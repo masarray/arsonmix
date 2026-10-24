@@ -2,20 +2,31 @@
 #pragma once
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <memory>
 
-// P1: single stereo microphone -> one VST3 -> master output.
-// Structural mutations happen on the message thread ONLY after detaching the
-// audio callback. No plugin load/scan/IO/mutex/logging/heap allocation by host
-// code inside audioDeviceIOCallbackWithContext.
+// One live stereo input path and up to 8 actual VST3 processors.
+// The audio callback never scans files, creates plugins, mutates the chain,
+// enters UI code, locks host mutexes, logs, or changes device settings.
+// Chain edits detach audio callback first (brief intentional dropout in P2).
 class LiveAudioEngine final : private juce::AudioIODeviceCallback
 {
 public:
+    static constexpr int maxFx = 8;
+
+    struct Slot
+    {
+        std::unique_ptr<juce::AudioPluginInstance> processor;
+        juce::String name, catalogId;
+        bool bypass = false;
+        int latency = 0;
+    };
+
     LiveAudioEngine()
     {
-        formatManager_.addFormat (std::make_unique<juce::VST3PluginFormat>());
+        formats_.addFormat (std::make_unique<juce::VST3PluginFormat>());
         scratch_.setSize (2, maxFrames, false, true, false);
     }
 
@@ -23,187 +34,267 @@ public:
 
     juce::AudioDeviceManager& devices() noexcept { return deviceManager_; }
 
-    juce::String start()
+    juce::String start (const juce::XmlElement* savedSettings = nullptr)
     {
-        // Disarmed on launch to prevent acoustic feedback with open microphones.
-        monitorEnabled_.store (false);
-        const auto error = deviceManager_.initialise (1, 2, nullptr, true);
-        if (error.isNotEmpty())
-            return error;
+        monitor_.store (false);
+        const auto error = deviceManager_.initialise (1, 2, savedSettings, true);
+        if (error.isNotEmpty()) return error;
         deviceManager_.addAudioCallback (this);
-        callbackAttached_ = true;
+        attached_ = true;
         return {};
     }
 
     void stop()
     {
-        if (callbackAttached_)
+        detach();
+        for (int i = 0; i < count_; ++i)
         {
-            deviceManager_.removeAudioCallback (this);
-            callbackAttached_ = false;
+            if (slots_[i].processor) slots_[i].processor->releaseResources();
+            slots_[i] = Slot {};
         }
-        if (plugin_ != nullptr)
-        {
-            plugin_->releaseResources();
-            plugin_.reset();
-        }
+        count_ = 0;
         deviceManager_.closeAudioDevice();
     }
 
-    void setMonitorEnabled (bool enabled) noexcept { monitorEnabled_.store (enabled); }
-    bool isMonitorEnabled() const noexcept { return monitorEnabled_.load(); }
-    void setBypassed (bool bypassed) noexcept { bypassed_.store (bypassed); }
-    bool isBypassed() const noexcept { return bypassed_.load(); }
-    void setMasterGainDb (float db) noexcept
+    void setMonitorEnabled (bool value) noexcept { monitor_.store (value); }
+    bool isMonitorEnabled() const noexcept { return monitor_.load(); }
+    void setMasterGainDb (float value) noexcept
     {
-        if (std::isfinite (db))
-            linearGain_.store (std::pow (10.0f, juce::jlimit (-60.0f, 10.0f, db) / 20.0f));
+        if (std::isfinite (value)) masterGain_.store (juce::Decibels::decibelsToGain (juce::jlimit (-60.f, 10.f, value)));
+    }
+    void setChannelGainDb (float value) noexcept
+    {
+        if (std::isfinite (value)) channelGain_.store (juce::Decibels::decibelsToGain (juce::jlimit (-60.f, 10.f, value)));
+    }
+    void setChannelMuted (bool value) noexcept { channelMute_.store (value); }
+
+    int chainSize() const noexcept { return count_; }
+
+    juce::AudioPluginInstance* pluginAt (int index) noexcept
+    {
+        return index >= 0 && index < count_ ? slots_[index].processor.get() : nullptr;
     }
 
-    // Message-thread operation. VST3 code is untrusted and may hang or crash;
-    // sandboxed scanning/hosting is deliberately a later milestone.
-    juce::String loadVst3 (const juce::File& path)
+    juce::var chainState() const
     {
-        if (! path.exists() || ! path.hasFileExtension (".vst3"))
-            return "Choose an installed .vst3 module or bundle";
+        juce::Array<juce::var> nodes;
+        for (int i = 0; i < count_; ++i)
+        {
+            auto node = std::make_unique<juce::DynamicObject>();
+            node->setProperty ("index", i);
+            node->setProperty ("name", slots_[i].name);
+            node->setProperty ("id", slots_[i].catalogId);
+            node->setProperty ("bypass", slots_[i].bypass);
+            node->setProperty ("latency", slots_[i].latency);
+            nodes.add (juce::var (node.release()));
+        }
+        return juce::var (nodes);
+    }
 
-        auto* format = formatManager_.getFormat (0);
-        if (format == nullptr || ! format->fileMightContainThisPluginType (path.getFullPathName()))
-            return "Not a recognised VST3 module";
-
-        juce::OwnedArray<juce::PluginDescription> descriptions;
-        format->findAllTypesForFile (descriptions, path.getFullPathName());
-        if (descriptions.isEmpty())
-            return "No VST3 effect found in the selected module";
-
+    juce::String addVst3 (const juce::String& filename, int uid,
+                          const juce::String& catalogId)
+    {
+        if (count_ >= maxFx) return "FX Rack is full (maximum 8 VST3 effects)";
         auto* device = deviceManager_.getCurrentAudioDevice();
-        if (device == nullptr)
-            return "Configure a working audio device first";
+        if (device == nullptr) return "Configure a working audio input/output device first";
+        auto* fmt = formats_.getFormat (0);
+        if (fmt == nullptr || ! fmt->fileMightContainThisPluginType (filename))
+            return "VST3 module not found: " + filename;
+
+        juce::OwnedArray<juce::PluginDescription> descs;
+        fmt->findAllTypesForFile (descs, filename);
+        juce::PluginDescription* chosen = nullptr;
+        for (auto* d : descs)
+            if (d != nullptr && d->uniqueId == uid && !d->isInstrument)
+            {
+                chosen = d;
+                break;
+            }
+        if (chosen == nullptr)
+            return "Effect not found inside VST3 module. Rescan the catalog.";
 
         juce::String error;
-        auto candidate = formatManager_.createPluginInstance (
-            *descriptions[0], device->getCurrentSampleRate(),
+        auto instance = formats_.createPluginInstance (
+            *chosen, device->getCurrentSampleRate(),
             juce::jmax (32, device->getCurrentBufferSizeSamples()), error);
-        if (candidate == nullptr)
-            return "VST3 load failed: " + error;
+        if (! instance)
+            return "Failed to instantiate VST3: " + error;
 
-        juce::AudioProcessor::BusesLayout stereo;
-        stereo.inputBuses.add (juce::AudioChannelSet::stereo());
-        stereo.outputBuses.add (juce::AudioChannelSet::stereo());
-        if (! candidate->setBusesLayout (stereo))
-            return "P1 accepts stereo input/stereo output effects only";
+        juce::AudioProcessor::BusesLayout layout;
+        layout.inputBuses.add (juce::AudioChannelSet::stereo());
+        layout.outputBuses.add (juce::AudioChannelSet::stereo());
+        if (! instance->setBusesLayout (layout))
+            return "P2 accepts stereo-in/stereo-out effects; plugin bus layout is incompatible";
 
-        // Detach waits for in-flight callbacks, then reattach after publish.
-        // The temporary silence is explicit P1 behaviour, not seamless hot swap.
-        if (callbackAttached_)
-            deviceManager_.removeAudioCallback (this);
-        if (plugin_ != nullptr)
-            plugin_->releaseResources();
-        plugin_ = std::move (candidate);
-        pluginName_ = descriptions[0]->name;
-        bypassed_.store (false);
-        if (callbackAttached_)
-            deviceManager_.addAudioCallback (this);
+        detach();
+        Slot node;
+        node.name = chosen->name;
+        node.catalogId = catalogId;
+        node.processor = std::move (instance);
+        slots_[count_++] = std::move (node);
+        attach();
         return {};
     }
 
-    void unloadPlugin()
+    bool setBypass (int index, bool value)
     {
-        if (callbackAttached_)
-            deviceManager_.removeAudioCallback (this);
-        if (plugin_ != nullptr)
-            plugin_->releaseResources();
-        plugin_.reset();
-        pluginName_.clear();
-        if (callbackAttached_)
-            deviceManager_.addAudioCallback (this);
+        if (index < 0 || index >= count_) return false;
+        // Message-thread writes under a detached callback; no data race.
+        detach();
+        slots_[index].bypass = value;
+        attach();
+        return true;
     }
 
-    juce::var status() const
+    bool removeAt (int index)
     {
-        auto object = std::make_unique<juce::DynamicObject>();
+        if (index < 0 || index >= count_) return false;
+        detach();
+        if (slots_[index].processor)
+            slots_[index].processor->releaseResources();
+        for (int i = index; i + 1 < count_; ++i)
+            slots_[i] = std::move (slots_[i + 1]);
+        slots_[--count_] = Slot {};
+        attach();
+        return true;
+    }
+
+    bool moveSlot (int from, int to)
+    {
+        if (from < 0 || from >= count_ || to < 0 || to >= count_ || from == to)
+            return false;
+        detach();
+        auto moved = std::move (slots_[from]);
+        if (from < to)
+            for (int i = from; i < to; ++i) slots_[i] = std::move (slots_[i + 1]);
+        else
+            for (int i = from; i > to; --i) slots_[i] = std::move (slots_[i - 1]);
+        slots_[to] = std::move (moved);
+        attach();
+        return true;
+    }
+
+    juce::var status()
+    {
+        auto o = std::make_unique<juce::DynamicObject>();
         auto* d = deviceManager_.getCurrentAudioDevice();
-        object->setProperty ("connected", d != nullptr);
-        object->setProperty ("driver", deviceManager_.getCurrentAudioDeviceType());
-        object->setProperty ("device", d != nullptr ? d->getName() : "No audio device");
-        object->setProperty ("rate", d != nullptr ? d->getCurrentSampleRate() : 0.0);
-        object->setProperty ("buffer", d != nullptr ? d->getCurrentBufferSizeSamples() : 0);
-        object->setProperty ("plugin", pluginName_);
-        object->setProperty ("pluginLatencySamples", plugin_ != nullptr ? plugin_->getLatencySamples() : 0);
-        object->setProperty ("monitor", monitorEnabled_.load());
-        object->setProperty ("bypass", bypassed_.load());
-        object->setProperty ("peak", peak_.load (std::memory_order_relaxed));
-        object->setProperty ("note", "P1: input stereo -> optional VST3 -> output; CH1 + master only");
-        return juce::var (object.release());
+        o->setProperty ("connected", d != nullptr);
+        o->setProperty ("driver", deviceManager_.getCurrentAudioDeviceType());
+        o->setProperty ("device", d ? d->getName() : "No device");
+        o->setProperty ("rate", d ? d->getCurrentSampleRate() : 0.0);
+        o->setProperty ("buffer", d ? d->getCurrentBufferSizeSamples() : 0);
+        o->setProperty ("monitor", monitor_.load());
+        o->setProperty ("inputPeak", inputPeak_.load());
+        o->setProperty ("peak", outputPeak_.load());
+        o->setProperty ("latencySamples", totalLatency_.load());
+        o->setProperty ("chainCount", count_);
+        return juce::var (o.release());
     }
 
 private:
     static constexpr int maxFrames = 8192;
     juce::AudioDeviceManager deviceManager_;
-    juce::AudioPluginFormatManager formatManager_;
-    std::unique_ptr<juce::AudioPluginInstance> plugin_;
+    juce::AudioPluginFormatManager formats_;
+    std::array<Slot, maxFx> slots_;
+    int count_ = 0;
+    bool attached_ = false;
     juce::AudioBuffer<float> scratch_;
-    juce::String pluginName_;
-    bool callbackAttached_ = false;
-    std::atomic<bool> monitorEnabled_ { false }, bypassed_ { false };
-    std::atomic<float> linearGain_ { 1.0f }, peak_ { 0.0f };
+    std::atomic<bool> monitor_ { false }, channelMute_ { false };
+    std::atomic<float> masterGain_ { 1.f }, channelGain_ { 1.f };
+    std::atomic<float> inputPeak_ { 0.f }, outputPeak_ { 0.f };
+    std::atomic<int> totalLatency_ { 0 };
 
-    void audioDeviceAboutToStart (juce::AudioIODevice* device) override
+    void detach()
     {
-        if (plugin_ != nullptr)
+        if (attached_)
         {
-            plugin_->releaseResources();
-            plugin_->prepareToPlay (device->getCurrentSampleRate(),
-                                    juce::jmax (32, device->getCurrentBufferSizeSamples()));
+            deviceManager_.removeAudioCallback (this);
+            attached_ = false;
         }
-        peak_.store (0.0f, std::memory_order_relaxed);
+    }
+    void attach()
+    {
+        if (! attached_ && deviceManager_.getCurrentAudioDevice() != nullptr)
+        {
+            deviceManager_.addAudioCallback (this);
+            attached_ = true;
+        }
     }
 
-    void audioDeviceStopped() override { peak_.store (0.0f, std::memory_order_relaxed); }
+    void audioDeviceAboutToStart (juce::AudioIODevice* d) override
+    {
+        int latency = 0;
+        for (int i = 0; i < count_; ++i)
+        {
+            auto& slot = slots_[i];
+            if (slot.processor)
+            {
+                slot.processor->releaseResources();
+                slot.processor->prepareToPlay (d->getCurrentSampleRate(),
+                    juce::jmax (32, d->getCurrentBufferSizeSamples()));
+                slot.latency = slot.processor->getLatencySamples();
+                if (!slot.bypass) latency += slot.latency;
+            }
+        }
+        totalLatency_.store (latency);
+        inputPeak_.store (0.f);
+        outputPeak_.store (0.f);
+    }
+
+    void audioDeviceStopped() override
+    {
+        inputPeak_.store (0.f);
+        outputPeak_.store (0.f);
+    }
 
     void audioDeviceIOCallbackWithContext (
-        const float* const* inputs, int numInputs, float* const* outputs,
-        int numOutputs, int samples,
-        const juce::AudioIODeviceCallbackContext&) override
+        const float* const* inputs, int inputChannels, float* const* outputs,
+        int outputChannels, int samples, const juce::AudioIODeviceCallbackContext&) override
     {
-        const bool enabled = monitorEnabled_.load (std::memory_order_relaxed);
-        const bool bypass = bypassed_.load (std::memory_order_relaxed);
-        const float gain = linearGain_.load (std::memory_order_relaxed);
-        float peak = 0.0f;
+        const bool enabled = monitor_.load (std::memory_order_relaxed);
+        const bool muted = channelMute_.load (std::memory_order_relaxed);
+        const float gain = masterGain_.load (std::memory_order_relaxed)
+                         * channelGain_.load (std::memory_order_relaxed);
+        float inPeak = 0.f, outPeak = 0.f;
         for (int offset = 0; offset < samples; offset += maxFrames)
         {
             const int frames = juce::jmin (maxFrames, samples - offset);
-            // Scratch memory was allocated at startup: avoidReallocating=true.
             scratch_.setSize (2, frames, false, false, true);
-            for (int ch = 0; ch < 2; ++ch)
+            for (int c = 0; c < 2; ++c)
             {
-                float* dst = scratch_.getWritePointer (ch);
-                const float* src = numInputs > ch ? inputs[ch]
-                                  : numInputs > 0 ? inputs[0] : nullptr;
-                if (src != nullptr)
+                float* dst = scratch_.getWritePointer (c);
+                const float* src = inputChannels > c ? inputs[c]
+                                  : inputChannels > 0 ? inputs[0] : nullptr;
+                if (src)
                     juce::FloatVectorOperations::copy (dst, src + offset, frames);
                 else
                     juce::FloatVectorOperations::clear (dst, frames);
+                for (int i = 0; i < frames; ++i)
+                    inPeak = juce::jmax (inPeak, std::abs (dst[i]));
             }
-            if (plugin_ != nullptr && ! bypass)
+            // MIDI capacity is empty unless the plugin itself changes it.
+            juce::MidiBuffer midi;
+            for (int fx = 0; fx < count_; ++fx)
             {
-                juce::MidiBuffer midi;
-                plugin_->processBlock (scratch_, midi);
+                auto& slot = slots_[fx];
+                if (slot.processor && ! slot.bypass)
+                    slot.processor->processBlock (scratch_, midi);
+                midi.clear();
             }
-            for (int ch = 0; ch < numOutputs; ++ch)
+            for (int c = 0; c < outputChannels; ++c)
             {
-                if (outputs[ch] == nullptr)
-                    continue;
-                float* out = outputs[ch] + offset;
-                const float* source = scratch_.getReadPointer (juce::jmin (ch, 1));
+                if (!outputs[c]) continue;
+                const float* src = scratch_.getReadPointer (juce::jmin (c, 1));
+                float* dst = outputs[c] + offset;
                 for (int i = 0; i < frames; ++i)
                 {
-                    const float x = enabled ? source[i] * gain : 0.0f;
-                    out[i] = x;
-                    peak = juce::jmax (peak, std::abs (x));
+                    const float value = (enabled && !muted) ? src[i] * gain : 0.f;
+                    dst[i] = value;
+                    outPeak = juce::jmax (outPeak, std::abs (value));
                 }
             }
         }
-        peak_.store (juce::jmin (1.0f, peak), std::memory_order_relaxed);
+        inputPeak_.store (juce::jmin (1.f, inPeak), std::memory_order_relaxed);
+        outputPeak_.store (juce::jmin (1.f, outPeak), std::memory_order_relaxed);
     }
 };
