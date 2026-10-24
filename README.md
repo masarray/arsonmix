@@ -52,3 +52,9 @@ Code in this trial is authored for the project and provided under AGPL-3.0-only 
 The new P1 native EXE provides actual microphone passthrough through one VST3 effect, ASIO/WASAPI device selector, bypass, monitor arm/mute, master gain and real callback meter. The old FX rack and channels 2–12 are **still UI previews** (do not confuse demo plugin inserts with native VST3). Output starts muted for hearing/feedback safety. See [P1 trial instructions](docs/P1_FIRST_SOUND.md).
 
 GitHub Actions: [Windows First Sound builds](https://github.com/masarray/arsonmix/actions/workflows/p1-windows.yml). Download the artifact only after the run is GREEN. JUCE 8.0.15 is pinned by CI and includes GPLv3 ASIO SDK sources; this repository uses AGPLv3. Plugin compatibility and low latency must still be verified with real hardware.
+
+## P2 Native VST3 Catalog and FX Rack
+
+The native Windows host supports **Scan VST3**, **Add Plugin Folder**, **Import VST3** and a persistent plugin catalog in user app-data. The FX Rack inside WebView2 now controls the **one native stereo audio path** with up to 8 real VST3 effects: add, bypass, reorder, remove and open plugin UI. The Windows audio setup dialog is also native, with saved device configuration.
+
+All remaining UI preview channels and factory vocal presets are still visual; do not infer that they are running live audio. Legacy VST2 `.dll` is **not** supported or automatically treated as VST3. Plugin scanning uses a worker, but not yet a crash-isolated subprocess; avoid unknown plugins during a livestream. Read [P2 Hardware Trial](docs/P2_NATIVE_FX_RACK.md).
