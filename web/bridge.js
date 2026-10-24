@@ -174,9 +174,9 @@
     queueMicrotask(()=>{
       renderPending=false;
       if(currentTab()==="FX RACK"){
-        if(workspace.dataset.nativeRack!=="1")renderRack();
+        if(workspace.firstElementChild?.dataset.liveNative!=="1")renderRack();
       } else if(currentTab()==="SETUP"){
-        if(workspace.dataset.nativeSetup!=="1")renderSetup();
+        if(workspace.firstElementChild?.dataset.nativeSetup!=="1")renderSetup();
       }
       patchMixer();
     });
