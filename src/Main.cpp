@@ -63,6 +63,24 @@ public:
     void closeButtonPressed() override { setVisible (false); }
 };
 
+class AudioSetupWindow final : public juce::DocumentWindow
+{
+public:
+    explicit AudioSetupWindow (juce::AudioDeviceManager& manager)
+        : juce::DocumentWindow ("AR MIX — ASIO / WASAPI Setup",
+                                juce::Colour (0xff14212a), allButtons)
+    {
+        setUsingNativeTitleBar (true);
+        setResizable (true, true);
+        setResizeLimits (580, 430, 1300, 1000);
+        auto* selector = new juce::AudioDeviceSelectorComponent (
+            manager, 1, 2, 1, 2, false, false, false, false);
+        setContentOwned (selector, true);
+        centreWithSize (740, 590);
+    }
+    void closeButtonPressed() override { setVisible (false); }
+};
+
 class ConsoleWindow final : public juce::DocumentWindow, private juce::Timer
 {
 public:
@@ -84,7 +102,7 @@ public:
               .withResourceProvider (assetFor))
     {
         settingsDirectory().createDirectory();
-        catalog_.onChanged = [this] { emitCatalog(); };
+        catalog_.onChanged = [this] { emitCatalog(); emitScanProgress(); };
         setUsingNativeTitleBar (true);
         setResizable (true, true);
         setResizeLimits (1100, 650, 3840, 2160);
@@ -96,8 +114,8 @@ public:
         startupError_ = engine_.start (saved.get());
         browser_.goToURL (juce::WebBrowserComponent::getResourceProviderRoot());
         startTimerHz (12);
-        if (catalog_.entries().empty())
-            catalog_.scanDefaults();
+        // Defer initial scan until explicitly requested in Plugin Manager.
+        // Startup must not spend seconds enumerating third-party VST3 modules.
     }
 
     ~ConsoleWindow() override
@@ -105,6 +123,7 @@ public:
         stopTimer();
         catalog_.onChanged = nullptr;
         editorWindow_.reset();
+        audioSetupWindow_.reset();
         engine_.stop();
         browser_.setVisible (false);
     }
@@ -117,8 +136,10 @@ private:
     Browser browser_;
     std::unique_ptr<juce::FileChooser> chooser_;
     std::unique_ptr<PluginEditorWindow> editorWindow_;
+    std::unique_ptr<AudioSetupWindow> audioSetupWindow_;
     juce::String startupError_, lastAudioXml_;
     bool initialStateSent_ = false;
+    bool setupLaunching_ = false;
     unsigned int timerTicks_ = 0;
 
     void emitNotice (const juce::String& message, bool error = false)
@@ -158,18 +179,51 @@ private:
             engine_.setMasterMuted (bool (value));
     }
 
+    void emitSetupPhase (const juce::String& phase, int elapsedMs = 0)
+    {
+        auto o = std::make_unique<juce::DynamicObject>();
+        o->setProperty ("phase", phase);
+        o->setProperty ("elapsedMs", elapsedMs);
+        if (browser_.loaded)
+            browser_.emitEventIfBrowserIsVisible ("arMixSetupProgress", juce::var (o.release()));
+    }
+
+    void emitScanProgress()
+    {
+        if (browser_.loaded)
+            browser_.emitEventIfBrowserIsVisible ("arMixScanProgress", catalog_.progress());
+    }
+
     void showDeviceSetup()
     {
-        juce::DialogWindow::LaunchOptions opts;
-        opts.dialogTitle = "AR MIX — ASIO / WASAPI Audio Setup";
-        opts.dialogBackgroundColour = juce::Colour (0xff14212a);
-        auto* selector = new juce::AudioDeviceSelectorComponent (
-            engine_.devices(), 1, 2, 1, 2, false, false, false, false);
-        selector->setSize (720, 560);
-        opts.content.setOwned (selector);
-        opts.useNativeTitleBar = true;
-        opts.resizable = true;
-        opts.launchAsync();
+        if (setupLaunching_) return;
+
+        // The native JUCE device list is cached after first construction:
+        // reopening the settings window avoids repeating full widget setup.
+        if (audioSetupWindow_ != nullptr)
+        {
+            audioSetupWindow_->setVisible (true);
+            audioSetupWindow_->toFront (true);
+            emitSetupPhase ("opened", 0);
+            return;
+        }
+
+        setupLaunching_ = true;
+        emitSetupPhase ("preparing");
+        const auto begin = juce::Time::getMillisecondCounter();
+        juce::Timer::callAfterDelay (150,
+            [safe = juce::Component::SafePointer<ConsoleWindow> (this), begin]
+        {
+            if (safe == nullptr) return;
+            safe->emitSetupPhase ("enumerating");
+            safe->audioSetupWindow_ =
+                std::make_unique<AudioSetupWindow> (safe->engine_.devices());
+            safe->audioSetupWindow_->setVisible (true);
+            safe->audioSetupWindow_->toFront (true);
+            safe->setupLaunching_ = false;
+            safe->emitSetupPhase ("opened",
+                static_cast<int> (juce::Time::getMillisecondCounter() - begin));
+        });
     }
 
     void chooseImport()
@@ -294,8 +348,11 @@ private:
         {
             initialStateSent_ = true;
             emitCatalog();
+            emitScanProgress();
             emitChain();
         }
+        if (catalog_.busy() && timerTicks_ % 3 == 0)
+            emitScanProgress();
         // Persist configuration off the callback; cap XML serialization to ~3 s.
         if (++timerTicks_ % 36 == 0)
         {

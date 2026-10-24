@@ -58,3 +58,7 @@ GitHub Actions: [Windows First Sound builds](https://github.com/masarray/arsonmi
 The native Windows host supports **Scan VST3**, **Add Plugin Folder**, **Import VST3** and a persistent plugin catalog in user app-data. The FX Rack inside WebView2 now controls the **one native stereo audio path** with up to 8 real VST3 effects: add, bypass, reorder, remove and open plugin UI. The Windows audio setup dialog is also native, with saved device configuration.
 
 All remaining UI preview channels and factory vocal presets are still visual; do not infer that they are running live audio. Legacy VST2 `.dll` is **not** supported or automatically treated as VST3. Plugin scanning uses a worker, but not yet a crash-isolated subprocess; avoid unknown plugins during a livestream. Read [P2 Hardware Trial](docs/P2_NATIVE_FX_RACK.md).
+
+## P2 DAW UX improvement
+
+Use MIX → Channel 1 ADD FX to select a real indexed VST3; PLUGINS opens Plugin Manager for scan/import only. Audio Setup now reports loading status and reuses the native selector window. Scan uses real candidate counters and indeterminate discovery stage. See [P2 DAW workflow guide](docs/P2_DAW_WORKFLOW.md).

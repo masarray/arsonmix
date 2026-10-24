@@ -1,7 +1,7 @@
 name: Windows Native VST3 Host
 on:
   push:
-    branches: [ main, feature/p1-first-sound-windows, feature/p2-native-vst-catalog-fx-rack ]
+    branches: [ main, feature/p1-first-sound-windows, feature/p2-native-vst-catalog-fx-rack, feature/p2-daw-workflow-progress ]
   pull_request:
   workflow_dispatch:
 
@@ -27,6 +27,9 @@ jobs:
       - name: Install WebView2 SDK for JUCE
         shell: pwsh
         run: nuget install Microsoft.Web.WebView2 -Version 1.0.3485.44 -OutputDirectory .deps -NonInteractive
+      - name: Validate native UI JavaScript
+        shell: pwsh
+        run: node --check web/bridge.js
       - name: Configure Windows x64
         shell: pwsh
         run: >
@@ -46,13 +49,13 @@ jobs:
             Where-Object { $_.Name -like "*AR*Mix*" -and $_.FullName -match 'Release' } |
             Select-Object -First 1
           if (-not $exe) { throw "ARMixConsole EXE not found" }
-          Copy-Item $exe.FullName "dist/AR-MIX-Studio-P2.exe"
+          Copy-Item $exe.FullName "dist/AR-MIX-Studio-P2-DAW.exe"
           Copy-Item README.md "dist/README.md"
           "P2 experimental: output muted until MONITOR ON; do not use during a public livestream without hardware tests." |
             Out-File -FilePath dist/FIRST_SOUND_README.txt -Encoding utf8
       - uses: actions/upload-artifact@v4
         with:
-          name: AR-MIX-Studio-P2-Windows-x64
+          name: AR-MIX-Studio-P2-DAW-Workflow-Windows-x64
           path: dist/
           if-no-files-found: error
           retention-days: 14
