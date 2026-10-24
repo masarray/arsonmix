@@ -105,12 +105,19 @@ document.addEventListener('click',e=>{const b=e.target.closest('button,[data-cho
 document.addEventListener('dblclick',e=>{const st=e.target.closest('[data-strip]');if(st){chooseChannel(+st.dataset.strip);setView('EDIT')}});
 let drag=null;
 document.addEventListener('pointerdown',e=>{const f=e.target.closest('[data-fader]'),k=e.target.closest('[data-knob]'),node=e.target.closest('[data-band]');if(!f&&!k&&!node)return;const el=f||k||node;
- if(f){drag={type:'fader',el,index:f.dataset.fader};const r=f.getBoundingClientRect();const y=clamp((e.clientY-r.top)/r.height,0,1);updateFader(drag.index,10-y*70)}
+ if(f){const idx=f.dataset.fader,fromCap=!!e.target.closest('.cap');
+   drag={type:'fader',el:f,index:idx,fromCap,startY:e.clientY,
+     startDb:idx==='master'?masterGain:channels[+idx].fader};
+   // Grabbing the metallic thumb must never jump the level on pointer-down.
+   if(!fromCap){const r=f.getBoundingClientRect();const y=clamp((e.clientY-r.top)/r.height,0,1);updateFader(idx,10-y*70)}}
  else if(k){drag={type:'knob',el,initial:e.clientY,original:k.dataset.knob==='phones'?phones:channels[+k.dataset.ch][k.dataset.knob],param:k.dataset.knob}}
  else if(node){drag={type:'eq',el,index:+node.dataset.band};activeBand=drag.index}
  if(el.setPointerCapture)el.setPointerCapture(e.pointerId);e.preventDefault();});
 document.addEventListener('pointermove',e=>{if(!drag)return;
- if(drag.type==='fader'){const r=drag.el.getBoundingClientRect();updateFader(drag.index,10-clamp((e.clientY-r.top)/r.height,0,1)*70)}
+ if(drag.type==='fader'){const r=drag.el.getBoundingClientRect();
+   if(drag.fromCap){const distance=Math.max(24,r.height-66);
+     updateFader(drag.index,drag.startDb+(drag.startY-e.clientY)*70/distance)}
+   else updateFader(drag.index,10-clamp((e.clientY-r.top)/r.height,0,1)*70)}
  else if(drag.type==='knob'){const delta=(drag.initial-e.clientY);updateKnob(drag.el,drag.original+(drag.param==='pan'?delta:delta*.35))}
  else if(drag.type==='eq'){const svg=$('eqSvg');if(!svg)return;const r=svg.getBoundingClientRect();const x=clamp((e.clientX-r.left)/r.width,0,1),y=clamp((e.clientY-r.top)/r.height,0,1);bands[drag.index].freq=Math.round(20*Math.pow(1000,x));bands[drag.index].gain=+(clamp((.5-y)*500/9,-18,18)).toFixed(1);renderEditor();}
 });

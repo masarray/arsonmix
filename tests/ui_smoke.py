@@ -12,28 +12,53 @@ async def main():
         page.on("pageerror", lambda e: errors.append(str(e)))
         await page.set_content((project/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").read_text())
         assert await page.locator(".strip").count()==12
-        # Cap uses equal upper/lower mirrored grip halves on all channels and master.
-        geometry=await page.evaluate("""() => [...document.querySelectorAll('[data-fader]')].map(f => {
-            const c=f.querySelector('.cap'),b=c.getBoundingClientRect(),r=f.getBoundingClientRect();
-            const x=getComputedStyle(c,'::before'),y=getComputedStyle(c,'::after');
-            return {width:b.width,height:b.height,inside:b.top>=r.top && b.bottom<=r.bottom,
-                    upper:x.height,lower:y.height,upperBG:x.backgroundImage,lowerBG:y.backgroundImage,
-                    mirror:y.transform,radius:getComputedStyle(c).borderRadius}
-        })""")
-        assert len(geometry)==13
-        for g in geometry:
-            assert (g['width'],g['height'])==(29,42),g
-            assert g['inside'],g
-            assert g['upper']==g['lower'] and g['upperBG']==g['lowerBG'],g
-            assert 'matrix(1, 0, 0, -1' in g['mirror'],g
-            assert g['radius']=='5px',g
+        # The source image has a real metallic body and a long cast shadow.
+        # The body must travel inside the track, centered on image y=35.
+        geometry=await page.evaluate("""async () => {
+            const slots=[...document.querySelectorAll('[data-fader]')];
+            const heads=slots.map(f => {
+                const c=f.querySelector('.cap'),b=c.getBoundingClientRect(),r=f.getBoundingClientRect();
+                const s=getComputedStyle(c);
+                return {width:b.width,height:b.height,bodyInside:b.top>=r.top-1 && b.top+66<=r.bottom+1,
+                        top:b.top,trackTop:r.top,radius:s.borderRadius,
+                        bg:s.backgroundImage,transform:s.transform};
+            });
+            const uri=heads[0].bg.match(/data:image\\/png;base64,[a-zA-Z0-9+/=]+/)?.[0];
+            if(!uri) throw new Error('Image data URI not found');
+            const image=new Image();image.src=uri;await image.decode();
+            return {heads,imgW:image.naturalWidth,imgH:image.naturalHeight};
+        }""")
+        assert len(geometry['heads'])==13
+        assert (geometry['imgW'],geometry['imgH'])==(31,90), geometry
+        for g in geometry['heads']:
+            assert (g['width'],g['height'])==(31,90),g
+            assert g['bodyInside'],g
+            assert g['radius']=='0px',g
+            assert 'matrix(1, 0, 0, 1, -15.5, -35)' in g['transform'],g
         for fader in ('0','master'):
-            control=page.locator(f'[data-fader="{fader}"]')
-            await control.focus()
-            await control.press('Home')
-            assert float(await control.get_attribute('aria-valuenow'))==-60
-            await control.press('End')
-            assert float(await control.get_attribute('aria-valuenow'))==10
+            ctrl=page.locator(f'[data-fader="{fader}"]')
+            await ctrl.focus()
+            await ctrl.press('Home')
+            assert float(await ctrl.get_attribute('aria-valuenow'))==-60
+            await ctrl.press('End')
+            assert float(await ctrl.get_attribute('aria-valuenow'))==10
+        # Repaint at 0 dB, then dragging the head starts without a value jump.
+        channel=page.locator('[data-fader="0"]')
+        await channel.focus()
+        for _ in range(20):
+            await channel.press('ArrowDown')
+        original=float(await channel.get_attribute('aria-valuenow'))
+        cap=channel.locator('.cap')
+        rect=await cap.bounding_box()
+        cx=rect['x']+rect['width']/2
+        cy=rect['y']+35
+        await page.mouse.move(cx,cy)
+        await page.mouse.down()
+        assert float(await channel.get_attribute('aria-valuenow'))==original
+        await page.mouse.move(cx,cy+18,steps=3)
+        assert float(await channel.get_attribute('aria-valuenow'))<original
+        await page.mouse.up()
+        await page.screenshot(path=str(project/'fader-ui-smoke.png'),full_page=True)
         await page.locator('[data-view="FX RACK"]').click()
         await page.locator('[data-addplugin]').click()
         await page.locator("#pluginSearch").fill("de-esser")
@@ -53,6 +78,6 @@ async def main():
         assert await page.locator('.app.easy').count()==0
         assert not errors, errors
         await browser.close()
-    print("PASS: mirrored channel/master caps, keyboard endpoints, FX flow and no JS errors")
+    print("PASS: asset PNG for 13 faders, detent alignment, no-jump drag, endpoints, FX chain, no JS errors")
 
 if __name__=="__main__":asyncio.run(main())
