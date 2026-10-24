@@ -118,6 +118,8 @@ private:
     std::unique_ptr<juce::FileChooser> chooser_;
     std::unique_ptr<PluginEditorWindow> editorWindow_;
     juce::String startupError_, lastAudioXml_;
+    bool initialStateSent_ = false;
+    unsigned int timerTicks_ = 0;
 
     void emitNotice (const juce::String& message, bool error = false)
     {
@@ -264,14 +266,23 @@ private:
     {
         if (!browser_.loaded) return;
 
-        // Audio-device preferences are saved on the message thread only.
-        if (auto xml = engine_.devices().createStateXml())
+        if (!initialStateSent_)
         {
-            const auto text = xml->toString();
-            if (text != lastAudioXml_)
+            initialStateSent_ = true;
+            emitCatalog();
+            emitChain();
+        }
+        // Persist configuration off the callback; cap XML serialization to ~3 s.
+        if (++timerTicks_ % 36 == 0)
+        {
+            if (auto xml = engine_.devices().createStateXml())
             {
-                lastAudioXml_ = text;
-                settingsDirectory().getChildFile ("audio-devices.xml").replaceWithText (text);
+                const auto text = xml->toString();
+                if (text != lastAudioXml_)
+                {
+                    lastAudioXml_ = text;
+                    settingsDirectory().getChildFile ("audio-devices.xml").replaceWithText (text);
+                }
             }
         }
         auto state = engine_.status();
