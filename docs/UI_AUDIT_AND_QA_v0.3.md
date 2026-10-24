@@ -31,3 +31,11 @@
 **Not yet verified:** Windows 125/150% display scaling; native WebView2 shell compilation; real VST3 scan; FX plugin state persistence; real audio capture/output; buffer underrun / callback budgets / device RTL; production memory leak analysis. Treat these as explicit release gates rather than claimed capabilities.
 
 - Responsive QA: at 1366×768, 1920×1080, 2560×1440, measured 12 strips, **zero fader head geometry clips** and **zero JavaScript page errors**. Screenshots were inspected.
+
+## 2026-10-25: Mirror-symmetric fader polish
+
+- Root cause: original 45px head used a fixed 19px centerline. An overriding 39px height and biased shadow left the cap unbalanced, while an obsolete travel calculation remained.
+- Repair: single 29×42px metallic head, matching 5px top/bottom corners and centered black stripe; the lower grip is a true Y-mirror of the upper grip. Same CSS for channel and master.
+- Keep the cross-browser 25px safe-travel clamp. Add subtle hover and keyboard focus highlights; remove contradictory height/position declarations.
+- UX: vertical ARIA sliders, live master value, 0.5dB arrow steps, 5dB Page steps, Home (-60dB) and End (+10dB).
+- Automated Playwright smoke includes cap dimension, pseudo-layer symmetry, boundary clipping at initial positions, keyboard endpoints and existing FX workflows. Only the standalone component has been visually rendered in Linux Chromium during this patch; run the complete smoke suite before release.
