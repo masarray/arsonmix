@@ -216,11 +216,25 @@ private:
         const int slot = static_cast<int> (args.getProperty ("slot", -1));
 
         if (action == "audioSetup") showDeviceSetup();
-        else if (action == "scanVst3") catalog_.scanDefaults();
-        else if (action == "addScanFolder") chooseFolder();
-        else if (action == "importVst3") chooseImport();
+        else if (action == "scanVst3")
+        {
+            if (engine_.isMonitorEnabled()) emitNotice ("Turn MONITOR OFF before scanning plugins.", true);
+            else catalog_.scanDefaults();
+        }
+        else if (action == "addScanFolder")
+        {
+            if (engine_.isMonitorEnabled()) emitNotice ("Turn MONITOR OFF before scanning plugins.", true);
+            else chooseFolder();
+        }
+        else if (action == "importVst3")
+        {
+            if (engine_.isMonitorEnabled()) emitNotice ("Turn MONITOR OFF before importing plugins.", true);
+            else chooseImport();
+        }
         else if (action == "addCatalog")
         {
+            if (engine_.isMonitorEnabled())
+                return emitNotice ("Turn MONITOR OFF before editing the live FX chain.", true);
             const auto* plugin = catalog_.find (args.getProperty ("id", {}).toString());
             if (!plugin)
                 return emitNotice ("Plugin not found in catalog. Rescan your VST3 folders.", true);
@@ -231,11 +245,15 @@ private:
         }
         else if (action == "fxRemove")
         {
+            if (engine_.isMonitorEnabled())
+                return emitNotice ("Turn MONITOR OFF before removing a live FX.", true);
             editorWindow_.reset();
             if (engine_.removeAt (slot)) emitChain();
         }
         else if (action == "fxMove")
         {
+            if (engine_.isMonitorEnabled())
+                return emitNotice ("Turn MONITOR OFF before reordering live FX.", true);
             editorWindow_.reset();
             if (engine_.moveSlot (slot, slot + static_cast<int> (value))) emitChain();
         }
@@ -256,7 +274,11 @@ private:
             }
         }
         else if (action == "monitor" && value.isBool())
-            engine_.setMonitorEnabled (bool (value));
+        {
+            if (bool (value) && catalog_.busy())
+                emitNotice ("VST3 scan still active. Wait for the scan to finish before enabling monitoring.", true);
+            else engine_.setMonitorEnabled (bool (value));
+        }
         else if (action == "refreshState")
         {
             emitCatalog();

@@ -132,7 +132,9 @@ public:
         node.name = chosen->name;
         node.catalogId = catalogId;
         node.processor = std::move (instance);
-        slots_[count_++] = std::move (node);
+        slots_[count_] = std::move (node);
+        bypassFlags_[count_].store (false, std::memory_order_release);
+        ++count_;
         attach();
         return {};
     }
@@ -140,10 +142,9 @@ public:
     bool setBypass (int index, bool value)
     {
         if (index < 0 || index >= count_) return false;
-        // Message-thread writes under a detached callback; no data race.
-        detach();
+        // Message-thread metadata and an atomic value consumed by the audio thread.
         slots_[index].bypass = value;
-        attach();
+        bypassFlags_[index].store (value, std::memory_order_release);
         return true;
     }
 
@@ -156,6 +157,8 @@ public:
         for (int i = index; i + 1 < count_; ++i)
             slots_[i] = std::move (slots_[i + 1]);
         slots_[--count_] = Slot {};
+        for (int i = 0; i < count_; ++i)
+            bypassFlags_[i].store (slots_[i].bypass, std::memory_order_release);
         attach();
         return true;
     }
@@ -171,6 +174,8 @@ public:
         else
             for (int i = from; i > to; --i) slots_[i] = std::move (slots_[i - 1]);
         slots_[to] = std::move (moved);
+        for (int i = 0; i < count_; ++i)
+            bypassFlags_[i].store (slots_[i].bypass, std::memory_order_release);
         attach();
         return true;
     }
@@ -201,6 +206,8 @@ private:
     int count_ = 0;
     bool attached_ = false;
     juce::AudioBuffer<float> scratch_;
+    // Indexed atomic bypass flags: instant RT-safe toggles, no graph detachment.
+    std::array<std::atomic<bool>, maxFx> bypassFlags_ {};
     std::atomic<bool> monitor_ { false }, channelMute_ { false }, masterMute_ { false };
     std::atomic<float> masterGain_ { 1.f }, channelGain_ { 1.f };
     std::atomic<float> inputPeak_ { 0.f }, outputPeak_ { 0.f };
@@ -235,7 +242,7 @@ private:
                 slot.processor->prepareToPlay (d->getCurrentSampleRate(),
                     juce::jmax (32, d->getCurrentBufferSizeSamples()));
                 slot.latency = slot.processor->getLatencySamples();
-                if (!slot.bypass) latency += slot.latency;
+                if (!bypassFlags_[i].load (std::memory_order_relaxed)) latency += slot.latency;
             }
         }
         totalLatency_.store (latency);
@@ -280,7 +287,7 @@ private:
             for (int fx = 0; fx < count_; ++fx)
             {
                 auto& slot = slots_[fx];
-                if (slot.processor && ! slot.bypass)
+                if (slot.processor && ! bypassFlags_[fx].load (std::memory_order_relaxed))
                     slot.processor->processBlock (scratch_, midi);
                 midi.clear();
             }

@@ -32,3 +32,6 @@
 - Add/remove/bypass/edit/reorder two real plugins and verify audible routing.
 - Save/restart audio device settings and verify the same device is selected.
 - Test repeatedly with headphones, 48 kHz / 128 samples then 64 only after stable result.
+
+## Live-safe P2 operations
+Bypass toggles are atomic and do not detach the audio callback. Scanning plugins and add/remove/reorder are refused when monitoring is enabled, so the singer cannot accidentally force an audio callback restart while live. Turn MONITOR OFF to edit chain structure, then arm monitoring again. The VST3 code itself is third-party; test carefully.
