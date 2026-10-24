@@ -46,3 +46,9 @@ g++ -std=c++20 -O2 -Wall -Wextra -pedantic -pthread tests/realtime_control_test.
 ## Licensing
 
 Code in this trial is authored for the project and provided under AGPL-3.0-only to align with JUCE open-source licensing. JUCE, ASIO SDK and VST3 SDK have their own notices and obligations; check exact version and dependency licensing before publishing binaries. No third-party VST binaries or proprietary mixer UI graphics are included.
+
+## P1 Windows native First Sound
+
+The new P1 native EXE provides actual microphone passthrough through one VST3 effect, ASIO/WASAPI device selector, bypass, monitor arm/mute, master gain and real callback meter. The old FX rack and channels 2–12 are **still UI previews** (do not confuse demo plugin inserts with native VST3). Output starts muted for hearing/feedback safety. See [P1 trial instructions](docs/P1_FIRST_SOUND.md).
+
+GitHub Actions: [Windows First Sound builds](https://github.com/masarray/arsonmix/actions/workflows/p1-windows.yml). Download the artifact only after the run is GREEN. JUCE 8.0.15 is pinned by CI and includes GPLv3 ASIO SDK sources; this repository uses AGPLv3. Plugin compatibility and low latency must still be verified with real hardware.
