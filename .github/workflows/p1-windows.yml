@@ -20,12 +20,16 @@ jobs:
           repository: juce-framework/JUCE
           ref: 8.0.15
           path: third_party/JUCE
-      - name: Install WebView2 SDK for JUCE\n        shell: pwsh\n        run: nuget install Microsoft.Web.WebView2 -Version 1.0.3485.44 -OutputDirectory .deps -NonInteractive\n      - name: Configure Windows x64
+      - name: Install WebView2 SDK for JUCE
+        shell: pwsh
+        run: nuget install Microsoft.Web.WebView2 -Version 1.0.3485.44 -OutputDirectory .deps -NonInteractive
+      - name: Configure Windows x64
         shell: pwsh
         run: >
           cmake -S . -B build -G "Visual Studio 17 2022" -A x64
           -DJUCE_ROOT="${{ github.workspace }}/third_party/JUCE"
-          -DBUILD_TESTING=ON\n          -DJUCE_WEBVIEW2_PACKAGE_LOCATION="${{ github.workspace }}/.deps"
+          -DBUILD_TESTING=ON
+          -DJUCE_WEBVIEW2_PACKAGE_LOCATION="${{ github.workspace }}/.deps"
       - name: Build executable and native RT tests
         run: cmake --build build --config Release --target ARMixConsole ARMixRTTests --parallel 2
       - name: Test realtime control primitives
