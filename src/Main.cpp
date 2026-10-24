@@ -154,6 +154,8 @@ private:
             engine_.setChannelGainDb (valueNumber);
         else if (name == "mute" && channel == 1 && value.isBool())
             engine_.setChannelMuted (bool (value));
+        else if (name == "masterMute" && value.isBool())
+            engine_.setMasterMuted (bool (value));
     }
 
     void showDeviceSetup()

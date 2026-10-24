@@ -67,6 +67,7 @@ public:
         if (std::isfinite (value)) channelGain_.store (juce::Decibels::decibelsToGain (juce::jlimit (-60.f, 10.f, value)));
     }
     void setChannelMuted (bool value) noexcept { channelMute_.store (value); }
+    void setMasterMuted (bool value) noexcept { masterMute_.store (value); }
 
     int chainSize() const noexcept { return count_; }
 
@@ -184,6 +185,7 @@ public:
         o->setProperty ("rate", d ? d->getCurrentSampleRate() : 0.0);
         o->setProperty ("buffer", d ? d->getCurrentBufferSizeSamples() : 0);
         o->setProperty ("monitor", monitor_.load());
+        o->setProperty ("masterMute", masterMute_.load());
         o->setProperty ("inputPeak", inputPeak_.load());
         o->setProperty ("peak", outputPeak_.load());
         o->setProperty ("latencySamples", totalLatency_.load());
@@ -199,7 +201,7 @@ private:
     int count_ = 0;
     bool attached_ = false;
     juce::AudioBuffer<float> scratch_;
-    std::atomic<bool> monitor_ { false }, channelMute_ { false };
+    std::atomic<bool> monitor_ { false }, channelMute_ { false }, masterMute_ { false };
     std::atomic<float> masterGain_ { 1.f }, channelGain_ { 1.f };
     std::atomic<float> inputPeak_ { 0.f }, outputPeak_ { 0.f };
     std::atomic<int> totalLatency_ { 0 };
@@ -252,7 +254,8 @@ private:
         int outputChannels, int samples, const juce::AudioIODeviceCallbackContext&) override
     {
         const bool enabled = monitor_.load (std::memory_order_relaxed);
-        const bool muted = channelMute_.load (std::memory_order_relaxed);
+        const bool muted = channelMute_.load (std::memory_order_relaxed)
+                        || masterMute_.load (std::memory_order_relaxed);
         const float gain = masterGain_.load (std::memory_order_relaxed)
                          * channelGain_.load (std::memory_order_relaxed);
         float inPeak = 0.f, outPeak = 0.f;
