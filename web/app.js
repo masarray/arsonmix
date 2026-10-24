@@ -181,4 +181,4 @@ let lastPersist=0;setInterval(()=>{if(Date.now()-lastPersist<2000)return;lastPer
 try{userSnapshots=JSON.parse(localStorage.getItem('armix-v03-snapshots')||'{}');savedChains=JSON.parse(localStorage.getItem('armix-v03-chains')||'{}');for(const k of Object.keys(userSnapshots))if(!scenes.includes(k))scenes.push(k)}catch{userSnapshots={};savedChains={}}
 
 createSide();renderMixer();renderMaster();try{let last=JSON.parse(localStorage.getItem('armix-v03-current'));if(!last)last=JSON.parse(localStorage.getItem('arMixStudioUI')); if(last&&last.channels?.length===channels.length){last.channels.forEach((s,i)=>{for(const k of ['fader','pan','trim','mute','solo','hpf'])if(s[k]!==undefined)channels[i][k]=s[k];if(Array.isArray(s.inserts))channels[i].inserts=s.inserts.filter(x=>typeof x==='string').slice(0,8)});sceneIdx=last.sceneIdx??0;masterGain=last.masterGain??-.1;renderMixer();renderMaster();flash('Previous UI session restored')}}catch{}
-requestAnimationFrame(meters);
+if (!window.__JUCE__?.backend) requestAnimationFrame(meters);
