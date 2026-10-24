@@ -1,6 +1,6 @@
 # AR MIX Studio — Open-Source Live FX Host (v0.3 UI & Architecture)
 
-**Status: interactive UI prototype + C++ real-time messaging primitives. No audio engine yet.**
+**Status: P1 experimental native Windows first-sound implementation (pending CI/hardware verification) + v0.3 UI demo.**
 
 AR MIX Studio targets live vocal processing for karaoke performers and livestream creators. It is VST3-first: the principal activity is building a beautiful, low-friction FX chain with a digital-console look. The core engine is planned as C++20/JUCE with Windows ASIO/WASAPI; the frontend is a self-contained HTML/CSS/SVG UI embedded in JUCE WebView2.
 

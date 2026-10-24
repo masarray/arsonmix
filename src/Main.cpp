@@ -20,8 +20,8 @@ std::optional<juce::WebBrowserComponent::Resource> assetFor (const juce::String&
         { data = BinaryData::styles_css; size = BinaryData::styles_cssSize; mime = "text/css"; }
     else if (path == "/app.js")
         { data = BinaryData::app_js; size = BinaryData::app_jsSize; mime = "text/javascript"; }
-    else if (path == "/native-bridge.js")
-        { data = BinaryData::native_bridge_js; size = BinaryData::native_bridge_jsSize; mime = "text/javascript"; }
+    else if (path == "/bridge.js")
+        { data = BinaryData::bridge_js; size = BinaryData::bridge_jsSize; mime = "text/javascript"; }
     else
         return std::nullopt;
 

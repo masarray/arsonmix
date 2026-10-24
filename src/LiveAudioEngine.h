@@ -122,7 +122,7 @@ public:
     juce::var status() const
     {
         auto object = std::make_unique<juce::DynamicObject>();
-        const auto* d = deviceManager_.getCurrentAudioDevice();
+        auto* d = deviceManager_.getCurrentAudioDevice();
         object->setProperty ("connected", d != nullptr);
         object->setProperty ("driver", deviceManager_.getCurrentAudioDeviceType());
         object->setProperty ("device", d != nullptr ? d->getName() : "No audio device");

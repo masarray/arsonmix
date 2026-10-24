@@ -11,12 +11,13 @@ add_subdirectory("${JUCE_ROOT}" "${CMAKE_BINARY_DIR}/juce")
 juce_add_gui_app(ARMixConsole
     PRODUCT_NAME "AR MIX Studio"
     COMPANY_NAME "AR MIX Open Source"
+    BUNDLE_ID "org.armix.studio"
     NEEDS_WEB_BROWSER TRUE
     NEEDS_WEBVIEW2 TRUE
     NEEDS_CURL FALSE)
 
 juce_add_binary_data(ARMixAssets SOURCES
-    web/index.html web/styles.css web/app.js web/native-bridge.js)
+    web/index.html web/styles.css web/app.js web/bridge.js)
 
 target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h)
 target_compile_definitions(ARMixConsole PRIVATE
