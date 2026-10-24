@@ -1,0 +1,6 @@
+AR MIX Studio UI + Architecture Starter v0.3
+Copyright (C) 2026 AR MIX contributors
+Offered under GNU Affero General Public License v3 only (AGPL-3.0-only).
+License text: https://www.gnu.org/licenses/agpl-3.0.html
+JUCE, Steinberg ASIO and VST3 SDK have separate licenses; obey them when building.
+No proprietary Soundcraft/Waves/DiGiCo sprites or plugin binaries are included.
