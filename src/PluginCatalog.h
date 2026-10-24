@@ -3,6 +3,9 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_events/juce_events.h>
 #include <algorithm>
+#if JUCE_WINDOWS
+ #include <objbase.h>
+#endif
 #include <atomic>
 #include <functional>
 #include <vector>
@@ -57,6 +60,7 @@ public:
     ~PluginCatalog()
     {
         alive_.store (false);
+        lifetime_->store (false);
         worker_.signalThreadShouldExit();
         // Scanning cannot be forcibly cancelled inside a third-party scanner.
         // Never detach a worker that still references this object.
@@ -177,9 +181,10 @@ private:
            #endif
             // Completion is delivered by a SafePointer owned by the UI host,
             // so destruction cannot dereference the window after shutdown.
-            juce::MessageManager::callAsync ([&owner = owner_, results = std::move (found)]() mutable
+            auto lifetime = owner_.lifetime_;
+            juce::MessageManager::callAsync ([&owner = owner_, lifetime, results = std::move (found)]() mutable
             {
-                if (! owner.alive_.load()) return;
+                if (! lifetime->load()) return;
                 for (const auto& e : results)
                 {
                     const auto iter = std::find_if (owner.entries_.begin(), owner.entries_.end(),
@@ -213,14 +218,16 @@ private:
     void load()
     {
         auto json = juce::JSON::parse (dataFolder_.getChildFile ("plugin-catalog.json"));
-        if (auto* items = json.getProperty ("items", {}).getArray())
+        const auto storedItems = json.getProperty ("items", {});
+        if (auto* items = storedItems.getArray())
             for (const auto& item : *items)
             {
                 auto entry = CatalogEntry::fromVar (item);
                 if (entry.path.isNotEmpty())
                     entries_.push_back (std::move (entry));
             }
-        if (auto* folders = json.getProperty ("folders", {}).getArray())
+        const auto storedFolders = json.getProperty ("folders", {});
+        if (auto* folders = storedFolders.getArray())
             for (const auto& folder : *folders)
                 customFolders_.addIfNotAlreadyThere (folder.toString());
         scanMessage_ = "Ready - " + juce::String (entries_.size()) + " cached VST3 effects";
@@ -235,15 +242,15 @@ private:
         o->setProperty ("schemaVersion", 1);
         o->setProperty ("items", juce::var (list));
         o->setProperty ("folders", juce::var (folders));
-        auto temporary = dataFolder_.getChildFile ("plugin-catalog.json.tmp");
-        if (temporary.replaceWithText (juce::JSON::toString (juce::var (o.release()), true)))
-            temporary.moveFileTo (dataFolder_.getChildFile ("plugin-catalog.json"));
+        dataFolder_.getChildFile ("plugin-catalog.json")
+            .replaceWithText (juce::JSON::toString (juce::var (o.release()), true));
     }
 
     juce::File dataFolder_;
     std::vector<CatalogEntry> entries_;
     juce::StringArray customFolders_;
     std::atomic<bool> alive_ { true }, scanning_ { false };
+    std::shared_ptr<std::atomic<bool>> lifetime_ = std::make_shared<std::atomic<bool>> (true);
     juce::String scanMessage_ = "Ready";
     Scanner worker_;
 };
