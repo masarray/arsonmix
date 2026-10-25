@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const read=p=>readFileSync(p,'utf8');
 const app=read('web/app.js'), css=read('web/styles.css'), html=read('web/index.html');
-const bridge=read('web/bridge.js'), src=read('src/LiveAudioEngine.h'), offline=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
+const bridge=read('web/bridge.js'), src=read('src/LiveAudioEngine.h'), main=read('src/Main.cpp'), offline=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
 test('GUI v0.8 remains the canonical host, not an older v0.5 reset',()=>{
  assert.match(app,/function openChannelIdentity\(/);
  assert.match(app,/function masterFxRows\(/);
@@ -26,6 +26,27 @@ test('no fake oscillating VUs inside native JUCE',()=>{
  assert.ok(a>=0&&guard>a&&guard<raf);
  assert.match(bridge,/\["masterL",liveOutputLeft\]/);
  assert.match(bridge,/\["masterR",liveOutputRight\]/);
+});
+test('native mixer always displays DSP gain, pan, and mute instead of stale demo session',()=>{
+ assert.match(src,/setProperty \("channelDb", juce::Decibels::gainToDecibels/);
+ assert.match(src,/setProperty \("masterDb", juce::Decibels::gainToDecibels/);
+ assert.match(bridge,/function syncNativeMixerControls\(d\)/);
+ assert.match(bridge,/syncNativeMixerControls\(d\);/);
+ assert.match(bridge,/channel\.mute=d\.channelMute/);
+ assert.match(bridge,/masterMute=d\.masterMute/);
+ assert.match(bridge,/Math\.abs\(channel\.fader-channelDb\)/);
+});
+test('master native preview restrictions run before source channel rack lookup',()=>{
+ const a=bridge.indexOf('if(track.classList.contains("master-strip"))');
+ const b=bridge.indexOf('const rack=track.querySelector(".rack")',a);
+ assert.ok(a>0 && b>a);
+ assert.match(bridge,/pan\.style\.pointerEvents="none"/);
+});
+test('editor opening cannot race with pending graph retirement',()=>{
+ const a=main.indexOf('else if (action == "fxEditor")');
+ const guard=main.indexOf('if (engine_.isGraphSwitchPending())',a);
+ const open=main.indexOf('engine_.pluginAt (slot)',a);
+ assert.ok(a>0 && guard>a && guard<open);
 });
 test('native plugin state and graph preserved',()=>{
  assert.match(src,/handoff_\.beginCycle\(/);
