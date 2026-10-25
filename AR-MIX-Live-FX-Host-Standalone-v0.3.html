@@ -607,28 +607,21 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 
 
 
-/* BUTTON 180 — raised dark-crystal cube OFF, recessed jewel-colored ON.
-   Single-element optics: light from above, hard-cut lower edge, tactile inset on press.
-   Geometry is fixed: state changes NEVER move the layout box or add pseudo-elements. */
+/* BUTTON 180 — ONE physical surface for OFF, ON, selected and pointer-down.
+   Change only the semantic color/border/ink tokens. Never create a separate
+   raised-OFF shadow or modify the 3px radius, rectangle, or hit target. */
 :root{
- --b180-off:#202832;--b180-edge:#070c13;
+ --b180-off:#858283;--b180-edge:#636363;--b180-off-ink:#2b2b2b;
  --b180-color:var(--b180-off);--b180-border:var(--b180-edge);
+ --b180-ink:var(--b180-off-ink);
 }
 :is(.btn-180,.toolbar .nav button,.toolbar .spec-device,.left-rail .tabs button,
 .strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
 .left-rail .rail-presets button,.left-rail .rail-bottom button,
 #masterLeft .master-tools button,.native-btn){
- /* Seven layers, same inset/outset sequence for smooth interpolation.
-    The base creates a crisp 2px crystal edge, not a blurred halo/dome. */
- --b180-shadow-raised:
-  inset 0 1px 0 rgba(246,251,255,.52),
-  inset 0 5px 5px -3px rgba(153,201,231,.28),
-  inset 1px 0 1px rgba(163,199,225,.24),
-  inset 0 -2px 2px rgba(0,0,0,.63),
-  0 2px 0 var(--b180-border),
-  0 3px 0 rgba(4,8,13,.92),
-  0 4px 4px rgba(0,0,0,.42);
- --b180-shadow-pressed:
+ /* Exact same inset + outside-edge model as the previously approved ON face.
+    All layers are shared; only --b180-border is allowed to tint the edge. */
+ --b180-shadow-surface:
   inset 0 3px 6px -1px rgba(0,0,0,.72),
   inset 0 0 0 1px rgba(255,255,255,.14),
   inset 0 1px 20px rgba(0,0,0,.19),
@@ -645,9 +638,8 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  outline:none;
  transform:translateY(0px)!important;
  position:relative;
- /* OFF visibly raised; ON and pointer-down collapse the outer edge inward. */
- --b180-depth:var(--b180-shadow-raised);
- box-shadow:var(--b180-depth)!important;
+ /* Shared geometry and shading; OFF/ON are merely different colorways. */
+ box-shadow:var(--b180-shadow-surface)!important;
  background:var(--b180-color)!important;
  filter:none!important;
  color:white!important;
@@ -692,20 +684,8 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  box-shadow:inset 0 1px 2px #020c18c0,0 1px 0 #68859940;color:#a9d6e6;cursor:default
 }
 
-/* ONE recessed/pressed construction. :active starts before the JS toggle,
-   then the selected/ON state keeps the face inward with no rectangle displacement. */
-:is(.btn-180,.toolbar .nav button,.toolbar .spec-device,
- .strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
- #masterLeft .master-actions button,#masterLeft .master-tools button,
- .left-rail .tabs button,.left-rail .rail-presets button,
- .left-rail .rail-bottom button,.native-btn):is(.active,.selected,.on,[aria-pressed="true"]),
-:is(.btn-180,.toolbar .nav button,.toolbar .spec-device,
- .strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
- #masterLeft .master-actions button,#masterLeft .master-tools button,
- .left-rail .tabs button,.left-rail .rail-presets button,
- .left-rail .rail-bottom button,.native-btn):active:not(:disabled){
- --b180-depth:var(--b180-shadow-pressed);
-}
+/* OFF, ON and mouse-down all use the base Button 180 optical surface.
+   No per-state box-shadow override: the semantic color tokens are sufficient. */
 /* Latch LED colors only; dark captions are legible on bright faces. */
 :is(.toolbar .nav button.selected,.left-rail .tabs button.selected,
  .left-rail .rail-presets button.active,.left-rail .rail-bottom #saveFxPreset.active,
@@ -736,14 +716,16 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  .left-rail .rail-bottom button,.native-btn):hover:not(:disabled){
  filter:brightness(1.32)!important;
 }
-/* All OFF keys use the same squared graphite-black crystal face.
-   The existing teal/coral/amber/green ON colors remain intact. */
+/* OFF = the exact ON material with neutral, extinguished gray palette.
+   Bright ON color recipes above remain untouched. */
 :is(.toolbar .nav button,.toolbar .spec-device,
  .strip .channel-actions .candy,.strip .utility-row button,
  #masterLeft .master-actions button,#masterLeft .master-tools button,
  .left-rail .tabs button,.left-rail .rail-presets button,
  .left-rail .rail-bottom button):not(.active):not(.selected):not(.on):not([aria-pressed="true"]){
  --b180-color:var(--b180-off);--b180-border:var(--b180-edge);
+ --b180-ink:var(--b180-off-ink);
+ color:var(--b180-ink)!important;
 }
 @media(prefers-reduced-motion:reduce){
  :is(.toolbar .nav button,.toolbar .spec-device,.strip .channel-actions .candy,
