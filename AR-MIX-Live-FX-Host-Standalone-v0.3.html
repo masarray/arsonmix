@@ -419,6 +419,14 @@
  background:#fb5b50;box-shadow:0 0 2px #f54a56aa;pointer-events:none}
 .meter-unit{position:relative;display:flex;flex-direction:column;min-height:0}
 .meter-unit .meter{height:100%;flex:1;min-height:0}
+
+/* Full-height selected strip: thin tinted outline, no disruptive thick border. */
+.strip.selected{box-shadow:inset 2px 0 #e2a86a,inset -2px 0 #e2a86a,inset 0 0 0 1px #e2a86a6c}
+.strip.selected::before{content:"";position:absolute;inset:0;border-top:1px solid #f4ce8b6b;
+ border-bottom:2px solid #db935c;pointer-events:none;z-index:6}
+.strip.selected .strip-name{box-shadow:inset 0 0 0 1px #ffd79f40}
+.strip .rack .insert-slot .insert:hover{color:#dff4fd!important}
+.strip .rack .insert-slot .insert-name{letter-spacing:-.15px}
 </style></head>
 <body>
 <div id="app" class="app">
@@ -609,6 +617,12 @@ function updatePan(idx,value,pointer=false){const c=channels[idx];c.pan=Math.rou
 function updateKnob(el,value){let idx=+el.dataset.ch,param=el.dataset.knob;
  if(param==='phones'){phones=clamp(value,-60,10);el.style.setProperty('--angle',phones/24*130+'deg');const rd=document.querySelector('[data-phones-read]');if(rd)rd.textContent=fmt(phones);send('phonesDb',phones,-1);return}
  const c=channels[idx];if(param==='pan'){updatePan(idx,value)}else{c.trim=+clamp(value,-24,24).toFixed(1);el.style.setProperty('--angle',c.trim/24*130+'deg');document.querySelector(`[data-trim-read="${idx}"]`).textContent=fmt(c.trim);send('trimDb',c.trim,idx)}}
+function focusChannel(i){
+ if(i<0||i>=channels.length||i===currentChannel)return;
+ currentChannel=i;
+ document.querySelectorAll('.strip').forEach(strip=>strip.classList.toggle('selected',+strip.dataset.strip===i));
+ document.querySelectorAll('#channelList [data-choose]').forEach(row=>row.classList.toggle('selected',+row.dataset.choose===i));
+}
 function chooseChannel(i){if(i>=channels.length){flash('Additional bank channels are not populated in this UI study');return}currentChannel=i;renderMixer();if(view!=='MIX')renderEditor()}
 function chooseScene(i){loadSnapshotByIndex((i+scenes.length)%scenes.length)}
 function toggleState(i,key){channels[i][key]=!channels[i][key];const btn=document.querySelector(`[data-${key}="${i}"]`);if(btn){btn.classList.toggle('active',channels[i][key]);btn.setAttribute('aria-pressed',String(channels[i][key]))}send(key,channels[i][key],i)}
@@ -616,7 +630,9 @@ document.addEventListener('click',e=>{const b=e.target.closest('button,[data-cho
  const icon=e.target.closest('[data-icon-choice]'),color=e.target.closest('[data-color-choice]');
  if(icon){editingIcon=icon.dataset.iconChoice;document.querySelectorAll('[data-icon-choice]').forEach(n=>{n.classList.toggle('selected',n===icon);n.setAttribute('aria-pressed',String(n===icon))});return}
  if(color){editingColor=color.dataset.colorChoice;document.querySelectorAll('[data-color-choice]').forEach(n=>{n.classList.toggle('selected',n===color);n.setAttribute('aria-pressed',String(n===color))});return}
- if(!b){const strip=e.target.closest('[data-strip]');if(strip&&view==='MIX'&&+strip.dataset.strip!==currentChannel)chooseChannel(+strip.dataset.strip);return;}
+ if(!b){const strip=e.target.closest('[data-strip]');if(strip&&view==='MIX')focusChannel(+strip.dataset.strip);return;}
+ const originStrip=b.closest('[data-strip]');
+ if(originStrip&&view==='MIX')focusChannel(+originStrip.dataset.strip);
  if(b.dataset.view){setView(b.dataset.view);return}if(b.dataset.choose!==undefined){chooseChannel(+b.dataset.choose);return}
  if(b.dataset.mute!==undefined){toggleState(+b.dataset.mute,'mute');return}if(b.dataset.solo!==undefined){toggleState(+b.dataset.solo,'solo');return}
  if(b.dataset.pre!==undefined){let i=+b.dataset.pre;channels[i].pre=!channels[i].pre;b.classList.toggle('active');send('phase',channels[i].pre,i);return}
@@ -650,6 +666,8 @@ document.addEventListener('dblclick',e=>{const pan=e.target.closest('[data-pan]'
 document.addEventListener('dblclick',e=>{const st=e.target.closest('[data-strip]');if(st){chooseChannel(+st.dataset.strip);setView('EDIT')}});
 let drag=null;
 document.addEventListener('pointerdown',e=>{const f=e.target.closest('[data-fader]'),p=e.target.closest('[data-pan]'),k=e.target.closest('[data-knob]'),node=e.target.closest('[data-band]');if(!f&&!p&&!k&&!node)return;const el=f||p||k||node;
+ const strip=e.target.closest('[data-strip]');
+ if(strip&&view==='MIX')focusChannel(+strip.dataset.strip);
  if(f){const idx=f.dataset.fader,fromCap=!!e.target.closest('.cap');
    drag={type:'fader',el:f,index:idx,fromCap,startY:e.clientY,
      startDb:idx==='master'?masterGain:channels[+idx].fader};

@@ -41,4 +41,5 @@ jobs:
             fader-ui-smoke.png
             mixer-design-review.png
             mixer-design-review-1440.png
+            mixer-master-clip-review.png
           if-no-files-found: ignore

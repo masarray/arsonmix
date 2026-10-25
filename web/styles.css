@@ -418,3 +418,11 @@
  background:#fb5b50;box-shadow:0 0 2px #f54a56aa;pointer-events:none}
 .meter-unit{position:relative;display:flex;flex-direction:column;min-height:0}
 .meter-unit .meter{height:100%;flex:1;min-height:0}
+
+/* Full-height selected strip: thin tinted outline, no disruptive thick border. */
+.strip.selected{box-shadow:inset 2px 0 #e2a86a,inset -2px 0 #e2a86a,inset 0 0 0 1px #e2a86a6c}
+.strip.selected::before{content:"";position:absolute;inset:0;border-top:1px solid #f4ce8b6b;
+ border-bottom:2px solid #db935c;pointer-events:none;z-index:6}
+.strip.selected .strip-name{box-shadow:inset 0 0 0 1px #ffd79f40}
+.strip .rack .insert-slot .insert:hover{color:#dff4fd!important}
+.strip .rack .insert-slot .insert-name{letter-spacing:-.15px}
