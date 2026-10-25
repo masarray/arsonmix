@@ -58,6 +58,8 @@ public:
 
     void setMonitorEnabled (bool value) noexcept { monitor_.store (value); }
     bool isMonitorEnabled() const noexcept { return monitor_.load(); }
+    void setDryTestEnabled (bool value) noexcept { dryTest_.store (value); }
+    bool isDryTestEnabled() const noexcept { return dryTest_.load(); }
     void setMasterGainDb (float value) noexcept
     {
         if (std::isfinite (value)) masterGain_.store (juce::Decibels::decibelsToGain (juce::jlimit (-60.f, 10.f, value)));
@@ -191,7 +193,19 @@ public:
         o->setProperty ("buffer", d ? d->getCurrentBufferSizeSamples() : 0);
         o->setProperty ("monitor", monitor_.load());
         o->setProperty ("masterMute", masterMute_.load());
+        o->setProperty ("channelMute", channelMute_.load());
+        o->setProperty ("dryTest", dryTest_.load());
+        juce::AudioDeviceManager::AudioDeviceSetup setup;
+        deviceManager_.getAudioDeviceSetup (setup);
+        o->setProperty ("inputDevice", setup.inputDeviceName);
+        o->setProperty ("outputDevice", setup.outputDeviceName);
+        o->setProperty ("deviceInputChannels", d ? d->getActiveInputChannels().countNumberOfSetBits() : 0);
+        o->setProperty ("deviceOutputChannels", d ? d->getActiveOutputChannels().countNumberOfSetBits() : 0);
+        o->setProperty ("callbackInputChannels", callbackInputs_.load());
+        o->setProperty ("callbackOutputChannels", callbackOutputs_.load());
+        o->setProperty ("callbackCount", static_cast<double> (callbackCount_.load()));
         o->setProperty ("inputPeak", inputPeak_.load());
+        o->setProperty ("postFxPeak", postFxPeak_.load());
         o->setProperty ("peak", outputPeak_.load());
         o->setProperty ("latencySamples", totalLatency_.load());
         o->setProperty ("chainCount", count_);
@@ -208,9 +222,11 @@ private:
     juce::AudioBuffer<float> scratch_;
     // Indexed atomic bypass flags: instant RT-safe toggles, no graph detachment.
     std::array<std::atomic<bool>, maxFx> bypassFlags_ {};
-    std::atomic<bool> monitor_ { false }, channelMute_ { false }, masterMute_ { false };
+    std::atomic<bool> monitor_ { false }, channelMute_ { false }, masterMute_ { false }, dryTest_ { false };
     std::atomic<float> masterGain_ { 1.f }, channelGain_ { 1.f };
-    std::atomic<float> inputPeak_ { 0.f }, outputPeak_ { 0.f };
+    std::atomic<float> inputPeak_ { 0.f }, postFxPeak_ { 0.f }, outputPeak_ { 0.f };
+    std::atomic<int> callbackInputs_ { 0 }, callbackOutputs_ { 0 };
+    std::atomic<unsigned long long> callbackCount_ { 0 };
     std::atomic<int> totalLatency_ { 0 };
 
     void detach()
@@ -247,6 +263,7 @@ private:
         }
         totalLatency_.store (latency);
         inputPeak_.store (0.f);
+        postFxPeak_.store (0.f);
         outputPeak_.store (0.f);
     }
 
@@ -260,12 +277,16 @@ private:
         const float* const* inputs, int inputChannels, float* const* outputs,
         int outputChannels, int samples, const juce::AudioIODeviceCallbackContext&) override
     {
+        callbackInputs_.store (inputChannels, std::memory_order_relaxed);
+        callbackOutputs_.store (outputChannels, std::memory_order_relaxed);
+        callbackCount_.fetch_add (1, std::memory_order_relaxed);
         const bool enabled = monitor_.load (std::memory_order_relaxed);
+        const bool dry = dryTest_.load (std::memory_order_relaxed);
         const bool muted = channelMute_.load (std::memory_order_relaxed)
                         || masterMute_.load (std::memory_order_relaxed);
         const float gain = masterGain_.load (std::memory_order_relaxed)
                          * channelGain_.load (std::memory_order_relaxed);
-        float inPeak = 0.f, outPeak = 0.f;
+        float inPeak = 0.f, postFxPeak = 0.f, outPeak = 0.f;
         for (int offset = 0; offset < samples; offset += maxFrames)
         {
             const int frames = juce::jmin (maxFrames, samples - offset);
@@ -284,12 +305,21 @@ private:
             }
             // MIDI capacity is empty unless the plugin itself changes it.
             juce::MidiBuffer midi;
-            for (int fx = 0; fx < count_; ++fx)
+            if (!dry)
             {
-                auto& slot = slots_[fx];
-                if (slot.processor && ! bypassFlags_[fx].load (std::memory_order_relaxed))
-                    slot.processor->processBlock (scratch_, midi);
-                midi.clear();
+                for (int fx = 0; fx < count_; ++fx)
+                {
+                    auto& slot = slots_[fx];
+                    if (slot.processor && ! bypassFlags_[fx].load (std::memory_order_relaxed))
+                        slot.processor->processBlock (scratch_, midi);
+                    midi.clear();
+                }
+            }
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                const float* processed = scratch_.getReadPointer (ch);
+                for (int i = 0; i < frames; ++i)
+                    postFxPeak = juce::jmax (postFxPeak, std::abs (processed[i]));
             }
             for (int c = 0; c < outputChannels; ++c)
             {
@@ -305,6 +335,7 @@ private:
             }
         }
         inputPeak_.store (juce::jmin (1.f, inPeak), std::memory_order_relaxed);
+        postFxPeak_.store (juce::jmin (1.f, postFxPeak), std::memory_order_relaxed);
         outputPeak_.store (juce::jmin (1.f, outPeak), std::memory_order_relaxed);
     }
 };

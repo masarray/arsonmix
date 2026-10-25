@@ -31,6 +31,8 @@ std::optional<juce::WebBrowserComponent::Resource> assetFor (const juce::String&
         { data = BinaryData::app_js; size = BinaryData::app_jsSize; mime = "text/javascript"; }
     else if (path == "/bridge.js")
         { data = BinaryData::bridge_js; size = BinaryData::bridge_jsSize; mime = "text/javascript"; }
+    else if (path == "/monitor.js")
+        { data = BinaryData::monitor_js; size = BinaryData::monitor_jsSize; mime = "text/javascript"; }
     else return std::nullopt;
 
     juce::WebBrowserComponent::Resource resource;
