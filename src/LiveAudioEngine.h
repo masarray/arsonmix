@@ -74,10 +74,11 @@ public:
 
     void stop()
     {
-        // Capture callback stops before releasing its FIFO or the render graph.
+        // Close BOTH callbacks before releasing the FIFO, processor or graph.
+        // Renderer is stopped first to guarantee no concurrent FIFO readers.
+        detach();
         if (smartBridgeConfigured_) splitAdapter_.stop();
         smartBridgeEnabled_.store (false, std::memory_order_release);
-        detach();
         handoff_.resetAfterStop (graphOwned_.get());
         stagedOwner_.reset();
         for (int i = 0; i < graphOwned_->count; ++i)
@@ -193,7 +194,7 @@ public:
     {
         if (!isSmartBridgeActive()) return {};
         const auto health = splitAdapter_.snapshot (deviceManager_.getCurrentAudioDevice());
-        if (health.captureCallbacks < 2 || health.captureAgeUs < 3000000u)
+        if (!health.captureStopped && health.captureAgeUs < 3000000u)
             return {};
         const auto fallbackError = disableSmartBridge();
         return "Smart bridge capture silent for >3 seconds: automatic direct fallback"
@@ -624,6 +625,10 @@ public:
         const bool split = isSmartBridgeActive();
         o->setProperty ("smartMode", split ? "DUAL_CLOCK_BRIDGED" : "DIRECT_JUCE");
         o->setProperty ("smartTargetLatencyMs", smartTargetMs_.load());
+        o->setProperty ("smartClockStatus", split
+            ? "TWO_REAL_JUCE_STREAMS_RENDER_MASTER_FIR_ASRC"
+            : "LEGACY_SINGLE_JUCE_DEVICE_NO_ADDITIONAL_SRC");
+        o->setProperty ("smartFallbackIsAutomatic", true);
         if (split)
         {
             const auto b = splitAdapter_.snapshot (d);
@@ -635,6 +640,9 @@ public:
             o->setProperty ("bridgeFillFrames", static_cast<double> (b.fifo.fillFrames));
             o->setProperty ("bridgeCorrectionPpm", b.fifo.correctionPpm);
             o->setProperty ("bridgeCaptureCallbacks", static_cast<double> (b.captureCallbacks));
+            o->setProperty ("bridgeCaptureStopped", b.captureStopped);
+            o->setProperty ("bridgeCaptureStartCount", static_cast<double> (b.captureStarts));
+            o->setProperty ("bridgeCaptureStopCount", static_cast<double> (b.captureStops));
             o->setProperty ("bridgeCaptureAgeMs", static_cast<double> (b.captureAgeUs) / 1000.);
             o->setProperty ("bridgeProducerOverflowFrames", static_cast<double> (b.fifo.overflowFrames));
             o->setProperty ("bridgeConsumerUnderflowFrames", static_cast<double> (b.fifo.underflowFrames));
@@ -678,6 +686,9 @@ public:
         o->setProperty ("worstCallbackGapUs", static_cast<double> (worstCallbackGapUs_.load()));
         o->setProperty ("worstPluginUs", static_cast<double> (worstPluginUs_.load()));
         o->setProperty ("deviceStartCount", static_cast<double> (deviceStartCount_.load()));
+        o->setProperty ("renderDeviceSource", split ? "SPLIT_WASAPI_RENDER" : "JUCE_SINGLE_DEVICE");
+        o->setProperty ("bridgeUnderflowMeaning", "HOST_CAPTURE_FIFO_READ_STARVATION_NOT_HARDWARE_RENDER_XRUN");
+        o->setProperty ("bridgeOverflowMeaning", "HOST_CAPTURE_FIFO_DROP_NEWEST_NOT_DRIVER_XRUN");
         o->setProperty ("deviceStopCount", static_cast<double> (deviceStopCount_.load()));
         juce::Array<juce::var> pluginTimings;
         for (int i = 0; i < graphOwned_->count; ++i)
