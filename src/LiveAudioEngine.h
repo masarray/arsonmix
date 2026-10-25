@@ -3,6 +3,7 @@
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "StereoPan.h"
+#include "NativePresetArchive.h"
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -22,7 +23,8 @@ public:
     struct Slot
     {
         std::unique_ptr<juce::AudioPluginInstance> processor;
-        juce::String name, catalogId;
+        juce::String name, catalogId, path;
+        int uid = 0;
         bool bypass = false;
         int latency = 0;
     };
@@ -150,11 +152,140 @@ public:
         Slot node;
         node.name = chosen->name;
         node.catalogId = catalogId;
+        node.path = filename;
+        node.uid = uid;
         node.processor = std::move (instance);
         slots_[count_] = std::move (node);
         bypassFlags_[count_].store (false, std::memory_order_release);
         ++count_;
         attach();
+        return {};
+    }
+
+    // Capture VST3 vendor binary state, not the legacy WebView2 mock settings.
+    // Must only run when output is muted (caller enforces): callback is detached
+    // exactly once, no plugin state methods ever execute on the audio thread.
+    juce::String captureSnapshot (armix::storage::Snapshot& snapshot)
+    {
+        if (!isOutputMuted()) return "Mute hardware output before saving a native preset";
+        snapshot.effects.clear();
+        snapshot.channelDb = juce::Decibels::gainToDecibels (
+            channelGain_.load (std::memory_order_relaxed), -60.f);
+        snapshot.masterDb = juce::Decibels::gainToDecibels (
+            masterGain_.load (std::memory_order_relaxed), -60.f);
+        snapshot.pan = channelPan_.load (std::memory_order_relaxed);
+        snapshot.channelMute = channelMute_.load (std::memory_order_relaxed);
+        snapshot.masterMute = masterMute_.load (std::memory_order_relaxed);
+        detach();
+        juce::String error;
+        try
+        {
+            for (int i = 0; i < count_; ++i)
+            {
+                const auto& slot = slots_[i];
+                if (!slot.processor) { error = "Invalid active FX slot"; break; }
+                armix::storage::FxState state;
+                state.path = slot.path;
+                state.name = slot.name;
+                state.catalogId = slot.catalogId;
+                state.uid = slot.uid;
+                state.bypass = bypassFlags_[i].load (std::memory_order_acquire);
+                slot.processor->getStateInformation (state.binary);
+                if (state.binary.getSize() > armix::storage::NativePresetArchive::maxStateBytes)
+                {
+                    error = "Plugin state exceeds 8 MB: " + slot.name;
+                    break;
+                }
+                snapshot.effects.push_back (std::move (state));
+            }
+        }
+        catch (...)
+        {
+            error = "Plugin threw while saving its state";
+        }
+        attach();
+        if (error.isNotEmpty()) snapshot.effects.clear();
+        return error;
+    }
+
+    // Stage every plugin/state BEFORE touching the currently operating plan.
+    // Caller must mute output; replacing the graph is non-RT, and no old
+    // processor is destroyed until the callback has been detached.
+    juce::String restoreSnapshot (const armix::storage::Snapshot& snapshot)
+    {
+        if (!isOutputMuted())
+            return "Mute hardware output before recalling a native preset";
+        if (snapshot.effects.size() > maxFx) return "Too many plugins in preset";
+        auto* device = deviceManager_.getCurrentAudioDevice();
+        if (!device) return "No active audio device";
+        auto* fmt = formats_.getFormat (0);
+        if (!fmt) return "No VST3 format available";
+        const auto rate = device->getCurrentSampleRate();
+        const auto buffer = juce::jmax (32, device->getCurrentBufferSizeSamples());
+
+        std::array<Slot, maxFx> staged;
+        for (int i = 0; i < static_cast<int> (snapshot.effects.size()); ++i)
+        {
+            const auto& fx = snapshot.effects[static_cast<size_t> (i)];
+            if (fx.binary.getSize() > armix::storage::NativePresetArchive::maxStateBytes ||
+                !juce::File (fx.path).exists() || !fx.path.endsWithIgnoreCase (".vst3"))
+                return "Plugin is missing or invalid: " + fx.name;
+            juce::OwnedArray<juce::PluginDescription> descriptions;
+            fmt->findAllTypesForFile (descriptions, fx.path);
+            juce::PluginDescription* match = nullptr;
+            for (auto* candidate : descriptions)
+                if (candidate != nullptr && candidate->uniqueId == fx.uid &&
+                    !candidate->isInstrument)
+                    { match = candidate; break; }
+            if (!match) return "VST3 plugin identity missing: " + fx.name;
+
+            juce::String error;
+            auto processor = formats_.createPluginInstance (*match, rate, buffer, error);
+            if (!processor) return "Cannot open preset plugin " + fx.name + ": " + error;
+            juce::AudioProcessor::BusesLayout layout;
+            layout.inputBuses.add (juce::AudioChannelSet::stereo());
+            layout.outputBuses.add (juce::AudioChannelSet::stereo());
+            if (!processor->setBusesLayout (layout))
+                return "Unsupported VST3 stereo bus: " + fx.name;
+            try
+            {
+                // State is restored before insertion; live audio still uses the
+                // old plan until every new instance has finished construction.
+                processor->prepareToPlay (rate, buffer);
+                if (fx.binary.getSize() > 0)
+                    processor->setStateInformation (
+                        fx.binary.getData(), static_cast<int> (fx.binary.getSize()));
+            }
+            catch (...)
+            {
+                return "Plugin failed to restore its binary state: " + fx.name;
+            }
+            Slot slot;
+            slot.name = match->name;
+            slot.catalogId = fx.catalogId;
+            slot.path = fx.path;
+            slot.uid = fx.uid;
+            slot.bypass = fx.bypass;
+            slot.processor = std::move (processor);
+            staged[static_cast<size_t> (i)] = std::move (slot);
+        }
+
+        detach();
+        for (int i = 0; i < count_; ++i)
+            if (slots_[i].processor) slots_[i].processor->releaseResources();
+        auto retired = std::move (slots_);
+        slots_ = std::move (staged);
+        count_ = static_cast<int> (snapshot.effects.size());
+        for (int i = 0; i < maxFx; ++i)
+            bypassFlags_[i].store (i < count_ ? slots_[i].bypass : false,
+                                   std::memory_order_release);
+        setChannelGainDb (snapshot.channelDb);
+        setChannelPan (snapshot.pan);
+        setMasterGainDb (snapshot.masterDb);
+        setChannelMuted (snapshot.channelMute);
+        setMasterMuted (snapshot.masterMute);
+        attach();
+        // retired instances are destroyed on the message thread, never callback.
         return {};
     }
 

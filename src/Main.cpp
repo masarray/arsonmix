@@ -92,6 +92,7 @@ public:
                          juce::Colour (0xff101921), allButtons),
           catalog_ (settingsDirectory()),
           diagnostics_ (settingsDirectory().getChildFile ("diagnostics")),
+          presets_ (settingsDirectory().getChildFile ("presets")),
           browser_ (juce::WebBrowserComponent::Options{}
               .withBackend (juce::WebBrowserComponent::Options::Backend::webview2)
               .withWinWebView2Options (
@@ -141,6 +142,7 @@ private:
     LiveAudioEngine engine_;
     PluginCatalog catalog_;
     DiagnosticsRecorder diagnostics_;
+    armix::storage::NativePresetArchive presets_;
     Browser browser_;
     std::unique_ptr<juce::FileChooser> chooser_;
     std::unique_ptr<PluginEditorWindow> editorWindow_;
@@ -164,6 +166,12 @@ private:
     {
         if (browser_.loaded)
             browser_.emitEventIfBrowserIsVisible ("arMixCatalog", catalog_.snapshot());
+    }
+
+    void emitPresets()
+    {
+        if (browser_.loaded)
+            browser_.emitEventIfBrowserIsVisible ("arMixPresets", presets_.list());
     }
 
     void emitChain()
@@ -283,6 +291,63 @@ private:
         const int slot = static_cast<int> (args.getProperty ("slot", -1));
 
         if (action == "audioSetup") showDeviceSetup();
+        else if (action == "presetList")
+            emitPresets();
+        else if (action == "presetSave")
+        {
+            const auto name = armix::storage::NativePresetArchive::cleanName (
+                args.getProperty ("name", {}).toString());
+            if (name.isEmpty())
+                return emitNotice ("Choose a valid preset name", true);
+            if (!engine_.isOutputMuted())
+                return emitNotice ("Mute output in SIGNAL CHECK before saving a native sound preset. This avoids interrupting your live performance.", true);
+            editorWindow_.reset();
+            armix::storage::Snapshot snapshot;
+            snapshot.name = name;
+            auto error = engine_.captureSnapshot (snapshot);
+            if (error.isEmpty()) error = presets_.save (snapshot);
+            if (error.isNotEmpty())
+            {
+                diagnostics_.record ("PRESET_SAVE_FAIL", name + ": " + error);
+                emitNotice (error, true);
+            }
+            else
+            {
+                diagnostics_.record ("PRESET_SAVED", name + " (" + juce::String (snapshot.effects.size()) + " VST3)");
+                emitPresets();
+                emitNotice ("Native VST3 preset saved: " + name);
+            }
+        }
+        else if (action == "presetLoad")
+        {
+            const auto name = args.getProperty ("name", {}).toString();
+            if (!engine_.isOutputMuted())
+                return emitNotice ("Mute output in SIGNAL CHECK before recalling a native sound preset.", true);
+            editorWindow_.reset();
+            armix::storage::Snapshot snapshot;
+            auto error = presets_.load (name, snapshot);
+            if (error.isEmpty()) error = engine_.restoreSnapshot (snapshot);
+            if (error.isNotEmpty())
+            {
+                diagnostics_.record ("PRESET_LOAD_FAIL", name + ": " + error);
+                emitNotice ("Preset unchanged: " + error, true);
+            }
+            else
+            {
+                diagnostics_.record ("PRESET_LOADED", name + " (" + juce::String (snapshot.effects.size()) + " VST3)");
+                emitChain();
+                auto updated = std::make_unique<juce::DynamicObject>();
+                updated->setProperty ("name", name);
+                updated->setProperty ("channelDb", snapshot.channelDb);
+                updated->setProperty ("masterDb", snapshot.masterDb);
+                updated->setProperty ("pan", snapshot.pan * 100.f);
+                updated->setProperty ("channelMute", snapshot.channelMute);
+                updated->setProperty ("masterMute", snapshot.masterMute);
+                if (browser_.loaded)
+                    browser_.emitEventIfBrowserIsVisible ("arMixNativePresetLoaded", juce::var (updated.release()));
+                emitNotice ("Native sound recalled: " + name + ". Output remains muted until you unmute it.");
+            }
+        }
         else if (action == "openDiagnostics")
         {
             const auto file = diagnostics_.getLogFile();
@@ -389,6 +454,7 @@ private:
             emitCatalog();
             emitScanProgress();
             emitChain();
+            emitPresets();
         }
         if (catalog_.busy() && timerTicks_ % 3 == 0)
             emitScanProgress();
