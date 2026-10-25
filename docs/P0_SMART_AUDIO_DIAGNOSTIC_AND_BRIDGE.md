@@ -44,7 +44,7 @@ Build `DeviceAdapter` native Windows feasibility under a feature gate:
 ## Functional acceptance remaining
 
 - Real mixed-clock WASAPI capture/render path: **NOT IMPLEMENTED**.
-- AUTO/STABLE profile picker + rollback: **NOT IMPLEMENTED**.
+- AUTO/STABLE profile **planner**: implemented as pure, deterministic capability-gated C++ component and offline CTest; device probing, real-time negotiation, automatic fallback/rollback and production activation: **NOT IMPLEMENTED**.
 - Hardware 30-minute 44.1/48 kHz acceptance: **NOT TESTED**.
 - VST3 structural FX add/remove/reorder without callback detach: **NOT IMPLEMENTED**.
 - Current diagnostic report + independent clock math and deterministic simulation: implementation in PR; success only after exact commit Windows CI confirms.
