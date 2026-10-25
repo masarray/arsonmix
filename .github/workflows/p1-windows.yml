@@ -51,7 +51,7 @@ jobs:
           -DBUILD_TESTING=ON
           -DJUCE_WEBVIEW2_PACKAGE_LOCATION="${{ github.workspace }}/.deps"
       - name: Build executable and native RT tests
-        run: cmake --build build --config Release --target ARMixConsole ARMixRTTests ARMixPresetTests ARMixDiagnosticTests ARMixClockBridgeTests ARMixHealthTests --parallel 2
+        run: cmake --build build --config Release --target ARMixConsole ARMixRTTests ARMixPresetTests ARMixDiagnosticTests ARMixClockBridgeTests ARMixHealthTests ARMixPolicyTests --parallel 2
       - name: Test realtime control primitives
         run: ctest --test-dir build -C Release --output-on-failure
       - name: Package native executable
