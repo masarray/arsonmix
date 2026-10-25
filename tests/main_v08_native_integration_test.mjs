@@ -41,6 +41,8 @@ test('master native preview restrictions run before source channel rack lookup',
  const b=bridge.indexOf('const rack=track.querySelector(".rack")',a);
  assert.ok(a>0 && b>a);
  assert.match(bridge,/pan\.style\.pointerEvents="none"/);
+ assert.match(bridge,/observe\(mixer,\{childList:true,subtree:true\}\)/);
+ assert.match(bridge,/marker\.textContent!=="NATIVE PEAKS"/);
 });
 test('editor opening cannot race with pending graph retirement',()=>{
  const a=main.indexOf('else if (action == "fxEditor")');
