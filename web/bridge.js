@@ -11,7 +11,7 @@
 
   const send = (action, more = {}) => backend.emitEvent("arMixAction", {action, ...more});
   const state = {catalog: [], chain: [], scanning: false, message: "Connecting to native host...",
-    device: {}, presets: [], filter: "", selectedCategory: "All", monitor: false, error: "", progress: {active:false,phase:"done",done:0,total:0,found:0,current:""}, adding:false};
+    device: {}, presets: [], addRequestId:0, addError:"", pendingPlugin:"", filter: "", selectedCategory: "All", monitor: false, error: "", progress: {active:false,phase:"done",done:0,total:0,found:0,current:""}, adding:false};
 
   const escapeHtml = text => String(text ?? "").replace(/[&<>"']/g, c => (
     {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -32,6 +32,15 @@
        background:linear-gradient(180deg,#405c70 0%,#243846 47%,#0d1e29 100%);cursor:pointer;
        box-shadow:inset 0 1px 1px #93badc70,0 2px 3px #0008}
     .native-btn:hover{border-color:#62b8dc}
+    .native-add-feedback{margin:9px 0 11px;padding:10px 12px;border-radius:5px;font-size:12px;
+      line-height:1.55;border:1px solid #4e7789;background:#153545;color:#b9eaff}
+    .native-add-feedback.error{background:#39252a;border-color:#b76b68;color:#ffe0d4}
+    .native-add-feedback.waiting{background:#203849;border-color:#669abc;color:#c4ecff}
+    .native-add-feedback strong{font-weight:600}
+    .native-add-feedback .native-busy{display:inline-block;width:10px;height:10px;
+      margin-right:7px;border:2px solid #477a97;border-top-color:#80eaff;
+      border-radius:100%;animation:nativeBusySpin 1s linear infinite}
+    @keyframes nativeBusySpin{to{transform:rotate(360deg)}}
     .native-btn.primary{border-color:#2dbee9;background:linear-gradient(180deg,#4cddff 0%,#0f9fd1 42%,#08688c 100%);color:#042231}
     .native-btn.warn{color:#ffd0c9;border-color:#915552}
     .native-btn.on{border-color:#4ae3fd;color:#9ceaff;background:linear-gradient(#165b79,#123142)}
@@ -147,7 +156,7 @@
       <small>${escapeHtml(p.vendor||"Unknown vendor")} · ${escapeHtml(p.category||"Audio effect")}</small></span>
     <span class="native-tag" style="flex:0">VST3</span>
     <button class="native-btn primary" data-native-add="${escapeHtml(p.id)}"
-      ${state.chain.length>=8?"disabled":""}>＋ ADD</button></div>`).join("")
+      ${state.chain.length>=8||state.adding?"disabled":""}>＋ ADD</button></div>`).join("")
     :'<div class="native-empty">No matching installed VST3 effects. Open Plugin Manager to scan your folders.</div>';
 }
   function filterPlugins(){
@@ -162,6 +171,14 @@
     <input class="native-search" id="nativeVstSearch" placeholder="Search by plugin name, developer or category..."
       value="${escapeHtml(state.filter)}">
     <div class="native-category">${fxCategories.map(c=>`<button class="native-btn ${c===state.selectedCategory?"on":""}" data-native-category="${c}">${c}</button>`).join("")}</div>
+    <div id="nativeAddFeedback" aria-live="polite" role="status"
+      class="native-add-feedback ${state.addError?"error":state.adding?"waiting":""}"
+      style="${state.addError||state.adding?"":"display:none"}">
+      ${state.adding?`<span class="native-busy"></span>Loading ${escapeHtml(state.pendingPlugin)}…
+        Initializing VST3; this may take a moment.`:
+      state.addError?`<strong>FX NOT LOADED:</strong> ${escapeHtml(state.addError)}
+        <div style="margin-top:4px">Open PLUGINS to rescan or SIGNAL CHECK for diagnostic logs.</div>`:""}
+    </div>
     <div style="max-height:430px;overflow:auto">${pluginRows(filterPlugins())}</div>`;
   dlg.querySelector(".native-dialog-footer").innerHTML=`${state.catalog.length} available plugins · <a href="#" data-plugin-manager="1" style="color:#7fdfff">OPEN PLUGIN MANAGER</a> for scanning and import`;
 }
@@ -405,8 +422,25 @@
     send(action);return;
   }
   if(el.dataset.nativeAdd){
+    if(state.adding)return;
+    const id=el.dataset.nativeAdd;
+    const chosen=state.catalog.find(p=>p.id===id);
     state.adding=true;
-    send("addCatalog",{id:el.dataset.nativeAdd});return;
+    state.addError="";
+    state.pendingPlugin=chosen?.name||"selected effect";
+    const requestId=++state.addRequestId;
+    const progress=document.getElementById("nativeAddFeedback");
+    if(progress){
+      progress.style.display="";
+      progress.className="native-add-feedback waiting";
+      progress.textContent="Loading "+state.pendingPlugin+"… Initializing VST3.";
+      progress.setAttribute("aria-busy","true");
+    }
+    document.querySelectorAll("#nativeFxSelector [data-native-add]")
+      .forEach(b=>b.disabled=true);
+    // Let the WebView paint before the synchronous plugin factory call.
+    requestAnimationFrame(()=>requestAnimationFrame(()=>send("addCatalog",{id,requestId})));
+    return;
   }
   if(el.dataset.nativeCategory){
     state.selectedCategory=el.dataset.nativeCategory;
@@ -465,12 +499,22 @@
     updateProgress();
   });
   backend.addEventListener("arMixChain",nodes=>{
-    const before=state.chain.length;
     state.chain=Array.isArray(nodes)?nodes:[];
-    if(state.adding && state.chain.length>before){hideDialog("nativeFxSelector");state.adding=false;}
     repaint();
     const picker=document.getElementById("nativeFxSelector");
     if(picker&&!picker.hidden)renderPicker();
+  });
+  backend.addEventListener("arMixAddResult",result=>{
+    if(Number(result.requestId)!==state.addRequestId)return;
+    state.adding=false;
+    state.pendingPlugin="";
+    state.addError=result.ok?"":String(result.error||"Unknown VST3 loading failure");
+    if(result.ok)hideDialog("nativeFxSelector");
+    else{
+      // Keep error in the open modal; toast behind backdrop is insufficient.
+      renderPicker();
+      document.getElementById("nativeAddFeedback")?.setAttribute("aria-busy","false");
+    }
   });
   backend.addEventListener("arMixNotice",data=>{
     const text=data.text||"";
@@ -480,7 +524,7 @@
       toast.classList.add("show");
       setTimeout(()=>toast.classList.remove("show"),3500);
     }
-    if(data.error){state.adding=false;console.warn("AR MIX native:",text);}
+    if(data.error)console.warn("AR MIX native:",text);
   });
   let liveInputLevel=0, liveOutputLevel=0, liveOutputLeft=0, liveOutputRight=0;
   let lastSetupSignature="";
