@@ -219,6 +219,19 @@ public:
         o->setProperty ("callbackGapCount", static_cast<double> (callbackGaps_.load()));
         o->setProperty ("worstCallbackGapUs", static_cast<double> (worstCallbackGapUs_.load()));
         o->setProperty ("worstPluginUs", static_cast<double> (worstPluginUs_.load()));
+        o->setProperty ("deviceStartCount", static_cast<double> (deviceStartCount_.load()));
+        o->setProperty ("deviceStopCount", static_cast<double> (deviceStopCount_.load()));
+        juce::Array<juce::var> pluginTimings;
+        for (int i = 0; i < count_; ++i)
+        {
+            auto item = std::make_unique<juce::DynamicObject>();
+            item->setProperty ("slot", i + 1);
+            item->setProperty ("name", slots_[i].name);
+            item->setProperty ("lastUs", static_cast<double> (lastPluginUsBySlot_[i].load()));
+            item->setProperty ("worstUs", static_cast<double> (worstPluginUsBySlot_[i].load()));
+            pluginTimings.add (juce::var (item.release()));
+        }
+        o->setProperty ("pluginTimings", juce::var (pluginTimings));
         o->setProperty ("slowPluginCount", static_cast<double> (slowPlugins_.load()));
         o->setProperty ("periodUs", d && d->getCurrentSampleRate() > 0
             ? 1000000.0 * d->getCurrentBufferSizeSamples() / d->getCurrentSampleRate() : 0.0);
@@ -252,6 +265,9 @@ private:
     std::atomic<std::uint64_t> slowCallbacks_ {0}, overBudgetCallbacks_ {0};
     std::atomic<std::uint64_t> callbackGaps_ {0}, worstCallbackGapUs_ {0};
     std::atomic<std::uint64_t> worstPluginUs_ {0}, slowPlugins_ {0};
+    std::atomic<std::uint64_t> deviceStartCount_ {0}, deviceStopCount_ {0};
+    std::array<std::atomic<std::uint64_t>, maxFx> lastPluginUsBySlot_ {};
+    std::array<std::atomic<std::uint64_t>, maxFx> worstPluginUsBySlot_ {};
     std::uint64_t previousCallbackStartUs_ = 0;
     double sampleRateHz_ = 48000.0;
 
@@ -289,7 +305,13 @@ private:
 
     void audioDeviceAboutToStart (juce::AudioIODevice* d) override
     {
+        deviceStartCount_.fetch_add (1, std::memory_order_relaxed);
         sampleRateHz_ = juce::jmax (1.0, d->getCurrentSampleRate());
+        for (int i = 0; i < maxFx; ++i)
+        {
+            lastPluginUsBySlot_[i].store (0, std::memory_order_relaxed);
+            worstPluginUsBySlot_[i].store (0, std::memory_order_relaxed);
+        }
         previousCallbackStartUs_ = 0;
         int latency = 0;
         for (int i = 0; i < count_; ++i)
@@ -312,6 +334,7 @@ private:
 
     void audioDeviceStopped() override
     {
+        deviceStopCount_.fetch_add (1, std::memory_order_relaxed);
         inputPeak_.store (0.f);
         outputPeak_.store (0.f);
     }
@@ -370,6 +393,8 @@ private:
                         const auto pluginBeginUs = clockMicros();
                         slot.processor->processBlock (scratch_, midi);
                         const auto pluginUs = clockMicros() - pluginBeginUs;
+                        lastPluginUsBySlot_[fx].store (pluginUs, std::memory_order_relaxed);
+                        publishMax (worstPluginUsBySlot_[fx], pluginUs);
                         publishMax (worstPluginUs_, pluginUs);
                         if (static_cast<double> (pluginUs) > periodUs * 0.75)
                             slowPlugins_.fetch_add (1, std::memory_order_relaxed);
