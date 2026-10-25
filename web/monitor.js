@@ -53,6 +53,18 @@
     el("arSignalBadge").style.color = d.monitor && !d.masterMute && !d.channelMute ? "#71e9cc" : "#e9be7c";
     const monitorButton=document.querySelector('[data-native-action="monitor"]');
     if (monitorButton) monitorButton.textContent=d.monitor?"DISARM OUTPUT":"ENABLE OUTPUT";
+    // The original UI shell had fixed 48 kHz / 64-sample demo badges. Show
+    // the REAL negotiated driver parameters instead of misleading the user.
+    const rateLabel=document.querySelector('.spec:not(.spec-device):not(.bpm) strong');
+    if(rateLabel)rateLabel.textContent=d.rate?String(Math.round(d.rate/1000)):"—";
+    const bufferLabel=document.querySelector('.spec.bpm strong');
+    if(bufferLabel)bufferLabel.textContent=d.buffer?String(d.buffer):"—";
+    const driverLabel=document.querySelector('.spec-device strong');
+    if(driverLabel)driverLabel.textContent=d.driver||"NO DRIVER";
+    const liveLabel=document.querySelector('.status > span:first-child > b');
+    if(liveLabel)liveLabel.textContent="NATIVE CH1";
+    const edition=document.querySelector('.status > span:last-child');
+    if(edition)edition.textContent="AR MIX P2 · CH1 NATIVE + UI PREVIEW";
     if (!overlay.classList.contains("open")) return;
     el("arInputName").textContent=d.inputDevice||"Input device";
     el("arFxName").textContent=d.dryTest?"DRY BYPASS":"VST3 Chain";
