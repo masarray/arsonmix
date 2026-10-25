@@ -1,26 +1,29 @@
-"""Pure CSS Crystal Candy replaces all stretched PNG button families."""
+"""Contract: use user-supplied Button 180 shadows and pressed-state verbatim."""
 from pathlib import Path
 import re
 root=Path(__file__).resolve().parents[1]
 css=(root/'web/styles.css').read_text(encoding='utf8')
 js=(root/'web/app.js').read_text(encoding='utf8')
+page=(root/'web/index.html').read_text(encoding='utf8')
 preview=(root/'AR-MIX-Live-FX-Host-Standalone-v0.3.html').read_text(encoding='utf8')
-assert 'CRYSTAL CANDY v2' in css
-assert '::before' in css and '::after' in css
-assert 'top:var(--cc-depth)' in css
-assert 'top:0;box-shadow:0 1px 2px' in css
-assert 'border:2px solid #eda458' not in css
-assert 'linear-gradient(to bottom,var(--cc-top)' in css
-assert 'transition:top 65ms ease-out,filter 65ms ease-out,box-shadow 80ms ease-out' in css
-assert 'top:var(--cc-depth);transform:none!important' in css
+assert 'BUTTON 180 — user-supplied button-180.html CSS' in css
+for rule in (
+ 'inset 0 30px 30px -15px rgba(255, 255, 255, .1)',
+ 'inset 0 0 0 1px rgba(255, 255, 255, .3)',
+ 'inset 0 1px 20px rgba(0, 0, 0, 0)',
+ '0 3px 2px rgba(0, 0, 0, .2)',
+ '0 5px 10px rgba(0, 0, 0, .1)',
+ '0 10px 20px rgba(0, 0, 0, .1)',
+ 'inset 0 16px 2px -15px rgba(0, 0, 0, 0)',
+ '0 0 0 2px rgba(255, 255, 255, .5)',
+ 'transform:translateY(3px)',
+ 'transition:150ms all',
+ 'background:var(--b180-color)',
+ 'display:inline-flex'
+):
+ assert rule in css,rule
+assert '/* CRYSTAL CANDY v2' not in css and '--cc-depth' not in css
+assert 'class="btn-180 candy mute' in js and 'class="btn-180' in page
 assert not re.search(r'--(?:ar-btn-|skin-small|skin-long|skin-large)',css)
-assert not re.search(r'var\(--(?:ar-btn-|skin-)',css)
-for family in ('.toolbar .nav button','.left-rail .tabs button','.strip .channel-actions .candy',
-               '.strip .utility-row button','.strip .fader-tools button',
-               '.left-rail .rail-presets button','.left-rail .rail-bottom button',
-               '#masterLeft .master-tools button'):
- assert family in css,family
-for state in ('.mute.active','.solo.active','button[data-hpf].active','.nav button.selected'):
- assert state in css,state
 assert '<style>'+css+'</style>' in preview and '<script>'+js+'</script>' in preview
-print('PASS: CSS-only candy 3D surfaces, semantic states, tactile 70ms press, preview parity')
+print('PASS: exact Button 180 shadow and active, responsive geometry, preview parity')
