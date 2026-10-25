@@ -68,6 +68,7 @@ public:
         std::uint64_t captureStarts = 0, captureStops = 0;
         bool captureStopped = false;
         double captureRate = 0., outputRate = 0.;
+        double preparedCaptureRate = 0., preparedRenderRate = 0.;
         int captureChannels = 0, renderChannels = 0;
         int capturePeriodFrames = 0, renderPeriodFrames = 0;
         int captureDriverXRuns = -1; // JUCE-backend-specific, not render underruns
@@ -123,6 +124,8 @@ public:
         const double outputRate = out->getCurrentSampleRate();
         if (!bridge_.prepare (captureRate, outputRate, 2, 16384, fifoTargetMs))
             return "Cannot prepare a bounded drift-correction bridge at negotiated device rates";
+        preparedCaptureRate_ = captureRate;
+        preparedRenderRate_ = outputRate;
         // Strictly no callback can observe an unprepared or reset bridge.
         captureManager_.addAudioCallback (&tap_);
         captureAttached_ = true;
@@ -161,6 +164,10 @@ public:
         const auto* cap = captureManager_.getCurrentAudioDevice();
         r.captureRate = cap ? cap->getCurrentSampleRate() : 0.;
         r.outputRate = renderDevice ? renderDevice->getCurrentSampleRate() : 0.;
+        r.preparedCaptureRate = preparedCaptureRate_;
+        r.preparedRenderRate = preparedRenderRate_;
+        const auto actualCallbackRate = tap_.rateHz.load (std::memory_order_relaxed);
+        if (actualCallbackRate > 0.) r.captureRate = actualCallbackRate;
         r.captureChannels = cap ? cap->getActiveInputChannels().countNumberOfSetBits() : 0;
         r.renderChannels = renderDevice ? renderDevice->getActiveOutputChannels().countNumberOfSetBits() : 0;
         r.capturePeriodFrames = cap ? cap->getCurrentBufferSizeSamples() : 0;
@@ -173,6 +180,7 @@ private:
     AdaptiveClockBridge bridge_;
     juce::AudioDeviceManager captureManager_;
     CaptureTap tap_;
+    double preparedCaptureRate_ = 0., preparedRenderRate_ = 0.; // message-thread-owned
     bool captureAttached_ = false, running_ = false; // message-thread only
 };
 } // namespace armix::device
