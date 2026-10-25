@@ -851,7 +851,8 @@ document.addEventListener('pointerdown',e=>{const f=e.target.closest('[data-fade
    drag={type:'fader',el:f,index:idx,fromCap,startY:e.clientY,
      startDb:idx==='master'?masterGain:channels[+idx].fader};
    // Motorized-console behavior: the rail is a focus/relative-drag surface.
-   // Never teleport gain to pointer Y, either on pointerdown or on the first move.}
+   // Never teleport gain to pointer Y, either on pointerdown or on the first move.
+ }
  else if(p){const index=p.dataset.pan==='master'?'master':+p.dataset.pan,fromThumb=!!e.target.closest('.pan-thumb');
  drag={type:'pan',el:p,index,fromThumb,startX:e.clientX,startPan:index==='master'?masterPan:channels[index].pan};
  if(!fromThumb){const r=p.getBoundingClientRect();updatePan(index,((e.clientX-r.left-9)/Math.max(1,r.width-18))*200-100,true)}}
