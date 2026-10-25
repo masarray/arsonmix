@@ -114,6 +114,7 @@ async def main():
         await page.screenshot(path=str(project/'mixer-crystal-candy-review.png'),full_page=True)
         await page.screenshot(path=str(project/'mixer-crystal-depth-glow-review.png'),full_page=True)
         await page.screenshot(path=str(project/'mixer-inter-recessed-toggle-review.png'),full_page=True)
+        await page.screenshot(path=str(project/'mixer-fixed-buttons-3d-onoff.png'),full_page=True)
         # Verify true geometric alignment of each source MUTE/SOLO and master MUTE/STEREO.
         actions=await page.evaluate("""()=>{
           const bounds=s=>{const r=document.querySelector(s).getBoundingClientRect();
@@ -185,37 +186,48 @@ async def main():
         assert smallRail['footerBottom']<=smallRail['bottom']+1,smallRail
         assert all(b['width']>35 for b in smallRail['buttons']),smallRail
         assert await page.locator('.strip').count()==13
-        # Raised OFF switch / recessed ON switch are persistent, not just :active.
+        # The user's requirement: the SAME size/position before, during, and after toggle.
+        # OFF: original seven-layer raised Button 180. ON: inset depth, without translate.
         def switch_state(selector):
             return page.locator(selector).evaluate("""e=>{
-              const s=getComputedStyle(e); return {
-                t:s.transform,shadow:s.boxShadow,color:s.backgroundColor,
-                ink:s.color,selected:e.classList.contains('active')||e.classList.contains('selected')
-              };
+              const s=getComputedStyle(e),r=e.getBoundingClientRect();
+              return {t:s.transform,shadow:s.boxShadow,color:s.backgroundColor,
+                ink:s.color,left:r.left,top:r.top,width:r.width,height:r.height,
+                selected:e.classList.contains('active')||e.classList.contains('selected')};
             }""")
+        def same_rect(a,b):
+            return all(abs(a[k]-b[k])<=.2 for k in ('left','top','width','height'))
         off=await switch_state('[data-mute="0"]')
         assert off['t']=='matrix(1, 0, 0, 1, 0, 0)',off
         await page.locator('[data-mute="0"]').click()
         await page.wait_for_function("""()=>{
             const e=document.querySelector('[data-mute="0"]');
-            return getComputedStyle(e).transform==='matrix(1, 0, 0, 1, 0, 3)';
+            return e.classList.contains('active')&&getComputedStyle(e).boxShadow.includes('inset');
         }""",timeout=2500)
+        await page.wait_for_timeout(190) # let the original 150 ms shadow animation settle
         on=await switch_state('[data-mute="0"]')
-        assert on['selected'] and on['shadow']!=off['shadow'],on
-        assert on['ink']!=off['ink'],(on,off)
+        assert on['selected'] and on['shadow']!=off['shadow'],(off,on)
+        assert on['t']==off['t'] and same_rect(off,on),(off,on)
+        assert on['ink']!=off['ink'],(off,on)
+        assert on['shadow'].startswith('rgba(0, 0, 0, 0.72)') or '0.72' in on['shadow'],on
         await page.locator('[data-mute="0"]').click()
-        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-mute="0"]')).transform==='matrix(1, 0, 0, 1, 0, 0)'""",timeout=2500)
-        # Every strip's name-panel must start below the A/B button's longest 10px cast shadow.
+        await page.wait_for_timeout(190)
+        back=await switch_state('[data-mute="0"]')
+        assert back['t']==off['t'] and same_rect(off,back),(off,back)
+        assert back['shadow']==off['shadow'],(off,back)
+        # Restore the original A/B geometry, with the name panel stacked above the shadow.
         geometry=await page.evaluate("""()=>[...document.querySelectorAll('#mixer > .strip')].map(s=>{
-          const n=s.querySelector('.strip-name').getBoundingClientRect();
-          const buttons=[...s.querySelectorAll('.fader-tools button')].map(b=>{
-            const r=b.getBoundingClientRect();return {bottom:r.bottom,x:r.left,right:r.right};
+          const n=s.querySelector('.strip-name'),ng=n.getBoundingClientRect();
+          const bay=s.querySelector('.fader-tools'),br=bay.getBoundingClientRect();
+          const buttons=[...bay.querySelectorAll('button')].map(b=>{
+            const r=b.getBoundingClientRect();return {bottom:r.bottom,height:r.height};
           });
-          return {nameTop:n.top,buttons,stripBottom:s.getBoundingClientRect().bottom};
+          return {nameTop:ng.top,buttons,bayHeight:br.height,
+            nameZ:getComputedStyle(n).zIndex,bayZ:getComputedStyle(bay).zIndex};
         })""")
-        assert all(x['buttons'] and max(b['bottom'] for b in x['buttons'])+10<=x['nameTop']+1
-                   for x in geometry),geometry
-        assert all(x['stripBottom']>=x['nameTop'] for x in geometry),geometry
+        assert all(x['buttons'] and abs(x['bayHeight']-31)<=1 and
+                   all(abs(b['height']-27)<=1 and b['bottom']<=x['nameTop']+1 for b in x['buttons']) and
+                   int(x['nameZ'])>int(x['bayZ']) for x in geometry),geometry
         # Source CSS: active moves 3px, no invented ::before/::after body.
         btn=page.locator('[data-mute="0"]')
         before=await btn.evaluate("""e=>({
@@ -223,25 +235,22 @@ async def main():
             before:getComputedStyle(e,'::before').content,
             after:getComputedStyle(e,'::after').content})""")
         assert before['before']=='none' and before['after']=='none',before
+        press_before=await btn.evaluate("(e)=>e.getBoundingClientRect().toJSON()")
         await btn.hover()
         await page.mouse.down()
-        await page.wait_for_function("""()=>{
-            const e=document.querySelector('[data-mute="0"]');
-            return getComputedStyle(e).transform==='matrix(1, 0, 0, 1, 0, 3)';
-        }""",timeout=3000)
-        shadow=await btn.evaluate("(e)=>getComputedStyle(e).boxShadow")
-        assert shadow!=before['shadow'],shadow
+        await page.wait_for_timeout(190)
+        during=await btn.evaluate("""e=>({
+            t:getComputedStyle(e).transform,rect:e.getBoundingClientRect().toJSON(),
+            shadow:getComputedStyle(e).boxShadow})""")
+        assert during['t']=='matrix(1, 0, 0, 1, 0, 0)',during
+        assert all(abs(during['rect'][k]-press_before[k])<=.2 for k in ('x','y','width','height')),during
+        assert during['shadow']!=before['shadow'],during
         await page.mouse.up()
-        # Mouse release does NOT spring back: the toggle is latched ON at -3px depth.
-        await page.wait_for_function("""()=>{
-            return getComputedStyle(document.querySelector('[data-mute="0"]')).transform==='matrix(1, 0, 0, 1, 0, 3)';
-        }""",timeout=3000)
         assert await btn.get_attribute('aria-pressed')=='true'
         await btn.click()
-        await page.wait_for_function("""()=>{
-            return getComputedStyle(document.querySelector('[data-mute="0"]')).transform==='matrix(1, 0, 0, 1, 0, 0)';
-        }""",timeout=3000)
+        await page.wait_for_timeout(190)
         assert await btn.get_attribute('aria-pressed')=='false'
+        assert await btn.evaluate("(e)=>getComputedStyle(e).transform")=='matrix(1, 0, 0, 1, 0, 0)'
         widths=await page.evaluate("""()=>{
           const mixer=document.querySelector('#mixer'),master=document.querySelector('#masterLeft');
           const source=document.querySelector('[data-strip="0"]');
