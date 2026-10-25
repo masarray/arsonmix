@@ -104,17 +104,60 @@ async def main():
         cap0=page.locator('[data-fader="0"] .cap')
         await cap0.hover()
         fader_hover=await cap0.evaluate("(e)=>getComputedStyle(e).filter")
-        assert 'brightness(1.3)' in fader_hover, fader_hover
+        assert 'brightness(1.19)' in fader_hover, fader_hover
         button=page.locator('[data-mute="0"]')
         await button.hover()
         await page.wait_for_timeout(150)  # Finish 90 ms physical-switch filter transition.
         button_hover=await button.evaluate("(e)=>getComputedStyle(e).filter")
-        assert 'brightness(1.3)' in button_hover,button_hover
+        assert 'brightness(1.13)' in button_hover,button_hover
         # FX power and FX name remain separate inside the 104px channel strip.
         assert await page.evaluate("""() => [...document.querySelectorAll('.strip .insert-slot')].every(slot=>{
             const cell=slot.getBoundingClientRect(),strip=slot.closest('.strip').getBoundingClientRect();
             return cell.x>=strip.x-1&&cell.right<=strip.right+1&&cell.height===25
         })"""), 'FX power overflow or slot geometry changed'
+        # Channel identities are real editable state, not only colored labels.
+        await page.locator('[data-editstrip="0"]').click()
+        assert await page.locator('#channelIdentity').is_visible()
+        await page.locator('#identityName').fill('Vocal Main')
+        await page.locator('[data-icon-choice="🎙"]').click()
+        await page.locator('[data-color-choice="#cf6b1e"]').click()
+        await page.locator('#identitySave').click()
+        assert await page.locator('#channelIdentity').is_hidden()
+        assert await page.locator('[data-editstrip="0"] .strip-caption').inner_text()=='Vocal Main'
+        assert await page.locator('[data-editstrip="0"] .track-icon').inner_text()=='🎙'
+        assert await page.evaluate('durableSession().channels[0].color')=='#cf6b1e'
+        # Channel name editor cancel must not overwrite committed changes.
+        await page.locator('[data-editstrip="0"]').click()
+        await page.locator('#identityName').fill('This Should Not Persist')
+        await page.locator('#identityCancel').click()
+        assert await page.locator('[data-editstrip="0"] .strip-caption').inner_text()=='Vocal Main'
+        # Master FX chain has its own slots and independent quick power.
+        assert await page.locator('.master-fx-slot').count()==5
+        assert await page.locator('[data-fader="master"] .cap.master-cap').count()==1
+        assert await page.locator('[data-master-insert="0"]').count()==1
+        await page.locator('[data-master-power="0"]').click()
+        assert await page.locator('[data-master-power="0"]').get_attribute('aria-pressed')=='false'
+        assert await page.evaluate('durableSession().masterBypassed["0"]') is True
+        await page.locator('[data-master-power="0"]').click()
+        assert await page.locator('[data-master-power="0"]').get_attribute('aria-pressed')=='true'
+        # Master insert selection can open an editor and replace the selected FX.
+        await page.locator('[data-master-insert="0"]').click()
+        assert await page.locator('#pluginModal').is_visible()
+        await page.locator('#closeBrowser').click()
+        assert await page.locator('#pluginModal').is_hidden()
+        assert await page.locator('#masterLufs').count()==1
+        assert await page.locator('#masterDbtp').count()==1
+        assert await page.locator('[data-clip]').count()==14
+        assert await page.locator('[data-meter="masterL"]').count()==1
+        assert await page.locator('[data-meter="masterR"]').count()==1
+        await page.evaluate('updateMeterVisual("masterL",99,performance.now())')
+        assert await page.locator('[data-clip="masterL"]').evaluate('(e)=>e.classList.contains("latched")')
+        await page.locator('[data-clip="masterL"]').click()
+        assert not await page.locator('[data-clip="masterL"]').evaluate('(e)=>e.classList.contains("latched")')
+        assert not await page.locator('.strip .insert-led').count()
+        assert await page.locator('.strip .insert-name').first.inner_text() != ''
+        assert await page.locator('.strip .insert-add-glyph').count()>0
+        await page.screenshot(path=str(project/'mixer-master-clip-review.png'),full_page=True)
         pan=page.locator('[data-pan="0"]')
         await pan.focus()
         await pan.press('Home')
