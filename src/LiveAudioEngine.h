@@ -97,6 +97,9 @@ public:
     // Normal ASIO / verified single-clock devices remain on the zero-SRC
     // JUCE direct callback. Independent capture/render is opt-in in P0.
     bool independentClockActive() const noexcept { return independent_.active(); }
+    // Control-thread-only: true after an unsuccessful DIRECT rollback.
+    // The original endpoint selection is retained for bounded recovery.
+    bool hasPendingDirectRestore() const noexcept { return savedDirectSetup_.has_value(); }
     bool independentClockFaulted() const noexcept { return independent_.active() && independent_.faulted(); }
 
     juce::String setIndependentClockEnabled (bool wanted)
