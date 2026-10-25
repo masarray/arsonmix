@@ -396,7 +396,7 @@
     }
     if(data.error){state.adding=false;console.warn("AR MIX native:",text);}
   });
-  let liveInputLevel=0, liveOutputLevel=0;
+  let liveInputLevel=0, liveOutputLevel=0, liveOutputLeft=0, liveOutputRight=0;
   let lastSetupSignature="";
   backend.addEventListener("arMixStatus",d=>{
     state.device=d;
@@ -409,16 +409,22 @@
     toStatus(text);
     // Only CH1 and master are sourced from a real native audio callback.
     const inputLevel=percent(d.inputPeak), outputLevel=percent(d.peak);
-    // PPM-like UI release; incoming peaks rise immediately. No fake activity,
-    // no visual state for the 11 channels that are still mock previews.
+    // Real left/right peaks reflect PAN. Fast attack, capped 12-Hz UI release.
     liveInputLevel=Math.max(inputLevel,liveInputLevel-5);
     liveOutputLevel=Math.max(outputLevel,liveOutputLevel-5);
+    liveOutputLeft=Math.max(percent(d.peakLeft),liveOutputLeft-5);
+    liveOutputRight=Math.max(percent(d.peakRight),liveOutputRight-5);
     const meter=document.querySelector('[data-meter="0"]');
     if(meter)meter.style.setProperty("--level",liveInputLevel+"%");
-    ["masterMeterL","masterMeterR","masterMeterAux"].forEach(id=>{
+    const nativeMasterLevels={
+      masterMeterL:liveOutputLeft,
+      masterMeterR:liveOutputRight,
+      masterMeterAux:liveOutputLevel
+    };
+    for(const [id,level] of Object.entries(nativeMasterLevels)){
       const x=document.getElementById(id);
-      if(x)x.style.setProperty("--level",liveOutputLevel+"%");
-    });
+      if(x)x.style.setProperty("--level",level+"%");
+    }
     const cpu=document.querySelector(".cpu strong");
     if(cpu)cpu.textContent="NATIVE";
     const statusSetup=document.querySelector("[data-native-setup]");
