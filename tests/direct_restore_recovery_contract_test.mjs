@@ -50,3 +50,12 @@ test('CI package describes the actual live BETA architecture, not the old offlin
   assert.match(workflow,/Independent JUCE WASAPI capture and render device adapters are opt-in experimental/);
   assert.doesNotMatch(workflow,/An offline adaptive dual-clock FIR bridge is tested in CI but NOT connected/);
 });
+
+test('healthy independent sessions never arm restoration; setup can replace missing devices',()=>{
+  assert.match(main,/\(!engine_\.independentClockActive\(\) && engine_\.hasPendingDirectRestore\(\)\)/);
+  assert.match(engine,/bool abandonPendingDirectRestoreForSetup\(\)/);
+  assert.match(engine,/deviceManager_\.addAudioCallback \(this\)/);
+  assert.match(main,/DIRECT_RESTORE_ABANDON/);
+  assert.match(main,/engine_\.devices\(\)\.getCurrentAudioDevice\(\) != nullptr/);
+  assert.match(main,/Choose a replacement in AUDIO SETUP/);
+});
