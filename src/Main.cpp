@@ -344,7 +344,28 @@ private:
         const auto value = args.getProperty ("value", {});
         const int slot = static_cast<int> (args.getProperty ("slot", -1));
 
-        if (action == "copyDiagnosticReport")
+        // Structural plugin operations currently use JUCE direct callback
+        // detachment and cannot safely mutate a running independent renderer.
+        if (engine_.independentClockActive() &&
+            (action == "addCatalog" || action == "fxRemove" || action == "fxMove" ||
+             action == "presetLoad" || action == "presetSave"))
+            return emitNotice ("Return to DIRECT mode before editing VST3 graph (live-safe graph edits are a later gate).", true);
+
+        if (action == "smartClock")
+        {
+            if (!value.isBool()) return emitNotice ("Invalid smart clock command", true);
+            const auto error = engine_.setIndependentClockEnabled (bool (value));
+            if (error.isNotEmpty())
+            {
+                diagnostics_.record ("SMART_CLOCK_FAIL", error);
+                return emitNotice (error, true);
+            }
+            diagnostics_.record ("SMART_CLOCK_MODE", juce::JSON::toString (engine_.status(), false));
+            emitNotice (engine_.independentClockActive()
+                ? "Independent capture/render clocks enabled (EXPERIMENTAL). Render-master ASRC, rollback on device fault."
+                : "Direct JUCE audio path restored; no extra SRC buffer.");
+        }
+        else if (action == "copyDiagnosticReport")
         {
             diagnostics_.record ("REPORT_COPY", "User explicitly requested one-click report");
             const auto report = makeAudioReport();
@@ -358,6 +379,12 @@ private:
         }
         else if (action == "audioSetup")
         {
+            if (engine_.independentClockActive())
+            {
+                const auto revert = engine_.setIndependentClockEnabled (false);
+                if (revert.isNotEmpty()) return emitNotice (revert, true);
+                deviceSettingsDirty_ = true;
+            }
             // One-sided device routes are temporary and must never leak into
             // normal user configuration or the persisted audio-devices.xml.
             if (engine_.hasTemporaryDiagnosticDevice())
@@ -370,6 +397,12 @@ private:
         }
         else if (action == "diagnosticRoute")
         {
+            if (engine_.independentClockActive())
+            {
+                const auto revert = engine_.setIndependentClockEnabled (false);
+                if (revert.isNotEmpty()) return emitNotice (revert, true);
+                deviceSettingsDirty_ = true;
+            }
             using Route = armix::diagnostics::Route;
             const auto selected = value.toString();
             auto route = Route::normal;
@@ -584,6 +617,21 @@ private:
     void timerCallback() override
     {
         ++timerTicks_;
+        // Driver disconnect or sample-rate renegotiation: fail closed and
+        // return to the direct path on the message thread, never from DSP.
+        if (engine_.independentClockFaulted())
+        {
+            const auto faultState = juce::JSON::toString (engine_.status(), false);
+            const auto error = engine_.setIndependentClockEnabled (false);
+            diagnostics_.record ("SMART_CLOCK_RECOVERY", faultState +
+                (error.isNotEmpty() ? " | RESTORE_FAIL: " + error : " | DIRECT_RESTORED"));
+            if (error.isNotEmpty()) emitNotice (error, true);
+            else
+            {
+                deviceSettingsDirty_ = true;
+                emitNotice ("Independent audio device changed/faulted; safe direct path restored.", true);
+            }
+        }
         if (engine_.finalizeGraphSwitch())
         {
             diagnostics_.record ("GRAPH_SWAP_ACK", pendingPresetName_);
@@ -603,7 +651,7 @@ private:
             deviceSettingsDirty_ = false;
             // DeviceManager signals even when a temporary capture-only /
             // output-only route is selected. Never persist that test route.
-            if (!engine_.hasTemporaryDiagnosticDevice())
+            if (!engine_.hasTemporaryDiagnosticDevice() && !engine_.independentClockActive())
             if (auto xml = engine_.devices().createStateXml())
             {
                 const auto text = xml->toString();
