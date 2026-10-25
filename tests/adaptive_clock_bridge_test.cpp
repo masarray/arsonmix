@@ -81,5 +81,34 @@ int main()
     empty.pull(outs,2,128);
     for(int i=0;i<128;++i)check(lo[i]==0.f && ro[i]==0.f);
     check(empty.status().primingFrames==128);
+
+    // Long-running starvation/overrun recovery. Explicitly test that FIFO
+    // resumes after the capture clock stalls and drops excess source frames.
+    armix::device::AdaptiveClockBridge recovering;
+    check(recovering.prepare(48000,48000,2,1024,12.));
+    std::array<float,512> srcL {},srcR {};
+    for(int i=0;i<512;++i)srcL[i]=srcR[i]=0.25f;
+    const float* src[2]={srcL.data(),srcR.data()};
+    for(int i=0;i<4;++i)recovering.push(src,2,512);
+    check(recovering.status().overflowFrames>0);
+    for(int i=0;i<64;++i)
+    {
+        recovering.pull(outs,2,128);
+        for(int n=0;n<128;++n)
+        {
+            check(std::isfinite(lo[n]) && std::isfinite(ro[n]));
+            check(std::abs(lo[n])<=0.3f && std::abs(ro[n])<=0.3f);
+        }
+    }
+    check(recovering.status().underflowFrames>0);
+    // Simulate a fresh producer clock after a full starvation interval.
+    for(int cycle=0;cycle<100;++cycle)
+    {
+        recovering.push(src,2,128);
+        recovering.pull(outs,2,128);
+    }
+    auto after=recovering.status();
+    check(after.pushedFrames>0 && after.renderedFrames>0);
+    check(after.fillFrames<=1024);
     return 0;
 }
