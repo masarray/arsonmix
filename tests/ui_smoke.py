@@ -231,7 +231,7 @@ async def main():
         await button.hover()
         await page.wait_for_timeout(150)  # Finish 90 ms physical-switch filter transition.
         button_hover=await button.evaluate("(e)=>getComputedStyle(e).filter")
-        assert 'brightness(1.13)' in button_hover,button_hover
+        assert 'brightness(1.12)' in button_hover and 'saturate(1.1)' in button_hover,button_hover
         # FX power and FX name remain separate inside the 104px channel strip.
         assert await page.evaluate("""() => [...document.querySelectorAll('.strip .insert-slot')].every(slot=>{
             const cell=slot.getBoundingClientRect(),strip=slot.closest('.strip').getBoundingClientRect();
@@ -359,12 +359,13 @@ async def main():
         assert await pan.get_attribute('aria-valuenow')=='0'
         assert not await page.locator('#editor').is_visible(),'PAN double click opened editor'
 
-        # Pixel-perfect state mapping uses original silver/red/green images, not CSS flats.
+        # Crystal Candy: OFF surfaces match; active MUTE coral and SOLO amber are distinct.
         async def image_for(selector):
             return await page.locator(selector).first.evaluate(
                 '(b) => getComputedStyle(b).backgroundImage')
-        assert "data:image/png;base64," in await image_for('[data-mute="0"]')
-        assert await image_for('[data-mute="0"]') == await image_for('[data-solo="0"]')
+        off_mute=await image_for('[data-mute="0"]')
+        assert 'linear-gradient' in off_mute and 'data:image/png' not in off_mute
+        assert off_mute == await image_for('[data-solo="0"]')
         await page.locator('[data-mute="0"]').click()
         assert await page.locator('[data-mute="0"]').get_attribute('aria-pressed') == 'true'
         assert await image_for('[data-mute="0"]') != await image_for('[data-solo="0"]')
