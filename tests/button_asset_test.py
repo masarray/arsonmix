@@ -16,7 +16,7 @@ for rule in (
  'inset 0 -1px 2px rgba(0,0,0,.32)',
  '0 0 0 1px rgba(0,0,0,.46)',
  'transform:translateY(0px)!important',
- 'transition:background-color 150ms, border-color 150ms, color 150ms, filter 120ms',
+ 'transition:background-color 150ms, border-color 150ms, color 150ms, filter 150ms',
  'background:var(--b180-color)',
  'display:inline-flex',
  'inset 0 3px 6px -1px rgba(0,0,0,.72)'
