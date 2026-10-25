@@ -56,6 +56,63 @@ async def main():
         await page.screenshot(path=str(project/'mixer-design-review-1440.png'),full_page=True)
         assert await page.locator('.strip').count()==12
         await page.set_viewport_size({"width":1680,"height":920})
+        # Hardware-style PAN illumination must grow from center, both L and R.
+        pan_fill=page.locator('[data-pan="1"] .pan-fill')
+        assert await pan_fill.count()==1
+        p1=page.locator('[data-pan="1"]')
+        await p1.focus()
+        await p1.press('Home')
+        at_center=await pan_fill.bounding_box()
+        assert at_center['width']<1,at_center
+        await p1.press('End')
+        right_fill=await pan_fill.bounding_box()
+        assert right_fill['width']>10,right_fill
+        await p1.press('Home')
+        await p1.press('ArrowLeft')
+        left_small=await pan_fill.bounding_box()
+        assert left_small['width']>0,left_small
+        for _ in range(20):
+            await p1.press('Shift+ArrowLeft')
+        left_fill=await pan_fill.bounding_box()
+        assert left_fill['width']>10 and left_fill['x']<at_center['x'],left_fill
+        await p1.press('Home')
+        # Inline strip FX power and full FX Rack power reflect same saved state.
+        assert await page.locator('.strip .insert-slot').count()==60
+        inline=page.locator('[data-fxpower="0:0"]')
+        assert await inline.get_attribute('aria-pressed')=='true'
+        assert await page.locator('[data-insert="0:0"]').count()==1
+        await inline.click()
+        assert await inline.get_attribute('aria-pressed')=='false'
+        assert await page.locator('[data-fxpower="0:0"]').locator('xpath=..').evaluate("(x)=>x.classList.contains('is-bypassed')")
+        assert await page.evaluate('bypassed["0:0"]') is True
+        assert await page.locator('#pluginModal').is_hidden()
+        await page.locator('[data-view="FX RACK"]').click()
+        rack_power=page.locator('[data-chainbypass="0"]')
+        assert await rack_power.get_attribute('aria-pressed')=='false'
+        await rack_power.click()
+        assert await rack_power.get_attribute('aria-pressed')=='true'
+        await page.locator('[data-view="MIX"]').click()
+        assert await page.locator('[data-fxpower="0:0"]').get_attribute('aria-pressed')=='true'
+        assert await page.evaluate('durableSession().bypassed["0:0"]') is False
+        await page.locator('#masterMute').click()
+        assert await page.locator('#masterMute').inner_text()=='MUTE'
+        assert await page.locator('#masterMute').get_attribute('aria-pressed')=='true'
+        await page.locator('#masterMute').click()
+        assert await page.locator('#masterMute').inner_text()=='MUTE'
+        # Hover and active feedback stays visual and does not change native fader geometry.
+        cap0=page.locator('[data-fader="0"] .cap')
+        await cap0.hover()
+        fader_hover=await cap0.evaluate("(e)=>getComputedStyle(e).filter")
+        assert 'brightness(1.3)' in fader_hover, fader_hover
+        button=page.locator('[data-mute="0"]')
+        await button.hover()
+        button_hover=await button.evaluate("(e)=>getComputedStyle(e).filter")
+        assert 'brightness(1.3)' in button_hover,button_hover
+        # FX power and FX name remain separate inside the 104px channel strip.
+        assert await page.evaluate("""() => [...document.querySelectorAll('.strip .insert-slot')].every(slot=>{
+            const cell=slot.getBoundingClientRect(),strip=slot.closest('.strip').getBoundingClientRect();
+            return cell.x>=strip.x-1&&cell.right<=strip.right+1&&cell.height===25
+        })"""), 'FX power overflow or slot geometry changed'
         pan=page.locator('[data-pan="0"]')
         await pan.focus()
         await pan.press('Home')

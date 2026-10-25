@@ -28,3 +28,13 @@
 All skins are data-URI embedded from **byte-identical original PNG assets**, so standalone WebView2 and GitHub Pages share one rendering path. No JavaScript audio routing changes.
 
 **QA:** `tests/button_asset_test.py` checks all nine new families, image sizes/byte integrity and absence of the obsolete global override. `tests/ui_smoke.py` now verifies that four families remain different, FX slots and tool icons do not accidentally inherit large button images, strip switches do not overflow, and review screenshots are captured at 1680x920 and 1440x820. The visual regression artifacts are attached to successful CI runs.
+
+## 2026-10-25 — Soundcraft reference / Studio One style insert-power refinement
+
+- **PAN**: added center-origin illuminated green/cyan ribbon between center tick and metallic PAN thumb, positive and negative pan; zero is empty, fully pan is fully illuminated. Existing pan range, no-jump drag and keyboard behavior remain.
+- **Master MUTE**: fixed physical printed label `MUTE` regardless of state; red artwork + pressed state mean muted. ARIA pressed persists.
+- **FX insert**: occupied rows now have separate **FX name/edit target** and **⏻ power target**. Button never opens browser, and opening name never changes bypass. Gray power = bypassed, luminous aqua = on. No power for empty slot. Existing chain bypass mechanism is the single state; it syncs main strips and full FX Rack, sends existing `chainBypass` bridge event, and immediately persists the UI/session state. This is a demo: audio DSP bypass still requires the native host to consume this event.
+- **Persistence**: initial restored session now also restores `bypassed`, `fxParams`, and `masterMute`.
+- **Tactile feedback**: increased hover brightness/contrast for hardware controls; darker active press. The 31×90 original fader image, exact translation/geometry, and hit zone remain unchanged.
+- **Geometry & regression guard**: Chromium checks pan bar left/right/center, 60 compact 25px rack slots, two independent FX targets, synchronized bypass, unchanged MUTE caption and visible hover feedback.
+- **Audit priorities**: use color only for meaningful state, keep signal-chain names legible at 1440px, isolate native DSP functions from preview simulation, and prevent per-strip overflow rather than scaling all buttons globally.
