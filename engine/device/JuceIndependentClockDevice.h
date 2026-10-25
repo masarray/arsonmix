@@ -3,6 +3,7 @@
 #include <juce_audio_devices/juce_audio_devices.h>
 #include "AdaptiveClockBridge.h"
 #include "ClockBridgeSizing.h"
+#include "IndependentStreamWatchdog.h"
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -117,6 +118,7 @@ public:
             close();
             return "Unable to allocate bounded capture FIFO / ASRC coefficients";
         }
+        streamWatchdog_.reset();
         deviceFault_.store (false, std::memory_order_release);
         rateChanged_.store (false, std::memory_order_release);
         captureCallbacks_.store (0, std::memory_order_relaxed);
@@ -147,6 +149,20 @@ public:
         renderManager_.closeAudioDevice();
         captureManager_.closeAudioDevice();
         downstream_ = nullptr;
+        streamWatchdog_.reset();
+    }
+
+    // Existing control timer owns this check; never invoked from audio callbacks.
+    void pollStreamHealth (std::uint64_t nowMs) noexcept
+    {
+        if (!active()) return;
+        if (streamWatchdog_.observe (nowMs, captureCallbacks(), renderCallbacks())
+            != IndependentStreamWatchdog::Stall::none)
+            deviceFault_.store (true, std::memory_order_release);
+    }
+    IndependentStreamWatchdog::Snapshot streamWatchdogStatus() const noexcept
+    {
+        return streamWatchdog_.snapshot();
     }
 
     bool active() const noexcept { return active_.load (std::memory_order_acquire); }
@@ -263,6 +279,7 @@ private:
 
     juce::AudioDeviceManager captureManager_, renderManager_;
     AdaptiveClockBridge bridge_;
+    IndependentStreamWatchdog streamWatchdog_; // message-thread policy
     juce::AudioBuffer<float> staging_;
     juce::AudioIODeviceCallback* downstream_ = nullptr; // non-owning, externally synchronized
     Capture captureCallback_;

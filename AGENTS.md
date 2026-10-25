@@ -48,3 +48,7 @@ The **experimental** P2.5 JUCE VST3 engine has now been integrated into `main` u
 - Historical rules quarantined in `10-console-legacy.css` remain candidates, not automatically dead code. Migrate only after DOM/cascade reachability and computed geometry assertions. See `docs/CSS_ARCHITECTURE_MILESTONES_2026-10-26.md`.
 
 - 2026-10-26 latest visual contract: Button 180 OFF, ON, pressed, and selected use **one identical inset box-shadow** and no transforms or geometry differences. OFF neutral graphite `#292d34`, ON only changes semantic color. Hover in both states changes brightness only, not border. This explicitly supersedes historical raised-OFF instructions.
+
+## P0 independent callback-silence watchdog (2026-10-26)
+- P0 independent JUCE clock adapter detects missing capture or render callback progress by sampling existing atomics at 12Hz on the message thread. Three seconds of absent progress latches a fault and enters existing bounded DIRECT restore; not a driver-confirmed xrun.
+- No new realtime clock reads, heap, blocking, workers, CSS/GUI edits. Callback-silence source and duration appear in COPY FULL REPORT recovery event. Physical FAT remains outstanding.
