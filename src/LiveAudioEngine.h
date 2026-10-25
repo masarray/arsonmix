@@ -8,6 +8,7 @@
 #include "LiveGraphHandoff.h"
 #include "DiagnosticTone.h"
 #include "../engine/core/RealtimeHealthHistogram.h"
+#include "../engine/device/JuceIndependentDeviceAdapter.h"
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -57,6 +58,69 @@ public:
     ~LiveAudioEngine() override { stop(); }
 
     juce::AudioDeviceManager& devices() noexcept { return deviceManager_; }
+    bool isIndependentAudioActive() const noexcept { return splitAudioActive_; }
+    bool isIndependentAudioDriverError() const noexcept
+    { return splitAudioActive_ && splitAdapter_.callbackErrorObserved(); }
+    juce::AudioIODevice* activeOutputDevice() const noexcept
+    { return splitAudioActive_ ? splitAdapter_.outputDevice() : deviceManager_.getCurrentAudioDevice(); }
+    juce::AudioIODevice* activeInputDevice() const noexcept
+    { return splitAudioActive_ ? splitAdapter_.inputDevice() : deviceManager_.getCurrentAudioDevice(); }
+
+    // CONTROL THREAD ONLY: stop/drain old callbacks before reconfiguring.
+    // This opt-in phase is deliberately restricted to 0 VST3, so it diagnoses
+    // and carries clean PCM before FX graph concurrency is introduced.
+    juce::String setIndependentAudioActive (bool desired)
+    {
+        if (splitAudioActive_ == desired) return {};
+        if (handoff_.busy()) return "Wait for the live FX transition to finish";
+        if (desired && graphOwned_->count != 0)
+            return "Independent-clock diagnostic currently requires an empty 0-VST3 rack";
+        if (desired && (savedLiveSetup_ || diagnosticRoute() != armix::diagnostics::Route::normal))
+            return "Return audio isolation mode to NORMAL before enabling Smart I/O";
+
+        struct SafeSwitch
+        {
+            std::atomic<bool>& flag;
+            explicit SafeSwitch (std::atomic<bool>& f):flag(f)
+            { flag.store(true,std::memory_order_release); }
+            ~SafeSwitch(){ flag.store(false,std::memory_order_release); }
+        } switching(routeReconfiguring_);
+
+        if (desired)
+        {
+            const auto type=deviceManager_.getCurrentAudioDeviceType();
+            deviceManager_.getAudioDeviceSetup(joinedBeforeSplit_);
+            if (joinedBeforeSplit_.inputDeviceName.isEmpty() ||
+                joinedBeforeSplit_.outputDeviceName.isEmpty())
+                return "Select both endpoints via AUDIO SETUP before enabling Smart I/O";
+            detach();
+            deviceManager_.closeAudioDevice();
+            auto error=splitAdapter_.prepare(type,joinedBeforeSplit_,25.0);
+            if(error.isEmpty()) error=splitAdapter_.start(*this);
+            if(error.isNotEmpty())
+            {
+                splitAdapter_.stop();
+                const auto restore=deviceManager_.setAudioDeviceSetup(joinedBeforeSplit_,false);
+                if(restore.isEmpty()) attach();
+                else setOutputMuted(true);
+                return "Split I/O not available: "+error+
+                    (restore.isNotEmpty()?" | Original audio restore failed: "+restore:juce::String());
+            }
+            splitAudioActive_=true;
+            return {};
+        }
+
+        splitAdapter_.stop(); // drain both independent device callbacks first
+        splitAudioActive_=false;
+        const auto error=deviceManager_.setAudioDeviceSetup(joinedBeforeSplit_,false);
+        if(error.isNotEmpty())
+        {
+            setOutputMuted(true); // never claim restored while no device is open
+            return "Could not restore joined audio routing: "+error;
+        }
+        attach();
+        return {};
+    }
 
     juce::String start (const juce::XmlElement* savedSettings = nullptr)
     {
@@ -73,6 +137,11 @@ public:
 
     void stop()
     {
+        if (splitAudioActive_)
+        {
+            splitAdapter_.stop();
+            splitAudioActive_ = false;
+        }
         detach();
         handoff_.resetAfterStop (graphOwned_.get());
         stagedOwner_.reset();
@@ -97,6 +166,7 @@ public:
     {
         using Route = armix::diagnostics::Route;
         if (handoff_.busy()) return "Finish the pending FX graph transition first";
+        if (splitAudioActive_) return "Disable Smart I/O before using isolation modes";
         if (wanted == diagnosticRoute_.load (std::memory_order_acquire) &&
             !(wanted == Route::normal && savedLiveSetup_)) return {};
         if (wanted < Route::normal || wanted > Route::captureOnly)
@@ -252,6 +322,7 @@ public:
     juce::String addVst3 (const juce::String& filename, int uid,
                           const juce::String& catalogId)
     {
+        if (splitAudioActive_) return "Return to joined I/O before loading VST3 effects";
         if (handoff_.busy()) return "FX graph transition in progress; retry shortly";
         if (graphOwned_->count >= maxFx) return "FX Rack is full (maximum 8 VST3 effects)";
         auto* device = deviceManager_.getCurrentAudioDevice();
@@ -302,6 +373,7 @@ public:
     // exactly once, no plugin state methods ever execute on the audio thread.
     juce::String captureSnapshot (armix::storage::Snapshot& snapshot)
     {
+        if (splitAudioActive_) return "Return to joined I/O before saving effect graphs";
         if (!isOutputMuted()) return "Mute hardware output before saving a native preset";
         if (handoff_.busy()) return "Finish pending FX graph transition before saving";
         snapshot.effects.clear();
@@ -486,8 +558,9 @@ public:
     juce::var status()
     {
         auto o = std::make_unique<juce::DynamicObject>();
-        auto* d = deviceManager_.getCurrentAudioDevice();
-        o->setProperty ("connected", d != nullptr);
+        auto* d = activeOutputDevice();
+        auto* captureDevice = activeInputDevice();
+        o->setProperty ("connected", d != nullptr && captureDevice != nullptr);
         o->setProperty ("driver", deviceManager_.getCurrentAudioDeviceType());
         o->setProperty ("device", d ? d->getName() : "No device");
         o->setProperty ("rate", d ? d->getCurrentSampleRate() : 0.0);
@@ -509,10 +582,32 @@ public:
         o->setProperty ("lateCallbackIntervals", static_cast<double> (lateCallbackIntervals_.load()));
         o->setProperty ("testOutputFrames", static_cast<double> (testOutputFrames_.load()));
         o->setProperty ("testCaptureFrames", static_cast<double> (testCaptureFrames_.load()));
+        // Capability truth: building the split pipeline and recovery policy does
+        // not mean the current JUCE AudioDeviceManager uses either one.
+        o->setProperty ("p0BackendMode", splitAudioActive_ ? "JUCE_SPLIT_BRIDGED_0FX" : "JUCE_JOINED_CALLBACK");
+        o->setProperty ("p0IndependentClockBridgeActive", splitAudioActive_);
+        o->setProperty ("p0SplitDriverError", isIndependentAudioDriverError());
+        if(splitAudioActive_)
+        {
+            const auto bridge=splitAdapter_.pipeline().bridgeStatus();
+            const auto streams=splitAdapter_.pipeline().streamStatus();
+            o->setProperty ("p0FifoFrames",static_cast<double>(bridge.fillFrames));
+            o->setProperty ("p0CaptureDropFrames",static_cast<double>(streams.captureDropFrames));
+            o->setProperty ("p0BridgeUnderflowFrames",static_cast<double>(streams.renderMissingFrames));
+            o->setProperty ("p0SrcCorrectionPpm",bridge.correctionPpm);
+            o->setProperty ("p0PrimingFrames",static_cast<double>(bridge.primingFrames));
+            o->setProperty ("p0CaptureCallbacks",static_cast<double>(streams.captureCallbacks));
+            o->setProperty ("p0RenderCallbacks",static_cast<double>(streams.renderCallbacks));
+        }
+        o->setProperty ("p0AutomaticDeviceRecoveryActive", false);
+        o->setProperty ("p0PhysicalOutputUnderrunsObservable", false);
         o->setProperty ("renderUnderrunSource", "UNAVAILABLE_THROUGH_CURRENT_JUCE_AUDIODEVICE");
         // AudioIODevice::getXRunCount is backend-specific, not comprehensive.
         // Pinned JUCE WASAPI reports input capture discontinuity flags only.
-        const int reported = d != nullptr ? d->getXRunCount() : -1;
+        // In split mode WASAPI capture discontinuities belong to the INPUT
+        // endpoint, not the render-master output endpoint.
+        auto* xrunSource = splitAudioActive_ ? captureDevice : d;
+        const int reported = xrunSource != nullptr ? xrunSource->getXRunCount() : -1;
         o->setProperty ("backendXrunCount", reported >= 0 ? juce::var (reported) : juce::var());
         const auto type = deviceManager_.getCurrentAudioDeviceType();
         o->setProperty ("backendXrunMeaning", reported < 0 ? "UNAVAILABLE"
@@ -520,9 +615,9 @@ public:
             : "DRIVER_DEFINED");
         juce::AudioDeviceManager::AudioDeviceSetup setup;
         deviceManager_.getAudioDeviceSetup (setup);
-        o->setProperty ("inputDevice", setup.inputDeviceName);
-        o->setProperty ("outputDevice", setup.outputDeviceName);
-        o->setProperty ("deviceInputChannels", d ? d->getActiveInputChannels().countNumberOfSetBits() : 0);
+        o->setProperty ("inputDevice", splitAudioActive_ ? joinedBeforeSplit_.inputDeviceName : setup.inputDeviceName);
+        o->setProperty ("outputDevice", splitAudioActive_ ? joinedBeforeSplit_.outputDeviceName : setup.outputDeviceName);
+        o->setProperty ("deviceInputChannels", captureDevice ? captureDevice->getActiveInputChannels().countNumberOfSetBits() : 0);
         o->setProperty ("deviceOutputChannels", d ? d->getActiveOutputChannels().countNumberOfSetBits() : 0);
         o->setProperty ("callbackInputChannels", callbackInputs_.load());
         o->setProperty ("callbackOutputChannels", callbackOutputs_.load());
@@ -574,6 +669,9 @@ public:
 private:
     static constexpr int maxFrames = 8192;
     juce::AudioDeviceManager deviceManager_;
+    armix::device::JuceIndependentDeviceAdapter splitAdapter_;
+    juce::AudioDeviceManager::AudioDeviceSetup joinedBeforeSplit_;
+    bool splitAudioActive_ = false; // JUCE message/control thread only
     juce::AudioPluginFormatManager formats_;
     std::unique_ptr<Graph> graphOwned_ {std::make_unique<Graph>()};
     std::unique_ptr<Graph> stagedOwner_;

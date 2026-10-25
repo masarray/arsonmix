@@ -293,7 +293,8 @@ private:
     juce::String makeAudioReport()
     {
         const auto status = engine_.status();
-        auto* device = engine_.devices().getCurrentAudioDevice();
+        auto* device = engine_.activeOutputDevice();
+        auto* captureDevice = engine_.activeInputDevice();
         juce::String result;
         result.preallocateBytes (64 * 1024);
         result << "ARSONMIX / SMART AUDIO DIAGNOSTIC REPORT v2\n";
@@ -309,7 +310,7 @@ private:
         result << "=== DEVICE CAPABILITIES (backend-reported) ===\n";
         if (device != nullptr)
         {
-            result << "Input latency: " << device->getInputLatencyInSamples()
+            result << "Input latency: " << (captureDevice ? captureDevice->getInputLatencyInSamples() : -1)
                    << " frames | Output latency: " << device->getOutputLatencyInSamples()
                    << " frames | Native buffer: " << device->getCurrentBufferSizeSamples() << " frames\n";
             result << "Reported sample rates: ";
@@ -337,7 +338,28 @@ private:
         const auto value = args.getProperty ("value", {});
         const int slot = static_cast<int> (args.getProperty ("slot", -1));
 
-        if (action == "copyDiagnosticReport")
+        if (engine_.isIndependentAudioActive() &&
+            (action == "addCatalog" || action == "presetSave" ||
+             action == "presetLoad" || action == "fxRemove" ||
+             action == "fxMove" || action == "fxEditor"))
+            return emitNotice ("Disable experimental Smart I/O before VST3 graph editing.", true);
+        if (action == "toggleSmartIO")
+        {
+            const bool enabled = bool(value);
+            if (audioSetupWindow_ != nullptr) audioSetupWindow_->setVisible (false);
+            const auto error = engine_.setIndependentAudioActive (enabled);
+            if (error.isNotEmpty())
+            {
+                diagnostics_.record ("P0_SPLIT_ROUTE_FAIL", error);
+                return emitNotice (error, true);
+            }
+            deviceSettingsDirty_ = !enabled;
+            diagnostics_.record ("P0_SPLIT_ROUTE", enabled ? "ON: independent capture+render (0FX)" : "OFF: legacy joined callback");
+            emitNotice (enabled
+                ? "EXPERIMENTAL independent-clock 0-FX route activated; FIFO is priming. COPY FULL REPORT to inspect bridge health."
+                : "Restored joined JUCE audio routing.");
+        }
+        else if (action == "copyDiagnosticReport")
         {
             diagnostics_.record ("REPORT_COPY", "User explicitly requested one-click report");
             const auto report = makeAudioReport();
@@ -351,6 +373,12 @@ private:
         }
         else if (action == "audioSetup")
         {
+            if (engine_.isIndependentAudioActive())
+            {
+                const auto error = engine_.setIndependentAudioActive (false);
+                if (error.isNotEmpty()) return emitNotice (error, true);
+                deviceSettingsDirty_ = true;
+            }
             // One-sided device routes are temporary and must never leak into
             // normal user configuration or the persisted audio-devices.xml.
             if (engine_.hasTemporaryDiagnosticDevice())
@@ -577,6 +605,17 @@ private:
     void timerCallback() override
     {
         ++timerTicks_;
+        // Device error is handled from message thread, never audio callback.
+        if (engine_.isIndependentAudioDriverError())
+        {
+            const auto error = engine_.setIndependentAudioActive (false);
+            diagnostics_.record ("P0_SPLIT_DEVICE_ERROR", error.isEmpty()
+                ? "Driver reported error; restored joined JUCE backend" : error);
+            deviceSettingsDirty_ = error.isEmpty();
+            emitNotice (error.isEmpty()
+                ? "Smart I/O driver failed; automatic fallback to joined I/O."
+                : "Smart I/O failed and joined backend could not be restored: "+error, true);
+        }
         if (engine_.finalizeGraphSwitch())
         {
             diagnostics_.record ("GRAPH_SWAP_ACK", pendingPresetName_);
@@ -596,7 +635,8 @@ private:
             deviceSettingsDirty_ = false;
             // DeviceManager signals even when a temporary capture-only /
             // output-only route is selected. Never persist that test route.
-            if (!engine_.hasTemporaryDiagnosticDevice())
+            if (!engine_.hasTemporaryDiagnosticDevice() &&
+                !engine_.isIndependentAudioActive())
             if (auto xml = engine_.devices().createStateXml())
             {
                 const auto text = xml->toString();

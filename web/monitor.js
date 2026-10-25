@@ -19,7 +19,9 @@
     "#arDiagnosticMode{color:#d9eaf3;background:#142a36;border:1px solid #57849a;border-radius:4px;padding:6px;font-size:11px}" +
     "#arDiagnosticMark{color:#f9e5ca;background:#503926;border:1px solid #b9854a;border-radius:4px;padding:7px 10px;cursor:pointer}" +
     "#arDiagnosticCopy{color:#e1f7f4;background:#166052;border:1px solid #34c8ac;border-radius:4px;padding:7px 12px;cursor:pointer}" +
-    "#arDiagnosticCopyStatus{color:#8cdec9;font-size:10px}";
+    "#arDiagnosticCopyStatus{color:#8cdec9;font-size:10px}" +
+    "#arSmartRoute{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin-top:9px;font-size:11px;color:#91b6c8}" +
+    "#arSmartToggle{padding:7px 12px;border-radius:4px;cursor:pointer;color:#d5f5ff;background:linear-gradient(#255469,#123544);border:1px solid #56a5bc}";
   document.head.appendChild(css);
   // Signal Check is declared in the permanent toolbar; footer holds status only.
   const overlay = document.createElement("div");
@@ -42,6 +44,8 @@
       '<button id="arDiagnosticMark">MARK CRACKLE</button>' +
       '<button id="arDiagnosticCopy" title="Copies native driver settings, recent events and timing data">COPY FULL REPORT</button>' +
       '<span id="arDiagnosticCopyStatus" role="status">One click → paste to ChatGPT</span></div>' +
+    '<div id="arSmartRoute"><button id="arSmartToggle">ENABLE SMART I/O · 0 FX (EXPERIMENTAL)</button>' +
+      '<span id="arSmartStatus">Requires two endpoints, empty FX rack and NORMAL isolation mode. No live certification.</span></div>' +
     '<div id="arHealthPanel" style="padding:8px 0;font:11px monospace;color:#8ad6e0"></div>' +
     '<div id="arSignalFooter">The legacy Main L/R, Record and Streaming buttons are UI previews, not hardware routing. Select output using AUDIO SETUP. Use headphones at low volume.</div>' +
     '</section>';
@@ -90,6 +94,10 @@
     el("arOutputBar").style.width=percent(d.peak)+"%";
     el("arSignalReason").textContent=diagnosis(d);
     el("arDiagnosticMode").value=d.diagnosticRoute||"NORMAL";
+    el("arSmartToggle").textContent=d.p0IndependentClockBridgeActive?"DISABLE SMART I/O":"ENABLE SMART I/O · 0 FX (EXPERIMENTAL)";
+    el("arSmartStatus").textContent=d.p0IndependentClockBridgeActive
+      ?"SPLIT ACTIVE · FIFO "+(d.p0FifoFrames??0)+" fr · SRC "+Number(d.p0SrcCorrectionPpm??0).toFixed(1)+" ppm · bridge starvation "+(d.p0BridgeUnderflowFrames??0)+" fr"
+      :"Legacy JUCE joined callback active. Enable only for 0-VST3 diagnostic; revert before inserting plugins.";
     el("arSignalMonitor").textContent=d.monitor?"MUTE OUTPUT":"UNMUTE OUTPUT";
     el("arSignalDry").textContent=d.dryTest?"DRY TEST ON":"DRY TEST OFF";
     el("arHealthPanel").textContent="CALLBACK "+(d.callbackDurationUs||0)+" µs / period "+
@@ -115,6 +123,8 @@
   el("arSignalClose").addEventListener("click",()=>overlay.classList.remove("open"));
   el("arSignalMonitor").addEventListener("click",()=>api.emitEvent("arMixAction",{action:"monitor",value:!state.monitor}));
   el("arSignalDry").addEventListener("click",()=>api.emitEvent("arMixAction",{action:"dryTest",value:!state.dryTest}));
+  el("arSmartToggle").addEventListener("click",()=>
+    api.emitEvent("arMixAction",{action:"toggleSmartIO",value:!state.p0IndependentClockBridgeActive}));
   el("arDiagnosticMode").addEventListener("change",e=>
     api.emitEvent("arMixAction",{action:"diagnosticRoute",value:e.target.value}));
   el("arDiagnosticMark").addEventListener("click",()=>

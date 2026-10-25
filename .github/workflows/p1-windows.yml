@@ -43,6 +43,7 @@ jobs:
           node --test tests/smart_audio_ard_contract_test.mjs
           node --test tests/p0_diagnostic_contract_test.mjs
           node --test tests/smart_audio_diagnostic_contract_test.mjs
+          node --test tests/p0_live_split_contract_test.mjs
       - name: Configure Windows x64
         shell: pwsh
         run: >
@@ -51,7 +52,7 @@ jobs:
           -DBUILD_TESTING=ON
           -DJUCE_WEBVIEW2_PACKAGE_LOCATION="${{ github.workspace }}/.deps"
       - name: Build executable and native RT tests
-        run: cmake --build build --config Release --target ARMixConsole ARMixRTTests ARMixPresetTests ARMixDiagnosticTests ARMixClockBridgeTests ARMixHealthTests ARMixPolicyTests --parallel 2
+        run: cmake --build build --config Release --target ARMixConsole ARMixRTTests ARMixPresetTests ARMixDiagnosticTests ARMixClockBridgeTests ARMixHealthTests ARMixPolicyTests ARMixRecoveryTests ARMixSplitTelemetryTests ARMixIndependentPipelineTests --parallel 2
       - name: Test realtime control primitives
         run: ctest --test-dir build -C Release --output-on-failure
       - name: Package native executable
