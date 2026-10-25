@@ -110,26 +110,29 @@ async def main():
         }""")
         for key in ('background','image','shadow','border','radius'):
             assert shared['header'][key]==shared['rail'][key]==shared['mute'][key],(key,shared)
-        assert shared['rail']['background']=='rgb(34, 53, 65)',shared
+        assert shared['rail']['background']=='rgb(41, 45, 52)',shared
+        assert '0.72' in shared['rail']['shadow'] and 'inset' in shared['rail']['shadow'],shared
         preset=page.locator('[data-preset="Clean Vocal"]')
         before=await preset.evaluate('(e)=>e.getBoundingClientRect().toJSON()')
         await preset.hover()
         await page.wait_for_function("""()=>{
           const s=getComputedStyle(document.querySelector('[data-preset="Clean Vocal"]'));
-          return s.filter==='brightness(1.18) saturate(1.04)';
+          return s.filter==='brightness(1.18)';
         }""",timeout=2500)
         hovered=await preset.evaluate("""e=>({
           shadow:getComputedStyle(e).boxShadow,
           box:e.getBoundingClientRect().toJSON(),
           background:getComputedStyle(e).backgroundImage,
           radius:getComputedStyle(e).borderTopLeftRadius,
+          border:getComputedStyle(e).borderTopColor,
           filter:getComputedStyle(e).filter
         })""")
-        # No cylindrical face: solid background, identical seven 3D shadows,
+        # No cylindrical face: solid background, identical inset-crystal 3D shadows,
         # identical rectangular geometry and radius. Only the shine filter changes.
         assert hovered['shadow']==shared['rail']['shadow'],hovered
         assert hovered['background']=='none' and hovered['radius']==shared['rail']['radius'],hovered
-        assert hovered['filter']=='brightness(1.18) saturate(1.04)',hovered
+        assert hovered['border']=='rgb(15, 19, 25)',hovered
+        assert hovered['filter']=='brightness(1.18)',hovered
         assert all(abs(before[k]-hovered['box'][k])<=.2 for k in ('x','y','width','height')),hovered
         # The header and strip OFF buttons must use exactly the same shine-only hover.
         for selector in ('[data-view="FX RACK"]','[data-mute="0"]'):
@@ -137,18 +140,21 @@ async def main():
             rest=await control.evaluate("""e=>({
               shadow:getComputedStyle(e).boxShadow,
               background:getComputedStyle(e).backgroundImage,
+               border:getComputedStyle(e).borderTopColor,
               rect:e.getBoundingClientRect().toJSON()
             })""")
             await control.hover()
             await page.wait_for_function("""s=>{
-              return getComputedStyle(document.querySelector(s)).filter==='brightness(1.18) saturate(1.04)';
+              return getComputedStyle(document.querySelector(s)).filter==='brightness(1.18)';
             }""",arg=selector,timeout=2500)
             shine=await control.evaluate("""e=>({
               shadow:getComputedStyle(e).boxShadow,
               background:getComputedStyle(e).backgroundImage,
+               border:getComputedStyle(e).borderTopColor,
               rect:e.getBoundingClientRect().toJSON()
             })""")
             assert shine['shadow']==rest['shadow'] and shine['background']==rest['background']=='none',(selector,rest,shine)
+            assert shine['border']==rest['border'],(selector,rest,shine)
             assert all(abs(rest['rect'][k]-shine['rect'][k])<=.2 for k in ('x','y','width','height')),(selector,rest,shine)
         await preset.hover()
         await preset.click()
@@ -160,6 +166,11 @@ async def main():
         }""",timeout=2500)
         active=await preset.evaluate('(e)=>e.getBoundingClientRect().toJSON()')
         assert all(abs(before[k]-active[k])<=.2 for k in ('x','y','width','height')),(before,active)
+        active_shadow=await preset.evaluate('(e)=>getComputedStyle(e).boxShadow')
+        assert active_shadow==shared['rail']['shadow'],(active_shadow,shared['rail']['shadow'])
+        await preset.hover()
+        await page.wait_for_timeout(160)
+        assert await preset.evaluate('(e)=>getComputedStyle(e).filter')=='brightness(1.18)'
         await page.mouse.move(1,1)
         # Restore factory FX chain so this visual-button test cannot change later FX tests.
         await page.evaluate("""()=>{
@@ -276,7 +287,7 @@ async def main():
         assert all(b['width']>35 for b in smallRail['buttons']),smallRail
         assert await page.locator('.strip').count()==13
         # The user's requirement: the SAME size/position before, during, and after toggle.
-        # OFF: original seven-layer raised Button 180. ON: inset depth, without translate.
+        # OFF and ON use the same exact inset shadow and physical geometry.
         def switch_state(selector):
             return page.locator(selector).evaluate("""e=>{
               const s=getComputedStyle(e),r=e.getBoundingClientRect();
@@ -295,7 +306,8 @@ async def main():
         }""",timeout=2500)
         await page.wait_for_timeout(190) # let the original 150 ms shadow animation settle
         on=await switch_state('[data-mute="0"]')
-        assert on['selected'] and on['shadow']!=off['shadow'],(off,on)
+        assert on['selected'] and on['shadow']==off['shadow'],(off,on)
+        assert on['color']!=off['color'],(off,on)
         assert on['t']==off['t'] and same_rect(off,on),(off,on)
         assert on['ink']!=off['ink'],(off,on)
         assert on['shadow'].startswith('rgba(0, 0, 0, 0.72)') or '0.72' in on['shadow'],on
@@ -318,7 +330,7 @@ async def main():
         assert len(geometry)==13 and all(x['nameTop']>=x['faderBottom']-1 for x in geometry),geometry
         assert all(not x['hasTools'] for x in geometry if not x['master']),geometry
         assert sum(x['hasTools'] for x in geometry)==1,geometry
-        # Source CSS: active moves 3px, no invented ::before/::after body.
+        # Press must not change shadow or move; no invented pseudo-body.
         btn=page.locator('[data-mute="0"]')
         before=await btn.evaluate("""e=>({
             shadow:getComputedStyle(e).boxShadow,
@@ -334,7 +346,7 @@ async def main():
             shadow:getComputedStyle(e).boxShadow})""")
         assert during['t']=='matrix(1, 0, 0, 1, 0, 0)',during
         assert all(abs(during['rect'][k]-press_before[k])<=.2 for k in ('x','y','width','height')),during
-        assert during['shadow']!=before['shadow'],during
+        assert during['shadow']==before['shadow'],(before,during)
         await page.mouse.up()
         assert await btn.get_attribute('aria-pressed')=='true'
         await btn.click()
@@ -404,7 +416,7 @@ async def main():
         await button.hover()
         await page.wait_for_timeout(150)  # Finish 90 ms physical-switch filter transition.
         button_hover=await button.evaluate("(e)=>getComputedStyle(e).filter")
-        assert button_hover=='brightness(1.18) saturate(1.04)',button_hover
+        assert button_hover=='brightness(1.18)',button_hover
         # FX power and FX name remain separate inside the 104px channel strip.
         assert await page.evaluate("""() => [...document.querySelectorAll('.strip .insert-slot')].every(slot=>{
             const cell=slot.getBoundingClientRect(),strip=slot.closest('.strip').getBoundingClientRect();

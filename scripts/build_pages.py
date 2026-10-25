@@ -1,6 +1,6 @@
 """Build public Pages landing and interactive console from canonical standalone HTML."""
 from pathlib import Path
-import argparse,os,json,shutil,subprocess
+import argparse,os,json,shutil,subprocess,sys
 ROOT=Path(__file__).resolve().parents[1]
 p=argparse.ArgumentParser()
 p.add_argument('--out',default='dist-pages')
@@ -12,6 +12,7 @@ if dst==ROOT or dst==ROOT/'site': raise SystemExit('unsafe output path')
 dst.mkdir(parents=True,exist_ok=True)
 shutil.copytree(ROOT/'site',dst,dirs_exist_ok=True)
 source=ROOT/'AR-MIX-Live-FX-Host-Standalone-v0.3.html'
+subprocess.run([sys.executable,str(ROOT/'scripts/build_ui_css.py'),'--check'],check=True)
 html=source.read_text(encoding='utf-8')
 assert '<style>' in html and '<script>' in html and 'data-fader' in html
 (dst/'preview').mkdir(exist_ok=True)
