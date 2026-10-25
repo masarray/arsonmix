@@ -554,28 +554,53 @@
     if(data.error)console.warn("AR MIX native:",text);
   });
   // The desktop DSP owns Channel 1 and Master gain/mute and Channel 1 PAN.
-  // Demo localStorage/snapshots must never make a live control visually disagree with audio.
+  // Only reconcile changed controls; never rebuild the strip while dragging a fader.
+  // A restored GUI-only snapshot must not masquerade as a live native setting.
   function syncNativeMixerControls(d){
     if(typeof channels==="undefined" || !channels[0])return;
     const channelDb=Number(d.channelDb), masterDb=Number(d.masterDb);
     const channelPan=Math.round(Number(d.channelPan)*100);
     if(!Number.isFinite(channelDb)||!Number.isFinite(masterDb)||!Number.isFinite(channelPan))return;
     const channel=channels[0];
-    let inputDirty=false,masterDirty=false;
-    if(Math.abs(channel.fader-channelDb)>0.05){channel.fader=channelDb;inputDirty=true;}
-    if(channel.pan!==channelPan){channel.pan=channelPan;inputDirty=true;}
+    let changed=false;
+    if(Math.abs(channel.fader-channelDb)>0.05){
+      channel.fader=channelDb;changed=true;
+      const fader=document.querySelector('[data-fader="0"]');
+      if(fader){fader.querySelector(".cap")?.style.setProperty("--pos",levelToTop(channelDb)+"%");fader.setAttribute("aria-valuenow",channelDb.toFixed(1));}
+      const read=document.querySelector('[data-read="0"]');
+      if(read)read.textContent=fmt(channelDb);
+    }
+    if(channel.pan!==channelPan){
+      channel.pan=channelPan;changed=true;
+      const pan=document.querySelector('[data-pan="0"]');
+      if(pan){
+        pan.classList.toggle("is-centered",channelPan===0);
+        pan.style.setProperty("--pan-frac",(channelPan+100)/200);
+        pan.style.setProperty("--pan-left",Math.min(.5,(channelPan+100)/200));
+        pan.style.setProperty("--pan-span",Math.abs(channelPan)/200);
+        pan.setAttribute("aria-valuenow",String(channelPan));
+        pan.setAttribute("aria-valuetext",panText(channelPan));
+      }
+      const read=document.querySelector('[data-pan-read="0"]');
+      if(read)read.textContent=panText(channelPan);
+    }
     if(typeof d.channelMute==="boolean" && channel.mute!==d.channelMute){
-      channel.mute=d.channelMute;inputDirty=true;
+      channel.mute=d.channelMute;changed=true;
+      const mute=document.querySelector('[data-mute="0"]');
+      if(mute){mute.classList.toggle("active",channel.mute);mute.setAttribute("aria-pressed",String(channel.mute));}
     }
     if(typeof masterGain!=="undefined" && Math.abs(masterGain-masterDb)>0.05){
-      masterGain=masterDb;masterDirty=true;
+      masterGain=masterDb;changed=true;
+      const fader=document.querySelector('[data-fader="master"]');
+      if(fader){fader.querySelector(".cap")?.style.setProperty("--pos",levelToTop(masterDb)+"%");fader.setAttribute("aria-valuenow",masterDb.toFixed(1));}
+      document.querySelectorAll(".master-db").forEach(e=>e.textContent=fmt(masterDb));
     }
     if(typeof masterMute!=="undefined" && typeof d.masterMute==="boolean" && masterMute!==d.masterMute){
-      masterMute=d.masterMute;masterDirty=true;
+      masterMute=d.masterMute;changed=true;
+      const mute=document.querySelector("#masterMute");
+      if(mute){mute.classList.toggle("active",masterMute);mute.setAttribute("aria-pressed",String(masterMute));}
     }
-    if(inputDirty && typeof renderMixer==="function")renderMixer();
-    else if(masterDirty && typeof renderMaster==="function")renderMaster();
-    if(inputDirty||masterDirty)patchMixer();
+    if(changed)patchMixer();
   }
   let liveInputLevel=0, liveOutputLevel=0, liveOutputLeft=0, liveOutputRight=0;
   let lastSetupSignature="";
