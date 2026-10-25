@@ -7,7 +7,8 @@ js=(root/'web/app.js').read_text(encoding='utf8')
 page=(root/'web/index.html').read_text(encoding='utf8')
 preview=(root/'AR-MIX-Live-FX-Host-Standalone-v0.3.html').read_text(encoding='utf8')
 license=(root/'web/assets/fonts/OFL-LICENSE-Inter.txt').read_text(encoding='utf8')
-assert 'Button 180 — reference shadow geometry' in css
+assert 'BUTTON 180 — user-supplied button-180.html CSS' in css
+compact=''.join(css.split())
 for rule in (
  'inset 0 30px 30px -15px rgba(255,255,255,.1)',
  'inset 0 0 0 1px rgba(255,255,255,.3)',
@@ -16,17 +17,16 @@ for rule in (
  '0 10px 20px rgba(0,0,0,.1)',
  'inset 0 16px 2px -15px rgba(0,0,0,0)',
  '0 0 0 2px rgba(255,255,255,.5)',
- 'transform:translateY(3px)',
+ 'transform:translateY(0px)!important',
  'transition:150ms all',
  'background:var(--b180-color)',
  'display:inline-flex',
- 'height:40px!important;flex:0 0 40px!important',
- 'height:24px!important;min-height:24px!important'
-): assert rule in css,rule
-assert '--b180-off:#203541' in css
-assert '--b180-text:#c9d8e1' in css
-assert '--b180-text:#291018' in css # ink on coral mute
-assert '--b180-text:#291d08' in css # ink on amber solo
+ 'inset 0 3px 6px -1px rgba(0,0,0,.72)'
+): assert ''.join(rule.split()) in compact,rule
+assert '--b180-off:#3a5161' in css
+assert '--b180-ink:#291018' in css
+assert '--b180-color:#e76f83' in css # ink on coral mute
+assert '--b180-ink:#291d08' in css # ink on amber solo
 assert 'data:font/woff2;base64,d09GMg' in css
 assert '@font-face' in css and 'font-family:"ArSonMix Inter"' in css
 assert 'SIL Open Font License' in license
@@ -34,4 +34,6 @@ assert not re.search(r'--(?:ar-btn-|skin-small|skin-long|skin-large)',css)
 assert 'class="btn-180 candy mute' in js and 'class="btn-180' in page
 assert '<style>'+css+'</style>' in preview
 assert '<script>'+js+'</script>' in preview
-print('PASS: recessed ON, dark raised OFF, Inter WOFF2 embedded, source/standalone parity')
+assert 'height:40px!important;flex:0 0 40px!important' not in css
+assert 'height:24px!important;min-height:24px!important' not in css
+print('PASS: original-size 3D raised OFF, same-slot inset ON, embedded Inter, parity')
