@@ -140,7 +140,20 @@ async def main():
               parent:{height:el.parentElement.getBoundingClientRect().height,width:el.parentElement.getBoundingClientRect().width},
               rect:{x:r.x,y:r.y,width:r.width,height:r.height},top:c.top,zIndex:c.zIndex,pos:el.style.getPropertyValue('--pos'),parentPosition:p.position};
         }""")
-        print('MASTER_THUMB_DIAGNOSTIC',master_fader_debug,flush=True)
+        assert master_fader_debug['display']!='none' and master_fader_debug['visibility']=='visible'
+        assert (master_fader_debug['rect']['width'],master_fader_debug['rect']['height'])==(31,90)
+        assert master_fader_debug['background'].startswith('url("data:image/png;base64,')
+        decoded=await page.locator('[data-fader="master"] .cap').evaluate("""async el => {
+          const bg=getComputedStyle(el).backgroundImage;
+          const image=new Image();image.src=bg.slice(5,-2);
+          await image.decode();
+          return {width:image.naturalWidth,height:image.naturalHeight};
+        }""")
+        assert decoded=={'width':31,'height':90}, 'Master red PNG did not decode'
+        a=await page.locator('[data-fader="0"]').bounding_box()
+        m=await page.locator('[data-fader="master"]').bounding_box()
+        assert abs(a['y']-m['y'])<=14,(a,m)
+
 
         assert await page.locator('[data-master-insert="0"]').count()==1
         await page.locator('[data-master-power="0"]').click()

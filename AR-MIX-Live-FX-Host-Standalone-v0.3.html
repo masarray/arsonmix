@@ -427,6 +427,23 @@
 .strip.selected .strip-name{box-shadow:inset 0 0 0 1px #ffd79f40}
 .strip .rack .insert-slot .insert:hover{color:#dff4fd!important}
 .strip .rack .insert-slot .insert-name{letter-spacing:-.15px}
+
+/* Align master slider band to input faders across EASY and PRO.
+ * Master-side tabs occupy 40px, so compensate through region heights. */
+.app.easy .master-fx-rack{height:132px;flex:0 0 132px;padding:5px 4px;gap:3px}
+.app.easy .master-fx-rack .master-fx-slot:last-child{display:none}
+.app.easy .master-fx-rack .master-fx-slot{height:22px;flex-basis:22px}
+.app.easy .master-meter-info{height:84px;flex:0 0 84px;padding:5px 7px 3px}
+.app.easy .master-info-kicker{font-size:8px;margin-bottom:5px}
+.app.easy .master-info-row{font-size:9px;margin-bottom:5px}
+.app.easy .master-info-row strong{font-size:12px}
+.app.easy .master-info-note{font-size:7px}
+.app.easy .master-action-space{height:39px;flex:0 0 39px;flex-direction:row;gap:5px;font-size:9px}
+.app.easy .master-stereo-symbol{font-size:10px}
+.app:not(.easy) .master-meter-info{height:150px;flex:0 0 150px}
+.app:not(.easy) .master-info-kicker{margin-bottom:9px}
+.app:not(.easy) .master-info-row{margin-bottom:8px}
+.app:not(.easy) .master-action-space{height:66px;flex:0 0 66px}
 </style></head>
 <body>
 <div id="app" class="app">

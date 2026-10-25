@@ -14,6 +14,12 @@ assert data, "Embedded metallic asset missing from web/styles.css"
 assert base64.b64decode(data.group(1))==asset, "Embedded thumb differs from source PNG"
 assert (len(asset),asset[:8])==(2786,b"\x89PNG\r\n\x1a\n")
 assert hashlib.sha256(asset).hexdigest()=="0f45fe5aebc8db7b65c4163ffad083cbe3965d59cde7056add94812ac067a899"
+master=(root/'web/assets/faders/FADER-RED2.png').read_bytes()
+assert hashlib.sha1(b'blob '+str(len(master)).encode()+bytes([0])+master).hexdigest()=='2369e1b9002522600948909246918e57880da1ed'
+needle='--master-cap-asset:url("data:image/png;base64,'
+assert needle in css, 'Missing master cap CSS source'
+master_css=css.split(needle,1)[1].split('")',1)[0]
+assert base64.b64decode(master_css)==master, 'Master red cap differs from original user PNG'
 assert "<style>"+css+"</style>" in html, "Offline CSS is stale"
 assert "<script>"+js+"</script>" in html, "Offline JS is stale"
 assert ".cap::before,.cap::after{content:none}" in css
