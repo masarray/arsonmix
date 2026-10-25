@@ -100,6 +100,24 @@ public:
     // Control-thread-only: true after an unsuccessful DIRECT rollback.
     // The original endpoint selection is retained for bounded recovery.
     bool hasPendingDirectRestore() const noexcept { return savedDirectSetup_.has_value(); }
+
+    // Explicit user escape hatch when the previous endpoint has disappeared.
+    // Called only from AUDIO SETUP on the message thread. No RT work, and no
+    // fallback silently routed to unknown speakers.
+    bool abandonPendingDirectRestoreForSetup()
+    {
+        if (independent_.active() || !savedDirectSetup_) return false;
+        setOutputMuted (true);
+        detach();
+        deviceManager_.closeAudioDevice();
+        savedDirectSetup_.reset();
+        // Register with the manager even while no device is open. JUCE then
+        // prepares this callback when the user selects a replacement endpoint.
+        // attach() deliberately requires a live device; it cannot do this.
+        deviceManager_.addAudioCallback (this);
+        attached_ = true;
+        return true;
+    }
     bool independentClockFaulted() const noexcept { return independent_.active() && independent_.faulted(); }
 
     juce::String setIndependentClockEnabled (bool wanted)
