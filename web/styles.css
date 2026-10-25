@@ -448,3 +448,45 @@
 .master-insert.empty{display:flex;align-items:center;gap:3px}
 .master-insert-add{color:#75d4e9;font:700 12px/1 Consolas,monospace;flex:0 0 auto}
 .master-insert.empty .insert-name{min-width:0;white-space:nowrap}
+
+/* v0.6 MASTER-IN-STRIP: all thirteen strips share identical vertical bands. */
+
+.mixer{gap:0}
+.strip.master-strip{--ch:#a32836;flex:0 0 138px;min-width:138px;max-width:138px}
+#masterLeft{display:flex;flex-direction:column;height:100%;padding:0;margin:0;overflow:hidden;border-left:2px solid #4c5962}
+#masterLeft .master-ch-id{height:35px;flex:0 0 35px;border-top:2px solid #f18a97;border-bottom:2px solid #070b10;letter-spacing:.45px}
+#masterLeft .master-fx-rack,
+.app.easy #masterLeft .master-fx-rack,.app:not(.easy) #masterLeft .master-fx-rack{
+ height:163px;flex:0 0 163px;padding:7px 4px;gap:4px;display:flex;flex-direction:column}
+#masterLeft .master-fx-slot{flex:0 0 25px;height:25px;min-height:25px}
+#masterLeft .master-fx-rack .master-insert{font-size:9px;line-height:1.1}
+#masterLeft .master-controls-zone{height:215px;flex:0 0 215px;display:flex;flex-direction:column;align-items:stretch;padding:0 5px}
+#masterLeft .master-analysis{flex:0 0 91px;height:91px;margin:5px 0 2px;padding:5px 7px;background:#0e1c26;border:1px solid #314451;border-radius:2px}
+#masterLeft .master-analysis .master-info-kicker{font:600 8px Consolas,monospace;margin:0 0 7px;white-space:nowrap}
+#masterLeft .master-analysis .master-info-row{font:9px Consolas,monospace;margin:0 0 6px;line-height:13px}
+#masterLeft .master-analysis .master-info-row strong{font:600 11px Consolas,monospace}
+#masterLeft .master-pan-wrap{flex:0 0 76px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:0}
+#masterLeft .master-pan-wrap .knob-label{margin:2px 0 0}
+#masterLeft .pan-control{width:100%;padding:0 8px}
+#masterLeft .master-monitor-label{margin-top:auto;margin-bottom:7px;text-align:center;letter-spacing:.8px;font:700 9px Consolas,monospace;color:#8ccada}
+#masterLeft .master-actions{height:41px;flex:0 0 41px;gap:4px}
+#masterLeft .master-actions button{font-size:9px}
+#masterLeft .master-actions #masterMute.active{background:var(--skin-small-mute) center/100% 100% no-repeat!important;color:white!important}
+#masterLeft .master-db{height:35px;flex:0 0 35px;background:linear-gradient(#192b34,#0c1921);font:700 12px Consolas,monospace;color:#e9c680}
+#masterLeft .master-fader-zone{flex:1 1 auto;min-height:90px;height:auto;gap:3px;padding:4px 5px 7px;display:flex;background:linear-gradient(90deg,#1e2931,#111a21 10%,#202b32 60%,#111b23)}
+#masterLeft .master-fader-zone .scale{width:18px;flex:0 0 18px;font-size:8px}
+#masterLeft .master-fader-zone .fader{flex:1 1 auto;min-width:31px}
+#masterLeft .master-fader-zone .fader .cap{background-image:var(--master-cap-asset)!important;background-repeat:no-repeat!important;background-position:center top!important;background-size:31px 90px!important}
+#masterLeft .master-fader-zone .meter-unit{min-width:11px;width:11px;flex:0 0 11px;position:relative}
+#masterLeft .master-fader-zone .meter-unit .meter{min-width:0;width:100%;height:calc(100% - 11px)}
+#masterLeft .master-fader-zone .meter-channel-label{height:10px;line-height:10px;position:absolute;bottom:0;width:100%;text-align:center}
+#masterLeft .master-tools{height:40px;flex:0 0 40px;padding:3px 5px;display:flex;gap:4px}
+#masterLeft .master-tools button{flex:1 1 0;min-width:0;height:27px;font-size:8px;padding:0 2px;background:var(--skin-small-off) center/100% 100% no-repeat;color:#182b35}
+#masterLeft .master-tools button.active{background:var(--skin-small-phase) center/100% 100% no-repeat;color:white}
+#masterLeft .master-strip-name{height:72px;flex:0 0 72px;border-top:3px solid #b53648;color:#fff;background:linear-gradient(125deg,#752536,#27131b 85%)!important;gap:9px}
+#masterLeft .master-strip-name .track-icon{font-size:15px;line-height:19px}
+.strip.selected{box-shadow:inset 2px 0 #f0aa57,inset -2px 0 #f0aa57,inset 0 0 0 1px #eec07988}
+.strip.selected::before{content:"";position:absolute;inset:0;z-index:6;pointer-events:none;border:2px solid #eda458;border-radius:2px;box-shadow:inset 0 0 0 1px #f8d79a42,0 0 5px #e59e3960}
+.pan-track::after{background:linear-gradient(#eef8ff,#9eb5c2);width:2px;height:18px;top:11px;box-shadow:0 0 1px #fff,0 1px 2px #000}
+.pan-track.is-centered::after{background:#ecfbff;box-shadow:0 0 0 1px #27485a,0 0 3px #f8ffff}
+/* Keep snap visible through a crisp detent, not a glowing metal slider. */
