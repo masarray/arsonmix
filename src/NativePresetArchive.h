@@ -205,7 +205,7 @@ public:
                 return "VST3 state is missing or exceeds safety limit";
             auto input = std::unique_ptr<juce::InputStream> (zip.createStreamForEntry (zipIndex));
             if (!input) return "Unable to read VST3 state";
-            input->readIntoMemoryBlock (fx.binary, static_cast<ssize_t> (maxStateBytes + 1));
+            input->readIntoMemoryBlock (fx.binary, static_cast<int> (maxStateBytes + 1));
             if (fx.binary.getSize() != static_cast<size_t> (zipEntry->uncompressedSize) ||
                 !juce::SHA256 (fx.binary).toHexString().equalsIgnoreCase (
                     entry.getProperty ("sha256", {}).toString()))
