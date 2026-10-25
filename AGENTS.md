@@ -52,3 +52,7 @@ The **experimental** P2.5 JUCE VST3 engine has now been integrated into `main` u
 ## P0 independent callback-silence watchdog (2026-10-26)
 - P0 independent JUCE clock adapter detects missing capture or render callback progress by sampling existing atomics at 12Hz on the message thread. Three seconds of absent progress latches a fault and enters existing bounded DIRECT restore; not a driver-confirmed xrun.
 - No new realtime clock reads, heap, blocking, workers, CSS/GUI edits. Callback-silence source and duration appear in COPY FULL REPORT recovery event. Physical FAT remains outstanding.
+
+## P0-02 ASRC signal integrity continuation (2026-10-26)
+- Non-finite capture PCM is sanitized at the independent FIFO ingress and counted, without heap/locks, before poisoning polyphase FIR/VST3; invalid latency and excessive capacity are rejected before allocation.
+- `bridgeNonFiniteCaptureSamples` is source-labeled, not a driver xrun. A deterministic spectral/injection test exercises bandpass, alias rejection, and finite output. See `docs/P0_ASRC_SIGNAL_INTEGRITY_2026-10-26.md`.

@@ -682,6 +682,8 @@ public:
             o->setProperty ("bridgeOverflowFrames", static_cast<double> (clock.overflowFrames));
             o->setProperty ("bridgeUnderflowFrames", static_cast<double> (clock.underflowFrames));
             o->setProperty ("bridgePrimingFrames", static_cast<double> (clock.primingFrames));
+            o->setProperty ("bridgeNonFiniteCaptureSamples",
+                static_cast<double> (clock.nonFiniteInputSamples));
             o->setProperty ("bridgeCorrectionPpm", clock.correctionPpm);
             o->setProperty ("bridgeTargetLatencyMs", independent_.bridgeTargetLatencyMs());
             o->setProperty ("bridgeCaptureCallbacks", static_cast<double> (independent_.captureCallbacks()));
