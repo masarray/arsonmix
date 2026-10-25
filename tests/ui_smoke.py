@@ -12,6 +12,24 @@ async def main():
         page.on("pageerror", lambda e: errors.append(str(e)))
         await page.set_content((project/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").read_text())
         assert await page.locator(".strip").count()==12
+        # Pixel-perfect state mapping uses original silver/red/green images, not CSS flats.
+        async def image_for(selector):
+            return await page.locator(selector).first.evaluate(
+                '(b) => getComputedStyle(b).backgroundImage')
+        assert "data:image/png;base64," in await image_for('[data-mute="0"]')
+        assert await image_for('[data-mute="0"]') == await image_for('[data-solo="0"]')
+        await page.locator('[data-mute="0"]').click()
+        assert await page.locator('[data-mute="0"]').get_attribute('aria-pressed') == 'true'
+        assert await image_for('[data-mute="0"]') != await image_for('[data-solo="0"]')
+        await page.locator('[data-solo="0"]').click()
+        assert await page.locator('[data-solo="0"]').get_attribute('aria-pressed') == 'true'
+        assert await image_for('[data-solo="0"]') != await image_for('[data-mute="0"]')
+        await page.locator('[data-mute="0"]').click()
+        await page.locator('[data-solo="0"]').click()
+        await page.locator('#masterMute').click()
+        assert await page.locator('#masterMute').get_attribute('aria-pressed') == 'true'
+        await page.locator('#masterMute').click()
+
         # The source image has a real metallic body and a long cast shadow.
         # The body must travel inside the track, centered on image y=35.
         geometry=await page.evaluate("""async () => {

@@ -36,3 +36,80 @@
 .fader:active .cap{filter:brightness(1.02)}
 
 .plugin-inspector label{display:block;font-size:11px;color:#a2d9e8;margin:18px 0}.plugin-inspector label output{float:right;font:11px Consolas,monospace;color:#6ce0fb}.plugin-inspector input[type=range]{display:block;width:100%;margin-top:10px;accent-color:#16b9dc;cursor:ew-resize}
+
+
+/* AR MIX: original switch-cap artwork by project author; real mechanical pixel shading.
+   Labels live in HTML for legibility and correct state semantics. */
+:root{
+  --switch-silver:url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADYAAAAlCAYAAAAJBxroAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAA2VJREFUeJztmc9uHEUQxn9V3T1a7zpc4j34ZJODkR+BvEEwEofwBuEFwnOQR+BOjtzhEqTgB4BwIpId8kfZcEnieJnp7uIwf7xrduWVsLBH7KcdVU1XTff3TfXOrmpkMBjcAb4FtlkAEVk0fOUws2Whl8A9GQwGL0RkG2A8HnP37pfs7+8z2tykKAp8CBQhEEJBCIFQeIIPhG68Prz3eO8JobbOObz3qCrOOVQVVSXnTM6ZlBI5Z2KMpJSIMVJVkRhj41dUVUXZ2CpWVGU7XlJWFbGqeP/+HU+e/MbDh98xef26Ff1SNjY2TES4efMm9+9/zY2PbqDO41VRVxNT53AqqCjiFBVFVZDWquJEoLHSxJwqzikgTb5gZuRsgJFSJuWMWcaykcwgZ5IZljM5G2a1zZaxlMmWSdnIzY3JKRJz5t3btzx48A1/vnmDmaEi9YJ3PjtguLkJtFtP6o8I2uRIc9dVpRbrHd45vPM47wne4cNZNYui8YtAURQzx8x4W/EQCN7hvMc7j2/mV+fq9VQR1Tk+NdWa72g04uDgc1o92m7MT/b2uk0q5+xsQBZHllxx0fdz1XyZ1fCP7NbuzWjwrcLBxvACEtcfw9Goe9jpBbk1pLtn7elc7KySCzNWW2DWk/kpZC5ztbnnhF3PB/sCrEB0tYr1EMuF9aZ8i/E/rFjPsRbWN6yF9Q1rYX3DWljfsBbWN6yF9Q3LhS1t2/UDnbDyr+lV8rgUTKennd8JO3523J8iLSH67Pi48zthh4eHTE9PF16Agc3MZudidXyFlVdgajNzLprNlsx9Op3y8+PH3bmMRiMTEba2ttjd3eXT27e59fEthsMhvijwvm1qeoL3uKax6X0geI8PdTs7eF93kJ3DOUW1ts45RKSzZkZKqbMpZXKubUyJnCJV2/auaj/GiiomUlVRNa3wsqqIseLDyQlPn/7OT48ecXR0xGQywczOhKkqOzs7eO/PVF/TFxItZl9MxBg5Ojoi5zwvLOdMURSMx2NGM43H6w4z4+TkhMlkQlmWqGon7IWIbOecr5rjpaAR9krN7Csze3XVhC4LZvbczO6JmVEUBcAXQN8b+B+A78uynPvn8cdVsblEPG+dWWG/Akt+yHqBKfBLe6LnAj9Sq07/Mal/g0TN+QdqDQD8DShhaM3P0n4TAAAAAElFTkSuQmCC");
+  --switch-green:url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADYAAAAlCAYAAAAJBxroAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAplJREFUeJztmLuKFEEUQM+tqh7FFhVdFdTcVQPRyER/w2SDRQX9DHMx2UQzQfwQwUwxEEF8pCY+VkUcWLbr1jXo6tfuhiM923igpqumbzX3cKsfFMBD4CdgE2k/gQeSO8cAyrMll+5d4PS108yOFohzICBC/lkCzLCsYGZs/9rmy8uvvHv0jj+f503UD6lDoDxziBuPr3Pw+AGc94Tg8cHjfSD4QOEKgst9HwguUPgij4s8rs8HVzfvA1483jm88zhxJEtoUjQl1BTVSEy5aaTK40qrPK7yOJ9P20RVolbEqMQYSVHZ+rXF87svmGe50Ciu3l5ldmSGJUNRUkpIrLpKLUnB6jJQVy7VVSMZoSy4eGeVV/dfAz2xlSsnsGTdZAdmIFgtt0xiZrWfUeecJVeurrRhrVhxuMhiAmL1BaTXlokd91kj6A/6NiR0wXQVg1rOSe0nvf+XAGvSSbsFG1oxUwNHr1LSXmG5tHr0K2YGqTvViZkhSTCxvZdfMx7Lsn1+D2kr1chluqWYGEgZhizdzTXEGtP+6zkzqFi7DAFBuolLzECuR9gjcjhhn9Kr2JhpLB43dgL/iv9i+43Jig0+qaZE73E/LbPJLsXJinUv6DGz+AdM9uEx2aX4X2y/0YrFeRwzj4WgW9r2W7HNt5ujJLNINt90Dq3Yx6efqP5UoyS0COI88vHZp3Y82CIpz5Ws3jrPqcunmJUzxAne+7oFP+gH73H56EPAe9cdvW/nOucQJzjnSClhyUgpoar1rrMqqgmNsT1GVVJUoioaNccM+83cal7x/e133j/50G5v7xKbEk5E9v/NtQMR+ebW1tY2yrL8PXYyi6Isy9/r6+sbYmY3gZPAbOykFsQ28FVsattTmel/eUyNv5a+k5FegassAAAAAElFTkSuQmCC");
+  --switch-red:url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADYAAAAlCAYAAAAJBxroAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAmtJREFUeJztmL9uFDEQh7+xrXBikZYI0QDK5QkiJCh4E5oUkfjT8A68AKJJQYNo4GnoCFQpo7s0ILgkIiSKbA/F2rt7ByjNidtd5SdZM56b0/nbsa29AXgNzAAdyJgBryQ5NwHujka82Nzk0fo6pXNYEQSQZLsgBVQVBaIqR97zcTbjzcEBk7OznPZDUi53RiPebm1xa20NK4K1FmctxhistVhrMdk618yd+2vcpO8aY5DkiwiqSowRDYEYYzVCIIZACIHofWVDIHj/RzykeIixGt7jY2R2ccHTvT2m5+cAuIz4bGOD0jmCavXjqnjvEalq1aWKwXzVInDDWp6Px7zc3wdaYA/KkgAYVTQ9WYG50QXVhymDJT8CD8uyzqvBCmurBBFE03NJflegsjIcCSiDXjOmznHt5KCKoapOBHJaF8Gg2obQVE1bOTVYUMW0t2Dyobtg7S2Zz1tWDZap89Uu2uZv4Oaj/0/19b2gxTOX1YBlqA6eqcvUhsuaO2PaQ6isxWq6yxL6KnN5Sj81txWHpMFWbLBgzeWhw9qMw6/YsOo14IpdgfVNgwW7ujz6puGDnYawynUsRecx1n4N9vnkZCWLWaY+HR/Xfg32fjrlp/crWdAydBoCHw4P6/lcj+TeaMST8Zj7Zcn11K62IhhjcMl3qZ1tjcEZU9nW3KRYHkYESTaqojESVZsWdWpz++T7ECqbPw+hiqniU1s8qFat7hj5FSNfjo54N5kwbXr3/2z+9F5GRL6vehHLloh8M9vb27tFUfT/5kgqiuJkZ2dnV1T1MXAbWFv1opakC+Cr6MD+OWcN/81jaPoNFG2JtYii0WUAAAAASUVORK5CYII=");
+}
+.strip .channel-actions .candy,
+.strip .utility-row button,
+.strip .fader-tools button,
+.master-controls button{
+  appearance:none;
+  position:relative;
+  isolation:isolate;
+  flex-shrink:1;
+  border:0!important;
+  border-radius:0!important;
+  background-color:transparent!important;
+  background-image:var(--switch-silver)!important;
+  background-position:center!important;
+  background-repeat:no-repeat!important;
+  background-size:100% 100%!important;
+  box-shadow:none!important;
+  color:#182029;
+  text-shadow:0 1px 1px #ffffffb5;
+  font-size:10px;
+  font-weight:700;
+  letter-spacing:.15px;
+  padding:0 2px 4px;
+  transition:filter 85ms ease,transform 85ms ease;
+  transform:translateY(0);
+}
+.strip .channel-actions .candy{height:34px;min-width:0}
+.strip .utility-row button{height:28px;min-width:0}
+.strip .fader-tools button{height:30px;min-width:0}
+.master-controls button{height:30px;min-height:30px;padding-left:0;text-align:center}
+.strip .candy.mute.active,
+.master-controls #masterMute.active{
+  background-image:var(--switch-red)!important;
+  color:#fff;
+  text-shadow:0 1px 2px #520d0ddd;
+}
+.strip .candy.solo.active,
+.strip .utility-row button.active,
+.strip .fader-tools button.active,
+.master-controls #dim.active{
+  background-image:var(--switch-green)!important;
+  color:#0b2210;
+  text-shadow:0 1px 1px #c8ffbb99;
+}
+.strip .channel-actions button.active,
+.strip .utility-row button.active,
+.strip .fader-tools button.active,
+.master-controls button.active{
+  transform:translateY(1px);
+  filter:brightness(.96);
+}
+.strip .channel-actions button:hover,
+.strip .utility-row button:hover,
+.strip .fader-tools button:hover,
+.master-controls button:hover{filter:brightness(1.11)}
+.strip .channel-actions button:active,
+.strip .utility-row button:active,
+.strip .fader-tools button:active,
+.master-controls button:active{transform:translateY(3px);filter:brightness(.84) contrast(1.04)}
+.strip .channel-actions button:focus-visible,
+.strip .utility-row button:focus-visible,
+.strip .fader-tools button:focus-visible,
+.master-controls button:focus-visible{
+  outline:1px solid #56d8f6;
+  outline-offset:-2px;
+}
+@media (prefers-reduced-motion:reduce){
+  .strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,.master-controls button{transition:none}
+}
