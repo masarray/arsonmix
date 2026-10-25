@@ -6,36 +6,36 @@
     <div class="brand"><span class="brand-ar">Ar</span><span class="brand-label">SonMix</span></div>
     <div class="toolbar-context">
       <div class="project"><span class="muted">Session:</span><strong> Live Vocal Studio</strong><span class="chev">▾</span></div>
-      <button type="button" class="spec spec-device" data-native-action="audioSetup" title="Configure ASIO / WASAPI"><strong id="headerDriver">Audio Device</strong></button>
+      <button type="button" class="btn-180 spec spec-device" data-native-action="audioSetup" title="Configure ASIO / WASAPI"><strong id="headerDriver">Audio Device</strong></button>
       <div class="spec spec-rate"><strong id="headerRate">--</strong> kHz</div>
       <div class="spec spec-buffer"><strong id="headerBuffer">--</strong> samples</div>
       <div class="scene-select" id="currentScene">Snapshot: <b>Vocal Live</b> <span>▾</span></div>
     </div>
     <div class="toolbar-actions">
       <nav class="nav" aria-label="Primary tools">
-        <button type="button" data-view="MIX" class="selected">MIX</button>
-        <button type="button" data-view="FX RACK">FX RACK</button>
-        <button type="button" data-view="SIGNAL FLOW">SIGNAL FLOW</button>
-        <button type="button" data-my-sounds="1">MY SOUNDS</button>
-        <button type="button" data-plugin-manager="1">PLUGINS</button>
-        <button type="button" id="audioSetupBtn" data-native-action="audioSetup">SETUP</button>
-        <button type="button" id="arSignalOpen">SIGNAL CHECK</button>
+        <button type="button" data-view="MIX" class="btn-180 selected">MIX</button>
+        <button class="btn-180" type="button" data-view="FX RACK">FX RACK</button>
+        <button class="btn-180" type="button" data-view="SIGNAL FLOW">SIGNAL FLOW</button>
+        <button class="btn-180" type="button" data-my-sounds="1">MY SOUNDS</button>
+        <button class="btn-180" type="button" data-plugin-manager="1">PLUGINS</button>
+        <button class="btn-180" type="button" id="audioSetupBtn" data-native-action="audioSetup">SETUP</button>
+        <button class="btn-180" type="button" id="arSignalOpen">SIGNAL CHECK</button>
       </nav>
     </div>
   </header>
   <div class="main">
     <aside class="left-rail">
-      <div class="seg tabs"><button class="selected" data-side="channels">CHANNELS</button><button data-side="fx">FX CHAINS</button></div>
+      <div class="seg tabs"><button class="btn-180 selected" data-side="channels">CHANNELS</button><button class="btn-180" data-side="fx">FX CHAINS</button></div>
       <div id="channelList" class="channel-list" aria-label="Mixer channels"></div>
       <div id="groupsList" class="rail-list hidden"></div>
       <div class="rail-section-title">QUICK SOUND PRESETS</div>
-      <div class="rail-presets" id="presetList"><button data-preset="Clean Vocal">Clean Vocal</button><button data-preset="Warm Karaoke">Warm Karaoke</button><button data-preset="Live Broadcast">Live Broadcast</button></div>
+      <div class="rail-presets" id="presetList"><button class="btn-180" data-preset="Clean Vocal">Clean Vocal</button><button class="btn-180" data-preset="Warm Karaoke">Warm Karaoke</button><button class="btn-180" data-preset="Live Broadcast">Live Broadcast</button></div>
       <div class="rail-section-title">MIXER SNAPSHOTS</div>
       <div id="scenesList" class="rail-list scenes-list"></div>
       <div class="rail-bottom" role="group" aria-label="Session actions">
-        <button id="addScene" title="Save current mixer as a named snapshot">＋ SAVE SNAPSHOT</button>
-        <button id="saveFxPreset" title="Save this channel's FX chain as a preset">SAVE FX</button>
-        <button id="menuScene" title="Export the complete session as JSON">EXPORT</button>
+        <button class="btn-180" id="addScene" title="Save current mixer as a named snapshot">＋ SAVE SNAPSHOT</button>
+        <button class="btn-180" id="saveFxPreset" title="Save this channel's FX chain as a preset">SAVE FX</button>
+        <button class="btn-180" id="menuScene" title="Export the complete session as JSON">EXPORT</button>
       </div>
       <div class="rail-input-footer"><span class="rail-live-indicator" aria-hidden="true"></span><span id="activeInput">MIC → FX → MASTER</span></div>
     </aside>
