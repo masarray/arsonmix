@@ -28,6 +28,22 @@ async def main():
         # GUI target: the master is the 13th sibling, not a floating right rail.
         assert await page.locator('#mixer > .strip').count()==13
         assert await page.locator('#mixer > .strip:last-child').get_attribute('id')=='masterLeft'
+        assert await page.locator('[data-insert="0:5"]').count()==1
+        assert await page.locator('[data-master-insert="5"]').count()==1
+        assert await page.locator('.strip-controls .knob-label').filter(has_text="PAN").count()==0
+        assert await page.locator('.pan-readline').count()==13
+        assert await page.locator('#masterLeft .master-controls-zone .master-analysis').count()==1
+        # Six real insert slots fit entirely within each FX rack (no cropping).
+        rack_geometry=await page.evaluate("""() => [...document.querySelectorAll('.strip')].every(strip=>{
+           const rack=strip.querySelector('.rack,.master-fx-rack');
+           const cells=[...rack.querySelectorAll('.insert-slot,.master-fx-slot')];
+           const r=rack.getBoundingClientRect();
+           return cells.length===6&&cells.every(c=>{
+             const b=c.getBoundingClientRect();return b.top>=r.top-.5 && b.bottom<=r.bottom+.5;
+           });
+        })""")
+        assert rack_geometry, 'Some of the six FX slots are clipped'
+
         assert await page.locator('.right-rail,.master-tabs,.head').count()==0
         assert await page.locator('[data-master-output]').count()==0
         assert await page.locator('.master-stereo-badge,.master-route-label').count()==2
@@ -86,7 +102,7 @@ async def main():
         assert left_fill['width']>10 and left_fill['x']<at_center['x'],left_fill
         await p1.press('Home')
         # Inline strip FX power and full FX Rack power reflect same saved state.
-        assert await page.locator('.strip .insert-slot').count()==60
+        assert await page.locator('.strip .insert-slot').count()==72
         inline=page.locator('[data-fxpower="0:0"]')
         assert await inline.get_attribute('aria-pressed')=='true'
         assert await page.locator('[data-insert="0:0"]').count()==1
@@ -121,7 +137,7 @@ async def main():
         # FX power and FX name remain separate inside the 104px channel strip.
         assert await page.evaluate("""() => [...document.querySelectorAll('.strip .insert-slot')].every(slot=>{
             const cell=slot.getBoundingClientRect(),strip=slot.closest('.strip').getBoundingClientRect();
-            return cell.x>=strip.x-1&&cell.right<=strip.right+1&&cell.height===25
+            return cell.x>=strip.x-1&&cell.right<=strip.right+1&&cell.height===27
         })"""), 'FX power overflow or slot geometry changed'
         # Channel identities are real editable state, not only colored labels.
         await page.locator('[data-editstrip="0"]').click()
@@ -140,7 +156,7 @@ async def main():
         await page.locator('#identityCancel').click()
         assert await page.locator('[data-editstrip="0"] .strip-caption').inner_text()=='Vocal Main'
         # Master FX chain has its own slots and independent quick power.
-        assert await page.locator('.master-fx-slot').count()==5
+        assert await page.locator('.master-fx-slot').count()==6
         assert await page.locator('[data-fader="master"] .cap.master-cap').count()==1
         master_fader_debug=await page.locator('[data-fader="master"] .cap.master-cap').evaluate("""(el)=>{
             const c=getComputedStyle(el),p=getComputedStyle(el.parentElement),r=el.getBoundingClientRect();
@@ -202,6 +218,13 @@ async def main():
         assert await page.locator('.strip .insert-name').first.inner_text() != ''
         assert await page.locator('.strip .insert-add-glyph').count()>0
         await page.screenshot(path=str(project/'mixer-master-clip-review.png'),full_page=True)
+        # Click any passive part of master strip, it must gain the same full border.
+        await page.locator('#masterLeft .master-ch-id').click()
+        assert await page.locator('#masterLeft').evaluate('(e)=>e.classList.contains("selected")')
+        assert await page.locator('[data-strip="0"]').evaluate('(e)=>!e.classList.contains("selected")')
+        await page.locator('[data-strip="0"] .ch-id').click()
+        assert await page.locator('#masterLeft').evaluate('(e)=>!e.classList.contains("selected")')
+
         pan=page.locator('[data-pan="0"]')
         await pan.focus()
         await pan.press('Home')
@@ -295,6 +318,21 @@ async def main():
         await page.mouse.move(cx,cy+18,steps=3)
         assert float(await channel.get_attribute('aria-valuenow'))<original
         await page.mouse.up()
+        # Rail click/drag uses a relative offset; unlike the old absolute-position
+        # algorithm it never teleports the thumb under the initial pointer.
+        for name in ('0','master'):
+            rail=page.locator(f'[data-fader="{name}"]')
+            await rail.focus()
+            await rail.press('Home')
+            await rail.press('PageUp')
+            baseline=float(await rail.get_attribute('aria-valuenow'))
+            box=await rail.bounding_box()
+            await page.mouse.move(box['x']+box['width']/2,box['y']+box['height']*.75)
+            await page.mouse.down()
+            assert float(await rail.get_attribute('aria-valuenow'))==baseline,(name,baseline)
+            await page.mouse.move(box['x']+box['width']/2,box['y']+box['height']*.75-18,steps=3)
+            assert float(await rail.get_attribute('aria-valuenow'))>baseline,(name,baseline)
+            await page.mouse.up()
         await page.screenshot(path=str(project/'fader-ui-smoke.png'),full_page=True)
         await page.locator('[data-view="FX RACK"]').click()
         await page.locator('[data-addplugin]').click()
