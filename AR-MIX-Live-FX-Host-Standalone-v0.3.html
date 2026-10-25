@@ -855,6 +855,13 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 #app .left-rail button.pushable:is(.selected,.active) > .shadow{
  transform:translateY(1px);
 }
+/* Selected/active keys stay seated even while hovered; hover-lift is for OFF only. */
+#app .left-rail button.pushable:is(.selected,.active):hover:not(:disabled) > .front{
+ transform:translateY(-2px);
+}
+#app .left-rail button.pushable:is(.selected,.active):hover:not(:disabled) > .shadow{
+ transform:translateY(1px);
+}
 #app .left-rail button.pushable:focus:not(:focus-visible){outline:none!important}
 #app .left-rail button.pushable:focus-visible{
  outline:2px solid #67d6ed!important;outline-offset:3px!important;
