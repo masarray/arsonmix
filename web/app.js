@@ -61,6 +61,18 @@ function panMarkup(ch,i){return `<div class="pan-track" data-pan="${i}" role="sl
 const channelIcons=['♩','♫','♬','🎙','🎸','🎹','🥁','🎧','▥','◉','◎','⊞'];
 const channelPalette=['#1699cd','#b92e41','#cf6b1e','#b28c27','#34a544','#168762','#0e95c9','#066fa9','#7140b5','#b52893','#c32974','#586889'];
 let editingChannel=-1,editingColor='',editingIcon='';
+// Position the lightweight popover at the strip name the user actually clicked.
+// Clamp the panel to the visible viewport without breaking its anchor/arrow.
+function positionChannelIdentity(){
+ const modal=$('channelIdentity');if(editingChannel<0||!modal||modal.classList.contains('hidden'))return;
+ const anchor=document.querySelector('[data-editstrip="'+editingChannel+'"]');
+ const panel=modal.querySelector('.identity-panel');if(!anchor||!panel)return;
+ const target=anchor.getBoundingClientRect(),pop=panel.getBoundingClientRect();
+ const left=clamp(target.left+target.width/2-pop.width/2,10,Math.max(10,innerWidth-pop.width-10));
+ const top=Math.max(10,target.top-pop.height-12);
+ panel.style.left=left+'px';panel.style.top=top+'px';
+ panel.style.setProperty('--identity-pointer-x',clamp(target.left+target.width/2-left,18,pop.width-18)+'px');
+}
 function openChannelIdentity(index){
  editingChannel=index;editingColor=channels[index].color||colors[index];editingIcon=channels[index].icon;
  const modal=$('channelIdentity');if(!modal)return;
@@ -68,9 +80,16 @@ function openChannelIdentity(index){
  $('identityName').value=channels[index].name;
  $('identityIcons').innerHTML=channelIcons.map(icon=>`<button type="button" class="identity-icon ${icon===editingIcon?'selected':''}" data-icon-choice="${safeText(icon)}" aria-pressed="${icon===editingIcon}">${safeText(icon)}</button>`).join('');
  $('identityColors').innerHTML=channelPalette.map(color=>`<button type="button" class="identity-color ${color===editingColor?'selected':''}" data-color-choice="${color}" style="--choice:${color}" aria-label="Channel color ${color}" aria-pressed="${color===editingColor}"></button>`).join('');
- modal.classList.remove('hidden');$('identityName').focus();$('identityName').select();
+ modal.classList.remove('hidden');
+ document.querySelectorAll('.strip.identity-editing').forEach(el=>el.classList.remove('identity-editing'));
+ document.querySelector('[data-strip="'+index+'"]')?.classList.add('identity-editing');
+ positionChannelIdentity();
+ $('identityName').focus();$('identityName').select();
 }
-function closeChannelIdentity(){editingChannel=-1;$('channelIdentity')?.classList.add('hidden')}
+function closeChannelIdentity(){
+ editingChannel=-1;$('channelIdentity')?.classList.add('hidden');
+ document.querySelectorAll('.strip.identity-editing').forEach(el=>el.classList.remove('identity-editing'));
+}
 function commitChannelIdentity(){
  if(editingChannel<0)return;const index=editingChannel;
  const name=$('identityName').value.trim().replace(/\s+/g,' ').slice(0,26);
@@ -81,6 +100,8 @@ function commitChannelIdentity(){
  if(view==='FX RACK')renderRackWorkspace();
  persistSession();flash('Channel identity updated');
 }
+window.addEventListener('resize',positionChannelIdentity);
+$('mixer').addEventListener('scroll',positionChannelIdentity,{passive:true});
 function makeStrip(ch,i){let inserts=ch.inserts.slice(0,6);while(inserts.length<6) inserts.push('');return `<article class="strip ${i===currentChannel?'selected':''}" data-strip="${i}" style="--ch:${ch.color||colors[i]}">
  <div class="ch-id">${i+1}</div><div class="rack">${inserts.map((n,j)=>`<div class="insert-slot ${n&&bypassed[fxKey(i,j)]?'is-bypassed':''}"><button class="insert ${!n?'empty':''}" data-insert="${i}:${j}" title="${n?'Open or replace '+safeText(n):'Add VST effect'}">${n?'':'<span class="insert-add-glyph" aria-hidden="true">＋</span>'}<span class="insert-name">${n? safeText(n):'ADD FX'}</span></button>${n?`<button type="button" class="fx-power ${bypassed[fxKey(i,j)]?'is-bypassed':''}" data-fxpower="${i}:${j}" aria-pressed="${!bypassed[fxKey(i,j)]}" aria-label="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}" title="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}">⏻</button>`:''}</div>`).join('')}</div>
  <div class="strip-controls"><div class="trim-row"><span class="mini-label">TRIM<br>dB</span><div class="mini-lcd" data-trim-read="${i}">${fmt(ch.trim)}</div></div>${knobMarkup('trim',i,ch.trim,'Trim')}<div class="pan-control">${panMarkup(ch,i)}<div class="pan-readline"><span aria-hidden="true">L</span><strong data-pan-read="${i}">${panText(ch.pan)}</strong><span aria-hidden="true">R</span></div></div><div class="utility-row"><button data-pre="${i}" class="${ch.pre?'active':''}">Ø</button><button data-hpf="${i}" class="${ch.hpf?'active':''}">HPF</button></div></div>
@@ -219,7 +240,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('button,[data-cho
  if(b.dataset.category){activeCategory=b.dataset.category;renderPluginBrowser();return}
  if(b.dataset.group!==undefined){flash('Group selection — interface placeholder');return}
  if(b.dataset.side){document.querySelectorAll('[data-side]').forEach(x=>x.classList.toggle('selected',x===b));if(b.dataset.side==='fx')setView('FX RACK');else setView('MIX');return}
- switch(b.id){case'identityCancel':closeChannelIdentity();break;case'identitySave':commitChannelIdentity();break;case'masterMute':masterMute=!masterMute;b.textContent='MUTE';b.classList.toggle('active',masterMute);b.setAttribute('aria-pressed',String(masterMute));send('masterMute',masterMute,-1);break;case'addScene':saveMixerSnapshot();break;case'saveFxPreset':saveFxChainPreset();break;case'menuScene':exportSession();break;case'closeBrowser':closePluginBrowser();break;case'closeFxInspector':pluginEditorIndex=null;renderRackWorkspace();break;case'modeToggle':toggleMode();break;case'chooseFxFile':importSession();break;case'arSignalOpen':if(!window.__JUCE__?.backend?.emitEvent)flash('Signal Check is available in the Windows desktop app');break;default:if(b.id)flash('UI study: '+b.textContent.trim().slice(0,28));}
+ switch(b.id){case'identityCancel':closeChannelIdentity();break;case'identitySave':commitChannelIdentity();break;case'masterMute':masterMute=!masterMute;b.textContent='MUTE';b.classList.toggle('active',masterMute);b.setAttribute('aria-pressed',String(masterMute));send('masterMute',masterMute,-1);break;case'addScene':saveMixerSnapshot();break;case'saveFxPreset':saveFxChainPreset();break;case'menuScene':exportSession();break;case'closeBrowser':closePluginBrowser();break;case'closeFxInspector':pluginEditorIndex=null;renderRackWorkspace();break;case'chooseFxFile':importSession();break;case'arSignalOpen':if(!window.__JUCE__?.backend?.emitEvent)flash('Signal Check is available in the Windows desktop app');break;default:if(b.id)flash('UI study: '+b.textContent.trim().slice(0,28));}
 });
 document.addEventListener('dblclick',e=>{const pan=e.target.closest('[data-pan]');if(pan){e.preventDefault();e.stopPropagation();updatePan(pan.dataset.pan==='master'?'master':+pan.dataset.pan,0)}},true);
 // Double-click a fader for 0 dB unity gain, without changing workspace.
@@ -292,7 +313,7 @@ const pluginCatalog=[
  {name:'Stereo Chorus',type:'Creative',badge:'CH',hint:'Gentle stereo width'},
  {name:'Saturator',type:'Creative',badge:'SAT',hint:'Analog-style harmonic color'}
 ];
-let pendingSlot=-1, activeCategory='All', easy=true, userSnapshots={},savedChains={},bypassed={},fxParams={},pluginEditorIndex=null;
+let pendingSlot=-1, activeCategory='All', userSnapshots={},savedChains={},bypassed={},fxParams={},pluginEditorIndex=null;
 const initialFactoryChannels=channels.map(c=>({...c,inserts:[...c.inserts]}));
 const safeText=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function normalChain(ch){return ch.inserts.filter(Boolean)}
@@ -372,8 +393,8 @@ function loadSnapshotByIndex(i){sceneIdx=(i+scenes.length)%scenes.length;const n
  createSide();persistSession()}
 function exportSession(){const data=JSON.stringify({...durableSession(),savedChains,userSnapshots},null,2);const blob=new Blob([data],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='ar-mix-live-session.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1200);flash('Session JSON exported')}
 function importSession(){const f=document.createElement('input');f.type='file';f.accept='application/json,.json';f.onchange=async()=>{const file=f.files?.[0];if(!file)return;if(file.size>2_000_000){flash('Session too large');return}try{const obj=JSON.parse(await file.text());applySession(obj);persistSession();flash('Session loaded')}catch{flash('Invalid JSON session')}};f.click()}
-function toggleMode(){easy=!easy;$('app').classList.toggle('easy',easy);$('modeToggle').classList.toggle('active',easy);$('modeToggle').textContent=easy?'EASY VIEW':'PRO VIEW';flash(easy?'Easy view: simplified controls':'Pro view: all controls visible')}
-$('app').classList.add('easy');$('modeToggle').classList.add('active');
+// Single optimized console layout. The unused PRO/EASY switch is retired.
+$('app').classList.add('easy');
 $('pluginSearch').addEventListener('input',renderPluginBrowser);
 document.addEventListener('input',e=>{const el=e.target;if(!el.dataset.fxparam)return;const slot=+el.dataset.slot,key=el.dataset.fxparam;if(!['mix','amount','output'].includes(key))return;const v=getFxParams(currentChannel,slot);v[key]=+el.value;const out=el.closest('label')?.querySelector('output');if(out)out.textContent=key==='output'?`${v[key]>0?'+':''}${v[key]} dB`:`${v[key]}%`;send('fxDemoParam',{slot,key,value:v[key]},currentChannel)});
 $('pluginModal').addEventListener('click',e=>{if(e.target===$('pluginModal'))closePluginBrowser()});

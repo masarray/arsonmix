@@ -4,22 +4,24 @@
 <div id="app" class="app">
   <header class="toolbar">
     <div class="brand"><span class="brand-ar">Ar</span><span class="brand-label">SonMix</span></div>
-    <div class="project"><span class="muted">Session:</span><strong> Live Vocal Studio</strong><span class="chev">▾</span></div>
-    <button type="button" class="spec spec-device" data-native-action="audioSetup" title="Configure ASIO / WASAPI"><strong id="headerDriver">Audio Device</strong></button>
-    <div class="spec spec-rate"><strong id="headerRate">--</strong> kHz</div>
-    <div class="spec spec-buffer"><strong id="headerBuffer">--</strong> samples</div>
-    <div class="toolbar-spacer"></div>
-    <div class="scene-select" id="currentScene">Snapshot: <b>Vocal Live</b> <span>▾</span></div>
-    <nav class="nav" aria-label="Primary tools">
-      <button type="button" data-view="MIX" class="selected">MIX</button>
-      <button type="button" data-view="FX RACK">FX RACK</button>
-      <button type="button" data-view="SIGNAL FLOW">SIGNAL FLOW</button>
-      <button type="button" data-my-sounds="1">MY SOUNDS</button>
-      <button type="button" data-plugin-manager="1">PLUGINS</button>
-      <button type="button" id="audioSetupBtn" data-native-action="audioSetup">SETUP</button>
-      <button type="button" id="arSignalOpen">SIGNAL CHECK</button>
-    </nav>
-    <button class="mode-pill" id="modeToggle" title="Toggle beginner and expert view">EASY VIEW</button>
+    <div class="toolbar-context">
+      <div class="project"><span class="muted">Session:</span><strong> Live Vocal Studio</strong><span class="chev">▾</span></div>
+      <button type="button" class="spec spec-device" data-native-action="audioSetup" title="Configure ASIO / WASAPI"><strong id="headerDriver">Audio Device</strong></button>
+      <div class="spec spec-rate"><strong id="headerRate">--</strong> kHz</div>
+      <div class="spec spec-buffer"><strong id="headerBuffer">--</strong> samples</div>
+      <div class="scene-select" id="currentScene">Snapshot: <b>Vocal Live</b> <span>▾</span></div>
+    </div>
+    <div class="toolbar-actions">
+      <nav class="nav" aria-label="Primary tools">
+        <button type="button" data-view="MIX" class="selected">MIX</button>
+        <button type="button" data-view="FX RACK">FX RACK</button>
+        <button type="button" data-view="SIGNAL FLOW">SIGNAL FLOW</button>
+        <button type="button" data-my-sounds="1">MY SOUNDS</button>
+        <button type="button" data-plugin-manager="1">PLUGINS</button>
+        <button type="button" id="audioSetupBtn" data-native-action="audioSetup">SETUP</button>
+        <button type="button" id="arSignalOpen">SIGNAL CHECK</button>
+      </nav>
+    </div>
   </header>
   <div class="main">
     <aside class="left-rail">

@@ -687,27 +687,104 @@
 @media(max-width:1370px){.toolbar .project{display:none}.toolbar .spec-buffer{display:none}}
 @media(max-width:1190px){.toolbar .spec-rate{display:none}.toolbar .scene-select{display:none}.toolbar .nav button{padding:0 7px}.status .status-help{display:none}}
 @media(max-width:1130px){.toolbar .spec-device{display:none}}
+
+/* 2026-10-25: single-layout console refinement. Preserve all native FX/fader controls. */
+.toolbar{height:56px;display:flex;align-items:center;gap:10px;padding:0 12px;justify-content:space-between}
+.toolbar .brand{height:100%;display:flex;align-items:center;flex:0 0 auto;margin:0;padding:0 13px 0 4px;font-size:19px}
+.toolbar-context{display:flex;align-items:center;justify-content:flex-start;gap:7px;flex:0 1 auto;min-width:0;height:100%}
+.toolbar-actions{display:flex;align-items:center;justify-content:flex-end;flex:1 1 0;min-width:0;height:100%}
+.toolbar .project{display:flex;align-items:center;gap:3px;width:178px;height:34px;padding:0 11px;flex:0 0 178px;white-space:nowrap}
+.toolbar .project .chev{margin-left:auto}
+.toolbar .spec,.toolbar .scene-select{height:34px;align-items:center}
+.toolbar .spec-device{display:flex;align-items:center;justify-content:center;flex:0 0 112px;width:112px}
+.toolbar .spec-rate{flex:0 0 66px;width:66px;display:flex;align-items:center;justify-content:center;gap:4px}
+.toolbar .spec-buffer{flex:0 0 97px;width:97px;display:flex;align-items:center;justify-content:center;gap:4px}
+.toolbar .scene-select{display:flex;min-width:0;max-width:none;width:150px;flex:0 0 150px}
+.toolbar-actions .nav{width:100%;max-width:810px;display:flex;align-items:center;gap:4px;margin:0;min-width:0;flex:1 1 auto}
+.toolbar-actions .nav button{height:34px;min-width:0;flex:1 1 0;padding:0 9px;font-size:10px;font-weight:600;display:flex;align-items:center;justify-content:center;white-space:nowrap;line-height:1;box-sizing:border-box}
+.toolbar-actions .nav #arSignalOpen{flex:1.22 1 0}
+@media(max-width:1580px){
+ .toolbar .project{display:none}
+ .toolbar-context{flex:0 0 auto}
+ .toolbar-actions .nav{max-width:880px}
+}
+@media(max-width:1250px){
+ .toolbar .spec-buffer{display:none}
+ .toolbar .scene-select{width:132px;flex-basis:132px}
+ .toolbar-actions .nav button{padding:0 7px}
+}
+@media(max-width:1100px){
+ .toolbar .spec-rate{display:none}
+ .toolbar .spec-device{display:none}
+ .toolbar-actions .nav button{font-size:9px}
+}
+@media(max-width:980px){
+ .toolbar .scene-select{display:none}
+}
+/* Master is a proper stereo bus, wider than the mono source strips. */
+.strip:not(.master-strip){flex:1 1 90px;min-width:90px;max-width:140px}
+#masterLeft.strip.master-strip{flex:0 0 168px;min-width:168px;max-width:168px}
+#masterLeft .master-fader-zone .meter-unit{flex:0 0 15px;min-width:15px;width:15px}
+#masterLeft .master-fader-zone .fader{min-width:38px}
+#masterLeft .master-fader-zone{gap:5px;padding-left:7px;padding-right:7px}
+/* One shared vertical grid; SOURCE MUTE/SOLO and MASTER MUTE/STEREO center identically. */
+.app.easy .strip .strip-controls,
+.app.easy #masterLeft .master-controls-zone{height:97px;flex:0 0 97px;min-height:97px}
+.strip .channel-actions,#masterLeft .master-actions{
+ height:41px;min-height:41px;flex:0 0 41px;display:flex;align-items:center;justify-content:center;
+ gap:5px;padding:0 6px;margin:0;box-sizing:border-box;
+}
+.strip .channel-actions .candy,
+#masterLeft .master-actions .candy,
+#masterLeft .master-actions .master-stereo-badge{
+ height:29px;min-height:29px;max-height:29px;flex:1 1 0;align-self:center;margin:0;
+ display:grid;place-items:center;padding:0;line-height:1;box-sizing:border-box;
+}
+#masterLeft .master-actions .master-stereo-badge{letter-spacing:.25px;font-size:10px}
+/* Contextual channel-properties popover: attach to strip name, no full-screen blur. */
+.identity-overlay{display:block;background:transparent;backdrop-filter:none;z-index:80}
+.identity-panel{
+ position:fixed;left:10px;top:10px;width:min(354px,calc(100vw - 20px));
+ max-height:calc(100vh - 20px);overflow:visible;
+ border-radius:5px;padding:13px 15px 14px;
+}
+.identity-panel::after{
+ content:"";position:absolute;bottom:-7px;left:var(--identity-pointer-x,50%);
+ width:12px;height:12px;transform:translateX(-50%) rotate(45deg);
+ background:#15232c;border-right:1px solid #5a7481;border-bottom:1px solid #5a7481;
+}
+.identity-panel .identity-heading{font-size:16px;margin:3px 0 13px}
+.identity-panel .identity-label{margin:11px 0 6px}
+.identity-panel .identity-icon{height:32px}
+.identity-panel .identity-color{height:25px}
+.identity-panel .identity-actions{margin-top:14px}
+.strip.identity-editing .strip-name{
+ outline:2px solid #5fd5fa;outline-offset:-3px;
+ box-shadow:inset 0 0 0 1px #63d9f9a8;
+}
 </style></head>
 <body>
 <div id="app" class="app">
   <header class="toolbar">
     <div class="brand"><span class="brand-ar">Ar</span><span class="brand-label">SonMix</span></div>
-    <div class="project"><span class="muted">Session:</span><strong> Live Vocal Studio</strong><span class="chev">▾</span></div>
-    <button type="button" class="spec spec-device" data-native-action="audioSetup" title="Configure ASIO / WASAPI"><strong id="headerDriver">Audio Device</strong></button>
-    <div class="spec spec-rate"><strong id="headerRate">--</strong> kHz</div>
-    <div class="spec spec-buffer"><strong id="headerBuffer">--</strong> samples</div>
-    <div class="toolbar-spacer"></div>
-    <div class="scene-select" id="currentScene">Snapshot: <b>Vocal Live</b> <span>▾</span></div>
-    <nav class="nav" aria-label="Primary tools">
-      <button type="button" data-view="MIX" class="selected">MIX</button>
-      <button type="button" data-view="FX RACK">FX RACK</button>
-      <button type="button" data-view="SIGNAL FLOW">SIGNAL FLOW</button>
-      <button type="button" data-my-sounds="1">MY SOUNDS</button>
-      <button type="button" data-plugin-manager="1">PLUGINS</button>
-      <button type="button" id="audioSetupBtn" data-native-action="audioSetup">SETUP</button>
-      <button type="button" id="arSignalOpen">SIGNAL CHECK</button>
-    </nav>
-    <button class="mode-pill" id="modeToggle" title="Toggle beginner and expert view">EASY VIEW</button>
+    <div class="toolbar-context">
+      <div class="project"><span class="muted">Session:</span><strong> Live Vocal Studio</strong><span class="chev">▾</span></div>
+      <button type="button" class="spec spec-device" data-native-action="audioSetup" title="Configure ASIO / WASAPI"><strong id="headerDriver">Audio Device</strong></button>
+      <div class="spec spec-rate"><strong id="headerRate">--</strong> kHz</div>
+      <div class="spec spec-buffer"><strong id="headerBuffer">--</strong> samples</div>
+      <div class="scene-select" id="currentScene">Snapshot: <b>Vocal Live</b> <span>▾</span></div>
+    </div>
+    <div class="toolbar-actions">
+      <nav class="nav" aria-label="Primary tools">
+        <button type="button" data-view="MIX" class="selected">MIX</button>
+        <button type="button" data-view="FX RACK">FX RACK</button>
+        <button type="button" data-view="SIGNAL FLOW">SIGNAL FLOW</button>
+        <button type="button" data-my-sounds="1">MY SOUNDS</button>
+        <button type="button" data-plugin-manager="1">PLUGINS</button>
+        <button type="button" id="audioSetupBtn" data-native-action="audioSetup">SETUP</button>
+        <button type="button" id="arSignalOpen">SIGNAL CHECK</button>
+      </nav>
+    </div>
   </header>
   <div class="main">
     <aside class="left-rail">
@@ -796,6 +873,18 @@ function panMarkup(ch,i){return `<div class="pan-track" data-pan="${i}" role="sl
 const channelIcons=['♩','♫','♬','🎙','🎸','🎹','🥁','🎧','▥','◉','◎','⊞'];
 const channelPalette=['#1699cd','#b92e41','#cf6b1e','#b28c27','#34a544','#168762','#0e95c9','#066fa9','#7140b5','#b52893','#c32974','#586889'];
 let editingChannel=-1,editingColor='',editingIcon='';
+// Position the lightweight popover at the strip name the user actually clicked.
+// Clamp the panel to the visible viewport without breaking its anchor/arrow.
+function positionChannelIdentity(){
+ const modal=$('channelIdentity');if(editingChannel<0||!modal||modal.classList.contains('hidden'))return;
+ const anchor=document.querySelector('[data-editstrip="'+editingChannel+'"]');
+ const panel=modal.querySelector('.identity-panel');if(!anchor||!panel)return;
+ const target=anchor.getBoundingClientRect(),pop=panel.getBoundingClientRect();
+ const left=clamp(target.left+target.width/2-pop.width/2,10,Math.max(10,innerWidth-pop.width-10));
+ const top=Math.max(10,target.top-pop.height-12);
+ panel.style.left=left+'px';panel.style.top=top+'px';
+ panel.style.setProperty('--identity-pointer-x',clamp(target.left+target.width/2-left,18,pop.width-18)+'px');
+}
 function openChannelIdentity(index){
  editingChannel=index;editingColor=channels[index].color||colors[index];editingIcon=channels[index].icon;
  const modal=$('channelIdentity');if(!modal)return;
@@ -803,9 +892,16 @@ function openChannelIdentity(index){
  $('identityName').value=channels[index].name;
  $('identityIcons').innerHTML=channelIcons.map(icon=>`<button type="button" class="identity-icon ${icon===editingIcon?'selected':''}" data-icon-choice="${safeText(icon)}" aria-pressed="${icon===editingIcon}">${safeText(icon)}</button>`).join('');
  $('identityColors').innerHTML=channelPalette.map(color=>`<button type="button" class="identity-color ${color===editingColor?'selected':''}" data-color-choice="${color}" style="--choice:${color}" aria-label="Channel color ${color}" aria-pressed="${color===editingColor}"></button>`).join('');
- modal.classList.remove('hidden');$('identityName').focus();$('identityName').select();
+ modal.classList.remove('hidden');
+ document.querySelectorAll('.strip.identity-editing').forEach(el=>el.classList.remove('identity-editing'));
+ document.querySelector('[data-strip="'+index+'"]')?.classList.add('identity-editing');
+ positionChannelIdentity();
+ $('identityName').focus();$('identityName').select();
 }
-function closeChannelIdentity(){editingChannel=-1;$('channelIdentity')?.classList.add('hidden')}
+function closeChannelIdentity(){
+ editingChannel=-1;$('channelIdentity')?.classList.add('hidden');
+ document.querySelectorAll('.strip.identity-editing').forEach(el=>el.classList.remove('identity-editing'));
+}
 function commitChannelIdentity(){
  if(editingChannel<0)return;const index=editingChannel;
  const name=$('identityName').value.trim().replace(/\s+/g,' ').slice(0,26);
@@ -816,6 +912,8 @@ function commitChannelIdentity(){
  if(view==='FX RACK')renderRackWorkspace();
  persistSession();flash('Channel identity updated');
 }
+window.addEventListener('resize',positionChannelIdentity);
+$('mixer').addEventListener('scroll',positionChannelIdentity,{passive:true});
 function makeStrip(ch,i){let inserts=ch.inserts.slice(0,6);while(inserts.length<6) inserts.push('');return `<article class="strip ${i===currentChannel?'selected':''}" data-strip="${i}" style="--ch:${ch.color||colors[i]}">
  <div class="ch-id">${i+1}</div><div class="rack">${inserts.map((n,j)=>`<div class="insert-slot ${n&&bypassed[fxKey(i,j)]?'is-bypassed':''}"><button class="insert ${!n?'empty':''}" data-insert="${i}:${j}" title="${n?'Open or replace '+safeText(n):'Add VST effect'}">${n?'':'<span class="insert-add-glyph" aria-hidden="true">＋</span>'}<span class="insert-name">${n? safeText(n):'ADD FX'}</span></button>${n?`<button type="button" class="fx-power ${bypassed[fxKey(i,j)]?'is-bypassed':''}" data-fxpower="${i}:${j}" aria-pressed="${!bypassed[fxKey(i,j)]}" aria-label="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}" title="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}">⏻</button>`:''}</div>`).join('')}</div>
  <div class="strip-controls"><div class="trim-row"><span class="mini-label">TRIM<br>dB</span><div class="mini-lcd" data-trim-read="${i}">${fmt(ch.trim)}</div></div>${knobMarkup('trim',i,ch.trim,'Trim')}<div class="pan-control">${panMarkup(ch,i)}<div class="pan-readline"><span aria-hidden="true">L</span><strong data-pan-read="${i}">${panText(ch.pan)}</strong><span aria-hidden="true">R</span></div></div><div class="utility-row"><button data-pre="${i}" class="${ch.pre?'active':''}">Ø</button><button data-hpf="${i}" class="${ch.hpf?'active':''}">HPF</button></div></div>
@@ -954,7 +1052,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('button,[data-cho
  if(b.dataset.category){activeCategory=b.dataset.category;renderPluginBrowser();return}
  if(b.dataset.group!==undefined){flash('Group selection — interface placeholder');return}
  if(b.dataset.side){document.querySelectorAll('[data-side]').forEach(x=>x.classList.toggle('selected',x===b));if(b.dataset.side==='fx')setView('FX RACK');else setView('MIX');return}
- switch(b.id){case'identityCancel':closeChannelIdentity();break;case'identitySave':commitChannelIdentity();break;case'masterMute':masterMute=!masterMute;b.textContent='MUTE';b.classList.toggle('active',masterMute);b.setAttribute('aria-pressed',String(masterMute));send('masterMute',masterMute,-1);break;case'addScene':saveMixerSnapshot();break;case'saveFxPreset':saveFxChainPreset();break;case'menuScene':exportSession();break;case'closeBrowser':closePluginBrowser();break;case'closeFxInspector':pluginEditorIndex=null;renderRackWorkspace();break;case'modeToggle':toggleMode();break;case'chooseFxFile':importSession();break;case'arSignalOpen':if(!window.__JUCE__?.backend?.emitEvent)flash('Signal Check is available in the Windows desktop app');break;default:if(b.id)flash('UI study: '+b.textContent.trim().slice(0,28));}
+ switch(b.id){case'identityCancel':closeChannelIdentity();break;case'identitySave':commitChannelIdentity();break;case'masterMute':masterMute=!masterMute;b.textContent='MUTE';b.classList.toggle('active',masterMute);b.setAttribute('aria-pressed',String(masterMute));send('masterMute',masterMute,-1);break;case'addScene':saveMixerSnapshot();break;case'saveFxPreset':saveFxChainPreset();break;case'menuScene':exportSession();break;case'closeBrowser':closePluginBrowser();break;case'closeFxInspector':pluginEditorIndex=null;renderRackWorkspace();break;case'chooseFxFile':importSession();break;case'arSignalOpen':if(!window.__JUCE__?.backend?.emitEvent)flash('Signal Check is available in the Windows desktop app');break;default:if(b.id)flash('UI study: '+b.textContent.trim().slice(0,28));}
 });
 document.addEventListener('dblclick',e=>{const pan=e.target.closest('[data-pan]');if(pan){e.preventDefault();e.stopPropagation();updatePan(pan.dataset.pan==='master'?'master':+pan.dataset.pan,0)}},true);
 // Double-click a fader for 0 dB unity gain, without changing workspace.
@@ -1027,7 +1125,7 @@ const pluginCatalog=[
  {name:'Stereo Chorus',type:'Creative',badge:'CH',hint:'Gentle stereo width'},
  {name:'Saturator',type:'Creative',badge:'SAT',hint:'Analog-style harmonic color'}
 ];
-let pendingSlot=-1, activeCategory='All', easy=true, userSnapshots={},savedChains={},bypassed={},fxParams={},pluginEditorIndex=null;
+let pendingSlot=-1, activeCategory='All', userSnapshots={},savedChains={},bypassed={},fxParams={},pluginEditorIndex=null;
 const initialFactoryChannels=channels.map(c=>({...c,inserts:[...c.inserts]}));
 const safeText=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function normalChain(ch){return ch.inserts.filter(Boolean)}
@@ -1107,8 +1205,8 @@ function loadSnapshotByIndex(i){sceneIdx=(i+scenes.length)%scenes.length;const n
  createSide();persistSession()}
 function exportSession(){const data=JSON.stringify({...durableSession(),savedChains,userSnapshots},null,2);const blob=new Blob([data],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='ar-mix-live-session.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1200);flash('Session JSON exported')}
 function importSession(){const f=document.createElement('input');f.type='file';f.accept='application/json,.json';f.onchange=async()=>{const file=f.files?.[0];if(!file)return;if(file.size>2_000_000){flash('Session too large');return}try{const obj=JSON.parse(await file.text());applySession(obj);persistSession();flash('Session loaded')}catch{flash('Invalid JSON session')}};f.click()}
-function toggleMode(){easy=!easy;$('app').classList.toggle('easy',easy);$('modeToggle').classList.toggle('active',easy);$('modeToggle').textContent=easy?'EASY VIEW':'PRO VIEW';flash(easy?'Easy view: simplified controls':'Pro view: all controls visible')}
-$('app').classList.add('easy');$('modeToggle').classList.add('active');
+// Single optimized console layout. The unused PRO/EASY switch is retired.
+$('app').classList.add('easy');
 $('pluginSearch').addEventListener('input',renderPluginBrowser);
 document.addEventListener('input',e=>{const el=e.target;if(!el.dataset.fxparam)return;const slot=+el.dataset.slot,key=el.dataset.fxparam;if(!['mix','amount','output'].includes(key))return;const v=getFxParams(currentChannel,slot);v[key]=+el.value;const out=el.closest('label')?.querySelector('output');if(out)out.textContent=key==='output'?`${v[key]>0?'+':''}${v[key]} dB`:`${v[key]}%`;send('fxDemoParam',{slot,key,value:v[key]},currentChannel)});
 $('pluginModal').addEventListener('click',e=>{if(e.target===$('pluginModal'))closePluginBrowser()});

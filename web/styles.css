@@ -686,3 +686,78 @@
 @media(max-width:1370px){.toolbar .project{display:none}.toolbar .spec-buffer{display:none}}
 @media(max-width:1190px){.toolbar .spec-rate{display:none}.toolbar .scene-select{display:none}.toolbar .nav button{padding:0 7px}.status .status-help{display:none}}
 @media(max-width:1130px){.toolbar .spec-device{display:none}}
+
+/* 2026-10-25: single-layout console refinement. Preserve all native FX/fader controls. */
+.toolbar{height:56px;display:flex;align-items:center;gap:10px;padding:0 12px;justify-content:space-between}
+.toolbar .brand{height:100%;display:flex;align-items:center;flex:0 0 auto;margin:0;padding:0 13px 0 4px;font-size:19px}
+.toolbar-context{display:flex;align-items:center;justify-content:flex-start;gap:7px;flex:0 1 auto;min-width:0;height:100%}
+.toolbar-actions{display:flex;align-items:center;justify-content:flex-end;flex:1 1 0;min-width:0;height:100%}
+.toolbar .project{display:flex;align-items:center;gap:3px;width:178px;height:34px;padding:0 11px;flex:0 0 178px;white-space:nowrap}
+.toolbar .project .chev{margin-left:auto}
+.toolbar .spec,.toolbar .scene-select{height:34px;align-items:center}
+.toolbar .spec-device{display:flex;align-items:center;justify-content:center;flex:0 0 112px;width:112px}
+.toolbar .spec-rate{flex:0 0 66px;width:66px;display:flex;align-items:center;justify-content:center;gap:4px}
+.toolbar .spec-buffer{flex:0 0 97px;width:97px;display:flex;align-items:center;justify-content:center;gap:4px}
+.toolbar .scene-select{display:flex;min-width:0;max-width:none;width:150px;flex:0 0 150px}
+.toolbar-actions .nav{width:100%;max-width:810px;display:flex;align-items:center;gap:4px;margin:0;min-width:0;flex:1 1 auto}
+.toolbar-actions .nav button{height:34px;min-width:0;flex:1 1 0;padding:0 9px;font-size:10px;font-weight:600;display:flex;align-items:center;justify-content:center;white-space:nowrap;line-height:1;box-sizing:border-box}
+.toolbar-actions .nav #arSignalOpen{flex:1.22 1 0}
+@media(max-width:1580px){
+ .toolbar .project{display:none}
+ .toolbar-context{flex:0 0 auto}
+ .toolbar-actions .nav{max-width:880px}
+}
+@media(max-width:1250px){
+ .toolbar .spec-buffer{display:none}
+ .toolbar .scene-select{width:132px;flex-basis:132px}
+ .toolbar-actions .nav button{padding:0 7px}
+}
+@media(max-width:1100px){
+ .toolbar .spec-rate{display:none}
+ .toolbar .spec-device{display:none}
+ .toolbar-actions .nav button{font-size:9px}
+}
+@media(max-width:980px){
+ .toolbar .scene-select{display:none}
+}
+/* Master is a proper stereo bus, wider than the mono source strips. */
+.strip:not(.master-strip){flex:1 1 90px;min-width:90px;max-width:140px}
+#masterLeft.strip.master-strip{flex:0 0 168px;min-width:168px;max-width:168px}
+#masterLeft .master-fader-zone .meter-unit{flex:0 0 15px;min-width:15px;width:15px}
+#masterLeft .master-fader-zone .fader{min-width:38px}
+#masterLeft .master-fader-zone{gap:5px;padding-left:7px;padding-right:7px}
+/* One shared vertical grid; SOURCE MUTE/SOLO and MASTER MUTE/STEREO center identically. */
+.app.easy .strip .strip-controls,
+.app.easy #masterLeft .master-controls-zone{height:97px;flex:0 0 97px;min-height:97px}
+.strip .channel-actions,#masterLeft .master-actions{
+ height:41px;min-height:41px;flex:0 0 41px;display:flex;align-items:center;justify-content:center;
+ gap:5px;padding:0 6px;margin:0;box-sizing:border-box;
+}
+.strip .channel-actions .candy,
+#masterLeft .master-actions .candy,
+#masterLeft .master-actions .master-stereo-badge{
+ height:29px;min-height:29px;max-height:29px;flex:1 1 0;align-self:center;margin:0;
+ display:grid;place-items:center;padding:0;line-height:1;box-sizing:border-box;
+}
+#masterLeft .master-actions .master-stereo-badge{letter-spacing:.25px;font-size:10px}
+/* Contextual channel-properties popover: attach to strip name, no full-screen blur. */
+.identity-overlay{display:block;background:transparent;backdrop-filter:none;z-index:80}
+.identity-panel{
+ position:fixed;left:10px;top:10px;width:min(354px,calc(100vw - 20px));
+ max-height:calc(100vh - 20px);overflow:visible;
+ border-radius:5px;padding:13px 15px 14px;
+}
+.identity-panel::after{
+ content:"";position:absolute;bottom:-7px;left:var(--identity-pointer-x,50%);
+ width:12px;height:12px;transform:translateX(-50%) rotate(45deg);
+ background:#15232c;border-right:1px solid #5a7481;border-bottom:1px solid #5a7481;
+}
+.identity-panel .identity-heading{font-size:16px;margin:3px 0 13px}
+.identity-panel .identity-label{margin:11px 0 6px}
+.identity-panel .identity-icon{height:32px}
+.identity-panel .identity-color{height:25px}
+.identity-panel .identity-actions{margin-top:14px}
+.strip.identity-editing .strip-name{
+ outline:2px solid #5fd5fa;outline-offset:-3px;
+ box-shadow:inset 0 0 0 1px #63d9f9a8;
+}
