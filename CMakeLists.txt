@@ -19,7 +19,7 @@ juce_add_gui_app(ARMixConsole
 juce_add_binary_data(ARMixAssets SOURCES
     web/index.html web/styles.css web/app.js web/bridge.js web/monitor.js)
 
-target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h src/PluginCatalog.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/DeviceRecoveryPolicy.h engine/device/SplitStreamTelemetry.h)
+target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h src/PluginCatalog.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/DeviceRecoveryPolicy.h engine/device/SplitStreamTelemetry.h engine/device/IndependentClockPipeline.h)
 target_compile_definitions(ARMixConsole PRIVATE
     JUCE_WEB_BROWSER=1
     JUCE_USE_WIN_WEBVIEW2=1
@@ -40,6 +40,9 @@ target_link_libraries(ARMixConsole PRIVATE
 
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(ARMixIndependentPipelineTests tests/independent_clock_pipeline_test.cpp)
+  target_compile_features(ARMixIndependentPipelineTests PRIVATE cxx_std_20)
+  add_test(NAME IndependentClockPipeline COMMAND ARMixIndependentPipelineTests)
   add_executable(ARMixSplitTelemetryTests tests/split_stream_telemetry_test.cpp)
   target_compile_features(ARMixSplitTelemetryTests PRIVATE cxx_std_20)
   add_test(NAME SplitStreamTelemetry COMMAND ARMixSplitTelemetryTests)
