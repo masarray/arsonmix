@@ -18,10 +18,18 @@
   <div class="main">
     <aside class="left-rail">
       <div class="seg tabs"><button class="selected" data-side="channels">CHANNELS</button><button data-side="fx">FX CHAINS</button></div>
-      <div id="channelList" class="channel-list"></div>
-      <div id="groupsList" class="rail-list hidden"></div><div class="rail-section-title">QUICK SOUND PRESETS</div><div class="rail-presets" id="presetList"><button data-preset="Clean Vocal">✦ Clean Vocal</button><button data-preset="Warm Karaoke">✦ Warm Karaoke</button><button data-preset="Live Broadcast">✦ Live Broadcast</button></div><div class="rail-section-title">ACTIVE INPUT</div><div class="rail-signal" id="activeInput">Mic In → FX Chain → Master</div>
-      <div class="rail-section-title">MIXER SNAPSHOTS</div><div id="scenesList" class="rail-list scenes-list"></div>
-      <div class="rail-bottom"><button id="addScene" title="Save mixer snapshot">＋ SAVE</button><button id="menuScene" title="Manage snapshots">···</button><button id="saveFxPreset" title="Save FX chain preset">FX SAVE</button></div>
+      <div id="channelList" class="channel-list" aria-label="Mixer channels"></div>
+      <div id="groupsList" class="rail-list hidden"></div>
+      <div class="rail-section-title">QUICK SOUND PRESETS</div>
+      <div class="rail-presets" id="presetList"><button data-preset="Clean Vocal">Clean Vocal</button><button data-preset="Warm Karaoke">Warm Karaoke</button><button data-preset="Live Broadcast">Live Broadcast</button></div>
+      <div class="rail-section-title">MIXER SNAPSHOTS</div>
+      <div id="scenesList" class="rail-list scenes-list"></div>
+      <div class="rail-bottom" role="group" aria-label="Session actions">
+        <button id="addScene" title="Save current mixer as a named snapshot">＋ SAVE SNAPSHOT</button>
+        <button id="saveFxPreset" title="Save this channel's FX chain as a preset">SAVE FX</button>
+        <button id="menuScene" title="Export the complete session as JSON">EXPORT</button>
+      </div>
+      <div class="rail-input-footer"><span class="rail-live-indicator" aria-hidden="true"></span><span id="activeInput">MIC → FX → MASTER</span></div>
     </aside>
     <section class="workbench">
       <div id="mixer" class="mixer"></div>

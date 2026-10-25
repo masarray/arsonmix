@@ -107,11 +107,10 @@ function renderMaster(){
  host.innerHTML=`<div class="ch-id master-ch-id">MASTER</div>
  <div class="master-fx-rack">${masterFxRows()}</div>
  <div class="strip-controls master-controls-zone">
-  <div class="master-analysis">
-   <div class="master-info-kicker">OUTPUT ANALYSIS <span>SIM</span></div>
-   <div class="master-info-row"><span>LUFS-I</span><strong id="masterLufs">--</strong></div>
-   <div class="master-info-row"><span>dBTP</span><strong id="masterDbtp">--</strong></div>
-   <div class="master-info-row"><span>PEAK</span><strong id="masterPeakDb">--</strong></div>
+  <div class="master-analysis" role="group" aria-label="Livestreaming loudness and true peak (simulated)">
+   <div class="master-info-kicker">STREAM LEVELS <span>SIM</span></div>
+   <div class="master-info-row"><span>LUFS-I</span><strong id="masterLufs" aria-label="Integrated loudness">--</strong></div>
+   <div class="master-info-row"><span>dBTP</span><strong id="masterDbtp" aria-label="True peak">--</strong></div>
   </div>
  <div class="master-pan-wrap">
     <div class="pan-control"><div class="pan-track ${masterPan===0?'is-centered':''}" data-pan="master"
@@ -280,10 +279,9 @@ let lastMeterFrame=0;function meters(t){
  const l=clamp(base+Math.sin(t*.003)*6,3,99),r=clamp(base-5+Math.sin(t*.003+1)*7,3,99);
  updateMeterVisual('masterL',masterMute?2:l,t);updateMeterVisual('masterR',masterMute?2:r,t);
  // UI demonstration only. These values are never from a true-peak or loudness meter.
- const lufs=$('masterLufs'),tp=$('masterDbtp'),peak=$('masterPeakDb');
+ const lufs=$('masterLufs'),tp=$('masterDbtp');
  if(lufs)lufs.textContent=(-31+(l+r)/11).toFixed(1);
  if(tp)tp.textContent=(-18+Math.max(l,r)/7).toFixed(1);
- if(peak)peak.textContent=(-60+Math.max(l,r)*.61).toFixed(1);
 }
 // v0.3: demo-only FX catalog. Items represent mock plugins, not installed VST3 binaries.
 const pluginCatalog=[

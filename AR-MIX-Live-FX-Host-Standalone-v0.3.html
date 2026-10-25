@@ -593,6 +593,81 @@
 #masterLeft .master-controls-zone .master-analysis .master-info-row{font:9px/9px Consolas,monospace;margin:0;min-height:9px}
 #masterLeft .master-controls-zone .master-analysis .master-info-row strong{font:600 10px/9px Consolas,monospace}
 #masterLeft .master-controls-zone .master-pan-wrap{flex:0 0 56px;min-height:56px;max-height:56px}
+
+
+/* ArSonMix v0.8: compact, readable streaming meters and organized left console. */
+/* This readout is an intentionally SIMULATED UI preview, never claim BS.1770/true-peak analysis. */
+#masterLeft .master-controls-zone .master-analysis{
+ height:38px;min-height:38px;flex:0 0 38px;display:flex;flex-direction:column;
+ justify-content:center;gap:1px;overflow:hidden;padding:1px 6px;
+ background:linear-gradient(180deg,#122734 0%,#081923 100%);
+ border:1px solid #365968;box-shadow:inset 0 1px 0 #9bd9ff2a;
+}
+#masterLeft .master-controls-zone .master-analysis .master-info-kicker{
+ flex:0 0 8px;height:8px;font:700 8px/8px Consolas,monospace;
+ color:#85bfcc;display:flex;align-items:center;justify-content:space-between;
+ margin:0;white-space:nowrap;letter-spacing:0
+}
+#masterLeft .master-controls-zone .master-analysis .master-info-kicker span{
+ font:700 7px/8px Consolas,monospace;color:#8f9ca5
+}
+#masterLeft .master-controls-zone .master-analysis .master-info-row{
+ flex:0 0 12px;height:12px;min-height:12px;line-height:12px;margin:0;
+ width:100%;display:flex;justify-content:space-between;align-items:center;
+ color:#a6d3de;font:600 9px/12px Consolas,monospace;white-space:nowrap
+}
+#masterLeft .master-controls-zone .master-analysis .master-info-row strong{
+ font:700 12px/12px Consolas,monospace;letter-spacing:.1px;
+ color:#e7d68e;text-shadow:0 0 3px #a997383f;min-width:38px;text-align:right
+}
+/* Section order is naturally stacked: no empty 120px gap in the channel list. */
+.left-rail{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.left-rail #channelList{flex:0 1 auto;min-height:0;max-height:44%;overflow-y:auto;overflow-x:hidden}
+.left-rail .rail-section-title{height:23px;min-height:23px;flex:0 0 23px;
+ border-top:1px solid #2d4957;background:linear-gradient(#1b2b35,#111c24);
+ padding:0 9px;color:#a4c7d4;letter-spacing:.4px;font:600 9px/23px 'Segoe UI',sans-serif
+}
+.left-rail .channel-list .list-item{height:23px;min-height:23px;padding:0 6px;gap:7px;font-size:10px}
+.left-rail .channel-list .list-item .swatch{height:14px;width:10px}
+.left-rail .channel-list .list-item .index{min-width:13px}
+.left-rail .rail-presets{flex:0 0 auto;display:grid;gap:3px;padding:5px 6px}
+.left-rail .rail-presets button{height:28px;min-height:28px;font-size:10px;padding-left:10px}
+.left-rail .scenes-list{flex:0 1 auto;max-height:128px;min-height:0;overflow-y:auto}
+.left-rail .scenes-list .list-item{height:23px;min-height:23px;padding-left:8px}
+.left-rail .rail-bottom{display:grid;flex:0 0 auto;grid-template-columns:1fr 1fr;
+ gap:4px;padding:6px 6px 5px;align-items:center;justify-content:stretch;
+ border-top:1px solid #253b47;background:linear-gradient(#14222c,#0e1921)
+}
+.left-rail .rail-bottom button{
+ height:27px;min-height:27px;width:100%;min-width:0;margin:0;
+ padding:0 3px 3px;font:600 9px/1 'Segoe UI',sans-serif;
+ background:var(--skin-small-off) center/100% 100% no-repeat!important;
+ text-align:center;color:#13242d!important;text-shadow:0 1px #fff8!important;
+ box-shadow:none!important;letter-spacing:0
+}
+.left-rail .rail-bottom #addScene{grid-column:1/-1;
+ background:var(--ar-btn-blue) center/100% 100% no-repeat!important;
+ color:#f5fcff!important;text-shadow:0 1px 1px #051b2a!important;
+ font-size:10px
+}
+.left-rail .rail-bottom #saveFxPreset{background:var(--ar-btn-tur) center/100% 100% no-repeat!important;
+ color:#f3ffff!important;text-shadow:0 1px 1px #0b343c!important}
+.left-rail .rail-bottom #menuScene{background:var(--ar-btn-off) center/100% 100% no-repeat!important;
+ color:#cfdfeb!important;text-shadow:0 1px 1px #08141e!important}
+.left-rail .rail-input-footer{margin-top:auto;min-height:28px;flex:0 0 28px;
+ display:flex;align-items:center;gap:6px;padding:0 8px;
+ border-top:1px solid #2f4857;background:linear-gradient(#152a35,#0c1b25);
+ color:#8abed0;font:600 9px Consolas,monospace;white-space:nowrap}
+.left-rail .rail-live-indicator{width:5px;height:5px;border-radius:50%;background:#39d2aa;
+ box-shadow:0 0 3px #2dba93}
+/* FX CHAINS uses the same compact list height, without forcing preset sections offscreen. */
+.left-rail #groupsList:not(.hidden){flex:0 0 auto;max-height:140px;overflow:auto}
+@media(max-height:730px){
+ .left-rail #channelList{max-height:39%}
+ .left-rail .rail-presets button{height:25px;min-height:25px}
+ .left-rail .rail-bottom button{height:25px;min-height:25px}
+ .left-rail .rail-input-footer{min-height:23px;flex-basis:23px}
+}
 </style></head>
 <body>
 <div id="app" class="app">
@@ -612,10 +687,18 @@
   <div class="main">
     <aside class="left-rail">
       <div class="seg tabs"><button class="selected" data-side="channels">CHANNELS</button><button data-side="fx">FX CHAINS</button></div>
-      <div id="channelList" class="channel-list"></div>
-      <div id="groupsList" class="rail-list hidden"></div><div class="rail-section-title">QUICK SOUND PRESETS</div><div class="rail-presets" id="presetList"><button data-preset="Clean Vocal">✦ Clean Vocal</button><button data-preset="Warm Karaoke">✦ Warm Karaoke</button><button data-preset="Live Broadcast">✦ Live Broadcast</button></div><div class="rail-section-title">ACTIVE INPUT</div><div class="rail-signal" id="activeInput">Mic In → FX Chain → Master</div>
-      <div class="rail-section-title">MIXER SNAPSHOTS</div><div id="scenesList" class="rail-list scenes-list"></div>
-      <div class="rail-bottom"><button id="addScene" title="Save mixer snapshot">＋ SAVE</button><button id="menuScene" title="Manage snapshots">···</button><button id="saveFxPreset" title="Save FX chain preset">FX SAVE</button></div>
+      <div id="channelList" class="channel-list" aria-label="Mixer channels"></div>
+      <div id="groupsList" class="rail-list hidden"></div>
+      <div class="rail-section-title">QUICK SOUND PRESETS</div>
+      <div class="rail-presets" id="presetList"><button data-preset="Clean Vocal">Clean Vocal</button><button data-preset="Warm Karaoke">Warm Karaoke</button><button data-preset="Live Broadcast">Live Broadcast</button></div>
+      <div class="rail-section-title">MIXER SNAPSHOTS</div>
+      <div id="scenesList" class="rail-list scenes-list"></div>
+      <div class="rail-bottom" role="group" aria-label="Session actions">
+        <button id="addScene" title="Save current mixer as a named snapshot">＋ SAVE SNAPSHOT</button>
+        <button id="saveFxPreset" title="Save this channel's FX chain as a preset">SAVE FX</button>
+        <button id="menuScene" title="Export the complete session as JSON">EXPORT</button>
+      </div>
+      <div class="rail-input-footer"><span class="rail-live-indicator" aria-hidden="true"></span><span id="activeInput">MIC → FX → MASTER</span></div>
     </aside>
     <section class="workbench">
       <div id="mixer" class="mixer"></div>
@@ -734,11 +817,10 @@ function renderMaster(){
  host.innerHTML=`<div class="ch-id master-ch-id">MASTER</div>
  <div class="master-fx-rack">${masterFxRows()}</div>
  <div class="strip-controls master-controls-zone">
-  <div class="master-analysis">
-   <div class="master-info-kicker">OUTPUT ANALYSIS <span>SIM</span></div>
-   <div class="master-info-row"><span>LUFS-I</span><strong id="masterLufs">--</strong></div>
-   <div class="master-info-row"><span>dBTP</span><strong id="masterDbtp">--</strong></div>
-   <div class="master-info-row"><span>PEAK</span><strong id="masterPeakDb">--</strong></div>
+  <div class="master-analysis" role="group" aria-label="Livestreaming loudness and true peak (simulated)">
+   <div class="master-info-kicker">STREAM LEVELS <span>SIM</span></div>
+   <div class="master-info-row"><span>LUFS-I</span><strong id="masterLufs" aria-label="Integrated loudness">--</strong></div>
+   <div class="master-info-row"><span>dBTP</span><strong id="masterDbtp" aria-label="True peak">--</strong></div>
   </div>
  <div class="master-pan-wrap">
     <div class="pan-control"><div class="pan-track ${masterPan===0?'is-centered':''}" data-pan="master"
@@ -907,10 +989,9 @@ let lastMeterFrame=0;function meters(t){
  const l=clamp(base+Math.sin(t*.003)*6,3,99),r=clamp(base-5+Math.sin(t*.003+1)*7,3,99);
  updateMeterVisual('masterL',masterMute?2:l,t);updateMeterVisual('masterR',masterMute?2:r,t);
  // UI demonstration only. These values are never from a true-peak or loudness meter.
- const lufs=$('masterLufs'),tp=$('masterDbtp'),peak=$('masterPeakDb');
+ const lufs=$('masterLufs'),tp=$('masterDbtp');
  if(lufs)lufs.textContent=(-31+(l+r)/11).toFixed(1);
  if(tp)tp.textContent=(-18+Math.max(l,r)/7).toFixed(1);
- if(peak)peak.textContent=(-60+Math.max(l,r)*.61).toFixed(1);
 }
 // v0.3: demo-only FX catalog. Items represent mock plugins, not installed VST3 binaries.
 const pluginCatalog=[
