@@ -607,9 +607,31 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 
 
 
-/* BUTTON 180 — single component owner: one physically identical inset crystal for OFF/ON/press.
-   No curved lens, extra pseudo-elements or change to physical button size. */
-:root{--b180-off:#292d34;--b180-edge:#0f1319;--b180-color:var(--b180-off);--b180-border:var(--b180-edge)}
+/* BUTTON 180 — raised dark-crystal cube OFF, recessed jewel-colored ON.
+   Single-element optics: light from above, hard-cut lower edge, tactile inset on press.
+   Geometry is fixed: state changes NEVER move the layout box or add pseudo-elements. */
+:root{
+ --b180-off:#202832;--b180-edge:#070c13;
+ --b180-color:var(--b180-off);--b180-border:var(--b180-edge);
+ /* Seven layers, same inset/outset sequence for smooth interpolation.
+    The base creates a crisp 2px crystal edge, not a blurred halo/dome. */
+ --b180-shadow-raised:
+  inset 0 1px 0 rgba(246,251,255,.52),
+  inset 0 5px 5px -3px rgba(153,201,231,.28),
+  inset 1px 0 1px rgba(163,199,225,.24),
+  inset 0 -2px 2px rgba(0,0,0,.63),
+  0 2px 0 var(--b180-border),
+  0 3px 0 rgba(4,8,13,.92),
+  0 4px 4px rgba(0,0,0,.42);
+ --b180-shadow-pressed:
+  inset 0 3px 6px -1px rgba(0,0,0,.72),
+  inset 0 0 0 1px rgba(255,255,255,.14),
+  inset 0 1px 20px rgba(0,0,0,.19),
+  inset 0 -1px 2px rgba(0,0,0,.32),
+  0 0 0 1px var(--b180-border),
+  0 1px 1px rgba(0,0,0,.28),
+  0 2px 3px rgba(0,0,0,.13);
+}
 :is(.btn-180,.toolbar .nav button,.toolbar .spec-device,.left-rail .tabs button,
 .strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
 .left-rail .rail-presets button,.left-rail .rail-bottom button,
@@ -623,21 +645,14 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  outline:none;
  transform:translateY(0px)!important;
  position:relative;
- /* ONE physical inset construction for every state; ON changes colors only.
-    Constant shadow colors prevent any change to the face geometry or depth. */
- box-shadow:
-  inset 0 3px 6px -1px rgba(0,0,0,.72),
-  inset 0 0 0 1px rgba(255,255,255,.14),
-  inset 0 1px 20px rgba(0,0,0,.19),
-  inset 0 -1px 2px rgba(0,0,0,.32),
-  0 0 0 1px rgba(0,0,0,.46),
-  0 1px 1px rgba(0,0,0,.28),
-  0 2px 3px rgba(0,0,0,.13)!important;
+ /* OFF visibly raised; ON and pointer-down collapse the outer edge inward. */
+ --b180-depth:var(--b180-shadow-raised);
+ box-shadow:var(--b180-depth)!important;
  background:var(--b180-color)!important;
  filter:none!important;
  color:white!important;
  text-shadow:0 1px 0 rgba(0, 0, 0, .3)!important;
- transition:background-color 150ms, border-color 150ms, color 150ms, filter 150ms!important;
+ transition:background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out, box-shadow 90ms ease-out, filter 120ms ease-out!important;
  font-family:Arial,Helvetica,sans-serif;
  cursor:pointer;text-decoration:none;user-select:none;
  display:inline-flex;justify-content:center;align-items:center;
@@ -677,7 +692,20 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  box-shadow:inset 0 1px 2px #020c18c0,0 1px 0 #68859940;color:#a9d6e6;cursor:default
 }
 
-/* Shared inset shadow and neutral transform apply to both OFF and ON. */
+/* ONE recessed/pressed construction. :active starts before the JS toggle,
+   then the selected/ON state keeps the face inward with no rectangle displacement. */
+:is(.btn-180,.toolbar .nav button,.toolbar .spec-device,
+ .strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
+ #masterLeft .master-actions button,#masterLeft .master-tools button,
+ .left-rail .tabs button,.left-rail .rail-presets button,
+ .left-rail .rail-bottom button,.native-btn):is(.active,.selected,.on,[aria-pressed="true"]),
+:is(.btn-180,.toolbar .nav button,.toolbar .spec-device,
+ .strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
+ #masterLeft .master-actions button,#masterLeft .master-tools button,
+ .left-rail .tabs button,.left-rail .rail-presets button,
+ .left-rail .rail-bottom button,.native-btn):active:not(:disabled){
+ --b180-depth:var(--b180-shadow-pressed);
+}
 /* Latch LED colors only; dark captions are legible on bright faces. */
 :is(.toolbar .nav button.selected,.left-rail .tabs button.selected,
  .left-rail .rail-presets button.active,.left-rail .rail-bottom #saveFxPreset.active,
@@ -700,15 +728,15 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 .strip .strip-name,#masterLeft .master-strip-name{position:relative;z-index:2;isolation:isolate}
 /* No odd vertical displacement of the active nav relative to its neighbors. */
 
-/* Hover (OFF and ON): brightness ONLY. No new border, drop shadow, lens or motion. */
+/* Hover intensifies reflected light, but creates NO new border/halo/motion. */
 :is(.btn-180,.toolbar .nav button,.toolbar .spec-device,
  .strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
  #masterLeft .master-actions button,#masterLeft .master-tools button,
  .left-rail .tabs button,.left-rail .rail-presets button,
  .left-rail .rail-bottom button,.native-btn):hover:not(:disabled){
- filter:brightness(1.18)!important;
+ filter:brightness(1.32)!important;
 }
-/* All OFF keys use the same square smoked-black crystal.
+/* All OFF keys use the same squared graphite-black crystal face.
    The existing teal/coral/amber/green ON colors remain intact. */
 :is(.toolbar .nav button,.toolbar .spec-device,
  .strip .channel-actions .candy,.strip .utility-row button,
