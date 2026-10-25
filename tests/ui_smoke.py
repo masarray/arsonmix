@@ -23,6 +23,39 @@ async def main():
         for selector in ['.nav button.selected','.left-rail .seg button.selected','.right-rail .seg button.selected','[data-output="Main L/R"]']:
             bg=await page.locator(selector).first.evaluate('(x)=>getComputedStyle(x).backgroundImage')
             assert 'data:image/png;base64,' in bg, (selector,bg[:110])
+        # Visual-architecture regression: four intentionally different hardware
+        # families, FX slots recessed rather than taking on button-cap artwork.
+        family=await page.evaluate("""() => {
+          const bg=s=>getComputedStyle(document.querySelector(s)).backgroundImage;
+          const rect=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height}};
+          const rail=rect('.right-rail'), left=rect('.left-rail'), mode=rect('#modeToggle'), nav=rect('.nav');
+          const overflow=[...document.querySelectorAll('.strip .channel-actions button,.strip .utility-row button')].some(el=>{
+            const b=el.getBoundingClientRect(),p=el.closest('.strip').getBoundingClientRect();
+            return b.left < p.left-1 || b.right > p.right+1;
+          });
+          return {nav:bg('.nav button.selected'),small:bg('[data-mute="0"]'),
+            long:bg('.rail-presets button'),large:bg('#talkBtn'),
+            fx:bg('.strip .rack .insert'),chrome:bg('#settingsBtn'),
+            label:bg('.master-fader-label'),navBounds:nav,mode,rail,left,overflow,
+            stripButtons:[...document.querySelectorAll('.strip .channel-actions button')].map(x=>x.getBoundingClientRect().height),
+            talkHeight:rect('#talkBtn').height,
+            tabHeights:[...document.querySelectorAll('.master-tabs button')].map(x=>x.getBoundingClientRect().height)};
+        }""")
+        assert len({family[k] for k in ('nav','small','long','large')})==4, 'Button families collapsed to one global skin'
+        assert 'data:image/png;base64' not in family['fx'], 'Recessed FX slots must not look like huge buttons'
+        assert 'data:image/png;base64' not in family['chrome'], 'Tool icons need their own chrome'
+        assert 'data:image/png;base64' not in family['label'], 'Main Master label is a metal plaque, not a button'
+        assert not family['overflow'], 'Some channel switches escape their strip'
+        assert all(abs(n-29)<=1 for n in family['stripButtons']),family['stripButtons']
+        assert family['talkHeight']==48
+        assert all(n==30 for n in family['tabHeights']),family['tabHeights']
+        assert family['navBounds']['right'] <= family['mode']['x']+1, 'Navigation overlaps Easy View'
+        await page.screenshot(path=str(project/'mixer-design-review.png'),full_page=True)
+        # Medium desktop check; channel strips may scroll *inside* workbench.
+        await page.set_viewport_size({"width":1440,"height":820})
+        await page.screenshot(path=str(project/'mixer-design-review-1440.png'),full_page=True)
+        assert await page.locator('.strip').count()==12
+        await page.set_viewport_size({"width":1680,"height":920})
         pan=page.locator('[data-pan="0"]')
         await pan.focus()
         await pan.press('Home')

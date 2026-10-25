@@ -37,5 +37,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ar-mix-fader-smoke
-          path: fader-ui-smoke.png
+          path: |
+            fader-ui-smoke.png
+            mixer-design-review.png
+            mixer-design-review-1440.png
           if-no-files-found: ignore
