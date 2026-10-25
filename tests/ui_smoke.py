@@ -118,6 +118,7 @@ async def main():
           const e=document.querySelector('[data-preset="Clean Vocal"]');
           return getComputedStyle(e).backgroundImage.includes('linear-gradient');
         }""",timeout=2500)
+        await page.wait_for_timeout(190) # Button 180's 150 ms hover shadow transition
         hovered=await preset.evaluate("""e=>({
           shadow:getComputedStyle(e).boxShadow,
           box:e.getBoundingClientRect().toJSON(),
