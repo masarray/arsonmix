@@ -72,3 +72,11 @@ Use MIX → Channel 1 ADD FX to select a real indexed VST3; PLUGINS opens Plugin
 - Uses current `fix/fader-thumb-symmetry-polish` GUI (ArSonMix, metal controls, horizontal PAN sliders). Audio host code stays isolated.
 - Press SIGNAL CHECK → OPEN DIAGNOSTIC LOG to inspect or share diagnostic evidence after reproducing audio stutter.
 - Read [P2.2 reliability guide](docs/P2_REALTIME_RELIABILITY.md).
+
+## P2.3 — Real Live VU + PAN + Instant FX Bypass
+
+- In the native JUCE host, v0.3 sine-wave demonstration meter generator is completely disabled. Only real Channel 1 input and real master output move; other preview channels have no fake audio activity.
+- Channel 1 horizontal PAN is connected to the actual stereo output matrix after VST3, with a transparent centre and correlated-stereo-safe extremes.
+- Each VST3 insert in the MIX view has a small ⏻ toggle with clear ON/OFF state. Bypass updates the atomic realtime control without rebuilding the plugin graph or leaving the MIX screen.
+- Diagnostic health JSON no longer truncates every record at 511 characters; the bounded queue slot is now 4096 bytes, with a truncation counter.
+- Windows CI validates the native UI contract and real DSP pan coefficient tests. Hardware verification remains necessary.

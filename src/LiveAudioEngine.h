@@ -2,6 +2,7 @@
 #pragma once
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_processors/juce_audio_processors.h>
+#include "StereoPan.h"
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -376,10 +377,7 @@ private:
         const float pan = channelPan_.load (std::memory_order_relaxed);
         // Precomputed stereo pan matrix; no trigonometry, locks or allocations
         // in the realtime sample loop. 0 = transparent identity matrix.
-        const float ll = pan > 0.f ? 1.f - pan : 1.f + pan * .5f;
-        const float lr = pan < 0.f ? -pan * .5f : 0.f;
-        const float rl = pan > 0.f ? pan * .5f : 0.f;
-        const float rr = pan < 0.f ? 1.f + pan : 1.f - pan * .5f;
+        const auto matrix = armix::dsp::StereoPanMatrix::fromNormalized (pan);
         float inPeak = 0.f, postFxPeak = 0.f, outPeak = 0.f;
         for (int offset = 0; offset < samples; offset += maxFrames)
         {
@@ -432,8 +430,8 @@ private:
                 float* dst = outputs[c] + offset;
                 for (int i = 0; i < frames; ++i)
                 {
-                    const float mapped = c == 0 ? ll * left[i] + lr * right[i]
-                                               : rl * left[i] + rr * right[i];
+                    const float mapped = c == 0 ? matrix.ll * left[i] + matrix.lr * right[i]
+                                               : matrix.rl * left[i] + matrix.rr * right[i];
                     const float value = (enabled && !muted) ? mapped * gain : 0.f;
                     dst[i] = value;
                     outPeak = juce::jmax (outPeak, std::abs (value));
