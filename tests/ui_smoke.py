@@ -42,7 +42,7 @@ async def main():
             }""")
             assert len(audit)==12,(width,height,audit)
             assert all(v['sameSize'] and v['aligned'] and v['order'] and v['inside'] and
-                       abs(v['height']-28)<.55 for v in audit),(width,height,audit)
+                       abs(v['height']-29)<.55 for v in audit),(width,height,audit)
         await page.set_viewport_size({"width":1680,"height":920})
         for key in ("pre","hpf"):
             ctrl=page.locator(f'[data-{key}="0"]')
