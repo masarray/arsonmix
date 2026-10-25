@@ -272,6 +272,8 @@ document.addEventListener('keydown',e=>{const pan=e.target.closest('[data-pan]')
 });
 document.addEventListener('keydown',e=>{if(e.ctrlKey&&e.key.toLowerCase()==='s'){e.preventDefault();if(persistSession())flash('UI state saved locally');else flash('Browser storage unavailable')}});
 let lastMeterFrame=0;function meters(t){
+ // JUCE desktop reads actual audio meters; browser demo only animates a preview.
+ if(window.__JUCE__?.backend?.emitEvent)return;
  requestAnimationFrame(meters);if(t-lastMeterFrame<33||document.hidden)return;lastMeterFrame=t;
  channels.forEach((ch,i)=>{const wave=(Math.sin(t*.0022+i*1.92)+Math.sin(t*.0043+i*.6))*.5;
  let v=clamp(45+wave*24+ch.fader*.48,4,98);if(ch.mute)v=2;updateMeterVisual(String(i),v,t)});

@@ -50,3 +50,6 @@ Native stack PRs [#1](https://github.com/masarray/arsonmix/pull/1), [#3](https:/
 4. Publish Pages from main and verify that deployed `build.json.sha` matches the **tested** commit (not a stale branch).
 
 **Acceptance statement:** the owner said the GUI was already "rapi dan bagus" and requested this progress be locked and merged. These exact visuals and interactions are the default for every subsequent thread.
+
+## Post-checkpoint native integration annotation
+The approved visual checkpoint above is unchanged. After this lock, [PR #13](https://github.com/masarray/arsonmix/pull/13) integrates experimental P2.5 native JUCE audio into current `main` by preserving the exact v0.8 CSS/layout and only adding the native bridge, a browser-preview meter guard, and backend sources. This is **not** physical hardware FAT or a stable release. Older references to PR #11 being unfinished describe the prior pre-integration state. Future work starts from `main`; the historical `checkpoint/gui-v0.8-approved-20261025` branch remains recoverable.

@@ -1,6 +1,6 @@
 # ArSonMix — Live Mixer & VST3 Host
 
-**Project status (25 October 2026):** the premium **GUI v0.8** has been visually approved and merged into `main`. The browser preview remains a **UI prototype with simulated audio/meters**. The native Windows/JUCE/VST3 engine is progressing separately through stacked draft PRs; those builds and hardware paths are **not** certified by the GUI merge.
+**Project status (25 October 2026):** premium **GUI v0.8** is approved and locked in `main`. The P2.5 JUCE Windows/VST3 code is now integrated as an **experimental native-development baseline** via PR #13; this is not a hardware-qualified or stable audio release. The browser preview remains visual-only, with intentionally simulated meters.
 
 > **GUI SOURCE OF TRUTH — LOCKED:** [GUI v0.8 baseline](docs/GUI_BASELINE_LOCK_2026-10-25.md) · approved commit `343692fc9b702661a8455cca30f0ffd108907324` · merged in [PR #2](https://github.com/masarray/arsonmix/pull/2) · preserved as `checkpoint/gui-v0.8-approved-20261025`. **Do not restore the previous GUI from native-engine branches.**
 
@@ -32,7 +32,7 @@ ArSonMix is a Windows-first digital mixer and low-latency live VST3 host project
 
 **Start by reading [AGENTS.md](AGENTS.md) and [docs/GUI_BASELINE_LOCK_2026-10-25.md](docs/GUI_BASELINE_LOCK_2026-10-25.md).** The approved GUI is in `main`; do not use the historical GUI branch as the source for new designs. If working on native VST3, apply the engine to the new GUI contract rather than replacing `web/app.js`, `web/styles.css` or the standalone HTML with a stale copy.
 
-The native PR chain [#1](https://github.com/masarray/arsonmix/pull/1), [#3–#10](https://github.com/masarray/arsonmix/pulls) and reconciliation PR [#11](https://github.com/masarray/arsonmix/pull/11) represent **separate in-progress engineering work**. Merge only after native build/test qualification, user hardware FAT and UI baseline parity; do not close these unfinished PRs just to tidy the issue list.
+Native changes from the stacked PRs [#1](https://github.com/masarray/arsonmix/pull/1) and [#3–#10](https://github.com/masarray/arsonmix/pulls) are now incorporated into `main` through the reconciled integration [PR #13](https://github.com/masarray/arsonmix/pull/13). The earlier PRs remain as historical/review references; their code integration does **not** certify third-party VST3 stability or real-device audio. PR #11 contains older v0.5 visuals and must never override approved v0.8.
 
 ## Local preview and tests
 
@@ -52,9 +52,9 @@ The Chromium smoke test needs Playwright Chromium installed. `.github/workflows/
 
 ## Windows native host
 
-`src/`, `engine/`, `CMakeLists.txt`, and `build_windows.ps1` in `main` are the original scaffold and reusable real-time primitives; evolving native versions are held in separate PR branches. Use Visual Studio 2022/CMake/JUCE and suitable ASIO/WASAPI drivers for native development. Browser-only UI acceptance is **not** proof of native VST3 load, FabFilter/RX compatibility, audio callback reliability, interop or full-fidelity plugin state.
+`main` contains experimental JUCE C++20 ASIO/WASAPI **Channel 1** realtime audio, VST3 scanning/import/catalog, editor, FX bypass, FabFilter/RX-compatible layout, diagnostics, native `.armix` preset saving and P2.5 prepared-graph recall. It preserves GUI v0.8, while Channels 2–12 and Master FX/PAN remain non-native previews. The display does **not** claim measured BS.1770 LUFS-I or dBTP. Live recall uses a de-click fade (not seamless DSP crossfade), and ADD/REMOVE/REORDER still detach callback. FabFilter, iZotope RX, and other third-party plugins require Windows hardware FAT before a stable release. [Experimental Windows CI builds](https://github.com/masarray/arsonmix/actions/workflows/p1-windows.yml) provide artifacts from passing runs.
 
-See the historical [architecture & roadmap](docs/ARD_AR_MIX_LIVE_FX_HOST_v0.3.md) and [GUI checkpoint](docs/GUI_BASELINE_LOCK_2026-10-25.md) for current precedence.
+See the [architecture & roadmap](docs/ARD_AR_MIX_LIVE_FX_HOST_v0.3.md), [approved GUI v0.8 checkpoint](docs/GUI_BASELINE_LOCK_2026-10-25.md), and [cross-thread engine reconciliation](docs/PROGRESS_RECONCILIATION_2026-10-25.md). Native code follows GUI v0.8, not the opposite.
 
 ## License and assets
 

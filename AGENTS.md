@@ -19,3 +19,6 @@
 2. Check current native PRs / base graph before cherry-picking; do not accidentally erase more recent GUI or engine work.
 3. Propose and implement only the requested incremental changes, validate actual behavior, and capture new checkpoints if another GUI revision is approved.
 4. Distinguish *GUI-preview simulation* from *live native audio* in reports and releases.
+
+## Post-lock native integration update (PR #13, 2026-10-25)
+The **experimental** P2.5 JUCE VST3 engine has now been integrated into `main` using the approved v0.8 GUI as its ancestor; it does not supersede the visual approval or certify audio. Archived stacked PRs and the v0.5 integration PR #11 remain as lineage, not a source for overwriting the GUI. Work on later engine phases starts from latest `main`, tests with both Windows MSVC and the GUI lock Chromium workflow, and preserves all locked visual geometry. Do not merge a stale P2.5 branch wholesale back into main.
