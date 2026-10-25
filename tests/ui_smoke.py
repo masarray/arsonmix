@@ -37,6 +37,12 @@ async def main():
             radius:s.borderTopLeftRadius,shadow:s.boxShadow};
         }""")
         assert style['border']=='1px' and style['radius']=='3px',style
+        # Inter is part of the app payload; no network font or fallback is allowed.
+        assert await page.evaluate("""async()=>{
+            await document.fonts.load('600 12px "ArSonMix Inter"');
+            return document.fonts.check('600 12px "ArSonMix Inter"')&&
+                getComputedStyle(document.querySelector('.strip-name')).fontFamily.includes('ArSonMix Inter');
+        }"""),'Embedded Inter font was not applied'
         assert all(abs(float(v.rstrip('s'))-.15)<.001 for v in style['dur'].split(', ')),style
         # Visual-architecture regression: four intentionally different hardware
         # families, FX slots recessed rather than taking on button-cap artwork.
@@ -107,6 +113,7 @@ async def main():
         await page.locator('[data-hpf="0"]').click()
         await page.screenshot(path=str(project/'mixer-crystal-candy-review.png'),full_page=True)
         await page.screenshot(path=str(project/'mixer-crystal-depth-glow-review.png'),full_page=True)
+        await page.screenshot(path=str(project/'mixer-inter-recessed-toggle-review.png'),full_page=True)
         # Verify true geometric alignment of each source MUTE/SOLO and master MUTE/STEREO.
         actions=await page.evaluate("""()=>{
           const bounds=s=>{const r=document.querySelector(s).getBoundingClientRect();
@@ -178,6 +185,37 @@ async def main():
         assert smallRail['footerBottom']<=smallRail['bottom']+1,smallRail
         assert all(b['width']>35 for b in smallRail['buttons']),smallRail
         assert await page.locator('.strip').count()==13
+        # Raised OFF switch / recessed ON switch are persistent, not just :active.
+        def switch_state(selector):
+            return page.locator(selector).evaluate("""e=>{
+              const s=getComputedStyle(e); return {
+                t:s.transform,shadow:s.boxShadow,color:s.backgroundColor,
+                ink:s.color,selected:e.classList.contains('active')||e.classList.contains('selected')
+              };
+            }""")
+        off=await switch_state('[data-mute="0"]')
+        assert off['t']=='matrix(1, 0, 0, 1, 0, 0)',off
+        await page.locator('[data-mute="0"]').click()
+        await page.wait_for_function("""()=>{
+            const e=document.querySelector('[data-mute="0"]');
+            return getComputedStyle(e).transform==='matrix(1, 0, 0, 1, 0, 3)';
+        }""",timeout=2500)
+        on=await switch_state('[data-mute="0"]')
+        assert on['selected'] and on['shadow']!=off['shadow'],on
+        assert on['ink']!=off['ink'],(on,off)
+        await page.locator('[data-mute="0"]').click()
+        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-mute="0"]')).transform==='matrix(1, 0, 0, 1, 0, 0)'""",timeout=2500)
+        # Every strip's name-panel must start below the A/B button's longest 10px cast shadow.
+        geometry=await page.evaluate("""()=>[...document.querySelectorAll('#mixer > .strip')].map(s=>{
+          const n=s.querySelector('.strip-name').getBoundingClientRect();
+          const buttons=[...s.querySelectorAll('.fader-tools button')].map(b=>{
+            const r=b.getBoundingClientRect();return {bottom:r.bottom,x:r.left,right:r.right};
+          });
+          return {nameTop:n.top,buttons,stripBottom:s.getBoundingClientRect().bottom};
+        })""")
+        assert all(x['buttons'] and max(b['bottom'] for b in x['buttons'])+10<=x['nameTop']+1
+                   for x in geometry),geometry
+        assert all(x['stripBottom']>=x['nameTop'] for x in geometry),geometry
         # Source CSS: active moves 3px, no invented ::before/::after body.
         btn=page.locator('[data-mute="0"]')
         before=await btn.evaluate("""e=>({
@@ -194,11 +232,16 @@ async def main():
         shadow=await btn.evaluate("(e)=>getComputedStyle(e).boxShadow")
         assert shadow!=before['shadow'],shadow
         await page.mouse.up()
+        # Mouse release does NOT spring back: the toggle is latched ON at -3px depth.
         await page.wait_for_function("""()=>{
-            return getComputedStyle(document.querySelector('[data-mute="0"]')).transform==='matrix(1, 0, 0, 1, 0, 0)';
+            return getComputedStyle(document.querySelector('[data-mute="0"]')).transform==='matrix(1, 0, 0, 1, 0, 3)';
         }""",timeout=3000)
         assert await btn.get_attribute('aria-pressed')=='true'
         await btn.click()
+        await page.wait_for_function("""()=>{
+            return getComputedStyle(document.querySelector('[data-mute="0"]')).transform==='matrix(1, 0, 0, 1, 0, 0)';
+        }""",timeout=3000)
+        assert await btn.get_attribute('aria-pressed')=='false'
         widths=await page.evaluate("""()=>{
           const mixer=document.querySelector('#mixer'),master=document.querySelector('#masterLeft');
           const source=document.querySelector('[data-strip="0"]');
@@ -400,7 +443,7 @@ async def main():
         await page.locator('[data-mute="0"]').click()
         assert await page.locator('[data-mute="0"]').get_attribute('aria-pressed') == 'true'
         # btn-180 intentionally animates background for 150ms. Wait for actual final RGB.
-        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-mute="0"]')).backgroundColor==='rgb(232, 97, 118)'""",timeout=2500)
+        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-mute="0"]')).backgroundColor==='rgb(231, 111, 131)'""",timeout=2500)
         assert await image_for('[data-mute="0"]') != await image_for('[data-solo="0"]'), await page.evaluate("""()=>{
           return [...document.querySelectorAll('[data-mute="0"],[data-solo="0"]')].map(e=>({
             cls:e.className,background:getComputedStyle(e).backgroundColor,
@@ -410,7 +453,7 @@ async def main():
         }""")
         await page.locator('[data-solo="0"]').click()
         assert await page.locator('[data-solo="0"]').get_attribute('aria-pressed') == 'true'
-        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-solo="0"]')).backgroundColor==='rgb(213, 168, 50)'""",timeout=2500)
+        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-solo="0"]')).backgroundColor==='rgb(219, 183, 92)'""",timeout=2500)
         assert await image_for('[data-solo="0"]') != await image_for('[data-mute="0"]')
         await page.locator('[data-mute="0"]').click()
         await page.locator('[data-solo="0"]').click()
