@@ -106,6 +106,7 @@ async def main():
         assert 'brightness(1.3)' in fader_hover, fader_hover
         button=page.locator('[data-mute="0"]')
         await button.hover()
+        await page.wait_for_timeout(150)  # Finish 90 ms physical-switch filter transition.
         button_hover=await button.evaluate("(e)=>getComputedStyle(e).filter")
         assert 'brightness(1.3)' in button_hover,button_hover
         # FX power and FX name remain separate inside the 104px channel strip.
