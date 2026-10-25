@@ -385,8 +385,11 @@ async def main():
         assert await page.evaluate('fxParams["0:1"].mix')==72
         await page.locator('[data-view="SIGNAL FLOW"]').click()
         assert await page.locator('.flow-node').count()==4
-        await page.locator('[data-view="SETUP"]').click()
-        assert await page.locator('.setup-section').count()==4
+        await page.locator('#audioSetupBtn').click()
+        assert await page.locator('#toast').inner_text()=='Audio Setup is available in the Windows desktop app'
+        assert await page.locator('.setup-section').count()==0
+        assert await page.locator('.editor').count()==0
+        assert await page.locator('.status button').count()==0
         await page.locator('[data-view="MIX"]').click()
         await page.locator('#modeToggle').click()
         assert await page.locator('.app.easy').count()==0

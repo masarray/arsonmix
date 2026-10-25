@@ -217,15 +217,6 @@ private:
             engine_.setMasterMuted (bool (value));
     }
 
-    void emitSetupPhase (const juce::String& phase, int elapsedMs = 0)
-    {
-        auto o = std::make_unique<juce::DynamicObject>();
-        o->setProperty ("phase", phase);
-        o->setProperty ("elapsedMs", elapsedMs);
-        if (browser_.loaded)
-            browser_.emitEventIfBrowserIsVisible ("arMixSetupProgress", juce::var (o.release()));
-    }
-
     void emitScanProgress()
     {
         if (browser_.loaded)
@@ -243,25 +234,19 @@ private:
         {
             audioSetupWindow_->setVisible (true);
             audioSetupWindow_->toFront (true);
-            emitSetupPhase ("opened", 0);
             return;
         }
 
         setupLaunching_ = true;
-        emitSetupPhase ("preparing");
-        const auto begin = juce::Time::getMillisecondCounter();
-        juce::Timer::callAfterDelay (150,
-            [safe = juce::Component::SafePointer<ConsoleWindow> (this), begin]
+        juce::MessageManager::callAsync (
+            [safe = juce::Component::SafePointer<ConsoleWindow> (this)]
         {
             if (safe == nullptr) return;
-            safe->emitSetupPhase ("enumerating");
             safe->audioSetupWindow_ =
                 std::make_unique<AudioSetupWindow> (safe->engine_.devices());
             safe->audioSetupWindow_->setVisible (true);
             safe->audioSetupWindow_->toFront (true);
             safe->setupLaunching_ = false;
-            safe->emitSetupPhase ("opened",
-                static_cast<int> (juce::Time::getMillisecondCounter() - begin));
         });
     }
 

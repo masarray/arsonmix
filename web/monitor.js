@@ -16,9 +16,7 @@
     "#arSignalFooter{margin-top:12px;font-size:11px;color:#9bbbbf;line-height:1.6}#arSignalBadge{color:#edbf7d;font-size:10px;margin-left:6px;white-space:nowrap}" +
     "#arSignalOpen{padding:4px 7px;font-size:10px}";
   document.head.appendChild(css);
-  const footer = document.querySelector("#nativeP2");
-  if (footer) footer.insertAdjacentHTML("beforeend",
-    '<button class="native-btn" id="arSignalOpen">SIGNAL CHECK</button><span id="arSignalBadge">OUTPUT DISARMED</span>');
+  // Signal Check is declared in the permanent toolbar; footer holds status only.
   const overlay = document.createElement("div");
   overlay.id = "arSignalOverlay";
   overlay.innerHTML = '<section class="arSignalPanel" role="dialog" aria-modal="true">' +
@@ -99,7 +97,7 @@
   el("arSignalLogs").addEventListener("click",()=>api.emitEvent("arMixAction",{action:"openDiagnostics"}));
   el("arSignalSetup").addEventListener("click",()=>{
     overlay.classList.remove("open");
-    document.querySelector('[data-native-action="audioSetup"]')?.click();
+    document.querySelector('#audioSetupBtn')?.click();
   });
   overlay.addEventListener("click",e=>{if(e.target===overlay)overlay.classList.remove("open");});
   document.addEventListener("click",e=>{

@@ -33,6 +33,7 @@ jobs:
           node --check web/bridge.js
           node --check web/monitor.js
           node --check web/app.js
+          node --test tests/gui_workflow_contract_test.mjs
           node --test tests/native_ui_contract_test.mjs
           node --test tests/native_preset_contract_test.mjs
           node --test tests/fx_add_contract_test.mjs

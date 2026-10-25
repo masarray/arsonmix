@@ -31,7 +31,9 @@ jobs:
         with:
           python-version: "3.12"
       - name: Validate JavaScript syntax
-        run: node --check web/app.js
+        run: |
+          node --check web/app.js
+          node --test tests/gui_workflow_contract_test.mjs
       - name: Validate approved GUI checkpoint and single publisher
         run: python tests/gui_baseline_lock_test.py
       - name: Install Chromium testing dependencies
