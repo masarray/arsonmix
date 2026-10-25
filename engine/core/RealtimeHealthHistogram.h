@@ -45,9 +45,9 @@ public:
             for (unsigned i = 0; i < v.counts.size(); ++i)
             {
                 acc += v.counts[i];
-                if (acc >= target) return i < bounds.size() ? bounds[i] : 1.0;
+                if (acc >= target) return i < bounds.size() ? bounds[i] : -1.0; // sentinel: unbounded > 100%
             }
-            return 1.0;
+            return -1.0;
         };
         v.p95Ceiling = percentile(95);
         v.p99Ceiling = percentile(99);
