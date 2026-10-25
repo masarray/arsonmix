@@ -29,20 +29,19 @@ public:
     }
     ~JuceIndependentClockDevice() { close(); }
 
-    juce::String open (const juce::String& captureName,
-                       const juce::String& renderName,
+    juce::String open (const juce::AudioDeviceManager::AudioDeviceSetup& selected,
                        juce::AudioIODeviceCallback* downstream,
                        double targetLatencyMs = 24.)
     {
         close();
-        if (! downstream || captureName.isEmpty() || renderName.isEmpty())
+        if (! downstream || selected.inputDeviceName.isEmpty() || selected.outputDeviceName.isEmpty())
             return "Missing independent capture/render endpoints or DSP callback";
         if (! std::isfinite (targetLatencyMs) || targetLatencyMs < 5 || targetLatencyMs > 100)
             return "Unsupported clock-bridge target latency";
         downstream_ = downstream;
         const auto initialiseManager = [] (juce::AudioDeviceManager& manager,
                                            int inputs, int outputs,
-                                           const juce::String& wanted,
+                                           const juce::AudioDeviceManager::AudioDeviceSetup& saved,
                                            bool capture) -> juce::String
         {
             auto error = manager.initialise (inputs, outputs, nullptr, false);
@@ -51,12 +50,12 @@ public:
             if (manager.getCurrentAudioDeviceType() != "Windows Audio")
                 return "Windows Audio shared device type unavailable";
             auto setup = manager.getAudioDeviceSetup();
-            setup.inputDeviceName = capture ? wanted : juce::String();
-            setup.outputDeviceName = capture ? juce::String() : wanted;
-            setup.useDefaultInputChannels = capture;
-            setup.useDefaultOutputChannels = !capture;
-            setup.inputChannels.clear();
-            setup.outputChannels.clear();
+            setup.inputDeviceName = capture ? saved.inputDeviceName : juce::String();
+            setup.outputDeviceName = capture ? juce::String() : saved.outputDeviceName;
+            setup.useDefaultInputChannels = capture && saved.useDefaultInputChannels;
+            setup.useDefaultOutputChannels = !capture && saved.useDefaultOutputChannels;
+            setup.inputChannels = capture ? saved.inputChannels : juce::BigInteger();
+            setup.outputChannels = capture ? juce::BigInteger() : saved.outputChannels;
             error = manager.setAudioDeviceSetup (setup, false);
             if (error.isNotEmpty()) return error;
             auto* device = manager.getCurrentAudioDevice();
@@ -67,11 +66,17 @@ public:
             if (!capture && (device->getActiveOutputChannels().isZero()
                              || !device->getActiveInputChannels().isZero()))
                 return "Render-only endpoint isolation rejected by driver";
+            if (capture && !saved.useDefaultInputChannels &&
+                device->getActiveInputChannels() != saved.inputChannels)
+                return "Selected microphone channel mask was not preserved";
+            if (!capture && !saved.useDefaultOutputChannels &&
+                device->getActiveOutputChannels() != saved.outputChannels)
+                return "Selected hardware output channel mask was not preserved";
             return {};
         };
-        auto error = initialiseManager (captureManager_, 2, 0, captureName, true);
+        auto error = initialiseManager (captureManager_, 2, 0, selected, true);
         if (error.isEmpty())
-            error = initialiseManager (renderManager_, 0, 2, renderName, false);
+            error = initialiseManager (renderManager_, 0, 2, selected, false);
         if (error.isNotEmpty())
         {
             close();
@@ -93,7 +98,26 @@ public:
 
         // 2 channels, 24 ms nominal bridge latency. Both rates are actual
         // negotiated endpoint rates, never hard-coded to 48 kHz.
-        if (!bridge_.prepare (captureRate_, renderRate_, 2, 32768, targetLatencyMs))
+        // Minimum FIFO target must cover a whole negotiated render block
+        // plus one producer replenishment quantum and FIR guard history.
+        // Otherwise long driver callbacks re-prime forever despite healthy
+        // input. Reject oversized periods rather than reporting false audio.
+        const auto requestedSourceFrames = static_cast<std::uint64_t> (
+            std::ceil (renderBufferFrames_ * captureRate_ / renderRate_));
+        const auto captureQuantum = static_cast<std::uint64_t> (captureBufferFrames_);
+        const auto minimumTargetFrames = requestedSourceFrames +
+            std::max (requestedSourceFrames, captureQuantum) +
+            static_cast<std::uint64_t> (AdaptiveClockBridge::taps * 2 + 4);
+        const auto minimumTargetMs = 1000.0 *
+            static_cast<double> (minimumTargetFrames) / captureRate_;
+        effectiveTargetLatencyMs_ = std::max (targetLatencyMs, minimumTargetMs);
+        if (effectiveTargetLatencyMs_ > 180.0 ||
+            minimumTargetFrames > 32768 / 2 - AdaptiveClockBridge::taps * 2)
+        {
+            close();
+            return "Device buffer periods require excessive or unsupported independent clock latency";
+        }
+        if (!bridge_.prepare (captureRate_, renderRate_, 2, 32768, effectiveTargetLatencyMs_))
         {
             close();
             return "Unable to allocate bounded capture FIFO / ASRC coefficients";
@@ -148,6 +172,7 @@ public:
     double renderRate() const noexcept { return renderRate_; }
     int captureBufferFrames() const noexcept { return captureBufferFrames_; }
     int renderBufferFrames() const noexcept { return renderBufferFrames_; }
+    double bridgeTargetLatencyMs() const noexcept { return effectiveTargetLatencyMs_; }
     AdaptiveClockBridge::Status bridgeStatus() const noexcept { return bridge_.status(); }
     std::uint64_t captureCallbacks() const noexcept { return captureCallbacks_.load(); }
     std::uint64_t renderCallbacks() const noexcept { return renderCallbacks_.load(); }
@@ -252,5 +277,6 @@ private:
     std::atomic<std::uint64_t> captureCallbacks_ {0}, renderCallbacks_ {0};
     double captureRate_ = 0, renderRate_ = 0;
     int captureBufferFrames_ = 0, renderBufferFrames_ = 0;
+    double effectiveTargetLatencyMs_ = 0.;
 };
 } // namespace armix::device
