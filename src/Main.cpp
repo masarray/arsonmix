@@ -194,7 +194,8 @@ private:
         const auto now = monotonicMilliseconds();
         auto snapshot = directRestore_.snapshot();
         if (snapshot.state == Gate::State::idle &&
-            (engine_.independentClockFaulted() || engine_.hasPendingDirectRestore()))
+            (engine_.independentClockFaulted() ||
+             (!engine_.independentClockActive() && engine_.hasPendingDirectRestore())))
         {
             const auto generation = directRestore_.begin (now);
             diagnostics_.record ("DIRECT_RESTORE_BEGIN",
