@@ -214,9 +214,12 @@ private:
             diagnostics_.record ("SMART_CLOCK_RECOVERY",
                 juce::String ("DIRECT_RESTORED after ") + juce::String (snapshot.attempts + 1) +
                 " attempt(s) | " + faultStatus);
-            emitNotice (wasIndependent
-                ? "Independent device fault: safe DIRECT audio restored."
-                : "DIRECT audio device restored after a bounded retry.", true);
+            if (engine_.isOutputMuted())
+                emitNotice ("DIRECT device reopened. Output remains muted for safety; unmute only when ready.", true);
+            else
+                emitNotice (wasIndependent
+                    ? "Independent device fault: safe DIRECT audio restored."
+                    : "DIRECT audio device restored after a bounded retry.", true);
             return;
         }
 
