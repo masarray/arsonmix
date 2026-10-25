@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../src/DiagnosticTone.h"
-#include <array>
-#include <cstdlib>
-static void check (bool condition) { if (!condition) std::abort(); }
+#include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
-#include <numbers>
+
+static void check (bool condition) { if (!condition) std::abort(); }
 
 int main()
 {
