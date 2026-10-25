@@ -1,6 +1,6 @@
 # ArSonMix — Live Mixer & VST3 Host
 
-**Project status (25 October 2026):** premium **GUI v0.8** is approved and locked in `main`. The P2.5 JUCE Windows/VST3 code is now integrated as an **experimental native-development baseline** via PR #13; this is not a hardware-qualified or stable audio release. The browser preview remains visual-only, with intentionally simulated meters.
+**Project status (25 October 2026):** premium **GUI v0.8** is approved and locked in `main`. The P2.5/P2.5.1 JUCE Windows/VST3 code was integrated through PRs #13/#14 as an **experimental native-development baseline**. Hardware tests reported **severe crackling with zero VST3**, so native audio has FAILED its P0 hardware acceptance; this is not a stable or broadcast-ready release. The browser preview remains visual-only, with intentionally simulated meters.
 
 > **GUI SOURCE OF TRUTH — LOCKED:** [GUI v0.8 baseline](docs/GUI_BASELINE_LOCK_2026-10-25.md) · approved commit `343692fc9b702661a8455cca30f0ffd108907324` · merged in [PR #2](https://github.com/masarray/arsonmix/pull/2) · preserved as `checkpoint/gui-v0.8-approved-20261025`. **Do not restore the previous GUI from native-engine branches.**
 
@@ -54,7 +54,7 @@ The Chromium smoke test needs Playwright Chromium installed. `.github/workflows/
 
 `main` contains experimental JUCE C++20 ASIO/WASAPI **Channel 1** realtime audio, VST3 scanning/import/catalog, editor, FX bypass, FabFilter/RX-compatible layout, diagnostics, native `.armix` preset saving and P2.5 prepared-graph recall. It preserves GUI v0.8, while Channels 2–12 and Master FX/PAN remain non-native previews. The display does **not** claim measured BS.1770 LUFS-I or dBTP. Live recall uses a de-click fade (not seamless DSP crossfade), and ADD/REMOVE/REORDER still detach callback. FabFilter, iZotope RX, and other third-party plugins require Windows hardware FAT before a stable release. [Experimental Windows CI builds](https://github.com/masarray/arsonmix/actions/workflows/p1-windows.yml) provide artifacts from passing runs.
 
-See the [architecture & roadmap](docs/ARD_AR_MIX_LIVE_FX_HOST_v0.3.md), [approved GUI v0.8 checkpoint](docs/GUI_BASELINE_LOCK_2026-10-25.md), and [cross-thread engine reconciliation](docs/PROGRESS_RECONCILIATION_2026-10-25.md). Native code follows GUI v0.8, not the opposite.
+**Current native architecture (read first):** [Smart Audio Engine ARD v1.0](docs/ARD_SMART_AUDIO_ENGINE_V1_2026-10-25.md) · [implementation blueprint](docs/SMART_AUDIO_ENGINE_IMPLEMENTATION_BLUEPRINT.md) · [zero-FX crackling P0 issue #15](https://github.com/masarray/arsonmix/issues/15). The [older architecture v0.3](docs/ARD_AR_MIX_LIVE_FX_HOST_v0.3.md) is historical and superseded where inconsistent. [GUI v0.8](docs/GUI_BASELINE_LOCK_2026-10-25.md) remains locked. No P2.6 expansion until 44.1/48 kHz dry audio FAT is clean; no public-live claims from green CI alone. Native code follows GUI v0.8, not the opposite.
 
 ## License and assets
 
