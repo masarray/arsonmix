@@ -4,6 +4,10 @@
 (() => {
   const backend = window.__JUCE__?.backend;
   if (!backend?.emitEvent || !backend?.addEventListener) return;
+  document.documentElement.classList.add("native-engine");
+  // Clear preview levels before first device callback/status reaches WebView.
+  document.querySelectorAll("[data-meter],#masterMeterL,#masterMeterR,#masterMeterAux")
+    .forEach(el=>el.style.setProperty("--level","0%"));
 
   const send = (action, more = {}) => backend.emitEvent("arMixAction", {action, ...more});
   const state = {catalog: [], chain: [], scanning: false, message: "Connecting to native host...",
@@ -65,6 +69,7 @@
     @media(max-width:1150px){.native-grid{grid-template-columns:1fr}.native-hdr{flex-direction:column}}
   `;
   css.textContent += "\n    .native-modal{position:fixed;inset:0;z-index:700;display:flex;align-items:center;justify-content:center;\n      background:rgba(3,11,18,.78);backdrop-filter:blur(5px);padding:22px;box-sizing:border-box}\n    .native-modal[hidden]{display:none}\n    .native-dialog{width:min(860px,96vw);max-height:min(840px,92vh);overflow:hidden;\n      display:flex;flex-direction:column;background:linear-gradient(145deg,#243945 0%,#101e29 62%,#0c1821);\n      border:1px solid #638293;border-radius:11px;box-shadow:0 18px 80px #000c,inset 0 1px #b2d9e449}\n    .native-dialog-header{display:flex;align-items:center;justify-content:space-between;gap:15px;\n      border-bottom:1px solid #3c5360;padding:14px 17px}\n    .native-dialog-header h2{font-size:18px;font-weight:500;color:#e4f4f9;margin:4px 0}\n    .native-dialog-body{padding:14px 17px;overflow:auto;min-height:60px}\n    .native-dialog-footer{border-top:1px solid #334b58;padding:9px 17px;color:#91abb8;font-size:11px}\n    .native-dialog.small{max-width:520px}\n    .native-bar{height:12px;border:1px solid #527282;background:#0a1621;border-radius:7px;overflow:hidden;position:relative;\n      box-shadow:inset 0 2px 5px #000c}\n    .native-bar-fill{height:100%;width:0%;background:linear-gradient(180deg,#8ef6ff,#17a8da 43%,#08688e);\n      box-shadow:0 0 8px #1ed5fcbb;border-right:1px solid #ddffff}\n    .native-bar.unknown .native-bar-fill{width:34%;position:absolute;animation:native-indeterminate 1.65s ease-in-out infinite}\n    @keyframes native-indeterminate{0%{left:-36%}50%{left:58%}100%{left:105%}}\n    .native-progress-info{font:11px monospace;color:#a5d5e2;margin:8px 0;display:flex;justify-content:space-between;gap:9px}\n    .native-progress-info strong{font-weight:500;color:#d8f9ff}\n    #nativeScanHud{position:fixed;left:50%;transform:translateX(-50%);bottom:37px;z-index:550;\n      background:#152c3b;border:1px solid #537588;border-radius:8px;box-shadow:0 6px 20px #000a;\n      padding:9px 13px;width:min(470px,90vw)}\n    #nativeScanHud[hidden]{display:none}\n    .native-result{display:flex;align-items:center;gap:7px;background:#10222c;border:1px solid #314d5c;\n      border-radius:6px;padding:9px 11px;margin:5px 0}\n    .native-result span{flex:1;min-width:0}\n    .native-result b{display:block;font-weight:500;color:#d6edf7;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n    .native-result small{display:block;color:#88aaba;font-size:10px;margin-top:4px}\n    .native-search{font-family:inherit!important}\n";
+  css.textContent += "\n    .native-insert-row{display:flex;align-items:center;gap:2px;width:100%;min-width:0}\n    .native-insert-row>.insert{flex:1;min-width:0;text-align:left;overflow:hidden;\n      text-overflow:ellipsis;white-space:nowrap;padding-left:4px;padding-right:1px}\n    .native-insert-row>.native-power{flex:0 0 21px;width:21px;height:21px;\n      font-size:14px;line-height:18px;text-align:center;border-radius:3px;\n      border:1px solid #3b6973;color:#8becb3;cursor:pointer;padding:0;\n      background:linear-gradient(#385e65,#102c30);box-shadow:inset 0 1px #91e8bd44}\n    .native-insert-row>.native-power.is-off{color:#8b9ca5;border-color:#53616a;\n      background:linear-gradient(#39414a,#171e27);box-shadow:none}\n    .native-insert-row>.native-power:focus-visible{outline:2px solid #4dd7ff}\n    .native-insert-row.is-bypassed>.insert{opacity:.54;filter:saturate(.55)}\n    .native-engine .strip[data-preview=\"1\"] .meter-fill{opacity:0!important}\n    .native-engine .strip[data-preview=\"1\"] .meter{opacity:.36}\n    .native-engine .meter-fill{transition:height 90ms linear}\n  ";
   document.head.appendChild(css);
   const footer = document.querySelector(".status-help");
   if(footer) footer.innerHTML = `<div id="nativeP2">
@@ -107,7 +112,7 @@
           <span class="node-index">${String(i+1).padStart(2,"0")}</span>
           <span class="node-text">${escapeHtml(p.name)}<small>${p.latency||0} samples processing latency</small></span>
           <button class="native-btn" data-native-fx="editor" data-slot="${i}">EDIT</button>
-          <button class="native-btn ${p.bypass?"":"on"}" data-native-fx="bypass" data-slot="${i}">${p.bypass?"BYPASS":"ACTIVE"}</button>
+          <button class="native-btn ${p.bypass?"":"on"}" data-native-fx="bypass" data-slot="${i}" aria-pressed="${!p.bypass}" title="Instantly ${p.bypass?"enable":"bypass"} this plugin without stopping audio">⏻ ${p.bypass?"OFF · ENABLE":"ON · BYPASS"}</button>
           <button class="native-btn" data-native-fx="up" data-slot="${i}" ${i===0?"disabled":""}>↑</button>
           <button class="native-btn" data-native-fx="down" data-slot="${i}" ${i===state.chain.length-1?"disabled":""}>↓</button>
           <button class="native-btn warn" data-native-fx="remove" data-slot="${i}">×</button>
@@ -250,15 +255,23 @@
     if(!rack)return;
     if(i!==0){
       rack.dataset.preview="1";
-      track.title=`${track.querySelector(".channel-name")?.textContent||"Channel"} — visual preview only; native I/O not wired`;
+      track.dataset.preview="1";
+      track.title=`${track.querySelector(".strip-name")?.textContent?.trim()||"Channel"} — visual preview only; native I/O not wired`;
       return;
     }
     const signature=state.chain.map(p=>p.id+"|"+p.bypass).join(",");
     if(rack.dataset.nativeSig===signature)return;
     rack.dataset.nativeSig=signature;
     rack.innerHTML=state.chain.slice(0,4).map((p,i)=>
-      `<button class="insert" data-native-fx="editor" data-slot="${i}" title="Open this VST3 plugin editor">
-        <span class="insert-led">◉</span>${escapeHtml(p.name)}</button>`).join("")+
+      `<div class="native-insert-row ${p.bypass?"is-bypassed":""}">
+        <button class="insert" data-native-fx="editor" data-slot="${i}"
+          title="Open ${escapeHtml(p.name)} editor" aria-label="Open ${escapeHtml(p.name)} editor">
+          <span class="insert-led">${p.bypass?"○":"◉"}</span>${escapeHtml(p.name)}</button>
+        <button type="button" class="native-power ${p.bypass?"is-off":""}"
+          data-native-fx="bypass" data-slot="${i}" aria-pressed="${!p.bypass}"
+          aria-label="${p.bypass?"Enable":"Bypass"} ${escapeHtml(p.name)}"
+          title="${p.bypass?"ENABLE FX":"BYPASS FX"} · ${escapeHtml(p.name)}">⏻</button>
+      </div>`).join("")+
       `<button class="insert empty" data-plugin-picker="1" aria-label="Add VST3 to Channel 1">
         <span class="insert-led">＋</span>ADD FX</button>`;
   });
@@ -383,6 +396,7 @@
     }
     if(data.error){state.adding=false;console.warn("AR MIX native:",text);}
   });
+  let liveInputLevel=0, liveOutputLevel=0;
   let lastSetupSignature="";
   backend.addEventListener("arMixStatus",d=>{
     state.device=d;
@@ -394,12 +408,16 @@
       :"NO AUDIO DEVICE · SELECT AUDIO SETUP";
     toStatus(text);
     // Only CH1 and master are sourced from a real native audio callback.
-    const src=percent(d.inputPeak), out=percent(d.peak);
-    document.querySelectorAll("[data-meter]").forEach(x=>
-      x.style.setProperty("--level",x.dataset.meter==="0"?src+"%":"1%"));
+    const inputLevel=percent(d.inputPeak), outputLevel=percent(d.peak);
+    // PPM-like UI release; incoming peaks rise immediately. No fake activity,
+    // no visual state for the 11 channels that are still mock previews.
+    liveInputLevel=Math.max(inputLevel,liveInputLevel-5);
+    liveOutputLevel=Math.max(outputLevel,liveOutputLevel-5);
+    const meter=document.querySelector('[data-meter="0"]');
+    if(meter)meter.style.setProperty("--level",liveInputLevel+"%");
     ["masterMeterL","masterMeterR","masterMeterAux"].forEach(id=>{
       const x=document.getElementById(id);
-      if(x)x.style.setProperty("--level",out+"%");
+      if(x)x.style.setProperty("--level",liveOutputLevel+"%");
     });
     const cpu=document.querySelector(".cpu strong");
     if(cpu)cpu.textContent="NATIVE";
