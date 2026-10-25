@@ -293,7 +293,45 @@ private:
         const auto value = args.getProperty ("value", {});
         const int slot = static_cast<int> (args.getProperty ("slot", -1));
 
-        if (action == "audioSetup") showDeviceSetup();
+        if (action == "audioSetup")
+        {
+            // One-sided device routes are temporary and must never leak into
+            // normal user configuration or the persisted audio-devices.xml.
+            if (engine_.hasTemporaryDiagnosticDevice())
+            {
+                const auto error = engine_.setDiagnosticRoute (armix::diagnostics::Route::normal);
+                if (error.isNotEmpty()) return emitNotice (error, true);
+                deviceSettingsDirty_ = true;
+            }
+            showDeviceSetup();
+        }
+        else if (action == "diagnosticRoute")
+        {
+            using Route = armix::diagnostics::Route;
+            const auto selected = value.toString();
+            auto route = Route::normal;
+            if (selected == "OUTPUT_ONLY_TONE") route = Route::outputOnlyTone;
+            else if (selected == "CAPTURE_ONLY") route = Route::captureOnly;
+            else if (selected == "DRY_THROUGH") route = Route::dryThrough;
+            else if (selected != "NORMAL") return emitNotice ("Unsupported diagnostic mode", true);
+            const auto error = engine_.setDiagnosticRoute (route);
+            if (error.isNotEmpty())
+            {
+                diagnostics_.record ("AUDIO_TEST_FAIL", selected + " | " + error);
+                return emitNotice (error, true);
+            }
+            // A live user setup, never the isolated test route, is persisted.
+            if (route == Route::normal) deviceSettingsDirty_ = true;
+            diagnostics_.record ("AUDIO_TEST_MODE", selected + " | " +
+                juce::JSON::toString (engine_.status(), false));
+            emitNotice ("Audio diagnostic: " + selected +
+                ". Use low headphone volume and MARK CRACKLE on audible faults.");
+        }
+        else if (action == "diagnosticMark")
+        {
+            diagnostics_.record ("AUDIO_GLITCH_MARK", juce::JSON::toString (engine_.status(), false));
+            emitNotice ("Crackle marker saved with current driver and callback counters.");
+        }
         else if (action == "presetList")
             emitPresets();
         else if (action == "presetSave")
@@ -417,6 +455,8 @@ private:
         }
         else if (action == "fxRemove")
         {
+            if (engine_.hasTemporaryDiagnosticDevice())
+                return emitNotice ("Return to NORMAL before editing VST3.", true);
             editorWindow_.reset();
             if (engine_.removeAt (slot)) { diagnostics_.record ("FX_REMOVE", juce::String (slot)); emitChain(); }
         }
@@ -489,6 +529,10 @@ private:
         if (deviceSettingsDirty_)
         {
             deviceSettingsDirty_ = false;
+            // DeviceManager signals even when a temporary capture-only /
+            // output-only route is selected. Never persist that test route.
+            if (engine_.hasTemporaryDiagnosticDevice())
+                return;
             if (auto xml = engine_.devices().createStateXml())
             {
                 const auto text = xml->toString();
