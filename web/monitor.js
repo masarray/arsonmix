@@ -19,7 +19,9 @@
     "#arDiagnosticMode{color:#d9eaf3;background:#142a36;border:1px solid #57849a;border-radius:4px;padding:6px;font-size:11px}" +
     "#arDiagnosticMark{color:#f9e5ca;background:#503926;border:1px solid #b9854a;border-radius:4px;padding:7px 10px;cursor:pointer}" +
     "#arDiagnosticCopy{color:#e1f7f4;background:#166052;border:1px solid #34c8ac;border-radius:4px;padding:7px 12px;cursor:pointer}" +
-    "#arDiagnosticCopyStatus{color:#8cdec9;font-size:10px}";
+    "#arDiagnosticCopyStatus{color:#8cdec9;font-size:10px}" +
+    "#arSmartProfile{background:#142a36;color:#c5eaf6;border:1px solid #598496;border-radius:4px;padding:6px;font-size:11px}" +
+    "#arSmartStats{margin:7px 0 2px;color:#9de4cd;font:11px monospace;overflow-wrap:anywhere}";
   document.head.appendChild(css);
   // Signal Check is declared in the permanent toolbar; footer holds status only.
   const overlay = document.createElement("div");
@@ -34,6 +36,11 @@
     '<div class="arSignalActions"><button id="arSignalMonitor">MUTE OUTPUT</button>' +
       '<button id="arSignalDry">DRY TEST OFF</button><button id="arSignalSetup">AUDIO SETUP</button>' +
     '<button id="arSignalLogs">OPEN DIAGNOSTIC LOG</button></div>' +
+    '<div id="arDiagnosticLab"><label for="arSmartProfile">SMART AUDIO</label>' +
+      '<select id="arSmartProfile" aria-label="Smart audio routing profile">' +
+      '<option value="AUTO">AUTO · ADAPTIVE</option><option value="STABLE">STABLE · MORE HEADROOM</option>' +
+      '<option value="LOW_LATENCY">LOW LATENCY</option><option value="DIRECT">DIRECT · NO SRC</option></select></div>' +
+    '<div id="arSmartStats" role="status"></div>' +
     '<div id="arDiagnosticLab"><label for="arDiagnosticMode">P0 AUDIO ISOLATION</label>' +
       '<select id="arDiagnosticMode"><option value="NORMAL">NORMAL</option>' +
       '<option value="DRY_THROUGH">DRY THROUGH (0 FX)</option>' +
@@ -90,6 +97,14 @@
     el("arOutputBar").style.width=percent(d.peak)+"%";
     el("arSignalReason").textContent=diagnosis(d);
     el("arDiagnosticMode").value=d.diagnosticRoute||"NORMAL";
+    el("arSmartProfile").value=d.smartUserProfile||"AUTO";
+    const bridged=d.smartMode==="DUAL_CLOCK_BRIDGED";
+    el("arSmartStats").textContent=bridged
+      ? "LIVE SPLIT CLOCKS · capture "+(d.bridgeCaptureRate||0)+" Hz → render "+(d.bridgeRenderRate||0)+
+        " Hz · FIFO "+(d.bridgeFillFrames||0)+" fr · drift "+Number(d.bridgeCorrectionPpm||0).toFixed(1)+
+        " ppm · src target "+(d.smartTargetLatencyMs||0)+" ms · underflow "+(d.bridgeConsumerUnderflowFrames||0)+
+        " fr · overflow "+(d.bridgeProducerOverflowFrames||0)+" fr"
+      : "DIRECT JUCE · no added SRC · supported ASIO/shared device fast path";
     el("arSignalMonitor").textContent=d.monitor?"MUTE OUTPUT":"UNMUTE OUTPUT";
     el("arSignalDry").textContent=d.dryTest?"DRY TEST ON":"DRY TEST OFF";
     el("arHealthPanel").textContent="CALLBACK "+(d.callbackDurationUs||0)+" µs / period "+
@@ -117,6 +132,8 @@
   el("arSignalDry").addEventListener("click",()=>api.emitEvent("arMixAction",{action:"dryTest",value:!state.dryTest}));
   el("arDiagnosticMode").addEventListener("change",e=>
     api.emitEvent("arMixAction",{action:"diagnosticRoute",value:e.target.value}));
+  el("arSmartProfile").addEventListener("change",e=>
+    api.emitEvent("arMixAction",{action:"smartAudioProfile",value:e.target.value}));
   el("arDiagnosticMark").addEventListener("click",()=>
     api.emitEvent("arMixAction",{action:"diagnosticMark"}));
   el("arDiagnosticCopy").addEventListener("click",()=>{
