@@ -96,7 +96,8 @@ public:
     {
         using Route = armix::diagnostics::Route;
         if (handoff_.busy()) return "Finish the pending FX graph transition first";
-        if (wanted == diagnosticRoute_.load (std::memory_order_acquire)) return {};
+        if (wanted == diagnosticRoute_.load (std::memory_order_acquire) &&
+            !(wanted == Route::normal && savedLiveSetup_)) return {};
         if (wanted < Route::normal || wanted > Route::captureOnly)
             return "Unknown audio diagnostic route";
 
@@ -114,10 +115,14 @@ public:
         if (savedLiveSetup_)
         {
             const auto restore = *savedLiveSetup_;
+            const auto previousRoute = diagnosticRoute_.load (std::memory_order_acquire);
             diagnosticRoute_.store (Route::normal, std::memory_order_release);
             const auto error = deviceManager_.setAudioDeviceSetup (restore, false);
             if (error.isNotEmpty())
             {
+                // Keep the temporary-route identity/restore token for retry.
+                // A driver can disappear and reappear during a diagnostic run.
+                diagnosticRoute_.store (previousRoute, std::memory_order_release);
                 setOutputMuted (true);
                 return "Cannot restore previous audio routing: " + error;
             }
