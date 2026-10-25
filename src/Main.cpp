@@ -491,7 +491,7 @@ private:
                 browser_.emitEventIfBrowserIsVisible ("arMixNativePresetLoaded", pendingPresetUI_);
             if (pendingPresetName_.isNotEmpty())
                 emitNotice ("Live sound recalled: " + pendingPresetName_);
-            pendingPresetUI_ = {};
+            pendingPresetUI_ = juce::var();
             pendingPresetName_.clear();
         }
         if (timerTicks_ % 12 == 0)
