@@ -11,7 +11,7 @@
 
   const send = (action, more = {}) => backend.emitEvent("arMixAction", {action, ...more});
   const state = {catalog: [], chain: [], scanning: false, message: "Connecting to native host...",
-    device: {}, filter: "", selectedCategory: "All", monitor: false, error: "", progress: {active:false,phase:"done",done:0,total:0,found:0,current:""}, adding:false};
+    device: {}, presets: [], filter: "", selectedCategory: "All", monitor: false, error: "", progress: {active:false,phase:"done",done:0,total:0,found:0,current:""}, adding:false};
 
   const escapeHtml = text => String(text ?? "").replace(/[&<>"']/g, c => (
     {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -75,6 +75,7 @@
   if(footer) footer.innerHTML = `<div id="nativeP2">
     <button class="native-btn" data-native-action="audioSetup">AUDIO SETUP</button>
     <button class="native-btn primary" data-go-native-rack="1">LIVE FX RACK</button>
+    <button class="native-btn" data-my-sounds="1">MY SOUNDS</button>
     <span class="native-sub" title="Live audio routes automatically to the chosen hardware output">LIVE AUDIO AUTO-ROUTED</span>
     <span id="nativeDeviceStatus">Starting native audio...</span>
   </div>`;
@@ -102,6 +103,7 @@
     <div class="native-toolbar" style="margin-bottom:12px">
       <button class="native-btn primary" data-plugin-picker="1">＋ ADD FX</button>
       <button class="native-btn" data-plugin-manager="1">PLUGIN MANAGER</button>
+      <button class="native-btn" data-my-sounds="1">SAVE / RECALL</button>
       <span class="native-sub">${state.chain.length}/8 live effects · Real-time processor chain (Channel 1)</span>
     </div>
     <div class="native-card" style="max-width:920px">
@@ -219,8 +221,45 @@
       nav.appendChild(b);
     }
   }
+  function renderMySounds(){
+    const dlg=document.getElementById("nativeMySounds");
+    if(!dlg)return;
+    const muted=!state.monitor;
+    dlg.querySelector(".native-dialog-body").innerHTML=`
+      <div class="native-sub" style="margin-bottom:10px">
+        Native .armix presets save the REAL VST3 binary settings, insert order,
+        bypass, Channel 1 fader/PAN/mute and master. Other demo channels are NOT included.
+        Devices and output routing are never changed by recall.
+      </div>
+      <div class="native-status" style="margin-bottom:10px;color:${muted?"#8fe5b8":"#f8c38d"}">
+        ${muted?"OUTPUT MUTED · Save/recall is available."
+          :"LIVE OUTPUT ACTIVE · Mute output first to protect your performance."}
+        ${muted?"":'<button class="native-btn" data-preset-mute="1" style="margin-left:7px">MUTE OUTPUT</button>'}
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:12px">
+        <input id="nativePresetName" class="native-search" style="margin:0;min-width:0;flex:1"
+           maxlength="56" placeholder="Name your sound, e.g. Warm Karaoke" aria-label="Native preset name">
+        <button class="native-btn primary" data-preset-save="1" ${muted?"":"disabled"}>SAVE SOUND</button>
+      </div>
+      <div class="native-sub" style="margin-bottom:7px">SAVED NATIVE SOUNDS · ${state.presets.length}</div>
+      <div style="max-height:250px;overflow:auto">${state.presets.length?
+        state.presets.map(n=>`<div class="native-result">
+          <span><b>${escapeHtml(n)}</b><small>.armix · full vendor VST3 state</small></span>
+          <button class="native-btn" data-preset-load="${escapeHtml(n)}" ${muted?"":"disabled"}>RECALL</button>
+        </div>`).join("") :
+        '<div class="native-empty">No native sounds saved. Mute output, then save the current live FX chain.</div>'}
+      </div>`;
+    dlg.querySelector(".native-dialog-footer").textContent=
+      "Changing active FX while performing is not seamless yet. Output stays muted after recall. Do not distribute presets containing licensed plugin state without permission.";
+  }
+  function openMySounds(){
+    renderMySounds();
+    showDialog("nativeMySounds");
+    send("presetList");
+  }
   function initModals(){
   createDialog("nativeFxSelector","Add VST3 Effect");
+  createDialog("nativeMySounds","My Sounds · Native Presets",true);
   createDialog("nativePluginManager","Plugin Manager");
   createDialog("nativeAudioSetup","Opening Audio Setup",true);
   const setup=document.getElementById("nativeAudioSetup");
@@ -300,11 +339,33 @@
 
   // Capture native controls before the legacy v0.3 demo handlers.
   document.addEventListener("click", function(e){
-  const el=e.target.closest("[data-native-action],[data-native-add],[data-native-fx],[data-native-category],[data-go-native-rack],[data-insert],[data-plugin-picker],[data-plugin-manager],[data-close-modal]");
+  const el=e.target.closest("[data-native-action],[data-native-add],[data-native-fx],[data-native-category],[data-go-native-rack],[data-insert],[data-plugin-picker],[data-plugin-manager],[data-my-sounds],[data-preset-mute],[data-preset-save],[data-preset-load],[data-close-modal]");
   if(!el)return;
   e.preventDefault();e.stopImmediatePropagation();
 
   if(el.dataset.closeModal){hideDialog(el.dataset.closeModal);return;}
+  if(el.hasAttribute("data-my-sounds")){openMySounds();return;}
+  if(el.hasAttribute("data-preset-mute")){
+    send("monitor",{value:false});state.monitor=false;renderMySounds();return;
+  }
+  if(el.hasAttribute("data-preset-save")){
+    const input=document.getElementById("nativePresetName");
+    const name=(input?.value||"").trim();
+    if(!name)return;
+    input.disabled=true;
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      send("presetSave",{name});
+      input.disabled=false;
+    }));
+    return;
+  }
+  if(el.hasAttribute("data-preset-load")){
+    const name=el.dataset.presetLoad;
+    if(!name)return;
+    if(!confirm('Recall native sound "'+name+'"? Current plugin chain will be replaced. Output must remain muted.'))return;
+    requestAnimationFrame(()=>requestAnimationFrame(()=>send("presetLoad",{name})));
+    return;
+  }
   if(el.hasAttribute("data-plugin-manager")){
     renderManager();showDialog("nativePluginManager");return;
   }
@@ -367,6 +428,31 @@
   input?.setSelectionRange(pos,pos);
 },true);
 
+  backend.addEventListener("arMixPresets",items=>{
+    state.presets=Array.isArray(items)?items:[];
+    const dialog=document.getElementById("nativeMySounds");
+    if(dialog&&!dialog.hidden){
+      const previous=dialog.querySelector("#nativePresetName")?.value||"";
+      renderMySounds();
+      const input=dialog.querySelector("#nativePresetName");
+      if(input)input.value=previous;
+    }
+  });
+  backend.addEventListener("arMixNativePresetLoaded",d=>{
+    // Synchronize the real mixer controls. Do not apply the legacy localStorage
+    // demo presets as an authoritative source for DSP.
+    if(typeof channels!=="undefined" && channels[0]){
+      channels[0].fader=Number(d.channelDb)||0;
+      channels[0].pan=Math.round(Number(d.pan)||0);
+      channels[0].mute=!!d.channelMute;
+      if(typeof masterGain!=="undefined")masterGain=Number(d.masterDb)||0;
+      if(typeof masterMute!=="undefined")masterMute=!!d.masterMute;
+      if(typeof renderMixer==="function")renderMixer();
+      if(typeof renderMaster==="function")renderMaster();
+      patchMixer();
+    }
+    hideDialog("nativeMySounds");
+  });
   backend.addEventListener("arMixCatalog",data=>{
     state.catalog=Array.isArray(data.items)?data.items:[];
     state.scanning=!!data.scanning;
