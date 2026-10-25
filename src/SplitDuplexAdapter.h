@@ -150,7 +150,7 @@ public:
         bridge_.pull (outputs, channels, frames);
     }
 
-    Readout snapshot (const juce::AudioIODevice* renderDevice) const
+    Readout snapshot (juce::AudioIODevice* renderDevice) const
     {
         Readout r;
         r.fifo = bridge_.status();
@@ -161,7 +161,7 @@ public:
         const auto last = tap_.lastCallbackUs.load (std::memory_order_relaxed);
         const auto now = CaptureTap::micros();
         r.captureAgeUs = last > 0 && now >= last ? now - last : 0;
-        const auto* cap = captureManager_.getCurrentAudioDevice();
+        auto* cap = captureManager_.getCurrentAudioDevice();
         r.captureRate = cap ? cap->getCurrentSampleRate() : 0.;
         r.outputRate = renderDevice ? renderDevice->getCurrentSampleRate() : 0.;
         r.preparedCaptureRate = preparedCaptureRate_;
