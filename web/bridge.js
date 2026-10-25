@@ -70,7 +70,7 @@
   if(footer) footer.innerHTML = `<div id="nativeP2">
     <button class="native-btn" data-native-action="audioSetup">AUDIO SETUP</button>
     <button class="native-btn primary" data-go-native-rack="1">LIVE FX RACK</button>
-    <button class="native-btn" data-native-action="monitor">MONITOR OFF</button>
+    <span class="native-sub" title="Live audio routes automatically to the chosen hardware output">LIVE AUDIO AUTO-ROUTED</span>
     <span id="nativeDeviceStatus">Starting native audio...</span>
   </div>`;
 
@@ -117,7 +117,7 @@
         <div class="native-status">MASTER OUTPUT / STREAM</div>
       </div>
     </div>
-    <p class="native-sub" style="margin-top:13px">Bypass can change during monitoring. Stop monitoring before scanning, adding, removing or reordering effects.</p>
+    <p class="native-sub" style="margin-top:13px">Bypass can change without stopping the audio callback. Live chain edits briefly restart processing; avoid editing FX while performing. Bypass is real-time safe.</p>
   </div>`;
 }
   function createDialog(id,title,small=false){
@@ -388,7 +388,7 @@
     state.device=d;
     state.monitor=!!d.monitor;
     const b=document.querySelector('[data-native-action="monitor"]');
-    if(b){b.textContent=state.monitor?"MONITOR ON":"MONITOR OFF";b.classList.toggle("on",state.monitor);}
+    if(b){b.textContent=state.monitor?"MUTE OUTPUT":"UNMUTE OUTPUT";b.classList.toggle("on",!state.monitor);}
     const text=d.error?"AUDIO ERROR: "+d.error:
       d.connected?`${d.driver} · ${Math.round(d.rate)} Hz / ${d.buffer} · ${state.chain.length} LIVE VST3 · ${d.latencySamples||0} samples FX latency`
       :"NO AUDIO DEVICE · SELECT AUDIO SETUP";

@@ -5,6 +5,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <BinaryData.h>
 #include "LiveAudioEngine.h"
+#include "DiagnosticsRecorder.h"
 #include "PluginCatalog.h"
 #include <cstring>
 #include <optional>
@@ -83,13 +84,14 @@ public:
     void closeButtonPressed() override { setVisible (false); }
 };
 
-class ConsoleWindow final : public juce::DocumentWindow, private juce::Timer
+class ConsoleWindow final : public juce::DocumentWindow, private juce::Timer, private juce::ChangeListener
 {
 public:
     ConsoleWindow()
         : DocumentWindow ("AR MIX Studio — Native VST3 FX Host",
                          juce::Colour (0xff101921), allButtons),
           catalog_ (settingsDirectory()),
+          diagnostics_ (settingsDirectory().getChildFile ("diagnostics")),
           browser_ (juce::WebBrowserComponent::Options{}
               .withBackend (juce::WebBrowserComponent::Options::Backend::webview2)
               .withWinWebView2Options (
@@ -114,6 +116,8 @@ public:
 
         auto saved = juce::XmlDocument::parse (settingsDirectory().getChildFile ("audio-devices.xml"));
         startupError_ = engine_.start (saved.get());
+        engine_.devices().addChangeListener (this);
+        diagnostics_.record ("STARTUP", startupError_.isEmpty() ? "Audio device initialized" : startupError_);
         browser_.goToURL (juce::WebBrowserComponent::getResourceProviderRoot());
         startTimerHz (12);
         // Defer initial scan until explicitly requested in Plugin Manager.
@@ -126,6 +130,7 @@ public:
         catalog_.onChanged = nullptr;
         editorWindow_.reset();
         audioSetupWindow_.reset();
+        engine_.devices().removeChangeListener (this);
         engine_.stop();
         browser_.setVisible (false);
     }
@@ -135,6 +140,7 @@ public:
 private:
     LiveAudioEngine engine_;
     PluginCatalog catalog_;
+    DiagnosticsRecorder diagnostics_;
     Browser browser_;
     std::unique_ptr<juce::FileChooser> chooser_;
     std::unique_ptr<PluginEditorWindow> editorWindow_;
@@ -143,6 +149,7 @@ private:
     bool initialStateSent_ = false;
     bool setupLaunching_ = false;
     unsigned int timerTicks_ = 0;
+    bool deviceSettingsDirty_ = false;
 
     void emitNotice (const juce::String& message, bool error = false)
     {
@@ -173,6 +180,7 @@ private:
         const auto valueNumber = static_cast<float> (static_cast<double> (value));
         if (name == "masterGain" && (value.isDouble() || value.isInt()))
             engine_.setMasterGainDb (valueNumber);
+        // The app.js bridge converts strip index 0 to channel ID 1.
         else if (name == "faderDb" && channel == 1 && (value.isDouble() || value.isInt()))
             engine_.setChannelGainDb (valueNumber);
         else if (name == "mute" && channel == 1 && value.isBool())
@@ -198,6 +206,7 @@ private:
 
     void showDeviceSetup()
     {
+        diagnostics_.record ("SETUP", "Open audio device setup");
         if (setupLaunching_) return;
 
         // The native JUCE device list is cached after first construction:
@@ -272,50 +281,48 @@ private:
         const int slot = static_cast<int> (args.getProperty ("slot", -1));
 
         if (action == "audioSetup") showDeviceSetup();
+        else if (action == "openDiagnostics")
+        {
+            const auto file = diagnostics_.getLogFile();
+            if (file.existsAsFile()) file.revealToUser();
+            else file.getParentDirectory().revealToUser();
+        }
         else if (action == "scanVst3")
         {
-            if (engine_.isMonitorEnabled()) emitNotice ("Turn MONITOR OFF before scanning plugins.", true);
-            else catalog_.scanDefaults();
+            diagnostics_.record ("PLUGIN_SCAN", "Scan standard VST3 folders");
+            catalog_.scanDefaults();
         }
         else if (action == "addScanFolder")
         {
-            if (engine_.isMonitorEnabled()) emitNotice ("Turn MONITOR OFF before scanning plugins.", true);
-            else chooseFolder();
+            chooseFolder();
         }
         else if (action == "importVst3")
         {
-            if (engine_.isMonitorEnabled()) emitNotice ("Turn MONITOR OFF before importing plugins.", true);
-            else chooseImport();
+            chooseImport();
         }
         else if (action == "addCatalog")
         {
-            if (engine_.isMonitorEnabled())
-                return emitNotice ("Turn MONITOR OFF before editing the live FX chain.", true);
             const auto* plugin = catalog_.find (args.getProperty ("id", {}).toString());
             if (!plugin)
                 return emitNotice ("Plugin not found in catalog. Rescan your VST3 folders.", true);
             editorWindow_.reset();
             const auto error = engine_.addVst3 (plugin->path, plugin->uid, plugin->key());
-            if (error.isNotEmpty()) emitNotice (error, true);
-            else { emitChain(); emitNotice (plugin->name + " inserted into the LIVE FX chain."); }
+            if (error.isNotEmpty()) { diagnostics_.record ("FX_LOAD_FAIL", plugin->name + ": " + error); emitNotice (error, true); }
+            else { diagnostics_.record ("FX_LOAD", plugin->name + " (callback reattached)"); emitChain(); emitNotice (plugin->name + " inserted. Live chain changes may briefly interrupt audio."); }
         }
         else if (action == "fxRemove")
         {
-            if (engine_.isMonitorEnabled())
-                return emitNotice ("Turn MONITOR OFF before removing a live FX.", true);
             editorWindow_.reset();
-            if (engine_.removeAt (slot)) emitChain();
+            if (engine_.removeAt (slot)) { diagnostics_.record ("FX_REMOVE", juce::String (slot)); emitChain(); }
         }
         else if (action == "fxMove")
         {
-            if (engine_.isMonitorEnabled())
-                return emitNotice ("Turn MONITOR OFF before reordering live FX.", true);
             editorWindow_.reset();
-            if (engine_.moveSlot (slot, slot + static_cast<int> (value))) emitChain();
+            if (engine_.moveSlot (slot, slot + static_cast<int> (value))) { diagnostics_.record ("FX_MOVE", juce::String (slot)); emitChain(); }
         }
         else if (action == "fxBypass")
         {
-            if (value.isBool() && engine_.setBypass (slot, bool (value))) emitChain();
+            if (value.isBool() && engine_.setBypass (slot, bool (value))) { diagnostics_.record ("FX_BYPASS", juce::String (slot) + (bool (value) ? " ON" : " OFF")); emitChain(); }
         }
         else if (action == "fxEditor")
         {
@@ -331,9 +338,13 @@ private:
         }
         else if (action == "monitor" && value.isBool())
         {
-            if (bool (value) && catalog_.busy())
-                emitNotice ("VST3 scan still active. Wait for the scan to finish before enabling monitoring.", true);
-            else engine_.setMonitorEnabled (bool (value));
+            engine_.setMonitorEnabled (bool (value));
+            diagnostics_.record ("OUTPUT_MUTE", bool (value) ? "OFF" : "ON");
+        }
+        else if (action == "dryTest" && value.isBool())
+        {
+            engine_.setDryTestEnabled (bool (value));
+            diagnostics_.record ("DRY_TEST", bool (value) ? "ON" : "OFF");
         }
         else if (action == "refreshState")
         {
@@ -342,10 +353,34 @@ private:
         }
     }
 
+    void changeListenerCallback (juce::ChangeBroadcaster*) override
+    {
+        // Save device state only after a real change, not on every 3-second tick.
+        deviceSettingsDirty_ = true;
+        diagnostics_.record ("DEVICE_CHANGE", "Device manager event");
+    }
+
     void timerCallback() override
     {
-        if (!browser_.loaded) return;
+        ++timerTicks_;
+        if (timerTicks_ % 12 == 0)
+            diagnostics_.record ("AUDIO_HEALTH", juce::JSON::toString (engine_.status(), false));
 
+        if (deviceSettingsDirty_)
+        {
+            deviceSettingsDirty_ = false;
+            if (auto xml = engine_.devices().createStateXml())
+            {
+                const auto text = xml->toString();
+                if (text != lastAudioXml_)
+                {
+                    lastAudioXml_ = text;
+                    if (!settingsDirectory().getChildFile ("audio-devices.xml").replaceWithText (text))
+                        diagnostics_.record ("DEVICE_SAVE_FAIL", "Unable to persist device settings");
+                }
+            }
+        }
+        if (!browser_.loaded) return;
         if (!initialStateSent_)
         {
             initialStateSent_ = true;
@@ -355,21 +390,10 @@ private:
         }
         if (catalog_.busy() && timerTicks_ % 3 == 0)
             emitScanProgress();
-        // Persist configuration off the callback; cap XML serialization to ~3 s.
-        if (++timerTicks_ % 36 == 0)
-        {
-            if (auto xml = engine_.devices().createStateXml())
-            {
-                const auto text = xml->toString();
-                if (text != lastAudioXml_)
-                {
-                    lastAudioXml_ = text;
-                    settingsDirectory().getChildFile ("audio-devices.xml").replaceWithText (text);
-                }
-            }
-        }
         auto state = engine_.status();
-        if (startupError_.isNotEmpty())
+        state.getDynamicObject()->setProperty ("diagnosticsDropped",
+            static_cast<double> (diagnostics_.lostRecords()));
+        if (startupError_.isNotEmpty() && !bool (state.getProperty ("connected", false)))
             state.getDynamicObject()->setProperty ("error", startupError_);
         browser_.emitEventIfBrowserIsVisible ("arMixStatus", state);
     }
@@ -378,7 +402,7 @@ private:
 class ConsoleApp final : public juce::JUCEApplication
 {
 public:
-    const juce::String getApplicationName() override { return "AR MIX Studio"; }
+    const juce::String getApplicationName() override { return "ArSonMix"; }
     const juce::String getApplicationVersion() override { return "0.5.0-native-catalog"; }
     void initialise (const juce::String&) override { window_ = std::make_unique<ConsoleWindow>(); }
     void shutdown() override { window_.reset(); }

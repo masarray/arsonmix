@@ -28,8 +28,10 @@
       '<div class="arSignalStage"><small>02 · POST FX</small><b id="arFxName">VST3</b><div class="arSignalMeter"><i id="arFxBar"></i></div></div>' +
       '<div class="arSignalStage"><small>03 · HARDWARE OUTPUT</small><b id="arOutputName">Headphone</b><div class="arSignalMeter"><i id="arOutputBar"></i></div></div>' +
     '</div><div id="arSignalReason">Reading native audio state...</div>' +
-    '<div class="arSignalActions"><button id="arSignalMonitor">ENABLE OUTPUT</button>' +
-      '<button id="arSignalDry">DRY TEST OFF</button><button id="arSignalSetup">AUDIO SETUP</button></div>' +
+    '<div class="arSignalActions"><button id="arSignalMonitor">MUTE OUTPUT</button>' +
+      '<button id="arSignalDry">DRY TEST OFF</button><button id="arSignalSetup">AUDIO SETUP</button>' +
+    '<button id="arSignalLogs">OPEN DIAGNOSTIC LOG</button></div>' +
+    '<div id="arHealthPanel" style="padding:8px 0;font:11px monospace;color:#8ad6e0"></div>' +
     '<div id="arSignalFooter">The legacy Main L/R, Record and Streaming buttons are UI previews, not hardware routing. Select output using AUDIO SETUP. Use headphones at low volume.</div>' +
     '</section>';
   document.body.appendChild(overlay);
@@ -39,7 +41,7 @@
     if (d.error) return "Audio driver error: "+d.error;
     if (!d.connected) return "No audio device connected. Open AUDIO SETUP.";
     if (!d.deviceOutputChannels) return "No active output channels. Select a headphone/speaker output in AUDIO SETUP.";
-    if (!d.monitor) return "OUTPUT DISARMED: the engine intentionally writes silence until ENABLE OUTPUT is clicked. This prevents microphone feedback.";
+    if (!d.monitor) return "OUTPUT MUTED by user. Audio routes automatically after a working input/output device is selected.";
     if (d.masterMute) return "MASTER MUTED: switch off the master MUTE button.";
     if (d.channelMute) return "CHANNEL 1 MUTED: switch off Lead Vocal MUTE.";
     if ((d.inputPeak||0)>.006 && (d.postFxPeak||0)<.0002) return "Mic input is detected but VST3 output is silent. Enable DRY TEST to bypass all plugins.";
@@ -52,7 +54,7 @@
     el("arSignalBadge").textContent = !d.monitor ? "OUTPUT MUTED" : d.masterMute ? "MASTER MUTED" : d.channelMute ? "CH1 MUTED" : "OUTPUT ARMED";
     el("arSignalBadge").style.color = d.monitor && !d.masterMute && !d.channelMute ? "#71e9cc" : "#e9be7c";
     const monitorButton=document.querySelector('[data-native-action="monitor"]');
-    if (monitorButton) monitorButton.textContent=d.monitor?"DISARM OUTPUT":"ENABLE OUTPUT";
+    if (monitorButton) monitorButton.textContent=d.monitor?"MUTE OUTPUT":"UNMUTE OUTPUT";
     // The original UI shell had fixed 48 kHz / 64-sample demo badges. Show
     // the REAL negotiated driver parameters instead of misleading the user.
     const rateLabel=document.querySelector('.spec:not(.spec-device):not(.bpm) strong');
@@ -73,8 +75,18 @@
     el("arFxBar").style.width=percent(d.postFxPeak)+"%";
     el("arOutputBar").style.width=percent(d.peak)+"%";
     el("arSignalReason").textContent=diagnosis(d);
-    el("arSignalMonitor").textContent=d.monitor?"DISARM OUTPUT":"ENABLE OUTPUT";
+    el("arSignalMonitor").textContent=d.monitor?"MUTE OUTPUT":"UNMUTE OUTPUT";
     el("arSignalDry").textContent=d.dryTest?"DRY TEST ON":"DRY TEST OFF";
+    el("arHealthPanel").textContent="CALLBACK "+(d.callbackDurationUs||0)+" µs / period "+
+      Math.round(d.periodUs||0)+" µs | Worst "+(d.worstCallbackUs||0)+
+      " µs | Over-budget "+(d.overBudgetCount||0)+
+      " | Long gaps "+(d.callbackGapCount||0)+
+      " | Worst VST "+(d.worstPluginUs||0)+" µs"+
+      " | device starts/stops "+(d.deviceStartCount||0)+"/"+(d.deviceStopCount||0)+
+      " (timing indicators, NOT confirmed driver xruns)";
+    const timing=Array.isArray(d.pluginTimings)?d.pluginTimings:[];
+    const fxInfo=timing.map(x=>x.slot+". "+x.name+": "+x.lastUs+" µs now, worst "+x.worstUs+" µs").join(" | ");
+    if(fxInfo)el("arHealthPanel").textContent+=" | FX: "+fxInfo;
     el("arSignalFooter").textContent=(d.driver||"Audio")+" · "+(d.rate||0)+" Hz / "+(d.buffer||0)+
       " samples · "+(d.deviceInputChannels||0)+" active input / "+(d.deviceOutputChannels||0)+" active output channels · "+
       (d.latencySamples||0)+" samples plugin latency. Choose hardware output using AUDIO SETUP; Main L/R and Streaming are UI previews.";
@@ -84,6 +96,7 @@
   el("arSignalClose").addEventListener("click",()=>overlay.classList.remove("open"));
   el("arSignalMonitor").addEventListener("click",()=>api.emitEvent("arMixAction",{action:"monitor",value:!state.monitor}));
   el("arSignalDry").addEventListener("click",()=>api.emitEvent("arMixAction",{action:"dryTest",value:!state.dryTest}));
+  el("arSignalLogs").addEventListener("click",()=>api.emitEvent("arMixAction",{action:"openDiagnostics"}));
   el("arSignalSetup").addEventListener("click",()=>{
     overlay.classList.remove("open");
     document.querySelector('[data-native-action="audioSetup"]')?.click();

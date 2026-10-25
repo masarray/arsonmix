@@ -62,3 +62,13 @@ All remaining UI preview channels and factory vocal presets are still visual; do
 ## P2 DAW UX improvement
 
 Use MIX → Channel 1 ADD FX to select a real indexed VST3; PLUGINS opens Plugin Manager for scan/import only. Audio Setup now reports loading status and reuses the native selector window. Scan uses real candidate counters and indeterminate discovery stage. See [P2 DAW workflow guide](docs/P2_DAW_WORKFLOW.md).
+
+## P2.2 Realtime Reliability + latest ArSonMix GUI
+
+- The live signal is routed automatically on a valid JUCE device; no extra enable gate. Emergency output mute stays in SIGNAL CHECK.
+- Real-time health counters: callback processing time, worst processing time, callbacks over 80% or 100% of buffer period, timing gaps, and worst VST3 processing time.
+- Persistent bounded rotating log in user app data `AR-MIX-Studio/diagnostics/audio-diagnostics.log`, using a dedicated logger worker (never audio callback).
+- Device XML saved upon device change, **not** on a repeating 3-second UI timer.
+- Uses current `fix/fader-thumb-symmetry-polish` GUI (ArSonMix, metal controls, horizontal PAN sliders). Audio host code stays isolated.
+- Press SIGNAL CHECK → OPEN DIAGNOSTIC LOG to inspect or share diagnostic evidence after reproducing audio stutter.
+- Read [P2.2 reliability guide](docs/P2_REALTIME_RELIABILITY.md).
