@@ -78,6 +78,8 @@ async def main():
         assert all(btn['width']>=40 and btn['height']>=25 for btn in railGeometry['buttons']),railGeometry
         await page.screenshot(path=str(project/'mixer-master-dual-metric-left-rail.png'),full_page=True)
 
+        assert await page.locator('header .nav button').count()==7
+        assert await page.locator('footer.status button').count()==0
         assert await page.locator('[data-clear-all-clips]').count()==1
         architecture=await page.evaluate("""() => {
           const bg=s=>getComputedStyle(document.querySelector(s)).backgroundImage;
@@ -88,7 +90,7 @@ async def main():
             return b.left<p.left-1||b.right>p.right+1;
           });
           return {nav:bg('.nav button.selected'),small:bg('[data-mute="0"]'),
-            long:bg('.rail-presets button'),fx:bg('.strip .rack .insert'),chrome:bg('#settingsBtn'),
+            long:bg('.rail-presets button'),fx:bg('.strip .rack .insert'),chrome:bg('.spec-device'),
             navBounds:rect('.nav'),mode:rect('#modeToggle'),overflow,
             mainHeader:rect('[data-strip="0"] .ch-id'),masterHeader:rect('#masterLeft .ch-id'),
             mainBottom:rect('[data-strip="0"] .strip-name'),masterBottom:rect('#masterLeft .strip-name'),
@@ -385,8 +387,11 @@ async def main():
         assert await page.evaluate('fxParams["0:1"].mix')==72
         await page.locator('[data-view="SIGNAL FLOW"]').click()
         assert await page.locator('.flow-node').count()==4
-        await page.locator('[data-view="SETUP"]').click()
-        assert await page.locator('.setup-section').count()==4
+        await page.locator('#audioSetupBtn').click()
+        assert await page.locator('#toast').inner_text()=='Audio Setup is available in the Windows desktop app'
+        assert await page.locator('.setup-section').count()==0
+        assert await page.locator('.editor').count()==0
+        assert await page.locator('.status button').count()==0
         await page.locator('[data-view="MIX"]').click()
         await page.locator('#modeToggle').click()
         assert await page.locator('.app.easy').count()==0

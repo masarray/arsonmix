@@ -17,8 +17,6 @@
     {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const percent = peak => Math.max(1,Math.min(100,(20*Math.log10(Math.max(1e-6,Number(peak)||0))+60)*100/60));
   const toStatus = text => {
-    const e = document.querySelector("#nativeDeviceStatus");
-    if(e) e.textContent = text;
     const footer = document.querySelector("#audioStatus");
     if(footer) footer.textContent = text;
   };
@@ -71,24 +69,12 @@
     .native-tag{font-size:9px;border:1px solid #3f7a90;padding:3px 5px;border-radius:3px;color:#8ad6ed}
     .native-empty{border:1px dashed #3b5361;padding:18px;color:#8fafbc;text-align:center;border-radius:5px;font-size:12px}
     .native-status{padding:8px 10px;background:#10212c;border:1px solid #36546b;border-radius:5px;font-size:11px;color:#97bac8}
-    #nativeP2{display:flex;gap:5px;align-items:center;font-size:10px;white-space:nowrap}
-    #nativeP2 button{padding:4px 8px;font-size:10px}
-    #nativeDeviceStatus{color:#a8c4d0;max-width:360px;overflow:hidden;text-overflow:ellipsis}
-    .status-help{flex:1;min-width:0}
     @media(max-width:1150px){.native-grid{grid-template-columns:1fr}.native-hdr{flex-direction:column}}
   `;
   css.textContent += "\n    .native-modal{position:fixed;inset:0;z-index:700;display:flex;align-items:center;justify-content:center;\n      background:rgba(3,11,18,.78);backdrop-filter:blur(5px);padding:22px;box-sizing:border-box}\n    .native-modal[hidden]{display:none}\n    .native-dialog{width:min(860px,96vw);max-height:min(840px,92vh);overflow:hidden;\n      display:flex;flex-direction:column;background:linear-gradient(145deg,#243945 0%,#101e29 62%,#0c1821);\n      border:1px solid #638293;border-radius:11px;box-shadow:0 18px 80px #000c,inset 0 1px #b2d9e449}\n    .native-dialog-header{display:flex;align-items:center;justify-content:space-between;gap:15px;\n      border-bottom:1px solid #3c5360;padding:14px 17px}\n    .native-dialog-header h2{font-size:18px;font-weight:500;color:#e4f4f9;margin:4px 0}\n    .native-dialog-body{padding:14px 17px;overflow:auto;min-height:60px}\n    .native-dialog-footer{border-top:1px solid #334b58;padding:9px 17px;color:#91abb8;font-size:11px}\n    .native-dialog.small{max-width:520px}\n    .native-bar{height:12px;border:1px solid #527282;background:#0a1621;border-radius:7px;overflow:hidden;position:relative;\n      box-shadow:inset 0 2px 5px #000c}\n    .native-bar-fill{height:100%;width:0%;background:linear-gradient(180deg,#8ef6ff,#17a8da 43%,#08688e);\n      box-shadow:0 0 8px #1ed5fcbb;border-right:1px solid #ddffff}\n    .native-bar.unknown .native-bar-fill{width:34%;position:absolute;animation:native-indeterminate 1.65s ease-in-out infinite}\n    @keyframes native-indeterminate{0%{left:-36%}50%{left:58%}100%{left:105%}}\n    .native-progress-info{font:11px monospace;color:#a5d5e2;margin:8px 0;display:flex;justify-content:space-between;gap:9px}\n    .native-progress-info strong{font-weight:500;color:#d8f9ff}\n    #nativeScanHud{position:fixed;left:50%;transform:translateX(-50%);bottom:37px;z-index:550;\n      background:#152c3b;border:1px solid #537588;border-radius:8px;box-shadow:0 6px 20px #000a;\n      padding:9px 13px;width:min(470px,90vw)}\n    #nativeScanHud[hidden]{display:none}\n    .native-result{display:flex;align-items:center;gap:7px;background:#10222c;border:1px solid #314d5c;\n      border-radius:6px;padding:9px 11px;margin:5px 0}\n    .native-result span{flex:1;min-width:0}\n    .native-result b{display:block;font-weight:500;color:#d6edf7;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n    .native-result small{display:block;color:#88aaba;font-size:10px;margin-top:4px}\n    .native-search{font-family:inherit!important}\n";
   css.textContent += "\n    .native-insert-row{display:flex;align-items:center;gap:2px;width:100%;min-width:0}\n    .native-insert-row>.insert{flex:1;min-width:0;text-align:left;overflow:hidden;\n      text-overflow:ellipsis;white-space:nowrap;padding-left:4px;padding-right:1px}\n    .native-insert-row>.native-power{flex:0 0 21px;width:21px;height:21px;\n      font-size:14px;line-height:18px;text-align:center;border-radius:3px;\n      border:1px solid #3b6973;color:#8becb3;cursor:pointer;padding:0;\n      background:linear-gradient(#385e65,#102c30);box-shadow:inset 0 1px #91e8bd44}\n    .native-insert-row>.native-power.is-off{color:#8b9ca5;border-color:#53616a;\n      background:linear-gradient(#39414a,#171e27);box-shadow:none}\n    .native-insert-row>.native-power:focus-visible{outline:2px solid #4dd7ff}\n    .native-insert-row.is-bypassed>.insert{opacity:.54;filter:saturate(.55)}\n    .native-engine .strip[data-preview=\"1\"] .meter-fill{opacity:0!important}\n    .native-engine .strip[data-preview=\"1\"] .meter{opacity:.36}\n    .native-engine .meter-fill{transition:height 90ms linear}\n  ";
   document.head.appendChild(css);
-  const footer = document.querySelector(".status-help");
-  if(footer) footer.innerHTML = `<div id="nativeP2">
-    <button class="native-btn" data-native-action="audioSetup">AUDIO SETUP</button>
-    <button class="native-btn primary" data-go-native-rack="1">LIVE FX RACK</button>
-    <button class="native-btn" data-my-sounds="1">MY SOUNDS</button>
-    <span class="native-sub" title="Live audio routes automatically to the chosen hardware output">LIVE AUDIO AUTO-ROUTED</span>
-    <span id="nativeDeviceStatus">Starting native audio...</span>
-  </div>`;
-
+  document.getElementById("engineBadge").textContent="NATIVE CH1";
   const workspace = document.querySelector("#rackWorkspace");
   const mixer = document.querySelector("#mixer");
   const currentTab = () => document.querySelector(".nav button.selected")?.dataset.view;
@@ -228,16 +214,6 @@
     if(host)host.innerHTML=p.active?scanProgressHtml():`<div class="native-sub">${escapeHtml(state.message)}</div>`;
   }
 }
-  function addPluginManagerToolbar(){
-    const nav=document.querySelector(".nav");
-    if(nav&&!nav.querySelector("[data-plugin-manager]")){
-      const b=document.createElement("button");
-      b.dataset.pluginManager="1";
-      b.textContent="PLUGINS";
-      b.title="Plugin Manager · VST3 scan and catalog administration";
-      nav.appendChild(b);
-    }
-  }
   function renderMySounds(){
     const dlg=document.getElementById("nativeMySounds");
     if(!dlg)return;
@@ -278,31 +254,8 @@
   createDialog("nativeFxSelector","Add VST3 Effect");
   createDialog("nativeMySounds","My Sounds · Native Presets",true);
   createDialog("nativePluginManager","Plugin Manager");
-  createDialog("nativeAudioSetup","Opening Audio Setup",true);
-  const setup=document.getElementById("nativeAudioSetup");
-  setup.querySelector(".native-dialog-body").innerHTML=`<p class="native-sub">Preparing ASIO/WASAPI driver configuration…</p>
-    <div class="native-bar unknown"><div class="native-bar-fill"></div></div>
-    <p class="native-sub" style="margin-top:12px">Third-party ASIO drivers may require additional enumeration time.</p>`;
-  setup.querySelector(".native-dialog-footer").textContent="Audio processing remains independent of this window.";
   const hud=document.createElement("div");hud.id="nativeScanHud";hud.hidden=true;document.body.appendChild(hud);
 }
-  function renderSetup() {
-    if(!workspace||currentTab()!=="SETUP") return;
-    workspace.dataset.nativeSetup="1";
-    const d=state.device;
-    workspace.innerHTML = `<div class="native-panel" data-native-setup="1">
-      ${cardHeader("Windows Audio Setup","Select your ASIO or WASAPI input and output using the native JUCE device selector. Settings are retained after restart.")}
-      <section class="native-card" style="max-width:700px">
-        <h3>ACTIVE AUDIO DEVICE</h3>
-        <p class="native-status">Driver: ${escapeHtml(d.driver||"Not connected")}<br>Device: ${escapeHtml(d.device||"Not selected")}<br>Sample rate: ${Number(d.rate||0).toLocaleString()} Hz · Buffer: ${d.buffer||0} samples</p>
-        <div class="native-toolbar" style="margin-top:15px">
-          <button class="native-btn primary" data-native-action="audioSetup">OPEN ASIO / WASAPI DEVICE SETTINGS</button>
-          <button class="native-btn" data-plugin-manager="1">OPEN PLUGIN MANAGER</button><button class="native-btn" data-go-native-rack="1">OPEN LIVE FX RACK</button>
-        </div>
-        <p class="native-sub" style="margin-top:14px">For first test: wired headphones, 48 kHz and 128/256 samples. Start MONITOR OFF. ASIO and WASAPI are not interchangeable with virtual streaming outputs; loopback routing is a separate feature.</p>
-      </section>
-    </div>`;
-  }
   function patchMixer(){
   if(!mixer)return;
   const tracks=mixer.querySelectorAll(".strip");
@@ -356,8 +309,6 @@
       renderPending=false;
       if(currentTab()==="FX RACK"){
         if(workspace.firstElementChild?.dataset.liveNative!=="1")renderRack();
-      } else if(currentTab()==="SETUP"){
-        if(workspace.firstElementChild?.dataset.nativeSetup!=="1")renderSetup();
       }
       patchMixer();
     });
@@ -368,7 +319,6 @@
   new MutationObserver(()=>syncView()).observe(mixer,{childList:true,subtree:true});
   const repaint=()=>{
     if(currentTab()==="FX RACK") renderRack();
-    if(currentTab()==="SETUP") renderSetup();
     patchMixer();
   };
 
@@ -435,19 +385,7 @@
   const action=el.dataset.nativeAction;
   if(action){
     if(action==="monitor"){send("monitor",{value:!state.monitor});return;}
-    if(action==="audioSetup"){
-      const overlay=document.getElementById("nativeAudioSetup");
-      if(overlay){
-        overlay.querySelector(".native-dialog-body").innerHTML=
-          `<p class="native-sub">Preparing ASIO/WASAPI device selection…</p>
-           <div class="native-bar unknown"><div class="native-bar-fill"></div></div>
-           <p class="native-sub" style="margin-top:12px">Loading device options. Third-party driver enumeration may be slow.</p>`;
-        showDialog("nativeAudioSetup");
-      }
-      // Allow WebView to paint before synchronous JUCE/ASIO enumeration begins.
-      requestAnimationFrame(()=>requestAnimationFrame(()=>send("audioSetup")));
-      return;
-    }
+    if(action==="audioSetup"){send("audioSetup");return;}
     send(action);return;
   }
   if(el.dataset.nativeAdd){
@@ -618,7 +556,6 @@
     if(changed)patchMixer();
   }
   let liveInputLevel=0, liveOutputLevel=0, liveOutputLeft=0, liveOutputRight=0;
-  let lastSetupSignature="";
   backend.addEventListener("arMixStatus",d=>{
     state.device=d;
     state.monitor=!!d.monitor;
@@ -654,34 +591,19 @@
     const pk=document.getElementById("masterPeakDb");
     if(pk)pk.textContent=Number(d.peak)>0
       ?(20*Math.log10(Math.max(1e-8,Number(d.peak)))).toFixed(1)+" dBFS":"−∞";
-    const cpu=document.querySelector(".cpu strong");
-    if(cpu)cpu.textContent="NATIVE";
-    const statusSetup=document.querySelector("[data-native-setup]");
-    const setupSignature=[d.connected,d.driver,d.device,d.rate,d.buffer,d.error||""].join("|");
-    if(statusSetup && setupSignature!==lastSetupSignature && !document.activeElement?.matches("input")){
-      lastSetupSignature=setupSignature;
-      renderSetup();
-    }
+    const driver=document.getElementById("headerDriver");
+    if(driver)driver.textContent=d.driver||"No device";
+    const rate=document.getElementById("headerRate");
+    if(rate)rate.textContent=d.rate?(Number(d.rate)/1000).toLocaleString("en-US",{maximumFractionDigits:1}):"--";
+    const buffer=document.getElementById("headerBuffer");
+    if(buffer)buffer.textContent=d.buffer||"--";
   });
   backend.addEventListener("arMixScanProgress",p=>{
     state.progress=p;
     updateProgress();
   });
-  backend.addEventListener("arMixSetupProgress",p=>{
-    const dlg=document.getElementById("nativeAudioSetup");
-    if(!dlg)return;
-    if(p.phase==="opened"){
-      const body=dlg.querySelector(".native-dialog-body");
-      body.innerHTML=`<p class="native-sub">Audio Device Settings opened in a separate window.</p><p class="native-sub">Setup initialization: ${Number(p.elapsedMs)||0} ms.</p>`;
-      setTimeout(()=>hideDialog("nativeAudioSetup"),700);
-    }else{
-      const info=dlg.querySelector(".native-dialog-body p");
-      if(info) info.textContent=p.phase==="enumerating"?"Enumerating ASIO/WASAPI devices and drivers…":"Preparing audio device selector…";
-    }
-  });
   // Create real dialogs and synchronize cached state after WebView startup.
   initModals();
-  addPluginManagerToolbar();
   send("refreshState");
   syncView();
 })();
