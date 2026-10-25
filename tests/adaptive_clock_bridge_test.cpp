@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstdint>
+#include <limits>
 #include <vector>
 static void check(bool ok){if(!ok)std::abort();}
 
@@ -97,8 +98,81 @@ static void testLargeRenderQuantum()
     check(!rejected.valid);
 }
 
+// Independent virtual 48 kHz capture -> 32 kHz render FIR fidelity test.
+// A 1 kHz source is passed; 19 kHz is above the render Nyquist and rejected.
+static double spectralRms (double frequency)
+{
+    armix::device::AdaptiveClockBridge bridge;
+    check (bridge.prepare (48000,32000,2,8192,50.));
+    std::array<float,48> inL{},inR{};
+    std::array<float,32> outL{},outR{};
+    const float* inputs[]={inL.data(),inR.data()};
+    float* outputs[]={outL.data(),outR.data()};
+    double power=0.;
+    std::uint64_t count=0;
+    for(int ms=0;ms<2500;++ms)
+    {
+        for(int k=0;k<48;++k)
+        {
+            const auto sample=static_cast<std::uint64_t>(ms)*48+k;
+            inL[k]=inR[k]=static_cast<float>(0.45*std::sin(
+                6.283185307179586*frequency*static_cast<double>(sample)/48000.));
+        }
+        check(bridge.push(inputs,2,48)==48);
+        bridge.pull(outputs,2,32);
+        for(int k=0;k<32;++k)
+        {
+            check(std::isfinite(outL[k]) && std::isfinite(outR[k]));
+            if(ms>500)
+            {
+                power+=static_cast<double>(outL[k])*outL[k];
+                ++count;
+            }
+        }
+    }
+    const auto status=bridge.status();
+    check(status.overflowFrames==0 && status.underflowFrames==0);
+    check(status.nonFiniteInputSamples==0 && count>1000);
+    return std::sqrt(power/static_cast<double>(count));
+}
+
+static void testNonFiniteCapture()
+{
+    using armix::device::AdaptiveClockBridge;
+    AdaptiveClockBridge bridge;
+    check(!bridge.prepare(48000,48000,2,8192,
+        std::numeric_limits<double>::quiet_NaN()));
+    check(!bridge.prepare(48000,48000,2,8192,
+        std::numeric_limits<double>::infinity()));
+    check(!bridge.prepare(48000,48000,2,(1<<19),12.));
+    check(bridge.prepare(48000,48000,2,2048,12.));
+    std::array<float,128> inL{},inR{},outL{},outR{};
+    const float* inputs[]={inL.data(),inR.data()};
+    float* outputs[]={outL.data(),outR.data()};
+    inL.fill(.2f); inR.fill(.2f);
+    inL[3]=std::numeric_limits<float>::quiet_NaN();
+    inR[4]=std::numeric_limits<float>::infinity();
+    for(int block=0;block<120;++block)
+    {
+        check(bridge.push(inputs,2,128)==128);
+        bridge.pull(outputs,2,128);
+        for(int k=0;k<128;++k)
+            check(std::isfinite(outL[k]) && std::isfinite(outR[k]));
+        if(block==0) { inL[3]=inR[4]=.2f; }
+    }
+    const auto status=bridge.status();
+    check(status.nonFiniteInputSamples==2);
+    check(status.overflowFrames==0 && status.underflowFrames==0);
+    check(status.renderedFrames==120*128);
+}
+
 int main()
 {
+    testNonFiniteCapture();
+    const double passband = spectralRms (1000.);
+    const double stopband = spectralRms (19000.);
+    check(passband > 0.27 && passband < 0.36);
+    check(stopband < 0.025);
     armix::device::AdaptiveClockBridge bad;
     check(!bad.prepare(0,48000,2));
     check(!bad.prepare(48000,48000,0));

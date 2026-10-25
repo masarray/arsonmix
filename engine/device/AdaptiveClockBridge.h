@@ -26,6 +26,7 @@ public:
         std::uint64_t pushedFrames = 0, renderedFrames = 0;
         std::uint64_t overflowFrames = 0, underflowFrames = 0;
         std::uint64_t primingFrames = 0;
+        std::uint64_t nonFiniteInputSamples = 0;
         std::uint64_t fillFrames = 0;
         double correctionPpm = 0, nominalInputPerOutput = 0;
     };
@@ -37,8 +38,9 @@ public:
             || captureRate < 8000 || renderRate < 8000
             || captureRate > 384000 || renderRate > 384000
             || numChannels < 1 || numChannels > 16
-            || bufferCapacityFrames < 256
+            || bufferCapacityFrames < 256 || bufferCapacityFrames > (1 << 18)
             || (bufferCapacityFrames & (bufferCapacityFrames - 1)) != 0
+            || !std::isfinite (targetLatencyMs)
             || targetLatencyMs < 5. || targetLatencyMs > 200.) return false;
 
         channels_ = numChannels;
@@ -90,6 +92,7 @@ public:
         lostInput_.store (0, std::memory_order_relaxed);
         missingOutput_.store (0, std::memory_order_relaxed);
         primeOutput_.store (0, std::memory_order_relaxed);
+        nonFiniteInput_.store (0, std::memory_order_relaxed);
         outputCount_.store (0, std::memory_order_relaxed);
         correctionSnapshot_.store (0., std::memory_order_relaxed);
         cursor_ = 0.; integratorPpm_ = 0.; correctionPpm_ = 0.;
@@ -107,16 +110,24 @@ public:
         const auto r = read_.load (std::memory_order_acquire);
         const auto used = std::min<std::uint64_t> (w - r, capacity_);
         const int accepted = std::min (frames, capacity_ - static_cast<int> (used));
+        std::uint64_t sanitized = 0;
         for (int i = 0; i < accepted; ++i)
         {
             const auto base = static_cast<std::size_t> (((w + i) & mask_) * channels_);
             for (int c = 0; c < channels_; ++c)
             {
                 const float* channel = capture[std::min (c, sourceChannels - 1)];
-                ring_[base + c] = channel != nullptr ? channel[i] : 0.f;
+                // Sanitize only at the capture ingress boundary. Without it,
+                // one invalid virtual-driver sample poisons FIR and VST3 DSP.
+                const float value = channel != nullptr ? channel[i] : 0.f;
+                const bool finite = std::isfinite (value);
+                ring_[base + c] = finite ? value : 0.f;
+                sanitized += static_cast<std::uint64_t> (!finite);
             }
         }
         write_.store (w + static_cast<std::uint64_t> (accepted), std::memory_order_release);
+        if (sanitized != 0) // one atomic increment per anomalous block
+            nonFiniteInput_.fetch_add (sanitized, std::memory_order_relaxed);
         if (accepted < frames)
             lostInput_.fetch_add (static_cast<std::uint64_t> (frames - accepted), std::memory_order_relaxed);
         return accepted;
@@ -232,6 +243,7 @@ public:
         s.overflowFrames = lostInput_.load (std::memory_order_relaxed);
         s.underflowFrames = missingOutput_.load (std::memory_order_relaxed);
         s.primingFrames = primeOutput_.load (std::memory_order_relaxed);
+        s.nonFiniteInputSamples = nonFiniteInput_.load (std::memory_order_relaxed);
         // UI snapshots may read write/read cursors from different instants.
         // Never report an enormous wrapped fill on a harmless cross-read race.
         s.fillFrames = w >= r ? w - r : 0;
@@ -251,6 +263,7 @@ private:
     alignas(64) std::atomic<std::uint64_t> write_ {0};
     alignas(64) std::atomic<std::uint64_t> read_ {0};
     std::atomic<std::uint64_t> lostInput_ {0}, missingOutput_ {0}, primeOutput_ {0}, outputCount_ {0};
+    std::atomic<std::uint64_t> nonFiniteInput_ {0};
     std::atomic<double> correctionSnapshot_ {0.};
 };
 } // namespace armix::device

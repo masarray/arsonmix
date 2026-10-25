@@ -54,3 +54,7 @@ The **experimental** P2.5 JUCE VST3 engine has now been integrated into `main` u
 - No new realtime clock reads, heap, blocking, workers, CSS/GUI edits. Callback-silence source and duration appear in COPY FULL REPORT recovery event. Physical FAT remains outstanding.
 
 - 2026-10-26 LATEST GUI owner request supersedes prior identical OFF/ON depth: OFF Button 180 is **raised dark crystal cube** with crisp lower bevel + top glint; selected/ON and pointer-down are recessed with the existing bright contextual palettes. The element rectangle and 3px radius must never move; hover strongly brightens only (`brightness(1.32)`), with no new border. Edit only the CSS owner `20-button-180.css` and regenerate via `scripts/build_ui_css.py`. Preserve native DSP/PAN/fader/master assets and geometry.
+
+## P0-02 ASRC signal integrity continuation (2026-10-26)
+- Non-finite capture PCM is sanitized at independent FIFO ingress and counted without heap/locks; NaN/Inf latency and excessive FIFO capacity are rejected before allocation.
+- `bridgeNonFiniteCaptureSamples` is source-labeled, not a confirmed hardware xrun. Deterministic spectral/injection tests cover 48k->32k passband, alias attenuation and finite output. See `docs/P0_ASRC_SIGNAL_INTEGRITY_2026-10-26.md`.
