@@ -395,6 +395,8 @@ private:
         auto state = engine_.status();
         state.getDynamicObject()->setProperty ("diagnosticsDropped",
             static_cast<double> (diagnostics_.lostRecords()));
+        state.getDynamicObject()->setProperty ("diagnosticsTruncated",
+            static_cast<double> (diagnostics_.truncatedRecords()));
         if (startupError_.isNotEmpty() && !bool (state.getProperty ("connected", false)))
             state.getDynamicObject()->setProperty ("error", startupError_);
         browser_.emitEventIfBrowserIsVisible ("arMixStatus", state);
