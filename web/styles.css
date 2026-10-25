@@ -904,3 +904,49 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 /* The obsolete A/B bay is removed from source strips. Let the fader occupy
    the recovered vertical area; MASTER keeps its dedicated clear-clip controls. */
 #mixer > .strip:not(.master-strip) > .fader-tools{display:none!important}
+
+/* 2026-10-25 visual audit: all four channel keys share one rigid 2-column grid.
+   Geometry only. Keep Button 180 shading/toggle colors, FX bypass, PAN PNG,
+   strip faders, left-rail pushables and realtime audio code unchanged. */
+#mixer > .strip:not(.master-strip) > .strip-controls > .utility-row,
+#mixer > .strip:not(.master-strip) > .channel-actions {
+  --strip-key-gap:5px;
+  --strip-key-gutter:6px;
+  --strip-key-height:28px;
+  display:grid!important;
+  grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  gap:var(--strip-key-gap)!important;
+  align-items:center!important;
+  justify-items:stretch!important;
+  padding-left:var(--strip-key-gutter)!important;
+  padding-right:var(--strip-key-gutter)!important;
+  width:100%!important;
+  box-sizing:border-box!important;
+}
+#mixer > .strip:not(.master-strip) > .strip-controls > .utility-row > button,
+#mixer > .strip:not(.master-strip) > .channel-actions > button.candy {
+  width:100%!important;
+  min-width:0!important;
+  max-width:none!important;
+  height:var(--strip-key-height,28px)!important;
+  min-height:var(--strip-key-height,28px)!important;
+  max-height:var(--strip-key-height,28px)!important;
+  padding:0 2px!important;
+  margin:0!important;
+  box-sizing:border-box!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  flex:none!important;
+  line-height:1!important;
+  white-space:nowrap;
+}
+/* Master remains a wider stereo bus but keeps the same key height and center. */
+#masterLeft .master-actions > #masterMute,
+#masterLeft .master-actions > .master-stereo-badge {
+  height:28px!important;
+  min-height:28px!important;
+  max-height:28px!important;
+  align-self:center;
+  box-sizing:border-box;
+}
