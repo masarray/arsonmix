@@ -18,7 +18,7 @@
 
 **Primary priorities in order:** (1) no dangerous noise/clicks, (2) continuous correctly routed signal, (3) bounded and predictable latency, (4) fidelity, (5) CPU/memory efficiency, (6) convenience. A driver profile must not automatically sacrifice 1–2 to make a nominal buffer lower.
 
-**Do not begin P2.6 true 12-channel implementation, or mark live-safe structural VST3 complete, while dry 0-FX I/O FAT is red.** The P2.5 graph/GUI checkpoint remains protected. This document does not imply the implementation is delivered.
+**Do not begin P2.5.2 live-safe structural VST3 operations or P2.6 true 12-channel implementation while dry 0-FX I/O FAT is red.** The P2.5 graph/GUI checkpoint remains protected. This document does not imply the implementation is delivered.
 
 ## 2. Evidence and diagnosis, not speculation
 
