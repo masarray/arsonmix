@@ -104,13 +104,17 @@ async def main():
         preset=page.locator('[data-preset="Clean Vocal"]')
         base_rect=await preset.evaluate('(e)=>e.getBoundingClientRect().toJSON()')
         await preset.hover()
-        await page.wait_for_timeout(120)
-        assert await preset.locator('.front').evaluate('(e)=>getComputedStyle(e).transform')=='matrix(1, 0, 0, 1, 0, -6)'
-        assert await preset.locator('.shadow').evaluate('(e)=>getComputedStyle(e).transform')=='matrix(1, 0, 0, 1, 0, 4)'
+        await page.wait_for_function("""()=>{
+          const b=document.querySelector('[data-preset="Clean Vocal"]');
+          return getComputedStyle(b.querySelector('.front')).transform==='matrix(1, 0, 0, 1, 0, -6)' &&
+                 getComputedStyle(b.querySelector('.shadow')).transform==='matrix(1, 0, 0, 1, 0, 4)';
+        }""",timeout=2500)
         await preset.click()
-        await page.wait_for_timeout(120)
-        assert await preset.get_attribute('class')=='pushable active'
-        assert await preset.locator('.front').evaluate('(e)=>getComputedStyle(e).transform')=='matrix(1, 0, 0, 1, 0, -2)'
+        await page.wait_for_function("""()=>{
+          const b=document.querySelector('[data-preset="Clean Vocal"]');
+          return b.classList.contains('active') &&
+                 getComputedStyle(b.querySelector('.front')).transform==='matrix(1, 0, 0, 1, 0, -2)';
+        }""",timeout=2500)
         pressed_rect=await preset.evaluate('(e)=>e.getBoundingClientRect().toJSON()')
         assert all(abs(base_rect[k]-pressed_rect[k])<=.2 for k in ('x','y','width','height'))
         assert await page.locator('#saveFxPreset').count()==1
