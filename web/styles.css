@@ -220,3 +220,72 @@
 /* Utility icons, EQ editor, plugin categories and signal/rack workspace
  * intentionally RETAIN their original design. No imported rectangular PNG skin. */
 @media(prefers-reduced-motion:reduce){:where(.toolbar button,.left-rail button,.right-rail button,.strip button){transition:none!important}}
+
+
+/* ArSonMix v0.5 interaction polish — visual only, no signal-path side effects. */
+/* Pan fill starts at 0 (center) and grows toward the thumb in either direction. */
+.pan-track .pan-fill{
+ position:absolute;z-index:1;pointer-events:none;top:19px;height:3px;
+ left:calc(9px + (100% - 18px)*var(--pan-left,.5));
+ width:calc((100% - 18px)*var(--pan-span,0));
+ border-radius:2px;
+ background:linear-gradient(180deg,#92fff1 0%,#34d9af 39%,#08ae85 100%);
+ box-shadow:0 0 5px #37efb08c,0 0 2px #9cfbeebb;
+ transition:none;
+}
+.pan-track:hover .pan-fill{filter:brightness(1.25);box-shadow:0 0 7px #57fcd6ae}
+.pan-track.is-dragging .pan-fill{filter:brightness(1.55)}
+.pan-track:hover .pan-thumb{filter:brightness(1.30) contrast(1.12) drop-shadow(0 0 4px #b4f7ff90)}
+.pan-track.is-dragging .pan-thumb{filter:brightness(.72) contrast(1.20) drop-shadow(0 0 4px #52fbd590)}
+/* Keep original metallic PNG, dimensions and translating anchor EXACTLY unchanged. */
+.fader:hover .cap,.fader .cap:hover{filter:brightness(1.30) contrast(1.11) drop-shadow(0 0 4px #d8f6ff8c)!important}
+.fader.is-dragging .cap,.fader:active .cap{filter:brightness(.72) contrast(1.19) drop-shadow(0 0 6px #59cae6)!important}
+/* Physical feedback; visual state retains semantic color and the original PNG. */
+:is(.strip .channel-actions button,.strip .utility-row button,.strip .fader-tools button,
+ .left-rail .tabs button,.right-rail .master-tabs button,.right-rail .master-right .right-button,
+ .left-rail .rail-presets button,.left-rail .rail-bottom button,
+ .toolbar .nav button,.toolbar .mode-pill,.right-rail .master-right #talkBtn):hover{
+ filter:brightness(1.30) contrast(1.10)!important;
+}
+:is(.strip .channel-actions button,.strip .utility-row button,.strip .fader-tools button,
+ .left-rail .tabs button,.right-rail .master-tabs button,.right-rail .master-right .right-button,
+ .left-rail .rail-presets button,.left-rail .rail-bottom button,
+ .toolbar .nav button,.toolbar .mode-pill,.right-rail .master-right #talkBtn):active{
+ filter:brightness(.72) contrast(1.22)!important;
+}
+/* Each occupied FX slot has two *independent* targets: label/edit and on/off.
+   Empty slots stay full width. Never make entire insert visually disabled. */
+.strip .rack .insert-slot{height:25px;min-height:25px;display:flex;align-items:stretch;gap:2px;min-width:0;width:100%}
+.strip .rack .insert-slot .insert{flex:1 1 0;width:auto;min-width:0;overflow:hidden;white-space:nowrap}
+.strip .rack .insert-slot .insert-name{display:block;flex:1;min-width:0;text-overflow:ellipsis;white-space:nowrap;overflow:hidden}
+.strip .rack .insert-slot .insert-led{flex:0 0 14px}
+.strip .rack .insert-slot .fx-power{
+ width:22px;min-width:22px;max-width:22px;height:25px;min-height:25px;
+ border:1px solid #106f72;border-radius:3px;cursor:pointer;
+ color:#76fff4;font:700 15px/1 'Segoe UI',sans-serif;
+ background:linear-gradient(180deg,#28424a,#09272b 52%,#0e333a);
+ box-shadow:inset 0 1px #b4f8e74d,0 1px #0009;
+ text-shadow:0 0 5px #4ddca59a;padding:0;display:grid;place-items:center;
+ transition:filter 90ms ease,box-shadow 90ms ease;
+}
+.strip .rack .insert-slot .fx-power.is-bypassed{
+ color:#637884;text-shadow:none;border-color:#34444c;
+ background:linear-gradient(#1e292f,#0d1419 55%,#1b282e);
+ box-shadow:inset 0 1px #7e94942c,0 1px #0008;
+}
+.strip .rack .insert-slot.is-bypassed .insert{color:#788e9b!important;filter:saturate(.55)}
+.strip .rack .insert-slot.is-bypassed .insert-led{filter:grayscale(1) brightness(.6)}
+.strip .rack .insert-slot .fx-power:hover{
+ filter:brightness(1.45)!important;box-shadow:inset 0 1px #d9ffed88,0 0 5px #48f9be7b
+}
+.strip .rack .insert-slot .fx-power:active{filter:brightness(.65) contrast(1.15)!important;transform:translateY(1px)}
+.strip .rack .insert-slot .fx-power:focus-visible{outline:2px solid #8cfbe7;outline-offset:1px}
+/* Existing FX Rack power button shows consistent enabled vs bypassed state. */
+.chain-node button[data-chainbypass]{width:34px;padding:0;min-width:34px;font-size:19px;line-height:1}
+.chain-node button[data-chainbypass].power-on{color:#61f9df;border-color:#1a988e;background:linear-gradient(#1c4648,#073037)}
+.chain-node button[data-chainbypass].is-bypassed{color:#6f8390;border-color:#364954;background:linear-gradient(#26323a,#131d24)}
+.chain-node button[data-chainbypass]:hover{filter:brightness(1.30)}
+.chain-node button[data-chainbypass]:active{filter:brightness(.74);transform:translateY(1px)}
+/* Clear selection without noisy new gradients or changing other control geometry. */
+.strip.selected .ch-id{box-shadow:inset 0 0 0 1px #8fe4ff3b}
+@media(prefers-reduced-motion:reduce){.fx-power,.pan-fill{transition:none!important}}
