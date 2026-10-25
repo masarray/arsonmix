@@ -40,6 +40,9 @@ target_link_libraries(ARMixConsole PRIVATE
 
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(ARMixSplitTelemetryTests tests/split_stream_telemetry_test.cpp)
+  target_compile_features(ARMixSplitTelemetryTests PRIVATE cxx_std_20)
+  add_test(NAME SplitStreamTelemetry COMMAND ARMixSplitTelemetryTests)
   add_executable(ARMixRecoveryTests tests/device_recovery_policy_test.cpp)
   target_compile_features(ARMixRecoveryTests PRIVATE cxx_std_20)
   add_test(NAME DeviceRecoveryPolicy COMMAND ARMixRecoveryTests)
