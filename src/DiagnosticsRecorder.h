@@ -43,8 +43,11 @@ public:
             details.replaceCharacters ("\r\n", "  ");
         const auto utf8 = message.toRawUTF8();
         auto& slot = queue_[head];
+        const auto inputLength = std::strlen (utf8);
         const auto count = juce::jmin (static_cast<size_t> (sizeof (slot.data) - 1),
-                                       std::strlen (utf8));
+                                       inputLength);
+        if (inputLength > count)
+            truncated_.fetch_add (1, std::memory_order_relaxed);
         std::memcpy (slot.data, utf8, count);
         slot.data[count] = 0;
         producer_.store (next, std::memory_order_release);
@@ -53,13 +56,14 @@ public:
 
     juce::File getLogFile() const { return logfile_; }
     std::uint64_t lostRecords() const noexcept { return lost_.load(); }
+    std::uint64_t truncatedRecords() const noexcept { return truncated_.load(); }
 
 private:
     static constexpr unsigned capacity = 128;
-    struct Record { char data[512] {}; };
+    struct Record { char data[4096] {}; };
     std::array<Record,capacity> queue_ {};
     std::atomic<unsigned> producer_ { 0 }, consumer_ { 0 };
-    std::atomic<std::uint64_t> lost_ { 0 };
+    std::atomic<std::uint64_t> lost_ { 0 }, truncated_ { 0 };
     juce::File folder_, logfile_;
 
     void run() override

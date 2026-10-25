@@ -150,7 +150,12 @@ document.addEventListener('keydown',e=>{const pan=e.target.closest('[data-pan]')
  updateFader(idx,e.key==='Home'?-60:e.key==='End'?10:db+steps[e.key]);
 });
 document.addEventListener('keydown',e=>{if(e.ctrlKey&&e.key.toLowerCase()==='s'){e.preventDefault();if(persistSession())flash('UI state saved locally');else flash('Browser storage unavailable')}});
-let lastMeterFrame=0;function meters(t){requestAnimationFrame(meters);if(t-lastMeterFrame<33||document.hidden)return;lastMeterFrame=t;channels.forEach((c,i)=>{const element=document.querySelector(`[data-meter="${i}"]`);if(!element)return;const wave=(Math.sin(t*.0022+i*1.92)+Math.sin(t*.0043+i*.6))*.5;let base=clamp(45+wave*24 +c.fader*.48,4,98);if(c.mute)base=2;element.style.setProperty('--level',base.toFixed(1)+'%')});let m=clamp(67+Math.sin(t*.002)*15,8,92);['masterMeterL','masterMeterR','masterMeterAux'].forEach((id,i)=>{let x=$(id);if(x)x.style.setProperty('--level',clamp(m-i*7+Math.sin(t*.003+i)*8,4,99).toFixed(1)+'%')})}
+let lastMeterFrame=0;function meters(t){
+  // Demo oscillators are exclusive to browser-only visual preview.
+  // Native JUCE owns ALL meter readings in the Windows desktop host.
+  if(window.__JUCE__?.backend?.emitEvent)return;
+  requestAnimationFrame(meters);
+  if(t-lastMeterFrame<33||document.hidden)return;lastMeterFrame=t;channels.forEach((c,i)=>{const element=document.querySelector(`[data-meter="${i}"]`);if(!element)return;const wave=(Math.sin(t*.0022+i*1.92)+Math.sin(t*.0043+i*.6))*.5;let base=clamp(45+wave*24 +c.fader*.48,4,98);if(c.mute)base=2;element.style.setProperty('--level',base.toFixed(1)+'%')});let m=clamp(67+Math.sin(t*.002)*15,8,92);['masterMeterL','masterMeterR','masterMeterAux'].forEach((id,i)=>{let x=$(id);if(x)x.style.setProperty('--level',clamp(m-i*7+Math.sin(t*.003+i)*8,4,99).toFixed(1)+'%')})}
 // v0.3: demo-only FX catalog. Items represent mock plugins, not installed VST3 binaries.
 const pluginCatalog=[
  {name:'Studio EQ',type:'EQ',badge:'EQ',hint:'Four-band tonal shaping'},
