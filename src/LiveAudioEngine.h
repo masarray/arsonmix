@@ -503,7 +503,7 @@ public:
         o->setProperty ("lateCallbackIntervals", static_cast<double> (lateCallbackIntervals_.load()));
         o->setProperty ("testOutputFrames", static_cast<double> (testOutputFrames_.load()));
         o->setProperty ("testCaptureFrames", static_cast<double> (testCaptureFrames_.load()));
-        o->setProperty ("renderUnderrunSource", "UNAVAILABLE_IN_JUCE_8_WASAPI");
+        o->setProperty ("renderUnderrunSource", "UNAVAILABLE_THROUGH_CURRENT_JUCE_AUDIODEVICE");
         // AudioIODevice::getXRunCount is backend-specific, not comprehensive.
         // Pinned JUCE WASAPI reports input capture discontinuity flags only.
         const int reported = d != nullptr ? d->getXRunCount() : -1;
