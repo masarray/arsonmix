@@ -19,6 +19,12 @@ test('actual device recoveries occur on message thread, not inside audio callbac
     /engine_\.setIndependentClockEnabled \(false\)/);
   assert.match(main,/engine_\.independentClockFaulted\(\)/);
   assert.match(engine,/hasPendingDirectRestore\(\) const noexcept/);
+  assert.match(engine,/verifyRestoredDirectDevice \(\*savedDirectSetup_\)/);
+  assert.match(engine,/verifyRestoredDirectDevice \(original\)/);
+  assert.match(engine,/current\.inputDeviceName == expected\.inputDeviceName/);
+  assert.match(engine,/current\.outputDeviceName == expected\.outputDeviceName/);
+  assert.match(engine,/getActiveInputChannels\(\)\.isZero\(\)/);
+  assert.match(engine,/getActiveOutputChannels\(\)\.isZero\(\)/);
   assert.match(gate,/class DirectRestoreBackoff final/);
   assert.match(gate,/static constexpr unsigned maxAttempts/);
   assert.match(gate,/generation == generation_/);
