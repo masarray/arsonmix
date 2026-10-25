@@ -613,6 +613,11 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 :root{
  --b180-off:#202832;--b180-edge:#070c13;
  --b180-color:var(--b180-off);--b180-border:var(--b180-edge);
+}
+:is(.btn-180,.toolbar .nav button,.toolbar .spec-device,.left-rail .tabs button,
+.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
+.left-rail .rail-presets button,.left-rail .rail-bottom button,
+#masterLeft .master-tools button,.native-btn){
  /* Seven layers, same inset/outset sequence for smooth interpolation.
     The base creates a crisp 2px crystal edge, not a blurred halo/dome. */
  --b180-shadow-raised:
@@ -631,11 +636,6 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
   0 0 0 1px var(--b180-border),
   0 1px 1px rgba(0,0,0,.28),
   0 2px 3px rgba(0,0,0,.13);
-}
-:is(.btn-180,.toolbar .nav button,.toolbar .spec-device,.left-rail .tabs button,
-.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
-.left-rail .rail-presets button,.left-rail .rail-bottom button,
-#masterLeft .master-tools button,.native-btn){
  border:1px solid var(--b180-border)!important;
  letter-spacing:1px;
  padding:8px 20px;

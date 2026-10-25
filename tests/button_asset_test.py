@@ -7,7 +7,8 @@ js=(root/'web/app.js').read_text(encoding='utf8')
 page=(root/'web/index.html').read_text(encoding='utf8')
 preview=(root/'AR-MIX-Live-FX-Host-Standalone-v0.3.html').read_text(encoding='utf8')
 license=(root/'web/assets/fonts/OFL-LICENSE-Inter.txt').read_text(encoding='utf8')
-assert 'BUTTON 180 — single component owner' in css
+assert 'BUTTON 180 — raised dark-crystal cube OFF' in css
+assert '--b180-shadow-raised:' in css and '--b180-shadow-pressed:' in css
 compact=''.join(css.split())
 for rule in (
  'inset 0 1px 0 rgba(246,251,255,.52)',
