@@ -1,5 +1,7 @@
 # P0 Smart Audio — native diagnostic + prepared clock bridge milestone
 
+> **Historical P0 core milestone (PR #21).** Live dual-stream integration is now documented in [P0_LIVE_SPLIT_AUDIO_ENGINE.md](P0_LIVE_SPLIT_AUDIO_ENGINE.md). Statements below that the bridge is not connected describe the historical PR #21 state, not the current branch.
+
 **Date:** 2026-10-25  
 **Scope:** P0-00 one-click field support, P0-01 clock-domain core/feasibility, P0-02 standalone polyphase SRC simulation  
 **Status:** experimental infrastructure; **the JUCE audio capture/render adapter is still a joined callback. Clock bridge is not connected to live physical audio.**  
