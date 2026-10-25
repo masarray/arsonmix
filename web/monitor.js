@@ -82,7 +82,11 @@
       " µs | Over-budget "+(d.overBudgetCount||0)+
       " | Long gaps "+(d.callbackGapCount||0)+
       " | Worst VST "+(d.worstPluginUs||0)+" µs"+
+      " | device starts/stops "+(d.deviceStartCount||0)+"/"+(d.deviceStopCount||0)+
       " (timing indicators, NOT confirmed driver xruns)";
+    const timing=Array.isArray(d.pluginTimings)?d.pluginTimings:[];
+    const fxInfo=timing.map(x=>x.slot+". "+x.name+": "+x.lastUs+" µs now, worst "+x.worstUs+" µs").join(" | ");
+    if(fxInfo)el("arHealthPanel").textContent+=" | FX: "+fxInfo;
     el("arSignalFooter").textContent=(d.driver||"Audio")+" · "+(d.rate||0)+" Hz / "+(d.buffer||0)+
       " samples · "+(d.deviceInputChannels||0)+" active input / "+(d.deviceOutputChannels||0)+" active output channels · "+
       (d.latencySamples||0)+" samples plugin latency. Choose hardware output using AUDIO SETUP; Main L/R and Streaming are UI previews.";
