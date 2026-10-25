@@ -47,6 +47,14 @@ public:
             ? message.substring (0, 950) + " [report-truncated]" : message;
         recentHead_ = (recentHead_ + 1) % recentCapacity;
         recentCount_ = juce::jmin (recentCount_ + 1, recentCapacity);
+        // A long clean run should not evict important device transitions and
+        // user MARK CRACKLE records from the single-click report.
+        if (kind != "AUDIO_HEALTH")
+        {
+            important_[importantHead_] = recent_[(recentHead_ + recentCapacity - 1) % recentCapacity];
+            importantHead_ = (importantHead_ + 1) % importantCapacity;
+            importantCount_ = juce::jmin (importantCount_ + 1, importantCapacity);
+        }
         const auto utf8 = message.toRawUTF8();
         auto& slot = queue_[head];
         const auto inputLength = std::strlen (utf8);
@@ -75,6 +83,18 @@ public:
         return result;
     }
 
+    juce::String significantReport() const
+    {
+        juce::String report;
+        const auto oldest = (importantHead_ + importantCapacity - importantCount_) % importantCapacity;
+        for (unsigned i = 0; i < importantCount_; ++i)
+        {
+            report += important_[(oldest + i) % importantCapacity];
+            report += "\n";
+        }
+        return report;
+    }
+
     juce::File getLogFile() const { return logfile_; }
     std::uint64_t lostRecords() const noexcept { return lost_.load(); }
     std::uint64_t truncatedRecords() const noexcept { return truncated_.load(); }
@@ -83,6 +103,9 @@ private:
     static constexpr unsigned recentCapacity = 64;
     std::array<juce::String, recentCapacity> recent_ {};
     unsigned recentHead_ = 0, recentCount_ = 0; // message-thread only
+    static constexpr unsigned importantCapacity = 24;
+    std::array<juce::String, importantCapacity> important_ {};
+    unsigned importantHead_ = 0, importantCount_ = 0; // message-thread only
     static constexpr unsigned capacity = 128;
     struct Record { char data[4096] {}; };
     std::array<Record,capacity> queue_ {};
