@@ -38,3 +38,17 @@ All skins are data-URI embedded from **byte-identical original PNG assets**, so 
 - **Tactile feedback**: increased hover brightness/contrast for hardware controls; darker active press. The 31×90 original fader image, exact translation/geometry, and hit zone remain unchanged.
 - **Geometry & regression guard**: Chromium checks pan bar left/right/center, 60 compact 25px rack slots, two independent FX targets, synchronized bypass, unchanged MUTE caption and visible hover feedback.
 - **Audit priorities**: use color only for meaningful state, keep signal-chain names legible at 1440px, isolate native DSP functions from preview simulation, and prevent per-strip overflow rather than scaling all buttons globally.
+
+## October 25, 2026 — Studio One-inspired channel/master metering and channel identity
+
+- PAN: removed neon glow from metallic thumb and green direction ribbon. Pointer interaction snaps to the center when the requested value is within ±6 units; keyboard retains fine one-unit increments. PAN is still -100..+100 and double-click centers.
+- Fader/button hover: reduced previous exaggerated contrast and brightness, keeping recognizably physical pressed states.
+- Insert rack: removed occupied slot `◉` graphic entirely; empty slots have one `＋` glyph and caption `ADD FX` (no repeated plus).
+- Channel identity: clicking the bottom colored identity plate opens a compact console-themed editor: channel name (26 characters maximum), twelve icon choices, twelve semantic strip colors. Identity is saved in UI session and snapshots and restored on reload. Values are escaped/whitelisted; cancelling discards changes.
+- Focused channel: border follows selected or interacted-with strip from channel header to bottom plate without changing fader geometry.
+- Input meters: industrial tick marks, red peak hold line (1.6 s), 8px raised hardware-style clip candy LED with latched red state and per-channel click-to-clear.
+- Master strip: own 5-slot UI FX chain (4 visible in Easy), dedicated enable/bypass buttons, dual L/R meters each with individual clip and peak, all-clip reset, exact original FADER-RED2.png (31×90), and output telemetry. Master fader's start is vertically aligned to input faders in both Easy/Pro UI modes.
+- Engineering integrity: source red master PNG git blob SHA `2369e1b9002522600948909246918e57880da1ed` is checked in. A previous one-character base64 corruption caused the image to be invisible; tests now verify byte-exact embedding and `Image.decode()` of 31×90 in Chromium.
+- The preview's `LUFS-I`, `dBTP`, and `PEAK` displays are visibly marked `SIM`/`DEMO · NOT CALIBRATED`. They are **not** real BS.1770 LUFS or oversampled true-peak measurements; those must be sourced from DSP/native audio metering before the product claims compliance.
+- Browser FX power (including master) is a GUI state/bridge event only; real VST3 bypass requires the native host to consume and apply the changes safely at audio-buffer boundaries.
+- QA: 12 input strips, 13 faders total, dual master meters, 14 clip LEDs, original master PNG decode, channel rename/icon/color persistence, FX bypass, no layout overflow at 1680×920 and 1440×820, plus aligned Easy/Pro fader-start geometry.
