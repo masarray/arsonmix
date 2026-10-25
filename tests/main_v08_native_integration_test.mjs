@@ -35,6 +35,9 @@ test('native mixer always displays DSP gain, pan, and mute instead of stale demo
  assert.match(bridge,/channel\.mute=d\.channelMute/);
  assert.match(bridge,/masterMute=d\.masterMute/);
  assert.match(bridge,/Math\.abs\(channel\.fader-channelDb\)/);
+ assert.match(bridge,/const editing=Date\.now\(\)<controlEditUntil/);
+ assert.match(bridge,/!editing && Math\.abs\(channel\.fader-channelDb\)/);
+ assert.match(bridge,/controlEditUntil=Date\.now\(\)\+350/);
 });
 test('master native preview restrictions run before source channel rack lookup',()=>{
  const a=bridge.indexOf('if(track.classList.contains("master-strip"))');
