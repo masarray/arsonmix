@@ -543,8 +543,8 @@ private:
         }
         else if (action == "addCatalog")
         {
-            if (engine_.hasTemporaryDiagnosticDevice())
-                return emitNotice ("Return to NORMAL before adding VST3 effects.", true);
+            if (engine_.hasTemporaryAudioRouting())
+                return emitNotice ("Switch to DIRECT before adding VST3 effects; callback-detaching edits are not live-safe yet.", true);
             const auto requestId = static_cast<int> (args.getProperty ("requestId", 0));
             const auto requestedId = args.getProperty ("id", {}).toString();
             const auto* plugin = catalog_.find (requestedId);
@@ -588,15 +588,15 @@ private:
         }
         else if (action == "fxRemove")
         {
-            if (engine_.hasTemporaryDiagnosticDevice())
-                return emitNotice ("Return to NORMAL before editing VST3.", true);
+            if (engine_.hasTemporaryAudioRouting())
+                return emitNotice ("Switch to DIRECT before removing VST3 effects; callback-detaching edits are not live-safe yet.", true);
             editorWindow_.reset();
             if (engine_.removeAt (slot)) { diagnostics_.record ("FX_REMOVE", juce::String (slot)); emitChain(); }
         }
         else if (action == "fxMove")
         {
-            if (engine_.hasTemporaryDiagnosticDevice())
-                return emitNotice ("Return to NORMAL before rearranging VST3 effects.", true);
+            if (engine_.hasTemporaryAudioRouting())
+                return emitNotice ("Switch to DIRECT before rearranging VST3 effects; callback-detaching edits are not live-safe yet.", true);
             editorWindow_.reset();
             if (engine_.moveSlot (slot, slot + static_cast<int> (value))) { diagnostics_.record ("FX_MOVE", juce::String (slot)); emitChain(); }
         }
