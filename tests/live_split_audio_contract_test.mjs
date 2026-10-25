@@ -30,11 +30,11 @@ test('unknown clocks are never labeled direct without proof or force resampled o
 test('both callbacks quiesce before buffer destruction or device rerouting',()=>{
   const stop =engine.slice(engine.indexOf('void stop()'),engine.indexOf('void setMonitorEnabled'));
   assert.ok(stop.indexOf('detach();')<stop.indexOf('splitAdapter_.stop()'));
-  assert.match(engine,/routeReconfiguring_\\.store \\(true/);
-  assert.match(engine,/original\\.inputChannels = full->getActiveInputChannels\\(\\)/);
-  assert.match(engine,/original\\.useDefaultInputChannels = false/);
-  assert.match(engine,/original\\.outputChannels = full->getActiveOutputChannels\\(\\)/);
-  assert.match(engine,/original\\.useDefaultOutputChannels = false/);
+  assert.match(engine,/routeReconfiguring_\.store \(true/);
+  assert.match(engine,/original\.inputChannels = full->getActiveInputChannels\(\)/);
+  assert.match(engine,/original\.useDefaultInputChannels = false/);
+  assert.match(engine,/original\.outputChannels = full->getActiveOutputChannels\(\)/);
+  assert.match(engine,/original\.useDefaultOutputChannels = false/);
   assert.match(engine,/preparedCaptureRate/);
   assert.match(engine,/preparedRenderRate/);
   assert.match(engine,/captureRestarted/);
