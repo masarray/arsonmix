@@ -107,12 +107,6 @@ function renderMaster(){
  host.innerHTML=`<div class="ch-id master-ch-id">MASTER</div>
  <div class="master-fx-rack">${masterFxRows()}</div>
  <div class="strip-controls master-controls-zone">
-  <div class="master-analysis">
-   <div class="master-info-kicker">OUTPUT ANALYSIS <span>SIM</span></div>
-   <div class="master-info-row"><span>LUFS-I</span><strong id="masterLufs">--</strong></div>
-   <div class="master-info-row"><span>dBTP</span><strong id="masterDbtp">--</strong></div>
-   <div class="master-info-row"><span>PEAK</span><strong id="masterPeakDb">--</strong></div>
-  </div>
   <div class="master-pan-wrap"><div class="knob-label">PAN</div>
     <div class="pan-control"><div class="pan-track ${masterPan===0?'is-centered':''}" data-pan="master"
        role="slider" tabindex="0" aria-orientation="horizontal"
@@ -138,6 +132,12 @@ function renderMaster(){
     <div class="cap master-cap" style="--pos:${levelToTop(masterGain)}%"></div>
   </div>
   ${meterUnit('masterR','R')}
+   <div class="master-analysis">
+   <div class="master-info-kicker">OUTPUT ANALYSIS <span>SIM</span></div>
+   <div class="master-info-row"><span>LUFS-I</span><strong id="masterLufs">--</strong></div>
+   <div class="master-info-row"><span>dBTP</span><strong id="masterDbtp">--</strong></div>
+   <div class="master-info-row"><span>PEAK</span><strong id="masterPeakDb">--</strong></div>
+  </div>
  </div>
  <div class="fader-tools master-tools"><button type="button" class="active" data-master-output="main" title="Main stereo output">MAIN L/R</button><button type="button" data-clear-all-clips="1">CLEAR CLIP</button></div>
  <div class="strip-name master-strip-name" role="group" aria-label="Master output"><span class="strip-caption">MASTER</span><span class="track-icon" aria-hidden="true">◖))</span></div>`;
