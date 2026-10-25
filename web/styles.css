@@ -680,13 +680,12 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  .left-rail .rail-bottom #saveFxPreset,.left-rail .rail-presets button.active,
  .native-btn.primary,.native-btn.on){--b180-color:#15ccbe;--b180-border:#0f988e}
 :is(.left-rail .rail-bottom #addScene,
- .strip .fader-tools button[data-send$=":a"].active){--b180-color:#259bd9;--b180-border:#116b9d}
+){--b180-color:#259bd9;--b180-border:#116b9d}
 .strip .utility-row button[data-hpf].active{--b180-color:#2ec990;--b180-border:#12845a}
 :is(.strip .channel-actions .mute.active,#masterLeft #masterMute.active,
  .native-btn.warn){--b180-color:#e86176;--b180-border:#aa314a}
 .strip .channel-actions .solo.active{--b180-color:#d5a832;--b180-border:#916719}
 :is(.strip .utility-row button[data-pre].active,
- .strip .fader-tools button[data-send$=":b"].active,
  #masterLeft .master-tools button.active){--b180-color:#9b83de;--b180-border:#644da0}
 #masterLeft .master-actions .master-stereo-badge{
  border:1px solid #4b6779;background:linear-gradient(#233a49,#102635 60%,#203442);
@@ -722,13 +721,12 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  .left-rail .rail-presets button.active,.left-rail .rail-bottom #saveFxPreset,
  .native-btn.primary,.native-btn.on){--b180-color:#22bbcc;--b180-border:#087b8e;--b180-ink:#041c27}
 :is(.left-rail .rail-bottom #addScene,
- .strip .fader-tools button[data-send$=":a"].active){--b180-color:#319ed4;--b180-border:#14618c;--b180-ink:#061c2b}
+){--b180-color:#319ed4;--b180-border:#14618c;--b180-ink:#061c2b}
 .strip .utility-row button[data-hpf].active{--b180-color:#37c99a;--b180-border:#126e5b;--b180-ink:#071f1a}
 :is(.strip .channel-actions .mute.active,#masterLeft #masterMute.active,
  .native-btn.warn){--b180-color:#e76f83;--b180-border:#a13650;--b180-ink:#291018}
 .strip .channel-actions .solo.active{--b180-color:#dbb75c;--b180-border:#967025;--b180-ink:#291d08}
 :is(.strip .utility-row button[data-pre].active,
- .strip .fader-tools button[data-send$=":b"].active,
  #masterLeft .master-tools button.active){--b180-color:#a68cdb;--b180-border:#684f9e;--b180-ink:#1d1234}
 :is(.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
  #masterLeft .master-tools button,.toolbar .nav button,.left-rail .tabs button,
@@ -790,3 +788,112 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  transition:none!important
  }
 }
+
+
+/* LEFT RAIL — supplied three-piece pushable construction.
+   Same shadow / edge / front geometry as reference, compact enough for 156px rail.
+   Only dimensions, corner scale and HSL colors are adapted to the mixer. */
+#app .left-rail button.pushable {
+ --pb-face:#274252;--pb-edge:#0e2532;--pb-ink:#dcebf2;
+ position:relative!important;display:block!important;isolation:isolate;
+ box-sizing:border-box!important;min-width:0;width:100%;
+ background:transparent!important;border:0!important;padding:0!important;
+ border-radius:5px!important;box-shadow:none!important;
+ transform:none!important;filter:none!important;
+ color:var(--pb-ink)!important;text-shadow:none!important;
+ cursor:pointer;overflow:visible!important;
+ transition:none!important;-webkit-tap-highlight-color:transparent;
+}
+#app .left-rail .tabs button.pushable{height:34px;min-height:34px}
+#app .left-rail .rail-presets{gap:6px;padding:8px 6px 6px}
+#app .left-rail .rail-presets button.pushable{height:27px;min-height:27px}
+#app .left-rail .rail-bottom{row-gap:7px;padding-top:9px}
+#app .left-rail .rail-bottom button.pushable{height:27px;min-height:27px}
+#app .left-rail button.pushable > .shadow,
+#app .left-rail button.pushable > .edge {
+ position:absolute;top:0;left:0;width:100%;height:100%;
+ border-radius:5px;pointer-events:none;display:block;
+}
+#app .left-rail button.pushable > .shadow {
+ background:hsl(0deg 0% 0% / .25);
+ transform:translateY(2px);
+ transition:transform 95ms ease-out;
+}
+#app .left-rail button.pushable > .edge {
+ background:var(--pb-edge);
+ box-shadow:inset 0 1px 0 #ffffff0c,0 1px 1px #0207098a;
+}
+#app .left-rail button.pushable > .front {
+ display:flex;position:relative;align-items:center;
+ justify-content:center;box-sizing:border-box;
+ padding:0 5px;width:100%;height:100%;
+ border-radius:5px;
+ font-family:"ArSonMix Inter","Segoe UI",sans-serif!important;
+ font-size:9px;font-weight:650;letter-spacing:.08px;line-height:1.15;
+ text-transform:uppercase;white-space:nowrap;
+ background:var(--pb-face);color:var(--pb-ink);
+ box-shadow:inset 0 1px 0 #ffffff36,inset 0 -1px 0 #0004;
+ text-shadow:0 1px 0 #0005;
+ transform:translateY(-4px);
+ transition:transform 95ms ease-out,background-color 95ms,color 95ms;
+}
+#app .left-rail .rail-presets button.pushable > .front{
+ justify-content:flex-start;padding:0 9px;
+}
+#app .left-rail button.pushable:hover:not(:disabled) > .front{
+ transform:translateY(-6px);
+}
+#app .left-rail button.pushable:hover:not(:disabled) > .shadow{
+ transform:translateY(4px);
+}
+#app .left-rail button.pushable:active:not(:disabled) > .front,
+#app .left-rail button.pushable:is(.selected,.active) > .front{
+ transform:translateY(-2px);
+}
+#app .left-rail button.pushable:active:not(:disabled) > .shadow,
+#app .left-rail button.pushable:is(.selected,.active) > .shadow{
+ transform:translateY(1px);
+}
+#app .left-rail button.pushable:focus:not(:focus-visible){outline:none!important}
+#app .left-rail button.pushable:focus-visible{
+ outline:2px solid #67d6ed!important;outline-offset:3px!important;
+}
+#app .left-rail button.pushable:is(.selected,.active){
+ --pb-face:#27bdd0;--pb-edge:#086479;--pb-ink:#061c27;
+}
+#app .left-rail button.pushable#addScene{
+ --pb-face:#198dbc;--pb-edge:#0a5377;--pb-ink:#f0faff;
+}
+#app .left-rail button.pushable#saveFxPreset{
+ --pb-face:#168f92;--pb-edge:#075254;--pb-ink:#eefcfc;
+}
+#app .left-rail button.pushable#menuScene{
+ --pb-face:#314a5b;--pb-edge:#162938;--pb-ink:#d3e2eb;
+}
+#app .left-rail button.pushable:disabled{
+ pointer-events:none;opacity:.55;filter:saturate(.5)!important;
+}
+@media(max-height:730px){
+ #app .left-rail .rail-presets{gap:4px;padding-top:6px;padding-bottom:4px}
+ #app .left-rail .rail-presets button.pushable{height:25px;min-height:25px}
+ #app .left-rail .rail-bottom{row-gap:5px;padding-top:7px}
+ #app .left-rail .rail-bottom button.pushable{height:25px;min-height:25px}
+}
+@media(prefers-reduced-motion:reduce){
+ #app .left-rail button.pushable > :is(.shadow,.front){transition:none!important}
+}
+/* PAN: recessed center detent is below the original metallic PNG, not over it.
+   z-order: track (0), center detent (1), illuminated pan fill (2), PNG thumb (3). */
+.pan-track{isolation:isolate}
+.pan-track::before{z-index:0!important}
+.pan-track::after{
+ z-index:1!important;top:15px;height:11px;
+ background:linear-gradient(#708b9c,#314957)!important;
+ box-shadow:0 0 0 1px #0710168c!important;
+}
+.pan-track.is-centered::after{background:#6e8899!important;box-shadow:0 0 0 1px #081720!important}
+.pan-track .pan-fill{z-index:2!important}
+.pan-track .pan-thumb{z-index:3!important}
+/* The obsolete A/B bay is removed from source strips. Let the fader occupy
+   the recovered vertical area; MASTER keeps its dedicated clear-clip controls. */
+#mixer > .strip:not(.master-strip) > .fader-tools{display:none!important}
