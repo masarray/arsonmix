@@ -473,14 +473,31 @@ private:
         }
         else if (action == "audioSetup")
         {
-            if (engine_.independentClockActive() || engine_.hasPendingDirectRestore())
+            if (engine_.independentClockActive())
             {
                 const auto revert = engine_.setIndependentClockEnabled (false);
-                if (revert.isNotEmpty()) return emitNotice (revert, true);
-                directRestore_.cancel();
-                lastDirectRestoreError_.clear();
-                deviceSettingsDirty_ = true;
+                // A graph handoff can block stopping the active independent
+                // callbacks. Never open the device selector while they run.
+                if (revert.isNotEmpty() && engine_.independentClockActive())
+                    return emitNotice (revert, true);
+                if (revert.isNotEmpty())
+                    diagnostics_.record ("DIRECT_RESTORE_SETUP_FALLBACK", revert);
+                else deviceSettingsDirty_ = true;
             }
+            if (engine_.hasPendingDirectRestore())
+            {
+                // Explicit user intent overrides retrying a missing original
+                // endpoint. Re-register the native callback so choosing a
+                // replacement device works, but keep output muted for safety.
+                if (!engine_.abandonPendingDirectRestoreForSetup())
+                    return emitNotice ("Unable to prepare replacement audio device selection.", true);
+                diagnostics_.record ("DIRECT_RESTORE_ABANDON",
+                    "User selected AUDIO SETUP to replace unavailable prior endpoint");
+                deviceSettingsDirty_ = false; // never persist an empty device
+                emitNotice ("Original endpoint unavailable. Choose a replacement in AUDIO SETUP; output remains muted.", true);
+            }
+            directRestore_.cancel();
+            lastDirectRestoreError_.clear();
             // One-sided device routes are temporary and must never leak into
             // normal user configuration or the persisted audio-devices.xml.
             if (engine_.hasTemporaryDiagnosticDevice())
@@ -743,7 +760,8 @@ private:
             deviceSettingsDirty_ = false;
             // DeviceManager signals even when a temporary capture-only /
             // output-only route is selected. Never persist that test route.
-            if (!engine_.hasTemporaryDiagnosticDevice() && !engine_.independentClockActive())
+            if (!engine_.hasTemporaryDiagnosticDevice() && !engine_.independentClockActive() &&
+                engine_.devices().getCurrentAudioDevice() != nullptr)
             if (auto xml = engine_.devices().createStateXml())
             {
                 const auto text = xml->toString();
