@@ -20,3 +20,9 @@ Windows WebView2 100/125/150% visual acceptance and real audio hardware are sepa
 
 ## Milestone 1b: one crystal geometry for every button state
 The owner rejected differences in physical elevation between OFF and ON. The shared shadow now uses the previously approved ON inset recipe on all states with fixed shadow colors; OFF is a neutral dark gray face. Hover on OFF and ON changes only brightness and never border. Tests compare computed OFF/ON and mouse-down shadows, bounds, semantic color and hover border. Generator/parity and native audio remain untouched.
+
+## Milestone 1c — raised dark-crystal OFF, tactile ON (latest owner design)
+- Same single Button 180 component owner, no extra HTML wrappers/layers or JS events. Raised OFF optical construction = solid dark slate `#202832`, 1px overhead/left specular highlights, crisp stepped 2–3px bottom bevel and restrained cast shadow.
+- Recessed press/ON shadow inherits existing semantic ON surface; instant CSS `:active` depth trigger, persistent `.active/.selected/[aria-pressed]` keeps inward surface. No physical layout move or added hover border/glow.
+- Filter-only hover `brightness(1.32)`; 90ms bounded press shadow tween, 150ms color, 120ms filter, reduced-motion guard; no continuous animations or will-change GPU allocation.
+- Browser test asserts OFF lower bevel vs ON inset, pressed shadow and unchanged hitbox, hover brightness and border continuity. Next milestone remains responsive/legacy AST cleanup; outside this feature's scope.
