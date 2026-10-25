@@ -40,7 +40,7 @@ public:
         if (event == DeviceEvent::stop)
         {
             ++generation_; state_ = SessionState::stopped; consecutiveFailures_ = 0;
-            stableSince_ = 0; nextRetry_ = 0;
+            stabilityArmed_ = false; stableSince_ = 0; nextRetry_ = 0;
             return result (RecoveryAction::silenceAndRetire, 0, true);
         }
         if (event == DeviceEvent::start)
@@ -48,7 +48,7 @@ public:
             if (state_ != SessionState::stopped && state_ != SessionState::failed)
                 return result (RecoveryAction::none, 0, false);
             ++generation_; state_ = SessionState::discovering;
-            consecutiveFailures_ = 0; stableSince_ = 0; nextRetry_ = 0;
+            consecutiveFailures_ = 0; stabilityArmed_ = false; stableSince_ = 0; nextRetry_ = 0;
             return result (RecoveryAction::enumerateDevices, 0, true);
         }
         if (token != generation_) return result (RecoveryAction::none, 0, false);
@@ -61,27 +61,28 @@ public:
                 return result (RecoveryAction::prepareCandidate, 0, true);
             case DeviceEvent::preparationOk:
                 if (state_ != SessionState::preparing) break;
-                state_ = SessionState::running; consecutiveFailures_ = 0;
-                stableSince_ = nowMs;
+                state_ = SessionState::running;
+                stableSince_ = nowMs; stabilityArmed_ = true;
                 return result (RecoveryAction::publishCandidate, 0, true);
             case DeviceEvent::callbackHealthy:
-                if (state_ == SessionState::running && stableSince_ != 0
+                if (state_ == SessionState::running && stabilityArmed_
                     && nowMs >= stableSince_ && nowMs - stableSince_ >= 30000)
                 {
-                    stableSince_ = 0; // one stable event per generation
+                    stabilityArmed_ = false;
+                    consecutiveFailures_ = 0; // reset only after sustained health
                     return result (RecoveryAction::persistStable, 0, true);
                 }
                 if (state_ == SessionState::degraded)
                 {
                     state_ = SessionState::running;
-                    stableSince_ = nowMs;
+                    stableSince_ = nowMs; stabilityArmed_ = true;
                     return result (RecoveryAction::none, 0, true);
                 }
                 break;
             case DeviceEvent::instability:
                 if (state_ == SessionState::running)
                 {
-                    state_ = SessionState::degraded; stableSince_ = 0;
+                    state_ = SessionState::degraded; stabilityArmed_ = false; stableSince_ = 0;
                     return result (RecoveryAction::none, 0, true);
                 }
                 break;
@@ -89,9 +90,17 @@ public:
                 if (state_ == SessionState::running || state_ == SessionState::degraded
                     || state_ == SessionState::preparing || state_ == SessionState::discovering)
                 {
-                    ++generation_; state_ = SessionState::recovering;
-                    nextRetry_ = nowMs; stableSince_ = 0;
-                    return result (RecoveryAction::silenceAndRetire, 0, true);
+                    ++consecutiveFailures_; ++generation_;
+                    stabilityArmed_ = false; stableSince_ = 0;
+                    if (consecutiveFailures_ >= 8)
+                    {
+                        state_ = SessionState::failed; nextRetry_ = 0;
+                        return result (RecoveryAction::silenceAndRetire, 0, true);
+                    }
+                    state_ = SessionState::recovering;
+                    const auto delay = backoffFor (consecutiveFailures_);
+                    nextRetry_ = nowMs + delay;
+                    return result (RecoveryAction::silenceAndRetire, delay, true);
                 }
                 break;
             case DeviceEvent::discoveryFailed:
@@ -106,8 +115,7 @@ public:
                     }
                     ++generation_; state_ = SessionState::recovering;
                     // Bounded backoff, 100ms to 10s; no uncontrolled spin.
-                    const auto shift = std::min (consecutiveFailures_ - 1, 7u);
-                    const auto delay = std::min<std::uint64_t> (10000, 100ull << shift);
+                    const auto delay = backoffFor (consecutiveFailures_);
                     nextRetry_ = nowMs + delay;
                     return result (RecoveryAction::scheduleRetry, delay, true);
                 }
@@ -127,10 +135,16 @@ public:
     SessionState state() const noexcept { return state_; }
     std::uint64_t nextRetryMs() const noexcept { return nextRetry_; }
 private:
+    static std::uint64_t backoffFor (unsigned consecutive) noexcept
+    {
+        const auto shift = std::min (consecutive - 1, 7u);
+        return std::min<std::uint64_t> (10000, 100ull << shift);
+    }
     RecoveryDecision result (RecoveryAction action, std::uint64_t delay, bool accepted) const noexcept
     { return {state_,action,generation_,delay,accepted}; }
     SessionState state_ = SessionState::stopped;
     std::uint64_t generation_ = 0, stableSince_ = 0, nextRetry_ = 0;
     unsigned consecutiveFailures_ = 0;
+    bool stabilityArmed_ = false;
 };
 } // namespace armix::device
