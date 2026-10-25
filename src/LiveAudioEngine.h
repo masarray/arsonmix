@@ -107,7 +107,25 @@ public:
         const auto type = deviceManager_.getCurrentAudioDeviceType();
         if (!type.startsWithIgnoreCase ("Windows Audio") || type.containsIgnoreCase ("Exclusive"))
             return "Smart clock bridge currently requires Windows Audio shared backend";
-        const Setup original = deviceManager_.getAudioDeviceSetup();
+        Setup original = deviceManager_.getAudioDeviceSetup();
+        // JUCE remembers channel requirements while a one-sided device is
+        // active. Explicit masks prevent restoring 0 inputs from remembered
+        // numInputChansNeeded=0 after we deliberately disable capture.
+        if (auto* full = deviceManager_.getCurrentAudioDevice())
+        {
+            if (original.useDefaultInputChannels)
+            {
+                original.inputChannels = full->getActiveInputChannels();
+                original.useDefaultInputChannels = false;
+            }
+            if (original.useDefaultOutputChannels)
+            {
+                original.outputChannels = full->getActiveOutputChannels();
+                original.useDefaultOutputChannels = false;
+            }
+        }
+        if (original.inputChannels.isZero() || original.outputChannels.isZero())
+            return "Original full-duplex channel masks are unavailable";
         if (original.inputDeviceName.isEmpty() || original.outputDeviceName.isEmpty())
             return "Input and output must both be configured before Smart Audio can start";
         routeReconfiguring_.store (true, std::memory_order_release);
@@ -144,6 +162,9 @@ public:
         smartBridgeEnabled_.store (true, std::memory_order_release);
         smartTargetMs_.store (targetLatencyMs, std::memory_order_relaxed);
         attach(); // render clock enters DSP after bridge is ready
+        smartRenderStartEpoch_ = deviceStartCount_.load (std::memory_order_acquire);
+        smartCaptureStartEpoch_ = splitAdapter_.snapshot (
+            deviceManager_.getCurrentAudioDevice()).captureStarts;
         routeReconfiguring_.store (false, std::memory_order_release);
         return {};
     }
@@ -194,10 +215,21 @@ public:
     {
         if (!isSmartBridgeActive()) return {};
         const auto health = splitAdapter_.snapshot (deviceManager_.getCurrentAudioDevice());
-        if (!health.captureStopped && health.captureAgeUs < 3000000u)
+        const bool captureRestarted = health.captureStarts != smartCaptureStartEpoch_;
+        const bool renderRestarted =
+            deviceStartCount_.load (std::memory_order_acquire) != smartRenderStartEpoch_;
+        const bool rateChanged = std::abs (health.captureRate - health.preparedCaptureRate) > 0.25
+                              || std::abs (health.outputRate - health.preparedRenderRate) > 0.25;
+        const bool silent = health.captureStopped || health.captureAgeUs >= 3000000u
+                         || health.captureChannels == 0 || health.renderChannels == 0;
+        if (!captureRestarted && !renderRestarted && !rateChanged && !silent)
             return {};
+        const auto reason = rateChanged ? "capture/render rate renegotiated"
+            : captureRestarted || renderRestarted ? "device stream restarted"
+            : "capture/render callback stalled or endpoint vanished";
         const auto fallbackError = disableSmartBridge();
-        return "Smart bridge capture silent for >3 seconds: automatic direct fallback"
+        return "Smart clock bridge generation invalidated (" + juce::String (reason)
+             + "); switched to safe JUCE direct fallback"
              + (fallbackError.isNotEmpty() ? " | " + fallbackError : juce::String());
     }
 
@@ -732,6 +764,7 @@ private:
     std::atomic<bool> smartBridgeEnabled_ {false};
     std::optional<juce::AudioDeviceManager::AudioDeviceSetup> smartBridgeConfigured_; // message thread
     std::atomic<double> smartTargetMs_ {0.};
+    std::uint64_t smartRenderStartEpoch_ = 0, smartCaptureStartEpoch_ = 0; // message thread
     juce::AudioPluginFormatManager formats_;
     std::unique_ptr<Graph> graphOwned_ {std::make_unique<Graph>()};
     std::unique_ptr<Graph> stagedOwner_;
