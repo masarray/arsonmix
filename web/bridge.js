@@ -307,8 +307,7 @@
   if(!mixer)return;
   const tracks=mixer.querySelectorAll(".strip");
   tracks.forEach((track,i)=>{
-    const rack=track.querySelector(".rack");
-    if(!rack)return;
+    // The v0.8 Master uses .master-fx-rack, not .rack. Handle it first.
     if(track.classList.contains("master-strip")){
       track.dataset.preview="1";
       track.title="Master FX and master PAN are visual previews; Master fader and meters are native";
@@ -321,6 +320,8 @@
       if(marker)marker.textContent="NATIVE PEAKS";
       return;
     }
+    const rack=track.querySelector(".rack");
+    if(!rack)return;
     if(i!==0){
       rack.dataset.preview="1";
       track.dataset.preview="1";
@@ -552,11 +553,36 @@
     }
     if(data.error)console.warn("AR MIX native:",text);
   });
+  // The desktop DSP owns Channel 1 and Master gain/mute and Channel 1 PAN.
+  // Demo localStorage/snapshots must never make a live control visually disagree with audio.
+  function syncNativeMixerControls(d){
+    if(typeof channels==="undefined" || !channels[0])return;
+    const channelDb=Number(d.channelDb), masterDb=Number(d.masterDb);
+    const channelPan=Math.round(Number(d.channelPan)*100);
+    if(!Number.isFinite(channelDb)||!Number.isFinite(masterDb)||!Number.isFinite(channelPan))return;
+    const channel=channels[0];
+    let inputDirty=false,masterDirty=false;
+    if(Math.abs(channel.fader-channelDb)>0.05){channel.fader=channelDb;inputDirty=true;}
+    if(channel.pan!==channelPan){channel.pan=channelPan;inputDirty=true;}
+    if(typeof d.channelMute==="boolean" && channel.mute!==d.channelMute){
+      channel.mute=d.channelMute;inputDirty=true;
+    }
+    if(typeof masterGain!=="undefined" && Math.abs(masterGain-masterDb)>0.05){
+      masterGain=masterDb;masterDirty=true;
+    }
+    if(typeof masterMute!=="undefined" && typeof d.masterMute==="boolean" && masterMute!==d.masterMute){
+      masterMute=d.masterMute;masterDirty=true;
+    }
+    if(inputDirty && typeof renderMixer==="function")renderMixer();
+    else if(masterDirty && typeof renderMaster==="function")renderMaster();
+    if(inputDirty||masterDirty)patchMixer();
+  }
   let liveInputLevel=0, liveOutputLevel=0, liveOutputLeft=0, liveOutputRight=0;
   let lastSetupSignature="";
   backend.addEventListener("arMixStatus",d=>{
     state.device=d;
     state.monitor=!!d.monitor;
+    syncNativeMixerControls(d);
     const b=document.querySelector('[data-native-action="monitor"]');
     if(b){b.textContent=state.monitor?"MUTE OUTPUT":"UNMUTE OUTPUT";b.classList.toggle("on",!state.monitor);}
     const text=d.error?"AUDIO ERROR: "+d.error:
