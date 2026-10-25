@@ -287,13 +287,67 @@ private:
             });
     }
 
+    // Executed only on JUCE message thread on explicit user request.
+    // No disk read, network request or audio-thread interaction is required.
+    // Clipboard contents are private until the user explicitly pastes them.
+    juce::String makeAudioReport()
+    {
+        const auto status = engine_.status();
+        auto* device = engine_.devices().getCurrentAudioDevice();
+        juce::String result;
+        result.preallocateBytes (64 * 1024);
+        result << "ARSONMIX / SMART AUDIO DIAGNOSTIC REPORT v2\n";
+        result << "Timestamp: " << juce::Time::getCurrentTime().toISO8601 (true) << "\n";
+        result << "Build: experimental-P0 clock-instrumentation / native JUCE 8.0.15\n";
+        result << "Platform: " << juce::SystemStats::getOperatingSystemName() << "\n";
+        result << "CPU: " << juce::SystemStats::getCpuModel() << "\n";
+        result << "Logical cores: " << juce::SystemStats::getNumCpus()
+               << " | RAM: " << juce::SystemStats::getMemorySizeInMegabytes() << " MiB\n";
+        result << "Telemetry: true hardware render underruns UNAVAILABLE; callback time/gap are proxies only.\n";
+        result << "No user audio samples, passwords or plugin vendor state are included.\n";
+        result << "Check device names and local paths before sharing this report.\n\n";
+        result << "=== DEVICE CAPABILITIES (backend-reported) ===\n";
+        if (device != nullptr)
+        {
+            result << "Input latency: " << device->getInputLatencyInSamples()
+                   << " frames | Output latency: " << device->getOutputLatencyInSamples()
+                   << " frames | Native buffer: " << device->getCurrentBufferSizeSamples() << " frames\n";
+            result << "Reported sample rates: ";
+            for (auto v : device->getAvailableSampleRates()) result << v << " ";
+            result << "\nReported buffer sizes: ";
+            for (auto v : device->getAvailableBufferSizes()) result << v << " ";
+            result << "\n";
+        }
+        else result << "No active device\n";
+        result << "\n=== STATUS SNAPSHOT (measured / source-labeled) ===\n";
+        result << juce::JSON::toString (status, true) << "\n";
+        result << "\n=== RECENT EVENTS (latest 48, capture on control thread) ===\n";
+        result << diagnostics_.recentReport (48);
+        result << "\n=== NEXT ACTION ===\n";
+        result << "Copy/paste this report to the ArSonMix engineering thread. "
+                  "Add a short description of the audible crackle and its mode, if any.\n";
+        return result;
+    }
+
     void onAction (const juce::var& args)
     {
         const auto action = args.getProperty ("action", {}).toString();
         const auto value = args.getProperty ("value", {});
         const int slot = static_cast<int> (args.getProperty ("slot", -1));
 
-        if (action == "audioSetup")
+        if (action == "copyDiagnosticReport")
+        {
+            diagnostics_.record ("REPORT_COPY", "User explicitly requested one-click report");
+            const auto report = makeAudioReport();
+            juce::SystemClipboard::copyTextToClipboard (report);
+            auto response = std::make_unique<juce::DynamicObject>();
+            response->setProperty ("bytes", report.getNumBytesAsUTF8());
+            response->setProperty ("generatedAt", juce::Time::getCurrentTime().toISO8601 (true));
+            if (browser_.loaded)
+                browser_.emitEventIfBrowserIsVisible ("arMixDiagnosticReportCopied", juce::var (response.release()));
+            emitNotice ("Audio report copied! Paste it directly into the engineering chat.");
+        }
+        else if (action == "audioSetup")
         {
             // One-sided device routes are temporary and must never leak into
             // normal user configuration or the persisted audio-devices.xml.
