@@ -249,8 +249,8 @@
         Devices and output routing are never changed by recall.
       </div>
       <div class="native-status" style="margin-bottom:10px;color:${muted?"#8fe5b8":"#f8c38d"}">
-        ${muted?"OUTPUT MUTED · Save/recall is available."
-          :"LIVE OUTPUT ACTIVE · Mute output first to protect your performance."}
+        ${muted?"OUTPUT MUTED · Save and recall available."
+          :"LIVE OUTPUT ACTIVE · Recall uses a short de-click fade. Mute before SAVE."}
         ${muted?"":'<button class="native-btn" data-preset-mute="1" style="margin-left:7px">MUTE OUTPUT</button>'}
       </div>
       <div style="display:flex;gap:6px;margin-bottom:12px">
@@ -262,12 +262,12 @@
       <div style="max-height:250px;overflow:auto">${state.presets.length?
         state.presets.map(n=>`<div class="native-result">
           <span><b>${escapeHtml(n)}</b><small>.armix · full vendor VST3 state</small></span>
-          <button class="native-btn" data-preset-load="${escapeHtml(n)}" ${muted?"":"disabled"}>RECALL</button>
+          <button class="native-btn" data-preset-load="${escapeHtml(n)}">RECALL LIVE</button>
         </div>`).join("") :
         '<div class="native-empty">No native sounds saved. Mute output, then save the current live FX chain.</div>'}
       </div>`;
     dlg.querySelector(".native-dialog-footer").textContent=
-      "Changing active FX while performing is not seamless yet. Output stays muted after recall. Do not distribute presets containing licensed plugin state without permission.";
+      "Live recall: prepared VST3 chain switches at a callback boundary with a brief fade-down/up (not dual-graph seamless). SAVE requires mute. Output routing is unchanged.";
   }
   function openMySounds(){
     renderMySounds();
@@ -379,7 +379,9 @@
   if(el.hasAttribute("data-preset-load")){
     const name=el.dataset.presetLoad;
     if(!name)return;
-    if(!confirm('Recall native sound "'+name+'"? Current plugin chain will be replaced. Output must remain muted.'))return;
+    if(!confirm('Recall native sound "'+name+'"? The mixer will use a short de-click fade when switching FX chains.'))return;
+    const notice=document.querySelector("#nativeMySounds .native-status");
+    if(notice)notice.textContent="Preparing new VST3 instances and binary states. Live audio remains on the current graph until the new plan is ready…";
     requestAnimationFrame(()=>requestAnimationFrame(()=>send("presetLoad",{name})));
     return;
   }

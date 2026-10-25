@@ -152,6 +152,8 @@ private:
     bool setupLaunching_ = false;
     unsigned int timerTicks_ = 0;
     bool deviceSettingsDirty_ = false;
+    juce::var pendingPresetUI_;
+    juce::String pendingPresetName_;
 
     void emitNotice (const juce::String& message, bool error = false)
     {
@@ -337,8 +339,8 @@ private:
         else if (action == "presetLoad")
         {
             const auto name = args.getProperty ("name", {}).toString();
-            if (!engine_.isOutputMuted())
-                return emitNotice ("Mute output in SIGNAL CHECK before recalling a native sound preset.", true);
+            if (engine_.isGraphSwitchPending())
+                return emitNotice ("FX recall is already transitioning; retry shortly.", true);
             editorWindow_.reset();
             armix::storage::Snapshot snapshot;
             auto error = presets_.load (name, snapshot);
@@ -350,8 +352,8 @@ private:
             }
             else
             {
-                diagnostics_.record ("PRESET_LOADED", name + " (" + juce::String (snapshot.effects.size()) + " VST3)");
-                emitChain();
+                // UI reflects state only AFTER the audio thread acknowledges
+                // the staged plan; avoid claiming active while it is still old.
                 auto updated = std::make_unique<juce::DynamicObject>();
                 updated->setProperty ("name", name);
                 updated->setProperty ("channelDb", snapshot.channelDb);
@@ -359,9 +361,11 @@ private:
                 updated->setProperty ("pan", snapshot.pan * 100.f);
                 updated->setProperty ("channelMute", snapshot.channelMute);
                 updated->setProperty ("masterMute", snapshot.masterMute);
-                if (browser_.loaded)
-                    browser_.emitEventIfBrowserIsVisible ("arMixNativePresetLoaded", juce::var (updated.release()));
-                emitNotice ("Native sound recalled: " + name + ". Output remains muted until you unmute it.");
+                pendingPresetUI_ = juce::var (updated.release());
+                pendingPresetName_ = name;
+                diagnostics_.record ("PRESET_GRAPH_QUEUED", name + " (" +
+                    juce::String (snapshot.effects.size()) + " VST3)");
+                emitNotice ("Preparing live transition to sound: " + name);
             }
         }
         else if (action == "openDiagnostics")
@@ -479,6 +483,17 @@ private:
     void timerCallback() override
     {
         ++timerTicks_;
+        if (engine_.finalizeGraphSwitch())
+        {
+            diagnostics_.record ("GRAPH_SWAP_ACK", pendingPresetName_);
+            emitChain();
+            if (pendingPresetUI_.isObject() && browser_.loaded)
+                browser_.emitEventIfBrowserIsVisible ("arMixNativePresetLoaded", pendingPresetUI_);
+            if (pendingPresetName_.isNotEmpty())
+                emitNotice ("Live sound recalled: " + pendingPresetName_);
+            pendingPresetUI_ = {};
+            pendingPresetName_.clear();
+        }
         if (timerTicks_ % 12 == 0)
             diagnostics_.record ("AUDIO_HEALTH", juce::JSON::toString (engine_.status(), false));
 
