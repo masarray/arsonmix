@@ -307,8 +307,7 @@
   if(!mixer)return;
   const tracks=mixer.querySelectorAll(".strip");
   tracks.forEach((track,i)=>{
-    const rack=track.querySelector(".rack");
-    if(!rack)return;
+    // The v0.8 Master uses .master-fx-rack, not .rack. Handle it first.
     if(track.classList.contains("master-strip")){
       track.dataset.preview="1";
       track.title="Master FX and master PAN are visual previews; Master fader and meters are native";
@@ -318,9 +317,11 @@
       const pan=track.querySelector('[data-pan="master"]');
       if(pan){pan.removeAttribute("tabindex");pan.style.pointerEvents="none";pan.title="Master PAN DSP not yet implemented";}
       const marker=track.querySelector(".master-info-kicker span");
-      if(marker)marker.textContent="NATIVE PEAKS";
+      if(marker && marker.textContent!=="NATIVE PEAKS")marker.textContent="NATIVE PEAKS";
       return;
     }
+    const rack=track.querySelector(".rack");
+    if(!rack)return;
     if(i!==0){
       rack.dataset.preview="1";
       track.dataset.preview="1";
@@ -362,7 +363,9 @@
     });
   }
   new MutationObserver(()=>syncView()).observe(workspace,{childList:true});
-  new MutationObserver(()=>syncView()).observe(mixer,{childList:true});
+  // renderMaster() replaces descendants without replacing the mixer root.
+  // Reapply the disabled native-only controls after each Master redraw.
+  new MutationObserver(()=>syncView()).observe(mixer,{childList:true,subtree:true});
   const repaint=()=>{
     if(currentTab()==="FX RACK") renderRack();
     if(currentTab()==="SETUP") renderSetup();
@@ -552,11 +555,74 @@
     }
     if(data.error)console.warn("AR MIX native:",text);
   });
+  // The desktop DSP owns Channel 1 and Master gain/mute and Channel 1 PAN.
+  // Control events are dispatched asynchronously; never overwrite an in-flight
+  // fader/PAN edit with an older audio status frame.
+  let controlEditUntil=0;
+  function markNativeUiEdit(e){
+    if(e.target?.closest?.('[data-fader="0"],[data-fader="master"],[data-pan="0"]'))
+      controlEditUntil=Date.now()+350;
+    if(typeof drag!=="undefined" && drag &&
+       (drag.type==="fader" || drag.type==="pan"))
+      controlEditUntil=Date.now()+350;
+  }
+  for(const event of ["pointerdown","pointermove","pointerup","pointercancel","wheel","keydown"])
+    document.addEventListener(event,markNativeUiEdit,true);
+  // A restored GUI-only snapshot must not masquerade as a live native setting.
+  function syncNativeMixerControls(d){
+    if(typeof channels==="undefined" || !channels[0])return;
+    const channelDb=Number(d.channelDb), masterDb=Number(d.masterDb);
+    const channelPan=Math.round(Number(d.channelPan)*100);
+    if(!Number.isFinite(channelDb)||!Number.isFinite(masterDb)||!Number.isFinite(channelPan))return;
+    const channel=channels[0];
+    const editing=Date.now()<controlEditUntil ||
+      (typeof drag!=="undefined" && drag && (drag.type==="fader" || drag.type==="pan"));
+    let changed=false;
+    if(!editing && Math.abs(channel.fader-channelDb)>0.05){
+      channel.fader=channelDb;changed=true;
+      const fader=document.querySelector('[data-fader="0"]');
+      if(fader){fader.querySelector(".cap")?.style.setProperty("--pos",levelToTop(channelDb)+"%");fader.setAttribute("aria-valuenow",channelDb.toFixed(1));}
+      const read=document.querySelector('[data-read="0"]');
+      if(read)read.textContent=fmt(channelDb);
+    }
+    if(!editing && channel.pan!==channelPan){
+      channel.pan=channelPan;changed=true;
+      const pan=document.querySelector('[data-pan="0"]');
+      if(pan){
+        pan.classList.toggle("is-centered",channelPan===0);
+        pan.style.setProperty("--pan-frac",(channelPan+100)/200);
+        pan.style.setProperty("--pan-left",Math.min(.5,(channelPan+100)/200));
+        pan.style.setProperty("--pan-span",Math.abs(channelPan)/200);
+        pan.setAttribute("aria-valuenow",String(channelPan));
+        pan.setAttribute("aria-valuetext",panText(channelPan));
+      }
+      const read=document.querySelector('[data-pan-read="0"]');
+      if(read)read.textContent=panText(channelPan);
+    }
+    if(typeof d.channelMute==="boolean" && channel.mute!==d.channelMute){
+      channel.mute=d.channelMute;changed=true;
+      const mute=document.querySelector('[data-mute="0"]');
+      if(mute){mute.classList.toggle("active",channel.mute);mute.setAttribute("aria-pressed",String(channel.mute));}
+    }
+    if(!editing && typeof masterGain!=="undefined" && Math.abs(masterGain-masterDb)>0.05){
+      masterGain=masterDb;changed=true;
+      const fader=document.querySelector('[data-fader="master"]');
+      if(fader){fader.querySelector(".cap")?.style.setProperty("--pos",levelToTop(masterDb)+"%");fader.setAttribute("aria-valuenow",masterDb.toFixed(1));}
+      document.querySelectorAll(".master-db").forEach(e=>e.textContent=fmt(masterDb));
+    }
+    if(typeof masterMute!=="undefined" && typeof d.masterMute==="boolean" && masterMute!==d.masterMute){
+      masterMute=d.masterMute;changed=true;
+      const mute=document.querySelector("#masterMute");
+      if(mute){mute.classList.toggle("active",masterMute);mute.setAttribute("aria-pressed",String(masterMute));}
+    }
+    if(changed)patchMixer();
+  }
   let liveInputLevel=0, liveOutputLevel=0, liveOutputLeft=0, liveOutputRight=0;
   let lastSetupSignature="";
   backend.addEventListener("arMixStatus",d=>{
     state.device=d;
     state.monitor=!!d.monitor;
+    syncNativeMixerControls(d);
     const b=document.querySelector('[data-native-action="monitor"]');
     if(b){b.textContent=state.monitor?"MUTE OUTPUT":"UNMUTE OUTPUT";b.classList.toggle("on",!state.monitor);}
     const text=d.error?"AUDIO ERROR: "+d.error:
