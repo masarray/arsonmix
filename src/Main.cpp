@@ -354,6 +354,8 @@ private:
         if (action == "smartClock")
         {
             if (!value.isBool()) return emitNotice ("Invalid smart clock command", true);
+            // Close third-party editors before device/processor preparation.
+            editorWindow_.reset();
             const auto error = engine_.setIndependentClockEnabled (bool (value));
             if (error.isNotEmpty())
             {
