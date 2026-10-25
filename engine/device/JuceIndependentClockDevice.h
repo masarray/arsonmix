@@ -2,6 +2,7 @@
 #pragma once
 #include <juce_audio_devices/juce_audio_devices.h>
 #include "AdaptiveClockBridge.h"
+#include "ClockBridgeSizing.h"
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -102,17 +103,11 @@ public:
         // plus one producer replenishment quantum and FIR guard history.
         // Otherwise long driver callbacks re-prime forever despite healthy
         // input. Reject oversized periods rather than reporting false audio.
-        const auto requestedSourceFrames = static_cast<std::uint64_t> (
-            std::ceil (renderBufferFrames_ * captureRate_ / renderRate_));
-        const auto captureQuantum = static_cast<std::uint64_t> (captureBufferFrames_);
-        const auto minimumTargetFrames = requestedSourceFrames +
-            std::max (requestedSourceFrames, captureQuantum) +
-            static_cast<std::uint64_t> (AdaptiveClockBridge::taps * 2 + 4);
-        const auto minimumTargetMs = 1000.0 *
-            static_cast<double> (minimumTargetFrames) / captureRate_;
-        effectiveTargetLatencyMs_ = std::max (targetLatencyMs, minimumTargetMs);
-        if (effectiveTargetLatencyMs_ > 180.0 ||
-            minimumTargetFrames > 32768 / 2 - AdaptiveClockBridge::taps * 2)
+        const auto sizing = ClockBridgeSizing::choose (
+            captureRate_, renderRate_, captureBufferFrames_,
+            renderBufferFrames_, AdaptiveClockBridge::taps, 32768, targetLatencyMs);
+        effectiveTargetLatencyMs_ = sizing.targetMs;
+        if (!sizing.valid)
         {
             close();
             return "Device buffer periods require excessive or unsupported independent clock latency";
