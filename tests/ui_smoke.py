@@ -433,8 +433,8 @@ async def main():
         assert await page.locator('.editor').count()==0
         assert await page.locator('.status button').count()==0
         await page.locator('[data-view="MIX"]').click()
-        await page.locator('#modeToggle').click()
-        assert await page.locator('.app.easy').count()==0
+        assert await page.locator('#modeToggle').count()==0
+        assert await page.locator('.app.easy').count()==1
         assert not errors, errors
         await browser.close()
     print("PASS: asset PNG for 13 faders, detent alignment, no-jump drag, endpoints, FX chain, no JS errors")
