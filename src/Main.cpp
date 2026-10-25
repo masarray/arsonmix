@@ -294,6 +294,7 @@ private:
     {
         const auto status = engine_.status();
         auto* device = engine_.activeOutputDevice();
+        auto* captureDevice = engine_.activeInputDevice();
         juce::String result;
         result.preallocateBytes (64 * 1024);
         result << "ARSONMIX / SMART AUDIO DIAGNOSTIC REPORT v2\n";
@@ -309,7 +310,7 @@ private:
         result << "=== DEVICE CAPABILITIES (backend-reported) ===\n";
         if (device != nullptr)
         {
-            result << "Input latency: " << device->getInputLatencyInSamples()
+            result << "Input latency: " << (captureDevice ? captureDevice->getInputLatencyInSamples() : -1)
                    << " frames | Output latency: " << device->getOutputLatencyInSamples()
                    << " frames | Native buffer: " << device->getCurrentBufferSizeSamples() << " frames\n";
             result << "Reported sample rates: ";
