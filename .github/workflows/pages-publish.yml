@@ -1,0 +1,60 @@
+name: Publish ArSonMix GUI (main dispatcher)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/pages-publish.yml'
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["UI smoke (Chromium)"]
+    types: [completed]
+    branches: [fix/fader-thumb-symmetry-polish]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arsonmix-production-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout approved GUI preview source
+        uses: actions/checkout@v4
+        with:
+          ref: fix/fader-thumb-symmetry-polish
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build static landing and exact mixer preview
+        run: |
+          SOURCE_SHA="$(git rev-parse HEAD)"
+          python scripts/build_pages.py --out dist-pages --sha "$SOURCE_SHA" --branch fix/fader-thumb-symmetry-polish
+          cmp AR-MIX-Live-FX-Host-Standalone-v0.3.html dist-pages/preview/mixer.html
+          python tests/button_asset_test.py
+          python tests/fader_asset_test.py
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Upload site bundle
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist-pages
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publish site from default branch workflow
+        id: deployment
+        uses: actions/deploy-pages@v4
