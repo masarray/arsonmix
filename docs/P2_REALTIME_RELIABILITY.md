@@ -27,7 +27,7 @@
 5. Use OPEN DIAGNOSTIC LOG. Copy the latest log around the timestamps of audible stutters, with device and plugin names sanitized if sharing publicly.
 6. Interpret cautiously:
    - Slow callback/over-budget jumps near a dropout suggest a DSP deadline miss (plugin processing or callback).
-   - Slow plugin increments suggest one or more VST3 calls are consuming most of the deadline. This release logs worst aggregate plugin call, not exact per-plugin identity.
+   - Slow plugin increments suggest one or more VST3 calls are consuming most of the deadline. This release logs each VST3 slot's last and worst processing time to help identify a slow insert. Compare slot timings and use DRY TEST to confirm causality.
    - A callback scheduling gap jump with low process time suggests driver/OS scheduling or device discontinuity.
    - Flat counters despite audible loss suggest an endpoint, physical device, external virtual cable, or a discontinuity not captured by this timing probe.
 7. Success criterion: sustained uninterrupted mic→dry→master output and then mic→VST3→master output; no observed dropout on the actual physical interface.
@@ -38,3 +38,6 @@
 - No complete plugin crash sandbox or seamless FX graph swap yet.
 - Real output to streaming apps is separate from the output endpoint in the JUCE device selector. UI “Record/Streaming” output buttons remain previews until real routing is implemented.
 - The log may contain local device/plugin names; treat it as diagnostic user data.
+
+## Additional telemetry
+Audio-device start and stop callback counts are recorded, together with per-VST3 slot last/worst process duration (microseconds). A rise in device stop/start around stutters indicates a device lifecycle event; a rise in one slot's processing duration indicates a potentially expensive effect. Time counters alone do not prove that a device underrun occurred.
