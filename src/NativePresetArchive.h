@@ -53,7 +53,6 @@ public:
     {
         juce::Array<juce::var> values;
         auto files = folder_.findChildFiles (juce::File::findFiles, false, "*.armix");
-        files.sort();
         for (const auto& file : files)
         {
             if (values.size() >= 120) break;
@@ -68,7 +67,7 @@ public:
         if (state.effects.size() > maxEffects) return "Too many effects in snapshot";
         const auto safe = cleanName (state.name);
         if (safe.isEmpty()) return "Use a preset name containing letters or numbers";
-        if (folder_.createDirectory() == false && !folder_.isDirectory())
+        if (!folder_.isDirectory() && folder_.createDirectory().failed())
             return "Preset directory cannot be created";
 
         juce::ZipFile::Builder builder;
@@ -113,11 +112,14 @@ public:
                  static_cast<size_t> (json.getNumBytesAsUTF8()), true),
             6, "manifest.json", juce::Time::getCurrentTime());
 
-        const juce::TemporaryFile temp (fileFor (safe));
+        juce::TemporaryFile temp (fileFor (safe));
         auto stream = temp.getFile().createOutputStream();
         if (! stream) return "Unable to open temporary preset file";
-        if (! builder.writeToStream (*stream, nullptr) || ! stream->flush())
+        if (! builder.writeToStream (*stream, nullptr))
             return "Preset ZIP write failed; original preset untouched";
+        stream->flush();
+        if (stream->getStatus().failed())
+            return "Failed to flush preset to disk";
         stream.reset();
         if (temp.getFile().getSize() > maxArchiveBytes)
             return "Preset archive exceeds safety limit";
@@ -172,7 +174,8 @@ public:
         temp.channelMute = static_cast<bool> (m1);
         temp.masterMute = static_cast<bool> (m2);
 
-        const auto* list = manifest.getProperty ("pluginInstances", {}).getArray();
+        const auto entries = manifest.getProperty ("pluginInstances", {});
+        const auto* list = entries.getArray();
         if (!list || list->size() > maxEffects || zip.getNumEntries() != list->size() + 1)
             return "Preset plugin count mismatch";
 
