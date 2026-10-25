@@ -7,6 +7,7 @@
 #include "VstBusLayout.h"
 #include "LiveGraphHandoff.h"
 #include "DiagnosticTone.h"
+#include "SplitDuplexAdapter.h"
 #include "../engine/core/RealtimeHealthHistogram.h"
 #include <array>
 #include <atomic>
@@ -73,6 +74,9 @@ public:
 
     void stop()
     {
+        // Capture callback stops before releasing its FIFO or the render graph.
+        if (smartBridgeConfigured_) splitAdapter_.stop();
+        smartBridgeEnabled_.store (false, std::memory_order_release);
         detach();
         handoff_.resetAfterStop (graphOwned_.get());
         stagedOwner_.reset();
@@ -83,6 +87,117 @@ public:
         }
         graphOwned_->count = 0;
         deviceManager_.closeAudioDevice();
+    }
+
+    // True separate stream mode: input and output are opened as two WASAPI
+    // AudioIODevices, NOT two callbacks multiplexed on one JUCE manager.
+    // Message-thread-only operations. On any error restore original full
+    // duplex, and fail muted when hardware restoration cannot succeed.
+    juce::String enableSmartBridge (double targetLatencyMs = 20.)
+    {
+        using Setup = juce::AudioDeviceManager::AudioDeviceSetup;
+        if (isGraphSwitchPending()) return "FX graph transition pending";
+        if (savedLiveSetup_) return "Leave the endpoint isolation test first";
+        if (smartBridgeConfigured_)
+        {
+            const auto stopError = disableSmartBridge();
+            if (stopError.isNotEmpty()) return stopError;
+        }
+        const auto type = deviceManager_.getCurrentAudioDeviceType();
+        if (!type.startsWithIgnoreCase ("Windows Audio") || type.containsIgnoreCase ("Exclusive"))
+            return "Smart clock bridge currently requires Windows Audio shared backend";
+        const Setup original = deviceManager_.getAudioDeviceSetup();
+        if (original.inputDeviceName.isEmpty() || original.outputDeviceName.isEmpty())
+            return "Input and output must both be configured before Smart Audio can start";
+        routeReconfiguring_.store (true, std::memory_order_release);
+        detach();
+        Setup outputOnly = original;
+        outputOnly.inputDeviceName.clear();
+        outputOnly.inputChannels.clear();
+        outputOnly.useDefaultInputChannels = false;
+        auto error = deviceManager_.setAudioDeviceSetup (outputOnly, false);
+        if (error.isEmpty())
+        {
+            auto* output = deviceManager_.getCurrentAudioDevice();
+            if (output == nullptr || output->getActiveInputChannels().countNumberOfSetBits() != 0
+                                  || output->getActiveOutputChannels().countNumberOfSetBits() == 0)
+                error = "Output endpoint refused render-only mode";
+        }
+        if (error.isEmpty())
+            error = splitAdapter_.prepare (type, original, deviceManager_, targetLatencyMs);
+        if (error.isNotEmpty())
+        {
+            splitAdapter_.stop();
+            smartBridgeEnabled_.store (false, std::memory_order_release);
+            const auto rollback = deviceManager_.setAudioDeviceSetup (original, false);
+            if (rollback.isNotEmpty())
+            {
+                setOutputMuted (true);
+                error += " | FATAL fallback failed: " + rollback;
+            }
+            attach();
+            routeReconfiguring_.store (false, std::memory_order_release);
+            return "Smart Audio could not start: " + error;
+        }
+        smartBridgeConfigured_ = original;
+        smartBridgeEnabled_.store (true, std::memory_order_release);
+        smartTargetMs_.store (targetLatencyMs, std::memory_order_relaxed);
+        attach(); // render clock enters DSP after bridge is ready
+        routeReconfiguring_.store (false, std::memory_order_release);
+        return {};
+    }
+
+    juce::String disableSmartBridge()
+    {
+        if (!smartBridgeConfigured_) return {};
+        routeReconfiguring_.store (true, std::memory_order_release);
+        detach(); // block render consumer before tearing down capture producer
+        splitAdapter_.stop(); // drain producer before any FIFO reconfiguration
+        smartBridgeEnabled_.store (false, std::memory_order_release);
+        const auto previous = *smartBridgeConfigured_;
+        const auto error = deviceManager_.setAudioDeviceSetup (previous, false);
+        if (error.isEmpty())
+            smartBridgeConfigured_.reset();
+        else
+            setOutputMuted (true); // preserve original config for retry
+        attach();
+        routeReconfiguring_.store (false, std::memory_order_release);
+        return error.isEmpty() ? juce::String()
+                 : "Original full-duplex device restore failed: " + error;
+    }
+
+    // At startup AUTO only attempts independently opened Windows Audio streams
+    // for distinct selected endpoint names; ASIO always keeps the direct path.
+    juce::String configureStartupAuto()
+    {
+        const auto setup = deviceManager_.getAudioDeviceSetup();
+        const auto type = deviceManager_.getCurrentAudioDeviceType();
+        if (type.startsWithIgnoreCase ("Windows Audio")
+            && !type.containsIgnoreCase ("Exclusive")
+            && setup.inputDeviceName.isNotEmpty()
+            && setup.outputDeviceName.isNotEmpty()
+            && setup.inputDeviceName != setup.outputDeviceName)
+            return enableSmartBridge();
+        return {};
+    }
+
+    bool isSmartBridgeActive() const noexcept
+    { return smartBridgeEnabled_.load (std::memory_order_acquire); }
+    bool hasSmartBridgeSetup() const noexcept { return smartBridgeConfigured_.has_value(); }
+    bool hasTemporaryAudioRouting() const noexcept
+    { return savedLiveSetup_.has_value() || smartBridgeConfigured_.has_value(); }
+
+    // If capture stops scheduling, the existing joined JUCE route is restored
+    // ON THE MESSAGE THREAD, never inside an audio callback. Report fallback.
+    juce::String pollSmartHealth()
+    {
+        if (!isSmartBridgeActive()) return {};
+        const auto health = splitAdapter_.snapshot (deviceManager_.getCurrentAudioDevice());
+        if (health.captureCallbacks < 2 || health.captureAgeUs < 3000000u)
+            return {};
+        const auto fallbackError = disableSmartBridge();
+        return "Smart bridge capture silent for >3 seconds: automatic direct fallback"
+             + (fallbackError.isNotEmpty() ? " | " + fallbackError : juce::String());
     }
 
     void setMonitorEnabled (bool value) noexcept { monitor_.store (value); }
@@ -97,6 +212,8 @@ public:
     {
         using Route = armix::diagnostics::Route;
         if (handoff_.busy()) return "Finish the pending FX graph transition first";
+        if (isSmartBridgeActive() || smartBridgeConfigured_)
+            return "Return to DIRECT mode before changing diagnostic route";
         if (wanted == diagnosticRoute_.load (std::memory_order_acquire) &&
             !(wanted == Route::normal && savedLiveSetup_)) return {};
         if (wanted < Route::normal || wanted > Route::captureOnly)
@@ -504,6 +621,27 @@ public:
         o->setProperty ("dryTest", dryTest_.load());
         const auto route = diagnosticRoute();
         o->setProperty ("diagnosticRoute", armix::diagnostics::routeName (route));
+        const bool split = isSmartBridgeActive();
+        o->setProperty ("smartMode", split ? "DUAL_CLOCK_BRIDGED" : "DIRECT_JUCE");
+        o->setProperty ("smartTargetLatencyMs", smartTargetMs_.load());
+        if (split)
+        {
+            const auto b = splitAdapter_.snapshot (d);
+            o->setProperty ("inputDevice", smartBridgeConfigured_->inputDeviceName);
+            o->setProperty ("bridgeCaptureRate", b.captureRate);
+            o->setProperty ("bridgeRenderRate", b.outputRate);
+            o->setProperty ("bridgeCapturePeriod", b.capturePeriodFrames);
+            o->setProperty ("bridgeRenderPeriod", b.renderPeriodFrames);
+            o->setProperty ("bridgeFillFrames", static_cast<double> (b.fifo.fillFrames));
+            o->setProperty ("bridgeCorrectionPpm", b.fifo.correctionPpm);
+            o->setProperty ("bridgeCaptureCallbacks", static_cast<double> (b.captureCallbacks));
+            o->setProperty ("bridgeCaptureAgeMs", static_cast<double> (b.captureAgeUs) / 1000.);
+            o->setProperty ("bridgeProducerOverflowFrames", static_cast<double> (b.fifo.overflowFrames));
+            o->setProperty ("bridgeConsumerUnderflowFrames", static_cast<double> (b.fifo.underflowFrames));
+            o->setProperty ("bridgeStartupPrimingFrames", static_cast<double> (b.fifo.primingFrames));
+            o->setProperty ("bridgeCaptureBackendXRuns", b.captureDriverXRuns < 0
+                ? juce::var() : juce::var (b.captureDriverXRuns));
+        }
         o->setProperty ("diagnosticTemporary", savedLiveSetup_.has_value());
         o->setProperty ("deviceGeneration", static_cast<double> (deviceStartCount_.load()));
         o->setProperty ("lateCallbackIntervals", static_cast<double> (lateCallbackIntervals_.load()));
@@ -513,16 +651,21 @@ public:
         // AudioIODevice::getXRunCount is backend-specific, not comprehensive.
         // Pinned JUCE WASAPI reports input capture discontinuity flags only.
         const int reported = d != nullptr ? d->getXRunCount() : -1;
-        o->setProperty ("backendXrunCount", reported >= 0 ? juce::var (reported) : juce::var());
+        o->setProperty ("backendXrunCount", reported >= 0 && !split ? juce::var (reported) : juce::var());
+        if (split)
+            o->setProperty ("backendXrunCount", splitAdapter_.snapshot (d).captureDriverXRuns >= 0
+                ? juce::var (splitAdapter_.snapshot (d).captureDriverXRuns) : juce::var());
         const auto type = deviceManager_.getCurrentAudioDeviceType();
         o->setProperty ("backendXrunMeaning", reported < 0 ? "UNAVAILABLE"
             : type.startsWith ("Windows Audio") ? "WASAPI_CAPTURE_DISCONTINUITIES_ONLY"
             : "DRIVER_DEFINED");
         juce::AudioDeviceManager::AudioDeviceSetup setup;
         deviceManager_.getAudioDeviceSetup (setup);
-        o->setProperty ("inputDevice", setup.inputDeviceName);
+        if (!split) o->setProperty ("inputDevice", setup.inputDeviceName);
         o->setProperty ("outputDevice", setup.outputDeviceName);
-        o->setProperty ("deviceInputChannels", d ? d->getActiveInputChannels().countNumberOfSetBits() : 0);
+        o->setProperty ("deviceInputChannels", split
+            ? splitAdapter_.snapshot (d).captureChannels
+            : d ? d->getActiveInputChannels().countNumberOfSetBits() : 0);
         o->setProperty ("deviceOutputChannels", d ? d->getActiveOutputChannels().countNumberOfSetBits() : 0);
         o->setProperty ("callbackInputChannels", callbackInputs_.load());
         o->setProperty ("callbackOutputChannels", callbackOutputs_.load());
@@ -574,6 +717,10 @@ public:
 private:
     static constexpr int maxFrames = 8192;
     juce::AudioDeviceManager deviceManager_;
+    armix::device::SplitDuplexAdapter splitAdapter_;
+    std::atomic<bool> smartBridgeEnabled_ {false};
+    std::optional<juce::AudioDeviceManager::AudioDeviceSetup> smartBridgeConfigured_; // message thread
+    std::atomic<double> smartTargetMs_ {0.};
     juce::AudioPluginFormatManager formats_;
     std::unique_ptr<Graph> graphOwned_ {std::make_unique<Graph>()};
     std::unique_ptr<Graph> stagedOwner_;
@@ -724,6 +871,13 @@ private:
         {
             const int frames = juce::jmin (maxFrames, samples - offset);
             scratch_.setSize (2, frames, false, false, true);
+            if (smartBridgeEnabled_.load (std::memory_order_acquire) && !toneTest)
+            {
+                auto* left = scratch_.getWritePointer (0);
+                auto* right = scratch_.getWritePointer (1);
+                float* target[2] {left, right};
+                splitAdapter_.pull (target, 2, frames);
+            }
             if (toneTest)
             {
                 auto* left = scratch_.getWritePointer (0);
@@ -737,7 +891,7 @@ private:
                 float* dst = scratch_.getWritePointer (c);
                 const float* src = inputChannels > c ? inputs[c]
                                   : inputChannels > 0 ? inputs[0] : nullptr;
-                if (!toneTest)
+                if (!toneTest && !smartBridgeEnabled_.load (std::memory_order_relaxed))
                 {
                     if (src)
                         juce::FloatVectorOperations::copy (dst, src + offset, frames);
