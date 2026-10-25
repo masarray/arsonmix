@@ -297,3 +297,51 @@
 /* Clear selection without noisy new gradients or changing other control geometry. */
 .strip.selected .ch-id{box-shadow:inset 0 0 0 1px #8fe4ff3b}
 @media(prefers-reduced-motion:reduce){.fx-power,.pan-fill{transition:none!important}}
+
+/* v0.6: subdued hardware feedback and center detent (zero snap in JS). */
+.pan-track:not([aria-valuenow="0"]) .pan-thumb,
+.pan-track:not([aria-valuenow="0"]):hover .pan-thumb{filter:brightness(1.08) drop-shadow(1px 1px 2px #0009)!important}
+.pan-track:hover .pan-thumb{filter:brightness(1.12) drop-shadow(1px 1px 2px #000a)!important}
+.pan-track.is-dragging .pan-thumb{filter:brightness(.9) drop-shadow(0 1px 1px #000c)!important}
+.pan-track .pan-fill{height:3px;top:19px;background:#35caac;box-shadow:none!important;filter:none!important}
+.pan-track:hover .pan-fill,.pan-track.is-dragging .pan-fill{filter:none!important;box-shadow:none!important}
+.pan-track::after{z-index:2;top:15px;height:11px;background:#829aa6;box-shadow:0 0 0 1px #071016}
+.fader:hover .cap,.fader .cap:hover{filter:brightness(1.19) contrast(1.06) drop-shadow(0 1px 3px #c6deef70)!important}
+.fader.is-dragging .cap,.fader:active .cap{filter:brightness(.82) contrast(1.11) drop-shadow(0 1px 3px #244c5b)!important}
+:is(.strip .channel-actions button,.strip .utility-row button,.strip .fader-tools button,.left-rail .tabs button,
+ .right-rail .master-tabs button,.right-rail .master-right .right-button,.left-rail .rail-presets button,.left-rail .rail-bottom button,
+ .toolbar .nav button,.toolbar .mode-pill,.right-rail .master-right #talkBtn):hover{filter:brightness(1.13) contrast(1.05)!important}
+:is(.strip .channel-actions button,.strip .utility-row button,.strip .fader-tools button,.left-rail .tabs button,
+ .right-rail .master-tabs button,.right-rail .master-right .right-button,.left-rail .rail-presets button,.left-rail .rail-bottom button,
+ .toolbar .nav button,.toolbar .mode-pill,.right-rail .master-right #talkBtn):active{filter:brightness(.87) contrast(1.09)!important}
+.strip .rack .insert-slot .insert{padding:0 4px;font-size:9.5px;text-align:left}
+.strip .rack .insert-slot .insert-name{min-width:0;text-overflow:ellipsis}
+.strip .rack .insert-slot .fx-power{width:19px;min-width:19px;max-width:19px;font-size:13px}
+.strip .rack .insert-add-glyph{flex:0 0 10px;color:#63c8e1;font-size:12px;line-height:1}
+.strip .strip-name .strip-caption{max-width:96%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.strip .strip-name:hover{filter:brightness(1.12)}
+/* Channel identity: console-matched floating control panel, not a page takeover. */
+.identity-overlay{z-index:60;background:#03090d88;display:grid;place-items:center}
+.identity-overlay.hidden{display:none}
+.identity-panel{width:min(390px,calc(100vw - 30px));padding:16px 18px 17px;color:#d9e7ef;border-radius:7px;
+ background:linear-gradient(150deg,#2a3944,#111e27 48%,#15232c);
+ border:1px solid #5a7481;box-shadow:0 16px 48px #000c,inset 0 1px #b8d4df46}
+.identity-top{display:flex;align-items:center;justify-content:space-between}
+.identity-kicker{font:600 10px Consolas,monospace;color:#74c7e2;letter-spacing:1px}
+.identity-close{width:27px;height:25px;color:#bdcad2;border:1px solid #48606e;
+ background:linear-gradient(#364651,#14212a);border-radius:3px;cursor:pointer}
+.identity-heading{font-size:18px;font-weight:600;margin:5px 0 19px;color:#f3f9fc}
+.identity-label{display:block;font:600 10px 'Segoe UI',sans-serif;letter-spacing:1px;color:#91b8c8;margin:15px 0 8px}
+#identityName{width:100%;height:36px;padding:0 10px;font:500 14px 'Segoe UI';color:#f4fbfd;
+ background:#0b1921;border:1px solid #43606c;box-shadow:inset 0 2px 5px #0008;border-radius:4px;outline:none}
+#identityName:focus{border-color:#55c8e4}
+.identity-icons,.identity-colors{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:7px}
+.identity-icon{height:35px;border-radius:4px;border:1px solid #324550;color:#dbeef6;cursor:pointer;
+ background:linear-gradient(#304452,#162530);font-size:17px}
+.identity-icon.selected{border-color:#6bd5ea;background:linear-gradient(#226682,#123448);box-shadow:inset 0 0 0 1px #62dafa66}
+.identity-color{height:28px;border:2px solid #101b22;border-radius:4px;background:var(--choice);cursor:pointer;box-shadow:inset 0 1px #fff5,0 2px 4px #0009}
+.identity-color.selected{outline:2px solid #eefaff;outline-offset:1px}
+.identity-actions{display:flex;justify-content:flex-end;margin-top:21px}
+#identitySave{height:34px;padding:0 16px;border:1px solid #2799b8;border-radius:4px;color:#f1fbff;
+ background:linear-gradient(#257fa0,#0d4761);font:600 11px 'Segoe UI';cursor:pointer}
+#identitySave:hover{filter:brightness(1.12)}
