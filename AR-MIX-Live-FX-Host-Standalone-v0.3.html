@@ -757,7 +757,7 @@ document.addEventListener('pointerdown',e=>{const f=e.target.closest('[data-fade
      startDb:idx==='master'?masterGain:channels[+idx].fader};
    // Grabbing the metallic thumb must never jump the level on pointer-down.
    if(!fromCap){const r=f.getBoundingClientRect();const y=clamp((e.clientY-r.top)/r.height,0,1);updateFader(idx,10-y*70)}}
- else if(p){const index=+p.dataset.pan,fromThumb=!!e.target.closest('.pan-thumb');
+ else if(p){const index=p.dataset.pan==='master'?'master':+p.dataset.pan,fromThumb=!!e.target.closest('.pan-thumb');
  drag={type:'pan',el:p,index,fromThumb,startX:e.clientX,startPan:index==='master'?masterPan:channels[index].pan};
  if(!fromThumb){const r=p.getBoundingClientRect();updatePan(index,((e.clientX-r.left-9)/Math.max(1,r.width-18))*200-100,true)}}
  else if(k){drag={type:'knob',el,initial:e.clientY,original:k.dataset.knob==='phones'?phones:channels[+k.dataset.ch][k.dataset.knob],param:k.dataset.knob}}
@@ -778,7 +778,7 @@ for(const event of ['pointerup','pointercancel'])document.addEventListener(event
  if(drag?.el)drag.el.classList.remove('is-dragging');
  drag=null;flushUiParams()
 });
-document.addEventListener('wheel',e=>{const pan=e.target.closest('[data-pan]');if(pan){e.preventDefault();const idx=+pan.dataset.pan;updatePan(idx,(idx==='master'?masterPan:channels[idx].pan)-Math.sign(e.deltaY)*2);return}
+document.addEventListener('wheel',e=>{const pan=e.target.closest('[data-pan]');if(pan){e.preventDefault();const idx=pan.dataset.pan==='master'?'master':+pan.dataset.pan;updatePan(idx,(idx==='master'?masterPan:channels[idx].pan)-Math.sign(e.deltaY)*2);return}
  const k=e.target.closest('[data-knob]');if(!k)return;e.preventDefault();const p=k.dataset.knob,i=+k.dataset.ch,v=p==='phones'?phones:channels[i][p];updateKnob(k,v-Math.sign(e.deltaY)*.5)},{passive:false});
 document.addEventListener('keydown',e=>{const pan=e.target.closest('[data-pan]');if(pan){const k=e.key,idx=pan.dataset.pan==='master'?'master':+pan.dataset.pan;
  if(!['ArrowLeft','ArrowRight','PageUp','PageDown','Home','End'].includes(k))return;
