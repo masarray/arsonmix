@@ -36,4 +36,12 @@ assert '<style>'+css+'</style>' in preview
 assert '<script>'+js+'</script>' in preview
 assert 'height:40px!important;flex:0 0 40px!important' not in css
 assert 'height:24px!important;min-height:24px!important' not in css
+assert 'class="pushable' in page
+assert page.count('class="shadow" aria-hidden="true"')==8
+assert page.count('class="edge" aria-hidden="true"')==8
+assert page.count('class="front"')==8
+assert 'translateY(-4px)' in css and 'translateY(-6px)' in css
+assert 'translateY(-2px)' in css and 'translateY(4px)' in css
+assert 'data-send' not in js and 'data-send' not in css
+assert 'a:true,b:false' not in js
 print('PASS: original-size 3D raised OFF, same-slot inset ON, embedded Inter, parity')
