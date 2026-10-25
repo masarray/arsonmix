@@ -24,6 +24,8 @@
 - One testable scope per PR. Deterministic fake clocks, bounded buffer/latency, device-state tests, Windows MSVC+CTest+Chromium PASS, actual sound FAT **separate**. Do not claim "optimized" merely because CI is green.
 - Locked GUI v0.8 source untouched without explicit new visual approval. Engine status goes through native adapter. No stale branch bulk merges.
 - Use `docs/SMART_AUDIO_ENGINE_IMPLEMENTATION_BLUEPRINT.md` PR ladder and definition of done, and update it only with evidence/ADR when changing design decisions.
+- Consolidate P0 infrastructure development and automated CI before requesting another physical hardware test; no user-assisted test after every tiny code edit. Native SIGNAL CHECK should expose **COPY FULL REPORT** to capture hardware capabilities, source-labeled xruns, budget histograms, and latest MARK CRACKLE events in the OS clipboard.
+- Read [P0 Smart Audio diagnostics & prepared bridge](docs/P0_SMART_AUDIO_DIAGNOSTIC_AND_BRIDGE.md) before wiring an SRC. The `AdaptiveClockBridge` is **experimental standalone**, and MUST NOT be wired to the joined JUCE callback or claimed to fix physical crackling until separate-clock adapter feasibility, back-end xrun semantics, automated quality benchmarks and hardware FAT are demonstrated.
 
 ## If you are a future ChatGPT thread
 1. Fetch live repository `main`, this file and the lock document. Cite approved commit and deployment metadata accurately.
