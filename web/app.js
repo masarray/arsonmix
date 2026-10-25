@@ -16,7 +16,7 @@ const raw=[
  ['Aux Out','◉',['Limiter'],-11.5,0]
 ];
 const extraNames=['BGV 2','Guitar 2','FX Return 2','Talkback'];
-const channels=raw.map((a,i)=>({id:i+1,name:a[0],icon:a[1],color:colors[i],inserts:[...a[2]],fader:a[3],pan:a[4],trim:0,mute:false,solo:false,pre:false,hpf:i%4!==0,a:true,b:false}));
+const channels=raw.map((a,i)=>({id:i+1,name:a[0],icon:a[1],color:colors[i],inserts:[...a[2]],fader:a[3],pan:a[4],trim:0,mute:false,solo:false,pre:false,hpf:i%4!==0}));
 let currentChannel=0, masterSelected=false, view='MIX', sceneIdx=0, timer=0;
 const scenes=['Vocal Live','Karaoke Warm','Clean Voice','Studio Session'];
 const $=id=>document.getElementById(id);
@@ -107,7 +107,6 @@ function makeStrip(ch,i){let inserts=ch.inserts.slice(0,6);while(inserts.length<
  <div class="strip-controls"><div class="trim-row"><span class="mini-label">TRIM<br>dB</span><div class="mini-lcd" data-trim-read="${i}">${fmt(ch.trim)}</div></div>${knobMarkup('trim',i,ch.trim,'Trim')}<div class="pan-control">${panMarkup(ch,i)}<div class="pan-readline"><span aria-hidden="true">L</span><strong data-pan-read="${i}">${panText(ch.pan)}</strong><span aria-hidden="true">R</span></div></div><div class="utility-row"><button data-pre="${i}" class="btn-180 ${ch.pre?'active':''}">Ø</button><button data-hpf="${i}" class="btn-180 ${ch.hpf?'active':''}">HPF</button></div></div>
  <div class="channel-actions"><button class="btn-180 candy mute ${ch.mute?'active':''}" data-mute="${i}" aria-pressed="${ch.mute}">MUTE</button><button class="btn-180 candy solo ${ch.solo?'active':''}" data-solo="${i}" aria-pressed="${ch.solo}">SOLO</button></div>
  <div class="db-display" data-read="${i}">${fmt(ch.fader)}</div><div class="fader-zone"><div class="scale"><span>10</span><span>0</span><span>−10</span><span>−20</span><span>−30</span><span>−40</span><span>−60</span></div><div class="fader" data-fader="${i}" role="slider" tabindex="0" aria-orientation="vertical" aria-label="${ch.name} fader" aria-valuemin="-60" aria-valuemax="10" aria-valuenow="${ch.fader}"><div class="cap" style="--pos:${levelToTop(ch.fader)}%"></div></div><div class="meter" data-meter-key="${i}"><button class="clip-led" type="button" data-clip="${i}" title="Clear latched clip — ${safeText(ch.name)}" aria-label="Clear ${safeText(ch.name)} clip"></button><div class="meter-fill" data-meter="${i}" style="--level:40%"></div><div class="meter-peak" aria-hidden="true"></div></div></div>
- <div class="fader-tools"><button data-send="${i}:a" class="btn-180 ${ch.a?'active':''}">A</button><button data-send="${i}:b" class="btn-180 ${ch.b?'active':''}">B</button></div>
  <div class="strip-name" data-editstrip="${i}" role="button" tabindex="0" aria-label="Edit ${safeText(ch.name)} name, icon and color" title="Edit channel identity"><span class="strip-caption">${safeText(ch.name)}</span><span class="track-icon">${safeText(ch.icon)}</span></div>
  </article>`}
 function renderMixer(){
@@ -220,7 +219,6 @@ document.addEventListener('click',e=>{const b=e.target.closest('button,[data-cho
  if(b.dataset.mute!==undefined){toggleState(+b.dataset.mute,'mute');return}if(b.dataset.solo!==undefined){toggleState(+b.dataset.solo,'solo');return}
  if(b.dataset.pre!==undefined){let i=+b.dataset.pre;channels[i].pre=!channels[i].pre;b.classList.toggle('active');send('phase',channels[i].pre,i);return}
  if(b.dataset.hpf!==undefined){let i=+b.dataset.hpf;channels[i].hpf=!channels[i].hpf;b.classList.toggle('active');send('hpf',channels[i].hpf,i);return}
- if(b.dataset.send!==undefined){let [i,k]=b.dataset.send.split(':');channels[+i][k]=!channels[+i][k];b.classList.toggle('active');send(`send${k.toUpperCase()}`,channels[+i][k],+i);return}
  if(b.dataset.masterInsert!==undefined){pendingMasterSlot=+b.dataset.masterInsert;openPluginBrowser(currentChannel,true);return}
  if(b.dataset.masterPower!==undefined){const slot=+b.dataset.masterPower;masterBypassed[slot]=!masterBypassed[slot];renderMaster();persistSession();send('masterFxBypass',{slot,bypass:masterBypassed[slot]},-1);return}
  if(b.dataset.clip!==undefined){resetClip(b.dataset.clip);return}

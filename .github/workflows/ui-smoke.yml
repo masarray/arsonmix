@@ -68,4 +68,5 @@ jobs:
             mixer-crystal-candy-review.png
             mixer-crystal-depth-glow-review.png
             mixer-inter-recessed-toggle-review.png
+            mixer-left-rail-pushable-no-ab-pan.png
           if-no-files-found: ignore

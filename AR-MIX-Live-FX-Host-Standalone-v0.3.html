@@ -681,13 +681,12 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  .left-rail .rail-bottom #saveFxPreset,.left-rail .rail-presets button.active,
  .native-btn.primary,.native-btn.on){--b180-color:#15ccbe;--b180-border:#0f988e}
 :is(.left-rail .rail-bottom #addScene,
- .strip .fader-tools button[data-send$=":a"].active){--b180-color:#259bd9;--b180-border:#116b9d}
+){--b180-color:#259bd9;--b180-border:#116b9d}
 .strip .utility-row button[data-hpf].active{--b180-color:#2ec990;--b180-border:#12845a}
 :is(.strip .channel-actions .mute.active,#masterLeft #masterMute.active,
  .native-btn.warn){--b180-color:#e86176;--b180-border:#aa314a}
 .strip .channel-actions .solo.active{--b180-color:#d5a832;--b180-border:#916719}
 :is(.strip .utility-row button[data-pre].active,
- .strip .fader-tools button[data-send$=":b"].active,
  #masterLeft .master-tools button.active){--b180-color:#9b83de;--b180-border:#644da0}
 #masterLeft .master-actions .master-stereo-badge{
  border:1px solid #4b6779;background:linear-gradient(#233a49,#102635 60%,#203442);
@@ -723,13 +722,12 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  .left-rail .rail-presets button.active,.left-rail .rail-bottom #saveFxPreset,
  .native-btn.primary,.native-btn.on){--b180-color:#22bbcc;--b180-border:#087b8e;--b180-ink:#041c27}
 :is(.left-rail .rail-bottom #addScene,
- .strip .fader-tools button[data-send$=":a"].active){--b180-color:#319ed4;--b180-border:#14618c;--b180-ink:#061c2b}
+){--b180-color:#319ed4;--b180-border:#14618c;--b180-ink:#061c2b}
 .strip .utility-row button[data-hpf].active{--b180-color:#37c99a;--b180-border:#126e5b;--b180-ink:#071f1a}
 :is(.strip .channel-actions .mute.active,#masterLeft #masterMute.active,
  .native-btn.warn){--b180-color:#e76f83;--b180-border:#a13650;--b180-ink:#291018}
 .strip .channel-actions .solo.active{--b180-color:#dbb75c;--b180-border:#967025;--b180-ink:#291d08}
 :is(.strip .utility-row button[data-pre].active,
- .strip .fader-tools button[data-send$=":b"].active,
  #masterLeft .master-tools button.active){--b180-color:#a68cdb;--b180-border:#684f9e;--b180-ink:#1d1234}
 :is(.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
  #masterLeft .master-tools button,.toolbar .nav button,.left-rail .tabs button,
@@ -791,6 +789,122 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  transition:none!important
  }
 }
+
+
+/* LEFT RAIL — supplied three-piece pushable construction.
+   Same shadow / edge / front geometry as reference, compact enough for 156px rail.
+   Only dimensions, corner scale and HSL colors are adapted to the mixer. */
+#app .left-rail button.pushable {
+ --pb-face:#274252;--pb-edge:#0e2532;--pb-ink:#dcebf2;
+ position:relative!important;display:block!important;isolation:isolate;
+ box-sizing:border-box!important;min-width:0;width:100%;
+ background:transparent!important;border:0!important;padding:0!important;
+ border-radius:5px!important;box-shadow:none!important;
+ transform:none!important;filter:none!important;
+ color:var(--pb-ink)!important;text-shadow:none!important;
+ cursor:pointer;overflow:visible!important;
+ transition:none!important;-webkit-tap-highlight-color:transparent;
+}
+#app .left-rail .tabs button.pushable{height:34px;min-height:34px}
+#app .left-rail .rail-presets{gap:6px;padding:8px 6px 6px}
+#app .left-rail .rail-presets button.pushable{height:27px;min-height:27px}
+#app .left-rail .rail-bottom{row-gap:7px;padding-top:9px}
+#app .left-rail .rail-bottom button.pushable{height:27px;min-height:27px}
+#app .left-rail button.pushable > .shadow,
+#app .left-rail button.pushable > .edge {
+ position:absolute;top:0;left:0;width:100%;height:100%;
+ border-radius:5px;pointer-events:none;display:block;
+}
+#app .left-rail button.pushable > .shadow {
+ background:hsl(0deg 0% 0% / .25);
+ transform:translateY(2px);
+ transition:transform 95ms ease-out;
+}
+#app .left-rail button.pushable > .edge {
+ background:var(--pb-edge);
+ box-shadow:inset 0 1px 0 #ffffff0c,0 1px 1px #0207098a;
+}
+#app .left-rail button.pushable > .front {
+ display:flex;position:relative;align-items:center;
+ justify-content:center;box-sizing:border-box;
+ padding:0 5px;width:100%;height:100%;
+ border-radius:5px;
+ font-family:"ArSonMix Inter","Segoe UI",sans-serif!important;
+ font-size:9px;font-weight:650;letter-spacing:.08px;line-height:1.15;
+ text-transform:uppercase;white-space:nowrap;
+ background:var(--pb-face);color:var(--pb-ink);
+ box-shadow:inset 0 1px 0 #ffffff36,inset 0 -1px 0 #0004;
+ text-shadow:0 1px 0 #0005;
+ transform:translateY(-4px);
+ transition:transform 95ms ease-out,background-color 95ms,color 95ms;
+}
+#app .left-rail .rail-presets button.pushable > .front{
+ justify-content:flex-start;padding:0 9px;
+}
+#app .left-rail button.pushable:hover:not(:disabled) > .front{
+ transform:translateY(-6px);
+}
+#app .left-rail button.pushable:hover:not(:disabled) > .shadow{
+ transform:translateY(4px);
+}
+#app .left-rail button.pushable:active:not(:disabled) > .front,
+#app .left-rail button.pushable:is(.selected,.active) > .front{
+ transform:translateY(-2px);
+}
+#app .left-rail button.pushable:active:not(:disabled) > .shadow,
+#app .left-rail button.pushable:is(.selected,.active) > .shadow{
+ transform:translateY(1px);
+}
+/* Selected/active keys stay seated even while hovered; hover-lift is for OFF only. */
+#app .left-rail button.pushable:is(.selected,.active):hover:not(:disabled) > .front{
+ transform:translateY(-2px);
+}
+#app .left-rail button.pushable:is(.selected,.active):hover:not(:disabled) > .shadow{
+ transform:translateY(1px);
+}
+#app .left-rail button.pushable:focus:not(:focus-visible){outline:none!important}
+#app .left-rail button.pushable:focus-visible{
+ outline:2px solid #67d6ed!important;outline-offset:3px!important;
+}
+#app .left-rail button.pushable:is(.selected,.active){
+ --pb-face:#27bdd0;--pb-edge:#086479;--pb-ink:#061c27;
+}
+#app .left-rail button.pushable#addScene{
+ --pb-face:#198dbc;--pb-edge:#0a5377;--pb-ink:#f0faff;
+}
+#app .left-rail button.pushable#saveFxPreset{
+ --pb-face:#168f92;--pb-edge:#075254;--pb-ink:#eefcfc;
+}
+#app .left-rail button.pushable#menuScene{
+ --pb-face:#314a5b;--pb-edge:#162938;--pb-ink:#d3e2eb;
+}
+#app .left-rail button.pushable:disabled{
+ pointer-events:none;opacity:.55;filter:saturate(.5)!important;
+}
+@media(max-height:730px){
+ #app .left-rail .rail-presets{gap:4px;padding-top:6px;padding-bottom:4px}
+ #app .left-rail .rail-presets button.pushable{height:25px;min-height:25px}
+ #app .left-rail .rail-bottom{row-gap:5px;padding-top:7px}
+ #app .left-rail .rail-bottom button.pushable{height:25px;min-height:25px}
+}
+@media(prefers-reduced-motion:reduce){
+ #app .left-rail button.pushable > :is(.shadow,.front){transition:none!important}
+}
+/* PAN: recessed center detent is below the original metallic PNG, not over it.
+   z-order: track (0), center detent (1), illuminated pan fill (2), PNG thumb (3). */
+.pan-track{isolation:isolate}
+.pan-track::before{z-index:0!important}
+.pan-track::after{
+ z-index:1!important;top:15px;height:11px;
+ background:linear-gradient(#708b9c,#314957)!important;
+ box-shadow:0 0 0 1px #0710168c!important;
+}
+.pan-track.is-centered::after{background:#6e8899!important;box-shadow:0 0 0 1px #081720!important}
+.pan-track .pan-fill{z-index:2!important}
+.pan-track .pan-thumb{z-index:3!important}
+/* The obsolete A/B bay is removed from source strips. Let the fader occupy
+   the recovered vertical area; MASTER keeps its dedicated clear-clip controls. */
+#mixer > .strip:not(.master-strip) > .fader-tools{display:none!important}
 </style></head>
 <body>
 <div id="app" class="app">
@@ -817,17 +931,17 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
   </header>
   <div class="main">
     <aside class="left-rail">
-      <div class="seg tabs"><button class="btn-180 selected" data-side="channels">CHANNELS</button><button class="btn-180" data-side="fx">FX CHAINS</button></div>
+      <div class="seg tabs"><button data-side="channels" class="pushable selected"><span class="shadow" aria-hidden="true"></span><span class="edge" aria-hidden="true"></span><span class="front">CHANNELS</span></button><button data-side="fx" class="pushable"><span class="shadow" aria-hidden="true"></span><span class="edge" aria-hidden="true"></span><span class="front">FX CHAINS</span></button></div>
       <div id="channelList" class="channel-list" aria-label="Mixer channels"></div>
       <div id="groupsList" class="rail-list hidden"></div>
       <div class="rail-section-title">QUICK SOUND PRESETS</div>
-      <div class="rail-presets" id="presetList"><button class="btn-180" data-preset="Clean Vocal">Clean Vocal</button><button class="btn-180" data-preset="Warm Karaoke">Warm Karaoke</button><button class="btn-180" data-preset="Live Broadcast">Live Broadcast</button></div>
+      <div class="rail-presets" id="presetList"><button data-preset="Clean Vocal" class="pushable"><span class="shadow" aria-hidden="true"></span><span class="edge" aria-hidden="true"></span><span class="front">Clean Vocal</span></button><button data-preset="Warm Karaoke" class="pushable"><span class="shadow" aria-hidden="true"></span><span class="edge" aria-hidden="true"></span><span class="front">Warm Karaoke</span></button><button data-preset="Live Broadcast" class="pushable"><span class="shadow" aria-hidden="true"></span><span class="edge" aria-hidden="true"></span><span class="front">Live Broadcast</span></button></div>
       <div class="rail-section-title">MIXER SNAPSHOTS</div>
       <div id="scenesList" class="rail-list scenes-list"></div>
       <div class="rail-bottom" role="group" aria-label="Session actions">
-        <button class="btn-180" id="addScene" title="Save current mixer as a named snapshot">＋ SAVE SNAPSHOT</button>
-        <button class="btn-180" id="saveFxPreset" title="Save this channel's FX chain as a preset">SAVE FX</button>
-        <button class="btn-180" id="menuScene" title="Export the complete session as JSON">EXPORT</button>
+        <button id="addScene" title="Save current mixer as a named snapshot" class="pushable"><span class="shadow" aria-hidden="true"></span><span class="edge" aria-hidden="true"></span><span class="front">＋ SAVE SNAPSHOT</span></button>
+        <button id="saveFxPreset" title="Save this channel's FX chain as a preset" class="pushable"><span class="shadow" aria-hidden="true"></span><span class="edge" aria-hidden="true"></span><span class="front">SAVE FX</span></button>
+        <button id="menuScene" title="Export the complete session as JSON" class="pushable"><span class="shadow" aria-hidden="true"></span><span class="edge" aria-hidden="true"></span><span class="front">EXPORT</span></button>
       </div>
       <div class="rail-input-footer"><span class="rail-live-indicator" aria-hidden="true"></span><span id="activeInput">MIC → FX → MASTER</span></div>
     </aside>
@@ -857,7 +971,7 @@ const raw=[
  ['Aux Out','◉',['Limiter'],-11.5,0]
 ];
 const extraNames=['BGV 2','Guitar 2','FX Return 2','Talkback'];
-const channels=raw.map((a,i)=>({id:i+1,name:a[0],icon:a[1],color:colors[i],inserts:[...a[2]],fader:a[3],pan:a[4],trim:0,mute:false,solo:false,pre:false,hpf:i%4!==0,a:true,b:false}));
+const channels=raw.map((a,i)=>({id:i+1,name:a[0],icon:a[1],color:colors[i],inserts:[...a[2]],fader:a[3],pan:a[4],trim:0,mute:false,solo:false,pre:false,hpf:i%4!==0}));
 let currentChannel=0, masterSelected=false, view='MIX', sceneIdx=0, timer=0;
 const scenes=['Vocal Live','Karaoke Warm','Clean Voice','Studio Session'];
 const $=id=>document.getElementById(id);
@@ -948,7 +1062,6 @@ function makeStrip(ch,i){let inserts=ch.inserts.slice(0,6);while(inserts.length<
  <div class="strip-controls"><div class="trim-row"><span class="mini-label">TRIM<br>dB</span><div class="mini-lcd" data-trim-read="${i}">${fmt(ch.trim)}</div></div>${knobMarkup('trim',i,ch.trim,'Trim')}<div class="pan-control">${panMarkup(ch,i)}<div class="pan-readline"><span aria-hidden="true">L</span><strong data-pan-read="${i}">${panText(ch.pan)}</strong><span aria-hidden="true">R</span></div></div><div class="utility-row"><button data-pre="${i}" class="btn-180 ${ch.pre?'active':''}">Ø</button><button data-hpf="${i}" class="btn-180 ${ch.hpf?'active':''}">HPF</button></div></div>
  <div class="channel-actions"><button class="btn-180 candy mute ${ch.mute?'active':''}" data-mute="${i}" aria-pressed="${ch.mute}">MUTE</button><button class="btn-180 candy solo ${ch.solo?'active':''}" data-solo="${i}" aria-pressed="${ch.solo}">SOLO</button></div>
  <div class="db-display" data-read="${i}">${fmt(ch.fader)}</div><div class="fader-zone"><div class="scale"><span>10</span><span>0</span><span>−10</span><span>−20</span><span>−30</span><span>−40</span><span>−60</span></div><div class="fader" data-fader="${i}" role="slider" tabindex="0" aria-orientation="vertical" aria-label="${ch.name} fader" aria-valuemin="-60" aria-valuemax="10" aria-valuenow="${ch.fader}"><div class="cap" style="--pos:${levelToTop(ch.fader)}%"></div></div><div class="meter" data-meter-key="${i}"><button class="clip-led" type="button" data-clip="${i}" title="Clear latched clip — ${safeText(ch.name)}" aria-label="Clear ${safeText(ch.name)} clip"></button><div class="meter-fill" data-meter="${i}" style="--level:40%"></div><div class="meter-peak" aria-hidden="true"></div></div></div>
- <div class="fader-tools"><button data-send="${i}:a" class="btn-180 ${ch.a?'active':''}">A</button><button data-send="${i}:b" class="btn-180 ${ch.b?'active':''}">B</button></div>
  <div class="strip-name" data-editstrip="${i}" role="button" tabindex="0" aria-label="Edit ${safeText(ch.name)} name, icon and color" title="Edit channel identity"><span class="strip-caption">${safeText(ch.name)}</span><span class="track-icon">${safeText(ch.icon)}</span></div>
  </article>`}
 function renderMixer(){
@@ -1061,7 +1174,6 @@ document.addEventListener('click',e=>{const b=e.target.closest('button,[data-cho
  if(b.dataset.mute!==undefined){toggleState(+b.dataset.mute,'mute');return}if(b.dataset.solo!==undefined){toggleState(+b.dataset.solo,'solo');return}
  if(b.dataset.pre!==undefined){let i=+b.dataset.pre;channels[i].pre=!channels[i].pre;b.classList.toggle('active');send('phase',channels[i].pre,i);return}
  if(b.dataset.hpf!==undefined){let i=+b.dataset.hpf;channels[i].hpf=!channels[i].hpf;b.classList.toggle('active');send('hpf',channels[i].hpf,i);return}
- if(b.dataset.send!==undefined){let [i,k]=b.dataset.send.split(':');channels[+i][k]=!channels[+i][k];b.classList.toggle('active');send(`send${k.toUpperCase()}`,channels[+i][k],+i);return}
  if(b.dataset.masterInsert!==undefined){pendingMasterSlot=+b.dataset.masterInsert;openPluginBrowser(currentChannel,true);return}
  if(b.dataset.masterPower!==undefined){const slot=+b.dataset.masterPower;masterBypassed[slot]=!masterBypassed[slot];renderMaster();persistSession();send('masterFxBypass',{slot,bypass:masterBypassed[slot]},-1);return}
  if(b.dataset.clip!==undefined){resetClip(b.dataset.clip);return}

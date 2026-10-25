@@ -12,4 +12,7 @@ match=re.search(r'--ar-pan:url\("data:image/png;base64,([A-Za-z0-9+/=]+)"\)',css
 assert match and base64.b64decode(match.group(1))==original
 assert not re.search(r'--ar-btn-|--skin-small|--skin-long|--skin-large',css)
 assert '<style>'+css+'</style>' in preview and '<script>'+js+'</script>' in preview
+assert '.pan-track .pan-thumb{z-index:3!important}' in css
+assert '.pan-track::after{' in css and 'z-index:1!important' in css
+assert '.pan-track .pan-fill{z-index:2!important}' in css
 print('PASS: original PAN thumb unchanged, CSS-only buttons, preview parity')
