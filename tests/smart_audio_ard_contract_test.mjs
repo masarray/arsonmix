@@ -27,8 +27,8 @@ test('ARD covers device-clock, realtime and hardware acceptance without false sh
   for (const concept of [
     'render-device clock', 'ClockDomainBridge', 'AUTO_STABLE',
     'P2.5.2', 'P2.6', 'GUI v0.8', 'JUCE 8.0.15',
-    'IAudioClient3', 'libsamplerate', 'captureDiscontinuities',
-    'NOT YET IMPLEMENTED', 'hardware FAT', 'VST3'
+    'IAudioClient3', 'libsamplerate', 'capture discontinuity',
+    'NOT YET IMPLEMENTED', 'FAT', 'VST3'
   ]) assert.ok(ard.includes(concept), 'missing ARD concept: ' + concept);
   assert.ok(ard.includes(issue));
 });
@@ -38,7 +38,7 @@ test('implementation order, fake clocks, lifecycle and physical gates remain doc
     'src/LiveAudioEngine.h', 'smart_clock_bridge_test.cpp',
     'autoStable', 'deviceGeneration', 'captureFifoUnderrunFrames',
     'renderUnderrunFrames', 'ClockDomainBridge',
-    '±100', '±300', '30-minute', 'rollback',
+    '±100', '±300', '30 min', 'rollback',
     'affinity', 'hardware', 'GUI v0.8'
   ]) assert.ok(impl.includes(concept), 'missing blueprint concept: ' + concept);
 });
