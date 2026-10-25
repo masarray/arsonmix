@@ -48,8 +48,10 @@ public:
         captureConfig.outputDeviceName.clear();
         captureConfig.outputChannels.clear();
         captureConfig.useDefaultOutputChannels = false;
-        captureConfig.sampleRate = selection.sampleRate; // may be negotiated
-        captureConfig.bufferSize = selection.bufferSize;
+        // Independent capture clock: use an actual driver-supported mode;
+        // forcing the render device rate here defeats separate-clock probing.
+        captureConfig.sampleRate = 0;
+        captureConfig.bufferSize = 0;
         err = captureManager_.setAudioDeviceSetup (captureConfig, false);
         if (err.isNotEmpty()) return fail ("Capture: " + err);
 
