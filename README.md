@@ -4,6 +4,14 @@
 
 AR MIX Studio targets live vocal processing for karaoke performers and livestream creators. It is VST3-first: the principal activity is building a beautiful, low-friction FX chain with a digital-console look. The core engine is planned as C++20/JUCE with Windows ASIO/WASAPI; the frontend is a self-contained HTML/CSS/SVG UI embedded in JUCE WebView2.
 
+## Public website and interactive GUI preview
+
+- **Landing website:** https://masarray.github.io/arsonmix/
+- **Review the actual mixer GUI:** https://masarray.github.io/arsonmix/preview/
+- **Open mixer full-screen:** https://masarray.github.io/arsonmix/preview/mixer.html
+
+GitHub Pages publishes the current **GUI development branch** through [the main-branch Pages workflow](.github/workflows/pages-publish.yml), after UI smoke tests pass. This preview is intentionally separate from the stable `main` code and from the native audio engine work. It is a **browser GUI prototype with simulated meters**, not a functioning VST audio host.
+
 ## Try the current prototype now
 
 Open `AR-MIX-Live-FX-Host-Standalone-v0.3.html` in a current Chrome or Edge browser. No installation or internet access is required. The meters are intentionally **simulated**. Clicking `FX RACK` opens a chain editor: add a *demo* plugin, bypass/reorder/remove it; `MIX` offers faders, pan and MUTE/SOLO; `SIGNAL FLOW` describes the path; `SETUP` previews the driver wizard; `EASY VIEW` toggles Pro controls. Save a local FX chain preset or Mixer Snapshot, and export/import a JSON session file.
