@@ -9,6 +9,7 @@
 #include <mmdeviceapi.h>
 #include <audioclient.h>
 #include <functiondiscoverykeys_devpkey.h>
+#include <propsys.h>
 #include <wrl/client.h>
 #include <cstdint>
 
@@ -53,7 +54,7 @@ public:
 private:
     static juce::String hex (HRESULT result)
     {
-        return "0x" + juce::String::toHexString (static_cast<std::uint32_t> (result)).paddedLeft ('0',8);
+        return "0x" + juce::String::toHexString (static_cast<juce::int64> (static_cast<std::uint32_t> (result))).paddedLeft ('0',8);
     }
 
     static std::uint64_t fingerprint (const wchar_t* value) noexcept
