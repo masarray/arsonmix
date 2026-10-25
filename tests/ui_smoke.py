@@ -186,13 +186,17 @@ async def main():
         assert 'linear-gradient' in await crystal.evaluate("(e)=>getComputedStyle(e).backgroundImage")
         await crystal.hover()
         await page.mouse.down()
-        await page.wait_for_timeout(110)
+        # Observe the completed transition, not an arbitrary wall-clock delay.
+        await page.wait_for_function("""()=>{
+          const e=document.querySelector('[data-mute="0"]');
+          return getComputedStyle(e).top==='3px'&&getComputedStyle(e,'::before').top==='0px';
+        }""",timeout=2500)
         pressed=await crystal.evaluate("""e=>({top:getComputedStyle(e).top,
           base:getComputedStyle(e,'::before').top,shadow:getComputedStyle(e).boxShadow})""")
         assert pressed['top']=='3px' and pressed['base']=='0px',pressed
         assert pressed['shadow']!=surface['faceShadow'],pressed
         await page.mouse.up()
-        await page.wait_for_timeout(100)
+        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-mute="0"]')).top==='0px'""",timeout=2500)
         assert await crystal.evaluate('(e)=>getComputedStyle(e).top')=='0px'
         assert await crystal.get_attribute('aria-pressed')=='true'
         await crystal.click()
