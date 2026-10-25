@@ -8,7 +8,10 @@ test('native tools open directly without Setup workspace',()=>{
  for(const s of ['data-native-action="audioSetup"','data-plugin-manager="1"','data-my-sounds="1"'])assert.ok(html.includes(s));
  assert.ok(bridge.includes('if(action==="audioSetup"){send("audioSetup");return;}'));
  assert.ok(!bridge.includes('nativeAudioSetup')&&!bridge.includes('renderSetup'));
- assert.ok(cpp.includes('if (action == "audioSetup") showDeviceSetup()'));
+ const action=cpp.indexOf('if (action == "audioSetup")');
+ const open=cpp.indexOf('showDeviceSetup();',action);
+ const nextAction=cpp.indexOf('else if (action == "diagnosticRoute")',action);
+ assert.ok(action>=0 && open>action && nextAction>open, 'SETUP opens directly after restoring any temporary audio test route');
  assert.ok(monitor.includes("querySelector('#audioSetupBtn')"));
 });
 test('demo EQ/Setup code is gone; fader double-click returns unity',()=>{

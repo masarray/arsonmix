@@ -6,12 +6,14 @@
 #include "NativePresetArchive.h"
 #include "VstBusLayout.h"
 #include "LiveGraphHandoff.h"
+#include "DiagnosticTone.h"
 #include <array>
 #include <atomic>
 #include <cmath>
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <optional>
 
 // One live stereo input path and up to 8 actual VST3 processors.
 // The audio callback never scans files, creates plugins, mutates the chain,
@@ -87,6 +89,103 @@ public:
     // Emergency output mute, not a prerequisite for receiving audio.
     void setOutputMuted (bool mute) noexcept { monitor_.store (!mute, std::memory_order_release); }
     bool isOutputMuted() const noexcept { return !monitor_.load (std::memory_order_acquire); }
+    // Called on the JUCE message thread, never from an audio callback.
+    // One-sided tests actually close the unused device endpoint. The saved
+    // user setup is restored on exit; temporary routes must not be persisted.
+    juce::String setDiagnosticRoute (armix::diagnostics::Route wanted)
+    {
+        using Route = armix::diagnostics::Route;
+        if (handoff_.busy()) return "Finish the pending FX graph transition first";
+        if (wanted == diagnosticRoute_.load (std::memory_order_acquire) &&
+            !(wanted == Route::normal && savedLiveSetup_)) return {};
+        if (wanted < Route::normal || wanted > Route::captureOnly)
+            return "Unknown audio diagnostic route";
+
+        // Muting the old/new combined backend callback during an intermediate
+        // device restart prevents briefly leaking microphone audio when changing
+        // from OUTPUT ONLY to CAPTURE ONLY (which first restores full duplex).
+        struct TransitionMute final
+        {
+            std::atomic<bool>& flag;
+            explicit TransitionMute (std::atomic<bool>& target) : flag (target)
+                { flag.store (true, std::memory_order_release); }
+            ~TransitionMute() { flag.store (false, std::memory_order_release); }
+        } transitionMute (routeReconfiguring_);
+
+        if (savedLiveSetup_)
+        {
+            const auto restore = *savedLiveSetup_;
+            const auto previousRoute = diagnosticRoute_.load (std::memory_order_acquire);
+            diagnosticRoute_.store (Route::normal, std::memory_order_release);
+            const auto error = deviceManager_.setAudioDeviceSetup (restore, false);
+            if (error.isNotEmpty())
+            {
+                // Keep the temporary-route identity/restore token for retry.
+                // A driver can disappear and reappear during a diagnostic run.
+                diagnosticRoute_.store (previousRoute, std::memory_order_release);
+                setOutputMuted (true);
+                return "Cannot restore previous audio routing: " + error;
+            }
+            savedLiveSetup_.reset();
+        }
+
+        if (wanted == Route::outputOnlyTone || wanted == Route::captureOnly)
+        {
+            juce::AudioDeviceManager::AudioDeviceSetup original;
+            deviceManager_.getAudioDeviceSetup (original);
+            if (wanted == Route::outputOnlyTone && original.outputDeviceName.isEmpty())
+                return "Choose an audio output before starting the output-only test";
+            if (wanted == Route::captureOnly && original.inputDeviceName.isEmpty())
+                return "Choose an audio input before starting the capture-only test";
+            auto isolated = original;
+            if (wanted == Route::outputOnlyTone)
+            {
+                isolated.inputDeviceName.clear();
+                isolated.inputChannels.clear();
+                isolated.useDefaultInputChannels = false;
+            }
+            else
+            {
+                isolated.outputDeviceName.clear();
+                isolated.outputChannels.clear();
+                isolated.useDefaultOutputChannels = false;
+            }
+            // The backend stop/start sequence provides a safe callback boundary.
+            // Set mode before starting a new one-sided device.
+            diagnosticRoute_.store (wanted, std::memory_order_release);
+            juce::String error = deviceManager_.setAudioDeviceSetup (isolated, false);
+            const auto* active = deviceManager_.getCurrentAudioDevice();
+            // Fail closed even when an audio backend ignores requested endpoint isolation.
+            if (error.isEmpty() && active != nullptr)
+            {
+                if (wanted == Route::outputOnlyTone &&
+                    (active->getActiveInputChannels().countNumberOfSetBits() != 0 ||
+                     active->getActiveOutputChannels().isZero()))
+                    error = "The driver did not provide output-only isolation";
+                if (wanted == Route::captureOnly &&
+                    (active->getActiveOutputChannels().countNumberOfSetBits() != 0 ||
+                     active->getActiveInputChannels().isZero()))
+                    error = "The driver did not provide capture-only isolation";
+            }
+            if (error.isNotEmpty() || active == nullptr)
+            {
+                diagnosticRoute_.store (Route::normal, std::memory_order_release);
+                const auto rollback = deviceManager_.setAudioDeviceSetup (original, false);
+                if (rollback.isNotEmpty()) setOutputMuted (true);
+                return "Unable to isolate endpoint: " + (error.isNotEmpty() ? error : "Device not available")
+                     + (rollback.isNotEmpty() ? " | restore failed: " + rollback : juce::String());
+            }
+            savedLiveSetup_ = original;
+        }
+        diagnosticRoute_.store (wanted, std::memory_order_release);
+        return {};
+    }
+
+    armix::diagnostics::Route diagnosticRoute() const noexcept
+    {
+        return diagnosticRoute_.load (std::memory_order_acquire);
+    }
+    bool hasTemporaryDiagnosticDevice() const noexcept { return savedLiveSetup_.has_value(); }
     void setDryTestEnabled (bool value) noexcept { dryTest_.store (value); }
     bool isDryTestEnabled() const noexcept { return dryTest_.load(); }
     void setMasterGainDb (float value) noexcept
@@ -402,6 +501,22 @@ public:
         o->setProperty ("masterDb", juce::Decibels::gainToDecibels (
             masterGain_.load (std::memory_order_relaxed), -60.f));
         o->setProperty ("dryTest", dryTest_.load());
+        const auto route = diagnosticRoute();
+        o->setProperty ("diagnosticRoute", armix::diagnostics::routeName (route));
+        o->setProperty ("diagnosticTemporary", savedLiveSetup_.has_value());
+        o->setProperty ("deviceGeneration", static_cast<double> (deviceStartCount_.load()));
+        o->setProperty ("lateCallbackIntervals", static_cast<double> (lateCallbackIntervals_.load()));
+        o->setProperty ("testOutputFrames", static_cast<double> (testOutputFrames_.load()));
+        o->setProperty ("testCaptureFrames", static_cast<double> (testCaptureFrames_.load()));
+        o->setProperty ("renderUnderrunSource", "UNAVAILABLE_THROUGH_CURRENT_JUCE_AUDIODEVICE");
+        // AudioIODevice::getXRunCount is backend-specific, not comprehensive.
+        // Pinned JUCE WASAPI reports input capture discontinuity flags only.
+        const int reported = d != nullptr ? d->getXRunCount() : -1;
+        o->setProperty ("backendXrunCount", reported >= 0 ? juce::var (reported) : juce::var());
+        const auto type = deviceManager_.getCurrentAudioDeviceType();
+        o->setProperty ("backendXrunMeaning", reported < 0 ? "UNAVAILABLE"
+            : type.startsWith ("Windows Audio") ? "WASAPI_CAPTURE_DISCONTINUITIES_ONLY"
+            : "DRIVER_DEFINED");
         juce::AudioDeviceManager::AudioDeviceSetup setup;
         deviceManager_.getAudioDeviceSetup (setup);
         o->setProperty ("inputDevice", setup.inputDeviceName);
@@ -456,6 +571,10 @@ private:
     armix::rt::LiveGraphHandoff<Graph> handoff_;
     bool attached_ = false;
     juce::AudioBuffer<float> scratch_;
+    armix::diagnostics::DiagnosticTone diagnosticTone_;
+    std::atomic<armix::diagnostics::Route> diagnosticRoute_ {armix::diagnostics::Route::normal};
+    std::atomic<bool> routeReconfiguring_ {false};
+    std::optional<juce::AudioDeviceManager::AudioDeviceSetup> savedLiveSetup_;
     // Indexed atomic bypass flags: instant RT-safe toggles, no graph detachment.
     std::atomic<bool> monitor_ { false }, channelMute_ { false }, masterMute_ { false }, dryTest_ { false };
     std::atomic<float> masterGain_ { 1.f }, channelGain_ { 1.f }, channelPan_ { 0.f };
@@ -468,6 +587,8 @@ private:
     std::atomic<std::uint64_t> lastCallbackUs_ {0}, worstCallbackUs_ {0};
     std::atomic<std::uint64_t> slowCallbacks_ {0}, overBudgetCallbacks_ {0};
     std::atomic<std::uint64_t> callbackGaps_ {0}, worstCallbackGapUs_ {0};
+    std::atomic<std::uint64_t> lateCallbackIntervals_ {0};
+    std::atomic<std::uint64_t> testOutputFrames_ {0}, testCaptureFrames_ {0};
     std::atomic<std::uint64_t> worstPluginUs_ {0}, slowPlugins_ {0};
     std::atomic<std::uint64_t> deviceStartCount_ {0}, deviceStopCount_ {0};
     std::array<std::atomic<std::uint64_t>, maxFx> lastPluginUsBySlot_ {};
@@ -512,6 +633,7 @@ private:
     {
         deviceStartCount_.fetch_add (1, std::memory_order_relaxed);
         sampleRateHz_ = juce::jmax (1.0, d->getCurrentSampleRate());
+        diagnosticTone_.prepare (sampleRateHz_); // device stopped; no RT allocation
         for (int i = 0; i < maxFx; ++i)
         {
             lastPluginUsBySlot_[i].store (0, std::memory_order_relaxed);
@@ -557,6 +679,8 @@ private:
         {
             const auto gap = beginUs - previousCallbackStartUs_;
             publishMax (worstCallbackGapUs_, gap);
+            if (static_cast<double> (gap) > periodUs * 1.5)
+                lateCallbackIntervals_.fetch_add (1, std::memory_order_relaxed);
             if (static_cast<double> (gap) > periodUs * 2.3)
                 callbackGaps_.fetch_add (1, std::memory_order_relaxed);
         }
@@ -564,8 +688,17 @@ private:
         callbackInputs_.store (inputChannels, std::memory_order_relaxed);
         callbackOutputs_.store (outputChannels, std::memory_order_relaxed);
         callbackCount_.fetch_add (1, std::memory_order_relaxed);
-        const bool enabled = monitor_.load (std::memory_order_relaxed);
-        const bool dry = dryTest_.load (std::memory_order_relaxed);
+        const bool enabled = monitor_.load (std::memory_order_relaxed)
+                          && !routeReconfiguring_.load (std::memory_order_acquire);
+        const auto route = diagnosticRoute_.load (std::memory_order_relaxed);
+        const bool toneTest = route == armix::diagnostics::Route::outputOnlyTone;
+        const bool captureTest = route == armix::diagnostics::Route::captureOnly;
+        const bool dry = dryTest_.load (std::memory_order_relaxed)
+                      || route != armix::diagnostics::Route::normal;
+        if (toneTest && outputChannels > 0)
+            testOutputFrames_.fetch_add (static_cast<std::uint64_t> (samples), std::memory_order_relaxed);
+        if (captureTest && inputChannels > 0)
+            testCaptureFrames_.fetch_add (static_cast<std::uint64_t> (samples), std::memory_order_relaxed);
         const bool muted = channelMute_.load (std::memory_order_relaxed)
                         || masterMute_.load (std::memory_order_relaxed);
         const float gain = masterGain_.load (std::memory_order_relaxed)
@@ -581,17 +714,28 @@ private:
         {
             const int frames = juce::jmin (maxFrames, samples - offset);
             scratch_.setSize (2, frames, false, false, true);
+            if (toneTest)
+            {
+                auto* left = scratch_.getWritePointer (0);
+                auto* right = scratch_.getWritePointer (1);
+                const bool audible = enabled && !masterMute_.load (std::memory_order_relaxed);
+                for (int i = 0; i < frames; ++i)
+                    left[i] = right[i] = diagnosticTone_.next (audible);
+            }
             for (int c = 0; c < 2; ++c)
             {
                 float* dst = scratch_.getWritePointer (c);
                 const float* src = inputChannels > c ? inputs[c]
                                   : inputChannels > 0 ? inputs[0] : nullptr;
-                if (src)
-                    juce::FloatVectorOperations::copy (dst, src + offset, frames);
-                else
-                    juce::FloatVectorOperations::clear (dst, frames);
+                if (!toneTest)
+                {
+                    if (src)
+                        juce::FloatVectorOperations::copy (dst, src + offset, frames);
+                    else
+                        juce::FloatVectorOperations::clear (dst, frames);
+                }
                 for (int i = 0; i < frames; ++i)
-                    inPeak = juce::jmax (inPeak, std::abs (dst[i]));
+                    if (!toneTest) inPeak = juce::jmax (inPeak, std::abs (dst[i]));
             }
             // MIDI capacity is empty unless the plugin itself changes it.
             juce::MidiBuffer midi;
@@ -629,12 +773,15 @@ private:
                 float channelPeak = 0.f;
                 for (int i = 0; i < frames; ++i)
                 {
-                    const float mapped = c == 0 ? matrix.ll * left[i] + matrix.lr * right[i]
+                    const float mapped = toneTest ? left[i]
+                        : c == 0 ? matrix.ll * left[i] + matrix.lr * right[i]
                                                : matrix.rl * left[i] + matrix.rr * right[i];
                     const auto phase = (offset + i) * rampStep;
                     const float ramp = cycle.fadeOut ? 1.f - phase
                                      : cycle.fadeIn ? phase : 1.f;
-                    const float value = (enabled && !muted) ? mapped * gain * ramp : 0.f;
+                    const float value = captureTest ? 0.f
+                        : toneTest ? mapped * ramp
+                        : (enabled && !muted) ? mapped * gain * ramp : 0.f;
                     dst[i] = value;
                     channelPeak = juce::jmax (channelPeak, std::abs (value));
                 }

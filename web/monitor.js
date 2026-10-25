@@ -14,7 +14,10 @@
     "#arSignalReason{font-size:12px;line-height:1.6;padding:12px;background:#1c3645;border:1px solid #4d7284;border-radius:5px;margin:13px 0}" +
     ".arSignalActions{display:flex;flex-wrap:wrap;gap:8px}.arSignalActions button,.arSignalHeader button{color:#e0f5ff;padding:8px 12px;border:1px solid #57849a;border-radius:4px;background:linear-gradient(#395b70,#143447);cursor:pointer}" +
     "#arSignalFooter{margin-top:12px;font-size:11px;color:#9bbbbf;line-height:1.6}#arSignalBadge{color:#edbf7d;font-size:10px;margin-left:6px;white-space:nowrap}" +
-    "#arSignalOpen{padding:4px 7px;font-size:10px}";
+    "#arSignalOpen{padding:4px 7px;font-size:10px}" +
+    "#arDiagnosticLab{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;font-size:11px}" +
+    "#arDiagnosticMode{color:#d9eaf3;background:#142a36;border:1px solid #57849a;border-radius:4px;padding:6px;font-size:11px}" +
+    "#arDiagnosticMark{color:#f9e5ca;background:#503926;border:1px solid #b9854a;border-radius:4px;padding:7px 10px;cursor:pointer}";
   document.head.appendChild(css);
   // Signal Check is declared in the permanent toolbar; footer holds status only.
   const overlay = document.createElement("div");
@@ -29,6 +32,12 @@
     '<div class="arSignalActions"><button id="arSignalMonitor">MUTE OUTPUT</button>' +
       '<button id="arSignalDry">DRY TEST OFF</button><button id="arSignalSetup">AUDIO SETUP</button>' +
     '<button id="arSignalLogs">OPEN DIAGNOSTIC LOG</button></div>' +
+    '<div id="arDiagnosticLab"><label for="arDiagnosticMode">P0 AUDIO ISOLATION</label>' +
+      '<select id="arDiagnosticMode"><option value="NORMAL">NORMAL</option>' +
+      '<option value="DRY_THROUGH">DRY THROUGH (0 FX)</option>' +
+      '<option value="OUTPUT_ONLY_TONE">OUTPUT ONLY · 440 Hz -30 dBFS</option>' +
+      '<option value="CAPTURE_ONLY">CAPTURE ONLY · SILENT OUTPUT</option></select>' +
+      '<button id="arDiagnosticMark">MARK CRACKLE</button></div>' +
     '<div id="arHealthPanel" style="padding:8px 0;font:11px monospace;color:#8ad6e0"></div>' +
     '<div id="arSignalFooter">The legacy Main L/R, Record and Streaming buttons are UI previews, not hardware routing. Select output using AUDIO SETUP. Use headphones at low volume.</div>' +
     '</section>';
@@ -36,6 +45,9 @@
   const el = id => document.getElementById(id);
   const percent = v => Math.max(1,Math.min(100,(20*Math.log10(Math.max(1e-6,Number(v)||0))+60)*100/60));
   function diagnosis(d) {
+    if(d.diagnosticRoute==="OUTPUT_ONLY_TONE") return "Output-only test: capture endpoint is disconnected. Listen for tone at low headphone volume and click MARK CRACKLE when audible.";
+    if(d.diagnosticRoute==="CAPTURE_ONLY") return "Capture-only test: hardware render endpoint is disconnected. Observe capture input and backend discontinuity count; you should hear no audio.";
+    if(d.diagnosticRoute==="DRY_THROUGH") return "Dry-through test: microphone to output with all VST3 bypassed. MARK CRACKLE at audible glitches.";
     if (d.error) return "Audio driver error: "+d.error;
     if (!d.connected) return "No audio device connected. Open AUDIO SETUP.";
     if (!d.deviceOutputChannels) return "No active output channels. Select a headphone/speaker output in AUDIO SETUP.";
@@ -66,22 +78,26 @@
     const edition=document.querySelector('.status > span:last-child');
     if(edition)edition.textContent="AR MIX P2 · CH1 NATIVE + UI PREVIEW";
     if (!overlay.classList.contains("open")) return;
-    el("arInputName").textContent=d.inputDevice||"Input device";
-    el("arFxName").textContent=d.dryTest?"DRY BYPASS":"VST3 Chain";
+    el("arInputName").textContent=d.diagnosticRoute==="OUTPUT_ONLY_TONE"?"INTERNAL TEST TONE":d.inputDevice||"Input device";
+    el("arFxName").textContent=d.diagnosticRoute==="OUTPUT_ONLY_TONE"?"NO INPUT / NO FX":d.diagnosticRoute!=="NORMAL"?"NO FX":d.dryTest?"DRY BYPASS":"VST3 Chain";
     el("arOutputName").textContent=d.outputDevice||"Output device";
     el("arInputBar").style.width=percent(d.inputPeak)+"%";
     el("arFxBar").style.width=percent(d.postFxPeak)+"%";
     el("arOutputBar").style.width=percent(d.peak)+"%";
     el("arSignalReason").textContent=diagnosis(d);
+    el("arDiagnosticMode").value=d.diagnosticRoute||"NORMAL";
     el("arSignalMonitor").textContent=d.monitor?"MUTE OUTPUT":"UNMUTE OUTPUT";
     el("arSignalDry").textContent=d.dryTest?"DRY TEST ON":"DRY TEST OFF";
     el("arHealthPanel").textContent="CALLBACK "+(d.callbackDurationUs||0)+" µs / period "+
       Math.round(d.periodUs||0)+" µs | Worst "+(d.worstCallbackUs||0)+
       " µs | Over-budget "+(d.overBudgetCount||0)+
       " | Long gaps "+(d.callbackGapCount||0)+
+      " | Late intervals (>1.5x) "+(d.lateCallbackIntervals||0)+
       " | Worst VST "+(d.worstPluginUs||0)+" µs"+
       " | device starts/stops "+(d.deviceStartCount||0)+"/"+(d.deviceStopCount||0)+
-      " (timing indicators, NOT confirmed driver xruns)";
+      " | backend XRUN "+(d.backendXrunCount??"N/A")+
+      " ("+(d.backendXrunMeaning||"UNKNOWN")+")"+
+      " | Render underflow UNOBSERVABLE via JUCE (timing NOT xruns)";
     const timing=Array.isArray(d.pluginTimings)?d.pluginTimings:[];
     const fxInfo=timing.map(x=>x.slot+". "+x.name+": "+x.lastUs+" µs now, worst "+x.worstUs+" µs").join(" | ");
     if(fxInfo)el("arHealthPanel").textContent+=" | FX: "+fxInfo;
@@ -94,6 +110,10 @@
   el("arSignalClose").addEventListener("click",()=>overlay.classList.remove("open"));
   el("arSignalMonitor").addEventListener("click",()=>api.emitEvent("arMixAction",{action:"monitor",value:!state.monitor}));
   el("arSignalDry").addEventListener("click",()=>api.emitEvent("arMixAction",{action:"dryTest",value:!state.dryTest}));
+  el("arDiagnosticMode").addEventListener("change",e=>
+    api.emitEvent("arMixAction",{action:"diagnosticRoute",value:e.target.value}));
+  el("arDiagnosticMark").addEventListener("click",()=>
+    api.emitEvent("arMixAction",{action:"diagnosticMark"}));
   el("arSignalLogs").addEventListener("click",()=>api.emitEvent("arMixAction",{action:"openDiagnostics"}));
   el("arSignalSetup").addEventListener("click",()=>{
     overlay.classList.remove("open");
