@@ -19,7 +19,7 @@ juce_add_gui_app(ARMixConsole
 juce_add_binary_data(ARMixAssets SOURCES
     web/index.html web/styles.css web/app.js web/bridge.js web/monitor.js)
 
-target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h src/PluginCatalog.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/SessionLifecycle.h)
+target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h src/PluginCatalog.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h)
 target_compile_definitions(ARMixConsole PRIVATE
     JUCE_WEB_BROWSER=1
     JUCE_USE_WIN_WEBVIEW2=1
@@ -28,6 +28,10 @@ target_compile_definitions(ARMixConsole PRIVATE
     JUCE_PLUGINHOST_VST3=1
     JUCE_APPLICATION_NAME_STRING="AR MIX Studio"
     JUCE_APPLICATION_VERSION_STRING="0.5.0-p2")
+if(WIN32)
+  target_link_libraries(ARMixConsole PRIVATE ole32 uuid)
+endif()
+
 target_link_libraries(ARMixConsole PRIVATE
     ARMixAssets
     juce::juce_gui_extra
@@ -40,6 +44,13 @@ target_link_libraries(ARMixConsole PRIVATE
 
 include(CTest)
 if(BUILD_TESTING)
+  if(WIN32)
+    juce_add_console_app(ARMixWasapiProbeTests PRODUCT_NAME "ArSonMix WASAPI Probe Tests")
+    target_sources(ARMixWasapiProbeTests PRIVATE tests/wasapi_capability_probe_test.cpp engine/device/WasapiCapabilityProbe.h)
+    target_link_libraries(ARMixWasapiProbeTests PRIVATE juce::juce_core ole32 uuid juce::juce_recommended_config_flags)
+    target_compile_features(ARMixWasapiProbeTests PRIVATE cxx_std_20)
+    add_test(NAME WasapiCapabilityProbe COMMAND ARMixWasapiProbeTests)
+  endif()
   add_executable(ARMixLifecycleTests tests/session_lifecycle_test.cpp)
   target_compile_features(ARMixLifecycleTests PRIVATE cxx_std_20)
   add_test(NAME DeviceSessionLifecycle COMMAND ARMixLifecycleTests)
