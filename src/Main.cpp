@@ -180,9 +180,10 @@ private:
         const auto valueNumber = static_cast<float> (static_cast<double> (value));
         if (name == "masterGain" && (value.isDouble() || value.isInt()))
             engine_.setMasterGainDb (valueNumber);
-        else if (name == "faderDb" && channel == 1 && (value.isDouble() || value.isInt()))
+        // Web mixer channels are zero-based; strip 0 is native Vocal Input.
+        else if (name == "faderDb" && channel == 0 && (value.isDouble() || value.isInt()))
             engine_.setChannelGainDb (valueNumber);
-        else if (name == "mute" && channel == 1 && value.isBool())
+        else if (name == "mute" && channel == 0 && value.isBool())
             engine_.setChannelMuted (bool (value));
         else if (name == "masterMute" && value.isBool())
             engine_.setMasterMuted (bool (value));
