@@ -12,6 +12,45 @@ async def main():
         page.on("pageerror", lambda e: errors.append(str(e)))
         await page.set_content((project/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").read_text())
         assert await page.locator(".strip").count()==12
+        # All 12 PAN knobs have been replaced by horizontal slider tracks.
+        assert await page.locator('[data-pan]').count()==12
+        assert await page.locator('[data-knob="pan"]').count()==0
+        assert await page.locator('.brand').inner_text()=='ArSonMix'
+        for idx in range(12):
+            p=page.locator(f'[data-pan="{idx}"]')
+            assert await p.get_attribute('aria-orientation')=='horizontal'
+            assert await p.locator('.pan-thumb').count()==1
+        for selector in ['.nav button.selected','.left-rail .seg button.selected','.right-rail .seg button.selected','[data-output="Main L/R"]']:
+            bg=await page.locator(selector).first.evaluate('(x)=>getComputedStyle(x).backgroundImage')
+            assert 'data:image/png;base64,' in bg, (selector,bg[:110])
+        pan=page.locator('[data-pan="0"]')
+        await pan.focus()
+        await pan.press('Home')
+        assert await pan.get_attribute('aria-valuenow')=='0'
+        await pan.press('ArrowRight')
+        assert await pan.get_attribute('aria-valuenow')=='1'
+        await pan.press('Shift+ArrowLeft')
+        assert await pan.get_attribute('aria-valuenow')=='-9'
+        await pan.press('End')
+        assert await pan.get_attribute('aria-valuenow')=='100'
+        await pan.press('Home')
+        bbox=await pan.bounding_box()
+        await page.mouse.click(bbox['x']+bbox['width']*.76,bbox['y']+20)
+        assert int(await pan.get_attribute('aria-valuenow'))>0
+        await pan.press('Home')
+        thumb=await pan.locator('.pan-thumb').bounding_box()
+        x=thumb['x']+thumb['width']/2
+        y=thumb['y']+thumb['height']/2
+        await page.mouse.move(x,y)
+        await page.mouse.down()
+        assert await pan.get_attribute('aria-valuenow')=='0','PAN jumped on grab'
+        await page.mouse.move(x+14,y,steps=3)
+        assert int(await pan.get_attribute('aria-valuenow'))>0
+        await page.mouse.up()
+        await pan.dblclick()
+        assert await pan.get_attribute('aria-valuenow')=='0'
+        assert not await page.locator('#editor').is_visible(),'PAN double click opened editor'
+
         # Pixel-perfect state mapping uses original silver/red/green images, not CSS flats.
         async def image_for(selector):
             return await page.locator(selector).first.evaluate(

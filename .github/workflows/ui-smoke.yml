@@ -28,6 +28,8 @@ jobs:
         run: python tests/fader_asset_test.py
       - name: Check switch PNG assets and offline HTML sync
         run: python tests/button_asset_test.py
+      - name: Check PAN and button PNG assets
+        run: python tests/pan_button_asset_test.py
       - name: Run mixer UI smoke tests
         run: python tests/ui_smoke.py
       - name: Attach visual regression screenshot
