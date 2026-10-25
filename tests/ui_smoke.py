@@ -22,6 +22,12 @@ async def main():
           png:getComputedStyle(e.querySelector('.pan-thumb')).backgroundImage
         })""")
         assert int(pan_z['center'])<int(pan_z['thumb']) and int(pan_z['fill'])<int(pan_z['thumb']),pan_z
+        pan_offset=await page.locator('[data-pan="0"]').evaluate("""e=>({
+          groove:getComputedStyle(e,'::before').top,
+          fill:getComputedStyle(e.querySelector('.pan-fill')).top,
+          detent:getComputedStyle(e,'::after').top
+        })""")
+        assert pan_offset=={'groove':'13px','fill':'15px','detent':'12px'},pan_offset
         assert 'data:image/png;base64,' in pan_z['png'],pan_z
         assert ''.join((await page.locator('.brand').inner_text()).split())=='ArSonMix'
         for idx in range(12):
@@ -87,36 +93,49 @@ async def main():
         assert await page.locator('.left-rail #saveFxPreset').inner_text()=='SAVE FX'
         assert await page.locator('.left-rail #menuScene').inner_text()=='EXPORT'
         assert await page.locator('.left-rail .rail-bottom button').count()==3
-        # Every left-rail action uses the exact three-piece pushable DOM.
-        rail_buttons=page.locator('.left-rail button.pushable')
+        # Left rail is no longer a separate three-layer pushable skin.
+        # It shares the exact Button 180 border/radius/base/shadow and type with header.
+        rail_buttons=page.locator('.left-rail button.btn-180')
         assert await rail_buttons.count()==8
-        for slot in ('shadow','edge','front'):
-            assert await page.locator(f'.left-rail button.pushable > span.{slot}').count()==8
-        layers=await page.locator('#addScene').evaluate("""e=>{
-            const f=getComputedStyle(e.querySelector('.front')),
-                  sh=getComputedStyle(e.querySelector('.shadow'));
-            return {face:f.transform,shadow:sh.transform,background:f.backgroundColor,
-              edge:getComputedStyle(e.querySelector('.edge')).backgroundColor};
+        assert await page.locator('.left-rail .pushable,.left-rail .front,.left-rail .edge,.left-rail .shadow').count()==0
+        shared=await page.evaluate("""()=>{
+          const vars=e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect();
+            return {background:s.backgroundColor,image:s.backgroundImage,shadow:s.boxShadow,
+              border:s.borderTopWidth,radius:s.borderTopLeftRadius,height:r.height,
+              width:r.width,x:r.x,y:r.y};
+          };
+          return {header:vars(document.querySelector('[data-view="FX RACK"]')),
+            rail:vars(document.querySelector('[data-preset="Clean Vocal"]')),
+            mute:vars(document.querySelector('[data-mute="0"]'))};
         }""")
-        assert layers['face']=='matrix(1, 0, 0, 1, 0, -4)',layers
-        assert layers['shadow']=='matrix(1, 0, 0, 1, 0, 2)',layers
-        assert layers['background']!=layers['edge'],layers
+        for key in ('background','image','shadow','border','radius'):
+            assert shared['header'][key]==shared['rail'][key]==shared['mute'][key],(key,shared)
+        assert shared['rail']['background']=='rgb(34, 53, 65)',shared
         preset=page.locator('[data-preset="Clean Vocal"]')
-        base_rect=await preset.evaluate('(e)=>e.getBoundingClientRect().toJSON()')
+        before=await preset.evaluate('(e)=>e.getBoundingClientRect().toJSON()')
         await preset.hover()
         await page.wait_for_function("""()=>{
-          const b=document.querySelector('[data-preset="Clean Vocal"]');
-          return getComputedStyle(b.querySelector('.front')).transform==='matrix(1, 0, 0, 1, 0, -6)' &&
-                 getComputedStyle(b.querySelector('.shadow')).transform==='matrix(1, 0, 0, 1, 0, 4)';
+          const e=document.querySelector('[data-preset="Clean Vocal"]');
+          return getComputedStyle(e).backgroundImage.includes('linear-gradient');
         }""",timeout=2500)
+        hovered=await preset.evaluate("""e=>({
+          shadow:getComputedStyle(e).boxShadow,
+          box:e.getBoundingClientRect().toJSON(),
+          background:getComputedStyle(e).backgroundImage
+        })""")
+        assert hovered['shadow']!=shared['rail']['shadow'],hovered
+        assert 'linear-gradient' in hovered['background'],hovered
+        assert all(abs(before[k]-hovered['box'][k])<=.2 for k in ('x','y','width','height')),hovered
         await preset.click()
+        assert await preset.evaluate("(e)=>e.classList.contains('active')")
         await page.wait_for_function("""()=>{
-          const b=document.querySelector('[data-preset="Clean Vocal"]');
-          return b.classList.contains('active') &&
-                 getComputedStyle(b.querySelector('.front')).transform==='matrix(1, 0, 0, 1, 0, -2)';
+          const e=document.querySelector('[data-preset="Clean Vocal"]');
+          return getComputedStyle(e).backgroundImage==='none' &&
+                 getComputedStyle(e).backgroundColor==='rgb(34, 187, 204)';
         }""",timeout=2500)
-        pressed_rect=await preset.evaluate('(e)=>e.getBoundingClientRect().toJSON()')
-        assert all(abs(base_rect[k]-pressed_rect[k])<=.2 for k in ('x','y','width','height'))
+        active=await preset.evaluate('(e)=>e.getBoundingClientRect().toJSON()')
+        assert all(abs(before[k]-active[k])<=.2 for k in ('x','y','width','height')),(before,active)
+        await page.mouse.move(1,1)
         # Restore factory FX chain so this visual-button test cannot change later FX tests.
         await page.evaluate("""()=>{
           channels[0].inserts=[...initialFactoryChannels[0].inserts];
@@ -218,7 +237,7 @@ async def main():
         }""")
         assert soft['border']=='0px' and soft['halo']!='none',soft
         await page.screenshot(path=str(project/'mixer-design-review.png'),full_page=True)
-        await page.screenshot(path=str(project/'mixer-left-rail-pushable-no-ab-pan.png'),full_page=True)
+        await page.screenshot(path=str(project/'mixer-left-rail-unified-button180-pan-131512.png'),full_page=True)
         # Medium desktop check; channel strips may scroll *inside* workbench.
         await page.set_viewport_size({"width":1440,"height":820})
         await page.screenshot(path=str(project/'mixer-design-review-1440.png'),full_page=True)
