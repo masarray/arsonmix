@@ -11,50 +11,55 @@ async def main():
         errors=[]
         page.on("pageerror", lambda e: errors.append(str(e)))
         await page.set_content((project/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").read_text())
-        assert await page.locator(".strip").count()==12
+        assert await page.locator(".strip").count()==13
         # All 12 PAN knobs have been replaced by horizontal slider tracks.
-        assert await page.locator('[data-pan]').count()==12
+        assert await page.locator('[data-pan]').count()==13
         assert await page.locator('[data-knob="pan"]').count()==0
         assert ''.join((await page.locator('.brand').inner_text()).split())=='ArSonMix'
         for idx in range(12):
             p=page.locator(f'[data-pan="{idx}"]')
             assert await p.get_attribute('aria-orientation')=='horizontal'
             assert await p.locator('.pan-thumb').count()==1
-        for selector in ['.nav button.selected','.left-rail .seg button.selected','.right-rail .seg button.selected','[data-output="Main L/R"]']:
+        for selector in ['.nav button.selected','.left-rail .seg button.selected','#masterLeft .master-tools button.active']:
             bg=await page.locator(selector).first.evaluate('(x)=>getComputedStyle(x).backgroundImage')
             assert 'data:image/png;base64,' in bg, (selector,bg[:110])
         # Visual-architecture regression: four intentionally different hardware
         # families, FX slots recessed rather than taking on button-cap artwork.
-        family=await page.evaluate("""() => {
+        # GUI target: the master is the 13th sibling, not a floating right rail.
+        assert await page.locator('#mixer > .strip').count()==13
+        assert await page.locator('#mixer > .strip:last-child').get_attribute('id')=='masterLeft'
+        assert await page.locator('.right-rail,.master-tabs,.head').count()==0
+        architecture=await page.evaluate("""() => {
           const bg=s=>getComputedStyle(document.querySelector(s)).backgroundImage;
-          const rect=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height}};
-          const rail=rect('.right-rail'), left=rect('.left-rail'), mode=rect('#modeToggle'), nav=rect('.nav');
+          const rect=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,height:r.height}};
+          const main=document.querySelector('[data-strip="0"]'),master=document.querySelector('#masterLeft');
           const overflow=[...document.querySelectorAll('.strip .channel-actions button,.strip .utility-row button')].some(el=>{
             const b=el.getBoundingClientRect(),p=el.closest('.strip').getBoundingClientRect();
-            return b.left < p.left-1 || b.right > p.right+1;
+            return b.left<p.left-1||b.right>p.right+1;
           });
           return {nav:bg('.nav button.selected'),small:bg('[data-mute="0"]'),
-            long:bg('.rail-presets button'),large:bg('#talkBtn'),
-            fx:bg('.strip .rack .insert'),chrome:bg('#settingsBtn'),
-            label:bg('.master-fader-label'),navBounds:nav,mode,rail,left,overflow,
-            stripButtons:[...document.querySelectorAll('.strip .channel-actions button')].map(x=>x.getBoundingClientRect().height),
-            talkHeight:rect('#talkBtn').height,
-            tabHeights:[...document.querySelectorAll('.master-tabs button')].map(x=>x.getBoundingClientRect().height)};
+            long:bg('.rail-presets button'),fx:bg('.strip .rack .insert'),chrome:bg('#settingsBtn'),
+            navBounds:rect('.nav'),mode:rect('#modeToggle'),overflow,
+            mainHeader:rect('[data-strip="0"] .ch-id'),masterHeader:rect('#masterLeft .ch-id'),
+            mainBottom:rect('[data-strip="0"] .strip-name'),masterBottom:rect('#masterLeft .strip-name'),
+            mainFader:rect('[data-strip="0"] .fader-zone'),masterFader:rect('#masterLeft .fader-zone'),
+            selection:getComputedStyle(main,'::before').borderTopWidth,
+            masterRows:[...master.children].map(x=>({cls:x.className,height:x.getBoundingClientRect().height}))};
         }""")
-        assert len({family[k] for k in ('nav','small','long','large')})==4, 'Button families collapsed to one global skin'
-        assert 'data:image/png;base64' not in family['fx'], 'Recessed FX slots must not look like huge buttons'
-        assert 'data:image/png;base64' not in family['chrome'], 'Tool icons need their own chrome'
-        assert 'data:image/png;base64' not in family['label'], 'Main Master label is a metal plaque, not a button'
-        assert not family['overflow'], 'Some channel switches escape their strip'
-        assert all(abs(n-29)<=1 for n in family['stripButtons']),family['stripButtons']
-        assert family['talkHeight']==48
-        assert all(n==30 for n in family['tabHeights']),family['tabHeights']
-        assert family['navBounds']['right'] <= family['mode']['x']+1, 'Navigation overlaps Easy View'
+        assert len({architecture[k] for k in ('nav','small','long')})==3
+        assert 'data:image/png;base64' not in architecture['fx']
+        assert 'data:image/png;base64' not in architecture['chrome']
+        assert not architecture['overflow']
+        assert architecture['navBounds']['right']<=architecture['mode']['x']+1
+        for key in ('Header','Bottom','Fader'):
+            assert abs(architecture['main'+key]['y']-architecture['master'+key]['y'])<=2,architecture
+        assert abs(architecture['mainBottom']['bottom']-architecture['masterBottom']['bottom'])<=2,architecture
+        assert architecture['selection']=='2px',architecture
         await page.screenshot(path=str(project/'mixer-design-review.png'),full_page=True)
         # Medium desktop check; channel strips may scroll *inside* workbench.
         await page.set_viewport_size({"width":1440,"height":820})
         await page.screenshot(path=str(project/'mixer-design-review-1440.png'),full_page=True)
-        assert await page.locator('.strip').count()==12
+        assert await page.locator('.strip').count()==13
         await page.set_viewport_size({"width":1680,"height":920})
         # Hardware-style PAN illumination must grow from center, both L and R.
         pan_fill=page.locator('[data-pan="1"] .pan-fill')
@@ -152,16 +157,24 @@ async def main():
         assert decoded=={'width':31,'height':90}, 'Master red PNG did not decode'
         a=await page.locator('[data-fader="0"]').bounding_box()
         m=await page.locator('[data-fader="master"]').bounding_box()
-        assert abs(a['y']-m['y'])<=14,(a,m)
+        assert abs(a['y']-m['y'])<=2,(a,m)
         await page.locator('#modeToggle').click()
         pro_a=await page.locator('[data-fader="0"]').bounding_box()
         pro_m=await page.locator('[data-fader="master"]').bounding_box()
-        assert abs(pro_a['y']-pro_m['y'])<=14,(pro_a,pro_m)
+        assert abs(pro_a['y']-pro_m['y'])<=2,(pro_a,pro_m)
         await page.screenshot(path=str(project/'mixer-pro-view-review.png'),full_page=True)
         await page.locator('#modeToggle').click()
 
 
 
+        masterPan=page.locator('[data-pan="master"]')
+        assert await masterPan.get_attribute('aria-valuenow')=='0'
+        await masterPan.focus()
+        await masterPan.press('ArrowRight')
+        assert await masterPan.get_attribute('aria-valuenow')=='1'
+        await masterPan.press('Home')
+        assert await masterPan.get_attribute('aria-valuenow')=='0'
+        assert await page.evaluate('durableSession().masterPan')==0
         assert await page.locator('[data-master-insert="0"]').count()==1
         await page.locator('[data-master-power="0"]').click()
         assert await page.locator('[data-master-power="0"]').get_attribute('aria-pressed')=='false'
@@ -231,10 +244,7 @@ async def main():
         await page.locator('#masterMute').click()
         assert await page.locator('#masterMute').get_attribute('aria-pressed') == 'true'
         await page.locator('#masterMute').click()
-        await page.locator('#dim').click()
-        assert await page.locator('#dim').get_attribute('aria-pressed') == 'true'
-        await page.locator('#dim').click()
-        assert await page.locator('#dim').get_attribute('aria-pressed') == 'false'
+        assert await page.locator('#dim,#talkBtn,[data-master-tab]').count()==0
 
         # The source image has a real metallic body and a long cast shadow.
         # The body must travel inside the track, centered on image y=35.
