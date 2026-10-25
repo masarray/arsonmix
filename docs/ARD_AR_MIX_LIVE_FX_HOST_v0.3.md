@@ -1,9 +1,20 @@
 # AR MIX Studio — Architecture Requirements & Design (ARD)
 
-**Version:** 0.3.0 · **Date:** 25 October 2026 · **Status:** Architecture baseline / design proposal, NOT production readiness certification  
+**Version:** 0.3.0 · **Date:** 25 October 2026 · **Status:** HISTORICAL 0.3 DESIGN; superseded for native-device architecture by Smart Audio Engine ARD v1.0 (NOT production readiness certification)  
 **Product:** Free and open-source Windows-first low-latency VST3 host for live karaoke, singers and livestream creators.  
 **Primary principle:** **FX Rack First, One-Click Live, Realtime First.**  
-**Implementation status:** The interactive UI demo and standalone control-queue proof are implemented. **Native audio, VST3 loading and actual driver capture are NOT implemented.**
+**Implementation status (updated 2026-10-25):** GUI v0.8 and experimental P2.5.1 JUCE Windows/VST3 Channel 1 native engine **are implemented in main**, but crackling was observed with zero plugins on actual hardware (P0 issue #15). This v0.3 document preserves original design history and must **not** be used as the current implementation status, current GUI specification or as authority to proceed to P2.6. See the canonical v1.0 architecture below.
+
+---
+
+## Current architecture (overrides outdated v0.3 proposals)
+
+1. **[Smart Audio Engine ARD v1.0](ARD_SMART_AUDIO_ENGINE_V1_2026-10-25.md)** — authoritative requirements, realtime safety, clock-domain, backend selection, and reliability gates.
+2. **[Smart Audio Engine Implementation Blueprint](SMART_AUDIO_ENGINE_IMPLEMENTATION_BLUEPRINT.md)** — precise API modules, algorithms, PR sequence, test harness, hardware FAT and handoff checklist.
+3. **[P0 issue #15](https://github.com/masarray/arsonmix/issues/15)** — unqualified zero-FX crackling; prioritize objective I/O tests before features.
+4. **[Locked GUI v0.8](GUI_BASELINE_LOCK_2026-10-25.md)** — sole approved visual source. Existing Easy/Pro and page-layout text below is historical where it differs from v0.8.
+
+The historical section following this notice is retained for traceability. An older aspirational requirement is not evidence that the product already implements it.
 
 ---
 
