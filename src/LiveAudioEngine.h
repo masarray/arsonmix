@@ -76,6 +76,14 @@ public:
     {
         if (std::isfinite (value)) channelGain_.store (juce::Decibels::decibelsToGain (juce::jlimit (-60.f, 10.f, value)));
     }
+    // True stereo-to-stereo pan: centre preserves stereo; extremes fold
+    // both stereo input channels to the chosen side at unity for dual-mono.
+    // Parameter is normalized on the UI thread; callback only loads atomic.
+    void setChannelPan (float value) noexcept
+    {
+        if (std::isfinite (value))
+            channelPan_.store (juce::jlimit (-1.f, 1.f, value), std::memory_order_relaxed);
+    }
     void setChannelMuted (bool value) noexcept { channelMute_.store (value); }
     void setMasterMuted (bool value) noexcept { masterMute_.store (value); }
 
@@ -202,6 +210,7 @@ public:
         o->setProperty ("monitor", monitor_.load());
         o->setProperty ("masterMute", masterMute_.load());
         o->setProperty ("channelMute", channelMute_.load());
+        o->setProperty ("channelPan", channelPan_.load());
         o->setProperty ("dryTest", dryTest_.load());
         juce::AudioDeviceManager::AudioDeviceSetup setup;
         deviceManager_.getAudioDeviceSetup (setup);
@@ -255,7 +264,7 @@ private:
     // Indexed atomic bypass flags: instant RT-safe toggles, no graph detachment.
     std::array<std::atomic<bool>, maxFx> bypassFlags_ {};
     std::atomic<bool> monitor_ { false }, channelMute_ { false }, masterMute_ { false }, dryTest_ { false };
-    std::atomic<float> masterGain_ { 1.f }, channelGain_ { 1.f };
+    std::atomic<float> masterGain_ { 1.f }, channelGain_ { 1.f }, channelPan_ { 0.f };
     std::atomic<float> inputPeak_ { 0.f }, postFxPeak_ { 0.f }, outputPeak_ { 0.f };
     std::atomic<int> callbackInputs_ { 0 }, callbackOutputs_ { 0 };
     std::atomic<unsigned long long> callbackCount_ { 0 };
@@ -364,6 +373,13 @@ private:
                         || masterMute_.load (std::memory_order_relaxed);
         const float gain = masterGain_.load (std::memory_order_relaxed)
                          * channelGain_.load (std::memory_order_relaxed);
+        const float pan = channelPan_.load (std::memory_order_relaxed);
+        // Precomputed stereo pan matrix; no trigonometry, locks or allocations
+        // in the realtime sample loop. 0 = transparent identity matrix.
+        const float ll = pan > 0.f ? 1.f - pan : 1.f + pan * .5f;
+        const float lr = pan < 0.f ? -pan * .5f : 0.f;
+        const float rl = pan > 0.f ? pan * .5f : 0.f;
+        const float rr = pan < 0.f ? 1.f + pan : 1.f - pan * .5f;
         float inPeak = 0.f, postFxPeak = 0.f, outPeak = 0.f;
         for (int offset = 0; offset < samples; offset += maxFrames)
         {
@@ -411,11 +427,14 @@ private:
             for (int c = 0; c < outputChannels; ++c)
             {
                 if (!outputs[c]) continue;
-                const float* src = scratch_.getReadPointer (juce::jmin (c, 1));
+                const float* left = scratch_.getReadPointer (0);
+                const float* right = scratch_.getReadPointer (1);
                 float* dst = outputs[c] + offset;
                 for (int i = 0; i < frames; ++i)
                 {
-                    const float value = (enabled && !muted) ? src[i] * gain : 0.f;
+                    const float mapped = c == 0 ? ll * left[i] + lr * right[i]
+                                               : rl * left[i] + rr * right[i];
+                    const float value = (enabled && !muted) ? mapped * gain : 0.f;
                     dst[i] = value;
                     outPeak = juce::jmax (outPeak, std::abs (value));
                 }
