@@ -20,4 +20,8 @@ int main()
     check(snap.counts[12]==100); // exceeded deadline
     check(snap.p95Ceiling==0.02);
     check(snap.p99Ceiling==0.40);
+    armix::rt::RealtimeHealthHistogram overloaded;
+    for(int i=0;i<100;++i)overloaded.observe(25000,10000);
+    auto over=overloaded.snapshot();
+    check(over.p95Ceiling<0 && over.p99Ceiling<0);
 }
