@@ -396,6 +396,11 @@ public:
         o->setProperty ("masterMute", masterMute_.load());
         o->setProperty ("channelMute", channelMute_.load());
         o->setProperty ("channelPan", channelPan_.load());
+        // Live controls are authoritative: never trust an old WebView localStorage fader/mute.
+        o->setProperty ("channelDb", juce::Decibels::gainToDecibels (
+            channelGain_.load (std::memory_order_relaxed), -60.f));
+        o->setProperty ("masterDb", juce::Decibels::gainToDecibels (
+            masterGain_.load (std::memory_order_relaxed), -60.f));
         o->setProperty ("dryTest", dryTest_.load());
         juce::AudioDeviceManager::AudioDeviceSetup setup;
         deviceManager_.getAudioDeviceSetup (setup);
