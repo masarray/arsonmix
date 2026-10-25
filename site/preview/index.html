@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="dark">
+<title>AR MIX Studio — Live GUI Preview</title>
+<style>
+:root{font-family:"Segoe UI",Arial,sans-serif;color:#dcecf5;background:#09131a}*{box-sizing:border-box}body{margin:0;height:100dvh;min-height:320px;display:flex;flex-direction:column;overflow:hidden}.head{height:47px;flex:none;display:flex;align-items:center;gap:13px;padding:0 14px;border-bottom:1px solid #365365;background:linear-gradient(#203440,#101c26)}a{color:inherit;text-decoration:none}.brand{font-size:13px;font-weight:620;white-space:nowrap}.brand b{color:#55dcfb}.seam{height:21px;border-left:1px solid #48606a}.desc{font-size:11px;color:#90b2bf;white-space:nowrap}.ready{display:inline-flex;align-items:center;gap:7px}.dot{width:7px;height:7px;border-radius:50%;background:#48d68b;box-shadow:0 0 5px #48d68b80}.spacer{flex:1}.build{font-size:10px;color:#8cabb8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:210px}.control{font:600 11px "Segoe UI",Arial,sans-serif;cursor:pointer;color:#d8eaf2;border:1px solid #3d5969;background:linear-gradient(#304652,#13222d);border-radius:3px;padding:6px 9px;white-space:nowrap}.control:hover{border-color:#56c7e5}.control.primary{background:linear-gradient(#37bfe7,#087ca6);color:#fff;border-color:#159ac3}iframe{flex:1;width:100%;border:0;background:#0c141a;min-height:0}.banner{position:absolute;top:57px;left:50%;transform:translateX(-50%);display:none;max-width:calc(100vw - 25px);padding:8px 12px;border:1px solid #3e8ea4;border-radius:4px;box-shadow:0 6px 20px #0009;background:#142e3a;color:#b9ecfa;font-size:11px;z-index:5}.banner.show{display:block}.mobile{display:none}@media(max-width:840px){.desc,.seam,.build{display:none}.mobile{display:inline}.head{gap:7px;padding:0 8px}.control{font-size:10px;padding:6px}}@media(max-width:470px){.head .source{display:none}.brand{font-size:11px}}
+</style></head><body>
+<header class="head"><a class="brand" href="../"><b>AR</b> MIX · <span class="mobile">GUI</span><span class="desc">Live Console Preview</span></a><span class="seam"></span><span class="ready desc"><i class="dot"></i> GUI Prototype</span><span class="spacer"></span><span class="build" id="build">Checking build…</span><button class="control primary" id="reload" title="Reload newest deployed mixer GUI">⟳ Reload GUI</button><a class="control source" href="https://github.com/masarray/arsonmix">Source</a><a class="control" href="./mixer.html" target="_blank" rel="noopener">Full Screen ↗</a></header>
+<iframe id="console" title="Interactive AR MIX Studio digital mixing console" src="./mixer.html" allow="fullscreen"></iframe>
+<div class="banner" id="banner" role="status"></div>
+<script>
+'use strict';
+const frame=document.getElementById('console'), label=document.getElementById('build'),banner=document.getElementById('banner');
+let currentSha='',busySince=0;
+document.addEventListener('pointerdown',()=>busySince=Date.now(),{passive:true});
+frame.addEventListener('load',()=>{try{frame.contentDocument.addEventListener('pointerdown',()=>busySince=Date.now(),{passive:true})}catch{}});
+function reload(){frame.src='./mixer.html?b='+encodeURIComponent(currentSha||Date.now());banner.classList.remove('show')}
+document.getElementById('reload').addEventListener('click',reload);
+async function checkBuild(){
+ try{
+  const response=await fetch('./build.json?_='+Date.now(),{cache:'no-store'});
+  if(!response.ok)throw Error('No build metadata');
+  const build=await response.json();const sha=String(build.sha||'');
+  label.textContent=(build.branch||'preview')+' · '+sha.slice(0,7);
+  label.title='GitHub revision '+sha;
+  if(currentSha&&sha!==currentSha){
+   currentSha=sha;
+   if(Date.now()-busySince>45000){reload()}else{banner.textContent='New GUI available · click Reload GUI to update without losing edits';banner.classList.add('show')}
+  }else currentSha=sha;
+ }catch{label.textContent='Static preview'}
+}
+checkBuild();setInterval(checkBuild,60000);
+</script></body></html>
