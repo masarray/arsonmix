@@ -232,7 +232,9 @@ public:
         s.overflowFrames = lostInput_.load (std::memory_order_relaxed);
         s.underflowFrames = missingOutput_.load (std::memory_order_relaxed);
         s.primingFrames = primeOutput_.load (std::memory_order_relaxed);
-        s.fillFrames = w - r;
+        // UI snapshots may read write/read cursors from different instants.
+        // Never report an enormous wrapped fill on a harmless cross-read race.
+        s.fillFrames = w >= r ? w - r : 0;
         s.nominalInputPerOutput = inputPerOutput_;
         s.correctionPpm = correctionSnapshot_.load (std::memory_order_relaxed);
         return s;
