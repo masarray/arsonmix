@@ -208,7 +208,18 @@ private:
         if (!directRestore_.due (snapshot.generation, now)) return;
 
         const bool wasIndependent = engine_.independentClockActive();
-        const auto faultStatus = juce::JSON::toString (engine_.status(), false);
+        const auto stateBeforeRestore = engine_.status();
+        const auto faultStatus = juce::JSON::toString (stateBeforeRestore, false);
+        // DiagnosticsRecorder bounds event details to 950 characters. Keep
+        // the independent stream fault source and durations FIRST, before the
+        // potentially long full status JSON, so field reports retain evidence
+        // after closing the adapter resets its watchdog.
+        const auto watchdogSummary = juce::String ("watchdog=")
+            + stateBeforeRestore.getProperty ("bridgeWatchdogFault", "NONE").toString()
+            + " captureSilentMs="
+            + stateBeforeRestore.getProperty ("bridgeCaptureSilentMs", 0).toString()
+            + " renderSilentMs="
+            + stateBeforeRestore.getProperty ("bridgeRenderSilentMs", 0).toString();
         const auto error = engine_.setIndependentClockEnabled (false);
         if (error.isEmpty())
         {
@@ -217,7 +228,7 @@ private:
             deviceSettingsDirty_ = true;
             diagnostics_.record ("SMART_CLOCK_RECOVERY",
                 juce::String ("DIRECT_RESTORED after ") + juce::String (snapshot.attempts + 1) +
-                " attempt(s) | " + faultStatus);
+                " attempt(s) | " + watchdogSummary + " | " + faultStatus);
             if (engine_.isOutputMuted())
                 emitNotice ("DIRECT device reopened. Output remains muted for safety; unmute only when ready.", true);
             else
@@ -233,7 +244,7 @@ private:
         diagnostics_.record ("SMART_CLOCK_RECOVERY",
             juce::String ("RESTORE_FAIL ") + juce::String (next.attempts) + "/" +
             juce::String (static_cast<int> (Gate::maxAttempts)) + ": " + error +
-            " | " + faultStatus);
+            " | " + watchdogSummary + " | " + faultStatus);
         if (next.state == Gate::State::exhausted)
             emitNotice ("Automatic DIRECT recovery exhausted; audio remains safe/muted. "
                         "Check AUDIO SETUP or retry DIRECT manually. " + error, true);

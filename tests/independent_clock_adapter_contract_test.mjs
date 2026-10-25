@@ -68,3 +68,11 @@ test('silent JUCE callback watchdog routes through control timer and DIRECT fail
   assert.match(engine,/bridgeCaptureSilentMs/);
   assert.match(engine,/bridgeRenderSilentMs/);
 });
+
+test('watchdog fault cause precedes bounded diagnostics JSON on both recovery outcomes',()=>{
+  assert.match(host,/const auto watchdogSummary =/);
+  assert.match(host,/getProperty \("bridgeWatchdogFault", "NONE"\)/);
+  assert.match(host,/getProperty \("bridgeCaptureSilentMs", 0\)/);
+  assert.match(host,/getProperty \("bridgeRenderSilentMs", 0\)/);
+  assert.equal((host.match(/watchdogSummary \+ " \| " \+ faultStatus/g)||[]).length,2);
+});
