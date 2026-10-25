@@ -15,15 +15,22 @@ async def main():
         # All 12 PAN knobs have been replaced by horizontal slider tracks.
         assert await page.locator('[data-pan]').count()==13
         assert await page.locator('[data-knob="pan"]').count()==0
+        pan_z=await page.locator('[data-pan="0"]').evaluate("""e=>({
+          center:getComputedStyle(e,'::after').zIndex,
+          thumb:getComputedStyle(e.querySelector('.pan-thumb')).zIndex,
+          fill:getComputedStyle(e.querySelector('.pan-fill')).zIndex,
+          png:getComputedStyle(e.querySelector('.pan-thumb')).backgroundImage
+        })""")
+        assert int(pan_z['center'])<int(pan_z['thumb']) and int(pan_z['fill'])<int(pan_z['thumb']),pan_z
+        assert 'data:image/png;base64,' in pan_z['png'],pan_z
         assert ''.join((await page.locator('.brand').inner_text()).split())=='ArSonMix'
         for idx in range(12):
             p=page.locator(f'[data-pan="{idx}"]')
             assert await p.get_attribute('aria-orientation')=='horizontal'
             assert await p.locator('.pan-thumb').count()==1
         # Button 180: SOLID base and exact layered shadow (never PNG/gradient).
-        for selector in ['.nav button.selected','.left-rail .seg button.selected',
-                         '[data-mute="0"]','[data-solo="0"]','[data-hpf="0"]',
-                         '.left-rail .rail-presets button','.left-rail .rail-bottom button']:
+        for selector in ['.nav button.selected',
+                         '[data-mute="0"]','[data-solo="0"]','[data-hpf="0"]']:
             v=await page.locator(selector).first.evaluate("""e=>{
                 const s=getComputedStyle(e);return {
                     image:s.backgroundImage,shadow:s.boxShadow,
@@ -80,6 +87,33 @@ async def main():
         assert await page.locator('.left-rail #saveFxPreset').inner_text()=='SAVE FX'
         assert await page.locator('.left-rail #menuScene').inner_text()=='EXPORT'
         assert await page.locator('.left-rail .rail-bottom button').count()==3
+        # Every left-rail action uses the exact three-piece pushable DOM.
+        rail_buttons=page.locator('.left-rail button.pushable')
+        assert await rail_buttons.count()==8
+        for slot in ('shadow','edge','front'):
+            assert await page.locator(f'.left-rail button.pushable > span.{slot}').count()==8
+        layers=await page.locator('#addScene').evaluate("""e=>{
+            const f=getComputedStyle(e.querySelector('.front')),
+                  sh=getComputedStyle(e.querySelector('.shadow'));
+            return {face:f.transform,shadow:sh.transform,background:f.backgroundColor,
+              edge:getComputedStyle(e.querySelector('.edge')).backgroundColor};
+        }""")
+        assert layers['face']=='matrix(1, 0, 0, 1, 0, -4)',layers
+        assert layers['shadow']=='matrix(1, 0, 0, 1, 0, 2)',layers
+        assert layers['background']!=layers['edge'],layers
+        preset=page.locator('[data-preset="Clean Vocal"]')
+        base_rect=await preset.evaluate('(e)=>e.getBoundingClientRect().toJSON()')
+        await preset.hover()
+        await page.wait_for_timeout(120)
+        assert await preset.locator('.front').evaluate('(e)=>getComputedStyle(e).transform')=='matrix(1, 0, 0, 1, 0, -6)'
+        assert await preset.locator('.shadow').evaluate('(e)=>getComputedStyle(e).transform')=='matrix(1, 0, 0, 1, 0, 4)'
+        await preset.click()
+        await page.wait_for_timeout(120)
+        assert await preset.get_attribute('class')=='pushable active'
+        assert await preset.locator('.front').evaluate('(e)=>getComputedStyle(e).transform')=='matrix(1, 0, 0, 1, 0, -2)'
+        pressed_rect=await preset.evaluate('(e)=>e.getBoundingClientRect().toJSON()')
+        assert all(abs(base_rect[k]-pressed_rect[k])<=.2 for k in ('x','y','width','height'))
+        assert await page.locator('#saveFxPreset').count()==1
         assert await page.locator('.left-rail .rail-input-footer').count()==1
         railGeometry=await page.evaluate("""()=>{
           const rect=s=>{const r=document.querySelector(s).getBoundingClientRect();return {top:r.top,bottom:r.bottom,width:r.width,height:r.height}};
@@ -174,6 +208,7 @@ async def main():
         }""")
         assert soft['border']=='0px' and soft['halo']!='none',soft
         await page.screenshot(path=str(project/'mixer-design-review.png'),full_page=True)
+        await page.screenshot(path=str(project/'mixer-left-rail-pushable-no-ab-pan.png'),full_page=True)
         # Medium desktop check; channel strips may scroll *inside* workbench.
         await page.set_viewport_size({"width":1440,"height":820})
         await page.screenshot(path=str(project/'mixer-design-review-1440.png'),full_page=True)
@@ -215,19 +250,19 @@ async def main():
         back=await switch_state('[data-mute="0"]')
         assert back['t']==off['t'] and same_rect(off,back),(off,back)
         assert back['shadow']==off['shadow'],(off,back)
-        # Restore the original A/B geometry, with the name panel stacked above the shadow.
+        # Source A/B controls are gone; fader travel expands into their old space.
+        assert await page.locator('[data-send]').count()==0
+        assert await page.locator('#mixer > .strip:not(.master-strip) .fader-tools').count()==0
         geometry=await page.evaluate("""()=>[...document.querySelectorAll('#mixer > .strip')].map(s=>{
-          const n=s.querySelector('.strip-name'),ng=n.getBoundingClientRect();
-          const bay=s.querySelector('.fader-tools'),br=bay.getBoundingClientRect();
-          const buttons=[...bay.querySelectorAll('button')].map(b=>{
-            const r=b.getBoundingClientRect();return {bottom:r.bottom,height:r.height};
-          });
-          return {nameTop:ng.top,buttons,bayHeight:br.height,
-            nameZ:getComputedStyle(n).zIndex,bayZ:getComputedStyle(bay).zIndex};
+          const n=s.querySelector('.strip-name').getBoundingClientRect();
+          const f=s.querySelector('.fader-zone').getBoundingClientRect();
+          return {master:s.classList.contains('master-strip'),
+            faderBottom:f.bottom,nameTop:n.top,nameBottom:n.bottom,
+            hasTools:!!s.querySelector('.fader-tools')};
         })""")
-        assert all(x['buttons'] and abs(x['bayHeight']-31)<=1 and
-                   all(abs(b['height']-27)<=1 and b['bottom']<=x['nameTop']+1 for b in x['buttons']) and
-                   int(x['nameZ'])>int(x['bayZ']) for x in geometry),geometry
+        assert len(geometry)==13 and all(x['nameTop']>=x['faderBottom']-1 for x in geometry),geometry
+        assert all(not x['hasTools'] for x in geometry if not x['master']),geometry
+        assert sum(x['hasTools'] for x in geometry)==1,geometry
         # Source CSS: active moves 3px, no invented ::before/::after body.
         btn=page.locator('[data-mute="0"]')
         before=await btn.evaluate("""e=>({
