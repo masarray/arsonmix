@@ -41,6 +41,20 @@ public:
         const auto timestamp = juce::Time::getCurrentTime().toISO8601 (true);
         juce::String message = timestamp + " | " + kind + " | " +
             details.replaceCharacters ("\r\n", "  ");
+        // Message-thread-only recent history, independent of the file writer.
+        // Retain glitch markers even if async disk writes have not completed.
+        recent_[recentHead_] = message.length() > 950
+            ? message.substring (0, 950) + " [report-truncated]" : message;
+        recentHead_ = (recentHead_ + 1) % recentCapacity;
+        recentCount_ = juce::jmin (recentCount_ + 1, recentCapacity);
+        // A long clean run should not evict important device transitions and
+        // user MARK CRACKLE records from the single-click report.
+        if (kind != "AUDIO_HEALTH")
+        {
+            important_[importantHead_] = recent_[(recentHead_ + recentCapacity - 1) % recentCapacity];
+            importantHead_ = (importantHead_ + 1) % importantCapacity;
+            importantCount_ = juce::jmin (importantCount_ + 1, importantCapacity);
+        }
         const auto utf8 = message.toRawUTF8();
         auto& slot = queue_[head];
         const auto inputLength = std::strlen (utf8);
@@ -54,11 +68,44 @@ public:
         notify();
     }
 
+    // Fast UI-only report: tail is captured before enqueue and does not wait
+    // for the writer thread or read a growing log file. Bounded to 64 records.
+    juce::String recentReport (int maxRecords = 48) const
+    {
+        juce::String result;
+        const auto count = juce::jmin (static_cast<unsigned> (juce::jlimit (0, 64, maxRecords)), recentCount_);
+        const unsigned oldest = (recentHead_ + recentCapacity - count) % recentCapacity;
+        for (unsigned n = 0; n < count; ++n)
+        {
+            result += recent_[(oldest + n) % recentCapacity];
+            result += "\n";
+        }
+        return result;
+    }
+
+    juce::String significantReport() const
+    {
+        juce::String report;
+        const auto oldest = (importantHead_ + importantCapacity - importantCount_) % importantCapacity;
+        for (unsigned i = 0; i < importantCount_; ++i)
+        {
+            report += important_[(oldest + i) % importantCapacity];
+            report += "\n";
+        }
+        return report;
+    }
+
     juce::File getLogFile() const { return logfile_; }
     std::uint64_t lostRecords() const noexcept { return lost_.load(); }
     std::uint64_t truncatedRecords() const noexcept { return truncated_.load(); }
 
 private:
+    static constexpr unsigned recentCapacity = 64;
+    std::array<juce::String, recentCapacity> recent_ {};
+    unsigned recentHead_ = 0, recentCount_ = 0; // message-thread only
+    static constexpr unsigned importantCapacity = 24;
+    std::array<juce::String, importantCapacity> important_ {};
+    unsigned importantHead_ = 0, importantCount_ = 0; // message-thread only
     static constexpr unsigned capacity = 128;
     struct Record { char data[4096] {}; };
     std::array<Record,capacity> queue_ {};
