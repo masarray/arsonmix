@@ -14,7 +14,7 @@ checks={
 for name,(token,digest) in checks.items():
     src=(root/'web/assets/buttons'/name).read_bytes()
     assert sha256(src).hexdigest()==digest, name+' changed'
-    found=re.search(r'--'+token+r':url\\("data:image/png;base64,([A-Za-z0-9+/=]+)"\\)',css)
+    found=re.search(r'--'+token+r':url\("data:image/png;base64,([A-Za-z0-9+/=]+)"\)',css)
     assert found, name+' not embedded'
     assert base64.b64decode(found.group(1))==src, name+' mismatch'
 assert '<style>'+css+'</style>' in offline
