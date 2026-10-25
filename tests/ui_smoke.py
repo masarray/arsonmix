@@ -65,6 +65,7 @@ async def main():
         at_center=await pan_fill.bounding_box()
         assert at_center['width']<1,at_center
         await p1.press('End')
+        assert 'drop-shadow' in await p1.locator('.pan-thumb').evaluate('(e)=>getComputedStyle(e).filter')
         right_fill=await pan_fill.bounding_box()
         assert right_fill['width']>10,right_fill
         await p1.press('Home')

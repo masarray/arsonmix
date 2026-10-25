@@ -226,16 +226,24 @@
 /* ArSonMix v0.5 interaction polish — visual only, no signal-path side effects. */
 /* Pan fill starts at 0 (center) and grows toward the thumb in either direction. */
 .pan-track .pan-fill{
- position:absolute;z-index:1;pointer-events:none;top:19px;height:3px;
+ position:absolute;z-index:1;pointer-events:none;top:18px;height:5px;
  left:calc(9px + (100% - 18px)*var(--pan-left,.5));
  width:calc((100% - 18px)*var(--pan-span,0));
  border-radius:2px;
  background:linear-gradient(180deg,#92fff1 0%,#34d9af 39%,#08ae85 100%);
- box-shadow:0 0 5px #37efb08c,0 0 2px #9cfbeebb;
+ box-shadow:0 0 6px 1px #37efb0ba,0 0 3px #b7fff4;
  transition:none;
 }
 .pan-track:hover .pan-fill{filter:brightness(1.25);box-shadow:0 0 7px #57fcd6ae}
 .pan-track.is-dragging .pan-fill{filter:brightness(1.55)}
+/* At small pan offsets the metal thumb occludes the short LED ribbon:
+   a subtle aqua edge makes every nonzero position observable. */
+.pan-track:not([aria-valuenow="0"]) .pan-thumb{
+ filter:drop-shadow(0 0 3px #35efbfba) drop-shadow(1px 1px 2px #0008);
+}
+.pan-track:not([aria-valuenow="0"]):hover .pan-thumb{
+ filter:brightness(1.3) contrast(1.12) drop-shadow(0 0 5px #69ffe8);
+}
 .pan-track:hover .pan-thumb{filter:brightness(1.30) contrast(1.12) drop-shadow(0 0 4px #b4f7ff90)}
 .pan-track.is-dragging .pan-thumb{filter:brightness(.72) contrast(1.20) drop-shadow(0 0 4px #52fbd590)}
 /* Keep original metallic PNG, dimensions and translating anchor EXACTLY unchanged. */
