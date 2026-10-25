@@ -33,6 +33,7 @@ class SplitDuplexAdapter final
         }
         void audioDeviceAboutToStart (juce::AudioIODevice* device) override
         {
+            stopped_.store (false, std::memory_order_release);
             startCount.fetch_add (1, std::memory_order_relaxed);
             rateHz.store (device->getCurrentSampleRate(), std::memory_order_relaxed);
             lastCallbackUs.store (micros(), std::memory_order_relaxed);
@@ -40,6 +41,9 @@ class SplitDuplexAdapter final
         void audioDeviceStopped() override
         {
             stopCount.fetch_add (1, std::memory_order_relaxed);
+            // Publish stopped state for supervisory fallback even if no more
+            // capture callbacks will ever arrive.
+            stopped_.store (true, std::memory_order_release);
             lastCallbackUs.store (0, std::memory_order_relaxed);
         }
         static std::uint64_t micros() noexcept
@@ -52,6 +56,7 @@ class SplitDuplexAdapter final
         std::atomic<std::uint64_t> lastCallbackUs {0}, callbackCount {0};
         std::atomic<std::uint64_t> startCount {0}, stopCount {0};
         std::atomic<double> rateHz {0.};
+        std::atomic<bool> stopped_ {true};
     };
 
 public:
@@ -61,6 +66,7 @@ public:
         std::uint64_t captureCallbacks = 0;
         std::uint64_t captureAgeUs = 0;
         std::uint64_t captureStarts = 0, captureStops = 0;
+        bool captureStopped = false;
         double captureRate = 0., outputRate = 0.;
         int captureChannels = 0, renderChannels = 0;
         int capturePeriodFrames = 0, renderPeriodFrames = 0;
@@ -90,7 +96,10 @@ public:
         capture.useDefaultOutputChannels = false;
         capture.useDefaultInputChannels = false;
         capture.inputChannels.clear();
-        capture.inputChannels.setRange (0, 2, true); // target max two physical channels
+        // Keep the working user's input mask: a mono device may reject asking
+        // for a second physical channel that it does not expose.
+        capture.inputChannels = original.inputChannels;
+        if (capture.inputChannels.isZero()) capture.inputChannels.setBit (0);
         // Initialise with zero channels to avoid briefly opening a wrong default
         // endpoint. Then select the original backend and explicit capture name.
         auto error = captureManager_.initialise (0, 0, nullptr, false);
@@ -145,6 +154,7 @@ public:
         r.captureCallbacks = tap_.callbackCount.load (std::memory_order_relaxed);
         r.captureStarts = tap_.startCount.load (std::memory_order_relaxed);
         r.captureStops = tap_.stopCount.load (std::memory_order_relaxed);
+        r.captureStopped = tap_.stopped_.load (std::memory_order_acquire);
         const auto last = tap_.lastCallbackUs.load (std::memory_order_relaxed);
         const auto now = CaptureTap::micros();
         r.captureAgeUs = last > 0 && now >= last ? now - last : 0;
