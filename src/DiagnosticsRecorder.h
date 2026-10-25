@@ -41,6 +41,12 @@ public:
         const auto timestamp = juce::Time::getCurrentTime().toISO8601 (true);
         juce::String message = timestamp + " | " + kind + " | " +
             details.replaceCharacters ("\r\n", "  ");
+        // Message-thread-only recent history, independent of the file writer.
+        // Retain glitch markers even if async disk writes have not completed.
+        if (message.length() > 950) message = message.substring (0, 950) + " [report-truncated]";
+        recent_[recentHead_] = message;
+        recentHead_ = (recentHead_ + 1) % recentCapacity;
+        recentCount_ = juce::jmin (recentCount_ + 1, recentCapacity);
         const auto utf8 = message.toRawUTF8();
         auto& slot = queue_[head];
         const auto inputLength = std::strlen (utf8);
@@ -54,11 +60,29 @@ public:
         notify();
     }
 
+    // Fast UI-only report: tail is captured before enqueue and does not wait
+    // for the writer thread or read a growing log file. Bounded to 64 records.
+    juce::String recentReport (int maxRecords = 48) const
+    {
+        juce::String result;
+        const auto count = juce::jmin (static_cast<unsigned> (juce::jlimit (0, 64, maxRecords)), recentCount_);
+        const unsigned oldest = (recentHead_ + recentCapacity - count) % recentCapacity;
+        for (unsigned n = 0; n < count; ++n)
+        {
+            result += recent_[(oldest + n) % recentCapacity];
+            result += "\n";
+        }
+        return result;
+    }
+
     juce::File getLogFile() const { return logfile_; }
     std::uint64_t lostRecords() const noexcept { return lost_.load(); }
     std::uint64_t truncatedRecords() const noexcept { return truncated_.load(); }
 
 private:
+    static constexpr unsigned recentCapacity = 64;
+    std::array<juce::String, recentCapacity> recent_ {};
+    unsigned recentHead_ = 0, recentCount_ = 0; // message-thread only
     static constexpr unsigned capacity = 128;
     struct Record { char data[4096] {}; };
     std::array<Record,capacity> queue_ {};
