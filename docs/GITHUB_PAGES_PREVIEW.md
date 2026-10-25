@@ -1,45 +1,37 @@
-# GitHub Pages GUI preview — production workflow
+# ArSonMix public Pages — approved GUI v0.8 runbook
 
-**Live and deployed** (GitHub Actions run [40147158731](https://github.com/masarray/arsonmix/actions/runs/40147158731)):
+**The approved GUI lives in `main`**, merged via [PR #2](https://github.com/masarray/arsonmix/pull/2); original approved commit: `343692fc9b702661a8455cca30f0ffd108907324`.
 
 - Landing: https://masarray.github.io/arsonmix/
-- Interactive mixer review: https://masarray.github.io/arsonmix/preview/
-- Full-screen standalone mixer: https://masarray.github.io/arsonmix/preview/mixer.html
-- Current served GUI revision: https://masarray.github.io/arsonmix/preview/build.json
+- Live mixer: https://masarray.github.io/arsonmix/preview/
+- Full-screen mixer: https://masarray.github.io/arsonmix/preview/mixer.html
+- Deployed SHA: https://masarray.github.io/arsonmix/preview/build.json
 
-## Architecture: safe GUI mirror without merging PR
+## Publishing pipeline after approval
 
-**The publishing workflow lives in the default branch:** `.github/workflows/pages-publish.yml` in `main`.
+1. Contributions to GUI files on `main` trigger `.github/workflows/ui-smoke.yml`.
+2. Only a successful **`main` UI smoke** triggers `.github/workflows/pages-publish.yml`.
+3. Pages publisher checks out the **exact successful smoke-run head SHA**, not a mutable stale GUI branch or an untested newer commit. A manual dispatch builds current `main`.
+4. `scripts/build_pages.py` copies `site/` and the canonical single-file standalone to `preview/mixer.html`, then writes `build.json` with SHA/branch.
+5. Preview shell automatically reloads when idle and a newer SHA is deployed; it does not add a second application header.
 
-The workflow **checks out `fix/fader-thumb-symmetry-polish`** to build the site, so GitHub Pages environment controls are satisfied without merging unapproved UI code into `main`.
+Only one production Pages workflow is authoritative. Do not introduce a parallel branch-local publisher or restore checkout of `fix/fader-thumb-symmetry-polish`.
 
-Whenever UI smoke CI passes for the preview branch, `workflow_run` on `main` automatically triggers production Pages deployment. You may also use **Actions → Publish ArSonMix GUI (main dispatcher) → Run workflow** for manual republishing, running the workflow on **main**.
-
-The prior branch-local `.github/workflows/pages-preview.yml` was removed because the `github-pages` environment blocked deployment from a non-default-branch workflow (build/upload succeeded but the deployment job could not start). Do not reintroduce a competing branch publisher.
-
-## Build parity
-
-`scripts/build_pages.py` copies:
-- `site/index.html` → site landing;
-- `site/preview/index.html` → review shell;
-- `AR-MIX-Live-FX-Host-Standalone-v0.3.html` → `preview/mixer.html`;
-- `preview/build.json` → deployed GUI git SHA + source branch.
-
-The preview shell checks `build.json` every 60 seconds and reloads automatically if a new build is available **and the user is idle**. Otherwise, it displays a reload notice. Click **Reload GUI** to force a refresh; **Full Screen** opens the mixer independently.
-
-## Local validation
+## Local tests
 
 ```bash
-python tests/button_asset_test.py
+node --check web/app.js
 python tests/fader_asset_test.py
-python scripts/build_pages.py --out dist-pages
+python tests/button_asset_test.py
+python tests/pan_button_asset_test.py
+python tests/gui_baseline_lock_test.py
+python tests/ui_smoke.py
+python scripts/build_pages.py --out dist-pages --sha local --branch main
 python -m http.server 8000 --directory dist-pages
 ```
 
-Then open `http://localhost:8000/` and `http://localhost:8000/preview/`.
+Open `http://localhost:8000/preview/` and compare against [GUI baseline lock](GUI_BASELINE_LOCK_2026-10-25.md).
 
-The browser version is a **GUI prototype** with simulated meters; it does not capture/process real audio. Real engine work is separate.
+## Scope / honesty
 
-## Future promotion
-
-After final GUI visual approval and merge to `main`, update the checkout ref and trigger branch settings in `.github/workflows/pages-publish.yml` to publish from `main` instead. This is intentionally not done until GUI changes are approved.
+The GitHub Pages console remains a **browser UI prototype**. VU meter animation, LUFS-I and dBTP are simulated, not authentic native DSP readings. It does not enumerate or process installed VST3 plugins. Native integration is a separate, unmerged engineering stage and requires Windows hardware/latency and plugin verification.

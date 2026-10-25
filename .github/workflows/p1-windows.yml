@@ -38,6 +38,7 @@ jobs:
           node --test tests/fx_add_contract_test.mjs
           node --test tests/live_graph_contract_test.mjs
           node --test tests/reconciled_gui_engine_contract_test.mjs
+          node --test tests/main_v08_native_integration_test.mjs
       - name: Configure Windows x64
         shell: pwsh
         run: >

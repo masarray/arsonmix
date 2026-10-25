@@ -1,6 +1,19 @@
 name: UI smoke (Chromium)
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - 'site/**'
+      - 'AR-MIX-Live-FX-Host-Standalone-v0.3.html'
+      - 'scripts/build_pages.py'
+      - 'tests/**'
+      - '.github/workflows/ui-smoke.yml'
+      - '.github/workflows/pages-publish.yml'
+      - 'README.md'
+      - 'AGENTS.md'
+      - 'docs/GUI_BASELINE_LOCK_2026-10-25.md'
   pull_request:
   workflow_dispatch:
 
@@ -19,6 +32,8 @@ jobs:
           python-version: "3.12"
       - name: Validate JavaScript syntax
         run: node --check web/app.js
+      - name: Validate approved GUI checkpoint and single publisher
+        run: python tests/gui_baseline_lock_test.py
       - name: Install Chromium testing dependencies
         run: |
           python -m pip install --upgrade pip
@@ -32,15 +47,16 @@ jobs:
         run: python tests/pan_button_asset_test.py
       - name: Run mixer UI smoke tests
         run: python tests/ui_smoke.py
-      - name: Attach visual regression screenshot
+      - name: Attach visual regression screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ar-mix-fader-smoke
+          name: arsonmix-gui-baseline-smoke
           path: |
             fader-ui-smoke.png
             mixer-design-review.png
             mixer-design-review-1440.png
             mixer-master-clip-review.png
             mixer-pro-view-review.png
+            mixer-master-dual-metric-left-rail.png
           if-no-files-found: ignore
