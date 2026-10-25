@@ -92,17 +92,17 @@ async def main():
         assert not railGeometry['emptyControls'],railGeometry
         assert all(btn['width']>=40 and btn['height']>=25 for btn in railGeometry['buttons']),railGeometry
         await page.screenshot(path=str(project/'mixer-master-dual-metric-left-rail.png'),full_page=True)
-        off_mute=await page.locator('[data-mute="0"]').evaluate("(e)=>getComputedStyle(e).getPropertyValue('--cc-top').trim()")
+        off_mute=await page.locator('[data-mute="0"]').evaluate("(e)=>getComputedStyle(e).getPropertyValue('--b180-color').trim()")
         await page.locator('[data-mute="0"]').click()
-        mute_on=await page.locator('[data-mute="0"]').evaluate("(e)=>getComputedStyle(e).getPropertyValue('--cc-top').trim()")
+        mute_on=await page.locator('[data-mute="0"]').evaluate("(e)=>getComputedStyle(e).getPropertyValue('--b180-color').trim()")
         assert mute_on!=off_mute and await page.locator('[data-mute="0"]').get_attribute('aria-pressed')=='true'
         await page.locator('[data-mute="0"]').click()
         await page.locator('[data-solo="0"]').click()
-        solo_on=await page.locator('[data-solo="0"]').evaluate("(e)=>getComputedStyle(e).getPropertyValue('--cc-top').trim()")
+        solo_on=await page.locator('[data-solo="0"]').evaluate("(e)=>getComputedStyle(e).getPropertyValue('--b180-color').trim()")
         assert solo_on!=mute_on
         await page.locator('[data-solo="0"]').click()
         await page.locator('[data-hpf="0"]').click()
-        hpf_on=await page.locator('[data-hpf="0"]').evaluate("(e)=>getComputedStyle(e).getPropertyValue('--cc-top').trim()")
+        hpf_on=await page.locator('[data-hpf="0"]').evaluate("(e)=>getComputedStyle(e).getPropertyValue('--b180-color').trim()")
         assert hpf_on not in (mute_on,solo_on,off_mute)
         await page.locator('[data-hpf="0"]').click()
         await page.screenshot(path=str(project/'mixer-crystal-candy-review.png'),full_page=True)
