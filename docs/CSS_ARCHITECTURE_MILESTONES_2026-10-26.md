@@ -17,3 +17,6 @@ python tests/gui_baseline_lock_test.py
 python tests/ui_smoke.py
 ```
 Windows WebView2 100/125/150% visual acceptance and real audio hardware are separate gates; no claims of those from GitHub CSS CI.
+
+## Milestone 1b: one crystal geometry for every button state
+The owner rejected differences in physical elevation between OFF and ON. The shared shadow now uses the previously approved ON inset recipe on all states with fixed shadow colors; OFF is a neutral dark gray face. Hover on OFF and ON changes only brightness and never border. Tests compare computed OFF/ON and mouse-down shadows, bounds, semantic color and hover border. Generator/parity and native audio remain untouched.

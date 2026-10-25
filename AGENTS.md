@@ -40,3 +40,5 @@ The **experimental** P2.5 JUCE VST3 engine has now been integrated into `main` u
 - Edit `web/styles-src/` modules, not generated `web/styles.css` or standalone HTML. Run `python scripts/build_ui_css.py`; `--check` is required in CI and publishing.
 - `20-button-180.css` is the **sole owner** of shared button skin and ON/OFF state. OFF is square solid black crystal with subtle upper inset reflections (color `#171c23`), ON remains approved vivid inset, radius 3px, no dome. Preserve PAN 13/15/12, 168px master and fixed button geometry.
 - Historical rules quarantined in `10-console-legacy.css` remain candidates, not automatically dead code. Migrate only after DOM/cascade reachability and computed geometry assertions. See `docs/CSS_ARCHITECTURE_MILESTONES_2026-10-26.md`.
+
+- 2026-10-26 latest visual contract: Button 180 OFF, ON, pressed, and selected use **one identical inset box-shadow** and no transforms or geometry differences. OFF neutral graphite `#292d34`, ON only changes semantic color. Hover in both states changes brightness only, not border. This explicitly supersedes historical raised-OFF instructions.

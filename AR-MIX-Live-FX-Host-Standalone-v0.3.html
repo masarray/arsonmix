@@ -607,9 +607,9 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 
 
 
-/* BUTTON 180 — single component owner: square black-crystal OFF, approved jewel ON.
+/* BUTTON 180 — single component owner: one physically identical inset crystal for OFF/ON/press.
    No curved lens, extra pseudo-elements or change to physical button size. */
-:root{--b180-off:#171c23;--b180-edge:#070d14;--b180-color:var(--b180-off);--b180-border:var(--b180-edge)}
+:root{--b180-off:#292d34;--b180-edge:#0f1319;--b180-color:var(--b180-off);--b180-border:var(--b180-edge)}
 :is(.btn-180,.toolbar .nav button,.toolbar .spec-device,.left-rail .tabs button,
 .strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
 .left-rail .rail-presets button,.left-rail .rail-bottom button,
@@ -623,37 +623,25 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  outline:none;
  transform:translateY(0px)!important;
  position:relative;
- /* Smoked crystal: subtle overhead highlight, crisp edges, dark lower depth.
-     Solid rectangle, not a metallic gradient or convex dome. */
+ /* ONE physical inset construction for every state; ON changes colors only.
+    Constant shadow colors prevent any change to the face geometry or depth. */
  box-shadow:
-  inset 0 2px 2px rgba(230,244,255,.40),
-  inset 0 13px 12px -11px rgba(183,213,231,.25),
-  inset 0 0 0 1px rgba(196,222,236,.13),
-  inset 0 -8px 12px -7px rgba(0,0,0,.82),
-  0 3px 0 var(--b180-border),
-  0 3px 2px rgba(0,0,0,.27),
-  0 5px 10px rgba(0,0,0,.13),
-  0 10px 20px rgba(0,0,0,.11)!important;
+  inset 0 3px 6px -1px rgba(0,0,0,.72),
+  inset 0 0 0 1px rgba(255,255,255,.14),
+  inset 0 1px 20px rgba(0,0,0,.19),
+  inset 0 -1px 2px rgba(0,0,0,.32),
+  0 0 0 1px rgba(0,0,0,.46),
+  0 1px 1px rgba(0,0,0,.28),
+  0 2px 3px rgba(0,0,0,.13)!important;
  background:var(--b180-color)!important;
  filter:none!important;
  color:white!important;
  text-shadow:0 1px 0 rgba(0, 0, 0, .3)!important;
- transition:background-color 150ms, border-color 150ms, color 150ms, box-shadow 150ms, filter 150ms!important;
+ transition:background-color 150ms, border-color 150ms, color 150ms, filter 120ms!important;
  font-family:Arial,Helvetica,sans-serif;
  cursor:pointer;text-decoration:none;user-select:none;
  display:inline-flex;justify-content:center;align-items:center;
  font-weight:700;
-}
-:is(.btn-180,.toolbar .nav button,.toolbar .spec-device,.left-rail .tabs button,
-.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
-.left-rail .rail-presets button,.left-rail .rail-bottom button,
-#masterLeft .master-tools button,.native-btn):active:not(:disabled){
- transform:translateY(3px)!important;
- box-shadow:inset 0 16px 2px -15px rgba(0, 0, 0, 0),
-  inset 0 0 0 1px rgba(255, 255, 255, .15),
-  inset 0 1px 20px rgba(0, 0, 0, .1),
-  0 0 0 var(--b180-border),0 0 0 2px rgba(255, 255, 255, .5),
-  0 0 0 rgba(0, 0, 0, 0),0 0 0 rgba(0, 0, 0, 0)!important;
 }
 :is(.btn-180,.toolbar .nav button,.toolbar .spec-device,.left-rail .tabs button,
 .strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
@@ -689,30 +677,7 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  box-shadow:inset 0 1px 2px #020c18c0,0 1px 0 #68859940;color:#a9d6e6;cursor:default
 }
 
-/* ON = an inward surface in the SAME slot. No translate, rescale, width or height changes.
-   OFF uses the new black-crystal raised face.
-   The illuminated face is sunken by dark INNER shadows while all edges stay fixed.
-   :active and latched controls use the same inner-depth recipe. */
-:is(.strip .channel-actions .candy,.strip .utility-row button,
-    .strip .fader-tools button,#masterLeft .master-actions #masterMute,
-    #masterLeft .master-tools button,.toolbar .nav button,
-    .left-rail .tabs button,.left-rail .rail-presets button,
-    .left-rail .rail-bottom button,.native-btn):is(.active,.selected,.on,[aria-pressed="true"]),
-:is(.strip .channel-actions .candy,.strip .utility-row button,
-    .strip .fader-tools button,#masterLeft .master-actions #masterMute,
-    #masterLeft .master-tools button,.toolbar .nav button,
-    .left-rail .tabs button,.left-rail .rail-presets button,
-    .left-rail .rail-bottom button,.native-btn):active:not(:disabled){
- transform:translateY(0px)!important;
- box-shadow:
-   inset 0 3px 6px -1px rgba(0,0,0,.72),
-   inset 0 0 0 1px rgba(255,255,255,.14),
-   inset 0 1px 20px rgba(0,0,0,.19),
-   inset 0 -1px 2px rgba(0,0,0,.32),
-   0 0 0 1px var(--b180-border),
-   0 1px 1px rgba(0,0,0,.28),
-   0 2px 3px rgba(0,0,0,.13)!important;
-}
+/* Shared inset shadow and neutral transform apply to both OFF and ON. */
 /* Latch LED colors only; dark captions are legible on bright faces. */
 :is(.toolbar .nav button.selected,.left-rail .tabs button.selected,
  .left-rail .rail-presets button.active,.left-rail .rail-bottom #saveFxPreset.active,
@@ -735,14 +700,13 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 .strip .strip-name,#masterLeft .master-strip-name{position:relative;z-index:2;isolation:isolate}
 /* No odd vertical displacement of the active nav relative to its neighbors. */
 
-/* OFF hover adds light, not a new curved silhouette: same black glass, 3px radius and rectangle. */
-:is(.toolbar .nav button,.toolbar .spec-device,
- .strip .channel-actions .candy,.strip .utility-row button,
+/* Hover (OFF and ON): brightness ONLY. No new border, drop shadow, lens or motion. */
+:is(.btn-180,.toolbar .nav button,.toolbar .spec-device,
+ .strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
  #masterLeft .master-actions button,#masterLeft .master-tools button,
  .left-rail .tabs button,.left-rail .rail-presets button,
- .left-rail .rail-bottom button):not(.active):not(.selected):not(.on):not([aria-pressed="true"]):hover:not(:disabled){
- filter:brightness(1.18) saturate(1.04)!important;
- border-color:#527789!important;
+ .left-rail .rail-bottom button,.native-btn):hover:not(:disabled){
+ filter:brightness(1.18)!important;
 }
 /* All OFF keys use the same square smoked-black crystal.
    The existing teal/coral/amber/green ON colors remain intact. */
