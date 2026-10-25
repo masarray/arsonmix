@@ -66,4 +66,5 @@ jobs:
             mixer-pro-view-review.png
             mixer-master-dual-metric-left-rail.png
             mixer-crystal-candy-review.png
+            mixer-crystal-depth-glow-review.png
           if-no-files-found: ignore

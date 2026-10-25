@@ -100,6 +100,7 @@ async def main():
         assert hpf_on not in (mute_on,solo_on,off_mute)
         await page.locator('[data-hpf="0"]').click()
         await page.screenshot(path=str(project/'mixer-crystal-candy-review.png'),full_page=True)
+        await page.screenshot(path=str(project/'mixer-crystal-depth-glow-review.png'),full_page=True)
         # Verify true geometric alignment of each source MUTE/SOLO and master MUTE/STEREO.
         actions=await page.evaluate("""()=>{
           const bounds=s=>{const r=document.querySelector(s).getBoundingClientRect();
@@ -154,7 +155,12 @@ async def main():
         for key in ('Header','Bottom','Fader'):
             assert abs(architecture['main'+key]['y']-architecture['master'+key]['y'])<=2,architecture
         assert abs(architecture['mainBottom']['bottom']-architecture['masterBottom']['bottom'])<=2,architecture
-        assert architecture['selection']=='2px',architecture
+        assert architecture['selection']=='0px',architecture
+        soft=await page.locator('[data-strip="0"]').evaluate("""e=>{
+          const sel=getComputedStyle(e),a=getComputedStyle(e,'::before');
+          return {shadow:sel.boxShadow,border:a.borderTopWidth,halo:a.boxShadow};
+        }""")
+        assert soft['border']=='0px' and soft['halo']!='none',soft
         await page.screenshot(path=str(project/'mixer-design-review.png'),full_page=True)
         # Medium desktop check; channel strips may scroll *inside* workbench.
         await page.set_viewport_size({"width":1440,"height":820})
@@ -168,6 +174,28 @@ async def main():
         assert smallRail['footerBottom']<=smallRail['bottom']+1,smallRail
         assert all(b['width']>35 for b in smallRail['buttons']),smallRail
         assert await page.locator('.strip').count()==13
+        # True physical depth: pseudo under-body extends below face and retracts on press.
+        crystal=page.locator('[data-mute="0"]')
+        surface=await crystal.evaluate("""e=>{
+          const f=getComputedStyle(e),under=getComputedStyle(e,'::before'),shine=getComputedStyle(e,'::after');
+          return {under:under.content,underTop:under.top,underHeight:under.height,
+            shine:shine.content,shineHeight:shine.height,faceTop:f.top,faceShadow:f.boxShadow};
+        }""")
+        assert surface['under']!='none' and surface['shine']!='none',surface
+        assert surface['underTop']=='3px' and surface['faceTop']=='0px',surface
+        assert 'linear-gradient' in await crystal.evaluate("(e)=>getComputedStyle(e).backgroundImage")
+        await crystal.hover()
+        await page.mouse.down()
+        await page.wait_for_timeout(110)
+        pressed=await crystal.evaluate("""e=>({top:getComputedStyle(e).top,
+          base:getComputedStyle(e,'::before').top,shadow:getComputedStyle(e).boxShadow})""")
+        assert pressed['top']=='3px' and pressed['base']=='0px',pressed
+        assert pressed['shadow']!=surface['faceShadow'],pressed
+        await page.mouse.up()
+        await page.wait_for_timeout(100)
+        assert await crystal.evaluate('(e)=>getComputedStyle(e).top')=='0px'
+        assert await crystal.get_attribute('aria-pressed')=='true'
+        await crystal.click()
         widths=await page.evaluate("""()=>{
           const mixer=document.querySelector('#mixer'),master=document.querySelector('#masterLeft');
           const source=document.querySelector('[data-strip="0"]');
@@ -231,7 +259,7 @@ async def main():
         await button.hover()
         await page.wait_for_timeout(150)  # Finish 90 ms physical-switch filter transition.
         button_hover=await button.evaluate("(e)=>getComputedStyle(e).filter")
-        assert 'brightness(1.12)' in button_hover and 'saturate(1.1)' in button_hover,button_hover
+        assert 'brightness(1.14)' in button_hover and 'saturate(1.1)' in button_hover,button_hover
         # FX power and FX name remain separate inside the 104px channel strip.
         assert await page.evaluate("""() => [...document.querySelectorAll('.strip .insert-slot')].every(slot=>{
             const cell=slot.getBoundingClientRect(),strip=slot.closest('.strip').getBoundingClientRect();
