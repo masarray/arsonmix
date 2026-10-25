@@ -20,18 +20,24 @@ async def main():
             p=page.locator(f'[data-pan="{idx}"]')
             assert await p.get_attribute('aria-orientation')=='horizontal'
             assert await p.locator('.pan-thumb').count()==1
-        # Glossy, pressed 3D CSS buttons; no PNG background in any button family.
+        # Button 180: SOLID base and exact layered shadow (never PNG/gradient).
         for selector in ['.nav button.selected','.left-rail .seg button.selected',
                          '[data-mute="0"]','[data-solo="0"]','[data-hpf="0"]',
                          '.left-rail .rail-presets button','.left-rail .rail-bottom button']:
-            bg=await page.locator(selector).first.evaluate('(x)=>getComputedStyle(x).backgroundImage')
-            assert 'linear-gradient' in bg and 'data:image/png' not in bg,(selector,bg[:150])
+            v=await page.locator(selector).first.evaluate("""e=>{
+                const s=getComputedStyle(e);return {
+                    image:s.backgroundImage,shadow:s.boxShadow,
+                    color:s.backgroundColor,transition:s.transitionDuration}
+            }""")
+            assert v['image']=='none' and v['color'].startswith('rgb('), (selector,v)
+            assert v['shadow'].count('rgb')>=6,(selector,v)
+            assert v['transition'].split(', ')[0]=='0.15s',(selector,v)
         style=await page.locator('[data-mute="0"]').evaluate("""e=>{
           const s=getComputedStyle(e);return {dur:s.transitionDuration,border:s.borderTopWidth,
             radius:s.borderTopLeftRadius,shadow:s.boxShadow};
         }""")
-        assert style['border']=='1px' and style['radius']=='4px',style
-        assert all(float(v.rstrip('s'))<=.1 for v in style['dur'].split(', ')),style
+        assert style['border']=='1px' and style['radius']=='3px',style
+        assert all(abs(float(v.rstrip('s'))-.15)<.001 for v in style['dur'].split(', ')),style
         # Visual-architecture regression: four intentionally different hardware
         # families, FX slots recessed rather than taking on button-cap artwork.
         # GUI target: the master is the 13th sibling, not a floating right rail.
@@ -86,17 +92,17 @@ async def main():
         assert not railGeometry['emptyControls'],railGeometry
         assert all(btn['width']>=40 and btn['height']>=25 for btn in railGeometry['buttons']),railGeometry
         await page.screenshot(path=str(project/'mixer-master-dual-metric-left-rail.png'),full_page=True)
-        off_mute=await page.locator('[data-mute="0"]').evaluate("(e)=>getComputedStyle(e).getPropertyValue('--cc-top').trim()")
+        off_mute=await page.locator('[data-mute="0"]').evaluate("(e)=>getComputedStyle(e).getPropertyValue('--b180-color').trim()")
         await page.locator('[data-mute="0"]').click()
-        mute_on=await page.locator('[data-mute="0"]').evaluate("(e)=>getComputedStyle(e).getPropertyValue('--cc-top').trim()")
+        mute_on=await page.locator('[data-mute="0"]').evaluate("(e)=>getComputedStyle(e).getPropertyValue('--b180-color').trim()")
         assert mute_on!=off_mute and await page.locator('[data-mute="0"]').get_attribute('aria-pressed')=='true'
         await page.locator('[data-mute="0"]').click()
         await page.locator('[data-solo="0"]').click()
-        solo_on=await page.locator('[data-solo="0"]').evaluate("(e)=>getComputedStyle(e).getPropertyValue('--cc-top').trim()")
+        solo_on=await page.locator('[data-solo="0"]').evaluate("(e)=>getComputedStyle(e).getPropertyValue('--b180-color').trim()")
         assert solo_on!=mute_on
         await page.locator('[data-solo="0"]').click()
         await page.locator('[data-hpf="0"]').click()
-        hpf_on=await page.locator('[data-hpf="0"]').evaluate("(e)=>getComputedStyle(e).getPropertyValue('--cc-top').trim()")
+        hpf_on=await page.locator('[data-hpf="0"]').evaluate("(e)=>getComputedStyle(e).getPropertyValue('--b180-color').trim()")
         assert hpf_on not in (mute_on,solo_on,off_mute)
         await page.locator('[data-hpf="0"]').click()
         await page.screenshot(path=str(project/'mixer-crystal-candy-review.png'),full_page=True)
@@ -142,9 +148,7 @@ async def main():
             selection:getComputedStyle(main,'::before').borderTopWidth,
             masterRows:[...master.children].map(x=>({cls:x.className,height:x.getBoundingClientRect().height}))};
         }""")
-        assert len({architecture[k] for k in ('nav','small','long')})>=2,architecture
-        assert all('linear-gradient' in architecture[k] and 'data:image/png' not in architecture[k]
-                   for k in ('nav','small','long')),architecture
+        assert all(architecture[k]=='none' for k in ('nav','small','long')),architecture
         assert 'data:image/png;base64' not in architecture['fx']
         assert 'data:image/png;base64' not in architecture['chrome']
         assert not architecture['overflow']
@@ -174,32 +178,27 @@ async def main():
         assert smallRail['footerBottom']<=smallRail['bottom']+1,smallRail
         assert all(b['width']>35 for b in smallRail['buttons']),smallRail
         assert await page.locator('.strip').count()==13
-        # True physical depth: pseudo under-body extends below face and retracts on press.
-        crystal=page.locator('[data-mute="0"]')
-        surface=await crystal.evaluate("""e=>{
-          const f=getComputedStyle(e),under=getComputedStyle(e,'::before'),shine=getComputedStyle(e,'::after');
-          return {under:under.content,underTop:under.top,underHeight:under.height,
-            shine:shine.content,shineHeight:shine.height,faceTop:f.top,faceShadow:f.boxShadow};
-        }""")
-        assert surface['under']!='none' and surface['shine']!='none',surface
-        assert surface['underTop']=='3px' and surface['faceTop']=='0px',surface
-        assert 'linear-gradient' in await crystal.evaluate("(e)=>getComputedStyle(e).backgroundImage")
-        await crystal.hover()
+        # Source CSS: active moves 3px, no invented ::before/::after body.
+        btn=page.locator('[data-mute="0"]')
+        before=await btn.evaluate("""e=>({
+            shadow:getComputedStyle(e).boxShadow,
+            before:getComputedStyle(e,'::before').content,
+            after:getComputedStyle(e,'::after').content})""")
+        assert before['before']=='none' and before['after']=='none',before
+        await btn.hover()
         await page.mouse.down()
-        # Observe the completed transition, not an arbitrary wall-clock delay.
         await page.wait_for_function("""()=>{
-          const e=document.querySelector('[data-mute="0"]');
-          return getComputedStyle(e).top==='3px'&&getComputedStyle(e,'::before').top==='0px';
-        }""",timeout=2500)
-        pressed=await crystal.evaluate("""e=>({top:getComputedStyle(e).top,
-          base:getComputedStyle(e,'::before').top,shadow:getComputedStyle(e).boxShadow})""")
-        assert pressed['top']=='3px' and pressed['base']=='0px',pressed
-        assert pressed['shadow']!=surface['faceShadow'],pressed
+            const e=document.querySelector('[data-mute="0"]');
+            return getComputedStyle(e).transform==='matrix(1, 0, 0, 1, 0, 3)';
+        }""",timeout=3000)
+        shadow=await btn.evaluate("(e)=>getComputedStyle(e).boxShadow")
+        assert shadow!=before['shadow'],shadow
         await page.mouse.up()
-        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-mute="0"]')).top==='0px'""",timeout=2500)
-        assert await crystal.evaluate('(e)=>getComputedStyle(e).top')=='0px'
-        assert await crystal.get_attribute('aria-pressed')=='true'
-        await crystal.click()
+        await page.wait_for_function("""()=>{
+            return getComputedStyle(document.querySelector('[data-mute="0"]')).transform==='matrix(1, 0, 0, 1, 0, 0)';
+        }""",timeout=3000)
+        assert await btn.get_attribute('aria-pressed')=='true'
+        await btn.click()
         widths=await page.evaluate("""()=>{
           const mixer=document.querySelector('#mixer'),master=document.querySelector('#masterLeft');
           const source=document.querySelector('[data-strip="0"]');
@@ -263,7 +262,7 @@ async def main():
         await button.hover()
         await page.wait_for_timeout(150)  # Finish 90 ms physical-switch filter transition.
         button_hover=await button.evaluate("(e)=>getComputedStyle(e).filter")
-        assert 'brightness(1.14)' in button_hover and 'saturate(1.1)' in button_hover,button_hover
+        assert button_hover=='none',button_hover
         # FX power and FX name remain separate inside the 104px channel strip.
         assert await page.evaluate("""() => [...document.querySelectorAll('.strip .insert-slot')].every(slot=>{
             const cell=slot.getBoundingClientRect(),strip=slot.closest('.strip').getBoundingClientRect();
@@ -391,18 +390,27 @@ async def main():
         assert await pan.get_attribute('aria-valuenow')=='0'
         assert not await page.locator('#editor').is_visible(),'PAN double click opened editor'
 
-        # Crystal Candy: OFF surfaces match; active MUTE coral and SOLO amber are distinct.
+        # Same Button 180 construction, distinct solid color for each ON state.
         async def image_for(selector):
             return await page.locator(selector).first.evaluate(
-                '(b) => getComputedStyle(b).backgroundImage')
+                '(b) => getComputedStyle(b).backgroundColor')
         off_mute=await image_for('[data-mute="0"]')
-        assert 'linear-gradient' in off_mute and 'data:image/png' not in off_mute
+        assert off_mute.startswith('rgb(')
         assert off_mute == await image_for('[data-solo="0"]')
         await page.locator('[data-mute="0"]').click()
         assert await page.locator('[data-mute="0"]').get_attribute('aria-pressed') == 'true'
-        assert await image_for('[data-mute="0"]') != await image_for('[data-solo="0"]')
+        # btn-180 intentionally animates background for 150ms. Wait for actual final RGB.
+        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-mute="0"]')).backgroundColor==='rgb(232, 97, 118)'""",timeout=2500)
+        assert await image_for('[data-mute="0"]') != await image_for('[data-solo="0"]'), await page.evaluate("""()=>{
+          return [...document.querySelectorAll('[data-mute="0"],[data-solo="0"]')].map(e=>({
+            cls:e.className,background:getComputedStyle(e).backgroundColor,
+            token:getComputedStyle(e).getPropertyValue('--b180-color'),
+            bgImage:getComputedStyle(e).backgroundImage
+          }))
+        }""")
         await page.locator('[data-solo="0"]').click()
         assert await page.locator('[data-solo="0"]').get_attribute('aria-pressed') == 'true'
+        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-solo="0"]')).backgroundColor==='rgb(213, 168, 50)'""",timeout=2500)
         assert await image_for('[data-solo="0"]') != await image_for('[data-mute="0"]')
         await page.locator('[data-mute="0"]').click()
         await page.locator('[data-solo="0"]').click()
