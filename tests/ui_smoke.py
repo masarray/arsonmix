@@ -134,6 +134,14 @@ async def main():
         # Master FX chain has its own slots and independent quick power.
         assert await page.locator('.master-fx-slot').count()==5
         assert await page.locator('[data-fader="master"] .cap.master-cap').count()==1
+        master_fader_debug=await page.locator('[data-fader="master"] .cap.master-cap').evaluate("""(el)=>{
+            const c=getComputedStyle(el),p=getComputedStyle(el.parentElement),r=el.getBoundingClientRect();
+            return {display:c.display,visibility:c.visibility,opacity:c.opacity,background:c.backgroundImage.slice(0,62),
+              parent:{height:el.parentElement.getBoundingClientRect().height,width:el.parentElement.getBoundingClientRect().width},
+              rect:{x:r.x,y:r.y,width:r.width,height:r.height},top:c.top,zIndex:c.zIndex,pos:el.style.getPropertyValue('--pos'),parentPosition:p.position};
+        }""")
+        print('MASTER_THUMB_DIAGNOSTIC',master_fader_debug,flush=True)
+
         assert await page.locator('[data-master-insert="0"]').count()==1
         await page.locator('[data-master-power="0"]').click()
         assert await page.locator('[data-master-power="0"]').get_attribute('aria-pressed')=='false'
