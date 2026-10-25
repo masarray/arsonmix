@@ -47,9 +47,9 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Verify original metallic asset and standalone synchronization
         run: python tests/fader_asset_test.py
-      - name: Check switch PNG assets and offline HTML sync
+      - name: Validate crystal candy CSS button contract
         run: python tests/button_asset_test.py
-      - name: Check PAN and button PNG assets
+      - name: Verify original PAN slider and CSS buttons
         run: python tests/pan_button_asset_test.py
       - name: Run mixer UI smoke tests
         run: python tests/ui_smoke.py
@@ -65,4 +65,5 @@ jobs:
             mixer-master-clip-review.png
             mixer-pro-view-review.png
             mixer-master-dual-metric-left-rail.png
+            mixer-crystal-candy-review.png
           if-no-files-found: ignore
