@@ -7,6 +7,7 @@
 #include "VstBusLayout.h"
 #include "LiveGraphHandoff.h"
 #include "DiagnosticTone.h"
+#include "../engine/device/JuceIndependentClockDevice.h"
 #include "../engine/core/RealtimeHealthHistogram.h"
 #include <array>
 #include <atomic>
@@ -73,6 +74,7 @@ public:
 
     void stop()
     {
+        independent_.close();
         detach();
         handoff_.resetAfterStop (graphOwned_.get());
         stagedOwner_.reset();
@@ -90,6 +92,73 @@ public:
     // Emergency output mute, not a prerequisite for receiving audio.
     void setOutputMuted (bool mute) noexcept { monitor_.store (!mute, std::memory_order_release); }
     bool isOutputMuted() const noexcept { return !monitor_.load (std::memory_order_acquire); }
+
+    // Device changes are exclusively CONTROL-THREAD transactions.
+    // Normal ASIO / verified single-clock devices remain on the zero-SRC
+    // JUCE direct callback. Independent capture/render is opt-in in P0.
+    bool independentClockActive() const noexcept { return independent_.active(); }
+    bool independentClockFaulted() const noexcept { return independent_.active() && independent_.faulted(); }
+
+    juce::String setIndependentClockEnabled (bool wanted)
+    {
+        if (handoff_.busy()) return "Finish pending VST3 graph switch before changing audio backend";
+        if (wanted == independent_.active() && !(savedDirectSetup_ && !wanted)) return {};
+        if (wanted && savedDirectSetup_) return "Restore old device backend before another transition";
+        if (wanted && (hasTemporaryDiagnosticDevice() ||
+                       diagnosticRoute() != armix::diagnostics::Route::normal))
+            return "Return SIGNAL CHECK to NORMAL before adaptive clock mode";
+
+        struct Transition final
+        {
+            std::atomic<bool>& flag;
+            explicit Transition (std::atomic<bool>& b):flag(b)
+                { flag.store (true,std::memory_order_release); }
+            ~Transition() { flag.store (false,std::memory_order_release); }
+        } muting (routeReconfiguring_);
+
+        if (!wanted)
+        {
+            independent_.close();
+            if (!savedDirectSetup_) return {};
+            const auto error = deviceManager_.setAudioDeviceSetup (*savedDirectSetup_, false);
+            if (error.isNotEmpty())
+            {
+                setOutputMuted (true);
+                return "Direct device restoration failed: " + error;
+            }
+            savedDirectSetup_.reset();
+            attach();
+            return {};
+        }
+        // ASIO or another known direct hardware clock bypasses the SRC.
+        if (deviceManager_.getCurrentAudioDeviceType() != "Windows Audio")
+            return "Independent mode is limited to WASAPI shared endpoints; existing ASIO/device path stays direct";
+        juce::AudioDeviceManager::AudioDeviceSetup original;
+        deviceManager_.getAudioDeviceSetup (original);
+        if (original.inputDeviceName.isEmpty() || original.outputDeviceName.isEmpty())
+            return "Both capture and render endpoints must be configured before independent mode";
+        detach();
+        deviceManager_.closeAudioDevice();
+        savedDirectSetup_ = original;
+        auto error = independent_.open (original.inputDeviceName,
+                                       original.outputDeviceName,
+                                       static_cast<juce::AudioIODeviceCallback*> (this));
+        if (error.isNotEmpty())
+        {
+            independent_.close();
+            const auto restore = deviceManager_.setAudioDeviceSetup (original, false);
+            if (restore.isEmpty())
+            {
+                savedDirectSetup_.reset();
+                attach();
+            }
+            else setOutputMuted (true);
+            return "Independent clock startup failed: " + error
+                 + (restore.isNotEmpty() ? " | direct rollback failed: " + restore
+                                         : juce::String (" | direct device restored"));
+        }
+        return {};
+    }
     // Called on the JUCE message thread, never from an audio callback.
     // One-sided tests actually close the unused device endpoint. The saved
     // user setup is restored on exit; temporary routes must not be persisted.
@@ -97,6 +166,7 @@ public:
     {
         using Route = armix::diagnostics::Route;
         if (handoff_.busy()) return "Finish the pending FX graph transition first";
+        if (independent_.active()) return "Disable independent clock mode before endpoint isolation tests";
         if (wanted == diagnosticRoute_.load (std::memory_order_acquire) &&
             !(wanted == Route::normal && savedLiveSetup_)) return {};
         if (wanted < Route::normal || wanted > Route::captureOnly)
@@ -486,9 +556,18 @@ public:
     juce::var status()
     {
         auto o = std::make_unique<juce::DynamicObject>();
-        auto* d = deviceManager_.getCurrentAudioDevice();
-        o->setProperty ("connected", d != nullptr);
-        o->setProperty ("driver", deviceManager_.getCurrentAudioDeviceType());
+        const bool dual = independent_.active();
+        auto* d = dual ? independent_.renderDevice()
+                       : deviceManager_.getCurrentAudioDevice();
+        auto* capture = dual ? independent_.captureDevice() : d;
+        o->setProperty ("connected", d != nullptr && capture != nullptr);
+        o->setProperty ("adaptiveClockActive", dual);
+        o->setProperty ("adaptiveClockFaulted", dual && independent_.faulted());
+        o->setProperty ("adaptiveClockMode", dual ? "INDEPENDENT_WASAPI_RENDER_MASTER" : "DIRECT");
+        o->setProperty ("driver", dual ? "Windows Audio / dual independent clocks"
+                                         : deviceManager_.getCurrentAudioDeviceType());
+        o->setProperty ("captureRate", capture ? capture->getCurrentSampleRate() : 0.0);
+        o->setProperty ("renderRate", d ? d->getCurrentSampleRate() : 0.0);
         o->setProperty ("device", d ? d->getName() : "No device");
         o->setProperty ("rate", d ? d->getCurrentSampleRate() : 0.0);
         o->setProperty ("buffer", d ? d->getCurrentBufferSizeSamples() : 0);
@@ -512,17 +591,18 @@ public:
         o->setProperty ("renderUnderrunSource", "UNAVAILABLE_THROUGH_CURRENT_JUCE_AUDIODEVICE");
         // AudioIODevice::getXRunCount is backend-specific, not comprehensive.
         // Pinned JUCE WASAPI reports input capture discontinuity flags only.
-        const int reported = d != nullptr ? d->getXRunCount() : -1;
+        const int reported = capture != nullptr ? capture->getXRunCount() : -1;
         o->setProperty ("backendXrunCount", reported >= 0 ? juce::var (reported) : juce::var());
-        const auto type = deviceManager_.getCurrentAudioDeviceType();
+        const auto type = dual ? juce::String ("Windows Audio")
+                               : deviceManager_.getCurrentAudioDeviceType();
         o->setProperty ("backendXrunMeaning", reported < 0 ? "UNAVAILABLE"
             : type.startsWith ("Windows Audio") ? "WASAPI_CAPTURE_DISCONTINUITIES_ONLY"
             : "DRIVER_DEFINED");
         juce::AudioDeviceManager::AudioDeviceSetup setup;
         deviceManager_.getAudioDeviceSetup (setup);
-        o->setProperty ("inputDevice", setup.inputDeviceName);
-        o->setProperty ("outputDevice", setup.outputDeviceName);
-        o->setProperty ("deviceInputChannels", d ? d->getActiveInputChannels().countNumberOfSetBits() : 0);
+        o->setProperty ("inputDevice", dual && capture ? capture->getName() : setup.inputDeviceName);
+        o->setProperty ("outputDevice", dual && d ? d->getName() : setup.outputDeviceName);
+        o->setProperty ("deviceInputChannels", capture ? capture->getActiveInputChannels().countNumberOfSetBits() : 0);
         o->setProperty ("deviceOutputChannels", d ? d->getActiveOutputChannels().countNumberOfSetBits() : 0);
         o->setProperty ("callbackInputChannels", callbackInputs_.load());
         o->setProperty ("callbackOutputChannels", callbackOutputs_.load());
@@ -568,12 +648,25 @@ public:
         o->setProperty ("chainCount", graphOwned_->count);
         o->setProperty ("graphSwitchPending", handoff_.busy());
         o->setProperty ("completedGraphSwaps", static_cast<double> (completedSwaps_.load()));
+        if (dual)
+        {
+            const auto clock = independent_.bridgeStatus();
+            o->setProperty ("bridgeOccupancyFrames", static_cast<double> (clock.fillFrames));
+            o->setProperty ("bridgeOverflowFrames", static_cast<double> (clock.overflowFrames));
+            o->setProperty ("bridgeUnderflowFrames", static_cast<double> (clock.underflowFrames));
+            o->setProperty ("bridgePrimingFrames", static_cast<double> (clock.primingFrames));
+            o->setProperty ("bridgeCorrectionPpm", clock.correctionPpm);
+            o->setProperty ("bridgeCaptureCallbacks", static_cast<double> (independent_.captureCallbacks()));
+            o->setProperty ("bridgeRenderCallbacks", static_cast<double> (independent_.renderCallbacks()));
+        }
         return juce::var (o.release());
     }
 
 private:
     static constexpr int maxFrames = 8192;
     juce::AudioDeviceManager deviceManager_;
+    armix::device::JuceIndependentClockDevice independent_;
+    std::optional<juce::AudioDeviceManager::AudioDeviceSetup> savedDirectSetup_;
     juce::AudioPluginFormatManager formats_;
     std::unique_ptr<Graph> graphOwned_ {std::make_unique<Graph>()};
     std::unique_ptr<Graph> stagedOwner_;
