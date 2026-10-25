@@ -4,6 +4,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "StereoPan.h"
 #include "NativePresetArchive.h"
+#include "VstBusLayout.h"
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -142,11 +143,9 @@ public:
         if (! instance)
             return "Failed to instantiate VST3: " + error;
 
-        juce::AudioProcessor::BusesLayout layout;
-        layout.inputBuses.add (juce::AudioChannelSet::stereo());
-        layout.outputBuses.add (juce::AudioChannelSet::stereo());
-        if (! instance->setBusesLayout (layout))
-            return "P2 accepts stereo-in/stereo-out effects; plugin bus layout is incompatible";
+        const auto busError = armix::vst::prepareStereoEffectLayout (*instance);
+        if (busError.isNotEmpty())
+            return chosen->name + ": " + busError;
 
         detach();
         Slot node;
@@ -242,11 +241,9 @@ public:
             juce::String error;
             auto processor = formats_.createPluginInstance (*match, rate, buffer, error);
             if (!processor) return "Cannot open preset plugin " + fx.name + ": " + error;
-            juce::AudioProcessor::BusesLayout layout;
-            layout.inputBuses.add (juce::AudioChannelSet::stereo());
-            layout.outputBuses.add (juce::AudioChannelSet::stereo());
-            if (!processor->setBusesLayout (layout))
-                return "Unsupported VST3 stereo bus: " + fx.name;
+            const auto busError = armix::vst::prepareStereoEffectLayout (*processor);
+            if (busError.isNotEmpty())
+                return "Unsupported VST3 bus layout for " + fx.name + ": " + busError;
             try
             {
                 // State is restored before insertion; live audio still uses the
