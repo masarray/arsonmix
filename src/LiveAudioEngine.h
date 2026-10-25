@@ -322,6 +322,7 @@ public:
     juce::String addVst3 (const juce::String& filename, int uid,
                           const juce::String& catalogId)
     {
+        if (splitAudioActive_) return "Return to joined I/O before loading VST3 effects";
         if (handoff_.busy()) return "FX graph transition in progress; retry shortly";
         if (graphOwned_->count >= maxFx) return "FX Rack is full (maximum 8 VST3 effects)";
         auto* device = deviceManager_.getCurrentAudioDevice();
@@ -372,6 +373,7 @@ public:
     // exactly once, no plugin state methods ever execute on the audio thread.
     juce::String captureSnapshot (armix::storage::Snapshot& snapshot)
     {
+        if (splitAudioActive_) return "Return to joined I/O before saving effect graphs";
         if (!isOutputMuted()) return "Mute hardware output before saving a native preset";
         if (handoff_.busy()) return "Finish pending FX graph transition before saving";
         snapshot.effects.clear();
