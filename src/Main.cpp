@@ -336,6 +336,8 @@ private:
             emitPresets();
         else if (action == "presetSave")
         {
+            if (engine_.hasTemporaryDiagnosticDevice())
+                return emitNotice ("Return to NORMAL before saving FX graphs.", true);
             const auto name = armix::storage::NativePresetArchive::cleanName (
                 args.getProperty ("name", {}).toString());
             if (name.isEmpty())
@@ -361,6 +363,8 @@ private:
         }
         else if (action == "presetLoad")
         {
+            if (engine_.hasTemporaryDiagnosticDevice())
+                return emitNotice ("Return to NORMAL before recalling FX graphs.", true);
             const auto name = args.getProperty ("name", {}).toString();
             if (engine_.isGraphSwitchPending())
                 return emitNotice ("FX recall is already transitioning; retry shortly.", true);
@@ -412,6 +416,8 @@ private:
         }
         else if (action == "addCatalog")
         {
+            if (engine_.hasTemporaryDiagnosticDevice())
+                return emitNotice ("Return to NORMAL before adding VST3 effects.", true);
             const auto requestId = static_cast<int> (args.getProperty ("requestId", 0));
             const auto requestedId = args.getProperty ("id", {}).toString();
             const auto* plugin = catalog_.find (requestedId);
@@ -462,6 +468,8 @@ private:
         }
         else if (action == "fxMove")
         {
+            if (engine_.hasTemporaryDiagnosticDevice())
+                return emitNotice ("Return to NORMAL before rearranging VST3 effects.", true);
             editorWindow_.reset();
             if (engine_.moveSlot (slot, slot + static_cast<int> (value))) { diagnostics_.record ("FX_MOVE", juce::String (slot)); emitChain(); }
         }
@@ -531,8 +539,7 @@ private:
             deviceSettingsDirty_ = false;
             // DeviceManager signals even when a temporary capture-only /
             // output-only route is selected. Never persist that test route.
-            if (engine_.hasTemporaryDiagnosticDevice())
-                return;
+            if (!engine_.hasTemporaryDiagnosticDevice())
             if (auto xml = engine_.devices().createStateXml())
             {
                 const auto text = xml->toString();
