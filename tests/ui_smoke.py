@@ -47,6 +47,37 @@ async def main():
         assert await page.locator('.right-rail,.master-tabs,.head').count()==0
         assert await page.locator('[data-master-output]').count()==0
         assert await page.locator('.master-stereo-badge,.master-route-label').count()==2
+        # Streaming output panel has only two useful readouts.
+        assert await page.locator('#masterLeft .master-analysis .master-info-row').count()==2
+        assert await page.locator('#masterPeakDb').count()==0
+        assert await page.locator('#masterLufs').count()==1
+        assert await page.locator('#masterDbtp').count()==1
+        assert 'SIM' in await page.locator('#masterLeft .master-analysis').inner_text()
+        assert 'LUFS-I' in await page.locator('#masterLeft .master-analysis').inner_text()
+        # Buttons must describe and perform actual distinct actions: no "..." blank cap.
+        assert await page.locator('.left-rail #addScene').inner_text()=='＋ SAVE SNAPSHOT'
+        assert await page.locator('.left-rail #saveFxPreset').inner_text()=='SAVE FX'
+        assert await page.locator('.left-rail #menuScene').inner_text()=='EXPORT'
+        assert await page.locator('.left-rail .rail-bottom button').count()==3
+        assert await page.locator('.left-rail .rail-input-footer').count()==1
+        railGeometry=await page.evaluate("""()=>{
+          const rect=s=>{const r=document.querySelector(s).getBoundingClientRect();return {top:r.top,bottom:r.bottom,width:r.width,height:r.height}};
+          const rail=rect('.left-rail'),channels=rect('#channelList');
+          const presets=rect('#presetList'),snapshots=rect('#scenesList');
+          const actions=rect('.rail-bottom'),input=rect('.rail-input-footer');
+          const sections=[...document.querySelectorAll('.left-rail .rail-section-title')].map(e=>e.getBoundingClientRect());
+          return {rail,channels,presets,snapshots,actions,input,sectionTops:sections.map(r=>r.top),
+            emptyControls:[...document.querySelectorAll('.left-rail .rail-bottom button')].some(b=>!b.innerText.trim()),
+            buttons:[...document.querySelectorAll('.left-rail .rail-bottom button')].map(b=>({width:b.getBoundingClientRect().width,height:b.getBoundingClientRect().height}))};
+        }""")
+        assert railGeometry['channels']['bottom']<=railGeometry['sectionTops'][0]+2,railGeometry
+        assert railGeometry['actions']['bottom']<=railGeometry['rail']['bottom']+1,railGeometry
+        assert railGeometry['input']['bottom']<=railGeometry['rail']['bottom']+1,railGeometry
+        assert railGeometry['snapshots']['bottom']<=railGeometry['actions']['top']+1,railGeometry
+        assert not railGeometry['emptyControls'],railGeometry
+        assert all(btn['width']>=40 and btn['height']>=25 for btn in railGeometry['buttons']),railGeometry
+        await page.screenshot(path=str(project/'mixer-master-dual-metric-left-rail.png'),full_page=True)
+
         assert await page.locator('[data-clear-all-clips]').count()==1
         architecture=await page.evaluate("""() => {
           const bg=s=>getComputedStyle(document.querySelector(s)).backgroundImage;
@@ -78,6 +109,14 @@ async def main():
         # Medium desktop check; channel strips may scroll *inside* workbench.
         await page.set_viewport_size({"width":1440,"height":820})
         await page.screenshot(path=str(project/'mixer-design-review-1440.png'),full_page=True)
+        smallRail=await page.evaluate("""()=>{
+          const rail=document.querySelector('.left-rail').getBoundingClientRect();
+          const footer=document.querySelector('.left-rail .rail-input-footer').getBoundingClientRect();
+          const buttons=[...document.querySelectorAll('.left-rail .rail-bottom button')].map(e=>e.getBoundingClientRect());
+          return {bottom:rail.bottom,footerBottom:footer.bottom,buttons:buttons.map(b=>({right:b.right,left:b.left,width:b.width}))};
+        }""")
+        assert smallRail['footerBottom']<=smallRail['bottom']+1,smallRail
+        assert all(b['width']>35 for b in smallRail['buttons']),smallRail
         assert await page.locator('.strip').count()==13
         await page.set_viewport_size({"width":1680,"height":920})
         # Hardware-style PAN illumination must grow from center, both L and R.
