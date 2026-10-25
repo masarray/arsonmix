@@ -343,7 +343,7 @@ private:
             const auto report = makeAudioReport();
             juce::SystemClipboard::copyTextToClipboard (report);
             auto response = std::make_unique<juce::DynamicObject>();
-            response->setProperty ("bytes", report.getNumBytesAsUTF8());
+            response->setProperty ("bytes", static_cast<double> (report.getNumBytesAsUTF8()));
             response->setProperty ("generatedAt", juce::Time::getCurrentTime().toISO8601 (true));
             if (browser_.loaded)
                 browser_.emitEventIfBrowserIsVisible ("arMixDiagnosticReportCopied", juce::var (response.release()));
