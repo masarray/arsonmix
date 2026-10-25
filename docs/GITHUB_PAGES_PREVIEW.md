@@ -1,34 +1,45 @@
-# GitHub Pages GUI preview
+# GitHub Pages GUI preview — production workflow
 
-The website is built from the repository's actual standalone mixer source.
+**Live and deployed** (GitHub Actions run [40147158731](https://github.com/masarray/arsonmix/actions/runs/40147158731)):
 
-- Landing: `https://masarray.github.io/arsonmix/`
-- GUI preview: `https://masarray.github.io/arsonmix/preview/`
-- Direct fullscreen: `https://masarray.github.io/arsonmix/preview/mixer.html`
+- Landing: https://masarray.github.io/arsonmix/
+- Interactive mixer review: https://masarray.github.io/arsonmix/preview/
+- Full-screen standalone mixer: https://masarray.github.io/arsonmix/preview/mixer.html
+- Current served GUI revision: https://masarray.github.io/arsonmix/preview/build.json
 
-## Initial enablement
+## Architecture: safe GUI mirror without merging PR
 
-GitHub Pages must be enabled **once** by a repository administrator: **Settings → Pages → Build and deployment → Source: GitHub Actions**. If Pages is disabled, workflow uploads can succeed while the deploy action will fail. This cannot be enabled through the current GitHub connector because there is no Pages Settings write operation exposed.
+**The publishing workflow lives in the default branch:** `.github/workflows/pages-publish.yml` in `main`.
 
-Then run **Actions → Publish GUI preview to GitHub Pages → Run workflow** (choose `fix/fader-thumb-symmetry-polish` until it is merged). Afterwards, every push to the tracked GUI source branch automatically regenerates and publishes the site. The latest run's URL and success state are the authority for deployment, not guessed availability.
+The workflow **checks out `fix/fader-thumb-symmetry-polish`** to build the site, so GitHub Pages environment controls are satisfied without merging unapproved UI code into `main`.
 
-## Mirror contract
+Whenever UI smoke CI passes for the preview branch, `workflow_run` on `main` automatically triggers production Pages deployment. You may also use **Actions → Publish ArSonMix GUI (main dispatcher) → Run workflow** for manual republishing, running the workflow on **main**.
+
+The prior branch-local `.github/workflows/pages-preview.yml` was removed because the `github-pages` environment blocked deployment from a non-default-branch workflow (build/upload succeeded but the deployment job could not start). Do not reintroduce a competing branch publisher.
+
+## Build parity
 
 `scripts/build_pages.py` copies:
-- `site/index.html` → root landing;
-- `site/preview/index.html` → GUI preview shell;
+- `site/index.html` → site landing;
+- `site/preview/index.html` → review shell;
 - `AR-MIX-Live-FX-Host-Standalone-v0.3.html` → `preview/mixer.html`;
-- `preview/build.json` → exact deployed git SHA and source branch.
+- `preview/build.json` → deployed GUI git SHA + source branch.
 
-The preview shell reads `build.json` every 60 seconds. If a new build arrives and the user is not interacting, it reloads the embedded mixer automatically. Otherwise it shows a nonblocking reload prompt. Reload now is always available.
+The preview shell checks `build.json` every 60 seconds and reloads automatically if a new build is available **and the user is idle**. Otherwise, it displays a reload notice. Click **Reload GUI** to force a refresh; **Full Screen** opens the mixer independently.
 
-No demo audio capture or VST3 real-time audio processing is implied. Preview is intentionally separate from public releases. To publish new GUI work from a different branch, change the workflow branch filter or merge into `main` before publishing.
-
-## Local check
+## Local validation
 
 ```bash
+python tests/button_asset_test.py
+python tests/fader_asset_test.py
 python scripts/build_pages.py --out dist-pages
 python -m http.server 8000 --directory dist-pages
 ```
 
-Browse `http://localhost:8000` and `http://localhost:8000/preview/`.
+Then open `http://localhost:8000/` and `http://localhost:8000/preview/`.
+
+The browser version is a **GUI prototype** with simulated meters; it does not capture/process real audio. Real engine work is separate.
+
+## Future promotion
+
+After final GUI visual approval and merge to `main`, update the checkout ref and trigger branch settings in `.github/workflows/pages-publish.yml` to publish from `main` instead. This is intentionally not done until GUI changes are approved.
