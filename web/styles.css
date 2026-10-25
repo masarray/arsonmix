@@ -280,11 +280,7 @@
 .meter-unit{position:relative;display:flex;flex-direction:column;min-height:0}
 .meter-unit .meter{height:100%;flex:1;min-height:0}
 
-/* Full-height selected strip: thin tinted outline, no disruptive thick border. */
-.strip.selected{box-shadow:inset 2px 0 #e2a86a,inset -2px 0 #e2a86a,inset 0 0 0 1px #e2a86a6c}
-.strip.selected::before{content:"";position:absolute;inset:0;border-top:1px solid #f4ce8b6b;
- border-bottom:2px solid #db935c;pointer-events:none;z-index:6}
-.strip.selected .strip-name{box-shadow:inset 0 0 0 1px #ffd79f40}
+/* Selected strip styling is centralized in the soft-glow treatment below. */
 .strip .rack .insert-slot .insert:hover{color:#dff4fd!important}
 .strip .rack .insert-slot .insert-name{letter-spacing:-.15px}
 
@@ -346,8 +342,6 @@
 
 #masterLeft .master-strip-name{height:72px;flex:0 0 72px;border-top:3px solid #b53648;color:#fff;background:linear-gradient(125deg,#752536,#27131b 85%)!important;gap:9px}
 #masterLeft .master-strip-name .track-icon{font-size:15px;line-height:19px}
-.strip.selected{box-shadow:inset 2px 0 #f0aa57,inset -2px 0 #f0aa57,inset 0 0 0 1px #eec07988}
-.strip.selected::before{content:"";position:absolute;inset:0;z-index:6;pointer-events:none;border:2px solid #eda458;border-radius:2px;box-shadow:inset 0 0 0 1px #f8d79a42,0 0 5px #e59e3960}
 .pan-track::after{background:linear-gradient(#eef8ff,#9eb5c2);width:2px;height:18px;top:11px;box-shadow:0 0 1px #fff,0 1px 2px #000}
 .pan-track.is-centered::after{background:#ecfbff;box-shadow:0 0 0 1px #27485a,0 0 3px #f8ffff}
 /* Keep snap visible through a crisp detent, not a glowing metal slider. */
@@ -427,11 +421,7 @@
 .pan-control .pan-readline span:first-child{text-align:left}
 .pan-control .pan-readline span:last-child{text-align:right}
 #masterLeft .pan-control{padding:0 5px}
-/* The master selected state reuses the same 2px uninterrupted outline as inputs. */
-#masterLeft.selected{box-shadow:inset 2px 0 #f0aa57,inset -2px 0 #f0aa57,inset 0 0 0 1px #eec07988}
-#masterLeft.selected::before{content:"";position:absolute;inset:0;z-index:6;
- pointer-events:none;border:2px solid #eda458;border-radius:2px;
- box-shadow:inset 0 0 0 1px #f8d79a42,0 0 5px #e59e3960}
+/* Master uses the same diffuse channel-selection glow as source strips. */
 /* On shorter desktops prioritize six FX while retaining a usable fader throw. */
 @media (max-height:760px){
  .strip .rack,.app.easy .strip .rack,.app:not(.easy) .strip .rack,
@@ -609,114 +599,218 @@
  box-shadow:inset 0 0 0 1px #63d9f9a8;
 }
 
-/* ARSONMIX CRYSTAL CANDY / CSS-ONLY 3D CONTROLS.
-   Compact glass-on-metal jewel skins. No stretched PNG or render-loop animation. */
+
+/* CRYSTAL CANDY v2 — faithful compact adaptation of supplied 3D SCSS.
+   .button::before is the physical under-body, ::after is glass reflection.
+   The face moves down --c-depth when pressed and the base shadow collapses. */
 :root{
- --cc-off-top:#718a9e;--cc-off-mid:#465e70;--cc-off-low:#2c4353;
- --cc-off-bottom:#1b303e;--cc-off-edge:#7897a9;--cc-off-shadow:#0b1923;
+ --cc-off-top:#a3bbc9;--cc-off-mid:#68889d;--cc-off-low:#3e6177;
+ --cc-off-bottom:#2a4659;--cc-off-edge:#a9c2cc;--cc-off-shadow:#122d3d;
 }
 :where(.toolbar .nav button,.toolbar .spec-device,
-.left-rail .tabs button,.right-rail .master-tabs button,
-.strip .channel-actions .candy,.strip .utility-row button,
-.strip .fader-tools button,.left-rail .rail-presets button,
-.left-rail .rail-bottom button,#masterLeft .master-tools button,
-.right-rail .master-right .right-button,
-.right-rail .master-right .master-controls button,
-.right-rail .master-right #talkBtn){
+ .left-rail .tabs button,.right-rail .master-tabs button,
+ .strip .channel-actions .candy,.strip .utility-row button,
+ .strip .fader-tools button,.left-rail .rail-presets button,
+ .left-rail .rail-bottom button,#masterLeft .master-tools button,
+ .right-rail .master-right .right-button,
+ .right-rail .master-right .master-controls button,
+ .right-rail .master-right #talkBtn){
  --cc-top:var(--cc-off-top);--cc-mid:var(--cc-off-mid);
  --cc-low:var(--cc-off-low);--cc-bottom:var(--cc-off-bottom);
- --cc-edge:var(--cc-off-edge);--cc-shadow:var(--cc-off-shadow);--cc-text:#edf6fc;
- appearance:none;user-select:none;cursor:pointer;position:relative;top:0;isolation:isolate;
- border-radius:4px!important;border:1px solid var(--cc-edge)!important;
- background-color:var(--cc-bottom)!important;
- background-image:
- linear-gradient(180deg,#ffffff70 0%,#ffffff28 20%,#ffffff08 41%,transparent 42%,#ffffff05 73%,#00000030 100%),
- linear-gradient(180deg,var(--cc-top) 0%,var(--cc-mid) 43%,var(--cc-low) 55%,var(--cc-bottom) 100%)!important;
- background-position:center!important;background-size:100% 100%!important;background-repeat:no-repeat!important;
- color:var(--cc-text)!important;text-shadow:0 1px 1px #06121bc7,0 -1px 0 #ffffff24!important;
- box-shadow:inset 0 1px 0 #ffffff9a,inset 0 -1px 1px #050f19a0,0 2px 0 var(--cc-shadow),0 3px 4px #0009!important;
- transform:none!important;filter:none!important;
- transition:filter 80ms ease-out,transform 70ms ease-out,box-shadow 70ms ease-out!important;
+ --cc-edge:var(--cc-off-edge);--cc-shadow:var(--cc-off-shadow);--cc-text:#f3faff;
+ --cc-depth:3px;
+ appearance:none;user-select:none;cursor:pointer;box-sizing:border-box;
+ position:relative!important;top:0;z-index:0;isolation:isolate;overflow:visible!important;
+ border:1px solid var(--cc-edge)!important;border-radius:4px!important;
+ background:linear-gradient(to bottom,var(--cc-top) 0%,var(--cc-mid) 26%,var(--cc-low) 58%,var(--cc-bottom) 100%)!important;
+ color:var(--cc-text)!important;
+ text-shadow:0 -1px 0 color-mix(in srgb,var(--cc-shadow) 85%,#000),
+             0 1px 1px #ffffff40!important;
+ box-shadow:inset 0 1px 0 #ffffff96,inset 0 -1px 0 #031c2a80,
+            0 var(--cc-depth) 0 var(--cc-shadow),
+            0 5px 5px #0008,0 9px 9px #0004!important;
+ filter:none!important;transform:none!important;
+ transition:top 65ms ease-out,filter 65ms ease-out,box-shadow 80ms ease-out!important;
+}
+/* Keep the under-body BELOW the face, projecting by 3px like the supplied :before. */
+:where(.toolbar .nav button,.toolbar .spec-device,
+ .left-rail .tabs button,.right-rail .master-tabs button,
+ .strip .channel-actions .candy,.strip .utility-row button,
+ .strip .fader-tools button,.left-rail .rail-presets button,
+ .left-rail .rail-bottom button,#masterLeft .master-tools button,
+ .right-rail .master-right .right-button,
+ .right-rail .master-right .master-controls button,
+ .right-rail .master-right #talkBtn)::before{
+ content:""!important;display:block;position:absolute;pointer-events:none;
+ z-index:-1;left:-1px;right:-1px;top:var(--cc-depth);height:100%;
+ border-radius:4px;
+ background:linear-gradient(to top,
+     color-mix(in srgb,var(--cc-shadow) 75%,#000) 0%,
+     var(--cc-shadow) 55%,var(--cc-low) 100%)!important;
+ box-shadow:0 1px 0 1px #0005,0 4px 2px #0006,0 6px 8px #0004!important;
+ transition:top 75ms ease-out,box-shadow 80ms ease-out!important;
+}
+/* Curved crystal catchlight, independent from the material/depth layer. */
+:where(.toolbar .nav button,.toolbar .spec-device,
+ .left-rail .tabs button,.right-rail .master-tabs button,
+ .strip .channel-actions .candy,.strip .utility-row button,
+ .strip .fader-tools button,.left-rail .rail-presets button,
+ .left-rail .rail-bottom button,#masterLeft .master-tools button,
+ .right-rail .master-right .right-button,
+ .right-rail .master-right .master-controls button,
+ .right-rail .master-right #talkBtn)::after{
+ content:""!important;position:absolute;display:block;pointer-events:none;
+ z-index:1;left:2px;right:2px;top:1px;height:46%;
+ border-radius:3px 3px 8px 8px;
+ background:linear-gradient(to bottom,#ffffff80,#ffffff2a 54%,#ffffff00 100%)!important;
+ box-shadow:inset 0 1px 0 #ffffff65!important;
+ opacity:.75;transition:opacity 65ms ease-out!important;
 }
 :where(.toolbar .nav button,.toolbar .spec-device,
-.left-rail .tabs button,.right-rail .master-tabs button,
-.strip .channel-actions .candy,.strip .utility-row button,
-.strip .fader-tools button,.left-rail .rail-presets button,
-.left-rail .rail-bottom button,#masterLeft .master-tools button,
-.right-rail .master-right .right-button,
-.right-rail .master-right .master-controls button,
-.right-rail .master-right #talkBtn):is(:hover,:focus-visible):not(:disabled){filter:brightness(1.12) saturate(1.10)!important}
+ .left-rail .tabs button,.right-rail .master-tabs button,
+ .strip .channel-actions .candy,.strip .utility-row button,
+ .strip .fader-tools button,.left-rail .rail-presets button,
+ .left-rail .rail-bottom button,#masterLeft .master-tools button,
+ .right-rail .master-right .right-button,
+ .right-rail .master-right .master-controls button,
+ .right-rail .master-right #talkBtn):hover:not(:disabled){filter:brightness(1.14) saturate(1.10)!important}
 :where(.toolbar .nav button,.toolbar .spec-device,
-.left-rail .tabs button,.right-rail .master-tabs button,
-.strip .channel-actions .candy,.strip .utility-row button,
-.strip .fader-tools button,.left-rail .rail-presets button,
-.left-rail .rail-bottom button,#masterLeft .master-tools button,
-.right-rail .master-right .right-button,
-.right-rail .master-right .master-controls button,
-.right-rail .master-right #talkBtn):active:not(:disabled){
- transform:translateY(1px)!important;filter:brightness(.93) saturate(1.04)!important;
- box-shadow:inset 0 2px 4px #04131caa,inset 0 1px 0 #ffffff46,0 1px 0 var(--cc-shadow),0 1px 2px #0009!important;
+ .left-rail .tabs button,.right-rail .master-tabs button,
+ .strip .channel-actions .candy,.strip .utility-row button,
+ .strip .fader-tools button,.left-rail .rail-presets button,
+ .left-rail .rail-bottom button,#masterLeft .master-tools button,
+ .right-rail .master-right .right-button,
+ .right-rail .master-right .master-controls button,
+ .right-rail .master-right #talkBtn):active:not(:disabled){
+ top:var(--cc-depth);transform:none!important;
+ color:#f9ffff!important;
+ text-shadow:0 -1px 0 var(--cc-shadow),0 0 4px #ffffff5e!important;
+ filter:brightness(1.03)!important;
+ box-shadow:inset 0 2px 4px #0005,inset 0 1px 0 #ffffff56,
+            0 1px 0 var(--cc-shadow),0 2px 3px #0008!important;
 }
 :where(.toolbar .nav button,.toolbar .spec-device,
-.left-rail .tabs button,.right-rail .master-tabs button,
-.strip .channel-actions .candy,.strip .utility-row button,
-.strip .fader-tools button,.left-rail .rail-presets button,
-.left-rail .rail-bottom button,#masterLeft .master-tools button,
-.right-rail .master-right .right-button,
-.right-rail .master-right .master-controls button,
-.right-rail .master-right #talkBtn):disabled{opacity:.52;cursor:default;filter:saturate(.4)!important;box-shadow:inset 0 1px 2px #000a!important}
+ .left-rail .tabs button,.right-rail .master-tabs button,
+ .strip .channel-actions .candy,.strip .utility-row button,
+ .strip .fader-tools button,.left-rail .rail-presets button,
+ .left-rail .rail-bottom button,#masterLeft .master-tools button,
+ .right-rail .master-right .right-button,
+ .right-rail .master-right .master-controls button,
+ .right-rail .master-right #talkBtn):active:not(:disabled)::before{
+ top:0;box-shadow:0 1px 2px #0009,0 2px 4px #0004!important;
+}
 :where(.toolbar .nav button,.toolbar .spec-device,
-.left-rail .tabs button,.right-rail .master-tabs button,
-.strip .channel-actions .candy,.strip .utility-row button,
-.strip .fader-tools button,.left-rail .rail-presets button,
-.left-rail .rail-bottom button,#masterLeft .master-tools button,
-.right-rail .master-right .right-button,
-.right-rail .master-right .master-controls button,
-.right-rail .master-right #talkBtn):focus-visible{outline:2px solid #9af6ff;outline-offset:2px}
-.toolbar .nav button.selected::before,.left-rail .tabs button.selected::before{content:none!important}
-/* ON colors identify function; OFF always retains steel-blue crystal depth. */
+ .left-rail .tabs button,.right-rail .master-tabs button,
+ .strip .channel-actions .candy,.strip .utility-row button,
+ .strip .fader-tools button,.left-rail .rail-presets button,
+ .left-rail .rail-bottom button,#masterLeft .master-tools button,
+ .right-rail .master-right .right-button,
+ .right-rail .master-right .master-controls button,
+ .right-rail .master-right #talkBtn):active:not(:disabled)::after{opacity:.52}
+:where(.toolbar .nav button,.toolbar .spec-device,
+ .left-rail .tabs button,.right-rail .master-tabs button,
+ .strip .channel-actions .candy,.strip .utility-row button,
+ .strip .fader-tools button,.left-rail .rail-presets button,
+ .left-rail .rail-bottom button,#masterLeft .master-tools button,
+ .right-rail .master-right .right-button,
+ .right-rail .master-right .master-controls button,
+ .right-rail .master-right #talkBtn):disabled{
+ opacity:.48;cursor:default;filter:saturate(.45)!important;
+ box-shadow:inset 0 2px 3px #0006,0 2px 0 var(--cc-shadow)!important
+}
+:where(.toolbar .nav button,.toolbar .spec-device,
+ .left-rail .tabs button,.right-rail .master-tabs button,
+ .strip .channel-actions .candy,.strip .utility-row button,
+ .strip .fader-tools button,.left-rail .rail-presets button,
+ .left-rail .rail-bottom button,#masterLeft .master-tools button,
+ .right-rail .master-right .right-button,
+ .right-rail .master-right .master-controls button,
+ .right-rail .master-right #talkBtn):focus-visible{outline:2px solid #83e9fa;outline-offset:2px}
+.toolbar .nav button.selected::before,.left-rail .tabs button.selected::before{content:""!important}
+/* A restrained mineral OFF color, vivid jewel functions when toggled. */
 .toolbar .nav button.selected,.left-rail .rail-bottom #addScene,
 .strip .fader-tools button[data-send$=":a"].active{
- --cc-top:#a2f4ff;--cc-mid:#36c9f2;--cc-low:#0b90c6;--cc-bottom:#085d89;
- --cc-edge:#b1f4ff;--cc-shadow:#062f4b;--cc-text:#f7feff;
+ --cc-top:#b5f5ff;--cc-mid:#59daef;--cc-low:#10a7d9;--cc-bottom:#09678f;
+ --cc-edge:#b5faff;--cc-shadow:#063b5d;--cc-text:#f8ffff;
 }
 .left-rail .tabs button.selected,.left-rail .rail-presets button.active,
 .left-rail .rail-bottom #saveFxPreset,.strip .utility-row button[data-hpf].active{
- --cc-top:#b9ffde;--cc-mid:#4ae1a6;--cc-low:#149f73;--cc-bottom:#0c684f;
- --cc-edge:#a1ffd7;--cc-shadow:#064231;--cc-text:#f7fff9;
+ --cc-top:#bdffe2;--cc-mid:#6decbe;--cc-low:#27bb86;--cc-bottom:#0c7455;
+ --cc-edge:#bbffde;--cc-shadow:#074630;--cc-text:#f8fff9;
 }
 .strip .channel-actions .mute.active,#masterLeft .master-actions #masterMute.active,
 .right-rail .master-right #masterMute.active{
- --cc-top:#ffc7c0;--cc-mid:#f87679;--cc-low:#cd2d4b;--cc-bottom:#8c1d35;
- --cc-edge:#ffb9bf;--cc-shadow:#540e2a;--cc-text:#fff9f8;
+ --cc-top:#ffd3cf;--cc-mid:#ff8986;--cc-low:#dc4560;--cc-bottom:#9e2140;
+ --cc-edge:#ffd3d0;--cc-shadow:#68152a;--cc-text:#fffaf9;
 }
 .strip .channel-actions .solo.active,.right-rail .master-right #dim.active{
- --cc-top:#fff5b1;--cc-mid:#fad365;--cc-low:#cb9325;--cc-bottom:#95651c;
- --cc-edge:#fff0ac;--cc-shadow:#573b10;--cc-text:#fffdf5;
+ --cc-top:#fff6ca;--cc-mid:#ffe38b;--cc-low:#e6ae3d;--cc-bottom:#a16d1f;
+ --cc-edge:#fff2b7;--cc-shadow:#694416;--cc-text:#fffdf3;
 }
 .strip .utility-row button[data-pre].active,
 .strip .fader-tools button[data-send$=":b"].active,
 #masterLeft .master-tools button.active{
- --cc-top:#c9c6ff;--cc-mid:#9485f0;--cc-low:#5b4ab9;--cc-bottom:#413284;
- --cc-edge:#d8d1ff;--cc-shadow:#281d51;--cc-text:#fbfaff;
+ --cc-top:#e0dcff;--cc-mid:#aaa3ff;--cc-low:#7567cf;--cc-bottom:#4e3c94;
+ --cc-edge:#e0d8ff;--cc-shadow:#2e205d;--cc-text:#fffaff;
 }
-.toolbar .spec-device{--cc-text:#e1f7ff;font-weight:600;font-size:11px}
-.toolbar .nav #audioSetupBtn{--cc-text:#e3f7ff}
+.toolbar .spec-device{--cc-text:#f0faff;font-size:11px;font-weight:600}
+.toolbar .nav #audioSetupBtn{--cc-text:#effaff}
 .left-rail .rail-presets button{width:100%;text-align:left;padding:0 10px;font-weight:550}
-.left-rail .rail-bottom #menuScene{--cc-text:#e4eff6}
 .strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button{
- padding:0 2px;font-size:10px;font-weight:650;line-height:1;display:grid;place-items:center;
+ padding:0 2px;font-size:10px;font-weight:650;line-height:1;
+ display:grid;place-items:center;
 }
-/* STEREO remains an informational label, not a clickable control. */
+/* STEREO is an informational label, never a pressable button. */
 #masterLeft .master-actions .master-stereo-badge{
  border:1px solid #4b6779;background:linear-gradient(#233a49,#102635 60%,#203442);
  box-shadow:inset 0 1px 2px #020c18c0,0 1px 0 #68859940;color:#a9d6e6;cursor:default;
 }
-@media(prefers-reduced-motion:reduce){:where(.toolbar .nav button,.toolbar .spec-device,
-.left-rail .tabs button,.right-rail .master-tabs button,
-.strip .channel-actions .candy,.strip .utility-row button,
-.strip .fader-tools button,.left-rail .rail-presets button,
-.left-rail .rail-bottom button,#masterLeft .master-tools button,
-.right-rail .master-right .right-button,
-.right-rail .master-right .master-controls button,
-.right-rail .master-right #talkBtn){transition:none!important}}
+/* One soft, non-rectilinear halo shared by source and stereo master. */
+.strip.selected,#masterLeft.selected{
+ --selection-tint:color-mix(in srgb,var(--ch) 22%,#7fe8ff 78%);
+ box-shadow:inset 0 0 11px color-mix(in srgb,var(--selection-tint) 23%,transparent),
+            inset 0 0 1px color-mix(in srgb,var(--selection-tint) 55%,transparent)!important;
+}
+.strip.selected::before,#masterLeft.selected::before{
+ content:"";position:absolute;inset:1px;z-index:6;pointer-events:none;
+ border:0!important;border-radius:3px;
+ background:linear-gradient(to right,
+    color-mix(in srgb,var(--selection-tint) 14%,transparent),transparent 13% 87%,
+    color-mix(in srgb,var(--selection-tint) 14%,transparent));
+ box-shadow:inset 0 0 8px color-mix(in srgb,var(--selection-tint) 28%,transparent),
+            inset 0 0 0 1px color-mix(in srgb,var(--selection-tint) 12%,transparent),
+            0 0 6px color-mix(in srgb,var(--selection-tint) 13%,transparent)!important;
+}
+.strip.selected .strip-name{
+ box-shadow:inset 0 0 6px color-mix(in srgb,var(--selection-tint) 19%,transparent)!important;
+}
+.strip.identity-editing .strip-name{
+ outline:none!important;
+ box-shadow:inset 0 0 9px #60d9fa51,0 0 6px #41bce75a!important;
+}
+@media(prefers-reduced-motion:reduce){
+ :where(.toolbar .nav button,.toolbar .spec-device,
+ .left-rail .tabs button,.right-rail .master-tabs button,
+ .strip .channel-actions .candy,.strip .utility-row button,
+ .strip .fader-tools button,.left-rail .rail-presets button,
+ .left-rail .rail-bottom button,#masterLeft .master-tools button,
+ .right-rail .master-right .right-button,
+ .right-rail .master-right .master-controls button,
+ .right-rail .master-right #talkBtn),:where(.toolbar .nav button,.toolbar .spec-device,
+ .left-rail .tabs button,.right-rail .master-tabs button,
+ .strip .channel-actions .candy,.strip .utility-row button,
+ .strip .fader-tools button,.left-rail .rail-presets button,
+ .left-rail .rail-bottom button,#masterLeft .master-tools button,
+ .right-rail .master-right .right-button,
+ .right-rail .master-right .master-controls button,
+ .right-rail .master-right #talkBtn)::before,:where(.toolbar .nav button,.toolbar .spec-device,
+ .left-rail .tabs button,.right-rail .master-tabs button,
+ .strip .channel-actions .candy,.strip .utility-row button,
+ .strip .fader-tools button,.left-rail .rail-presets button,
+ .left-rail .rail-bottom button,#masterLeft .master-tools button,
+ .right-rail .master-right .right-button,
+ .right-rail .master-right .master-controls button,
+ .right-rail .master-right #talkBtn)::after{
+ transition:none!important
+ }
+}
