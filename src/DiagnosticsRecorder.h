@@ -43,8 +43,8 @@ public:
             details.replaceCharacters ("\r\n", "  ");
         // Message-thread-only recent history, independent of the file writer.
         // Retain glitch markers even if async disk writes have not completed.
-        if (message.length() > 950) message = message.substring (0, 950) + " [report-truncated]";
-        recent_[recentHead_] = message;
+        recent_[recentHead_] = message.length() > 950
+            ? message.substring (0, 950) + " [report-truncated]" : message;
         recentHead_ = (recentHead_ + 1) % recentCapacity;
         recentCount_ = juce::jmin (recentCount_ + 1, recentCapacity);
         const auto utf8 = message.toRawUTF8();
