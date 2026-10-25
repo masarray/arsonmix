@@ -38,7 +38,7 @@ test('implementation order, fake clocks, lifecycle and physical gates remain doc
     'src/LiveAudioEngine.h', 'smart_clock_bridge_test.cpp',
     'autoStable', 'deviceGeneration', 'captureFifoUnderrunFrames',
     'renderUnderrunFrames', 'ClockDomainBridge',
-    '±100', '±300', '30 min', 'rollback',
+    '±100', '±300', '≥30m', 'rollback',
     'affinity', 'hardware', 'GUI v0.8'
   ]) assert.ok(impl.includes(concept), 'missing blueprint concept: ' + concept);
 });
