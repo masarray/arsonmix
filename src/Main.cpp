@@ -344,7 +344,39 @@ private:
         const auto value = args.getProperty ("value", {});
         const int slot = static_cast<int> (args.getProperty ("slot", -1));
 
-        if (action == "copyDiagnosticReport")
+        // Structural plugin operations currently detach the original callback
+        // and must never mutate a running independent render thread.
+        if (engine_.independentClockActive() && action == "addCatalog")
+        {
+            const int requestId = static_cast<int> (args.getProperty ("requestId", 0));
+            const auto* plugin = catalog_.find (args.getProperty ("id", {}).toString());
+            const auto name = plugin ? plugin->name : juce::String ("Unknown VST3");
+            const auto error = juce::String ("Return to DIRECT mode before editing VST3 graph.");
+            emitFxAddResult (requestId, name, error, 0);
+            return emitNotice (error, true);
+        }
+        if (engine_.independentClockActive() &&
+            (action == "fxRemove" || action == "fxMove" ||
+             action == "presetLoad" || action == "presetSave"))
+            return emitNotice ("Return to DIRECT mode before editing VST3 graph (live-safe graph edits are a later gate).", true);
+
+        if (action == "smartClock")
+        {
+            if (!value.isBool()) return emitNotice ("Invalid smart clock command", true);
+            // Close third-party editors before device/processor preparation.
+            editorWindow_.reset();
+            const auto error = engine_.setIndependentClockEnabled (bool (value));
+            if (error.isNotEmpty())
+            {
+                diagnostics_.record ("SMART_CLOCK_FAIL", error);
+                return emitNotice (error, true);
+            }
+            diagnostics_.record ("SMART_CLOCK_MODE", juce::JSON::toString (engine_.status(), false));
+            emitNotice (engine_.independentClockActive()
+                ? "Independent capture/render clocks enabled (EXPERIMENTAL). Render-master ASRC, rollback on device fault."
+                : "Direct JUCE audio path restored; no extra SRC buffer.");
+        }
+        else if (action == "copyDiagnosticReport")
         {
             diagnostics_.record ("REPORT_COPY", "User explicitly requested one-click report");
             const auto report = makeAudioReport();
@@ -358,6 +390,12 @@ private:
         }
         else if (action == "audioSetup")
         {
+            if (engine_.independentClockActive())
+            {
+                const auto revert = engine_.setIndependentClockEnabled (false);
+                if (revert.isNotEmpty()) return emitNotice (revert, true);
+                deviceSettingsDirty_ = true;
+            }
             // One-sided device routes are temporary and must never leak into
             // normal user configuration or the persisted audio-devices.xml.
             if (engine_.hasTemporaryDiagnosticDevice())
@@ -370,6 +408,12 @@ private:
         }
         else if (action == "diagnosticRoute")
         {
+            if (engine_.independentClockActive())
+            {
+                const auto revert = engine_.setIndependentClockEnabled (false);
+                if (revert.isNotEmpty()) return emitNotice (revert, true);
+                deviceSettingsDirty_ = true;
+            }
             using Route = armix::diagnostics::Route;
             const auto selected = value.toString();
             auto route = Route::normal;
@@ -480,9 +524,15 @@ private:
         }
         else if (action == "addCatalog")
         {
-            if (engine_.hasTemporaryDiagnosticDevice())
-                return emitNotice ("Return to NORMAL before adding VST3 effects.", true);
             const auto requestId = static_cast<int> (args.getProperty ("requestId", 0));
+            if (engine_.hasTemporaryDiagnosticDevice())
+            {
+                const auto* blocked = catalog_.find (args.getProperty ("id", {}).toString());
+                const auto name = blocked ? blocked->name : juce::String ("Unknown VST3");
+                const auto error = juce::String ("Return to NORMAL before adding VST3 effects.");
+                emitFxAddResult (requestId, name, error, 0);
+                return emitNotice (error, true);
+            }
             const auto requestedId = args.getProperty ("id", {}).toString();
             const auto* plugin = catalog_.find (requestedId);
             const auto name = plugin != nullptr ? plugin->name : juce::String ("Unknown VST3");
@@ -584,6 +634,21 @@ private:
     void timerCallback() override
     {
         ++timerTicks_;
+        // Driver disconnect or sample-rate renegotiation: fail closed and
+        // return to the direct path on the message thread, never from DSP.
+        if (engine_.independentClockFaulted())
+        {
+            const auto faultState = juce::JSON::toString (engine_.status(), false);
+            const auto error = engine_.setIndependentClockEnabled (false);
+            diagnostics_.record ("SMART_CLOCK_RECOVERY", faultState +
+                (error.isNotEmpty() ? " | RESTORE_FAIL: " + error : " | DIRECT_RESTORED"));
+            if (error.isNotEmpty()) emitNotice (error, true);
+            else
+            {
+                deviceSettingsDirty_ = true;
+                emitNotice ("Independent audio device changed/faulted; safe direct path restored.", true);
+            }
+        }
         if (engine_.finalizeGraphSwitch())
         {
             diagnostics_.record ("GRAPH_SWAP_ACK", pendingPresetName_);
@@ -603,7 +668,7 @@ private:
             deviceSettingsDirty_ = false;
             // DeviceManager signals even when a temporary capture-only /
             // output-only route is selected. Never persist that test route.
-            if (!engine_.hasTemporaryDiagnosticDevice())
+            if (!engine_.hasTemporaryDiagnosticDevice() && !engine_.independentClockActive())
             if (auto xml = engine_.devices().createStateXml())
             {
                 const auto text = xml->toString();

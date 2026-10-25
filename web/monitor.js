@@ -19,7 +19,8 @@
     "#arDiagnosticMode{color:#d9eaf3;background:#142a36;border:1px solid #57849a;border-radius:4px;padding:6px;font-size:11px}" +
     "#arDiagnosticMark{color:#f9e5ca;background:#503926;border:1px solid #b9854a;border-radius:4px;padding:7px 10px;cursor:pointer}" +
     "#arDiagnosticCopy{color:#e1f7f4;background:#166052;border:1px solid #34c8ac;border-radius:4px;padding:7px 12px;cursor:pointer}" +
-    "#arDiagnosticCopyStatus{color:#8cdec9;font-size:10px}";
+    "#arDiagnosticCopyStatus{color:#8cdec9;font-size:10px}" +
+    "#arSmartClockToggle{color:#f5eadb;background:#284961;border:1px solid #9bb2c5;border-radius:4px;padding:7px 12px;cursor:pointer}";
   document.head.appendChild(css);
   // Signal Check is declared in the permanent toolbar; footer holds status only.
   const overlay = document.createElement("div");
@@ -40,6 +41,7 @@
       '<option value="OUTPUT_ONLY_TONE">OUTPUT ONLY · 440 Hz -30 dBFS</option>' +
       '<option value="CAPTURE_ONLY">CAPTURE ONLY · SILENT OUTPUT</option></select>' +
       '<button id="arDiagnosticMark">MARK CRACKLE</button>' +
+      '<button id="arSmartClockToggle" title="Experimental independent capture/render clock synchronization">SMART CLOCK: DIRECT</button>' +
       '<button id="arDiagnosticCopy" title="Copies native driver settings, recent events and timing data">COPY FULL REPORT</button>' +
       '<span id="arDiagnosticCopyStatus" role="status">One click → paste to ChatGPT</span></div>' +
     '<div id="arHealthPanel" style="padding:8px 0;font:11px monospace;color:#8ad6e0"></div>' +
@@ -92,6 +94,7 @@
     el("arDiagnosticMode").value=d.diagnosticRoute||"NORMAL";
     el("arSignalMonitor").textContent=d.monitor?"MUTE OUTPUT":"UNMUTE OUTPUT";
     el("arSignalDry").textContent=d.dryTest?"DRY TEST ON":"DRY TEST OFF";
+    el("arSmartClockToggle").textContent=d.adaptiveClockActive?"SMART CLOCK: INDEPENDENT (BETA)":"SMART CLOCK: DIRECT";
     el("arHealthPanel").textContent="CALLBACK "+(d.callbackDurationUs||0)+" µs / period "+
       Math.round(d.periodUs||0)+" µs | Worst "+(d.worstCallbackUs||0)+
       " µs | Over-budget "+(d.overBudgetCount||0)+
@@ -102,7 +105,12 @@
       " | device starts/stops "+(d.deviceStartCount||0)+"/"+(d.deviceStopCount||0)+
       " | backend XRUN "+(d.backendXrunCount??"N/A")+
       " ("+(d.backendXrunMeaning||"UNKNOWN")+")"+
-      " | Render underflow UNOBSERVABLE via JUCE (timing NOT xruns)";
+      " | Render underflow UNOBSERVABLE via JUCE (timing NOT xruns)"+
+      " | Clock "+(d.adaptiveClockMode||"DIRECT")+
+      (d.adaptiveClockActive?" | FIFO "+(d.bridgeOccupancyFrames||0)+"f"+
+      " | bridge lost capture "+(d.bridgeOverflowFrames||0)+
+      " | bridge missing render "+(d.bridgeUnderflowFrames||0)+
+      " | drift "+Math.round(d.bridgeCorrectionPpm||0)+"ppm":"");
     const timing=Array.isArray(d.pluginTimings)?d.pluginTimings:[];
     const fxInfo=timing.map(x=>x.slot+". "+x.name+": "+x.lastUs+" µs now, worst "+x.worstUs+" µs").join(" | ");
     if(fxInfo)el("arHealthPanel").textContent+=" | FX: "+fxInfo;
@@ -119,6 +127,8 @@
     api.emitEvent("arMixAction",{action:"diagnosticRoute",value:e.target.value}));
   el("arDiagnosticMark").addEventListener("click",()=>
     api.emitEvent("arMixAction",{action:"diagnosticMark"}));
+  el("arSmartClockToggle").addEventListener("click",()=>
+    api.emitEvent("arMixAction",{action:"smartClock",value:!state.adaptiveClockActive}));
   el("arDiagnosticCopy").addEventListener("click",()=>{
     el("arDiagnosticCopyStatus").textContent="Preparing report...";
     api.emitEvent("arMixAction",{action:"copyDiagnosticReport"});

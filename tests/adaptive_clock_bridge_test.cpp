@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/device/AdaptiveClockBridge.h"
+#include "../engine/device/ClockBridgeSizing.h"
 #include <array>
 #include <cmath>
 #include <cstdlib>
@@ -62,12 +63,47 @@ static void testRate(double captureRate,double renderRate,double driftPpm)
     check(std::abs(st.correctionPpm)<=2000.0);
 }
 
+static void testLargeRenderQuantum()
+{
+    using namespace armix::device;
+    const auto sizing = ClockBridgeSizing::choose(48000.,48000.,480,1440,
+        AdaptiveClockBridge::taps,32768,24.);
+    check(sizing.valid && sizing.targetMs > 60.);
+    AdaptiveClockBridge bridge;
+    check(bridge.prepare(48000,48000,2,32768,sizing.targetMs));
+    std::array<float,480> captureL {},captureR {};
+    std::array<float,1440> renderL {},renderR {};
+    const float* capture[2]={captureL.data(),captureR.data()};
+    float* render[2]={renderL.data(),renderR.data()};
+    std::uint64_t silentAfterPrime=0;
+    for(int block=0;block<200;++block)
+    {
+        for(int j=0;j<3;++j)
+        {
+            for(int i=0;i<480;++i)
+                captureL[i]=captureR[i]=0.25f;
+            check(bridge.push(capture,2,480)==480);
+        }
+        bridge.pull(render,2,1440);
+        if(block>15)
+            for(float sample:renderL) if(std::abs(sample)<0.05f)++silentAfterPrime;
+    }
+    const auto st=bridge.status();
+    check(st.underflowFrames==0);
+    check(st.overflowFrames==0);
+    check(silentAfterPrime==0);
+    const auto rejected = ClockBridgeSizing::choose(48000.,48000.,480,20000,
+        AdaptiveClockBridge::taps,32768,24.);
+    check(!rejected.valid);
+}
+
 int main()
 {
     armix::device::AdaptiveClockBridge bad;
     check(!bad.prepare(0,48000,2));
     check(!bad.prepare(48000,48000,0));
     check(!bad.prepare(48000,48000,2,1000));
+    testLargeRenderQuantum();
     testRate(44100,48000,0);
     testRate(44100,48000,300);
     testRate(48000,44100,-300);
