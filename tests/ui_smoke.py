@@ -20,9 +20,18 @@ async def main():
             p=page.locator(f'[data-pan="{idx}"]')
             assert await p.get_attribute('aria-orientation')=='horizontal'
             assert await p.locator('.pan-thumb').count()==1
-        for selector in ['.nav button.selected','.left-rail .seg button.selected']:
+        # Glossy, pressed 3D CSS buttons; no PNG background in any button family.
+        for selector in ['.nav button.selected','.left-rail .seg button.selected',
+                         '[data-mute="0"]','[data-solo="0"]','[data-hpf="0"]',
+                         '.left-rail .rail-presets button','.left-rail .rail-bottom button']:
             bg=await page.locator(selector).first.evaluate('(x)=>getComputedStyle(x).backgroundImage')
-            assert 'data:image/png;base64,' in bg, (selector,bg[:110])
+            assert 'linear-gradient' in bg and 'data:image/png' not in bg,(selector,bg[:150])
+        style=await page.locator('[data-mute="0"]').evaluate("""e=>{
+          const s=getComputedStyle(e);return {dur:s.transitionDuration,border:s.borderTopWidth,
+            radius:s.borderTopLeftRadius,shadow:s.boxShadow};
+        }""")
+        assert style['border']=='1px' and style['radius']=='4px',style
+        assert all(float(v.rstrip('s'))<=.1 for v in style['dur'].split(', ')),style
         # Visual-architecture regression: four intentionally different hardware
         # families, FX slots recessed rather than taking on button-cap artwork.
         # GUI target: the master is the 13th sibling, not a floating right rail.
@@ -77,6 +86,20 @@ async def main():
         assert not railGeometry['emptyControls'],railGeometry
         assert all(btn['width']>=40 and btn['height']>=25 for btn in railGeometry['buttons']),railGeometry
         await page.screenshot(path=str(project/'mixer-master-dual-metric-left-rail.png'),full_page=True)
+        off_mute=await page.locator('[data-mute="0"]').evaluate("(e)=>getComputedStyle(e).getPropertyValue('--cc-top').trim()")
+        await page.locator('[data-mute="0"]').click()
+        mute_on=await page.locator('[data-mute="0"]').evaluate("(e)=>getComputedStyle(e).getPropertyValue('--cc-top').trim()")
+        assert mute_on!=off_mute and await page.locator('[data-mute="0"]').get_attribute('aria-pressed')=='true'
+        await page.locator('[data-mute="0"]').click()
+        await page.locator('[data-solo="0"]').click()
+        solo_on=await page.locator('[data-solo="0"]').evaluate("(e)=>getComputedStyle(e).getPropertyValue('--cc-top').trim()")
+        assert solo_on!=mute_on
+        await page.locator('[data-solo="0"]').click()
+        await page.locator('[data-hpf="0"]').click()
+        hpf_on=await page.locator('[data-hpf="0"]').evaluate("(e)=>getComputedStyle(e).getPropertyValue('--cc-top').trim()")
+        assert hpf_on not in (mute_on,solo_on,off_mute)
+        await page.locator('[data-hpf="0"]').click()
+        await page.screenshot(path=str(project/'mixer-crystal-candy-review.png'),full_page=True)
         # Verify true geometric alignment of each source MUTE/SOLO and master MUTE/STEREO.
         actions=await page.evaluate("""()=>{
           const bounds=s=>{const r=document.querySelector(s).getBoundingClientRect();
@@ -118,7 +141,9 @@ async def main():
             selection:getComputedStyle(main,'::before').borderTopWidth,
             masterRows:[...master.children].map(x=>({cls:x.className,height:x.getBoundingClientRect().height}))};
         }""")
-        assert len({architecture[k] for k in ('nav','small','long')})==3
+        assert len({architecture[k] for k in ('nav','small','long')})>=2,architecture
+        assert all('linear-gradient' in architecture[k] and 'data:image/png' not in architecture[k]
+                   for k in ('nav','small','long')),architecture
         assert 'data:image/png;base64' not in architecture['fx']
         assert 'data:image/png;base64' not in architecture['chrome']
         assert not architecture['overflow']
@@ -206,7 +231,7 @@ async def main():
         await button.hover()
         await page.wait_for_timeout(150)  # Finish 90 ms physical-switch filter transition.
         button_hover=await button.evaluate("(e)=>getComputedStyle(e).filter")
-        assert 'brightness(1.13)' in button_hover,button_hover
+        assert 'brightness(1.12)' in button_hover and 'saturate(1.1)' in button_hover,button_hover
         # FX power and FX name remain separate inside the 104px channel strip.
         assert await page.evaluate("""() => [...document.querySelectorAll('.strip .insert-slot')].every(slot=>{
             const cell=slot.getBoundingClientRect(),strip=slot.closest('.strip').getBoundingClientRect();
@@ -334,12 +359,13 @@ async def main():
         assert await pan.get_attribute('aria-valuenow')=='0'
         assert not await page.locator('#editor').is_visible(),'PAN double click opened editor'
 
-        # Pixel-perfect state mapping uses original silver/red/green images, not CSS flats.
+        # Crystal Candy: OFF surfaces match; active MUTE coral and SOLO amber are distinct.
         async def image_for(selector):
             return await page.locator(selector).first.evaluate(
                 '(b) => getComputedStyle(b).backgroundImage')
-        assert "data:image/png;base64," in await image_for('[data-mute="0"]')
-        assert await image_for('[data-mute="0"]') == await image_for('[data-solo="0"]')
+        off_mute=await image_for('[data-mute="0"]')
+        assert 'linear-gradient' in off_mute and 'data:image/png' not in off_mute
+        assert off_mute == await image_for('[data-solo="0"]')
         await page.locator('[data-mute="0"]').click()
         assert await page.locator('[data-mute="0"]').get_attribute('aria-pressed') == 'true'
         assert await image_for('[data-mute="0"]') != await image_for('[data-solo="0"]')
