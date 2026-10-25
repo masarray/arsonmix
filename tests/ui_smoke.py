@@ -153,6 +153,13 @@ async def main():
         a=await page.locator('[data-fader="0"]').bounding_box()
         m=await page.locator('[data-fader="master"]').bounding_box()
         assert abs(a['y']-m['y'])<=14,(a,m)
+        await page.locator('#modeToggle').click()
+        pro_a=await page.locator('[data-fader="0"]').bounding_box()
+        pro_m=await page.locator('[data-fader="master"]').bounding_box()
+        assert abs(pro_a['y']-pro_m['y'])<=14,(pro_a,pro_m)
+        await page.screenshot(path=str(project/'mixer-pro-view-review.png'),full_page=True)
+        await page.locator('#modeToggle').click()
+
 
 
         assert await page.locator('[data-master-insert="0"]').count()==1
