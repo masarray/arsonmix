@@ -97,7 +97,7 @@
       " µs | Over-budget "+(d.overBudgetCount||0)+
       " | Long gaps "+(d.callbackGapCount||0)+
       " | Late intervals (>1.5x) "+(d.lateCallbackIntervals||0)+
-      " | DSP p95/p99 (upper bound) "+(d.callbackP95BudgetUpperPct??0).toFixed(1)+"/"+(d.callbackP99BudgetUpperPct??0).toFixed(1)+"%"+
+      " | DSP p95/p99 budget (upper bound) "+(d.callbackP95BeyondDeadline?">100":Number(d.callbackP95BudgetUpperPct??0).toFixed(1))+"/"+(d.callbackP99BeyondDeadline?">100":Number(d.callbackP99BudgetUpperPct??0).toFixed(1))+"%"+
       " | Worst VST "+(d.worstPluginUs||0)+" µs"+
       " | device starts/stops "+(d.deviceStartCount||0)+"/"+(d.deviceStopCount||0)+
       " | backend XRUN "+(d.backendXrunCount??"N/A")+
