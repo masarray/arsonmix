@@ -17,7 +17,9 @@
     "#arSignalOpen{padding:4px 7px;font-size:10px}" +
     "#arDiagnosticLab{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;font-size:11px}" +
     "#arDiagnosticMode{color:#d9eaf3;background:#142a36;border:1px solid #57849a;border-radius:4px;padding:6px;font-size:11px}" +
-    "#arDiagnosticMark{color:#f9e5ca;background:#503926;border:1px solid #b9854a;border-radius:4px;padding:7px 10px;cursor:pointer}";
+    "#arDiagnosticMark{color:#f9e5ca;background:#503926;border:1px solid #b9854a;border-radius:4px;padding:7px 10px;cursor:pointer}" +
+    "#arDiagnosticCopy{color:#e1f7f4;background:#166052;border:1px solid #34c8ac;border-radius:4px;padding:7px 12px;cursor:pointer}" +
+    "#arDiagnosticCopyStatus{color:#8cdec9;font-size:10px}";
   document.head.appendChild(css);
   // Signal Check is declared in the permanent toolbar; footer holds status only.
   const overlay = document.createElement("div");
@@ -37,7 +39,9 @@
       '<option value="DRY_THROUGH">DRY THROUGH (0 FX)</option>' +
       '<option value="OUTPUT_ONLY_TONE">OUTPUT ONLY · 440 Hz -30 dBFS</option>' +
       '<option value="CAPTURE_ONLY">CAPTURE ONLY · SILENT OUTPUT</option></select>' +
-      '<button id="arDiagnosticMark">MARK CRACKLE</button></div>' +
+      '<button id="arDiagnosticMark">MARK CRACKLE</button>' +
+      '<button id="arDiagnosticCopy" title="Copies native driver settings, recent events and timing data">COPY FULL REPORT</button>' +
+      '<span id="arDiagnosticCopyStatus" role="status">One click → paste to ChatGPT</span></div>' +
     '<div id="arHealthPanel" style="padding:8px 0;font:11px monospace;color:#8ad6e0"></div>' +
     '<div id="arSignalFooter">The legacy Main L/R, Record and Streaming buttons are UI previews, not hardware routing. Select output using AUDIO SETUP. Use headphones at low volume.</div>' +
     '</section>';
@@ -93,6 +97,7 @@
       " µs | Over-budget "+(d.overBudgetCount||0)+
       " | Long gaps "+(d.callbackGapCount||0)+
       " | Late intervals (>1.5x) "+(d.lateCallbackIntervals||0)+
+      " | DSP p95/p99 (upper bound) "+(d.callbackP95BudgetUpperPct??0).toFixed(1)+"/"+(d.callbackP99BudgetUpperPct??0).toFixed(1)+"%"+
       " | Worst VST "+(d.worstPluginUs||0)+" µs"+
       " | device starts/stops "+(d.deviceStartCount||0)+"/"+(d.deviceStopCount||0)+
       " | backend XRUN "+(d.backendXrunCount??"N/A")+
@@ -114,6 +119,13 @@
     api.emitEvent("arMixAction",{action:"diagnosticRoute",value:e.target.value}));
   el("arDiagnosticMark").addEventListener("click",()=>
     api.emitEvent("arMixAction",{action:"diagnosticMark"}));
+  el("arDiagnosticCopy").addEventListener("click",()=>{
+    el("arDiagnosticCopyStatus").textContent="Preparing report...";
+    api.emitEvent("arMixAction",{action:"copyDiagnosticReport"});
+  });
+  api.addEventListener("arMixDiagnosticReportCopied",d=>{
+    el("arDiagnosticCopyStatus").textContent="COPIED ("+Math.round((Number(d.bytes)||0)/1024)+" KB) · paste into chat";
+  });
   el("arSignalLogs").addEventListener("click",()=>api.emitEvent("arMixAction",{action:"openDiagnostics"}));
   el("arSignalSetup").addEventListener("click",()=>{
     overlay.classList.remove("open");
