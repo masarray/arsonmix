@@ -602,12 +602,11 @@
 
 
 /* BUTTON 180 — user-supplied button-180.html CSS. Only colors are parametrized. */
-:root{--b180-off:#506879;--b180-edge:#294555}
+:root{--b180-off:#506879;--b180-edge:#294555;--b180-color:var(--b180-off);--b180-border:var(--b180-edge)}
 :is(.btn-180,.toolbar .nav button,.toolbar .spec-device,.left-rail .tabs button,
 .strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
 .left-rail .rail-presets button,.left-rail .rail-bottom button,
 #masterLeft .master-tools button,.native-btn){
- --b180-color:var(--b180-off);--b180-border:var(--b180-edge);
  border:1px solid var(--b180-border)!important;
  letter-spacing:1px;
  padding:8px 20px;
