@@ -8,7 +8,7 @@ page=(root/'web/index.html').read_text(encoding='utf8')
 preview=(root/'AR-MIX-Live-FX-Host-Standalone-v0.3.html').read_text(encoding='utf8')
 license=(root/'web/assets/fonts/OFL-LICENSE-Inter.txt').read_text(encoding='utf8')
 assert 'BUTTON 180 — user-supplied button-180.html CSS' in css
-compact=re.sub(r'\\s+','',css)
+compact=''.join(css.split())
 for rule in (
  'inset 0 30px 30px -15px rgba(255,255,255,.1)',
  'inset 0 0 0 1px rgba(255,255,255,.3)',
@@ -22,7 +22,7 @@ for rule in (
  'background:var(--b180-color)',
  'display:inline-flex',
  'inset 0 3px 6px -1px rgba(0,0,0,.72)'
-): assert re.sub(r'\\s+','',rule) in compact,rule
+): assert ''.join(rule.split()) in compact,rule
 assert '--b180-off:#3a5161' in css
 assert '--b180-ink:#291018' in css
 assert '--b180-color:#e76f83' in css # ink on coral mute
