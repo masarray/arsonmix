@@ -317,7 +317,7 @@
       const pan=track.querySelector('[data-pan="master"]');
       if(pan){pan.removeAttribute("tabindex");pan.style.pointerEvents="none";pan.title="Master PAN DSP not yet implemented";}
       const marker=track.querySelector(".master-info-kicker span");
-      if(marker)marker.textContent="NATIVE PEAKS";
+      if(marker && marker.textContent!=="NATIVE PEAKS")marker.textContent="NATIVE PEAKS";
       return;
     }
     const rack=track.querySelector(".rack");
@@ -363,7 +363,9 @@
     });
   }
   new MutationObserver(()=>syncView()).observe(workspace,{childList:true});
-  new MutationObserver(()=>syncView()).observe(mixer,{childList:true});
+  // renderMaster() replaces descendants without replacing the mixer root.
+  // Reapply the disabled native-only controls after each Master redraw.
+  new MutationObserver(()=>syncView()).observe(mixer,{childList:true,subtree:true});
   const repaint=()=>{
     if(currentTab()==="FX RACK") renderRack();
     if(currentTab()==="SETUP") renderSetup();
