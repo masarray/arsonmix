@@ -77,6 +77,26 @@ async def main():
         assert not railGeometry['emptyControls'],railGeometry
         assert all(btn['width']>=40 and btn['height']>=25 for btn in railGeometry['buttons']),railGeometry
         await page.screenshot(path=str(project/'mixer-master-dual-metric-left-rail.png'),full_page=True)
+        # Verify true geometric alignment of each source MUTE/SOLO and master MUTE/STEREO.
+        actions=await page.evaluate("""()=>{
+          const bounds=s=>{const r=document.querySelector(s).getBoundingClientRect();
+            return {top:r.top,height:r.height,middle:r.top+r.height/2,width:r.width}};
+          const master=bounds('#masterMute'),stereo=bounds('.master-stereo-badge');
+          return {master,stereo,rows:[...document.querySelectorAll('.strip:not(.master-strip) .channel-actions')].map(row=>{
+            const mute=row.querySelector('.mute'),solo=row.querySelector('.solo');
+            return {mute:bounds('[data-mute="'+mute.dataset.mute+'"]'),solo:bounds('[data-solo="'+solo.dataset.solo+'"]')};
+          })};
+        }""")
+        assert abs(actions['master']['middle']-actions['stereo']['middle'])<=1,actions
+        assert all(abs(row[key]['middle']-actions['master']['middle'])<=1 for row in actions['rows'] for key in ('mute','solo')),actions
+        assert all(abs(row['mute']['middle']-row['solo']['middle'])<=1 for row in actions['rows']),actions
+        assert actions['stereo']['height']==actions['master']['height']==29,actions
+        header=await page.evaluate("""()=>{
+          const btns=[...document.querySelectorAll('.toolbar .nav button')];
+          return {buttons:btns.map(b=>{const r=b.getBoundingClientRect();return {width:r.width,mid:r.top+r.height/2,right:r.right}}),
+            device:(()=>{const r=document.querySelector('.spec-device').getBoundingClientRect();return r.top+r.height/2})()};
+        }""")
+        assert all(b['width']>=77 and abs(b['mid']-header['device'])<=1 for b in header['buttons']),header
 
         assert await page.locator('header .nav button').count()==7
         assert await page.locator('footer.status button').count()==0
@@ -91,7 +111,7 @@ async def main():
           });
           return {nav:bg('.nav button.selected'),small:bg('[data-mute="0"]'),
             long:bg('.rail-presets button'),fx:bg('.strip .rack .insert'),chrome:bg('.spec-device'),
-            navBounds:rect('.nav'),mode:rect('#modeToggle'),overflow,
+            navBounds:rect('.nav'),overflow,
             mainHeader:rect('[data-strip="0"] .ch-id'),masterHeader:rect('#masterLeft .ch-id'),
             mainBottom:rect('[data-strip="0"] .strip-name'),masterBottom:rect('#masterLeft .strip-name'),
             mainFader:rect('[data-strip="0"] .fader-zone'),masterFader:rect('#masterLeft .fader-zone'),
@@ -102,7 +122,10 @@ async def main():
         assert 'data:image/png;base64' not in architecture['fx']
         assert 'data:image/png;base64' not in architecture['chrome']
         assert not architecture['overflow']
-        assert architecture['navBounds']['right']<=architecture['mode']['x']+1
+        assert architecture['navBounds']['right']<=1680+1,architecture
+        assert await page.locator('.toolbar-actions .nav button').count()==7
+        assert await page.locator('#masterLeft').evaluate(
+            '(m)=>m.getBoundingClientRect().width>document.querySelector("[data-strip=\\\"0\\\"]").getBoundingClientRect().width+30')
         for key in ('Header','Bottom','Fader'):
             assert abs(architecture['main'+key]['y']-architecture['master'+key]['y'])<=2,architecture
         assert abs(architecture['mainBottom']['bottom']-architecture['masterBottom']['bottom'])<=2,architecture
@@ -120,6 +143,15 @@ async def main():
         assert smallRail['footerBottom']<=smallRail['bottom']+1,smallRail
         assert all(b['width']>35 for b in smallRail['buttons']),smallRail
         assert await page.locator('.strip').count()==13
+        widths=await page.evaluate("""()=>{
+          const mixer=document.querySelector('#mixer'),master=document.querySelector('#masterLeft');
+          const source=document.querySelector('[data-strip="0"]');
+          return {master:master.getBoundingClientRect().width,source:source.getBoundingClientRect().width,
+             visible:master.getBoundingClientRect().right<=mixer.getBoundingClientRect().right+1,
+             viewport:mixer.getBoundingClientRect().width};
+        }""")
+        assert widths['master']>=168 and widths['master']>widths['source']+25, widths
+        assert widths['visible'],widths
         await page.set_viewport_size({"width":1680,"height":920})
         # Hardware-style PAN illumination must grow from center, both L and R.
         pan_fill=page.locator('[data-pan="1"] .pan-fill')
@@ -183,6 +215,17 @@ async def main():
         # Channel identities are real editable state, not only colored labels.
         await page.locator('[data-editstrip="0"]').click()
         assert await page.locator('#channelIdentity').is_visible()
+        anchor=await page.evaluate("""()=>{
+          const n=document.querySelector('[data-editstrip="0"]').getBoundingClientRect();
+          const p=document.querySelector('.identity-panel').getBoundingClientRect();
+          return {nameTop:n.top,nameCenter:n.left+n.width/2,popupBottom:p.bottom,popupLeft:p.left,
+            popupRight:p.right,popupCenter:p.left+p.width/2,overlay:getComputedStyle(document.querySelector('.identity-overlay')).backdropFilter,
+            active:document.querySelector('[data-strip="0"]').classList.contains('identity-editing')};
+        }""")
+        assert anchor['popupBottom']<=anchor['nameTop']-7,anchor
+        assert anchor['popupLeft']>=0 and anchor['popupRight']<=1680,anchor
+        assert anchor['active'] and anchor['overlay']=='none',anchor
+        assert await page.locator('#modeToggle').count()==0
         await page.locator('#identityName').fill('Vocal Main')
         await page.locator('[data-icon-choice="🎙"]').click()
         await page.locator('[data-color-choice="#cf6b1e"]').click()
@@ -218,12 +261,9 @@ async def main():
         a=await page.locator('[data-fader="0"]').bounding_box()
         m=await page.locator('[data-fader="master"]').bounding_box()
         assert abs(a['y']-m['y'])<=2,(a,m)
-        await page.locator('#modeToggle').click()
-        pro_a=await page.locator('[data-fader="0"]').bounding_box()
-        pro_m=await page.locator('[data-fader="master"]').bounding_box()
-        assert abs(pro_a['y']-pro_m['y'])<=2,(pro_a,pro_m)
-        await page.screenshot(path=str(project/'mixer-pro-view-review.png'),full_page=True)
-        await page.locator('#modeToggle').click()
+        assert await page.locator('#modeToggle').count()==0
+        # All strips retain a single, optimized height; no PRO/EASY mode switch.
+        assert abs(a['y']-m['y'])<=2,(a,m)
 
 
 
@@ -393,8 +433,8 @@ async def main():
         assert await page.locator('.editor').count()==0
         assert await page.locator('.status button').count()==0
         await page.locator('[data-view="MIX"]').click()
-        await page.locator('#modeToggle').click()
-        assert await page.locator('.app.easy').count()==0
+        assert await page.locator('#modeToggle').count()==0
+        assert await page.locator('.app.easy').count()==1
         assert not errors, errors
         await browser.close()
     print("PASS: asset PNG for 13 faders, detent alignment, no-jump drag, endpoints, FX chain, no JS errors")
