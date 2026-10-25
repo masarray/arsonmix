@@ -607,8 +607,9 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 
 
 
-/* BUTTON 180 — user-supplied button-180.html CSS. Only colors are parametrized. */
-:root{--b180-off:#223541;--b180-edge:#0c202c;--b180-color:var(--b180-off);--b180-border:var(--b180-edge)}
+/* BUTTON 180 — single component owner: square black-crystal OFF, approved jewel ON.
+   No curved lens, extra pseudo-elements or change to physical button size. */
+:root{--b180-off:#171c23;--b180-edge:#070d14;--b180-color:var(--b180-off);--b180-border:var(--b180-edge)}
 :is(.btn-180,.toolbar .nav button,.toolbar .spec-device,.left-rail .tabs button,
 .strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
 .left-rail .rail-presets button,.left-rail .rail-bottom button,
@@ -622,17 +623,22 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  outline:none;
  transform:translateY(0px)!important;
  position:relative;
- box-shadow:inset 0 30px 30px -15px rgba(255, 255, 255, .1),
-  inset 0 0 0 1px rgba(255, 255, 255, .3),
-  inset 0 1px 20px rgba(0, 0, 0, 0),
-  0 3px 0 var(--b180-border),0 3px 2px rgba(0, 0, 0, .2),
-  0 5px 10px rgba(0, 0, 0, .1),
-  0 10px 20px rgba(0, 0, 0, .1)!important;
+ /* Smoked crystal: subtle overhead highlight, crisp edges, dark lower depth.
+     Solid rectangle, not a metallic gradient or convex dome. */
+ box-shadow:
+  inset 0 2px 2px rgba(230,244,255,.40),
+  inset 0 13px 12px -11px rgba(183,213,231,.25),
+  inset 0 0 0 1px rgba(196,222,236,.13),
+  inset 0 -8px 12px -7px rgba(0,0,0,.82),
+  0 3px 0 var(--b180-border),
+  0 3px 2px rgba(0,0,0,.27),
+  0 5px 10px rgba(0,0,0,.13),
+  0 10px 20px rgba(0,0,0,.11)!important;
  background:var(--b180-color)!important;
  filter:none!important;
  color:white!important;
  text-shadow:0 1px 0 rgba(0, 0, 0, .3)!important;
- transition:150ms all!important;
+ transition:background-color 150ms, border-color 150ms, color 150ms, box-shadow 150ms, filter 150ms!important;
  font-family:Arial,Helvetica,sans-serif;
  cursor:pointer;text-decoration:none;user-select:none;
  display:inline-flex;justify-content:center;align-items:center;
@@ -657,7 +663,7 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  background:#dcdcdc!important;box-shadow:none!important;
  text-shadow:none!important;border:none!important;
 }
-/* No artificial glass/underbody pseudo-elements: Button 180 has none. */
+/* Glass glint is drawn by inset shadows only; no pseudo-elements. */
 :is(.btn-180,.toolbar .nav button,.toolbar .spec-device,.left-rail .tabs button,
 .strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
 .left-rail .rail-presets button,.left-rail .rail-bottom button,
@@ -677,23 +683,14 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 .toolbar .nav button{letter-spacing:.35px!important}
 .left-rail .rail-presets button{text-align:left;justify-content:flex-start;padding:0 9px!important}
 .toolbar .spec-device{text-transform:none;letter-spacing:0!important}
-:is(.toolbar .nav button.selected,.left-rail .tabs button.selected,
- .left-rail .rail-bottom #saveFxPreset.active,.left-rail .rail-presets button.active,
- .native-btn.primary,.native-btn.on){--b180-color:#15ccbe;--b180-border:#0f988e}
-.left-rail .rail-bottom #addScene.active{--b180-color:#259bd9;--b180-border:#116b9d}
-.strip .utility-row button[data-hpf].active{--b180-color:#2ec990;--b180-border:#12845a}
-:is(.strip .channel-actions .mute.active,#masterLeft #masterMute.active,
- .native-btn.warn){--b180-color:#e86176;--b180-border:#aa314a}
-.strip .channel-actions .solo.active{--b180-color:#d5a832;--b180-border:#916719}
-:is(.strip .utility-row button[data-pre].active,
- #masterLeft .master-tools button.active){--b180-color:#9b83de;--b180-border:#644da0}
+/* Semantic ON palette is defined exactly once after the recessed state. */
 #masterLeft .master-actions .master-stereo-badge{
  border:1px solid #4b6779;background:linear-gradient(#233a49,#102635 60%,#203442);
  box-shadow:inset 0 1px 2px #020c18c0,0 1px 0 #68859940;color:#a9d6e6;cursor:default
 }
 
 /* ON = an inward surface in the SAME slot. No translate, rescale, width or height changes.
-   OFF uses original raised seven-layer Button 180 box-shadow.
+   OFF uses the new black-crystal raised face.
    The illuminated face is sunken by dark INNER shadows while all edges stay fixed.
    :active and latched controls use the same inner-depth recipe. */
 :is(.strip .channel-actions .candy,.strip .utility-row button,
@@ -738,6 +735,28 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 .strip .strip-name,#masterLeft .master-strip-name{position:relative;z-index:2;isolation:isolate}
 /* No odd vertical displacement of the active nav relative to its neighbors. */
 
+/* OFF hover adds light, not a new curved silhouette: same black glass, 3px radius and rectangle. */
+:is(.toolbar .nav button,.toolbar .spec-device,
+ .strip .channel-actions .candy,.strip .utility-row button,
+ #masterLeft .master-actions button,#masterLeft .master-tools button,
+ .left-rail .tabs button,.left-rail .rail-presets button,
+ .left-rail .rail-bottom button):not(.active):not(.selected):not(.on):not([aria-pressed="true"]):hover:not(:disabled){
+ filter:brightness(1.18) saturate(1.04)!important;
+ border-color:#527789!important;
+}
+/* All OFF keys use the same square smoked-black crystal.
+   The existing teal/coral/amber/green ON colors remain intact. */
+:is(.toolbar .nav button,.toolbar .spec-device,
+ .strip .channel-actions .candy,.strip .utility-row button,
+ #masterLeft .master-actions button,#masterLeft .master-tools button,
+ .left-rail .tabs button,.left-rail .rail-presets button,
+ .left-rail .rail-bottom button):not(.active):not(.selected):not(.on):not([aria-pressed="true"]){
+ --b180-color:var(--b180-off);--b180-border:var(--b180-edge);
+}
+@media(prefers-reduced-motion:reduce){
+ :is(.toolbar .nav button,.toolbar .spec-device,.strip .channel-actions .candy,
+ .strip .utility-row button,.left-rail button.btn-180){transition:none!important}
+}
 /* One soft, non-rectilinear halo shared by source and stereo master. */
 .strip.selected,#masterLeft.selected{
  --selection-tint:color-mix(in srgb,var(--ch) 22%,#7fe8ff 78%);
@@ -818,30 +837,6 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
    the recovered vertical area; MASTER keeps its dedicated clear-clip controls. */
 #mixer > .strip:not(.master-strip) > .fader-tools{display:none!important}
 
-/* OFF hover = SHINE ONLY. Preserve the original Button 180 solid rectangular
-   face, its seven-layer cast-shadow, 3px corner radius, size, inset/raised depth,
-   text, and position. Never swap in a curved/silvery gradient or glow blob. */
-:is(.toolbar .nav button,.toolbar .spec-device,
- .strip .channel-actions .candy,.strip .utility-row button,
- #masterLeft .master-actions button,#masterLeft .master-tools button,
- .left-rail .tabs button,.left-rail .rail-presets button,
- .left-rail .rail-bottom button):not(.active):not(.selected):not(.on):not([aria-pressed="true"]):hover:not(:disabled){
- filter:brightness(1.18) saturate(1.04)!important;
- border-color:#527789!important;
-}
-/* All OFF hardware keys have identical deep dark-slate color.
-   The existing teal/coral/amber/green ON colors remain intact. */
-:is(.toolbar .nav button,.toolbar .spec-device,
- .strip .channel-actions .candy,.strip .utility-row button,
- #masterLeft .master-actions button,#masterLeft .master-tools button,
- .left-rail .tabs button,.left-rail .rail-presets button,
- .left-rail .rail-bottom button):not(.active):not(.selected):not(.on):not([aria-pressed="true"]){
- --b180-color:#223541;--b180-border:#0c202c;
-}
-@media(prefers-reduced-motion:reduce){
- :is(.toolbar .nav button,.toolbar .spec-device,.strip .channel-actions .candy,
- .strip .utility-row button,.left-rail button.btn-180){transition:none!important}
-}
 </style></head>
 <body>
 <div id="app" class="app">

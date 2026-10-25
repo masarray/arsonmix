@@ -110,7 +110,8 @@ async def main():
         }""")
         for key in ('background','image','shadow','border','radius'):
             assert shared['header'][key]==shared['rail'][key]==shared['mute'][key],(key,shared)
-        assert shared['rail']['background']=='rgb(34, 53, 65)',shared
+        assert shared['rail']['background']=='rgb(23, 28, 35)',shared
+        assert '230, 244, 255' in shared['rail']['shadow'] and 'inset' in shared['rail']['shadow'],shared
         preset=page.locator('[data-preset="Clean Vocal"]')
         before=await preset.evaluate('(e)=>e.getBoundingClientRect().toJSON()')
         await preset.hover()
@@ -125,7 +126,7 @@ async def main():
           radius:getComputedStyle(e).borderTopLeftRadius,
           filter:getComputedStyle(e).filter
         })""")
-        # No cylindrical face: solid background, identical seven 3D shadows,
+        # No cylindrical face: solid background, identical inset-crystal 3D shadows,
         # identical rectangular geometry and radius. Only the shine filter changes.
         assert hovered['shadow']==shared['rail']['shadow'],hovered
         assert hovered['background']=='none' and hovered['radius']==shared['rail']['radius'],hovered

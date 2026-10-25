@@ -1,0 +1,29 @@
+/* Left rail uses the same Button 180 metal/gloss surface as header and channels. */
+#app .left-rail .tabs button.btn-180{height:34px;min-height:34px}
+#app .left-rail .rail-presets{gap:5px;padding:7px 6px 6px}
+#app .left-rail .rail-presets button.btn-180{height:27px;min-height:27px}
+#app .left-rail .rail-bottom{row-gap:6px;padding-top:8px}
+#app .left-rail .rail-bottom button.btn-180{height:27px;min-height:27px}
+#app .left-rail .rail-presets button.btn-180{text-align:left;justify-content:flex-start;padding:0 9px!important}
+@media(max-height:730px){
+ #app .left-rail .rail-presets{gap:4px;padding-top:6px;padding-bottom:4px}
+ #app .left-rail .rail-presets button.btn-180{height:25px;min-height:25px}
+ #app .left-rail .rail-bottom{row-gap:5px;padding-top:7px}
+ #app .left-rail .rail-bottom button.btn-180{height:25px;min-height:25px}
+}
+/* PAN: recessed center detent is below the original metallic PNG, not over it.
+   z-order: track (0), center detent (1), illuminated pan fill (2), PNG thumb (3). */
+.pan-track{isolation:isolate}
+.pan-track::before{z-index:0!important;top:13px!important}
+.pan-track::after{
+ z-index:1!important;top:12px!important;height:11px;
+ background:linear-gradient(#708b9c,#314957)!important;
+ box-shadow:0 0 0 1px #0710168c!important;
+}
+.pan-track.is-centered::after{background:#6e8899!important;box-shadow:0 0 0 1px #081720!important}
+.pan-track .pan-fill{z-index:2!important;top:15px!important}
+.pan-track .pan-thumb{z-index:3!important}
+/* The obsolete A/B bay is removed from source strips. Let the fader occupy
+   the recovered vertical area; MASTER keeps its dedicated clear-clip controls. */
+#mixer > .strip:not(.master-strip) > .fader-tools{display:none!important}
+

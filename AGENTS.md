@@ -35,3 +35,8 @@
 
 ## Post-lock native integration update (PR #13, 2026-10-25)
 The **experimental** P2.5 JUCE VST3 engine has now been integrated into `main` using the approved v0.8 GUI as its ancestor; it does not supersede the visual approval or certify audio. Archived stacked PRs and the v0.5 integration PR #11 remain as lineage, not a source for overwriting the GUI. Work on later engine phases starts from latest `main`, tests with both Windows MSVC and the GUI lock Chromium workflow, and preserves all locked visual geometry. Do not merge a stale P2.5 branch wholesale back into main.
+
+## 2026-10-26 CSS ownership: mandatory source workflow
+- Edit `web/styles-src/` modules, not generated `web/styles.css` or standalone HTML. Run `python scripts/build_ui_css.py`; `--check` is required in CI and publishing.
+- `20-button-180.css` is the **sole owner** of shared button skin and ON/OFF state. OFF is square solid black crystal with subtle upper inset reflections (color `#171c23`), ON remains approved vivid inset, radius 3px, no dome. Preserve PAN 13/15/12, 168px master and fixed button geometry.
+- Historical rules quarantined in `10-console-legacy.css` remain candidates, not automatically dead code. Migrate only after DOM/cascade reachability and computed geometry assertions. See `docs/CSS_ARCHITECTURE_MILESTONES_2026-10-26.md`.
