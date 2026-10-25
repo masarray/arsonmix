@@ -39,82 +39,6 @@
 .plugin-inspector label{display:block;font-size:11px;color:#a2d9e8;margin:18px 0}.plugin-inspector label output{float:right;font:11px Consolas,monospace;color:#6ce0fb}.plugin-inspector input[type=range]{display:block;width:100%;margin-top:10px;accent-color:#16b9dc;cursor:ew-resize}
 
 
-/* AR MIX: original switch-cap artwork by project author; real mechanical pixel shading.
-   Labels live in HTML for legibility and correct state semantics. */
-:root{
-  --switch-silver:url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADYAAAAlCAYAAAAJBxroAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAA2VJREFUeJztmc9uHEUQxn9V3T1a7zpc4j34ZJODkR+BvEEwEofwBuEFwnOQR+BOjtzhEqTgB4BwIpId8kfZcEnieJnp7uIwf7xrduWVsLBH7KcdVU1XTff3TfXOrmpkMBjcAb4FtlkAEVk0fOUws2Whl8A9GQwGL0RkG2A8HnP37pfs7+8z2tykKAp8CBQhEEJBCIFQeIIPhG68Prz3eO8JobbOObz3qCrOOVQVVSXnTM6ZlBI5Z2KMpJSIMVJVkRhj41dUVUXZ2CpWVGU7XlJWFbGqeP/+HU+e/MbDh98xef26Ff1SNjY2TES4efMm9+9/zY2PbqDO41VRVxNT53AqqCjiFBVFVZDWquJEoLHSxJwqzikgTb5gZuRsgJFSJuWMWcaykcwgZ5IZljM5G2a1zZaxlMmWSdnIzY3JKRJz5t3btzx48A1/vnmDmaEi9YJ3PjtguLkJtFtP6o8I2uRIc9dVpRbrHd45vPM47wne4cNZNYui8YtAURQzx8x4W/EQCN7hvMc7j2/mV+fq9VQR1Tk+NdWa72g04uDgc1o92m7MT/b2uk0q5+xsQBZHllxx0fdz1XyZ1fCP7NbuzWjwrcLBxvACEtcfw9Goe9jpBbk1pLtn7elc7KySCzNWW2DWk/kpZC5ztbnnhF3PB/sCrEB0tYr1EMuF9aZ8i/E/rFjPsRbWN6yF9Q1rYX3DWljfsBbWN6yF9Q3LhS1t2/UDnbDyr+lV8rgUTKennd8JO3523J8iLSH67Pi48zthh4eHTE9PF16Agc3MZudidXyFlVdgajNzLprNlsx9Op3y8+PH3bmMRiMTEba2ttjd3eXT27e59fEthsMhvijwvm1qeoL3uKax6X0geI8PdTs7eF93kJ3DOUW1ts45RKSzZkZKqbMpZXKubUyJnCJV2/auaj/GiiomUlVRNa3wsqqIseLDyQlPn/7OT48ecXR0xGQywczOhKkqOzs7eO/PVF/TFxItZl9MxBg5Ojoi5zwvLOdMURSMx2NGM43H6w4z4+TkhMlkQlmWqGon7IWIbOecr5rjpaAR9krN7Csze3XVhC4LZvbczO6JmVEUBcAXQN8b+B+A78uynPvn8cdVsblEPG+dWWG/Akt+yHqBKfBLe6LnAj9Sq07/Mal/g0TN+QdqDQD8DShhaM3P0n4TAAAAAElFTkSuQmCC");
-  --switch-green:url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADYAAAAlCAYAAAAJBxroAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAplJREFUeJztmLuKFEEUQM+tqh7FFhVdFdTcVQPRyER/w2SDRQX9DHMx2UQzQfwQwUwxEEF8pCY+VkUcWLbr1jXo6tfuhiM923igpqumbzX3cKsfFMBD4CdgE2k/gQeSO8cAyrMll+5d4PS108yOFohzICBC/lkCzLCsYGZs/9rmy8uvvHv0jj+f503UD6lDoDxziBuPr3Pw+AGc94Tg8cHjfSD4QOEKgst9HwguUPgij4s8rs8HVzfvA1483jm88zhxJEtoUjQl1BTVSEy5aaTK40qrPK7yOJ9P20RVolbEqMQYSVHZ+rXF87svmGe50Ciu3l5ldmSGJUNRUkpIrLpKLUnB6jJQVy7VVSMZoSy4eGeVV/dfAz2xlSsnsGTdZAdmIFgtt0xiZrWfUeecJVeurrRhrVhxuMhiAmL1BaTXlokd91kj6A/6NiR0wXQVg1rOSe0nvf+XAGvSSbsFG1oxUwNHr1LSXmG5tHr0K2YGqTvViZkhSTCxvZdfMx7Lsn1+D2kr1chluqWYGEgZhizdzTXEGtP+6zkzqFi7DAFBuolLzECuR9gjcjhhn9Kr2JhpLB43dgL/iv9i+43Jig0+qaZE73E/LbPJLsXJinUv6DGz+AdM9uEx2aX4X2y/0YrFeRwzj4WgW9r2W7HNt5ujJLNINt90Dq3Yx6efqP5UoyS0COI88vHZp3Y82CIpz5Ws3jrPqcunmJUzxAne+7oFP+gH73H56EPAe9cdvW/nOucQJzjnSClhyUgpoar1rrMqqgmNsT1GVVJUoioaNccM+83cal7x/e133j/50G5v7xKbEk5E9v/NtQMR+ebW1tY2yrL8PXYyi6Isy9/r6+sbYmY3gZPAbOykFsQ28FVsattTmel/eUyNv5a+k5FegassAAAAAElFTkSuQmCC");
-  --switch-red:url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADYAAAAlCAYAAAAJBxroAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAmtJREFUeJztmL9uFDEQh7+xrXBikZYI0QDK5QkiJCh4E5oUkfjT8A68AKJJQYNo4GnoCFQpo7s0ILgkIiSKbA/F2rt7ByjNidtd5SdZM56b0/nbsa29AXgNzAAdyJgBryQ5NwHujka82Nzk0fo6pXNYEQSQZLsgBVQVBaIqR97zcTbjzcEBk7OznPZDUi53RiPebm1xa20NK4K1FmctxhistVhrMdk618yd+2vcpO8aY5DkiwiqSowRDYEYYzVCIIZACIHofWVDIHj/RzykeIixGt7jY2R2ccHTvT2m5+cAuIz4bGOD0jmCavXjqnjvEalq1aWKwXzVInDDWp6Px7zc3wdaYA/KkgAYVTQ9WYG50QXVhymDJT8CD8uyzqvBCmurBBFE03NJflegsjIcCSiDXjOmznHt5KCKoapOBHJaF8Gg2obQVE1bOTVYUMW0t2Dyobtg7S2Zz1tWDZap89Uu2uZv4Oaj/0/19b2gxTOX1YBlqA6eqcvUhsuaO2PaQ6isxWq6yxL6KnN5Sj81txWHpMFWbLBgzeWhw9qMw6/YsOo14IpdgfVNgwW7ujz6puGDnYawynUsRecx1n4N9vnkZCWLWaY+HR/Xfg32fjrlp/crWdAydBoCHw4P6/lcj+TeaMST8Zj7Zcn11K62IhhjcMl3qZ1tjcEZU9nW3KRYHkYESTaqojESVZsWdWpz++T7ECqbPw+hiqniU1s8qFat7hj5FSNfjo54N5kwbXr3/2z+9F5GRL6vehHLloh8M9vb27tFUfT/5kgqiuJkZ2dnV1T1MXAbWFv1opakC+Cr6MD+OWcN/81jaPoNFG2JtYii0WUAAAAASUVORK5CYII=");
-}
-.strip .channel-actions .candy,
-.strip .utility-row button,
-.strip .fader-tools button,
-.master-controls button{
-  appearance:none;
-  position:relative;
-  isolation:isolate;
-  flex-shrink:1;
-  border:0!important;
-  border-radius:0!important;
-  background-color:transparent!important;
-  background-image:var(--switch-silver)!important;
-  background-position:center!important;
-  background-repeat:no-repeat!important;
-  background-size:100% 100%!important;
-  box-shadow:none!important;
-  color:#182029;
-  text-shadow:0 1px 1px #ffffffb5;
-  font-size:10px;
-  font-weight:700;
-  letter-spacing:.15px;
-  padding:0 2px 4px;
-  transition:filter 85ms ease,transform 85ms ease;
-  transform:translateY(0);
-}
-.strip .channel-actions .candy{height:34px;min-width:0}
-.strip .utility-row button{height:28px;min-width:0}
-.strip .fader-tools button{height:30px;min-width:0}
-.master-controls button{height:30px;min-height:30px;padding-left:0;text-align:center}
-.strip .candy.mute.active,
-.master-controls #masterMute.active{
-  background-image:var(--switch-red)!important;
-  color:#fff;
-  text-shadow:0 1px 2px #520d0ddd;
-}
-.strip .candy.solo.active,
-.strip .utility-row button.active,
-.strip .fader-tools button.active,
-.master-controls #dim.active{
-  background-image:var(--switch-green)!important;
-  color:#0b2210;
-  text-shadow:0 1px 1px #c8ffbb99;
-}
-.strip .channel-actions button.active,
-.strip .utility-row button.active,
-.strip .fader-tools button.active,
-.master-controls button.active{
-  transform:translateY(1px);
-  filter:brightness(.96);
-}
-.strip .channel-actions button:hover,
-.strip .utility-row button:hover,
-.strip .fader-tools button:hover,
-.master-controls button:hover{filter:brightness(1.11)}
-.strip .channel-actions button:active,
-.strip .utility-row button:active,
-.strip .fader-tools button:active,
-.master-controls button:active{transform:translateY(3px);filter:brightness(.84) contrast(1.04)}
-.strip .channel-actions button:focus-visible,
-.strip .utility-row button:focus-visible,
-.strip .fader-tools button:focus-visible,
-.master-controls button:focus-visible{
-  outline:1px solid #56d8f6;
-  outline-offset:-2px;
-}
-@media (prefers-reduced-motion:reduce){
-  .strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,.master-controls button{transition:none}
-}
-
 /* ArSonMix: supplied 18x40 horizontal pan head and 88x36 tactile button art. */
 :root{
 --ar-pan:url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABIAAAAoCAMAAADE8VquAAACf1BMVEUAAAAgICAQEBANDQ0UFBQUFBQSEhIaGhoQEBAfHx8XFxcSEhIvLy8SEhIUFBQ2NjZiYmJdXV1aWlpbW1sVFRUmJiYWFhYaGhoaGhoeHh4TExMUFBQeHh4gICAbGxsTExMbGxsaGhodHR0dHR0aGhobGxsYGBgUFBQVFRUXFxcXFxcWFhYaGhobGxsZGRkYGBgXFxcWFhYXFxcUFBQUFBQTExMTExMTExMUFBQQEBAQEBAQEBAMDAwMDAwJCQkJCQkJCQkGBgYGBgYGBgYDAwMDAwMCAgICAgI5OTkODg5LS0tKSkpSUlI7OzsQEBBZWVldXV08PDwUFBROTk5aWlpkZGRNTU0WFhYSEhIREREfHx8qKio9PT06OjopKSkeHh4XFxcYGBgZGRkTExN1dXV4eHgaGhobHByrq6utra0cHBw1NTUbGxshISEkJCQlJSQQEA+0tLS3t7cPDg4jIiIiIiIgICBAQEAwMDAzMzMmJSUdHBwMDAzCwsLGxcYjIyItLS0xMTAvLy8/Pz8oKCgrKyvPz8/T09MNDQ1MTEwnJycPDw/a2trf39/j4+Pm5uYdHR0gHx8oKCfq6urt7e0qKSkoJycxMTHy8vIzMzIlJSUpKSgrKyosLCstLCwpKCjx8fE0MzMqKikxMDDz8/MnJyYvLy739/ctLSwmJiUuLi0wMC/29vYqKyosLCwuLi43Nzb19fU6OTktLC0yMjI0NDQyMTEvLi4yMjFRUVFEREQ4OTk2Njbr6+vn5+c4ODhDQ0NFRUVISEhBQUE4ODfb29vZ2dk/Pz4VFRUmJiY7OzorKiqhoaGgn585OTgJCQkVFRQEBAQFBQUGBgb////VMJxXAAAASHRSTlMAA1Km0er2/lMDBqX+pn/8/P7+/tf9+fj5zPz+zY/q/ut8nMDf8/j6+m6IgIWMjY2NjW9ddHNycXFNX148Siw3Nh4lJBAUBgcgP/CnAAAACXBIWXMAAC4jAAAuIwF4pT92AAACoUlEQVR4nF2Q6T9UYRiGn0JKshQqkuyyy5YlsqSxDfMW7zlOzHLqtBi0akjNMVEaLYjGdoZMs5gwqlGpKbROq+Qf6ujXB7m+PNd9/+5PD8C69Q6OThucBQLnDU6ODhs3AbhsLnQtKiouKS0tKS4uci3c4gJuQncPz61l5SJRedk2Tw93oRt4Ie/SI0fLK0SiivKySoE38gIfTJC4ijpWXS2qEWOSwD4gwVKZBCP6+AkaYYlMiiXAVDEymewkceo0cYYXPoK4Vi6vq284e+78hYuXGuXyWjFUXVY0KZqvtFy91sIo2VbV9Spoq2yX08LClhs3OwqFBFNzSw2Y6uwkCZK+fQcJCbJTSGGgCYQQRszde3L+IETQgCVSpqtb3HO/t03c3cVIJRiYrrp6dd8DTW//gLpPXV/XxUDj4NAwpx1pGu1/OKLlhocGG0E9zA1TY826/ketzWMUH9RAaduH9HqlYdSoUOr1Q+1aCjgT1TOuV5pHjY+V+vEeysSBycytrBQTxtaVFWc2AWswc5NjDQNG40DD2CRnNrAwZVGpLJa+aaNxus+y4lOgZRU6ncYkeDLx1KTR6RTsM7DOsBbFc4Ogf1Tw4qXCwM5YoW321WurxmJ789Zm0Vjn5mfbAM3VLrx7/6Hp4yer7fPC/MwcAqmNtn/RfP32/cfIT9WgnbZJAbMSmiQxWlxEmCRpCYvBzv/L/gvRS79pXvh/2WE7bzz08vI/2QE7ka+fH29LS3zl5+eLdoH/bnsAzaeODr6nA+x7/CEwKDgkNMwnPCIi3CcsNCQ4KBD2RkZFx8TGxSckxMfFxkRHRe6DxKSk5JTU/X9JTUlOSkqEtPSM9FVkpKdB5oE1ZEJW9sH/yM6CnNy83FXk5eZA/qE15EPB4TUU/AGjFCIu7pe82wAAAABJRU5ErkJggg==");
@@ -137,36 +61,166 @@
 .pan-track:focus-visible .pan-thumb{filter:drop-shadow(0 0 3px #39cbff)}
 .pan-control .knob-value{margin-top:-1px;font:10px Consolas,monospace;line-height:11px;color:#77d7f0;text-align:center}
 @media(max-height:790px){.pan-control{padding:0 5px}}
-:is(.nav button,.seg button,.right-button,.rail-presets button,.rail-bottom button,.chrome-icon,.mode-pill,.guide-chip,.action,.plugin-categories button,.rack .insert,.talk-btn){
-appearance:none;background-color:transparent!important;background-image:var(--ar-btn-off)!important;
-background-size:100% 100%!important;background-repeat:no-repeat!important;background-position:center!important;
-border:0!important;box-shadow:none!important;border-radius:3px!important;
-color:#e1e7ea!important;text-shadow:0 1px 1px #000b!important;font-weight:550!important;
-position:relative;isolation:isolate;transition:filter 100ms ease,transform 100ms ease}
-:is(.nav button,.seg button,.right-button,.rail-presets button,.rail-bottom button,.chrome-icon,.mode-pill,.guide-chip,.action,.plugin-categories button,.rack .insert,.talk-btn):hover{filter:brightness(1.15)}
-:is(.nav button,.seg button,.right-button,.rail-presets button,.rail-bottom button,.chrome-icon,.mode-pill,.guide-chip,.action,.plugin-categories button,.rack .insert,.talk-btn):active{transform:translateY(2px);filter:brightness(.90)}
-:is(.nav button,.seg button,.right-button,.rail-presets button,.rail-bottom button,.chrome-icon,.mode-pill,.guide-chip,.action,.plugin-categories button,.rack .insert,.talk-btn):focus-visible{outline:2px solid #69dfff!important;outline-offset:0}
-:is(.nav button.selected,.plugin-categories button.active,.mode-pill.active){background-image:var(--ar-btn-blue)!important;color:white!important}
-:is(.seg button.selected,.right-button.selected,.rail-presets button.active,.guide-chip.active){background-image:var(--ar-btn-tur)!important;color:#f8ffff!important}
-:is(.rail-bottom button#addScene,.rail-bottom button#saveFxPreset,.action){background-image:var(--ar-btn-blue)!important;color:white!important}
-:is(.rail-bottom button#menuScene,.right-button#monitorSource){background-image:var(--ar-btn-off)!important}
-:is(.right-button[data-output="Record"].selected){background-image:var(--ar-btn-red)!important}
-:is(.right-button[data-output="Streaming"].selected,.talk-btn.selected){background-image:var(--ar-btn-pink)!important}
-:is(.nav button.selected,.seg button.selected,.mode-pill.active)::before{content:none!important}
-:is(.nav button.selected,.seg button.selected,.mode-pill.active){transform:translateY(1px)}
-.nav button{padding:0 10px!important;min-width:61px;height:34px}
-.seg button{font-size:10px!important;min-height:36px}
-.right-button{height:30px;min-height:30px;text-align:left;padding:0 10px 3px!important;font-size:10px}
-.rail-presets button{height:31px;font-size:10px}
-.rail-bottom button{height:28px}
-.chrome-icon{width:36px;min-width:36px;height:34px}
-.mode-pill{min-width:88px;height:34px}
-.rack .insert{min-height:25px;font-weight:500!important;padding:0 5px}
-.rack .insert.empty{color:#8dd4ea!important}
-.plugin-categories button{padding:5px 11px}
-.talk-btn{height:46px!important;min-height:46px;font-size:20px}
-.master-fader-label{background:var(--ar-btn-blue) center / 100% 100% no-repeat;border:0;color:#eefbff;padding-bottom:5px;font-weight:600}
-@media(prefers-reduced-motion:reduce){.pan-thumb,:is(.nav button,.seg button,.right-button,.rail-presets button,.rail-bottom button,.chrome-icon,.mode-pill,.guide-chip,.action,.plugin-categories button,.rack .insert,.talk-btn){transition:none}}
+
+/* CONTEXTUAL ARSONMIX HARDWARE BUTTONS — no selector shared across unrelated zones.
+ * Source art is checked into web/assets/buttons and embedded for standalone parity.
+ * Families: 49x37 strip; 88x36 navigation/output; 192x36 presets; 88x56 talkback.
+ * Do not stretch art onto rack-insert cells, labels, knobs, or icon buttons. */
+:root {
+  --skin-small-off:url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADEAAAAlCAYAAADr2wGRAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAA0JJREFUeJztmLtuG0cUhr8zM2dNcRU3lgWokpCLgvghnDqxgLRx7bxB/BjOI6R3yvSuHMDKA0RpAhdUfENoN7YoUbtzSbEXkpIoy0IgrgP+AMkzM9zd/5vDXQK/9Hq9b4CfgQ3OkIicNX2lSinNW3oJ3JNer/dCRDYAbt5c5/u7d7n11S1WV1fJsozsmqKakWVKphmqSpYpmmWoZqg61DmcU1QdzjmstVhrMcZgjCHGSIyREAIhBLz3lKXH+5KyrsuyoCwKiqKkLEuKsqkLiuOSoig4ODhg7889fnn4kOHwnwbwpaysrCQR4caNNX68f59Prl/HGYtxFmssxlqsEcQYjLFYoa7rl8hkLIIxBmsNUtciQkqJGCMpJUKogGIzN1U345AgxlDVMRFDIMRA9AEfA+/evuWnBw948+Y1KSWMiCAi3NnZIe/nVZMERAARjIBIZdIaqUCsw9nq09a775yimaLadO70S+tOaqY4p1XX1M2czxhbX8dU1619VH4qe3k/59udOzTeTfPj2v5yu/Ffv0tVt7eEMLU0U05N8b5bSM459vSg3tCTnoDtL7bbc7qGpr/SP//qHVOe5+1Dx7znu5VkaoOm5ibbf0kn08fLGUsXPO8sxOKfphfTCZ8X60THNReia005z8//uxMfk5YQXdESoitaQnRFS4iuaAnRFS0huqK5EHOTngXpPD8txPh4fAVW/juNxxO/LcT+YL972z9PCf7e32+HLcTvu084Gs/pRjqDLzGZvCz89PHpjKU55z0aj9ndfdKOJc/zJCKsra2xtbXF7dtf8+lnn9PP+1xTxTVRZaY4q2TqUFVcE5pZW0eXDuss1pg6BJNTMWaMiRA8IUaCD4Tg8d7j62jTl76OMD0+lJRFWcWdZcFxWXI4OuTp07/47fFjBoMBw+GQlNIEwhjD5uYmzrkJYQfC5EbTobL3nsFg0EajLUSMEVVlfX19JpjqklJKjEYjhsMhRVFgjGkhXojIRoxx0R4/WDXEK5NS+iGl9GrRhi6jlNLzlNI9SSmRZRnAd8DHFMgeAr+q6sw/9rNFubmkngOMRqMZiD3gaDF+Plhj4I9mYE4sPKIiDFds6qIKVP4eUfkF4F81rFSu+vKxSgAAAABJRU5ErkJggg==");
+  --skin-small-mute:url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADEAAAAlCAYAAADr2wGRAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAmFJREFUeJztmMFqU0EUhr8zc5sEEkiwuLFQaJcuiqAbX8QHMK678Al8gK7sUtzog7h1afsEhaagSGhaLG3JzBwXd2ZyUyulFXtzQ38Y5uTcw3A+zjk33AHYAY4BbeA6BnYkGgOAtU6H7Y0NXq6uMmi3WSkKrLXYoiiXtZhom+g3Vb+1mLjEGIwxiDFoCIQQyt17gvd47wnOzXbnSr9z2e+j33uPc47jy0u+jsfsHhxweH5O1EQiEU86HT5sbbHaamEAESn3aAv3LwVUFQVCtAMwmU55s7fH6OICAAu8A3i7ucnTXq8kqh4iUh4QD7rvpUBIIBGiJcKjVosv4zEARUr4eb+PB4wqKoKqllWorPtWbv5rqvGi389xGaJrbRkggmisR7TrAEhKIMTkE1TbmBxTVIO9ap6DAKSwuiGgbCWYVaPa9hnCq2KqbRRtWAyIalul+UjKEIkwvYlEq6wzkHnv/1F+ZV7R1RlJmkEkgJpn4CZVQZLmZkIXHCDpapWKmwKaIHNzyOJrrp2aqqWoxFJAzAZbm9tQy1WJ5tZhSSrxALEoWgqIh8FeFC0XxJn3deZxa12EkO0MsX96Wksyd9W3k5NsZ4hPoxG/nKslodvqzHs+Hx3l33Pf5GudDq/X13k2GNC1FmMMhbXYuBfGYK1lJe3XPCusxYhg412sESlv7kLAh0BQxcW7WBdCaYfANPqmIfzxzHlPCIEz79mfTPh4eMhodhf714uFRsmIyPe6k/gXicgPMxwOd7vdbrOmOqrX602Gw+F7UdVXwGOgXXdSd9Al8FO0wV90Scv1j91k/QaH6ohCo2QnFQAAAABJRU5ErkJggg==");
+  --skin-small-solo:url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADEAAAAlCAYAAADr2wGRAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAzNJREFUeJztmEuLHFUUx3/n3tsZZnqciQbRiLoKbhUJovg9sgguAo07H+DnCIKPhYI7Ef0kLsRZmZ0rheAEF0kmk9ah657joqtuPW51uqdnsKZD/tDUue///zwu1QVwG7gP2Ab+7gO3pTQuA7x2dZvPPnyD96+/xP7+Fs57fPC4EHAh4MOofLZtFwLOB1zwOB8Q73HOI84hzmGqmCqqEYsRjQVaVM+CWFTPWcvWZEc0Rh4+POHng3t8/t3v/Hl3SokHUiri1Ze3+eGLd3h+/xIiIAgi81kiQLKFJtqt9WDdtlkaSKaBYZjB0fGMm5/+koS4auHHt65xee9StqBqVwE0s/oQzicnmuRtfvhCAQDPjUd8cutaWhcq4923XkgLRMoNxMD6PW8d/3UjtAqazig3TRxaz65DgffevpKL2N8LmCkikgtpHFDJ6FLuilpNRaeZiFprOBNlxng7JVEtwrQibpkQkfmG0jiAHs+fJhjdIDTJLxPQXV+LaPhSeoR0SUoPCzlFmWepBJ36yG2z/njXIszmFEqv17uU6SMd7/XwTXsswaLEy0pkQXo1ix4aIjAtPT+nkeq5JwyZoBUIrop2BHLyzf4K7UhIPaFKjUpM08tPKIu1seCiajVaNdMXCS3v54qXSO7T7Bo9RxH5TdVTM92LskQrEtWEVjF3Nm7pOGvuLMCTotKXxg0RmqULIhnP83T+IvTWW6ez2arTSctaaLs+2+t/EbFsvDMhdEcW3TqrHjAEahHocCzOiKywNxGNSDwTMSiepdNFQXbFbiKerkis9ffygqCRTgOyOCOSiONpwe6OH5LLqfDPv/UbRvpkcHDn8SBk1sWvd46TnUR88+Mhjx7HQQidFsfTyLc/HaZ2+owJ8PorW3z0wVWuv7nHzo7DOYcfebwXXCjt4Oa/kcePBB/KvpHDeUcIDvEO5wXnHc4JqoZGRaNhUSkKRaMSZ0oslFhE4syIs1i2lTiLaKHEOO9XVaZT5eC3I77+/i/+uHvSL2JT4UTkcPm0iwsRuecmk8lX4/H4aGgy62B3d/fBZDL5UszsBvAisDU0qTVwAvwtm/z2WsEtn3Lx8VSI+A/3qQzD0HhTtAAAAABJRU5ErkJggg==");
+  --skin-small-enable:url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADEAAAAlCAYAAADr2wGRAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAqBJREFUeJztmE9rE0EYh5+ZdzZWt4hoe7F3LSKI3jzox/AuETz4JfwAPakHb4L4QQRPIh5UCtpeFRVbWsX4JzvvvB72b1APtpJtQh8YMpvMJr8n7+xsMgBrwA5gM9h2gDVXdU4A5Cs552+dY+XyaY6eOEoWBoQQGEggyIBMAplkZfNZ25dA8PVj2cQL4gXvPMkSmhRNSkyRmCKFRmIqKDRSaFG2VLR9jUQdM9ZIjOWY7zvfePf0Pev31vn6dkTFrquMyE8f4+r9KyycPALe4bzDecA5cOBwTBvDqu/csASWDJIx/jzm8c0njCqRUJ+wOlxlcHxQDoS2YFV2czZdgzoDtBJWSoQ849yNVZ7dfg50JJYunpoU8GAGDmuqMXXqKlR9S9YILV1aaoY1EtliVkk4cNZWoW59YYZVs8LMGhlZkGZIaAfTVgJKEe9Klz6mUh2r/uj0u0xNI2Fq4OlUwDXv0J9Ch24lzCC1L7USZrjkygv4T1OoPp6GUbNmTtJUoBapaKdTYkLAsF6W1b9htVX3VlcxUYnukupw7YkHhAmRDuEPIydPmAE6legzxv7wfQf4HxxKHBTmQmLiZ8es0lliZ9diLqbTXEi0N7s+U+yTubiw52I6HUocFBqJOIp95vhn9Ic2/UZi+9V2L2H2yvaLNm8jsfFwk+Jr0UugfyWOIhuPNpvjib/k+UrO2etnWL6wzCAflPupwSMSkEwQEUIo+5kEJAghC4gIEspjEUHEI15w4vDek1LC1Mr9WE2oKhoVjRFVJRYRjUqhES2UWD2vhaIa0Vju5Y5HY7ZebvH6wZtmC/M3iVnFO+c+9B1iPzjnPvrhcHg3z/MvfYfZC4uLi7vD4fCOM7NrwDJwpO9Qe+An8MnZLG9zVMzXHXuW+QX7w3rACYB3jAAAAABJRU5ErkJggg==");
+  --skin-small-phase:url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADEAAAAlCAYAAADr2wGRAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAsNJREFUeJztmD1rFFEUhp9z78xsZBMSEmwUBT8qBRG0sbQX7PwBrp1g4S/wB1ipndjoX7APWln6AXaCooKiIVEMyc7MPcfi3hlXg0gSzewuPjCcs/cDznvfs7PsBbgJrAI2gc8qcFNSsgAws3SQIxeusXTyHL35BbJejs89Wc+TFR5feLKei3mKWc/F8TxGXzh85nC54LzDeUGDoUHRygi1EkollIG6SnGo1GUgpFgP03gZqIeBUAXqYc3wyyorL5/w+uFtNj6/JbEmSREziwc4dfUuxdwSiENEwDlAYi7CnmOGWTp01ZibUq2v8ezOFTZX3gHggRsARy9eZ/bQiUYTCIAhaSNt3MNHNQlJUeO4ZAXF3CIrL5YByBrR80fPgAZMHOIMU4tKGhesAyewn90wjXWZMn/sbLuqFeH39TEzBMVU2vrNOmqlhiQgBm1FuaLXLslGFxsBcPHURUFcmuxQRGrv2FJEN5JDDa0ICwERh4mBCILEHBgHEfGQU/HN9yQx4kRUKMT+N5F2P/CjpWx08B8R+3jreNtav3PCFGmKb06+SwN+xUaSxpXEDye0mRhDAQ22JQFGRfy6cg+65m/h/rxk/PnpFTupTIUTUyFi5BXbZRm7Y7qcmGQrpsKJqRAx0k4dVrFLpsyJCbbifzuNC62IMFzvso5to+Vmm7civr553kkxO+XLm6dt3op49+g+9ea3TgraLmG4zvvHD9rP7TUmwMziQQ6fv8zC8dP4fX1c7vB5hst9jEWGLzyuiHe0vshxhccXGS6Pcz7PkMzhMo/LHOIcporWitYBq5VQ1YQyoFVNKGu0DISyIlQBLas4V9aEqkarkKISNtZZe/Wct8v32EhXmFtETCpORD50XcRuEJGPbjAY3O73+1+7LmYnzM7Org0Gg1tiZpeA/UDvT5vGkCHwSWyC/0c0TNcv9iTzHb57w/ktyM3KAAAAAElFTkSuQmCC");
+  --skin-long-off:url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMAAAAAkCAYAAADfCTWTAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAABC5JREFUeJztnM1u2zgQx/+U9WFEQRAZSA+67LFAgBxyCALsXvclFthn6Cl9gh6blwh62PdYoE12kUuQ0+bg0+YSBFk4gGpbkcgeiiFGNC1ni9ay4/kBgkgOSTPKDIcfolS/348BvAfwO4ABBOHl8x+ADwDehkEQvNdavwGANE2R5zmyLEMYhlBKAQCCIIBSauaidC7naW54UbzX683I29K5zM3T6/Vs/T5ZW7qvnC/u/g3uM6Cw+wzduDEGxhhorQFgJq61bqS5Ya11I2yMQV3XC+O8HMnnpWutn1WGX/Nkvt9x5fPibc+A0vhFz7Cuazw8POD29hZFUWQA3gRBMFHb29ujqqp20jTFwcEB4jhGFEWI49j+gb5/oHsXhC4g/aQ7N4S6ru1FBqyUwtXVFcbjMcIwfAyrqtpRSiHPcwBAVVUwxnh7NwAND0BxQegKbgDGGKuPWmvrXV3vkOc5hsMhqqraCanA7u4uqqqybl5rbRWfKubKTmnUAEHoCq6DXCdp2MqHllprDAYDDIdDKKUQ8oxlWTYq4BWRQbg/LB5A6BKu/HwYRPB5FuWhTt4Yg9Dt1WmyUdc1ADSGQW7FvrAgLAuf8hPu5JinEQ0PQBkoTJMIkpOMWxTPKwhd4c4DeJwWctxVIesB3Ir48pM72XXnAYKwarhG4FtG5TQMgK87c2/gGoEgrCquB3D3DPgwHmgxgLqu7aTXN94XQxBWCXfhhsK+DTqO1wBo44AqmTfhFSMQVoF5k2He8/OdZ453DsDv7rDHp/RiCEIX+BZffAbgvjbB8a4C0fax+/oDzysIq8g8AyAPwPe2ZlaByAC4q3AVXgxAWGXcHt73Yh2nYQCLKpuXJgiryiJ9DVqlgvDCEQMQNhoxAGGjCQAZ1wubhz3o1XE7BKFTvAYgHkHYFOZ6ADECYROw+wBZltmNsDAMEUVR4yywIKwjtBNclqU9755lmZV7PYBvx0wQ1pFFHbj1APTJCP7uBP+ujSCsGz7lD4LAnnQEmAE8Pj4iSRJMJpPGcUg6QCxDIWHd4K/y04cfkiTBaDSyedTW1pZRSiFNU+zv76MoCkwmE1uIvg9kC4ghCGsC6W8URfarJlEU4fr62nb01gMURYGbmxvs7e0hy7KlD33aTp39n/tzw8+RL8r/rXna4ovCbWm+u++Z+k5P8XjbfVFaW/hb4t8jD/B1iD8ajXB/f287eABQg8GgmE6nW/RwoiiSQy/C2jPvTeanpycrS5Lkc3h4ePjp4uLiV+Dr6s90Ol1uSwVhyVBnfnR09Gfv/Pz838vLy5/u7u5eVVUVddw2Qfjh9Pv9z8fHxx/Pzs7eKWNMD8DPAF6fnJz80nXjBOFHc3p6+hHAPwA+KWMM4jgm2W/dNUsQlsYfZVkCmN0JHi+/LYKwVCY84hrA324GQXhBjAH8xRO+AHKJJQFZ4LumAAAAAElFTkSuQmCC");
+  --skin-long-on:url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMAAAAAkCAYAAADfCTWTAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAABIRJREFUeJztnM1uHEUQx/81u+zORstHLIOUgODII1hC+GTEKY/AM3CCAwIURUkkJCLeweIZkBBcgb34BTgi5WQsWUkcr012uzj0V3VPz24M9g546mfJ/f2h3aqu6llNUV3XIwDfAvgEwBYU5fpzDOB7AJ8PRqPRd8z8KYBJx5tSlE0xAbBTVdWYptPpk8Vi8dqonuDjew9wdHMbc2NAAAZEAFWoCCAAVUWwfwARUFEFuDxEfcyTa8/ayPYolQl2MVpXT3GN8loivci8LfuK5eZasg2hv5w7r7cfBolvhAGA2aY2C8CVOeSS+jTv27M2N7ZUZjtxUi7Wc1yjvJZILzJvy75iubmWbIPYn3FzG9fXiL0YY2AATKoK28dH+OnuV/jrbI7hcPiU6rpmALjzzSP88frNVBCc0JL4soJg+a9VfouKsmGcfljlgVAYSIVMle7do0P88PUXAIChn+jPN7YBs4yTEtuTjn0ZQQlY/AdHDVBlUDaBF3pAWMZYISyg789J+ejNWyEfFOBkuUBFBAaH0z0KPoPZagAzBxPuNxAUwy2SGndFuRyig+jLIt/iPpaU5WS5CHVDwLo1bOxhbg99Btgqg1UKgMg7XpkiiI2QUApFuSqYy4pQEnwTXKJ4h2J2Ms+MoRRaw4zK3QG8JTDM9rDnXBEgzn6nOKyCr2yGVNSk3+9rOMn7MUZYCiKKLpCtdgIP/wQj+vl+mLwAAxz8/uj+KMrVkR+xuYtTvB8kT55SDyUqgIETeLImwgl3oghAogwevfwqXVByOKRspo9W06dBnngHYOM6eRcIICaQu1Z7ZWBx6luouBFF2QypwNuaptDHdk7vAH6wYY4CT+nU9g4Q3Rsp/0Qq/Up3pC6PTzlrk65Q5gKROM79jwlW2K3UE/ytWQ4UKsDqAind0PQ8StbAp82DOrkEGxMvuX6Ad4Wyudc+51d9UK6Cdb5G2+P3kpXwJC6Qh/LejSM+VRZF6ZJWxWj5vUDSsAA5/lcCRfk/sk5yhzHbYj4uby+K8p+j6noDitIl0QLoUa/0ELUASq8RFkBNgNI/1AIovUbvAEqvWfsYVFGuM2oBlF6jdwCl16gLpPSaoADTwQAni2WXe1GUjTAdDkI+uEBvnz7tZDOKsmluPzsOedra2np+dnZ2YzyZ4MPPvsTjyat43oElyMMFyhCLsT2NSCdDD/pIdmmYwzhnsU6sV1E6bymFGEONeX3IRrlHEV2vFFqxEZ6xfS3/GSSfk4jgJ8dDlMOn6Mr+hackoJR8lTC0+/A4vo8LN+LmbIZJzMeLcIhJ/+wFdRG2xIcsSUInrlqrkAIyFEocC2acv3iBd+bP8Mujhzifz1HX9Snt7e39PJvNPpJvhpG+4qVcQ2TYHmbG7u7uj4PZbPb44ODgvcPDw7eWy+UrgCqAcr0Zj8enOzs7v+7v798nZh4A+ADA+wDGG95LrmlUyK+qa+uzqt/Ltr3s2H875iLpura2vkD6mK8RXqclXdW2Kv0ndZc1Jm87QZNzAL8D+I00mpvSZ/SHMKXXqAIoveZvpie3xmhXBnEAAAAASUVORK5CYII=");
+  --skin-large-off:url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFgAAAA4CAYAAAB5YT9uAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAABE5JREFUeJztnM9OKzcUhz97ZhKUIESyQnmBSkhIIEpVdVepj9BleYW7K8t2z30Luu1TdHGFKlGBWHWTBWIBC4RAyiUwHruLcOY6ziS59DJFTfxJlj0z9vz5zZnjA/igVlZWGsB74CegS+Q1uAV+A35OtdbvrbXvANrtNr1ej263S5ZlJEmC1po0TUmSZKwOS5ZlE7UUv4+UJEkmjkvxr+Xfg9YarTXWWqy1GGOw1lIUBUVRYIwpa7/keU6e5xRFUbbzPJ84LvvCOizhtay15HnOzc0Nl5eXDAaDDvBOaz1Uq6urd8aYtXa7zdbWFo1GgyzLaDQaFEWBcw4ArTVKKZRSABP1oiLPL7W1FucczrnyxRZFUb5opRRnZ2c8PDyQpul9aoxZU0rR6/UAMMbgnCutRSlV1kAp8jIK7Jwrn9dai1IK59yY6M45er0e/X4fY8xaKgPW19cxxpAkCUoprLWlsHJiX0zZJzewyPjP6D+zUookSbDWlv2stXS7Xfr9PkopUr/j09PT2An8E4ng4YWXxYL9tggKn75oXzMxUuccaWiVMoEURQEw5ibCE1e1F4kqcQVxC1L7+4QxC5YO0hYnLsflmP/G/L6LTOiH/W0JBKSIEZYWHJ5ILNgXVAaEfngZCUX2LTm0YGBcYFF/msB+PY3/+wuY9zXOCttEN5+pAhdFUU5qyxb7TiMUN/zi5wrsv4kqn+LXYXuRqZrsQr/sa+YzNsmFUYT8wOH3WRZRp1HlIvzih7YTk5zEuuEn4BMFdpXb4RcvzI0iQgte9JDsc/lXUURVbBv6YJ9lseYqowotd1rfyknOHzTLcqM1T2o2U+BwgGyHLIvlhkwzsmniQoXAs04a/fCIlzx/+hJrXHZhX4pSCj2/W+RLiALXTBS4ZqLANRMFrpkocM1EgWsmClwzUeCaiQLXTBS4ZqLANRMFrhkdf0NWH865aMF1EwWumShwzUSBayYKXDNR4JpJYRROdDqdcjWPpFfF9cDzkT/XSxqYaFlmZ00bFHkdprqIKPLrEH3wKzHNICsFrlolGKlm3hxVLp2SNFA/TdRfvhqZpEpcrXWZnQWewPf39zSbTYbD4VgKlyTVxWhiEn+5ryRzNptN7u7uyj6q1Wo5pRTtdpvNzU0GgwHD4bAcJDnL5YAodInok2VZmR2QZRnn5+eloZYCA7RaLTY2Nuh0Op/tGnzr9jPypYQJ5WGSedietx22w+tUlao1vGHiSrhKvao9a9sYw+3tLdfX11xcXADPFt7tdgePj48tEWuWkJFPzAoC5Fiz2fyY7uzsfDg+Pv4BRv428uUYYwDY29v7Q11dXX2/v7//y8nJyTdA621vbWH4uLu7++fR0dGvyjmXAN8BXx0eHn771ne2CBwcHBwDfwMflHOO7e1tOfbj293W4nB6evq7tFMYRQ/PDIGVN7inReLR30hh9N+mnjkBvgaa/+09LQwPwF/+jn8AUaW7oOeSJxIAAAAASUVORK5CYII=");
+  --skin-large-on:url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFgAAAA4CAYAAAB5YT9uAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAA4RJREFUeJztnDFvHEUUx39v9uLbJBaREgmaSJSpKFJZILnBiNDT8gWgoOMTUCLR0tBYSFDwBSIQoghwErJEh+Q+SGABwQEsI27nTzGze7O2YysocxeO95NP783c7M3cX2/f7Oq8z9q23QDeA94AruM8CR4AHwHvNBsbG+9Lehu4vOJFrROXga0QwtQ2NzcP5/P5M9ZMuPnqm9y4fYdLV65hTUNoGgwjBCOEgBkEs2SDEQzMbPCDGSH0NvcFe0Q7j8t9NvKLebI1AyP5EgglK4jS2EYRBZIGP0rE2NvcF/WIdh6X+zTy8zxRdDHmOSLq5vz950N+/u4u9z/7AHVzJpPJQ2vbVgA377zFcy++joUGLGBJRSB9ecxWGxNPG0rCgyALjSKKHT/e+4QfvvgQgEk//voLL6MYU8OUxO2EmSFwgU8iZZNEVoxZ4MiN26+dFrhpr+YBYCGdAtCfm0ZWeflf5KlE2RRRrJg0U0xaZiaQ8qgUFwfHAAgLhpRF9QgekyM4RW+OYsUsesyaion1wsWIApgMGSlYuzL3usBjiihGqamY/JxqzWyRIqSIRZBZOrhPCdar7ZxGC4GB/rJmkQ2KHJwGRlBSHiyJLZyL6Dc6FUJnFjk4xhSwvbAu7uMhjdLFkIOLEflPMGxsq1nrfw6dcgYWm9zoPZ3R5zwuZkZY9SLWnXGKcJ44HsGVcYErU1wHr3AVa4xHcGVc4Mq4wJVxgSvjm1xl/EajMp4iKuMCV8YFrkzxk9Eql7G+eARXxgWujF+mVcZvNCrjKaIyLnBlXODKuMCV8U2uMh7BlXGBK+M3GpXxCK6Mb3KV8QiujAtcGRe4Mi5wZVzgygwCd8d/rHIda0Wp5SDw4f5XK1nMOvLb918O/qRt26Pj4+MrP80+BoNrt7ZpplfPOfw0ZakBK8sQkG3oyxKUZQ8K3wzL7Sa/V5Y36Mf048ef18+3mHtYC7YoezCUP+hLHfTlD5TLExQlDDQuc9CXRej6Y/uyBxqXQfjl1wcc7t/j4NtPAWjb9sh2dnY+n81mrwxPG9E/iLgcas+lJf4/QjmXJLa3t+82s9ns/t7e3vMHBwfPdl13CZYr8DoynU6Ptra2vt7d3X3XJDXAS8AtYPovPq98mNlOvMI57XCBvajvrFe5hlxnAAr/5Cue4Z/Xd9aY38/Q5C9gH/jGlnkK/R/x6+DKuMCV+Qe1cdb3DUeEIgAAAABJRU5ErkJggg==");
+}
+:where(.toolbar .nav button,.toolbar .mode-pill,
+ .left-rail .tabs button,.right-rail .master-tabs button,
+ .right-rail .right-button,.rail-presets button,.rail-bottom button,
+ .strip .channel-actions button,.strip .utility-row button,
+ .strip .fader-tools button,.master-controls button,.right-rail .talk-btn){
+ appearance:none; user-select:none; cursor:pointer;
+ transition:filter 90ms ease,transform 90ms ease;
+}
+:where(.toolbar .nav button,.toolbar .mode-pill,.left-rail .tabs button,
+ .right-rail .master-tabs button,.right-rail .right-button,.rail-presets button,
+ .rail-bottom button,.strip .channel-actions button,.strip .utility-row button,
+ .strip .fader-tools button,.master-controls button,.right-rail .talk-btn):hover{filter:brightness(1.09)}
+:where(.toolbar .nav button,.toolbar .mode-pill,.left-rail .tabs button,
+ .right-rail .master-tabs button,.right-rail .right-button,.rail-presets button,
+ .rail-bottom button,.strip .channel-actions button,.strip .utility-row button,
+ .strip .fader-tools button,.master-controls button,.right-rail .talk-btn):active{transform:translateY(1px);filter:brightness(.92)}
+:where(.toolbar .nav button,.toolbar .mode-pill,.left-rail .tabs button,
+ .right-rail .master-tabs button,.right-rail .right-button,.rail-presets button,
+ .rail-bottom button,.strip .channel-actions button,.strip .utility-row button,
+ .strip .fader-tools button,.master-controls button,.right-rail .talk-btn):focus-visible{outline:2px solid #66dbfa;outline-offset:1px}
+
+/* Top transport/nav has its own dimensions, unrelated to channel switches. */
+.toolbar .nav{gap:2px;align-items:center;margin-left:6px}
+.toolbar .nav button{
+ height:31px; min-width:0; flex:0 0 auto;
+ padding:0 9px 3px; font-size:10px;font-weight:600;line-height:1.1;
+ color:#c4d5dc;text-shadow:0 1px 1px #000;
+ background:var(--ar-btn-off) center/100% 100% no-repeat !important;
+ border:0;box-shadow:none;border-radius:2px;
+}
+.toolbar .nav button[data-view="MIX"]{width:54px}
+.toolbar .nav button[data-view="FX RACK"]{width:69px}
+.toolbar .nav button[data-view="SIGNAL FLOW"]{width:94px}
+.toolbar .nav button[data-view="SETUP"]{width:64px}
+.toolbar .nav button.selected{background-image:var(--ar-btn-blue)!important;color:#f4fbff}
+.toolbar .nav button.selected::before{content:none}
+.toolbar .mode-pill{min-width:91px;height:31px;
+ background:var(--ar-btn-off) center/100% 100% no-repeat!important;
+ border:0;box-shadow:none;border-radius:2px;padding:0 9px 3px;
+ font-size:10px;font-weight:600;line-height:1.1;color:#dae5eb;text-shadow:0 1px 1px #000}
+.toolbar .mode-pill.active{background-image:var(--ar-btn-tur)!important;color:#fff}
+.toolbar .mode-pill.active::before{content:none}
+
+/* Sidebar tabs and master section tabs: 88x36 medium, never tiny strip caps. */
+.left-rail .tabs,.right-rail .master-tabs{gap:3px;padding:4px}
+.left-rail .tabs button,.right-rail .master-tabs button{
+ flex:1 1 0;min-width:0;height:30px;min-height:30px;padding:0 2px 3px;
+ border:0;box-shadow:none;border-radius:2px;
+ background:var(--ar-btn-off) center/100% 100% no-repeat!important;
+ color:#d4e3e8;font-weight:600;font-size:10px;text-shadow:0 1px 1px #000;
+}
+.left-rail .tabs button.selected,.right-rail .master-tabs button.selected{
+ background-image:var(--ar-btn-tur)!important;color:#f5ffff;
+}
+.left-rail .tabs button.selected::before,.right-rail .master-tabs button.selected::before{content:none}
+
+/* The 49x37 family is for the dense 12-channel toggle grid. */
+.strip .channel-actions{gap:4px;padding:3px 5px;height:38px}
+.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button{
+ background:var(--skin-small-off) center/100% 100% no-repeat!important;
+ border:0!important;box-shadow:none!important;border-radius:2px!important;
+ padding:0 2px 3px;color:#142027!important;text-shadow:0 1px #ffffffb5!important;
+ font-size:10px;font-weight:650;min-width:0;line-height:1.1;
+}
+.strip .channel-actions .candy{height:29px;min-height:29px;flex:1}
+.strip .utility-row{padding:0 6px;gap:4px;margin-bottom:6px}
+.strip .utility-row button{height:27px;min-height:27px;flex:1}
+.strip .fader-tools{padding:3px 6px;gap:4px}
+.strip .fader-tools button{height:27px;min-height:27px;flex:1}
+.strip .candy.mute.active{background-image:var(--skin-small-mute)!important;color:#fff!important;text-shadow:0 1px 1px #521217!important}
+.strip .candy.solo.active{background-image:var(--skin-small-solo)!important;color:#19160a!important}
+.strip .utility-row button[data-hpf].active{background-image:var(--skin-small-enable)!important;color:#0a240c!important}
+.strip .utility-row button[data-pre].active{background-image:var(--skin-small-phase)!important;color:white!important}
+.strip .fader-tools button.active{background-image:var(--skin-small-phase)!important;color:#fff!important}
+.strip .channel-actions button.active,.strip .utility-row button.active,.strip .fader-tools button.active{transform:translateY(1px)}
+
+/* FX insert slots are narrow, recessed signal-chain elements, NOT hardware buttons.
+ * Restore their understated dark rack aesthetic rather than resizing button art. */
+.strip .rack .insert,.strip .rack .insert.empty{
+ background:linear-gradient(#283a44,#111b21 55%,#1b2b33)!important;
+ border:1px solid #071016!important;box-shadow:inset 0 1px #71838d55,0 1px #50667158!important;
+ border-radius:3px!important;color:#bfd4df!important;font-size:10px;
+ padding:0 4px;min-height:25px;height:25px;font-weight:500!important;text-shadow:none!important;
+}
+.strip .rack .insert.empty{background:linear-gradient(#1b2d37,#0a1820)!important;color:#70cbeb!important}
+.strip .rack .insert:hover{filter:brightness(1.12)}
+
+/* Presets are long and narrow — use 192x36 elongated plate, not 88x36 cap. */
+.left-rail .rail-presets{padding:5px 6px;gap:3px}
+.left-rail .rail-presets button{
+ width:100%;height:28px;min-height:28px;padding:0 9px 3px;
+ background:var(--skin-long-off) center/100% 100% no-repeat!important;
+ border:0;box-shadow:none;border-radius:2px;color:#cedde6!important;
+ font-size:10px;font-weight:560;text-align:left;text-shadow:0 1px 1px #000c;
+}
+.left-rail .rail-presets button.active{
+ background-image:var(--skin-long-on)!important;color:#f7ffff!important;
+}
+/* Toolbar snapshot actions: small caps, independent from long presets. */
+.left-rail .rail-bottom{display:flex;gap:4px;padding:4px 5px}
+.left-rail .rail-bottom button{
+ flex:1 1 0;width:auto;min-width:0;height:28px;min-height:28px;
+ padding:0 2px 3px;border:0;box-shadow:none;border-radius:2px;
+ background:var(--skin-small-off) center/100% 100% no-repeat!important;
+ color:#15202a!important;font-size:9px;font-weight:600;
+}
+.left-rail .rail-bottom #addScene,.left-rail .rail-bottom #saveFxPreset{
+ background-image:var(--skin-small-phase)!important;color:white!important;
+}
+
+/* Output selector rail has medium switches; only the selected route gets color.
+ * Red/pink are reserved for the selected destination, never all at once. */
+.right-rail .master-right .right-button{
+ width:100%;min-width:0;height:27px;min-height:27px;padding:0 8px 3px;
+ background:var(--ar-btn-off) center/100% 100% no-repeat!important;
+ border:0;box-shadow:none;border-radius:2px;
+ color:#e1eaf0!important;font-size:10px;font-weight:570;text-align:left;text-shadow:0 1px #000e;
+}
+.right-rail .master-right .right-button.selected{background-image:var(--ar-btn-tur)!important;color:#fff!important}
+.right-rail .master-right .right-button[data-output="Record"].selected{background-image:var(--ar-btn-red)!important}
+.right-rail .master-right .right-button[data-output="Streaming"].selected{background-image:var(--ar-btn-pink)!important}
+.right-rail .master-right #monitorSource{background-image:var(--ar-btn-off)!important}
+.right-rail .master-right .master-controls{display:flex;gap:4px}
+.right-rail .master-right .master-controls button{
+ flex:1 1 0;padding:0 2px 3px;text-align:center;font-size:9px;
+ background-image:var(--skin-small-off)!important;color:#18232c!important;text-shadow:0 1px #fff9;
+}
+.right-rail .master-right #masterMute.active{background-image:var(--skin-small-mute)!important;color:white!important;text-shadow:0 1px #451014}
+.right-rail .master-right #dim.active{background-image:var(--skin-small-solo)!important;color:#221e07!important}
+/* Talkback is a prominent momentary action: 88x56 tall-family cap only here. */
+.right-rail .master-right #talkBtn{
+ height:48px;min-height:48px;padding:0 0 4px;border:0;box-shadow:none;border-radius:3px;
+ background:var(--skin-large-off) center/100% 100% no-repeat!important;
+ color:#d9f4ff;font-size:20px;text-shadow:0 1px 1px #000;
+}
+.right-rail .master-right #talkBtn.selected{background-image:var(--skin-large-on)!important}
+.master-fader-label{
+ background:linear-gradient(180deg,#144568,#08253b 65%,#0e334c)!important;
+ border:1px solid #155777;color:#9ce9ff;box-shadow:inset 0 1px #9cdfff36;
+ padding:0;font-weight:600;
+}
+/* Utility icons, EQ editor, plugin categories and signal/rack workspace
+ * intentionally RETAIN their original design. No imported rectangular PNG skin. */
+@media(prefers-reduced-motion:reduce){:where(.toolbar button,.left-rail button,.right-rail button,.strip button){transition:none!important}}
 </style></head>
 <body>
 <div id="app" class="app">
