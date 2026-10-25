@@ -1,7 +1,7 @@
 name: Windows Native VST3 Host
 on:
   push:
-    branches: [ main, feature/p1-first-sound-windows, feature/p2-native-vst-catalog-fx-rack, feature/p2-daw-workflow-progress, fix/p2-native-output-monitor-diagnostics, fix/p2-realtime-glitch-telemetry-latest-gui, fix/p2-truthful-meter-pan-fx-toggle, feature/p2-native-state-presets, fix/p2-fabfilter-add-workflow ]
+    branches: [ main, feature/p1-first-sound-windows, feature/p2-native-vst-catalog-fx-rack, feature/p2-daw-workflow-progress, fix/p2-native-output-monitor-diagnostics, fix/p2-realtime-glitch-telemetry-latest-gui, fix/p2-truthful-meter-pan-fx-toggle, feature/p2-native-state-presets, fix/p2-fabfilter-add-workflow, feature/p25-live-preset-graph-swap ]
   pull_request:
   workflow_dispatch:
 
@@ -36,6 +36,7 @@ jobs:
           node --test tests/native_ui_contract_test.mjs
           node --test tests/native_preset_contract_test.mjs
           node --test tests/fx_add_contract_test.mjs
+          node --test tests/live_graph_contract_test.mjs
       - name: Configure Windows x64
         shell: pwsh
         run: >
@@ -55,13 +56,13 @@ jobs:
             Where-Object { $_.Name -like "*AR*Mix*" -and $_.FullName -match 'Release' } |
             Select-Object -First 1
           if (-not $exe) { throw "ARMixConsole EXE not found" }
-          Copy-Item $exe.FullName "dist/ArSonMix-P2-FX-Compatibility.exe"
+          Copy-Item $exe.FullName "dist/ArSonMix-P2.5-Live-Recall.exe"
           Copy-Item README.md "dist/README.md"
           "P2 experimental: audio routes automatically; use headphones at low level. Only Channel 1 is native. Other strips are inactive previews." |
             Out-File -FilePath dist/FIRST_SOUND_README.txt -Encoding utf8
       - uses: actions/upload-artifact@v4
         with:
-          name: ArSonMix-P2-FX-Compatibility-Windows-x64
+          name: ArSonMix-P2.5-Live-Recall-Windows-x64
           path: dist/
           if-no-files-found: error
           retention-days: 14

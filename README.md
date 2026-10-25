@@ -80,3 +80,9 @@ Use MIX → Channel 1 ADD FX to select a real indexed VST3; PLUGINS opens Plugin
 - Each VST3 insert in the MIX view has a small ⏻ toggle with clear ON/OFF state. Bypass updates the atomic realtime control without rebuilding the plugin graph or leaving the MIX screen.
 - Diagnostic health JSON no longer truncates every record at 511 characters; the bounded queue slot is now 4096 bytes, with a truncation counter.
 - Windows CI validates the native UI contract and real DSP pan coefficient tests. Hardware verification remains necessary.
+
+## P2.5.1 — Live preset prepared graph
+
+- Pre-stage plugin binary state before live recall, publish graph at audio callback boundary, retire old graph only after callback acknowledges; de-click buffer fades.
+- Does not require MUTE OUTPUT for recall; SAVE still muted-only. Old ADD/REMOVE/REORDER remains callback-detach and should not be used during performance.
+- See [P2.5 live recall notes](docs/P25_LIVE_GRAPH_HANDOFF.md). This is not a full seamless dual-DSP crossfade.
