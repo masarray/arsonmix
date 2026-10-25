@@ -344,10 +344,19 @@ private:
         const auto value = args.getProperty ("value", {});
         const int slot = static_cast<int> (args.getProperty ("slot", -1));
 
-        // Structural plugin operations currently use JUCE direct callback
-        // detachment and cannot safely mutate a running independent renderer.
+        // Structural plugin operations currently detach the original callback
+        // and must never mutate a running independent render thread.
+        if (engine_.independentClockActive() && action == "addCatalog")
+        {
+            const int requestId = static_cast<int> (args.getProperty ("requestId", 0));
+            const auto* plugin = catalog_.find (args.getProperty ("id", {}).toString());
+            const auto name = plugin ? plugin->name : juce::String ("Unknown VST3");
+            const auto error = juce::String ("Return to DIRECT mode before editing VST3 graph.");
+            emitFxAddResult (requestId, name, error, 0);
+            return emitNotice (error, true);
+        }
         if (engine_.independentClockActive() &&
-            (action == "addCatalog" || action == "fxRemove" || action == "fxMove" ||
+            (action == "fxRemove" || action == "fxMove" ||
              action == "presetLoad" || action == "presetSave"))
             return emitNotice ("Return to DIRECT mode before editing VST3 graph (live-safe graph edits are a later gate).", true);
 
@@ -515,9 +524,15 @@ private:
         }
         else if (action == "addCatalog")
         {
-            if (engine_.hasTemporaryDiagnosticDevice())
-                return emitNotice ("Return to NORMAL before adding VST3 effects.", true);
             const auto requestId = static_cast<int> (args.getProperty ("requestId", 0));
+            if (engine_.hasTemporaryDiagnosticDevice())
+            {
+                const auto* blocked = catalog_.find (args.getProperty ("id", {}).toString());
+                const auto name = blocked ? blocked->name : juce::String ("Unknown VST3");
+                const auto error = juce::String ("Return to NORMAL before adding VST3 effects.");
+                emitFxAddResult (requestId, name, error, 0);
+                return emitNotice (error, true);
+            }
             const auto requestedId = args.getProperty ("id", {}).toString();
             const auto* plugin = catalog_.find (requestedId);
             const auto name = plugin != nullptr ? plugin->name : juce::String ("Unknown VST3");
