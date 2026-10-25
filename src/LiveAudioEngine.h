@@ -702,7 +702,7 @@ private:
                         juce::FloatVectorOperations::clear (dst, frames);
                 }
                 for (int i = 0; i < frames; ++i)
-                    inPeak = juce::jmax (inPeak, std::abs (dst[i]));
+                    if (!toneTest) inPeak = juce::jmax (inPeak, std::abs (dst[i]));
             }
             // MIDI capacity is empty unless the plugin itself changes it.
             juce::MidiBuffer midi;
