@@ -12,6 +12,46 @@ async def main():
         page.on("pageerror", lambda e: errors.append(str(e)))
         await page.set_content((project/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").read_text())
         assert await page.locator(".strip").count()==13
+        # Four-key layout contract: Ø / HPF / MUTE / SOLO share exactly the
+        # same two-column grid at every input strip and at common desktop sizes.
+        # Do not replace the metallic button visual language while aligning it.
+        for width,height in ((1680,920),(1440,820),(1280,768)):
+            await page.set_viewport_size({"width":width,"height":height})
+            audit=await page.evaluate("""() => {
+              const near=(a,b)=>Math.abs(a-b)<=.55;
+              return [...document.querySelectorAll('#mixer > .strip:not(.master-strip)')].map((strip,i)=>{
+                const select=(s)=>strip.querySelector(s).getBoundingClientRect();
+                const phase=select('[data-pre]'),hpf=select('[data-hpf]');
+                const mute=select('[data-mute]'),solo=select('[data-solo]');
+                const control=select('.strip-controls'),act=select('.channel-actions');
+                const keys=[phase,hpf,mute,solo];
+                return {
+                  index:i,
+                  sameSize:keys.every(k=>near(k.width,phase.width)&&near(k.height,phase.height)),
+                  aligned:near(phase.x,mute.x)&&near(hpf.x,solo.x)&&
+                          near(phase.y,hpf.y)&&near(mute.y,solo.y),
+                  order:phase.right<hpf.left&&mute.right<solo.left&&
+                        phase.bottom<=mute.top,
+                  inside:keys.every(k=>k.width>0&&k.height>0)&&
+                         phase.x>=control.x-.55&&hpf.right<=control.right+.55&&
+                         mute.x>=act.x-.55&&solo.right<=act.right+.55,
+                  width:phase.width,height:phase.height,
+                  x:[phase.x,hpf.x,mute.x,solo.x]
+                };
+              });
+            }""")
+            assert len(audit)==12,(width,height,audit)
+            assert all(v['sameSize'] and v['aligned'] and v['order'] and v['inside'] and
+                       abs(v['height']-28)<.55 for v in audit),(width,height,audit)
+        await page.set_viewport_size({"width":1680,"height":920})
+        for key in ("pre","hpf"):
+            ctrl=page.locator(f'[data-{key}="0"]')
+            initial=await ctrl.get_attribute("aria-pressed")
+            await ctrl.click()
+            assert await ctrl.get_attribute("aria-pressed")!=initial,key
+            assert (await ctrl.get_attribute("class")).count("active")== (1 if initial=="false" else 0),key
+            await ctrl.click()
+            assert await ctrl.get_attribute("aria-pressed")==initial,key
         # All 12 PAN knobs have been replaced by horizontal slider tracks.
         assert await page.locator('[data-pan]').count()==13
         assert await page.locator('[data-knob="pan"]').count()==0
