@@ -446,6 +446,10 @@ private:
         }
         else if (action == "fxEditor")
         {
+            // Pending callback handoff may retire pluginAt() immediately after this event.
+            // Never open an editor for an old graph waiting to be destroyed.
+            if (engine_.isGraphSwitchPending())
+                return emitNotice ("FX recall is transitioning; open the editor after recall completes.", true);
             editorWindow_.reset();
             if (auto* processor = engine_.pluginAt (slot))
             {
