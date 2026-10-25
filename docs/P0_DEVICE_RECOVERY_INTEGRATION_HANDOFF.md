@@ -9,6 +9,7 @@
 - On endpoint loss: require render silence and device retirement **before** acquiring replacement. Retry uses bounded backoff 100 ms–10 seconds, maximum eight consecutive failures, and explicit terminal failure.
 - A configuration is **eligible** for stable persistence only after 30 seconds of healthy callbacks. This is a policy primitive, not a claim that audible playback is clean.
 - Pure `SplitStreamTelemetry`: lock-free independent capture/render frames, dropped input frames, bridge starvation frames and invalid-buffer counters, with separate generation numbers. These are not equivalent to Windows driver output xruns; report source provenance.
+- `IndependentClockPipeline` now connects two **independently invoked callback interfaces** to the prepared FIR/ASRC and telemetry. It is JUCE-independent and tested against separate synthetic source/render callback frame counts; it is NOT hooked to Windows physical device streams.
 - Release-active CTests for generation cancellation, state transitions, bounded delays, stable eligibility, recording different capture/render frame rates, and FIFO overflow/starvation/re-prime.
 
 ## Production integration is **not yet complete**
