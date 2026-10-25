@@ -10,7 +10,7 @@ assert '::before' in css and '::after' in css
 assert 'top:var(--cc-depth)' in css
 assert 'top:0;box-shadow:0 1px 2px' in css
 assert 'border:2px solid #eda458' not in css
-assert 'linear-gradient(180deg,var(--cc-top)' in css
+assert 'linear-gradient(to bottom,var(--cc-top)' in css
 assert 'transition:top 65ms ease-out,filter 65ms ease-out,box-shadow 80ms ease-out' in css
 assert 'top:var(--cc-depth);transform:none!important' in css
 assert not re.search(r'--(?:ar-btn-|skin-small|skin-long|skin-large)',css)
