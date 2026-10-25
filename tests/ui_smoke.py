@@ -232,11 +232,16 @@ async def main():
         shadow=await btn.evaluate("(e)=>getComputedStyle(e).boxShadow")
         assert shadow!=before['shadow'],shadow
         await page.mouse.up()
+        # Mouse release does NOT spring back: the toggle is latched ON at -3px depth.
         await page.wait_for_function("""()=>{
-            return getComputedStyle(document.querySelector('[data-mute="0"]')).transform==='matrix(1, 0, 0, 1, 0, 0)';
+            return getComputedStyle(document.querySelector('[data-mute="0"]')).transform==='matrix(1, 0, 0, 1, 0, 3)';
         }""",timeout=3000)
         assert await btn.get_attribute('aria-pressed')=='true'
         await btn.click()
+        await page.wait_for_function("""()=>{
+            return getComputedStyle(document.querySelector('[data-mute="0"]')).transform==='matrix(1, 0, 0, 1, 0, 0)';
+        }""",timeout=3000)
+        assert await btn.get_attribute('aria-pressed')=='false'
         widths=await page.evaluate("""()=>{
           const mixer=document.querySelector('#mixer'),master=document.querySelector('#masterLeft');
           const source=document.querySelector('[data-strip="0"]');
