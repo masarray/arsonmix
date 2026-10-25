@@ -29,7 +29,7 @@ test('no fake oscillating VUs inside native JUCE',()=>{
 });
 test('native plugin state and graph preserved',()=>{
  assert.match(src,/handoff_\.beginCycle\(/);
- assert.match(src,/handoff_\.stage\(/);
+ assert.match(src,/handoff_\.stage \(/);
  assert.match(bridge,/arMixNativePresetLoaded/);
  assert.match(bridge,/Master PAN DSP not yet implemented/);
  assert.match(bridge,/data-fxpower/);
