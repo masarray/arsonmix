@@ -8,6 +8,7 @@
 #include "LiveGraphHandoff.h"
 #include "DiagnosticTone.h"
 #include "../engine/core/RealtimeHealthHistogram.h"
+#include "../engine/device/JuceIndependentDeviceAdapter.h"
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -509,6 +510,12 @@ public:
         o->setProperty ("lateCallbackIntervals", static_cast<double> (lateCallbackIntervals_.load()));
         o->setProperty ("testOutputFrames", static_cast<double> (testOutputFrames_.load()));
         o->setProperty ("testCaptureFrames", static_cast<double> (testCaptureFrames_.load()));
+        // Capability truth: building the split pipeline and recovery policy does
+        // not mean the current JUCE AudioDeviceManager uses either one.
+        o->setProperty ("p0BackendMode", "JUCE_JOINED_CALLBACK");
+        o->setProperty ("p0IndependentClockBridgeActive", false);
+        o->setProperty ("p0AutomaticDeviceRecoveryActive", false);
+        o->setProperty ("p0PhysicalOutputUnderrunsObservable", false);
         o->setProperty ("renderUnderrunSource", "UNAVAILABLE_THROUGH_CURRENT_JUCE_AUDIODEVICE");
         // AudioIODevice::getXRunCount is backend-specific, not comprehensive.
         // Pinned JUCE WASAPI reports input capture discontinuity flags only.
