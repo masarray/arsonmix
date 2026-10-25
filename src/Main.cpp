@@ -314,6 +314,7 @@ private:
             else if (selected == "CAPTURE_ONLY") route = Route::captureOnly;
             else if (selected == "DRY_THROUGH") route = Route::dryThrough;
             else if (selected != "NORMAL") return emitNotice ("Unsupported diagnostic mode", true);
+            if (audioSetupWindow_ != nullptr) audioSetupWindow_->setVisible (false);
             const auto error = engine_.setDiagnosticRoute (route);
             if (error.isNotEmpty())
             {
