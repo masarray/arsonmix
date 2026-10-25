@@ -682,6 +682,7 @@ private:
     {
         const auto cycle = handoff_.beginCycle();
         const std::uint64_t beginUs = clockMicros();
+        if (samples <= 0) return;
         const double periodUs = 1000000.0 * static_cast<double> (samples) / sampleRateHz_;
         // Scheduling gaps only suggest instability: pause/suspend and WASAPI
         // callback scheduling can create false positives. Never label xruns.
@@ -723,7 +724,11 @@ private:
         for (int offset = 0; offset < samples; offset += maxFrames)
         {
             const int frames = juce::jmin (maxFrames, samples - offset);
-            scratch_.setSize (2, frames, false, false, true);
+            // Preallocated backing store: no resizing/capacity bookkeeping in RT.
+            // Two-channel AudioBuffer view refers to scratch_ without ownership.
+            // JUCE uses its inline channel pointer storage for two channels.
+            juce::AudioBuffer<float> scratchView (
+                scratch_.getArrayOfWritePointers(), 2, frames);
             if (toneTest)
             {
                 auto* left = scratch_.getWritePointer (0);
@@ -757,7 +762,7 @@ private:
                     if (slot.processor && ! cycle.graph->bypassFlags[fx].load (std::memory_order_relaxed))
                     {
                         const auto pluginBeginUs = clockMicros();
-                        slot.processor->processBlock (scratch_, midi);
+                        slot.processor->processBlock (scratchView, midi);
                         const auto pluginUs = clockMicros() - pluginBeginUs;
                         lastPluginUsBySlot_[fx].store (pluginUs, std::memory_order_relaxed);
                         publishMax (worstPluginUsBySlot_[fx], pluginUs);
