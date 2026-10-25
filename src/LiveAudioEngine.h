@@ -249,6 +249,8 @@ public:
         o->setProperty ("inputPeak", inputPeak_.load());
         o->setProperty ("postFxPeak", postFxPeak_.load());
         o->setProperty ("peak", outputPeak_.load());
+        o->setProperty ("peakLeft", outputPeakL_.load());
+        o->setProperty ("peakRight", outputPeakR_.load());
         o->setProperty ("latencySamples", totalLatency_.load());
         o->setProperty ("chainCount", count_);
         return juce::var (o.release());
@@ -267,6 +269,7 @@ private:
     std::atomic<bool> monitor_ { false }, channelMute_ { false }, masterMute_ { false }, dryTest_ { false };
     std::atomic<float> masterGain_ { 1.f }, channelGain_ { 1.f }, channelPan_ { 0.f };
     std::atomic<float> inputPeak_ { 0.f }, postFxPeak_ { 0.f }, outputPeak_ { 0.f };
+    std::atomic<float> outputPeakL_ { 0.f }, outputPeakR_ { 0.f };
     std::atomic<int> callbackInputs_ { 0 }, callbackOutputs_ { 0 };
     std::atomic<unsigned long long> callbackCount_ { 0 };
     // Audio-thread-only timestamp and cheap atomically published counters.
@@ -379,6 +382,7 @@ private:
         // in the realtime sample loop. 0 = transparent identity matrix.
         const auto matrix = armix::dsp::StereoPanMatrix::fromNormalized (pan);
         float inPeak = 0.f, postFxPeak = 0.f, outPeak = 0.f;
+        float outPeakL = 0.f, outPeakR = 0.f;
         for (int offset = 0; offset < samples; offset += maxFrames)
         {
             const int frames = juce::jmin (maxFrames, samples - offset);
@@ -428,19 +432,25 @@ private:
                 const float* left = scratch_.getReadPointer (0);
                 const float* right = scratch_.getReadPointer (1);
                 float* dst = outputs[c] + offset;
+                float channelPeak = 0.f;
                 for (int i = 0; i < frames; ++i)
                 {
                     const float mapped = c == 0 ? matrix.ll * left[i] + matrix.lr * right[i]
                                                : matrix.rl * left[i] + matrix.rr * right[i];
                     const float value = (enabled && !muted) ? mapped * gain : 0.f;
                     dst[i] = value;
-                    outPeak = juce::jmax (outPeak, std::abs (value));
+                    channelPeak = juce::jmax (channelPeak, std::abs (value));
                 }
+                outPeak = juce::jmax (outPeak, channelPeak);
+                if (c == 0) outPeakL = juce::jmax (outPeakL, channelPeak);
+                if (c == 1) outPeakR = juce::jmax (outPeakR, channelPeak);
             }
         }
         inputPeak_.store (juce::jmin (1.f, inPeak), std::memory_order_relaxed);
         postFxPeak_.store (juce::jmin (1.f, postFxPeak), std::memory_order_relaxed);
         outputPeak_.store (juce::jmin (1.f, outPeak), std::memory_order_relaxed);
+        outputPeakL_.store (juce::jmin (1.f, outPeakL), std::memory_order_relaxed);
+        outputPeakR_.store (juce::jmin (1.f, outPeakR), std::memory_order_relaxed);
         const auto elapsedUs = clockMicros() - beginUs;
         lastCallbackUs_.store (elapsedUs, std::memory_order_relaxed);
         publishMax (worstCallbackUs_, elapsedUs);
