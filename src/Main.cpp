@@ -6,6 +6,9 @@
 #include <BinaryData.h>
 #include "LiveAudioEngine.h"
 #include "DiagnosticsRecorder.h"
+#if defined(_WIN32)
+#include "../engine/device/WasapiCapabilityProbe.h"
+#endif
 #include "PluginCatalog.h"
 #include <cstring>
 #include <optional>
@@ -319,6 +322,10 @@ private:
             result << "\n";
         }
         else result << "No active device\n";
+#if defined(_WIN32)
+        result << "\n=== WINDOWS NATIVE WASAPI CAPABILITY PROBE (NOT LIVE LATENCY) ===\n";
+        result << armix::device::WasapiCapabilityProbe::report() << "\n";
+#endif
         result << "\n=== STATUS SNAPSHOT (measured / source-labeled) ===\n";
         result << juce::JSON::toString (status, true) << "\n";
         result << "\n=== RECENT EVENTS (latest 48, capture on control thread) ===\n";
