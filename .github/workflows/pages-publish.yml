@@ -1,15 +1,11 @@
 name: Publish ArSonMix GUI (main dispatcher)
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/pages-publish.yml'
   workflow_dispatch:
   workflow_run:
     workflows: ["UI smoke (Chromium)"]
     types: [completed]
-    branches: [fix/fader-thumb-symmetry-polish]
+    branches: [main]
 
 permissions:
   contents: read
@@ -23,21 +19,24 @@ jobs:
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout approved GUI preview source
+      - name: Checkout exact qualified main GUI revision
         uses: actions/checkout@v4
         with:
-          ref: fix/fader-thumb-symmetry-polish
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || 'main' }}
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Build static landing and exact mixer preview
+      - name: Build static landing and approved mixer preview
         run: |
           SOURCE_SHA="$(git rev-parse HEAD)"
-          python scripts/build_pages.py --out dist-pages --sha "$SOURCE_SHA" --branch fix/fader-thumb-symmetry-polish
+          node --check web/app.js
+          python tests/gui_baseline_lock_test.py
+          python scripts/build_pages.py --out dist-pages --sha "$SOURCE_SHA" --branch main
           cmp AR-MIX-Live-FX-Host-Standalone-v0.3.html dist-pages/preview/mixer.html
           python tests/button_asset_test.py
           python tests/fader_asset_test.py
+          python tests/pan_button_asset_test.py
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
       - name: Upload site bundle
@@ -55,6 +54,6 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Publish site from default branch workflow
+      - name: Publish site from main
         id: deployment
         uses: actions/deploy-pages@v4
