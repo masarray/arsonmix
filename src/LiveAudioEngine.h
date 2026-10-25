@@ -140,9 +140,8 @@ public:
         detach();
         deviceManager_.closeAudioDevice();
         savedDirectSetup_ = original;
-        auto error = independent_.open (original.inputDeviceName,
-                                       original.outputDeviceName,
-                                       static_cast<juce::AudioIODeviceCallback*> (this));
+        auto error = independent_.open (original,
+                                        static_cast<juce::AudioIODeviceCallback*> (this));
         if (error.isNotEmpty())
         {
             independent_.close();
@@ -656,6 +655,7 @@ public:
             o->setProperty ("bridgeUnderflowFrames", static_cast<double> (clock.underflowFrames));
             o->setProperty ("bridgePrimingFrames", static_cast<double> (clock.primingFrames));
             o->setProperty ("bridgeCorrectionPpm", clock.correctionPpm);
+            o->setProperty ("bridgeTargetLatencyMs", independent_.bridgeTargetLatencyMs());
             o->setProperty ("bridgeCaptureCallbacks", static_cast<double> (independent_.captureCallbacks()));
             o->setProperty ("bridgeRenderCallbacks", static_cast<double> (independent_.renderCallbacks()));
         }
