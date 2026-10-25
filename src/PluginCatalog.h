@@ -70,6 +70,25 @@ public:
     const std::vector<CatalogEntry>& entries() const noexcept { return entries_; }
     bool busy() const noexcept { return scanning_.load(); }
     juce::String scanMessage() const { return scanMessage_; }
+    // Real scan counters. Enumeration has no known denominator; only report
+    // a percentage after candidate discovery has finished.
+    juce::var progress() const
+    {
+        auto result = std::make_unique<juce::DynamicObject>();
+        const auto phase = phase_.load (std::memory_order_acquire);
+        const auto total = total_.load (std::memory_order_relaxed);
+        result->setProperty ("active", busy());
+        result->setProperty ("phase", phase == 1 ? "discovering" :
+                                        phase == 2 ? "inspecting" : "done");
+        result->setProperty ("done", completed_.load (std::memory_order_relaxed));
+        result->setProperty ("total", total);
+        result->setProperty ("found", found_.load (std::memory_order_relaxed));
+        {
+            const juce::ScopedLock lock (progressLock_);
+            result->setProperty ("current", current_);
+        }
+        return juce::var (result.release());
+    }
     Callback onChanged;
 
     void addDirectory (const juce::File& folder)
@@ -146,6 +165,9 @@ private:
            #endif
             std::vector<CatalogEntry> found;
             juce::VST3PluginFormat format;
+            juce::StringArray allCandidates;
+            // 1. Enumerate candidates. Total cannot be estimated here.
+            owner_.phase_.store (1, std::memory_order_release);
             for (const auto& requested : requested_)
             {
                 if (threadShouldExit()) break;
@@ -159,11 +181,23 @@ private:
                 }
                 else if (file.hasFileExtension (".vst3"))
                     candidates.add (requested);
-
                 for (const auto& path : candidates)
+                    allCandidates.addIfNotAlreadyThere (path);
+            }
+
+            // 2. Inspect actual plugins; progress denominator is now real.
+            owner_.total_.store (allCandidates.size(), std::memory_order_relaxed);
+            owner_.phase_.store (2, std::memory_order_release);
+            for (int n = 0; n < allCandidates.size(); ++n)
+            {
+                if (threadShouldExit()) break;
+                const auto path = allCandidates[n];
                 {
-                    if (threadShouldExit()) break;
-                    if (! format.fileMightContainThisPluginType (path)) continue;
+                    const juce::ScopedLock lock (owner_.progressLock_);
+                    owner_.current_ = juce::File (path).getFileName();
+                }
+                if (format.fileMightContainThisPluginType (path))
+                {
                     juce::OwnedArray<juce::PluginDescription> descriptions;
                     format.findAllTypesForFile (descriptions, path);
                     for (int i = 0; i < descriptions.size(); ++i)
@@ -175,6 +209,12 @@ private:
                                            desc->uniqueId, i });
                     }
                 }
+                owner_.found_.store (static_cast<int> (found.size()), std::memory_order_relaxed);
+                owner_.completed_.store (n + 1, std::memory_order_release);
+            }
+            {
+                const juce::ScopedLock lock (owner_.progressLock_);
+                owner_.current_.clear();
             }
            #if JUCE_WINDOWS
             if (SUCCEEDED (hr)) CoUninitialize();
@@ -198,6 +238,7 @@ private:
                     [] (const CatalogEntry& a, const CatalogEntry& b)
                     { return a.name.compareIgnoreCase (b.name) < 0; });
                 owner.scanMessage_ = "Scan complete: " + juce::String (results.size()) + " plugin variants inspected";
+                owner.phase_.store (0, std::memory_order_release);
                 owner.scanning_.store (false);
                 owner.save();
                 if (owner.onChanged) owner.onChanged();
@@ -208,6 +249,11 @@ private:
     void scan (const juce::StringArray& paths)
     {
         if (busy()) return;
+        completed_.store (0);
+        total_.store (0);
+        found_.store (0);
+        phase_.store (1);
+        { const juce::ScopedLock lock (progressLock_); current_.clear(); }
         scanning_.store (true);
         scanMessage_ = "Scanning VST3 metadata (background)...";
         if (onChanged) onChanged();
@@ -251,6 +297,9 @@ private:
     juce::StringArray customFolders_;
     std::atomic<bool> alive_ { true }, scanning_ { false };
     std::shared_ptr<std::atomic<bool>> lifetime_ = std::make_shared<std::atomic<bool>> (true);
+    mutable juce::CriticalSection progressLock_;
+    juce::String current_;
+    std::atomic<int> phase_ { 0 }, total_ { 0 }, completed_ { 0 }, found_ { 0 };
     juce::String scanMessage_ = "Ready";
     Scanner worker_;
 };
