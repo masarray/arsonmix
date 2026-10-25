@@ -5,6 +5,8 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <chrono>
+#include <cstdint>
 #include <memory>
 
 // One live stereo input path and up to 8 actual VST3 processors.
@@ -36,7 +38,10 @@ public:
 
     juce::String start (const juce::XmlElement* savedSettings = nullptr)
     {
-        monitor_.store (false);
+        // A mixer behaves like a signal path: ready I/O flows automatically.
+        // The former MONITOR enable gate caused silent master/output confusion.
+        // Panic OUTPUT MUTE remains available at all times.
+        monitor_.store (true);
         const auto error = deviceManager_.initialise (1, 2, savedSettings, true);
         if (error.isNotEmpty()) return error;
         deviceManager_.addAudioCallback (this);
@@ -58,6 +63,9 @@ public:
 
     void setMonitorEnabled (bool value) noexcept { monitor_.store (value); }
     bool isMonitorEnabled() const noexcept { return monitor_.load(); }
+    // Emergency output mute, not a prerequisite for receiving audio.
+    void setOutputMuted (bool mute) noexcept { monitor_.store (!mute, std::memory_order_release); }
+    bool isOutputMuted() const noexcept { return !monitor_.load (std::memory_order_acquire); }
     void setDryTestEnabled (bool value) noexcept { dryTest_.store (value); }
     bool isDryTestEnabled() const noexcept { return dryTest_.load(); }
     void setMasterGainDb (float value) noexcept
@@ -204,6 +212,17 @@ public:
         o->setProperty ("callbackInputChannels", callbackInputs_.load());
         o->setProperty ("callbackOutputChannels", callbackOutputs_.load());
         o->setProperty ("callbackCount", static_cast<double> (callbackCount_.load()));
+        o->setProperty ("callbackDurationUs", static_cast<double> (lastCallbackUs_.load()));
+        o->setProperty ("worstCallbackUs", static_cast<double> (worstCallbackUs_.load()));
+        o->setProperty ("slowCallbackCount", static_cast<double> (slowCallbacks_.load()));
+        o->setProperty ("overBudgetCount", static_cast<double> (overBudgetCallbacks_.load()));
+        o->setProperty ("callbackGapCount", static_cast<double> (callbackGaps_.load()));
+        o->setProperty ("worstCallbackGapUs", static_cast<double> (worstCallbackGapUs_.load()));
+        o->setProperty ("worstPluginUs", static_cast<double> (worstPluginUs_.load()));
+        o->setProperty ("slowPluginCount", static_cast<double> (slowPlugins_.load()));
+        o->setProperty ("periodUs", d && d->getCurrentSampleRate() > 0
+            ? 1000000.0 * d->getCurrentBufferSizeSamples() / d->getCurrentSampleRate() : 0.0);
+        o->setProperty ("performanceNote", "Over-budget and callback-gap counts are timing indicators, not driver-confirmed xruns.");
         o->setProperty ("inputPeak", inputPeak_.load());
         o->setProperty ("postFxPeak", postFxPeak_.load());
         o->setProperty ("peak", outputPeak_.load());
@@ -227,6 +246,28 @@ private:
     std::atomic<float> inputPeak_ { 0.f }, postFxPeak_ { 0.f }, outputPeak_ { 0.f };
     std::atomic<int> callbackInputs_ { 0 }, callbackOutputs_ { 0 };
     std::atomic<unsigned long long> callbackCount_ { 0 };
+    // Audio-thread-only timestamp and cheap atomically published counters.
+    // No log writes, allocations, locks or WebView interactions in callback.
+    std::atomic<std::uint64_t> lastCallbackUs_ {0}, worstCallbackUs_ {0};
+    std::atomic<std::uint64_t> slowCallbacks_ {0}, overBudgetCallbacks_ {0};
+    std::atomic<std::uint64_t> callbackGaps_ {0}, worstCallbackGapUs_ {0};
+    std::atomic<std::uint64_t> worstPluginUs_ {0}, slowPlugins_ {0};
+    std::uint64_t previousCallbackStartUs_ = 0;
+    double sampleRateHz_ = 48000.0;
+
+    static std::uint64_t clockMicros() noexcept
+    {
+        return static_cast<std::uint64_t> (
+            std::chrono::duration_cast<std::chrono::microseconds> (
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+    }
+
+    static void publishMax (std::atomic<std::uint64_t>& dst, std::uint64_t value) noexcept
+    {
+        auto old = dst.load (std::memory_order_relaxed);
+        while (old < value && !dst.compare_exchange_weak (
+            old, value, std::memory_order_relaxed)) {}
+    }
     std::atomic<int> totalLatency_ { 0 };
 
     void detach()
@@ -248,6 +289,8 @@ private:
 
     void audioDeviceAboutToStart (juce::AudioIODevice* d) override
     {
+        sampleRateHz_ = juce::jmax (1.0, d->getCurrentSampleRate());
+        previousCallbackStartUs_ = 0;
         int latency = 0;
         for (int i = 0; i < count_; ++i)
         {
@@ -277,6 +320,18 @@ private:
         const float* const* inputs, int inputChannels, float* const* outputs,
         int outputChannels, int samples, const juce::AudioIODeviceCallbackContext&) override
     {
+        const std::uint64_t beginUs = clockMicros();
+        const double periodUs = 1000000.0 * static_cast<double> (samples) / sampleRateHz_;
+        // Scheduling gaps only suggest instability: pause/suspend and WASAPI
+        // callback scheduling can create false positives. Never label xruns.
+        if (previousCallbackStartUs_ != 0 && periodUs > 0)
+        {
+            const auto gap = beginUs - previousCallbackStartUs_;
+            publishMax (worstCallbackGapUs_, gap);
+            if (static_cast<double> (gap) > periodUs * 2.3)
+                callbackGaps_.fetch_add (1, std::memory_order_relaxed);
+        }
+        previousCallbackStartUs_ = beginUs;
         callbackInputs_.store (inputChannels, std::memory_order_relaxed);
         callbackOutputs_.store (outputChannels, std::memory_order_relaxed);
         callbackCount_.fetch_add (1, std::memory_order_relaxed);
@@ -311,7 +366,14 @@ private:
                 {
                     auto& slot = slots_[fx];
                     if (slot.processor && ! bypassFlags_[fx].load (std::memory_order_relaxed))
+                    {
+                        const auto pluginBeginUs = clockMicros();
                         slot.processor->processBlock (scratch_, midi);
+                        const auto pluginUs = clockMicros() - pluginBeginUs;
+                        publishMax (worstPluginUs_, pluginUs);
+                        if (static_cast<double> (pluginUs) > periodUs * 0.75)
+                            slowPlugins_.fetch_add (1, std::memory_order_relaxed);
+                    }
                     midi.clear();
                 }
             }
@@ -337,5 +399,12 @@ private:
         inputPeak_.store (juce::jmin (1.f, inPeak), std::memory_order_relaxed);
         postFxPeak_.store (juce::jmin (1.f, postFxPeak), std::memory_order_relaxed);
         outputPeak_.store (juce::jmin (1.f, outPeak), std::memory_order_relaxed);
+        const auto elapsedUs = clockMicros() - beginUs;
+        lastCallbackUs_.store (elapsedUs, std::memory_order_relaxed);
+        publishMax (worstCallbackUs_, elapsedUs);
+        if (static_cast<double> (elapsedUs) > periodUs * 0.80)
+            slowCallbacks_.fetch_add (1, std::memory_order_relaxed);
+        if (static_cast<double> (elapsedUs) > periodUs)
+            overBudgetCallbacks_.fetch_add (1, std::memory_order_relaxed);
     }
 };
