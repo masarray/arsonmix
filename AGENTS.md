@@ -27,6 +27,12 @@
 - Consolidate P0 infrastructure development and automated CI before requesting another physical hardware test; no user-assisted test after every tiny code edit. Native SIGNAL CHECK should expose **COPY FULL REPORT** to capture hardware capabilities, source-labeled xruns, budget histograms, and latest MARK CRACKLE events in the OS clipboard.
 - Read [P0 Smart Audio diagnostics & prepared bridge](docs/P0_SMART_AUDIO_DIAGNOSTIC_AND_BRIDGE.md) before wiring an SRC. The `AdaptiveClockBridge` is **experimental standalone**, and MUST NOT be wired to the joined JUCE callback or claimed to fix physical crackling until separate-clock adapter feasibility, back-end xrun semantics, automated quality benchmarks and hardware FAT are demonstrated.
 
+## P0 live dual-clock + recovery checkpoint (2026-10-26)
+
+- **Current live engine truth:** [PR #35](https://github.com/masarray/arsonmix/pull/35) merged two actual independent Windows Audio shared capture/render JUCE callbacks with the prepared `AdaptiveClockBridge` in a render-master path; the prior text describing it as standalone applies only to older commits. This is an opt-in **BETA**, not automatic device qualification. Direct ASIO path has no SRC.
+- **Required current handoff:** [P0 DIRECT restore recovery & next gates](docs/P0_DIRECT_RECOVERY_HANDOFF_2026-10-26.md). On an independent device loss, fail silent and restore the previous DIRECT setup only on the message thread using bounded generation-safe backoff; never hot-plug spin, auto-renable independent mode, or mutate devices in callbacks. Expose recovery history through native COPY FULL REPORT.
+- The next P0 gates are stable endpoint identity, real AUTO/STABLE capability integration, backend render underrun provenance, long-drift/quality measurements, and one consolidated physical FAT. P0 #15 remains open and no blanket crackle-free claim is permitted. Other threads may concurrently change CSS: fetch latest main and never overwrite their GUI decisions.
+
 ## If you are a future ChatGPT thread
 1. Fetch live repository `main`, this file and the lock document. Cite approved commit and deployment metadata accurately.
 2. Check current native PRs / base graph before cherry-picking; do not accidentally erase more recent GUI or engine work.
