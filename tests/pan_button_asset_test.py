@@ -14,5 +14,7 @@ assert not re.search(r'--ar-btn-|--skin-small|--skin-long|--skin-large',css)
 assert '<style>'+css+'</style>' in preview and '<script>'+js+'</script>' in preview
 assert '.pan-track .pan-thumb{z-index:3!important}' in css
 assert '.pan-track::after{' in css and 'z-index:1!important' in css
-assert '.pan-track .pan-fill{z-index:2!important}' in css
+assert '.pan-track .pan-fill{z-index:2!important;top:15px!important}' in css
+assert '.pan-track::before{z-index:0!important;top:13px!important}' in css
+assert 'z-index:1!important;top:12px!important' in css
 print('PASS: original PAN thumb unchanged, CSS-only buttons, preview parity')
