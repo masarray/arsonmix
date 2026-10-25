@@ -24,7 +24,8 @@ int main()
             check(std::abs(c[i])<0.25f && std::abs(d[i])<0.25f);
         }
     }
-    const auto status=p.streamStatus(),bridge=p.bridgeStatus();
+    const auto status=p.streamStatus();
+    const auto bridge=p.bridgeStatus();
     check(status.captureCallbacks==1200 && status.renderCallbacks==1200);
     check(status.captureFrames>50000 && status.renderFrames==57600);
     check(status.captureDropFrames==bridge.overflowFrames);
