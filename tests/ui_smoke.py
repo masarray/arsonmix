@@ -115,18 +115,42 @@ async def main():
         before=await preset.evaluate('(e)=>e.getBoundingClientRect().toJSON()')
         await preset.hover()
         await page.wait_for_function("""()=>{
-          const e=document.querySelector('[data-preset="Clean Vocal"]');
-          return getComputedStyle(e).backgroundImage.includes('linear-gradient');
+          const s=getComputedStyle(document.querySelector('[data-preset="Clean Vocal"]'));
+          return s.filter==='brightness(1.18) saturate(1.04)';
         }""",timeout=2500)
-        await page.wait_for_timeout(190) # Button 180's 150 ms hover shadow transition
         hovered=await preset.evaluate("""e=>({
           shadow:getComputedStyle(e).boxShadow,
           box:e.getBoundingClientRect().toJSON(),
-          background:getComputedStyle(e).backgroundImage
+          background:getComputedStyle(e).backgroundImage,
+          radius:getComputedStyle(e).borderTopLeftRadius,
+          filter:getComputedStyle(e).filter
         })""")
-        assert hovered['shadow']!=shared['rail']['shadow'],hovered
-        assert 'linear-gradient' in hovered['background'],hovered
+        # No cylindrical face: solid background, identical seven 3D shadows,
+        # identical rectangular geometry and radius. Only the shine filter changes.
+        assert hovered['shadow']==shared['rail']['shadow'],hovered
+        assert hovered['background']=='none' and hovered['radius']==shared['rail']['radius'],hovered
+        assert hovered['filter']=='brightness(1.18) saturate(1.04)',hovered
         assert all(abs(before[k]-hovered['box'][k])<=.2 for k in ('x','y','width','height')),hovered
+        # The header and strip OFF buttons must use exactly the same shine-only hover.
+        for selector in ('[data-view="FX RACK"]','[data-mute="0"]'):
+            control=page.locator(selector)
+            rest=await control.evaluate("""e=>({
+              shadow:getComputedStyle(e).boxShadow,
+              background:getComputedStyle(e).backgroundImage,
+              rect:e.getBoundingClientRect().toJSON()
+            })""")
+            await control.hover()
+            await page.wait_for_function("""s=>{
+              return getComputedStyle(document.querySelector(s)).filter==='brightness(1.18) saturate(1.04)';
+            }""",arg=selector,timeout=2500)
+            shine=await control.evaluate("""e=>({
+              shadow:getComputedStyle(e).boxShadow,
+              background:getComputedStyle(e).backgroundImage,
+              rect:e.getBoundingClientRect().toJSON()
+            })""")
+            assert shine['shadow']==rest['shadow'] and shine['background']==rest['background']=='none',(selector,rest,shine)
+            assert all(abs(rest['rect'][k]-shine['rect'][k])<=.2 for k in ('x','y','width','height')),(selector,rest,shine)
+        await preset.hover()
         await preset.click()
         assert await preset.evaluate("(e)=>e.classList.contains('active')")
         await page.wait_for_function("""()=>{
