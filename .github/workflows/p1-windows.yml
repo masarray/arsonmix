@@ -43,6 +43,7 @@ jobs:
           node --test tests/smart_audio_ard_contract_test.mjs
           node --test tests/p0_diagnostic_contract_test.mjs
           node --test tests/smart_audio_diagnostic_contract_test.mjs
+          node --test tests/p0_live_split_contract_test.mjs
       - name: Configure Windows x64
         shell: pwsh
         run: >
