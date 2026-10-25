@@ -725,7 +725,7 @@ private:
     // being present. Drivers can disappear between device discovery and open;
     // a wrong fallback endpoint must never be presented as restored audio.
     bool verifyRestoredDirectDevice (
-        const juce::AudioDeviceManager::AudioDeviceSetup& expected) const
+        const juce::AudioDeviceManager::AudioDeviceSetup& expected)
     {
         const auto* active = deviceManager_.getCurrentAudioDevice();
         if (active == nullptr ||
