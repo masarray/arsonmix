@@ -47,7 +47,7 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Verify original metallic asset and standalone synchronization
         run: python tests/fader_asset_test.py
-      - name: Validate crystal candy CSS button contract
+      - name: Validate recessed Button 180 + embedded Inter font contract
         run: python tests/button_asset_test.py
       - name: Verify original PAN slider and CSS buttons
         run: python tests/pan_button_asset_test.py
@@ -67,4 +67,5 @@ jobs:
             mixer-master-dual-metric-left-rail.png
             mixer-crystal-candy-review.png
             mixer-crystal-depth-glow-review.png
+            mixer-inter-recessed-toggle-review.png
           if-no-files-found: ignore
