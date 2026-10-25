@@ -399,7 +399,13 @@ async def main():
         assert off_mute == await image_for('[data-solo="0"]')
         await page.locator('[data-mute="0"]').click()
         assert await page.locator('[data-mute="0"]').get_attribute('aria-pressed') == 'true'
-        assert await image_for('[data-mute="0"]') != await image_for('[data-solo="0"]')
+        assert await image_for('[data-mute="0"]') != await image_for('[data-solo="0"]'), await page.evaluate("""()=>{
+          return [...document.querySelectorAll('[data-mute="0"],[data-solo="0"]')].map(e=>({
+            cls:e.className,background:getComputedStyle(e).backgroundColor,
+            token:getComputedStyle(e).getPropertyValue('--b180-color'),
+            bgImage:getComputedStyle(e).backgroundImage
+          }))
+        }""")
         await page.locator('[data-solo="0"]').click()
         assert await page.locator('[data-solo="0"]').get_attribute('aria-pressed') == 'true'
         assert await image_for('[data-solo="0"]') != await image_for('[data-mute="0"]')
