@@ -41,7 +41,9 @@ assert 'class="pushable' not in page and '--pb-face:' not in css
 assert 'top:13px!important' in css
 assert 'top:12px!important' in css
 assert 'top:15px!important' in css
-assert 'background:linear-gradient(180deg,#526a78' in css
+assert 'filter:brightness(1.18) saturate(1.04)!important' in css
+assert 'background:linear-gradient(180deg,#526a78' not in css
+assert '0 0 8px rgba(60,191,230,.24)' not in css
 assert 'data-send' not in js and 'data-send' not in css
 assert 'a:true,b:false' not in js
 print('PASS: original-size 3D raised OFF, same-slot inset ON, embedded Inter, parity')
