@@ -10,6 +10,7 @@ const diag=read('src/DiagnosticsRecorder.h');
 const engine=read('src/LiveAudioEngine.h');
 const ui=read('web/monitor.js');
 const bridge=read('engine/device/AdaptiveClockBridge.h');
+const policy=read('engine/device/AudioProfilePolicy.h');
 const health=read('engine/core/RealtimeHealthHistogram.h');
 const cmake=read('CMakeLists.txt');
 const flow=read('.github/workflows/p1-windows.yml');
@@ -48,5 +49,8 @@ test('clock bridge has no callback alloc / blocking and is gated behind independ
   assert.doesNotMatch(engine,/AdaptiveClockBridge\s+clockBridge_/);
   assert.match(cmake,/AdaptiveDualClockBridge/);
   assert.match(cmake,/RealtimeHealthHistogram/);
-  assert.match(flow,/ARMixClockBridgeTests ARMixHealthTests/);
+  assert.match(flow,/ARMixClockBridgeTests ARMixHealthTests ARMixPolicyTests/);
+  assert.match(policy,/class AudioProfilePolicy final/);
+  assert.match(policy,/clockSharedByHardware/);
+  assert.match(policy,/unsupportedClockAdapter/);
 });
