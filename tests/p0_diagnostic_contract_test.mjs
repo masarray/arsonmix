@@ -20,7 +20,7 @@ test('true output-only and capture-only device configurations are opened, not si
   assert.match(engine,/setAudioDeviceSetup \(original, false\)/);
   assert.match(engine,/savedLiveSetup_ = original/);
   assert.match(engine,/diagnosticRoute_\.store \(wanted/);
-  assert.match(host,/!engine_\.hasTemporaryDiagnosticDevice\(\)/);
+  assert.match(host,/!engine_\.hasTemporaryAudioRouting\(\)/);
 });
 test('audio callback isolates low-amplitude oscillator from input and VST3',()=>{
   assert.match(engine,/const bool toneTest = route == armix::diagnostics::Route::outputOnlyTone/);
