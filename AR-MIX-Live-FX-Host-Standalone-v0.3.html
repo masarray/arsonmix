@@ -580,6 +580,19 @@
  .strip .rack .insert-slot .insert,.strip .rack .insert-slot .fx-power,
  #masterLeft .master-insert,#masterLeft .master-fx-power{height:25px;min-height:25px}
 }
+
+/* Geometry correction measured by Chromium: EASY master controls need 94px,
+   not 127px, when both channel and master FX racks are the same height. */
+.app.easy #masterLeft .master-controls-zone{height:94px;flex:0 0 94px;min-height:94px;
+ padding:0 5px;gap:0;justify-content:flex-start}
+.app.easy #masterLeft .master-controls-zone .master-analysis,
+#masterLeft .master-controls-zone .master-analysis{
+ height:38px;min-height:38px;flex:0 0 38px;padding:1px 5px;margin:0;overflow:hidden
+}
+#masterLeft .master-controls-zone .master-analysis .master-info-kicker{font:600 8px/9px Consolas,monospace;margin:0}
+#masterLeft .master-controls-zone .master-analysis .master-info-row{font:9px/9px Consolas,monospace;margin:0;min-height:9px}
+#masterLeft .master-controls-zone .master-analysis .master-info-row strong{font:600 10px/9px Consolas,monospace}
+#masterLeft .master-controls-zone .master-pan-wrap{flex:0 0 56px;min-height:56px;max-height:56px}
 </style></head>
 <body>
 <div id="app" class="app">
