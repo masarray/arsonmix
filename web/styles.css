@@ -443,3 +443,8 @@
 .app:not(.easy) .master-info-kicker{margin-bottom:9px}
 .app:not(.easy) .master-info-row{margin-bottom:8px}
 .app:not(.easy) .master-action-space{height:66px;flex:0 0 66px}
+
+/* Master add-slot uses one leading plus icon, matching channel strips. */
+.master-insert.empty{display:flex;align-items:center;gap:3px}
+.master-insert-add{color:#75d4e9;font:700 12px/1 Consolas,monospace;flex:0 0 auto}
+.master-insert.empty .insert-name{min-width:0;white-space:nowrap}
