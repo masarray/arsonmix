@@ -1,0 +1,69 @@
+name: Windows Native VST3 Host
+on:
+  push:
+    branches: [ main, feature/p1-first-sound-windows, feature/p2-native-vst-catalog-fx-rack, feature/p2-daw-workflow-progress, fix/p2-native-output-monitor-diagnostics, fix/p2-realtime-glitch-telemetry-latest-gui, fix/p2-truthful-meter-pan-fx-toggle, feature/p2-native-state-presets, fix/p2-fabfilter-add-workflow, feature/p25-live-preset-graph-swap, integration/p25-gui-engine-reconciled, integration/main-v08-gui-p25-native ]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: windows-vst3-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows-build:
+    runs-on: windows-2022
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout JUCE 8 pinned
+        uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: 8.0.15
+          path: third_party/JUCE
+      - name: Install WebView2 SDK for JUCE
+        shell: pwsh
+        run: nuget install Microsoft.Web.WebView2 -Version 1.0.3485.44 -OutputDirectory .deps -NonInteractive
+      - name: Validate native UI JavaScript
+        shell: pwsh
+        run: |
+          node --check web/bridge.js
+          node --check web/monitor.js
+          node --check web/app.js
+          node --test tests/native_ui_contract_test.mjs
+          node --test tests/native_preset_contract_test.mjs
+          node --test tests/fx_add_contract_test.mjs
+          node --test tests/live_graph_contract_test.mjs
+          node --test tests/reconciled_gui_engine_contract_test.mjs
+      - name: Configure Windows x64
+        shell: pwsh
+        run: >
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+          -DJUCE_ROOT="${{ github.workspace }}/third_party/JUCE"
+          -DBUILD_TESTING=ON
+          -DJUCE_WEBVIEW2_PACKAGE_LOCATION="${{ github.workspace }}/.deps"
+      - name: Build executable and native RT tests
+        run: cmake --build build --config Release --target ARMixConsole ARMixRTTests ARMixPresetTests --parallel 2
+      - name: Test realtime control primitives
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Package native executable
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $exe = Get-ChildItem -Path build -Filter "*.exe" -Recurse |
+            Where-Object { $_.Name -like "*AR*Mix*" -and $_.FullName -match 'Release' } |
+            Select-Object -First 1
+          if (-not $exe) { throw "ARMixConsole EXE not found" }
+          Copy-Item $exe.FullName "dist/ArSonMix-P2.5-GUI-v0.8-Native-Windows.exe"
+          Copy-Item README.md "dist/README.md"
+          "P2 experimental: audio routes automatically; use headphones at low level. Only Channel 1 is native. Other strips are inactive previews." |
+            Out-File -FilePath dist/FIRST_SOUND_README.txt -Encoding utf8
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ArSonMix-P2.5-GUI-v0.8-Native-Windows-x64
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
