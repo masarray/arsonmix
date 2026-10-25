@@ -25,6 +25,19 @@ const levelToTop=db=>+(clamp((10-db)/70,0,1)*100).toFixed(3);
 const fmt=db=>db===-Infinity?'−∞':`${db>0?'+':''}${db.toFixed(1)} dB`;
 // UI side throttling is distinct from the native realtime control plane.
 const pendingUiParams=new Map();let uiFlushScheduled=false;
+const peakHold=Object.create(null),clipLatch=Object.create(null);
+function resetClip(key){clipLatch[key]=false;document.querySelector(`[data-clip="${key}"]`)?.classList.remove('latched')}
+function syncClipLeds(){document.querySelectorAll('[data-clip]').forEach(e=>e.classList.toggle('latched',!!clipLatch[e.dataset.clip]))}
+function updateMeterVisual(key,level,now){
+ const el=document.querySelector(`[data-meter="${key}"]`);if(!el)return;
+ const value=clamp(level,0,99);
+ el.style.setProperty('--level',value.toFixed(1)+'%');
+ const slot=el.closest('.meter'),old=peakHold[key];
+ if(!old||value>=old.value||now>=old.until)peakHold[key]={value,until:now+1600};
+ const pk=slot?.querySelector('.meter-peak');if(pk)pk.style.bottom=peakHold[key].value.toFixed(1)+'%';
+ if(value>=97){clipLatch[key]=true;slot?.querySelector('.clip-led')?.classList.add('latched')}
+}
+
 function flushUiParams(){uiFlushScheduled=false;const bridge=window.__JUCE__?.backend;if(bridge?.emitEvent)for(const event of pendingUiParams.values())bridge.emitEvent('arMixParameter',event);pendingUiParams.clear()}
 function send(param,value,ch=currentChannel){
  const event={channel:ch+1,parameter:param,value};
@@ -72,14 +85,46 @@ function makeStrip(ch,i){let inserts=ch.inserts.slice(0,4);while(inserts.length<
  <div class="ch-id">${i+1}</div><div class="rack">${inserts.map((n,j)=>`<div class="insert-slot ${n&&bypassed[fxKey(i,j)]?'is-bypassed':''}"><button class="insert ${!n?'empty':''}" data-insert="${i}:${j}" title="${n?'Open or replace '+safeText(n):'Add VST effect'}">${n?'':'<span class="insert-add-glyph" aria-hidden="true">＋</span>'}<span class="insert-name">${n? safeText(n):'ADD FX'}</span></button>${n?`<button type="button" class="fx-power ${bypassed[fxKey(i,j)]?'is-bypassed':''}" data-fxpower="${i}:${j}" aria-pressed="${!bypassed[fxKey(i,j)]}" aria-label="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}" title="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}">⏻</button>`:''}</div>`).join('')}</div>
  <div class="strip-controls"><div class="trim-row"><span class="mini-label">TRIM<br>dB</span><div class="mini-lcd" data-trim-read="${i}">${fmt(ch.trim)}</div></div>${knobMarkup('trim',i,ch.trim,'Trim')}<div class="knob-label">PAN</div><div class="pan-control">${panMarkup(ch,i)}<div class="knob-value" data-pan-read="${i}">${panText(ch.pan)}</div></div><div class="utility-row"><button data-pre="${i}" class="${ch.pre?'active':''}">Ø</button><button data-hpf="${i}" class="${ch.hpf?'active':''}">HPF</button></div></div>
  <div class="channel-actions"><button class="candy mute ${ch.mute?'active':''}" data-mute="${i}" aria-pressed="${ch.mute}">MUTE</button><button class="candy solo ${ch.solo?'active':''}" data-solo="${i}" aria-pressed="${ch.solo}">SOLO</button></div>
- <div class="db-display" data-read="${i}">${fmt(ch.fader)}</div><div class="fader-zone"><div class="scale"><span>10</span><span>0</span><span>−10</span><span>−20</span><span>−30</span><span>−40</span><span>−60</span></div><div class="fader" data-fader="${i}" role="slider" tabindex="0" aria-orientation="vertical" aria-label="${ch.name} fader" aria-valuemin="-60" aria-valuemax="10" aria-valuenow="${ch.fader}"><div class="cap" style="--pos:${levelToTop(ch.fader)}%"></div></div><div class="meter"><div class="meter-fill" data-meter="${i}" style="--level:40%"></div></div></div>
+ <div class="db-display" data-read="${i}">${fmt(ch.fader)}</div><div class="fader-zone"><div class="scale"><span>10</span><span>0</span><span>−10</span><span>−20</span><span>−30</span><span>−40</span><span>−60</span></div><div class="fader" data-fader="${i}" role="slider" tabindex="0" aria-orientation="vertical" aria-label="${ch.name} fader" aria-valuemin="-60" aria-valuemax="10" aria-valuenow="${ch.fader}"><div class="cap" style="--pos:${levelToTop(ch.fader)}%"></div></div><div class="meter" data-meter-key="${i}"><button class="clip-led" type="button" data-clip="${i}" title="Clear latched clip — ${safeText(ch.name)}" aria-label="Clear ${safeText(ch.name)} clip"></button><div class="meter-fill" data-meter="${i}" style="--level:40%"></div><div class="meter-peak" aria-hidden="true"></div></div></div>
  <div class="fader-tools"><button data-send="${i}:a" class="${ch.a?'active':''}">A</button><button data-send="${i}:b" class="${ch.b?'active':''}">B</button></div>
  <div class="strip-name" data-editstrip="${i}" role="button" tabindex="0" aria-label="Edit ${safeText(ch.name)} name, icon and color" title="Edit channel identity"><span class="strip-caption">${safeText(ch.name)}</span><span class="track-icon">${safeText(ch.icon)}</span></div>
  </article>`}
 function renderMixer(){const x=$('mixer'),scroll=x.scrollLeft;x.innerHTML=channels.map(makeStrip).join('');x.scrollLeft=scroll;createSide()}
-let masterGain=-.1,masterMute=false,phones=-12;
-function renderMaster(){ $('masterLeft').innerHTML=`<div class="master-lcd">${fmt(masterGain)}</div><div class="master-meter-box"><div class="meter"><div class="meter-fill" id="masterMeterL" style="--level:60%"></div></div><div class="meter"><div class="meter-fill" id="masterMeterR" style="--level:57%"></div></div></div><div class="master-mid">${fmt(masterGain)}</div><div class="master-slider-wrap"><div class="scale"><span>10</span><span>0</span><span>−10</span><span>−20</span><span>−30</span><span>−40</span><span>−60</span></div><div class="fader" data-fader="master" role="slider" tabindex="0" aria-orientation="vertical" aria-label="Main master fader" aria-valuemin="-60" aria-valuemax="10" aria-valuenow="${masterGain}"><div class="cap" style="--pos:${levelToTop(masterGain)}%"></div></div><div class="meter"><div class="meter-fill" id="masterMeterAux" style="--level:59%"></div></div></div><div class="master-fader-label">MAIN MASTER</div>`;
- $('masterRight').innerHTML=`<div class="right-title">OUTPUTS</div>${['Main L/R','Alt 1','Alt 2','Record','Streaming'].map((s,i)=>`<button data-output="${s}" class="right-button ${i===0?'selected':''}">◆ ${s}</button>`).join('')}<div class="right-title">MONITOR SOURCE</div><button class="right-button" id="monitorSource">Main Mix　⌄</button><div class="monitor-knob">${knobMarkup('phones',-1,phones,'Phones')}</div><div class="right-data" data-phones-read>${fmt(phones)}</div><div class="master-controls"><button class="right-button" id="dim" aria-pressed="false">DIM</button><button class="right-button ${masterMute?'active':''}" id="masterMute" aria-pressed="${masterMute}">MUTE</button></div><div class="right-title">TALKBACK</div><button class="talk-btn" id="talkBtn">♩</button><div class="right-small"><input type="checkbox" id="talkLatch"> Latch</div><div class="right-small"><input type="checkbox" checked id="toMonitor"> To Monitors</div><div class="right-title">PHONES</div><div class="right-data">${fmt(phones)}</div>`; }
+let masterGain=-.1,masterMute=false,phones=-12,masterInserts=['Studio EQ','Brickwall Limiter'],masterBypassed={},pendingMasterSlot=null;
+function masterFxRows(){
+ const slots=masterInserts.slice(0,5);while(slots.length<5)slots.push('');
+ return slots.map((name,i)=>`<div class="master-fx-slot ${masterBypassed[i]?'is-bypassed':''}">
+ <button class="master-insert ${name?'':'empty'}" data-master-insert="${i}" title="${name?'Replace '+safeText(name):'Add master FX'}"><span class="insert-name">${name?safeText(name):'＋ ADD FX'}</span></button>
+ ${name?`<button class="master-fx-power ${masterBypassed[i]?'is-bypassed':''}" data-master-power="${i}" title="${masterBypassed[i]?'Enable':'Bypass'} ${safeText(name)}" aria-label="${masterBypassed[i]?'Enable':'Bypass'} ${safeText(name)}" aria-pressed="${!masterBypassed[i]}">⏻</button>`:''}</div>`).join('');
+}
+function meterUnit(key,label){return `<div class="meter-unit"><div class="meter" data-meter-key="${key}"><button type="button" class="clip-led" data-clip="${key}" title="Clear latched clip — ${label}" aria-label="Clear ${label} clip indication"></button><div class="meter-fill" data-meter="${key}" style="--level:6%"></div><div class="meter-peak" aria-hidden="true"></div></div>${label?'<span class="meter-channel-label">'+label+'</span>':''}</div>`}
+function renderMaster(){
+ $('masterLeft').innerHTML=`<div class="master-ch-id">MASTER</div>
+ <div class="master-fx-rack"><div class="master-fx-title">FX CHAIN · MASTER</div>${masterFxRows()}</div>
+ <div class="master-meter-info"><div class="master-info-kicker">OUTPUT ANALYSIS <span>SIM</span></div>
+ <div class="master-info-row"><span>LUFS-I</span><strong id="masterLufs">--</strong></div>
+ <div class="master-info-row"><span>dBTP</span><strong id="masterDbtp">--</strong></div>
+ <div class="master-info-row"><span>PEAK</span><strong id="masterPeakDb">--</strong></div>
+ <div class="master-info-note">DEMO · NOT CALIBRATED</div></div>
+ <div class="master-action-space"><span>MAIN L/R</span><span class="master-stereo-symbol">◀　▶</span></div>
+ <div class="master-db" data-master-db>${fmt(masterGain)}</div>
+ <div class="master-fader-zone"><div class="scale"><span>10</span><span>0</span><span>−10</span><span>−20</span><span>−30</span><span>−40</span><span>−60</span></div>
+ ${meterUnit('masterL','L')}
+ <div class="fader" data-fader="master" role="slider" tabindex="0" aria-orientation="vertical" aria-label="Main master fader" aria-valuemin="-60" aria-valuemax="10" aria-valuenow="${masterGain}"><div class="cap master-cap" style="--pos:${levelToTop(masterGain)}%"></div></div>
+ ${meterUnit('masterR','R')}</div>
+ <div class="master-tools"><button type="button" data-clear-all-clips="1" title="Reset all peak clip indicators">CLEAR CLIP</button></div>
+ <div class="master-fader-label">MAIN MASTER</div>`;
+ $('masterRight').innerHTML=`<div class="right-title">OUTPUTS</div>${['Main L/R','Alt 1','Alt 2','Record','Streaming'].map((s,i)=>`<button data-output="${s}" class="right-button ${i===0?'selected':''}">◆ ${s}</button>`).join('')}
+ <div class="right-title">MONITOR SOURCE</div><button class="right-button" id="monitorSource">Main Mix　⌄</button>
+ <div class="monitor-knob">${knobMarkup('phones',-1,phones,'Phones')}</div><div class="right-data" data-phones-read>${fmt(phones)}</div>
+ <div class="master-controls"><button class="right-button" id="dim" aria-pressed="false">DIM</button>
+ <button class="right-button ${masterMute?'active':''}" id="masterMute" aria-pressed="${masterMute}">MUTE</button></div>
+ <div class="right-title">TALKBACK</div><button class="talk-btn" id="talkBtn">♩</button>
+ <div class="right-small"><input type="checkbox" id="talkLatch"> Latch</div>
+ <div class="right-small"><input type="checkbox" checked id="toMonitor"> To Monitors</div>
+ <div class="right-title">PHONES</div><div class="right-data">${fmt(phones)}</div>`;
+ syncClipLeds();
+}
 let bands=[{freq:80,gain:2.1,q:1},{freq:300,gain:-3.2,q:1},{freq:2200,gain:-1.5,q:1.2},{freq:7800,gain:3.5,q:.8}];let activeBand=1;
 const fx=x=>Math.log(x/20)/Math.log(1000)*1000;
 const fy=y=>250-y*9;
@@ -96,7 +141,7 @@ function setView(next){
  if(next==='SIGNAL FLOW')renderSignalFlow();
  if(next==='SETUP')renderSetup();
 }
-function updateFader(idx,value){if(idx==='master'){masterGain=clamp(value,-60,10);const host=document.querySelector('[data-fader="master"]');host.querySelector('.cap').style.setProperty('--pos',levelToTop(masterGain)+'%');host.setAttribute('aria-valuenow',masterGain.toFixed(1));$('masterLeft').querySelectorAll('.master-lcd,.master-mid').forEach(e=>e.textContent=fmt(masterGain));send('masterGain',masterGain,-1);return}const ch=channels[+idx];ch.fader=clamp(value,-60,10);const el=document.querySelector(`[data-fader="${idx}"]`);if(el){el.querySelector('.cap').style.setProperty('--pos',levelToTop(ch.fader)+'%');el.setAttribute('aria-valuenow',ch.fader.toFixed(1));document.querySelector(`[data-read="${idx}"]`).textContent=fmt(ch.fader)}send('faderDb',ch.fader,+idx)}
+function updateFader(idx,value){if(idx==='master'){masterGain=clamp(value,-60,10);const host=document.querySelector('[data-fader="master"]');host.querySelector('.cap').style.setProperty('--pos',levelToTop(masterGain)+'%');host.setAttribute('aria-valuenow',masterGain.toFixed(1));$('masterLeft').querySelectorAll('.master-db').forEach(e=>e.textContent=fmt(masterGain));send('masterGain',masterGain,-1);return}const ch=channels[+idx];ch.fader=clamp(value,-60,10);const el=document.querySelector(`[data-fader="${idx}"]`);if(el){el.querySelector('.cap').style.setProperty('--pos',levelToTop(ch.fader)+'%');el.setAttribute('aria-valuenow',ch.fader.toFixed(1));document.querySelector(`[data-read="${idx}"]`).textContent=fmt(ch.fader)}send('faderDb',ch.fader,+idx)}
 function updatePan(idx,value,pointer=false){const c=channels[idx];c.pan=Math.round(clamp(pointer&&Math.abs(value)<=6?0:value,-100,100));
  const el=document.querySelector(`[data-pan="${idx}"]`);
  if(el){el.style.setProperty('--pan-frac',(c.pan+100)/200);el.style.setProperty('--pan-left',Math.min(.5,(c.pan+100)/200));el.style.setProperty('--pan-span',Math.abs(c.pan)/200);el.setAttribute('aria-valuenow',String(c.pan));el.setAttribute('aria-valuetext',panText(c.pan))}
@@ -120,6 +165,10 @@ document.addEventListener('click',e=>{const b=e.target.closest('button,[data-cho
  if(b.dataset.pre!==undefined){let i=+b.dataset.pre;channels[i].pre=!channels[i].pre;b.classList.toggle('active');send('phase',channels[i].pre,i);return}
  if(b.dataset.hpf!==undefined){let i=+b.dataset.hpf;channels[i].hpf=!channels[i].hpf;b.classList.toggle('active');send('hpf',channels[i].hpf,i);return}
  if(b.dataset.send!==undefined){let [i,k]=b.dataset.send.split(':');channels[+i][k]=!channels[+i][k];b.classList.toggle('active');send(`send${k.toUpperCase()}`,channels[+i][k],+i);return}
+ if(b.dataset.masterInsert!==undefined){pendingMasterSlot=+b.dataset.masterInsert;openPluginBrowser(currentChannel,true);return}
+ if(b.dataset.masterPower!==undefined){const slot=+b.dataset.masterPower;masterBypassed[slot]=!masterBypassed[slot];renderMaster();persistSession();send('masterFxBypass',{slot,bypass:masterBypassed[slot]},-1);return}
+ if(b.dataset.clip!==undefined){resetClip(b.dataset.clip);return}
+ if(b.dataset.clearAllClips!==undefined){Object.keys(clipLatch).forEach(resetClip);Object.keys(peakHold).forEach(k=>delete peakHold[k]);return}
  if(b.dataset.fxpower!==undefined){const [i,j]=b.dataset.fxpower.split(':').map(Number);setFxBypass(i,j,!bypassed[fxKey(i,j)]);return}
  if(b.dataset.insert){let [i,j]=b.dataset.insert.split(':').map(Number);currentChannel=i;pendingSlot=j;openPluginBrowser(i);return}
  if(b.dataset.editstrip!==undefined){openChannelIdentity(+b.dataset.editstrip);return}
@@ -183,7 +232,19 @@ document.addEventListener('keydown',e=>{const pan=e.target.closest('[data-pan]')
  updateFader(idx,e.key==='Home'?-60:e.key==='End'?10:db+steps[e.key]);
 });
 document.addEventListener('keydown',e=>{if(e.ctrlKey&&e.key.toLowerCase()==='s'){e.preventDefault();if(persistSession())flash('UI state saved locally');else flash('Browser storage unavailable')}});
-let lastMeterFrame=0;function meters(t){requestAnimationFrame(meters);if(t-lastMeterFrame<33||document.hidden)return;lastMeterFrame=t;channels.forEach((c,i)=>{const element=document.querySelector(`[data-meter="${i}"]`);if(!element)return;const wave=(Math.sin(t*.0022+i*1.92)+Math.sin(t*.0043+i*.6))*.5;let base=clamp(45+wave*24 +c.fader*.48,4,98);if(c.mute)base=2;element.style.setProperty('--level',base.toFixed(1)+'%')});let m=clamp(67+Math.sin(t*.002)*15,8,92);['masterMeterL','masterMeterR','masterMeterAux'].forEach((id,i)=>{let x=$(id);if(x)x.style.setProperty('--level',clamp(m-i*7+Math.sin(t*.003+i)*8,4,99).toFixed(1)+'%')})}
+let lastMeterFrame=0;function meters(t){
+ requestAnimationFrame(meters);if(t-lastMeterFrame<33||document.hidden)return;lastMeterFrame=t;
+ channels.forEach((ch,i)=>{const wave=(Math.sin(t*.0022+i*1.92)+Math.sin(t*.0043+i*.6))*.5;
+ let v=clamp(45+wave*24+ch.fader*.48,4,98);if(ch.mute)v=2;updateMeterVisual(String(i),v,t)});
+ const base=clamp(67+Math.sin(t*.002)*15,8,95);
+ const l=clamp(base+Math.sin(t*.003)*6,3,99),r=clamp(base-5+Math.sin(t*.003+1)*7,3,99);
+ updateMeterVisual('masterL',masterMute?2:l,t);updateMeterVisual('masterR',masterMute?2:r,t);
+ // UI demonstration only. These values are never from a true-peak or loudness meter.
+ const lufs=$('masterLufs'),tp=$('masterDbtp'),peak=$('masterPeakDb');
+ if(lufs)lufs.textContent=(-31+(l+r)/11).toFixed(1);
+ if(tp)tp.textContent=(-18+Math.max(l,r)/7).toFixed(1);
+ if(peak)peak.textContent=(-60+Math.max(l,r)*.61).toFixed(1);
+}
 // v0.3: demo-only FX catalog. Items represent mock plugins, not installed VST3 binaries.
 const pluginCatalog=[
  {name:'Studio EQ',type:'EQ',badge:'EQ',hint:'Four-band tonal shaping'},
@@ -212,10 +273,19 @@ function renderRackWorkspace(){let c=channels[currentChannel];let chain=normalCh
 function pluginInspector(ch,slot){const name=normalChain(channels[ch])[slot],v=getFxParams(ch,slot);return `<div class="guide-panel plugin-inspector"><span class="eyebrow">FX EDITOR · DEMO PARAMETERS</span><h3>${safeText(name)}</h3><p>These generic controls demonstrate the editing and preset workflow. The real VST3 editor will replace them when connected.</p><label>Mix <output data-fxread="mix">${v.mix}%</output><input type="range" min="0" max="100" value="${v.mix}" data-fxparam="mix" data-slot="${slot}"></label><label>Amount <output data-fxread="amount">${v.amount}%</output><input type="range" min="0" max="100" value="${v.amount}" data-fxparam="amount" data-slot="${slot}"></label><label>Output <output data-fxread="output">${v.output>0?'+':''}${v.output} dB</output><input type="range" min="-24" max="12" value="${v.output}" data-fxparam="output" data-slot="${slot}"></label><button id="closeFxInspector" class="ghost-action" style="margin-top:20px;width:100%">CLOSE EDITOR</button></div>`}
 function renderSignalFlow(){$('rackWorkspace').innerHTML=`<div class="feature-top"><div><span class="eyebrow">NO TECHNICAL PATCHBAY REQUIRED</span><h2>Signal Flow — See where your voice goes</h2><p>A beginner-first view of the real-time audio path. Select your audio device in Setup.</p></div><button class="action" id="openSetupFromFlow">CHOOSE AUDIO DEVICE</button></div><div class="workflow"><div class="flow-node"><span class="eyebrow">01 · INPUT</span><b>Microphone</b><small>Audio Interface<br>ASIO or WASAPI</small></div><span class="flow-arrow">➜</span><div class="flow-node"><span class="eyebrow">02 · FX CHAIN</span><b>VST3 Plugins</b><small>EQ · Dynamics<br>Reverb · Delay</small></div><span class="flow-arrow">➜</span><div class="flow-node"><span class="eyebrow">03 · MIXER</span><b>Mix & Monitor</b><small>Fader · Pan<br>Master · Meters</small></div><span class="flow-arrow">➜</span><div class="flow-node"><span class="eyebrow">04 · OUTPUT</span><b>Speakers / Stream</b><small>Audio Device<br>Streaming bridge later</small></div></div><div class="flow-summary"><span>⚠ In this trial the audio flow is a visual concept; no microphone is captured and no audio is sent to a livestream.</span><button class="ghost-action" id="flowFxButton">OPEN FX RACK</button></div>`}
 function renderSetup(){$('rackWorkspace').innerHTML=`<div class="feature-top"><div><span class="eyebrow">AUDIO DEVICE WIZARD</span><h2>Make your live setup simple</h2><p>Windows ASIO / WASAPI support is a core requirement for the native build.</p></div><button class="ghost-action" id="backMixer">BACK TO MIXER</button></div><div class="setup-grid"><div class="setup-section"><h3>1 · Audio Driver</h3><label>Driver API<select id="driverSelect"><option>ASIO — when available</option><option>WASAPI Shared</option><option>WASAPI Exclusive</option></select></label><label>Input Source<select><option>Demo microphone (not connected)</option></select></label><label>Output Device<select><option>Demo master output (not connected)</option></select></label><p style="color:#81b0c2;font-size:10px">Actual device enumeration and stream opening belong to the upcoming native engine.</p></div><div class="setup-section"><h3>2 · Live Latency</h3><label>Sample Rate<select id="rateSelect"><option>48000 Hz</option><option>44100 Hz</option><option>96000 Hz</option></select></label><label>ASIO/WASAPI Buffer<select id="bufferSelect"><option>64 samples</option><option>128 samples</option><option>256 samples</option></select></label><p style="font-size:11px;color:#8ed1df">At 48 kHz, 64 samples ≈ 1.33 ms buffer period. This is NOT the device round-trip latency.</p></div><div class="setup-section"><h3>3 · Your Voice</h3><button class="action" data-preset="Warm Karaoke">USE WARM KARAOKE PRESET</button><p style="font-size:11px;color:#85aab8">This changes the FX chain preview and can later recall stored VST3 states automatically.</p></div><div class="setup-section"><h3>4 · Live Safety</h3><p style="font-size:11px;color:#a1b9c5;line-height:1.8">Before livestream: verify your microphone level, output device, monitoring feedback, total latency and plugin stability. The future engine will display xruns, dropouts, latency and recovery state here.</p></div></div>`}
-function openPluginBrowser(idx){currentChannel=idx;activeCategory='All';$('pluginModal').classList.remove('hidden');$('pluginTarget').textContent='Adding to '+channels[idx].name+' · virtual effects catalog';$('pluginSearch').value='';renderPluginBrowser();$('pluginSearch').focus()}
+function openPluginBrowser(idx,isMaster=false){if(!isMaster){currentChannel=idx;pendingMasterSlot=null}activeCategory='All';$('pluginModal').classList.remove('hidden');$('pluginTarget').textContent=isMaster?'Adding to MASTER bus · demo FX catalog':'Adding to '+channels[idx].name+' · virtual effects catalog';$('pluginSearch').value='';renderPluginBrowser();$('pluginSearch').focus()}
 function closePluginBrowser(){$('pluginModal').classList.add('hidden')}
 function renderPluginBrowser(){document.querySelectorAll('[data-category]').forEach(b=>b.classList.toggle('active',b.dataset.category===activeCategory));const q=$('pluginSearch').value.trim().toLowerCase();let pool=pluginCatalog.filter(p=>(activeCategory==='All'||p.type===activeCategory)&&`${p.name} ${p.type} ${p.hint}`.toLowerCase().includes(q));$('pluginResults').innerHTML=pool.map(p=>`<button class="plugin-card" data-pluginname="${safeText(p.name)}"><span class="plugin-glyph">${safeText(p.badge)}</span><span><b>${safeText(p.name)}</b><small>${safeText(p.type)} · ${safeText(p.hint)}</small></span></button>`).join('')||'<p>No matching demo effects.</p>'}
-function insertPlugin(name){const c=channels[currentChannel];const chain=normalChain(c);if(chain.length>=8){flash('Maximum 8 FX slots in this UI trial');return}const index=clamp(pendingSlot,0,chain.length);shiftFxMetaRight(currentChannel,index,chain.length);chain.splice(index,0,name);pluginEditorIndex=index;setChain(c,chain);closePluginBrowser();flash(name+' added to preview chain');send('chainChanged',{chain},currentChannel)}
+function insertPlugin(name){
+ if(pendingMasterSlot!==null){
+   const slot=pendingMasterSlot;
+   if(slot>=5)return;
+   masterInserts[slot]=name;delete masterBypassed[slot];pendingMasterSlot=null;
+   closePluginBrowser();renderMaster();persistSession();
+   send('masterChainChanged',{chain:[...masterInserts]},-1);
+   flash('Master FX updated (GUI preview)');return;
+ }
+ const c=channels[currentChannel];const chain=normalChain(c);if(chain.length>=8){flash('Maximum 8 FX slots in this UI trial');return}const index=clamp(pendingSlot,0,chain.length);shiftFxMetaRight(currentChannel,index,chain.length);chain.splice(index,0,name);pluginEditorIndex=index;setChain(c,chain);closePluginBrowser();flash(name+' added to preview chain');send('chainChanged',{chain},currentChannel)}
 function movePlugin(idx,dir){const c=channels[currentChannel],ch=normalChain(c),n=idx+dir;if(n<0||n>=ch.length)return;[ch[idx],ch[n]]=[ch[n],ch[idx]];moveFxMeta(currentChannel,idx,n);pluginEditorIndex=n;setChain(c,ch);send('chainChanged',{chain:ch},currentChannel)}
 function removePlugin(idx){const c=channels[currentChannel],ch=normalChain(c);shiftFxMetaLeft(currentChannel,idx,ch.length);ch.splice(idx,1);pluginEditorIndex=null;setChain(c,ch);send('chainChanged',{chain:ch},currentChannel)}
 function setFxBypass(ch,slot,disabled){
@@ -249,7 +319,7 @@ function setFxBypass(ch,slot,disabled){
 function toggleBypass(idx){setFxBypass(currentChannel,idx,!bypassed[fxKey(currentChannel,idx)])}
 const quickPresets={'Clean Vocal':['Noise Gate','Studio EQ','Vocal Compressor'],'Warm Karaoke':['Noise Gate','Studio EQ','Vocal Compressor','Studio Reverb'],'Live Broadcast':['Noise Gate','Dynamic EQ','De-Esser','Brickwall Limiter']};
 function applyQuickPreset(name){const c=channels[currentChannel];for(let i=0;i<8;i++){delete fxParams[fxKey(currentChannel,i)];delete bypassed[fxKey(currentChannel,i)]}pluginEditorIndex=null;setChain(c,quickPresets[name]||[]);document.querySelectorAll('[data-preset]').forEach(b=>b.classList.toggle('active',b.dataset.preset===name));flash('FX chain preset selected: '+name+' (UI only)');send('chainChanged',{chain:normalChain(c)},currentChannel)}
-function durableSession(){return {schemaVersion:1,version:'0.3-ui',channels:channels.map(c=>({id:c.id,name:c.name,icon:c.icon,color:c.color,inserts:[...c.inserts],fader:c.fader,pan:c.pan,trim:c.trim,mute:c.mute,solo:c.solo,hpf:c.hpf})),masterGain,masterMute,sceneIdx,selected:currentChannel,fxParams:structuredClone(fxParams),bypassed:{...bypassed}};}
+function durableSession(){return {schemaVersion:1,version:'0.3-ui',channels:channels.map(c=>({id:c.id,name:c.name,icon:c.icon,color:c.color,inserts:[...c.inserts],fader:c.fader,pan:c.pan,trim:c.trim,mute:c.mute,solo:c.solo,hpf:c.hpf})),masterGain,masterMute,masterInserts:[...masterInserts],masterBypassed:{...masterBypassed},sceneIdx,selected:currentChannel,fxParams:structuredClone(fxParams),bypassed:{...bypassed}};}
 function persistSession(){try{localStorage.setItem('armix-v03-current',JSON.stringify(durableSession()));localStorage.setItem('armix-v03-snapshots',JSON.stringify(userSnapshots));localStorage.setItem('armix-v03-chains',JSON.stringify(savedChains));return true}catch{return false}}
 function saveFxChainPreset(){const name=prompt('Name this FX chain preset:','My Vocal Chain');if(!name)return;const key=name.trim().slice(0,60);if(!key)return;savedChains[key]={schemaVersion:1,inserts:[...normalChain(channels[currentChannel])],states:normalChain(channels[currentChannel]).map((_,i)=>({...getFxParams(currentChannel,i),bypass:!!bypassed[fxKey(currentChannel,i)]}))};persistSession();flash('FX chain preset saved: '+key)}
 function recallFxChain(){const keys=Object.keys(savedChains);if(!keys.length){flash('No saved FX chains yet');return}const key=prompt('Enter FX chain preset name:\n'+keys.join('\n'),keys[0]);if(!key||!savedChains[key])return;setChain(channels[currentChannel],savedChains[key].inserts);savedChains[key].states?.forEach((v,i)=>{fxParams[fxKey(currentChannel,i)]={mix:v.mix,amount:v.amount,output:v.output};bypassed[fxKey(currentChannel,i)]=!!v.bypass});pluginEditorIndex=null;renderRackWorkspace();flash('FX chain recalled: '+key)}
@@ -258,7 +328,10 @@ function applySession(session){if(!session||session.schemaVersion!==1||!Array.is
  if(typeof src.name==='string'&&src.name.trim())c.name=src.name.trim().slice(0,26);
  if(channelIcons.includes(src.icon))c.icon=src.icon;
  if(channelPalette.includes(src.color))c.color=src.color;
- for(const k of ['fader','pan','trim'])if(Number.isFinite(src[k]))c[k]=src[k];for(const k of ['mute','solo','hpf'])if(typeof src[k]==='boolean')c[k]=src[k];if(Array.isArray(src.inserts))c.inserts=src.inserts.filter(x=>typeof x==='string').slice(0,8)}masterGain=Number.isFinite(session.masterGain)?session.masterGain:-.1;masterMute=!!session.masterMute;fxParams=(session.fxParams&&typeof session.fxParams==='object')?structuredClone(session.fxParams):{};bypassed=(session.bypassed&&typeof session.bypassed==='object')?{...session.bypassed}:{};pluginEditorIndex=null;renderMixer();renderMaster();if(view==='FX RACK')renderRackWorkspace()}
+ for(const k of ['fader','pan','trim'])if(Number.isFinite(src[k]))c[k]=src[k];for(const k of ['mute','solo','hpf'])if(typeof src[k]==='boolean')c[k]=src[k];if(Array.isArray(src.inserts))c.inserts=src.inserts.filter(x=>typeof x==='string').slice(0,8)}masterGain=Number.isFinite(session.masterGain)?session.masterGain:-.1;masterMute=!!session.masterMute;
+ if(Array.isArray(session.masterInserts))masterInserts=session.masterInserts.filter(x=>typeof x==='string').slice(0,5);
+ masterBypassed=(session.masterBypassed&&typeof session.masterBypassed==='object')?{...session.masterBypassed}:{};
+ fxParams=(session.fxParams&&typeof session.fxParams==='object')?structuredClone(session.fxParams):{};bypassed=(session.bypassed&&typeof session.bypassed==='object')?{...session.bypassed}:{};pluginEditorIndex=null;renderMixer();renderMaster();if(view==='FX RACK')renderRackWorkspace()}
 function loadSnapshotByIndex(i){sceneIdx=(i+scenes.length)%scenes.length;const name=scenes[sceneIdx];
  if(userSnapshots[name])applySession(userSnapshots[name]);
  else if(sceneIdx<4){const state=durableSession();state.channels=initialFactoryChannels.map(c=>({...c,inserts:[...c.inserts]}));state.masterGain=-.1;
@@ -283,6 +356,8 @@ createSide();renderMixer();renderMaster();try{let last=JSON.parse(localStorage.g
  if(channelIcons.includes(s.icon))channels[i].icon=s.icon;
  if(channelPalette.includes(s.color))channels[i].color=s.color;
  for(const k of ['fader','pan','trim','mute','solo','hpf'])if(s[k]!==undefined)channels[i][k]=s[k];if(Array.isArray(s.inserts))channels[i].inserts=s.inserts.filter(x=>typeof x==='string').slice(0,8)});sceneIdx=last.sceneIdx??0;masterGain=last.masterGain??-.1;masterMute=!!last.masterMute;
+  if(Array.isArray(last.masterInserts))masterInserts=last.masterInserts.filter(x=>typeof x==='string').slice(0,5);
+  if(last.masterBypassed&&typeof last.masterBypassed==='object')masterBypassed={...last.masterBypassed};
   if(last.bypassed&&typeof last.bypassed==='object')bypassed={...last.bypassed};
   if(last.fxParams&&typeof last.fxParams==='object')fxParams=structuredClone(last.fxParams);
   renderMixer();renderMaster();flash('Previous UI session restored')}}catch{}
