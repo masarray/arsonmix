@@ -42,9 +42,11 @@ function createSide(){
  $('currentScene').innerHTML=`Snapshot: <b>${scenes[sceneIdx]}</b><span>▾</span>`;
 }
 function knobMarkup(param,ch,value,label,small=false){let angle=(param==='pan'?value/100*130:value/24*130);return `<button class="knob ${small?'small':''}" data-knob="${param}" data-ch="${ch}" data-value="${value}" style="--angle:${angle}deg" title="Drag vertically or scroll to change ${label}" aria-label="${label}"></button>`}
+function panText(v){return v===0?'C':(v<0?'L':'R')+' '+Math.abs(v)}
+function panMarkup(ch,i){return `<div class="pan-track" data-pan="${i}" role="slider" tabindex="0" aria-orientation="horizontal" aria-label="${ch.name} pan" aria-valuemin="-100" aria-valuemax="100" aria-valuenow="${ch.pan}" aria-valuetext="${panText(ch.pan)}" title="Drag left/right · double-click to center" style="--pan-frac:${(ch.pan+100)/200}"><span class="pan-thumb" aria-hidden="true"></span></div>`}
 function makeStrip(ch,i){let inserts=ch.inserts.slice(0,4);while(inserts.length<5) inserts.push('');return `<article class="strip ${i===currentChannel?'selected':''}" data-strip="${i}" style="--ch:${colors[i]}">
  <div class="ch-id">${i+1}</div><div class="rack">${inserts.map((n,j)=>`<button class="insert ${!n?'empty':''}" data-insert="${i}:${j}"><span class="insert-led">${n?'◉':'+'}</span>${n||'+ ADD FX'}</button>`).join('')}</div>
- <div class="strip-controls"><div class="trim-row"><span class="mini-label">TRIM<br>dB</span><div class="mini-lcd" data-trim-read="${i}">${fmt(ch.trim)}</div></div>${knobMarkup('trim',i,ch.trim,'Trim')}<div class="knob-label">PAN</div><div class="pan-control">${knobMarkup('pan',i,ch.pan,'Pan',true)}<div class="knob-value" data-pan-read="${i}">${ch.pan===0?'C':`${ch.pan<0?'L':'R'} ${Math.abs(ch.pan)}`}</div></div><div class="utility-row"><button data-pre="${i}" class="${ch.pre?'active':''}">Ø</button><button data-hpf="${i}" class="${ch.hpf?'active':''}">HPF</button></div></div>
+ <div class="strip-controls"><div class="trim-row"><span class="mini-label">TRIM<br>dB</span><div class="mini-lcd" data-trim-read="${i}">${fmt(ch.trim)}</div></div>${knobMarkup('trim',i,ch.trim,'Trim')}<div class="knob-label">PAN</div><div class="pan-control">${panMarkup(ch,i)}<div class="knob-value" data-pan-read="${i}">${panText(ch.pan)}</div></div><div class="utility-row"><button data-pre="${i}" class="${ch.pre?'active':''}">Ø</button><button data-hpf="${i}" class="${ch.hpf?'active':''}">HPF</button></div></div>
  <div class="channel-actions"><button class="candy mute ${ch.mute?'active':''}" data-mute="${i}" aria-pressed="${ch.mute}">MUTE</button><button class="candy solo ${ch.solo?'active':''}" data-solo="${i}" aria-pressed="${ch.solo}">SOLO</button></div>
  <div class="db-display" data-read="${i}">${fmt(ch.fader)}</div><div class="fader-zone"><div class="scale"><span>10</span><span>0</span><span>−10</span><span>−20</span><span>−30</span><span>−40</span><span>−60</span></div><div class="fader" data-fader="${i}" role="slider" tabindex="0" aria-orientation="vertical" aria-label="${ch.name} fader" aria-valuemin="-60" aria-valuemax="10" aria-valuenow="${ch.fader}"><div class="cap" style="--pos:${levelToTop(ch.fader)}%"></div></div><div class="meter"><div class="meter-fill" data-meter="${i}" style="--level:40%"></div></div></div>
  <div class="fader-tools"><button data-send="${i}:a" class="${ch.a?'active':''}">A</button><button data-send="${i}:b" class="${ch.b?'active':''}">B</button></div>
@@ -71,9 +73,16 @@ function setView(next){
  if(next==='SETUP')renderSetup();
 }
 function updateFader(idx,value){if(idx==='master'){masterGain=clamp(value,-60,10);const host=document.querySelector('[data-fader="master"]');host.querySelector('.cap').style.setProperty('--pos',levelToTop(masterGain)+'%');host.setAttribute('aria-valuenow',masterGain.toFixed(1));$('masterLeft').querySelectorAll('.master-lcd,.master-mid').forEach(e=>e.textContent=fmt(masterGain));send('masterGain',masterGain,-1);return}const ch=channels[+idx];ch.fader=clamp(value,-60,10);const el=document.querySelector(`[data-fader="${idx}"]`);if(el){el.querySelector('.cap').style.setProperty('--pos',levelToTop(ch.fader)+'%');el.setAttribute('aria-valuenow',ch.fader.toFixed(1));document.querySelector(`[data-read="${idx}"]`).textContent=fmt(ch.fader)}send('faderDb',ch.fader,+idx)}
+function updatePan(idx,value){const c=channels[idx];c.pan=Math.round(clamp(value,-100,100));
+ const el=document.querySelector(`[data-pan="${idx}"]`);
+ if(el){el.style.setProperty('--pan-frac',(c.pan+100)/200);el.setAttribute('aria-valuenow',String(c.pan));el.setAttribute('aria-valuetext',panText(c.pan))}
+ const display=document.querySelector(`[data-pan-read="${idx}"]`);
+ if(display)display.textContent=panText(c.pan);
+ send('pan',c.pan,idx);
+}
 function updateKnob(el,value){let idx=+el.dataset.ch,param=el.dataset.knob;
  if(param==='phones'){phones=clamp(value,-60,10);el.style.setProperty('--angle',phones/24*130+'deg');const rd=document.querySelector('[data-phones-read]');if(rd)rd.textContent=fmt(phones);send('phonesDb',phones,-1);return}
- const c=channels[idx];if(param==='pan'){c.pan=Math.round(clamp(value,-100,100));el.style.setProperty('--angle',(c.pan/100*130)+'deg');document.querySelector(`[data-pan-read="${idx}"]`).textContent=c.pan===0?'C':`${c.pan<0?'L':'R'} ${Math.abs(c.pan)}`;send('pan',c.pan,idx)}else{c.trim=+clamp(value,-24,24).toFixed(1);el.style.setProperty('--angle',c.trim/24*130+'deg');document.querySelector(`[data-trim-read="${idx}"]`).textContent=fmt(c.trim);send('trimDb',c.trim,idx)}}
+ const c=channels[idx];if(param==='pan'){updatePan(idx,value)}else{c.trim=+clamp(value,-24,24).toFixed(1);el.style.setProperty('--angle',c.trim/24*130+'deg');document.querySelector(`[data-trim-read="${idx}"]`).textContent=fmt(c.trim);send('trimDb',c.trim,idx)}}
 function chooseChannel(i){if(i>=channels.length){flash('Additional bank channels are not populated in this UI study');return}currentChannel=i;renderMixer();if(view!=='MIX')renderEditor()}
 function chooseScene(i){loadSnapshotByIndex((i+scenes.length)%scenes.length)}
 function toggleState(i,key){channels[i][key]=!channels[i][key];const btn=document.querySelector(`[data-${key}="${i}"]`);if(btn){btn.classList.toggle('active',channels[i][key]);btn.setAttribute('aria-pressed',String(channels[i][key]))}send(key,channels[i][key],i)}
@@ -102,14 +111,18 @@ document.addEventListener('click',e=>{const b=e.target.closest('button,[data-cho
  if(b.dataset.side){document.querySelectorAll('[data-side]').forEach(x=>x.classList.toggle('selected',x===b));if(b.dataset.side==='fx')setView('FX RACK');else setView('MIX');return}
  switch(b.id){case'prevScene':chooseScene(sceneIdx-1);break;case'nextScene':chooseScene(sceneIdx+1);break;case'editorClose':setView('MIX');break;case'masterMute':masterMute=!masterMute;b.textContent=masterMute?'UNMUTE':'MUTE';b.classList.toggle('active',masterMute);b.setAttribute('aria-pressed',String(masterMute));send('masterMute',masterMute,-1);break;case'dim':b.classList.toggle('active');b.setAttribute('aria-pressed',String(b.classList.contains('active')));flash('DIM is a UI preview — audio not connected');break;case'resetEq':bands.forEach(b=>b.gain=0);renderEditor();break;case'addScene':saveMixerSnapshot();break;case'saveFxPreset':saveFxChainPreset();break;case'menuScene':exportSession();break;case'closeBrowser':closePluginBrowser();break;case'closeFxInspector':pluginEditorIndex=null;renderRackWorkspace();break;case'modeToggle':toggleMode();break;case'chooseFxFile':importSession();break;case'browse':importSession();break;case'settingsBtn':setView('SETUP');break;case'talkBtn':b.classList.toggle('selected');flash('Talkback control — audio disconnected');break;default:if(b.id)flash('UI study: '+b.textContent.trim().slice(0,28));}
 });
+document.addEventListener('dblclick',e=>{const pan=e.target.closest('[data-pan]');if(pan){e.preventDefault();e.stopPropagation();updatePan(+pan.dataset.pan,0)}},true);
 document.addEventListener('dblclick',e=>{const st=e.target.closest('[data-strip]');if(st){chooseChannel(+st.dataset.strip);setView('EDIT')}});
 let drag=null;
-document.addEventListener('pointerdown',e=>{const f=e.target.closest('[data-fader]'),k=e.target.closest('[data-knob]'),node=e.target.closest('[data-band]');if(!f&&!k&&!node)return;const el=f||k||node;
+document.addEventListener('pointerdown',e=>{const f=e.target.closest('[data-fader]'),p=e.target.closest('[data-pan]'),k=e.target.closest('[data-knob]'),node=e.target.closest('[data-band]');if(!f&&!p&&!k&&!node)return;const el=f||p||k||node;
  if(f){const idx=f.dataset.fader,fromCap=!!e.target.closest('.cap');
    drag={type:'fader',el:f,index:idx,fromCap,startY:e.clientY,
      startDb:idx==='master'?masterGain:channels[+idx].fader};
    // Grabbing the metallic thumb must never jump the level on pointer-down.
    if(!fromCap){const r=f.getBoundingClientRect();const y=clamp((e.clientY-r.top)/r.height,0,1);updateFader(idx,10-y*70)}}
+ else if(p){const index=+p.dataset.pan,fromThumb=!!e.target.closest('.pan-thumb');
+ drag={type:'pan',el:p,index,fromThumb,startX:e.clientX,startPan:channels[index].pan};
+ if(!fromThumb){const r=p.getBoundingClientRect();updatePan(index,((e.clientX-r.left-9)/Math.max(1,r.width-18))*200-100)}}
  else if(k){drag={type:'knob',el,initial:e.clientY,original:k.dataset.knob==='phones'?phones:channels[+k.dataset.ch][k.dataset.knob],param:k.dataset.knob}}
  else if(node){drag={type:'eq',el,index:+node.dataset.band};activeBand=drag.index}
  if(el.setPointerCapture)el.setPointerCapture(e.pointerId);e.preventDefault();});
@@ -118,12 +131,19 @@ document.addEventListener('pointermove',e=>{if(!drag)return;
    if(drag.fromCap){const distance=Math.max(24,r.height-66);
      updateFader(drag.index,drag.startDb+(drag.startY-e.clientY)*70/distance)}
    else updateFader(drag.index,10-clamp((e.clientY-r.top)/r.height,0,1)*70)}
- else if(drag.type==='knob'){const delta=(drag.initial-e.clientY);updateKnob(drag.el,drag.original+(drag.param==='pan'?delta:delta*.35))}
+ else if(drag.type==='pan'){const r=drag.el.getBoundingClientRect(),travel=Math.max(1,r.width-18);
+ updatePan(drag.index,drag.fromThumb?drag.startPan+(e.clientX-drag.startX)*200/travel:((e.clientX-r.left-9)/travel)*200-100)}
+ else if(drag.type==='knob'){const delta=(drag.initial-e.clientY);updateKnob(drag.el,drag.original+delta*.35)}
  else if(drag.type==='eq'){const svg=$('eqSvg');if(!svg)return;const r=svg.getBoundingClientRect();const x=clamp((e.clientX-r.left)/r.width,0,1),y=clamp((e.clientY-r.top)/r.height,0,1);bands[drag.index].freq=Math.round(20*Math.pow(1000,x));bands[drag.index].gain=+(clamp((.5-y)*500/9,-18,18)).toFixed(1);renderEditor();}
 });
 for(const event of ['pointerup','pointercancel'])document.addEventListener(event,()=>{drag=null;flushUiParams()});
-document.addEventListener('wheel',e=>{const k=e.target.closest('[data-knob]');if(!k)return;e.preventDefault();const p=k.dataset.knob,i=+k.dataset.ch,v=p==='phones'?phones:channels[i][p];updateKnob(k,v-(Math.sign(e.deltaY)*(p==='pan'?2:.5)))},{passive:false});
-document.addEventListener('keydown',e=>{const f=e.target.closest('[data-fader]');if(!f)return;
+document.addEventListener('wheel',e=>{const pan=e.target.closest('[data-pan]');if(pan){e.preventDefault();const idx=+pan.dataset.pan;updatePan(idx,channels[idx].pan-Math.sign(e.deltaY)*2);return}
+ const k=e.target.closest('[data-knob]');if(!k)return;e.preventDefault();const p=k.dataset.knob,i=+k.dataset.ch,v=p==='phones'?phones:channels[i][p];updateKnob(k,v-Math.sign(e.deltaY)*.5)},{passive:false});
+document.addEventListener('keydown',e=>{const pan=e.target.closest('[data-pan]');if(pan){const k=e.key,idx=+pan.dataset.pan;
+ if(!['ArrowLeft','ArrowRight','PageUp','PageDown','Home','End'].includes(k))return;
+ e.preventDefault();const value=channels[idx].pan,step=e.shiftKey?10:1;
+ updatePan(idx,k==='Home'?0:k==='End'?100:k==='PageUp'?value+10:k==='PageDown'?value-10:value+(k==='ArrowRight'?step:-step));return}
+ const f=e.target.closest('[data-fader]');if(!f)return;
  const steps={ArrowUp:.5,ArrowDown:-.5,PageUp:5,PageDown:-5};
  if(!(e.key in steps)&&e.key!=='Home'&&e.key!=='End')return;
  e.preventDefault();const idx=f.dataset.fader,db=idx==='master'?masterGain:channels[+idx].fader;
