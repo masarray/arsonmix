@@ -905,6 +905,52 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 /* The obsolete A/B bay is removed from source strips. Let the fader occupy
    the recovered vertical area; MASTER keeps its dedicated clear-clip controls. */
 #mixer > .strip:not(.master-strip) > .fader-tools{display:none!important}
+
+/* 2026-10-25 visual audit: all four channel keys share one rigid 2-column grid.
+   Geometry only. Keep Button 180 shading/toggle colors, FX bypass, PAN PNG,
+   strip faders, left-rail pushables and realtime audio code unchanged. */
+#mixer > .strip:not(.master-strip) > .strip-controls > .utility-row,
+#mixer > .strip:not(.master-strip) > .channel-actions {
+  --strip-key-gap:5px;
+  --strip-key-gutter:6px;
+  --strip-key-height:28px;
+  display:grid!important;
+  grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  gap:var(--strip-key-gap)!important;
+  align-items:center!important;
+  justify-items:stretch!important;
+  padding-left:var(--strip-key-gutter)!important;
+  padding-right:var(--strip-key-gutter)!important;
+  width:100%!important;
+  box-sizing:border-box!important;
+}
+#mixer > .strip:not(.master-strip) > .strip-controls > .utility-row > button,
+#mixer > .strip:not(.master-strip) > .channel-actions > button.candy {
+  width:100%!important;
+  min-width:0!important;
+  max-width:none!important;
+  height:var(--strip-key-height,28px)!important;
+  min-height:var(--strip-key-height,28px)!important;
+  max-height:var(--strip-key-height,28px)!important;
+  padding:0 2px!important;
+  margin:0!important;
+  box-sizing:border-box!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  flex:none!important;
+  line-height:1!important;
+  white-space:nowrap;
+}
+/* Master remains a wider stereo bus but keeps the same key height and center. */
+#masterLeft .master-actions > #masterMute,
+#masterLeft .master-actions > .master-stereo-badge {
+  height:28px!important;
+  min-height:28px!important;
+  max-height:28px!important;
+  align-self:center;
+  box-sizing:border-box;
+}
 </style></head>
 <body>
 <div id="app" class="app">
@@ -1059,7 +1105,7 @@ window.addEventListener('resize',positionChannelIdentity);
 $('mixer').addEventListener('scroll',positionChannelIdentity,{passive:true});
 function makeStrip(ch,i){let inserts=ch.inserts.slice(0,6);while(inserts.length<6) inserts.push('');return `<article class="strip ${i===currentChannel?'selected':''}" data-strip="${i}" style="--ch:${ch.color||colors[i]}">
  <div class="ch-id">${i+1}</div><div class="rack">${inserts.map((n,j)=>`<div class="insert-slot ${n&&bypassed[fxKey(i,j)]?'is-bypassed':''}"><button class="insert ${!n?'empty':''}" data-insert="${i}:${j}" title="${n?'Open or replace '+safeText(n):'Add VST effect'}">${n?'':'<span class="insert-add-glyph" aria-hidden="true">＋</span>'}<span class="insert-name">${n? safeText(n):'ADD FX'}</span></button>${n?`<button type="button" class="fx-power ${bypassed[fxKey(i,j)]?'is-bypassed':''}" data-fxpower="${i}:${j}" aria-pressed="${!bypassed[fxKey(i,j)]}" aria-label="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}" title="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}">⏻</button>`:''}</div>`).join('')}</div>
- <div class="strip-controls"><div class="trim-row"><span class="mini-label">TRIM<br>dB</span><div class="mini-lcd" data-trim-read="${i}">${fmt(ch.trim)}</div></div>${knobMarkup('trim',i,ch.trim,'Trim')}<div class="pan-control">${panMarkup(ch,i)}<div class="pan-readline"><span aria-hidden="true">L</span><strong data-pan-read="${i}">${panText(ch.pan)}</strong><span aria-hidden="true">R</span></div></div><div class="utility-row"><button data-pre="${i}" class="btn-180 ${ch.pre?'active':''}">Ø</button><button data-hpf="${i}" class="btn-180 ${ch.hpf?'active':''}">HPF</button></div></div>
+ <div class="strip-controls"><div class="trim-row"><span class="mini-label">TRIM<br>dB</span><div class="mini-lcd" data-trim-read="${i}">${fmt(ch.trim)}</div></div>${knobMarkup('trim',i,ch.trim,'Trim')}<div class="pan-control">${panMarkup(ch,i)}<div class="pan-readline"><span aria-hidden="true">L</span><strong data-pan-read="${i}">${panText(ch.pan)}</strong><span aria-hidden="true">R</span></div></div><div class="utility-row"><button data-pre="${i}" class="btn-180 ${ch.pre?'active':''}" aria-pressed="${!!ch.pre}" aria-label="${safeText(ch.name)} phase invert">Ø</button><button data-hpf="${i}" class="btn-180 ${ch.hpf?'active':''}" aria-pressed="${!!ch.hpf}" aria-label="${safeText(ch.name)} high-pass filter">HPF</button></div></div>
  <div class="channel-actions"><button class="btn-180 candy mute ${ch.mute?'active':''}" data-mute="${i}" aria-pressed="${ch.mute}">MUTE</button><button class="btn-180 candy solo ${ch.solo?'active':''}" data-solo="${i}" aria-pressed="${ch.solo}">SOLO</button></div>
  <div class="db-display" data-read="${i}">${fmt(ch.fader)}</div><div class="fader-zone"><div class="scale"><span>10</span><span>0</span><span>−10</span><span>−20</span><span>−30</span><span>−40</span><span>−60</span></div><div class="fader" data-fader="${i}" role="slider" tabindex="0" aria-orientation="vertical" aria-label="${ch.name} fader" aria-valuemin="-60" aria-valuemax="10" aria-valuenow="${ch.fader}"><div class="cap" style="--pos:${levelToTop(ch.fader)}%"></div></div><div class="meter" data-meter-key="${i}"><button class="clip-led" type="button" data-clip="${i}" title="Clear latched clip — ${safeText(ch.name)}" aria-label="Clear ${safeText(ch.name)} clip"></button><div class="meter-fill" data-meter="${i}" style="--level:40%"></div><div class="meter-peak" aria-hidden="true"></div></div></div>
  <div class="strip-name" data-editstrip="${i}" role="button" tabindex="0" aria-label="Edit ${safeText(ch.name)} name, icon and color" title="Edit channel identity"><span class="strip-caption">${safeText(ch.name)}</span><span class="track-icon">${safeText(ch.icon)}</span></div>
@@ -1172,8 +1218,8 @@ document.addEventListener('click',e=>{const b=e.target.closest('button,[data-cho
  if(b.dataset.mySounds!==undefined){flash('Native VST3 presets are available in the Windows desktop app');return}
  if(b.dataset.choose!==undefined){chooseChannel(+b.dataset.choose);return}
  if(b.dataset.mute!==undefined){toggleState(+b.dataset.mute,'mute');return}if(b.dataset.solo!==undefined){toggleState(+b.dataset.solo,'solo');return}
- if(b.dataset.pre!==undefined){let i=+b.dataset.pre;channels[i].pre=!channels[i].pre;b.classList.toggle('active');send('phase',channels[i].pre,i);return}
- if(b.dataset.hpf!==undefined){let i=+b.dataset.hpf;channels[i].hpf=!channels[i].hpf;b.classList.toggle('active');send('hpf',channels[i].hpf,i);return}
+ if(b.dataset.pre!==undefined){let i=+b.dataset.pre;channels[i].pre=!channels[i].pre;b.classList.toggle('active',channels[i].pre);b.setAttribute('aria-pressed',String(channels[i].pre));send('phase',channels[i].pre,i);return}
+ if(b.dataset.hpf!==undefined){let i=+b.dataset.hpf;channels[i].hpf=!channels[i].hpf;b.classList.toggle('active',channels[i].hpf);b.setAttribute('aria-pressed',String(channels[i].hpf));send('hpf',channels[i].hpf,i);return}
  if(b.dataset.masterInsert!==undefined){pendingMasterSlot=+b.dataset.masterInsert;openPluginBrowser(currentChannel,true);return}
  if(b.dataset.masterPower!==undefined){const slot=+b.dataset.masterPower;masterBypassed[slot]=!masterBypassed[slot];renderMaster();persistSession();send('masterFxBypass',{slot,bypass:masterBypassed[slot]},-1);return}
  if(b.dataset.clip!==undefined){resetClip(b.dataset.clip);return}
