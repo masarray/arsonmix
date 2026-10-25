@@ -137,8 +137,21 @@ public:
             // The backend stop/start sequence provides a safe callback boundary.
             // Set mode before starting a new one-sided device.
             diagnosticRoute_.store (wanted, std::memory_order_release);
-            const auto error = deviceManager_.setAudioDeviceSetup (isolated, false);
-            if (error.isNotEmpty() || !deviceManager_.getCurrentAudioDevice())
+            juce::String error = deviceManager_.setAudioDeviceSetup (isolated, false);
+            const auto* active = deviceManager_.getCurrentAudioDevice();
+            // Fail closed even when an audio backend ignores requested endpoint isolation.
+            if (error.isEmpty() && active != nullptr)
+            {
+                if (wanted == Route::outputOnlyTone &&
+                    (active->getActiveInputChannels().countNumberOfSetBits() != 0 ||
+                     active->getActiveOutputChannels().isZero()))
+                    error = "The driver did not provide output-only isolation";
+                if (wanted == Route::captureOnly &&
+                    (active->getActiveOutputChannels().countNumberOfSetBits() != 0 ||
+                     active->getActiveInputChannels().isZero()))
+                    error = "The driver did not provide capture-only isolation";
+            }
+            if (error.isNotEmpty() || active == nullptr)
             {
                 diagnosticRoute_.store (Route::normal, std::memory_order_release);
                 const auto rollback = deviceManager_.setAudioDeviceSetup (original, false);
@@ -664,8 +677,10 @@ private:
         const bool captureTest = route == armix::diagnostics::Route::captureOnly;
         const bool dry = dryTest_.load (std::memory_order_relaxed)
                       || route != armix::diagnostics::Route::normal;
-        if (toneTest) testOutputFrames_.fetch_add (static_cast<std::uint64_t> (samples), std::memory_order_relaxed);
-        if (captureTest) testCaptureFrames_.fetch_add (static_cast<std::uint64_t> (samples), std::memory_order_relaxed);
+        if (toneTest && outputChannels > 0)
+            testOutputFrames_.fetch_add (static_cast<std::uint64_t> (samples), std::memory_order_relaxed);
+        if (captureTest && inputChannels > 0)
+            testCaptureFrames_.fetch_add (static_cast<std::uint64_t> (samples), std::memory_order_relaxed);
         const bool muted = channelMute_.load (std::memory_order_relaxed)
                         || masterMute_.load (std::memory_order_relaxed);
         const float gain = masterGain_.load (std::memory_order_relaxed)
@@ -746,7 +761,8 @@ private:
                     const auto phase = (offset + i) * rampStep;
                     const float ramp = cycle.fadeOut ? 1.f - phase
                                      : cycle.fadeIn ? phase : 1.f;
-                    const float value = toneTest ? mapped * ramp
+                    const float value = captureTest ? 0.f
+                        : toneTest ? mapped * ramp
                         : (enabled && !muted) ? mapped * gain * ramp : 0.f;
                     dst[i] = value;
                     channelPeak = juce::jmax (channelPeak, std::abs (value));
