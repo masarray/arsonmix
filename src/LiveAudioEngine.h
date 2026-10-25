@@ -119,6 +119,10 @@ public:
         return true;
     }
     bool independentClockFaulted() const noexcept { return independent_.active() && independent_.faulted(); }
+    void pollIndependentClockHealth (std::uint64_t nowMs) noexcept
+    {
+        independent_.pollStreamHealth (nowMs);
+    }
 
     juce::String setIndependentClockEnabled (bool wanted)
     {
@@ -682,6 +686,14 @@ public:
             o->setProperty ("bridgeTargetLatencyMs", independent_.bridgeTargetLatencyMs());
             o->setProperty ("bridgeCaptureCallbacks", static_cast<double> (independent_.captureCallbacks()));
             o->setProperty ("bridgeRenderCallbacks", static_cast<double> (independent_.renderCallbacks()));
+            const auto watch = independent_.streamWatchdogStatus();
+            o->setProperty ("bridgeWatchdogFault",
+                armix::device::IndependentStreamWatchdog::name (watch.stall));
+            o->setProperty ("bridgeCaptureSilentMs", static_cast<double> (watch.captureSilentMs));
+            o->setProperty ("bridgeRenderSilentMs", static_cast<double> (watch.renderSilentMs));
+            o->setProperty ("bridgeWatchdogArmed", watch.armed);
+            o->setProperty ("bridgeWatchdogThresholdMs",
+                static_cast<double> (armix::device::IndependentStreamWatchdog::silenceThresholdMs));
         }
         return juce::var (o.release());
     }

@@ -192,6 +192,9 @@ private:
     {
         using Gate = armix::device::DirectRestoreBackoff;
         const auto now = monotonicMilliseconds();
+        // Independent drivers can stop callbacks without emitting JUCE error.
+        // Read existing atomic progress on message thread before failback gate.
+        engine_.pollIndependentClockHealth (now);
         auto snapshot = directRestore_.snapshot();
         if (snapshot.state == Gate::State::idle &&
             (engine_.independentClockFaulted() ||

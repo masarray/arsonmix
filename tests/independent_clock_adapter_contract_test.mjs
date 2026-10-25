@@ -7,6 +7,7 @@ const device=r('engine/device/JuceIndependentClockDevice.h');
 const engine=r('src/LiveAudioEngine.h');
 const host=r('src/Main.cpp');
 const sizing=r('engine/device/ClockBridgeSizing.h');
+const watchdog=r('engine/device/IndependentStreamWatchdog.h');
 const ui=r('web/monitor.js');
 
 test('independent source/render means two actual JUCE managers and distinct callback owners',()=>{
@@ -54,4 +55,16 @@ test('approved mixer visuals unchanged; only native signal-check opt-in',()=>{
   assert.match(ui,/action:"smartClock"/);
   assert.match(ui,/bridgeOverflowFrames/);
   assert.match(ui,/bridgeUnderflowFrames/);
+});
+
+test('silent JUCE callback watchdog routes through control timer and DIRECT failback',()=>{
+  assert.match(watchdog,/silenceThresholdMs = 3000/);
+  assert.match(watchdog,/captureCount != captureCount_/);
+  assert.match(watchdog,/renderCount != renderCount_/);
+  assert.match(device,/streamWatchdog_\.observe/);
+  assert.match(engine,/pollIndependentClockHealth/);
+  assert.match(host,/engine_\.pollIndependentClockHealth \(now\)/);
+  assert.match(engine,/bridgeWatchdogFault/);
+  assert.match(engine,/bridgeCaptureSilentMs/);
+  assert.match(engine,/bridgeRenderSilentMs/);
 });
