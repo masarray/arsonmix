@@ -6,6 +6,7 @@
 #include <BinaryData.h>
 #include "LiveAudioEngine.h"
 #include "DiagnosticsRecorder.h"
+#include "../engine/device/DirectRestoreBackoff.h"
 #if defined(_WIN32)
 #include "../engine/device/WasapiCapabilityProbe.h"
 #endif
@@ -13,6 +14,7 @@
 #include <cstring>
 #include <optional>
 #include <memory>
+#include <chrono>
 
 namespace
 {
@@ -155,8 +157,82 @@ private:
     bool setupLaunching_ = false;
     unsigned int timerTicks_ = 0;
     bool deviceSettingsDirty_ = false;
+    armix::device::DirectRestoreBackoff directRestore_;
+    juce::String lastDirectRestoreError_;
     juce::var pendingPresetUI_;
     juce::String pendingPresetName_;
+
+    static std::uint64_t monotonicMilliseconds() noexcept
+    {
+        return static_cast<std::uint64_t> (
+            std::chrono::duration_cast<std::chrono::milliseconds> (
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+    }
+
+    void annotateRecovery (juce::var& state) const
+    {
+        auto* object = state.getDynamicObject();
+        if (object == nullptr) return;
+        const auto snapshot = directRestore_.snapshot();
+        using State = armix::device::DirectRestoreBackoff::State;
+        const char* label = snapshot.state == State::idle ? "IDLE"
+                          : snapshot.state == State::waiting ? "WAITING" : "EXHAUSTED";
+        object->setProperty ("directRestoreState", label);
+        object->setProperty ("directRestoreAttempts", static_cast<int> (snapshot.attempts));
+        object->setProperty ("directRestoreNextMs",
+            static_cast<double> (directRestore_.remainingMs (monotonicMilliseconds())));
+        object->setProperty ("directRestoreGeneration", static_cast<double> (snapshot.generation));
+        object->setProperty ("directRestoreError", lastDirectRestoreError_);
+        object->setProperty ("directRestorePending", engine_.hasPendingDirectRestore());
+    }
+
+    // Device reopens happen on the JUCE message thread, never the RT callback.
+    // Restoring DIRECT never silently re-enables a faulting bridged route.
+    void serviceDirectRestore()
+    {
+        using Gate = armix::device::DirectRestoreBackoff;
+        const auto now = monotonicMilliseconds();
+        auto snapshot = directRestore_.snapshot();
+        if (snapshot.state == Gate::State::idle &&
+            (engine_.independentClockFaulted() || engine_.hasPendingDirectRestore()))
+        {
+            const auto generation = directRestore_.begin (now);
+            diagnostics_.record ("DIRECT_RESTORE_BEGIN",
+                juce::String ("Generation ") + juce::String (static_cast<juce::int64> (generation)));
+            snapshot = directRestore_.snapshot();
+        }
+        if (!directRestore_.due (snapshot.generation, now)) return;
+
+        const bool wasIndependent = engine_.independentClockActive();
+        const auto faultStatus = juce::JSON::toString (engine_.status(), false);
+        const auto error = engine_.setIndependentClockEnabled (false);
+        if (error.isEmpty())
+        {
+            directRestore_.recovered (snapshot.generation);
+            lastDirectRestoreError_.clear();
+            deviceSettingsDirty_ = true;
+            diagnostics_.record ("SMART_CLOCK_RECOVERY",
+                juce::String ("DIRECT_RESTORED after ") + juce::String (snapshot.attempts + 1) +
+                " attempt(s) | " + faultStatus);
+            emitNotice (wasIndependent
+                ? "Independent device fault: safe DIRECT audio restored."
+                : "DIRECT audio device restored after a bounded retry.", true);
+            return;
+        }
+
+        directRestore_.failed (snapshot.generation, now);
+        lastDirectRestoreError_ = error;
+        const auto next = directRestore_.snapshot();
+        diagnostics_.record ("SMART_CLOCK_RECOVERY",
+            juce::String ("RESTORE_FAIL ") + juce::String (next.attempts) + "/" +
+            juce::String (static_cast<int> (Gate::maxAttempts)) + ": " + error +
+            " | " + faultStatus);
+        if (next.state == Gate::State::exhausted)
+            emitNotice ("Automatic DIRECT recovery exhausted; audio remains safe/muted. "
+                        "Check AUDIO SETUP or retry DIRECT manually. " + error, true);
+        else if (next.attempts == 1)
+            emitNotice ("Device interrupted. DIRECT restore is retrying with bounded backoff.", true);
+    }
 
     void emitNotice (const juce::String& message, bool error = false)
     {
@@ -295,7 +371,8 @@ private:
     // Clipboard contents are private until the user explicitly pastes them.
     juce::String makeAudioReport()
     {
-        const auto status = engine_.status();
+        auto status = engine_.status();
+        annotateRecovery (status);
         auto* device = engine_.devices().getCurrentAudioDevice();
         juce::String result;
         result.preallocateBytes (64 * 1024);
@@ -371,6 +448,8 @@ private:
                 diagnostics_.record ("SMART_CLOCK_FAIL", error);
                 return emitNotice (error, true);
             }
+            directRestore_.cancel();
+            lastDirectRestoreError_.clear();
             diagnostics_.record ("SMART_CLOCK_MODE", juce::JSON::toString (engine_.status(), false));
             emitNotice (engine_.independentClockActive()
                 ? "Independent capture/render clocks enabled (EXPERIMENTAL). Render-master ASRC, rollback on device fault."
@@ -390,10 +469,12 @@ private:
         }
         else if (action == "audioSetup")
         {
-            if (engine_.independentClockActive())
+            if (engine_.independentClockActive() || engine_.hasPendingDirectRestore())
             {
                 const auto revert = engine_.setIndependentClockEnabled (false);
                 if (revert.isNotEmpty()) return emitNotice (revert, true);
+                directRestore_.cancel();
+                lastDirectRestoreError_.clear();
                 deviceSettingsDirty_ = true;
             }
             // One-sided device routes are temporary and must never leak into
@@ -408,10 +489,12 @@ private:
         }
         else if (action == "diagnosticRoute")
         {
-            if (engine_.independentClockActive())
+            if (engine_.independentClockActive() || engine_.hasPendingDirectRestore())
             {
                 const auto revert = engine_.setIndependentClockEnabled (false);
                 if (revert.isNotEmpty()) return emitNotice (revert, true);
+                directRestore_.cancel();
+                lastDirectRestoreError_.clear();
                 deviceSettingsDirty_ = true;
             }
             using Route = armix::diagnostics::Route;
@@ -634,21 +717,9 @@ private:
     void timerCallback() override
     {
         ++timerTicks_;
-        // Driver disconnect or sample-rate renegotiation: fail closed and
-        // return to the direct path on the message thread, never from DSP.
-        if (engine_.independentClockFaulted())
-        {
-            const auto faultState = juce::JSON::toString (engine_.status(), false);
-            const auto error = engine_.setIndependentClockEnabled (false);
-            diagnostics_.record ("SMART_CLOCK_RECOVERY", faultState +
-                (error.isNotEmpty() ? " | RESTORE_FAIL: " + error : " | DIRECT_RESTORED"));
-            if (error.isNotEmpty()) emitNotice (error, true);
-            else
-            {
-                deviceSettingsDirty_ = true;
-                emitNotice ("Independent audio device changed/faulted; safe direct path restored.", true);
-            }
-        }
+        // Audio thread publishes only fault flags. A bounded message-thread
+        // restore transaction handles device failures without hot-plug spin.
+        serviceDirectRestore();
         if (engine_.finalizeGraphSwitch())
         {
             diagnostics_.record ("GRAPH_SWAP_ACK", pendingPresetName_);
@@ -692,6 +763,7 @@ private:
         if (catalog_.busy() && timerTicks_ % 3 == 0)
             emitScanProgress();
         auto state = engine_.status();
+        annotateRecovery (state);
         state.getDynamicObject()->setProperty ("diagnosticsDropped",
             static_cast<double> (diagnostics_.lostRecords()));
         state.getDynamicObject()->setProperty ("diagnosticsTruncated",
