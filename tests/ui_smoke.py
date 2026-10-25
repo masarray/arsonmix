@@ -29,6 +29,10 @@ async def main():
         await page.locator('#masterMute').click()
         assert await page.locator('#masterMute').get_attribute('aria-pressed') == 'true'
         await page.locator('#masterMute').click()
+        await page.locator('#dim').click()
+        assert await page.locator('#dim').get_attribute('aria-pressed') == 'true'
+        await page.locator('#dim').click()
+        assert await page.locator('#dim').get_attribute('aria-pressed') == 'false'
 
         # The source image has a real metallic body and a long cast shadow.
         # The body must travel inside the track, centered on image y=35.
