@@ -65,7 +65,7 @@ jobs:
           if (-not $exe) { throw "ARMixConsole EXE not found" }
           Copy-Item $exe.FullName "dist/ArSonMix-P2.5-GUI-v0.8-Native-Windows.exe"
           Copy-Item README.md "dist/README.md"
-          "P0 native engineering build: SIGNAL CHECK has COPY FULL REPORT, hardware capability and DSP distributions, and isolated output/capture/dry modes. An offline adaptive dual-clock FIR bridge is tested in CI but NOT connected to the existing JUCE joined callback until P0-01 separate-stream adapter is validated. No hardware audio acceptance yet. Use headphones at low level. Only Channel 1 is native." |
+          "P0 live dual-stream integration build: AUTO attempts independent Windows Audio capture/render with bounded polyphase ASRC for distinct endpoints, DIRECT keeps ASIO without added SRC; profiles and one-click report are available in SIGNAL CHECK. AUTO falls back to legacy JUCE on failed setup or missing capture callbacks. No physical hardware acceptance yet. Use headphones at low level. Only Channel 1 is native." |
             Out-File -FilePath dist/FIRST_SOUND_README.txt -Encoding utf8
       - uses: actions/upload-artifact@v4
         with:
