@@ -97,6 +97,27 @@ public:
     // Normal ASIO / verified single-clock devices remain on the zero-SRC
     // JUCE direct callback. Independent capture/render is opt-in in P0.
     bool independentClockActive() const noexcept { return independent_.active(); }
+    // Control-thread-only: true after an unsuccessful DIRECT rollback.
+    // The original endpoint selection is retained for bounded recovery.
+    bool hasPendingDirectRestore() const noexcept { return savedDirectSetup_.has_value(); }
+
+    // Explicit user escape hatch when the previous endpoint has disappeared.
+    // Called only from AUDIO SETUP on the message thread. No RT work, and no
+    // fallback silently routed to unknown speakers.
+    bool abandonPendingDirectRestoreForSetup()
+    {
+        if (independent_.active() || !savedDirectSetup_) return false;
+        setOutputMuted (true);
+        detach();
+        deviceManager_.closeAudioDevice();
+        savedDirectSetup_.reset();
+        // Register with the manager even while no device is open. JUCE then
+        // prepares this callback when the user selects a replacement endpoint.
+        // attach() deliberately requires a live device; it cannot do this.
+        deviceManager_.addAudioCallback (this);
+        attached_ = true;
+        return true;
+    }
     bool independentClockFaulted() const noexcept { return independent_.active() && independent_.faulted(); }
 
     juce::String setIndependentClockEnabled (bool wanted)
@@ -121,10 +142,11 @@ public:
             independent_.close();
             if (!savedDirectSetup_) return {};
             const auto error = deviceManager_.setAudioDeviceSetup (*savedDirectSetup_, false);
-            if (error.isNotEmpty())
+            if (error.isNotEmpty() || !verifyRestoredDirectDevice (*savedDirectSetup_))
             {
                 setOutputMuted (true);
-                return "Direct device restoration failed: " + error;
+                return "Direct device restoration failed: " +
+                    (error.isNotEmpty() ? error : juce::String ("Expected capture/render endpoints or channel masks were not reopened"));
             }
             savedDirectSetup_.reset();
             attach();
@@ -146,15 +168,17 @@ public:
         {
             independent_.close();
             const auto restore = deviceManager_.setAudioDeviceSetup (original, false);
-            if (restore.isEmpty())
+            const bool restored = restore.isEmpty() && verifyRestoredDirectDevice (original);
+            if (restored)
             {
                 savedDirectSetup_.reset();
                 attach();
             }
             else setOutputMuted (true);
             return "Independent clock startup failed: " + error
-                 + (restore.isNotEmpty() ? " | direct rollback failed: " + restore
-                                         : juce::String (" | direct device restored"));
+                 + (!restored ? " | direct rollback failed: " +
+                     (restore.isNotEmpty() ? restore : juce::String ("Expected endpoints unavailable"))
+                     : juce::String (" | direct device restored"));
         }
         return {};
     }
@@ -714,6 +738,27 @@ private:
     }
     std::atomic<int> totalLatency_ { 0 };
     std::atomic<unsigned long long> completedSwaps_ {0};
+
+    // Do not equate JUCE's empty error string with the selected hardware
+    // being present. Drivers can disappear between device discovery and open;
+    // a wrong fallback endpoint must never be presented as restored audio.
+    bool verifyRestoredDirectDevice (
+        const juce::AudioDeviceManager::AudioDeviceSetup& expected)
+    {
+        const auto* active = deviceManager_.getCurrentAudioDevice();
+        if (active == nullptr ||
+            deviceManager_.getCurrentAudioDeviceType() != "Windows Audio" ||
+            active->getActiveInputChannels().isZero() ||
+            active->getActiveOutputChannels().isZero()) return false;
+        juce::AudioDeviceManager::AudioDeviceSetup current;
+        deviceManager_.getAudioDeviceSetup (current);
+        return current.inputDeviceName == expected.inputDeviceName
+            && current.outputDeviceName == expected.outputDeviceName
+            && (expected.useDefaultInputChannels ||
+                current.inputChannels == expected.inputChannels)
+            && (expected.useDefaultOutputChannels ||
+                current.outputChannels == expected.outputChannels);
+    }
 
     void detach()
     {
