@@ -528,6 +528,58 @@
  border-radius:2px;min-width:0;white-space:nowrap;
 }
 #masterLeft .master-strip-name .track-icon{display:grid;place-items:center}
+
+
+/* Premium console v0.7 — six visible VST insert slots per strip, shared geometry. */
+.strip .rack,.app.easy .strip .rack,.app:not(.easy) .strip .rack,
+#masterLeft .master-fx-rack,.app.easy #masterLeft .master-fx-rack,.app:not(.easy) #masterLeft .master-fx-rack{
+ height:196px;flex:0 0 196px;min-height:196px;gap:4px;padding:7px 4px;overflow:hidden;
+ display:flex;flex-direction:column
+}
+.strip .rack .insert-slot,#masterLeft .master-fx-slot,
+.app.easy #masterLeft .master-fx-slot{
+ height:27px;min-height:27px;flex:0 0 27px;max-height:27px;gap:2px;
+}
+.app.easy #masterLeft .master-fx-slot:last-child{display:flex}
+.strip .rack .insert-slot .insert{height:27px;min-height:27px}
+.strip .rack .insert-slot .fx-power{height:27px;min-height:27px}
+#masterLeft .master-fx-power{height:27px}
+#masterLeft .master-insert{height:27px;min-height:27px}
+#masterLeft .master-controls-zone{justify-content:center;align-items:stretch;gap:2px}
+.app.easy #masterLeft .master-controls-zone{justify-content:center;padding-top:0}
+#masterLeft .master-controls-zone .master-pan-wrap{flex:0 0 56px;min-height:56px;margin:0;padding:0}
+#masterLeft .master-controls-zone .master-analysis{
+ position:static;flex:0 0 55px;height:55px;min-height:55px;width:100%;
+ padding:3px 7px;margin:0;border-radius:2px;
+}
+#masterLeft .master-controls-zone .master-analysis .master-info-kicker{margin:0 0 3px}
+#masterLeft .master-controls-zone .master-analysis .master-info-row{margin:0 0 3px;line-height:9px;font-size:9px}
+#masterLeft .master-controls-zone .master-analysis .master-info-row strong{font-size:10px}
+#masterLeft .master-fader-zone{padding-bottom:7px}
+#masterLeft .master-fader-zone .meter-unit .meter{height:calc(100% - 11px)}
+/* PAN numeric readouts replace a redundant PAN heading and make L / R explicit. */
+.pan-control{gap:0}
+.pan-control .pan-readline{width:100%;padding:0 6px;margin:-2px 0 0;display:grid;align-items:center;
+ grid-template-columns:18px minmax(0,1fr) 18px;height:16px;line-height:16px;
+ font:700 9px Consolas,monospace;color:#7fa6bb}
+.pan-control .pan-readline strong{font:700 10px Consolas,monospace;color:#8be2f5;
+ text-align:center;white-space:nowrap}
+.pan-control .pan-readline span:first-child{text-align:left}
+.pan-control .pan-readline span:last-child{text-align:right}
+#masterLeft .pan-control{padding:0 5px}
+/* The master selected state reuses the same 2px uninterrupted outline as inputs. */
+#masterLeft.selected{box-shadow:inset 2px 0 #f0aa57,inset -2px 0 #f0aa57,inset 0 0 0 1px #eec07988}
+#masterLeft.selected::before{content:"";position:absolute;inset:0;z-index:6;
+ pointer-events:none;border:2px solid #eda458;border-radius:2px;
+ box-shadow:inset 0 0 0 1px #f8d79a42,0 0 5px #e59e3960}
+/* On shorter desktops prioritize six FX while retaining a usable fader throw. */
+@media (max-height:760px){
+ .strip .rack,.app.easy .strip .rack,.app:not(.easy) .strip .rack,
+ #masterLeft .master-fx-rack,.app.easy #masterLeft .master-fx-rack,.app:not(.easy) #masterLeft .master-fx-rack{height:172px;flex-basis:172px;min-height:172px;gap:2px;padding:5px 4px}
+ .strip .rack .insert-slot,#masterLeft .master-fx-slot,.app.easy #masterLeft .master-fx-slot{height:25px;min-height:25px;flex-basis:25px}
+ .strip .rack .insert-slot .insert,.strip .rack .insert-slot .fx-power,
+ #masterLeft .master-insert,#masterLeft .master-fx-power{height:25px;min-height:25px}
+}
 </style></head>
 <body>
 <div id="app" class="app">
@@ -579,7 +631,7 @@ const raw=[
 ];
 const extraNames=['BGV 2','Guitar 2','FX Return 2','Talkback'];
 const channels=raw.map((a,i)=>({id:i+1,name:a[0],icon:a[1],color:colors[i],inserts:[...a[2]],fader:a[3],pan:a[4],trim:0,mute:false,solo:false,pre:false,hpf:i%4!==0,a:true,b:false}));
-let currentChannel=0, view='MIX', sceneIdx=0, timer=0;
+let currentChannel=0, masterSelected=false, view='MIX', sceneIdx=0, timer=0;
 const scenes=['Vocal Live','Karaoke Warm','Clean Voice','Studio Session'];
 const $=id=>document.getElementById(id);
 const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
@@ -643,9 +695,9 @@ function commitChannelIdentity(){
  if(view==='FX RACK')renderRackWorkspace();
  persistSession();flash('Channel identity updated');
 }
-function makeStrip(ch,i){let inserts=ch.inserts.slice(0,4);while(inserts.length<5) inserts.push('');return `<article class="strip ${i===currentChannel?'selected':''}" data-strip="${i}" style="--ch:${ch.color||colors[i]}">
+function makeStrip(ch,i){let inserts=ch.inserts.slice(0,6);while(inserts.length<6) inserts.push('');return `<article class="strip ${i===currentChannel?'selected':''}" data-strip="${i}" style="--ch:${ch.color||colors[i]}">
  <div class="ch-id">${i+1}</div><div class="rack">${inserts.map((n,j)=>`<div class="insert-slot ${n&&bypassed[fxKey(i,j)]?'is-bypassed':''}"><button class="insert ${!n?'empty':''}" data-insert="${i}:${j}" title="${n?'Open or replace '+safeText(n):'Add VST effect'}">${n?'':'<span class="insert-add-glyph" aria-hidden="true">＋</span>'}<span class="insert-name">${n? safeText(n):'ADD FX'}</span></button>${n?`<button type="button" class="fx-power ${bypassed[fxKey(i,j)]?'is-bypassed':''}" data-fxpower="${i}:${j}" aria-pressed="${!bypassed[fxKey(i,j)]}" aria-label="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}" title="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}">⏻</button>`:''}</div>`).join('')}</div>
- <div class="strip-controls"><div class="trim-row"><span class="mini-label">TRIM<br>dB</span><div class="mini-lcd" data-trim-read="${i}">${fmt(ch.trim)}</div></div>${knobMarkup('trim',i,ch.trim,'Trim')}<div class="knob-label">PAN</div><div class="pan-control">${panMarkup(ch,i)}<div class="knob-value" data-pan-read="${i}">${panText(ch.pan)}</div></div><div class="utility-row"><button data-pre="${i}" class="${ch.pre?'active':''}">Ø</button><button data-hpf="${i}" class="${ch.hpf?'active':''}">HPF</button></div></div>
+ <div class="strip-controls"><div class="trim-row"><span class="mini-label">TRIM<br>dB</span><div class="mini-lcd" data-trim-read="${i}">${fmt(ch.trim)}</div></div>${knobMarkup('trim',i,ch.trim,'Trim')}<div class="pan-control">${panMarkup(ch,i)}<div class="pan-readline"><span aria-hidden="true">L</span><strong data-pan-read="${i}">${panText(ch.pan)}</strong><span aria-hidden="true">R</span></div></div><div class="utility-row"><button data-pre="${i}" class="${ch.pre?'active':''}">Ø</button><button data-hpf="${i}" class="${ch.hpf?'active':''}">HPF</button></div></div>
  <div class="channel-actions"><button class="candy mute ${ch.mute?'active':''}" data-mute="${i}" aria-pressed="${ch.mute}">MUTE</button><button class="candy solo ${ch.solo?'active':''}" data-solo="${i}" aria-pressed="${ch.solo}">SOLO</button></div>
  <div class="db-display" data-read="${i}">${fmt(ch.fader)}</div><div class="fader-zone"><div class="scale"><span>10</span><span>0</span><span>−10</span><span>−20</span><span>−30</span><span>−40</span><span>−60</span></div><div class="fader" data-fader="${i}" role="slider" tabindex="0" aria-orientation="vertical" aria-label="${ch.name} fader" aria-valuemin="-60" aria-valuemax="10" aria-valuenow="${ch.fader}"><div class="cap" style="--pos:${levelToTop(ch.fader)}%"></div></div><div class="meter" data-meter-key="${i}"><button class="clip-led" type="button" data-clip="${i}" title="Clear latched clip — ${safeText(ch.name)}" aria-label="Clear ${safeText(ch.name)} clip"></button><div class="meter-fill" data-meter="${i}" style="--level:40%"></div><div class="meter-peak" aria-hidden="true"></div></div></div>
  <div class="fader-tools"><button data-send="${i}:a" class="${ch.a?'active':''}">A</button><button data-send="${i}:b" class="${ch.b?'active':''}">B</button></div>
@@ -653,12 +705,12 @@ function makeStrip(ch,i){let inserts=ch.inserts.slice(0,4);while(inserts.length<
  </article>`}
 function renderMixer(){
  const x=$('mixer'),scroll=x.scrollLeft;
- x.innerHTML=channels.map(makeStrip).join('')+'<article id="masterLeft" class="strip master-strip" aria-label="Stereo master channel"></article>';
+ x.innerHTML=channels.map(makeStrip).join('')+'<article id="masterLeft" class="strip master-strip '+(masterSelected?'selected':'')+'" aria-label="Stereo master channel"></article>';
  renderMaster();x.scrollLeft=scroll;createSide();
 }
 let masterGain=-.1,masterPan=0,masterMute=false,phones=-12,masterInserts=['Studio EQ','Brickwall Limiter'],masterBypassed={},pendingMasterSlot=null;
 function masterFxRows(){
- const slots=masterInserts.slice(0,5);while(slots.length<5)slots.push('');
+ const slots=masterInserts.slice(0,6);while(slots.length<6)slots.push('');
  return slots.map((name,i)=>`<div class="master-fx-slot ${masterBypassed[i]?'is-bypassed':''}">
  <button class="master-insert ${name?'':'empty'}" data-master-insert="${i}" title="${name?'Replace '+safeText(name):'Add master FX'}">${name?'':'<span class="master-insert-add" aria-hidden="true">＋</span>'}<span class="insert-name">${name?safeText(name):'ADD FX'}</span></button>
  ${name?`<button class="master-fx-power ${masterBypassed[i]?'is-bypassed':''}" data-master-power="${i}" title="${masterBypassed[i]?'Enable':'Bypass'} ${safeText(name)}" aria-label="${masterBypassed[i]?'Enable':'Bypass'} ${safeText(name)}" aria-pressed="${!masterBypassed[i]}">⏻</button>`:''}</div>`).join('');
@@ -669,14 +721,20 @@ function renderMaster(){
  host.innerHTML=`<div class="ch-id master-ch-id">MASTER</div>
  <div class="master-fx-rack">${masterFxRows()}</div>
  <div class="strip-controls master-controls-zone">
-  <div class="master-pan-wrap"><div class="knob-label">PAN</div>
+  <div class="master-analysis">
+   <div class="master-info-kicker">OUTPUT ANALYSIS <span>SIM</span></div>
+   <div class="master-info-row"><span>LUFS-I</span><strong id="masterLufs">--</strong></div>
+   <div class="master-info-row"><span>dBTP</span><strong id="masterDbtp">--</strong></div>
+   <div class="master-info-row"><span>PEAK</span><strong id="masterPeakDb">--</strong></div>
+  </div>
+ <div class="master-pan-wrap">
     <div class="pan-control"><div class="pan-track ${masterPan===0?'is-centered':''}" data-pan="master"
        role="slider" tabindex="0" aria-orientation="horizontal"
        aria-label="Master pan" aria-valuemin="-100" aria-valuemax="100"
        aria-valuenow="${masterPan}" aria-valuetext="${panText(masterPan)}"
        title="Master pan · drag · center snap" style="--pan-frac:${(masterPan+100)/200};--pan-left:${Math.min(.5,(masterPan+100)/200)};--pan-span:${Math.abs(masterPan)/200}">
        <span class="pan-fill" aria-hidden="true"></span><span class="pan-thumb" aria-hidden="true"></span></div>
-       <div class="knob-value" data-pan-read="master">${panText(masterPan)}</div>
+       <div class="pan-readline"><span aria-hidden="true">L</span><strong data-pan-read="master">${panText(masterPan)}</strong><span aria-hidden="true">R</span></div>
     </div>
   </div>
   <div class="master-monitor-label">STEREO MAIN L / R</div>
@@ -694,13 +752,7 @@ function renderMaster(){
     <div class="cap master-cap" style="--pos:${levelToTop(masterGain)}%"></div>
   </div>
   ${meterUnit('masterR','R')}
-   <div class="master-analysis">
-   <div class="master-info-kicker">OUTPUT ANALYSIS <span>SIM</span></div>
-   <div class="master-info-row"><span>LUFS-I</span><strong id="masterLufs">--</strong></div>
-   <div class="master-info-row"><span>dBTP</span><strong id="masterDbtp">--</strong></div>
-   <div class="master-info-row"><span>PEAK</span><strong id="masterPeakDb">--</strong></div>
-  </div>
- </div>
+   </div>
  <div class="fader-tools master-tools"><span class="master-route-label">MAIN L/R</span><button type="button" data-clear-all-clips="1" title="Reset latched clips">CLEAR CLIP</button></div>
  <div class="strip-name master-strip-name" role="group" aria-label="Master output"><span class="strip-caption">MASTER</span><span class="track-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m11 5-5 4H3v6h3l5 4V5Z"/><path d="M15 9a5 5 0 0 1 0 6M18 6a9 9 0 0 1 0 12"/></svg></span></div>`;
  syncClipLeds();
@@ -741,10 +793,16 @@ function updateKnob(el,value){let idx=+el.dataset.ch,param=el.dataset.knob;
  if(param==='phones'){phones=clamp(value,-60,10);el.style.setProperty('--angle',phones/24*130+'deg');const rd=document.querySelector('[data-phones-read]');if(rd)rd.textContent=fmt(phones);send('phonesDb',phones,-1);return}
  const c=channels[idx];if(param==='pan'){updatePan(idx,value)}else{c.trim=+clamp(value,-24,24).toFixed(1);el.style.setProperty('--angle',c.trim/24*130+'deg');document.querySelector(`[data-trim-read="${idx}"]`).textContent=fmt(c.trim);send('trimDb',c.trim,idx)}}
 function focusChannel(i){
- if(i<0||i>=channels.length||i===currentChannel)return;
- currentChannel=i;
- document.querySelectorAll('.strip').forEach(strip=>strip.classList.toggle('selected',+strip.dataset.strip===i));
+ if(i<0||i>=channels.length||(i===currentChannel&&!masterSelected))return;
+ masterSelected=false;currentChannel=i;
+ document.querySelectorAll('.strip').forEach(strip=>strip.classList.toggle('selected',strip.dataset.strip!==undefined&&+strip.dataset.strip===i));
  document.querySelectorAll('#channelList [data-choose]').forEach(row=>row.classList.toggle('selected',+row.dataset.choose===i));
+}
+function focusMaster(){
+ if(masterSelected)return;
+ masterSelected=true;
+ document.querySelectorAll('.strip').forEach(strip=>strip.classList.toggle('selected',strip.id==='masterLeft'));
+ document.querySelectorAll('#channelList [data-choose]').forEach(row=>row.classList.remove('selected'));
 }
 function chooseChannel(i){if(i>=channels.length){flash('Additional bank channels are not populated in this UI study');return}currentChannel=i;renderMixer();if(view!=='MIX')renderEditor()}
 function chooseScene(i){loadSnapshotByIndex((i+scenes.length)%scenes.length)}
@@ -753,9 +811,9 @@ document.addEventListener('click',e=>{const b=e.target.closest('button,[data-cho
  const icon=e.target.closest('[data-icon-choice]'),color=e.target.closest('[data-color-choice]');
  if(icon){editingIcon=icon.dataset.iconChoice;document.querySelectorAll('[data-icon-choice]').forEach(n=>{n.classList.toggle('selected',n===icon);n.setAttribute('aria-pressed',String(n===icon))});return}
  if(color){editingColor=color.dataset.colorChoice;document.querySelectorAll('[data-color-choice]').forEach(n=>{n.classList.toggle('selected',n===color);n.setAttribute('aria-pressed',String(n===color))});return}
- if(!b){const strip=e.target.closest('[data-strip]');if(strip&&view==='MIX')focusChannel(+strip.dataset.strip);return;}
+ if(!b){const strip=e.target.closest('[data-strip]');if(strip&&view==='MIX')focusChannel(+strip.dataset.strip);else if(e.target.closest('#masterLeft')&&view==='MIX')focusMaster();return;}
  const originStrip=b.closest('[data-strip]');
- if(originStrip&&view==='MIX')focusChannel(+originStrip.dataset.strip);
+ if(originStrip&&view==='MIX')focusChannel(+originStrip.dataset.strip);else if(b.closest('#masterLeft')&&view==='MIX')focusMaster();
  if(b.dataset.view){setView(b.dataset.view);return}if(b.dataset.choose!==undefined){chooseChannel(+b.dataset.choose);return}
  if(b.dataset.mute!==undefined){toggleState(+b.dataset.mute,'mute');return}if(b.dataset.solo!==undefined){toggleState(+b.dataset.solo,'solo');return}
  if(b.dataset.pre!==undefined){let i=+b.dataset.pre;channels[i].pre=!channels[i].pre;b.classList.toggle('active');send('phase',channels[i].pre,i);return}
@@ -788,12 +846,12 @@ document.addEventListener('dblclick',e=>{const st=e.target.closest('[data-strip]
 let drag=null;
 document.addEventListener('pointerdown',e=>{const f=e.target.closest('[data-fader]'),p=e.target.closest('[data-pan]'),k=e.target.closest('[data-knob]'),node=e.target.closest('[data-band]');if(!f&&!p&&!k&&!node)return;const el=f||p||k||node;
  const strip=e.target.closest('[data-strip]');
- if(strip&&view==='MIX')focusChannel(+strip.dataset.strip);
+ if(strip&&view==='MIX')focusChannel(+strip.dataset.strip);else if(e.target.closest('#masterLeft')&&view==='MIX')focusMaster();
  if(f){const idx=f.dataset.fader,fromCap=!!e.target.closest('.cap');
    drag={type:'fader',el:f,index:idx,fromCap,startY:e.clientY,
      startDb:idx==='master'?masterGain:channels[+idx].fader};
-   // Grabbing the metallic thumb must never jump the level on pointer-down.
-   if(!fromCap){const r=f.getBoundingClientRect();const y=clamp((e.clientY-r.top)/r.height,0,1);updateFader(idx,10-y*70)}}
+   // Motorized-console behavior: the rail is a focus/relative-drag surface.
+   // Never teleport gain to pointer Y, either on pointerdown or on the first move.}
  else if(p){const index=p.dataset.pan==='master'?'master':+p.dataset.pan,fromThumb=!!e.target.closest('.pan-thumb');
  drag={type:'pan',el:p,index,fromThumb,startX:e.clientX,startPan:index==='master'?masterPan:channels[index].pan};
  if(!fromThumb){const r=p.getBoundingClientRect();updatePan(index,((e.clientX-r.left-9)/Math.max(1,r.width-18))*200-100,true)}}
@@ -803,9 +861,8 @@ document.addEventListener('pointerdown',e=>{const f=e.target.closest('[data-fade
  if(el.setPointerCapture)el.setPointerCapture(e.pointerId);e.preventDefault();});
 document.addEventListener('pointermove',e=>{if(!drag)return;
  if(drag.type==='fader'){const r=drag.el.getBoundingClientRect();
-   if(drag.fromCap){const distance=Math.max(24,r.height-66);
-     updateFader(drag.index,drag.startDb+(drag.startY-e.clientY)*70/distance)}
-   else updateFader(drag.index,10-clamp((e.clientY-r.top)/r.height,0,1)*70)}
+   const distance=Math.max(24,r.height-66);
+   updateFader(drag.index,drag.startDb+(drag.startY-e.clientY)*70/distance)}
  else if(drag.type==='pan'){const r=drag.el.getBoundingClientRect(),travel=Math.max(1,r.width-18);
  updatePan(drag.index,drag.fromThumb?drag.startPan+(e.clientX-drag.startX)*200/travel:((e.clientX-r.left-9)/travel)*200-100,true)}
  else if(drag.type==='knob'){const delta=(drag.initial-e.clientY);updateKnob(drag.el,drag.original+delta*.35)}
@@ -875,7 +932,7 @@ function renderPluginBrowser(){document.querySelectorAll('[data-category]').forE
 function insertPlugin(name){
  if(pendingMasterSlot!==null){
    const slot=pendingMasterSlot;
-   if(slot>=5)return;
+   if(slot>=6)return;
    masterInserts[slot]=name;delete masterBypassed[slot];pendingMasterSlot=null;
    closePluginBrowser();renderMaster();persistSession();
    send('masterChainChanged',{chain:[...masterInserts]},-1);
@@ -925,7 +982,7 @@ function applySession(session){if(!session||session.schemaVersion!==1||!Array.is
  if(channelIcons.includes(src.icon))c.icon=src.icon;
  if(channelPalette.includes(src.color))c.color=src.color;
  for(const k of ['fader','pan','trim'])if(Number.isFinite(src[k]))c[k]=src[k];for(const k of ['mute','solo','hpf'])if(typeof src[k]==='boolean')c[k]=src[k];if(Array.isArray(src.inserts))c.inserts=src.inserts.filter(x=>typeof x==='string').slice(0,8)}masterGain=Number.isFinite(session.masterGain)?session.masterGain:-.1;masterPan=Number.isFinite(session.masterPan)?clamp(session.masterPan,-100,100):0;masterMute=!!session.masterMute;
- if(Array.isArray(session.masterInserts))masterInserts=session.masterInserts.filter(x=>typeof x==='string').slice(0,5);
+ if(Array.isArray(session.masterInserts))masterInserts=session.masterInserts.filter(x=>typeof x==='string').slice(0,6);
  masterBypassed=(session.masterBypassed&&typeof session.masterBypassed==='object')?{...session.masterBypassed}:{};
  fxParams=(session.fxParams&&typeof session.fxParams==='object')?structuredClone(session.fxParams):{};bypassed=(session.bypassed&&typeof session.bypassed==='object')?{...session.bypassed}:{};pluginEditorIndex=null;renderMixer();renderMaster();if(view==='FX RACK')renderRackWorkspace()}
 function loadSnapshotByIndex(i){sceneIdx=(i+scenes.length)%scenes.length;const name=scenes[sceneIdx];
@@ -952,7 +1009,7 @@ createSide();renderMixer();renderMaster();try{let last=JSON.parse(localStorage.g
  if(channelIcons.includes(s.icon))channels[i].icon=s.icon;
  if(channelPalette.includes(s.color))channels[i].color=s.color;
  for(const k of ['fader','pan','trim','mute','solo','hpf'])if(s[k]!==undefined)channels[i][k]=s[k];if(Array.isArray(s.inserts))channels[i].inserts=s.inserts.filter(x=>typeof x==='string').slice(0,8)});sceneIdx=last.sceneIdx??0;masterGain=last.masterGain??-.1;masterPan=Number.isFinite(last.masterPan)?clamp(last.masterPan,-100,100):0;masterMute=!!last.masterMute;
-  if(Array.isArray(last.masterInserts))masterInserts=last.masterInserts.filter(x=>typeof x==='string').slice(0,5);
+  if(Array.isArray(last.masterInserts))masterInserts=last.masterInserts.filter(x=>typeof x==='string').slice(0,6);
   if(last.masterBypassed&&typeof last.masterBypassed==='object')masterBypassed={...last.masterBypassed};
   if(last.bypassed&&typeof last.bypassed==='object')bypassed={...last.bypassed};
   if(last.fxParams&&typeof last.fxParams==='object')fxParams=structuredClone(last.fxParams);
