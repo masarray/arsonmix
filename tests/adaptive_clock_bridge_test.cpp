@@ -68,7 +68,7 @@ static void testRate(double captureRate,double renderRate,double driftPpm)
 static void testThirtyMinuteDualClock()
 {
     armix::device::AdaptiveClockBridge bridge;
-    check(bridge.prepare(8000.,8000.,2,8192,20.));
+    check(bridge.prepare(8000.,8000.,2,8192,40.)); // STABLE headroom for periodic 10ms stalls
     std::array<float,256> left{},right{},outL{},outR{};
     left.fill(.125f); right.fill(.125f);
     const float* input[2]={left.data(),right.data()};
