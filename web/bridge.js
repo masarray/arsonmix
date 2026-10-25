@@ -383,6 +383,7 @@
     }
     if(data.error){state.adding=false;console.warn("AR MIX native:",text);}
   });
+  let lastSetupSignature="";
   backend.addEventListener("arMixStatus",d=>{
     state.device=d;
     state.monitor=!!d.monitor;
@@ -403,7 +404,11 @@
     const cpu=document.querySelector(".cpu strong");
     if(cpu)cpu.textContent="NATIVE";
     const statusSetup=document.querySelector("[data-native-setup]");
-    if(statusSetup && !document.activeElement?.matches("input"))renderSetup();
+    const setupSignature=[d.connected,d.driver,d.device,d.rate,d.buffer,d.error||""].join("|");
+    if(statusSetup && setupSignature!==lastSetupSignature && !document.activeElement?.matches("input")){
+      lastSetupSignature=setupSignature;
+      renderSetup();
+    }
   });
   backend.addEventListener("arMixScanProgress",p=>{
     state.progress=p;
