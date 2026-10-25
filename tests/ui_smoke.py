@@ -20,7 +20,7 @@ async def main():
             p=page.locator(f'[data-pan="{idx}"]')
             assert await p.get_attribute('aria-orientation')=='horizontal'
             assert await p.locator('.pan-thumb').count()==1
-        for selector in ['.nav button.selected','.left-rail .seg button.selected','#masterLeft .master-tools button.active']:
+        for selector in ['.nav button.selected','.left-rail .seg button.selected']:
             bg=await page.locator(selector).first.evaluate('(x)=>getComputedStyle(x).backgroundImage')
             assert 'data:image/png;base64,' in bg, (selector,bg[:110])
         # Visual-architecture regression: four intentionally different hardware
@@ -29,6 +29,9 @@ async def main():
         assert await page.locator('#mixer > .strip').count()==13
         assert await page.locator('#mixer > .strip:last-child').get_attribute('id')=='masterLeft'
         assert await page.locator('.right-rail,.master-tabs,.head').count()==0
+        assert await page.locator('[data-master-output]').count()==0
+        assert await page.locator('.master-stereo-badge,.master-route-label').count()==2
+        assert await page.locator('[data-clear-all-clips]').count()==1
         architecture=await page.evaluate("""() => {
           const bg=s=>getComputedStyle(document.querySelector(s)).backgroundImage;
           const rect=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,height:r.height}};
