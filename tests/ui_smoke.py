@@ -15,7 +15,7 @@ async def main():
         # All 12 PAN knobs have been replaced by horizontal slider tracks.
         assert await page.locator('[data-pan]').count()==12
         assert await page.locator('[data-knob="pan"]').count()==0
-        assert await page.locator('.brand').inner_text()=='ArSonMix'
+        assert ''.join((await page.locator('.brand').inner_text()).split())=='ArSonMix'
         for idx in range(12):
             p=page.locator(f'[data-pan="{idx}"]')
             assert await p.get_attribute('aria-orientation')=='horizontal'
