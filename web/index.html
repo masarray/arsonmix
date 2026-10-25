@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="dark"><title>AR MIX Studio — Live FX Host Concept</title><link rel="stylesheet" href="styles.css"></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="dark"><title>ArSonMix — Live FX Host GUI Preview</title><link rel="stylesheet" href="styles.css"></head>
 <body>
 <div id="app" class="app">
   <header class="toolbar">
-    <div class="brand"><span class="brand-ar">AR</span><span class="brand-label">MIX<span> Studio</span></span></div>
+    <div class="brand"><span class="brand-ar">Ar</span><span class="brand-label">SonMix</span></div>
     <div class="project"><span class="muted">Session:</span><strong> Live Vocal Studio</strong><span class="chev">▾</span></div>
     <button class="chrome-icon" title="Session browser" id="browse">▣</button>
     <div class="spec spec-device"><strong>ASIO / WASAPI</strong></div><div class="spec"><strong>48</strong> kHz</div><div class="spec bpm"><strong>64</strong> samples</div>
@@ -18,22 +18,26 @@
   <div class="main">
     <aside class="left-rail">
       <div class="seg tabs"><button class="selected" data-side="channels">CHANNELS</button><button data-side="fx">FX CHAINS</button></div>
-      <div id="channelList" class="channel-list"></div>
-      <div id="groupsList" class="rail-list hidden"></div><div class="rail-section-title">QUICK SOUND PRESETS</div><div class="rail-presets" id="presetList"><button data-preset="Clean Vocal">✦ Clean Vocal</button><button data-preset="Warm Karaoke">✦ Warm Karaoke</button><button data-preset="Live Broadcast">✦ Live Broadcast</button></div><div class="rail-section-title">ACTIVE INPUT</div><div class="rail-signal" id="activeInput">Mic In → FX Chain → Master</div>
-      <div class="rail-section-title">MIXER SNAPSHOTS</div><div id="scenesList" class="rail-list scenes-list"></div>
-      <div class="rail-bottom"><button id="addScene" title="Save mixer snapshot">＋ SAVE</button><button id="menuScene" title="Manage snapshots">···</button><button id="saveFxPreset" title="Save FX chain preset">FX SAVE</button></div>
+      <div id="channelList" class="channel-list" aria-label="Mixer channels"></div>
+      <div id="groupsList" class="rail-list hidden"></div>
+      <div class="rail-section-title">QUICK SOUND PRESETS</div>
+      <div class="rail-presets" id="presetList"><button data-preset="Clean Vocal">Clean Vocal</button><button data-preset="Warm Karaoke">Warm Karaoke</button><button data-preset="Live Broadcast">Live Broadcast</button></div>
+      <div class="rail-section-title">MIXER SNAPSHOTS</div>
+      <div id="scenesList" class="rail-list scenes-list"></div>
+      <div class="rail-bottom" role="group" aria-label="Session actions">
+        <button id="addScene" title="Save current mixer as a named snapshot">＋ SAVE SNAPSHOT</button>
+        <button id="saveFxPreset" title="Save this channel's FX chain as a preset">SAVE FX</button>
+        <button id="menuScene" title="Export the complete session as JSON">EXPORT</button>
+      </div>
+      <div class="rail-input-footer"><span class="rail-live-indicator" aria-hidden="true"></span><span id="activeInput">MIC → FX → MASTER</span></div>
     </aside>
     <section class="workbench">
       <div id="mixer" class="mixer"></div>
       <div id="editor" class="editor hidden"></div><div id="rackWorkspace" class="feature-workspace hidden"></div>
     </section>
-    <aside class="right-rail">
-      <div class="seg tabs master-tabs"><button class="selected" data-master-tab="master">MASTER</button><button data-master-tab="monitors">MONITORS</button><button data-master-tab="talkback">TALKBACK</button></div>
-      <div class="master-workarea"><div id="masterLeft" class="master-left"></div><div id="masterRight" class="master-right"></div></div>
-    </aside>
   </div>
-  <footer class="status"><span><i class="live-dot"></i><b>UI STUDY</b> <span class="dim-text">· <span id="audioStatus">Audio engine disconnected · Simulated meters</span></span></span><span class="status-help">Drag faders & knobs • Click FX insert to open plugin browser • Ctrl+S saves session</span><span>AR MIX v0.3  |  FX HOST UI PROTOTYPE</span></footer>
-  <div class="toast" id="toast" role="status"></div><div class="modal hidden" id="pluginModal" role="dialog" aria-modal="true" aria-label="Choose VST plugin"><div class="modal-panel"><div class="modal-head"><div><span class="eyebrow">VST3 FX BROWSER</span><h2>Choose an effect</h2><p id="pluginTarget">Select a processor to insert in the chain</p></div><button id="closeBrowser" class="chrome-icon" aria-label="Close plugin browser">×</button></div><input id="pluginSearch" class="plugin-search" placeholder="Search by effect, category, plugin name..." autocomplete="off"><div class="plugin-categories"><button class="active" data-category="All">All</button><button data-category="Dynamics">Dynamics</button><button data-category="EQ">EQ</button><button data-category="Space">Space</button><button data-category="Creative">Creative</button></div><div id="pluginResults" class="plugin-results"></div><div class="modal-footer">Demo catalog only · Native VST3 scanning and loading not yet connected</div></div></div>
+  <footer class="status"><span><i class="live-dot"></i><b>UI STUDY</b> <span class="dim-text">· <span id="audioStatus">Audio engine disconnected · Simulated meters</span></span></span><span class="status-help">Drag faders and PAN sliders • Click FX insert to open plugin browser • Ctrl+S saves session</span><span>ArSonMix  |  FX HOST UI PROTOTYPE</span></footer>
+  <div class="modal hidden identity-overlay" id="channelIdentity" role="dialog" aria-modal="true" aria-label="Edit channel identity"><div class="identity-panel"><div class="identity-top"><div class="identity-kicker">ARSONMIX · CHANNEL <span id="identityIndex">01</span></div><button class="identity-close" id="identityCancel" aria-label="Close channel editor">×</button></div><div class="identity-heading">Channel Properties</div><label class="identity-label" for="identityName">NAME</label><input type="text" id="identityName" maxlength="26" placeholder="Channel name" autocomplete="off"><div class="identity-label">ICON</div><div id="identityIcons" class="identity-icons"></div><div class="identity-label">STRIP COLOR</div><div id="identityColors" class="identity-colors"></div><div class="identity-actions"><button id="identitySave">APPLY CHANGES</button></div></div></div><div class="toast" id="toast" role="status"></div><div class="modal hidden" id="pluginModal" role="dialog" aria-modal="true" aria-label="Choose VST plugin"><div class="modal-panel"><div class="modal-head"><div><span class="eyebrow">VST3 FX BROWSER</span><h2>Choose an effect</h2><p id="pluginTarget">Select a processor to insert in the chain</p></div><button id="closeBrowser" class="chrome-icon" aria-label="Close plugin browser">×</button></div><input id="pluginSearch" class="plugin-search" placeholder="Search by effect, category, plugin name..." autocomplete="off"><div class="plugin-categories"><button class="active" data-category="All">All</button><button data-category="Dynamics">Dynamics</button><button data-category="EQ">EQ</button><button data-category="Space">Space</button><button data-category="Creative">Creative</button></div><div id="pluginResults" class="plugin-results"></div><div class="modal-footer">Demo catalog only · Native VST3 scanning and loading not yet connected</div></div></div>
 </div>
 <script src="app.js"></script>
 </body></html>

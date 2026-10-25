@@ -31,3 +31,20 @@
 **Not yet verified:** Windows 125/150% display scaling; native WebView2 shell compilation; real VST3 scan; FX plugin state persistence; real audio capture/output; buffer underrun / callback budgets / device RTL; production memory leak analysis. Treat these as explicit release gates rather than claimed capabilities.
 
 - Responsive QA: at 1366×768, 1920×1080, 2560×1440, measured 12 strips, **zero fader head geometry clips** and **zero JavaScript page errors**. Screenshots were inspected.
+
+## 2026-10-25: Mirror-symmetric fader polish
+
+- Root cause: original 45px head used a fixed 19px centerline. An overriding 39px height and biased shadow left the cap unbalanced, while an obsolete travel calculation remained.
+- Repair: single 29×42px metallic head, matching 5px top/bottom corners and centered black stripe; the lower grip is a true Y-mirror of the upper grip. Same CSS for channel and master.
+- Keep the cross-browser 25px safe-travel clamp. Add subtle hover and keyboard focus highlights; remove contradictory height/position declarations.
+- UX: vertical ARIA sliders, live master value, 0.5dB arrow steps, 5dB Page steps, Home (-60dB) and End (+10dB).
+- Automated Playwright smoke includes cap dimension, pseudo-layer symmetry, boundary clipping at initial positions, keyboard endpoints and existing FX workflows. Only the standalone component has been visually rendered in Linux Chromium during this patch; run the complete smoke suite before release.
+
+## 2026-10-25 — Image-backed rugged silver fader (supersedes flat CSS v0.3)
+
+- **Canonical reference:** `web/assets/fader-silver2.png` (user-supplied Gambar 3, 31×90 RGBA, SHA-256 `0f45fe5aebc8db7b65c4163ffad083cbe3965d59cde7056add94812ac067a899`).
+- The original PNG preserves curved machined-metal edge shading, fine ridges and soft downcast shadow. The embedded CSS data URI uses exactly the same PNG so **standalone HTML, normal browser CSS and JUCE WebView2 never depend on external file loading**; the canonical PNG remains replaceable.
+- On-image black horizontal center mark is **pixel y=35**, CSS `translateY(-35px)` pins that mark to the fader dB coordinate. The body ends near y=65; the transparent falloff continues below without changing the controlled value. Keep the visual clipping assertions limited to the actual metal body (not its cast shadow).
+- Pointer-down on an existing cap now retains the current gain; drag is relative to the starting value. Track click still jumps as before. Keyboard and ARIA controls retained.
+- QA: `python tests/fader_asset_test.py` checks byte-exact PNG, CSS and offline trial synchronization. Chromium `tests/ui_smoke.py` covers asset decode, all 13 cap dimensions, body clipping, no-jump drag, keyboard endpoints, plugin rack operations and screenshot artifact.
+- **Known:** Original user asset is only 31px wide. It is deliberately shown at approximately original pixel dimensions, not artificially upscaled. Replacing the original source with a high-DPI recreation may be considered later if 150%/200% scaling reveals softness.
