@@ -121,7 +121,7 @@ function renderMaster(){
  </div>
  <div class="channel-actions master-actions">
   <button class="candy mute ${masterMute?'active':''}" type="button" id="masterMute" aria-pressed="${masterMute}">MUTE</button>
-  <button class="candy" type="button" data-clear-all-clips="1" title="Reset peak/clip memory">CLIP CLR</button>
+  <span class="master-stereo-badge" aria-label="Stereo master channel">STEREO</span>
  </div>
  <div class="db-display master-db" data-master-db>${fmt(masterGain)}</div>
  <div class="fader-zone master-fader-zone">
@@ -139,8 +139,8 @@ function renderMaster(){
    <div class="master-info-row"><span>PEAK</span><strong id="masterPeakDb">--</strong></div>
   </div>
  </div>
- <div class="fader-tools master-tools"><button type="button" class="active" data-master-output="main" title="Main stereo output">MAIN L/R</button><button type="button" data-clear-all-clips="1">CLEAR CLIP</button></div>
- <div class="strip-name master-strip-name" role="group" aria-label="Master output"><span class="strip-caption">MASTER</span><span class="track-icon" aria-hidden="true">◖))</span></div>`;
+ <div class="fader-tools master-tools"><span class="master-route-label">MAIN L/R</span><button type="button" data-clear-all-clips="1" title="Reset latched clips">CLEAR CLIP</button></div>
+ <div class="strip-name master-strip-name" role="group" aria-label="Master output"><span class="strip-caption">MASTER</span><span class="track-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m11 5-5 4H3v6h3l5 4V5Z"/><path d="M15 9a5 5 0 0 1 0 6M18 6a9 9 0 0 1 0 12"/></svg></span></div>`;
  syncClipLeds();
 }
 let bands=[{freq:80,gain:2.1,q:1},{freq:300,gain:-3.2,q:1},{freq:2200,gain:-1.5,q:1.2},{freq:7800,gain:3.5,q:.8}];let activeBand=1;
