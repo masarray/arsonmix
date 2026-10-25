@@ -753,6 +753,11 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  color:#9ecddd;cursor:default;
 }
 
+/* Navigation shows selected inset color but stays on the global header baseline.
+   Hardware channel toggles (MUTE/SOLO/HPF/send) still physically latch 3px inward. */
+.toolbar .nav button.selected,.left-rail .tabs button.selected{
+ transform:translateY(0px)!important;
+}
 /* One soft, non-rectilinear halo shared by source and stereo master. */
 .strip.selected,#masterLeft.selected{
  --selection-tint:color-mix(in srgb,var(--ch) 22%,#7fe8ff 78%);
