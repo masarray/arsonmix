@@ -44,6 +44,13 @@ target_link_libraries(ARMixConsole PRIVATE
 
 include(CTest)
 if(BUILD_TESTING)
+  if(WIN32)
+    juce_add_console_app(ARMixWasapiProbeTests PRODUCT_NAME "ArSonMix WASAPI Probe Tests")
+    target_sources(ARMixWasapiProbeTests PRIVATE tests/wasapi_capability_probe_test.cpp engine/device/WasapiCapabilityProbe.h)
+    target_link_libraries(ARMixWasapiProbeTests PRIVATE juce::juce_core ole32 uuid juce::juce_recommended_config_flags)
+    target_compile_features(ARMixWasapiProbeTests PRIVATE cxx_std_20)
+    add_test(NAME WasapiCapabilityProbe COMMAND ARMixWasapiProbeTests)
+  endif()
   add_executable(ARMixLifecycleTests tests/session_lifecycle_test.cpp)
   target_compile_features(ARMixLifecycleTests PRIVATE cxx_std_20)
   add_test(NAME DeviceSessionLifecycle COMMAND ARMixLifecycleTests)
