@@ -34,7 +34,7 @@ The one-endpoint modes call JUCE `AudioDeviceManager::setAudioDeviceSetup` with 
 
 - `lateCallbackIntervals`: callback start gap >1.5× nominal period; **scheduler indicator, not a confirmed xrun**. `callbackGapCount` remains the legacy >2.3× threshold for comparison.
 - `backendXrunCount`: from `juce::AudioIODevice::getXRunCount()`; null when unavailable. On pinned JUCE 8.0.15 **WASAPI**, this represents reported input **DATA_DISCONTINUITY** flags, **not all capture FIFO shortfalls or output underruns**. Other backends expose driver-defined semantics.
-- `renderUnderrunSource = UNAVAILABLE_IN_JUCE_8_WASAPI`: render starvation is **not directly observed** by the generic current callback. A zero in any timing counter is not proof that output playback is clean.
+- `renderUnderrunSource = UNAVAILABLE_THROUGH_CURRENT_JUCE_AUDIODEVICE`: render starvation is **not directly observed** by the generic current callback. A zero in any timing counter is not proof that output playback is clean.
 - `deviceGeneration` = number of callbacks started; `testOutputFrames` / `testCaptureFrames` = host diagnostic frames processed, not guarantee that endpoint delivered/consumed all of them.
 - `callbackDurationUs`, `worstCallbackUs`, plugin counts and peaks remain host-processing estimates and snapshots, never total physical output latency.
 - MARK CRACKLE correlates the person's listening observation with sampled counters; cannot automatically measure an actual hardware dropout.
