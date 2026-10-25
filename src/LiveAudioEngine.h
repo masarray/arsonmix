@@ -100,6 +100,17 @@ public:
         if (wanted < Route::normal || wanted > Route::captureOnly)
             return "Unknown audio diagnostic route";
 
+        // Muting the old/new combined backend callback during an intermediate
+        // device restart prevents briefly leaking microphone audio when changing
+        // from OUTPUT ONLY to CAPTURE ONLY (which first restores full duplex).
+        struct TransitionMute final
+        {
+            std::atomic<bool>& flag;
+            explicit TransitionMute (std::atomic<bool>& target) : flag (target)
+                { flag.store (true, std::memory_order_release); }
+            ~TransitionMute() { flag.store (false, std::memory_order_release); }
+        } transitionMute (routeReconfiguring_);
+
         if (savedLiveSetup_)
         {
             const auto restore = *savedLiveSetup_;
@@ -557,6 +568,7 @@ private:
     juce::AudioBuffer<float> scratch_;
     armix::diagnostics::DiagnosticTone diagnosticTone_;
     std::atomic<armix::diagnostics::Route> diagnosticRoute_ {armix::diagnostics::Route::normal};
+    std::atomic<bool> routeReconfiguring_ {false};
     std::optional<juce::AudioDeviceManager::AudioDeviceSetup> savedLiveSetup_;
     // Indexed atomic bypass flags: instant RT-safe toggles, no graph detachment.
     std::atomic<bool> monitor_ { false }, channelMute_ { false }, masterMute_ { false }, dryTest_ { false };
@@ -671,7 +683,8 @@ private:
         callbackInputs_.store (inputChannels, std::memory_order_relaxed);
         callbackOutputs_.store (outputChannels, std::memory_order_relaxed);
         callbackCount_.fetch_add (1, std::memory_order_relaxed);
-        const bool enabled = monitor_.load (std::memory_order_relaxed);
+        const bool enabled = monitor_.load (std::memory_order_relaxed)
+                          && !routeReconfiguring_.load (std::memory_order_acquire);
         const auto route = diagnosticRoute_.load (std::memory_order_relaxed);
         const bool toneTest = route == armix::diagnostics::Route::outputOnlyTone;
         const bool captureTest = route == armix::diagnostics::Route::captureOnly;
