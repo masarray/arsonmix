@@ -117,6 +117,12 @@ async def main():
         }""",timeout=2500)
         pressed_rect=await preset.evaluate('(e)=>e.getBoundingClientRect().toJSON()')
         assert all(abs(base_rect[k]-pressed_rect[k])<=.2 for k in ('x','y','width','height'))
+        # Restore factory FX chain so this visual-button test cannot change later FX tests.
+        await page.evaluate("""()=>{
+          channels[0].inserts=[...initialFactoryChannels[0].inserts];
+          document.querySelectorAll('[data-preset]').forEach(b=>b.classList.remove('active'));
+          renderMixer();
+        }""")
         assert await page.locator('#saveFxPreset').count()==1
         assert await page.locator('.left-rail .rail-input-footer').count()==1
         railGeometry=await page.evaluate("""()=>{
