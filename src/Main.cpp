@@ -323,6 +323,8 @@ private:
         result << juce::JSON::toString (status, true) << "\n";
         result << "\n=== RECENT EVENTS (latest 48, capture on control thread) ===\n";
         result << diagnostics_.recentReport (48);
+        result << "\n=== IMPORTANT EVENTS (retained across long sessions) ===\n";
+        result << diagnostics_.significantReport();
         result << "\n=== NEXT ACTION ===\n";
         result << "Copy/paste this report to the ArSonMix engineering thread. "
                   "Add a short description of the audible crackle and its mode, if any.\n";
