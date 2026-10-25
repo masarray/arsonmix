@@ -309,27 +309,42 @@
   tracks.forEach((track,i)=>{
     const rack=track.querySelector(".rack");
     if(!rack)return;
+    if(track.classList.contains("master-strip")){
+      track.dataset.preview="1";
+      track.title="Master FX and master PAN are visual previews; Master fader and meters are native";
+      track.querySelectorAll("[data-master-insert],[data-master-power]").forEach(x=>{
+        x.disabled=true;x.title="Preview only — Master FX DSP not yet implemented";
+      });
+      const pan=track.querySelector('[data-pan="master"]');
+      if(pan){pan.removeAttribute("tabindex");pan.style.pointerEvents="none";pan.title="Master PAN DSP not yet implemented";}
+      const marker=track.querySelector(".master-info-kicker span");
+      if(marker)marker.textContent="PEAK ONLY";
+      return;
+    }
     if(i!==0){
       rack.dataset.preview="1";
       track.dataset.preview="1";
+      track.querySelectorAll(".meter-peak").forEach(x=>x.style.display="none");
       track.title=`${track.querySelector(".strip-name")?.textContent?.trim()||"Channel"} — visual preview only; native I/O not wired`;
       return;
     }
     const signature=state.chain.map(p=>p.id+"|"+p.bypass).join(",");
     if(rack.dataset.nativeSig===signature)return;
     rack.dataset.nativeSig=signature;
-    rack.innerHTML=state.chain.slice(0,4).map((p,i)=>
-      `<div class="native-insert-row ${p.bypass?"is-bypassed":""}">
+    rack.innerHTML=state.chain.slice(0,5).map((p,i)=>
+      `<div class="insert-slot native-insert-row ${p.bypass?"is-bypassed":""}">
         <button class="insert" data-native-fx="editor" data-slot="${i}"
-          title="Open ${escapeHtml(p.name)} editor" aria-label="Open ${escapeHtml(p.name)} editor">
-          <span class="insert-led">${p.bypass?"○":"◉"}</span>${escapeHtml(p.name)}</button>
-        <button type="button" class="native-power ${p.bypass?"is-off":""}"
+          title="Open ${escapeHtml(p.name)}" aria-label="Edit ${escapeHtml(p.name)}">
+          <span class="insert-name">${escapeHtml(p.name)}</span></button>
+        <button type="button" class="fx-power native-power ${p.bypass?"is-bypassed is-off":""}"
           data-native-fx="bypass" data-slot="${i}" aria-pressed="${!p.bypass}"
-          aria-label="${p.bypass?"Enable":"Bypass"} ${escapeHtml(p.name)}"
-          title="${p.bypass?"ENABLE FX":"BYPASS FX"} · ${escapeHtml(p.name)}">⏻</button>
+          title="${p.bypass?"Enable":"Bypass"} ${escapeHtml(p.name)}">⏻</button>
       </div>`).join("")+
-      `<button class="insert empty" data-plugin-picker="1" aria-label="Add VST3 to Channel 1">
-        <span class="insert-led">＋</span>ADD FX</button>`;
+      `<div class="insert-slot"><button class="insert empty" data-plugin-picker="1"
+          ${state.chain.length>=8?"disabled":""} aria-label="Add VST3 to Channel 1">
+          <span class="insert-add-glyph" aria-hidden="true">＋</span>
+          <span class="insert-name">${state.chain.length>=8?"FX FULL":"ADD FX"}</span>
+      </button></div>`;
   });
 }
   let renderPending = false;
@@ -356,11 +371,20 @@
 
   // Capture native controls before the legacy v0.3 demo handlers.
   document.addEventListener("click", function(e){
-  const el=e.target.closest("[data-native-action],[data-native-add],[data-native-fx],[data-native-category],[data-go-native-rack],[data-insert],[data-plugin-picker],[data-plugin-manager],[data-my-sounds],[data-preset-mute],[data-preset-save],[data-preset-load],[data-close-modal]");
+  const el=e.target.closest("[data-native-action],[data-native-add],[data-native-fx],[data-fxpower],[data-master-insert],[data-master-power],[data-native-category],[data-go-native-rack],[data-insert],[data-plugin-picker],[data-plugin-manager],[data-my-sounds],[data-preset-mute],[data-preset-save],[data-preset-load],[data-close-modal]");
   if(!el)return;
   e.preventDefault();e.stopImmediatePropagation();
 
   if(el.dataset.closeModal){hideDialog(el.dataset.closeModal);return;}
+  if(el.hasAttribute("data-master-insert")||el.hasAttribute("data-master-power")){
+    toStatus("Master FX is a visual preview; real processing is Channel 1.");return;
+  }
+  if(el.hasAttribute("data-fxpower")){
+    const [channel,slot]=el.dataset.fxpower.split(":").map(Number);
+    if(channel===0)send("fxBypass",{slot,value:!state.chain[slot]?.bypass});
+    else toStatus("Visual preview only. Native FX available on Channel 1.");
+    return;
+  }
   if(el.hasAttribute("data-my-sounds")){openMySounds();return;}
   if(el.hasAttribute("data-preset-mute")){
     send("monitor",{value:false});state.monitor=false;renderMySounds();return;
@@ -548,15 +572,20 @@
     liveOutputRight=Math.max(percent(d.peakRight),liveOutputRight-5);
     const meter=document.querySelector('[data-meter="0"]');
     if(meter)meter.style.setProperty("--level",liveInputLevel+"%");
-    const nativeMasterLevels={
-      masterMeterL:liveOutputLeft,
-      masterMeterR:liveOutputRight,
-      masterMeterAux:liveOutputLevel
-    };
-    for(const [id,level] of Object.entries(nativeMasterLevels)){
-      const x=document.getElementById(id);
-      if(x)x.style.setProperty("--level",level+"%");
+    for(const [key,level] of [["masterL",liveOutputLeft],["masterR",liveOutputRight]]){
+      const target=document.querySelector('[data-meter="'+key+'"]')||
+        document.getElementById(key==="masterL"?"masterMeterL":"masterMeterR");
+      if(target)target.style.setProperty("--level",level+"%");
     }
+    const aux=document.getElementById("masterMeterAux");
+    if(aux)aux.style.setProperty("--level",liveOutputLevel+"%");
+    // Design-only LUFS/true-peak fields have no native measurement yet.
+    const lufs=document.getElementById("masterLufs"),tp=document.getElementById("masterDbtp");
+    if(lufs)lufs.textContent="—";
+    if(tp)tp.textContent="—";
+    const pk=document.getElementById("masterPeakDb");
+    if(pk)pk.textContent=Number(d.peak)>0
+      ?(20*Math.log10(Math.max(1e-8,Number(d.peak)))).toFixed(1)+" dBFS":"−∞";
     const cpu=document.querySelector(".cpu strong");
     if(cpu)cpu.textContent="NATIVE";
     const statusSetup=document.querySelector("[data-native-setup]");

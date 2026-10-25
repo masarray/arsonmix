@@ -1,3 +1,19 @@
+# ArSonMix — Live VST3 Host
+
+**Current integration candidate (25 October 2026): P2.5 live preset graph + latest v0.5 premium mixer GUI.** Desktop Windows x64 / JUCE 8 / ASIO-WASAPI / VST3. The integrated branch is `integration/p25-gui-engine-reconciled`; **the default `main` is older** and must not be treated as the latest native implementation. Code is experimental until Windows hardware tests pass.
+
+- [Integrated Windows builds](https://github.com/masarray/arsonmix/actions/workflows/p1-windows.yml?query=branch%3Aintegration%2Fp25-gui-engine-reconciled) — download EXE artifact from a successful run.
+- [Integration PR](https://github.com/masarray/arsonmix/pulls) and [progress reconciliation ledger](docs/PROGRESS_RECONCILIATION_2026-10-25.md).
+- [Premium GUI reference branch](https://github.com/masarray/arsonmix/tree/fix/fader-thumb-symmetry-polish) is archived by branch and imported to the integration source; static browser demo is not a VST host.
+- [Latest native engine reference](https://github.com/masarray/arsonmix/tree/feature/p25-live-preset-graph-swap), including real FabFilter/RX compatibility and experimental buffer-boundary preset graph handoff.
+
+**Actual native status:** Channel 1 stereo path, native VST3 rack/catalog/scan/import, FabFilter and iZotope RX were confirmed to INSERT on user hardware, native VU and PAN, FX bypass, native `.armix` snapshots, experimental Live Recall. **Not yet native:** Channels 2–12, master inserts, master PAN, routing to independent streaming/recording buses, LUFS/true peak. Browser-only session controls are not native persistence. SAVE is muted-only and structure ADD/REMOVE/REORDER still detaches callback.
+
+## Historical roadmap and previous implementation notes
+
+The text below documents the development progression. Historical "source-only" or v0.3 statements are superseded by the above current status, not a description of this integration branch.
+
+---
 # AR MIX Studio — Open-Source Live FX Host (v0.3 UI & Architecture)
 
 **Status: P1 experimental native Windows first-sound implementation (pending CI/hardware verification) + v0.3 UI demo.**

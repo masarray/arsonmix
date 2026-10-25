@@ -11,7 +11,329 @@ async def main():
         errors=[]
         page.on("pageerror", lambda e: errors.append(str(e)))
         await page.set_content((project/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").read_text())
-        assert await page.locator(".strip").count()==12
+        assert await page.locator(".strip").count()==13
+        # All 12 PAN knobs have been replaced by horizontal slider tracks.
+        assert await page.locator('[data-pan]').count()==13
+        assert await page.locator('[data-knob="pan"]').count()==0
+        assert ''.join((await page.locator('.brand').inner_text()).split())=='ArSonMix'
+        for idx in range(12):
+            p=page.locator(f'[data-pan="{idx}"]')
+            assert await p.get_attribute('aria-orientation')=='horizontal'
+            assert await p.locator('.pan-thumb').count()==1
+        for selector in ['.nav button.selected','.left-rail .seg button.selected']:
+            bg=await page.locator(selector).first.evaluate('(x)=>getComputedStyle(x).backgroundImage')
+            assert 'data:image/png;base64,' in bg, (selector,bg[:110])
+        # Visual-architecture regression: four intentionally different hardware
+        # families, FX slots recessed rather than taking on button-cap artwork.
+        # GUI target: the master is the 13th sibling, not a floating right rail.
+        assert await page.locator('#mixer > .strip').count()==13
+        assert await page.locator('#mixer > .strip:last-child').get_attribute('id')=='masterLeft'
+        assert await page.locator('[data-insert="0:5"]').count()==1
+        assert await page.locator('[data-master-insert="5"]').count()==1
+        assert await page.locator('.strip-controls .knob-label').filter(has_text="PAN").count()==0
+        assert await page.locator('.pan-readline').count()==13
+        assert await page.locator('#masterLeft .master-controls-zone .master-analysis').count()==1
+        # Six real insert slots fit entirely within each FX rack (no cropping).
+        rack_geometry=await page.evaluate("""() => [...document.querySelectorAll('.strip')].every(strip=>{
+           const rack=strip.querySelector('.rack,.master-fx-rack');
+           const cells=[...rack.querySelectorAll('.insert-slot,.master-fx-slot')];
+           const r=rack.getBoundingClientRect();
+           return cells.length===6&&cells.every(c=>{
+             const b=c.getBoundingClientRect();return b.top>=r.top-.5 && b.bottom<=r.bottom+.5;
+           });
+        })""")
+        assert rack_geometry, 'Some of the six FX slots are clipped'
+
+        assert await page.locator('.right-rail,.master-tabs,.head').count()==0
+        assert await page.locator('[data-master-output]').count()==0
+        assert await page.locator('.master-stereo-badge,.master-route-label').count()==2
+        assert await page.locator('[data-clear-all-clips]').count()==1
+        architecture=await page.evaluate("""() => {
+          const bg=s=>getComputedStyle(document.querySelector(s)).backgroundImage;
+          const rect=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,height:r.height}};
+          const main=document.querySelector('[data-strip="0"]'),master=document.querySelector('#masterLeft');
+          const overflow=[...document.querySelectorAll('.strip .channel-actions button,.strip .utility-row button')].some(el=>{
+            const b=el.getBoundingClientRect(),p=el.closest('.strip').getBoundingClientRect();
+            return b.left<p.left-1||b.right>p.right+1;
+          });
+          return {nav:bg('.nav button.selected'),small:bg('[data-mute="0"]'),
+            long:bg('.rail-presets button'),fx:bg('.strip .rack .insert'),chrome:bg('#settingsBtn'),
+            navBounds:rect('.nav'),mode:rect('#modeToggle'),overflow,
+            mainHeader:rect('[data-strip="0"] .ch-id'),masterHeader:rect('#masterLeft .ch-id'),
+            mainBottom:rect('[data-strip="0"] .strip-name'),masterBottom:rect('#masterLeft .strip-name'),
+            mainFader:rect('[data-strip="0"] .fader-zone'),masterFader:rect('#masterLeft .fader-zone'),
+            selection:getComputedStyle(main,'::before').borderTopWidth,
+            masterRows:[...master.children].map(x=>({cls:x.className,height:x.getBoundingClientRect().height}))};
+        }""")
+        assert len({architecture[k] for k in ('nav','small','long')})==3
+        assert 'data:image/png;base64' not in architecture['fx']
+        assert 'data:image/png;base64' not in architecture['chrome']
+        assert not architecture['overflow']
+        assert architecture['navBounds']['right']<=architecture['mode']['x']+1
+        for key in ('Header','Bottom','Fader'):
+            assert abs(architecture['main'+key]['y']-architecture['master'+key]['y'])<=2,architecture
+        assert abs(architecture['mainBottom']['bottom']-architecture['masterBottom']['bottom'])<=2,architecture
+        assert architecture['selection']=='2px',architecture
+        await page.screenshot(path=str(project/'mixer-design-review.png'),full_page=True)
+        # Medium desktop check; channel strips may scroll *inside* workbench.
+        await page.set_viewport_size({"width":1440,"height":820})
+        await page.screenshot(path=str(project/'mixer-design-review-1440.png'),full_page=True)
+        assert await page.locator('.strip').count()==13
+        await page.set_viewport_size({"width":1680,"height":920})
+        # Hardware-style PAN illumination must grow from center, both L and R.
+        pan_fill=page.locator('[data-pan="1"] .pan-fill')
+        assert await pan_fill.count()==1
+        p1=page.locator('[data-pan="1"]')
+        await p1.focus()
+        await p1.press('Home')
+        at_center=await pan_fill.bounding_box()
+        assert at_center['width']<1,at_center
+        await p1.press('End')
+        assert 'drop-shadow' in await p1.locator('.pan-thumb').evaluate('(e)=>getComputedStyle(e).filter')
+        right_fill=await pan_fill.bounding_box()
+        assert right_fill['width']>10,right_fill
+        await p1.press('Home')
+        await p1.press('ArrowLeft')
+        left_small=await pan_fill.bounding_box()
+        assert left_small['width']>0,left_small
+        for _ in range(20):
+            await p1.press('Shift+ArrowLeft')
+        left_fill=await pan_fill.bounding_box()
+        assert left_fill['width']>10 and left_fill['x']<at_center['x'],left_fill
+        await p1.press('Home')
+        # Inline strip FX power and full FX Rack power reflect same saved state.
+        assert await page.locator('.strip .insert-slot').count()==72
+        inline=page.locator('[data-fxpower="0:0"]')
+        assert await inline.get_attribute('aria-pressed')=='true'
+        assert await page.locator('[data-insert="0:0"]').count()==1
+        await inline.click()
+        assert await inline.get_attribute('aria-pressed')=='false'
+        assert await page.locator('[data-fxpower="0:0"]').locator('xpath=..').evaluate("(x)=>x.classList.contains('is-bypassed')")
+        assert await page.evaluate('bypassed["0:0"]') is True
+        assert await page.locator('#pluginModal').is_hidden()
+        await page.locator('[data-view="FX RACK"]').click()
+        rack_power=page.locator('[data-chainbypass="0"]')
+        assert await rack_power.get_attribute('aria-pressed')=='false'
+        await rack_power.click()
+        assert await rack_power.get_attribute('aria-pressed')=='true'
+        await page.locator('[data-view="MIX"]').click()
+        assert await page.locator('[data-fxpower="0:0"]').get_attribute('aria-pressed')=='true'
+        assert await page.evaluate('durableSession().bypassed["0:0"]') is False
+        await page.locator('#masterMute').click()
+        assert await page.locator('#masterMute').inner_text()=='MUTE'
+        assert await page.locator('#masterMute').get_attribute('aria-pressed')=='true'
+        await page.locator('#masterMute').click()
+        assert await page.locator('#masterMute').inner_text()=='MUTE'
+        # Hover and active feedback stays visual and does not change native fader geometry.
+        cap0=page.locator('[data-fader="0"] .cap')
+        await cap0.hover()
+        fader_hover=await cap0.evaluate("(e)=>getComputedStyle(e).filter")
+        assert 'brightness(1.19)' in fader_hover, fader_hover
+        button=page.locator('[data-mute="0"]')
+        await button.hover()
+        await page.wait_for_timeout(150)  # Finish 90 ms physical-switch filter transition.
+        button_hover=await button.evaluate("(e)=>getComputedStyle(e).filter")
+        assert 'brightness(1.13)' in button_hover,button_hover
+        # FX power and FX name remain separate inside the 104px channel strip.
+        assert await page.evaluate("""() => [...document.querySelectorAll('.strip .insert-slot')].every(slot=>{
+            const cell=slot.getBoundingClientRect(),strip=slot.closest('.strip').getBoundingClientRect();
+            return cell.x>=strip.x-1&&cell.right<=strip.right+1&&cell.height===27
+        })"""), 'FX power overflow or slot geometry changed'
+        # Channel identities are real editable state, not only colored labels.
+        await page.locator('[data-editstrip="0"]').click()
+        assert await page.locator('#channelIdentity').is_visible()
+        await page.locator('#identityName').fill('Vocal Main')
+        await page.locator('[data-icon-choice="🎙"]').click()
+        await page.locator('[data-color-choice="#cf6b1e"]').click()
+        await page.locator('#identitySave').click()
+        assert await page.locator('#channelIdentity').is_hidden()
+        assert await page.locator('[data-editstrip="0"] .strip-caption').inner_text()=='Vocal Main'
+        assert await page.locator('[data-editstrip="0"] .track-icon').inner_text()=='🎙'
+        assert await page.evaluate('durableSession().channels[0].color')=='#cf6b1e'
+        # Channel name editor cancel must not overwrite committed changes.
+        await page.locator('[data-editstrip="0"]').click()
+        await page.locator('#identityName').fill('This Should Not Persist')
+        await page.locator('#identityCancel').click()
+        assert await page.locator('[data-editstrip="0"] .strip-caption').inner_text()=='Vocal Main'
+        # Master FX chain has its own slots and independent quick power.
+        assert await page.locator('.master-fx-slot').count()==6
+        assert await page.locator('[data-fader="master"] .cap.master-cap').count()==1
+        master_fader_debug=await page.locator('[data-fader="master"] .cap.master-cap').evaluate("""(el)=>{
+            const c=getComputedStyle(el),p=getComputedStyle(el.parentElement),r=el.getBoundingClientRect();
+            return {display:c.display,visibility:c.visibility,opacity:c.opacity,background:c.backgroundImage.slice(0,62),
+              parent:{height:el.parentElement.getBoundingClientRect().height,width:el.parentElement.getBoundingClientRect().width},
+              rect:{x:r.x,y:r.y,width:r.width,height:r.height},top:c.top,zIndex:c.zIndex,pos:el.style.getPropertyValue('--pos'),parentPosition:p.position};
+        }""")
+        assert master_fader_debug['display']!='none' and master_fader_debug['visibility']=='visible'
+        assert (master_fader_debug['rect']['width'],master_fader_debug['rect']['height'])==(31,90)
+        assert master_fader_debug['background'].startswith('url("data:image/png;base64,')
+        decoded=await page.locator('[data-fader="master"] .cap').evaluate("""async el => {
+          const bg=getComputedStyle(el).backgroundImage;
+          const image=new Image();image.src=bg.slice(5,-2);
+          await image.decode();
+          return {width:image.naturalWidth,height:image.naturalHeight};
+        }""")
+        assert decoded=={'width':31,'height':90}, 'Master red PNG did not decode'
+        a=await page.locator('[data-fader="0"]').bounding_box()
+        m=await page.locator('[data-fader="master"]').bounding_box()
+        assert abs(a['y']-m['y'])<=2,(a,m)
+        await page.locator('#modeToggle').click()
+        pro_a=await page.locator('[data-fader="0"]').bounding_box()
+        pro_m=await page.locator('[data-fader="master"]').bounding_box()
+        assert abs(pro_a['y']-pro_m['y'])<=2,(pro_a,pro_m)
+        await page.screenshot(path=str(project/'mixer-pro-view-review.png'),full_page=True)
+        await page.locator('#modeToggle').click()
+
+
+
+        masterPan=page.locator('[data-pan="master"]')
+        assert await masterPan.get_attribute('aria-valuenow')=='0'
+        await masterPan.focus()
+        await masterPan.press('ArrowRight')
+        assert await masterPan.get_attribute('aria-valuenow')=='1'
+        await masterPan.press('Home')
+        assert await masterPan.get_attribute('aria-valuenow')=='0'
+        assert await page.evaluate('durableSession().masterPan')==0
+        assert await page.locator('[data-master-insert="0"]').count()==1
+        await page.locator('[data-master-power="0"]').click()
+        assert await page.locator('[data-master-power="0"]').get_attribute('aria-pressed')=='false'
+        assert await page.evaluate('durableSession().masterBypassed["0"]') is True
+        await page.locator('[data-master-power="0"]').click()
+        assert await page.locator('[data-master-power="0"]').get_attribute('aria-pressed')=='true'
+        # Master insert selection can open an editor and replace the selected FX.
+        await page.locator('[data-master-insert="0"]').click()
+        assert await page.locator('#pluginModal').is_visible()
+        await page.locator('#closeBrowser').click()
+        assert await page.locator('#pluginModal').is_hidden()
+        assert await page.locator('#masterLufs').count()==1
+        assert await page.locator('#masterDbtp').count()==1
+        assert await page.locator('[data-clip]').count()==14
+        assert await page.locator('[data-meter="masterL"]').count()==1
+        assert await page.locator('[data-meter="masterR"]').count()==1
+        await page.evaluate('updateMeterVisual("masterL",99,performance.now())')
+        assert await page.locator('[data-clip="masterL"]').evaluate('(e)=>e.classList.contains("latched")')
+        await page.locator('[data-clip="masterL"]').click()
+        assert not await page.locator('[data-clip="masterL"]').evaluate('(e)=>e.classList.contains("latched")')
+        assert not await page.locator('.strip .insert-led').count()
+        assert await page.locator('.strip .insert-name').first.inner_text() != ''
+        assert await page.locator('.strip .insert-add-glyph').count()>0
+        await page.screenshot(path=str(project/'mixer-master-clip-review.png'),full_page=True)
+        # Click any passive part of master strip, it must gain the same full border.
+        await page.locator('#masterLeft .master-ch-id').click()
+        assert await page.locator('#masterLeft').evaluate('(e)=>e.classList.contains("selected")')
+        assert await page.locator('[data-strip="0"]').evaluate('(e)=>!e.classList.contains("selected")')
+        await page.locator('[data-strip="0"] .ch-id').click()
+        assert await page.locator('#masterLeft').evaluate('(e)=>!e.classList.contains("selected")')
+
+        pan=page.locator('[data-pan="0"]')
+        await pan.focus()
+        await pan.press('Home')
+        assert await pan.get_attribute('aria-valuenow')=='0'
+        await pan.press('ArrowRight')
+        assert await pan.get_attribute('aria-valuenow')=='1'
+        await pan.press('Shift+ArrowLeft')
+        assert await pan.get_attribute('aria-valuenow')=='-9'
+        await pan.press('End')
+        assert await pan.get_attribute('aria-valuenow')=='100'
+        await pan.press('Home')
+        bbox=await pan.bounding_box()
+        await page.mouse.click(bbox['x']+bbox['width']*.76,bbox['y']+20)
+        assert int(await pan.get_attribute('aria-valuenow'))>0
+        await pan.press('Home')
+        thumb=await pan.locator('.pan-thumb').bounding_box()
+        x=thumb['x']+thumb['width']/2
+        y=thumb['y']+thumb['height']/2
+        await page.mouse.move(x,y)
+        await page.mouse.down()
+        assert await pan.get_attribute('aria-valuenow')=='0','PAN jumped on grab'
+        await page.mouse.move(x+14,y,steps=3)
+        assert int(await pan.get_attribute('aria-valuenow'))>0
+        await page.mouse.up()
+        await pan.dblclick()
+        assert await pan.get_attribute('aria-valuenow')=='0'
+        assert not await page.locator('#editor').is_visible(),'PAN double click opened editor'
+
+        # Pixel-perfect state mapping uses original silver/red/green images, not CSS flats.
+        async def image_for(selector):
+            return await page.locator(selector).first.evaluate(
+                '(b) => getComputedStyle(b).backgroundImage')
+        assert "data:image/png;base64," in await image_for('[data-mute="0"]')
+        assert await image_for('[data-mute="0"]') == await image_for('[data-solo="0"]')
+        await page.locator('[data-mute="0"]').click()
+        assert await page.locator('[data-mute="0"]').get_attribute('aria-pressed') == 'true'
+        assert await image_for('[data-mute="0"]') != await image_for('[data-solo="0"]')
+        await page.locator('[data-solo="0"]').click()
+        assert await page.locator('[data-solo="0"]').get_attribute('aria-pressed') == 'true'
+        assert await image_for('[data-solo="0"]') != await image_for('[data-mute="0"]')
+        await page.locator('[data-mute="0"]').click()
+        await page.locator('[data-solo="0"]').click()
+        await page.locator('#masterMute').click()
+        assert await page.locator('#masterMute').get_attribute('aria-pressed') == 'true'
+        await page.locator('#masterMute').click()
+        assert await page.locator('#dim,#talkBtn,[data-master-tab]').count()==0
+
+        # The source image has a real metallic body and a long cast shadow.
+        # The body must travel inside the track, centered on image y=35.
+        geometry=await page.evaluate("""async () => {
+            const slots=[...document.querySelectorAll('[data-fader]')];
+            const heads=slots.map(f => {
+                const c=f.querySelector('.cap'),b=c.getBoundingClientRect(),r=f.getBoundingClientRect();
+                const s=getComputedStyle(c);
+                return {width:b.width,height:b.height,bodyInside:b.top>=r.top-1 && b.top+66<=r.bottom+1,
+                        top:b.top,trackTop:r.top,radius:s.borderRadius,
+                        bg:s.backgroundImage,transform:s.transform};
+            });
+            const uri=heads[0].bg.match(/data:image\\/png;base64,[a-zA-Z0-9+/=]+/)?.[0];
+            if(!uri) throw new Error('Image data URI not found');
+            const image=new Image();image.src=uri;await image.decode();
+            return {heads,imgW:image.naturalWidth,imgH:image.naturalHeight};
+        }""")
+        assert len(geometry['heads'])==13
+        assert (geometry['imgW'],geometry['imgH'])==(31,90), geometry
+        for g in geometry['heads']:
+            assert (g['width'],g['height'])==(31,90),g
+            assert g['bodyInside'],g
+            assert g['radius']=='0px',g
+            assert 'matrix(1, 0, 0, 1, -15.5, -35)' in g['transform'],g
+        for fader in ('0','master'):
+            ctrl=page.locator(f'[data-fader="{fader}"]')
+            await ctrl.focus()
+            await ctrl.press('Home')
+            assert float(await ctrl.get_attribute('aria-valuenow'))==-60
+            await ctrl.press('End')
+            assert float(await ctrl.get_attribute('aria-valuenow'))==10
+        # Repaint at 0 dB, then dragging the head starts without a value jump.
+        channel=page.locator('[data-fader="0"]')
+        await channel.focus()
+        for _ in range(20):
+            await channel.press('ArrowDown')
+        original=float(await channel.get_attribute('aria-valuenow'))
+        cap=channel.locator('.cap')
+        rect=await cap.bounding_box()
+        cx=rect['x']+rect['width']/2
+        cy=rect['y']+35
+        await page.mouse.move(cx,cy)
+        await page.mouse.down()
+        assert float(await channel.get_attribute('aria-valuenow'))==original
+        await page.mouse.move(cx,cy+18,steps=3)
+        assert float(await channel.get_attribute('aria-valuenow'))<original
+        await page.mouse.up()
+        # Rail click/drag uses a relative offset; unlike the old absolute-position
+        # algorithm it never teleports the thumb under the initial pointer.
+        for name in ('0','master'):
+            rail=page.locator(f'[data-fader="{name}"]')
+            await rail.focus()
+            await rail.press('Home')
+            await rail.press('PageUp')
+            baseline=float(await rail.get_attribute('aria-valuenow'))
+            box=await rail.bounding_box()
+            await page.mouse.move(box['x']+box['width']/2,box['y']+box['height']*.75)
+            await page.mouse.down()
+            assert float(await rail.get_attribute('aria-valuenow'))==baseline,(name,baseline)
+            await page.mouse.move(box['x']+box['width']/2,box['y']+box['height']*.75-18,steps=3)
+            assert float(await rail.get_attribute('aria-valuenow'))>baseline,(name,baseline)
+            await page.mouse.up()
+        await page.screenshot(path=str(project/'fader-ui-smoke.png'),full_page=True)
         await page.locator('[data-view="FX RACK"]').click()
         await page.locator('[data-addplugin]').click()
         await page.locator("#pluginSearch").fill("de-esser")
@@ -31,6 +353,6 @@ async def main():
         assert await page.locator('.app.easy').count()==0
         assert not errors, errors
         await browser.close()
-    print("PASS: 12 strips, plugin chain, editor, reorder, signal flow, setup, easy/pro, no JS errors")
+    print("PASS: asset PNG for 13 faders, detent alignment, no-jump drag, endpoints, FX chain, no JS errors")
 
 if __name__=="__main__":asyncio.run(main())

@@ -220,3 +220,375 @@
 /* Utility icons, EQ editor, plugin categories and signal/rack workspace
  * intentionally RETAIN their original design. No imported rectangular PNG skin. */
 @media(prefers-reduced-motion:reduce){:where(.toolbar button,.left-rail button,.right-rail button,.strip button){transition:none!important}}
+
+
+/* ArSonMix v0.5 interaction polish — visual only, no signal-path side effects. */
+/* Pan fill starts at 0 (center) and grows toward the thumb in either direction. */
+.pan-track .pan-fill{
+ position:absolute;z-index:1;pointer-events:none;top:18px;height:5px;
+ left:calc(9px + (100% - 18px)*var(--pan-left,.5));
+ width:calc((100% - 18px)*var(--pan-span,0));
+ border-radius:2px;
+ background:linear-gradient(180deg,#92fff1 0%,#34d9af 39%,#08ae85 100%);
+ box-shadow:0 0 6px 1px #37efb0ba,0 0 3px #b7fff4;
+ transition:none;
+}
+.pan-track:hover .pan-fill{filter:brightness(1.25);box-shadow:0 0 7px #57fcd6ae}
+.pan-track.is-dragging .pan-fill{filter:brightness(1.55)}
+/* At small pan offsets the metal thumb occludes the short LED ribbon:
+   a subtle aqua edge makes every nonzero position observable. */
+.pan-track:not([aria-valuenow="0"]) .pan-thumb{
+ filter:drop-shadow(0 0 3px #35efbfba) drop-shadow(1px 1px 2px #0008);
+}
+.pan-track:not([aria-valuenow="0"]):hover .pan-thumb{
+ filter:brightness(1.3) contrast(1.12) drop-shadow(0 0 5px #69ffe8);
+}
+.pan-track:hover .pan-thumb{filter:brightness(1.30) contrast(1.12) drop-shadow(0 0 4px #b4f7ff90)}
+.pan-track.is-dragging .pan-thumb{filter:brightness(.72) contrast(1.20) drop-shadow(0 0 4px #52fbd590)}
+/* Keep original metallic PNG, dimensions and translating anchor EXACTLY unchanged. */
+.fader:hover .cap,.fader .cap:hover{filter:brightness(1.30) contrast(1.11) drop-shadow(0 0 4px #d8f6ff8c)!important}
+.fader.is-dragging .cap,.fader:active .cap{filter:brightness(.72) contrast(1.19) drop-shadow(0 0 6px #59cae6)!important}
+/* Physical feedback; visual state retains semantic color and the original PNG. */
+:is(.strip .channel-actions button,.strip .utility-row button,.strip .fader-tools button,
+ .left-rail .tabs button,.right-rail .master-tabs button,.right-rail .master-right .right-button,
+ .left-rail .rail-presets button,.left-rail .rail-bottom button,
+ .toolbar .nav button,.toolbar .mode-pill,.right-rail .master-right #talkBtn):hover{
+ filter:brightness(1.30) contrast(1.10)!important;
+}
+:is(.strip .channel-actions button,.strip .utility-row button,.strip .fader-tools button,
+ .left-rail .tabs button,.right-rail .master-tabs button,.right-rail .master-right .right-button,
+ .left-rail .rail-presets button,.left-rail .rail-bottom button,
+ .toolbar .nav button,.toolbar .mode-pill,.right-rail .master-right #talkBtn):active{
+ filter:brightness(.72) contrast(1.22)!important;
+}
+/* Each occupied FX slot has two *independent* targets: label/edit and on/off.
+   Empty slots stay full width. Never make entire insert visually disabled. */
+.strip .rack .insert-slot{height:25px;min-height:25px;display:flex;align-items:stretch;gap:2px;min-width:0;width:100%}
+.strip .rack .insert-slot .insert{flex:1 1 0;width:auto;min-width:0;overflow:hidden;white-space:nowrap}
+.strip .rack .insert-slot .insert-name{display:block;flex:1;min-width:0;text-overflow:ellipsis;white-space:nowrap;overflow:hidden}
+.strip .rack .insert-slot .insert-led{flex:0 0 14px}
+.strip .rack .insert-slot .fx-power{
+ width:22px;min-width:22px;max-width:22px;height:25px;min-height:25px;
+ border:1px solid #106f72;border-radius:3px;cursor:pointer;
+ color:#76fff4;font:700 15px/1 'Segoe UI',sans-serif;
+ background:linear-gradient(180deg,#28424a,#09272b 52%,#0e333a);
+ box-shadow:inset 0 1px #b4f8e74d,0 1px #0009;
+ text-shadow:0 0 5px #4ddca59a;padding:0;display:grid;place-items:center;
+ transition:filter 90ms ease,box-shadow 90ms ease;
+}
+.strip .rack .insert-slot .fx-power.is-bypassed{
+ color:#637884;text-shadow:none;border-color:#34444c;
+ background:linear-gradient(#1e292f,#0d1419 55%,#1b282e);
+ box-shadow:inset 0 1px #7e94942c,0 1px #0008;
+}
+.strip .rack .insert-slot.is-bypassed .insert{color:#788e9b!important;filter:saturate(.55)}
+.strip .rack .insert-slot.is-bypassed .insert-led{filter:grayscale(1) brightness(.6)}
+.strip .rack .insert-slot .fx-power:hover{
+ filter:brightness(1.45)!important;box-shadow:inset 0 1px #d9ffed88,0 0 5px #48f9be7b
+}
+.strip .rack .insert-slot .fx-power:active{filter:brightness(.65) contrast(1.15)!important;transform:translateY(1px)}
+.strip .rack .insert-slot .fx-power:focus-visible{outline:2px solid #8cfbe7;outline-offset:1px}
+/* Existing FX Rack power button shows consistent enabled vs bypassed state. */
+.chain-node button[data-chainbypass]{width:34px;padding:0;min-width:34px;font-size:19px;line-height:1}
+.chain-node button[data-chainbypass].power-on{color:#61f9df;border-color:#1a988e;background:linear-gradient(#1c4648,#073037)}
+.chain-node button[data-chainbypass].is-bypassed{color:#6f8390;border-color:#364954;background:linear-gradient(#26323a,#131d24)}
+.chain-node button[data-chainbypass]:hover{filter:brightness(1.30)}
+.chain-node button[data-chainbypass]:active{filter:brightness(.74);transform:translateY(1px)}
+/* Clear selection without noisy new gradients or changing other control geometry. */
+.strip.selected .ch-id{box-shadow:inset 0 0 0 1px #8fe4ff3b}
+@media(prefers-reduced-motion:reduce){.fx-power,.pan-fill{transition:none!important}}
+
+/* v0.6: subdued hardware feedback and center detent (zero snap in JS). */
+.pan-track:not([aria-valuenow="0"]) .pan-thumb,
+.pan-track:not([aria-valuenow="0"]):hover .pan-thumb{filter:brightness(1.08) drop-shadow(1px 1px 2px #0009)!important}
+.pan-track:hover .pan-thumb{filter:brightness(1.12) drop-shadow(1px 1px 2px #000a)!important}
+.pan-track.is-dragging .pan-thumb{filter:brightness(.9) drop-shadow(0 1px 1px #000c)!important}
+.pan-track .pan-fill{height:3px;top:19px;background:#35caac;box-shadow:none!important;filter:none!important}
+.pan-track:hover .pan-fill,.pan-track.is-dragging .pan-fill{filter:none!important;box-shadow:none!important}
+.pan-track::after{z-index:2;top:15px;height:11px;background:#829aa6;box-shadow:0 0 0 1px #071016}
+.fader:hover .cap,.fader .cap:hover{filter:brightness(1.19) contrast(1.06) drop-shadow(0 1px 3px #c6deef70)!important}
+.fader.is-dragging .cap,.fader:active .cap{filter:brightness(.82) contrast(1.11) drop-shadow(0 1px 3px #244c5b)!important}
+:is(.strip .channel-actions button,.strip .utility-row button,.strip .fader-tools button,.left-rail .tabs button,
+ .right-rail .master-tabs button,.right-rail .master-right .right-button,.left-rail .rail-presets button,.left-rail .rail-bottom button,
+ .toolbar .nav button,.toolbar .mode-pill,.right-rail .master-right #talkBtn):hover{filter:brightness(1.13) contrast(1.05)!important}
+:is(.strip .channel-actions button,.strip .utility-row button,.strip .fader-tools button,.left-rail .tabs button,
+ .right-rail .master-tabs button,.right-rail .master-right .right-button,.left-rail .rail-presets button,.left-rail .rail-bottom button,
+ .toolbar .nav button,.toolbar .mode-pill,.right-rail .master-right #talkBtn):active{filter:brightness(.87) contrast(1.09)!important}
+.strip .rack .insert-slot .insert{padding:0 4px;font-size:9.5px;text-align:left}
+.strip .rack .insert-slot .insert-name{min-width:0;text-overflow:ellipsis}
+.strip .rack .insert-slot .fx-power{width:19px;min-width:19px;max-width:19px;font-size:13px}
+.strip .rack .insert-add-glyph{flex:0 0 10px;color:#63c8e1;font-size:12px;line-height:1}
+.strip .strip-name .strip-caption{max-width:96%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.strip .strip-name:hover{filter:brightness(1.12)}
+/* Channel identity: console-matched floating control panel, not a page takeover. */
+.identity-overlay{z-index:60;background:#03090d88;display:grid;place-items:center}
+.identity-overlay.hidden{display:none}
+.identity-panel{width:min(390px,calc(100vw - 30px));padding:16px 18px 17px;color:#d9e7ef;border-radius:7px;
+ background:linear-gradient(150deg,#2a3944,#111e27 48%,#15232c);
+ border:1px solid #5a7481;box-shadow:0 16px 48px #000c,inset 0 1px #b8d4df46}
+.identity-top{display:flex;align-items:center;justify-content:space-between}
+.identity-kicker{font:600 10px Consolas,monospace;color:#74c7e2;letter-spacing:1px}
+.identity-close{width:27px;height:25px;color:#bdcad2;border:1px solid #48606e;
+ background:linear-gradient(#364651,#14212a);border-radius:3px;cursor:pointer}
+.identity-heading{font-size:18px;font-weight:600;margin:5px 0 19px;color:#f3f9fc}
+.identity-label{display:block;font:600 10px 'Segoe UI',sans-serif;letter-spacing:1px;color:#91b8c8;margin:15px 0 8px}
+#identityName{width:100%;height:36px;padding:0 10px;font:500 14px 'Segoe UI';color:#f4fbfd;
+ background:#0b1921;border:1px solid #43606c;box-shadow:inset 0 2px 5px #0008;border-radius:4px;outline:none}
+#identityName:focus{border-color:#55c8e4}
+.identity-icons,.identity-colors{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:7px}
+.identity-icon{height:35px;border-radius:4px;border:1px solid #324550;color:#dbeef6;cursor:pointer;
+ background:linear-gradient(#304452,#162530);font-size:17px}
+.identity-icon.selected{border-color:#6bd5ea;background:linear-gradient(#226682,#123448);box-shadow:inset 0 0 0 1px #62dafa66}
+.identity-color{height:28px;border:2px solid #101b22;border-radius:4px;background:var(--choice);cursor:pointer;box-shadow:inset 0 1px #fff5,0 2px 4px #0009}
+.identity-color.selected{outline:2px solid #eefaff;outline-offset:1px}
+.identity-actions{display:flex;justify-content:flex-end;margin-top:21px}
+#identitySave{height:34px;padding:0 16px;border:1px solid #2799b8;border-radius:4px;color:#f1fbff;
+ background:linear-gradient(#257fa0,#0d4761);font:600 11px 'Segoe UI';cursor:pointer}
+#identitySave:hover{filter:brightness(1.12)}
+
+/* MASTER STRIP — matched physical segments and red master fader, without shrinking tools. */
+:root{--master-cap-asset:url("data:image/png;base64,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")}
+.right-rail{flex-basis:268px;min-width:253px}
+.master-workarea{padding:4px;gap:4px;min-height:0}
+.master-left{width:132px;flex:1 1 132px;min-width:112px;padding:0;overflow:hidden;gap:0;border-radius:2px;
+ background:linear-gradient(90deg,#1e303d,#141e26 47%,#1c2934)}
+.master-right{width:100px;flex:0 0 100px}
+.master-ch-id{height:35px;flex:0 0 35px;display:grid;place-items:center;
+ color:#f8f3f3;font:600 15px 'Segoe UI';letter-spacing:1px;border-top:2px solid #f4858d;
+ background:linear-gradient(120deg,#a12e37,#5e1926 58%,#3c121b);text-shadow:0 1px 2px #000d}
+.master-fx-rack{height:163px;flex:0 0 163px;display:flex;flex-direction:column;gap:4px;padding:7px 4px;
+ border-bottom:2px solid #04090d;background:linear-gradient(#111b22,#18232d)}
+.master-fx-title{height:12px;flex:0 0 12px;font:600 8px Consolas,monospace;color:#a1d9eb;letter-spacing:.3px}
+.master-fx-slot{height:22px;flex:0 0 22px;display:flex;min-width:0;gap:2px}
+.master-insert{min-width:0;flex:1 1 0;padding:0 4px;color:#c7dce8;overflow:hidden;
+ text-overflow:ellipsis;white-space:nowrap;text-align:left;border:1px solid #061219;border-radius:2px;
+ background:linear-gradient(#293b45,#111d25);font:500 9px 'Segoe UI';cursor:pointer}
+.master-insert.empty{color:#6ed0ea;background:linear-gradient(#14232d,#0b171f)}
+.master-insert:hover{filter:brightness(1.13)}
+.master-insert .insert-name{overflow:hidden;display:block;text-overflow:ellipsis}
+.master-fx-power{width:19px;flex:0 0 19px;padding:0;border-radius:2px;
+ border:1px solid #14656a;background:linear-gradient(#28535a,#092a31);color:#7cfce3;
+ font:700 13px 'Segoe UI';cursor:pointer}
+.master-fx-slot.is-bypassed .master-insert{opacity:.57}
+.master-fx-power.is-bypassed{color:#8697a3;background:linear-gradient(#2b363a,#15212a);border-color:#334854}
+.master-meter-info{height:174px;flex:0 0 174px;padding:10px 8px 6px;border-bottom:1px solid #060c11;
+ background:linear-gradient(#1f2e38,#121d26)}
+.master-info-kicker{color:#85c7dc;font:700 9px 'Segoe UI';letter-spacing:.3px;margin-bottom:13px}
+.master-info-kicker span{color:#caae64;font:700 8px Consolas,monospace;float:right}
+.master-info-row{display:flex;align-items:center;justify-content:space-between;
+ font:600 10px Consolas,monospace;color:#93b0be;margin-bottom:12px;gap:5px}
+.master-info-row strong{color:#edda8c;font:600 14px Consolas,monospace}
+.master-info-note{font:8px Consolas,monospace;color:#7c93a0;letter-spacing:0;white-space:nowrap}
+.master-action-space{height:82px;flex:0 0 82px;display:flex;flex-direction:column;
+ align-items:center;justify-content:center;gap:8px;border-bottom:1px solid #091117;
+ color:#72bdd5;font:600 10px 'Segoe UI'}
+.master-stereo-symbol{color:#3da1bd;font-size:14px}
+.master-db{height:35px;flex:0 0 35px;display:grid;place-items:center;
+ color:#f5db8a;background:linear-gradient(#1e2c35,#101a23);font:700 12px Consolas,monospace}
+.master-fader-zone{flex:1;min-height:95px;display:flex;gap:2px;padding:7px 4px 5px;
+ border-top:1px solid #43515d;background:linear-gradient(90deg,#1a2730,#131e25,#23303a)}
+.master-fader-zone .scale{width:18px;flex:0 0 18px;font-size:8px}
+.master-fader-zone .fader{flex:1;min-width:29px}
+.master-fader-zone .fader .cap{
+ background-image:var(--master-cap-asset)!important;background-repeat:no-repeat!important;
+ background-position:center!important;background-size:31px 90px!important;
+}
+.master-fader-zone .meter-unit{min-width:10px;width:11px;flex:0 0 11px}
+.master-fader-zone .meter-unit .meter{width:100%;min-width:0}
+.master-fader-zone .meter-channel-label{font:700 8px Consolas,monospace;color:#9bcadd}
+.master-tools{height:40px;flex:0 0 40px;display:flex;align-items:center;justify-content:center;
+ background:linear-gradient(#202d36,#101922);border-top:1px solid #40515b}
+.master-tools button{font:600 9px 'Segoe UI';padding:5px 8px;color:#a9dbea;
+ border:1px solid #3c5d6a;border-radius:3px;background:linear-gradient(#264555,#122a35);
+ cursor:pointer}
+.master-tools button:hover{filter:brightness(1.14)}
+.master-left .master-fader-label{height:72px;min-height:72px;flex:0 0 72px;margin-top:0;
+ display:grid;place-items:center;border-top:3px solid #be3b46;color:#fce4e4;
+ background:linear-gradient(135deg,#5a212b,#25171d 80%)!important;font-size:11px}
+/* Channel and master meters: subtle industrial scale + red peak-hold + click-reset CLIP LED. */
+.scale{background:repeating-linear-gradient(to bottom,#607482aa 0 1px,transparent 1px 10px) right 2px top / 5px 100% no-repeat}
+.meter{overflow:visible}
+.meter .meter-fill{bottom:2px;max-height:calc(100% - 14px)}
+.meter .clip-led{position:absolute;top:3px;left:1px;right:1px;width:calc(100% - 2px);height:8px;
+ border:1px solid #54616c;border-radius:2px;z-index:4;cursor:pointer;padding:0;
+ background:linear-gradient(#45484c,#161d23);box-shadow:inset 0 1px #c8d3db56,0 1px 1px #0009}
+.meter .clip-led.latched{background:linear-gradient(#ffb4a1,#ee4139 46%,#86121b);
+ border-color:#f85a58;box-shadow:0 0 5px #ec343a88,inset 0 1px #fff8}
+.meter .meter-peak{position:absolute;z-index:3;left:1px;right:1px;height:2px;
+ background:#fb5b50;box-shadow:0 0 2px #f54a56aa;pointer-events:none}
+.meter-unit{position:relative;display:flex;flex-direction:column;min-height:0}
+.meter-unit .meter{height:100%;flex:1;min-height:0}
+
+/* Full-height selected strip: thin tinted outline, no disruptive thick border. */
+.strip.selected{box-shadow:inset 2px 0 #e2a86a,inset -2px 0 #e2a86a,inset 0 0 0 1px #e2a86a6c}
+.strip.selected::before{content:"";position:absolute;inset:0;border-top:1px solid #f4ce8b6b;
+ border-bottom:2px solid #db935c;pointer-events:none;z-index:6}
+.strip.selected .strip-name{box-shadow:inset 0 0 0 1px #ffd79f40}
+.strip .rack .insert-slot .insert:hover{color:#dff4fd!important}
+.strip .rack .insert-slot .insert-name{letter-spacing:-.15px}
+
+/* Align master slider band to input faders across EASY and PRO.
+ * Master-side tabs occupy 40px, so compensate through region heights. */
+.app.easy .master-fx-rack{height:132px;flex:0 0 132px;padding:5px 4px;gap:3px}
+.app.easy .master-fx-rack .master-fx-slot:last-child{display:none}
+.app.easy .master-fx-rack .master-fx-slot{height:22px;flex-basis:22px}
+.app.easy .master-meter-info{height:84px;flex:0 0 84px;padding:5px 7px 3px}
+.app.easy .master-info-kicker{font-size:8px;margin-bottom:5px}
+.app.easy .master-info-row{font-size:9px;margin-bottom:5px}
+.app.easy .master-info-row strong{font-size:12px}
+.app.easy .master-info-note{font-size:7px}
+.app.easy .master-action-space{height:39px;flex:0 0 39px;flex-direction:row;gap:5px;font-size:9px}
+.app.easy .master-stereo-symbol{font-size:10px}
+.app:not(.easy) .master-meter-info{height:150px;flex:0 0 150px}
+.app:not(.easy) .master-info-kicker{margin-bottom:9px}
+.app:not(.easy) .master-info-row{margin-bottom:8px}
+.app:not(.easy) .master-action-space{height:66px;flex:0 0 66px}
+
+/* Master add-slot uses one leading plus icon, matching channel strips. */
+.master-insert.empty{display:flex;align-items:center;gap:3px}
+.master-insert-add{color:#75d4e9;font:700 12px/1 Consolas,monospace;flex:0 0 auto}
+.master-insert.empty .insert-name{min-width:0;white-space:nowrap}
+
+/* v0.6 MASTER-IN-STRIP: all thirteen strips share identical vertical bands. */
+
+.mixer{gap:0}
+.strip.master-strip{--ch:#a32836;flex:0 0 138px;min-width:138px;max-width:138px}
+#masterLeft{display:flex;flex-direction:column;height:100%;padding:0;margin:0;overflow:hidden;border-left:2px solid #4c5962}
+#masterLeft .master-ch-id{height:35px;flex:0 0 35px;border-top:2px solid #f18a97;border-bottom:2px solid #070b10;letter-spacing:.45px}
+#masterLeft .master-fx-rack,
+.app.easy #masterLeft .master-fx-rack,.app:not(.easy) #masterLeft .master-fx-rack{
+ height:163px;flex:0 0 163px;padding:7px 4px;gap:4px;display:flex;flex-direction:column}
+#masterLeft .master-fx-slot{flex:0 0 25px;height:25px;min-height:25px}
+#masterLeft .master-fx-rack .master-insert{font-size:9px;line-height:1.1}
+#masterLeft .master-controls-zone{height:215px;flex:0 0 215px;display:flex;flex-direction:column;align-items:stretch;padding:0 5px}
+#masterLeft .master-analysis{flex:0 0 91px;height:91px;margin:5px 0 2px;padding:5px 7px;background:#0e1c26;border:1px solid #314451;border-radius:2px}
+#masterLeft .master-analysis .master-info-kicker{font:600 8px Consolas,monospace;margin:0 0 7px;white-space:nowrap}
+#masterLeft .master-analysis .master-info-row{font:9px Consolas,monospace;margin:0 0 6px;line-height:13px}
+#masterLeft .master-analysis .master-info-row strong{font:600 11px Consolas,monospace}
+#masterLeft .master-pan-wrap{flex:0 0 76px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:0}
+#masterLeft .master-pan-wrap .knob-label{margin:2px 0 0}
+#masterLeft .pan-control{width:100%;padding:0 8px}
+#masterLeft .master-monitor-label{margin-top:auto;margin-bottom:7px;text-align:center;letter-spacing:.8px;font:700 9px Consolas,monospace;color:#8ccada}
+#masterLeft .master-actions{height:41px;flex:0 0 41px;gap:4px}
+#masterLeft .master-actions button{font-size:9px}
+#masterLeft .master-actions #masterMute.active{background:var(--skin-small-mute) center/100% 100% no-repeat!important;color:white!important}
+#masterLeft .master-db{height:35px;flex:0 0 35px;background:linear-gradient(#192b34,#0c1921);font:700 12px Consolas,monospace;color:#e9c680}
+#masterLeft .master-fader-zone{flex:1 1 auto;min-height:90px;height:auto;gap:3px;padding:4px 5px 7px;display:flex;background:linear-gradient(90deg,#1e2931,#111a21 10%,#202b32 60%,#111b23)}
+#masterLeft .master-fader-zone .scale{width:18px;flex:0 0 18px;font-size:8px}
+#masterLeft .master-fader-zone .fader{flex:1 1 auto;min-width:31px}
+#masterLeft .master-fader-zone .fader .cap{background-image:var(--master-cap-asset)!important;background-repeat:no-repeat!important;background-position:center top!important;background-size:31px 90px!important}
+#masterLeft .master-fader-zone .meter-unit{min-width:11px;width:11px;flex:0 0 11px;position:relative}
+#masterLeft .master-fader-zone .meter-unit .meter{min-width:0;width:100%;height:calc(100% - 11px)}
+#masterLeft .master-fader-zone .meter-channel-label{height:10px;line-height:10px;position:absolute;bottom:0;width:100%;text-align:center}
+#masterLeft .master-tools{height:40px;flex:0 0 40px;padding:3px 5px;display:flex;gap:4px}
+#masterLeft .master-tools button{flex:1 1 0;min-width:0;height:27px;font-size:8px;padding:0 2px;background:var(--skin-small-off) center/100% 100% no-repeat;color:#182b35}
+#masterLeft .master-tools button.active{background:var(--skin-small-phase) center/100% 100% no-repeat;color:white}
+#masterLeft .master-strip-name{height:72px;flex:0 0 72px;border-top:3px solid #b53648;color:#fff;background:linear-gradient(125deg,#752536,#27131b 85%)!important;gap:9px}
+#masterLeft .master-strip-name .track-icon{font-size:15px;line-height:19px}
+.strip.selected{box-shadow:inset 2px 0 #f0aa57,inset -2px 0 #f0aa57,inset 0 0 0 1px #eec07988}
+.strip.selected::before{content:"";position:absolute;inset:0;z-index:6;pointer-events:none;border:2px solid #eda458;border-radius:2px;box-shadow:inset 0 0 0 1px #f8d79a42,0 0 5px #e59e3960}
+.pan-track::after{background:linear-gradient(#eef8ff,#9eb5c2);width:2px;height:18px;top:11px;box-shadow:0 0 1px #fff,0 1px 2px #000}
+.pan-track.is-centered::after{background:#ecfbff;box-shadow:0 0 0 1px #27485a,0 0 3px #f8ffff}
+/* Keep snap visible through a crisp detent, not a glowing metal slider. */
+
+
+/* Mode-aware master: exactly the same vertical grid as channel 1. */
+.app.easy #masterLeft .master-fx-rack{height:130px;flex:0 0 130px;padding:5px 4px;gap:2px}
+.app.easy #masterLeft .master-fx-slot{height:22px;min-height:22px;flex:0 0 22px}
+.app.easy #masterLeft .master-fx-slot:last-child{display:none}
+.app.easy #masterLeft .master-controls-zone{height:127px;flex:0 0 127px;justify-content:flex-start;padding-top:5px}
+.app:not(.easy) #masterLeft .master-controls-zone{height:212px;flex:0 0 212px;justify-content:center}
+#masterLeft .master-controls-zone .master-pan-wrap{flex:0 0 63px}
+#masterLeft .master-controls-zone .master-monitor-label{display:none}
+.app.easy #masterLeft .master-tools{height:31px;flex:0 0 31px}
+.app.easy #masterLeft .master-strip-name{height:61px;flex:0 0 61px}
+#masterLeft .master-fader-zone{position:relative;padding-bottom:70px}
+#masterLeft .master-analysis{
+ position:absolute;left:4px;right:4px;bottom:3px;height:64px;min-height:64px;
+ margin:0;padding:3px 7px;background:linear-gradient(#152735,#091721);
+ border:1px solid #324a59;border-radius:2px;
+ box-shadow:inset 0 1px #6d929f48,0 -1px 4px #0007;z-index:2}
+#masterLeft .master-analysis .master-info-kicker{font-size:8px;margin:0 0 3px}
+#masterLeft .master-analysis .master-info-row{line-height:10px;font-size:9px;margin:0 0 3px}
+#masterLeft .master-analysis .master-info-row strong{font-size:10px}
+
+/* Master output is an identity chip, not a dummy routing action. */
+#masterLeft .master-stereo-badge{
+ flex:1 1 0;min-width:0;height:29px;display:grid;place-items:center;
+ font:600 9px 'Segoe UI',sans-serif;letter-spacing:.5px;
+ background:linear-gradient(#293944,#15232e 54%,#233541);
+ border:1px solid #394d58;border-radius:3px;color:#9acada;
+ box-shadow:inset 0 1px #7e9fad39;
+}
+#masterLeft .master-route-label{
+ flex:1 1 0;display:grid;place-items:center;color:#d3f2fc;
+ font:600 9px Consolas,monospace;letter-spacing:.1px;
+ border:1px solid #205d7f;background:linear-gradient(#164661,#0c263d);
+ border-radius:2px;min-width:0;white-space:nowrap;
+}
+#masterLeft .master-strip-name .track-icon{display:grid;place-items:center}
+
+
+/* Premium console v0.7 — six visible VST insert slots per strip, shared geometry. */
+.strip .rack,.app.easy .strip .rack,.app:not(.easy) .strip .rack,
+#masterLeft .master-fx-rack,.app.easy #masterLeft .master-fx-rack,.app:not(.easy) #masterLeft .master-fx-rack{
+ height:196px;flex:0 0 196px;min-height:196px;gap:4px;padding:7px 4px;overflow:hidden;
+ display:flex;flex-direction:column
+}
+.strip .rack .insert-slot,#masterLeft .master-fx-slot,
+.app.easy #masterLeft .master-fx-slot{
+ height:27px;min-height:27px;flex:0 0 27px;max-height:27px;gap:2px;
+}
+.app.easy #masterLeft .master-fx-slot:last-child{display:flex}
+.strip .rack .insert-slot .insert{height:27px;min-height:27px}
+.strip .rack .insert-slot .fx-power{height:27px;min-height:27px}
+#masterLeft .master-fx-power{height:27px}
+#masterLeft .master-insert{height:27px;min-height:27px}
+#masterLeft .master-controls-zone{justify-content:center;align-items:stretch;gap:2px}
+.app.easy #masterLeft .master-controls-zone{justify-content:center;padding-top:0}
+#masterLeft .master-controls-zone .master-pan-wrap{flex:0 0 56px;min-height:56px;margin:0;padding:0}
+#masterLeft .master-controls-zone .master-analysis{
+ position:static;flex:0 0 55px;height:55px;min-height:55px;width:100%;
+ padding:3px 7px;margin:0;border-radius:2px;
+}
+#masterLeft .master-controls-zone .master-analysis .master-info-kicker{margin:0 0 3px}
+#masterLeft .master-controls-zone .master-analysis .master-info-row{margin:0 0 3px;line-height:9px;font-size:9px}
+#masterLeft .master-controls-zone .master-analysis .master-info-row strong{font-size:10px}
+#masterLeft .master-fader-zone{padding-bottom:7px}
+#masterLeft .master-fader-zone .meter-unit .meter{height:calc(100% - 11px)}
+/* PAN numeric readouts replace a redundant PAN heading and make L / R explicit. */
+.pan-control{gap:0}
+.pan-control .pan-readline{width:100%;padding:0 6px;margin:-2px 0 0;display:grid;align-items:center;
+ grid-template-columns:18px minmax(0,1fr) 18px;height:16px;line-height:16px;
+ font:700 9px Consolas,monospace;color:#7fa6bb}
+.pan-control .pan-readline strong{font:700 10px Consolas,monospace;color:#8be2f5;
+ text-align:center;white-space:nowrap}
+.pan-control .pan-readline span:first-child{text-align:left}
+.pan-control .pan-readline span:last-child{text-align:right}
+#masterLeft .pan-control{padding:0 5px}
+/* The master selected state reuses the same 2px uninterrupted outline as inputs. */
+#masterLeft.selected{box-shadow:inset 2px 0 #f0aa57,inset -2px 0 #f0aa57,inset 0 0 0 1px #eec07988}
+#masterLeft.selected::before{content:"";position:absolute;inset:0;z-index:6;
+ pointer-events:none;border:2px solid #eda458;border-radius:2px;
+ box-shadow:inset 0 0 0 1px #f8d79a42,0 0 5px #e59e3960}
+/* On shorter desktops prioritize six FX while retaining a usable fader throw. */
+@media (max-height:760px){
+ .strip .rack,.app.easy .strip .rack,.app:not(.easy) .strip .rack,
+ #masterLeft .master-fx-rack,.app.easy #masterLeft .master-fx-rack,.app:not(.easy) #masterLeft .master-fx-rack{height:172px;flex-basis:172px;min-height:172px;gap:2px;padding:5px 4px}
+ .strip .rack .insert-slot,#masterLeft .master-fx-slot,.app.easy #masterLeft .master-fx-slot{height:25px;min-height:25px;flex-basis:25px}
+ .strip .rack .insert-slot .insert,.strip .rack .insert-slot .fx-power,
+ #masterLeft .master-insert,#masterLeft .master-fx-power{height:25px;min-height:25px}
+}
+
+/* Geometry correction measured by Chromium: EASY master controls need 94px,
+   not 127px, when both channel and master FX racks are the same height. */
+.app.easy #masterLeft .master-controls-zone{height:94px;flex:0 0 94px;min-height:94px;
+ padding:0 5px;gap:0;justify-content:flex-start}
+.app.easy #masterLeft .master-controls-zone .master-analysis,
+#masterLeft .master-controls-zone .master-analysis{
+ height:38px;min-height:38px;flex:0 0 38px;padding:1px 5px;margin:0;overflow:hidden
+}
+#masterLeft .master-controls-zone .master-analysis .master-info-kicker{font:600 8px/9px Consolas,monospace;margin:0}
+#masterLeft .master-controls-zone .master-analysis .master-info-row{font:9px/9px Consolas,monospace;margin:0;min-height:9px}
+#masterLeft .master-controls-zone .master-analysis .master-info-row strong{font:600 10px/9px Consolas,monospace}
+#masterLeft .master-controls-zone .master-pan-wrap{flex:0 0 56px;min-height:56px;max-height:56px}

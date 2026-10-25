@@ -17,8 +17,8 @@ test('native app never runs demo sine meters',()=>{
 test('native meter reads DSP and hides all 11 visual-only channels',()=>{
   assert.match(bridge,/inputLevel=percent\(d\.inputPeak\)/);
   assert.match(bridge,/outputLevel=percent\(d\.peak\)/);
-  assert.ok(bridge.includes("masterMeterL:liveOutputLeft"));
-  assert.ok(bridge.includes("masterMeterR:liveOutputRight"));
+  assert.ok(bridge.includes('["masterL",liveOutputLeft]'));
+  assert.ok(bridge.includes('["masterR",liveOutputRight]'));
   assert.match(bridge,/track\.dataset\.preview="1"/);
   assert.ok(bridge.includes("meter-fill{opacity:0!important}"));
 });
@@ -26,10 +26,10 @@ test('quick FX bypass is wired to native slot instead of demo mock',()=>{
   assert.match(bridge,/data-native-fx="bypass" data-slot="\$\{i\}"/);
   assert.match(bridge,/aria-pressed="\$\{!p\.bypass\}"/);
   assert.match(bridge,/send\("fxBypass",\{slot,value:!state\.chain\[slot\]\?\.bypass\}\)/);
-  assert.match(engine,/bypassFlags_\[index\]\.store/);
+  assert.match(engine,/graphOwned_->bypassFlags\[index\]\.store/);
 });
 test('GUI pan event reaches actual callback pan matrix',()=>{
-  assert.match(app,/send\('pan',c\.pan,idx\)/);
+  assert.match(app,/send\(master\?'masterPan':'pan',c\.pan,master\?-1:idx\)/);
   assert.match(main,/name == "pan" && channel == 1/);
   assert.match(engine,/StereoPanMatrix::fromNormalized/);
 });
