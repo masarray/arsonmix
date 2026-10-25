@@ -168,6 +168,22 @@ private:
             browser_.emitEventIfBrowserIsVisible ("arMixCatalog", catalog_.snapshot());
     }
 
+    // Every plugin insert request gets a structured result. A toast behind
+    // a modal is not an actionable failure report for live performers.
+    void emitFxAddResult (int requestId, const juce::String& name,
+                          const juce::String& error, unsigned int elapsedMs)
+    {
+        auto response = std::make_unique<juce::DynamicObject>();
+        response->setProperty ("requestId", requestId);
+        response->setProperty ("name", name);
+        response->setProperty ("ok", error.isEmpty());
+        response->setProperty ("error", error);
+        response->setProperty ("elapsedMs", static_cast<int> (elapsedMs));
+        response->setProperty ("chainSize", engine_.chainSize());
+        if (browser_.loaded)
+            browser_.emitEventIfBrowserIsVisible ("arMixAddResult", juce::var (response.release()));
+    }
+
     void emitPresets()
     {
         if (browser_.loaded)
@@ -369,13 +385,46 @@ private:
         }
         else if (action == "addCatalog")
         {
-            const auto* plugin = catalog_.find (args.getProperty ("id", {}).toString());
-            if (!plugin)
-                return emitNotice ("Plugin not found in catalog. Rescan your VST3 folders.", true);
-            editorWindow_.reset();
-            const auto error = engine_.addVst3 (plugin->path, plugin->uid, plugin->key());
-            if (error.isNotEmpty()) { diagnostics_.record ("FX_LOAD_FAIL", plugin->name + ": " + error); emitNotice (error, true); }
-            else { diagnostics_.record ("FX_LOAD", plugin->name + " (callback reattached)"); emitChain(); emitNotice (plugin->name + " inserted. Live chain changes may briefly interrupt audio."); }
+            const auto requestId = static_cast<int> (args.getProperty ("requestId", 0));
+            const auto requestedId = args.getProperty ("id", {}).toString();
+            const auto* plugin = catalog_.find (requestedId);
+            const auto name = plugin != nullptr ? plugin->name : juce::String ("Unknown VST3");
+            const auto started = juce::Time::getMillisecondCounter();
+            juce::String error;
+
+            if (plugin == nullptr)
+                error = "Plugin is no longer in the catalog. Rescan in PLUGINS and try again.";
+            else
+            {
+                diagnostics_.record ("FX_ADD_REQUEST", name + " | " + plugin->path);
+                editorWindow_.reset();
+                try
+                {
+                    error = engine_.addVst3 (plugin->path, plugin->uid, plugin->key());
+                }
+                catch (const std::exception& ex)
+                {
+                    error = "VST3 instantiation threw an exception: " + juce::String (ex.what());
+                }
+                catch (...)
+                {
+                    error = "VST3 instantiation failed with an unknown exception";
+                }
+            }
+            const auto elapsed = juce::Time::getMillisecondCounter() - started;
+            emitFxAddResult (requestId, name, error, elapsed);
+            if (error.isNotEmpty())
+            {
+                diagnostics_.record ("FX_LOAD_FAIL", name + " | " + error +
+                    " | elapsedMs=" + juce::String (elapsed));
+                emitNotice (name + ": " + error, true);
+            }
+            else
+            {
+                diagnostics_.record ("FX_LOAD", name + " | elapsedMs=" + juce::String (elapsed));
+                emitChain();
+                emitNotice (name + " inserted into Channel 1 FX Rack.");
+            }
         }
         else if (action == "fxRemove")
         {
