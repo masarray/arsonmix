@@ -1,104 +1,54 @@
-# ArSonMix — Live VST3 Host
+# ArSonMix
 
-**Current integration candidate (25 October 2026): P2.5 live preset graph + latest v0.5 premium mixer GUI.** Desktop Windows x64 / JUCE 8 / ASIO-WASAPI / VST3. The integrated branch is `integration/p25-gui-engine-reconciled`; **the default `main` is older** and must not be treated as the latest native implementation. Code is experimental until Windows hardware tests pass.
+**Open-source live VST3 host with a premium virtual digital mixer interface.** Built for Windows live vocal, karaoke and streaming workflows, with a JUCE C++20 audio engine and a WebView2 console UI.
 
-- [Integrated Windows builds](https://github.com/masarray/arsonmix/actions/workflows/p1-windows.yml?query=branch%3Aintegration%2Fp25-gui-engine-reconciled) — download EXE artifact from a successful run.
-- [Integration PR](https://github.com/masarray/arsonmix/pulls) and [progress reconciliation ledger](docs/PROGRESS_RECONCILIATION_2026-10-25.md).
-- [Premium GUI reference branch](https://github.com/masarray/arsonmix/tree/fix/fader-thumb-symmetry-polish) is archived by branch and imported to the integration source; static browser demo is not a VST host.
-- [Latest native engine reference](https://github.com/masarray/arsonmix/tree/feature/p25-live-preset-graph-swap), including real FabFilter/RX compatibility and experimental buffer-boundary preset graph handoff.
+[Premium browser GUI preview](site/preview/index.html) · [Experimental Windows EXE builds](https://github.com/masarray/arsonmix/actions/workflows/p1-windows.yml?query=branch%3Aintegration%2Fp25-gui-engine-reconciled) · [Progress & release status](docs/PROGRESS_RECONCILIATION_2026-10-25.md) · [ARD](docs/ARD_AR_MIX_LIVE_FX_HOST_v0.3.md)
 
-**Actual native status:** Channel 1 stereo path, native VST3 rack/catalog/scan/import, FabFilter and iZotope RX were confirmed to INSERT on user hardware, native VU and PAN, FX bypass, native `.armix` snapshots, experimental Live Recall. **Not yet native:** Channels 2–12, master inserts, master PAN, routing to independent streaming/recording buses, LUFS/true peak. Browser-only session controls are not native persistence. SAVE is muted-only and structure ADD/REMOVE/REORDER still detaches callback.
+## Current development baseline · 25 October 2026
 
-## Historical roadmap and previous implementation notes
+| Area | Working development scope | Important limit |
+|---|---|---|
+| GUI & UX | Latest tactile/metallic v0.5 PC console design, channel identity editor (name/icon/color), PAN snapping, red Master fader, peak-hold & clip LEDs | Browser-only UI controls are not proof of audio DSP functionality |
+| Audio | JUCE native callback, Windows ASIO/WASAPI device selection, auto output routing, real meters, PAN, channel/master faders and MUTE | Real processing currently uses **Channel 1 stereo**; input strips 2–12 are previews |
+| VST3 | Scan/import/catalog, insert/editor, atomic bypass and diagnostic messages | FabFilter and iZotope RX were confirmed loading on prior P2.4.1 hardware; retest integrated build |
+| Presets | Native `.armix` ZIP + vendor binary plugin state, FX order/bypass, Channel 1/master gain and PAN | Save requires muted output; presets depend on locally installed VST3 files |
+| Live recall | Experimental P2.5 prepared graph, callback-boundary de-click fade, deferred plugin retirement | Not seamless dual-graph crossfade. FX ADD/REMOVE/REORDER still detach callback |
+| Master | Real Master level/MUTE plus independent L/R meters | Master FX inserts, master PAN, LUFS-I and dBTP **not native**; visual previews/placeholder fields |
+| Routing | Functional Channel 1 to selected hardware output | No true independent 12-channel, streaming/record buses or automatic loopback setup yet |
 
-The text below documents the development progression. Historical "source-only" or v0.3 statements are superseded by the above current status, not a description of this integration branch.
+The canonical reconciliation source is **`integration/p25-gui-engine-reconciled`**, preserving both the best [GUI branch](https://github.com/masarray/arsonmix/tree/fix/fader-thumb-symmetry-polish) and the advanced [P2.5 engine branch](https://github.com/masarray/arsonmix/tree/feature/p25-live-preset-graph-swap). The default `main` and all earlier draft PRs have intentionally **not** been overwritten.
 
----
-# AR MIX Studio — Open-Source Live FX Host (v0.3 UI & Architecture)
+## Try it
 
-**Status: P1 experimental native Windows first-sound implementation (pending CI/hardware verification) + v0.3 UI demo.**
+**Visual preview:** open `AR-MIX-Live-FX-Host-Standalone-v0.3.html` directly in a current browser, or use the `site/preview` UI. Browser preview uses animated demonstration meters and dummy FX. It cannot process your microphone.
 
-AR MIX Studio targets live vocal processing for karaoke performers and livestream creators. It is VST3-first: the principal activity is building a beautiful, low-friction FX chain with a digital-console look. The core engine is planned as C++20/JUCE with Windows ASIO/WASAPI; the frontend is a self-contained HTML/CSS/SVG UI embedded in JUCE WebView2.
+**Actual Windows audio:** from the linked Windows Actions workflow, open the latest **successful integration-branch run** and download its EXE artifact. Use wired headphones at a low level; configure ASIO/WASAPI; open `MIX → ADD FX` to scan/select your own installed VST3, then edit and bypass it in the rack. The source does **not** redistribute FabFilter, iZotope, or other proprietary plugins.
 
-## Try the current prototype now
+For native sound presets, create a sound, mute output and choose `MY SOUNDS → SAVE`. Re-enable output before using experimental `RECALL LIVE`. Check `SIGNAL CHECK` and `audio-diagnostics.log` after a test. Avoid changing audio devices during graph transitions.
 
-Open `AR-MIX-Live-FX-Host-Standalone-v0.3.html` in a current Chrome or Edge browser. No installation or internet access is required. The meters are intentionally **simulated**. Clicking `FX RACK` opens a chain editor: add a *demo* plugin, bypass/reorder/remove it; `MIX` offers faders, pan and MUTE/SOLO; `SIGNAL FLOW` describes the path; `SETUP` previews the driver wizard; `EASY VIEW` toggles Pro controls. Save a local FX chain preset or Mixer Snapshot, and export/import a JSON session file.
+This is an **engineering preview**, not qualified for an unattended livestream. Do not equate passing CI with verified dropout-free ASIO/WASAPI or all-plugin compatibility.
 
-**Important:** catalog entries are visual demo effects, not installed VST3 binaries. Nothing will process live audio or activate your mic in this version. The Windows JUCE shell is source-only and has not been compiled/validated on Windows in this environment.
+## Building the Windows native app
 
-## Build JUCE WebView2 shell (Windows)
-
-Prerequisites: Visual Studio 2022 with C++, CMake >=3.22, a local compatible JUCE 8/9 source checkout, and WebView2 runtime. See licenses before distribution.
-
-```powershell
-.\build_windows.ps1 -JuceRoot C:\dev\JUCE
-```
-
-CMake example:
+Requires Visual Studio 2022 C++, CMake 3.22+, compatible JUCE 8, WebView2 and the appropriate ASIO SDK/licensing components.
 
 ```powershell
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DJUCE_ROOT="C:/dev/JUCE"
 cmake --build build --config Release
+ctest --test-dir build -C Release --output-on-failure
 ```
 
-The shell embeds the same UI through JUCE BinaryData and uses `WebBrowserComponent::withResourceProvider`. `withEventListener("arMixParameter")` only logs events on the **JUCE message thread**. Implement the typed control dispatcher + RT backend before making it process audio. `JUCE_ASIO=1` is **not yet enabled** in this shell; check GPLv3 ASIO SDK compatibility and driver setup as specified in the ARD.
+The source tree separates `src/` (JUCE native engine, VST3 host, diagnostics and state), `web/` (premium console and native bridge), `engine/core/` (reusable realtime controls), `tests/` (native and visual regressions), `docs/` (ARD and phase guides) and `site/` (browser-only landing/preview). GitHub CI tests both Windows MSVC and Chromium layout independently.
 
-## C++20 realtime primitives test
+## Planned progression
 
-```bash
-g++ -std=c++20 -O2 -Wall -Wextra -pedantic -pthread tests/realtime_control_test.cpp -o rt_tests
-./rt_tests
-```
+1. **P2.5.2** — safe live ADD/REMOVE/REORDER, preparation worker, plugin/device lifecycle and measured crossfade/latency tradeoffs.
+2. **P2.6** — actual multichannel input mixer, per-channel VST racks, routing and independent output buses.
+3. **P2.7** — complete native session/snapshot persistence, autosave recovery, sound library and beginner-focused flow.
+4. Hardware validation and stability gates with common VST3 plugins, including FabFilter/RX, before promoting a qualified release.
 
-## Files
+For the lineage of all parallel threads and outstanding tests, read [the reconciliation ledger](docs/PROGRESS_RECONCILIATION_2026-10-25.md). Previous README content remains preserved in [historical notes](docs/HISTORICAL_README_PRE_RECONCILIATION.md).
 
-- `docs/ARD_AR_MIX_LIVE_FX_HOST_v0.3.md` — full product/technical architecture, RT rules, UX flows, benchmarks, roadmap and risk register.
-- `docs/UI_AUDIT_AND_QA_v0.3.md` — source UI audit, fixes and executed smoke test.
-- `web/{index.html,styles.css,app.js}` — maintainable UI frontend.
-- `AR-MIX-Live-FX-Host-Standalone-v0.3.html` — complete single-file offline trial.
-- `src/Main.cpp`, `CMakeLists.txt`, `build_windows.ps1` — native UI host scaffold.
-- `engine/core/RealtimeControl.h`, `tests/realtime_control_test.cpp` — tested sample real-time control patterns, not complete DSP.
+## License
 
-## Licensing
-
-Code in this trial is authored for the project and provided under AGPL-3.0-only to align with JUCE open-source licensing. JUCE, ASIO SDK and VST3 SDK have their own notices and obligations; check exact version and dependency licensing before publishing binaries. No third-party VST binaries or proprietary mixer UI graphics are included.
-
-## P1 Windows native First Sound
-
-The new P1 native EXE provides actual microphone passthrough through one VST3 effect, ASIO/WASAPI device selector, bypass, monitor arm/mute, master gain and real callback meter. The old FX rack and channels 2–12 are **still UI previews** (do not confuse demo plugin inserts with native VST3). Output starts muted for hearing/feedback safety. See [P1 trial instructions](docs/P1_FIRST_SOUND.md).
-
-GitHub Actions: [Windows First Sound builds](https://github.com/masarray/arsonmix/actions/workflows/p1-windows.yml). Download the artifact only after the run is GREEN. JUCE 8.0.15 is pinned by CI and includes GPLv3 ASIO SDK sources; this repository uses AGPLv3. Plugin compatibility and low latency must still be verified with real hardware.
-
-## P2 Native VST3 Catalog and FX Rack
-
-The native Windows host supports **Scan VST3**, **Add Plugin Folder**, **Import VST3** and a persistent plugin catalog in user app-data. The FX Rack inside WebView2 now controls the **one native stereo audio path** with up to 8 real VST3 effects: add, bypass, reorder, remove and open plugin UI. The Windows audio setup dialog is also native, with saved device configuration.
-
-All remaining UI preview channels and factory vocal presets are still visual; do not infer that they are running live audio. Legacy VST2 `.dll` is **not** supported or automatically treated as VST3. Plugin scanning uses a worker, but not yet a crash-isolated subprocess; avoid unknown plugins during a livestream. Read [P2 Hardware Trial](docs/P2_NATIVE_FX_RACK.md).
-
-## P2 DAW UX improvement
-
-Use MIX → Channel 1 ADD FX to select a real indexed VST3; PLUGINS opens Plugin Manager for scan/import only. Audio Setup now reports loading status and reuses the native selector window. Scan uses real candidate counters and indeterminate discovery stage. See [P2 DAW workflow guide](docs/P2_DAW_WORKFLOW.md).
-
-## P2.2 Realtime Reliability + latest ArSonMix GUI
-
-- The live signal is routed automatically on a valid JUCE device; no extra enable gate. Emergency output mute stays in SIGNAL CHECK.
-- Real-time health counters: callback processing time, worst processing time, callbacks over 80% or 100% of buffer period, timing gaps, and worst VST3 processing time.
-- Persistent bounded rotating log in user app data `AR-MIX-Studio/diagnostics/audio-diagnostics.log`, using a dedicated logger worker (never audio callback).
-- Device XML saved upon device change, **not** on a repeating 3-second UI timer.
-- Uses current `fix/fader-thumb-symmetry-polish` GUI (ArSonMix, metal controls, horizontal PAN sliders). Audio host code stays isolated.
-- Press SIGNAL CHECK → OPEN DIAGNOSTIC LOG to inspect or share diagnostic evidence after reproducing audio stutter.
-- Read [P2.2 reliability guide](docs/P2_REALTIME_RELIABILITY.md).
-
-## P2.3 — Real Live VU + PAN + Instant FX Bypass
-
-- In the native JUCE host, v0.3 sine-wave demonstration meter generator is completely disabled. Only real Channel 1 input and real master output move; other preview channels have no fake audio activity.
-- Channel 1 horizontal PAN is connected to the actual stereo output matrix after VST3, with a transparent centre and correlated-stereo-safe extremes.
-- Each VST3 insert in the MIX view has a small ⏻ toggle with clear ON/OFF state. Bypass updates the atomic realtime control without rebuilding the plugin graph or leaving the MIX screen.
-- Diagnostic health JSON no longer truncates every record at 511 characters; the bounded queue slot is now 4096 bytes, with a truncation counter.
-- Windows CI validates the native UI contract and real DSP pan coefficient tests. Hardware verification remains necessary.
-
-## P2.5.1 — Live preset prepared graph
-
-- Pre-stage plugin binary state before live recall, publish graph at audio callback boundary, retire old graph only after callback acknowledges; de-click buffer fades.
-- Does not require MUTE OUTPUT for recall; SAVE still muted-only. Old ADD/REMOVE/REORDER remains callback-detach and should not be used during performance.
-- See [P2.5 live recall notes](docs/P25_LIVE_GRAPH_HANDOFF.md). This is not a full seamless dual-DSP crossfade.
+Project code is published under AGPL-3.0-only. JUCE, ASIO, VST3 SDK, third-party artwork and plugin licenses are independent and must be reviewed before redistribution; commercial VST binaries are not included.
