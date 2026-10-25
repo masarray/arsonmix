@@ -31,6 +31,7 @@ int main()
     p=AudioProfilePolicy::choose(capture,output,{});
     check(!p.valid && p.reason==ProfileReason::unsupportedClockAdapter);
     capture.clockSharedByHardware=true;
+    output.clockSharedByHardware=true;
     p=AudioProfilePolicy::choose(capture,output,{});
     check(p.valid && p.direct);
     // Unsupported manual rates/frames do not quietly become an invented profile.
