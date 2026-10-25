@@ -8,6 +8,7 @@
 #include "LiveGraphHandoff.h"
 #include "DiagnosticTone.h"
 #include "../engine/core/RealtimeHealthHistogram.h"
+#include "../engine/device/JuceIndependentDeviceAdapter.h"
 #include <array>
 #include <atomic>
 #include <cmath>
