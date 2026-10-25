@@ -9,7 +9,8 @@
 - On endpoint loss: require render silence and device retirement **before** acquiring replacement. Retry uses bounded backoff 100 ms–10 seconds, maximum eight consecutive failures, and explicit terminal failure.
 - A configuration is **eligible** for stable persistence only after 30 seconds of healthy callbacks. This is a policy primitive, not a claim that audible playback is clean.
 - Pure `SplitStreamTelemetry`: lock-free independent capture/render frames, dropped input frames, bridge starvation frames and invalid-buffer counters, with separate generation numbers. These are not equivalent to Windows driver output xruns; report source provenance.
-- `IndependentClockPipeline` now connects two **independently invoked callback interfaces** to the prepared FIR/ASRC and telemetry. It is JUCE-independent and tested against separate synthetic source/render callback frame counts; it is NOT hooked to Windows physical device streams.
+- `IndependentClockPipeline` now connects two **independently invoked callback interfaces** to the prepared FIR/ASRC and telemetry. It is JUCE-independent and tested against separate synthetic source/render callback frame counts.
+- `JuceIndependentDeviceAdapter` now implements two actually separate JUCE AudioDeviceManager callback hosts: one input-only clock, one output-only clock, capture FIFO producer, render-master FIR consumer and bounded render blocks. Its source compiles into the Windows app but **is not activated**: a controlled migration from the existing joined device and plugin-graph ownership must be implemented and verified before exposure. Independent capture rate is negotiated separately; output uses selected render period.
 - Release-active CTests for generation cancellation, state transitions, bounded delays, stable eligibility, recording different capture/render frame rates, and FIFO overflow/starvation/re-prime.
 
 ## Production integration is **not yet complete**
