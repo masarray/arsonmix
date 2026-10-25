@@ -17,8 +17,10 @@ test('native app never runs demo sine meters',()=>{
 test('native meter reads DSP and hides all 11 visual-only channels',()=>{
   assert.match(bridge,/inputLevel=percent\(d\.inputPeak\)/);
   assert.match(bridge,/outputLevel=percent\(d\.peak\)/);
+  assert.ok(bridge.includes("masterMeterL:liveOutputLeft"));
+  assert.ok(bridge.includes("masterMeterR:liveOutputRight"));
   assert.match(bridge,/track\.dataset\.preview="1"/);
-  assert.match(bridge,/\.strip\[data-preview="1"\] \.meter-fill/);
+  assert.ok(bridge.includes("meter-fill{opacity:0!important}"));
 });
 test('quick FX bypass is wired to native slot instead of demo mock',()=>{
   assert.match(bridge,/data-native-fx="bypass" data-slot="\$\{i\}"/);
