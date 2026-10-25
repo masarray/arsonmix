@@ -41,7 +41,8 @@ test('live deployment preserves direct ASIO and bounded rollback semantics',()=>
   assert.match(engine,/bridgeUnderflowFrames/);
   assert.match(engine,/bridgeCorrectionPpm/);
   assert.match(engine,/WASAPI_CAPTURE_DISCONTINUITIES_ONLY/);
-  assert.match(host,/if \(engine_\.independentClockFaulted\(\)\)/);
+  assert.match(host,/engine_\.independentClockFaulted\(\)/);
+  assert.match(host,/serviceDirectRestore\(\)/);
   assert.match(host,/SMART_CLOCK_RECOVERY/);
   assert.match(host,/!engine_\.independentClockActive\(\)/);
   assert.match(host,/editing VST3 graph/);
