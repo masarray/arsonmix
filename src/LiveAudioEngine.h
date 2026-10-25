@@ -40,6 +40,7 @@ public:
         int latency = 0;
         bool hasRecallState = false;
         float channelDb = 0.f, masterDb = 0.f, pan = 0.f;
+        float channelLinear = 1.f, masterLinear = 1.f;
         bool channelMute = false, masterMute = false;
     };
 
@@ -318,6 +319,8 @@ public:
         staged->hasRecallState = true;
         staged->channelDb = snapshot.channelDb;
         staged->masterDb = snapshot.masterDb;
+        staged->channelLinear = juce::Decibels::decibelsToGain (snapshot.channelDb);
+        staged->masterLinear = juce::Decibels::decibelsToGain (snapshot.masterDb);
         staged->pan = snapshot.pan;
         staged->channelMute = snapshot.channelMute;
         staged->masterMute = snapshot.masterMute;
@@ -647,8 +650,8 @@ private:
             const auto* switched = handoff_.current();
             if (switched && switched->hasRecallState)
             {
-                setChannelGainDb (switched->channelDb);
-                setMasterGainDb (switched->masterDb);
+                channelGain_.store (switched->channelLinear, std::memory_order_relaxed);
+                masterGain_.store (switched->masterLinear, std::memory_order_relaxed);
                 setChannelPan (switched->pan);
                 setChannelMuted (switched->channelMute);
                 setMasterMuted (switched->masterMute);
