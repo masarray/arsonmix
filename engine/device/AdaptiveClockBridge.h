@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstddef>
@@ -136,7 +137,11 @@ public:
         const auto fill = w - r;
         if (!primed_ && fill >= targetFill_ + taps)
         {
-            cursor_ = static_cast<double> (r + taps / 2);
+            // Prime near target occupancy; after starvation never replay
+            // a large stale segment of the input FIFO.
+            const auto freshStart = w > targetFill_
+                ? w - targetFill_ + taps / 2 : r + taps / 2;
+            cursor_ = static_cast<double> (std::max (r + taps / 2, freshStart));
             primed_ = true;
             gain_ = 0.;
             integratorPpm_ = 0.;
@@ -166,6 +171,8 @@ public:
                 if (primed_) ++missing;
                 else ++priming;
             }
+            if (have) gain_ = std::min (1., gain_ + 1. / 64.);
+            else gain_ = std::max (0., gain_ - 1. / 64.);
             const int phase = have ? std::min (phases - 1,
                 static_cast<int> ((cursor_ - static_cast<double> (base)) * phases)) : 0;
             const float* kernel = coefficients_.data() + phase * taps;
@@ -185,13 +192,11 @@ public:
                     }
                     sample = static_cast<float> (acc);
                     // Smooth start; 64-sample ramp prevents hard jumps on prime.
-                    gain_ = std::min (1., gain_ + 1. / 64.);
                     sample *= static_cast<float> (gain_);
                     previous_[static_cast<std::size_t> (sourceC)] = sample;
                 }
                 else
                 {
-                    gain_ = std::max (0., gain_ - 1. / 64.);
                     sample = previous_[static_cast<std::size_t> (sourceC)] * static_cast<float> (gain_);
                 }
                 render[c][i] = sample;
@@ -204,7 +209,8 @@ public:
                 primed_ = false; integratorPpm_ = 0.;
             }
         }
-        if (primed_)
+        // Publish consumed frames even if a block starves half-way through.
+        // Otherwise a stale read cursor can permanently fill producer FIFO.
         {
             const auto retire = static_cast<std::uint64_t> (cursor_) > taps
                     ? static_cast<std::uint64_t> (cursor_) - taps : 0;
