@@ -48,7 +48,10 @@ test('clock bridge has no callback alloc / blocking and is gated behind independ
   assert.match(bridge,/anti-windup/);
   assert.match(bridge,/void pull \(float\* const\* render, int outputChannels, int frames\) noexcept/);
   assert.match(bridge,/int push \(const float\* const\* capture, int sourceChannels, int frames\) noexcept/);
-  assert.match(bridge,/Not yet wired to JUCE joined WASAPI callback/);
+  assert.match(bridge,/Wired only through SplitDuplexAdapter/);
+  assert.match(engine,/splitAdapter_\.pull \(target, 2, frames\)/);
+  assert.match(engine,/splitAdapter_\.prepare \(type, original, deviceManager_, targetLatencyMs\)/);
+  assert.match(engine,/smartBridgeEnabled_/);
   assert.doesNotMatch(engine,/AdaptiveClockBridge\s+clockBridge_/);
   assert.match(cmake,/AdaptiveDualClockBridge/);
   assert.match(cmake,/RealtimeHealthHistogram/);

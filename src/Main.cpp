@@ -118,6 +118,20 @@ public:
         auto saved = juce::XmlDocument::parse (settingsDirectory().getChildFile ("audio-devices.xml"));
         startupError_ = engine_.start (saved.get());
         engine_.devices().addChangeListener (this);
+        // AUTO is default. Explicit DIRECT persists across reboots, without
+        // affecting the old ASIO direct path or the approved mixer GUI.
+        const auto choice = settingsDirectory().getChildFile ("smart-audio-profile.txt")
+                               .loadFileAsString().trim().toUpperCase();
+        if (choice == "DIRECT" || choice == "STABLE" || choice == "LOW_LATENCY")
+            audioProfileChoice_ = choice;
+        if (startupError_.isEmpty() && audioProfileChoice_ != "DIRECT")
+        {
+            const auto smartError = audioProfileChoice_ == "AUTO"
+                ? engine_.configureStartupAuto()
+                : engine_.enableSmartBridge (audioProfileChoice_ == "STABLE" ? 40. : 12.);
+            diagnostics_.record (smartError.isEmpty() ? "SMART_AUTO_START" : "SMART_AUTO_FALLBACK",
+                                 smartError.isEmpty() ? audioProfileChoice_ : smartError);
+        }
         diagnostics_.record ("STARTUP", startupError_.isEmpty() ? "Audio device initialized" : startupError_);
         browser_.goToURL (juce::WebBrowserComponent::getResourceProviderRoot());
         startTimerHz (12);
@@ -152,6 +166,7 @@ private:
     bool setupLaunching_ = false;
     unsigned int timerTicks_ = 0;
     bool deviceSettingsDirty_ = false;
+    juce::String audioProfileChoice_ {"AUTO"};
     juce::var pendingPresetUI_;
     juce::String pendingPresetName_;
 
@@ -298,7 +313,8 @@ private:
         result.preallocateBytes (64 * 1024);
         result << "ARSONMIX / SMART AUDIO DIAGNOSTIC REPORT v2\n";
         result << "Timestamp: " << juce::Time::getCurrentTime().toISO8601 (true) << "\n";
-        result << "Build: experimental-P0 clock-instrumentation / native JUCE 8.0.15\n";
+        result << "Build: ArSonMix P0 independent capture/render JUCE 8.0.15\n";
+        result << "User profile: " << audioProfileChoice_ << "\n";
         result << "Platform: " << juce::SystemStats::getOperatingSystemName() << "\n";
         result << "CPU: " << juce::SystemStats::getCpuModel() << "\n";
         result << "Logical cores: " << juce::SystemStats::getNumCpus()
@@ -349,8 +365,47 @@ private:
                 browser_.emitEventIfBrowserIsVisible ("arMixDiagnosticReportCopied", juce::var (response.release()));
             emitNotice ("Audio report copied! Paste it directly into the engineering chat.");
         }
+        else if (action == "smartAudioProfile")
+        {
+            const auto request = value.toString().toUpperCase();
+            if (request != "AUTO" && request != "STABLE"
+                && request != "LOW_LATENCY" && request != "DIRECT")
+                return emitNotice ("Unknown Smart Audio profile", true);
+            if (engine_.hasTemporaryDiagnosticDevice())
+            {
+                const auto error = engine_.setDiagnosticRoute (armix::diagnostics::Route::normal);
+                if (error.isNotEmpty()) return emitNotice (error, true);
+            }
+            if (engine_.hasSmartBridgeSetup())
+            {
+                const auto error = engine_.disableSmartBridge();
+                if (error.isNotEmpty()) return emitNotice (error, true);
+            }
+            juce::String error;
+            if (request == "AUTO") error = engine_.configureStartupAuto();
+            else if (request == "STABLE") error = engine_.enableSmartBridge (40.);
+            else if (request == "LOW_LATENCY") error = engine_.enableSmartBridge (12.);
+            if (error.isNotEmpty())
+            {
+                diagnostics_.record ("SMART_PROFILE_FAIL", request + " | " + error);
+                return emitNotice (error + " | running safe JUCE direct fallback", true);
+            }
+            audioProfileChoice_ = request;
+            if (!settingsDirectory().getChildFile ("smart-audio-profile.txt")
+                    .replaceWithText (audioProfileChoice_))
+                diagnostics_.record ("SMART_PROFILE_SAVE_FAIL", audioProfileChoice_);
+            diagnostics_.record ("SMART_PROFILE_SELECTED", request + " | "
+                                 + juce::JSON::toString (engine_.status(), false));
+            deviceSettingsDirty_ = true;
+            emitNotice ("Smart Audio profile: " + request);
+        }
         else if (action == "audioSetup")
         {
+            if (engine_.hasSmartBridgeSetup())
+            {
+                const auto error = engine_.disableSmartBridge();
+                if (error.isNotEmpty()) return emitNotice (error, true);
+            }
             // One-sided device routes are temporary and must never leak into
             // normal user configuration or the persisted audio-devices.xml.
             if (engine_.hasTemporaryDiagnosticDevice())
@@ -371,6 +426,11 @@ private:
             else if (selected == "DRY_THROUGH") route = Route::dryThrough;
             else if (selected != "NORMAL") return emitNotice ("Unsupported diagnostic mode", true);
             if (audioSetupWindow_ != nullptr) audioSetupWindow_->setVisible (false);
+            if (engine_.hasSmartBridgeSetup())
+            {
+                const auto restoreError = engine_.disableSmartBridge();
+                if (restoreError.isNotEmpty()) return emitNotice (restoreError, true);
+            }
             const auto error = engine_.setDiagnosticRoute (route);
             if (error.isNotEmpty())
             {
@@ -381,6 +441,16 @@ private:
             if (route == Route::normal) deviceSettingsDirty_ = true;
             diagnostics_.record ("AUDIO_TEST_MODE", selected + " | " +
                 juce::JSON::toString (engine_.status(), false));
+            if (route == Route::normal && audioProfileChoice_ != "DIRECT")
+            {
+                // A diagnostics run is a deliberate interruption. Re-arm only
+                // after the original combined endpoint has been restored.
+                const auto smartError = audioProfileChoice_ == "AUTO"
+                    ? engine_.configureStartupAuto()
+                    : engine_.enableSmartBridge (audioProfileChoice_ == "STABLE" ? 40. : 12.);
+                if (smartError.isNotEmpty())
+                    diagnostics_.record ("SMART_POST_TEST_FALLBACK", smartError);
+            }
             emitNotice ("Audio diagnostic: " + selected +
                 ". Use low headphone volume and MARK CRACKLE on audible faults.");
         }
@@ -473,8 +543,8 @@ private:
         }
         else if (action == "addCatalog")
         {
-            if (engine_.hasTemporaryDiagnosticDevice())
-                return emitNotice ("Return to NORMAL before adding VST3 effects.", true);
+            if (engine_.hasTemporaryAudioRouting())
+                return emitNotice ("Switch to DIRECT before adding VST3 effects; callback-detaching edits are not live-safe yet.", true);
             const auto requestId = static_cast<int> (args.getProperty ("requestId", 0));
             const auto requestedId = args.getProperty ("id", {}).toString();
             const auto* plugin = catalog_.find (requestedId);
@@ -518,15 +588,15 @@ private:
         }
         else if (action == "fxRemove")
         {
-            if (engine_.hasTemporaryDiagnosticDevice())
-                return emitNotice ("Return to NORMAL before editing VST3.", true);
+            if (engine_.hasTemporaryAudioRouting())
+                return emitNotice ("Switch to DIRECT before removing VST3 effects; callback-detaching edits are not live-safe yet.", true);
             editorWindow_.reset();
             if (engine_.removeAt (slot)) { diagnostics_.record ("FX_REMOVE", juce::String (slot)); emitChain(); }
         }
         else if (action == "fxMove")
         {
-            if (engine_.hasTemporaryDiagnosticDevice())
-                return emitNotice ("Return to NORMAL before rearranging VST3 effects.", true);
+            if (engine_.hasTemporaryAudioRouting())
+                return emitNotice ("Switch to DIRECT before rearranging VST3 effects; callback-detaching edits are not live-safe yet.", true);
             editorWindow_.reset();
             if (engine_.moveSlot (slot, slot + static_cast<int> (value))) { diagnostics_.record ("FX_MOVE", juce::String (slot)); emitChain(); }
         }
@@ -577,6 +647,15 @@ private:
     void timerCallback() override
     {
         ++timerTicks_;
+        if (timerTicks_ % 12 == 0)
+        {
+            const auto health = engine_.pollSmartHealth();
+            if (health.isNotEmpty())
+            {
+                diagnostics_.record ("SMART_WATCHDOG_FALLBACK", health);
+                emitNotice (health, true);
+            }
+        }
         if (engine_.finalizeGraphSwitch())
         {
             diagnostics_.record ("GRAPH_SWAP_ACK", pendingPresetName_);
@@ -596,7 +675,7 @@ private:
             deviceSettingsDirty_ = false;
             // DeviceManager signals even when a temporary capture-only /
             // output-only route is selected. Never persist that test route.
-            if (!engine_.hasTemporaryDiagnosticDevice())
+            if (!engine_.hasTemporaryAudioRouting())
             if (auto xml = engine_.devices().createStateXml())
             {
                 const auto text = xml->toString();
@@ -620,6 +699,7 @@ private:
         if (catalog_.busy() && timerTicks_ % 3 == 0)
             emitScanProgress();
         auto state = engine_.status();
+        state.getDynamicObject()->setProperty ("smartUserProfile", audioProfileChoice_);
         state.getDynamicObject()->setProperty ("diagnosticsDropped",
             static_cast<double> (diagnostics_.lostRecords()));
         state.getDynamicObject()->setProperty ("diagnosticsTruncated",

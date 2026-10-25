@@ -14,8 +14,8 @@ namespace armix::device
 // The render clock owns the output timeline; source clock can be independent.
 // Prepare/reset are CONTROL-THREAD operations with both streams STOPPED.
 // push()/pull() never allocate, lock, log, wait or call JUCE.
-// Not yet wired to JUCE joined WASAPI callback: true independent device
-// adapter is required to make this useful on unrelated physical clocks.
+// Wired only through SplitDuplexAdapter: a separate capture manager runs its
+// own callback. Direct JUCE full-duplex/ASIO never calls this SRC.
 class AdaptiveClockBridge final
 {
 public:

@@ -62,6 +62,49 @@ static void testRate(double captureRate,double renderRate,double driftPpm)
     check(std::abs(st.correctionPpm)<=2000.0);
 }
 
+// 30 minutes of virtual capture/render clocks. Pure deterministic automation;
+// no hardware dependency, sleeping, COM objects or real-time wall clock.
+// Includes -300ppm and brief 10ms capture scheduling gaps with catch-up.
+static void testThirtyMinuteDualClock()
+{
+    armix::device::AdaptiveClockBridge bridge;
+    check(bridge.prepare(8000.,8000.,2,8192,40.)); // STABLE headroom for periodic 10ms stalls
+    std::array<float,256> left{},right{},outL{},outR{};
+    left.fill(.125f); right.fill(.125f);
+    const float* input[2]={left.data(),right.data()};
+    float* output[2]={outL.data(),outR.data()};
+    std::uint64_t written=0, consumed=0;
+    const double inputRate=8000.*(1.-300.e-6);
+    for(int i=1;i<=180000;++i)
+    {
+        const auto expected=static_cast<std::uint64_t>(
+            std::floor(inputRate*i/100.)); // 10ms timestep
+        if(i%300!=100) // brief capture scheduler stall, next tick catches up
+        {
+            int n=static_cast<int>(expected-written);
+            check(n>=0&&n<=256);
+            check(bridge.push(input,2,n)==n);
+            written=expected;
+        }
+        const auto outExpected=static_cast<std::uint64_t>(i*80);
+        const int need=static_cast<int>(outExpected-consumed);
+        bridge.pull(output,2,need);
+        consumed=outExpected;
+        for(int j=0;j<need;++j)
+        {
+            check(std::isfinite(outL[j])&&std::isfinite(outR[j]));
+            check(std::abs(outL[j])<=.2f&&std::abs(outR[j])<=.2f);
+        }
+    }
+    const auto stat=bridge.status();
+    check(stat.pushedFrames==written);
+    check(stat.renderedFrames==consumed);
+    check(stat.overflowFrames==0);
+    check(stat.underflowFrames==0);
+    check(stat.fillFrames<8192);
+    check(std::abs(stat.correctionPpm)<2000);
+}
+
 int main()
 {
     armix::device::AdaptiveClockBridge bad;
@@ -72,6 +115,7 @@ int main()
     testRate(44100,48000,300);
     testRate(48000,44100,-300);
     testRate(48000,48000,100);
+    testThirtyMinuteDualClock();
     // Missing capture source is distinguishable from confirmed output xrun:
     // this core reports its own exact priming/underflow/overflow frames only.
     armix::device::AdaptiveClockBridge empty;
