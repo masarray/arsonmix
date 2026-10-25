@@ -552,8 +552,12 @@ public:
             ? 1000000.0 * d->getCurrentBufferSizeSamples() / d->getCurrentSampleRate() : 0.0);
         o->setProperty ("performanceNote", "Over-budget and callback-gap counts are timing indicators, not driver-confirmed xruns.");
         auto histogram = realtimeHistogram_.snapshot();
-        o->setProperty ("callbackP95BudgetUpperPct", histogram.p95Ceiling * 100.0);
-        o->setProperty ("callbackP99BudgetUpperPct", histogram.p99Ceiling * 100.0);
+        o->setProperty ("callbackP95BudgetUpperPct", histogram.p95Ceiling < 0
+            ? juce::var() : juce::var (histogram.p95Ceiling * 100.0));
+        o->setProperty ("callbackP99BudgetUpperPct", histogram.p99Ceiling < 0
+            ? juce::var() : juce::var (histogram.p99Ceiling * 100.0));
+        o->setProperty ("callbackP95BeyondDeadline", histogram.p95Ceiling < 0);
+        o->setProperty ("callbackP99BeyondDeadline", histogram.p99Ceiling < 0);
         o->setProperty ("callbackBudgetSamples", static_cast<double> (histogram.total));
         o->setProperty ("inputPeak", inputPeak_.load());
         o->setProperty ("postFxPeak", postFxPeak_.load());
