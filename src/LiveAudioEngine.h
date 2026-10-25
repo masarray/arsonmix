@@ -7,6 +7,7 @@
 #include "VstBusLayout.h"
 #include "LiveGraphHandoff.h"
 #include "DiagnosticTone.h"
+#include "../engine/core/RealtimeHealthHistogram.h"
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -550,6 +551,10 @@ public:
         o->setProperty ("periodUs", d && d->getCurrentSampleRate() > 0
             ? 1000000.0 * d->getCurrentBufferSizeSamples() / d->getCurrentSampleRate() : 0.0);
         o->setProperty ("performanceNote", "Over-budget and callback-gap counts are timing indicators, not driver-confirmed xruns.");
+        auto histogram = realtimeHistogram_.snapshot();
+        o->setProperty ("callbackP95BudgetUpperPct", histogram.p95Ceiling * 100.0);
+        o->setProperty ("callbackP99BudgetUpperPct", histogram.p99Ceiling * 100.0);
+        o->setProperty ("callbackBudgetSamples", static_cast<double> (histogram.total));
         o->setProperty ("inputPeak", inputPeak_.load());
         o->setProperty ("postFxPeak", postFxPeak_.load());
         o->setProperty ("peak", outputPeak_.load());
@@ -584,6 +589,7 @@ private:
     std::atomic<unsigned long long> callbackCount_ { 0 };
     // Audio-thread-only timestamp and cheap atomically published counters.
     // No log writes, allocations, locks or WebView interactions in callback.
+    armix::rt::RealtimeHealthHistogram realtimeHistogram_;
     std::atomic<std::uint64_t> lastCallbackUs_ {0}, worstCallbackUs_ {0};
     std::atomic<std::uint64_t> slowCallbacks_ {0}, overBudgetCallbacks_ {0};
     std::atomic<std::uint64_t> callbackGaps_ {0}, worstCallbackGapUs_ {0};
@@ -813,6 +819,7 @@ private:
         const auto elapsedUs = clockMicros() - beginUs;
         lastCallbackUs_.store (elapsedUs, std::memory_order_relaxed);
         publishMax (worstCallbackUs_, elapsedUs);
+        realtimeHistogram_.observe (elapsedUs, periodUs);
         if (static_cast<double> (elapsedUs) > periodUs * 0.80)
             slowCallbacks_.fetch_add (1, std::memory_order_relaxed);
         if (static_cast<double> (elapsedUs) > periodUs)
