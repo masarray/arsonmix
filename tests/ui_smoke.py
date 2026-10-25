@@ -276,6 +276,7 @@ async def main():
         assert on['ink']!=off['ink'],(off,on)
         assert on['shadow'].startswith('rgba(0, 0, 0, 0.72)') or '0.72' in on['shadow'],on
         await page.locator('[data-mute="0"]').click()
+        await page.mouse.move(1,1)  # OFF after pointer leaves, not the intentional glossy hover state
         await page.wait_for_timeout(190)
         back=await switch_state('[data-mute="0"]')
         assert back['t']==off['t'] and same_rect(off,back),(off,back)
