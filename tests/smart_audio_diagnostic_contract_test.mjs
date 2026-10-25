@@ -25,6 +25,9 @@ test('native one-click copy uses system clipboard and includes last event marker
   assert.match(host,/diagnostics_\.recentReport \(48\)/);
   assert.match(host,/arMixDiagnosticReportCopied/);
   assert.match(diag,/recentCapacity = 64/);
+  assert.match(diag,/importantCapacity = 24/);
+  assert.match(diag,/kind != "AUDIO_HEALTH"/);
+  assert.match(host,/diagnostics_\.significantReport\(\)/);
   assert.match(diag,/recent_\[recentHead_\] =/);
   assert.match(ui,/COPY FULL REPORT/);
   assert.match(ui,/action:"copyDiagnosticReport"/);
