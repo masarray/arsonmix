@@ -84,14 +84,19 @@ public:
 
         Fault observed = Fault::none;
         std::uint64_t affected = 0;
-        // Source-owned ASRC FIFO counters: >1% missing or dropped frames,
-        // or >20% priming render frames, sustained across 3 full windows.
-        // Provisional lab safety thresholds, never a claimed psychoacoustic
-        // crackling threshold. Ratio uses rendered frames, no magic 48k.
-        if (missing > frames / 100)
-            { observed = Fault::underflow; affected = missing; }
-        else if (startup > frames / 5)
-            { observed = Fault::priming; affected = startup; }
+        // After the warmup window, BOTH underflow and repeated re-priming
+        // mean absent audio PCM. AdaptiveClockBridge::pull() counts just the
+        // first starved sample as underflow and the subsequent silence as
+        // priming. Evaluating them separately would miss repeated crackles.
+        // Use overflow-safe threshold arithmetic even for malformed counters.
+        const auto starvation = missing > UINT64_MAX - startup
+            ? UINT64_MAX : missing + startup;
+        if (starvation > frames / 100)
+        {
+            observed = missing >= startup && missing != 0
+                ? Fault::underflow : Fault::priming;
+            affected = starvation;
+        }
         else if (discarded > frames / 100)
             { observed = Fault::overflow; affected = discarded; }
         if (observed == Fault::none)
@@ -101,7 +106,14 @@ public:
             lossBasisPoints_ = 0;
             return Fault::none;
         }
-        badWindows_ = observed == lastWindowFault_ ? badWindows_ + 1 : 1;
+        // "underflow" and "priming" are two counter views of the SAME
+        // absent capture PCM. Do not reset the bad-window streak as the
+        // bridge switches from missing samples into FIR re-priming.
+        const bool sourceNow = observed == Fault::underflow || observed == Fault::priming;
+        const bool sourceBefore = lastWindowFault_ == Fault::underflow
+                               || lastWindowFault_ == Fault::priming;
+        badWindows_ = (observed == lastWindowFault_ ||
+                      (sourceNow && sourceBefore)) ? badWindows_ + 1 : 1;
         lastWindowFault_ = observed;
         // Control thread uses double to avoid uint64 multiply overflow.
         const double bp = 10000.0 * static_cast<double> (affected)

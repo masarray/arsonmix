@@ -46,6 +46,27 @@ int main()
     sample(gate,5000,240000,0);
     check(gate.snapshot().fault==F::none);
 
+    // Real bridge behavior: a single underflow frame then repeated priming.
+    // A repeated ~6% post-warmup loss must NOT evade the continuity gate.
+    gate.reset();sample(gate,0,0);
+    for(std::uint64_t t=100;t<=1600;t+=100)sample(gate,t,t*48);
+    for(std::uint64_t t=1700;t<=4700;t+=100)
+        sample(gate,t,t*48,(t-1600)/100,(t-1600)*48/16);
+    check(gate.snapshot().fault==F::priming);
+
+    // Alternating counter provenance is still one sustained source fault.
+    gate.reset();sample(gate,0,0);
+    for(std::uint64_t t=100;t<=1600;t+=100)sample(gate,t,t*48);
+    // A complete window 1: underflow frames dominate.
+    sample(gate,2700,2700*48,2700,0);
+    check(gate.snapshot().consecutiveBadWindows==1);
+    // Window 2: re-priming dominates (same absent PCM).
+    sample(gate,3800,3800*48,2700,3000);
+    check(gate.snapshot().consecutiveBadWindows==2);
+    // Window 3: underflow again, threshold reached despite type switch.
+    sample(gate,4900,4900*48,5400,3000);
+    check(gate.snapshot().fault==F::underflow);
+
     // Callback alive but capture produces zero useful frames: prime forever.
     gate.reset();sample(gate,0,0);
     for(std::uint64_t t=100;t<=1600;t+=100)sample(gate,t,t*48);
