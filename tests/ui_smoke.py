@@ -99,7 +99,7 @@ async def main():
         assert await page.locator('.left-rail button.fx-control').count()==8
         assert await page.locator('.toolbar-actions .btn-180,.left-rail .btn-180').count()==0
         assert await page.locator('.left-rail .pushable,.left-rail .front,.left-rail .edge,.left-rail .shadow').count()==0
-        shared=await page.evaluate("""()=>{
+        shared=await page.evaluate("""async()=>{
           const snap=e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect();return {
             image:s.backgroundImage,shadow:s.boxShadow,ink:s.color,edge:s.borderTopColor,
             radius:s.borderTopLeftRadius,rect:r.toJSON()
@@ -107,6 +107,9 @@ async def main():
           const p=document.querySelector('[data-fxpower="0:0"]');
           const powered=snap(p);
           p.classList.add('is-bypassed');
+          // FX Power animates box-shadow for 90ms. Sample the settled
+          // physical skin, not a mid-transition interpolated color.
+          await new Promise(resolve=>setTimeout(resolve,145));
           const bypassed=snap(p);
           p.classList.remove('is-bypassed');
           return {powered,bypassed,
