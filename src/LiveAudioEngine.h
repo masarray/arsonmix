@@ -13,6 +13,7 @@
 #include "../engine/device/DirectRouteFence.h"
 #include "../engine/device/WasapiEndpointIdentityGuard.h"
 #include "../engine/core/RealtimeHealthHistogram.h"
+#include "../engine/core/CallbackCadenceEvidence.h"
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -795,6 +796,15 @@ public:
         o->setProperty ("diagnosticTemporary", savedLiveSetup_.has_value());
         o->setProperty ("deviceGeneration", static_cast<double> (deviceStartCount_.load()));
         o->setProperty ("lateCallbackIntervals", static_cast<double> (lateCallbackIntervals_.load()));
+        o->setProperty ("callbackCadenceProvenance",
+            armix::rt::CallbackCadenceEvidence::provenance());
+        o->setProperty ("callbackCadenceComparedIntervals",
+            static_cast<double> (cadenceComparedIntervals_.load (std::memory_order_relaxed)));
+        o->setProperty ("callbackCadenceClockRegressions",
+            static_cast<double> (cadenceClockRegressions_.load (std::memory_order_relaxed)));
+        o->setProperty ("callbackCadenceLastExpectedUs",
+            static_cast<double> (cadenceLastExpectedUs_.load (std::memory_order_relaxed)));
+        o->setProperty ("callbackCadenceGapThresholds", "SUGGESTIVE_1_5X_AND_2_3X_PREVIOUS_BLOCK_PERIOD");
         o->setProperty ("testOutputFrames", static_cast<double> (testOutputFrames_.load()));
         o->setProperty ("testCaptureFrames", static_cast<double> (testCaptureFrames_.load()));
         o->setProperty ("renderUnderrunSource", "UNAVAILABLE_THROUGH_CURRENT_JUCE_AUDIODEVICE");
@@ -1002,12 +1012,14 @@ private:
     std::atomic<std::uint64_t> slowCallbacks_ {0}, overBudgetCallbacks_ {0};
     std::atomic<std::uint64_t> callbackGaps_ {0}, worstCallbackGapUs_ {0};
     std::atomic<std::uint64_t> lateCallbackIntervals_ {0};
+    std::atomic<std::uint64_t> cadenceComparedIntervals_ {0}, cadenceClockRegressions_ {0};
+    std::atomic<std::uint64_t> cadenceLastExpectedUs_ {0};
     std::atomic<std::uint64_t> testOutputFrames_ {0}, testCaptureFrames_ {0};
     std::atomic<std::uint64_t> worstPluginUs_ {0}, slowPlugins_ {0};
     std::atomic<std::uint64_t> deviceStartCount_ {0}, deviceStopCount_ {0};
     std::array<std::atomic<std::uint64_t>, maxFx> lastPluginUsBySlot_ {};
     std::array<std::atomic<std::uint64_t>, maxFx> worstPluginUsBySlot_ {};
-    std::uint64_t previousCallbackStartUs_ = 0;
+    armix::rt::CallbackCadenceEvidence cadence_; // one render producer; lifecycle reset
     double sampleRateHz_ = 48000.0;
 
     static std::uint64_t clockMicros() noexcept
@@ -1083,7 +1095,8 @@ private:
             lastPluginUsBySlot_[i].store (0, std::memory_order_relaxed);
             worstPluginUsBySlot_[i].store (0, std::memory_order_relaxed);
         }
-        previousCallbackStartUs_ = 0;
+        cadence_.prepare (sampleRateHz_);
+        cadenceLastExpectedUs_.store (0, std::memory_order_relaxed);
         int latency = 0;
         for (int i = 0; i < graphOwned_->count; ++i)
         {
@@ -1138,18 +1151,26 @@ private:
         const auto cycle = handoff_.beginCycle();
         const std::uint64_t beginUs = clockMicros();
         const double periodUs = 1000000.0 * static_cast<double> (samples) / sampleRateHz_;
-        // Scheduling gaps only suggest instability: pause/suspend and WASAPI
-        // callback scheduling can create false positives. Never label xruns.
-        if (previousCallbackStartUs_ != 0 && periodUs > 0)
+        // Scheduling gaps are NOT driver-confirmed xruns. Critically the
+        // expected START-to-START period comes from the PREVIOUS callback's
+        // number of frames, not the current block (JUCE can vary quantum).
+        // O(1), single audio producer; lifecycle resets before stream begins.
+        const auto cadence = cadence_.observe (beginUs, samples);
+        if (cadence.comparable())
         {
-            const auto gap = beginUs - previousCallbackStartUs_;
-            publishMax (worstCallbackGapUs_, gap);
-            if (static_cast<double> (gap) > periodUs * 1.5)
+            cadenceComparedIntervals_.fetch_add (1, std::memory_order_relaxed);
+            cadenceLastExpectedUs_.store (
+                static_cast<std::uint64_t> (cadence.expectedIntervalUs + 0.5),
+                std::memory_order_relaxed);
+            publishMax (worstCallbackGapUs_, cadence.actualIntervalUs);
+            if (cadence.kind == armix::rt::CallbackCadenceEvidence::Kind::late ||
+                cadence.kind == armix::rt::CallbackCadenceEvidence::Kind::veryLate)
                 lateCallbackIntervals_.fetch_add (1, std::memory_order_relaxed);
-            if (static_cast<double> (gap) > periodUs * 2.3)
+            if (cadence.kind == armix::rt::CallbackCadenceEvidence::Kind::veryLate)
                 callbackGaps_.fetch_add (1, std::memory_order_relaxed);
         }
-        previousCallbackStartUs_ = beginUs;
+        else if (cadence.kind == armix::rt::CallbackCadenceEvidence::Kind::clockRegression)
+            cadenceClockRegressions_.fetch_add (1, std::memory_order_relaxed);
         callbackInputs_.store (inputChannels, std::memory_order_relaxed);
         callbackOutputs_.store (outputChannels, std::memory_order_relaxed);
         callbackCount_.fetch_add (1, std::memory_order_relaxed);

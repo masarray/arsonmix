@@ -446,6 +446,9 @@ private:
         result << "Logical cores: " << juce::SystemStats::getNumCpus()
                << " | RAM: " << juce::SystemStats::getMemorySizeInMegabytes() << " MiB\n";
         result << "Telemetry: true hardware render underruns UNAVAILABLE; callback time/gap are proxies only.\n";
+        result << "CALLBACK CADENCE: START-to-START estimates use PREVIOUS callback frame count; "
+                  "normal variable block sizes are not driver xruns. 1.5x/2.3x flags "
+                  "are scheduling heuristics only, not WASAPI/ASIO underrun evidence.\n";
         result << "No user audio samples, passwords or plugin vendor state are included.\n";
         result << "Check device names and local paths before sharing this report.\n\n";
         result << "=== DEVICE CAPABILITIES (backend-reported) ===\n";
