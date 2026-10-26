@@ -47,4 +47,26 @@ assert 'filter:none!important' in source
 legacy=(root/"web/assets/faders/FADER-RED2.png").read_bytes()
 assert hashlib.sha1(b"blob "+str(len(legacy)).encode()+bytes([0])+legacy).hexdigest()=="2369e1b9002522600948909246918e57880da1ed"
 assert ".cap::before,.cap::after{content:none}" in css
-print("PASS: untouched 36x77 silver channels + gold MASTER, correct detent and offline parity")
+
+# Muted silver / rose-gold master artwork is a new static 36x77 PNG,
+# derived from the silver relief. Gold source is kept for rollback only.
+rose=(root/"web/assets/faders/FADER-ARI-ROSEGOLD.png").read_bytes()
+assert len(rose)==3782
+assert hashlib.sha256(rose).hexdigest()=="730d4e6739e1eeca87c3c758777eef48dac8a29b2d2a4abc857463ee0a9d0f17"
+assert (int.from_bytes(rose[16:20],"big"),int.from_bytes(rose[20:24],"big"))==(36,77)
+finish=(root/"web/styles-src/42-mixer-premium.css").read_text(encoding="utf-8")
+assert css.endswith(finish), "Premium CSS module not compiled last"
+marker='--ari-master-cap:url("data:image/png;base64,'
+assert css.count(marker)==2, "Rose MASTER must override old gold master once"
+embedded=css.rsplit(marker,1)[1].split('")',1)[0]
+assert base64.b64decode(embedded)==rose, "Active MASTER finish must match rose-silver PNG"
+assert css.count('background-image:var(--ari-master-cap)!important')>=1
+assert "#app #mixer > .strip:not(.master-strip)" in finish
+assert "grid-template-columns:repeat(2,minmax(0,1fr))" in finish
+assert "max-width:none" in finish
+assert "channels.length<channels.length" not in js
+assert "session.channels.length<channels.length" in js
+assert "last.channels.slice(0,channels.length)" in js
+assert 'const raw=[' in js and "['Monitor','◉'" not in js and "['Aux Out','◉'" not in js
+assert "Deliberate double-click to edit a strip." in js
+print("PASS: ten channels, 36x77 silver + rose MASTER, responsive shell, offline parity")
