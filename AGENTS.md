@@ -58,3 +58,5 @@ The **experimental** P2.5 JUCE VST3 engine has now been integrated into `main` u
 ## P0-02 ASRC signal integrity continuation (2026-10-26)
 - Non-finite capture PCM is sanitized at independent FIFO ingress and counted without heap/locks; NaN/Inf latency and excessive FIFO capacity are rejected before allocation.
 - `bridgeNonFiniteCaptureSamples` is source-labeled, not a confirmed hardware xrun. Deterministic spectral/injection tests cover 48k->32k passband, alias attenuation and finite output. See `docs/P0_ASRC_SIGNAL_INTEGRITY_2026-10-26.md`.
+
+- **Latest 2026-10-26 UI correction (supersedes dark raised-OFF cube):** Button 180 OFF and ON must share *one identical optical/physical shadow recipe*; OFF differs only via `--b180-color:#858283;--b180-border:#636363;--b180-ink:#2b2b2b`. ON functional colors unchanged. No separate OFF or pressed shadow elevation, hover remains brightness-only 1.32. Edit the single CSS source owner, regenerate runtime CSS/standalone, run Chromium/native gates.
