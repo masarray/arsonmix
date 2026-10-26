@@ -28,3 +28,7 @@ JUCE ASIO driver names are *not physical stable hardware IDs*. This guard detect
 ## Proof
 
 Deterministic `P0AsioLiveDirectRouteFence` CTest covers unapproved startup, approved same-route restarts, mismatched API/name, sticky fault, deliberate same-route recovery, explicit user authorization and malformed identities. Native Node integration asserts guard wiring, pre-DSP zero-fill path and selector approval, with MSVC Release/CTest and Chromium smoke required on exact PR head. Visual GUI untouched.
+
+### Actionable user notification
+
+The existing 12 Hz **control/message-thread timer** detects a newly latched `unexpectedDirectRoute()` fault and emits **one native notice**: audio route changed unexpectedly, live output muted, confirm device in AUDIO SETUP. The event is also retained by `DiagnosticsRecorder` as `DIRECT_ROUTE_BLOCKED`. Latching avoids UI/log spam; recovery clears notice state. This does **not** add timer tasks or notifications on the audio thread.

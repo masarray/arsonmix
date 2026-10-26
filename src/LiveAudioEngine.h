@@ -157,6 +157,10 @@ public:
     void setOutputMuted (bool mute) noexcept { monitor_.store (!mute, std::memory_order_release); }
     bool isOutputMuted() const noexcept { return !monitor_.load (std::memory_order_acquire); }
     bool directRouteAuthorized() const noexcept { return directFence_.permitted(); }
+    bool unexpectedDirectRoute() const noexcept
+    {
+        return directFence_.fault() == armix::device::DirectRouteFence::Fault::unexpectedRoute;
+    }
     // Native AUDIO SETUP is the explicit user authorization boundary.
     // Suppress any live output while selecting/changing a device, even if JUCE
     // starts its new callback before the selector window is closed.

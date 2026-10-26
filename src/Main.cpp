@@ -172,6 +172,7 @@ private:
     bool setupLaunching_ = false;
     unsigned int timerTicks_ = 0;
     bool deviceSettingsDirty_ = false;
+    bool unexpectedRouteNoticeSent_ = false;
     armix::device::DirectRestoreBackoff directRestore_;
     juce::String lastDirectRestoreError_;
     juce::var pendingPresetUI_;
@@ -791,6 +792,20 @@ private:
     void timerCallback() override
     {
         ++timerTicks_;
+        // ONE actionable notice per unexpected DIRECT reroute. The audio
+        // callback has already zero-filled output atomically; status, log and
+        // WebView notifications belong only on this JUCE control timer.
+        const bool blocked = engine_.unexpectedDirectRoute()
+            && !engine_.independentClockActive()
+            && engine_.diagnosticRoute() == armix::diagnostics::Route::normal;
+        if (blocked && !unexpectedRouteNoticeSent_)
+        {
+            unexpectedRouteNoticeSent_ = true;
+            diagnostics_.record ("DIRECT_ROUTE_BLOCKED",
+                "A device or backend changed unexpectedly; host output held at zero");
+            emitNotice ("Audio device changed unexpectedly. Live output muted; confirm your ASIO/WASAPI device in AUDIO SETUP.", true);
+        }
+        if (!blocked) unexpectedRouteNoticeSent_ = false;
         // Audio thread publishes only fault flags. A bounded message-thread
         // restore transaction handles device failures without hot-plug spin.
         serviceDirectRestore();

@@ -147,3 +147,10 @@ test('P0 ASIO live direct route fence blocks hotplug substitution before DSP',()
   assert.match(host,/engine_\.finishManualAudioSetup\(\)/);
   assert.match(host,/engine_\.directRouteAuthorized\(\)/);
 });
+
+test('unexpected ASIO/WASAPI switch notifies user once from control thread',()=>{
+  assert.match(engine,/unexpectedDirectRoute\(\) const noexcept/);
+  assert.match(host,/DIRECT_ROUTE_BLOCKED/);
+  assert.match(host,/unexpectedRouteNoticeSent_/);
+  assert.match(host,/confirm your ASIO\/WASAPI device in AUDIO SETUP/);
+});
