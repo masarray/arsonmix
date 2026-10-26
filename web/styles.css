@@ -947,3 +947,12 @@ html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="met
 html:is([data-mixperf="baseline"],[data-mixperf="hover-off"],[data-mixperf="meters-off"]) #app .meter .meter-fill{will-change:transform}
 html:is([data-mixperf="hover-off"],[data-mixperf="all-off"]) #mixer :is(.fader:hover .cap,.pan-track:hover .pan-thumb,.rack .insert:hover,.rack .fx-power:hover,.strip-name:hover,.master-insert:hover,.master-tools button:hover){filter:none!important;transition:none!important}
 html:is([data-mixperf="hover-off"],[data-mixperf="all-off"]) #mixer .strip-name:hover{outline:none!important}
+
+/* Issue #56 phase 2: optional canvas-vs-DOM meter compositor experiment.
+   Native never enables this mode. Keep the full 13-strip/control geometry. */
+html[data-mixperf="canvas"] #app .workbench{position:relative}
+html[data-mixperf="canvas"] #app .meter :is(.meter-fill,.meter-peak){visibility:hidden}
+#app .workbench > .mix-meter-canvas{
+ position:absolute;inset:0;width:100%;height:100%;
+ z-index:3;pointer-events:none;user-select:none;
+}
