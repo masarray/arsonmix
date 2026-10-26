@@ -314,7 +314,7 @@ async def main():
         active=await preset.evaluate("""e=>({
           face:getComputedStyle(e).backgroundColor,shadow:getComputedStyle(e).boxShadow,
           rect:e.getBoundingClientRect().toJSON(),transform:getComputedStyle(e).transform})""")
-        assert active['face']=='rgb(227, 166, 216)' and active['transform'=='matrix(1, 0, 0, 1, 0, 0)',active
+        assert active['face']=='rgb(227, 166, 216)' and active['transform']=='matrix(1, 0, 0, 1, 0, 0)',active
         assert shared_shadow_shape(active['shadow'])==shared_shadow_shape(style['rail']['shadow']),active
         assert all(abs(active['rect'][k]-pre[k])<=.2 for k in ('x','y','width','height')),active
         # Utility ON is soft cyan, not the old green/purple polarity palettes.
