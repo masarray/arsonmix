@@ -48,6 +48,7 @@ int main()
     auto zero=sample(1000);
     zero.counters[static_cast<std::size_t>(E::Counter::wasapiCaptureDiscontinuities)]={0,true};
     tracker.push(zero);
+    for(std::uint64_t ms=2000;ms<=4000;ms+=1000) tracker.push(sample(ms));
     auto after=sample(5000);
     after.counters[static_cast<std::size_t>(E::Counter::wasapiCaptureDiscontinuities)]={3,true};
     auto res=tracker.mark(after);
@@ -68,6 +69,7 @@ int main()
     auto old=sample(1000);
     old.counters[static_cast<std::size_t>(E::Counter::bridgeUnderflowFrames)]={1000,true};
     tracker.push(old);
+    for(std::uint64_t ms=2000;ms<=4000;ms+=1000) tracker.push(sample(ms));
     auto fresh=sample(5000);
     fresh.counters[static_cast<std::size_t>(E::Counter::bridgeUnderflowFrames)]={3,true};
     res=tracker.mark(fresh);
@@ -82,7 +84,7 @@ int main()
     check(res.ready() && !delta(res,E::Counter::renderedCallbacks).comparable);
 
     // A stale control polling loop cannot claim a 5s pre-marker window.
-    check(tracker.mark(sample(5000)).reason==E::Reason::stalePoll);
+    check(tracker.mark(sample(6201)).reason==E::Reason::stalePoll);
     check(tracker.mark(sample(900)).reason==E::Reason::clockRegression);
     check(tracker.mark(sample(5000,42,"changed-route")).reason==
           E::Reason::changedRouteOrGeneration);
