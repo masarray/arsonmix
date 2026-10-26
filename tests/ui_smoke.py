@@ -216,7 +216,9 @@ async def main():
             selection:getComputedStyle(main,'::before').borderTopWidth,
             masterRows:[...master.children].map(x=>({cls:x.className,height:x.getBoundingClientRect().height}))};
         }""")
-        assert all(architecture[k]=='none' for k in ('nav','small','long')),architecture
+        assert architecture['small']=='none',architecture
+        assert architecture['nav'].startswith('linear-gradient('),architecture
+        assert architecture['long'].startswith('linear-gradient('),architecture
         assert 'data:image/png;base64' not in architecture['fx']
         assert 'data:image/png;base64' not in architecture['chrome']
         assert not architecture['overflow']
