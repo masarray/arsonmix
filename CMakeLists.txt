@@ -19,7 +19,7 @@ juce_add_gui_app(ARMixConsole
 juce_add_binary_data(ARMixAssets SOURCES
     web/index.html web/styles.css web/app.js web/bridge.js web/monitor.js)
 
-target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h src/PluginCatalog.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/ClockBridgeSizing.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h engine/device/BridgeContinuityGate.h engine/device/EndpointIdentityPolicy.h engine/device/WasapiEndpointIdentityGuard.h engine/device/AsioStartupPolicy.h engine/device/AsioPriorityDeviceManager.h engine/device/DirectRouteFence.h)
+target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h src/PluginCatalog.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/core/CallbackCadenceEvidence.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/PeriodCapabilityEvidence.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/ClockBridgeSizing.h engine/device/IndependentStreamFormatFence.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h engine/device/BridgeContinuityGate.h engine/device/EndpointIdentityPolicy.h engine/device/WasapiEndpointIdentityGuard.h engine/device/AsioStartupPolicy.h engine/device/AsioPriorityDeviceManager.h engine/device/AsioRegistrationPolicy.h engine/device/AsioRegistryIdentityProbe.h engine/device/DirectRouteFence.h)
 target_compile_definitions(ARMixConsole PRIVATE
     JUCE_WEB_BROWSER=1
     JUCE_USE_WIN_WEBVIEW2=1
@@ -29,7 +29,7 @@ target_compile_definitions(ARMixConsole PRIVATE
     JUCE_APPLICATION_NAME_STRING="AR MIX Studio"
     JUCE_APPLICATION_VERSION_STRING="0.5.0-p2")
 if(WIN32)
-  target_link_libraries(ARMixConsole PRIVATE ole32 uuid)
+  target_link_libraries(ARMixConsole PRIVATE ole32 uuid advapi32)
 endif()
 
 target_link_libraries(ARMixConsole PRIVATE
@@ -44,6 +44,12 @@ target_link_libraries(ARMixConsole PRIVATE
 
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(ARMixAsioRegistryIdentityTests tests/asio_registry_identity_test.cpp)
+  target_compile_features(ARMixAsioRegistryIdentityTests PRIVATE cxx_std_20)
+  if(WIN32)
+    target_link_libraries(ARMixAsioRegistryIdentityTests PRIVATE advapi32)
+  endif()
+  add_test(NAME AsioDriverClassRegistryAttestation COMMAND ARMixAsioRegistryIdentityTests)
   add_executable(ARMixDirectFenceTests tests/direct_route_fence_test.cpp)
   target_compile_features(ARMixDirectFenceTests PRIVATE cxx_std_20)
   add_test(NAME P0AsioLiveDirectRouteFence COMMAND ARMixDirectFenceTests)
@@ -65,6 +71,9 @@ if(BUILD_TESTING)
   add_executable(ARMixClockSizingTests tests/clock_bridge_sizing_test.cpp)
   target_compile_features(ARMixClockSizingTests PRIVATE cxx_std_20)
   add_test(NAME AdaptiveClockPeriodHeadroom COMMAND ARMixClockSizingTests)
+  add_executable(ARMixIndependentFormatTests tests/independent_stream_format_fence_test.cpp)
+  target_compile_features(ARMixIndependentFormatTests PRIVATE cxx_std_20)
+  add_test(NAME IndependentStreamNegotiatedFormatFence COMMAND ARMixIndependentFormatTests)
   if(WIN32)
     juce_add_console_app(ARMixAsioBackendTests PRODUCT_NAME "ArSonMix ASIO Backend Registration Tests")
     target_sources(ARMixAsioBackendTests PRIVATE tests/asio_backend_registration_test.cpp engine/device/AsioPriorityDeviceManager.h)
@@ -94,9 +103,19 @@ if(BUILD_TESTING)
   add_executable(ARMixPolicyTests tests/audio_profile_policy_test.cpp)
   target_compile_features(ARMixPolicyTests PRIVATE cxx_std_20)
   add_test(NAME CapabilityAudioProfilePolicy COMMAND ARMixPolicyTests)
+  add_executable(ARMixPeriodEvidenceTests tests/period_capability_evidence_test.cpp)
+  target_compile_features(ARMixPeriodEvidenceTests PRIVATE cxx_std_20)
+  add_test(NAME NativeDriverPeriodEvidence COMMAND ARMixPeriodEvidenceTests)
   add_executable(ARMixClockBridgeTests tests/adaptive_clock_bridge_test.cpp)
   target_compile_features(ARMixClockBridgeTests PRIVATE cxx_std_20)
   add_test(NAME AdaptiveDualClockBridge COMMAND ARMixClockBridgeTests)
+  add_executable(ARMixVirtualClockSoakTests tests/adaptive_clock_virtual_soak_test.cpp)
+  target_compile_features(ARMixVirtualClockSoakTests PRIVATE cxx_std_20)
+  add_test(NAME IndependentClockASRCDriftJitterSoak COMMAND ARMixVirtualClockSoakTests)
+  set_tests_properties(IndependentClockASRCDriftJitterSoak PROPERTIES TIMEOUT 30)
+  add_executable(ARMixCadenceTests tests/callback_cadence_evidence_test.cpp)
+  target_compile_features(ARMixCadenceTests PRIVATE cxx_std_20)
+  add_test(NAME P0RenderCallbackVariableQuantumCadence COMMAND ARMixCadenceTests)
   add_executable(ARMixHealthTests tests/realtime_health_histogram_test.cpp)
   target_compile_features(ARMixHealthTests PRIVATE cxx_std_20)
   add_test(NAME RealtimeHealthHistogram COMMAND ARMixHealthTests)

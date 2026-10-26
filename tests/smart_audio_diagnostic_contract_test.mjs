@@ -33,12 +33,86 @@ test('native one-click copy uses system clipboard and includes last event marker
   assert.match(ui,/action:"copyDiagnosticReport"/);
   assert.match(ui,/arMixDiagnosticReportCopied/);
 });
+test('P0 capability report uses real independent endpoints and never auto-applies buffer hints',()=>{
+  const adapter=read('engine/device/PeriodCapabilityEvidence.h');
+  assert.match(engine,/juce::AudioIODevice\* diagnosticRenderDevice\(\) noexcept/);
+  assert.match(engine,/juce::AudioIODevice\* diagnosticCaptureDevice\(\) noexcept/);
+  assert.match(engine,/independent_\.active\(\) \? independent_\.renderDevice\(\)/);
+  assert.match(engine,/independent_\.active\(\) \? independent_\.captureDevice\(\)/);
+  assert.match(host,/auto\* device = engine_\.diagnosticRenderDevice\(\)/);
+  assert.match(host,/auto\* capture = engine_\.diagnosticCaptureDevice\(\)/);
+  assert.match(host,/PeriodCapabilityEvidence::inspect/);
+  assert.match(host,/NOT_FAT_QUALIFIED_DO_NOT_AUTO_APPLY/);
+  assert.match(host,/WASAPI shared can/);
+  assert.match(adapter,/std::span<const int>/);
+  assert.match(cmake,/NativeDriverPeriodEvidence/);
+  assert.match(flow,/ARMixPeriodEvidenceTests/);
+  assert.match(policy,/unqualifiedLowLatency/);
+  assert.match(policy,/explicitExclusiveApprovalRequired/);
+});
+
+test('P0 ASIO native COM-driver registration attestation runs only on control plane',()=>{
+  const registry=read('engine/device/AsioRegistryIdentityProbe.h');
+  const policy=read('engine/device/AsioRegistrationPolicy.h');
+  assert.match(registry,/RegOpenKeyExW\(HKEY_LOCAL_MACHINE/);
+  assert.match(registry,/L"SOFTWARE\\\\ASIO"/);
+  assert.match(registry,/RegEnumKeyExW/);
+  assert.match(registry,/InprocServer32/);
+  assert.match(policy,/ambiguousName/);
+  assert.match(policy,/canonicalGuid/);
+  assert.match(engine,/savedAsioPreflight/);
+  assert.match(engine,/safeRequirements\.setAttribute \("deviceType", "Windows Audio"\)/);
+  assert.match(engine,/deviceManager_\.initialise \(1, 2, &safeRequirements, false\)/);
+  assert.match(engine,/deviceManager_\.closeAudioDevice\(\)/);
+  assert.match(engine,/expectedAsio->sameDriverClass\(selected\.registration\.identity\)/);
+  const approval = engine.slice(engine.indexOf('bool approveDirectRoute ('),
+                                engine.indexOf('bool resumeVerifiedDirectRoute()'));
+  assert.ok(approval.indexOf('expectedAsio->sameDriverClass') >= 0);
+  assert.ok(approval.indexOf('expectedAsio->sameDriverClass') <
+            approval.indexOf('directFence_.approve'));
+  assert.match(engine,/asioPinnedRegistration_\.sameDriverClass/);
+  assert.match(engine,/asioRegisteredClassHash/);
+  assert.match(host,/WINDOWS ASIO DRIVER REGISTRATION/);
+  assert.match(cmake,/AsioDriverClassRegistryAttestation/);
+  assert.match(flow,/ARMixAsioRegistryIdentityTests/);
+});
+test('P0 render callback cadence uses previous quantum and labels provenance rather than inventing XRUNs',()=>{
+  const cadence=read('engine/core/CallbackCadenceEvidence.h');
+  const cadenceTest=read('tests/callback_cadence_evidence_test.cpp');
+  assert.match(cadence,/previousFrames_/);
+  assert.match(cadence,/1000000\.0 \* previousFrames \/ rateHz_/);
+  assert.match(cadence,/NOT_RENDER_XRUN/);
+  assert.match(cadenceTest,/100000/);
+  assert.match(cadenceTest,/C::Kind::clockRegression/);
+  assert.match(engine,/cadence_\.prepare \(sampleRateHz_\)/);
+  assert.match(engine,/cadence_\.observe \(beginUs, samples\)/);
+  assert.match(engine,/callbackCadenceProvenance/);
+  assert.match(engine,/callbackCadenceComparedIntervals/);
+  assert.match(engine,/callbackCadenceClockRegressions/);
+  assert.match(host,/START-to-START estimates use PREVIOUS callback frame count/);
+  assert.match(cmake,/P0RenderCallbackVariableQuantumCadence/);
+  assert.match(flow,/ARMixCadenceTests/);
+  assert.doesNotMatch(engine,/previousCallbackStartUs_/);
+});
 test('telemetry distinguishes measured host budget fractions from unobservable output underrun',()=>{
   assert.match(engine,/realtimeHistogram_\.observe \(elapsedUs, periodUs\)/);
   assert.match(engine,/callbackP95BudgetUpperPct/);
   assert.match(engine,/callbackP99BudgetUpperPct/);
   assert.match(engine,/UNAVAILABLE_THROUGH_CURRENT_JUCE_AUDIODEVICE/);
   assert.match(health,/std::array<std::atomic<std::uint64_t>,13>/);
+});
+test('P0 deterministic virtual clock soak is enforced in Windows CTest',()=>{
+  const soak=read('tests/adaptive_clock_virtual_soak_test.cpp');
+  assert.match(soak,/ASRC_SOAK/);
+  assert.match(soak,/simulatedMilliseconds = 8000/);
+  assert.match(soak,/96k_to_48k_minus300/);
+  assert.match(soak,/48k_to_96k_plus300/);
+  assert.match(soak,/std::abs\(crossMean\)/);
+  assert.match(soak,/steadyUnderflow/);
+  assert.match(soak,/p99Budget/);
+  assert.doesNotMatch(soak,/std::this_thread::sleep_for\s*\(|std::random_device\s*[({]/);
+  assert.match(cmake,/IndependentClockASRCDriftJitterSoak/);
+  assert.match(flow,/ARMixVirtualClockSoakTests/);
 });
 test('clock bridge has no callback alloc / blocking and is gated behind independent stream adapter',()=>{
   assert.match(bridge,/class AdaptiveClockBridge final/);
@@ -52,7 +126,9 @@ test('clock bridge has no callback alloc / blocking and is gated behind independ
   assert.doesNotMatch(engine,/AdaptiveClockBridge\s+clockBridge_/);
   assert.match(cmake,/AdaptiveDualClockBridge/);
   assert.match(cmake,/RealtimeHealthHistogram/);
-  assert.match(flow,/ARMixClockBridgeTests ARMixHealthTests ARMixPolicyTests/);
+  for (const target of ['ARMixClockBridgeTests','ARMixVirtualClockSoakTests',
+                        'ARMixHealthTests','ARMixPolicyTests'])
+    assert.ok(flow.includes(target), 'Windows CI is missing ' + target);
   assert.match(policy,/class AudioProfilePolicy final/);
   assert.match(policy,/clockSharedByHardware/);
   assert.match(policy,/unsupportedClockAdapter/);

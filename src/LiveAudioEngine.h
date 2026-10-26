@@ -9,9 +9,11 @@
 #include "DiagnosticTone.h"
 #include "../engine/device/JuceIndependentClockDevice.h"
 #include "../engine/device/AsioPriorityDeviceManager.h"
+#include "../engine/device/AsioRegistryIdentityProbe.h"
 #include "../engine/device/DirectRouteFence.h"
 #include "../engine/device/WasapiEndpointIdentityGuard.h"
 #include "../engine/core/RealtimeHealthHistogram.h"
+#include "../engine/core/CallbackCadenceEvidence.h"
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -61,6 +63,19 @@ public:
     ~LiveAudioEngine() override { stop(); }
 
     juce::AudioDeviceManager& devices() noexcept { return deviceManager_; }
+    // Message/control-thread reporting only. The normal JUCE manager is
+    // intentionally closed while independent WASAPI capture/render runs.
+    // Diagnostics must use the ACTUAL render/capture device in that mode.
+    juce::AudioIODevice* diagnosticRenderDevice() noexcept
+    {
+        return independent_.active() ? independent_.renderDevice()
+                                    : deviceManager_.getCurrentAudioDevice();
+    }
+    juce::AudioIODevice* diagnosticCaptureDevice() noexcept
+    {
+        return independent_.active() ? independent_.captureDevice()
+                                    : deviceManager_.getCurrentAudioDevice();
+    }
 
     juce::String start (const juce::XmlElement* savedSettings = nullptr)
     {
@@ -69,6 +84,8 @@ public:
         // Panic OUTPUT MUTE remains available at all times.
         monitor_.store (true);
         directFence_.suspend(); // silence until the selected backend is verified
+        asioPinnedRegistration_ = {};
+        asioRegistrationScope_ = "NONE";
         // Register the host callback BEFORE opening any physical device.
         // If saved ASIO is absent/busy and startup deliberately fails closed,
         // AUDIO SETUP can still select a replacement and JUCE will call the
@@ -80,6 +97,36 @@ public:
             && savedSettings->hasTagName ("DEVICESETUP");
         const auto expectedBackend = savedRoute
             ? savedSettings->getStringAttribute ("deviceType") : juce::String();
+        // Saved ASIO device labels are never sufficient to trust a registered
+        // COM driver class. The native registry lookup mirrors pinned JUCE's
+        // SOFTWARE/ASIO view. Recheck after JUCE has actually opened it.
+        // This comparison is a control-thread transaction, not a callback.
+        std::optional<armix::device::AsioRegistrationPolicy::Identity> savedAsioPreflight;
+        if (savedRoute && expectedBackend == "ASIO")
+        {
+            auto name = savedSettings->getStringAttribute ("audioDeviceName");
+            if (name.isEmpty()) name = savedSettings->getStringAttribute ("audioOutputDeviceName");
+            if (name.isEmpty()) name = savedSettings->getStringAttribute ("audioInputDeviceName");
+            const auto identity = armix::device::AsioRegistryIdentityProbe::resolve (
+                std::wstring (name.toWideCharPointer()));
+            if (!identity.registration.ok())
+            {
+                // JUCE requires initialise() to establish its default minimum
+                // channel requirements for AUDIO SETUP, even if this saved ASIO
+                // route must never be opened. Only initialise a transient
+                // Windows Audio fallback while the DIRECT fence is SUSPENDED,
+                // then close it. Never instantiate the rejected ASIO class.
+                juce::XmlElement safeRequirements ("DEVICESETUP");
+                safeRequirements.setAttribute ("deviceType", "Windows Audio");
+                (void) deviceManager_.initialise (1, 2, &safeRequirements, false);
+                deviceManager_.closeAudioDevice();
+                asioRegistrationScope_ = "SAVED_ASIO_PREFLIGHT_REJECTED";
+                return "Saved ASIO registration preflight rejected: " +
+                    juce::String (armix::device::AsioRegistrationPolicy::reason (
+                        identity.registration.error));
+            }
+            savedAsioPreflight = identity.registration.identity;
+        }
         // Saved explicit device choice MUST NOT be silently replaced by
         // JUCE's selectDefaultDeviceOnFailure path (e.g. ASIO -> WASAPI).
         auto error = deviceManager_.initialise (1, 2, savedSettings, !savedRoute);
@@ -127,17 +174,25 @@ public:
                 return "Saved audio route identity changed: choose an explicit ASIO/WASAPI device in AUDIO SETUP";
             }
         }
-        if (!approveDirectRoute())
+        // The native registration comparison MUST complete while the DIRECT
+        // fence is still suspended. approveDirectRoute() publishes permission
+        // only AFTER its post-open full CLSID/key check has succeeded.
+        if (!approveDirectRoute (savedAsioPreflight
+                                 ? &*savedAsioPreflight : nullptr))
         {
             deviceManager_.closeAudioDevice();
-            return "Device backend opened without valid full-duplex identity";
+            return "Device backend or saved ASIO registration changed; choose AUDIO SETUP explicitly";
         }
+        if (savedAsioPreflight)
+            asioRegistrationScope_ = "SAVED_PREFLIGHT_POSTOPEN_REGISTRATION_CONSISTENT";
         return {};
     }
 
     void stop()
     {
         directFence_.suspend();
+        asioPinnedRegistration_ = {};
+        asioRegistrationScope_ = "NONE";
         independent_.close();
         detach();
         handoff_.resetAfterStop (graphOwned_.get());
@@ -699,6 +754,14 @@ public:
             "PINNED_BACKEND_AND_DRIVER_NAME_NOT_HARDWARE_ID");
         o->setProperty ("directRouteChannelMapGuard",
             "EXACT_ACTIVE_INPUT_AND_OUTPUT_CHANNEL_BITMASKS");
+        o->setProperty ("asioRegistryAttestation", asioRegistrationScope_);
+        o->setProperty ("asioRegistryIdentityProvenance",
+            "WINDOWS_ASIO_REGISTRY_CLSID_NOT_PHYSICAL_HARDWARE_OR_OPEN_COM_OBJECT");
+        const auto asioHash = armix::device::AsioRegistryIdentityProbe::diagnosticFingerprint (
+            asioPinnedRegistration_);
+        o->setProperty ("asioRegisteredClassHash", asioHash != 0
+            ? juce::String::toHexString (static_cast<juce::int64> (asioHash))
+            : juce::String());
         o->setProperty ("liveBackendClass", dual ? "WASAPI_BRIDGED_ASRC"
             : backend == "ASIO" ? "ASIO_DIRECT_ZERO_EXTRA_FIFO"
             : backend.startsWith ("Windows Audio") ? "WASAPI_DIRECT_ZERO_EXTRA_FIFO"
@@ -733,6 +796,15 @@ public:
         o->setProperty ("diagnosticTemporary", savedLiveSetup_.has_value());
         o->setProperty ("deviceGeneration", static_cast<double> (deviceStartCount_.load()));
         o->setProperty ("lateCallbackIntervals", static_cast<double> (lateCallbackIntervals_.load()));
+        o->setProperty ("callbackCadenceProvenance",
+            armix::rt::CallbackCadenceEvidence::provenance());
+        o->setProperty ("callbackCadenceComparedIntervals",
+            static_cast<double> (cadenceComparedIntervals_.load (std::memory_order_relaxed)));
+        o->setProperty ("callbackCadenceClockRegressions",
+            static_cast<double> (cadenceClockRegressions_.load (std::memory_order_relaxed)));
+        o->setProperty ("callbackCadenceLastExpectedUs",
+            static_cast<double> (cadenceLastExpectedUs_.load (std::memory_order_relaxed)));
+        o->setProperty ("callbackCadenceGapThresholds", "SUGGESTIVE_1_5X_AND_2_3X_PREVIOUS_BLOCK_PERIOD");
         o->setProperty ("testOutputFrames", static_cast<double> (testOutputFrames_.load()));
         o->setProperty ("testCaptureFrames", static_cast<double> (testCaptureFrames_.load()));
         o->setProperty ("renderUnderrunSource", "UNAVAILABLE_THROUGH_CURRENT_JUCE_AUDIODEVICE");
@@ -812,6 +884,9 @@ public:
             o->setProperty ("bridgeRenderEndpointIdHash", independent_.renderIdentityHash());
             o->setProperty ("bridgeCaptureCallbacks", static_cast<double> (independent_.captureCallbacks()));
             o->setProperty ("bridgeRenderCallbacks", static_cast<double> (independent_.renderCallbacks()));
+            o->setProperty ("bridgeNegotiationFault", independent_.formatFaultReason());
+            o->setProperty ("bridgeNegotiationProtection",
+                "FULL_CHANNEL_MASK_RATE_PERIOD_AT_START_PLUS_RT_CHANNEL_COUNT");
             const auto watch = independent_.streamWatchdogStatus();
             o->setProperty ("bridgeWatchdogFault",
                 armix::device::IndependentStreamWatchdog::name (watch.stall));
@@ -836,7 +911,8 @@ public:
     }
 
 private:
-    bool approveDirectRoute()
+    bool approveDirectRoute (
+        const armix::device::AsioRegistrationPolicy::Identity* expectedAsio = nullptr)
     {
         auto* device=deviceManager_.getCurrentAudioDevice();
         if (device == nullptr || device->getActiveInputChannels().isZero()
@@ -849,8 +925,35 @@ private:
         const auto name=device->getName();
         const auto inputMask=device->getActiveInputChannels().toString (16);
         const auto outputMask=device->getActiveOutputChannels().toString (16);
-        return directFence_.approve (backend.toRawUTF8(), name.toRawUTF8(),
-                                     inputMask.toRawUTF8(), outputMask.toRawUTF8());
+        armix::device::AsioRegistrationPolicy::Identity candidate;
+        if (backend == "ASIO")
+        {
+            const auto selected = armix::device::AsioRegistryIdentityProbe::resolve (
+                std::wstring (name.toWideCharPointer()));
+            if (!selected.registration.ok() ||
+                (expectedAsio != nullptr &&
+                 !expectedAsio->sameDriverClass(selected.registration.identity)))
+            {
+                directFence_.suspend();
+                asioRegistrationScope_ = !selected.registration.ok()
+                    ? juce::String (armix::device::AsioRegistrationPolicy::reason (
+                        selected.registration.error))
+                    : juce::String ("SAVED_ASIO_DRIVER_REGISTRATION_CHANGED_DURING_OPEN");
+                return false;
+            }
+            candidate = selected.registration.identity;
+        }
+        const bool approved = directFence_.approve (
+            backend.toRawUTF8(), name.toRawUTF8(),
+            inputMask.toRawUTF8(), outputMask.toRawUTF8());
+        if (approved)
+        {
+            asioPinnedRegistration_ = std::move(candidate);
+            asioRegistrationScope_ = backend == "ASIO"
+                ? "POSTOPEN_REGISTERED_ASIO_DRIVER_CLASS_PINNED"
+                : "NOT_ASIO";
+        }
+        return approved;
     }
     bool resumeVerifiedDirectRoute()
     {
@@ -862,12 +965,25 @@ private:
         const auto name=device->getName();
         const auto inputMask=device->getActiveInputChannels().toString (16);
         const auto outputMask=device->getActiveOutputChannels().toString (16);
+        if (backend == "ASIO")
+        {
+            const auto selected = armix::device::AsioRegistryIdentityProbe::resolve (
+                std::wstring (name.toWideCharPointer()));
+            if (!selected.registration.ok() ||
+                !asioPinnedRegistration_.sameDriverClass(selected.registration.identity))
+                return false; // no new ASIO driver class without explicit user approval
+        }
+        else if (asioPinnedRegistration_.valid()) return false;
         return directFence_.resumeExpected (backend.toRawUTF8(), name.toRawUTF8(),
                                             inputMask.toRawUTF8(), outputMask.toRawUTF8());
     }
     static constexpr int maxFrames = 8192;
     armix::device::AsioPriorityDeviceManager deviceManager_;
     armix::device::DirectRouteFence directFence_;
+    // Control-thread only; retain full class identity for exact comparison,
+    // publish correlation HASH only. Never read registry in audio callback.
+    armix::device::AsioRegistrationPolicy::Identity asioPinnedRegistration_;
+    juce::String asioRegistrationScope_ {"NONE"};
     std::atomic<std::uint64_t> directSuppressedFrames_ {0};
     juce::String startupFallbackReason_; // control-thread-only startup diagnostics
     armix::device::JuceIndependentClockDevice independent_;
@@ -896,12 +1012,14 @@ private:
     std::atomic<std::uint64_t> slowCallbacks_ {0}, overBudgetCallbacks_ {0};
     std::atomic<std::uint64_t> callbackGaps_ {0}, worstCallbackGapUs_ {0};
     std::atomic<std::uint64_t> lateCallbackIntervals_ {0};
+    std::atomic<std::uint64_t> cadenceComparedIntervals_ {0}, cadenceClockRegressions_ {0};
+    std::atomic<std::uint64_t> cadenceLastExpectedUs_ {0};
     std::atomic<std::uint64_t> testOutputFrames_ {0}, testCaptureFrames_ {0};
     std::atomic<std::uint64_t> worstPluginUs_ {0}, slowPlugins_ {0};
     std::atomic<std::uint64_t> deviceStartCount_ {0}, deviceStopCount_ {0};
     std::array<std::atomic<std::uint64_t>, maxFx> lastPluginUsBySlot_ {};
     std::array<std::atomic<std::uint64_t>, maxFx> worstPluginUsBySlot_ {};
-    std::uint64_t previousCallbackStartUs_ = 0;
+    armix::rt::CallbackCadenceEvidence cadence_; // one render producer; lifecycle reset
     double sampleRateHz_ = 48000.0;
 
     static std::uint64_t clockMicros() noexcept
@@ -977,7 +1095,8 @@ private:
             lastPluginUsBySlot_[i].store (0, std::memory_order_relaxed);
             worstPluginUsBySlot_[i].store (0, std::memory_order_relaxed);
         }
-        previousCallbackStartUs_ = 0;
+        cadence_.prepare (sampleRateHz_);
+        cadenceLastExpectedUs_.store (0, std::memory_order_relaxed);
         int latency = 0;
         for (int i = 0; i < graphOwned_->count; ++i)
         {
@@ -1032,18 +1151,26 @@ private:
         const auto cycle = handoff_.beginCycle();
         const std::uint64_t beginUs = clockMicros();
         const double periodUs = 1000000.0 * static_cast<double> (samples) / sampleRateHz_;
-        // Scheduling gaps only suggest instability: pause/suspend and WASAPI
-        // callback scheduling can create false positives. Never label xruns.
-        if (previousCallbackStartUs_ != 0 && periodUs > 0)
+        // Scheduling gaps are NOT driver-confirmed xruns. Critically the
+        // expected START-to-START period comes from the PREVIOUS callback's
+        // number of frames, not the current block (JUCE can vary quantum).
+        // O(1), single audio producer; lifecycle resets before stream begins.
+        const auto cadence = cadence_.observe (beginUs, samples);
+        if (cadence.comparable())
         {
-            const auto gap = beginUs - previousCallbackStartUs_;
-            publishMax (worstCallbackGapUs_, gap);
-            if (static_cast<double> (gap) > periodUs * 1.5)
+            cadenceComparedIntervals_.fetch_add (1, std::memory_order_relaxed);
+            cadenceLastExpectedUs_.store (
+                static_cast<std::uint64_t> (cadence.expectedIntervalUs + 0.5),
+                std::memory_order_relaxed);
+            publishMax (worstCallbackGapUs_, cadence.actualIntervalUs);
+            if (cadence.kind == armix::rt::CallbackCadenceEvidence::Kind::late ||
+                cadence.kind == armix::rt::CallbackCadenceEvidence::Kind::veryLate)
                 lateCallbackIntervals_.fetch_add (1, std::memory_order_relaxed);
-            if (static_cast<double> (gap) > periodUs * 2.3)
+            if (cadence.kind == armix::rt::CallbackCadenceEvidence::Kind::veryLate)
                 callbackGaps_.fetch_add (1, std::memory_order_relaxed);
         }
-        previousCallbackStartUs_ = beginUs;
+        else if (cadence.kind == armix::rt::CallbackCadenceEvidence::Kind::clockRegression)
+            cadenceClockRegressions_.fetch_add (1, std::memory_order_relaxed);
         callbackInputs_.store (inputChannels, std::memory_order_relaxed);
         callbackOutputs_.store (outputChannels, std::memory_order_relaxed);
         callbackCount_.fetch_add (1, std::memory_order_relaxed);

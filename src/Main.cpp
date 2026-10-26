@@ -7,6 +7,7 @@
 #include "LiveAudioEngine.h"
 #include "DiagnosticsRecorder.h"
 #include "../engine/device/DirectRestoreBackoff.h"
+#include "../engine/device/PeriodCapabilityEvidence.h"
 #if defined(_WIN32)
 #include "../engine/device/WasapiCapabilityProbe.h"
 #endif
@@ -230,7 +231,9 @@ private:
         // the independent stream fault source and durations FIRST, before the
         // potentially long full status JSON, so field reports retain evidence
         // after closing the adapter resets its watchdog.
-        const auto watchdogSummary = juce::String ("watchdog=")
+        const auto watchdogSummary = juce::String ("format=")
+            + stateBeforeRestore.getProperty ("bridgeNegotiationFault", "NONE").toString()
+            + " watchdog="
             + stateBeforeRestore.getProperty ("bridgeWatchdogFault", "NONE").toString()
             + " captureSilentMs="
             + stateBeforeRestore.getProperty ("bridgeCaptureSilentMs", 0).toString()
@@ -431,7 +434,8 @@ private:
     {
         auto status = engine_.status();
         annotateRecovery (status);
-        auto* device = engine_.devices().getCurrentAudioDevice();
+        auto* device = engine_.diagnosticRenderDevice();
+        auto* capture = engine_.diagnosticCaptureDevice();
         juce::String result;
         result.preallocateBytes (64 * 1024);
         result << "ARSONMIX / SMART AUDIO DIAGNOSTIC REPORT v2\n";
@@ -442,22 +446,71 @@ private:
         result << "Logical cores: " << juce::SystemStats::getNumCpus()
                << " | RAM: " << juce::SystemStats::getMemorySizeInMegabytes() << " MiB\n";
         result << "Telemetry: true hardware render underruns UNAVAILABLE; callback time/gap are proxies only.\n";
+        result << "CALLBACK CADENCE: START-to-START estimates use PREVIOUS callback frame count; "
+                  "normal variable block sizes are not driver xruns. 1.5x/2.3x flags "
+                  "are scheduling heuristics only, not WASAPI/ASIO underrun evidence.\n";
         result << "No user audio samples, passwords or plugin vendor state are included.\n";
         result << "Check device names and local paths before sharing this report.\n\n";
         result << "=== DEVICE CAPABILITIES (backend-reported) ===\n";
         if (device != nullptr)
         {
-            result << "Input latency: " << device->getInputLatencyInSamples()
+            result << "Input latency: "
+                   << (capture ? capture->getInputLatencyInSamples() : -1)
                    << " frames | Output latency: " << device->getOutputLatencyInSamples()
-                   << " frames | Native buffer: " << device->getCurrentBufferSizeSamples() << " frames\n";
-            result << "Reported sample rates: ";
+                   << " frames | Native render buffer: "
+                   << device->getCurrentBufferSizeSamples() << " frames\n";
+            result << "Capture backend device: "
+                   << (capture ? capture->getName() : juce::String ("Unavailable"))
+                   << " | Render backend device: " << device->getName() << "\n";
+            result << "Reported render sample rates: ";
             for (auto v : device->getAvailableSampleRates()) result << v << " ";
-            result << "\nReported buffer sizes: ";
-            for (auto v : device->getAvailableBufferSizes()) result << v << " ";
+            const auto reportedBuffers = device->getAvailableBufferSizes();
+            result << "\nReported render buffer sizes: ";
+            for (auto v : reportedBuffers) result << v << " ";
             result << "\n";
+            const auto evidence = armix::device::PeriodCapabilityEvidence::inspect (
+                device->getCurrentSampleRate(), device->getCurrentBufferSizeSamples(),
+                std::span<const int> (reportedBuffers.getRawDataPointer(),
+                                      static_cast<std::size_t> (reportedBuffers.size())));
+            result << "BUFFER POLICY (read-only; no device change): ";
+            if (!evidence.validFormat)
+                result << "INVALID_NEGOTIATED_FORMAT\n";
+            else
+            {
+                result << "actualPeriodMs=" << evidence.nominalCallbackMs
+                       << " activeFramesAdvertised="
+                       << (evidence.activePeriodAdvertised ? "YES" : "NO_OR_UNREPORTED")
+                       << " minimumAdvertisedFrames=" << evidence.smallestReportedFrames
+                       << " conservativeCandidateFrames=" << evidence.conservativeReportedFrames
+                       << " conservativePeriodMs=" << evidence.conservativeCallbackMs
+                       << " | NOT_FAT_QUALIFIED_DO_NOT_AUTO_APPLY\n";
+            }
+            result << "These periods are driver/JUCE reported (WASAPI shared can"
+                      " select an OS period independently). This is not measured"
+                      " round-trip latency or proof of stable low latency.\n";
         }
         else result << "No active device\n";
 #if defined(_WIN32)
+        // ASIO JUCE names are only labels: report the COM driver class bound
+        // to the selected name from the Windows registry ON THIS EXPLICIT
+        // REPORT REQUEST, not in the 12 Hz UI status or realtime callback.
+        result << "\n=== WINDOWS ASIO DRIVER REGISTRATION (NOT HARDWARE ID) ===\n";
+        if (device != nullptr && device->getTypeName() == "ASIO")
+        {
+            const auto resolved = armix::device::AsioRegistryIdentityProbe::resolve (
+                std::wstring (device->getName().toWideCharPointer()));
+            result << armix::device::AsioRegistrationPolicy::reason (
+                resolved.registration.error) << "\n";
+            if (resolved.registration.ok())
+                result << "Registered driver class hash: "
+                       << juce::String::toHexString (static_cast<juce::int64> (
+                           armix::device::AsioRegistryIdentityProbe::diagnosticFingerprint (
+                               resolved.registration.identity))) << "\n";
+            result << "CLSID identifies a Windows software COM driver class, "
+                      "NOT a physical USB device, audio clock, or proof the "
+                      "currently opened COM instance is that class.\n";
+        }
+        else result << "Not using an ASIO DIRECT backend\n";
         result << "\n=== WINDOWS NATIVE WASAPI CAPABILITY PROBE (NOT LIVE LATENCY) ===\n";
         result << armix::device::WasapiCapabilityProbe::report() << "\n";
 #endif

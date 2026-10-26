@@ -30,21 +30,28 @@ jobs:
       - name: Validate native UI JavaScript
         shell: pwsh
         run: |
-          node --check web/bridge.js
-          node --check web/monitor.js
-          node --check web/app.js
-          node --test tests/gui_workflow_contract_test.mjs
-          node --test tests/native_ui_contract_test.mjs
-          node --test tests/native_preset_contract_test.mjs
-          node --test tests/fx_add_contract_test.mjs
-          node --test tests/live_graph_contract_test.mjs
-          node --test tests/reconciled_gui_engine_contract_test.mjs
-          node --test tests/main_v08_native_integration_test.mjs
-          node --test tests/smart_audio_ard_contract_test.mjs
-          node --test tests/p0_diagnostic_contract_test.mjs
-          node --test tests/smart_audio_diagnostic_contract_test.mjs
-          node --test tests/independent_clock_adapter_contract_test.mjs
-          node --test tests/direct_restore_recovery_contract_test.mjs
+          # Do not hide earlier Node failures with the exit code of the LAST
+          # command. One Node invocation also avoids repeated startup costs.
+          foreach ($file in @('web/bridge.js', 'web/monitor.js', 'web/app.js')) {
+            node --check $file
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          $contracts = @(
+            'tests/gui_workflow_contract_test.mjs'
+            'tests/native_ui_contract_test.mjs'
+            'tests/native_preset_contract_test.mjs'
+            'tests/fx_add_contract_test.mjs'
+            'tests/live_graph_contract_test.mjs'
+            'tests/reconciled_gui_engine_contract_test.mjs'
+            'tests/main_v08_native_integration_test.mjs'
+            'tests/smart_audio_ard_contract_test.mjs'
+            'tests/p0_diagnostic_contract_test.mjs'
+            'tests/smart_audio_diagnostic_contract_test.mjs'
+            'tests/independent_clock_adapter_contract_test.mjs'
+            'tests/direct_restore_recovery_contract_test.mjs'
+          )
+          node --test $contracts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Configure Windows x64
         shell: pwsh
         run: >
@@ -53,7 +60,7 @@ jobs:
           -DBUILD_TESTING=ON
           -DJUCE_WEBVIEW2_PACKAGE_LOCATION="${{ github.workspace }}/.deps"
       - name: Build executable and native RT tests
-        run: cmake --build build --config Release --target ARMixConsole ARMixRTTests ARMixPresetTests ARMixDiagnosticTests ARMixClockBridgeTests ARMixHealthTests ARMixPolicyTests ARMixLifecycleTests ARMixWasapiProbeTests ARMixDualJuceTests ARMixClockSizingTests ARMixRecoveryTests ARMixStreamWatchdogTests ARMixBridgeContinuityTests ARMixEndpointPolicyTests ARMixEndpointGuardTests ARMixAsioPolicyTests ARMixAsioBackendTests ARMixDirectFenceTests --parallel 2
+        run: cmake --build build --config Release --target ARMixConsole ARMixRTTests ARMixPresetTests ARMixDiagnosticTests ARMixClockBridgeTests ARMixVirtualClockSoakTests ARMixCadenceTests ARMixHealthTests ARMixPolicyTests ARMixPeriodEvidenceTests ARMixLifecycleTests ARMixWasapiProbeTests ARMixDualJuceTests ARMixClockSizingTests ARMixIndependentFormatTests ARMixRecoveryTests ARMixStreamWatchdogTests ARMixBridgeContinuityTests ARMixEndpointPolicyTests ARMixEndpointGuardTests ARMixAsioPolicyTests ARMixAsioBackendTests ARMixAsioRegistryIdentityTests ARMixDirectFenceTests --parallel 2
       - name: Test realtime control primitives
         run: ctest --test-dir build -C Release --output-on-failure
       - name: Package native executable

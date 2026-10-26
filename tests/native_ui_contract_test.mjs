@@ -9,10 +9,15 @@ const engine=readFileSync('src/LiveAudioEngine.h','utf8');
 const main=readFileSync('src/Main.cpp','utf8');
 const recorder=readFileSync('src/DiagnosticsRecorder.h','utf8');
 test('native app never runs demo sine meters',()=>{
+  const scheduler=app.indexOf('function scheduleDemoMeter()');
   const fn=app.indexOf('function meters(t)');
-  const nativeExit=app.indexOf('if(window.__JUCE__?.backend?.emitEvent)return;',fn);
-  const demoLoop=app.indexOf('requestAnimationFrame(meters)',fn);
-  assert.ok(fn>=0 && nativeExit>fn && nativeExit<demoLoop);
+  const scheduleGuard=app.indexOf('if(window.__JUCE__?.backend?.emitEvent||document.hidden||',scheduler);
+  const timer=app.indexOf('meterTimer=setTimeout(',scheduler);
+  const meterGuard=app.indexOf('if(window.__JUCE__?.backend?.emitEvent||document.hidden||',fn);
+  const synth=app.indexOf('channels.forEach((ch,i)=>{const wave=',fn);
+  assert.ok(scheduler>=0 && scheduleGuard>scheduler && scheduleGuard<timer);
+  assert.ok(fn>scheduler && meterGuard>fn && meterGuard<synth);
+  assert.ok(app.indexOf('meterRAF=requestAnimationFrame(t=>{meterRAF=0;meters(t)});',scheduler)>scheduler);
 });
 test('native meter reads DSP and hides all 11 visual-only channels',()=>{
   assert.match(bridge,/inputLevel=percent\(d\.inputPeak\)/);
