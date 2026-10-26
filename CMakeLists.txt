@@ -19,7 +19,7 @@ juce_add_gui_app(ARMixConsole
 juce_add_binary_data(ARMixAssets SOURCES
     web/index.html web/styles.css web/app.js web/bridge.js web/monitor.js)
 
-target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h src/PluginCatalog.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/ClockBridgeSizing.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h)
+target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h src/PluginCatalog.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/ClockBridgeSizing.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h engine/device/BridgeContinuityGate.h)
 target_compile_definitions(ARMixConsole PRIVATE
     JUCE_WEB_BROWSER=1
     JUCE_USE_WIN_WEBVIEW2=1
@@ -44,6 +44,9 @@ target_link_libraries(ARMixConsole PRIVATE
 
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(ARMixBridgeContinuityTests tests/bridge_continuity_gate_test.cpp)
+  target_compile_features(ARMixBridgeContinuityTests PRIVATE cxx_std_20)
+  add_test(NAME SustainedAsrcContinuityFailback COMMAND ARMixBridgeContinuityTests)
   add_executable(ARMixStreamWatchdogTests tests/independent_stream_watchdog_test.cpp)
   target_compile_features(ARMixStreamWatchdogTests PRIVATE cxx_std_20)
   add_test(NAME IndependentStreamSilenceRecovery COMMAND ARMixStreamWatchdogTests)

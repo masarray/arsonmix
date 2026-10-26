@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/device/AdaptiveClockBridge.h"
 #include "../engine/device/ClockBridgeSizing.h"
+#include "../engine/device/BridgeContinuityGate.h"
 #include <array>
 #include <cmath>
 #include <cstdlib>
@@ -166,8 +167,55 @@ static void testNonFiniteCapture()
     check(status.renderedFrames==120*128);
 }
 
+// End-to-end virtual-clock reproduction of an ACTUAL FIFO starvation:
+// render is continuously scheduled but capture returns no useful frames
+// for 60ms every 500ms. First missing sample is "underflow"; the rest
+// are counted as "priming" by AdaptiveClockBridge. Policy must combine
+// those counters rather than misclassify the long re-prime as clean audio.
+// No hardware, wall-clock sleeps, mocks of the resampler or allocation in RT.
+static void testLiveBridgeContinuityFailback()
+{
+    using armix::device::AdaptiveClockBridge;
+    using armix::device::BridgeContinuityGate;
+    AdaptiveClockBridge bridge;
+    check(bridge.prepare(48000.,48000.,2,8192,50.));
+    BridgeContinuityGate gate;
+    std::array<float,48> l{},r{},outL{},outR{};
+    l.fill(.15f);r.fill(.15f);
+    const float* inputs[]={l.data(),r.data()};
+    float* outputs[]={outL.data(),outR.data()};
+    bool tripped=false;
+    for (std::uint64_t ms=0;ms<12000;++ms)
+    {
+        // Physical callback may still be called with zero usable capture.
+        // Do not stop the render clock or manufacture output xrun counts.
+        if (ms%500>=60) check(bridge.push(inputs,2,48)==48);
+        else check(bridge.push(inputs,2,0)==0);
+        bridge.pull(outputs,2,48);
+        const auto stats=bridge.status();
+        const auto fault=gate.observe(ms,{
+            stats.renderedFrames,stats.underflowFrames,
+            stats.primingFrames,stats.overflowFrames});
+        for(int i=0;i<48;++i)
+            check(std::isfinite(outL[i]) && std::isfinite(outR[i]));
+        if(fault!=BridgeContinuityGate::Fault::none)
+        {
+            tripped=true;
+            check(ms>=BridgeContinuityGate::warmupMs
+                + BridgeContinuityGate::windowMs);
+            check(gate.snapshot().consecutiveBadWindows>=3);
+            break;
+        }
+    }
+    const auto stats=bridge.status();
+    check(stats.primingFrames>0);
+    check(stats.underflowFrames>0);
+    check(tripped); // proven real FIR/FIFO starvation, not synthetic counters
+}
+
 int main()
 {
+    testLiveBridgeContinuityFailback();
     testNonFiniteCapture();
     const double passband = spectralRms (1000.);
     const double stopband = spectralRms (19000.);

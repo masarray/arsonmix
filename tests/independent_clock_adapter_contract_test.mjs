@@ -76,3 +76,19 @@ test('watchdog fault cause precedes bounded diagnostics JSON on both recovery ou
   assert.match(host,/getProperty \("bridgeRenderSilentMs", 0\)/);
   assert.equal((host.match(/watchdogSummary \+ " \| " \+ faultStatus/g)||[]).length,2);
 });
+
+test('sustained live FIFO loss feeds bounded DIRECT recovery without audio-callback policy work',()=>{
+  const gate=r('engine/device/BridgeContinuityGate.h');
+  assert.match(gate,/class BridgeContinuityGate final/);
+  assert.match(gate,/requiredBadWindows = 3/);
+  assert.match(gate,/warmupMs = 1500/);
+  assert.match(device,/continuityGate_\.observe \(nowMs/);
+  assert.match(device,/pcm\.underflowFrames/);
+  assert.match(device,/pcm\.primingFrames/);
+  assert.match(device,/pcm\.overflowFrames/);
+  assert.match(engine,/bridgeContinuityFault/);
+  assert.match(engine,/bridgeContinuityLossBp/);
+  assert.match(host,/getProperty \("bridgeContinuityFault", "NONE"\)/);
+  assert.match(host,/getProperty \("bridgeContinuityLossBp", 0\)/);
+  assert.match(host,/engine_\.pollIndependentClockHealth \(now\)/);
+});
