@@ -5,6 +5,7 @@
 #include "ClockBridgeSizing.h"
 #include "IndependentStreamWatchdog.h"
 #include "BridgeContinuityGate.h"
+#include "IndependentStreamFormatFence.h"
 #include "WasapiEndpointIdentityGuard.h"
 #include <array>
 #include <atomic>
@@ -143,10 +144,17 @@ public:
             close();
             return "Unable to allocate bounded capture FIFO / ASRC coefficients";
         }
+        // Lock negotiated stream name, rate, buffer period and FULL channel mask
+        // before either independent callback is attached. These two separate
+        // JUCE managers cannot silently renegotiate an already-prepared ASRC.
+        if (!formatFence_.prepare (formatOf (capture, true), formatOf (render, false)))
+        {
+            close();
+            return "Independent stream negotiated an unsupported channel map/format";
+        }
         streamWatchdog_.reset();
         continuityGate_.reset();
         deviceFault_.store (false, std::memory_order_release);
-        rateChanged_.store (false, std::memory_order_release);
         captureCallbacks_.store (0, std::memory_order_relaxed);
         renderCallbacks_.store (0, std::memory_order_relaxed);
         // Capture producer must start before the render-clock consumer.
@@ -179,6 +187,7 @@ public:
         renderEndpointHash_.clear();
         streamWatchdog_.reset();
         continuityGate_.reset();
+        formatFence_.resetStopped(); // callbacks detached, ownership exclusive
     }
 
     // Existing control timer owns this check; never invoked from audio callbacks.
@@ -210,7 +219,7 @@ public:
     bool faulted() const noexcept
     {
         return deviceFault_.load (std::memory_order_acquire)
-            || rateChanged_.load (std::memory_order_acquire);
+            || formatFence_.fault() != IndependentStreamFormatFence::Fault::none;
     }
     juce::AudioIODevice* captureDevice() const noexcept
     {
@@ -230,16 +239,32 @@ public:
     AdaptiveClockBridge::Status bridgeStatus() const noexcept { return bridge_.status(); }
     std::uint64_t captureCallbacks() const noexcept { return captureCallbacks_.load(); }
     std::uint64_t renderCallbacks() const noexcept { return renderCallbacks_.load(); }
+    const char* formatFaultReason() const noexcept
+    {
+        return IndependentStreamFormatFence::reason (formatFence_.fault());
+    }
 
 private:
+    static IndependentStreamFormatFence::Endpoint formatOf (
+        const juce::AudioIODevice* device, bool capture)
+    {
+        // Lifecycle thread only: names and full bitmask are never formatted or
+        // queried inside the realtime process callback.
+        if (device == nullptr) return {};
+        const auto mask = capture ? device->getActiveInputChannels()
+                                  : device->getActiveOutputChannels();
+        return {device->getName().toStdString(), device->getCurrentSampleRate(),
+                device->getCurrentBufferSizeSamples(), mask.toString (16).toStdString(),
+                mask.countNumberOfSetBits()};
+    }
     struct Capture final : juce::AudioIODeviceCallback
     {
         JuceIndependentClockDevice& owner;
         explicit Capture (JuceIndependentClockDevice& p) : owner (p) {}
         void audioDeviceAboutToStart (juce::AudioIODevice* device) override
         {
-            if (device && device->getCurrentSampleRate() != owner.captureRate_)
-                owner.rateChanged_.store (true, std::memory_order_release);
+            owner.formatFence_.observeStart (
+                IndependentStreamFormatFence::Side::capture, formatOf (device, true));
         }
         void audioDeviceStopped() override
         {
@@ -258,6 +283,10 @@ private:
                 if (outputs[c]) juce::FloatVectorOperations::clear (outputs[c], samples);
             if (samples <= 0) return;
             owner.captureCallbacks_.fetch_add (1, std::memory_order_relaxed);
+            if (!owner.active() || owner.faulted()
+                || !owner.formatFence_.observeCallbackChannels (
+                       IndependentStreamFormatFence::Side::capture, inputChannels))
+                return;
             owner.bridge_.push (inputs, inputChannels, samples);
         }
     };
@@ -268,8 +297,10 @@ private:
         explicit Render (JuceIndependentClockDevice& p) : owner (p) {}
         void audioDeviceAboutToStart (juce::AudioIODevice* device) override
         {
-            if (device && device->getCurrentSampleRate() != owner.renderRate_)
-                owner.rateChanged_.store (true, std::memory_order_release);
+            owner.formatFence_.observeStart (
+                IndependentStreamFormatFence::Side::render, formatOf (device, false));
+            // Preserve plugin/JUCE lifecycle dispatch; DSP is muted by the
+            // render callback until control-thread recovery handles the fault.
             if (owner.downstream_) owner.downstream_->audioDeviceAboutToStart (device);
         }
         void audioDeviceStopped() override
@@ -289,7 +320,9 @@ private:
         {
             if (samples <= 0) return;
             owner.renderCallbacks_.fetch_add (1, std::memory_order_relaxed);
-            if (!owner.active() || !owner.downstream_ || owner.faulted())
+            const bool channelsMatch = owner.formatFence_.observeCallbackChannels (
+                IndependentStreamFormatFence::Side::render, outputChannels);
+            if (!channelsMatch || !owner.active() || !owner.downstream_ || owner.faulted())
             {
                 for (int c=0; c<outputChannels; ++c)
                     if (outputs[c]) juce::FloatVectorOperations::clear (outputs[c], samples);
@@ -324,12 +357,13 @@ private:
     AdaptiveClockBridge bridge_;
     IndependentStreamWatchdog streamWatchdog_; // message-thread policy
     BridgeContinuityGate continuityGate_; // message-thread policy, no RT work
+    IndependentStreamFormatFence formatFence_; // O(1) count guard on RT
     juce::AudioBuffer<float> staging_;
     juce::AudioIODeviceCallback* downstream_ = nullptr; // non-owning, externally synchronized
     Capture captureCallback_;
     Render renderCallback_;
     bool captureAttached_ = false, renderAttached_ = false; // control-thread only
-    std::atomic<bool> active_ {false}, deviceFault_ {false}, rateChanged_ {false};
+    std::atomic<bool> active_ {false}, deviceFault_ {false};
     std::atomic<std::uint64_t> captureCallbacks_ {0}, renderCallbacks_ {0};
     double captureRate_ = 0, renderRate_ = 0;
     int captureBufferFrames_ = 0, renderBufferFrames_ = 0;
