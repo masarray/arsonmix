@@ -109,9 +109,21 @@ public:
             const auto identity = armix::device::AsioRegistryIdentityProbe::resolve (
                 std::wstring (name.toWideCharPointer()));
             if (!identity.registration.ok())
+            {
+                // JUCE requires initialise() to establish its default minimum
+                // channel requirements for AUDIO SETUP, even if this saved ASIO
+                // route must never be opened. Only initialise a transient
+                // Windows Audio fallback while the DIRECT fence is SUSPENDED,
+                // then close it. Never instantiate the rejected ASIO class.
+                juce::XmlElement safeRequirements ("DEVICESETUP");
+                safeRequirements.setAttribute ("deviceType", "Windows Audio");
+                (void) deviceManager_.initialise (1, 2, &safeRequirements, false);
+                deviceManager_.closeAudioDevice();
+                asioRegistrationScope_ = "SAVED_ASIO_PREFLIGHT_REJECTED";
                 return "Saved ASIO registration preflight rejected: " +
                     juce::String (armix::device::AsioRegistrationPolicy::reason (
                         identity.registration.error));
+            }
             savedAsioPreflight = identity.registration.identity;
         }
         // Saved explicit device choice MUST NOT be silently replaced by
@@ -161,19 +173,14 @@ public:
                 return "Saved audio route identity changed: choose an explicit ASIO/WASAPI device in AUDIO SETUP";
             }
         }
-        if (!approveDirectRoute())
+        // The native registration comparison MUST complete while the DIRECT
+        // fence is still suspended. approveDirectRoute() publishes permission
+        // only AFTER its post-open full CLSID/key check has succeeded.
+        if (!approveDirectRoute (savedAsioPreflight
+                                 ? &*savedAsioPreflight : nullptr))
         {
             deviceManager_.closeAudioDevice();
-            return "Device backend opened without valid full-duplex identity or ASIO registry class";
-        }
-        if (savedAsioPreflight &&
-            !savedAsioPreflight->sameDriverClass(asioPinnedRegistration_))
-        {
-            directFence_.suspend();
-            asioPinnedRegistration_ = {};
-            asioRegistrationScope_ = "SAVED_ASIO_DRIVER_REGISTRATION_CHANGED_DURING_OPEN";
-            deviceManager_.closeAudioDevice();
-            return "Saved ASIO driver CLSID/key changed between registration preflight and open";
+            return "Device backend or saved ASIO registration changed; choose AUDIO SETUP explicitly";
         }
         if (savedAsioPreflight)
             asioRegistrationScope_ = "SAVED_PREFLIGHT_POSTOPEN_REGISTRATION_CONSISTENT";
@@ -894,7 +901,8 @@ public:
     }
 
 private:
-    bool approveDirectRoute()
+    bool approveDirectRoute (
+        const armix::device::AsioRegistrationPolicy::Identity* expectedAsio = nullptr)
     {
         auto* device=deviceManager_.getCurrentAudioDevice();
         if (device == nullptr || device->getActiveInputChannels().isZero()
@@ -912,11 +920,15 @@ private:
         {
             const auto selected = armix::device::AsioRegistryIdentityProbe::resolve (
                 std::wstring (name.toWideCharPointer()));
-            if (!selected.registration.ok())
+            if (!selected.registration.ok() ||
+                (expectedAsio != nullptr &&
+                 !expectedAsio->sameDriverClass(selected.registration.identity)))
             {
                 directFence_.suspend();
-                asioRegistrationScope_ = juce::String (
-                    armix::device::AsioRegistrationPolicy::reason (selected.registration.error));
+                asioRegistrationScope_ = !selected.registration.ok()
+                    ? juce::String (armix::device::AsioRegistrationPolicy::reason (
+                        selected.registration.error))
+                    : juce::String ("SAVED_ASIO_DRIVER_REGISTRATION_CHANGED_DURING_OPEN");
                 return false;
             }
             candidate = selected.registration.identity;
