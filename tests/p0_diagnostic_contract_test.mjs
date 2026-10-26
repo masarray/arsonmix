@@ -32,6 +32,25 @@ test('audio callback isolates low-amplitude oscillator from input and VST3',()=>
   assert.doesNotMatch(osc,/new |malloc\(|std::vector|mutex|lock_guard|fwrite\(/);
   assert.match(build,/P0DiagnosticTone/);
 });
+test('P0 crackle marker records a bounded pre-event source-labeled evidence window without callback polling',()=>{
+  const evidence=read('engine/diagnostics/CrackleEvidenceWindow.h');
+  assert.match(evidence,/class CrackleEvidenceWindow final/);
+  assert.match(evidence,/lookbackMs = 5000/);
+  assert.match(evidence,/latestPollLimitMs = 1600/);
+  assert.match(evidence,/deviceGeneration/);
+  assert.match(evidence,/sameScope/);
+  assert.match(evidence,/b\.count >= a\.count/);
+  assert.match(evidence,/WASAPI_CAPTURE_DISCONTINUITY_FLAGS/);
+  assert.match(evidence,/ASRC_INPUT_UNDERFLOW_FRAMES/);
+  assert.match(host,/AUDIO_GLITCH_WINDOW/);
+  assert.match(host,/PRE_MARK_EVIDENCE_5S/);
+  assert.match(host,/RENDER_HARDWARE_XRUN=UNAVAILABLE_THROUGH_JUCE/);
+  assert.match(host,/crackleEvidence_\.push \(makeEvidenceSample\(health\)\)/);
+  assert.match(host,/crackleEvidence_\.mark \(makeEvidenceSample\(status\)\)/);
+  assert.match(host,/if \(timerTicks_ % 12 == 0\)/);
+  assert.match(build,/P0PreMarkerFiveSecondEvidenceWindow/);
+  assert.doesNotMatch(engine,/CrackleEvidenceWindow/);
+});
 test('diagnostics preserve provenance and user-stamped glitch evidence',()=>{
   assert.match(engine,/backendXrunMeaning/);
   assert.match(engine,/WASAPI_CAPTURE_DISCONTINUITIES_ONLY/);
