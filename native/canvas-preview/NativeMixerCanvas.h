@@ -430,12 +430,13 @@ private:
         g.setFont (9.0f);
         g.drawText (master ? "L  R" : "VU", r.getX() + 5, f.getY() - 17, 40, 13,
                     juce::Justification::centredLeft);
-        g.setColour (juce::Colour::fromRGB (110, 124, 131));
-        g.drawText ("0", juce::roundToInt (meter.getX()), juce::roundToInt (meter.getY() - 27),
-                    20, 11, juce::Justification::centredLeft);
-        g.drawText ("-60", juce::roundToInt (meter.getX()),
-                    juce::roundToInt (meter.getBottom() + 6), 30, 11,
-                    juce::Justification::centredLeft);
+        // Meter has its own accurate 0..-60 dB tick axis beside the VU lane.
+        for (float db : { 0.0f, -6.0f, -12.0f, -24.0f, -36.0f, -48.0f, -60.0f })
+        {
+            const float y = meter.getBottom() - ((db + 60.0f) / 60.0f) * meter.getHeight();
+            g.setColour (juce::Colour::fromRGB (105, 124, 131));
+            g.drawLine (meter.getRight() + 1.0f, y, meter.getRight() + 4.0f, y, 1.0f);
+        }
 
         const juce::Rectangle<float> footer (r.getX() + 3, r.getBottom() - 42,
                                               r.getWidth() - 6, 35);
