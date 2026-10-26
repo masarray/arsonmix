@@ -32,7 +32,7 @@
  display:inline-flex;align-items:center;justify-content:center;
  flex:1 1 0;min-width:0;height:29px;min-height:29px;max-height:29px;
  font-size:10px;letter-spacing:.3px;padding:0 2px;line-height:1;
- filter:none!important;
+ filter:none!important;transition:none!important;
 }
 #app #masterLeft .master-actions #masterMode.is-stereo{
  --b180-color:#509bd2;--b180-border:#236b9e;--b180-ink:#061e2d;
