@@ -28,14 +28,42 @@ const pendingUiParams=new Map();let uiFlushScheduled=false;
 const peakHold=Object.create(null),clipLatch=Object.create(null);
 function resetClip(key){clipLatch[key]=false;document.querySelector(`[data-clip="${key}"]`)?.classList.remove('latched')}
 function syncClipLeds(){document.querySelectorAll('[data-clip]').forEach(e=>e.classList.toggle('latched',!!clipLatch[e.dataset.clip]))}
+// Cache per-meter nodes across preview frames, rebuilding on mixer re-render.
+// Styling a full-height bar with a compositor transform avoids 14 cyclic height
+// reflows per meter tick. No native meter or DSP data path is affected.
+const meterNodes=new Map();
+function meterNode(key){
+ const cached=meterNodes.get(key);
+ if(cached?.fill.isConnected)return cached;
+ const fill=document.querySelector(`[data-meter="${key}"]`);
+ if(!fill)return null;
+ const slot=fill.closest('.meter');
+ const entry={fill,peak:slot?.querySelector('.meter-peak'),
+              clip:slot?.querySelector('.clip-led'),level:-1,peakValue:-1};
+ meterNodes.set(key,entry);
+ return entry;
+}
 function updateMeterVisual(key,level,now){
- const el=document.querySelector(`[data-meter="${key}"]`);if(!el)return;
+ const meter=meterNode(key);if(!meter)return;
  const value=clamp(level,0,99);
- el.style.setProperty('--level',value.toFixed(1)+'%');
- const slot=el.closest('.meter'),old=peakHold[key];
- if(!old||value>=old.value||now>=old.until)peakHold[key]={value,until:now+1600};
- const pk=slot?.querySelector('.meter-peak');if(pk)pk.style.bottom=peakHold[key].value.toFixed(1)+'%';
- if(value>=97){clipLatch[key]=true;slot?.querySelector('.clip-led')?.classList.add('latched')}
+ const levelStep=Math.round(value*10);
+ if(meter.level!==levelStep){
+   meter.level=levelStep;
+   meter.fill.style.setProperty('--meter-scale',String(levelStep/1000));
+ }
+ const previous=peakHold[key];
+ if(!previous||value>=previous.value||now>=previous.until){
+   peakHold[key]={value,until:now+1600};
+   const step=Math.round(value*10);
+   if(meter.peak&&meter.peakValue!==step){
+     meter.peakValue=step;
+     meter.peak.style.bottom=(step/10)+'%';
+   }
+ }
+ if(value>=97&&!clipLatch[key]){
+   clipLatch[key]=true;
+   meter.clip?.classList.add('latched');
+ }
 }
 
 function flushUiParams(){uiFlushScheduled=false;const bridge=window.__JUCE__?.backend;if(bridge?.emitEvent)for(const event of pendingUiParams.values())bridge.emitEvent('arMixParameter',event);pendingUiParams.clear()}
@@ -106,7 +134,7 @@ function makeStrip(ch,i){let inserts=ch.inserts.slice(0,6);while(inserts.length<
  <div class="ch-id">${i+1}</div><div class="rack">${inserts.map((n,j)=>`<div class="insert-slot ${n&&bypassed[fxKey(i,j)]?'is-bypassed':''}"><button class="insert ${!n?'empty':''}" data-insert="${i}:${j}" title="${n?'Open or replace '+safeText(n):'Add VST effect'}">${n?'':'<span class="insert-add-glyph" aria-hidden="true">＋</span>'}<span class="insert-name">${n? safeText(n):'ADD FX'}</span></button>${n?`<button type="button" class="fx-power ${bypassed[fxKey(i,j)]?'is-bypassed':''}" data-fxpower="${i}:${j}" aria-pressed="${!bypassed[fxKey(i,j)]}" aria-label="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}" title="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}">⏻</button>`:''}</div>`).join('')}</div>
  <div class="strip-controls"><div class="trim-row"><span class="mini-label">TRIM<br>dB</span><div class="mini-lcd" data-trim-read="${i}">${fmt(ch.trim)}</div></div>${knobMarkup('trim',i,ch.trim,'Trim')}<div class="pan-control">${panMarkup(ch,i)}<div class="pan-readline"><span aria-hidden="true">L</span><strong data-pan-read="${i}">${panText(ch.pan)}</strong><span aria-hidden="true">R</span></div></div><div class="utility-row"><button data-pre="${i}" class="btn-180 ${ch.pre?'active':''}">Ø</button><button data-hpf="${i}" class="btn-180 ${ch.hpf?'active':''}">HPF</button></div></div>
  <div class="channel-actions"><button class="btn-180 candy mute ${ch.mute?'active':''}" data-mute="${i}" aria-pressed="${ch.mute}">MUTE</button><button class="btn-180 candy solo ${ch.solo?'active':''}" data-solo="${i}" aria-pressed="${ch.solo}">SOLO</button></div>
- <div class="db-display" data-read="${i}">${fmt(ch.fader)}</div><div class="fader-zone"><div class="scale"><span>10</span><span>0</span><span>−10</span><span>−20</span><span>−30</span><span>−40</span><span>−60</span></div><div class="fader" data-fader="${i}" role="slider" tabindex="0" aria-orientation="vertical" aria-label="${ch.name} fader" aria-valuemin="-60" aria-valuemax="10" aria-valuenow="${ch.fader}"><div class="cap" style="--pos:${levelToTop(ch.fader)}%"></div></div><div class="meter" data-meter-key="${i}"><button class="clip-led" type="button" data-clip="${i}" title="Clear latched clip — ${safeText(ch.name)}" aria-label="Clear ${safeText(ch.name)} clip"></button><div class="meter-fill" data-meter="${i}" style="--level:40%"></div><div class="meter-peak" aria-hidden="true"></div></div></div>
+ <div class="db-display" data-read="${i}">${fmt(ch.fader)}</div><div class="fader-zone"><div class="scale"><span>10</span><span>0</span><span>−10</span><span>−20</span><span>−30</span><span>−40</span><span>−60</span></div><div class="fader" data-fader="${i}" role="slider" tabindex="0" aria-orientation="vertical" aria-label="${ch.name} fader" aria-valuemin="-60" aria-valuemax="10" aria-valuenow="${ch.fader}"><div class="cap" style="--pos:${levelToTop(ch.fader)}%"></div></div><div class="meter" data-meter-key="${i}"><button class="clip-led" type="button" data-clip="${i}" title="Clear latched clip — ${safeText(ch.name)}" aria-label="Clear ${safeText(ch.name)} clip"></button><div class="meter-fill" data-meter="${i}" style="--meter-scale:.4"></div><div class="meter-peak" aria-hidden="true"></div></div></div>
  <div class="strip-name" data-editstrip="${i}" role="button" tabindex="0" aria-label="Edit ${safeText(ch.name)} name, icon and color" title="Edit channel identity"><span class="strip-caption">${safeText(ch.name)}</span><span class="track-icon">${safeText(ch.icon)}</span></div>
  </article>`}
 function renderMixer(){
@@ -121,7 +149,7 @@ function masterFxRows(){
  <button class="master-insert ${name?'':'empty'}" data-master-insert="${i}" title="${name?'Replace '+safeText(name):'Add master FX'}">${name?'':'<span class="master-insert-add" aria-hidden="true">＋</span>'}<span class="insert-name">${name?safeText(name):'ADD FX'}</span></button>
  ${name?`<button class="master-fx-power ${masterBypassed[i]?'is-bypassed':''}" data-master-power="${i}" title="${masterBypassed[i]?'Enable':'Bypass'} ${safeText(name)}" aria-label="${masterBypassed[i]?'Enable':'Bypass'} ${safeText(name)}" aria-pressed="${!masterBypassed[i]}">⏻</button>`:''}</div>`).join('');
 }
-function meterUnit(key,label){return `<div class="meter-unit"><div class="meter" data-meter-key="${key}"><button type="button" class="clip-led" data-clip="${key}" title="Clear latched clip — ${label}" aria-label="Clear ${label} clip indication"></button><div class="meter-fill" data-meter="${key}" style="--level:6%"></div><div class="meter-peak" aria-hidden="true"></div></div>${label?'<span class="meter-channel-label">'+label+'</span>':''}</div>`}
+function meterUnit(key,label){return `<div class="meter-unit"><div class="meter" data-meter-key="${key}"><button type="button" class="clip-led" data-clip="${key}" title="Clear latched clip — ${label}" aria-label="Clear ${label} clip indication"></button><div class="meter-fill" data-meter="${key}" style="--meter-scale:.06"></div><div class="meter-peak" aria-hidden="true"></div></div>${label?'<span class="meter-channel-label">'+label+'</span>':''}</div>`}
 function renderMaster(){
  const host=$('masterLeft');if(!host)return;
  host.innerHTML=`<div class="ch-id master-ch-id">MASTER</div>
@@ -243,33 +271,57 @@ document.addEventListener('click',e=>{const b=e.target.closest('button,[data-cho
 document.addEventListener('dblclick',e=>{const pan=e.target.closest('[data-pan]');if(pan){e.preventDefault();e.stopPropagation();updatePan(pan.dataset.pan==='master'?'master':+pan.dataset.pan,0)}},true);
 // Double-click a fader for 0 dB unity gain, without changing workspace.
 document.addEventListener('dblclick',e=>{const f=e.target.closest('[data-fader]');if(!f)return;e.preventDefault();e.stopPropagation();updateFader(f.dataset.fader,0)},true);
+// Idle pointer movement has no handler. Acquire geometry only once per drag
+// rather than forcing a layout read on every input event.
 let drag=null;
-document.addEventListener('pointerdown',e=>{const f=e.target.closest('[data-fader]'),p=e.target.closest('[data-pan]'),k=e.target.closest('[data-knob]');if(!f&&!p&&!k)return;const el=f||p||k;
- const strip=e.target.closest('[data-strip]');
- if(strip&&view==='MIX')focusChannel(+strip.dataset.strip);else if(e.target.closest('#masterLeft')&&view==='MIX')focusMaster();
- if(f){const idx=f.dataset.fader,fromCap=!!e.target.closest('.cap');
-   drag={type:'fader',el:f,index:idx,fromCap,startY:e.clientY,
-     startDb:idx==='master'?masterGain:channels[+idx].fader};
-   // Motorized-console behavior: the rail is a focus/relative-drag surface.
-   // Never teleport gain to pointer Y, either on pointerdown or on the first move.
+function moveDraggedControl(e){
+ const d=drag;
+ if(!d||d.pointerId!==e.pointerId)return;
+ if(d.type==='fader'){
+   updateFader(d.index,d.startDb+(d.startY-e.clientY)*70/d.distance);
+ }else if(d.type==='pan'){
+   updatePan(d.index,d.fromThumb?d.startPan+(e.clientX-d.startX)*200/d.travel:
+      ((e.clientX-d.left-9)/d.travel)*200-100,true);
+ }else if(d.type==='knob'){
+   updateKnob(d.el,d.original+(d.initial-e.clientY)*.35);
  }
- else if(p){const index=p.dataset.pan==='master'?'master':+p.dataset.pan,fromThumb=!!e.target.closest('.pan-thumb');
- drag={type:'pan',el:p,index,fromThumb,startX:e.clientX,startPan:index==='master'?masterPan:channels[index].pan};
- if(!fromThumb){const r=p.getBoundingClientRect();updatePan(index,((e.clientX-r.left-9)/Math.max(1,r.width-18))*200-100,true)}}
- else if(k){drag={type:'knob',el,initial:e.clientY,original:k.dataset.knob==='phones'?phones:channels[+k.dataset.ch][k.dataset.knob],param:k.dataset.knob}}
- if(drag&&(drag.type==='fader'||drag.type==='pan'))drag.el.classList.add('is-dragging');
- if(el.setPointerCapture)el.setPointerCapture(e.pointerId);e.preventDefault();});
-document.addEventListener('pointermove',e=>{if(!drag)return;
- if(drag.type==='fader'){const r=drag.el.getBoundingClientRect();
-   const distance=Math.max(24,r.height-66);
-   updateFader(drag.index,drag.startDb+(drag.startY-e.clientY)*70/distance)}
- else if(drag.type==='pan'){const r=drag.el.getBoundingClientRect(),travel=Math.max(1,r.width-18);
- updatePan(drag.index,drag.fromThumb?drag.startPan+(e.clientX-drag.startX)*200/travel:((e.clientX-r.left-9)/travel)*200-100,true)}
- else if(drag.type==='knob'){const delta=(drag.initial-e.clientY);updateKnob(drag.el,drag.original+delta*.35)}
+}
+document.addEventListener('pointerdown',e=>{
+ if(drag)return;
+ const f=e.target.closest('[data-fader]'),p=e.target.closest('[data-pan]'),k=e.target.closest('[data-knob]');
+ if(!f&&!p&&!k)return;
+ const el=f||p||k,strip=e.target.closest('[data-strip]');
+ if(strip&&view==='MIX')focusChannel(+strip.dataset.strip);
+ else if(e.target.closest('#masterLeft')&&view==='MIX')focusMaster();
+ if(f){
+   const idx=f.dataset.fader,r=f.getBoundingClientRect();
+   drag={type:'fader',el:f,pointerId:e.pointerId,index:idx,
+     startY:e.clientY,distance:Math.max(24,r.height-66),
+     startDb:idx==='master'?masterGain:channels[+idx].fader};
+   // Relative drag: clicking track never teleports the fader.
+ }else if(p){
+   const index=p.dataset.pan==='master'?'master':+p.dataset.pan,
+     fromThumb=!!e.target.closest('.pan-thumb'),r=p.getBoundingClientRect(),
+     travel=Math.max(1,r.width-18);
+   drag={type:'pan',el:p,pointerId:e.pointerId,index,fromThumb,
+     startX:e.clientX,startPan:index==='master'?masterPan:channels[index].pan,
+     travel,left:r.left};
+   if(!fromThumb)updatePan(index,((e.clientX-r.left-9)/travel)*200-100,true);
+ }else{
+   drag={type:'knob',el:k,pointerId:e.pointerId,initial:e.clientY,
+     original:k.dataset.knob==='phones'?phones:channels[+k.dataset.ch][k.dataset.knob]};
+ }
+ if(drag.type==='fader'||drag.type==='pan')el.classList.add('is-dragging');
+ document.addEventListener('pointermove',moveDraggedControl,{passive:true});
+ if(el.setPointerCapture)el.setPointerCapture(e.pointerId);
+ e.preventDefault();
 });
-for(const event of ['pointerup','pointercancel'])document.addEventListener(event,()=>{
- if(drag?.el)drag.el.classList.remove('is-dragging');
- drag=null;flushUiParams()
+for(const type of ['pointerup','pointercancel'])document.addEventListener(type,e=>{
+ if(!drag||e.pointerId!==drag.pointerId)return;
+ document.removeEventListener('pointermove',moveDraggedControl);
+ drag.el.classList.remove('is-dragging');
+ drag=null;
+ flushUiParams();
 });
 document.addEventListener('wheel',e=>{const pan=e.target.closest('[data-pan]');if(pan){e.preventDefault();const idx=pan.dataset.pan==='master'?'master':+pan.dataset.pan;updatePan(idx,(idx==='master'?masterPan:channels[idx].pan)-Math.sign(e.deltaY)*2);return}
  const k=e.target.closest('[data-knob]');if(!k)return;e.preventDefault();const p=k.dataset.knob,i=+k.dataset.ch,v=p==='phones'?phones:channels[i][p];updateKnob(k,v-Math.sign(e.deltaY)*.5)},{passive:false});
@@ -287,7 +339,7 @@ document.addEventListener('keydown',e=>{if(e.ctrlKey&&e.key.toLowerCase()==='s')
 let lastMeterFrame=0;function meters(t){
  // JUCE desktop reads actual audio meters; browser demo only animates a preview.
  if(window.__JUCE__?.backend?.emitEvent)return;
- requestAnimationFrame(meters);if(t-lastMeterFrame<33||document.hidden)return;lastMeterFrame=t;
+ requestAnimationFrame(meters);if(document.hidden||t-lastMeterFrame<40)return;lastMeterFrame=t;
  channels.forEach((ch,i)=>{const wave=(Math.sin(t*.0022+i*1.92)+Math.sin(t*.0043+i*.6))*.5;
  let v=clamp(45+wave*24+ch.fader*.48,4,98);if(ch.mute)v=2;updateMeterVisual(String(i),v,t)});
  const base=clamp(67+Math.sin(t*.002)*15,8,95);
