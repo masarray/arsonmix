@@ -7,7 +7,9 @@ js=(root/'web/app.js').read_text(encoding='utf8')
 page=(root/'web/index.html').read_text(encoding='utf8')
 preview=(root/'AR-MIX-Live-FX-Host-Standalone-v0.3.html').read_text(encoding='utf8')
 license=(root/'web/assets/fonts/OFL-LICENSE-Inter.txt').read_text(encoding='utf8')
-assert 'BUTTON 180 — ONE physical surface for OFF, ON' in css
+assert 'BUTTON 180 — one identical RESTING surface for OFF and ON' in css
+# Keep a structural style check, not a historical comment header.
+assert ':active:not(:disabled)' in css
 assert '--b180-shadow-surface:' in css and '--b180-shadow-raised:' not in css
 assert '--b180-depth:' not in css
 compact=''.join(css.split())
