@@ -8,6 +8,7 @@
 #include "DiagnosticsRecorder.h"
 #include "../engine/device/DirectRestoreBackoff.h"
 #include "../engine/device/PeriodCapabilityEvidence.h"
+#include "../engine/diagnostics/CrackleEvidenceWindow.h"
 #if defined(_WIN32)
 #include "../engine/device/WasapiCapabilityProbe.h"
 #endif
@@ -16,6 +17,7 @@
 #include <optional>
 #include <memory>
 #include <chrono>
+#include <cmath>
 #include <functional>
 
 namespace
@@ -175,6 +177,7 @@ private:
     bool deviceSettingsDirty_ = false;
     bool unexpectedRouteNoticeSent_ = false;
     armix::device::DirectRestoreBackoff directRestore_;
+    armix::diagnostics::CrackleEvidenceWindow crackleEvidence_; // 1Hz message-thread snapshots
     juce::String lastDirectRestoreError_;
     juce::var pendingPresetUI_;
     juce::String pendingPresetName_;
@@ -184,6 +187,94 @@ private:
         return static_cast<std::uint64_t> (
             std::chrono::duration_cast<std::chrono::milliseconds> (
                 std::chrono::steady_clock::now().time_since_epoch()).count());
+    }
+
+    // Audio evidence is produced only by the JUCE message thread. Counter
+    // sources are strictly typed: void/negative/nonintegral values remain
+    // UNAVAILABLE, not silently converted to observed zero.
+    static armix::diagnostics::CrackleEvidenceWindow::Reading evidenceCounter (
+        const juce::var& value) noexcept
+    {
+        using Reading = armix::diagnostics::CrackleEvidenceWindow::Reading;
+        if (!(value.isInt() || value.isInt64() || value.isDouble()))
+            return Reading {};
+        const double amount = static_cast<double>(value);
+        if (!std::isfinite(amount) || amount < 0.0 ||
+            amount > 9007199254740991.0 || std::floor(amount) != amount)
+            return Reading {};
+        return {static_cast<std::uint64_t>(amount), true};
+    }
+
+    static armix::diagnostics::CrackleEvidenceWindow::Sample makeEvidenceSample (
+        const juce::var& state)
+    {
+        using Window = armix::diagnostics::CrackleEvidenceWindow;
+        Window::Sample out;
+        out.atMs = monotonicMilliseconds();
+        out.connected = bool(state.getProperty("connected", false));
+        const auto epoch = evidenceCounter(state.getProperty("deviceGeneration", {}));
+        if (!epoch.available) out.connected = false;
+        else out.deviceGeneration = epoch.count;
+        // Length-prefix identity and control-plane modes: delimiters in user
+        // device names can never collide or combine unrelated sessions.
+        auto addScope = [&] (const char* key)
+        {
+            auto token=state.getProperty(key, {}).toString().toStdString();
+            out.routeScope += std::to_string(token.size()) + ":" + token;
+        };
+        for (const auto* key : {"liveBackendClass","inputDevice","outputDevice",
+                                "diagnosticRoute","rate","buffer","monitor",
+                                "channelMute","masterMute","dryTest",
+                                "bridgeCaptureEndpointIdHash",
+                                "bridgeRenderEndpointIdHash",
+                                "backendXrunMeaning"})
+            addScope(key);
+
+        auto set=[&](Window::Counter id,const char* name)
+        {
+            out.counters[static_cast<std::size_t>(id)] =
+                evidenceCounter(state.getProperty(name, {}));
+        };
+        set(Window::Counter::renderedCallbacks, "callbackCount");
+        set(Window::Counter::overBudgetCallbacks, "overBudgetCount");
+        set(Window::Counter::lateCallbackIntervals, "lateCallbackIntervals");
+        set(Window::Counter::callbackGapIntervals, "callbackGapCount");
+        const auto meaning=state.getProperty("backendXrunMeaning", {}).toString();
+        if (meaning == "WASAPI_CAPTURE_DISCONTINUITIES_ONLY")
+            set(Window::Counter::wasapiCaptureDiscontinuities, "backendXrunCount");
+        else if (meaning == "DRIVER_DEFINED")
+            set(Window::Counter::otherDriverXruns, "backendXrunCount");
+        // A missing ASRC bridge deliberately emits N/A instead of 0 losses.
+        set(Window::Counter::bridgeUnderflowFrames, "bridgeUnderflowFrames");
+        set(Window::Counter::bridgePrimingFrames, "bridgePrimingFrames");
+        set(Window::Counter::bridgeOverflowFrames, "bridgeOverflowFrames");
+        set(Window::Counter::bridgeNonFiniteInputSamples, "bridgeNonFiniteCaptureSamples");
+        set(Window::Counter::bridgeCaptureCallbacks, "bridgeCaptureCallbacks");
+        set(Window::Counter::bridgeRenderCallbacks, "bridgeRenderCallbacks");
+        return out;
+    }
+
+    juce::String crackleWindowReport (const juce::var& status) const
+    {
+        using Window = armix::diagnostics::CrackleEvidenceWindow;
+        const auto window = crackleEvidence_.mark (makeEvidenceSample(status));
+        juce::String report = "PRE_MARK_EVIDENCE_5S=";
+        report += Window::reasonName(window.reason);
+        report += " | elapsedMs=" + juce::String(static_cast<juce::int64>(window.elapsedMs));
+        report += " | RENDER_HARDWARE_XRUN=UNAVAILABLE_THROUGH_JUCE";
+        for (std::size_t index=0; index<Window::counterCount; ++index)
+        {
+            const auto id=static_cast<Window::Counter>(index);
+            const auto delta=window.changes[index];
+            report += " | ";
+            report += Window::name(id);
+            report += "=";
+            report += delta.comparable
+                ? juce::String(static_cast<juce::int64>(delta.value))
+                : juce::String("N/A");
+        }
+        report += " | CORRELATION_ONLY_NOT_CAUSAL_PROOF";
+        return report;
     }
 
     void annotateRecovery (juce::var& state) const
@@ -648,8 +739,10 @@ private:
         }
         else if (action == "diagnosticMark")
         {
-            diagnostics_.record ("AUDIO_GLITCH_MARK", juce::JSON::toString (engine_.status(), false));
-            emitNotice ("Crackle marker saved with current driver and callback counters.");
+            const auto status = engine_.status();
+            diagnostics_.record ("AUDIO_GLITCH_MARK", juce::JSON::toString (status, false));
+            diagnostics_.record ("AUDIO_GLITCH_WINDOW", crackleWindowReport (status));
+            emitNotice ("Crackle marker saved with source-labeled pre-mark evidence (up to 5 s).");
         }
         else if (action == "presetList")
             emitPresets();
@@ -876,7 +969,11 @@ private:
             pendingPresetName_.clear();
         }
         if (timerTicks_ % 12 == 0)
-            diagnostics_.record ("AUDIO_HEALTH", juce::JSON::toString (engine_.status(), false));
+        {
+            auto health = engine_.status();
+            crackleEvidence_.push (makeEvidenceSample(health));
+            diagnostics_.record ("AUDIO_HEALTH", juce::JSON::toString (health, false));
+        }
 
         if (deviceSettingsDirty_)
         {
