@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "../engine/core/OrbitPhase.h"
 #include <cmath>
+#include <utility>
 
 // A single, explicit VST3 parameter modulator. Only called/owned by the JUCE
 // message thread. Never calls plugin parameter APIs from audio callbacks,
@@ -23,8 +24,12 @@ public:
         if (parameterIndex < 0 || parameterIndex >= params.size())
             return "Invalid VST3 parameter index";
         auto* next = params[parameterIndex];
-        if (next == nullptr || !next->isAutomatable() || next->getNumSteps() <= 2)
-            return "Choose an automatable, non-toggle VST3 parameter";
+        if (next == nullptr || !next->isAutomatable() || next->getNumSteps() < 72)
+            return "Choose an automatable VST3 parameter with at least 72 resolution steps";
+
+        const float phase = next->getValue();
+        if (!std::isfinite (phase) || phase < 0.0f || phase > 1.0f)
+            return "Selected VST3 parameter returned an invalid normalized value";
 
         stop(); // ends gesture on the old processor before replacing it
         processor_ = plugin;
@@ -33,7 +38,7 @@ public:
         parameterIndex_ = parameterIndex;
         period_ = revolutionSeconds;
         reverse_ = reverse;
-        phaseStart_ = next->getValue(); // no abrupt jump on START
+        phaseStart_ = phase; // no abrupt jump on START
         startMs_ = juce::Time::getMillisecondCounterHiRes();
         parameter_->beginChangeGesture();
         startTimerHz (60); // control updates only; callback remains untouched
@@ -43,9 +48,9 @@ public:
     void stop()
     {
         stopTimer();
-        if (parameter_ != nullptr)
-            parameter_->endChangeGesture();
-        parameter_ = nullptr;
+        auto* oldParameter = std::exchange (parameter_, nullptr);
+        if (oldParameter != nullptr)
+            oldParameter->endChangeGesture();
         processor_ = nullptr;
         slot_ = -1;
         parameterIndex_ = -1;
@@ -63,7 +68,8 @@ private:
         if (parameter_ == nullptr) return;
         const double elapsed = (juce::Time::getMillisecondCounterHiRes() - startMs_) / 1000.0;
         const auto normalized = armix::core::orbitRamp (phaseStart_, elapsed, period_, reverse_);
-        parameter_->setValueNotifyingHost (normalized);
+        if (std::isfinite (normalized) && normalized >= 0.0f && normalized <= 1.0f)
+            parameter_->setValueNotifyingHost (normalized);
     }
 
     juce::AudioPluginInstance* processor_ = nullptr; // borrowed, only while slot stable
