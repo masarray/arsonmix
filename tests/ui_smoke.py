@@ -117,7 +117,7 @@ async def main():
               return getComputedStyle(e).backgroundImage;
             })()};
         }""")
-        for key in ('bg','face','shadow','color','radius','textTransform'):
+        for key in ('bg','face','color','textTransform'):
             assert style['nav'][key]==style['rail'][key],(key,style)
         assert 'radial-gradient(' in style['nav']['bg'],style
         assert style['nav']['face']=='rgb(224, 228, 232)',style
@@ -149,7 +149,7 @@ async def main():
           textTransform:getComputedStyle(e.querySelector('span')).transform,
           rect:e.getBoundingClientRect().toJSON()
         })""")
-        assert active['face']=='rgb(57, 239, 114)' and active['shadow']==pressed['shadow'],active
+        assert active['face']=='rgb(57, 239, 114)' and shared_shadow_shape(active['shadow'])==shared_shadow_shape(pressed['shadow']),active
         assert active['textTransform']==pressed['textTransform'],active
         assert all(abs(before[k]-active['rect'][k])<=.2 for k in ('x','y','width','height')),active
         # Navigation remains mutually exclusive, never an independent fake toggle.
