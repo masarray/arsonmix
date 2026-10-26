@@ -35,7 +35,7 @@ for filename,variable,length,expected_sha256 in assets:
 assert 'width:36px;height:77px' in source
 assert 'background-size:36px 77px!important' in source
 assert 'top:var(--pos,50%)' in source
-assert '.fader-travel' in js
+assert 'class="fader-travel"' in js
 assert 'gain-scale-travel' in js
 assert 'vu-scale-travel' in js
 assert 'transform:translate(-50%,-38px)' in source

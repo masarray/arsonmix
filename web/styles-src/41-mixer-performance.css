@@ -72,5 +72,5 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
  background-position:center top!important;
  background-repeat:no-repeat!important;
 }
-#app #mixer [data-fader]:not([data-fader="master"]) > .cap{background-image:var(--ari-channel-cap)!important}
-#app #mixer [data-fader="master"] > .cap{background-image:var(--ari-master-cap)!important}
+#app #mixer [data-fader]:not([data-fader="master"]) .fader-travel > .cap{background-image:var(--ari-channel-cap)!important}
+#app #mixer [data-fader="master"] .fader-travel > .cap{background-image:var(--ari-master-cap)!important}
