@@ -139,27 +139,8 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 .strip .rack .insert-slot .insert{flex:1 1 0;width:auto;min-width:0;overflow:hidden;white-space:nowrap}
 .strip .rack .insert-slot .insert-name{display:block;flex:1;min-width:0;text-overflow:ellipsis;white-space:nowrap;overflow:hidden}
 .strip .rack .insert-slot .insert-led{flex:0 0 14px}
-.strip .rack .insert-slot .fx-power{
- width:22px;min-width:22px;max-width:22px;height:25px;min-height:25px;
- border:1px solid #106f72;border-radius:3px;cursor:pointer;
- color:#76fff4;font:700 15px/1 'Segoe UI',sans-serif;
- background:linear-gradient(180deg,#28424a,#09272b 52%,#0e333a);
- box-shadow:inset 0 1px #b4f8e74d,0 1px #0009;
- text-shadow:0 0 5px #4ddca59a;padding:0;display:grid;place-items:center;
- transition:filter 90ms ease,box-shadow 90ms ease;
-}
-.strip .rack .insert-slot .fx-power.is-bypassed{
- color:#637884;text-shadow:none;border-color:#34444c;
- background:linear-gradient(#1e292f,#0d1419 55%,#1b282e);
- box-shadow:inset 0 1px #7e94942c,0 1px #0008;
-}
 .strip .rack .insert-slot.is-bypassed .insert{color:#788e9b!important;filter:saturate(.55)}
 .strip .rack .insert-slot.is-bypassed .insert-led{filter:grayscale(1) brightness(.6)}
-.strip .rack .insert-slot .fx-power:hover{
- filter:brightness(1.45)!important;box-shadow:inset 0 1px #d9ffed88,0 0 5px #48f9be7b
-}
-.strip .rack .insert-slot .fx-power:active{filter:brightness(.65) contrast(1.15)!important;transform:translateY(1px)}
-.strip .rack .insert-slot .fx-power:focus-visible{outline:2px solid #8cfbe7;outline-offset:1px}
 /* Existing FX Rack power button shows consistent enabled vs bypassed state. */
 .chain-node button[data-chainbypass]{width:34px;padding:0;min-width:34px;font-size:19px;line-height:1}
 .chain-node button[data-chainbypass].power-on{color:#61f9df;border-color:#1a988e;background:linear-gradient(#1c4648,#073037)}
@@ -614,10 +595,7 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  --b180-color:var(--b180-off);--b180-border:var(--b180-edge);
  --b180-ink:var(--b180-off-ink);
 }
-:is(.btn-180,.toolbar .nav button,.toolbar .spec-device,.left-rail .tabs button,
-.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
-.left-rail .rail-presets button,.left-rail .rail-bottom button,
-#masterLeft .master-tools button,.native-btn){
+:is(.btn-180,.toolbar .spec-device,.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,#masterLeft .master-tools button,.native-btn){
  /* Exact same inset + outside-edge model as the previously approved ON face.
     All layers are shared; only --b180-border is allowed to tint the edge. */
  --b180-shadow-surface:
@@ -649,33 +627,18 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  display:inline-flex;justify-content:center;align-items:center;
  font-weight:700;
 }
-:is(.btn-180,.toolbar .nav button,.toolbar .spec-device,.left-rail .tabs button,
-.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
-.left-rail .rail-presets button,.left-rail .rail-bottom button,
-#masterLeft .master-tools button,.native-btn):disabled{
+:is(.btn-180,.toolbar .spec-device,.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,#masterLeft .master-tools button,.native-btn):disabled{
  pointer-events:none;opacity:.65;color:#7e7e7e!important;
  background:#dcdcdc!important;box-shadow:none!important;
  text-shadow:none!important;border:none!important;
 }
 /* Glass glint is drawn by inset shadows only; no pseudo-elements. */
-:is(.btn-180,.toolbar .nav button,.toolbar .spec-device,.left-rail .tabs button,
-.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
-.left-rail .rail-presets button,.left-rail .rail-bottom button,
-#masterLeft .master-tools button,.native-btn)::before,:is(.btn-180,.toolbar .nav button,.toolbar .spec-device,.left-rail .tabs button,
-.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
-.left-rail .rail-presets button,.left-rail .rail-bottom button,
-#masterLeft .master-tools button,.native-btn)::after{content:none!important}
-:is(.btn-180,.toolbar .nav button,.toolbar .spec-device,.left-rail .tabs button,
-.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
-.left-rail .rail-presets button,.left-rail .rail-bottom button,
-#masterLeft .master-tools button,.native-btn):focus-visible{outline:2px solid #9ceaff;outline-offset:1px}
+:is(.btn-180,.toolbar .spec-device,.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,#masterLeft .master-tools button,.native-btn)::before,:is(.btn-180,.toolbar .spec-device,.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,#masterLeft .master-tools button,.native-btn)::after{content:none!important}
+:is(.btn-180,.toolbar .spec-device,.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,#masterLeft .master-tools button,.native-btn):focus-visible{outline:2px solid #9ceaff;outline-offset:1px}
 /* Geometry-only accommodation for 27–34px mixer slots. */
-:is(.btn-180,.toolbar .nav button,.toolbar .spec-device,.left-rail .tabs button,
-.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
-.left-rail .rail-presets button,.left-rail .rail-bottom button,
-#masterLeft .master-tools button,.native-btn){padding:0 3px!important;letter-spacing:.12px!important;font-size:10px!important;min-width:0}
-.toolbar .nav button{letter-spacing:.35px!important}
-.left-rail .rail-presets button{text-align:left;justify-content:flex-start;padding:0 9px!important}
+:is(.btn-180,.toolbar .spec-device,.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,#masterLeft .master-tools button,.native-btn){padding:0 3px!important;letter-spacing:.12px!important;font-size:10px!important;min-width:0}
+
+
 .toolbar .spec-device{text-transform:none;letter-spacing:0!important}
 /* Semantic ON palette is defined exactly once after the recessed state. */
 #masterLeft .master-actions .master-stereo-badge{
@@ -686,19 +649,15 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 /* Latching OFF/ON must NOT alter material, depth or layout. The physical
    press response below exists only while :active, never on .active/.selected. */
 /* Latch LED colors only; dark captions are legible on bright faces. */
-:is(.toolbar .nav button.selected,.left-rail .tabs button.selected,
- .left-rail .rail-presets button.active,.left-rail .rail-bottom #saveFxPreset.active,
- .native-btn.primary,.native-btn.on){--b180-color:#22bbcc;--b180-border:#087b8e;--b180-ink:#041c27}
-.left-rail .rail-bottom #addScene.active{--b180-color:#319ed4;--b180-border:#14618c;--b180-ink:#061c2b}
+:is(.native-btn.primary,.native-btn.on){--b180-color:#22bbcc;--b180-border:#087b8e;--b180-ink:#041c27}
+
 .strip .utility-row button[data-hpf].active{--b180-color:#37c99a;--b180-border:#126e5b;--b180-ink:#071f1a}
 :is(.strip .channel-actions .mute.active,#masterLeft #masterMute.active,
  .native-btn.warn){--b180-color:#e76f83;--b180-border:#a13650;--b180-ink:#291018}
 .strip .channel-actions .solo.active{--b180-color:#dbb75c;--b180-border:#967025;--b180-ink:#291d08}
 :is(.strip .utility-row button[data-pre].active,
  #masterLeft .master-tools button.active){--b180-color:#a68cdb;--b180-border:#684f9e;--b180-ink:#1d1234}
-:is(.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
- #masterLeft .master-tools button,.toolbar .nav button,.left-rail .tabs button,
- .left-rail .rail-presets button,.left-rail .rail-bottom button,.native-btn){
+:is(.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,#masterLeft .master-tools button,.native-btn){
  color:var(--b180-ink,#f2f8fb)!important;
 }
 /* Keep pre-refactor fixed-sized buttons and their existing rails.
@@ -708,11 +667,7 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 /* No odd vertical displacement of the active nav relative to its neighbors. */
 
 /* Hover intensifies reflected light, but creates NO new border/halo/motion. */
-:is(.btn-180,.toolbar .nav button,.toolbar .spec-device,
- .strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
- #masterLeft .master-actions button,#masterLeft .master-tools button,
- .left-rail .tabs button,.left-rail .rail-presets button,
- .left-rail .rail-bottom button,.native-btn):hover:not(:disabled){
+:is(.btn-180,.toolbar .spec-device,.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,#masterLeft .master-actions button,#masterLeft .master-tools button,.native-btn):hover:not(:disabled){
  filter:brightness(1.32)!important;
 }
 
@@ -720,11 +675,7 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
    1px into the control panel. The layout and hit target stay the same; only
    the rendered face shifts, while the lower cast shadow collapses inward.
    Identical response for gray OFF and colored ON; no persistent pressed skin. */
-:is(.btn-180,.toolbar .nav button,.toolbar .spec-device,
- .strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
- #masterLeft .master-actions button,#masterLeft .master-tools button,
- .left-rail .tabs button,.left-rail .rail-presets button,
- .left-rail .rail-bottom button,.native-btn):active:not(:disabled){
+:is(.btn-180,.toolbar .spec-device,.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,#masterLeft .master-actions button,#masterLeft .master-tools button,.native-btn):active:not(:disabled){
  transform:translateY(1px)!important;
  box-shadow:
   inset 0 4px 8px -1px rgba(0,0,0,.82),
@@ -738,18 +689,84 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 
 /* OFF = the exact ON material with neutral, extinguished gray palette.
    Bright ON color recipes above remain untouched. */
-:is(.toolbar .nav button,.toolbar .spec-device,
- .strip .channel-actions .candy,.strip .utility-row button,
- #masterLeft .master-actions button,#masterLeft .master-tools button,
- .left-rail .tabs button,.left-rail .rail-presets button,
- .left-rail .rail-bottom button):not(.active):not(.selected):not(.on):not([aria-pressed="true"]){
+:is(.toolbar .spec-device,.strip .channel-actions .candy,.strip .utility-row button,#masterLeft .master-actions button,#masterLeft .master-tools button):not(.active):not(.selected):not(.on):not([aria-pressed="true"]){
  --b180-color:var(--b180-off);--b180-border:var(--b180-edge);
  --b180-ink:var(--b180-off-ink);
  color:var(--b180-ink)!important;
 }
 @media(prefers-reduced-motion:reduce){
- :is(.toolbar .nav button,.toolbar .spec-device,.strip .channel-actions .candy,
- .strip .utility-row button,.left-rail button.btn-180){transition:none!important}
+ :is(.toolbar .spec-device,.strip .channel-actions .candy,.strip .utility-row button){transition:none!important}
+}
+/* FX Power design owner.
+   Channel FX Power is powered unless .is-bypassed.
+   Navigation/left-rail use the same powered teal for .selected/.active,
+   and the bypassed dark FX Power surface at rest.
+   Colors/shadows belong here; sizes belong to regional layout owners. */
+:root{
+ --fxctl-on-face:linear-gradient(180deg,#28424a,#09272b 52%,#0e333a);
+ --fxctl-on-edge:#106f72;--fxctl-on-ink:#76fff4;
+ --fxctl-on-shadow:inset 0 1px #b4f8e74d,0 1px #0009;
+ --fxctl-off-face:linear-gradient(#1e292f,#0d1419 55%,#1b282e);
+ --fxctl-off-edge:#34444c;--fxctl-off-ink:#637884;
+ --fxctl-off-shadow:inset 0 1px #7e94942c,0 1px #0008;
+}
+.strip .rack .insert-slot .fx-power,
+:is(.toolbar-actions,.left-rail) button.fx-control{
+ --fxctl-face:var(--fxctl-on-face);
+ --fxctl-edge:var(--fxctl-on-edge);
+ --fxctl-ink:var(--fxctl-on-ink);
+ --fxctl-depth:var(--fxctl-on-shadow);
+ --fxctl-text-glow:0 0 5px #4ddca59a;
+ appearance:none;border:1px solid var(--fxctl-edge);border-radius:3px;
+ background:var(--fxctl-face);color:var(--fxctl-ink);
+ box-shadow:var(--fxctl-depth);text-shadow:var(--fxctl-text-glow);
+ cursor:pointer;transition:filter 90ms ease,box-shadow 90ms ease,transform 90ms ease;
+}
+.strip .rack .insert-slot .fx-power{
+ font-family:'Segoe UI',sans-serif;font-weight:700;line-height:1;
+ padding:0;display:grid;place-items:center;
+}
+/* The two disabled-looking surfaces deliberately share the exact formula. */
+.strip .rack .insert-slot .fx-power.is-bypassed,
+:is(.toolbar-actions,.left-rail) button.fx-control{
+ --fxctl-face:var(--fxctl-off-face);
+ --fxctl-edge:var(--fxctl-off-edge);
+ --fxctl-ink:var(--fxctl-off-ink);
+ --fxctl-depth:var(--fxctl-off-shadow);
+ --fxctl-text-glow:none;
+}
+:is(.toolbar-actions,.left-rail) button.fx-control:is(.selected,.active){
+ --fxctl-face:var(--fxctl-on-face);
+ --fxctl-edge:var(--fxctl-on-edge);
+ --fxctl-ink:var(--fxctl-on-ink);
+ --fxctl-depth:var(--fxctl-on-shadow);
+ --fxctl-text-glow:0 0 5px #4ddca59a;
+}
+:is(.toolbar-actions,.left-rail) button.fx-control{
+ font-family:'Segoe UI',sans-serif;font-weight:600;
+ text-transform:uppercase;letter-spacing:.15px;
+ padding-inline:5px;min-width:0;user-select:none;
+}
+.left-rail .rail-presets button.fx-control{
+ justify-content:flex-start;text-align:left;padding-inline:9px;
+}
+.strip .rack .insert-slot .fx-power:hover,
+:is(.toolbar-actions,.left-rail) button.fx-control:hover:not(:disabled){
+ filter:brightness(1.45)!important;
+ box-shadow:inset 0 1px #d9ffed88,0 0 5px #48f9be7b;
+}
+.strip .rack .insert-slot .fx-power:active,
+:is(.toolbar-actions,.left-rail) button.fx-control:active:not(:disabled){
+ filter:brightness(.65) contrast(1.15)!important;transform:translateY(1px);
+}
+.strip .rack .insert-slot .fx-power:focus-visible,
+:is(.toolbar-actions,.left-rail) button.fx-control:focus-visible{
+ outline:2px solid #8cfbe7;outline-offset:1px;
+}
+:is(.toolbar-actions,.left-rail) button.fx-control:disabled{opacity:.5;cursor:not-allowed}
+@media(prefers-reduced-motion:reduce){
+ .strip .rack .insert-slot .fx-power,
+ :is(.toolbar-actions,.left-rail) button.fx-control{transition:none!important}
 }
 /* One soft, non-rectilinear halo shared by source and stereo master. */
 .strip.selected,#masterLeft.selected{
@@ -802,18 +819,18 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 }
 
 
-/* Left rail uses the same Button 180 metal/gloss surface as header and channels. */
-#app .left-rail .tabs button.btn-180{height:34px;min-height:34px}
+/* Left-rail geometry only; FX Power surface owns the visual skin. */
+#app .left-rail .tabs button.fx-control{height:34px;min-height:34px}
 #app .left-rail .rail-presets{gap:5px;padding:7px 6px 6px}
-#app .left-rail .rail-presets button.btn-180{height:27px;min-height:27px}
+#app .left-rail .rail-presets button.fx-control{height:27px;min-height:27px}
 #app .left-rail .rail-bottom{row-gap:6px;padding-top:8px}
-#app .left-rail .rail-bottom button.btn-180{height:27px;min-height:27px}
-#app .left-rail .rail-presets button.btn-180{text-align:left;justify-content:flex-start;padding:0 9px!important}
+#app .left-rail .rail-bottom button.fx-control{height:27px;min-height:27px}
+#app .left-rail .rail-presets button.fx-control{text-align:left;justify-content:flex-start;padding:0 9px!important}
 @media(max-height:730px){
  #app .left-rail .rail-presets{gap:4px;padding-top:6px;padding-bottom:4px}
- #app .left-rail .rail-presets button.btn-180{height:25px;min-height:25px}
+ #app .left-rail .rail-presets button.fx-control{height:25px;min-height:25px}
  #app .left-rail .rail-bottom{row-gap:5px;padding-top:7px}
- #app .left-rail .rail-bottom button.btn-180{height:25px;min-height:25px}
+ #app .left-rail .rail-bottom button.fx-control{height:25px;min-height:25px}
 }
 /* PAN: recessed center detent is below the original metallic PNG, not over it.
    z-order: track (0), center detent (1), illuminated pan fill (2), PNG thumb (3). */

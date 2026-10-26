@@ -37,12 +37,16 @@ assert 'data:font/woff2;base64,d09GMg' in css
 assert '@font-face' in css and 'font-family:"ArSonMix Inter"' in css
 assert 'SIL Open Font License' in license
 assert not re.search(r'--(?:ar-btn-|skin-small|skin-long|skin-large)',css)
-assert 'class="btn-180 candy mute' in js and 'class="btn-180' in page
+assert 'class="btn-180 candy mute' in js and 'class="btn-180 spec spec-device"' in page
+assert 'class="fx-control selected"' in page
+assert 'class="btn-180 selected"' not in page
 assert '<style>'+css+'</style>' in preview
 assert '<script>'+js+'</script>' in preview
 assert 'height:40px!important;flex:0 0 40px!important' not in css
 assert 'height:24px!important;min-height:24px!important' not in css
-assert page.count('class="btn-180')>=8
+assert page.count('class="btn-180')==1
+assert page.count('class="fx-control')==15
+assert '--fxctl-on-face:' in css and '--fxctl-off-face:' in css
 assert 'class="pushable' not in page and '--pb-face:' not in css
 assert 'top:13px!important' in css
 assert 'top:12px!important' in css

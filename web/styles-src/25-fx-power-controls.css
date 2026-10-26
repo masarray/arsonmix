@@ -1,0 +1,71 @@
+/* FX Power design owner.
+   Channel FX Power is powered unless .is-bypassed.
+   Navigation/left-rail use the same powered teal for .selected/.active,
+   and the bypassed dark FX Power surface at rest.
+   Colors/shadows belong here; sizes belong to regional layout owners. */
+:root{
+ --fxctl-on-face:linear-gradient(180deg,#28424a,#09272b 52%,#0e333a);
+ --fxctl-on-edge:#106f72;--fxctl-on-ink:#76fff4;
+ --fxctl-on-shadow:inset 0 1px #b4f8e74d,0 1px #0009;
+ --fxctl-off-face:linear-gradient(#1e292f,#0d1419 55%,#1b282e);
+ --fxctl-off-edge:#34444c;--fxctl-off-ink:#637884;
+ --fxctl-off-shadow:inset 0 1px #7e94942c,0 1px #0008;
+}
+.strip .rack .insert-slot .fx-power,
+:is(.toolbar-actions,.left-rail) button.fx-control{
+ --fxctl-face:var(--fxctl-on-face);
+ --fxctl-edge:var(--fxctl-on-edge);
+ --fxctl-ink:var(--fxctl-on-ink);
+ --fxctl-depth:var(--fxctl-on-shadow);
+ --fxctl-text-glow:0 0 5px #4ddca59a;
+ appearance:none;border:1px solid var(--fxctl-edge);border-radius:3px;
+ background:var(--fxctl-face);color:var(--fxctl-ink);
+ box-shadow:var(--fxctl-depth);text-shadow:var(--fxctl-text-glow);
+ cursor:pointer;transition:filter 90ms ease,box-shadow 90ms ease,transform 90ms ease;
+}
+.strip .rack .insert-slot .fx-power{
+ font-family:'Segoe UI',sans-serif;font-weight:700;line-height:1;
+ padding:0;display:grid;place-items:center;
+}
+/* The two disabled-looking surfaces deliberately share the exact formula. */
+.strip .rack .insert-slot .fx-power.is-bypassed,
+:is(.toolbar-actions,.left-rail) button.fx-control{
+ --fxctl-face:var(--fxctl-off-face);
+ --fxctl-edge:var(--fxctl-off-edge);
+ --fxctl-ink:var(--fxctl-off-ink);
+ --fxctl-depth:var(--fxctl-off-shadow);
+ --fxctl-text-glow:none;
+}
+:is(.toolbar-actions,.left-rail) button.fx-control:is(.selected,.active){
+ --fxctl-face:var(--fxctl-on-face);
+ --fxctl-edge:var(--fxctl-on-edge);
+ --fxctl-ink:var(--fxctl-on-ink);
+ --fxctl-depth:var(--fxctl-on-shadow);
+ --fxctl-text-glow:0 0 5px #4ddca59a;
+}
+:is(.toolbar-actions,.left-rail) button.fx-control{
+ font-family:'Segoe UI',sans-serif;font-weight:600;
+ text-transform:uppercase;letter-spacing:.15px;
+ padding-inline:5px;min-width:0;user-select:none;
+}
+.left-rail .rail-presets button.fx-control{
+ justify-content:flex-start;text-align:left;padding-inline:9px;
+}
+.strip .rack .insert-slot .fx-power:hover,
+:is(.toolbar-actions,.left-rail) button.fx-control:hover:not(:disabled){
+ filter:brightness(1.45)!important;
+ box-shadow:inset 0 1px #d9ffed88,0 0 5px #48f9be7b;
+}
+.strip .rack .insert-slot .fx-power:active,
+:is(.toolbar-actions,.left-rail) button.fx-control:active:not(:disabled){
+ filter:brightness(.65) contrast(1.15)!important;transform:translateY(1px);
+}
+.strip .rack .insert-slot .fx-power:focus-visible,
+:is(.toolbar-actions,.left-rail) button.fx-control:focus-visible{
+ outline:2px solid #8cfbe7;outline-offset:1px;
+}
+:is(.toolbar-actions,.left-rail) button.fx-control:disabled{opacity:.5;cursor:not-allowed}
+@media(prefers-reduced-motion:reduce){
+ .strip .rack .insert-slot .fx-power,
+ :is(.toolbar-actions,.left-rail) button.fx-control{transition:none!important}
+}

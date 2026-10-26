@@ -134,27 +134,8 @@
 .strip .rack .insert-slot .insert{flex:1 1 0;width:auto;min-width:0;overflow:hidden;white-space:nowrap}
 .strip .rack .insert-slot .insert-name{display:block;flex:1;min-width:0;text-overflow:ellipsis;white-space:nowrap;overflow:hidden}
 .strip .rack .insert-slot .insert-led{flex:0 0 14px}
-.strip .rack .insert-slot .fx-power{
- width:22px;min-width:22px;max-width:22px;height:25px;min-height:25px;
- border:1px solid #106f72;border-radius:3px;cursor:pointer;
- color:#76fff4;font:700 15px/1 'Segoe UI',sans-serif;
- background:linear-gradient(180deg,#28424a,#09272b 52%,#0e333a);
- box-shadow:inset 0 1px #b4f8e74d,0 1px #0009;
- text-shadow:0 0 5px #4ddca59a;padding:0;display:grid;place-items:center;
- transition:filter 90ms ease,box-shadow 90ms ease;
-}
-.strip .rack .insert-slot .fx-power.is-bypassed{
- color:#637884;text-shadow:none;border-color:#34444c;
- background:linear-gradient(#1e292f,#0d1419 55%,#1b282e);
- box-shadow:inset 0 1px #7e94942c,0 1px #0008;
-}
 .strip .rack .insert-slot.is-bypassed .insert{color:#788e9b!important;filter:saturate(.55)}
 .strip .rack .insert-slot.is-bypassed .insert-led{filter:grayscale(1) brightness(.6)}
-.strip .rack .insert-slot .fx-power:hover{
- filter:brightness(1.45)!important;box-shadow:inset 0 1px #d9ffed88,0 0 5px #48f9be7b
-}
-.strip .rack .insert-slot .fx-power:active{filter:brightness(.65) contrast(1.15)!important;transform:translateY(1px)}
-.strip .rack .insert-slot .fx-power:focus-visible{outline:2px solid #8cfbe7;outline-offset:1px}
 /* Existing FX Rack power button shows consistent enabled vs bypassed state. */
 .chain-node button[data-chainbypass]{width:34px;padding:0;min-width:34px;font-size:19px;line-height:1}
 .chain-node button[data-chainbypass].power-on{color:#61f9df;border-color:#1a988e;background:linear-gradient(#1c4648,#073037)}
