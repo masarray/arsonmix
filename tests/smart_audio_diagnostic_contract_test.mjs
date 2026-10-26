@@ -58,6 +58,19 @@ test('telemetry distinguishes measured host budget fractions from unobservable o
   assert.match(engine,/UNAVAILABLE_THROUGH_CURRENT_JUCE_AUDIODEVICE/);
   assert.match(health,/std::array<std::atomic<std::uint64_t>,13>/);
 });
+test('P0 deterministic virtual clock soak is enforced in Windows CTest',()=>{
+  const soak=read('tests/adaptive_clock_virtual_soak_test.cpp');
+  assert.match(soak,/ASRC_SOAK/);
+  assert.match(soak,/simulatedMilliseconds = 8000/);
+  assert.match(soak,/96k_to_48k_minus300/);
+  assert.match(soak,/48k_to_96k_plus300/);
+  assert.match(soak,/std::abs\(crossMean\)/);
+  assert.match(soak,/steadyUnderflow/);
+  assert.match(soak,/p99Budget/);
+  assert.doesNotMatch(soak,/sleep_for|random_device/);
+  assert.match(cmake,/IndependentClockASRCDriftJitterSoak/);
+  assert.match(flow,/ARMixVirtualClockSoakTests/);
+});
 test('clock bridge has no callback alloc / blocking and is gated behind independent stream adapter',()=>{
   assert.match(bridge,/class AdaptiveClockBridge final/);
   assert.match(bridge,/std::atomic<std::uint64_t> write_/);
