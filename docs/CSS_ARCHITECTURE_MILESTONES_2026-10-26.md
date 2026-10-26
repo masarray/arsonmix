@@ -32,3 +32,6 @@ The raised cube OFF experiment was rejected. The OFF and ON Button 180 surface n
 
 ## Milestone 1f — momentary tactile depression without diverging OFF/ON skins
 CSS owner `20-button-180.css` adds `:active:not(:disabled)` only, not latched `.active`: transient 1px visual travel (`transform`) and deeper inset/compressed outer shadow. This restores physical button tactile feedback at pointer/keyboard press while preserving exact OFF/ON resting shadow structure, OFF `#858283/#636363/#2b2b2b`, ON semantic colors, 3px radius and dimensions. Transform is purely painted, no document layout reflow. Chromium test verifies press travel and release for both OFF and ON. No UI JS/native audio changes.
+
+## 2026-10-26 — latest main / GUI merge reconciliation
+See `docs/GUI_MERGE_RECONCILIATION_2026-10-26.md`. PR #53 **replaces the visual FX-power navigation of PR #51** with owner-approved Button 19 chrome (grey raised OFF, green recessed ON), while retaining the CSS module filename `21-navigation-fx-power.css`. PR #54 is the current pointer/meter layout and paint-path optimizer. Both are merged and deployed. These decisions take precedence over the earlier 1g notes. Keep issue #37 open for remaining responsive/legacy AST ownership work; there is no currently open GUI PR to merge.
