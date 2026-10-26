@@ -12,7 +12,7 @@ async def main():
         errors=[]
         # Mixer Button 180 must retain OFF/ON shadow *geometry*; only colors differ.
         def shared_shadow_shape(shadow):
-            return re.sub(r'rgba?\\([^)]*\\)', '<color>', shadow)
+            return re.sub(r'rgba?\([^)]*\)', '<color>', shadow)
         page.on("pageerror", lambda e: errors.append(str(e)))
         await page.set_content((project/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").read_text())
         assert await page.locator(".strip").count()==13
