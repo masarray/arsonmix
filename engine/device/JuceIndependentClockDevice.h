@@ -246,7 +246,7 @@ public:
 
 private:
     static IndependentStreamFormatFence::Endpoint formatOf (
-        const juce::AudioIODevice* device, bool capture)
+        juce::AudioIODevice* device, bool capture)
     {
         // Lifecycle thread only: names and full bitmask are never formatted or
         // queried inside the realtime process callback.
