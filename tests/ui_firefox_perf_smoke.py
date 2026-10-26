@@ -30,8 +30,8 @@ async def main():
                 await page.goto(PAGE + "?mixperf=" + mode)
                 await page.wait_for_selector('[data-fader="master"] .cap')
                 assert await page.locator('#mixer [data-fader]').count() == 11
-                assert await page.locator('#mixer [data-meter]').count() == 12
-                assert await page.locator('#mixer [data-clip]').count() == 12
+                assert await page.locator('#mixer [data-meter]').count() == 16
+                assert await page.locator('#mixer [data-clip]').count() == 16
 
                 heads = await page.evaluate("""() => {
                     const c = document.querySelector('[data-fader="0"] .cap');
