@@ -21,7 +21,7 @@
   const state = {catalog: [], chain: [], scanning: false, message: "Connecting to native host...",
     device: {}, presets: [], addRequestId:0, addError:"", pendingPlugin:"", filter: "", selectedCategory: "All", monitor: false, error: "", progress: {active:false,phase:"done",done:0,total:0,found:0,current:""}, adding:false};
 
-  const orbit = {slot:-1, plugin:"", parameters:[], active:false, activeSlot:-1, activeParameter:-1, periodSeconds:20, reverse:false, preferredParameter:-1};
+  const orbit = {slot:-1, plugin:"", parameters:[], active:false, activeSlot:-1, activeParameter:-1, periodSeconds:20, reverse:false, preferredParameter:-1, selection:-1, confirmed:false};
   const escapeHtml = text => String(text ?? "").replace(/[&<>"']/g, c => (
     {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const percent = peak => Math.max(1,Math.min(100,(20*Math.log10(Math.max(1e-6,Number(peak)||0))+60)*100/60));
@@ -82,6 +82,25 @@
   `;
   css.textContent += "\n    .native-modal{position:fixed;inset:0;z-index:700;display:flex;align-items:center;justify-content:center;\n      background:rgba(3,11,18,.9);backdrop-filter:none;padding:22px;box-sizing:border-box}\n    .native-modal[hidden]{display:none}\n    .native-dialog{width:min(860px,96vw);max-height:min(840px,92vh);overflow:hidden;\n      display:flex;flex-direction:column;background:linear-gradient(145deg,#243945 0%,#101e29 62%,#0c1821);\n      border:1px solid #638293;border-radius:11px;box-shadow:0 18px 80px #000c,inset 0 1px #b2d9e449}\n    .native-dialog-header{display:flex;align-items:center;justify-content:space-between;gap:15px;\n      border-bottom:1px solid #3c5360;padding:14px 17px}\n    .native-dialog-header h2{font-size:18px;font-weight:500;color:#e4f4f9;margin:4px 0}\n    .native-dialog-body{padding:14px 17px;overflow:auto;min-height:60px}\n    .native-dialog-footer{border-top:1px solid #334b58;padding:9px 17px;color:#91abb8;font-size:11px}\n    .native-dialog.small{max-width:520px}\n    .native-bar{height:12px;border:1px solid #527282;background:#0a1621;border-radius:7px;overflow:hidden;position:relative;\n      box-shadow:inset 0 2px 5px #000c}\n    .native-bar-fill{height:100%;width:0%;background:linear-gradient(180deg,#8ef6ff,#17a8da 43%,#08688e);\n      box-shadow:none;border-right:1px solid #ddffff}\n    .native-bar.unknown .native-bar-fill{width:34%;position:absolute;animation:native-indeterminate 1.65s ease-in-out infinite}\n    @keyframes native-indeterminate{0%{left:-36%}50%{left:58%}100%{left:105%}}\n    .native-progress-info{font:11px monospace;color:#a5d5e2;margin:8px 0;display:flex;justify-content:space-between;gap:9px}\n    .native-progress-info strong{font-weight:500;color:#d8f9ff}\n    #nativeScanHud{position:fixed;left:50%;transform:translateX(-50%);bottom:37px;z-index:550;\n      background:#152c3b;border:1px solid #537588;border-radius:8px;box-shadow:0 6px 20px #000a;\n      padding:9px 13px;width:min(470px,90vw)}\n    #nativeScanHud[hidden]{display:none}\n    .native-result{display:flex;align-items:center;gap:7px;background:#10222c;border:1px solid #314d5c;\n      border-radius:6px;padding:9px 11px;margin:5px 0}\n    .native-result span{flex:1;min-width:0}\n    .native-result b{display:block;font-weight:500;color:#d6edf7;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n    .native-result small{display:block;color:#88aaba;font-size:10px;margin-top:4px}\n    .native-search{font-family:inherit!important}\n";
   css.textContent += "\n    .native-insert-row{display:flex;align-items:center;gap:2px;width:100%;min-width:0}\n    .native-insert-row>.insert{flex:1;min-width:0;text-align:left;overflow:hidden;\n      text-overflow:ellipsis;white-space:nowrap;padding-left:4px;padding-right:1px}\n    .native-insert-row>.native-power{flex:0 0 21px;width:21px;height:21px;\n      font-size:14px;line-height:18px;text-align:center;border-radius:3px;\n      border:1px solid #3b6973;color:#8becb3;cursor:pointer;padding:0;\n      background:linear-gradient(#385e65,#102c30);box-shadow:inset 0 1px #91e8bd44}\n    .native-insert-row>.native-power.is-off{color:#8b9ca5;border-color:#53616a;\n      background:linear-gradient(#39414a,#171e27);box-shadow:none}\n    .native-insert-row>.native-power:focus-visible{outline:2px solid #4dd7ff}\n    .native-insert-row.is-bypassed>.insert{opacity:.54;filter:saturate(.55)}\n    .native-engine .strip[data-preview=\"1\"] .meter-fill{opacity:0!important}\n    .native-engine .strip[data-preview=\"1\"] .meter{opacity:.36}\n    .native-engine .meter-fill{transition:none}\n  ";
+  // Scoped compact controls; do not modify the approved mixer/strip CSS baseline.
+  css.textContent += `
+    #nativeOrbit .native-dialog{max-width:470px;border-radius:6px}
+    #nativeOrbit .native-dialog-header{padding:10px 13px}
+    #nativeOrbit .native-dialog-header h2{font-size:14px;font-weight:550;margin:2px 0}
+    #nativeOrbit .native-dialog-body{padding:12px 14px}
+    #nativeOrbit .native-dialog-footer{padding:8px 14px;line-height:1.5}
+    #nativeOrbit .native-search{height:32px;margin:4px 0 8px;font-size:11px;padding:5px 8px;border-radius:4px}
+    #nativeOrbit .orbit-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    #nativeOrbit .orbit-verify{display:flex;align-items:flex-start;gap:8px;padding:9px;
+        background:#0b1c26;border:1px solid #284852;border-radius:4px;color:#b7d5df;
+        font-size:11px;line-height:1.5;margin:7px 0 11px;cursor:pointer}
+    #nativeOrbit .orbit-verify input{accent-color:#49c5cb;margin:2px 0 0;flex:none}
+    #nativeOrbit .orbit-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    #nativeOrbit .orbit-actions .native-btn{padding:6px 11px;font-size:11px;border-radius:4px}
+    #nativeOrbit .orbit-actions .native-btn:disabled{opacity:.43;cursor:not-allowed}
+    #nativeOrbit .orbit-running{font-size:11px;color:#87c8cd}
+    #nativeOrbit .orbit-warning{font-size:11px;line-height:1.55;color:#a8bfc9;margin:5px 0}
+  `;
   document.head.appendChild(css);
   document.getElementById("engineBadge").textContent="NATIVE CH1";
   const workspace = document.querySelector("#rackWorkspace");
@@ -150,7 +169,8 @@
     const dlg=document.getElementById("nativeOrbit");
     if(!dlg)return;
     const options=Array.isArray(orbit.parameters)?orbit.parameters:[];
-    const selected=orbit.active&&orbit.activeSlot===orbit.slot?orbit.activeParameter:orbit.preferredParameter;
+    const selected=orbit.active&&orbit.activeSlot===orbit.slot?orbit.activeParameter:
+      (orbit.selection>=0?orbit.selection:orbit.preferredParameter);
     const valid=options.some(p=>p.index===selected);
     dlg.querySelector(".native-dialog-body").innerHTML=`
       <div class="native-sub" style="margin-bottom:13px">
@@ -158,26 +178,31 @@
       </div>
       <label class="native-sub" for="nativeOrbitParameter">VST3 AUTOMATABLE PARAMETER</label>
       ${options.length?`<select class="native-search" id="nativeOrbitParameter">
+        <option value="" ${valid?"":"selected"} disabled>Select spatial angle parameter…</option>
         ${options.map(p=>`<option value="${p.index}" ${valid&&p.index===selected?"selected":""}>
           ${escapeHtml(p.name)} · ${escapeHtml(p.minText)} → ${escapeHtml(p.maxText)}
         </option>`).join("")}</select>`:
         '<div class="native-empty">This VST3 exposes no suitable automatable parameters.</div>'}
-      <label class="native-sub" for="nativeOrbitSeconds">SECONDS PER 360° REVOLUTION</label>
-      <input class="native-search" id="nativeOrbitSeconds" type="number" min="2" max="180" step="1"
-         value="${Number(orbit.periodSeconds)||20}">
-      <label class="native-sub" for="nativeOrbitReverse">DIRECTION</label>
-      <select class="native-search" id="nativeOrbitReverse">
-        <option value="false" ${orbit.reverse?"":"selected"}>Forward</option>
-        <option value="true" ${orbit.reverse?"selected":""}>Reverse</option>
-      </select>
-      <div class="native-toolbar">
-        <button class="native-btn primary" data-orbit-start="1" ${options.length?"":"disabled"}>▶ START ORBIT</button>
-        <button class="native-btn ${orbit.active?"on":""}" data-orbit-stop="1" ${orbit.active?"":"disabled"}>■ STOP</button>
-        <span class="native-sub">${orbit.active?`RUNNING · FX ${orbit.activeSlot+1}`:"Stopped"}</span>
+      <div class="orbit-grid">
+        <div><label class="native-sub" for="nativeOrbitSeconds">ONE REVOLUTION (SEC)</label>
+          <input class="native-search" id="nativeOrbitSeconds" type="number" min="2" max="180" step="1"
+          value="${Number(orbit.periodSeconds)||20}"></div>
+        <div><label class="native-sub" for="nativeOrbitReverse">DIRECTION</label>
+          <select class="native-search" id="nativeOrbitReverse">
+            <option value="false" ${orbit.reverse?"":"selected"}>CLOCKWISE / FORWARD</option>
+            <option value="true" ${orbit.reverse?"selected":""}>REVERSE</option>
+          </select></div>
       </div>
-      <p class="native-sub" style="margin-top:14px">For dearVR PRO 2 select Position: AZIMUTH in POLAR mode.
-        Confirm the parameter covers an entire 360° circle (minimum/maximum shown above).
-        The host moves one parameter at 60 control updates/sec; plugin smoothing and audible seam behaviour depend on the vendor.</p>`;
+      <label class="orbit-verify">
+        <input type="checkbox" id="nativeOrbitConfirm" ${orbit.confirmed?"checked":""}>
+        <span>I verified this parameter covers a complete 360° azimuth range, not Scale/Gain/Distance.</span>
+      </label>
+      <div class="orbit-actions">
+        <button class="native-btn primary" data-orbit-start="1" ${valid&&orbit.confirmed?"":"disabled"}>▶ START</button>
+        <button class="native-btn ${orbit.active?"on":""}" data-orbit-stop="1" ${orbit.active?"":"disabled"}>■ STOP</button>
+        <span class="orbit-running">${orbit.active?`● RUNNING · FX ${orbit.activeSlot+1}`:"● IDLE"}</span>
+      </div>
+      <p class="orbit-warning">dearVR: use POSITION → POLAR → Azimuth. A 0/1 parameter wrap may produce an audible seam, so test at low headphone volume.</p>`;
     dlg.querySelector(".native-dialog-footer").textContent=
       "Orbit runs in the JUCE control thread, not the audio callback. Opening the vendor editor is optional.";
   }
@@ -185,6 +210,8 @@
     orbit.slot=slot;
     orbit.plugin=state.chain[slot]?.name||"";
     orbit.parameters=[];
+    orbit.selection=-1;
+    orbit.confirmed=false;
     showDialog("nativeOrbit");
     renderOrbit();
     send("orbitInspect",{slot});
@@ -384,10 +411,11 @@
 
   if(el.dataset.closeModal){hideDialog(el.dataset.closeModal);return;}
   if(el.hasAttribute("data-orbit-start")){
-    const param=Number(document.getElementById("nativeOrbitParameter")?.value);
+    const raw=document.getElementById("nativeOrbitParameter")?.value;
+    const param=raw===""||raw===undefined?NaN:Number(raw);
     const seconds=Number(document.getElementById("nativeOrbitSeconds")?.value);
     const reverse=document.getElementById("nativeOrbitReverse")?.value==="true";
-    if(!Number.isInteger(param)||!Number.isFinite(seconds)||seconds<2||seconds>180){
+    if(!orbit.confirmed||!Number.isInteger(param)||!Number.isFinite(seconds)||seconds<2||seconds>180){
       toStatus("Choose a valid VST3 parameter and revolution period (2–180 seconds).");return;
     }
     send("orbitStart",{slot:orbit.slot,parameterIndex:param,seconds,reverse});return;
@@ -494,6 +522,17 @@
   input?.setSelectionRange(pos,pos);
 },true);
 
+  document.addEventListener("change",e=>{
+    const t=e.target;
+    if(!t||!["nativeOrbitConfirm","nativeOrbitParameter","nativeOrbitSeconds","nativeOrbitReverse"].includes(t.id))return;
+    if(t.id==="nativeOrbitConfirm")orbit.confirmed=!!t.checked;
+    if(t.id==="nativeOrbitParameter")orbit.selection=t.value===""?-1:Number(t.value);
+    if(t.id==="nativeOrbitSeconds")orbit.periodSeconds=Number(t.value);
+    if(t.id==="nativeOrbitReverse")orbit.reverse=t.value==="true";
+    const selected=document.getElementById("nativeOrbitParameter")?.value;
+    const start=document.querySelector("#nativeOrbit [data-orbit-start]");
+    if(start)start.disabled=!(orbit.confirmed&&selected!==""&&selected!==undefined);
+  },true);
   backend.addEventListener("arMixOrbitState",data=>{
     if(!data||Number(data.slot)!==orbit.slot)return;
     Object.assign(orbit,data);
