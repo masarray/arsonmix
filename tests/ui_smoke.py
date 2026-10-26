@@ -808,23 +808,24 @@ async def main():
         await canvas_page.wait_for_function("""()=>meterCanvasState.draws>=3
             && meterCanvasState.canvas.classList.contains('hidden')===false""")
         await canvas_page.close()
-        # Simulate a blocked Canvas2D context before the GUI starts.
+        # Force a second Canvas2D initialization to fail AFTER the page
+        # loads: Chromium file:// navigation skips Playwright add_init_script.
         fail_page=await browser.new_page(viewport={"width":1440,"height":820})
-        await fail_page.add_init_script("""()=>{
+        await fail_page.goto((project/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").as_uri()+"?mixperf=canvas")
+        await fail_page.wait_for_function("""()=>meterCanvasState.draws>=1""")
+        forced=await fail_page.evaluate("""()=>{
           const old=HTMLCanvasElement.prototype.getContext;
+          meterCanvasState.canvas.remove();
+          meterCanvasState.canvas=null;meterCanvasState.ctx=null;
+          meterCanvasState.failed=false;
           HTMLCanvasElement.prototype.getContext=function(type,...args){
             return type==='2d'?null:old.call(this,type,...args);
           };
+          try{return prepareMeterCanvas()}finally{
+            HTMLCanvasElement.prototype.getContext=old;
+          }
         }""")
-        await fail_page.goto((project/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").as_uri()+"?mixperf=canvas")
-        await fail_page.wait_for_timeout(250)
-        failure_probe=await fail_page.evaluate("""()=>({
-          mode:mixperfMode,failed:meterCanvasState.failed,
-          context:!!meterCanvasState.ctx,draws:meterCanvasState.draws,
-          intercepted:HTMLCanvasElement.prototype.getContext.toString().includes('type==='),
-          active:document.documentElement.dataset.mixcanvas||null
-        })""")
-        assert failure_probe['failed'],failure_probe
+        assert forced is False,forced
         fallback=await fail_page.evaluate("""()=>{
           const el=document.querySelector('[data-meter="0"]');
           return {active:document.documentElement.dataset.mixcanvas||null,
