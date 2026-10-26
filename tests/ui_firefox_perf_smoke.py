@@ -1,6 +1,6 @@
 """Firefox functional smoke for Issue #56; no synthetic FPS pass/fail gates.
 
-Validates opt-in diagnostics and 13-strip native-size artwork on Gecko.
+Validates opt-in diagnostics and 11-strip native-size artwork on Gecko.
 Real Windows frame pacing/compositor still requires owner-side Firefox Profiler.
 """
 import asyncio
@@ -20,7 +20,7 @@ async def main():
             page.on("pageerror", lambda error: errors.append(str(error)))
             await page.goto(PAGE)
             await page.wait_for_selector('[data-fader="master"] .cap')
-            assert await page.locator('#mixer [data-fader]').count() == 13
+            assert await page.locator('#mixer [data-fader]').count() == 11
             assert await page.evaluate('window.__arMixPerfProbe === undefined'), "No profiler in normal mode"
             await page.close()
 
@@ -29,9 +29,9 @@ async def main():
                 page.on("pageerror", lambda error: errors.append(str(error)))
                 await page.goto(PAGE + "?mixperf=" + mode)
                 await page.wait_for_selector('[data-fader="master"] .cap')
-                assert await page.locator('#mixer [data-fader]').count() == 13
-                assert await page.locator('#mixer [data-meter]').count() == 14
-                assert await page.locator('#mixer [data-clip]').count() == 14
+                assert await page.locator('#mixer [data-fader]').count() == 11
+                assert await page.locator('#mixer [data-meter]').count() == 12
+                assert await page.locator('#mixer [data-clip]').count() == 12
 
                 heads = await page.evaluate("""() => {
                     const c = document.querySelector('[data-fader="0"] .cap');
@@ -78,7 +78,7 @@ async def main():
                 await page.close()
         finally:
             await browser.close()
-    print("PASS: Firefox 13 faders, fixed LEDs, opt-in probe and honest long-task support")
+    print("PASS: Firefox 11 faders, fixed LEDs, opt-in probe and honest long-task support")
 
 
 if __name__ == "__main__":
