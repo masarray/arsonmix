@@ -1,5 +1,7 @@
 # ArSonMix Theme Engine — Implementation Ladder & Verification Strategy
 
+> **DESIGN REFERENCE DELIVERED:** [Exact Brushed Metal adapter](../design-references/brushed-metal-v1.0/adapter.css) + [fingerprint](../design-references/brushed-metal-v1.0/reference.json) + [reconstruction script](../scripts/render_brushed_reference.py) + [integrity/parity test](../tests/theme_reference_fixture_test.py). Read [next-thread handoff](THEME_ENGINE_NEW_THREAD_HANDOFF_2026-10-26.md) **before T0**. The CSS should be *mined* for existing paints/shadows, **never copied** as the production runtime theme. T0–T7 statuses remain NOT IMPLEMENTED.
+
 **Status:** READY FOR EXECUTION PLANNING · 2026-10-26 · implementasi belum dimulai.  
 **ARD:** [ARD_MULTITHEME_ENGINE_V1_2026-10-26.md](ARD_MULTITHEME_ENGINE_V1_2026-10-26.md)  
 **Scope:** Default vs Brushed Metal. GUI core menjadi layout owner tunggal. Native DSP tidak berubah.
