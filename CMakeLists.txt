@@ -19,7 +19,7 @@ juce_add_gui_app(ARMixConsole
 juce_add_binary_data(ARMixAssets SOURCES
     web/index.html web/styles.css web/app.js web/bridge.js web/monitor.js)
 
-target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h src/PluginCatalog.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/ClockBridgeSizing.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h engine/device/BridgeContinuityGate.h)
+target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h src/PluginCatalog.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/ClockBridgeSizing.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h engine/device/BridgeContinuityGate.h engine/device/EndpointIdentityPolicy.h engine/device/WasapiEndpointIdentityGuard.h)
 target_compile_definitions(ARMixConsole PRIVATE
     JUCE_WEB_BROWSER=1
     JUCE_USE_WIN_WEBVIEW2=1
@@ -44,6 +44,9 @@ target_link_libraries(ARMixConsole PRIVATE
 
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(ARMixEndpointPolicyTests tests/endpoint_identity_policy_test.cpp)
+  target_compile_features(ARMixEndpointPolicyTests PRIVATE cxx_std_20)
+  add_test(NAME UniqueWindowsEndpointIdentity COMMAND ARMixEndpointPolicyTests)
   add_executable(ARMixBridgeContinuityTests tests/bridge_continuity_gate_test.cpp)
   target_compile_features(ARMixBridgeContinuityTests PRIVATE cxx_std_20)
   add_test(NAME SustainedAsrcContinuityFailback COMMAND ARMixBridgeContinuityTests)
@@ -67,6 +70,11 @@ if(BUILD_TESTING)
     target_link_libraries(ARMixWasapiProbeTests PRIVATE juce::juce_core ole32 uuid juce::juce_recommended_config_flags)
     target_compile_features(ARMixWasapiProbeTests PRIVATE cxx_std_20)
     add_test(NAME WasapiCapabilityProbe COMMAND ARMixWasapiProbeTests)
+    juce_add_console_app(ARMixEndpointGuardTests PRODUCT_NAME "ArSonMix Windows Endpoint Identity Guard Tests")
+    target_sources(ARMixEndpointGuardTests PRIVATE tests/wasapi_endpoint_identity_guard_test.cpp engine/device/WasapiEndpointIdentityGuard.h)
+    target_link_libraries(ARMixEndpointGuardTests PRIVATE juce::juce_core ole32 uuid juce::juce_recommended_config_flags)
+    target_compile_features(ARMixEndpointGuardTests PRIVATE cxx_std_20)
+    add_test(NAME WindowsEndpointIdentityGuard COMMAND ARMixEndpointGuardTests)
   endif()
   add_executable(ARMixLifecycleTests tests/session_lifecycle_test.cpp)
   target_compile_features(ARMixLifecycleTests PRIVATE cxx_std_20)
