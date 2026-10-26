@@ -30,3 +30,13 @@ The independent JUCE capture/render implementation prepares `AdaptiveClockBridge
 - Subsequent work: an OS-backed stable ASIO identity/capability generation, real backend-source-labelled render starvation observations (or unsupported), an AUTO/STABLE coordinator with cold-start validation/hysteresis and rollback, long ASRC jitter/drift/spectral benchmarks, then **consolidated actual-device FAT**.
 
 **Engineering decision:** unchanged physical latency in clean DIRECT/ASIO routing and no variable callback jitter false positives. Safety has priority over output continuing with a stale route.
+
+## CI gate repair found during P0-08 validation
+
+The first PR-head Windows log detected a compile contract mismatch with pinned JUCE 8: `getCurrentSampleRate()` and `getCurrentBufferSizeSamples()` are **non-const**. `formatOf(juce::AudioIODevice*)` now honors their actual API contract.
+
+The same log uncovered three outdated **test-only** JavaScript asserts that expected a removed 60/144Hz-style `requestAnimationFrame(meters)` call and a single-line native exit. The current app deliberately uses a self-scheduling `setTimeout` plus one rAF and has **two early native exits** (scheduler + meter body). Updated all three contracts to assert those two fail-closed guards precede timer/synthetic PCM generation. No runtime GUI file changed.
+
+The Windows job had also been silently reporting a green `Validate native UI JavaScript` step if a later Node test passed, despite an earlier test's nonzero exit status. The updated job runs 3 syntax checks with explicit exit-code checks, then launches the **12 test files as one Node test invocation with explicit exit-code validation**. This reduces Node process startups and prevents false-positive green CI. This fix intentionally includes otherwise unrelated stale contract assertions because a reliable gate is essential for signoff.
+
+Do NOT merge this PR on a check-run name alone: require a complete exact-head log containing *all* native contract passes, Release executable build, and all 20/20 CTest.
