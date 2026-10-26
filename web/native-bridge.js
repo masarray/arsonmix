@@ -38,6 +38,12 @@
     const db = 20 * Math.log10(Math.max(1e-6, Number(peak) || 0));
     return Math.max(1, Math.min(100, (db + 60) * 100 / 60));
   }
+  function paintMeter(el,value){
+    if(!el)return;
+    const level=Math.max(0,Math.min(100,Number(value)||0));
+    el.style.setProperty("--level",level+"%");
+    el.style.setProperty("--meter-scale",String(level/100));
+  }
   backend.addEventListener("arMixStatus", (s) => {
     monitor = !!s.monitor;
     bypass = !!s.bypass;
@@ -59,10 +65,10 @@
       : "P1 NATIVE · No audio device";
     const p = level(s.peak);
     document.querySelectorAll("[data-meter]").forEach((meter) =>
-      meter.style.setProperty("--level", meter.dataset.meter === "0" ? p + "%" : "1%"));
+      paintMeter(meter,meter.dataset.meter === "0" ? p : 1));
     ["masterMeterL","masterMeterR","masterMeterAux"].forEach((id) => {
       const el = document.getElementById(id);
-      if (el) el.style.setProperty("--level", p + "%");
+      paintMeter(el,p);
     });
     const cpu = document.querySelector(".cpu strong");
     if (cpu) cpu.textContent = "P1 LIVE";

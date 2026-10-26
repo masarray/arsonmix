@@ -27,3 +27,13 @@ test('status bar is informational and not an action rack',()=>{
  assert.ok(html.includes('id="arSignalBadge"'));
  assert.ok(bridge.includes('getElementById("headerRate")'));
 });
+
+test('native meter bridge honors compositor scale and historical level status',()=>{
+  for(const src of [bridge,read('web/native-bridge.js')]){
+    assert.ok(src.includes('function paintMeter('), 'missing native-meter adapter');
+    assert.ok(src.includes('"--meter-scale"'), 'native meter stops displaying after height->transform migration');
+    assert.ok(src.includes('"--level"'), 'legacy meter consumers must still receive levels');
+    assert.ok(!src.includes('transition:height 90ms linear'),'height animation triggers needless reflow');
+  }
+  assert.ok(css.includes('transform:scaleY(var(--meter-scale,.4))'));
+});
