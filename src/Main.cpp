@@ -434,7 +434,7 @@ private:
             for (int i = 0; i < params.size(); ++i)
             {
                 auto* param = params[i];
-                if (param == nullptr || !param->isAutomatable() || param->getNumSteps() <= 2)
+                if (param == nullptr || !param->isAutomatable() || param->getNumSteps() < 72)
                     continue;
                 const auto name = param->getName (100);
                 auto item = std::make_unique<juce::DynamicObject>();
