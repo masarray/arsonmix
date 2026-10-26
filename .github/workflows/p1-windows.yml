@@ -49,6 +49,7 @@ jobs:
             'tests/smart_audio_diagnostic_contract_test.mjs'
             'tests/independent_clock_adapter_contract_test.mjs'
             'tests/direct_restore_recovery_contract_test.mjs'
+            'tests/native_artifact_packaging_contract_test.mjs'
           )
           node --test $contracts
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -63,21 +64,14 @@ jobs:
         run: cmake --build build --config Release --target ARMixConsole ARMixRTTests ARMixPresetTests ARMixDiagnosticTests ARMixClockBridgeTests ARMixVirtualClockSoakTests ARMixCadenceTests ARMixCrackleWindowTests ARMixHealthTests ARMixPolicyTests ARMixPeriodEvidenceTests ARMixLifecycleTests ARMixWasapiProbeTests ARMixDualJuceTests ARMixClockSizingTests ARMixIndependentFormatTests ARMixRecoveryTests ARMixStreamWatchdogTests ARMixBridgeContinuityTests ARMixEndpointPolicyTests ARMixEndpointGuardTests ARMixAsioPolicyTests ARMixAsioBackendTests ARMixAsioRegistryIdentityTests ARMixDirectFenceTests --parallel 2
       - name: Test realtime control primitives
         run: ctest --test-dir build -C Release --output-on-failure
-      - name: Package native executable
+      - name: Package verified JUCE GUI for hardware FAT
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          $exe = Get-ChildItem -Path build -Filter "*.exe" -Recurse |
-            Where-Object { $_.Name -like "*AR*Mix*" -and $_.FullName -match 'Release' } |
-            Select-Object -First 1
-          if (-not $exe) { throw "ARMixConsole EXE not found" }
-          Copy-Item $exe.FullName "dist/ArSonMix-P2.5-GUI-v0.8-Native-Windows.exe"
-          Copy-Item README.md "dist/README.md"
-          "P0 native engineering build: SIGNAL CHECK has COPY FULL REPORT, hardware capability and DSP distributions, and isolated output/capture/dry modes. Independent JUCE WASAPI capture and render device adapters are opt-in experimental, with adaptive FIR bridging and bounded DIRECT recovery; physical audio qualification still pending. No hardware audio acceptance yet. Use headphones at low level. Only Channel 1 is native." |
-            Out-File -FilePath dist/FIRST_SOUND_README.txt -Encoding utf8
+          & ./scripts/package_native_windows.ps1 -BuildDir build -OutputDir dist
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         with:
-          name: ArSonMix-P2.5-GUI-v0.8-Native-Windows-x64
+          name: ArSonMix-GUI10CH-P012-Verified-Hardware-FAT-Windows-x64
           path: dist/
           if-no-files-found: error
           retention-days: 14
