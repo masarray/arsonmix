@@ -1,5 +1,7 @@
 # ARD — ArSonMix Pluggable Theme Engine v1.0
 
+> **SOURCE HANDOFF UPDATE (2026-10-26):** The approved Brushed Metal v1.0 CSS is now preserved **verbatim** at [design-references/brushed-metal-v1.0/adapter.css](../design-references/brushed-metal-v1.0/adapter.css) (SHA256 `d4d3b13fa5ceba0f29665f902735ad0e48c4df44e4107cb00d2ff2f65ec678b6`). See [reference README](../design-references/brushed-metal-v1.0/README.md) and [next-thread engineer handoff](THEME_ENGINE_NEW_THREAD_HANDOFF_2026-10-26.md). **Do not recreate its CSS**; translate existing visual declarations into semantic tokens after baseline/cascade audit. The frozen adapter contains `!important` and geometry overrides solely as historical reference, and must not be loaded wholesale into the final runtime theme engine. Implementation has not begun.
+
 **Status:** PROPOSED / DESIGN ONLY · **Tanggal:** 2026-10-26  
 **Source of truth:** `main` pada `7401573252f2e19f2a74ad59973f666a85fd6924` (ambil ulang `main` saat implementasi).  
 **Pemilik keputusan:** GUI Core owns layout; Theme Engine owns visual skin; audio/native owns DSP.  
