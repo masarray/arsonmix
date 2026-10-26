@@ -57,7 +57,7 @@ async def main():
             return document.fonts.check('600 12px "ArSonMix Inter"')&&
                 getComputedStyle(document.querySelector('.strip-name')).fontFamily.includes('ArSonMix Inter');
         }"""),'Embedded Inter font was not applied'
-        assert [round(float(v.rstrip('s')),3) for v in style['dur'].split(', ')]==[.15,.15,.15,.09,.12],style
+        assert [round(float(v.rstrip('s')),3) for v in style['dur'].split(', ')]==[.15,.15,.15,.09,.12,.075],style
         # Visual-architecture regression: four intentionally different hardware
         # families, FX slots recessed rather than taking on button-cap artwork.
         # GUI target: the master is the 13th sibling, not a floating right rail.
@@ -338,7 +338,8 @@ async def main():
         assert len(geometry)==13 and all(x['nameTop']>=x['faderBottom']-1 for x in geometry),geometry
         assert all(not x['hasTools'] for x in geometry if not x['master']),geometry
         assert sum(x['hasTools'] for x in geometry)==1,geometry
-        # Press never changes shadow geometry or hitbox; ON color updates after release.
+        # Both resting states share depth; while pointer is down only, cap sinks 1px
+        # with a stronger inner shadow and unchanged width/height/layout slot.
         btn=page.locator('[data-mute="0"]')
         before=await btn.evaluate("""e=>({
             shadow:getComputedStyle(e).boxShadow,
@@ -352,15 +353,38 @@ async def main():
         during=await btn.evaluate("""e=>({
             t:getComputedStyle(e).transform,rect:e.getBoundingClientRect().toJSON(),
             shadow:getComputedStyle(e).boxShadow})""")
-        assert during['t']=='matrix(1, 0, 0, 1, 0, 0)',during
-        assert all(abs(during['rect'][k]-press_before[k])<=.2 for k in ('x','y','width','height')),during
-        assert during['shadow']==before['shadow'],(before,during)
+        assert during['t']=='matrix(1, 0, 0, 1, 0, 1)',during
+        assert abs(during['rect']['y']-press_before['y']-1)<=.2,during
+        assert all(abs(during['rect'][k]-press_before[k])<=.2 for k in ('x','width','height')),during
+        assert during['shadow']!=before['shadow'] and '0.82' in during['shadow'],(before,during)
         await page.mouse.up()
+        await page.wait_for_timeout(190)
         assert await btn.get_attribute('aria-pressed')=='true'
-        await btn.click()
+        released_on=await btn.evaluate("""e=>({
+            t:getComputedStyle(e).transform, shadow:getComputedStyle(e).boxShadow,
+            rect:e.getBoundingClientRect().toJSON()
+        })""")
+        assert released_on['t']=='matrix(1, 0, 0, 1, 0, 0)',released_on
+        assert abs(released_on['rect']['y']-press_before['y'])<=.2,released_on
+        assert shared_shadow_shape(released_on['shadow'])==shared_shadow_shape(before['shadow']),(before,released_on)
+        # Re-press while already ON; it must have the same 1px tactile travel.
+        await btn.hover()
+        await page.mouse.down()
+        await page.wait_for_timeout(120)
+        pressed_on=await btn.evaluate("""e=>({
+            t:getComputedStyle(e).transform,shadow:getComputedStyle(e).boxShadow,
+            rect:e.getBoundingClientRect().toJSON()
+        })""")
+        assert pressed_on['t']=='matrix(1, 0, 0, 1, 0, 1)',pressed_on
+        assert abs(pressed_on['rect']['y']-press_before['y']-1)<=.2,pressed_on
+        assert all(abs(pressed_on['rect'][k]-press_before[k])<=.2 for k in ('x','width','height')),pressed_on
+        assert '0.82' in pressed_on['shadow'],pressed_on
+        await page.mouse.up()
         await page.wait_for_timeout(190)
         assert await btn.get_attribute('aria-pressed')=='false'
         assert await btn.evaluate("(e)=>getComputedStyle(e).transform")=='matrix(1, 0, 0, 1, 0, 0)'
+        released_off=await btn.evaluate("(e)=>e.getBoundingClientRect().toJSON()")
+        assert abs(released_off['y']-press_before['y'])<=.2,released_off
         widths=await page.evaluate("""()=>{
           const mixer=document.querySelector('#mixer'),master=document.querySelector('#masterLeft');
           const source=document.querySelector('[data-strip="0"]');
