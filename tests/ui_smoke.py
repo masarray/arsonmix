@@ -497,7 +497,7 @@ async def main():
         cap0=page.locator('[data-fader="0"] .cap')
         await cap0.hover()
         fader_hover=await cap0.evaluate("(e)=>getComputedStyle(e).filter")
-        assert 'brightness(1.19)' in fader_hover, fader_hover
+        assert 'brightness(1.1)' in fader_hover and 'drop-shadow' not in fader_hover, fader_hover
         button=page.locator('[data-mute="0"]')
         await button.hover()
         await page.wait_for_timeout(150)  # Finish 90 ms physical-switch filter transition.
@@ -742,6 +742,20 @@ async def main():
         assert await page.locator('#modeToggle').count()==0
         assert await page.locator('.app.easy').count()==1
         assert not errors, errors
+        # Query-string run from actual standalone document, not a CSS-only class
+        # flip: the explicit probe exists and meter-off is a browser-only feature.
+        diag=await browser.new_page(viewport={"width":1680,"height":920})
+        await diag.goto((project/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").as_uri()+"?mixperf=meters-off")
+        assert await diag.evaluate("""()=>document.documentElement.dataset.mixperf==='meters-off'
+            && window.__arMixPerfProbe?.mode==='meters-off'""")
+        capture=asyncio.create_task(diag.evaluate("()=>window.__arMixPerfProbe.run(1000)"))
+        await diag.mouse.move(370,195)
+        await diag.mouse.move(600,580,steps=16)
+        await diag.mouse.move(900,625,steps=10)
+        measured=await capture
+        assert measured["mode"]=="meters-off" and measured["durationMs"]==1000,measured
+        assert measured["mixer"]["samples"]>0 and measured["pointerMoves"]["mixer"]>0,measured
+        await diag.close()
         await browser.close()
     print("PASS: asset PNG for 13 faders, detent alignment, no-jump drag, endpoints, FX chain, no JS errors")
 
