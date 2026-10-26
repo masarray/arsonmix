@@ -231,7 +231,7 @@ async def main():
         preset=page.locator('[data-preset="Clean Vocal"]')
         before=await preset.evaluate('(e)=>e.getBoundingClientRect().toJSON()')
         await preset.hover()
-        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-preset="Clean Vocal"]')).filter==='brightness(1.045)'""")
+        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-preset="Clean Vocal"]')).filter==='none'""")
         await page.mouse.down()
         await page.wait_for_timeout(150)
         pressed=await preset.evaluate("""e=>({
