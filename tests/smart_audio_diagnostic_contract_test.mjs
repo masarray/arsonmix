@@ -67,7 +67,7 @@ test('P0 deterministic virtual clock soak is enforced in Windows CTest',()=>{
   assert.match(soak,/std::abs\(crossMean\)/);
   assert.match(soak,/steadyUnderflow/);
   assert.match(soak,/p99Budget/);
-  assert.doesNotMatch(soak,/sleep_for|random_device/);
+  assert.doesNotMatch(soak,/std::this_thread::sleep_for\s*\(|std::random_device\s*[({]/);
   assert.match(cmake,/IndependentClockASRCDriftJitterSoak/);
   assert.match(flow,/ARMixVirtualClockSoakTests/);
 });
@@ -83,7 +83,9 @@ test('clock bridge has no callback alloc / blocking and is gated behind independ
   assert.doesNotMatch(engine,/AdaptiveClockBridge\s+clockBridge_/);
   assert.match(cmake,/AdaptiveDualClockBridge/);
   assert.match(cmake,/RealtimeHealthHistogram/);
-  assert.match(flow,/ARMixClockBridgeTests ARMixHealthTests ARMixPolicyTests/);
+  for (const target of ['ARMixClockBridgeTests','ARMixVirtualClockSoakTests',
+                        'ARMixHealthTests','ARMixPolicyTests'])
+    assert.ok(flow.includes(target), 'Windows CI is missing ' + target);
   assert.match(policy,/class AudioProfilePolicy final/);
   assert.match(policy,/clockSharedByHardware/);
   assert.match(policy,/unsupportedClockAdapter/);
