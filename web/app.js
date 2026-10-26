@@ -56,7 +56,7 @@ function updateMeterVisual(key,level,now){
  const levelStep=Math.round(value*10);
  if(meter.level!==levelStep){
    meter.level=levelStep;
-   if(mixperfMode!=='canvas')meter.fill.style.setProperty('--meter-scale',String(levelStep/1000));
+   if(!meterCanvasState.ctx)meter.fill.style.setProperty('--meter-scale',String(levelStep/1000));
  }
  const previous=peakHold[key];
  if(!previous||value>=previous.value||now>=previous.until){
@@ -64,7 +64,7 @@ function updateMeterVisual(key,level,now){
    const step=Math.round(value*10);
    if(meter.peak&&meter.peakValue!==step){
      meter.peakValue=step;
-     if(mixperfMode!=='canvas')meter.peak.style.bottom=(step/10)+'%';
+     if(!meterCanvasState.ctx)meter.peak.style.bottom=(step/10)+'%';
    }
  }
  if(value>=97&&!clipLatch[key]){
@@ -386,9 +386,21 @@ if(mixperfParam&&mixperfModes.includes(mixperfParam)){
    It draws the 12 channel + 2 master meters into ONE transparent canvas.
    DOM clip buttons and native JUCE metering remain the owners of interaction
    and true audio telemetry. No pointer handler or canvas exists in normal GUI. */
-const meterCanvasState={canvas:null,ctx:null,entries:[],tiles:new Map(),invalid:true,
+const meterCanvasState={canvas:null,ctx:null,failed:false,entries:[],tiles:new Map(),invalid:true,
                         dpr:1,width:0,height:0,draws:0,resizeObserver:null};
 function invalidateMeterCanvas(){meterCanvasState.invalid=true}
+function restoreDomMeterFallback(){
+ const state=meterCanvasState;
+ state.failed=true;state.ctx=null;
+ delete document.documentElement.dataset.mixcanvas;
+ // Restore last measured levels and held peaks immediately after context loss.
+ for(const [key,node] of meterNodes){
+  if(!node.fill.isConnected)continue;
+  if(node.level>=0)node.fill.style.setProperty('--meter-scale',String(node.level/1000));
+  const held=peakHold[key];
+  if(held&&node.peak)node.peak.style.bottom=(Math.round(held.value*10)/10)+'%';
+ }
+}
 function meterCanvasTile(w,h){
  const state=meterCanvasState,key=w+'x'+h,existing=state.tiles.get(key);
  if(existing)return existing;
@@ -404,7 +416,7 @@ function meterCanvasTile(w,h){
  state.tiles.set(key,tile);return tile;
 }
 function prepareMeterCanvas(){
- if(mixperfMode!=='canvas'||window.__JUCE__?.backend?.emitEvent)return false;
+ if(mixperfMode!=='canvas'||window.__JUCE__?.backend?.emitEvent||meterCanvasState.failed)return false;
  const state=meterCanvasState,host=$('mixer')?.parentElement;
  if(!host)return false;
  if(!state.canvas){
@@ -414,7 +426,9 @@ function prepareMeterCanvas(){
   host.append(canvas);
   state.canvas=canvas;
   state.ctx=canvas.getContext('2d',{alpha:true});
-  if(!state.ctx){canvas.remove();state.canvas=null;return false}
+  if(!state.ctx){canvas.remove();state.canvas=null;restoreDomMeterFallback();return false}
+  document.documentElement.dataset.mixcanvas='active';
+  canvas.addEventListener('contextlost',e=>{e.preventDefault();restoreDomMeterFallback()});
   if('ResizeObserver' in window){
    state.resizeObserver=new ResizeObserver(invalidateMeterCanvas);
    state.resizeObserver.observe(host);
