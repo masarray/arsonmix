@@ -354,8 +354,9 @@ if(mixperfParam&&mixperfModes.includes(mixperfParam)){
   const buckets={mixer:[],outside:[]},moves={mixer:0,outside:0};
   let area='',pointerAt=-Infinity,lastFrame=0,frameId=0,observer=null,longTasks=0,longTaskMs=0;
   function pointer(e){area=e.target.closest?.('#mixer')?'mixer':'outside';pointerAt=performance.now();moves[area]++}
+  function visibility(){lastFrame=0;pointerAt=-Infinity}
   function frame(t){
-   if(lastFrame&&t-pointerAt<350&&t-lastFrame>0&&t-lastFrame<1000)buckets[area].push(t-lastFrame);
+   if(lastFrame&&!document.hidden&&t-pointerAt<350&&t-lastFrame>0)buckets[area].push(t-lastFrame);
    lastFrame=t;frameId=requestAnimationFrame(frame);
   }
   function stats(a){const s=a.slice().sort((x,y)=>x-y),n=s.length;
@@ -364,12 +365,14 @@ if(mixperfParam&&mixperfModes.includes(mixperfParam)){
     over33Ms:s.filter(x=>x>33.3).length,over50Ms:s.filter(x=>x>50).length};
   }
   document.addEventListener('pointermove',pointer,{passive:true});
+  document.addEventListener('visibilitychange',visibility);
   if('PerformanceObserver' in window){try{observer=new PerformanceObserver(l=>{
    for(const e of l.getEntries()){longTasks++;longTaskMs+=e.duration}
   });observer.observe({entryTypes:['longtask']})}catch{observer=null}}
   frameId=requestAnimationFrame(frame);
   return new Promise(done=>setTimeout(()=>{
-   cancelAnimationFrame(frameId);document.removeEventListener('pointermove',pointer);observer?.disconnect();
+   cancelAnimationFrame(frameId);document.removeEventListener('pointermove',pointer);
+   document.removeEventListener('visibilitychange',visibility);observer?.disconnect();
    done({mode:mixperfMode,durationMs:ms,environment:{userAgent:navigator.userAgent,dpr:devicePixelRatio,
     width:innerWidth,height:innerHeight,iframe:top!==self},mixer:stats(buckets.mixer),
     outside:stats(buckets.outside),pointerMoves:moves,longTasks,
