@@ -248,8 +248,8 @@ async def main():
         assert await page.locator('.left-rail #saveFxPreset').inner_text()=='SAVE FX'
         assert await page.locator('.left-rail #menuScene').inner_text()=='EXPORT'
         assert await page.locator('.left-rail .rail-bottom button').count()==3
-        # Approved Button 19: raised bright-grey OFF and recessed vivid-green ON,
-        # shared only by toolbar navigation and the 8 left-rail keys.
+        # Toolbar crystal is an isolated BTN-180-derived flat acrylic surface.
+        # Eight left-rail keys retain the original Button 19 material.
         assert await page.locator('.toolbar-actions .nav button.fx-nav').count()==7
         assert await page.locator('.left-rail button.fx-nav').count()==8
         assert await page.locator('.toolbar-actions .btn-180,.left-rail .btn-180').count()==0
@@ -269,14 +269,21 @@ async def main():
               return getComputedStyle(e).backgroundImage;
             })()};
         }""")
-        for key in ('bg','face','color','textTransform'):
-            assert style['nav'][key]==style['rail'][key],(key,style)
-        assert 'radial-gradient(' in style['nav']['bg'],style
-        assert style['nav']['face']=='rgb(224, 228, 232)',style
-        assert style['selected']['face']=='rgb(57, 239, 114)',style
-        assert style['selected']['shadow']!=style['nav']['shadow'],style
-        assert style['selected']['textTransform']=='matrix(0.95, 0, 0, 0.95, 0, 0)',style
+        assert style['rail']['face']=='rgb(224, 228, 232)',style
+        assert style['rail']['textTransform']=='none',style
+        assert style['nav']['face']=='rgba(96, 111, 126, 0.74)',style
+        assert style['selected']['face']=='rgba(243, 249, 253, 0.96)',style
+        assert style['nav']['radius']==style['selected']['radius']=='2px',style
+        assert 'linear-gradient(' in style['nav']['bg'] and 'radial-gradient(' not in style['nav']['bg'],style
+        assert style['nav']['bg']==style['selected']['bg'],style
+        assert style['nav']['shadow'].count('rgb')==7,style
+        assert style['selected']['shadow'].count('rgb')==7,style
+        assert style['nav']['color']!=style['selected']['color'],style
+        assert style['nav']['textTransform']==style['selected']['textTransform']=='none',style
         assert style['mixer']=='none',style
+        assert await page.locator('[data-view="FX RACK"]').evaluate(
+            "(e)=>getComputedStyle(e).backdropFilter==='none' && getComputedStyle(e).filter==='none'")
+        await page.screenshot(path=str(project/'toolbar-crystal-offon.png'),full_page=True)
         preset=page.locator('[data-preset="Clean Vocal"]')
         before=await preset.evaluate('(e)=>e.getBoundingClientRect().toJSON()')
         await preset.hover()
@@ -306,15 +313,28 @@ async def main():
         assert all(abs(before[k]-active['rect'][k])<=.2 for k in ('x','y','width','height')),active
         # Navigation remains mutually exclusive, never an independent fake toggle.
         await page.locator('[data-view="FX RACK"]').click()
-        # CSS animates face color over 115ms; assert the final rendered state,
-        # not an intermediate animation frame immediately after the click.
+        # Navigation remains radio-like; OFF grey / selected ON pearl white.
+        # The seven reflection/shadow layers never need a compositor blur.
         await page.wait_for_function("""()=>{
           const on=document.querySelector('[data-view="FX RACK"]');
           const off=document.querySelector('[data-view="MIX"]');
           return on.classList.contains('selected') && !off.classList.contains('selected')
-            && getComputedStyle(on).backgroundColor==='rgb(57, 239, 114)'
-            && getComputedStyle(off).backgroundColor==='rgb(224, 228, 232)';
+            && getComputedStyle(on).backgroundColor==='rgba(243, 249, 253, 0.96)'
+            && getComputedStyle(off).backgroundColor==='rgba(96, 111, 126, 0.74)';
         }""")
+        crystal=page.locator('[data-view="FX RACK"]')
+        rest=await crystal.evaluate("""e=>({rect:e.getBoundingClientRect().toJSON(),
+            shadow:getComputedStyle(e).boxShadow})""")
+        await crystal.hover()
+        await page.mouse.down()
+        pressed_crystal=await crystal.evaluate("""e=>({rect:e.getBoundingClientRect().toJSON(),
+            shadow:getComputedStyle(e).boxShadow,
+            textTransform:getComputedStyle(e.querySelector('span')).transform})""")
+        assert rest['shadow']!=pressed_crystal['shadow'],(rest,pressed_crystal)
+        assert pressed_crystal['textTransform']=='none',pressed_crystal
+        assert all(abs(rest['rect'][key]-pressed_crystal['rect'][key])<=.2
+                   for key in ('x','y','width','height')),pressed_crystal
+        await page.mouse.up()
         await page.locator('[data-view="MIX"]').click()
         # One-shot toolbar commands must NOT latch visually after release.
         await page.locator('#audioSetupBtn').click()

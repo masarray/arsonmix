@@ -842,6 +842,89 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  #app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav),
  #app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav)>span{transition:none!important}
 }
+
+/* Toolbar BTN-180 Crystal: a FLAT acrylic block, never a domed button.
+   Reuse Button-180's seven-edge construction but exchange its rubber-like
+   solid material for low-alpha grey / lit white with planar reflected light.
+   Scoped ONLY to seven toolbar actions: do not alter Button-19 left rail,
+   Button-180 mixer/MASTER, FX-power or any toolbar dimensions/handlers. */
+#app .toolbar-actions .nav button.fx-nav{
+ --tb180-face:rgba(96,111,126,.74);
+ --tb180-edge:rgba(159,178,194,.82);
+ --tb180-ink:#f7fafc;
+ --tb180-top:rgba(250,253,255,.78);
+ --tb180-left:rgba(235,245,251,.37);
+ --tb180-right:rgba(8,16,26,.42);
+ --tb180-floor:rgba(5,12,19,.7);
+ --tb180-rim:rgba(7,15,24,.85);
+ appearance:none;
+ -webkit-appearance:none;
+ border:1px solid var(--tb180-edge);
+ border-radius:2px;
+ /* Flat plane: one narrow optical glint + one planar light falloff.
+    Neither radial shading nor blur/filters/backdrop processing is used. */
+ background-color:var(--tb180-face);
+ background-image:
+  linear-gradient(180deg,rgba(255,255,255,.46) 0,rgba(255,255,255,.19) 1px,transparent 2px,transparent calc(100% - 2px),rgba(3,9,16,.25) 100%),
+  linear-gradient(180deg,rgba(255,255,255,.18) 0%,rgba(255,255,255,.07) 31%,transparent 32%,rgba(3,9,16,.06) 100%);
+ background-blend-mode:normal;
+ color:var(--tb180-ink);
+ text-shadow:0 1px 0 rgba(0,0,0,.43);
+ box-shadow:
+  inset 0 1px 0 var(--tb180-top),
+  inset 1px 0 0 var(--tb180-left),
+  inset -1px 0 0 var(--tb180-right),
+  inset 0 -2px 0 var(--tb180-floor),
+  0 0 0 1px var(--tb180-rim),
+  0 1px 0 rgba(0,0,0,.48),
+  0 2px 0 rgba(0,0,0,.25);
+ transform:none;
+ filter:none!important;
+ backdrop-filter:none;
+ -webkit-backdrop-filter:none;
+ transition:background-color 100ms ease-out,color 100ms ease-out,border-color 100ms ease-out;
+}
+/* ON is PEARL WHITE, not green/magenta; only reflectance and palette change.
+   Selected navigation stays at precisely the same coordinates and cap size. */
+#app .toolbar-actions .nav button.fx-nav.selected{
+ --tb180-face:rgba(243,249,253,.96);
+ --tb180-edge:rgba(246,252,255,1);
+ --tb180-ink:#102231;
+ --tb180-top:rgba(255,255,255,1);
+ --tb180-left:rgba(255,255,255,.96);
+ --tb180-right:rgba(72,97,116,.42);
+ --tb180-floor:rgba(62,88,105,.43);
+ --tb180-rim:rgba(222,243,255,.95);
+ text-shadow:0 1px 0 rgba(255,255,255,.53);
+}
+/* Press only changes the inset depth, not the button rectangle or span
+   scale. This also covers single-shot commands that must never latch. */
+#app .toolbar-actions .nav button.fx-nav:active:not(:disabled){
+ transform:none;
+ box-shadow:
+  inset 0 2px 0 rgba(8,18,28,.48),
+  inset 1px 0 0 var(--tb180-left),
+  inset -1px 0 0 var(--tb180-right),
+  inset 0 -1px 0 var(--tb180-floor),
+  0 0 0 1px var(--tb180-rim),
+  0 0 0 rgba(0,0,0,0),
+  0 0 0 rgba(0,0,0,0);
+}
+#app .toolbar-actions .nav button.fx-nav > span,
+#app .toolbar-actions .nav button.fx-nav:is(.selected,:active) > span{
+ transform:none;
+ transition:none;
+}
+#app .toolbar-actions .nav button.fx-nav:hover:not(:disabled){
+ filter:none!important;
+}
+#app .toolbar-actions .nav button.fx-nav:focus-visible{
+ outline:2px solid #e5f5ff;
+ outline-offset:2px;
+}
+@media(prefers-reduced-motion:reduce){
+ #app .toolbar-actions .nav button.fx-nav{transition:none}
+}
 /* Crisp selection seams: no Gaussian blur, preserved layout and semantic tint. */
 .strip.selected,#masterLeft.selected{
  --selection-tint:color-mix(in srgb,var(--ch) 22%,#7fe8ff 78%);

@@ -68,6 +68,7 @@ jobs:
           name: arsonmix-gui-baseline-smoke
           path: |
             fader-ui-smoke.png
+            toolbar-crystal-offon.png
             mixer-design-review.png
             mixer-design-review-1440.png
             mixer-master-clip-review.png
