@@ -33,6 +33,24 @@ test('native one-click copy uses system clipboard and includes last event marker
   assert.match(ui,/action:"copyDiagnosticReport"/);
   assert.match(ui,/arMixDiagnosticReportCopied/);
 });
+test('P0 capability report uses real independent endpoints and never auto-applies buffer hints',()=>{
+  const adapter=read('engine/device/PeriodCapabilityEvidence.h');
+  assert.match(engine,/juce::AudioIODevice\* diagnosticRenderDevice\(\) noexcept/);
+  assert.match(engine,/juce::AudioIODevice\* diagnosticCaptureDevice\(\) noexcept/);
+  assert.match(engine,/independent_\.active\(\) \? independent_\.renderDevice\(\)/);
+  assert.match(engine,/independent_\.active\(\) \? independent_\.captureDevice\(\)/);
+  assert.match(host,/auto\* device = engine_\.diagnosticRenderDevice\(\)/);
+  assert.match(host,/auto\* capture = engine_\.diagnosticCaptureDevice\(\)/);
+  assert.match(host,/PeriodCapabilityEvidence::inspect/);
+  assert.match(host,/NOT_FAT_QUALIFIED_DO_NOT_AUTO_APPLY/);
+  assert.match(host,/WASAPI shared can/);
+  assert.match(adapter,/std::span<const int>/);
+  assert.match(cmake,/NativeDriverPeriodEvidence/);
+  assert.match(flow,/ARMixPeriodEvidenceTests/);
+  assert.match(policy,/unqualifiedLowLatency/);
+  assert.match(policy,/explicitExclusiveApprovalRequired/);
+});
+
 test('telemetry distinguishes measured host budget fractions from unobservable output underrun',()=>{
   assert.match(engine,/realtimeHistogram_\.observe \(elapsedUs, periodUs\)/);
   assert.match(engine,/callbackP95BudgetUpperPct/);

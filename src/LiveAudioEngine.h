@@ -61,6 +61,19 @@ public:
     ~LiveAudioEngine() override { stop(); }
 
     juce::AudioDeviceManager& devices() noexcept { return deviceManager_; }
+    // Message/control-thread reporting only. The normal JUCE manager is
+    // intentionally closed while independent WASAPI capture/render runs.
+    // Diagnostics must use the ACTUAL render/capture device in that mode.
+    juce::AudioIODevice* diagnosticRenderDevice() noexcept
+    {
+        return independent_.active() ? independent_.renderDevice()
+                                    : deviceManager_.getCurrentAudioDevice();
+    }
+    juce::AudioIODevice* diagnosticCaptureDevice() noexcept
+    {
+        return independent_.active() ? independent_.captureDevice()
+                                    : deviceManager_.getCurrentAudioDevice();
+    }
 
     juce::String start (const juce::XmlElement* savedSettings = nullptr)
     {
