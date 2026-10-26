@@ -232,7 +232,10 @@ async def main():
 
         assert await page.locator('.right-rail,.master-tabs,.head').count()==0
         assert await page.locator('[data-master-output]').count()==0
-        assert await page.locator('.master-stereo-badge,.master-route-label').count()==2
+        assert await page.locator('.master-stereo-badge,.master-route-label,.fader-tools.master-tools').count()==0
+        assert await page.locator('#masterMode.btn-180.is-stereo').count()==1
+        assert await page.locator('#masterMode').inner_text()=='STEREO'
+        assert await page.locator('#masterMode').get_attribute('aria-pressed')=='false'
         # Streaming output panel has only two useful readouts.
         assert await page.locator('#masterLeft .master-analysis .master-info-row').count()==2
         assert await page.locator('#masterPeakDb').count()==0
@@ -363,7 +366,7 @@ async def main():
         actions=await page.evaluate("""()=>{
           const bounds=s=>{const r=document.querySelector(s).getBoundingClientRect();
             return {top:r.top,height:r.height,middle:r.top+r.height/2,width:r.width}};
-          const master=bounds('#masterMute'),stereo=bounds('.master-stereo-badge');
+          const master=bounds('#masterMute'),stereo=bounds('#masterMode');
           return {master,stereo,rows:[...document.querySelectorAll('.strip:not(.master-strip) .channel-actions')].map(row=>{
             const mute=row.querySelector('.mute'),solo=row.querySelector('.solo');
             return {mute:bounds('[data-mute="'+mute.dataset.mute+'"]'),solo:bounds('[data-solo="'+solo.dataset.solo+'"]')};
@@ -373,6 +376,7 @@ async def main():
         assert all(abs(row[key]['middle']-actions['master']['middle'])<=1 for row in actions['rows'] for key in ('mute','solo')),actions
         assert all(abs(row['mute']['middle']-row['solo']['middle'])<=1 for row in actions['rows']),actions
         assert actions['stereo']['height']==actions['master']['height']==29,actions
+        # Without obsolete tools, MASTER fader rail must be as long as sources.
         header=await page.evaluate("""()=>{
           const btns=[...document.querySelectorAll('.toolbar .nav button')];
           return {buttons:btns.map(b=>{const r=b.getBoundingClientRect();return {width:r.width,mid:r.top+r.height/2,right:r.right}}),
@@ -382,7 +386,7 @@ async def main():
 
         assert await page.locator('header .nav button').count()==7
         assert await page.locator('footer.status button').count()==0
-        assert await page.locator('[data-clear-all-clips]').count()==1
+        assert await page.locator('[data-clear-all-clips]').count()==0
         architecture=await page.evaluate("""() => {
           const bg=s=>getComputedStyle(document.querySelector(s)).backgroundImage;
           const rect=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,height:r.height}};
@@ -401,6 +405,7 @@ async def main():
             masterRows:[...master.children].map(x=>({cls:x.className,height:x.getBoundingClientRect().height}))};
         }""")
         assert architecture['small']=='none',architecture
+        assert abs(architecture['mainFader']['height']-architecture['masterFader']['height'])<=2,architecture
         assert architecture['nav'].startswith('linear-gradient('),architecture
         assert architecture['long'].startswith('linear-gradient('),architecture
         assert 'data:image/png;base64' not in architecture['fx']
@@ -477,7 +482,7 @@ async def main():
         })""")
         assert len(geometry)==11 and all(x['nameTop']>=x['faderBottom']-1 for x in geometry),geometry
         assert all(not x['hasTools'] for x in geometry if not x['master']),geometry
-        assert sum(x['hasTools'] for x in geometry)==1,geometry
+        assert not any(x['hasTools'] for x in geometry),geometry
         # Both resting states share depth; while pointer is down only, cap sinks 1px
         # with a stronger inner shadow and unchanged width/height/layout slot.
         btn=page.locator('[data-mute="0"]')
@@ -574,6 +579,18 @@ async def main():
         await page.locator('[data-view="MIX"]').click()
         assert await page.locator('[data-fxpower="0:0"]').get_attribute('aria-pressed')=='true'
         assert await page.evaluate('durableSession().bypassed["0:0"]') is False
+        # A real two-state BTN-180 control: blue STEREO, red MONO, durable state.
+        mode=page.locator('#masterMode')
+        blue=await mode.evaluate("(e)=>getComputedStyle(e).getPropertyValue('--b180-color').trim()")
+        assert blue=='#509bd2',blue
+        await mode.click()
+        red=await mode.evaluate("(e)=>getComputedStyle(e).getPropertyValue('--b180-color').trim()")
+        assert await mode.inner_text()=='MONO' and await mode.get_attribute('aria-pressed')=='true'
+        assert red=='#e76f83' and red!=blue,red
+        assert await page.evaluate('durableSession().masterMono') is True
+        await mode.click()
+        assert await mode.inner_text()=='STEREO' and await mode.get_attribute('aria-pressed')=='false'
+        assert await page.evaluate('durableSession().masterMono') is False
         await page.locator('#masterMute').click()
         assert await page.locator('#masterMute').inner_text()=='MUTE'
         assert await page.locator('#masterMute').get_attribute('aria-pressed')=='true'
@@ -678,8 +695,10 @@ async def main():
         assert await page.locator('[data-meter="masterR"]').count()==1
         await page.evaluate('updateMeterVisual("masterL",99,performance.now())')
         assert await page.locator('[data-clip="masterL"]').evaluate('(e)=>e.classList.contains("latched")')
+        assert await page.evaluate('Boolean(peakHold.masterL)') is True
         await page.locator('[data-clip="masterL"]').click()
         assert not await page.locator('[data-clip="masterL"]').evaluate('(e)=>e.classList.contains("latched")')
+        assert await page.evaluate('Boolean(peakHold.masterL)') is False
         assert not await page.locator('.strip .insert-led').count()
         assert await page.locator('.strip .insert-name').first.inner_text() != ''
         assert await page.locator('.strip .insert-add-glyph').count()>0

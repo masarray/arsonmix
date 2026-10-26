@@ -23,7 +23,11 @@ const fmt=db=>db===-Infinity?'−∞':`${db>0?'+':''}${db.toFixed(1)} dB`;
 // UI side throttling is distinct from the native realtime control plane.
 const pendingUiParams=new Map();let uiFlushScheduled=false;
 const peakHold=Object.create(null),clipLatch=Object.create(null);
-function resetClip(key){clipLatch[key]=false;document.querySelector(`[data-clip="${key}"]`)?.classList.remove('latched')}
+function resetClip(key){
+ clipLatch[key]=false;delete peakHold[key];
+ document.querySelector(`[data-clip="${key}"]`)?.classList.remove('latched');
+ const entry=meterNodes.get(key);if(entry?.peak){entry.peak.style.bottom='0%';entry.peakValue=-1}
+}
 function syncClipLeds(){document.querySelectorAll('[data-clip]').forEach(e=>e.classList.toggle('latched',!!clipLatch[e.dataset.clip]))}
 // Cache per-meter nodes across preview frames, rebuilding on mixer re-render.
 // Styling a full-height bar with a compositor transform avoids 14 cyclic height
@@ -169,10 +173,10 @@ function makeStrip(ch,i){let inserts=ch.inserts.slice(0,6);while(inserts.length<
  </article>`}
 function renderMixer(){
  const x=$('mixer'),scroll=x.scrollLeft;
- x.innerHTML=channels.map(makeStrip).join('')+'<article id="masterLeft" class="strip master-strip '+(masterSelected?'selected':'')+'" aria-label="Stereo master channel"></article>';
+ x.innerHTML=channels.map(makeStrip).join('')+'<article id="masterLeft" class="strip master-strip '+(masterSelected?'selected':'')+'" aria-label="Master output channel"></article>';
  renderMaster();x.scrollLeft=scroll;createSide();
 }
-let masterGain=-.1,masterPan=0,masterMute=false,phones=-12,masterInserts=['Studio EQ','Brickwall Limiter'],masterBypassed={},pendingMasterSlot=null;
+let masterGain=-.1,masterPan=0,masterMute=false,masterMono=false,phones=-12,masterInserts=['Studio EQ','Brickwall Limiter'],masterBypassed={},pendingMasterSlot=null;
 function masterFxRows(){
  const slots=masterInserts.slice(0,6);while(slots.length<6)slots.push('');
  return slots.map((name,i)=>`<div class="master-fx-slot ${masterBypassed[i]?'is-bypassed':''}">
@@ -204,7 +208,7 @@ function renderMaster(){
  </div>
  <div class="channel-actions master-actions">
   <button class="candy mute ${masterMute?'active':''}" type="button" id="masterMute" aria-pressed="${masterMute}">MUTE</button>
-  <span class="master-stereo-badge" aria-label="Stereo master channel">STEREO</span>
+  <button type="button" id="masterMode" class="btn-180 master-mode ${masterMono?'is-mono':'is-stereo'}" aria-pressed="${masterMono}" aria-label="Master output mode: ${masterMono?'Mono':'Stereo'}" title="Toggle master mono/stereo output">${masterMono?'MONO':'STEREO'}</button>
  </div>
  <div class="db-display master-db" data-master-db>${fmt(masterGain)}</div>
  <div class="fader-zone master-fader-zone">
@@ -216,9 +220,19 @@ function renderMaster(){
   </div>
   ${meterUnit('masterR','R')}
    </div>
- <div class="fader-tools master-tools"><span class="master-route-label">MAIN L/R</span><button type="button" class="btn-180" data-clear-all-clips="1" title="Reset latched clips">CLEAR CLIP</button></div>
  <div class="strip-name master-strip-name" role="group" aria-label="Master output"><span class="strip-caption">MASTER</span><span class="track-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m11 5-5 4H3v6h3l5 4V5Z"/><path d="M15 9a5 5 0 0 1 0 6M18 6a9 9 0 0 1 0 12"/></svg></span></div>`;
  syncClipLeds();
+}
+function setMasterMono(value,emit=true){
+ masterMono=!!value;
+ const button=$('masterMode');if(button){
+  button.textContent=masterMono?'MONO':'STEREO';
+  button.classList.toggle('is-mono',masterMono);
+  button.classList.toggle('is-stereo',!masterMono);
+  button.setAttribute('aria-pressed',String(masterMono));
+  button.setAttribute('aria-label','Master output mode: '+(masterMono?'Mono':'Stereo'));
+ }
+ if(emit){send('masterMono',masterMono,-1);persistSession()}
 }
 function setView(next){
  if(next!=='MIX'&&next!=='FX RACK'&&next!=='SIGNAL FLOW')return;
@@ -280,7 +294,6 @@ document.addEventListener('click',e=>{const b=e.target.closest('button,[data-cho
  if(b.dataset.masterInsert!==undefined){pendingMasterSlot=+b.dataset.masterInsert;openPluginBrowser(currentChannel,true);return}
  if(b.dataset.masterPower!==undefined){const slot=+b.dataset.masterPower;masterBypassed[slot]=!masterBypassed[slot];renderMaster();persistSession();send('masterFxBypass',{slot,bypass:masterBypassed[slot]},-1);return}
  if(b.dataset.clip!==undefined){resetClip(b.dataset.clip);return}
- if(b.dataset.clearAllClips!==undefined){Object.keys(clipLatch).forEach(resetClip);Object.keys(peakHold).forEach(k=>delete peakHold[k]);return}
  if(b.dataset.fxpower!==undefined){const [i,j]=b.dataset.fxpower.split(':').map(Number);setFxBypass(i,j,!bypassed[fxKey(i,j)]);return}
  if(b.dataset.insert){let [i,j]=b.dataset.insert.split(':').map(Number);currentChannel=i;pendingSlot=j;openPluginBrowser(i);return}
  if(b.dataset.scene!==undefined){loadSnapshotByIndex(+b.dataset.scene);return}
@@ -295,7 +308,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('button,[data-cho
  if(b.dataset.category){activeCategory=b.dataset.category;renderPluginBrowser();return}
  if(b.dataset.group!==undefined){flash('Group selection — interface placeholder');return}
  if(b.dataset.side){document.querySelectorAll('[data-side]').forEach(x=>x.classList.toggle('selected',x===b));if(b.dataset.side==='fx')setView('FX RACK');else setView('MIX');return}
- switch(b.id){case'identityCancel':closeChannelIdentity();break;case'identitySave':commitChannelIdentity();break;case'masterMute':masterMute=!masterMute;b.textContent='MUTE';b.classList.toggle('active',masterMute);b.setAttribute('aria-pressed',String(masterMute));send('masterMute',masterMute,-1);break;case'addScene':saveMixerSnapshot();break;case'saveFxPreset':saveFxChainPreset();break;case'menuScene':exportSession();break;case'closeBrowser':closePluginBrowser();break;case'closeFxInspector':pluginEditorIndex=null;renderRackWorkspace();break;case'chooseFxFile':importSession();break;case'arSignalOpen':if(!window.__JUCE__?.backend?.emitEvent)flash('Signal Check is available in the Windows desktop app');break;default:if(b.id)flash('UI study: '+b.textContent.trim().slice(0,28));}
+ switch(b.id){case'identityCancel':closeChannelIdentity();break;case'identitySave':commitChannelIdentity();break;case'masterMute':masterMute=!masterMute;b.textContent='MUTE';b.classList.toggle('active',masterMute);b.setAttribute('aria-pressed',String(masterMute));send('masterMute',masterMute,-1);break;case'masterMode':setMasterMono(!masterMono);break;case'addScene':saveMixerSnapshot();break;case'saveFxPreset':saveFxChainPreset();break;case'menuScene':exportSession();break;case'closeBrowser':closePluginBrowser();break;case'closeFxInspector':pluginEditorIndex=null;renderRackWorkspace();break;case'chooseFxFile':importSession();break;case'arSignalOpen':if(!window.__JUCE__?.backend?.emitEvent)flash('Signal Check is available in the Windows desktop app');break;default:if(b.id)flash('UI study: '+b.textContent.trim().slice(0,28));}
 });
 // Deliberate double-click to edit a strip. Single-click only changes selection.
 document.addEventListener('dblclick',e=>{const el=e.target.closest('[data-editstrip]');if(!el)return;
@@ -530,7 +543,7 @@ function setFxBypass(ch,slot,disabled){
 function toggleBypass(idx){setFxBypass(currentChannel,idx,!bypassed[fxKey(currentChannel,idx)])}
 const quickPresets={'Clean Vocal':['Noise Gate','Studio EQ','Vocal Compressor'],'Warm Karaoke':['Noise Gate','Studio EQ','Vocal Compressor','Studio Reverb'],'Live Broadcast':['Noise Gate','Dynamic EQ','De-Esser','Brickwall Limiter']};
 function applyQuickPreset(name){const c=channels[currentChannel];for(let i=0;i<8;i++){delete fxParams[fxKey(currentChannel,i)];delete bypassed[fxKey(currentChannel,i)]}pluginEditorIndex=null;setChain(c,quickPresets[name]||[]);document.querySelectorAll('[data-preset]').forEach(b=>b.classList.toggle('active',b.dataset.preset===name));flash('FX chain preset selected: '+name+' (UI only)');send('chainChanged',{chain:normalChain(c)},currentChannel)}
-function durableSession(){return {schemaVersion:1,version:'0.3-ui',channels:channels.map(c=>({id:c.id,name:c.name,icon:c.icon,color:c.color,inserts:[...c.inserts],fader:c.fader,pan:c.pan,trim:c.trim,mute:c.mute,solo:c.solo,hpf:c.hpf})),masterGain,masterPan,masterMute,masterInserts:[...masterInserts],masterBypassed:{...masterBypassed},sceneIdx,selected:currentChannel,fxParams:structuredClone(fxParams),bypassed:{...bypassed}};}
+function durableSession(){return {schemaVersion:1,version:'0.3-ui',channels:channels.map(c=>({id:c.id,name:c.name,icon:c.icon,color:c.color,inserts:[...c.inserts],fader:c.fader,pan:c.pan,trim:c.trim,mute:c.mute,solo:c.solo,hpf:c.hpf})),masterGain,masterPan,masterMute,masterMono,masterInserts:[...masterInserts],masterBypassed:{...masterBypassed},sceneIdx,selected:currentChannel,fxParams:structuredClone(fxParams),bypassed:{...bypassed}};}
 function persistSession(){try{localStorage.setItem('armix-v03-current',JSON.stringify(durableSession()));localStorage.setItem('armix-v03-snapshots',JSON.stringify(userSnapshots));localStorage.setItem('armix-v03-chains',JSON.stringify(savedChains));return true}catch{return false}}
 function saveFxChainPreset(){const name=prompt('Name this FX chain preset:','My Vocal Chain');if(!name)return;const key=name.trim().slice(0,60);if(!key)return;savedChains[key]={schemaVersion:1,inserts:[...normalChain(channels[currentChannel])],states:normalChain(channels[currentChannel]).map((_,i)=>({...getFxParams(currentChannel,i),bypass:!!bypassed[fxKey(currentChannel,i)]}))};persistSession();flash('FX chain preset saved: '+key)}
 function recallFxChain(){const keys=Object.keys(savedChains);if(!keys.length){flash('No saved FX chains yet');return}const key=prompt('Enter FX chain preset name:\n'+keys.join('\n'),keys[0]);if(!key||!savedChains[key])return;setChain(channels[currentChannel],savedChains[key].inserts);savedChains[key].states?.forEach((v,i)=>{fxParams[fxKey(currentChannel,i)]={mix:v.mix,amount:v.amount,output:v.output};bypassed[fxKey(currentChannel,i)]=!!v.bypass});pluginEditorIndex=null;renderRackWorkspace();flash('FX chain recalled: '+key)}
@@ -539,7 +552,8 @@ function applySession(session){if(!session||session.schemaVersion!==1||!Array.is
  if(typeof src.name==='string'&&src.name.trim())c.name=src.name.trim().slice(0,26);
  if(channelIcons.includes(src.icon))c.icon=src.icon;
  if(channelPalette.includes(src.color))c.color=src.color;
- for(const k of ['fader','pan','trim'])if(Number.isFinite(src[k]))c[k]=src[k];for(const k of ['mute','solo','hpf'])if(typeof src[k]==='boolean')c[k]=src[k];if(Array.isArray(src.inserts))c.inserts=src.inserts.filter(x=>typeof x==='string').slice(0,8)}masterGain=Number.isFinite(session.masterGain)?session.masterGain:-.1;masterPan=Number.isFinite(session.masterPan)?clamp(session.masterPan,-100,100):0;masterMute=!!session.masterMute;
+ for(const k of ['fader','pan','trim'])if(Number.isFinite(src[k]))c[k]=src[k];for(const k of ['mute','solo','hpf'])if(typeof src[k]==='boolean')c[k]=src[k];if(Array.isArray(src.inserts))c.inserts=src.inserts.filter(x=>typeof x==='string').slice(0,8)}masterGain=Number.isFinite(session.masterGain)?session.masterGain:-.1;masterPan=Number.isFinite(session.masterPan)?clamp(session.masterPan,-100,100):0;masterMute=!!session.masterMute;masterMono=!!session.masterMono;
+ send('masterMono',masterMono,-1);
  if(Array.isArray(session.masterInserts))masterInserts=session.masterInserts.filter(x=>typeof x==='string').slice(0,6);
  masterBypassed=(session.masterBypassed&&typeof session.masterBypassed==='object')?{...session.masterBypassed}:{};
  fxParams=(session.fxParams&&typeof session.fxParams==='object')?structuredClone(session.fxParams):{};bypassed=(session.bypassed&&typeof session.bypassed==='object')?{...session.bypassed}:{};pluginEditorIndex=null;renderMixer();renderMaster();if(view==='FX RACK')renderRackWorkspace()}
@@ -566,7 +580,8 @@ try{userSnapshots=JSON.parse(localStorage.getItem('armix-v03-snapshots')||'{}');
 createSide();renderMixer();renderMaster();try{let last=JSON.parse(localStorage.getItem('armix-v03-current'));if(!last)last=JSON.parse(localStorage.getItem('arMixStudioUI')); if(last&&last.channels?.length>=channels.length){last.channels.slice(0,channels.length).forEach((s,i)=>{if(typeof s.name==='string'&&s.name.trim())channels[i].name=s.name.trim().slice(0,26);
  if(channelIcons.includes(s.icon))channels[i].icon=s.icon;
  if(channelPalette.includes(s.color))channels[i].color=s.color;
- for(const k of ['fader','pan','trim','mute','solo','hpf'])if(s[k]!==undefined)channels[i][k]=s[k];if(Array.isArray(s.inserts))channels[i].inserts=s.inserts.filter(x=>typeof x==='string').slice(0,8)});sceneIdx=last.sceneIdx??0;masterGain=last.masterGain??-.1;masterPan=Number.isFinite(last.masterPan)?clamp(last.masterPan,-100,100):0;masterMute=!!last.masterMute;
+ for(const k of ['fader','pan','trim','mute','solo','hpf'])if(s[k]!==undefined)channels[i][k]=s[k];if(Array.isArray(s.inserts))channels[i].inserts=s.inserts.filter(x=>typeof x==='string').slice(0,8)});sceneIdx=last.sceneIdx??0;masterGain=last.masterGain??-.1;masterPan=Number.isFinite(last.masterPan)?clamp(last.masterPan,-100,100):0;masterMute=!!last.masterMute;masterMono=!!last.masterMono;
+  send('masterMono',masterMono,-1);
   if(Array.isArray(last.masterInserts))masterInserts=last.masterInserts.filter(x=>typeof x==='string').slice(0,6);
   if(last.masterBypassed&&typeof last.masterBypassed==='object')masterBypassed={...last.masterBypassed};
   if(last.bypassed&&typeof last.bypassed==='object')bypassed={...last.bypassed};
