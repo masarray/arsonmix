@@ -64,7 +64,6 @@ assert css.count('background-image:var(--ari-master-cap)!important')>=1
 assert "#app #mixer > .strip:not(.master-strip)" in finish
 assert "grid-template-columns:repeat(2,minmax(0,1fr))" in finish
 assert "max-width:none" in finish
-assert "channels.length<channels.length" not in js
 assert "session.channels.length<channels.length" in js
 assert "last.channels.slice(0,channels.length)" in js
 assert 'const raw=[' in js and "['Monitor','◉'" not in js and "['Aux Out','◉'" not in js
