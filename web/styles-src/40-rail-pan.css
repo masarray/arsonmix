@@ -30,13 +30,13 @@
 /* Preview performance + dense mixer shell: preserve all control sizes.
    The prior 6px top gutter was visually excessive below the 56px toolbar. */
 #app .main{padding-top:2px}
-/* Fixed LED palette, revealing only the reached amplitude; no image scaling.
-   Colors and LED separator positions stay anchored along the meter. */
+/* Stationary 7px LED cells: the shared painter supplies --led-lit as whole rows.
+   --level remains a fallback for hosts without the shared painter. */
 #app .meter .meter-fill{
  height:calc(100% - 14px);
  max-height:none;
  transform:none;
- clip-path:inset(calc(100% - var(--level,40%)) 0 0);
+ clip-path:inset(calc(100% - var(--led-lit,var(--level,40%))) 0 0);
  will-change:auto;
  pointer-events:none;
 }

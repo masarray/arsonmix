@@ -843,11 +843,10 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  #app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav),
  #app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav)>span{transition:none!important}
 }
-/* One soft, non-rectilinear halo shared by source and stereo master. */
+/* Crisp selection seams: no Gaussian blur, preserved layout and semantic tint. */
 .strip.selected,#masterLeft.selected{
  --selection-tint:color-mix(in srgb,var(--ch) 22%,#7fe8ff 78%);
- box-shadow:inset 0 0 11px color-mix(in srgb,var(--selection-tint) 23%,transparent),
-            inset 0 0 1px color-mix(in srgb,var(--selection-tint) 55%,transparent)!important;
+ box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--selection-tint) 55%,transparent)!important;
 }
 .strip.selected::before,#masterLeft.selected::before{
  content:"";position:absolute;inset:1px;z-index:6;pointer-events:none;
@@ -855,16 +854,14 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  background:linear-gradient(to right,
     color-mix(in srgb,var(--selection-tint) 14%,transparent),transparent 13% 87%,
     color-mix(in srgb,var(--selection-tint) 14%,transparent));
- box-shadow:inset 0 0 8px color-mix(in srgb,var(--selection-tint) 28%,transparent),
-            inset 0 0 0 1px color-mix(in srgb,var(--selection-tint) 12%,transparent),
-            0 0 6px color-mix(in srgb,var(--selection-tint) 13%,transparent)!important;
+ box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--selection-tint) 28%,transparent)!important;
 }
 .strip.selected .strip-name{
- box-shadow:inset 0 0 6px color-mix(in srgb,var(--selection-tint) 19%,transparent)!important;
+ box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--selection-tint) 19%,transparent)!important;
 }
 .strip.identity-editing .strip-name{
  outline:none!important;
- box-shadow:inset 0 0 9px #60d9fa51,0 0 6px #41bce75a!important;
+ box-shadow:inset 0 0 0 1px #60d9fa51!important;
 }
 @media(prefers-reduced-motion:reduce){
  :where(.toolbar .nav button,.toolbar .spec-device,
@@ -926,13 +923,13 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 /* Preview performance + dense mixer shell: preserve all control sizes.
    The prior 6px top gutter was visually excessive below the 56px toolbar. */
 #app .main{padding-top:2px}
-/* Fixed LED palette, revealing only the reached amplitude; no image scaling.
-   Colors and LED separator positions stay anchored along the meter. */
+/* Stationary 7px LED cells: the shared painter supplies --led-lit as whole rows.
+   --level remains a fallback for hosts without the shared painter. */
 #app .meter .meter-fill{
  height:calc(100% - 14px);
  max-height:none;
  transform:none;
- clip-path:inset(calc(100% - var(--level,40%)) 0 0);
+ clip-path:inset(calc(100% - var(--led-lit,var(--level,40%))) 0 0);
  will-change:auto;
  pointer-events:none;
 }
@@ -1077,6 +1074,31 @@ function syncClipLeds(){document.querySelectorAll('[data-clip]').forEach(e=>e.cl
 // Styling a full-height bar with a compositor transform avoids 14 cyclic height
 // reflows per meter tick. No native meter or DSP data path is affected.
 const meterNodes=new Map();
+// Shared preview/native painter: preserve fixed colors; light only whole 7px LEDs.
+const LED_PITCH_PX=7,ledMeterCache=new WeakMap();
+function setLedMeterLevel(el,rawLevel){
+ if(!el)return;
+ const level=clamp(Number(rawLevel)||0,0,100);
+ let state=ledMeterCache.get(el);
+ if(!state){state={height:el.getBoundingClientRect().height,level:-1,lit:-1};ledMeterCache.set(el,state)}
+ if(state.level!==level){state.level=level;el.style.setProperty('--level',level+'%')}
+ const lit=level>=100?state.height:Math.floor((level*state.height/100+1e-7)/LED_PITCH_PX)*LED_PITCH_PX;
+ if(state.lit!==lit){state.lit=lit;el.style.setProperty('--led-lit',lit+'px')}
+}
+window.__arMixSetLedMeterLevel=setLedMeterLevel;
+// Observe only the stable mixer root, never disposable strips; no hot-path reflow.
+if(typeof ResizeObserver==='function'){
+ const ledResizeObserver=new ResizeObserver(()=>{
+  document.querySelectorAll('#mixer [data-meter]').forEach(el=>{
+   const state=ledMeterCache.get(el);if(!state)return;
+   const height=el.getBoundingClientRect().height;
+   if(height===state.height)return;
+   state.height=height;state.lit=-1;setLedMeterLevel(el,state.level);
+  });
+ });
+ const mixerRoot=document.getElementById('mixer');
+ if(mixerRoot)ledResizeObserver.observe(mixerRoot);
+}
 function meterNode(key){
  const cached=meterNodes.get(key);
  if(cached?.fill.isConnected)return cached;
@@ -1101,7 +1123,7 @@ function updateMeterVisual(key,level,now){
  const levelStep=Math.round(value*10);
  if(meter.level!==levelStep){
    meter.level=levelStep;
-   meter.fill.style.setProperty('--level',(levelStep/10)+'%');
+   setLedMeterLevel(meter.fill,levelStep/10);
  }
  const previous=peakHold[key];
  if(!previous||value>=previous.value||now>=previous.until){

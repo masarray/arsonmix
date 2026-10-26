@@ -32,6 +32,31 @@ function syncClipLeds(){document.querySelectorAll('[data-clip]').forEach(e=>e.cl
 // Styling a full-height bar with a compositor transform avoids 14 cyclic height
 // reflows per meter tick. No native meter or DSP data path is affected.
 const meterNodes=new Map();
+// Shared preview/native painter: preserve fixed colors; light only whole 7px LEDs.
+const LED_PITCH_PX=7,ledMeterCache=new WeakMap();
+function setLedMeterLevel(el,rawLevel){
+ if(!el)return;
+ const level=clamp(Number(rawLevel)||0,0,100);
+ let state=ledMeterCache.get(el);
+ if(!state){state={height:el.getBoundingClientRect().height,level:-1,lit:-1};ledMeterCache.set(el,state)}
+ if(state.level!==level){state.level=level;el.style.setProperty('--level',level+'%')}
+ const lit=level>=100?state.height:Math.floor((level*state.height/100+1e-7)/LED_PITCH_PX)*LED_PITCH_PX;
+ if(state.lit!==lit){state.lit=lit;el.style.setProperty('--led-lit',lit+'px')}
+}
+window.__arMixSetLedMeterLevel=setLedMeterLevel;
+// Observe only the stable mixer root, never disposable strips; no hot-path reflow.
+if(typeof ResizeObserver==='function'){
+ const ledResizeObserver=new ResizeObserver(()=>{
+  document.querySelectorAll('#mixer [data-meter]').forEach(el=>{
+   const state=ledMeterCache.get(el);if(!state)return;
+   const height=el.getBoundingClientRect().height;
+   if(height===state.height)return;
+   state.height=height;state.lit=-1;setLedMeterLevel(el,state.level);
+  });
+ });
+ const mixerRoot=document.getElementById('mixer');
+ if(mixerRoot)ledResizeObserver.observe(mixerRoot);
+}
 function meterNode(key){
  const cached=meterNodes.get(key);
  if(cached?.fill.isConnected)return cached;
@@ -56,7 +81,7 @@ function updateMeterVisual(key,level,now){
  const levelStep=Math.round(value*10);
  if(meter.level!==levelStep){
    meter.level=levelStep;
-   meter.fill.style.setProperty('--level',(levelStep/10)+'%');
+   setLedMeterLevel(meter.fill,levelStep/10);
  }
  const previous=peakHold[key];
  if(!previous||value>=previous.value||now>=previous.until){

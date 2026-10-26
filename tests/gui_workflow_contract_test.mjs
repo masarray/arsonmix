@@ -35,9 +35,14 @@ test('native meter bridge drives fixed-palette LED reveal by level',()=>{
     assert.ok(!src.includes('"--meter-scale"'), 'obsolete compositor-scale property creates redundant writes');
     assert.ok(!src.includes('transition:height 90ms linear'),'height animation triggers needless reflow');
   }
-  assert.ok(css.includes('clip-path:inset(calc(100% - var(--level,40%)) 0 0)'));
+  assert.ok(css.includes('clip-path:inset(calc(100% - var(--led-lit,var(--level,40%))) 0 0)'));
   assert.ok(!css.includes('transform:scaleY(var(--meter-scale,.4))'));
   assert.ok(css.includes('repeating-linear-gradient(to top,transparent 0 5px,#071014 5px 7px)'));
-  assert.ok(app.includes("meter.fill.style.setProperty('--level'"));
+  assert.ok(app.includes('setLedMeterLevel(meter.fill,levelStep/10)'));
+  assert.ok(app.includes('const LED_PITCH_PX=7'));
+  assert.ok(app.includes('new WeakMap()'));
+  assert.ok(bridge.includes('window.__arMixSetLedMeterLevel'));
+  assert.ok(read('web/native-bridge.js').includes('window.__arMixSetLedMeterLevel'));
+  assert.ok(!bridge.includes('backdrop-filter:blur(5px)'));
   assert.ok(!app.includes("meter.fill.style.setProperty('--meter-scale'"));
 });

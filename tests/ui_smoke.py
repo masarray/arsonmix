@@ -79,24 +79,41 @@ async def main():
           updateMeterVisual('0',27,10000);
           const first={ratio:fill.style.getPropertyValue('--level'),
             peak:peak.style.bottom,height:getComputedStyle(fill).height,
+            lit:parseFloat(fill.style.getPropertyValue('--led-lit')),
+            heightPx:fill.getBoundingClientRect().height,
             clip:getComputedStyle(fill).clipPath,palette:getComputedStyle(fill).backgroundImage,
             cached:meterNodes.get('0').fill===fill};
           updateMeterVisual('0',16,10016);
           const held=peak.style.bottom;
           updateMeterVisual('0',45,10032);
-          return {first,held,latest:peak.style.bottom,ratio:fill.style.getPropertyValue('--level'),
+          const ratio=fill.style.getPropertyValue('--level');
+          const clip=getComputedStyle(fill).clipPath;
+          const palette=getComputedStyle(fill).backgroundImage;
+          const levels=[10,30,60,85,98].map(v=>{
+            setLedMeterLevel(fill,v);
+            return {v,lit:parseFloat(fill.style.getPropertyValue('--led-lit')),
+              height:fill.getBoundingClientRect().height,
+              palette:getComputedStyle(fill).backgroundImage,
+              clip:getComputedStyle(fill).clipPath};
+          });
+          return {first,held,latest:peak.style.bottom,ratio,
             heightBefore,heightAfter:getComputedStyle(fill).height,
-            transform:getComputedStyle(fill).transform,
-            clip:getComputedStyle(fill).clipPath,
-            palette:getComputedStyle(fill).backgroundImage,
+            transform:getComputedStyle(fill).transform,clip,palette,levels,
             shape:slot.getBoundingClientRect().height};
         }""")
         assert meter['first']['cached'] and meter['first']['ratio']=='27%',meter
         assert meter['first']['peak']==meter['held'] and meter['latest']=='45%',meter
         assert meter['ratio']=='45%' and meter['heightBefore']==meter['heightAfter'],meter
         assert meter['transform']=='none' and meter['shape']>0,meter
-        assert '73%' in meter['first']['clip'] and '55%' in meter['clip'],meter
+        assert abs(meter['first']['lit']-7*int(meter['first']['heightPx']*.27/7))<.01,meter
+        assert meter['first']['clip'].startswith('inset(') and meter['clip'].startswith('inset('),meter
         assert meter['first']['palette']==meter['palette'],meter
+        levels=meter['levels']
+        assert [x['v'] for x in levels]==[10,30,60,85,98],levels
+        assert all(abs(x['lit']-7*int(x['height']*x['v']/100/7))<.01 for x in levels),levels
+        assert all(x['palette']==meter['first']['palette'] for x in levels),levels
+        assert all(x['lit']<=.9*x['height'] for x in levels[:4]),levels
+        assert levels[-1]['lit']>.9*levels[-1]['height'],levels
         # Full mixer rebuild must restore held peaks and clip state on fresh DOM nodes.
         restored=await page.evaluate("""()=>{
           clipLatch['0']=true;
