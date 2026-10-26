@@ -1,0 +1,42 @@
+/* FX-power navigation chrome. One owner for toolbar-actions and left rail.
+   Mirrors the authentic rack FX-power materials; geometry belongs to shell/rail.
+   No Button 180 styling or text/geometry conversion applies to these controls. */
+:is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav){
+ appearance:none;
+ border:1px solid #34444c;
+ border-radius:3px;
+ color:#b3c9d0;
+ background:linear-gradient(#1e292f,#0d1419 55%,#1b282e);
+ box-shadow:inset 0 1px #7e94942c,0 1px #0008;
+ text-shadow:none;
+ font-family:'Segoe UI',Arial,sans-serif;
+ font-weight:600;
+ cursor:pointer;user-select:none;
+ transform:translateY(0);
+ transition:filter 90ms ease,box-shadow 90ms ease,transform 90ms ease;
+}
+:is(.toolbar-actions .nav button.fx-nav.selected,
+    .left-rail .tabs button.fx-nav.selected,
+    .left-rail .rail-presets button.fx-nav.active,
+    .left-rail .rail-bottom button.fx-nav.active){
+ border-color:#106f72;
+ color:#76fff4;
+ background:linear-gradient(180deg,#28424a,#09272b 52%,#0e333a);
+ box-shadow:inset 0 1px #b4f8e74d,0 1px #0009;
+ text-shadow:0 0 5px #4ddca59a;
+}
+:is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav):hover:not(:disabled){
+ filter:brightness(1.45);
+ box-shadow:inset 0 1px #d9ffed88,0 0 5px #48f9be7b;
+}
+:is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav):active:not(:disabled){
+ filter:brightness(.65) contrast(1.15);
+ transform:translateY(1px);
+}
+:is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav):focus-visible{
+ outline:2px solid #8cfbe7;outline-offset:1px;
+}
+.left-rail .rail-presets button.fx-nav{text-align:left;justify-content:flex-start;padding:0 9px}
+@media(prefers-reduced-motion:reduce){
+ :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav){transition:none}
+}

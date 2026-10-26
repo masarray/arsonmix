@@ -3,7 +3,7 @@ from pathlib import Path
 import argparse
 ROOT=Path(__file__).resolve().parents[1]
 SOURCE=ROOT/'web/styles-src'
-MODULES=('00-font-and-assets.css','10-console-legacy.css','20-button-180.css','30-selection-effects.css','40-rail-pan.css')
+MODULES=('00-font-and-assets.css','10-console-legacy.css','20-button-180.css','21-navigation-fx-power.css','30-selection-effects.css','40-rail-pan.css')
 CSS=ROOT/'web/styles.css'
 HTML=ROOT/'AR-MIX-Live-FX-Host-Standalone-v0.3.html'
 def compile_css():
