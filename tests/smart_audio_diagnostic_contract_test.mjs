@@ -61,7 +61,15 @@ test('P0 ASIO native COM-driver registration attestation runs only on control pl
   assert.match(policy,/ambiguousName/);
   assert.match(policy,/canonicalGuid/);
   assert.match(engine,/savedAsioPreflight/);
-  assert.match(engine,/sameDriverClass\(asioPinnedRegistration_\)/);
+  assert.match(engine,/safeRequirements\.setAttribute \("deviceType", "Windows Audio"\)/);
+  assert.match(engine,/deviceManager_\.initialise \(1, 2, &safeRequirements, false\)/);
+  assert.match(engine,/deviceManager_\.closeAudioDevice\(\)/);
+  assert.match(engine,/expectedAsio->sameDriverClass\(selected\.registration\.identity\)/);
+  const approval = engine.slice(engine.indexOf('bool approveDirectRoute ('),
+                                engine.indexOf('bool resumeVerifiedDirectRoute()'));
+  assert.ok(approval.indexOf('expectedAsio->sameDriverClass') >= 0);
+  assert.ok(approval.indexOf('expectedAsio->sameDriverClass') <
+            approval.indexOf('directFence_.approve'));
   assert.match(engine,/asioPinnedRegistration_\.sameDriverClass/);
   assert.match(engine,/asioRegisteredClassHash/);
   assert.match(host,/WINDOWS ASIO DRIVER REGISTRATION/);
