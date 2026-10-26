@@ -96,46 +96,73 @@ async def main():
         assert await page.locator('.left-rail #saveFxPreset').inner_text()=='SAVE FX'
         assert await page.locator('.left-rail #menuScene').inner_text()=='EXPORT'
         assert await page.locator('.left-rail .rail-bottom button').count()==3
-        # Toolbar and rail use the REAL fx-power material, not Button 180.
+        # Approved Button 19: raised bright-grey OFF and recessed vivid-green ON,
+        # shared only by toolbar navigation and the 8 left-rail keys.
         assert await page.locator('.toolbar-actions .nav button.fx-nav').count()==7
         assert await page.locator('.left-rail button.fx-nav').count()==8
         assert await page.locator('.toolbar-actions .btn-180,.left-rail .btn-180').count()==0
         assert await page.locator('.left-rail .pushable,.left-rail .front,.left-rail .edge,.left-rail .shadow').count()==0
+        assert await page.locator('.toolbar-actions button.fx-nav > span').count()==7
+        assert await page.locator('.left-rail button.fx-nav > span').count()==8
         style=await page.evaluate("""()=>{
-          const grab=q=>{const el=document.querySelector(q),s=getComputedStyle(el),r=el.getBoundingClientRect();return {
-            bg:s.backgroundImage,shadow:s.boxShadow,color:s.color,border:s.borderTopColor,
-            radius:s.borderTopLeftRadius,box:r.toJSON(),filter:s.filter
+          const grab=q=>{const e=document.querySelector(q),s=getComputedStyle(e),r=e.getBoundingClientRect();return {
+            bg:s.backgroundImage,face:s.backgroundColor,shadow:s.boxShadow,
+            color:s.color,radius:s.borderTopLeftRadius,box:r.toJSON(),
+            textTransform:getComputedStyle(e.querySelector('span')).transform
           }};
-          return {nav:grab('[data-view="FX RACK"]'),rail:grab('[data-preset="Clean Vocal"]'),
-            rack:(()=>{const e=document.querySelector('.strip .rack .insert-slot .fx-power');
-              if(!e)return null;
-              const old=e.classList.contains('is-bypassed');
-              e.classList.add('is-bypassed');
-              const result=grab('.strip .rack .insert-slot .fx-power.is-bypassed');
-              if(!old)e.classList.remove('is-bypassed');
-              return result})(),
-            mixer:grab('[data-mute="0"]')};
+          return {nav:grab('[data-view="FX RACK"]'),
+            rail:grab('[data-preset="Clean Vocal"]'),
+            selected:grab('[data-view="MIX"]'),mixer:(()=>{
+              const e=document.querySelector('[data-mute="0"]');
+              return getComputedStyle(e).backgroundImage;
+            })()};
         }""")
-        for key in ('bg','color','border','shadow','radius'):
+        for key in ('bg','face','shadow','color','radius','textTransform'):
             assert style['nav'][key]==style['rail'][key],(key,style)
-        assert style['nav']['bg'].startswith('linear-gradient('),style
-        assert style['nav']['bg']==style['rack']['bg'],style
-        assert style['nav']['border']==style['rack']['border'],style
-        assert style['mixer']['bg']=='none',style
+        assert 'radial-gradient(' in style['nav']['bg'],style
+        assert style['nav']['face']=='rgb(224, 228, 232)',style
+        assert style['selected']['face']=='rgb(57, 239, 114)',style
+        assert style['selected']['shadow']!=style['nav']['shadow'],style
+        assert style['selected']['textTransform']=='matrix(0.95, 0, 0, 0.95, 0, 0)',style
+        assert style['mixer']=='none',style
         preset=page.locator('[data-preset="Clean Vocal"]')
         before=await preset.evaluate('(e)=>e.getBoundingClientRect().toJSON()')
         await preset.hover()
-        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-preset="Clean Vocal"]')).filter==='brightness(1.45)'""")
-        hovered=await preset.evaluate("""e=>({s:getComputedStyle(e).boxShadow,r:e.getBoundingClientRect().toJSON()})""")
-        assert '0px 0px 5px' in hovered['s'],hovered
-        assert all(abs(before[k]-hovered['r'][k])<=.2 for k in ('x','y','width','height')),hovered
-        await preset.click()
+        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-preset="Clean Vocal"]')).filter==='brightness(1.045)'""")
+        await page.mouse.down()
+        await page.wait_for_timeout(150)
+        pressed=await preset.evaluate("""e=>({
+          shadow:getComputedStyle(e).boxShadow,
+          textTransform:getComputedStyle(e.querySelector('span')).transform,
+          rect:e.getBoundingClientRect().toJSON()
+        })""")
+        assert pressed['shadow']!=style['rail']['shadow'],pressed
+        assert pressed['textTransform']=='matrix(0.95, 0, 0, 0.95, 0, 0)',pressed
+        assert all(abs(before[k]-pressed['rect'][k])<=.2 for k in ('x','y','width','height')),pressed
+        await page.mouse.up()
         assert await preset.evaluate('(e)=>e.classList.contains("active")')
-        await page.wait_for_timeout(180)
-        active=await preset.evaluate("""e=>({s:getComputedStyle(e),r:e.getBoundingClientRect().toJSON()})""")
-        assert active['r']['width']==before['width'] and active['r']['height']==before['height'],active
-        assert await preset.evaluate('(e)=>getComputedStyle(e).backgroundImage')!='none'
         await page.mouse.move(1,1)
+        await page.wait_for_timeout(180)
+        active=await preset.evaluate("""e=>({
+          face:getComputedStyle(e).backgroundColor,
+          shadow:getComputedStyle(e).boxShadow,
+          textTransform:getComputedStyle(e.querySelector('span')).transform,
+          rect:e.getBoundingClientRect().toJSON()
+        })""")
+        assert active['face']=='rgb(57, 239, 114)' and active['shadow']==pressed['shadow'],active
+        assert active['textTransform']==pressed['textTransform'],active
+        assert all(abs(before[k]-active['rect'][k])<=.2 for k in ('x','y','width','height')),active
+        # Navigation remains mutually exclusive, never an independent fake toggle.
+        await page.locator('[data-view="FX RACK"]').click()
+        assert await page.locator('[data-view="FX RACK"]').evaluate(
+            '(e)=>e.classList.contains("selected") && getComputedStyle(e).backgroundColor==="rgb(57, 239, 114)"')
+        assert await page.locator('[data-view="MIX"]').evaluate(
+            '(e)=>!e.classList.contains("selected") && getComputedStyle(e).backgroundColor==="rgb(224, 228, 232)"')
+        await page.locator('[data-view="MIX"]').click()
+        # One-shot toolbar commands must NOT latch visually after release.
+        await page.locator('#audioSetupBtn').click()
+        assert await page.locator('#audioSetupBtn').evaluate(
+            '(e)=>!e.classList.contains("active") && !e.classList.contains("selected")')
         # Restore factory FX chain so this visual-button test cannot change later FX tests.
         await page.evaluate("""()=>{
           channels[0].inserts=[...initialFactoryChannels[0].inserts];

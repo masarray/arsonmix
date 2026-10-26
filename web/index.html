@@ -13,29 +13,29 @@
     </div>
     <div class="toolbar-actions">
       <nav class="nav" aria-label="Primary tools">
-        <button type="button" data-view="MIX" class="fx-nav selected">MIX</button>
-        <button class="fx-nav" type="button" data-view="FX RACK">FX RACK</button>
-        <button class="fx-nav" type="button" data-view="SIGNAL FLOW">SIGNAL FLOW</button>
-        <button class="fx-nav" type="button" data-my-sounds="1">MY SOUNDS</button>
-        <button class="fx-nav" type="button" data-plugin-manager="1">PLUGINS</button>
-        <button class="fx-nav" type="button" id="audioSetupBtn" data-native-action="audioSetup">SETUP</button>
-        <button class="fx-nav" type="button" id="arSignalOpen">SIGNAL CHECK</button>
+        <button type="button" data-view="MIX" class="fx-nav selected"><span>MIX</span></button>
+        <button class="fx-nav" type="button" data-view="FX RACK"><span>FX RACK</span></button>
+        <button class="fx-nav" type="button" data-view="SIGNAL FLOW"><span>SIGNAL FLOW</span></button>
+        <button class="fx-nav" type="button" data-my-sounds="1"><span>MY SOUNDS</span></button>
+        <button class="fx-nav" type="button" data-plugin-manager="1"><span>PLUGINS</span></button>
+        <button class="fx-nav" type="button" id="audioSetupBtn" data-native-action="audioSetup"><span>SETUP</span></button>
+        <button class="fx-nav" type="button" id="arSignalOpen"><span>SIGNAL CHECK</span></button>
       </nav>
     </div>
   </header>
   <div class="main">
     <aside class="left-rail">
-      <div class="seg tabs"><button data-side="channels" class="fx-nav selected">CHANNELS</button><button data-side="fx" class="fx-nav">FX CHAINS</button></div>
+      <div class="seg tabs"><button data-side="channels" class="fx-nav selected"><span>CHANNELS</span></button><button data-side="fx" class="fx-nav"><span>FX CHAINS</span></button></div>
       <div id="channelList" class="channel-list" aria-label="Mixer channels"></div>
       <div id="groupsList" class="rail-list hidden"></div>
       <div class="rail-section-title">QUICK SOUND PRESETS</div>
-      <div class="rail-presets" id="presetList"><button data-preset="Clean Vocal" class="fx-nav">Clean Vocal</button><button data-preset="Warm Karaoke" class="fx-nav">Warm Karaoke</button><button data-preset="Live Broadcast" class="fx-nav">Live Broadcast</button></div>
+      <div class="rail-presets" id="presetList"><button data-preset="Clean Vocal" class="fx-nav"><span>Clean Vocal</span></button><button data-preset="Warm Karaoke" class="fx-nav"><span>Warm Karaoke</span></button><button data-preset="Live Broadcast" class="fx-nav"><span>Live Broadcast</span></button></div>
       <div class="rail-section-title">MIXER SNAPSHOTS</div>
       <div id="scenesList" class="rail-list scenes-list"></div>
       <div class="rail-bottom" role="group" aria-label="Session actions">
-        <button id="addScene" title="Save current mixer as a named snapshot" class="fx-nav">＋ SAVE SNAPSHOT</button>
-        <button id="saveFxPreset" title="Save this channel's FX chain as a preset" class="fx-nav">SAVE FX</button>
-        <button id="menuScene" title="Export the complete session as JSON" class="fx-nav">EXPORT</button>
+        <button id="addScene" title="Save current mixer as a named snapshot" class="fx-nav"><span>＋ SAVE SNAPSHOT</span></button>
+        <button id="saveFxPreset" title="Save this channel's FX chain as a preset" class="fx-nav"><span>SAVE FX</span></button>
+        <button id="menuScene" title="Export the complete session as JSON" class="fx-nav"><span>EXPORT</span></button>
       </div>
       <div class="rail-input-footer"><span class="rail-live-indicator" aria-hidden="true"></span><span id="activeInput">MIC → FX → MASTER</span></div>
     </aside>
