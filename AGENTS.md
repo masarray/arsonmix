@@ -72,3 +72,12 @@ The **experimental** P2.5 JUCE VST3 engine has now been integrated into `main` u
 - PR #54's compositor/pointer and 2px main gutter improvements are locked into `main`. Preserve the latest 13-strip GUI and responsive spacing. Channel/master **Button 180** and real FX Rack `fx-power` remain their distinct control families.
 - Before merge: check latest `main`, ancestry, changed files, and CI. **No GUI PR is outstanding** as of audited main `8d5f974`; old native stacked PRs are not safe bulk merges. Never replace current GUI from the old brushed-metal design branch, which is behind main.
 - This authoritative reconciliation supersedes older `AGENTS.md` lines calling FX-power the latest navigation *visual style*. The legacy sections remain as history only.
+
+## 2026-10-27 — LATEST GUI button authority: global BTN-180 owner recipe
+User expressly rejected both Button 19 and the experimental flat-crystal 7-toolbar skin (PR #78). Toolbar-actions (7), left-rail (8), utility-row, channel-actions, and header Audio Device use ONE shared `btn-180` CSS skin from `web/styles-src/20-button-180.css`.
+- OFF `#b3b3b3`, border `var(--b180-edge)`, ink `var(--b180-off-ink)`.
+- Seven-layer common rest shadow starts `inset 5px 5px 2px -1px rgba(0,0,0,.30)` and second `inset 0 0 1px 1px rgba(255,255,255,.14)`; exact 7 entries in the owner CSS.
+- While physically `:active`, move `translateY(1px)`; shadow starts `inset 3px 2px 2px -1px rgba(0,0,0,.50)`, second `inset 0 0 1px 0 rgba(255,255,255,.14)`, all seven layers including lower cast (no latched physical depth).
+- ON utility-row cyan soft, ON left-rail magenta soft, toolbar selected pale silver-white. Functional channel MUTE/SOLO coral/amber, MASTER stereo blue/mono red with black mono ink remain independent semantic states.
+- No Button 19 `fx-nav` hooks. `21-navigation-fx-power.css` remains an empty compatibility module for deterministic build order. `40-rail-pan.css` owns geometry; `20-button-180.css` owns the button skin. Preserve PAN 13/15/12, stereo VU, 36×77 faders, native backend.
+- `scripts/build_ui_css.py --check`, `tests/button_asset_test.py`, Chromium/Firefox UI, Windows native CI must pass before merging. This block supersedes all older 2026-10-26 Button 19/flat crystal instructions.
