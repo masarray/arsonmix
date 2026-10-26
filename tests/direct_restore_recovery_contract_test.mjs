@@ -72,7 +72,11 @@ test('ASIO/WASAPI DIRECT authorizes the exact active input/output channel map',(
   assert.equal(engine.split('getActiveInputChannels().toString (16)').length-1,3);
   assert.equal(engine.split('getActiveOutputChannels().toString (16)').length-1,3);
   for (const operation of ['approve','resumeExpected','observeStart']) {
-    assert.ok(engine.includes('directFence_.'+operation+' (backend.toRawUTF8(), name.toRawUTF8(),'));
+    // Match the verified native device/mask inputs independently of cosmetic
+    // line wrapping introduced by the ASIO control-plane identity guard.
+    const call = new RegExp('directFence_\\.' + operation +
+      '\\s*\\(\\s*backend\\.toRawUTF8\\(\\),\\s*name\\.toRawUTF8\\(\\),');
+    assert.match(engine, call);
   }
   assert.ok(engine.includes('EXACT_ACTIVE_INPUT_AND_OUTPUT_CHANNEL_BITMASKS'));
   assert.ok(fence.includes('UNEXPECTED_DIRECT_BACKEND_DEVICE_OR_CHANNEL_MASK'));
