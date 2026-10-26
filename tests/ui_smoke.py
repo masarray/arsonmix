@@ -673,7 +673,7 @@ async def main():
         assert await page.locator('#pluginModal').is_hidden()
         assert await page.locator('#masterLufs').count()==1
         assert await page.locator('#masterDbtp').count()==1
-        assert await page.locator('[data-clip]').count()==14
+        assert await page.locator('[data-clip]').count()==12  # 10 source clips + MASTER L/R
         assert await page.locator('[data-meter="masterL"]').count()==1
         assert await page.locator('[data-meter="masterR"]').count()==1
         await page.evaluate('updateMeterVisual("masterL",99,performance.now())')
