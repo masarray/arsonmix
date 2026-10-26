@@ -231,7 +231,9 @@ private:
         // the independent stream fault source and durations FIRST, before the
         // potentially long full status JSON, so field reports retain evidence
         // after closing the adapter resets its watchdog.
-        const auto watchdogSummary = juce::String ("watchdog=")
+        const auto watchdogSummary = juce::String ("format=")
+            + stateBeforeRestore.getProperty ("bridgeNegotiationFault", "NONE").toString()
+            + " watchdog="
             + stateBeforeRestore.getProperty ("bridgeWatchdogFault", "NONE").toString()
             + " captureSilentMs="
             + stateBeforeRestore.getProperty ("bridgeCaptureSilentMs", 0).toString()
