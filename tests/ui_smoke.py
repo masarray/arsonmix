@@ -786,7 +786,20 @@ async def main():
         }""")
         assert canvas_geom['canvas'] and canvas_geom['painted']>0,canvas_geom
         assert canvas_geom['entries']==14 and canvas_geom['clips']==14,canvas_geom
-        assert canvas_geom['hidden']=='hidden' and canvas_geom['active']=='active' and canvas_geom['inlineStyle']=='.4',canvas_geom
+        assert canvas_geom['hidden']=='hidden' and canvas_geom['active']=='active',canvas_geom
+        # The initial frame may write a DOM value before context activation;
+        # once active, later frames must leave the old DOM fill style unchanged.
+        before_canvas=await canvas_page.evaluate("""()=>({
+          style:document.querySelector('[data-meter="0"]').style.getPropertyValue('--meter-scale'),
+          draws:meterCanvasState.draws
+        })""")
+        await canvas_page.wait_for_timeout(160)
+        after_canvas=await canvas_page.evaluate("""()=>({
+          style:document.querySelector('[data-meter="0"]').style.getPropertyValue('--meter-scale'),
+          draws:meterCanvasState.draws
+        })""")
+        assert after_canvas['draws']>before_canvas['draws'],(before_canvas,after_canvas)
+        assert after_canvas['style']==before_canvas['style'],(before_canvas,after_canvas)
         # Real desktop bridge isn't modified: canvas is URL gated and not active
         # in default mode, or when a native backend is present.
         await canvas_page.locator('[data-view="FX RACK"]').click()
