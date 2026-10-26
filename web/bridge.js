@@ -21,6 +21,7 @@
   const state = {catalog: [], chain: [], scanning: false, message: "Connecting to native host...",
     device: {}, presets: [], addRequestId:0, addError:"", pendingPlugin:"", filter: "", selectedCategory: "All", monitor: false, error: "", progress: {active:false,phase:"done",done:0,total:0,found:0,current:""}, adding:false};
 
+  const orbit = {slot:-1, plugin:"", parameters:[], active:false, activeSlot:-1, activeParameter:-1, periodSeconds:20, reverse:false, preferredParameter:-1};
   const escapeHtml = text => String(text ?? "").replace(/[&<>"']/g, c => (
     {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const percent = peak => Math.max(1,Math.min(100,(20*Math.log10(Math.max(1e-6,Number(peak)||0))+60)*100/60));
@@ -117,6 +118,7 @@
           <span class="node-index">${String(i+1).padStart(2,"0")}</span>
           <span class="node-text">${escapeHtml(p.name)}<small>${p.latency||0} samples processing latency</small></span>
           <button class="native-btn" data-native-fx="editor" data-slot="${i}">EDIT</button>
+          <button class="native-btn ${orbit.active && orbit.activeSlot===i?"on":""}" data-native-fx="orbit" data-slot="${i}" title="Modulate a native VST3 parameter in a circular ramp">ORBIT</button>
           <button class="native-btn ${p.bypass?"":"on"}" data-native-fx="bypass" data-slot="${i}" aria-pressed="${!p.bypass}" title="Instantly ${p.bypass?"enable":"bypass"} this plugin without stopping audio">⏻ ${p.bypass?"OFF · ENABLE":"ON · BYPASS"}</button>
           <button class="native-btn" data-native-fx="up" data-slot="${i}" ${i===0?"disabled":""}>↑</button>
           <button class="native-btn" data-native-fx="down" data-slot="${i}" ${i===state.chain.length-1?"disabled":""}>↓</button>
@@ -144,6 +146,49 @@
 }
   function showDialog(id){const d=document.getElementById(id);if(d){d.hidden=false;d.querySelector("input")?.focus()}}
   function hideDialog(id){const d=document.getElementById(id);if(d)d.hidden=true}
+  function renderOrbit(){
+    const dlg=document.getElementById("nativeOrbit");
+    if(!dlg)return;
+    const options=Array.isArray(orbit.parameters)?orbit.parameters:[];
+    const selected=orbit.active&&orbit.activeSlot===orbit.slot?orbit.activeParameter:orbit.preferredParameter;
+    const valid=options.some(p=>p.index===selected);
+    dlg.querySelector(".native-dialog-body").innerHTML=`
+      <div class="native-sub" style="margin-bottom:13px">
+        ${escapeHtml(orbit.plugin||"Select a loaded VST3 effect")} · Native host LFO · Channel 1
+      </div>
+      <label class="native-sub" for="nativeOrbitParameter">VST3 AUTOMATABLE PARAMETER</label>
+      ${options.length?`<select class="native-search" id="nativeOrbitParameter">
+        ${options.map(p=>`<option value="${p.index}" ${valid&&p.index===selected?"selected":""}>
+          ${escapeHtml(p.name)} · ${escapeHtml(p.minText)} → ${escapeHtml(p.maxText)}
+        </option>`).join("")}</select>`:
+        '<div class="native-empty">This VST3 exposes no suitable automatable parameters.</div>'}
+      <label class="native-sub" for="nativeOrbitSeconds">SECONDS PER 360° REVOLUTION</label>
+      <input class="native-search" id="nativeOrbitSeconds" type="number" min="2" max="180" step="1"
+         value="${Number(orbit.periodSeconds)||20}">
+      <label class="native-sub" for="nativeOrbitReverse">DIRECTION</label>
+      <select class="native-search" id="nativeOrbitReverse">
+        <option value="false" ${orbit.reverse?"":"selected"}>Forward</option>
+        <option value="true" ${orbit.reverse?"selected":""}>Reverse</option>
+      </select>
+      <div class="native-toolbar">
+        <button class="native-btn primary" data-orbit-start="1" ${options.length?"":"disabled"}>▶ START ORBIT</button>
+        <button class="native-btn ${orbit.active?"on":""}" data-orbit-stop="1" ${orbit.active?"":"disabled"}>■ STOP</button>
+        <span class="native-sub">${orbit.active?`RUNNING · FX ${orbit.activeSlot+1}`:"Stopped"}</span>
+      </div>
+      <p class="native-sub" style="margin-top:14px">For dearVR PRO 2 select Position: AZIMUTH in POLAR mode.
+        Confirm the parameter covers an entire 360° circle (minimum/maximum shown above).
+        The host moves one parameter at 60 control updates/sec; plugin smoothing and audible seam behaviour depend on the vendor.</p>`;
+    dlg.querySelector(".native-dialog-footer").textContent=
+      "Orbit runs in the JUCE control thread, not the audio callback. Opening the vendor editor is optional.";
+  }
+  function openOrbit(slot){
+    orbit.slot=slot;
+    orbit.plugin=state.chain[slot]?.name||"";
+    orbit.parameters=[];
+    showDialog("nativeOrbit");
+    renderOrbit();
+    send("orbitInspect",{slot});
+  }
   function pluginRows(items,limit=180){
   return items.length?items.slice(0,limit).map(p=>`<div class="native-result">
     <span><b title="${escapeHtml(p.path)}">${escapeHtml(p.name)}</b>
@@ -261,6 +306,7 @@
   function initModals(){
   createDialog("nativeFxSelector","Add VST3 Effect");
   createDialog("nativeMySounds","My Sounds · Native Presets",true);
+  createDialog("nativeOrbit","VST3 Auto Orbit",true);
   createDialog("nativePluginManager","Plugin Manager");
   const hud=document.createElement("div");hud.id="nativeScanHud";hud.hidden=true;document.body.appendChild(hud);
 }
@@ -332,11 +378,21 @@
 
   // Capture native controls before the legacy v0.3 demo handlers.
   document.addEventListener("click", function(e){
-  const el=e.target.closest("[data-native-action],[data-native-add],[data-native-fx],[data-fxpower],[data-master-insert],[data-master-power],[data-native-category],[data-go-native-rack],[data-insert],[data-plugin-picker],[data-plugin-manager],[data-my-sounds],[data-preset-mute],[data-preset-save],[data-preset-load],[data-close-modal]");
+  const el=e.target.closest("[data-native-action],[data-native-add],[data-native-fx],[data-fxpower],[data-master-insert],[data-master-power],[data-native-category],[data-go-native-rack],[data-insert],[data-plugin-picker],[data-plugin-manager],[data-my-sounds],[data-preset-mute],[data-preset-save],[data-preset-load],[data-close-modal],[data-orbit-start],[data-orbit-stop]");
   if(!el)return;
   e.preventDefault();e.stopImmediatePropagation();
 
   if(el.dataset.closeModal){hideDialog(el.dataset.closeModal);return;}
+  if(el.hasAttribute("data-orbit-start")){
+    const param=Number(document.getElementById("nativeOrbitParameter")?.value);
+    const seconds=Number(document.getElementById("nativeOrbitSeconds")?.value);
+    const reverse=document.getElementById("nativeOrbitReverse")?.value==="true";
+    if(!Number.isInteger(param)||!Number.isFinite(seconds)||seconds<2||seconds>180){
+      toStatus("Choose a valid VST3 parameter and revolution period (2–180 seconds).");return;
+    }
+    send("orbitStart",{slot:orbit.slot,parameterIndex:param,seconds,reverse});return;
+  }
+  if(el.hasAttribute("data-orbit-stop")){send("orbitStop",{slot:orbit.slot});return;}
   if(el.hasAttribute("data-master-insert")||el.hasAttribute("data-master-power")){
     toStatus("Master FX is a visual preview; real processing is Channel 1.");return;
   }
@@ -422,6 +478,7 @@
     renderPicker();return;
   }
   const fx=el.dataset.nativeFx,slot=Number(el.dataset.slot);
+  if(fx==="orbit"){openOrbit(slot);return;}
   if(fx==="editor")send("fxEditor",{slot});
   if(fx==="remove")send("fxRemove",{slot});
   if(fx==="bypass")send("fxBypass",{slot,value:!state.chain[slot]?.bypass});
@@ -437,6 +494,12 @@
   input?.setSelectionRange(pos,pos);
 },true);
 
+  backend.addEventListener("arMixOrbitState",data=>{
+    if(!data||Number(data.slot)!==orbit.slot)return;
+    Object.assign(orbit,data);
+    renderOrbit();
+    if(currentTab()==="FX RACK")renderRack();
+  });
   backend.addEventListener("arMixPresets",items=>{
     state.presets=Array.isArray(items)?items:[];
     const dialog=document.getElementById("nativeMySounds");
