@@ -39,6 +39,9 @@ assert 'SIL Open Font License' in license
 assert not re.search(r'--(?:ar-btn-|skin-small|skin-long|skin-large)',css)
 assert 'class="btn-180 candy mute' in js and 'class="btn-180 spec spec-device"' in page
 assert 'class="fx-control selected"' in page
+assert preview.count('class="fx-control')==15
+assert 'class="btn-180 selected"' not in preview
+assert 'class="btn-180 candy mute' in js
 assert 'class="btn-180 selected"' not in page
 assert '<style>'+css+'</style>' in preview
 assert '<script>'+js+'</script>' in preview
