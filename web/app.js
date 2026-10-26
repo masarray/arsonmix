@@ -380,10 +380,37 @@ if(mixperfParam&&mixperfModes.includes(mixperfParam)){
   },ms));
  }};
 }
-let lastMeterFrame=0;function meters(t){
+// Browser-only meter scheduler: do not enqueue a 60/120/144Hz rAF just to
+// reject 3/4 of its callbacks. Timer wakes shortly before the next visual tick;
+// a single rAF aligns the paint with the browser. Native JUCE owns live metering.
+const browserMeterStats={ticks:0,skipped:0,slowWakeups:0,intervalMs:40};
+let meterTimer=0,meterRAF=0,meterExpected=0,meterLate=0,meterHealthy=0;
+function scheduleDemoMeter(){
+ if(window.__JUCE__?.backend?.emitEvent||document.hidden||
+    mixperfMode==='meters-off'||mixperfMode==='all-off')return;
+ const interval=browserMeterStats.intervalMs;
+ meterExpected=performance.now()+interval;
+ meterTimer=setTimeout(()=>{
+   meterTimer=0;
+   const late=Math.max(0,performance.now()-meterExpected);
+   if(late>25){
+     browserMeterStats.slowWakeups++;
+     meterLate++;meterHealthy=0;
+     if(meterLate>=3){browserMeterStats.intervalMs=60;meterLate=0}
+   }else{
+     meterHealthy++;meterLate=0;
+     if(meterHealthy>=30){browserMeterStats.intervalMs=40;meterHealthy=0}
+   }
+   if(document.hidden){browserMeterStats.skipped++;return}
+   meterRAF=requestAnimationFrame(t=>{meterRAF=0;meters(t)});
+ },interval);
+}
+function meters(t){
  // JUCE desktop reads actual audio meters; browser demo only animates a preview.
- if(window.__JUCE__?.backend?.emitEvent)return;
- requestAnimationFrame(meters);if(document.hidden||mixperfMode==='meters-off'||mixperfMode==='all-off'||t-lastMeterFrame<40)return;lastMeterFrame=t;
+ if(window.__JUCE__?.backend?.emitEvent||document.hidden||
+    mixperfMode==='meters-off'||mixperfMode==='all-off')return;
+ browserMeterStats.ticks++;
+ scheduleDemoMeter();
  channels.forEach((ch,i)=>{const wave=(Math.sin(t*.0022+i*1.92)+Math.sin(t*.0043+i*.6))*.5;
  let v=clamp(45+wave*24+ch.fader*.48,4,98);if(ch.mute)v=2;updateMeterVisual(String(i),v,t)});
  const base=clamp(67+Math.sin(t*.002)*15,8,95);
@@ -509,4 +536,12 @@ createSide();renderMixer();renderMaster();try{let last=JSON.parse(localStorage.g
   if(last.bypassed&&typeof last.bypassed==='object')bypassed={...last.bypassed};
   if(last.fxParams&&typeof last.fxParams==='object')fxParams=structuredClone(last.fxParams);
   renderMixer();renderMaster();flash('Previous UI session restored')}}catch{}
-requestAnimationFrame(meters);
+// Stop all simulated animation work while the tab is hidden, and restart on
+// foregrounding. One owner per timer / RAF; never double-schedule on restore.
+document.addEventListener('visibilitychange',()=>{
+ if(document.hidden){
+   if(meterTimer){clearTimeout(meterTimer);meterTimer=0}
+   if(meterRAF){cancelAnimationFrame(meterRAF);meterRAF=0}
+ }else if(!meterTimer&&!meterRAF)scheduleDemoMeter();
+});
+scheduleDemoMeter();

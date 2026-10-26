@@ -14,3 +14,6 @@ After merging to main and deploying Pages, open https://masarray.github.io/arson
 
 ## Constraints
 Preserve 13 strips, six FX inserts each, metallic 31×90 fader PNG/no-jump drag, PAN center snap, peak hold/clip latch, ASIO/WASAPI and native meter bridge. Do not touch realtime audio callback or immutable reference theme. Headless CI passing is not evidence of performance improvement on the owner's specific PC.
+
+## Phase 2 — 2026-10-26 browser preview idle-frame suppression
+The browser-only synthetic meter loop previously requested a display-rate rAF (60–144Hz), then returned early on nearly every frame because of its 40ms throttle. Now one 40ms timer schedules one rAF for the visual tick; there is no permanently recurring display-rate callback. Timer lateness >25ms across three wakeups degrades to 60ms; 30 healthy wakeups restore 40ms. Visibility change cancels the timer and outstanding frame; foreground schedules exactly one next tick. Native JUCE meter updates bypass this entire demo scheduling path and real audio/DSP remains unchanged. `browserMeterStats` exposes executed tick and late-wakeup counts to Chromium smoke/developer tools. This is a source-level CPU scheduling reduction, **not** hardware FPS proof. Leave issue #56 open for Firefox A/B recordings.
