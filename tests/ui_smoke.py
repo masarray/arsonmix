@@ -377,7 +377,6 @@ async def main():
         assert all(abs(row['mute']['middle']-row['solo']['middle'])<=1 for row in actions['rows']),actions
         assert actions['stereo']['height']==actions['master']['height']==29,actions
         # Without obsolete tools, MASTER fader rail must be as long as sources.
-        assert abs(architecture['mainFader']['height']-architecture['masterFader']['height'])<=2,architecture
         header=await page.evaluate("""()=>{
           const btns=[...document.querySelectorAll('.toolbar .nav button')];
           return {buttons:btns.map(b=>{const r=b.getBoundingClientRect();return {width:r.width,mid:r.top+r.height/2,right:r.right}}),
@@ -406,6 +405,7 @@ async def main():
             masterRows:[...master.children].map(x=>({cls:x.className,height:x.getBoundingClientRect().height}))};
         }""")
         assert architecture['small']=='none',architecture
+        assert abs(architecture['mainFader']['height']-architecture['masterFader']['height'])<=2,architecture
         assert architecture['nav'].startswith('linear-gradient('),architecture
         assert architecture['long'].startswith('linear-gradient('),architecture
         assert 'data:image/png;base64' not in architecture['fx']
