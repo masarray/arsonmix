@@ -43,6 +43,9 @@ assert 'class="fx-nav"' not in page
 assert 'Button 19 / experimental acrylic' in css
 assert '<style>'+css+'</style>' in preview
 assert '<script>'+js+'</script>' in preview
+assert preview[preview.index('<div class="toolbar-actions">'):preview.index('</header>')].count('class="btn-180')==7
+assert preview[preview.index('<aside class="left-rail">'):preview.index('</aside>')].count('class="btn-180')==8
+assert 'class="fx-nav' not in preview
 assert 'height:40px!important;flex:0 0 40px!important' not in css
 assert 'height:24px!important;min-height:24px!important' not in css
 assert page.count('class="btn-180')==16
