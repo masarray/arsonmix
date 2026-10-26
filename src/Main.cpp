@@ -457,6 +457,15 @@ private:
             browser_.emitEventIfBrowserIsVisible ("arMixOrbitState", juce::var (event.release()));
     }
 
+    // Stop while the VST3 instance still exists and synchronize its UI state.
+    void stopOrbit()
+    {
+        const int previousSlot = orbit_.slot();
+        if (!orbit_.active()) return;
+        orbit_.stop();
+        emitOrbitState (previousSlot);
+    }
+
     void onParameter (const juce::var& args)
     {
         const auto name = args.getProperty ("parameter", {}).toString();
@@ -691,7 +700,7 @@ private:
         {
             if (!value.isBool()) return emitNotice ("Invalid smart clock command", true);
             // Close third-party editors before device/processor preparation.
-            orbit_.stop();
+            stopOrbit();
             editorWindow_.reset();
             const auto error = engine_.setIndependentClockEnabled (bool (value));
             if (error.isNotEmpty())
@@ -805,7 +814,7 @@ private:
                 return emitNotice ("Choose a valid preset name", true);
             if (!engine_.isOutputMuted())
                 return emitNotice ("Mute output in SIGNAL CHECK before saving a native sound preset. This avoids interrupting your live performance.", true);
-            orbit_.stop();
+            stopOrbit();
             editorWindow_.reset();
             armix::storage::Snapshot snapshot;
             snapshot.name = name;
@@ -830,7 +839,7 @@ private:
             const auto name = args.getProperty ("name", {}).toString();
             if (engine_.isGraphSwitchPending())
                 return emitNotice ("FX recall is already transitioning; retry shortly.", true);
-            orbit_.stop();
+            stopOrbit();
             editorWindow_.reset();
             armix::storage::Snapshot snapshot;
             auto error = presets_.load (name, snapshot);
@@ -899,7 +908,7 @@ private:
             else
             {
                 diagnostics_.record ("FX_ADD_REQUEST", name + " | " + plugin->path);
-                orbit_.stop();
+                stopOrbit();
                 editorWindow_.reset();
                 try
                 {
@@ -933,7 +942,7 @@ private:
         {
             if (engine_.hasTemporaryDiagnosticDevice())
                 return emitNotice ("Return to NORMAL before editing VST3.", true);
-            orbit_.stop();
+            stopOrbit();
             editorWindow_.reset();
             if (engine_.removeAt (slot)) { diagnostics_.record ("FX_REMOVE", juce::String (slot)); emitChain(); }
         }
@@ -941,7 +950,7 @@ private:
         {
             if (engine_.hasTemporaryDiagnosticDevice())
                 return emitNotice ("Return to NORMAL before rearranging VST3 effects.", true);
-            orbit_.stop();
+            stopOrbit();
             editorWindow_.reset();
             if (engine_.moveSlot (slot, slot + static_cast<int> (value))) { diagnostics_.record ("FX_MOVE", juce::String (slot)); emitChain(); }
         }
@@ -965,6 +974,7 @@ private:
                 !reverseValue.isBool())
                 return emitNotice ("Invalid Orbit settings.", true);
             const int parameterIndex = static_cast<int> (paramValue);
+            if (orbit_.active() && orbit_.slot() != slot) stopOrbit();
             const auto error = orbit_.start (engine_.pluginAt (slot), slot, parameterIndex,
                                              static_cast<double> (secondsValue),
                                              bool (reverseValue));
@@ -977,7 +987,7 @@ private:
         }
         else if (action == "orbitStop")
         {
-            orbit_.stop();
+            stopOrbit();
             diagnostics_.record ("FX_ORBIT_STOP", "User requested stop");
             emitOrbitState (slot);
         }
