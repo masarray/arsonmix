@@ -1,0 +1,218 @@
+/*
+ * ARSONMIX PREMIUM BRUSHED METAL — THEME ADAPTER
+ * Source: GitHub main 3478823069d053db4f0d4c34786f444df3defac0
+ * Ownership: this file ONLY. Baseline CSS/JS in the GitHub standalone remains intact.
+ * Material map: chassis/toolbars/ordinary controls = aluminum;
+ * FX racks/inserts/power/plugin workspace/meters = blue-black optical glass;
+ * PAN/fader = original embedded PNG artwork, unchanged.
+ */
+#app{
+  --am-face:
+    repeating-linear-gradient(90deg,transparent 0 3px,rgba(255,255,255,.085) 4px,transparent 5px 8px),
+    repeating-linear-gradient(90deg,transparent 0 6px,rgba(12,30,38,.028) 7px,transparent 8px 10px),
+    linear-gradient(180deg,#cbd1d3 0%,#f0f1f0 44%,#ced2d3 53%,#aeb9bd 100%);
+  --am-skin:
+    repeating-linear-gradient(90deg,transparent 0 3px,rgba(255,255,255,.075) 4px,transparent 5px 8px),
+    linear-gradient(100deg,#9eabb1,#d2dadc 16%,#b8c4c9 49%,#d1d8d8 83%,#93a3ac);
+  --am-dark:#14222a;
+  --am-ink:#28343b;
+  --am-glass:
+    linear-gradient(180deg,rgba(202,241,255,.17) 0%,transparent 20%),
+    linear-gradient(180deg,#253b48 0%,#13232e 37%,#08131b 57%,#162b38 100%);
+  --am-glass-muted:
+    linear-gradient(180deg,rgba(167,193,204,.11) 0%,transparent 25%),
+    linear-gradient(180deg,#1d2b34,#101b23 45%,#0b141b 57%,#1c2b32);
+  --am-glass-ring:#456576;
+  --am-cyan:#74edea;
+  --am-blue:#047dd8;
+}
+html,body{background:#a7b3b8!important}
+/* Structural metal, NOT the live-status LCDs or FX bays. */
+#app.app{background:linear-gradient(140deg,#9aa9b2,#c1cace 48%,#9cadb4)!important;color:#202f37}
+#app .toolbar{
+  background:
+    repeating-linear-gradient(90deg,transparent 0 4px,rgba(255,255,255,.10) 5px,transparent 6px 9px),
+    linear-gradient(180deg,#e1e5e5 0%,#a5b4bd 52%,#8a9ba5 100%)!important;
+  border-bottom:1px solid #4b5a62!important;
+  box-shadow:inset 0 1px #fff9,0 2px 4px #13222d66!important;
+}
+#app .toolbar .brand{border-right-color:#71818a72!important}
+#app .toolbar .brand-label{color:#293943!important;text-shadow:0 1px #fff8!important}
+#app .toolbar .brand-ar{color:#056293!important;text-shadow:0 1px #fff7!important}
+#app .toolbar .project,#app .toolbar .scene-select,#app .toolbar .spec:not(.spec-device){
+ background:linear-gradient(#1c303b,#0c1921 62%,#1c303b)!important;
+ border:1px solid #49616b!important;color:#b4d6e4!important;
+ box-shadow:inset 0 1px #cce5ee2c,0 1px #ffffff57!important;
+}
+#app .toolbar .project strong,#app .toolbar .spec strong,#app .toolbar .scene-select b{color:#a9edff!important}
+#app .main{background:linear-gradient(180deg,#8798a0,#c4cdd0)!important}
+#app .left-rail{
+ background:
+   repeating-linear-gradient(90deg,transparent 0 3px,rgba(255,255,255,.08) 4px,transparent 5px 8px),
+   linear-gradient(95deg,#a2b0b7,#d2d9da 52%,#9dabb3)!important;
+ border:1px solid #657783!important;box-shadow:inset 1px 0 #fff8,inset -1px 0 #50616a75!important;
+}
+#app .left-rail .tabs,#app .left-rail .rail-bottom{
+ background:linear-gradient(180deg,#c1cccf,#98a9b2)!important;
+ border-color:#768a93!important;
+}
+#app .left-rail .rail-section-title{
+ background:linear-gradient(#a0b0b9,#708994)!important;
+ color:#183946!important;text-shadow:0 1px #edf7fa86!important;
+ border-top-color:#506b79!important;
+}
+#app .left-rail .list-item{color:#263b45!important;border-bottom-color:#56697530!important}
+#app .left-rail .list-item .index{color:#5b7580!important}
+#app .left-rail .list-item:hover{background:#e0eced99!important}
+#app .left-rail .list-item.selected{color:#062d45!important;background:linear-gradient(90deg,#7fa7bb,#c5e1e9)!important}
+#app .left-rail .rail-input-footer{background:linear-gradient(#728b99,#304651)!important;color:#c3e3eb!important}
+#app .workbench{background:#7a8991!important;border:1px solid #5d717d!important;box-shadow:0 0 0 1px #ffffff64!important}
+#app .mixer{background:#6d7d87!important}
+#app .strip:not(.master-strip){
+ background:var(--am-skin)!important;
+ border-left-color:#eef7f6a3!important;border-right-color:#3e5968!important;
+ box-shadow:inset 1px 0 #ffffff94,inset -2px 0 #5b707b80!important;
+}
+#app .strip:not(.master-strip).selected{box-shadow:inset 1px 0 #f9fffb,inset -2px 0 #547988!important}
+#app #masterLeft.master-strip{background:var(--am-skin)!important;border-left-color:#eaf1f1!important;border-right-color:#51606a!important}
+#app .strip .ch-id{border-bottom-color:#4c6270!important}
+#app .strip .strip-controls,#app #masterLeft .master-controls-zone{
+ background:
+   repeating-linear-gradient(90deg,transparent 0 3px,#ffffff0c 4px,transparent 5px 8px),
+   linear-gradient(180deg,#a3b2b9 0%,#cfdbdd 46%,#acbac2 100%)!important;
+ border-top-color:#eef9f88a!important;border-bottom-color:#526b76!important;
+}
+#app .strip .channel-actions,#app #masterLeft .master-actions{
+ background:linear-gradient(180deg,#c3ced1,#aab9c0)!important;
+ border-color:#67818a52!important;
+}
+#app .strip .fader-zone,#app #masterLeft .master-fader-zone{
+ background:
+   repeating-linear-gradient(90deg,transparent 0 4px,#ffffff14 5px,transparent 6px 9px),
+   linear-gradient(90deg,#96a8b0,#d5dfe0 10%,#b7c6cb 55%,#d3dddf 84%,#8fa4ae)!important;
+ border-top-color:#f4fafaab!important;
+}
+#app .strip .scale{color:#45606d!important;text-shadow:0 1px #fff8!important}
+#app .strip .fader::before{box-shadow:inset 0 1px 4px #000,inset 0 0 0 1px #647c86!important}
+/* Channel identity colors remain from source; this is not a palette reset. */
+#app .strip .strip-name,#app #masterLeft .master-strip-name{box-shadow:inset 0 1px #fff2!important}
+/* One physical metal-button system. Same face/depth in OFF and ON. */
+#app :is(.btn-180,.toolbar .nav button,.toolbar .spec-device,
+ .left-rail .tabs button,.left-rail .rail-presets button,.left-rail .rail-bottom button,
+ .strip .utility-row button,.strip .channel-actions .candy,
+ .strip .fader-tools button,#masterLeft #masterMute,#masterLeft .master-tools button,
+ .native-btn){
+ border:0!important;border-radius:5px!important;
+ background:var(--am-face)!important;
+ color:#303a40!important;
+ box-shadow:
+   inset 0 0 0 1px rgba(22,29,33,.89),
+   inset 0 0 0 2px rgba(255,255,255,.34),
+   inset 0 -1px 2px rgba(22,31,36,.14),
+   inset 0 1px 1px rgba(255,255,255,.7),
+   0 -1px 1px rgba(0,0,0,.11),
+   0 1px 2px rgba(0,0,0,.22)!important;
+ text-shadow:0 -1px rgba(0,0,0,.15),0 1px rgba(255,255,255,.78)!important;
+ transform:none!important;filter:none!important;
+ font-family:"ArSonMix Inter","Segoe UI",Arial,sans-serif!important;
+ font-weight:650!important;letter-spacing:.08px!important;
+ transition:filter 120ms ease,color 120ms ease,box-shadow 120ms ease!important;
+}
+#app :is(.btn-180,.toolbar .nav button,.toolbar .spec-device,
+ .left-rail .tabs button,.left-rail .rail-presets button,.left-rail .rail-bottom button,
+ .strip .utility-row button,.strip .channel-actions .candy,
+ #masterLeft #masterMute,#masterLeft .master-tools button,.native-btn):hover:not(:disabled){filter:brightness(1.12)!important}
+#app :is(.btn-180,.toolbar .nav button,.toolbar .spec-device,
+ .left-rail .tabs button,.strip .utility-row button,.strip .channel-actions .candy,
+ #masterLeft #masterMute,.native-btn):active{transform:none!important;filter:brightness(.99)!important}
+/* Semantic illuminated outline; never recolor the aluminum itself or move the button. */
+#app :is(.toolbar .nav button.selected,.left-rail .tabs button.selected,
+ .left-rail .rail-presets button.active,.strip .utility-row button.active,
+ .strip .channel-actions .candy.active,#masterLeft #masterMute.active,
+ #masterLeft .master-tools button.active,.native-btn.on,.native-btn.primary){
+ --am-led:rgba(0,143,243,.46);--am-edge:#086db0;--am-text:#076fc7;
+ background:var(--am-face)!important;
+ color:var(--am-text)!important;
+ box-shadow:
+   inset 0 0 0 1.5px var(--am-edge),
+   inset 0 0 0 2.5px rgba(255,255,255,.56),
+   inset 0 -1px 2px rgba(22,31,36,.14),
+   inset 0 1px 1px rgba(255,255,255,.7),
+   0 0 4px 1px var(--am-led),
+   0 1px 2px rgba(0,0,0,.19)!important;
+ text-shadow:0 1px rgba(255,255,255,.8),0 0 5px var(--am-led)!important;
+ transform:none!important;
+}
+#app :is(.strip .channel-actions .mute.active,#masterLeft #masterMute.active,.native-btn.warn){--am-edge:#a6253e;--am-text:#b12745;--am-led:rgba(229,46,76,.43)}
+#app .strip .channel-actions .solo.active{--am-edge:#a47811;--am-text:#9a700d;--am-led:rgba(255,190,43,.44)}
+#app .strip .utility-row button[data-hpf].active{--am-edge:#0e864d;--am-text:#087f47;--am-led:rgba(35,210,118,.37)}
+#app .strip .utility-row button[data-pre].active{--am-edge:#0878c4;--am-text:#0d6ab2;--am-led:rgba(51,154,245,.42)}
+#app .left-rail .rail-presets button{text-align:left!important;justify-content:flex-start!important;padding-left:8px!important}
+#app #masterLeft .master-stereo-badge{background:var(--am-face)!important;border:0!important;color:#346075!important;
+ box-shadow:inset 0 0 0 1px #607b89,inset 0 1px 1px #fff8!important}
+#app .btn-180:focus-visible{outline:2px solid #1274b2!important;outline-offset:2px!important}
+/* Respect original source dimensions/alignments (12-channel + master). */
+#app .strip .utility-row{padding-left:6px!important;padding-right:6px!important;gap:5px!important}
+#app .strip .channel-actions{padding-left:6px!important;padding-right:6px!important;gap:5px!important}
+#app .strip .utility-row button{height:25px!important;min-height:25px!important}
+#app .strip .channel-actions .candy,#app #masterLeft #masterMute{height:29px!important;min-height:29px!important}
+/* PAN: center-zero blue fill remains under untouched metal PNG thumb. */
+#app .pan-track::before{top:13px!important}
+#app .pan-track .pan-fill{background:linear-gradient(#9befff,#1498e7)!important;box-shadow:0 0 4px #20adff70!important}
+#app .pan-track .pan-thumb{top:3px!important;z-index:3!important}
+#app .pan-track::after{z-index:1!important}
+/* FX-GLASS MATERIAL OWNER: no metal skin on insert/power/edit rack surfaces. */
+#app .strip .rack,#app #masterLeft .master-fx-rack{
+ background:linear-gradient(#152b37,#0a161f 55%,#162d3a)!important;
+ border-bottom:2px solid #07121a!important;
+ box-shadow:inset 0 1px #aec4d03c,inset 0 -1px #000b!important;
+}
+#app .strip .rack .insert,#app #masterLeft .master-insert,
+#app .chain-node,#app .plugin-card{
+ background:var(--am-glass)!important;color:#c9e3ee!important;
+ border:1px solid var(--am-glass-ring)!important;border-top-color:#6992a6!important;
+ box-shadow:inset 0 1px #d4f7ff36,inset 0 -1px #000b,0 1px 2px #0008!important;
+ text-shadow:0 1px #0009!important;
+ border-radius:3px!important;
+}
+#app .strip .rack .insert.empty,#app #masterLeft .master-insert.empty{background:var(--am-glass-muted)!important;color:#83cde3!important}
+#app .strip .rack .insert:hover,#app #masterLeft .master-insert:hover{filter:brightness(1.14)!important}
+#app .strip .rack .fx-power,#app #masterLeft .master-fx-power,#app .chain-node button[data-chainbypass]{
+ background:var(--am-glass)!important;color:#60f8df!important;
+ border:1px solid #2c6672!important;border-top-color:#7db8c5!important;
+ box-shadow:inset 0 1px #c3fff743,0 1px 2px #0009!important;
+ text-shadow:0 0 5px #2efadc9a!important;
+}
+#app .strip .rack .fx-power.is-bypassed,#app #masterLeft .master-fx-power.is-bypassed,
+#app .chain-node button[data-chainbypass].is-bypassed{
+ background:var(--am-glass-muted)!important;color:#708f9c!important;
+ border-color:#2f4752!important;text-shadow:none!important;box-shadow:inset 0 1px #ffffff13,0 1px 1px #0009!important;
+}
+#app .feature-workspace,#app .modal-panel{
+ background:radial-gradient(ellipse at 50% 0%,#263d4c 0%,#101d28 53%,#081219 100%)!important;color:#cfe7f2!important;
+}
+#app .feature-workspace :is(.action,.ghost-action,.chain-add,.chain-node button,.guide-chip),
+#app .plugin-categories button,#app .plugin-card{
+ background:var(--am-glass)!important;border:1px solid #325f71!important;
+ color:#cceaf7!important;box-shadow:inset 0 1px #d8f5ff30,0 1px 2px #0007!important;
+ text-shadow:0 1px #000c!important;
+}
+#app .feature-workspace :is(.action,.ghost-action,.chain-add,.chain-node button):hover,
+#app .plugin-categories button:hover{filter:brightness(1.2)!important}
+#app .feature-workspace .guide-panel{background:linear-gradient(#1a2d38,#0b1921)!important;border:1px solid #335464!important}
+#app .feature-workspace .chain-end{background:linear-gradient(#152d3a,#0b202b)!important;color:#bcefff!important}
+#app .db-display,#app #masterLeft .master-db{background:linear-gradient(#1b303c,#07121c)!important;border-color:#091925!important}
+/* Native meters, values and status footer stay dark for readability. */
+#app .status{background:linear-gradient(#142631,#08141c)!important;color:#a6bdc9!important}
+@media(prefers-reduced-motion:reduce){#app .btn-180,#app .fx-power{transition:none!important}}
+/* Detail QA: semantic LED specificity, source-aligned key sizes, legible silver-panel markings. */
+#app .strip .utility-row button{height:29px!important;min-height:29px!important;max-height:29px!important}
+#app .strip .channel-actions .candy{height:29px!important;min-height:29px!important;max-height:29px!important}
+#app .strip .pan-readline,#app #masterLeft .pan-readline{color:#31586d!important;text-shadow:0 1px #fff9!important}
+#app .strip .pan-readline strong,#app #masterLeft .pan-readline strong{color:#006b9f!important;text-shadow:0 1px #fff8!important}
+#app .strip .mini-label,#app .strip .knob-label,#app .strip .knob-value{color:#334f5d!important;text-shadow:0 1px #fff9!important}
+#app .toolbar .spec-device strong{color:#344c5a!important;text-shadow:0 1px #fff9!important}
+#app .strip .channel-actions .mute.active,#app #masterLeft #masterMute.active{--am-edge:#a6253e!important;--am-text:#b12745!important;--am-led:rgba(229,46,76,.43)!important}
+#app .strip .channel-actions .solo.active{--am-edge:#a47811!important;--am-text:#9a700d!important;--am-led:rgba(255,190,43,.44)!important}
+#app .strip .utility-row button[data-hpf].active{--am-edge:#0e864d!important;--am-text:#087f47!important;--am-led:rgba(35,210,118,.37)!important}
+#app .strip .utility-row button[data-pre].active{--am-edge:#0878c4!important;--am-text:#0d6ab2!important;--am-led:rgba(51,154,245,.42)!important}
