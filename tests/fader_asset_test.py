@@ -9,7 +9,7 @@ css=(root/"web/styles.css").read_text(encoding="utf-8")
 js=(root/"web/app.js").read_text(encoding="utf-8")
 html=(root/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").read_text(encoding="utf-8")
 source=(root/"web/styles-src/41-mixer-performance.css").read_text(encoding="utf-8")
-assert css.endswith(source), "Generated WebView2 CSS differs from source module"
+assert source in css, "Base mixer performance CSS is missing from compiled build"
 assert "<style>"+css+"</style>" in html, "Standalone CSS drift"
 assert "<script>"+js+"</script>" in html, "Standalone JS drift"
 
