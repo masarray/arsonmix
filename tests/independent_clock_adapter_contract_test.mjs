@@ -132,3 +132,18 @@ test('saved ASIO startup failure keeps the host callback registered for manual A
   assert.match(host,/new juce::AudioDeviceSelectorComponent/);
   assert.match(host,/showDeviceSetup\(\)/);
 });
+
+test('P0 ASIO live direct route fence blocks hotplug substitution before DSP',()=>{
+  const fence=r('engine/device/DirectRouteFence.h');
+  assert.match(fence,/class DirectRouteFence final/);
+  assert.match(fence,/void suspend\(\) noexcept/);
+  assert.match(fence,/bool observeStart/);
+  assert.match(fence,/bool resumeExpected/);
+  assert.match(engine,/directFence_\.observeStart/);
+  assert.match(engine,/directFence_\.permitted\(\)/);
+  assert.match(engine,/directSuppressedFrames_\.fetch_add/);
+  assert.match(engine,/directRouteProtection/);
+  assert.match(host,/engine_\.beginManualAudioSetup\(\)/);
+  assert.match(host,/engine_\.finishManualAudioSetup\(\)/);
+  assert.match(host,/engine_\.directRouteAuthorized\(\)/);
+});
