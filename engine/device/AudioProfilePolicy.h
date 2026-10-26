@@ -7,22 +7,26 @@
 
 namespace armix::device
 {
-// Pure capability-based profile planning. Runs on control thread only.
-// No device-name heuristics, probing, COM or audio-thread work.
+// Control-plane-only capability planner. It neither opens a device nor changes
+// the current route. Rates/periods must be reported by the selected backend;
+// stable IDs and shared-clock claims require positive platform evidence.
 enum class AudioIntent { autoStable, lowLatency, advancedManual };
 enum class StreamApi { asio, wasapiShared, wasapiLowLatency, wasapiExclusive };
 enum class ProfileReason {
-    unavailable, directSameClock, bridgedIndependentClocks, unsupportedClockAdapter
+    unavailable, directSameClock, bridgedIndependentClocks,
+    unsupportedClockAdapter, changedIdentity, unqualifiedLowLatency,
+    explicitExclusiveApprovalRequired
 };
 struct EndpointCapabilities
 {
-    std::string stableId;           // verified ID, not a friendly name
-    std::string capabilityFingerprint;
+    std::string stableId;           // verified endpoint ID, not a friendly name
+    std::string capabilityFingerprint; // driver+capabilities generation
     StreamApi api = StreamApi::wasapiShared;
     std::vector<int> rates;
-    std::vector<int> periods;       // physical supported output periods in frames
+    std::vector<int> periods;       // driver-reported output periods in frames
     int activeChannels = 0;
-    bool clockSharedByHardware = false; // evidence must be confirmed by adapter
+    bool clockSharedByHardware = false; // positive evidence from the adapter
+    bool validatedLowLatency = false;   // device/profile-specific physical FAT evidence
 };
 struct AudioProfile
 {
@@ -34,10 +38,12 @@ struct AudioProfile
 struct ProfileRequest
 {
     AudioIntent intent = AudioIntent::autoStable;
-    int requestedRate = 0;          // optional; nonzero manual exact request
-    int requestedFrames = 0;
+    int requestedRate = 0;          // optional, exact when nonzero
+    int requestedFrames = 0;        // optional, exact when nonzero
     bool hasIndependentAdapter = false;
+    bool exclusiveModeApproved = false; // explicit user action, NEVER inferred
 };
+
 class AudioProfilePolicy final
 {
 public:
@@ -48,84 +54,112 @@ public:
         AudioProfile p;
         if (input.activeChannels < 1 || output.activeChannels < 1 ||
             input.stableId.empty() || output.stableId.empty() ||
+            input.capabilityFingerprint.empty() || output.capabilityFingerprint.empty() ||
             input.rates.empty() || output.rates.empty() ||
-            output.periods.empty()) return p;
+            output.periods.empty() || request.requestedRate < 0 ||
+            request.requestedFrames < 0) return p;
 
-        // Only positive backend evidence can prove the two stream clocks are one.
-        const bool sharedClock = input.stableId == output.stableId
-                              && input.clockSharedByHardware
-                              && output.clockSharedByHardware;
-        p.direct = sharedClock;
-        p.needsClockBridge = !sharedClock;
-        if (!sharedClock && !request.hasIndependentAdapter)
+        // Never silently enable exclusive mode: it may evict other audio apps.
+        if (input.api == StreamApi::wasapiExclusive ||
+            output.api == StreamApi::wasapiExclusive)
         {
-            p.reason = ProfileReason::unsupportedClockAdapter;
+            if (request.intent != AudioIntent::advancedManual || !request.exclusiveModeApproved)
+            {
+                p.reason = ProfileReason::explicitExclusiveApprovalRequired;
+                return p;
+            }
+        }
+
+        // Identical endpoint IDs but a different driver/API fingerprint mean
+        // stale capabilities, not proof of one clock (and not an ASRC escape).
+        const bool sameId = input.stableId == output.stableId;
+        if (sameId && (input.api != output.api ||
+                       input.capabilityFingerprint != output.capabilityFingerprint))
+        {
+            p.reason = ProfileReason::changedIdentity;
+            return p;
+        }
+        const bool direct = sameId && input.clockSharedByHardware
+                         && output.clockSharedByHardware;
+        if (!direct)
+        {
+            // The only currently implemented independent JUCE adapter is
+            // WASAPI shared + WASAPI shared, with DISTINCT validated endpoints.
+            // Do not pretend an ASIO or exclusive cross-device bridge exists.
+            if (!request.hasIndependentAdapter || sameId ||
+                input.api != StreamApi::wasapiShared ||
+                output.api != StreamApi::wasapiShared)
+            {
+                p.reason = ProfileReason::unsupportedClockAdapter;
+                return p;
+            }
+        }
+        if (request.intent == AudioIntent::lowLatency &&
+            (!input.validatedLowLatency || !output.validatedLowLatency))
+        {
+            p.reason = ProfileReason::unqualifiedLowLatency;
             return p;
         }
 
-        const auto available = [](const std::vector<int>& v, int rate)
-        { return std::find (v.begin(), v.end(), rate) != v.end(); };
-        const auto chooseRate = [&](const std::vector<int>& rates, bool requireCommon) -> int
+        const auto containsRate = [](const std::vector<int>& rates, int rate)
         {
-            if (request.requestedRate != 0)
-                return available (rates, request.requestedRate) &&
-                       (!requireCommon || available (input.rates, request.requestedRate))
-                        ? request.requestedRate : 0;
-            // Windows streaming defaults to 48k ONLY if endpoints actually support it.
-            for (const int rate : {48000, 44100, 96000, 88200})
-                if (available (rates, rate) &&
-                    (!requireCommon || available (input.rates, rate))) return rate;
-            for (auto rate : rates)
-                if (rate > 0 && (!requireCommon || available (input.rates, rate))) return rate;
-            return 0;
+            return rate >= 8000 && rate <= 384000 &&
+                std::find (rates.begin(), rates.end(), rate) != rates.end();
         };
+        const auto rateFor = [&](const std::vector<int>& rates, bool requireCommon)
+        {
+            const auto supported = [&](int r) {
+                return containsRate(rates, r) &&
+                    (!requireCommon || containsRate(input.rates, r));
+            };
+            if (request.requestedRate != 0)
+                return supported(request.requestedRate) ? request.requestedRate : 0;
+            for (int r : {48000,44100,96000,88200})
+                if (supported(r)) return r;
+            // Do not assume the backend reports rates in ascending order.
+            int lowest = 0;
+            for (int r : rates)
+                if (supported(r) && (lowest == 0 || r < lowest)) lowest = r;
+            return lowest;
+        };
+        const int renderRate = rateFor(output.rates, direct);
+        const int captureRate = direct ? renderRate :
+            (containsRate(input.rates, renderRate) ? renderRate : rateFor(input.rates, false));
+        if (renderRate == 0 || captureRate == 0) return p;
 
-        p.renderRate = chooseRate (output.rates, sharedClock);
-        if (p.renderRate == 0) return p;
-        p.captureRate = sharedClock ? p.renderRate : (
-            available (input.rates, p.renderRate) ? p.renderRate :
-            choosePreferredCaptureRate (input.rates));
-        if (p.captureRate == 0) return p;
-        if (request.requestedFrames != 0)
+        // One scan, no heap copy or sort: AUTO_STABLE chooses the smallest
+        // advertised period >= provisional 10ms; else the largest advertised.
+        // LOW_LATENCY may pick the minimum only after physical qualification.
+        int minimum = 0, largest = 0, conservative = 0;
+        const int target = (renderRate + 99) / 100;
+        for (int frames : output.periods)
         {
-            if (std::find (output.periods.begin(), output.periods.end(),
-                           request.requestedFrames) == output.periods.end()) return p;
-            p.renderPeriod = request.requestedFrames;
+            if (frames <= 0 || frames > 65536) continue;
+            if (minimum == 0 || frames < minimum) minimum = frames;
+            largest = std::max(largest, frames);
+            if (frames >= target &&
+                (conservative == 0 || frames < conservative)) conservative = frames;
         }
-        else
-        {
-            // AUTO_STABLE: conservative supported candidate >= 10 ms if present.
-            // This 10 ms threshold is a provisional laboratory policy,
-            // not a physical guarantee of clean sound.
-            std::vector<int> valid;
-            for (auto frames : output.periods)
-                if (frames > 0) valid.push_back (frames);
-            if (valid.empty()) return p;
-            std::sort (valid.begin(), valid.end());
-            if (request.intent == AudioIntent::lowLatency)
-                p.renderPeriod = valid.front();
-            else
-            {
-                const int target = (p.renderRate + 99) / 100;
-                const auto it = std::lower_bound (valid.begin(), valid.end(), target);
-                p.renderPeriod = it == valid.end() ? valid.back() : *it;
-            }
-        }
+        if (minimum == 0) return p;
+        const int selected = request.requestedFrames != 0 ? request.requestedFrames :
+            request.intent == AudioIntent::lowLatency ? minimum :
+            conservative != 0 ? conservative : largest;
+        if (selected < 1 || selected > 65536 ||
+            std::find(output.periods.begin(), output.periods.end(), selected) ==
+                output.periods.end()) return p;
+
+        // Publish a complete decision only after all preconditions passed.
+        p.captureRate = captureRate;
+        p.renderRate = renderRate;
+        p.renderPeriod = selected;
         p.inputChannels = input.activeChannels;
         p.outputChannels = output.activeChannels;
-        p.reason = sharedClock ? ProfileReason::directSameClock
-                               : ProfileReason::bridgedIndependentClocks;
+        p.direct = direct;
+        p.needsClockBridge = !direct;
+        p.reason = direct ? ProfileReason::directSameClock
+                          : ProfileReason::bridgedIndependentClocks;
         p.valid = true;
         return p;
-    }
-private:
-    static int choosePreferredCaptureRate (const std::vector<int>& available)
-    {
-        for (auto r : {48000, 44100, 96000, 88200})
-            if (std::find (available.begin(), available.end(), r) != available.end())
-                return r;
-        for (auto r : available) if (r > 0) return r;
-        return 0;
     }
 };
 } // namespace armix::device
