@@ -287,6 +287,8 @@ async def main():
         assert await page.locator('.strip').count()==13
         # The user's requirement: the SAME size/position before, during, and after toggle.
         # OFF/ON use the exact same shadow-layer geometry, differing only in palette.
+        def shared_shadow_shape(shadow):
+            return re.sub(r'rgba?\([^)]*\)', '<color>', shadow)
         def switch_state(selector):
             return page.locator(selector).evaluate("""e=>{
               const s=getComputedStyle(e),r=e.getBoundingClientRect();
