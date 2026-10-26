@@ -36,3 +36,15 @@ The existing 12 Hz **control/message-thread timer** detects a newly latched `une
 ### P1 review correction — DRY_THROUGH is live microphone routing
 
 `Route::dryThrough` bypasses plugins but still forwards the **real microphone**. It is protected by exactly the same authorization fence as NORMAL. Only one-sided `OUTPUT_ONLY_TONE` and `CAPTURE_ONLY` diagnostic modes are exempt because they explicitly isolate the unused direction. The latching native notice applies to NORMAL and DRY_THROUGH too. Node contract verifies the regression cannot silently reintroduce a dry-mode bypass.
+
+## P0-06: exact DIRECT channel maps (26 October 2026)
+
+**Risk closed in source:** PR #55 pinned only JUCE backend type and driver-reported name. A multichannel ASIO interface can keep its exact name while the selected input/output bitsets change (for example, speaker output 1/2 to output 3/4). Because the audio callback was authorized by name alone, an unapproved channel-map substitution could continue passing audio. This is a routing-safety issue, not a proven cause of the 0-FX crackling.
+
+**Control/lifecycle change:** `DirectRouteFence` now fingerprints four length-separated fields: backend type, driver name, full active input mask and full active output mask. The masks are canonical JUCE `BigInteger::toString(16)` values; no 32/64-bit truncation, count-only comparison, or device-name heuristics. Both masks must be nonzero. The same identity is required for initial explicit approval, `audioDeviceAboutToStart` and exact DIRECT recovery. Unapproved changes latch `UNEXPECTED_DIRECT_BACKEND_DEVICE_OR_CHANNEL_MASK`. Reconnection remains muted until explicit user approval or a verified exact restore. `status().directRouteChannelMapGuard` makes this protection visible in native COPY FULL REPORT.
+
+**Realtime cost:** unchanged. The expensive conversions and FNV-1a hashing run exclusively in JUCE startup/setup lifecycle, not the render callback. The callback still executes one atomic permission check before graph/DSP and clears output on mismatch. No added queue, ASRC, thread, locks, heap, per-sample checks, or GUI modifications.
+
+**Validation gates:** deterministic C++20 `P0AsioLiveDirectRouteFence` covers same-name channel swaps, capture swaps, backend/name swaps, sticky fault, exact recovery, invalid/empty masks, and >64-bit masks. Existing Windows CI Node contract `direct_restore_recovery_contract_test.mjs` verifies all three JUCE integration sites and RT ordering; Release MSVC/CTest and Chromium remain required on the exact PR SHA. Not a physical Windows test.
+
+**Residual limits:** driver-reported names plus channel masks are not immutable ASIO hardware identity. A different physical interface using the same driver name and identical channel masks is still indistinguishable. Endpoint GUID/driver-specific identity and sound-quality/latency FAT remain P0 work under [issue #15](https://github.com/masarray/arsonmix/issues/15). Do not call this change a fix for crackling or measured latency.
