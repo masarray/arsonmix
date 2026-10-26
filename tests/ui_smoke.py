@@ -33,7 +33,7 @@ async def main():
         cap=page.locator('[data-fader="0"] .cap')
         await cap.hover()
         fast=await cap.evaluate("(e)=>getComputedStyle(e).filter")
-        assert 'drop-shadow' not in fast,fast
+        assert fast=='none',fast
         await page.evaluate("document.documentElement.dataset.mixperf='baseline'")
         original=await cap.evaluate("(e)=>getComputedStyle(e).filter")
         assert 'drop-shadow' in original,original
@@ -49,7 +49,7 @@ async def main():
         await pan.evaluate("(e)=>e.setAttribute('aria-valuenow','22')")
         pan_thumb=pan.locator('.pan-thumb')
         light_pan=await pan_thumb.evaluate("(e)=>getComputedStyle(e).filter")
-        assert 'drop-shadow' not in light_pan,light_pan
+        assert light_pan=='none',light_pan
         await page.evaluate("document.documentElement.dataset.mixperf='baseline'")
         old_pan=await pan_thumb.evaluate("(e)=>getComputedStyle(e).filter")
         assert 'brightness(1.08)' in old_pan and 'drop-shadow' in old_pan,old_pan
@@ -72,21 +72,26 @@ async def main():
           const slot=fill.closest('.meter');
           const heightBefore=getComputedStyle(fill).height;
           updateMeterVisual('0',27,10000);
-          const first={ratio:fill.style.getPropertyValue('--meter-scale'),
+          const first={ratio:fill.style.getPropertyValue('--level'),
             peak:peak.style.bottom,height:getComputedStyle(fill).height,
+            clip:getComputedStyle(fill).clipPath,palette:getComputedStyle(fill).backgroundImage,
             cached:meterNodes.get('0').fill===fill};
           updateMeterVisual('0',16,10016);
           const held=peak.style.bottom;
           updateMeterVisual('0',45,10032);
-          return {first,held,latest:peak.style.bottom,ratio:fill.style.getPropertyValue('--meter-scale'),
+          return {first,held,latest:peak.style.bottom,ratio:fill.style.getPropertyValue('--level'),
             heightBefore,heightAfter:getComputedStyle(fill).height,
             transform:getComputedStyle(fill).transform,
+            clip:getComputedStyle(fill).clipPath,
+            palette:getComputedStyle(fill).backgroundImage,
             shape:slot.getBoundingClientRect().height};
         }""")
-        assert meter['first']['cached'] and meter['first']['ratio']=='0.27',meter
+        assert meter['first']['cached'] and meter['first']['ratio']=='27%',meter
         assert meter['first']['peak']==meter['held'] and meter['latest']=='45%',meter
-        assert meter['ratio']=='0.45' and meter['heightBefore']==meter['heightAfter'],meter
-        assert meter['transform']!='none' and meter['shape']>0,meter
+        assert meter['ratio']=='45%' and meter['heightBefore']==meter['heightAfter'],meter
+        assert meter['transform']=='none' and meter['shape']>0,meter
+        assert '73%' in meter['first']['clip'] and '55%' in meter['clip'],meter
+        assert meter['first']['palette']==meter['palette'],meter
         # Full mixer rebuild must restore held peaks and clip state on fresh DOM nodes.
         restored=await page.evaluate("""()=>{
           clipLatch['0']=true;
@@ -214,7 +219,7 @@ async def main():
         preset=page.locator('[data-preset="Clean Vocal"]')
         before=await preset.evaluate('(e)=>e.getBoundingClientRect().toJSON()')
         await preset.hover()
-        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-preset="Clean Vocal"]')).filter==='brightness(1.045)'""")
+        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-preset="Clean Vocal"]')).filter==='none'""")
         await page.mouse.down()
         await page.wait_for_timeout(150)
         pressed=await preset.evaluate("""e=>({
@@ -481,7 +486,7 @@ async def main():
         at_center=await pan_fill.bounding_box()
         assert at_center['width']<1,at_center
         await p1.press('End')
-        assert 'drop-shadow' in await p1.locator('.pan-thumb').evaluate('(e)=>getComputedStyle(e).filter')
+        assert await p1.locator('.pan-thumb').evaluate('(e)=>getComputedStyle(e).filter')=='none'
         right_fill=await pan_fill.bounding_box()
         assert right_fill['width']>10,right_fill
         await p1.press('Home')
@@ -520,7 +525,7 @@ async def main():
         cap0=page.locator('[data-fader="0"] .cap')
         await cap0.hover()
         fader_hover=await cap0.evaluate("(e)=>getComputedStyle(e).filter")
-        assert 'brightness(1.1)' in fader_hover and 'drop-shadow' not in fader_hover, fader_hover
+        assert fader_hover=='none',fader_hover
         button=page.locator('[data-mute="0"]')
         await button.hover()
         await page.wait_for_timeout(150)  # Finish 90 ms physical-switch filter transition.

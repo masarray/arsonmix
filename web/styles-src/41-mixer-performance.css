@@ -52,3 +52,8 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 #app :is(.live-dot,.rail-live-indicator){box-shadow:none!important}
 #app .modal{backdrop-filter:none!important}
 #app #mixer .strip.selected .strip-name{box-shadow:inset 0 0 0 1px #8fcde151!important}
+/* Focus remains keyboard-visible on the track; PNG artwork stays unchanged. */
+#app #mixer .fader:focus-visible .cap,
+#app #mixer .pan-track:focus-visible .pan-thumb{filter:none!important}
+#app #mixer .meter .meter-fill{filter:none!important}
+
