@@ -1,9 +1,14 @@
-# ARI fader art — silver channels / gold MASTER (2026-10-26)
+# ARI fader assets — original silver channels and gold MASTER (2026-10-26)
 
-Owner-uploaded PNGs: silver `FADER-ARI (1).png` (33x79 RGB, SHA-256 `f3820891ffa019f899a079b8d0cb7cf7726fc757155c32fc20022c21cfacfccf`); gold `FADER-ARI (2).png` (33x79 RGBA, SHA-256 `839a2d41efb07e2d2fa252be80bf86f43876b8b291c0e4568bd9c14eba5413e3`).
+The final approved fader art is shipped **without resizing** or color adjustment:
 
-Offline 30x70 downsampling avoids continuous browser image scaling. Production PNGs: `web/assets/faders/ARI-FADER-SILVER-30x70.png` (indexed 256-color silver, 2925 bytes, SHA-256 `88f3e7932466b12fbcffe8fb69353371496daea32fa19cda88dc413516d4bb34`), `web/assets/faders/ARI-FADER-GOLD-30x70.png` (RGBA gold, 4357 bytes, SHA-256 `8bc265a895de882842817275f439bcbedfd117ade62ea142a71cc3ce3b33eb59`). Older silver/red art remains stored for rollback but is superseded in the live mixer.
+- Channels 1–12: `web/assets/faders/FADER-ARI-SILVER.png`, original 36×77 RGBA, 3,801 bytes, SHA-256 `de0cd2f8250d8d4eef1ce48cb5c509f596f65134c9c618dce895eaadd54d6132`.
+- MASTER: `web/assets/faders/FADER-ARI-GOLD.png`, original 36×77 RGBA, 3,997 bytes, SHA-256 `8396598e7456cb7f132c9f91ee39cb68ff7c331ae57f04aab15c259ea4143f62`.
 
-CSS owner: `web/styles-src/41-mixer-performance.css`. The channel PNG is fixed through `--ari-channel-cap`; MASTER uses its existing `--master-cap-asset` variable replaced by the gold URI in the last CSS module. Both render at native 30x70 pixels with image detent at y=34; clamp the pixel origin at 34px..height-36px to prevent clipping; drag travel = track height minus 70px. Preserve keyboard/aria, fixed-color LED meter, no-blur state and VST3 audio path. No new event listeners, visual hover filters or animations.
+Both supersede the discarded resized 30×70 files and the duplicate `ARI-FADER.PNG`, all removed from the PR branch. The historical red master and earlier silver art remain in the repository for baseline/rollback only; the live mixer uses silver + gold.
 
-Regenerate/check CSS and standalone HTML with `python scripts/build_ui_css.py --check`. Regression guards in `tests/fader_asset_test.py` and `tests/ui_smoke.py` verify source hashes, unique silver/gold renderers, coordinates and pointer movement.
+Authoritative CSS is `web/styles-src/41-mixer-performance.css`, with the exact PNGs embedded as static data URIs for standalone HTML and JUCE WebView2 offline parity. Only one decoded bitmap per fader color is needed; avoid new pointer event listeners, image filters, blur, hover glow, or animations.
+
+The shared black detent occupies image rows 37–38. Render full, natural size `36px × 77px`, align with `translate(-50%,-38px)`, constrain `top` to `38px .. trackHeight-39px`, and use `Math.max(24, trackHeight-77px)` pointer travel for both channel and master. Keyboard behavior and no-jump relative drag stay intact.
+
+Validate with `python scripts/build_ui_css.py --check`, `python tests/fader_asset_test.py` and `python tests/ui_smoke.py`. Publish GitHub Pages only through the existing passing-main workflow; do not bypass Chromium or Windows Native gates.

@@ -1,47 +1,49 @@
-"""Regression guard for original user-supplied metallic fader PNG and offline build."""
+"""Lock the exact original silver/gold PNG artwork and offline/WebView2 geometry."""
 from pathlib import Path
 import base64
 import hashlib
 import re
 
 root=Path(__file__).resolve().parents[1]
-asset=(root/"web/assets/fader-silver2.png").read_bytes()
 css=(root/"web/styles.css").read_text(encoding="utf-8")
 js=(root/"web/app.js").read_text(encoding="utf-8")
 html=(root/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").read_text(encoding="utf-8")
-data=re.search(r'data:image/png;base64,([A-Za-z0-9+/=]+)',css)
-assert data, "Embedded metallic asset missing from web/styles.css"
-assert base64.b64decode(data.group(1))==asset, "Embedded thumb differs from source PNG"
-assert (len(asset),asset[:8])==(2786,b"\x89PNG\r\n\x1a\n")
-assert hashlib.sha256(asset).hexdigest()=="0f45fe5aebc8db7b65c4163ffad083cbe3965d59cde7056add94812ac067a899"
-ari=(root/"web/assets/faders/ARI-FADER.PNG").read_bytes()
-assert len(ari)==3801 and ari.startswith(bytes([137,80,78,71,13,10,26,10]))
-assert hashlib.sha256(ari).hexdigest()=="de0cd2f8250d8d4eef1ce48cb5c509f596f65134c9c618dce895eaadd54d6132"
-assert (int.from_bytes(ari[16:20],"big"),int.from_bytes(ari[20:24],"big"))==(36,77)
-silver=(root/"web/assets/faders/ARI-FADER-SILVER-30x70.png").read_bytes()
-gold=(root/"web/assets/faders/ARI-FADER-GOLD-30x70.png").read_bytes()
-assert len(silver)==2925 and hashlib.sha256(silver).hexdigest()=="88f3e7932466b12fbcffe8fb69353371496daea32fa19cda88dc413516d4bb34"
-assert len(gold)==4357 and hashlib.sha256(gold).hexdigest()=="8bc265a895de882842817275f439bcbedfd117ade62ea142a71cc3ce3b33eb59"
-for png in (silver,gold):
-    assert png.startswith(bytes([137,80,78,71,13,10,26,10]))
-    assert (int.from_bytes(png[16:20],"big"),int.from_bytes(png[20:24],"big"))==(30,70)
-channel_uri=css.split('--ari-channel-cap:url("data:image/png;base64,',1)[1].split('")',1)[0]
-assert base64.b64decode(channel_uri)==silver,"Rendered channel PNG differs from approved silver asset"
-assert 'top:clamp(34px,var(--pos,50%),calc(100% - 36px))' in css
-assert 'transform:translate(-50%,-34px)' in css
-assert 'width:30px;height:70px' in css
-assert 'distance:Math.max(24,r.height-70)' in js
-master=(root/'web/assets/faders/FADER-RED2.png').read_bytes()
-assert hashlib.sha1(b'blob '+str(len(master)).encode()+bytes([0])+master).hexdigest()=='2369e1b9002522600948909246918e57880da1ed'
-needle='--master-cap-asset:url("data:image/png;base64,'
-assert needle in css, 'Missing master cap CSS source'
-master_css_legacy=css.split(needle,1)[1].split('")',1)[0]
-assert base64.b64decode(master_css_legacy)==master, 'Original red MASTER fallback unexpectedly altered'
-master_css=css.rsplit(needle,1)[1].split('")',1)[0]
-assert base64.b64decode(master_css)==gold,'Rendered MASTER PNG differs from approved gold asset'
-assert channel_uri != master_css,'Channel silver and MASTER gold must be distinct assets'
-assert "<style>"+css+"</style>" in html, "Offline CSS is stale"
-assert "<script>"+js+"</script>" in html, "Offline JS is stale"
+source=(root/"web/styles-src/41-mixer-performance.css").read_text(encoding="utf-8")
+assert css.endswith(source), "Generated WebView2 CSS differs from source module"
+assert "<style>"+css+"</style>" in html, "Standalone CSS drift"
+assert "<script>"+js+"</script>" in html, "Standalone JS drift"
+
+# Old resized copies and duplicate artwork must not ship as active assets.
+for obsolete in ("ARI-FADER-GOLD-30x70.png","ARI-FADER-SILVER-30x70.png","ARI-FADER.PNG"):
+    assert not (root/"web/assets/faders"/obsolete).exists(),obsolete
+
+assets=(
+    ("FADER-ARI-SILVER.png","--ari-channel-cap",3801,"de0cd2f8250d8d4eef1ce48cb5c509f596f65134c9c618dce895eaadd54d6132"),
+    ("FADER-ARI-GOLD.png","--ari-master-cap",3997,"8396598e7456cb7f132c9f91ee39cb68ff7c331ae57f04aab15c259ea4143f62"),
+)
+for filename,variable,length,expected_sha256 in assets:
+    original=(root/"web/assets/faders"/filename).read_bytes()
+    assert len(original)==length,filename
+    assert hashlib.sha256(original).hexdigest()==expected_sha256,filename
+    assert original[:8]==b"\\x89PNG\\r\\n\\x1a\\n",filename
+    assert (int.from_bytes(original[16:20],"big"),int.from_bytes(original[20:24],"big"))==(36,77),filename
+    pattern=re.escape(variable)+r':url\\("data:image/png;base64,([A-Za-z0-9+/=]+)"\\)'
+    matched=re.search(pattern,css)
+    assert matched and base64.b64decode(matched.group(1))==original,filename+" embedded PNG mismatch"
+
+assert 'width:36px;height:77px' in source
+assert 'background-size:36px 77px!important' in source
+assert 'top:clamp(38px,var(--pos,50%),calc(100% - 39px))' in source
+assert 'transform:translate(-50%,-38px)' in source
+assert 'distance:Math.max(24,r.height-77)' in js
+assert 'background-image:var(--ari-channel-cap)!important' in source
+assert 'background-image:var(--ari-master-cap)!important' in source
+assert ':not([data-fader="master"])' in source
+assert '[data-fader="master"] > .cap' in source
+assert 'filter:none!important' in source
+
+# Historical art is retained for rollback; active heads must use new assets.
+legacy=(root/"web/assets/faders/FADER-RED2.png").read_bytes()
+assert hashlib.sha1(b"blob "+str(len(legacy)).encode()+b"\\0"+legacy).hexdigest()=="2369e1b9002522600948909246918e57880da1ed"
 assert ".cap::before,.cap::after{content:none}" in css
-assert "translate(-50%,-35px)" in css
-print("PASS: resized silver channels, gold MASTER, aligned detent and standalone/WebView2 parity")
+print("PASS: untouched 36x77 silver channels + gold MASTER, correct detent and offline parity")
