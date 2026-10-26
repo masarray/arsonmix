@@ -328,7 +328,7 @@ document.addEventListener('pointerdown',e=>{
  if(f){
    const idx=f.dataset.fader,r=f.getBoundingClientRect();
    drag={type:'fader',el:f,pointerId:e.pointerId,index:idx,
-     startY:e.clientY,distance:Math.max(24,r.height-66),
+     startY:e.clientY,distance:Math.max(24,r.height-77),
      startDb:idx==='master'?masterGain:channels[+idx].fader};
    // Relative drag: clicking track never teleports the fader.
  }else if(p){

@@ -600,7 +600,7 @@ async def main():
               rect:{x:r.x,y:r.y,width:r.width,height:r.height},top:c.top,zIndex:c.zIndex,pos:el.style.getPropertyValue('--pos'),parentPosition:p.position};
         }""")
         assert master_fader_debug['display']!='none' and master_fader_debug['visibility']=='visible'
-        assert (master_fader_debug['rect']['width'],master_fader_debug['rect']['height'])==(31,90)
+        assert (master_fader_debug['rect']['width'],master_fader_debug['rect']['height'])==(36,77)
         assert master_fader_debug['background'].startswith('url("data:image/png;base64,')
         decoded=await page.locator('[data-fader="master"] .cap').evaluate("""async el => {
           const bg=getComputedStyle(el).backgroundImage;
@@ -608,7 +608,7 @@ async def main():
           await image.decode();
           return {width:image.naturalWidth,height:image.naturalHeight};
         }""")
-        assert decoded=={'width':31,'height':90}, 'Master red PNG did not decode'
+        assert decoded=={'width':36,'height':77}, 'Gold MASTER PNG must decode to original 36x77'
         a=await page.locator('[data-fader="0"]').bounding_box()
         m=await page.locator('[data-fader="master"]').bounding_box()
         assert abs(a['y']-m['y'])<=2,(a,m)
@@ -714,14 +714,14 @@ async def main():
         await page.locator('#masterMute').click()
         assert await page.locator('#dim,#talkBtn,[data-master-tab]').count()==0
 
-        # The source image has a real metallic body and a long cast shadow.
-        # The body must travel inside the track, centered on image y=35.
+        # Silver channels and gold MASTER use exact unscaled 36x77 PNGs, detent y=38.
+        # Verify geometry, travel and distinct source rasters without CSS resampling.
         geometry=await page.evaluate("""async () => {
             const slots=[...document.querySelectorAll('[data-fader]')];
             const heads=slots.map(f => {
                 const c=f.querySelector('.cap'),b=c.getBoundingClientRect(),r=f.getBoundingClientRect();
                 const s=getComputedStyle(c);
-                return {width:b.width,height:b.height,bodyInside:b.top>=r.top-1 && b.top+66<=r.bottom+1,
+                return {master:f.dataset.fader==='master',width:b.width,height:b.height,bodyInside:b.top>=r.top-1 && b.bottom<=r.bottom+1,
                         top:b.top,trackTop:r.top,radius:s.borderRadius,
                         bg:s.backgroundImage,transform:s.transform};
             });
@@ -731,12 +731,14 @@ async def main():
             return {heads,imgW:image.naturalWidth,imgH:image.naturalHeight};
         }""")
         assert len(geometry['heads'])==13
-        assert (geometry['imgW'],geometry['imgH'])==(31,90), geometry
+        assert (geometry['imgW'],geometry['imgH'])==(36,77),geometry
+        assert sum(g['master'] for g in geometry['heads'])==1,geometry
+        assert geometry['heads'][0]['bg'] != geometry['heads'][-1]['bg'], 'MASTER must use gold instead of channel silver'
         for g in geometry['heads']:
-            assert (g['width'],g['height'])==(31,90),g
+            assert (g['width'],g['height'])==(36,77),g
             assert g['bodyInside'],g
             assert g['radius']=='0px',g
-            assert 'matrix(1, 0, 0, 1, -15.5, -35)' in g['transform'],g
+            assert 'matrix(1, 0, 0, 1, -18, -38)' in g['transform'],g
         for fader in ('0','master'):
             ctrl=page.locator(f'[data-fader="{fader}"]')
             await ctrl.focus()
@@ -753,7 +755,7 @@ async def main():
         cap=channel.locator('.cap')
         rect=await cap.bounding_box()
         cx=rect['x']+rect['width']/2
-        cy=rect['y']+35
+        cy=rect['y']+38
         await page.mouse.move(cx,cy)
         await page.mouse.down()
         assert float(await channel.get_attribute('aria-valuenow'))==original
