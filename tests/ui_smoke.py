@@ -51,6 +51,11 @@ async def main():
         light_pan=await pan_thumb.evaluate("(e)=>getComputedStyle(e).filter")
         assert light_pan=='none',light_pan
         await page.evaluate("document.documentElement.dataset.mixperf='baseline'")
+        # The baseline restores the historical PAN 95ms filter transition.
+        # Inspect its final value, not the temporary interpolated frame.
+        await page.wait_for_function("""()=>getComputedStyle(
+            document.querySelector('[data-pan="0"] .pan-thumb')
+        ).filter.includes('brightness(1.08)')""")
         old_pan=await pan_thumb.evaluate("(e)=>getComputedStyle(e).filter")
         assert 'brightness(1.08)' in old_pan and 'drop-shadow' in old_pan,old_pan
         await page.evaluate("document.documentElement.dataset.mixperf='optimized'")
