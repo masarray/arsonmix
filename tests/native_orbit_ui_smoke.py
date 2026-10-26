@@ -91,7 +91,7 @@ async def main():
         start_payload = await page.evaluate("""()=>window.__JUCE__.backend.calls.findLast(x=>
           x.payload.action==='orbitStart').payload""")
         assert start_payload == {
-            "action": "orbitStart", "slot": 0, "parameterIndex": 2,
+            "action": "orbitStart", "slot": 0, "pluginId": "dearvr-pro-2", "parameterIndex": 2,
             "seconds": 15, "reverse": True,
         }, start_payload
         await modal.locator("[data-orbit-stop]").click()
