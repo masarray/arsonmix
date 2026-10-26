@@ -14,7 +14,12 @@ test('actual device recoveries occur on message thread, not inside audio callbac
   const timer=main.indexOf('void timerCallback() override');
   const runner=main.indexOf('void serviceDirectRestore()');
   assert.ok(timer>=0 && runner>0);
-  assert.match(main.slice(timer,timer+420),/serviceDirectRestore\(\)/);
+  // Extract the actual initial control-timer phase rather than relying on
+  // a brittle 420-character prefix: safe notification / fault reporting may
+  // precede recovery without moving a device restart to the audio thread.
+  const graphAck=main.indexOf('if (engine_.finalizeGraphSwitch())', timer);
+  assert.ok(graphAck>timer);
+  assert.match(main.slice(timer,graphAck),/serviceDirectRestore\(\)/);
   assert.match(main.slice(runner,main.indexOf('void emitNotice',runner)),
     /engine_\.setIndependentClockEnabled \(false\)/);
   assert.match(main,/engine_\.independentClockFaulted\(\)/);

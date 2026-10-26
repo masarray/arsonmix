@@ -132,3 +132,40 @@ test('saved ASIO startup failure keeps the host callback registered for manual A
   assert.match(host,/new juce::AudioDeviceSelectorComponent/);
   assert.match(host,/showDeviceSetup\(\)/);
 });
+
+test('P0 ASIO live direct route fence blocks hotplug substitution before DSP',()=>{
+  const fence=r('engine/device/DirectRouteFence.h');
+  assert.match(fence,/class DirectRouteFence final/);
+  assert.match(fence,/void suspend\(\) noexcept/);
+  assert.match(fence,/bool observeStart/);
+  assert.match(fence,/bool resumeExpected/);
+  assert.match(engine,/directFence_\.observeStart/);
+  assert.match(engine,/directFence_\.permitted\(\)/);
+  assert.match(engine,/directSuppressedFrames_\.fetch_add/);
+  assert.match(engine,/directRouteProtection/);
+  assert.match(host,/engine_\.beginManualAudioSetup\(\)/);
+  assert.match(host,/engine_\.finishManualAudioSetup\(\)/);
+  assert.match(host,/engine_\.directRouteAuthorized\(\)/);
+});
+
+test('unexpected ASIO/WASAPI switch notifies user once from control thread',()=>{
+  assert.match(engine,/unexpectedDirectRoute\(\) const noexcept/);
+  assert.match(host,/DIRECT_ROUTE_BLOCKED/);
+  assert.match(host,/unexpectedRouteNoticeSent_/);
+  assert.match(host,/confirm your ASIO\/WASAPI device in AUDIO SETUP/);
+});
+
+test('P1: dry-through live microphone is NEVER exempted from DIRECT route fencing',()=>{
+  const callback=engine.slice(engine.indexOf('void audioDeviceIOCallbackWithContext ('));
+  const begin=callback.indexOf('const auto activeDiagnosticRoute =');
+  const end=callback.indexOf('const auto cycle = handoff_.beginCycle();');
+  assert.ok(begin>=0 && end>begin);
+  const gate=callback.slice(begin,end);
+  assert.match(gate,/activeDiagnosticRoute != armix::diagnostics::Route::outputOnlyTone/);
+  assert.match(gate,/activeDiagnosticRoute != armix::diagnostics::Route::captureOnly/);
+  assert.doesNotMatch(gate,/activeDiagnosticRoute == armix::diagnostics::Route::normal/);
+  assert.match(gate,/directFence_\.permitted\(\)/);
+  assert.match(gate,/FloatVectorOperations::clear/);
+  assert.match(host,/diagnosticRoute != armix::diagnostics::Route::outputOnlyTone/);
+  assert.match(host,/diagnosticRoute != armix::diagnostics::Route::captureOnly/);
+});

@@ -9,6 +9,7 @@
 #include "DiagnosticTone.h"
 #include "../engine/device/JuceIndependentClockDevice.h"
 #include "../engine/device/AsioPriorityDeviceManager.h"
+#include "../engine/device/DirectRouteFence.h"
 #include "../engine/device/WasapiEndpointIdentityGuard.h"
 #include "../engine/core/RealtimeHealthHistogram.h"
 #include <array>
@@ -67,6 +68,7 @@ public:
         // The former MONITOR enable gate caused silent master/output confusion.
         // Panic OUTPUT MUTE remains available at all times.
         monitor_.store (true);
+        directFence_.suspend(); // silence until the selected backend is verified
         // Register the host callback BEFORE opening any physical device.
         // If saved ASIO is absent/busy and startup deliberately fails closed,
         // AUDIO SETUP can still select a replacement and JUCE will call the
@@ -125,11 +127,17 @@ public:
                 return "Saved audio route identity changed: choose an explicit ASIO/WASAPI device in AUDIO SETUP";
             }
         }
+        if (!approveDirectRoute())
+        {
+            deviceManager_.closeAudioDevice();
+            return "Device backend opened without valid full-duplex identity";
+        }
         return {};
     }
 
     void stop()
     {
+        directFence_.suspend();
         independent_.close();
         detach();
         handoff_.resetAfterStop (graphOwned_.get());
@@ -148,6 +156,16 @@ public:
     // Emergency output mute, not a prerequisite for receiving audio.
     void setOutputMuted (bool mute) noexcept { monitor_.store (!mute, std::memory_order_release); }
     bool isOutputMuted() const noexcept { return !monitor_.load (std::memory_order_acquire); }
+    bool directRouteAuthorized() const noexcept { return directFence_.permitted(); }
+    bool unexpectedDirectRoute() const noexcept
+    {
+        return directFence_.fault() == armix::device::DirectRouteFence::Fault::unexpectedRoute;
+    }
+    // Native AUDIO SETUP is the explicit user authorization boundary.
+    // Suppress any live output while selecting/changing a device, even if JUCE
+    // starts its new callback before the selector window is closed.
+    void beginManualAudioSetup() noexcept { directFence_.suspend(); }
+    bool finishManualAudioSetup() { return approveDirectRoute(); }
 
     // Device changes are exclusively CONTROL-THREAD transactions.
     // Normal ASIO / verified single-clock devices remain on the zero-SRC
@@ -208,6 +226,11 @@ public:
                 return "Direct device restoration failed: " +
                     (error.isNotEmpty() ? error : juce::String ("Expected capture/render endpoints or channel masks were not reopened"));
             }
+            if (!resumeVerifiedDirectRoute())
+            {
+                setOutputMuted (true);
+                return "DIRECT backend changed during restoration; user must select a device";
+            }
             savedDirectSetup_.reset();
             attach();
             return {};
@@ -226,6 +249,7 @@ public:
         const auto identity = armix::device::WasapiEndpointIdentityGuard::resolve (
             original.inputDeviceName, original.outputDeviceName);
         if (!identity.ok()) return "Independent Windows endpoint preflight failed: " + identity.error;
+        directFence_.suspend(); // independent path bypasses only this DIRECT fence
         detach();
         deviceManager_.closeAudioDevice();
         savedDirectSetup_ = original;
@@ -239,8 +263,12 @@ public:
             const bool restored = restore.isEmpty() && verifyRestoredDirectDevice (original);
             if (restored)
             {
-                savedDirectSetup_.reset();
-                attach();
+                if (resumeVerifiedDirectRoute())
+                {
+                    savedDirectSetup_.reset();
+                    attach();
+                }
+                else setOutputMuted (true);
             }
             else setOutputMuted (true);
             return "Independent clock startup failed: " + error
@@ -340,6 +368,11 @@ public:
             savedLiveSetup_ = original;
         }
         diagnosticRoute_.store (wanted, std::memory_order_release);
+        if (wanted == Route::normal && !resumeVerifiedDirectRoute())
+        {
+            setOutputMuted (true);
+            return "Diagnostic DIRECT route identity changed; choose a device in AUDIO SETUP";
+        }
         return {};
     }
 
@@ -657,6 +690,13 @@ public:
         o->setProperty ("adaptiveClockMode", dual ? "INDEPENDENT_WASAPI_RENDER_MASTER" : "DIRECT");
         const auto backend = dual ? juce::String ("Windows Audio")
                                   : deviceManager_.getCurrentAudioDeviceType();
+        o->setProperty ("directRouteAuthorized", directFence_.permitted());
+        o->setProperty ("directRouteFault",
+            armix::device::DirectRouteFence::reason (directFence_.fault()));
+        o->setProperty ("directSuppressedFrames",
+            static_cast<double> (directSuppressedFrames_.load (std::memory_order_relaxed)));
+        o->setProperty ("directRouteProtection",
+            "PINNED_BACKEND_AND_DRIVER_NAME_NOT_HARDWARE_ID");
         o->setProperty ("liveBackendClass", dual ? "WASAPI_BRIDGED_ASRC"
             : backend == "ASIO" ? "ASIO_DIRECT_ZERO_EXTRA_FIFO"
             : backend.startsWith ("Windows Audio") ? "WASAPI_DIRECT_ZERO_EXTRA_FIFO"
@@ -794,8 +834,30 @@ public:
     }
 
 private:
+    bool approveDirectRoute()
+    {
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if (device == nullptr || device->getActiveInputChannels().isZero()
+            || device->getActiveOutputChannels().isZero())
+            return false;
+        const auto backend=device->getTypeName();
+        const auto name=device->getName();
+        return directFence_.approve (backend.toRawUTF8(), name.toRawUTF8());
+    }
+    bool resumeVerifiedDirectRoute()
+    {
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if (device == nullptr || device->getActiveInputChannels().isZero()
+            || device->getActiveOutputChannels().isZero())
+            return false;
+        const auto backend=device->getTypeName();
+        const auto name=device->getName();
+        return directFence_.resumeExpected (backend.toRawUTF8(), name.toRawUTF8());
+    }
     static constexpr int maxFrames = 8192;
     armix::device::AsioPriorityDeviceManager deviceManager_;
+    armix::device::DirectRouteFence directFence_;
+    std::atomic<std::uint64_t> directSuppressedFrames_ {0};
     juce::String startupFallbackReason_; // control-thread-only startup diagnostics
     armix::device::JuceIndependentClockDevice independent_;
     std::optional<juce::AudioDeviceManager::AudioDeviceSetup> savedDirectSetup_;
@@ -887,6 +949,12 @@ private:
 
     void audioDeviceAboutToStart (juce::AudioIODevice* d) override
     {
+        if (!independent_.active())
+        {
+            const auto backend=d->getTypeName();
+            const auto name=d->getName();
+            directFence_.observeStart (backend.toRawUTF8(), name.toRawUTF8());
+        }
         deviceStartCount_.fetch_add (1, std::memory_order_relaxed);
         sampleRateHz_ = juce::jmax (1.0, d->getCurrentSampleRate());
         diagnosticTone_.prepare (sampleRateHz_); // device stopped; no RT allocation
@@ -926,9 +994,29 @@ private:
         const float* const* inputs, int inputChannels, float* const* outputs,
         int outputChannels, int samples, const juce::AudioIODeviceCallbackContext&) override
     {
+        if (samples <= 0) return;
+        // Fail closed if JUCE silently rerouted ASIO/WASAPI after hotplug or
+        // while the user is changing devices. Atomic gate only: no name hash,
+        // allocations, OS calls or device restart on the realtime callback.
+        // An independent WASAPI bridge has its own verified endpoint guard.
+        const auto activeDiagnosticRoute = diagnosticRoute_.load (std::memory_order_relaxed);
+        // DRY_THROUGH still routes a live microphone to the hardware output:
+        // it MUST use the same DIRECT authorization fence as NORMAL. Only
+        // genuinely isolated OUTPUT_ONLY_TONE / CAPTURE_ONLY tests may bypass
+        // the full-duplex route fence while the driver is one-sided.
+        if (!independent_.active()
+            && activeDiagnosticRoute != armix::diagnostics::Route::outputOnlyTone
+            && activeDiagnosticRoute != armix::diagnostics::Route::captureOnly
+            && !directFence_.permitted())
+        {
+            for (int c=0; c<outputChannels; ++c)
+                if (outputs[c]) juce::FloatVectorOperations::clear (outputs[c], samples);
+            directSuppressedFrames_.fetch_add (static_cast<std::uint64_t> (samples),
+                                               std::memory_order_relaxed);
+            return;
+        }
         const auto cycle = handoff_.beginCycle();
         const std::uint64_t beginUs = clockMicros();
-        if (samples <= 0) return;
         const double periodUs = 1000000.0 * static_cast<double> (samples) / sampleRateHz_;
         // Scheduling gaps only suggest instability: pause/suspend and WASAPI
         // callback scheduling can create false positives. Never label xruns.

@@ -15,6 +15,7 @@
 #include <optional>
 #include <memory>
 #include <chrono>
+#include <functional>
 
 namespace
 {
@@ -74,9 +75,11 @@ public:
 class AudioSetupWindow final : public juce::DocumentWindow
 {
 public:
-    explicit AudioSetupWindow (juce::AudioDeviceManager& manager)
+    explicit AudioSetupWindow (juce::AudioDeviceManager& manager,
+                               std::function<void()> onClosed)
         : juce::DocumentWindow ("AR MIX — ASIO / WASAPI Setup",
-                                juce::Colour (0xff14212a), allButtons)
+                                juce::Colour (0xff14212a), allButtons),
+          onClosed_ (std::move (onClosed))
     {
         setUsingNativeTitleBar (true);
         setResizable (true, true);
@@ -87,6 +90,18 @@ public:
         centreWithSize (740, 590);
     }
     void closeButtonPressed() override { setVisible (false); }
+    void visibilityChanged() override
+    {
+        if (isVisible()) wasVisible_ = true;
+        else if (wasVisible_)
+        {
+            wasVisible_ = false;
+            if (onClosed_) onClosed_();
+        }
+    }
+private:
+    std::function<void()> onClosed_;
+    bool wasVisible_ = false;
 };
 
 class ConsoleWindow final : public juce::DocumentWindow, private juce::Timer, private juce::ChangeListener
@@ -157,6 +172,7 @@ private:
     bool setupLaunching_ = false;
     unsigned int timerTicks_ = 0;
     bool deviceSettingsDirty_ = false;
+    bool unexpectedRouteNoticeSent_ = false;
     armix::device::DirectRestoreBackoff directRestore_;
     juce::String lastDirectRestoreError_;
     juce::var pendingPresetUI_;
@@ -330,6 +346,7 @@ private:
     {
         diagnostics_.record ("SETUP", "Open audio device setup");
         if (setupLaunching_) return;
+        engine_.beginManualAudioSetup();
 
         // The native JUCE device list is cached after first construction:
         // reopening the settings window avoids repeating full widget setup.
@@ -346,7 +363,24 @@ private:
         {
             if (safe == nullptr) return;
             safe->audioSetupWindow_ =
-                std::make_unique<AudioSetupWindow> (safe->engine_.devices());
+                std::make_unique<AudioSetupWindow> (safe->engine_.devices(),
+                    [safe]
+                    {
+                        if (safe == nullptr) return;
+                        if (safe->engine_.finishManualAudioSetup())
+                        {
+                            safe->deviceSettingsDirty_ = true;
+                            safe->startupError_.clear();
+                            safe->diagnostics_.record ("DIRECT_ROUTE_APPROVED",
+                                "User confirmed selected ASIO/WASAPI backend in AUDIO SETUP");
+                        }
+                        else
+                        {
+                            safe->diagnostics_.record ("DIRECT_ROUTE_REJECTED",
+                                "No valid full-duplex device; audio remains gated");
+                            safe->emitNotice ("Choose a working capture and render device. Audio remains muted.", true);
+                        }
+                    });
             safe->audioSetupWindow_->setVisible (true);
             safe->audioSetupWindow_->toFront (true);
             safe->setupLaunching_ = false;
@@ -758,6 +792,22 @@ private:
     void timerCallback() override
     {
         ++timerTicks_;
+        // ONE actionable notice per unexpected DIRECT reroute. The audio
+        // callback has already zero-filled output atomically; status, log and
+        // WebView notifications belong only on this JUCE control timer.
+        const auto diagnosticRoute = engine_.diagnosticRoute();
+        const bool blocked = engine_.unexpectedDirectRoute()
+            && !engine_.independentClockActive()
+            && diagnosticRoute != armix::diagnostics::Route::outputOnlyTone
+            && diagnosticRoute != armix::diagnostics::Route::captureOnly;
+        if (blocked && !unexpectedRouteNoticeSent_)
+        {
+            unexpectedRouteNoticeSent_ = true;
+            diagnostics_.record ("DIRECT_ROUTE_BLOCKED",
+                "A device or backend changed unexpectedly; host output held at zero");
+            emitNotice ("Audio device changed unexpectedly. Live output muted; confirm your ASIO/WASAPI device in AUDIO SETUP.", true);
+        }
+        if (!blocked) unexpectedRouteNoticeSent_ = false;
         // Audio thread publishes only fault flags. A bounded message-thread
         // restore transaction handles device failures without hot-plug spin.
         serviceDirectRestore();
@@ -781,6 +831,8 @@ private:
             // DeviceManager signals even when a temporary capture-only /
             // output-only route is selected. Never persist that test route.
             if (!engine_.hasTemporaryDiagnosticDevice() && !engine_.independentClockActive() &&
+                engine_.directRouteAuthorized() &&
+                (audioSetupWindow_ == nullptr || !audioSetupWindow_->isVisible()) &&
                 engine_.devices().getCurrentAudioDevice() != nullptr)
             if (auto xml = engine_.devices().createStateXml())
             {
