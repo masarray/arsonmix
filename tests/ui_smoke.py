@@ -731,6 +731,30 @@ async def main():
                     clip:m.querySelector('.clip-led')!==null};});
         }""")
         assert len(vu_geometry)==16,vu_geometry
+        # Reference-inspired hierarchy MUST be [VU left] [rail middle] [scale right].
+        module_layout=await page.evaluate("""()=>{
+          return [...document.querySelectorAll('#mixer > .strip')].map((strip)=>{
+            const z=strip.querySelector('.fader-zone'),bank=z.querySelector('.vu-bank'),rail=z.querySelector('.fader'),ruler=z.querySelector('.scale');
+            const box=x=>{const r=x.getBoundingClientRect();return {l:r.left,r:r.right,t:r.top,b:r.bottom,w:r.width,h:r.height};};
+            const meterItems=[...bank.querySelectorAll('.meter-unit')];
+            return {master:strip.id==='masterLeft',dom:[...z.children].map(x=>x.classList.contains('vu-bank')?'VU':x.classList.contains('fader')?'FADER':x.classList.contains('scale')?'SCALE':'OTHER'),
+                    strip:box(strip),zone:box(z),bank:box(bank),rail:box(rail),ruler:box(ruler),
+                    meters:meterItems.map(box),count:meterItems.length};
+          });
+        }""")
+        assert len(module_layout)==11,module_layout
+        assert [s['count'] for s in module_layout]==[1]*6+[2]*5,module_layout
+        for s in module_layout:
+            assert s['dom']==['VU','FADER','SCALE'],s
+            assert abs(s['bank']['w']-30)<.3 and abs(s['ruler']['w']-20)<.3,s
+            assert s['bank']['r']+2<s['rail']['l'] and s['rail']['r']+2<s['ruler']['l'],s
+            assert s['bank']['l']>=s['zone']['l']-1 and s['ruler']['r']<=s['zone']['r']+1,s
+            assert all(abs(m['w']-14)<.3 for m in s['meters']),s
+            assert s['rail']['w']>=36 and s['rail']['h']>150,s
+        # Mono and stereo strips share an identically located central rail.
+        rail_x=[s['rail']['l']-s['zone']['l'] for s in module_layout[:10]]
+        assert max(rail_x)-min(rail_x)<1,rail_x
+
         assert all(abs(v['unit']-14)<.3 and abs(v['meter']-14)<.3 and abs(v['fill']-10)<.6 and v['clip'] for v in vu_geometry),vu_geometry
         assert len(set(v['gradient'] for v in vu_geometry))==1, 'VU palette must match across all L/R/mono bars'
         await page.locator('#masterMode').click()

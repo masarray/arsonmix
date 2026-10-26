@@ -72,3 +72,36 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
  color:#141014!important;
  text-shadow:none!important;
 }
+
+/* Reference-audited channel strip: [VU bank] [fader] [dB ruler].
+   The fixed two-slot bank stops MONO/STEREO switches from moving the rail.
+   One shared module geometry, for all ten channels and MASTER. */
+#app #mixer .fader-zone{
+ display:flex;align-items:stretch;gap:4px;
+}
+#app #mixer .fader-zone .vu-bank{
+ box-sizing:border-box;display:flex;align-items:stretch;
+ flex:0 0 30px;width:30px;min-width:30px;max-width:30px;
+ gap:2px;justify-content:flex-end;
+ min-height:0;
+}
+#app #mixer .fader-zone .vu-bank .meter-unit{
+ flex:0 0 14px;width:14px;min-width:14px;max-width:14px;
+ height:100%;
+}
+#app #mixer .fader-zone .fader{
+ flex:1 1 auto;min-width:36px;
+}
+/* Remove old MASTER-only ruler compensation: every strip has the same width. */
+#app #mixer .fader-zone .scale,
+#app #masterLeft .master-fader-zone .scale{
+ box-sizing:border-box;display:flex;flex:0 0 20px;width:20px;min-width:20px;
+ text-align:left;padding:0 0 1px;
+ background-position:left 2px top;
+ font:9px/1 Consolas,monospace;
+}
+/* The clip LED, bars and labels stay native 14px and obey one shared painter. */
+#app #mixer .fader-zone .vu-bank .meter-unit .meter{
+ width:14px;min-width:14px;height:calc(100% - 11px);
+}
+/* Do not perturb the pressed fader PNG, drag travel, native DSP or meter cadence. */
