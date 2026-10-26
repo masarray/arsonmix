@@ -161,7 +161,10 @@ async def main():
         assert abs(down['r']['y']-normal['y']-1)<=.2,down
         await page.mouse.up()
         await page.wait_for_timeout(125)
-        assert await nav.evaluate("(e)=>getComputedStyle(e).transform")=='matrix(1, 0, 0, 1, 0, 0)'
+        restored=await nav.evaluate("""e=>({t:getComputedStyle(e).transform,
+          r:e.getBoundingClientRect().toJSON()})""")
+        assert restored['t'] in ('none','matrix(1, 0, 0, 1, 0, 0)'),restored
+        assert all(abs(restored['r'][k]-normal[k])<=.2 for k in ('x','y','width','height')),restored
         await page.mouse.move(1,1)
         # Restore factory FX chain so this visual-button test cannot change later FX tests.
         await page.evaluate("""()=>{
