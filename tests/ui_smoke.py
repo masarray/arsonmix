@@ -165,6 +165,10 @@ async def main():
           r:e.getBoundingClientRect().toJSON()})""")
         assert restored['t'] in ('none','matrix(1, 0, 0, 1, 0, 0)'),restored
         assert all(abs(restored['r'][k]-normal[k])<=.2 for k in ('x','y','width','height')),restored
+        # The mouse-up is a genuine FX RACK navigation click; restore MIX.
+        assert await page.locator('#rackWorkspace').is_visible()
+        await page.locator('[data-view="MIX"]').click()
+        assert await page.locator('#mixer').is_visible()
         await page.mouse.move(1,1)
         # Restore factory FX chain so this visual-button test cannot change later FX tests.
         await page.evaluate("""()=>{
