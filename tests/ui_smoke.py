@@ -72,6 +72,10 @@ async def main():
         assert shell['mainHeight']>400,shell
         # Fixed-height, composited meters; peak only mutates when peak value changes.
         meter=await page.evaluate("""()=>{
+          // Freeze synthetic preview ticks while probing deterministic peak-hold.
+          // Otherwise the 25 Hz real-clock demo can interleave with fake test timestamps.
+          if(meterTimer){clearTimeout(meterTimer);meterTimer=0}
+          if(meterRAF){cancelAnimationFrame(meterRAF);meterRAF=0}
           const fill=document.querySelector('[data-meter="0"]');
           const peak=fill.closest('.meter').querySelector('.meter-peak');
           const slot=fill.closest('.meter');
@@ -127,6 +131,7 @@ async def main():
           return result;
         }""")
         assert restored=={'peak':'45%','clip':True},restored
+        await page.evaluate('scheduleDemoMeter()')
         # No per-event idle fader work: drag listener is attached only on pointerdown.
         assert await page.evaluate('drag===null')
         # All 12 PAN knobs have been replaced by horizontal slider tracks.
