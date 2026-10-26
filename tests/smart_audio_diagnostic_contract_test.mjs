@@ -76,6 +76,24 @@ test('P0 ASIO native COM-driver registration attestation runs only on control pl
   assert.match(cmake,/AsioDriverClassRegistryAttestation/);
   assert.match(flow,/ARMixAsioRegistryIdentityTests/);
 });
+test('P0 render callback cadence uses previous quantum and labels provenance rather than inventing XRUNs',()=>{
+  const cadence=read('engine/core/CallbackCadenceEvidence.h');
+  const cadenceTest=read('tests/callback_cadence_evidence_test.cpp');
+  assert.match(cadence,/previousFrames_/);
+  assert.match(cadence,/1000000\.0 \* previousFrames \/ rateHz_/);
+  assert.match(cadence,/NOT_RENDER_XRUN/);
+  assert.match(cadenceTest,/100000/);
+  assert.match(cadenceTest,/C::Kind::clockRegression/);
+  assert.match(engine,/cadence_\.prepare \(sampleRateHz_\)/);
+  assert.match(engine,/cadence_\.observe \(beginUs, samples\)/);
+  assert.match(engine,/callbackCadenceProvenance/);
+  assert.match(engine,/callbackCadenceComparedIntervals/);
+  assert.match(engine,/callbackCadenceClockRegressions/);
+  assert.match(host,/START-to-START estimates use PREVIOUS callback frame count/);
+  assert.match(cmake,/P0RenderCallbackVariableQuantumCadence/);
+  assert.match(flow,/ARMixCadenceTests/);
+  assert.doesNotMatch(engine,/previousCallbackStartUs_/);
+});
 test('telemetry distinguishes measured host budget fractions from unobservable output underrun',()=>{
   assert.match(engine,/realtimeHistogram_\.observe \(elapsedUs, periodUs\)/);
   assert.match(engine,/callbackP95BudgetUpperPct/);
