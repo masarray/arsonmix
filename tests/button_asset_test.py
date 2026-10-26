@@ -1,4 +1,4 @@
-"""Contract: shared Button 180 ON/OFF optics with exact OFF neutral-gray tokens."""
+"""Contract: shared OFF/ON Button 180 rest skin, transient 1px tactile press."""
 from pathlib import Path
 import re
 root=Path(__file__).resolve().parents[1]
@@ -19,7 +19,7 @@ for rule in (
  '0 0 0 1px var(--b180-border)',
  'box-shadow:var(--b180-shadow-surface)',
  'transform:translateY(0px)!important',
- 'transition:background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out, box-shadow 90ms ease-out, filter 120ms ease-out',
+ 'transition:background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out, box-shadow 90ms ease-out, filter 120ms ease-out, transform 75ms ease-out',
  'background:var(--b180-color)',
  'display:inline-flex',
  'inset 0 3px 6px -1px rgba(0,0,0,.72)'
@@ -50,8 +50,12 @@ assert 'border-color:#527789!important' not in css
 assert css.count('inset 0 3px 6px -1px rgba(0,0,0,.72)') == 1
 assert 'box-shadow:var(--b180-shadow-surface)!important' in css
 assert 'transform:translateY(3px)!important' not in css
+assert 'transform:translateY(1px)!important' in css
+assert 'inset 0 4px 8px -1px rgba(0,0,0,.82)' in css
+assert '0 0 0 rgba(0,0,0,0)' in css
+assert css.count('box-shadow:var(--b180-shadow-surface)!important') == 1
 assert 'background:linear-gradient(180deg,#526a78' not in css
 assert '0 0 8px rgba(60,191,230,.24)' not in css
 assert 'data-send' not in js and 'data-send' not in css
 assert 'a:true,b:false' not in js
-print('PASS: Button 180 OFF/ON shared shadow+geometry, exact gray palette, Inter and HTML parity')
+print('PASS: OFF/ON identical resting skin, transient 1px tactile press, gray palette and HTML parity')
