@@ -48,6 +48,19 @@ async def main():
         assert meter['first']['peak']==meter['held'] and meter['latest']=='45%',meter
         assert meter['ratio']=='0.45' and meter['heightBefore']==meter['heightAfter'],meter
         assert meter['transform']!='none' and meter['shape']>0,meter
+        # Full mixer rebuild must restore held peaks and clip state on fresh DOM nodes.
+        restored=await page.evaluate("""()=>{
+          clipLatch['0']=true;
+          renderMixer();
+          updateMeterVisual('0',5,10048);
+          const slot=document.querySelector('[data-meter="0"]').closest('.meter');
+          const result={peak:slot.querySelector('.meter-peak').style.bottom,
+            clip:slot.querySelector('.clip-led').classList.contains('latched')};
+          clipLatch['0']=false;
+          slot.querySelector('.clip-led').classList.remove('latched');
+          return result;
+        }""")
+        assert restored=={'peak':'45%','clip':True},restored
         # No per-event idle fader work: drag listener is attached only on pointerdown.
         assert await page.evaluate('drag===null')
         # All 12 PAN knobs have been replaced by horizontal slider tracks.

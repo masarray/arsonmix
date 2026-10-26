@@ -40,6 +40,13 @@ function meterNode(key){
  const slot=fill.closest('.meter');
  const entry={fill,peak:slot?.querySelector('.meter-peak'),
               clip:slot?.querySelector('.clip-led'),level:-1,peakValue:-1};
+ // DOM replacement must not erase a held peak or a latched CLIP lamp.
+ const held=peakHold[key];
+ if(held&&entry.peak){
+   entry.peakValue=Math.round(held.value*10);
+   entry.peak.style.bottom=(entry.peakValue/10)+'%';
+ }
+ if(clipLatch[key])entry.clip?.classList.add('latched');
  meterNodes.set(key,entry);
  return entry;
 }
