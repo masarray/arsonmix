@@ -15,6 +15,16 @@ ArSonMix is a Windows-first digital mixer and low-latency live VST3 host project
 
 **Pages builds the canonical standalone GUI from `main`, after the main-branch Chromium smoke test succeeds.** The last visual sign-off is GUI v0.8; a later change must preserve the accepted design or obtain another explicit review.
 
+## Proposed Multi-Theme Architecture (design checkpoint; not yet implemented)
+
+A layout-safe Appearance system is planned to let users switch between **Studio Default** (approved GitHub appearance) and **Brushed Metal** (silver hardware, black-blue glossy FX glass), while the canonical GUI remains the sole owner of strip geometry and interactions.
+
+- [Theme Engine ARD v1.0](docs/ARD_MULTITHEME_ENGINE_V1_2026-10-26.md)
+- [Implementation PR ladder and verification strategy](docs/THEME_ENGINE_IMPLEMENTATION_PLAN_2026-10-26.md)
+- [Tracking epic #44](https://github.com/masarray/arsonmix/issues/44)
+
+**Status:** docs/ARD only. Neither runtime theme selector nor token engine exists in `main` yet. Work proceeds by individually validated T0–T7 PRs; current GUI lock, audio/native engine and Pages publishing stay unchanged.
+
 ## Approved GUI v0.8 features
 
 - 12 color-coded input strips plus aligned stereo **MASTER strip #13**; full-height amber selected-strip highlight.
