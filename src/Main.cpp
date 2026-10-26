@@ -966,6 +966,13 @@ private:
         {
             if (engine_.isGraphSwitchPending())
                 return emitNotice ("Finish FX preset recall before starting Orbit.", true);
+            const auto requestedPluginId = args.getProperty ("pluginId", {}).toString();
+            const auto chain = engine_.chainState();
+            const auto* currentSlots = chain.getArray();
+            if (requestedPluginId.isEmpty() || currentSlots == nullptr || slot < 0 ||
+                slot >= currentSlots->size() ||
+                (*currentSlots)[slot].getProperty ("id", {}).toString() != requestedPluginId)
+                return emitNotice ("FX chain changed. Reopen ORBIT to select the current plugin.", true);
             const auto paramValue = args.getProperty ("parameterIndex", -1);
             const auto secondsValue = args.getProperty ("seconds", 20.0);
             const auto reverseValue = args.getProperty ("reverse", false);
