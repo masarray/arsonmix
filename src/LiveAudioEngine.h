@@ -9,6 +9,7 @@
 #include "DiagnosticTone.h"
 #include "../engine/device/JuceIndependentClockDevice.h"
 #include "../engine/device/AsioPriorityDeviceManager.h"
+#include "../engine/device/AsioRegistryIdentityProbe.h"
 #include "../engine/device/DirectRouteFence.h"
 #include "../engine/device/WasapiEndpointIdentityGuard.h"
 #include "../engine/core/RealtimeHealthHistogram.h"
@@ -82,6 +83,8 @@ public:
         // Panic OUTPUT MUTE remains available at all times.
         monitor_.store (true);
         directFence_.suspend(); // silence until the selected backend is verified
+        asioPinnedRegistration_ = {};
+        asioRegistrationScope_ = "NONE";
         // Register the host callback BEFORE opening any physical device.
         // If saved ASIO is absent/busy and startup deliberately fails closed,
         // AUDIO SETUP can still select a replacement and JUCE will call the
@@ -93,6 +96,24 @@ public:
             && savedSettings->hasTagName ("DEVICESETUP");
         const auto expectedBackend = savedRoute
             ? savedSettings->getStringAttribute ("deviceType") : juce::String();
+        // Saved ASIO device labels are never sufficient to trust a registered
+        // COM driver class. The native registry lookup mirrors pinned JUCE's
+        // SOFTWARE/ASIO view. Recheck after JUCE has actually opened it.
+        // This comparison is a control-thread transaction, not a callback.
+        std::optional<armix::device::AsioRegistrationPolicy::Identity> savedAsioPreflight;
+        if (savedRoute && expectedBackend == "ASIO")
+        {
+            auto name = savedSettings->getStringAttribute ("audioDeviceName");
+            if (name.isEmpty()) name = savedSettings->getStringAttribute ("audioOutputDeviceName");
+            if (name.isEmpty()) name = savedSettings->getStringAttribute ("audioInputDeviceName");
+            const auto identity = armix::device::AsioRegistryIdentityProbe::resolve (
+                std::wstring (name.toWideCharPointer()));
+            if (!identity.registration.ok())
+                return "Saved ASIO registration preflight rejected: " +
+                    juce::String (armix::device::AsioRegistrationPolicy::reason (
+                        identity.registration.error));
+            savedAsioPreflight = identity.registration.identity;
+        }
         // Saved explicit device choice MUST NOT be silently replaced by
         // JUCE's selectDefaultDeviceOnFailure path (e.g. ASIO -> WASAPI).
         auto error = deviceManager_.initialise (1, 2, savedSettings, !savedRoute);
@@ -143,14 +164,27 @@ public:
         if (!approveDirectRoute())
         {
             deviceManager_.closeAudioDevice();
-            return "Device backend opened without valid full-duplex identity";
+            return "Device backend opened without valid full-duplex identity or ASIO registry class";
         }
+        if (savedAsioPreflight &&
+            !savedAsioPreflight->sameDriverClass(asioPinnedRegistration_))
+        {
+            directFence_.suspend();
+            asioPinnedRegistration_ = {};
+            asioRegistrationScope_ = "SAVED_ASIO_DRIVER_REGISTRATION_CHANGED_DURING_OPEN";
+            deviceManager_.closeAudioDevice();
+            return "Saved ASIO driver CLSID/key changed between registration preflight and open";
+        }
+        if (savedAsioPreflight)
+            asioRegistrationScope_ = "SAVED_PREFLIGHT_POSTOPEN_REGISTRATION_CONSISTENT";
         return {};
     }
 
     void stop()
     {
         directFence_.suspend();
+        asioPinnedRegistration_ = {};
+        asioRegistrationScope_ = "NONE";
         independent_.close();
         detach();
         handoff_.resetAfterStop (graphOwned_.get());
@@ -712,6 +746,14 @@ public:
             "PINNED_BACKEND_AND_DRIVER_NAME_NOT_HARDWARE_ID");
         o->setProperty ("directRouteChannelMapGuard",
             "EXACT_ACTIVE_INPUT_AND_OUTPUT_CHANNEL_BITMASKS");
+        o->setProperty ("asioRegistryAttestation", asioRegistrationScope_);
+        o->setProperty ("asioRegistryIdentityProvenance",
+            "WINDOWS_ASIO_REGISTRY_CLSID_NOT_PHYSICAL_HARDWARE_OR_OPEN_COM_OBJECT");
+        const auto asioHash = armix::device::AsioRegistryIdentityProbe::diagnosticFingerprint (
+            asioPinnedRegistration_);
+        o->setProperty ("asioRegisteredClassHash", asioHash != 0
+            ? juce::String::toHexString (static_cast<juce::int64> (asioHash))
+            : juce::String());
         o->setProperty ("liveBackendClass", dual ? "WASAPI_BRIDGED_ASRC"
             : backend == "ASIO" ? "ASIO_DIRECT_ZERO_EXTRA_FIFO"
             : backend.startsWith ("Windows Audio") ? "WASAPI_DIRECT_ZERO_EXTRA_FIFO"
@@ -865,8 +907,31 @@ private:
         const auto name=device->getName();
         const auto inputMask=device->getActiveInputChannels().toString (16);
         const auto outputMask=device->getActiveOutputChannels().toString (16);
-        return directFence_.approve (backend.toRawUTF8(), name.toRawUTF8(),
-                                     inputMask.toRawUTF8(), outputMask.toRawUTF8());
+        armix::device::AsioRegistrationPolicy::Identity candidate;
+        if (backend == "ASIO")
+        {
+            const auto selected = armix::device::AsioRegistryIdentityProbe::resolve (
+                std::wstring (name.toWideCharPointer()));
+            if (!selected.registration.ok())
+            {
+                directFence_.suspend();
+                asioRegistrationScope_ = juce::String (
+                    armix::device::AsioRegistrationPolicy::reason (selected.registration.error));
+                return false;
+            }
+            candidate = selected.registration.identity;
+        }
+        const bool approved = directFence_.approve (
+            backend.toRawUTF8(), name.toRawUTF8(),
+            inputMask.toRawUTF8(), outputMask.toRawUTF8());
+        if (approved)
+        {
+            asioPinnedRegistration_ = std::move(candidate);
+            asioRegistrationScope_ = backend == "ASIO"
+                ? "POSTOPEN_REGISTERED_ASIO_DRIVER_CLASS_PINNED"
+                : "NOT_ASIO";
+        }
+        return approved;
     }
     bool resumeVerifiedDirectRoute()
     {
@@ -878,12 +943,25 @@ private:
         const auto name=device->getName();
         const auto inputMask=device->getActiveInputChannels().toString (16);
         const auto outputMask=device->getActiveOutputChannels().toString (16);
+        if (backend == "ASIO")
+        {
+            const auto selected = armix::device::AsioRegistryIdentityProbe::resolve (
+                std::wstring (name.toWideCharPointer()));
+            if (!selected.registration.ok() ||
+                !asioPinnedRegistration_.sameDriverClass(selected.registration.identity))
+                return false; // no new ASIO driver class without explicit user approval
+        }
+        else if (asioPinnedRegistration_.valid()) return false;
         return directFence_.resumeExpected (backend.toRawUTF8(), name.toRawUTF8(),
                                             inputMask.toRawUTF8(), outputMask.toRawUTF8());
     }
     static constexpr int maxFrames = 8192;
     armix::device::AsioPriorityDeviceManager deviceManager_;
     armix::device::DirectRouteFence directFence_;
+    // Control-thread only; retain full class identity for exact comparison,
+    // publish correlation HASH only. Never read registry in audio callback.
+    armix::device::AsioRegistrationPolicy::Identity asioPinnedRegistration_;
+    juce::String asioRegistrationScope_ {"NONE"};
     std::atomic<std::uint64_t> directSuppressedFrames_ {0};
     juce::String startupFallbackReason_; // control-thread-only startup diagnostics
     armix::device::JuceIndependentClockDevice independent_;
