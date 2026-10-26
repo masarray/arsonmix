@@ -690,9 +690,41 @@ async def main():
         assert await page.locator('#pluginModal').is_hidden()
         assert await page.locator('#masterLufs').count()==1
         assert await page.locator('#masterDbtp').count()==1
-        assert await page.locator('[data-clip]').count()==12  # 10 source clips + MASTER L/R
+        assert await page.locator('[data-clip]').count()==16  # 6 mono + 4 stereo pairs + MASTER L/R
         assert await page.locator('[data-meter="masterL"]').count()==1
         assert await page.locator('[data-meter="masterR"]').count()==1
+        # Each visible source has its configured mono/stereo topology.
+        topology=await page.evaluate("""()=>{
+          const channels=[...document.querySelectorAll('#mixer > [data-strip]')];
+          const units=channels.map((strip,i)=>({stereo:channelsState(i),keys:[...strip.querySelectorAll('[data-meter]')].map(e=>e.dataset.meter)}));
+          function channelsState(i){return channels[i].querySelectorAll('.meter-unit').length===2}
+          return {units,master:[...document.querySelectorAll('#masterLeft .meter-unit [data-meter]')].map(e=>e.dataset.meter)};
+        }""")
+        assert [m['keys'] for m in topology['units']]==[[str(i)] for i in range(6)]+[[f'{i}L',f'{i}R'] for i in range(6,10)],topology
+        assert topology['master']==['masterL','masterR'],topology
+        # Shared physical LED width: 14px case, equal inner fill and clip caps.
+        vu_geometry=await page.evaluate("""()=>{
+          const nodes=[...document.querySelectorAll('#mixer .meter-unit')];
+          return nodes.map(unit=>{const m=unit.querySelector('.meter'),fill=m.querySelector('.meter-fill');
+            const a=unit.getBoundingClientRect(),b=m.getBoundingClientRect(),c=fill.getBoundingClientRect();
+            return {unit:a.width,meter:b.width,fill:c.width,gradient:getComputedStyle(fill).backgroundImage,
+                    clip:m.querySelector('.clip-led')!==null};});
+        }""")
+        assert len(vu_geometry)==16,vu_geometry
+        assert all(abs(v['unit']-14)<.3 and abs(v['meter']-14)<.3 and abs(v['fill']-10)<.6 and v['clip'] for v in vu_geometry),vu_geometry
+        assert len(set(v['gradient'] for v in vu_geometry))==1, 'VU palette must match across all L/R/mono bars'
+        await page.locator('#masterMode').click()
+        assert await page.locator('#masterMode').inner_text()=='MONO'
+        mono_text=await page.locator('#masterMode').evaluate('(e)=>({color:getComputedStyle(e).color,shadow:getComputedStyle(e).textShadow})')
+        assert mono_text['color']=='rgb(20, 16, 20)' and mono_text['shadow']=='none',mono_text
+        await page.locator('#masterMode').click()
+        assert await page.locator('#masterMode').inner_text()=='STEREO'
+        await page.evaluate('updateMeterVisual("6L",99,performance.now())')
+        assert await page.locator('[data-clip="6L"]').evaluate('(e)=>e.classList.contains("latched")')
+        await page.locator('[data-clip="6L"]').click()
+        assert not await page.locator('[data-clip="6L"]').evaluate('(e)=>e.classList.contains("latched")')
+        assert await page.locator('[data-meter="6R"]').count()==1
+        
         await page.evaluate('updateMeterVisual("masterL",99,performance.now())')
         assert await page.locator('[data-clip="masterL"]').evaluate('(e)=>e.classList.contains("latched")')
         assert await page.evaluate('Boolean(peakHold.masterL)') is True
