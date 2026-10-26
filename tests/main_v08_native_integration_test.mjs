@@ -22,8 +22,14 @@ test('offline standalone is the byte-matched MAIN v0.8 demo',()=>{
  assert.ok(offline.includes('<style>'+css+'</style>'));
 });
 test('no fake oscillating VUs inside native JUCE',()=>{
- const a=app.indexOf('function meters(t)'),guard=app.indexOf('if(window.__JUCE__?.backend?.emitEvent)return;',a),raf=app.indexOf('requestAnimationFrame(meters)',a);
- assert.ok(a>=0&&guard>a&&guard<raf);
+ const scheduler=app.indexOf('function scheduleDemoMeter()');
+ const a=app.indexOf('function meters(t)');
+ const guard=app.indexOf('if(window.__JUCE__?.backend?.emitEvent||document.hidden||',a);
+ const firstSynth=app.indexOf('channels.forEach((ch,i)=>{const wave=',a);
+ const schedulerGuard=app.indexOf('if(window.__JUCE__?.backend?.emitEvent||document.hidden||',scheduler);
+ const scheduled=app.indexOf('meterTimer=setTimeout(',scheduler);
+ assert.ok(a>scheduler && guard>a && guard<firstSynth);
+ assert.ok(schedulerGuard>scheduler && schedulerGuard<scheduled);
  assert.match(bridge,/\["masterL",liveOutputLeft\]/);
  assert.match(bridge,/\["masterR",liveOutputRight\]/);
 });
