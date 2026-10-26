@@ -415,8 +415,8 @@ async def main():
         }""")
         assert architecture['small']=='none',architecture
         assert abs(architecture['mainFader']['height']-architecture['masterFader']['height'])<=2,architecture
-        assert architecture['nav'].startswith('linear-gradient('),architecture
-        assert architecture['long'].startswith('linear-gradient('),architecture
+        assert architecture['nav']=='none',architecture
+        assert architecture['long']=='none',architecture
         assert 'data:image/png;base64' not in architecture['fx']
         assert 'data:image/png;base64' not in architecture['chrome']
         assert not architecture['overflow']
