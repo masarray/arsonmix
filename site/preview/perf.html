@@ -7,7 +7,7 @@
 <a id="direct" target="_blank" rel="noopener">Open direct mixer</a><span id="status">Loading…</span></header>
 <aside>Move mouse over FX inserts, fader caps and PAN during 10s; also move over toolbar as control. Repeat each mode 2–3 times. The meter demo is not real audio.</aside>
 <iframe id="mixer" title="ArSonMix full-size performance comparison"></iframe>
-<pre id="report">No measurements. rAF frame intervals are diagnostic proxies; browser graphics profiling is still required.</pre>
+<pre id="report">No measurements. rAF intervals are scheduling proxies, not GPU paint/input latency. Unsupported Long Tasks API is reported as null, not zero.</pre>
 <script>
 'use strict';
 const sel=document.getElementById('mode'),view=document.getElementById('mixer'),

@@ -378,6 +378,8 @@ if(mixperfParam&&mixperfModes.includes(mixperfParam)){
   const ms=Math.max(1000,Math.min(20000,Number(durationMs)||10000));
   const buckets={mixer:[],outside:[]},moves={mixer:0,outside:0};
   let area='',pointerAt=-Infinity,lastFrame=0,frameId=0,observer=null,longTasks=0,longTaskMs=0;
+  // Long Task entries are browser-dependent. Unavailable must never read as zero.
+  let longTaskAvailable=false;
   function pointer(e){area=e.target.closest?.('#mixer')?'mixer':'outside';pointerAt=performance.now();moves[area]++}
   function visibility(){lastFrame=0;pointerAt=-Infinity}
   function frame(t){
@@ -385,23 +387,30 @@ if(mixperfParam&&mixperfModes.includes(mixperfParam)){
    lastFrame=t;frameId=requestAnimationFrame(frame);
   }
   function stats(a){const s=a.slice().sort((x,y)=>x-y),n=s.length;
+   const over33=s.filter(x=>x>33.3).length,over50=s.filter(x=>x>50).length;
    return {samples:n,medianMs:n?+s[Math.floor((n-1)*.5)].toFixed(2):null,
     p95Ms:n?+s[Math.ceil(n*.95)-1].toFixed(2):null,
-    over33Ms:s.filter(x=>x>33.3).length,over50Ms:s.filter(x=>x>50).length};
+    p99Ms:n?+s[Math.ceil(n*.99)-1].toFixed(2):null,maxMs:n?+s[n-1].toFixed(2):null,
+    over33Ms:over33,over50Ms:over50,over33Pct:n?+(over33*100/n).toFixed(2):null};
   }
   document.addEventListener('pointermove',pointer,{passive:true});
   document.addEventListener('visibilitychange',visibility);
-  if('PerformanceObserver' in window){try{observer=new PerformanceObserver(l=>{
-   for(const e of l.getEntries()){longTasks++;longTaskMs+=e.duration}
-  });observer.observe({entryTypes:['longtask']})}catch{observer=null}}
+  if(typeof PerformanceObserver==='function' &&
+     PerformanceObserver.supportedEntryTypes?.includes('longtask'))try{
+   observer=new PerformanceObserver(l=>{
+    for(const e of l.getEntries()){longTasks++;longTaskMs+=e.duration}
+   });observer.observe({entryTypes:['longtask']});longTaskAvailable=true;
+  }catch{observer?.disconnect();observer=null}
   frameId=requestAnimationFrame(frame);
   return new Promise(done=>setTimeout(()=>{
    cancelAnimationFrame(frameId);document.removeEventListener('pointermove',pointer);
    document.removeEventListener('visibilitychange',visibility);observer?.disconnect();
    done({mode:mixperfMode,durationMs:ms,environment:{userAgent:navigator.userAgent,dpr:devicePixelRatio,
     width:innerWidth,height:innerHeight,iframe:top!==self},mixer:stats(buckets.mixer),
-    outside:stats(buckets.outside),pointerMoves:moves,longTasks,
-    longTaskMs:+longTaskMs.toFixed(1),note:'rAF proxy, not measured GPU paint/input latency'});
+    outside:stats(buckets.outside),pointerMoves:moves,longTaskAvailable,
+    longTasks:longTaskAvailable?longTasks:null,
+    longTaskMs:longTaskAvailable?+longTaskMs.toFixed(1):null,
+    note:'rAF proxy, not measured GPU paint/input latency; unsupported longtask is null'});
   },ms));
  }};
 }

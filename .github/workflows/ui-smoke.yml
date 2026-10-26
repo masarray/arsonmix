@@ -57,6 +57,10 @@ jobs:
         run: python tests/pan_button_asset_test.py
       - name: Run mixer UI smoke tests
         run: python tests/ui_smoke.py
+      - name: Install Firefox for compositor functional regression
+        run: python -m playwright install firefox
+      - name: Run Firefox opt-in performance diagnostics smoke
+        run: python tests/ui_firefox_perf_smoke.py
       - name: Attach visual regression screenshots
         if: always()
         uses: actions/upload-artifact@v4
