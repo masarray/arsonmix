@@ -58,3 +58,8 @@ The **experimental** P2.5 JUCE VST3 engine has now been integrated into `main` u
 ## P0-02 ASRC signal integrity continuation (2026-10-26)
 - Non-finite capture PCM is sanitized at independent FIFO ingress and counted without heap/locks; NaN/Inf latency and excessive FIFO capacity are rejected before allocation.
 - `bridgeNonFiniteCaptureSamples` is source-labeled, not a confirmed hardware xrun. Deterministic spectral/injection tests cover 48k->32k passband, alias attenuation and finite output. See `docs/P0_ASRC_SIGNAL_INTEGRITY_2026-10-26.md`.
+
+## Proposed Multi-Theme Architecture (2026-10-26; design-only)
+- Refer to [Theme Engine ARD v1.0](docs/ARD_MULTITHEME_ENGINE_V1_2026-10-26.md) and [Implementation Plan](docs/THEME_ENGINE_IMPLEMENTATION_PLAN_2026-10-26.md) before any Appearance/theme refactor. The runtime multi-theme feature is **not yet built or approved for merge**.
+- GUI core alone owns geometry and interaction. Theme packs may set approved semantic visual tokens only. No whole-stylesheet copies per theme or global button overrides. Black-blue glossy FX insert/power may never become brushed metal.
+- Stage implementation using #44/T0–T7 and preserve default pixel/geometry parity, standalone build parity, native bridge isolation, and Windows DPI QA. Don't move layout values into themes.
