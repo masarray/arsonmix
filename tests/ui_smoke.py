@@ -21,6 +21,9 @@ async def main():
           const low=getComputedStyle(el,'::after').transform;
           updateMeterVisual('0',75,123010);
           const high=getComputedStyle(el,'::after').transform;
+          // The visual probe must not poison the later peak-hold clock test.
+          delete peakHold['0'];
+          meterNodes.get('0').peakValue=-1;
           const s=getComputedStyle(el);
           return {background:s.backgroundImage,transform:s.transform,low,high,
             shutter:getComputedStyle(el,'::after').content};
