@@ -607,12 +607,12 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 
 
 
-/* Button 180 is owned by mixer controls only; toolbar-actions and left-rail have FX-power chrome. */
+/* Button 180 is the ONE shared material for channel, MASTER, toolbar and left-rail pads. */
 /* BUTTON 180 — one identical RESTING surface for OFF and ON.
    Semantic colors alone define the latched state; only the transient :active
    pointer press moves the cap inward by 1px without changing its layout slot. */
 :root{
- --b180-off:#858283;--b180-edge:#636363;--b180-off-ink:#2b2b2b;
+ --b180-off:#b3b3b3;--b180-edge:#636363;--b180-off-ink:#2b2b2b;
  --b180-color:var(--b180-off);--b180-border:var(--b180-edge);
  --b180-ink:var(--b180-off-ink);
 }
@@ -623,8 +623,8 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  /* Exact same inset + outside-edge model as the previously approved ON face.
     All layers are shared; only --b180-border is allowed to tint the edge. */
  --b180-shadow-surface:
-  inset 0 3px 6px -1px rgba(0,0,0,.72),
-  inset 0 0 0 1px rgba(255,255,255,.14),
+  inset 5px 5px 2px -1px rgba(0,0,0,.30),
+  inset 0 0 1px 1px rgba(255,255,255,.14),
   inset 0 1px 20px rgba(0,0,0,.19),
   inset 0 -1px 2px rgba(0,0,0,.32),
   0 0 0 1px var(--b180-border),
@@ -688,10 +688,9 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 /* Latching OFF/ON must NOT alter material, depth or layout. The physical
    press response below exists only while :active, never on .active/.selected. */
 /* Latch LED colors only; dark captions are legible on bright faces. */
-:is(.toolbar .nav button.btn-180.selected,.left-rail .tabs button.btn-180.selected,
- .left-rail .rail-presets button.btn-180.active,.left-rail .rail-bottom #saveFxPreset.btn-180.active,
- .native-btn.primary,.native-btn.on){--b180-color:#22bbcc;--b180-border:#087b8e;--b180-ink:#041c27}
-.left-rail .rail-bottom #addScene.btn-180.active{--b180-color:#319ed4;--b180-border:#14618c;--b180-ink:#061c2b}
+/* Native dialog buttons keep native cyan; toolbar and rail states below
+   each have ONE scope owner, with no competing earlier palette selectors. */
+:is(.native-btn.primary,.native-btn.on){--b180-color:#22bbcc;--b180-border:#087b8e;--b180-ink:#041c27}
 .strip .utility-row button[data-hpf].active{--b180-color:#37c99a;--b180-border:#126e5b;--b180-ink:#071f1a}
 :is(.strip .channel-actions .mute.active,#masterLeft #masterMute.active,
  .native-btn.warn){--b180-color:#e76f83;--b180-border:#a13650;--b180-ink:#291018}
@@ -729,23 +728,23 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  .left-rail .rail-bottom button.btn-180,.native-btn):active:not(:disabled){
  transform:translateY(1px)!important;
  box-shadow:
-  inset 0 4px 8px -1px rgba(0,0,0,.82),
-  inset 0 1px 2px rgba(0,0,0,.4),
-  inset 0 2px 15px rgba(0,0,0,.27),
-  inset 0 -1px 2px rgba(0,0,0,.44),
+  inset 3px 2px 2px -1px rgba(0,0,0,.50),
+  inset 0 0 1px 0 rgba(255,255,255,.14),
+  inset 0 1px 15px rgba(0,0,0,.29),
+  inset 0 -1px 2px rgba(0,0,0,.32),
   0 0 0 1px var(--b180-border),
-  0 0 0 rgba(0,0,0,0),
-  0 0 0 rgba(0,0,0,0)!important;
+  0 1px 1px rgba(0,0,0,.28),
+  0 2px 3px rgba(0,0,0,.13)!important;
 }
 
-/* OFF = the exact ON material with neutral, extinguished gray palette.
+/* OFF = the same shared material, neutral #b3b3b3 as owner requested.
    Bright ON color recipes above remain untouched. */
 :is(.toolbar .nav button.btn-180,.toolbar .spec-device,
  .strip .channel-actions .candy,.strip .utility-row button,
  #masterLeft .master-actions button,#masterLeft .master-tools button,
  .left-rail .tabs button.btn-180,.left-rail .rail-presets button.btn-180,
  .left-rail .rail-bottom button.btn-180):not(.active):not(.selected):not(.on):not([aria-pressed="true"]){
- --b180-color:var(--b180-off);--b180-border:var(--b180-edge);
+ --b180-color:#b3b3b3;--b180-border:var(--b180-edge);
  --b180-ink:var(--b180-off-ink);
  color:var(--b180-ink)!important;
 }
@@ -753,177 +752,27 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  :is(.toolbar .nav button.btn-180,.toolbar .spec-device,.strip .channel-actions .candy,
  .strip .utility-row button,.left-rail button.btn-180){transition:none!important}
 }
-/* Button 19 mixer key — left-rail ONLY: grey raised OFF / green latched ON.
-   Physical 3D geometry from button_19_mixer_latching.html. Toolbar is now
-   a separate BTN-180-derived crystal surface; never share rail state rules.
-   The real application owns .selected (radio/navigation) and .active (presets);
-   one-shot commands retain a momentary :active press, never a fake latched state. */
-#app .left-rail button.fx-nav{
- --face:#e0e4e8;
- --side:#a1aab2;
- --side-pressed:#7f8992;
- --light:rgba(255,255,255,.52);
- --hole-dark:rgba(0,0,0,.27);
- --hole-light:rgba(255,255,255,.27);
- appearance:none;
- -webkit-appearance:none;
- -webkit-tap-highlight-color:transparent;
- border:0;
- border-radius:.375em;
- background:
-  linear-gradient(to bottom,rgba(0,0,0,0),rgba(0,0,0,.13)),
-  radial-gradient(90% 7% at 50% 8%,rgba(255,255,255,.47) 25%,rgba(255,255,255,0) 50%);
- background-color:var(--face);
- color:#353e47;
- text-shadow:none;
- /* Crisp tactile edges; no Gaussian blur or fake halo. */
- box-shadow:
-  .15em .15em 0 rgba(0,0,0,.36),
-  0 -.1em 0 .1em var(--hole-dark),
-  0 .1em 0 .1em var(--hole-light),
-  -.2em 0 0 var(--side) inset,
-  0 .2em 0 var(--light) inset,
-  .2em 0 0 var(--light) inset,
-  0 -.2em 0 var(--side) inset;
- font-family:'Segoe UI',Arial,sans-serif;
- font-weight:600;
- cursor:pointer;
- user-select:none;
- touch-action:manipulation;
- transform:none;
- filter:none;
- transition:none;
-}
-/* Text shrinks inside its unchanged layout slot like the approved single-key demo. */
-#app .left-rail button.fx-nav>span{
- display:block;
- transition:none;
-}
-#app .left-rail button.fx-nav:is(.selected,.active){
- --face:#39ef72;
- --side:#1aaf50;
- --side-pressed:#0b8039;
- --light:rgba(218,255,226,.48);
- color:#07582b;
- text-shadow:none;
-}
-/* Recessed ON is persistent; OFF is recessed only while physically pressed. */
-#app .left-rail button.fx-nav:is(:active,.selected,.active){
- box-shadow:
-  0 -.1em 0 .1em var(--hole-dark),
-  0 .1em 0 .1em var(--hole-light),
-  -.2em 0 0 var(--side-pressed) inset,
-  0 .2em 0 var(--hole-dark) inset,
-  .2em 0 0 var(--hole-dark) inset,
-  0 -.2em 0 var(--side-pressed) inset;
-}
-#app .left-rail button.fx-nav:is(:active,.selected,.active)>span{
- transform:scale(.95);
-}
-/* Earlier generic selected glass overlays are not part of Button 19. */
-#app .left-rail button.fx-nav::before,
-#app .left-rail button.fx-nav::after{
- content:none;
-}
-#app .left-rail button.fx-nav:hover:not(:disabled){
- filter:none;
-}
-#app .left-rail button.fx-nav:focus-visible{
- outline:2px solid #86f7ad;
- outline-offset:2px;
-}
-#app .left-rail .rail-presets button.fx-nav{
- text-align:left;
- justify-content:flex-start;
- padding:0 9px;
-}
-@media(prefers-reduced-motion:reduce){
- #app .left-rail button.fx-nav,
- #app .left-rail button.fx-nav>span{transition:none!important}
-}
 
-/* Toolbar BTN-180 Crystal: a FLAT acrylic block, never a domed button.
-   Reuse Button-180's seven-edge construction but exchange its rubber-like
-   solid material for low-alpha grey / lit white with planar reflected light.
-   Scoped ONLY to seven toolbar actions: do not alter Button-19 left rail,
-   Button-180 mixer/MASTER, FX-power or any toolbar dimensions/handlers. */
-#app .toolbar-actions .nav button.fx-nav{
- --tb180-face:rgba(96,111,126,.74);
- --tb180-edge:rgba(159,178,194,.82);
- --tb180-ink:#f7fafc;
- --tb180-top:rgba(250,253,255,.78);
- --tb180-left:rgba(235,245,251,.37);
- --tb180-right:rgba(8,16,26,.42);
- --tb180-floor:rgba(5,12,19,.7);
- --tb180-rim:rgba(7,15,24,.85);
- appearance:none;
- -webkit-appearance:none;
- border:1px solid var(--tb180-edge);
- border-radius:2px;
- /* Flat plane: one narrow optical glint + one planar light falloff.
-    Neither radial shading nor blur/filters/backdrop processing is used. */
- background-color:var(--tb180-face);
- background-image:
-  linear-gradient(180deg,rgba(255,255,255,.46) 0,rgba(255,255,255,.19) 1px,transparent 2px,transparent calc(100% - 2px),rgba(3,9,16,.25) 100%),
-  linear-gradient(180deg,rgba(255,255,255,.18) 0%,rgba(255,255,255,.07) 31%,transparent 32%,rgba(3,9,16,.06) 100%);
- background-blend-mode:normal;
- color:var(--tb180-ink);
- text-shadow:0 1px 0 rgba(0,0,0,.43);
- box-shadow:
-  inset 0 1px 0 var(--tb180-top),
-  inset 1px 0 0 var(--tb180-left),
-  inset -1px 0 0 var(--tb180-right),
-  inset 0 -2px 0 var(--tb180-floor),
-  0 0 0 1px var(--tb180-rim),
-  0 1px 0 rgba(0,0,0,.48),
-  0 2px 0 rgba(0,0,0,.25);
- transform:none;
- filter:none!important;
- backdrop-filter:none;
- -webkit-backdrop-filter:none;
- transition:background-color 100ms ease-out,color 100ms ease-out,border-color 100ms ease-out;
+/* Scope-specific ON palette: only variables change; all keys share
+   the same seven-layer pad and exact press recipe above. */
+#app .toolbar-actions .nav button.btn-180.selected{
+ --b180-color:#f0f1f3;--b180-border:#939ba5;--b180-ink:#222932;
 }
-/* ON is PEARL WHITE, not green/magenta; only reflectance and palette change.
-   Selected navigation stays at precisely the same coordinates and cap size. */
-#app .toolbar-actions .nav button.fx-nav.selected{
- --tb180-face:rgba(243,249,253,.96);
- --tb180-edge:rgba(246,252,255,1);
- --tb180-ink:#102231;
- --tb180-top:rgba(255,255,255,1);
- --tb180-left:rgba(255,255,255,.96);
- --tb180-right:rgba(72,97,116,.42);
- --tb180-floor:rgba(62,88,105,.43);
- --tb180-rim:rgba(222,243,255,.95);
- text-shadow:0 1px 0 rgba(255,255,255,.53);
+#app .left-rail button.btn-180:is(.selected,.active){
+ --b180-color:#db9cce;--b180-border:#9c5b91;--b180-ink:#32172f;
 }
-/* Press only changes the inset depth, not the button rectangle or span
-   scale. This also covers single-shot commands that must never latch. */
-#app .toolbar-actions .nav button.fx-nav:active:not(:disabled){
- transform:none;
- box-shadow:
-  inset 0 2px 0 rgba(8,18,28,.48),
-  inset 1px 0 0 var(--tb180-left),
-  inset -1px 0 0 var(--tb180-right),
-  inset 0 -1px 0 var(--tb180-floor),
-  0 0 0 1px var(--tb180-rim),
-  0 0 0 rgba(0,0,0,0),
-  0 0 0 rgba(0,0,0,0);
+/* Polarity/HPF share the gentle cyan pad; MUTE/SOLO keep their alert palettes. */
+#app #mixer .strip .utility-row button.btn-180.active{
+ --b180-color:#83d6e0;--b180-border:#38909e;--b180-ink:#12323c;
 }
-#app .toolbar-actions .nav button.fx-nav > span,
-#app .toolbar-actions .nav button.fx-nav:is(.selected,:active) > span{
- transform:none;
- transition:none;
-}
-#app .toolbar-actions .nav button.fx-nav:hover:not(:disabled){
- filter:none!important;
-}
-#app .toolbar-actions .nav button.fx-nav:focus-visible{
- outline:2px solid #e5f5ff;
- outline-offset:2px;
-}
-@media(prefers-reduced-motion:reduce){
- #app .toolbar-actions .nav button.fx-nav{transition:none}
-}
+#app .left-rail .rail-presets button.btn-180{text-transform:none}
+#app .toolbar-actions .nav button.btn-180{height:34px;min-height:34px;min-width:77px;padding:0 10px!important;letter-spacing:.35px!important}
+#app .left-rail button.btn-180 > span,
+#app .toolbar-actions .nav button.btn-180 > span{transform:none!important;transition:none!important}
+/* Superseded navigation skin (Button 19 / experimental acrylic).
+   All toolbar and left-rail buttons now use the canonical Button-180 pad
+   owned by 20-button-180.css. Kept as a stable zero-rule CSS module in
+   the deterministic offline/WebView2 build order. */
 /* Crisp selection seams: no Gaussian blur, preserved layout and semantic tint. */
 .strip.selected,#masterLeft.selected{
  --selection-tint:color-mix(in srgb,var(--ch) 22%,#7fe8ff 78%);
@@ -972,18 +821,18 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 }
 
 
-/* Left-rail geometry; fx-nav styling is owned by 21-navigation-fx-power.css. */
-#app .left-rail .tabs button.fx-nav{height:34px;min-height:34px}
+/* Left-rail geometry; BTN-180 materials are owned by 20-button-180.css. */
+#app .left-rail .tabs button.btn-180{height:34px;min-height:34px}
 #app .left-rail .rail-presets{gap:5px;padding:7px 6px 6px}
-#app .left-rail .rail-presets button.fx-nav{height:27px;min-height:27px}
+#app .left-rail .rail-presets button.btn-180{height:27px;min-height:27px}
 #app .left-rail .rail-bottom{row-gap:6px;padding-top:8px}
-#app .left-rail .rail-bottom button.fx-nav{height:27px;min-height:27px}
-#app .left-rail .rail-presets button.fx-nav{text-align:left;justify-content:flex-start;padding:0 9px!important}
+#app .left-rail .rail-bottom button.btn-180{height:27px;min-height:27px}
+#app .left-rail .rail-presets button.btn-180{text-align:left;justify-content:flex-start;padding:0 9px!important}
 @media(max-height:730px){
  #app .left-rail .rail-presets{gap:4px;padding-top:6px;padding-bottom:4px}
- #app .left-rail .rail-presets button.fx-nav{height:25px;min-height:25px}
+ #app .left-rail .rail-presets button.btn-180{height:25px;min-height:25px}
  #app .left-rail .rail-bottom{row-gap:5px;padding-top:7px}
- #app .left-rail .rail-bottom button.fx-nav{height:25px;min-height:25px}
+ #app .left-rail .rail-bottom button.btn-180{height:25px;min-height:25px}
 }
 /* PAN: recessed center detent is below the original metallic PNG, not over it.
    z-order: track (0), center detent (1), illuminated pan fill (2), PNG thumb (3). */
@@ -1178,29 +1027,29 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
     </div>
     <div class="toolbar-actions">
       <nav class="nav" aria-label="Primary tools">
-        <button type="button" data-view="MIX" class="fx-nav selected"><span>MIX</span></button>
-        <button class="fx-nav" type="button" data-view="FX RACK"><span>FX RACK</span></button>
-        <button class="fx-nav" type="button" data-view="SIGNAL FLOW"><span>SIGNAL FLOW</span></button>
-        <button class="fx-nav" type="button" data-my-sounds="1"><span>MY SOUNDS</span></button>
-        <button class="fx-nav" type="button" data-plugin-manager="1"><span>PLUGINS</span></button>
-        <button class="fx-nav" type="button" id="audioSetupBtn" data-native-action="audioSetup"><span>SETUP</span></button>
-        <button class="fx-nav" type="button" id="arSignalOpen"><span>SIGNAL CHECK</span></button>
+        <button type="button" data-view="MIX" class="btn-180 selected"><span>MIX</span></button>
+        <button class="btn-180" type="button" data-view="FX RACK"><span>FX RACK</span></button>
+        <button class="btn-180" type="button" data-view="SIGNAL FLOW"><span>SIGNAL FLOW</span></button>
+        <button class="btn-180" type="button" data-my-sounds="1"><span>MY SOUNDS</span></button>
+        <button class="btn-180" type="button" data-plugin-manager="1"><span>PLUGINS</span></button>
+        <button class="btn-180" type="button" id="audioSetupBtn" data-native-action="audioSetup"><span>SETUP</span></button>
+        <button class="btn-180" type="button" id="arSignalOpen"><span>SIGNAL CHECK</span></button>
       </nav>
     </div>
   </header>
   <div class="main">
     <aside class="left-rail">
-      <div class="seg tabs"><button data-side="channels" class="fx-nav selected"><span>CHANNELS</span></button><button data-side="fx" class="fx-nav"><span>FX CHAINS</span></button></div>
+      <div class="seg tabs"><button data-side="channels" class="btn-180 selected"><span>CHANNELS</span></button><button data-side="fx" class="btn-180"><span>FX CHAINS</span></button></div>
       <div id="channelList" class="channel-list" aria-label="Mixer channels"></div>
       <div id="groupsList" class="rail-list hidden"></div>
       <div class="rail-section-title">QUICK SOUND PRESETS</div>
-      <div class="rail-presets" id="presetList"><button data-preset="Clean Vocal" class="fx-nav"><span>Clean Vocal</span></button><button data-preset="Warm Karaoke" class="fx-nav"><span>Warm Karaoke</span></button><button data-preset="Live Broadcast" class="fx-nav"><span>Live Broadcast</span></button></div>
+      <div class="rail-presets" id="presetList"><button data-preset="Clean Vocal" class="btn-180"><span>Clean Vocal</span></button><button data-preset="Warm Karaoke" class="btn-180"><span>Warm Karaoke</span></button><button data-preset="Live Broadcast" class="btn-180"><span>Live Broadcast</span></button></div>
       <div class="rail-section-title">MIXER SNAPSHOTS</div>
       <div id="scenesList" class="rail-list scenes-list"></div>
       <div class="rail-bottom" role="group" aria-label="Session actions">
-        <button id="addScene" title="Save current mixer as a named snapshot" class="fx-nav"><span>＋ SAVE SNAPSHOT</span></button>
-        <button id="saveFxPreset" title="Save this channel's FX chain as a preset" class="fx-nav"><span>SAVE FX</span></button>
-        <button id="menuScene" title="Export the complete session as JSON" class="fx-nav"><span>EXPORT</span></button>
+        <button id="addScene" title="Save current mixer as a named snapshot" class="btn-180"><span>＋ SAVE SNAPSHOT</span></button>
+        <button id="saveFxPreset" title="Save this channel's FX chain as a preset" class="btn-180"><span>SAVE FX</span></button>
+        <button id="menuScene" title="Export the complete session as JSON" class="btn-180"><span>EXPORT</span></button>
       </div>
       <div class="rail-input-footer"><span class="rail-live-indicator" aria-hidden="true"></span><span id="activeInput">MIC → FX → MASTER</span></div>
     </aside>
