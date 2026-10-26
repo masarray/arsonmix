@@ -386,7 +386,7 @@ async def main():
 
         assert await page.locator('header .nav button').count()==7
         assert await page.locator('footer.status button').count()==0
-        assert await page.locator('[data-clear-all-clips]').count()==1
+        assert await page.locator('[data-clear-all-clips]').count()==0
         architecture=await page.evaluate("""() => {
           const bg=s=>getComputedStyle(document.querySelector(s)).backgroundImage;
           const rect=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,height:r.height}};
@@ -482,7 +482,7 @@ async def main():
         })""")
         assert len(geometry)==11 and all(x['nameTop']>=x['faderBottom']-1 for x in geometry),geometry
         assert all(not x['hasTools'] for x in geometry if not x['master']),geometry
-        assert sum(x['hasTools'] for x in geometry)==1,geometry
+        assert not any(x['hasTools'] for x in geometry),geometry
         # Both resting states share depth; while pointer is down only, cap sinks 1px
         # with a stronger inner shadow and unchanged width/height/layout slot.
         btn=page.locator('[data-mute="0"]')
