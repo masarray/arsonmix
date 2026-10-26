@@ -33,3 +33,12 @@ No automatic low-latency switching/ASIO device re-opening is introduced. Physica
 - New native `AsioDriverClassRegistryAttestation` CTest: valid GUID canonicalization, same registry key and CLSID, changed GUID or subkey, missing/ambiguous duplicate friendly names, missing COM server, malformed/empty/all-zero CLSIDs, uninstalled driver on headless CI.
 - Node source contract asserts real startup pre/post and DIRECT restoration integration and on-demand report.
 - Existing Windows MSVC Release, all CTest and Chromium smoke must pass on **exact PR-head SHA** before squash merge. Single native test target added to existing build; no additional CI runner/job, no GUI design edits. Record the resulting main commit and update #15.
+
+## Review-driven hardening — startup is a silent transaction
+
+Native review identified two edge cases and the implementation enforces their fixes:
+
+1. **Preflight denial + manual recovery.** JUCE establishes default required capture/render channel counts inside `AudioDeviceManager::initialise(1,2,...)`; returning without that step leaves AUDIO SETUP unable to select a working full-duplex replacement. If a SAVED ASIO preflight fails, the already-registered host callback remains suspended, we initialize these requirements using a transient `DEVICESETUP` pinned specifically to `Windows Audio` (never the rejected ASIO registration), then close any temporary device. No saved device config is replaced or persisted; output remains muted pending explicit selection.
+2. **Post-open attestation BEFORE sound authorization.** The comparison of preflight registry key/CLSID to the fresh post-open probe now lives *inside* `approveDirectRoute(expectedAsio)`, ahead of `DirectRouteFence::approve`. A changed registry class can no longer create a short window of authorized live microphone playback before being rejected. Only after all checks pass is the existing O(1) atomic realtime gate enabled.
+
+The Node source contract enforces both invariants. These are fault-path protection changes, not any authorization to automatically switch an ASIO interface while performing.
