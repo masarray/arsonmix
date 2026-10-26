@@ -45,3 +45,30 @@
 
 /* No blur/shadow animation on the newly finished FADER heads. */
 html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-mixperf="meters-off"]) #app #mixer .fader .cap{filter:none!important;transition:none!important}
+
+/* 2026-10-27 VU parity: one pixel-precise geometry for mono, stereo and MASTER.
+   The existing fixed-color 7px LED paint engine is shared by all meter keys. */
+#app #mixer .fader-zone .meter-unit{
+ position:relative;display:flex;flex:0 0 14px;min-width:14px;width:14px;
+ flex-direction:column;min-height:0;
+}
+#app #mixer .fader-zone .meter-unit .meter{
+ flex:0 0 auto;display:block;width:100%;min-width:0;
+ height:calc(100% - 11px);
+ box-sizing:border-box;
+}
+#app #mixer .fader-zone .meter-unit .meter-fill{
+ left:1px;right:1px;
+}
+#app #mixer .fader-zone .meter-unit .meter-channel-label{
+ position:absolute;bottom:0;left:0;width:100%;height:10px;
+ line-height:10px;text-align:center;
+ font:700 8px/10px Consolas,monospace;color:#9bcadd;
+ pointer-events:none;
+}
+/* Do not let generic BTN-180 active/hover styles whiten MONO's legend. */
+#app #masterLeft .master-actions #masterMode.is-mono{
+ --b180-ink:#141014;
+ color:#141014!important;
+ text-shadow:none!important;
+}
