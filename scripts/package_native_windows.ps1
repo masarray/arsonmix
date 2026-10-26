@@ -15,6 +15,14 @@ $app = Join-Path $BuildDir $appRelativePath
 if (-not (Test-Path -LiteralPath $app -PathType Leaf)) {
     throw "Missing JUCE GUI executable at expected target: $app"
 }
+# An earlier 648KB artifact was a test console binary, not the mixer.
+# Require a realistic lower bound in addition to exact path and PE subtype:
+# small/missing embedded assets or a wrong target must fail the release.
+$minimumGuiExeBytes = 4MB
+$appBytes = (Get-Item -LiteralPath $app).Length
+if ($appBytes -lt $minimumGuiExeBytes) {
+    throw "GUI EXE too small ($appBytes bytes). Expected >= $minimumGuiExeBytes bytes with embedded JUCE/WebView UI."
+}
 
 # Structural PE check: AMD64 + PE32+ + Windows GUI subsystem (2).
 # Our previous wildcard packaging accidentally shipped a valid x64 CONSOLE
@@ -67,6 +75,10 @@ $manifest = [ordered]@{
     sourceCommit = $gitSha
     gui = "10 SOURCE CHANNELS + STEREO MASTER (PR #73)"
     engine = "P0-12 BOUNDED PRE-MARK HARDWARE EVIDENCE"
+    nativeDSP = "CHANNEL_1_ONLY__REMAINING_9_GUI_CHANNELS_NOT_REAL_AUDIO"
+    guiExeBytes = $appBytes
+    guiExeMinimumBytes = $minimumGuiExeBytes
+    runtimeDependency = "MICROSOFT_EDGE_WEBVIEW2_RUNTIME_REQUIRED_ON_HARDWARE"
     appTarget = "ARMixConsole"
     expectedTargetPath = $appRelativePath
     executable = $exeName

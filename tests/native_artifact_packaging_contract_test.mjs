@@ -7,6 +7,8 @@ import {readFileSync} from 'node:fs';
 const read = path => readFileSync(path, 'utf8');
 const workflow = read('.github/workflows/p1-windows.yml');
 const packaging = read('scripts/package_native_windows.ps1');
+const verify = read('scripts/verify_native_windows_artifact.ps1');
+const nativeMain = read('src/Main.cpp');
 const cmake = read('CMakeLists.txt');
 const fat = read('docs/HARDWARE_FAT_GUI10_ENGINE_P012_20261027.md');
 
@@ -31,6 +33,33 @@ test('native FAT artifact proves AMD64 PE32+ WINDOWS GUI, rejects console-subsys
   assert.match(packaging, /BUILD_PROVENANCE\.json/);
   assert.match(packaging, /HARDWARE_FAT_GUIDE\.md/);
   assert.match(packaging, /EXPERIMENTAL_NOT_HARDWARE_QUALIFIED/);
+});
+test('production Windows workflow rejects a tiny 648KB zip, test EXE, or missing GUI/engine runtime data', () => {
+  assert.match(packaging, /minimumGuiExeBytes = 4MB/);
+  assert.match(verify, /\$bytes\.Length -lt 4MB/);
+  assert.match(verify, /\$archiveBytes -lt 2MB/);
+  assert.match(verify, /Compress-Archive/);
+  assert.match(verify, /ZipFile\]::OpenRead/);
+  assert.match(verify, /ComputeHash\(\$stream\)/);
+  assert.match(verify, /manifest\.sourceCommit/);
+  assert.match(verify, /manifest\.appJsSha256/);
+  assert.match(verify, /manifest\.stylesCssSha256/);
+  for (const marker of [
+    'function openChannelIdentity',
+    'class="master-analysis"',
+    '--ari-master-cap',
+    'function syncNativeMixerControls',
+    'AUDIO_GLITCH_WINDOW',
+  ]) {
+    assert.ok(verify.includes(marker), 'release audit must search compiled artifact for '+marker);
+  }
+  assert.match(nativeMain, /BinaryData::app_js/);
+  assert.match(nativeMain, /BinaryData::styles_css/);
+  assert.match(nativeMain, /withResourceProvider \(assetFor\)/);
+  assert.match(workflow, /Independently verify release ZIP and embedded GUI\/engine before upload/);
+  assert.match(workflow, /scripts\/verify_native_windows_artifact\.ps1/);
+  assert.ok(workflow.indexOf('scripts/verify_native_windows_artifact.ps1') <
+            workflow.indexOf('uses: actions/upload-artifact@v4'));
 });
 test('physical test protocol differentiates actual native channel 1 and GUI-only channels', () => {
   assert.match(fat, /native engine implements \*\*Channel 1\*\* only/i);

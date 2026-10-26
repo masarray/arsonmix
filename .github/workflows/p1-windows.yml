@@ -69,6 +69,11 @@ jobs:
         run: |
           & ./scripts/package_native_windows.ps1 -BuildDir build -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Independently verify release ZIP and embedded GUI/engine before upload
+        shell: pwsh
+        run: |
+          & ./scripts/verify_native_windows_artifact.ps1 -OutputDir dist
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         with:
           name: ArSonMix-GUI10CH-P012-Verified-Hardware-FAT-Windows-x64
