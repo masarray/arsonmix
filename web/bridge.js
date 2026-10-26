@@ -21,7 +21,7 @@
   const state = {catalog: [], chain: [], scanning: false, message: "Connecting to native host...",
     device: {}, presets: [], addRequestId:0, addError:"", pendingPlugin:"", filter: "", selectedCategory: "All", monitor: false, error: "", progress: {active:false,phase:"done",done:0,total:0,found:0,current:""}, adding:false};
 
-  const orbit = {slot:-1, plugin:"", parameters:[], active:false, activeSlot:-1, activeParameter:-1, periodSeconds:20, reverse:false, preferredParameter:-1, selection:-1, confirmed:false};
+  const orbit = {slot:-1, plugin:"", parameters:[], active:false, activeSlot:-1, activeParameter:-1, periodSeconds:20, reverse:false, preferredParameter:-1, selection:-1, confirmed:false,revision:null};
   const escapeHtml = text => String(text ?? "").replace(/[&<>"']/g, c => (
     {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const percent = peak => Math.max(1,Math.min(100,(20*Math.log10(Math.max(1e-6,Number(peak)||0))+60)*100/60));
@@ -198,7 +198,7 @@
         <span>I verified this parameter covers a complete 360° azimuth range, not Scale/Gain/Distance.</span>
       </label>
       <div class="orbit-actions">
-        <button class="native-btn primary" data-orbit-start="1" ${valid&&orbit.confirmed?"":"disabled"}>▶ START</button>
+        <button class="native-btn primary" data-orbit-start="1" ${valid&&orbit.confirmed&&orbit.revision!==null?"":"disabled"}>▶ START</button>
         <button class="native-btn ${orbit.active?"on":""}" data-orbit-stop="1" ${orbit.active?"":"disabled"}>■ STOP</button>
         <span class="orbit-running">${orbit.active?`● RUNNING · FX ${orbit.activeSlot+1}`:"● IDLE"}</span>
       </div>
@@ -212,6 +212,7 @@
     orbit.parameters=[];
     orbit.selection=-1;
     orbit.confirmed=false;
+    orbit.revision=null;
     showDialog("nativeOrbit");
     renderOrbit();
     send("orbitInspect",{slot});
@@ -415,10 +416,10 @@
     const param=raw===""||raw===undefined?NaN:Number(raw);
     const seconds=Number(document.getElementById("nativeOrbitSeconds")?.value);
     const reverse=document.getElementById("nativeOrbitReverse")?.value==="true";
-    if(!orbit.confirmed||!Number.isInteger(param)||!Number.isFinite(seconds)||seconds<2||seconds>180){
+    if(!orbit.confirmed||orbit.revision===null||!Number.isInteger(param)||!Number.isFinite(seconds)||seconds<2||seconds>180){
       toStatus("Choose a valid VST3 parameter and revolution period (2–180 seconds).");return;
     }
-    send("orbitStart",{slot:orbit.slot,pluginId:state.chain[orbit.slot]?.id||"",parameterIndex:param,seconds,reverse});return;
+    send("orbitStart",{slot:orbit.slot,revision:orbit.revision,pluginId:state.chain[orbit.slot]?.id||"",parameterIndex:param,seconds,reverse});return;
   }
   if(el.hasAttribute("data-orbit-stop")){send("orbitStop",{slot:orbit.slot});return;}
   if(el.hasAttribute("data-master-insert")||el.hasAttribute("data-master-power")){
@@ -531,7 +532,7 @@
     if(t.id==="nativeOrbitReverse")orbit.reverse=t.value==="true";
     const selected=document.getElementById("nativeOrbitParameter")?.value;
     const start=document.querySelector("#nativeOrbit [data-orbit-start]");
-    if(start)start.disabled=!(orbit.confirmed&&selected!==""&&selected!==undefined);
+    if(start)start.disabled=!(orbit.confirmed&&orbit.revision!==null&&selected!==""&&selected!==undefined);
   },true);
   backend.addEventListener("arMixOrbitState",data=>{
     if(!data||Number(data.slot)!==orbit.slot)return;
@@ -581,6 +582,7 @@
     const orbitDialog=document.getElementById("nativeOrbit");
     if(orbitDialog&&!orbitDialog.hidden){
       orbit.confirmed=false;
+      orbit.revision=null;
       orbit.selection=-1;
       orbit.parameters=[];
       orbit.plugin=state.chain[orbit.slot]?.name||"";

@@ -30,7 +30,7 @@ async def main():
               }
               if(payload.action === 'orbitInspect') {
                 queueMicrotask(() => listeners.get('arMixOrbitState')?.({
-                  slot:payload.slot, plugin:'dearVR PRO 2', active:false,
+                  slot:payload.slot, revision:'1', plugin:'dearVR PRO 2', active:false,
                   activeSlot:-1,activeParameter:-1,periodSeconds:20,
                   reverse:false,preferredParameter:2,
                   parameters:[
@@ -91,7 +91,7 @@ async def main():
         start_payload = await page.evaluate("""()=>window.__JUCE__.backend.calls.findLast(x=>
           x.payload.action==='orbitStart').payload""")
         assert start_payload == {
-            "action": "orbitStart", "slot": 0, "pluginId": "dearvr-pro-2", "parameterIndex": 2,
+            "action": "orbitStart", "slot": 0, "revision": "1", "pluginId": "dearvr-pro-2", "parameterIndex": 2,
             "seconds": 15, "reverse": True,
         }, start_payload
         await modal.locator("[data-orbit-stop]").click()

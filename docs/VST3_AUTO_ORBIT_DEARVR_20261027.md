@@ -33,3 +33,11 @@ The separate JUCE control timer runs only when orbit is enabled at 60 updates/se
 This PR is an experimental capability, NOT a complete production-grade spatial automation engine. Its continuous ramp is time-based, not sample accurate; under heavy UI load the 60 Hz JUCE timer can jitter. It has no independent orbit audible seam validation, per-vendor calibration profile, parameter state persistence, spatial Cartesian dual-axis fallback, or multi-plugin/multi-channel independent LFO scheduler. Each of those should be based on actual user requirements and tested vendor behavior rather than naive generalisation.
 
 There is a hard logical wrap at the normalized 0/1 endpoint. That mathematically returns to the same azimuth only if the VST3 parameter truly encodes a full circle. The vendor may smooth/interpolate the seam poorly, causing audible fast panning. The earliest manual hardware acceptance is **dearVR PRO 2 POLAR, Azimuth confirmed -180°..180°, Binaural 2CH, editor open/closed, 2/10/20 second revolutions, no perceptible wrap jump**. If seam fails, do not merge as mature: a vendor-aware dual-axis (Cartesian sin/cos) path may be required instead.
+
+## Optimized-control checkpoint (2026-10-27)
+
+- The 60 Hz JUCE message-thread timer now coalesces parameter notifications when the requested circular value is unchanged or below the parameter's useful step resolution; vendor calls are never inserted into the audio callback. This is a *control-plane reduction*, not measured audio CPU/latency improvement.
+- Timer updates derive azimuth from absolute monotonic elapsed time, not tick count. Missed timer ticks do not create catch-up bursts.
+- Stop/recall/graph changes capture bounded `FX_ORBIT_CONTROL` evidence: ticks, writes, coalesced updates, late control ticks (>50ms), maximum timer interval. These are UI timing measurements, **not** audio xruns.
+- Native ORBIT START now carries both the catalog ID and a monotonic FX graph revision. Removal, reorder, addition and acknowledged preset graph swap invalidate old confirmations, including when the same plugin is reinserted into the same slot.
+- Experimental feature is still awaiting real dearVR PRO 2 audio seam, latency and performance testing; preserve P0 Issue #15 as a separate gating fault.

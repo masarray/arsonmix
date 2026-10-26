@@ -166,6 +166,7 @@ public:
 private:
     LiveAudioEngine engine_;
     VstOrbitController orbit_;
+    juce::int64 fxGraphRevision_ = 1; // control-thread monotonic graph generation
     PluginCatalog catalog_;
     DiagnosticsRecorder diagnostics_;
     armix::storage::NativePresetArchive presets_;
@@ -418,6 +419,7 @@ private:
     {
         auto event = std::make_unique<juce::DynamicObject>();
         event->setProperty ("slot", slot);
+        event->setProperty ("revision", juce::String (fxGraphRevision_));
         const auto& stats = orbit_.stats();
         event->setProperty ("controlTicks", static_cast<juce::int64> (stats.ticks));
         event->setProperty ("parameterWrites", static_cast<juce::int64> (stats.writes));
@@ -948,6 +950,7 @@ private:
             else
             {
                 diagnostics_.record ("FX_LOAD", name + " | elapsedMs=" + juce::String (elapsed));
+                ++fxGraphRevision_;
                 emitChain();
                 emitNotice (name + " inserted into Channel 1 FX Rack.");
             }
@@ -958,7 +961,7 @@ private:
                 return emitNotice ("Return to NORMAL before editing VST3.", true);
             stopOrbit();
             editorWindow_.reset();
-            if (engine_.removeAt (slot)) { diagnostics_.record ("FX_REMOVE", juce::String (slot)); emitChain(); }
+            if (engine_.removeAt (slot)) { ++fxGraphRevision_; diagnostics_.record ("FX_REMOVE", juce::String (slot)); emitChain(); }
         }
         else if (action == "fxMove")
         {
@@ -966,7 +969,7 @@ private:
                 return emitNotice ("Return to NORMAL before rearranging VST3 effects.", true);
             stopOrbit();
             editorWindow_.reset();
-            if (engine_.moveSlot (slot, slot + static_cast<int> (value))) { diagnostics_.record ("FX_MOVE", juce::String (slot)); emitChain(); }
+            if (engine_.moveSlot (slot, slot + static_cast<int> (value))) { ++fxGraphRevision_; diagnostics_.record ("FX_MOVE", juce::String (slot)); emitChain(); }
         }
         else if (action == "fxBypass")
         {
@@ -980,6 +983,9 @@ private:
         {
             if (engine_.isGraphSwitchPending())
                 return emitNotice ("Finish FX preset recall before starting Orbit.", true);
+            const auto requestedRevision = args.getProperty ("revision", {}).toString();
+            if (requestedRevision.isEmpty() || requestedRevision != juce::String (fxGraphRevision_))
+                return emitNotice ("FX graph changed. Reopen ORBIT to verify this instance.", true);
             const auto requestedPluginId = args.getProperty ("pluginId", {}).toString();
             const auto chain = engine_.chainState();
             const auto* currentSlots = chain.getArray();
@@ -1076,6 +1082,7 @@ private:
         serviceDirectRestore();
         if (engine_.finalizeGraphSwitch())
         {
+            ++fxGraphRevision_;
             diagnostics_.record ("GRAPH_SWAP_ACK", pendingPresetName_);
             emitChain();
             if (pendingPresetUI_.isObject() && browser_.loaded)
