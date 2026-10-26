@@ -33,7 +33,7 @@ test('native FAT artifact proves AMD64 PE32+ WINDOWS GUI, rejects console-subsys
   assert.match(packaging, /EXPERIMENTAL_NOT_HARDWARE_QUALIFIED/);
 });
 test('physical test protocol differentiates actual native channel 1 and GUI-only channels', () => {
-  assert.match(fat, /native engine implements \\*\\*Channel 1\\*\\* only/i);
+  assert.match(fat, /native engine implements \*\*Channel 1\*\* only/i);
   assert.match(fat, /OUTPUT_ONLY_TONE/);
   assert.match(fat, /CAPTURE_ONLY/);
   assert.match(fat, /DRY_THROUGH/);
