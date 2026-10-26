@@ -51,8 +51,8 @@ assert ".cap::before,.cap::after{content:none}" in css
 # Muted silver / rose-gold master artwork is a new static 36x77 PNG,
 # derived from the silver relief. Gold source is kept for rollback only.
 rose=(root/"web/assets/faders/FADER-ARI-ROSEGOLD.png").read_bytes()
-assert len(rose)==3782
-assert hashlib.sha256(rose).hexdigest()=="730d4e6739e1eeca87c3c758777eef48dac8a29b2d2a4abc857463ee0a9d0f17"
+assert len(rose)==3961
+assert hashlib.sha256(rose).hexdigest()=="a1d0962a25336d88a062263761d22b65ceca85d4b356e7643f1234afd6573913"
 assert (int.from_bytes(rose[16:20],"big"),int.from_bytes(rose[20:24],"big"))==(36,77)
 finish=(root/"web/styles-src/42-mixer-premium.css").read_text(encoding="utf-8")
 assert css.endswith(finish), "Premium CSS module not compiled last"
@@ -68,4 +68,8 @@ assert "session.channels.length<channels.length" in js
 assert "last.channels.slice(0,channels.length)" in js
 assert 'const raw=[' in js and "['Monitor','◉'" not in js and "['Aux Out','◉'" not in js
 assert "Deliberate double-click to edit a strip." in js
-print("PASS: ten channels, 36x77 silver + rose MASTER, responsive shell, offline parity")
+assert 'id="masterMode"' in js
+assert 'fader-tools master-tools' not in js
+assert 'masterMono' in js
+assert 'class="btn-180 master-mode' in js
+print("PASS: rose-gold MASTER, 10 channels, button mode/clip layout, offline parity")

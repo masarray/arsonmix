@@ -456,6 +456,7 @@ public:
     }
     void setChannelMuted (bool value) noexcept { channelMute_.store (value); }
     void setMasterMuted (bool value) noexcept { masterMute_.store (value); }
+    void setMasterMono (bool value) noexcept { masterMono_.store (value, std::memory_order_relaxed); }
 
     int chainSize() const noexcept { return graphOwned_->count; }
     bool isGraphSwitchPending() const noexcept { return handoff_.busy(); }
@@ -783,6 +784,7 @@ public:
         o->setProperty ("buffer", d ? d->getCurrentBufferSizeSamples() : 0);
         o->setProperty ("monitor", monitor_.load());
         o->setProperty ("masterMute", masterMute_.load());
+        o->setProperty ("masterMono", masterMono_.load (std::memory_order_relaxed));
         o->setProperty ("channelMute", channelMute_.load());
         o->setProperty ("channelPan", channelPan_.load());
         // Live controls are authoritative: never trust an old WebView localStorage fader/mute.
@@ -999,7 +1001,7 @@ private:
     std::atomic<bool> routeReconfiguring_ {false};
     std::optional<juce::AudioDeviceManager::AudioDeviceSetup> savedLiveSetup_;
     // Indexed atomic bypass flags: instant RT-safe toggles, no graph detachment.
-    std::atomic<bool> monitor_ { false }, channelMute_ { false }, masterMute_ { false }, dryTest_ { false };
+    std::atomic<bool> monitor_ { false }, channelMute_ { false }, masterMute_ { false }, masterMono_ { false }, dryTest_ { false };
     std::atomic<float> masterGain_ { 1.f }, channelGain_ { 1.f }, channelPan_ { 0.f };
     std::atomic<float> inputPeak_ { 0.f }, postFxPeak_ { 0.f }, outputPeak_ { 0.f };
     std::atomic<float> outputPeakL_ { 0.f }, outputPeakR_ { 0.f };
@@ -1193,6 +1195,11 @@ private:
         // Precomputed stereo pan matrix; no trigonometry, locks or allocations
         // in the realtime sample loop. 0 = transparent identity matrix.
         const auto matrix = armix::dsp::StereoPanMatrix::fromNormalized (pan);
+        const bool mono = masterMono_.load (std::memory_order_relaxed);
+        // Collapse POST-pan L/R with a 0.5 + 0.5 sum; keep equal outputs.
+        // Coefficients are computed once per block outside the per-sample loop.
+        const float monoL = 0.5f * (matrix.ll + matrix.rl);
+        const float monoR = 0.5f * (matrix.lr + matrix.rr);
         const float rampStep = samples > 1 ? 1.f / static_cast<float> (samples - 1) : 0.f;
         float inPeak = 0.f, postFxPeak = 0.f, outPeak = 0.f;
         float outPeakL = 0.f, outPeakR = 0.f;
@@ -1260,12 +1267,12 @@ private:
                 const float* left = scratch_.getReadPointer (0);
                 const float* right = scratch_.getReadPointer (1);
                 float* dst = outputs[c] + offset;
+                const float fromL = mono ? monoL : (c == 0 ? matrix.ll : matrix.rl);
+                const float fromR = mono ? monoR : (c == 0 ? matrix.lr : matrix.rr);
                 float channelPeak = 0.f;
                 for (int i = 0; i < frames; ++i)
                 {
-                    const float mapped = toneTest ? left[i]
-                        : c == 0 ? matrix.ll * left[i] + matrix.lr * right[i]
-                                               : matrix.rl * left[i] + matrix.rr * right[i];
+                    const float mapped = toneTest ? left[i] : fromL * left[i] + fromR * right[i];
                     const auto phase = (offset + i) * rampStep;
                     const float ramp = cycle.fadeOut ? 1.f - phase
                                      : cycle.fadeIn ? phase : 1.f;

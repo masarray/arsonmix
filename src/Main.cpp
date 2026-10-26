@@ -428,6 +428,8 @@ private:
             engine_.setChannelMuted (bool (value));
         else if (name == "masterMute" && value.isBool())
             engine_.setMasterMuted (bool (value));
+        else if (name == "masterMono" && value.isBool())
+            engine_.setMasterMono (bool (value));
     }
 
     void emitScanProgress()

@@ -561,6 +561,9 @@
       const mute=document.querySelector("#masterMute");
       if(mute){mute.classList.toggle("active",masterMute);mute.setAttribute("aria-pressed",String(masterMute));}
     }
+    if(typeof masterMono!=="undefined" && typeof d.masterMono==="boolean" && masterMono!==d.masterMono){
+      setMasterMono(d.masterMono,false);changed=true;
+    }
     if(changed)patchMixer();
   }
   let liveInputLevel=0, liveOutputLevel=0, liveOutputLeft=0, liveOutputRight=0;

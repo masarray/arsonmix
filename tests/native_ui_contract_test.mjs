@@ -42,3 +42,18 @@ test('health logger has room for complete JSON snapshots',()=>{
   assert.match(recorder,/char data\[4096\]/);
   assert.match(recorder,/truncatedRecords\(\)/);
 });
+
+test('MASTER MONO/STEREO is delivered to RT audio as equal post-pan L+R summing',()=>{
+  assert.match(app,/case'masterMode':setMasterMono\(!masterMono\)/);
+  assert.match(app,/send\('masterMono',masterMono,-1\)/);
+  assert.match(app,/masterGain,masterPan,masterMute,masterMono,masterInserts/);
+  assert.match(main,/name == "masterMono" && value\.isBool\(\)/);
+  assert.match(main,/engine_\.setMasterMono \(bool \(value\)\)/);
+  assert.match(engine,/masterMono_ \{ false \}/);
+  assert.match(engine,/const bool mono = masterMono_\.load/);
+  assert.match(engine,/const float monoL = 0\.5f \* \(matrix\.ll \+ matrix\.rl\)/);
+  assert.match(engine,/const float monoR = 0\.5f \* \(matrix\.lr \+ matrix\.rr\)/);
+  assert.match(engine,/const float fromL = mono \? monoL/);
+  assert.match(engine,/const float fromR = mono \? monoR/);
+  assert.match(bridge,/setMasterMono\(d\.masterMono,false\)/);
+});
