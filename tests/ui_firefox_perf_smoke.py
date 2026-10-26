@@ -30,6 +30,7 @@ async def main():
             }""")
             assert data["mode"]=="canvas" and data["meters"]==14 and data["alpha"]>0,data
             assert data["clips"]==14 and data["visible"]=="hidden",data
+            assert await page.evaluate("document.documentElement.dataset.mixcanvas")=='active'
             await page.locator('[data-view="FX RACK"]').click()
             assert await page.locator(".mix-meter-canvas").is_hidden()
             await page.locator('[data-view="MIX"]').click()
