@@ -248,95 +248,84 @@ async def main():
         assert await page.locator('.left-rail #saveFxPreset').inner_text()=='SAVE FX'
         assert await page.locator('.left-rail #menuScene').inner_text()=='EXPORT'
         assert await page.locator('.left-rail .rail-bottom button').count()==3
-        # Toolbar crystal is an isolated BTN-180-derived flat acrylic surface.
-        # Eight left-rail keys retain the original Button 19 material.
-        assert await page.locator('.toolbar-actions .nav button.fx-nav').count()==7
-        assert await page.locator('.left-rail button.fx-nav').count()==8
-        assert await page.locator('.toolbar-actions .btn-180,.left-rail .btn-180').count()==0
+        # Owner's global BTN-180 hardware recipe: 7 toolbar + 8 left rail.
+        # Single solid face, identical resting 7-shadow model, no Button 19.
+        assert await page.locator('.toolbar-actions .nav button.btn-180').count()==7
+        assert await page.locator('.left-rail button.btn-180').count()==8
+        assert await page.locator('.toolbar-actions .fx-nav,.left-rail .fx-nav').count()==0
         assert await page.locator('.left-rail .pushable,.left-rail .front,.left-rail .edge,.left-rail .shadow').count()==0
-        assert await page.locator('.toolbar-actions button.fx-nav > span').count()==7
-        assert await page.locator('.left-rail button.fx-nav > span').count()==8
         style=await page.evaluate("""()=>{
-          const grab=q=>{const e=document.querySelector(q),s=getComputedStyle(e),r=e.getBoundingClientRect();return {
-            bg:s.backgroundImage,face:s.backgroundColor,shadow:s.boxShadow,
-            color:s.color,radius:s.borderTopLeftRadius,box:r.toJSON(),
-            textTransform:getComputedStyle(e.querySelector('span')).transform
-          }};
+          const grab=q=>{const e=document.querySelector(q),s=getComputedStyle(e),r=e.getBoundingClientRect();
+            return {face:s.backgroundColor,image:s.backgroundImage,ink:s.color,shadow:s.boxShadow,
+                    rect:r.toJSON(),transform:s.transform,radius:s.borderTopLeftRadius,
+                    spanTransform:e.querySelector('span')?getComputedStyle(e.querySelector('span')).transform:null}};
           return {nav:grab('[data-view="FX RACK"]'),
-            rail:grab('[data-preset="Clean Vocal"]'),
-            selected:grab('[data-view="MIX"]'),mixer:(()=>{
-              const e=document.querySelector('[data-mute="0"]');
-              return getComputedStyle(e).backgroundImage;
-            })()};
+                  selected:grab('[data-view="MIX"]'),
+                  rail:grab('[data-preset="Clean Vocal"]'),
+                  railOn:grab('[data-side="channels"]'),
+                  mute:grab('[data-mute="0"]'),
+                  utility:grab('[data-hpf="0"]')};
         }""")
-        assert style['rail']['face']=='rgb(224, 228, 232)',style
-        assert style['rail']['textTransform']=='none',style
-        assert style['nav']['face']=='rgba(96, 111, 126, 0.74)',style
-        assert style['selected']['face']=='rgba(243, 249, 253, 0.96)',style
-        assert style['nav']['radius']==style['selected']['radius']=='2px',style
-        assert 'linear-gradient(' in style['nav']['bg'] and 'radial-gradient(' not in style['nav']['bg'],style
-        assert style['nav']['bg']==style['selected']['bg'],style
-        assert style['nav']['shadow'].count('rgb')==7,style
-        assert style['selected']['shadow'].count('rgb')==7,style
-        assert style['nav']['color']!=style['selected']['color'],style
-        assert style['nav']['textTransform']==style['selected']['textTransform']=='none',style
-        assert style['mixer']=='none',style
-        assert await page.locator('[data-view="FX RACK"]').evaluate(
-            "(e)=>getComputedStyle(e).backdropFilter==='none' && getComputedStyle(e).filter==='none'")
-        await page.screenshot(path=str(project/'toolbar-crystal-offon.png'),full_page=True)
+        for key in ('nav','rail','mute','utility'):
+            assert style[key]['face']=='rgb(179, 179, 179)',(key,style)
+            assert style[key]['image']=='none',(key,style)
+            assert style[key]['shadow'].count('rgb')==7,(key,style)
+            assert style[key]['radius']=='3px',(key,style)
+        assert style['selected']['face']=='rgb(240, 241, 243)',style
+        assert style['railOn']['face']=='rgb(219, 156, 206)',style
+        assert all(style[key]['spanTransform']=='none' for key in ('nav','rail','selected')),style
+        assert await page.locator('[data-hpf="0"]').evaluate(
+            "(e)=>getComputedStyle(e).boxShadow.includes('5px 5px 2px -1px')"),style
+        # Real 1px tactile travel; no text scaling or width/height changes.
         preset=page.locator('[data-preset="Clean Vocal"]')
-        before=await preset.evaluate('(e)=>e.getBoundingClientRect().toJSON()')
+        pre=await preset.evaluate("(e)=>e.getBoundingClientRect().toJSON()")
         await preset.hover()
-        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-preset="Clean Vocal"]')).filter==='none'""")
         await page.mouse.down()
-        await page.wait_for_timeout(150)
-        pressed=await preset.evaluate("""e=>({
-          shadow:getComputedStyle(e).boxShadow,
-          textTransform:getComputedStyle(e.querySelector('span')).transform,
-          rect:e.getBoundingClientRect().toJSON()
-        })""")
-        assert pressed['shadow']!=style['rail']['shadow'],pressed
-        assert pressed['textTransform']=='matrix(0.95, 0, 0, 0.95, 0, 0)',pressed
-        assert all(abs(before[k]-pressed['rect'][k])<=.2 for k in ('x','y','width','height')),pressed
+        await page.wait_for_timeout(120)
+        pushed=await preset.evaluate("""e=>({transform:getComputedStyle(e).transform,
+          shadow:getComputedStyle(e).boxShadow,rect:e.getBoundingClientRect().toJSON()})""")
+        assert pushed['transform']=='matrix(1, 0, 0, 1, 0, 1)',pushed
+        assert pushed['shadow'].startswith('rgba(0, 0, 0, 0.5)'),pushed
+        assert abs(pushed['rect']['y']-pre['y']-1)<=.2,pushed
+        assert all(abs(pushed['rect'][k]-pre[k])<=.2 for k in ('x','width','height')),pushed
         await page.mouse.up()
-        assert await preset.evaluate('(e)=>e.classList.contains("active")')
         await page.mouse.move(1,1)
-        await page.wait_for_timeout(180)
+        await page.wait_for_timeout(190)
         active=await preset.evaluate("""e=>({
-          face:getComputedStyle(e).backgroundColor,
-          shadow:getComputedStyle(e).boxShadow,
-          textTransform:getComputedStyle(e.querySelector('span')).transform,
-          rect:e.getBoundingClientRect().toJSON()
-        })""")
-        assert active['face']=='rgb(57, 239, 114)' and shared_shadow_shape(active['shadow'])==shared_shadow_shape(pressed['shadow']),active
-        assert active['textTransform']==pressed['textTransform'],active
-        assert all(abs(before[k]-active['rect'][k])<=.2 for k in ('x','y','width','height')),active
-        # Navigation remains mutually exclusive, never an independent fake toggle.
+          face:getComputedStyle(e).backgroundColor,shadow:getComputedStyle(e).boxShadow,
+          rect:e.getBoundingClientRect().toJSON(),transform:getComputedStyle(e).transform})""")
+        assert active['face']=='rgb(219, 156, 206)' and active['transform']=='matrix(1, 0, 0, 1, 0, 0)',active
+        assert shared_shadow_shape(active['shadow'])==shared_shadow_shape(style['rail']['shadow']),active
+        assert all(abs(active['rect'][k]-pre[k])<=.2 for k in ('x','y','width','height')),active
+        # Utility ON is soft cyan, not the old green/purple polarity palettes.
+        await page.locator('[data-hpf="0"]').click()
+        await page.wait_for_timeout(190)
+        cyan=await page.locator('[data-hpf="0"]').evaluate("(e)=>getComputedStyle(e).backgroundColor")
+        assert cyan=='rgb(131, 214, 224)',cyan
+        await page.locator('[data-hpf="0"]').click()
+        # Navigation remains mutually exclusive; selected is only a color latch.
         await page.locator('[data-view="FX RACK"]').click()
-        # Navigation remains radio-like; OFF grey / selected ON pearl white.
-        # The seven reflection/shadow layers never need a compositor blur.
         await page.wait_for_function("""()=>{
           const on=document.querySelector('[data-view="FX RACK"]');
           const off=document.querySelector('[data-view="MIX"]');
           return on.classList.contains('selected') && !off.classList.contains('selected')
-            && getComputedStyle(on).backgroundColor==='rgba(243, 249, 253, 0.96)'
-            && getComputedStyle(off).backgroundColor==='rgba(96, 111, 126, 0.74)';
+            && getComputedStyle(on).backgroundColor==='rgb(240, 241, 243)'
+            && getComputedStyle(off).backgroundColor==='rgb(179, 179, 179)';
         }""")
-        crystal=page.locator('[data-view="FX RACK"]')
-        rest=await crystal.evaluate("""e=>({rect:e.getBoundingClientRect().toJSON(),
-            shadow:getComputedStyle(e).boxShadow})""")
-        await crystal.hover()
+        nav=page.locator('[data-view="FX RACK"]')
+        navBefore=await nav.evaluate("(e)=>e.getBoundingClientRect().toJSON()")
+        await nav.hover()
         await page.mouse.down()
-        pressed_crystal=await crystal.evaluate("""e=>({rect:e.getBoundingClientRect().toJSON(),
-            shadow:getComputedStyle(e).boxShadow,
-            textTransform:getComputedStyle(e.querySelector('span')).transform})""")
-        assert rest['shadow']!=pressed_crystal['shadow'],(rest,pressed_crystal)
-        assert pressed_crystal['textTransform']=='none',pressed_crystal
-        assert all(abs(rest['rect'][key]-pressed_crystal['rect'][key])<=.2
-                   for key in ('x','y','width','height')),pressed_crystal
+        await page.wait_for_timeout(120)
+        navDown=await nav.evaluate("""e=>({shadow:getComputedStyle(e).boxShadow,
+          rect:e.getBoundingClientRect().toJSON(),transform:getComputedStyle(e).transform})""")
+        assert navDown['shadow'].startswith('rgba(0, 0, 0, 0.5)'),navDown
+        assert navDown['transform']=='matrix(1, 0, 0, 1, 0, 1)',navDown
+        assert abs(navDown['rect']['y']-navBefore['y']-1)<=.2,navDown
         await page.mouse.up()
         await page.locator('[data-view="MIX"]').click()
-        # One-shot toolbar commands must NOT latch visually after release.
+        await page.screenshot(path=str(project/'toolbar-global-btn180-pad.png'),full_page=True)
+        # One-shot toolbar commands remain unlatched after release.
         await page.locator('#audioSetupBtn').click()
         assert await page.locator('#audioSetupBtn').evaluate(
             '(e)=>!e.classList.contains("active") && !e.classList.contains("selected")')
@@ -481,9 +470,9 @@ async def main():
         assert on['selected'] and shared_shadow_shape(on['shadow'])==shared_shadow_shape(off['shadow']),(off,on)
         assert on['color']!=off['color'],(off,on)
         assert on['t']==off['t'] and same_rect(off,on),(off,on)
-        assert off['color']=='rgb(133, 130, 131)' and off['ink']=='rgb(43, 43, 43)',(off,on)
+        assert off['color']=='rgb(179, 179, 179)' and off['ink']=='rgb(43, 43, 43)',(off,on)
         assert on['ink']!=off['ink'],(off,on)
-        assert on['shadow'].startswith('rgba(0, 0, 0, 0.72)') or '0.72' in on['shadow'],on
+        assert on['shadow'].startswith('rgba(0, 0, 0, 0.3)'),on
         await page.locator('[data-mute="0"]').click()
         await page.mouse.move(1,1)  # OFF after pointer leaves, not the intentional glossy hover state
         await page.wait_for_timeout(190)
@@ -521,7 +510,7 @@ async def main():
         assert during['t']=='matrix(1, 0, 0, 1, 0, 1)',during
         assert abs(during['rect']['y']-press_before['y']-1)<=.2,during
         assert all(abs(during['rect'][k]-press_before[k])<=.2 for k in ('x','width','height')),during
-        assert during['shadow']!=before['shadow'] and '0.82' in during['shadow'],(before,during)
+        assert during['shadow']!=before['shadow'] and '0.5' in during['shadow'],(before,during)
         await page.mouse.up()
         await page.wait_for_timeout(190)
         assert await btn.get_attribute('aria-pressed')=='true'
@@ -543,7 +532,7 @@ async def main():
         assert pressed_on['t']=='matrix(1, 0, 0, 1, 0, 1)',pressed_on
         assert abs(pressed_on['rect']['y']-press_before['y']-1)<=.2,pressed_on
         assert all(abs(pressed_on['rect'][k]-press_before[k])<=.2 for k in ('x','width','height')),pressed_on
-        assert '0.82' in pressed_on['shadow'],pressed_on
+        assert '0.5' in pressed_on['shadow'],pressed_on
         await page.mouse.up()
         await page.wait_for_timeout(190)
         assert await btn.get_attribute('aria-pressed')=='false'

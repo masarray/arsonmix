@@ -1,9 +1,9 @@
-/* Button 180 is owned by mixer controls only; toolbar-actions and left-rail have FX-power chrome. */
+/* Button 180 is the ONE shared material for channel, MASTER, toolbar and left-rail pads. */
 /* BUTTON 180 — one identical RESTING surface for OFF and ON.
    Semantic colors alone define the latched state; only the transient :active
    pointer press moves the cap inward by 1px without changing its layout slot. */
 :root{
- --b180-off:#858283;--b180-edge:#636363;--b180-off-ink:#2b2b2b;
+ --b180-off:#b3b3b3;--b180-edge:#636363;--b180-off-ink:#2b2b2b;
  --b180-color:var(--b180-off);--b180-border:var(--b180-edge);
  --b180-ink:var(--b180-off-ink);
 }
@@ -14,8 +14,8 @@
  /* Exact same inset + outside-edge model as the previously approved ON face.
     All layers are shared; only --b180-border is allowed to tint the edge. */
  --b180-shadow-surface:
-  inset 0 3px 6px -1px rgba(0,0,0,.72),
-  inset 0 0 0 1px rgba(255,255,255,.14),
+  inset 5px 5px 2px -1px rgba(0,0,0,.30),
+  inset 0 0 1px 1px rgba(255,255,255,.14),
   inset 0 1px 20px rgba(0,0,0,.19),
   inset 0 -1px 2px rgba(0,0,0,.32),
   0 0 0 1px var(--b180-border),
@@ -120,23 +120,23 @@
  .left-rail .rail-bottom button.btn-180,.native-btn):active:not(:disabled){
  transform:translateY(1px)!important;
  box-shadow:
-  inset 0 4px 8px -1px rgba(0,0,0,.82),
-  inset 0 1px 2px rgba(0,0,0,.4),
-  inset 0 2px 15px rgba(0,0,0,.27),
-  inset 0 -1px 2px rgba(0,0,0,.44),
+  inset 3px 2px 2px -1px rgba(0,0,0,.50),
+  inset 0 0 1px 0 rgba(255,255,255,.14),
+  inset 0 1px 15px rgba(0,0,0,.29),
+  inset 0 -1px 2px rgba(0,0,0,.32),
   0 0 0 1px var(--b180-border),
-  0 0 0 rgba(0,0,0,0),
-  0 0 0 rgba(0,0,0,0)!important;
+  0 1px 1px rgba(0,0,0,.28),
+  0 2px 3px rgba(0,0,0,.13)!important;
 }
 
-/* OFF = the exact ON material with neutral, extinguished gray palette.
+/* OFF = the same shared material, neutral #b3b3b3 as owner requested.
    Bright ON color recipes above remain untouched. */
 :is(.toolbar .nav button.btn-180,.toolbar .spec-device,
  .strip .channel-actions .candy,.strip .utility-row button,
  #masterLeft .master-actions button,#masterLeft .master-tools button,
  .left-rail .tabs button.btn-180,.left-rail .rail-presets button.btn-180,
  .left-rail .rail-bottom button.btn-180):not(.active):not(.selected):not(.on):not([aria-pressed="true"]){
- --b180-color:var(--b180-off);--b180-border:var(--b180-edge);
+ --b180-color:#b3b3b3;--b180-border:var(--b180-edge);
  --b180-ink:var(--b180-off-ink);
  color:var(--b180-ink)!important;
 }
@@ -144,3 +144,20 @@
  :is(.toolbar .nav button.btn-180,.toolbar .spec-device,.strip .channel-actions .candy,
  .strip .utility-row button,.left-rail button.btn-180){transition:none!important}
 }
+
+/* Scope-specific ON palette: only variables change; all keys share
+   the same seven-layer pad and exact press recipe above. */
+#app .toolbar-actions .nav button.btn-180.selected{
+ --b180-color:#f0f1f3;--b180-border:#939ba5;--b180-ink:#222932;
+}
+#app .left-rail button.btn-180:is(.selected,.active){
+ --b180-color:#db9cce;--b180-border:#9c5b91;--b180-ink:#32172f;
+}
+/* Polarity/HPF share the gentle cyan pad; MUTE/SOLO keep their alert palettes. */
+#app #mixer .strip .utility-row button.btn-180.active{
+ --b180-color:#83d6e0;--b180-border:#38909e;--b180-ink:#12323c;
+}
+#app .left-rail .rail-presets button.btn-180{text-transform:none}
+#app .toolbar-actions .nav button.btn-180{height:34px;min-height:34px;min-width:77px;padding:0 10px!important;letter-spacing:.35px!important}
+#app .left-rail button.btn-180 > span,
+#app .toolbar-actions .nav button.btn-180 > span{transform:none!important;transition:none!important}
