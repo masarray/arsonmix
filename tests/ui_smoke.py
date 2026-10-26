@@ -746,7 +746,7 @@ async def main():
         assert [s['count'] for s in module_layout]==[1]*6+[2]*5,module_layout
         for s in module_layout:
             assert s['dom']==['VU','FADER','SCALE'],s
-            assert abs(s['bank']['w']-30)<.3 and abs(s['ruler']['w']-20)<.3,s
+            assert abs(s['bank']['w']-30)<.3 and abs(s['ruler']['w']-26)<.3,s
             assert s['bank']['r']+2<s['rail']['l'] and s['rail']['r']+2<s['ruler']['l'],s
             assert s['bank']['l']>=s['zone']['l']-1 and s['ruler']['r']<=s['zone']['r']+1,s
             assert all(abs(m['w']-14)<.3 for m in s['meters']),s
