@@ -51,6 +51,23 @@ test('P0 capability report uses real independent endpoints and never auto-applie
   assert.match(policy,/explicitExclusiveApprovalRequired/);
 });
 
+test('P0 ASIO native COM-driver registration attestation runs only on control plane',()=>{
+  const registry=read('engine/device/AsioRegistryIdentityProbe.h');
+  const policy=read('engine/device/AsioRegistrationPolicy.h');
+  assert.match(registry,/RegOpenKeyExW\(HKEY_LOCAL_MACHINE/);
+  assert.match(registry,/L"SOFTWARE\\\\ASIO"/);
+  assert.match(registry,/RegEnumKeyExW/);
+  assert.match(registry,/InprocServer32/);
+  assert.match(policy,/ambiguousName/);
+  assert.match(policy,/canonicalGuid/);
+  assert.match(engine,/savedAsioPreflight/);
+  assert.match(engine,/sameDriverClass\(asioPinnedRegistration_\)/);
+  assert.match(engine,/asioPinnedRegistration_\.sameDriverClass/);
+  assert.match(engine,/asioRegisteredClassHash/);
+  assert.match(host,/WINDOWS ASIO DRIVER REGISTRATION/);
+  assert.match(cmake,/AsioDriverClassRegistryAttestation/);
+  assert.match(flow,/ARMixAsioRegistryIdentityTests/);
+});
 test('telemetry distinguishes measured host budget fractions from unobservable output underrun',()=>{
   assert.match(engine,/realtimeHistogram_\.observe \(elapsedUs, periodUs\)/);
   assert.match(engine,/callbackP95BudgetUpperPct/);
