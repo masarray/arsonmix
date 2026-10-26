@@ -768,6 +768,32 @@ async def main():
         assert measured["mode"]=="meters-off" and measured["durationMs"]==1000,measured
         assert measured["mixer"]["samples"]>0 and measured["pointerMoves"]["mixer"]>0,measured
         await diag.close()
+        # Canvas A/B: preserve 14 meter geometry/CLIP targets while eliminating
+        # per-frame style writes to the individual DOM bars.
+        canvas_page=await browser.new_page(viewport={"width":1680,"height":920})
+        await canvas_page.goto((project/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").as_uri()+"?mixperf=canvas")
+        await canvas_page.wait_for_function("""()=>meterCanvasState.draws>=2
+            && meterCanvasState.entries.length===14""")
+        canvas_geom=await canvas_page.evaluate("""()=>{
+          const c=meterCanvasState.canvas,ctx=c.getContext('2d');
+          const img=ctx.getImageData(0,0,c.width,c.height);
+          let painted=0;for(let i=3;i<img.data.length;i+=4)if(img.data[i]){painted++;if(painted>5)break}
+          return {draws:meterCanvasState.draws,entries:meterCanvasState.entries.length,
+           canvas:c.width>0&&c.height>0,painted,clips:document.querySelectorAll('#mixer [data-clip]').length,
+           hidden:getComputedStyle(document.querySelector('[data-meter="0"]')).visibility,
+           inlineStyle:document.querySelector('[data-meter="0"]').style.getPropertyValue('--meter-scale')};
+        }""")
+        assert canvas_geom['canvas'] and canvas_geom['painted']>0,canvas_geom
+        assert canvas_geom['entries']==14 and canvas_geom['clips']==14,canvas_geom
+        assert canvas_geom['hidden']=='hidden' and canvas_geom['inlineStyle']=='.4',canvas_geom
+        # Real desktop bridge isn't modified: canvas is URL gated and not active
+        # in default mode, or when a native backend is present.
+        await canvas_page.locator('[data-view="FX RACK"]').click()
+        assert await canvas_page.locator('.mix-meter-canvas').is_hidden()
+        await canvas_page.locator('[data-view="MIX"]').click()
+        await canvas_page.wait_for_function("""()=>meterCanvasState.draws>=3
+            && meterCanvasState.canvas.classList.contains('hidden')===false""")
+        await canvas_page.close()
         await browser.close()
     print("PASS: asset PNG for 13 faders, detent alignment, no-jump drag, endpoints, FX chain, no JS errors")
 
