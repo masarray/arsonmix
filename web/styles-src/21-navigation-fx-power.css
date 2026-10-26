@@ -1,9 +1,9 @@
-/* Button 19 mixer key — approved bright-grey raised OFF / luminous green latched ON.
-   Physical 3D geometry is ported from button_19_mixer_latching.html, not from
-   the former FX-power chrome. Only toolbar-actions and left-rail own this skin.
+/* Button 19 mixer key — left-rail ONLY: grey raised OFF / green latched ON.
+   Physical 3D geometry from button_19_mixer_latching.html. Toolbar is now
+   a separate BTN-180-derived crystal surface; never share rail state rules.
    The real application owns .selected (radio/navigation) and .active (presets);
    one-shot commands retain a momentary :active press, never a fake latched state. */
-#app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav){
+#app .left-rail button.fx-nav{
  --face:#e0e4e8;
  --side:#a1aab2;
  --side-pressed:#7f8992;
@@ -40,13 +40,11 @@
  transition:none;
 }
 /* Text shrinks inside its unchanged layout slot like the approved single-key demo. */
-#app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav)>span{
+#app .left-rail button.fx-nav>span{
  display:block;
  transition:none;
 }
-#app :is(.toolbar-actions .nav button.fx-nav.selected,
-         .left-rail button.fx-nav.selected,
-         .left-rail button.fx-nav.active){
+#app .left-rail button.fx-nav:is(.selected,.active){
  --face:#39ef72;
  --side:#1aaf50;
  --side-pressed:#0b8039;
@@ -55,7 +53,7 @@
  text-shadow:none;
 }
 /* Recessed ON is persistent; OFF is recessed only while physically pressed. */
-#app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav):is(:active,.selected,.active){
+#app .left-rail button.fx-nav:is(:active,.selected,.active){
  box-shadow:
   0 -.1em 0 .1em var(--hole-dark),
   0 .1em 0 .1em var(--hole-light),
@@ -64,18 +62,18 @@
   .2em 0 0 var(--hole-dark) inset,
   0 -.2em 0 var(--side-pressed) inset;
 }
-#app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav):is(:active,.selected,.active)>span{
+#app .left-rail button.fx-nav:is(:active,.selected,.active)>span{
  transform:scale(.95);
 }
 /* Earlier generic selected glass overlays are not part of Button 19. */
-#app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav)::before,
-#app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav)::after{
+#app .left-rail button.fx-nav::before,
+#app .left-rail button.fx-nav::after{
  content:none;
 }
-#app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav):hover:not(:disabled){
+#app .left-rail button.fx-nav:hover:not(:disabled){
  filter:none;
 }
-#app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav):focus-visible{
+#app .left-rail button.fx-nav:focus-visible{
  outline:2px solid #86f7ad;
  outline-offset:2px;
 }
@@ -85,8 +83,8 @@
  padding:0 9px;
 }
 @media(prefers-reduced-motion:reduce){
- #app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav),
- #app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav)>span{transition:none!important}
+ #app .left-rail button.fx-nav,
+ #app .left-rail button.fx-nav>span{transition:none!important}
 }
 
 /* Toolbar BTN-180 Crystal: a FLAT acrylic block, never a domed button.
