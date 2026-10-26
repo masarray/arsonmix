@@ -696,6 +696,17 @@ public:
             o->setProperty ("bridgeWatchdogArmed", watch.armed);
             o->setProperty ("bridgeWatchdogThresholdMs",
                 static_cast<double> (armix::device::IndependentStreamWatchdog::silenceThresholdMs));
+            const auto continuity = independent_.continuityStatus();
+            o->setProperty ("bridgeContinuityFault",
+                armix::device::BridgeContinuityGate::name (continuity.fault));
+            o->setProperty ("bridgeContinuityWindowReason",
+                armix::device::BridgeContinuityGate::name (continuity.lastWindowFault));
+            o->setProperty ("bridgeContinuityBadWindows",
+                static_cast<int> (continuity.consecutiveBadWindows));
+            o->setProperty ("bridgeContinuityLossBp",
+                static_cast<int> (continuity.lossBasisPoints));
+            o->setProperty ("bridgeContinuityWindowFrames",
+                static_cast<double> (continuity.windowFrames));
         }
         return juce::var (o.release());
     }

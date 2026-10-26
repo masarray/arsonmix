@@ -219,7 +219,13 @@ private:
             + " captureSilentMs="
             + stateBeforeRestore.getProperty ("bridgeCaptureSilentMs", 0).toString()
             + " renderSilentMs="
-            + stateBeforeRestore.getProperty ("bridgeRenderSilentMs", 0).toString();
+            + stateBeforeRestore.getProperty ("bridgeRenderSilentMs", 0).toString()
+            + " continuity="
+            + stateBeforeRestore.getProperty ("bridgeContinuityFault", "NONE").toString()
+            + " lossBp="
+            + stateBeforeRestore.getProperty ("bridgeContinuityLossBp", 0).toString()
+            + " badWindows="
+            + stateBeforeRestore.getProperty ("bridgeContinuityBadWindows", 0).toString();
         const auto error = engine_.setIndependentClockEnabled (false);
         if (error.isEmpty())
         {

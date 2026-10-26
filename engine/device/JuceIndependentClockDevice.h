@@ -4,6 +4,7 @@
 #include "AdaptiveClockBridge.h"
 #include "ClockBridgeSizing.h"
 #include "IndependentStreamWatchdog.h"
+#include "BridgeContinuityGate.h"
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -119,6 +120,7 @@ public:
             return "Unable to allocate bounded capture FIFO / ASRC coefficients";
         }
         streamWatchdog_.reset();
+        continuityGate_.reset();
         deviceFault_.store (false, std::memory_order_release);
         rateChanged_.store (false, std::memory_order_release);
         captureCallbacks_.store (0, std::memory_order_relaxed);
@@ -150,6 +152,7 @@ public:
         captureManager_.closeAudioDevice();
         downstream_ = nullptr;
         streamWatchdog_.reset();
+        continuityGate_.reset();
     }
 
     // Existing control timer owns this check; never invoked from audio callbacks.
@@ -159,10 +162,22 @@ public:
         if (streamWatchdog_.observe (nowMs, captureCallbacks(), renderCallbacks())
             != IndependentStreamWatchdog::Stall::none)
             deviceFault_.store (true, std::memory_order_release);
+        // Existing atomic bridge counters can reveal recurrent dropouts even
+        // when BOTH OS callbacks still execute. Observe at 12 Hz, not on RT.
+        const auto pcm = bridge_.status();
+        if (continuityGate_.observe (nowMs,
+                {pcm.renderedFrames, pcm.underflowFrames,
+                 pcm.primingFrames, pcm.overflowFrames})
+            != BridgeContinuityGate::Fault::none)
+            deviceFault_.store (true, std::memory_order_release);
     }
     IndependentStreamWatchdog::Snapshot streamWatchdogStatus() const noexcept
     {
         return streamWatchdog_.snapshot();
+    }
+    BridgeContinuityGate::Snapshot continuityStatus() const noexcept
+    {
+        return continuityGate_.snapshot();
     }
 
     bool active() const noexcept { return active_.load (std::memory_order_acquire); }
@@ -280,6 +295,7 @@ private:
     juce::AudioDeviceManager captureManager_, renderManager_;
     AdaptiveClockBridge bridge_;
     IndependentStreamWatchdog streamWatchdog_; // message-thread policy
+    BridgeContinuityGate continuityGate_; // message-thread policy, no RT work
     juce::AudioBuffer<float> staging_;
     juce::AudioIODeviceCallback* downstream_ = nullptr; // non-owning, externally synchronized
     Capture captureCallback_;
