@@ -16,11 +16,14 @@ test('latest desktop GUI is present and actually loads native bridge',()=>{
   assert.match(css,/master-fx-rack/);
 });
 test('native desktop does not run any visual-only sine meter loop',()=>{
+  const scheduler=app.indexOf('function scheduleDemoMeter()');
   const fn=app.indexOf('function meters(t)');
-  assert.ok(fn>0);
-  const early=app.indexOf('if(window.__JUCE__?.backend?.emitEvent)return;',fn);
-  const osc=app.indexOf('requestAnimationFrame(meters)',fn);
-  assert.ok(early>fn&&early<osc);
+  const early=app.indexOf('if(window.__JUCE__?.backend?.emitEvent||document.hidden||',fn);
+  const synth=app.indexOf('channels.forEach((ch,i)=>{const wave=',fn);
+  const scheduleGuard=app.indexOf('if(window.__JUCE__?.backend?.emitEvent||document.hidden||',scheduler);
+  const timer=app.indexOf('meterTimer=setTimeout(',scheduler);
+  assert.ok(scheduler>=0 && fn>scheduler && early>fn && early<synth);
+  assert.ok(scheduleGuard>scheduler && scheduleGuard<timer);
   assert.match(bridge,/liveOutputLeft/);
   assert.match(bridge,/\["masterL",liveOutputLeft\]/);
   assert.match(bridge,/\["masterR",liveOutputRight\]/);

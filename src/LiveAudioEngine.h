@@ -825,6 +825,9 @@ public:
             o->setProperty ("bridgeRenderEndpointIdHash", independent_.renderIdentityHash());
             o->setProperty ("bridgeCaptureCallbacks", static_cast<double> (independent_.captureCallbacks()));
             o->setProperty ("bridgeRenderCallbacks", static_cast<double> (independent_.renderCallbacks()));
+            o->setProperty ("bridgeNegotiationFault", independent_.formatFaultReason());
+            o->setProperty ("bridgeNegotiationProtection",
+                "FULL_CHANNEL_MASK_RATE_PERIOD_AT_START_PLUS_RT_CHANNEL_COUNT");
             const auto watch = independent_.streamWatchdogStatus();
             o->setProperty ("bridgeWatchdogFault",
                 armix::device::IndependentStreamWatchdog::name (watch.stall));
