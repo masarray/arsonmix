@@ -15,9 +15,6 @@ async def main():
         page = await browser.new_page(viewport={"width": 1440, "height": 820})
         errors = []
         page.on("pageerror", lambda e: errors.append(str(e)))
-        await page.add_init_script("""() => {
-          // Wrapper function intentionally invoked below: init scripts execute in window.
-        }""")
         await page.add_init_script("""(() => {
           const listeners = new Map();
           const backend = {
@@ -78,6 +75,13 @@ async def main():
         assert await start.is_disabled(), "Start must require range confirmation"
         await modal.locator("#nativeOrbitConfirm").check()
         assert await start.is_enabled()
+        geometry = await modal.locator(".native-dialog").evaluate("""el=>({
+          width:el.getBoundingClientRect().width,
+          height:el.getBoundingClientRect().height,
+          overflow:el.scrollWidth>el.clientWidth
+        })""")
+        assert geometry["width"] <= 480 and not geometry["overflow"], geometry
+        await page.screenshot(path="native-orbit-ui-review.png", full_page=True)
         await modal.locator("#nativeOrbitSeconds").fill("15")
         await modal.locator("#nativeOrbitReverse").select_option("true")
         await start.click()
