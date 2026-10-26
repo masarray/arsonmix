@@ -30,13 +30,13 @@
 /* Preview performance + dense mixer shell: preserve all control sizes.
    The prior 6px top gutter was visually excessive below the 56px toolbar. */
 #app .main{padding-top:2px}
-/* The original height-based bar was laid out and repainted ~14 x 30/s.
-   A fixed paint box whose scale is composited keeps the meter layout stable. */
+/* Stationary 7px LED cells: the shared painter supplies --led-lit as whole rows.
+   --level remains a fallback for hosts without the shared painter. */
 #app .meter .meter-fill{
  height:calc(100% - 14px);
  max-height:none;
- transform-origin:center bottom;
- transform:scaleY(var(--meter-scale,.4));
+ transform:none;
+ clip-path:inset(calc(100% - var(--led-lit,var(--level,40%))) 0 0);
  will-change:auto;
  pointer-events:none;
 }

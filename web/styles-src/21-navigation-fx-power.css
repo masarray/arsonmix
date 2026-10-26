@@ -20,15 +20,16 @@
   radial-gradient(90% 7% at 50% 8%,rgba(255,255,255,.47) 25%,rgba(255,255,255,0) 50%);
  background-color:var(--face);
  color:#353e47;
- text-shadow:0 1px 0 rgba(255,255,255,.7);
+ text-shadow:none;
+ /* Crisp tactile edges; no Gaussian blur or fake halo. */
  box-shadow:
-  .2em .2em .5em rgba(0,0,0,.47),
+  .15em .15em 0 rgba(0,0,0,.36),
   0 -.1em 0 .1em var(--hole-dark),
   0 .1em 0 .1em var(--hole-light),
-  -.2em 0 .2em var(--side) inset,
-  0 .2em .2em var(--light) inset,
-  .2em 0 .2em var(--light) inset,
-  0 -.2em .2em var(--side) inset;
+  -.2em 0 0 var(--side) inset,
+  0 .2em 0 var(--light) inset,
+  .2em 0 0 var(--light) inset,
+  0 -.2em 0 var(--side) inset;
  font-family:'Segoe UI',Arial,sans-serif;
  font-weight:600;
  cursor:pointer;
@@ -36,13 +37,12 @@
  touch-action:manipulation;
  transform:none;
  filter:none;
- transition:box-shadow 100ms linear,background-color 115ms ease-out,
-            color 115ms ease-out,filter 100ms ease-out;
+ transition:none;
 }
 /* Text shrinks inside its unchanged layout slot like the approved single-key demo. */
 #app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav)>span{
  display:block;
- transition:transform 100ms linear;
+ transition:none;
 }
 #app :is(.toolbar-actions .nav button.fx-nav.selected,
          .left-rail button.fx-nav.selected,
@@ -52,18 +52,17 @@
  --side-pressed:#0b8039;
  --light:rgba(218,255,226,.48);
  color:#07582b;
- text-shadow:0 1px 0 rgba(230,255,235,.65);
+ text-shadow:none;
 }
 /* Recessed ON is persistent; OFF is recessed only while physically pressed. */
 #app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav):is(:active,.selected,.active){
  box-shadow:
-  0 0 0 rgba(0,0,0,.47),
   0 -.1em 0 .1em var(--hole-dark),
   0 .1em 0 .1em var(--hole-light),
-  -.2em 0 .2em var(--side-pressed) inset,
-  0 .2em .2em var(--hole-dark) inset,
-  .2em 0 .2em var(--hole-dark) inset,
-  0 -.2em .2em var(--side-pressed) inset;
+  -.2em 0 0 var(--side-pressed) inset,
+  0 .2em 0 var(--hole-dark) inset,
+  .2em 0 0 var(--hole-dark) inset,
+  0 -.2em 0 var(--side-pressed) inset;
 }
 #app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav):is(:active,.selected,.active)>span{
  transform:scale(.95);
@@ -74,7 +73,7 @@
  content:none;
 }
 #app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav):hover:not(:disabled){
- filter:brightness(1.045);
+ filter:none;
 }
 #app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav):focus-visible{
  outline:2px solid #86f7ad;

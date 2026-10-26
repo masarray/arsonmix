@@ -1,8 +1,7 @@
-/* One soft, non-rectilinear halo shared by source and stereo master. */
+/* Crisp selection seams: no Gaussian blur, preserved layout and semantic tint. */
 .strip.selected,#masterLeft.selected{
  --selection-tint:color-mix(in srgb,var(--ch) 22%,#7fe8ff 78%);
- box-shadow:inset 0 0 11px color-mix(in srgb,var(--selection-tint) 23%,transparent),
-            inset 0 0 1px color-mix(in srgb,var(--selection-tint) 55%,transparent)!important;
+ box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--selection-tint) 55%,transparent)!important;
 }
 .strip.selected::before,#masterLeft.selected::before{
  content:"";position:absolute;inset:1px;z-index:6;pointer-events:none;
@@ -10,16 +9,14 @@
  background:linear-gradient(to right,
     color-mix(in srgb,var(--selection-tint) 14%,transparent),transparent 13% 87%,
     color-mix(in srgb,var(--selection-tint) 14%,transparent));
- box-shadow:inset 0 0 8px color-mix(in srgb,var(--selection-tint) 28%,transparent),
-            inset 0 0 0 1px color-mix(in srgb,var(--selection-tint) 12%,transparent),
-            0 0 6px color-mix(in srgb,var(--selection-tint) 13%,transparent)!important;
+ box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--selection-tint) 28%,transparent)!important;
 }
 .strip.selected .strip-name{
- box-shadow:inset 0 0 6px color-mix(in srgb,var(--selection-tint) 19%,transparent)!important;
+ box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--selection-tint) 19%,transparent)!important;
 }
 .strip.identity-editing .strip-name{
  outline:none!important;
- box-shadow:inset 0 0 9px #60d9fa51,0 0 6px #41bce75a!important;
+ box-shadow:inset 0 0 0 1px #60d9fa51!important;
 }
 @media(prefers-reduced-motion:reduce){
  :where(.toolbar .nav button,.toolbar .spec-device,

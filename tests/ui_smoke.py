@@ -33,7 +33,7 @@ async def main():
         cap=page.locator('[data-fader="0"] .cap')
         await cap.hover()
         fast=await cap.evaluate("(e)=>getComputedStyle(e).filter")
-        assert 'drop-shadow' not in fast,fast
+        assert fast=='none',fast
         await page.evaluate("document.documentElement.dataset.mixperf='baseline'")
         original=await cap.evaluate("(e)=>getComputedStyle(e).filter")
         assert 'drop-shadow' in original,original
@@ -49,8 +49,13 @@ async def main():
         await pan.evaluate("(e)=>e.setAttribute('aria-valuenow','22')")
         pan_thumb=pan.locator('.pan-thumb')
         light_pan=await pan_thumb.evaluate("(e)=>getComputedStyle(e).filter")
-        assert 'drop-shadow' not in light_pan,light_pan
+        assert light_pan=='none',light_pan
         await page.evaluate("document.documentElement.dataset.mixperf='baseline'")
+        # The baseline restores the historical PAN 95ms filter transition.
+        # Inspect its final value, not the temporary interpolated frame.
+        await page.wait_for_function("""()=>getComputedStyle(
+            document.querySelector('[data-pan="0"] .pan-thumb')
+        ).filter.includes('brightness(1.08)')""")
         old_pan=await pan_thumb.evaluate("(e)=>getComputedStyle(e).filter")
         assert 'brightness(1.08)' in old_pan and 'drop-shadow' in old_pan,old_pan
         await page.evaluate("document.documentElement.dataset.mixperf='optimized'")
@@ -67,26 +72,52 @@ async def main():
         assert shell['mainHeight']>400,shell
         # Fixed-height, composited meters; peak only mutates when peak value changes.
         meter=await page.evaluate("""()=>{
+          // Freeze synthetic preview ticks while probing deterministic peak-hold.
+          // Otherwise the 25 Hz real-clock demo can interleave with fake test timestamps.
+          if(meterTimer){clearTimeout(meterTimer);meterTimer=0}
+          if(meterRAF){cancelAnimationFrame(meterRAF);meterRAF=0}
           const fill=document.querySelector('[data-meter="0"]');
           const peak=fill.closest('.meter').querySelector('.meter-peak');
           const slot=fill.closest('.meter');
           const heightBefore=getComputedStyle(fill).height;
           updateMeterVisual('0',27,10000);
-          const first={ratio:fill.style.getPropertyValue('--meter-scale'),
+          const first={ratio:fill.style.getPropertyValue('--level'),
             peak:peak.style.bottom,height:getComputedStyle(fill).height,
+            lit:parseFloat(fill.style.getPropertyValue('--led-lit')),
+            heightPx:fill.getBoundingClientRect().height,
+            clip:getComputedStyle(fill).clipPath,palette:getComputedStyle(fill).backgroundImage,
             cached:meterNodes.get('0').fill===fill};
           updateMeterVisual('0',16,10016);
           const held=peak.style.bottom;
           updateMeterVisual('0',45,10032);
-          return {first,held,latest:peak.style.bottom,ratio:fill.style.getPropertyValue('--meter-scale'),
+          const ratio=fill.style.getPropertyValue('--level');
+          const clip=getComputedStyle(fill).clipPath;
+          const palette=getComputedStyle(fill).backgroundImage;
+          const levels=[10,30,60,85,98].map(v=>{
+            setLedMeterLevel(fill,v);
+            return {v,lit:parseFloat(fill.style.getPropertyValue('--led-lit')),
+              height:fill.getBoundingClientRect().height,
+              palette:getComputedStyle(fill).backgroundImage,
+              clip:getComputedStyle(fill).clipPath};
+          });
+          return {first,held,latest:peak.style.bottom,ratio,
             heightBefore,heightAfter:getComputedStyle(fill).height,
-            transform:getComputedStyle(fill).transform,
+            transform:getComputedStyle(fill).transform,clip,palette,levels,
             shape:slot.getBoundingClientRect().height};
         }""")
-        assert meter['first']['cached'] and meter['first']['ratio']=='0.27',meter
+        assert meter['first']['cached'] and meter['first']['ratio']=='27%',meter
         assert meter['first']['peak']==meter['held'] and meter['latest']=='45%',meter
-        assert meter['ratio']=='0.45' and meter['heightBefore']==meter['heightAfter'],meter
-        assert meter['transform']!='none' and meter['shape']>0,meter
+        assert meter['ratio']=='45%' and meter['heightBefore']==meter['heightAfter'],meter
+        assert meter['transform']=='none' and meter['shape']>0,meter
+        assert abs(meter['first']['lit']-7*int(meter['first']['heightPx']*.27/7))<.01,meter
+        assert meter['first']['clip'].startswith('inset(') and meter['clip'].startswith('inset('),meter
+        assert meter['first']['palette']==meter['palette'],meter
+        levels=meter['levels']
+        assert [x['v'] for x in levels]==[10,30,60,85,98],levels
+        assert all(abs(x['lit']-7*int(x['height']*x['v']/100/7))<.01 for x in levels),levels
+        assert all(x['palette']==meter['first']['palette'] for x in levels),levels
+        assert all(x['lit']<=.9*x['height'] for x in levels[:4]),levels
+        assert levels[-1]['lit']>.9*levels[-1]['height'],levels
         # Full mixer rebuild must restore held peaks and clip state on fresh DOM nodes.
         restored=await page.evaluate("""()=>{
           clipLatch['0']=true;
@@ -100,6 +131,7 @@ async def main():
           return result;
         }""")
         assert restored=={'peak':'45%','clip':True},restored
+        await page.evaluate('scheduleDemoMeter()')
         # No per-event idle fader work: drag listener is attached only on pointerdown.
         assert await page.evaluate('drag===null')
         # All 12 PAN knobs have been replaced by horizontal slider tracks.
@@ -214,7 +246,7 @@ async def main():
         preset=page.locator('[data-preset="Clean Vocal"]')
         before=await preset.evaluate('(e)=>e.getBoundingClientRect().toJSON()')
         await preset.hover()
-        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-preset="Clean Vocal"]')).filter==='brightness(1.045)'""")
+        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-preset="Clean Vocal"]')).filter==='none'""")
         await page.mouse.down()
         await page.wait_for_timeout(150)
         pressed=await preset.evaluate("""e=>({
@@ -481,7 +513,7 @@ async def main():
         at_center=await pan_fill.bounding_box()
         assert at_center['width']<1,at_center
         await p1.press('End')
-        assert 'drop-shadow' in await p1.locator('.pan-thumb').evaluate('(e)=>getComputedStyle(e).filter')
+        assert await p1.locator('.pan-thumb').evaluate('(e)=>getComputedStyle(e).filter')=='none'
         right_fill=await pan_fill.bounding_box()
         assert right_fill['width']>10,right_fill
         await p1.press('Home')
@@ -520,7 +552,7 @@ async def main():
         cap0=page.locator('[data-fader="0"] .cap')
         await cap0.hover()
         fader_hover=await cap0.evaluate("(e)=>getComputedStyle(e).filter")
-        assert 'brightness(1.1)' in fader_hover and 'drop-shadow' not in fader_hover, fader_hover
+        assert fader_hover=='none',fader_hover
         button=page.locator('[data-mute="0"]')
         await button.hover()
         await page.wait_for_timeout(150)  # Finish 90 ms physical-switch filter transition.
