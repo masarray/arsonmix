@@ -304,3 +304,7 @@ A fake capture/render backend uses **virtual sample clocks**, not real-time `sle
 6. CI: Windows MSVC Release, CTest, Chromium locked GUI. Keep logs/benchmark/artifacts from exact SHA.
 7. **Physical FAT** must be reported as hardware-observed, not inferred from green CI.
 8. Finish with PR, issue links, commit SHA, remaining risks and next gate. Don't declare generic "optimized" without profiling measurements.
+
+## ASIO-first implementation update (2026-10-26)
+
+Prioritize ASIO for live vocal/live mixer performance, with supported WASAPI direct and independent capture/render routes as peers, not replacement. JUCE 8.0.15 enumerates Windows Audio before ASIO by default; `AsioPriorityDeviceManager` now chooses first-run ASIO **only if exactly one matching input/output ASIO driver** is discovered. Driver sample rates and periods remain negotiated by JUCE without guessed settings; strict saved-route identity enforces user's manually chosen backend and device names. Without a saved route, failed automatic ASIO opening may fail over to Windows Audio DIRECT with an explicit diagnostic. ASIO path never enters independent ASRC. New deterministic policy and Windows compile-time + actual ASIO type registration test are required in CI. Never claim measured RTL from driver latency hints. Future work: ASIO device notifications, latency/FAT and real AUTO/STABLE low-latency health gating. Preserve existing GUI.

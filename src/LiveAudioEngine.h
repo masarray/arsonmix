@@ -8,6 +8,7 @@
 #include "LiveGraphHandoff.h"
 #include "DiagnosticTone.h"
 #include "../engine/device/JuceIndependentClockDevice.h"
+#include "../engine/device/AsioPriorityDeviceManager.h"
 #include "../engine/device/WasapiEndpointIdentityGuard.h"
 #include "../engine/core/RealtimeHealthHistogram.h"
 #include <array>
@@ -66,10 +67,64 @@ public:
         // The former MONITOR enable gate caused silent master/output confusion.
         // Panic OUTPUT MUTE remains available at all times.
         monitor_.store (true);
-        const auto error = deviceManager_.initialise (1, 2, savedSettings, true);
-        if (error.isNotEmpty()) return error;
+        // Register the host callback BEFORE opening any physical device.
+        // If saved ASIO is absent/busy and startup deliberately fails closed,
+        // AUDIO SETUP can still select a replacement and JUCE will call the
+        // already-registered host's aboutToStart() on the new device.
+        // No RT worker, no second callback registration on successful start.
         deviceManager_.addAudioCallback (this);
         attached_ = true;
+        const bool savedRoute = savedSettings != nullptr
+            && savedSettings->hasTagName ("DEVICESETUP");
+        const auto expectedBackend = savedRoute
+            ? savedSettings->getStringAttribute ("deviceType") : juce::String();
+        // Saved explicit device choice MUST NOT be silently replaced by
+        // JUCE's selectDefaultDeviceOnFailure path (e.g. ASIO -> WASAPI).
+        auto error = deviceManager_.initialise (1, 2, savedSettings, !savedRoute);
+        if (error.isNotEmpty() && !savedRoute && deviceManager_.singleAsioPreferred())
+        {
+            // This was only an automatic FIRST-RUN ASIO preference, not the
+            // user's chosen ASIO driver. Keep WASAPI supported if the sole
+            // discovered ASIO driver cannot open. Report the provenance.
+            const auto asioError = error;
+            deviceManager_.setCurrentAudioDeviceType ("Windows Audio", false);
+            if (deviceManager_.getCurrentAudioDevice() != nullptr &&
+                deviceManager_.getCurrentAudioDeviceType() == "Windows Audio")
+            {
+                startupFallbackReason_ = "AUTO_ASIO_FAILED_WASAPI_DIRECT";
+                error.clear();
+            }
+            else error = "Automatic ASIO open failed: " + asioError
+                       + " | Windows Audio fallback unavailable";
+        }
+        if (error.isNotEmpty()) return error;
+        const auto* active = deviceManager_.getCurrentAudioDevice();
+        if (active == nullptr)
+            return "Selected audio backend has no open device";
+        if (savedRoute)
+        {
+            // JUCE's missing-backend XML compatibility logic may otherwise
+            // infer another driver by friendly name, even with fallback=false.
+            // A persisted manually selected ASIO/WASAPI route must not hijack
+            // a different physical output on startup.
+            const auto expectedDuplexName = savedSettings->getStringAttribute ("audioDeviceName");
+            const auto inputName = expectedDuplexName.isNotEmpty()
+                ? expectedDuplexName
+                : savedSettings->getStringAttribute ("audioInputDeviceName");
+            const auto outputName = expectedDuplexName.isNotEmpty()
+                ? expectedDuplexName
+                : savedSettings->getStringAttribute ("audioOutputDeviceName");
+            juce::AudioDeviceManager::AudioDeviceSetup actual;
+            deviceManager_.getAudioDeviceSetup (actual);
+            if ((expectedBackend.isNotEmpty() &&
+                 deviceManager_.getCurrentAudioDeviceType() != expectedBackend)
+                || (inputName.isNotEmpty() && actual.inputDeviceName != inputName)
+                || (outputName.isNotEmpty() && actual.outputDeviceName != outputName))
+            {
+                deviceManager_.closeAudioDevice();
+                return "Saved audio route identity changed: choose an explicit ASIO/WASAPI device in AUDIO SETUP";
+            }
+        }
         return {};
     }
 
@@ -600,6 +655,20 @@ public:
         o->setProperty ("adaptiveClockActive", dual);
         o->setProperty ("adaptiveClockFaulted", dual && independent_.faulted());
         o->setProperty ("adaptiveClockMode", dual ? "INDEPENDENT_WASAPI_RENDER_MASTER" : "DIRECT");
+        const auto backend = dual ? juce::String ("Windows Audio")
+                                  : deviceManager_.getCurrentAudioDeviceType();
+        o->setProperty ("liveBackendClass", dual ? "WASAPI_BRIDGED_ASRC"
+            : backend == "ASIO" ? "ASIO_DIRECT_ZERO_EXTRA_FIFO"
+            : backend.startsWith ("Windows Audio") ? "WASAPI_DIRECT_ZERO_EXTRA_FIFO"
+            : "OTHER_DIRECT");
+        o->setProperty ("asioFirstBootEligible", deviceManager_.singleAsioPreferred());
+        o->setProperty ("startupFallbackReason", startupFallbackReason_);
+        o->setProperty ("driverReportedInputLatencyFrames",
+            capture ? juce::var (capture->getInputLatencyInSamples()) : juce::var());
+        o->setProperty ("driverReportedOutputLatencyFrames",
+            d ? juce::var (d->getOutputLatencyInSamples()) : juce::var());
+        o->setProperty ("driverLatencyProvenance",
+            "DRIVER_HINT_NOT_MEASURED_ROUND_TRIP");
         o->setProperty ("driver", dual ? "Windows Audio / dual independent clocks"
                                          : deviceManager_.getCurrentAudioDeviceType());
         o->setProperty ("captureRate", capture ? capture->getCurrentSampleRate() : 0.0);
@@ -726,7 +795,8 @@ public:
 
 private:
     static constexpr int maxFrames = 8192;
-    juce::AudioDeviceManager deviceManager_;
+    armix::device::AsioPriorityDeviceManager deviceManager_;
+    juce::String startupFallbackReason_; // control-thread-only startup diagnostics
     armix::device::JuceIndependentClockDevice independent_;
     std::optional<juce::AudioDeviceManager::AudioDeviceSetup> savedDirectSetup_;
     juce::AudioPluginFormatManager formats_;

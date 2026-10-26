@@ -194,3 +194,11 @@ Primary sources reviewed:
 - [Original hardware issue #15](https://github.com/masarray/arsonmix/issues/15)
 
 **Known source limitations:** these references provide API contracts and plausible mechanisms, not proof of exact hardware fault in the user's BT/virtual-cable pair. The P0 instrumentation/FAT phase exists to establish that proof.
+
+## 2026-10-26 decision update — ASIO is the principal live-performance backend
+
+**Implementation slice:** `AsioPriorityDeviceManager` puts the JUCE ASIO device type ahead of WASAPI **only on a fresh default setup** and only when the installed ASIO backend advertises exactly one unambiguous, identically named input/output interface. This is not a guarantee that the registered ASIO driver is wired hardware or latency-certified. With multiple ASIO drivers, no automatic guess is made; the user explicitly selects ASIO in the native AUDIO SETUP. Any valid saved explicit ASIO or WASAPI DEVICESETUP remains authoritative. A failed saved ASIO route **does not silently fall back to a different device**. When a first-run auto-preferred ASIO driver fails, Windows Audio direct is available as a clearly diagnosed startup fallback, never a hidden change to a user's saved device.
+
+Live backend status distinguishes `ASIO_DIRECT_ZERO_EXTRA_FIFO`, `WASAPI_DIRECT_ZERO_EXTRA_FIFO` and `WASAPI_BRIDGED_ASRC`. ASIO DIRECT uses the existing JUCE hardware callback and **no added resampler or capture FIFO**. Driver-reported capture/output latency hints remain separate from physical loopback/round-trip latency. Windows CI must verify the ASIO JUCE backend exists even on a headless runner. Exact sample rate and quantum are *negotiated by driver* or explicitly configured, never guessed from a nominal latency marketing target.
+
+**Remaining P0:** ASIO hardware FAT, hotplug fail-closed backend ownership, production AUTO/STABLE policy and measured loopback latency. Live-performance support is a product priority, not hardware-certified merely by compilation. GUI visuals are unchanged.

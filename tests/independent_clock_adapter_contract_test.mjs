@@ -106,3 +106,29 @@ test('dual-WASAPI opening is guarded by unique native endpoint IDs without GUI o
   assert.match(engine,/bridgeCaptureEndpointIdHash/);
   assert.match(engine,/bridgeRenderEndpointIdHash/);
 });
+
+test('ASIO is the preferred first-run live backend only for one same-driver duplex route',()=>{
+  const policy=r('engine/device/AsioStartupPolicy.h');
+  const manager=r('engine/device/AsioPriorityDeviceManager.h');
+  assert.match(policy,/captures\.size\(\) == 1 && renders\.size\(\) == 1/);
+  assert.match(policy,/captures\.front\(\) == renders\.front\(\)/);
+  assert.match(manager,/createAudioDeviceTypes/);
+  assert.match(manager,/driver->scanForDevices\(\)/);
+  assert.match(manager,/types\.move \(i, 0\)/);
+  assert.match(engine,/savedSettings, !savedRoute/);
+  assert.match(engine,/AUTO_ASIO_FAILED_WASAPI_DIRECT/);
+  assert.match(engine,/Saved audio route identity changed/);
+  assert.match(engine,/ASIO_DIRECT_ZERO_EXTRA_FIFO/);
+  assert.match(engine,/driverLatencyProvenance/);
+  assert.match(engine,/DRIVER_HINT_NOT_MEASURED_ROUND_TRIP/);
+});
+
+test('saved ASIO startup failure keeps the host callback registered for manual AUDIO SETUP recovery',()=>{
+  const registration=engine.indexOf('deviceManager_.addAudioCallback (this);');
+  const initialise=engine.indexOf('auto error = deviceManager_.initialise (1, 2, savedSettings, !savedRoute);');
+  assert.ok(registration>=0 && registration<initialise);
+  assert.match(engine,/attached_ = true;\s*const bool savedRoute/);
+  assert.match(engine,/if \(error\.isNotEmpty\(\)\) return error;/);
+  assert.match(host,/new juce::AudioDeviceSelectorComponent/);
+  assert.match(host,/showDeviceSetup\(\)/);
+});
