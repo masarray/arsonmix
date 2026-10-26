@@ -688,10 +688,9 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 /* Latching OFF/ON must NOT alter material, depth or layout. The physical
    press response below exists only while :active, never on .active/.selected. */
 /* Latch LED colors only; dark captions are legible on bright faces. */
-:is(.toolbar .nav button.btn-180.selected,.left-rail .tabs button.btn-180.selected,
- .left-rail .rail-presets button.btn-180.active,.left-rail .rail-bottom #saveFxPreset.btn-180.active,
- .native-btn.primary,.native-btn.on){--b180-color:#22bbcc;--b180-border:#087b8e;--b180-ink:#041c27}
-.left-rail .rail-bottom #addScene.btn-180.active{--b180-color:#319ed4;--b180-border:#14618c;--b180-ink:#061c2b}
+/* Native dialog buttons keep native cyan; toolbar and rail states below
+   each have ONE scope owner, with no competing earlier palette selectors. */
+:is(.native-btn.primary,.native-btn.on){--b180-color:#22bbcc;--b180-border:#087b8e;--b180-ink:#041c27}
 .strip .utility-row button[data-hpf].active{--b180-color:#37c99a;--b180-border:#126e5b;--b180-ink:#071f1a}
 :is(.strip .channel-actions .mute.active,#masterLeft #masterMute.active,
  .native-btn.warn){--b180-color:#e76f83;--b180-border:#a13650;--b180-ink:#291018}
