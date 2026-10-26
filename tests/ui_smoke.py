@@ -19,6 +19,17 @@ async def main():
         # Issue #56: defaults preserve geometry; mode CSS isolates hover/layers.
         assert await page.evaluate("""()=>document.documentElement.dataset.mixperf==='optimized'
             && !window.__arMixPerfProbe""")
+        # Only one timer schedules each synthetic visual update; no polling rAF
+        # at monitor refresh rate (60/120/144Hz) when meter target is ~25 Hz.
+        scheduler=await page.evaluate("""()=>({
+          stats:browserMeterStats,owner:typeof scheduleDemoMeter,
+          idleRAF:meterRAF,paused:document.hidden,
+          timerOwned:meterTimer!==0
+        })""")
+        assert scheduler['owner']=='function',scheduler
+        assert scheduler['stats']['intervalMs'] in (40,60),scheduler
+        assert scheduler['timerOwned'] or scheduler['idleRAF']!=0,scheduler
+
         cap=page.locator('[data-fader="0"] .cap')
         await cap.hover()
         fast=await cap.evaluate("(e)=>getComputedStyle(e).filter")
