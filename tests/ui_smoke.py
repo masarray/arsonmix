@@ -154,10 +154,15 @@ async def main():
         assert all(abs(before[k]-active['rect'][k])<=.2 for k in ('x','y','width','height')),active
         # Navigation remains mutually exclusive, never an independent fake toggle.
         await page.locator('[data-view="FX RACK"]').click()
-        assert await page.locator('[data-view="FX RACK"]').evaluate(
-            '(e)=>e.classList.contains("selected") && getComputedStyle(e).backgroundColor==="rgb(57, 239, 114)"')
-        assert await page.locator('[data-view="MIX"]').evaluate(
-            '(e)=>!e.classList.contains("selected") && getComputedStyle(e).backgroundColor==="rgb(224, 228, 232)"')
+        # CSS animates face color over 115ms; assert the final rendered state,
+        # not an intermediate animation frame immediately after the click.
+        await page.wait_for_function("""()=>{
+          const on=document.querySelector('[data-view="FX RACK"]');
+          const off=document.querySelector('[data-view="MIX"]');
+          return on.classList.contains('selected') && !off.classList.contains('selected')
+            && getComputedStyle(on).backgroundColor==='rgb(57, 239, 114)'
+            && getComputedStyle(off).backgroundColor==='rgb(224, 228, 232)';
+        }""")
         await page.locator('[data-view="MIX"]').click()
         # One-shot toolbar commands must NOT latch visually after release.
         await page.locator('#audioSetupBtn').click()
