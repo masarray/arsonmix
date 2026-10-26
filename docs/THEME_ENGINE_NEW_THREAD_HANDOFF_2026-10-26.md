@@ -1,7 +1,7 @@
 # ArSonMix Theme Engine — START HERE (Next Thread / Architect Handoff)
 
 **Updated:** 2026-10-26 | **Architecture status:** PROPOSED | **Implementation status:** NOT STARTED
-**Epic:** [#44](https://github.com/masarray/arsonmix/issues/44) | **Draft architecture PR:** [#46](https://github.com/masarray/arsonmix/pull/46)
+**Epic:** [#44](https://github.com/masarray/arsonmix/issues/44) | **Draft architecture PR:** [#48](https://github.com/masarray/arsonmix/pull/48)
 
 ## First instruction to incoming engineer
 
