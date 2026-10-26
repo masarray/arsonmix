@@ -32,6 +32,18 @@ async def main():
         await page.evaluate("document.documentElement.dataset.mixperf='hover-off'")
         assert await cap.evaluate("(e)=>getComputedStyle(e).filter")=='none'
         await page.evaluate("document.documentElement.dataset.mixperf='optimized'")
+        # PAN at non-center has a separate legacy :hover cascade.
+        pan=page.locator('[data-pan="0"]')
+        await pan.hover()
+        await pan.evaluate("(e)=>e.setAttribute('aria-valuenow','22')")
+        pan_thumb=pan.locator('.pan-thumb')
+        light_pan=await pan_thumb.evaluate("(e)=>getComputedStyle(e).filter")
+        assert 'drop-shadow' not in light_pan,light_pan
+        await page.evaluate("document.documentElement.dataset.mixperf='baseline'")
+        old_pan=await pan_thumb.evaluate("(e)=>getComputedStyle(e).filter")
+        assert 'brightness(1.08)' in old_pan and 'drop-shadow' in old_pan,old_pan
+        await page.evaluate("document.documentElement.dataset.mixperf='optimized'")
+        await pan.evaluate("(e)=>e.setAttribute('aria-valuenow','0')")
         # Toolbar/body fit: no excessive empty band between the hardware header and mixer.
         shell=await page.evaluate("""()=>{
           const bottom=document.querySelector('.toolbar').getBoundingClientRect().bottom;
