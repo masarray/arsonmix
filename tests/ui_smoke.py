@@ -714,14 +714,14 @@ async def main():
         await page.locator('#masterMute').click()
         assert await page.locator('#dim,#talkBtn,[data-master-tab]').count()==0
 
-        # The source image has a real metallic body and a long cast shadow.
-        # The body must travel inside the track, centered on image y=35.
+        # ARI channels are 36x77 centered at image row 38; MASTER stays red 31x90.
+        # Check geometry and travel separately without resizing the original PNG.
         geometry=await page.evaluate("""async () => {
             const slots=[...document.querySelectorAll('[data-fader]')];
             const heads=slots.map(f => {
                 const c=f.querySelector('.cap'),b=c.getBoundingClientRect(),r=f.getBoundingClientRect();
                 const s=getComputedStyle(c);
-                return {width:b.width,height:b.height,bodyInside:b.top>=r.top-1 && b.top+66<=r.bottom+1,
+                return {master:f.dataset.fader==='master',width:b.width,height:b.height,bodyInside:b.top>=r.top-1 && b.top+(f.dataset.fader==='master'?66:77)<=r.bottom+1,
                         top:b.top,trackTop:r.top,radius:s.borderRadius,
                         bg:s.backgroundImage,transform:s.transform};
             });
@@ -731,12 +731,14 @@ async def main():
             return {heads,imgW:image.naturalWidth,imgH:image.naturalHeight};
         }""")
         assert len(geometry['heads'])==13
-        assert (geometry['imgW'],geometry['imgH'])==(31,90), geometry
+        assert (geometry['imgW'],geometry['imgH'])==(36,77), geometry
+        assert sum(g['master'] for g in geometry['heads'])==1,geometry
         for g in geometry['heads']:
-            assert (g['width'],g['height'])==(31,90),g
+            assert (g['width'],g['height'])==((31,90) if g['master'] else (36,77)),g
             assert g['bodyInside'],g
             assert g['radius']=='0px',g
-            assert 'matrix(1, 0, 0, 1, -15.5, -35)' in g['transform'],g
+            expected='matrix(1, 0, 0, 1, -15.5, -35)' if g['master'] else 'matrix(1, 0, 0, 1, -18, -38)'
+            assert expected in g['transform'],g
         for fader in ('0','master'):
             ctrl=page.locator(f'[data-fader="{fader}"]')
             await ctrl.focus()
@@ -753,7 +755,7 @@ async def main():
         cap=channel.locator('.cap')
         rect=await cap.bounding_box()
         cx=rect['x']+rect['width']/2
-        cy=rect['y']+35
+        cy=rect['y']+38
         await page.mouse.move(cx,cy)
         await page.mouse.down()
         assert float(await channel.get_attribute('aria-valuenow'))==original
