@@ -1,5 +1,7 @@
 # ArSonMix — Live Mixer & VST3 Host
 
+**Theme architecture handoff (design/reference only):** [Start-here for a new engineer](docs/THEME_ENGINE_NEW_THREAD_HANDOFF_2026-10-26.md) · [exact preserved Brushed Metal v1.0 CSS](design-references/brushed-metal-v1.0/adapter.css) · [reference reconstruction instructions](design-references/brushed-metal-v1.0/README.md). The theme engine is not yet built; no changes to production GUI/runtime are implied by these reference artifacts.
+
 **Project status (25 October 2026):** premium **GUI v0.8** is approved and locked in `main`. The P2.5/P2.5.1 JUCE Windows/VST3 code was integrated through PRs #13/#14 as an **experimental native-development baseline**. Hardware tests reported **severe crackling with zero VST3**, so native audio has FAILED its P0 hardware acceptance; this is not a stable or broadcast-ready release. The browser preview remains visual-only, with intentionally simulated meters.
 
 > **GUI SOURCE OF TRUTH — LOCKED:** [GUI v0.8 baseline](docs/GUI_BASELINE_LOCK_2026-10-25.md) · approved commit `343692fc9b702661a8455cca30f0ffd108907324` · merged in [PR #2](https://github.com/masarray/arsonmix/pull/2) · preserved as `checkpoint/gui-v0.8-approved-20261025`. **Do not restore the previous GUI from native-engine branches.**
