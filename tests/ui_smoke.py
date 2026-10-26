@@ -136,7 +136,7 @@ async def main():
         await page.evaluate('scheduleDemoMeter()')
         # No per-event idle fader work: drag listener is attached only on pointerdown.
         assert await page.evaluate('drag===null')
-        # All 12 PAN knobs have been replaced by horizontal slider tracks.
+        # All 10 source PAN knobs have been replaced by horizontal slider tracks.
         assert await page.locator('[data-pan]').count()==11
         assert await page.locator('[data-knob="pan"]').count()==0
         pan_z=await page.locator('[data-pan="0"]').evaluate("""e=>({
@@ -182,7 +182,7 @@ async def main():
         assert [round(float(v.rstrip('s')),3) for v in style['dur'].split(', ')]==[.15,.15,.15,.09,.12,.075],style
         # Visual-architecture regression: four intentionally different hardware
         # families, FX slots recessed rather than taking on button-cap artwork.
-        # GUI target: the master is the 13th sibling, not a floating right rail.
+        # GUI target: MASTER is the 11th strip, not a floating right rail.
         assert await page.locator('#mixer > .strip').count()==11
         assert await page.locator('#mixer > .strip:last-child').get_attribute('id')=='masterLeft'
         assert await page.locator('[data-insert="0:5"]').count()==1
@@ -557,7 +557,7 @@ async def main():
         assert left_fill['width']>10 and left_fill['x']<at_center['x'],left_fill
         await p1.press('Home')
         # Inline strip FX power and full FX Rack power reflect same saved state.
-        assert await page.locator('.strip .insert-slot').count()==72
+        assert await page.locator('.strip .insert-slot').count()==60
         inline=page.locator('[data-fxpower="0:0"]')
         assert await inline.get_attribute('aria-pressed')=='true'
         assert await page.locator('[data-insert="0:0"]').count()==1
