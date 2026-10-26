@@ -31,6 +31,24 @@ test('independent source/render means two actual JUCE managers and distinct call
   assert.match(sizing,/renderSourceFrames/);
   assert.match(sizing,/d\.minFrames = d\.renderSourceFrames/);
 });
+test('P0 immutable independent stream format fence blocks silent device/period/map substitutions',()=>{
+  const fence=r('engine/device/IndependentStreamFormatFence.h');
+  const cmake=r('CMakeLists.txt');
+  const workflow=r('.github/workflows/p1-windows.yml');
+  assert.match(fence,/class IndependentStreamFormatFence final/);
+  assert.match(fence,/bool observeCallbackChannels/);
+  assert.match(fence,/lifecyclePeriod/);
+  assert.match(fence,/lifecycleChannelMap/);
+  assert.match(device,/formatFence_\.prepare \(formatOf \(capture, true\), formatOf \(render, false\)\)/);
+  assert.match(device,/formatFence_\.observeStart/);
+  assert.match(device,/formatFence_\.observeCallbackChannels/);
+  assert.match(device,/formatFence_\.resetStopped\(\)/);
+  assert.match(engine,/bridgeNegotiationFault/);
+  assert.match(host,/getProperty \("bridgeNegotiationFault", "NONE"\)/);
+  assert.match(cmake,/IndependentStreamNegotiatedFormatFence/);
+  assert.match(workflow,/ARMixIndependentFormatTests/);
+});
+
 test('live deployment preserves direct ASIO and bounded rollback semantics',()=>{
   assert.match(engine,/setIndependentClockEnabled \(bool wanted\)/);
   assert.match(engine,/getCurrentAudioDeviceType\(\) != "Windows Audio"/);
