@@ -51,9 +51,17 @@ test('restore retry is bounded and disabled on success, explicit direct and setu
   assert.match(workflow,/ARMixRecoveryTests/);
   assert.match(workflow,/direct_restore_recovery_contract_test.mjs/);
 });
-test('CI package describes the actual live BETA architecture, not the old offline-only core',()=>{
-  assert.match(workflow,/Independent JUCE WASAPI capture and render device adapters are opt-in experimental/);
-  assert.doesNotMatch(workflow,/An offline adaptive dual-clock FIR bridge is tested in CI but NOT connected/);
+test('verified native FAT package preserves actual beta live-bridge provenance, not older offline-only claim',()=>{
+  const fatGuide=read('docs/HARDWARE_FAT_GUI10_ENGINE_P012_20261027.md');
+  const packaging=read('scripts/package_native_windows.ps1');
+  // Authoritative backend facts live in C++ + a versioned FAT protocol, not
+  // inside a brittle PowerShell free-text Out-File string.
+  assert.match(engine,/JuceIndependentClockDevice independent_/);
+  assert.match(fatGuide,/Do not enable beta independent clocks/);
+  assert.match(fatGuide,/ASRC_INPUT_UNDERFLOW_FRAMES/);
+  assert.match(packaging,/FAT_GUIDE\\.md/);
+  assert.match(packaging,/EXPERIMENTAL_NOT_HARDWARE_QUALIFIED/);
+  assert.doesNotMatch(packaging,/An offline adaptive dual-clock FIR bridge is tested in CI but NOT connected/);
 });
 
 test('healthy independent sessions never arm restoration; setup can replace missing devices',()=>{
