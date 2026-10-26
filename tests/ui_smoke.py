@@ -36,8 +36,7 @@ async def main():
             assert await p.get_attribute('aria-orientation')=='horizontal'
             assert await p.locator('.pan-thumb').count()==1
         # Button 180: SOLID base and exact layered shadow (never PNG/gradient).
-        for selector in ['.nav button.selected',
-                         '[data-mute="0"]','[data-solo="0"]','[data-hpf="0"]']:
+        for selector in ['[data-mute="0"]','[data-solo="0"]','[data-hpf="0"]']:
             v=await page.locator(selector).first.evaluate("""e=>{
                 const s=getComputedStyle(e);return {
                     image:s.backgroundImage,shadow:s.boxShadow,
@@ -94,90 +93,39 @@ async def main():
         assert await page.locator('.left-rail #saveFxPreset').inner_text()=='SAVE FX'
         assert await page.locator('.left-rail #menuScene').inner_text()=='EXPORT'
         assert await page.locator('.left-rail .rail-bottom button').count()==3
-        # Left rail is no longer a separate three-layer pushable skin.
-        # It shares the exact Button 180 border/radius/base/shadow and type with header.
-        rail_buttons=page.locator('.left-rail button.btn-180')
-        assert await rail_buttons.count()==8
+        # Toolbar and rail use the REAL fx-power material, not Button 180.
+        assert await page.locator('.toolbar-actions .nav button.fx-nav').count()==7
+        assert await page.locator('.left-rail button.fx-nav').count()==8
+        assert await page.locator('.toolbar-actions .btn-180,.left-rail .btn-180').count()==0
         assert await page.locator('.left-rail .pushable,.left-rail .front,.left-rail .edge,.left-rail .shadow').count()==0
-        shared=await page.evaluate("""()=>{
-          const vars=e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect();
-            return {background:s.backgroundColor,image:s.backgroundImage,shadow:s.boxShadow,
-              ink:s.color,edge:s.borderTopColor,
-              border:s.borderTopWidth,radius:s.borderTopLeftRadius,height:r.height,
-              width:r.width,x:r.x,y:r.y};
-          };
-          return {header:vars(document.querySelector('[data-view="FX RACK"]')),
-            rail:vars(document.querySelector('[data-preset="Clean Vocal"]')),
-            mute:vars(document.querySelector('[data-mute="0"]'))};
+        style=await page.evaluate("""()=>{
+          const grab=q=>{const el=document.querySelector(q),s=getComputedStyle(el),r=el.getBoundingClientRect();return {
+            bg:s.backgroundImage,shadow:s.boxShadow,color:s.color,border:s.borderTopColor,
+            radius:s.borderTopLeftRadius,box:r.toJSON(),filter:s.filter
+          }};
+          return {nav:grab('[data-view="FX RACK"]'),rail:grab('[data-preset="Clean Vocal"]'),
+            rack:grab('.strip .rack .insert-slot .fx-power.is-bypassed'),
+            mixer:grab('[data-mute="0"]')};
         }""")
-        for key in ('background','image','shadow','border','radius'):
-            assert shared['header'][key]==shared['rail'][key]==shared['mute'][key],(key,shared)
-        assert shared['rail']['background']=='rgb(133, 130, 131)',shared
-        for st in shared.values():
-            assert st['ink']=='rgb(43, 43, 43)' and st['edge']=='rgb(99, 99, 99)',st
-        def shared_shadow_shape(shadow):
-            # Keep the original ON geometry, ignore only colors (OFF gray vs ON accent).
-            return re.sub(r'rgba?\([^)]*\)', '<color>', shadow)
-        assert '0.72' in shared['rail']['shadow'] and 'inset' in shared['rail']['shadow'],shared
+        for key in ('bg','color','border','shadow','radius'):
+            assert style['nav'][key]==style['rail'][key],(key,style)
+        assert style['nav']['bg'].startswith('linear-gradient('),style
+        assert style['nav']['bg']==style['rack']['bg'],style
+        assert style['nav']['border']==style['rack']['border'],style
+        assert style['mixer']['bg']=='none',style
         preset=page.locator('[data-preset="Clean Vocal"]')
         before=await preset.evaluate('(e)=>e.getBoundingClientRect().toJSON()')
         await preset.hover()
-        await page.wait_for_function("""()=>{
-          const s=getComputedStyle(document.querySelector('[data-preset="Clean Vocal"]'));
-          return s.filter==='brightness(1.32)';
-        }""",timeout=2500)
-        hovered=await preset.evaluate("""e=>({
-          shadow:getComputedStyle(e).boxShadow,
-          box:e.getBoundingClientRect().toJSON(),
-          background:getComputedStyle(e).backgroundImage,
-          radius:getComputedStyle(e).borderTopLeftRadius,
-          border:getComputedStyle(e).borderTopColor,
-          filter:getComputedStyle(e).filter
-        })""")
-        # No cylindrical face: OFF/ON use the same ON-type optical shadow, stable on hover,
-        # identical rectangular geometry and radius. Only the shine filter changes.
-        assert hovered['shadow']==shared['rail']['shadow'],hovered
-        assert hovered['background']=='none' and hovered['radius']==shared['rail']['radius'],hovered
-        assert hovered['border']=='rgb(99, 99, 99)',hovered
-        assert hovered['filter']=='brightness(1.32)',hovered
-        assert all(abs(before[k]-hovered['box'][k])<=.2 for k in ('x','y','width','height')),hovered
-        # The header and strip OFF buttons must use exactly the same shine-only hover.
-        for selector in ('[data-view="FX RACK"]','[data-mute="0"]'):
-            control=page.locator(selector)
-            rest=await control.evaluate("""e=>({
-              shadow:getComputedStyle(e).boxShadow,
-              background:getComputedStyle(e).backgroundImage,
-               border:getComputedStyle(e).borderTopColor,
-              rect:e.getBoundingClientRect().toJSON()
-            })""")
-            await control.hover()
-            await page.wait_for_function("""s=>{
-              return getComputedStyle(document.querySelector(s)).filter==='brightness(1.32)';
-            }""",arg=selector,timeout=2500)
-            shine=await control.evaluate("""e=>({
-              shadow:getComputedStyle(e).boxShadow,
-              background:getComputedStyle(e).backgroundImage,
-               border:getComputedStyle(e).borderTopColor,
-              rect:e.getBoundingClientRect().toJSON()
-            })""")
-            assert shine['shadow']==rest['shadow'] and shine['background']==rest['background']=='none',(selector,rest,shine)
-            assert shine['border']==rest['border'],(selector,rest,shine)
-            assert all(abs(rest['rect'][k]-shine['rect'][k])<=.2 for k in ('x','y','width','height')),(selector,rest,shine)
-        await preset.hover()
+        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-preset="Clean Vocal"]')).filter==='brightness(1.45)'""")
+        hovered=await preset.evaluate("""e=>({s:getComputedStyle(e).boxShadow,r:e.getBoundingClientRect().toJSON()})""")
+        assert '0px 0px 5px' in hovered['s'],hovered
+        assert all(abs(before[k]-hovered['r'][k])<=.2 for k in ('x','y','width','height')),hovered
         await preset.click()
-        assert await preset.evaluate("(e)=>e.classList.contains('active')")
-        await page.wait_for_function("""()=>{
-          const e=document.querySelector('[data-preset="Clean Vocal"]');
-          return getComputedStyle(e).backgroundImage==='none' &&
-                 getComputedStyle(e).backgroundColor==='rgb(34, 187, 204)';
-        }""",timeout=2500)
-        active=await preset.evaluate('(e)=>e.getBoundingClientRect().toJSON()')
-        assert all(abs(before[k]-active[k])<=.2 for k in ('x','y','width','height')),(before,active)
-        active_shadow=await preset.evaluate('(e)=>getComputedStyle(e).boxShadow')
-        assert shared_shadow_shape(active_shadow)==shared_shadow_shape(shared['rail']['shadow']),(active_shadow,shared['rail']['shadow'])
-        await preset.hover()
-        await page.wait_for_timeout(160)
-        assert await preset.evaluate('(e)=>getComputedStyle(e).filter')=='brightness(1.32)'
+        assert await preset.evaluate('(e)=>e.classList.contains("active")')
+        await page.wait_for_timeout(180)
+        active=await preset.evaluate("""e=>({s:getComputedStyle(e),r:e.getBoundingClientRect().toJSON()})""")
+        assert active['r']['width']==before['width'] and active['r']['height']==before['height'],active
+        assert await preset.evaluate('(e)=>getComputedStyle(e).backgroundImage')!='none'
         await page.mouse.move(1,1)
         # Restore factory FX chain so this visual-button test cannot change later FX tests.
         await page.evaluate("""()=>{
@@ -280,7 +228,7 @@ async def main():
         }""")
         assert soft['border']=='0px' and soft['halo']!='none',soft
         await page.screenshot(path=str(project/'mixer-design-review.png'),full_page=True)
-        await page.screenshot(path=str(project/'mixer-left-rail-unified-button180-pan-131512.png'),full_page=True)
+        await page.screenshot(path=str(project/'mixer-left-rail-fx-power-pan-131512.png'),full_page=True)
         # Medium desktop check; channel strips may scroll *inside* workbench.
         await page.set_viewport_size({"width":1440,"height":820})
         await page.screenshot(path=str(project/'mixer-design-review-1440.png'),full_page=True)
