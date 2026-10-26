@@ -947,3 +947,37 @@ html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="met
 html:is([data-mixperf="baseline"],[data-mixperf="hover-off"],[data-mixperf="meters-off"]) #app .meter .meter-fill{will-change:transform}
 html:is([data-mixperf="hover-off"],[data-mixperf="all-off"]) #mixer :is(.fader:hover .cap,.pan-track:hover .pan-thumb,.rack .insert:hover,.rack .fx-power:hover,.strip-name:hover,.master-insert:hover,.master-tools button:hover){filter:none!important;transition:none!important}
 html:is([data-mixperf="hover-off"],[data-mixperf="all-off"]) #mixer .strip-name:hover{outline:none!important}
+
+/* Fixed hardware LED coordinates: red/top, amber/upper, green/bottom.
+   Unlit shutter moves; colored gradient never moves, shrinks or repaints. */
+#app .meter .meter-fill{
+ transform:none!important;box-shadow:none!important;isolation:isolate;
+ background:repeating-linear-gradient(to top,transparent 0 5px,#000b 5px 7px),
+ linear-gradient(to top,#20e678 0%,#45df4a 53%,#c6db33 72%,#f2a52c 87%,#ef4035 100%);
+}
+#app .meter .meter-fill::after{
+ content:"";position:absolute;inset:0;pointer-events:none;
+ background:repeating-linear-gradient(to top,transparent 0 5px,#0009 5px 7px),#101a1e;
+ transform-origin:center top;
+ transform:scaleY(calc(1 - var(--meter-scale,.4)));
+}
+/* Crisp physical lighting; no blur/hover filters on action keys, rail or PNGs. */
+#app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav){
+ filter:none!important;text-shadow:none!important;transition:none!important;
+ box-shadow:2px 2px 0 #050d13,0 -1px 0 1px #36404a,
+ inset -2px 0 0 var(--side),inset 0 2px 0 var(--light),
+ inset 2px 0 0 var(--light),inset 0 -2px 0 var(--side)!important;
+}
+#app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav):is(:active,.selected,.active){
+ box-shadow:0 -1px 0 1px #0b161c,inset -2px 0 0 var(--side-pressed),
+ inset 0 2px 0 #16262b,inset 2px 0 0 #16262b,
+ inset 0 -2px 0 var(--side-pressed)!important;
+}
+#app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav)>span{transition:none!important}
+#app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav):hover{filter:none!important}
+#app .strip :is(.cap,.pan-thumb,.pan-fill,.insert,.fx-power,.strip-name),
+#app .strip :is(.cap,.pan-thumb,.pan-fill,.insert,.fx-power,.strip-name):is(:hover,:active,:focus-visible),
+#app .strip .fader:hover .cap,#app .strip .pan-track:hover .pan-thumb{
+ filter:none!important;transition:none!important;text-shadow:none!important;
+}
+#app .meter .meter-peak,#app .meter .clip-led.latched,#app .strip .pan-fill{box-shadow:none!important}

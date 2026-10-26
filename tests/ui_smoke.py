@@ -16,6 +16,20 @@ async def main():
         page.on("pageerror", lambda e: errors.append(str(e)))
         await page.set_content((project/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").read_text())
         assert await page.locator(".strip").count()==13
+        led=await page.locator('[data-meter="0"]').evaluate("""el=>{
+          updateMeterVisual('0',25,123000);
+          const low=getComputedStyle(el,'::after').transform;
+          updateMeterVisual('0',75,123010);
+          const high=getComputedStyle(el,'::after').transform;
+          const s=getComputedStyle(el);
+          return {background:s.backgroundImage,transform:s.transform,low,high,
+            shutter:getComputedStyle(el,'::after').content};
+        }""")
+        assert 'linear-gradient' in led['background'] and led['transform']=='none',led
+        assert led['shutter']!='none' and led['low']!=led['high'],led
+        nav=await page.locator('[data-view="MIX"]').evaluate(
+          "(e)=>({filter:getComputedStyle(e).filter,shadow:getComputedStyle(e).boxShadow})")
+        assert nav['filter']=='none' and nav['shadow']!='none',nav
         # Issue #56: defaults preserve geometry; mode CSS isolates hover/layers.
         assert await page.evaluate("""()=>document.documentElement.dataset.mixperf==='optimized'
             && !window.__arMixPerfProbe""")
@@ -86,7 +100,7 @@ async def main():
         assert meter['first']['cached'] and meter['first']['ratio']=='0.27',meter
         assert meter['first']['peak']==meter['held'] and meter['latest']=='45%',meter
         assert meter['ratio']=='0.45' and meter['heightBefore']==meter['heightAfter'],meter
-        assert meter['transform']!='none' and meter['shape']>0,meter
+        assert meter['transform']=='none' and meter['shape']>0,meter
         # Full mixer rebuild must restore held peaks and clip state on fresh DOM nodes.
         restored=await page.evaluate("""()=>{
           clipLatch['0']=true;
