@@ -418,7 +418,7 @@
     if(!orbit.confirmed||!Number.isInteger(param)||!Number.isFinite(seconds)||seconds<2||seconds>180){
       toStatus("Choose a valid VST3 parameter and revolution period (2–180 seconds).");return;
     }
-    send("orbitStart",{slot:orbit.slot,parameterIndex:param,seconds,reverse});return;
+    send("orbitStart",{slot:orbit.slot,pluginId:state.chain[orbit.slot]?.id||"",parameterIndex:param,seconds,reverse});return;
   }
   if(el.hasAttribute("data-orbit-stop")){send("orbitStop",{slot:orbit.slot});return;}
   if(el.hasAttribute("data-master-insert")||el.hasAttribute("data-master-power")){
@@ -577,6 +577,16 @@
   });
   backend.addEventListener("arMixChain",nodes=>{
     state.chain=Array.isArray(nodes)?nodes:[];
+    // Structural edits invalidate a previously verified VST3 parameter range.
+    const orbitDialog=document.getElementById("nativeOrbit");
+    if(orbitDialog&&!orbitDialog.hidden){
+      orbit.confirmed=false;
+      orbit.selection=-1;
+      orbit.parameters=[];
+      orbit.plugin=state.chain[orbit.slot]?.name||"";
+      renderOrbit();
+      if(state.chain[orbit.slot])send("orbitInspect",{slot:orbit.slot});
+    }
     repaint();
     const picker=document.getElementById("nativeFxSelector");
     if(picker&&!picker.hidden)renderPicker();
