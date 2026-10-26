@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "referenceId": "arsonmix-brushed-metal-v1.0",
+  "status": "FROZEN_VISUAL_REFERENCE_NOT_RUNTIME_THEME",
+  "sourceRepository": "masarray/arsonmix",
+  "sourceCommit": "3478823069d053db4f0d4c34786f444df3defac0",
+  "sourcePath": "AR-MIX-Live-FX-Host-Standalone-v0.3.html",
+  "sourceGitBlob": "abbc4916be3af9ea73d6cb60f4537ac366d0dd49",
+  "sourceSha256": "d7ed37da6c52baaeef7c74cfb8be6388e523d491a18920b218d0e82ef8c55772",
+  "adapterPath": "design-references/brushed-metal-v1.0/adapter.css",
+  "adapterGitBlob": "1086c285a44d2d06787a12ae809c1d4c5c80bb44",
+  "adapterSha256": "d4d3b13fa5ceba0f29665f902735ad0e48c4df44e4107cb00d2ff2f65ec678b6",
+  "approvedSurfaceMap": {
+    "chassis": "brushed aluminum/silver",
+    "controlButtons": "aluminum, same surface when OFF/ON, contextual glow + text only",
+    "fxRack": "glossy black-blue glass always",
+    "fxInsert": "glossy black-blue glass always",
+    "fxPower": "glossy black-blue glass with cyan/bypass indicator",
+    "pan": "center-zero blue line below existing canonical PNG thumb",
+    "fader": "canonical silver fader PNG; distinct red master fader",
+    "lcdMeters": "dark glass; legibility is mandatory"
+  },
+  "baselineViewportChecks": [
+    [
+      1680,
+      920
+    ],
+    [
+      1440,
+      820
+    ],
+    [
+      1280,
+      768
+    ],
+    [
+      1100,
+      740
+    ]
+  ],
+  "migrationNote": "Reference CSS contains explicit selectors, layout declarations and !important. It is frozen as a fidelity reference; migrate components to semantic tokens, never append this as production theme CSS."
+}
