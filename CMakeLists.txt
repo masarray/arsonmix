@@ -19,7 +19,7 @@ juce_add_gui_app(ARMixConsole
 juce_add_binary_data(ARMixAssets SOURCES
     web/index.html web/styles.css web/app.js web/bridge.js web/monitor.js)
 
-target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h src/PluginCatalog.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/ClockBridgeSizing.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h engine/device/BridgeContinuityGate.h engine/device/EndpointIdentityPolicy.h engine/device/WasapiEndpointIdentityGuard.h)
+target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h src/PluginCatalog.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/ClockBridgeSizing.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h engine/device/BridgeContinuityGate.h engine/device/EndpointIdentityPolicy.h engine/device/WasapiEndpointIdentityGuard.h engine/device/AsioStartupPolicy.h engine/device/AsioPriorityDeviceManager.h)
 target_compile_definitions(ARMixConsole PRIVATE
     JUCE_WEB_BROWSER=1
     JUCE_USE_WIN_WEBVIEW2=1
@@ -44,6 +44,9 @@ target_link_libraries(ARMixConsole PRIVATE
 
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(ARMixAsioPolicyTests tests/asio_startup_policy_test.cpp)
+  target_compile_features(ARMixAsioPolicyTests PRIVATE cxx_std_20)
+  add_test(NAME AsioFirstBootPriorityPolicy COMMAND ARMixAsioPolicyTests)
   add_executable(ARMixEndpointPolicyTests tests/endpoint_identity_policy_test.cpp)
   target_compile_features(ARMixEndpointPolicyTests PRIVATE cxx_std_20)
   add_test(NAME UniqueWindowsEndpointIdentity COMMAND ARMixEndpointPolicyTests)
@@ -60,6 +63,12 @@ if(BUILD_TESTING)
   target_compile_features(ARMixClockSizingTests PRIVATE cxx_std_20)
   add_test(NAME AdaptiveClockPeriodHeadroom COMMAND ARMixClockSizingTests)
   if(WIN32)
+    juce_add_console_app(ARMixAsioBackendTests PRODUCT_NAME "ArSonMix ASIO Backend Registration Tests")
+    target_sources(ARMixAsioBackendTests PRIVATE tests/asio_backend_registration_test.cpp engine/device/AsioPriorityDeviceManager.h)
+    target_compile_definitions(ARMixAsioBackendTests PRIVATE JUCE_ASIO=1)
+    target_link_libraries(ARMixAsioBackendTests PRIVATE juce::juce_audio_devices juce::juce_recommended_config_flags)
+    target_compile_features(ARMixAsioBackendTests PRIVATE cxx_std_20)
+    add_test(NAME AsioNativeBackendRegistered COMMAND ARMixAsioBackendTests)
     juce_add_console_app(ARMixDualJuceTests PRODUCT_NAME "ArSonMix Independent JUCE Device Tests")
     target_sources(ARMixDualJuceTests PRIVATE tests/juce_independent_device_lifecycle_test.cpp engine/device/JuceIndependentClockDevice.h)
     target_link_libraries(ARMixDualJuceTests PRIVATE juce::juce_audio_devices juce::juce_audio_basics juce::juce_recommended_config_flags)
