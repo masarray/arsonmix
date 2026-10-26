@@ -32,3 +32,7 @@ Deterministic `P0AsioLiveDirectRouteFence` CTest covers unapproved startup, appr
 ### Actionable user notification
 
 The existing 12 Hz **control/message-thread timer** detects a newly latched `unexpectedDirectRoute()` fault and emits **one native notice**: audio route changed unexpectedly, live output muted, confirm device in AUDIO SETUP. The event is also retained by `DiagnosticsRecorder` as `DIRECT_ROUTE_BLOCKED`. Latching avoids UI/log spam; recovery clears notice state. This does **not** add timer tasks or notifications on the audio thread.
+
+### P1 review correction — DRY_THROUGH is live microphone routing
+
+`Route::dryThrough` bypasses plugins but still forwards the **real microphone**. It is protected by exactly the same authorization fence as NORMAL. Only one-sided `OUTPUT_ONLY_TONE` and `CAPTURE_ONLY` diagnostic modes are exempt because they explicitly isolate the unused direction. The latching native notice applies to NORMAL and DRY_THROUGH too. Node contract verifies the regression cannot silently reintroduce a dry-mode bypass.

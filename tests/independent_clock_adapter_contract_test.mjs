@@ -154,3 +154,18 @@ test('unexpected ASIO/WASAPI switch notifies user once from control thread',()=>
   assert.match(host,/unexpectedRouteNoticeSent_/);
   assert.match(host,/confirm your ASIO\/WASAPI device in AUDIO SETUP/);
 });
+
+test('P1: dry-through live microphone is NEVER exempted from DIRECT route fencing',()=>{
+  const callback=engine.slice(engine.indexOf('void audioDeviceIOCallbackWithContext ('));
+  const begin=callback.indexOf('const auto activeDiagnosticRoute =');
+  const end=callback.indexOf('const auto cycle = handoff_.beginCycle();');
+  assert.ok(begin>=0 && end>begin);
+  const gate=callback.slice(begin,end);
+  assert.match(gate,/activeDiagnosticRoute != armix::diagnostics::Route::outputOnlyTone/);
+  assert.match(gate,/activeDiagnosticRoute != armix::diagnostics::Route::captureOnly/);
+  assert.doesNotMatch(gate,/activeDiagnosticRoute == armix::diagnostics::Route::normal/);
+  assert.match(gate,/directFence_\.permitted\(\)/);
+  assert.match(gate,/FloatVectorOperations::clear/);
+  assert.match(host,/diagnosticRoute != armix::diagnostics::Route::outputOnlyTone/);
+  assert.match(host,/diagnosticRoute != armix::diagnostics::Route::captureOnly/);
+});

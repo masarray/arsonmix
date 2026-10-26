@@ -999,9 +999,14 @@ private:
         // while the user is changing devices. Atomic gate only: no name hash,
         // allocations, OS calls or device restart on the realtime callback.
         // An independent WASAPI bridge has its own verified endpoint guard.
+        const auto activeDiagnosticRoute = diagnosticRoute_.load (std::memory_order_relaxed);
+        // DRY_THROUGH still routes a live microphone to the hardware output:
+        // it MUST use the same DIRECT authorization fence as NORMAL. Only
+        // genuinely isolated OUTPUT_ONLY_TONE / CAPTURE_ONLY tests may bypass
+        // the full-duplex route fence while the driver is one-sided.
         if (!independent_.active()
-            && diagnosticRoute_.load (std::memory_order_relaxed) ==
-                armix::diagnostics::Route::normal
+            && activeDiagnosticRoute != armix::diagnostics::Route::outputOnlyTone
+            && activeDiagnosticRoute != armix::diagnostics::Route::captureOnly
             && !directFence_.permitted())
         {
             for (int c=0; c<outputChannels; ++c)

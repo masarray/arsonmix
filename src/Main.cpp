@@ -795,9 +795,11 @@ private:
         // ONE actionable notice per unexpected DIRECT reroute. The audio
         // callback has already zero-filled output atomically; status, log and
         // WebView notifications belong only on this JUCE control timer.
+        const auto diagnosticRoute = engine_.diagnosticRoute();
         const bool blocked = engine_.unexpectedDirectRoute()
             && !engine_.independentClockActive()
-            && engine_.diagnosticRoute() == armix::diagnostics::Route::normal;
+            && diagnosticRoute != armix::diagnostics::Route::outputOnlyTone
+            && diagnosticRoute != armix::diagnostics::Route::captureOnly;
         if (blocked && !unexpectedRouteNoticeSent_)
         {
             unexpectedRouteNoticeSent_ = true;
