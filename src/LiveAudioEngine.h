@@ -67,6 +67,13 @@ public:
         // The former MONITOR enable gate caused silent master/output confusion.
         // Panic OUTPUT MUTE remains available at all times.
         monitor_.store (true);
+        // Register the host callback BEFORE opening any physical device.
+        // If saved ASIO is absent/busy and startup deliberately fails closed,
+        // AUDIO SETUP can still select a replacement and JUCE will call the
+        // already-registered host's aboutToStart() on the new device.
+        // No RT worker, no second callback registration on successful start.
+        deviceManager_.addAudioCallback (this);
+        attached_ = true;
         const bool savedRoute = savedSettings != nullptr
             && savedSettings->hasTagName ("DEVICESETUP");
         const auto expectedBackend = savedRoute
@@ -118,8 +125,6 @@ public:
                 return "Saved audio route identity changed: choose an explicit ASIO/WASAPI device in AUDIO SETUP";
             }
         }
-        deviceManager_.addAudioCallback (this);
-        attached_ = true;
         return {};
     }
 

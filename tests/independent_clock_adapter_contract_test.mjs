@@ -122,3 +122,13 @@ test('ASIO is the preferred first-run live backend only for one same-driver dupl
   assert.match(engine,/driverLatencyProvenance/);
   assert.match(engine,/DRIVER_HINT_NOT_MEASURED_ROUND_TRIP/);
 });
+
+test('saved ASIO startup failure keeps the host callback registered for manual AUDIO SETUP recovery',()=>{
+  const registration=engine.indexOf('deviceManager_.addAudioCallback (this);');
+  const initialise=engine.indexOf('auto error = deviceManager_.initialise (1, 2, savedSettings, !savedRoute);');
+  assert.ok(registration>=0 && registration<initialise);
+  assert.match(engine,/attached_ = true;\s*const bool savedRoute/);
+  assert.match(engine,/if \(error\.isNotEmpty\(\)\) return error;/);
+  assert.match(host,/new juce::AudioDeviceSelectorComponent/);
+  assert.match(host,/showDeviceSetup\(\)/);
+});
