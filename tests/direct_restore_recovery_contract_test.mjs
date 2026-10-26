@@ -64,3 +64,23 @@ test('healthy independent sessions never arm restoration; setup can replace miss
   assert.match(main,/engine_\.devices\(\)\.getCurrentAudioDevice\(\) != nullptr/);
   assert.match(main,/Choose a replacement in AUDIO SETUP/);
 });
+
+test('ASIO/WASAPI DIRECT authorizes the exact active input/output channel map',()=>{
+  const fence=read('engine/device/DirectRouteFence.h');
+  // Bind BOTH untruncated JUCE BigInteger masks at startup, manual selection,
+  // and verified DIRECT restore, rather than only the friendly device name.
+  assert.equal(engine.split('getActiveInputChannels().toString (16)').length-1,3);
+  assert.equal(engine.split('getActiveOutputChannels().toString (16)').length-1,3);
+  for (const operation of ['approve','resumeExpected','observeStart']) {
+    assert.ok(engine.includes('directFence_.'+operation+' (backend.toRawUTF8(), name.toRawUTF8(),'));
+  }
+  assert.ok(engine.includes('EXACT_ACTIVE_INPUT_AND_OUTPUT_CHANNEL_BITMASKS'));
+  assert.ok(fence.includes('UNEXPECTED_DIRECT_BACKEND_DEVICE_OR_CHANNEL_MASK'));
+  assert.ok(fence.includes('!validMask(inputMask)'));
+  assert.ok(fence.includes('!validMask(outputMask)'));
+  const callback=engine.slice(engine.indexOf('void audioDeviceIOCallbackWithContext'));
+  assert.ok(callback.indexOf('!directFence_.permitted()')>=0);
+  assert.ok(callback.indexOf('!directFence_.permitted()')<callback.indexOf('handoff_.beginCycle()'));
+  assert.ok(!callback.includes('fingerprint(') && !callback.includes('toString (16)'));
+  assert.ok(cmake.includes('P0AsioLiveDirectRouteFence'));
+});
