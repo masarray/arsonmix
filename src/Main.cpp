@@ -488,6 +488,26 @@ private:
         }
         else result << "No active device\n";
 #if defined(_WIN32)
+        // ASIO JUCE names are only labels: report the COM driver class bound
+        // to the selected name from the Windows registry ON THIS EXPLICIT
+        // REPORT REQUEST, not in the 12 Hz UI status or realtime callback.
+        result << "\n=== WINDOWS ASIO DRIVER REGISTRATION (NOT HARDWARE ID) ===\n";
+        if (device != nullptr && device->getTypeName() == "ASIO")
+        {
+            const auto resolved = armix::device::AsioRegistryIdentityProbe::resolve (
+                std::wstring (device->getName().toWideCharPointer()));
+            result << armix::device::AsioRegistrationPolicy::reason (
+                resolved.registration.error) << "\n";
+            if (resolved.registration.ok())
+                result << "Registered driver class hash: "
+                       << juce::String::toHexString (static_cast<juce::int64> (
+                           armix::device::AsioRegistryIdentityProbe::diagnosticFingerprint (
+                               resolved.registration.identity))) << "\n";
+            result << "CLSID identifies a Windows software COM driver class, "
+                      "NOT a physical USB device, audio clock, or proof the "
+                      "currently opened COM instance is that class.\n";
+        }
+        else result << "Not using an ASIO DIRECT backend\n";
         result << "\n=== WINDOWS NATIVE WASAPI CAPABILITY PROBE (NOT LIVE LATENCY) ===\n";
         result << armix::device::WasapiCapabilityProbe::report() << "\n";
 #endif
