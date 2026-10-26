@@ -56,7 +56,7 @@ function updateMeterVisual(key,level,now){
  const levelStep=Math.round(value*10);
  if(meter.level!==levelStep){
    meter.level=levelStep;
-   meter.fill.style.setProperty('--meter-scale',String(levelStep/1000));
+   if(!meterCanvasState.ctx)meter.fill.style.setProperty('--meter-scale',String(levelStep/1000));
  }
  const previous=peakHold[key];
  if(!previous||value>=previous.value||now>=previous.until){
@@ -64,7 +64,7 @@ function updateMeterVisual(key,level,now){
    const step=Math.round(value*10);
    if(meter.peak&&meter.peakValue!==step){
      meter.peakValue=step;
-     meter.peak.style.bottom=(step/10)+'%';
+     if(!meterCanvasState.ctx)meter.peak.style.bottom=(step/10)+'%';
    }
  }
  if(value>=97&&!clipLatch[key]){
@@ -147,7 +147,7 @@ function makeStrip(ch,i){let inserts=ch.inserts.slice(0,6);while(inserts.length<
 function renderMixer(){
  const x=$('mixer'),scroll=x.scrollLeft;
  x.innerHTML=channels.map(makeStrip).join('')+'<article id="masterLeft" class="strip master-strip '+(masterSelected?'selected':'')+'" aria-label="Stereo master channel"></article>';
- renderMaster();x.scrollLeft=scroll;createSide();
+ renderMaster();x.scrollLeft=scroll;createSide();invalidateMeterCanvas();
 }
 let masterGain=-.1,masterPan=0,masterMute=false,phones=-12,masterInserts=['Studio EQ','Brickwall Limiter'],masterBypassed={},pendingMasterSlot=null;
 function masterFxRows(){
@@ -195,7 +195,7 @@ function renderMaster(){
    </div>
  <div class="fader-tools master-tools"><span class="master-route-label">MAIN L/R</span><button type="button" class="btn-180" data-clear-all-clips="1" title="Reset latched clips">CLEAR CLIP</button></div>
  <div class="strip-name master-strip-name" role="group" aria-label="Master output"><span class="strip-caption">MASTER</span><span class="track-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m11 5-5 4H3v6h3l5 4V5Z"/><path d="M15 9a5 5 0 0 1 0 6M18 6a9 9 0 0 1 0 12"/></svg></span></div>`;
- syncClipLeds();
+ syncClipLeds();invalidateMeterCanvas();
 }
 function setView(next){
  if(next!=='MIX'&&next!=='FX RACK'&&next!=='SIGNAL FLOW')return;
@@ -203,6 +203,8 @@ function setView(next){
  document.querySelectorAll('[data-view]').forEach(btn=>btn.classList.toggle('selected',btn.dataset.view===next));
  $('mixer').classList.toggle('hidden',next!=='MIX');
  $('rackWorkspace').classList.toggle('hidden',!['FX RACK','SIGNAL FLOW'].includes(next));
+ // Canvas is an overlay sibling of #mixer: hide it immediately on view switch.
+ if(meterCanvasState.canvas)meterCanvasState.canvas.classList.toggle('hidden',next!=='MIX');
  if(next==='FX RACK')renderRackWorkspace();
  if(next==='SIGNAL FLOW')renderSignalFlow();
 }
@@ -345,7 +347,7 @@ document.addEventListener('keydown',e=>{const pan=e.target.closest('[data-pan]')
 document.addEventListener('keydown',e=>{if(e.ctrlKey&&e.key.toLowerCase()==='s'){e.preventDefault();if(persistSession())flash('UI state saved locally');else flash('Browser storage unavailable')}});
 // Issue #56: no pointer profiler/event listener runs in normal preview or native.
 const mixperfParam=new URLSearchParams(location.search).get('mixperf');
-const mixperfModes=['optimized','baseline','hover-off','meters-off','layers-off','all-off'];
+const mixperfModes=['optimized','baseline','hover-off','meters-off','layers-off','all-off','canvas'];
 const mixperfMode=mixperfModes.includes(mixperfParam)?mixperfParam:'optimized';
 document.documentElement.dataset.mixperf=mixperfMode;
 if(mixperfParam&&mixperfModes.includes(mixperfParam)){
@@ -380,6 +382,111 @@ if(mixperfParam&&mixperfModes.includes(mixperfParam)){
   },ms));
  }};
 }
+/* Experimental, browser-preview-only single-surface meter renderer (Issue #56).
+   It draws the 12 channel + 2 master meters into ONE transparent canvas.
+   DOM clip buttons and native JUCE metering remain the owners of interaction
+   and true audio telemetry. No pointer handler or canvas exists in normal GUI. */
+const meterCanvasState={canvas:null,ctx:null,failed:false,entries:[],tiles:new Map(),invalid:true,
+                        dpr:1,width:0,height:0,draws:0,resizeObserver:null};
+function invalidateMeterCanvas(){meterCanvasState.invalid=true}
+function restoreDomMeterFallback(){
+ const state=meterCanvasState;
+ state.failed=true;state.ctx=null;
+ delete document.documentElement.dataset.mixcanvas;
+ state.canvas?.remove();state.canvas=null;
+ state.resizeObserver?.disconnect();state.resizeObserver=null;
+ $('mixer')?.removeEventListener('scroll',invalidateMeterCanvas);
+ window.removeEventListener('resize',invalidateMeterCanvas);
+ // Restore last measured levels and held peaks immediately after context loss.
+ for(const [key,node] of meterNodes){
+  if(!node.fill.isConnected)continue;
+  if(node.level>=0)node.fill.style.setProperty('--meter-scale',String(node.level/1000));
+  const held=peakHold[key];
+  if(held&&node.peak)node.peak.style.bottom=(Math.round(held.value*10)/10)+'%';
+ }
+}
+function meterCanvasTile(w,h){
+ const state=meterCanvasState,key=w+'x'+h,existing=state.tiles.get(key);
+ if(existing)return existing;
+ const tile=document.createElement('canvas');tile.width=w;tile.height=h;
+ const context=tile.getContext('2d',{alpha:true});
+ if(!context){restoreDomMeterFallback();return null;}
+ const gradient=context.createLinearGradient(0,h,0,0);
+ for(const [at,color] of [[0,'#33f17d'],[.43,'#78f65f'],[.69,'#d6ec36'],
+  [.85,'#ffe133'],[1,'#ff6540']])gradient.addColorStop(at,color);
+ context.fillStyle=gradient;context.fillRect(0,0,w,h);
+ context.fillStyle='rgba(0,0,0,.60)';
+ for(let y=h-7;y>=-2;y-=7)context.fillRect(0,y,w,2);
+ state.tiles.set(key,tile);return tile;
+}
+function prepareMeterCanvas(){
+ if(mixperfMode!=='canvas'||window.__JUCE__?.backend?.emitEvent||meterCanvasState.failed)return false;
+ const state=meterCanvasState,host=$('mixer')?.parentElement;
+ if(!host)return false;
+ if(!state.canvas){
+  const canvas=document.createElement('canvas');
+  canvas.className='mix-meter-canvas';
+  canvas.setAttribute('aria-hidden','true');
+  host.append(canvas);
+  state.canvas=canvas;
+  state.ctx=canvas.getContext('2d',{alpha:true});
+  if(!state.ctx){canvas.remove();state.canvas=null;restoreDomMeterFallback();return false}
+  document.documentElement.dataset.mixcanvas='active';
+  canvas.addEventListener('contextlost',e=>{e.preventDefault();restoreDomMeterFallback()});
+  if('ResizeObserver' in window){
+   state.resizeObserver=new ResizeObserver(invalidateMeterCanvas);
+   state.resizeObserver.observe(host);
+  }
+  $('mixer').addEventListener('scroll',invalidateMeterCanvas,{passive:true});
+  window.addEventListener('resize',invalidateMeterCanvas,{passive:true});
+ }
+ state.canvas.classList.toggle('hidden',view!=='MIX');
+ if(view!=='MIX')return false;
+ const dpr=Math.min(window.devicePixelRatio||1,2);
+ const width=host.clientWidth,height=host.clientHeight;
+ if(width<=0||height<=0)return false;
+ if(width!==state.width||height!==state.height||dpr!==state.dpr){
+  state.width=width;state.height=height;state.dpr=dpr;
+  state.canvas.width=Math.ceil(width*dpr);
+  state.canvas.height=Math.ceil(height*dpr);
+  state.ctx.setTransform(dpr,0,0,dpr,0,0);
+  state.invalid=true;
+ }
+ if(state.invalid||state.entries.some(e=>!e.fill.isConnected)){
+  const hostRect=host.getBoundingClientRect();
+  state.entries=[...$('mixer').querySelectorAll('.meter-fill')].map(fill=>{
+   const slot=fill.closest('.meter'),box=slot.getBoundingClientRect();
+   // offsetTop/Left read the *untransformed* meter geometry once per rebuild.
+   return {key:fill.dataset.meter,fill,x:box.left-hostRect.left-host.clientLeft+fill.offsetLeft,
+    y:box.top-hostRect.top-host.clientTop+fill.offsetTop,
+    w:fill.offsetWidth,h:fill.offsetHeight,
+    peakBottom:box.bottom-hostRect.top-host.clientTop,peakH:box.height};
+  });
+  state.invalid=false;
+ }
+ return true;
+}
+function paintPreviewMeterCanvas(){
+ if(!prepareMeterCanvas())return;
+ const state=meterCanvasState,ctx=state.ctx;
+ ctx.clearRect(0,0,state.width,state.height);
+ for(const e of state.entries){
+  if(e.x+e.w<0||e.x>state.width||e.y+e.h<0||e.y>state.height)continue;
+  const node=meterNodes.get(e.key);
+  if(!node||!node.fill.isConnected)continue;
+  const value=Math.max(0,Math.min(1,node.level/1000));
+  if(value>0){
+   const tile=meterCanvasTile(Math.max(1,e.w),Math.max(1,e.h));
+   if(tile)ctx.drawImage(tile,e.x,e.y+e.h*(1-value),e.w,e.h*value);
+  }
+  const held=peakHold[e.key];
+  if(held){
+   const peakY=e.peakBottom-e.peakH*(held.value/100)-2;
+   ctx.fillStyle='#fb5b50';ctx.fillRect(e.x,peakY,e.w,2);
+  }
+ }
+ state.draws++;
+}
 let lastMeterFrame=0;function meters(t){
  // JUCE desktop reads actual audio meters; browser demo only animates a preview.
  if(window.__JUCE__?.backend?.emitEvent)return;
@@ -389,6 +496,7 @@ let lastMeterFrame=0;function meters(t){
  const base=clamp(67+Math.sin(t*.002)*15,8,95);
  const l=clamp(base+Math.sin(t*.003)*6,3,99),r=clamp(base-5+Math.sin(t*.003+1)*7,3,99);
  updateMeterVisual('masterL',masterMute?2:l,t);updateMeterVisual('masterR',masterMute?2:r,t);
+ if(mixperfMode==='canvas')paintPreviewMeterCanvas();
  // UI demonstration only. These values are never from a true-peak or loudness meter.
  const lufs=$('masterLufs'),tp=$('masterDbtp');
  if(lufs)lufs.textContent=(-31+(l+r)/11).toFixed(1);

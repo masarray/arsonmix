@@ -768,6 +768,75 @@ async def main():
         assert measured["mode"]=="meters-off" and measured["durationMs"]==1000,measured
         assert measured["mixer"]["samples"]>0 and measured["pointerMoves"]["mixer"]>0,measured
         await diag.close()
+        # Canvas A/B: preserve 14 meter geometry/CLIP targets while eliminating
+        # per-frame style writes to the individual DOM bars.
+        canvas_page=await browser.new_page(viewport={"width":1680,"height":920})
+        await canvas_page.goto((project/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").as_uri()+"?mixperf=canvas")
+        await canvas_page.wait_for_function("""()=>meterCanvasState.draws>=2
+            && meterCanvasState.entries.length===14""")
+        canvas_geom=await canvas_page.evaluate("""()=>{
+          const c=meterCanvasState.canvas,ctx=c.getContext('2d');
+          const img=ctx.getImageData(0,0,c.width,c.height);
+          let painted=0;for(let i=3;i<img.data.length;i+=4)if(img.data[i]){painted++;if(painted>5)break}
+          return {draws:meterCanvasState.draws,entries:meterCanvasState.entries.length,
+           canvas:c.width>0&&c.height>0,painted,clips:document.querySelectorAll('#mixer [data-clip]').length,
+           hidden:getComputedStyle(document.querySelector('[data-meter="0"]')).visibility,
+           active:document.documentElement.dataset.mixcanvas,
+           inlineStyle:document.querySelector('[data-meter="0"]').style.getPropertyValue('--meter-scale')};
+        }""")
+        assert canvas_geom['canvas'] and canvas_geom['painted']>0,canvas_geom
+        assert canvas_geom['entries']==14 and canvas_geom['clips']==14,canvas_geom
+        assert canvas_geom['hidden']=='hidden' and canvas_geom['active']=='active',canvas_geom
+        # The initial frame may write a DOM value before context activation;
+        # once active, later frames must leave the old DOM fill style unchanged.
+        before_canvas=await canvas_page.evaluate("""()=>({
+          style:document.querySelector('[data-meter="0"]').style.getPropertyValue('--meter-scale'),
+          draws:meterCanvasState.draws
+        })""")
+        await canvas_page.wait_for_timeout(160)
+        after_canvas=await canvas_page.evaluate("""()=>({
+          style:document.querySelector('[data-meter="0"]').style.getPropertyValue('--meter-scale'),
+          draws:meterCanvasState.draws
+        })""")
+        assert after_canvas['draws']>before_canvas['draws'],(before_canvas,after_canvas)
+        assert after_canvas['style']==before_canvas['style'],(before_canvas,after_canvas)
+        # Real desktop bridge isn't modified: canvas is URL gated and not active
+        # in default mode, or when a native backend is present.
+        await canvas_page.locator('[data-view="FX RACK"]').click()
+        assert await canvas_page.locator('.mix-meter-canvas').is_hidden()
+        await canvas_page.locator('[data-view="MIX"]').click()
+        await canvas_page.wait_for_function("""()=>meterCanvasState.draws>=3
+            && meterCanvasState.canvas.classList.contains('hidden')===false""")
+        await canvas_page.close()
+        # Force a second Canvas2D initialization to fail AFTER the page
+        # loads: Chromium file:// navigation skips Playwright add_init_script.
+        fail_page=await browser.new_page(viewport={"width":1440,"height":820})
+        await fail_page.goto((project/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").as_uri()+"?mixperf=canvas")
+        await fail_page.wait_for_function("""()=>meterCanvasState.draws>=1""")
+        forced=await fail_page.evaluate("""()=>{
+          const old=HTMLCanvasElement.prototype.getContext;
+          meterCanvasState.canvas.remove();
+          meterCanvasState.canvas=null;meterCanvasState.ctx=null;
+          meterCanvasState.failed=false;
+          HTMLCanvasElement.prototype.getContext=function(type,...args){
+            return type==='2d'?null:old.call(this,type,...args);
+          };
+          try{return prepareMeterCanvas()}finally{
+            HTMLCanvasElement.prototype.getContext=old;
+          }
+        }""")
+        assert forced is False,forced
+        fallback=await fail_page.evaluate("""()=>{
+          const el=document.querySelector('[data-meter="0"]');
+          return {active:document.documentElement.dataset.mixcanvas||null,
+            visible:getComputedStyle(el).visibility,
+            failed:meterCanvasState.failed,canvas:meterCanvasState.canvas,
+            fill:el.style.getPropertyValue('--meter-scale')};
+        }""")
+        assert fallback['visible']=='visible' and fallback['active'] is None,fallback
+        assert fallback['failed'] and fallback['canvas'] is None,fallback
+        assert float(fallback['fill'])>=0,fallback
+        await fail_page.close()
         await browser.close()
     print("PASS: asset PNG for 13 faders, detent alignment, no-jump drag, endpoints, FX chain, no JS errors")
 
