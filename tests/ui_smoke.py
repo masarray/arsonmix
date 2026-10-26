@@ -781,11 +781,12 @@ async def main():
           return {draws:meterCanvasState.draws,entries:meterCanvasState.entries.length,
            canvas:c.width>0&&c.height>0,painted,clips:document.querySelectorAll('#mixer [data-clip]').length,
            hidden:getComputedStyle(document.querySelector('[data-meter="0"]')).visibility,
+           active:document.documentElement.dataset.mixcanvas,
            inlineStyle:document.querySelector('[data-meter="0"]').style.getPropertyValue('--meter-scale')};
         }""")
         assert canvas_geom['canvas'] and canvas_geom['painted']>0,canvas_geom
         assert canvas_geom['entries']==14 and canvas_geom['clips']==14,canvas_geom
-        assert canvas_geom['hidden']=='hidden' and canvas_geom['inlineStyle']=='.4',canvas_geom
+        assert canvas_geom['hidden']=='hidden' and canvas_geom['active']=='active' and canvas_geom['inlineStyle']=='.4',canvas_geom
         # Real desktop bridge isn't modified: canvas is URL gated and not active
         # in default mode, or when a native backend is present.
         await canvas_page.locator('[data-view="FX RACK"]').click()
@@ -794,6 +795,27 @@ async def main():
         await canvas_page.wait_for_function("""()=>meterCanvasState.draws>=3
             && meterCanvasState.canvas.classList.contains('hidden')===false""")
         await canvas_page.close()
+        # Simulate a blocked Canvas2D context before the GUI starts.
+        fail_page=await browser.new_page(viewport={"width":1440,"height":820})
+        await fail_page.add_init_script("""()=>{
+          const old=HTMLCanvasElement.prototype.getContext;
+          HTMLCanvasElement.prototype.getContext=function(type,...args){
+            return type==='2d'?null:old.call(this,type,...args);
+          };
+        }""")
+        await fail_page.goto((project/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").as_uri()+"?mixperf=canvas")
+        await fail_page.wait_for_function("""()=>meterCanvasState.failed===true""")
+        fallback=await fail_page.evaluate("""()=>{
+          const el=document.querySelector('[data-meter="0"]');
+          return {active:document.documentElement.dataset.mixcanvas||null,
+            visible:getComputedStyle(el).visibility,
+            failed:meterCanvasState.failed,canvas:meterCanvasState.canvas,
+            fill:el.style.getPropertyValue('--meter-scale')};
+        }""")
+        assert fallback['visible']=='visible' and fallback['active'] is None,fallback
+        assert fallback['failed'] and fallback['canvas'] is None,fallback
+        assert float(fallback['fill'])>=0,fallback
+        await fail_page.close()
         await browser.close()
     print("PASS: asset PNG for 13 faders, detent alignment, no-jump drag, endpoints, FX chain, no JS errors")
 
