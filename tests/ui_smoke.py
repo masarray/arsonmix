@@ -16,6 +16,22 @@ async def main():
         page.on("pageerror", lambda e: errors.append(str(e)))
         await page.set_content((project/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").read_text())
         assert await page.locator(".strip").count()==13
+        # Issue #56: defaults preserve geometry; mode CSS isolates hover/layers.
+        assert await page.evaluate("""()=>document.documentElement.dataset.mixperf==='optimized'
+            && !window.__arMixPerfProbe""")
+        cap=page.locator('[data-fader="0"] .cap')
+        await cap.hover()
+        fast=await cap.evaluate("(e)=>getComputedStyle(e).filter")
+        assert 'drop-shadow' not in fast,fast
+        await page.evaluate("document.documentElement.dataset.mixperf='baseline'")
+        original=await cap.evaluate("(e)=>getComputedStyle(e).filter")
+        assert 'drop-shadow' in original,original
+        assert await page.locator('.meter-fill').first.evaluate("(e)=>getComputedStyle(e).willChange")=='transform'
+        await page.evaluate("document.documentElement.dataset.mixperf='layers-off'")
+        assert await page.locator('.meter-fill').first.evaluate("(e)=>getComputedStyle(e).willChange")=='auto'
+        await page.evaluate("document.documentElement.dataset.mixperf='hover-off'")
+        assert await cap.evaluate("(e)=>getComputedStyle(e).filter")=='none'
+        await page.evaluate("document.documentElement.dataset.mixperf='optimized'")
         # Toolbar/body fit: no excessive empty band between the hardware header and mixer.
         shell=await page.evaluate("""()=>{
           const bottom=document.querySelector('.toolbar').getBoundingClientRect().bottom;
