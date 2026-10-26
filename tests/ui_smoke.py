@@ -50,7 +50,7 @@ async def main():
         assert 'drop-shadow' not in fast,fast
         await page.evaluate("document.documentElement.dataset.mixperf='baseline'")
         original=await cap.evaluate("(e)=>getComputedStyle(e).filter")
-        assert 'drop-shadow' in original,original
+        assert original=='none',original
         assert await page.locator('.meter-fill').first.evaluate("(e)=>getComputedStyle(e).willChange")=='transform'
         await page.evaluate("document.documentElement.dataset.mixperf='layers-off'")
         assert await page.locator('.meter-fill').first.evaluate("(e)=>getComputedStyle(e).willChange")=='auto'
@@ -66,7 +66,7 @@ async def main():
         assert 'drop-shadow' not in light_pan,light_pan
         await page.evaluate("document.documentElement.dataset.mixperf='baseline'")
         old_pan=await pan_thumb.evaluate("(e)=>getComputedStyle(e).filter")
-        assert 'brightness(1.08)' in old_pan and 'drop-shadow' in old_pan,old_pan
+        assert old_pan=='none',old_pan
         await page.evaluate("document.documentElement.dataset.mixperf='optimized'")
         await pan.evaluate("(e)=>e.setAttribute('aria-valuenow','0')")
         # Toolbar/body fit: no excessive empty band between the hardware header and mixer.
@@ -495,7 +495,7 @@ async def main():
         at_center=await pan_fill.bounding_box()
         assert at_center['width']<1,at_center
         await p1.press('End')
-        assert 'drop-shadow' in await p1.locator('.pan-thumb').evaluate('(e)=>getComputedStyle(e).filter')
+        assert await p1.locator('.pan-thumb').evaluate('(e)=>getComputedStyle(e).filter')=='none'
         right_fill=await pan_fill.bounding_box()
         assert right_fill['width']>10,right_fill
         await p1.press('Home')
@@ -534,7 +534,7 @@ async def main():
         cap0=page.locator('[data-fader="0"] .cap')
         await cap0.hover()
         fader_hover=await cap0.evaluate("(e)=>getComputedStyle(e).filter")
-        assert 'brightness(1.1)' in fader_hover and 'drop-shadow' not in fader_hover, fader_hover
+        assert fader_hover=='none',fader_hover
         button=page.locator('[data-mute="0"]')
         await button.hover()
         await page.wait_for_timeout(150)  # Finish 90 ms physical-switch filter transition.
