@@ -98,7 +98,7 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  padding:0 4px;min-height:25px;height:25px;font-weight:500!important;text-shadow:none!important;
 }
 .strip .rack .insert.empty{background:linear-gradient(#1b2d37,#0a1820)!important;color:#70cbeb!important}
-.strip .rack .insert:hover{filter:brightness(1.12)}
+.strip .rack .insert:hover{border-color:#64b8d5}
 
 /* Replaced PNG-backed preset, snapshot and output controls. */
 /* Utility icons, EQ editor, plugin categories and signal/rack workspace
@@ -173,19 +173,19 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 /* v0.6: subdued hardware feedback and center detent (zero snap in JS). */
 .pan-track:not([aria-valuenow="0"]) .pan-thumb,
 .pan-track:not([aria-valuenow="0"]):hover .pan-thumb{filter:brightness(1.08) drop-shadow(1px 1px 2px #0009)!important}
-.pan-track:hover .pan-thumb{filter:brightness(1.12) drop-shadow(1px 1px 2px #000a)!important}
+.pan-track:hover .pan-thumb{filter:brightness(1.08)!important}
 .pan-track.is-dragging .pan-thumb{filter:brightness(.9) drop-shadow(0 1px 1px #000c)!important}
 .pan-track .pan-fill{height:3px;top:19px;background:#35caac;box-shadow:none!important;filter:none!important}
 .pan-track:hover .pan-fill,.pan-track.is-dragging .pan-fill{filter:none!important;box-shadow:none!important}
 .pan-track::after{z-index:2;top:15px;height:11px;background:#829aa6;box-shadow:0 0 0 1px #071016}
-.fader:hover .cap,.fader .cap:hover{filter:brightness(1.19) contrast(1.06) drop-shadow(0 1px 3px #c6deef70)!important}
+.fader:hover .cap,.fader .cap:hover{filter:brightness(1.10)!important}
 .fader.is-dragging .cap,.fader:active .cap{filter:brightness(.82) contrast(1.11) drop-shadow(0 1px 3px #244c5b)!important}
 .strip .rack .insert-slot .insert{padding:0 4px;font-size:9.5px;text-align:left}
 .strip .rack .insert-slot .insert-name{min-width:0;text-overflow:ellipsis}
 .strip .rack .insert-slot .fx-power{width:19px;min-width:19px;max-width:19px;font-size:13px}
 .strip .rack .insert-add-glyph{flex:0 0 10px;color:#63c8e1;font-size:12px;line-height:1}
 .strip .strip-name .strip-caption{max-width:96%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.strip .strip-name:hover{filter:brightness(1.12)}
+.strip .strip-name:hover{outline:1px solid #7ad4ee55;outline-offset:-2px}
 /* Channel identity: console-matched floating control panel, not a page takeover. */
 .identity-overlay{z-index:60;background:#03090d88;display:grid;place-items:center}
 .identity-overlay.hidden{display:none}
@@ -933,6 +933,16 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  max-height:none;
  transform-origin:center bottom;
  transform:scaleY(var(--meter-scale,.4));
- will-change:transform;
+ will-change:auto;
  pointer-events:none;
 }
+/* Issue #56: diagnostic variants for hover paint, demo meters and layer hints.
+   All mixer geometry, fader PNG, Button 19 and native audio remain untouched. */
+html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="meters-off"]) #mixer .fader:hover .cap,
+html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="meters-off"]) #mixer .fader .cap:hover{filter:brightness(1.19) contrast(1.06) drop-shadow(0 1px 3px #c6deef70)!important}
+html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="meters-off"]) #mixer .pan-track:hover .pan-thumb{filter:brightness(1.12) drop-shadow(1px 1px 2px #000a)!important}
+html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="meters-off"]) #mixer .strip-name:hover{filter:brightness(1.12);outline:none}
+html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="meters-off"]) #mixer .rack .insert:hover{filter:brightness(1.12)}
+html:is([data-mixperf="baseline"],[data-mixperf="hover-off"],[data-mixperf="meters-off"]) #app .meter .meter-fill{will-change:transform}
+html:is([data-mixperf="hover-off"],[data-mixperf="all-off"]) #mixer :is(.fader:hover .cap,.pan-track:hover .pan-thumb,.rack .insert:hover,.rack .fx-power:hover,.strip-name:hover,.master-insert:hover,.master-tools button:hover){filter:none!important;transition:none!important}
+html:is([data-mixperf="hover-off"],[data-mixperf="all-off"]) #mixer .strip-name:hover{outline:none!important}
