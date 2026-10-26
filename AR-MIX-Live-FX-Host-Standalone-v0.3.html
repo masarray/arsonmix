@@ -1009,6 +1009,38 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 }
 #app #mixer [data-fader]:not([data-fader="master"]) > .cap{background-image:var(--ari-channel-cap)!important}
 #app #mixer [data-fader="master"] > .cap{background-image:var(--ari-master-cap)!important}
+
+/* Mixer ergonomic pass: ten evenly distributed source channels + master.
+   The reusable chrome keeps its existing geometry and metering; only layout,
+   naming affordance and MASTER's static bitmap finish change here. */
+:root{--ari-master-cap:url("data:image/png;base64,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")}
+#app #mixer{display:flex;justify-content:flex-start;align-items:stretch;gap:0}
+#app #mixer > .strip:not(.master-strip){flex:1 1 0px;min-width:108px;max-width:none;box-sizing:border-box}
+#app #mixer > #masterLeft.strip.master-strip{flex:0 0 168px;min-width:168px;max-width:168px}
+/* Equal, aligned 2-column controls across both rows: Ø / HPF, MUTE / SOLO. */
+#app #mixer > .strip:not(.master-strip) .utility-row,
+#app #mixer > .strip:not(.master-strip) .channel-actions{
+ display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+ align-items:center;column-gap:8px;padding-left:9px;padding-right:9px;
+ box-sizing:border-box;
+}
+#app #mixer > .strip:not(.master-strip) .utility-row{width:100%;margin-bottom:7px}
+#app #mixer > .strip:not(.master-strip) .channel-actions{height:41px;min-height:41px;flex:0 0 41px}
+#app #mixer > .strip:not(.master-strip) .utility-row > button,
+#app #mixer > .strip:not(.master-strip) .channel-actions > button{
+ width:100%;min-width:0;max-width:none;justify-self:stretch;margin:0;
+ padding:0 2px;box-sizing:border-box;
+}
+#app #mixer > .strip:not(.master-strip) .utility-row > button{height:27px}
+#app #mixer > .strip:not(.master-strip) .channel-actions > button{height:29px}
+/* A quieter identity rail and a warm silver MASTER, not saturated yellow gold. */
+#app #mixer .strip-name[data-editstrip]{cursor:default}
+#app #mixer .strip-name[data-editstrip]:focus-visible{outline:2px solid #81c5d7;outline-offset:-3px}
+#app #masterLeft .master-ch-id{background:linear-gradient(130deg,#80505f,#4a313b 66%,#2a1e27);border-top-color:#c28e9f}
+#app #masterLeft .master-strip-name{border-top-color:#ba8e9b;background:linear-gradient(140deg,#573744,#2a1b26 80%)}
+#app #masterLeft .master-stereo-badge{border-color:#78606a}
+/* No blur/shadow animation on the newly finished FADER heads. */
+html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-mixperf="meters-off"]) #app #mixer .fader .cap{filter:none!important;transition:none!important}
 </style></head>
 <body>
 <div id="app" class="app">
@@ -1070,11 +1102,8 @@ const raw=[
  ['Backing','♫',['EQ','Reverb'],-3.6,-25],
  ['Guitar','♬',['EQ','Compressor','Delay'],-7.9,30],
  ['Keyboard','▥',['EQ','Reverb'],-14.2,0],
- ['FX Return','◎',['Reverb'],-5.1,0],
- ['Monitor','◉',['EQ'],-2.8,15],
- ['Aux Out','◉',['Limiter'],-11.5,0]
+ ['FX Return','◎',['Reverb'],-5.1,0]
 ];
-const extraNames=['BGV 2','Guitar 2','FX Return 2','Talkback'];
 const channels=raw.map((a,i)=>({id:i+1,name:a[0],icon:a[1],color:colors[i],inserts:[...a[2]],fader:a[3],pan:a[4],trim:0,mute:false,solo:false,pre:false,hpf:i%4!==0}));
 let currentChannel=0, masterSelected=false, view='MIX', sceneIdx=0, timer=0;
 const scenes=['Vocal Live','Karaoke Warm','Clean Voice','Studio Session'];
@@ -1168,7 +1197,7 @@ function send(param,value,ch=currentChannel){
 function flash(message){const x=$('toast');x.textContent=message;x.classList.add('show');clearTimeout(timer);timer=setTimeout(()=>x.classList.remove('show'),1500)}
 function createSide(){
  const labels=channels.map(c=>c.name);
- $('channelList').innerHTML=labels.map((label,i)=>`<div class="list-item ${i===currentChannel?'selected':''}" data-choose="${i}"><span class="swatch" style="background:${channels[i].color||colors[i%colors.length]}"></span><span class="index">${i+1}</span><span>${label}</span></div>`).join('');
+ $('channelList').innerHTML=labels.map((label,i)=>`<div class="list-item ${i===currentChannel?'selected':''}" data-choose="${i}"><span class="swatch" style="background:${channels[i].color||colors[i%colors.length]}"></span><span class="index">${i+1}</span><span>${safeText(label)}</span></div>`).join('');
  $('groupsList').innerHTML=['Drums','Band','Vocals','FX','All Music','All Vocals'].map((x,i)=>`<div class="list-item" data-group="${i}"><span class="swatch" style="background:${colors[(i+4)%12]}"></span><span class="index">${i+1}</span><span>${x}</span></div>`).join('');
  $('scenesList').innerHTML=scenes.map((x,i)=>`<div class="list-item ${i===sceneIdx?'selected':''}" data-scene="${i}"><span class="swatch" style="background:${i===sceneIdx?'#23bce9':'#283d4a'};width:8px;height:14px"></span>${x}</div>`).join('');
  $('currentScene').innerHTML=`Snapshot: <b>${scenes[sceneIdx]}</b><span>▾</span>`;
@@ -1193,6 +1222,7 @@ function positionChannelIdentity(){
  panel.style.setProperty('--identity-pointer-x',clamp(target.left+target.width/2-left,18,pop.width-18)+'px');
 }
 function openChannelIdentity(index){
+ if(!Number.isInteger(index)||index<0||index>=channels.length)return;
  editingChannel=index;editingColor=channels[index].color||colors[index];editingIcon=channels[index].icon;
  const modal=$('channelIdentity');if(!modal)return;
  $('identityIndex').textContent=String(index+1).padStart(2,'0');
@@ -1226,7 +1256,7 @@ function makeStrip(ch,i){let inserts=ch.inserts.slice(0,6);while(inserts.length<
  <div class="strip-controls"><div class="trim-row"><span class="mini-label">TRIM<br>dB</span><div class="mini-lcd" data-trim-read="${i}">${fmt(ch.trim)}</div></div>${knobMarkup('trim',i,ch.trim,'Trim')}<div class="pan-control">${panMarkup(ch,i)}<div class="pan-readline"><span aria-hidden="true">L</span><strong data-pan-read="${i}">${panText(ch.pan)}</strong><span aria-hidden="true">R</span></div></div><div class="utility-row"><button data-pre="${i}" class="btn-180 ${ch.pre?'active':''}">Ø</button><button data-hpf="${i}" class="btn-180 ${ch.hpf?'active':''}">HPF</button></div></div>
  <div class="channel-actions"><button class="btn-180 candy mute ${ch.mute?'active':''}" data-mute="${i}" aria-pressed="${ch.mute}">MUTE</button><button class="btn-180 candy solo ${ch.solo?'active':''}" data-solo="${i}" aria-pressed="${ch.solo}">SOLO</button></div>
  <div class="db-display" data-read="${i}">${fmt(ch.fader)}</div><div class="fader-zone"><div class="scale"><span>10</span><span>0</span><span>−10</span><span>−20</span><span>−30</span><span>−40</span><span>−60</span></div><div class="fader" data-fader="${i}" role="slider" tabindex="0" aria-orientation="vertical" aria-label="${ch.name} fader" aria-valuemin="-60" aria-valuemax="10" aria-valuenow="${ch.fader}"><div class="cap" style="--pos:${levelToTop(ch.fader)}%"></div></div><div class="meter" data-meter-key="${i}"><button class="clip-led" type="button" data-clip="${i}" title="Clear latched clip — ${safeText(ch.name)}" aria-label="Clear ${safeText(ch.name)} clip"></button><div class="meter-fill" data-meter="${i}" style="--level:40%"></div><div class="meter-peak" aria-hidden="true"></div></div></div>
- <div class="strip-name" data-editstrip="${i}" role="button" tabindex="0" aria-label="Edit ${safeText(ch.name)} name, icon and color" title="Edit channel identity"><span class="strip-caption">${safeText(ch.name)}</span><span class="track-icon">${safeText(ch.icon)}</span></div>
+ <div class="strip-name" data-editstrip="${i}" role="button" tabindex="0" aria-label="Double-click to edit ${safeText(ch.name)} name, icon and color" title="Double-click to edit channel identity"><span class="strip-caption">${safeText(ch.name)}</span><span class="track-icon">${safeText(ch.icon)}</span></div>
  </article>`}
 function renderMixer(){
  const x=$('mixer'),scroll=x.scrollLeft;
@@ -1321,9 +1351,9 @@ function focusMaster(){
  document.querySelectorAll('.strip').forEach(strip=>strip.classList.toggle('selected',strip.id==='masterLeft'));
  document.querySelectorAll('#channelList [data-choose]').forEach(row=>row.classList.remove('selected'));
 }
-function chooseChannel(i){if(i>=channels.length){flash('Additional bank channels are not populated in this UI study');return}currentChannel=i;renderMixer();if(view==='FX RACK')renderRackWorkspace()}
+function chooseChannel(i){if(i<0||i>=channels.length){flash('Additional bank channels are not populated in this UI study');return}currentChannel=i;renderMixer();if(view==='FX RACK')renderRackWorkspace()}
 function toggleState(i,key){channels[i][key]=!channels[i][key];const btn=document.querySelector(`[data-${key}="${i}"]`);if(btn){btn.classList.toggle('active',channels[i][key]);btn.setAttribute('aria-pressed',String(channels[i][key]))}send(key,channels[i][key],i)}
-document.addEventListener('click',e=>{const b=e.target.closest('button,[data-choose],[data-scene],[data-editstrip],[data-group]');
+document.addEventListener('click',e=>{const b=e.target.closest('button,[data-choose],[data-scene],[data-group]');
  const icon=e.target.closest('[data-icon-choice]'),color=e.target.closest('[data-color-choice]');
  if(icon){editingIcon=icon.dataset.iconChoice;document.querySelectorAll('[data-icon-choice]').forEach(n=>{n.classList.toggle('selected',n===icon);n.setAttribute('aria-pressed',String(n===icon))});return}
  if(color){editingColor=color.dataset.colorChoice;document.querySelectorAll('[data-color-choice]').forEach(n=>{n.classList.toggle('selected',n===color);n.setAttribute('aria-pressed',String(n===color))});return}
@@ -1344,7 +1374,6 @@ document.addEventListener('click',e=>{const b=e.target.closest('button,[data-cho
  if(b.dataset.clearAllClips!==undefined){Object.keys(clipLatch).forEach(resetClip);Object.keys(peakHold).forEach(k=>delete peakHold[k]);return}
  if(b.dataset.fxpower!==undefined){const [i,j]=b.dataset.fxpower.split(':').map(Number);setFxBypass(i,j,!bypassed[fxKey(i,j)]);return}
  if(b.dataset.insert){let [i,j]=b.dataset.insert.split(':').map(Number);currentChannel=i;pendingSlot=j;openPluginBrowser(i);return}
- if(b.dataset.editstrip!==undefined){openChannelIdentity(+b.dataset.editstrip);return}
  if(b.dataset.scene!==undefined){loadSnapshotByIndex(+b.dataset.scene);return}
  if(b.dataset.preset){applyQuickPreset(b.dataset.preset);return}
  if(b.dataset.addplugin!==undefined){pendingSlot=channels[currentChannel].inserts.length;openPluginBrowser(currentChannel);return}
@@ -1359,6 +1388,11 @@ document.addEventListener('click',e=>{const b=e.target.closest('button,[data-cho
  if(b.dataset.side){document.querySelectorAll('[data-side]').forEach(x=>x.classList.toggle('selected',x===b));if(b.dataset.side==='fx')setView('FX RACK');else setView('MIX');return}
  switch(b.id){case'identityCancel':closeChannelIdentity();break;case'identitySave':commitChannelIdentity();break;case'masterMute':masterMute=!masterMute;b.textContent='MUTE';b.classList.toggle('active',masterMute);b.setAttribute('aria-pressed',String(masterMute));send('masterMute',masterMute,-1);break;case'addScene':saveMixerSnapshot();break;case'saveFxPreset':saveFxChainPreset();break;case'menuScene':exportSession();break;case'closeBrowser':closePluginBrowser();break;case'closeFxInspector':pluginEditorIndex=null;renderRackWorkspace();break;case'chooseFxFile':importSession();break;case'arSignalOpen':if(!window.__JUCE__?.backend?.emitEvent)flash('Signal Check is available in the Windows desktop app');break;default:if(b.id)flash('UI study: '+b.textContent.trim().slice(0,28));}
 });
+// Deliberate double-click to edit a strip. Single-click only changes selection.
+document.addEventListener('dblclick',e=>{const el=e.target.closest('[data-editstrip]');if(!el)return;
+ const i=Number(el.dataset.editstrip);if(!Number.isInteger(i)||i<0||i>=channels.length)return;
+ e.preventDefault();e.stopPropagation();openChannelIdentity(i);
+},true);
 document.addEventListener('dblclick',e=>{const pan=e.target.closest('[data-pan]');if(pan){e.preventDefault();e.stopPropagation();updatePan(pan.dataset.pan==='master'?'master':+pan.dataset.pan,0)}},true);
 // Double-click a fader for 0 dB unity gain, without changing workspace.
 document.addEventListener('dblclick',e=>{const f=e.target.closest('[data-fader]');if(!f)return;e.preventDefault();e.stopPropagation();updateFader(f.dataset.fader,0)},true);
@@ -1592,7 +1626,7 @@ function persistSession(){try{localStorage.setItem('armix-v03-current',JSON.stri
 function saveFxChainPreset(){const name=prompt('Name this FX chain preset:','My Vocal Chain');if(!name)return;const key=name.trim().slice(0,60);if(!key)return;savedChains[key]={schemaVersion:1,inserts:[...normalChain(channels[currentChannel])],states:normalChain(channels[currentChannel]).map((_,i)=>({...getFxParams(currentChannel,i),bypass:!!bypassed[fxKey(currentChannel,i)]}))};persistSession();flash('FX chain preset saved: '+key)}
 function recallFxChain(){const keys=Object.keys(savedChains);if(!keys.length){flash('No saved FX chains yet');return}const key=prompt('Enter FX chain preset name:\n'+keys.join('\n'),keys[0]);if(!key||!savedChains[key])return;setChain(channels[currentChannel],savedChains[key].inserts);savedChains[key].states?.forEach((v,i)=>{fxParams[fxKey(currentChannel,i)]={mix:v.mix,amount:v.amount,output:v.output};bypassed[fxKey(currentChannel,i)]=!!v.bypass});pluginEditorIndex=null;renderRackWorkspace();flash('FX chain recalled: '+key)}
 function saveMixerSnapshot(){const name=prompt('Name this mixer snapshot:','My Live Sound');if(!name)return;const key=name.trim().slice(0,60);if(!key)return;userSnapshots[key]=durableSession();if(!scenes.includes(key))scenes.push(key);persistSession();createSide();flash('Snapshot saved: '+key)}
-function applySession(session){if(!session||session.schemaVersion!==1||!Array.isArray(session.channels)||session.channels.length!==channels.length){flash('Unsupported session format');return}for(let i=0;i<channels.length;i++){const src=session.channels[i],c=channels[i];
+function applySession(session){if(!session||session.schemaVersion!==1||!Array.isArray(session.channels)||session.channels.length<channels.length){flash('Unsupported session format');return}for(let i=0;i<channels.length;i++){const src=session.channels[i],c=channels[i];
  if(typeof src.name==='string'&&src.name.trim())c.name=src.name.trim().slice(0,26);
  if(channelIcons.includes(src.icon))c.icon=src.icon;
  if(channelPalette.includes(src.color))c.color=src.color;
@@ -1620,7 +1654,7 @@ document.addEventListener('click',e=>{const id=e.target.closest('button')?.id;if
 let lastPersist=0;setInterval(()=>{if(Date.now()-lastPersist<2000)return;lastPersist=Date.now();persistSession()},5000);
 try{userSnapshots=JSON.parse(localStorage.getItem('armix-v03-snapshots')||'{}');savedChains=JSON.parse(localStorage.getItem('armix-v03-chains')||'{}');for(const k of Object.keys(userSnapshots))if(!scenes.includes(k))scenes.push(k)}catch{userSnapshots={};savedChains={}}
 
-createSide();renderMixer();renderMaster();try{let last=JSON.parse(localStorage.getItem('armix-v03-current'));if(!last)last=JSON.parse(localStorage.getItem('arMixStudioUI')); if(last&&last.channels?.length===channels.length){last.channels.forEach((s,i)=>{if(typeof s.name==='string'&&s.name.trim())channels[i].name=s.name.trim().slice(0,26);
+createSide();renderMixer();renderMaster();try{let last=JSON.parse(localStorage.getItem('armix-v03-current'));if(!last)last=JSON.parse(localStorage.getItem('arMixStudioUI')); if(last&&last.channels?.length>=channels.length){last.channels.slice(0,channels.length).forEach((s,i)=>{if(typeof s.name==='string'&&s.name.trim())channels[i].name=s.name.trim().slice(0,26);
  if(channelIcons.includes(s.icon))channels[i].icon=s.icon;
  if(channelPalette.includes(s.color))channels[i].color=s.color;
  for(const k of ['fader','pan','trim','mute','solo','hpf'])if(s[k]!==undefined)channels[i][k]=s[k];if(Array.isArray(s.inserts))channels[i].inserts=s.inserts.filter(x=>typeof x==='string').slice(0,8)});sceneIdx=last.sceneIdx??0;masterGain=last.masterGain??-.1;masterPan=Number.isFinite(last.masterPan)?clamp(last.masterPan,-100,100):0;masterMute=!!last.masterMute;

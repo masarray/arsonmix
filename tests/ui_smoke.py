@@ -15,7 +15,9 @@ async def main():
             return re.sub(r'rgba?\([^)]*\)', '<color>', shadow)
         page.on("pageerror", lambda e: errors.append(str(e)))
         await page.set_content((project/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").read_text())
-        assert await page.locator(".strip").count()==13
+        assert await page.locator(".strip").count()==11
+        assert await page.locator("#channelList [data-choose]").count()==10
+        assert await page.locator("[data-strip=\"10\"], [data-strip=\"11\"]").count()==0
         # Issue #56: defaults preserve geometry; mode CSS isolates hover/layers.
         assert await page.evaluate("""()=>document.documentElement.dataset.mixperf==='optimized'
             && !window.__arMixPerfProbe""")
@@ -134,8 +136,8 @@ async def main():
         await page.evaluate('scheduleDemoMeter()')
         # No per-event idle fader work: drag listener is attached only on pointerdown.
         assert await page.evaluate('drag===null')
-        # All 12 PAN knobs have been replaced by horizontal slider tracks.
-        assert await page.locator('[data-pan]').count()==13
+        # All 10 source PAN knobs have been replaced by horizontal slider tracks.
+        assert await page.locator('[data-pan]').count()==11
         assert await page.locator('[data-knob="pan"]').count()==0
         pan_z=await page.locator('[data-pan="0"]').evaluate("""e=>({
           center:getComputedStyle(e,'::after').zIndex,
@@ -152,7 +154,7 @@ async def main():
         assert pan_offset=={'groove':'13px','fill':'15px','detent':'12px'},pan_offset
         assert 'data:image/png;base64,' in pan_z['png'],pan_z
         assert ''.join((await page.locator('.brand').inner_text()).split())=='ArSonMix'
-        for idx in range(12):
+        for idx in range(10):
             p=page.locator(f'[data-pan="{idx}"]')
             assert await p.get_attribute('aria-orientation')=='horizontal'
             assert await p.locator('.pan-thumb').count()==1
@@ -180,14 +182,43 @@ async def main():
         assert [round(float(v.rstrip('s')),3) for v in style['dur'].split(', ')]==[.15,.15,.15,.09,.12,.075],style
         # Visual-architecture regression: four intentionally different hardware
         # families, FX slots recessed rather than taking on button-cap artwork.
-        # GUI target: the master is the 13th sibling, not a floating right rail.
-        assert await page.locator('#mixer > .strip').count()==13
+        # GUI target: MASTER is the 11th strip, not a floating right rail.
+        assert await page.locator('#mixer > .strip').count()==11
         assert await page.locator('#mixer > .strip:last-child').get_attribute('id')=='masterLeft'
         assert await page.locator('[data-insert="0:5"]').count()==1
         assert await page.locator('[data-master-insert="5"]').count()==1
         assert await page.locator('.strip-controls .knob-label').filter(has_text="PAN").count()==0
-        assert await page.locator('.pan-readline').count()==13
+        assert await page.locator('.pan-readline').count()==11
         assert await page.locator('#masterLeft .master-controls-zone .master-analysis').count()==1
+        # Fluid ten-channel rail must fill the available width, without a dead right gutter.
+        layout=await page.evaluate("""()=>{
+          const area=document.querySelector('#mixer').getBoundingClientRect();
+          const strips=[...document.querySelectorAll('#mixer > .strip')];
+          const master=strips.at(-1).getBoundingClientRect();
+          const prev=strips.at(-2).getBoundingClientRect();
+          const controlPairs=[...document.querySelectorAll('#mixer > .strip:not(.master-strip)')].map(strip=>{
+            const rect=e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,width:r.width}};
+            const a=[...strip.querySelectorAll('.utility-row button')].map(rect);
+            const b=[...strip.querySelectorAll('.channel-actions button')].map(rect);
+            return {upper:a,lower:b};
+          });
+          return {areaRight:area.right,masterRight:master.right,gap:master.left-prev.right,
+                  overflow:document.querySelector('#mixer').scrollWidth-document.querySelector('#mixer').clientWidth,
+                  all:controlPairs};
+        }""")
+        assert abs(layout['masterRight']-layout['areaRight'])<=3,layout
+        assert abs(layout['gap'])<=3,layout
+        assert layout['overflow']<=2,layout
+        for pair in layout['all']:
+            top,bot=pair['upper'],pair['lower']
+            assert len(top)==2 and len(bot)==2,pair
+            assert all(b['width']>=42 for b in top+bot),pair
+            assert abs(top[0]['width']-top[1]['width'])<=2,pair
+            assert abs(bot[0]['width']-bot[1]['width'])<=2,pair
+            assert abs(top[0]['left']-bot[0]['left'])<=2,pair
+            assert abs(top[1]['right']-bot[1]['right'])<=2,pair
+            assert 6<=top[1]['left']-top[0]['right']<=10,pair
+            assert 6<=bot[1]['left']-bot[0]['right']<=10,pair
         # Six real insert slots fit entirely within each FX rack (no cropping).
         rack_geometry=await page.evaluate("""() => [...document.querySelectorAll('.strip')].every(strip=>{
            const rack=strip.querySelector('.rack,.master-fx-rack');
@@ -401,7 +432,7 @@ async def main():
         }""")
         assert smallRail['footerBottom']<=smallRail['bottom']+1,smallRail
         assert all(b['width']>35 for b in smallRail['buttons']),smallRail
-        assert await page.locator('.strip').count()==13
+        assert await page.locator('.strip').count()==11
         # The user's requirement: the SAME size/position before, during, and after toggle.
         # OFF/ON use the exact same shadow-layer geometry, differing only in palette.
         def switch_state(selector):
@@ -444,7 +475,7 @@ async def main():
             faderBottom:f.bottom,nameTop:n.top,nameBottom:n.bottom,
             hasTools:!!s.querySelector('.fader-tools')};
         })""")
-        assert len(geometry)==13 and all(x['nameTop']>=x['faderBottom']-1 for x in geometry),geometry
+        assert len(geometry)==11 and all(x['nameTop']>=x['faderBottom']-1 for x in geometry),geometry
         assert all(not x['hasTools'] for x in geometry if not x['master']),geometry
         assert sum(x['hasTools'] for x in geometry)==1,geometry
         # Both resting states share depth; while pointer is down only, cap sinks 1px
@@ -526,7 +557,7 @@ async def main():
         assert left_fill['width']>10 and left_fill['x']<at_center['x'],left_fill
         await p1.press('Home')
         # Inline strip FX power and full FX Rack power reflect same saved state.
-        assert await page.locator('.strip .insert-slot').count()==72
+        assert await page.locator('.strip .insert-slot').count()==60
         inline=page.locator('[data-fxpower="0:0"]')
         assert await inline.get_attribute('aria-pressed')=='true'
         assert await page.locator('[data-insert="0:0"]').count()==1
@@ -565,6 +596,9 @@ async def main():
         })"""), 'FX power overflow or slot geometry changed'
         # Channel identities are real editable state, not only colored labels.
         await page.locator('[data-editstrip="0"]').click()
+        assert await page.locator('#channelIdentity').is_hidden(), 'Single-click must select only'
+        assert await page.locator('[data-strip="0"]').evaluate("(e)=>e.classList.contains('selected')")
+        await page.locator('[data-editstrip="0"]').dblclick()
         assert await page.locator('#channelIdentity').is_visible()
         anchor=await page.evaluate("""()=>{
           const n=document.querySelector('[data-editstrip="0"]').getBoundingClientRect();
@@ -586,7 +620,7 @@ async def main():
         assert await page.locator('[data-editstrip="0"] .track-icon').inner_text()=='🎙'
         assert await page.evaluate('durableSession().channels[0].color')=='#cf6b1e'
         # Channel name editor cancel must not overwrite committed changes.
-        await page.locator('[data-editstrip="0"]').click()
+        await page.locator('[data-editstrip="0"]').dblclick()
         await page.locator('#identityName').fill('This Should Not Persist')
         await page.locator('#identityCancel').click()
         assert await page.locator('[data-editstrip="0"] .strip-caption').inner_text()=='Vocal Main'
@@ -639,7 +673,7 @@ async def main():
         assert await page.locator('#pluginModal').is_hidden()
         assert await page.locator('#masterLufs').count()==1
         assert await page.locator('#masterDbtp').count()==1
-        assert await page.locator('[data-clip]').count()==14
+        assert await page.locator('[data-clip]').count()==12  # 10 source clips + MASTER L/R
         assert await page.locator('[data-meter="masterL"]').count()==1
         assert await page.locator('[data-meter="masterR"]').count()==1
         await page.evaluate('updateMeterVisual("masterL",99,performance.now())')
@@ -730,7 +764,7 @@ async def main():
             const image=new Image();image.src=uri;await image.decode();
             return {heads,imgW:image.naturalWidth,imgH:image.naturalHeight};
         }""")
-        assert len(geometry['heads'])==13
+        assert len(geometry['heads'])==11
         assert (geometry['imgW'],geometry['imgH'])==(36,77),geometry
         assert sum(g['master'] for g in geometry['heads'])==1,geometry
         assert geometry['heads'][0]['bg'] != geometry['heads'][-1]['bg'], 'MASTER must use gold instead of channel silver'
@@ -814,6 +848,6 @@ async def main():
         assert measured["mixer"]["samples"]>0 and measured["pointerMoves"]["mixer"]>0,measured
         await diag.close()
         await browser.close()
-    print("PASS: asset PNG for 13 faders, detent alignment, no-jump drag, endpoints, FX chain, no JS errors")
+    print("PASS: 10-channel premium mixer, rose MASTER, responsive layout, double-click rename, no JS errors")
 
 if __name__=="__main__":asyncio.run(main())
