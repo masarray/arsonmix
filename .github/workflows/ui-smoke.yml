@@ -69,6 +69,7 @@ jobs:
         with:
           name: arsonmix-gui-baseline-smoke
           path: |
+            native-orbit-ui-review.png
             fader-ui-smoke.png
             mixer-design-review.png
             mixer-design-review-1440.png
