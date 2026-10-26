@@ -168,7 +168,7 @@ function makeStrip(ch,i){let inserts=ch.inserts.slice(0,6);while(inserts.length<
  <div class="ch-id">${i+1}</div><div class="rack">${inserts.map((n,j)=>`<div class="insert-slot ${n&&bypassed[fxKey(i,j)]?'is-bypassed':''}"><button class="insert ${!n?'empty':''}" data-insert="${i}:${j}" title="${n?'Open or replace '+safeText(n):'Add VST effect'}">${n?'':'<span class="insert-add-glyph" aria-hidden="true">＋</span>'}<span class="insert-name">${n? safeText(n):'ADD FX'}</span></button>${n?`<button type="button" class="fx-power ${bypassed[fxKey(i,j)]?'is-bypassed':''}" data-fxpower="${i}:${j}" aria-pressed="${!bypassed[fxKey(i,j)]}" aria-label="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}" title="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}">⏻</button>`:''}</div>`).join('')}</div>
  <div class="strip-controls"><div class="trim-row"><span class="mini-label">TRIM<br>dB</span><div class="mini-lcd" data-trim-read="${i}">${fmt(ch.trim)}</div></div>${knobMarkup('trim',i,ch.trim,'Trim')}<div class="pan-control">${panMarkup(ch,i)}<div class="pan-readline"><span aria-hidden="true">L</span><strong data-pan-read="${i}">${panText(ch.pan)}</strong><span aria-hidden="true">R</span></div></div><div class="utility-row"><button data-pre="${i}" class="btn-180 ${ch.pre?'active':''}">Ø</button><button data-hpf="${i}" class="btn-180 ${ch.hpf?'active':''}">HPF</button></div></div>
  <div class="channel-actions"><button class="btn-180 candy mute ${ch.mute?'active':''}" data-mute="${i}" aria-pressed="${ch.mute}">MUTE</button><button class="btn-180 candy solo ${ch.solo?'active':''}" data-solo="${i}" aria-pressed="${ch.solo}">SOLO</button></div>
- <div class="db-display" data-read="${i}">${fmt(ch.fader)}</div><div class="fader-zone"><div class="vu-bank" role="group" aria-label="${safeText(ch.name)} ${ch.stereo?'stereo left and right meters':'mono meter'}">${ch.stereo?meterUnit(String(i)+'L','L')+meterUnit(String(i)+'R','R'):meterUnit(String(i),'')}</div><div class="fader" data-fader="${i}" role="slider" tabindex="0" aria-orientation="vertical" aria-label="${ch.name} fader" aria-valuemin="-60" aria-valuemax="10" aria-valuenow="${ch.fader}"><div class="cap" style="--pos:${levelToTop(ch.fader)}%"></div></div><div class="scale"><span>10</span><span>0</span><span>−10</span><span>−20</span><span>−30</span><span>−40</span><span>−60</span></div></div></div>
+ <div class="db-display" data-read="${i}">${fmt(ch.fader)}</div><div class="fader-zone"><div class="vu-bank" role="group" aria-label="${safeText(ch.name)} ${ch.stereo?'stereo left and right meters':'mono meter'}"><div class="vu-bars">${ch.stereo?meterUnit(String(i)+'L','L')+meterUnit(String(i)+'R','R'):meterUnit(String(i),'')}</div>${meterScaleMarkup()}</div><div class="fader" data-fader="${i}" role="slider" tabindex="0" aria-orientation="vertical" aria-label="${ch.name} fader" aria-valuemin="-60" aria-valuemax="10" aria-valuenow="${ch.fader}"><div class="fader-travel"><div class="cap" style="--pos:${levelToTop(ch.fader)}%"></div></div></div>${faderScaleMarkup()}</div></div>
  <div class="strip-name" data-editstrip="${i}" role="button" tabindex="0" aria-label="Double-click to edit ${safeText(ch.name)} name, icon and color" title="Double-click to edit channel identity"><span class="strip-caption">${safeText(ch.name)}</span><span class="track-icon">${safeText(ch.icon)}</span></div>
  </article>`}
 function renderMixer(){
@@ -183,7 +183,16 @@ function masterFxRows(){
  <button class="master-insert ${name?'':'empty'}" data-master-insert="${i}" title="${name?'Replace '+safeText(name):'Add master FX'}">${name?'':'<span class="master-insert-add" aria-hidden="true">＋</span>'}<span class="insert-name">${name?safeText(name):'ADD FX'}</span></button>
  ${name?`<button class="master-fx-power ${masterBypassed[i]?'is-bypassed':''}" data-master-power="${i}" title="${masterBypassed[i]?'Enable':'Bypass'} ${safeText(name)}" aria-label="${masterBypassed[i]?'Enable':'Bypass'} ${safeText(name)}" aria-pressed="${!masterBypassed[i]}">⏻</button>`:''}</div>`).join('');
 }
-function meterUnit(key,label){return `<div class="meter-unit"><div class="meter" data-meter-key="${key}"><button type="button" class="clip-led" data-clip="${key}" title="Clear latched clip — ${label}" aria-label="Clear ${label} clip indication"></button><div class="meter-fill" data-meter="${key}" style="--level:6%"></div><div class="meter-peak" aria-hidden="true"></div></div><span class="meter-channel-label" aria-hidden="true">${label||''}</span></div>`}
+// Independent physically calibrated rulers, not seven flex-spaced labels.
+// Fader endpoints are the center stripe of the 36x77px PNG, y=38.
+const FADER_DB_TICKS=[10,5,0,-5,-10,-15,-20,-25,-30,-35,-40,-45,-50,-55,-60];
+const METER_DBFS_TICKS=[0,-6,-12,-18,-24,-36,-48,-60];
+const FADER_MAJOR_DB=new Set([10,0,-10,-20,-30,-40,-50,-60]);
+const faderScaleMarkup=()=>`<div class="scale gain-scale" aria-label="Fader gain, +10 to −60 dB"><div class="gain-scale-travel">${FADER_DB_TICKS.map(db=>`<div class="gain-tick ${FADER_MAJOR_DB.has(db)?'major':'minor'}" data-gain-tick="${db}" style="--tick:${levelToTop(db)}%">${FADER_MAJOR_DB.has(db)?`<span>${db>0?'+'+db:db}</span>`:''}</div>`).join('')}</div></div>`;
+const meterScaleMarkup=()=>`<div class="vu-scale" aria-label="Meter level, 0 to −60 dBFS"><div class="vu-scale-travel">${METER_DBFS_TICKS.map(db=>`<div class="vu-tick" data-vu-tick="${db}" style="--tick:${+(-db/60*100).toFixed(4)}%"><span>${db}</span></div>`).join('')}</div></div>`;
+// Native peak telemetry is mapped from -60..0 dBFS to 0..100% in web/bridge.js.
+const meterPercentToDbfs=p=>clamp(p,0,100)*.6-60;
+function meterUnit(key,label){return `<div class="meter-unit"><div class="meter" data-meter-key="${key}"><button type="button" class="clip-led" data-clip="${key}" title="Clear latched clip — ${label}" aria-label="Clear ${label} clip indication"></button><div class="meter-signal-area"><div class="meter-fill" data-meter="${key}" style="--level:6%"></div><div class="meter-peak" aria-hidden="true"></div></div></div><span class="meter-channel-label" aria-hidden="true">${label||''}</span></div>`}
 function renderMaster(){
  const host=$('masterLeft');if(!host)return;
  host.innerHTML=`<div class="ch-id master-ch-id">MASTER</div>
@@ -213,14 +222,14 @@ function renderMaster(){
  <div class="db-display master-db" data-master-db>${fmt(masterGain)}</div>
  <div class="fader-zone master-fader-zone">
   <div class="vu-bank" role="group" aria-label="Master left and right meters">
-   ${meterUnit('masterL','L')}
-   ${meterUnit('masterR','R')}
+   <div class="vu-bars">${meterUnit('masterL','L')}${meterUnit('masterR','R')}</div>
+   ${meterScaleMarkup()}
   </div>
   <div class="fader" data-fader="master" role="slider" tabindex="0" aria-orientation="vertical"
        aria-label="Main master fader" aria-valuemin="-60" aria-valuemax="10" aria-valuenow="${masterGain}">
-    <div class="cap master-cap" style="--pos:${levelToTop(masterGain)}%"></div>
+    <div class="fader-travel"><div class="cap master-cap" style="--pos:${levelToTop(masterGain)}%"></div></div>
   </div>
-  <div class="scale"><span>10</span><span>0</span><span>−10</span><span>−20</span><span>−30</span><span>−40</span><span>−60</span></div>
+  ${faderScaleMarkup()}
  </div>
  <div class="strip-name master-strip-name" role="group" aria-label="Master output"><span class="strip-caption">MASTER</span><span class="track-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m11 5-5 4H3v6h3l5 4V5Z"/><path d="M15 9a5 5 0 0 1 0 6M18 6a9 9 0 0 1 0 12"/></svg></span></div>`;
  syncClipLeds();

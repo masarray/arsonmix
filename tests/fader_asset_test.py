@@ -34,13 +34,16 @@ for filename,variable,length,expected_sha256 in assets:
 
 assert 'width:36px;height:77px' in source
 assert 'background-size:36px 77px!important' in source
-assert 'top:clamp(38px,var(--pos,50%),calc(100% - 39px))' in source
+assert 'top:var(--pos,50%)' in source
+assert '.fader-travel' in js
+assert 'gain-scale-travel' in js
+assert 'vu-scale-travel' in js
 assert 'transform:translate(-50%,-38px)' in source
 assert 'distance:Math.max(24,r.height-77)' in js
 assert 'background-image:var(--ari-channel-cap)!important' in source
 assert 'background-image:var(--ari-master-cap)!important' in source
 assert ':not([data-fader="master"])' in source
-assert '[data-fader="master"] > .cap' in source
+assert '[data-fader="master"] .fader-travel > .cap' in source
 assert 'filter:none!important' in source
 
 # Historical art is retained for rollback; active heads must use new assets.

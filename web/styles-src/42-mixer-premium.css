@@ -105,3 +105,81 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
  width:14px;min-width:14px;height:calc(100% - 11px);
 }
 /* Do not perturb the pressed fader PNG, drag travel, native DSP or meter cadence. */
+
+/* 2026-10-27 calibrated, independent meters and faders.
+   All tick centers and the PNG detent use exactly the same physical travel box.
+   Fader: +10=top/−60=bottom (H−77px). Meter: 0 dBFS=top/−60=bottom. */
+#app #mixer .fader-zone .vu-bank{
+ flex:0 0 51px;width:51px;min-width:51px;max-width:51px;
+ display:flex;justify-content:flex-start;gap:2px;align-items:stretch;
+}
+#app #mixer .fader-zone .vu-bars{
+ width:30px;min-width:30px;flex:0 0 30px;
+ display:flex;justify-content:flex-end;gap:2px;min-height:0;
+}
+#app #mixer .fader-zone .vu-scale{
+ position:relative;flex:0 0 19px;min-width:19px;width:19px;
+ color:#9aadb8;font:8px/1 Consolas,monospace;pointer-events:none;
+}
+#app #mixer .fader-zone .vu-scale-travel{
+ position:absolute;top:12px;bottom:13px;left:0;right:0;
+}
+#app #mixer .fader-zone .vu-tick{
+ position:absolute;left:0;right:0;top:var(--tick);
+ height:0;white-space:nowrap;
+}
+#app #mixer .fader-zone .vu-tick::before{
+ content:"";position:absolute;top:0;left:0;width:3px;height:1px;background:#637783;
+}
+#app #mixer .fader-zone .vu-tick span{
+ position:absolute;left:4px;top:-5px;font:8px/10px Consolas,monospace;
+}
+#app #mixer .fader-zone .meter-signal-area{
+ position:absolute;top:12px;bottom:2px;left:0;right:0;pointer-events:none;
+}
+#app #mixer .fader-zone .meter-signal-area .meter-fill{
+ height:100%;max-height:none;bottom:0;left:1px;right:1px;
+}
+#app #mixer .fader-zone .meter-signal-area .meter-peak{
+ bottom:0;left:1px;right:1px;
+}
+#app #mixer .fader-zone .fader:before{
+ top:38px;bottom:39px;
+}
+#app #mixer .fader-zone .fader:after{
+ top:38px;bottom:39px;
+}
+#app #mixer .fader-zone .fader-travel{
+ position:absolute;top:38px;bottom:39px;left:0;right:0;
+ pointer-events:none;
+}
+#app #mixer .fader-zone .fader-travel > .cap{
+ pointer-events:auto;
+}
+/* The ruler is anchored to the black center line, not to the fader body ends. */
+#app #mixer .fader-zone .scale,
+#app #masterLeft .master-fader-zone .scale{
+ position:relative;display:block;
+ flex:0 0 26px;width:26px;min-width:26px;
+ padding:0;box-sizing:border-box;
+ background:none;color:#a8b9c3;
+}
+#app #mixer .fader-zone .gain-scale-travel{
+ position:absolute;top:38px;bottom:39px;left:0;right:0;
+}
+#app #mixer .fader-zone .gain-tick{
+ position:absolute;top:var(--tick);left:0;right:0;height:0;
+}
+#app #mixer .fader-zone .gain-tick::before{
+ content:"";position:absolute;left:1px;top:0;
+ height:1px;width:3px;background:#687d89;
+}
+#app #mixer .fader-zone .gain-tick.major::before{
+ width:6px;background:#a4b9c4;
+}
+#app #mixer .fader-zone .gain-tick span{
+ position:absolute;top:-6px;left:8px;right:0;text-align:right;
+ font:9px/12px Consolas,monospace;white-space:nowrap;
+}
+/* LED increments stay fixed and the meter keeps its native dBFS conversion.
+   No hot-path DOM reads, filters, blur or per-frame scale animation. */

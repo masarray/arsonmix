@@ -722,6 +722,45 @@ async def main():
         }""")
         assert [m['keys'] for m in topology['units']]==[[str(i)] for i in range(6)]+[[f'{i}L',f'{i}R'] for i in range(6,10)],topology
         assert topology['master']==['masterL','masterR'],topology
+
+        # Calibration contract: +10 and -60 must align the PNG's black row 38.
+        calibrated=await page.evaluate("""()=>{
+          const selected=['0','6','master'];
+          const ticks=[10,0,-10,-30,-60];
+          const result=[];
+          for(const key of selected){
+            const f=document.querySelector('[data-fader="'+key+'"]'),strip=f.closest('.strip');
+            const scale=strip.querySelector('.gain-scale');
+            const old=f.dataset.fader==='master'?masterGain:channels[+key].fader;
+            for(const db of ticks){
+              updateFader(key,db);
+              const cap=f.querySelector('.cap').getBoundingClientRect();
+              const tick=scale.querySelector('[data-gain-tick="'+db+'"]').getBoundingClientRect();
+              result.push({key,db,error:cap.top+38-tick.top,
+                           inside:cap.top>=f.getBoundingClientRect().top-.5&&cap.bottom<=f.getBoundingClientRect().bottom+.5});
+            }
+            updateFader(key,old);
+          }
+          const vu=[];
+          for(const strip of [...document.querySelectorAll('#mixer>.strip')]){
+            const scale=strip.querySelector('.vu-scale-travel');
+            const active=strip.querySelector('.meter-signal-area');
+            const a=active.getBoundingClientRect(),b=scale.getBoundingClientRect();
+            vu.push({top:a.top-b.top,bottom:a.bottom-b.bottom,
+              ticks:[0,-12,-24,-60].map(db=>{
+                const target=scale.querySelector('[data-vu-tick="'+db+'"]').getBoundingClientRect();
+                return target.top-(a.top+(-db/60)*a.height);
+              })});
+          }
+          return {result,vu};
+        }""")
+        assert len(calibrated['result'])==15,calibrated
+        assert all(abs(x['error'])<=1 and x['inside'] for x in calibrated['result']),calibrated
+        assert len(calibrated['vu'])==11 and all(abs(s['top'])<=2 and abs(s['bottom'])<=2 and all(abs(d)<=1.5 for d in s['ticks']) for s in calibrated['vu']),calibrated
+        assert await page.evaluate('meterPercentToDbfs(0)')==-60
+        assert await page.evaluate('meterPercentToDbfs(80)')==-12
+        assert await page.evaluate('meterPercentToDbfs(100)')==0
+
         # Shared physical LED width: 14px case, equal inner fill and clip caps.
         vu_geometry=await page.evaluate("""()=>{
           const nodes=[...document.querySelectorAll('#mixer .meter-unit')];
@@ -746,7 +785,7 @@ async def main():
         assert [s['count'] for s in module_layout]==[1]*6+[2]*5,module_layout
         for s in module_layout:
             assert s['dom']==['VU','FADER','SCALE'],s
-            assert abs(s['bank']['w']-30)<.3 and abs(s['ruler']['w']-26)<.3,s
+            assert abs(s['bank']['w']-51)<.3 and abs(s['ruler']['w']-26)<.3,s
             assert s['bank']['r']+2<s['rail']['l'] and s['rail']['r']+2<s['ruler']['l'],s
             assert s['bank']['l']>=s['zone']['l']-1 and s['ruler']['r']<=s['zone']['r']+1,s
             assert all(abs(m['w']-14)<.3 for m in s['meters']),s
