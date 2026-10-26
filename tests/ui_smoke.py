@@ -104,7 +104,13 @@ async def main():
             radius:s.borderTopLeftRadius,box:r.toJSON(),filter:s.filter
           }};
           return {nav:grab('[data-view="FX RACK"]'),rail:grab('[data-preset="Clean Vocal"]'),
-            rack:grab('.strip .rack .insert-slot .fx-power.is-bypassed'),
+            rack:(()=>{const e=document.querySelector('.strip .rack .insert-slot .fx-power');
+              if(!e)return null;
+              const old=e.classList.contains('is-bypassed');
+              e.classList.add('is-bypassed');
+              const result=grab('.strip .rack .insert-slot .fx-power.is-bypassed');
+              if(!old)e.classList.remove('is-bypassed');
+              return result})(),
             mixer:grab('[data-mute="0"]')};
         }""")
         for key in ('bg','color','border','shadow','radius'):

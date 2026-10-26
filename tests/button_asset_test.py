@@ -43,7 +43,10 @@ assert '<script>'+js+'</script>' in preview
 assert 'height:40px!important;flex:0 0 40px!important' not in css
 assert 'height:24px!important;min-height:24px!important' not in css
 assert page.count('class="fx-nav')>=8
-assert 'class="btn-180' not in page
+assert 'class="btn-180 spec spec-device"' in page
+assert 'btn-180' not in page[page.index('<div class="toolbar-actions">'):page.index('</header>')]
+assert 'btn-180' not in page[page.index('<aside class="left-rail">'):page.index('</aside>')]
+assert page.count('class="fx-nav')==15
 assert '.toolbar .nav button.btn-180' in css
 assert 'class="pushable' not in page and '--pb-face:' not in css
 assert 'top:13px!important' in css
