@@ -42,7 +42,6 @@
     if(!el)return;
     const level=Math.max(0,Math.min(100,Number(value)||0));
     el.style.setProperty("--level",level+"%");
-    el.style.setProperty("--meter-scale",String(level/100));
   }
   backend.addEventListener("arMixStatus", (s) => {
     monitor = !!s.monitor;
