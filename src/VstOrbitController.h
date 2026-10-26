@@ -2,6 +2,7 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "../engine/core/OrbitPhase.h"
+#include "../engine/core/OrbitControlPolicy.h"
 #include <cmath>
 #include <utility>
 
@@ -39,6 +40,10 @@ public:
         period_ = revolutionSeconds;
         reverse_ = reverse;
         phaseStart_ = phase; // no abrupt jump on START
+        lastPublished_ = phase;
+        parameterSteps_ = next->getNumSteps();
+        dispatch_ = {};
+        previousTickMs_ = startMs_;
         startMs_ = juce::Time::getMillisecondCounterHiRes();
         parameter_->beginChangeGesture();
         startTimerHz (60); // control updates only; callback remains untouched
@@ -61,15 +66,27 @@ public:
     int parameterIndex() const noexcept { return parameterIndex_; }
     double secondsPerRevolution() const noexcept { return period_; }
     bool reverse() const noexcept { return reverse_; }
+    const armix::core::OrbitDispatchStats& stats() const noexcept { return dispatch_; }
 
 private:
     void timerCallback() override
     {
         if (parameter_ == nullptr) return;
-        const double elapsed = (juce::Time::getMillisecondCounterHiRes() - startMs_) / 1000.0;
-        const auto normalized = armix::core::orbitRamp (phaseStart_, elapsed, period_, reverse_);
-        if (std::isfinite (normalized) && normalized >= 0.0f && normalized <= 1.0f)
-            parameter_->setValueNotifyingHost (normalized);
+        const auto nowMs = juce::Time::getMillisecondCounterHiRes();
+        dispatch_.observe (nowMs - previousTickMs_);
+        previousTickMs_ = nowMs;
+        ++dispatch_.ticks;
+        // Compute from monotonic absolute time: late ticks skip obsolete phases.
+        const auto value = armix::core::orbitRamp (
+            phaseStart_, (nowMs - startMs_) / 1000.0, period_, reverse_);
+        if (!armix::core::shouldPublishOrbit (value, lastPublished_, parameterSteps_))
+        {
+            ++dispatch_.coalesced;
+            return;
+        }
+        parameter_->setValueNotifyingHost (value);
+        lastPublished_ = value;
+        ++dispatch_.writes;
     }
 
     juce::AudioPluginInstance* processor_ = nullptr; // borrowed, only while slot stable
@@ -77,5 +94,9 @@ private:
     int slot_ = -1, parameterIndex_ = -1;
     double period_ = 20.0, startMs_ = 0.0;
     float phaseStart_ = 0.0f;
+    float lastPublished_ = 0.0f;
+    int parameterSteps_ = 0;
+    double previousTickMs_ = 0.0;
+    armix::core::OrbitDispatchStats dispatch_;
     bool reverse_ = false;
 };

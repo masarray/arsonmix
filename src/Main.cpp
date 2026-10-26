@@ -418,6 +418,12 @@ private:
     {
         auto event = std::make_unique<juce::DynamicObject>();
         event->setProperty ("slot", slot);
+        const auto& stats = orbit_.stats();
+        event->setProperty ("controlTicks", static_cast<juce::int64> (stats.ticks));
+        event->setProperty ("parameterWrites", static_cast<juce::int64> (stats.writes));
+        event->setProperty ("coalesced", static_cast<juce::int64> (stats.coalesced));
+        event->setProperty ("lateTicks", static_cast<juce::int64> (stats.lateTicks));
+        event->setProperty ("maxGapMs", stats.maxGapMs);
         event->setProperty ("active", orbit_.active());
         event->setProperty ("activeSlot", orbit_.slot());
         event->setProperty ("activeParameter", orbit_.parameterIndex());
@@ -462,7 +468,15 @@ private:
     {
         const int previousSlot = orbit_.slot();
         if (!orbit_.active()) return;
+        const auto result = orbit_.stats();
         orbit_.stop();
+        diagnostics_.record ("FX_ORBIT_CONTROL",
+            "ticks=" + juce::String (static_cast<juce::int64> (result.ticks)) +
+            " writes=" + juce::String (static_cast<juce::int64> (result.writes)) +
+            " coalesced=" + juce::String (static_cast<juce::int64> (result.coalesced)) +
+            " lateTicks=" + juce::String (static_cast<juce::int64> (result.lateTicks)) +
+            " maxTimerGapMs=" + juce::String (result.maxGapMs, 1) +
+            " | timer delay is NOT a hardware xrun");
         emitOrbitState (previousSlot);
     }
 
