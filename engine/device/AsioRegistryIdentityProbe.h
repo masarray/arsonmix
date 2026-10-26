@@ -2,6 +2,8 @@
 #pragma once
 #include "AsioRegistrationPolicy.h"
 #include <cstdint>
+#include <iterator>
+#include <string_view>
 #include <string>
 #include <vector>
 #if defined(_WIN32)
@@ -55,7 +57,7 @@ public:
             const Key entry(item);
             std::wstring description;
             // This is JUCE's fallback rule: missing description => key name.
-            if (!readString(entry.handle,L"description",description))
+            if (!readString(entry.handle,L"description",description,true))
                 description = keyName;
             // Do not treat duplicate NAME matches as safe even with same CLSID;
             // JUCE selects by its name-to-index mapping and might choose either.
@@ -79,21 +81,24 @@ public:
     {
         std::uint64_t hash = 14695981039346656037ull;
         if (!identity.valid()) return 0;
-        for (const auto& text : {identity.registryKey,identity.canonicalClsid})
-        {
-            const auto length = static_cast<std::uint64_t>(text.size());
-            for (unsigned bit=0;bit<64;bit+=8)
-                hash=(hash ^ ((length>>bit)&255u))*1099511628211ull;
-            for (const auto ch : text)
-            {
-                const auto code=static_cast<std::uint16_t>(ch);
-                hash=(hash ^ (code & 255u))*1099511628211ull;
-                hash=(hash ^ (code >> 8))*1099511628211ull;
-            }
-        }
+        appendFingerprint(hash,identity.registryKey);
+        appendFingerprint(hash,identity.canonicalClsid);
         return hash;
     }
 private:
+    static void appendFingerprint(std::uint64_t& hash,
+                                  std::wstring_view text) noexcept
+    {
+        const auto length=static_cast<std::uint64_t>(text.size());
+        for (unsigned bit=0;bit<64;bit+=8)
+            hash=(hash ^ ((length>>bit)&255u))*1099511628211ull;
+        for (const auto ch:text)
+        {
+            const auto code=static_cast<std::uint16_t>(ch);
+            hash=(hash ^ (code & 255u))*1099511628211ull;
+            hash=(hash ^ (code >> 8))*1099511628211ull;
+        }
+    }
 #if defined(_WIN32)
     struct Key
     {
@@ -104,7 +109,8 @@ private:
         Key& operator=(const Key&) = delete;
     };
 
-    static bool readString(HKEY key,const wchar_t* value,std::wstring& result)
+    static bool readString(HKEY key,const wchar_t* value,std::wstring& result,
+                           bool allowEmpty = false)
     {
         wchar_t buffer[512] = {};
         DWORD size=sizeof(buffer);
@@ -116,7 +122,7 @@ private:
             || size % sizeof(wchar_t) != 0
             || buffer[size/sizeof(wchar_t)-1] != L'\0') return false;
         result.assign(buffer);
-        return !result.empty();
+        return allowEmpty || !result.empty();
     }
 
     static bool hasComServer(const std::wstring& canonical)
