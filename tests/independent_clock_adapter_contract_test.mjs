@@ -92,3 +92,17 @@ test('sustained live FIFO loss feeds bounded DIRECT recovery without audio-callb
   assert.match(host,/getProperty \("bridgeContinuityLossBp", 0\)/);
   assert.match(host,/engine_\.pollIndependentClockHealth \(now\)/);
 });
+
+test('dual-WASAPI opening is guarded by unique native endpoint IDs without GUI or RT work',()=>{
+  const native=r('engine/device/WasapiEndpointIdentityGuard.h');
+  const pure=r('engine/device/EndpointIdentityPolicy.h');
+  assert.match(pure,/captureAmbiguous, renderAmbiguous/);
+  assert.match(native,/EnumAudioEndpoints \(flow, DEVICE_STATE_ACTIVE/);
+  assert.match(native,/EndpointIdentityPolicy::sameIdentity/);
+  assert.match(engine,/WasapiEndpointIdentityGuard::resolve/);
+  assert.match(device,/WasapiEndpointIdentityGuard::verify/);
+  assert.match(device,/captureSetup\.inputDeviceName != selected\.inputDeviceName/);
+  assert.match(device,/renderSetup\.outputDeviceName != selected\.outputDeviceName/);
+  assert.match(engine,/bridgeCaptureEndpointIdHash/);
+  assert.match(engine,/bridgeRenderEndpointIdHash/);
+});

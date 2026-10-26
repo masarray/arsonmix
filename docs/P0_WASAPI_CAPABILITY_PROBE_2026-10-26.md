@@ -29,3 +29,18 @@ The reported period is a Windows **capability**, not a measurement of actual Blu
 5. Final real 44.1/48 kHz, 0-VST3 and third-party VST3 hardware FAT; hardware acceptance is not replaced by synthetic CI.
 
 **User tests are not requested per commit.** The one-click report and integrated P0 hardware campaign remain the intended acceptance workflow.
+
+## P0-03 safety slice — unique Windows endpoint ID verification (2026-10-26)
+
+The opt-in, experimental JUCE independent adapter previously selected endpoints **only by friendly name**. Pinned JUCE 8.0.15 scans `PKEY_Device_FriendlyName`, stores its native `IMMDevice::GetId`, and resolves `createDevice` via a name-index lookup; duplicate names can receive JUCE suffixes and silently use first-match semantics. A name is therefore not a stable identity.
+
+`EndpointIdentityPolicy` provides deterministic pure-C++ unique capture/render selection, refusing identical friendly names in the **same role** (identical names across capture and render roles are allowed), absent IDs and swapped/replaced stable IDs. `WasapiEndpointIdentityGuard` enumerates active MMDevice endpoints read-only with bounded maximum (128 per role) on the JUCE message thread, never in audio callbacks.
+
+Transition sequence:
+1. **Before DIRECT detach/close**, resolve both selected JUCE device names to exactly one active native endpoint ID per flow; reject ambiguity/missing/hotplug without interrupting DIRECT.
+2. Open independent JUCE managers with names and channel masks unchanged; reject any JUCE setup substitution.
+3. **Before attaching capture or render callbacks**, rescan native IDs and verify both match the original snapshot exactly. Reject and trigger the existing DIRECT rollback if replaced between discovery and open.
+4. Status supplies only non-cryptographic 64-bit `bridgeCaptureEndpointIdHash`, `bridgeRenderEndpointIdHash` and transparent `bridgeEndpointIdentityVerification=UNIQUE_WINDOWS_ID_PREFLIGHT_AND_POSTOPEN_NOT_ID_BOUND`. Raw device IDs are not copied in field reports.
+5. New deterministic policy tests and headless Windows COM smoke test join MSVC Release/CTest. No changes to DSP, ASRC latency, callback load, GUI assets or ASIO direct path.
+
+**Limits:** This is an identity *guard*, not an ID-bound native WASAPI stream. Pinned JUCE still binds by name internally; there is an irreducible small race between second native enumeration and callback attach until a dedicated native ID-bound device adapter is built. No runtime MMDevice notification subscription or user-facing AUTO/STABLE planner exists yet. Genuine hardware shared-clock verification, true render underrun observability and physical sound FAT remain open. It is deliberately safer to refuse an ambiguous endpoint than guess which microphone or speaker should receive live audio.

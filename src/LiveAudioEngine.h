@@ -8,6 +8,7 @@
 #include "LiveGraphHandoff.h"
 #include "DiagnosticTone.h"
 #include "../engine/device/JuceIndependentClockDevice.h"
+#include "../engine/device/WasapiEndpointIdentityGuard.h"
 #include "../engine/core/RealtimeHealthHistogram.h"
 #include <array>
 #include <atomic>
@@ -163,11 +164,19 @@ public:
         deviceManager_.getAudioDeviceSetup (original);
         if (original.inputDeviceName.isEmpty() || original.outputDeviceName.isEmpty())
             return "Both capture and render endpoints must be configured before independent mode";
+        // Fail before touching the working DIRECT stream. JUCE's Windows
+        // adapter chooses hardware by *friendly name*. Native MMDevice IDs
+        // must resolve uniquely to that selection, with a second comparison
+        // after both independent JUCE managers have actually opened.
+        const auto identity = armix::device::WasapiEndpointIdentityGuard::resolve (
+            original.inputDeviceName, original.outputDeviceName);
+        if (!identity.ok()) return "Independent Windows endpoint preflight failed: " + identity.error;
         detach();
         deviceManager_.closeAudioDevice();
         savedDirectSetup_ = original;
         auto error = independent_.open (original,
-                                        static_cast<juce::AudioIODeviceCallback*> (this));
+                                        static_cast<juce::AudioIODeviceCallback*> (this),
+                                        identity.selection);
         if (error.isNotEmpty())
         {
             independent_.close();
@@ -686,6 +695,10 @@ public:
                 static_cast<double> (clock.nonFiniteInputSamples));
             o->setProperty ("bridgeCorrectionPpm", clock.correctionPpm);
             o->setProperty ("bridgeTargetLatencyMs", independent_.bridgeTargetLatencyMs());
+            o->setProperty ("bridgeEndpointIdentityVerification",
+                "UNIQUE_WINDOWS_ID_PREFLIGHT_AND_POSTOPEN_NOT_ID_BOUND");
+            o->setProperty ("bridgeCaptureEndpointIdHash", independent_.captureIdentityHash());
+            o->setProperty ("bridgeRenderEndpointIdHash", independent_.renderIdentityHash());
             o->setProperty ("bridgeCaptureCallbacks", static_cast<double> (independent_.captureCallbacks()));
             o->setProperty ("bridgeRenderCallbacks", static_cast<double> (independent_.renderCallbacks()));
             const auto watch = independent_.streamWatchdogStatus();

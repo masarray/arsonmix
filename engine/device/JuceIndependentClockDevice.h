@@ -5,6 +5,7 @@
 #include "ClockBridgeSizing.h"
 #include "IndependentStreamWatchdog.h"
 #include "BridgeContinuityGate.h"
+#include "WasapiEndpointIdentityGuard.h"
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -34,11 +35,14 @@ public:
 
     juce::String open (const juce::AudioDeviceManager::AudioDeviceSetup& selected,
                        juce::AudioIODeviceCallback* downstream,
+                       const WasapiEndpointIdentityGuard::Selection& selectedIdentity,
                        double targetLatencyMs = 24.)
     {
         close();
         if (! downstream || selected.inputDeviceName.isEmpty() || selected.outputDeviceName.isEmpty())
             return "Missing independent capture/render endpoints or DSP callback";
+        if (!selectedIdentity.valid())
+            return "Windows native endpoint identity was not verified before stream opening";
         if (! std::isfinite (targetLatencyMs) || targetLatencyMs < 5 || targetLatencyMs > 100)
             return "Unsupported clock-bridge target latency";
         downstream_ = downstream;
@@ -88,6 +92,26 @@ public:
 
         auto* capture = captureManager_.getCurrentAudioDevice();
         auto* render = renderManager_.getCurrentAudioDevice();
+        const auto captureSetup = captureManager_.getAudioDeviceSetup();
+        const auto renderSetup = renderManager_.getAudioDeviceSetup();
+        if (captureSetup.inputDeviceName != selected.inputDeviceName ||
+            renderSetup.outputDeviceName != selected.outputDeviceName)
+        {
+            close();
+            return "Independent Windows Audio managers substituted a different capture/render selection";
+        }
+        // Verify freshly enumerated native endpoint IDs BEFORE attaching
+        // either live callback. An unplug/replacement during the open must
+        // never become a silently accepted alternate speaker/microphone.
+        const auto identityError = WasapiEndpointIdentityGuard::verify (
+            selectedIdentity, capture->getName(), render->getName());
+        if (identityError.isNotEmpty())
+        {
+            close();
+            return identityError;
+        }
+        captureEndpointHash_ = WasapiEndpointIdentityGuard::fingerprint (selectedIdentity.captureId);
+        renderEndpointHash_ = WasapiEndpointIdentityGuard::fingerprint (selectedIdentity.renderId);
         captureRate_ = capture->getCurrentSampleRate();
         renderRate_ = render->getCurrentSampleRate();
         captureBufferFrames_ = capture->getCurrentBufferSizeSamples();
@@ -151,6 +175,8 @@ public:
         renderManager_.closeAudioDevice();
         captureManager_.closeAudioDevice();
         downstream_ = nullptr;
+        captureEndpointHash_.clear();
+        renderEndpointHash_.clear();
         streamWatchdog_.reset();
         continuityGate_.reset();
     }
@@ -199,6 +225,8 @@ public:
     int captureBufferFrames() const noexcept { return captureBufferFrames_; }
     int renderBufferFrames() const noexcept { return renderBufferFrames_; }
     double bridgeTargetLatencyMs() const noexcept { return effectiveTargetLatencyMs_; }
+    const juce::String& captureIdentityHash() const noexcept { return captureEndpointHash_; }
+    const juce::String& renderIdentityHash() const noexcept { return renderEndpointHash_; }
     AdaptiveClockBridge::Status bridgeStatus() const noexcept { return bridge_.status(); }
     std::uint64_t captureCallbacks() const noexcept { return captureCallbacks_.load(); }
     std::uint64_t renderCallbacks() const noexcept { return renderCallbacks_.load(); }
@@ -306,5 +334,6 @@ private:
     double captureRate_ = 0, renderRate_ = 0;
     int captureBufferFrames_ = 0, renderBufferFrames_ = 0;
     double effectiveTargetLatencyMs_ = 0.;
+    juce::String captureEndpointHash_, renderEndpointHash_; // control thread only; no raw IDs in report
 };
 } // namespace armix::device

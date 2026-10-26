@@ -11,7 +11,7 @@ int main()
     check (!d.faulted());
     check (d.captureCallbacks() == 0);
     check (d.renderCallbacks() == 0);
-    check (d.open ({}, nullptr).isNotEmpty());
+    check (d.open ({}, nullptr, {}).isNotEmpty());
     check (!d.active());
     d.close();
     d.close();
