@@ -393,6 +393,10 @@ function restoreDomMeterFallback(){
  const state=meterCanvasState;
  state.failed=true;state.ctx=null;
  delete document.documentElement.dataset.mixcanvas;
+ state.canvas?.remove();state.canvas=null;
+ state.resizeObserver?.disconnect();state.resizeObserver=null;
+ $('mixer')?.removeEventListener('scroll',invalidateMeterCanvas);
+ window.removeEventListener('resize',invalidateMeterCanvas);
  // Restore last measured levels and held peaks immediately after context loss.
  for(const [key,node] of meterNodes){
   if(!node.fill.isConnected)continue;
@@ -406,7 +410,7 @@ function meterCanvasTile(w,h){
  if(existing)return existing;
  const tile=document.createElement('canvas');tile.width=w;tile.height=h;
  const context=tile.getContext('2d',{alpha:true});
- if(!context)return null;
+ if(!context){restoreDomMeterFallback();return null;}
  const gradient=context.createLinearGradient(0,h,0,0);
  for(const [at,color] of [[0,'#33f17d'],[.43,'#78f65f'],[.69,'#d6ec36'],
   [.85,'#ffe133'],[1,'#ff6540']])gradient.addColorStop(at,color);
