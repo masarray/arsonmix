@@ -70,7 +70,7 @@ int main()
     measure = cadence.observe(5999900,128);
     check(measure.kind == C::Kind::clockRegression);
     measure = cadence.observe(6002802,441);
-    check(measure.kind == C::Kind::veryLate);
+    check(measure.kind == C::Kind::onSchedule);
     check(close(measure.expectedIntervalUs,1000000.0*128/44100.0,0.001));
 
     // A new JUCE device generation resets the cadence seed.
