@@ -697,6 +697,8 @@ public:
             static_cast<double> (directSuppressedFrames_.load (std::memory_order_relaxed)));
         o->setProperty ("directRouteProtection",
             "PINNED_BACKEND_AND_DRIVER_NAME_NOT_HARDWARE_ID");
+        o->setProperty ("directRouteChannelMapGuard",
+            "EXACT_ACTIVE_INPUT_AND_OUTPUT_CHANNEL_BITMASKS");
         o->setProperty ("liveBackendClass", dual ? "WASAPI_BRIDGED_ASRC"
             : backend == "ASIO" ? "ASIO_DIRECT_ZERO_EXTRA_FIFO"
             : backend.startsWith ("Windows Audio") ? "WASAPI_DIRECT_ZERO_EXTRA_FIFO"
@@ -840,9 +842,15 @@ private:
         if (device == nullptr || device->getActiveInputChannels().isZero()
             || device->getActiveOutputChannels().isZero())
             return false;
+        // JUCE BigInteger has no fixed 64-bit channel limit: preserve all
+        // channel bits when locking an explicitly approved ASIO/WASAPI route.
+        // Device setup/control thread only; NEVER run hashing in processBlock.
         const auto backend=device->getTypeName();
         const auto name=device->getName();
-        return directFence_.approve (backend.toRawUTF8(), name.toRawUTF8());
+        const auto inputMask=device->getActiveInputChannels().toString (16);
+        const auto outputMask=device->getActiveOutputChannels().toString (16);
+        return directFence_.approve (backend.toRawUTF8(), name.toRawUTF8(),
+                                     inputMask.toRawUTF8(), outputMask.toRawUTF8());
     }
     bool resumeVerifiedDirectRoute()
     {
@@ -852,7 +860,10 @@ private:
             return false;
         const auto backend=device->getTypeName();
         const auto name=device->getName();
-        return directFence_.resumeExpected (backend.toRawUTF8(), name.toRawUTF8());
+        const auto inputMask=device->getActiveInputChannels().toString (16);
+        const auto outputMask=device->getActiveOutputChannels().toString (16);
+        return directFence_.resumeExpected (backend.toRawUTF8(), name.toRawUTF8(),
+                                            inputMask.toRawUTF8(), outputMask.toRawUTF8());
     }
     static constexpr int maxFrames = 8192;
     armix::device::AsioPriorityDeviceManager deviceManager_;
@@ -953,7 +964,10 @@ private:
         {
             const auto backend=d->getTypeName();
             const auto name=d->getName();
-            directFence_.observeStart (backend.toRawUTF8(), name.toRawUTF8());
+            const auto inputMask=d->getActiveInputChannels().toString (16);
+            const auto outputMask=d->getActiveOutputChannels().toString (16);
+            directFence_.observeStart (backend.toRawUTF8(), name.toRawUTF8(),
+                                       inputMask.toRawUTF8(), outputMask.toRawUTF8());
         }
         deviceStartCount_.fetch_add (1, std::memory_order_relaxed);
         sampleRateHz_ = juce::jmax (1.0, d->getCurrentSampleRate());
