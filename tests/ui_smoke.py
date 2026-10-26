@@ -16,6 +16,34 @@ async def main():
         page.on("pageerror", lambda e: errors.append(str(e)))
         await page.set_content((project/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").read_text())
         assert await page.locator(".strip").count()==13
+        # Issue #56: defaults preserve geometry; mode CSS isolates hover/layers.
+        assert await page.evaluate("""()=>document.documentElement.dataset.mixperf==='optimized'
+            && !window.__arMixPerfProbe""")
+        cap=page.locator('[data-fader="0"] .cap')
+        await cap.hover()
+        fast=await cap.evaluate("(e)=>getComputedStyle(e).filter")
+        assert 'drop-shadow' not in fast,fast
+        await page.evaluate("document.documentElement.dataset.mixperf='baseline'")
+        original=await cap.evaluate("(e)=>getComputedStyle(e).filter")
+        assert 'drop-shadow' in original,original
+        assert await page.locator('.meter-fill').first.evaluate("(e)=>getComputedStyle(e).willChange")=='transform'
+        await page.evaluate("document.documentElement.dataset.mixperf='layers-off'")
+        assert await page.locator('.meter-fill').first.evaluate("(e)=>getComputedStyle(e).willChange")=='auto'
+        await page.evaluate("document.documentElement.dataset.mixperf='hover-off'")
+        assert await cap.evaluate("(e)=>getComputedStyle(e).filter")=='none'
+        await page.evaluate("document.documentElement.dataset.mixperf='optimized'")
+        # PAN at non-center has a separate legacy :hover cascade.
+        pan=page.locator('[data-pan="0"]')
+        await pan.hover()
+        await pan.evaluate("(e)=>e.setAttribute('aria-valuenow','22')")
+        pan_thumb=pan.locator('.pan-thumb')
+        light_pan=await pan_thumb.evaluate("(e)=>getComputedStyle(e).filter")
+        assert 'drop-shadow' not in light_pan,light_pan
+        await page.evaluate("document.documentElement.dataset.mixperf='baseline'")
+        old_pan=await pan_thumb.evaluate("(e)=>getComputedStyle(e).filter")
+        assert 'brightness(1.08)' in old_pan and 'drop-shadow' in old_pan,old_pan
+        await page.evaluate("document.documentElement.dataset.mixperf='optimized'")
+        await pan.evaluate("(e)=>e.setAttribute('aria-valuenow','0')")
         # Toolbar/body fit: no excessive empty band between the hardware header and mixer.
         shell=await page.evaluate("""()=>{
           const bottom=document.querySelector('.toolbar').getBoundingClientRect().bottom;
@@ -481,7 +509,7 @@ async def main():
         cap0=page.locator('[data-fader="0"] .cap')
         await cap0.hover()
         fader_hover=await cap0.evaluate("(e)=>getComputedStyle(e).filter")
-        assert 'brightness(1.19)' in fader_hover, fader_hover
+        assert 'brightness(1.1)' in fader_hover and 'drop-shadow' not in fader_hover, fader_hover
         button=page.locator('[data-mute="0"]')
         await button.hover()
         await page.wait_for_timeout(150)  # Finish 90 ms physical-switch filter transition.
@@ -726,6 +754,20 @@ async def main():
         assert await page.locator('#modeToggle').count()==0
         assert await page.locator('.app.easy').count()==1
         assert not errors, errors
+        # Query-string run from actual standalone document, not a CSS-only class
+        # flip: the explicit probe exists and meter-off is a browser-only feature.
+        diag=await browser.new_page(viewport={"width":1680,"height":920})
+        await diag.goto((project/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").as_uri()+"?mixperf=meters-off")
+        assert await diag.evaluate("""()=>document.documentElement.dataset.mixperf==='meters-off'
+            && window.__arMixPerfProbe?.mode==='meters-off'""")
+        capture=asyncio.create_task(diag.evaluate("()=>window.__arMixPerfProbe.run(1000)"))
+        await diag.mouse.move(370,195)
+        await diag.mouse.move(600,580,steps=16)
+        await diag.mouse.move(900,625,steps=10)
+        measured=await capture
+        assert measured["mode"]=="meters-off" and measured["durationMs"]==1000,measured
+        assert measured["mixer"]["samples"]>0 and measured["pointerMoves"]["mixer"]>0,measured
+        await diag.close()
         await browser.close()
     print("PASS: asset PNG for 13 faders, detent alignment, no-jump drag, endpoints, FX chain, no JS errors")
 

@@ -1,0 +1,33 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ArSonMix Mixer Performance Lab</title>
+<style>*{box-sizing:border-box}body{margin:0;height:100dvh;display:flex;flex-direction:column;background:#101a22;color:#d5e8f1;font:12px Segoe UI,Arial,sans-serif}header{display:flex;gap:9px;align-items:center;flex-wrap:wrap;padding:9px 13px;background:#192b38;border-bottom:1px solid #395261}b{font-size:14px;color:#80e7c0}select,button{padding:7px 9px;border:1px solid #527789;border-radius:4px;color:#e3f4fa;background:#243946;font:inherit}button{cursor:pointer}button:disabled{opacity:.5}iframe{flex:1;min-height:220px;width:100%;border:0}aside{padding:7px 13px;color:#a0becc;background:#142630;font-size:11px}pre{margin:0;padding:9px 13px;max-height:110px;overflow:auto;background:#09131a;white-space:pre-wrap;font:11px Consolas,monospace}a{color:#8edaf4}</style></head><body>
+<header><b>ArSonMix · Mixer Perf Lab</b><label for="mode">A/B</label>
+<select id="mode"><option value="optimized">Optimized (default)</option><option value="baseline">Baseline (old hover + GPU hints)</option><option value="hover-off">Hover off (old GPU hints)</option><option value="meters-off">Meters paused (old hover + GPU hints)</option><option value="layers-off">Layer hint off (old hover)</option><option value="all-off">All off (hover, meters, hint)</option></select>
+<button id="record">Record 10s</button><button id="copy" disabled>Copy JSON</button>
+<a id="direct" target="_blank" rel="noopener">Open direct mixer</a><span id="status">Loading…</span></header>
+<aside>Move mouse over FX inserts, fader caps and PAN during 10s; also move over toolbar as control. Repeat each mode 2–3 times. The meter demo is not real audio.</aside>
+<iframe id="mixer" title="ArSonMix full-size performance comparison"></iframe>
+<pre id="report">No measurements. rAF frame intervals are diagnostic proxies; browser graphics profiling is still required.</pre>
+<script>
+'use strict';
+const sel=document.getElementById('mode'),view=document.getElementById('mixer'),
+ record=document.getElementById('record'),copy=document.getElementById('copy'),
+ status=document.getElementById('status'),report=document.getElementById('report'),
+ direct=document.getElementById('direct');let last=null,sha='';
+fetch('./build.json',{cache:'no-store'}).then(r=>r.json()).then(x=>{sha=x.sha||''}).catch(()=>{});
+function load(){const url='./mixer.html?mixperf='+encodeURIComponent(sel.value)+'&build='+encodeURIComponent(sha);
+ direct.href=url;view.src=url;record.disabled=true;status.textContent='Loading '+sel.value+'…'}
+view.addEventListener('load',()=>{record.disabled=false;status.textContent='Ready · '+sel.value});
+sel.addEventListener('change',()=>{last=null;copy.disabled=true;load()});
+record.addEventListener('click',async()=>{const p=view.contentWindow?.__arMixPerfProbe;
+ if(!p?.run){status.textContent='Probe missing; reload';return}
+ record.disabled=true;sel.disabled=true;status.textContent='Recording 10 seconds…';
+ try{last=await p.run(10000);report.textContent=JSON.stringify(last,null,2);
+  copy.disabled=false;status.textContent='Completed '+last.mode}
+ catch(e){status.textContent='Error: '+String(e)}
+ finally{record.disabled=false;sel.disabled=false}
+});
+copy.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(JSON.stringify(last,null,2));
+ status.textContent='Copied diagnostic JSON'}catch{status.textContent='Copy manually from report below'}});
+load();
+</script></body></html>

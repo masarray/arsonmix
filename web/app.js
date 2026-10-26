@@ -343,10 +343,47 @@ document.addEventListener('keydown',e=>{const pan=e.target.closest('[data-pan]')
  updateFader(idx,e.key==='Home'?-60:e.key==='End'?10:db+steps[e.key]);
 });
 document.addEventListener('keydown',e=>{if(e.ctrlKey&&e.key.toLowerCase()==='s'){e.preventDefault();if(persistSession())flash('UI state saved locally');else flash('Browser storage unavailable')}});
+// Issue #56: no pointer profiler/event listener runs in normal preview or native.
+const mixperfParam=new URLSearchParams(location.search).get('mixperf');
+const mixperfModes=['optimized','baseline','hover-off','meters-off','layers-off','all-off'];
+const mixperfMode=mixperfModes.includes(mixperfParam)?mixperfParam:'optimized';
+document.documentElement.dataset.mixperf=mixperfMode;
+if(mixperfParam&&mixperfModes.includes(mixperfParam)){
+ window.__arMixPerfProbe={mode:mixperfMode,run(durationMs=10000){
+  const ms=Math.max(1000,Math.min(20000,Number(durationMs)||10000));
+  const buckets={mixer:[],outside:[]},moves={mixer:0,outside:0};
+  let area='',pointerAt=-Infinity,lastFrame=0,frameId=0,observer=null,longTasks=0,longTaskMs=0;
+  function pointer(e){area=e.target.closest?.('#mixer')?'mixer':'outside';pointerAt=performance.now();moves[area]++}
+  function visibility(){lastFrame=0;pointerAt=-Infinity}
+  function frame(t){
+   if(lastFrame&&!document.hidden&&t-pointerAt<350&&t-lastFrame>0)buckets[area].push(t-lastFrame);
+   lastFrame=t;frameId=requestAnimationFrame(frame);
+  }
+  function stats(a){const s=a.slice().sort((x,y)=>x-y),n=s.length;
+   return {samples:n,medianMs:n?+s[Math.floor((n-1)*.5)].toFixed(2):null,
+    p95Ms:n?+s[Math.ceil(n*.95)-1].toFixed(2):null,
+    over33Ms:s.filter(x=>x>33.3).length,over50Ms:s.filter(x=>x>50).length};
+  }
+  document.addEventListener('pointermove',pointer,{passive:true});
+  document.addEventListener('visibilitychange',visibility);
+  if('PerformanceObserver' in window){try{observer=new PerformanceObserver(l=>{
+   for(const e of l.getEntries()){longTasks++;longTaskMs+=e.duration}
+  });observer.observe({entryTypes:['longtask']})}catch{observer=null}}
+  frameId=requestAnimationFrame(frame);
+  return new Promise(done=>setTimeout(()=>{
+   cancelAnimationFrame(frameId);document.removeEventListener('pointermove',pointer);
+   document.removeEventListener('visibilitychange',visibility);observer?.disconnect();
+   done({mode:mixperfMode,durationMs:ms,environment:{userAgent:navigator.userAgent,dpr:devicePixelRatio,
+    width:innerWidth,height:innerHeight,iframe:top!==self},mixer:stats(buckets.mixer),
+    outside:stats(buckets.outside),pointerMoves:moves,longTasks,
+    longTaskMs:+longTaskMs.toFixed(1),note:'rAF proxy, not measured GPU paint/input latency'});
+  },ms));
+ }};
+}
 let lastMeterFrame=0;function meters(t){
  // JUCE desktop reads actual audio meters; browser demo only animates a preview.
  if(window.__JUCE__?.backend?.emitEvent)return;
- requestAnimationFrame(meters);if(document.hidden||t-lastMeterFrame<40)return;lastMeterFrame=t;
+ requestAnimationFrame(meters);if(document.hidden||mixperfMode==='meters-off'||mixperfMode==='all-off'||t-lastMeterFrame<40)return;lastMeterFrame=t;
  channels.forEach((ch,i)=>{const wave=(Math.sin(t*.0022+i*1.92)+Math.sin(t*.0043+i*.6))*.5;
  let v=clamp(45+wave*24+ch.fader*.48,4,98);if(ch.mute)v=2;updateMeterVisual(String(i),v,t)});
  const base=clamp(67+Math.sin(t*.002)*15,8,95);

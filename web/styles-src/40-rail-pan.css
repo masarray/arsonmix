@@ -37,6 +37,6 @@
  max-height:none;
  transform-origin:center bottom;
  transform:scaleY(var(--meter-scale,.4));
- will-change:transform;
+ will-change:auto;
  pointer-events:none;
 }
