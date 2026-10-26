@@ -16,6 +16,53 @@ async def main():
         page.on("pageerror", lambda e: errors.append(str(e)))
         await page.set_content((project/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").read_text())
         assert await page.locator(".strip").count()==13
+        # Toolbar/body fit: no excessive empty band between the hardware header and mixer.
+        shell=await page.evaluate("""()=>{
+          const bottom=document.querySelector('.toolbar').getBoundingClientRect().bottom;
+          const main=document.querySelector('.main').getBoundingClientRect();
+          const rail=document.querySelector('.left-rail').getBoundingClientRect();
+          const mixer=document.querySelector('.workbench').getBoundingClientRect();
+          return {topGap:rail.top-bottom,mixerGap:mixer.top-bottom,mainHeight:main.height};
+        }""")
+        assert abs(shell['topGap']-2)<=.2 and abs(shell['mixerGap']-2)<=.2,shell
+        assert shell['mainHeight']>400,shell
+        # Fixed-height, composited meters; peak only mutates when peak value changes.
+        meter=await page.evaluate("""()=>{
+          const fill=document.querySelector('[data-meter="0"]');
+          const peak=fill.closest('.meter').querySelector('.meter-peak');
+          const slot=fill.closest('.meter');
+          const heightBefore=getComputedStyle(fill).height;
+          updateMeterVisual('0',27,10000);
+          const first={ratio:fill.style.getPropertyValue('--meter-scale'),
+            peak:peak.style.bottom,height:getComputedStyle(fill).height,
+            cached:meterNodes.get('0').fill===fill};
+          updateMeterVisual('0',16,10016);
+          const held=peak.style.bottom;
+          updateMeterVisual('0',45,10032);
+          return {first,held,latest:peak.style.bottom,ratio:fill.style.getPropertyValue('--meter-scale'),
+            heightBefore,heightAfter:getComputedStyle(fill).height,
+            transform:getComputedStyle(fill).transform,
+            shape:slot.getBoundingClientRect().height};
+        }""")
+        assert meter['first']['cached'] and meter['first']['ratio']=='0.27',meter
+        assert meter['first']['peak']==meter['held'] and meter['latest']=='45%',meter
+        assert meter['ratio']=='0.45' and meter['heightBefore']==meter['heightAfter'],meter
+        assert meter['transform']!='none' and meter['shape']>0,meter
+        # Full mixer rebuild must restore held peaks and clip state on fresh DOM nodes.
+        restored=await page.evaluate("""()=>{
+          clipLatch['0']=true;
+          renderMixer();
+          updateMeterVisual('0',5,10048);
+          const slot=document.querySelector('[data-meter="0"]').closest('.meter');
+          const result={peak:slot.querySelector('.meter-peak').style.bottom,
+            clip:slot.querySelector('.clip-led').classList.contains('latched')};
+          clipLatch['0']=false;
+          slot.querySelector('.clip-led').classList.remove('latched');
+          return result;
+        }""")
+        assert restored=={'peak':'45%','clip':True},restored
+        # No per-event idle fader work: drag listener is attached only on pointerdown.
+        assert await page.evaluate('drag===null')
         # All 12 PAN knobs have been replaced by horizontal slider tracks.
         assert await page.locator('[data-pan]').count()==13
         assert await page.locator('[data-knob="pan"]').count()==0

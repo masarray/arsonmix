@@ -923,3 +923,16 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
    the recovered vertical area; MASTER keeps its dedicated clear-clip controls. */
 #mixer > .strip:not(.master-strip) > .fader-tools{display:none!important}
 
+/* Preview performance + dense mixer shell: preserve all control sizes.
+   The prior 6px top gutter was visually excessive below the 56px toolbar. */
+#app .main{padding-top:2px}
+/* The original height-based bar was laid out and repainted ~14 x 30/s.
+   A fixed paint box whose scale is composited keeps the meter layout stable. */
+#app .meter .meter-fill{
+ height:calc(100% - 14px);
+ max-height:none;
+ transform-origin:center bottom;
+ transform:scaleY(var(--meter-scale,.4));
+ will-change:transform;
+ pointer-events:none;
+}
