@@ -68,7 +68,8 @@ async def main():
         await page.locator('[data-view="FX RACK"]').click()
         await page.get_by_role("button", name="ORBIT").click()
         modal = page.locator("#nativeOrbit")
-        await modal.locator("#nativeOrbitParameter option").first.wait_for()
+        await modal.locator("#nativeOrbitParameter").wait_for(state="visible")
+        await page.wait_for_function("""()=>document.querySelector("#nativeOrbitParameter")?.value==="2" """)
         assert await modal.locator("#nativeOrbitParameter").input_value() == "2"
         assert "-180" in await modal.inner_text(), "Vendor endpoint range should be visible"
         start = modal.locator("[data-orbit-start]")
