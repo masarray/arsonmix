@@ -25,11 +25,12 @@ for filename,variable,length,expected_sha256 in assets:
     original=(root/"web/assets/faders"/filename).read_bytes()
     assert len(original)==length,filename
     assert hashlib.sha256(original).hexdigest()==expected_sha256,filename
-    assert original[:8]==b"\\x89PNG\\r\\n\\x1a\\n",filename
+    assert original[:8]==bytes([137,80,78,71,13,10,26,10]),filename
     assert (int.from_bytes(original[16:20],"big"),int.from_bytes(original[20:24],"big"))==(36,77),filename
-    pattern=re.escape(variable)+r':url\\("data:image/png;base64,([A-Za-z0-9+/=]+)"\\)'
-    matched=re.search(pattern,css)
-    assert matched and base64.b64decode(matched.group(1))==original,filename+" embedded PNG mismatch"
+    marker=variable+':url("data:image/png;base64,'
+    assert marker in css,filename+" CSS variable missing"
+    encoded=css.split(marker,1)[1].split('")',1)[0]
+    assert base64.b64decode(encoded)==original,filename+" embedded PNG mismatch"
 
 assert 'width:36px;height:77px' in source
 assert 'background-size:36px 77px!important' in source
@@ -44,6 +45,6 @@ assert 'filter:none!important' in source
 
 # Historical art is retained for rollback; active heads must use new assets.
 legacy=(root/"web/assets/faders/FADER-RED2.png").read_bytes()
-assert hashlib.sha1(b"blob "+str(len(legacy)).encode()+b"\\0"+legacy).hexdigest()=="2369e1b9002522600948909246918e57880da1ed"
+assert hashlib.sha1(b"blob "+str(len(legacy)).encode()+bytes([0])+legacy).hexdigest()=="2369e1b9002522600948909246918e57880da1ed"
 assert ".cap::before,.cap::after{content:none}" in css
 print("PASS: untouched 36x77 silver channels + gold MASTER, correct detent and offline parity")
