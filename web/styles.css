@@ -774,15 +774,16 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
   radial-gradient(90% 7% at 50% 8%,rgba(255,255,255,.47) 25%,rgba(255,255,255,0) 50%);
  background-color:var(--face);
  color:#353e47;
- text-shadow:0 1px 0 rgba(255,255,255,.7);
+ text-shadow:none;
+ /* Crisp tactile edges; no Gaussian blur or fake halo. */
  box-shadow:
-  .2em .2em .5em rgba(0,0,0,.47),
+  .15em .15em 0 rgba(0,0,0,.36),
   0 -.1em 0 .1em var(--hole-dark),
   0 .1em 0 .1em var(--hole-light),
-  -.2em 0 .2em var(--side) inset,
-  0 .2em .2em var(--light) inset,
-  .2em 0 .2em var(--light) inset,
-  0 -.2em .2em var(--side) inset;
+  -.2em 0 0 var(--side) inset,
+  0 .2em 0 var(--light) inset,
+  .2em 0 0 var(--light) inset,
+  0 -.2em 0 var(--side) inset;
  font-family:'Segoe UI',Arial,sans-serif;
  font-weight:600;
  cursor:pointer;
@@ -790,13 +791,12 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  touch-action:manipulation;
  transform:none;
  filter:none;
- transition:box-shadow 100ms linear,background-color 115ms ease-out,
-            color 115ms ease-out,filter 100ms ease-out;
+ transition:none;
 }
 /* Text shrinks inside its unchanged layout slot like the approved single-key demo. */
 #app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav)>span{
  display:block;
- transition:transform 100ms linear;
+ transition:none;
 }
 #app :is(.toolbar-actions .nav button.fx-nav.selected,
          .left-rail button.fx-nav.selected,
@@ -806,18 +806,17 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  --side-pressed:#0b8039;
  --light:rgba(218,255,226,.48);
  color:#07582b;
- text-shadow:0 1px 0 rgba(230,255,235,.65);
+ text-shadow:none;
 }
 /* Recessed ON is persistent; OFF is recessed only while physically pressed. */
 #app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav):is(:active,.selected,.active){
  box-shadow:
-  0 0 0 rgba(0,0,0,.47),
   0 -.1em 0 .1em var(--hole-dark),
   0 .1em 0 .1em var(--hole-light),
-  -.2em 0 .2em var(--side-pressed) inset,
-  0 .2em .2em var(--hole-dark) inset,
-  .2em 0 .2em var(--hole-dark) inset,
-  0 -.2em .2em var(--side-pressed) inset;
+  -.2em 0 0 var(--side-pressed) inset,
+  0 .2em 0 var(--hole-dark) inset,
+  .2em 0 0 var(--hole-dark) inset,
+  0 -.2em 0 var(--side-pressed) inset;
 }
 #app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav):is(:active,.selected,.active)>span{
  transform:scale(.95);
@@ -828,7 +827,7 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  content:none;
 }
 #app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav):hover:not(:disabled){
- filter:brightness(1.045);
+ filter:none;
 }
 #app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav):focus-visible{
  outline:2px solid #86f7ad;
@@ -926,13 +925,13 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 /* Preview performance + dense mixer shell: preserve all control sizes.
    The prior 6px top gutter was visually excessive below the 56px toolbar. */
 #app .main{padding-top:2px}
-/* The original height-based bar was laid out and repainted ~14 x 30/s.
-   A fixed paint box whose scale is composited keeps the meter layout stable. */
+/* Fixed LED palette, revealing only the reached amplitude; no image scaling.
+   Colors and LED separator positions stay anchored along the meter. */
 #app .meter .meter-fill{
  height:calc(100% - 14px);
  max-height:none;
- transform-origin:center bottom;
- transform:scaleY(var(--meter-scale,.4));
+ transform:none;
+ clip-path:inset(calc(100% - var(--level,40%)) 0 0);
  will-change:auto;
  pointer-events:none;
 }
@@ -947,3 +946,51 @@ html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="met
 html:is([data-mixperf="baseline"],[data-mixperf="hover-off"],[data-mixperf="meters-off"]) #app .meter .meter-fill{will-change:transform}
 html:is([data-mixperf="hover-off"],[data-mixperf="all-off"]) #mixer :is(.fader:hover .cap,.pan-track:hover .pan-thumb,.rack .insert:hover,.rack .fx-power:hover,.strip-name:hover,.master-insert:hover,.master-tools button:hover){filter:none!important;transition:none!important}
 html:is([data-mixperf="hover-off"],[data-mixperf="all-off"]) #mixer .strip-name:hover{outline:none!important}
+
+/* LED quantisation follows Soundcraft-style *fixed-color* segments. Low green
+   is always at the bottom; amber/red exist only at upper meter thresholds.
+   The fill remains full-height; a clip reveals reached segments without
+   scaling the green/yellow/red palette or moving divider bands. */
+#app .meter{
+ background:
+  repeating-linear-gradient(to top,transparent 0 5px,#061018 5px 7px),
+  linear-gradient(to top,#0b241c 0%,#1b261a 64%,#2a2514 82%,#301b1c 100%);
+ box-shadow:inset 0 0 0 1px #03090c,0 0 0 1px #05090c;
+}
+#app .meter .meter-fill{
+ background:
+  repeating-linear-gradient(to top,transparent 0 5px,#071014 5px 7px),
+  linear-gradient(to top,
+   #15cf69 0%,#39ed79 48%,#c4e934 70%,
+   #ffce26 82%,#ff8b20 90%,#f74635 100%);
+ box-shadow:none;
+ transition:none!important;
+}
+#app .meter .meter-peak{box-shadow:none!important}
+#app .meter .clip-led.latched{box-shadow:inset 0 1px 0 #ffe2da!important}
+/* No transient PNG/filter effects on real physical controls. The click/drag,
+   aria, travel calculations, keyboard controls and PNG assets are unchanged. */
+html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-mixperf="meters-off"]) #app #mixer .fader .cap,
+html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-mixperf="meters-off"]) #app #mixer .pan-track .pan-thumb{
+ filter:none!important;
+ transition:none!important;
+}
+#app #mixer .pan-track .pan-fill{filter:none!important;box-shadow:none!important}
+#app #mixer :is(.rack .fx-power:hover,.rack .insert:hover,.master-insert:hover,.master-tools button:hover,.strip-name:hover){
+ filter:none!important;
+ transition:none!important;
+}
+/* State transitions still show semantic ON/OFF; no expensive hover repaint. */
+#app .toolbar button:hover,#app .left-rail button:hover{filter:none!important}
+#app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav){
+ filter:none!important;text-shadow:none!important;
+}
+#app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav):hover{filter:none!important}
+#app :is(.live-dot,.rail-live-indicator){box-shadow:none!important}
+#app .modal{backdrop-filter:none!important}
+#app #mixer .strip.selected .strip-name{box-shadow:inset 0 0 0 1px #8fcde151!important}
+/* Focus remains keyboard-visible on the track; PNG artwork stays unchanged. */
+#app #mixer .fader:focus-visible .cap,
+#app #mixer .pan-track:focus-visible .pan-thumb{filter:none!important}
+#app #mixer .meter .meter-fill{filter:none!important}
+
