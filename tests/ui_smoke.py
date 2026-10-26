@@ -44,9 +44,9 @@ async def main():
             transform:getComputedStyle(fill).transform,
             shape:slot.getBoundingClientRect().height};
         }""")
-        assert meter['first']['cached'] and meter['first']['ratio']=='.27',meter
+        assert meter['first']['cached'] and meter['first']['ratio']=='0.27',meter
         assert meter['first']['peak']==meter['held'] and meter['latest']=='45%',meter
-        assert meter['ratio']=='.45' and meter['heightBefore']==meter['heightAfter'],meter
+        assert meter['ratio']=='0.45' and meter['heightBefore']==meter['heightAfter'],meter
         assert meter['transform']!='none' and meter['shape']>0,meter
         # No per-event idle fader work: drag listener is attached only on pointerdown.
         assert await page.evaluate('drag===null')
