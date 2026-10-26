@@ -171,8 +171,8 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 @media(prefers-reduced-motion:reduce){.fx-power,.pan-fill{transition:none!important}}
 
 /* v0.6: subdued hardware feedback and center detent (zero snap in JS). */
-.pan-track:not([aria-valuenow="0"]) .pan-thumb,
-.pan-track:not([aria-valuenow="0"]):hover .pan-thumb{filter:brightness(1.08) drop-shadow(1px 1px 2px #0009)!important}
+.pan-track:not([aria-valuenow="0"]) .pan-thumb{filter:brightness(1.08) drop-shadow(1px 1px 2px #0009)!important}
+.pan-track:not([aria-valuenow="0"]):hover .pan-thumb{filter:brightness(1.08)!important}
 .pan-track:hover .pan-thumb{filter:brightness(1.08)!important}
 .pan-track.is-dragging .pan-thumb{filter:brightness(.9) drop-shadow(0 1px 1px #000c)!important}
 .pan-track .pan-fill{height:3px;top:19px;background:#35caac;box-shadow:none!important;filter:none!important}
@@ -938,9 +938,10 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 }
 /* Issue #56: diagnostic variants for hover paint, demo meters and layer hints.
    All mixer geometry, fader PNG, Button 19 and native audio remain untouched. */
-html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="meters-off"]) #mixer .fader:hover .cap,
-html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="meters-off"]) #mixer .fader .cap:hover{filter:brightness(1.19) contrast(1.06) drop-shadow(0 1px 3px #c6deef70)!important}
-html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="meters-off"]) #mixer .pan-track:hover .pan-thumb{filter:brightness(1.12) drop-shadow(1px 1px 2px #000a)!important}
+html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="meters-off"]) #mixer .fader:not(.is-dragging):hover .cap,
+html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="meters-off"]) #mixer .fader:not(.is-dragging) .cap:hover{filter:brightness(1.19) contrast(1.06) drop-shadow(0 1px 3px #c6deef70)!important}
+html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="meters-off"]) #mixer .pan-track:not(.is-dragging):hover .pan-thumb{filter:brightness(1.12) drop-shadow(1px 1px 2px #000a)!important}
+html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="meters-off"]) #mixer .pan-track:not(.is-dragging):not([aria-valuenow="0"]):hover .pan-thumb{filter:brightness(1.08) drop-shadow(1px 1px 2px #0009)!important}
 html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="meters-off"]) #mixer .strip-name:hover{filter:brightness(1.12);outline:none}
 html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="meters-off"]) #mixer .rack .insert:hover{filter:brightness(1.12)}
 html:is([data-mixperf="baseline"],[data-mixperf="hover-off"],[data-mixperf="meters-off"]) #app .meter .meter-fill{will-change:transform}
