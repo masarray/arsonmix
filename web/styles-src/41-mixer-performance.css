@@ -1,11 +1,11 @@
 /* Issue #56: diagnostic variants for hover paint, demo meters and layer hints.
    All mixer geometry, fader PNG, Button 19 and native audio remain untouched. */
 html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="meters-off"]) #mixer .fader:not(.is-dragging):hover .cap,
-html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="meters-off"]) #mixer .fader:not(.is-dragging) .cap:hover{filter:brightness(1.19) contrast(1.06) drop-shadow(0 1px 3px #c6deef70)!important}
-html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="meters-off"]) #mixer .pan-track:not(.is-dragging):hover .pan-thumb{filter:brightness(1.12) drop-shadow(1px 1px 2px #000a)!important}
-html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="meters-off"]) #mixer .pan-track:not(.is-dragging):not([aria-valuenow="0"]):hover .pan-thumb{filter:brightness(1.08) drop-shadow(1px 1px 2px #0009)!important}
-html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="meters-off"]) #mixer .strip-name:hover{filter:brightness(1.12);outline:none}
-html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="meters-off"]) #mixer .rack .insert:hover{filter:brightness(1.12)}
+html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="meters-off"]) #mixer .fader:not(.is-dragging) .cap:hover{filter:none!important}
+html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="meters-off"]) #mixer .pan-track:not(.is-dragging):hover .pan-thumb{filter:none!important}
+html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="meters-off"]) #mixer .pan-track:not(.is-dragging):not([aria-valuenow="0"]):hover .pan-thumb{filter:none!important}
+html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="meters-off"]) #mixer .strip-name:hover{filter:none!important;outline:none}
+html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="meters-off"]) #mixer .rack .insert:hover{filter:none!important}
 html:is([data-mixperf="baseline"],[data-mixperf="hover-off"],[data-mixperf="meters-off"]) #app .meter .meter-fill{will-change:transform}
 html:is([data-mixperf="hover-off"],[data-mixperf="all-off"]) #mixer :is(.fader:hover .cap,.pan-track:hover .pan-thumb,.rack .insert:hover,.rack .fx-power:hover,.strip-name:hover,.master-insert:hover,.master-tools button:hover){filter:none!important;transition:none!important}
 html:is([data-mixperf="hover-off"],[data-mixperf="all-off"]) #mixer .strip-name:hover{outline:none!important}
