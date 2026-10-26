@@ -58,6 +58,12 @@
       (s.connected ? s.driver + " · " + Math.round(s.rate) + "Hz / " + s.buffer + " · " +
        (s.plugin || "Dry mic") + " · +" + (s.pluginLatencySamples || 0) + " samples plugin latency" :
        "NO AUDIO DEVICE");
+    const deviceButton = document.querySelector(".toolbar .spec-device");
+    if(deviceButton){
+      const ready=!!s.connected && !s.error;
+      deviceButton.classList.toggle("on",ready);
+      deviceButton.dataset.audioConnected=String(ready);
+    }
     const status = document.getElementById("audioStatus");
     if (status) status.textContent = s.connected
       ? "P1 NATIVE · " + (monitor ? "MONITOR ARMED" : "MONITOR MUTED (safe)") +

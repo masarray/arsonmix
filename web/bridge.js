@@ -604,6 +604,13 @@
       ?(20*Math.log10(Math.max(1e-8,Number(d.peak)))).toFixed(1)+" dBFS":"−∞";
     const driver=document.getElementById("headerDriver");
     if(driver)driver.textContent=d.driver||"No device";
+    // Hardware lamp: never claim a ready audio device in preview or error states.
+    const deviceButton=document.querySelector(".toolbar .spec-device");
+    if(deviceButton){
+      const ready=!!d.connected && !d.error;
+      deviceButton.classList.toggle("on",ready);
+      deviceButton.dataset.audioConnected=String(ready);
+    }
     const rate=document.getElementById("headerRate");
     if(rate)rate.textContent=d.rate?(Number(d.rate)/1000).toLocaleString("en-US",{maximumFractionDigits:1}):"--";
     const buffer=document.getElementById("headerBuffer");

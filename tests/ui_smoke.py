@@ -272,7 +272,27 @@ async def main():
             assert style[key]['shadow'].count('rgb')==7,(key,style)
             assert style[key]['radius']=='3px',(key,style)
         assert style['selected']['face']=='rgb(240, 241, 243)',style
-        assert style['railOn']['face']=='rgb(219, 156, 206)',style
+        assert style['railOn']['face']=='rgb(227, 166, 216)',style
+        # Audio Device shares the physical BTN-180 toolbar face and dark ink.
+        # The OFF state is truthful in UI-only preview. Explicitly force ON
+        # for a PALETTE-ONLY regression screenshot, then restore it immediately.
+        device=page.locator('.toolbar .spec-device')
+        devOff=await device.evaluate("""e=>{const s=getComputedStyle(e),t=getComputedStyle(e.querySelector('#headerDriver')),
+          r=e.getBoundingClientRect();return {face:s.backgroundColor,ink:t.color,shadow:s.boxShadow,rect:r.toJSON(),
+          pressed:e.classList.contains('on'),backgroundImage:s.backgroundImage}}""")
+        assert devOff['face']==style['nav']['face']=='rgb(179, 179, 179)',devOff
+        assert devOff['ink']=='rgb(43, 43, 43)' and devOff['backgroundImage']=='none',devOff
+        assert not devOff['pressed'],devOff
+        await device.evaluate("(e)=>e.classList.add('on')")
+        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('.spec-device')).backgroundColor==='rgb(121, 221, 158)'""")
+        devOn=await device.evaluate("""e=>{const s=getComputedStyle(e),t=getComputedStyle(e.querySelector('#headerDriver'));
+          return {face:s.backgroundColor,ink:t.color,shadow:s.boxShadow,rect:e.getBoundingClientRect().toJSON()}}""")
+        assert devOn['face']=='rgb(121, 221, 158)' and devOn['ink']=='rgb(17, 51, 34)',devOn
+        assert shared_shadow_shape(devOn['shadow'])==shared_shadow_shape(devOff['shadow']),(devOn,devOff)
+        assert all(abs(devOff['rect'][k]-devOn['rect'][k])<.2 for k in ('x','y','width','height')),(devOff,devOn)
+        await page.screenshot(path=str(project/'device-green-on-palette-review.png'),full_page=True)
+        await device.evaluate("(e)=>e.classList.remove('on')")
+        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('.spec-device')).backgroundColor==='rgb(179, 179, 179)'""")
         assert all(style[key]['spanTransform']=='none' for key in ('nav','rail','selected')),style
         assert await page.locator('[data-hpf="0"]').evaluate(
             "(e)=>getComputedStyle(e).boxShadow.includes('5px 5px 2px -1px')"),style
@@ -294,7 +314,7 @@ async def main():
         active=await preset.evaluate("""e=>({
           face:getComputedStyle(e).backgroundColor,shadow:getComputedStyle(e).boxShadow,
           rect:e.getBoundingClientRect().toJSON(),transform:getComputedStyle(e).transform})""")
-        assert active['face']=='rgb(219, 156, 206)' and active['transform']=='matrix(1, 0, 0, 1, 0, 0)',active
+        assert active['face']=='rgb(227, 166, 216)' and active['transform'=='matrix(1, 0, 0, 1, 0, 0)',active
         assert shared_shadow_shape(active['shadow'])==shared_shadow_shape(style['rail']['shadow']),active
         assert all(abs(active['rect'][k]-pre[k])<=.2 for k in ('x','y','width','height')),active
         # Utility ON is soft cyan, not the old green/purple polarity palettes.
@@ -852,7 +872,7 @@ async def main():
         await page.locator('[data-mute="0"]').click()
         assert await page.locator('[data-mute="0"]').get_attribute('aria-pressed') == 'true'
         # btn-180 intentionally animates background for 150ms. Wait for actual final RGB.
-        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-mute="0"]')).backgroundColor==='rgb(231, 111, 131)'""",timeout=2500)
+        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-mute="0"]')).backgroundColor==='rgb(243, 136, 149)'""",timeout=2500)
         assert await image_for('[data-mute="0"]') != await image_for('[data-solo="0"]'), await page.evaluate("""()=>{
           return [...document.querySelectorAll('[data-mute="0"],[data-solo="0"]')].map(e=>({
             cls:e.className,background:getComputedStyle(e).backgroundColor,
@@ -862,7 +882,7 @@ async def main():
         }""")
         await page.locator('[data-solo="0"]').click()
         assert await page.locator('[data-solo="0"]').get_attribute('aria-pressed') == 'true'
-        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-solo="0"]')).backgroundColor==='rgb(219, 183, 92)'""",timeout=2500)
+        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-solo="0"]')).backgroundColor==='rgb(237, 198, 105)'""",timeout=2500)
         assert await image_for('[data-solo="0"]') != await image_for('[data-mute="0"]')
         await page.locator('[data-mute="0"]').click()
         await page.locator('[data-solo="0"]').click()
