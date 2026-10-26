@@ -203,6 +203,8 @@ function setView(next){
  document.querySelectorAll('[data-view]').forEach(btn=>btn.classList.toggle('selected',btn.dataset.view===next));
  $('mixer').classList.toggle('hidden',next!=='MIX');
  $('rackWorkspace').classList.toggle('hidden',!['FX RACK','SIGNAL FLOW'].includes(next));
+ // Canvas is an overlay sibling of #mixer: hide it immediately on view switch.
+ if(meterCanvasState.canvas)meterCanvasState.canvas.classList.toggle('hidden',next!=='MIX');
  if(next==='FX RACK')renderRackWorkspace();
  if(next==='SIGNAL FLOW')renderSignalFlow();
 }
