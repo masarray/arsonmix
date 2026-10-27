@@ -65,12 +65,10 @@ async def main():
         })();""")
         await page.goto((root / "web/index.html").as_uri())
         await page.wait_for_selector(".strip")
-        # Main MIX page must provide a discoverable ORBIT button for the actual VST insert.
-        mix_orbit=page.locator(".strip").first.locator('[data-native-fx="orbit"]')
-        await mix_orbit.wait_for(state="visible")
-        assert await mix_orbit.inner_text()=="ORBIT"
-        assert await mix_orbit.get_attribute("aria-pressed")=="false"
-        await mix_orbit.click()
+        assert await page.locator(".strip").first.locator('[data-native-fx="orbit"]').count()==0
+        await page.locator(".strip").first.locator('[data-native-fx="editor"]').click(button="right")
+        menu=page.locator("#nativeFxContext")
+        await menu.get_by_role("menuitem",name="Auto Orbit").click()
         assert await page.locator(".nav button.selected").get_attribute("data-view")=="MIX"
         modal = page.locator("#nativeOrbit")
         await modal.locator("#nativeOrbitParameter").wait_for(state="visible")
@@ -104,7 +102,9 @@ async def main():
           x.payload.action==='orbitStop')""")
         await modal.locator('[data-close-modal="nativeOrbit"]').click()
         await page.locator('[data-view="FX RACK"]').click()
-        await page.get_by_role("button", name="ORBIT").click()
+        assert await page.locator(".native-node [data-native-fx='orbit']").count()==0
+        await page.locator(".native-node [data-native-fx='editor']").first.click(button="right")
+        await menu.get_by_role("menuitem",name="Auto Orbit").click()
         await modal.locator("#nativeOrbitParameter").wait_for(state="visible")
         assert not errors, errors
         await browser.close()

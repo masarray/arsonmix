@@ -102,16 +102,12 @@
     #nativeOrbit .orbit-warning{font-size:11px;line-height:1.55;color:#a8bfc9;margin:5px 0}
   `;
 
-  // Native MIX inserts: a visible, compact ORBIT action without modifying the GUI CSS owners.
   css.textContent += `
-    .native-insert-row>.native-orbit{flex:0 0 34px;width:34px;height:21px;padding:0;
-      font-size:8px;font-weight:600;line-height:19px;letter-spacing:0;text-align:center;
-      color:#9bd8ed;border:1px solid #416d81;border-radius:3px;cursor:pointer;
-      background:linear-gradient(#274659,#102430);box-shadow:inset 0 1px #8bc9ea30}
-    .native-insert-row>.native-orbit:hover{border-color:#67d6f1;color:#e6ffff}
-    .native-insert-row>.native-orbit.is-active{background:linear-gradient(#69edf7,#0ea3c3);
-      color:#042431;border-color:#76f6ff;box-shadow:inset 0 1px #fff8}
-    .native-insert-row>.native-orbit:focus-visible{outline:2px solid #63dcfd;outline-offset:1px}
+    #nativeFxContext{position:fixed;z-index:950;min-width:180px;padding:4px;background:#13232e;border:1px solid #426175;border-radius:5px;box-shadow:0 9px 26px #000b;color:#dcecf2;font-size:11px}
+    #nativeFxContext[hidden]{display:none}
+    #nativeFxContext button{display:block;width:100%;text-align:left;background:transparent;color:inherit;border:0;border-radius:3px;padding:7px 10px;cursor:pointer;font:inherit}
+    #nativeFxContext button:hover,#nativeFxContext button:focus-visible{background:#234657;color:#b5f2ff}
+    #nativeFxContext .native-context-divider{height:1px;background:#334a58;margin:3px 4px}
   `;
   document.head.appendChild(css);
   document.getElementById("engineBadge").textContent="NATIVE CH1 · ORBIT";
@@ -149,8 +145,6 @@
           <span class="node-index">${String(i+1).padStart(2,"0")}</span>
           <span class="node-text">${escapeHtml(p.name)}<small>${p.latency||0} samples processing latency</small></span>
           <button class="native-btn" data-native-fx="editor" data-slot="${i}">EDIT</button>
-          <button class="native-btn ${orbit.active && orbit.activeSlot===i?"on":""}" data-native-fx="orbit" data-slot="${i}"
-            aria-pressed="${orbit.active&&orbit.activeSlot===i}" title="Native Azimuth Auto Orbit">ORBIT</button>
           <button class="native-btn ${p.bypass?"":"on"}" data-native-fx="bypass" data-slot="${i}" aria-pressed="${!p.bypass}" title="Instantly ${p.bypass?"enable":"bypass"} this plugin without stopping audio">⏻ ${p.bypass?"OFF · ENABLE":"ON · BYPASS"}</button>
           <button class="native-btn" data-native-fx="up" data-slot="${i}" ${i===0?"disabled":""}>↑</button>
           <button class="native-btn" data-native-fx="down" data-slot="${i}" ${i===state.chain.length-1?"disabled":""}>↓</button>
@@ -378,7 +372,7 @@
       track.title=`${track.querySelector(".strip-name")?.textContent?.trim()||"Channel"} — visual preview only; native I/O not wired`;
       return;
     }
-    const signature=state.chain.map((p,i)=>p.id+"|"+p.bypass+"|"+(orbit.active&&orbit.activeSlot===i)).join(",");
+    const signature=state.chain.map(p=>p.id+"|"+p.bypass).join(",");
     if(rack.dataset.nativeSig===signature)return;
     rack.dataset.nativeSig=signature;
     rack.innerHTML=state.chain.slice(0,5).map((p,i)=>
@@ -386,10 +380,6 @@
         <button class="insert" data-native-fx="editor" data-slot="${i}"
           title="Open ${escapeHtml(p.name)}" aria-label="Edit ${escapeHtml(p.name)}">
           <span class="insert-name">${escapeHtml(p.name)}</span></button>
-        <button type="button" class="native-orbit ${orbit.active&&orbit.activeSlot===i?"is-active":""}"
-          data-native-fx="orbit" data-slot="${i}" aria-label="ORBIT ${escapeHtml(p.name)}"
-          aria-pressed="${orbit.active&&orbit.activeSlot===i}"
-          title="Auto Orbit · ${escapeHtml(p.name)}">ORBIT</button>
         <button type="button" class="fx-power native-power ${p.bypass?"is-bypassed is-off":""}"
           data-native-fx="bypass" data-slot="${i}" aria-pressed="${!p.bypass}"
           title="${p.bypass?"Enable":"Bypass"} ${escapeHtml(p.name)}">⏻</button>
@@ -422,6 +412,60 @@
     patchMixer();
   };
 
+
+  // Delegated host-side FX context menu; no extra buttons or DSP work.
+  const fxContext=document.createElement("div");
+  fxContext.id="nativeFxContext";fxContext.hidden=true;
+  fxContext.setAttribute("role","menu");
+  fxContext.setAttribute("aria-label","FX actions");
+  document.body.appendChild(fxContext);
+  let contextSlot=-1;
+  function closeFxContext(){fxContext.hidden=true;contextSlot=-1;}
+  function openFxContext(slot,x,y){
+    if(!state.chain[slot])return;
+    contextSlot=slot;
+    const p=state.chain[slot];
+    fxContext.innerHTML='<button role="menuitem" data-context-fx="editor">Open '+escapeHtml(p.name)+'</button>'+
+      '<button role="menuitem" data-context-fx="orbit">Auto Orbit</button>'+
+      '<div class="native-context-divider" role="separator"></div>'+
+      '<button role="menuitem" data-context-fx="bypass">'+(p.bypass?'Enable':'Bypass')+' FX</button>';
+    fxContext.hidden=false;
+    fxContext.style.left=Math.max(4,Math.min(x,window.innerWidth-fxContext.offsetWidth-4))+'px';
+    fxContext.style.top=Math.max(4,Math.min(y,window.innerHeight-fxContext.offsetHeight-4))+'px';
+    fxContext.querySelector("button")?.focus({preventScroll:true});
+  }
+  document.addEventListener("contextmenu",e=>{
+    const el=e.target.closest('[data-native-fx="editor"]');
+    if(!el||!el.closest(".native-insert-row,.native-node"))return;
+    const slot=Number(el.dataset.slot);
+    if(!Number.isInteger(slot)||slot<0||slot>=state.chain.length)return;
+    e.preventDefault();e.stopImmediatePropagation();
+    openFxContext(slot,e.clientX,e.clientY);
+  },true);
+  document.addEventListener("click",e=>{
+    const item=e.target.closest("#nativeFxContext [data-context-fx]");
+    if(!item){if(!fxContext.hidden)closeFxContext();return;}
+    e.preventDefault();e.stopImmediatePropagation();
+    const slot=contextSlot,action=item.dataset.contextFx;
+    closeFxContext();
+    if(!state.chain[slot])return;
+    if(action==="orbit")openOrbit(slot);
+    else if(action==="editor")send("fxEditor",{slot});
+    else if(action==="bypass")send("fxBypass",{slot,value:!state.chain[slot].bypass});
+  },true);
+  document.addEventListener("keydown",e=>{
+    if(fxContext.hidden)return;
+    if(e.key==="Escape"){e.preventDefault();closeFxContext();}
+    if(e.key==="ArrowDown"||e.key==="ArrowUp"){
+      e.preventDefault();
+      const items=[...fxContext.querySelectorAll("button")];
+      const i=items.indexOf(document.activeElement);
+      items[(i+(e.key==="ArrowDown"?1:items.length-1))%items.length]?.focus();
+    }
+  },true);
+  window.addEventListener("blur",closeFxContext);
+  window.addEventListener("resize",closeFxContext);
+  document.addEventListener("scroll",closeFxContext,true);
   // Capture native controls before the legacy v0.3 demo handlers.
   document.addEventListener("click", function(e){
   const el=e.target.closest("[data-native-action],[data-native-add],[data-native-fx],[data-fxpower],[data-master-insert],[data-master-power],[data-native-category],[data-go-native-rack],[data-insert],[data-plugin-picker],[data-plugin-manager],[data-my-sounds],[data-preset-mute],[data-preset-save],[data-preset-load],[data-close-modal],[data-orbit-start],[data-orbit-stop]");
@@ -525,7 +569,6 @@
     renderPicker();return;
   }
   const fx=el.dataset.nativeFx,slot=Number(el.dataset.slot);
-  if(fx==="orbit"){openOrbit(slot);return;}
   if(fx==="editor")send("fxEditor",{slot});
   if(fx==="remove")send("fxRemove",{slot});
   if(fx==="bypass")send("fxBypass",{slot,value:!state.chain[slot]?.bypass});
