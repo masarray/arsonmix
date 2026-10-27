@@ -1,0 +1,72 @@
+name: Native JUCE Canvas Preview (Windows x64)
+on:
+  push:
+    branches:
+      - feature/native-juce-mixer-canvas-20261027
+    paths:
+      - native/canvas-preview/**
+      - .github/workflows/native-canvas-windows.yml
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - native/canvas-preview/**
+      - .github/workflows/native-canvas-windows.yml
+
+permissions:
+  contents: read
+
+jobs:
+  native-canvas-preview:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - name: Checkout ArSonMix prototype branch
+        uses: actions/checkout@v4
+      - name: Checkout pinned JUCE 8.0.15
+        uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: 8.0.15
+          path: third_party/JUCE
+          persist-credentials: false
+      - name: Configure independent JUCE native preview
+        shell: pwsh
+        run: |
+          cmake -S native/canvas-preview -B build/native-canvas -G "Visual Studio 17 2022" -A x64 -DJUCE_ROOT="${{ github.workspace }}/third_party/JUCE"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build Windows x64 executable
+        shell: pwsh
+        run: |
+          cmake --build build/native-canvas --config Release --target ARMixNativeMixerCanvasPreview --parallel 2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Package inspected EXE and checksum
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path build/native-canvas -Filter '*.exe' -Recurse -File |
+            Where-Object { $_.Name -like "*Native Canvas Preview*" -or $_.Name -like "*ARMixNativeMixerCanvasPreview*" } |
+            Select-Object -First 1
+          if ($null -eq $exe) {
+            Get-ChildItem -Path build/native-canvas -Filter '*.exe' -Recurse | ForEach-Object { Write-Host $_.FullName }
+            throw "JUCE preview EXE was not found"
+          }
+          New-Item -ItemType Directory -Force -Path dist/native-canvas | Out-Null
+          Copy-Item $exe.FullName "dist/native-canvas/ArSonMix-Native-JUCE-Mixer-Canvas-Windows-x64.exe"
+          Get-FileHash "dist/native-canvas/ArSonMix-Native-JUCE-Mixer-Canvas-Windows-x64.exe" -Algorithm SHA256 |
+            Format-List | Out-String | Set-Content "dist/native-canvas/SHA256.txt"
+          Set-Content "dist/native-canvas/README.txt" @'
+          ArSonMix Native JUCE Mixer Canvas PREVIEW (Windows x64)
+          UI-only proof of concept; no audio engine, no VST hosting.
+          Fader, PAN, MUTE, SOLO are interactive; meters require real native input.
+          Does NOT replace the production ArSonMix GUI.
+          Original Soundcraft Ui24 canvas graphics/code are NOT included.
+          '@
+          $len = (Get-Item "dist/native-canvas/ArSonMix-Native-JUCE-Mixer-Canvas-Windows-x64.exe").Length
+          Write-Host "Built executable size (bytes): $len"
+          if ($len -lt 102400) { throw "Executable unexpectedly small" }
+      - name: Upload Windows binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArSonMix-Native-JUCE-Mixer-Canvas-Windows-x64
+          path: dist/native-canvas/
+          retention-days: 14
+          if-no-files-found: error
