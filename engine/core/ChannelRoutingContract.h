@@ -142,12 +142,7 @@ struct ChannelRoutingPlan final {
                 // applies AFTER FX, with no raw L+R +6 dB double sum.
                 out.leftGain = original.faderLinear * std::sqrt(0.5f*(1.f-original.pan));
                 out.rightGain = original.faderLinear * std::sqrt(0.5f*(1.f+original.pan));
-            } else if (effective[i] == ChannelFormat::stereo && original.source == SourceMode::mono) {
-                // A mono source expanded to a stereo channel is DUAL MONO,
-                // not fabricated stereo width. Preserve -3dB center pan law.
-                constexpr float center = 0.7071067811865475244f;
-                out.leftGain = center * original.faderLinear * (original.pan > 0.f ? 1.f-original.pan : 1.f);
-                out.rightGain = center * original.faderLinear * (original.pan < 0.f ? 1.f+original.pan : 1.f);
+
             }
         }
         ChannelRoutingPlan ready;

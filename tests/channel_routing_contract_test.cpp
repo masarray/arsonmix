@@ -60,6 +60,17 @@ int main() {
     plan.accumulate(0,l.data(),r.data(),ml.data(),mr.data(),3);
     assert(approx(ml[0],.2f*.70710678f)&&approx(mr[0],.2f*.70710678f));
 
+    // Mono source keeps equal-power pan even with STEREO channel format.
+    // At hard right, level is unity and never unintentionally -3dB.
+    cfg.stripsAndMaster.strips[0].pan=1.f;
+    assert(ChannelRoutingPlan::compile(cfg,enabled,plan,error));
+    Plan::clearMaster(ml.data(),mr.data(),3);
+    assert(plan.extract(0,callback,3,l.data(),r.data(),3));
+    plan.accumulate(0,l.data(),r.data(),ml.data(),mr.data(),3);
+    assert(approx(ml[0],0.f)&&approx(mr[0],.2f));
+    cfg.stripsAndMaster.strips[0].pan=0.f;
+    assert(ChannelRoutingPlan::compile(cfg,enabled,plan,error));
+
     // Physical mapping rejected transactionally: plan stays bit-exact.
     const auto old=plan;
     cfg.stripsAndMaster.strips[0].inputA=6;
