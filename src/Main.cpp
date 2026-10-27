@@ -958,7 +958,8 @@ private:
             else
             {
                 diagnostics_.record ("FX_ADD_REQUEST", name + " | " + plugin->path);
-                stopOrbit();
+                // Appending a new VST3 preserves existing AudioPluginInstance addresses.
+                // Orbit references a still-live processor and must continue through ADD.
                 editorWindow_.reset();
                 try
                 {
@@ -986,6 +987,7 @@ private:
                 diagnostics_.record ("FX_LOAD", name + " | elapsedMs=" + juce::String (elapsed));
                 ++fxGraphRevision_;
                 emitChain();
+                if (orbit_.active()) emitOrbitState (orbit_.slot());
                 emitNotice (name + " inserted into Channel 1 FX Rack.");
             }
         }
