@@ -220,3 +220,12 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;will-change:transform;
 }
 .fx-drag-source{opacity:.48}
+
+/* Native FX Rack uses the same lightweight insertion marker as mixer inserts. */
+.native-node[data-native-move]{position:relative}
+.native-node.fx-drop-before::before,.native-node.fx-drop-after::after{
+ content:"";position:absolute;left:1px;right:1px;height:2px;
+ background:#9dd6d3;z-index:5;pointer-events:none;
+}
+.native-node.fx-drop-before::before{top:-2px}
+.native-node.fx-drop-after::after{bottom:-2px}
