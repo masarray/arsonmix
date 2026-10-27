@@ -26,7 +26,7 @@
 // The audio callback never scans files, creates plugins, mutates the chain,
 // enters UI code, locks host mutexes, logs, or changes device settings.
 // P2.5 recall pre-stages a graph and transitions at callback boundaries.
-// Legacy Add/Remove/Move still detach; seamless structural editing is deferred.
+// Add/Remove still use a bounded offline lifecycle; MOVE is a lock-free order publication.
 class LiveAudioEngine final : private juce::AudioIODeviceCallback
 {
 public:
@@ -43,6 +43,19 @@ public:
 
     struct Graph
     {
+        // Eight 4-bit physical slot indices in one x64 lock-free word.
+        // Moving an insert publishes one complete order for the NEXT audio
+        // block; the processor objects and their binary states never move.
+        static constexpr std::uint64_t canonicalOrder = 0x76543210ULL;
+        std::atomic<std::uint64_t> orderPacked {canonicalOrder};
+        static int physicalAt (std::uint64_t order, int logical) noexcept
+        {
+            return static_cast<int> ((order >> (logical * 4)) & 0xfULL);
+        }
+        int physicalAt (int logical) const noexcept
+        {
+            return physicalAt (orderPacked.load (std::memory_order_acquire), logical);
+        }
         std::array<Slot, maxFx> slots {};
         std::array<std::atomic<bool>, maxFx> bypassFlags {};
         int count = 0;
@@ -480,7 +493,8 @@ public:
 
     juce::AudioPluginInstance* pluginAt (int index) noexcept
     {
-        return index >= 0 && index < graphOwned_->count ? graphOwned_->slots[index].processor.get() : nullptr;
+        return index >= 0 && index < graphOwned_->count
+            ? graphOwned_->slots[graphOwned_->physicalAt (index)].processor.get() : nullptr;
     }
 
     juce::var chainState() const
@@ -490,13 +504,30 @@ public:
         {
             auto node = std::make_unique<juce::DynamicObject>();
             node->setProperty ("index", i);
-            node->setProperty ("name", graphOwned_->slots[i].name);
-            node->setProperty ("id", graphOwned_->slots[i].catalogId);
-            node->setProperty ("bypass", graphOwned_->slots[i].bypass);
-            node->setProperty ("latency", graphOwned_->slots[i].latency);
+            const auto& slot = graphOwned_->slots[graphOwned_->physicalAt (i)];
+            node->setProperty ("name", slot.name);
+            node->setProperty ("id", slot.catalogId);
+            node->setProperty ("bypass", slot.bypass);
+            node->setProperty ("latency", slot.latency);
             nodes.add (juce::var (node.release()));
         }
         return juce::var (nodes);
+    }
+
+    // Called only after the current audio callback has been detached for a
+    // structural ADD/REMOVE. Normalize physical storage before mutation.
+    void materializeOrderOnStoppedCallback()
+    {
+        auto& graph = *graphOwned_;
+        const auto order = graph.orderPacked.load (std::memory_order_acquire);
+        if (order == Graph::canonicalOrder) return;
+        std::array<Slot, maxFx> rearranged {};
+        for (int i = 0; i < graph.count; ++i)
+            rearranged[i] = std::move (graph.slots[Graph::physicalAt (order, i)]);
+        graph.slots = std::move (rearranged);
+        for (int i = 0; i < graph.count; ++i)
+            graph.bypassFlags[i].store (graph.slots[i].bypass, std::memory_order_relaxed);
+        graph.orderPacked.store (Graph::canonicalOrder, std::memory_order_release);
     }
 
     juce::String addVst3 (const juce::String& filename, int uid,
@@ -534,6 +565,7 @@ public:
             return chosen->name + ": " + busError;
 
         detach();
+        materializeOrderOnStoppedCallback();
         Slot node;
         node.name = chosen->name;
         node.catalogId = catalogId;
@@ -568,14 +600,15 @@ public:
         {
             for (int i = 0; i < graphOwned_->count; ++i)
             {
-                const auto& slot = graphOwned_->slots[i];
+                const int physical = graphOwned_->physicalAt (i);
+                const auto& slot = graphOwned_->slots[physical];
                 if (!slot.processor) { error = "Invalid active FX slot"; break; }
                 armix::storage::FxState state;
                 state.path = slot.path;
                 state.name = slot.name;
                 state.catalogId = slot.catalogId;
                 state.uid = slot.uid;
-                state.bypass = graphOwned_->bypassFlags[i].load (std::memory_order_acquire);
+                state.bypass = graphOwned_->bypassFlags[physical].load (std::memory_order_acquire);
                 slot.processor->getStateInformation (state.binary);
                 if (state.binary.getSize() > armix::storage::NativePresetArchive::maxStateBytes)
                 {
@@ -694,8 +727,9 @@ public:
         if (handoff_.busy()) return false;
         if (index < 0 || index >= graphOwned_->count) return false;
         // Message-thread metadata and an atomic value consumed by the audio thread.
-        graphOwned_->slots[index].bypass = value;
-        graphOwned_->bypassFlags[index].store (value, std::memory_order_release);
+        const int physical = graphOwned_->physicalAt (index);
+        graphOwned_->slots[physical].bypass = value;
+        graphOwned_->bypassFlags[physical].store (value, std::memory_order_release);
         return true;
     }
 
@@ -704,6 +738,7 @@ public:
         if (handoff_.busy()) return false;
         if (index < 0 || index >= graphOwned_->count) return false;
         detach();
+        materializeOrderOnStoppedCallback();
         if (graphOwned_->slots[index].processor)
             graphOwned_->slots[index].processor->releaseResources();
         for (int i = index; i + 1 < graphOwned_->count; ++i)
@@ -717,19 +752,31 @@ public:
 
     bool moveSlot (int from, int to)
     {
+        // The processor instances remain at stable PHYSICAL addresses.
+        // A 64-bit release store publishes the complete logical order.
+        // The callback takes one acquire snapshot per audio buffer.
         if (handoff_.busy()) return false;
-        if (from < 0 || from >= graphOwned_->count || to < 0 || to >= graphOwned_->count || from == to)
+        const int count = graphOwned_->count;
+        if (from < 0 || to < 0 || from >= count || to >= count || from == to)
             return false;
-        detach();
-        auto moved = std::move (graphOwned_->slots[from]);
+        const auto previous = graphOwned_->orderPacked.load (std::memory_order_acquire);
+        std::array<int, maxFx> indices {};
+        for (int i = 0; i < count; ++i)
+            indices[i] = Graph::physicalAt (previous, i);
+        const int moved = indices[from];
         if (from < to)
-            for (int i = from; i < to; ++i) graphOwned_->slots[i] = std::move (graphOwned_->slots[i + 1]);
+            for (int i = from; i < to; ++i) indices[i] = indices[i + 1];
         else
-            for (int i = from; i > to; --i) graphOwned_->slots[i] = std::move (graphOwned_->slots[i - 1]);
-        graphOwned_->slots[to] = std::move (moved);
-        for (int i = 0; i < graphOwned_->count; ++i)
-            graphOwned_->bypassFlags[i].store (graphOwned_->slots[i].bypass, std::memory_order_release);
-        attach();
+            for (int i = from; i > to; --i) indices[i] = indices[i - 1];
+        indices[to] = moved;
+        auto next = Graph::canonicalOrder;
+        for (int i = 0; i < count; ++i)
+        {
+            const auto shift = static_cast<unsigned> (i * 4);
+            next = (next & ~(0xfULL << shift))
+                 | (static_cast<std::uint64_t> (indices[i]) << shift);
+        }
+        graphOwned_->orderPacked.store (next, std::memory_order_release);
         return true;
     }
 
@@ -842,9 +889,10 @@ public:
         {
             auto item = std::make_unique<juce::DynamicObject>();
             item->setProperty ("slot", i + 1);
-            item->setProperty ("name", graphOwned_->slots[i].name);
-            item->setProperty ("lastUs", static_cast<double> (lastPluginUsBySlot_[i].load()));
-            item->setProperty ("worstUs", static_cast<double> (worstPluginUsBySlot_[i].load()));
+            const int physical = graphOwned_->physicalAt (i);
+            item->setProperty ("name", graphOwned_->slots[physical].name);
+            item->setProperty ("lastUs", static_cast<double> (lastPluginUsBySlot_[physical].load()));
+            item->setProperty ("worstUs", static_cast<double> (worstPluginUsBySlot_[physical].load()));
             pluginTimings.add (juce::var (item.release()));
         }
         o->setProperty ("pluginTimings", juce::var (pluginTimings));
@@ -1238,16 +1286,19 @@ private:
             juce::MidiBuffer midi;
             if (!dry)
             {
+                // One order snapshot: never observe half of a drag reorder.
+                const auto order = cycle.graph->orderPacked.load (std::memory_order_acquire);
                 for (int fx = 0; fx < cycle.graph->count; ++fx)
                 {
-                    auto& slot = cycle.graph->slots[fx];
-                    if (slot.processor && ! cycle.graph->bypassFlags[fx].load (std::memory_order_relaxed))
+                    const int physical = Graph::physicalAt (order, fx);
+                    auto& slot = cycle.graph->slots[physical];
+                    if (slot.processor && ! cycle.graph->bypassFlags[physical].load (std::memory_order_relaxed))
                     {
                         const auto pluginBeginUs = clockMicros();
                         slot.processor->processBlock (scratchView, midi);
                         const auto pluginUs = clockMicros() - pluginBeginUs;
-                        lastPluginUsBySlot_[fx].store (pluginUs, std::memory_order_relaxed);
-                        publishMax (worstPluginUsBySlot_[fx], pluginUs);
+                        lastPluginUsBySlot_[physical].store (pluginUs, std::memory_order_relaxed);
+                        publishMax (worstPluginUsBySlot_[physical], pluginUs);
                         publishMax (worstPluginUs_, pluginUs);
                         if (static_cast<double> (pluginUs) > periodUs * 0.75)
                             slowPlugins_.fetch_add (1, std::memory_order_relaxed);
