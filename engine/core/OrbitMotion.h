@@ -42,10 +42,10 @@ inline OrbitMotionPoint orbitMotionPoint(double phase,int shape,
     const double r=std::hypot(x,y);
     // User-selected VST3-normalised near/far setpoints, never fixed 30 metres.
     if(!std::isfinite(nearDistance)||!std::isfinite(farDistance))return {};
-    const double near=std::clamp(nearDistance,0.0,1.0);
-    const double far=std::clamp(farDistance,0.0,1.0);
+    const double nearValue=std::clamp(nearDistance,0.0,1.0);
+    const double farValue=std::clamp(farDistance,0.0,1.0);
     const double radius=std::clamp((r-0.43)/0.57,0.0,1.0);
-    const double distance=near+(far-near)*radius;
+    const double distance=nearValue+(farValue-nearValue)*radius;
     const double z=needsOrbitElevation(shape) ? 0.30*std::sin(t) : 0.0;
     const double azimuth=orbitWrap(0.5+std::atan2(x,y)/(2.0*pi));
     return {static_cast<float>(azimuth),static_cast<float>(distance),

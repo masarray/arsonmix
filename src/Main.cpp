@@ -574,19 +574,19 @@ private:
         event->setProperty("distanceMin",metres?minMetres:0.0);
         event->setProperty("distanceMax",metres?maxMetres:100.0);
         const bool activeTarget=orbit_.active()&&orbit_.slot()==slot;
-        const double near=activeTarget?orbit_.nearDistance():0.2;
-        const double far=activeTarget?orbit_.farDistance():0.7;
+        const double nearValue=activeTarget?orbit_.nearDistance():0.2;
+        const double farValue=activeTarget?orbit_.farDistance():0.7;
         if(metres){
             // Defaults are nearby audible positions, *not* the plugin's maximum range.
             event->setProperty("nearSetpoint",activeTarget?
-                dist->getText(static_cast<float>(near),48).getDoubleValue():
+                dist->getText(static_cast<float>(nearValue),48).getDoubleValue():
                 std::clamp(1.0,minMetres,maxMetres));
             event->setProperty("farSetpoint",activeTarget?
-                dist->getText(static_cast<float>(far),48).getDoubleValue():
+                dist->getText(static_cast<float>(farValue),48).getDoubleValue():
                 std::clamp(3.0,minMetres,maxMetres));
         }else{
-            event->setProperty("nearSetpoint",near*100.0);
-            event->setProperty("farSetpoint",far*100.0);
+            event->setProperty("nearSetpoint",nearValue*100.0);
+            event->setProperty("farSetpoint",farValue*100.0);
         }
         event->setProperty ("preferredDistance",preferredDistance);
         event->setProperty ("preferredElevation",preferredElevation);
@@ -1186,27 +1186,27 @@ private:
                 return emitNotice("Unknown Orbit trajectory.",true);
             const double rawNear=static_cast<double>(nearArg);
             const double rawFar=static_cast<double>(farArg);
-            float near=0.f,far=1.f;
+            float nearValue=0.f,farValue=1.f;
             if(unitArg=="m"){
                 auto* plugin=engine_.pluginAt(slot);
                 if(!plugin||distanceIndex<0||distanceIndex>=plugin->getParameters().size())
                     return emitNotice("Choose a Distance parameter supporting metres.",true);
                 auto* param=plugin->getParameters()[distanceIndex];
-                if(!metresToNormalized(param,rawNear,near)||
-                   !metresToNormalized(param,rawFar,far))
+                if(!metresToNormalized(param,rawNear,nearValue)||
+                   !metresToNormalized(param,rawFar,farValue))
                     return emitNotice("VST3 cannot resolve these metre setpoints; choose valid near/far values.",true);
             }else if(unitArg=="%"){
                 if(!std::isfinite(rawNear)||!std::isfinite(rawFar)||
                    rawNear<0||rawFar>100)
                     return emitNotice("Distance must be between 0 and 100% of the VST3 parameter.",true);
-                near=static_cast<float>(rawNear/100.0);
-                far=static_cast<float>(rawFar/100.0);
+                nearValue=static_cast<float>(rawNear/100.0);
+                farValue=static_cast<float>(rawFar/100.0);
             }else return emitNotice("Unknown distance units.",true);
-            if(near>far)return emitNotice("Near must not exceed Far.",true);
+            if(nearValue>farValue)return emitNotice("Near must not exceed Far.",true);
             if (orbit_.active() && orbit_.slot() != slot) stopOrbit();
             const auto error = orbit_.start(engine_.pluginAt(slot),slot,parameterIndex,
                 static_cast<double>(secondsValue),bool(reverseValue),shape,
-                distanceIndex,static_cast<int>(elevationArg),near,far);
+                distanceIndex,static_cast<int>(elevationArg),nearValue,farValue);
             if (error.isNotEmpty()) return emitNotice ("Orbit: " + error, true);
             diagnostics_.record ("FX_ORBIT_START", "slot=" + juce::String (slot) +
                 " parameter=" + juce::String (parameterIndex) +
