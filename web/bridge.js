@@ -17,8 +17,14 @@
     else el.style.setProperty("--level",level+"%");
   }
   // Clear preview levels before first real device callback/status.
+  // One-time native boot clear includes unrouted preview channels. Keep it
+  // direct so the live 30fps animator owns ONLY CH1 and real Master meters.
   document.querySelectorAll("[data-meter],#masterMeterL,#masterMeterR,#masterMeterAux")
-    .forEach(el=>paintMeter(el,0));
+    .forEach(el=>{
+      if(typeof window.__arMixSetLedMeterLevel==="function")
+        window.__arMixSetLedMeterLevel(el,0);
+      else el.style.setProperty("--level","0%");
+    });
 
   const send = (action, more = {}) => backend.emitEvent("arMixAction", {action, ...more});
   const state = {catalog: [], chain: [], scanning: false, message: "Connecting to native host...",
