@@ -7,6 +7,7 @@
 #include "LiveAudioEngine.h"
 #include "VstOrbitController.h"
 #include "../engine/core/OrbitDistanceMapping.h"
+#include "../engine/core/DearVrPolarPolicy.h"
 #include "DiagnosticsRecorder.h"
 #include "../engine/device/DirectRestoreBackoff.h"
 #include "../engine/device/PeriodCapabilityEvidence.h"
@@ -497,6 +498,7 @@ private:
         event->setProperty ("periodSeconds", orbit_.secondsPerRevolution());
         event->setProperty ("reverse", orbit_.reverse());
         event->setProperty ("shape", orbit_.shape());
+        event->setProperty ("polarMode", orbit_.polarStatus());
         event->setProperty ("distanceIndex", orbit_.distanceParameterIndex());
         event->setProperty ("elevationIndex", orbit_.elevationParameterIndex());
         event->setProperty ("phase", orbit_.phase());
@@ -1163,6 +1165,9 @@ private:
                 !reverseValue.isBool())
                 return emitNotice ("Invalid Orbit settings.", true);
             const int parameterIndex = static_cast<int> (paramValue);
+            auto* targetPlugin=engine_.pluginAt(slot);
+            if(!targetPlugin || !armix::core::isDearVrPro2(targetPlugin->getName().toStdString()))
+                return emitNotice("Orbit for dearVR PRO 2 only.",true);
             const auto shapeArg=args.getProperty("shape",0);
             const auto distanceArg=args.getProperty("distanceIndex",-1);
             const auto elevationArg=args.getProperty("elevationIndex",-1);
@@ -1201,6 +1206,7 @@ private:
                 static_cast<double>(secondsValue),bool(reverseValue),shape,
                 distanceIndex,static_cast<int>(elevationArg),nearValue,farValue);
             if (error.isNotEmpty()) return emitNotice ("Orbit: " + error, true);
+            diagnostics_.record ("FX_ORBIT_POLAR",orbit_.polarStatus());
             diagnostics_.record ("FX_ORBIT_START", "slot=" + juce::String (slot) +
                 " parameter=" + juce::String (parameterIndex) +
                 " revolutionSec=" + juce::String (orbit_.secondsPerRevolution()) +
@@ -1208,7 +1214,9 @@ private:
                 " near=" + juce::String(orbit_.nearDistance(),4) +
                 " far=" + juce::String(orbit_.farDistance(),4));
             emitOrbitState (slot);
-            emitNotice ("VST3 Auto Orbit running. STOP to restore manual parameter control.");
+            emitNotice(orbit_.polarStatus()=="MANUAL_REQUIRED"
+                ? "Orbit started. Set POSITION → POLAR in dearVR; vendor did not expose a verified mode parameter."
+                : "dearVR Orbit started in POLAR mode.");
         }
         else if (action == "orbitStop")
         {

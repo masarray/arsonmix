@@ -401,6 +401,10 @@
             <option value="true" ${orbit.reverse?"selected":""}>↺ Reverse</option>
           </select></div>
       </div>
+      ${running&&orbit.polarMode==="MANUAL_REQUIRED"?
+        '<p class="orbit-help-note">Set POSITION → POLAR in dearVR. This VST3 did not expose a verified switch.</p>':
+        running&&["AUTO_SWITCHED","ALREADY_POLAR"].includes(orbit.polarMode)?
+        '<p class="orbit-help-note">dearVR POLAR mode confirmed</p>':""}
       ${needsE?'<p class="orbit-help-note">Elevation requires an automatable VST3 parameter.</p>':""}
       <div class="orbit-actions">
         <button class="native-btn primary" data-orbit-start="1"
@@ -417,7 +421,7 @@
   }
   function openOrbit(slot,anchor){
     const fx=state.chain[slot];
-    if(!fx)return;
+    if(!fx||!dearVrOrbitEligible(fx.name))return;
     orbitAnchor=anchor?.isConnected?anchor:document.querySelector(
       '.native-insert-row [data-native-fx="editor"][data-slot="'+slot+'"],'+
       '.native-node [data-native-fx="editor"][data-slot="'+slot+'"]');
@@ -639,13 +643,14 @@
   document.body.appendChild(fxContext);
   let contextSlot=-1, contextAnchor=null;
   function closeFxContext(){fxContext.hidden=true;contextSlot=-1;contextAnchor=null;}
+  const dearVrOrbitEligible=name=>/dear[\\s_-]*vr[\\s_-]*pro[\\s_-]*2/i.test(String(name||""));
   function openFxContext(slot,x,y,anchor){
     if(!state.chain[slot])return;
     contextSlot=slot;
     contextAnchor=anchor;
     const p=state.chain[slot];
     fxContext.innerHTML='<button role="menuitem" data-context-fx="editor">Open '+escapeHtml(p.name)+'</button>'+
-      '<button role="menuitem" data-context-fx="orbit">Auto Orbit</button>'+
+      (dearVrOrbitEligible(p.name)?'<button role="menuitem" data-context-fx="orbit">Orbit for dearVR PRO 2</button>':'')+
       '<div class="native-context-divider" role="separator"></div>'+
       '<button role="menuitem" data-context-fx="bypass">'+(p.bypass?'Enable':'Bypass')+' FX</button>';
     fxContext.hidden=false;
@@ -678,7 +683,7 @@
     const slot=contextSlot,action=item.dataset.contextFx,anchor=contextAnchor;
     closeFxContext();
     if(!state.chain[slot])return;
-    if(action==="orbit")openOrbit(slot,anchor);
+    if(action==="orbit"&&dearVrOrbitEligible(state.chain[slot].name))openOrbit(slot,anchor);
     else if(action==="editor")send("fxEditor",{slot});
     else if(action==="bypass")send("fxBypass",{slot,value:!state.chain[slot].bypass});
   },true);

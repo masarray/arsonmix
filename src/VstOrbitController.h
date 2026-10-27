@@ -4,6 +4,7 @@
 #include "../engine/core/OrbitPhase.h"
 #include "../engine/core/OrbitControlPolicy.h"
 #include "../engine/core/OrbitMotion.h"
+#include "../engine/core/DearVrPolarPolicy.h"
 #include <cmath>
 #include <utility>
 
@@ -20,6 +21,8 @@ public:
                        double nearDistance=0.2,double farDistance=0.7)
     {
         if(!plugin) return "VST3 processor is no longer available";
+        if(!armix::core::isDearVrPro2(plugin->getName().toStdString()))
+            return "Auto Orbit is supported for dearVR PRO 2 only";
         if(!std::isfinite(seconds)||seconds<2.0||seconds>180.0)
             return "Revolution time must be 2–180 seconds";
         if(!armix::core::validOrbitShape(shape)) return "Unknown motion path";
@@ -44,6 +47,29 @@ public:
         if(armix::core::needsOrbitElevation(shape) &&
            (!validParam(elevation)||elevation==az||elevation==distance))
             return "Rise/fall needs a distinct automatable Elevation parameter";
+        // Use a vendor-exposed coordinate mode ONLY when its text definitively
+        // labels both Cartesian and Polar. No pixel mouse simulation.
+        juce::AudioProcessorParameter* mode=nullptr;
+        for(auto* candidate:params){
+            if(!candidate||!candidate->isAutomatable())continue;
+            const auto name=candidate->getName(128).trim().toLowerCase();
+            const auto zero=candidate->getText(0.f,64).trim().toLowerCase();
+            const auto one=candidate->getText(1.f,64).trim().toLowerCase();
+            if(armix::core::isCartesianPolarMode(name.toStdString(),zero.toStdString(),one.toStdString())){
+                mode=candidate;break;
+            }
+        }
+        auto polarResult=juce::String("MANUAL_REQUIRED");
+        if(mode){
+            if(!mode->getText(mode->getValue(),64).containsIgnoreCase("polar")){
+                mode->beginChangeGesture();
+                mode->setValueNotifyingHost(1.f);
+                mode->endChangeGesture();
+                if(!mode->getText(mode->getValue(),64).containsIgnoreCase("polar"))
+                    return "dearVR could not switch to POLAR; set it in the plugin editor";
+                polarResult="AUTO_SWITCHED";
+            }else polarResult="ALREADY_POLAR";
+        }
         const auto first=az->getValue();
         const auto startPhase=armix::core::orbitShapePhaseForAzimuth(first,shape);
         const float startDist=distance?distance->getValue():0.5f;
@@ -54,6 +80,7 @@ public:
         slot_=slot;azimuthIndex_=azimuthIndex;distanceIndex_=distanceIndex;
         elevationIndex_=elevationIndex;shape_=shape;period_=seconds;reverse_=reverse;
         nearDistance_=nearDistance;farDistance_=farDistance;
+        polarStatus_=polarResult;
         phaseStart_=static_cast<float>(startPhase);
         lastAz_=first;lastDist_=startDist;lastElev_=startElev;
         initialDistance_=startDist;initialElevation_=startElev;
@@ -76,6 +103,7 @@ public:
         if(distance_)std::exchange(distance_,nullptr)->endChangeGesture();
         if(elevation_)std::exchange(elevation_,nullptr)->endChangeGesture();
         processor_=nullptr;slot_=-1;azimuthIndex_=-1;distanceIndex_=-1;
+        polarStatus_="NOT_STARTED";
         elevationIndex_=-1;
     }
     void pauseForGraphEdit() { if(active())stopTimer(); }
@@ -94,6 +122,7 @@ public:
     double farDistance() const noexcept { return farDistance_; }
     double secondsPerRevolution() const noexcept { return period_; }
     bool reverse() const noexcept { return reverse_; }
+    const juce::String& polarStatus() const noexcept { return polarStatus_; }
     const armix::core::OrbitDispatchStats& stats() const noexcept { return dispatch_; }
 
     double phase() const noexcept
@@ -160,5 +189,6 @@ private:
     float phaseStart_=0.f,lastAz_=0.5f,lastDist_=0.5f,lastElev_=0.5f;
     float initialDistance_=0.5f,initialElevation_=0.5f;
     bool reverse_=false;
+    juce::String polarStatus_ {"NOT_STARTED"};
     armix::core::OrbitDispatchStats dispatch_;
 };
