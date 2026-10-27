@@ -5,6 +5,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <BinaryData.h>
 #include "LiveAudioEngine.h"
+#include "VstOrbitController.h"
 #include "DiagnosticsRecorder.h"
 #include "../engine/device/DirectRestoreBackoff.h"
 #include "../engine/device/PeriodCapabilityEvidence.h"
@@ -151,6 +152,7 @@ public:
     ~ConsoleWindow() override
     {
         stopTimer();
+        orbit_.stop();
         catalog_.onChanged = nullptr;
         editorWindow_.reset();
         audioSetupWindow_.reset();
@@ -163,6 +165,8 @@ public:
 
 private:
     LiveAudioEngine engine_;
+    VstOrbitController orbit_;
+    juce::int64 fxGraphRevision_ = 1; // control-thread monotonic graph generation
     PluginCatalog catalog_;
     DiagnosticsRecorder diagnostics_;
     armix::storage::NativePresetArchive presets_;
@@ -411,6 +415,73 @@ private:
             browser_.emitEventIfBrowserIsVisible ("arMixChain", engine_.chainState());
     }
 
+    void emitOrbitState (int slot)
+    {
+        auto event = std::make_unique<juce::DynamicObject>();
+        event->setProperty ("slot", slot);
+        event->setProperty ("revision", juce::String (fxGraphRevision_));
+        const auto& stats = orbit_.stats();
+        event->setProperty ("controlTicks", static_cast<juce::int64> (stats.ticks));
+        event->setProperty ("parameterWrites", static_cast<juce::int64> (stats.writes));
+        event->setProperty ("coalesced", static_cast<juce::int64> (stats.coalesced));
+        event->setProperty ("lateTicks", static_cast<juce::int64> (stats.lateTicks));
+        event->setProperty ("maxGapMs", stats.maxGapMs);
+        event->setProperty ("active", orbit_.active());
+        event->setProperty ("activeSlot", orbit_.slot());
+        event->setProperty ("activeParameter", orbit_.parameterIndex());
+        event->setProperty ("periodSeconds", orbit_.secondsPerRevolution());
+        event->setProperty ("reverse", orbit_.reverse());
+
+        juce::Array<juce::var> listed;
+        int preferred = -1;
+        auto* plugin = engine_.isGraphSwitchPending() ? nullptr : engine_.pluginAt (slot);
+        if (plugin != nullptr)
+        {
+            event->setProperty ("plugin", plugin->getName());
+            const auto& params = plugin->getParameters();
+            for (int i = 0; i < params.size(); ++i)
+            {
+                auto* param = params[i];
+                if (param == nullptr || !param->isAutomatable() || param->getNumSteps() < 72)
+                    continue;
+                const auto name = param->getName (100);
+                auto item = std::make_unique<juce::DynamicObject>();
+                item->setProperty ("index", i);
+                item->setProperty ("name", name);
+                item->setProperty ("minText", param->getText (0.f, 32));
+                item->setProperty ("maxText", param->getText (1.f, 32));
+                listed.add (juce::var (item.release()));
+                if (name.equalsIgnoreCase ("Azimuth"))
+                    preferred = i;
+                else if (preferred < 0 && name.containsIgnoreCase ("azimuth") &&
+                         !name.containsIgnoreCase ("scale"))
+                    preferred = i;
+            }
+        }
+        event->setProperty ("preferredParameter",
+            orbit_.active() && orbit_.slot() == slot ? orbit_.parameterIndex() : preferred);
+        event->setProperty ("parameters", juce::var (listed));
+        if (browser_.loaded)
+            browser_.emitEventIfBrowserIsVisible ("arMixOrbitState", juce::var (event.release()));
+    }
+
+    // Stop while the VST3 instance still exists and synchronize its UI state.
+    void stopOrbit()
+    {
+        const int previousSlot = orbit_.slot();
+        if (!orbit_.active()) return;
+        const auto result = orbit_.stats();
+        orbit_.stop();
+        diagnostics_.record ("FX_ORBIT_CONTROL",
+            "ticks=" + juce::String (static_cast<juce::int64> (result.ticks)) +
+            " writes=" + juce::String (static_cast<juce::int64> (result.writes)) +
+            " coalesced=" + juce::String (static_cast<juce::int64> (result.coalesced)) +
+            " lateTicks=" + juce::String (static_cast<juce::int64> (result.lateTicks)) +
+            " maxTimerGapMs=" + juce::String (result.maxGapMs, 1) +
+            " | timer delay is NOT a hardware xrun");
+        emitOrbitState (previousSlot);
+    }
+
     void onParameter (const juce::var& args)
     {
         const auto name = args.getProperty ("parameter", {}).toString();
@@ -645,6 +716,7 @@ private:
         {
             if (!value.isBool()) return emitNotice ("Invalid smart clock command", true);
             // Close third-party editors before device/processor preparation.
+            stopOrbit();
             editorWindow_.reset();
             const auto error = engine_.setIndependentClockEnabled (bool (value));
             if (error.isNotEmpty())
@@ -758,6 +830,7 @@ private:
                 return emitNotice ("Choose a valid preset name", true);
             if (!engine_.isOutputMuted())
                 return emitNotice ("Mute output in SIGNAL CHECK before saving a native sound preset. This avoids interrupting your live performance.", true);
+            stopOrbit();
             editorWindow_.reset();
             armix::storage::Snapshot snapshot;
             snapshot.name = name;
@@ -782,6 +855,7 @@ private:
             const auto name = args.getProperty ("name", {}).toString();
             if (engine_.isGraphSwitchPending())
                 return emitNotice ("FX recall is already transitioning; retry shortly.", true);
+            stopOrbit();
             editorWindow_.reset();
             armix::storage::Snapshot snapshot;
             auto error = presets_.load (name, snapshot);
@@ -850,6 +924,7 @@ private:
             else
             {
                 diagnostics_.record ("FX_ADD_REQUEST", name + " | " + plugin->path);
+                stopOrbit();
                 editorWindow_.reset();
                 try
                 {
@@ -875,6 +950,7 @@ private:
             else
             {
                 diagnostics_.record ("FX_LOAD", name + " | elapsedMs=" + juce::String (elapsed));
+                ++fxGraphRevision_;
                 emitChain();
                 emitNotice (name + " inserted into Channel 1 FX Rack.");
             }
@@ -883,19 +959,64 @@ private:
         {
             if (engine_.hasTemporaryDiagnosticDevice())
                 return emitNotice ("Return to NORMAL before editing VST3.", true);
+            stopOrbit();
             editorWindow_.reset();
-            if (engine_.removeAt (slot)) { diagnostics_.record ("FX_REMOVE", juce::String (slot)); emitChain(); }
+            if (engine_.removeAt (slot)) { ++fxGraphRevision_; diagnostics_.record ("FX_REMOVE", juce::String (slot)); emitChain(); }
         }
         else if (action == "fxMove")
         {
             if (engine_.hasTemporaryDiagnosticDevice())
                 return emitNotice ("Return to NORMAL before rearranging VST3 effects.", true);
+            stopOrbit();
             editorWindow_.reset();
-            if (engine_.moveSlot (slot, slot + static_cast<int> (value))) { diagnostics_.record ("FX_MOVE", juce::String (slot)); emitChain(); }
+            if (engine_.moveSlot (slot, slot + static_cast<int> (value))) { ++fxGraphRevision_; diagnostics_.record ("FX_MOVE", juce::String (slot)); emitChain(); }
         }
         else if (action == "fxBypass")
         {
             if (value.isBool() && engine_.setBypass (slot, bool (value))) { diagnostics_.record ("FX_BYPASS", juce::String (slot) + (bool (value) ? " ON" : " OFF")); emitChain(); }
+        }
+        else if (action == "orbitInspect")
+        {
+            emitOrbitState (slot);
+        }
+        else if (action == "orbitStart")
+        {
+            if (engine_.isGraphSwitchPending())
+                return emitNotice ("Finish FX preset recall before starting Orbit.", true);
+            const auto requestedRevision = args.getProperty ("revision", {}).toString();
+            if (requestedRevision.isEmpty() || requestedRevision != juce::String (fxGraphRevision_))
+                return emitNotice ("FX graph changed. Reopen ORBIT to verify this instance.", true);
+            const auto requestedPluginId = args.getProperty ("pluginId", {}).toString();
+            const auto chain = engine_.chainState();
+            const auto* currentSlots = chain.getArray();
+            if (requestedPluginId.isEmpty() || currentSlots == nullptr || slot < 0 ||
+                slot >= currentSlots->size() ||
+                (*currentSlots)[slot].getProperty ("id", {}).toString() != requestedPluginId)
+                return emitNotice ("FX chain changed. Reopen ORBIT to select the current plugin.", true);
+            const auto paramValue = args.getProperty ("parameterIndex", -1);
+            const auto secondsValue = args.getProperty ("seconds", 20.0);
+            const auto reverseValue = args.getProperty ("reverse", false);
+            if (!(paramValue.isInt() || paramValue.isInt64()) ||
+                !(secondsValue.isDouble() || secondsValue.isInt()) ||
+                !reverseValue.isBool())
+                return emitNotice ("Invalid Orbit settings.", true);
+            const int parameterIndex = static_cast<int> (paramValue);
+            if (orbit_.active() && orbit_.slot() != slot) stopOrbit();
+            const auto error = orbit_.start (engine_.pluginAt (slot), slot, parameterIndex,
+                                             static_cast<double> (secondsValue),
+                                             bool (reverseValue));
+            if (error.isNotEmpty()) return emitNotice ("Orbit: " + error, true);
+            diagnostics_.record ("FX_ORBIT_START", "slot=" + juce::String (slot) +
+                " parameter=" + juce::String (parameterIndex) +
+                " revolutionSec=" + juce::String (orbit_.secondsPerRevolution()));
+            emitOrbitState (slot);
+            emitNotice ("VST3 Auto Orbit running. STOP to restore manual parameter control.");
+        }
+        else if (action == "orbitStop")
+        {
+            stopOrbit();
+            diagnostics_.record ("FX_ORBIT_STOP", "User requested stop");
+            emitOrbitState (slot);
         }
         else if (action == "fxEditor")
         {
@@ -961,6 +1082,7 @@ private:
         serviceDirectRestore();
         if (engine_.finalizeGraphSwitch())
         {
+            ++fxGraphRevision_;
             diagnostics_.record ("GRAPH_SWAP_ACK", pendingPresetName_);
             emitChain();
             if (pendingPresetUI_.isObject() && browser_.loaded)
