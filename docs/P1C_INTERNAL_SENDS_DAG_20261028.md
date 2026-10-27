@@ -24,17 +24,18 @@ One physical input may fan out to multiple strips by explicit selection. Each st
 All validation, float finite checks, duplicate checks, cycle sorting, output offsets and send gain/pan coefficients are computed **off realtime** by `ChannelSendPlan::compile`. Plan publication is **not** implemented yet. `dispatch` loops only over the active source's outgoing edges and the host-provided fixed sample count, accumulating into preallocated, already-cleared destination buffers. No heap, locks, sample-loop trigonometry, topology scans, telemetry string allocations, graph destruction or plugin creation in this primitive.
 
 The future RT integration must provide correctly scoped scratch buffers:
-1. Mix device input and incoming internal sends for the target strip into preallocated stereo scratch, following the compiled topological order.
-2. Run that strip's VST3 instances exactly once on its own buffer; capture its post-FX/pre-fader tap.
-3. Apply fader/mute/solo/pan and capture a distinct post-fader tap; deliver those outputs through the compiled edges.
-4. Mix only explicitly MASTER-enabled strips to MASTER; run its FX chain and main output controls once, then submit to device.
-5. The routing plan, channel VST instances, plugin editors, Orbit references and negotiated device source identity must be changed through a single safe graph epoch/handoff/ACK protocol. Never process the same VST3 instance concurrently in old/new graphs.
+1. At the start of **each audio block**, clear **every** per-strip destination/incoming-send accumulator exactly once; also prepare each strip's physical input scratch. Use `ChannelRoutingPlan::extract` **before** any internal-send dispatch, because `extract` overwrites scratch. Never clear the destination after an upstream send has already written to it.
+2. Walk `topologicalOrder` once, combining that strip's prepared physical input and previously accumulated upstream sends into its *own* preallocated input buffer, then run its VST3 chain exactly once. Capture its post-FX/pre-fader tap.
+3. Apply fader/mute/solo/pan to a distinct scratch output, capture its post-fader tap, and dispatch each configured pre/post tap only from the correct buffer. Do not reuse a destination accumulator as a source.
+4. `receivesInternalAudio(strip)` is true for any bus-return recipient, **even if its hardware SourceMode is disconnected**. The future host must not skip a return merely because P1A/P1B's physical-only `Strip::active` is false. The return's effective gain/mute/solo state must be applied separately, without processing an invented physical input.
+5. Mix only `toMaster=true` strips to MASTER; run MASTER FX and final output controls once, then send to the selected driver output. `toMaster=false` prevents duplicate dry+send output.
+6. The routing plan, channel VST instances, plugin editors, Orbit references and negotiated device source identity must be changed through a single safe graph epoch/handoff/ACK protocol. Never process the same VST3 instance concurrently in old/new graphs.
 
 Input device masks, hotplug and callback port indices are owned by P1B + forthcoming device registry. P1C cannot prove stable hardware timing and must not be enabled on top of a failing zero-VST hardware FAT (#15).
 
 ## Tests / boundaries
 
-`tests/channel_send_plan_test.cpp` verifies: zero-send defaults, deterministic 10-strip order, pre vs post taps, send pan and gain, fan-out, fan-in, main-out disable, cycle/self-loop rejection, duplicate edge prevention, invalid indices, gain, pan and tap, disabled edges, over-capacity, transaction rollback and invalid buffer guard. Windows Release `assert` is kept enabled even under `NDEBUG` so CTest is meaningful. No redundant GitHub Action matrix.
+`tests/channel_send_plan_test.cpp` verifies: zero-send defaults, deterministic 10-strip order, pre vs post taps, send pan and gain, fan-out, fan-in, main-out disable, cycle/self-loop rejection, duplicate edge prevention, invalid indices, gain, pan and tap, disabled edges, over-capacity, transaction rollback and invalid buffer guard, plus audio-return activity with no physical port. Windows Release `assert` is kept enabled even under `NDEBUG` so CTest is meaningful. No redundant GitHub Action matrix.
 
 The planned GUI should offer a compact SOURCE chooser and channel Sends inspector. Only show a real send selection when both source and destination are native connected buses; all routed requests use native ACK/reject. No full DOM redraw on pointer movements and no fake meter.
 
