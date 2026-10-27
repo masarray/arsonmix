@@ -42,6 +42,12 @@ int main() {
     assert(plan.upstreamOf(0,1));
     assert(plan.upstreamOf(1,3));
     assert(plan.upstreamOf(2,3));
+    assert(plan.upstreamOf(0,3)); // transitive 0 -> 1 -> 3
+    assert(!plan.upstreamOf(0,2)); // topological order != graph edge
+    assert(!plan.upstreamOf(1,2));
+    assert(!plan.upstreamOf(3,0));
+    assert(!plan.upstreamOf(0,0));
+    assert(!plan.upstreamOf(-1,3));
     const std::array<float,3> one {1.f,-.25f,.75f};
     const std::array<float,3> two {.5f,.25f,-.5f};
     std::array<std::array<float,3>,stripCount> l{},r{};
@@ -107,6 +113,7 @@ int main() {
         cfg.sends[i]={i,i+1,SendTap::postFader,1.f,0.f,true};
     assert(ChannelSendPlan::compile(cfg,plan,err));
     for(int i=0;i<stripCount;++i)assert(plan.topologicalOrder[i]==i);
+    assert(plan.upstreamOf(0,9) && !plan.upstreamOf(9,0));
     cfg.sends[cfg.count++]={9,0,SendTap::postFader,1.f,0.f,true};
     assert(!ChannelSendPlan::compile(cfg,plan,err)&&err.fault==SendFault::cycleDetected);
 
