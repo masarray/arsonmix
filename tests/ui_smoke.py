@@ -179,7 +179,16 @@ async def main():
             return document.fonts.check('600 12px "ArSonMix Inter"')&&
                 getComputedStyle(document.querySelector('.strip-name')).fontFamily.includes('ArSonMix Inter');
         }"""),'Embedded Inter font was not applied'
-        assert [round(float(v.rstrip('s')),3) for v in style['dur'].split(', ')]==[.15,.15,.15,.09,.12,.075],style
+        assert [round(float(v.rstrip('s')),3) for v in style['dur'].split(', ')]==[.15,.15,.15,.075],style
+        # Hover in production does not create a filter, while diagnostic
+        # baseline restores brightness to permit same-PC performance A/B.
+        utility=page.locator('[data-hpf="0"]')
+        await utility.hover()
+        assert await utility.evaluate("(e)=>getComputedStyle(e).filter")=='none'
+        await page.evaluate("document.documentElement.dataset.mixperf='baseline'")
+        assert 'brightness(1.32)' in await utility.evaluate("(e)=>getComputedStyle(e).filter")
+        await page.evaluate("delete document.documentElement.dataset.mixperf")
+        assert await utility.evaluate("(e)=>getComputedStyle(e).filter")=='none'
         # Visual-architecture regression: four intentionally different hardware
         # families, FX slots recessed rather than taking on button-cap artwork.
         # GUI target: MASTER is the 11th strip, not a floating right rail.

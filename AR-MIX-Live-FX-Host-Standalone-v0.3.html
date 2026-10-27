@@ -649,7 +649,7 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  filter:none!important;
  color:white!important;
  text-shadow:0 1px 0 rgba(0, 0, 0, .3)!important;
- transition:background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out, box-shadow 90ms ease-out, filter 120ms ease-out, transform 75ms ease-out!important;
+ transition:background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out, transform 75ms ease-out!important;
  font-family:Arial,Helvetica,sans-serif;
  cursor:pointer;text-decoration:none;user-select:none;
  display:inline-flex;justify-content:center;align-items:center;
@@ -711,14 +711,9 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 .strip .strip-name,#masterLeft .master-strip-name{position:relative;z-index:2;isolation:isolate}
 /* No odd vertical displacement of the active nav relative to its neighbors. */
 
-/* Hover intensifies reflected light, but creates NO new border/halo/motion. */
-:is(.btn-180,.toolbar .nav button.btn-180,.toolbar .spec-device,
- .strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
- #masterLeft .master-actions button,#masterLeft .master-tools button,
- .left-rail .tabs button.btn-180,.left-rail .rail-presets button.btn-180,
- .left-rail .rail-bottom button.btn-180,.native-btn):hover:not(:disabled){
- filter:brightness(1.32)!important;
-}
+/* Issue #56: passive hover has no filter or animated shadow.
+   Preserve all seven resting / seven pressed shadows and 1px tactile response.
+   Historical brightness is isolated to opt-in baseline A/B only. */
 
 /* Hardware tactility: brief pointer/keyboard activation presses the SAME cap
    1px into the control panel. The layout and hit target stay the same; only
@@ -882,7 +877,7 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  pointer-events:none;
 }
 /* Issue #56: diagnostic variants for hover paint, demo meters and layer hints.
-   All mixer geometry, fader PNG, Button 19 and native audio remain untouched. */
+   All mixer geometry, fader PNG, BTN-180 and native audio remain untouched. */
 html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="meters-off"]) #mixer .fader:not(.is-dragging):hover .cap,
 html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="meters-off"]) #mixer .fader:not(.is-dragging) .cap:hover{filter:brightness(1.19) contrast(1.06) drop-shadow(0 1px 3px #c6deef70)!important}
 html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="meters-off"]) #mixer .pan-track:not(.is-dragging):hover .pan-thumb{filter:brightness(1.12) drop-shadow(1px 1px 2px #000a)!important}
@@ -892,6 +887,12 @@ html:is([data-mixperf="baseline"],[data-mixperf="layers-off"],[data-mixperf="met
 html:is([data-mixperf="baseline"],[data-mixperf="hover-off"],[data-mixperf="meters-off"]) #app .meter .meter-fill{will-change:transform}
 html:is([data-mixperf="hover-off"],[data-mixperf="all-off"]) #mixer :is(.fader:hover .cap,.pan-track:hover .pan-thumb,.rack .insert:hover,.rack .fx-power:hover,.strip-name:hover,.master-insert:hover,.master-tools button:hover){filter:none!important;transition:none!important}
 html:is([data-mixperf="hover-off"],[data-mixperf="all-off"]) #mixer .strip-name:hover{outline:none!important}
+
+/* Issue #56: optional historical BTN-180 brightness for field A/B only. */
+html[data-mixperf="baseline"] #app button.btn-180:hover:not(:disabled),
+html[data-mixperf="baseline"] #app .native-btn:hover:not(:disabled){
+ filter:brightness(1.32)!important;
+}
 
 /* LED quantisation follows Soundcraft-style *fixed-color* segments. Low green
    is always at the bottom; amber/red exist only at upper meter thresholds.
