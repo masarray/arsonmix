@@ -295,8 +295,9 @@
     const minDist=Number.isFinite(+orbit.distanceMin)?+orbit.distanceMin:0;
     const maxDist=Number.isFinite(+orbit.distanceMax)?+orbit.distanceMax:100;
     const validSetpoints=Number.isFinite(orbit.nearSetpoint)&&Number.isFinite(orbit.farSetpoint)&&
-      orbit.nearSetpoint>=minDist&&orbit.farSetpoint<=maxDist&&
-      orbit.nearSetpoint<=orbit.farSetpoint;
+      orbit.farSetpoint>=minDist&&orbit.farSetpoint<=maxDist&&
+      (!needsD||orbit.nearSetpoint<=orbit.farSetpoint)&&
+      (!needsD||orbit.nearSetpoint>=minDist);
     const distanceSel=orbit.distanceSelection>=0?orbit.distanceSelection:
       (running&&orbit.shape===shape?orbit.distanceIndex:orbit.preferredDistance);
     const elevationSel=orbit.elevationSelection>=0?orbit.elevationSelection:
@@ -349,11 +350,11 @@
       <label class="orbit-field-label" for="nativeOrbitDistance">Distance parameter</label>
       ${list("nativeOrbitDistance",distanceSel)}
       <div class="orbit-grid">
-        <div><label class="orbit-field-label" for="nativeOrbitNear">Near (${unit})</label>
+        ${needsD?`<div><label class="orbit-field-label" for="nativeOrbitNear">Near (${unit})</label>
           <input class="native-search" id="nativeOrbitNear" type="number"
             min="${minDist}" max="${maxDist}" step="${meter?0.1:1}"
-            value="${orbit.nearSetpoint}"></div>
-        <div><label class="orbit-field-label" for="nativeOrbitFar">Far (${unit})</label>
+            value="${orbit.nearSetpoint}"></div>`:""}
+        <div><label class="orbit-field-label" for="nativeOrbitFar">${needsD?"Far":"Distance"} (${unit})</label>
           <input class="native-search" id="nativeOrbitFar" type="number"
             min="${minDist}" max="${maxDist}" step="${meter?0.1:1}"
             value="${orbit.farSetpoint}"></div>
@@ -693,7 +694,8 @@
     const elevationIndex=Number(document.getElementById("nativeOrbitElevation")?.value??-1);
     const requiredDistance=needsDistance(shape);
     const requiredHeight=needsHeight(shape);
-    const near=orbit.nearSetpoint,far=orbit.farSetpoint;
+    const far=orbit.farSetpoint;
+    const near=requiredDistance?orbit.nearSetpoint:Math.min(orbit.nearSetpoint,far);
     if(orbit.revision===null||!Number.isInteger(param)||
        !Number.isFinite(seconds)||seconds<2||seconds>180||
        !Number.isFinite(near)||!Number.isFinite(far)||
@@ -845,6 +847,21 @@
     if(t.id==="nativeOrbitElevation")orbit.elevationSelection=Number(t.value);
     if(t.id==="nativeOrbitSeconds")orbit.periodSeconds=Number(t.value);
     if(t.id==="nativeOrbitReverse")orbit.reverse=t.value==="true";
+    // Don't destroy focused number fields on blur: a concurrent START/UPDATE
+    // click must reach its original button, not a replacement DOM node.
+    if(["nativeOrbitNear","nativeOrbitFar","nativeOrbitSeconds"].includes(t.id)){
+      const button=document.querySelector("#nativeOrbit [data-orbit-start]");
+      if(button){
+        const near=orbit.nearSetpoint,far=orbit.farSetpoint;
+        const needD=needsDistance(orbit.selectedShape);
+        button.disabled=orbit.revision===null||
+          !Number.isFinite(far)||far<orbit.distanceMin||far>orbit.distanceMax||
+          (needD&&(!Number.isFinite(near)||near<orbit.distanceMin||near>far))||
+          !Number.isFinite(orbit.periodSeconds)||orbit.periodSeconds<2||
+          orbit.periodSeconds>180;
+      }
+      return;
+    }
     renderOrbit();
   },true);
   backend.addEventListener("arMixOrbitState",data=>{
