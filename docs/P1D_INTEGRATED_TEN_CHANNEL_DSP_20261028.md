@@ -1,6 +1,6 @@
 # P1D — INTEGRATED TEN-CHANNEL DSP MILESTONE (2026-10-28)
 
-**Source-of-truth:** this integration branch is forked directly from current main at `c0d7c794a27fcdc7adbe77c6166a2e97b848b82c`. The narrow CMake and Windows workflow edits preserve P0 sample-accurate FX bypass and all device/Orbit protections on main. It consolidates P1A #108, P1B #110, P1C #111 and adds a genuine **single-pass 10-strip audio block executor**. It does **not** silently merge old UI branches.
+**Source-of-truth:** this integration branch originated at `c0d7c794a27fcdc7adbe77c6166a2e97b848b82c` and was subsequently reconciled by a guarded merge with `main@66989fa46f004aa852207f1159bf3e1b8e9506c1` (#101 lean CI). The narrow CMake and Windows workflow edits preserve P0 sample-accurate FX bypass and all device/Orbit protections on main. It consolidates P1A #108, P1B #110, P1C #111 and adds a genuine **single-pass 10-strip audio block executor**. It does **not** silently merge old UI branches.
 
 ## Shipped in this integration milestone (native C++, device independent)
 - `MixerRoutingPlan.h`: 10-channel gain/pan/mute/solo/master DSP primitives.

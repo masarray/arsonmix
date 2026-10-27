@@ -9,15 +9,31 @@ on:
       - 'AR-MIX-Live-FX-Host-Standalone-v0.3.html'
       - 'scripts/build_pages.py'
       - 'tests/**'
+      - 'scripts/build_ui_css.py'
       - '.github/workflows/ui-smoke.yml'
       - '.github/workflows/pages-publish.yml'
-      - 'README.md'
-      - 'AGENTS.md'
-      - 'docs/GUI_BASELINE_LOCK_2026-10-25.md'
-      - 'docs/ARD_SMART_AUDIO_ENGINE_V1_2026-10-25.md'
-      - 'docs/SMART_AUDIO_ENGINE_IMPLEMENTATION_BLUEPRINT.md'
   pull_request:
+    paths:
+      - 'web/**'
+      - 'site/**'
+      - 'AR-MIX-Live-FX-Host-Standalone-v0.3.html'
+      - 'scripts/build_pages.py'
+      - 'scripts/build_ui_css.py'
+      - 'tests/*.py'
+      - 'tests/gui_workflow_contract_test.mjs'
+      - 'tests/*gui*contract*.mjs'
+      - 'tests/native_ui_contract_test.mjs'
+      - 'tests/native_orbit_ui_smoke.py'
+      - 'tests/ci_workflow_efficiency_test.mjs'
+      - '.github/workflows/ui-smoke.yml'
+      - '.github/workflows/pages-publish.yml'
   workflow_dispatch:
+
+# New PR commits supersede old UI checks. The production Pages dispatcher
+# only reacts to a completed successful main push, never cancelled checks.
+concurrency:
+  group: ui-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -39,7 +55,7 @@ jobs:
       - name: Validate JavaScript syntax
         run: |
           node --check web/app.js
-          node --test tests/gui_workflow_contract_test.mjs
+          node --test tests/gui_workflow_contract_test.mjs tests/ci_workflow_efficiency_test.mjs
       - name: Validate approved GUI checkpoint and single publisher
         run: python tests/gui_baseline_lock_test.py
       - name: Validate smart audio architecture handoff contract
@@ -59,9 +75,13 @@ jobs:
         run: python tests/ui_smoke.py
       - name: Verify MIX and FX RACK Auto Orbit workflow
         run: python tests/native_orbit_ui_smoke.py
+      # Firefox perf is deliberate: main release verification or manual opt-in.
+      # Do not download/run a second browser for every iterative GUI PR.
       - name: Install Firefox for compositor functional regression
+        if: ${{ github.event_name != 'pull_request' }}
         run: python -m playwright install firefox
       - name: Run Firefox opt-in performance diagnostics smoke
+        if: ${{ github.event_name != 'pull_request' }}
         run: python tests/ui_firefox_perf_smoke.py
       - name: Attach visual regression screenshots
         if: always()
@@ -83,3 +103,4 @@ jobs:
             mixer-inter-recessed-toggle-review.png
             mixer-left-rail-unified-button180-pan-131512.png
           if-no-files-found: ignore
+          retention-days: 3
