@@ -84,6 +84,7 @@ $manifest = [ordered]@{
     guiExeBytes = $appBytes
     guiExeMinimumBytes = $minimumGuiExeBytes
     runtimeDependency = "MICROSOFT_EDGE_WEBVIEW2_RUNTIME_REQUIRED_ON_HARDWARE"
+    webview2LoaderMode = "STATIC_LINKED_IN_EXE_NO_LOADER_DLL_REQUIRED"
     appTarget = "ARMixConsole"
     expectedTargetPath = $appRelativePath
     executable = $exeName

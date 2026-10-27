@@ -23,6 +23,7 @@ target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h src/VstOr
 target_compile_definitions(ARMixConsole PRIVATE
     JUCE_WEB_BROWSER=1
     JUCE_USE_WIN_WEBVIEW2=1
+    JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1
     JUCE_USE_CURL=0
     JUCE_ASIO=1
     JUCE_PLUGINHOST_VST3=1

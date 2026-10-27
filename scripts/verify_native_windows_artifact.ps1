@@ -24,6 +24,9 @@ if (@(Compare-Object -ReferenceObject $expected -DifferenceObject $actual).Count
 }
 
 $manifest = Get-Content -LiteralPath (Join-Path $OutputDir "BUILD_PROVENANCE.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+if ($manifest.webview2LoaderMode -ne "STATIC_LINKED_IN_EXE_NO_LOADER_DLL_REQUIRED") {
+    throw "Windows shipping blocked: static WebView2 loader contract missing"
+}
 if ($manifest.storageMode -ne "PORTABLE_MARKER__USER_STUDIO_EMPTY_AT_RELEASE") {
     throw "Public ZIP missing portable workspace mode provenance"
 }

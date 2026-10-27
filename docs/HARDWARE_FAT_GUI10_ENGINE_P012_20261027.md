@@ -26,3 +26,9 @@ Include the complete **COPY FULL REPORT** output plus: driver name/version, actu
 
 ## Acceptance
 This is P0 **hardware qualification**, not a demo. Close GitHub issue #15 ONLY after real 0-VST3 tests across agreed device/driver/rate matrix show clean output and any remaining defects have exact reproducible provenance. Do not automatically choose the smallest buffer just because CTest and virtual ASRC soak pass.
+
+## WebView2 startup on a different Windows PC
+
+If the application is blank or displays **Navigation to the webpage was canceled** instead of the mixer, this is a GUI browser/bootstrap fault, **not** dearVR or VST3 audio processing. The old WebView2Loader was dynamically loaded but was not included in the self-contained artifact; this build links the loader statically. The Microsoft **WebView2 Evergreen Runtime** itself still must be installed on the target Windows PC. Install/repair it from Microsoft: https://developer.microsoft.com/en-us/microsoft-edge/webview2/ .
+
+The native application now checks whether its embedded page completes the GUI-ready handshake (sent by `refreshState`). If an error occurs or the page does not become ready within ten seconds, ArSonMix mutes live monitoring and shows a native diagnostic message instead of silently accepting an Internet Explorer error page. The diagnostic log is stored under the current Studio workspace's `diagnostics` folder. This change does **not** certify an actual audio device or eliminate P0 crackling.

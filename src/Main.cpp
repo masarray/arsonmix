@@ -63,7 +63,20 @@ class Browser final : public juce::WebBrowserComponent
 public:
     explicit Browser (Options options) : WebBrowserComponent (std::move (options)) {}
     bool loaded = false;
-    void pageFinishedLoading (const juce::String&) override { loaded = true; }
+    juce::String loadError;
+    void pageFinishedLoading (const juce::String& url) override
+    {
+        // JUCE may fall back to IE if WebView2 failed to initialise.
+        // Loading a browser error document is not a successful mixer startup.
+        loaded = loadError.isEmpty()
+            && url.startsWith (juce::WebBrowserComponent::getResourceProviderRoot());
+    }
+    bool pageLoadHadNetworkError (const juce::String& errorInfo) override
+    {
+        loaded = false;
+        loadError = errorInfo;
+        return false; // native recovery replaces the browser's useless error page
+    }
 };
 
 class PluginEditorWindow final : public juce::DocumentWindow
@@ -134,6 +147,14 @@ public:
               .withResourceProvider (assetFor))
     {
         settingsDirectory().createDirectory();
+        if (!armix::storage::PortableWorkspace::browserDataRoot().createDirectory().wasOk())
+            diagnostics_.record ("WEBVIEW_PROFILE_PATH_ERROR",
+                "WebView2 user-data folder is not writable: " +
+                armix::storage::PortableWorkspace::browserDataRoot().getFullPathName());
+        browserRecovery_.setColour (juce::Label::backgroundColourId, juce::Colour (0xff101921));
+        browserRecovery_.setColour (juce::Label::textColourId, juce::Colour (0xffcce3ed));
+        browserRecovery_.setJustificationType (juce::Justification::centred);
+        browserRecovery_.setBorderSize (juce::BorderSize<int> (25));
         catalog_.onChanged = [this] { emitCatalog(); emitScanProgress(); };
         setUsingNativeTitleBar (true);
         setResizable (true, true);
@@ -174,6 +195,8 @@ private:
     DiagnosticsRecorder diagnostics_;
     armix::storage::NativePresetArchive presets_;
     Browser browser_;
+    juce::Label browserRecovery_;
+    bool guiHandshakeReceived_ = false, guiRecoveryShown_ = false;
     std::unique_ptr<juce::FileChooser> chooser_;
     std::unique_ptr<PluginEditorWindow> editorWindow_;
     std::unique_ptr<AudioSetupWindow> audioSetupWindow_;
@@ -1053,6 +1076,7 @@ private:
         }
         else if (action == "refreshState")
         {
+            guiHandshakeReceived_ = true; // sent only after native JS bridge runs
             emitCatalog();
             emitChain();
         }
@@ -1065,9 +1089,38 @@ private:
         diagnostics_.record ("DEVICE_CHANGE", "Device manager event");
     }
 
+    void showBrowserRecovery()
+    {
+        if (guiRecoveryShown_ || guiHandshakeReceived_) return;
+        guiRecoveryShown_ = true;
+        engine_.setMonitorEnabled (false); // fail silent when mixer controls cannot load
+        const auto reason = browser_.loadError.isNotEmpty()
+            ? browser_.loadError
+            : juce::String ("No native GUI-ready handshake within 10 seconds");
+        diagnostics_.record ("WEBVIEW2_STARTUP_FAILED",
+            reason + " | expected embedded https://juce.backend/ | UI_NOT_READY");
+        browserRecovery_.setText (
+            "AR MIX Studio — GUI could not start\n\n"
+            "This PC may be missing the Microsoft Edge WebView2 Runtime, "
+            "or the WebView2 profile may be inaccessible.\n\n"
+            "Install or repair the WebView2 Evergreen Runtime from Microsoft, "
+            "then restart ArSonMix.\n"
+            "https://developer.microsoft.com/en-us/microsoft-edge/webview2/\n\n"
+            "Details: " + reason + "\n\n"
+            "Diagnostic folder: " +
+            settingsDirectory().getChildFile ("diagnostics").getFullPathName() +
+            "\n\nLive monitor has been muted for safety.",
+            juce::dontSendNotification);
+        browser_.setVisible (false);
+        setContentNonOwned (&browserRecovery_, false);
+    }
+
     void timerCallback() override
     {
         ++timerTicks_;
+        if (!guiHandshakeReceived_ && !guiRecoveryShown_ &&
+            (browser_.loadError.isNotEmpty() || timerTicks_ >= 120))
+            showBrowserRecovery();
         // ONE actionable notice per unexpected DIRECT reroute. The audio
         // callback has already zero-filled output atomically; status, log and
         // WebView notifications belong only on this JUCE control timer.
