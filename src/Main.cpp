@@ -461,9 +461,26 @@ private:
         event->setProperty ("activeParameter", orbit_.parameterIndex());
         event->setProperty ("periodSeconds", orbit_.secondsPerRevolution());
         event->setProperty ("reverse", orbit_.reverse());
+        event->setProperty ("shape", orbit_.shape());
+        event->setProperty ("distanceIndex", orbit_.distanceParameterIndex());
+        event->setProperty ("elevationIndex", orbit_.elevationParameterIndex());
+        event->setProperty ("phase", orbit_.phase());
+        // Sample the *same C++ pure trajectory* as the engine so the WebView
+        // draws matching paths without vendor calls or WebView events at 60Hz.
+        juce::Array<juce::var> path;
+        for(int i=0;i<=64;++i)
+        {
+            const auto p=armix::core::orbitMotionPoint(i/64.0,orbit_.shape());
+            auto pt=std::make_unique<juce::DynamicObject>();
+            pt->setProperty("x",p.x);
+            pt->setProperty("y",p.y);
+            pt->setProperty("z",p.z);
+            path.add(juce::var(pt.release()));
+        }
+        event->setProperty("motionPath",juce::var(path));
 
         juce::Array<juce::var> listed;
-        int preferred = -1;
+        int preferred = -1, preferredDistance = -1, preferredElevation = -1;
         auto* plugin = engine_.isGraphSwitchPending() ? nullptr : engine_.pluginAt (slot);
         if (plugin != nullptr)
         {
@@ -486,10 +503,16 @@ private:
                 else if (preferred < 0 && name.containsIgnoreCase ("azimuth") &&
                          !name.containsIgnoreCase ("scale"))
                     preferred = i;
+                if (name.equalsIgnoreCase("Distance"))
+                    preferredDistance = i;
+                if (name.equalsIgnoreCase("Elevation"))
+                    preferredElevation = i;
             }
         }
         event->setProperty ("preferredParameter",
             orbit_.active() && orbit_.slot() == slot ? orbit_.parameterIndex() : preferred);
+        event->setProperty ("preferredDistance",preferredDistance);
+        event->setProperty ("preferredElevation",preferredElevation);
         event->setProperty ("parameters", juce::var (listed));
         if (browser_.loaded)
             browser_.emitEventIfBrowserIsVisible ("arMixOrbitState", juce::var (event.release()));
@@ -960,6 +983,9 @@ private:
                 diagnostics_.record ("FX_ADD_REQUEST", name + " | " + plugin->path);
                 // Appending a new VST3 preserves existing AudioPluginInstance addresses.
                 // Orbit references a still-live processor and must continue through ADD.
+                // Pause notifications while JUCE reconfigures the FX callback.
+                const bool keepOrbit=orbit_.active();
+                if(keepOrbit)orbit_.pauseForGraphEdit();
                 editorWindow_.reset();
                 try
                 {
@@ -973,6 +999,7 @@ private:
                 {
                     error = "VST3 instantiation failed with an unknown exception";
                 }
+                if(keepOrbit)orbit_.resumeAfterGraphEdit();
             }
             const auto elapsed = juce::Time::getMillisecondCounter() - started;
             emitFxAddResult (requestId, name, error, elapsed);
@@ -995,17 +1022,44 @@ private:
         {
             if (engine_.hasTemporaryDiagnosticDevice())
                 return emitNotice ("Return to NORMAL before editing VST3.", true);
-            stopOrbit();
+            const auto* previous=orbit_.processor();
+            if(previous && engine_.pluginAt(slot)==previous)stopOrbit();
+            else orbit_.pauseForGraphEdit();
             editorWindow_.reset();
-            if (engine_.removeAt (slot)) { ++fxGraphRevision_; diagnostics_.record ("FX_REMOVE", juce::String (slot)); emitChain(); }
+            const bool changed=engine_.removeAt(slot);
+            if(previous && orbit_.active()){
+                int found=-1;
+                for(int i=0;i<engine_.chainSize();++i)
+                    if(engine_.pluginAt(i)==previous){found=i;break;}
+                if(found<0)stopOrbit();
+                else {orbit_.rebindSlot(found);orbit_.resumeAfterGraphEdit();}
+            }
+            if(changed){
+                ++fxGraphRevision_;
+                diagnostics_.record("FX_REMOVE",juce::String(slot));
+                emitChain();
+                if(orbit_.active())emitOrbitState(orbit_.slot());
+            }
         }
         else if (action == "fxMove")
         {
             if (engine_.hasTemporaryDiagnosticDevice())
                 return emitNotice ("Return to NORMAL before rearranging VST3 effects.", true);
-            stopOrbit();
+            const auto* orbitPlugin=orbit_.processor();
+            orbit_.pauseForGraphEdit();
             editorWindow_.reset();
-            if (engine_.moveSlot (slot, slot + static_cast<int> (value))) { ++fxGraphRevision_; diagnostics_.record ("FX_MOVE", juce::String (slot)); emitChain(); }
+            const bool changed=engine_.moveSlot(slot,slot+static_cast<int>(value));
+            if(orbitPlugin && orbit_.active()){
+                for(int i=0;i<engine_.chainSize();++i)
+                    if(engine_.pluginAt(i)==orbitPlugin){orbit_.rebindSlot(i);break;}
+                orbit_.resumeAfterGraphEdit();
+            }
+            if(changed){
+                ++fxGraphRevision_;
+                diagnostics_.record("FX_MOVE",juce::String(slot));
+                emitChain();
+                if(orbit_.active())emitOrbitState(orbit_.slot());
+            }
         }
         else if (action == "fxBypass")
         {
@@ -1037,14 +1091,28 @@ private:
                 !reverseValue.isBool())
                 return emitNotice ("Invalid Orbit settings.", true);
             const int parameterIndex = static_cast<int> (paramValue);
+            const auto shapeArg=args.getProperty("shape",0);
+            const auto distanceArg=args.getProperty("distanceIndex",-1);
+            const auto elevationArg=args.getProperty("elevationIndex",-1);
+            const auto calibrated=args.getProperty("calibrated",false);
+            if(!shapeArg.isInt()||!distanceArg.isInt()||!elevationArg.isInt()||
+               !calibrated.isBool())
+                return emitNotice("Invalid motion configuration types.",true);
+            const int shape=static_cast<int>(shapeArg);
+            if(!armix::core::validOrbitShape(shape))
+                return emitNotice("Unknown Orbit trajectory.",true);
+            if((armix::core::needsOrbitDistance(shape)||
+                armix::core::needsOrbitElevation(shape)) && !bool(calibrated))
+                return emitNotice("Confirm vendor distance/elevation parameter mapping.",true);
             if (orbit_.active() && orbit_.slot() != slot) stopOrbit();
-            const auto error = orbit_.start (engine_.pluginAt (slot), slot, parameterIndex,
-                                             static_cast<double> (secondsValue),
-                                             bool (reverseValue));
+            const auto error = orbit_.start (engine_.pluginAt(slot),slot,parameterIndex,
+                static_cast<double>(secondsValue),bool(reverseValue),shape,
+                static_cast<int>(distanceArg),static_cast<int>(elevationArg));
             if (error.isNotEmpty()) return emitNotice ("Orbit: " + error, true);
             diagnostics_.record ("FX_ORBIT_START", "slot=" + juce::String (slot) +
                 " parameter=" + juce::String (parameterIndex) +
-                " revolutionSec=" + juce::String (orbit_.secondsPerRevolution()));
+                " revolutionSec=" + juce::String (orbit_.secondsPerRevolution()) +
+                " shape=" + juce::String (orbit_.shape()));
             emitOrbitState (slot);
             emitNotice ("VST3 Auto Orbit running. STOP to restore manual parameter control.");
         }
