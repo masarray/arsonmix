@@ -69,6 +69,6 @@ test('premium fold and per-slot popover avoid rectangle border and global backdr
  assert.match(b,/background:transparent!important;backdrop-filter:none!important/);
  assert.match(b,/pickerAnchor\?\.classList\.add\("fx-picker-target"\)/);
  assert.match(b,/state\.chain\.length>=8\|\|state\.adding\|\|pickerChannel!==0/);
- assert.match(b,/data-context-fx=\\"delete\\"/);
+ assert.ok(b.includes('data-context-fx="delete"'));
  assert.match(b,/native-node\.has-orbit/);
 });
