@@ -767,11 +767,9 @@
   e.preventDefault();e.stopImmediatePropagation();
 
   if(el.hasAttribute("data-native-unrouted")){
-    const id=Number(el.dataset.nativeUnrouted);
-    if(id===-1){if(typeof focusMaster==="function")focusMaster();}
-    else if(Number.isInteger(id)&&id>=0&&id<10&&typeof focusChannel==="function")focusChannel(id);
-    if(currentTab()!=="FX RACK")document.querySelector('.nav button[data-view="FX RACK"]')?.click();
-    renderRack();return;
+    const id=Number(el.dataset.nativeUnrouted),rack=el.closest(".rack,.master-fx-rack");
+    const slot=rack?[...rack.children].indexOf(el.closest(".insert-slot,.master-fx-slot")):0;
+    openPicker(el,id,Math.max(0,slot));return;
   }
   if(el.dataset.closeModal){if(el.dataset.closeModal==="nativeOrbit")hideOrbit();else hideDialog(el.dataset.closeModal);return;}
   if(el.hasAttribute("data-orbit-start")){
@@ -836,7 +834,9 @@
     renderManager();showDialog("nativePluginManager");return;
   }
   if(el.hasAttribute("data-plugin-picker")){
-    openPicker();return;
+    const rack=el.closest(".rack");
+    const slot=rack?[...rack.children].indexOf(el.closest(".insert-slot")):state.chain.length;
+    openPicker(el,0,slot<0?state.chain.length:slot);return;
   }
   if(el.hasAttribute("data-insert")){
     const article=el.closest(".strip");
@@ -847,7 +847,8 @@
         setTimeout(()=>toast.classList.remove("show"),2200);}
       return;
     }
-    openPicker();return;
+    const slot=Number(el.dataset.insert?.split(":")[1]||state.chain.length);
+    openPicker(el,idx,slot);return;
   }
   if(el.hasAttribute("data-go-native-rack")){
     document.querySelector('.nav button[data-view="FX RACK"]')?.click();return;
@@ -860,6 +861,10 @@
   }
   if(el.dataset.nativeAdd){
     if(state.adding)return;
+    if(pickerChannel!==0){
+      toStatus("Native VST3 routing is not connected on "+(pickerChannel===-1?"MASTER":"CH "+(pickerChannel+1))+". No effect was loaded.");
+      return;
+    }
     const id=el.dataset.nativeAdd;
     const chosen=state.catalog.find(p=>p.id===id);
     state.adding=true;
