@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const text = path => readFileSync(new URL('../'+path,import.meta.url),'utf8');
+const b=text('web/bridge.js'), c=text('web/styles-src/20-button-180.css'),f=text('web/styles-src/42-mixer-premium.css');
+assert.match(b,/data-native-unrouted/);
+assert.match(b,/selectedMaster \|\| selected!==0/);
+assert.match(b,/OPEN CHANNEL 1 FX/);
+assert.match(b,/Array.from\(\{length:6\}/);
+assert.match(c,/--b180-color:#b9cf77/);
+assert.match(f,/P0 static recessed bed/);
+assert.match(f,/top:38px;bottom:39px/);
+const css=['00-font-and-assets.css','10-console-legacy.css','20-button-180.css','21-navigation-fx-power.css','30-selection-effects.css','40-rail-pan.css','41-mixer-performance.css','42-mixer-premium.css'].map(n=>text('web/styles-src/'+n)).join('');
+assert.equal(css,text('web/styles.css'),'source and runtime CSS parity');
+const page=text('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
+assert.equal(page.slice(page.indexOf('<style>')+7,page.indexOf('</style>')),css,'standalone CSS parity');
+console.log('P0 native FX affordance and tactile visual contract PASS');
