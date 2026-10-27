@@ -43,5 +43,15 @@ int main() {
           "ellipse uses far setpoint at front/back");
     check(std::abs(orbitMotionPoint(.25,1,.25,.9).distance-.25f)<1.e-5,
           "changing distance setpoints alters C++ output");
+    // Crossed extrema must publish exact setpoints even if no 60Hz tick
+    // happens exactly at phase 0.25 / 0.50 / 0.75.
+    check(crossesOrbitDistanceExtreme(.242,.258,1,false),"front/back near crossover");
+    check(crossesOrbitDistanceExtreme(.491,.510,1,true),"front/back far crossover");
+    check(crossesOrbitDistanceExtreme(.242,.258,2,true),"left/right far crossover");
+    check(crossesOrbitDistanceExtreme(.491,.510,2,false),"left/right near crossover");
+    check(crossesOrbitDistanceExtreme(.258,.242,1,false),"reverse near crossover");
+    check(!crossesOrbitDistanceExtreme(.258,.280,1,false),"no false peak");
+    check(!crossesOrbitDistanceExtreme(.1,.3,1,false),"stalled timer ignores stale extremum");
+    check(!crossesOrbitDistanceExtreme(.242,.258,0,false),"circle has constant distance");
     return failures?1:0;
 }

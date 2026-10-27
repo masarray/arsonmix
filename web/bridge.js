@@ -311,16 +311,34 @@
       (running&&orbit.shape===shape?orbit.distanceIndex:orbit.preferredDistance);
     const elevationSel=orbit.elevationSelection>=0?orbit.elevationSelection:
       (running&&orbit.shape===shape?orbit.elevationIndex:orbit.preferredElevation);
-    const valid=options.some(p=>p.index===selected);
+    const valid=candidates("azimuth").some(p=>p.index===selected);
     const distValid=(!needsD&&distanceSel<0)||
-      options.some(p=>p.index===distanceSel&&p.index!==selected);
-    const elevValid=!needsE||options.some(p=>p.index===elevationSel&&p.index!==selected&&p.index!==distanceSel);
+      candidates("distance").some(p=>p.index===distanceSel&&p.index!==selected);
+    const elevValid=!needsE||candidates("elevation").some(p=>p.index===elevationSel&&p.index!==selected&&p.index!==distanceSel);
     const allValid=valid&&distValid&&elevValid&&validSetpoints&&orbit.revision!==null;
-    const list=(id,sel)=>`<select class="native-search" id="${id}">
-      <option value="-1" ${sel<0?"selected":""}>Choose parameter…</option>
-      ${options.map(p=>`<option value="${p.index}" ${p.index===sel?"selected":""}>
-        ${escapeHtml(p.name)} · ${escapeHtml(p.minText)} → ${escapeHtml(p.maxText)}
-      </option>`).join("")}</select>`;
+    // A parameter control is NOT the plugin's entire parameter catalog.
+    // Contextual vendor names only; preserve original VST3 parameter indices.
+    const candidates=role=>options.filter(p=>{
+      const name=String(p.name||"").trim();
+      if(/scale|range|width|occlusion/i.test(name))return false;
+      if(role==="azimuth")return /azimuth/i.test(name);
+      if(role==="distance")return /distance/i.test(name);
+      if(role==="elevation")return /elevation/i.test(name);
+      return false;
+    });
+    const list=(id,sel,role)=>{
+      const matches=candidates(role);
+      const roleName={azimuth:"Azimuth",distance:"Distance",elevation:"Elevation"}[role];
+      return `<select class="native-search" id="${id}"
+        aria-label="${roleName}" title="Automatable ${roleName} parameter">
+        <option value="-1" ${!matches.some(p=>p.index===sel)?"selected":""} disabled>
+          ${matches.length?"Select "+roleName+"…":"No automatable "+roleName}
+        </option>
+        ${matches.map(p=>`<option value="${p.index}" ${p.index===sel?"selected":""}>
+          ${escapeHtml(p.name)}
+        </option>`).join("")}
+      </select>`;
+    };
     const modeName=motionModes[shape]?.[0]||motionModes[0][0];
     const modeHelp=motionModes[shape]?.[1]||motionModes[0][1];
     const ready=running&&orbit.shape===shape;
@@ -355,9 +373,9 @@
         ${motionModes.map((m,i)=>`<option value="${i}" ${shape===i?"selected":""}>${escapeHtml(m[0])}</option>`).join("")}
       </select>
       <label class="orbit-field-label" for="nativeOrbitParameter">Azimuth · 360°</label>
-      ${options.length?list("nativeOrbitParameter",selected):'<div class="native-empty">Reading plugin parameters…</div>'}
+      ${options.length?list("nativeOrbitParameter",selected,"azimuth"):'<div class="native-empty">Reading plugin parameters…</div>'}
       <label class="orbit-field-label" for="nativeOrbitDistance">Distance parameter</label>
-      ${list("nativeOrbitDistance",distanceSel)}
+      ${list("nativeOrbitDistance",distanceSel,"distance")}
       <div class="orbit-grid">
         ${needsD?`<div><label class="orbit-field-label" for="nativeOrbitNear">Near (${unit})</label>
           <input class="native-search" id="nativeOrbitNear" type="number"
@@ -369,10 +387,10 @@
             value="${orbit.farSetpoint}"></div>
       </div>
       <p class="orbit-help-note">${meter?
-         "Metres from the VST3 Distance parameter.":
-         "VST3 parameter (0–100%). No physical metres inferred."}</p>
+         "Distance is applied in metres.":
+         "Distance uses plugin percent (not metres)."}</p>
       ${needsE?`<label class="orbit-field-label" for="nativeOrbitElevation">Elevation · Down ↔ Up</label>
-        ${list("nativeOrbitElevation",elevationSel)}`:""}
+        ${list("nativeOrbitElevation",elevationSel,"elevation")}`:""}
       <div class="orbit-grid">
         <div><label class="orbit-field-label" for="nativeOrbitSeconds">Seconds / turn</label>
           <input class="native-search" id="nativeOrbitSeconds" type="number" min="2" max="180" step="1"

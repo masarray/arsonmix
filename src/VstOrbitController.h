@@ -61,6 +61,7 @@ public:
         dispatch_={};
         startMs_=juce::Time::getMillisecondCounterHiRes();
         previousTickMs_=startMs_;
+        previousAbsolutePhase_=startPhase;
         azimuth_->beginChangeGesture();
         if(distance_)distance_->beginChangeGesture();
         if(elevation_)elevation_->beginChangeGesture();
@@ -110,9 +111,20 @@ private:
         previousTickMs_=now;
         ++dispatch_.ticks;
         const double elapsed=(now-startMs_)/1000.0;
+        const double absolutePhase=static_cast<double>(phaseStart_) +
+            (reverse_?-1.0:1.0)*elapsed/period_;
         const auto pos=armix::core::orbitMotionPoint(
-            armix::core::orbitRamp(phaseStart_,elapsed,period_,reverse_),shape_,
-            nearDistance_,farDistance_);
+            armix::core::orbitWrap(absolutePhase),shape_,nearDistance_,farDistance_);
+        float appliedDistance=pos.distance;
+        if(distance_ && elapsed>=0.3) {
+            if(armix::core::crossesOrbitDistanceExtreme(previousAbsolutePhase_,
+                absolutePhase,shape_,true))
+                appliedDistance=static_cast<float>(farDistance_);
+            else if(armix::core::crossesOrbitDistanceExtreme(previousAbsolutePhase_,
+                absolutePhase,shape_,false))
+                appliedDistance=static_cast<float>(nearDistance_);
+        }
+        previousAbsolutePhase_=absolutePhase;
         const auto publish=[&](juce::AudioProcessorParameter* p,float value,
                                float& previous,bool cyclic,int steps){
             if(!p)return;
@@ -127,7 +139,7 @@ private:
         // 300 ms easing prevents jumps when enabling additional axes.
         const float mix=static_cast<float>(std::clamp(elapsed/0.3,0.0,1.0));
         if(distance_)publish(distance_,initialDistance_+
-            mix*(pos.distance-initialDistance_),lastDist_,false,0);
+            mix*(appliedDistance-initialDistance_),lastDist_,false,0);
         if(elevation_)publish(elevation_,initialElevation_+
             mix*(pos.elevation-initialElevation_),lastElev_,false,0);
     }
@@ -139,7 +151,7 @@ private:
     int slot_=-1,azimuthIndex_=-1,distanceIndex_=-1,elevationIndex_=-1;
     int shape_=0,azimuthSteps_=0;
     double period_=20.0,startMs_=0.0,previousTickMs_=0.0;
-    double nearDistance_=0.2,farDistance_=0.7;
+    double nearDistance_=0.2,farDistance_=0.7,previousAbsolutePhase_=0.0;
     float phaseStart_=0.f,lastAz_=0.5f,lastDist_=0.5f,lastElev_=0.5f;
     float initialDistance_=0.5f,initialElevation_=0.5f;
     bool reverse_=false;
