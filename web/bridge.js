@@ -151,6 +151,33 @@
     #nativeFxContext .native-context-divider{height:1px;background:#334a58;margin:3px 4px}
   `;
   css.textContent += "\n    #nativeOrbit .native-dialog{width:374px;max-width:calc(100vw - 16px)}\n    #nativeOrbit .orbit-motion-view{background:#0b1e2a;border:1px solid #2f5161;\n      border-radius:6px;margin:0 0 10px;padding:7px;display:flex;align-items:center;gap:10px}\n    #nativeOrbit .orbit-map{width:132px;height:132px;flex:none}\n    #nativeOrbit .orbit-mode-help{font-size:11px;color:#9abfce;line-height:1.55}\n    #nativeOrbit .orbit-mode-help strong{display:block;color:#d8f0f7;font-weight:500;margin-bottom:4px}\n    #nativeOrbit .orbit-field-label{font-size:11px}\n    #nativeOrbit .orbit-extra-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}\n    #nativeOrbit .orbit-help-note{font-size:10px;color:#87a8b9;line-height:1.4;margin:0 0 8px}\n    #nativeOrbit .material-icon{width:18px;height:18px;fill:currentColor;vertical-align:middle;flex:none}\n    #nativeOrbit .orbit-actions .native-btn{display:inline-flex;justify-content:center;align-items:center;gap:5px}\n    #nativeOrbit .orbit-map path{vector-effect:non-scaling-stroke}\n";
+  // Slot-attached FX catalogue — independent of large screen-dimming dialogs.
+  css.textContent += `
+    #nativeFxSelector{position:fixed;inset:0;display:block;padding:0;
+      background:transparent!important;backdrop-filter:none!important;
+      pointer-events:none;z-index:970}
+    #nativeFxSelector[hidden]{display:none}
+    #nativeFxSelector .native-dialog{position:fixed;box-sizing:border-box;
+      width:min(386px,calc(100vw - 16px));max-height:min(530px,calc(100vh - 20px));
+      pointer-events:auto;overflow:hidden;margin:0;border:1px solid #4b6b78;
+      background:#1b2c36;border-radius:7px;
+      box-shadow:0 7px 18px #0009,inset 0 1px #ffffff14}
+    #nativeFxSelector .native-dialog::before{content:"";position:absolute;
+      top:-5px;left:var(--fx-arrow-x,20px);width:8px;height:8px;
+      background:#1b2c36;transform:rotate(45deg);
+      border-top:1px solid #4b6b78;border-left:1px solid #4b6b78}
+    #nativeFxSelector .native-dialog.picker-above::before{
+      top:auto;bottom:-5px;border:0;border-right:1px solid #4b6b78;
+      border-bottom:1px solid #4b6b78}
+    #nativeFxSelector .native-dialog-header{padding:8px 11px}
+    #nativeFxSelector .native-dialog-header h2{font-size:13px;font-weight:500;margin:1px 0}
+    #nativeFxSelector .native-dialog-body{min-height:0;padding:8px 11px}
+    #nativeFxSelector .native-dialog-footer{padding:6px 11px}
+    #nativeFxSelector .native-result{padding:5px 7px;margin:3px 0}
+    #nativeFxSelector .native-result button{padding:5px 7px}
+    #nativeFxSelector .native-category button{padding:4px 6px}
+    .native-engine .fx-picker-target{outline:1px solid #7ccac3;outline-offset:-1px}
+  `;
   document.head.appendChild(css);
   document.getElementById("engineBadge").textContent="NATIVE CH1 · ORBIT";
   const workspace = document.querySelector("#rackWorkspace");
@@ -467,7 +494,7 @@
       <small>${escapeHtml(p.vendor||"Unknown vendor")} · ${escapeHtml(p.category||"Audio effect")}</small></span>
     <span class="native-tag" style="flex:0">VST3</span>
     <button class="native-btn primary" data-native-add="${escapeHtml(p.id)}"
-      ${state.chain.length>=8||state.adding?"disabled":""}>＋ ADD</button></div>`).join("")
+      ${state.chain.length>=8||state.adding||pickerChannel!==0?"disabled":""} title="${pickerChannel===0?"Insert native VST3":"Channel routing not yet connected"}">＋ ADD</button></div>`).join("")
     :'<div class="native-empty">No matching installed VST3 effects. Open Plugin Manager to scan your folders.</div>';
 }
   function filterPlugins(){
