@@ -27,6 +27,7 @@
     });
 
   const send = (action, more = {}) => backend.emitEvent("arMixAction", {action, ...more});
+  let fxNativeGesture=null,fxNativeBlockClick=false;
   const state = {catalog: [], chain: [], scanning: false, message: "Connecting to native host...",
     device: {}, presets: [], addRequestId:0, addError:"", pendingPlugin:"", filter: "", selectedCategory: "All", monitor: false, error: "", progress: {active:false,phase:"done",done:0,total:0,found:0,current:""}, adding:false};
 
@@ -167,6 +168,22 @@
   }
   function renderRack(){
   if(!workspace || currentTab()!=="FX RACK") return;
+  const selected=typeof currentChannel==="number"?currentChannel:0;
+  const isMaster=typeof masterSelected!=="undefined"&&masterSelected;
+  if(isMaster||selected!==0){
+    const label=isMaster?"MASTER":(typeof channels!=="undefined"&&channels[selected]?.name)||("Channel "+(selected+1));
+    workspace.innerHTML=`<div class="native-panel" data-live-native="1">
+      ${cardHeader("FX Rack · "+label,"Same DAW insert layout across all mixer channels")}
+      <div class="native-card" style="max-width:920px">
+        <h3>${escapeHtml(label)} · FX CHAIN</h3>
+        <div class="native-sub">This bus is not yet connected to independent native VST3 processing. Its inserts are unavailable for audio until channel routing is implemented.</div>
+        <div class="native-nodes" style="margin-top:12px">
+          ${Array.from({length:6},(_,i)=>`<button class="native-btn" data-native-unrouted="${isMaster?-1:selected}" style="text-align:left">＋ ADD FX</button>`).join("")}
+        </div>
+      </div>
+    </div>`;
+    return;
+  }
   workspace.innerHTML=`<div class="native-panel" data-live-native="1">
     ${cardHeader("Live FX Chain · Vocal Input","Arrange your real VST3 effects here. Use ＋ ADD FX to choose from your installed catalog.")}
     <div class="native-toolbar" style="margin-bottom:12px">
@@ -179,7 +196,7 @@
       <h3>MIC INPUT → PROCESSING → MAIN OUTPUT</h3>
       <div class="native-nodes">
         <div class="native-status">INPUT 1 / MICROPHONE</div>
-        ${state.chain.map((p,i)=>`<div class="native-node ${p.bypass?"is-bypassed":""}">
+        ${state.chain.map((p,i)=>`<div class="native-node ${p.bypass?"is-bypassed":""}" data-native-move="${i}">
           <span class="node-index">${String(i+1).padStart(2,"0")}</span>
           <span class="node-text">${escapeHtml(p.name)}<small>${p.latency||0} samples processing latency</small></span>
           <button class="native-btn" data-native-fx="editor" data-slot="${i}">EDIT</button>
@@ -551,9 +568,14 @@
     if(track.classList.contains("master-strip")){
       track.dataset.preview="1";
       track.title="Master FX and master PAN are visual previews; Master fader and meters are native";
-      track.querySelectorAll("[data-master-insert],[data-master-power]").forEach(x=>{
-        x.disabled=true;x.title="Preview only — Master FX DSP not yet implemented";
-      });
+      const masterRack=track.querySelector(".master-fx-rack");
+      if(masterRack&&masterRack.dataset.nativeSig!=="empty-nonlive"){
+        masterRack.dataset.nativeSig="empty-nonlive";
+        masterRack.innerHTML=Array.from({length:6},()=>`<div class="master-fx-slot">
+          <button class="master-insert empty" data-native-unrouted="-1" title="Master FX is not routed to native DSP">
+            <span class="master-insert-add" aria-hidden="true">＋</span><span class="insert-name">ADD FX</span>
+          </button></div>`).join("");
+      }
       const pan=track.querySelector('[data-pan="master"]');
       if(pan){pan.removeAttribute("tabindex");pan.style.pointerEvents="none";pan.title="Master PAN DSP not yet implemented";}
       const marker=track.querySelector(".master-info-kicker span");
@@ -563,6 +585,13 @@
     const rack=track.querySelector(".rack");
     if(!rack)return;
     if(i!==0){
+      if(rack.dataset.nativeSig!=="empty-nonlive"){
+        rack.dataset.nativeSig="empty-nonlive";
+        rack.innerHTML=Array.from({length:6},()=>`<div class="insert-slot">
+          <button class="insert empty" data-native-unrouted="${i}" title="FX Rack · channel source not routed">
+            <span class="insert-add-glyph" aria-hidden="true">＋</span><span class="insert-name">ADD FX</span>
+          </button></div>`).join("");
+      }
       rack.dataset.preview="1";
       track.dataset.preview="1";
       track.querySelectorAll(".meter-peak").forEach(x=>x.style.display="none");
@@ -572,8 +601,8 @@
     const signature=state.chain.map(p=>p.id+"|"+p.bypass).join(",");
     if(rack.dataset.nativeSig===signature)return;
     rack.dataset.nativeSig=signature;
-    rack.innerHTML=state.chain.slice(0,5).map((p,i)=>
-      `<div class="insert-slot native-insert-row ${p.bypass?"is-bypassed":""}">
+    rack.innerHTML=state.chain.slice(0,6).map((p,i)=>
+      `<div class="insert-slot native-insert-row ${p.bypass?"is-bypassed":""}" data-native-move="${i}">
         <button class="insert" data-native-fx="editor" data-slot="${i}"
           title="Open ${escapeHtml(p.name)}" aria-label="Edit ${escapeHtml(p.name)}">
           <span class="insert-name">${escapeHtml(p.name)}</span></button>
@@ -581,11 +610,10 @@
           data-native-fx="bypass" data-slot="${i}" aria-pressed="${!p.bypass}"
           title="${p.bypass?"Enable":"Bypass"} ${escapeHtml(p.name)}">⏻</button>
       </div>`).join("")+
-      `<div class="insert-slot"><button class="insert empty" data-plugin-picker="1"
-          ${state.chain.length>=8?"disabled":""} aria-label="Add VST3 to Channel 1">
-          <span class="insert-add-glyph" aria-hidden="true">＋</span>
-          <span class="insert-name">${state.chain.length>=8?"FX FULL":"ADD FX"}</span>
-      </button></div>`;
+      Array.from({length:Math.max(0,6-Math.min(state.chain.length,6))},()=>
+        `<div class="insert-slot"><button class="insert empty" data-plugin-picker="1" aria-label="Add VST3 to Channel 1">
+          <span class="insert-add-glyph" aria-hidden="true">＋</span><span class="insert-name">ADD FX</span>
+        </button></div>`).join("");
   });
 }
   let renderPending = false;
@@ -688,10 +716,18 @@
   },true);
   // Capture native controls before the legacy v0.3 demo handlers.
   document.addEventListener("click", function(e){
-  const el=e.target.closest("[data-native-action],[data-native-add],[data-native-fx],[data-fxpower],[data-master-insert],[data-master-power],[data-native-category],[data-go-native-rack],[data-insert],[data-plugin-picker],[data-plugin-manager],[data-my-sounds],[data-preset-mute],[data-preset-save],[data-preset-load],[data-close-modal],[data-orbit-start],[data-orbit-stop]");
+  if(fxNativeBlockClick){fxNativeBlockClick=false;e.preventDefault();e.stopImmediatePropagation();return;}
+  const el=e.target.closest("[data-native-unrouted],[data-native-action],[data-native-add],[data-native-fx],[data-fxpower],[data-master-insert],[data-master-power],[data-native-category],[data-go-native-rack],[data-insert],[data-plugin-picker],[data-plugin-manager],[data-my-sounds],[data-preset-mute],[data-preset-save],[data-preset-load],[data-close-modal],[data-orbit-start],[data-orbit-stop]");
   if(!el)return;
   e.preventDefault();e.stopImmediatePropagation();
 
+  if(el.hasAttribute("data-native-unrouted")){
+    const id=Number(el.dataset.nativeUnrouted);
+    if(id===-1){if(typeof focusMaster==="function")focusMaster();}
+    else if(Number.isInteger(id)&&id>=0&&id<10&&typeof focusChannel==="function")focusChannel(id);
+    if(currentTab()!=="FX RACK")document.querySelector('.nav button[data-view="FX RACK"]')?.click();
+    renderRack();return;
+  }
   if(el.dataset.closeModal){if(el.dataset.closeModal==="nativeOrbit")hideOrbit();else hideDialog(el.dataset.closeModal);return;}
   if(el.hasAttribute("data-orbit-start")){
     const raw=document.getElementById("nativeOrbitParameter")?.value;
@@ -808,6 +844,74 @@
   if(fx==="bypass")send("fxBypass",{slot,value:!state.chain[slot]?.bypass});
   if(fx==="up"||fx==="down")send("fxMove",{slot,value:fx==="up"?-1:1});
 },true);
+  // True DAW FX insert gesture. Geometries are captured ONCE at pointerdown;
+  // pointermove only moves a ghost and a 2px insertion marker. Exactly one
+  // native fxMove request is emitted at pointerup (never while dragging).
+  const removeNativeDrag=()=>{
+    const d=fxNativeGesture;if(!d)return;
+    d.marker?.classList.remove("fx-drop-before","fx-drop-after");
+    d.row?.classList.remove("fx-drag-source");
+    d.ghost?.remove();fxNativeGesture=null;
+  };
+  document.addEventListener("pointerdown",e=>{
+    if(e.button!==0||fxNativeGesture||state.chain.length<2)return;
+    const row=e.target.closest(".native-insert-row[data-native-move],.native-node[data-native-move]");
+    if(!row||!row.isConnected)return;
+    if(row.classList.contains("native-node")){
+      if(!e.target.closest(".node-text,.node-index"))return;
+    }else if(!e.target.closest(".insert:not(.empty)"))return;
+    const from=Number(row.dataset.nativeMove),siblings=[...row.parentElement.children]
+      .filter(n=>n.hasAttribute("data-native-move"));
+    if(!Number.isInteger(from)||from<0||from>=state.chain.length||siblings.length<2)return;
+    fxNativeGesture={pointerId:e.pointerId,row,from,count:siblings.length,
+      startX:e.clientX,startY:e.clientY,x:e.clientX,y:e.clientY,
+      bounds:siblings.map(el=>({el,rect:el.getBoundingClientRect()})),
+      insertion:from,marker:null,ghost:null,active:false};
+  },true);
+  document.addEventListener("pointermove",e=>{
+    const d=fxNativeGesture;if(!d||e.pointerId!==d.pointerId)return;
+    d.x=e.clientX;d.y=e.clientY;
+    if(!d.active){
+      if(Math.hypot(d.x-d.startX,d.y-d.startY)<7)return;
+      d.active=true;d.row.classList.add("fx-drag-source");
+      d.ghost=document.createElement("div");d.ghost.className="fx-drag-ghost";
+      d.ghost.textContent=state.chain[d.from]?.name||"VST3";
+      document.body.appendChild(d.ghost);
+    }
+    e.preventDefault();
+    d.ghost.style.transform="translate3d("+(d.x+12)+"px,"+(d.y+10)+"px,0)";
+    d.marker?.classList.remove("fx-drop-before","fx-drop-after");d.marker=null;
+    const bs=d.bounds,first=bs[0].rect,last=bs[bs.length-1].rect;
+    if(d.x<first.left-20||d.x>first.right+20||d.y<first.top-12||d.y>last.bottom+12){
+      d.insertion=-1;return;
+    }
+    let at=d.count;
+    for(let i=0;i<bs.length;i++){
+      if(d.y<(bs[i].rect.top+bs[i].rect.bottom)/2){at=i;break}
+    }
+    d.insertion=at;
+    const end=at===d.count;
+    d.marker=bs[end?bs.length-1:at].el;
+    d.marker.classList.add(end?"fx-drop-after":"fx-drop-before");
+  },{passive:false});
+  document.addEventListener("pointerup",e=>{
+    const d=fxNativeGesture;if(!d||d.pointerId!==e.pointerId)return;
+    const active=d.active,at=d.insertion,from=d.from,count=d.count;
+    removeNativeDrag();
+    if(active){
+      fxNativeBlockClick=true;setTimeout(()=>fxNativeBlockClick=false,0);
+      if(at>=0){
+        const to=Math.max(0,Math.min(count-1,at>from?at-1:at));
+        if(to!==from)send("fxMove",{slot:from,value:to-from});
+      }
+    }
+  },true);
+  document.addEventListener("pointercancel",e=>{
+    if(fxNativeGesture?.pointerId===e.pointerId)removeNativeDrag();
+  },true);
+  document.addEventListener("keydown",e=>{
+    if(e.key==="Escape"&&fxNativeGesture)removeNativeDrag();
+  },true);
   document.addEventListener("input", function(e){
   if(e.target.id!=="nativeVstSearch")return;
   state.filter=e.target.value;
