@@ -1027,6 +1027,53 @@ async def main():
         assert measured["mode"]=="meters-off" and measured["durationMs"]==1000,measured
         assert measured["mixer"]["samples"]>0 and measured["pointerMoves"]["mixer"]>0,measured
         await diag.close()
+        # Native WebView bridge integration: real MASTER peaks must stay visible
+        # while preview-only channels 2–10 remain dark. No synthetic DSP meter.
+        native=await browser.new_page(viewport={"width":1680,"height":920})
+        native_errors=[]
+        native.on("pageerror",lambda e: native_errors.append(str(e)))
+        await native.add_init_script("""(() => {
+          window.__arMixMockEvents={};
+          window.__JUCE__={backend:{
+            emitEvent(){},
+            addEventListener(name,fn){window.__arMixMockEvents[name]=fn;}
+          }};
+        })()""")
+        await native.goto((project/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").as_uri())
+        await native.add_script_tag(path=str(project/"web/bridge.js"))
+        native_static=await native.evaluate("""()=>{
+          const master=document.querySelector('#masterLeft');
+          const left=master.querySelector('[data-meter="masterL"]');
+          const right=master.querySelector('[data-meter="masterR"]');
+          const ch2=document.querySelector('[data-strip="1"]');
+          const inactive=ch2.querySelector('[data-meter="1"]');
+          return {native:document.documentElement.classList.contains('native-engine'),
+            masterPreview:master.dataset.preview,fxPreview:master.dataset.fxPreview,
+            leftOpacity:getComputedStyle(left).opacity,
+            rightOpacity:getComputedStyle(right).opacity,
+            ch2Preview:ch2.dataset.preview,
+            ch2Opacity:getComputedStyle(inactive).opacity};
+        }""")
+        assert native_static["native"] and native_static["fxPreview"]=="1",native_static
+        assert native_static["masterPreview"] is None,native_static
+        assert native_static["leftOpacity"]=="1" and native_static["rightOpacity"]=="1",native_static
+        assert native_static["ch2Preview"]=="1" and native_static["ch2Opacity"]=="0",native_static
+        await native.evaluate("""()=>{
+          window.__arMixMockEvents.arMixStatus({
+            connected:true,error:'',driver:'Windows Audio',rate:48000,buffer:480,
+            monitor:true,channelDb:0,masterDb:0,channelPan:0,
+            inputPeak:.45,peak:.38,peakLeft:.38,peakRight:.24,
+            peakOutput:.38,deviceOutputChannels:2,masterMute:false
+          });
+        }""")
+        await native.wait_for_function("""()=>{
+          const l=document.querySelector('[data-meter="masterL"]');
+          const r=document.querySelector('[data-meter="masterR"]');
+          return Number.parseFloat(l.style.getPropertyValue('--led-lit'))>7 &&
+            Number.parseFloat(r.style.getPropertyValue('--led-lit'))>7;
+        }""",timeout=3000)
+        assert not native_errors,native_errors
+        await native.close()
         await browser.close()
     print("PASS: 10-channel premium mixer, rose MASTER, responsive layout, double-click rename, no JS errors")
 
