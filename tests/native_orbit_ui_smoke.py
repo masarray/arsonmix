@@ -17,6 +17,13 @@ async def main():
         page.on("pageerror", lambda e: errors.append(str(e)))
         await page.add_init_script("""(() => {
           const listeners = new Map();
+          const pathFor = shape => Array.from({length:65}, (_,i) => {
+            const a=i*Math.PI*2/64;
+            const rx=(shape===1||shape===4)?0.43:1.0;
+            const ry=(shape===2||shape===5)?0.43:1.0;
+            return {x:rx*Math.sin(a), y:ry*Math.cos(a),
+              z:shape>=3?0.3*Math.sin(a):0};
+          });
           const backend = {
             calls: [],
             addEventListener(name, cb) { listeners.set(name, cb); },
@@ -33,30 +40,43 @@ async def main():
                   slot:payload.slot, revision:'1', plugin:'dearVR PRO 2', active:false,
                   activeSlot:-1,activeParameter:-1,periodSeconds:20,
                   reverse:false,preferredParameter:2,
+                  shape:0, previewShape:payload.shape??-1, phase:0.125,
+                  motionPath:pathFor(payload.shape??0),
+                  preferredDistance:4,preferredElevation:5,
                   parameters:[
                     {index:1,name:'Azimuth Scale',minText:'0.5',maxText:'5'},
                     {index:2,name:'Azimuth',minText:'-180°',maxText:'+180°'},
-                    {index:3,name:'Gain',minText:'-60',maxText:'12'}
+                    {index:3,name:'Gain',minText:'-60',maxText:'12'},
+                    {index:4,name:'Distance',minText:'0 m',maxText:'10 m'},
+                    {index:5,name:'Elevation',minText:'-90°',maxText:'90°'}
                   ]
                 }));
               }
               if(payload.action === 'orbitStart') {
                 queueMicrotask(() => listeners.get('arMixOrbitState')?.({
-                  slot:payload.slot, plugin:'dearVR PRO 2', active:true,
+                  slot:payload.slot, revision:'1', plugin:'dearVR PRO 2', active:true,
                   activeSlot:payload.slot, activeParameter:payload.parameterIndex,
                   periodSeconds:payload.seconds,reverse:payload.reverse,
                   preferredParameter:payload.parameterIndex,
+                  shape:payload.shape,distanceIndex:payload.distanceIndex,elevationIndex:payload.elevationIndex,
+                  preferredDistance:4,preferredElevation:5,
+                  previewShape:-1,phase:0.12,motionPath:pathFor(payload.shape),
                   parameters:[
-                    {index:2,name:'Azimuth',minText:'-180°',maxText:'+180°'}
+                    {index:2,name:'Azimuth',minText:'-180°',maxText:'+180°'},
+                    {index:4,name:'Distance',minText:'0 m',maxText:'10 m'},
+                    {index:5,name:'Elevation',minText:'-90°',maxText:'90°'}
                   ]
                 }));
               }
               if(payload.action === 'orbitStop') {
                 queueMicrotask(() => listeners.get('arMixOrbitState')?.({
-                  slot:payload.slot, plugin:'dearVR PRO 2', active:false,
+                  slot:payload.slot,revision:'1',plugin:'dearVR PRO 2',active:false,
                   activeSlot:-1,activeParameter:-1,periodSeconds:20,
-                  reverse:false,preferredParameter:2,
-                  parameters:[{index:2,name:'Azimuth',minText:'-180°',maxText:'+180°'}]
+                  reverse:false,preferredParameter:2,shape:0,previewShape:-1,phase:0,
+                  motionPath:pathFor(0),preferredDistance:4,preferredElevation:5,
+                  parameters:[{index:2,name:'Azimuth',minText:'-180°',maxText:'+180°'},
+                    {index:4,name:'Distance',minText:'0 m',maxText:'10 m'},
+                    {index:5,name:'Elevation',minText:'-90°',maxText:'90°'}]
                 }));
               }
             }
@@ -93,7 +113,9 @@ async def main():
         assert 0<=geometry["x"] and geometry["x"]+geometry["width"]<=geometry["vw"], geometry
         assert 0<=geometry["top"] and geometry["bottom"]<=geometry["vh"], geometry
         assert geometry["outside"]=="none", geometry
-        assert await page.locator("#nativeOrbit .orbit-graphic").count()==1
+        assert await page.locator("#nativeOrbit .orbit-map").count()==1
+        assert await page.locator("#nativeOrbit .material-icon").count()>=3
+        assert await page.locator("#nativeOrbitDot").count()==1
         assert await page.locator("#nativeOrbit .native-dialog-footer").is_hidden()
         await page.wait_for_function("""()=>document.querySelector("#nativeOrbitParameter")?.value==="2" """)
         assert await modal.locator("#nativeOrbitParameter").input_value() == "2"
@@ -109,9 +131,17 @@ async def main():
         })""")
         assert geometry["width"] <= 480 and not geometry["overflow"], geometry
         await page.screenshot(path="native-orbit-ui-review.png", full_page=True)
+        # Switch modes before START; unsupported mapping must never silently run.
+        await modal.locator("#nativeOrbitShape").select_option("4")
+        await page.wait_for_function("""()=>document.querySelector("#nativeOrbitPath")?.getAttribute("d")?.length>120""")
+        assert await modal.locator("#nativeOrbitDistance").input_value()=="4"
+        assert await modal.locator("#nativeOrbitElevation").input_value()=="5"
+        assert await modal.locator("[data-orbit-start]").is_disabled()
+        await modal.locator("#nativeOrbitConfirm").check()
+        assert await modal.locator("[data-orbit-start]").is_enabled()
         await modal.locator("#nativeOrbitSeconds").fill("15")
         await modal.locator("#nativeOrbitReverse").select_option("true")
-        await start.click()
+        await modal.locator("[data-orbit-start]").click()
         await page.wait_for_function("""()=>window.__JUCE__.backend.calls.some(x=>
           x.payload.action==='orbitStart')""")
         start_payload = await page.evaluate("""()=>window.__JUCE__.backend.calls.findLast(x=>
@@ -119,7 +149,14 @@ async def main():
         assert start_payload == {
             "action": "orbitStart", "slot": 0, "revision": "1", "pluginId": "dearvr-pro-2", "parameterIndex": 2,
             "seconds": 15, "reverse": True,
+            "shape": 4, "distanceIndex": 4, "elevationIndex": 5,
+            "calibrated": True,
         }, start_payload
+        # Animated dot advances along the C++-supplied sampled path.
+        first=await page.locator("#nativeOrbitDot").get_attribute("cx")
+        await page.wait_for_timeout(180)
+        second=await page.locator("#nativeOrbitDot").get_attribute("cx")
+        assert first!=second, (first,second)
         await modal.locator("[data-orbit-stop]").click()
         await page.wait_for_function("""()=>window.__JUCE__.backend.calls.some(x=>
           x.payload.action==='orbitStop')""")
