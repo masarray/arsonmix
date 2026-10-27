@@ -32,3 +32,13 @@ test('old structural operations remain guarded and declared as unfinished',()=>{
   assert.match(e,/if \(handoff_\.busy\(\)\) return false/);
   assert.match(e,/Legacy Add\/Remove\/Move still detach/);
 });
+
+test('bypass is sample-smoothed on audio callback without control-thread CPU work',()=>{
+ assert.match(e,/bypassEnvelope/);
+ assert.match(e,/bypass\.request\(cycle\.graph->bypassFlags/);
+ assert.match(e,/bypass\.transitioning\(\)/);
+ assert.match(e,/dryScratch_\.setSize \(2, maxFrames/);
+ assert.match(e,/bypass\.next\(\)/);
+ assert.match(e,/bypass\.shouldProcessWet\(\)/);
+ assert.doesNotMatch(e.slice(e.indexOf('bool setBypass'),e.indexOf('bool removeAt')),/detach\(|prepareToPlay|releaseResources/);
+});

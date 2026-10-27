@@ -14,6 +14,7 @@
 #include "../engine/device/WasapiEndpointIdentityGuard.h"
 #include "../engine/core/RealtimeHealthHistogram.h"
 #include "../engine/core/CallbackCadenceEvidence.h"
+#include "../engine/core/FxBypassEnvelope.h"
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -45,6 +46,9 @@ public:
     {
         std::array<Slot, maxFx> slots {};
         std::array<std::atomic<bool>, maxFx> bypassFlags {};
+        // Owned and advanced exclusively by the realtime render callback.
+        // Physical-slot identity survives an atomic logical reorder (PR #102).
+        std::array<armix::dsp::FxBypassEnvelope, maxFx> bypassEnvelope {};
         int count = 0;
         int latency = 0;
         bool hasRecallState = false;
@@ -57,6 +61,8 @@ public:
     {
         formats_.addFormat (std::make_unique<juce::VST3PluginFormat>());
         scratch_.setSize (2, maxFrames, false, true, false);
+        // One reusable preallocated stereo dry snapshot for transient FX bypass.
+        dryScratch_.setSize (2, maxFrames, false, true, false);
         handoff_.initialize (graphOwned_.get());
     }
 
@@ -677,6 +683,8 @@ public:
         for (int i = 0; i < staged->count; ++i)
         {
             staged->bypassFlags[i].store (staged->slots[i].bypass, std::memory_order_relaxed);
+            staged->bypassEnvelope[i].prepare (staged->slots[i].bypass, rate,
+                                                staged->slots[i].latency);
             staged->slots[i].latency = staged->slots[i].processor->getLatencySamples();
             if (!staged->slots[i].bypass) staged->latency += staged->slots[i].latency;
         }
@@ -696,6 +704,13 @@ public:
         // Message-thread metadata and an atomic value consumed by the audio thread.
         graphOwned_->slots[index].bypass = value;
         graphOwned_->bypassFlags[index].store (value, std::memory_order_release);
+        // Recompute the advertised steady-state graph latency on the control
+        // thread. The audible transition is managed sample-by-sample by RT.
+        int activeLatency=0;
+        for(int i=0;i<graphOwned_->count;++i)
+            if(!graphOwned_->bypassFlags[i].load(std::memory_order_acquire))
+                activeLatency+=graphOwned_->slots[i].latency;
+        totalLatency_.store(activeLatency,std::memory_order_release);
         return true;
     }
 
@@ -996,6 +1011,7 @@ private:
     armix::rt::LiveGraphHandoff<Graph> handoff_;
     bool attached_ = false;
     juce::AudioBuffer<float> scratch_;
+    juce::AudioBuffer<float> dryScratch_;
     armix::diagnostics::DiagnosticTone diagnosticTone_;
     std::atomic<armix::diagnostics::Route> diagnosticRoute_ {armix::diagnostics::Route::normal};
     std::atomic<bool> routeReconfiguring_ {false};
@@ -1109,7 +1125,9 @@ private:
                 slot.processor->prepareToPlay (d->getCurrentSampleRate(),
                     juce::jmax (32, d->getCurrentBufferSizeSamples()));
                 slot.latency = slot.processor->getLatencySamples();
-                if (!graphOwned_->bypassFlags[i].load (std::memory_order_relaxed)) latency += slot.latency;
+                const bool bypass=graphOwned_->bypassFlags[i].load (std::memory_order_relaxed);
+                graphOwned_->bypassEnvelope[i].prepare(bypass,sampleRateHz_,slot.latency);
+                if (!bypass) latency += slot.latency;
             }
         }
         totalLatency_.store (latency);
@@ -1241,7 +1259,19 @@ private:
                 for (int fx = 0; fx < cycle.graph->count; ++fx)
                 {
                     auto& slot = cycle.graph->slots[fx];
-                    if (slot.processor && ! cycle.graph->bypassFlags[fx].load (std::memory_order_relaxed))
+                    if (!slot.processor) {midi.clear();continue;}
+                    auto& bypass=cycle.graph->bypassEnvelope[fx];
+                    bypass.request(cycle.graph->bypassFlags[fx].load(std::memory_order_acquire));
+                    // Steady wet/dry requires no copy or extra arithmetic.
+                    // A transition temporarily snapshots the exact input to
+                    // this insert; a second full FX graph is never created.
+                    const bool blend=bypass.transitioning();
+                    if (blend)
+                        for(int ch=0;ch<2;++ch)
+                            juce::FloatVectorOperations::copy(
+                                dryScratch_.getWritePointer(ch),
+                                scratch_.getReadPointer(ch),frames);
+                    if (bypass.shouldProcessWet())
                     {
                         const auto pluginBeginUs = clockMicros();
                         slot.processor->processBlock (scratchView, midi);
@@ -1251,6 +1281,19 @@ private:
                         publishMax (worstPluginUs_, pluginUs);
                         if (static_cast<double> (pluginUs) > periodUs * 0.75)
                             slowPlugins_.fetch_add (1, std::memory_order_relaxed);
+                    }
+                    if (blend)
+                    {
+                        float* wetL=scratch_.getWritePointer(0);
+                        float* wetR=scratch_.getWritePointer(1);
+                        const float* dryL=dryScratch_.getReadPointer(0);
+                        const float* dryR=dryScratch_.getReadPointer(1);
+                        for(int i=0;i<frames;++i)
+                        {
+                            const auto g=bypass.next();
+                            wetL[i]=g.wet*wetL[i]+g.dry*dryL[i];
+                            wetR[i]=g.wet*wetR[i]+g.dry*dryR[i];
+                        }
                     }
                     midi.clear();
                 }
