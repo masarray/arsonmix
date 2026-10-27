@@ -69,6 +69,10 @@ if (-not (Test-Path -LiteralPath $fatGuide -PathType Leaf)) {
 }
 Copy-Item -LiteralPath $readme -Destination (Join-Path $OutputDir "README.md")
 Copy-Item -LiteralPath $fatGuide -Destination (Join-Path $OutputDir "HARDWARE_FAT_GUIDE.md")
+# Same executable, same features. Portable ZIP selects the adjacent Studio/
+# data root; installed apps without this file continue using legacy AppData.
+"ARSONMIX_PORTABLE_WORKSPACE_V1" |
+    Set-Content -LiteralPath (Join-Path $OutputDir "portable_mode.txt") -Encoding utf8
 
 $manifest = [ordered]@{
     schema = "arsonmix.native-artifact-provenance.v1"
@@ -76,6 +80,7 @@ $manifest = [ordered]@{
     gui = "10 SOURCE CHANNELS + STEREO MASTER (PR #73)"
     engine = "P0-12 BOUNDED PRE-MARK HARDWARE EVIDENCE"
     nativeDSP = "CHANNEL_1_ONLY__REMAINING_9_GUI_CHANNELS_NOT_REAL_AUDIO"
+    storageMode = "PORTABLE_MARKER__USER_STUDIO_EMPTY_AT_RELEASE"
     guiExeBytes = $appBytes
     guiExeMinimumBytes = $minimumGuiExeBytes
     runtimeDependency = "MICROSOFT_EDGE_WEBVIEW2_RUNTIME_REQUIRED_ON_HARDWARE"

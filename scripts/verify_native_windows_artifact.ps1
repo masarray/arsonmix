@@ -10,7 +10,8 @@ $expected = @(
     "ArSonMix-GUI10CH-P012-Windows-x64.exe",
     "BUILD_PROVENANCE.json",
     "HARDWARE_FAT_GUIDE.md",
-    "README.md"
+    "README.md",
+    "portable_mode.txt"
 )
 foreach ($name in $expected) {
     if (-not (Test-Path -LiteralPath (Join-Path $OutputDir $name) -PathType Leaf)) {
@@ -23,6 +24,14 @@ if (@(Compare-Object -ReferenceObject $expected -DifferenceObject $actual).Count
 }
 
 $manifest = Get-Content -LiteralPath (Join-Path $OutputDir "BUILD_PROVENANCE.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+if ($manifest.storageMode -ne "PORTABLE_MARKER__USER_STUDIO_EMPTY_AT_RELEASE") {
+    throw "Public ZIP missing portable workspace mode provenance"
+}
+$portableMarker = (Get-Content -LiteralPath (Join-Path $OutputDir "portable_mode.txt") -Raw -Encoding UTF8).Trim()
+if ($portableMarker -ne "ARSONMIX_PORTABLE_WORKSPACE_V1") { throw "Invalid portable marker" }
+if (Test-Path -LiteralPath (Join-Path $OutputDir "Studio")) {
+    throw "Public artifact MUST NOT bundle user-specific plugins, presets or sessions"
+}
 $exePath = Join-Path $OutputDir "ArSonMix-GUI10CH-P012-Windows-x64.exe"
 $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $exePath).Path)
 if ($bytes.Length -lt 4MB) { throw "REJECT: suspiciously small executable ($($bytes.Length) bytes)" }

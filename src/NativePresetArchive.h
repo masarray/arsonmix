@@ -2,6 +2,7 @@
 #pragma once
 #include <juce_core/juce_core.h>
 #include <juce_cryptography/juce_cryptography.h>
+#include "PortableWorkspace.h"
 #include <array>
 #include <cmath>
 #include <vector>
@@ -33,7 +34,8 @@ public:
     static constexpr size_t maxStateBytes = 8 * 1024 * 1024;
     static constexpr juce::int64 maxArchiveBytes = 72 * 1024 * 1024;
 
-    explicit NativePresetArchive (juce::File directory) : folder_ (std::move (directory))
+    explicit NativePresetArchive (juce::File directory, juce::File workspaceRoot = {})
+        : folder_ (std::move (directory)), workspaceRoot_ (std::move (workspaceRoot))
     {
         folder_.createDirectory();
     }
@@ -92,8 +94,16 @@ public:
             const auto path = "state/" + juce::String (index).paddedLeft ('0', 2) + ".bin";
             auto obj = std::make_unique<juce::DynamicObject>();
             obj->setProperty ("name", fx.name);
-            obj->setProperty ("path", fx.path);
-            obj->setProperty ("catalogId", fx.catalogId);
+            const auto storedPath = workspaceRoot_ == juce::File()
+                ? fx.path : PortableWorkspace::encode (workspaceRoot_, juce::File (fx.path));
+            obj->setProperty ("path", storedPath);
+            // The legacy key is path|JUCE_UID|variant. Rebase the path portion
+            // together with the module path so the loaded rack finds the
+            // correct catalog entry after a USB drive-letter change.
+            const auto storedId = fx.catalogId.startsWith (fx.path + "|")
+                ? storedPath + fx.catalogId.substring (fx.path.length())
+                : fx.catalogId;
+            obj->setProperty ("catalogId", storedId);
             obj->setProperty ("uid", fx.uid);
             obj->setProperty ("bypass", fx.bypass);
             obj->setProperty ("statePath", path);
@@ -185,8 +195,17 @@ public:
             if (!entry.isObject()) return "Invalid preset plugin record";
             auto fx = FxState {};
             fx.name = entry.getProperty ("name", {}).toString();
-            fx.path = entry.getProperty ("path", {}).toString();
+            const auto storedPath = entry.getProperty ("path", {}).toString();
+            fx.path = storedPath; // v1 absolute string is preserved byte-for-byte
+            if (storedPath.startsWith (PortableWorkspace::scheme))
+            {
+                const auto resolved = PortableWorkspace::decode (workspaceRoot_, storedPath);
+                if (resolved == juce::File()) return "Unsafe workspace plugin reference";
+                fx.path = resolved.getFullPathName();
+            }
             fx.catalogId = entry.getProperty ("catalogId", {}).toString();
+            if (fx.catalogId.startsWith (storedPath + "|"))
+                fx.catalogId = fx.path + fx.catalogId.substring (storedPath.length());
             const auto vUid = entry.getProperty ("uid", {});
             const auto vBypass = entry.getProperty ("bypass", {});
             if (!vUid.isInt() || !vBypass.isBool() ||
@@ -217,6 +236,6 @@ public:
     }
 
 private:
-    juce::File folder_;
+    juce::File folder_, workspaceRoot_;
 };
 } // namespace armix::storage
