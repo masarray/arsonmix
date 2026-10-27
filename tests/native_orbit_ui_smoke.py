@@ -126,7 +126,7 @@ async def main():
         assert await modal.locator("#nativeOrbitParameter").input_value() == "2"
         assert await modal.locator("#nativeOrbitParameter option").count()==2, "Only Azimuth should be listed"
         assert await modal.locator("#nativeOrbitDistance option").count()==2, "Only Distance should be listed"
-        assert await modal.locator("#nativeOrbitDistance option").last.inner_text()=="Distance"
+        assert (await modal.locator("#nativeOrbitDistance option").last.inner_text()).strip()=="Distance"
         assert "30.0 m" not in await modal.locator("#nativeOrbitDistance").inner_text(), "Vendor technical limit is not a dropdown label"
         assert "Gain" not in await modal.locator("#nativeOrbitParameter").inner_text(), "Unrelated VST parameters must be filtered"
         start = modal.locator("[data-orbit-start]")
