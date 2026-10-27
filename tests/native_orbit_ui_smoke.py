@@ -108,7 +108,7 @@ async def main():
         await page.evaluate("""()=>{
           window.__emitNativeChain([{id:'dearvr-pro-2',name:'dearVR PRO 2',bypass:false,latency:0}]);
         }""")
-                await page.locator(".strip").first.locator('[data-native-fx="editor"]').click(button="right")
+        await page.locator(".strip").first.locator('[data-native-fx="editor"]').click(button="right")
         menu=page.locator("#nativeFxContext")
         await menu.get_by_role("menuitem",name="Orbit for dearVR PRO 2").click()
         assert await page.locator(".nav button.selected").get_attribute("data-view")=="MIX"
