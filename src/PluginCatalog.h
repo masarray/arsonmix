@@ -2,6 +2,7 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_events/juce_events.h>
+#include "PortableWorkspace.h"
 #include <algorithm>
 #if JUCE_WINDOWS
  #include <objbase.h>
@@ -269,6 +270,12 @@ private:
             for (const auto& item : *items)
             {
                 auto entry = CatalogEntry::fromVar (item);
+                if (entry.path.startsWith (armix::storage::PortableWorkspace::scheme))
+                {
+                    const auto resolved = armix::storage::PortableWorkspace::decode (dataFolder_, entry.path);
+                    if (resolved == juce::File()) continue;
+                    entry.path = resolved.getFullPathName();
+                }
                 if (entry.path.isNotEmpty())
                     entries_.push_back (std::move (entry));
             }
@@ -283,7 +290,13 @@ private:
     {
         auto o = std::make_unique<juce::DynamicObject>();
         juce::Array<juce::var> list, folders;
-        for (const auto& entry : entries_) list.add (entry.toVar());
+        for (const auto& entry : entries_)
+        {
+            auto item = entry.toVar();
+            item.getDynamicObject()->setProperty ("path",
+                armix::storage::PortableWorkspace::encode (dataFolder_, juce::File (entry.path)));
+            list.add (std::move (item));
+        }
         for (const auto& folder : customFolders_) folders.add (folder);
         o->setProperty ("schemaVersion", 1);
         o->setProperty ("items", juce::var (list));

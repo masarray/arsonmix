@@ -14,6 +14,7 @@
 #include "../engine/device/WasapiCapabilityProbe.h"
 #endif
 #include "PluginCatalog.h"
+#include "PortableWorkspace.h"
 #include <cstring>
 #include <optional>
 #include <memory>
@@ -25,8 +26,12 @@ namespace
 {
 juce::File settingsDirectory()
 {
-    return juce::File::getSpecialLocation (
-        juce::File::userApplicationDataDirectory).getChildFile ("AR-MIX-Studio");
+    return armix::storage::PortableWorkspace::dataRoot();
+}
+
+juce::File machineSettingsDirectory()
+{
+    return armix::storage::PortableWorkspace::machineDataRoot();
 }
 
 std::optional<juce::WebBrowserComponent::Resource> assetFor (const juce::String& path)
@@ -116,15 +121,13 @@ public:
                          juce::Colour (0xff101921), allButtons),
           catalog_ (settingsDirectory()),
           diagnostics_ (settingsDirectory().getChildFile ("diagnostics")),
-          presets_ (settingsDirectory().getChildFile ("presets")),
+          presets_ (settingsDirectory().getChildFile ("presets"), settingsDirectory()),
           browser_ (juce::WebBrowserComponent::Options{}
               .withBackend (juce::WebBrowserComponent::Options::Backend::webview2)
               .withWinWebView2Options (
                   juce::WebBrowserComponent::Options::WinWebView2{}
                       .withUserDataFolder (
-                          juce::File::getSpecialLocation (
-                              juce::File::userApplicationDataDirectory)
-                              .getChildFile ("AR-MIX-Studio-WebView2")))
+                          armix::storage::PortableWorkspace::browserDataRoot()))
               .withNativeIntegrationEnabled()
               .withEventListener ("arMixParameter", [this] (juce::var args) { onParameter (args); })
               .withEventListener ("arMixAction", [this] (juce::var args) { onAction (args); })
@@ -139,7 +142,7 @@ public:
         centreWithSize (1650, 930);
         setVisible (true);
 
-        auto saved = juce::XmlDocument::parse (settingsDirectory().getChildFile ("audio-devices.xml"));
+        auto saved = juce::XmlDocument::parse (machineSettingsDirectory().getChildFile ("audio-devices.xml"));
         startupError_ = engine_.start (saved.get());
         engine_.devices().addChangeListener (this);
         diagnostics_.record ("STARTUP", startupError_.isEmpty() ? "Audio device initialized" : startupError_);
@@ -1113,9 +1116,19 @@ private:
                 const auto text = xml->toString();
                 if (text != lastAudioXml_)
                 {
-                    lastAudioXml_ = text;
-                    if (!settingsDirectory().getChildFile ("audio-devices.xml").replaceWithText (text))
-                        diagnostics_.record ("DEVICE_SAVE_FAIL", "Unable to persist device settings");
+                    // A clean portable PC has no AppData/AR-MIX-Studio
+                    // directory yet. Create the machine-local parent before
+                    // writing the approved ASIO/WASAPI device XML.
+                    const auto machineFolder = machineSettingsDirectory();
+                    const auto folderReady = machineFolder.createDirectory().wasOk();
+                    if (!folderReady ||
+                        !machineFolder.getChildFile ("audio-devices.xml").replaceWithText (text))
+                    {
+                        diagnostics_.record ("DEVICE_SAVE_FAIL",
+                            "Cannot persist audio setup in machine AppData");
+                        emitNotice ("Audio setup is active but could not be saved on this PC. Check AppData folder permissions.", true);
+                    }
+                    else lastAudioXml_ = text;
                 }
             }
         }
