@@ -56,6 +56,13 @@
     if(node&&node.textContent!==text)node.textContent=text;
   };
   const percent = v => Math.max(1,Math.min(100,(20*Math.log10(Math.max(1e-6,Number(v)||0))+60)*100/60));
+  // Evidence is input-side only; JUCE cannot report hardware render underruns.
+  // Do not turn capture flags into fake "CPU overload" or restart devices.
+  const captureFaultEvidence=d=>d?.connected && d?.diagnosticRoute==="NORMAL" &&
+    !d?.adaptiveClockActive && Number(d?.chainCount)===0 &&
+    d?.backendXrunMeaning==="WASAPI_CAPTURE_DISCONTINUITIES_ONLY" &&
+    Number(d?.backendXrunCount)>=3 &&
+    Number(d?.overBudgetCount)===0;
   function diagnosis(d) {
     if(d.diagnosticRoute==="OUTPUT_ONLY_TONE") return "Output-only test: capture endpoint is disconnected. Listen for tone at low headphone volume and click MARK CRACKLE when audible.";
     if(d.diagnosticRoute==="CAPTURE_ONLY") return "Capture-only test: hardware render endpoint is disconnected. Observe capture input and backend discontinuity count; you should hear no audio.";
@@ -66,6 +73,11 @@
     if (!d.monitor) return "OUTPUT MUTED by user. Audio routes automatically after a working input/output device is selected.";
     if (d.masterMute) return "MASTER MUTED: switch off the master MUTE button.";
     if (d.channelMute) return "CHANNEL 1 MUTED: switch off Lead Vocal MUTE.";
+    if(captureFaultEvidence(d))
+      return "Capture dropouts recorded with NO FX and no DSP overruns ("+
+        Math.floor(Number(d.backendXrunCount))+" capture flags). This is not proof of render underruns. " +
+        "Compare DIRECT with TRY INDEPENDENT CLOCK for your VB-Cable → headphone route. " +
+        "Switching reopens devices; use low headphone volume and change only when safe.";
     if ((d.inputPeak||0)>.006 && (d.postFxPeak||0)<.0002) return "Mic input is detected but VST3 output is silent. Enable DRY TEST to bypass all plugins.";
     if ((d.postFxPeak||0)>.003 && (d.peak||0)<.0002) return "Post-FX audio exists, but hardware output is silent. Check faders, mutes and output settings.";
     if ((d.peak||0)>.003) return "Samples reach the output buffer. If you cannot hear them, check your interface mixer, physical output selection and headphone volume.";
@@ -100,7 +112,12 @@
     el("arDiagnosticMode").value=d.diagnosticRoute||"NORMAL";
     el("arSignalMonitor").textContent=d.monitor?"MUTE OUTPUT":"UNMUTE OUTPUT";
     el("arSignalDry").textContent=d.dryTest?"DRY TEST ON":"DRY TEST OFF";
-    el("arSmartClockToggle").textContent=d.adaptiveClockActive?"SMART CLOCK: INDEPENDENT (BETA)":"SMART CLOCK: DIRECT";
+    const trial=captureFaultEvidence(d);
+    el("arSmartClockToggle").textContent=d.adaptiveClockActive?
+      "SMART CLOCK: INDEPENDENT (BETA)":trial?"TRY INDEPENDENT CLOCK (BETA)":"SMART CLOCK: DIRECT";
+    el("arSmartClockToggle").title=trial?
+      "Explicit A/B test for recorded WASAPI capture dropouts. Opens separate capture/render devices; can add latency. No automatic switch.":
+      "Manual independent capture/render clock control";
     el("arHealthPanel").textContent="CALLBACK "+(d.callbackDurationUs||0)+" µs / period "+
       Math.round(d.periodUs||0)+" µs | Worst "+(d.worstCallbackUs||0)+
       " µs | Over-budget "+(d.overBudgetCount||0)+

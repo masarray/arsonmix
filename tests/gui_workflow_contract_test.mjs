@@ -77,3 +77,7 @@ test('native 12Hz status uses one capped shared visual meter scheduler',()=>{
  assert.ok(!bridge.includes('liveOutputLeft-5'));
  assert.ok(!app.includes('setInterval(animateNativeMeters'), 'no perpetual meter frame timer');
 });
+
+// Check the light-weight, source-labelled capture triage contract in the same
+// existing Node test invocation; no second CI job or browser required.
+import './audio_capture_triage_contract_test.mjs';

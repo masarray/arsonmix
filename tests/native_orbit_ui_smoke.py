@@ -86,6 +86,7 @@ async def main():
               }
             }
           };
+          window.__emitNativeChain=items=>listeners.get('arMixChain')?.(items);
           window.__JUCE__ = {backend};
         })();""")
         await page.goto((root / "web/index.html").as_uri())
@@ -98,9 +99,18 @@ async def main():
         }""")
         assert await page.locator("#nativeFxContext").is_hidden()
         assert await page.locator(".strip").first.locator('[data-native-fx="orbit"]').count()==0
+        # Built-in context actions are target-aware; no generic "Orbit" on other FX.
+        await page.evaluate("""()=>{
+          window.__emitNativeChain([{id:'eq',name:'EQ',bypass:false,latency:0}]);
+        }""")
+        await page.locator(".strip").first.locator('[data-native-fx="editor"]').click(button="right")
+        assert await page.locator("#nativeFxContext [data-context-fx='orbit']").count()==0
+        await page.evaluate("""()=>{
+          window.__emitNativeChain([{id:'dearvr-pro-2',name:'dearVR PRO 2',bypass:false,latency:0}]);
+        }""")
         await page.locator(".strip").first.locator('[data-native-fx="editor"]').click(button="right")
         menu=page.locator("#nativeFxContext")
-        await menu.get_by_role("menuitem",name="Auto Orbit").click()
+        await menu.get_by_role("menuitem",name="Orbit for dearVR PRO 2").click()
         assert await page.locator(".nav button.selected").get_attribute("data-view")=="MIX"
         modal = page.locator("#nativeOrbit")
         await modal.locator("#nativeOrbitParameter").wait_for(state="visible")
@@ -194,7 +204,7 @@ async def main():
         await page.locator('[data-view="FX RACK"]').click()
         assert await page.locator(".native-node [data-native-fx='orbit']").count()==0
         await page.locator(".native-node [data-native-fx='editor']").first.click(button="right")
-        await menu.get_by_role("menuitem",name="Auto Orbit").click()
+        await menu.get_by_role("menuitem",name="Orbit for dearVR PRO 2").click()
         await modal.locator("#nativeOrbitParameter").wait_for(state="visible")
         await page.keyboard.press("Escape")
         assert await modal.is_hidden(), "Escape closes contextual orbit popover"
