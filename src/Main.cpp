@@ -72,7 +72,7 @@ juce::WebBrowserComponent::Options webViewOptions()
 
 void showWebViewStartupError (const juce::String& detail)
 {
-    juce::NativeMessageBox::showMessageBoxAsync (
+    juce::NativeMessageBox::showAsync (
         juce::MessageBoxOptions{}
             .withIconType (juce::MessageBoxIconType::WarningIcon)
             .withTitle ("ArSonMix - WebView2 unavailable")
