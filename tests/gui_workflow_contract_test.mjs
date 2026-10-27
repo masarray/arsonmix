@@ -55,3 +55,28 @@ test('native bridge does not inspect idle pointer movement',()=>{
  assert.ok(!guard.includes('"pointermove"'), 'idle pointer listener forbidden');
  assert.ok(guard.includes('typeof drag') && guard.includes('"pointerup"') && guard.includes('"pointercancel"'));
 });
+
+
+test('P0 FX Rack allows selection of every channel and MASTER without falsely loading VST3',()=>{
+ for(const marker of ['function rackTarget','function rackOptions','function renderPendingRack','function openRackTarget','data-native-rack-open','data-native-routing-pending','id="nativeRackChannel"']){
+   assert.ok(bridge.includes(marker),marker);
+ }
+ assert.ok(bridge.includes('if(rackTarget()!==0)'));
+ assert.ok(bridge.includes('openRackTarget("master")'));
+ assert.ok(bridge.includes('rack.dataset.nativeSig="p0-master-pending"'));
+ assert.ok(bridge.includes('const signature="p0-unrouted-"+i'));
+ assert.ok(app.includes('function renderMasterRackWorkspace'));
+ assert.ok(app.includes('masterSelected=false;currentChannel=i;renderMixer()'));
+ assert.ok(cpp.includes('channel == 1'), 'P0 must preserve truthful Channel 1-only native DSP');
+});
+test('P0 selected toolbar pad and fader recess are paint-only refinements',()=>{
+ const btn=read('web/styles-src/20-button-180.css');
+ const fader=read('web/styles-src/42-mixer-premium.css');
+ assert.ok(btn.includes('--b180-color:#b9cf77;--b180-border:#708942;--b180-ink:#263319'));
+ assert.ok(fader.includes('width:min(44px,100%)'));
+ assert.ok(fader.includes('width:6px'));
+ assert.ok(fader.includes('top:7px;bottom:7px'));
+ assert.ok(fader.includes('pointer-events:none'));
+ assert.ok(css.includes('transform:translate(-50%,-38px)'));
+ assert.ok(!fader.includes('backdrop-filter:blur('));
+});

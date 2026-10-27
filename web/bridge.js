@@ -156,11 +156,39 @@
     return `<div class="native-hdr"><div><span class="eyebrow">AR MIX · NATIVE VST3 ENGINE</span>
       <h2>${escapeHtml(title)}</h2><div class="native-sub">${escapeHtml(subtitle)}</div></div></div>`;
   }
+  function rackTarget(){return typeof masterSelected!=="undefined"&&masterSelected?"master":Math.min(channels.length-1,Math.max(0,currentChannel));}
+function rackOptions(){
+ const selected=rackTarget();
+ return `<label class="native-sub" for="nativeRackChannel">CHANNEL</label><select id="nativeRackChannel" aria-label="FX Rack channel" style="background:#132a36;color:#e5f0f3;border:1px solid #4b7182;border-radius:4px;padding:8px;font-size:12px">${channels.map((c,i)=>`<option value="${i}" ${selected===i?"selected":""}>${i+1} · ${escapeHtml(c.name)}</option>`).join("")}<option value="master" ${selected==="master"?"selected":""}>MASTER</option></select>`;
+}
+function renderPendingRack(t){
+ const label=t==="master"?"MASTER":channels[t]?.name||"Channel";
+ workspace.innerHTML=`<div class="native-panel" data-live-native="1" data-rack-target="${t}">
+ ${cardHeader("FX Rack · "+label,"Consistent FX workspace · native processing not routed for this channel")}
+ <div class="native-toolbar" style="margin-bottom:12px">${rackOptions()}
+ <button class="native-btn primary" data-plugin-picker="1">＋ ADD FX</button><button class="native-btn" data-plugin-manager="1">PLUGINS</button>
+ <span class="native-sub">ROUTING PENDING</span></div>
+ <div class="native-card" style="max-width:920px"><h3>${escapeHtml(label)} · FX CHAIN</h3><div class="native-nodes">
+ <div class="native-status">INPUT NOT ASSIGNED</div>
+ <div class="native-empty" data-native-routing-pending="1"><b>Native VST3 is not available here yet.</b>
+ <p>Only Channel 1 has real VST3 DSP. This rack deliberately does not simulate loaded effects or audible routing.</p>
+ <p>Channel/source routing and the MASTER processing graph are scheduled for the native multi-channel implementation.</p></div>
+ <button class="native-btn" data-plugin-picker="1">＋ ADD FX</button>
+ <div class="native-status">NO LIVE FX OUTPUT</div></div></div></div>`;
+}
+function openRackTarget(t){
+ if(t==="master")focusMaster();
+ else{const i=Number(t);if(!Number.isInteger(i)||i<0||i>=channels.length)return;focusChannel(i);}
+ if(currentTab()!=="FX RACK")document.querySelector('.nav button[data-view="FX RACK"]')?.click();
+ renderRack();patchMixer();
+}
   function renderRack(){
+  if(rackTarget()!==0){renderPendingRack(rackTarget());return;}
   if(!workspace || currentTab()!=="FX RACK") return;
   workspace.innerHTML=`<div class="native-panel" data-live-native="1">
     ${cardHeader("Live FX Chain · Vocal Input","Arrange your real VST3 effects here. Use ＋ ADD FX to choose from your installed catalog.")}
     <div class="native-toolbar" style="margin-bottom:12px">
+      ${rackOptions()}
       <button class="native-btn primary" data-plugin-picker="1">＋ ADD FX</button>
       <button class="native-btn" data-plugin-manager="1">PLUGIN MANAGER</button>
       <button class="native-btn" data-my-sounds="1">SAVE / RECALL</button>
@@ -517,24 +545,29 @@
   tracks.forEach((track,i)=>{
     // The v0.8 Master uses .master-fx-rack, not .rack. Handle it first.
     if(track.classList.contains("master-strip")){
-      track.dataset.preview="1";
-      track.title="Master FX and master PAN are visual previews; Master fader and meters are native";
-      track.querySelectorAll("[data-master-insert],[data-master-power]").forEach(x=>{
-        x.disabled=true;x.title="Preview only — Master FX DSP not yet implemented";
-      });
+      track.dataset.preview="1";track.title="MASTER FX: native processing not yet routed";
+      const rack=track.querySelector(".master-fx-rack");
+      if(rack&&rack.dataset.nativeSig!=="p0-master-pending"){
+        rack.dataset.nativeSig="p0-master-pending";
+        rack.innerHTML=Array.from({length:6},(_,slot)=>`<div class="master-fx-slot"><button class="master-insert empty" data-master-insert="${slot}" title="Open MASTER FX Rack · routing pending"><span class="insert-name">${slot===0?"＋ ADD FX":"—"}</span></button></div>`).join("");
+      }
       const pan=track.querySelector('[data-pan="master"]');
-      if(pan){pan.removeAttribute("tabindex");pan.style.pointerEvents="none";pan.title="Master PAN DSP not yet implemented";}
+      if(pan){pan.removeAttribute("tabindex");pan.style.pointerEvents="none";pan.title="MASTER PAN DSP pending";}
       const marker=track.querySelector(".master-info-kicker span");
-      if(marker && marker.textContent!=="NATIVE PEAKS")marker.textContent="NATIVE PEAKS";
+      if(marker&&marker.textContent!=="NATIVE PEAKS")marker.textContent="NATIVE PEAKS";
       return;
     }
     const rack=track.querySelector(".rack");
     if(!rack)return;
     if(i!==0){
-      rack.dataset.preview="1";
-      track.dataset.preview="1";
-      track.querySelectorAll(".meter-peak").forEach(x=>x.style.display="none");
-      track.title=`${track.querySelector(".strip-name")?.textContent?.trim()||"Channel"} — visual preview only; native I/O not wired`;
+      track.dataset.preview="1";rack.dataset.preview="1";
+      track.title=(channels[i]?.name||"Channel")+" · not connected to native DSP";
+      track.querySelectorAll(".meter-peak").forEach(x=>{if(x.style.display!=="none")x.style.display="none";});
+      const signature="p0-unrouted-"+i;
+      if(rack.dataset.nativeSig!==signature){
+        rack.dataset.nativeSig=signature;
+        rack.innerHTML=Array.from({length:6},(_,slot)=>`<div class="insert-slot"><button class="insert empty" data-native-rack-open="${i}" title="Open FX Rack · native routing pending"><span class="insert-name">${slot===0?"＋ ADD FX":"—"}</span></button></div>`).join("");
+      }
       return;
     }
     const signature=state.chain.map(p=>p.id+"|"+p.bypass).join(",");
@@ -656,7 +689,7 @@
   },true);
   // Capture native controls before the legacy v0.3 demo handlers.
   document.addEventListener("click", function(e){
-  const el=e.target.closest("[data-native-action],[data-native-add],[data-native-fx],[data-fxpower],[data-master-insert],[data-master-power],[data-native-category],[data-go-native-rack],[data-insert],[data-plugin-picker],[data-plugin-manager],[data-my-sounds],[data-preset-mute],[data-preset-save],[data-preset-load],[data-close-modal],[data-orbit-start],[data-orbit-stop]");
+  const el=e.target.closest("[data-native-rack-open],[data-native-action],[data-native-add],[data-native-fx],[data-fxpower],[data-master-insert],[data-master-power],[data-native-category],[data-go-native-rack],[data-insert],[data-plugin-picker],[data-plugin-manager],[data-my-sounds],[data-preset-mute],[data-preset-save],[data-preset-load],[data-close-modal],[data-orbit-start],[data-orbit-stop]");
   if(!el)return;
   e.preventDefault();e.stopImmediatePropagation();
 
@@ -681,13 +714,12 @@
       shape,distanceIndex,elevationIndex,calibrated:orbit.confirmed});return;
   }
   if(el.hasAttribute("data-orbit-stop")){send("orbitStop",{slot:orbit.slot});return;}
-  if(el.hasAttribute("data-master-insert")||el.hasAttribute("data-master-power")){
-    toStatus("Master FX is a visual preview; real processing is Channel 1.");return;
-  }
+  if(el.hasAttribute("data-native-rack-open")){openRackTarget(el.dataset.nativeRackOpen);return;}
+  if(el.hasAttribute("data-master-insert")||el.hasAttribute("data-master-power")){openRackTarget("master");return;}
   if(el.hasAttribute("data-fxpower")){
     const [channel,slot]=el.dataset.fxpower.split(":").map(Number);
     if(channel===0)send("fxBypass",{slot,value:!state.chain[slot]?.bypass});
-    else toStatus("Visual preview only. Native FX available on Channel 1.");
+    else openRackTarget(channel);
     return;
   }
   if(el.hasAttribute("data-my-sounds")){openMySounds();return;}
@@ -718,17 +750,12 @@
     renderManager();showDialog("nativePluginManager");return;
   }
   if(el.hasAttribute("data-plugin-picker")){
+    if(rackTarget()!==0){toStatus("FX Rack selected, but native channel routing is not yet available. No VST3 was loaded.");return;}
     openPicker();return;
   }
   if(el.hasAttribute("data-insert")){
-    const article=el.closest(".strip");
-    const idx=Number(article?.dataset.strip??0);
-    if(idx!==0){
-      const toast=document.querySelector("#toast");
-      if(toast){toast.textContent="Native VST3 is currently available on Channel 1 only.";toast.classList.add("show");
-        setTimeout(()=>toast.classList.remove("show"),2200);}
-      return;
-    }
+    const idx=Number(el.closest(".strip")?.dataset.strip??0);
+    if(idx!==0){openRackTarget(idx);return;}
     openPicker();return;
   }
   if(el.hasAttribute("data-go-native-rack")){
@@ -771,6 +798,7 @@
   if(fx==="bypass")send("fxBypass",{slot,value:!state.chain[slot]?.bypass});
   if(fx==="up"||fx==="down")send("fxMove",{slot,value:fx==="up"?-1:1});
 },true);
+  document.addEventListener("change",function(e){if(e.target?.id==="nativeRackChannel")openRackTarget(e.target.value);},true);
   document.addEventListener("input", function(e){
   if(e.target.id!=="nativeVstSearch")return;
   state.filter=e.target.value;
