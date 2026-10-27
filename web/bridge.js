@@ -311,11 +311,6 @@
       (running&&orbit.shape===shape?orbit.distanceIndex:orbit.preferredDistance);
     const elevationSel=orbit.elevationSelection>=0?orbit.elevationSelection:
       (running&&orbit.shape===shape?orbit.elevationIndex:orbit.preferredElevation);
-    const valid=candidates("azimuth").some(p=>p.index===selected);
-    const distValid=(!needsD&&distanceSel<0)||
-      candidates("distance").some(p=>p.index===distanceSel&&p.index!==selected);
-    const elevValid=!needsE||candidates("elevation").some(p=>p.index===elevationSel&&p.index!==selected&&p.index!==distanceSel);
-    const allValid=valid&&distValid&&elevValid&&validSetpoints&&orbit.revision!==null;
     // A parameter control is NOT the plugin's entire parameter catalog.
     // Contextual vendor names only; preserve original VST3 parameter indices.
     const candidates=role=>options.filter(p=>{
@@ -339,6 +334,11 @@
         </option>`).join("")}
       </select>`;
     };
+    const valid=candidates("azimuth").some(p=>p.index===selected);
+    const distValid=(!needsD&&distanceSel<0)||
+      candidates("distance").some(p=>p.index===distanceSel&&p.index!==selected);
+    const elevValid=!needsE||candidates("elevation").some(p=>p.index===elevationSel&&p.index!==selected&&p.index!==distanceSel);
+    const allValid=valid&&distValid&&elevValid&&validSetpoints&&orbit.revision!==null;
     const modeName=motionModes[shape]?.[0]||motionModes[0][0];
     const modeHelp=motionModes[shape]?.[1]||motionModes[0][1];
     const ready=running&&orbit.shape===shape;

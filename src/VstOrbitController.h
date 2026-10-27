@@ -116,21 +116,25 @@ private:
         const auto pos=armix::core::orbitMotionPoint(
             armix::core::orbitWrap(absolutePhase),shape_,nearDistance_,farDistance_);
         float appliedDistance=pos.distance;
+        bool forceDistanceEndpoint=false;
         if(distance_ && elapsed>=0.3) {
             if(armix::core::crossesOrbitDistanceExtreme(previousAbsolutePhase_,
-                absolutePhase,shape_,true))
+                absolutePhase,shape_,true)){
                 appliedDistance=static_cast<float>(farDistance_);
-            else if(armix::core::crossesOrbitDistanceExtreme(previousAbsolutePhase_,
-                absolutePhase,shape_,false))
+                forceDistanceEndpoint=true;
+            }else if(armix::core::crossesOrbitDistanceExtreme(previousAbsolutePhase_,
+                absolutePhase,shape_,false)){
                 appliedDistance=static_cast<float>(nearDistance_);
+                forceDistanceEndpoint=true;
+            }
         }
         previousAbsolutePhase_=absolutePhase;
         const auto publish=[&](juce::AudioProcessorParameter* p,float value,
-                               float& previous,bool cyclic,int steps){
+                               float& previous,bool cyclic,int steps,bool force=false){
             if(!p)return;
-            const bool needed=cyclic ?
+            const bool needed=force||(cyclic ?
                 armix::core::shouldPublishOrbit(value,previous,steps):
-                std::abs(value-previous)>0.0001f;
+                std::abs(value-previous)>0.0001f);
             if(needed && std::isfinite(value) && value>=0.f && value<=1.f){
                 p->setValueNotifyingHost(value);previous=value;++dispatch_.writes;
             } else ++dispatch_.coalesced;
@@ -139,7 +143,8 @@ private:
         // 300 ms easing prevents jumps when enabling additional axes.
         const float mix=static_cast<float>(std::clamp(elapsed/0.3,0.0,1.0));
         if(distance_)publish(distance_,initialDistance_+
-            mix*(appliedDistance-initialDistance_),lastDist_,false,0);
+            mix*(appliedDistance-initialDistance_),lastDist_,false,0,
+            forceDistanceEndpoint);
         if(elevation_)publish(elevation_,initialElevation_+
             mix*(pos.elevation-initialElevation_),lastElev_,false,0);
     }
