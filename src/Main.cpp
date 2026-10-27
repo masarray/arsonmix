@@ -838,7 +838,7 @@ private:
             return emitNotice (error, true);
         }
         if (engine_.independentClockActive() &&
-            (action == "fxRemove" || action == "fxMove" ||
+            (action == "fxRemove" ||
              action == "presetLoad" || action == "presetSave"))
             return emitNotice ("Return to DIRECT mode before editing VST3 graph (live-safe graph edits are a later gate).", true);
 
@@ -1123,8 +1123,10 @@ private:
             if (engine_.hasTemporaryDiagnosticDevice())
                 return emitNotice ("Return to NORMAL before rearranging VST3 effects.", true);
             const auto* orbitPlugin=orbit_.processor();
+            // MOVE only publishes a lock-free order word at the next audio
+            // buffer boundary; the underlying VST3 processor/editor remains
+            // alive, so neither callback detach nor editor close is needed.
             orbit_.pauseForGraphEdit();
-            editorWindow_.reset();
             const bool changed=engine_.moveSlot(slot,slot+static_cast<int>(value));
             if(orbitPlugin && orbit_.active()){
                 for(int i=0;i<engine_.chainSize();++i)
