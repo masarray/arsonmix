@@ -753,7 +753,7 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 /* Scope-specific ON palette: only variables change; all keys share
    the same seven-layer pad and exact press recipe above. */
 #app .toolbar-actions .nav button.btn-180.selected{
- --b180-color:#f0f1f3;--b180-border:#939ba5;--b180-ink:#222932;
+ --b180-color:#b9cf77;--b180-border:#778c45;--b180-ink:#253019;
 }
 #app .left-rail button.btn-180:is(.selected,.active){
  --b180-color:var(--b180-on-magenta);--b180-border:#ad6d9f;--b180-ink:#32172f;
@@ -1142,3 +1142,9 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 }
 /* LED increments stay fixed and the meter keeps its native dBFS conversion.
    No hot-path DOM reads, filters, blur or per-frame scale animation. */
+
+/* P0 static recessed bed, matching all mixer faders without extra rendering work. */
+#app #mixer .fader-zone .fader{position:relative;isolation:isolate;background:linear-gradient(90deg,#0b1218,#1b2931 16%,#202c34 82%,#0d171e 94%,#35434b);border-left:1px solid #080e12;border-right:1px solid #40505a;box-shadow:inset 3px 0 4px -3px #000,inset -2px 0 2px -2px #000}
+#app #mixer .fader-zone .fader::before{content:"";position:absolute;left:calc(50% - 4px);width:8px;top:38px;bottom:39px;z-index:0;pointer-events:none;background:linear-gradient(90deg,#344149,#030607 23%,#030607 78%,#35424a);border:0;box-shadow:inset 0 0 1px #000}
+#app #mixer .fader-zone .fader::after{content:"";position:absolute;left:calc(50% - 14px);width:1px;top:38px;bottom:39px;z-index:0;pointer-events:none;background:#0a131a;box-shadow:1px 0 #34424b}
+#app #mixer .fader-zone .fader-travel{z-index:1}
