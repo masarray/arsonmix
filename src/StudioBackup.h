@@ -30,7 +30,8 @@ public:
                           const juce::File& destinationRoot)
     {
         if (!executable.existsAsFile() || !studio.isDirectory() ||
-            !destinationRoot.isDirectory())
+            !destinationRoot.isDirectory() || executable.isSymbolicLink() ||
+            studio.isSymbolicLink())
             return { {}, "App, Studio or backup destination is missing" };
         // Do not recurse into the workspace while enumerating it.
         if (destinationRoot == studio || destinationRoot.isAChildOf (studio))
@@ -98,7 +99,10 @@ public:
             const auto rel = item.path().lexically_relative (root);
             if (rel.empty() || rel.is_absolute())
                 return fail ("Unsafe Studio entry");
-            const auto original = studio.getChildFile (juce::String (rel.generic_u8string().c_str()));
+            const auto utf8 = rel.generic_u8string();
+            const auto localRel = juce::String::fromUTF8 (
+                reinterpret_cast<const char*> (utf8.data()), static_cast<int> (utf8.size()));
+            const auto original = studio.getChildFile (localRel);
             const auto status = item.symlink_status (ec);
             if (ec || std::filesystem::is_symlink (status))
                 return fail ("Linked/reparse Studio entries cannot be backed up");
@@ -111,8 +115,7 @@ public:
             if (std::filesystem::is_directory (status)) continue;
             if (!std::filesystem::is_regular_file (status))
                 return fail ("Unsupported special file inside Studio");
-            const auto relative = juce::String ("Studio/") +
-                juce::String (rel.generic_u8string().c_str());
+            const auto relative = juce::String ("Studio/") + localRel;
             const auto target = staging.getChildFile (relative);
             error = copyVerify (original, target, relative);
             if (error.isNotEmpty()) return fail (error);
