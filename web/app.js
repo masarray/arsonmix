@@ -35,14 +35,27 @@ function syncClipLeds(){document.querySelectorAll('[data-clip]').forEach(e=>e.cl
 const meterNodes=new Map();
 // Shared preview/native painter: preserve fixed colors; light only whole 7px LEDs.
 const LED_PITCH_PX=7,ledMeterCache=new WeakMap();
+// Opt-in performance A/B: reproduce pre-P1 raw-level DOM writes, with the
+// exact same meter visuals. Production only writes CSS on visible LED changes.
+const meterRawStyleWrites=new URLSearchParams(location.search).get('mixperf')==='meter-raw';
 function setLedMeterLevel(el,rawLevel){
  if(!el)return;
  const level=clamp(Number(rawLevel)||0,0,100);
  let state=ledMeterCache.get(el);
  if(!state){state={height:el.getBoundingClientRect().height,level:-1,lit:-1};ledMeterCache.set(el,state)}
- if(state.level!==level){state.level=level;el.style.setProperty('--level',level+'%')}
+ const levelChanged=state.level!==level;
+ state.level=level; // Full precision remains cached for ResizeObserver / telemetry.
  const lit=level>=100?state.height:Math.floor((level*state.height/100+1e-7)/LED_PITCH_PX)*LED_PITCH_PX;
- if(state.lit!==lit){state.lit=lit;el.style.setProperty('--led-lit',lit+'px')}
+ if(state.lit!==lit){
+   state.lit=lit;
+   // --led-lit drives the clip; --level remains the compatible fallback,
+   // updated only when the visible whole-row LED state actually changes.
+   el.style.setProperty('--level',level+'%');
+   el.style.setProperty('--led-lit',lit+'px');
+ }else if(meterRawStyleWrites&&levelChanged){
+   // Diagnostics only: old unconditional raw-level style invalidation.
+   el.style.setProperty('--level',level+'%');
+ }
 }
 window.__arMixSetLedMeterLevel=setLedMeterLevel;
 // Observe only the stable mixer root, never disposable strips; no hot-path reflow.
@@ -396,7 +409,7 @@ document.addEventListener('keydown',e=>{const pan=e.target.closest('[data-pan]')
 document.addEventListener('keydown',e=>{if(e.ctrlKey&&e.key.toLowerCase()==='s'){e.preventDefault();if(persistSession())flash('UI state saved locally');else flash('Browser storage unavailable')}});
 // Issue #56: no pointer profiler/event listener runs in normal preview or native.
 const mixperfParam=new URLSearchParams(location.search).get('mixperf');
-const mixperfModes=['optimized','baseline','hover-off','meters-off','layers-off','all-off'];
+const mixperfModes=['optimized','baseline','hover-off','meters-off','layers-off','all-off','meter-raw'];
 const mixperfMode=mixperfModes.includes(mixperfParam)?mixperfParam:'optimized';
 document.documentElement.dataset.mixperf=mixperfMode;
 if(mixperfParam&&mixperfModes.includes(mixperfParam)){
