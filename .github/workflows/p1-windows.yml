@@ -51,6 +51,7 @@ jobs:
             'tests/direct_restore_recovery_contract_test.mjs'
             'tests/native_artifact_packaging_contract_test.mjs'
             'tests/portable_workspace_contract_test.mjs'
+            'tests/plugin_vault_contract_test.mjs'
           )
           node --test $contracts
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -62,7 +63,7 @@ jobs:
           -DBUILD_TESTING=ON
           -DJUCE_WEBVIEW2_PACKAGE_LOCATION="${{ github.workspace }}/.deps"
       - name: Build executable and native RT tests
-        run: cmake --build build --config Release --target ARMixConsole ARMixWorkspaceTests ARMixOrbitPhaseTests ARMixOrbitControlTests ARMixRTTests ARMixPresetTests ARMixDiagnosticTests ARMixClockBridgeTests ARMixVirtualClockSoakTests ARMixCadenceTests ARMixCrackleWindowTests ARMixHealthTests ARMixPolicyTests ARMixPeriodEvidenceTests ARMixLifecycleTests ARMixWasapiProbeTests ARMixDualJuceTests ARMixClockSizingTests ARMixIndependentFormatTests ARMixRecoveryTests ARMixStreamWatchdogTests ARMixBridgeContinuityTests ARMixEndpointPolicyTests ARMixEndpointGuardTests ARMixAsioPolicyTests ARMixAsioBackendTests ARMixAsioRegistryIdentityTests ARMixDirectFenceTests --parallel 2
+        run: cmake --build build --config Release --target ARMixConsole ARMixWorkspaceTests ARMixVaultTests ARMixOrbitPhaseTests ARMixOrbitControlTests ARMixRTTests ARMixPresetTests ARMixDiagnosticTests ARMixClockBridgeTests ARMixVirtualClockSoakTests ARMixCadenceTests ARMixCrackleWindowTests ARMixHealthTests ARMixPolicyTests ARMixPeriodEvidenceTests ARMixLifecycleTests ARMixWasapiProbeTests ARMixDualJuceTests ARMixClockSizingTests ARMixIndependentFormatTests ARMixRecoveryTests ARMixStreamWatchdogTests ARMixBridgeContinuityTests ARMixEndpointPolicyTests ARMixEndpointGuardTests ARMixAsioPolicyTests ARMixAsioBackendTests ARMixAsioRegistryIdentityTests ARMixDirectFenceTests --parallel 2
       - name: Test realtime control primitives
         run: ctest --test-dir build -C Release --output-on-failure
       - name: Package verified JUCE GUI for hardware FAT

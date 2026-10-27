@@ -280,9 +280,10 @@
   dlg.querySelector(".native-dialog-body").innerHTML=`
     <div class="native-sub" style="margin-bottom:12px">MANAGE INSTALLED VST3 PLUGINS · SCANNING RUNS OFF THE AUDIO CALLBACK</div>
     <div class="native-toolbar" style="margin-bottom:12px">
-      <button class="native-btn primary" data-native-action="scanVst3" ${state.scanning?"disabled":""}>SCAN STANDARD FOLDERS</button>
-      <button class="native-btn" data-native-action="addScanFolder" ${state.scanning?"disabled":""}>ADD FOLDER</button>
-      <button class="native-btn" data-native-action="importVst3" ${state.scanning?"disabled":""}>IMPORT INDIVIDUAL .VST3</button>
+      <button class="native-btn primary" data-native-action="importVst3" ${state.scanning?"disabled":""}>＋ ADD VST · KEEP IN STUDIO</button>
+      <button class="native-btn" data-native-action="importVst3InPlace" ${state.scanning?"disabled":""}>LOAD IN PLACE</button>
+      <button class="native-btn" data-native-action="addScanFolder" ${state.scanning?"disabled":""}>ADD REFERENCE FOLDER</button>
+      <button class="native-btn" data-native-action="scanVst3" ${state.scanning?"disabled":""}>SCAN SYSTEM (OPTIONAL)</button>
     </div>
     <div class="native-card" style="min-height:0;margin-bottom:12px">
       <h3>${state.scanning?"SCANNING PLUGINS":"PLUGIN SCANNER"}</h3>

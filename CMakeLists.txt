@@ -19,7 +19,7 @@ juce_add_gui_app(ARMixConsole
 juce_add_binary_data(ARMixAssets SOURCES
     web/index.html web/styles.css web/app.js web/bridge.js web/monitor.js)
 
-target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h src/VstOrbitController.h engine/core/OrbitPhase.h engine/core/OrbitControlPolicy.h src/PluginCatalog.h src/PortableWorkspace.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/core/CallbackCadenceEvidence.h engine/diagnostics/CrackleEvidenceWindow.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/PeriodCapabilityEvidence.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/ClockBridgeSizing.h engine/device/IndependentStreamFormatFence.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h engine/device/BridgeContinuityGate.h engine/device/EndpointIdentityPolicy.h engine/device/WasapiEndpointIdentityGuard.h engine/device/AsioStartupPolicy.h engine/device/AsioPriorityDeviceManager.h engine/device/AsioRegistrationPolicy.h engine/device/AsioRegistryIdentityProbe.h engine/device/DirectRouteFence.h)
+target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h src/VstOrbitController.h engine/core/OrbitPhase.h engine/core/OrbitControlPolicy.h src/PluginCatalog.h src/PluginVault.h src/PortableWorkspace.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/core/CallbackCadenceEvidence.h engine/diagnostics/CrackleEvidenceWindow.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/PeriodCapabilityEvidence.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/ClockBridgeSizing.h engine/device/IndependentStreamFormatFence.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h engine/device/BridgeContinuityGate.h engine/device/EndpointIdentityPolicy.h engine/device/WasapiEndpointIdentityGuard.h engine/device/AsioStartupPolicy.h engine/device/AsioPriorityDeviceManager.h engine/device/AsioRegistrationPolicy.h engine/device/AsioRegistryIdentityProbe.h engine/device/DirectRouteFence.h)
 target_compile_definitions(ARMixConsole PRIVATE
     JUCE_WEB_BROWSER=1
     JUCE_USE_WIN_WEBVIEW2=1
@@ -131,6 +131,11 @@ if(BUILD_TESTING)
   add_executable(ARMixDiagnosticTests tests/diagnostic_tone_test.cpp)
   target_compile_features(ARMixDiagnosticTests PRIVATE cxx_std_20)
   add_test(NAME P0DiagnosticTone COMMAND ARMixDiagnosticTests)
+  juce_add_console_app(ARMixVaultTests PRODUCT_NAME "ArSonMix Selective VST3 Vault Tests")
+  target_sources(ARMixVaultTests PRIVATE tests/plugin_vault_test.cpp src/PluginVault.h src/PortableWorkspace.h)
+  target_link_libraries(ARMixVaultTests PRIVATE juce::juce_core juce::juce_recommended_config_flags)
+  target_compile_features(ARMixVaultTests PRIVATE cxx_std_20)
+  add_test(NAME SelectiveVst3BundleVaultImport COMMAND ARMixVaultTests)
   juce_add_console_app(ARMixWorkspaceTests PRODUCT_NAME "ArSonMix Portable Workspace Tests")
   target_sources(ARMixWorkspaceTests PRIVATE tests/portable_workspace_test.cpp src/PortableWorkspace.h src/NativePresetArchive.h)
   target_link_libraries(ARMixWorkspaceTests PRIVATE juce::juce_core juce::juce_cryptography

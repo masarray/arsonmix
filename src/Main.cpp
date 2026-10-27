@@ -557,15 +557,15 @@ private:
         });
     }
 
-    void chooseImport()
+    void chooseImport (bool copyToVault = true)
     {
         chooser_ = std::make_unique<juce::FileChooser> (
-            "Import an individual VST3 module or bundle", juce::File{}, "*", true);
+            "Import and KEEP a VST3 module or bundle in this Studio", juce::File{}, "*", true);
         chooser_->launchAsync (
             juce::FileBrowserComponent::openMode |
             juce::FileBrowserComponent::canSelectFiles |
             juce::FileBrowserComponent::canSelectDirectories,
-            [this] (const juce::FileChooser& f)
+            [this, copyToVault] (const juce::FileChooser& f)
             {
                 const auto file = f.getResult();
                 if (file == juce::File{}) return;
@@ -574,7 +574,7 @@ private:
                     emitNotice ("Legacy VST2 DLL cannot be imported as VST3. Select a .vst3 module.", true);
                     return;
                 }
-                catalog_.importVst3 (file);
+                catalog_.importVst3 (file, copyToVault);
                 emitCatalog();
             });
     }
@@ -903,7 +903,11 @@ private:
         }
         else if (action == "importVst3")
         {
-            chooseImport();
+            chooseImport (true); // Copy full VST3 into Studio by default.
+        }
+        else if (action == "importVst3InPlace")
+        {
+            chooseImport (false); // Explicit user choice: original external path.
         }
         else if (action == "addCatalog")
         {

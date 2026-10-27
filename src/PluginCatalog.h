@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_events/juce_events.h>
 #include "PortableWorkspace.h"
+#include "PluginVault.h"
 #include <algorithm>
 #if JUCE_WINDOWS
  #include <objbase.h>
@@ -119,7 +120,7 @@ public:
 
     // Direct VST3 file/bundle import (no forced recursive system scan).
     // Native .dll is legacy VST2 and is deliberately not mislabeled as VST3.
-    void importVst3 (const juce::File& file)
+    void importVst3 (const juce::File& file, bool copyToVault = true)
     {
         if (busy()) return;
         if (! file.exists() || ! file.hasFileExtension (".vst3"))
@@ -128,7 +129,9 @@ public:
             if (onChanged) onChanged();
             return;
         }
-        scan (juce::StringArray { file.getFullPathName() });
+        // The selected VST3 is copied on Scanner's non-audio thread.
+        // Keep the original filename/bundle/resources and scan ONLY this copy.
+        scan (juce::StringArray { file.getFullPathName() }, copyToVault);
     }
 
     const CatalogEntry* find (const juce::String& id) const
@@ -158,6 +161,7 @@ private:
         explicit Scanner (PluginCatalog& owner) : juce::Thread ("AR MIX VST3 Scanner"), owner_ (owner) {}
         PluginCatalog& owner_;
         juce::StringArray requested_;
+        bool copyToVault_ = false;
 
         void run() override
         {
@@ -167,12 +171,25 @@ private:
             std::vector<CatalogEntry> found;
             juce::VST3PluginFormat format;
             juce::StringArray allCandidates;
+            juce::String importErrors;
             // 1. Enumerate candidates. Total cannot be estimated here.
             owner_.phase_.store (1, std::memory_order_release);
             for (const auto& requested : requested_)
             {
                 if (threadShouldExit()) break;
-                const juce::File file (requested);
+                juce::File file (requested);
+                if (copyToVault_)
+                {
+                    const auto imported = armix::storage::PluginVault::importSelected (
+                        file, owner_.dataFolder_);
+                    if (!imported.ok())
+                    {
+                        importErrors << (importErrors.isNotEmpty() ? " | " : "")
+                                     << file.getFileName() << ": " << imported.error;
+                        continue;
+                    }
+                    file = imported.plugin;
+                }
                 juce::StringArray candidates;
                 if (file.isDirectory() && ! file.hasFileExtension (".vst3"))
                 {
@@ -181,7 +198,7 @@ private:
                     candidates = format.searchPathsForPlugins (search, true, false);
                 }
                 else if (file.hasFileExtension (".vst3"))
-                    candidates.add (requested);
+                    candidates.add (file.getFullPathName());
                 for (const auto& path : candidates)
                     allCandidates.addIfNotAlreadyThere (path);
             }
@@ -223,7 +240,8 @@ private:
             // Completion is delivered by a SafePointer owned by the UI host,
             // so destruction cannot dereference the window after shutdown.
             auto lifetime = owner_.lifetime_;
-            juce::MessageManager::callAsync ([&owner = owner_, lifetime, results = std::move (found)]() mutable
+            juce::MessageManager::callAsync ([&owner = owner_, lifetime, results = std::move (found),
+                                              importErrors]() mutable
             {
                 if (! lifetime->load()) return;
                 for (const auto& e : results)
@@ -238,7 +256,11 @@ private:
                 std::sort (owner.entries_.begin(), owner.entries_.end(),
                     [] (const CatalogEntry& a, const CatalogEntry& b)
                     { return a.name.compareIgnoreCase (b.name) < 0; });
-                owner.scanMessage_ = "Scan complete: " + juce::String (results.size()) + " plugin variants inspected";
+                owner.scanMessage_ = importErrors.isNotEmpty()
+                    ? "Import incomplete: " + importErrors
+                    : (results.empty()
+                        ? "No compatible VST3 effects found; check plugin architecture and vendor dependencies."
+                        : "Ready: " + juce::String (results.size()) + " VST3 variants inspected");
                 owner.phase_.store (0, std::memory_order_release);
                 owner.scanning_.store (false);
                 owner.save();
@@ -247,7 +269,7 @@ private:
         }
     };
 
-    void scan (const juce::StringArray& paths)
+    void scan (const juce::StringArray& paths, bool copyToVault = false)
     {
         if (busy()) return;
         completed_.store (0);
@@ -256,9 +278,12 @@ private:
         phase_.store (1);
         { const juce::ScopedLock lock (progressLock_); current_.clear(); }
         scanning_.store (true);
-        scanMessage_ = "Scanning VST3 metadata (background)...";
+        scanMessage_ = copyToVault
+            ? "Importing selected VST3 into Studio (only chosen module)..."
+            : "Scanning VST3 metadata (background)...";
         if (onChanged) onChanged();
         worker_.requested_ = paths;
+        worker_.copyToVault_ = copyToVault;
         worker_.startThread();
     }
 
