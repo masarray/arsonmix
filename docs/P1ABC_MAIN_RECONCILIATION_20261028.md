@@ -25,3 +25,6 @@ Current live native chain remains CH1 + MASTER. **CH2–10 and MASTER FX are not
 - Chromium/Firefox GUI smoke includes the real MASTER L/R LED regression and latest Orbit.
 - Validate newest main HEAD, PR review and complete CI prior to merge. Postmerge main CI and Pages must be green.
 - This is a **compile-only engineering milestone**, not a functioning 10-channel DAW. Neither FPS on owner's Windows server nor native multi-I/O hardware audio has been qualified.
+
+## Late reconciliation with PR #101 (2026-10-28)
+While integration PR #112 was being validated, another thread merged PR #101 at `main@66989fa46f004aa852207f1159bf3e1b8e9506c1`: path-filtered native PR gates, current-main-only verified Windows FAT artifact, and stale-safe Pages publisher. Its three workflow changes and policy Node tests are now authoritative. PR #112 was reconciled by a two-parent merge commit (no overwriting `main` workflows). Only three native test targets were inserted into **PR #101's** new Windows build list. `tests/ci_workflow_efficiency_test.mjs`, concurrent Pages policy, Chromium/Firefox gate scheduling, mandatory de-click/Orbit CTests, and main-only artifact upload are preserved unchanged. Main CI and full on-head Windows MSVC CTest must re-pass following this integration.
