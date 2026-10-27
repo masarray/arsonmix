@@ -28,6 +28,24 @@ inline double orbitShapePhaseForAzimuth(float azimuth,int shape) noexcept {
                               std::cos(angle)/orbitAxisY(shape));
     return orbitWrap(t/(2.0*pi));
 }
+// Crossing a near/far phase extremum between timer ticks is common at 60 Hz.
+// Capture the actual endpoint once (without another thread or timer) so the
+// distance parameter really reaches the user-selected near/far setpoints.
+inline bool crossesOrbitDistanceExtreme(double previous,double current,
+                                        int shape,bool isFarEndpoint) noexcept
+{
+    if (!needsOrbitDistance(shape) ||
+        !std::isfinite(previous)||!std::isfinite(current) ||
+        std::abs(current-previous)>0.125 || previous==current)return false;
+    const double lo=std::min(previous,current),hi=std::max(previous,current);
+    const bool frontBack=(shape==1||shape==4);
+    const double offset=frontBack?(isFarEndpoint?0.0:0.25):(isFarEndpoint?0.25:0.0);
+    for(int side=0;side<2;++side) {
+        const double threshold=offset+side*0.5;
+        if(std::floor(hi-threshold)>std::floor(lo-threshold))return true;
+    }
+    return false;
+}
 struct OrbitMotionPoint {
     float azimuth=0.5f, distance=0.5f, elevation=0.5f;
     float x=0.0f,y=1.0f,z=0.0f; // top-down x/y, signed elevation z

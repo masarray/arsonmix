@@ -124,7 +124,11 @@ async def main():
         assert await page.locator("#nativeOrbit .native-dialog-footer").is_hidden()
         await page.wait_for_function("""()=>document.querySelector("#nativeOrbitParameter")?.value==="2" """)
         assert await modal.locator("#nativeOrbitParameter").input_value() == "2"
-        assert "-180" in await modal.inner_text(), "Vendor endpoint range should be visible"
+        assert await modal.locator("#nativeOrbitParameter option").count()==2, "Only Azimuth should be listed"
+        assert await modal.locator("#nativeOrbitDistance option").count()==2, "Only Distance should be listed"
+        assert (await modal.locator("#nativeOrbitDistance option").last.inner_text()).strip()=="Distance"
+        assert "30.0 m" not in await modal.locator("#nativeOrbitDistance").inner_text(), "Vendor technical limit is not a dropdown label"
+        assert "Gain" not in await modal.locator("#nativeOrbitParameter").inner_text(), "Unrelated VST parameters must be filtered"
         start = modal.locator("[data-orbit-start]")
         assert await modal.locator("#nativeOrbitConfirm").count()==0
         assert await start.is_enabled(), "START must be ready without checkbox"
