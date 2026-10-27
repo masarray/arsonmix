@@ -27,7 +27,8 @@ public:
     // JUCE calls aboutToStart after configuring the input/output device.
     // One device session gets a new epoch; stored route cannot survive it.
     void prepareDevice (juce::AudioIODevice* device) noexcept {
-        enabled_.store(false,std::memory_order_release);
+        // Preserve explicit LAB ownership across hotplug; the new epoch
+        // makes the old prepared graph return silence, NEVER CH1 fallthrough.
         const auto generation=deviceEpoch_.fetch_add(1,std::memory_order_acq_rel)+1;
         registryValid_=false;
         enabledPorts_.fill(-1);
@@ -48,7 +49,8 @@ public:
         callbackInputCount_.store(portCount_,std::memory_order_release);
     }
     void deviceStopped() noexcept {
-        enabled_.store(false,std::memory_order_release);
+        // Epoch invalidates output while LAB mode remains fail-closed until
+        // the operator explicitly disables it or applies a new device map.
         deviceEpoch_.fetch_add(1,std::memory_order_acq_rel);
         callbackInputCount_.store(-1,std::memory_order_release);
         peakL_.store(0.f,std::memory_order_relaxed);
