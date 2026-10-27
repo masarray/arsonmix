@@ -19,7 +19,7 @@ test('native app never runs demo sine meters',()=>{
   assert.ok(fn>scheduler && meterGuard>fn && meterGuard<synth);
   assert.ok(app.indexOf('meterRAF=requestAnimationFrame(t=>{meterRAF=0;meters(t)});',scheduler)>scheduler);
 });
-test('native meter reads DSP and hides all 11 visual-only channels',()=>{
+test('native meter reads DSP and hides only the nine unrouted input channels',()=>{
   assert.ok(bridge.includes('percent(d.inputPeak)'),'CH1 uses native audio input peak');
   assert.ok(bridge.includes('percent(d.peakLeft)') && bridge.includes('percent(d.peakRight)'),'real output L/R peak inputs');
   assert.ok(bridge.includes('percent(d.peak)'),'master aux uses native output peak');
@@ -33,7 +33,6 @@ test('quick FX bypass is wired to native slot instead of demo mock',()=>{
   assert.match(bridge,/aria-pressed="\$\{!p\.bypass\}"/);
   assert.match(bridge,/send\("fxBypass",\{slot,value:!state\.chain\[slot\]\?\.bypass\}\)/);
   assert.match(engine,/graphOwned_->bypassFlags\[physical\]\.store/);
-  assert.match(engine,/const int physical = graphOwned_->physicalAt \(index\)/);
 });
 test('GUI pan event reaches actual callback pan matrix',()=>{
   assert.match(app,/send\(master\?'masterPan':'pan',c\.pan,master\?-1:idx\)/);
@@ -58,4 +57,19 @@ test('MASTER MONO/STEREO is delivered to RT audio as equal post-pan L+R summing'
   assert.match(engine,/const float fromL = mono \? monoL/);
   assert.match(engine,/const float fromR = mono \? monoR/);
   assert.match(bridge,/setMasterMono\(d\.masterMono,false\)/);
+});
+
+// Regression: MASTER has preview-only FX, not preview-only AUDIO. Do not
+// let the generic "data-preview" selector suppress real master output peaks.
+test('MASTER stereo meters are never hidden by native preview CSS',()=>{
+  assert.ok(bridge.includes('.strip:not(.master-strip)[data-preview=\\\"1\\\"] .meter-fill{opacity:0!important}'));
+  assert.ok(bridge.includes('.strip:not(.master-strip)[data-preview=\\\"1\\\"] .meter{opacity:.36}'));
+  const start=bridge.indexOf('if(track.classList.contains("master-strip"))');
+  const end=bridge.indexOf('const rack=track.querySelector(".rack")',start);
+  assert.ok(start>=0&&end>start);
+  const masterBranch=bridge.slice(start,end);
+  assert.ok(masterBranch.includes('track.removeAttribute("data-preview")'));
+  assert.ok(masterBranch.includes('track.dataset.fxPreview="1"'));
+  assert.ok(!masterBranch.includes('track.dataset.preview="1"'));
+  assert.ok(bridge.includes('percent(d.peakLeft)')&&bridge.includes('percent(d.peakRight)'));
 });

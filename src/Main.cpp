@@ -8,6 +8,7 @@
 #include "VstOrbitController.h"
 #include "DiagnosticsRecorder.h"
 #include "../engine/device/DirectRestoreBackoff.h"
+#include "../engine/core/OrbitDistanceMapping.h"
 #include "../engine/device/PeriodCapabilityEvidence.h"
 #include "../engine/diagnostics/CrackleEvidenceWindow.h"
 #if defined(_WIN32)
@@ -473,18 +474,10 @@ private:
         double loMeters=0,hiMeters=0;
         if(!distanceMeterBounds(p,loMeters,hiMeters)||
            !std::isfinite(metres)||metres<loMeters||metres>hiMeters)return false;
-        double lo=0.0,hi=1.0;
-        for(int i=0;i<24;++i){
-            const double mid=(lo+hi)*0.5;
-            const double v=p->getText(static_cast<float>(mid),48).getDoubleValue();
-            if(!std::isfinite(v))return false;
-            if(v<metres)lo=mid;else hi=mid;
-        }
-        normalized=static_cast<float>((lo+hi)*0.5);
-        // Round-trip tolerance accommodates formatted vendor resolution.
-        const double actual=p->getText(normalized,48).getDoubleValue();
-        return std::isfinite(actual)&&std::abs(actual-metres)<=
-            std::max(0.2,0.01*(hiMeters-loMeters));
+        return armix::core::normalizedForDisplayedSetpoint(
+            metres,loMeters,hiMeters,
+            [p](float value) {return p->getText(value,48).getDoubleValue();},
+            normalized);
     }
 
     void emitOrbitState (int slot,int previewShape=-1)
@@ -1196,7 +1189,7 @@ private:
                 auto* param=plugin->getParameters()[distanceIndex];
                 if(!metresToNormalized(param,rawNear,nearValue)||
                    !metresToNormalized(param,rawFar,farValue))
-                    return emitNotice("VST3 cannot resolve these metre setpoints; choose valid near/far values.",true);
+                    return emitNotice("This VST3 cannot represent the requested metres exactly. Choose a supported value.",true);
             }else if(unitArg=="%"){
                 if(!std::isfinite(rawNear)||!std::isfinite(rawFar)||
                    rawNear<0||rawFar>100)

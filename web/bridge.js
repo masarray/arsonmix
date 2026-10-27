@@ -94,7 +94,7 @@
     @media(max-width:1150px){.native-grid{grid-template-columns:1fr}.native-hdr{flex-direction:column}}
   `;
   css.textContent += "\n    .native-modal{position:fixed;inset:0;z-index:700;display:flex;align-items:center;justify-content:center;\n      background:rgba(3,11,18,.9);backdrop-filter:none;padding:22px;box-sizing:border-box}\n    .native-modal[hidden]{display:none}\n    .native-dialog{width:min(860px,96vw);max-height:min(840px,92vh);overflow:hidden;\n      display:flex;flex-direction:column;background:linear-gradient(145deg,#243945 0%,#101e29 62%,#0c1821);\n      border:1px solid #638293;border-radius:11px;box-shadow:0 18px 80px #000c,inset 0 1px #b2d9e449}\n    .native-dialog-header{display:flex;align-items:center;justify-content:space-between;gap:15px;\n      border-bottom:1px solid #3c5360;padding:14px 17px}\n    .native-dialog-header h2{font-size:18px;font-weight:500;color:#e4f4f9;margin:4px 0}\n    .native-dialog-body{padding:14px 17px;overflow:auto;min-height:60px}\n    .native-dialog-footer{border-top:1px solid #334b58;padding:9px 17px;color:#91abb8;font-size:11px}\n    .native-dialog.small{max-width:520px}\n    .native-bar{height:12px;border:1px solid #527282;background:#0a1621;border-radius:7px;overflow:hidden;position:relative;\n      box-shadow:inset 0 2px 5px #000c}\n    .native-bar-fill{height:100%;width:0%;background:linear-gradient(180deg,#8ef6ff,#17a8da 43%,#08688e);\n      box-shadow:none;border-right:1px solid #ddffff}\n    .native-bar.unknown .native-bar-fill{width:34%;position:absolute;animation:native-indeterminate 1.65s ease-in-out infinite}\n    @keyframes native-indeterminate{0%{left:-36%}50%{left:58%}100%{left:105%}}\n    .native-progress-info{font:11px monospace;color:#a5d5e2;margin:8px 0;display:flex;justify-content:space-between;gap:9px}\n    .native-progress-info strong{font-weight:500;color:#d8f9ff}\n    #nativeScanHud{position:fixed;left:50%;transform:translateX(-50%);bottom:37px;z-index:550;\n      background:#152c3b;border:1px solid #537588;border-radius:8px;box-shadow:0 6px 20px #000a;\n      padding:9px 13px;width:min(470px,90vw)}\n    #nativeScanHud[hidden]{display:none}\n    .native-result{display:flex;align-items:center;gap:7px;background:#10222c;border:1px solid #314d5c;\n      border-radius:6px;padding:9px 11px;margin:5px 0}\n    .native-result span{flex:1;min-width:0}\n    .native-result b{display:block;font-weight:500;color:#d6edf7;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n    .native-result small{display:block;color:#88aaba;font-size:10px;margin-top:4px}\n    .native-search{font-family:inherit!important}\n";
-  css.textContent += "\n    .native-insert-row{display:flex;align-items:center;gap:2px;width:100%;min-width:0}\n    .native-insert-row>.insert{flex:1;min-width:0;text-align:left;overflow:hidden;\n      text-overflow:ellipsis;white-space:nowrap;padding-left:4px;padding-right:1px}\n    .native-insert-row>.native-power{flex:0 0 21px;width:21px;height:21px;\n      font-size:14px;line-height:18px;text-align:center;border-radius:3px;\n      border:1px solid #3b6973;color:#8becb3;cursor:pointer;padding:0;\n      background:linear-gradient(#385e65,#102c30);box-shadow:inset 0 1px #91e8bd44}\n    .native-insert-row>.native-power.is-off{color:#8b9ca5;border-color:#53616a;\n      background:linear-gradient(#39414a,#171e27);box-shadow:none}\n    .native-insert-row>.native-power:focus-visible{outline:2px solid #4dd7ff}\n    .native-insert-row.is-bypassed>.insert{opacity:.54;filter:saturate(.55)}\n    .native-engine .strip[data-preview=\"1\"] .meter-fill{opacity:0!important}\n    .native-engine .strip[data-preview=\"1\"] .meter{opacity:.36}\n    .native-engine .meter-fill{transition:none}\n  ";
+  css.textContent += "\n    .native-insert-row{display:flex;align-items:center;gap:2px;width:100%;min-width:0}\n    .native-insert-row>.insert{flex:1;min-width:0;text-align:left;overflow:hidden;\n      text-overflow:ellipsis;white-space:nowrap;padding-left:4px;padding-right:1px}\n    .native-insert-row>.native-power{flex:0 0 21px;width:21px;height:21px;\n      font-size:14px;line-height:18px;text-align:center;border-radius:3px;\n      border:1px solid #3b6973;color:#8becb3;cursor:pointer;padding:0;\n      background:linear-gradient(#385e65,#102c30);box-shadow:inset 0 1px #91e8bd44}\n    .native-insert-row>.native-power.is-off{color:#8b9ca5;border-color:#53616a;\n      background:linear-gradient(#39414a,#171e27);box-shadow:none}\n    .native-insert-row>.native-power:focus-visible{outline:2px solid #4dd7ff}\n    .native-insert-row.is-bypassed>.insert{opacity:.54;filter:saturate(.55)}\n    .native-engine .strip:not(.master-strip)[data-preview=\"1\"] .meter-fill{opacity:0!important}\n    .native-engine .strip:not(.master-strip)[data-preview=\"1\"] .meter{opacity:.36}\n    .native-engine .meter-fill{transition:none}\n  ";
   // Native-only FX popover: no mixer theme/layout changes and no full-screen dimmer.
   css.textContent += `
     #nativeOrbit{z-index:980;background:transparent!important;backdrop-filter:none!important;
@@ -335,16 +335,34 @@
       (running&&orbit.shape===shape?orbit.distanceIndex:orbit.preferredDistance);
     const elevationSel=orbit.elevationSelection>=0?orbit.elevationSelection:
       (running&&orbit.shape===shape?orbit.elevationIndex:orbit.preferredElevation);
-    const valid=options.some(p=>p.index===selected);
+    // A parameter control is NOT the plugin's entire parameter catalog.
+    // Contextual vendor names only; preserve original VST3 parameter indices.
+    const candidates=role=>options.filter(p=>{
+      const name=String(p.name||"").trim();
+      if(/scale|range|width|occlusion/i.test(name))return false;
+      if(role==="azimuth")return /azimuth/i.test(name);
+      if(role==="distance")return /distance/i.test(name);
+      if(role==="elevation")return /elevation/i.test(name);
+      return false;
+    });
+    const list=(id,sel,role)=>{
+      const matches=candidates(role);
+      const roleName={azimuth:"Azimuth",distance:"Distance",elevation:"Elevation"}[role];
+      return `<select class="native-search" id="${id}"
+        aria-label="${roleName}" title="Automatable ${roleName} parameter">
+        <option value="-1" ${!matches.some(p=>p.index===sel)?"selected":""} disabled>
+          ${matches.length?"Select "+roleName+"…":"No automatable "+roleName}
+        </option>
+        ${matches.map(p=>`<option value="${p.index}" ${p.index===sel?"selected":""}>
+          ${escapeHtml(p.name)}
+        </option>`).join("")}
+      </select>`;
+    };
+    const valid=candidates("azimuth").some(p=>p.index===selected);
     const distValid=(!needsD&&distanceSel<0)||
-      options.some(p=>p.index===distanceSel&&p.index!==selected);
-    const elevValid=!needsE||options.some(p=>p.index===elevationSel&&p.index!==selected&&p.index!==distanceSel);
+      candidates("distance").some(p=>p.index===distanceSel&&p.index!==selected);
+    const elevValid=!needsE||candidates("elevation").some(p=>p.index===elevationSel&&p.index!==selected&&p.index!==distanceSel);
     const allValid=valid&&distValid&&elevValid&&validSetpoints&&orbit.revision!==null;
-    const list=(id,sel)=>`<select class="native-search" id="${id}">
-      <option value="-1" ${sel<0?"selected":""}>Choose parameter…</option>
-      ${options.map(p=>`<option value="${p.index}" ${p.index===sel?"selected":""}>
-        ${escapeHtml(p.name)} · ${escapeHtml(p.minText)} → ${escapeHtml(p.maxText)}
-      </option>`).join("")}</select>`;
     const modeName=motionModes[shape]?.[0]||motionModes[0][0];
     const modeHelp=motionModes[shape]?.[1]||motionModes[0][1];
     const ready=running&&orbit.shape===shape;
@@ -379,9 +397,9 @@
         ${motionModes.map((m,i)=>`<option value="${i}" ${shape===i?"selected":""}>${escapeHtml(m[0])}</option>`).join("")}
       </select>
       <label class="orbit-field-label" for="nativeOrbitParameter">Azimuth · 360°</label>
-      ${options.length?list("nativeOrbitParameter",selected):'<div class="native-empty">Reading plugin parameters…</div>'}
+      ${options.length?list("nativeOrbitParameter",selected,"azimuth"):'<div class="native-empty">Reading plugin parameters…</div>'}
       <label class="orbit-field-label" for="nativeOrbitDistance">Distance parameter</label>
-      ${list("nativeOrbitDistance",distanceSel)}
+      ${list("nativeOrbitDistance",distanceSel,"distance")}
       <div class="orbit-grid">
         ${needsD?`<div><label class="orbit-field-label" for="nativeOrbitNear">Near (${unit})</label>
           <input class="native-search" id="nativeOrbitNear" type="number"
@@ -393,10 +411,10 @@
             value="${orbit.farSetpoint}"></div>
       </div>
       <p class="orbit-help-note">${meter?
-         "Metres from the VST3 Distance parameter.":
-         "VST3 parameter (0–100%). No physical metres inferred."}</p>
+         "Distance is applied in metres.":
+         "Distance uses plugin percent (not metres)."}</p>
       ${needsE?`<label class="orbit-field-label" for="nativeOrbitElevation">Elevation · Down ↔ Up</label>
-        ${list("nativeOrbitElevation",elevationSel)}`:""}
+        ${list("nativeOrbitElevation",elevationSel,"elevation")}`:""}
       <div class="orbit-grid">
         <div><label class="orbit-field-label" for="nativeOrbitSeconds">Seconds / turn</label>
           <input class="native-search" id="nativeOrbitSeconds" type="number" min="2" max="180" step="1"
@@ -608,7 +626,8 @@
   tracks.forEach((track,i)=>{
     // The v0.8 Master uses .master-fx-rack, not .rack. Handle it first.
     if(track.classList.contains("master-strip")){
-      track.dataset.preview="1";
+      track.removeAttribute("data-preview");
+      track.dataset.fxPreview="1";
       track.title="Master FX and master PAN are visual previews; Master fader and meters are native";
       const masterRack=track.querySelector(".master-fx-rack");
       if(masterRack&&masterRack.dataset.nativeSig!=="empty-nonlive"){
