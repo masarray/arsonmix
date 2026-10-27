@@ -974,7 +974,13 @@ async def main():
             assert float(await rail.get_attribute('aria-valuenow'))>baseline,(name,baseline)
             await page.mouse.up()
         await page.screenshot(path=str(project/'fader-ui-smoke.png'),full_page=True)
+        # Native/master-aware rack semantics: explicitly visit MASTER, then CH1.
+        await page.locator('#masterLeft .ch-id').click()
         await page.locator('[data-view="FX RACK"]').click()
+        assert await page.locator('.feature-top h2').inner_text()=='FX Rack — MASTER'
+        assert await page.locator('.chain-add[data-master-insert]').count()==1
+        await page.locator('[data-choose="0"]').click()
+        assert await page.locator('[data-addplugin]').count()==1
         await page.locator('[data-addplugin]').click()
         await page.locator("#pluginSearch").fill("de-esser")
         await page.locator('[data-pluginname="De-Esser"]').click()
