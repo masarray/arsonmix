@@ -21,7 +21,7 @@
   const state = {catalog: [], chain: [], scanning: false, message: "Connecting to native host...",
     device: {}, presets: [], addRequestId:0, addError:"", pendingPlugin:"", filter: "", selectedCategory: "All", monitor: false, error: "", progress: {active:false,phase:"done",done:0,total:0,found:0,current:""}, adding:false};
 
-  const orbit = {slot:-1, plugin:"", parameters:[], active:false, activeSlot:-1, activeParameter:-1, periodSeconds:20, reverse:false, preferredParameter:-1, selection:-1, confirmed:false,revision:null};
+  const orbit = {slot:-1, plugin:"", parameters:[], active:false, activeSlot:-1, activeParameter:-1, periodSeconds:20, reverse:false, preferredParameter:-1, selection:-1, confirmed:false,revision:null,selectedShape:0,shape:0,distanceSelection:-1,elevationSelection:-1,distanceIndex:-1,elevationIndex:-1,preferredDistance:-1,preferredElevation:-1,motionPath:[],visualPhase:0,visualTime:0};
   const escapeHtml = text => String(text ?? "").replace(/[&<>"']/g, c => (
     {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const percent = peak => Math.max(1,Math.min(100,(20*Math.log10(Math.max(1e-6,Number(peak)||0))+60)*100/60));
@@ -137,6 +137,7 @@
     #nativeFxContext button:hover,#nativeFxContext button:focus-visible{background:#234657;color:#b5f2ff}
     #nativeFxContext .native-context-divider{height:1px;background:#334a58;margin:3px 4px}
   `;
+  css.textContent += "\n    #nativeOrbit .native-dialog{width:374px;max-width:calc(100vw - 16px)}\n    #nativeOrbit .orbit-motion-view{background:#0b1e2a;border:1px solid #2f5161;\n      border-radius:6px;margin:0 0 10px;padding:7px;display:flex;align-items:center;gap:10px}\n    #nativeOrbit .orbit-map{width:132px;height:132px;flex:none}\n    #nativeOrbit .orbit-mode-help{font-size:11px;color:#9abfce;line-height:1.55}\n    #nativeOrbit .orbit-mode-help strong{display:block;color:#d8f0f7;font-weight:500;margin-bottom:4px}\n    #nativeOrbit .orbit-field-label{font-size:11px}\n    #nativeOrbit .orbit-extra-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}\n    #nativeOrbit .orbit-help-note{font-size:10px;color:#87a8b9;line-height:1.4;margin:0 0 8px}\n    #nativeOrbit .material-icon{width:18px;height:18px;fill:currentColor;vertical-align:middle;flex:none}\n    #nativeOrbit .orbit-actions .native-btn{display:inline-flex;justify-content:center;align-items:center;gap:5px}\n    #nativeOrbit .orbit-map path{vector-effect:non-scaling-stroke}\n";
   document.head.appendChild(css);
   document.getElementById("engineBadge").textContent="NATIVE CH1 · ORBIT";
   const workspace = document.querySelector("#rackWorkspace");
@@ -226,45 +227,117 @@
     panel.style.setProperty("--orbit-arrow-x",
       Math.max(12,Math.min(anchor.left+Math.min(25,anchor.width/2)-left,width-22))+"px");
   }
+  const motionModes=[
+    ["Circle","Same distance in every direction"],
+    ["Front–Back ellipse","Far ahead/behind · close left/right"],
+    ["Left–Right ellipse","Close ahead/behind · far left/right"],
+    ["Circle · Rise/Fall","Round orbit with vertical motion"],
+    ["Front–Back · Rise/Fall","Long front/back with vertical motion"],
+    ["Left–Right · Rise/Fall","Wide left/right with vertical motion"]
+  ];
+  const iconSvg=(name)=>{
+    // Google Material Icons vector paths (Apache-2.0), self-contained; no font/network.
+    const paths={
+      close:"M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z",
+      play:"M8 5v14l11-7z",
+      stop:"M6 6h12v12H6z"
+    };
+    return '<svg class="material-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="'+paths[name]+'"/></svg>';
+  };
+  const needsDistance=mode=>mode===1||mode===2||mode===4||mode===5;
+  const needsHeight=mode=>mode>=3&&mode<=5;
+  function motionSvgPath(points){
+    if(!Array.isArray(points)||points.length<4)return "";
+    return points.map((p,i)=>{
+      const x=80+53*Math.max(-1.2,Math.min(1.2,Number(p.x)||0));
+      const y=80-53*Math.max(-1.2,Math.min(1.2,Number(p.y)||0));
+      return (i?"L":"M")+x.toFixed(2)+" "+y.toFixed(2);
+    }).join(" ");
+  }
+  let animationActive=false,lastMotionFrame=0;
+  function animateOrbitPreview(now){
+    const dlg=document.getElementById("nativeOrbit");
+    if(!dlg||dlg.hidden){animationActive=false;return;}
+    if(now-lastMotionFrame>=32){
+      lastMotionFrame=now;
+      const points=orbit.motionPath||[];
+      if(points.length>=4){
+        const elapsed=(now-(orbit.visualTime||now))/1000;
+        const period=Math.max(2,Math.min(180,Number(orbit.periodSeconds)||20));
+        const direction=orbit.reverse?-1:1;
+        const phase=((Number(orbit.visualPhase||0)+direction*elapsed/period)%1+1)%1;
+        const exact=phase*(points.length-1),i=Math.min(points.length-2,Math.floor(exact)),f=exact-i;
+        const a=points[i],b=points[i+1];
+        const mix=k=>(Number(a[k])||0)*(1-f)+(Number(b[k])||0)*f;
+        const dot=dlg.querySelector("#nativeOrbitDot");
+        if(dot){dot.setAttribute("cx",String(80+53*mix("x")));
+          dot.setAttribute("cy",String(80-53*mix("y")));}
+        const height=dlg.querySelector("#nativeOrbitHeightDot");
+        if(height)height.setAttribute("cy",String(80-52*mix("z")));
+      }
+    }
+    requestAnimationFrame(animateOrbitPreview);
+  }
   function renderOrbit(){
     const dlg=document.getElementById("nativeOrbit");
     if(!dlg)return;
     const options=Array.isArray(orbit.parameters)?orbit.parameters:[];
     const selected=orbit.active&&orbit.activeSlot===orbit.slot?orbit.activeParameter:
       (orbit.selection>=0?orbit.selection:orbit.preferredParameter);
-    const valid=options.some(p=>p.index===selected);
-    const chosen=options.find(p=>p.index===selected);
+    const shape=Number.isInteger(orbit.selectedShape)?orbit.selectedShape:0;
     const running=orbit.active&&orbit.activeSlot===orbit.slot;
+    const needsD=needsDistance(shape),needsE=needsHeight(shape);
+    const distanceSel=orbit.distanceSelection>=0?orbit.distanceSelection:
+      (running&&orbit.shape===shape?orbit.distanceIndex:orbit.preferredDistance);
+    const elevationSel=orbit.elevationSelection>=0?orbit.elevationSelection:
+      (running&&orbit.shape===shape?orbit.elevationIndex:orbit.preferredElevation);
+    const valid=options.some(p=>p.index===selected);
+    const distValid=!needsD||options.some(p=>p.index===distanceSel&&p.index!==selected);
+    const elevValid=!needsE||options.some(p=>p.index===elevationSel&&p.index!==selected&&p.index!==distanceSel);
+    const allValid=valid&&distValid&&elevValid;
+    const list=(id,sel)=>`<select class="native-search" id="${id}">
+      <option value="-1" ${sel<0?"selected":""}>Choose parameter…</option>
+      ${options.map(p=>`<option value="${p.index}" ${p.index===sel?"selected":""}>
+        ${escapeHtml(p.name)} · ${escapeHtml(p.minText)} → ${escapeHtml(p.maxText)}
+      </option>`).join("")}</select>`;
+    const modeName=motionModes[shape]?.[0]||motionModes[0][0];
+    const modeHelp=motionModes[shape]?.[1]||motionModes[0][1];
     dlg.querySelector(".native-dialog-header .eyebrow").textContent="FX "+(orbit.slot+1)+" · CHANNEL 1";
     dlg.querySelector(".native-dialog-header h2").textContent="Auto Orbit";
     dlg.querySelector(".native-dialog").setAttribute("aria-modal","false");
     dlg.querySelector(".native-dialog-body").innerHTML=`
-      <div class="orbit-target" title="${escapeHtml(orbit.plugin)}">${escapeHtml(orbit.plugin||"Loading FX…")}</div>
-      <div class="orbit-visual">
-        <svg class="orbit-graphic ${orbit.reverse?"is-reverse":""}" viewBox="0 0 80 80"
-          aria-label="Circular motion around the listener" role="img">
-          <circle cx="40" cy="40" r="28" fill="none" stroke="#3b5e6c" stroke-dasharray="3 4"/>
-          <circle cx="40" cy="40" r="9" fill="#294957" stroke="#7bb6c8"/>
-          <path d="M40 12 A28 28 0 1 1 16 26" stroke="#36c6d5" stroke-width="3"
-            stroke-linecap="round" fill="none"/>
-          <path d="M9 23 L16 29 L24 24" stroke="#36c6d5" stroke-width="3"
-            stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-          <circle cx="40" cy="12" r="4" fill="#8cf9f1"/>
-          <path d="M36 39h8m-4-4v10" stroke="#c5f1fa" stroke-width="1.4"/>
+      <div class="orbit-target">${escapeHtml(orbit.plugin||"Loading plugin…")}</div>
+      <div class="orbit-motion-view">
+        <svg class="orbit-map" viewBox="0 0 160 160" role="img" aria-label="Top-down spatial path preview">
+          <path d="M80 10V150M10 80H150" stroke="#29424d" fill="none"/>
+          <path id="nativeOrbitPath" d="${motionSvgPath(orbit.motionPath)}"
+            stroke="#43ccdc" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          <circle cx="80" cy="80" r="9" fill="#2c5964" stroke="#9ed8e6"/>
+          <path d="M77 81h6m-3-4v8" stroke="#c4f2f6" stroke-width="1.5"/>
+          <circle id="nativeOrbitDot" cx="80" cy="27" r="5.5" fill="#90fcf1"
+            stroke="#173641" stroke-width="2"/>
+          <path d="M147 59v42" stroke="#547580" stroke-width="2"/>
+          <circle id="nativeOrbitHeightDot" cx="147" cy="80" r="4" fill="#fec67f"/>
+          <text x="80" y="9" text-anchor="middle" fill="#698fa0" font-size="10">FRONT</text>
         </svg>
-        <div class="orbit-visual-caption">
-          <strong>360° · Continuous</strong>
-          Suara berputar mengelilingi pendengar
-          <div class="orbit-state ${running?"running":""}">${running?"RUNNING":"IDLE"}</div>
+        <div class="orbit-mode-help">
+          <strong>${escapeHtml(modeName)}</strong>
+          ${escapeHtml(modeHelp)}
+          <div class="orbit-state ${running?"running":""}">
+            ${running?(orbit.shape===shape?"RUNNING":"PREVIEW · UPDATE"):"PREVIEW"}
+          </div>
         </div>
       </div>
-      <label class="orbit-field-label" for="nativeOrbitParameter">Parameter</label>
-      ${options.length?`<select class="native-search" id="nativeOrbitParameter">
-        <option value="" ${valid?"":"selected"} disabled>Choose azimuth…</option>
-        ${options.map(p=>`<option value="${p.index}" ${valid&&p.index===selected?"selected":""}>
-          ${escapeHtml(p.name)} · ${escapeHtml(p.minText)} → ${escapeHtml(p.maxText)}
-        </option>`).join("")}</select>`:
-        '<div class="native-empty">Reading plugin parameters…</div>'}
+      <label class="orbit-field-label" for="nativeOrbitShape">Path</label>
+      <select class="native-search" id="nativeOrbitShape">
+        ${motionModes.map((m,i)=>`<option value="${i}" ${shape===i?"selected":""}>${escapeHtml(m[0])}</option>`).join("")}
+      </select>
+      <label class="orbit-field-label" for="nativeOrbitParameter">Azimuth · 360°</label>
+      ${options.length?list("nativeOrbitParameter",selected):'<div class="native-empty">Reading plugin parameters…</div>'}
+      ${needsD?`<label class="orbit-field-label" for="nativeOrbitDistance">Distance · Near ↔ Far</label>
+        ${list("nativeOrbitDistance",distanceSel)}`:""}
+      ${needsE?`<label class="orbit-field-label" for="nativeOrbitElevation">Elevation · Down ↔ Up</label>
+        ${list("nativeOrbitElevation",elevationSel)}`:""}
       <div class="orbit-grid">
         <div><label class="orbit-field-label" for="nativeOrbitSeconds">Seconds / turn</label>
           <input class="native-search" id="nativeOrbitSeconds" type="number" min="2" max="180" step="1"
@@ -275,16 +348,22 @@
             <option value="true" ${orbit.reverse?"selected":""}>↺ Reverse</option>
           </select></div>
       </div>
-      <label class="orbit-verify" title="Only use a parameter that describes an entire spatial circle">
+      <label class="orbit-verify">
         <input type="checkbox" id="nativeOrbitConfirm" ${orbit.confirmed?"checked":""}>
-        <span>Full-circle azimuth (360°) confirmed</span>
+        <span>${needsD||needsE?"Azimuth + spatial ranges verified":"Full-circle azimuth (360°) verified"}</span>
       </label>
+      ${needsD||needsE?'<p class="orbit-help-note">Confirm the vendor Distance/Elevation mapping before START. Normalized values are not metres.</p>':""}
       <div class="orbit-actions">
-        <button class="native-btn primary" data-orbit-start="1" ${valid&&orbit.confirmed&&orbit.revision!==null?"":"disabled"}>▶ ${running?"UPDATE":"START"}</button>
-        <button class="native-btn ${running?"on":""}" data-orbit-stop="1" ${running?"":"disabled"}>■ STOP</button>
-      </div>
-      <p class="orbit-hint">dearVR: Position → POLAR · Set a low listening level</p>`;
-    if(!dlg.hidden)positionOrbit();
+        <button class="native-btn primary" data-orbit-start="1"
+          ${allValid&&orbit.confirmed&&orbit.revision!==null?"":"disabled"}>
+          ${iconSvg("play")}${running?"UPDATE":"START"}</button>
+        <button class="native-btn ${running?"on":""}" data-orbit-stop="1" ${running?"":"disabled"}>
+          ${iconSvg("stop")}STOP</button>
+      </div>`;
+    if(!dlg.hidden){
+      positionOrbit();
+      if(!animationActive){animationActive=true;requestAnimationFrame(animateOrbitPreview);}
+    }
   }
   function openOrbit(slot,anchor){
     const fx=state.chain[slot];
@@ -299,10 +378,14 @@
     orbit.selection=-1;
     orbit.confirmed=false;
     orbit.revision=null;
+    orbit.selectedShape=orbit.active&&orbit.activeSlot===slot?orbit.shape:0;
+    orbit.distanceSelection=-1;
+    orbit.elevationSelection=-1;
+    orbit.motionPath=[];
     const panel=document.getElementById("nativeOrbit");
     panel.hidden=false;
     renderOrbit();
-    send("orbitInspect",{slot});
+    send("orbitInspect",{slot,shape:orbit.selectedShape});
   }
   function pluginRows(items,limit=180){
   return items.length?items.slice(0,limit).map(p=>`<div class="native-result">
@@ -423,6 +506,8 @@
   createDialog("nativeFxSelector","Add VST3 Effect");
   createDialog("nativeMySounds","My Sounds · Native Presets",true);
   createDialog("nativeOrbit","Auto Orbit",true);
+  const orbitClose=document.querySelector('#nativeOrbit [data-close-modal]');
+  if(orbitClose)orbitClose.innerHTML=iconSvg("close");
   createDialog("nativePluginManager","Plugin Manager");
   const hud=document.createElement("div");hud.id="nativeScanHud";hud.hidden=true;document.body.appendChild(hud);
 }
@@ -581,10 +666,19 @@
     const param=raw===""||raw===undefined?NaN:Number(raw);
     const seconds=Number(document.getElementById("nativeOrbitSeconds")?.value);
     const reverse=document.getElementById("nativeOrbitReverse")?.value==="true";
-    if(!orbit.confirmed||orbit.revision===null||!Number.isInteger(param)||!Number.isFinite(seconds)||seconds<2||seconds>180){
+    const shape=orbit.selectedShape;
+    const distanceIndex=Number(document.getElementById("nativeOrbitDistance")?.value??-1);
+    const elevationIndex=Number(document.getElementById("nativeOrbitElevation")?.value??-1);
+    const requiredDistance=needsDistance(shape);
+    const requiredHeight=needsHeight(shape);
+    if(!orbit.confirmed||orbit.revision===null||!Number.isInteger(param)||
+       !Number.isFinite(seconds)||seconds<2||seconds>180||
+       (requiredDistance&&distanceIndex<0)||(requiredHeight&&elevationIndex<0)){
       toStatus("Choose a valid VST3 parameter and revolution period (2–180 seconds).");return;
     }
-    send("orbitStart",{slot:orbit.slot,revision:orbit.revision,pluginId:state.chain[orbit.slot]?.id||"",parameterIndex:param,seconds,reverse});return;
+    send("orbitStart",{slot:orbit.slot,revision:orbit.revision,
+      pluginId:state.chain[orbit.slot]?.id||"",parameterIndex:param,seconds,reverse,
+      shape,distanceIndex,elevationIndex,calibrated:orbit.confirmed});return;
   }
   if(el.hasAttribute("data-orbit-stop")){send("orbitStop",{slot:orbit.slot});return;}
   if(el.hasAttribute("data-master-insert")||el.hasAttribute("data-master-power")){
@@ -689,18 +783,36 @@
 
   document.addEventListener("change",e=>{
     const t=e.target;
-    if(!t||!["nativeOrbitConfirm","nativeOrbitParameter","nativeOrbitSeconds","nativeOrbitReverse"].includes(t.id))return;
+    if(!t||!["nativeOrbitConfirm","nativeOrbitParameter","nativeOrbitSeconds",
+      "nativeOrbitReverse","nativeOrbitShape","nativeOrbitDistance","nativeOrbitElevation"].includes(t.id))return;
+    if(t.id==="nativeOrbitShape"){
+      orbit.selectedShape=Number(t.value);
+      orbit.confirmed=false;
+      orbit.motionPath=[];
+      send("orbitInspect",{slot:orbit.slot,shape:orbit.selectedShape});
+      renderOrbit();return;
+    }
     if(t.id==="nativeOrbitConfirm")orbit.confirmed=!!t.checked;
-    if(t.id==="nativeOrbitParameter")orbit.selection=t.value===""?-1:Number(t.value);
+    if(t.id==="nativeOrbitParameter")orbit.selection=Number(t.value);
+    if(t.id==="nativeOrbitDistance")orbit.distanceSelection=Number(t.value);
+    if(t.id==="nativeOrbitElevation")orbit.elevationSelection=Number(t.value);
     if(t.id==="nativeOrbitSeconds")orbit.periodSeconds=Number(t.value);
     if(t.id==="nativeOrbitReverse")orbit.reverse=t.value==="true";
-    const selected=document.getElementById("nativeOrbitParameter")?.value;
-    const start=document.querySelector("#nativeOrbit [data-orbit-start]");
-    if(start)start.disabled=!(orbit.confirmed&&orbit.revision!==null&&selected!==""&&selected!==undefined);
+    renderOrbit();
   },true);
   backend.addEventListener("arMixOrbitState",data=>{
     if(!data||Number(data.slot)!==orbit.slot)return;
     Object.assign(orbit,data);
+    if(data.previewShape===-1&&data.active&&data.activeSlot===orbit.slot){
+      orbit.selectedShape=data.shape;
+      orbit.distanceSelection=data.distanceIndex;
+      orbit.elevationSelection=data.elevationIndex;
+    }
+    if(data.previewShape===orbit.selectedShape || data.previewShape===-1){
+      orbit.motionPath=Array.isArray(data.motionPath)?data.motionPath:[];
+      orbit.visualPhase=Number(data.phase)||0;
+      orbit.visualTime=performance.now();
+    }
     renderOrbit();
     if(currentTab()==="FX RACK")renderRack();
     patchMixer();
