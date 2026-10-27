@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/ChannelRoutingContract.h"
 #include <array>
+#if defined(NDEBUG)
+#undef NDEBUG // Assertions are test execution, even in Windows Release.
+#endif
 #include <cassert>
 #include <cmath>
 #include <limits>
