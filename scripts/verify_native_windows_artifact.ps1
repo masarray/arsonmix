@@ -86,7 +86,14 @@ foreach ($marker in @(
     "meter-signal-area",            # VU activity region distinct from CLIP LED
     "fader-travel",                 # PNG black detent in 38px inset travel
     "function syncNativeMixerControls", # JUCE WebView bridge
-    "AUDIO_GLITCH_WINDOW"           # engine P0-12 compiled diagnostics
+    "AUDIO_GLITCH_WINDOW",          # engine P0-12 compiled diagnostics
+    "--b180-on-mute",              # current harmonized BTN-180 palette
+    "--b180-on-solo",              # MUTE / SOLO lightness calibration
+    "--b180-on-stereo",            # STEREO blue lightness calibration
+    "--b180-on-green",             # native device-connected green
+    "inset 5px 5px 2px -1px",      # owner-approved hardware button shadow
+    "gain-scale-travel",           # calibrated fader detent
+    "function syncNativeMixerControls" # latest native GUI state bridge
 )) {
     if ($embeddedText.IndexOf($marker, [StringComparison]::Ordinal) -lt 0) {
         throw "Compiled GUI/engine marker absent from shipped EXE: $marker"
