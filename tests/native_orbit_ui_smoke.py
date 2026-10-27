@@ -86,6 +86,7 @@ async def main():
               }
             }
           };
+          window.__emitNativeChain=items=>listeners.get('arMixChain')?.(items);
           window.__JUCE__ = {backend};
         })();""")
         await page.goto((root / "web/index.html").as_uri())
@@ -100,12 +101,12 @@ async def main():
         assert await page.locator(".strip").first.locator('[data-native-fx="orbit"]').count()==0
         # Built-in context actions are target-aware; no generic "Orbit" on other FX.
         await page.evaluate("""()=>{
-          window.__JUCE__.backend.emitEvent('arMixChain',[{id:'eq',name:'EQ',bypass:false,latency:0}]);
+          window.__emitNativeChain([{id:'eq',name:'EQ',bypass:false,latency:0}]);
         }""")
         await page.locator(".strip").first.locator('[data-native-fx="editor"]').click(button="right")
         assert await page.locator("#nativeFxContext [data-context-fx='orbit']").count()==0
         await page.evaluate("""()=>{
-          window.__JUCE__.backend.emitEvent('arMixChain',[{id:'dearvr-pro-2',name:'dearVR PRO 2',bypass:false,latency:0}]);
+          window.__emitNativeChain([{id:'dearvr-pro-2',name:'dearVR PRO 2',bypass:false,latency:0}]);
         }""")
                 await page.locator(".strip").first.locator('[data-native-fx="editor"]').click(button="right")
         menu=page.locator("#nativeFxContext")
