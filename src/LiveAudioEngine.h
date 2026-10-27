@@ -12,6 +12,7 @@
 #include "../engine/device/AsioRegistryIdentityProbe.h"
 #include "../engine/device/DirectRouteFence.h"
 #include "../engine/device/WasapiEndpointIdentityGuard.h"
+#include "../engine/core/FxOrderPlan.h"
 #include "../engine/core/RealtimeHealthHistogram.h"
 #include "../engine/core/CallbackCadenceEvidence.h"
 #include <array>
@@ -46,11 +47,11 @@ public:
         // Eight 4-bit physical slot indices in one x64 lock-free word.
         // Moving an insert publishes one complete order for the NEXT audio
         // block; the processor objects and their binary states never move.
-        static constexpr std::uint64_t canonicalOrder = 0x76543210ULL;
+        static constexpr std::uint64_t canonicalOrder = armix::dsp::FxOrderPlan::canonical;
         std::atomic<std::uint64_t> orderPacked {canonicalOrder};
         static int physicalAt (std::uint64_t order, int logical) noexcept
         {
-            return static_cast<int> ((order >> (logical * 4)) & 0xfULL);
+            return armix::dsp::FxOrderPlan::physicalAt (order, logical);
         }
         int physicalAt (int logical) const noexcept
         {
@@ -760,22 +761,7 @@ public:
         if (from < 0 || to < 0 || from >= count || to >= count || from == to)
             return false;
         const auto previous = graphOwned_->orderPacked.load (std::memory_order_acquire);
-        std::array<int, maxFx> indices {};
-        for (int i = 0; i < count; ++i)
-            indices[i] = Graph::physicalAt (previous, i);
-        const int moved = indices[from];
-        if (from < to)
-            for (int i = from; i < to; ++i) indices[i] = indices[i + 1];
-        else
-            for (int i = from; i > to; --i) indices[i] = indices[i - 1];
-        indices[to] = moved;
-        auto next = Graph::canonicalOrder;
-        for (int i = 0; i < count; ++i)
-        {
-            const auto shift = static_cast<unsigned> (i * 4);
-            next = (next & ~(0xfULL << shift))
-                 | (static_cast<std::uint64_t> (indices[i]) << shift);
-        }
+        const auto next = armix::dsp::FxOrderPlan::moved (previous, count, from, to);
         graphOwned_->orderPacked.store (next, std::memory_order_release);
         return true;
     }
