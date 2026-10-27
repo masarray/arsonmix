@@ -659,7 +659,7 @@
       track.title=`${track.querySelector(".strip-name")?.textContent?.trim()||"Channel"} — visual preview only; native I/O not wired`;
       return;
     }
-    const signature=state.chain.map(p=>p.id+"|"+p.bypass).join(",")+"|orbit="+state.orbitActiveSlot;
+    const signature=state.chain.map(p=>p.id+"|"+p.bypass).join(",");
     if(rack.dataset.nativeSig===signature)return;
     rack.dataset.nativeSig=signature;
     rack.innerHTML=state.chain.slice(0,6).map((p,i)=>
@@ -677,6 +677,13 @@
         </button></div>`).join("");
   });
 }
+  // Orbit lighting changes a class on existing rows. Never replace the row
+  // holding the native popup's anchor, nor reset its animation.
+  function updateOrbitRackMarker(){
+    document.querySelectorAll('.native-insert-row[data-native-move],.native-node[data-native-move]')
+      .forEach(row=>row.classList.toggle("has-orbit",
+        state.orbitActiveSlot>=0&&Number(row.dataset.nativeMove)===state.orbitActiveSlot));
+  }
   let renderPending = false;
   function syncView(){
     if(renderPending) return;
@@ -1053,7 +1060,7 @@
     const activeSlot=data.active&&Number.isInteger(Number(data.activeSlot))?Number(data.activeSlot):-1;
     if(state.orbitActiveSlot!==activeSlot){
       state.orbitActiveSlot=activeSlot;
-      patchMixer();
+      updateOrbitRackMarker();
     }
     if(Number(data.slot)!==orbit.slot)return;
     const wasInitialized=orbit.initialized;
@@ -1078,8 +1085,7 @@
       orbit.visualTime=performance.now();
     }
     renderOrbit();
-    if(currentTab()==="FX RACK")renderRack();
-    patchMixer();
+    updateOrbitRackMarker();
   });
   backend.addEventListener("arMixPresets",items=>{
     state.presets=Array.isArray(items)?items:[];
