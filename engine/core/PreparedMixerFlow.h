@@ -63,14 +63,11 @@ struct PreparedMixerFlow final {
             m.canSendPre=sourceAvailable && !c.mute && (!anySolo || c.solo);
             m.audible=m.canSendPre && c.faderLinear>0.f;
             if(!m.audible)continue;
-            // The P1A/P1B plan already compiles correct channel processing
-            // format and its gain coefficients for physical sources.
-            if(m.mayReceivePhysical) {
-                m.gainL=next.routing.base.strips[i].leftGain;
-                m.gainR=next.routing.base.strips[i].rightGain;
-            } else if(next.routing.effectiveFormats[i]==ChannelFormat::mono) {
-                // Pure internal bus/FX return, no physical channel. Derive its
-                // coefficients on CONTROL thread instead of dropping the bus.
+            // Channel FORMAT, not physical pin width, chooses the pan law.
+            // MONO-to-STEREO dual-mono uses stereo balance (unity center).
+            // Forced stereo-to-MONO uses equal-power pan after the raw fold.
+            // This also applies to internal returns with no hardware input.
+            if(next.routing.effectiveFormats[i]==ChannelFormat::mono) {
                 m.gainL=c.faderLinear*std::sqrt(.5f*(1.f-c.pan));
                 m.gainR=c.faderLinear*std::sqrt(.5f*(1.f+c.pan));
             } else {
