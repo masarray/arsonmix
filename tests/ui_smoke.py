@@ -641,9 +641,8 @@ async def main():
         assert fader_hover=='none',fader_hover
         button=page.locator('[data-mute="0"]')
         await button.hover()
-        await page.wait_for_timeout(150)  # Finish 90 ms physical-switch filter transition.
         button_hover=await button.evaluate("(e)=>getComputedStyle(e).filter")
-        assert button_hover=='brightness(1.32)',button_hover
+        assert button_hover=='none',button_hover  # No passive GPU filter in normal GUI
         # FX power and FX name remain separate inside the 104px channel strip.
         assert await page.evaluate("""() => [...document.querySelectorAll('.strip .insert-slot')].every(slot=>{
             const cell=slot.getBoundingClientRect(),strip=slot.closest('.strip').getBoundingClientRect();
