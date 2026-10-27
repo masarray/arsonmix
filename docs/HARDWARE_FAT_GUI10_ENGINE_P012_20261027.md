@@ -6,6 +6,13 @@
 2. Verify `sourceCommit` matches the GitHub Actions run's commit; `executable` must be `ArSonMix-GUI10CH-P012-Windows-x64.exe`, `appTarget=ARMixConsole`, and `peSubsystem=WINDOWS_GUI (2)`. The `exeSha256` must match the extracted EXE.
 3. Use **Windows 10/11 x64** with its audio interface driver already installed. JUCE VST3 discovery is optional. Do not infer GUI has all ten channels physically mixed yet: the current native engine implements **Channel 1** only; the remaining strips are visual design.
 
+## GUI failure: "Navigation to the webpage was canceled"
+The offline mixer needs **Microsoft Edge WebView2 Runtime** (not Internet Explorer). JUCE can silently fall back to IE if its loader or runtime is unavailable. New builds statically link the WebView2 loader into the EXE, check browser-data-folder access, and require a real native JavaScript readiness handshake. That means no white browser error should be presented as a successful GUI load.
+
+Extract the **whole** newest release ZIP, check `BUILD_PROVENANCE.json` says `webView2LoaderMode=JUCE_WEBVIEW2_LOADER_STATIC_LINKED_V1`, and launch the EXE. If the new error dialog reports WebView2 missing, install or repair **Microsoft Edge WebView2 Runtime** using the official page https://developer.microsoft.com/en-us/microsoft-edge/webview2/. Restart ArSonMix. Do not delete `Studio`, presets, VST3, or saved sessions to repair the browser.
+
+The static loader is NOT the Chromium Runtime. Runtime installation and a physical Windows GUI startup test remain prerequisites to certification, even after GitHub CI passes.
+
 ## Safe test sequence — use headphones at LOW volume
 1. Exit other exclusive-audio apps. Connect the intended interface and note driver/interface model, ASIO/WASAPI choice, Windows version, sample rate, and driver buffer.
 2. Start the app and open **AUDIO SETUP**. Explicitly select the same intended capture and output devices. Verify channel map; leave output muted until ready. Do not enable beta independent clocks or switch endpoints while audio is running.

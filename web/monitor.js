@@ -118,6 +118,9 @@
       " samples · "+(d.deviceInputChannels||0)+" active input / "+(d.deviceOutputChannels||0)+" active output channels · "+
       (d.latencySamples||0)+" samples plugin latency. Choose hardware output using AUDIO SETUP; Main L/R and Streaming are UI previews.";
   }
+  // Only a fully initialized WebView2 ArSonMix page sends this. An old-IE
+  // navigation error can never mark the native engine GUI as loaded.
+  api.emitEvent("arMixGuiReady",{protocol:1});
   api.addEventListener("arMixStatus",d=>{state=d;repaint(d);});
   el("arSignalOpen")?.addEventListener("click",()=>{overlay.classList.add("open");repaint(state);});
   el("arSignalClose").addEventListener("click",()=>overlay.classList.remove("open"));
