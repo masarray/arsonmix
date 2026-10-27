@@ -58,6 +58,93 @@ function setLedMeterLevel(el,rawLevel){
  }
 }
 window.__arMixSetLedMeterLevel=setLedMeterLevel;
+
+// Native-only visual interpolation. JUCE sends true peak samples at 12 Hz;
+// never change that realtime/data cadence to control animation smoothness.
+// Exactly ONE pending timer + ONE rAF serve every live meter (not one per bar).
+const NATIVE_METER_FRAME_MS=34; // ceiling 29.4 scheduled paint frames/s
+const nativeMeterStates=new Map();
+const nativeMeterDirect=new URLSearchParams(location.search).get('metermotion')==='direct';
+const nativeMeterMotionStats={frames:0,scheduled:0,targets:0,meterPaintCalls:0,frameBudgetMs:NATIVE_METER_FRAME_MS,active:0};
+let nativeMeterTimer=0,nativeMeterRAF=0,nativeMeterLastTime=0;
+function nativeMeterStep(level,target,fallVelocity,dt){
+ const span=Math.max(0,Math.min(.065,Number(dt)||0));
+ if(target>level){
+  // About 85% of an upward step in 34ms; almost immediate at real speech peaks.
+  const v=level+(target-level)*(1-Math.exp(-span/.018));
+  return {level:target-v<.3?target:v,velocity:0};
+ }
+ if(target<level){
+  // Gravity-like release: gentle initial descent, time-based acceleration,
+  // capped terminal speed. Never overshoot, even with irregular UI callbacks.
+  const speed=Math.min(100,Math.max(14,fallVelocity)+230*span);
+  const next=Math.max(target,level-speed*span);
+  return {level:next-target<.3?target:next,velocity:next===target?0:speed};
+ }
+ return {level:target,velocity:0};
+}
+function scheduleNativeMeterFrame(){
+ if(nativeMeterTimer||nativeMeterRAF||document.hidden)return;
+ nativeMeterMotionStats.scheduled++;
+ nativeMeterTimer=setTimeout(()=>{
+  nativeMeterTimer=0;
+  if(!document.hidden)nativeMeterRAF=requestAnimationFrame(animateNativeMeters);
+ },NATIVE_METER_FRAME_MS);
+}
+function animateNativeMeters(now){
+ nativeMeterRAF=0;
+ if(document.hidden){nativeMeterLastTime=0;return;}
+ const dt=nativeMeterLastTime?Math.min(.065,Math.max(0,(now-nativeMeterLastTime)/1000)):NATIVE_METER_FRAME_MS/1000;
+ nativeMeterLastTime=now;
+ nativeMeterMotionStats.frames++;
+ let active=0;
+ for(const [el,s] of nativeMeterStates){
+  if(!el.isConnected){nativeMeterStates.delete(el);continue;}
+  const next=nativeMeterStep(s.level,s.target,s.velocity,dt);
+  s.level=next.level;s.velocity=next.velocity;
+  setLedMeterLevel(el,s.level);
+  nativeMeterMotionStats.meterPaintCalls++;
+  if(Math.abs(s.level-s.target)>.3)active++;
+ }
+ nativeMeterMotionStats.active=active;
+ if(active)scheduleNativeMeterFrame();
+ else nativeMeterLastTime=0;
+}
+function setNativeMeterTarget(el,rawValue){
+ if(!el)return;
+ const target=clamp(Number(rawValue)||0,0,100);
+ let s=nativeMeterStates.get(el);
+ if(!s){
+  // Mixer DOM may be rebuilt after a preset/FX edit: prune detached nodes
+  // without polling or leaking strong references to old LED bars.
+  if(nativeMeterStates.size>4)
+   for(const [old] of nativeMeterStates)if(!old.isConnected)nativeMeterStates.delete(old);
+  s={level:0,target:0,velocity:0};nativeMeterStates.set(el,s);
+  setLedMeterLevel(el,0);
+ }
+ s.target=target;
+ nativeMeterMotionStats.targets++;
+ if(nativeMeterDirect||document.hidden||
+    (typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches)){
+  s.level=target;s.velocity=0;setLedMeterLevel(el,target);
+  return;
+ }
+ if(Math.abs(s.level-target)>.3)scheduleNativeMeterFrame();
+}
+window.__arMixSetNativeMeterTarget=setNativeMeterTarget;
+window.__arMixMeterMotionStats=nativeMeterMotionStats;
+document.addEventListener('visibilitychange',()=>{
+ if(!document.hidden)return;
+ if(nativeMeterTimer){clearTimeout(nativeMeterTimer);nativeMeterTimer=0;}
+ if(nativeMeterRAF){cancelAnimationFrame(nativeMeterRAF);nativeMeterRAF=0;}
+ nativeMeterLastTime=0;
+ for(const [el,s] of nativeMeterStates){
+  if(!el.isConnected){nativeMeterStates.delete(el);continue;}
+  s.level=s.target;s.velocity=0;setLedMeterLevel(el,s.level);
+ }
+ nativeMeterMotionStats.active=0;
+});
+
 // Observe only the stable mixer root, never disposable strips; no hot-path reflow.
 if(typeof ResizeObserver==='function'){
  const ledResizeObserver=new ResizeObserver(()=>{

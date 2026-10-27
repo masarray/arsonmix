@@ -64,3 +64,16 @@ test('quantised LED meter avoids redundant raw CSS writes while preserving diagn
  assert.ok(monitor.includes('const setTextIfChanged='));
  assert.ok(bridge.includes('footer.textContent!==text'));
 });
+
+test('native 12Hz status uses one capped shared visual meter scheduler',()=>{
+ assert.ok(app.includes('const NATIVE_METER_FRAME_MS=34;'));
+ assert.ok(app.includes('const nativeMeterStates=new Map()'));
+ assert.ok(app.includes('function nativeMeterStep('));
+ assert.ok(app.includes('function scheduleNativeMeterFrame('));
+ assert.ok(app.includes('if(nativeMeterTimer||nativeMeterRAF||document.hidden)return;'));
+ assert.ok(app.includes("window.__arMixSetNativeMeterTarget=setNativeMeterTarget"));
+ assert.ok(bridge.includes('window.__arMixSetNativeMeterTarget(el,level)'));
+ assert.ok(!bridge.includes('liveInputLevel-5'), 'release must use elapsed time, not telemetry count');
+ assert.ok(!bridge.includes('liveOutputLeft-5'));
+ assert.ok(!app.includes('setInterval(animateNativeMeters'), 'no perpetual meter frame timer');
+});

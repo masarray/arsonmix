@@ -10,12 +10,21 @@
   function paintMeter(el,value){
     if(!el)return;
     const level=Math.max(0,Math.min(100,Number(value)||0));
-    if(typeof window.__arMixSetLedMeterLevel==="function")window.__arMixSetLedMeterLevel(el,level);
+    if(typeof window.__arMixSetNativeMeterTarget==="function")
+      window.__arMixSetNativeMeterTarget(el,level);
+    else if(typeof window.__arMixSetLedMeterLevel==="function")
+      window.__arMixSetLedMeterLevel(el,level);
     else el.style.setProperty("--level",level+"%");
   }
   // Clear preview levels before first real device callback/status.
+  // One-time native boot clear includes unrouted preview channels. Keep it
+  // direct so the live 30fps animator owns ONLY CH1 and real Master meters.
   document.querySelectorAll("[data-meter],#masterMeterL,#masterMeterR,#masterMeterAux")
-    .forEach(el=>paintMeter(el,0));
+    .forEach(el=>{
+      if(typeof window.__arMixSetLedMeterLevel==="function")
+        window.__arMixSetLedMeterLevel(el,0);
+      else el.style.setProperty("--level","0%");
+    });
 
   const send = (action, more = {}) => backend.emitEvent("arMixAction", {action, ...more});
   const state = {catalog: [], chain: [], scanning: false, message: "Connecting to native host...",
@@ -1033,7 +1042,6 @@
     }
     if(changed)patchMixer();
   }
-  let liveInputLevel=0, liveOutputLevel=0, liveOutputLeft=0, liveOutputRight=0;
   backend.addEventListener("arMixStatus",d=>{
     state.device=d;
     state.monitor=!!d.monitor;
@@ -1049,21 +1057,15 @@
       :"NO AUDIO DEVICE · SELECT AUDIO SETUP";
     toStatus(text);
     // Only CH1 and master are sourced from a real native audio callback.
-    const inputLevel=percent(d.inputPeak), outputLevel=percent(d.peak);
-    // Real left/right peaks reflect PAN. Fast attack, capped 12-Hz UI release.
-    liveInputLevel=Math.max(inputLevel,liveInputLevel-5);
-    liveOutputLevel=Math.max(outputLevel,liveOutputLevel-5);
-    liveOutputLeft=Math.max(percent(d.peakLeft),liveOutputLeft-5);
-    liveOutputRight=Math.max(percent(d.peakRight),liveOutputRight-5);
-    const meter=document.querySelector('[data-meter="0"]');
-    paintMeter(meter,liveInputLevel);
-    for(const [key,level] of [["masterL",liveOutputLeft],["masterR",liveOutputRight]]){
-      const target=document.querySelector('[data-meter="'+key+'"]')||
-        document.getElementById(key==="masterL"?"masterMeterL":"masterMeterR");
-      paintMeter(target,level);
-    }
-    const aux=document.getElementById("masterMeterAux");
-    paintMeter(aux,liveOutputLevel);
+    // No fixed "-5 per telemetry callback" smoothing: its speed changed
+    // with source cadence and fought the shared elapsed-time ballistics.
+    // UI animation is capped at 29.4fps; native peaks remain unmodified.
+    paintMeter(document.querySelector('[data-meter="0"]'),percent(d.inputPeak));
+    paintMeter(document.querySelector('[data-meter="masterL"]')||
+      document.getElementById("masterMeterL"),percent(d.peakLeft));
+    paintMeter(document.querySelector('[data-meter="masterR"]')||
+      document.getElementById("masterMeterR"),percent(d.peakRight));
+    paintMeter(document.getElementById("masterMeterAux"),percent(d.peak));
     // Design-only LUFS/true-peak fields have no native measurement yet.
     const lufs=document.getElementById("masterLufs"),tp=document.getElementById("masterDbtp");
     if(lufs&&lufs.textContent!=="—")lufs.textContent="—";

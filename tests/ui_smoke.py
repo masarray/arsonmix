@@ -130,6 +130,25 @@ async def main():
           return {before,after:e.getAttribute('style'),lit,level:ledMeterCache.get(e).level};
         }""")
         assert dirty['before']==dirty['after'] and dirty['level']==1.1,dirty
+        # Deterministic native-style time-based ballistics: fast attack,
+        # gravity release, non-overshoot, single shared 30fps visual owner.
+        ballistic=await page.evaluate("""()=>{
+          const fast=nativeMeterStep(8,96,0,.034);
+          const down=nativeMeterStep(96,8,0,.034);
+          const further=nativeMeterStep(down.level,8,down.velocity,.034);
+          const zero=nativeMeterStep(8,8,14,.034);
+          const overshoot=nativeMeterStep(2,0,96,.065);
+          return {fast,down,further,zero,overshoot,cap:NATIVE_METER_FRAME_MS,
+            nativeTarget:typeof window.__arMixSetNativeMeterTarget,
+            stats:typeof window.__arMixMeterMotionStats};
+        }""")
+        assert ballistic['cap']>=34 and ballistic['nativeTarget']=='function',ballistic
+        assert ballistic['fast']['level']>80 and ballistic['fast']['level']<=96,ballistic
+        assert 94<ballistic['down']['level']<96,ballistic
+        assert ballistic['down']['velocity']<ballistic['further']['velocity'],ballistic
+        assert ballistic['further']['level']<ballistic['down']['level'],ballistic
+        assert ballistic['zero']=={'level':8,'velocity':0},ballistic
+        assert ballistic['overshoot']['level']==0,ballistic
         # Full mixer rebuild must restore held peaks and clip state on fresh DOM nodes.
         restored=await page.evaluate("""()=>{
           clipLatch['0']=true;

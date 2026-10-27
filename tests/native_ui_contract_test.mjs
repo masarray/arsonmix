@@ -20,10 +20,11 @@ test('native app never runs demo sine meters',()=>{
   assert.ok(app.indexOf('meterRAF=requestAnimationFrame(t=>{meterRAF=0;meters(t)});',scheduler)>scheduler);
 });
 test('native meter reads DSP and hides all 11 visual-only channels',()=>{
-  assert.match(bridge,/inputLevel=percent\(d\.inputPeak\)/);
-  assert.match(bridge,/outputLevel=percent\(d\.peak\)/);
-  assert.ok(bridge.includes('["masterL",liveOutputLeft]'));
-  assert.ok(bridge.includes('["masterR",liveOutputRight]'));
+  assert.ok(bridge.includes('percent(d.inputPeak)'),'CH1 uses native audio input peak');
+  assert.ok(bridge.includes('percent(d.peakLeft)') && bridge.includes('percent(d.peakRight)'),'real output L/R peak inputs');
+  assert.ok(bridge.includes('percent(d.peak)'),'master aux uses native output peak');
+  assert.ok(bridge.includes('window.__arMixSetNativeMeterTarget(el,level)'),'native data is fed to bounded visual presenter');
+  assert.ok(!bridge.includes('liveInputLevel-5'),'remove callback-cadence smoothing');
   assert.match(bridge,/track\.dataset\.preview="1"/);
   assert.ok(bridge.includes("meter-fill{opacity:0!important}"));
 });
