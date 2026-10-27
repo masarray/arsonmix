@@ -170,6 +170,7 @@ public:
         startupError_ = engine_.start (saved.get());
         engine_.devices().addChangeListener (this);
         diagnostics_.record ("STARTUP", startupError_.isEmpty() ? "Audio device initialized" : startupError_);
+        webViewStartupTick_ = juce::Time::getMillisecondCounter();
         browser_.goToURL (juce::WebBrowserComponent::getResourceProviderRoot());
         startTimerHz (12);
         // Defer initial scan until explicitly requested in Plugin Manager.
@@ -204,7 +205,7 @@ private:
     juce::String startupError_, lastAudioXml_;
     bool initialStateSent_ = false;
     bool webViewStartupNoticeSent_ = false;
-    const juce::uint32 webViewStartupTick_ = juce::Time::getMillisecondCounter();
+    juce::uint32 webViewStartupTick_ = 0;
     bool setupLaunching_ = false;
     unsigned int timerTicks_ = 0;
     bool deviceSettingsDirty_ = false;
