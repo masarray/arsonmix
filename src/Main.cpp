@@ -445,7 +445,7 @@ private:
             browser_.emitEventIfBrowserIsVisible ("arMixChain", engine_.chainState());
     }
 
-    void emitOrbitState (int slot)
+    void emitOrbitState (int slot,int previewShape=-1)
     {
         auto event = std::make_unique<juce::DynamicObject>();
         event->setProperty ("slot", slot);
@@ -465,12 +465,14 @@ private:
         event->setProperty ("distanceIndex", orbit_.distanceParameterIndex());
         event->setProperty ("elevationIndex", orbit_.elevationParameterIndex());
         event->setProperty ("phase", orbit_.phase());
+        event->setProperty("previewShape",previewShape);
+        const int pathShape=armix::core::validOrbitShape(previewShape)?previewShape:orbit_.shape();
         // Sample the *same C++ pure trajectory* as the engine so the WebView
         // draws matching paths without vendor calls or WebView events at 60Hz.
         juce::Array<juce::var> path;
         for(int i=0;i<=64;++i)
         {
-            const auto p=armix::core::orbitMotionPoint(i/64.0,orbit_.shape());
+            const auto p=armix::core::orbitMotionPoint(i/64.0,pathShape);
             auto pt=std::make_unique<juce::DynamicObject>();
             pt->setProperty("x",p.x);
             pt->setProperty("y",p.y);
@@ -1067,7 +1069,9 @@ private:
         }
         else if (action == "orbitInspect")
         {
-            emitOrbitState (slot);
+            const auto requested=args.getProperty("shape",-1);
+            const int shape=requested.isInt()?static_cast<int>(requested):-1;
+            emitOrbitState(slot,shape);
         }
         else if (action == "orbitStart")
         {
