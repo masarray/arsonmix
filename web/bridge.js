@@ -552,7 +552,7 @@ function openRackTarget(t){
         rack.innerHTML=Array.from({length:6},(_,slot)=>`<div class="master-fx-slot"><button class="master-insert empty" data-master-insert="${slot}" title="Open MASTER FX Rack · routing pending"><span class="insert-name">${slot===0?"＋ ADD FX":"—"}</span></button></div>`).join("");
       }
       const pan=track.querySelector('[data-pan="master"]');
-      if(pan){pan.removeAttribute("tabindex");pan.style.pointerEvents="none";pan.title="MASTER PAN DSP pending";}
+      if(pan){pan.removeAttribute("tabindex");pan.style.pointerEvents="none";pan.title="Master PAN DSP not yet implemented";}
       const marker=track.querySelector(".master-info-kicker span");
       if(marker&&marker.textContent!=="NATIVE PEAKS")marker.textContent="NATIVE PEAKS";
       return;

@@ -285,12 +285,13 @@ async def main():
                   mute:grab('[data-mute="0"]'),
                   utility:grab('[data-hpf="0"]')};
         }""")
-        for key in ('nav','rail','mute','utility'):
+        for key in ('rail','mute','utility'):
             assert style[key]['face']=='rgb(179, 179, 179)',(key,style)
             assert style[key]['image']=='none',(key,style)
             assert style[key]['shadow'].count('rgb')==7,(key,style)
             assert style[key]['radius']=='3px',(key,style)
-        assert style['selected']['face']=='rgb(240, 241, 243)',style
+        assert style['nav']['face']=='rgb(173, 200, 117)',style
+        assert style['selected']['face']=='rgb(185, 207, 119)',style
         assert style['railOn']['face']=='rgb(227, 166, 216)',style
         # Audio Device shares the physical BTN-180 toolbar face and dark ink.
         # The OFF state is truthful in UI-only preview. Explicitly force ON
@@ -299,7 +300,7 @@ async def main():
         devOff=await device.evaluate("""e=>{const s=getComputedStyle(e),t=getComputedStyle(e.querySelector('#headerDriver')),
           r=e.getBoundingClientRect();return {face:s.backgroundColor,ink:t.color,shadow:s.boxShadow,rect:r.toJSON(),
           pressed:e.classList.contains('on'),backgroundImage:s.backgroundImage}}""")
-        assert devOff['face']==style['nav']['face']=='rgb(179, 179, 179)',devOff
+        assert devOff['face']=='rgb(179, 179, 179)',devOff
         assert devOff['ink']=='rgb(43, 43, 43)' and devOff['backgroundImage']=='none',devOff
         assert not devOff['pressed'],devOff
         await device.evaluate("(e)=>e.classList.add('on')")
@@ -348,8 +349,8 @@ async def main():
           const on=document.querySelector('[data-view="FX RACK"]');
           const off=document.querySelector('[data-view="MIX"]');
           return on.classList.contains('selected') && !off.classList.contains('selected')
-            && getComputedStyle(on).backgroundColor==='rgb(240, 241, 243)'
-            && getComputedStyle(off).backgroundColor==='rgb(179, 179, 179)';
+            && getComputedStyle(on).backgroundColor==='rgb(185, 207, 119)'
+            && getComputedStyle(off).backgroundColor==='rgb(173, 200, 117)';
         }""")
         nav=page.locator('[data-view="FX RACK"]')
         navBefore=await nav.evaluate("(e)=>e.getBoundingClientRect().toJSON()")
