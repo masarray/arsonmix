@@ -1,8 +1,34 @@
 name: Windows Native VST3 Host
 on:
+  # Single canonical Windows release producer: main changes to shipped runtime,
+  # native C++ or distribution scripts. Historical feature branch pushes are PRs.
   push:
-    branches: [ main, feature/p1-first-sound-windows, feature/p2-native-vst-catalog-fx-rack, feature/p2-daw-workflow-progress, fix/p2-native-output-monitor-diagnostics, fix/p2-realtime-glitch-telemetry-latest-gui, fix/p2-truthful-meter-pan-fx-toggle, feature/p2-native-state-presets, fix/p2-fabfilter-add-workflow, feature/p25-live-preset-graph-swap, integration/p25-gui-engine-reconciled, integration/main-v08-gui-p25-native ]
+    branches: [main]
+    paths:
+      - 'CMakeLists.txt'
+      - 'src/**'
+      - 'engine/**'
+      - 'web/**'
+      - 'AR-MIX-Live-FX-Host-Standalone-v0.3.html'
+      - 'scripts/build_ui_css.py'
+      - 'tests/*.cpp'
+      - 'scripts/package_native_windows.ps1'
+      - 'scripts/verify_native_windows_artifact.ps1'
+      - '.github/workflows/p1-windows.yml'
+  # GUI-only PRs receive browser checks; they need not compile JUCE on every edit.
+  # A merged GUI change is still packaged once on main, or manually for FAT.
   pull_request:
+    paths:
+      - 'CMakeLists.txt'
+      - 'src/**'
+      - 'engine/**'
+      - 'tests/*.cpp'
+      - 'tests/*native*contract*.mjs'
+      - 'tests/live_graph_contract_test.mjs'
+      - 'tests/ci_workflow_efficiency_test.mjs'
+      - 'scripts/package_native_windows.ps1'
+      - 'scripts/verify_native_windows_artifact.ps1'
+      - '.github/workflows/p1-windows.yml'
   workflow_dispatch:
 
 concurrency:
@@ -76,7 +102,10 @@ jobs:
         run: |
           & ./scripts/verify_native_windows_artifact.ps1 -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      # Compile + CTest + distribution verification gate PRs; upload only
+      # qualified main builds or an explicit branch FAT workflow_dispatch.
       - uses: actions/upload-artifact@v4
+        if: ${{ github.event_name != 'pull_request' }}
         with:
           name: ArSonMix-GUI10CH-P012-Verified-Hardware-FAT-Windows-x64
           path: dist/
