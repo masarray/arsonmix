@@ -16,6 +16,7 @@ int main() {
     SendError err;
     assert(ChannelSendPlan::compile(cfg,plan,err));
     assert(plan.edgeCount==0);
+    assert(!plan.receivesInternalAudio(3));
     for(int i=0;i<stripCount;++i) {
         assert(plan.topologicalOrder[i]==i);
         assert(plan.masterEnabled(i));
@@ -31,6 +32,12 @@ int main() {
     cfg.count=4;
     assert(ChannelSendPlan::compile(cfg,plan,err));
     assert(plan.edgeCount==4);
+    // CH4 may be a pure FX Return with no hardware port, but it is active
+    // as an internal-bus recipient. Physical input availability is separate.
+    assert(plan.receivesInternalAudio(1));
+    assert(plan.receivesInternalAudio(3));
+    assert(!plan.receivesInternalAudio(0));
+    assert(!plan.receivesInternalAudio(-1));
     assert(!plan.masterEnabled(0)&&plan.masterEnabled(1));
     assert(plan.upstreamOf(0,1));
     assert(plan.upstreamOf(1,3));
@@ -82,6 +89,7 @@ int main() {
     cfg.sends[4].enabled=false;
     assert(ChannelSendPlan::compile(cfg,plan,err));
     assert(plan.edgeCount==4); // disabled edge never processed
+    assert(plan.receivesInternalAudio(3));
     cfg.count=maxChannelSends+1;
     assert(!ChannelSendPlan::compile(cfg,plan,err)&&err.fault==SendFault::tooManySends);
     cfg.count=-1;
