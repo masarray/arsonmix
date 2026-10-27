@@ -163,4 +163,40 @@ int main() {
     assert(Flow::compile(cfg,port0,request,flow,error));
     assert(flow.render(capture,1,frames,work,dry));
     assert(eq(work.masterL[0],0.f)&&eq(work.masterR[0],0.f));
+    // 10 real physical strips + a send into a strip that ALSO has hardware
+    // audio: sum its two sources exactly once, no channel bleed/copy aliases.
+    cfg=ChannelRoutingConfig{};request=SendRequest{};
+    std::array<int,stripCount> physicalIds {};
+    std::array<std::array<float,frames>,stripCount> tenInputs {};
+    std::array<const float*,stripCount> tenPtrs {};
+    for(int i=0;i<stripCount;++i) {
+        physicalIds[i]=i;
+        cfg.stripsAndMaster.strips[i]={SourceMode::mono,i,-1,1.f,0.f,false,false};
+        cfg.formats[i]=ChannelFormat::stereo;
+        tenInputs[i].fill(static_cast<float>(i+1));
+        tenPtrs[i]=tenInputs[i].data();
+    }
+    request.toMaster[0]=false;
+    request.count=1;
+    request.sends[0]={0,9,SendTap::preFader,.5f,0.f,true};
+    assert(Flow::compile(cfg,physicalIds,request,flow,error));
+    assert(flow.render(tenPtrs.data(),stripCount,frames,work,dry));
+    assert(eq(work.masterL[0],54.5f)&&eq(work.masterR[0],54.5f));
+    cfg.stripsAndMaster.strips[5].mute=true;
+    assert(Flow::compile(cfg,physicalIds,request,flow,error));
+    assert(flow.render(tenPtrs.data(),stripCount,frames,work,dry));
+    assert(eq(work.masterL[0],48.5f)&&eq(work.masterR[0],48.5f));
+
+    // Stereo-to-mono must fold before FX; a hard-left mono pan uses the
+    // folded midpoint rather than dropping the opposite stereo input.
+    cfg=ChannelRoutingConfig{};request=SendRequest{};
+    cfg.stripsAndMaster.strips[0]={SourceMode::stereo,0,1,1.f,-1.f,false,false};
+    cfg.formats[0]=ChannelFormat::mono;
+    constexpr std::array<int,2> adjacent={0,1};
+    std::array<float,frames> stereoL{},stereoR{};
+    stereoL.fill(1.f);stereoR.fill(.2f);
+    const float* stereoInputs[]={stereoL.data(),stereoR.data()};
+    assert(Flow::compile(cfg,adjacent,request,flow,error));
+    assert(flow.render(stereoInputs,2,frames,work,dry));
+    assert(eq(work.masterL[0],.6f)&&eq(work.masterR[0],0.f));
 }
