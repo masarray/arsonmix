@@ -781,6 +781,12 @@
   input?.setSelectionRange(pos,pos);
 },true);
 
+  // Persist numeric edits immediately; input[type=number] may not emit change
+  // until blur, and a subsequent select change re-renders the popover.
+  document.addEventListener("input",e=>{
+    if(e.target?.id==="nativeOrbitSeconds")
+      orbit.periodSeconds=Number(e.target.value);
+  },true);
   document.addEventListener("change",e=>{
     const t=e.target;
     if(!t||!["nativeOrbitConfirm","nativeOrbitParameter","nativeOrbitSeconds",
