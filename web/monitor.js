@@ -114,7 +114,7 @@
     el("arSignalDry").textContent=d.dryTest?"DRY TEST ON":"DRY TEST OFF";
     const trial=captureFaultEvidence(d);
     el("arSmartClockToggle").textContent=d.adaptiveClockActive?
-      "RETURN TO DIRECT":trial?"TRY INDEPENDENT CLOCK (BETA)":"SMART CLOCK: DIRECT";
+      "SMART CLOCK: INDEPENDENT (BETA)":trial?"TRY INDEPENDENT CLOCK (BETA)":"SMART CLOCK: DIRECT";
     el("arSmartClockToggle").title=trial?
       "Explicit A/B test for recorded WASAPI capture dropouts. Opens separate capture/render devices; can add latency. No automatic switch.":
       "Manual independent capture/render clock control";
