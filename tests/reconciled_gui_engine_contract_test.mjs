@@ -24,9 +24,10 @@ test('native desktop does not run any visual-only sine meter loop',()=>{
   const timer=app.indexOf('meterTimer=setTimeout(',scheduler);
   assert.ok(scheduler>=0 && fn>scheduler && early>fn && early<synth);
   assert.ok(scheduleGuard>scheduler && scheduleGuard<timer);
-  assert.match(bridge,/liveOutputLeft/);
-  assert.match(bridge,/\["masterL",liveOutputLeft\]/);
-  assert.match(bridge,/\["masterR",liveOutputRight\]/);
+  assert.ok(bridge.includes('percent(d.peakLeft)')&&bridge.includes('percent(d.peakRight)'));
+  assert.match(bridge,/paintMeter\(document\.querySelector\('\[data-meter="masterL"\]'\)/);
+  assert.match(bridge,/paintMeter\(document\.querySelector\('\[data-meter="masterR"\]'\)/);
+  assert.ok(!bridge.includes('liveOutputLeft-5'),'native output must be raw before time-based visual motion');
   assert.match(bridge,/track\.dataset\.preview="1"/);
 });
 test('master non-native control surfaces explicitly excluded',()=>{
