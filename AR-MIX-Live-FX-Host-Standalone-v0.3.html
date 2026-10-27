@@ -1154,8 +1154,16 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 #app #mixer .fader-zone .fader::before{
   content:"";position:absolute;left:50%;top:0;bottom:0;width:46px;
   transform:translateX(-50%);z-index:0;pointer-events:none;
-  background:#10181e;border:1px solid #34424c;border-radius:2px;
-  box-shadow:inset 0 2px 2px #050a0e,inset 0 -2px 2px #070c10,inset 2px 0 2px #080e13,inset -1px 0 1px #26333b;
+  /* A gently folded metal lip, NOT a bright rectangular outline.
+     One flat, graphite-grey interior plus small static bevels at four edges. */
+  background:#1b2a32;border:0;border-radius:4px;
+  box-shadow:
+    inset 0 3px 2px -2px #060c11,
+    inset 0 -3px 2px -2px #080e13,
+    inset 3px 0 2px -2px #0b151b,
+    inset -3px 0 2px -2px #0b151b,
+    0 -1px 0 #364650, 0 1px 0 #293b45,
+    -1px 0 0 #2c3c45, 1px 0 0 #2c3c45;
 }
 #app #mixer .fader-zone .fader::after{
   content:"";position:absolute;left:50%;top:38px;bottom:39px;width:5px;
@@ -1189,6 +1197,52 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 }
 .native-node.fx-drop-before::before{top:-2px}
 .native-node.fx-drop-after::after{bottom:-2px}
+
+/* FX slot selection is always clear without expensive hover blur/compositing. */
+#app #mixer .fx-picker-target{
+  outline:1px solid #88cfc5;outline-offset:-1px;
+  background-color:#1b393e;
+}
+#app #mixer .native-insert-row.has-orbit .insert,
+#app #mixer .native-insert-row.has-orbit .fx-power{
+  background-color:#24454b!important;color:#b7eee1;
+}
+#app #mixer .native-insert-row.has-orbit .insert-name::after{
+  content:" · ↻";color:#8dd9c4;font-size:10px;
+}
+#nativeFxSelector.native-modal{
+  background:transparent!important;backdrop-filter:none!important;
+  pointer-events:none!important;display:block;padding:0;
+}
+#nativeFxSelector[hidden]{display:none!important}
+#nativeFxSelector .native-dialog{
+  position:fixed;pointer-events:auto;width:min(390px,calc(100vw - 16px));
+  max-height:min(560px,calc(100vh - 16px));
+  margin:0;padding:0;box-shadow:0 5px 19px #0008;
+  border:1px solid #547c85;border-radius:6px;
+  background:#172a34;overflow:visible;
+}
+#nativeFxSelector .native-dialog::before{
+  content:"";position:absolute;top:-5px;left:var(--fx-arrow-x,22px);
+  width:8px;height:8px;background:#172a34;
+  border-left:1px solid #547c85;border-top:1px solid #547c85;
+  transform:rotate(45deg);
+}
+#nativeFxSelector .native-dialog.picker-above::before{
+  top:auto;bottom:-5px;border:0;border-right:1px solid #547c85;
+  border-bottom:1px solid #547c85;
+}
+#nativeFxSelector .native-dialog-header{
+  padding:8px 11px;border-bottom:1px solid #34515e;
+}
+#nativeFxSelector .native-dialog-header h2{font-size:13px;margin:2px 0;font-weight:500}
+#nativeFxSelector .native-dialog-body{padding:9px 11px;min-height:0;overflow:auto}
+#nativeFxSelector .native-dialog-footer{padding:6px 11px}
+#nativeFxSelector .native-category{gap:3px}
+#nativeFxSelector .native-category button{padding:4px 6px;font-size:10px}
+#nativeFxSelector .native-search{padding:7px 9px;margin-bottom:5px}
+#nativeFxContext .fx-context-delete{color:#efb2a8;display:flex;align-items:center;gap:7px}
+#nativeFxContext .fx-context-delete svg{width:15px;height:15px;fill:currentColor}
 </style></head>
 <body>
 <div id="app" class="app">
