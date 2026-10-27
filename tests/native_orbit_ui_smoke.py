@@ -65,6 +65,13 @@ async def main():
         })();""")
         await page.goto((root / "web/index.html").as_uri())
         await page.wait_for_selector(".strip")
+        # Suppress native browser menu where ArSonMix has no custom action.
+        await page.locator("#mixer").evaluate("""el => {
+          const event=new MouseEvent('contextmenu',{bubbles:true,cancelable:true,button:2});
+          const allowed=el.dispatchEvent(event);
+          if(allowed) throw new Error('Default browser context menu not prevented');
+        }""")
+        assert await page.locator("#nativeFxContext").is_hidden()
         assert await page.locator(".strip").first.locator('[data-native-fx="orbit"]').count()==0
         await page.locator(".strip").first.locator('[data-native-fx="editor"]').click(button="right")
         menu=page.locator("#nativeFxContext")
@@ -72,6 +79,22 @@ async def main():
         assert await page.locator(".nav button.selected").get_attribute("data-view")=="MIX"
         modal = page.locator("#nativeOrbit")
         await modal.locator("#nativeOrbitParameter").wait_for(state="visible")
+        # Popover visually belongs to the clicked plugin, never to the center screen.
+        geometry=await page.evaluate("""() => {
+          const fx=document.querySelector('.strip [data-native-fx="editor"]')?.getBoundingClientRect();
+          const panel=document.querySelector('#nativeOrbit .native-dialog')?.getBoundingClientRect();
+          const overlay=getComputedStyle(document.querySelector('#nativeOrbit'));
+          return {fxBottom:fx.bottom,fxTop:fx.top,x:panel.x,y:panel.y,width:panel.width,
+            height:panel.height,top:panel.top,bottom:panel.bottom,
+            vw:innerWidth,vh:innerHeight,backdrop:overlay.backgroundColor,
+            outside:overlay.pointerEvents};
+        }""")
+        assert geometry["y"] >= geometry["fxBottom"]-1 or geometry["bottom"] <= geometry["fxTop"]+1, geometry
+        assert 0<=geometry["x"] and geometry["x"]+geometry["width"]<=geometry["vw"], geometry
+        assert 0<=geometry["top"] and geometry["bottom"]<=geometry["vh"], geometry
+        assert geometry["outside"]=="none", geometry
+        assert await page.locator("#nativeOrbit .orbit-graphic").count()==1
+        assert await page.locator("#nativeOrbit .native-dialog-footer").is_hidden()
         await page.wait_for_function("""()=>document.querySelector("#nativeOrbitParameter")?.value==="2" """)
         assert await modal.locator("#nativeOrbitParameter").input_value() == "2"
         assert "-180" in await modal.inner_text(), "Vendor endpoint range should be visible"
@@ -106,6 +129,8 @@ async def main():
         await page.locator(".native-node [data-native-fx='editor']").first.click(button="right")
         await menu.get_by_role("menuitem",name="Auto Orbit").click()
         await modal.locator("#nativeOrbitParameter").wait_for(state="visible")
+        await page.keyboard.press("Escape")
+        assert await modal.is_hidden(), "Escape closes contextual orbit popover"
         assert not errors, errors
         await browser.close()
     print("Native Orbit UX + real bridge event payload smoke PASS")
