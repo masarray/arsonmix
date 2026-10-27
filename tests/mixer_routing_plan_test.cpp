@@ -68,6 +68,9 @@ int main() {
     cfg.strips[0].pan=std::numeric_limits<float>::quiet_NaN();
     assert(!Plan::compile(cfg,3,plan,err)&&err.code==Fault::invalidPan&&err.strip==0);
     cfg.strips[0].pan=0.f;
+    cfg.strips[3].source=static_cast<SourceMode>(255);
+    assert(!Plan::compile(cfg,3,plan,err)&&err.code==Fault::invalidSourceMode&&err.strip==3);
+    cfg.strips[3]={};
     cfg.master.gainLinear=10.f;
     assert(!Plan::compile(cfg,3,plan,err)&&err.code==Fault::invalidGain&&err.strip==-1);
     cfg.master.gainLinear=1.f;
