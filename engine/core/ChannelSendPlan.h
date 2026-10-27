@@ -56,6 +56,9 @@ struct ChannelSendPlan final {
     std::array<int,stripCount> topologicalOrder {};
     std::array<int,stripCount> orderRank {};
     std::array<bool,stripCount> toMaster {};
+    // A strip can be a BUS RETURN even without any physical input; do not
+    // gate these strips on ChannelRoutingPlan::Strip::active (physical only).
+    std::array<bool,stripCount> receivesInternal {};
     int edgeCount = 0;
 
     static bool compile(const SendRequest& requested,
@@ -102,6 +105,7 @@ struct ChannelSendPlan final {
             if (!s.enabled) continue;
             ++outgoingCount[s.source];
             ++indegree[s.destination];
+            candidate.receivesInternal[s.destination]=true;
             ++candidate.edgeCount;
         }
         candidate.outgoingOffset[0]=0;
@@ -157,6 +161,9 @@ struct ChannelSendPlan final {
                 dr[i]+=sourceRight[i]*edge.rightGain;
             }
         }
+    }
+    bool receivesInternalAudio(int strip) const noexcept {
+        return strip>=0&&strip<stripCount&&receivesInternal[strip];
     }
     bool masterEnabled(int strip) const noexcept {
         return strip>=0&&strip<stripCount&&toMaster[strip];
