@@ -4,6 +4,7 @@
 #include "../engine/core/RealtimeRoutePublisher.h"
 #include "../engine/device/LiveInputPortRegistry.h"
 #include <juce_audio_devices/juce_audio_devices.h>
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -71,7 +72,8 @@ public:
             static_cast<juce::int64>(command.getProperty("revision",juce::var(0))));
         if(currentEpoch==0 || expectedEpoch!=currentEpoch)
             return "Audio device changed: reopen ROUTING to remap physical ports";
-        auto* assignments=command.getProperty("channels",{}).getArray();
+        const auto values=command.getProperty("channels",{});
+        auto* assignments=values.getArray();
         if(!assignments || assignments->size()!=count)
             return "Supply exactly 10 explicit channel assignments";
         armix::mixer::ChannelRoutingConfig cfg;
@@ -160,7 +162,9 @@ public:
         for(int c=0;c<outputCount;++c)
             if(outputs && outputs[c])
                 juce::FloatVectorOperations::clear(outputs[c],frames);
-        if(!outputs||outputCount<2||!outputs[0]||!outputs[1])return true;
+        if(!outputs||outputCount<2||!outputs[0]||!outputs[1] ||
+           inputCount<0 || inputCount>armix::device::LiveInputPortRegistry::limit)
+            return true;
         const auto generation=epoch();
         auto lease=publisher_.acquire();
         const auto* snapshot=lease.get(generation);
