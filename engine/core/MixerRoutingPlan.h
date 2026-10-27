@@ -32,7 +32,7 @@ struct Configuration final {
     MasterConfig master {};
 };
 enum class Fault { none, invalidInputCount, inputOutOfRange, duplicateStereoInput,
-                   invalidGain, invalidPan };
+                   invalidSourceMode, invalidGain, invalidPan };
 struct Error final {
     Fault code = Fault::none;
     int strip = -1; // -1 denotes master/device rather than a source strip
@@ -70,6 +70,10 @@ struct Plan final {
         bool anySolo = false;
         for (int i=0;i<stripCount;++i) {
             const auto& c=cfg.strips[i];
+            if (c.source!=SourceMode::disconnected &&
+                c.source!=SourceMode::mono && c.source!=SourceMode::stereo) {
+                error={Fault::invalidSourceMode,i};return false;
+            }
             if (!validGain(c.faderLinear)) { error={Fault::invalidGain,i};return false; }
             if (!validPan(c.pan)) { error={Fault::invalidPan,i};return false; }
             if (c.source == SourceMode::disconnected) continue;
