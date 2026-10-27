@@ -80,18 +80,17 @@ public:
     // Caller must ensure the audio device is stopped before destroying this
     // object; asynchronous stop merely disconnects the new graph view.
     void unpublish() noexcept {
-        pollRetirement();
-        if(owned_) {
-            if(retiredCount_<RetiredCapacity)
-                retired_[retiredCount_++]=std::move(owned_);
-            else {
-                // No drop/free while the audio thread may use the pointer.
-                // The host must quiesce and call pollRetirement() first.
-                return;
-            }
-        }
+        // The hard mute is published FIRST, even if a busy RT consumer
+        // prevents reclaiming the previous ownership immediately.
         active_.store(nullptr,std::memory_order_release);
         revision_=0;
+        pollRetirement();
+        if(!owned_)return;
+        if(retiredCount_<RetiredCapacity)
+            retired_[retiredCount_++]=std::move(owned_);
+        // Otherwise retain owned_ (but not published) until safe retirement.
+        // A future publish correctly sees retirementFull rather than freeing
+        // a graph on a live audio callback.
     }
     // CONTROL thread only. No free until every acquire() lease has exited.
     bool pollRetirement() noexcept {
