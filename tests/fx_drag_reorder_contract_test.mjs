@@ -46,7 +46,13 @@ test('native has six consistent empty inserts and one DSP reorder per drop',()=>
  assert.match(bridge,/send\("fxMove",\{slot:from,value:to-from\}\)/);
  assert.doesNotMatch(bridge,/FX FULL/);
  assert.match(css,/width:46px/);
- assert.match(css,/background:#10181e/);
+ assert.match(css,/background:#1b2a32/);
  assert.match(css,/top:0;bottom:0;width:46px/);
+ assert.match(css,/#nativeFxSelector .native-dialog::before/);
+ assert.match(css,/#app #mixer .native-insert-row.has-orbit/);
+ assert.match(bridge,/fx-context-delete/);
+ assert.match(bridge,/pickerAnchor/);
+ assert.match(bridge,/data\.activeSlot/);
+ assert.match(bridge,/openPicker\(el,id,Math.max\(0,slot\)\)/);
  assert.match(native,/moreThanOneInstanceAllowed\(\) override \{ return false; \}/);
 });
