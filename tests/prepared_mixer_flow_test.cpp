@@ -135,6 +135,17 @@ int main() {
     assert(flow.sends.edgeCount==previous.sends.edgeCount);
     cfg.stripsAndMaster.strips[0].inputA=0;
 
+    // A transiently unavailable input must NOT let a VST synthesize a
+    // phantom signal from a disconnected capture-only source.
+    const auto phantom=[](int,ChannelFormat,float* l,float* r,int n) noexcept {
+        for(int i=0;i<n;++i){l[i]=100.f;r[i]=100.f;}
+    };
+    SendRequest disconnectedSends;
+    Flow disconnected;
+    assert(Flow::compile(cfg,port0,disconnectedSends,disconnected,error));
+    assert(disconnected.render(nullptr,0,frames,work,phantom));
+    assert(eq(work.masterL[0],0.f)&&eq(work.masterR[0],0.f));
+
     // Fail closed when requested block exceeds preallocated memory.
     work.masterL[0]=123.f;
     assert(!flow.render(capture,1,frames+1,work,dry));
