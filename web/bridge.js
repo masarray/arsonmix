@@ -1016,8 +1016,8 @@
     if(deviceButton){
       const ready=!!d.connected && !d.error;
       deviceButton.classList.toggle("on",ready);
-      const readyText=String(ready);
-      if(deviceButton.dataset.audioConnected!==readyText)deviceButton.dataset.audioConnected=readyText;
+      if(deviceButton.dataset.audioConnected!==String(ready))
+        deviceButton.dataset.audioConnected=String(ready);
     }
     const rate=document.getElementById("headerRate");
     if(rate){
