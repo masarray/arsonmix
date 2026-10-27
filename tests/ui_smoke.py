@@ -120,6 +120,16 @@ async def main():
         assert all(x['palette']==meter['first']['palette'] for x in levels),levels
         assert all(x['lit']<=.9*x['height'] for x in levels[:4]),levels
         assert levels[-1]['lit']>.9*levels[-1]['height'],levels
+        # The visible LED row must be the only normal-mode CSS mutation gate.
+        # Two nearby raw levels with the same lit 7px row must not repaint.
+        dirty=await page.evaluate("""()=>{
+          const e=document.querySelector('[data-meter="0"]');
+          setLedMeterLevel(e,1);
+          const before=e.getAttribute('style'),lit=e.style.getPropertyValue('--led-lit');
+          setLedMeterLevel(e,1.1);
+          return {before,after:e.getAttribute('style'),lit,level:ledMeterCache.get(e).level};
+        }""")
+        assert dirty['before']==dirty['after'] and dirty['level']==1.1,dirty
         # Full mixer rebuild must restore held peaks and clip state on fresh DOM nodes.
         restored=await page.evaluate("""()=>{
           clipLatch['0']=true;
