@@ -82,24 +82,52 @@
   `;
   css.textContent += "\n    .native-modal{position:fixed;inset:0;z-index:700;display:flex;align-items:center;justify-content:center;\n      background:rgba(3,11,18,.9);backdrop-filter:none;padding:22px;box-sizing:border-box}\n    .native-modal[hidden]{display:none}\n    .native-dialog{width:min(860px,96vw);max-height:min(840px,92vh);overflow:hidden;\n      display:flex;flex-direction:column;background:linear-gradient(145deg,#243945 0%,#101e29 62%,#0c1821);\n      border:1px solid #638293;border-radius:11px;box-shadow:0 18px 80px #000c,inset 0 1px #b2d9e449}\n    .native-dialog-header{display:flex;align-items:center;justify-content:space-between;gap:15px;\n      border-bottom:1px solid #3c5360;padding:14px 17px}\n    .native-dialog-header h2{font-size:18px;font-weight:500;color:#e4f4f9;margin:4px 0}\n    .native-dialog-body{padding:14px 17px;overflow:auto;min-height:60px}\n    .native-dialog-footer{border-top:1px solid #334b58;padding:9px 17px;color:#91abb8;font-size:11px}\n    .native-dialog.small{max-width:520px}\n    .native-bar{height:12px;border:1px solid #527282;background:#0a1621;border-radius:7px;overflow:hidden;position:relative;\n      box-shadow:inset 0 2px 5px #000c}\n    .native-bar-fill{height:100%;width:0%;background:linear-gradient(180deg,#8ef6ff,#17a8da 43%,#08688e);\n      box-shadow:none;border-right:1px solid #ddffff}\n    .native-bar.unknown .native-bar-fill{width:34%;position:absolute;animation:native-indeterminate 1.65s ease-in-out infinite}\n    @keyframes native-indeterminate{0%{left:-36%}50%{left:58%}100%{left:105%}}\n    .native-progress-info{font:11px monospace;color:#a5d5e2;margin:8px 0;display:flex;justify-content:space-between;gap:9px}\n    .native-progress-info strong{font-weight:500;color:#d8f9ff}\n    #nativeScanHud{position:fixed;left:50%;transform:translateX(-50%);bottom:37px;z-index:550;\n      background:#152c3b;border:1px solid #537588;border-radius:8px;box-shadow:0 6px 20px #000a;\n      padding:9px 13px;width:min(470px,90vw)}\n    #nativeScanHud[hidden]{display:none}\n    .native-result{display:flex;align-items:center;gap:7px;background:#10222c;border:1px solid #314d5c;\n      border-radius:6px;padding:9px 11px;margin:5px 0}\n    .native-result span{flex:1;min-width:0}\n    .native-result b{display:block;font-weight:500;color:#d6edf7;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n    .native-result small{display:block;color:#88aaba;font-size:10px;margin-top:4px}\n    .native-search{font-family:inherit!important}\n";
   css.textContent += "\n    .native-insert-row{display:flex;align-items:center;gap:2px;width:100%;min-width:0}\n    .native-insert-row>.insert{flex:1;min-width:0;text-align:left;overflow:hidden;\n      text-overflow:ellipsis;white-space:nowrap;padding-left:4px;padding-right:1px}\n    .native-insert-row>.native-power{flex:0 0 21px;width:21px;height:21px;\n      font-size:14px;line-height:18px;text-align:center;border-radius:3px;\n      border:1px solid #3b6973;color:#8becb3;cursor:pointer;padding:0;\n      background:linear-gradient(#385e65,#102c30);box-shadow:inset 0 1px #91e8bd44}\n    .native-insert-row>.native-power.is-off{color:#8b9ca5;border-color:#53616a;\n      background:linear-gradient(#39414a,#171e27);box-shadow:none}\n    .native-insert-row>.native-power:focus-visible{outline:2px solid #4dd7ff}\n    .native-insert-row.is-bypassed>.insert{opacity:.54;filter:saturate(.55)}\n    .native-engine .strip[data-preview=\"1\"] .meter-fill{opacity:0!important}\n    .native-engine .strip[data-preview=\"1\"] .meter{opacity:.36}\n    .native-engine .meter-fill{transition:none}\n  ";
-  // Scoped compact controls; do not modify the approved mixer/strip CSS baseline.
+  // Native-only FX popover: no mixer theme/layout changes and no full-screen dimmer.
   css.textContent += `
-    #nativeOrbit .native-dialog{max-width:470px;border-radius:6px}
-    #nativeOrbit .native-dialog-header{padding:10px 13px}
+    #nativeOrbit{z-index:980;background:transparent!important;backdrop-filter:none!important;
+      display:block;padding:0;pointer-events:none}
+    #nativeOrbit[hidden]{display:none}
+    #nativeOrbit .native-dialog{position:fixed;box-sizing:border-box;width:342px;max-width:calc(100vw - 16px);
+      max-height:calc(100vh - 16px);margin:0;pointer-events:auto;overflow:visible;
+      border:1px solid #497488;border-radius:8px;
+      background:linear-gradient(158deg,#203541,#12242f 75%);
+      box-shadow:0 10px 32px #000b,inset 0 1px #b1f4ff20}
+    #nativeOrbit .native-dialog::before{content:"";position:absolute;top:-5px;left:var(--orbit-arrow-x,24px);
+      width:8px;height:8px;background:#203541;border-left:1px solid #497488;
+      border-top:1px solid #497488;transform:rotate(45deg)}
+    #nativeOrbit .native-dialog.orbit-above::before{top:auto;bottom:-5px;border:0;
+      background:#12242f;border-right:1px solid #497488;border-bottom:1px solid #497488}
+    #nativeOrbit .native-dialog-header{padding:10px 12px 7px;border-bottom:0;gap:5px}
+    #nativeOrbit .native-dialog-header .eyebrow{font-size:9px;color:#65c3d8;letter-spacing:.07em}
     #nativeOrbit .native-dialog-header h2{font-size:14px;font-weight:550;margin:2px 0}
-    #nativeOrbit .native-dialog-body{padding:12px 14px}
-    #nativeOrbit .native-dialog-footer{padding:8px 14px;line-height:1.5}
-    #nativeOrbit .native-search{height:32px;margin:4px 0 8px;font-size:11px;padding:5px 8px;border-radius:4px}
-    #nativeOrbit .orbit-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-    #nativeOrbit .orbit-verify{display:flex;align-items:flex-start;gap:8px;padding:9px;
-        background:#0b1c26;border:1px solid #284852;border-radius:4px;color:#b7d5df;
-        font-size:11px;line-height:1.5;margin:7px 0 11px;cursor:pointer}
-    #nativeOrbit .orbit-verify input{accent-color:#49c5cb;margin:2px 0 0;flex:none}
-    #nativeOrbit .orbit-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-    #nativeOrbit .orbit-actions .native-btn{padding:6px 11px;font-size:11px;border-radius:4px}
-    #nativeOrbit .orbit-actions .native-btn:disabled{opacity:.43;cursor:not-allowed}
-    #nativeOrbit .orbit-running{font-size:11px;color:#87c8cd}
-    #nativeOrbit .orbit-warning{font-size:11px;line-height:1.55;color:#a8bfc9;margin:5px 0}
+    #nativeOrbit [data-close-modal]{padding:3px 7px;min-width:27px;font-size:12px}
+    #nativeOrbit .native-dialog-body{padding:0 12px 12px;overflow:auto;min-height:0}
+    #nativeOrbit .native-dialog-footer{display:none}
+    #nativeOrbit .orbit-target{font-size:11px;color:#a4c8d5;white-space:nowrap;overflow:hidden;
+      text-overflow:ellipsis;margin-bottom:6px}
+    #nativeOrbit .orbit-visual{display:flex;align-items:center;gap:10px;margin-bottom:10px;
+      background:#0c1d27;border:1px solid #2a4958;border-radius:6px;padding:7px 10px}
+    #nativeOrbit .orbit-graphic{width:68px;height:68px;flex:none}
+    #nativeOrbit .orbit-graphic.is-reverse{transform:scaleX(-1)}
+    #nativeOrbit .orbit-visual-caption{font-size:10px;color:#85b1c3;line-height:1.5}
+    #nativeOrbit .orbit-visual-caption strong{display:block;font-size:12px;font-weight:500;color:#c9edf5}
+    #nativeOrbit .orbit-field-label{display:block;font-size:10px;color:#a4c2d0;margin:0 0 4px}
+    #nativeOrbit .native-search{height:35px;margin:0 0 9px;font-size:12px;
+      padding:6px 9px;border-radius:4px}
+    #nativeOrbit .orbit-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+    #nativeOrbit .orbit-verify{display:flex;align-items:center;gap:8px;margin:1px 0 10px;
+      color:#b5ccd6;font-size:10px;cursor:pointer}
+    #nativeOrbit .orbit-verify input{accent-color:#40bed4;margin:0;flex:none}
+    #nativeOrbit .orbit-actions{display:flex;align-items:center;gap:8px}
+    #nativeOrbit .orbit-actions .native-btn{flex:1;min-height:36px;border-radius:5px;
+      padding:7px;font-size:12px;font-weight:550}
+    #nativeOrbit .orbit-actions .native-btn:disabled{opacity:.35;cursor:not-allowed}
+    #nativeOrbit .orbit-state{display:inline-flex;gap:5px;align-items:center;font-size:10px;color:#9fb9c6;
+      margin:0 0 8px}
+    #nativeOrbit .orbit-state::before{content:"";width:6px;height:6px;border-radius:50%;background:#556f80}
+    #nativeOrbit .orbit-state.running::before{background:#39cfbe;box-shadow:0 0 7px #2cdbc06e}
+    #nativeOrbit .orbit-hint{font-size:10px;color:#819fae;margin:0}
+    @media(max-height:480px){#nativeOrbit .orbit-visual{display:none}}
   `;
 
   css.textContent += `
@@ -172,6 +200,32 @@
 }
   function showDialog(id){const d=document.getElementById(id);if(d){d.hidden=false;d.querySelector("input")?.focus()}}
   function hideDialog(id){const d=document.getElementById(id);if(d)d.hidden=true}
+  let orbitAnchor=null;
+  function hideOrbit(){
+    const d=document.getElementById("nativeOrbit");
+    if(d)d.hidden=true;
+    orbitAnchor=null;
+  }
+  function positionOrbit(){
+    const overlay=document.getElementById("nativeOrbit");
+    if(!overlay||overlay.hidden)return;
+    if(!orbitAnchor?.isConnected){hideOrbit();return;}
+    const panel=overlay.querySelector(".native-dialog");
+    const anchor=orbitAnchor.getBoundingClientRect();
+    const margin=8;
+    const width=panel.offsetWidth;
+    const height=panel.offsetHeight;
+    const left=Math.max(margin,Math.min(anchor.left,window.innerWidth-width-margin));
+    const below=anchor.bottom+9;
+    const above=anchor.top-height-9;
+    const flip=below+height+margin>window.innerHeight && above>=margin;
+    const top=Math.max(margin,Math.min(flip?above:below,window.innerHeight-height-margin));
+    panel.style.left=left+"px";
+    panel.style.top=top+"px";
+    panel.classList.toggle("orbit-above",flip);
+    panel.style.setProperty("--orbit-arrow-x",
+      Math.max(12,Math.min(anchor.left+Math.min(25,anchor.width/2)-left,width-22))+"px");
+  }
   function renderOrbit(){
     const dlg=document.getElementById("nativeOrbit");
     if(!dlg)return;
@@ -179,48 +233,74 @@
     const selected=orbit.active&&orbit.activeSlot===orbit.slot?orbit.activeParameter:
       (orbit.selection>=0?orbit.selection:orbit.preferredParameter);
     const valid=options.some(p=>p.index===selected);
+    const chosen=options.find(p=>p.index===selected);
+    const running=orbit.active&&orbit.activeSlot===orbit.slot;
+    dlg.querySelector(".native-dialog-header .eyebrow").textContent="FX "+(orbit.slot+1)+" · CHANNEL 1";
+    dlg.querySelector(".native-dialog-header h2").textContent="Auto Orbit";
+    dlg.querySelector(".native-dialog").setAttribute("aria-modal","false");
     dlg.querySelector(".native-dialog-body").innerHTML=`
-      <div class="native-sub" style="margin-bottom:13px">
-        ${escapeHtml(orbit.plugin||"Select a loaded VST3 effect")} · Native host LFO · Channel 1
+      <div class="orbit-target" title="${escapeHtml(orbit.plugin)}">${escapeHtml(orbit.plugin||"Loading FX…")}</div>
+      <div class="orbit-visual">
+        <svg class="orbit-graphic ${orbit.reverse?"is-reverse":""}" viewBox="0 0 80 80"
+          aria-label="Circular motion around the listener" role="img">
+          <circle cx="40" cy="40" r="28" fill="none" stroke="#3b5e6c" stroke-dasharray="3 4"/>
+          <circle cx="40" cy="40" r="9" fill="#294957" stroke="#7bb6c8"/>
+          <path d="M40 12 A28 28 0 1 1 16 26" stroke="#36c6d5" stroke-width="3"
+            stroke-linecap="round" fill="none"/>
+          <path d="M9 23 L16 29 L24 24" stroke="#36c6d5" stroke-width="3"
+            stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          <circle cx="40" cy="12" r="4" fill="#8cf9f1"/>
+          <path d="M36 39h8m-4-4v10" stroke="#c5f1fa" stroke-width="1.4"/>
+        </svg>
+        <div class="orbit-visual-caption">
+          <strong>360° · Continuous</strong>
+          Suara berputar mengelilingi pendengar
+          <div class="orbit-state ${running?"running":""}">${running?"RUNNING":"IDLE"}</div>
+        </div>
       </div>
-      <label class="native-sub" for="nativeOrbitParameter">VST3 AUTOMATABLE PARAMETER</label>
+      <label class="orbit-field-label" for="nativeOrbitParameter">Parameter</label>
       ${options.length?`<select class="native-search" id="nativeOrbitParameter">
-        <option value="" ${valid?"":"selected"} disabled>Select spatial angle parameter…</option>
+        <option value="" ${valid?"":"selected"} disabled>Choose azimuth…</option>
         ${options.map(p=>`<option value="${p.index}" ${valid&&p.index===selected?"selected":""}>
           ${escapeHtml(p.name)} · ${escapeHtml(p.minText)} → ${escapeHtml(p.maxText)}
         </option>`).join("")}</select>`:
-        '<div class="native-empty">This VST3 exposes no suitable automatable parameters.</div>'}
+        '<div class="native-empty">Reading plugin parameters…</div>'}
       <div class="orbit-grid">
-        <div><label class="native-sub" for="nativeOrbitSeconds">ONE REVOLUTION (SEC)</label>
+        <div><label class="orbit-field-label" for="nativeOrbitSeconds">Seconds / turn</label>
           <input class="native-search" id="nativeOrbitSeconds" type="number" min="2" max="180" step="1"
           value="${Number(orbit.periodSeconds)||20}"></div>
-        <div><label class="native-sub" for="nativeOrbitReverse">DIRECTION</label>
+        <div><label class="orbit-field-label" for="nativeOrbitReverse">Direction</label>
           <select class="native-search" id="nativeOrbitReverse">
-            <option value="false" ${orbit.reverse?"":"selected"}>CLOCKWISE / FORWARD</option>
-            <option value="true" ${orbit.reverse?"selected":""}>REVERSE</option>
+            <option value="false" ${orbit.reverse?"":"selected"}>↻ Forward</option>
+            <option value="true" ${orbit.reverse?"selected":""}>↺ Reverse</option>
           </select></div>
       </div>
-      <label class="orbit-verify">
+      <label class="orbit-verify" title="Only use a parameter that describes an entire spatial circle">
         <input type="checkbox" id="nativeOrbitConfirm" ${orbit.confirmed?"checked":""}>
-        <span>I verified this parameter covers a complete 360° azimuth range, not Scale/Gain/Distance.</span>
+        <span>Full-circle azimuth (360°) confirmed</span>
       </label>
       <div class="orbit-actions">
-        <button class="native-btn primary" data-orbit-start="1" ${valid&&orbit.confirmed&&orbit.revision!==null?"":"disabled"}>▶ START</button>
-        <button class="native-btn ${orbit.active?"on":""}" data-orbit-stop="1" ${orbit.active?"":"disabled"}>■ STOP</button>
-        <span class="orbit-running">${orbit.active?`● RUNNING · FX ${orbit.activeSlot+1}`:"● IDLE"}</span>
+        <button class="native-btn primary" data-orbit-start="1" ${valid&&orbit.confirmed&&orbit.revision!==null?"":"disabled"}>▶ ${running?"UPDATE":"START"}</button>
+        <button class="native-btn ${running?"on":""}" data-orbit-stop="1" ${running?"":"disabled"}>■ STOP</button>
       </div>
-      <p class="orbit-warning">dearVR: use POSITION → POLAR → Azimuth. A 0/1 parameter wrap may produce an audible seam, so test at low headphone volume.</p>`;
-    dlg.querySelector(".native-dialog-footer").textContent=
-      "Orbit runs in the JUCE control thread, not the audio callback. Opening the vendor editor is optional.";
+      <p class="orbit-hint">dearVR: Position → POLAR · Set a low listening level</p>`;
+    if(!dlg.hidden)positionOrbit();
   }
-  function openOrbit(slot){
+  function openOrbit(slot,anchor){
+    const fx=state.chain[slot];
+    if(!fx)return;
+    orbitAnchor=anchor?.isConnected?anchor:document.querySelector(
+      '.native-insert-row [data-native-fx="editor"][data-slot="'+slot+'"],'+
+      '.native-node [data-native-fx="editor"][data-slot="'+slot+'"]');
+    if(!orbitAnchor)return;
     orbit.slot=slot;
-    orbit.plugin=state.chain[slot]?.name||"";
+    orbit.plugin=fx.name||"";
     orbit.parameters=[];
     orbit.selection=-1;
     orbit.confirmed=false;
     orbit.revision=null;
-    showDialog("nativeOrbit");
+    const panel=document.getElementById("nativeOrbit");
+    panel.hidden=false;
     renderOrbit();
     send("orbitInspect",{slot});
   }
@@ -342,7 +422,7 @@
   function initModals(){
   createDialog("nativeFxSelector","Add VST3 Effect");
   createDialog("nativeMySounds","My Sounds · Native Presets",true);
-  createDialog("nativeOrbit","VST3 Auto Orbit",true);
+  createDialog("nativeOrbit","Auto Orbit",true);
   createDialog("nativePluginManager","Plugin Manager");
   const hud=document.createElement("div");hud.id="nativeScanHud";hud.hidden=true;document.body.appendChild(hud);
 }
@@ -419,11 +499,12 @@
   fxContext.setAttribute("role","menu");
   fxContext.setAttribute("aria-label","FX actions");
   document.body.appendChild(fxContext);
-  let contextSlot=-1;
-  function closeFxContext(){fxContext.hidden=true;contextSlot=-1;}
-  function openFxContext(slot,x,y){
+  let contextSlot=-1, contextAnchor=null;
+  function closeFxContext(){fxContext.hidden=true;contextSlot=-1;contextAnchor=null;}
+  function openFxContext(slot,x,y,anchor){
     if(!state.chain[slot])return;
     contextSlot=slot;
+    contextAnchor=anchor;
     const p=state.chain[slot];
     fxContext.innerHTML='<button role="menuitem" data-context-fx="editor">Open '+escapeHtml(p.name)+'</button>'+
       '<button role="menuitem" data-context-fx="orbit">Auto Orbit</button>'+
@@ -435,25 +516,44 @@
     fxContext.querySelector("button")?.focus({preventScroll:true});
   }
   document.addEventListener("contextmenu",e=>{
+    // Suppress browser/IE/WebView2 default menus throughout the ArSonMix canvas.
+    // Other native windows (including vendor plugin editors) are unaffected.
+    e.preventDefault();
     const el=e.target.closest('[data-native-fx="editor"]');
-    if(!el||!el.closest(".native-insert-row,.native-node"))return;
+    if(!el||!el.closest(".native-insert-row,.native-node")){
+      closeFxContext();
+      return;
+    }
     const slot=Number(el.dataset.slot);
-    if(!Number.isInteger(slot)||slot<0||slot>=state.chain.length)return;
-    e.preventDefault();e.stopImmediatePropagation();
-    openFxContext(slot,e.clientX,e.clientY);
+    if(!Number.isInteger(slot)||slot<0||slot>=state.chain.length){
+      closeFxContext();
+      return;
+    }
+    e.stopImmediatePropagation();
+    hideOrbit();
+    openFxContext(slot,e.clientX,e.clientY,el);
   },true);
   document.addEventListener("click",e=>{
     const item=e.target.closest("#nativeFxContext [data-context-fx]");
     if(!item){if(!fxContext.hidden)closeFxContext();return;}
     e.preventDefault();e.stopImmediatePropagation();
-    const slot=contextSlot,action=item.dataset.contextFx;
+    const slot=contextSlot,action=item.dataset.contextFx,anchor=contextAnchor;
     closeFxContext();
     if(!state.chain[slot])return;
-    if(action==="orbit")openOrbit(slot);
+    if(action==="orbit")openOrbit(slot,anchor);
     else if(action==="editor")send("fxEditor",{slot});
     else if(action==="bypass")send("fxBypass",{slot,value:!state.chain[slot].bypass});
   },true);
+  document.addEventListener("pointerdown",e=>{
+    const popup=document.getElementById("nativeOrbit");
+    if(!popup||popup.hidden)return;
+    if(!e.target.closest("#nativeOrbit .native-dialog") &&
+       !e.target.closest("#nativeFxContext")) hideOrbit();
+  },true);
   document.addEventListener("keydown",e=>{
+    if(e.key==="Escape" && !document.getElementById("nativeOrbit").hidden){
+      e.preventDefault();hideOrbit();return;
+    }
     if(fxContext.hidden)return;
     if(e.key==="Escape"){e.preventDefault();closeFxContext();}
     if(e.key==="ArrowDown"||e.key==="ArrowUp"){
@@ -464,15 +564,18 @@
     }
   },true);
   window.addEventListener("blur",closeFxContext);
-  window.addEventListener("resize",closeFxContext);
-  document.addEventListener("scroll",closeFxContext,true);
+  window.addEventListener("resize",()=>{closeFxContext();positionOrbit();});
+  document.addEventListener("scroll",e=>{
+    closeFxContext();
+    if(!e.target?.closest?.("#nativeOrbit .native-dialog"))hideOrbit();
+  },true);
   // Capture native controls before the legacy v0.3 demo handlers.
   document.addEventListener("click", function(e){
   const el=e.target.closest("[data-native-action],[data-native-add],[data-native-fx],[data-fxpower],[data-master-insert],[data-master-power],[data-native-category],[data-go-native-rack],[data-insert],[data-plugin-picker],[data-plugin-manager],[data-my-sounds],[data-preset-mute],[data-preset-save],[data-preset-load],[data-close-modal],[data-orbit-start],[data-orbit-stop]");
   if(!el)return;
   e.preventDefault();e.stopImmediatePropagation();
 
-  if(el.dataset.closeModal){hideDialog(el.dataset.closeModal);return;}
+  if(el.dataset.closeModal){if(el.dataset.closeModal==="nativeOrbit")hideOrbit();else hideDialog(el.dataset.closeModal);return;}
   if(el.hasAttribute("data-orbit-start")){
     const raw=document.getElementById("nativeOrbitParameter")?.value;
     const param=raw===""||raw===undefined?NaN:Number(raw);
@@ -642,6 +745,7 @@
     state.chain=Array.isArray(nodes)?nodes:[];
     // Structural edits invalidate a previously verified VST3 parameter range.
     const orbitDialog=document.getElementById("nativeOrbit");
+    if(orbitDialog&&!orbitDialog.hidden && !orbitAnchor?.isConnected)hideOrbit();
     if(orbitDialog&&!orbitDialog.hidden){
       orbit.confirmed=false;
       orbit.revision=null;

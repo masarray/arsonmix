@@ -45,3 +45,9 @@ There is a hard logical wrap at the normalized 0/1 endpoint. That mathematically
 ## MIX workflow and latest GUI integration — 2026-10-27
 
 Native Channel 1 FX inserts now have an always-visible text-labelled ORBIT button on the MIX page. It opens the same host control as FX RACK, independent of the vendor plugin window; the button reflects RUNNING only after the native host acknowledges state. The embedded engine badge is `NATIVE CH1 · ORBIT`. The integration tree is based on the current main GUI and preserves main's hardware-device lamp, fader and VU changes. Audio FAT and vendor azimuth seam testing remain outstanding.
+
+## UI reconciliation: FX-anchored popover and right-click suppression (2026-10-27)
+
+In ArSonMix's embedded WebView, right-click opens custom FX context menus **only** when an existing native FX insert/editor control owns one; all other right-clicks have their default WebView browser menu prevented. This does not affect separate vendor VST3 editor windows or other Windows applications.
+
+Selecting **Auto Orbit** from a plugin's menu opens a compact anchored popover directly below its FX entry (or above if too close to the viewport edge), without dimming the entire mixer. It has a simple circular-path diagram, plugin name, a parameter selector, revolution duration, direction and START/STOP. A full-circle confirmation remains necessary before starting. Clicking outside or pressing Escape closes the popover without stopping active Orbit. The JUCE modulation engine and audio callback are unchanged.
