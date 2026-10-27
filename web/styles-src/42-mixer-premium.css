@@ -184,9 +184,10 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 /* LED increments stay fixed and the meter keeps its native dBFS conversion.
    No hot-path DOM reads, filters, blur or per-frame scale animation. */
 
-/* Flat milled-fader bay: a fixed-width, four-sided recess for EVERY strip,
-   including the wider MASTER. The center detent and 36×77 PNG remain unchanged.
-   Two static layers, no gradients/glow/filter/animated surface repaint. */
+/* P0: one folded-sheet-metal trough across CH1–10 and MASTER.
+   Dark graphite flat interior, soft top/bottom rolled lips, zero bright
+   rectangular border. 46px bay independently centered in each fader rail.
+   Preserve existing cap PNG, gain travel, and mouse hit targets. */
 #app #mixer .fader-zone .fader{
   position:relative;isolation:isolate;min-width:36px;
   background:transparent!important;border:0!important;box-shadow:none!important;
@@ -194,21 +195,20 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 #app #mixer .fader-zone .fader::before{
   content:"";position:absolute;left:50%;top:0;bottom:0;width:46px;
   transform:translateX(-50%);z-index:0;pointer-events:none;
-  /* A gently folded metal lip, NOT a bright rectangular outline.
-     One flat, graphite-grey interior plus small static bevels at four edges. */
-  background:#1b2a32;border:0;border-radius:4px;
+  box-sizing:border-box;border:0;border-radius:6px;
+  background:#24333b;
+  /* Smooth machine folds at all four edges, no light outer rectangle. */
   box-shadow:
-    inset 0 3px 2px -2px #060c11,
-    inset 0 -3px 2px -2px #080e13,
-    inset 3px 0 2px -2px #0b151b,
-    inset -3px 0 2px -2px #0b151b,
-    0 -1px 0 #364650, 0 1px 0 #293b45,
-    -1px 0 0 #2c3c45, 1px 0 0 #2c3c45;
+    inset 0 4px 4px -3px #070e13,
+    inset 0 -4px 4px -3px #070e13,
+    inset 4px 0 5px -4px #081116,
+    inset -4px 0 5px -4px #081116;
 }
 #app #mixer .fader-zone .fader::after{
   content:"";position:absolute;left:50%;top:38px;bottom:39px;width:5px;
   transform:translateX(-50%);z-index:0;pointer-events:none;
-  background:#020506;border:0;box-shadow:inset 1px 0 #26323a,inset -1px 0 #26323a;
+  background:#05090c;border:0;
+  box-shadow:inset 1px 0 #34434b,inset -1px 0 #34434b;
 }
 #app #mixer .fader-zone .fader-travel{z-index:1}
 /* DAW insertion markers are painted only while an FX drag is active. */
