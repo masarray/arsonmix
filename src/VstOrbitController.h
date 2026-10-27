@@ -16,25 +16,29 @@ public:
 
     juce::String start(juce::AudioPluginInstance* plugin,int slot,int azimuthIndex,
                        double seconds,bool reverse,int shape=0,
-                       int distanceIndex=-1,int elevationIndex=-1)
+                       int distanceIndex=-1,int elevationIndex=-1,
+                       double nearDistance=0.2,double farDistance=0.7)
     {
         if(!plugin) return "VST3 processor is no longer available";
         if(!std::isfinite(seconds)||seconds<2.0||seconds>180.0)
             return "Revolution time must be 2–180 seconds";
         if(!armix::core::validOrbitShape(shape)) return "Unknown motion path";
+        if(!std::isfinite(nearDistance)||!std::isfinite(farDistance)||
+           nearDistance<0.0||farDistance>1.0||nearDistance>farDistance)
+            return "Invalid Near/Far distance setpoints";
         auto& params=plugin->getParameters();
         auto findParam=[&](int index)->juce::AudioProcessorParameter* {
             return index>=0&&index<params.size()?params[index]:nullptr;
         };
         auto* az=findParam(azimuthIndex);
-        auto* distance=armix::core::needsOrbitDistance(shape)?findParam(distanceIndex):nullptr;
+        auto* distance=distanceIndex>=0?findParam(distanceIndex):nullptr;
         auto* elevation=armix::core::needsOrbitElevation(shape)?findParam(elevationIndex):nullptr;
         auto validParam=[](juce::AudioProcessorParameter* p) {
             return p&&p->isAutomatable()&&p->getNumSteps()>=72 &&
                    std::isfinite(p->getValue())&&p->getValue()>=0.f&&p->getValue()<=1.f;
         };
         if(!validParam(az)) return "Choose a high-resolution automatable Azimuth parameter";
-        if(armix::core::needsOrbitDistance(shape) &&
+        if((armix::core::needsOrbitDistance(shape)||distanceIndex>=0) &&
            (!validParam(distance)||distance==az))
             return "Ellipse needs a distinct automatable Distance parameter";
         if(armix::core::needsOrbitElevation(shape) &&
@@ -49,6 +53,7 @@ public:
         azimuth_=az;distance_=distance;elevation_=elevation;
         slot_=slot;azimuthIndex_=azimuthIndex;distanceIndex_=distanceIndex;
         elevationIndex_=elevationIndex;shape_=shape;period_=seconds;reverse_=reverse;
+        nearDistance_=nearDistance;farDistance_=farDistance;
         phaseStart_=static_cast<float>(startPhase);
         lastAz_=first;lastDist_=startDist;lastElev_=startElev;
         initialDistance_=startDist;initialElevation_=startElev;
@@ -84,6 +89,8 @@ public:
     int distanceParameterIndex() const noexcept { return distanceIndex_; }
     int elevationParameterIndex() const noexcept { return elevationIndex_; }
     int shape() const noexcept { return shape_; }
+    double nearDistance() const noexcept { return nearDistance_; }
+    double farDistance() const noexcept { return farDistance_; }
     double secondsPerRevolution() const noexcept { return period_; }
     bool reverse() const noexcept { return reverse_; }
     const armix::core::OrbitDispatchStats& stats() const noexcept { return dispatch_; }
@@ -104,7 +111,8 @@ private:
         ++dispatch_.ticks;
         const double elapsed=(now-startMs_)/1000.0;
         const auto pos=armix::core::orbitMotionPoint(
-            armix::core::orbitRamp(phaseStart_,elapsed,period_,reverse_),shape_);
+            armix::core::orbitRamp(phaseStart_,elapsed,period_,reverse_),shape_,
+            nearDistance_,farDistance_);
         const auto publish=[&](juce::AudioProcessorParameter* p,float value,
                                float& previous,bool cyclic,int steps){
             if(!p)return;
@@ -131,6 +139,7 @@ private:
     int slot_=-1,azimuthIndex_=-1,distanceIndex_=-1,elevationIndex_=-1;
     int shape_=0,azimuthSteps_=0;
     double period_=20.0,startMs_=0.0,previousTickMs_=0.0;
+    double nearDistance_=0.2,farDistance_=0.7;
     float phaseStart_=0.f,lastAz_=0.5f,lastDist_=0.5f,lastElev_=0.5f;
     float initialDistance_=0.5f,initialElevation_=0.5f;
     bool reverse_=false;

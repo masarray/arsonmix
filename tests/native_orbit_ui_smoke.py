@@ -40,6 +40,7 @@ async def main():
                   slot:payload.slot, revision:'1', plugin:'dearVR PRO 2', active:false,
                   activeSlot:-1,activeParameter:-1,periodSeconds:20,
                   reverse:false,preferredParameter:2,
+                  nearSetpoint:1,farSetpoint:3,distanceUnit:'m',distanceMin:0,distanceMax:10,
                   shape:0, previewShape:payload.shape??-1, phase:0.125,
                   motionPath:pathFor(payload.shape??0),
                   preferredDistance:4,preferredElevation:5,
@@ -47,7 +48,7 @@ async def main():
                     {index:1,name:'Azimuth Scale',minText:'0.5',maxText:'5'},
                     {index:2,name:'Azimuth',minText:'-180°',maxText:'+180°'},
                     {index:3,name:'Gain',minText:'-60',maxText:'12'},
-                    {index:4,name:'Distance',minText:'0 m',maxText:'10 m'},
+                    {index:4,name:'Distance',minText:'0 m',maxText:'10 m',unit:'m',minMetres:0,maxMetres:10},
                     {index:5,name:'Elevation',minText:'-90°',maxText:'90°'}
                   ]
                 }));
@@ -59,11 +60,14 @@ async def main():
                   periodSeconds:payload.seconds,reverse:payload.reverse,
                   preferredParameter:payload.parameterIndex,
                   shape:payload.shape,distanceIndex:payload.distanceIndex,elevationIndex:payload.elevationIndex,
+                  nearSetpoint:payload.nearDistance,farSetpoint:payload.farDistance,
+                  nearNormalized:payload.nearDistance/10,farNormalized:payload.farDistance/10,
+                  distanceUnit:payload.distanceUnit,distanceMin:0,distanceMax:10,
                   preferredDistance:4,preferredElevation:5,
                   previewShape:-1,phase:0.12,motionPath:pathFor(payload.shape),
                   parameters:[
                     {index:2,name:'Azimuth',minText:'-180°',maxText:'+180°'},
-                    {index:4,name:'Distance',minText:'0 m',maxText:'10 m'},
+                    {index:4,name:'Distance',minText:'0 m',maxText:'10 m',unit:'m',minMetres:0,maxMetres:10},
                     {index:5,name:'Elevation',minText:'-90°',maxText:'90°'}
                   ]
                 }));
@@ -73,9 +77,10 @@ async def main():
                   slot:payload.slot,revision:'1',plugin:'dearVR PRO 2',active:false,
                   activeSlot:-1,activeParameter:-1,periodSeconds:20,
                   reverse:false,preferredParameter:2,shape:0,previewShape:-1,phase:0,
+                  nearSetpoint:1,farSetpoint:3,distanceUnit:'m',distanceMin:0,distanceMax:10,
                   motionPath:pathFor(0),preferredDistance:4,preferredElevation:5,
                   parameters:[{index:2,name:'Azimuth',minText:'-180°',maxText:'+180°'},
-                    {index:4,name:'Distance',minText:'0 m',maxText:'10 m'},
+                    {index:4,name:'Distance',minText:'0 m',maxText:'10 m',unit:'m',minMetres:0,maxMetres:10},
                     {index:5,name:'Elevation',minText:'-90°',maxText:'90°'}]
                 }));
               }
@@ -121,9 +126,13 @@ async def main():
         assert await modal.locator("#nativeOrbitParameter").input_value() == "2"
         assert "-180" in await modal.inner_text(), "Vendor endpoint range should be visible"
         start = modal.locator("[data-orbit-start]")
-        assert await start.is_disabled(), "Start must require range confirmation"
-        await modal.locator("#nativeOrbitConfirm").check()
-        assert await start.is_enabled()
+        assert await modal.locator("#nativeOrbitConfirm").count()==0
+        assert await start.is_enabled(), "START must be ready without checkbox"
+        assert await modal.locator("#nativeOrbitNear").input_value()=="1"
+        assert await modal.locator("#nativeOrbitFar").input_value()=="3"
+        dot_before=await page.locator("#nativeOrbitDot").get_attribute("cx")
+        await page.wait_for_timeout(150)
+        assert await page.locator("#nativeOrbitDot").get_attribute("cx")==dot_before, "Dot must stay still before START"
         geometry = await modal.locator(".native-dialog").evaluate("""el=>({
           width:el.getBoundingClientRect().width,
           height:el.getBoundingClientRect().height,
@@ -136,9 +145,9 @@ async def main():
         await page.wait_for_function("""()=>document.querySelector("#nativeOrbitPath")?.getAttribute("d")?.length>120""")
         assert await modal.locator("#nativeOrbitDistance").input_value()=="4"
         assert await modal.locator("#nativeOrbitElevation").input_value()=="5"
-        assert await modal.locator("[data-orbit-start]").is_disabled()
-        await modal.locator("#nativeOrbitConfirm").check()
         assert await modal.locator("[data-orbit-start]").is_enabled()
+        await modal.locator("#nativeOrbitNear").fill("2")
+        await modal.locator("#nativeOrbitFar").fill("5")
         await modal.locator("#nativeOrbitSeconds").fill("15")
         await modal.locator("#nativeOrbitReverse").select_option("true")
         await modal.locator("[data-orbit-start]").click()
@@ -150,16 +159,33 @@ async def main():
             "action": "orbitStart", "slot": 0, "revision": "1", "pluginId": "dearvr-pro-2", "parameterIndex": 2,
             "seconds": 15, "reverse": True,
             "shape": 4, "distanceIndex": 4, "elevationIndex": 5,
-            "calibrated": True,
+            "nearDistance": 2, "farDistance": 5, "distanceUnit": "m",
         }, start_payload
         # Animated dot advances along the C++-supplied sampled path.
         first=await page.locator("#nativeOrbitDot").get_attribute("cx")
         await page.wait_for_timeout(180)
         second=await page.locator("#nativeOrbitDot").get_attribute("cx")
         assert first!=second, (first,second)
+        # UPDATE must apply new Near/Far setpoints to the host and redraw the fields.
+        await modal.locator("#nativeOrbitNear").fill("1.5")
+        await modal.locator("#nativeOrbitFar").fill("6")
+        await modal.locator("#nativeOrbitSeconds").fill("18")
+        await modal.locator("[data-orbit-start]").click()
+        await page.wait_for_function("""()=>window.__JUCE__.backend.calls.filter(x=>
+          x.payload.action==='orbitStart').length===2""")
+        update=await page.evaluate("""()=>window.__JUCE__.backend.calls.filter(x=>
+          x.payload.action==='orbitStart').at(-1).payload""")
+        assert update["nearDistance"]==1.5 and update["farDistance"]==6
+        assert update["seconds"]==18
+        assert await modal.locator("#nativeOrbitNear").input_value()=="1.5"
+        assert await modal.locator("#nativeOrbitFar").input_value()=="6"
+        assert await modal.locator("#nativeOrbitSeconds").input_value()=="18"
         await modal.locator("[data-orbit-stop]").click()
         await page.wait_for_function("""()=>window.__JUCE__.backend.calls.some(x=>
           x.payload.action==='orbitStop')""")
+        frozen=await page.locator("#nativeOrbitDot").get_attribute("cx")
+        await page.wait_for_timeout(160)
+        assert await page.locator("#nativeOrbitDot").get_attribute("cx")==frozen, "Dot stops with engine"
         await modal.locator('[data-close-modal="nativeOrbit"]').click()
         await page.locator('[data-view="FX RACK"]').click()
         assert await page.locator(".native-node [data-native-fx='orbit']").count()==0

@@ -32,15 +32,20 @@ struct OrbitMotionPoint {
     float azimuth=0.5f, distance=0.5f, elevation=0.5f;
     float x=0.0f,y=1.0f,z=0.0f; // top-down x/y, signed elevation z
 };
-inline OrbitMotionPoint orbitMotionPoint(double phase,int shape) noexcept {
+inline OrbitMotionPoint orbitMotionPoint(double phase,int shape,
+    double nearDistance=0.2,double farDistance=0.7) noexcept {
     constexpr double pi=3.14159265358979323846;
     if (!validOrbitShape(shape)||!std::isfinite(phase)) return {};
     const double t=orbitWrap(phase)*2.0*pi;
     const double x=orbitAxisX(shape)*std::sin(t);
     const double y=orbitAxisY(shape)*std::cos(t);
     const double r=std::hypot(x,y);
-    // Explicit vendor-normalised ranges: confirm near/far direction on target plugin.
-    const double distance=std::clamp(0.22+0.58*(r-0.40)/0.60,0.20,0.82);
+    // User-selected VST3-normalised near/far setpoints, never fixed 30 metres.
+    if(!std::isfinite(nearDistance)||!std::isfinite(farDistance))return {};
+    const double near=std::clamp(nearDistance,0.0,1.0);
+    const double far=std::clamp(farDistance,0.0,1.0);
+    const double radius=std::clamp((r-0.43)/0.57,0.0,1.0);
+    const double distance=near+(far-near)*radius;
     const double z=needsOrbitElevation(shape) ? 0.30*std::sin(t) : 0.0;
     const double azimuth=orbitWrap(0.5+std::atan2(x,y)/(2.0*pi));
     return {static_cast<float>(azimuth),static_cast<float>(distance),

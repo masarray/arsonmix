@@ -16,7 +16,13 @@ test('Native motion requires explicit vendor parameter mapping',()=>{
  const main=read('src/Main.cpp'),bridge=read('web/bridge.js'),core=read('engine/core/OrbitMotion.h');
  assert.match(main,/needsOrbitDistance\(shape\)/);
  assert.match(main,/needsOrbitElevation\(shape\)/);
- assert.match(main,/calibrated/);
+ assert.match(main,/metresToNormalized/);
+ assert.match(main,/nearDistance/);
+ assert.match(main,/distanceMeterBounds/);
+ assert.doesNotMatch(bridge,/nativeOrbitConfirm/);
+ assert.match(bridge,/nativeOrbitNear/);
+ assert.match(bridge,/nativeOrbitFar/);
+ assert.match(bridge,/nearDistance:near,farDistance:far/);
  assert.match(bridge,/nativeOrbitDistance/);
  assert.match(bridge,/nativeOrbitElevation/);
  assert.match(bridge,/nativeOrbitDot/);
