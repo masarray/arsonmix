@@ -42,6 +42,12 @@ int main() {
     assert(plan.upstreamOf(0,1));
     assert(plan.upstreamOf(1,3));
     assert(plan.upstreamOf(2,3));
+    assert(plan.upstreamOf(0,3)); // transitive 0 -> 1 -> 3
+    assert(!plan.upstreamOf(0,2)); // topological order != graph edge
+    assert(!plan.upstreamOf(1,2));
+    assert(!plan.upstreamOf(3,0));
+    assert(!plan.upstreamOf(0,0));
+    assert(!plan.upstreamOf(-1,3));
     const std::array<float,3> one {1.f,-.25f,.75f};
     const std::array<float,3> two {.5f,.25f,-.5f};
     std::array<std::array<float,3>,stripCount> l{},r{};
@@ -107,6 +113,62 @@ int main() {
         cfg.sends[i]={i,i+1,SendTap::postFader,1.f,0.f,true};
     assert(ChannelSendPlan::compile(cfg,plan,err));
     for(int i=0;i<stripCount;++i)assert(plan.topologicalOrder[i]==i);
+    assert(plan.upstreamOf(0,9) && !plan.upstreamOf(9,0));
     cfg.sends[cfg.count++]={9,0,SendTap::postFader,1.f,0.f,true};
     assert(!ChannelSendPlan::compile(cfg,plan,err)&&err.fault==SendFault::cycleDetected);
+
+    // Cross-module regression: fader=-infinity MUST NOT gate PRE-FADER sends.
+    // Raw source access and post-fader/master activity are independent.
+    ChannelRoutingConfig physical;
+    physical.stripsAndMaster.strips[0]={SourceMode::mono,0,-1,0.f,0.f,false,false};
+    ChannelRoutingPlan sourcePlan;
+    LayoutError layoutError;
+    constexpr std::array<int,1> enabledPort{0};
+    assert(ChannelRoutingPlan::compile(physical,enabledPort,sourcePlan,layoutError));
+    assert(!sourcePlan.base.strips[0].active);
+    const std::array<float,2> mic {.8f,-.4f};
+    const float* capture[]={mic.data()};
+    std::array<float,2> rawL{},rawR{},postL{},postR{},mixL{},mixR{};
+    assert(sourcePlan.extractSource(0,capture,1,rawL.data(),rawR.data(),2));
+    assert(close(rawL[0],.8f)&&close(rawR[0],.8f));
+    assert(!sourcePlan.extract(0,capture,1,postL.data(),postR.data(),2));
+    assert(close(postL[0],0.f)&&close(postR[0],0.f));
+    sourcePlan.accumulate(0,rawL.data(),rawR.data(),mixL.data(),mixR.data(),2);
+    assert(close(mixL[0],0.f)&&close(mixR[0],0.f));
+
+    SendRequest preOnly;
+    preOnly.count=1;
+    preOnly.toMaster[0]=false;
+    preOnly.sends[0]={0,1,SendTap::preFader,1.f,0.f,true};
+    ChannelSendPlan prePlan;
+    assert(ChannelSendPlan::compile(preOnly,prePlan,err));
+    std::array<std::array<float,2>,stripCount> recvL{},recvR{};
+    std::array<float*,stripCount> recvLp{},recvRp{};
+    for(int i=0;i<stripCount;++i) {
+        recvLp[i]=recvL[i].data();recvRp[i]=recvR[i].data();
+    }
+    prePlan.dispatch(0,SendTap::preFader,rawL.data(),rawR.data(),
+                     recvLp.data(),recvRp.data(),2);
+    assert(close(recvL[1][0],.8f)&&close(recvR[1][0],.8f));
+    prePlan.dispatch(0,SendTap::postFader,postL.data(),postR.data(),
+                     recvLp.data(),recvRp.data(),2);
+    assert(close(recvL[1][0],.8f)&&close(recvR[1][0],.8f));
+
+    // Pre-send mute/solo policy must be deliberately applied by its caller.
+    // Even a muted source retains raw physical input; MASTER stays quiet.
+    physical.stripsAndMaster.strips[0].mute=true;
+    assert(ChannelRoutingPlan::compile(physical,enabledPort,sourcePlan,layoutError));
+    assert(sourcePlan.extractSource(0,capture,1,rawL.data(),rawR.data(),2));
+    assert(!sourcePlan.extract(0,capture,1,postL.data(),postR.data(),2));
+
+    // Source stereo folded into MONO even with a zero fader (before FX/send).
+    constexpr std::array<int,2> stereoPorts{0,1};
+    physical.stripsAndMaster.strips[0]={SourceMode::stereo,0,1,0.f,0.f,false,false};
+    physical.formats[0]=ChannelFormat::mono;
+    assert(ChannelRoutingPlan::compile(physical,stereoPorts,sourcePlan,layoutError));
+    const std::array<float,2> side {-.2f,.4f};
+    const float* stereoCapture[]={mic.data(),side.data()};
+    assert(sourcePlan.extractSource(0,stereoCapture,2,rawL.data(),rawR.data(),2));
+    assert(close(rawL[0],.3f)&&close(rawR[0],.3f));
+    assert(!sourcePlan.extract(0,stereoCapture,2,postL.data(),postR.data(),2));
 }
