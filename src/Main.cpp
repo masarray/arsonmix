@@ -1374,6 +1374,19 @@ class ConsoleApp final : public juce::JUCEApplication
 public:
     const juce::String getApplicationName() override { return "ArSonMix"; }
     const juce::String getApplicationVersion() override { return "0.5.0-native-catalog"; }
+    // Shared WASAPI/ASIO endpoints, VST editors, settings and WebView2 cache
+    // belong to one console session. Bring the existing window forward rather
+    // than creating a second host instance against the same physical device.
+    bool moreThanOneInstanceAllowed() override { return false; }
+    void anotherInstanceStarted (const juce::String&) override
+    {
+        if (window_)
+        {
+            window_->setMinimised (false);
+            window_->toFront (true);
+            window_->grabKeyboardFocus();
+        }
+    }
     void initialise (const juce::String&) override
     {
         const auto folder = armix::storage::PortableWorkspace::browserDataRoot();
