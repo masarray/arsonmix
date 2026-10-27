@@ -615,6 +615,10 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  --b180-off:#b3b3b3;--b180-edge:#636363;--b180-off-ink:#2b2b2b;
  --b180-color:var(--b180-off);--b180-border:var(--b180-edge);
  --b180-ink:var(--b180-off-ink);
+ --b180-on-cyan:#83d6e0;--b180-on-green:#79dd9e;
+ --b180-on-magenta:#e3a6d8;--b180-on-purple:#c4a9e8;
+ --b180-on-mute:#f38895;--b180-on-solo:#edc669;
+ --b180-on-stereo:#77baeb;
 }
 :is(.btn-180,.toolbar .nav button.btn-180,.toolbar .spec-device,.left-rail .tabs button.btn-180,
 .strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
@@ -691,12 +695,11 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 /* Native dialog buttons keep native cyan; toolbar and rail states below
    each have ONE scope owner, with no competing earlier palette selectors. */
 :is(.native-btn.primary,.native-btn.on){--b180-color:#22bbcc;--b180-border:#087b8e;--b180-ink:#041c27}
-.strip .utility-row button[data-hpf].active{--b180-color:#37c99a;--b180-border:#126e5b;--b180-ink:#071f1a}
+/* Utility ON is exclusively cyan, owned by the more specific scoped rule below. */
 :is(.strip .channel-actions .mute.active,#masterLeft #masterMute.active,
- .native-btn.warn){--b180-color:#e76f83;--b180-border:#a13650;--b180-ink:#291018}
-.strip .channel-actions .solo.active{--b180-color:#dbb75c;--b180-border:#967025;--b180-ink:#291d08}
-:is(.strip .utility-row button[data-pre].active,
- #masterLeft .master-tools button.active){--b180-color:#a68cdb;--b180-border:#684f9e;--b180-ink:#1d1234}
+ .native-btn.warn){--b180-color:var(--b180-on-mute);--b180-border:#b14a5f;--b180-ink:#32151e}
+.strip .channel-actions .solo.active{--b180-color:var(--b180-on-solo);--b180-border:#a48337;--b180-ink:#2b210b}
+#masterLeft .master-tools button.active{--b180-color:var(--b180-on-purple);--b180-border:#8668b8;--b180-ink:#26163c}
 :is(.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
  #masterLeft .master-tools button,.toolbar .nav button.btn-180,.left-rail .tabs button.btn-180,
  .left-rail .rail-presets button.btn-180,.left-rail .rail-bottom button.btn-180,.native-btn){
@@ -759,16 +762,31 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  --b180-color:#f0f1f3;--b180-border:#939ba5;--b180-ink:#222932;
 }
 #app .left-rail button.btn-180:is(.selected,.active){
- --b180-color:#db9cce;--b180-border:#9c5b91;--b180-ink:#32172f;
+ --b180-color:var(--b180-on-magenta);--b180-border:#ad6d9f;--b180-ink:#32172f;
 }
 /* Polarity/HPF share the gentle cyan pad; MUTE/SOLO keep their alert palettes. */
 #app #mixer .strip .utility-row button.btn-180.active{
- --b180-color:#83d6e0;--b180-border:#38909e;--b180-ink:#12323c;
+ --b180-color:var(--b180-on-cyan);--b180-border:#38909e;--b180-ink:#12323c;
 }
 #app .left-rail .rail-presets button.btn-180{text-transform:none}
 #app .toolbar-actions .nav button.btn-180{height:34px;min-height:34px;min-width:77px;padding:0 10px!important;letter-spacing:.35px!important}
 #app .left-rail button.btn-180 > span,
 #app .toolbar-actions .nav button.btn-180 > span{transform:none!important;transition:none!important}
+
+/* Device is a standard toolbar-size BTN-180 pad, not the old cyan-caption spec.
+   Green indicates verified connected native audio status only. Preview is OFF. */
+#app .toolbar .spec-device{
+ height:34px;min-height:34px;
+ padding:0 10px!important;letter-spacing:.35px!important;
+}
+#app .toolbar .spec-device #headerDriver{
+ color:var(--b180-ink)!important;
+}
+#app .toolbar .spec-device.on{
+ --b180-color:var(--b180-on-green);
+ --b180-border:#3a9b68;
+ --b180-ink:#113322;
+}
 /* Superseded navigation skin (Button 19 / experimental acrylic).
    All toolbar and left-rail buttons now use the canonical Button-180 pad
    owned by 20-button-180.css. Kept as a stable zero-rule CSS module in
@@ -976,10 +994,10 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
  filter:none!important;transition:none!important;
 }
 #app #masterLeft .master-actions #masterMode.is-stereo{
- --b180-color:#509bd2;--b180-border:#236b9e;--b180-ink:#061e2d;
+ --b180-color:var(--b180-on-stereo);--b180-border:#377eac;--b180-ink:#0a2639;
 }
 #app #masterLeft .master-actions #masterMode.is-mono{
- --b180-color:#e76f83;--b180-border:#aa3651;--b180-ink:#31101c;
+ --b180-color:var(--b180-on-mute);--b180-border:#b14a5f;--b180-ink:#31101c;
 }
 /* The discarded MASTER tools row no longer shortens its fader travel. */
 #app #masterLeft .master-fader-zone{flex:1 1 auto;min-height:90px}

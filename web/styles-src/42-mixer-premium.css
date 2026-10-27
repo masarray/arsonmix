@@ -35,10 +35,10 @@
  filter:none!important;transition:none!important;
 }
 #app #masterLeft .master-actions #masterMode.is-stereo{
- --b180-color:#509bd2;--b180-border:#236b9e;--b180-ink:#061e2d;
+ --b180-color:var(--b180-on-stereo);--b180-border:#377eac;--b180-ink:#0a2639;
 }
 #app #masterLeft .master-actions #masterMode.is-mono{
- --b180-color:#e76f83;--b180-border:#aa3651;--b180-ink:#31101c;
+ --b180-color:var(--b180-on-mute);--b180-border:#b14a5f;--b180-ink:#31101c;
 }
 /* The discarded MASTER tools row no longer shortens its fader travel. */
 #app #masterLeft .master-fader-zone{flex:1 1 auto;min-height:90px}

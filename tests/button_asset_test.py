@@ -30,10 +30,11 @@ assert '--b180-off:#b3b3b3' in css
 assert '--b180-edge:#636363' in css
 assert '--b180-off-ink:#2b2b2b' in css
 assert '--b180-ink:var(--b180-off-ink)' in css
-assert '--b180-color:#83d6e0' in css and '--b180-color:#db9cce' in css
-assert '--b180-ink:#291018' in css
-assert '--b180-color:#e76f83' in css # ink on coral mute
-assert '--b180-ink:#291d08' in css # ink on amber solo
+assert '--b180-color:var(--b180-on-cyan)' in css
+assert '--b180-color:var(--b180-on-magenta)' in css
+assert '--b180-ink:#32151e' in css
+assert '--b180-color:var(--b180-on-mute)' in css # coral MUTE
+assert '--b180-ink:#2b210b' in css # ink on amber SOLO
 assert 'data:font/woff2;base64,d09GMg' in css
 assert '@font-face' in css and 'font-family:"ArSonMix Inter"' in css
 assert 'SIL Open Font License' in license
@@ -71,4 +72,46 @@ assert 'background:linear-gradient(180deg,#526a78' not in css
 assert '0 0 8px rgba(60,191,230,.24)' not in css
 assert 'data-send' not in js and 'data-send' not in css
 assert 'a:true,b:false' not in js
-print('PASS: owner BTN-180 shadow 7/7, neutral OFF, scoped cyan/magenta ON, common 1px click and HTML parity')
+# Palette quality gate: stable perceptual lightness and readable dark captions.
+# No runtime calculations or painting cost; this runs only in CI.
+tokens={
+  'cyan':('#83d6e0','#12323c'),
+  'green':('#79dd9e','#113322'),
+  'magenta':('#e3a6d8','#32172f'),
+  'purple':('#c4a9e8','#26163c'),
+  'mute':('#f38895','#32151e'),
+  'solo':('#edc669','#2b210b'),
+  'stereo':('#77baeb','#0a2639'),
+}
+owner=(root/'web/styles-src/20-button-180.css').read_text(encoding='utf-8')
+def linear(u):
+  return u/12.92 if u<=.04045 else ((u+.055)/1.055)**2.4
+def rgb(hexcode):
+  return [linear(int(hexcode[x:x+2],16)/255) for x in (1,3,5)]
+def luminance(hexcode):
+  return sum(c*w for c,w in zip(rgb(hexcode),(.2126,.7152,.0722)))
+def contrast(face,ink):
+  y1,y2=sorted((luminance(face),luminance(ink)))
+  return (y2+.05)/(y1+.05)
+def oklab_lightness(hexcode):
+  r,g,b=rgb(hexcode)
+  l=.4122214708*r+.5363325363*g+.0514459929*b
+  m=.2119034982*r+.6806995451*g+.1073969566*b
+  s=.0883024619*r+.2817188376*g+.6299787005*b
+  return .2104542553*l**(1/3)+.793617785*m**(1/3)-.0040720468*s**(1/3)
+lightness=[]
+for role,(face,ink) in tokens.items():
+  assert f'--b180-on-{role}:{face}' in owner,(role,face)
+  assert contrast(face,ink)>=6,(role,contrast(face,ink))
+  lightness.append(oklab_lightness(face))
+assert max(lightness)-min(lightness)<.11,lightness
+bridge=(root/'web/bridge.js').read_text(encoding='utf8')
+native=(root/'web/native-bridge.js').read_text(encoding='utf8')
+for name,src,flag in [('bridge',bridge,'d'),('native',native,'s')]:
+  assert f'const ready=!!{flag}.connected && !{flag}.error;' in src,name
+  assert 'deviceButton.classList.toggle("on",ready)' in src,name
+  assert 'deviceButton.dataset.audioConnected=String(ready)' in src,name
+assert '#app .toolbar .spec-device #headerDriver' in owner
+assert '#app .toolbar .spec-device.on' in owner
+assert '--b180-color:var(--b180-on-stereo)' in (root/'web/styles-src/42-mixer-premium.css').read_text(encoding='utf8')
+print('PASS: balanced OKLab lightness, WCAG captions, device-green native safety and BTN-180 parity')

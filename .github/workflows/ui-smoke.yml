@@ -69,6 +69,7 @@ jobs:
           path: |
             fader-ui-smoke.png
             toolbar-global-btn180-pad.png
+            device-green-on-palette-review.png
             mixer-design-review.png
             mixer-design-review-1440.png
             mixer-master-clip-review.png
