@@ -130,25 +130,38 @@ async def main():
           return {before,after:e.getAttribute('style'),lit,level:ledMeterCache.get(e).level};
         }""")
         assert dirty['before']==dirty['after'] and dirty['level']==1.1,dirty
-        # Deterministic native-style time-based ballistics: fast attack,
-        # gravity release, non-overshoot, single shared 30fps visual owner.
+        # Fast rise + aggressive early fall + smooth exponential landing.
+        # Numerical envelope is frame-rate invariant, bounded and allocation-free.
         ballistic=await page.evaluate("""()=>{
-          const fast=nativeMeterStep(8,96,0,.034);
-          const down=nativeMeterStep(96,8,0,.034);
-          const further=nativeMeterStep(down.level,8,down.velocity,.034);
-          const zero=nativeMeterStep(8,8,14,.034);
-          const overshoot=nativeMeterStep(2,0,96,.065);
-          return {fast,down,further,zero,overshoot,cap:NATIVE_METER_FRAME_MS,
+          const fast=nativeMeterStep(8,96,.034);
+          const down=nativeMeterStep(96,8,.034);
+          const further=nativeMeterStep(down,8,.034);
+          const initialDrop=96-down,nextDrop=down-further;
+          const split=further; // two 34ms steps vs one 65ms plus 3ms
+          const mixed=nativeMeterStep(nativeMeterStep(96,8,.065),8,.003);
+          const zero=nativeMeterStep(8,8,.034);
+          const landing=nativeMeterStep(8.25,8,.034);
+          const noOvershoot=nativeMeterStep(2,0,.065);
+          const retarget=nativeMeterStep(down,99,.034);
+          const capped=nativeMeterStep(96,8,5);
+          const bounded=nativeMeterStep(96,8,.065);
+          return {fast,down,further,initialDrop,nextDrop,split,mixed,zero,
+            landing,noOvershoot,retarget,capped,bounded,
+            cap:NATIVE_METER_FRAME_MS,attack:NATIVE_METER_ATTACK_SECONDS,
+            release:NATIVE_METER_RELEASE_SECONDS,
             nativeTarget:typeof window.__arMixSetNativeMeterTarget,
             stats:typeof window.__arMixMeterMotionStats};
         }""")
         assert ballistic['cap']>=34 and ballistic['nativeTarget']=='function',ballistic
-        assert ballistic['fast']['level']>80 and ballistic['fast']['level']<=96,ballistic
-        assert 94<ballistic['down']['level']<96,ballistic
-        assert ballistic['down']['velocity']<ballistic['further']['velocity'],ballistic
-        assert ballistic['further']['level']<ballistic['down']['level'],ballistic
-        assert ballistic['zero']=={'level':8,'velocity':0},ballistic
-        assert ballistic['overshoot']['level']==0,ballistic
+        assert ballistic['attack']<ballistic['release']<.3,ballistic
+        assert 80<ballistic['fast']<=96,ballistic
+        assert 8<ballistic['further']<ballistic['down']<85,ballistic
+        assert ballistic['initialDrop']>ballistic['nextDrop']>0,ballistic
+        assert abs(ballistic['split']-ballistic['mixed'])<1e-6,ballistic
+        assert ballistic['zero']==8 and ballistic['landing']==8,ballistic
+        assert 0<=ballistic['noOvershoot']<2,ballistic
+        assert ballistic['down']<ballistic['retarget']<99,ballistic
+        assert abs(ballistic['capped']-ballistic['bounded'])<1e-6,ballistic
         # Full mixer rebuild must restore held peaks and clip state on fresh DOM nodes.
         restored=await page.evaluate("""()=>{
           clipLatch['0']=true;

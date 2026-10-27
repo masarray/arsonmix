@@ -1256,25 +1256,23 @@ window.__arMixSetLedMeterLevel=setLedMeterLevel;
 // never change that realtime/data cadence to control animation smoothness.
 // Exactly ONE pending timer + ONE rAF serve every live meter (not one per bar).
 const NATIVE_METER_FRAME_MS=34; // ceiling 29.4 scheduled paint frames/s
+const NATIVE_METER_ATTACK_SECONDS=.018; // immediate-looking, but visually bounded
+const NATIVE_METER_RELEASE_SECONDS=.165; // fast initial fall, gentle exponential landing
 const nativeMeterStates=new Map();
 const nativeMeterDirect=new URLSearchParams(location.search).get('metermotion')==='direct';
 const nativeMeterMotionStats={frames:0,scheduled:0,targets:0,meterPaintCalls:0,frameBudgetMs:NATIVE_METER_FRAME_MS,active:0};
 let nativeMeterTimer=0,nativeMeterRAF=0,nativeMeterLastTime=0;
-function nativeMeterStep(level,target,fallVelocity,dt){
+function nativeMeterStep(level,target,dt){
+ // One-pole envelope in DISPLAY space only: never modify audio/true peak.
+ // On a sudden level drop, travel is initially fast because the gap is large;
+ // speed decays continuously as the visible bar approaches the measured target.
+ // Time-correct across 30fps jitter; no easing animation, overshoot or bounce.
  const span=Math.max(0,Math.min(.065,Number(dt)||0));
- if(target>level){
-  // About 85% of an upward step in 34ms; almost immediate at real speech peaks.
-  const v=level+(target-level)*(1-Math.exp(-span/.018));
-  return {level:target-v<.3?target:v,velocity:0};
- }
- if(target<level){
-  // Gravity-like release: gentle initial descent, time-based acceleration,
-  // capped terminal speed. Never overshoot, even with irregular UI callbacks.
-  const speed=Math.min(100,Math.max(14,fallVelocity)+230*span);
-  const next=Math.max(target,level-speed*span);
-  return {level:next-target<.3?target:next,velocity:next===target?0:speed};
- }
- return {level:target,velocity:0};
+ if(!span||level===target)return level;
+ const tau=target>level?NATIVE_METER_ATTACK_SECONDS:NATIVE_METER_RELEASE_SECONDS;
+ const next=target+(level-target)*Math.exp(-span/tau);
+ // Sub-LED residual cannot be seen: stop scheduling without tail jitter.
+ return Math.abs(next-target)<.3?target:next;
 }
 function scheduleNativeMeterFrame(){
  if(nativeMeterTimer||nativeMeterRAF||document.hidden)return;
@@ -1293,8 +1291,7 @@ function animateNativeMeters(now){
  let active=0;
  for(const [el,s] of nativeMeterStates){
   if(!el.isConnected){nativeMeterStates.delete(el);continue;}
-  const next=nativeMeterStep(s.level,s.target,s.velocity,dt);
-  s.level=next.level;s.velocity=next.velocity;
+  s.level=nativeMeterStep(s.level,s.target,dt);
   setLedMeterLevel(el,s.level);
   nativeMeterMotionStats.meterPaintCalls++;
   if(Math.abs(s.level-s.target)>.3)active++;
@@ -1312,14 +1309,14 @@ function setNativeMeterTarget(el,rawValue){
   // without polling or leaking strong references to old LED bars.
   if(nativeMeterStates.size>4)
    for(const [old] of nativeMeterStates)if(!old.isConnected)nativeMeterStates.delete(old);
-  s={level:0,target:0,velocity:0};nativeMeterStates.set(el,s);
+  s={level:0,target:0};nativeMeterStates.set(el,s);
   setLedMeterLevel(el,0);
  }
  s.target=target;
  nativeMeterMotionStats.targets++;
  if(nativeMeterDirect||document.hidden||
     (typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches)){
-  s.level=target;s.velocity=0;setLedMeterLevel(el,target);
+  s.level=target;setLedMeterLevel(el,target);
   return;
  }
  if(Math.abs(s.level-target)>.3)scheduleNativeMeterFrame();
@@ -1333,7 +1330,7 @@ document.addEventListener('visibilitychange',()=>{
  nativeMeterLastTime=0;
  for(const [el,s] of nativeMeterStates){
   if(!el.isConnected){nativeMeterStates.delete(el);continue;}
-  s.level=s.target;s.velocity=0;setLedMeterLevel(el,s.level);
+  s.level=s.target;setLedMeterLevel(el,s.level);
  }
  nativeMeterMotionStats.active=0;
 });
