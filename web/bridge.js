@@ -852,6 +852,7 @@
     d.marker?.classList.remove("fx-drop-before","fx-drop-after");
     d.row?.classList.remove("fx-drag-source");
     d.ghost?.remove();fxNativeGesture=null;
+    document.removeEventListener("pointermove",moveNativeFxGesture);
   };
   document.addEventListener("pointerdown",e=>{
     if(e.button!==0||fxNativeGesture||state.chain.length<2)return;
@@ -867,8 +868,9 @@
       startX:e.clientX,startY:e.clientY,x:e.clientX,y:e.clientY,
       bounds:siblings.map(el=>({el,rect:el.getBoundingClientRect()})),
       insertion:from,marker:null,ghost:null,active:false};
+    document.addEventListener("pointermove",moveNativeFxGesture,{passive:false});
   },true);
-  document.addEventListener("pointermove",e=>{
+  const moveNativeFxGesture=e=>{
     const d=fxNativeGesture;if(!d||e.pointerId!==d.pointerId)return;
     d.x=e.clientX;d.y=e.clientY;
     if(!d.active){
@@ -893,7 +895,7 @@
     const end=at===d.count;
     d.marker=bs[end?bs.length-1:at].el;
     d.marker.classList.add(end?"fx-drop-after":"fx-drop-before");
-  },{passive:false});
+  };
   document.addEventListener("pointerup",e=>{
     const d=fxNativeGesture;if(!d||d.pointerId!==e.pointerId)return;
     const active=d.active,at=d.insertion,from=d.from,count=d.count;
