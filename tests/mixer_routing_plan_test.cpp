@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/MixerRoutingPlan.h"
 #include <array>
+#if defined(NDEBUG)
+#undef NDEBUG // Never skip P1A assertions in Release native CTest.
+#endif
 #include <cassert>
 #include <cmath>
 #include <limits>
