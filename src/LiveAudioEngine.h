@@ -13,6 +13,7 @@
 #include "../engine/device/DirectRouteFence.h"
 #include "../engine/device/WasapiEndpointIdentityGuard.h"
 #include "../engine/core/FxOrderPlan.h"
+#include "../engine/core/FxMoveRamp.h"
 #include "../engine/core/RealtimeHealthHistogram.h"
 #include "../engine/core/CallbackCadenceEvidence.h"
 #include <array>
@@ -1347,8 +1348,8 @@ private:
                     const auto phase = (offset + i) * rampStep;
                     const float graphRamp = cycle.fadeOut ? 1.f - phase
                                           : cycle.fadeIn ? phase : 1.f;
-                    const float fxRamp = fxFadeOut ? 1.f - phase
-                                       : fxFadeIn ? phase : 1.f;
+                    const float fxRamp = armix::dsp::FxMoveRamp::gain (
+                        fxMovePhase, offset + i, samples);
                     const float ramp = graphRamp * fxRamp;
                     const float value = captureTest ? 0.f
                         : toneTest ? mapped * ramp
