@@ -158,6 +158,19 @@
   }
   function renderRack(){
   if(!workspace || currentTab()!=="FX RACK") return;
+  const selectedMaster=typeof masterSelected!=="undefined" && masterSelected;
+  const selected=typeof currentChannel==="number"?currentChannel:0;
+  if(selectedMaster || selected!==0){
+    const label=selectedMaster?"MASTER":(typeof channels!=="undefined"&&channels[selected]?.name)||("Channel "+(selected+1));
+    workspace.innerHTML=`<div class="native-panel" data-live-native="0">
+      ${cardHeader("FX Rack · "+label,"This channel is not yet connected to an independent native DSP graph.")}
+      <div class="native-card" style="max-width:920px">
+        <h3>${escapeHtml(label)} · FX CHAIN</h3>
+        <p class="native-sub">The native VST3 engine currently processes Channel 1. Effects for this channel will be available after its audio routing and DSP are implemented.</p>
+        <div class="native-toolbar"><button class="native-btn" data-native-select-live="1">OPEN CHANNEL 1 FX</button><button class="native-btn" data-plugin-manager="1">PLUGIN MANAGER</button></div>
+      </div></div>`;
+    return;
+  }
   workspace.innerHTML=`<div class="native-panel" data-live-native="1">
     ${cardHeader("Live FX Chain · Vocal Input","Arrange your real VST3 effects here. Use ＋ ADD FX to choose from your installed catalog.")}
     <div class="native-toolbar" style="margin-bottom:12px">
@@ -531,6 +544,14 @@
     const rack=track.querySelector(".rack");
     if(!rack)return;
     if(i!==0){
+      if(rack.dataset.nativeSig!=="not-routed"){
+        rack.dataset.nativeSig="not-routed";
+        const channelName=escapeHtml(track.querySelector(".strip-name")?.textContent?.trim()||"Channel");
+        rack.innerHTML=Array.from({length:6},(_,slot)=>`<div class="insert-slot">
+          <button class="insert empty" data-native-unrouted="${i}" aria-label="Open ${channelName} FX Rack">
+            <span class="insert-name">${slot===0?"＋ ADD FX":"—"}</span>
+          </button></div>`).join("");
+      }
       rack.dataset.preview="1";
       track.dataset.preview="1";
       track.querySelectorAll(".meter-peak").forEach(x=>x.style.display="none");
@@ -656,10 +677,23 @@
   },true);
   // Capture native controls before the legacy v0.3 demo handlers.
   document.addEventListener("click", function(e){
-  const el=e.target.closest("[data-native-action],[data-native-add],[data-native-fx],[data-fxpower],[data-master-insert],[data-master-power],[data-native-category],[data-go-native-rack],[data-insert],[data-plugin-picker],[data-plugin-manager],[data-my-sounds],[data-preset-mute],[data-preset-save],[data-preset-load],[data-close-modal],[data-orbit-start],[data-orbit-stop]");
+  const el=e.target.closest("[data-native-unrouted],[data-native-select-live],[data-native-action],[data-native-add],[data-native-fx],[data-fxpower],[data-master-insert],[data-master-power],[data-native-category],[data-go-native-rack],[data-insert],[data-plugin-picker],[data-plugin-manager],[data-my-sounds],[data-preset-mute],[data-preset-save],[data-preset-load],[data-close-modal],[data-orbit-start],[data-orbit-stop]");
   if(!el)return;
   e.preventDefault();e.stopImmediatePropagation();
 
+  if(el.hasAttribute("data-native-unrouted")){
+    const index=Number(el.dataset.nativeUnrouted);
+    if(Number.isInteger(index)&&index>0&&index<10){
+      if(typeof focusChannel==="function")focusChannel(index);
+      document.querySelector('.nav button[data-view="FX RACK"]')?.click();
+      renderRack();
+    }
+    return;
+  }
+  if(el.hasAttribute("data-native-select-live")){
+    if(typeof focusChannel==="function")focusChannel(0);
+    renderRack();return;
+  }
   if(el.dataset.closeModal){if(el.dataset.closeModal==="nativeOrbit")hideOrbit();else hideDialog(el.dataset.closeModal);return;}
   if(el.hasAttribute("data-orbit-start")){
     const raw=document.getElementById("nativeOrbitParameter")?.value;
@@ -682,7 +716,9 @@
   }
   if(el.hasAttribute("data-orbit-stop")){send("orbitStop",{slot:orbit.slot});return;}
   if(el.hasAttribute("data-master-insert")||el.hasAttribute("data-master-power")){
-    toStatus("Master FX is a visual preview; real processing is Channel 1.");return;
+    if(typeof focusMaster==="function")focusMaster();
+    document.querySelector('.nav button[data-view="FX RACK"]')?.click();
+    renderRack();return;
   }
   if(el.hasAttribute("data-fxpower")){
     const [channel,slot]=el.dataset.fxpower.split(":").map(Number);
@@ -718,6 +754,7 @@
     renderManager();showDialog("nativePluginManager");return;
   }
   if(el.hasAttribute("data-plugin-picker")){
+    if((typeof masterSelected!=="undefined"&&masterSelected)||(typeof currentChannel==="number"&&currentChannel!==0)){renderRack();return;}
     openPicker();return;
   }
   if(el.hasAttribute("data-insert")){
