@@ -86,9 +86,13 @@ $manifest = [ordered]@{
     peFormat = "PE32+"
     peSubsystem = "WINDOWS_GUI (2)"
     exeSha256 = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
+    indexHtmlSha256 = (Get-FileHash -LiteralPath "web/index.html" -Algorithm SHA256).Hash.ToLowerInvariant()
     appJsSha256 = (Get-FileHash -LiteralPath "web/app.js" -Algorithm SHA256).Hash.ToLowerInvariant()
     stylesCssSha256 = (Get-FileHash -LiteralPath "web/styles.css" -Algorithm SHA256).Hash.ToLowerInvariant()
-    guiSource = "web/app.js + web/styles.css embedded by JUCE BinaryData target"
+    bridgeJsSha256 = (Get-FileHash -LiteralPath "web/bridge.js" -Algorithm SHA256).Hash.ToLowerInvariant()
+    monitorJsSha256 = (Get-FileHash -LiteralPath "web/monitor.js" -Algorithm SHA256).Hash.ToLowerInvariant()
+    guiSource = "web/index.html + web/app.js + web/styles.css + web/bridge.js + web/monitor.js (JUCE BinaryData)"
+    guiCalibration = "GAIN_10_TO_MINUS60_BLACK_DETENT_AT_38PX__VU_DBFS_INDEPENDENT_TICKS"
     fatStatus = "EXPERIMENTAL_NOT_HARDWARE_QUALIFIED"
     note = "No assertion of clean 0-FX sound, measured round-trip latency or native render-hardware XRUN."
 }
