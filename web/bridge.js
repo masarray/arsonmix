@@ -28,7 +28,8 @@
 
   const send = (action, more = {}) => backend.emitEvent("arMixAction", {action, ...more});
   let fxNativeGesture=null,fxNativeBlockClick=false;
-  const state = {catalog: [], chain: [], scanning: false, message: "Connecting to native host...",
+  let pickerAnchor=null,pickerChannel=0,pickerSlot=0;
+  const state = {orbitActiveSlot:-1,catalog: [], chain: [], scanning: false, message: "Connecting to native host...",
     device: {}, presets: [], addRequestId:0, addError:"", pendingPlugin:"", filter: "", selectedCategory: "All", monitor: false, error: "", progress: {active:false,phase:"done",done:0,total:0,found:0,current:""}, adding:false};
 
   const orbit = {slot:-1, plugin:"", parameters:[], active:false, activeSlot:-1, activeParameter:-1, periodSeconds:20, reverse:false, preferredParameter:-1, selection:-1, revision:null,nearSetpoint:20,farSetpoint:70,distanceUnit:"%",distanceMin:0,distanceMax:100,selectedShape:0,appliedPeriod:20,appliedReverse:false,initialized:false,shape:0,distanceSelection:-1,elevationSelection:-1,distanceIndex:-1,elevationIndex:-1,preferredDistance:-1,preferredElevation:-1,motionPath:[],visualPhase:0,visualTime:0};
@@ -75,6 +76,8 @@
     .native-node .node-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
     .native-node .node-text small{display:block;color:#7196a8;font-size:10px;margin-top:3px}
     .native-node.is-bypassed{opacity:.55}
+    .native-node.has-orbit{background:#19343b;border-color:#44757b}
+    .native-node.has-orbit .node-text::after{content:" · ORBIT";color:#a1e7da;font-size:9px;letter-spacing:.05em}
     .native-node button{padding:5px 7px;font-size:10px;min-width:28px}
     .native-search{box-sizing:border-box;display:block;width:100%;font:12px inherit;outline:0;color:#dcecf2;
         border:1px solid #4b6b79;background:#0b1923;border-radius:5px;padding:10px;margin-bottom:9px}
@@ -196,7 +199,7 @@
       <h3>MIC INPUT → PROCESSING → MAIN OUTPUT</h3>
       <div class="native-nodes">
         <div class="native-status">INPUT 1 / MICROPHONE</div>
-        ${state.chain.map((p,i)=>`<div class="native-node ${p.bypass?"is-bypassed":""}" data-native-move="${i}">
+        ${state.chain.map((p,i)=>`<div class="native-node ${p.bypass?"is-bypassed":""} ${state.orbitActiveSlot===i?"has-orbit":""}" data-native-move="${i}">
           <span class="node-index">${String(i+1).padStart(2,"0")}</span>
           <span class="node-text">${escapeHtml(p.name)}<small>${p.latency||0} samples processing latency</small></span>
           <button class="native-btn" data-native-fx="editor" data-slot="${i}">EDIT</button>
@@ -226,7 +229,10 @@
   return overlay;
 }
   function showDialog(id){const d=document.getElementById(id);if(d){d.hidden=false;d.querySelector("input")?.focus()}}
-  function hideDialog(id){const d=document.getElementById(id);if(d)d.hidden=true}
+  function hideDialog(id){
+    const d=document.getElementById(id);if(d)d.hidden=true;
+    if(id==="nativeFxSelector")clearPickerTarget();
+  }
   let orbitAnchor=null;
   function hideOrbit(){
     const d=document.getElementById("nativeOrbit");
@@ -266,7 +272,8 @@
     const paths={
       close:"M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z",
       play:"M8 5v14l11-7z",
-      stop:"M6 6h12v12H6z"
+      stop:"M6 6h12v12H6z",
+      bin:"M6 7h12v2H6V7zm2 3h2v9H8v-9zm6 0h2v9h-2v-9zM9 4h6l1 2H8l1-2zm-2 6h10l-.7 11H7.7L7 10z"
     };
     return '<svg class="material-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="'+paths[name]+'"/></svg>';
   };
@@ -453,7 +460,7 @@
   const dlg=document.getElementById("nativeFxSelector");
   if(!dlg)return;
   dlg.querySelector(".native-dialog-body").innerHTML=`
-    <div class="native-sub" style="margin-bottom:12px">SELECT EFFECT → INSERT INTO LIVE VOCAL FX RACK</div>
+    <div class="native-sub" style="margin-bottom:9px">INSERT → ${pickerChannel===-1?"MASTER":"CH "+(pickerChannel+1)} · SLOT ${pickerSlot+1}${pickerChannel===0?" · LIVE VST3":" · ROUTING NOT CONNECTED"}</div>
     <input class="native-search" id="nativeVstSearch" placeholder="Search by plugin name, developer or category..."
       value="${escapeHtml(state.filter)}">
     <div class="native-category">${fxCategories.map(c=>`<button class="native-btn ${c===state.selectedCategory?"on":""}" data-native-category="${c}">${c}</button>`).join("")}</div>
@@ -468,7 +475,42 @@
     <div style="max-height:430px;overflow:auto">${pluginRows(filterPlugins())}</div>`;
   dlg.querySelector(".native-dialog-footer").innerHTML=`${state.catalog.length} available plugins · <a href="#" data-plugin-manager="1" style="color:#7fdfff">OPEN PLUGIN MANAGER</a> for scanning and import`;
 }
-  function openPicker(){renderPicker();showDialog("nativeFxSelector")}
+  function clearPickerTarget(){
+    pickerAnchor?.classList.remove("fx-picker-target");
+    pickerAnchor=null;
+  }
+  function positionPicker(){
+    const overlay=document.getElementById("nativeFxSelector"),dlg=overlay?.querySelector(".native-dialog");
+    if(!overlay||overlay.hidden||!dlg)return;
+    if(!pickerAnchor?.isConnected){hideDialog("nativeFxSelector");return;}
+    const rect=pickerAnchor.getBoundingClientRect(),w=dlg.offsetWidth,h=dlg.offsetHeight;
+    const left=Math.max(8,Math.min(window.innerWidth-w-8,rect.left+rect.width/2-34));
+    const above=(window.innerHeight-rect.bottom<h+12)&&(rect.top>window.innerHeight-rect.bottom);
+    const top=above?Math.max(8,rect.top-h-9):Math.max(8,Math.min(window.innerHeight-h-8,rect.bottom+9));
+    dlg.style.left=left+"px";dlg.style.top=top+"px";
+    dlg.style.setProperty("--fx-arrow-x",Math.max(12,Math.min(w-20,rect.left+rect.width/2-left))+"px");
+    dlg.classList.toggle("picker-above",above);
+  }
+  function openPicker(anchor,channel=0,slot=state.chain.length){
+    clearPickerTarget();
+    const row=anchor?.closest(".insert-slot,.master-fx-slot,.native-node");
+    pickerAnchor=(row||anchor)?.isConnected?(row||anchor):document.querySelector('.nav button[data-view="FX RACK"]');
+    pickerChannel=Number(channel);pickerSlot=Math.max(0,Number(slot)||0);
+    pickerAnchor?.classList.add("fx-picker-target");
+    renderPicker();showDialog("nativeFxSelector");positionPicker();
+  }
+  window.addEventListener("resize",positionPicker);
+  document.addEventListener("pointerdown",e=>{
+    const picker=document.getElementById("nativeFxSelector");
+    if(picker&&!picker.hidden&&!e.target.closest("#nativeFxSelector .native-dialog")
+       &&!e.target.closest("[data-plugin-picker],[data-native-unrouted]"))hideDialog("nativeFxSelector");
+  },true);
+  document.addEventListener("keydown",e=>{
+    if(e.key==="Escape"){
+      const picker=document.getElementById("nativeFxSelector");
+      if(picker&&!picker.hidden){e.preventDefault();hideDialog("nativeFxSelector");}
+    }
+  },true);
   function scanProgressHtml(){
   const p=state.progress||{};
   const count=p.done||0,total=p.total||0,found=p.found||0;
@@ -598,11 +640,11 @@
       track.title=`${track.querySelector(".strip-name")?.textContent?.trim()||"Channel"} — visual preview only; native I/O not wired`;
       return;
     }
-    const signature=state.chain.map(p=>p.id+"|"+p.bypass).join(",");
+    const signature=state.chain.map(p=>p.id+"|"+p.bypass).join(",")+"|orbit="+state.orbitActiveSlot;
     if(rack.dataset.nativeSig===signature)return;
     rack.dataset.nativeSig=signature;
     rack.innerHTML=state.chain.slice(0,6).map((p,i)=>
-      `<div class="insert-slot native-insert-row ${p.bypass?"is-bypassed":""}" data-native-move="${i}">
+      `<div class="insert-slot native-insert-row ${p.bypass?"is-bypassed":""} ${state.orbitActiveSlot===i?"has-orbit":""}" data-native-move="${i}">
         <button class="insert" data-native-fx="editor" data-slot="${i}"
           title="Open ${escapeHtml(p.name)}" aria-label="Edit ${escapeHtml(p.name)}">
           <span class="insert-name">${escapeHtml(p.name)}</span></button>
@@ -654,7 +696,9 @@
     fxContext.innerHTML='<button role="menuitem" data-context-fx="editor">Open '+escapeHtml(p.name)+'</button>'+
       '<button role="menuitem" data-context-fx="orbit">Auto Orbit</button>'+
       '<div class="native-context-divider" role="separator"></div>'+
-      '<button role="menuitem" data-context-fx="bypass">'+(p.bypass?'Enable':'Bypass')+' FX</button>';
+      '<button role="menuitem" data-context-fx="bypass">'+(p.bypass?'Enable':'Bypass')+' FX</button>'+
+      '<div class="native-context-divider" role="separator"></div>'+
+      '<button role="menuitem" class="fx-context-delete" data-context-fx="delete">'+iconSvg("bin")+' Delete FX</button>';
     fxContext.hidden=false;
     fxContext.style.left=Math.max(4,Math.min(x,window.innerWidth-fxContext.offsetWidth-4))+'px';
     fxContext.style.top=Math.max(4,Math.min(y,window.innerHeight-fxContext.offsetHeight-4))+'px';
@@ -688,6 +732,7 @@
     if(action==="orbit")openOrbit(slot,anchor);
     else if(action==="editor")send("fxEditor",{slot});
     else if(action==="bypass")send("fxBypass",{slot,value:!state.chain[slot].bypass});
+    else if(action==="delete")send("fxRemove",{slot});
   },true);
   document.addEventListener("pointerdown",e=>{
     const popup=document.getElementById("nativeOrbit");
@@ -980,7 +1025,13 @@
     renderOrbit();
   },true);
   backend.addEventListener("arMixOrbitState",data=>{
-    if(!data||Number(data.slot)!==orbit.slot)return;
+    if(!data)return;
+    const activeSlot=data.active&&Number.isInteger(Number(data.activeSlot))?Number(data.activeSlot):-1;
+    if(state.orbitActiveSlot!==activeSlot){
+      state.orbitActiveSlot=activeSlot;
+      patchMixer();
+    }
+    if(Number(data.slot)!==orbit.slot)return;
     const wasInitialized=orbit.initialized;
     const preview=data.previewShape!==-1;
     const draft={nearSetpoint:orbit.nearSetpoint,farSetpoint:orbit.farSetpoint,
