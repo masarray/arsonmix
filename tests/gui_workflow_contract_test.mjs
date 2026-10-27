@@ -55,3 +55,12 @@ test('native bridge does not inspect idle pointer movement',()=>{
  assert.ok(!guard.includes('"pointermove"'), 'idle pointer listener forbidden');
  assert.ok(guard.includes('typeof drag') && guard.includes('"pointerup"') && guard.includes('"pointercancel"'));
 });
+
+test('quantised LED meter avoids redundant raw CSS writes while preserving diagnostics',()=>{
+ assert.ok(app.includes('meterRawStyleWrites=new URLSearchParams(location.search)'));
+ assert.ok(app.includes('if(state.lit!==lit)'));
+ assert.ok(app.includes('else if(meterRawStyleWrites&&levelChanged)'));
+ assert.ok(app.includes("'meter-raw'"));
+ assert.ok(monitor.includes('const setTextIfChanged='));
+ assert.ok(bridge.includes('footer.textContent!==text'));
+});

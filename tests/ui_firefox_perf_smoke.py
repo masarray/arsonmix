@@ -24,7 +24,7 @@ async def main():
             assert await page.evaluate('window.__arMixPerfProbe === undefined'), "No profiler in normal mode"
             await page.close()
 
-            for mode in ("optimized", "meters-off", "all-off"):
+            for mode in ("optimized", "meters-off", "all-off", "meter-raw"):
                 page = await browser.new_page(viewport={"width": 1440, "height": 820})
                 page.on("pageerror", lambda error: errors.append(str(error)))
                 await page.goto(PAGE + "?mixperf=" + mode)
@@ -32,6 +32,15 @@ async def main():
                 assert await page.locator('#mixer [data-fader]').count() == 11
                 assert await page.locator('#mixer [data-meter]').count() == 16
                 assert await page.locator('#mixer [data-clip]').count() == 16
+                dirty = await page.evaluate("""() => {
+                    const el=document.querySelector('[data-meter="0"]');
+                    setLedMeterLevel(el,1);
+                    const first=el.getAttribute('style');
+                    setLedMeterLevel(el,1.1);
+                    return {changed:first!==el.getAttribute('style'),
+                            raw:ledMeterCache.get(el).level};
+                }""")
+                assert dirty == {"changed":mode=="meter-raw","raw":1.1}, (mode,dirty)
 
                 heads = await page.evaluate("""() => {
                     const c = document.querySelector('[data-fader="0"] .cap');

@@ -27,7 +27,7 @@
   const percent = peak => Math.max(1,Math.min(100,(20*Math.log10(Math.max(1e-6,Number(peak)||0))+60)*100/60));
   const toStatus = text => {
     const footer = document.querySelector("#audioStatus");
-    if(footer) footer.textContent = text;
+    if(footer && footer.textContent!==text) footer.textContent = text;
   };
 
   // The v0.3 cosmetic demo catalog and FX editor are replaced with the REAL
@@ -972,7 +972,11 @@
     state.monitor=!!d.monitor;
     syncNativeMixerControls(d);
     const b=document.querySelector('[data-native-action="monitor"]');
-    if(b){b.textContent=state.monitor?"MUTE OUTPUT":"UNMUTE OUTPUT";b.classList.toggle("on",!state.monitor);}
+    if(b){
+      const label=state.monitor?"MUTE OUTPUT":"UNMUTE OUTPUT";
+      if(b.textContent!==label)b.textContent=label;
+      b.classList.toggle("on",!state.monitor);
+    }
     const text=d.error?"AUDIO ERROR: "+d.error:
       d.connected?`${d.driver} · ${Math.round(d.rate)} Hz / ${d.buffer} · ${state.chain.length} LIVE VST3 · ${d.latencySamples||0} samples FX latency`
       :"NO AUDIO DEVICE · SELECT AUDIO SETUP";
@@ -995,26 +999,36 @@
     paintMeter(aux,liveOutputLevel);
     // Design-only LUFS/true-peak fields have no native measurement yet.
     const lufs=document.getElementById("masterLufs"),tp=document.getElementById("masterDbtp");
-    if(lufs)lufs.textContent="—";
-    if(tp)tp.textContent="—";
+    if(lufs&&lufs.textContent!=="—")lufs.textContent="—";
+    if(tp&&tp.textContent!=="—")tp.textContent="—";
     // v0.8 Master stream LUFS-I/dBTP remains unimplemented; values stay
     // em dashes rather than falsely claiming measured loudness.
     const pk=document.getElementById("masterPeakDb");
     if(pk)pk.textContent=Number(d.peak)>0
       ?(20*Math.log10(Math.max(1e-8,Number(d.peak)))).toFixed(1)+" dBFS":"−∞";
     const driver=document.getElementById("headerDriver");
-    if(driver)driver.textContent=d.driver||"No device";
+    if(driver){
+      const label=d.driver||"No device";
+      if(driver.textContent!==label)driver.textContent=label;
+    }
     // Preserve the latest main native device lamp.
     const deviceButton=document.querySelector(".toolbar .spec-device");
     if(deviceButton){
       const ready=!!d.connected && !d.error;
       deviceButton.classList.toggle("on",ready);
-      deviceButton.dataset.audioConnected=String(ready);
+      if(deviceButton.dataset.audioConnected!==String(ready))
+        deviceButton.dataset.audioConnected=String(ready);
     }
     const rate=document.getElementById("headerRate");
-    if(rate)rate.textContent=d.rate?(Number(d.rate)/1000).toLocaleString("en-US",{maximumFractionDigits:1}):"--";
+    if(rate){
+      const label=d.rate?(Number(d.rate)/1000).toLocaleString("en-US",{maximumFractionDigits:1}):"--";
+      if(rate.textContent!==label)rate.textContent=label;
+    }
     const buffer=document.getElementById("headerBuffer");
-    if(buffer)buffer.textContent=d.buffer||"--";
+    if(buffer){
+      const label=String(d.buffer||"--");
+      if(buffer.textContent!==label)buffer.textContent=label;
+    }
   });
   backend.addEventListener("arMixScanProgress",p=>{
     state.progress=p;

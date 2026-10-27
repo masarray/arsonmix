@@ -49,6 +49,12 @@
     '</section>';
   document.body.appendChild(overlay);
   const el = id => document.getElementById(id);
+  // 12Hz native telemetry must not replace unchanged text nodes or cause
+  // needless main-thread paint/layout invalidations on static header labels.
+  const setTextIfChanged=(node,value)=>{
+    const text=String(value);
+    if(node&&node.textContent!==text)node.textContent=text;
+  };
   const percent = v => Math.max(1,Math.min(100,(20*Math.log10(Math.max(1e-6,Number(v)||0))+60)*100/60));
   function diagnosis(d) {
     if(d.diagnosticRoute==="OUTPUT_ONLY_TONE") return "Output-only test: capture endpoint is disconnected. Listen for tone at low headphone volume and click MARK CRACKLE when audible.";
@@ -67,22 +73,22 @@
     return "Output armed. Speak into the microphone and inspect all three meters.";
   }
   function repaint(d) {
-    el("arSignalBadge").textContent = !d.monitor ? "OUTPUT MUTED" : d.masterMute ? "MASTER MUTED" : d.channelMute ? "CH1 MUTED" : "OUTPUT ARMED";
+    setTextIfChanged(el("arSignalBadge"),!d.monitor ? "OUTPUT MUTED" : d.masterMute ? "MASTER MUTED" : d.channelMute ? "CH1 MUTED" : "OUTPUT ARMED");
     el("arSignalBadge").style.color = d.monitor && !d.masterMute && !d.channelMute ? "#71e9cc" : "#e9be7c";
     const monitorButton=document.querySelector('[data-native-action="monitor"]');
-    if (monitorButton) monitorButton.textContent=d.monitor?"MUTE OUTPUT":"UNMUTE OUTPUT";
+    setTextIfChanged(monitorButton,d.monitor?"MUTE OUTPUT":"UNMUTE OUTPUT");
     // The original UI shell had fixed 48 kHz / 64-sample demo badges. Show
     // the REAL negotiated driver parameters instead of misleading the user.
     const rateLabel=document.querySelector('.spec:not(.spec-device):not(.bpm) strong');
-    if(rateLabel)rateLabel.textContent=d.rate?String(Math.round(d.rate/1000)):"—";
+    setTextIfChanged(rateLabel,d.rate?String(Math.round(d.rate/1000)):"—");
     const bufferLabel=document.querySelector('.spec.bpm strong');
-    if(bufferLabel)bufferLabel.textContent=d.buffer?String(d.buffer):"—";
+    setTextIfChanged(bufferLabel,d.buffer?String(d.buffer):"—");
     const driverLabel=document.querySelector('.spec-device strong');
-    if(driverLabel)driverLabel.textContent=d.driver||"NO DRIVER";
+    setTextIfChanged(driverLabel,d.driver||"NO DRIVER");
     const liveLabel=document.querySelector('.status > span:first-child > b');
-    if(liveLabel)liveLabel.textContent="NATIVE CH1";
+    setTextIfChanged(liveLabel,"NATIVE CH1");
     const edition=document.querySelector('.status > span:last-child');
-    if(edition)edition.textContent="AR MIX P2 · CH1 NATIVE + UI PREVIEW";
+    setTextIfChanged(edition,"AR MIX P2 · CH1 NATIVE + UI PREVIEW");
     if (!overlay.classList.contains("open")) return;
     el("arInputName").textContent=d.diagnosticRoute==="OUTPUT_ONLY_TONE"?"INTERNAL TEST TONE":d.inputDevice||"Input device";
     el("arFxName").textContent=d.diagnosticRoute==="OUTPUT_ONLY_TONE"?"NO INPUT / NO FX":d.diagnosticRoute!=="NORMAL"?"NO FX":d.dryTest?"DRY BYPASS":"VST3 Chain";
