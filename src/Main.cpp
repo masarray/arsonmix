@@ -17,6 +17,7 @@
 #endif
 #include "PluginCatalog.h"
 #include "PortableWorkspace.h"
+#include "StudioBackup.h"
 #include <cstring>
 #include <optional>
 #include <memory>
@@ -201,6 +202,8 @@ private:
     DiagnosticsRecorder diagnostics_;
     armix::storage::NativePresetArchive presets_;
     Browser browser_;
+    armix::storage::StudioBackup::Worker studioBackupWorker_;
+    bool studioBackupBusy_ = false;
     std::unique_ptr<juce::FileChooser> chooser_;
     std::unique_ptr<PluginEditorWindow> editorWindow_;
     std::unique_ptr<AudioSetupWindow> audioSetupWindow_;
@@ -701,6 +704,65 @@ private:
             });
     }
 
+    // The selected location receives a NEW, directly runnable versioned
+    // portable folder. IO/hashing stay on StudioBackup's worker thread.
+    void chooseStudioBackup()
+    {
+        if (studioBackupBusy_ || catalog_.busy() || engine_.isGraphSwitchPending())
+            return emitNotice ("Finish VST import or FX recall before backing up Studio.", true);
+        // Large USB copies cause disk contention even on an IO worker. Avoid
+        // starting a backup during a live performance.
+        if (!engine_.isOutputMuted())
+            return emitNotice ("Mute audio output before starting backup to avoid USB IO disturbing live sound.", true);
+        chooser_ = std::make_unique<juce::FileChooser> (
+            "Choose a destination folder for a new ArSonMix backup",
+            juce::File::getSpecialLocation (juce::File::userHomeDirectory), "*", true);
+        chooser_->launchAsync (
+            juce::FileBrowserComponent::openMode |
+            juce::FileBrowserComponent::canSelectDirectories,
+            [safe = juce::Component::SafePointer<ConsoleWindow> (this)] (const juce::FileChooser& picker)
+            {
+                if (safe == nullptr) return;
+                const auto destination = picker.getResult();
+                if (destination == juce::File()) return;
+                if (safe->studioBackupBusy_ || safe->catalog_.busy() ||
+                    safe->engine_.isGraphSwitchPending() || !safe->engine_.isOutputMuted())
+                    return safe->emitNotice ("Plugin import/FX recall is active; backup was not started.", true);
+                const auto app = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
+                // Source and destination must both be writable/valid. No VST
+                // editor or audio device selection is changed by backup.
+                const auto started = safe->studioBackupWorker_.launch (app, settingsDirectory(),
+                    destination, [safe] (armix::storage::StudioBackup::Result result)
+                    {
+                        if (safe == nullptr) return;
+                        safe->studioBackupBusy_ = false;
+                        if (!result.ok())
+                        {
+                            safe->diagnostics_.record ("STUDIO_BACKUP_FAIL", result.error);
+                            safe->emitNotice ("Studio backup failed; previous backups unchanged: " + result.error, true);
+                            return;
+                        }
+                        safe->diagnostics_.record ("STUDIO_BACKUP_VERIFIED",
+                            result.folder.getFullPathName() + " | " +
+                            juce::String (result.files) + " files | bytes=" + juce::String (result.bytes));
+                        const auto warning = result.externalPluginReferences > 0
+                            ? " WARNING: " + juce::String (result.externalPluginReferences) +
+                              " VST catalog entries still reference files outside Studio."
+                            : juce::String();
+                        safe->emitNotice ("Native Studio backup verified: " +
+                            result.folder.getFileName() + ". " +
+                            juce::String (result.files) + " files copied." + warning +
+                            " Browser-only scenes and third-party activations are not included.");
+                        result.folder.revealToUser();
+                    });
+                if (!started)
+                    return safe->emitNotice ("Could not start backup worker.", true);
+                safe->studioBackupBusy_ = true;
+                safe->emitNotice ("Backing up Studio and VST files to a new folder. " 
+                                  "SHA256 readback runs off the audio thread.");
+            });
+    }
+
     void chooseFolder()
     {
         chooser_ = std::make_unique<juce::FileChooser> (
@@ -820,6 +882,13 @@ private:
         const auto action = args.getProperty ("action", {}).toString();
         const auto value = args.getProperty ("value", {});
         const int slot = static_cast<int> (args.getProperty ("slot", -1));
+        // User may adjust live levels, but cannot alter the persisted VST
+        // library/preset while a background snapshot is being copied.
+        if (studioBackupBusy_ && (action.startsWith ("preset") ||
+            action.startsWith ("import") || action.startsWith ("fx") ||
+            action == "addCatalog" || action == "addScanFolder" ||
+            action == "scanVst3"))
+            return emitNotice ("Studio backup in progress. Finish backup before editing saved FX or VST library.", true);
 
         // Structural plugin operations currently detach the original callback
         // and must never mutate a running independent render thread.
@@ -943,6 +1012,8 @@ private:
             diagnostics_.record ("AUDIO_GLITCH_WINDOW", crackleWindowReport (status));
             emitNotice ("Crackle marker saved with source-labeled pre-mark evidence (up to 5 s).");
         }
+        else if (action == "backupStudio")
+            chooseStudioBackup();
         else if (action == "presetList")
             emitPresets();
         else if (action == "presetSave")
