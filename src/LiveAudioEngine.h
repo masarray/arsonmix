@@ -602,7 +602,7 @@ public:
     juce::String captureSnapshot (armix::storage::Snapshot& snapshot)
     {
         if (!isOutputMuted()) return "Mute hardware output before saving a native preset";
-        if (handoff_.busy()) return "Finish pending FX graph transition before saving";
+        if (handoff_.busy() || fxMovePhase_.load (std::memory_order_acquire) != 0) return "Finish pending FX graph transition before saving";
         snapshot.effects.clear();
         snapshot.channelDb = juce::Decibels::gainToDecibels (
             channelGain_.load (std::memory_order_relaxed), -60.f);
@@ -648,7 +648,7 @@ public:
     // or destroys a plugin. No manual output mute is required for recall.
     juce::String restoreSnapshot (const armix::storage::Snapshot& snapshot)
     {
-        if (handoff_.busy())
+        if (handoff_.busy() || fxMovePhase_.load (std::memory_order_acquire) != 0)
             return "A live FX graph transition is already in progress";
         if (snapshot.effects.size() > maxFx) return "Too many plugins in preset";
         auto* device = deviceManager_.getCurrentAudioDevice();
@@ -781,6 +781,11 @@ public:
         const auto next = armix::dsp::FxOrderPlan::moved (previous, count, from, to);
         // Plugin objects are not moved. Acknowledge UI intent immediately,
         // then run output ramp 1->0, publish at 0, ramp 0->1 in callback.
+        if (!attached_ && !independent_.active())
+        {
+            graphOwned_->orderPacked.store (next, std::memory_order_release);
+            return true; // no callback exists to acknowledge a fade
+        }
         fxMovePendingOrder_.store (next, std::memory_order_relaxed);
         fxMovePhase_.store (1, std::memory_order_release);
         return true;
