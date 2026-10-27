@@ -33,7 +33,15 @@ int main() {
     check(fore2.distance<side2.distance,"front/back near sides far");
     const auto up=orbitMotionPoint(.25,3),down=orbitMotionPoint(.75,3);
     check(up.elevation>0.5&&down.elevation<0.5,"rise and fall");
-    check(std::abs(orbitMotionPoint(.25,0).distance-orbitMotionPoint(0.,0).distance)<1.e-5,
+    check(std::abs(orbitMotionPoint(.25,0,.15,.85).distance-orbitMotionPoint(0.,0,.15,.85).distance)<1.e-5,
           "circle radius constant");
+    check(std::abs(orbitMotionPoint(.25,0,.2,.4).distance-.4f)<1.e-5,
+          "circle far setpoint controls its actual radius");
+    check(std::abs(orbitMotionPoint(.25,1,.1,.6).distance-.1f)<1.e-5,
+          "ellipse uses near setpoint at sides");
+    check(std::abs(orbitMotionPoint(0.,1,.1,.6).distance-.6f)<1.e-5,
+          "ellipse uses far setpoint at front/back");
+    check(std::abs(orbitMotionPoint(.25,1,.25,.9).distance-.25f)<1.e-5,
+          "changing distance setpoints alters C++ output");
     return failures?1:0;
 }

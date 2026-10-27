@@ -445,6 +445,48 @@ private:
             browser_.emitEventIfBrowserIsVisible ("arMixChain", engine_.chainState());
     }
 
+    // Valid metre labels only. A naked "30" is NOT proof that VST3 represents metres.
+    static bool isMetreText(const juce::String& text)
+    {
+        const auto t=text.trim().toLowerCase();
+        return t.endsWith(" m") || t.endsWith(" meter") || t.endsWith(" meters")
+            || t.endsWith(" metre") || t.endsWith(" metres");
+    }
+
+    static bool distanceMeterBounds(juce::AudioProcessorParameter* p,double& minimum,double& maximum)
+    {
+        if(!p)return false;
+        const auto a=p->getText(0.f,48),b=p->getText(1.f,48);
+        const auto mid=p->getText(0.5f,48);
+        if(!isMetreText(a)||!isMetreText(b)||!isMetreText(mid))return false;
+        minimum=a.getDoubleValue();maximum=b.getDoubleValue();
+        const double middle=mid.getDoubleValue();
+        return std::isfinite(minimum)&&std::isfinite(maximum)&&
+            minimum>=0&&maximum>minimum&&maximum<=10000.0 &&
+            middle>minimum&&middle<maximum;
+    }
+
+    // Converts a physical metre setpoint by inverting the plugin's own text display.
+    // Works with nonlinear vendor mappings; never invents a 0–30m linear scale.
+    static bool metresToNormalized(juce::AudioProcessorParameter* p,double metres,float& normalized)
+    {
+        double loMeters=0,hiMeters=0;
+        if(!distanceMeterBounds(p,loMeters,hiMeters)||
+           !std::isfinite(metres)||metres<loMeters||metres>hiMeters)return false;
+        double lo=0.0,hi=1.0;
+        for(int i=0;i<24;++i){
+            const double mid=(lo+hi)*0.5;
+            const double v=p->getText(static_cast<float>(mid),48).getDoubleValue();
+            if(!std::isfinite(v))return false;
+            if(v<metres)lo=mid;else hi=mid;
+        }
+        normalized=static_cast<float>((lo+hi)*0.5);
+        // Round-trip tolerance accommodates formatted vendor resolution.
+        const double actual=p->getText(normalized,48).getDoubleValue();
+        return std::isfinite(actual)&&std::abs(actual-metres)<=
+            std::max(0.2,0.01*(hiMeters-loMeters));
+    }
+
     void emitOrbitState (int slot,int previewShape=-1)
     {
         auto event = std::make_unique<juce::DynamicObject>();
@@ -465,6 +507,8 @@ private:
         event->setProperty ("distanceIndex", orbit_.distanceParameterIndex());
         event->setProperty ("elevationIndex", orbit_.elevationParameterIndex());
         event->setProperty ("phase", orbit_.phase());
+        event->setProperty("nearNormalized",orbit_.nearDistance());
+        event->setProperty("farNormalized",orbit_.farDistance());
         event->setProperty("previewShape",previewShape);
         const int pathShape=armix::core::validOrbitShape(previewShape)?previewShape:orbit_.shape();
         // Sample the *same C++ pure trajectory* as the engine so the WebView
@@ -472,7 +516,8 @@ private:
         juce::Array<juce::var> path;
         for(int i=0;i<=64;++i)
         {
-            const auto p=armix::core::orbitMotionPoint(i/64.0,pathShape);
+            const auto p=armix::core::orbitMotionPoint(i/64.0,pathShape,
+                orbit_.nearDistance(),orbit_.farDistance());
             auto pt=std::make_unique<juce::DynamicObject>();
             pt->setProperty("x",p.x);
             pt->setProperty("y",p.y);
@@ -499,6 +544,10 @@ private:
                 item->setProperty ("name", name);
                 item->setProperty ("minText", param->getText (0.f, 32));
                 item->setProperty ("maxText", param->getText (1.f, 32));
+                double minMetres=0,maxMetres=0;
+                item->setProperty("unit",distanceMeterBounds(param,minMetres,maxMetres)?"m":"%");
+                item->setProperty("minMetres",minMetres);
+                item->setProperty("maxMetres",maxMetres);
                 listed.add (juce::var (item.release()));
                 if (name.equalsIgnoreCase ("Azimuth"))
                     preferred = i;
@@ -513,6 +562,32 @@ private:
         }
         event->setProperty ("preferredParameter",
             orbit_.active() && orbit_.slot() == slot ? orbit_.parameterIndex() : preferred);
+        // Display near/far setpoints for the plugin parameter's *actual* units.
+        int setpointParam=orbit_.active()&&orbit_.slot()==slot?
+            orbit_.distanceParameterIndex():preferredDistance;
+        auto* dist=setpointParam>=0&&plugin!=nullptr&&
+            setpointParam<plugin->getParameters().size()?
+            plugin->getParameters()[setpointParam]:nullptr;
+        double minMetres=0,maxMetres=0;
+        const bool metres=distanceMeterBounds(dist,minMetres,maxMetres);
+        event->setProperty("distanceUnit",metres?"m":"%");
+        event->setProperty("distanceMin",metres?minMetres:0.0);
+        event->setProperty("distanceMax",metres?maxMetres:100.0);
+        const bool activeTarget=orbit_.active()&&orbit_.slot()==slot;
+        const double nearValue=activeTarget?orbit_.nearDistance():0.2;
+        const double farValue=activeTarget?orbit_.farDistance():0.7;
+        if(metres){
+            // Defaults are nearby audible positions, *not* the plugin's maximum range.
+            event->setProperty("nearSetpoint",activeTarget?
+                dist->getText(static_cast<float>(nearValue),48).getDoubleValue():
+                std::clamp(1.0,minMetres,maxMetres));
+            event->setProperty("farSetpoint",activeTarget?
+                dist->getText(static_cast<float>(farValue),48).getDoubleValue():
+                std::clamp(3.0,minMetres,maxMetres));
+        }else{
+            event->setProperty("nearSetpoint",nearValue*100.0);
+            event->setProperty("farSetpoint",farValue*100.0);
+        }
         event->setProperty ("preferredDistance",preferredDistance);
         event->setProperty ("preferredElevation",preferredElevation);
         event->setProperty ("parameters", juce::var (listed));
@@ -1098,25 +1173,47 @@ private:
             const auto shapeArg=args.getProperty("shape",0);
             const auto distanceArg=args.getProperty("distanceIndex",-1);
             const auto elevationArg=args.getProperty("elevationIndex",-1);
-            const auto calibrated=args.getProperty("calibrated",false);
+            const auto nearArg=args.getProperty("nearDistance",-1.0);
+            const auto farArg=args.getProperty("farDistance",-1.0);
+            const auto unitArg=args.getProperty("distanceUnit",{}).toString();
             if(!shapeArg.isInt()||!distanceArg.isInt()||!elevationArg.isInt()||
-               !calibrated.isBool())
-                return emitNotice("Invalid motion configuration types.",true);
+                !(nearArg.isDouble()||nearArg.isInt())||
+                !(farArg.isDouble()||farArg.isInt()))
+                return emitNotice("Invalid motion setpoint types.",true);
             const int shape=static_cast<int>(shapeArg);
+            const int distanceIndex=static_cast<int>(distanceArg);
             if(!armix::core::validOrbitShape(shape))
                 return emitNotice("Unknown Orbit trajectory.",true);
-            if((armix::core::needsOrbitDistance(shape)||
-                armix::core::needsOrbitElevation(shape)) && !bool(calibrated))
-                return emitNotice("Confirm vendor distance/elevation parameter mapping.",true);
+            const double rawNear=static_cast<double>(nearArg);
+            const double rawFar=static_cast<double>(farArg);
+            float nearValue=0.f,farValue=1.f;
+            if(unitArg=="m"){
+                auto* plugin=engine_.pluginAt(slot);
+                if(!plugin||distanceIndex<0||distanceIndex>=plugin->getParameters().size())
+                    return emitNotice("Choose a Distance parameter supporting metres.",true);
+                auto* param=plugin->getParameters()[distanceIndex];
+                if(!metresToNormalized(param,rawNear,nearValue)||
+                   !metresToNormalized(param,rawFar,farValue))
+                    return emitNotice("VST3 cannot resolve these metre setpoints; choose valid near/far values.",true);
+            }else if(unitArg=="%"){
+                if(!std::isfinite(rawNear)||!std::isfinite(rawFar)||
+                   rawNear<0||rawFar>100)
+                    return emitNotice("Distance must be between 0 and 100% of the VST3 parameter.",true);
+                nearValue=static_cast<float>(rawNear/100.0);
+                farValue=static_cast<float>(rawFar/100.0);
+            }else return emitNotice("Unknown distance units.",true);
+            if(nearValue>farValue)return emitNotice("Near must not exceed Far.",true);
             if (orbit_.active() && orbit_.slot() != slot) stopOrbit();
-            const auto error = orbit_.start (engine_.pluginAt(slot),slot,parameterIndex,
+            const auto error = orbit_.start(engine_.pluginAt(slot),slot,parameterIndex,
                 static_cast<double>(secondsValue),bool(reverseValue),shape,
-                static_cast<int>(distanceArg),static_cast<int>(elevationArg));
+                distanceIndex,static_cast<int>(elevationArg),nearValue,farValue);
             if (error.isNotEmpty()) return emitNotice ("Orbit: " + error, true);
             diagnostics_.record ("FX_ORBIT_START", "slot=" + juce::String (slot) +
                 " parameter=" + juce::String (parameterIndex) +
                 " revolutionSec=" + juce::String (orbit_.secondsPerRevolution()) +
-                " shape=" + juce::String (orbit_.shape()));
+                " shape=" + juce::String (orbit_.shape()) +
+                " near=" + juce::String(orbit_.nearDistance(),4) +
+                " far=" + juce::String(orbit_.farDistance(),4));
             emitOrbitState (slot);
             emitNotice ("VST3 Auto Orbit running. STOP to restore manual parameter control.");
         }

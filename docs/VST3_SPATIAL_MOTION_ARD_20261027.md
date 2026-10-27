@@ -42,3 +42,7 @@ Material Icons: self-contained play_arrow/stop/close SVG paths (Google Material 
 
 ## Known future work
 Per-FX multiple simultaneous LFOs, full-session Orbit persistence, calibrated vendor parameter profiles, sample-accurate automation and vendor seam workarounds are explicitly out of scope. Never claim ultra-low latency from message-timer motion math alone.
+
+## 2026-10-27 user feedback — distance setpoints and immediate START
+
+Replace fixed normalized distance range with editable Near/Far setpoints on every path, including Circle. When vendor exposes a real metre unit, render metre fields and validate conversion on the JUCE message thread; otherwise label controls explicitly as normalized VST3 percent (never invent 30m). START must be enabled as soon as selected plugin parameters and bounds validate—no confirmation checkbox. Animate the position dot only when the host acknowledges running; UPDATE must apply the current draft and acknowledge the new engine configuration before visual follows it.
