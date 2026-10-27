@@ -643,7 +643,7 @@
   document.body.appendChild(fxContext);
   let contextSlot=-1, contextAnchor=null;
   function closeFxContext(){fxContext.hidden=true;contextSlot=-1;contextAnchor=null;}
-  const dearVrOrbitEligible=name=>/dear[\\s_-]*vr[\\s_-]*pro[\\s_-]*2/i.test(String(name||""));
+  const dearVrOrbitEligible=name=>/dear[\s_-]*vr[\s_-]*pro[\s_-]*2/i.test(String(name||""));
   function openFxContext(slot,x,y,anchor){
     if(!state.chain[slot])return;
     contextSlot=slot;
