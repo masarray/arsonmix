@@ -30,8 +30,10 @@ test('no fake oscillating VUs inside native JUCE',()=>{
  const scheduled=app.indexOf('meterTimer=setTimeout(',scheduler);
  assert.ok(a>scheduler && guard>a && guard<firstSynth);
  assert.ok(schedulerGuard>scheduler && schedulerGuard<scheduled);
- assert.match(bridge,/\["masterL",liveOutputLeft\]/);
- assert.match(bridge,/\["masterR",liveOutputRight\]/);
+ assert.match(bridge,/paintMeter\(document\.querySelector\('\[data-meter="masterL"\]'\)/);
+ assert.match(bridge,/paintMeter\(document\.querySelector\('\[data-meter="masterR"\]'\)/);
+ assert.ok(bridge.includes('percent(d.peakLeft)') && bridge.includes('percent(d.peakRight)'));
+ assert.ok(!bridge.includes('liveOutputLeft-5'),'do not smooth on the 12Hz source callback');
 });
 test('native mixer always displays DSP gain, pan, and mute instead of stale demo session',()=>{
  assert.match(src,/setProperty \("channelDb", juce::Decibels::gainToDecibels/);
