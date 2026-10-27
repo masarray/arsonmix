@@ -86,3 +86,16 @@ test('release proves exact calibrated GUI bytes are embedded in the executable, 
   }
   assert.match(packaging,/GAIN_10_TO_MINUS60_BLACK_DETENT_AT_38PX__VU_DBFS_INDEPENDENT_TICKS/);
 });
+
+test('latest BTN-180 GUI palette is an attested embedded native release requirement', () => {
+  const current=read('web/styles-src/20-button-180.css');
+  const integrated=read('web/styles.css');
+  for(const token of ['--b180-on-mute','--b180-on-solo','--b180-on-stereo','--b180-on-green']) {
+    assert.ok(current.includes(token) && integrated.includes(token),token);
+    assert.ok(verify.includes('"'+token+'"'), 'native verified executable missing acceptance marker '+token);
+  }
+  assert.match(verify,/inset 5px 5px 2px -1px/);
+  assert.match(cmake,/web\/index\.html web\/styles\.css web\/app\.js web\/bridge\.js web\/monitor\.js/);
+  assert.match(nativeMain,/BinaryData::index_html/);
+  assert.match(nativeMain,/BinaryData::bridge_js/);
+});
