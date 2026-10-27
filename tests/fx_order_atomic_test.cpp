@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/FxOrderPlan.h"
+#include "../engine/core/FxMoveRamp.h"
 #include <array>
 #include <atomic>
 #include <cassert>
@@ -12,6 +13,21 @@ int main()
     static_assert (Plan::canonical == 0x76543210ULL);
     static_assert (std::atomic<std::uint64_t>::is_always_lock_free,
                    "Realtime order publication requires lock-free x64 atomic.");
+    // Both halves meet at exact digital zero across the graph-order seam.
+    using Ramp = armix::dsp::FxMoveRamp;
+    for (int frames : {32, 64, 128, 480, 1024})
+    {
+        assert(Ramp::gain(1,0,frames)==1.f);
+        assert(Ramp::gain(1,frames-1,frames)==0.f);
+        assert(Ramp::gain(2,0,frames)==0.f);
+        assert(Ramp::gain(2,frames-1,frames)==1.f);
+        assert(Ramp::gain(0,17,frames)==1.f);
+        for(int i=1;i<frames;i++)
+        {
+            assert(Ramp::gain(1,i,frames)<=Ramp::gain(1,i-1,frames));
+            assert(Ramp::gain(2,i,frames)>=Ramp::gain(2,i-1,frames));
+        }
+    }
     // Entire insert identities survive every arbitrary move. No duplicates.
     for (int count=2; count<=8; ++count)
         for (int from=0; from<count; ++from)
