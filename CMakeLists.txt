@@ -47,6 +47,9 @@ target_link_libraries(ARMixConsole PRIVATE
 
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(ARMixFxOrderTests tests/fx_order_atomic_test.cpp)
+  target_compile_features(ARMixFxOrderTests PRIVATE cxx_std_20)
+  add_test(NAME FxOrderAtomicBlockSnapshot COMMAND ARMixFxOrderTests)
   add_executable(ARMixOrbitPhaseTests tests/orbit_phase_test.cpp)
   target_compile_features(ARMixOrbitPhaseTests PRIVATE cxx_std_20)
   add_test(NAME VstAzimuthOrbitRamp COMMAND ARMixOrbitPhaseTests)
