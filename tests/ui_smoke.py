@@ -179,7 +179,16 @@ async def main():
             return document.fonts.check('600 12px "ArSonMix Inter"')&&
                 getComputedStyle(document.querySelector('.strip-name')).fontFamily.includes('ArSonMix Inter');
         }"""),'Embedded Inter font was not applied'
-        assert [round(float(v.rstrip('s')),3) for v in style['dur'].split(', ')]==[.15,.15,.15,.09,.12,.075],style
+        assert [round(float(v.rstrip('s')),3) for v in style['dur'].split(', ')]==[.15,.15,.15,.075],style
+        # Hover in production does not create a filter, while diagnostic
+        # baseline restores brightness to permit same-PC performance A/B.
+        utility=page.locator('[data-hpf="0"]')
+        await utility.hover()
+        assert await utility.evaluate("(e)=>getComputedStyle(e).filter")=='none'
+        await page.evaluate("document.documentElement.dataset.mixperf='baseline'")
+        assert 'brightness(1.32)' in await utility.evaluate("(e)=>getComputedStyle(e).filter")
+        await page.evaluate("delete document.documentElement.dataset.mixperf")
+        assert await utility.evaluate("(e)=>getComputedStyle(e).filter")=='none'
         # Visual-architecture regression: four intentionally different hardware
         # families, FX slots recessed rather than taking on button-cap artwork.
         # GUI target: MASTER is the 11th strip, not a floating right rail.
@@ -632,9 +641,8 @@ async def main():
         assert fader_hover=='none',fader_hover
         button=page.locator('[data-mute="0"]')
         await button.hover()
-        await page.wait_for_timeout(150)  # Finish 90 ms physical-switch filter transition.
         button_hover=await button.evaluate("(e)=>getComputedStyle(e).filter")
-        assert button_hover=='brightness(1.32)',button_hover
+        assert button_hover=='none',button_hover  # No passive GPU filter in normal GUI
         # FX power and FX name remain separate inside the 104px channel strip.
         assert await page.evaluate("""() => [...document.querySelectorAll('.strip .insert-slot')].every(slot=>{
             const cell=slot.getBoundingClientRect(),strip=slot.closest('.strip').getBoundingClientRect();

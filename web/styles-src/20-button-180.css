@@ -40,7 +40,7 @@
  filter:none!important;
  color:white!important;
  text-shadow:0 1px 0 rgba(0, 0, 0, .3)!important;
- transition:background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out, box-shadow 90ms ease-out, filter 120ms ease-out, transform 75ms ease-out!important;
+ transition:background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out, transform 75ms ease-out!important;
  font-family:Arial,Helvetica,sans-serif;
  cursor:pointer;text-decoration:none;user-select:none;
  display:inline-flex;justify-content:center;align-items:center;
@@ -102,14 +102,9 @@
 .strip .strip-name,#masterLeft .master-strip-name{position:relative;z-index:2;isolation:isolate}
 /* No odd vertical displacement of the active nav relative to its neighbors. */
 
-/* Hover intensifies reflected light, but creates NO new border/halo/motion. */
-:is(.btn-180,.toolbar .nav button.btn-180,.toolbar .spec-device,
- .strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
- #masterLeft .master-actions button,#masterLeft .master-tools button,
- .left-rail .tabs button.btn-180,.left-rail .rail-presets button.btn-180,
- .left-rail .rail-bottom button.btn-180,.native-btn):hover:not(:disabled){
- filter:brightness(1.32)!important;
-}
+/* Issue #56: passive hover has no filter or animated shadow.
+   Preserve all seven resting / seven pressed shadows and 1px tactile response.
+   Historical brightness is isolated to opt-in baseline A/B only. */
 
 /* Hardware tactility: brief pointer/keyboard activation presses the SAME cap
    1px into the control panel. The layout and hit target stay the same; only

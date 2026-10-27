@@ -792,7 +792,9 @@
        (drag.type==="fader" || drag.type==="pan"))
       controlEditUntil=Date.now()+350;
   }
-  for(const event of ["pointerdown","pointermove","pointerup","pointercancel","wheel","keydown"])
+  // Idle pointer traversal does not inspect DOM. Active drag stays guarded
+  // by syncNativeMixerControls() and pointer release renews the grace window.
+  for(const event of ["pointerdown","pointerup","pointercancel","wheel","keydown"])
     document.addEventListener(event,markNativeUiEdit,true);
   // A restored GUI-only snapshot must not masquerade as a live native setting.
   function syncNativeMixerControls(d){

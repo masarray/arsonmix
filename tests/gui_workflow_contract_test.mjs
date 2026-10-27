@@ -46,3 +46,12 @@ test('native meter bridge drives fixed-palette LED reveal by level',()=>{
   assert.ok(!bridge.includes('backdrop-filter:blur(5px)'));
   assert.ok(!app.includes("meter.fill.style.setProperty('--meter-scale'"));
 });
+
+test('native bridge does not inspect idle pointer movement',()=>{
+ const a=bridge.indexOf('let controlEditUntil=0;');
+ const b=bridge.indexOf('function syncNativeMixerControls',a);
+ assert.ok(a>=0 && b>a);
+ const guard=bridge.slice(a,b);
+ assert.ok(!guard.includes('"pointermove"'), 'idle pointer listener forbidden');
+ assert.ok(guard.includes('typeof drag') && guard.includes('"pointerup"') && guard.includes('"pointercancel"'));
+});

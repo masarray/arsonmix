@@ -21,7 +21,7 @@ for rule in (
  '0 0 0 1px var(--b180-border)',
  'box-shadow:var(--b180-shadow-surface)',
  'transform:translateY(0px)!important',
- 'transition:background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out, box-shadow 90ms ease-out, filter 120ms ease-out, transform 75ms ease-out',
+ 'transition:background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out, transform 75ms ease-out',
  'background:var(--b180-color)',
  'display:inline-flex',
  'inset 5px 5px 2px -1px rgba(0,0,0,.30)'
@@ -59,6 +59,9 @@ assert 'class="pushable' not in page and '--pb-face:' not in css
 assert 'top:13px!important' in css
 assert 'top:12px!important' in css
 assert 'top:15px!important' in css
+# Historical brightness must remain diagnostic-only, not the normal pad.
+assert 'filter:brightness(1.32)!important' not in (root/'web/styles-src/20-button-180.css').read_text(encoding='utf8')
+assert 'html[data-mixperf="baseline"] #app button.btn-180:hover:not(:disabled)' in css
 assert 'filter:brightness(1.32)!important' in css
 assert 'border-color:#527789!important' not in css
 assert css.count('inset 5px 5px 2px -1px rgba(0,0,0,.30)') == 1
