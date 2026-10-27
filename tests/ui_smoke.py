@@ -309,7 +309,7 @@ async def main():
             assert style[key]['image']=='none',(key,style)
             assert style[key]['shadow'].count('rgb')==7,(key,style)
             assert style[key]['radius']=='3px',(key,style)
-        assert style['selected']['face']=='rgb(240, 241, 243)',style
+        assert style['selected']['face']=='rgb(185, 207, 119)',style
         assert style['railOn']['face']=='rgb(227, 166, 216)',style
         # Audio Device shares the physical BTN-180 toolbar face and dark ink.
         # The OFF state is truthful in UI-only preview. Explicitly force ON
@@ -367,7 +367,7 @@ async def main():
           const on=document.querySelector('[data-view="FX RACK"]');
           const off=document.querySelector('[data-view="MIX"]');
           return on.classList.contains('selected') && !off.classList.contains('selected')
-            && getComputedStyle(on).backgroundColor==='rgb(240, 241, 243)'
+            && getComputedStyle(on).backgroundColor==='rgb(185, 207, 119)'
             && getComputedStyle(off).backgroundColor==='rgb(179, 179, 179)';
         }""")
         nav=page.locator('[data-view="FX RACK"]')
