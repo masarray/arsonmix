@@ -28,7 +28,14 @@ test('preset UI reflects callback-acknowledged state not queued state',()=>{
   assert.match(m,/arMixNativePresetLoaded/);
   assert.match(b,/RECALL LIVE/);
 });
-test('old structural operations remain guarded and declared as unfinished',()=>{
+test('atomic MOVE keeps VST3 instances live while ADD/REMOVE remain guarded',()=>{
   assert.match(e,/if \(handoff_\.busy\(\)\) return false/);
-  assert.match(e,/Legacy Add\/Remove\/Move still detach/);
+  assert.match(e,/Add\/Remove still use a bounded offline lifecycle/);
+  assert.match(e,/std::atomic<std::uint64_t> orderPacked/);
+  const begin=e.indexOf('bool moveSlot (int from, int to)');
+  const move=e.slice(begin,e.indexOf('juce::var status()',begin));
+  assert.match(move,/FxOrderPlan::moved/);
+  assert.match(move,/orderPacked.store/);
+  assert.doesNotMatch(move,/detach\(|attach\(|releaseResources\(|prepareToPlay\(/);
+  assert.match(e,/cycle\.graph->orderPacked.load/);
 });
