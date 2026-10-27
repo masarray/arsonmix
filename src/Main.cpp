@@ -1116,9 +1116,19 @@ private:
                 const auto text = xml->toString();
                 if (text != lastAudioXml_)
                 {
-                    lastAudioXml_ = text;
-                    if (!machineSettingsDirectory().getChildFile ("audio-devices.xml").replaceWithText (text))
-                        diagnostics_.record ("DEVICE_SAVE_FAIL", "Unable to persist device settings");
+                    // A clean portable PC has no AppData/AR-MIX-Studio
+                    // directory yet. Create the machine-local parent before
+                    // writing the approved ASIO/WASAPI device XML.
+                    const auto machineFolder = machineSettingsDirectory();
+                    const auto folderReady = machineFolder.createDirectory().wasOk();
+                    if (!folderReady ||
+                        !machineFolder.getChildFile ("audio-devices.xml").replaceWithText (text))
+                    {
+                        diagnostics_.record ("DEVICE_SAVE_FAIL",
+                            "Cannot persist audio setup in machine AppData");
+                        emitNotice ("Audio setup is active but could not be saved on this PC. Check AppData folder permissions.", true);
+                    }
+                    else lastAudioXml_ = text;
                 }
             }
         }
