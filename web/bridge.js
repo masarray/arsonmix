@@ -545,8 +545,9 @@ function openRackTarget(t){
   tracks.forEach((track,i)=>{
     // The v0.8 Master uses .master-fx-rack, not .rack. Handle it first.
     if(track.classList.contains("master-strip")){
-      track.dataset.preview="1";track.title="MASTER FX: native processing not yet routed";
       const rack=track.querySelector(".master-fx-rack");
+      if(rack?.dataset.nativeSig==="p0-master-pending")return; // Already patched; no idle DOM work.
+      track.dataset.preview="1";track.title="MASTER FX: native processing not yet routed";
       if(rack&&rack.dataset.nativeSig!=="p0-master-pending"){
         rack.dataset.nativeSig="p0-master-pending";
         rack.innerHTML=Array.from({length:6},(_,slot)=>`<div class="master-fx-slot"><button class="master-insert empty" data-master-insert="${slot}" title="Open MASTER FX Rack · routing pending"><span class="insert-name">${slot===0?"＋ ADD FX":"—"}</span></button></div>`).join("");
@@ -560,6 +561,7 @@ function openRackTarget(t){
     const rack=track.querySelector(".rack");
     if(!rack)return;
     if(i!==0){
+      if(rack.dataset.nativeSig==="p0-unrouted-"+i)return; // No repeat writes/queries on 12Hz status ticks.
       track.dataset.preview="1";rack.dataset.preview="1";
       track.title=(channels[i]?.name||"Channel")+" · not connected to native DSP";
       track.querySelectorAll(".meter-peak").forEach(x=>{if(x.style.display!=="none")x.style.display="none";});

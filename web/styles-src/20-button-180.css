@@ -155,7 +155,9 @@
  --b180-color:var(--b180-on-cyan);--b180-border:#38909e;--b180-ink:#12323c;
 }
 #app .left-rail .rail-presets button.btn-180{text-transform:none}
-#app .toolbar-actions .nav button.btn-180{--b180-color:#adc875;--b180-border:#708942;--b180-ink:#263319;height:34px;min-height:34px;min-width:77px;padding:0 10px!important;letter-spacing:.35px!important}
+#app .toolbar-actions .nav button.btn-180{height:34px;min-height:34px;min-width:77px;padding:0 10px!important;letter-spacing:.35px!important}
+/* The shared OFF selector inherits #masterLeft specificity through :is(). Scope toolbar OFF with explicit state guards, without new !important paint rules. */
+#app .toolbar-actions .nav button.btn-180:not(.selected):not(.active):not(.on):not([aria-pressed="true"]){--b180-color:#adc875;--b180-border:#708942;--b180-ink:#263319}
 #app .left-rail button.btn-180 > span,
 #app .toolbar-actions .nav button.btn-180 > span{transform:none!important;transition:none!important}
 

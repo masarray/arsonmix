@@ -764,7 +764,9 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  --b180-color:var(--b180-on-cyan);--b180-border:#38909e;--b180-ink:#12323c;
 }
 #app .left-rail .rail-presets button.btn-180{text-transform:none}
-#app .toolbar-actions .nav button.btn-180{--b180-color:#adc875;--b180-border:#708942;--b180-ink:#263319;height:34px;min-height:34px;min-width:77px;padding:0 10px!important;letter-spacing:.35px!important}
+#app .toolbar-actions .nav button.btn-180{height:34px;min-height:34px;min-width:77px;padding:0 10px!important;letter-spacing:.35px!important}
+/* The shared OFF selector inherits #masterLeft specificity through :is(). Scope toolbar OFF with explicit state guards, without new !important paint rules. */
+#app .toolbar-actions .nav button.btn-180:not(.selected):not(.active):not(.on):not([aria-pressed="true"]){--b180-color:#adc875;--b180-border:#708942;--b180-ink:#263319}
 #app .left-rail button.btn-180 > span,
 #app .toolbar-actions .nav button.btn-180 > span{transform:none!important;transition:none!important}
 
@@ -1518,7 +1520,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('button,[data-cho
  if(b.dataset.pre!==undefined){let i=+b.dataset.pre;channels[i].pre=!channels[i].pre;b.classList.toggle('active');send('phase',channels[i].pre,i);return}
  if(b.dataset.hpf!==undefined){let i=+b.dataset.hpf;channels[i].hpf=!channels[i].hpf;b.classList.toggle('active');send('hpf',channels[i].hpf,i);return}
  if(b.dataset.masterInsert!==undefined){pendingMasterSlot=+b.dataset.masterInsert;openPluginBrowser(currentChannel,true);return}
- if(b.dataset.masterPower!==undefined){const slot=+b.dataset.masterPower;masterBypassed[slot]=!masterBypassed[slot];renderMaster();persistSession();send('masterFxBypass',{slot,bypass:masterBypassed[slot]},-1);return}
+ if(b.dataset.masterPower!==undefined){const slot=+b.dataset.masterPower;masterBypassed[slot]=!masterBypassed[slot];renderMaster();if(view==='FX RACK'&&masterSelected)renderMasterRackWorkspace();persistSession();send('masterFxBypass',{slot,bypass:masterBypassed[slot]},-1);return}
  if(b.dataset.clip!==undefined){resetClip(b.dataset.clip);return}
  if(b.dataset.fxpower!==undefined){const [i,j]=b.dataset.fxpower.split(':').map(Number);setFxBypass(i,j,!bypassed[fxKey(i,j)]);return}
  if(b.dataset.insert){let [i,j]=b.dataset.insert.split(':').map(Number);currentChannel=i;pendingSlot=j;openPluginBrowser(i);return}
@@ -1727,10 +1729,10 @@ function setChain(ch,chain){ch.inserts=chain.slice(0,8);renderMixer();if(view===
 function focusOptions(){return channels.map((c,i)=>`<option value="${i}" ${i===currentChannel?'selected':''}>${i+1} · ${safeText(c.name)}</option>`).join('')}
 function renderMasterRackWorkspace(){
  const chain=masterInserts.filter(Boolean).slice(0,6);
- $('rackWorkspace').innerHTML=`<div class="feature-top"><div><span class="eyebrow">MASTER BUS · UI PREVIEW</span><h2>FX Rack — MASTER</h2><p>Native MASTER VST3 processing is not implemented yet.</p></div><button class="action" data-master-insert="${Math.min(chain.length,5)}">＋ ADD FX</button></div>
+ $('rackWorkspace').innerHTML=`<div class="feature-top"><div><span class="eyebrow">MASTER BUS · UI PREVIEW</span><h2>FX Rack — MASTER</h2><p>Native MASTER VST3 processing is not implemented yet.</p></div><button class="action" data-master-insert="${Math.min(chain.length,5)}" ${chain.length>=6?"disabled":""}>${chain.length>=6?"FX FULL":"＋ ADD FX"}</button></div>
  <div class="rack-layout"><div class="chain-list"><div class="chain-end">● MIXED INPUTS</div><div class="chain-path">↓</div>
  ${chain.map((name,i)=>`<div class="chain-node"><span class="chain-index">${String(i+1).padStart(2,"0")}</span><span class="chain-name"><b>${safeText(name)}</b><small>Preview FX only</small></span><button data-master-insert="${i}">EDIT</button><button data-master-power="${i}" aria-label="Toggle preview master bypass">⏻</button></div><div class="chain-path">↓</div>`).join("")}
- <button class="chain-add" data-master-insert="${Math.min(chain.length,5)}">＋ ADD FX</button><div class="chain-path">↓</div><div class="chain-end">◎ MASTER OUTPUT</div></div>
+ <button class="chain-add" data-master-insert="${Math.min(chain.length,5)}" ${chain.length>=6?"disabled":""}>${chain.length>=6?"FX FULL":"＋ ADD FX"}</button><div class="chain-path">↓</div><div class="chain-end">◎ MASTER OUTPUT</div></div>
  <div class="guide-panel"><h3>MASTER · PREVIEW</h3><p>Master FX will become real audio processors after native multi-channel routing is integrated.</p></div></div>`;
 }
 function renderRackWorkspace(){if(masterSelected){renderMasterRackWorkspace();return;}let c=channels[currentChannel];let chain=normalChain(c);$('rackWorkspace').innerHTML=`<div class="feature-top"><div><span class="eyebrow">YOUR SOUND · CORE WORKFLOW</span><h2>FX Rack — ${safeText(c.name)}</h2><p>Build your signature vocal sound. Add, reorder, bypass, and store your VST chain.</p></div><div style="display:flex;gap:7px"><select id="rackChannel" class="ghost-action" aria-label="Choose channel">${focusOptions()}</select><button class="ghost-action" id="recallFxPreset">LOAD CHAIN</button><button class="action" id="saveFxFromRack">SAVE FX CHAIN</button></div></div><div class="rack-layout"><div class="chain-list"><div class="chain-end">● AUDIO INPUT · ${safeText(c.name)}</div><div class="chain-path">↓</div>${chain.map((name,i)=>`<div class="chain-node ${bypassed[currentChannel+':'+i]?'dimmed':''}"><span class="chain-index">${String(i+1).padStart(2,'0')}</span><span class="chain-name"><b>${safeText(name)}</b><small>${safeText(pluginCatalog.find(p=>p.name===name)?.hint||'VST3 plugin · mock chain state')}</small></span><button data-chainedit="${i}" title="Open plugin controls">EDIT</button><button data-chainbypass="${i}" class="${bypassed[fxKey(currentChannel,i)]?'is-bypassed':'power-on'}" aria-pressed="${!bypassed[fxKey(currentChannel,i)]}" aria-label="${bypassed[fxKey(currentChannel,i)]?'Enable':'Bypass'} ${safeText(name)}" title="${bypassed[fxKey(currentChannel,i)]?'Enable':'Bypass'} ${safeText(name)}">⏻</button><button data-chainmove="-1" data-index="${i}" title="Move up" ${i===0?'disabled':''}>↑</button><button data-chainmove="1" data-index="${i}" title="Move down" ${i===chain.length-1?'disabled':''}>↓</button><button data-chainremove="${i}" title="Remove FX">×</button></div><div class="chain-path">↓</div>`).join('')}<button class="chain-add" data-addplugin="1">＋ ADD VST3 EFFECT</button><div class="chain-path">↓</div><div class="chain-end">◎ OUTPUT · MASTER / STREAM</div></div>${pluginEditorIndex!==null&&pluginEditorIndex<chain.length?pluginInspector(currentChannel,pluginEditorIndex):`<div class="guide-panel"><h3>Ready-to-use Sound</h3><p>Start with a preset, then personalize your FX chain. No complex routing required.</p><div>${['Clean Vocal','Warm Karaoke','Live Broadcast'].map(s=>`<button class="guide-chip" data-preset="${s}">${s}</button>`).join('')}</div><h3 style="margin-top:20px">Make it sound better</h3><p>Recommended signal path:</p><p>Noise Gate → EQ → Compressor → De-Esser → Reverb</p><h3 style="margin-top:20px">Demo status</h3><p>Plugin names and bypass buttons currently change visual state only. Installed VST3 scanning and DSP are scheduled for the native engine phase.</p></div>`}</div>`}
@@ -1744,7 +1746,7 @@ function insertPlugin(name){
    const slot=pendingMasterSlot;
    if(slot>=6)return;
    masterInserts[slot]=name;delete masterBypassed[slot];pendingMasterSlot=null;
-   closePluginBrowser();renderMaster();persistSession();
+   closePluginBrowser();renderMaster();if(view==='FX RACK'&&masterSelected)renderMasterRackWorkspace();persistSession();
    send('masterChainChanged',{chain:[...masterInserts]},-1);
    flash('Master FX updated (GUI preview)');return;
  }

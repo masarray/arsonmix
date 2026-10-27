@@ -74,6 +74,8 @@ test('P0 FX Rack allows selection of every channel and MASTER without falsely lo
  assert.ok(bridge.includes('openRackTarget("master")'));
  assert.ok(bridge.includes('rack.dataset.nativeSig="p0-master-pending"'));
  assert.ok(bridge.includes('const signature="p0-unrouted-"+i'));
+ assert.ok(bridge.includes('if(rack.dataset.nativeSig==="p0-unrouted-"+i)return;'), 'No idle FX rack DOM rewrites');
+ assert.ok(bridge.includes('if(rack?.dataset.nativeSig==="p0-master-pending")return;'), 'No idle MASTER rack rewrites');
  assert.ok(app.includes('function renderMasterRackWorkspace'));
  assert.ok(app.includes('masterSelected=false;currentChannel=i;renderMixer()'));
  assert.ok(cpp.includes('channel == 1'), 'P0 must preserve truthful Channel 1-only native DSP');
