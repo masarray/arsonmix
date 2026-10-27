@@ -435,6 +435,7 @@ function clearFxGesture(){
  const d=fxGesture;if(!d)return;
  d.marker?.classList.remove('fx-drop-before','fx-drop-after');
  d.source?.classList.remove('fx-drag-source');d.ghost?.remove();
+ document.removeEventListener('pointermove',moveFxGesture);
  fxGesture=null;
 }
 document.addEventListener('pointerdown',e=>{
@@ -451,8 +452,9 @@ document.addEventListener('pointerdown',e=>{
  startX:e.clientX,startY:e.clientY,x:e.clientX,y:e.clientY,
  bounds:slots.map(slot=>({slot,rect:slot.getBoundingClientRect()})),
  insertion:from,active:false,ghost:null,marker:null};
+ document.addEventListener('pointermove',moveFxGesture,{passive:false});
 },true);
-document.addEventListener('pointermove',e=>{
+const moveFxGesture=e=>{
  const d=fxGesture;if(!d||e.pointerId!==d.pointerId)return;
  d.x=e.clientX;d.y=e.clientY;
  if(!d.active){
@@ -476,7 +478,7 @@ document.addEventListener('pointermove',e=>{
  const last=insertion===d.count;
  d.marker=bounds[last?Math.max(0,d.count-1):insertion]?.slot||null;
  d.marker?.classList.add(last?'fx-drop-after':'fx-drop-before');
-},{passive:false});
+};
 document.addEventListener('pointerup',e=>{
  const d=fxGesture;if(!d||e.pointerId!==d.pointerId)return;
  const active=d.active,from=d.from,at=d.insertion,ch=d.channel;
