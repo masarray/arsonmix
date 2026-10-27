@@ -30,7 +30,7 @@
   const state = {catalog: [], chain: [], scanning: false, message: "Connecting to native host...",
     device: {}, presets: [], addRequestId:0, addError:"", pendingPlugin:"", filter: "", selectedCategory: "All", monitor: false, error: "", progress: {active:false,phase:"done",done:0,total:0,found:0,current:""}, adding:false};
 
-  const orbit = {slot:-1, plugin:"", parameters:[], active:false, activeSlot:-1, activeParameter:-1, periodSeconds:20, reverse:false, preferredParameter:-1, selection:-1, confirmed:false,revision:null,selectedShape:0,shape:0,distanceSelection:-1,elevationSelection:-1,distanceIndex:-1,elevationIndex:-1,preferredDistance:-1,preferredElevation:-1,motionPath:[],visualPhase:0,visualTime:0};
+  const orbit = {slot:-1, plugin:"", parameters:[], active:false, activeSlot:-1, activeParameter:-1, periodSeconds:20, reverse:false, preferredParameter:-1, selection:-1, revision:null,nearSetpoint:20,farSetpoint:70,distanceUnit:"%",distanceMin:0,distanceMax:100,selectedShape:0,appliedPeriod:20,appliedReverse:false,initialized:false,shape:0,distanceSelection:-1,elevationSelection:-1,distanceIndex:-1,elevationIndex:-1,preferredDistance:-1,preferredElevation:-1,motionPath:[],visualPhase:0,visualTime:0};
   const escapeHtml = text => String(text ?? "").replace(/[&<>"']/g, c => (
     {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const percent = peak => Math.max(1,Math.min(100,(20*Math.log10(Math.max(1e-6,Number(peak)||0))+60)*100/60));
@@ -267,13 +267,16 @@
   function animateOrbitPreview(now){
     const dlg=document.getElementById("nativeOrbit");
     if(!dlg||dlg.hidden){animationActive=false;return;}
+    const animating=orbit.active&&orbit.activeSlot===orbit.slot&&
+      orbit.selectedShape===orbit.shape;
+    if(!animating){animationActive=false;return;}
     if(now-lastMotionFrame>=32){
       lastMotionFrame=now;
       const points=orbit.motionPath||[];
       if(points.length>=4){
         const elapsed=(now-(orbit.visualTime||now))/1000;
-        const period=Math.max(2,Math.min(180,Number(orbit.periodSeconds)||20));
-        const direction=orbit.reverse?-1:1;
+        const period=Math.max(2,Math.min(180,Number(orbit.appliedPeriod)||20));
+        const direction=orbit.appliedReverse?-1:1;
         const phase=((Number(orbit.visualPhase||0)+direction*elapsed/period)%1+1)%1;
         const exact=phase*(points.length-1),i=Math.min(points.length-2,Math.floor(exact)),f=exact-i;
         const a=points[i],b=points[i+1];
@@ -296,14 +299,23 @@
     const shape=Number.isInteger(orbit.selectedShape)?orbit.selectedShape:0;
     const running=orbit.active&&orbit.activeSlot===orbit.slot;
     const needsD=needsDistance(shape),needsE=needsHeight(shape);
+    const unit=orbit.distanceUnit==="m"?"m":"%";
+    const meter=unit==="m";
+    const minDist=Number.isFinite(+orbit.distanceMin)?+orbit.distanceMin:0;
+    const maxDist=Number.isFinite(+orbit.distanceMax)?+orbit.distanceMax:100;
+    const validSetpoints=Number.isFinite(orbit.nearSetpoint)&&Number.isFinite(orbit.farSetpoint)&&
+      orbit.farSetpoint>=minDist&&orbit.farSetpoint<=maxDist&&
+      (!needsD||orbit.nearSetpoint<=orbit.farSetpoint)&&
+      (!needsD||orbit.nearSetpoint>=minDist);
     const distanceSel=orbit.distanceSelection>=0?orbit.distanceSelection:
       (running&&orbit.shape===shape?orbit.distanceIndex:orbit.preferredDistance);
     const elevationSel=orbit.elevationSelection>=0?orbit.elevationSelection:
       (running&&orbit.shape===shape?orbit.elevationIndex:orbit.preferredElevation);
     const valid=options.some(p=>p.index===selected);
-    const distValid=!needsD||options.some(p=>p.index===distanceSel&&p.index!==selected);
+    const distValid=(!needsD&&distanceSel<0)||
+      options.some(p=>p.index===distanceSel&&p.index!==selected);
     const elevValid=!needsE||options.some(p=>p.index===elevationSel&&p.index!==selected&&p.index!==distanceSel);
-    const allValid=valid&&distValid&&elevValid;
+    const allValid=valid&&distValid&&elevValid&&validSetpoints&&orbit.revision!==null;
     const list=(id,sel)=>`<select class="native-search" id="${id}">
       <option value="-1" ${sel<0?"selected":""}>Choose parameter…</option>
       ${options.map(p=>`<option value="${p.index}" ${p.index===sel?"selected":""}>
@@ -311,6 +323,7 @@
       </option>`).join("")}</select>`;
     const modeName=motionModes[shape]?.[0]||motionModes[0][0];
     const modeHelp=motionModes[shape]?.[1]||motionModes[0][1];
+    const ready=running&&orbit.shape===shape;
     dlg.querySelector(".native-dialog-header .eyebrow").textContent="FX "+(orbit.slot+1)+" · CHANNEL 1";
     dlg.querySelector(".native-dialog-header h2").textContent="Auto Orbit";
     dlg.querySelector(".native-dialog").setAttribute("aria-modal","false");
@@ -343,8 +356,21 @@
       </select>
       <label class="orbit-field-label" for="nativeOrbitParameter">Azimuth · 360°</label>
       ${options.length?list("nativeOrbitParameter",selected):'<div class="native-empty">Reading plugin parameters…</div>'}
-      ${needsD?`<label class="orbit-field-label" for="nativeOrbitDistance">Distance · Near ↔ Far</label>
-        ${list("nativeOrbitDistance",distanceSel)}`:""}
+      <label class="orbit-field-label" for="nativeOrbitDistance">Distance parameter</label>
+      ${list("nativeOrbitDistance",distanceSel)}
+      <div class="orbit-grid">
+        ${needsD?`<div><label class="orbit-field-label" for="nativeOrbitNear">Near (${unit})</label>
+          <input class="native-search" id="nativeOrbitNear" type="number"
+            min="${minDist}" max="${maxDist}" step="${meter?0.1:1}"
+            value="${orbit.nearSetpoint}"></div>`:""}
+        <div><label class="orbit-field-label" for="nativeOrbitFar">${needsD?"Far":"Distance"} (${unit})</label>
+          <input class="native-search" id="nativeOrbitFar" type="number"
+            min="${minDist}" max="${maxDist}" step="${meter?0.1:1}"
+            value="${orbit.farSetpoint}"></div>
+      </div>
+      <p class="orbit-help-note">${meter?
+         "Metres from the VST3 Distance parameter.":
+         "VST3 parameter (0–100%). No physical metres inferred."}</p>
       ${needsE?`<label class="orbit-field-label" for="nativeOrbitElevation">Elevation · Down ↔ Up</label>
         ${list("nativeOrbitElevation",elevationSel)}`:""}
       <div class="orbit-grid">
@@ -357,21 +383,18 @@
             <option value="true" ${orbit.reverse?"selected":""}>↺ Reverse</option>
           </select></div>
       </div>
-      <label class="orbit-verify">
-        <input type="checkbox" id="nativeOrbitConfirm" ${orbit.confirmed?"checked":""}>
-        <span>${needsD||needsE?"Azimuth + spatial ranges verified":"Full-circle azimuth (360°) verified"}</span>
-      </label>
-      ${needsD||needsE?'<p class="orbit-help-note">Confirm the vendor Distance/Elevation mapping before START. Normalized values are not metres.</p>':""}
+      ${needsE?'<p class="orbit-help-note">Elevation requires an automatable VST3 parameter.</p>':""}
       <div class="orbit-actions">
         <button class="native-btn primary" data-orbit-start="1"
-          ${allValid&&orbit.confirmed&&orbit.revision!==null?"":"disabled"}>
+          ${allValid?"":"disabled"}>
           ${iconSvg("play")}${running?"UPDATE":"START"}</button>
         <button class="native-btn ${running?"on":""}" data-orbit-stop="1" ${running?"":"disabled"}>
           ${iconSvg("stop")}STOP</button>
       </div>`;
     if(!dlg.hidden){
       positionOrbit();
-      if(!animationActive){animationActive=true;requestAnimationFrame(animateOrbitPreview);}
+      if(ready&&!animationActive){animationActive=true;
+        requestAnimationFrame(animateOrbitPreview);}
     }
   }
   function openOrbit(slot,anchor){
@@ -385,8 +408,8 @@
     orbit.plugin=fx.name||"";
     orbit.parameters=[];
     orbit.selection=-1;
-    orbit.confirmed=false;
     orbit.revision=null;
+    orbit.initialized=false;
     orbit.selectedShape=orbit.active&&orbit.activeSlot===slot?orbit.shape:0;
     orbit.distanceSelection=-1;
     orbit.elevationSelection=-1;
@@ -680,14 +703,19 @@
     const elevationIndex=Number(document.getElementById("nativeOrbitElevation")?.value??-1);
     const requiredDistance=needsDistance(shape);
     const requiredHeight=needsHeight(shape);
-    if(!orbit.confirmed||orbit.revision===null||!Number.isInteger(param)||
+    const far=orbit.farSetpoint;
+    const near=requiredDistance?orbit.nearSetpoint:Math.min(orbit.nearSetpoint,far);
+    if(orbit.revision===null||!Number.isInteger(param)||
        !Number.isFinite(seconds)||seconds<2||seconds>180||
+       !Number.isFinite(near)||!Number.isFinite(far)||
+       near<orbit.distanceMin||far>orbit.distanceMax||near>far||
        (requiredDistance&&distanceIndex<0)||(requiredHeight&&elevationIndex<0)){
       toStatus("Choose a valid VST3 parameter and revolution period (2–180 seconds).");return;
     }
     send("orbitStart",{slot:orbit.slot,revision:orbit.revision,
       pluginId:state.chain[orbit.slot]?.id||"",parameterIndex:param,seconds,reverse,
-      shape,distanceIndex,elevationIndex,calibrated:orbit.confirmed});return;
+      shape,distanceIndex,elevationIndex,
+      nearDistance:near,farDistance:far,distanceUnit:orbit.distanceUnit});return;
   }
   if(el.hasAttribute("data-orbit-stop")){send("orbitStop",{slot:orbit.slot});return;}
   if(el.hasAttribute("data-master-insert")||el.hasAttribute("data-master-power")){
@@ -795,34 +823,74 @@
   document.addEventListener("input",e=>{
     if(e.target?.id==="nativeOrbitSeconds")
       orbit.periodSeconds=Number(e.target.value);
+    if(e.target?.id==="nativeOrbitNear")orbit.nearSetpoint=Number(e.target.value);
+    if(e.target?.id==="nativeOrbitFar")orbit.farSetpoint=Number(e.target.value);
   },true);
   document.addEventListener("change",e=>{
     const t=e.target;
-    if(!t||!["nativeOrbitConfirm","nativeOrbitParameter","nativeOrbitSeconds",
+    if(!t||!["nativeOrbitNear","nativeOrbitFar","nativeOrbitParameter","nativeOrbitSeconds",
       "nativeOrbitReverse","nativeOrbitShape","nativeOrbitDistance","nativeOrbitElevation"].includes(t.id))return;
     if(t.id==="nativeOrbitShape"){
       orbit.selectedShape=Number(t.value);
-      orbit.confirmed=false;
       orbit.motionPath=[];
       send("orbitInspect",{slot:orbit.slot,shape:orbit.selectedShape});
       renderOrbit();return;
     }
-    if(t.id==="nativeOrbitConfirm")orbit.confirmed=!!t.checked;
+    if(t.id==="nativeOrbitNear")orbit.nearSetpoint=Number(t.value);
+    if(t.id==="nativeOrbitFar")orbit.farSetpoint=Number(t.value);
     if(t.id==="nativeOrbitParameter")orbit.selection=Number(t.value);
-    if(t.id==="nativeOrbitDistance")orbit.distanceSelection=Number(t.value);
+    if(t.id==="nativeOrbitDistance"){
+      orbit.distanceSelection=Number(t.value);
+      const p=orbit.parameters.find(x=>x.index===orbit.distanceSelection);
+      const nextUnit=p?.unit==="m"?"m":"%";
+      if(nextUnit!==orbit.distanceUnit){
+        orbit.distanceUnit=nextUnit;
+        orbit.distanceMin=nextUnit==="m"?p.minMetres:0;
+        orbit.distanceMax=nextUnit==="m"?p.maxMetres:100;
+        orbit.nearSetpoint=nextUnit==="m"?
+          Math.min(orbit.distanceMax,Math.max(orbit.distanceMin,1)):20;
+        orbit.farSetpoint=nextUnit==="m"?
+          Math.min(orbit.distanceMax,Math.max(orbit.nearSetpoint,3)):70;
+      }
+    }
     if(t.id==="nativeOrbitElevation")orbit.elevationSelection=Number(t.value);
     if(t.id==="nativeOrbitSeconds")orbit.periodSeconds=Number(t.value);
     if(t.id==="nativeOrbitReverse")orbit.reverse=t.value==="true";
+    // Don't destroy focused number fields on blur: a concurrent START/UPDATE
+    // click must reach its original button, not a replacement DOM node.
+    if(["nativeOrbitNear","nativeOrbitFar","nativeOrbitSeconds"].includes(t.id)){
+      const button=document.querySelector("#nativeOrbit [data-orbit-start]");
+      if(button){
+        const near=orbit.nearSetpoint,far=orbit.farSetpoint;
+        const needD=needsDistance(orbit.selectedShape);
+        button.disabled=orbit.revision===null||
+          !Number.isFinite(far)||far<orbit.distanceMin||far>orbit.distanceMax||
+          (needD&&(!Number.isFinite(near)||near<orbit.distanceMin||near>far))||
+          !Number.isFinite(orbit.periodSeconds)||orbit.periodSeconds<2||
+          orbit.periodSeconds>180;
+      }
+      return;
+    }
     renderOrbit();
   },true);
   backend.addEventListener("arMixOrbitState",data=>{
     if(!data||Number(data.slot)!==orbit.slot)return;
+    const wasInitialized=orbit.initialized;
+    const preview=data.previewShape!==-1;
+    const draft={nearSetpoint:orbit.nearSetpoint,farSetpoint:orbit.farSetpoint,
+      periodSeconds:orbit.periodSeconds,reverse:orbit.reverse,
+      distanceUnit:orbit.distanceUnit,distanceMin:orbit.distanceMin,
+      distanceMax:orbit.distanceMax};
     Object.assign(orbit,data);
-    if(data.previewShape===-1&&data.active&&data.activeSlot===orbit.slot){
+    if(preview&&wasInitialized)Object.assign(orbit,draft);
+    else if(data.active&&data.activeSlot===orbit.slot){
+      orbit.appliedPeriod=data.periodSeconds;
+      orbit.appliedReverse=data.reverse;
       orbit.selectedShape=data.shape;
       orbit.distanceSelection=data.distanceIndex;
       orbit.elevationSelection=data.elevationIndex;
     }
+    orbit.initialized=true;
     if(data.previewShape===orbit.selectedShape || data.previewShape===-1){
       orbit.motionPath=Array.isArray(data.motionPath)?data.motionPath:[];
       orbit.visualPhase=Number(data.phase)||0;
@@ -874,7 +942,6 @@
     const orbitDialog=document.getElementById("nativeOrbit");
     if(orbitDialog&&!orbitDialog.hidden && !orbitAnchor?.isConnected)hideOrbit();
     if(orbitDialog&&!orbitDialog.hidden){
-      orbit.confirmed=false;
       orbit.revision=null;
       orbit.selection=-1;
       orbit.parameters=[];
