@@ -154,24 +154,34 @@ struct ChannelRoutingPlan final {
         return true;
     }
 
-    // Audio thread: consume *preallocated* stereo scratch supplied by caller.
-    // No format/device queries, allocation, mutex, trigonometry, or I/O here.
+    // Raw source input for FX and PRE-FADER taps. Keep fader and mute/solo
+    // policies separate, including stereo -> mono fold before the plugin.
+    bool extractSource(int strip, const float* const* input, int availableCallbackInputs,
+                       float* left, float* right, int frames) const noexcept {
+        if (!base.extractSource(strip,input,availableCallbackInputs,left,right,frames))
+            return false;
+        foldIfMono(strip,left,right,frames);
+        return true;
+    }
+    // Post-fader/master compatibility path (inactive strips remain silent).
     bool extract(int strip, const float* const* input, int availableCallbackInputs,
                  float* left, float* right, int frames) const noexcept {
-        if (!base.extract(strip, input, availableCallbackInputs, left, right, frames))
+        if (!base.extract(strip,input,availableCallbackInputs,left,right,frames))
             return false;
-        if (foldStereoToMono[strip]) {
-            for (int i = 0; i < frames; ++i) {
-                const float mono = 0.5f * (left[i] + right[i]);
-                left[i] = mono;
-                right[i] = mono;
-            }
-        }
+        foldIfMono(strip,left,right,frames);
         return true;
     }
     void accumulate(int strip, const float* left, const float* right,
                     float* masterL, float* masterR, int frames) const noexcept {
         base.accumulate(strip, left, right, masterL, masterR, frames);
+    }
+private:
+    void foldIfMono(int strip,float* left,float* right,int frames) const noexcept {
+        if (!foldStereoToMono[strip]) return;
+        for(int i=0;i<frames;++i) {
+            const float mono=0.5f*(left[i]+right[i]);
+            left[i]=mono;right[i]=mono;
+        }
     }
 };
 } // namespace armix::mixer
