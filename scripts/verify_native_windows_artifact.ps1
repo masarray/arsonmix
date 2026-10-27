@@ -24,6 +24,11 @@ if (@(Compare-Object -ReferenceObject $expected -DifferenceObject $actual).Count
 }
 
 $manifest = Get-Content -LiteralPath (Join-Path $OutputDir "BUILD_PROVENANCE.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+# App-only ZIP does not ship an untracked dynamic WebView2Loader.dll.
+if ($manifest.webView2LoaderMode -ne "JUCE_WEBVIEW2_LOADER_STATIC_LINKED_V1" -or
+    $manifest.guiStartupVerification -ne "WEBVIEW2_PREFLIGHT_AND_AR_MIX_GUI_READY_HANDSHAKE") {
+    throw "Missing Windows WebView2 startup / static loader provenance"
+}
 if ($manifest.storageMode -ne "PORTABLE_MARKER__USER_STUDIO_EMPTY_AT_RELEASE") {
     throw "Public ZIP missing portable workspace mode provenance"
 }
@@ -86,6 +91,8 @@ foreach ($marker in @(
     "meter-signal-area",            # VU activity region distinct from CLIP LED
     "fader-travel",                 # PNG black detent in 38px inset travel
     "function syncNativeMixerControls", # JUCE WebView bridge
+    "arMixGuiReady",               # Native GUI JS ready handshake
+    "WEBVIEW2_GUI_READY_TIMEOUT",  # Visible failure, never a blank IE page
     "AUDIO_GLITCH_WINDOW",          # engine P0-12 compiled diagnostics
     "--b180-on-mute",              # current harmonized BTN-180 palette
     "--b180-on-solo",              # MUTE / SOLO lightness calibration
@@ -137,7 +144,7 @@ try {
     Write-Host "FAT_RELEASE_ACCEPTED: source=$sha GUI_WIN64_PE32+=2"
     Write-Host "FAT_RELEASE_ACCEPTED: exeBytes=$($bytes.Length) testZipBytes=$archiveBytes sha256=$appHash"
     Write-Host "FAT_RELEASE_ACCEPTED: full embedded GUI HTML/CSS/JS/bridge/monitor + calibrated VU/fader matched exactly"
-    Write-Host "FAT_RELEASE_ACCEPTED: engine P0-12 markers verified"
+    Write-Host "FAT_RELEASE_ACCEPTED: P0-12 and static WebView2 startup contract verified"
 } finally {
     if (Test-Path -LiteralPath $archivePath) { Remove-Item -LiteralPath $archivePath -Force }
 }

@@ -99,3 +99,18 @@ test('latest BTN-180 GUI palette is an attested embedded native release requirem
   assert.match(nativeMain,/BinaryData::index_html/);
   assert.match(nativeMain,/BinaryData::bridge_js/);
 });
+
+test('native startup requires static WebView2 loader and JS-backed UI readiness', () => {
+  const monitor=read('web/monitor.js');
+  assert.match(cmake,/JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1/);
+  assert.match(cmake,/NEEDS_WEBVIEW2 TRUE/);
+  assert.match(nativeMain,/WebBrowserComponent::areOptionsSupported \(webViewOptions\(\)\)/);
+  assert.match(nativeMain,/WEBVIEW2_GUI_READY_TIMEOUT/);
+  assert.match(nativeMain,/withEventListener \("arMixGuiReady"/);
+  assert.doesNotMatch(nativeMain,/pageFinishedLoading \(const juce::String&\) override \{ loaded = true; \}/);
+  assert.match(monitor,/api\.emitEvent\("arMixGuiReady"/);
+  assert.match(packaging,/webView2LoaderMode = "JUCE_WEBVIEW2_LOADER_STATIC_LINKED_V1"/);
+  assert.match(verify,/manifest\.webView2LoaderMode/);
+  assert.match(verify,/WEBVIEW2_GUI_READY_TIMEOUT/);
+  assert.match(fat,/Microsoft Edge WebView2 Runtime/);
+});

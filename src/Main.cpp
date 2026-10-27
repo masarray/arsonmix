@@ -58,12 +58,40 @@ std::optional<juce::WebBrowserComponent::Resource> assetFor (const juce::String&
     return resource;
 }
 
+// Materialize browser cache BEFORE WebView2 construction (USB portable mode).
+// This single options factory also drives the startup preflight below.
+juce::WebBrowserComponent::Options webViewOptions()
+{
+    const auto folder = armix::storage::PortableWorkspace::browserDataRoot();
+    folder.createDirectory();
+    return juce::WebBrowserComponent::Options{}
+        .withBackend (juce::WebBrowserComponent::Options::Backend::webview2)
+        .withWinWebView2Options (
+            juce::WebBrowserComponent::Options::WinWebView2{}.withUserDataFolder (folder));
+}
+
+void showWebViewStartupError (const juce::String& detail)
+{
+    juce::NativeMessageBox::showAsync (
+        juce::MessageBoxOptions{}
+            .withIconType (juce::MessageBoxIconType::WarningIcon)
+            .withTitle ("ArSonMix - WebView2 unavailable")
+            .withMessage ("The offline ArSonMix mixer needs Microsoft Edge WebView2 Runtime.\\n\\n"
+                          + detail + "\\n\\nDownload / repair from Microsoft:\\n"
+                          "https://developer.microsoft.com/en-us/microsoft-edge/webview2/\\n\\n"
+                          "No VST3, mixer presets or session data were deleted.")
+            .withButton ("Close"),
+        [] (int) { juce::JUCEApplication::getInstance()->systemRequestedQuit(); });
+}
+
 class Browser final : public juce::WebBrowserComponent
 {
 public:
     explicit Browser (Options options) : WebBrowserComponent (std::move (options)) {}
     bool loaded = false;
-    void pageFinishedLoading (const juce::String&) override { loaded = true; }
+    // An Internet Explorer error page can trigger this callback too.
+    // Only arMixGuiReady from our final JS script authenticates readiness.
+    void pageFinishedLoading (const juce::String&) override {}
 };
 
 class PluginEditorWindow final : public juce::DocumentWindow
@@ -122,13 +150,9 @@ public:
           catalog_ (settingsDirectory()),
           diagnostics_ (settingsDirectory().getChildFile ("diagnostics")),
           presets_ (settingsDirectory().getChildFile ("presets"), settingsDirectory()),
-          browser_ (juce::WebBrowserComponent::Options{}
-              .withBackend (juce::WebBrowserComponent::Options::Backend::webview2)
-              .withWinWebView2Options (
-                  juce::WebBrowserComponent::Options::WinWebView2{}
-                      .withUserDataFolder (
-                          armix::storage::PortableWorkspace::browserDataRoot()))
+          browser_ (webViewOptions()
               .withNativeIntegrationEnabled()
+              .withEventListener ("arMixGuiReady", [this] (juce::var) { browser_.loaded = true; })
               .withEventListener ("arMixParameter", [this] (juce::var args) { onParameter (args); })
               .withEventListener ("arMixAction", [this] (juce::var args) { onAction (args); })
               .withResourceProvider (assetFor))
@@ -146,6 +170,7 @@ public:
         startupError_ = engine_.start (saved.get());
         engine_.devices().addChangeListener (this);
         diagnostics_.record ("STARTUP", startupError_.isEmpty() ? "Audio device initialized" : startupError_);
+        webViewStartupTick_ = juce::Time::getMillisecondCounter();
         browser_.goToURL (juce::WebBrowserComponent::getResourceProviderRoot());
         startTimerHz (12);
         // Defer initial scan until explicitly requested in Plugin Manager.
@@ -179,6 +204,8 @@ private:
     std::unique_ptr<AudioSetupWindow> audioSetupWindow_;
     juce::String startupError_, lastAudioXml_;
     bool initialStateSent_ = false;
+    bool webViewStartupNoticeSent_ = false;
+    juce::uint32 webViewStartupTick_ = 0;
     bool setupLaunching_ = false;
     unsigned int timerTicks_ = 0;
     bool deviceSettingsDirty_ = false;
@@ -1068,6 +1095,18 @@ private:
     void timerCallback() override
     {
         ++timerTicks_;
+        // Existing message-thread 12 Hz timer: no extra worker or DSP work.
+        // Never allow a hidden broken GUI to continue unattended audio.
+        if (!browser_.loaded && !webViewStartupNoticeSent_ &&
+            juce::Time::getMillisecondCounter() - webViewStartupTick_ > 10000u)
+        {
+            webViewStartupNoticeSent_ = true;
+            diagnostics_.record ("WEBVIEW2_GUI_READY_TIMEOUT", "No native ArSonMix UI handshake");
+            engine_.stop();
+            showWebViewStartupError ("The embedded mixer did not initialize in 10 seconds."
+                                     " Check the WebView2 Runtime and browser-cache folder permissions.");
+            return;
+        }
         // ONE actionable notice per unexpected DIRECT reroute. The audio
         // callback has already zero-filled output atomically; status, log and
         // WebView notifications belong only on this JUCE control timer.
@@ -1164,7 +1203,21 @@ class ConsoleApp final : public juce::JUCEApplication
 public:
     const juce::String getApplicationName() override { return "ArSonMix"; }
     const juce::String getApplicationVersion() override { return "0.5.0-native-catalog"; }
-    void initialise (const juce::String&) override { window_ = std::make_unique<ConsoleWindow>(); }
+    void initialise (const juce::String&) override
+    {
+        const auto folder = armix::storage::PortableWorkspace::browserDataRoot();
+        if (!folder.createDirectory().wasOk() && !folder.isDirectory())
+        {
+            showWebViewStartupError ("Cannot create the browser-cache folder: " + folder.getFullPathName());
+            return;
+        }
+        if (!juce::WebBrowserComponent::areOptionsSupported (webViewOptions()))
+        {
+            showWebViewStartupError ("WebView2 Runtime could not be initialized on this machine.");
+            return;
+        }
+        window_ = std::make_unique<ConsoleWindow>();
+    }
     void shutdown() override { window_.reset(); }
 private:
     std::unique_ptr<ConsoleWindow> window_;
