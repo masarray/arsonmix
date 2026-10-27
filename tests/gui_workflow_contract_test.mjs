@@ -69,6 +69,11 @@ test('native 12Hz status uses one capped shared visual meter scheduler',()=>{
  assert.ok(app.includes('const NATIVE_METER_FRAME_MS=34;'));
  assert.ok(app.includes('const nativeMeterStates=new Map()'));
  assert.ok(app.includes('function nativeMeterStep('));
+ assert.ok(app.includes('const NATIVE_METER_ATTACK_SECONDS=.018;'));
+ assert.ok(app.includes('const NATIVE_METER_RELEASE_SECONDS=.165;'));
+ assert.ok(app.includes('target+(level-target)*Math.exp(-span/tau)'));
+ assert.ok(!app.includes('fallVelocity') && !app.includes('s.velocity'), 'no frame-dependent acceleration state or per-meter velocity GC');
+ assert.ok(app.includes('s.level=nativeMeterStep(s.level,s.target,dt)'));
  assert.ok(app.includes('function scheduleNativeMeterFrame('));
  assert.ok(app.includes('if(nativeMeterTimer||nativeMeterRAF||document.hidden)return;'));
  assert.ok(app.includes("window.__arMixSetNativeMeterTarget=setNativeMeterTarget"));
