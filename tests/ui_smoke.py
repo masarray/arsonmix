@@ -1032,13 +1032,13 @@ async def main():
         native=await browser.new_page(viewport={"width":1680,"height":920})
         native_errors=[]
         native.on("pageerror",lambda e: native_errors.append(str(e)))
-        await native.add_init_script("""() => {
+        await native.add_init_script("""(() => {
           window.__arMixMockEvents={};
           window.__JUCE__={backend:{
             emitEvent(){},
             addEventListener(name,fn){window.__arMixMockEvents[name]=fn;}
           }};
-        }""")
+        })()""")
         await native.goto((project/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").as_uri())
         await native.add_script_tag(path=str(project/"web/bridge.js"))
         native_static=await native.evaluate("""()=>{
