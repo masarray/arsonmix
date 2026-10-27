@@ -183,3 +183,40 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 }
 /* LED increments stay fixed and the meter keeps its native dBFS conversion.
    No hot-path DOM reads, filters, blur or per-frame scale animation. */
+
+/* Flat milled-fader bay: a fixed-width, four-sided recess for EVERY strip,
+   including the wider MASTER. The center detent and 36×77 PNG remain unchanged.
+   Two static layers, no gradients/glow/filter/animated surface repaint. */
+#app #mixer .fader-zone .fader{
+  position:relative;isolation:isolate;min-width:36px;
+  background:transparent!important;border:0!important;box-shadow:none!important;
+}
+#app #mixer .fader-zone .fader::before{
+  content:"";position:absolute;left:50%;top:0;bottom:0;width:46px;
+  transform:translateX(-50%);z-index:0;pointer-events:none;
+  background:#10181e;border:1px solid #34424c;border-radius:2px;
+  box-shadow:inset 0 2px 2px #050a0e,inset 0 -2px 2px #070c10,inset 2px 0 2px #080e13,inset -1px 0 1px #26333b;
+}
+#app #mixer .fader-zone .fader::after{
+  content:"";position:absolute;left:50%;top:38px;bottom:39px;width:5px;
+  transform:translateX(-50%);z-index:0;pointer-events:none;
+  background:#020506;border:0;box-shadow:inset 1px 0 #26323a,inset -1px 0 #26323a;
+}
+#app #mixer .fader-zone .fader-travel{z-index:1}
+/* DAW insertion markers are painted only while an FX drag is active. */
+#app #mixer .insert-slot.fx-drop-before::before,
+#app #mixer .insert-slot.fx-drop-after::after{
+  content:"";position:absolute;left:1px;right:1px;height:2px;
+  background:#9dd6d3;z-index:5;pointer-events:none;
+}
+#app #mixer .insert-slot{position:relative}
+#app #mixer .insert-slot.fx-drop-before::before{top:-1px}
+#app #mixer .insert-slot.fx-drop-after::after{bottom:-1px}
+.fx-drag-ghost{
+  position:fixed;z-index:5000;top:0;left:0;box-sizing:border-box;
+  min-width:84px;max-width:290px;padding:6px 9px;pointer-events:none;
+  color:#e7f8f8;background:#172a34;border:1px solid #81c5c8;
+  border-radius:3px;box-shadow:0 3px 8px #0008;font:11px/1.2 Arial,sans-serif;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;will-change:transform;
+}
+.fx-drag-source{opacity:.48}
