@@ -32,14 +32,14 @@ inline double orbitShapePhaseForAzimuth(float azimuth,int shape) noexcept {
 // Capture the actual endpoint once (without another thread or timer) so the
 // distance parameter really reaches the user-selected near/far setpoints.
 inline bool crossesOrbitDistanceExtreme(double previous,double current,
-                                        int shape,bool far) noexcept
+                                        int shape,bool isFarEndpoint) noexcept
 {
     if (!needsOrbitDistance(shape) ||
         !std::isfinite(previous)||!std::isfinite(current) ||
         std::abs(current-previous)>0.125 || previous==current)return false;
     const double lo=std::min(previous,current),hi=std::max(previous,current);
     const bool frontBack=(shape==1||shape==4);
-    const double offset=frontBack?(far?0.0:0.25):(far?0.25:0.0);
+    const double offset=frontBack?(isFarEndpoint?0.0:0.25):(isFarEndpoint?0.25:0.0);
     for(int side=0;side<2;++side) {
         const double threshold=offset+side*0.5;
         if(std::floor(hi-threshold)>std::floor(lo-threshold))return true;
