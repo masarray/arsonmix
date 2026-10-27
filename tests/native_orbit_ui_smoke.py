@@ -128,7 +128,7 @@ async def main():
         start = modal.locator("[data-orbit-start]")
         assert await modal.locator("#nativeOrbitConfirm").count()==0
         assert await start.is_enabled(), "START must be ready without checkbox"
-        assert await modal.locator("#nativeOrbitNear").input_value()=="1"
+        assert await modal.locator("#nativeOrbitNear").count()==0, "Circle needs one Distance setpoint"
         assert await modal.locator("#nativeOrbitFar").input_value()=="3"
         dot_before=await page.locator("#nativeOrbitDot").get_attribute("cx")
         await page.wait_for_timeout(150)
