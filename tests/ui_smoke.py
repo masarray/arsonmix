@@ -248,75 +248,104 @@ async def main():
         assert await page.locator('.left-rail #saveFxPreset').inner_text()=='SAVE FX'
         assert await page.locator('.left-rail #menuScene').inner_text()=='EXPORT'
         assert await page.locator('.left-rail .rail-bottom button').count()==3
-        # Approved Button 19: raised bright-grey OFF and recessed vivid-green ON,
-        # shared only by toolbar navigation and the 8 left-rail keys.
-        assert await page.locator('.toolbar-actions .nav button.fx-nav').count()==7
-        assert await page.locator('.left-rail button.fx-nav').count()==8
-        assert await page.locator('.toolbar-actions .btn-180,.left-rail .btn-180').count()==0
+        # Owner's global BTN-180 hardware recipe: 7 toolbar + 8 left rail.
+        # Single solid face, identical resting 7-shadow model, no Button 19.
+        assert await page.locator('.toolbar-actions .nav button.btn-180').count()==7
+        assert await page.locator('.left-rail button.btn-180').count()==8
+        assert await page.locator('.toolbar-actions .fx-nav,.left-rail .fx-nav').count()==0
         assert await page.locator('.left-rail .pushable,.left-rail .front,.left-rail .edge,.left-rail .shadow').count()==0
-        assert await page.locator('.toolbar-actions button.fx-nav > span').count()==7
-        assert await page.locator('.left-rail button.fx-nav > span').count()==8
         style=await page.evaluate("""()=>{
-          const grab=q=>{const e=document.querySelector(q),s=getComputedStyle(e),r=e.getBoundingClientRect();return {
-            bg:s.backgroundImage,face:s.backgroundColor,shadow:s.boxShadow,
-            color:s.color,radius:s.borderTopLeftRadius,box:r.toJSON(),
-            textTransform:getComputedStyle(e.querySelector('span')).transform
-          }};
+          const grab=q=>{const e=document.querySelector(q),s=getComputedStyle(e),r=e.getBoundingClientRect();
+            return {face:s.backgroundColor,image:s.backgroundImage,ink:s.color,shadow:s.boxShadow,
+                    rect:r.toJSON(),transform:s.transform,radius:s.borderTopLeftRadius,
+                    spanTransform:e.querySelector('span')?getComputedStyle(e.querySelector('span')).transform:null}};
           return {nav:grab('[data-view="FX RACK"]'),
-            rail:grab('[data-preset="Clean Vocal"]'),
-            selected:grab('[data-view="MIX"]'),mixer:(()=>{
-              const e=document.querySelector('[data-mute="0"]');
-              return getComputedStyle(e).backgroundImage;
-            })()};
+                  selected:grab('[data-view="MIX"]'),
+                  rail:grab('[data-preset="Clean Vocal"]'),
+                  railOn:grab('[data-side="channels"]'),
+                  mute:grab('[data-mute="0"]'),
+                  utility:grab('[data-hpf="0"]')};
         }""")
-        for key in ('bg','face','color','textTransform'):
-            assert style['nav'][key]==style['rail'][key],(key,style)
-        assert 'radial-gradient(' in style['nav']['bg'],style
-        assert style['nav']['face']=='rgb(224, 228, 232)',style
-        assert style['selected']['face']=='rgb(57, 239, 114)',style
-        assert style['selected']['shadow']!=style['nav']['shadow'],style
-        assert style['selected']['textTransform']=='matrix(0.95, 0, 0, 0.95, 0, 0)',style
-        assert style['mixer']=='none',style
+        for key in ('nav','rail','mute','utility'):
+            assert style[key]['face']=='rgb(179, 179, 179)',(key,style)
+            assert style[key]['image']=='none',(key,style)
+            assert style[key]['shadow'].count('rgb')==7,(key,style)
+            assert style[key]['radius']=='3px',(key,style)
+        assert style['selected']['face']=='rgb(240, 241, 243)',style
+        assert style['railOn']['face']=='rgb(227, 166, 216)',style
+        # Audio Device shares the physical BTN-180 toolbar face and dark ink.
+        # The OFF state is truthful in UI-only preview. Explicitly force ON
+        # for a PALETTE-ONLY regression screenshot, then restore it immediately.
+        device=page.locator('.toolbar .spec-device')
+        devOff=await device.evaluate("""e=>{const s=getComputedStyle(e),t=getComputedStyle(e.querySelector('#headerDriver')),
+          r=e.getBoundingClientRect();return {face:s.backgroundColor,ink:t.color,shadow:s.boxShadow,rect:r.toJSON(),
+          pressed:e.classList.contains('on'),backgroundImage:s.backgroundImage}}""")
+        assert devOff['face']==style['nav']['face']=='rgb(179, 179, 179)',devOff
+        assert devOff['ink']=='rgb(43, 43, 43)' and devOff['backgroundImage']=='none',devOff
+        assert not devOff['pressed'],devOff
+        await device.evaluate("(e)=>e.classList.add('on')")
+        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('.spec-device')).backgroundColor==='rgb(121, 221, 158)'""")
+        devOn=await device.evaluate("""e=>{const s=getComputedStyle(e),t=getComputedStyle(e.querySelector('#headerDriver'));
+          return {face:s.backgroundColor,ink:t.color,shadow:s.boxShadow,rect:e.getBoundingClientRect().toJSON()}}""")
+        assert devOn['face']=='rgb(121, 221, 158)' and devOn['ink']=='rgb(17, 51, 34)',devOn
+        assert shared_shadow_shape(devOn['shadow'])==shared_shadow_shape(devOff['shadow']),(devOn,devOff)
+        assert all(abs(devOff['rect'][k]-devOn['rect'][k])<.2 for k in ('x','y','width','height')),(devOff,devOn)
+        await page.screenshot(path=str(project/'device-green-on-palette-review.png'),full_page=True)
+        await device.evaluate("(e)=>e.classList.remove('on')")
+        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('.spec-device')).backgroundColor==='rgb(179, 179, 179)'""")
+        assert all(style[key]['spanTransform']=='none' for key in ('nav','rail','selected')),style
+        assert await page.locator('[data-hpf="0"]').evaluate(
+            "(e)=>getComputedStyle(e).boxShadow.includes('5px 5px 2px -1px')"),style
+        # Real 1px tactile travel; no text scaling or width/height changes.
         preset=page.locator('[data-preset="Clean Vocal"]')
-        before=await preset.evaluate('(e)=>e.getBoundingClientRect().toJSON()')
+        pre=await preset.evaluate("(e)=>e.getBoundingClientRect().toJSON()")
         await preset.hover()
-        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-preset="Clean Vocal"]')).filter==='none'""")
         await page.mouse.down()
-        await page.wait_for_timeout(150)
-        pressed=await preset.evaluate("""e=>({
-          shadow:getComputedStyle(e).boxShadow,
-          textTransform:getComputedStyle(e.querySelector('span')).transform,
-          rect:e.getBoundingClientRect().toJSON()
-        })""")
-        assert pressed['shadow']!=style['rail']['shadow'],pressed
-        assert pressed['textTransform']=='matrix(0.95, 0, 0, 0.95, 0, 0)',pressed
-        assert all(abs(before[k]-pressed['rect'][k])<=.2 for k in ('x','y','width','height')),pressed
+        await page.wait_for_timeout(120)
+        pushed=await preset.evaluate("""e=>({transform:getComputedStyle(e).transform,
+          shadow:getComputedStyle(e).boxShadow,rect:e.getBoundingClientRect().toJSON()})""")
+        assert pushed['transform']=='matrix(1, 0, 0, 1, 0, 1)',pushed
+        assert pushed['shadow'].startswith('rgba(0, 0, 0, 0.5)'),pushed
+        assert abs(pushed['rect']['y']-pre['y']-1)<=.2,pushed
+        assert all(abs(pushed['rect'][k]-pre[k])<=.2 for k in ('x','width','height')),pushed
         await page.mouse.up()
-        assert await preset.evaluate('(e)=>e.classList.contains("active")')
         await page.mouse.move(1,1)
-        await page.wait_for_timeout(180)
+        await page.wait_for_timeout(190)
         active=await preset.evaluate("""e=>({
-          face:getComputedStyle(e).backgroundColor,
-          shadow:getComputedStyle(e).boxShadow,
-          textTransform:getComputedStyle(e.querySelector('span')).transform,
-          rect:e.getBoundingClientRect().toJSON()
-        })""")
-        assert active['face']=='rgb(57, 239, 114)' and shared_shadow_shape(active['shadow'])==shared_shadow_shape(pressed['shadow']),active
-        assert active['textTransform']==pressed['textTransform'],active
-        assert all(abs(before[k]-active['rect'][k])<=.2 for k in ('x','y','width','height')),active
-        # Navigation remains mutually exclusive, never an independent fake toggle.
+          face:getComputedStyle(e).backgroundColor,shadow:getComputedStyle(e).boxShadow,
+          rect:e.getBoundingClientRect().toJSON(),transform:getComputedStyle(e).transform})""")
+        assert active['face']=='rgb(227, 166, 216)' and active['transform']=='matrix(1, 0, 0, 1, 0, 0)',active
+        assert shared_shadow_shape(active['shadow'])==shared_shadow_shape(style['rail']['shadow']),active
+        assert all(abs(active['rect'][k]-pre[k])<=.2 for k in ('x','y','width','height')),active
+        # Utility ON is soft cyan, not the old green/purple polarity palettes.
+        await page.locator('[data-hpf="0"]').click()
+        await page.wait_for_timeout(190)
+        cyan=await page.locator('[data-hpf="0"]').evaluate("(e)=>getComputedStyle(e).backgroundColor")
+        assert cyan=='rgb(131, 214, 224)',cyan
+        await page.locator('[data-hpf="0"]').click()
+        # Navigation remains mutually exclusive; selected is only a color latch.
         await page.locator('[data-view="FX RACK"]').click()
-        # CSS animates face color over 115ms; assert the final rendered state,
-        # not an intermediate animation frame immediately after the click.
         await page.wait_for_function("""()=>{
           const on=document.querySelector('[data-view="FX RACK"]');
           const off=document.querySelector('[data-view="MIX"]');
           return on.classList.contains('selected') && !off.classList.contains('selected')
-            && getComputedStyle(on).backgroundColor==='rgb(57, 239, 114)'
-            && getComputedStyle(off).backgroundColor==='rgb(224, 228, 232)';
+            && getComputedStyle(on).backgroundColor==='rgb(240, 241, 243)'
+            && getComputedStyle(off).backgroundColor==='rgb(179, 179, 179)';
         }""")
+        nav=page.locator('[data-view="FX RACK"]')
+        navBefore=await nav.evaluate("(e)=>e.getBoundingClientRect().toJSON()")
+        await nav.hover()
+        await page.mouse.down()
+        await page.wait_for_timeout(120)
+        navDown=await nav.evaluate("""e=>({shadow:getComputedStyle(e).boxShadow,
+          rect:e.getBoundingClientRect().toJSON(),transform:getComputedStyle(e).transform})""")
+        assert navDown['shadow'].startswith('rgba(0, 0, 0, 0.5)'),navDown
+        assert navDown['transform']=='matrix(1, 0, 0, 1, 0, 1)',navDown
+        assert abs(navDown['rect']['y']-navBefore['y']-1)<=.2,navDown
+        await page.mouse.up()
         await page.locator('[data-view="MIX"]').click()
-        # One-shot toolbar commands must NOT latch visually after release.
+        await page.screenshot(path=str(project/'toolbar-global-btn180-pad.png'),full_page=True)
+        # One-shot toolbar commands remain unlatched after release.
         await page.locator('#audioSetupBtn').click()
         assert await page.locator('#audioSetupBtn').evaluate(
             '(e)=>!e.classList.contains("active") && !e.classList.contains("selected")')
@@ -406,8 +435,8 @@ async def main():
         }""")
         assert architecture['small']=='none',architecture
         assert abs(architecture['mainFader']['height']-architecture['masterFader']['height'])<=2,architecture
-        assert architecture['nav'].startswith('linear-gradient('),architecture
-        assert architecture['long'].startswith('linear-gradient('),architecture
+        assert architecture['nav']=='none',architecture
+        assert architecture['long']=='none',architecture
         assert 'data:image/png;base64' not in architecture['fx']
         assert 'data:image/png;base64' not in architecture['chrome']
         assert not architecture['overflow']
@@ -461,9 +490,9 @@ async def main():
         assert on['selected'] and shared_shadow_shape(on['shadow'])==shared_shadow_shape(off['shadow']),(off,on)
         assert on['color']!=off['color'],(off,on)
         assert on['t']==off['t'] and same_rect(off,on),(off,on)
-        assert off['color']=='rgb(133, 130, 131)' and off['ink']=='rgb(43, 43, 43)',(off,on)
+        assert off['color']=='rgb(179, 179, 179)' and off['ink']=='rgb(43, 43, 43)',(off,on)
         assert on['ink']!=off['ink'],(off,on)
-        assert on['shadow'].startswith('rgba(0, 0, 0, 0.72)') or '0.72' in on['shadow'],on
+        assert on['shadow'].startswith('rgba(0, 0, 0, 0.3)'),on
         await page.locator('[data-mute="0"]').click()
         await page.mouse.move(1,1)  # OFF after pointer leaves, not the intentional glossy hover state
         await page.wait_for_timeout(190)
@@ -501,7 +530,7 @@ async def main():
         assert during['t']=='matrix(1, 0, 0, 1, 0, 1)',during
         assert abs(during['rect']['y']-press_before['y']-1)<=.2,during
         assert all(abs(during['rect'][k]-press_before[k])<=.2 for k in ('x','width','height')),during
-        assert during['shadow']!=before['shadow'] and '0.82' in during['shadow'],(before,during)
+        assert during['shadow']!=before['shadow'] and '0.5' in during['shadow'],(before,during)
         await page.mouse.up()
         await page.wait_for_timeout(190)
         assert await btn.get_attribute('aria-pressed')=='true'
@@ -523,7 +552,7 @@ async def main():
         assert pressed_on['t']=='matrix(1, 0, 0, 1, 0, 1)',pressed_on
         assert abs(pressed_on['rect']['y']-press_before['y']-1)<=.2,pressed_on
         assert all(abs(pressed_on['rect'][k]-press_before[k])<=.2 for k in ('x','width','height')),pressed_on
-        assert '0.82' in pressed_on['shadow'],pressed_on
+        assert '0.5' in pressed_on['shadow'],pressed_on
         await page.mouse.up()
         await page.wait_for_timeout(190)
         assert await btn.get_attribute('aria-pressed')=='false'
@@ -582,11 +611,11 @@ async def main():
         # A real two-state BTN-180 control: blue STEREO, red MONO, durable state.
         mode=page.locator('#masterMode')
         blue=await mode.evaluate("(e)=>getComputedStyle(e).getPropertyValue('--b180-color').trim()")
-        assert blue=='#509bd2',blue
+        assert blue=='#77baeb',blue
         await mode.click()
         red=await mode.evaluate("(e)=>getComputedStyle(e).getPropertyValue('--b180-color').trim()")
         assert await mode.inner_text()=='MONO' and await mode.get_attribute('aria-pressed')=='true'
-        assert red=='#e76f83' and red!=blue,red
+        assert red=='#f38895' and red!=blue,red
         assert await page.evaluate('durableSession().masterMono') is True
         await mode.click()
         assert await mode.inner_text()=='STEREO' and await mode.get_attribute('aria-pressed')=='false'
@@ -702,6 +731,45 @@ async def main():
         }""")
         assert [m['keys'] for m in topology['units']]==[[str(i)] for i in range(6)]+[[f'{i}L',f'{i}R'] for i in range(6,10)],topology
         assert topology['master']==['masterL','masterR'],topology
+
+        # Calibration contract: +10 and -60 must align the PNG's black row 38.
+        calibrated=await page.evaluate("""()=>{
+          const selected=['0','6','master'];
+          const ticks=[10,0,-10,-30,-60];
+          const result=[];
+          for(const key of selected){
+            const f=document.querySelector('[data-fader="'+key+'"]'),strip=f.closest('.strip');
+            const scale=strip.querySelector('.gain-scale');
+            const old=f.dataset.fader==='master'?masterGain:channels[+key].fader;
+            for(const db of ticks){
+              updateFader(key,db);
+              const cap=f.querySelector('.cap').getBoundingClientRect();
+              const tick=scale.querySelector('[data-gain-tick="'+db+'"]').getBoundingClientRect();
+              result.push({key,db,error:cap.top+38-tick.top,
+                           inside:cap.top>=f.getBoundingClientRect().top-.5&&cap.bottom<=f.getBoundingClientRect().bottom+.5});
+            }
+            updateFader(key,old);
+          }
+          const vu=[];
+          for(const strip of [...document.querySelectorAll('#mixer>.strip')]){
+            const scale=strip.querySelector('.vu-scale-travel');
+            const active=strip.querySelector('.meter-signal-area');
+            const a=active.getBoundingClientRect(),b=scale.getBoundingClientRect();
+            vu.push({top:a.top-b.top,bottom:a.bottom-b.bottom,
+              ticks:[0,-12,-24,-60].map(db=>{
+                const target=scale.querySelector('[data-vu-tick="'+db+'"]').getBoundingClientRect();
+                return target.top-(a.top+(-db/60)*a.height);
+              })});
+          }
+          return {result,vu};
+        }""")
+        assert len(calibrated['result'])==15,calibrated
+        assert all(abs(x['error'])<=1 and x['inside'] for x in calibrated['result']),calibrated
+        assert len(calibrated['vu'])==11 and all(abs(s['top'])<=2 and abs(s['bottom'])<=2 and all(abs(d)<=1.5 for d in s['ticks']) for s in calibrated['vu']),calibrated
+        assert await page.evaluate('meterPercentToDbfs(0)')==-60
+        assert await page.evaluate('meterPercentToDbfs(80)')==-12
+        assert await page.evaluate('meterPercentToDbfs(100)')==0
+
         # Shared physical LED width: 14px case, equal inner fill and clip caps.
         vu_geometry=await page.evaluate("""()=>{
           const nodes=[...document.querySelectorAll('#mixer .meter-unit')];
@@ -711,6 +779,30 @@ async def main():
                     clip:m.querySelector('.clip-led')!==null};});
         }""")
         assert len(vu_geometry)==16,vu_geometry
+        # Reference-inspired hierarchy MUST be [VU left] [rail middle] [scale right].
+        module_layout=await page.evaluate("""()=>{
+          return [...document.querySelectorAll('#mixer > .strip')].map((strip)=>{
+            const z=strip.querySelector('.fader-zone'),bank=z.querySelector('.vu-bank'),rail=z.querySelector('.fader'),ruler=z.querySelector('.scale');
+            const box=x=>{const r=x.getBoundingClientRect();return {l:r.left,r:r.right,t:r.top,b:r.bottom,w:r.width,h:r.height};};
+            const meterItems=[...bank.querySelectorAll('.meter-unit')];
+            return {master:strip.id==='masterLeft',dom:[...z.children].map(x=>x.classList.contains('vu-bank')?'VU':x.classList.contains('fader')?'FADER':x.classList.contains('scale')?'SCALE':'OTHER'),
+                    strip:box(strip),zone:box(z),bank:box(bank),rail:box(rail),ruler:box(ruler),
+                    meters:meterItems.map(box),count:meterItems.length};
+          });
+        }""")
+        assert len(module_layout)==11,module_layout
+        assert [s['count'] for s in module_layout]==[1]*6+[2]*5,module_layout
+        for s in module_layout:
+            assert s['dom']==['VU','FADER','SCALE'],s
+            assert abs(s['bank']['w']-51)<.3 and abs(s['ruler']['w']-26)<.3,s
+            assert s['bank']['r']+2<s['rail']['l'] and s['rail']['r']+2<s['ruler']['l'],s
+            assert s['bank']['l']>=s['zone']['l']-1 and s['ruler']['r']<=s['zone']['r']+1,s
+            assert all(abs(m['w']-14)<.3 for m in s['meters']),s
+            assert s['rail']['w']>=36 and s['rail']['h']>150,s
+        # Mono and stereo strips share an identically located central rail.
+        rail_x=[s['rail']['l']-s['zone']['l'] for s in module_layout[:10]]
+        assert max(rail_x)-min(rail_x)<1,rail_x
+
         assert all(abs(v['unit']-14)<.3 and abs(v['meter']-14)<.3 and abs(v['fill']-10)<.6 and v['clip'] for v in vu_geometry),vu_geometry
         assert len(set(v['gradient'] for v in vu_geometry))==1, 'VU palette must match across all L/R/mono bars'
         await page.locator('#masterMode').click()
@@ -780,7 +872,7 @@ async def main():
         await page.locator('[data-mute="0"]').click()
         assert await page.locator('[data-mute="0"]').get_attribute('aria-pressed') == 'true'
         # btn-180 intentionally animates background for 150ms. Wait for actual final RGB.
-        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-mute="0"]')).backgroundColor==='rgb(231, 111, 131)'""",timeout=2500)
+        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-mute="0"]')).backgroundColor==='rgb(243, 136, 149)'""",timeout=2500)
         assert await image_for('[data-mute="0"]') != await image_for('[data-solo="0"]'), await page.evaluate("""()=>{
           return [...document.querySelectorAll('[data-mute="0"],[data-solo="0"]')].map(e=>({
             cls:e.className,background:getComputedStyle(e).backgroundColor,
@@ -790,7 +882,7 @@ async def main():
         }""")
         await page.locator('[data-solo="0"]').click()
         assert await page.locator('[data-solo="0"]').get_attribute('aria-pressed') == 'true'
-        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-solo="0"]')).backgroundColor==='rgb(219, 183, 92)'""",timeout=2500)
+        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-solo="0"]')).backgroundColor==='rgb(237, 198, 105)'""",timeout=2500)
         assert await image_for('[data-solo="0"]') != await image_for('[data-mute="0"]')
         await page.locator('[data-mute="0"]').click()
         await page.locator('[data-solo="0"]').click()

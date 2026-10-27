@@ -1,11 +1,15 @@
-/* Button 180 is owned by mixer controls only; toolbar-actions and left-rail have FX-power chrome. */
+/* Button 180 is the ONE shared material for channel, MASTER, toolbar and left-rail pads. */
 /* BUTTON 180 — one identical RESTING surface for OFF and ON.
    Semantic colors alone define the latched state; only the transient :active
    pointer press moves the cap inward by 1px without changing its layout slot. */
 :root{
- --b180-off:#858283;--b180-edge:#636363;--b180-off-ink:#2b2b2b;
+ --b180-off:#b3b3b3;--b180-edge:#636363;--b180-off-ink:#2b2b2b;
  --b180-color:var(--b180-off);--b180-border:var(--b180-edge);
  --b180-ink:var(--b180-off-ink);
+ --b180-on-cyan:#83d6e0;--b180-on-green:#79dd9e;
+ --b180-on-magenta:#e3a6d8;--b180-on-purple:#c4a9e8;
+ --b180-on-mute:#f38895;--b180-on-solo:#edc669;
+ --b180-on-stereo:#77baeb;
 }
 :is(.btn-180,.toolbar .nav button.btn-180,.toolbar .spec-device,.left-rail .tabs button.btn-180,
 .strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
@@ -14,8 +18,8 @@
  /* Exact same inset + outside-edge model as the previously approved ON face.
     All layers are shared; only --b180-border is allowed to tint the edge. */
  --b180-shadow-surface:
-  inset 0 3px 6px -1px rgba(0,0,0,.72),
-  inset 0 0 0 1px rgba(255,255,255,.14),
+  inset 5px 5px 2px -1px rgba(0,0,0,.30),
+  inset 0 0 1px 1px rgba(255,255,255,.14),
   inset 0 1px 20px rgba(0,0,0,.19),
   inset 0 -1px 2px rgba(0,0,0,.32),
   0 0 0 1px var(--b180-border),
@@ -79,16 +83,14 @@
 /* Latching OFF/ON must NOT alter material, depth or layout. The physical
    press response below exists only while :active, never on .active/.selected. */
 /* Latch LED colors only; dark captions are legible on bright faces. */
-:is(.toolbar .nav button.btn-180.selected,.left-rail .tabs button.btn-180.selected,
- .left-rail .rail-presets button.btn-180.active,.left-rail .rail-bottom #saveFxPreset.btn-180.active,
- .native-btn.primary,.native-btn.on){--b180-color:#22bbcc;--b180-border:#087b8e;--b180-ink:#041c27}
-.left-rail .rail-bottom #addScene.btn-180.active{--b180-color:#319ed4;--b180-border:#14618c;--b180-ink:#061c2b}
-.strip .utility-row button[data-hpf].active{--b180-color:#37c99a;--b180-border:#126e5b;--b180-ink:#071f1a}
+/* Native dialog buttons keep native cyan; toolbar and rail states below
+   each have ONE scope owner, with no competing earlier palette selectors. */
+:is(.native-btn.primary,.native-btn.on){--b180-color:#22bbcc;--b180-border:#087b8e;--b180-ink:#041c27}
+/* Utility ON is exclusively cyan, owned by the more specific scoped rule below. */
 :is(.strip .channel-actions .mute.active,#masterLeft #masterMute.active,
- .native-btn.warn){--b180-color:#e76f83;--b180-border:#a13650;--b180-ink:#291018}
-.strip .channel-actions .solo.active{--b180-color:#dbb75c;--b180-border:#967025;--b180-ink:#291d08}
-:is(.strip .utility-row button[data-pre].active,
- #masterLeft .master-tools button.active){--b180-color:#a68cdb;--b180-border:#684f9e;--b180-ink:#1d1234}
+ .native-btn.warn){--b180-color:var(--b180-on-mute);--b180-border:#b14a5f;--b180-ink:#32151e}
+.strip .channel-actions .solo.active{--b180-color:var(--b180-on-solo);--b180-border:#a48337;--b180-ink:#2b210b}
+#masterLeft .master-tools button.active{--b180-color:var(--b180-on-purple);--b180-border:#8668b8;--b180-ink:#26163c}
 :is(.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
  #masterLeft .master-tools button,.toolbar .nav button.btn-180,.left-rail .tabs button.btn-180,
  .left-rail .rail-presets button.btn-180,.left-rail .rail-bottom button.btn-180,.native-btn){
@@ -120,27 +122,59 @@
  .left-rail .rail-bottom button.btn-180,.native-btn):active:not(:disabled){
  transform:translateY(1px)!important;
  box-shadow:
-  inset 0 4px 8px -1px rgba(0,0,0,.82),
-  inset 0 1px 2px rgba(0,0,0,.4),
-  inset 0 2px 15px rgba(0,0,0,.27),
-  inset 0 -1px 2px rgba(0,0,0,.44),
+  inset 3px 2px 2px -1px rgba(0,0,0,.50),
+  inset 0 0 1px 0 rgba(255,255,255,.14),
+  inset 0 1px 15px rgba(0,0,0,.29),
+  inset 0 -1px 2px rgba(0,0,0,.32),
   0 0 0 1px var(--b180-border),
-  0 0 0 rgba(0,0,0,0),
-  0 0 0 rgba(0,0,0,0)!important;
+  0 1px 1px rgba(0,0,0,.28),
+  0 2px 3px rgba(0,0,0,.13)!important;
 }
 
-/* OFF = the exact ON material with neutral, extinguished gray palette.
+/* OFF = the same shared material, neutral #b3b3b3 as owner requested.
    Bright ON color recipes above remain untouched. */
 :is(.toolbar .nav button.btn-180,.toolbar .spec-device,
  .strip .channel-actions .candy,.strip .utility-row button,
  #masterLeft .master-actions button,#masterLeft .master-tools button,
  .left-rail .tabs button.btn-180,.left-rail .rail-presets button.btn-180,
  .left-rail .rail-bottom button.btn-180):not(.active):not(.selected):not(.on):not([aria-pressed="true"]){
- --b180-color:var(--b180-off);--b180-border:var(--b180-edge);
+ --b180-color:#b3b3b3;--b180-border:var(--b180-edge);
  --b180-ink:var(--b180-off-ink);
  color:var(--b180-ink)!important;
 }
 @media(prefers-reduced-motion:reduce){
  :is(.toolbar .nav button.btn-180,.toolbar .spec-device,.strip .channel-actions .candy,
  .strip .utility-row button,.left-rail button.btn-180){transition:none!important}
+}
+
+/* Scope-specific ON palette: only variables change; all keys share
+   the same seven-layer pad and exact press recipe above. */
+#app .toolbar-actions .nav button.btn-180.selected{
+ --b180-color:#f0f1f3;--b180-border:#939ba5;--b180-ink:#222932;
+}
+#app .left-rail button.btn-180:is(.selected,.active){
+ --b180-color:var(--b180-on-magenta);--b180-border:#ad6d9f;--b180-ink:#32172f;
+}
+/* Polarity/HPF share the gentle cyan pad; MUTE/SOLO keep their alert palettes. */
+#app #mixer .strip .utility-row button.btn-180.active{
+ --b180-color:var(--b180-on-cyan);--b180-border:#38909e;--b180-ink:#12323c;
+}
+#app .left-rail .rail-presets button.btn-180{text-transform:none}
+#app .toolbar-actions .nav button.btn-180{height:34px;min-height:34px;min-width:77px;padding:0 10px!important;letter-spacing:.35px!important}
+#app .left-rail button.btn-180 > span,
+#app .toolbar-actions .nav button.btn-180 > span{transform:none!important;transition:none!important}
+
+/* Device is a standard toolbar-size BTN-180 pad, not the old cyan-caption spec.
+   Green indicates verified connected native audio status only. Preview is OFF. */
+#app .toolbar .spec-device{
+ height:34px;min-height:34px;
+ padding:0 10px!important;letter-spacing:.35px!important;
+}
+#app .toolbar .spec-device #headerDriver{
+ color:var(--b180-ink)!important;
+}
+#app .toolbar .spec-device.on{
+ --b180-color:var(--b180-on-green);
+ --b180-border:#3a9b68;
+ --b180-ink:#113322;
 }

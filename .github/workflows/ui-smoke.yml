@@ -57,7 +57,7 @@ jobs:
         run: python tests/pan_button_asset_test.py
       - name: Run mixer UI smoke tests
         run: python tests/ui_smoke.py
-      - name: Verify native Orbit UX with mocked VST3 parameter bridge
+      - name: Verify MIX and FX RACK Auto Orbit workflow
         run: python tests/native_orbit_ui_smoke.py
       - name: Install Firefox for compositor functional regression
         run: python -m playwright install firefox
@@ -71,6 +71,8 @@ jobs:
           path: |
             native-orbit-ui-review.png
             fader-ui-smoke.png
+            toolbar-global-btn180-pad.png
+            device-green-on-palette-review.png
             mixer-design-review.png
             mixer-design-review-1440.png
             mixer-master-clip-review.png

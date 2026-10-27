@@ -43,3 +43,22 @@ test('full engine capabilities preserved',()=>{
   assert.match(bridge,/arMixAddResult/);
   assert.match(bridge,/arMixNativePresetLoaded/);
 });
+
+test('JUCE native resources track the approved calibrated GUI without maintaining a second mixer implementation', () => {
+  const cmake=read('CMakeLists.txt');
+  const cpp=read('src/Main.cpp');
+  const sourceCss=read('web/styles-src/42-mixer-premium.css');
+  const standalone=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
+  assert.match(cmake,/juce_add_binary_data\(ARMixAssets SOURCES\s+web\/index\.html web\/styles\.css web\/app\.js web\/bridge\.js web\/monitor\.js\)/);
+  for (const resource of ['index_html','styles_css','app_js','bridge_js','monitor_js']) {
+    assert.ok(cpp.includes('BinaryData::'+resource),resource+' missing from WebView provider');
+  }
+  assert.ok(css.endsWith(sourceCss), 'native CSS must end with its authoritative calibration module');
+  assert.ok(standalone.includes('<style>'+css+'</style>'), 'Pages/standalone CSS drift');
+  assert.ok(standalone.includes('<script>'+app+'</script>'), 'Pages/standalone JS drift');
+  for (const cls of ['gain-scale-travel','vu-scale-travel','meter-signal-area','fader-travel']) {
+    assert.ok(app.includes(cls)||sourceCss.includes(cls), 'calibration module missing '+cls);
+  }
+  assert.match(app,/const levelToTop=db=>/);
+  assert.match(app,/distance:Math\.max\(24,r\.height-77\)/);
+});

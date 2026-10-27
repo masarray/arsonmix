@@ -70,3 +70,19 @@ test('physical test protocol differentiates actual native channel 1 and GUI-only
   assert.match(fat, /48,000 Hz/);
   assert.match(fat, /RENDER_HARDWARE_XRUN=UNAVAILABLE_THROUGH_JUCE/);
 });
+
+test('release proves exact calibrated GUI bytes are embedded in the executable, not just copied beside it', () => {
+  for (const field of ['indexHtmlSha256','appJsSha256','stylesCssSha256','bridgeJsSha256','monitorJsSha256','guiCalibration']) {
+    assert.ok(packaging.includes(field+' = '), 'provenance missing '+field);
+    assert.ok(verify.includes('manifest.'+field), 'verifier missing '+field);
+  }
+  for (const file of ['web/index.html','web/app.js','web/styles.css','web/bridge.js','web/monitor.js']) {
+    assert.ok(verify.includes('Path="'+file+'"'), 'native resource not checked: '+file);
+  }
+  assert.match(verify,/IndexOf\(\$sourceText, \[StringComparison\]::Ordinal\)/);
+  assert.match(verify,/STALE NATIVE GUI: exact JUCE BinaryData resource absent from EXE/);
+  for (const marker of ['gain-scale-travel','vu-scale-travel','meter-signal-area','fader-travel']) {
+    assert.ok(verify.includes('"'+marker+'"'), 'calibration marker absent: '+marker);
+  }
+  assert.match(packaging,/GAIN_10_TO_MINUS60_BLACK_DETENT_AT_38PX__VU_DBFS_INDEPENDENT_TICKS/);
+});

@@ -65,8 +65,13 @@ async def main():
         })();""")
         await page.goto((root / "web/index.html").as_uri())
         await page.wait_for_selector(".strip")
-        await page.locator('[data-view="FX RACK"]').click()
-        await page.get_by_role("button", name="ORBIT").click()
+        # Main MIX page must provide a discoverable ORBIT button for the actual VST insert.
+        mix_orbit=page.locator(".strip").first.locator('[data-native-fx="orbit"]')
+        await mix_orbit.wait_for(state="visible")
+        assert await mix_orbit.inner_text()=="ORBIT"
+        assert await mix_orbit.get_attribute("aria-pressed")=="false"
+        await mix_orbit.click()
+        assert await page.locator(".nav button.selected").get_attribute("data-view")=="MIX"
         modal = page.locator("#nativeOrbit")
         await modal.locator("#nativeOrbitParameter").wait_for(state="visible")
         await page.wait_for_function("""()=>document.querySelector("#nativeOrbitParameter")?.value==="2" """)
@@ -97,6 +102,10 @@ async def main():
         await modal.locator("[data-orbit-stop]").click()
         await page.wait_for_function("""()=>window.__JUCE__.backend.calls.some(x=>
           x.payload.action==='orbitStop')""")
+        await modal.locator('[data-close-modal="nativeOrbit"]').click()
+        await page.locator('[data-view="FX RACK"]').click()
+        await page.get_by_role("button", name="ORBIT").click()
+        await modal.locator("#nativeOrbitParameter").wait_for(state="visible")
         assert not errors, errors
         await browser.close()
     print("Native Orbit UX + real bridge event payload smoke PASS")

@@ -4,7 +4,7 @@
 
 1. Load dearVR PRO 2 into the **real Channel 1** VST3 FX Rack in the Windows desktop app.
 2. Open the vendor editor (**EDIT**) and switch **POSITION** from CARTESIAN to **POLAR**. Keep elevation and distance fixed. Set a comfortable initial azimuth. Disable dearVR's Performance Mode if it optimises for static sources.
-3. In the native FX Rack select **ORBIT** next to dearVR PRO 2. Inspect the live list of vendor-exposed VST3 parameters (not the mock HTML plugin inspector).
+3. From **MIX**, click the compact **ORBIT** button on the Channel 1 dearVR insert, next to the bypass control. **FX RACK → dearVR → ORBIT** is an alternative. Inspect the live list of vendor-exposed VST3 parameters (not the mock HTML plugin inspector).
 4. Select **Azimuth** (not **Azimuth Scale**). Read the vendor-reported minimum/maximum. Confirm they span a complete circle by checking the verification checkbox. If the native plugin does not expose a full-cycle automatable azimuth, do **not** enable orbit.
 5. Set the speed (default 20 seconds per revolution) and forward/reverse direction. Start remains disabled until an actual parameter is selected and the range is confirmed.
 6. Click **START**; change direction/period and start again to update. **STOP** returns the parameter to manual control without resetting its current angle.
@@ -41,3 +41,7 @@ There is a hard logical wrap at the normalized 0/1 endpoint. That mathematically
 - Stop/recall/graph changes capture bounded `FX_ORBIT_CONTROL` evidence: ticks, writes, coalesced updates, late control ticks (>50ms), maximum timer interval. These are UI timing measurements, **not** audio xruns.
 - Native ORBIT START now carries both the catalog ID and a monotonic FX graph revision. Removal, reorder, addition and acknowledged preset graph swap invalidate old confirmations, including when the same plugin is reinserted into the same slot.
 - Experimental feature is still awaiting real dearVR PRO 2 audio seam, latency and performance testing; preserve P0 Issue #15 as a separate gating fault.
+
+## MIX workflow and latest GUI integration — 2026-10-27
+
+Native Channel 1 FX inserts now have an always-visible text-labelled ORBIT button on the MIX page. It opens the same host control as FX RACK, independent of the vendor plugin window; the button reflects RUNNING only after the native host acknowledges state. The embedded engine badge is `NATIVE CH1 · ORBIT`. The integration tree is based on the current main GUI and preserves main's hardware-device lamp, fader and VU changes. Audio FAT and vendor azimuth seam testing remain outstanding.

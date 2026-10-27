@@ -40,20 +40,42 @@ $sha = (& git rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $sha -ne $manifest.sourceCommit) {
     throw "Distribution manifest Git sourceCommit does not match checkout"
 }
-foreach ($item in @(
+# Verify the exact full resource text shipped by JUCE BinaryData, not merely
+# hashes recorded next to an unrelated executable. This catches packaging an
+# older GUI with the latest source files and avoids brittle marker-only checks.
+$resources = @(
+    @{Path="web/index.html"; Hash=$manifest.indexHtmlSha256},
     @{Path="web/app.js"; Hash=$manifest.appJsSha256},
-    @{Path="web/styles.css"; Hash=$manifest.stylesCssSha256}
-)) {
-    $real = (Get-FileHash -LiteralPath $item.Path -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($real -ne $item.Hash) { throw "Compiled GUI source provenance mismatch: $($item.Path)" }
-}
-# These actual resource bytes must be in the Windows app, not just present
-# as files in GitHub's source tree or asserted by an unrelated Node test.
+    @{Path="web/styles.css"; Hash=$manifest.stylesCssSha256},
+    @{Path="web/bridge.js"; Hash=$manifest.bridgeJsSha256},
+    @{Path="web/monitor.js"; Hash=$manifest.monitorJsSha256}
+)
 $embeddedText = [Text.Encoding]::UTF8.GetString($bytes)
+foreach ($item in $resources) {
+    $real = (Get-FileHash -LiteralPath $item.Path -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($real -ne $item.Hash) {
+        throw "GUI provenance SHA256 mismatch: $($item.Path)"
+    }
+    $sourceText = [System.IO.File]::ReadAllText(
+        (Resolve-Path -LiteralPath $item.Path).Path, [Text.Encoding]::UTF8)
+    if ($sourceText.Length -eq 0 -or
+        $embeddedText.IndexOf($sourceText, [StringComparison]::Ordinal) -lt 0) {
+        throw "STALE NATIVE GUI: exact JUCE BinaryData resource absent from EXE: $($item.Path)"
+    }
+}
+# Assert current approved calibration is present inside the actual shipped binary.
+if ($manifest.guiCalibration -ne "GAIN_10_TO_MINUS60_BLACK_DETENT_AT_38PX__VU_DBFS_INDEPENDENT_TICKS") {
+    throw "GUI calibration release contract is missing"
+}
+# Marker checks below supplement, not replace, full resource byte correspondence.
 foreach ($marker in @(
     "function openChannelIdentity",   # latest mixer channel editor
     'class="master-analysis"',       # native-compatible master analyzer
     "--ari-master-cap",             # rose/silver MASTER styling
+    "gain-scale-travel",            # calibrated +10..-60 dB scale
+    "vu-scale-travel",              # independent dBFS meter ruler
+    "meter-signal-area",            # VU activity region distinct from CLIP LED
+    "fader-travel",                 # PNG black detent in 38px inset travel
     "function syncNativeMixerControls", # JUCE WebView bridge
     "AUDIO_GLITCH_WINDOW"           # engine P0-12 compiled diagnostics
 )) {
@@ -98,7 +120,8 @@ try {
     }
     Write-Host "FAT_RELEASE_ACCEPTED: source=$sha GUI_WIN64_PE32+=2"
     Write-Host "FAT_RELEASE_ACCEPTED: exeBytes=$($bytes.Length) testZipBytes=$archiveBytes sha256=$appHash"
-    Write-Host "FAT_RELEASE_ACCEPTED: embedded native GUI/bridge + engine P0-12 markers all verified"
+    Write-Host "FAT_RELEASE_ACCEPTED: full embedded GUI HTML/CSS/JS/bridge/monitor + calibrated VU/fader matched exactly"
+    Write-Host "FAT_RELEASE_ACCEPTED: engine P0-12 markers verified"
 } finally {
     if (Test-Path -LiteralPath $archivePath) { Remove-Item -LiteralPath $archivePath -Force }
 }
