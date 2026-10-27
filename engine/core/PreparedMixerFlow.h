@@ -120,16 +120,23 @@ struct PreparedMixerFlow final {
                 continue;
             std::copy_n(work.incomingL[strip].data(),frames,work.sourceL.data());
             std::copy_n(work.incomingR[strip].data(),frames,work.sourceR.data());
+            bool physicallyAvailable=false;
             if(control.mayReceivePhysical) {
-                if(routing.extractSource(strip,inputs,callbackInputs,
-                                         work.physicalL.data(),
-                                         work.physicalR.data(),frames)) {
+                physicallyAvailable=routing.extractSource(
+                    strip,inputs,callbackInputs,work.physicalL.data(),
+                    work.physicalR.data(),frames);
+                if(physicallyAvailable) {
                     for(int i=0;i<frames;++i) {
                         work.sourceL[i]+=work.physicalL[i];
                         work.sourceR[i]+=work.physicalR[i];
                     }
                 }
             }
+            // Missing/disconnected driver input must remain silent even when
+            // a VST generates output from zeros. However, an internal return
+            // is allowed to process a reverb tail with no fresh input.
+            if(!physicallyAvailable && !sends.receivesInternalAudio(strip))
+                continue;
             // POST-FX, PRE-FADER tap: fader zero does not suppress the send.
             processFx(strip,routing.effectiveFormats[strip],
                       work.sourceL.data(),work.sourceR.data(),frames);
