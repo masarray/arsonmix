@@ -78,6 +78,7 @@ jobs:
             'tests/native_artifact_packaging_contract_test.mjs'
             'tests/portable_workspace_contract_test.mjs'
             'tests/plugin_vault_contract_test.mjs'
+            'tests/live_routing_ui_contract_test.mjs'
           )
           node --test $contracts
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
