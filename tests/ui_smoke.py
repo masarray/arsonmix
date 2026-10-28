@@ -296,9 +296,48 @@ async def main():
         assert 'LUFS-I' in await page.locator('#masterLeft .master-analysis').inner_text()
         # Buttons must describe and perform actual distinct actions: no "..." blank cap.
         assert await page.locator('.left-rail #addScene').inner_text()=='＋ SAVE SNAPSHOT'
+        await page.locator('#addScene').click()
+        assert await page.locator('#snapshotModal').is_visible()
+        assert await page.locator('#snapshotPick option').count()==4
+        assert await page.locator('#snapshotScope').is_visible()
+        await page.locator('#snapshotClose').click()
+        assert await page.locator('#snapshotModal').is_hidden()
         assert await page.locator('.left-rail #saveFxPreset').inner_text()=='SAVE FX'
         assert await page.locator('.left-rail #menuScene').inner_text()=='EXPORT'
         assert await page.locator('.left-rail .rail-bottom button').count()==3
+
+        # Real persistence requires a stable origin; page.set_content() above
+        # uses about:blank where browser localStorage is intentionally denied.
+        # Run CRUD/reload on the same local-file origin shipped by Windows.
+        snapPage=await browser.new_page(viewport={"width":1680,"height":920})
+        await snapPage.goto((project/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").as_uri())
+        await snapPage.locator('#addScene').click()
+        await snapPage.locator('#snapshotName').fill('Friday Vocal')
+        await snapPage.locator('#snapshotSaveNew').click()
+        assert await snapPage.locator('#snapshotPick option').count()==5, await snapPage.locator('#snapshotFeedback').inner_text()
+        assert 'Friday Vocal' in await snapPage.locator('#scenesList').inner_text()
+        await snapPage.locator('[data-snapshot-safe="0"]').check()
+        assert await snapPage.evaluate("localStorage.getItem('armix-v03-snapshot-safes')")=='["0"]'
+        await snapPage.locator('#snapshotUpdate').click()
+        await snapPage.locator('#snapshotUpdate').click()
+        assert 'Updated' in await snapPage.locator('#snapshotFeedback').inner_text()
+        await snapPage.reload()
+        await snapPage.locator('#addScene').click()
+        assert await snapPage.locator('#snapshotPick option').count()==5
+        assert await snapPage.locator('[data-snapshot-safe="0"]').is_checked()
+        await snapPage.locator('#snapshotName').fill('Friday Vocal V2')
+        await snapPage.locator('#snapshotRename').click()
+        await snapPage.locator('#snapshotRename').click()
+        assert 'Friday Vocal V2' in await snapPage.locator('#scenesList').inner_text()
+        await snapPage.locator('#snapshotRecall').click()
+        assert await snapPage.locator('#snapshotUndo').is_enabled()
+        await snapPage.locator('#snapshotUndo').click()
+        await snapPage.locator('[data-snapshot-safe="0"]').uncheck()
+        await snapPage.locator('#snapshotDelete').click()
+        await snapPage.locator('#snapshotDelete').click()
+        assert await snapPage.locator('#snapshotPick option').count()==4
+        await snapPage.close()
+
         # Owner's global BTN-180 hardware recipe: 7 toolbar + 8 left rail.
         # Single solid face, identical resting 7-shadow model, no Button 19.
         assert await page.locator('.toolbar-actions .nav button.btn-180').count()==7
@@ -322,7 +361,7 @@ async def main():
             assert style[key]['image']=='none',(key,style)
             assert style[key]['shadow'].count('rgb')==7,(key,style)
             assert style[key]['radius']=='3px',(key,style)
-        assert style['nav']['face']=='rgb(200, 217, 155)' and style['selected']['face']=='rgb(229, 244, 162)',style
+        assert style['nav']['face']=='rgb(203, 209, 209)' and style['selected']['face']=='rgb(145, 237, 172)',style
         assert style['railOn']['face']=='rgb(237, 184, 223)',style
         # Audio Device shares the physical BTN-180 toolbar face and dark ink.
         # The OFF state is truthful in UI-only preview. Explicitly force ON
@@ -370,9 +409,17 @@ async def main():
         assert all(abs(active['rect'][k]-pre[k])<=.2 for k in ('x','y','width','height')),active
         # Utility ON is soft cyan, not the old green/purple polarity palettes.
         await page.locator('[data-hpf="0"]').click()
-        await page.wait_for_timeout(190)
+        await page.mouse.move(1,1)
+        await page.wait_for_timeout(65)
         cyan=await page.locator('[data-hpf="0"]').evaluate("(e)=>getComputedStyle(e).backgroundColor")
         assert cyan=='rgb(148, 232, 237)',cyan
+        await page.locator('[data-hpf="0"]').hover()
+        hover=await page.locator('[data-hpf="0"]').evaluate("""e=>({
+          face:getComputedStyle(e).backgroundColor,filter:getComputedStyle(e).filter,
+          transition:getComputedStyle(e).transitionDuration
+        })""")
+        assert hover['face']!=cyan and hover['filter']=='none' and all(x=='0s' for x in hover['transition'].split(', ')),hover
+        await page.mouse.move(1,1)
         await page.locator('[data-hpf="0"]').click()
         # Navigation remains mutually exclusive; selected is only a color latch.
         await page.locator('[data-view="FX RACK"]').click()
@@ -380,8 +427,8 @@ async def main():
           const on=document.querySelector('[data-view="FX RACK"]');
           const off=document.querySelector('[data-view="MIX"]');
           return on.classList.contains('selected') && !off.classList.contains('selected')
-            && getComputedStyle(on).backgroundColor==='rgb(229, 244, 162)'
-            && getComputedStyle(off).backgroundColor==='rgb(200, 217, 155)';
+            && getComputedStyle(on).getPropertyValue('--b180-color').trim()==='#91edac'
+            && getComputedStyle(off).getPropertyValue('--b180-color').trim()==='#cbd1d1';
         }""")
         nav=page.locator('[data-view="FX RACK"]')
         navBefore=await nav.evaluate("(e)=>e.getBoundingClientRect().toJSON()")
@@ -955,6 +1002,7 @@ async def main():
         assert off_mute == await image_for('[data-solo="0"]')
         await page.locator('[data-mute="0"]').click()
         assert await page.locator('[data-mute="0"]').get_attribute('aria-pressed') == 'true'
+        await page.mouse.move(1,1)  # avoid the intentionally brighter hover skin during palette assertion
         # BTN-180 color transition is 45ms, while tactile press is immediate.
         await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-mute="0"]')).backgroundColor==='rgb(249, 154, 164)'""",timeout=2500)
         assert await image_for('[data-mute="0"]') != await image_for('[data-solo="0"]'), await page.evaluate("""()=>{
@@ -966,6 +1014,7 @@ async def main():
         }""")
         await page.locator('[data-solo="0"]').click()
         assert await page.locator('[data-solo="0"]').get_attribute('aria-pressed') == 'true'
+        await page.mouse.move(1,1)
         await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-solo="0"]')).backgroundColor==='rgb(244, 212, 121)'""",timeout=2500)
         assert await image_for('[data-solo="0"]') != await image_for('[data-mute="0"]')
         await page.locator('[data-mute="0"]').click()

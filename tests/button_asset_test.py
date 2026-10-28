@@ -30,7 +30,10 @@ assert '--b180-off:#cbd1d1' in css
 assert '--b180-edge:#747f7f' in css
 assert '--b180-off-ink:#172229' in css
 assert '--b180-ink:var(--b180-off-ink)' in css
-assert '--b180-color:#c8d99b' in css and '--b180-color:#e5f4a2' in css
+assert '#app .toolbar-actions .nav button.btn-180:not(.selected):not(.active):not([aria-pressed="true"])' in css
+assert '--b180-color:var(--b180-off)' in css and '--b180-color:var(--b180-on-green)' in css
+assert 'color-mix(in srgb,var(--b180-color) 92%,#fff 8%)' in css
+assert 'transition:none!important' in css
 assert 'transform 0ms!important' in css
 assert '--b180-color:var(--b180-on-cyan)' in css
 assert '--b180-color:var(--b180-on-magenta)' in css

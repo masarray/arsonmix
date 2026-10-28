@@ -126,13 +126,34 @@ public:
         setResizeLimits (580, 430, 1300, 1000);
         auto* selector = new juce::AudioDeviceSelectorComponent (
             manager, 1, 2, 1, 2, false, false, false, false);
-        setContentOwned (selector, true);
+        // The selector changes its preferred content size while enumerating
+        // Windows audio devices. Never let that asynchronously resize the
+        // top-level peer: it causes an incorrectly scaled first paint on some
+        // Windows/Intel graphics paths until the user moves the dialog.
+        // The window owns the component but fixes the viewport geometry.
+        setContentOwned (selector, false);
         centreWithSize (740, 590);
     }
     void closeButtonPressed() override { setVisible (false); }
     void visibilityChanged() override
     {
-        if (isVisible()) wasVisible_ = true;
+        if (isVisible())
+        {
+            wasVisible_ = true;
+            // Reflow once after the native HWND is visible. This is one
+            // deferred message-thread paint, not a timer or repeated redraw.
+            juce::MessageManager::callAsync (
+                [safe = juce::Component::SafePointer<AudioSetupWindow> (this)]
+                {
+                    if (safe == nullptr || ! safe->isVisible()) return;
+                    if (auto* content = safe->getContentComponent())
+                    {
+                        content->resized();
+                        content->repaint();
+                    }
+                    safe->repaint();
+                });
+        }
         else if (wasVisible_)
         {
             wasVisible_ = false;

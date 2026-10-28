@@ -145,7 +145,7 @@
 /* Scope-specific ON palette: only variables change; all keys share
    the same seven-layer pad and exact press recipe above. */
 #app .toolbar-actions .nav button.btn-180.selected{
- --b180-color:#e5f4a2;--b180-border:#8baf48;--b180-ink:#1c2b14;
+ --b180-color:var(--b180-on-green);--b180-border:#3a9b68;--b180-ink:#113322;
 }
 #app .left-rail button.btn-180:is(.selected,.active){
  --b180-color:var(--b180-on-magenta);--b180-border:#ad6d9f;--b180-ink:#32172f;
@@ -173,11 +173,17 @@
  --b180-border:#3a9b68;
  --b180-ink:#113322;
 }
-/* P0 toolbar palette: premium yellow-lime pads, entirely static per state.
-   Higher specificity overrides historical neutral OFF skin only in main nav. */
-#app .toolbar-actions .nav button.btn-180:not(.selected){
- --b180-color:#c8d99b;--b180-border:#829957;--b180-ink:#27351a;
+/* P0 toolbar semantics: common light-steel OFF; green only for a latched
+   selected/active action. All seven pads retain the same BTN-180 shadow stack. */
+#app .toolbar-actions .nav button.btn-180:not(.selected):not(.active):not([aria-pressed="true"]){
+ --b180-color:var(--b180-off);--b180-border:var(--b180-edge);--b180-ink:var(--b180-off-ink);
 }
-#app .toolbar-actions .nav button.btn-180.selected{
- --b180-color:#e5f4a2;--b180-border:#8baf48;--b180-ink:#1c2b14;
+#app .toolbar-actions .nav button.btn-180:is(.selected,.active,[aria-pressed="true"]){
+ --b180-color:var(--b180-on-green);--b180-border:#3a9b68;--b180-ink:#113322;
+}
+/* Paint only the hovered pad with an 8% color lift. No filter, blur,
+   backdrop, animated box-shadow, layer allocation or hover transition. */
+#app :is(button.btn-180,button.native-btn):hover:not(:active):not(:disabled){
+ background:color-mix(in srgb,var(--b180-color) 92%,#fff 8%)!important;
+ transition:none!important;
 }
