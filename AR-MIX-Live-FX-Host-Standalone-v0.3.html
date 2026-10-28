@@ -976,7 +976,7 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
    shrinking a MASTER-only fader/LED bank or truncating channel ornaments. */
 #app #mixer > .strip,
 #app #mixer > #masterLeft.strip.master-strip{
- flex:1 0 108px;min-width:108px;max-width:none;box-sizing:border-box;
+ flex:1 0 128px;min-width:128px;max-width:none;box-sizing:border-box;
 }
 /* Equal, aligned 2-column controls across both rows: Ø / HPF, MUTE / SOLO. */
 #app #mixer > .strip:not(.master-strip) .utility-row,
@@ -1049,7 +1049,7 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
    The fixed two-slot bank stops MONO/STEREO switches from moving the rail.
    One shared module geometry, for all ten channels and MASTER. */
 #app #mixer .fader-zone{
- display:flex;align-items:stretch;gap:4px;
+ display:flex;align-items:stretch;gap:3px;padding-left:4px;padding-right:4px;
 }
 #app #mixer .fader-zone .vu-bank{
  box-sizing:border-box;display:flex;align-items:stretch;
