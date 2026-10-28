@@ -124,7 +124,7 @@
     if(!Array.isArray(d.ports)||!d.ports.length){
       document.getElementById("arRouteFeedback").textContent="Select a real ASIO/WASAPI audio input in AUDIO SETUP first.";return;
     }
-    document.getElementById("arRouteFeedback").textContent="Applying to actual native DSP...";
+    document.getElementById("arRouteFeedback").textContent="Applying native route (output must be MUTED)...";
     api.emitEvent("arMixAction",{action:"routingDryApply",value:{
       deviceEpoch:Number(d.epoch)||0,revision:Number(d.revision)||0,
       channels:draftRoutes.map(c=>({...c}))
@@ -133,9 +133,10 @@
   document.getElementById("arRouteStop").addEventListener("click",()=>api.emitEvent("arMixAction",{action:"routingDryStop"}));
   api.addEventListener("arMixRoutingLabAck",reply=>{
     const result=reply?.state||reply||{};
+    if(result && typeof result==="object" && "epoch" in result)state.dryRoutingLab=result;
     document.getElementById("arRouteFeedback").textContent=
       reply?.ok===false?("REJECTED · "+(reply.error||"Invalid route")):
-      result.active?"NATIVE ACK: DRY LAB ENABLED · zero VST3 · low headphone volume":"NATIVE ACK: DRY LAB STOPPED";
+      result.active?"NATIVE ACK: DRY LAB ENABLED · zero VST3 · UNMUTE OUTPUT in SIGNAL CHECK":"NATIVE ACK: STOPPED · output remains MUTED for safety";
     updateRouteLabIdentity();
   });
 
@@ -155,6 +156,9 @@
     Number(d?.backendXrunCount)>=3 &&
     Number(d?.overBudgetCount)===0;
   function diagnosis(d) {
+    if(d.dryRoutingLab?.active) return d.dryRoutingLab.ready?
+      "Live 10-channel DRY ROUTING LAB: actual native inputs → dry master. No VST3, AUX or snapshot routing. Use low headphone volume.":
+      "Routing LAB device generation changed. Output is SILENT until you remap the real device and APPLY again.";
     if(d.diagnosticRoute==="OUTPUT_ONLY_TONE") return "Output-only test: capture endpoint is disconnected. Listen for tone at low headphone volume and click MARK CRACKLE when audible.";
     if(d.diagnosticRoute==="CAPTURE_ONLY") return "Capture-only test: hardware render endpoint is disconnected. Observe capture input and backend discontinuity count; you should hear no audio.";
     if(d.diagnosticRoute==="DRY_THROUGH") return "Dry-through test: microphone to output with all VST3 bypassed. MARK CRACKLE at audible glitches.";
@@ -190,14 +194,15 @@
     const driverLabel=document.querySelector('.spec-device strong');
     setTextIfChanged(driverLabel,d.driver||"NO DRIVER");
     const liveLabel=document.querySelector('.status > span:first-child > b');
-    setTextIfChanged(liveLabel,"NATIVE CH1");
+    setTextIfChanged(liveLabel,d.dryRoutingLab?.active?"NATIVE DRY 10CH LAB":"NATIVE CH1");
     const edition=document.querySelector('.status > span:last-child');
-    setTextIfChanged(edition,"AR MIX P2 · CH1 NATIVE + UI PREVIEW");
+    setTextIfChanged(edition,d.dryRoutingLab?.active?
+      "AR MIX P1E · REAL DRY ROUTES / FX DISABLED":"AR MIX P2 · CH1 NATIVE + UI PREVIEW");
     if (!overlay.classList.contains("open")) return;
-    el("arInputName").textContent=d.diagnosticRoute==="OUTPUT_ONLY_TONE"?"INTERNAL TEST TONE":d.inputDevice||"Input device";
-    el("arFxName").textContent=d.diagnosticRoute==="OUTPUT_ONLY_TONE"?"NO INPUT / NO FX":d.diagnosticRoute!=="NORMAL"?"NO FX":d.dryTest?"DRY BYPASS":"VST3 Chain";
+    el("arInputName").textContent=d.dryRoutingLab?.active?"NATIVE 10 CH INPUTS":d.diagnosticRoute==="OUTPUT_ONLY_TONE"?"INTERNAL TEST TONE":d.inputDevice||"Input device";
+    el("arFxName").textContent=d.dryRoutingLab?.active?"DRY · ZERO VST3":d.diagnosticRoute==="OUTPUT_ONLY_TONE"?"NO INPUT / NO FX":d.diagnosticRoute!=="NORMAL"?"NO FX":d.dryTest?"DRY BYPASS":"VST3 Chain";
     el("arOutputName").textContent=d.outputDevice||"Output device";
-    el("arInputBar").style.width=percent(d.inputPeak)+"%";
+    el("arInputBar").style.width=percent(d.dryRoutingLab?.active?Math.max(d.dryRoutingLab.peakL||0,d.dryRoutingLab.peakR||0):d.inputPeak)+"%";
     el("arFxBar").style.width=percent(d.postFxPeak)+"%";
     el("arOutputBar").style.width=percent(d.peak)+"%";
     el("arSignalReason").textContent=diagnosis(d);
