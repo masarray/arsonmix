@@ -494,7 +494,7 @@ async def main():
         assert architecture['navBounds']['right']<=1680+1,architecture
         assert await page.locator('.toolbar-actions .nav button').count()==7
         assert await page.locator('#masterLeft').evaluate(
-            '(m)=>m.getBoundingClientRect().width>document.querySelector("[data-strip=\\\"0\\\"]").getBoundingClientRect().width+30')
+            '(m)=>Math.abs(m.getBoundingClientRect().width-document.querySelector("[data-strip=\\\"0\\\"]").getBoundingClientRect().width)<=1')
         for key in ('Header','Bottom','Fader'):
             assert abs(architecture['main'+key]['y']-architecture['master'+key]['y'])<=2,architecture
         assert abs(architecture['mainBottom']['bottom']-architecture['masterBottom']['bottom'])<=2,architecture
