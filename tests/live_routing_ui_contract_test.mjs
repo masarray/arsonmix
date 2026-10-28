@@ -88,8 +88,8 @@ test("P1G is real native BUS/send, not a cosmetic routing picker",()=>{
 
 test("P1H independently instantiates and processes real JUCE FX in 10 native lanes",()=>{
   const fx=readFileSync(new URL("../engine/core/LiveChannelFxGraph.h",import.meta.url),"utf8");
-  assert.match(fx,/std::array<std::unique_ptr<Processor>,channels>/);
-  assert.match(fx,/processors_\[strip\]->processBlock\(buffer,midi\)/);
+  assert.match(fx,/std::array<std::shared_ptr<FxInstance>,channels>/);
+  assert.match(fx,/processor->processBlock\(buffer,midi\)/);
   assert.match(fx,/processor->releaseResources\(\)/);
   assert.match(lab,/std::make_unique<FxGraph>\(plan/);
   assert.match(lab,/formats\.createPluginInstance/);
@@ -122,4 +122,29 @@ test("P1I binds premium 10CH console to REAL native RT graph without FX restart"
   assert.match(bridge,/window\.__armixRouteToken/);
   assert.match(bridge,/lab\.channelPeaks/);
   assert.match(bridge,/data-native-routing-lab/);
+});
+
+test("P1J keeps real per-strip VST3 identity and tails across routing-only APPLY",()=>{
+  const fx=readFileSync(new URL("../engine/core/LiveChannelFxGraph.h",import.meta.url),"utf8");
+  const publisher=readFileSync(new URL("../engine/core/RealtimeRoutePublisher.h",import.meta.url),"utf8");
+  const app=readFileSync(new URL("../web/app.js",import.meta.url),"utf8");
+  assert.match(fx,/struct FxInstance final/);
+  assert.match(fx,/std::shared_ptr<FxInstance>/);
+  assert.match(fx,/processing\.test_and_set/);
+  assert.match(fx,/processing\.clear/);
+  assert.match(fx,/bool reuse\(int strip,const LiveChannelFxGraph& previous/);
+  assert.match(fx,/previous\.insertId\(strip\)!=catalogId/);
+  assert.match(publisher,/controlPrepared\(std::uint64_t epoch/);
+  assert.match(lab,/publisher_\.controlPrepared\(currentEpoch,expectedRevision\)/);
+  assert.match(lab,/next->prepared->reuse\(lane,\*prior,req\.id\)/);
+  assert.match(lab,/continue; \/\/ NO disk scan/);
+  assert.match(lab,/fxReused_\.store\(reusedCount/);
+  assert.match(lab,/acceptedRoute_=command/);
+  assert.match(lab,/setProperty\("acceptedRoute",acceptedRoute_\)/);
+  assert.match(ui,/hydrateAcceptedRoute/);
+  assert.match(ui,/saved\.deviceEpoch/);
+  assert.match(ui,/window\.__arMixOpenRoutingLab=openRoutingLab/);
+  assert.match(app,/id="flowRoutingButton"/);
+  assert.match(app,/Independent VST3/);
+  assert.match(ui,/NATIVE ACK:.*preserved/);
 });

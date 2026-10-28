@@ -130,6 +130,16 @@ public:
             return false;
         return update(*owned_->prepared);
     }
+    // CONTROL thread only. The owner stays alive while compiling a candidate.
+    // NEVER cache the returned pointer in the audio callback or across a
+    // subsequent publication. Use only immutable identity/FX shared ownership.
+    const Prepared* controlPrepared(std::uint64_t epoch,
+                                   std::uint64_t expectedRevision) const noexcept {
+        return owned_ && owned_->prepared && revision_==expectedRevision &&
+               owned_->deviceEpoch==epoch &&
+               owned_->graphRevision==expectedRevision
+                   ?owned_->prepared.get():nullptr;
+    }
     [[nodiscard]] ReadLease acquire() noexcept {return ReadLease(*this);}
     std::uint64_t lastRevision() const noexcept {return revision_;} // CONTROL
     std::size_t pendingRetirements() const noexcept {return retiredCount_;} // CONTROL

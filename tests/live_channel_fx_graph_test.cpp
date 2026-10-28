@@ -53,7 +53,7 @@ private:
     float gain_;
 };
 static bool near(float x,float y){return std::abs(x-y)<0.0001f;}
-static std::unique_ptr<LiveChannelFxGraph> makeGraph(float firstFx,float returnFx) {
+static std::unique_ptr<LiveChannelFxGraph> makeGraph(float firstFx,float returnFx,bool withFx=true) {
     ChannelRoutingConfig config;
     config.stripsAndMaster.strips[0]={SourceMode::mono,2,-1,0.f,0.f,false,false};
     config.stripsAndMaster.strips[1]={SourceMode::disconnected,-1,-1,1.f,0.f,false,false};
@@ -66,14 +66,16 @@ static std::unique_ptr<LiveChannelFxGraph> makeGraph(float firstFx,float returnF
     constexpr std::array ports{2,5,9};
     assert(PreparedRenderGraph::compile(config,ports,sends,route,error));
     auto graph=std::make_unique<LiveChannelFxGraph>(route,32,8);
-    auto a=std::make_unique<GainFx>(firstFx);
-    auto b=std::make_unique<GainFx>(returnFx);
-    a->prepareToPlay(48000,8);
-    b->prepareToPlay(48000,8);
-    assert(graph->install(0,std::move(a),"CH1 FX"));
-    assert(graph->install(1,std::move(b),"BUS FX"));
-    assert(!graph->install(1,std::make_unique<GainFx>(2.f),"duplicate"));
-    assert(graph->activeInserts()==2);
+    if(withFx) {
+        auto a=std::make_unique<GainFx>(firstFx);
+        auto b=std::make_unique<GainFx>(returnFx);
+        a->prepareToPlay(48000,8);
+        b->prepareToPlay(48000,8);
+        assert(graph->install(0,std::move(a),"CH1 FX","vst3-ch1-id"));
+        assert(graph->install(1,std::move(b),"BUS FX","vst3-bus-id"));
+        assert(!graph->install(1,std::make_unique<GainFx>(2.f),"duplicate"));
+        assert(graph->activeInserts()==2);
+    }
     assert(graph->maxFramesPerPlugin()==32); // clamp minimum safe plugin quantum
     return graph;
 }
@@ -126,6 +128,58 @@ int main() {
     assert(routes.pollRetirement());
     assert(GainFx::living==0);
     assert(GainFx::released==4);
+    // P1J: route revision 2 reuses exact native VST3s from revision 1.
+    // No duplicate creation, prepare/release, state loss, or RT heap use.
+    // Retirement of old snapshot must NOT release shared FX still needed.
+    {
+        Publication stable;
+        auto one=std::make_unique<Publication::Snapshot>();
+        one->deviceEpoch=71;one->graphRevision=1;
+        one->prepared=makeGraph(3.f,2.f);
+        assert(stable.publish(std::move(one),0,71)==Publication::Result::applied);
+        auto* previous=stable.controlPrepared(71,1);
+        assert(previous && previous->activeInserts()==2);
+        assert(!stable.controlPrepared(72,1));
+        assert(!stable.controlPrepared(71,3));
+        const auto* identity=previous->instanceProcessor(0);
+        const auto* busIdentity=previous->instanceProcessor(1);
+        const int livingBefore=GainFx::living;
+        const int preparedBefore=GainFx::prepared;
+        const int releasedBefore=GainFx::released;
+        auto next=std::make_unique<Publication::Snapshot>();
+        next->deviceEpoch=71;next->graphRevision=2;
+        next->prepared=makeGraph(6.f,9.f,false);
+        assert(!next->prepared->reuse(0,*previous,"wrong-vst3"));
+        assert(next->prepared->reuse(0,*previous,"vst3-ch1-id"));
+        assert(next->prepared->reuse(1,*previous,"vst3-bus-id"));
+        assert(!next->prepared->reuse(0,*previous,"vst3-ch1-id"));
+        assert(next->prepared->activeInserts()==2);
+        assert(next->prepared->instanceProcessor(0)==identity);
+        assert(next->prepared->instanceProcessor(1)==busIdentity);
+        assert(GainFx::living==livingBefore&&GainFx::prepared==preparedBefore);
+        {
+            auto oldReader=stable.acquire();
+            assert(oldReader.get(71));
+            assert(stable.publish(std::move(next),1,71)==Publication::Result::applied);
+            assert(!stable.pollRetirement());
+        }
+        assert(stable.pollRetirement());
+        assert(GainFx::living==livingBefore);
+        assert(GainFx::released==releasedBefore);
+        {
+            auto live=stable.acquire();
+            assert(live.get(71));
+            assert(live.get(71)->prepared->instanceProcessor(0)==identity);
+            const auto allocated=heapCalls.load(std::memory_order_relaxed);
+            assert(live.get(71)->prepared->process(phys,3,l.data(),r.data(),4));
+            assert(heapCalls.load(std::memory_order_relaxed)==allocated);
+            assert(near(l[0],1.2f)); // original FX gain preserved
+        }
+        stable.unpublish();
+        assert(stable.pollRetirement());
+        assert(GainFx::living==0);
+        assert(GainFx::released==releasedBefore+2);
+    }
     // Tests above use a real JUCE AudioProcessor processing seam. Vendor
     // VST3 formats and sound quality require separate Windows hardware FAT.
 }

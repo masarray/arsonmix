@@ -109,6 +109,28 @@
     catalogItems=items.filter(p=>p&&typeof p.id==="string");
     if(routeOverlay.classList.contains("open"))drawRoutes();
   });
+  // Rehydrate only from the native ACK/SSOT when opening the editor.
+  // Browsing a panel or reloading the WebView must never accidentally erase
+  // an already published port/FX/send arrangement with stale UI defaults.
+  function hydrateAcceptedRoute(){
+    const d=state.dryRoutingLab||{},saved=d.acceptedRoute;
+    invalidateDraftForNewDevice(Number(d.epoch)||0);
+    if(!d.ready||!saved||Number(saved.deviceEpoch)!==Number(d.epoch)||
+       !Array.isArray(saved.channels)||saved.channels.length!==10)return false;
+    const keys=["mode","left","right","gain","pan","main","mute","solo","fxId"];
+    for(let i=0;i<10;i++){
+      const source=saved.channels[i];
+      if(!source||typeof source!=="object")return false;
+      for(const key of keys)
+        if(Object.prototype.hasOwnProperty.call(source,key))
+          draftRoutes[i][key]=source[key];
+    }
+    draftSends.length=0;
+    if(Array.isArray(saved.sends))
+      for(const send of saved.sends.slice(0,32))
+        if(send&&typeof send==="object")draftSends.push({...send});
+    return true;
+  }
   function syncNativeLevelsToRouteDraft(){
     const d=state.dryRoutingLab||{};
     if(!d.active||!d.ready||!Array.isArray(d.channelControls))return;
@@ -209,12 +231,17 @@
       " · device epoch "+(d.epoch||0)+" · rev "+(d.revision||0)+
       " · "+(d.ports?.length||0)+" enabled inputs · "+(d.outputPorts?.length||0)+" outputs · "+(d.sendCount||0)+" live sends");
   }
-  document.getElementById("arOpenRoutingLab").addEventListener("click",()=>{
+  function openRoutingLab(){
+    hydrateAcceptedRoute();
     syncNativeLevelsToRouteDraft();
     drawRoutes();
     routeOverlay.classList.add("open");
     overlay.classList.remove("open");
-  });
+  }
+  // Exposed only to the existing native SIGNAL FLOW GUI; does not publish a
+  // routing transaction or bypass the output-MUTE operator safety gate.
+  window.__arMixOpenRoutingLab=openRoutingLab;
+  document.getElementById("arOpenRoutingLab").addEventListener("click",openRoutingLab);
   document.getElementById("arRouteClose").addEventListener("click",()=>routeOverlay.classList.remove("open"));
   routeOverlay.addEventListener("click",e=>{if(e.target===routeOverlay)routeOverlay.classList.remove("open");});
   document.getElementById("arRouteApply").addEventListener("click",()=>{
@@ -241,7 +268,7 @@
     if(result && typeof result==="object" && "epoch" in result)state.dryRoutingLab=result;
     document.getElementById("arRouteFeedback").textContent=
       reply?.ok===false?("REJECTED · "+(reply.error||"Invalid route")):
-      result.active?"NATIVE ACK: "+(result.fxCount||0)+" INDEPENDENT VST3 · "+(result.sendCount||0)+" SENDS · UNMUTE OUTPUT in SIGNAL CHECK":"NATIVE ACK: STOPPED · output remains MUTED for safety";
+      result.active?"NATIVE ACK: "+(result.fxCount||0)+" VST3 ("+(result.fxReused||0)+" preserved) · "+(result.sendCount||0)+" SENDS · UNMUTE OUTPUT in SIGNAL CHECK":"NATIVE ACK: STOPPED · output remains MUTED for safety";
     updateRouteLabIdentity();
   });
 

@@ -78,6 +78,10 @@ public:
         topologyFault_.store(false,std::memory_order_release);
         sendCount_.store(0,std::memory_order_relaxed);
         fxCount_.store(0,std::memory_order_relaxed);
+        fxReused_.store(0,std::memory_order_relaxed);
+        // Device lifecycle callback may run off the message thread.
+        // acceptedRoute_ is a JUCE var owned by the CONTROL thread and must
+        // never be mutated from the device thread. Epoch gates hide stale data.
         for(auto& p:channelPeaks_)p.store(0.f,std::memory_order_relaxed);
         peakL_.store(0.f,std::memory_order_relaxed);
         peakR_.store(0.f,std::memory_order_relaxed);
@@ -153,15 +157,24 @@ public:
                    proposed[i].mute,proposed[i].solo))
                 return "Cannot prepare native channel controls";
         }
-        // Every VST3 is instantiated and prepared on the control thread.
-        // A graph has private processor instances: a retiring snapshot can
-        // NEVER share a processBlock call with a newly published snapshot.
-        int insertCount=0;
+        // P1J: a structural APPLY owns only the new topology. Retain a
+        // same-strip/same-ID prepared VST3 from this device epoch, including
+        // its vendor parameter state and reverb/delay tail. A prior snapshot
+        // may remain leased by one callback: shared_ptr copy is CONTROL only,
+        // and FxInstance has an atomic try-enter to guard against overlap.
+        // Never reuse across a device epoch or changed device quantum.
+        const auto* prior=publisher_.controlPrepared(currentEpoch,expectedRevision);
+        int insertCount=0,reusedCount=0;
         for(int lane=0;lane<count;++lane) {
             const auto& req=selections[lane];
             if(req.id.isEmpty())continue;
             if(!plan.scheduled[lane])
                 return "CH "+juce::String(lane+1)+": select an active physical source or BUS return before adding VST3";
+            if(prior && next->prepared->reuse(lane,*prior,req.id)) {
+                ++insertCount;
+                ++reusedCount;
+                continue; // NO disk scan, NO plugin prepare, NO tail/state reset
+            }
             if(!(sampleRate>0.0) || deviceFrames<=0)
                 return "Audio device sample rate or buffer size is invalid";
             auto* fmt=formats.getFormat(0);
@@ -197,7 +210,7 @@ public:
             if(instance->getLatencySamples()!=0)
                 return "CH "+juce::String(lane+1)+
                     ": this VST3 reports latency; choose zero-latency mode until PDC is implemented";
-            if(!next->prepared->install(lane,std::move(instance),chosen->name))
+            if(!next->prepared->install(lane,std::move(instance),chosen->name,req.id))
                 return "CH "+juce::String(lane+1)+": duplicate or invalid VST3 insert";
             ++insertCount;
         }
@@ -212,6 +225,11 @@ public:
                 enabled_.store(true,std::memory_order_release);
                 sendCount_.store(sends.count,std::memory_order_relaxed);
                 fxCount_.store(insertCount,std::memory_order_relaxed);
+                fxReused_.store(reusedCount,std::memory_order_relaxed);
+                // Native control state is the routing SSOT. The GUI only
+                // displays an acknowledged immutable copy; draft changes
+                // never update this until graph publication succeeds.
+                acceptedRoute_=command;
                 channelEdits_=proposed; // control thread SSOT for this route revision
                 for(int i=0;i<count;++i)channelFxNames_[i]=selections[i].name;
                 return {};
@@ -264,6 +282,8 @@ public:
         peakR_.store(0.f,std::memory_order_relaxed);
         sendCount_.store(0,std::memory_order_relaxed);
         fxCount_.store(0,std::memory_order_relaxed);
+        fxReused_.store(0,std::memory_order_relaxed);
+        acceptedRoute_=juce::var(); // control-thread STOP only
         for(auto& p:channelPeaks_)p.store(0.f,std::memory_order_relaxed);
     }
     void poll() noexcept {publisher_.pollRetirement();} // message thread
@@ -382,6 +402,9 @@ public:
         out->setProperty("peakR",peakR_.load(std::memory_order_relaxed));
         out->setProperty("sendCount",sendCount_.load(std::memory_order_relaxed));
         out->setProperty("fxCount",fxCount_.load(std::memory_order_relaxed));
+        out->setProperty("fxReused",fxReused_.load(std::memory_order_relaxed));
+        // Only the message thread calls status(), never the audio callback.
+        if(active() && ready())out->setProperty("acceptedRoute",acceptedRoute_);
         juce::Array<juce::var> controls,fxNames;
         for(int i=0;i<count;++i) {
             const auto& st=channelEdits_[i];
@@ -433,6 +456,7 @@ private:
     Publisher publisher_;
     std::array<ChannelEdit,count> channelEdits_{}; // JUCE message thread only
     std::array<juce::String,count> channelFxNames_{}; // status/control thread only
+    juce::var acceptedRoute_; // native ACK only, no UI preview/localStorage truth
     // All data shared between JUCE device lifecycle and GUI/control reads
     // are atomic; the callback never enumerates masks or channel names.
     std::array<std::atomic<int>,armix::device::LiveInputPortRegistry::limit> enabledPorts_{};
@@ -448,6 +472,7 @@ private:
     std::atomic<float> peakL_{0.f},peakR_{0.f};
     std::atomic<int> sendCount_{0};
     std::atomic<int> fxCount_{0};
+    std::atomic<int> fxReused_{0};
     std::array<std::atomic<float>,count> channelPeaks_{};
     // Exclusive render-producer state. Bounded fade starts from the exact
     // previously output sample, preventing a topology switch discontinuity.
