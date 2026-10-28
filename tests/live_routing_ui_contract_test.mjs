@@ -85,3 +85,20 @@ test("P1G is real native BUS/send, not a cosmetic routing picker",()=>{
   assert.match(ui,/result\.sendCount/);
   assert.match(ui,/data-route-peak/);
 });
+
+test("P1H independently instantiates and processes real JUCE FX in 10 native lanes",()=>{
+  const fx=readFileSync(new URL("../engine/core/LiveChannelFxGraph.h",import.meta.url),"utf8");
+  assert.match(fx,/std::array<std::unique_ptr<Processor>,channels>/);
+  assert.match(fx,/processors_\[strip\]->processBlock\(buffer,midi\)/);
+  assert.match(fx,/processor->releaseResources\(\)/);
+  assert.match(lab,/std::make_unique<FxGraph>\(plan/);
+  assert.match(lab,/formats\.createPluginInstance/);
+  assert.match(lab,/prepareStereoEffectLayout/);
+  assert.match(lab,/prepareToPlay/);
+  assert.match(lab,/maxFramesPerPlugin/);
+  assert.match(main,/catalog_\.find\(id\)/);
+  assert.match(ui,/data-route-fx/);
+  assert.match(ui,/arMixCatalog/);
+  assert.match(ui,/fxChoices\(v\.fxId\)/);
+  assert.match(ui,/result\.fxCount/);
+});
