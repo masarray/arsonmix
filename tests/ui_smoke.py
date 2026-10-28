@@ -296,9 +296,37 @@ async def main():
         assert 'LUFS-I' in await page.locator('#masterLeft .master-analysis').inner_text()
         # Buttons must describe and perform actual distinct actions: no "..." blank cap.
         assert await page.locator('.left-rail #addScene').inner_text()=='＋ SAVE SNAPSHOT'
+        await page.locator('#addScene').click()
+        assert await page.locator('#snapshotModal').is_visible()
+        assert await page.locator('#snapshotPick option').count()==4
+        assert await page.locator('#snapshotScope').is_visible()
+        await page.locator('#snapshotClose').click()
+        assert await page.locator('#snapshotModal').is_hidden()
         assert await page.locator('.left-rail #saveFxPreset').inner_text()=='SAVE FX'
         assert await page.locator('.left-rail #menuScene').inner_text()=='EXPORT'
         assert await page.locator('.left-rail .rail-bottom button').count()==3
+
+        # Non-modal, native-safe preview management: persistent save/update,
+        # rename/delete and channel safes. No VST3-native assertion is implied.
+        await page.locator('#addScene').click()
+        await page.locator('#snapshotName').fill('Friday Vocal')
+        await page.locator('#snapshotSaveNew').click()
+        assert await page.locator('#snapshotPick option').count()==5
+        assert 'Friday Vocal' in await page.locator('#scenesList').inner_text()
+        await page.locator('[data-snapshot-safe="0"]').check()
+        assert await page.evaluate("localStorage.getItem('armix-v03-snapshot-safes')")=='["0"]'
+        await page.locator('#snapshotName').fill('Friday Vocal V2')
+        await page.locator('#snapshotRename').click()
+        await page.locator('#snapshotRename').click()
+        assert 'Friday Vocal V2' in await page.locator('#scenesList').inner_text()
+        await page.locator('#snapshotRecall').click()
+        assert await page.locator('#snapshotUndo').is_enabled()
+        await page.locator('#snapshotUndo').click()
+        await page.locator('#snapshotDelete').click()
+        await page.locator('#snapshotDelete').click()
+        assert await page.locator('#snapshotPick option').count()==4
+        await page.locator('#snapshotClose').click()
+
         # Owner's global BTN-180 hardware recipe: 7 toolbar + 8 left rail.
         # Single solid face, identical resting 7-shadow model, no Button 19.
         assert await page.locator('.toolbar-actions .nav button.btn-180').count()==7
@@ -322,7 +350,7 @@ async def main():
             assert style[key]['image']=='none',(key,style)
             assert style[key]['shadow'].count('rgb')==7,(key,style)
             assert style[key]['radius']=='3px',(key,style)
-        assert style['nav']['face']=='rgb(200, 217, 155)' and style['selected']['face']=='rgb(229, 244, 162)',style
+        assert style['nav']['face']=='rgb(203, 209, 209)' and style['selected']['face']=='rgb(145, 237, 172)',style
         assert style['railOn']['face']=='rgb(237, 184, 223)',style
         # Audio Device shares the physical BTN-180 toolbar face and dark ink.
         # The OFF state is truthful in UI-only preview. Explicitly force ON
@@ -380,8 +408,8 @@ async def main():
           const on=document.querySelector('[data-view="FX RACK"]');
           const off=document.querySelector('[data-view="MIX"]');
           return on.classList.contains('selected') && !off.classList.contains('selected')
-            && getComputedStyle(on).backgroundColor==='rgb(229, 244, 162)'
-            && getComputedStyle(off).backgroundColor==='rgb(200, 217, 155)';
+            && getComputedStyle(on).getPropertyValue('--b180-color').trim()==='#91edac'
+            && getComputedStyle(off).getPropertyValue('--b180-color').trim()==='#cbd1d1';
         }""")
         nav=page.locator('[data-view="FX RACK"]')
         navBefore=await nav.evaluate("(e)=>e.getBoundingClientRect().toJSON()")
