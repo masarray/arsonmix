@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "../engine/core/PreparedMixerBlock.h"
+#include "../engine/core/LiveChannelFxGraph.h"
+#include "VstBusLayout.h"
 #include "../engine/core/NativeDryRouteCommand.h"
 #include "../engine/device/JuceActivePortSnapshot.h"
 #include "../engine/core/RealtimeRoutePublisher.h"
@@ -11,6 +13,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <exception>
 #include <memory>
 #include <span>
 
@@ -23,7 +26,12 @@ class LiveDryRoutingLab final {
 public:
     using Plan=armix::mixer::PreparedRenderGraph;
     using Block=armix::mixer::PreparedMixerBlock;
-    using Publisher=armix::rt::RealtimeRoutePublisher<Block>;
+    using FxGraph=armix::mixer::LiveChannelFxGraph;
+    using Publisher=armix::rt::RealtimeRoutePublisher<FxGraph>;
+    struct FxSelection final {
+        juce::String id,path,name;
+        int uid=0;
+    };
     static constexpr int count=armix::mixer::stripCount;
 
     // JUCE calls aboutToStart after configuring the input/output device.
@@ -65,13 +73,17 @@ public:
         callbackOutputCount_.store(-1,std::memory_order_release);
         topologyFault_.store(false,std::memory_order_release);
         sendCount_.store(0,std::memory_order_relaxed);
+        fxCount_.store(0,std::memory_order_relaxed);
         for(auto& p:channelPeaks_)p.store(0.f,std::memory_order_relaxed);
         peakL_.store(0.f,std::memory_order_relaxed);
         peakR_.store(0.f,std::memory_order_relaxed);
     }
 
     juce::String apply (const juce::var& command, bool directPermitted,
-                        bool independentClock, int loadedFx) {
+                        bool independentClock, int loadedFx,
+                        const std::array<FxSelection,count>& selections,
+                        juce::AudioPluginFormatManager& formats,
+                        double sampleRate,int deviceFrames) {
         // Called by the native message thread only. Not callable from RT.
         if(!directPermitted || independentClock)
             return "Dry Routing LAB requires one verified DIRECT audio device";
@@ -115,9 +127,51 @@ public:
         auto next=std::make_unique<Publisher::Snapshot>();
         next->deviceEpoch=currentEpoch;
         next->graphRevision=revision;
-        next->prepared=std::make_unique<Block>(plan,Block::hardFrameLimit);
+        next->prepared=std::make_unique<FxGraph>(plan,Block::hardFrameLimit);
         if(!next->prepared || next->prepared->capacity()==0)
             return "Cannot allocate routing workspace";
+        // Every VST3 is instantiated and prepared on the control thread.
+        // A graph has private processor instances: a retiring snapshot can
+        // NEVER share a processBlock call with a newly published snapshot.
+        int insertCount=0;
+        for(int lane=0;lane<count;++lane) {
+            const auto& req=selections[lane];
+            if(req.id.isEmpty())continue;
+            if(!plan.scheduled[lane])
+                return "CH "+juce::String(lane+1)+": select an active physical source or BUS return before adding VST3";
+            if(!(sampleRate>0.0) || deviceFrames<=0)
+                return "Audio device sample rate or buffer size is invalid";
+            auto* fmt=formats.getFormat(0);
+            if(!fmt || !fmt->fileMightContainThisPluginType(req.path))
+                return "CH "+juce::String(lane+1)+": VST3 module is unavailable; rescan catalog";
+            juce::OwnedArray<juce::PluginDescription> descriptions;
+            fmt->findAllTypesForFile(descriptions,req.path);
+            juce::PluginDescription* chosen=nullptr;
+            for(auto* item:descriptions)
+                if(item && item->uniqueId==req.uid && !item->isInstrument)
+                    {chosen=item;break;}
+            if(!chosen)
+                return "CH "+juce::String(lane+1)+": selected VST3 effect identity not found (instrument plugins are unsupported)";
+            juce::String pluginError;
+            auto instance=formats.createPluginInstance(*chosen,sampleRate,
+                juce::jmax(32,deviceFrames),pluginError);
+            if(!instance)
+                return "CH "+juce::String(lane+1)+": VST3 instantiation failed: "+pluginError;
+            const auto layoutError=armix::vst::prepareStereoEffectLayout(*instance);
+            if(layoutError.isNotEmpty())
+                return "CH "+juce::String(lane+1)+": "+layoutError;
+            try {
+                instance->prepareToPlay(sampleRate,
+                    juce::jmax(32,deviceFrames));
+            } catch(const std::exception& ex) {
+                return "CH "+juce::String(lane+1)+": plugin prepare failed: "+juce::String(ex.what());
+            } catch(...) {
+                return "CH "+juce::String(lane+1)+": plugin prepare failed (unknown exception)";
+            }
+            if(!next->prepared->install(lane,std::move(instance),chosen->name))
+                return "CH "+juce::String(lane+1)+": duplicate or invalid VST3 insert";
+            ++insertCount;
+        }
         const auto epochAtPublish=deviceEpoch_.load(std::memory_order_acquire);
         if(!registryValid_.load(std::memory_order_acquire) ||
            epochAtPublish!=currentEpoch)
@@ -128,6 +182,7 @@ public:
                 publishedEpoch_.store(currentEpoch,std::memory_order_release);
                 enabled_.store(true,std::memory_order_release);
                 sendCount_.store(sends.count,std::memory_order_relaxed);
+                fxCount_.store(insertCount,std::memory_order_relaxed);
                 return {};
             case Publisher::Result::staleDevice:
                 return "Device epoch changed during preparation";
@@ -216,7 +271,6 @@ public:
         // no heap allocation or new processing object inside callback.
         std::array<const float*,armix::device::LiveInputPortRegistry::limit> shifted{};
         constexpr int max=Block::hardFrameLimit;
-        const auto noFx=[](int,float*,float*,int) noexcept {};
         float peakL=0.f,peakR=0.f;
         std::array<float,count> perChannelPeaks{};
         for(int offset=0;offset<frames;offset+=max) {
@@ -225,7 +279,7 @@ public:
                 shifted[c]=inputs&&inputs[c]?inputs[c]+offset:nullptr;
             armix::mixer::RenderLevels level;
             if(!snapshot->prepared->process(shifted.data(),inputCount,
-                   outputs[0]+offset,outputs[1]+offset,n,noFx,&level))
+                   outputs[0]+offset,outputs[1]+offset,n,&level))
                 return true;
             for(int ch=0;ch<count;++ch)
                 perChannelPeaks[ch]=std::max(perChannelPeaks[ch],level.channelPeak[ch]);
@@ -265,6 +319,7 @@ public:
         out->setProperty("peakL",peakL_.load(std::memory_order_relaxed));
         out->setProperty("peakR",peakR_.load(std::memory_order_relaxed));
         out->setProperty("sendCount",sendCount_.load(std::memory_order_relaxed));
+        out->setProperty("fxCount",fxCount_.load(std::memory_order_relaxed));
         juce::Array<juce::var> levels;
         for(const auto& p:channelPeaks_)levels.add(p.load(std::memory_order_relaxed));
         out->setProperty("channelPeaks",juce::var(levels));
@@ -296,7 +351,7 @@ public:
                 outputPorts.add(enabledOutputPorts_[i].load(std::memory_order_relaxed));
         }
         out->setProperty("outputPorts",juce::var(outputPorts));
-        out->setProperty("note","EXPLICIT DRY HARDWARE FAT: real pre/post sends, no VST3 or portable route persistence");
+        out->setProperty("note","EXPLICIT NATIVE ROUTING LAB: per-strip stereo VST3, PRE/POST sends; no performance preset recall or hardware FAT qualification");
         return juce::var(out.release());
     }
 private:
@@ -315,6 +370,7 @@ private:
     std::atomic<bool> enabled_{false};
     std::atomic<float> peakL_{0.f},peakR_{0.f};
     std::atomic<int> sendCount_{0};
+    std::atomic<int> fxCount_{0};
     std::array<std::atomic<float>,count> channelPeaks_{};
     // Exclusive render-producer state. Bounded fade starts from the exact
     // previously output sample, preventing a topology switch discontinuity.
