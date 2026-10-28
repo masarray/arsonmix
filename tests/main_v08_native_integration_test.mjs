@@ -9,7 +9,7 @@ test('GUI v0.8 remains the canonical host, not an older v0.5 reset',()=>{
  assert.match(app,/function openChannelIdentity\(/);
  assert.match(app,/function masterFxRows\(/);
  assert.match(app,/class="master-analysis"/);
- assert.match(app,/span>LUFS<\\/span>/);
+ assert.ok(app.includes('<span>LUFS</span>'));
  assert.match(app,/dBTP/);
  assert.match(html,/id="channelIdentity"/);
  assert.match(css,/rail-input-footer/);
