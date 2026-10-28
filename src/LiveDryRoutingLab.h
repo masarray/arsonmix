@@ -189,7 +189,7 @@ public:
                 return "Audio device sample rate or buffer size is invalid";
             auto* fmt=formats.getFormat(0);
             if(!fmt || !fmt->fileMightContainThisPluginType(req.path))
-                return "label+": VST3 module is unavailable; rescan catalog";
+                return label+": VST3 module is unavailable; rescan catalog";
             juce::OwnedArray<juce::PluginDescription> descriptions;
             fmt->findAllTypesForFile(descriptions,req.path);
             juce::PluginDescription* chosen=nullptr;
@@ -197,31 +197,31 @@ public:
                 if(item && item->uniqueId==req.uid && !item->isInstrument)
                     {chosen=item;break;}
             if(!chosen)
-                return "label+": selected VST3 effect identity not found (instrument plugins are unsupported)";
+                return label+": selected VST3 effect identity not found (instrument plugins are unsupported)";
             juce::String pluginError;
             auto instance=formats.createPluginInstance(*chosen,sampleRate,
                 juce::jmax(32,deviceFrames),pluginError);
             if(!instance)
-                return "label+": VST3 instantiation failed: "+pluginError;
+                return label+": VST3 instantiation failed: "+pluginError;
             const auto layoutError=armix::vst::prepareStereoEffectLayout(*instance);
             if(layoutError.isNotEmpty())
-                return "label+": "+layoutError;
+                return label+": "+layoutError;
             try {
                 instance->prepareToPlay(sampleRate,
                     juce::jmax(32,deviceFrames));
             } catch(const std::exception& ex) {
-                return "label+": plugin prepare failed: "+juce::String(ex.what());
+                return label+": plugin prepare failed: "+juce::String(ex.what());
             } catch(...) {
-                return "label+": plugin prepare failed (unknown exception)";
+                return label+": plugin prepare failed (unknown exception)";
             }
             // Uncompensated latent inserts produce comb filtering in PRE/POST
             // sends. Until native PDC exists, reject instead of lying about
             // phase accuracy or silent extra buffer latency.
             if(instance->getLatencySamples()!=0)
-                return "label+
+                return label+
                     ": this VST3 reports latency; choose zero-latency mode until PDC is implemented";
             if(!next->prepared->install(lane,std::move(instance),chosen->name,req.id))
-                return "label+": duplicate or invalid VST3 insert";
+                return label+": duplicate or invalid VST3 insert";
             ++insertCount;
         }
         const auto epochAtPublish=deviceEpoch_.load(std::memory_order_acquire);
