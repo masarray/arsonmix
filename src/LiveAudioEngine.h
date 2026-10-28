@@ -13,6 +13,8 @@
 #include "../engine/device/AsioRegistryIdentityProbe.h"
 #include "../engine/device/DirectRouteFence.h"
 #include "../engine/device/WasapiEndpointIdentityGuard.h"
+#include "../engine/core/FxOrderPlan.h"
+#include "../engine/core/FxMoveRamp.h"
 #include "../engine/core/RealtimeHealthHistogram.h"
 #include "../engine/core/CallbackCadenceEvidence.h"
 #include "../engine/core/FxBypassEnvelope.h"
@@ -28,7 +30,7 @@
 // The audio callback never scans files, creates plugins, mutates the chain,
 // enters UI code, locks host mutexes, logs, or changes device settings.
 // P2.5 recall pre-stages a graph and transitions at callback boundaries.
-// Legacy Add/Remove/Move still detach; seamless structural editing is deferred.
+// Add/Remove still use a bounded offline lifecycle; MOVE is a lock-free order publication.
 class LiveAudioEngine final : private juce::AudioIODeviceCallback
 {
 public:
@@ -45,6 +47,19 @@ public:
 
     struct Graph
     {
+        // Eight 4-bit physical slot indices in one x64 lock-free word.
+        // Moving an insert publishes one complete order for the NEXT audio
+        // block; the processor objects and their binary states never move.
+        static constexpr std::uint64_t canonicalOrder = armix::dsp::FxOrderPlan::canonical;
+        std::atomic<std::uint64_t> orderPacked {canonicalOrder};
+        static int physicalAt (std::uint64_t order, int logical) noexcept
+        {
+            return armix::dsp::FxOrderPlan::physicalAt (order, logical);
+        }
+        int physicalAt (int logical) const noexcept
+        {
+            return physicalAt (orderPacked.load (std::memory_order_acquire), logical);
+        }
         std::array<Slot, maxFx> slots {};
         std::array<std::atomic<bool>, maxFx> bypassFlags {};
         // Owned and advanced exclusively by the realtime render callback.
@@ -205,6 +220,8 @@ public:
         detach();
         handoff_.resetAfterStop (graphOwned_.get());
         stagedOwner_.reset();
+        fxMovePhase_.store (0, std::memory_order_release);
+        fxMovePendingOrder_.store (Graph::canonicalOrder, std::memory_order_relaxed);
         for (int i = 0; i < graphOwned_->count; ++i)
         {
             if (graphOwned_->slots[i].processor) graphOwned_->slots[i].processor->releaseResources();
@@ -489,25 +506,56 @@ public:
         return true;
     }
 
+    // Non-RT UI readers show the requested order even during the two-buffer
+    // de-click handoff. DSP still uses the active order until fade-out reaches 0.
+    std::uint64_t visibleFxOrder() const noexcept
+    {
+        return fxMovePhase_.load (std::memory_order_acquire) != 0
+            ? fxMovePendingOrder_.load (std::memory_order_acquire)
+            : graphOwned_->orderPacked.load (std::memory_order_acquire);
+    }
+
     juce::AudioPluginInstance* pluginAt (int index) noexcept
     {
-        return index >= 0 && index < graphOwned_->count ? graphOwned_->slots[index].processor.get() : nullptr;
+        return index >= 0 && index < graphOwned_->count
+            ? graphOwned_->slots[Graph::physicalAt (visibleFxOrder(), index)].processor.get() : nullptr;
     }
 
     juce::var chainState() const
     {
         juce::Array<juce::var> nodes;
+        const auto logicalOrder = visibleFxOrder();
         for (int i = 0; i < graphOwned_->count; ++i)
         {
             auto node = std::make_unique<juce::DynamicObject>();
             node->setProperty ("index", i);
-            node->setProperty ("name", graphOwned_->slots[i].name);
-            node->setProperty ("id", graphOwned_->slots[i].catalogId);
-            node->setProperty ("bypass", graphOwned_->slots[i].bypass);
-            node->setProperty ("latency", graphOwned_->slots[i].latency);
+            const auto& slot = graphOwned_->slots[Graph::physicalAt (logicalOrder, i)];
+            node->setProperty ("name", slot.name);
+            node->setProperty ("id", slot.catalogId);
+            node->setProperty ("bypass", slot.bypass);
+            node->setProperty ("latency", slot.latency);
             nodes.add (juce::var (node.release()));
         }
         return juce::var (nodes);
+    }
+
+    // Called only after the current audio callback has been detached for a
+    // structural ADD/REMOVE. Normalize physical storage before mutation.
+    void materializeOrderOnStoppedCallback()
+    {
+        auto& graph = *graphOwned_;
+        const auto order = fxMovePhase_.load (std::memory_order_acquire) != 0
+            ? fxMovePendingOrder_.load (std::memory_order_acquire)
+            : graph.orderPacked.load (std::memory_order_acquire);
+        fxMovePhase_.store (0, std::memory_order_release);
+        if (order == Graph::canonicalOrder) { graph.orderPacked.store (order, std::memory_order_release); return; }
+        std::array<Slot, maxFx> rearranged {};
+        for (int i = 0; i < graph.count; ++i)
+            rearranged[i] = std::move (graph.slots[Graph::physicalAt (order, i)]);
+        graph.slots = std::move (rearranged);
+        for (int i = 0; i < graph.count; ++i)
+            graph.bypassFlags[i].store (graph.slots[i].bypass, std::memory_order_relaxed);
+        graph.orderPacked.store (Graph::canonicalOrder, std::memory_order_release);
     }
 
     juce::String addVst3 (const juce::String& filename, int uid,
@@ -546,6 +594,7 @@ public:
             return chosen->name + ": " + busError;
 
         detach();
+        materializeOrderOnStoppedCallback();
         Slot node;
         node.name = chosen->name;
         node.catalogId = catalogId;
@@ -566,7 +615,7 @@ public:
     {
         if (dryRoutingLab_.active()) return "Stop DRY ROUTING LAB before saving native FX state";
         if (!isOutputMuted()) return "Mute hardware output before saving a native preset";
-        if (handoff_.busy()) return "Finish pending FX graph transition before saving";
+        if (handoff_.busy() || fxMovePhase_.load (std::memory_order_acquire) != 0) return "Finish pending FX graph transition before saving";
         snapshot.effects.clear();
         snapshot.channelDb = juce::Decibels::gainToDecibels (
             channelGain_.load (std::memory_order_relaxed), -60.f);
@@ -581,14 +630,15 @@ public:
         {
             for (int i = 0; i < graphOwned_->count; ++i)
             {
-                const auto& slot = graphOwned_->slots[i];
+                const int physical = graphOwned_->physicalAt (i);
+                const auto& slot = graphOwned_->slots[physical];
                 if (!slot.processor) { error = "Invalid active FX slot"; break; }
                 armix::storage::FxState state;
                 state.path = slot.path;
                 state.name = slot.name;
                 state.catalogId = slot.catalogId;
                 state.uid = slot.uid;
-                state.bypass = graphOwned_->bypassFlags[i].load (std::memory_order_acquire);
+                state.bypass = graphOwned_->bypassFlags[physical].load (std::memory_order_acquire);
                 slot.processor->getStateInformation (state.binary);
                 if (state.binary.getSize() > armix::storage::NativePresetArchive::maxStateBytes)
                 {
@@ -691,9 +741,9 @@ public:
         for (int i = 0; i < staged->count; ++i)
         {
             staged->bypassFlags[i].store (staged->slots[i].bypass, std::memory_order_relaxed);
+            staged->slots[i].latency = staged->slots[i].processor->getLatencySamples();
             staged->bypassEnvelope[i].prepare (staged->slots[i].bypass, rate,
                                                 staged->slots[i].latency);
-            staged->slots[i].latency = staged->slots[i].processor->getLatencySamples();
             if (!staged->slots[i].bypass) staged->latency += staged->slots[i].latency;
         }
         stagedOwner_ = std::move (staged);
@@ -707,11 +757,12 @@ public:
 
     bool setBypass (int index, bool value)
     {
-        if (handoff_.busy()) return false;
+        if (handoff_.busy() || fxMovePhase_.load (std::memory_order_acquire) != 0) return false;
         if (index < 0 || index >= graphOwned_->count) return false;
         // Message-thread metadata and an atomic value consumed by the audio thread.
-        graphOwned_->slots[index].bypass = value;
-        graphOwned_->bypassFlags[index].store (value, std::memory_order_release);
+        const int physical = Graph::physicalAt (visibleFxOrder(), index);
+        graphOwned_->slots[physical].bypass = value;
+        graphOwned_->bypassFlags[physical].store (value, std::memory_order_release);
         // Recompute the advertised steady-state graph latency on the control
         // thread. The audible transition is managed sample-by-sample by RT.
         int activeLatency=0;
@@ -725,9 +776,10 @@ public:
     bool removeAt (int index)
     {
         if (dryRoutingLab_.active()) return false;
-        if (handoff_.busy()) return false;
+        if (handoff_.busy() || fxMovePhase_.load (std::memory_order_acquire) != 0) return false;
         if (index < 0 || index >= graphOwned_->count) return false;
         detach();
+        materializeOrderOnStoppedCallback();
         if (graphOwned_->slots[index].processor)
             graphOwned_->slots[index].processor->releaseResources();
         for (int i = index; i + 1 < graphOwned_->count; ++i)
@@ -741,20 +793,26 @@ public:
 
     bool moveSlot (int from, int to)
     {
-        if (dryRoutingLab_.active()) return false;
-        if (handoff_.busy()) return false;
-        if (from < 0 || from >= graphOwned_->count || to < 0 || to >= graphOwned_->count || from == to)
+        // The processor instances remain at stable PHYSICAL addresses.
+        // A 64-bit release store publishes the complete logical order.
+        // The callback takes one acquire snapshot per audio buffer.
+        if (dryRoutingLab_.active() || independent_.active()) return false;
+        if (handoff_.busy() || fxMovePhase_.load (std::memory_order_acquire) != 0)
             return false;
-        detach();
-        auto moved = std::move (graphOwned_->slots[from]);
-        if (from < to)
-            for (int i = from; i < to; ++i) graphOwned_->slots[i] = std::move (graphOwned_->slots[i + 1]);
-        else
-            for (int i = from; i > to; --i) graphOwned_->slots[i] = std::move (graphOwned_->slots[i - 1]);
-        graphOwned_->slots[to] = std::move (moved);
-        for (int i = 0; i < graphOwned_->count; ++i)
-            graphOwned_->bypassFlags[i].store (graphOwned_->slots[i].bypass, std::memory_order_release);
-        attach();
+        const int count = graphOwned_->count;
+        if (from < 0 || to < 0 || from >= count || to >= count || from == to)
+            return false;
+        const auto previous = graphOwned_->orderPacked.load (std::memory_order_acquire);
+        const auto next = armix::dsp::FxOrderPlan::moved (previous, count, from, to);
+        // Plugin objects are not moved. Acknowledge UI intent immediately,
+        // then run output ramp 1->0, publish at 0, ramp 0->1 in callback.
+        if (!attached_ && !independent_.active())
+        {
+            graphOwned_->orderPacked.store (next, std::memory_order_release);
+            return true; // no callback exists to acknowledge a fade
+        }
+        fxMovePendingOrder_.store (next, std::memory_order_relaxed);
+        fxMovePhase_.store (1, std::memory_order_release);
         return true;
     }
 
@@ -890,9 +948,10 @@ public:
         {
             auto item = std::make_unique<juce::DynamicObject>();
             item->setProperty ("slot", i + 1);
-            item->setProperty ("name", graphOwned_->slots[i].name);
-            item->setProperty ("lastUs", static_cast<double> (lastPluginUsBySlot_[i].load()));
-            item->setProperty ("worstUs", static_cast<double> (worstPluginUsBySlot_[i].load()));
+            const int physical = graphOwned_->physicalAt (i);
+            item->setProperty ("name", graphOwned_->slots[physical].name);
+            item->setProperty ("lastUs", static_cast<double> (lastPluginUsBySlot_[physical].load()));
+            item->setProperty ("worstUs", static_cast<double> (worstPluginUsBySlot_[physical].load()));
             pluginTimings.add (juce::var (item.release()));
         }
         o->setProperty ("pluginTimings", juce::var (pluginTimings));
@@ -1042,6 +1101,10 @@ private:
     std::unique_ptr<Graph> graphOwned_ {std::make_unique<Graph>()};
     std::unique_ptr<Graph> stagedOwner_;
     armix::rt::LiveGraphHandoff<Graph> handoff_;
+    // 0 idle, 1 fade-out, 2 fade-in. One controller producer, one RT reader.
+    // No allocation, plugin re-instantiation or extra processing pass.
+    std::atomic<int> fxMovePhase_ {0};
+    std::atomic<std::uint64_t> fxMovePendingOrder_ {Graph::canonicalOrder};
     bool attached_ = false;
     juce::AudioBuffer<float> scratch_;
     juce::AudioBuffer<float> dryScratch_;
@@ -1297,6 +1360,11 @@ private:
         const float monoL = 0.5f * (matrix.ll + matrix.rl);
         const float monoR = 0.5f * (matrix.lr + matrix.rr);
         const float rampStep = samples > 1 ? 1.f / static_cast<float> (samples - 1) : 0.f;
+        const int fxMovePhase = fxMovePhase_.load (std::memory_order_acquire);
+        // The same envelope applies to every output channel and sample.
+        // Old graph reaches zero before the callback publishes new order.
+        const bool fxFadeOut = fxMovePhase == 1;
+        const bool fxFadeIn = fxMovePhase == 2;
         float inPeak = 0.f, postFxPeak = 0.f, outPeak = 0.f;
         float outPeakL = 0.f, outPeakR = 0.f;
         for (int offset = 0; offset < samples; offset += maxFrames)
@@ -1334,12 +1402,17 @@ private:
             juce::MidiBuffer midi;
             if (!dry)
             {
+                // One order snapshot: never observe half of a drag reorder.
+                const auto order = cycle.graph->orderPacked.load (std::memory_order_acquire);
+                // One atomic order snapshot per block, while DSP and bypass are attached to physical slots.
+                const auto order = cycle.graph->orderPacked.load (std::memory_order_acquire);
                 for (int fx = 0; fx < cycle.graph->count; ++fx)
                 {
-                    auto& slot = cycle.graph->slots[fx];
+                    const int physical = Graph::physicalAt (order, fx);
+                    auto& slot = cycle.graph->slots[physical];
                     if (!slot.processor) {midi.clear();continue;}
-                    auto& bypass=cycle.graph->bypassEnvelope[fx];
-                    bypass.request(cycle.graph->bypassFlags[fx].load(std::memory_order_acquire));
+                    auto& bypass=cycle.graph->bypassEnvelope[physical];
+                    bypass.request(cycle.graph->bypassFlags[physical].load(std::memory_order_acquire));
                     // Steady wet/dry requires no copy or extra arithmetic.
                     // A transition temporarily snapshots the exact input to
                     // this insert; a second full FX graph is never created.
@@ -1354,8 +1427,8 @@ private:
                         const auto pluginBeginUs = clockMicros();
                         slot.processor->processBlock (scratchView, midi);
                         const auto pluginUs = clockMicros() - pluginBeginUs;
-                        lastPluginUsBySlot_[fx].store (pluginUs, std::memory_order_relaxed);
-                        publishMax (worstPluginUsBySlot_[fx], pluginUs);
+                        lastPluginUsBySlot_[physical].store (pluginUs, std::memory_order_relaxed);
+                        publishMax (worstPluginUsBySlot_[physical], pluginUs);
                         publishMax (worstPluginUs_, pluginUs);
                         if (static_cast<double> (pluginUs) > periodUs * 0.75)
                             slowPlugins_.fetch_add (1, std::memory_order_relaxed);
@@ -1395,8 +1468,11 @@ private:
                 {
                     const float mapped = toneTest ? left[i] : fromL * left[i] + fromR * right[i];
                     const auto phase = (offset + i) * rampStep;
-                    const float ramp = cycle.fadeOut ? 1.f - phase
-                                     : cycle.fadeIn ? phase : 1.f;
+                    const float graphRamp = cycle.fadeOut ? 1.f - phase
+                                          : cycle.fadeIn ? phase : 1.f;
+                    const float fxRamp = armix::dsp::FxMoveRamp::gain (
+                        fxMovePhase, offset + i, samples);
+                    const float ramp = graphRamp * fxRamp;
                     const float value = captureTest ? 0.f
                         : toneTest ? mapped * ramp
                         : (enabled && !muted) ? mapped * gain * ramp : 0.f;
@@ -1413,6 +1489,19 @@ private:
         outputPeak_.store (juce::jmin (1.f, outPeak), std::memory_order_relaxed);
         outputPeakL_.store (juce::jmin (1.f, outPeakL), std::memory_order_relaxed);
         outputPeakR_.store (juce::jmin (1.f, outPeakR), std::memory_order_relaxed);
+        if (fxFadeOut)
+        {
+            // The last emitted sample of this block is exactly zero.
+            // Switch order only after all outputs were rendered. Next block
+            // starts at zero under the NEW order, so there is no step edge.
+            cycle.graph->orderPacked.store (
+                fxMovePendingOrder_.load (std::memory_order_acquire),
+                std::memory_order_release);
+            fxMovePhase_.store (2, std::memory_order_release);
+        }
+        else if (fxFadeIn)
+            fxMovePhase_.store (0, std::memory_order_release);
+
         if (cycle.fadeOut)
         {
             // Ownership remains with stagedOwner_ until message thread ack.
