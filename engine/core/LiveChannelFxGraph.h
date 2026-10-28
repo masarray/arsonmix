@@ -40,7 +40,10 @@ public:
         ~FxInstance() noexcept {
             // Shared by old/new immutable snapshots; last owner drops ONLY on
             // control-thread retirement after the final RT reader exits.
-            if(processor)processor->releaseResources();
+            if(processor) {
+                try { processor->releaseResources(); }
+                catch(...) { /* vendor cleanup cannot unwind graph retirement */ }
+            }
         }
         void render(float* left,float* right,int samples) noexcept {
             if(processing.test_and_set(std::memory_order_acquire)) {
