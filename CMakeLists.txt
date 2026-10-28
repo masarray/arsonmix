@@ -223,4 +223,10 @@ if(BUILD_TESTING)
   target_compile_features(ARMixShowSchemaTests PRIVATE cxx_std_20)
   add_test(NAME P4NativeShowSnapshotV2WireRoundTrip COMMAND ARMixShowSchemaTests)
 
+  juce_add_console_app(ARMixShowStoreTests PRODUCT_NAME "ArSonMix Native Studio Shows Generation Tests")
+  target_sources(ARMixShowStoreTests PRIVATE tests/native_show_store_test.cpp src/NativeShowStore.h src/NativeShowSchema.h)
+  target_link_libraries(ARMixShowStoreTests PRIVATE juce::juce_core juce::juce_cryptography juce::juce_recommended_config_flags)
+  target_compile_features(ARMixShowStoreTests PRIVATE cxx_std_20)
+  add_test(NAME P4ImmutableNativeShowsAndVendorStateRoundTrip COMMAND ARMixShowStoreTests)
+
 endif()
