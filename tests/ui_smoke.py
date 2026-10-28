@@ -937,6 +937,14 @@ async def main():
         assert mono_text['color']=='rgb(20, 16, 20)' and mono_text['shadow']=='none',mono_text
         await page.locator('#masterMode').click()
         assert await page.locator('#masterMode').inner_text()=='STEREO'
+        # Manual peak-hold reset must be deterministic: cancel the browser's
+        # unrelated 25Hz demo producer before injecting explicit levels. Without
+        # this, a live demo RAF can repopulate peakHold after RESET and make the
+        # test flaky on slower CI hosts. Production native metering is untouched.
+        await page.evaluate("""()=>{
+          if(meterTimer){clearTimeout(meterTimer);meterTimer=0}
+          if(meterRAF){cancelAnimationFrame(meterRAF);meterRAF=0}
+        }""")
         await page.evaluate('updateMeterVisual("6L",99,performance.now())')
         assert await page.locator('[data-clip="6L"]').evaluate('(e)=>e.classList.contains("latched")')
         await page.locator('[data-clip="6L"]').click()

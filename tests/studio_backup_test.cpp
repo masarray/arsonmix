@@ -28,6 +28,12 @@ int main()
     assert (plugin.replaceWithText ("Fake bundled FX bytes"));
     assert (sound.replaceWithText ("vendor state stub"));
     assert (cache.replaceWithText ("DO NOT BACKUP CACHE"));
+    // Native P4 Shows stay inside Studio and must be in verified USB backup.
+    const auto showPointer = studio.getChildFile (
+        "Shows/11111111-2222-4333-8444-555555555555/HEAD");
+    assert (showPointer.getParentDirectory().createDirectory().wasOk());
+    assert (showPointer.replaceWithText ("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"));
+
     assert (studio.getChildFile ("plugin-catalog.json").replaceWithText ("{\"items\":[]}"));
 
     assert (!st::StudioBackup::create (exe, studio, studio).ok()); // no recursion into source
@@ -42,6 +48,9 @@ int main()
                 .loadFileAsString() == plugin.loadFileAsString());
     assert (copy.folder.getChildFile ("Studio/presets/Vocal Live.armix")
                 .loadFileAsString() == sound.loadFileAsString());
+    assert (copy.folder.getChildFile (
+        "Studio/Shows/11111111-2222-4333-8444-555555555555/HEAD")
+        .loadFileAsString() == showPointer.loadFileAsString());
     assert (!copy.folder.getChildFile ("Studio/Cache/WebView2/deletable-cache").exists());
     const auto manifest = juce::JSON::parse (
         copy.folder.getChildFile ("backup-manifest.json").loadFileAsString());
