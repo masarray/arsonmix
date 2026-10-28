@@ -930,8 +930,15 @@ private:
                     selected[i]={entry->key(),entry->path,entry->name,entry->uid};
                 }
             }
-            if(error.isEmpty())
-                error=engine_.applyDryRoutingLab(value,selected);
+            if(error.isEmpty()) {
+                try {
+                    error=engine_.applyDryRoutingLab(value,selected);
+                } catch(const std::exception& ex) {
+                    error="VST3 preparation failed: "+juce::String(ex.what());
+                } catch(...) {
+                    error="VST3 preparation failed (unknown vendor exception)";
+                }
+            }
             auto reply=std::make_unique<juce::DynamicObject>();
             reply->setProperty("ok",error.isEmpty());
             reply->setProperty("error",error);
