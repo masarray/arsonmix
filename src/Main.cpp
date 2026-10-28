@@ -159,7 +159,11 @@ public:
           presets_ (settingsDirectory().getChildFile ("presets"), settingsDirectory()),
           browser_ (webViewOptions()
               .withNativeIntegrationEnabled()
-              .withEventListener ("arMixGuiReady", [this] (juce::var) { browser_.loaded = true; })
+              .withEventListener ("arMixGuiReady", [this] (juce::var)
+              {
+                  browser_.loaded = true;
+                  guiReadyTick_ = juce::Time::getMillisecondCounter();
+              })
               .withEventListener ("arMixParameter", [this] (juce::var args) { onParameter (args); })
               .withEventListener ("arMixAction", [this] (juce::var args) { onAction (args); })
               .withResourceProvider (assetFor))
@@ -173,13 +177,13 @@ public:
         centreWithSize (1650, 930);
         setVisible (true);
 
-        auto saved = juce::XmlDocument::parse (machineSettingsDirectory().getChildFile ("audio-devices.xml"));
-        startupError_ = engine_.start (saved.get());
-        engine_.devices().addChangeListener (this);
-        diagnostics_.record ("STARTUP", startupError_.isEmpty() ? "Audio device initialized" : startupError_);
+        // Begin WebView navigation BEFORE any synchronous JUCE driver setup.
+        // Device startup on cold PCs otherwise blocks the very first GUI.
         webViewStartupTick_ = juce::Time::getMillisecondCounter();
         browser_.goToURL (juce::WebBrowserComponent::getResourceProviderRoot());
         startTimerHz (12);
+        // The existing 12Hz message-thread tick starts the audio engine after
+        // an authenticated GUI handshake and initial compositor paint.
         // Defer initial scan until explicitly requested in Plugin Manager.
         // Startup must not spend seconds enumerating third-party VST3 modules.
     }
@@ -215,6 +219,8 @@ private:
     bool initialStateSent_ = false;
     bool webViewStartupNoticeSent_ = false;
     juce::uint32 webViewStartupTick_ = 0;
+    juce::uint32 guiReadyTick_ = 0;
+    bool audioEngineStarted_ = false;
     bool setupLaunching_ = false;
     unsigned int timerTicks_ = 0;
     bool deviceSettingsDirty_ = false;
@@ -1435,6 +1441,21 @@ private:
             showWebViewStartupError ("The embedded mixer did not initialize in 10 seconds."
                                      " Check the WebView2 Runtime and browser-cache folder permissions.");
             return;
+        }
+        // First visible GUI frame must precede device discovery. Reuse the
+        // existing timer; never add a worker or poll the audio callback.
+        if (!audioEngineStarted_)
+        {
+            if (!browser_.loaded ||
+                juce::Time::getMillisecondCounter() - guiReadyTick_ < 150u)
+                return;
+            audioEngineStarted_ = true;
+            auto saved = juce::XmlDocument::parse (
+                machineSettingsDirectory().getChildFile ("audio-devices.xml"));
+            startupError_ = engine_.start (saved.get());
+            engine_.devices().addChangeListener (this);
+            diagnostics_.record ("STARTUP",
+                startupError_.isEmpty() ? "Audio device initialized" : startupError_);
         }
         // ONE actionable notice per unexpected DIRECT reroute. The audio
         // callback has already zero-filled output atomically; status, log and
