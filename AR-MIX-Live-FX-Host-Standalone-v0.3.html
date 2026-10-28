@@ -1338,6 +1338,12 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 #app #masterLeft .master-controls-zone .master-analysis .master-info-row strong.over-limit{
  color:#ff555f;text-shadow:none;
 }
+
+/* Borderless deep LED slit keeps the approved 10px illuminated cell width. */
+#app #mixer .fader-zone .meter-signal-area .meter-fill,
+#app #mixer .fader-zone .meter-signal-area .meter-peak{
+ left:2px;right:2px;
+}
 </style></head>
 <body>
 <div id="app" class="app">
