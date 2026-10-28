@@ -222,11 +222,12 @@
   function drawSends(){
     const el=document.getElementById("arSendRows");
     const channels=Array.from({length:10},(_,i)=>'<option value="'+i+'">CH '+(i+1)+'</option>');
-    const channelSelect=(value)=>channels.map((option,i)=>option.replace('<option','<option '+(i===value?'selected':''))).join('');
+    const destinations=channels.concat(Array.from({length:4},(_,i)=>'<option value="'+(10+i)+'">AUX '+(i+1)+'</option>'));
+    const listSelect=(options,value)=>options.map((option,i)=>option.replace('<option','<option '+(i===value?'selected':''))).join('');
     el.innerHTML=draftSends.map((send,index)=>
       '<div class="arSendRow" data-send-row="'+index+'">'+
-      '<select data-send-from aria-label="Send source">'+channelSelect(send.from)+'</select>'+
-      '<select data-send-to aria-label="Send destination">'+channelSelect(send.to)+'</select>'+
+      '<select data-send-from aria-label="Send source">'+listSelect(channels,send.from)+'</select>'+
+      '<select data-send-to aria-label="Send destination">'+listSelect(destinations,send.to)+'</select>'+
       '<select data-send-tap aria-label="Send tap">'+['PRE','POST'].map(t=>'<option '+(t===send.tap?'selected':'')+'>'+t+'</option>').join('')+'</select>'+
       '<select data-send-gain aria-label="Send level">'+
       [[.125,'−18 dB'],[.25,'−12 dB'],[.5,'−6 dB'],[1,'0 dB']].map(([v,l])=>'<option value="'+v+'" '+(v===send.gain?'selected':'')+'>'+l+'</option>').join('')+'</select>'+
