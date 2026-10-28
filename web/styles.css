@@ -1171,3 +1171,75 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
   box-shadow:inset 1px 0 #34434b,inset -1px 0 #34434b;
 }
 #app #mixer .fader-zone .fader-travel{z-index:1}
+/* DAW insertion markers are painted only while an FX drag is active. */
+#app #mixer .insert-slot.fx-drop-before::before,
+#app #mixer .insert-slot.fx-drop-after::after{
+  content:"";position:absolute;left:1px;right:1px;height:2px;
+  background:#9dd6d3;z-index:5;pointer-events:none;
+}
+#app #mixer .insert-slot{position:relative}
+#app #mixer .insert-slot.fx-drop-before::before{top:-1px}
+#app #mixer .insert-slot.fx-drop-after::after{bottom:-1px}
+.fx-drag-ghost{
+  position:fixed;z-index:5000;top:0;left:0;box-sizing:border-box;
+  min-width:84px;max-width:290px;padding:6px 9px;pointer-events:none;
+  color:#e7f8f8;background:#172a34;border:1px solid #81c5c8;
+  border-radius:3px;box-shadow:0 3px 8px #0008;font:11px/1.2 Arial,sans-serif;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;will-change:transform;
+}
+.fx-drag-source{opacity:.48}
+
+/* Native FX Rack uses the same lightweight insertion marker as mixer inserts. */
+.native-node[data-native-move]{position:relative}
+.native-node.fx-drop-before::before,.native-node.fx-drop-after::after{
+ content:"";position:absolute;left:1px;right:1px;height:2px;
+ background:#9dd6d3;z-index:5;pointer-events:none;
+}
+.native-node.fx-drop-before::before{top:-2px}
+.native-node.fx-drop-after::after{bottom:-2px}
+
+/* FX slot selection is always clear without expensive hover blur/compositing. */
+#app #mixer .fx-picker-target{
+  outline:1px solid #88cfc5;outline-offset:-1px;
+  background-color:#1b393e;
+}
+#app #mixer .native-insert-row.has-orbit .insert,
+#app #mixer .native-insert-row.has-orbit .fx-power{
+  background-color:#24454b!important;color:#b7eee1;
+}
+#app #mixer .native-insert-row.has-orbit .insert-name::after{
+  content:" · ↻";color:#8dd9c4;font-size:10px;
+}
+#nativeFxSelector.native-modal{
+  background:transparent!important;backdrop-filter:none!important;
+  pointer-events:none!important;display:block;padding:0;
+}
+#nativeFxSelector[hidden]{display:none!important}
+#nativeFxSelector .native-dialog{
+  position:fixed;pointer-events:auto;width:min(390px,calc(100vw - 16px));
+  max-height:min(560px,calc(100vh - 16px));
+  margin:0;padding:0;box-shadow:0 5px 19px #0008;
+  border:1px solid #547c85;border-radius:6px;
+  background:#172a34;overflow:visible;
+}
+#nativeFxSelector .native-dialog::before{
+  content:"";position:absolute;top:-5px;left:var(--fx-arrow-x,22px);
+  width:8px;height:8px;background:#172a34;
+  border-left:1px solid #547c85;border-top:1px solid #547c85;
+  transform:rotate(45deg);
+}
+#nativeFxSelector .native-dialog.picker-above::before{
+  top:auto;bottom:-5px;border:0;border-right:1px solid #547c85;
+  border-bottom:1px solid #547c85;
+}
+#nativeFxSelector .native-dialog-header{
+  padding:8px 11px;border-bottom:1px solid #34515e;
+}
+#nativeFxSelector .native-dialog-header h2{font-size:13px;margin:2px 0;font-weight:500}
+#nativeFxSelector .native-dialog-body{padding:9px 11px;min-height:0;overflow:auto}
+#nativeFxSelector .native-dialog-footer{padding:6px 11px}
+#nativeFxSelector .native-category{gap:3px}
+#nativeFxSelector .native-category button{padding:4px 6px;font-size:10px}
+#nativeFxSelector .native-search{padding:7px 9px;margin-bottom:5px}
+#nativeFxContext .fx-context-delete{color:#efb2a8;display:flex;align-items:center;gap:7px}
+#nativeFxContext .fx-context-delete svg{width:15px;height:15px;fill:currentColor}
