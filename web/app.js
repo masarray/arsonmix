@@ -199,6 +199,11 @@ function updateMeterVisual(key,level,now){
 function flushUiParams(){uiFlushScheduled=false;const bridge=window.__JUCE__?.backend;if(bridge?.emitEvent)for(const event of pendingUiParams.values())bridge.emitEvent('arMixParameter',event);pendingUiParams.clear()}
 function send(param,value,ch=currentChannel){
  const event={channel:ch+1,parameter:param,value};
+ // P1I: native routing token rejects UI gestures from stale device graphs.
+ const liveToken=window.__armixRouteToken;
+ if(ch>=0&&ch<10&&liveToken?.epoch>0&&liveToken?.revision>0){
+   event.routeEpoch=liveToken.epoch;event.routeRevision=liveToken.revision;
+ }
  if(['faderDb','pan','trimDb','phonesDb','masterGain'].includes(param)){
    pendingUiParams.set(`${ch}:${param}`,event);
    if(!uiFlushScheduled){uiFlushScheduled=true;requestAnimationFrame(flushUiParams)}
