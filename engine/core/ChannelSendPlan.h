@@ -55,6 +55,9 @@ struct ChannelSendPlan final {
     std::array<int,stripCount+1> outgoingOffset {};
     std::array<int,stripCount> topologicalOrder {};
     std::array<int,stripCount> orderRank {};
+    // True graph reachability, not mere topological rank. Bounded ten-bit
+    // descendants per source, computed only during non-RT plan compilation.
+    std::array<std::uint16_t,stripCount> downstreamMask {};
     std::array<bool,stripCount> toMaster {};
     // A strip can be a BUS RETURN even without any physical input; do not
     // gate these strips on ChannelRoutingPlan::Strip::active (physical only).
@@ -137,6 +140,20 @@ struct ChannelSendPlan final {
                 j<candidate.outgoingOffset[found+1];++j)
                 --indegree[candidate.orderedEdges[j].destination];
         }
+        // Reverse topological order ensures each child's transitive mask
+        // is final before publishing its parent's mask. 10 strips < 16 bits.
+        for(int k=stripCount-1;k>=0;--k) {
+            const int source=candidate.topologicalOrder[k];
+            std::uint16_t reachable=0;
+            for(int e=candidate.outgoingOffset[source];
+                e<candidate.outgoingOffset[source+1];++e) {
+                const int child=candidate.orderedEdges[e].destination;
+                reachable=static_cast<std::uint16_t>(
+                    reachable | (std::uint16_t{1} << child) |
+                    candidate.downstreamMask[child]);
+            }
+            candidate.downstreamMask[source]=reachable;
+        }
         destination=candidate;
         return true;
     }
@@ -170,7 +187,8 @@ struct ChannelSendPlan final {
     }
     bool upstreamOf(int source,int destination) const noexcept {
         return source>=0&&source<stripCount&&destination>=0&&
-               destination<stripCount&&orderRank[source]<orderRank[destination];
+               destination<stripCount&&source!=destination&&
+               (downstreamMask[source] & (std::uint16_t{1} << destination))!=0;
     }
 };
 } // namespace armix::mixer

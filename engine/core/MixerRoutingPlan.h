@@ -116,13 +116,15 @@ struct Plan final {
         return true;
     }
 
-    // RT: read one physical input source into preallocated stereo FX scratch.
-    // Stereo processors can consume both channels before accumulate().
-    bool extract(int strip,const float* const* inputs,int availableInputs,
-                 float* left,float* right,int frames) const noexcept {
+    // RT: raw physical extraction for PRE-FADER sends / pre-FX processing.
+    // Hardware ownership is independent of current fader/mute/solo: at -inf dB
+    // a pre-fader send can still receive real input. The future caller owns
+    // explicit pre-send mute/solo policy. No DSP graph is activated here.
+    bool extractSource(int strip,const float* const* inputs,int availableInputs,
+                       float* left,float* right,int frames) const noexcept {
         if (!left || !right || frames<=0 || strip<0 || strip>=stripCount) return false;
         const auto& route=strips[strip];
-        const bool valid=route.active && inputs &&
+        const bool valid=route.mode!=SourceMode::disconnected && inputs &&
             route.inputA>=0 && route.inputA<availableInputs &&
             route.inputB>=0 && route.inputB<availableInputs &&
             inputs[route.inputA] && inputs[route.inputB];
@@ -133,6 +135,18 @@ struct Plan final {
         std::copy_n(inputs[route.inputA],frames,left);
         std::copy_n(inputs[route.inputB],frames,right);
         return true;
+    }
+
+    // Compatibility extraction for the post-fader/solo-controlled mix path.
+    // Maintain old muted/zero-fader semantics for existing P1A/P1B clients.
+    bool extract(int strip,const float* const* inputs,int availableInputs,
+                 float* left,float* right,int frames) const noexcept {
+        if (!left || !right || frames<=0 || strip<0 || strip>=stripCount) return false;
+        if (!strips[strip].active) {
+            std::fill_n(left,frames,0.f);std::fill_n(right,frames,0.f);
+            return false;
+        }
+        return extractSource(strip,inputs,availableInputs,left,right,frames);
     }
 
     // RT: mix one channel's POST-FX scratch onto the master accumulator.
