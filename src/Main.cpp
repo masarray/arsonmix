@@ -126,7 +126,11 @@ public:
         setResizeLimits (580, 430, 1300, 1000);
         auto* selector = new juce::AudioDeviceSelectorComponent (
             manager, 1, 2, 1, 2, false, false, false, false);
-        setContentOwned (selector, true);
+        // The JUCE selector refreshes its own preferred height while devices
+        // enumerate. It must NOT drive the top-level peer's dimensions.
+        // Fixed window ownership avoids Windows DPI / first-show stretching.
+        selector->setSize (720, 550);
+        setContentOwned (selector, false);
         centreWithSize (740, 590);
     }
     void closeButtonPressed() override { setVisible (false); }
@@ -695,6 +699,10 @@ private:
                     });
             safe->audioSetupWindow_->setVisible (true);
             safe->audioSetupWindow_->toFront (true);
+            // The peer now exists: perform one initial JUCE layout on the
+            // message thread, rather than relying on a manual window drag.
+            safe->audioSetupWindow_->resized();
+            safe->audioSetupWindow_->repaint();
             safe->setupLaunching_ = false;
         });
     }
