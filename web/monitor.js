@@ -193,8 +193,26 @@
       row.querySelector('[data-route-fx]').addEventListener('change',e=>{model.fxId=e.target.value;});
       refreshMode(row);
     });
+    drawAux();
     drawSends();
     updateRouteLabIdentity();
+  }
+  function drawAux(){
+    const parent=document.getElementById("arAuxRows");
+    parent.innerHTML=draftAux.map((bus,i)=>'<div class="arAuxRow" data-aux-row="'+i+'">'+
+      '<strong>AUX '+(i+1)+'</strong>'+
+      '<label><input data-aux-enable type="checkbox" '+(bus.enabled?'checked':'')+'>ON</label>'+
+      '<select data-aux-gain aria-label="AUX '+(i+1)+' level">'+routeGainChoices(bus.gain)+'</select>'+
+      '<label><input data-aux-main type="checkbox" '+(bus.main?'checked':'')+'>MAIN</label>'+
+      '<select data-aux-fx aria-label="AUX '+(i+1)+' native VST3">'+fxChoices(bus.fxId)+'</select>'+
+      '</div>').join('');
+    parent.querySelectorAll('[data-aux-row]').forEach(row=>{
+      const bus=draftAux[Number(row.dataset.auxRow)];
+      row.querySelector('[data-aux-enable]').addEventListener('change',e=>{bus.enabled=e.target.checked;});
+      row.querySelector('[data-aux-gain]').addEventListener('change',e=>{bus.gain=Number(e.target.value);});
+      row.querySelector('[data-aux-main]').addEventListener('change',e=>{bus.main=e.target.checked;});
+      row.querySelector('[data-aux-fx]').addEventListener('change',e=>{bus.fxId=e.target.value;});
+    });
   }
   function refreshMode(row){
     const type=row.querySelector('[data-route-mode]').value;
