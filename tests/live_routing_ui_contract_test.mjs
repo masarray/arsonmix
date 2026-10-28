@@ -90,7 +90,7 @@ test("P1H independently instantiates and processes real JUCE FX in 10 native lan
   const fx=readFileSync(new URL("../engine/core/LiveChannelFxGraph.h",import.meta.url),"utf8");
   assert.match(fx,/std::array<std::shared_ptr<FxInstance>,channels>/);
   assert.match(fx,/processor->processBlock\(buffer,midi\)/);
-  assert.match(fx,/if\(processor\)processor->releaseResources\(\)/);
+  assert.match(fx,/processor->releaseResources\(\)/);
   assert.match(lab,/std::make_unique<FxGraph>\(plan/);
   assert.match(lab,/formats\.createPluginInstance/);
   assert.match(lab,/prepareStereoEffectLayout/);
