@@ -306,27 +306,37 @@ async def main():
         assert await page.locator('.left-rail #menuScene').inner_text()=='EXPORT'
         assert await page.locator('.left-rail .rail-bottom button').count()==3
 
-        # Non-modal, native-safe preview management: persistent save/update,
-        # rename/delete and channel safes. No VST3-native assertion is implied.
-        await page.locator('#addScene').click()
-        await page.locator('#snapshotName').fill('Friday Vocal')
-        await page.locator('#snapshotSaveNew').click()
-        assert await page.locator('#snapshotPick option').count()==5
-        assert 'Friday Vocal' in await page.locator('#scenesList').inner_text()
-        await page.locator('[data-snapshot-safe="0"]').check()
-        assert await page.evaluate("localStorage.getItem('armix-v03-snapshot-safes')")=='["0"]'
-        await page.locator('#snapshotName').fill('Friday Vocal V2')
-        await page.locator('#snapshotRename').click()
-        await page.locator('#snapshotRename').click()
-        assert 'Friday Vocal V2' in await page.locator('#scenesList').inner_text()
-        await page.locator('#snapshotRecall').click()
-        assert await page.locator('#snapshotUndo').is_enabled()
-        await page.locator('#snapshotUndo').click()
-        await page.locator('[data-snapshot-safe="0"]').uncheck()
-        await page.locator('#snapshotDelete').click()
-        await page.locator('#snapshotDelete').click()
-        assert await page.locator('#snapshotPick option').count()==4
-        await page.locator('#snapshotClose').click()
+        # Real persistence requires a stable origin; page.set_content() above
+        # uses about:blank where browser localStorage is intentionally denied.
+        # Run CRUD/reload on the same local-file origin shipped by Windows.
+        snapPage=await browser.new_page(viewport={"width":1680,"height":920})
+        await snapPage.goto((project/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").as_uri())
+        await snapPage.locator('#addScene').click()
+        await snapPage.locator('#snapshotName').fill('Friday Vocal')
+        await snapPage.locator('#snapshotSaveNew').click()
+        assert await snapPage.locator('#snapshotPick option').count()==5, await snapPage.locator('#snapshotFeedback').inner_text()
+        assert 'Friday Vocal' in await snapPage.locator('#scenesList').inner_text()
+        await snapPage.locator('[data-snapshot-safe="0"]').check()
+        assert await snapPage.evaluate("localStorage.getItem('armix-v03-snapshot-safes')")=='["0"]'
+        await snapPage.locator('#snapshotUpdate').click()
+        await snapPage.locator('#snapshotUpdate').click()
+        assert 'Updated' in await snapPage.locator('#snapshotFeedback').inner_text()
+        await snapPage.reload()
+        await snapPage.locator('#addScene').click()
+        assert await snapPage.locator('#snapshotPick option').count()==5
+        assert await snapPage.locator('[data-snapshot-safe="0"]').is_checked()
+        await snapPage.locator('#snapshotName').fill('Friday Vocal V2')
+        await snapPage.locator('#snapshotRename').click()
+        await snapPage.locator('#snapshotRename').click()
+        assert 'Friday Vocal V2' in await snapPage.locator('#scenesList').inner_text()
+        await snapPage.locator('#snapshotRecall').click()
+        assert await snapPage.locator('#snapshotUndo').is_enabled()
+        await snapPage.locator('#snapshotUndo').click()
+        await snapPage.locator('[data-snapshot-safe="0"]').uncheck()
+        await snapPage.locator('#snapshotDelete').click()
+        await snapPage.locator('#snapshotDelete').click()
+        assert await snapPage.locator('#snapshotPick option').count()==4
+        await snapPage.close()
 
         # Owner's global BTN-180 hardware recipe: 7 toolbar + 8 left rail.
         # Single solid face, identical resting 7-shadow model, no Button 19.
