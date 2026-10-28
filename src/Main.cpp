@@ -616,6 +616,23 @@ private:
         const int channel = static_cast<int> (args.getProperty ("channel", -2));
         const auto value = args.getProperty ("value", {});
         const auto valueNumber = static_cast<float> (static_cast<double> (value));
+        // P1I: exact acknowledged epoch+revision fences all live strip edits.
+        if(engine_.dryRoutingLabActive() && channel>=1 &&
+           channel<=LiveDryRoutingLab::count &&
+           (name=="faderDb"||name=="pan"||name=="mute"||name=="solo")) {
+            const auto ep=args.getProperty("routeEpoch",juce::var());
+            const auto rev=args.getProperty("routeRevision",juce::var());
+            if(!ep.isVoid()&&!rev.isVoid() &&
+               ((name=="mute"||name=="solo")?value.isBool():
+                  (value.isDouble()||value.isInt()))) {
+                const auto epoch=static_cast<std::uint64_t>(static_cast<juce::int64>(ep));
+                const auto revision=static_cast<std::uint64_t>(static_cast<juce::int64>(rev));
+                const float liveValue=value.isBool()?(bool(value)?1.f:0.f):valueNumber;
+                (void)engine_.setDryRoutingLabParameter(channel-1,epoch,revision,
+                    name,liveValue);
+            }
+            return;
+        }
         if (name == "masterGain" && (value.isDouble() || value.isInt()))
             engine_.setMasterGainDb (valueNumber);
         // The app.js bridge converts strip index 0 to channel ID 1.

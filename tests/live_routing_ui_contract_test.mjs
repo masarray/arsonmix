@@ -102,3 +102,24 @@ test("P1H independently instantiates and processes real JUCE FX in 10 native lan
   assert.match(ui,/fxChoices\(v\.fxId\)/);
   assert.match(ui,/result\.fxCount/);
 });
+
+test("P1I binds premium 10CH console to REAL native RT graph without FX restart",()=>{
+  const app=readFileSync(new URL("../web/app.js",import.meta.url),"utf8");
+  const core=readFileSync(new URL("../engine/core/PreparedMixerBlock.h",import.meta.url),"utf8");
+  const fx=readFileSync(new URL("../engine/core/LiveChannelFxGraph.h",import.meta.url),"utf8");
+  const publisher=readFileSync(new URL("../engine/core/RealtimeRoutePublisher.h",import.meta.url),"utf8");
+  assert.match(app,/routeEpoch=liveToken\.epoch/);
+  assert.match(app,/routeRevision=liveToken\.revision/);
+  assert.match(main,/setDryRoutingLabParameter/);
+  assert.match(lab,/setChannelParameter/);
+  assert.match(lab,/publisher_\.updateActiveControl/);
+  assert.match(lab,/channelControls/);
+  assert.match(lab,/channelFxNames/);
+  assert.match(core,/class RealtimeStripControls/);
+  assert.match(core,/graph\.sends\.upstreamOf/);
+  assert.match(fx,/&controls_/);
+  assert.match(publisher,/updateActiveControl/);
+  assert.match(bridge,/window\.__armixRouteToken/);
+  assert.match(bridge,/lab\.channelPeaks/);
+  assert.match(bridge,/data-native-routing-lab/);
+});

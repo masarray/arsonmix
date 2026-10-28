@@ -841,6 +841,11 @@ public:
         setOutputMuted(true); // never expose CH1 unexpectedly on STOP
         dryRoutingLab_.disable();
     }
+    bool setDryRoutingLabParameter(int strip,std::uint64_t epoch,
+            std::uint64_t revision,const juce::String& parameter,
+            float value) noexcept {
+        return dryRoutingLab_.setChannelParameter(strip,epoch,revision,parameter,value);
+    }
     bool dryRoutingLabActive() const noexcept {return dryRoutingLab_.active();}
     void pollDryRoutingLab() noexcept {dryRoutingLab_.poll();}
 

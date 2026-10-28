@@ -198,6 +198,22 @@
   }
   function renderRack(){
   if(!workspace || currentTab()!=="FX RACK") return;
+  const lab=state.device?.dryRoutingLab;
+  if(lab?.active) {
+    const selected=typeof currentChannel==="number"?currentChannel:0;
+    const isMaster=typeof masterSelected!=="undefined"&&masterSelected;
+    const name=isMaster?"MASTER":(channels[selected]?.name||("CH "+(selected+1)));
+    const fx=isMaster?"":(lab.channelFxNames?.[selected]||"");
+    workspace.innerHTML='<div class="native-panel" data-live-native="1">'+
+      cardHeader("Native FX · "+name,"One LIVE routing graph · one source of truth")+
+      '<div class="native-card"><h3>REAL VST3 PROCESSING</h3>'+
+      '<p class="native-sub">'+(isMaster?"MASTER inserts are not available in this mode":
+          fx?escapeHtml(fx)+" · independent native VST3 instance":
+          "DRY · no FX selected for this channel")+'</p>'+
+      '<button class="native-btn primary" data-native-routing-lab="1">CONFIGURE INPUT / FX / BUS / SENDS</button>'+
+      '<p class="native-sub">Fader, PAN, MUTE and SOLO now change LIVE DSP without rebuilding VST3. Structural changes stay in Routing LAB.</p></div></div>';
+    return;
+  }
   const selected=typeof currentChannel==="number"?currentChannel:0;
   const isMaster=typeof masterSelected!=="undefined"&&masterSelected;
   if(isMaster||selected!==0){
@@ -684,6 +700,21 @@
     }
     const rack=track.querySelector(".rack");
     if(!rack)return;
+    const lab=state.device?.dryRoutingLab;
+    if(lab?.active){
+      const fx=lab.channelFxNames?.[i]||"";
+      const signature="live-lab-"+fx;
+      if(rack.dataset.nativeSig!==signature){
+        rack.dataset.nativeSig=signature;
+        rack.innerHTML='<div class="insert-slot"><button class="insert '+(fx?"":"empty")+
+          '" data-native-routing-lab="1" title="Configure live channel FX and routing">'+
+          '<span class="insert-name">'+escapeHtml(fx||"＋ ROUTE / FX")+'</span></button></div>';
+      }
+      track.removeAttribute("data-preview");
+      rack.removeAttribute("data-preview");
+      track.title="LIVE native routing · channel "+(i+1)+" · FX: "+(fx||"DRY");
+      return;
+    }
     if(i!==0){
       if(rack.dataset.nativeSig!=="empty-nonlive"){
         rack.dataset.nativeSig="empty-nonlive";
@@ -739,6 +770,12 @@
   // renderMaster() replaces descendants without replacing the mixer root.
   // Reapply the disabled native-only controls after each Master redraw.
   new MutationObserver(()=>syncView()).observe(mixer,{childList:true,subtree:true});
+  // Opens the existing native Routing LAB, not a second mixer/editor.
+  document.addEventListener("click",event=>{
+    if(!event.target.closest("[data-native-routing-lab]"))return;
+    event.preventDefault();event.stopImmediatePropagation();
+    document.getElementById("arOpenRoutingLab")?.click();
+  },true);
   const repaint=()=>{
     if(currentTab()==="FX RACK") renderRack();
     patchMixer();
@@ -1221,6 +1258,39 @@
   // A restored GUI-only snapshot must not masquerade as a live native setting.
   function syncNativeMixerControls(d){
     if(typeof channels==="undefined" || !channels[0])return;
+    const lab=d.dryRoutingLab;
+    if(lab?.active&&lab.ready&&Array.isArray(lab.channelControls)){
+      const editing=Date.now()<controlEditUntil ||
+        (typeof drag!=="undefined"&&drag&&
+          (drag.type==="fader"||drag.type==="pan"));
+      let changed=false;
+      for(let i=0;i<Math.min(10,lab.channelControls.length);++i){
+        const st=lab.channelControls[i],ch=channels[i];
+        if(!ch||!st)continue;
+        const db=Number(st.db),pan=Math.round(Number(st.pan));
+        if(!editing&&Number.isFinite(db)&&Math.abs(ch.fader-db)>.05){
+          ch.fader=db;changed=true;
+          const f=document.querySelector('[data-fader="'+i+'"]');
+          if(f){f.querySelector(".cap")?.style.setProperty("--pos",levelToTop(db)+"%");f.setAttribute("aria-valuenow",db.toFixed(1));}
+          const read=document.querySelector('[data-read="'+i+'"]');
+          if(read)read.textContent=fmt(db);
+        }
+        if(!editing&&Number.isFinite(pan)&&ch.pan!==pan){
+          ch.pan=pan;changed=true;
+          const p=document.querySelector('[data-pan="'+i+'"]');
+          if(p){p.style.setProperty("--pan-frac",(pan+100)/200);p.style.setProperty("--pan-left",Math.min(.5,(pan+100)/200));p.style.setProperty("--pan-span",Math.abs(pan)/200);p.setAttribute("aria-valuenow",String(pan));}
+          const read=document.querySelector('[data-pan-read="'+i+'"]');
+          if(read)read.textContent=panText(pan);
+        }
+        for(const key of ["mute","solo"])if(ch[key]!==!!st[key]){
+          ch[key]=!!st[key];changed=true;
+          const b=document.querySelector('[data-'+key+'="'+i+'"]');
+          if(b){b.classList.toggle("active",ch[key]);b.setAttribute("aria-pressed",String(ch[key]));}
+        }
+      }
+      if(changed)patchMixer();
+      return;
+    }
     const channelDb=Number(d.channelDb), masterDb=Number(d.masterDb);
     const channelPan=Math.round(Number(d.channelPan)*100);
     if(!Number.isFinite(channelDb)||!Number.isFinite(masterDb)||!Number.isFinite(channelPan))return;
@@ -1271,9 +1341,16 @@
     if(changed)patchMixer();
   }
   backend.addEventListener("arMixStatus",d=>{
+    const labWasActive=!!state.device?.dryRoutingLab?.active;
     state.device=d;
     state.monitor=!!d.monitor;
+    const lab=d.dryRoutingLab;
+    window.__armixRouteToken=lab?.active&&lab.ready?
+      {epoch:Number(lab.epoch),revision:Number(lab.revision)}:null;
     syncNativeMixerControls(d);
+    // UI can switch between CH1 production and 10CH DSP without replacing
+    // premium mixer geometry or rebuilding VST3 instances.
+    if(labWasActive!==!!lab?.active)repaint();
     const b=document.querySelector('[data-native-action="monitor"]');
     if(b){
       const label=state.monitor?"MUTE OUTPUT":"UNMUTE OUTPUT";
@@ -1288,7 +1365,11 @@
     // No fixed "-5 per telemetry callback" smoothing: its speed changed
     // with source cadence and fought the shared elapsed-time ballistics.
     // UI animation is capped at 29.4fps; native peaks remain unmodified.
-    paintMeter(document.querySelector('[data-meter="0"]'),percent(d.inputPeak));
+    if(lab?.active&&lab.ready&&Array.isArray(lab.channelPeaks)){
+      for(let i=0;i<Math.min(10,lab.channelPeaks.length);++i)
+        paintMeter(document.querySelector('[data-meter="'+i+'"]'),
+                   percent(Number(lab.channelPeaks[i])||0));
+    }else paintMeter(document.querySelector('[data-meter="0"]'),percent(d.inputPeak));
     paintMeter(document.querySelector('[data-meter="masterL"]')||
       document.getElementById("masterMeterL"),percent(d.peakLeft));
     paintMeter(document.querySelector('[data-meter="masterR"]')||

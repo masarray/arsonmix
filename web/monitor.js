@@ -75,14 +75,14 @@
     '<div id="arRouteFeedback" role="status">Select channels, BUS returns and sends; APPLY is a native graph transaction.</div>' +
     '<div class="arRouteFoot"><button id="arRouteStop">STOP LAB</button><button id="arRouteApply">APPLY TO NATIVE AUDIO</button></div></section>';
   document.body.appendChild(routeOverlay);
-  const draftRoutes=Array.from({length:10},()=>({mode:"NONE",left:-1,right:-1,gain:0.25,main:true,mute:false,solo:false,fxId:""}));
+  const draftRoutes=Array.from({length:10},()=>({mode:"NONE",left:-1,right:-1,gain:0.25,pan:0,main:true,mute:false,solo:false,fxId:""}));
   const draftSends=[];
   let draftEpoch=0; // identity of the hardware used to draw these selectors
   function invalidateDraftForNewDevice(nextEpoch){
     if(draftEpoch===nextEpoch)return false;
     draftEpoch=nextEpoch;
     for(const route of draftRoutes) {
-      route.mode="NONE";route.left=-1;route.right=-1;route.gain=0.25;
+      route.mode="NONE";route.left=-1;route.right=-1;route.gain=0.25;route.pan=0;
       route.main=true;route.mute=false;route.solo=false;route.fxId="";
     }
     draftSends.length=0;
@@ -109,6 +109,29 @@
     catalogItems=items.filter(p=>p&&typeof p.id==="string");
     if(routeOverlay.classList.contains("open"))drawRoutes();
   });
+  function syncNativeLevelsToRouteDraft(){
+    const d=state.dryRoutingLab||{};
+    if(!d.active||!d.ready||!Array.isArray(d.channelControls))return;
+    // Changes performed on the main mixer must survive the next STRUCTURAL
+    // APPLY; never roll back a musician's fader/PAN when editing a send.
+    for(let i=0;i<Math.min(10,d.channelControls.length);++i){
+      const s=d.channelControls[i],r=draftRoutes[i];
+      const db=Number(s?.db),pan=Number(s?.pan);
+      if(Number.isFinite(db))
+        r.gain=db<=-60?0:Math.min(4,Math.max(0,10**(db/20)));
+      if(Number.isFinite(pan))r.pan=Math.min(1,Math.max(-1,pan/100));
+      r.mute=!!s?.mute;
+      r.solo=!!s?.solo;
+    }
+  }
+  function routeGainChoices(current){
+    const base=[[.125,'−18 dB'],[.25,'−12 dB'],[.5,'−6 dB'],[1,'0 dB']];
+    const matched=base.some(([v])=>Math.abs(v-current)<.00001);
+    if(!matched&&Number.isFinite(current)&&current>=0&&current<=4)
+      base.push([current,(current<=0?'−∞':(20*Math.log10(current)).toFixed(1))+' dB · LIVE']);
+    return base.map(([v,label])=>
+      '<option value="'+v+'" '+(Math.abs(v-current)<.00001?'selected':'')+'>'+label+'</option>').join('');
+  }
   function drawRoutes(){
     // An identical numbered input on another ASIO device is NOT the same
     // microphone. Clear all prior user intent if device epoch changed.
@@ -123,8 +146,7 @@
       '<select data-route-left aria-label="CH '+(i+1)+' hardware left">'+routeSelect(ports,v.left)+'</select>'+
       '<select data-route-right aria-label="CH '+(i+1)+' hardware right">'+routeSelect(ports,v.right)+'</select>'+
       '<select data-route-gain aria-label="CH '+(i+1)+' test level">'+
-      [[.125,'−18 dB'],[.25,'−12 dB'],[.5,'−6 dB'],[1,'0 dB']].map(([a,label])=>
-        '<option value="'+a+'" '+(v.gain===a?'selected':'')+'>'+label+'</option>').join('')+'</select>'+
+      routeGainChoices(v.gain)+'</select>'+
       '<div class="arRouteFlags">'+
       '<label title="Send directly to MAIN"><input type="checkbox" data-route-main '+(v.main?'checked':'')+'>MAIN</label>'+
       '<label title="Mute channel and sends"><input type="checkbox" data-route-mute '+(v.mute?'checked':'')+'>M</label>'+
@@ -188,6 +210,7 @@
       " · "+(d.ports?.length||0)+" enabled inputs · "+(d.outputPorts?.length||0)+" outputs · "+(d.sendCount||0)+" live sends");
   }
   document.getElementById("arOpenRoutingLab").addEventListener("click",()=>{
+    syncNativeLevelsToRouteDraft();
     drawRoutes();
     routeOverlay.classList.add("open");
     overlay.classList.remove("open");

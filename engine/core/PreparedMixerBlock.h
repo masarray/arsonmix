@@ -2,6 +2,7 @@
 #pragma once
 #include "ChannelSendPlan.h"
 #include <algorithm>
+#include <atomic>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -107,6 +108,40 @@ struct PreparedRenderGraph final {
     }
 };
 
+// P1I: A single native parameter plane, updated only by the control thread.
+// All coefficients are calculated on control thread. Callback reads atomics
+// once per block and interpolates into fixed strip scratch buffers. The
+// immutable topology (DAG/physical ports/FX ownership) is never rebuilt for
+// ordinary fader, pan, MUTE, or SOLO changes.
+class RealtimeStripControls final {
+public:
+    struct Target {
+        std::atomic<float> left{1.f},right{1.f};
+        std::atomic<bool> mute{false},solo{false};
+    };
+    bool set(int strip,float gain,float pan,bool mono,bool mute,bool solo) noexcept {
+        if(strip<0||strip>=stripCount||!std::isfinite(gain)||gain<0.f||gain>4.f||
+           !std::isfinite(pan)||pan< -1.f||pan>1.f)return false;
+        const float left=mono?gain*std::sqrt(0.5f*(1.f-pan)):
+                               gain*(pan>0.f?1.f-pan:1.f);
+        const float right=mono?gain*std::sqrt(0.5f*(1.f+pan)):
+                                gain*(pan<0.f?1.f+pan:1.f);
+        auto& c=targets_[strip];
+        c.left.store(left,std::memory_order_relaxed);
+        c.right.store(right,std::memory_order_relaxed);
+        c.mute.store(mute,std::memory_order_relaxed);
+        c.solo.store(solo,std::memory_order_relaxed);
+        return true;
+    }
+    void setPreparedCoefficients(int strip,float left,float right) noexcept {
+        targets_[strip].left.store(left,std::memory_order_relaxed);
+        targets_[strip].right.store(right,std::memory_order_relaxed);
+    }
+    const Target& at(int strip) const noexcept{return targets_[strip];}
+private:
+    std::array<Target,stripCount> targets_{};
+};
+
 struct RenderLevels final {
     std::array<float,stripCount> channelPeak {};
     float masterPeakL = 0.f, masterPeakR = 0.f;
@@ -150,7 +185,8 @@ public:
     template<class Fx>
     bool process(const float* const* physical, int callbackInputCount,
                  float* outputL, float* outputR, int frames, Fx&& processFx,
-                 RenderLevels* observed=nullptr) noexcept {
+                 RenderLevels* observed=nullptr,
+                 const RealtimeStripControls* live=nullptr) noexcept {
         static_assert(std::is_nothrow_invocable_v<Fx&,int,float*,float*,int>,
                       "DSP hook must be noexcept and realtime bounded");
         if (observed) *observed={};
@@ -167,6 +203,10 @@ public:
         std::fill_n(masterL_,frames,0.f);
         std::fill_n(masterR_,frames,0.f);
 
+        bool anySolo=false;
+        if(live)for(int strip=0;strip<stripCount;++strip)
+            anySolo |= live->at(strip).solo.load(std::memory_order_relaxed) &&
+                      !live->at(strip).mute.load(std::memory_order_relaxed);
         for(int k=0;k<stripCount;++k) {
             const int strip=graph.sends.topologicalOrder[k];
             if(!graph.scheduled[strip]) continue;
@@ -197,12 +237,66 @@ public:
                 }
             }
             processFx(strip,l,r,frames); // genuine pre-fader channel-FX seam
+            // Solo closure includes a soloed strip and its source/return
+            // ancestors/descendants, matching the compiler's original policy.
+            bool routeAudible=true;
+            float gl=graph.leftGain[strip],gr=graph.rightGain[strip];
+            if(live) {
+                const auto& target=live->at(strip);
+                routeAudible=!target.mute.load(std::memory_order_relaxed);
+                if(routeAudible&&anySolo) {
+                    routeAudible=false;
+                    for(int j=0;j<stripCount;++j) {
+                        const auto& s=live->at(j);
+                        if(s.solo.load(std::memory_order_relaxed) &&
+                           !s.mute.load(std::memory_order_relaxed) &&
+                           (j==strip||graph.sends.upstreamOf(strip,j)||
+                            graph.sends.upstreamOf(j,strip))) {
+                            routeAudible=true;break;
+                        }
+                    }
+                }
+                gl=target.left.load(std::memory_order_relaxed);
+                gr=target.right.load(std::memory_order_relaxed);
+                // A MUTE or SOLO transition must also silence PRE sends.
+                // Smooth the pre-send source gate over <=64 samples; it does
+                // not create/restart FX, drivers, nodes or send topology.
+                const float targetGate=routeAudible?1.f:0.f;
+                if(!rampPrimed_[strip]) {
+                    preGate_[strip]=targetGate;
+                    lastGainL_[strip]=gl;
+                    lastGainR_[strip]=gr;
+                    rampPrimed_[strip]=true;
+                }
+                const int ramp=std::min(frames,64);
+                const float dGate=(targetGate-preGate_[strip])/ramp;
+                float gate=preGate_[strip];
+                for(int f=0;f<frames;++f) {
+                    if(f<ramp)gate+=dGate;
+                    l[f]*=gate;r[f]*=gate;
+                }
+                preGate_[strip]=targetGate;
+            }
             graph.sends.dispatch(strip,SendTap::preFader,l,r,
                                  left_.data(),right_.data(),frames);
-            const float gl=graph.leftGain[strip];
-            const float gr=graph.rightGain[strip];
             float peak=0.f;
-            for(int f=0;f<frames;++f) {
+            if(live) {
+                // A block-linear fader/PAN ramp avoids zipper clicks at the
+                // native callback rate. UI sends at most one target per rAF.
+                const int ramp=std::min(frames,64);
+                const float dL=(gl-lastGainL_[strip])/ramp;
+                const float dR=(gr-lastGainR_[strip])/ramp;
+                float lv=lastGainL_[strip],rv=lastGainR_[strip];
+                for(int f=0;f<frames;++f) {
+                    if(f<ramp){lv+=dL;rv+=dR;}
+                    l[f]*=lv;r[f]*=rv;
+                    peak=std::max(peak,std::max(std::abs(l[f]),std::abs(r[f])));
+                    if(graph.sends.toMaster[strip]) {
+                        masterL_[f]+=l[f];masterR_[f]+=r[f];
+                    }
+                }
+                lastGainL_[strip]=gl;lastGainR_[strip]=gr;
+            }else for(int f=0;f<frames;++f) {
                 l[f]*=gl;
                 r[f]*=gr;
                 peak=std::max(peak,std::max(std::abs(l[f]),std::abs(r[f])));
@@ -234,6 +328,8 @@ private:
     std::vector<float> backing_; // ALLOCATED BEFORE callback, never resized
     std::array<float*,stripCount> left_{};
     std::array<float*,stripCount> right_{};
+    std::array<float,stripCount> preGate_{},lastGainL_{},lastGainR_{};
+    std::array<bool,stripCount> rampPrimed_{};
     float* masterL_=nullptr;
     float* masterR_=nullptr;
 };

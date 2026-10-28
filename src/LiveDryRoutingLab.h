@@ -33,6 +33,10 @@ public:
         int uid=0;
     };
     static constexpr int count=armix::mixer::stripCount;
+    struct ChannelEdit {
+        float linear=1.f, pan=0.f;
+        bool mute=false, solo=false, mono=false;
+    };
 
     // JUCE calls aboutToStart after configuring the input/output device.
     // One device session gets a new epoch; stored route cannot survive it.
@@ -116,9 +120,17 @@ public:
                command,decoded,validationError))return validationError;
         const auto& cfg=decoded.channels;
         const auto& sends=decoded.sends;
+        // All physical and BUS nodes stay scheduled for realtime SOLO/MUTE;
+        // only the runtime parameter plane controls audibility thereafter.
+        // This prevents re-instantiating VST3 when a musician moves a fader.
+        auto topology=cfg;
+        for(auto& strip:topology.stripsAndMaster.strips) {
+            strip.mute=false;
+            strip.solo=false;
+        }
         Plan plan;
         armix::mixer::RenderError error;
-        if(!Plan::compile(cfg,
+        if(!Plan::compile(topology,
                           {physicalPorts.data(),static_cast<std::size_t>(countNow)},
                           sends,plan,error))
             return "Invalid physical routing (inactive port, format or mapping)";
@@ -131,6 +143,16 @@ public:
              juce::jlimit(32,Block::hardFrameLimit,deviceFrames));
         if(!next->prepared || next->prepared->capacity()==0)
             return "Cannot allocate routing workspace";
+        std::array<ChannelEdit,count> proposed{};
+        for(int i=0;i<count;++i) {
+            const auto& strip=cfg.stripsAndMaster.strips[i];
+            proposed[i]={strip.faderLinear,strip.pan,strip.mute,strip.solo,
+                plan.channels.effectiveFormats[i]==armix::mixer::ChannelFormat::mono};
+            if(!next->prepared->setStripControl(i,proposed[i].linear,
+                   proposed[i].pan,proposed[i].mono,
+                   proposed[i].mute,proposed[i].solo))
+                return "Cannot prepare native channel controls";
+        }
         // Every VST3 is instantiated and prepared on the control thread.
         // A graph has private processor instances: a retiring snapshot can
         // NEVER share a processBlock call with a newly published snapshot.
@@ -190,6 +212,8 @@ public:
                 enabled_.store(true,std::memory_order_release);
                 sendCount_.store(sends.count,std::memory_order_relaxed);
                 fxCount_.store(insertCount,std::memory_order_relaxed);
+                channelEdits_=proposed; // control thread SSOT for this route revision
+                for(int i=0;i<count;++i)channelFxNames_[i]=selections[i].name;
                 return {};
             case Publisher::Result::staleDevice:
                 return "Device epoch changed during preparation";
@@ -200,6 +224,36 @@ public:
             default:
                 return "Invalid prepared route";
         }
+    }
+
+    // Native live control path. Only the JUCE message thread writes. No
+    // graph recompilation, VST3 instantiation or callback detach.
+    // Browser carries the exact acknowledged route token to reject stale
+    // events following hotplug, reload or another user's APPLY transaction.
+    bool setChannelParameter(int strip,std::uint64_t expectedEpoch,
+                             std::uint64_t expectedRevision,
+                             const juce::String& name,float value) noexcept {
+        if(strip<0||strip>=count || !ready() ||
+           expectedEpoch!=epoch() || expectedRevision!=revision())return false;
+        auto updated=channelEdits_[strip];
+        if(name=="faderDb") {
+            if(!std::isfinite(value)||value< -60.f||value>10.f)return false;
+            updated.linear=value<= -60.f?0.f:std::pow(10.f,value/20.f);
+        }else if(name=="pan") {
+            if(!std::isfinite(value)||value< -100.f||value>100.f)return false;
+            updated.pan=value*.01f;
+        }else if(name=="mute"||name=="solo") {
+            if(value!=0.f && value!=1.f)return false;
+            if(name=="mute")updated.mute=value>0.5f;
+            else updated.solo=value>0.5f;
+        }else return false;
+        if(!publisher_.updateActiveControl(expectedEpoch,expectedRevision,
+            [&](FxGraph& fx) noexcept {
+                return fx.setStripControl(strip,updated.linear,updated.pan,
+                    updated.mono,updated.mute,updated.solo);
+            }))return false;
+        channelEdits_[strip]=updated;
+        return true;
     }
 
     void disable() noexcept {
@@ -328,6 +382,19 @@ public:
         out->setProperty("peakR",peakR_.load(std::memory_order_relaxed));
         out->setProperty("sendCount",sendCount_.load(std::memory_order_relaxed));
         out->setProperty("fxCount",fxCount_.load(std::memory_order_relaxed));
+        juce::Array<juce::var> controls,fxNames;
+        for(int i=0;i<count;++i) {
+            const auto& st=channelEdits_[i];
+            auto obj=std::make_unique<juce::DynamicObject>();
+            obj->setProperty("db",st.linear>0.f?20.f*std::log10(st.linear):-60.f);
+            obj->setProperty("pan",st.pan*100.f);
+            obj->setProperty("mute",st.mute);
+            obj->setProperty("solo",st.solo);
+            controls.add(juce::var(obj.release()));
+            fxNames.add(channelFxNames_[i]);
+        }
+        out->setProperty("channelControls",juce::var(controls));
+        out->setProperty("channelFxNames",juce::var(fxNames));
         juce::Array<juce::var> levels;
         for(const auto& p:channelPeaks_)levels.add(p.load(std::memory_order_relaxed));
         out->setProperty("channelPeaks",juce::var(levels));
@@ -364,6 +431,8 @@ public:
     }
 private:
     Publisher publisher_;
+    std::array<ChannelEdit,count> channelEdits_{}; // JUCE message thread only
+    std::array<juce::String,count> channelFxNames_{}; // status/control thread only
     // All data shared between JUCE device lifecycle and GUI/control reads
     // are atomic; the callback never enumerates masks or channel names.
     std::array<std::atomic<int>,armix::device::LiveInputPortRegistry::limit> enabledPorts_{};

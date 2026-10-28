@@ -22,7 +22,11 @@ public:
 
     explicit LiveChannelFxGraph(const PreparedRenderGraph& plan,int frames,int pluginQuantum=512)
         : block_(std::make_unique<PreparedMixerBlock>(plan,frames)),
-          pluginQuantum_(std::clamp(pluginQuantum,32,PreparedMixerBlock::hardFrameLimit)) {}
+          pluginQuantum_(std::clamp(pluginQuantum,32,PreparedMixerBlock::hardFrameLimit)) {
+        // P1H callers without live edits retain original compiled faders.
+        for(int i=0;i<channels;++i)
+            controls_.setPreparedCoefficients(i,plan.leftGain[i],plan.rightGain[i]);
+    }
 
     LiveChannelFxGraph(const LiveChannelFxGraph&)=delete;
     LiveChannelFxGraph& operator=(const LiveChannelFxGraph&)=delete;
@@ -35,6 +39,10 @@ public:
     int capacity() const noexcept{return block_?block_->capacity():0;}
     int maxFramesPerPlugin() const noexcept {return pluginQuantum_;}
     int activeInserts() const noexcept{return activeInserts_;}
+    bool setStripControl(int channel,float gain,float pan,
+                         bool mono,bool mute,bool solo) noexcept {
+        return controls_.set(channel,gain,pan,mono,mute,solo);
+    }
     const juce::String& insertName(int strip) const noexcept {
         static const juce::String empty;
         return strip>=0&&strip<channels?names_[strip]:empty;
@@ -67,11 +75,12 @@ public:
             midi.clear();
             processors_[strip]->processBlock(buffer,midi);
         };
-        return block_->process(physical,inputs,left,right,frames,channelFx,levels);
+        return block_->process(physical,inputs,left,right,frames,channelFx,levels,&controls_);
     }
 
 private:
     std::unique_ptr<PreparedMixerBlock> block_;
+    RealtimeStripControls controls_ {};
     FxBank processors_ {};
     std::array<juce::MidiBuffer,channels> midi_ {};
     std::array<juce::String,channels> names_ {};
