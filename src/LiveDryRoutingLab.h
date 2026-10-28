@@ -169,6 +169,12 @@ public:
             } catch(...) {
                 return "CH "+juce::String(lane+1)+": plugin prepare failed (unknown exception)";
             }
+            // Uncompensated latent inserts produce comb filtering in PRE/POST
+            // sends. Until native PDC exists, reject instead of lying about
+            // phase accuracy or silent extra buffer latency.
+            if(instance->getLatencySamples()!=0)
+                return "CH "+juce::String(lane+1)+
+                    ": this VST3 reports latency; choose zero-latency mode until PDC is implemented";
             if(!next->prepared->install(lane,std::move(instance),chosen->name))
                 return "CH "+juce::String(lane+1)+": duplicate or invalid VST3 insert";
             ++insertCount;
@@ -203,6 +209,7 @@ public:
         peakL_.store(0.f,std::memory_order_relaxed);
         peakR_.store(0.f,std::memory_order_relaxed);
         sendCount_.store(0,std::memory_order_relaxed);
+        fxCount_.store(0,std::memory_order_relaxed);
         for(auto& p:channelPeaks_)p.store(0.f,std::memory_order_relaxed);
     }
     void poll() noexcept {publisher_.pollRetirement();} // message thread
