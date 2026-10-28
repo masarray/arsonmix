@@ -1220,7 +1220,7 @@ private:
                 return emitNotice ("Return to NORMAL before rearranging VST3 effects.", true);
             const auto* orbitPlugin=orbit_.processor();
             orbit_.pauseForGraphEdit();
-            editorWindow_.reset();
+            // Logical FX reorder preserves the existing vendor editor and stable plugin identity.
             const bool changed=engine_.moveSlot(slot,slot+static_cast<int>(value));
             if(orbitPlugin && orbit_.active()){
                 for(int i=0;i<engine_.chainSize();++i)
@@ -1476,6 +1476,17 @@ class ConsoleApp final : public juce::JUCEApplication
 public:
     const juce::String getApplicationName() override { return "ArSonMix"; }
     const juce::String getApplicationVersion() override { return "0.5.0-native-catalog"; }
+    // Prevent competing audio-device owners and WebView2 sessions.
+    bool moreThanOneInstanceAllowed() override { return false; }
+    void anotherInstanceStarted (const juce::String&) override
+    {
+        if (window_)
+        {
+            window_->setMinimised (false);
+            window_->toFront (true);
+            window_->grabKeyboardFocus();
+        }
+    }
     void initialise (const juce::String&) override
     {
         const auto folder = armix::storage::PortableWorkspace::browserDataRoot();
