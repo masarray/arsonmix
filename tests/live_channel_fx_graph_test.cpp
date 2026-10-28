@@ -180,6 +180,49 @@ int main() {
         assert(GainFx::living==0);
         assert(GainFx::released==releasedBefore+2);
     }
+    // P1K: real JUCE processors on both a physical INPUT and a dedicated
+    // AUX. All ten input channels remain available while this bus is running.
+    {
+        constexpr std::array physical{2,5,9};
+        ChannelRoutingConfig route;
+        route.stripsAndMaster.strips[0]={SourceMode::mono,2,-1,0.f,0.f,false,false};
+        SendRequest sends; sends.toMaster[0]=false;
+        AuxBusRequest aux;
+        aux.buses[0]={true,true,false,1.f};
+        aux.count=1;
+        aux.sends[0]={0,0,SendTap::preFader,.5f,0.f,true};
+        PreparedRenderGraph plan; RenderError error;
+        assert(PreparedRenderGraph::compile(route,physical,sends,plan,error,aux));
+        auto fx=std::make_unique<LiveChannelFxGraph>(plan,32,32);
+        auto dry=std::make_unique<GainFx>(2.f);
+        auto wet=std::make_unique<GainFx>(3.f);
+        dry->prepareToPlay(48000,32);
+        wet->prepareToPlay(48000,32);
+        assert(fx->install(0,std::move(dry),"CH1","source-vst3"));
+        assert(fx->install(stripCount,std::move(wet),"AUX1","aux-vst3"));
+        assert(fx->activeInserts()==2);
+        const auto* originalBus=fx->instanceProcessor(stripCount);
+        RenderLevels levels;
+        const auto before=heapCalls.load(std::memory_order_relaxed);
+        assert(fx->process(phys,3,l.data(),r.data(),4,&levels));
+        assert(heapCalls.load(std::memory_order_relaxed)==before);
+        assert(near(l[0],1.2f)&&near(r[0],1.2f));
+        assert(near(levels.auxPeak[0],1.2f));
+        auto second=std::make_unique<LiveChannelFxGraph>(plan,32,32);
+        assert(second->reuse(0,*fx,"source-vst3"));
+        assert(second->reuse(stripCount,*fx,"aux-vst3"));
+        assert(second->instanceProcessor(stripCount)==originalBus);
+        assert(!second->reuse(stripCount,*fx,"wrong-id"));
+        const int oldPrepared=GainFx::prepared,oldReleased=GainFx::released;
+        fx.reset(); // AUX processor must remain live in second graph
+        assert(GainFx::released==oldReleased);
+        assert(second->process(phys,3,l.data(),r.data(),4,&levels));
+        assert(near(l[0],1.2f));
+        assert(GainFx::prepared==oldPrepared);
+        second.reset();
+        assert(GainFx::released==oldReleased+2);
+        assert(GainFx::living==0);
+    }
     // Tests above use a real JUCE AudioProcessor processing seam. Vendor
     // VST3 formats and sound quality require separate Windows hardware FAT.
 }

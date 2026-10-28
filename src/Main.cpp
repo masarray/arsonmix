@@ -935,7 +935,7 @@ private:
         // existing 1-channel VST3 production chain. Explicit Apply/Stop.
         if (action == "routingDryApply")
         {
-            std::array<LiveDryRoutingLab::FxSelection,LiveDryRoutingLab::count> selected{};
+            std::array<LiveDryRoutingLab::FxSelection,LiveDryRoutingLab::fxSlots> selected{};
             juce::String error;
             const auto rowsValue=value.getProperty("channels",juce::var());
             auto* rows=rowsValue.getArray();
@@ -953,6 +953,25 @@ private:
                         break;
                     }
                     selected[i]={entry->key(),entry->path,entry->name,entry->uid};
+                }
+            }
+            // Dedicated AUX catalog IDs come only from the trusted native
+            // VST3 catalog, NEVER untrusted WebView file paths.
+            const auto auxValue=value.getProperty("auxes",juce::var());
+            if(error.isEmpty() && !auxValue.isVoid()){
+                auto* auxRows=auxValue.getArray();
+                if(!auxRows||auxRows->size()!=LiveDryRoutingLab::auxCount)
+                    error="Exactly four AUX returns are required";
+                else for(int b=0;b<LiveDryRoutingLab::auxCount;++b){
+                    const auto id=auxRows->getReference(b).getProperty("fxId",{}).toString();
+                    if(id.isEmpty())continue;
+                    const auto* entry=catalog_.find(id);
+                    if(!entry){
+                        error="AUX "+juce::String(b+1)+": VST3 missing in catalog";
+                        break;
+                    }
+                    selected[LiveDryRoutingLab::count+b]=
+                        {entry->key(),entry->path,entry->name,entry->uid};
                 }
             }
             if(error.isEmpty()) {

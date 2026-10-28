@@ -82,13 +82,14 @@ test("P1G is real native BUS/send, not a cosmetic routing picker",()=>{
   assert.match(ui,/arAddSend/);
   assert.match(ui,/data-send-tap/);
   assert.match(ui,/sends:draftSends\.map/);
-  assert.match(ui,/result\.sendCount/);
+  assert.match(ui,/result\.auxSendCount/);
+  assert.match(ui,/d\.sendCount/);
   assert.match(ui,/data-route-peak/);
 });
 
 test("P1H independently instantiates and processes real JUCE FX in 10 native lanes",()=>{
   const fx=readFileSync(new URL("../engine/core/LiveChannelFxGraph.h",import.meta.url),"utf8");
-  assert.match(fx,/std::array<std::shared_ptr<FxInstance>,channels>/);
+  assert.match(fx,/std::array<std::shared_ptr<FxInstance>,fxSlots>/);
   assert.match(fx,/processor->processBlock\(buffer,midi\)/);
   assert.match(fx,/processor->releaseResources\(\)/);
   assert.match(lab,/std::make_unique<FxGraph>\(plan/);
@@ -147,4 +148,30 @@ test("P1J keeps real per-strip VST3 identity and tails across routing-only APPLY
   assert.match(app,/id="flowRoutingButton"/);
   assert.match(app,/Independent VST3/);
   assert.match(ui,/NATIVE ACK:.*preserved/);
+});
+
+test("P1K truly keeps ten physical INPUT strips and adds four independent native AUX/FX returns",()=>{
+  const aux=readFileSync(new URL("../engine/core/AuxBusPlan.h",import.meta.url),"utf8");
+  const block=readFileSync(new URL("../engine/core/PreparedMixerBlock.h",import.meta.url),"utf8");
+  const fx=readFileSync(new URL("../engine/core/LiveChannelFxGraph.h",import.meta.url),"utf8");
+  const command=readFileSync(new URL("../engine/core/NativeDryRouteCommand.h",import.meta.url),"utf8");
+  const app=readFileSync(new URL("../web/monitor.js",import.meta.url),"utf8");
+  assert.match(aux,/auxBusCount=4/);
+  assert.match(aux,/source<0\|\|s\.source>=stripCount/);
+  assert.match(aux,/destination<0\|\|s\.destination>=auxBusCount/);
+  assert.match(block,/processFx\(stripCount\+b,l,r,frames\)/);
+  assert.match(block,/graph\.aux\.dispatch\(strip,SendTap::preFader/);
+  assert.match(block,/graph\.aux\.dispatch\(strip,SendTap::postFader/);
+  assert.match(fx,/fxSlots=stripCount\+auxBusCount/);
+  assert.match(lab,/decoded\.aux/);
+  assert.match(lab,/auxSendCount_/);
+  assert.match(main,/LiveDryRoutingLab::auxCount/);
+  assert.match(command,/to>=stripCount/);
+  assert.match(app,/data-aux-row/);
+  assert.match(app,/auxes:draftAux\.map/);
+  assert.match(app,/data-aux-fx/);
+  const cmake=readFileSync(new URL("../CMakeLists.txt",import.meta.url),"utf8");
+  const workflow=readFileSync(new URL("../.github/workflows/p1-windows.yml",import.meta.url),"utf8");
+  assert.match(cmake,/P1KTenIndependentInputsAndFourDedicatedAuxReturns/);
+  assert.match(workflow,/ARMixDedicatedAuxBusTests/);
 });

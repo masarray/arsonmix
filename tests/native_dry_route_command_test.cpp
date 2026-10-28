@@ -64,6 +64,40 @@ int main(){
     invalid=juce::JSON::parse(json.replace("\"gain\":0.5","\"gain\":999"));
     assert(!NativeDryRouteCommand::decode(invalid,decoded,error));
     assert(decoded.sends.count==2);
+    // P1K native JSON: AUX1 is an additional stereo return (index 10),
+    // not one of the 10 physical/BUS channel rows. Resolve by native index.
+    auto dedicated=juce::JSON::parse(json);
+    juce::Array<juce::var> auxRows;
+    for(int b=0;b<auxBusCount;++b){
+        auto bus=std::make_unique<juce::DynamicObject>();
+        bus->setProperty("enabled",b==0);
+        bus->setProperty("main",true);
+        bus->setProperty("mute",false);
+        bus->setProperty("gain",1.0);
+        auxRows.add(juce::var(bus.release()));
+    }
+    dedicated.getDynamicObject()->setProperty("auxes",juce::var(auxRows));
+    const auto rawSends=dedicated.getProperty("sends",juce::var());
+    assert(rawSends.isArray());
+    rawSends.getArray()->getReference(0).getDynamicObject()->setProperty("to",10);
+    assert(NativeDryRouteCommand::decode(dedicated,decoded,error));
+    assert(decoded.aux.count==1&&decoded.sends.count==1);
+    assert(decoded.aux.sends[0].destination==0);
+    assert(decoded.aux.sends[0].tap==SendTap::preFader);
+    assert(PreparedRenderGraph::compile(
+        decoded.channels,ports,decoded.sends,graph,fault,decoded.aux));
+    PreparedMixerBlock dedicatedBlock(graph,64);
+    assert(dedicatedBlock.process(inputs,3,l.data(),r.data(),2,noFx));
+    assert(near(l[0],.5f)&&near(r[0],.5f)); // AUX PRE audible at CH1 -inf
+    // Invalid destination or disabled AUX must fail with unchanged result.
+    auxRows.getReference(0).getDynamicObject()->setProperty("enabled",false);
+    assert(!NativeDryRouteCommand::decode(dedicated,decoded,error));
+    assert(decoded.aux.count==1);
+    auxRows.getReference(0).getDynamicObject()->setProperty("enabled",true);
+    rawSends.getArray()->getReference(0).getDynamicObject()->setProperty("to",14);
+    assert(!NativeDryRouteCommand::decode(dedicated,decoded,error));
+    assert(decoded.aux.count==1);
+    // Older native commands still decode; AUX remains off by default.
     // Legacy command without "sends" remains backwards compatible.
     auto legacy=juce::JSON::parse(json.upToFirstOccurrenceOf(",\"sends\"",false,false)+"}");
     assert(NativeDryRouteCommand::decode(legacy,decoded,error));
