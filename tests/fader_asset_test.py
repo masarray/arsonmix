@@ -64,7 +64,9 @@ assert css.count(marker)==2, "Rose MASTER must override old gold master once"
 embedded=css.rsplit(marker,1)[1].split('")',1)[0]
 assert base64.b64decode(embedded)==rose, "Active MASTER finish must match rose-silver PNG"
 assert css.count('background-image:var(--ari-master-cap)!important')>=1
-assert "#app #mixer > .strip:not(.master-strip)" in finish
+assert "#app #mixer > #masterLeft.strip.master-strip" in finish
+assert "flex:1 0 128px;min-width:128px;max-width:none" in finish
+assert "P0 flat-glass LED meter" in finish
 assert "grid-template-columns:repeat(2,minmax(0,1fr))" in finish
 assert "max-width:none" in finish
 assert "session.channels.length<channels.length" in js

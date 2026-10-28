@@ -3,13 +3,13 @@
    Semantic colors alone define the latched state; only the transient :active
    pointer press moves the cap inward by 1px without changing its layout slot. */
 :root{
- --b180-off:#b3b3b3;--b180-edge:#636363;--b180-off-ink:#2b2b2b;
+ --b180-off:#cbd1d1;--b180-edge:#747f7f;--b180-off-ink:#172229;
  --b180-color:var(--b180-off);--b180-border:var(--b180-edge);
  --b180-ink:var(--b180-off-ink);
- --b180-on-cyan:#83d6e0;--b180-on-green:#79dd9e;
- --b180-on-magenta:#e3a6d8;--b180-on-purple:#c4a9e8;
- --b180-on-mute:#f38895;--b180-on-solo:#edc669;
- --b180-on-stereo:#77baeb;
+ --b180-on-cyan:#94e8ed;--b180-on-green:#91edac;
+ --b180-on-magenta:#edb8df;--b180-on-purple:#d6b9f0;
+ --b180-on-mute:#f99aa4;--b180-on-solo:#f4d479;
+ --b180-on-stereo:#9dd2f0;
 }
 :is(.btn-180,.toolbar .nav button.btn-180,.toolbar .spec-device,.left-rail .tabs button.btn-180,
 .strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
@@ -18,9 +18,9 @@
  /* Exact same inset + outside-edge model as the previously approved ON face.
     All layers are shared; only --b180-border is allowed to tint the edge. */
  --b180-shadow-surface:
-  inset 5px 5px 2px -1px rgba(0,0,0,.30),
+  inset 5px 5px 2px -1px rgba(0,0,0,.18),
   inset 0 0 1px 1px rgba(255,255,255,.14),
-  inset 0 1px 20px rgba(0,0,0,.19),
+  inset 0 1px 20px rgba(0,0,0,.12),
   inset 0 -1px 2px rgba(0,0,0,.32),
   0 0 0 1px var(--b180-border),
   0 1px 1px rgba(0,0,0,.28),
@@ -38,9 +38,9 @@
  box-shadow:var(--b180-shadow-surface)!important;
  background:var(--b180-color)!important;
  filter:none!important;
- color:white!important;
- text-shadow:0 1px 0 rgba(0, 0, 0, .3)!important;
- transition:background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out, transform 75ms ease-out!important;
+ color:var(--b180-ink)!important;
+ text-shadow:0 1px 0 rgba(255,255,255,.16)!important;
+ transition:background-color 45ms linear, border-color 45ms linear, color 0ms, transform 0ms!important;
  font-family:Arial,Helvetica,sans-serif;
  cursor:pointer;text-decoration:none;user-select:none;
  display:inline-flex;justify-content:center;align-items:center;
@@ -126,14 +126,14 @@
   0 2px 3px rgba(0,0,0,.13)!important;
 }
 
-/* OFF = the same shared material, neutral #b3b3b3 as owner requested.
+/* OFF uses the same shared material with a brighter light-steel face.
    Bright ON color recipes above remain untouched. */
-:is(.toolbar .nav button.btn-180,.toolbar .spec-device,
+:is(.toolbar .spec-device,
  .strip .channel-actions .candy,.strip .utility-row button,
  #masterLeft .master-actions button,#masterLeft .master-tools button,
  .left-rail .tabs button.btn-180,.left-rail .rail-presets button.btn-180,
  .left-rail .rail-bottom button.btn-180):not(.active):not(.selected):not(.on):not([aria-pressed="true"]){
- --b180-color:#b3b3b3;--b180-border:var(--b180-edge);
+ --b180-color:var(--b180-off);--b180-border:var(--b180-edge);
  --b180-ink:var(--b180-off-ink);
  color:var(--b180-ink)!important;
 }
@@ -145,7 +145,7 @@
 /* Scope-specific ON palette: only variables change; all keys share
    the same seven-layer pad and exact press recipe above. */
 #app .toolbar-actions .nav button.btn-180.selected{
- --b180-color:#f0f1f3;--b180-border:#939ba5;--b180-ink:#222932;
+ --b180-color:#e5f4a2;--b180-border:#8baf48;--b180-ink:#1c2b14;
 }
 #app .left-rail button.btn-180:is(.selected,.active){
  --b180-color:var(--b180-on-magenta);--b180-border:#ad6d9f;--b180-ink:#32172f;
@@ -172,4 +172,12 @@
  --b180-color:var(--b180-on-green);
  --b180-border:#3a9b68;
  --b180-ink:#113322;
+}
+/* P0 toolbar palette: premium yellow-lime pads, entirely static per state.
+   Higher specificity overrides historical neutral OFF skin only in main nav. */
+#app .toolbar-actions .nav button.btn-180:not(.selected){
+ --b180-color:#c8d99b;--b180-border:#829957;--b180-ink:#27351a;
+}
+#app .toolbar-actions .nav button.btn-180.selected{
+ --b180-color:#e5f4a2;--b180-border:#8baf48;--b180-ink:#1c2b14;
 }

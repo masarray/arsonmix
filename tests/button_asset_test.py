@@ -14,22 +14,24 @@ assert '--b180-shadow-surface:' in css and '--b180-shadow-raised:' not in css
 assert '--b180-depth:' not in css
 compact=''.join(css.split())
 for rule in (
- 'inset 5px 5px 2px -1px rgba(0,0,0,.30)',
+ 'inset 5px 5px 2px -1px rgba(0,0,0,.18)',
  'inset 0 0 1px 1px rgba(255,255,255,.14)',
- 'inset 0 1px 20px rgba(0,0,0,.19)',
+ 'inset 0 1px 20px rgba(0,0,0,.12)',
  'inset 0 -1px 2px rgba(0,0,0,.32)',
  '0 0 0 1px var(--b180-border)',
  'box-shadow:var(--b180-shadow-surface)',
  'transform:translateY(0px)!important',
- 'transition:background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out, transform 75ms ease-out',
+ 'transition:background-color 45ms linear, border-color 45ms linear, color 0ms, transform 0ms',
  'background:var(--b180-color)',
  'display:inline-flex',
- 'inset 5px 5px 2px -1px rgba(0,0,0,.30)'
+ 'inset 5px 5px 2px -1px rgba(0,0,0,.18)'
 ): assert ''.join(rule.split()) in compact,rule
-assert '--b180-off:#b3b3b3' in css
-assert '--b180-edge:#636363' in css
-assert '--b180-off-ink:#2b2b2b' in css
+assert '--b180-off:#cbd1d1' in css
+assert '--b180-edge:#747f7f' in css
+assert '--b180-off-ink:#172229' in css
 assert '--b180-ink:var(--b180-off-ink)' in css
+assert '--b180-color:#c8d99b' in css and '--b180-color:#e5f4a2' in css
+assert 'transform 0ms!important' in css
 assert '--b180-color:var(--b180-on-cyan)' in css
 assert '--b180-color:var(--b180-on-magenta)' in css
 assert '--b180-ink:#32151e' in css
@@ -64,7 +66,7 @@ assert 'filter:brightness(1.32)!important' not in (root/'web/styles-src/20-butto
 assert 'html[data-mixperf="baseline"] #app button.btn-180:hover:not(:disabled)' in css
 assert 'filter:brightness(1.32)!important' in css
 assert 'border-color:#527789!important' not in css
-assert css.count('inset 5px 5px 2px -1px rgba(0,0,0,.30)') == 1
+assert css.count('inset 5px 5px 2px -1px rgba(0,0,0,.18)') == 1
 assert 'box-shadow:var(--b180-shadow-surface)!important' in css
 assert 'transform:translateY(3px)!important' not in css
 assert 'transform:translateY(1px)!important' in css
@@ -78,13 +80,13 @@ assert 'a:true,b:false' not in js
 # Palette quality gate: stable perceptual lightness and readable dark captions.
 # No runtime calculations or painting cost; this runs only in CI.
 tokens={
-  'cyan':('#83d6e0','#12323c'),
-  'green':('#79dd9e','#113322'),
-  'magenta':('#e3a6d8','#32172f'),
-  'purple':('#c4a9e8','#26163c'),
-  'mute':('#f38895','#32151e'),
-  'solo':('#edc669','#2b210b'),
-  'stereo':('#77baeb','#0a2639'),
+  'cyan':('#94e8ed','#12323c'),
+  'green':('#91edac','#113322'),
+  'magenta':('#edb8df','#32172f'),
+  'purple':('#d6b9f0','#26163c'),
+  'mute':('#f99aa4','#32151e'),
+  'solo':('#f4d479','#2b210b'),
+  'stereo':('#9dd2f0','#0a2639'),
 }
 owner=(root/'web/styles-src/20-button-180.css').read_text(encoding='utf-8')
 def linear(u):
