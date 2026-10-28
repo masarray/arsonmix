@@ -3,6 +3,7 @@
 #include "NativeShowSchema.h"
 #include <juce_cryptography/juce_cryptography.h>
 #include <vector>
+#include <set>
 
 // P4 stage 2: CONTROL / I/O thread only. One immutable generation is prepared
 // and verified before a single small HEAD file is atomically replaced. The
@@ -165,6 +166,7 @@ private:
            tmp.snapshotOrder.size()>maxSnapshotsPerCommit)return "Invalid Show JSON";
         std::vector<SnapshotV2> candidate;
         juce::int64 total=header.getSize();
+        std::set<juce::String> verifiedHashes;
         for(const auto& id:tmp.snapshotOrder) {
             const auto file=dir.getChildFile("snapshots").getChildFile(id.toLowerCase()+".json");
             if(!file.existsAsFile()||file.getSize()>maxJsonBytes)return "Snapshot JSON missing/oversized";
@@ -179,8 +181,14 @@ private:
                     const auto file=dir.getChildFile("blobs").getChildFile(fx.stateSha256.toLowerCase()+".bin");
                     if(!file.existsAsFile()||file.getSize()>maxBlobBytes)
                         return "Missing/oversized vendor state";
-                    if(!juce::SHA256(file).toHexString().equalsIgnoreCase(fx.stateSha256))
-                        return "Vendor binary hash mismatch";
+                    // Count and hash every unique immutable blob once, even if
+                    // many FX snapshots intentionally reference the same state.
+                    if(verifiedHashes.insert(fx.stateSha256.toLowerCase()).second) {
+                        total+=file.getSize();
+                        if(total>maxGenerationBytes) return "Generation exceeds read budget";
+                        if(!juce::SHA256(file).toHexString().equalsIgnoreCase(fx.stateSha256))
+                            return "Vendor binary hash mismatch";
+                    }
                 }
             candidate.push_back(std::move(snap));
         }
