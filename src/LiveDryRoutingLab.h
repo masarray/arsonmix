@@ -127,7 +127,8 @@ public:
         auto next=std::make_unique<Publisher::Snapshot>();
         next->deviceEpoch=currentEpoch;
         next->graphRevision=revision;
-        next->prepared=std::make_unique<FxGraph>(plan,Block::hardFrameLimit);
+        next->prepared=std::make_unique<FxGraph>(plan,Block::hardFrameLimit,
+             juce::jlimit(32,Block::hardFrameLimit,deviceFrames));
         if(!next->prepared || next->prepared->capacity()==0)
             return "Cannot allocate routing workspace";
         // Every VST3 is instantiated and prepared on the control thread.
@@ -270,7 +271,7 @@ public:
         // Large/variable JUCE quantum is chunked using stack pointer views;
         // no heap allocation or new processing object inside callback.
         std::array<const float*,armix::device::LiveInputPortRegistry::limit> shifted{};
-        constexpr int max=Block::hardFrameLimit;
+        const int max=snapshot->prepared->maxFramesPerPlugin();
         float peakL=0.f,peakR=0.f;
         std::array<float,count> perChannelPeaks{};
         for(int offset=0;offset<frames;offset+=max) {
