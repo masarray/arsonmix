@@ -133,6 +133,10 @@ public:
         c.solo.store(solo,std::memory_order_relaxed);
         return true;
     }
+    void setPreparedCoefficients(int strip,float left,float right) noexcept {
+        targets_[strip].left.store(left,std::memory_order_relaxed);
+        targets_[strip].right.store(right,std::memory_order_relaxed);
+    }
     const Target& at(int strip) const noexcept{return targets_[strip];}
 private:
     std::array<Target,stripCount> targets_{};
