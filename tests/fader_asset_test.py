@@ -75,4 +75,22 @@ assert 'id="masterMode"' in js
 assert 'fader-tools master-tools' not in js
 assert 'masterMono' in js
 assert 'class="btn-180 master-mode' in js
+
+# P0 physical recess is source-owned, not merely present in a stale screenshot.
+# These selectors must be last so the old narrow line can't override the bay.
+for marker in (
+    "P0 FADER BED RECOVERY",
+    "width:min(46px,100%)",
+    "background:#26343c;border:0;border-radius:6px",
+    "inset 0 4px 4px -3px #070e13",
+    "inset 0 -4px 4px -3px #070e13",
+    "inset 4px 0 5px -4px #081116",
+    "inset -4px 0 5px -4px #081116",
+    "width:5px;transform:translateX(-50%)",
+    "#app #mixer .fader-zone .fader-travel{z-index:1}",
+):
+    assert marker in finish, "Latest fader recess lost from source: "+marker
+assert "backdrop-filter" not in finish.split("P0 FADER BED RECOVERY",1)[1]
+assert "filter:" not in finish.split("P0 FADER BED RECOVERY",1)[1]
+
 print("PASS: rose-gold MASTER, 10 channels, button mode/clip layout, offline parity")

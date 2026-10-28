@@ -563,6 +563,25 @@ async def main():
         assert len(geometry)==11 and all(x['nameTop']>=x['faderBottom']-1 for x in geometry),geometry
         assert all(not x['hasTools'] for x in geometry if not x['master']),geometry
         assert not any(x['hasTools'] for x in geometry),geometry
+        # Fader rail must be an actual smooth bent-metal recess (not old slit-only
+        # or a bright white rectangular frame); checked for all 10 + MASTER
+        # in the Browser before approving the Windows distribution.
+        fader_recess=await page.evaluate("""() => [...document.querySelectorAll('#mixer [data-fader]')].map(f=>{
+          const bay=getComputedStyle(f,'::before'),slit=getComputedStyle(f,'::after');
+          const rail=f.getBoundingClientRect(),cap=f.querySelector('.cap');
+          return {id:f.dataset.fader,rail:rail.width,bay:parseFloat(bay.width),
+            fill:bay.backgroundColor,edge:bay.boxShadow,border:bay.borderTopWidth,
+            top:bay.top,bottom:bay.bottom,slit:parseFloat(slit.width),
+            slitColor:slit.backgroundColor,capWidth:cap.getBoundingClientRect().width};
+        })""")
+        assert len(fader_recess)==11,fader_recess
+        assert all(x['bay']>=30 and x['bay']<=46.1 and x['bay']<=x['rail']+.1
+            and x['fill']=='rgb(38, 52, 60)' and x['border']=='0px'
+            and 'inset' in x['edge'] and x['top']=='0px'
+            and x['bottom']=='0px' and x['slit']==5
+            and x['slitColor']=='rgb(5, 9, 12)' and x['capWidth']==36
+            for x in fader_recess),fader_recess
+
         # Both resting states share depth; while pointer is down only, cap sinks 1px
         # with a stronger inner shadow and unchanged width/height/layout slot.
         btn=page.locator('[data-mute="0"]')
