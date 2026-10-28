@@ -72,7 +72,7 @@ int main(){
     assert(near(outL[0],direct+auxA+auxB));
     assert(near(outR[0],direct+auxA+auxB));
     assert(fxInvocations[0]==1 && fxInvocations[1]==1);
-    assert(near(meters.auxPeak[0],.1f)); // after bus gain 0.5
+    assert(near(meters.auxPeak[0],auxA)); // after bus gain 0.5
     assert(near(meters.auxPeak[1],auxB));
     assert(near(meters.channelPeak[9],.1f*std::sqrt(.5f)));
 
