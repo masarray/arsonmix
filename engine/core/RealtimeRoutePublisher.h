@@ -119,6 +119,17 @@ public:
         retiredCount_=0;
         return true;
     }
+    // Only the single control-thread writer calls this. The editor MUST
+    // mutate atomic runtime parameters, never processor lifetime or topology.
+    // The owned snapshot is stable on the writer thread; RT reads atomics.
+    template<class Update>
+    bool updateActiveControl(std::uint64_t epoch,std::uint64_t expectedRevision,
+                             Update&& update) noexcept {
+        if(!owned_||!owned_->prepared||owned_->deviceEpoch!=epoch||
+           owned_->graphRevision!=expectedRevision||revision_!=expectedRevision)
+            return false;
+        return update(*owned_->prepared);
+    }
     [[nodiscard]] ReadLease acquire() noexcept {return ReadLease(*this);}
     std::uint64_t lastRevision() const noexcept {return revision_;} // CONTROL
     std::size_t pendingRetirements() const noexcept {return retiredCount_;} // CONTROL

@@ -35,6 +35,10 @@ public:
     int capacity() const noexcept{return block_?block_->capacity():0;}
     int maxFramesPerPlugin() const noexcept {return pluginQuantum_;}
     int activeInserts() const noexcept{return activeInserts_;}
+    bool setStripControl(int channel,float gain,float pan,
+                         bool mono,bool mute,bool solo) noexcept {
+        return controls_.set(channel,gain,pan,mono,mute,solo);
+    }
     const juce::String& insertName(int strip) const noexcept {
         static const juce::String empty;
         return strip>=0&&strip<channels?names_[strip]:empty;
@@ -67,11 +71,12 @@ public:
             midi.clear();
             processors_[strip]->processBlock(buffer,midi);
         };
-        return block_->process(physical,inputs,left,right,frames,channelFx,levels);
+        return block_->process(physical,inputs,left,right,frames,channelFx,levels,&controls_);
     }
 
 private:
     std::unique_ptr<PreparedMixerBlock> block_;
+    RealtimeStripControls controls_ {};
     FxBank processors_ {};
     std::array<juce::MidiBuffer,channels> midi_ {};
     std::array<juce::String,channels> names_ {};
