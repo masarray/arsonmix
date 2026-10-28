@@ -68,3 +68,20 @@ test("MUTE gate precedes processing and suppresses previous audible crossfade",(
   assert.match(gate,/return true/);
   assert.ok(!lab.includes("masterMuted?0.f:std::clamp(masterGain"), "don't mute before fade and then reintroduce old samples");
 });
+
+test("P1G is real native BUS/send, not a cosmetic routing picker",()=>{
+  assert.match(lab,/NativeDryRouteCommand::decode/);
+  assert.match(lab,/const auto& sends=decoded\.sends/);
+  assert.match(lab,/JuceActivePortSnapshot::capture/);
+  assert.match(lab,/callbackOutputCount_\.load/);
+  assert.match(lab,/level\.channelPeak\[ch\]/);
+  assert.match(ui,/\['NONE','MONO','STEREO','BUS'\]/);
+  assert.match(ui,/data-route-main/);
+  assert.match(ui,/data-route-mute/);
+  assert.match(ui,/data-route-solo/);
+  assert.match(ui,/arAddSend/);
+  assert.match(ui,/data-send-tap/);
+  assert.match(ui,/sends:draftSends\.map/);
+  assert.match(ui,/result\.sendCount/);
+  assert.match(ui,/data-route-peak/);
+});
