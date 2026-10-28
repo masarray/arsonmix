@@ -562,7 +562,8 @@ public:
                           const juce::String& catalogId)
     {
         if (dryRoutingLab_.active()) return "Stop DRY ROUTING LAB before editing VST3";
-        if (handoff_.busy()) return "FX graph transition in progress; retry shortly";
+        if (handoff_.busy() || fxMovePhase_.load (std::memory_order_acquire) != 0)
+            return "FX graph transition in progress; retry shortly";
         if (graphOwned_->count >= maxFx) return "FX Rack is full (maximum 8 VST3 effects)";
         auto* device = deviceManager_.getCurrentAudioDevice();
         if (device == nullptr) return "Configure a working audio input/output device first";
@@ -1402,9 +1403,7 @@ private:
             juce::MidiBuffer midi;
             if (!dry)
             {
-                // One order snapshot: never observe half of a drag reorder.
-                const auto order = cycle.graph->orderPacked.load (std::memory_order_acquire);
-                // One atomic order snapshot per block, while DSP and bypass are attached to physical slots.
+                // One atomic order snapshot per block: stable physical FX and bypass identity.
                 const auto order = cycle.graph->orderPacked.load (std::memory_order_acquire);
                 for (int fx = 0; fx < cycle.graph->count; ++fx)
                 {
