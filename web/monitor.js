@@ -27,8 +27,10 @@
     "#arRoutingLabOverlay{display:none;position:fixed;inset:0;z-index:995;background:#08121be8;align-items:center;justify-content:center}" +
     "#arRoutingLabOverlay.open{display:flex}#arRoutingLabPanel{width:min(760px,94vw);max-height:86vh;overflow:auto;box-sizing:border-box;padding:16px;background:#172834;border:1px solid #637e8a;border-radius:8px;color:#dcecf3}" +
     "#arRoutingLabPanel h2{font-size:17px;font-weight:600;margin:0 0 6px}#arRoutingLabPanel p{font-size:11px;line-height:1.6;color:#9cc5d4;margin:6px 0 13px}" +
-    ".arRouteRow{display:grid;grid-template-columns:60px 105px 1fr 1fr 110px;gap:6px;align-items:center;padding:5px 0;border-bottom:1px solid #2d4653}" +
+    ".arRouteRow{display:grid;grid-template-columns:54px 82px minmax(65px,1fr) minmax(65px,1fr) 88px 148px;gap:6px;align-items:center;padding:5px 0;border-bottom:1px solid #2d4653}" +
     ".arRouteRow label{font-size:11px;font-weight:600}.arRouteRow select{width:100%;min-width:0;padding:6px;background:#0d202b;border:1px solid #4d6879;border-radius:4px;color:#e1eef5;font-size:11px}" +
+    ".arRouteFlags{display:flex;gap:5px;align-items:center;font-size:10px}.arRouteFlags label{display:flex;gap:1px;align-items:center;font-size:10px;white-space:nowrap}.arRouteFlags input{width:12px;height:12px;margin:0}.arRoutePeak{display:block;color:#91dcd0;font-size:9px;font-variant-numeric:tabular-nums}" +
+    "#arRouteRows{overflow-x:auto}.arRouteRow{min-width:590px}#arRouteSends{margin-top:12px}#arRouteSends h3{font-size:12px;margin:8px 0;color:#b1d4dd}.arSendRow{display:grid;grid-template-columns:1fr 1fr 76px 83px 32px;gap:6px;margin-bottom:5px}.arSendRow select{width:100%;min-width:0;padding:6px;color:#e1eef5;background:#0d202b;border:1px solid #4d6879;border-radius:4px}.arSendRow button{border:1px solid #9a6060;background:#442930;color:#f3dadd;border-radius:4px}#arAddSend{font-size:10px;padding:6px 8px}" +
     ".arRouteFoot{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-top:12px}.arRouteFoot button,.arRouteClose{color:#f0f7fa;background:#24475a;border:1px solid #587f91;border-radius:4px;padding:8px 12px;cursor:pointer}" +
     "#arRouteApply{background:#237566;border-color:#4ba48d}#arRouteStop{background:#50343c;border-color:#a8717c}" +
     "#arRouteFeedback{font-size:11px;min-height:18px;color:#8bdec1;margin-top:10px}";
@@ -65,19 +67,23 @@
   routeOverlay.id="arRoutingLabOverlay";
   routeOverlay.innerHTML='<section id="arRoutingLabPanel" role="dialog" aria-modal="true" aria-label="Native 10-channel dry routing">' +
     '<div class="arSignalHeader"><div><h2>ArSonMix · Live Input Routing LAB</h2><small id="arRouteIdentity">Reading actual device ports...</small></div><button class="arRouteClose" id="arRouteClose">CLOSE ×</button></div>' +
-    '<p>This is a real native hardware test with DRY DSP ONLY: no VST3 chains, AUX sends, or portable route recall. Use headphones at LOW volume. ' +
+    '<p>This is a real native hardware test with DRY DSP ONLY: no VST3 chains or portable route recall; internal PRE/POST sends and BUS returns are REAL. Use headphones at LOW volume. ' +
     'The normal CH1 VST3 host resumes after STOP. Every port shown is from the device active input mask.</p>' +
-    '<div id="arRouteRows"></div><div id="arRouteFeedback" role="status">Select channels and APPLY; unassigned channels stay silent.</div>' +
+    '<div id="arRouteRows"></div><section id="arRouteSends"><h3>INTERNAL SENDS · PRE / POST FADER (MAX 32)</h3><div id="arSendRows"></div><button id="arAddSend">＋ ADD SEND</button></section>' +
+    '<div id="arRouteFeedback" role="status">Select channels, BUS returns and sends; APPLY is a native graph transaction.</div>' +
     '<div class="arRouteFoot"><button id="arRouteStop">STOP LAB</button><button id="arRouteApply">APPLY TO NATIVE AUDIO</button></div></section>';
   document.body.appendChild(routeOverlay);
-  const draftRoutes=Array.from({length:10},()=>({mode:"NONE",left:-1,right:-1,gain:0.25}));
+  const draftRoutes=Array.from({length:10},()=>({mode:"NONE",left:-1,right:-1,gain:0.25,main:true,mute:false,solo:false}));
+  const draftSends=[];
   let draftEpoch=0; // identity of the hardware used to draw these selectors
   function invalidateDraftForNewDevice(nextEpoch){
     if(draftEpoch===nextEpoch)return false;
     draftEpoch=nextEpoch;
     for(const route of draftRoutes) {
       route.mode="NONE";route.left=-1;route.right=-1;route.gain=0.25;
+      route.main=true;route.mute=false;route.solo=false;
     }
+    draftSends.length=0;
     return true;
   }
   const safeRouteText=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -92,14 +98,19 @@
     const rows=document.getElementById("arRouteRows");
     rows.innerHTML=Array.from({length:10},(_,i)=>{
       const v=draftRoutes[i];
-      return '<div class="arRouteRow" data-route-row="'+i+'"><label>CH '+(i+1)+'</label>'+
+      return '<div class="arRouteRow" data-route-row="'+i+'"><label>CH '+(i+1)+'<small class="arRoutePeak" data-route-peak="'+i+'"></small></label>'+
       '<select data-route-mode aria-label="CH '+(i+1)+' format">'+
-      ['NONE','MONO','STEREO'].map(m=>'<option value="'+m+'" '+(v.mode===m?'selected':'')+'>'+m+'</option>').join('')+'</select>'+
+      ['NONE','MONO','STEREO','BUS'].map(m=>'<option value="'+m+'" '+(v.mode===m?'selected':'')+'>'+m+'</option>').join('')+'</select>'+
       '<select data-route-left aria-label="CH '+(i+1)+' hardware left">'+routeSelect(ports,v.left)+'</select>'+
       '<select data-route-right aria-label="CH '+(i+1)+' hardware right">'+routeSelect(ports,v.right)+'</select>'+
       '<select data-route-gain aria-label="CH '+(i+1)+' test level">'+
       [[.125,'−18 dB'],[.25,'−12 dB'],[.5,'−6 dB'],[1,'0 dB']].map(([a,label])=>
-        '<option value="'+a+'" '+(v.gain===a?'selected':'')+'>'+label+'</option>').join('')+'</select></div>';
+        '<option value="'+a+'" '+(v.gain===a?'selected':'')+'>'+label+'</option>').join('')+'</select>'+
+      '<div class="arRouteFlags">'+
+      '<label title="Send directly to MAIN"><input type="checkbox" data-route-main '+(v.main?'checked':'')+'>MAIN</label>'+
+      '<label title="Mute channel and sends"><input type="checkbox" data-route-mute '+(v.mute?'checked':'')+'>M</label>'+
+      '<label title="Solo channel with upstream/downstream sends"><input type="checkbox" data-route-solo '+(v.solo?'checked':'')+'>S</label>'+
+      '</div></div>';
     }).join('');
     rows.querySelectorAll('[data-route-row]').forEach(row=>{
       const model=draftRoutes[Number(row.dataset.routeRow)];
@@ -107,22 +118,54 @@
       row.querySelector('[data-route-left]').addEventListener('change',e=>{model.left=Number(e.target.value);});
       row.querySelector('[data-route-right]').addEventListener('change',e=>{model.right=Number(e.target.value);});
       row.querySelector('[data-route-gain]').addEventListener('change',e=>{model.gain=Number(e.target.value);});
+      row.querySelector('[data-route-main]').addEventListener('change',e=>{model.main=e.target.checked;});
+      row.querySelector('[data-route-mute]').addEventListener('change',e=>{model.mute=e.target.checked;});
+      row.querySelector('[data-route-solo]').addEventListener('change',e=>{model.solo=e.target.checked;});
       refreshMode(row);
     });
+    drawSends();
     updateRouteLabIdentity();
   }
   function refreshMode(row){
     const type=row.querySelector('[data-route-mode]').value;
-    row.querySelector('[data-route-left]').disabled=type==="NONE";
+    row.querySelector('[data-route-left]').disabled=type==="NONE"||type==="BUS";
     row.querySelector('[data-route-right]').disabled=type!=="STEREO";
   }
+  function drawSends(){
+    const el=document.getElementById("arSendRows");
+    const channels=Array.from({length:10},(_,i)=>'<option value="'+i+'">CH '+(i+1)+'</option>');
+    const channelSelect=(value)=>channels.map((option,i)=>option.replace('<option','<option '+(i===value?'selected':''))).join('');
+    el.innerHTML=draftSends.map((send,index)=>
+      '<div class="arSendRow" data-send-row="'+index+'">'+
+      '<select data-send-from aria-label="Send source">'+channelSelect(send.from)+'</select>'+
+      '<select data-send-to aria-label="Send destination">'+channelSelect(send.to)+'</select>'+
+      '<select data-send-tap aria-label="Send tap">'+['PRE','POST'].map(t=>'<option '+(t===send.tap?'selected':'')+'>'+t+'</option>').join('')+'</select>'+
+      '<select data-send-gain aria-label="Send level">'+
+      [[.125,'−18 dB'],[.25,'−12 dB'],[.5,'−6 dB'],[1,'0 dB']].map(([v,l])=>'<option value="'+v+'" '+(v===send.gain?'selected':'')+'>'+l+'</option>').join('')+'</select>'+
+      '<button data-send-remove aria-label="Remove send" title="Remove send">×</button></div>').join('');
+    el.querySelectorAll('[data-send-row]').forEach(row=>{
+      const i=Number(row.dataset.sendRow),m=draftSends[i];
+      row.querySelector('[data-send-from]').addEventListener('change',e=>{m.from=Number(e.target.value);});
+      row.querySelector('[data-send-to]').addEventListener('change',e=>{m.to=Number(e.target.value);});
+      row.querySelector('[data-send-tap]').addEventListener('change',e=>{m.tap=e.target.value;});
+      row.querySelector('[data-send-gain]').addEventListener('change',e=>{m.gain=Number(e.target.value);});
+      row.querySelector('[data-send-remove]').addEventListener('click',()=>{draftSends.splice(i,1);drawSends();});
+    });
+    document.getElementById("arAddSend").disabled=draftSends.length>=32;
+  }
+  document.getElementById("arAddSend").addEventListener('click',()=>{
+    if(draftSends.length>=32)return;
+    // Draft only; no sound changes until native acknowledgement.
+    draftSends.push({from:0,to:1,tap:"POST",gain:.25});
+    drawSends();
+  });
   function updateRouteLabIdentity(){
     const d=state.dryRoutingLab||{};
     const label=document.getElementById("arRouteIdentity");
     if(!label)return;
     setTextIfChanged(label,(d.active ? (d.ready?"DRY LAB ACTIVE":"DRY LAB STALE — SILENT, REAPPLY"):"DRY LAB OFF")+
       " · device epoch "+(d.epoch||0)+" · rev "+(d.revision||0)+
-      " · "+(d.ports?.length||0)+" enabled physical inputs");
+      " · "+(d.ports?.length||0)+" enabled inputs · "+(d.outputPorts?.length||0)+" outputs · "+(d.sendCount||0)+" live sends");
   }
   document.getElementById("arOpenRoutingLab").addEventListener("click",()=>{
     drawRoutes();
@@ -145,7 +188,8 @@
     document.getElementById("arRouteFeedback").textContent="Applying native route (output must be MUTED)...";
     api.emitEvent("arMixAction",{action:"routingDryApply",value:{
       deviceEpoch:draftEpoch,revision:Number(d.revision)||0,
-      channels:draftRoutes.map(c=>({...c}))
+      channels:draftRoutes.map(c=>({...c})),
+      sends:draftSends.map(s=>({...s}))
     }});
   });
   document.getElementById("arRouteStop").addEventListener("click",()=>api.emitEvent("arMixAction",{action:"routingDryStop"}));
@@ -154,7 +198,7 @@
     if(result && typeof result==="object" && "epoch" in result)state.dryRoutingLab=result;
     document.getElementById("arRouteFeedback").textContent=
       reply?.ok===false?("REJECTED · "+(reply.error||"Invalid route")):
-      result.active?"NATIVE ACK: DRY LAB ENABLED · zero VST3 · UNMUTE OUTPUT in SIGNAL CHECK":"NATIVE ACK: STOPPED · output remains MUTED for safety";
+      result.active?"NATIVE ACK: "+(result.sendCount||0)+" LIVE SENDS · zero VST3 · UNMUTE OUTPUT in SIGNAL CHECK":"NATIVE ACK: STOPPED · output remains MUTED for safety";
     updateRouteLabIdentity();
   });
 
@@ -175,7 +219,7 @@
     Number(d?.overBudgetCount)===0;
   function diagnosis(d) {
     if(d.dryRoutingLab?.active) return d.dryRoutingLab.ready?
-      "Live 10-channel DRY ROUTING LAB: actual native inputs → dry master. No VST3, AUX or snapshot routing. Use low headphone volume.":
+      "Live 10-channel DRY ROUTING LAB: real inputs, PRE/POST sends and BUS returns to master. No VST3 or portable routing. Use low headphone volume.":
       "Routing LAB device generation changed. Output is SILENT until you remap the real device and APPLY again.";
     if(d.diagnosticRoute==="OUTPUT_ONLY_TONE") return "Output-only test: capture endpoint is disconnected. Listen for tone at low headphone volume and click MARK CRACKLE when audible.";
     if(d.diagnosticRoute==="CAPTURE_ONLY") return "Capture-only test: hardware render endpoint is disconnected. Observe capture input and backend discontinuity count; you should hear no audio.";
@@ -199,6 +243,11 @@
   }
   function repaint(d) {
     if(routeOverlay.classList.contains("open")){
+      const levels=Array.isArray(d.dryRoutingLab?.channelPeaks)?d.dryRoutingLab.channelPeaks:[];
+      routeOverlay.querySelectorAll('[data-route-peak]').forEach(el=>{
+        const peak=Number(levels[Number(el.dataset.routePeak)])||0;
+        setTextIfChanged(el,d.dryRoutingLab?.ready?(Math.round(Math.min(1,peak)*100)+"%"):"—");
+      });
       if(draftEpoch!==(Number(d.dryRoutingLab?.epoch)||0)) {
         drawRoutes(); // fresh port names; reset stale user assignments
         document.getElementById("arRouteFeedback").textContent=
