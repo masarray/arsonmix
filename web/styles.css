@@ -781,13 +781,21 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  --b180-border:#3a9b68;
  --b180-ink:#113322;
 }
-/* P0 toolbar palette: premium yellow-lime pads, entirely static per state.
-   Higher specificity overrides historical neutral OFF skin only in main nav. */
-#app .toolbar-actions .nav button.btn-180:not(.selected){
- --b180-color:#c8d99b;--b180-border:#829957;--b180-ink:#27351a;
+/* Toolbar actions are NEUTRAL when idle, green only for selected/active.
+   One solid repaint on state change, never a hover filter or glow. */
+#app .toolbar-actions .nav button.btn-180:not(.selected):not(.active):not([aria-pressed="true"]){
+ --b180-color:var(--b180-off);--b180-border:var(--b180-edge);
+ --b180-ink:var(--b180-off-ink);
 }
-#app .toolbar-actions .nav button.btn-180.selected{
- --b180-color:#e5f4a2;--b180-border:#8baf48;--b180-ink:#1c2b14;
+#app .toolbar-actions .nav button.btn-180:is(.selected,.active,[aria-pressed="true"]){
+ --b180-color:#b2e8a0;--b180-border:#649c62;--b180-ink:#1a361d;
+}
+/* Lightweight hardware hover: a single solid tint, no filter, blur,
+   shadow animation, scale or new compositing layer. */
+#app .toolbar-actions .nav button.btn-180:not(:disabled):hover:not(:active),
+#app .left-rail button.btn-180:not(:disabled):hover:not(:active),
+#app #mixer button.btn-180:not(:disabled):hover:not(:active){
+ background-color:color-mix(in srgb,var(--b180-color) 90%,white 10%)!important;
 }
 /* Superseded navigation skin (Button 19 / experimental acrylic).
    All toolbar and left-rail buttons now use the canonical Button-180 pad
@@ -1281,3 +1289,9 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 #app #masterLeft .master-actions > button{width:100%;min-width:0;margin:0;padding:0 2px!important}
 #app #masterLeft .master-analysis{min-width:0}
 #app #masterLeft .master-analysis .master-info-kicker{letter-spacing:0;font-size:8px}
+
+/* Snapshot row actions: accessible, clipped and independent from recall click. */
+#app #scenesList .list-item{min-width:0}
+#app #scenesList .scene-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+#app #scenesList .scene-delete{flex:0 0 20px;height:18px;padding:0;border:1px solid #53646d;border-radius:2px;background:#26343c;color:#d0dbdf;font-size:14px;line-height:14px}
+#app #scenesList .scene-delete:hover{background:#40515a}
