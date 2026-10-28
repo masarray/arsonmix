@@ -700,7 +700,7 @@ async def main():
         await mode.click()
         red=await mode.evaluate("(e)=>getComputedStyle(e).getPropertyValue('--b180-color').trim()")
         assert await mode.inner_text()=='MONO' and await mode.get_attribute('aria-pressed')=='true'
-        assert red=='#f38895' and red!=blue,red
+        assert red=='#f99aa4' and red!=blue,red
         assert await page.evaluate('durableSession().masterMono') is True
         await mode.click()
         assert await mode.inner_text()=='STEREO' and await mode.get_attribute('aria-pressed')=='false'
