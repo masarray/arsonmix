@@ -213,6 +213,7 @@ public:
                 sendCount_.store(sends.count,std::memory_order_relaxed);
                 fxCount_.store(insertCount,std::memory_order_relaxed);
                 channelEdits_=proposed; // control thread SSOT for this route revision
+                for(int i=0;i<count;++i)channelFxNames_[i]=selections[i].name;
                 return {};
             case Publisher::Result::staleDevice:
                 return "Device epoch changed during preparation";
@@ -381,6 +382,19 @@ public:
         out->setProperty("peakR",peakR_.load(std::memory_order_relaxed));
         out->setProperty("sendCount",sendCount_.load(std::memory_order_relaxed));
         out->setProperty("fxCount",fxCount_.load(std::memory_order_relaxed));
+        juce::Array<juce::var> controls,fxNames;
+        for(int i=0;i<count;++i) {
+            const auto& st=channelEdits_[i];
+            auto obj=std::make_unique<juce::DynamicObject>();
+            obj->setProperty("db",st.linear>0.f?20.f*std::log10(st.linear):-60.f);
+            obj->setProperty("pan",st.pan*100.f);
+            obj->setProperty("mute",st.mute);
+            obj->setProperty("solo",st.solo);
+            controls.add(juce::var(obj.release()));
+            fxNames.add(channelFxNames_[i]);
+        }
+        out->setProperty("channelControls",juce::var(controls));
+        out->setProperty("channelFxNames",juce::var(fxNames));
         juce::Array<juce::var> controls;
         for(const auto& state:channelEdits_) {
             auto c=std::make_unique<juce::DynamicObject>();
@@ -429,6 +443,7 @@ public:
 private:
     Publisher publisher_;
     std::array<ChannelEdit,count> channelEdits_{}; // JUCE message thread only
+    std::array<juce::String,count> channelFxNames_{}; // status/control thread only
     // All data shared between JUCE device lifecycle and GUI/control reads
     // are atomic; the callback never enumerates masks or channel names.
     std::array<std::atomic<int>,armix::device::LiveInputPortRegistry::limit> enabledPorts_{};
