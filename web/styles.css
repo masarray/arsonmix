@@ -795,7 +795,7 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 #app .toolbar-actions .nav button.btn-180:not(:disabled):hover:not(:active),
 #app .left-rail button.btn-180:not(:disabled):hover:not(:active),
 #app #mixer button.btn-180:not(:disabled):hover:not(:active){
- background-color:color-mix(in srgb,var(--b180-color) 90%,white 10%)!important;
+ border-color:color-mix(in srgb,var(--b180-border) 72%,white 28%)!important;
 }
 /* Superseded navigation skin (Button 19 / experimental acrylic).
    All toolbar and left-rail buttons now use the canonical Button-180 pad
