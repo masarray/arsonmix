@@ -14,3 +14,10 @@ The opt-in **SIGNAL CHECK → DRY ROUTING LAB** provides real physical ASIO/WASA
 The exact newly integrated head must run the **same** full Chromium/Firefox/Orbit GUI smoke currently green on main, native Node route contract, Windows MSVC/CTest and real executable packaging. Verify output against latest original main tree for unrelated visual source blobs. No additional CI matrices or jobs.
 
 Do **not** claim full production 10-channel VST3, 2-AUX runtime processing, plugin graph live swap, or #15 zero-VST crackle hardware pass. P1E is operator-controlled DRY hardware FAT only. Physical Windows ASIO/WASAPI inputs, buffer dropouts, latency, mute transition and routing status must be tested on owner's actual interface. Avoid arbitrarily modifying old PR #102 FX drag engine, source fader image or Orbit; use current main as owner.
+
+## Postreview fail-closed audio safety (P2 fixes before merge)
+Two valid review comments on the first PR head required corrections:
+1. A concurrent **STOP LAB** can change `active()` after the audio callback's outer check but before entering `process()`. The caller now checks the return value and explicitly zeros *all* output buffers plus all displayed output levels on a false return. Never fall through to the CH1 production renderer. No allocation or OS call on callback.
+2. With mute engaged during a topology switch, interpolating old `lastOutput` after applying `masterMuted?0` output gain could leak previously audible samples into hardware output. The lab now returns early with already-cleared outputs when muted, resets all residual fade/output history and primes a 256-sample **from-zero** transition on first unmute. It also skips muted dry DSP processing to conserve CPU.
+
+The existing Windows CTest runs unchanged; native UI Node contract now requires explicit STOP output-clear and mute-before-DSP guards. Both fail-closed safety paths are engineering corrections, not proof of hardware crackle immunity.

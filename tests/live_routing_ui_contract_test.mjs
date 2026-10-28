@@ -44,3 +44,27 @@ test("GUI exposes only truthful dry device routes and acknowledged commit",()=>{
   assert.match(bridge,/if\(i!==0\)/);
   assert.match(bridge,/track\.dataset\.preview="1"/);
 });
+
+test("STOP-race is fail closed: all outputs are written to silence without CH1 fallback",()=>{
+  const enter=engine.indexOf("if (dryRoutingLab_.active())",engine.indexOf("callbackCount_.fetch_add"));
+  const end=engine.indexOf("// Existing FX graph is excluded",enter);
+  assert.ok(enter>=0&&end>enter, "live audio callback LAB branch must exist");
+  const branch=engine.slice(enter,end);
+  assert.match(branch,/const bool routed=dryRoutingLab_\.process\(/);
+  assert.match(branch,/if\(!routed\)\s*\{\s*for\(int c=0;c<outputChannels;\+\+c\)/);
+  assert.match(branch,/juce::FloatVectorOperations::clear\(outputs\[c\],samples\)/);
+  assert.match(branch,/const float left=routed\?dryRoutingLab_\.peakLeft\(\):0\.f/);
+  assert.match(branch,/const float right=routed\?dryRoutingLab_\.peakRight\(\):0\.f/);
+});
+test("MUTE gate precedes processing and suppresses previous audible crossfade",()=>{
+  const start=lab.indexOf("if(snapshot->graphRevision!=audioRevision_");
+  const beforeRender=lab.indexOf("snapshot->prepared->process(",start);
+  const silent=lab.indexOf("if(masterMuted) {",start);
+  assert.ok(start>=0&&silent>start&&beforeRender>silent);
+  const gate=lab.slice(silent,beforeRender);
+  assert.match(gate,/fadeRemaining_=rampFrames/);
+  assert.match(gate,/fadeFromL_=fadeFromR_=0\.f/);
+  assert.match(gate,/lastOutputL_=lastOutputR_=0\.f/);
+  assert.match(gate,/return true/);
+  assert.ok(!lab.includes("masterMuted?0.f:std::clamp(masterGain"), "don't mute before fade and then reintroduce old samples");
+});

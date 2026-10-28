@@ -1241,13 +1241,20 @@ private:
               && !masterMute_.load(std::memory_order_relaxed)
               && activeDiagnosticRoute == armix::diagnostics::Route::normal
               && !independent_.active();
-            (void) dryRoutingLab_.process(inputs,inputChannels,outputs,
+            const bool routed=dryRoutingLab_.process(inputs,inputChannels,outputs,
                      outputChannels,samples,
                      masterGain_.load(std::memory_order_relaxed),
                      !outputPermitted);
-            // Only measured output levels, not fake VST or other-strip meters.
-            const float left=dryRoutingLab_.peakLeft();
-            const float right=dryRoutingLab_.peakRight();
+            // STOP can race after the outer active() check. Never leave a
+            // callback's output untouched, and NEVER fall through into CH1.
+            if(!routed) {
+                for(int c=0;c<outputChannels;++c)
+                    if(outputs && outputs[c])
+                        juce::FloatVectorOperations::clear(outputs[c],samples);
+            }
+            // Only actually routed audio can produce a live output meter.
+            const float left=routed?dryRoutingLab_.peakLeft():0.f;
+            const float right=routed?dryRoutingLab_.peakRight():0.f;
             inputPeak_.store(0.f,std::memory_order_relaxed);
             postFxPeak_.store(juce::jmin(1.f,juce::jmax(left,right)),std::memory_order_relaxed);
             outputPeakL_.store(juce::jmin(1.f,left),std::memory_order_relaxed);

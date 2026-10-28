@@ -214,6 +214,16 @@ public:
             fadeFromL_=lastOutputL_;
             fadeFromR_=lastOutputR_;
         }
+        // Strict output mute wins over every topology fade. Output buffers
+        // were zeroed before reading the graph, so skip all muted DSP work.
+        // Prime a 256-sample fade FROM ZERO for the first unmuted block.
+        // Never interpolate any previously audible sample while muted.
+        if(masterMuted) {
+            fadeRemaining_=rampFrames;
+            fadeFromL_=fadeFromR_=0.f;
+            lastOutputL_=lastOutputR_=0.f;
+            return true;
+        }
         // Large/variable JUCE quantum is chunked using stack pointer views;
         // no heap allocation or new processing object inside callback.
         std::array<const float*,armix::device::LiveInputPortRegistry::limit> shifted{};
@@ -228,7 +238,7 @@ public:
             if(!snapshot->prepared->process(shifted.data(),inputCount,
                    outputs[0]+offset,outputs[1]+offset,n,noFx,&level))
                 return true;
-            const float g=masterMuted?0.f:std::clamp(masterGain,0.f,2.f);
+            const float g=std::clamp(masterGain,0.f,2.f);
             for(int i=0;i<n;++i) {
                 float l=outputs[0][offset+i]*g;
                 float r=outputs[1][offset+i]*g;
