@@ -60,7 +60,7 @@ test('native has six consistent empty inserts and one DSP reorder per drop',()=>
 
 test('premium fold and per-slot popover avoid rectangle border and global backdrop',()=>{
  const b=readFileSync('web/bridge.js','utf8');
- const trough=css.slice(css.indexOf('/* P0: one folded-sheet-metal trough'),css.indexOf('/* DAW insertion markers'));
+ const trough=css.slice(css.indexOf('/* P0 FADER BED RECOVERY'),css.indexOf('/* DAW insertion markers'));
  assert.match(trough,/background:#26343c/);
  assert.match(trough,/width:min\(46px,100%\)/);
  assert.match(trough,/border:0;border-radius:6px/);
