@@ -148,6 +148,8 @@ public:
     }
     void poll() noexcept {publisher_.pollRetirement();} // message thread
     bool active() const noexcept {return enabled_.load(std::memory_order_acquire);}
+    float peakLeft() const noexcept {return peakL_.load(std::memory_order_relaxed);}
+    float peakRight() const noexcept {return peakR_.load(std::memory_order_relaxed);}
     std::uint64_t epoch() const noexcept {
         return deviceEpoch_.load(std::memory_order_acquire);
     }
@@ -160,6 +162,9 @@ public:
                  float* const* outputs,int outputCount,int frames,
                  float masterGain,bool masterMuted) noexcept {
         if(!active())return false;
+        // Stale meters must never survive a failed device/epoch mapping.
+        peakL_.store(0.f,std::memory_order_relaxed);
+        peakR_.store(0.f,std::memory_order_relaxed);
         if(frames<=0)return true;
         for(int c=0;c<outputCount;++c)
             if(outputs && outputs[c])
