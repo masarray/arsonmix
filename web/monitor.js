@@ -4,6 +4,7 @@
   const api = window.__JUCE__?.backend;
   if (!api?.emitEvent || !api?.addEventListener) return;
   let state = {};
+  let catalogItems = []; // native VST3 catalog, never a WebView file path
   const css = document.createElement("style");
   css.textContent = "#arSignalOverlay{display:none;position:fixed;inset:0;z-index:990;background:#020a10d9;align-items:center;justify-content:center}" +
     "#arSignalOverlay.open{display:flex}.arSignalPanel{width:min(710px,93vw);padding:16px;background:linear-gradient(#263d4b,#10212c 80%);border:1px solid #6a92a5;border-radius:9px;color:#d9eaf3;box-shadow:0 15px 55px #000c}" +
@@ -27,6 +28,7 @@
     "#arRoutingLabOverlay{display:none;position:fixed;inset:0;z-index:995;background:#08121be8;align-items:center;justify-content:center}" +
     "#arRoutingLabOverlay.open{display:flex}#arRoutingLabPanel{width:min(760px,94vw);max-height:86vh;overflow:auto;box-sizing:border-box;padding:16px;background:#172834;border:1px solid #637e8a;border-radius:8px;color:#dcecf3}" +
     "#arRoutingLabPanel h2{font-size:17px;font-weight:600;margin:0 0 6px}#arRoutingLabPanel p{font-size:11px;line-height:1.6;color:#9cc5d4;margin:6px 0 13px}" +
+    ".arRoutePluginLine{grid-column:1/-1;display:flex;align-items:center;gap:8px;padding:1px 4px 5px;color:#9bbfc6;font-size:10px}.arRoutePluginLine select{min-width:0;max-width:460px;flex:1;padding:5px 7px;color:#dcecf3;background:#0d202b;border:1px solid #4d6879;border-radius:4px}.arRoutePluginLine small{color:#7fa4b1}" +
     ".arRouteRow{display:grid;grid-template-columns:54px 82px minmax(65px,1fr) minmax(65px,1fr) 88px 148px;gap:6px;align-items:center;padding:5px 0;border-bottom:1px solid #2d4653}" +
     ".arRouteRow label{font-size:11px;font-weight:600}.arRouteRow select{width:100%;min-width:0;padding:6px;background:#0d202b;border:1px solid #4d6879;border-radius:4px;color:#e1eef5;font-size:11px}" +
     ".arRouteFlags{display:flex;gap:5px;align-items:center;font-size:10px}.arRouteFlags label{display:flex;gap:1px;align-items:center;font-size:10px;white-space:nowrap}.arRouteFlags input{width:12px;height:12px;margin:0}.arRoutePeak{display:block;color:#91dcd0;font-size:9px;font-variant-numeric:tabular-nums}" +
@@ -67,13 +69,13 @@
   routeOverlay.id="arRoutingLabOverlay";
   routeOverlay.innerHTML='<section id="arRoutingLabPanel" role="dialog" aria-modal="true" aria-label="Native 10-channel dry routing">' +
     '<div class="arSignalHeader"><div><h2>ArSonMix · Live Input Routing LAB</h2><small id="arRouteIdentity">Reading actual device ports...</small></div><button class="arRouteClose" id="arRouteClose">CLOSE ×</button></div>' +
-    '<p>This is a real native hardware test with DRY DSP ONLY: no VST3 chains or portable route recall; internal PRE/POST sends and BUS returns are REAL. Use headphones at LOW volume. ' +
+    '<p>Real hardware routing test: independent stereo-compatible VST3 insert per channel, PRE/POST sends, and BUS returns. No portable route recall. Use headphones at LOW volume. ' +
     'The normal CH1 VST3 host resumes after STOP. Every port shown is from the device active input mask.</p>' +
     '<div id="arRouteRows"></div><section id="arRouteSends"><h3>INTERNAL SENDS · PRE / POST FADER (MAX 32)</h3><div id="arSendRows"></div><button id="arAddSend">＋ ADD SEND</button></section>' +
     '<div id="arRouteFeedback" role="status">Select channels, BUS returns and sends; APPLY is a native graph transaction.</div>' +
     '<div class="arRouteFoot"><button id="arRouteStop">STOP LAB</button><button id="arRouteApply">APPLY TO NATIVE AUDIO</button></div></section>';
   document.body.appendChild(routeOverlay);
-  const draftRoutes=Array.from({length:10},()=>({mode:"NONE",left:-1,right:-1,gain:0.25,main:true,mute:false,solo:false}));
+  const draftRoutes=Array.from({length:10},()=>({mode:"NONE",left:-1,right:-1,gain:0.25,main:true,mute:false,solo:false,fxId:""}));
   const draftSends=[];
   let draftEpoch=0; // identity of the hardware used to draw these selectors
   function invalidateDraftForNewDevice(nextEpoch){
@@ -81,7 +83,7 @@
     draftEpoch=nextEpoch;
     for(const route of draftRoutes) {
       route.mode="NONE";route.left=-1;route.right=-1;route.gain=0.25;
-      route.main=true;route.mute=false;route.solo=false;
+      route.main=true;route.mute=false;route.solo=false;route.fxId="";
     }
     draftSends.length=0;
     return true;
@@ -90,6 +92,23 @@
   const routeSelect=(port,value)=>'<option value="-1">—</option>'+port.map(p=>
     '<option value="'+Number(p.port)+'" '+(Number(p.port)===value?'selected':'')+'>'+
     safeRouteText(p.label||("Input "+(Number(p.port)+1)))+' (IN '+(Number(p.port)+1)+')</option>').join('');
+  function fxChoices(selected){
+    const options=['<option value="">DRY · no VST3</option>'];
+    for(const p of catalogItems){
+      // All names and IDs originate from native catalog; escaped for DOM.
+      if(!p?.id)continue;
+      options.push('<option value="'+safeRouteText(p.id)+'" '+(p.id===selected?'selected':'')+'>'+safeRouteText(p.name||p.id)+'</option>');
+    }
+    if(selected && !catalogItems.some(p=>p.id===selected))
+      options.push('<option value="'+safeRouteText(selected)+'" selected>UNAVAILABLE · reselect VST3</option>');
+    return options.join('');
+  }
+  api.addEventListener("arMixCatalog",message=>{
+    const items=message?.items||message?.state?.items;
+    if(!Array.isArray(items))return;
+    catalogItems=items.filter(p=>p&&typeof p.id==="string");
+    if(routeOverlay.classList.contains("open"))drawRoutes();
+  });
   function drawRoutes(){
     // An identical numbered input on another ASIO device is NOT the same
     // microphone. Clear all prior user intent if device epoch changed.
@@ -110,7 +129,7 @@
       '<label title="Send directly to MAIN"><input type="checkbox" data-route-main '+(v.main?'checked':'')+'>MAIN</label>'+
       '<label title="Mute channel and sends"><input type="checkbox" data-route-mute '+(v.mute?'checked':'')+'>M</label>'+
       '<label title="Solo channel with upstream/downstream sends"><input type="checkbox" data-route-solo '+(v.solo?'checked':'')+'>S</label>'+
-      '</div></div>';
+      '</div><div class="arRoutePluginLine"><span>VST3 INSERT</span><select data-route-fx aria-label="CH '+(i+1)+' native VST3 insert">'+fxChoices(v.fxId)+'</select><small>one stereo-compatible instance · real FX</small></div></div>';
     }).join('');
     rows.querySelectorAll('[data-route-row]').forEach(row=>{
       const model=draftRoutes[Number(row.dataset.routeRow)];
@@ -121,6 +140,7 @@
       row.querySelector('[data-route-main]').addEventListener('change',e=>{model.main=e.target.checked;});
       row.querySelector('[data-route-mute]').addEventListener('change',e=>{model.mute=e.target.checked;});
       row.querySelector('[data-route-solo]').addEventListener('change',e=>{model.solo=e.target.checked;});
+      row.querySelector('[data-route-fx]').addEventListener('change',e=>{model.fxId=e.target.value;});
       refreshMode(row);
     });
     drawSends();
@@ -198,7 +218,7 @@
     if(result && typeof result==="object" && "epoch" in result)state.dryRoutingLab=result;
     document.getElementById("arRouteFeedback").textContent=
       reply?.ok===false?("REJECTED · "+(reply.error||"Invalid route")):
-      result.active?"NATIVE ACK: "+(result.sendCount||0)+" LIVE SENDS · zero VST3 · UNMUTE OUTPUT in SIGNAL CHECK":"NATIVE ACK: STOPPED · output remains MUTED for safety";
+      result.active?"NATIVE ACK: "+(result.fxCount||0)+" INDEPENDENT VST3 · "+(result.sendCount||0)+" SENDS · UNMUTE OUTPUT in SIGNAL CHECK":"NATIVE ACK: STOPPED · output remains MUTED for safety";
     updateRouteLabIdentity();
   });
 
@@ -219,7 +239,7 @@
     Number(d?.overBudgetCount)===0;
   function diagnosis(d) {
     if(d.dryRoutingLab?.active) return d.dryRoutingLab.ready?
-      "Live 10-channel DRY ROUTING LAB: real inputs, PRE/POST sends and BUS returns to master. No VST3 or portable routing. Use low headphone volume.":
+      "Live 10-channel Routing LAB: "+(d.dryRoutingLab.fxCount||0)+" independent native VST3 inserts, PRE/POST sends and BUS returns. Use low headphone volume.":
       "Routing LAB device generation changed. Output is SILENT until you remap the real device and APPLY again.";
     if(d.diagnosticRoute==="OUTPUT_ONLY_TONE") return "Output-only test: capture endpoint is disconnected. Listen for tone at low headphone volume and click MARK CRACKLE when audible.";
     if(d.diagnosticRoute==="CAPTURE_ONLY") return "Capture-only test: hardware render endpoint is disconnected. Observe capture input and backend discontinuity count; you should hear no audio.";
@@ -267,13 +287,13 @@
     const driverLabel=document.querySelector('.spec-device strong');
     setTextIfChanged(driverLabel,d.driver||"NO DRIVER");
     const liveLabel=document.querySelector('.status > span:first-child > b');
-    setTextIfChanged(liveLabel,d.dryRoutingLab?.active?"NATIVE DRY 10CH LAB":"NATIVE CH1");
+    setTextIfChanged(liveLabel,d.dryRoutingLab?.active?"NATIVE 10CH FX LAB":"NATIVE CH1");
     const edition=document.querySelector('.status > span:last-child');
     setTextIfChanged(edition,d.dryRoutingLab?.active?
-      "AR MIX P1E · REAL DRY ROUTES / FX DISABLED":"AR MIX P2 · CH1 NATIVE + UI PREVIEW");
+      "AR MIX P1H · REAL 10CH FX / BUS SENDS":"AR MIX P2 · CH1 NATIVE + UI PREVIEW");
     if (!overlay.classList.contains("open")) return;
     el("arInputName").textContent=d.dryRoutingLab?.active?"NATIVE 10 CH INPUTS":d.diagnosticRoute==="OUTPUT_ONLY_TONE"?"INTERNAL TEST TONE":d.inputDevice||"Input device";
-    el("arFxName").textContent=d.dryRoutingLab?.active?"DRY · ZERO VST3":d.diagnosticRoute==="OUTPUT_ONLY_TONE"?"NO INPUT / NO FX":d.diagnosticRoute!=="NORMAL"?"NO FX":d.dryTest?"DRY BYPASS":"VST3 Chain";
+    el("arFxName").textContent=d.dryRoutingLab?.active?(String(d.dryRoutingLab.fxCount||0)+" NATIVE VST3"):d.diagnosticRoute==="OUTPUT_ONLY_TONE"?"NO INPUT / NO FX":d.diagnosticRoute!=="NORMAL"?"NO FX":d.dryTest?"DRY BYPASS":"VST3 Chain";
     el("arOutputName").textContent=d.outputDevice||"Output device";
     el("arInputBar").style.width=percent(d.dryRoutingLab?.active?Math.max(d.dryRoutingLab.peakL||0,d.dryRoutingLab.peakR||0):d.inputPeak)+"%";
     el("arFxBar").style.width=percent(d.postFxPeak)+"%";
