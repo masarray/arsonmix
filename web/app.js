@@ -270,7 +270,7 @@ function makeStrip(ch,i){let inserts=ch.inserts.slice(0,6);while(inserts.length<
  <div class="ch-id">${i+1}</div><div class="rack">${inserts.map((n,j)=>`<div class="insert-slot ${n&&bypassed[fxKey(i,j)]?'is-bypassed':''}"><button class="insert ${!n?'empty':''}" data-insert="${i}:${j}" title="${n?'Open or replace '+safeText(n):'Add VST effect'}">${n?'':'<span class="insert-add-glyph" aria-hidden="true">＋</span>'}<span class="insert-name">${n? safeText(n):'ADD FX'}</span></button>${n?`<button type="button" class="fx-power ${bypassed[fxKey(i,j)]?'is-bypassed':''}" data-fxpower="${i}:${j}" aria-pressed="${!bypassed[fxKey(i,j)]}" aria-label="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}" title="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}">⏻</button>`:''}</div>`).join('')}</div>
  <div class="strip-controls"><div class="trim-row"><span class="mini-label">TRIM<br>dB</span><div class="mini-lcd" data-trim-read="${i}">${fmt(ch.trim)}</div></div>${knobMarkup('trim',i,ch.trim,'Trim')}<div class="pan-control">${panMarkup(ch,i)}<div class="pan-readline"><span aria-hidden="true">L</span><strong data-pan-read="${i}">${panText(ch.pan)}</strong><span aria-hidden="true">R</span></div></div><div class="utility-row"><button data-pre="${i}" class="btn-180 ${ch.pre?'active':''}">Ø</button><button data-hpf="${i}" class="btn-180 ${ch.hpf?'active':''}">HPF</button></div></div>
  <div class="channel-actions"><button class="btn-180 candy mute ${ch.mute?'active':''}" data-mute="${i}" aria-pressed="${ch.mute}">MUTE</button><button class="btn-180 candy solo ${ch.solo?'active':''}" data-solo="${i}" aria-pressed="${ch.solo}">SOLO</button></div>
- <div class="db-display" data-read="${i}">${fmt(ch.fader)}</div><div class="fader-zone"><div class="vu-bank" role="group" aria-label="${safeText(ch.name)} ${ch.stereo?'stereo left and right meters':'mono meter'}"><div class="vu-bars">${ch.stereo?meterUnit(String(i)+'L','L')+meterUnit(String(i)+'R','R'):meterUnit(String(i),'')}</div>${meterScaleMarkup()}</div><div class="fader" data-fader="${i}" role="slider" tabindex="0" aria-orientation="vertical" aria-label="${ch.name} fader" aria-valuemin="-60" aria-valuemax="10" aria-valuenow="${ch.fader}"><div class="fader-travel"><div class="cap" style="--pos:${levelToTop(ch.fader)}%"></div></div></div>${faderScaleMarkup()}</div></div>
+ <div class="db-display" data-read="${i}">${fmt(ch.fader)}</div><div class="fader-zone"><div class="vu-bank ${ch.stereo?'is-stereo':'is-mono'}" role="group" aria-label="${safeText(ch.name)} ${ch.stereo?'stereo left and right meters':'mono meter'}"><div class="vu-bars">${ch.stereo?meterUnit(String(i)+'L','L')+meterUnit(String(i)+'R','R'):meterUnit(String(i),'')}</div>${meterScaleMarkup()}</div><div class="fader" data-fader="${i}" role="slider" tabindex="0" aria-orientation="vertical" aria-label="${ch.name} fader" aria-valuemin="-60" aria-valuemax="10" aria-valuenow="${ch.fader}"><div class="fader-travel"><div class="cap" style="--pos:${levelToTop(ch.fader)}%"></div></div></div>${faderScaleMarkup()}</div></div>
  <div class="strip-name" data-editstrip="${i}" role="button" tabindex="0" aria-label="Double-click to edit ${safeText(ch.name)} name, icon and color" title="Double-click to edit channel identity"><span class="strip-caption">${safeText(ch.name)}</span><span class="track-icon">${safeText(ch.icon)}</span></div>
  </article>`}
 function renderMixer(){
@@ -300,10 +300,9 @@ function renderMaster(){
  host.innerHTML=`<div class="ch-id master-ch-id">MASTER</div>
  <div class="master-fx-rack">${masterFxRows()}</div>
  <div class="strip-controls master-controls-zone">
-  <div class="master-analysis" role="group" aria-label="Livestreaming loudness and true peak (simulated)">
-   <div class="master-info-kicker">STREAM LEVELS <span>SIM</span></div>
-   <div class="master-info-row"><span>LUFS-I</span><strong id="masterLufs" aria-label="Integrated loudness">--</strong></div>
-   <div class="master-info-row"><span>dBTP</span><strong id="masterDbtp" aria-label="True peak">--</strong></div>
+  <div class="master-analysis" role="group" aria-label="LUFS integrated loudness and dBTP true peak" title="Browser demo is simulated; actual native loudness/true peak not implemented">
+   <div class="master-info-row"><span>LUFS</span><strong id="masterLufs" aria-label="Integrated loudness unavailable">—</strong></div>
+   <div class="master-info-row"><span>dBTP</span><strong id="masterDbtp" aria-label="True peak unavailable">—</strong></div>
   </div>
  <div class="master-pan-wrap">
     <div class="pan-control"><div class="pan-track ${masterPan===0?'is-centered':''}" data-pan="master"
@@ -653,10 +652,18 @@ function meters(t){
  const base=clamp(67+Math.sin(t*.002)*15,8,95);
  const l=clamp(base+Math.sin(t*.003)*6,3,99),r=clamp(base-5+Math.sin(t*.003+1)*7,3,99);
  updateMeterVisual('masterL',masterMute?2:l,t);updateMeterVisual('masterR',masterMute?2:r,t);
- // UI demonstration only. These values are never from a true-peak or loudness meter.
- const lufs=$('masterLufs'),tp=$('masterDbtp');
- if(lufs)lufs.textContent=(-31+(l+r)/11).toFixed(1);
- if(tp)tp.textContent=(-18+Math.max(l,r)/7).toFixed(1);
+ // UI preview only. No native BS.1770 or oversampled true peak is calculated.
+ updateMasterAnalysisPreview(-31+(l+r)/11,-18+Math.max(l,r)/7);
+}
+// Threshold color policy for browser-only preview, no additional timer.
+function updateMasterAnalysisPreview(lufs,dbtp){
+ for(const [id,value,limit] of [['masterLufs',lufs,-12],['masterDbtp',dbtp,-1]]){
+  const el=$(id);if(!el)continue;
+  const valid=Number.isFinite(value),next=valid?value.toFixed(1):'—';
+  if(el.textContent!==next)el.textContent=next;
+  el.classList.toggle('over-limit',valid&&value>limit);
+  el.setAttribute('aria-label',valid?('Simulated '+id+' '+next):(id+' unavailable'));
+ }
 }
 // v0.3: demo-only FX catalog. Items represent mock plugins, not installed VST3 binaries.
 const pluginCatalog=[

@@ -1295,3 +1295,51 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 #app #scenesList .scene-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
 #app #scenesList .scene-delete{flex:0 0 20px;height:18px;padding:0;border:1px solid #53646d;border-radius:2px;background:#26343c;color:#d0dbdf;font-size:14px;line-height:14px}
 #app #scenesList .scene-delete:hover{background:#40515a}
+
+/* The mono meter has ONE LED slot, stereo/master TWO. Keep 7px fixed LEDs. */
+#app #mixer .fader-zone .vu-bank.is-mono{
+ flex-basis:35px;width:35px;min-width:35px;max-width:35px;
+}
+#app #mixer .fader-zone .vu-bank.is-mono .vu-bars{
+ flex-basis:14px;width:14px;min-width:14px;max-width:14px;
+}
+/* Same machined recessed folds as fader; no external rectangular stroke. */
+#app #mixer .fader-zone .vu-bank .vu-bars{
+ position:relative;isolation:isolate;border:0;border-radius:5px;background:#24343c;
+ box-shadow:inset 0 4px 4px -3px #070e13,inset 0 -4px 4px -3px #070e13,
+            inset 4px 0 5px -4px #081116,inset -4px 0 5px -4px #081116;
+}
+#app #mixer .fader-zone .vu-bank .meter-unit .meter{
+ border:0;border-radius:2px;background:#080f14;
+ box-shadow:inset 0 1px 2px #0009,inset 1px 0 2px #000c,inset -1px 0 2px #000b;
+}
+#app #mixer .fader-zone .vu-bank .meter-unit .meter::after{
+ inset:0;background:linear-gradient(180deg,#d3eced10,transparent 35%);
+}
+/* LUFS / dBTP: exactly two lines in a black glass LCD. No blur/compositor. */
+#app #masterLeft .master-controls-zone .master-analysis{
+ box-sizing:border-box;height:38px;min-height:38px;flex:0 0 38px;
+ display:flex;flex-direction:column;justify-content:center;gap:1px;
+ margin:0;padding:3px 6px;border:0;border-radius:4px;
+ background:linear-gradient(180deg,#0d1c1c,#030a0b 35%,#071313);
+ box-shadow:inset 0 3px 4px -2px #000,inset 2px 0 3px -2px #000,
+            inset -2px 0 3px -2px #000,inset 0 -1px 0 #40625c77;
+}
+#app #masterLeft .master-controls-zone .master-analysis .master-info-row{
+ display:flex;align-items:center;justify-content:space-between;
+ flex:0 0 14px;height:14px;min-height:14px;margin:0;
+ color:#70c2a1;font:600 9px/14px Consolas,monospace;
+}
+#app #masterLeft .master-controls-zone .master-analysis .master-info-row strong{
+ color:#58f3a0;font:700 12px/14px Consolas,monospace;
+ min-width:0;text-align:right;text-shadow:none;
+}
+#app #masterLeft .master-controls-zone .master-analysis .master-info-row strong.over-limit{
+ color:#ff555f;text-shadow:none;
+}
+
+/* Borderless deep LED slit keeps the approved 10px illuminated cell width. */
+#app #mixer .fader-zone .meter-signal-area .meter-fill,
+#app #mixer .fader-zone .meter-signal-area .meter-peak{
+ left:2px;right:2px;
+}
