@@ -96,7 +96,8 @@ int main() {
     {
         auto lease=publisher.acquire();
         assert(lease.get(4)&&lease.get(4)->prepared->identity==42);
-        assert(near(lease.get(4)->prepared->params.at(3).left.load(),.5f));
+        assert(near(lease.get(4)->prepared->params.at(3).left.load(),.4f)); // stereo pan +20% reduces LEFT
+        assert(near(lease.get(4)->prepared->params.at(3).right.load(),.5f));
     }
     publisher.unpublish();
     assert(!publisher.updateActiveControl(4,1,update));
