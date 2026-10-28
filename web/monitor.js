@@ -35,7 +35,8 @@
     "#arRouteRows{overflow-x:auto}.arRouteRow{min-width:590px}#arRouteSends{margin-top:12px}#arRouteSends h3{font-size:12px;margin:8px 0;color:#b1d4dd}.arSendRow{display:grid;grid-template-columns:1fr 1fr 76px 83px 32px;gap:6px;margin-bottom:5px}.arSendRow select{width:100%;min-width:0;padding:6px;color:#e1eef5;background:#0d202b;border:1px solid #4d6879;border-radius:4px}.arSendRow button{border:1px solid #9a6060;background:#442930;color:#f3dadd;border-radius:4px}#arAddSend{font-size:10px;padding:6px 8px}" +
     ".arRouteFoot{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-top:12px}.arRouteFoot button,.arRouteClose{color:#f0f7fa;background:#24475a;border:1px solid #587f91;border-radius:4px;padding:8px 12px;cursor:pointer}" +
     "#arRouteApply{background:#237566;border-color:#4ba48d}#arRouteStop{background:#50343c;border-color:#a8717c}" +
-    "#arRouteFeedback{font-size:11px;min-height:18px;color:#8bdec1;margin-top:10px}";
+    "#arRouteFeedback{font-size:11px;min-height:18px;color:#8bdec1;margin-top:10px}" +
+    ".arAuxRow{display:grid;grid-template-columns:64px 52px 90px 70px 1fr;align-items:center;gap:7px;padding:7px;background:#0c202b;border-bottom:1px solid #36515f;font-size:11px}.arAuxRow label{display:flex;gap:4px;align-items:center}.arAuxRow select{min-width:0;width:100%;background:#0c202b;color:#dcecf3;border:1px solid #496b7a;padding:6px;border-radius:4px}#arAuxReturns h3{font-size:12px;color:#b1d4dd;margin:14px 0 8px}#arAuxReturns p{color:#90afbc;font-size:10px;margin:4px 0 7px}";
   document.head.appendChild(css);
   // Signal Check is declared in the permanent toolbar; footer holds status only.
   const overlay = document.createElement("div");
@@ -71,11 +72,12 @@
     '<div class="arSignalHeader"><div><h2>ArSonMix · Live Input Routing LAB</h2><small id="arRouteIdentity">Reading actual device ports...</small></div><button class="arRouteClose" id="arRouteClose">CLOSE ×</button></div>' +
     '<p>Real hardware routing test: independent stereo-compatible VST3 insert per channel, PRE/POST sends, and BUS returns. No portable route recall. Use headphones at LOW volume. ' +
     'The normal CH1 VST3 host resumes after STOP. Every port shown is from the device active input mask.</p>' +
-    '<div id="arRouteRows"></div><section id="arRouteSends"><h3>INTERNAL SENDS · PRE / POST FADER (MAX 32)</h3><div id="arSendRows"></div><button id="arAddSend">＋ ADD SEND</button></section>' +
+    '<div id="arRouteRows"></div><section id="arAuxReturns"><h3>4 DEDICATED AUX / FX RETURNS · INPUT CH1–10 REMAIN AVAILABLE</h3><p>Each AUX has a separate stereo return, VST3, level and MASTER routing. PRE/POST sends may target AUX1–4 without consuming CH strips.</p><div id="arAuxRows"></div></section><section id="arRouteSends"><h3>INTERNAL SENDS · PRE / POST FADER (MAX 32)</h3><div id="arSendRows"></div><button id="arAddSend">＋ ADD SEND</button></section>' +
     '<div id="arRouteFeedback" role="status">Select channels, BUS returns and sends; APPLY is a native graph transaction.</div>' +
     '<div class="arRouteFoot"><button id="arRouteStop">STOP LAB</button><button id="arRouteApply">APPLY TO NATIVE AUDIO</button></div></section>';
   document.body.appendChild(routeOverlay);
   const draftRoutes=Array.from({length:10},()=>({mode:"NONE",left:-1,right:-1,gain:0.25,pan:0,main:true,mute:false,solo:false,fxId:""}));
+  const draftAux=Array.from({length:4},()=>({enabled:false,gain:1,main:true,mute:false,fxId:""}));
   const draftSends=[];
   let draftEpoch=0; // identity of the hardware used to draw these selectors
   function invalidateDraftForNewDevice(nextEpoch){
@@ -85,6 +87,7 @@
       route.mode="NONE";route.left=-1;route.right=-1;route.gain=0.25;route.pan=0;
       route.main=true;route.mute=false;route.solo=false;route.fxId="";
     }
+    for(const b of draftAux){b.enabled=false;b.gain=1;b.main=true;b.mute=false;b.fxId="";}
     draftSends.length=0;
     return true;
   }
@@ -125,6 +128,9 @@
         if(Object.prototype.hasOwnProperty.call(source,key))
           draftRoutes[i][key]=source[key];
     }
+    if(Array.isArray(saved.auxes)&&saved.auxes.length===4)
+      for(let b=0;b<4;b++)for(const key of ["enabled","gain","main","mute","fxId"])
+        if(Object.prototype.hasOwnProperty.call(saved.auxes[b]||{},key))draftAux[b][key]=saved.auxes[b][key];
     draftSends.length=0;
     if(Array.isArray(saved.sends))
       for(const send of saved.sends.slice(0,32))
