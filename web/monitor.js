@@ -71,11 +71,23 @@
     '<div class="arRouteFoot"><button id="arRouteStop">STOP LAB</button><button id="arRouteApply">APPLY TO NATIVE AUDIO</button></div></section>';
   document.body.appendChild(routeOverlay);
   const draftRoutes=Array.from({length:10},()=>({mode:"NONE",left:-1,right:-1,gain:0.25}));
+  let draftEpoch=0; // identity of the hardware used to draw these selectors
+  function invalidateDraftForNewDevice(nextEpoch){
+    if(draftEpoch===nextEpoch)return false;
+    draftEpoch=nextEpoch;
+    for(const route of draftRoutes) {
+      route.mode="NONE";route.left=-1;route.right=-1;route.gain=0.25;
+    }
+    return true;
+  }
   const safeRouteText=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const routeSelect=(port,value)=>'<option value="-1">—</option>'+port.map(p=>
     '<option value="'+Number(p.port)+'" '+(Number(p.port)===value?'selected':'')+'>'+
     safeRouteText(p.label||("Input "+(Number(p.port)+1)))+' (IN '+(Number(p.port)+1)+')</option>').join('');
   function drawRoutes(){
+    // An identical numbered input on another ASIO device is NOT the same
+    // microphone. Clear all prior user intent if device epoch changed.
+    invalidateDraftForNewDevice(Number(state.dryRoutingLab?.epoch)||0);
     const ports=Array.isArray(state.dryRoutingLab?.ports)?state.dryRoutingLab.ports:[];
     const rows=document.getElementById("arRouteRows");
     rows.innerHTML=Array.from({length:10},(_,i)=>{
@@ -121,12 +133,18 @@
   routeOverlay.addEventListener("click",e=>{if(e.target===routeOverlay)routeOverlay.classList.remove("open");});
   document.getElementById("arRouteApply").addEventListener("click",()=>{
     const d=state.dryRoutingLab||{};
+    if(!draftEpoch || draftEpoch!==Number(d.epoch)){
+      document.getElementById("arRouteFeedback").textContent=
+        "DEVICE CHANGED · old channel assignments discarded. Re-select the actual physical inputs.";
+      drawRoutes();
+      return; // must never submit old ports with a newly observed epoch
+    }
     if(!Array.isArray(d.ports)||!d.ports.length){
       document.getElementById("arRouteFeedback").textContent="Select a real ASIO/WASAPI audio input in AUDIO SETUP first.";return;
     }
     document.getElementById("arRouteFeedback").textContent="Applying native route (output must be MUTED)...";
     api.emitEvent("arMixAction",{action:"routingDryApply",value:{
-      deviceEpoch:Number(d.epoch)||0,revision:Number(d.revision)||0,
+      deviceEpoch:draftEpoch,revision:Number(d.revision)||0,
       channels:draftRoutes.map(c=>({...c}))
     }});
   });
@@ -180,7 +198,13 @@
     return "Output armed. Speak into the microphone and inspect all three meters.";
   }
   function repaint(d) {
-    if(routeOverlay.classList.contains("open"))updateRouteLabIdentity();
+    if(routeOverlay.classList.contains("open")){
+      if(draftEpoch!==(Number(d.dryRoutingLab?.epoch)||0)) {
+        drawRoutes(); // fresh port names; reset stale user assignments
+        document.getElementById("arRouteFeedback").textContent=
+          "AUDIO DEVICE CHANGED · all input assignments reset. Select ports again.";
+      } else updateRouteLabIdentity();
+    }
     setTextIfChanged(el("arSignalBadge"),!d.monitor ? "OUTPUT MUTED" : d.masterMute ? "MASTER MUTED" : d.channelMute ? "CH1 MUTED" : "OUTPUT ARMED");
     el("arSignalBadge").style.color = d.monitor && !d.masterMute && !d.channelMute ? "#71e9cc" : "#e9be7c";
     const monitorButton=document.querySelector('[data-native-action="monitor"]');
