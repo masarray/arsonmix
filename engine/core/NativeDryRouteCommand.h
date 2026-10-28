@@ -18,7 +18,8 @@ struct NativeDryRouteCommand final {
                        juce::String& problem) {
         problem.clear();
         if(!request.isObject()) {problem="Invalid routing command";return false;}
-        auto* rows=request.getProperty("channels",{}).getArray();
+        const auto rawRows=request.getProperty("channels",juce::var());
+        auto* rows=rawRows.getArray();
         if(!rows || rows->size()!=stripCount) {
             problem="Exactly 10 channel assignments are required";return false;
         }
