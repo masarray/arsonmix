@@ -209,8 +209,8 @@ function createSide(){
  const labels=channels.map(c=>c.name);
  $('channelList').innerHTML=labels.map((label,i)=>`<div class="list-item ${i===currentChannel?'selected':''}" data-choose="${i}"><span class="swatch" style="background:${channels[i].color||colors[i%colors.length]}"></span><span class="index">${i+1}</span><span>${safeText(label)}</span></div>`).join('');
  $('groupsList').innerHTML=['Drums','Band','Vocals','FX','All Music','All Vocals'].map((x,i)=>`<div class="list-item" data-group="${i}"><span class="swatch" style="background:${colors[(i+4)%12]}"></span><span class="index">${i+1}</span><span>${x}</span></div>`).join('');
- $('scenesList').innerHTML=scenes.map((x,i)=>`<div class="list-item ${i===sceneIdx?'selected':''}" data-scene="${i}"><span class="swatch" style="background:${i===sceneIdx?'#23bce9':'#283d4a'};width:8px;height:14px"></span>${x}</div>`).join('');
- $('currentScene').innerHTML=`Snapshot: <b>${scenes[sceneIdx]}</b><span>▾</span>`;
+ $('scenesList').innerHTML=scenes.map((x,i)=>`<div class="list-item ${i===sceneIdx?'selected':''}" data-scene="${i}"><span class="swatch" style="background:${i===sceneIdx?'#23bce9':'#283d4a'};width:8px;height:14px"></span>${safeText(x)}</div>`).join('');
+ $('currentScene').innerHTML=`Snapshot: <b>${safeText(scenes[sceneIdx]||scenes[0])}</b><span>▾</span>`;
 }
 function knobMarkup(param,ch,value,label,small=false){let angle=(param==='pan'?value/100*130:value/24*130);return `<button class="knob ${small?'small':''}" data-knob="${param}" data-ch="${ch}" data-value="${value}" style="--angle:${angle}deg" title="Drag vertically or scroll to change ${label}" aria-label="${label}"></button>`}
 function panText(v){return v===0?'C':(v<0?'L':'R')+' '+Math.abs(v)}
@@ -404,7 +404,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('button,[data-cho
  if(b.dataset.clip!==undefined){resetClip(b.dataset.clip);return}
  if(b.dataset.fxpower!==undefined){const [i,j]=b.dataset.fxpower.split(':').map(Number);setFxBypass(i,j,!bypassed[fxKey(i,j)]);return}
  if(b.dataset.insert){let [i,j]=b.dataset.insert.split(':').map(Number);currentChannel=i;pendingSlot=j;openPluginBrowser(i);return}
- if(b.dataset.scene!==undefined){loadSnapshotByIndex(+b.dataset.scene);return}
+ if(b.dataset.scene!==undefined){snapshotRecall(+b.dataset.scene);return}
  if(b.dataset.preset){applyQuickPreset(b.dataset.preset);return}
  if(b.dataset.addplugin!==undefined){pendingSlot=channels[currentChannel].inserts.length;openPluginBrowser(currentChannel);return}
  if(b.dataset.chainmove){movePlugin(+b.dataset.index,+b.dataset.chainmove);return}
@@ -416,7 +416,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('button,[data-cho
  if(b.dataset.category){activeCategory=b.dataset.category;renderPluginBrowser();return}
  if(b.dataset.group!==undefined){flash('Group selection — interface placeholder');return}
  if(b.dataset.side){document.querySelectorAll('[data-side]').forEach(x=>x.classList.toggle('selected',x===b));if(b.dataset.side==='fx')setView('FX RACK');else setView('MIX');return}
- switch(b.id){case'identityCancel':closeChannelIdentity();break;case'identitySave':commitChannelIdentity();break;case'masterMute':masterMute=!masterMute;b.textContent='MUTE';b.classList.toggle('active',masterMute);b.setAttribute('aria-pressed',String(masterMute));send('masterMute',masterMute,-1);break;case'masterMode':setMasterMono(!masterMono);break;case'addScene':saveMixerSnapshot();break;case'saveFxPreset':saveFxChainPreset();break;case'menuScene':exportSession();break;case'closeBrowser':closePluginBrowser();break;case'closeFxInspector':pluginEditorIndex=null;renderRackWorkspace();break;case'chooseFxFile':importSession();break;case'arSignalOpen':if(!window.__JUCE__?.backend?.emitEvent)flash('Signal Check is available in the Windows desktop app');break;default:if(b.id)flash('UI study: '+b.textContent.trim().slice(0,28));}
+ switch(b.id){case'identityCancel':closeChannelIdentity();break;case'identitySave':commitChannelIdentity();break;case'masterMute':masterMute=!masterMute;b.textContent='MUTE';b.classList.toggle('active',masterMute);b.setAttribute('aria-pressed',String(masterMute));send('masterMute',masterMute,-1);break;case'masterMode':setMasterMono(!masterMono);break;case'addScene':saveMixerSnapshot();break;case'snapshotClose':case'snapshotSaveNew':case'snapshotUpdate':case'snapshotRecall':case'snapshotRename':case'snapshotDelete':case'snapshotUndo':snapshotCommand(b.id);break;case'saveFxPreset':saveFxChainPreset();break;case'menuScene':exportSession();break;case'closeBrowser':closePluginBrowser();break;case'closeFxInspector':pluginEditorIndex=null;renderRackWorkspace();break;case'chooseFxFile':importSession();break;case'arSignalOpen':if(!window.__JUCE__?.backend?.emitEvent)flash('Signal Check is available in the Windows desktop app');break;default:if(b.id)flash('UI study: '+b.textContent.trim().slice(0,28));}
 });
 // Deliberate double-click to edit a strip. Single-click only changes selection.
 document.addEventListener('dblclick',e=>{const el=e.target.closest('[data-editstrip]');if(!el)return;
@@ -666,6 +666,7 @@ const pluginCatalog=[
  {name:'Saturator',type:'Creative',badge:'SAT',hint:'Analog-style harmonic color'}
 ];
 let pendingSlot=-1, activeCategory='All', userSnapshots={},savedChains={},bypassed={},fxParams={},pluginEditorIndex=null;
+let snapshotSafes=new Set(),snapshotPendingAction='',snapshotUndo=null;
 const initialFactoryChannels=channels.map(c=>({...c,inserts:[...c.inserts]}));
 const safeText=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function normalChain(ch){return ch.inserts.filter(Boolean)}
@@ -736,10 +737,118 @@ function toggleBypass(idx){setFxBypass(currentChannel,idx,!bypassed[fxKey(curren
 const quickPresets={'Clean Vocal':['Noise Gate','Studio EQ','Vocal Compressor'],'Warm Karaoke':['Noise Gate','Studio EQ','Vocal Compressor','Studio Reverb'],'Live Broadcast':['Noise Gate','Dynamic EQ','De-Esser','Brickwall Limiter']};
 function applyQuickPreset(name){const c=channels[currentChannel];for(let i=0;i<8;i++){delete fxParams[fxKey(currentChannel,i)];delete bypassed[fxKey(currentChannel,i)]}pluginEditorIndex=null;setChain(c,quickPresets[name]||[]);document.querySelectorAll('[data-preset]').forEach(b=>b.classList.toggle('active',b.dataset.preset===name));flash('FX chain preset selected: '+name+' (UI only)');send('chainChanged',{chain:normalChain(c)},currentChannel)}
 function durableSession(){return {schemaVersion:1,version:'0.3-ui',channels:channels.map(c=>({id:c.id,name:c.name,icon:c.icon,color:c.color,inserts:[...c.inserts],fader:c.fader,pan:c.pan,trim:c.trim,mute:c.mute,solo:c.solo,hpf:c.hpf,stereo:c.stereo})),masterGain,masterPan,masterMute,masterMono,masterInserts:[...masterInserts],masterBypassed:{...masterBypassed},sceneIdx,selected:currentChannel,fxParams:structuredClone(fxParams),bypassed:{...bypassed}};}
-function persistSession(){try{localStorage.setItem('armix-v03-current',JSON.stringify(durableSession()));localStorage.setItem('armix-v03-snapshots',JSON.stringify(userSnapshots));localStorage.setItem('armix-v03-chains',JSON.stringify(savedChains));return true}catch{return false}}
+function persistSession(){try{localStorage.setItem('armix-v03-current',JSON.stringify(durableSession()));localStorage.setItem('armix-v03-snapshots',JSON.stringify(userSnapshots));localStorage.setItem('armix-v03-chains',JSON.stringify(savedChains));localStorage.setItem('armix-v03-snapshot-safes',JSON.stringify([...snapshotSafes]));return true}catch{return false}}
 function saveFxChainPreset(){const name=prompt('Name this FX chain preset:','My Vocal Chain');if(!name)return;const key=name.trim().slice(0,60);if(!key)return;savedChains[key]={schemaVersion:1,inserts:[...normalChain(channels[currentChannel])],states:normalChain(channels[currentChannel]).map((_,i)=>({...getFxParams(currentChannel,i),bypass:!!bypassed[fxKey(currentChannel,i)]}))};persistSession();flash('FX chain preset saved: '+key)}
 function recallFxChain(){const keys=Object.keys(savedChains);if(!keys.length){flash('No saved FX chains yet');return}const key=prompt('Enter FX chain preset name:\n'+keys.join('\n'),keys[0]);if(!key||!savedChains[key])return;setChain(channels[currentChannel],savedChains[key].inserts);savedChains[key].states?.forEach((v,i)=>{fxParams[fxKey(currentChannel,i)]={mix:v.mix,amount:v.amount,output:v.output};bypassed[fxKey(currentChannel,i)]=!!v.bypass});pluginEditorIndex=null;renderRackWorkspace();flash('FX chain recalled: '+key)}
-function saveMixerSnapshot(){const name=prompt('Name this mixer snapshot:','My Live Sound');if(!name)return;const key=name.trim().slice(0,60);if(!key)return;userSnapshots[key]=durableSession();if(!scenes.includes(key))scenes.push(key);persistSession();createSide();flash('Snapshot saved: '+key)}
+/* Soundcraft-style quick snapshot manager for the PREVIEW mixer.
+   Native full-mixer snapshot recall is deliberately fenced until its 10CH DSP
+   transaction/backend is implemented; MY SOUNDS remains native CH1 storage. */
+function snapshotNativeBlocked(){
+ if(!window.__JUCE__?.backend?.emitEvent)return false;
+ snapshotMessage('Native full-mixer Save/Recall is not available yet. Use MY SOUNDS for the current native VST3 preset.');
+ return true;
+}
+const snapshotNameValue=()=>String($('snapshotName')?.value||'').trim().replace(/\s+/g,' ').slice(0,60);
+const snapshotValidName=n=>n.length>0 && !/^(?:__proto__|prototype|constructor)$/i.test(n) &&
+ !/[\x00-\x1f<>]/.test(n);
+function snapshotMessage(s){const el=$('snapshotFeedback');if(el)el.textContent=s;else flash(s)}
+function snapshotSelected(){const i=Number($('snapshotPick')?.value);return Number.isInteger(i)&&i>=0&&i<scenes.length?i:sceneIdx}
+function snapshotIsUser(i){return i>=4&&Object.prototype.hasOwnProperty.call(userSnapshots,scenes[i])}
+function snapshotManagerRefresh(select=sceneIdx){
+ const pick=$('snapshotPick');if(!pick)return;
+ pick.innerHTML=scenes.map((name,i)=>'<option value="'+i+'">'+(i<4?'FACTORY · ':'USER · ')+safeText(name)+'</option>').join('');
+ pick.value=String(Math.max(0,Math.min(select,scenes.length-1)));
+ $('snapshotName').value=snapshotIsUser(+pick.value)?scenes[+pick.value]:'';
+ $('snapshotSafes').innerHTML=channels.map((c,i)=>'<label title="'+safeText(c.name)+'"><input type="checkbox" data-snapshot-safe="'+i+'" '+(snapshotSafes.has(String(i))?'checked':'')+'> '+(i+1)+' '+safeText(c.name)+'</label>').join('')+
+ '<label><input type="checkbox" data-snapshot-safe="master" '+(snapshotSafes.has('master')?'checked':'')+'> MASTER</label>';
+ snapshotPendingAction='';
+ for(const id of ['snapshotUpdate','snapshotRename','snapshotDelete'])$(id).disabled=!snapshotIsUser(+pick.value);
+ $('snapshotUndo').disabled=!snapshotUndo;
+ const preview=!window.__JUCE__?.backend?.emitEvent;
+ $('snapshotScope').textContent=preview
+  ?'LOCAL UI PREVIEW · Saves persist between browser sessions. Actual VST3 audio state is not included.'
+  :'NATIVE SAFETY · Full 10-channel snapshot storage/recall is not yet active. MY SOUNDS handles native CH1 presets.';
+ snapshotMessage('Recall Safes keep checked channels unchanged when recalling a preview snapshot.');
+}
+function openSnapshotManager(){
+ snapshotManagerRefresh(sceneIdx);$('snapshotModal').classList.remove('hidden');$('snapshotPick').focus();
+}
+function closeSnapshotManager(){$('snapshotModal').classList.add('hidden');snapshotPendingAction=''}
+function snapshotConfirm(action,key){
+ const token=action+':'+key;
+ if(snapshotPendingAction!==token){snapshotPendingAction=token;snapshotMessage('Click '+action+' again to confirm changes to "'+key+'".');return false;}
+ snapshotPendingAction='';return true;
+}
+function snapshotMergeSafes(state){
+ const target=structuredClone(state),now=durableSession();
+ if(Array.isArray(target.channels)){
+   for(let i=0;i<channels.length;i++)if(snapshotSafes.has(String(i)))target.channels[i]=now.channels[i];
+ }
+ if(snapshotSafes.has('master'))for(const k of ['masterGain','masterPan','masterMute','masterMono','masterInserts','masterBypassed'])
+    target[k]=now[k];
+ return target;
+}
+function snapshotRecall(i){
+ if(snapshotNativeBlocked())return;
+ if(!Number.isInteger(i)||i<0||i>=scenes.length)return;
+ const name=scenes[i],saved=userSnapshots[name];let state;
+ if(snapshotIsUser(i)){state=saved;}
+ else if(i<4){
+   state=durableSession();state.channels=initialFactoryChannels.map(c=>({...c,inserts:[...c.inserts]}));state.masterGain=-.1;
+   const p=[quickPresets['Clean Vocal'],quickPresets['Warm Karaoke'],quickPresets['Live Broadcast'],quickPresets['Clean Vocal']];
+   state.channels[0].inserts=[...p[i]];
+ }else return;
+ if(!state||state.schemaVersion!==1||!Array.isArray(state.channels))return snapshotMessage('Invalid snapshot; current mix was not changed.');
+ const previous=durableSession();
+ try{snapshotUndo=structuredClone(previous);localStorage.setItem('armix-v03-undo-recall',JSON.stringify(previous));}
+ catch{snapshotUndo=previous}
+ sceneIdx=i;applySession(snapshotMergeSafes(state));createSide();persistSession();
+ snapshotManagerRefresh(i);snapshotMessage('Recalled UI snapshot "'+name+'". Undo Recall is available.');
+}
+function snapshotCommand(id){
+ const i=snapshotSelected(),name=scenes[i],input=snapshotNameValue();
+ if(id==='snapshotClose')return closeSnapshotManager();
+ if(id==='snapshotUndo'){
+   if(snapshotNativeBlocked())return;
+   if(!snapshotUndo)return snapshotMessage('No earlier mix to restore.');
+   const prior=snapshotUndo;snapshotUndo=null;applySession(prior);sceneIdx=prior.sceneIdx??sceneIdx;createSide();persistSession();
+   snapshotManagerRefresh(sceneIdx);return snapshotMessage('Previous UI mix restored.');
+ }
+ if(id==='snapshotRecall')return snapshotRecall(i);
+ if(snapshotNativeBlocked())return;
+ if(id==='snapshotSaveNew'){
+   if(!snapshotValidName(input))return snapshotMessage('Enter a valid snapshot name (1–60 characters).');
+   if(scenes.some(x=>x.toLowerCase()===input.toLowerCase()))return snapshotMessage('Name exists. Select it and use UPDATE instead.');
+   if(scenes.length>=68)return snapshotMessage('Limit: 64 user snapshots per show. Export your show and archive old entries.');
+   const next=durableSession();userSnapshots[input]=next;scenes.push(input);sceneIdx=scenes.length-1;
+   if(!persistSession()){delete userSnapshots[input];scenes.pop();sceneIdx=i;return snapshotMessage('Storage full/unavailable. No snapshot was saved.');}
+   createSide();snapshotManagerRefresh(sceneIdx);return snapshotMessage('Saved UI snapshot: '+input);
+ }
+ if(!snapshotIsUser(i))return snapshotMessage('Factory snapshots are read-only. Use SAVE NEW.');
+ if(id==='snapshotUpdate'){
+   if(!snapshotConfirm('UPDATE',name))return;
+   const old=userSnapshots[name];userSnapshots[name]=durableSession();
+   if(!persistSession()){userSnapshots[name]=old;return snapshotMessage('Storage failed; previous snapshot preserved.');}
+   return snapshotMessage('Updated UI snapshot: '+name);
+ }
+ if(id==='snapshotRename'){
+   if(!snapshotValidName(input)||input.toLowerCase()===name.toLowerCase())return snapshotMessage('Enter a different valid name.');
+   if(scenes.some((x,j)=>j!==i&&x.toLowerCase()===input.toLowerCase()))return snapshotMessage('That snapshot name already exists.');
+   if(!snapshotConfirm('RENAME',name))return;
+   userSnapshots[input]=userSnapshots[name];delete userSnapshots[name];scenes[i]=input;
+   if(!persistSession()){userSnapshots[name]=userSnapshots[input];delete userSnapshots[input];scenes[i]=name;return snapshotMessage('Storage failed; previous name preserved.');}
+   createSide();snapshotManagerRefresh(i);return snapshotMessage('Renamed snapshot: '+input);
+ }
+ if(id==='snapshotDelete'){
+   if(!snapshotConfirm('DELETE',name))return;
+   const old=userSnapshots[name];delete userSnapshots[name];scenes.splice(i,1);
+   if(sceneIdx===i)sceneIdx=0;else if(sceneIdx>i)sceneIdx--;
+   if(!persistSession()){scenes.splice(i,0,name);userSnapshots[name]=old;return snapshotMessage('Delete failed; original snapshot preserved.');}
+   createSide();snapshotManagerRefresh(sceneIdx);return snapshotMessage('Deleted snapshot: '+name);
+ }
+}
+function saveMixerSnapshot(){openSnapshotManager()}
+
 function applySession(session){if(!session||session.schemaVersion!==1||!Array.isArray(session.channels)||session.channels.length<channels.length){flash('Unsupported session format');return}for(let i=0;i<channels.length;i++){const src=session.channels[i],c=channels[i];
  c.stereo=i>=6; // Fixed 1–6 mono, 7–10 stereo across legacy snapshot migrations.
  if(typeof src.name==='string'&&src.name.trim())c.name=src.name.trim().slice(0,26);
@@ -750,11 +859,7 @@ function applySession(session){if(!session||session.schemaVersion!==1||!Array.is
  if(Array.isArray(session.masterInserts))masterInserts=session.masterInserts.filter(x=>typeof x==='string').slice(0,6);
  masterBypassed=(session.masterBypassed&&typeof session.masterBypassed==='object')?{...session.masterBypassed}:{};
  fxParams=(session.fxParams&&typeof session.fxParams==='object')?structuredClone(session.fxParams):{};bypassed=(session.bypassed&&typeof session.bypassed==='object')?{...session.bypassed}:{};pluginEditorIndex=null;renderMixer();renderMaster();if(view==='FX RACK')renderRackWorkspace()}
-function loadSnapshotByIndex(i){sceneIdx=(i+scenes.length)%scenes.length;const name=scenes[sceneIdx];
- if(userSnapshots[name])applySession(userSnapshots[name]);
- else if(sceneIdx<4){const state=durableSession();state.channels=initialFactoryChannels.map(c=>({...c,inserts:[...c.inserts]}));state.masterGain=-.1;
-  const voicePresets=[quickPresets['Clean Vocal'],quickPresets['Warm Karaoke'],quickPresets['Live Broadcast'],quickPresets['Clean Vocal']];state.channels[0].inserts=[...voicePresets[sceneIdx]];applySession(state);flash('Factory snapshot recalled: '+name+' (UI only)')}
- createSide();persistSession()}
+function loadSnapshotByIndex(i){snapshotRecall((i+scenes.length)%scenes.length)}
 function exportSession(){const data=JSON.stringify({...durableSession(),savedChains,userSnapshots},null,2);const blob=new Blob([data],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='ar-mix-live-session.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1200);flash('Session JSON exported')}
 function importSession(){const f=document.createElement('input');f.type='file';f.accept='application/json,.json';f.onchange=async()=>{const file=f.files?.[0];if(!file)return;if(file.size>2_000_000){flash('Session too large');return}try{const obj=JSON.parse(await file.text());applySession(obj);persistSession();flash('Session loaded')}catch{flash('Invalid JSON session')}};f.click()}
 // Single optimized console layout. The unused PRO/EASY switch is retired.
@@ -764,11 +869,21 @@ document.addEventListener('input',e=>{const el=e.target;if(!el.dataset.fxparam)r
 $('pluginModal').addEventListener('click',e=>{if(e.target===$('pluginModal'))closePluginBrowser()});
 $('channelIdentity').addEventListener('click',e=>{if(e.target===$('channelIdentity'))closeChannelIdentity()});
 $('identityName').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();commitChannelIdentity()}});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closePluginBrowser();closeChannelIdentity()}if((e.key==='Enter'||e.key===' ')&&e.target.matches('[data-editstrip]')){e.preventDefault();openChannelIdentity(+e.target.dataset.editstrip)}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closePluginBrowser();closeChannelIdentity();closeSnapshotManager()}if((e.key==='Enter'||e.key===' ')&&e.target.matches('[data-editstrip]')){e.preventDefault();openChannelIdentity(+e.target.dataset.editstrip)}});
 document.addEventListener('change',e=>{if(e.target.id==='rackChannel'){currentChannel=+e.target.value;renderRackWorkspace();renderMixer()}});
 document.addEventListener('click',e=>{const id=e.target.closest('button')?.id;if(id==='saveFxFromRack')saveFxChainPreset();else if(id==='recallFxPreset')recallFxChain();else if(id==='openSetupFromFlow')$('audioSetupBtn')?.click();else if(id==='flowFxButton')setView('FX RACK');else if(id==='backMixer')setView('MIX')});
 let lastPersist=0;setInterval(()=>{if(Date.now()-lastPersist<2000)return;lastPersist=Date.now();persistSession()},5000);
-try{userSnapshots=JSON.parse(localStorage.getItem('armix-v03-snapshots')||'{}');savedChains=JSON.parse(localStorage.getItem('armix-v03-chains')||'{}');for(const k of Object.keys(userSnapshots))if(!scenes.includes(k))scenes.push(k)}catch{userSnapshots={};savedChains={}}
+try{userSnapshots=JSON.parse(localStorage.getItem('armix-v03-snapshots')||'{}');savedChains=JSON.parse(localStorage.getItem('armix-v03-chains')||'{}');const safes=JSON.parse(localStorage.getItem('armix-v03-snapshot-safes')||'[]');snapshotSafes=new Set(Array.isArray(safes)?safes.filter(x=>x==='master'||/^(?:[0-9])$/.test(x)):[]);for(const k of Object.keys(userSnapshots))if(snapshotValidName(k)&&!scenes.includes(k)&&scenes.length<68)scenes.push(k);snapshotUndo=JSON.parse(localStorage.getItem('armix-v03-undo-recall')||'null')}catch{userSnapshots={};savedChains={};snapshotSafes=new Set();snapshotUndo=null}
+
+
+// Snapshot manager events are delegated once, not attached to rebuilt rows.
+$('snapshotPick').addEventListener('change',()=>snapshotManagerRefresh(snapshotSelected()));
+$('snapshotModal').addEventListener('click',e=>{if(e.target===$('snapshotModal'))closeSnapshotManager()});
+$('snapshotSafes').addEventListener('change',e=>{const key=e.target.dataset.snapshotSafe;if(key===undefined)return;
+ if(e.target.checked)snapshotSafes.add(key);else snapshotSafes.delete(key);
+ persistSession();snapshotPendingAction='';snapshotMessage('Recall Safe updated for the local UI preview.');
+});
+$('currentScene').addEventListener('click',openSnapshotManager);
 
 createSide();renderMixer();renderMaster();try{let last=JSON.parse(localStorage.getItem('armix-v03-current'));if(!last)last=JSON.parse(localStorage.getItem('arMixStudioUI')); if(last&&last.channels?.length>=channels.length){last.channels.slice(0,channels.length).forEach((s,i)=>{if(typeof s.name==='string'&&s.name.trim())channels[i].name=s.name.trim().slice(0,26);
  if(channelIcons.includes(s.icon))channels[i].icon=s.icon;
