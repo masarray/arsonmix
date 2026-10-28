@@ -887,7 +887,7 @@ private:
         if (studioBackupBusy_ && (action.startsWith ("preset") ||
             action.startsWith ("import") || action.startsWith ("fx") ||
             action == "addCatalog" || action == "addScanFolder" ||
-            action == "scanVst3"))
+            action == "scanVst3" || action == "routingDryApply"))
             return emitNotice ("Studio backup in progress. Finish backup before editing saved FX or VST library.", true);
 
         // Structural plugin operations currently detach the original callback
@@ -910,7 +910,28 @@ private:
         // existing 1-channel VST3 production chain. Explicit Apply/Stop.
         if (action == "routingDryApply")
         {
-            const auto error=engine_.applyDryRoutingLab(value);
+            std::array<LiveDryRoutingLab::FxSelection,LiveDryRoutingLab::count> selected{};
+            juce::String error;
+            const auto rowsValue=value.getProperty("channels",juce::var());
+            auto* rows=rowsValue.getArray();
+            // Catalog IDs, never caller paths, are the only trusted VST3
+            // identities. Missing/changed catalog entries FAIL the entire
+            // transaction before any third-party instantiation.
+            if(rows && rows->size()==LiveDryRoutingLab::count) {
+                for(int i=0;i<rows->size();++i) {
+                    const auto id=rows->getReference(i).getProperty("fxId",{}).toString();
+                    if(id.isEmpty())continue;
+                    const auto* entry=catalog_.find(id);
+                    if(!entry) {
+                        error="CH "+juce::String(i+1)+
+                            ": VST3 unavailable in catalog. Rescan or select DRY.";
+                        break;
+                    }
+                    selected[i]={entry->key(),entry->path,entry->name,entry->uid};
+                }
+            }
+            if(error.isEmpty())
+                error=engine_.applyDryRoutingLab(value,selected);
             auto reply=std::make_unique<juce::DynamicObject>();
             reply->setProperty("ok",error.isEmpty());
             reply->setProperty("error",error);
@@ -921,10 +942,13 @@ private:
                     "arMixRoutingLabAck",juce::var(reply.release()));
             if(error.isNotEmpty())return emitNotice(error,true);
             diagnostics_.record("LIVE_DRY_ROUTING_LAB_APPLIED",
-                "No VST3 | actual enabled hardware mask and epoch verified");
+                "Actual physical mask and epoch verified | native VST3 per-strip "
+                "count="+juce::String(static_cast<int>(status.getProperty("fxCount",0))));
             return emitNotice(
-                "DRY ROUTING LAB active: 10 native input strips, NO FX. "
-                "Use low headphone volume. Stop LAB before loading VST3.");
+                "Native 10-channel Routing LAB active: "+
+                juce::String(static_cast<int>(status.getProperty("fxCount",0)))+
+                " independent VST3 inserts, real PRE/POST sends. "
+                "Use low headphone volume; STOP LAB before normal CH1 VST3.");
         }
         if (action == "routingDryStop")
         {
