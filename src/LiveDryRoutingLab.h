@@ -395,17 +395,6 @@ public:
         }
         out->setProperty("channelControls",juce::var(controls));
         out->setProperty("channelFxNames",juce::var(fxNames));
-        juce::Array<juce::var> controls;
-        for(const auto& state:channelEdits_) {
-            auto c=std::make_unique<juce::DynamicObject>();
-            const float db=state.linear>0.f ? 20.f*std::log10(state.linear) : -60.f;
-            c->setProperty("db",db);
-            c->setProperty("pan",state.pan*100.f);
-            c->setProperty("mute",state.mute);
-            c->setProperty("solo",state.solo);
-            controls.add(juce::var(c.release()));
-        }
-        out->setProperty("channelControls",juce::var(controls));
         juce::Array<juce::var> levels;
         for(const auto& p:channelPeaks_)levels.add(p.load(std::memory_order_relaxed));
         out->setProperty("channelPeaks",juce::var(levels));
