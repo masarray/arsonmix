@@ -637,7 +637,17 @@ async def main():
              viewport:mixer.getBoundingClientRect().width};
         }""")
         assert widths['master']>=128 and abs(widths['master']-widths['source'])<=1, widths
-        assert widths['visible'],widths
+        if not widths['visible']:
+            # Smaller viewports scroll inside workbench; MASTER must remain
+            # intact and reachable instead of becoming a distorted wide strip.
+            master_reachable=await page.evaluate("""()=>{
+              const mixer=document.querySelector('#mixer');mixer.scrollLeft=mixer.scrollWidth;
+              const master=document.querySelector('#masterLeft').getBoundingClientRect();
+              const view=mixer.getBoundingClientRect();
+              return master.right<=view.right+1 && master.left>=view.left-1;
+            }""")
+            assert master_reachable,widths
+            await page.evaluate("document.querySelector('#mixer').scrollLeft=0")
         lcd=await page.evaluate("""()=>[...document.querySelectorAll('#mixer .vu-bank .meter')].map(e=>{
           const s=getComputedStyle(e),glass=getComputedStyle(e,'::after');
           return {back:s.backgroundColor,glass:glass.content};
