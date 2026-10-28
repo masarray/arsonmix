@@ -1142,3 +1142,32 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 }
 /* LED increments stay fixed and the meter keeps its native dBFS conversion.
    No hot-path DOM reads, filters, blur or per-frame scale animation. */
+
+/* P0 FADER BED RECOVERY, main-aligned from PR #102 (visual CSS ONLY).
+   Full-height smooth graphite metal folds; zero white rectangular border.
+   No blur, gradients, interactive filters, animation or pointer listeners.
+   Recess width is bounded to the actual rail so CH1-10/MASTER VU and rulers
+   remain unobstructed on narrower displays. 36×77 PNG and 38px detent kept. */
+#app #mixer .fader-zone .fader{
+  position:relative;isolation:isolate;min-width:36px;
+  background:transparent!important;border:0!important;box-shadow:none!important;
+}
+#app #mixer .fader-zone .fader::before{
+  content:"";position:absolute;top:0;bottom:0;left:50%;
+  width:min(46px,100%);transform:translateX(-50%);
+  z-index:0;pointer-events:none;box-sizing:border-box;
+  background:#26343c;border:0;border-radius:6px;
+  box-shadow:
+    inset 0 4px 4px -3px #070e13,
+    inset 0 -4px 4px -3px #070e13,
+    inset 4px 0 5px -4px #081116,
+    inset -4px 0 5px -4px #081116;
+}
+#app #mixer .fader-zone .fader::after{
+  content:"";position:absolute;left:50%;top:38px;bottom:39px;
+  width:5px;transform:translateX(-50%);
+  z-index:0;pointer-events:none;
+  background:#05090c;border:0;
+  box-shadow:inset 1px 0 #34434b,inset -1px 0 #34434b;
+}
+#app #mixer .fader-zone .fader-travel{z-index:1}
