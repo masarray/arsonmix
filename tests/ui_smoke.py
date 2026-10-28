@@ -221,7 +221,7 @@ async def main():
             return document.fonts.check('600 12px "ArSonMix Inter"')&&
                 getComputedStyle(document.querySelector('.strip-name')).fontFamily.includes('ArSonMix Inter');
         }"""),'Embedded Inter font was not applied'
-        assert [round(float(v.rstrip('s')),3) for v in style['dur'].split(', ')]==[.15,.15,.15,.075],style
+        assert [round(float(v.rstrip('s')),3) for v in style['dur'].split(', ')]==[.045,.045,0,0],style
         # Hover in production does not create a filter, while diagnostic
         # baseline restores brightness to permit same-PC performance A/B.
         utility=page.locator('[data-hpf="0"]')
@@ -945,7 +945,7 @@ async def main():
         assert off_mute == await image_for('[data-solo="0"]')
         await page.locator('[data-mute="0"]').click()
         assert await page.locator('[data-mute="0"]').get_attribute('aria-pressed') == 'true'
-        # btn-180 intentionally animates background for 150ms. Wait for actual final RGB.
+        # BTN-180 color transition is 45ms, while tactile press is immediate.
         await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-mute="0"]')).backgroundColor==='rgb(249, 154, 164)'""",timeout=2500)
         assert await image_for('[data-mute="0"]') != await image_for('[data-solo="0"]'), await page.evaluate("""()=>{
           return [...document.querySelectorAll('[data-mute="0"],[data-solo="0"]')].map(e=>({
