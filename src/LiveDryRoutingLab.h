@@ -33,6 +33,8 @@ public:
         int uid=0;
     };
     static constexpr int count=armix::mixer::stripCount;
+    static constexpr int auxCount=armix::mixer::auxBusCount;
+    static constexpr int fxSlots=count+auxCount;
     struct ChannelEdit {
         float linear=1.f, pan=0.f;
         bool mute=false, solo=false, mono=false;
@@ -78,6 +80,8 @@ public:
         topologyFault_.store(false,std::memory_order_release);
         sendCount_.store(0,std::memory_order_relaxed);
         fxCount_.store(0,std::memory_order_relaxed);
+        auxCountActive_.store(0,std::memory_order_relaxed);
+        auxSendCount_.store(0,std::memory_order_relaxed);
         fxReused_.store(0,std::memory_order_relaxed);
         // Device lifecycle callback may run off the message thread.
         // acceptedRoute_ is a JUCE var owned by the CONTROL thread and must
@@ -89,7 +93,7 @@ public:
 
     juce::String apply (const juce::var& command, bool directPermitted,
                         bool independentClock, int loadedFx,
-                        const std::array<FxSelection,count>& selections,
+                        const std::array<FxSelection,fxSlots>& selections,
                         juce::AudioPluginFormatManager& formats,
                         double sampleRate,int deviceFrames) {
         // Called by the native message thread only. Not callable from RT.
@@ -136,7 +140,7 @@ public:
         armix::mixer::RenderError error;
         if(!Plan::compile(topology,
                           {physicalPorts.data(),static_cast<std::size_t>(countNow)},
-                          sends,plan,error))
+                          sends,plan,error,decoded.aux))
             return "Invalid physical routing (inactive port, format or mapping)";
         const auto revision=expectedRevision+1;
         if(revision==0) return "Routing revision overflow";
@@ -165,11 +169,16 @@ public:
         // Never reuse across a device epoch or changed device quantum.
         const auto* prior=publisher_.controlPrepared(currentEpoch,expectedRevision);
         int insertCount=0,reusedCount=0;
-        for(int lane=0;lane<count;++lane) {
+        for(int lane=0;lane<fxSlots;++lane) {
             const auto& req=selections[lane];
             if(req.id.isEmpty())continue;
-            if(!plan.scheduled[lane])
-                return "CH "+juce::String(lane+1)+": select an active physical source or BUS return before adding VST3";
+            const bool scheduled=lane<count?plan.scheduled[lane]:
+                plan.aux.buses[lane-count].enabled;
+            const juce::String label=lane<count
+                ?"CH "+juce::String(lane+1)
+                :"AUX "+juce::String(lane-count+1);
+            if(!scheduled)
+                return label+": enable a real input/return before adding VST3";
             if(prior && next->prepared->reuse(lane,*prior,req.id)) {
                 ++insertCount;
                 ++reusedCount;
@@ -179,7 +188,7 @@ public:
                 return "Audio device sample rate or buffer size is invalid";
             auto* fmt=formats.getFormat(0);
             if(!fmt || !fmt->fileMightContainThisPluginType(req.path))
-                return "CH "+juce::String(lane+1)+": VST3 module is unavailable; rescan catalog";
+                return "label+": VST3 module is unavailable; rescan catalog";
             juce::OwnedArray<juce::PluginDescription> descriptions;
             fmt->findAllTypesForFile(descriptions,req.path);
             juce::PluginDescription* chosen=nullptr;
@@ -187,31 +196,31 @@ public:
                 if(item && item->uniqueId==req.uid && !item->isInstrument)
                     {chosen=item;break;}
             if(!chosen)
-                return "CH "+juce::String(lane+1)+": selected VST3 effect identity not found (instrument plugins are unsupported)";
+                return "label+": selected VST3 effect identity not found (instrument plugins are unsupported)";
             juce::String pluginError;
             auto instance=formats.createPluginInstance(*chosen,sampleRate,
                 juce::jmax(32,deviceFrames),pluginError);
             if(!instance)
-                return "CH "+juce::String(lane+1)+": VST3 instantiation failed: "+pluginError;
+                return "label+": VST3 instantiation failed: "+pluginError;
             const auto layoutError=armix::vst::prepareStereoEffectLayout(*instance);
             if(layoutError.isNotEmpty())
-                return "CH "+juce::String(lane+1)+": "+layoutError;
+                return "label+": "+layoutError;
             try {
                 instance->prepareToPlay(sampleRate,
                     juce::jmax(32,deviceFrames));
             } catch(const std::exception& ex) {
-                return "CH "+juce::String(lane+1)+": plugin prepare failed: "+juce::String(ex.what());
+                return "label+": plugin prepare failed: "+juce::String(ex.what());
             } catch(...) {
-                return "CH "+juce::String(lane+1)+": plugin prepare failed (unknown exception)";
+                return "label+": plugin prepare failed (unknown exception)";
             }
             // Uncompensated latent inserts produce comb filtering in PRE/POST
             // sends. Until native PDC exists, reject instead of lying about
             // phase accuracy or silent extra buffer latency.
             if(instance->getLatencySamples()!=0)
-                return "CH "+juce::String(lane+1)+
+                return "label+
                     ": this VST3 reports latency; choose zero-latency mode until PDC is implemented";
             if(!next->prepared->install(lane,std::move(instance),chosen->name,req.id))
-                return "CH "+juce::String(lane+1)+": duplicate or invalid VST3 insert";
+                return "label+": duplicate or invalid VST3 insert";
             ++insertCount;
         }
         const auto epochAtPublish=deviceEpoch_.load(std::memory_order_acquire);
@@ -232,6 +241,14 @@ public:
                 acceptedRoute_=command;
                 channelEdits_=proposed; // control thread SSOT for this route revision
                 for(int i=0;i<count;++i)channelFxNames_[i]=selections[i].name;
+                for(int b=0;b<auxCount;++b)
+                    auxFxNames_[b]=selections[count+b].name;
+                auxCountActive_.store(
+                    static_cast<int>(std::count_if(plan.aux.buses.begin(),
+                        plan.aux.buses.end(),
+                        [](const auto& b){return b.enabled;})),
+                    std::memory_order_relaxed);
+                auxSendCount_.store(decoded.aux.count,std::memory_order_relaxed);
                 return {};
             case Publisher::Result::staleDevice:
                 return "Device epoch changed during preparation";
@@ -355,6 +372,7 @@ public:
         const int max=snapshot->prepared->maxFramesPerPlugin();
         float peakL=0.f,peakR=0.f;
         std::array<float,count> perChannelPeaks{};
+        std::array<float,auxCount> perAuxPeaks{};
         for(int offset=0;offset<frames;offset+=max) {
             const int n=std::min(max,frames-offset);
             for(int c=0;c<inputCount;++c)
@@ -365,6 +383,8 @@ public:
                 return true;
             for(int ch=0;ch<count;++ch)
                 perChannelPeaks[ch]=std::max(perChannelPeaks[ch],level.channelPeak[ch]);
+            for(int b=0;b<auxCount;++b)
+                perAuxPeaks[b]=std::max(perAuxPeaks[b],level.auxPeak[b]);
             const float g=std::clamp(masterGain,0.f,2.f);
             for(int i=0;i<n;++i) {
                 float l=outputs[0][offset+i]*g;
@@ -388,6 +408,8 @@ public:
         peakR_.store(peakR,std::memory_order_relaxed);
         for(int ch=0;ch<count;++ch)
             channelPeaks_[ch].store(perChannelPeaks[ch],std::memory_order_relaxed);
+        for(int b=0;b<auxCount;++b)
+            auxPeaks_[b].store(perAuxPeaks[b],std::memory_order_relaxed);
         return true;
     }
 
@@ -402,6 +424,15 @@ public:
         out->setProperty("peakR",peakR_.load(std::memory_order_relaxed));
         out->setProperty("sendCount",sendCount_.load(std::memory_order_relaxed));
         out->setProperty("fxCount",fxCount_.load(std::memory_order_relaxed));
+        out->setProperty("auxCount",auxCountActive_.load(std::memory_order_relaxed));
+        out->setProperty("auxSendCount",auxSendCount_.load(std::memory_order_relaxed));
+        juce::Array<juce::var> auxNames,auxPeaks;
+        for(int b=0;b<auxCount;++b){
+            auxNames.add(auxFxNames_[b]);
+            auxPeaks.add(auxPeaks_[b].load(std::memory_order_relaxed));
+        }
+        out->setProperty("auxFxNames",juce::var(auxNames));
+        out->setProperty("auxPeaks",juce::var(auxPeaks));
         out->setProperty("fxReused",fxReused_.load(std::memory_order_relaxed));
         // Only the message thread calls status(), never the audio callback.
         if(active() && ready())out->setProperty("acceptedRoute",acceptedRoute_);
@@ -456,6 +487,9 @@ private:
     Publisher publisher_;
     std::array<ChannelEdit,count> channelEdits_{}; // JUCE message thread only
     std::array<juce::String,count> channelFxNames_{}; // status/control thread only
+    std::array<juce::String,auxCount> auxFxNames_{}; // dedicated bus FX
+    std::array<std::atomic<float>,auxCount> auxPeaks_{};
+    std::atomic<int> auxCountActive_{0},auxSendCount_{0};
     juce::var acceptedRoute_; // native ACK only, no UI preview/localStorage truth
     // All data shared between JUCE device lifecycle and GUI/control reads
     // are atomic; the callback never enumerates masks or channel names.
