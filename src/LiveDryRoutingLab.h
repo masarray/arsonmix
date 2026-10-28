@@ -79,7 +79,9 @@ public:
         sendCount_.store(0,std::memory_order_relaxed);
         fxCount_.store(0,std::memory_order_relaxed);
         fxReused_.store(0,std::memory_order_relaxed);
-        acceptedRoute_=juce::var();
+        // Device lifecycle callback may run off the message thread.
+        // acceptedRoute_ is a JUCE var owned by the CONTROL thread and must
+        // never be mutated from the device thread. Epoch gates hide stale data.
         for(auto& p:channelPeaks_)p.store(0.f,std::memory_order_relaxed);
         peakL_.store(0.f,std::memory_order_relaxed);
         peakR_.store(0.f,std::memory_order_relaxed);
@@ -280,6 +282,8 @@ public:
         peakR_.store(0.f,std::memory_order_relaxed);
         sendCount_.store(0,std::memory_order_relaxed);
         fxCount_.store(0,std::memory_order_relaxed);
+        fxReused_.store(0,std::memory_order_relaxed);
+        acceptedRoute_=juce::var(); // control-thread STOP only
         for(auto& p:channelPeaks_)p.store(0.f,std::memory_order_relaxed);
     }
     void poll() noexcept {publisher_.pollRetirement();} // message thread
