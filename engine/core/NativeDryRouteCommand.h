@@ -45,9 +45,9 @@ struct NativeDryRouteCommand final {
             }
             const float level=static_cast<float>(static_cast<double>(gain));
             const float balance=static_cast<float>(static_cast<double>(pan));
-            if(!std::isfinite(level)||level<0.f||level>1.f||
+            if(!std::isfinite(level)||level<0.f||level>4.f||
                !std::isfinite(balance)||balance< -1.f||balance>1.f) {
-                problem="Channel level must be 0..1 and pan -1..1";return false;
+                problem="Channel linear gain must be 0..4 and pan -1..1";return false;
             }
             auto& c=candidate.channels.stripsAndMaster.strips[i];
             c.faderLinear=level;c.pan=balance;
