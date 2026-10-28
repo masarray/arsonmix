@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "ChannelSendPlan.h"
+#include "AuxBusPlan.h"
 #include <juce_core/juce_core.h>
 #include <array>
 #include <cmath>
@@ -12,6 +13,7 @@ namespace armix::mixer {
 struct NativeDryRouteCommand final {
     ChannelRoutingConfig channels {};
     SendRequest sends {};
+    AuxBusRequest aux {};
 
     static bool decode(const juce::var& request,
                        NativeDryRouteCommand& destination,
@@ -68,6 +70,33 @@ struct NativeDryRouteCommand final {
                 problem="Channel must be NONE, MONO, STEREO or BUS";return false;
             }
         }
+        // Dedicated AUX 1..4 are independent from the ten physical INPUTs.
+        // Old sessions without auxes remain backward compatible and silent.
+        const auto rawAux=request.getProperty("auxes",juce::var());
+        if(!rawAux.isVoid()){
+            auto* auxRows=rawAux.getArray();
+            if(!auxRows||auxRows->size()!=auxBusCount){
+                problem="Exactly four dedicated AUX definitions are required";
+                return false;
+            }
+            for(int b=0;b<auxBusCount;++b){
+                const auto& row=auxRows->getReference(b);
+                if(!row.isObject()){problem="Invalid AUX return";return false;}
+                const auto enabled=row.getProperty("enabled",false);
+                const auto master=row.getProperty("main",true);
+                const auto mute=row.getProperty("mute",false);
+                const auto level=row.getProperty("gain",1.0);
+                if(!enabled.isBool()||!master.isBool()||!mute.isBool()||
+                   !(level.isDouble()||level.isInt())){
+                    problem="Invalid AUX enable, main, mute or level";return false;
+                }
+                const float gain=static_cast<float>(static_cast<double>(level));
+                if(!std::isfinite(gain)||gain<0.f||gain>4.f){
+                    problem="AUX gain must be 0..4";return false;
+                }
+                candidate.aux.buses[b]={bool(enabled),bool(master),bool(mute),gain};
+            }
+        }
         const auto rawSends=request.getProperty("sends",juce::var());
         if(!rawSends.isVoid() && !rawSends.isArray()){
             problem="Sends must be an array";return false;
@@ -94,10 +123,12 @@ struct NativeDryRouteCommand final {
                     problem="Send tap must be PRE or POST";return false;
                 }
                 const int from=static_cast<int>(source),to=static_cast<int>(dest);
-                if(from<0||from>=stripCount||to<0||to>=stripCount){
-                    problem="Send channel outside 1..10";return false;
+                if(from<0||from>=stripCount||to<0||to>=stripCount+auxBusCount){
+                    problem="Send requires CH1..10 source and CH/AUX destination";return false;
                 }
-                if(modeNames[from]=="NONE"||modeNames[to]=="NONE"){
+                if(modeNames[from]=="NONE"||
+                   (to<stripCount&&modeNames[to]=="NONE")||
+                   (to>=stripCount&&!candidate.aux.buses[to-stripCount].enabled)){
                     problem="Enable a sender and set the recipient to BUS or an assigned channel";return false;
                 }
                 const float sendGain=static_cast<float>(static_cast<double>(gain));
@@ -106,10 +137,17 @@ struct NativeDryRouteCommand final {
                    !std::isfinite(sendPan)||sendPan< -1.f||sendPan>1.f){
                     problem="Send level 0..1, pan -1..1";return false;
                 }
-                auto& s=candidate.sends.sends[candidate.sends.count++];
-                s.source=from;s.destination=to;
-                s.tap=tap=="PRE"?SendTap::preFader:SendTap::postFader;
-                s.gain=sendGain;s.pan=sendPan;s.enabled=true;
+                if(to>=stripCount){
+                    auto& s=candidate.aux.sends[candidate.aux.count++];
+                    s.source=from;s.destination=to-stripCount;
+                    s.tap=tap=="PRE"?SendTap::preFader:SendTap::postFader;
+                    s.gain=sendGain;s.pan=sendPan;s.enabled=true;
+                }else{
+                    auto& s=candidate.sends.sends[candidate.sends.count++];
+                    s.source=from;s.destination=to;
+                    s.tap=tap=="PRE"?SendTap::preFader:SendTap::postFader;
+                    s.gain=sendGain;s.pan=sendPan;s.enabled=true;
+                }
             }
         }
         // Rejection never mutates the destination. Explicit DAG validation
