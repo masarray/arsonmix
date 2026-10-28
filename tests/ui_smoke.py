@@ -322,6 +322,7 @@ async def main():
         await page.locator('#snapshotRecall').click()
         assert await page.locator('#snapshotUndo').is_enabled()
         await page.locator('#snapshotUndo').click()
+        await page.locator('[data-snapshot-safe="0"]').uncheck()
         await page.locator('#snapshotDelete').click()
         await page.locator('#snapshotDelete').click()
         assert await page.locator('#snapshotPick option').count()==4
