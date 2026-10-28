@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "ChannelSendPlan.h"
+#include "AuxBusPlan.h"
 #include <algorithm>
 #include <atomic>
 #include <array>
@@ -19,17 +20,19 @@
 namespace armix::mixer {
 
 enum class RenderFault : unsigned char {
-    none, invalidChannelRouting, invalidSendRouting
+    none, invalidChannelRouting, invalidSendRouting, invalidAuxRouting
 };
 struct RenderError final {
     RenderFault fault = RenderFault::none;
     LayoutError channel {};
     SendError sends {};
+    AuxError aux {};
 };
 
 struct PreparedRenderGraph final {
     ChannelRoutingPlan channels {};
     ChannelSendPlan sends {};
+    AuxBusPlan aux {};
     std::array<bool, stripCount> audible {};
     std::array<bool, stripCount> scheduled {};
     std::array<float, stripCount> leftGain {};
@@ -43,7 +46,8 @@ struct PreparedRenderGraph final {
                         std::span<const int> callbackOrderedPhysicalPorts,
                         const SendRequest& sendsRequest,
                         PreparedRenderGraph& destination,
-                        RenderError& error) noexcept {
+                        RenderError& error,
+                        const AuxBusRequest& requestedAux={}) noexcept {
         error = {};
         PreparedRenderGraph candidate;
         if (!ChannelRoutingPlan::compile(routing, callbackOrderedPhysicalPorts,
@@ -53,6 +57,10 @@ struct PreparedRenderGraph final {
         }
         if (!ChannelSendPlan::compile(sendsRequest, candidate.sends, error.sends)) {
             error.fault = RenderFault::invalidSendRouting;
+            return false;
+        }
+        if (!AuxBusPlan::compile(requestedAux,candidate.aux,error.aux)){
+            error.fault=RenderFault::invalidAuxRouting;
             return false;
         }
 
@@ -144,6 +152,7 @@ private:
 
 struct RenderLevels final {
     std::array<float,stripCount> channelPeak {};
+    std::array<float,auxBusCount> auxPeak {};
     float masterPeakL = 0.f, masterPeakR = 0.f;
 };
 
@@ -153,12 +162,13 @@ struct RenderLevels final {
 class PreparedMixerBlock final {
 public:
     // The maximum is an implementation bound, NOT an OS device promise.
-    // Allocations are constructor-only; 20 strip lanes + 2 master lanes.
+    // Allocations are constructor-only; 20 strip lanes + optional 8 AUX + 2 master.
     static constexpr int hardFrameLimit = 8192;
     PreparedMixerBlock(const PreparedRenderGraph& plan, int maxFrames)
         : plan_(plan), capacity_(maxFrames),
           backing_(validCapacity(maxFrames)
-                ? static_cast<std::size_t>(stripCount*2+2)*maxFrames
+                ? static_cast<std::size_t>(stripCount*2+2+
+                    (plan.aux.active?auxBusCount*2:0))*maxFrames
                 : 0u, 0.f) {
         if (!validCapacity(maxFrames))
             capacity_=0;
@@ -169,6 +179,13 @@ public:
         }
         masterL_=backing_.data()+static_cast<std::size_t>(stripCount*2)*capacity_;
         masterR_=masterL_+capacity_;
+        if(plan.aux.active){
+            for(int b=0;b<auxBusCount;++b){
+                auxLeft_[b]=masterR_+capacity_+
+                    static_cast<std::size_t>(b*2)*capacity_;
+                auxRight_[b]=auxLeft_[b]+capacity_;
+            }
+        }
     }
     PreparedMixerBlock(const PreparedMixerBlock&)=delete;
     PreparedMixerBlock& operator=(const PreparedMixerBlock&)=delete;
@@ -202,6 +219,11 @@ public:
         PreparedRenderGraph const& graph=plan_;
         std::fill_n(masterL_,frames,0.f);
         std::fill_n(masterR_,frames,0.f);
+        if(graph.aux.active)
+            for(int b=0;b<auxBusCount;++b){
+                std::fill_n(auxLeft_[b],frames,0.f);
+                std::fill_n(auxRight_[b],frames,0.f);
+            }
 
         bool anySolo=false;
         if(live)for(int strip=0;strip<stripCount;++strip)
@@ -279,6 +301,8 @@ public:
             }
             graph.sends.dispatch(strip,SendTap::preFader,l,r,
                                  left_.data(),right_.data(),frames);
+            graph.aux.dispatch(strip,SendTap::preFader,l,r,
+                               auxLeft_.data(),auxRight_.data(),frames);
             float peak=0.f;
             if(live) {
                 // A block-linear fader/PAN ramp avoids zipper clicks at the
@@ -308,6 +332,27 @@ public:
             if(observed) observed->channelPeak[strip]=peak;
             graph.sends.dispatch(strip,SendTap::postFader,l,r,
                                  left_.data(),right_.data(),frames);
+            graph.aux.dispatch(strip,SendTap::postFader,l,r,
+                               auxLeft_.data(),auxRight_.data(),frames);
+        }
+        // Dedicated AUX returns execute AFTER all ten source strips.
+        // Input channel count NEVER decreases when an AUX is enabled.
+        // AUX FX IDs are stripCount+b; -1 remains MASTER FX callback.
+        if(graph.aux.active)for(int b=0;b<auxBusCount;++b){
+            const auto& bus=graph.aux.buses[b];
+            if(!bus.enabled)continue;
+            float* const l=auxLeft_[b],* const r=auxRight_[b];
+            processFx(stripCount+b,l,r,frames);
+            float peak=0.f;
+            for(int f=0;f<frames;++f) {
+                const float vl=l[f]*bus.gain,vr=r[f]*bus.gain;
+                peak=std::max(peak,std::max(std::abs(vl),std::abs(vr)));
+                if(bus.toMaster && !bus.mute){
+                    masterL_[f]+=vl;
+                    masterR_[f]+=vr;
+                }
+            }
+            if(observed)observed->auxPeak[b]=peak;
         }
         processFx(-1,masterL_,masterR_,frames);
         graph.channels.base.finishMaster(masterL_,masterR_,frames);
@@ -328,6 +373,7 @@ private:
     std::vector<float> backing_; // ALLOCATED BEFORE callback, never resized
     std::array<float*,stripCount> left_{};
     std::array<float*,stripCount> right_{};
+    std::array<float*,auxBusCount> auxLeft_{},auxRight_{};
     std::array<float,stripCount> preGate_{},lastGainL_{},lastGainR_{};
     std::array<bool,stripCount> rampPrimed_{};
     float* masterL_=nullptr;
