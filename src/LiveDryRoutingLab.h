@@ -31,6 +31,7 @@ public:
     void prepareDevice (juce::AudioIODevice* device) noexcept {
         const auto generation=deviceEpoch_.fetch_add(1,std::memory_order_acq_rel)+1;
         registryValid_.store(false,std::memory_order_release);
+        topologyFault_.store(false,std::memory_order_release);
         portCount_.store(0,std::memory_order_release);
         callbackInputCount_.store(-1,std::memory_order_release);
         callbackOutputCount_.store(-1,std::memory_order_release);
@@ -62,6 +63,9 @@ public:
         portCount_.store(0,std::memory_order_release);
         callbackInputCount_.store(-1,std::memory_order_release);
         callbackOutputCount_.store(-1,std::memory_order_release);
+        topologyFault_.store(false,std::memory_order_release);
+        sendCount_.store(0,std::memory_order_relaxed);
+        for(auto& p:channelPeaks_)p.store(0.f,std::memory_order_relaxed);
         peakL_.store(0.f,std::memory_order_relaxed);
         peakR_.store(0.f,std::memory_order_relaxed);
     }
@@ -77,6 +81,8 @@ public:
         const auto currentEpoch=deviceEpoch_.load(std::memory_order_acquire);
         if(!registryValid_.load(std::memory_order_acquire))
             return "Audio device has no validated active capture ports";
+        if(topologyFault_.load(std::memory_order_acquire))
+            return "Device callback channel layout changed; reopen AUDIO SETUP before applying";
         const int countNow=portCount_.load(std::memory_order_acquire);
         if(countNow<=0 || countNow>armix::device::LiveInputPortRegistry::limit)
             return "Invalid active device input channel mask";
@@ -148,7 +154,8 @@ public:
     float peakLeft() const noexcept {return peakL_.load(std::memory_order_relaxed);}
     float peakRight() const noexcept {return peakR_.load(std::memory_order_relaxed);}
     bool ready() const noexcept {
-        return active() && publishedEpoch_.load(std::memory_order_acquire)==epoch();
+        return active() && !topologyFault_.load(std::memory_order_acquire)
+            && publishedEpoch_.load(std::memory_order_acquire)==epoch();
     }
     std::uint64_t epoch() const noexcept {
         return deviceEpoch_.load(std::memory_order_acquire);
@@ -172,13 +179,18 @@ public:
                 juce::FloatVectorOperations::clear(outputs[c],frames);
         if(!outputs||outputCount<2||!outputs[0]||!outputs[1] ||
            outputCount!=callbackOutputCount_.load(std::memory_order_acquire) ||
-           inputCount<0 || inputCount>armix::device::LiveInputPortRegistry::limit)
+           inputCount<0 || inputCount>armix::device::LiveInputPortRegistry::limit) {
+            topologyFault_.store(true,std::memory_order_release);
             return true;
+        }
+        if(topologyFault_.load(std::memory_order_acquire))return true;
         const auto generation=epoch();
         auto lease=publisher_.acquire();
         const auto* snapshot=lease.get(generation);
         if(!snapshot||!snapshot->prepared ||
            inputCount!=callbackInputCount_.load(std::memory_order_acquire)) {
+            if(inputCount!=callbackInputCount_.load(std::memory_order_acquire))
+                topologyFault_.store(true,std::memory_order_release);
             fadeRemaining_=0;
             lastOutputL_=lastOutputR_=0.f;
             return true;
@@ -246,6 +258,7 @@ public:
     juce::var status(juce::AudioIODevice* device) const {
         auto out=std::make_unique<juce::DynamicObject>();
         out->setProperty("active",active());
+        out->setProperty("topologyFault",topologyFault_.load(std::memory_order_acquire));
         out->setProperty("ready",ready());
         out->setProperty("epoch",static_cast<juce::int64>(epoch()));
         out->setProperty("revision",static_cast<juce::int64>(revision()));
@@ -294,6 +307,7 @@ private:
     std::array<std::atomic<int>,armix::device::LiveInputPortRegistry::limit> enabledOutputPorts_{};
     std::atomic<int> portCount_{0};
     std::atomic<bool> registryValid_{false};
+    std::atomic<bool> topologyFault_{false};
     std::atomic<std::uint64_t> deviceEpoch_{0};
     std::atomic<std::uint64_t> publishedEpoch_{0};
     std::atomic<int> callbackInputCount_{-1};
