@@ -20,6 +20,7 @@ namespace armix::mixer {
 class LiveChannelFxGraph final {
 public:
     static constexpr int channels=stripCount;
+    static constexpr int fxSlots=stripCount+auxBusCount;
     using Processor=juce::AudioProcessor;
 
     struct FxInstance final {
@@ -67,7 +68,7 @@ public:
             processing.clear(std::memory_order_release);
         }
     };
-    using FxBank=std::array<std::shared_ptr<FxInstance>,channels>;
+    using FxBank=std::array<std::shared_ptr<FxInstance>,fxSlots>;
 
     explicit LiveChannelFxGraph(const PreparedRenderGraph& plan,int frames,int pluginQuantum=512)
         : block_(std::make_unique<PreparedMixerBlock>(plan,frames)),
@@ -89,16 +90,16 @@ public:
     }
     const juce::String& insertName(int strip) const noexcept {
         static const juce::String empty;
-        return strip>=0&&strip<channels&&processors_[strip]
+        return strip>=0&&strip<fxSlots&&processors_[strip]
             ?processors_[strip]->name:empty;
     }
     const juce::String& insertId(int strip) const noexcept {
         static const juce::String empty;
-        return strip>=0&&strip<channels&&processors_[strip]
+        return strip>=0&&strip<fxSlots&&processors_[strip]
             ?processors_[strip]->catalogId:empty;
     }
     const Processor* instanceProcessor(int strip) const noexcept {
-        return strip>=0&&strip<channels&&processors_[strip]
+        return strip>=0&&strip<fxSlots&&processors_[strip]
             ?processors_[strip]->processor.get():nullptr;
     }
 
@@ -107,7 +108,7 @@ public:
     // same device epoch, sample-rate and prepared audio quantum.
     bool reuse(int strip,const LiveChannelFxGraph& previous,
                const juce::String& catalogId) {
-        if(strip<0||strip>=channels||catalogId.isEmpty()||
+        if(strip<0||strip>=fxSlots||catalogId.isEmpty()||
            processors_[strip]||!previous.processors_[strip]||
            previous.insertId(strip)!=catalogId||
            previous.pluginQuantum_!=pluginQuantum_)return false;
@@ -118,7 +119,7 @@ public:
 
     bool install(int strip,std::unique_ptr<Processor> processor,
                  const juce::String& name,const juce::String& catalogId={}) {
-        if(strip<0||strip>=channels||!processor||processors_[strip])
+        if(strip<0||strip>=fxSlots||!processor||processors_[strip])
             return false;
         processors_[strip]=std::make_shared<FxInstance>(
             std::move(processor),catalogId,name);
@@ -132,7 +133,7 @@ public:
                  float* left,float* right,int frames,
                  RenderLevels* levels=nullptr) noexcept {
         auto channelFx=[this](int strip,float* l,float* r,int samples) noexcept {
-            if(strip<0||strip>=channels)return;
+            if(strip<0||strip>=fxSlots)return;
             auto* instance=processors_[strip].get(); // no shared_ptr copy in RT
             if(instance)instance->render(l,r,samples);
         };
