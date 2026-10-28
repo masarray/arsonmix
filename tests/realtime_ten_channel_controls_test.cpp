@@ -10,6 +10,8 @@
 #include <cmath>
 #include <cstdlib>
 #include <new>
+#include <tuple>
+#include <utility>
 using namespace armix::mixer;
 static std::atomic<unsigned long> allocations{0};
 void* operator new(std::size_t n) {
