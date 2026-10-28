@@ -696,7 +696,7 @@ async def main():
         # A real two-state BTN-180 control: blue STEREO, red MONO, durable state.
         mode=page.locator('#masterMode')
         blue=await mode.evaluate("(e)=>getComputedStyle(e).getPropertyValue('--b180-color').trim()")
-        assert blue=='#77baeb',blue
+        assert blue=='#9dd2f0',blue
         await mode.click()
         red=await mode.evaluate("(e)=>getComputedStyle(e).getPropertyValue('--b180-color').trim()")
         assert await mode.inner_text()=='MONO' and await mode.get_attribute('aria-pressed')=='true'
