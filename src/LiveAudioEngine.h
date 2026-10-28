@@ -513,6 +513,7 @@ public:
     juce::String addVst3 (const juce::String& filename, int uid,
                           const juce::String& catalogId)
     {
+        if (dryRoutingLab_.active()) return "Stop DRY ROUTING LAB before editing VST3";
         if (handoff_.busy()) return "FX graph transition in progress; retry shortly";
         if (graphOwned_->count >= maxFx) return "FX Rack is full (maximum 8 VST3 effects)";
         auto* device = deviceManager_.getCurrentAudioDevice();
@@ -563,6 +564,7 @@ public:
     // exactly once, no plugin state methods ever execute on the audio thread.
     juce::String captureSnapshot (armix::storage::Snapshot& snapshot)
     {
+        if (dryRoutingLab_.active()) return "Stop DRY ROUTING LAB before saving native FX state";
         if (!isOutputMuted()) return "Mute hardware output before saving a native preset";
         if (handoff_.busy()) return "Finish pending FX graph transition before saving";
         snapshot.effects.clear();
@@ -609,6 +611,7 @@ public:
     // or destroys a plugin. No manual output mute is required for recall.
     juce::String restoreSnapshot (const armix::storage::Snapshot& snapshot)
     {
+        if (dryRoutingLab_.active()) return "Stop DRY ROUTING LAB before preset recall";
         if (handoff_.busy())
             return "A live FX graph transition is already in progress";
         if (snapshot.effects.size() > maxFx) return "Too many plugins in preset";
@@ -721,6 +724,7 @@ public:
 
     bool removeAt (int index)
     {
+        if (dryRoutingLab_.active()) return false;
         if (handoff_.busy()) return false;
         if (index < 0 || index >= graphOwned_->count) return false;
         detach();
@@ -737,6 +741,7 @@ public:
 
     bool moveSlot (int from, int to)
     {
+        if (dryRoutingLab_.active()) return false;
         if (handoff_.busy()) return false;
         if (from < 0 || from >= graphOwned_->count || to < 0 || to >= graphOwned_->count || from == to)
             return false;
