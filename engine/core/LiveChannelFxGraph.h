@@ -2,6 +2,7 @@
 #pragma once
 #include "PreparedMixerBlock.h"
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <memory>
@@ -19,8 +20,9 @@ public:
     using Processor=juce::AudioProcessor;
     using FxBank=std::array<std::unique_ptr<Processor>,channels>;
 
-    explicit LiveChannelFxGraph(const PreparedRenderGraph& plan,int frames)
-        : block_(std::make_unique<PreparedMixerBlock>(plan,frames)) {}
+    explicit LiveChannelFxGraph(const PreparedRenderGraph& plan,int frames,int pluginQuantum=512)
+        : block_(std::make_unique<PreparedMixerBlock>(plan,frames)),
+          pluginQuantum_(std::clamp(pluginQuantum,32,PreparedMixerBlock::hardFrameLimit)) {}
 
     LiveChannelFxGraph(const LiveChannelFxGraph&)=delete;
     LiveChannelFxGraph& operator=(const LiveChannelFxGraph&)=delete;
@@ -31,6 +33,7 @@ public:
     }
 
     int capacity() const noexcept{return block_?block_->capacity():0;}
+    int maxFramesPerPlugin() const noexcept {return pluginQuantum_;}
     int activeInserts() const noexcept{return activeInserts_;}
     const juce::String& insertName(int strip) const noexcept {
         static const juce::String empty;
@@ -73,5 +76,6 @@ private:
     std::array<juce::MidiBuffer,channels> midi_ {};
     std::array<juce::String,channels> names_ {};
     int activeInserts_=0;
+    int pluginQuantum_=512;
 };
 } // namespace armix::mixer
