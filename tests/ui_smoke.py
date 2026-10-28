@@ -409,9 +409,17 @@ async def main():
         assert all(abs(active['rect'][k]-pre[k])<=.2 for k in ('x','y','width','height')),active
         # Utility ON is soft cyan, not the old green/purple polarity palettes.
         await page.locator('[data-hpf="0"]').click()
-        await page.wait_for_timeout(190)
+        await page.mouse.move(1,1)
+        await page.wait_for_timeout(65)
         cyan=await page.locator('[data-hpf="0"]').evaluate("(e)=>getComputedStyle(e).backgroundColor")
         assert cyan=='rgb(148, 232, 237)',cyan
+        await page.locator('[data-hpf="0"]').hover()
+        hover=await page.locator('[data-hpf="0"]').evaluate("""e=>({
+          face:getComputedStyle(e).backgroundColor,filter:getComputedStyle(e).filter,
+          transition:getComputedStyle(e).transitionDuration
+        })""")
+        assert hover['face']!=cyan and hover['filter']=='none' and all(x=='0s' for x in hover['transition'].split(', ')),hover
+        await page.mouse.move(1,1)
         await page.locator('[data-hpf="0"]').click()
         # Navigation remains mutually exclusive; selected is only a color latch.
         await page.locator('[data-view="FX RACK"]').click()
@@ -994,6 +1002,7 @@ async def main():
         assert off_mute == await image_for('[data-solo="0"]')
         await page.locator('[data-mute="0"]').click()
         assert await page.locator('[data-mute="0"]').get_attribute('aria-pressed') == 'true'
+        await page.mouse.move(1,1)  # avoid the intentionally brighter hover skin during palette assertion
         # BTN-180 color transition is 45ms, while tactile press is immediate.
         await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-mute="0"]')).backgroundColor==='rgb(249, 154, 164)'""",timeout=2500)
         assert await image_for('[data-mute="0"]') != await image_for('[data-solo="0"]'), await page.evaluate("""()=>{
@@ -1005,6 +1014,7 @@ async def main():
         }""")
         await page.locator('[data-solo="0"]').click()
         assert await page.locator('[data-solo="0"]').get_attribute('aria-pressed') == 'true'
+        await page.mouse.move(1,1)
         await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-solo="0"]')).backgroundColor==='rgb(244, 212, 121)'""",timeout=2500)
         assert await image_for('[data-solo="0"]') != await image_for('[data-mute="0"]')
         await page.locator('[data-mute="0"]').click()
