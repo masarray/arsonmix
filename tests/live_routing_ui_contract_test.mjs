@@ -88,9 +88,9 @@ test("P1G is real native BUS/send, not a cosmetic routing picker",()=>{
 
 test("P1H independently instantiates and processes real JUCE FX in 10 native lanes",()=>{
   const fx=readFileSync(new URL("../engine/core/LiveChannelFxGraph.h",import.meta.url),"utf8");
-  assert.match(fx,/std::array<std::unique_ptr<Processor>,channels>/);
-  assert.match(fx,/processors_\[strip\]->processBlock\(buffer,midi\)/);
-  assert.match(fx,/processor->releaseResources\(\)/);
+  assert.match(fx,/std::array<std::shared_ptr<FxInstance>,channels>/);
+  assert.match(fx,/processor->processBlock\(buffer,midi\)/);
+  assert.match(fx,/if\(processor\)processor->releaseResources\(\)/);
   assert.match(lab,/std::make_unique<FxGraph>\(plan/);
   assert.match(lab,/formats\.createPluginInstance/);
   assert.match(lab,/prepareStereoEffectLayout/);
@@ -145,6 +145,6 @@ test("P1J keeps real per-strip VST3 identity and tails across routing-only APPLY
   assert.match(ui,/saved\.deviceEpoch/);
   assert.match(ui,/window\.__arMixOpenRoutingLab=openRoutingLab/);
   assert.match(app,/id="flowRoutingButton"/);
-  assert.match(app,/native VST3/i);
+  assert.match(app,/Independent VST3/);
   assert.match(ui,/NATIVE ACK:.*preserved/);
 });
