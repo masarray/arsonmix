@@ -547,6 +547,14 @@
           <button class="native-btn" data-preset-load="${escapeHtml(n)}">RECALL LIVE</button>
         </div>`).join("") :
         '<div class="native-empty">No native sounds saved. Mute output, then save the current live FX chain.</div>'}
+      </div>
+      <div class="native-card" style="margin-top:12px">
+        <div class="native-sub" style="margin-bottom:8px">PORTABLE STUDIO · VST FILES + NATIVE PRESETS</div>
+        <button class="native-btn primary" data-backup-studio="1" ${muted?"":"disabled"}>BACKUP STUDIO TO USB / FOLDER</button>
+        <div class="native-sub" style="margin-top:8px">
+          Mute output, then create a NEW verified folder with the ArSonMix app and managed VST3s.
+          Browser-only demo scenes, external VST files and vendor licenses may still need setup on a new PC.
+        </div>
       </div>`;
     dlg.querySelector(".native-dialog-footer").textContent=
       "Live recall: prepared VST3 chain switches at a callback boundary with a brief fade-down/up (not dual-graph seamless). SAVE requires mute. Output routing is unchanged.";
@@ -714,7 +722,7 @@
   },true);
   // Capture native controls before the legacy v0.3 demo handlers.
   document.addEventListener("click", function(e){
-  const el=e.target.closest("[data-native-action],[data-native-add],[data-native-fx],[data-fxpower],[data-master-insert],[data-master-power],[data-native-category],[data-go-native-rack],[data-insert],[data-plugin-picker],[data-plugin-manager],[data-my-sounds],[data-preset-mute],[data-preset-save],[data-preset-load],[data-close-modal],[data-orbit-start],[data-orbit-stop]");
+  const el=e.target.closest("[data-native-action],[data-native-add],[data-native-fx],[data-fxpower],[data-master-insert],[data-master-power],[data-native-category],[data-go-native-rack],[data-insert],[data-plugin-picker],[data-plugin-manager],[data-my-sounds],[data-backup-studio],[data-preset-mute],[data-preset-save],[data-preset-load],[data-close-modal],[data-orbit-start],[data-orbit-stop]");
   if(!el)return;
   e.preventDefault();e.stopImmediatePropagation();
 
@@ -754,6 +762,7 @@
     return;
   }
   if(el.hasAttribute("data-my-sounds")){openMySounds();return;}
+  if(el.hasAttribute("data-backup-studio")){send("backupStudio");return;}
   if(el.hasAttribute("data-preset-mute")){
     send("monitor",{value:false});state.monitor=false;renderMySounds();return;
   }
