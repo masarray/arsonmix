@@ -2,7 +2,10 @@
 #pragma once
 #include "LiveInputPortRegistry.h"
 #include <juce_audio_devices/juce_audio_devices.h>
+#include <algorithm>
 #include <array>
+#include <span>
+#include <utility>
 #include <cstdint>
 
 // P1F: control-thread hardware topology attestation. The JUCE callback's
