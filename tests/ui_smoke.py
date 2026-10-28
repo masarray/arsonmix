@@ -330,8 +330,9 @@ async def main():
         assert await page.locator('#masterPeakDb').count()==0
         assert await page.locator('#masterLufs').count()==1
         assert await page.locator('#masterDbtp').count()==1
-        assert 'SIM' in await page.locator('#masterLeft .master-analysis').inner_text()
-        assert 'LUFS-I' in await page.locator('#masterLeft .master-analysis').inner_text()
+        assert 'SIM' not in await page.locator('#masterLeft .master-analysis').inner_text()
+        assert 'LUFS' in await page.locator('#masterLeft .master-analysis').inner_text()
+        assert 'simulated' in (await page.locator('#masterLeft .master-analysis').get_attribute('title')).lower()
         # Buttons must describe and perform actual distinct actions: no "..." blank cap.
         assert await page.locator('.left-rail #addScene').inner_text()=='＋ SAVE SNAPSHOT'
         assert await page.locator('.left-rail #saveFxPreset').inner_text()=='SAVE FX'
