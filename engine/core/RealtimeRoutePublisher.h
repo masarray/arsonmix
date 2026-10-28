@@ -7,16 +7,23 @@
 #include <memory>
 #include <utility>
 
-// Realtime path: two atomics per callback, one pointer read, no heap, locks,
-// waiting, deallocation or device/GUI operations. One CONTROL writer.
-// Prepared owns all DSP buffers; plugin objects MUST NOT be concurrently
-// processed on old/new graphs (plugin lifecycle gate lives above this class).
-// Old graph destruction happens only from pollRetirement() after RT readers
-// have left. Do not destroy the exchange while audio callbacks are attached.
+// One control-thread writer and any number of bounded RT readers.
+// IMPORTANT: Separate "reader count" and "active pointer" atomics DO NOT
+// protect reclamation; a reader can enter after a zero-count observation
+// and acquire a pointer which is being freed. Gate reader reservation and
+// writer publication with ONE sequentially-consistent atomic state.
+//
+// State bit 0: writer publishing/unpublishing (RT fails closed, NO SPIN).
+// High bits: +2 per active reader. Any reader registered before writer
+// publication retains old lifetime until it releases the lease.
+// In contrast, readers registering after the gate clears see only NEW active.
+// Retired memory is reclaimed only on control thread, and only when there
+// are no preexisting readers. No heap/lock/device call on RT read path.
 namespace armix::rt {
 template<class Prepared, std::size_t RetiredCapacity=8>
 class RealtimeRoutePublisher final {
     static_assert(RetiredCapacity>=2);
+    static constexpr std::uint32_t writerFlag=1U, readerUnit=2U;
 public:
     struct Snapshot final {
         std::uint64_t deviceEpoch=0;
@@ -29,15 +36,25 @@ public:
     class ReadLease final {
     public:
         explicit ReadLease (RealtimeRoutePublisher& owner) noexcept : owner_(&owner) {
-            owner_->readers_.fetch_add(1,std::memory_order_acq_rel);
-            item_=owner_->active_.load(std::memory_order_acquire);
+            auto activity=owner_->activity_.load(std::memory_order_seq_cst);
+            // Do not spin/wait inside the audio callback. One silent block is
+            // preferable to scheduling jitter while control thread publishes.
+            if((activity&writerFlag)!=0 || activity>UINT32_MAX-readerUnit)
+                return;
+            if(!owner_->activity_.compare_exchange_strong(
+                activity,activity+readerUnit,
+                std::memory_order_seq_cst,std::memory_order_seq_cst))
+                return;
+            registered_=true;
+            item_=owner_->active_.load(std::memory_order_seq_cst);
         }
         ReadLease(const ReadLease&)=delete;
         ReadLease& operator=(const ReadLease&)=delete;
         ReadLease(ReadLease&&)=delete;
         ReadLease& operator=(ReadLease&&)=delete;
         ~ReadLease() noexcept {
-            owner_->readers_.fetch_sub(1,std::memory_order_release);
+            if(registered_)
+                owner_->activity_.fetch_sub(readerUnit,std::memory_order_seq_cst);
         }
         const Snapshot* get(std::uint64_t currentEpoch) const noexcept {
             return item_ && item_->deviceEpoch==currentEpoch
@@ -46,15 +63,15 @@ public:
     private:
         RealtimeRoutePublisher* owner_;
         const Snapshot* item_=nullptr;
+        bool registered_=false;
     };
 
     RealtimeRoutePublisher()=default;
     RealtimeRoutePublisher(const RealtimeRoutePublisher&)=delete;
     RealtimeRoutePublisher& operator=(const RealtimeRoutePublisher&)=delete;
 
-    // CONTROL thread, with fully prepared DSP state and explicit revision.
-    // Expected revision always refers to the last ACKnowledged publication.
-    // All failure outcomes preserve the audio callback's last valid graph.
+    // CONTROL thread only. Expected revision is last acknowledged revision;
+    // candidate is fully preallocated and validated before any RT publication.
     Result publish(std::unique_ptr<Snapshot> next,
                    std::uint64_t expectedRevision,
                    std::uint64_t deviceEpochNow) noexcept {
@@ -65,51 +82,54 @@ public:
             return Result::staleDevice;
         if(expectedRevision!=revision_)
             return Result::staleRevision;
-        pollRetirement(); // control thread only
+        pollRetirement();
         if(owned_ && retiredCount_>=RetiredCapacity)
             return Result::retirementFull;
-        if(owned_) retired_[retiredCount_++]=std::move(owned_);
+        // Single writer. Publish/retire happens only with the low-bit gate set.
+        activity_.fetch_or(writerFlag,std::memory_order_seq_cst);
+        if(owned_)retired_[retiredCount_++]=std::move(owned_);
         owned_=std::move(next);
-        // Publish ownership last; readers always see a live allocation.
-        active_.store(owned_.get(),std::memory_order_release);
+        active_.store(owned_.get(),std::memory_order_seq_cst);
+        activity_.fetch_and(~writerFlag,std::memory_order_seq_cst);
         revision_=owned_->graphRevision;
         return Result::applied;
     }
 
-    // CONTROL thread: gate new callback usage, then retire safely.
-    // Caller must ensure the audio device is stopped before destroying this
-    // object; asynchronous stop merely disconnects the new graph view.
+    // Immediately gate the last route to silence. Do NOT delete a graph
+    // while the audio callback could own a ReadLease to its snapshot.
     void unpublish() noexcept {
-        // The hard mute is published FIRST, even if a busy RT consumer
-        // prevents reclaiming the previous ownership immediately.
-        active_.store(nullptr,std::memory_order_release);
+        activity_.fetch_or(writerFlag,std::memory_order_seq_cst);
+        active_.store(nullptr,std::memory_order_seq_cst);
+        activity_.fetch_and(~writerFlag,std::memory_order_seq_cst);
         revision_=0;
         pollRetirement();
         if(!owned_)return;
         if(retiredCount_<RetiredCapacity)
             retired_[retiredCount_++]=std::move(owned_);
-        // Otherwise retain owned_ (but not published) until safe retirement.
-        // A future publish correctly sees retirementFull rather than freeing
-        // a graph on a live audio callback.
+        // Saturated: preserve unpublished ownership until quiescent.
+        // The next publication is rejected unless safe retirement completes.
     }
-    // CONTROL thread only. No free until every acquire() lease has exited.
+
+    // CONTROL only: cannot reclaim any snapshot whose pointer might still
+    // be held by a reader which registered before its publication.
     bool pollRetirement() noexcept {
-        if(readers_.load(std::memory_order_acquire)!=0) return false;
-        for(std::size_t i=0;i<retiredCount_;++i) retired_[i].reset();
+        if((activity_.load(std::memory_order_seq_cst)&~writerFlag)!=0)
+            return false;
+        for(std::size_t i=0;i<retiredCount_;++i)retired_[i].reset();
         retiredCount_=0;
         return true;
     }
     [[nodiscard]] ReadLease acquire() noexcept {return ReadLease(*this);}
-    std::uint64_t lastRevision() const noexcept {return revision_;} // CONTROL only
-    std::size_t pendingRetirements() const noexcept {return retiredCount_;} // CONTROL only
+    std::uint64_t lastRevision() const noexcept {return revision_;} // CONTROL
+    std::size_t pendingRetirements() const noexcept {return retiredCount_;} // CONTROL
     bool readersPresent() const noexcept {
-        return readers_.load(std::memory_order_acquire)!=0;
+        return (activity_.load(std::memory_order_seq_cst)&~writerFlag)!=0;
     }
 private:
     std::atomic<const Snapshot*> active_{nullptr};
-    std::atomic<std::uint32_t> readers_{0};
+    std::atomic<std::uint32_t> activity_{0};
     std::unique_ptr<Snapshot> owned_;
-    std::array<std::unique_ptr<Snapshot>,RetiredCapacity> retired_ {};
+    std::array<std::unique_ptr<Snapshot>,RetiredCapacity> retired_{};
     std::size_t retiredCount_=0;
     std::uint64_t revision_=0;
 };
