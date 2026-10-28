@@ -128,7 +128,7 @@
 
 /* OFF uses the same shared material with a brighter light-steel face.
    Bright ON color recipes above remain untouched. */
-:is(.toolbar .nav button.btn-180,.toolbar .spec-device,
+:is(.toolbar .spec-device,
  .strip .channel-actions .candy,.strip .utility-row button,
  #masterLeft .master-actions button,#masterLeft .master-tools button,
  .left-rail .tabs button.btn-180,.left-rail .rail-presets button.btn-180,
