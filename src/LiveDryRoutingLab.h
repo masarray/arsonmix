@@ -27,31 +27,39 @@ public:
     // JUCE calls aboutToStart after configuring the input/output device.
     // One device session gets a new epoch; stored route cannot survive it.
     void prepareDevice (juce::AudioIODevice* device) noexcept {
-        // Preserve explicit LAB ownership across hotplug; the new epoch
-        // makes the old prepared graph return silence, NEVER CH1 fallthrough.
+        // The new epoch invalidates old DSP immediately. Publish the new
+        // active mask using ATOMIC port slots: JUCE can restart the driver
+        // while its message thread is generating a routing/status snapshot.
         const auto generation=deviceEpoch_.fetch_add(1,std::memory_order_acq_rel)+1;
-        registryValid_=false;
-        enabledPorts_.fill(-1);
-        portCount_=0;
-        if(!device) return;
+        registryValid_.store(false,std::memory_order_release);
+        portCount_.store(0,std::memory_order_release);
+        callbackInputCount_.store(-1,std::memory_order_release);
+        if(!device)return;
+        std::array<int,armix::device::LiveInputPortRegistry::limit> candidate{};
+        int count=0;
         const auto mask=device->getActiveInputChannels();
-        int bit=mask.findNextSetBit(0);
-        while(bit>=0) {
-            if(portCount_>=armix::device::LiveInputPortRegistry::limit)
-                return; // no silent truncation
-            enabledPorts_[portCount_++]=bit;
-            bit=mask.findNextSetBit(bit+1);
+        for(int bit=mask.findNextSetBit(0);bit>=0;
+            bit=mask.findNextSetBit(bit+1)) {
+            if(count>=armix::device::LiveInputPortRegistry::limit)
+                return; // never truncate/alias active device ports
+            candidate[count++]=bit;
         }
+        armix::device::LiveInputPortRegistry prepared;
         armix::device::LiveInputPortRegistry::Fault fault;
-        registryValid_=armix::device::LiveInputPortRegistry::prepare(
-            generation,{enabledPorts_.data(),static_cast<std::size_t>(portCount_)},
-            registry_,fault);
-        callbackInputCount_.store(portCount_,std::memory_order_release);
+        if(!armix::device::LiveInputPortRegistry::prepare(
+               generation,{candidate.data(),static_cast<std::size_t>(count)},
+               prepared,fault))return;
+        for(int i=0;i<count;++i)
+            enabledPorts_[i].store(candidate[i],std::memory_order_relaxed);
+        portCount_.store(count,std::memory_order_release);
+        callbackInputCount_.store(count,std::memory_order_release);
+        registryValid_.store(true,std::memory_order_release);
     }
     void deviceStopped() noexcept {
-        // Epoch invalidates output while LAB mode remains fail-closed until
-        // the operator explicitly disables it or applies a new device map.
+        // A stale lab cannot silently resume legacy CH1 on device hotplug.
         deviceEpoch_.fetch_add(1,std::memory_order_acq_rel);
+        registryValid_.store(false,std::memory_order_release);
+        portCount_.store(0,std::memory_order_release);
         callbackInputCount_.store(-1,std::memory_order_release);
         peakL_.store(0.f,std::memory_order_relaxed);
         peakR_.store(0.f,std::memory_order_relaxed);
@@ -64,10 +72,19 @@ public:
             return "Dry Routing LAB requires one verified DIRECT audio device";
         if(loadedFx>0)
             return "Disable/remove Channel 1 VST3 before DRY Routing LAB (no plugin state is touched)";
-        if(!registryValid_ || portCount_==0)
-            return "Audio device has no validated active capture ports";
         if(!command.isObject()) return "Invalid Dry Routing configuration";
         const auto currentEpoch=deviceEpoch_.load(std::memory_order_acquire);
+        if(!registryValid_.load(std::memory_order_acquire))
+            return "Audio device has no validated active capture ports";
+        const int countNow=portCount_.load(std::memory_order_acquire);
+        if(countNow<=0 || countNow>armix::device::LiveInputPortRegistry::limit)
+            return "Invalid active device input channel mask";
+        std::array<int,armix::device::LiveInputPortRegistry::limit> physicalPorts{};
+        for(int i=0;i<countNow;++i)
+            physicalPorts[i]=enabledPorts_[i].load(std::memory_order_relaxed);
+        if(deviceEpoch_.load(std::memory_order_acquire)!=currentEpoch ||
+           !registryValid_.load(std::memory_order_acquire))
+            return "Audio input map changed during routing preparation";
         const auto expectedEpoch=static_cast<std::uint64_t>(
             static_cast<juce::int64>(command.getProperty("deviceEpoch",juce::var(0))));
         const auto expectedRevision=static_cast<std::uint64_t>(
@@ -113,7 +130,7 @@ public:
         Plan plan;
         armix::mixer::RenderError error;
         if(!Plan::compile(cfg,
-                          {enabledPorts_.data(),static_cast<std::size_t>(portCount_)},
+                          {physicalPorts.data(),static_cast<std::size_t>(countNow)},
                           sends,plan,error))
             return "Invalid physical routing (inactive port, format or mapping)";
         const auto revision=expectedRevision+1;
@@ -124,7 +141,11 @@ public:
         next->prepared=std::make_unique<Block>(plan,Block::hardFrameLimit);
         if(!next->prepared || next->prepared->capacity()==0)
             return "Cannot allocate routing workspace";
-        const auto result=publisher_.publish(std::move(next),expectedRevision,currentEpoch);
+        const auto epochAtPublish=deviceEpoch_.load(std::memory_order_acquire);
+        if(!registryValid_.load(std::memory_order_acquire) ||
+           epochAtPublish!=currentEpoch)
+            return "Audio device changed before routing publication";
+        const auto result=publisher_.publish(std::move(next),expectedRevision,epochAtPublish);
         switch(result) {
             case Publisher::Result::applied:
                 publishedEpoch_.store(currentEpoch,std::memory_order_release);
@@ -240,10 +261,13 @@ public:
         out->setProperty("peakL",peakL_.load(std::memory_order_relaxed));
         out->setProperty("peakR",peakR_.load(std::memory_order_relaxed));
         juce::Array<juce::var> ports;
-        if(device && registryValid_) {
+        if(device && registryValid_.load(std::memory_order_acquire)) {
+            const auto generation=epoch();
+            const int countNow=portCount_.load(std::memory_order_acquire);
             const auto names=device->getInputChannelNames();
-            for(int i=0;i<portCount_;++i){
-                const int physical=enabledPorts_[i];
+            for(int i=0;i<countNow &&
+                       i<armix::device::LiveInputPortRegistry::limit;++i){
+                const int physical=enabledPorts_[i].load(std::memory_order_relaxed);
                 auto p=std::make_unique<juce::DynamicObject>();
                 p->setProperty("port",physical);
                 p->setProperty("callback",i);
@@ -251,6 +275,10 @@ public:
                     ?names[physical]:juce::String("Input ")+juce::String(physical+1));
                 ports.add(juce::var(p.release()));
             }
+            // Device may restart while a status report is constructed.
+            if(epoch()!=generation ||
+               !registryValid_.load(std::memory_order_acquire))
+                ports.clear();
         }
         out->setProperty("ports",juce::var(ports));
         out->setProperty("note","EXPLICIT DRY HARDWARE FAT ONLY: no channel VST3, no sends, no portable route persistence");
@@ -258,10 +286,11 @@ public:
     }
 private:
     Publisher publisher_;
-    armix::device::LiveInputPortRegistry registry_; // device lifecycle only
-    std::array<int,armix::device::LiveInputPortRegistry::limit> enabledPorts_{};
-    int portCount_=0;
-    bool registryValid_=false;
+    // All data shared between JUCE device lifecycle and GUI/control reads
+    // are atomic; the callback never enumerates masks or channel names.
+    std::array<std::atomic<int>,armix::device::LiveInputPortRegistry::limit> enabledPorts_{};
+    std::atomic<int> portCount_{0};
+    std::atomic<bool> registryValid_{false};
     std::atomic<std::uint64_t> deviceEpoch_{0};
     std::atomic<std::uint64_t> publishedEpoch_{0};
     std::atomic<int> callbackInputCount_{-1};
