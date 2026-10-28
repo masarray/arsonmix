@@ -917,14 +917,17 @@ async def main():
         assert [s['count'] for s in module_layout]==[1]*6+[2]*5,module_layout
         for s in module_layout:
             assert s['dom']==['VU','FADER','SCALE'],s
-            assert abs(s['bank']['w']-51)<.3 and abs(s['ruler']['w']-26)<.3,s
+            assert abs(s['bank']['w']-(35 if s['count']==1 else 51))<.3 and abs(s['ruler']['w']-26)<.3,s
             assert s['bank']['r']+2<s['rail']['l'] and s['rail']['r']+2<s['ruler']['l'],s
             assert s['bank']['l']>=s['zone']['l']-1 and s['ruler']['r']<=s['zone']['r']+1,s
             assert all(abs(m['w']-14)<.3 for m in s['meters']),s
             assert s['rail']['w']>=36 and s['rail']['h']>150,s
-        # Mono and stereo strips share an identically located central rail.
-        rail_x=[s['rail']['l']-s['zone']['l'] for s in module_layout[:10]]
-        assert max(rail_x)-min(rail_x)<1,rail_x
+        # Mono's narrower well intentionally releases 16px to its fader.
+        # Same-format strips retain precisely aligned central rail offsets.
+        mono_x=[s['rail']['l']-s['zone']['l'] for s in module_layout[:10] if s['count']==1]
+        stereo_x=[s['rail']['l']-s['zone']['l'] for s in module_layout[:10] if s['count']==2]
+        assert max(mono_x)-min(mono_x)<1 and max(stereo_x)-min(stereo_x)<1,(mono_x,stereo_x)
+        assert abs((stereo_x[0]-mono_x[0])-16)<1,(mono_x,stereo_x)
 
         assert all(abs(v['unit']-14)<.3 and abs(v['meter']-14)<.3 and abs(v['fill']-10)<.6 and v['clip'] for v in vu_geometry),vu_geometry
         assert len(set(v['gradient'] for v in vu_geometry))==1, 'VU palette must match across all L/R/mono bars'
