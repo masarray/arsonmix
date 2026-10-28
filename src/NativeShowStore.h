@@ -54,22 +54,24 @@ public:
             total+=static_cast<juce::int64>(blob.bytes.getSize());
             if(total>maxGenerationBytes) return "Generation exceeds 128 MB limit";
         }
-        // Every referenced VST3 state must be provided, no phantom vendor state.
+        // Every referenced VST3 state must be present. Once-only validated
+        // hashes are indexed for O(log B) lookup, not a nested linear scan
+        // across every channel/FX/snapshot at save time.
+        std::set<juce::String> suppliedHashes;
+        for(const auto& blob:blobs)
+            suppliedHashes.insert(blob.sha256.toLowerCase());
         for(const auto& snap:snapshots)
             for(const auto& strip:snap.strips)
-                for(const auto& fx:strip.fx) {
-                    bool found=false;
-                    for(const auto& blob:blobs)
-                        if(fx.stateSha256.equalsIgnoreCase(blob.sha256)) {found=true;break;}
-                    if(!found) return "Missing vendor state for "+fx.catalogId;
-                }
+                for(const auto& fx:strip.fx)
+                    if(suppliedHashes.find(fx.stateSha256.toLowerCase())==suppliedHashes.end())
+                        return "Missing vendor state for "+fx.catalogId;
         if(!root_.isDirectory() && root_.createDirectory().failed())
             return "Studio Shows directory is not writable";
         const auto showRoot=root_.getChildFile(show.id.toLowerCase());
         const auto versions=showRoot.getChildFile("versions");
         if(!versions.isDirectory()&&versions.createDirectory().failed())
             return "Show version directory is not writable";
-        const auto generation=juce::Uuid().toString().toLowerCase();
+        const auto generation=juce::Uuid().toDashedString().toLowerCase();
         if(!detail::uuid(generation)) return "Could not create generation ID";
         const auto stage=showRoot.getChildFile(".staging-"+generation);
         if(stage.exists()) return "Staging generation already exists";

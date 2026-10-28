@@ -13,6 +13,11 @@ int main() {
  const auto workspace=base.getChildFile("Studio");
  assert(workspace.createDirectory().wasOk());
  NativeShowStore store(workspace);
+ // JUCE's toString() emits 32 hex digits; wire/storage UUIDs require
+ // 36-character RFC 4122 dashed identifiers. Guard that API contract.
+ assert(!detail::uuid(juce::Uuid().toString()));
+ assert(detail::uuid(juce::Uuid().toDashedString()));
+
  ShowV2 show;
  show.id="11111111-2222-4333-8444-555555555555";
  show.name="Stage Live 01";
@@ -34,7 +39,9 @@ int main() {
  snap.strips[0].fx.push_back({"TestVendor|195",195,blob.sha256,false});
  std::vector<SnapshotV2> snapshots={snap};
  std::vector<BinaryState> blobs={blob};
- assert(store.commit(show,snapshots,blobs).isEmpty());
+ const auto firstCommitError=store.commit(show,snapshots,blobs);
+ if(firstCommitError.isNotEmpty()) std::cerr<<"initial Show commit failed: "<<firstCommitError<<"\\n";
+ assert(firstCommitError.isEmpty());
  const auto first=store.currentGeneration(show.id);
  assert(first.isDirectory());
  ShowV2 loaded;
