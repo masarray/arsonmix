@@ -123,3 +123,28 @@ test("P1I binds premium 10CH console to REAL native RT graph without FX restart"
   assert.match(bridge,/lab\.channelPeaks/);
   assert.match(bridge,/data-native-routing-lab/);
 });
+
+test("P1J keeps real per-strip VST3 identity and tails across routing-only APPLY",()=>{
+  const fx=readFileSync(new URL("../engine/core/LiveChannelFxGraph.h",import.meta.url),"utf8");
+  const publisher=readFileSync(new URL("../engine/core/RealtimeRoutePublisher.h",import.meta.url),"utf8");
+  const app=readFileSync(new URL("../web/app.js",import.meta.url),"utf8");
+  assert.match(fx,/struct FxInstance final/);
+  assert.match(fx,/std::shared_ptr<FxInstance>/);
+  assert.match(fx,/processing\.test_and_set/);
+  assert.match(fx,/processing\.clear/);
+  assert.match(fx,/bool reuse\(int strip,const LiveChannelFxGraph& previous/);
+  assert.match(fx,/previous\.insertId\(strip\)!=catalogId/);
+  assert.match(publisher,/controlPrepared\(std::uint64_t epoch/);
+  assert.match(lab,/publisher_\.controlPrepared\(currentEpoch,expectedRevision\)/);
+  assert.match(lab,/next->prepared->reuse\(lane,\*prior,req\.id\)/);
+  assert.match(lab,/continue; \/\/ NO disk scan/);
+  assert.match(lab,/fxReused_\.store\(reusedCount/);
+  assert.match(lab,/acceptedRoute_=command/);
+  assert.match(lab,/setProperty\("acceptedRoute",acceptedRoute_\)/);
+  assert.match(ui,/hydrateAcceptedRoute/);
+  assert.match(ui,/saved\.deviceEpoch/);
+  assert.match(ui,/window\.__arMixOpenRoutingLab=openRoutingLab/);
+  assert.match(app,/id="flowRoutingButton"/);
+  assert.match(app,/native VST3/i);
+  assert.match(ui,/NATIVE ACK:.*preserved/);
+});
