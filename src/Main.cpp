@@ -906,6 +906,36 @@ private:
              action == "presetLoad" || action == "presetSave"))
             return emitNotice ("Return to DIRECT mode before editing VST3 graph (live-safe graph edits are a later gate).", true);
 
+        // A user-controlled hardware dry routing FAT, not a change to the
+        // existing 1-channel VST3 production chain. Explicit Apply/Stop.
+        if (action == "routingDryApply")
+        {
+            const auto error=engine_.applyDryRoutingLab(value);
+            auto reply=std::make_unique<juce::DynamicObject>();
+            reply->setProperty("ok",error.isEmpty());
+            reply->setProperty("error",error);
+            const auto status=engine_.status().getProperty("dryRoutingLab",{});
+            reply->setProperty("state",status);
+            if(browser_.loaded)
+                browser_.emitEventIfBrowserIsVisible(
+                    "arMixRoutingLabAck",juce::var(reply.release()));
+            if(error.isNotEmpty())return emitNotice(error,true);
+            diagnostics_.record("LIVE_DRY_ROUTING_LAB_APPLIED",
+                "No VST3 | actual enabled hardware mask and epoch verified");
+            return emitNotice(
+                "DRY ROUTING LAB active: 10 native input strips, NO FX. "
+                "Use low headphone volume. Stop LAB before loading VST3.");
+        }
+        if (action == "routingDryStop")
+        {
+            engine_.disableDryRoutingLab();
+            diagnostics_.record("LIVE_DRY_ROUTING_LAB_STOP","Restored native CH1 production path");
+            if(browser_.loaded)
+                browser_.emitEventIfBrowserIsVisible(
+                    "arMixRoutingLabAck",engine_.status().getProperty("dryRoutingLab",{}));
+            return emitNotice("DRY ROUTING LAB stopped. Native CH1 path restored.");
+        }
+
         if (action == "smartClock")
         {
             if (!value.isBool()) return emitNotice ("Invalid smart clock command", true);
