@@ -86,3 +86,25 @@ test('native 12Hz status uses one capped shared visual meter scheduler',()=>{
 // Check the light-weight, source-labelled capture triage contract in the same
 // existing Node test invocation; no second CI job or browser required.
 import './audio_capture_triage_contract_test.mjs';
+
+test('ASIO/WASAPI selector has stable outer geometry and one-shot repaint',()=>{
+ const block=cpp.slice(cpp.indexOf('class AudioSetupWindow final'),cpp.indexOf('class ConsoleWindow final'));
+ assert.ok(block.includes('setContentOwned (selector, false)'),'device enumeration cannot auto-resize top-level HWND');
+ assert.ok(block.includes('centreWithSize (740, 590)'));
+ assert.ok(block.includes('juce::MessageManager::callAsync'));
+ assert.ok(block.includes('content->resized();')&&block.includes('content->repaint();'));
+ assert.ok(block.includes('juce::Component::SafePointer<AudioSetupWindow>'));
+ assert.ok(!block.includes('startTimer')&&!block.includes('setContentOwned (selector, true)'));
+});
+test('snapshot manager is honest about native persistence and supports recovery',()=>{
+ for(const id of ['snapshotModal','snapshotPick','snapshotName','snapshotSaveNew','snapshotUpdate',
+  'snapshotRename','snapshotDelete','snapshotRecall','snapshotUndo','snapshotSafes'])
+  assert.ok(html.includes('id="'+id+'"'),id);
+ for(const part of ['snapshotNativeBlocked','snapshotMergeSafes','snapshotUndo',
+  'snapshotPendingAction','snapshotValidName','armix-v03-undo-recall','armix-v03-snapshot-safes'])
+  assert.ok(app.includes(part),part);
+ assert.match(app,/if\(snapshotNativeBlocked\(\)\)return/);
+ assert.match(app,/localStorage\.setItem\('armix-v03-snapshots'/);
+ assert.ok(css.includes('#snapshotModal .snapshot-panel'));
+ assert.ok(!app.includes("prompt('Name this mixer snapshot"));
+});
