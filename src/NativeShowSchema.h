@@ -190,9 +190,6 @@ public:
            !detail::str(detail::get(v,"currentSnapshotId"),next.currentSnapshotId,36,false) ||
            (!next.currentSnapshotId.isEmpty() && !detail::uuid(next.currentSnapshotId)))
             return false;
-        const auto* order=detail::get(v,"snapshotOrder").getArray();
-        const auto* safes=detail::get(v,"channelSafes").getArray();
-        // getArray pointers above must not outlive their containing var.
         return decodeShowArrays(v,next,out);
     }
     static bool decode(const juce::String& json,SnapshotV2& out) {
