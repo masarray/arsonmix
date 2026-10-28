@@ -1341,12 +1341,16 @@
     if(changed)patchMixer();
   }
   backend.addEventListener("arMixStatus",d=>{
+    const labWasActive=!!state.device?.dryRoutingLab?.active;
     state.device=d;
     state.monitor=!!d.monitor;
     const lab=d.dryRoutingLab;
     window.__armixRouteToken=lab?.active&&lab.ready?
       {epoch:Number(lab.epoch),revision:Number(lab.revision)}:null;
     syncNativeMixerControls(d);
+    // UI can switch between CH1 production and 10CH DSP without replacing
+    // premium mixer geometry or rebuilding VST3 instances.
+    if(labWasActive!==!!lab?.active)repaint();
     const b=document.querySelector('[data-native-action="monitor"]');
     if(b){
       const label=state.monitor?"MUTE OUTPUT":"UNMUTE OUTPUT";
