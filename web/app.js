@@ -751,7 +751,7 @@ function snapshotNativeBlocked(){
 const snapshotNameValue=()=>String($('snapshotName')?.value||'').trim().replace(/\s+/g,' ').slice(0,60);
 const snapshotValidName=n=>n.length>0 && !/^(?:__proto__|prototype|constructor)$/i.test(n) &&
  !/[\x00-\x1f<>]/.test(n);
-function snapshotMessage(s){const el=$('snapshotFeedback');if(el)el.textContent=s;else flash(s)}
+function snapshotMessage(s){const el=$('snapshotFeedback');if(el && !$('snapshotModal').classList.contains('hidden'))el.textContent=s;else flash(s)}
 function snapshotSelected(){const i=Number($('snapshotPick')?.value);return Number.isInteger(i)&&i>=0&&i<scenes.length?i:sceneIdx}
 function snapshotIsUser(i){return i>=4&&Object.prototype.hasOwnProperty.call(userSnapshots,scenes[i])}
 function snapshotManagerRefresh(select=sceneIdx){
@@ -884,6 +884,7 @@ $('snapshotSafes').addEventListener('change',e=>{const key=e.target.dataset.snap
  persistSession();snapshotPendingAction='';snapshotMessage('Recall Safe updated for the local UI preview.');
 });
 $('currentScene').addEventListener('click',openSnapshotManager);
+$('currentScene').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openSnapshotManager()}});
 
 createSide();renderMixer();renderMaster();try{let last=JSON.parse(localStorage.getItem('armix-v03-current'));if(!last)last=JSON.parse(localStorage.getItem('arMixStudioUI')); if(last&&last.channels?.length>=channels.length){last.channels.slice(0,channels.length).forEach((s,i)=>{if(typeof s.name==='string'&&s.name.trim())channels[i].name=s.name.trim().slice(0,26);
  if(channelIcons.includes(s.icon))channels[i].icon=s.icon;
