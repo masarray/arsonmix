@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "../engine/core/PreparedMixerBlock.h"
+#include "../engine/core/NativeDryRouteCommand.h"
+#include "../engine/device/JuceActivePortSnapshot.h"
 #include "../engine/core/RealtimeRoutePublisher.h"
 #include "../engine/device/LiveInputPortRegistry.h"
 #include <juce_audio_devices/juce_audio_devices.h>
@@ -27,32 +29,30 @@ public:
     // JUCE calls aboutToStart after configuring the input/output device.
     // One device session gets a new epoch; stored route cannot survive it.
     void prepareDevice (juce::AudioIODevice* device) noexcept {
-        // The new epoch invalidates old DSP immediately. Publish the new
-        // active mask using ATOMIC port slots: JUCE can restart the driver
-        // while its message thread is generating a routing/status snapshot.
         const auto generation=deviceEpoch_.fetch_add(1,std::memory_order_acq_rel)+1;
         registryValid_.store(false,std::memory_order_release);
         portCount_.store(0,std::memory_order_release);
         callbackInputCount_.store(-1,std::memory_order_release);
-        if(!device)return;
-        std::array<int,armix::device::LiveInputPortRegistry::limit> candidate{};
-        int count=0;
-        const auto mask=device->getActiveInputChannels();
-        for(int bit=mask.findNextSetBit(0);bit>=0;
-            bit=mask.findNextSetBit(bit+1)) {
-            if(count>=armix::device::LiveInputPortRegistry::limit)
-                return; // never truncate/alias active device ports
-            candidate[count++]=bit;
-        }
-        armix::device::LiveInputPortRegistry prepared;
-        armix::device::LiveInputPortRegistry::Fault fault;
-        if(!armix::device::LiveInputPortRegistry::prepare(
-               generation,{candidate.data(),static_cast<std::size_t>(count)},
-               prepared,fault))return;
-        for(int i=0;i<count;++i)
-            enabledPorts_[i].store(candidate[i],std::memory_order_relaxed);
-        portCount_.store(count,std::memory_order_release);
-        callbackInputCount_.store(count,std::memory_order_release);
+        callbackOutputCount_.store(-1,std::memory_order_release);
+        if(!device) return;
+        // P1F: snapshot both actually negotiated JUCE active masks. This
+        // is invoked only during the device lifecycle, never in RT.
+        armix::device::JuceActivePortSnapshot snapshot;
+        armix::device::JuceActivePortSnapshot::Fault reason;
+        if(!armix::device::JuceActivePortSnapshot::capture(
+               device,generation,snapshot,reason))return;
+        const int inputs=snapshot.inputs.enabledCount;
+        const int outputs=snapshot.outputCount;
+        if(inputs<=0 || outputs<2) return; // stereo monitoring LAB only
+        for(int i=0;i<inputs;++i)
+            enabledPorts_[i].store(snapshot.inputs.physicalIndex(i),
+                                  std::memory_order_relaxed);
+        for(int i=0;i<outputs;++i)
+            enabledOutputPorts_[i].store(snapshot.outputPhysicalPort(i),
+                                        std::memory_order_relaxed);
+        portCount_.store(inputs,std::memory_order_release);
+        callbackInputCount_.store(inputs,std::memory_order_release);
+        callbackOutputCount_.store(outputs,std::memory_order_release);
         registryValid_.store(true,std::memory_order_release);
     }
     void deviceStopped() noexcept {
@@ -61,6 +61,7 @@ public:
         registryValid_.store(false,std::memory_order_release);
         portCount_.store(0,std::memory_order_release);
         callbackInputCount_.store(-1,std::memory_order_release);
+        callbackOutputCount_.store(-1,std::memory_order_release);
         peakL_.store(0.f,std::memory_order_relaxed);
         peakR_.store(0.f,std::memory_order_relaxed);
     }
@@ -91,42 +92,12 @@ public:
             static_cast<juce::int64>(command.getProperty("revision",juce::var(0))));
         if(currentEpoch==0 || expectedEpoch!=currentEpoch)
             return "Audio device changed: reopen ROUTING to remap physical ports";
-        const auto values=command.getProperty("channels",{});
-        auto* assignments=values.getArray();
-        if(!assignments || assignments->size()!=count)
-            return "Supply exactly 10 explicit channel assignments";
-        armix::mixer::ChannelRoutingConfig cfg;
-        for(int i=0;i<count;++i) {
-            const auto item=assignments->getReference(i);
-            if(!item.isObject())return "Invalid channel assignment";
-            const auto mode=item.getProperty("mode",{}).toString();
-            const auto left=item.getProperty("left",-1);
-            const auto right=item.getProperty("right",-1);
-            const auto gain=item.getProperty("gain",0.25);
-            if(!left.isInt()||!right.isInt()||!(gain.isDouble()||gain.isInt()))
-                return "Invalid input port number or channel level";
-            const float level=static_cast<float>(static_cast<double>(gain));
-            if(!std::isfinite(level)||level<0.f||level>1.f)
-                return "Channel level must be 0..1";
-            auto& c=cfg.stripsAndMaster.strips[i];
-            c.faderLinear=level;
-            c.pan=0.f;
-            if(mode=="NONE") {
-                c.source=armix::mixer::SourceMode::disconnected;
-                continue;
-            }
-            if(mode=="MONO") {
-                c.source=armix::mixer::SourceMode::mono;
-                c.inputA=static_cast<int>(left);
-                cfg.formats[i]=armix::mixer::ChannelFormat::mono;
-            } else if(mode=="STEREO") {
-                c.source=armix::mixer::SourceMode::stereo;
-                c.inputA=static_cast<int>(left);
-                c.inputB=static_cast<int>(right);
-                cfg.formats[i]=armix::mixer::ChannelFormat::stereo;
-            } else return "Channel format must be NONE, MONO or STEREO";
-        }
-        armix::mixer::SendRequest sends; // hardware dry FAT, no FX/send fabric yet
+        armix::mixer::NativeDryRouteCommand decoded;
+        juce::String validationError;
+        if(!armix::mixer::NativeDryRouteCommand::decode(
+               command,decoded,validationError))return validationError;
+        const auto& cfg=decoded.channels;
+        const auto& sends=decoded.sends;
         Plan plan;
         armix::mixer::RenderError error;
         if(!Plan::compile(cfg,
@@ -150,6 +121,7 @@ public:
             case Publisher::Result::applied:
                 publishedEpoch_.store(currentEpoch,std::memory_order_release);
                 enabled_.store(true,std::memory_order_release);
+                sendCount_.store(sends.count,std::memory_order_relaxed);
                 return {};
             case Publisher::Result::staleDevice:
                 return "Device epoch changed during preparation";
@@ -168,6 +140,8 @@ public:
         publisher_.unpublish(); // control thread only
         peakL_.store(0.f,std::memory_order_relaxed);
         peakR_.store(0.f,std::memory_order_relaxed);
+        sendCount_.store(0,std::memory_order_relaxed);
+        for(auto& p:channelPeaks_)p.store(0.f,std::memory_order_relaxed);
     }
     void poll() noexcept {publisher_.pollRetirement();} // message thread
     bool active() const noexcept {return enabled_.load(std::memory_order_acquire);}
@@ -188,6 +162,7 @@ public:
                  float* const* outputs,int outputCount,int frames,
                  float masterGain,bool masterMuted) noexcept {
         if(!active())return false;
+        for(auto& p:channelPeaks_)p.store(0.f,std::memory_order_relaxed);
         // Stale meters must never survive a failed device/epoch mapping.
         peakL_.store(0.f,std::memory_order_relaxed);
         peakR_.store(0.f,std::memory_order_relaxed);
@@ -196,6 +171,7 @@ public:
             if(outputs && outputs[c])
                 juce::FloatVectorOperations::clear(outputs[c],frames);
         if(!outputs||outputCount<2||!outputs[0]||!outputs[1] ||
+           outputCount!=callbackOutputCount_.load(std::memory_order_acquire) ||
            inputCount<0 || inputCount>armix::device::LiveInputPortRegistry::limit)
             return true;
         const auto generation=epoch();
@@ -230,6 +206,7 @@ public:
         constexpr int max=Block::hardFrameLimit;
         const auto noFx=[](int,float*,float*,int) noexcept {};
         float peakL=0.f,peakR=0.f;
+        std::array<float,count> perChannelPeaks{};
         for(int offset=0;offset<frames;offset+=max) {
             const int n=std::min(max,frames-offset);
             for(int c=0;c<inputCount;++c)
@@ -238,6 +215,8 @@ public:
             if(!snapshot->prepared->process(shifted.data(),inputCount,
                    outputs[0]+offset,outputs[1]+offset,n,noFx,&level))
                 return true;
+            for(int ch=0;ch<count;++ch)
+                perChannelPeaks[ch]=std::max(perChannelPeaks[ch],level.channelPeak[ch]);
             const float g=std::clamp(masterGain,0.f,2.f);
             for(int i=0;i<n;++i) {
                 float l=outputs[0][offset+i]*g;
@@ -259,6 +238,8 @@ public:
         }
         peakL_.store(peakL,std::memory_order_relaxed);
         peakR_.store(peakR,std::memory_order_relaxed);
+        for(int ch=0;ch<count;++ch)
+            channelPeaks_[ch].store(perChannelPeaks[ch],std::memory_order_relaxed);
         return true;
     }
 
@@ -270,6 +251,10 @@ public:
         out->setProperty("revision",static_cast<juce::int64>(revision()));
         out->setProperty("peakL",peakL_.load(std::memory_order_relaxed));
         out->setProperty("peakR",peakR_.load(std::memory_order_relaxed));
+        out->setProperty("sendCount",sendCount_.load(std::memory_order_relaxed));
+        juce::Array<juce::var> levels;
+        for(const auto& p:channelPeaks_)levels.add(p.load(std::memory_order_relaxed));
+        out->setProperty("channelPeaks",juce::var(levels));
         juce::Array<juce::var> ports;
         if(device && registryValid_.load(std::memory_order_acquire)) {
             const auto generation=epoch();
@@ -291,7 +276,14 @@ public:
                 ports.clear();
         }
         out->setProperty("ports",juce::var(ports));
-        out->setProperty("note","EXPLICIT DRY HARDWARE FAT ONLY: no channel VST3, no sends, no portable route persistence");
+        juce::Array<juce::var> outputPorts;
+        if(registryValid_.load(std::memory_order_acquire)) {
+            const int outputs=callbackOutputCount_.load(std::memory_order_acquire);
+            for(int i=0;i<outputs && i<armix::device::LiveInputPortRegistry::limit;++i)
+                outputPorts.add(enabledOutputPorts_[i].load(std::memory_order_relaxed));
+        }
+        out->setProperty("outputPorts",juce::var(outputPorts));
+        out->setProperty("note","EXPLICIT DRY HARDWARE FAT: real pre/post sends, no VST3 or portable route persistence");
         return juce::var(out.release());
     }
 private:
@@ -299,13 +291,17 @@ private:
     // All data shared between JUCE device lifecycle and GUI/control reads
     // are atomic; the callback never enumerates masks or channel names.
     std::array<std::atomic<int>,armix::device::LiveInputPortRegistry::limit> enabledPorts_{};
+    std::array<std::atomic<int>,armix::device::LiveInputPortRegistry::limit> enabledOutputPorts_{};
     std::atomic<int> portCount_{0};
     std::atomic<bool> registryValid_{false};
     std::atomic<std::uint64_t> deviceEpoch_{0};
     std::atomic<std::uint64_t> publishedEpoch_{0};
     std::atomic<int> callbackInputCount_{-1};
+    std::atomic<int> callbackOutputCount_{-1};
     std::atomic<bool> enabled_{false};
     std::atomic<float> peakL_{0.f},peakR_{0.f};
+    std::atomic<int> sendCount_{0};
+    std::array<std::atomic<float>,count> channelPeaks_{};
     // Exclusive render-producer state. Bounded fade starts from the exact
     // previously output sample, preventing a topology switch discontinuity.
     static constexpr int rampFrames=256;
