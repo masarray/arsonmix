@@ -214,7 +214,7 @@ function createSide(){
  const labels=channels.map(c=>c.name);
  $('channelList').innerHTML=labels.map((label,i)=>`<div class="list-item ${i===currentChannel?'selected':''}" data-choose="${i}"><span class="swatch" style="background:${channels[i].color||colors[i%colors.length]}"></span><span class="index">${i+1}</span><span>${safeText(label)}</span></div>`).join('');
  $('groupsList').innerHTML=['Drums','Band','Vocals','FX','All Music','All Vocals'].map((x,i)=>`<div class="list-item" data-group="${i}"><span class="swatch" style="background:${colors[(i+4)%12]}"></span><span class="index">${i+1}</span><span>${x}</span></div>`).join('');
- $('scenesList').innerHTML=scenes.map((x,i)=>`<div class="list-item ${i===sceneIdx?'selected':''}" data-scene="${i}"><span class="swatch" style="background:${i===sceneIdx?'#23bce9':'#283d4a'};width:8px;height:14px"></span>${x}</div>`).join('');
+ $('scenesList').innerHTML=scenes.map((x,i)=>`<div class="list-item ${i===sceneIdx?'selected':''}" data-scene="${i}" title="Recall ${safeText(x)}"><span class="swatch" style="background:${i===sceneIdx?'#23bce9':'#283d4a'};width:8px;height:14px"></span><span class="scene-name">${safeText(x)}</span>${userSnapshots[x]?`<button class="scene-delete" type="button" data-delete-scene="${safeText(x)}" title="Delete saved snapshot" aria-label="Delete ${safeText(x)}">×</button>`:''}</div>`).join('');
  $('currentScene').innerHTML=`Snapshot: <b>${scenes[sceneIdx]}</b><span>▾</span>`;
 }
 function knobMarkup(param,ch,value,label,small=false){let angle=(param==='pan'?value/100*130:value/24*130);return `<button class="knob ${small?'small':''}" data-knob="${param}" data-ch="${ch}" data-value="${value}" style="--angle:${angle}deg" title="Drag vertically or scroll to change ${label}" aria-label="${label}"></button>`}
@@ -409,6 +409,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('button,[data-cho
  if(b.dataset.clip!==undefined){resetClip(b.dataset.clip);return}
  if(b.dataset.fxpower!==undefined){const [i,j]=b.dataset.fxpower.split(':').map(Number);setFxBypass(i,j,!bypassed[fxKey(i,j)]);return}
  if(b.dataset.insert){let [i,j]=b.dataset.insert.split(':').map(Number);currentChannel=i;pendingSlot=j;openPluginBrowser(i);return}
+ if(b.dataset.deleteScene!==undefined){deleteMixerSnapshot(b.dataset.deleteScene);return}
  if(b.dataset.scene!==undefined){loadSnapshotByIndex(+b.dataset.scene);return}
  if(b.dataset.preset){applyQuickPreset(b.dataset.preset);return}
  if(b.dataset.addplugin!==undefined){pendingSlot=channels[currentChannel].inserts.length;openPluginBrowser(currentChannel);return}
@@ -744,7 +745,31 @@ function durableSession(){return {schemaVersion:1,version:'0.3-ui',channels:chan
 function persistSession(){try{localStorage.setItem('armix-v03-current',JSON.stringify(durableSession()));localStorage.setItem('armix-v03-snapshots',JSON.stringify(userSnapshots));localStorage.setItem('armix-v03-chains',JSON.stringify(savedChains));return true}catch{return false}}
 function saveFxChainPreset(){const name=prompt('Name this FX chain preset:','My Vocal Chain');if(!name)return;const key=name.trim().slice(0,60);if(!key)return;savedChains[key]={schemaVersion:1,inserts:[...normalChain(channels[currentChannel])],states:normalChain(channels[currentChannel]).map((_,i)=>({...getFxParams(currentChannel,i),bypass:!!bypassed[fxKey(currentChannel,i)]}))};persistSession();flash('FX chain preset saved: '+key)}
 function recallFxChain(){const keys=Object.keys(savedChains);if(!keys.length){flash('No saved FX chains yet');return}const key=prompt('Enter FX chain preset name:\n'+keys.join('\n'),keys[0]);if(!key||!savedChains[key])return;setChain(channels[currentChannel],savedChains[key].inserts);savedChains[key].states?.forEach((v,i)=>{fxParams[fxKey(currentChannel,i)]={mix:v.mix,amount:v.amount,output:v.output};bypassed[fxKey(currentChannel,i)]=!!v.bypass});pluginEditorIndex=null;renderRackWorkspace();flash('FX chain recalled: '+key)}
-function saveMixerSnapshot(){const name=prompt('Name this mixer snapshot:','My Live Sound');if(!name)return;const key=name.trim().slice(0,60);if(!key)return;userSnapshots[key]=durableSession();if(!scenes.includes(key))scenes.push(key);persistSession();createSide();flash('Snapshot saved: '+key)}
+function saveMixerSnapshot(){
+ const name=prompt('Save mixer snapshot — name:',scenes[sceneIdx]||'My Live Sound');
+ if(name===null)return;
+ const key=name.trim().replace(/\\s+/g,' ').slice(0,60);
+ if(!key){flash('Enter a snapshot name');return}
+ if(Object.prototype.hasOwnProperty.call(userSnapshots,key)&&!confirm('Replace existing snapshot "'+key+'"?'))return;
+ const session=durableSession();
+ const previous=userSnapshots[key];
+ userSnapshots[key]={...session,savedAt:new Date().toISOString()};
+ if(!scenes.includes(key))scenes.push(key);
+ sceneIdx=scenes.indexOf(key);
+ if(!persistSession()){
+   if(previous===undefined)delete userSnapshots[key];else userSnapshots[key]=previous;
+   flash('Snapshot NOT saved: storage unavailable');return;
+ }
+ createSide();flash('Mixer snapshot saved: '+key+' (local UI state)');
+}
+function deleteMixerSnapshot(name){
+ if(!Object.prototype.hasOwnProperty.call(userSnapshots,name))return;
+ if(!confirm('Delete saved snapshot "'+name+'"?'))return;
+ const previous=userSnapshots[name];delete userSnapshots[name];
+ if(!persistSession()){userSnapshots[name]=previous;flash('Delete failed: storage unavailable');return}
+ const index=scenes.indexOf(name);if(index>=4)scenes.splice(index,1);
+ sceneIdx=Math.min(sceneIdx,scenes.length-1);createSide();flash('Snapshot deleted: '+name);
+}
 function applySession(session){if(!session||session.schemaVersion!==1||!Array.isArray(session.channels)||session.channels.length<channels.length){flash('Unsupported session format');return}for(let i=0;i<channels.length;i++){const src=session.channels[i],c=channels[i];
  c.stereo=i>=6; // Fixed 1–6 mono, 7–10 stereo across legacy snapshot migrations.
  if(typeof src.name==='string'&&src.name.trim())c.name=src.name.trim().slice(0,26);
@@ -755,7 +780,7 @@ function applySession(session){if(!session||session.schemaVersion!==1||!Array.is
  if(Array.isArray(session.masterInserts))masterInserts=session.masterInserts.filter(x=>typeof x==='string').slice(0,6);
  masterBypassed=(session.masterBypassed&&typeof session.masterBypassed==='object')?{...session.masterBypassed}:{};
  fxParams=(session.fxParams&&typeof session.fxParams==='object')?structuredClone(session.fxParams):{};bypassed=(session.bypassed&&typeof session.bypassed==='object')?{...session.bypassed}:{};pluginEditorIndex=null;renderMixer();renderMaster();if(view==='FX RACK')renderRackWorkspace()}
-function loadSnapshotByIndex(i){sceneIdx=(i+scenes.length)%scenes.length;const name=scenes[sceneIdx];
+function loadSnapshotByIndex(i){if(!Number.isInteger(i)||i<0||i>=scenes.length)return;sceneIdx=i;const name=scenes[sceneIdx];
  if(userSnapshots[name])applySession(userSnapshots[name]);
  else if(sceneIdx<4){const state=durableSession();state.channels=initialFactoryChannels.map(c=>({...c,inserts:[...c.inserts]}));state.masterGain=-.1;
   const voicePresets=[quickPresets['Clean Vocal'],quickPresets['Warm Karaoke'],quickPresets['Live Broadcast'],quickPresets['Clean Vocal']];state.channels[0].inserts=[...voicePresets[sceneIdx]];applySession(state);flash('Factory snapshot recalled: '+name+' (UI only)')}
