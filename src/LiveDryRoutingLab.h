@@ -127,6 +127,7 @@ public:
         const auto result=publisher_.publish(std::move(next),expectedRevision,currentEpoch);
         switch(result) {
             case Publisher::Result::applied:
+                publishedEpoch_.store(currentEpoch,std::memory_order_release);
                 enabled_.store(true,std::memory_order_release);
                 return {};
             case Publisher::Result::staleDevice:
@@ -142,6 +143,7 @@ public:
 
     void disable() noexcept {
         enabled_.store(false,std::memory_order_release);
+        publishedEpoch_.store(0,std::memory_order_release);
         publisher_.unpublish(); // control thread only
         peakL_.store(0.f,std::memory_order_relaxed);
         peakR_.store(0.f,std::memory_order_relaxed);
@@ -150,6 +152,9 @@ public:
     bool active() const noexcept {return enabled_.load(std::memory_order_acquire);}
     float peakLeft() const noexcept {return peakL_.load(std::memory_order_relaxed);}
     float peakRight() const noexcept {return peakR_.load(std::memory_order_relaxed);}
+    bool ready() const noexcept {
+        return active() && publishedEpoch_.load(std::memory_order_acquire)==epoch();
+    }
     std::uint64_t epoch() const noexcept {
         return deviceEpoch_.load(std::memory_order_acquire);
     }
@@ -176,8 +181,18 @@ public:
         auto lease=publisher_.acquire();
         const auto* snapshot=lease.get(generation);
         if(!snapshot||!snapshot->prepared ||
-           inputCount!=callbackInputCount_.load(std::memory_order_acquire))
+           inputCount!=callbackInputCount_.load(std::memory_order_acquire)) {
+            fadeRemaining_=0;
+            lastOutputL_=lastOutputR_=0.f;
             return true;
+        }
+        if(snapshot->graphRevision!=audioRevision_ || generation!=audioEpoch_) {
+            audioRevision_=snapshot->graphRevision;
+            audioEpoch_=generation;
+            fadeRemaining_=rampFrames;
+            fadeFromL_=lastOutputL_;
+            fadeFromR_=lastOutputR_;
+        }
         // Large/variable JUCE quantum is chunked using stack pointer views;
         // no heap allocation or new processing object inside callback.
         std::array<const float*,armix::device::LiveInputPortRegistry::limit> shifted{};
@@ -193,12 +208,23 @@ public:
                    outputs[0]+offset,outputs[1]+offset,n,noFx,&level))
                 return true;
             const float g=masterMuted?0.f:std::clamp(masterGain,0.f,2.f);
-            for(int i=0;i<n;++i){
-                outputs[0][offset+i]*=g;
-                outputs[1][offset+i]*=g;
+            for(int i=0;i<n;++i) {
+                float l=outputs[0][offset+i]*g;
+                float r=outputs[1][offset+i]*g;
+                if(fadeRemaining_>0) {
+                    const float t=1.f-static_cast<float>(fadeRemaining_-1)/
+                                           static_cast<float>(rampFrames);
+                    l=fadeFromL_+(l-fadeFromL_)*t;
+                    r=fadeFromR_+(r-fadeFromR_)*t;
+                    --fadeRemaining_;
+                }
+                outputs[0][offset+i]=l;
+                outputs[1][offset+i]=r;
+                lastOutputL_=l;
+                lastOutputR_=r;
+                peakL=std::max(peakL,std::abs(l));
+                peakR=std::max(peakR,std::abs(r));
             }
-            peakL=std::max(peakL,level.masterPeakL*g);
-            peakR=std::max(peakR,level.masterPeakR*g);
         }
         peakL_.store(peakL,std::memory_order_relaxed);
         peakR_.store(peakR,std::memory_order_relaxed);
@@ -208,6 +234,7 @@ public:
     juce::var status(juce::AudioIODevice* device) const {
         auto out=std::make_unique<juce::DynamicObject>();
         out->setProperty("active",active());
+        out->setProperty("ready",ready());
         out->setProperty("epoch",static_cast<juce::int64>(epoch()));
         out->setProperty("revision",static_cast<juce::int64>(revision()));
         out->setProperty("peakL",peakL_.load(std::memory_order_relaxed));
@@ -236,7 +263,15 @@ private:
     int portCount_=0;
     bool registryValid_=false;
     std::atomic<std::uint64_t> deviceEpoch_{0};
+    std::atomic<std::uint64_t> publishedEpoch_{0};
     std::atomic<int> callbackInputCount_{-1};
     std::atomic<bool> enabled_{false};
     std::atomic<float> peakL_{0.f},peakR_{0.f};
+    // Exclusive render-producer state. Bounded fade starts from the exact
+    // previously output sample, preventing a topology switch discontinuity.
+    static constexpr int rampFrames=256;
+    int fadeRemaining_=0;
+    std::uint64_t audioRevision_=0,audioEpoch_=0;
+    float fadeFromL_=0.f,fadeFromR_=0.f;
+    float lastOutputL_=0.f,lastOutputR_=0.f;
 };
