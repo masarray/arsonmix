@@ -1,5 +1,8 @@
 # Repository instructions — ArSonMix (all future threads and AI coding agents)
 
+**CURRENT NEXT-THREAD ENTRYPOINT (2026-10-29):** Read [docs/HANDOFF_ARSONMIX_NEXT_THREAD_20261029.md](docs/HANDOFF_ARSONMIX_NEXT_THREAD_20261029.md) before changes. Baseline #129 merged; GUI performance, FX atomic reorder/de-click, Orbit POLAR and P1I native 10CH LAB must not regress. Historic v0.8 12+1 references and dated PR OPEN statements further below are retained for lineage but not authoritative over current 10CH+MASTER main. Native full Shows/Snapshots is NOT delivered by localStorage scene UX. Source/CI/hardware evidence takes precedence.
+
+
 **MANDATORY FOR ALL FUTURE MULTI-THEME THREADS (2026-10-26):** READ [docs/THEME_ENGINE_NEW_THREAD_HANDOFF_2026-10-26.md](docs/THEME_ENGINE_NEW_THREAD_HANDOFF_2026-10-26.md) and [design-references/brushed-metal-v1.0/README.md](design-references/brushed-metal-v1.0/README.md) BEFORE editing the theme system. The *exact* accepted Brushed Metal v1.0 styling lives in `design-references/brushed-metal-v1.0/adapter.css` (Git blob `1086c285a44d2d06787a12ae809c1d4c5c80bb44`; full hash in reference.json). Do not redesign buttons/FX visuals from scratch. Never paste the adapter as a production `!important` override: migrate its values into semantic tokens with GUI core remaining the only layout owner; FX insert/power/workspace stay black-blue glass. Follow ARD + T0–T7 PR ladder, preserve byte-parity and native bridge isolation. The runtime multi-theme engine is **not yet implemented**.
 
 **MANDATORY: Read [docs/GUI_BASELINE_LOCK_2026-10-25.md](docs/GUI_BASELINE_LOCK_2026-10-25.md) before editing UI or reconciling VST3 engine PRs.**

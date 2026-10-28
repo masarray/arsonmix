@@ -1,5 +1,8 @@
 # ArSonMix cross-thread engineering reconciliation — 2026-10-28
 
+> HISTORICAL 2026-10-28 SNAPSHOT — for current status and next-thread actions see [2026-10-29 canonical handoff](HANDOFF_ARSONMIX_NEXT_THREAD_20261029.md). In particular #102/#106/#101 have been reconciled/merged or superseded and #129 is merged on main. Do not execute the OPEN/CONFLICT status below without refreshing GitHub.
+
+
 ## Latest authoritative baseline
 - Base main when the fix was authored: `de683b001a5a1e5e050bc20ddb52d32b22fa58d1` (merged PR #105). Read the latest GitHub `main` again before every integration.
 - Preserved: accepted dearVR PRO 2 Orbit/POLAR UX (PR #105), contextual Near/Far 2 m display (PR #103), native MASTER LED visibility (PR #104), latest approved meter/GUI. **Do not** replace source with older handoff branches.
