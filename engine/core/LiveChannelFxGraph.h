@@ -22,7 +22,11 @@ public:
 
     explicit LiveChannelFxGraph(const PreparedRenderGraph& plan,int frames,int pluginQuantum=512)
         : block_(std::make_unique<PreparedMixerBlock>(plan,frames)),
-          pluginQuantum_(std::clamp(pluginQuantum,32,PreparedMixerBlock::hardFrameLimit)) {}
+          pluginQuantum_(std::clamp(pluginQuantum,32,PreparedMixerBlock::hardFrameLimit)) {
+        // P1H callers without live edits retain original compiled faders.
+        for(int i=0;i<channels;++i)
+            controls_.setPreparedCoefficients(i,plan.leftGain[i],plan.rightGain[i]);
+    }
 
     LiveChannelFxGraph(const LiveChannelFxGraph&)=delete;
     LiveChannelFxGraph& operator=(const LiveChannelFxGraph&)=delete;
