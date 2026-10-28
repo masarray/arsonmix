@@ -18,6 +18,44 @@ async def main():
         assert await page.locator(".strip").count()==11
         assert await page.locator("#channelList [data-choose]").count()==10
         assert await page.locator("[data-strip=\"10\"], [data-strip=\"11\"]").count()==0
+
+        # P0 visual fix: mono gets ONE recessed LED slot, stereo gets TWO.
+        # Existing 7px segment rendering and physical meter semantics are untouched.
+        lcd=await page.evaluate("""()=>{
+          const mono=document.querySelector('#mixer .strip:not(.master-strip) .vu-bank.is-mono');
+          const stereo=document.querySelector('#mixer .strip:not(.master-strip) .vu-bank.is-stereo');
+          const master=document.querySelector('#masterLeft .vu-bank');
+          const bars=e=>e.querySelector('.vu-bars');
+          const style=e=>getComputedStyle(e);
+          const read=document.querySelector('#masterLeft .master-analysis');
+          const labels=[...read.querySelectorAll('.master-info-row span')].map(x=>x.textContent);
+          updateMasterAnalysisPreview(-11.5,-.5);
+          const hot=[document.querySelector('#masterLufs').classList.contains('over-limit'),
+                     document.querySelector('#masterDbtp').classList.contains('over-limit')];
+          updateMasterAnalysisPreview(-12,-1);
+          const edge=[document.querySelector('#masterLufs').classList.contains('over-limit'),
+                      document.querySelector('#masterDbtp').classList.contains('over-limit')];
+          return {monoBars:bars(mono).getBoundingClientRect().width,
+            stereoBars:bars(stereo).getBoundingClientRect().width,
+            monoBank:mono.getBoundingClientRect().width,
+            stereoBank:stereo.getBoundingClientRect().width,
+            masterBars:bars(master).getBoundingClientRect().width,
+            physicalMono:mono.querySelectorAll('.meter').length,
+            physicalStereo:stereo.querySelectorAll('.meter').length,
+            innerShadow:style(bars(mono)).boxShadow,
+            border:style(bars(mono)).borderTopWidth,
+            lcdBackground:style(read).backgroundImage, lcdBorder:style(read).borderTopWidth,
+            labels,kicker:!!read.querySelector('.master-info-kicker'),
+            hot,edge};
+        }""")
+        assert lcd['monoBars']==14 and lcd['stereoBars']==30 and lcd['masterBars']==30,lcd
+        assert lcd['monoBank']==35 and lcd['stereoBank']==51,lcd
+        assert lcd['physicalMono']==1 and lcd['physicalStereo']==2,lcd
+        assert 'inset' in lcd['innerShadow'] and lcd['border']=='0px',lcd
+        assert lcd['labels']==['LUFS','dBTP'] and not lcd['kicker'],lcd
+        assert lcd['hot']==[True,True] and lcd['edge']==[False,False],lcd
+        assert 'gradient' in lcd['lcdBackground'] and lcd['lcdBorder']=='0px',lcd
+
         # Issue #56: defaults preserve geometry; mode CSS isolates hover/layers.
         assert await page.evaluate("""()=>document.documentElement.dataset.mixperf==='optimized'
             && !window.__arMixPerfProbe""")
