@@ -1,6 +1,6 @@
 # P4 stage 2 — Native Studio/Shows transactional generation store
 
-**Status:** Engine-independent storage implementation; not yet wired to a live SAVE/RECALL button.
+**Status:** Engine-independent storage with versioned 10-INPUT/4-AUX snapshots; not yet wired to a live SAVE/RECALL button.
 
 ## Source and boundaries
 - `src/NativeShowStore.h` owns CONTROL/IO-thread `commit(show,snapshots,vendorBlobs)` and `load(showId)`. The application must call it with its normal `PortableWorkspace::dataRoot()` (already `Studio/` in portable mode). All files land under `Studio/Shows/<show-uuid>/`.
@@ -9,6 +9,13 @@
 - Load verifies the HEAD UUID, bounded metadata, every snapshot and every distinct referenced binary hash, then publishes outputs to the caller together. Corrupt/missing data leaves prior caller objects intact. Distinct blob hashes are verified once; total reader I/O and accepted commit size are capped.
 - Policy caps per generation: 64 snapshots, 128 supplied blobs, 8 MiB per VST3 binary, 128 MiB of assembled data. This is deliberately narrower than the standalone schema limit of 256 snapshots. Future scalable manifests need paging before raising these limits.
 - `StudioBackup` already enumerates all ordinary files in Studio, so each Show HEAD/generation is included in the same independent SHA256-verified USB backup. `tests/studio_backup_test.cpp` now asserts it. Browser cache and diagnostics remain excluded.
+
+## P1K AUX return storage extension (snapshot schema version 3)
+- Ten INPUT source strips stay distinct from exactly four additional AUX stereo FX return lanes, identified `aux-001` through `aux-004`; each persists enabled, MAIN flag, mute, linear gain, and ordered vendor FX references.
+- Up to 32 input-only `auxSends` persist source CH0..9, destination AUX0..3, PRE/POST, gain 0..1 and pan -1..1. The decoder rejects duplicate (source,destination,tap), disabled destination, invalid gain/pan and malformed/partial AUX arrays. No AUX feedback path is expressible.
+- Newly encoded snapshots are **schemaVersion 3**; Show metadata stays V2. The `SnapshotV2` C++ DTO remains source-compatible but now serializes version 3. Older version 2 snapshots lacking AUX fields decode with all returns inactive. Version 2 payloads carrying AUX data are *rejected*: older executables must not silently drop AUX on re-save.
+- INPUT and AUX VST3 state references share SHA256, UID, catalog identity and bypass validation. `NativeShowStore` refuses missing AUX bytes *before disk writes* and verifies every distinct referenced blob *before replacing loaded outputs*. Tests exercise corrupt FX, route rejection, legacy migration, rollback and portable backup.
+- The extension is **not** live audio state capture/recall. Plugin state capture thread, device preflight and application of a prepared graph remain separate gates.
 
 ## Failure and recovery notes
 - Retired generations are kept for recovery; lifecycle pruning and disk quota UI still require a later implementation. An unsuccessful HEAD replacement may leave an orphan version which is not automatically loaded.
