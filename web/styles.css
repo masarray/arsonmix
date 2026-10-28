@@ -753,7 +753,7 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
 /* Scope-specific ON palette: only variables change; all keys share
    the same seven-layer pad and exact press recipe above. */
 #app .toolbar-actions .nav button.btn-180.selected{
- --b180-color:#e5f4a2;--b180-border:#8baf48;--b180-ink:#1c2b14;
+ --b180-color:var(--b180-on-green);--b180-border:#3a9b68;--b180-ink:#113322;
 }
 #app .left-rail button.btn-180:is(.selected,.active){
  --b180-color:var(--b180-on-magenta);--b180-border:#ad6d9f;--b180-ink:#32172f;
@@ -781,13 +781,19 @@ html,body,body *:not(svg):not(path):not(circle):not(rect){
  --b180-border:#3a9b68;
  --b180-ink:#113322;
 }
-/* P0 toolbar palette: premium yellow-lime pads, entirely static per state.
-   Higher specificity overrides historical neutral OFF skin only in main nav. */
-#app .toolbar-actions .nav button.btn-180:not(.selected){
- --b180-color:#c8d99b;--b180-border:#829957;--b180-ink:#27351a;
+/* P0 toolbar semantics: common light-steel OFF; green only for a latched
+   selected/active action. All seven pads retain the same BTN-180 shadow stack. */
+#app .toolbar-actions .nav button.btn-180:not(.selected):not(.active):not([aria-pressed="true"]){
+ --b180-color:var(--b180-off);--b180-border:var(--b180-edge);--b180-ink:var(--b180-off-ink);
 }
-#app .toolbar-actions .nav button.btn-180.selected{
- --b180-color:#e5f4a2;--b180-border:#8baf48;--b180-ink:#1c2b14;
+#app .toolbar-actions .nav button.btn-180:is(.selected,.active,[aria-pressed="true"]){
+ --b180-color:var(--b180-on-green);--b180-border:#3a9b68;--b180-ink:#113322;
+}
+/* Paint only the hovered pad with an 8% color lift. No filter, blur,
+   backdrop, animated box-shadow, layer allocation or hover transition. */
+#app :is(button.btn-180,button.native-btn):hover:not(:active):not(:disabled){
+ background:color-mix(in srgb,var(--b180-color) 92%,#fff 8%)!important;
+ transition:none!important;
 }
 /* Superseded navigation skin (Button 19 / experimental acrylic).
    All toolbar and left-rail buttons now use the canonical Button-180 pad
@@ -1281,3 +1287,35 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 #app #masterLeft .master-actions > button{width:100%;min-width:0;margin:0;padding:0 2px!important}
 #app #masterLeft .master-analysis{min-width:0}
 #app #masterLeft .master-analysis .master-info-kicker{letter-spacing:0;font-size:8px}
+
+/* Compact, source-owned Shows/Snapshots manager; never part of the metering
+   animation or GPU compositing path. The native UI-only boundary is explicit. */
+#snapshotModal.snapshot-overlay{z-index:120;background:#02090ecc;display:flex;align-items:center;justify-content:center;padding:10px}
+#snapshotModal.snapshot-overlay.hidden{display:none!important}
+#snapshotModal .snapshot-panel{width:min(425px,calc(100vw - 20px));max-height:calc(100dvh - 20px);
+ overflow:auto;box-sizing:border-box;background:#172731;border:1px solid #53717d;border-radius:5px;
+ box-shadow:0 6px 21px #0008;padding:12px 14px;color:#c9e0e8;font:11px/1.4 "Segoe UI",sans-serif}
+#snapshotModal .snapshot-head{display:flex;justify-content:space-between;gap:8px;align-items:center;border-bottom:1px solid #304b57;padding-bottom:8px}
+#snapshotModal .snapshot-head span{font:9px Consolas,monospace;color:#7fbacc;letter-spacing:.5px}
+#snapshotModal .snapshot-head h2{font-size:16px;font-weight:550;margin:2px 0}
+#snapshotModal .snapshot-head button{height:26px;width:28px;font-size:19px;background:#263941;color:#e3f0f4;border:1px solid #4b6874;border-radius:3px}
+#snapshotModal #snapshotScope{font-size:10px;color:#a3bdc9;background:#14212a;border-left:2px solid #69a1b1;margin:9px 0;padding:6px 8px}
+#snapshotModal label{display:block;margin:8px 0 4px;color:#93b6c6;font:10px Consolas,monospace}
+#snapshotModal #snapshotPick,#snapshotModal #snapshotName{display:block;width:100%;box-sizing:border-box;height:30px;padding:4px 8px;
+ border:1px solid #46636f;border-radius:3px;background:#101d25;color:#dbeaf0;font:11px "Segoe UI",sans-serif}
+#snapshotModal .snapshot-subhead{display:flex;justify-content:space-between;align-items:center;gap:8px;
+ font:10px Consolas,monospace;color:#a1cfdb;margin:11px 0 5px}
+#snapshotModal .snapshot-subhead span{font:9px/1.3 "Segoe UI",sans-serif;color:#819ba8}
+#snapshotModal .snapshot-safes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;
+ background:#0c1921;border:1px solid #314a56;border-radius:3px;padding:8px}
+#snapshotModal .snapshot-safes label{display:flex;align-items:center;gap:4px;min-width:0;
+ white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#bfd4dd;margin:0;font:10px "Segoe UI",sans-serif}
+#snapshotModal .snapshot-safes input{margin:0;accent-color:#79caad}
+#snapshotModal #snapshotFeedback{min-height:15px;color:#a9d1df;font-size:10px;margin:9px 0 6px}
+#snapshotModal .snapshot-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
+#snapshotModal .snapshot-actions button{height:28px;min-width:0;font:600 10px "Segoe UI",sans-serif;
+ border:1px solid #4a6872;border-radius:3px;background:#30434c;color:#dcebf0;cursor:pointer}
+#snapshotModal .snapshot-actions button:hover{background:#3a525d}
+#snapshotModal #snapshotSaveNew,#snapshotModal #snapshotRecall{background:#36645a;border-color:#5b9884;color:#d4f7e8}
+#snapshotModal #snapshotDelete{color:#f3bdb7}
+#snapshotModal .snapshot-actions button:disabled{opacity:.38;cursor:default}
