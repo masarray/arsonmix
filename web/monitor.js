@@ -254,7 +254,7 @@
     if(!label)return;
     setTextIfChanged(label,(d.active ? (d.ready?"DRY LAB ACTIVE":"DRY LAB STALE — SILENT, REAPPLY"):"DRY LAB OFF")+
       " · device epoch "+(d.epoch||0)+" · rev "+(d.revision||0)+
-      " · "+(d.ports?.length||0)+" enabled inputs · "+(d.outputPorts?.length||0)+" outputs · "+(d.sendCount||0)+" live sends");
+      " · "+(d.ports?.length||0)+" enabled inputs · "+(d.outputPorts?.length||0)+" outputs · "+(d.sendCount||0)+" channel sends · "+(d.auxSendCount||0)+" AUX sends · "+(d.auxCount||0)+" AUX");
   }
   function openRoutingLab(){
     hydrateAcceptedRoute();
@@ -284,6 +284,7 @@
     api.emitEvent("arMixAction",{action:"routingDryApply",value:{
       deviceEpoch:draftEpoch,revision:Number(d.revision)||0,
       channels:draftRoutes.map(c=>({...c})),
+      auxes:draftAux.map(b=>({...b})),
       sends:draftSends.map(s=>({...s}))
     }});
   });
@@ -293,7 +294,7 @@
     if(result && typeof result==="object" && "epoch" in result)state.dryRoutingLab=result;
     document.getElementById("arRouteFeedback").textContent=
       reply?.ok===false?("REJECTED · "+(reply.error||"Invalid route")):
-      result.active?"NATIVE ACK: "+(result.fxCount||0)+" VST3 ("+(result.fxReused||0)+" preserved) · "+(result.sendCount||0)+" SENDS · UNMUTE OUTPUT in SIGNAL CHECK":"NATIVE ACK: STOPPED · output remains MUTED for safety";
+      result.active?"NATIVE ACK: "+(result.fxCount||0)+" VST3 ("+(result.fxReused||0)+" preserved) · "+(result.auxCount||0)+" dedicated AUX · "+(result.auxSendCount||0)+" AUX sends · UNMUTE OUTPUT in SIGNAL CHECK":"NATIVE ACK: STOPPED · output remains MUTED for safety";
     updateRouteLabIdentity();
   });
 
