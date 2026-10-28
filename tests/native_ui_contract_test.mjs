@@ -32,7 +32,8 @@ test('quick FX bypass is wired to native slot instead of demo mock',()=>{
   assert.match(bridge,/data-native-fx="bypass" data-slot="\$\{i\}"/);
   assert.match(bridge,/aria-pressed="\$\{!p\.bypass\}"/);
   assert.match(bridge,/send\("fxBypass",\{slot,value:!state\.chain\[slot\]\?\.bypass\}\)/);
-  assert.match(engine,/graphOwned_->bypassFlags\[index\]\.store/);
+  assert.match(engine,/graphOwned_->bypassFlags\[physical\]\.store/);
+  assert.match(engine,/bypassEnvelope\[physical\]/);
 });
 test('GUI pan event reaches actual callback pan matrix',()=>{
   assert.match(app,/send\(master\?'masterPan':'pan',c\.pan,master\?-1:idx\)/);

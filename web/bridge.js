@@ -27,7 +27,9 @@
     });
 
   const send = (action, more = {}) => backend.emitEvent("arMixAction", {action, ...more});
-  const state = {catalog: [], chain: [], scanning: false, message: "Connecting to native host...",
+  let fxNativeGesture=null,fxNativeBlockClick=false;
+  let pickerAnchor=null,pickerChannel=0,pickerSlot=0;
+  const state = {orbitActiveSlot:-1,catalog: [], chain: [], scanning: false, message: "Connecting to native host...",
     device: {}, presets: [], addRequestId:0, addError:"", pendingPlugin:"", filter: "", selectedCategory: "All", monitor: false, error: "", progress: {active:false,phase:"done",done:0,total:0,found:0,current:""}, adding:false};
 
   const orbit = {slot:-1, plugin:"", parameters:[], active:false, activeSlot:-1, activeParameter:-1, periodSeconds:20, reverse:false, preferredParameter:-1, selection:-1, revision:null,nearSetpoint:20,farSetpoint:70,distanceUnit:"%",distanceMin:0,distanceMax:100,selectedShape:0,appliedPeriod:20,appliedReverse:false,initialized:false,shape:0,distanceSelection:-1,elevationSelection:-1,distanceIndex:-1,elevationIndex:-1,preferredDistance:-1,preferredElevation:-1,motionPath:[],visualPhase:0,visualTime:0};
@@ -74,6 +76,8 @@
     .native-node .node-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
     .native-node .node-text small{display:block;color:#7196a8;font-size:10px;margin-top:3px}
     .native-node.is-bypassed{opacity:.55}
+    .native-node.has-orbit{background:#19343b;border-color:#44757b}
+    .native-node.has-orbit .node-text::after{content:" · ORBIT";color:#a1e7da;font-size:9px;letter-spacing:.05em}
     .native-node button{padding:5px 7px;font-size:10px;min-width:28px}
     .native-search{box-sizing:border-box;display:block;width:100%;font:12px inherit;outline:0;color:#dcecf2;
         border:1px solid #4b6b79;background:#0b1923;border-radius:5px;padding:10px;margin-bottom:9px}
@@ -147,6 +151,33 @@
     #nativeFxContext .native-context-divider{height:1px;background:#334a58;margin:3px 4px}
   `;
   css.textContent += "\n    #nativeOrbit .native-dialog{width:374px;max-width:calc(100vw - 16px)}\n    #nativeOrbit .orbit-motion-view{background:#0b1e2a;border:1px solid #2f5161;\n      border-radius:6px;margin:0 0 10px;padding:7px;display:flex;align-items:center;gap:10px}\n    #nativeOrbit .orbit-map{width:132px;height:132px;flex:none}\n    #nativeOrbit .orbit-mode-help{font-size:11px;color:#9abfce;line-height:1.55}\n    #nativeOrbit .orbit-mode-help strong{display:block;color:#d8f0f7;font-weight:500;margin-bottom:4px}\n    #nativeOrbit .orbit-field-label{font-size:11px}\n    #nativeOrbit .orbit-extra-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}\n    #nativeOrbit .orbit-help-note{font-size:10px;color:#87a8b9;line-height:1.4;margin:0 0 8px}\n    #nativeOrbit .material-icon{width:18px;height:18px;fill:currentColor;vertical-align:middle;flex:none}\n    #nativeOrbit .orbit-actions .native-btn{display:inline-flex;justify-content:center;align-items:center;gap:5px}\n    #nativeOrbit .orbit-map path{vector-effect:non-scaling-stroke}\n";
+  // Slot-attached FX catalogue — independent of large screen-dimming dialogs.
+  css.textContent += `
+    #nativeFxSelector{position:fixed;inset:0;display:block;padding:0;
+      background:transparent!important;backdrop-filter:none!important;
+      pointer-events:none;z-index:970}
+    #nativeFxSelector[hidden]{display:none}
+    #nativeFxSelector .native-dialog{position:fixed;box-sizing:border-box;
+      width:min(386px,calc(100vw - 16px));max-height:min(530px,calc(100vh - 20px));
+      pointer-events:auto;overflow:hidden;margin:0;border:1px solid #4b6b78;
+      background:#1b2c36;border-radius:7px;
+      box-shadow:0 7px 18px #0009,inset 0 1px #ffffff14}
+    #nativeFxSelector .native-dialog::before{content:"";position:absolute;
+      top:-5px;left:var(--fx-arrow-x,20px);width:8px;height:8px;
+      background:#1b2c36;transform:rotate(45deg);
+      border-top:1px solid #4b6b78;border-left:1px solid #4b6b78}
+    #nativeFxSelector .native-dialog.picker-above::before{
+      top:auto;bottom:-5px;border:0;border-right:1px solid #4b6b78;
+      border-bottom:1px solid #4b6b78}
+    #nativeFxSelector .native-dialog-header{padding:8px 11px}
+    #nativeFxSelector .native-dialog-header h2{font-size:13px;font-weight:500;margin:1px 0}
+    #nativeFxSelector .native-dialog-body{min-height:0;padding:8px 11px}
+    #nativeFxSelector .native-dialog-footer{padding:6px 11px}
+    #nativeFxSelector .native-result{padding:5px 7px;margin:3px 0}
+    #nativeFxSelector .native-result button{padding:5px 7px}
+    #nativeFxSelector .native-category button{padding:4px 6px}
+    .native-engine .fx-picker-target{outline:1px solid #7ccac3;outline-offset:-1px}
+  `;
   document.head.appendChild(css);
   document.getElementById("engineBadge").textContent="NATIVE CH1 · ORBIT";
   const workspace = document.querySelector("#rackWorkspace");
@@ -167,6 +198,22 @@
   }
   function renderRack(){
   if(!workspace || currentTab()!=="FX RACK") return;
+  const selected=typeof currentChannel==="number"?currentChannel:0;
+  const isMaster=typeof masterSelected!=="undefined"&&masterSelected;
+  if(isMaster||selected!==0){
+    const label=isMaster?"MASTER":(typeof channels!=="undefined"&&channels[selected]?.name)||("Channel "+(selected+1));
+    workspace.innerHTML=`<div class="native-panel" data-live-native="1">
+      ${cardHeader("FX Rack · "+label,"Same DAW insert layout across all mixer channels")}
+      <div class="native-card" style="max-width:920px">
+        <h3>${escapeHtml(label)} · FX CHAIN</h3>
+        <div class="native-sub">This bus is not yet connected to independent native VST3 processing. Its inserts are unavailable for audio until channel routing is implemented.</div>
+        <div class="native-nodes" style="margin-top:12px">
+          ${Array.from({length:6},(_,i)=>`<button class="native-btn" data-native-unrouted="${isMaster?-1:selected}" style="text-align:left">＋ ADD FX</button>`).join("")}
+        </div>
+      </div>
+    </div>`;
+    return;
+  }
   workspace.innerHTML=`<div class="native-panel" data-live-native="1">
     ${cardHeader("Live FX Chain · Vocal Input","Arrange your real VST3 effects here. Use ＋ ADD FX to choose from your installed catalog.")}
     <div class="native-toolbar" style="margin-bottom:12px">
@@ -179,7 +226,7 @@
       <h3>MIC INPUT → PROCESSING → MAIN OUTPUT</h3>
       <div class="native-nodes">
         <div class="native-status">INPUT 1 / MICROPHONE</div>
-        ${state.chain.map((p,i)=>`<div class="native-node ${p.bypass?"is-bypassed":""}">
+        ${state.chain.map((p,i)=>`<div class="native-node ${p.bypass?"is-bypassed":""} ${state.orbitActiveSlot===i?"has-orbit":""}" data-native-move="${i}">
           <span class="node-index">${String(i+1).padStart(2,"0")}</span>
           <span class="node-text">${escapeHtml(p.name)}<small>${p.latency||0} samples processing latency</small></span>
           <button class="native-btn" data-native-fx="editor" data-slot="${i}">EDIT</button>
@@ -209,7 +256,10 @@
   return overlay;
 }
   function showDialog(id){const d=document.getElementById(id);if(d){d.hidden=false;d.querySelector("input")?.focus()}}
-  function hideDialog(id){const d=document.getElementById(id);if(d)d.hidden=true}
+  function hideDialog(id){
+    const d=document.getElementById(id);if(d)d.hidden=true;
+    if(id==="nativeFxSelector")clearPickerTarget();
+  }
   let orbitAnchor=null;
   function hideOrbit(){
     const d=document.getElementById("nativeOrbit");
@@ -249,7 +299,8 @@
     const paths={
       close:"M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z",
       play:"M8 5v14l11-7z",
-      stop:"M6 6h12v12H6z"
+      stop:"M6 6h12v12H6z",
+      bin:"M6 7h12v2H6V7zm2 3h2v9H8v-9zm6 0h2v9h-2v-9zM9 4h6l1 2H8l1-2zm-2 6h10l-.7 11H7.7L7 10z"
     };
     return '<svg class="material-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="'+paths[name]+'"/></svg>';
   };
@@ -447,7 +498,7 @@
       <small>${escapeHtml(p.vendor||"Unknown vendor")} · ${escapeHtml(p.category||"Audio effect")}</small></span>
     <span class="native-tag" style="flex:0">VST3</span>
     <button class="native-btn primary" data-native-add="${escapeHtml(p.id)}"
-      ${state.chain.length>=8||state.adding?"disabled":""}>＋ ADD</button></div>`).join("")
+      ${state.chain.length>=8||state.adding||pickerChannel!==0?"disabled":""} title="${pickerChannel===0?"Insert native VST3":"Channel routing not yet connected"}">＋ ADD</button></div>`).join("")
     :'<div class="native-empty">No matching installed VST3 effects. Open Plugin Manager to scan your folders.</div>';
 }
   function filterPlugins(){
@@ -458,7 +509,7 @@
   const dlg=document.getElementById("nativeFxSelector");
   if(!dlg)return;
   dlg.querySelector(".native-dialog-body").innerHTML=`
-    <div class="native-sub" style="margin-bottom:12px">SELECT EFFECT → INSERT INTO LIVE VOCAL FX RACK</div>
+    <div class="native-sub" style="margin-bottom:9px">INSERT → ${pickerChannel===-1?"MASTER":"CH "+(pickerChannel+1)} · SLOT ${pickerSlot+1}${pickerChannel===0?" · LIVE VST3":" · ROUTING NOT CONNECTED"}</div>
     <input class="native-search" id="nativeVstSearch" placeholder="Search by plugin name, developer or category..."
       value="${escapeHtml(state.filter)}">
     <div class="native-category">${fxCategories.map(c=>`<button class="native-btn ${c===state.selectedCategory?"on":""}" data-native-category="${c}">${c}</button>`).join("")}</div>
@@ -473,7 +524,42 @@
     <div style="max-height:430px;overflow:auto">${pluginRows(filterPlugins())}</div>`;
   dlg.querySelector(".native-dialog-footer").innerHTML=`${state.catalog.length} available plugins · <a href="#" data-plugin-manager="1" style="color:#7fdfff">OPEN PLUGIN MANAGER</a> for scanning and import`;
 }
-  function openPicker(){renderPicker();showDialog("nativeFxSelector")}
+  function clearPickerTarget(){
+    pickerAnchor?.classList.remove("fx-picker-target");
+    pickerAnchor=null;
+  }
+  function positionPicker(){
+    const overlay=document.getElementById("nativeFxSelector"),dlg=overlay?.querySelector(".native-dialog");
+    if(!overlay||overlay.hidden||!dlg)return;
+    if(!pickerAnchor?.isConnected){hideDialog("nativeFxSelector");return;}
+    const rect=pickerAnchor.getBoundingClientRect(),w=dlg.offsetWidth,h=dlg.offsetHeight;
+    const left=Math.max(8,Math.min(window.innerWidth-w-8,rect.left+rect.width/2-34));
+    const above=(window.innerHeight-rect.bottom<h+12)&&(rect.top>window.innerHeight-rect.bottom);
+    const top=above?Math.max(8,rect.top-h-9):Math.max(8,Math.min(window.innerHeight-h-8,rect.bottom+9));
+    dlg.style.left=left+"px";dlg.style.top=top+"px";
+    dlg.style.setProperty("--fx-arrow-x",Math.max(12,Math.min(w-20,rect.left+rect.width/2-left))+"px");
+    dlg.classList.toggle("picker-above",above);
+  }
+  function openPicker(anchor,channel=0,slot=state.chain.length){
+    clearPickerTarget();
+    const row=anchor?.closest(".insert-slot,.master-fx-slot,.native-node");
+    pickerAnchor=(row||anchor)?.isConnected?(row||anchor):document.querySelector('.nav button[data-view="FX RACK"]');
+    pickerChannel=Number(channel);pickerSlot=Math.max(0,Number(slot)||0);
+    pickerAnchor?.classList.add("fx-picker-target");
+    renderPicker();showDialog("nativeFxSelector");positionPicker();
+  }
+  window.addEventListener("resize",positionPicker);
+  document.addEventListener("pointerdown",e=>{
+    const picker=document.getElementById("nativeFxSelector");
+    if(picker&&!picker.hidden&&!e.target.closest("#nativeFxSelector .native-dialog")
+       &&!e.target.closest("[data-plugin-picker],[data-native-unrouted]"))hideDialog("nativeFxSelector");
+  },true);
+  document.addEventListener("keydown",e=>{
+    if(e.key==="Escape"){
+      const picker=document.getElementById("nativeFxSelector");
+      if(picker&&!picker.hidden){e.preventDefault();hideDialog("nativeFxSelector");}
+    }
+  },true);
   function scanProgressHtml(){
   const p=state.progress||{};
   const count=p.done||0,total=p.total||0,found=p.found||0;
@@ -579,14 +665,17 @@
   tracks.forEach((track,i)=>{
     // The v0.8 Master uses .master-fx-rack, not .rack. Handle it first.
     if(track.classList.contains("master-strip")){
-      // FX/PAN are previews, but MASTER L/R metering is REAL native output.
-      // Never tag this entire strip data-preview: that hides its live LEDs.
       track.removeAttribute("data-preview");
       track.dataset.fxPreview="1";
       track.title="Master FX and master PAN are visual previews; Master fader and meters are native";
-      track.querySelectorAll("[data-master-insert],[data-master-power]").forEach(x=>{
-        x.disabled=true;x.title="Preview only — Master FX DSP not yet implemented";
-      });
+      const masterRack=track.querySelector(".master-fx-rack");
+      if(masterRack&&masterRack.dataset.nativeSig!=="empty-nonlive"){
+        masterRack.dataset.nativeSig="empty-nonlive";
+        masterRack.innerHTML=Array.from({length:6},()=>`<div class="master-fx-slot">
+          <button class="master-insert empty" data-native-unrouted="-1" title="Master FX is not routed to native DSP">
+            <span class="master-insert-add" aria-hidden="true">＋</span><span class="insert-name">ADD FX</span>
+          </button></div>`).join("");
+      }
       const pan=track.querySelector('[data-pan="master"]');
       if(pan){pan.removeAttribute("tabindex");pan.style.pointerEvents="none";pan.title="Master PAN DSP not yet implemented";}
       const marker=track.querySelector(".master-info-kicker span");
@@ -596,6 +685,13 @@
     const rack=track.querySelector(".rack");
     if(!rack)return;
     if(i!==0){
+      if(rack.dataset.nativeSig!=="empty-nonlive"){
+        rack.dataset.nativeSig="empty-nonlive";
+        rack.innerHTML=Array.from({length:6},()=>`<div class="insert-slot">
+          <button class="insert empty" data-native-unrouted="${i}" title="FX Rack · channel source not routed">
+            <span class="insert-add-glyph" aria-hidden="true">＋</span><span class="insert-name">ADD FX</span>
+          </button></div>`).join("");
+      }
       rack.dataset.preview="1";
       track.dataset.preview="1";
       track.querySelectorAll(".meter-peak").forEach(x=>x.style.display="none");
@@ -605,8 +701,8 @@
     const signature=state.chain.map(p=>p.id+"|"+p.bypass).join(",");
     if(rack.dataset.nativeSig===signature)return;
     rack.dataset.nativeSig=signature;
-    rack.innerHTML=state.chain.slice(0,5).map((p,i)=>
-      `<div class="insert-slot native-insert-row ${p.bypass?"is-bypassed":""}">
+    rack.innerHTML=state.chain.slice(0,6).map((p,i)=>
+      `<div class="insert-slot native-insert-row ${p.bypass?"is-bypassed":""} ${state.orbitActiveSlot===i?"has-orbit":""}" data-native-move="${i}">
         <button class="insert" data-native-fx="editor" data-slot="${i}"
           title="Open ${escapeHtml(p.name)}" aria-label="Edit ${escapeHtml(p.name)}">
           <span class="insert-name">${escapeHtml(p.name)}</span></button>
@@ -614,13 +710,19 @@
           data-native-fx="bypass" data-slot="${i}" aria-pressed="${!p.bypass}"
           title="${p.bypass?"Enable":"Bypass"} ${escapeHtml(p.name)}">⏻</button>
       </div>`).join("")+
-      `<div class="insert-slot"><button class="insert empty" data-plugin-picker="1"
-          ${state.chain.length>=8?"disabled":""} aria-label="Add VST3 to Channel 1">
-          <span class="insert-add-glyph" aria-hidden="true">＋</span>
-          <span class="insert-name">${state.chain.length>=8?"FX FULL":"ADD FX"}</span>
-      </button></div>`;
+      Array.from({length:Math.max(0,6-Math.min(state.chain.length,6))},()=>
+        `<div class="insert-slot"><button class="insert empty" data-plugin-picker="1" aria-label="Add VST3 to Channel 1">
+          <span class="insert-add-glyph" aria-hidden="true">＋</span><span class="insert-name">ADD FX</span>
+        </button></div>`).join("");
   });
 }
+  // Orbit lighting changes a class on existing rows. Never replace the row
+  // holding the native popup's anchor, nor reset its animation.
+  function updateOrbitRackMarker(){
+    document.querySelectorAll('.native-insert-row[data-native-move],.native-node[data-native-move]')
+      .forEach(row=>row.classList.toggle("has-orbit",
+        state.orbitActiveSlot>=0&&Number(row.dataset.nativeMove)===state.orbitActiveSlot));
+  }
   let renderPending = false;
   function syncView(){
     if(renderPending) return;
@@ -660,7 +762,9 @@
     fxContext.innerHTML='<button role="menuitem" data-context-fx="editor">Open '+escapeHtml(p.name)+'</button>'+
       (dearVrOrbitEligible(p.name)?'<button role="menuitem" data-context-fx="orbit">Orbit for dearVR PRO 2</button>':'')+
       '<div class="native-context-divider" role="separator"></div>'+
-      '<button role="menuitem" data-context-fx="bypass">'+(p.bypass?'Enable':'Bypass')+' FX</button>';
+      '<button role="menuitem" data-context-fx="bypass">'+(p.bypass?'Enable':'Bypass')+' FX</button>'+
+      '<div class="native-context-divider" role="separator"></div>'+
+      '<button role="menuitem" class="fx-context-delete" data-context-fx="delete">'+iconSvg("bin")+' Delete FX</button>';
     fxContext.hidden=false;
     fxContext.style.left=Math.max(4,Math.min(x,window.innerWidth-fxContext.offsetWidth-4))+'px';
     fxContext.style.top=Math.max(4,Math.min(y,window.innerHeight-fxContext.offsetHeight-4))+'px';
@@ -694,6 +798,7 @@
     if(action==="orbit"&&dearVrOrbitEligible(state.chain[slot].name))openOrbit(slot,anchor);
     else if(action==="editor")send("fxEditor",{slot});
     else if(action==="bypass")send("fxBypass",{slot,value:!state.chain[slot].bypass});
+    else if(action==="delete")send("fxRemove",{slot});
   },true);
   document.addEventListener("pointerdown",e=>{
     const popup=document.getElementById("nativeOrbit");
@@ -722,10 +827,16 @@
   },true);
   // Capture native controls before the legacy v0.3 demo handlers.
   document.addEventListener("click", function(e){
-  const el=e.target.closest("[data-native-action],[data-native-add],[data-native-fx],[data-fxpower],[data-master-insert],[data-master-power],[data-native-category],[data-go-native-rack],[data-insert],[data-plugin-picker],[data-plugin-manager],[data-my-sounds],[data-backup-studio],[data-preset-mute],[data-preset-save],[data-preset-load],[data-close-modal],[data-orbit-start],[data-orbit-stop]");
+  if(fxNativeBlockClick){fxNativeBlockClick=false;e.preventDefault();e.stopImmediatePropagation();return;}
+  const el=e.target.closest("[data-native-unrouted],[data-native-action],[data-native-add],[data-native-fx],[data-fxpower],[data-master-insert],[data-master-power],[data-native-category],[data-go-native-rack],[data-insert],[data-plugin-picker],[data-plugin-manager],[data-my-sounds],[data-backup-studio],[data-preset-mute],[data-preset-save],[data-preset-load],[data-close-modal],[data-orbit-start],[data-orbit-stop]");
   if(!el)return;
   e.preventDefault();e.stopImmediatePropagation();
 
+  if(el.hasAttribute("data-native-unrouted")){
+    const id=Number(el.dataset.nativeUnrouted),rack=el.closest(".rack,.master-fx-rack");
+    const slot=rack?[...rack.children].indexOf(el.closest(".insert-slot,.master-fx-slot")):0;
+    openPicker(el,id,Math.max(0,slot));return;
+  }
   if(el.dataset.closeModal){if(el.dataset.closeModal==="nativeOrbit")hideOrbit();else hideDialog(el.dataset.closeModal);return;}
   if(el.hasAttribute("data-orbit-start")){
     const raw=document.getElementById("nativeOrbitParameter")?.value;
@@ -790,7 +901,9 @@
     renderManager();showDialog("nativePluginManager");return;
   }
   if(el.hasAttribute("data-plugin-picker")){
-    openPicker();return;
+    const rack=el.closest(".rack");
+    const slot=rack?[...rack.children].indexOf(el.closest(".insert-slot")):state.chain.length;
+    openPicker(el,0,slot<0?state.chain.length:slot);return;
   }
   if(el.hasAttribute("data-insert")){
     const article=el.closest(".strip");
@@ -801,7 +914,8 @@
         setTimeout(()=>toast.classList.remove("show"),2200);}
       return;
     }
-    openPicker();return;
+    const slot=Number(el.dataset.insert?.split(":")[1]||state.chain.length);
+    openPicker(el,idx,slot);return;
   }
   if(el.hasAttribute("data-go-native-rack")){
     document.querySelector('.nav button[data-view="FX RACK"]')?.click();return;
@@ -814,6 +928,10 @@
   }
   if(el.dataset.nativeAdd){
     if(state.adding)return;
+    if(pickerChannel!==0){
+      toStatus("Native VST3 routing is not connected on "+(pickerChannel===-1?"MASTER":"CH "+(pickerChannel+1))+". No effect was loaded.");
+      return;
+    }
     const id=el.dataset.nativeAdd;
     const chosen=state.catalog.find(p=>p.id===id);
     state.adding=true;
@@ -843,6 +961,76 @@
   if(fx==="bypass")send("fxBypass",{slot,value:!state.chain[slot]?.bypass});
   if(fx==="up"||fx==="down")send("fxMove",{slot,value:fx==="up"?-1:1});
 },true);
+  // True DAW FX insert gesture. Geometries are captured ONCE at pointerdown;
+  // pointermove only moves a ghost and a 2px insertion marker. Exactly one
+  // native fxMove request is emitted at pointerup (never while dragging).
+  const removeNativeDrag=()=>{
+    const d=fxNativeGesture;if(!d)return;
+    d.marker?.classList.remove("fx-drop-before","fx-drop-after");
+    d.row?.classList.remove("fx-drag-source");
+    d.ghost?.remove();fxNativeGesture=null;
+    document.removeEventListener("pointermove",moveNativeFxGesture);
+  };
+  document.addEventListener("pointerdown",e=>{
+    if(e.button!==0||fxNativeGesture||state.chain.length<2)return;
+    const row=e.target.closest(".native-insert-row[data-native-move],.native-node[data-native-move]");
+    if(!row||!row.isConnected)return;
+    if(row.classList.contains("native-node")){
+      if(!e.target.closest(".node-text,.node-index"))return;
+    }else if(!e.target.closest(".insert:not(.empty)"))return;
+    const from=Number(row.dataset.nativeMove),siblings=[...row.parentElement.children]
+      .filter(n=>n.hasAttribute("data-native-move"));
+    if(!Number.isInteger(from)||from<0||from>=state.chain.length||siblings.length<2)return;
+    fxNativeGesture={pointerId:e.pointerId,row,from,count:siblings.length,
+      startX:e.clientX,startY:e.clientY,x:e.clientX,y:e.clientY,
+      bounds:siblings.map(el=>({el,rect:el.getBoundingClientRect()})),
+      insertion:from,marker:null,ghost:null,active:false};
+    document.addEventListener("pointermove",moveNativeFxGesture,{passive:false});
+  },true);
+  const moveNativeFxGesture=e=>{
+    const d=fxNativeGesture;if(!d||e.pointerId!==d.pointerId)return;
+    d.x=e.clientX;d.y=e.clientY;
+    if(!d.active){
+      if(Math.hypot(d.x-d.startX,d.y-d.startY)<7)return;
+      d.active=true;d.row.classList.add("fx-drag-source");
+      d.ghost=document.createElement("div");d.ghost.className="fx-drag-ghost";
+      d.ghost.textContent=state.chain[d.from]?.name||"VST3";
+      document.body.appendChild(d.ghost);
+    }
+    e.preventDefault();
+    d.ghost.style.transform="translate3d("+(d.x+12)+"px,"+(d.y+10)+"px,0)";
+    d.marker?.classList.remove("fx-drop-before","fx-drop-after");d.marker=null;
+    const bs=d.bounds,first=bs[0].rect,last=bs[bs.length-1].rect;
+    if(d.x<first.left-20||d.x>first.right+20||d.y<first.top-12||d.y>last.bottom+12){
+      d.insertion=-1;return;
+    }
+    let at=d.count;
+    for(let i=0;i<bs.length;i++){
+      if(d.y<(bs[i].rect.top+bs[i].rect.bottom)/2){at=i;break}
+    }
+    d.insertion=at;
+    const end=at===d.count;
+    d.marker=bs[end?bs.length-1:at].el;
+    d.marker.classList.add(end?"fx-drop-after":"fx-drop-before");
+  };
+  document.addEventListener("pointerup",e=>{
+    const d=fxNativeGesture;if(!d||d.pointerId!==e.pointerId)return;
+    const active=d.active,at=d.insertion,from=d.from,count=d.count;
+    removeNativeDrag();
+    if(active){
+      fxNativeBlockClick=true;setTimeout(()=>fxNativeBlockClick=false,0);
+      if(at>=0){
+        const to=Math.max(0,Math.min(count-1,at>from?at-1:at));
+        if(to!==from)send("fxMove",{slot:from,value:to-from});
+      }
+    }
+  },true);
+  document.addEventListener("pointercancel",e=>{
+    if(fxNativeGesture?.pointerId===e.pointerId)removeNativeDrag();
+  },true);
+  document.addEventListener("keydown",e=>{
+    if(e.key==="Escape"&&fxNativeGesture)removeNativeDrag();
+  },true);
   document.addEventListener("input", function(e){
   if(e.target.id!=="nativeVstSearch")return;
   state.filter=e.target.value;
@@ -909,7 +1097,13 @@
     renderOrbit();
   },true);
   backend.addEventListener("arMixOrbitState",data=>{
-    if(!data||Number(data.slot)!==orbit.slot)return;
+    if(!data)return;
+    const activeSlot=data.active&&Number.isInteger(Number(data.activeSlot))?Number(data.activeSlot):-1;
+    if(state.orbitActiveSlot!==activeSlot){
+      state.orbitActiveSlot=activeSlot;
+      updateOrbitRackMarker();
+    }
+    if(Number(data.slot)!==orbit.slot)return;
     const wasInitialized=orbit.initialized;
     const preview=data.previewShape!==-1;
     const draft={nearSetpoint:orbit.nearSetpoint,farSetpoint:orbit.farSetpoint,
@@ -932,8 +1126,7 @@
       orbit.visualTime=performance.now();
     }
     renderOrbit();
-    if(currentTab()==="FX RACK")renderRack();
-    patchMixer();
+    updateOrbitRackMarker();
   });
   backend.addEventListener("arMixPresets",items=>{
     state.presets=Array.isArray(items)?items:[];

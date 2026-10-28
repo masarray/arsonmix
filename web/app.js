@@ -424,6 +424,75 @@ document.addEventListener('dblclick',e=>{const el=e.target.closest('[data-editst
  e.preventDefault();e.stopPropagation();openChannelIdentity(i);
 },true);
 document.addEventListener('dblclick',e=>{const pan=e.target.closest('[data-pan]');if(pan){e.preventDefault();e.stopPropagation();updatePan(pan.dataset.pan==='master'?'master':+pan.dataset.pan,0)}},true);
+// DAW-like insert move in standalone preview: ghost and insertion line during
+// pointer travel; one final chain transaction at drop. Native host owns its
+// own verified DSP reorder and this preview path never sends native edits.
+let fxGesture=null,fxSuppressClick=false;
+function clearFxGesture(){
+ const d=fxGesture;if(!d)return;
+ d.marker?.classList.remove('fx-drop-before','fx-drop-after');
+ d.source?.classList.remove('fx-drag-source');d.ghost?.remove();
+ document.removeEventListener('pointermove',moveFxGesture);
+ fxGesture=null;
+}
+document.addEventListener('pointerdown',e=>{
+ if(window.__JUCE__?.backend?.emitEvent||e.button!==0||fxGesture)return;
+ const button=e.target.closest('#mixer .rack .insert:not(.empty)');
+ if(!button)return;
+ const strip=button.closest('[data-strip]'),rack=button.closest('.rack');
+ if(!strip||!rack)return;
+ const channel=Number(strip.dataset.strip),from=Number(button.dataset.insert?.split(':')[1]);
+ const count=normalChain(channels[channel]).length;
+ if(!Number.isInteger(from)||from>=count||count<2)return;
+ const slots=[...rack.querySelectorAll('.insert-slot')];
+ fxGesture={pointerId:e.pointerId,source:button.closest('.insert-slot'),channel,from,count,
+ startX:e.clientX,startY:e.clientY,x:e.clientX,y:e.clientY,
+ bounds:slots.map(slot=>({slot,rect:slot.getBoundingClientRect()})),
+ insertion:from,active:false,ghost:null,marker:null};
+ document.addEventListener('pointermove',moveFxGesture,{passive:false});
+},true);
+const moveFxGesture=e=>{
+ const d=fxGesture;if(!d||e.pointerId!==d.pointerId)return;
+ d.x=e.clientX;d.y=e.clientY;
+ if(!d.active){
+  if(Math.hypot(d.x-d.startX,d.y-d.startY)<7)return;
+  d.active=true;d.source.classList.add('fx-drag-source');
+  d.ghost=document.createElement('div');d.ghost.className='fx-drag-ghost';
+  d.ghost.textContent=d.source.querySelector('.insert-name')?.textContent||'FX';
+  document.body.appendChild(d.ghost);
+ }
+ e.preventDefault();
+ d.ghost.style.transform='translate3d('+(d.x+12)+'px,'+(d.y+10)+'px,0)';
+ d.marker?.classList.remove('fx-drop-before','fx-drop-after');d.marker=null;
+ const bounds=d.bounds;
+ const inside=bounds.length&&d.x>=bounds[0].rect.left-15&&d.x<=bounds[0].rect.right+15
+  &&d.y>=bounds[0].rect.top-8&&d.y<=bounds[bounds.length-1].rect.bottom+8;
+ if(!inside){d.insertion=-1;return}
+ let insertion=d.count;
+ for(let i=0;i<d.count;i++)
+  if(d.y<(bounds[i].rect.top+bounds[i].rect.bottom)/2){insertion=i;break}
+ d.insertion=insertion;
+ const last=insertion===d.count;
+ d.marker=bounds[last?Math.max(0,d.count-1):insertion]?.slot||null;
+ d.marker?.classList.add(last?'fx-drop-after':'fx-drop-before');
+};
+document.addEventListener('pointerup',e=>{
+ const d=fxGesture;if(!d||e.pointerId!==d.pointerId)return;
+ const active=d.active,from=d.from,at=d.insertion,ch=d.channel;
+ clearFxGesture();
+ if(active){fxSuppressClick=true;setTimeout(()=>fxSuppressClick=false,0);
+  if(at>=0)movePluginTo(ch,from,Math.max(0,Math.min(d.count-1,at>from?at-1:at)));}
+},true);
+document.addEventListener('pointercancel',e=>{
+ if(fxGesture?.pointerId===e.pointerId)clearFxGesture();
+},true);
+document.addEventListener('keydown',e=>{
+ if(e.key==='Escape'&&fxGesture){clearFxGesture();fxSuppressClick=true;setTimeout(()=>fxSuppressClick=false,0);}
+},true);
+document.addEventListener('click',e=>{
+ if(fxSuppressClick&&!window.__JUCE__?.backend?.emitEvent){fxSuppressClick=false;e.preventDefault();e.stopImmediatePropagation()}
+},true);
+
 // Double-click a fader for 0 dB unity gain, without changing workspace.
 document.addEventListener('dblclick',e=>{const f=e.target.closest('[data-fader]');if(!f)return;e.preventDefault();e.stopPropagation();updateFader(f.dataset.fader,0)},true);
 // Idle pointer movement has no handler. Acquire geometry only once per drag
@@ -623,7 +692,17 @@ function insertPlugin(name){
    flash('Master FX updated (GUI preview)');return;
  }
  const c=channels[currentChannel];const chain=normalChain(c);if(chain.length>=8){flash('Maximum 8 FX slots in this UI trial');return}const index=clamp(pendingSlot,0,chain.length);shiftFxMetaRight(currentChannel,index,chain.length);chain.splice(index,0,name);pluginEditorIndex=index;setChain(c,chain);closePluginBrowser();flash(name+' added to preview chain');send('chainChanged',{chain},currentChannel)}
-function movePlugin(idx,dir){const c=channels[currentChannel],ch=normalChain(c),n=idx+dir;if(n<0||n>=ch.length)return;[ch[idx],ch[n]]=[ch[n],ch[idx]];moveFxMeta(currentChannel,idx,n);pluginEditorIndex=n;setChain(c,ch);send('chainChanged',{chain:ch},currentChannel)}
+function movePluginTo(channel,from,to){
+ const c=channels[channel],chain=normalChain(c);
+ if(from<0||to<0||from>=chain.length||to>=chain.length||from===to)return false;
+ const [fx]=chain.splice(from,1);chain.splice(to,0,fx);
+ // Preserve each insert's bypass and editor settings, rather than swapping labels.
+ for(let i=from;i!==to;i+=to>from?1:-1)moveFxMeta(channel,i,i+(to>from?1:-1));
+ if(channel===currentChannel)pluginEditorIndex=to;
+ setChain(c,chain);persistSession();
+ send('chainChanged',{chain},channel);return true;
+}
+function movePlugin(idx,dir){movePluginTo(currentChannel,idx,idx+dir)}
 function removePlugin(idx){const c=channels[currentChannel],ch=normalChain(c);shiftFxMetaLeft(currentChannel,idx,ch.length);ch.splice(idx,1);pluginEditorIndex=null;setChain(c,ch);send('chainChanged',{chain:ch},currentChannel)}
 function setFxBypass(ch,slot,disabled){
  const chain=normalChain(channels[ch]);

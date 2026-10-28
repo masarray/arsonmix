@@ -55,7 +55,7 @@ jobs:
       - name: Validate JavaScript syntax
         run: |
           node --check web/app.js
-          node --test tests/gui_workflow_contract_test.mjs tests/ci_workflow_efficiency_test.mjs
+          node --test tests/gui_workflow_contract_test.mjs tests/ci_workflow_efficiency_test.mjs tests/fx_drag_reorder_contract_test.mjs
       - name: Validate approved GUI checkpoint and single publisher
         run: python tests/gui_baseline_lock_test.py
       - name: Validate smart audio architecture handoff contract
