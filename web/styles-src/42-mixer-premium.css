@@ -4,8 +4,12 @@
    naming affordance and MASTER's static bitmap finish change here. */
 :root{--ari-master-cap:url("data:image/png;base64,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")}
 #app #mixer{display:flex;justify-content:flex-start;align-items:stretch;gap:0}
-#app #mixer > .strip:not(.master-strip){flex:1 1 0px;min-width:108px;max-width:none;box-sizing:border-box}
-#app #mixer > #masterLeft.strip.master-strip{flex:0 0 168px;min-width:168px;max-width:168px}
+/* One shared flex track for all eleven strips. Overflow scrolls instead of
+   shrinking a MASTER-only fader/LED bank or truncating channel ornaments. */
+#app #mixer > .strip,
+#app #mixer > #masterLeft.strip.master-strip{
+ flex:1 0 108px;min-width:108px;max-width:none;box-sizing:border-box;
+}
 /* Equal, aligned 2-column controls across both rows: Ø / HPF, MUTE / SOLO. */
 #app #mixer > .strip:not(.master-strip) .utility-row,
 #app #mixer > .strip:not(.master-strip) .channel-actions{
@@ -284,3 +288,29 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 #nativeFxSelector .native-search{padding:7px 9px;margin-bottom:5px}
 #nativeFxContext .fx-context-delete{color:#efb2a8;display:flex;align-items:center;gap:7px}
 #nativeFxContext .fx-context-delete svg{width:15px;height:15px;fill:currentColor}
+
+/* P0 flat-glass LED meter: static inset chassis, no per-frame work.
+   The existing fixed-color 7px LED painting, peak and clip elements survive. */
+#app #mixer .fader-zone .vu-bank .vu-bars{
+ background:#0a151b;border-radius:3px;
+ box-shadow:inset 0 0 0 1px #304a55,inset 0 2px 3px #000a,0 1px 0 #55697544;
+}
+#app #mixer .fader-zone .vu-bank .meter-unit .meter{
+ position:relative;border:1px solid #314a55;border-radius:2px;
+ background:#080f14;
+ box-shadow:inset 0 0 0 1px #060d12,inset 1px 0 2px #000b,
+            inset -1px 0 2px #000b,0 0 0 1px #09161d;
+}
+#app #mixer .fader-zone .vu-bank .meter-unit .meter::after{
+ content:"";position:absolute;inset:1px;pointer-events:none;z-index:3;
+ background:linear-gradient(180deg,#d3eced13 0%,#c3e0e008 26%,transparent 52%);
+}
+/* MASTER controls follow the very same two-column grid as ordinary strips. */
+#app #masterLeft .master-actions{
+ display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+ align-items:center;column-gap:8px;padding-left:9px;padding-right:9px;
+ box-sizing:border-box;
+}
+#app #masterLeft .master-actions > button{width:100%;min-width:0;margin:0;padding:0 2px!important}
+#app #masterLeft .master-analysis{min-width:0}
+#app #masterLeft .master-analysis .master-info-kicker{letter-spacing:0;font-size:8px}
