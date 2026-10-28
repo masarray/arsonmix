@@ -29,11 +29,11 @@ test('preset UI reflects callback-acknowledged state not queued state',()=>{
   assert.match(b,/RECALL LIVE/);
 });
 test('ADD/REMOVE remain guarded while MOVE publishes physical-slot order',()=>{
-  assert.match(e,/fxMovePhase_\\.load/);
+  assert.match(e,/fxMovePhase_\.load/);
   assert.match(e,/FxOrderPlan::moved/);
-  assert.match(e,/Add\\/Remove still use a bounded offline lifecycle/);
+  assert.match(e,/Add\/Remove still use a bounded offline lifecycle/);
   const move=e.slice(e.indexOf('bool moveSlot'),e.indexOf('juce::String applyDryRoutingLab'));
-  assert.doesNotMatch(move,/detach\\(|attach\\(/);
+  assert.doesNotMatch(move,/detach\(|attach\(/);
 });
 
 test('bypass is sample-smoothed on audio callback without control-thread CPU work',()=>{
