@@ -760,6 +760,7 @@ public:
 
     // Explicit message-thread transaction. NO VST is processed in this LAB.
     juce::String applyDryRoutingLab (const juce::var& command) {
+        if (!isOutputMuted()) return "MUTE OUTPUT before applying physical DRY LAB routing";
         if (handoff_.busy()) return "A VST3 graph handoff is in progress";
         if (routeReconfiguring_.load(std::memory_order_acquire))
             return "Audio device is changing; retry when stable";
@@ -771,7 +772,10 @@ public:
         return dryRoutingLab_.apply(command,directFence_.permitted(),
                                       independent_.active(),graphOwned_->count);
     }
-    void disableDryRoutingLab() noexcept {dryRoutingLab_.disable();}
+    void disableDryRoutingLab() noexcept {
+        setOutputMuted(true); // never expose CH1 unexpectedly on STOP
+        dryRoutingLab_.disable();
+    }
     bool dryRoutingLabActive() const noexcept {return dryRoutingLab_.active();}
     void pollDryRoutingLab() noexcept {dryRoutingLab_.poll();}
 
