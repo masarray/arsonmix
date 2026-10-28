@@ -87,6 +87,7 @@ public:
         // acceptedRoute_ is a JUCE var owned by the CONTROL thread and must
         // never be mutated from the device thread. Epoch gates hide stale data.
         for(auto& p:channelPeaks_)p.store(0.f,std::memory_order_relaxed);
+        for(auto& p:auxPeaks_)p.store(0.f,std::memory_order_relaxed);
         peakL_.store(0.f,std::memory_order_relaxed);
         peakR_.store(0.f,std::memory_order_relaxed);
     }
@@ -301,7 +302,9 @@ public:
         fxCount_.store(0,std::memory_order_relaxed);
         fxReused_.store(0,std::memory_order_relaxed);
         acceptedRoute_=juce::var(); // control-thread STOP only
+        for(auto& n:auxFxNames_)n.clear();
         for(auto& p:channelPeaks_)p.store(0.f,std::memory_order_relaxed);
+        for(auto& p:auxPeaks_)p.store(0.f,std::memory_order_relaxed);
     }
     void poll() noexcept {publisher_.pollRetirement();} // message thread
     bool active() const noexcept {return enabled_.load(std::memory_order_acquire);}
@@ -324,6 +327,7 @@ public:
                  float masterGain,bool masterMuted) noexcept {
         if(!active())return false;
         for(auto& p:channelPeaks_)p.store(0.f,std::memory_order_relaxed);
+        for(auto& p:auxPeaks_)p.store(0.f,std::memory_order_relaxed);
         // Stale meters must never survive a failed device/epoch mapping.
         peakL_.store(0.f,std::memory_order_relaxed);
         peakR_.store(0.f,std::memory_order_relaxed);
