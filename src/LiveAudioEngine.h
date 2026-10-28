@@ -6,6 +6,7 @@
 #include "NativePresetArchive.h"
 #include "VstBusLayout.h"
 #include "LiveGraphHandoff.h"
+#include "LiveDryRoutingLab.h"
 #include "DiagnosticTone.h"
 #include "../engine/device/JuceIndependentClockDevice.h"
 #include "../engine/device/AsioPriorityDeviceManager.h"
@@ -196,6 +197,7 @@ public:
 
     void stop()
     {
+        dryRoutingLab_.disable();
         directFence_.suspend();
         asioPinnedRegistration_ = {};
         asioRegistrationScope_ = "NONE";
@@ -210,6 +212,7 @@ public:
         }
         graphOwned_->count = 0;
         deviceManager_.closeAudioDevice();
+        dryRoutingLab_.poll();
     }
 
     void setMonitorEnabled (bool value) noexcept { monitor_.store (value); }
@@ -261,6 +264,7 @@ public:
 
     juce::String setIndependentClockEnabled (bool wanted)
     {
+        if (dryRoutingLab_.active()) return "Stop DRY ROUTING LAB before changing the device clock";
         if (handoff_.busy()) return "Finish pending VST3 graph switch before changing audio backend";
         if (wanted == independent_.active() && !(savedDirectSetup_ && !wanted)) return {};
         if (wanted && savedDirectSetup_) return "Restore old device backend before another transition";
@@ -344,6 +348,7 @@ public:
     // user setup is restored on exit; temporary routes must not be persisted.
     juce::String setDiagnosticRoute (armix::diagnostics::Route wanted)
     {
+        if (dryRoutingLab_.active()) return "Stop DRY ROUTING LAB before changing SIGNAL CHECK";
         using Route = armix::diagnostics::Route;
         if (handoff_.busy()) return "Finish the pending FX graph transition first";
         if (independent_.active()) return "Disable independent clock mode before endpoint isolation tests";
@@ -748,13 +753,32 @@ public:
         return true;
     }
 
+    // Explicit message-thread transaction. NO VST is processed in this LAB.
+    juce::String applyDryRoutingLab (const juce::var& command) {
+        if (handoff_.busy()) return "A VST3 graph handoff is in progress";
+        if (routeReconfiguring_.load(std::memory_order_acquire))
+            return "Audio device is changing; retry when stable";
+        if (diagnosticRoute_.load(std::memory_order_acquire)
+            != armix::diagnostics::Route::normal)
+            return "Return SIGNAL CHECK to NORMAL before routing LAB";
+        if (savedDirectSetup_ || savedLiveSetup_)
+            return "Restore the full DIRECT audio device before routing LAB";
+        return dryRoutingLab_.apply(command,directFence_.permitted(),
+                                      independent_.active(),graphOwned_->count);
+    }
+    void disableDryRoutingLab() noexcept {dryRoutingLab_.disable();}
+    bool dryRoutingLabActive() const noexcept {return dryRoutingLab_.active();}
+    void pollDryRoutingLab() noexcept {dryRoutingLab_.poll();}
+
     juce::var status()
     {
+        dryRoutingLab_.poll(); // off-RT reclaim after callback quiescence
         auto o = std::make_unique<juce::DynamicObject>();
         const bool dual = independent_.active();
         auto* d = dual ? independent_.renderDevice()
                        : deviceManager_.getCurrentAudioDevice();
         auto* capture = dual ? independent_.captureDevice() : d;
+        o->setProperty ("dryRoutingLab",dryRoutingLab_.status(capture));
         o->setProperty ("connected", d != nullptr && capture != nullptr);
         o->setProperty ("adaptiveClockActive", dual);
         o->setProperty ("adaptiveClockFaulted", dual && independent_.faulted());
@@ -1013,6 +1037,7 @@ private:
     juce::AudioBuffer<float> scratch_;
     juce::AudioBuffer<float> dryScratch_;
     armix::diagnostics::DiagnosticTone diagnosticTone_;
+    LiveDryRoutingLab dryRoutingLab_;
     std::atomic<armix::diagnostics::Route> diagnosticRoute_ {armix::diagnostics::Route::normal};
     std::atomic<bool> routeReconfiguring_ {false};
     std::optional<juce::AudioDeviceManager::AudioDeviceSetup> savedLiveSetup_;
@@ -1096,6 +1121,7 @@ private:
 
     void audioDeviceAboutToStart (juce::AudioIODevice* d) override
     {
+        dryRoutingLab_.prepareDevice(d); // exact active mask, before callback
         if (!independent_.active())
         {
             const auto backend=d->getTypeName();
@@ -1138,6 +1164,7 @@ private:
 
     void audioDeviceStopped() override
     {
+        dryRoutingLab_.deviceStopped();
         deviceStopCount_.fetch_add (1, std::memory_order_relaxed);
         inputPeak_.store (0.f);
         outputPeak_.store (0.f);
@@ -1194,6 +1221,41 @@ private:
         callbackInputs_.store (inputChannels, std::memory_order_relaxed);
         callbackOutputs_.store (outputChannels, std::memory_order_relaxed);
         callbackCount_.fetch_add (1, std::memory_order_relaxed);
+        // P1E: the LIVE dry-routed 10-strip path is an explicit operator
+        // action, with an immutable preallocated P1D graph. Its own zero-VST
+        // callback path NEVER falls through to CH1 on stale/hotplug routes.
+        // DirectFence was already checked above; no output to unknown device.
+        if (dryRoutingLab_.active())
+        {
+            const bool outputPermitted = monitor_.load(std::memory_order_relaxed)
+              && !routeReconfiguring_.load(std::memory_order_acquire)
+              && !masterMute_.load(std::memory_order_relaxed)
+              && activeDiagnosticRoute == armix::diagnostics::Route::normal
+              && !independent_.active();
+            (void) dryRoutingLab_.process(inputs,inputChannels,outputs,
+                     outputChannels,samples,
+                     masterGain_.load(std::memory_order_relaxed),
+                     !outputPermitted);
+            // Only measured output levels, not fake VST or other-strip meters.
+            const float left=dryRoutingLab_.peakLeft();
+            const float right=dryRoutingLab_.peakRight();
+            inputPeak_.store(0.f,std::memory_order_relaxed);
+            postFxPeak_.store(juce::jmin(1.f,juce::jmax(left,right)),std::memory_order_relaxed);
+            outputPeakL_.store(juce::jmin(1.f,left),std::memory_order_relaxed);
+            outputPeakR_.store(juce::jmin(1.f,right),std::memory_order_relaxed);
+            outputPeak_.store(juce::jmin(1.f,juce::jmax(left,right)),std::memory_order_relaxed);
+            // Existing FX graph is excluded at enable time. A structural
+            // edit during LAB is rejected on the control thread.
+            const auto elapsed=clockMicros()-beginUs;
+            lastCallbackUs_.store(elapsed,std::memory_order_relaxed);
+            publishMax(worstCallbackUs_,elapsed);
+            realtimeHistogram_.observe(elapsed,periodUs);
+            if(static_cast<double>(elapsed)>periodUs*0.80)
+                slowCallbacks_.fetch_add(1,std::memory_order_relaxed);
+            if(static_cast<double>(elapsed)>periodUs)
+                overBudgetCallbacks_.fetch_add(1,std::memory_order_relaxed);
+            return;
+        }
         const bool enabled = monitor_.load (std::memory_order_relaxed)
                           && !routeReconfiguring_.load (std::memory_order_acquire);
         const auto route = diagnosticRoute_.load (std::memory_order_relaxed);
