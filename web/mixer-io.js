@@ -67,7 +67,7 @@
     const current=valueFor(r);
     populate(source,portsFor(s,r),current);
     source.dataset.channel=String(i);source.disabled=!isNative()||!s.ready||!!s.pending;
-    output.textContent=outputLabel(s);
+    output.textContent=r.mode==='NONE'?'UNPATCHED · NO INPUT':r.main?outputLabel(s):'MAIN OFF · SEND PATH ONLY';
     const accepted=s.acceptedRoute?.channels?.[i],dirty=current!==valueFor(accepted);
     const stage=strip.querySelector('.arBankStage');
     stage.textContent=!s.ready?'NO LIVE DEVICE':dirty?'DRAFT · NOT APPLIED':r.mode==='NONE'?'UNPATCHED · SILENT':'LIVE · NATIVE ACK';

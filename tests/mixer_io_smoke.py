@@ -50,6 +50,7 @@ async def main():
         }""")
         assert all(abs(a-b)<1 for a,b in zip(sizes,after)),(sizes,after)
         await page.locator('[data-mix-mode="ROUTE"]').click()
+        assert "UNPATCHED" in await page.locator('[data-strip="1"] .arBankOutput').inner_text()
         palette=await page.evaluate("""() => ['FX','ROUTE'].map(x=>getComputedStyle(
           document.querySelector('[data-mix-mode="'+x+'"]')).backgroundColor)""")
         assert palette[0]!=palette[1],palette
