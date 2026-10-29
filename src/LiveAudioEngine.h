@@ -310,7 +310,8 @@ public:
 
     juce::String setIndependentClockEnabled (bool wanted)
     {
-        if (dryRoutingLab_.active()) return "Stop DRY ROUTING LAB before changing the device clock";
+        if (dryRoutingLab_.hasExplicitRoute())
+            return "CLEAR PATCH and MUTE OUTPUT before changing the device clock";
         if (handoff_.busy()) return "Finish pending VST3 graph switch before changing audio backend";
         if (wanted == independent_.active() && !(savedDirectSetup_ && !wanted)) return {};
         if (wanted && savedDirectSetup_) return "Restore old device backend before another transition";
@@ -318,6 +319,10 @@ public:
                        diagnosticRoute() != armix::diagnostics::Route::normal))
             return "Return SIGNAL CHECK to NORMAL before adaptive clock mode";
 
+        if(dryRoutingLab_.active()) {
+            setOutputMuted(true);
+            dryRoutingLab_.disable();
+        }
         struct Transition final
         {
             std::atomic<bool>& flag;
@@ -344,6 +349,9 @@ public:
             }
             savedDirectSetup_.reset();
             attach();
+            const auto sessionError=startUnpatchedProductionSession();
+            if(sessionError.isNotEmpty())
+                return "DIRECT restored but native mixer unpatched session failed: "+sessionError;
             return {};
         }
         // ASIO or another known direct hardware clock bypasses the SRC.
@@ -378,6 +386,7 @@ public:
                 {
                     savedDirectSetup_.reset();
                     attach();
+                    (void) startUnpatchedProductionSession(); // fail silent on rollback
                 }
                 else setOutputMuted (true);
             }
@@ -394,7 +403,8 @@ public:
     // user setup is restored on exit; temporary routes must not be persisted.
     juce::String setDiagnosticRoute (armix::diagnostics::Route wanted)
     {
-        if (dryRoutingLab_.active()) return "Stop DRY ROUTING LAB before changing SIGNAL CHECK";
+        if (dryRoutingLab_.hasExplicitRoute())
+            return "CLEAR PATCH and MUTE OUTPUT before changing SIGNAL CHECK";
         using Route = armix::diagnostics::Route;
         if (handoff_.busy()) return "Finish the pending FX graph transition first";
         if (independent_.active()) return "Disable independent clock mode before endpoint isolation tests";
@@ -403,6 +413,13 @@ public:
         if (wanted < Route::normal || wanted > Route::captureOnly)
             return "Unknown audio diagnostic route";
 
+        // Explicit diagnostic isolation is still available when no user patch
+        // is active. Release the silent production graph on CONTROL before
+        // selecting a one-sided device. No phantom hardware output or CH1 mix.
+        if(dryRoutingLab_.active()) {
+            setOutputMuted(true);
+            dryRoutingLab_.disable();
+        }
         // Muting the old/new combined backend callback during an intermediate
         // device restart prevents briefly leaking microphone audio when changing
         // from OUTPUT ONLY to CAPTURE ONLY (which first restores full duplex).
@@ -480,10 +497,13 @@ public:
             savedLiveSetup_ = original;
         }
         diagnosticRoute_.store (wanted, std::memory_order_release);
-        if (wanted == Route::normal && !resumeVerifiedDirectRoute())
-        {
-            setOutputMuted (true);
-            return "Diagnostic DIRECT route identity changed; choose a device in AUDIO SETUP";
+        if(wanted == Route::normal) {
+            if(!resumeVerifiedDirectRoute()) {
+                setOutputMuted(true);
+                return "Diagnostic DIRECT route identity changed; choose a device in AUDIO SETUP";
+            }
+            const auto error=startUnpatchedProductionSession();
+            if(error.isNotEmpty())return "Cannot resume native production mixer: "+error;
         }
         return {};
     }
