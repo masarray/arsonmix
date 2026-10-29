@@ -88,3 +88,17 @@ test('master readout remains native-unavailable until measured BS.1770/true peak
  assert.match(bridge,/tp\.textContent="—"/);
  assert.doesNotMatch(app, /STREAM LEVELS <span>SIM<\/span>/);
 });
+
+test('startup uses splash before constructing WebView2 and native engine',()=>{
+ const splash=read('src/ArSonMixStartupSplash.h');
+ assert.match(splash,/class ArSonMixStartupSplash/);
+ assert.match(splash,/setOpaque \(true\)/);
+ assert.doesNotMatch(splash,/WebBrowserComponent|AudioDeviceManager|repaintTimer/);
+ const startup=main.slice(main.indexOf('class ConsoleApp final'));
+ assert.ok(startup.indexOf('make_unique<ArSonMixStartupSplash>') <
+           startup.indexOf('make_unique<ConsoleWindow>'));
+ assert.match(startup,/startTimer \(90\)/);
+ assert.match(startup,/if \(stage == 2\)/);
+ assert.match(main,/onStartupStage_ \(1\)/);
+ assert.match(main,/onStartupStage_ \(2\)/);
+});
