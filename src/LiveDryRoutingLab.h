@@ -445,6 +445,7 @@ public:
             const auto& st=channelEdits_[i];
             auto obj=std::make_unique<juce::DynamicObject>();
             obj->setProperty("db",st.linear>0.f?20.f*std::log10(st.linear):-60.f);
+            obj->setProperty("linear",st.linear); // exact, including hard -infinity mute
             obj->setProperty("pan",st.pan*100.f);
             obj->setProperty("mute",st.mute);
             obj->setProperty("solo",st.solo);
