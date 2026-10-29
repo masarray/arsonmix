@@ -14,7 +14,16 @@ test('every ADD click identifies request and reports result inside the open sele
   assert.match(js,/nativeAddFeedback/);
   assert.match(js,/FX NOT LOADED:/);
   assert.match(js,/if\(result\.ok\)hideDialog\("nativeFxSelector"\)/);
-  assert.match(host,/emitFxAddResult \(requestId, name, error, elapsed\)/);
+  // Errors respond immediately; successful inserts ACK only AFTER the
+  // audio callback swaps to the prepared graph and the control thread retires.
+  assert.match(host,/emitFxAddResult \(requestId,name,error,elapsed\)/);
+  const finalized=host.indexOf('if (engine_.finalizeGraphSwitch())');
+  const accepted=host.indexOf('emitFxAddResult(pendingFxAddRequestId_',finalized);
+  assert.ok(finalized>=0&&accepted>finalized);
+  const staging=host.slice(host.indexOf('if (action == "addCatalog")',host.indexOf('if (action == "addScanFolder")')),
+                           host.indexOf('else if (action == "fxRemove")'));
+  assert.match(staging,/pendingFxAddRequestId_=requestId/);
+  assert.doesNotMatch(staging,/\+\+fxGraphRevision_/);
   assert.match(host,/FX_LOAD_FAIL/);
 });
 test('plugin load and preset restore both negotiate existing VST3 bus layouts',()=>{
