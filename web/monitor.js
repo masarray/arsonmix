@@ -923,7 +923,9 @@
   // DRAFT/ACK route; never create a second frontend or native audio graph.
   window.__arMixRouteView=()=>{
     const d=state.dryRoutingLab||{};
-    if(draftEpoch!==Number(d.epoch||0))hydrateAcceptedRoute();
+    // Read-only telemetry projection. Never mutate the draft/epoch here:
+    // this listener may run before the routing controller's arMixStatus
+    // callback and would swallow device-epoch invalidation (stale patch UI).
     return {
       epoch:Number(d.epoch)||0,revision:Number(d.revision)||0,
       ready:!!d.ready,active:!!d.active,monitor:!!state.monitor,

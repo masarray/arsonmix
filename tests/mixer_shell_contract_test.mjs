@@ -22,3 +22,10 @@ test('new shell resources are in the exact native WebView2 asset list',()=>{
   }
   assert.ok(html.indexOf('mixer-io.js')<html.indexOf('mixer-layout.js'));
 });
+
+test('route status adapter never consumes the device epoch before the native controller',()=>{
+  const monitor=read('web/monitor.js');
+  const projection=monitor.slice(monitor.indexOf('window.__arMixRouteView=()=>'),monitor.indexOf('window.__arMixStageChannelInput=',monitor.indexOf('window.__arMixRouteView=()=>')));
+  assert.doesNotMatch(projection,/hydrateAcceptedRoute\\(|invalidateDraftForNewDevice\\(/);
+  assert.match(monitor,/if\\(draftEpoch!==\\(Number\\(d\\.dryRoutingLab\\?\\.epoch\\)\\|\\|0\\)\\)/);
+});
