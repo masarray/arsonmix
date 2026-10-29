@@ -11,6 +11,8 @@
 namespace armix::shows {
 
 constexpr int channels = 10;
+constexpr int auxReturns = 4; // physical input strips are not consumed by AUX
+constexpr int maxAuxSendsPerSnapshot = 32;
 constexpr int maxFxPerStrip = 8;
 constexpr int maxSendsPerSnapshot = 32;
 constexpr int maxSnapshotsPerShow = 256;
@@ -35,10 +37,24 @@ struct Strip final {
     std::vector<FxRef> fx;
     std::vector<Send> sends;
 };
+// AUX is an extra, one-way stereo FX return, not INPUT CH9/10 or hardware I/O.
+struct AuxReturn final {
+    bool enabled = false, toMaster = true, mute = false;
+    double gain = 1.0;
+    std::vector<FxRef> fx;
+};
+struct AuxSend final {
+    int source = -1;      // physical logical INPUT 0..9
+    int destination = -1; // dedicated AUX 0..3
+    bool preFader = false;
+    double gain = 0.25, pan = 0.0;
+};
 struct SnapshotV2 final {
     juce::String id, name, sourceBuild;
     juce::int64 createdMs = 0, modifiedMs = 0;
     std::array<Strip, channels> strips{};
+    std::array<AuxReturn, auxReturns> aux{};
+    std::vector<AuxSend> auxSends;
     double masterGain = 1.0, masterPan = 0.0;
     bool masterMute = false, masterMono = false;
 };
@@ -119,9 +135,10 @@ inline void commonWrite(juce::var& v, const juce::String& id,
 inline juce::String encode(const juce::var& v) {
     return juce::JSON::toString(v, true);
 }
-inline bool header(const juce::var& v,const char* format) {
+inline bool header(const juce::var& v,const char* format,
+                   int minVersion=2,int maxVersion=2) {
     int schema=0; juce::String kind;
-    return v.isObject() && integer(get(v,"schemaVersion"),schema,2,2) &&
+    return v.isObject() && integer(get(v,"schemaVersion"),schema,minVersion,maxVersion) &&
         str(get(v,"format"),kind,64) && kind==format;
 }
 } // namespace detail
@@ -143,6 +160,9 @@ public:
     static juce::String encode(const SnapshotV2& s) {
         auto v=detail::object();
         detail::commonWrite(v,s.id,s.name,s.createdMs,s.modifiedMs);
+        // V3 is mandatory for AUX-aware snapshots: old V2 readers must fail
+        // closed instead of silently dropping four AUX returns on re-save.
+        detail::put(v,"schemaVersion",3);
         detail::put(v,"format","arsonmix.native.snapshot");
         detail::put(v,"sourceBuild",s.sourceBuild);
         auto master=detail::object();
@@ -159,13 +179,8 @@ public:
             detail::put(c,"fader",ch.fader);detail::put(c,"pan",ch.pan);
             detail::put(c,"mute",ch.mute);detail::put(c,"solo",ch.solo);
             detail::put(c,"toMaster",ch.toMaster);
-            juce::Array<juce::var> fx, sends;
-            for(const auto& f:ch.fx) {
-                auto p=detail::object();
-                detail::put(p,"catalogId",f.catalogId);detail::put(p,"uid",f.uid);
-                detail::put(p,"stateSha256",f.stateSha256);detail::put(p,"bypass",f.bypass);
-                fx.add(p);
-            }
+            const auto fx=encodeFx(ch.fx);
+            juce::Array<juce::var> sends;
             for(const auto& se:ch.sends) {
                 auto p=detail::object();
                 detail::put(p,"destination",se.destination);
@@ -177,6 +192,29 @@ public:
             strips.add(c);
         }
         detail::put(v,"strips",juce::var(strips));
+        juce::Array<juce::var> aux, auxSends;
+        for(int i=0;i<auxReturns;++i) {
+            const auto& bus=s.aux[static_cast<size_t>(i)];
+            auto rec=detail::object();
+            detail::put(rec,"id","aux-"+juce::String(i+1).paddedLeft('0',3));
+            detail::put(rec,"enabled",bus.enabled);
+            detail::put(rec,"toMaster",bus.toMaster);
+            detail::put(rec,"mute",bus.mute);
+            detail::put(rec,"gain",bus.gain);
+            detail::put(rec,"fx",juce::var(encodeFx(bus.fx)));
+            aux.add(rec);
+        }
+        for(const auto& send:s.auxSends) {
+            auto rec=detail::object();
+            detail::put(rec,"source",send.source);
+            detail::put(rec,"destination",send.destination);
+            detail::put(rec,"preFader",send.preFader);
+            detail::put(rec,"gain",send.gain);
+            detail::put(rec,"pan",send.pan);
+            auxSends.add(rec);
+        }
+        detail::put(v,"auxReturns",juce::var(aux));
+        detail::put(v,"auxSends",juce::var(auxSends));
         return detail::encode(v);
     }
     // Decode is transactional: an invalid record never mutates the caller's
@@ -195,7 +233,7 @@ public:
     static bool decode(const juce::String& json,SnapshotV2& out) {
         if(json.getNumBytesAsUTF8()>maxJsonBytes) return false;
         const auto v=juce::JSON::parse(json);
-        if(!detail::header(v,"arsonmix.native.snapshot")) return false;
+        if(!detail::header(v,"arsonmix.native.snapshot",2,3)) return false;
         SnapshotV2 next;
         if(!detail::common(v,next.id,next.name,next.createdMs,next.modifiedMs) ||
            !detail::str(detail::get(v,"sourceBuild"),next.sourceBuild,80,false))
@@ -231,23 +269,9 @@ public:
                (ch.source==2 && (ch.inputA<0||ch.inputB<0||ch.inputA==ch.inputB)))
                 return false;
             const auto fxv=detail::get(rec,"fx"), sv=detail::get(rec,"sends");
-            const auto* fx=fxv.getArray();
             const auto* sends=sv.getArray();
-            if(!fx||!sends||fx->size()>maxFxPerStrip ||
-               (totalSends+=sends->size())>maxSendsPerSnapshot) return false;
-            for(const auto& p:*fx) {
-                FxRef f;
-                if(!p.isObject() ||
-                   !detail::str(detail::get(p,"catalogId"),f.catalogId,512) ||
-                   !detail::integer(detail::get(p,"uid"),f.uid,-2147483647,2147483647) ||
-                   !detail::str(detail::get(p,"stateSha256"),f.stateSha256,64) ||
-                   !detail::flag(detail::get(p,"bypass"),f.bypass) ||
-                   f.stateSha256.length()!=64) return false;
-                for(auto chHex:f.stateSha256.toStdString())
-                    if(!((chHex>='a'&&chHex<='f')||(chHex>='A'&&chHex<='F')||
-                         (chHex>='0'&&chHex<='9'))) return false;
-                ch.fx.push_back(std::move(f));
-            }
+            if(!sends || (totalSends+=sends->size())>maxSendsPerSnapshot ||
+               !decodeFx(fxv,ch.fx)) return false;
             for(const auto& p:*sends) {
                 Send send;
                 if(!p.isObject() ||
@@ -260,9 +284,82 @@ public:
                 ch.sends.push_back(send);
             }
         }
+        // Existing stage-1 V2 records without AUX keys remain readable. A
+        // partially provided AUX record is never accepted silently.
+        const auto auxv=detail::get(v,"auxReturns");
+        const auto auxsv=detail::get(v,"auxSends");
+        int version=0;
+        if(!detail::integer(detail::get(v,"schemaVersion"),version,2,3))
+            return false;
+        if(version==2) {
+            if(!auxv.isVoid() || !auxsv.isVoid()) return false;
+            out=std::move(next); return true;
+        }
+        const auto* aux=auxv.getArray();
+        const auto* sends=auxsv.getArray();
+        if(!aux || !sends || aux->size()!=auxReturns ||
+           sends->size()>maxAuxSendsPerSnapshot) return false;
+        for(int i=0;i<auxReturns;++i) {
+            auto& bus=next.aux[static_cast<size_t>(i)];
+            const auto& rec=aux->getReference(i);
+            juce::String id;
+            if(!rec.isObject() ||
+               !detail::str(detail::get(rec,"id"),id,7) ||
+               id!="aux-"+juce::String(i+1).paddedLeft('0',3) ||
+               !detail::flag(detail::get(rec,"enabled"),bus.enabled) ||
+               !detail::flag(detail::get(rec,"toMaster"),bus.toMaster) ||
+               !detail::flag(detail::get(rec,"mute"),bus.mute) ||
+               !detail::real(detail::get(rec,"gain"),bus.gain,0.0,4.0) ||
+               !decodeFx(detail::get(rec,"fx"),bus.fx)) return false;
+        }
+        for(const auto& rec:*sends) {
+            AuxSend send;
+            if(!rec.isObject() ||
+               !detail::integer(detail::get(rec,"source"),send.source,0,channels-1) ||
+               !detail::integer(detail::get(rec,"destination"),send.destination,0,auxReturns-1) ||
+               !detail::flag(detail::get(rec,"preFader"),send.preFader) ||
+               !detail::real(detail::get(rec,"gain"),send.gain,0.0,1.0) ||
+               !detail::real(detail::get(rec,"pan"),send.pan,-1.0,1.0) ||
+               !next.aux[static_cast<size_t>(send.destination)].enabled)
+                return false;
+            for(const auto& previous:next.auxSends)
+                if(previous.source==send.source && previous.destination==send.destination &&
+                   previous.preFader==send.preFader) return false;
+            next.auxSends.push_back(send);
+        }
         out=std::move(next); return true;
     }
 private:
+    static juce::Array<juce::var> encodeFx(const std::vector<FxRef>& fx) {
+        juce::Array<juce::var> encoded;
+        for(const auto& f:fx) {
+            auto rec=detail::object();
+            detail::put(rec,"catalogId",f.catalogId);
+            detail::put(rec,"uid",f.uid);
+            detail::put(rec,"stateSha256",f.stateSha256);
+            detail::put(rec,"bypass",f.bypass);
+            encoded.add(rec);
+        }
+        return encoded;
+    }
+    static bool decodeFx(const juce::var& value,std::vector<FxRef>& out) {
+        const auto* fx=value.getArray();
+        if(!fx || fx->size()>maxFxPerStrip) return false;
+        for(const auto& p:*fx) {
+            FxRef f;
+            if(!p.isObject() ||
+               !detail::str(detail::get(p,"catalogId"),f.catalogId,512) ||
+               !detail::integer(detail::get(p,"uid"),f.uid,-2147483647,2147483647) ||
+               !detail::str(detail::get(p,"stateSha256"),f.stateSha256,64) ||
+               !detail::flag(detail::get(p,"bypass"),f.bypass) ||
+               f.stateSha256.length()!=64) return false;
+            for(auto chHex:f.stateSha256.toStdString())
+                if(!((chHex>='a'&&chHex<='f')||(chHex>='A'&&chHex<='F')||
+                     (chHex>='0'&&chHex<='9'))) return false;
+            out.push_back(std::move(f));
+        }
+        return true;
+    }
     static bool decodeShowArrays(const juce::var& v,ShowV2& next,ShowV2& out) {
         const auto orderV=detail::get(v,"snapshotOrder");
         const auto safesV=detail::get(v,"channelSafes");

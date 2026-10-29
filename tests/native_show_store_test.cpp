@@ -37,8 +37,16 @@ int main() {
  blob.bytes.append(bytes,sizeof(bytes));
  blob.sha256=juce::SHA256(blob.bytes).toHexString();
  snap.strips[0].fx.push_back({"TestVendor|195",195,blob.sha256,false});
+ // Separate AUX VST state is part of the immutable transaction.
+ BinaryState auxBlob;
+ const char auxBytes[]={'a','u','x','r','e','v','e','r','b',0,3};
+ auxBlob.bytes.append(auxBytes,sizeof(auxBytes));
+ auxBlob.sha256=juce::SHA256(auxBlob.bytes).toHexString();
+ snap.aux[0].enabled=true;snap.aux[0].gain=0.6;
+ snap.aux[0].fx.push_back({"AuxReverb|202",202,auxBlob.sha256,false});
+ snap.auxSends.push_back({0,0,true,0.35,0.0});
  std::vector<SnapshotV2> snapshots={snap};
- std::vector<BinaryState> blobs={blob};
+ std::vector<BinaryState> blobs={blob,auxBlob};
  const auto firstCommitError=store.commit(show,snapshots,blobs);
  if(firstCommitError.isNotEmpty()) std::cerr<<"initial Show commit failed: "<<firstCommitError<<"\\n";
  assert(firstCommitError.isEmpty());
@@ -50,11 +58,20 @@ int main() {
  assert(loaded.channelSafes[3]);
  assert(retrieved.size()==1 && retrieved[0].strips[0].inputB==5);
  assert(retrieved[0].strips[0].fx[0].stateSha256==blob.sha256);
+ assert(retrieved[0].aux[0].enabled && retrieved[0].aux[0].gain==0.6);
+ assert(retrieved[0].auxSends.size()==1 && retrieved[0].auxSends[0].preFader);
+ assert(retrieved[0].aux[0].fx.size()==1 &&
+        retrieved[0].aux[0].fx[0].stateSha256==auxBlob.sha256);
 
  // Bad/missing binary fails entirely without touching HEAD.
  auto badBlob=blobs;
  badBlob[0].bytes.append("CORRUPT",7);
  assert(store.commit(show,snapshots,badBlob).isNotEmpty());
+ assert(store.currentGeneration(show.id)==first);
+
+ // Missing AUX VST state is an all-or-nothing rejection just like input FX.
+ std::vector<BinaryState> missingAux={blob};
+ assert(store.commit(show,snapshots,missingAux).isNotEmpty());
  assert(store.currentGeneration(show.id)==first);
 
  // Prepared show cannot reference snapshots not in the transaction.

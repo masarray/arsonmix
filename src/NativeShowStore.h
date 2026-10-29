@@ -60,11 +60,16 @@ public:
         std::set<juce::String> suppliedHashes;
         for(const auto& blob:blobs)
             suppliedHashes.insert(blob.sha256.toLowerCase());
-        for(const auto& snap:snapshots)
+        for(const auto& snap:snapshots) {
             for(const auto& strip:snap.strips)
                 for(const auto& fx:strip.fx)
                     if(suppliedHashes.find(fx.stateSha256.toLowerCase())==suppliedHashes.end())
                         return "Missing vendor state for "+fx.catalogId;
+            for(const auto& aux:snap.aux)
+                for(const auto& fx:aux.fx)
+                    if(suppliedHashes.find(fx.stateSha256.toLowerCase())==suppliedHashes.end())
+                        return "Missing AUX vendor state for "+fx.catalogId;
+        }
         if(!root_.isDirectory() && root_.createDirectory().failed())
             return "Studio Shows directory is not writable";
         const auto showRoot=root_.getChildFile(show.id.toLowerCase());
@@ -177,20 +182,31 @@ private:
                !snap.id.equalsIgnoreCase(id))return "Invalid snapshot metadata";
             total+=file.getSize();
             if(total>maxGenerationBytes)return "Generation too large";
+            // The same hash verification policy applies to INPUT and AUX FX.
+            // No partially readable Show is ever returned to the caller.
+            const auto checkState=[&](const FxRef& fx)->juce::String {
+                if(!validHash(fx.stateSha256))return "Unsafe state hash";
+                const auto blobFile=dir.getChildFile("blobs").getChildFile(
+                    fx.stateSha256.toLowerCase()+".bin");
+                if(!blobFile.existsAsFile()||blobFile.getSize()>maxBlobBytes)
+                    return "Missing/oversized vendor state";
+                if(verifiedHashes.insert(fx.stateSha256.toLowerCase()).second) {
+                    total+=blobFile.getSize();
+                    if(total>maxGenerationBytes) return "Generation exceeds read budget";
+                    if(!juce::SHA256(blobFile).toHexString().equalsIgnoreCase(fx.stateSha256))
+                        return "Vendor binary hash mismatch";
+                }
+                return {};
+            };
             for(const auto& strip:snap.strips)
                 for(const auto& fx:strip.fx) {
-                    if(!validHash(fx.stateSha256))return "Unsafe state hash";
-                    const auto file=dir.getChildFile("blobs").getChildFile(fx.stateSha256.toLowerCase()+".bin");
-                    if(!file.existsAsFile()||file.getSize()>maxBlobBytes)
-                        return "Missing/oversized vendor state";
-                    // Count and hash every unique immutable blob once, even if
-                    // many FX snapshots intentionally reference the same state.
-                    if(verifiedHashes.insert(fx.stateSha256.toLowerCase()).second) {
-                        total+=file.getSize();
-                        if(total>maxGenerationBytes) return "Generation exceeds read budget";
-                        if(!juce::SHA256(file).toHexString().equalsIgnoreCase(fx.stateSha256))
-                            return "Vendor binary hash mismatch";
-                    }
+                    const auto error=checkState(fx);
+                    if(error.isNotEmpty())return error;
+                }
+            for(const auto& aux:snap.aux)
+                for(const auto& fx:aux.fx) {
+                    const auto error=checkState(fx);
+                    if(error.isNotEmpty())return error;
                 }
             candidate.push_back(std::move(snap));
         }
