@@ -102,7 +102,7 @@
       const desc=node('p','arIOHint',portList(s).length+' verified active input pins. Assign MONO (M) or STEREO (L/R); APPLY only while output MUTED.');
       body.appendChild(desc);
       const grid=node('div','arIOInputGrid');
-      grid.appendChild(node('strong','arIOGridLabel','LOGICAL CHANNEL'),node('strong','arIOGridLabel','PHYSICAL SOURCE'));
+      grid.append(node('strong','arIOGridLabel','LOGICAL CHANNEL'),node('strong','arIOGridLabel','PHYSICAL SOURCE'));
       for(let i=0;i<10;i++){
         const r=channelState(s,i);
         grid.appendChild(node('span','arIOChannelName','CH '+String(i+1).padStart(2,'0')+' · '+(window.channels?.[i]?.name||'INPUT')));
@@ -119,7 +119,7 @@
       for(const [i,label] of ['MAIN LEFT','MAIN RIGHT'].entries()){
         const p=ports[i];
         const row=node('div','arIOOutputRow');
-        row.appendChild(node('strong','',label),node('span','',s.ready&&Number.isInteger(p)&&p>=0?'HW OUT '+(p+1)+' · READ ONLY':'NOT AVAILABLE · NO VERIFIED OUTPUT'));
+        row.append(node('strong','',label),node('span','',s.ready&&Number.isInteger(p)&&p>=0?'HW OUT '+(p+1)+' · READ ONLY':'NOT AVAILABLE · NO VERIFIED OUTPUT'));
         body.appendChild(row);
       }
       body.appendChild(node('p','arIOHint','AUX1–4 are internal stereo FX returns, not physical output sockets.'));
@@ -128,7 +128,7 @@
       if(!deviceInventory?.types?.length)body.appendChild(node('p','arIOHint','No device inventory yet · select a verified Windows audio device.'));
       for(const type of deviceInventory?.types||[]){
         const card=node('div','arIODeviceType');
-        card.appendChild(node('strong','',type.name+(type.active?' · CURRENT':'')));
+        card.append(node('strong','',type.name+(type.active?' · CURRENT':'')));
         card.appendChild(node('span','','IN: '+(type.inputs?.join(', ')||'NONE')));
         card.appendChild(node('span','','OUT: '+(type.outputs?.join(', ')||'NONE')));
         body.appendChild(card);
