@@ -2,6 +2,8 @@
 
 **October 30, 2026 engineering status:** ArSonMix is an experimental Windows-first **10 input channel + 4 stereo AUX return + MASTER** mixer with real device-bound audio routing and VST3, not a hardware-qualified live/broadcast release. The native hardware 0-VST crackle issue [#15](https://github.com/masarray/arsonmix/issues/15) remains open. **Never interpret successful Windows CTest, GUI screenshots, or a workflow named Hardware FAT as proof of clean real-device audio.**
 
+The [approved GUI visual baseline](docs/GUI_BASELINE_LOCK_2026-10-25.md) remains the reference for compact FX racks, BTN-180 and layout; its historical channel count is superseded by the current mixer PRD.
+
 ## Start here — new canonical product and engineering plans
 1. [PRD v2.0 — Digital Mixer, per-channel FX/ROUTE/SENDS, custom hardware I/O, AUX buses](docs/PRD_ARSONMIX_PRO_MIXER_WORKSPACE_ROUTING_20261030.md)
 2. [ARD v2.0 — one audio graph, physical output patch, bus model, native ACK, staged execution](docs/ARD_PRD_MIXER_IO_AUX_BUS_REFORM_20261030.md)
