@@ -18,7 +18,7 @@ test("P1E is opt-in; all native VST3/clock/diagnostic paths protected",()=>{
   assert.match(engine,/dryRoutingLab_\.prepareDevice\(d\)/);
   assert.match(engine,/dryRoutingLab_\.deviceStopped\(\)/);
   assert.match(engine,/dryRoutingLab_\.process\(inputs,inputChannels,outputs/);
-  assert.match(engine,/if \(dryRoutingLab_\.active\(\)\) return "Stop DRY ROUTING LAB before editing VST3"/);
+  assert.match(engine,/std::shared_ptr<juce::AudioPluginInstance> processor/);
   assert.match(engine,/if \(dryRoutingLab_\.active\(\)\) return "Stop DRY ROUTING LAB before preset recall"/);
   assert.match(lab,/publisher_\.publish/);
   assert.match(lab,/deviceEpoch_/);
@@ -210,7 +210,7 @@ test("R0 premium workspace is anchored to mixer chrome and lazily opens INTERNAL
 });
 test("R1 upstream Studio-IO rejection always releases native APPLY pending state",()=>{
   const first=main.indexOf('if ((studioBackupBusy_ || nativeShowBusy_)');
-  const next=main.indexOf('// Structural plugin operations',first);
+  const next=main.indexOf('if (engine_.independentClockActive()',first);
   assert.ok(first>=0&&next>first);
   const gate=main.slice(first,next);
   assert.match(gate,/action=="routingDryApply"/);

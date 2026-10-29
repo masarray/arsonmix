@@ -257,6 +257,13 @@ private:
     juce::String lastDirectRestoreError_;
     juce::var pendingPresetUI_;
     juce::String pendingPresetName_;
+    // Structural FX edits are acknowledged only AFTER RT handoff and
+    // control-thread retirement. Never tell a picker that a staged insert
+    // is LIVE while the old graph is still rendering.
+    int pendingFxAddRequestId_=-1;
+    juce::String pendingFxAddName_;
+    unsigned int pendingFxAddElapsedMs_=0;
+    int pendingFxRemoveSlot_=-1;
 
     static std::uint64_t monotonicMilliseconds() noexcept
     {
@@ -964,8 +971,8 @@ private:
             return emitNotice(reason,true);
         }
 
-        // Structural plugin operations currently detach the original callback
-        // and must never mutate a running independent render thread.
+        // Native structural VST3 edits use one prepared graph handoff in DIRECT mode.
+        // Independent capture/render stream lifecycle is still gated separately.
         if (engine_.independentClockActive() && action == "addCatalog")
         {
             const int requestId = static_cast<int> (args.getProperty ("requestId", 0));
@@ -1335,7 +1342,7 @@ private:
                 diagnostics_.record ("FX_ADD_REQUEST", name + " | " + plugin->path);
                 // Appending a new VST3 preserves existing AudioPluginInstance addresses.
                 // Orbit references a still-live processor and must continue through ADD.
-                // Pause notifications while JUCE reconfigures the FX callback.
+                // Orbit retains the same vendor instance across the prepared graph handoff.
                 const bool keepOrbit=orbit_.active();
                 if(keepOrbit)orbit_.pauseForGraphEdit();
                 editorWindow_.reset();
@@ -1351,23 +1358,24 @@ private:
                 {
                     error = "VST3 instantiation failed with an unknown exception";
                 }
-                if(keepOrbit)orbit_.resumeAfterGraphEdit();
+                if(keepOrbit && error.isNotEmpty())orbit_.resumeAfterGraphEdit();
             }
             const auto elapsed = juce::Time::getMillisecondCounter() - started;
-            emitFxAddResult (requestId, name, error, elapsed);
             if (error.isNotEmpty())
             {
-                diagnostics_.record ("FX_LOAD_FAIL", name + " | " + error +
-                    " | elapsedMs=" + juce::String (elapsed));
-                emitNotice (name + ": " + error, true);
+                emitFxAddResult (requestId,name,error,elapsed);
+                diagnostics_.record("FX_LOAD_FAIL",name+" | "+error+
+                    " | elapsedMs="+juce::String(elapsed));
+                emitNotice(name+": "+error,true);
             }
             else
             {
-                diagnostics_.record ("FX_LOAD", name + " | elapsedMs=" + juce::String (elapsed));
-                ++fxGraphRevision_;
-                emitChain();
-                if (orbit_.active()) emitOrbitState (orbit_.slot());
-                emitNotice (name + " inserted into Channel 1 FX Rack.");
+                pendingFxAddRequestId_=requestId;
+                pendingFxAddName_=name;
+                pendingFxAddElapsedMs_=elapsed;
+                diagnostics_.record("FX_ADD_STAGED",name);
+                // The timer sends positive arMixAddResult only once the
+                // callback has published the graph and retired old leases.
             }
         }
         else if (action == "fxRemove")
@@ -1375,22 +1383,20 @@ private:
             if (engine_.hasTemporaryDiagnosticDevice())
                 return emitNotice ("Return to NORMAL before editing VST3.", true);
             const auto* previous=orbit_.processor();
-            if(previous && engine_.pluginAt(slot)==previous)stopOrbit();
-            else orbit_.pauseForGraphEdit();
+            const bool removedOrbit=previous && engine_.pluginAt(slot)==previous;
+            if(orbit_.active())orbit_.pauseForGraphEdit();
             editorWindow_.reset();
             const bool changed=engine_.removeAt(slot);
-            if(previous && orbit_.active()){
-                int found=-1;
-                for(int i=0;i<engine_.chainSize();++i)
-                    if(engine_.pluginAt(i)==previous){found=i;break;}
-                if(found<0)stopOrbit();
-                else {orbit_.rebindSlot(found);orbit_.resumeAfterGraphEdit();}
-            }
-            if(changed){
-                ++fxGraphRevision_;
-                diagnostics_.record("FX_REMOVE",juce::String(slot));
-                emitChain();
-                if(orbit_.active())emitOrbitState(orbit_.slot());
+            if(changed) {
+                // Orbit stays paused until the callback and control thread
+                // acknowledge the NEW logical graph; only stop a deleted
+                // target early to avoid dangling vendor parameter handles.
+                if(removedOrbit)stopOrbit();
+                pendingFxRemoveSlot_=slot;
+                diagnostics_.record("FX_REMOVE_STAGED",juce::String(slot));
+            } else {
+                if(orbit_.active())orbit_.resumeAfterGraphEdit();
+                emitNotice("FX removal rejected: device unavailable or graph busy",true);
             }
         }
         else if (action == "fxMove")
@@ -1600,6 +1606,35 @@ private:
             ++fxGraphRevision_;
             diagnostics_.record ("GRAPH_SWAP_ACK", pendingPresetName_);
             emitChain();
+            if(pendingFxAddRequestId_>=0)
+            {
+                if(orbit_.active())orbit_.resumeAfterGraphEdit();
+                emitFxAddResult(pendingFxAddRequestId_,pendingFxAddName_,{},
+                                pendingFxAddElapsedMs_);
+                diagnostics_.record("FX_ADD_ACK",pendingFxAddName_);
+                emitNotice(pendingFxAddName_+" inserted into Channel 1 FX Rack.");
+                pendingFxAddRequestId_=-1;
+                pendingFxAddName_.clear();
+                pendingFxAddElapsedMs_=0;
+            }
+            if(pendingFxRemoveSlot_>=0)
+            {
+                // The replacement graph has NOW become authoritative.
+                // Rebind Orbit by stable processor identity, not by its old
+                // slot index (which may shift when an earlier FX is removed).
+                if(orbit_.active() && orbit_.processor())
+                {
+                    const auto* retained=orbit_.processor();
+                    int target=-1;
+                    for(int i=0;i<engine_.chainSize();++i)
+                        if(engine_.pluginAt(i)==retained){target=i;break;}
+                    if(target>=0){orbit_.rebindSlot(target);orbit_.resumeAfterGraphEdit();}
+                    else stopOrbit();
+                }
+                diagnostics_.record("FX_REMOVE_ACK",juce::String(pendingFxRemoveSlot_));
+                pendingFxRemoveSlot_=-1;
+            }
+            if(orbit_.active())emitOrbitState(orbit_.slot());
             if (pendingPresetUI_.isObject() && browser_.loaded)
                 browser_.emitEventIfBrowserIsVisible ("arMixNativePresetLoaded", pendingPresetUI_);
             if (pendingPresetName_.isNotEmpty())
