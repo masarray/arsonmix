@@ -31,7 +31,7 @@ test('preset UI reflects callback-acknowledged state not queued state',()=>{
 test('ADD/REMOVE remain guarded while MOVE publishes physical-slot order',()=>{
   assert.match(e,/fxMovePhase_\.load/);
   assert.match(e,/FxOrderPlan::moved/);
-  assert.match(e,/Add\/Remove still use a bounded offline lifecycle/);
+  assert.match(e,/ADD\/REMOVE and preset recall use bounded graph handoff/);
   const move=e.slice(e.indexOf('bool moveSlot'),e.indexOf('juce::String applyDryRoutingLab'));
   assert.doesNotMatch(move,/detach\(|attach\(/);
 });
@@ -62,4 +62,33 @@ test('R0B CH1 MOVE inside routed 10CH graph uses the same callback-boundary de-c
   assert.ok(routed.indexOf('FxMoveRamp::gain')<routed.indexOf('masterLoudness_.process'));
   assert.match(routed,/audibleLeft=routedFxMove!=0\?movedPeakL:left/);
   assert.doesNotMatch(routed,/detach\(|attach\(|prepareToPlay|releaseResources/);
+});
+
+test('R0B major milestone: ADD and REMOVE are prepared control-thread transactions',()=>{
+  const add=e.slice(e.indexOf('juce::String addVst3('),e.indexOf('// Capture VST3 vendor binary state'));
+  const remove=e.slice(e.indexOf('bool removeAt('),e.indexOf('bool moveSlot'));
+  for(const part of [add,remove]){
+    assert.doesNotMatch(part,/detach\s*\(|attach\s*\(|removeAudioCallback|addAudioCallback/);
+    assert.match(part,/publishFxEdit\(/);
+  }
+  assert.match(add,/prepareToPlay\(rate,frames\)/);
+  assert.match(add,/latency!=0/);
+  assert.match(e,/std::shared_ptr<juce::AudioPluginInstance> processor/);
+  assert.match(e,/p\.use_count\(\)==1/);
+  assert.match(e,/handoff_\.stage\(stagedOwner_\.get\(\)\)/);
+  const callback=e.slice(e.indexOf('if (dryRoutingLab_.active())',e.indexOf('callbackCount_.fetch_add')),
+                         e.indexOf('const bool enabled = monitor_',e.indexOf('callbackCount_.fetch_add')));
+  assert.match(callback,/handoff_\.endCycle\(cycle\)/);
+  assert.match(callback,/cycle\.fadeOut/);
+  assert.match(callback,/cycle\.fadeIn/);
+  assert.ok(callback.indexOf('handoff_.endCycle(cycle)')<callback.indexOf('masterLoudness_.process'));
+  assert.doesNotMatch(callback,/prepareToPlay|releaseResources|make_shared|make_unique|detach\(/);
+  const timer=m.slice(m.indexOf('if (engine_.finalizeGraphSwitch())'),
+                     m.indexOf('if (timerTicks_ % 12',m.indexOf('if (engine_.finalizeGraphSwitch())')));
+  assert.match(timer,/emitFxAddResult\(pendingFxAddRequestId_/);
+  assert.match(timer,/FX_REMOVE_ACK/);
+  const addUi=m.slice(m.indexOf('if (action == "addCatalog")',m.indexOf('if (action == "addScanFolder")')),
+                      m.indexOf('else if (action == "fxRemove")'));
+  assert.match(addUi,/FX_ADD_STAGED/);
+  assert.doesNotMatch(addUi,/\+\+fxGraphRevision_/);
 });

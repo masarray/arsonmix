@@ -18,7 +18,7 @@ test("P1E is opt-in; all native VST3/clock/diagnostic paths protected",()=>{
   assert.match(engine,/dryRoutingLab_\.prepareDevice\(d\)/);
   assert.match(engine,/dryRoutingLab_\.deviceStopped\(\)/);
   assert.match(engine,/dryRoutingLab_\.process\(inputs,inputChannels,outputs/);
-  assert.match(engine,/if \(dryRoutingLab_\.active\(\)\) return "Stop DRY ROUTING LAB before editing VST3"/);
+  assert.match(engine,/std::shared_ptr<juce::AudioPluginInstance> processor/);
   assert.match(engine,/if \(dryRoutingLab_\.active\(\)\) return "Stop DRY ROUTING LAB before preset recall"/);
   assert.match(lab,/publisher_\.publish/);
   assert.match(lab,/deviceEpoch_/);
