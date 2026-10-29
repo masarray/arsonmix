@@ -509,7 +509,7 @@
       patchGrid.innerHTML='<div class="arPatchEmpty">NO VERIFIED HARDWARE INPUTS · Choose a DIRECT ASIO / WASAPI device in AUDIO SETUP</div>';
       return;
     }
-    patchGrid.style.gridTemplateColumns="190px repeat("+patchPageSize+",minmax(58px,1fr))";
+    patchGrid.style.gridTemplateColumns="226px repeat("+patchPageSize+",minmax(58px,1fr))";
     let html='<div class="arPatchRow" role="row"><div class="arPatchCorner" role="columnheader">CHANNEL / FORMAT</div>';
     for(const port of shown)
       html+='<div class="arPatchPort" role="columnheader" data-patch-col="'+port.port+
@@ -856,8 +856,7 @@
     const label=document.getElementById("arRouteIdentity");
     if(!label)return;
     setTextIfChanged(label,(d.active ? (d.ready?(d.acceptedRoute?"NATIVE PATCH LIVE":"NATIVE MIXER READY · UNPATCHED / SILENT"):"PATCH STALE — SILENT, REAPPLY"):"AWAITING VERIFIED DEVICE")+
-      " · device epoch "+(d.epoch||0)+" · rev "+(d.revision||0)+
-      " · "+(d.ports?.length||0)+" enabled inputs · "+(d.outputPorts?.length||0)+" outputs · "+(d.sendCount||0)+" channel sends · "+(d.auxSendCount||0)+" AUX sends · "+(d.auxCount||0)+" AUX");
+      " · "+(d.ports?.length||0)+" INPUTS · "+(d.outputPorts?.length||0)+" OUTPUTS · E"+(d.epoch||0)+" / R"+(d.revision||0));
   }
   function openRoutingLab(){
     hydrateAcceptedRoute();
