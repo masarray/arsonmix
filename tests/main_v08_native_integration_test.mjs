@@ -98,7 +98,7 @@ test('startup uses splash before constructing WebView2 and native engine',()=>{
  assert.ok(startup.indexOf('make_unique<ArSonMixStartupSplash>') <
            startup.indexOf('make_unique<ConsoleWindow>'));
  assert.match(startup,/startTimer \(90\)/);
- assert.match(startup,/if \(stage == 2\)/);
+ assert.match(startup,/if \(stage >= 2\)/);
  assert.match(main,/onStartupStage_ \(1\)/);
  assert.match(main,/onStartupStage_ \(2\)/);
 });
