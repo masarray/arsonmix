@@ -4,7 +4,7 @@
 
 ## Implemented
 
-- Native ROUTING opens from toolbar **in one click** (existing SIGNAL FLOW action); no extra diagram or operator-facing START LAB. Original ArSonMix metallic charcoal / aquatic green UI, 1100px bounded panel, horizontal paging of eight active physical input ports, 10 fixed CH rows.
+- Native ROUTING opens from toolbar **in one click** (existing SIGNAL FLOW action); no extra diagram or operator-facing START LAB. Original ArSonMix metallic charcoal / aquatic green UI, 1100px bounded panel, horizontal paging of eight fixed-size matrix columns per page (unused hardware input slots are disabled, never stretched into oversized tiles), 10 fixed CH rows.
 - Matrix gets real physical source list from `dryRoutingLab.ports` on the active JUCE DIRECT device, not static assumptions or browser localStorage. Escaped device names; malformed, duplicate or invalid physical port descriptors ignored.
 - MONO: click a physical input to patch; click again to clear; new choice replaces old. STEREO: independent visible L/R selectors; incomplete, duplicate-side or stale hardware port rejects before native call. NONE and BUS remain explicit. Physical fan-out to several channels is allowed by existing native routing plan.
 - User edits are DRAFT only (amber). LIVE/green only if the device-epoch-matched acknowledged `acceptedRoute` reports that exact physical assignment. A removed cell displays old-live-until-APPLY status. REVERT reinstates native ACK, not a browser snapshot. Native `routingDryApply` and exact `arMixRoutingLabAck` are reused; no backend duplication. No automatic unmute; output must be MUTED.

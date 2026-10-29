@@ -1249,6 +1249,23 @@ async def main():
         assert await native.locator("#arRoutingLabOverlay").evaluate(
             "(e)=>e.classList.contains('open')")
         assert await native.locator("#arPatchGrid [data-patch-row][data-patch-port]").count()==20
+        assert await native.locator("#arPatchGrid .arPatchCell").count()==80
+        patch_visual=await native.evaluate("""()=>{
+          const grid=document.querySelector('#arPatchGrid').getBoundingClientRect();
+          const cols=[...document.querySelectorAll('#arPatchGrid .arPatchPort')]
+            .map(x=>x.getBoundingClientRect().width);
+          const panel=document.querySelector('#arRoutingLabPanel').getBoundingClientRect();
+          return {grid:Math.round(grid.width),panel:Math.round(panel.width),
+                  cols:cols.map(Math.round),rowCount:
+                    document.querySelectorAll('#arPatchGrid .arPatchChan').length};
+        }""")
+        assert patch_visual['rowCount']==10 and len(patch_visual['cols'])==8,patch_visual
+        assert max(patch_visual['cols'])-min(patch_visual['cols'])<=1,patch_visual
+        assert all(58<=w<=140 for w in patch_visual['cols']),patch_visual
+        await native.screenshot(path=str(project/"native-input-patch-review-1680.png"))
+        await native.set_viewport_size({"width":1440,"height":820})
+        await native.screenshot(path=str(project/"native-input-patch-review-1440.png"))
+        await native.set_viewport_size({"width":1680,"height":920})
         assert await native.locator("#arPatchGrid .arPatchRow").first.evaluate(
             "(e)=>getComputedStyle(e).display")=="contents"
         assert await native.locator(".arPatchPort").first.get_attribute("title")=="Input <Mic> & One"
