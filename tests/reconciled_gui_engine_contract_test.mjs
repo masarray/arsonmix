@@ -50,8 +50,8 @@ test('JUCE native resources track the approved calibrated GUI without maintainin
   const cpp=read('src/Main.cpp');
   const sourceCss=read('web/styles-src/42-mixer-premium.css');
   const standalone=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
-  assert.match(cmake,/juce_add_binary_data\(ARMixAssets SOURCES\s+web\/index\.html web\/styles\.css web\/app\.js web\/bridge\.js web\/monitor\.js\)/);
-  for (const resource of ['index_html','styles_css','app_js','bridge_js','monitor_js']) {
+  assert.match(cmake,/juce_add_binary_data\(ARMixAssets SOURCES\s+web\/index\.html web\/styles\.css web\/plugin-ui\.css web\/app\.js web\/plugin-ui\.js web\/bridge\.js web\/monitor\.js\)/);
+  for (const resource of ['index_html','styles_css','plugin_ui_css','app_js','plugin_ui_js','bridge_js','monitor_js']) {
     assert.ok(cpp.includes('BinaryData::'+resource),resource+' missing from WebView provider');
   }
   assert.ok(css.endsWith(sourceCss), 'native CSS must end with its authoritative calibration module');
