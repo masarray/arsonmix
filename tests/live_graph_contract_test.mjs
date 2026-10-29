@@ -74,7 +74,10 @@ test('R0B major milestone: ADD and REMOVE are prepared control-thread transactio
   assert.match(add,/prepareToPlay\(rate,frames\)/);
   assert.match(add,/latency!=0/);
   assert.match(e,/std::shared_ptr<juce::AudioPluginInstance> processor/);
-  assert.match(e,/p\.use_count\(\)==1/);
+  assert.match(e,/struct PluginRelease final/);
+  assert.match(e,/processor->releaseResources\(\)/);
+  assert.match(e,/ownPlugin\s*\(/);
+  assert.match(e,/old\.reset\(\); \/\/ Vendor cleanup only on final CONTROL-owned reference/);
   assert.match(e,/handoff_\.stage\(stagedOwner_\.get\(\)\)/);
   const callback=e.slice(e.indexOf('if (dryRoutingLab_.active())',e.indexOf('callbackCount_.fetch_add')),
                          e.indexOf('const bool enabled = monitor_',e.indexOf('callbackCount_.fetch_add')));
@@ -88,7 +91,7 @@ test('R0B major milestone: ADD and REMOVE are prepared control-thread transactio
   assert.match(timer,/emitFxAddResult\(pendingFxAddRequestId_/);
   assert.match(timer,/FX_REMOVE_ACK/);
   assert.match(timer,/orbit_\.rebindSlot\(target\)/);
-  assert.match(add,/preparedNew\.use_count\(\)==1/);
+  assert.match(add,/auto prepared=ownPlugin\(std::move\(instance\)\)/);
   const addUi=m.slice(m.indexOf('if (action == "addCatalog")',m.indexOf('if (action == "addScanFolder")')),
                       m.indexOf('else if (action == "fxRemove")'));
   assert.match(addUi,/FX_ADD_STAGED/);
