@@ -1654,7 +1654,16 @@ async def main():
           d.acceptedRoute=null;
           window.__arMixMockEvents.arMixStatus(window.__arPatchStatus);
         }""")
-        assert await native.locator('[data-patch-row][data-patch-port]').count()==10
+        epoch_cell_count=await native.locator('[data-patch-row][data-patch-port]').count()
+        if epoch_cell_count!=10:
+            epoch_debug=await native.evaluate("""() => ({
+              activeTab:[...document.querySelectorAll('[data-patch-tab]')].filter(x=>x.getAttribute('aria-selected')==='true').map(x=>x.dataset.patchTab),
+              gridText:document.querySelector('#arPatchGrid')?.innerText.slice(0,400),
+              incoming:window.__arPatchStatus?.dryRoutingLab?.ports,
+              controller:window.__arMixRouteView?.()?.ports,
+              epoch:window.__arMixRouteView?.()?.epoch
+            })""")
+            assert epoch_cell_count==10,(epoch_cell_count,epoch_debug)
         assert await native.locator('[data-patch-row="0"][data-patch-port="9"]').get_attribute("data-patch-state")=="off"
         assert "DEVICE CHANGED" in await native.locator("#arRouteFeedback").inner_text()
 
