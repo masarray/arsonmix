@@ -97,6 +97,9 @@ jobs:
             mixer-g1-g2-1366.png
             mixer-g1-g2-1440.png
             mixer-g1-g2-1680.png
+            mixer-g1-bank-fx-1680.png
+            mixer-g1-bank-route-1680.png
+            mixer-g1-bank-sends-1680.png
             fader-ui-smoke.png
             toolbar-global-btn180-pad.png
             device-green-on-palette-review.png

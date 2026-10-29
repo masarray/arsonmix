@@ -89,6 +89,12 @@ async def main():
             assert await page.locator('#arIOOverlay .arIOWindow').is_visible()
         await page.locator('[data-io-close]').click()
         assert not await page.locator('#arIOOverlay').is_visible()
+        await page.set_viewport_size({"width":1680,"height":920})
+        for bank in ("FX","ROUTE","SENDS"):
+            await page.locator(f'[data-mix-mode="{bank}"]').click()
+            assert await page.locator("#mixer .rack").count()==10
+            assert await page.locator("#mixer .fader-zone").count()==11
+            await page.screenshot(path=f'mixer-g1-bank-{bank.lower()}-1680.png')
         assert not errors,errors
         await browser.close()
         print("PASS: G1/G2 FX retention, stable faders, muted native input draft/ACK, real I/O, 3 viewport screenshots")
