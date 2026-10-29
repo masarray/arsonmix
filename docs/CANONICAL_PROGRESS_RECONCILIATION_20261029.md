@@ -1,5 +1,8 @@
 # ArSonMix — Canonical Progress Reconciliation & Next Execution (2026-10-29 17:55 WIB)
 
+> **LATEST ROUTING UX 2026-10-30:** eMotion-informed but original ArSonMix console patchbay visual unification R3 [PR #164](https://github.com/masarray/arsonmix/pull/164) MERGED `71ab580`. Shared BTN-180 material on all routing operator controls, dense real 10CH INPUT matrix, 10×4 PRE/POST AUX, less noisy native session identity and explicit OUTPUT MUTE state. Proven exact-head Chromium 1440/1680 screenshots and native ACK workflow in [40956088106](https://github.com/masarray/arsonmix/actions/runs/40956088106) SUCCESS; main Windows compile pending and real hardware FAT #15 open. Do not reintroduce old flat beige routing buttons, stretched 159px input columns or CH NONE clipping. Source milestone design: `docs/R3_ROUTING_PATCHBAY_BTN180_VISUAL_SYSTEM_20261030.md`.
+
+
 > **POST-#163 VERIFIED MERGES 2026-10-29:** R0B B3 #160 MERGED `3af8470`; Windows main distributable [40904834549](https://github.com/masarray/arsonmix/actions/runs/40904834549) SUCCESS (artifact had obsolete provenance text despite real B3 source; corrected in later repo). P4 Show worker-browse and DRY-only native revisioned recall #163 MERGED `5667eec`, exact-head Windows [40905958127](https://github.com/masarray/arsonmix/actions/runs/40905958127) and Chromium [40905958087](https://github.com/masarray/arsonmix/actions/runs/40905958087) SUCCESS. Main `fb0193e` fixes package manifest/nativeDSP to native 10CH+4AUX without falsely claiming hardware qualification; final main artifact CI pending. #15 real physical crackle FAT still open, no full vendor VST Show recall/PDC/physical output patch. Supersedes any 'B3 / P4 next' dated snapshots below.
 
 
