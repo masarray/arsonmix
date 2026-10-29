@@ -1375,12 +1375,27 @@
     paintMeter(document.querySelector('[data-meter="masterR"]')||
       document.getElementById("masterMeterR"),percent(d.peakRight));
     paintMeter(document.getElementById("masterMeterAux"),percent(d.peak));
-    // Design-only LUFS/true-peak fields have no native measurement yet.
+    // Native measurement is valid ONLY with an explicit qualified 48k DIRECT
+    // provenance. Never substitute sample peak for dBTP, or demo LUFS.
+    const measurement=d.masterAnalysisProvenance==="MEASURED_48K_BS1770_K_4X_FIR";
     const lufs=document.getElementById("masterLufs"),tp=document.getElementById("masterDbtp");
-    if(lufs&&lufs.textContent!=="—")lufs.textContent="—";
-    if(tp&&tp.textContent!=="—")tp.textContent="—";
-    // v0.8 Master stream LUFS-I/dBTP remains unimplemented; values stay
-    // em dashes rather than falsely claiming measured loudness.
+    for(const [element,value,limit,unit] of
+        [[lufs,d.masterLufs,-12,"LUFS"],[tp,d.masterDbtp,-1,"dBTP"]]){
+      if(!element)continue;
+      const measured=measurement&&typeof value==="number"&&Number.isFinite(value);
+      const label=measured?value.toFixed(1):"—";
+      if(element.textContent!==label)element.textContent=label;
+      element.classList.toggle("over-limit",measured&&value>limit);
+      element.setAttribute("aria-label",measured?
+         ("Native measured "+unit+" "+label):(unit+" unavailable"));
+    }
+    const lcd=document.querySelector("#masterLeft .master-analysis");
+    if(lcd){
+       const info=measurement?
+         "Native measured 48k BS.1770 K-weighted gated LUFS and 4x FIR true peak":
+         "Native measurement unavailable at this rate or independent clock";
+       if(lcd.title!==info)lcd.title=info;
+    }
     const pk=document.getElementById("masterPeakDb");
     if(pk)pk.textContent=Number(d.peak)>0
       ?(20*Math.log10(Math.max(1e-8,Number(d.peak)))).toFixed(1)+" dBFS":"−∞";
