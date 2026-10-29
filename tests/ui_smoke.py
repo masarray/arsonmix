@@ -691,7 +691,7 @@ async def main():
           const s=getComputedStyle(e),glass=getComputedStyle(e,'::after');
           return {back:s.backgroundColor,glass:glass.content};
         })""")
-        assert len(lcd)>=11 and all(x['back']=='rgb(8, 15, 20)' and x['glass']!='none' for x in lcd),lcd
+        assert len(lcd)>=11 and all(x['back']=='rgb(1, 6, 10)' and x['glass']!='none' for x in lcd),lcd
         await page.set_viewport_size({"width":1680,"height":920})
         # Hardware-style PAN illumination must grow from center, both L and R.
         pan_fill=page.locator('[data-pan="1"] .pan-fill')
