@@ -105,7 +105,8 @@
       grid.append(node('strong','arIOGridLabel','LOGICAL CHANNEL'),node('strong','arIOGridLabel','PHYSICAL SOURCE'));
       for(let i=0;i<10;i++){
         const r=channelState(s,i);
-        grid.appendChild(node('span','arIOChannelName','CH '+String(i+1).padStart(2,'0')+' · '+(window.channels?.[i]?.name||'INPUT')));
+        const logicalName=document.querySelector('#mixer [data-strip="'+i+'"] .strip-caption')?.textContent?.trim()||'INPUT';
+        grid.appendChild(node('span','arIOChannelName','CH '+String(i+1).padStart(2,'0')+' · '+logicalName));
         const select=node('select','arIOSource');
         select.dataset.channel=String(i);select.setAttribute('aria-label','CH '+(i+1)+' physical input');
         populate(select,portsFor(s,r),valueFor(r));select.disabled=!isNative()||!s.ready||!!s.pending;

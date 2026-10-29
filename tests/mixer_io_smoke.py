@@ -50,6 +50,9 @@ async def main():
         }""")
         assert all(abs(a-b)<1 for a,b in zip(sizes,after)),(sizes,after)
         await page.locator('[data-mix-mode="ROUTE"]').click()
+        palette=await page.evaluate("""() => ['FX','ROUTE'].map(x=>getComputedStyle(
+          document.querySelector('[data-mix-mode="'+x+'"]')).backgroundColor)""")
+        assert palette[0]!=palette[1],palette
         await page.locator('[data-strip="0"] select.arBankSource').select_option("MONO:0")
         assert "DRAFT" in await page.locator('[data-strip="0"] .arBankStage').inner_text()
         await page.locator('.arMixerBankBar [data-mix-apply]').click()

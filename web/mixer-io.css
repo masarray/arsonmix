@@ -52,3 +52,11 @@
 .arIODeviceType span{color:#a8c1ca}
 @media(max-height:790px){#app #mixer .arChannelBank{height:129px;flex-basis:129px;padding:5px;gap:4px}#app #mixer .arRouteBank,#app #mixer .arSendBank{gap:4px}#app #mixer .arBankTitle{font-size:8px}#app #mixer .arBankSource,#app #mixer .arBankOutput{min-height:24px;height:24px}#app #mixer .arBankPatch{min-height:26px;height:26px}#app #mixer .arSendChip{padding:2px 4px}}
 @media(max-width:900px){.arMixerBankBar{gap:3px;padding:3px}.arMixerBankModes .btn-180{width:50px;min-width:50px}.arMixerBankInfo{font-size:9px}.arMixerBankBar .arMixIoOpen{width:78px}.arIOWindow>footer{flex-wrap:wrap}}
+
+/* Global BTN-180 material is unchanged: cyan denotes the active bank/tab only. */
+#app .arMixerBankModes .btn-180.active,
+.arIOWindow nav .btn-180.active{
+  --b180-color:#94e8ed;
+  --b180-border:#0d90aa;
+  --b180-ink:#09252a;
+}
