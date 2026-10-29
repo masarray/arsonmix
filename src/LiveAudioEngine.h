@@ -319,10 +319,6 @@ public:
                        diagnosticRoute() != armix::diagnostics::Route::normal))
             return "Return SIGNAL CHECK to NORMAL before adaptive clock mode";
 
-        if(dryRoutingLab_.active()) {
-            setOutputMuted(true);
-            dryRoutingLab_.disable();
-        }
         struct Transition final
         {
             std::atomic<bool>& flag;
@@ -368,6 +364,13 @@ public:
         const auto identity = armix::device::WasapiEndpointIdentityGuard::resolve (
             original.inputDeviceName, original.outputDeviceName);
         if (!identity.ok()) return "Independent Windows endpoint preflight failed: " + identity.error;
+        // Only release the unpatched graph AFTER all opt-in backend
+        // preflight gates pass. A rejected unsupported driver must leave the
+        // native NORMAL mixer ready, not stranded without a session.
+        if(dryRoutingLab_.active()) {
+            setOutputMuted(true);
+            dryRoutingLab_.disable();
+        }
         directFence_.suspend(); // independent path bypasses only this DIRECT fence
         detach();
         deviceManager_.closeAudioDevice();
