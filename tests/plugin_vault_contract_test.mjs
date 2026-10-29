@@ -25,7 +25,7 @@ test('manual VST3 import physically copies whole plugin into the user workspace,
   assert.match(main,/canSelectDirectories/);
   assert.match(main,/chooseImport \(true\)/);
   assert.match(main,/chooseImport \(false\)/);
-  assert.match(read('web/bridge.js'),/data-native-action="importVst3InPlace"/);
+  assert.match(read('web/plugin-ui.js'),/data-native-action="importVst3InPlace"/);
   assert.match(read('web/plugin-ui.js'),/IMPORT \.VST3 FILE/);
   assert.match(read('web/plugin-ui.js'),/IMPORT BUNDLE/);
   assert.doesNotMatch(vault,/deleteRecursively\(\).*selected/);
