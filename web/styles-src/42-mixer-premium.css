@@ -368,3 +368,37 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 #app #mixer .fader-zone .meter-signal-area .meter-peak{
  left:2px;right:2px;
 }
+
+/* P0: common sleeping LCD material for all 10 CH + MASTER, regardless
+   of channel color, selected state, audio connection or live level.
+   Pure static inset paint: no CSS animation, filters, blur or new RAF. */
+#app #mixer .fader-zone .vu-bank .vu-bars{
+ background-color:#02070b;
+ background-image:linear-gradient(90deg,#0b1a20 0%,#020609 13%,#010408 61%,#07131a 100%);
+ border:0;border-radius:5px;
+ box-shadow:inset 2px 0 3px #000a,inset -2px 0 3px #000a,
+            inset 0 3px 3px #000e,inset 0 -2px 2px #122a33;
+ filter:none;backdrop-filter:none;
+}
+#app #mixer .fader-zone .vu-bank .meter-unit .meter{
+ background-color:#01060a;
+ background-image:linear-gradient(90deg,#030c11,#010407 45%,#040e13);
+ border:0;border-radius:3px;
+ box-shadow:inset 1px 0 2px #000,inset -1px 0 2px #000,
+            inset 0 2px 3px #000e,inset 0 -1px 1px #18303a;
+ filter:none;backdrop-filter:none;
+}
+#app #mixer .fader-zone .vu-bank .meter-unit .meter::after{
+ inset:0;border:0;border-radius:3px;
+ background:linear-gradient(180deg,#e8ffff0c,transparent 30%);
+}
+#app #mixer .fader-zone .vu-bank .meter-signal-area{
+ background:#010509;border-radius:2px;
+}
+#app #mixer .fader-zone .vu-bank.is-mono .vu-bars{
+ flex:0 0 14px;min-width:14px;max-width:14px;width:14px;
+}
+#app #mixer .fader-zone .vu-bank.is-stereo .vu-bars,
+#app #masterLeft .master-fader-zone .vu-bank .vu-bars{
+ flex:0 0 30px;min-width:30px;max-width:30px;width:30px;
+}
