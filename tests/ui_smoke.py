@@ -1189,6 +1189,8 @@ async def main():
           }};
         })()""")
         await native.goto((project/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").as_uri())
+        # Mirror JUCE BinaryData startup order: catalog UI module before bridge.
+        await native.add_script_tag(path=str(project/"web/plugin-ui.js"))
         await native.add_script_tag(path=str(project/"web/bridge.js"))
         native_static=await native.evaluate("""()=>{
           const master=document.querySelector('#masterLeft');
