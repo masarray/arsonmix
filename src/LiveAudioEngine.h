@@ -802,7 +802,11 @@ public:
         // The processor instances remain at stable PHYSICAL addresses.
         // A 64-bit release store publishes the complete logical order.
         // The callback takes one acquire snapshot per audio buffer.
-        if (dryRoutingLab_.active() || independent_.active()) return false;
+        // R0B slice: CH1 rack MOVE is a pure atomic physical-slot reorder,
+        // including while the native 10CH/4AUX graph borrows this same rack.
+        // The routed callback below owns the identical two-block de-click
+        // publication that the legacy callback already uses.
+        if (independent_.active()) return false;
         if (handoff_.busy() || fxMovePhase_.load (std::memory_order_acquire) != 0)
             return false;
         const int count = graphOwned_->count;
@@ -1411,6 +1415,34 @@ private:
                     if(outputs && outputs[c])
                         juce::FloatVectorOperations::clear(outputs[c],samples);
             }
+            // R0B: when routed CH1 borrows the original vendor rack, apply
+            // the SAME two-buffer FX MOVE de-click as the original callback.
+            // The physical instance pointers do not change. Publish the new
+            // logical order only after the old render has faded to zero.
+            // No heap, plugin lifecycle, callback detach, locks or UI on RT.
+            const int routedFxMove=fxMovePhase_.load(std::memory_order_acquire);
+            float movedPeakL=0.f,movedPeakR=0.f;
+            if(routedFxMove!=0) {
+                for(int c=0;c<juce::jmin(outputChannels,2);++c) {
+                    auto* const out=outputs?outputs[c]:nullptr;
+                    if(!out)continue;
+                    float peak=0.f;
+                    for(int i=0;i<samples;++i) {
+                        out[i]*=armix::dsp::FxMoveRamp::gain(routedFxMove,i,samples);
+                        peak=juce::jmax(peak,std::abs(out[i]));
+                    }
+                    if(c==0)movedPeakL=peak;
+                    else movedPeakR=peak;
+                }
+                if(routedFxMove==1 && cycle.graph) {
+                    cycle.graph->orderPacked.store(
+                        fxMovePendingOrder_.load(std::memory_order_acquire),
+                        std::memory_order_release);
+                    fxMovePhase_.store(2,std::memory_order_release);
+                } else if(routedFxMove==2) {
+                    fxMovePhase_.store(0,std::memory_order_release);
+                }
+            }
             // Read actual hardware-bound MASTER PCM, never browser preview.
             // A fixed stack view; no VST/JSON/heap/locks in the audio callback.
             const float* measured[2] = {
@@ -1421,13 +1453,15 @@ private:
             // Only actually routed audio can produce a live output meter.
             const float left=routed?dryRoutingLab_.peakLeft():0.f;
             const float right=routed?dryRoutingLab_.peakRight():0.f;
+            const float audibleLeft=routedFxMove!=0?movedPeakL:left;
+            const float audibleRight=routedFxMove!=0?movedPeakR:right;
             inputPeak_.store(0.f,std::memory_order_relaxed);
             postFxPeak_.store(juce::jmin(1.f,juce::jmax(left,right)),std::memory_order_relaxed);
-            outputPeakL_.store(juce::jmin(1.f,left),std::memory_order_relaxed);
-            outputPeakR_.store(juce::jmin(1.f,right),std::memory_order_relaxed);
-            outputPeak_.store(juce::jmin(1.f,juce::jmax(left,right)),std::memory_order_relaxed);
-            // Existing FX graph is excluded at enable time. A structural
-            // edit during LAB is rejected on the control thread.
+            outputPeakL_.store(juce::jmin(1.f,audibleLeft),std::memory_order_relaxed);
+            outputPeakR_.store(juce::jmin(1.f,audibleRight),std::memory_order_relaxed);
+            outputPeak_.store(juce::jmin(1.f,juce::jmax(audibleLeft,audibleRight)),std::memory_order_relaxed);
+            // ADD/REMOVE still need the R0B prepared shared-owner lifecycle;
+            // only CH1 MOVE is now safe inside the routed render callback.
             const auto elapsed=clockMicros()-beginUs;
             lastCallbackUs_.store(elapsed,std::memory_order_relaxed);
             publishMax(worstCallbackUs_,elapsed);
