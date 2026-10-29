@@ -237,3 +237,19 @@ test("R2 shared VST3 picker is lazy, bounded and draft-only, not 14 catalog drop
   assert.match(ui,/if\(tab!=="internal"\)closeFxPicker\(\)/);
   assert.match(ui,/if\(fxPickerTarget\)\{closeFxPicker\(true\);return;\}/);
 });
+
+
+test("R0B B3 routing GUI has one native engine, truthful UNPATCHED and safe CLEAR PATCH",()=>{
+  assert.match(ui,/id="arRouteClear"/);
+  assert.doesNotMatch(ui,/id="arRouteStop"/);
+  assert.match(ui,/NATIVE MIXER READY · UNPATCHED \/ SILENT/);
+  assert.match(ui,/NATIVE ACK: INPUT PATCH CLEARED/);
+  assert.match(ui,/clear\.disabled=patchPending\|\|!d\.acceptedRoute\|\|!!state\.monitor/);
+  assert.match(ui,/action:"routingDryStop"/); // backward compatible event name
+  assert.match(ui,/if\(reply\?\.ok===true\)/);
+  assert.match(ui,/invalidateDraftForNewDevice\(0\)/);
+  assert.match(main,/const auto error=engine_\.clearProductionRouting\(\)/);
+  assert.match(main,/NATIVE_INPUT_PATCH_CLEARED/);
+  assert.match(main,/ack->setProperty\("ok",error\.isEmpty\(\)\)/);
+  assert.doesNotMatch(main,/Native CH1 path restored/);
+});
