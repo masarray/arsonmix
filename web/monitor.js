@@ -908,6 +908,8 @@
     if(!rackFxDraft)return {ok:false,error:"No pending FX selection."};
     if(patchPending)return {ok:false,error:"Native routing request already pending."};
     if(state.monitor)return {ok:false,error:"MUTE OUTPUT before applying a structural FX edit."};
+    if(draftRoutes[rackFxDraft.channel]?.mode==="NONE")
+      return {ok:false,error:"Assign a physical input to this channel in ROUTING before applying its FX."};
     const failure=patchPreflight();
     if(failure)return {ok:false,error:failure};
     document.getElementById("arRouteApply").click();
