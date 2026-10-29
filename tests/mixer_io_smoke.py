@@ -63,11 +63,14 @@ async def main():
         payload=actions[0]['data']['value']
         assert payload['deviceEpoch']==4 and payload['revision']==3,payload
         assert payload['channels'][0]['mode']=='MONO' and payload['channels'][0]['left']==0,payload
-        await page.evaluate("""status => {
+        # Carry forward the new authoritative native status. A status mock
+        # based on the pre-ACK snapshot would incorrectly erase a live send.
+        status=await page.evaluate("""status => {
           status.dryRoutingLab.revision=4;
           status.dryRoutingLab.acceptedRoute.channels[0]={...status.dryRoutingLab.acceptedRoute.channels[0],mode:'MONO',left:0};
           window.__armixTestEmit('arMixRoutingLabAck',{ok:true,state:status.dryRoutingLab});
           window.__armixTestEmit('arMixStatus',status);
+          return status;
         }""",status)
         assert "LIVE" in await page.locator('[data-strip="0"] .arBankStage').inner_text()
         await page.locator('#audioSetupBtn').click()
@@ -117,13 +120,14 @@ async def main():
         assert (g3['sends'][0]['from']==0 and g3['sends'][0]['to']==10 and
           g3['sends'][0]['tap']=='POST' and g3['sends'][0]['gain']==0.5 and
           g3['sends'][0]['pan']==0.5),g3
-        await page.evaluate("""status => {
+        status=await page.evaluate("""status => {
           const native=status.dryRoutingLab;
           native.revision=5;
           native.acceptedRoute.auxes[0].enabled=true;
           native.acceptedRoute.sends=[{from:0,to:10,tap:"POST",gain:.5,pan:.5}];
           window.__armixTestEmit("arMixRoutingLabAck",{ok:true,state:native});
           window.__armixTestEmit("arMixStatus",status);
+          return status;
         }""",status)
         assert "NATIVE ACK" in await page.locator('#arSendFeedback').inner_text()
         assert await page.locator('#mixer [data-strip="0"] .rack .insert-slot').count()==6
