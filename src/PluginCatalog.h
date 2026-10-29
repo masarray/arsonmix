@@ -141,13 +141,16 @@ public:
     // Stored alongside each catalog variant so the Studio backup carries favorites.
     bool setFavorite (const juce::String& id, bool favorite)
     {
-        auto* entry = const_cast<CatalogEntry*> (find (id));
-        if (entry == nullptr) return false;
-        if (entry->favorite == favorite) return true;
-        entry->favorite = favorite;
-        save();
-        if (onChanged) onChanged();
-        return true;
+        for (auto& entry : entries_)
+            if (entry.key() == id)
+            {
+                if (entry.favorite == favorite) return true;
+                entry.favorite = favorite;
+                save();
+                if (onChanged) onChanged();
+                return true;
+            }
+        return false;
     }
 
     const CatalogEntry* find (const juce::String& id) const
