@@ -7,6 +7,7 @@
 #include "VstBusLayout.h"
 #include "LiveGraphHandoff.h"
 #include "LiveDryRoutingLab.h"
+#include "../engine/dsp/NativeMasterLoudness.h"
 #include "DiagnosticTone.h"
 #include "../engine/device/JuceIndependentClockDevice.h"
 #include "../engine/device/AsioPriorityDeviceManager.h"
@@ -985,6 +986,14 @@ public:
         o->setProperty ("peak", outputPeak_.load());
         o->setProperty ("peakLeft", outputPeakL_.load());
         o->setProperty ("peakRight", outputPeakR_.load());
+        const auto loudness = masterLoudness_.read();
+        const bool measuredDirect = !dual && loudness.supported;
+        o->setProperty ("masterAnalysisProvenance",
+            measuredDirect ? "MEASURED_48K_BS1770_K_4X_FIR" : "UNSUPPORTED");
+        if (measuredDirect && loudness.integratedValid)
+            o->setProperty ("masterLufs", loudness.integratedLufs);
+        if (measuredDirect && loudness.truePeakValid)
+            o->setProperty ("masterDbtp", loudness.dbtp);
         o->setProperty ("latencySamples", totalLatency_.load());
         o->setProperty ("chainCount", graphOwned_->count);
         o->setProperty ("graphSwitchPending", handoff_.busy());
@@ -1121,6 +1130,7 @@ private:
     bool attached_ = false;
     juce::AudioBuffer<float> scratch_;
     juce::AudioBuffer<float> dryScratch_;
+    armix::dsp::NativeMasterLoudness masterLoudness_;
     armix::diagnostics::DiagnosticTone diagnosticTone_;
     LiveDryRoutingLab dryRoutingLab_;
     std::atomic<armix::diagnostics::Route> diagnosticRoute_ {armix::diagnostics::Route::normal};
@@ -1219,6 +1229,7 @@ private:
         deviceStartCount_.fetch_add (1, std::memory_order_relaxed);
         sampleRateHz_ = juce::jmax (1.0, d->getCurrentSampleRate());
         diagnosticTone_.prepare (sampleRateHz_); // device stopped; no RT allocation
+        masterLoudness_.prepare (sampleRateHz_); // fixed buffers, 48k DIRECT only
         for (int i = 0; i < maxFx; ++i)
         {
             lastPluginUsBySlot_[i].store (0, std::memory_order_relaxed);
@@ -1249,6 +1260,7 @@ private:
 
     void audioDeviceStopped() override
     {
+        masterLoudness_.prepare (0.0); // clear validity across device epoch
         dryRoutingLab_.deviceStopped();
         deviceStopCount_.fetch_add (1, std::memory_order_relaxed);
         inputPeak_.store (0.f);
@@ -1328,6 +1340,13 @@ private:
                     if(outputs && outputs[c])
                         juce::FloatVectorOperations::clear(outputs[c],samples);
             }
+            // Read actual hardware-bound MASTER PCM, never browser preview.
+            // A fixed stack view; no VST/JSON/heap/locks in the audio callback.
+            const float* measured[2] = {
+                outputs && outputChannels>0 ? outputs[0] : nullptr,
+                outputs && outputChannels>1 ? outputs[1] : nullptr
+            };
+            masterLoudness_.process(measured,juce::jmin(outputChannels,2),samples);
             // Only actually routed audio can produce a live output meter.
             const float left=routed?dryRoutingLab_.peakLeft():0.f;
             const float right=routed?dryRoutingLab_.peakRight():0.f;
@@ -1494,6 +1513,14 @@ private:
                 if (c == 0) outPeakL = juce::jmax (outPeakL, channelPeak);
                 if (c == 1) outPeakR = juce::jmax (outPeakR, channelPeak);
             }
+        }
+        if (!independent_.active())
+        {
+            const float* measured[2] = {
+                outputs && outputChannels>0 ? outputs[0] : nullptr,
+                outputs && outputChannels>1 ? outputs[1] : nullptr
+            };
+            masterLoudness_.process(measured,juce::jmin(outputChannels,2),samples);
         }
         inputPeak_.store (juce::jmin (1.f, inPeak), std::memory_order_relaxed);
         postFxPeak_.store (juce::jmin (1.f, postFxPeak), std::memory_order_relaxed);
