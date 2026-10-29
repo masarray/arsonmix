@@ -415,6 +415,15 @@ public:
             !(wanted == Route::normal && savedLiveSetup_)) return {};
         if (wanted < Route::normal || wanted > Route::captureOnly)
             return "Unknown audio diagnostic route";
+        if(!savedLiveSetup_ && (wanted == Route::outputOnlyTone ||
+                               wanted == Route::captureOnly)) {
+            juce::AudioDeviceManager::AudioDeviceSetup current;
+            deviceManager_.getAudioDeviceSetup(current);
+            if(wanted == Route::outputOnlyTone && current.outputDeviceName.isEmpty())
+                return "Choose an audio output before starting the output-only test";
+            if(wanted == Route::captureOnly && current.inputDeviceName.isEmpty())
+                return "Choose an audio input before starting the capture-only test";
+        }
 
         // Explicit diagnostic isolation is still available when no user patch
         // is active. Release the silent production graph on CONTROL before
@@ -493,7 +502,9 @@ public:
             {
                 diagnosticRoute_.store (Route::normal, std::memory_order_release);
                 const auto rollback = deviceManager_.setAudioDeviceSetup (original, false);
-                if (rollback.isNotEmpty()) setOutputMuted (true);
+                if (rollback.isEmpty() && resumeVerifiedDirectRoute()) {
+                    (void) startUnpatchedProductionSession(); // original DIRECT, silent
+                } else setOutputMuted(true);
                 return "Unable to isolate endpoint: " + (error.isNotEmpty() ? error : "Device not available")
                      + (rollback.isNotEmpty() ? " | restore failed: " + rollback : juce::String());
             }
