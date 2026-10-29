@@ -46,7 +46,7 @@ test("GUI exposes only truthful dry device routes and acknowledged commit",()=>{
 });
 
 test("STOP-race is fail closed: all outputs are written to silence without CH1 fallback",()=>{
-  const enter=engine.indexOf("if (dryRoutingLab_.active())",engine.indexOf("callbackCount_.fetch_add"));
+  const enter=engine.indexOf("if (dryRoutingLab_.active() ||",engine.indexOf("callbackCount_.fetch_add"));
   // Bound the entire routed branch by the first statement of the legacy
   // fallback, not by an informational comment that can change at each R0B slice.
   const end=engine.indexOf("const bool enabled = monitor_",enter);
@@ -236,4 +236,18 @@ test("R2 shared VST3 picker is lazy, bounded and draft-only, not 14 catalog drop
   assert.match(ui,/closeFxPicker\(true\)/);
   assert.match(ui,/if\(tab!=="internal"\)closeFxPicker\(\)/);
   assert.match(ui,/if\(fxPickerTarget\)\{closeFxPicker\(true\);return;\}/);
+});
+
+test("R0B B3 normal production starts muted, requires native patch ACK and never falls back to CH1",()=>{
+  const start=engine.slice(engine.indexOf('juce::String start ('),engine.indexOf('void stop()'));
+  assert.match(start,/monitor_\.store \(false, std::memory_order_release\)/);
+  const cb=engine.slice(engine.indexOf('callbackCount_.fetch_add'),engine.indexOf('const bool enabled = monitor_',engine.indexOf('callbackCount_.fetch_add')));
+  assert.match(cb,/dryRoutingLab_\.active\(\) \|\|/);
+  assert.match(cb,/activeDiagnosticRoute == armix::diagnostics::Route::normal/);
+  assert.match(cb,/!independent_\.active\(\)/);
+  assert.match(cb,/if\(!routed\)/);
+  assert.match(cb,/FloatVectorOperations::clear\(outputs\[c\],samples\)/);
+  assert.match(cb,/return;/);
+  assert.match(main,/NATIVE_ROUTING_CLEAR/);
+  assert.doesNotMatch(main,/Restored native CH1 production path/);
 });

@@ -122,7 +122,10 @@ public:
         // A mixer behaves like a signal path: ready I/O flows automatically.
         // The former MONITOR enable gate caused silent master/output confusion.
         // Panic OUTPUT MUTE remains available at all times.
-        monitor_.store (true);
+        // B3: production boots unpatched and MUTED. Only a verified,
+        // explicitly ACKed physical route can reach the normal output.
+        // Diagnostic tone/capture remain separate intentional modes.
+        monitor_.store (false, std::memory_order_release);
         directFence_.suspend(); // silence until the selected backend is verified
         asioPinnedRegistration_ = {};
         asioRegistrationScope_ = "NONE";
@@ -1454,8 +1457,13 @@ private:
         // action, with an immutable preallocated P1D graph. Its own zero-VST
         // callback path NEVER falls through to CH1 on stale/hotplug routes.
         // DirectFence was already checked above; no output to unknown device.
-        if (dryRoutingLab_.active())
+        if (dryRoutingLab_.active() ||
+            (activeDiagnosticRoute == armix::diagnostics::Route::normal
+             && !independent_.active()))
         {
+            // The normal mixer ALWAYS uses its single native route owner.
+            // Until a physical route is ACKed, process() returns false and
+            // every output is cleared; never fall through to legacy CH1.
             const bool outputPermitted = monitor_.load(std::memory_order_relaxed)
               && !routeReconfiguring_.load(std::memory_order_acquire)
               && !masterMute_.load(std::memory_order_relaxed)

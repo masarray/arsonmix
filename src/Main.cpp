@@ -1115,11 +1115,11 @@ private:
         if (action == "routingDryStop")
         {
             engine_.disableDryRoutingLab();
-            diagnostics_.record("LIVE_DRY_ROUTING_LAB_STOP","Restored native CH1 production path");
+            diagnostics_.record("NATIVE_ROUTING_CLEAR","Native route cleared; unpatched mixer remains silent");
             if(browser_.loaded)
                 browser_.emitEventIfBrowserIsVisible(
                     "arMixRoutingLabAck",engine_.status().getProperty("dryRoutingLab",{}));
-            return emitNotice("DRY ROUTING LAB stopped. Native CH1 path restored.");
+            return emitNotice("Physical patch cleared. Mixer remains MUTED and unpatched until a new routing ACK.");
         }
 
         if (action == "smartClock")
