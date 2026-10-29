@@ -51,10 +51,13 @@ std::optional<juce::WebBrowserComponent::Resource> assetFor (const juce::String&
         { data = BinaryData::styles_css; size = BinaryData::styles_cssSize; mime = "text/css"; }
     else if (path == "/app.js")
         { data = BinaryData::app_js; size = BinaryData::app_jsSize; mime = "text/javascript"; }
+    // JUCE 8.0.15 BinaryData strips hyphens from generated identifiers:
+    // "plugin-ui.js" -> pluginui_js, "plugin-ui.css" -> pluginui_css.
+    // Asset HTTP paths retain their hyphenated original names.
     else if (path == "/plugin-ui.js")
-        { data = BinaryData::plugin_ui_js; size = BinaryData::plugin_ui_jsSize; mime = "text/javascript"; }
+        { data = BinaryData::pluginui_js; size = BinaryData::pluginui_jsSize; mime = "text/javascript"; }
     else if (path == "/plugin-ui.css")
-        { data = BinaryData::plugin_ui_css; size = BinaryData::plugin_ui_cssSize; mime = "text/css"; }
+        { data = BinaryData::pluginui_css; size = BinaryData::pluginui_cssSize; mime = "text/css"; }
     else if (path == "/bridge.js")
         { data = BinaryData::bridge_js; size = BinaryData::bridge_jsSize; mime = "text/javascript"; }
     else if (path == "/monitor.js")
