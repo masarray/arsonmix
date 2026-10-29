@@ -1189,6 +1189,9 @@ async def main():
           }};
         })()""")
         await native.goto((project/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").as_uri())
+        # Mirror native UI appearance and resource load order in the JUCE WebView.
+        await native.add_style_tag(path=str(project/"web/plugin-ui.css"))
+        await native.add_script_tag(path=str(project/"web/plugin-ui.js"))
         await native.add_script_tag(path=str(project/"web/bridge.js"))
         native_static=await native.evaluate("""()=>{
           const master=document.querySelector('#masterLeft');
@@ -1207,6 +1210,42 @@ async def main():
         assert native_static["masterPreview"] is None,native_static
         assert native_static["leftOpacity"]=="1" and native_static["rightOpacity"]=="1",native_static
         assert native_static["ch2Preview"]=="1" and native_static["ch2Opacity"]=="0",native_static
+        # Real plugin-manager and picker layout regression on Chromium:
+        # catalog pagination, stable search node and non-overlapping ADD button.
+        await native.evaluate("""()=>{
+          window.__arMixMockEvents.arMixCatalog({scanning:false,message:"Ready",
+            items:Array.from({length:241},(_,i)=>({
+              id:"plugin-"+i,name:"Effect "+String(i).padStart(3,"0"),
+              vendor:"Vendor "+i%4,category:"EQ",
+              path:"C:\\\\Plugins\\\\Effect"+i+".vst3"
+            }))
+          });
+        }""")
+        await native.locator('[data-plugin-manager="1"]').first.click()
+        assert await native.locator("#arPluginManagerRows .ar-plugin-row").count()==120
+        await native.locator("#arManagerMore").click()
+        assert await native.locator("#arPluginManagerRows .ar-plugin-row").count()==240
+        await native.locator("#arManagerSearch").fill("Effect 240")
+        assert await native.locator("#arPluginManagerRows .ar-plugin-row").count()==1
+        assert await native.locator("#nativePluginManager [data-close-modal] svg path").count()==1
+        await native.locator("#nativePluginManager [data-close-modal]").click()
+        await native.locator('[data-strip="0"] [data-plugin-picker="1"]').first.click()
+        assert await native.locator("#arPickerRows .ar-picker-row").count()==80
+        await native.locator("#nativeVstSearch").evaluate('e=>e.dataset.focusProbe="kept"')
+        await native.locator("#nativeVstSearch").fill("Effect 240")
+        assert await native.locator("#arPickerRows .ar-picker-row").count()==1
+        shape=await native.evaluate("""()=>{
+          const input=document.querySelector("#nativeVstSearch");
+          const row=document.querySelector("#arPickerRows .ar-picker-row");
+          const left=row.querySelector(".ar-picker-details").getBoundingClientRect();
+          const add=row.querySelector(".ar-picker-add").getBoundingClientRect();
+          return {focus:document.activeElement===input,
+            sameInput:input.dataset.focusProbe==="kept",
+            noCollision:left.right+2<=add.left};
+        }""")
+        assert all(shape.values()),shape
+        await native.locator("#nativeFxSelector [data-close-modal]").click()
+        assert not native_errors,native_errors
         await native.evaluate("""()=>{
           window.__arMixMockEvents.arMixStatus({
             connected:true,error:'',driver:'Windows Audio',rate:48000,buffer:480,
