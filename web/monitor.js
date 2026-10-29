@@ -159,7 +159,7 @@
     '<div class="arPatchViewport"><div id="arPatchGrid" class="arPatchGrid" role="grid" aria-label="Native input patch matrix"></div></div><div class="arPatchLegend"><span><b></b>UNPATCHED</span><span><b class="live"></b>LIVE · NATIVE ACK</span><span><b class="draft"></b>DRAFT · NOT APPLIED</span><span><b class="removed"></b>LIVE UNTIL APPLY</span></div><div class="arPatchInspector" id="arPatchInspector" role="status"><strong>10 CHANNEL INPUT PATCH</strong><span>Uses actual enabled ASIO/WASAPI hardware ports</span></div><div class="arPatchNote">No auto-unmute. Stale devices, incomplete stereo assignments and invalid physical ports are rejected before APPLY. One input can feed multiple channels.</div></section>' +
     '<section class="arPatchBody arPatchHidden" id="arPatchInternalPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>CHANNEL CONTROL / INTERNAL SENDS</strong><small>Native channel controls, VST3 inserts, 4 AUX returns and PRE/POST sends.</small></div></div><div id="arRouteRows"></div><section id="arAuxReturns"><h3>4 DEDICATED AUX / FX RETURNS</h3><p>Independent stereo return with VST3, level and MAIN route.</p><div id="arAuxRows"></div></section><section id="arRouteSends"><h3>INTERNAL SENDS · PRE / POST FADER (MAX 32)</h3><div id="arSendRows"></div><button id="arAddSend">＋ ADD SEND</button></section></section>' +
     '<section class="arPatchBody arPatchHidden" id="arPatchOutputPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>CURRENT HARDWARE OUTPUT</strong><small>Current hardware MAIN L/R is read-only. Configure output in AUDIO SETUP.</small></div></div><div id="arPatchOutputMap"></div><div class="arPatchNote">AUX-to-hardware-output patching is not available. Select physical device/output in AUDIO SETUP.</div></section>' +
-    '<footer class="arPatchFooter"><div id="arRouteFeedback" role="status">Select actual input ports, then APPLY while output is muted.</div><div class="arRouteFoot"><button id="arPatchRevert">REVERT DRAFT</button><button id="arRouteSaveDry" title="Save real DRY-only Show (MUTED output and zero VST3)">SAVE DRY SHOW</button><button id="arRouteApply">APPLY ROUTING</button><button id="arRouteStop" class="arPatchHidden" hidden aria-hidden="true">STOP</button></div></footer><section id="arPatchFxPicker" role="dialog" aria-label="Choose native VST3" aria-modal="false"><label for="arPatchFxSearch">FIND VST3 · SHARED PICKER</label><input id="arPatchFxSearch" type="search" autocomplete="off" placeholder="Search plugin name or ID"><div id="arPatchFxResults"></div><div id="arPatchFxCount"></div></section></section>';
+    '<footer class="arPatchFooter"><div id="arRouteFeedback" role="status">Select actual input ports, then APPLY while output is muted.</div><div class="arRouteFoot"><button id="arPatchRevert">REVERT DRAFT</button><button id="arRouteSaveDry" title="Save real DRY-only Show (MUTED output and zero VST3)">SAVE DRY SHOW</button><button id="arRouteApply">APPLY ROUTING</button><button id="arRouteClear" title="Discard the native input patch; keep the mixer prepared and output muted">CLEAR PATCH</button></div></footer><section id="arPatchFxPicker" role="dialog" aria-label="Choose native VST3" aria-modal="false"><label for="arPatchFxSearch">FIND VST3 · SHARED PICKER</label><input id="arPatchFxSearch" type="search" autocomplete="off" placeholder="Search plugin name or ID"><div id="arPatchFxResults"></div><div id="arPatchFxCount"></div></section></section>';
   document.body.appendChild(routeOverlay);
   const draftRoutes=Array.from({length:10},()=>({mode:"NONE",left:-1,right:-1,gain:0.25,pan:0,main:true,mute:false,solo:false,fxId:""}));
   const draftAux=Array.from({length:4},()=>({enabled:false,gain:1,main:true,mute:false,fxId:""}));
@@ -602,7 +602,7 @@
     const d=state.dryRoutingLab||{};
     const label=document.getElementById("arRouteIdentity");
     if(!label)return;
-    setTextIfChanged(label,(d.active ? (d.ready?"NATIVE PATCH LIVE":"PATCH STALE — SILENT, REAPPLY"):"AWAITING NATIVE PATCH")+
+    setTextIfChanged(label,(d.active ? (d.ready?(d.acceptedRoute?"NATIVE PATCH LIVE":"NATIVE MIXER READY · UNPATCHED / SILENT"):"PATCH STALE — SILENT, REAPPLY"):"AWAITING VERIFIED DEVICE")+
       " · device epoch "+(d.epoch||0)+" · rev "+(d.revision||0)+
       " · "+(d.ports?.length||0)+" enabled inputs · "+(d.outputPorts?.length||0)+" outputs · "+(d.sendCount||0)+" channel sends · "+(d.auxSendCount||0)+" AUX sends · "+(d.auxCount||0)+" AUX");
   }
@@ -664,7 +664,15 @@
       sends:draftSends.map(s=>({...s}))
     }});
   });
-  document.getElementById("arRouteStop").addEventListener("click",()=>api.emitEvent("arMixAction",{action:"routingDryStop"}));
+  document.getElementById("arRouteClear").addEventListener("click",()=>{
+    if(patchPending)return;
+    if(state.monitor){patchFeedback("MUTE OUTPUT FIRST · clear routing while speakers are safe.");return;}
+    if(!window.confirm("Clear all native INPUT PATCH assignments? OUTPUT remains MUTED."))return;
+    patchPending=true;
+    renderPatchMatrix();
+    patchFeedback("Clearing physical input patch; native mixer remains prepared and SILENT...");
+    api.emitEvent("arMixAction",{action:"routingDryStop"});
+  });
   document.getElementById("arRouteSaveDry").addEventListener("click",()=>{
     const d=state.dryRoutingLab||{};
     if(!d.ready || !d.active || !d.acceptedRoute || state.monitor ||
@@ -686,12 +694,25 @@
     const result=reply?.state||reply||{};
     patchPending=false;
     if(result && typeof result==="object" && "epoch" in result)state.dryRoutingLab=result;
-    if(reply?.ok===true)hydrateAcceptedRoute();
+    if(reply?.ok===true){
+      if(result.acceptedRoute)hydrateAcceptedRoute();
+      else {
+        // A successful CLEAR must also clear the old browser draft, never
+        // display previous device assignments as an active native patch.
+        invalidateDraftForNewDevice(0);
+        invalidateDraftForNewDevice(Number(result.epoch)||0);
+        syncNativeLevelsToRouteDraft();
+        if(patchTab==="internal")drawRoutes();
+      }
+    }
     renderPatchMatrix();
     if(patchTab==="output")renderPatchOutput();
     document.getElementById("arRouteFeedback").textContent=
       reply?.ok===false?("REJECTED · "+(reply.error||"Invalid route")):
-      result.active?"NATIVE ACK: "+(Number(result.fxCount||0)+Number(state.chainCount||0))+" VST3 total (CH1 rack retained · "+(result.fxReused||0)+" native inserts preserved) · "+(result.auxCount||0)+" AUX · "+(result.auxSendCount||0)+" AUX sends · UNMUTE OUTPUT in SIGNAL CHECK":"NATIVE ACK: STOPPED · output remains MUTED for safety";
+      result.active&&result.ready&&result.acceptedRoute
+        ?"NATIVE ACK: "+(Number(result.fxCount||0)+Number(state.chainCount||0))+" VST3 total (CH1 rack retained · "+(result.fxReused||0)+" native inserts preserved) · "+(result.auxCount||0)+" AUX · "+(result.auxSendCount||0)+" AUX sends · UNMUTE OUTPUT in SIGNAL CHECK"
+        :result.active&&result.ready?"NATIVE ACK: INPUT PATCH CLEARED · 10CH+4AUX engine ready, output MUTED"
+        :"NATIVE ROUTE UNAVAILABLE · output remains SILENT";
     updateRouteLabIdentity();
   });
 
