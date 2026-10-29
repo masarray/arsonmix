@@ -910,6 +910,7 @@ public:
             channelGain_.load (std::memory_order_relaxed), -60.f));
         o->setProperty ("masterDb", juce::Decibels::gainToDecibels (
             masterGain_.load (std::memory_order_relaxed), -60.f));
+        o->setProperty ("masterLinear", masterGain_.load (std::memory_order_relaxed));
         o->setProperty ("dryTest", dryTest_.load());
         const auto route = diagnosticRoute();
         o->setProperty ("diagnosticRoute", armix::diagnostics::routeName (route));

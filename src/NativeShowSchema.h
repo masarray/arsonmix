@@ -34,6 +34,7 @@ struct Strip final {
     int inputA = -1, inputB = -1; // DEVICE-LOCAL physical indexes; never auto-applied
     double fader = 1.0, pan = 0.0; // DSP linear gain, not GUI dB
     bool mute = false, solo = false, toMaster = true;
+    bool busReturn = false; // disconnected BUS return distinct from NONE
     std::vector<FxRef> fx;
     std::vector<Send> sends;
 };
@@ -179,6 +180,7 @@ public:
             detail::put(c,"fader",ch.fader);detail::put(c,"pan",ch.pan);
             detail::put(c,"mute",ch.mute);detail::put(c,"solo",ch.solo);
             detail::put(c,"toMaster",ch.toMaster);
+            detail::put(c,"busReturn",ch.busReturn);
             const auto fx=encodeFx(ch.fx);
             juce::Array<juce::var> sends;
             for(const auto& se:ch.sends) {
@@ -264,6 +266,12 @@ public:
                !detail::flag(detail::get(rec,"solo"),ch.solo) ||
                !detail::flag(detail::get(rec,"toMaster"),ch.toMaster))
                 return false;
+            // Old V2/V3 records did not distinguish BUS from NONE. Preserve
+            // their safe disconnected interpretation; new captures are exact.
+            const auto busField=detail::get(rec,"busReturn");
+            if(!busField.isVoid() && !detail::flag(busField,ch.busReturn))
+                return false;
+            if(ch.busReturn && ch.source!=0) return false;
             if((ch.source==0 && (ch.inputA!=-1||ch.inputB!=-1)) ||
                (ch.source==1 && (ch.inputA<0||ch.inputB!=-1)) ||
                (ch.source==2 && (ch.inputA<0||ch.inputB<0||ch.inputA==ch.inputB)))

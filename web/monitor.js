@@ -74,7 +74,7 @@
     'The normal CH1 VST3 host resumes after STOP. Every port shown is from the device active input mask.</p>' +
     '<div id="arRouteRows"></div><section id="arAuxReturns"><h3>4 DEDICATED AUX / FX RETURNS · INPUT CH1–10 REMAIN AVAILABLE</h3><p>Each AUX has a separate stereo return, VST3, level and MASTER routing. PRE/POST sends may target AUX1–4 without consuming CH strips.</p><div id="arAuxRows"></div></section><section id="arRouteSends"><h3>INTERNAL SENDS · PRE / POST FADER (MAX 32)</h3><div id="arSendRows"></div><button id="arAddSend">＋ ADD SEND</button></section>' +
     '<div id="arRouteFeedback" role="status">Select channels, BUS returns and sends; APPLY is a native graph transaction.</div>' +
-    '<div class="arRouteFoot"><button id="arRouteStop">STOP LAB</button><button id="arRouteApply">APPLY TO NATIVE AUDIO</button></div></section>';
+    '<div class="arRouteFoot"><button id="arRouteStop">STOP LAB</button><button id="arRouteSaveDry" title="Save acknowledged native route and current live controls, only when muted and with zero VST3">SAVE DRY SHOW</button><button id="arRouteApply">APPLY TO NATIVE AUDIO</button></div></section>';
   document.body.appendChild(routeOverlay);
   const draftRoutes=Array.from({length:10},()=>({mode:"NONE",left:-1,right:-1,gain:0.25,pan:0,main:true,mute:false,solo:false,fxId:""}));
   const draftAux=Array.from({length:4},()=>({enabled:false,gain:1,main:true,mute:false,fxId:""}));
@@ -289,6 +289,23 @@
     }});
   });
   document.getElementById("arRouteStop").addEventListener("click",()=>api.emitEvent("arMixAction",{action:"routingDryStop"}));
+  document.getElementById("arRouteSaveDry").addEventListener("click",()=>{
+    const d=state.dryRoutingLab||{};
+    if(!d.ready || !d.active || !d.acceptedRoute || state.monitor ||
+       Number(d.fxCount)!==0){
+      document.getElementById("arRouteFeedback").textContent=
+        "SAVE DRY SHOW requires an ACKnowledged native route, MUTED OUTPUT and zero VST3; no changes saved.";
+      return;
+    }
+    document.getElementById("arRouteFeedback").textContent=
+      "Saving acknowledged 10 INPUT + 4 AUX DRY state to Studio/Shows (not a live recall)...";
+    api.emitEvent("arMixAction",{action:"routingDryShowSave"});
+  });
+  api.addEventListener("arMixNativeShowSaveAck",ack=>{
+    document.getElementById("arRouteFeedback").textContent=ack?.ok
+      ? "NATIVE SHOW VERIFIED · "+String(ack.showId||"")+" · Studio/Shows · live recall not yet supported"
+      : "SHOW NOT SAVED · "+String(ack?.error||"Unknown storage failure");
+  });
   api.addEventListener("arMixRoutingLabAck",reply=>{
     const result=reply?.state||reply||{};
     if(result && typeof result==="object" && "epoch" in result)state.dryRoutingLab=result;

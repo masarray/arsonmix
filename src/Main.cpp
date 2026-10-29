@@ -18,6 +18,8 @@
 #include "PluginCatalog.h"
 #include "PortableWorkspace.h"
 #include "StudioBackup.h"
+#include "NativeLiveShowCapture.h"
+#include "NativeShowSaveWorker.h"
 #include <cstring>
 #include <optional>
 #include <memory>
@@ -230,6 +232,8 @@ private:
     armix::storage::NativePresetArchive presets_;
     Browser browser_;
     armix::storage::StudioBackup::Worker studioBackupWorker_;
+    armix::shows::NativeShowSaveWorker nativeShowWorker_;
+    bool nativeShowBusy_ = false;
     bool studioBackupBusy_ = false;
     std::unique_ptr<juce::FileChooser> chooser_;
     std::unique_ptr<PluginEditorWindow> editorWindow_;
@@ -758,7 +762,7 @@ private:
     // portable folder. IO/hashing stay on StudioBackup's worker thread.
     void chooseStudioBackup()
     {
-        if (studioBackupBusy_ || catalog_.busy() || engine_.isGraphSwitchPending())
+        if (studioBackupBusy_ || nativeShowBusy_ || catalog_.busy() || engine_.isGraphSwitchPending())
             return emitNotice ("Finish VST import or FX recall before backing up Studio.", true);
         // Large USB copies cause disk contention even on an IO worker. Avoid
         // starting a backup during a live performance.
@@ -775,7 +779,7 @@ private:
                 if (safe == nullptr) return;
                 const auto destination = picker.getResult();
                 if (destination == juce::File()) return;
-                if (safe->studioBackupBusy_ || safe->catalog_.busy() ||
+                if (safe->studioBackupBusy_ || safe->nativeShowBusy_ || safe->catalog_.busy() ||
                     safe->engine_.isGraphSwitchPending() || !safe->engine_.isOutputMuted())
                     return safe->emitNotice ("Plugin import/FX recall is active; backup was not started.", true);
                 const auto app = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
@@ -934,7 +938,7 @@ private:
         const int slot = static_cast<int> (args.getProperty ("slot", -1));
         // User may adjust live levels, but cannot alter the persisted VST
         // library/preset while a background snapshot is being copied.
-        if (studioBackupBusy_ && (action.startsWith ("preset") ||
+        if ((studioBackupBusy_ || nativeShowBusy_) && (action.startsWith ("preset") ||
             action.startsWith ("import") || action.startsWith ("fx") ||
             action == "addCatalog" || action == "addScanFolder" ||
             action == "scanVst3" || action == "routingDryApply"))
@@ -1025,6 +1029,60 @@ private:
                 juce::String(static_cast<int>(status.getProperty("fxCount",0)))+
                 " independent VST3 inserts, real PRE/POST sends. "
                 "Use low headphone volume; STOP LAB before normal CH1 VST3.");
+        }
+        if (action == "routingDryShowSave")
+        {
+            const auto reject=[this](const juce::String& reason) {
+                if(browser_.loaded) {
+                    auto ack=std::make_unique<juce::DynamicObject>();
+                    ack->setProperty("ok",false);
+                    ack->setProperty("error",reason);
+                    browser_.emitEventIfBrowserIsVisible("arMixNativeShowSaveAck",
+                        juce::var(ack.release()));
+                }
+                emitNotice("Show not saved: "+reason,true);
+            };
+            if (nativeShowBusy_ || studioBackupBusy_ || catalog_.busy() ||
+                engine_.isGraphSwitchPending() || engine_.hasTemporaryDiagnosticDevice())
+                return reject("Finish the current Studio task before capturing a native Show.");
+            // Never save the unacknowledged JS draft. Message-thread capture
+            // reads the accepted LIVE graph, updated faders and exact device epoch.
+            // VST3 is fail-closed until a quiescent vendor state capture gate exists.
+            armix::shows::SnapshotV2 captured;
+            const auto name=juce::String("Dry Routing ")+juce::Time::getCurrentTime().formatted("%Y%m%d %H%M%S");
+            const auto error=armix::shows::NativeLiveShowCapture::captureDry(
+                engine_.status(),name,captured);
+            if(error.isNotEmpty()) {
+                diagnostics_.record("NATIVE_SHOW_REJECTED",error);
+                return reject(error);
+            }
+            auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
+            const bool started=nativeShowWorker_.launch(settingsDirectory(),
+                std::move(captured),[safe](armix::shows::NativeShowSaveWorker::Result result) {
+                    if(safe==nullptr)return;
+                    safe->nativeShowBusy_=false;
+                    if(!result.ok()) {
+                        safe->diagnostics_.record("NATIVE_SHOW_SAVE_FAIL",result.error);
+                        safe->emitNotice("Native Show not saved: "+result.error,true);
+                    }else{
+                        safe->diagnostics_.record("NATIVE_DRY_SHOW_SAVED",
+                            result.showId+" | "+result.snapshotId);
+                        safe->emitNotice("Native DRY Show saved and verified in Studio/Shows: "+
+                            result.name+". FX-equipped Show capture/recall is not available yet.");
+                    }
+                    if(safe->browser_.loaded) {
+                        auto ack=std::make_unique<juce::DynamicObject>();
+                        ack->setProperty("ok",result.ok());
+                        ack->setProperty("error",result.error);
+                        ack->setProperty("showId",result.ok()?result.showId:juce::String());
+                        ack->setProperty("snapshotId",result.ok()?result.snapshotId:juce::String());
+                        safe->browser_.emitEventIfBrowserIsVisible("arMixNativeShowSaveAck",
+                            juce::var(ack.release()));
+                    }
+                });
+            if(!started)return reject("Native Show worker is busy. No session was modified.");
+            nativeShowBusy_=true;
+            return emitNotice("Saving ACK-verified dry routing to Studio/Shows on the IO worker.");
         }
         if (action == "routingDryStop")
         {
