@@ -5,6 +5,8 @@
 #include <cassert>
 #include <iostream>
 #include "../src/NativeLiveShowCapture.h"
+#include "../src/NativeDryShowRecall.h"
+#include "../engine/core/MasterOutputMonoPolicy.h"
 #include "../src/NativeShowStore.h"
 
 namespace {
@@ -136,6 +138,52 @@ int main() {
     ShowV2 reread;std::vector<SnapshotV2> snaps;
     assert(store.load(show.id,reread,snaps).isEmpty());
     assert(snaps.size()==1&&Codec::encode(snaps[0])==prior);
+    // P4 stage 4: a verified disk snapshot is PREPARED against current
+    // native epoch + active sparse physical mask. Only LiveAudioEngine
+    // may publish the resulting control transaction after mute fencing.
+    juce::var prepared;
+    const auto prepareError=NativeDryShowRecall::prepare(snaps[0],setup(),prepared);
+    if(prepareError.isNotEmpty())std::cerr<<"Recall prep failed: "<<prepareError<<"\\n";
+    assert(prepareError.isEmpty());
+    assert(prepared.isObject());
+    assert(static_cast<juce::int64>(prepared.getProperty("deviceEpoch",{}))==9);
+    assert(static_cast<juce::int64>(prepared.getProperty("revision",{}))==5);
+    armix::mixer::NativeDryRouteCommand parsed;
+    juce::String decodeError;
+    assert(armix::mixer::NativeDryRouteCommand::decode(prepared,parsed,decodeError));
+    assert(parsed.channels.stripsAndMaster.strips[0].faderLinear==0.f);
+    assert(parsed.channels.stripsAndMaster.strips[1].inputB==8);
+    assert(parsed.sends.count==1&&parsed.aux.count==2);
+    assert(parsed.aux.sends[0].destination==0);
+    const auto previous=juce::JSON::toString(prepared,false);
+    auto absentPort=setup();
+    auto absentLab=absentPort.getProperty("dryRoutingLab",{});
+    juce::Array<juce::var> tinyMask;auto pp=obj();set(pp,"port",3);tinyMask.add(pp);
+    set(absentLab,"ports",juce::var(tinyMask));
+    assert(NativeDryShowRecall::prepare(snaps[0],absentPort,prepared).isNotEmpty());
+    assert(juce::JSON::toString(prepared,false)==previous);
+    auto unmuted=setup();set(unmuted,"monitor",true);
+    assert(NativeDryShowRecall::prepare(snaps[0],unmuted,prepared).isNotEmpty());
+    auto staleLab=setup();auto staleRouting=staleLab.getProperty("dryRoutingLab",{});
+    set(staleRouting,"ready",false);
+    assert(NativeDryShowRecall::prepare(snaps[0],staleLab,prepared).isNotEmpty());
+    auto withVendorFx=snaps[0];
+    withVendorFx.aux[0].fx.push_back({"Vendor|123",123,
+        juce::String("a").paddedRight('a',64),false});
+    assert(NativeDryShowRecall::prepare(withVendorFx,setup(),prepared).isNotEmpty());
+    auto badMaster=snaps[0];badMaster.masterGain=3.0;
+    assert(NativeDryShowRecall::prepare(badMaster,setup(),prepared).isNotEmpty());
+    assert(juce::JSON::toString(prepared,false)==previous);
+
+    // Mono policy lives in routed native audio callback; no extra buffer
+    // and no partial stereo leak after silent output arms.
+    armix::dsp::MasterOutputMonoPolicy mono;
+    mono.primeWhileMuted(true);
+    float l=1.f,rr=0.f;mono.process(true,l,rr);
+    assert(l==0.5f && rr==0.5f);
+    for(int i=0;i<64;++i){l=1.f;rr=0.f;mono.process(false,l,rr);}
+    assert(l==1.f && rr==0.f);
+    assert(mono.blend()==0.f);
     assert(home.deleteRecursively());
     std::cout<<"PASS: actual ACK dry routing capture, 10 INPUT / 4 AUX, bus identity, live linear, master, PRE/POST, stale epoch/plugin/ports rejection, transactional persistence\n";
 }
