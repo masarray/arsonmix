@@ -190,6 +190,5 @@ test("R1 matrix edits only device-bound draft and honors native revision ACK",()
   assert.match(ui,/selectPatchTab\("input"\)/);
   assert.match(ui,/window\.__arMixOpenRouting=openRoutingLab/);
   assert.doesNotMatch(ui,/filter\s*:\s*blur\(/);
-  const app=readFileSync(new URL("../web/app.js",import.meta.url),"utf8");
-  assert.match(app,/window\.__arMixOpenRouting\?\.\(\)/);
+  assert.match(ui,/document\.addEventListener\("click",event=>/);
 });

@@ -489,6 +489,11 @@
   // routing transaction or bypass the output-MUTE operator safety gate.
   window.__arMixOpenRoutingLab=openRoutingLab;
   window.__arMixOpenRouting=openRoutingLab;
+  // Native toolbar action remains the approved SIGNAL FLOW data-view,
+  // but ROUTING opens on the same click without an intermediate lab screen.
+  document.addEventListener("click",event=>{
+    if(event.target.closest('[data-view="SIGNAL FLOW"]'))openRoutingLab();
+  });
   const routingNav=document.querySelector('[data-view="SIGNAL FLOW"] span');
   if(routingNav)routingNav.textContent="ROUTING";
   document.getElementById("arOpenRoutingLab").addEventListener("click",openRoutingLab);
