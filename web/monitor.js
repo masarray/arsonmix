@@ -612,7 +612,9 @@
       } else updateRouteLabIdentity();
     }
     setTextIfChanged(el("arSignalBadge"),!d.monitor ? "OUTPUT MUTED" : d.masterMute ? "MASTER MUTED" : d.channelMute ? "CH1 MUTED" : "OUTPUT ARMED");
-    el("arSignalBadge").style.color = d.monitor && !d.masterMute && !d.channelMute ? "#71e9cc" : "#e9be7c";
+    const outputBadge=el("arSignalBadge");
+    if(outputBadge)outputBadge.style.color =
+      d.monitor && !d.masterMute && !d.channelMute ? "#71e9cc" : "#e9be7c";
     const monitorButton=document.querySelector('[data-native-action="monitor"]');
     setTextIfChanged(monitorButton,d.monitor?"MUTE OUTPUT":"UNMUTE OUTPUT");
     // The original UI shell had fixed 48 kHz / 64-sample demo badges. Show
