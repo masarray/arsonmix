@@ -28,7 +28,7 @@ test("P1E is opt-in; all native VST3/clock/diagnostic paths protected",()=>{
   assert.match(lab,/std::array<const float\*,armix::device::LiveInputPortRegistry::limit>/);
 });
 test("GUI exposes only truthful dry device routes and acknowledged commit",()=>{
-  assert.match(ui,/ROUTING LAB · 10 CH/);
+  assert.match(ui,/ROUTING · 10 CH/);
   assert.match(ui,/routingDryApply/);
   assert.match(ui,/routingDryStop/);
   assert.match(ui,/arMixRoutingLabAck/);
@@ -174,4 +174,22 @@ test("P1K truly keeps ten physical INPUT strips and adds four independent native
   const workflow=readFileSync(new URL("../.github/workflows/p1-windows.yml",import.meta.url),"utf8");
   assert.match(cmake,/P1KTenIndependentInputsAndFourDedicatedAuxReturns/);
   assert.match(workflow,/ARMixDedicatedAuxBusTests/);
+});
+
+
+test("R1 matrix edits only device-bound draft and honors native revision ACK",()=>{
+  assert.match(ui,/data-patch-tab="input"/);
+  assert.match(ui,/patchPageSize=8/);
+  assert.match(ui,/patchPorts\(\)/);
+  assert.match(ui,/Number\.isInteger\(n\)/);
+  assert.match(ui,/data-patch-state/);
+  assert.match(ui,/patchPreflight\(\)/);
+  assert.match(ui,/patchPending=true/);
+  assert.match(ui,/hydrateAcceptedRoute/);
+  assert.match(ui,/arMixRoutingLabAck/);
+  assert.match(ui,/selectPatchTab\("input"\)/);
+  assert.match(ui,/window\.__arMixOpenRouting=openRoutingLab/);
+  assert.doesNotMatch(ui,/filter\s*:\s*blur\(/);
+  const app=readFileSync(new URL("../web/app.js",import.meta.url),"utf8");
+  assert.match(app,/window\.__arMixOpenRouting\?\.\(\)/);
 });
