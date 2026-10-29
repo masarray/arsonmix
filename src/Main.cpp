@@ -5,6 +5,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <BinaryData.h>
 #include "LiveAudioEngine.h"
+#include "ArSonMixStartupSplash.h"
 #include "VstOrbitController.h"
 #include "../engine/core/OrbitDistanceMapping.h"
 #include "../engine/core/DearVrPolarPolicy.h"
@@ -169,12 +170,13 @@ private:
 class ConsoleWindow final : public juce::DocumentWindow, private juce::Timer, private juce::ChangeListener
 {
 public:
-    ConsoleWindow()
+    explicit ConsoleWindow (std::function<void(int)> onStartupStage)
         : DocumentWindow ("AR MIX Studio — Native VST3 FX Host",
                          juce::Colour (0xff101921), allButtons),
           catalog_ (settingsDirectory()),
           diagnostics_ (settingsDirectory().getChildFile ("diagnostics")),
           presets_ (settingsDirectory().getChildFile ("presets"), settingsDirectory()),
+          onStartupStage_ (std::move (onStartupStage)),
           browser_ (webViewOptions()
               .withNativeIntegrationEnabled()
               .withEventListener ("arMixGuiReady", [this] (juce::var)
@@ -182,6 +184,7 @@ public:
                   browser_.loaded = true;
                   guiReadyTick_ = juce::Time::getMillisecondCounter();
                   browser_.repaint();
+                  if (onStartupStage_) onStartupStage_ (1);
               })
               .withEventListener ("arMixParameter", [this] (juce::var args) { onParameter (args); })
               .withEventListener ("arMixAction", [this] (juce::var args) { onAction (args); })
@@ -228,6 +231,7 @@ private:
     PluginCatalog catalog_;
     DiagnosticsRecorder diagnostics_;
     armix::storage::NativePresetArchive presets_;
+    std::function<void(int)> onStartupStage_;
     Browser browser_;
     armix::storage::StudioBackup::Worker studioBackupWorker_;
     bool studioBackupBusy_ = false;
@@ -1494,6 +1498,7 @@ private:
             engine_.devices().addChangeListener (this);
             diagnostics_.record ("STARTUP",
                 startupError_.isEmpty() ? "Audio device initialized" : startupError_);
+            if (onStartupStage_) onStartupStage_ (2);
         }
         // ONE actionable notice per unexpected DIRECT reroute. The audio
         // callback has already zero-filled output atomically; status, log and
@@ -1586,7 +1591,7 @@ private:
     }
 };
 
-class ConsoleApp final : public juce::JUCEApplication
+class ConsoleApp final : public juce::JUCEApplication, private juce::Timer
 {
 public:
     const juce::String getApplicationName() override { return "ArSonMix"; }
@@ -1604,21 +1609,45 @@ public:
     }
     void initialise (const juce::String&) override
     {
+        // Paint the approved dark native splash BEFORE browser cache I/O,
+        // WebView2 initialization, device scan or native console construction.
+        splash_ = std::make_unique<ArSonMixStartupSplash>();
+        startTimer (90); // one-shot handoff after Windows first paint
+    }
+    void timerCallback() override
+    {
+        stopTimer();
         const auto folder = armix::storage::PortableWorkspace::browserDataRoot();
         if (!folder.createDirectory().wasOk() && !folder.isDirectory())
         {
+            splash_.reset();
             showWebViewStartupError ("Cannot create the browser-cache folder: " + folder.getFullPathName());
             return;
         }
         if (!juce::WebBrowserComponent::areOptionsSupported (webViewOptions()))
         {
+            splash_.reset();
             showWebViewStartupError ("WebView2 Runtime could not be initialized on this machine.");
             return;
         }
-        window_ = std::make_unique<ConsoleWindow>();
+        window_ = std::make_unique<ConsoleWindow> ([this] (int stage)
+        {
+            if (splash_) splash_->setStage (stage);
+            if (stage == 2)
+            {
+                splash_.reset(); // no overlay over live mixer after engine init
+                if (window_) window_->toFront (true);
+            }
+        });
     }
-    void shutdown() override { window_.reset(); }
+    void shutdown() override
+    {
+        stopTimer();
+        window_.reset();
+        splash_.reset();
+    }
 private:
+    std::unique_ptr<ArSonMixStartupSplash> splash_;
     std::unique_ptr<ConsoleWindow> window_;
 };
 }
