@@ -4,7 +4,7 @@
 ## Validate the archive before running
 1. Extract the GitHub Actions ZIP. Check `BUILD_PROVENANCE.json` is present.
 2. Verify `sourceCommit` matches the GitHub Actions run's commit; `executable` must be `ArSonMix-GUI10CH-P012-Windows-x64.exe`, `appTarget=ARMixConsole`, and `peSubsystem=WINDOWS_GUI (2)`. The `exeSha256` must match the extracted EXE.
-3. Use **Windows 10/11 x64** with its audio interface driver already installed. JUCE VST3 discovery is optional. Do not infer GUI has all ten channels physically mixed yet: the current native engine implements **Channel 1** only; the remaining strips are visual design.
+3. Use **Windows 10/11 x64** with its audio interface driver installed. JUCE VST3 discovery is optional. **R0B native 10CH + 4 AUX is implemented as a verified DIRECT-device routing graph; it starts with zero input patches and OUTPUT MUTE.** Sound will remain intentionally silent until you explicitly select a valid input port, APPLY the physical input patch and manually unmute OUTPUT. **Do not interpret this expected silence as a driver failure.**
 
 ## GUI failure: "Navigation to the webpage was canceled"
 The offline mixer needs **Microsoft Edge WebView2 Runtime** (not Internet Explorer). JUCE can silently fall back to IE if its loader or runtime is unavailable. New builds statically link the WebView2 loader into the EXE, check browser-data-folder access, and require a real native JavaScript readiness handshake. That means no white browser error should be presented as a successful GUI load.
@@ -14,12 +14,24 @@ Extract the **whole** newest release ZIP, check `BUILD_PROVENANCE.json` says `we
 The static loader is NOT the Chromium Runtime. Runtime installation and a physical Windows GUI startup test remain prerequisites to certification, even after GitHub CI passes.
 
 ## Safe test sequence — use headphones at LOW volume
-1. Exit other exclusive-audio apps. Connect the intended interface and note driver/interface model, ASIO/WASAPI choice, Windows version, sample rate, and driver buffer.
-2. Start the app and open **AUDIO SETUP**. Explicitly select the same intended capture and output devices. Verify channel map; leave output muted until ready. Do not enable beta independent clocks or switch endpoints while audio is running.
+1. Exit other exclusive-audio apps. Connect the intended interface and note driver/interface model, ASIO/WASAPI choice, Windows version, sample rate, and driver buffer. **Copy the entire ZIP to a new folder**; do not launch the EXE while still inside the archive.
+2. Start the app and open **AUDIO SETUP**. Explicitly select the intended capture and output device. Verify actual enabled ports; leave OUTPUT MUTE engaged. Native ROUTING starts with **UNPATCHED / SILENT**, which is correct. Do not enable beta independent clocks or switch endpoints while audio is running.
 3. Open **SIGNAL CHECK**. First choose **OUTPUT_ONLY_TONE**, no input and **zero VST3**. Listen at a conservative level for 30 seconds. If the tone crackles, click **MARK CRACKLE immediately**, then **COPY FULL REPORT**. A bad output-only tone is important evidence that capture/ASRC processing is not a prerequisite to the fault.
 4. Choose **CAPTURE_ONLY** and test microphone input for 30 seconds; check capture discontinuity flags if the driver reports them. Click **MARK CRACKLE** on a detected problem, then **COPY FULL REPORT**.
 5. Choose **DRY_THROUGH** with no VST3, listen for at least 30 seconds, then repeat MARK CRACKLE + COPY FULL REPORT at the first failure. Keep analog gains reasonable to rule out acoustic clipping.
 6. Repeat the above at **48,000 Hz** and **44,100 Hz** when your actual driver supports both. Record the **actual negotiated** period and rate, not only the requested setting.
+
+## Fast native 10CH smoke test — after isolated audio checks
+
+1. Keep **OUTPUT MUTED**. Open **SIGNAL FLOW → INPUT PATCH**. Confirm the device identity, current epoch and actual hardware input labels. A fresh native graph has **no** active patch.
+2. Select one physical microphone/line input for **CH1**, choose MONO and click **APPLY ROUTING**. The UI must change from DRAFT to LIVE **only after native ACK**. A stale/invalid port must return a rejection with existing LIVE state unchanged.
+3. With headphones at minimum level, deliberately unmute OUTPUT. Move CH1 fader and verify the actual input reaches stereo MAIN L/R with no VST3. Verify CH2–10 remain silent until explicitly assigned.
+4. MUTE again. Assign a **different real physical port** to CH2 when available; verify independent CH1/CH2 faders, mute, solo and pan. Do not invent extra ports for 2-input interfaces. Try CH1→AUX1 PRE and CH2→AUX1 POST in INTERNAL / SENDS; verify DRAFT vs native ACK and a real AUX return. AUX returns are **not** independent physical output sockets.
+5. With output muted, load one *owned* VST3 on the CH1 rack, then exercise FX ADD, MOVE, bypass and REMOVE. Re-enable output conservatively between edits and listen for transient clicks. Report VST name/version and whether its own latency/PDC mode is active. No automatic plugin installation is required.
+6. Use **CLEAR PATCH** to return to native unpatched silence. Restart or change the physical device only while muted. No previous CH1 audio may reappear automatically on a different endpoint.
+7. If any burst/click occurs, use **SIGNAL CHECK → MARK CRACKLE → COPY FULL REPORT** immediately. Do not mark the app hardware-qualified just because 50/50 CTests passed.
+
+**Rapid evidence to send:** screenshot of AUDIO SETUP showing actual device/rate/buffer; INPUT PATCH before/after LIVE ACK; short result for 0 VST3, CH1+CH2 independent route, AUX send, FX ADD/MOVE/REMOVE and CLEAR PATCH; full glitch report on failure.
 
 ## How to interpret evidence
 - `AUDIO_GLITCH_WINDOW` contains up to 5 seconds of pre-marker differences from the existing 1Hz status polling. It NEVER proves the exact millisecond of a glitch.
@@ -29,7 +41,7 @@ The static loader is NOT the Chromium Runtime. Runtime installation and a physic
 - A device identity/route/mute or generation change invalidates the comparison. Do not assume an incomplete or stale window is an audio success.
 
 ## Return evidence
-Include the complete **COPY FULL REPORT** output plus: driver name/version, actual interface make/model, physically connected output route, sample rate/buffer, mode (tone/capture/dry), observed noise, whether Bluetooth is involved, and ideally a loopback recording. Note that a 10-channel mixer GUI does not imply 10-channel native DSP at this stage.
+Include the complete **COPY FULL REPORT** output plus: driver name/version, actual interface make/model, physically connected output route, sample rate/buffer, mode (tone/capture/dry), observed noise, whether Bluetooth is involved, and ideally a loopback recording. State how many physical input channels were actually enabled; the native mixer supports **10 strips + 4 stereo AUX returns** but does **not** imply that every soundcard has ten capture or independently patched hardware output ports. OUT patching beyond MAIN L/R is not yet delivered.
 
 ## Acceptance
 This is P0 **hardware qualification**, not a demo. Close GitHub issue #15 ONLY after real 0-VST3 tests across agreed device/driver/rate matrix show clean output and any remaining defects have exact reproducible provenance. Do not automatically choose the smallest buffer just because CTest and virtual ASRC soak pass.
