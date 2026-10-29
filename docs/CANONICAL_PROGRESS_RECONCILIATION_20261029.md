@@ -1,5 +1,8 @@
 # ArSonMix — Canonical Progress Reconciliation & Next Execution (2026-10-29 17:55 WIB)
 
+> **ROUTING-FOCUSED EXECUTION HANDOFF:** [docs/HANDOFF_ARSONMIX_ROUTING_R0_NEXT_THREAD_20261029.md](HANDOFF_ARSONMIX_ROUTING_R0_NEXT_THREAD_20261029.md) provides the exact R0/R1 done inventory, #147 overlap/negative-ACK merge gate, R0B #149, R2 INTERNAL/AUX UI, R3 native FAT and anti-regression checklist. Read it for Routing coding; this canonical document remains authoritative for all-project progress.
+
+
 > **START HERE for cross-thread continuation.** This document is a verified status snapshot from GitHub. It supersedes *status claims* in older dated handoffs, README, AGENTS historical appendices and old issue descriptions, not their engineering evidence. Re-read live main/PRs/CI before code changes. No new feature or physical FAT is claimed by this documentation.
 
 ## 0. Verified frozen baseline

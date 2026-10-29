@@ -1,5 +1,8 @@
 # Repository instructions — ArSonMix (all future threads and AI coding agents)
 
+> **ROUTING ENGINEERING HANDOFF (2026-10-29):** [docs/HANDOFF_ARSONMIX_ROUTING_R0_NEXT_THREAD_20261029.md](docs/HANDOFF_ARSONMIX_ROUTING_R0_NEXT_THREAD_20261029.md) is the concrete next-thread plan for integrated Routing R0, ACK PR #147, unified production R0B #149, INTERNAL/AUX R2 and real hardware R3. It complements, not supersedes, the global canonical reconciliation. Do not rebuild R0/R1 or regress FX/Orbit/audio callback.
+
+
 > **LATEST RECONCILED LIVE STATUS — 2026-10-29 17:55 WIB:** Read [docs/CANONICAL_PROGRESS_RECONCILIATION_20261029.md](docs/CANONICAL_PROGRESS_RECONCILIATION_20261029.md) FIRST and refresh GitHub before coding. Verified main 4d14251: R0A #144, input patch #146 and premium routing workbench already MERGED; R0B production graph still OPEN as #149; ACK hardening #147 OPEN; zero-FX hardware crackle #15 OPEN. Older assertions that R1 is unmerged or all 10CH routing is absent are superseded. No visual/engine redesign from historical status snapshots.
 
 **CURRENT NEXT-THREAD ENTRYPOINT (2026-10-29):** Read [docs/HANDOFF_ARSONMIX_NEXT_THREAD_20261029.md](docs/HANDOFF_ARSONMIX_NEXT_THREAD_20261029.md) before changes. Baseline #129 merged; GUI performance, FX atomic reorder/de-click, Orbit POLAR and P1I native 10CH LAB must not regress. Historic v0.8 12+1 references and dated PR OPEN statements further below are retained for lineage but not authoritative over current 10CH+MASTER main. Native full Shows/Snapshots is NOT delivered by localStorage scene UX. Source/CI/hardware evidence takes precedence.
