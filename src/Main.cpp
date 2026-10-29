@@ -54,6 +54,7 @@ std::optional<juce::WebBrowserComponent::Resource> assetFor (const juce::String&
     // JUCE 8.0.15 BinaryData strips hyphens from generated identifiers:
     // "plugin-ui.js" -> pluginui_js, "plugin-ui.css" -> pluginui_css.
     // Asset HTTP paths retain their hyphenated original names.
+    // JUCE BinaryData strips dashes from the source filename: plugin-ui.js -> pluginui_js.
     else if (path == "/plugin-ui.js")
         { data = BinaryData::pluginui_js; size = BinaryData::pluginui_jsSize; mime = "text/javascript"; }
     else if (path == "/plugin-ui.css")
@@ -766,10 +767,10 @@ private:
             : "Select a .vst3 plugin file";
         chooser_ = std::make_unique<juce::FileChooser> (
             title, lastPluginFolder_, selectBundle ? "*" : "*.vst3", true);
-        const auto flags = juce::FileBrowserComponent::openMode |
+        const auto chooserFlags = juce::FileBrowserComponent::openMode |
             (selectBundle ? juce::FileBrowserComponent::canSelectDirectories
                           : juce::FileBrowserComponent::canSelectFiles);
-        chooser_->launchAsync (flags,
+        chooser_->launchAsync (chooserFlags,
             [safe = juce::Component::SafePointer<ConsoleWindow> (this), copyToVault]
             (const juce::FileChooser& picker)
             {

@@ -98,8 +98,8 @@ test('latest BTN-180 GUI palette is an attested embedded native release requirem
   assert.match(cmake,/web\/index\.html web\/styles\.css web\/plugin-ui\.css web\/app\.js web\/plugin-ui\.js web\/bridge\.js web\/monitor\.js/);
   assert.match(nativeMain,/BinaryData::index_html/);
   assert.match(nativeMain,/BinaryData::bridge_js/);
-  assert.match(nativeMain,/BinaryData::plugin_ui_js/);
-  assert.match(nativeMain,/BinaryData::plugin_ui_css/);
+  assert.match(nativeMain,/BinaryData::pluginui_js/);
+  assert.match(nativeMain,/BinaryData::pluginui_css/);
 });
 
 test('native startup requires static WebView2 loader and JS-backed UI readiness', () => {
