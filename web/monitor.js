@@ -579,18 +579,11 @@
     if(failure){patchFeedback("REJECTED · "+failure);return;}
     if(state.monitor){patchFeedback("MUTE OUTPUT FIRST · structural routing cannot be applied while speakers are armed.");return;}
     syncNativeLevelsToRouteDraft();
+    // patchPreflight above already checked epoch, enabled ports and stereo.
+    // Enter pending only after *every* synchronous rejection gate has passed.
     patchPending=true;
     renderPatchMatrix();
-    if(!draftEpoch || draftEpoch!==Number(d.epoch)){
-      document.getElementById("arRouteFeedback").textContent=
-        "DEVICE CHANGED · old channel assignments discarded. Re-select the actual physical inputs.";
-      drawRoutes();
-      return; // must never submit old ports with a newly observed epoch
-    }
-    if(!Array.isArray(d.ports)||!d.ports.length){
-      document.getElementById("arRouteFeedback").textContent="Select a real ASIO/WASAPI audio input in AUDIO SETUP first.";return;
-    }
-    document.getElementById("arRouteFeedback").textContent="Applying native route (output must be MUTED)...";
+    document.getElementById("arRouteFeedback").textContent="Applying verified native route (output remains MUTED)...";
     api.emitEvent("arMixAction",{action:"routingDryApply",value:{
       deviceEpoch:draftEpoch,revision:Number(d.revision)||0,
       channels:draftRoutes.map(c=>({...c})),
