@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <cassert>
+#include <cstdlib>
 #include <memory>
 #include <cstdio>
 #include <cstdint>
@@ -39,7 +40,7 @@ int main(){
     auto first=publisher.beginCycle();
     check(first.graph==original.get() && first.fadeOut && !first.fadeIn);
     check(armix::dsp::FxMoveRamp::gain(1,127,128)==0.f);
-    check(deleted.load()==k/2-((k%2)==0?0:0)); // removed nodes already retired on prior round
+    check(deleted.load()==k/2); // removed nodes already retired on prior round
     publisher.endCycle(first); // RT does pointer exchange only
     auto second=publisher.beginCycle();
     check(second.graph==staged.get() && second.fadeIn);
