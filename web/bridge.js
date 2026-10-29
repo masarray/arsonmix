@@ -567,7 +567,8 @@
     pickerAnchor=(row||anchor)?.isConnected?(row||anchor):document.querySelector('.nav button[data-view="FX RACK"]');
     pickerChannel=Number(channel);pickerSlot=Math.max(0,Number(slot)||0);
     pickerRouteMode=!!routeMode;state.routedPickerMode=pickerRouteMode;
-    state.addError="";
+    // A new FX insert opens the full catalog, not the search from a previous picker.
+    state.filter="";state.selectedCategory="All";state.addError="";
     pickerAnchor?.classList.add("fx-picker-target");
     renderPicker();showDialog("nativeFxSelector");positionPicker();
   }
