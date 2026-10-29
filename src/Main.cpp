@@ -1625,6 +1625,18 @@ private:
             }
             if(pendingFxRemoveSlot_>=0)
             {
+                // The replacement graph has NOW become authoritative.
+                // Rebind Orbit by stable processor identity, not by its old
+                // slot index (which may shift when an earlier FX is removed).
+                if(orbit_.active() && orbit_.processor())
+                {
+                    const auto* retained=orbit_.processor();
+                    int target=-1;
+                    for(int i=0;i<engine_.chainSize();++i)
+                        if(engine_.pluginAt(i)==retained){target=i;break;}
+                    if(target>=0)orbit_.rebindSlot(target);
+                    else stopOrbit();
+                }
                 diagnostics_.record("FX_REMOVE_ACK",juce::String(pendingFxRemoveSlot_));
                 pendingFxRemoveSlot_=-1;
             }
