@@ -92,6 +92,52 @@ public:
         peakR_.store(0.f,std::memory_order_relaxed);
     }
 
+    // R0B B3: One native production topology exists immediately after an
+    // explicitly VERIFIED DIRECT device is selected. NONE of its ten strips
+    // is mapped to an input, all four AUX returns and sends are OFF.
+    // Use the SAME decode/compile/publish transaction as an operator patch:
+    // no second DSP, fake default IN-1 mapping or callback initialization.
+    // Message/control thread ONLY; all allocations happen outside realtime.
+    juce::String startUnpatchedSession(bool directPermitted, bool independentClock,
+                       int loadedFx, juce::AudioPluginFormatManager& formats,
+                       double sampleRate,int deviceFrames) {
+        if(!directPermitted || independentClock)
+            return "Production session requires a verified DIRECT audio device";
+        if(!registryValid_.load(std::memory_order_acquire) ||
+           topologyFault_.load(std::memory_order_acquire))
+            return "Verified stereo input/output masks are unavailable";
+        if(active() && ready() && hasExplicitRoute())
+            return "Clear the active input patch before creating an unpatched session";
+        if(active() && ready() && !hasExplicitRoute())return {};
+        auto request=std::make_unique<juce::DynamicObject>();
+        request->setProperty("deviceEpoch",static_cast<juce::int64>(epoch()));
+        request->setProperty("revision",static_cast<juce::int64>(revision()));
+        juce::Array<juce::var> channels;
+        for(int i=0;i<count;++i) {
+            auto row=std::make_unique<juce::DynamicObject>();
+            row->setProperty("mode","NONE");
+            row->setProperty("left",-1);
+            row->setProperty("right",-1);
+            row->setProperty("gain",0.25);
+            row->setProperty("pan",0.0);
+            row->setProperty("mute",false);
+            row->setProperty("solo",false);
+            row->setProperty("main",true);
+            channels.add(juce::var(row.release()));
+        }
+        request->setProperty("channels",juce::var(channels));
+        const std::array<FxSelection,fxSlots> none{};
+        const auto error=apply(juce::var(request.release()),directPermitted,
+                              independentClock,loadedFx,none,formats,
+                              sampleRate,deviceFrames);
+        if(error.isEmpty()) {
+            // A prepared silence graph is NOT an operator-ACKed physical patch.
+            // Never expose a synthetic default in the GUI or native Shows.
+            acceptedRoute_=juce::var();
+        }
+        return error;
+    }
+
     juce::String apply (const juce::var& command, bool directPermitted,
                         bool independentClock, int loadedFx,
                         const std::array<FxSelection,fxSlots>& selections,
@@ -317,6 +363,11 @@ public:
         return active() && !topologyFault_.load(std::memory_order_acquire)
             && publishedEpoch_.load(std::memory_order_acquire)==epoch();
     }
+    // Status / control thread only. An empty prepared graph is ready, but
+    // cannot be advertised as a LIVE patched route or a savable Show.
+    bool hasExplicitRoute() const noexcept {
+        return ready() && acceptedRoute_.isObject();
+    }
     std::uint64_t epoch() const noexcept {
         return deviceEpoch_.load(std::memory_order_acquire);
     }
@@ -428,6 +479,7 @@ public:
         out->setProperty("active",active());
         out->setProperty("topologyFault",topologyFault_.load(std::memory_order_acquire));
         out->setProperty("ready",ready());
+        out->setProperty("hasAcceptedRoute",hasExplicitRoute());
         out->setProperty("epoch",static_cast<juce::int64>(epoch()));
         out->setProperty("revision",static_cast<juce::int64>(revision()));
         out->setProperty("peakL",peakL_.load(std::memory_order_relaxed));
@@ -491,7 +543,7 @@ public:
                 outputPorts.add(enabledOutputPorts_[i].load(std::memory_order_relaxed));
         }
         out->setProperty("outputPorts",juce::var(outputPorts));
-        out->setProperty("note","EXPLICIT NATIVE ROUTING LAB: per-strip stereo VST3, PRE/POST sends; no performance preset recall or hardware FAT qualification");
+        out->setProperty("note","Native 10CH+4AUX production mixer; unpatched startup is SILENT. Explicit input assignment/ACK required. Hardware FAT unqualified.");
         return juce::var(out.release());
     }
 private:
