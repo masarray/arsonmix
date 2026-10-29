@@ -5,6 +5,7 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const app=readFileSync('web/app.js','utf8');
 const bridge=readFileSync('web/bridge.js','utf8');
+const pluginUi=readFileSync('web/plugin-ui.js','utf8');
 const css=readFileSync('web/styles-src/42-mixer-premium.css','utf8');
 const native=readFileSync('src/Main.cpp','utf8');
 function extractFunction(name){
@@ -68,7 +69,8 @@ test('premium fold and per-slot popover avoid rectangle border and global backdr
  assert.match(b,/#nativeFxSelector\{position:fixed;inset:0;display:block;padding:0/);
  assert.match(b,/background:transparent!important;backdrop-filter:none!important/);
  assert.match(b,/pickerAnchor\?\.classList\.add\("fx-picker-target"\)/);
- assert.match(b,/state\.chain\.length>=8\|\|state\.adding\|\|pickerChannel!==0/);
+ assert.match(pluginUi,/state\.chain\.length>=8\|\|state\.adding\|\|channel!==0/);
+ assert.match(b,/const pluginUi=window\.ArSonPluginUI/);
  assert.ok(b.includes('data-context-fx="delete"'));
  assert.match(b,/native-node\.has-orbit/);
 });

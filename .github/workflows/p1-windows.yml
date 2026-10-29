@@ -58,7 +58,7 @@ jobs:
         run: |
           # Do not hide earlier Node failures with the exit code of the LAST
           # command. One Node invocation also avoids repeated startup costs.
-          foreach ($file in @('web/bridge.js', 'web/monitor.js', 'web/app.js')) {
+          foreach ($file in @('web/bridge.js', 'web/plugin-ui.js', 'web/monitor.js', 'web/app.js')) {
             node --check $file
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
@@ -79,6 +79,7 @@ jobs:
             'tests/native_artifact_packaging_contract_test.mjs'
             'tests/portable_workspace_contract_test.mjs'
             'tests/plugin_vault_contract_test.mjs'
+            'tests/plugin_ui_contract_test.mjs'
             'tests/live_routing_ui_contract_test.mjs'
             'tests/studio_backup_contract_test.mjs'
           )

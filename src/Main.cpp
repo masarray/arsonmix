@@ -52,6 +52,14 @@ std::optional<juce::WebBrowserComponent::Resource> assetFor (const juce::String&
         { data = BinaryData::styles_css; size = BinaryData::styles_cssSize; mime = "text/css"; }
     else if (path == "/app.js")
         { data = BinaryData::app_js; size = BinaryData::app_jsSize; mime = "text/javascript"; }
+    // JUCE 8.0.15 BinaryData strips hyphens from generated identifiers:
+    // "plugin-ui.js" -> pluginui_js, "plugin-ui.css" -> pluginui_css.
+    // Asset HTTP paths retain their hyphenated original names.
+    // JUCE BinaryData strips dashes from the source filename: plugin-ui.js -> pluginui_js.
+    else if (path == "/plugin-ui.js")
+        { data = BinaryData::pluginui_js; size = BinaryData::pluginui_jsSize; mime = "text/javascript"; }
+    else if (path == "/plugin-ui.css")
+        { data = BinaryData::pluginui_css; size = BinaryData::pluginui_cssSize; mime = "text/css"; }
     else if (path == "/bridge.js")
         { data = BinaryData::bridge_js; size = BinaryData::bridge_jsSize; mime = "text/javascript"; }
     else if (path == "/monitor.js")
@@ -241,6 +249,7 @@ private:
     bool nativeShowBusy_ = false;
     bool studioBackupBusy_ = false;
     std::unique_ptr<juce::FileChooser> chooser_;
+    juce::File lastPluginFolder_ = juce::File::getSpecialLocation (juce::File::userHomeDirectory);
     std::unique_ptr<PluginEditorWindow> editorWindow_;
     std::unique_ptr<AudioSetupWindow> audioSetupWindow_;
     juce::String startupError_, lastAudioXml_;
@@ -748,25 +757,34 @@ private:
         });
     }
 
-    void chooseImport (bool copyToVault = true)
+    // A Windows native Explorer picker cannot select ordinary files AND folders in
+    // the same operation. Split the modes instead of silently falling back to
+    // JUCE's non-native browser. .vst3 bundles are folders on Windows.
+    void chooseImport (bool copyToVault = true, bool selectBundle = false)
     {
+        if (catalog_.busy()) return;
+        const auto title = selectBundle
+            ? "Select a .vst3 bundle folder"
+            : "Select a .vst3 plugin file";
         chooser_ = std::make_unique<juce::FileChooser> (
-            "Import and KEEP a VST3 module or bundle in this Studio", juce::File{}, "*", true);
-        chooser_->launchAsync (
-            juce::FileBrowserComponent::openMode |
-            juce::FileBrowserComponent::canSelectFiles |
-            juce::FileBrowserComponent::canSelectDirectories,
-            [this, copyToVault] (const juce::FileChooser& f)
+            title, lastPluginFolder_, selectBundle ? "*" : "*.vst3", true);
+        const auto chooserFlags = juce::FileBrowserComponent::openMode |
+            (selectBundle ? juce::FileBrowserComponent::canSelectDirectories
+                          : juce::FileBrowserComponent::canSelectFiles);
+        chooser_->launchAsync (chooserFlags,
+            [safe = juce::Component::SafePointer<ConsoleWindow> (this), copyToVault]
+            (const juce::FileChooser& picker)
             {
-                const auto file = f.getResult();
+                if (safe == nullptr) return;
+                const auto file = picker.getResult();
                 if (file == juce::File{}) return;
-                if (file.hasFileExtension (".dll"))
-                {
-                    emitNotice ("Legacy VST2 DLL cannot be imported as VST3. Select a .vst3 module.", true);
-                    return;
-                }
-                catalog_.importVst3 (file, copyToVault);
-                emitCatalog();
+                safe->lastPluginFolder_ = file.getParentDirectory();
+                if (!file.hasFileExtension (".vst3"))
+                    return safe->emitNotice ("Select a .vst3 module or bundle, not a VST2 .dll or ordinary folder.", true);
+                if (safe->catalog_.busy())
+                    return safe->emitNotice ("Plugin scanner is busy. Retry after the current import finishes.", true);
+                safe->catalog_.importVst3 (file, copyToVault);
+                safe->emitCatalog();
             });
     }
 
@@ -831,16 +849,19 @@ private:
 
     void chooseFolder()
     {
+        if (catalog_.busy()) return;
         chooser_ = std::make_unique<juce::FileChooser> (
-            "Add a VST3 plugin folder to your catalog", juce::File{}, "*", true);
+            "Add a VST3 plugin reference folder", lastPluginFolder_, "*", true);
         chooser_->launchAsync (
             juce::FileBrowserComponent::openMode |
             juce::FileBrowserComponent::canSelectDirectories,
-            [this] (const juce::FileChooser& f)
+            [safe = juce::Component::SafePointer<ConsoleWindow> (this)] (const juce::FileChooser& picker)
             {
-                const auto folder = f.getResult();
-                if (folder != juce::File{})
-                    catalog_.addDirectory (folder);
+                if (safe == nullptr) return;
+                const auto folder = picker.getResult();
+                if (folder == juce::File{}) return;
+                safe->lastPluginFolder_ = folder;
+                safe->catalog_.addDirectory (folder);
             });
     }
 
@@ -1457,6 +1478,14 @@ private:
         else if (action == "importVst3InPlace")
         {
             chooseImport (false); // Explicit user choice: original external path.
+        }
+        else if (action == "importVst3Bundle")
+        {
+            chooseImport (true, true); // Native folder chooser, copied to Studio.
+        }
+        else if (action == "importVst3BundleInPlace")
+        {
+            chooseImport (false, true); // Explicit external bundle reference.
         }
         else if (action == "addCatalog")
         {

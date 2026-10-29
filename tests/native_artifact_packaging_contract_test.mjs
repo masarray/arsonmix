@@ -66,6 +66,8 @@ test('physical hardware FAT documents verified 10CH and dedicated 4 AUX native m
   // while keeping hardware 0-FX crackle FAT explicitly unqualified.
   assert.match(packaging,/NATIVE_TEN_INPUT_CHANNELS_FOUR_DEDICATED_STEREO_AUX_RETURNS_MASTER__EXPLICIT_PATCH_ACK/);
   assert.match(packaging,/HARDWARE_FAT_UNQUALIFIED/);
+  assert.match(verify,/NATIVE_TEN_INPUT_CHANNELS_FOUR_DEDICATED_STEREO_AUX_RETURNS_MASTER__EXPLICIT_PATCH_ACK/);
+  assert.doesNotMatch(verify,/NATIVE_10CH_4AUX__EXPLICIT_PHYSICAL_INPUT_PATCH__MAIN_LR_OUTPUT_ONLY/);
   assert.doesNotMatch(packaging,/CHANNEL_1_ONLY__REMAINING_9_GUI_CHANNELS_NOT_REAL_AUDIO/);
   assert.match(fat, /native 10CH \+ 4 AUX/i);
   assert.match(fat, /UNPATCHED \/ SILENT/i);
@@ -81,11 +83,11 @@ test('physical hardware FAT documents verified 10CH and dedicated 4 AUX native m
 });
 
 test('release proves exact calibrated GUI bytes are embedded in the executable, not just copied beside it', () => {
-  for (const field of ['indexHtmlSha256','appJsSha256','stylesCssSha256','bridgeJsSha256','monitorJsSha256','guiCalibration']) {
+  for (const field of ['indexHtmlSha256','appJsSha256','stylesCssSha256','pluginUiCssSha256','pluginUiJsSha256','bridgeJsSha256','monitorJsSha256','guiCalibration']) {
     assert.ok(packaging.includes(field+' = '), 'provenance missing '+field);
     assert.ok(verify.includes('manifest.'+field), 'verifier missing '+field);
   }
-  for (const file of ['web/index.html','web/app.js','web/styles.css','web/bridge.js','web/monitor.js']) {
+  for (const file of ['web/index.html','web/app.js','web/styles.css','web/plugin-ui.css','web/plugin-ui.js','web/bridge.js','web/monitor.js']) {
     assert.ok(verify.includes('Path="'+file+'"'), 'native resource not checked: '+file);
   }
   assert.match(verify,/IndexOf\(\$sourceText, \[StringComparison\]::Ordinal\)/);
@@ -104,9 +106,11 @@ test('latest BTN-180 GUI palette is an attested embedded native release requirem
     assert.ok(verify.includes('"'+token+'"'), 'native verified executable missing acceptance marker '+token);
   }
   assert.match(verify,/inset 5px 5px 2px -1px/);
-  assert.match(cmake,/web\/index\.html web\/styles\.css web\/app\.js web\/bridge\.js web\/monitor\.js/);
+  assert.match(cmake,/web\/index\.html web\/styles\.css web\/plugin-ui\.css web\/app\.js web\/plugin-ui\.js web\/bridge\.js web\/monitor\.js/);
   assert.match(nativeMain,/BinaryData::index_html/);
   assert.match(nativeMain,/BinaryData::bridge_js/);
+  assert.match(nativeMain,/BinaryData::pluginui_js/);
+  assert.match(nativeMain,/BinaryData::pluginui_css/);
 });
 
 test('native startup requires static WebView2 loader and JS-backed UI readiness', () => {
