@@ -120,3 +120,8 @@ assert '#app .toolbar .spec-device #headerDriver' in owner
 assert '#app .toolbar .spec-device.on' in owner
 assert '--b180-color:var(--b180-on-stereo)' in (root/'web/styles-src/42-mixer-premium.css').read_text(encoding='utf8')
 print('PASS: balanced OKLab lightness, WCAG captions, device-green native safety and BTN-180 parity')
+
+# P0 mouse latency: no passive BTN-180 hover edge or legacy default hover.
+assert 'color-mix(in srgb,var(--b180-border) 72%,white 28%)' not in css
+assert 'html[data-mixperf="baseline"] .list-item:hover' in css
+assert 'html[data-mixperf="baseline"] .insert:hover' in css

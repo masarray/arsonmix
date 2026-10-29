@@ -70,6 +70,38 @@ async def main():
         assert scheduler['stats']['intervalMs'] in (40,60),scheduler
         assert scheduler['timerOwned'] or scheduler['idleRAF']!=0,scheduler
 
+        # Pointer crossing 12 representative hardware surfaces must not alter
+        # paint-bearing styles. Focus-visible, SELECTED/ON and press feedback
+        # have independent checks later in this suite.
+        async def passive_hover_is_inert(selector):
+            target=page.locator(selector).first
+            assert await target.count()==1,selector
+            await page.mouse.move(1,1)
+            static=await target.evaluate("""e=>{
+                const s=getComputedStyle(e);
+                return {background:s.background,border:s.borderColor,color:s.color,
+                        shadow:s.boxShadow,filter:s.filter,opacity:s.opacity,
+                        outline:s.outlineColor,transform:s.transform}
+            }""")
+            await target.hover()
+            hovered=await target.evaluate("""e=>{
+                const s=getComputedStyle(e);
+                return {background:s.background,border:s.borderColor,color:s.color,
+                        shadow:s.boxShadow,filter:s.filter,opacity:s.opacity,
+                        outline:s.outlineColor,transform:s.transform}
+            }""")
+            assert static==hovered,(selector,static,hovered)
+
+        for selector in (
+            '[data-view="MIX"]', '[data-view="FX RACK"]',
+            '.toolbar .spec-device', '[data-preset="Clean Vocal"]',
+            '.channel-list .list-item', '[data-hpf="0"]',
+            '#mixer .strip .rack .insert',
+            '#mixer .strip .rack .insert.empty',
+            '#masterLeft .master-insert', '[data-fxpower="0:0"]',
+            '#mixer .strip .strip-name', '#masterMute'):
+            await passive_hover_is_inert(selector)
+
         cap=page.locator('[data-fader="0"] .cap')
         await cap.hover()
         fast=await cap.evaluate("(e)=>getComputedStyle(e).filter")

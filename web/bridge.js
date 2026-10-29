@@ -49,7 +49,7 @@
     .native-btn{font:inherit;color:#d6e9ef;padding:8px 12px;border:1px solid #48677a;border-radius:6px;
        background:linear-gradient(180deg,#405c70 0%,#243846 47%,#0d1e29 100%);cursor:pointer;
        box-shadow:inset 0 1px 1px #93badc70,0 2px 3px #0008}
-    .native-btn:hover{border-color:#62b8dc}
+    /* No passive pointer hover paint on native controls. */
     .native-add-feedback{margin:9px 0 11px;padding:10px 12px;border-radius:5px;font-size:12px;
       line-height:1.55;border:1px solid #4e7789;background:#153545;color:#b9eaff}
     .native-add-feedback.error{background:#39252a;border-color:#b76b68;color:#ffe0d4}
@@ -147,7 +147,7 @@
     #nativeFxContext{position:fixed;z-index:950;min-width:180px;padding:4px;background:#13232e;border:1px solid #426175;border-radius:5px;box-shadow:0 9px 26px #000b;color:#dcecf2;font-size:11px}
     #nativeFxContext[hidden]{display:none}
     #nativeFxContext button{display:block;width:100%;text-align:left;background:transparent;color:inherit;border:0;border-radius:3px;padding:7px 10px;cursor:pointer;font:inherit}
-    #nativeFxContext button:hover,#nativeFxContext button:focus-visible{background:#234657;color:#b5f2ff}
+    #nativeFxContext button:focus-visible{background:#234657;color:#b5f2ff}
     #nativeFxContext .native-context-divider{height:1px;background:#334a58;margin:3px 4px}
   `;
   css.textContent += "\n    #nativeOrbit .native-dialog{width:374px;max-width:calc(100vw - 16px)}\n    #nativeOrbit .orbit-motion-view{background:#0b1e2a;border:1px solid #2f5161;\n      border-radius:6px;margin:0 0 10px;padding:7px;display:flex;align-items:center;gap:10px}\n    #nativeOrbit .orbit-map{width:132px;height:132px;flex:none}\n    #nativeOrbit .orbit-mode-help{font-size:11px;color:#9abfce;line-height:1.55}\n    #nativeOrbit .orbit-mode-help strong{display:block;color:#d8f0f7;font-weight:500;margin-bottom:4px}\n    #nativeOrbit .orbit-field-label{font-size:11px}\n    #nativeOrbit .orbit-extra-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}\n    #nativeOrbit .orbit-help-note{font-size:10px;color:#87a8b9;line-height:1.4;margin:0 0 8px}\n    #nativeOrbit .material-icon{width:18px;height:18px;fill:currentColor;vertical-align:middle;flex:none}\n    #nativeOrbit .orbit-actions .native-btn{display:inline-flex;justify-content:center;align-items:center;gap:5px}\n    #nativeOrbit .orbit-map path{vector-effect:non-scaling-stroke}\n";

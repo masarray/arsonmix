@@ -182,10 +182,5 @@
 #app .toolbar-actions .nav button.btn-180:is(.selected,.active,[aria-pressed="true"]){
  --b180-color:#b2e8a0;--b180-border:#649c62;--b180-ink:#1a361d;
 }
-/* Lightweight hardware hover: a single solid tint, no filter, blur,
-   shadow animation, scale or new compositing layer. */
-#app .toolbar-actions .nav button.btn-180:not(:disabled):hover:not(:active),
-#app .left-rail button.btn-180:not(:disabled):hover:not(:active),
-#app #mixer button.btn-180:not(:disabled):hover:not(:active){
- border-color:color-mix(in srgb,var(--b180-border) 72%,white 28%)!important;
-}
+/* P0 low-end GPU: hover does not repaint BTN-180. Focus-visible,
+   1px hardware press, shared static shadows and semantic ON stay unchanged. */

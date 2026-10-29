@@ -45,16 +45,12 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
  transition:none!important;
 }
 #app #mixer .pan-track .pan-fill{filter:none!important;box-shadow:none!important}
-#app #mixer :is(.rack .fx-power:hover,.rack .insert:hover,.master-insert:hover,.master-tools button:hover,.strip-name:hover){
- filter:none!important;
- transition:none!important;
-}
-/* State transitions still show semantic ON/OFF; no expensive hover repaint. */
-#app .toolbar button:hover,#app .left-rail button:hover{filter:none!important}
+
+
 #app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav){
  filter:none!important;text-shadow:none!important;
 }
-#app :is(.toolbar-actions .nav button.fx-nav,.left-rail button.fx-nav):hover{filter:none!important}
+
 #app :is(.live-dot,.rail-live-indicator){box-shadow:none!important}
 #app .modal{backdrop-filter:none!important}
 #app #mixer .strip.selected .strip-name{box-shadow:inset 0 0 0 1px #8fcde151!important}
@@ -80,3 +76,9 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 }
 #app #mixer [data-fader]:not([data-fader="master"]) .fader-travel > .cap{background-image:var(--ari-channel-cap)!important}
 #app #mixer [data-fader="master"] .fader-travel > .cap{background-image:var(--ari-master-cap)!important}
+
+/* Default: no passive mouse-hover gradient, border, shadow, filter or fade.
+   Historical A/B is available ONLY when explicitly ?mixperf=baseline. */
+html:not([data-mixperf="baseline"]) #app :is(.rack .insert,.master-insert){
+ transition:none!important;
+}
