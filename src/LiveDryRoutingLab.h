@@ -44,6 +44,7 @@ public:
     // One device session gets a new epoch; stored route cannot survive it.
     void prepareDevice (juce::AudioIODevice* device) noexcept {
         const auto generation=deviceEpoch_.fetch_add(1,std::memory_order_acq_rel)+1;
+        userPatched_.store(false,std::memory_order_release);
         registryValid_.store(false,std::memory_order_release);
         topologyFault_.store(false,std::memory_order_release);
         portCount_.store(0,std::memory_order_release);
@@ -72,6 +73,7 @@ public:
     }
     void deviceStopped() noexcept {
         // A stale lab cannot silently resume legacy CH1 on device hotplug.
+        userPatched_.store(false,std::memory_order_release);
         deviceEpoch_.fetch_add(1,std::memory_order_acq_rel);
         registryValid_.store(false,std::memory_order_release);
         portCount_.store(0,std::memory_order_release);
@@ -127,22 +129,18 @@ public:
         }
         request->setProperty("channels",juce::var(channels));
         const std::array<FxSelection,fxSlots> none{};
-        const auto error=apply(juce::var(request.release()),directPermitted,
-                              independentClock,loadedFx,none,formats,
-                              sampleRate,deviceFrames);
-        if(error.isEmpty()) {
-            // A prepared silence graph is NOT an operator-ACKed physical patch.
-            // Never expose a synthetic default in the GUI or native Shows.
-            acceptedRoute_=juce::var();
-        }
-        return error;
+        // Same publisher/graph as a real user APPLY, but no authorization.
+        // Never briefly advertise a synthetic route as LIVE.
+        return apply(juce::var(request.release()),directPermitted,
+                     independentClock,loadedFx,none,formats,
+                     sampleRate,deviceFrames,false);
     }
 
     juce::String apply (const juce::var& command, bool directPermitted,
                         bool independentClock, int loadedFx,
                         const std::array<FxSelection,fxSlots>& selections,
                         juce::AudioPluginFormatManager& formats,
-                        double sampleRate,int deviceFrames) {
+                        double sampleRate,int deviceFrames,bool explicitSelection=true) {
         // Called by the native message thread only. Not callable from RT.
         if(!directPermitted || independentClock)
             return "Dry Routing LAB requires one verified DIRECT audio device";
@@ -288,7 +286,11 @@ public:
                 // Native control state is the routing SSOT. The GUI only
                 // displays an acknowledged immutable copy; draft changes
                 // never update this until graph publication succeeds.
-                acceptedRoute_=command;
+                acceptedRoute_=explicitSelection?command:juce::var();
+                // Release-store only AFTER a valid immutable graph publishes.
+                // Even if OUTPUT is mistakenly armed, unpatched renders never
+                // enter ANY channel/master vendor DSP or produce sound.
+                userPatched_.store(explicitSelection,std::memory_order_release);
                 channelEdits_=proposed; // control thread SSOT for this route revision
                 for(int i=0;i<count;++i)channelFxNames_[i]=selections[i].name;
                 for(int b=0;b<auxCount;++b)
@@ -342,6 +344,7 @@ public:
     }
 
     void disable() noexcept {
+        userPatched_.store(false,std::memory_order_release);
         enabled_.store(false,std::memory_order_release);
         publishedEpoch_.store(0,std::memory_order_release);
         publisher_.unpublish(); // control thread only
@@ -398,6 +401,18 @@ public:
             return true;
         }
         if(topologyFault_.load(std::memory_order_acquire))return true;
+        if(inputCount!=callbackInputCount_.load(std::memory_order_acquire)) {
+            topologyFault_.store(true,std::memory_order_release);
+            return true;
+        }
+        // A prepared graph does NOT authorize physical inputs: skip ALL
+        // channel, AUX and MASTER vendor processing until explicit native ACK.
+        // One atomic read; output and every meter were already zeroed above.
+        if(!userPatched_.load(std::memory_order_acquire)) {
+            fadeRemaining_=0;
+            lastOutputL_=lastOutputR_=0.f;
+            return true;
+        }
         const auto generation=epoch();
         auto lease=publisher_.acquire();
         const auto* snapshot=lease.get(generation);
@@ -566,6 +581,7 @@ private:
     std::atomic<int> callbackInputCount_{-1};
     std::atomic<int> callbackOutputCount_{-1};
     std::atomic<bool> enabled_{false};
+    std::atomic<bool> userPatched_{false}; // RT authorization, not graph readiness
     std::atomic<float> peakL_{0.f},peakR_{0.f};
     std::atomic<int> sendCount_{0};
     std::atomic<int> fxCount_{0};

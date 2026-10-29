@@ -141,8 +141,8 @@ test('R0B B3 always-on native 10CH startup is verified, muted and unpatched',()=
   assert.match(factory,/row->setProperty\("left",-1\)/);
   assert.match(factory,/row->setProperty\("right",-1\)/);
   assert.match(factory,/const std::array<FxSelection,fxSlots> none\{\}/);
-  assert.match(factory,/const auto error=apply\(/);
-  assert.match(factory,/acceptedRoute_=juce::var\(\)/);
+  assert.match(factory,/return apply\(/);
+  assert.match(factory,/sampleRate,deviceFrames,false\)/);
   assert.doesNotMatch(factory,/autoMap|firstInput|callbackIndex|start\(|attach\(|detach\(/);
   assert.match(lab,/setProperty\("hasAcceptedRoute",hasExplicitRoute\(\)\)/);
   assert.match(e,/NATIVE_UNPATCHED_SILENT/);
@@ -166,4 +166,45 @@ test('R0B B3 preserves diagnostic isolation without exposing an accepted patch',
  assert.match(manual,/dryRoutingLab_\.disable\(\)/);
  assert.match(manual,/startUnpatchedProductionSession\(\)/);
  assert.doesNotMatch(manual,/setOutputMuted\(false\)/);
+});
+
+
+test('R0B B3 unpatched session preserves CH1 presets and zero-PDC gates only on explicit patch',()=>{
+  const capture=e.slice(e.indexOf('juce::String captureSnapshot'),
+                        e.indexOf('juce::String restoreSnapshot'));
+  const restore=e.slice(e.indexOf('juce::String restoreSnapshot'),
+                        e.indexOf('bool setBypass'));
+  assert.match(capture,/dryRoutingLab_\.hasExplicitRoute\(\)/);
+  assert.match(restore,/dryRoutingLab_\.hasExplicitRoute\(\)/);
+  assert.doesNotMatch(capture,/dryRoutingLab_\.active\(\)/);
+  assert.doesNotMatch(restore,/dryRoutingLab_\.active\(\)/);
+  assert.match(capture,/isOutputMuted\(\)/);
+  assert.match(restore,/handoff_\.stage/);
+  assert.match(e,/if\(dryRoutingLab_\.hasExplicitRoute\(\) && latency!=0\)/);
+  assert.match(e,/if\(dryRoutingLab_\.hasExplicitRoute\(\) && !value &&/);
+  assert.match(e,/CH1 rack contains a latent VST3: zero-latency settings are required/);
+});
+
+test('R0B B3 never processes MASTER FX, strips or AUX until explicit ACK',()=>{
+  const lab=readFileSync('src/LiveDryRoutingLab.h','utf8');
+  const body=lab.slice(lab.indexOf('bool process(const float* const* inputs'),
+                       lab.indexOf('juce::var status('));
+  const zero=body.indexOf('FloatVectorOperations::clear(outputs[c],frames)');
+  const guard=body.indexOf('!userPatched_.load(std::memory_order_acquire)');
+  const lease=body.indexOf('publisher_.acquire()');
+  const dsp=body.indexOf('snapshot->prepared->process(');
+  assert.ok(zero>=0&&guard>zero&&lease>guard&&dsp>lease);
+  assert.match(body,/if\(!userPatched_\.load\(std::memory_order_acquire\)\)/);
+  assert.match(body,/inputCount!=callbackInputCount_\.load/);
+  assert.match(body.slice(guard,lease),/return true/);
+  const apply=lab.slice(lab.indexOf('juce::String apply ('),
+                        lab.indexOf('bool setChannelParameter('));
+  assert.match(apply,/bool explicitSelection=true/);
+  assert.match(apply,/acceptedRoute_=explicitSelection\?command:juce::var\(\)/);
+  assert.match(apply,/userPatched_\.store\(explicitSelection,std::memory_order_release\)/);
+  const empty=lab.slice(lab.indexOf('juce::String startUnpatchedSession'),
+                        lab.indexOf('juce::String apply ('));
+  assert.match(empty,/sampleRate,deviceFrames,false/);
+  assert.match(lab,/userPatched_\.store\(false,std::memory_order_release\)/);
+  assert.match(lab,/std::atomic<bool> userPatched_\{false\}/);
 });

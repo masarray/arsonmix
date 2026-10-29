@@ -694,7 +694,7 @@ public:
         catch(...){return "VST3 prepare failed (unknown exception)";}
         // Explicit PDC gate: PRE/POST sends must never combine misaligned FX.
         // This rejects a new latent CH1 insert, even if bypassed at insertion.
-        if(dryRoutingLab_.active() && latency!=0)
+        if(dryRoutingLab_.hasExplicitRoute() && latency!=0)
             return "Native sends require zero-latency CH1 FX until PDC is implemented";
         // Construct/prepare entirely on the native message thread. Existing
         // processor identities, binary state, Orbit and tails are shared with
@@ -718,7 +718,7 @@ public:
     // exactly once, no plugin state methods ever execute on the audio thread.
     juce::String captureSnapshot (armix::storage::Snapshot& snapshot)
     {
-        if (dryRoutingLab_.active()) return "Stop DRY ROUTING LAB before saving native FX state";
+        if (dryRoutingLab_.hasExplicitRoute()) return "CLEAR PATCH before capturing CH1 native FX state";
         if (!isOutputMuted()) return "Mute hardware output before saving a native preset";
         if (handoff_.busy() || fxMovePhase_.load (std::memory_order_acquire) != 0) return "Finish pending FX graph transition before saving";
         snapshot.effects.clear();
@@ -766,7 +766,7 @@ public:
     // or destroys a plugin. No manual output mute is required for recall.
     juce::String restoreSnapshot (const armix::storage::Snapshot& snapshot)
     {
-        if (dryRoutingLab_.active()) return "Stop DRY ROUTING LAB before preset recall";
+        if (dryRoutingLab_.hasExplicitRoute()) return "CLEAR PATCH before recalling CH1 native preset";
         if (handoff_.busy())
             return "A live FX graph transition is already in progress";
         if (snapshot.effects.size() > maxFx) return "Too many plugins in preset";
@@ -869,7 +869,7 @@ public:
         const int physical = Graph::physicalAt (visibleFxOrder(), index);
         // No PDC: a bypassed latent CH1 processor must not be re-enabled
         // after routing was ACKed (otherwise parallel sends misalign).
-        if(dryRoutingLab_.active() && !value &&
+        if(dryRoutingLab_.hasExplicitRoute() && !value &&
            graphOwned_->slots[physical].latency!=0)return false;
         graphOwned_->slots[physical].bypass = value;
         graphOwned_->bypassFlags[physical].store (value, std::memory_order_release);
