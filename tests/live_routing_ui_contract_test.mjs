@@ -192,3 +192,15 @@ test("R1 matrix edits only device-bound draft and honors native revision ACK",()
   assert.doesNotMatch(ui,/filter\s*:\s*blur\(/);
   assert.match(ui,/document\.addEventListener\("click",event=>/);
 });
+
+test("R1 upstream Studio-IO rejection always releases native APPLY pending state",()=>{
+  const first=main.indexOf('if ((studioBackupBusy_ || nativeShowBusy_)');
+  const next=main.indexOf('// Structural plugin operations',first);
+  assert.ok(first>=0&&next>first);
+  const gate=main.slice(first,next);
+  assert.match(gate,/action=="routingDryApply"/);
+  assert.match(gate,/arMixRoutingLabAck/);
+  assert.match(gate,/setProperty\("ok",false\)/);
+  assert.match(ui,/patchPending=false/);
+  assert.match(ui,/if\(patchPending\)return/);
+});
