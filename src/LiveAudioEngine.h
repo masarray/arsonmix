@@ -15,6 +15,7 @@
 #include "../engine/device/DirectRouteFence.h"
 #include "../engine/device/WasapiEndpointIdentityGuard.h"
 #include "../engine/core/FxOrderPlan.h"
+#include "../engine/core/FxStructuralEditPlan.h"
 #include "../engine/core/FxMoveRamp.h"
 #include "../engine/core/RealtimeHealthHistogram.h"
 #include "../engine/core/CallbackCadenceEvidence.h"
@@ -31,15 +32,32 @@
 // The audio callback never scans files, creates plugins, mutates the chain,
 // enters UI code, locks host mutexes, logs, or changes device settings.
 // P2.5 recall pre-stages a graph and transitions at callback boundaries.
-// Add/Remove still use a bounded offline lifecycle; MOVE is a lock-free order publication.
+// ADD/REMOVE stage a shared-owner graph; MOVE publishes a lock-free order.
 class LiveAudioEngine final : private juce::AudioIODeviceCallback
 {
 public:
     static constexpr int maxFx = 8;
 
+    // Vendor lifecycle calls occur ONLY when the final control-owned graph
+    // reference disappears, never inside the realtime audio callback.
+    struct PluginRelease final
+    {
+        void operator()(juce::AudioPluginInstance* p) const noexcept
+        {
+            if (!p) return;
+            try { p->releaseResources(); } catch (...) {}
+            delete p;
+        }
+    };
+    static std::shared_ptr<juce::AudioPluginInstance> ownPlugin (
+        std::unique_ptr<juce::AudioPluginInstance> instance)
+    {
+        return {instance.release(), PluginRelease{}};
+    }
+
     struct Slot
     {
-        std::unique_ptr<juce::AudioPluginInstance> processor;
+        std::shared_ptr<juce::AudioPluginInstance> processor;
         juce::String name, catalogId, path;
         int uid = 0;
         bool bypass = false;
@@ -225,8 +243,7 @@ public:
         fxMovePendingOrder_.store (Graph::canonicalOrder, std::memory_order_relaxed);
         for (int i = 0; i < graphOwned_->count; ++i)
         {
-            if (graphOwned_->slots[i].processor) graphOwned_->slots[i].processor->releaseResources();
-            graphOwned_->slots[i] = Slot {};
+            graphOwned_->slots[i] = Slot {}; // last-owner vendor retirement on control thread
         }
         graphOwned_->count = 0;
         deviceManager_.closeAudioDevice();
@@ -499,9 +516,8 @@ public:
         if (retired != graphOwned_.get() || !stagedOwner_) return false;
         auto old = std::move (graphOwned_);
         graphOwned_ = std::move (stagedOwner_);
-        for (int i = 0; i < old->count; ++i)
-            if (old->slots[i].processor) old->slots[i].processor->releaseResources();
-        old.reset(); // Third-party destruction exclusively on message thread.
+        old.reset(); // Reused processors stay alive; removed ones release once on control thread.
+        totalLatency_.store (graphOwned_->latency, std::memory_order_release);
         handoff_.completeRetirement();
         completedSwaps_.fetch_add (1, std::memory_order_relaxed);
         return true;
@@ -559,54 +575,121 @@ public:
         graph.orderPacked.store (Graph::canonicalOrder, std::memory_order_release);
     }
 
+    // B2: control-thread graph compiler. Immutable ownership of every VST3
+    // stays in shared_ptrs; the audio callback reads raw pointers exclusively.
+    // No plugin instance, slot, string, or shared refcount is moved on RT.
+    bool stageStructuralEdit (int removedLogical, Slot* appended, double rate)
+    {
+        if (!attached_ || independent_.active() || handoff_.busy()
+            || fxMovePhase_.load (std::memory_order_acquire) != 0)
+            return false;
+        const auto packed=graphOwned_->orderPacked.load (std::memory_order_acquire);
+        const auto plan=armix::dsp::FxStructuralEditPlan::make (
+            packed,graphOwned_->count,removedLogical,appended?1:0);
+        if (!plan.valid) return false;
+        auto candidate=std::make_unique<Graph>();
+        for (int logical=0;logical<plan.count;++logical)
+        {
+            const int physical=plan.sourcePhysical[logical];
+            Slot slot;
+            if (physical>=0)
+            {
+                slot=graphOwned_->slots[physical]; // CONTROL: retain same vendor instance/state/tail
+                slot.bypass=graphOwned_->bypassFlags[physical].load(std::memory_order_acquire);
+            }
+            else
+            {
+                if (!appended) return false;
+                slot=std::move(*appended);
+            }
+            candidate->slots[logical]=std::move(slot);
+            candidate->bypassFlags[logical].store (
+                candidate->slots[logical].bypass,std::memory_order_relaxed);
+            candidate->bypassEnvelope[logical].prepare (
+                candidate->slots[logical].bypass,rate,
+                candidate->slots[logical].latency);
+            if (!candidate->slots[logical].bypass)
+                candidate->latency+=candidate->slots[logical].latency;
+        }
+        candidate->count=plan.count;
+        // Prevent duplicated vendor processor cleanup during retirement.
+        // Only the last graph owner invokes PluginRelease on the UI thread.
+        stagedOwner_=std::move(candidate);
+        if (!handoff_.stage(stagedOwner_.get()))
+        {
+            stagedOwner_.reset();
+            return false;
+        }
+        return true;
+    }
+
     juce::String addVst3 (const juce::String& filename, int uid,
                           const juce::String& catalogId)
     {
-        if (dryRoutingLab_.active()) return "Stop DRY ROUTING LAB before editing VST3";
-        if (handoff_.busy() || fxMovePhase_.load (std::memory_order_acquire) != 0)
-            return "FX graph transition in progress; retry shortly";
-        if (graphOwned_->count >= maxFx) return "FX Rack is full (maximum 8 VST3 effects)";
-        auto* device = deviceManager_.getCurrentAudioDevice();
-        if (device == nullptr) return "Configure a working audio input/output device first";
-        auto* fmt = formats_.getFormat (0);
-        if (fmt == nullptr || ! fmt->fileMightContainThisPluginType (filename))
-            return "VST3 module not found: " + filename;
+        if (independent_.active())
+            return "Return to DIRECT ASIO/WASAPI before editing the FX graph";
+        if (handoff_.busy() || fxMovePhase_.load(std::memory_order_acquire)!=0)
+            return "FX graph transition in progress; retry after native ACK";
+        if (!attached_) return "Audio callback is not attached to a verified device";
+        if (graphOwned_->count>=maxFx) return "FX Rack is full (maximum 8 VST3 effects)";
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if (!device || !directFence_.permitted() ||
+            routeReconfiguring_.load(std::memory_order_acquire))
+            return "Select a stable verified audio device first";
+        const auto rate=device->getCurrentSampleRate();
+        const auto buffer=juce::jmax(32,device->getCurrentBufferSizeSamples());
+        const auto epoch=deviceStartCount_.load(std::memory_order_acquire);
+        auto* fmt=formats_.getFormat(0);
+        if (!fmt || !fmt->fileMightContainThisPluginType(filename))
+            return "VST3 module not found: "+filename;
 
         juce::OwnedArray<juce::PluginDescription> descs;
-        fmt->findAllTypesForFile (descs, filename);
-        juce::PluginDescription* chosen = nullptr;
-        for (auto* d : descs)
-            if (d != nullptr && d->uniqueId == uid && !d->isInstrument)
-            {
-                chosen = d;
-                break;
-            }
-        if (chosen == nullptr)
-            return "Effect not found inside VST3 module. Rescan the catalog.";
-
+        fmt->findAllTypesForFile(descs,filename);
+        juce::PluginDescription* chosen=nullptr;
+        for (auto* d:descs)
+            if(d && d->uniqueId==uid && !d->isInstrument){chosen=d;break;}
+        if(!chosen)return "Effect not found inside VST3 module. Rescan the catalog.";
         juce::String error;
-        auto instance = formats_.createPluginInstance (
-            *chosen, device->getCurrentSampleRate(),
-            juce::jmax (32, device->getCurrentBufferSizeSamples()), error);
-        if (! instance)
-            return "Failed to instantiate VST3: " + error;
+        auto instance=formats_.createPluginInstance(*chosen,rate,buffer,error);
+        if(!instance)return "Failed to instantiate VST3: "+error;
+        const auto busError=armix::vst::prepareStereoEffectLayout(*instance);
+        if(busError.isNotEmpty())return chosen->name+": "+busError;
 
-        const auto busError = armix::vst::prepareStereoEffectLayout (*instance);
-        if (busError.isNotEmpty())
-            return chosen->name + ": " + busError;
-
-        detach();
-        materializeOrderOnStoppedCallback();
+        // Vendor initialization is off RT while existing VST instances keep
+        // rendering. Never detach/reopen the hardware callback for an insert.
+        int latency=0;
+        try
+        {
+            instance->prepareToPlay(rate,buffer);
+            latency=instance->getLatencySamples();
+        }
+        catch (...)
+        {
+            return "VST3 failed to prepare on the control thread";
+        }
+        if(dryRoutingLab_.active() && latency!=0)
+        {
+            instance->releaseResources();
+            return "This live multi-bus route needs a zero-latency VST3 until PDC is available";
+        }
+        if(epoch!=deviceStartCount_.load(std::memory_order_acquire) ||
+           device!=deviceManager_.getCurrentAudioDevice() ||
+           rate!=device->getCurrentSampleRate() ||
+           buffer!=juce::jmax(32,device->getCurrentBufferSizeSamples()) ||
+           !directFence_.permitted())
+        {
+            instance->releaseResources();
+            return "Audio device changed during VST3 preparation. Retry insert.";
+        }
         Slot node;
-        node.name = chosen->name;
-        node.catalogId = catalogId;
-        node.path = filename;
-        node.uid = uid;
-        node.processor = std::move (instance);
-        graphOwned_->slots[graphOwned_->count] = std::move (node);
-        graphOwned_->bypassFlags[graphOwned_->count].store (false, std::memory_order_release);
-        ++graphOwned_->count;
-        attach();
+        node.name=chosen->name;
+        node.catalogId=catalogId;
+        node.path=filename;
+        node.uid=uid;
+        node.latency=latency;
+        node.processor=ownPlugin(std::move(instance));
+        if(!stageStructuralEdit(-1,&node,rate))
+            return "Cannot schedule a safe live FX insert; retry after graph ACK";
         return {};
     }
 
@@ -716,7 +799,7 @@ public:
             slot.path = fx.path;
             slot.uid = fx.uid;
             slot.bypass = fx.bypass;
-            slot.processor = std::move (processor);
+            slot.processor = ownPlugin (std::move (processor));
             stagedSlots[static_cast<size_t> (i)] = std::move (slot);
         }
 
@@ -781,20 +864,17 @@ public:
 
     bool removeAt (int index)
     {
-        if (dryRoutingLab_.active()) return false;
-        if (handoff_.busy() || fxMovePhase_.load (std::memory_order_acquire) != 0) return false;
-        if (index < 0 || index >= graphOwned_->count) return false;
-        detach();
-        materializeOrderOnStoppedCallback();
-        if (graphOwned_->slots[index].processor)
-            graphOwned_->slots[index].processor->releaseResources();
-        for (int i = index; i + 1 < graphOwned_->count; ++i)
-            graphOwned_->slots[i] = std::move (graphOwned_->slots[i + 1]);
-        graphOwned_->slots[--graphOwned_->count] = Slot {};
-        for (int i = 0; i < graphOwned_->count; ++i)
-            graphOwned_->bypassFlags[i].store (graphOwned_->slots[i].bypass, std::memory_order_release);
-        attach();
-        return true;
+        if(independent_.active() || !attached_ ||
+           !deviceManager_.getCurrentAudioDevice() || !directFence_.permitted() ||
+           routeReconfiguring_.load(std::memory_order_acquire) ||
+           handoff_.busy() || fxMovePhase_.load(std::memory_order_acquire)!=0)
+            return false;
+        if(index<0||index>=graphOwned_->count)return false;
+        // Safe for both CH1 DIRECT and native 10CH+4AUX. The old processor
+        // remains alive until the RT callback publishes the replacement and
+        // the control thread retires the old immutable graph.
+        return stageStructuralEdit(index,nullptr,
+                    deviceManager_.getCurrentAudioDevice()->getCurrentSampleRate());
     }
 
     bool moveSlot (int from, int to)
@@ -1415,20 +1495,25 @@ private:
                     if(outputs && outputs[c])
                         juce::FloatVectorOperations::clear(outputs[c],samples);
             }
-            // R0B: when routed CH1 borrows the original vendor rack, apply
-            // the SAME two-buffer FX MOVE de-click as the original callback.
-            // The physical instance pointers do not change. Publish the new
-            // logical order only after the old render has faded to zero.
-            // No heap, plugin lifecycle, callback detach, locks or UI on RT.
+            // B2: the SAME callback-owned two-buffer graph handoff also
+            // covers ADD/REMOVE inside the 10CH+4AUX production route.
+            // Ramp the already-rendered MASTER before meters, publish only
+            // after the old instance reaches zero, retain vendor ownership
+            // until message-thread graph retirement. No second DSP pass.
             const int routedFxMove=fxMovePhase_.load(std::memory_order_acquire);
+            const bool graphRamp=cycle.fadeOut||cycle.fadeIn;
             float movedPeakL=0.f,movedPeakR=0.f;
-            if(routedFxMove!=0) {
+            if(routedFxMove!=0 || graphRamp) {
                 for(int c=0;c<juce::jmin(outputChannels,2);++c) {
                     auto* const out=outputs?outputs[c]:nullptr;
                     if(!out)continue;
                     float peak=0.f;
                     for(int i=0;i<samples;++i) {
-                        out[i]*=armix::dsp::FxMoveRamp::gain(routedFxMove,i,samples);
+                        const float orderGain=armix::dsp::FxMoveRamp::gain(
+                            routedFxMove,i,samples);
+                        const float handoffGain=armix::rt::linearBufferRamp(
+                            i,samples,cycle.fadeOut,cycle.fadeIn);
+                        out[i]*=orderGain*handoffGain;
                         peak=juce::jmax(peak,std::abs(out[i]));
                     }
                     if(c==0)movedPeakL=peak;
@@ -1453,15 +1538,15 @@ private:
             // Only actually routed audio can produce a live output meter.
             const float left=routed?dryRoutingLab_.peakLeft():0.f;
             const float right=routed?dryRoutingLab_.peakRight():0.f;
-            const float audibleLeft=routedFxMove!=0?movedPeakL:left;
-            const float audibleRight=routedFxMove!=0?movedPeakR:right;
+            const float audibleLeft=(routedFxMove!=0||graphRamp)?movedPeakL:left;
+            const float audibleRight=(routedFxMove!=0||graphRamp)?movedPeakR:right;
             inputPeak_.store(0.f,std::memory_order_relaxed);
             postFxPeak_.store(juce::jmin(1.f,juce::jmax(left,right)),std::memory_order_relaxed);
             outputPeakL_.store(juce::jmin(1.f,audibleLeft),std::memory_order_relaxed);
             outputPeakR_.store(juce::jmin(1.f,audibleRight),std::memory_order_relaxed);
             outputPeak_.store(juce::jmin(1.f,juce::jmax(audibleLeft,audibleRight)),std::memory_order_relaxed);
-            // ADD/REMOVE still need the R0B prepared shared-owner lifecycle;
-            // only CH1 MOVE is now safe inside the routed render callback.
+            if(cycle.fadeOut) handoff_.endCycle(cycle);
+            // Vendor ADD/REMOVE completion and retirement happen in timerCallback.
             const auto elapsed=clockMicros()-beginUs;
             lastCallbackUs_.store(elapsed,std::memory_order_relaxed);
             publishMax(worstCallbackUs_,elapsed);
