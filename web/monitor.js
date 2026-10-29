@@ -311,7 +311,7 @@
     if(result && typeof result==="object" && "epoch" in result)state.dryRoutingLab=result;
     document.getElementById("arRouteFeedback").textContent=
       reply?.ok===false?("REJECTED · "+(reply.error||"Invalid route")):
-      result.active?"NATIVE ACK: "+(Number(result.fxCount||0)+Number(state.chainCount||0))+" VST3 total (CH1 rack retained · "+(result.fxReused||0)+" native inserts reused) · "+(result.auxCount||0)+" AUX · "+(result.auxSendCount||0)+" AUX sends · UNMUTE OUTPUT in SIGNAL CHECK":"NATIVE ACK: STOPPED · output remains MUTED for safety";
+      result.active?"NATIVE ACK: "+(Number(result.fxCount||0)+Number(state.chainCount||0))+" VST3 total (CH1 rack retained · "+(result.fxReused||0)+" native inserts preserved) · "+(result.auxCount||0)+" AUX · "+(result.auxSendCount||0)+" AUX sends · UNMUTE OUTPUT in SIGNAL CHECK":"NATIVE ACK: STOPPED · output remains MUTED for safety";
     updateRouteLabIdentity();
   });
 
