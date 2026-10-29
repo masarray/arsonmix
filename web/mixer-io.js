@@ -35,7 +35,7 @@
   overlay.id='arIOOverlay';overlay.hidden=true;
   overlay.innerHTML='<section class="arIOWindow" role="dialog" aria-modal="true" aria-label="ArSonMix hardware audio I/O"><header><div><small>ARSONMIX · AUDIO HARDWARE</small><h2>Audio I/O Setup</h2></div><button type="button" class="btn-180" data-io-close aria-label="Close Audio I/O">CLOSE</button></header><div class="arIOTop" id="arIOIdentity"></div><nav role="tablist" aria-label="Audio I/O views"><button class="btn-180 active" role="tab" data-io-tab="inputs">INPUTS</button><button class="btn-180" role="tab" data-io-tab="outputs">OUTPUTS</button><button class="btn-180" role="tab" data-io-tab="device">DEVICE</button></nav><div id="arIOBody" class="arIOBody"></div><footer><span id="arIOFeedback" role="status">Hardware changes require native ACK. Output stays MUTED on APPLY.</span><button type="button" class="btn-180" data-mix-apply>APPLY PATCH</button><button type="button" class="btn-180" data-io-advanced>DRIVER SETTINGS</button></footer></section>';
   document.body.appendChild(overlay);
-  function openIO(){overlay.hidden=false;refreshIO();if(isNative())backend.emitEvent('arMixAction',{action:'audioDeviceInventory'});}
+  function openIO(){document.getElementById('arRouteClose')?.click();overlay.hidden=false;refreshIO();if(isNative())backend.emitEvent('arMixAction',{action:'audioDeviceInventory'});}
   function closeIO(){overlay.hidden=true;}
   function setMode(next){
     if(!['FX','ROUTE','SENDS'].includes(next))return;
@@ -153,6 +153,13 @@
   }
   document.addEventListener('change',e=>{
     if(e.target.matches('.arBankSource,.arIOSource'))changeSource(e.target);
+  },true);
+  // The legacy native VST3 bridge registers document capture before this module.
+  // Window capture intercepts only AUDIO SETUP, without changing FX/Orbit ownership.
+  window.addEventListener('click',e=>{
+    const setup=e.target.closest?.('[data-native-action="audioSetup"]');
+    if(!setup)return;
+    e.preventDefault();e.stopImmediatePropagation();openIO();
   },true);
   document.addEventListener('click',e=>{
     const b=e.target.closest('button');
