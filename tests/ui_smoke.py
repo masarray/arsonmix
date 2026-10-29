@@ -1279,6 +1279,40 @@ async def main():
         assert workspace_layout['width']>workspace_layout['viewport']*.80,workspace_layout
         assert workspace_layout['backdrop']=='none',workspace_layout
         assert workspace_layout['routeRows']==0, "Input patch should not eagerly build 14 VST selectors"
+        # R2: 1000 native-catalog plugins, but only ONE lazy chooser with
+        # <=40 matched plugin rows (+ DRY); no 14x option-node explosion.
+        await native.locator('[data-patch-tab="internal"]').click()
+        assert await native.locator(".arPatchFxTrigger").count()==14
+        assert await native.locator("select[data-route-fx],select[data-aux-fx]").count()==0
+        await native.evaluate("""()=>{
+          const items=Array.from({length:1000},(_,i)=>({
+            id:"vst-"+String(i).padStart(4,"0"),
+            name:"Native Plugin "+String(i).padStart(4,"0")
+          }));
+          window.__arMixMockEvents.arMixCatalog({items});
+        }""")
+        assert await native.locator(".arPatchFxTrigger").count()==14
+        await native.locator('[data-route-fx]').first.click()
+        assert await native.locator("#arPatchFxPicker").evaluate(
+            "(e)=>e.classList.contains('open')")
+        assert await native.locator('#arPatchFxResults button').count()==41
+        assert "Showing 40 of 1000" in await native.locator("#arPatchFxCount").inner_text()
+        await native.locator("#arPatchFxSearch").fill("0999")
+        assert await native.locator('#arPatchFxResults button').count()==2
+        await native.locator('[data-fx-picker-choice="vst-0999"]').click()
+        assert "Native Plugin 0999" in await native.locator("[data-route-fx]").first.inner_text()
+        # Restore DRY, ensuring existing routing-test state remains unchanged.
+        await native.locator("[data-route-fx]").first.click()
+        await native.locator('[data-fx-picker-choice=""]').click()
+        await native.locator('[data-aux-fx]').first.click()
+        await native.locator("#arPatchFxSearch").fill("0998")
+        assert await native.locator('#arPatchFxResults button').count()==2
+        await native.locator("#arPatchFxSearch").press("Escape")
+        assert not await native.locator("#arPatchFxPicker").evaluate(
+            "(e)=>e.classList.contains('open')")
+        assert await native.locator("#arRoutingLabOverlay").evaluate(
+            "(e)=>e.classList.contains('open')")
+        await native.locator('[data-patch-tab="input"]').click()
         normal_cell=native.locator('[data-patch-row="0"][data-patch-port="2"].arPatchCell')
         idle_color=await normal_cell.evaluate('(e)=>getComputedStyle(e).backgroundColor')
         await normal_cell.hover()

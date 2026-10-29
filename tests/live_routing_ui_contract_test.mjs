@@ -102,7 +102,8 @@ test("P1H independently instantiates and processes real JUCE FX in 10 native lan
   assert.match(main,/catalog_\.find\(id\)/);
   assert.match(ui,/data-route-fx/);
   assert.match(ui,/arMixCatalog/);
-  assert.match(ui,/fxChoices\(v\.fxId\)/);
+  assert.match(ui,/fxButtonMarkup\("ch",i,v\.fxId\)/);
+  assert.match(ui,/fxButtonMarkup\("aux",i,bus\.fxId\)/);
   assert.match(ui,/result\.fxCount/);
 });
 
@@ -219,3 +220,20 @@ test("R1 upstream Studio-IO rejection always releases native APPLY pending state
   assert.match(ui,/if\(patchPending\)return/);
 });
 
+
+
+test("R2 shared VST3 picker is lazy, bounded and draft-only, not 14 catalog dropdowns",()=>{
+  assert.match(ui,/id="arPatchFxPicker"/);
+  assert.match(ui,/data-fx-picker-choice/);
+  assert.match(ui,/total<=40/);
+  assert.match(ui,/fxSearch\.addEventListener\("input",drawFxResults\)/);
+  assert.match(ui,/catalogNames\.set\(p\.id,name\)/);
+  assert.match(ui,/model\.fxId/);
+  assert.match(ui,/button\.textContent=fxCaption\(id\)/);
+  assert.doesNotMatch(ui,/fxChoices\(/);
+  assert.doesNotMatch(ui,/<select data-route-fx/);
+  assert.doesNotMatch(ui,/<select data-aux-fx/);
+  assert.match(ui,/closeFxPicker\(true\)/);
+  assert.match(ui,/if\(tab!=="internal"\)closeFxPicker\(\)/);
+  assert.match(ui,/if\(fxPickerTarget\)\{closeFxPicker\(true\);return;\}/);
+});
