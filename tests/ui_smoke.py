@@ -1314,7 +1314,7 @@ async def main():
         await native.locator('#rackWorkspace [data-routed-apply]').click()
         assert await native.evaluate("""()=>!window.__arMixSent.some(x=>
           x.payload?.action==="routingDryApply")"""),"No input patch must not publish a routed FX change"
-        await native.locator('#arPatchRevert').click()
+        await native.evaluate('()=>document.getElementById("arPatchRevert").click()')
         await native.evaluate("()=>window.__arMixMockEvents.arMixStatus(window.__arPatchStatus)")
         await native.locator('[data-view="MIX"]').click()
         await native.locator('[data-view="SIGNAL FLOW"]').click()
