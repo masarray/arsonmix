@@ -55,12 +55,12 @@ test('R0B CH1 MOVE inside routed 10CH graph uses the same callback-boundary de-c
   const begin=e.indexOf('if (dryRoutingLab_.active())',e.indexOf('callbackCount_.fetch_add'));
   const end=e.indexOf('const bool enabled = monitor_',begin);
   const routed=e.slice(begin,end);
-  assert.match(routed,/FxMoveRamp::gain\(routedFxMove,i,samples\)/);
+  assert.match(routed,/FxMoveRamp::gain\(\s*routedFxMove,i,samples\)/);
   assert.match(routed,/fxMovePhase_\.store\(2,std::memory_order_release\)/);
   assert.match(routed,/fxMovePhase_\.store\(0,std::memory_order_release\)/);
   assert.match(routed,/cycle\.graph->orderPacked\.store/);
   assert.ok(routed.indexOf('FxMoveRamp::gain')<routed.indexOf('masterLoudness_.process'));
-  assert.match(routed,/audibleLeft=routedFxMove!=0\?movedPeakL:left/);
+  assert.match(routed,/audibleLeft=\(routedFxMove!=0\|\|cycle\.fadeOut\|\|cycle\.fadeIn\)\?movedPeakL:left/);
   assert.doesNotMatch(routed,/detach\(|attach\(|prepareToPlay|releaseResources/);
 });
 
