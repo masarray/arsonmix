@@ -103,3 +103,58 @@ test('asset registration and no blur/focus thrash in native plugin UI',()=>{
   assert.doesNotMatch(css,/backdrop-filter\s*:\s*blur\(/);
   assert.doesNotMatch(css,/:hover/);
 });
+
+test('favorites sort to top, remain searchable and serialize in the portable catalog',()=>{
+  const {component,dialog,listeners}=loadRenderer();
+  const state={catalog:entries(4),scanning:false,message:'Ready',filter:'',
+    chain:[],selectedCategory:'All',adding:false,addError:'',pendingPlugin:'',routedPickerMode:false};
+  state.catalog[3].favorite=true;
+  component.renderPicker(dialog,state,'CH 1 · SLOT 1 · LIVE VST3',['All'],()=> 'All');
+  const rows=dialog.querySelector('#arPickerRows').innerHTML;
+  assert.ok(rows.indexOf('Effect 003') < rows.indexOf('Effect 000'));
+  assert.match(rows,/aria-pressed="true"/);
+  const sent=[];
+  component.init(()=>state,(id,value)=>sent.push({id,value}));
+  let prevented=false;
+  listeners.click({preventDefault(){prevented=true},target:{
+    closest(sel){return sel==='[data-ar-favorite]'?{dataset:{arFavorite:'plugin-3'}}:null}
+  }});
+  assert.ok(prevented);
+  assert.deepEqual(sent,[{id:'plugin-3',value:false}]);
+  component.renderManager(dialog,state,()=>'<p>done</p>');
+  listeners.click({target:{closest:sel=>sel==='#arManagerFavorites'?{}:null}});
+  assert.equal((dialog.querySelector('#arPluginManagerRows').innerHTML.match(/class="ar-plugin-row"/g)||[]).length,1);
+  const catalog=read('src/PluginCatalog.h');
+  assert.match(catalog,/setProperty \("favorite", favorite\)/);
+  assert.match(catalog,/e\.favorite = static_cast<bool>/);
+  assert.match(catalog,/iter->favorite = favorite/);
+  assert.match(catalog,/bool setFavorite \(/);
+  assert.match(native,/action == "setPluginFavorite"/);
+  assert.match(native,/catalog_\.setFavorite \(id, favorite\)/);
+});
+
+test('real routed FX rack remains separate from Routing and respects native apply/ACK',()=>{
+  const monitor=read('web/monitor.js');
+  const engine=read('src/LiveDryRoutingLab.h');
+  assert.match(bridge,/CH1 without a routed VST3 continues into its existing 8-slot rack/);
+  assert.match(bridge,/routed-fx-rack-/);
+  assert.match(bridge,/data-routed-fx=/);
+  assert.match(bridge,/data-routed-apply="1"/);
+  assert.match(bridge,/if\(pickerRouteMode\)/);
+  assert.match(monitor,/window\.__arMixStageRackFx=/);
+  assert.match(monitor,/window\.__arMixApplyRackFx=/);
+  assert.match(monitor,/patchPreflight\(\)/);
+  assert.match(monitor,/document\.getElementById\("arRouteApply"\)\.click\(\)/);
+  assert.match(monitor,/rackFxDraft=null; \/\/ Native ACK became authoritative/);
+  assert.match(engine,/if\(loadedFx>0 && !selections\[0\]\.id\.isEmpty\(\)\)/);
+  assert.ok(!bridge.includes('＋ ROUTE / FX'));
+});
+
+test('WebView2 avoids hidden-page reload and white underlay; startup uses opaque splash',()=>{
+  assert.match(native,/withKeepPageLoadedWhenBrowserIsHidden\(\)/);
+  assert.match(native,/withBackgroundColour \(juce::Colour \(0xff101921\)\)/);
+  assert.match(native,/setVisible \(false\);\s*\/\/ Begin WebView navigation/);
+  assert.match(native,/setVisible \(true\);\s*toBack\(\)/);
+  assert.match(read('src/ArSonMixStartupSplash.h'),/setOpaque \(true\)/);
+  assert.doesNotMatch(native,/goToURL \(.*\);\s*\/\/ restore/);
+});
