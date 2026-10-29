@@ -654,9 +654,6 @@ public:
         return {};
     }
 
-    // Vendor binary capture remains an offline, explicitly muted action.
-    
-
     // Capture VST3 vendor binary state, not the legacy WebView2 mock settings.
     // Must only run when output is muted (caller enforces): callback is detached
     // exactly once, no plugin state methods ever execute on the audio thread.
