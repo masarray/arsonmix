@@ -1358,7 +1358,7 @@ private:
                 {
                     error = "VST3 instantiation failed with an unknown exception";
                 }
-                if(keepOrbit)orbit_.resumeAfterGraphEdit();
+                if(keepOrbit && error.isNotEmpty())orbit_.resumeAfterGraphEdit();
             }
             const auto elapsed = juce::Time::getMillisecondCounter() - started;
             if (error.isNotEmpty())
@@ -1388,17 +1388,10 @@ private:
             editorWindow_.reset();
             const bool changed=engine_.removeAt(slot);
             if(changed) {
-                // The original graph remains leased until the callback ACK.
-                // Stop an Orbit targeting the removed processor BEFORE the
-                // control thread releases its last strong owner.
+                // Orbit stays paused until the callback and control thread
+                // acknowledge the NEW logical graph; only stop a deleted
+                // target early to avoid dangling vendor parameter handles.
                 if(removedOrbit)stopOrbit();
-                else if(previous && orbit_.active()){
-                    int nextSlot=-1;
-                    for(int i=0;i<engine_.chainSize();++i)
-                        if(engine_.pluginAt(i)==previous){nextSlot=i;break;}
-                    if(nextSlot<0)stopOrbit();
-                    else {orbit_.rebindSlot(nextSlot);orbit_.resumeAfterGraphEdit();}
-                }
                 pendingFxRemoveSlot_=slot;
                 diagnostics_.record("FX_REMOVE_STAGED",juce::String(slot));
             } else {
@@ -1615,6 +1608,7 @@ private:
             emitChain();
             if(pendingFxAddRequestId_>=0)
             {
+                if(orbit_.active())orbit_.resumeAfterGraphEdit();
                 emitFxAddResult(pendingFxAddRequestId_,pendingFxAddName_,{},
                                 pendingFxAddElapsedMs_);
                 diagnostics_.record("FX_ADD_ACK",pendingFxAddName_);
@@ -1634,7 +1628,7 @@ private:
                     int target=-1;
                     for(int i=0;i<engine_.chainSize();++i)
                         if(engine_.pluginAt(i)==retained){target=i;break;}
-                    if(target>=0)orbit_.rebindSlot(target);
+                    if(target>=0){orbit_.rebindSlot(target);orbit_.resumeAfterGraphEdit();}
                     else stopOrbit();
                 }
                 diagnostics_.record("FX_REMOVE_ACK",juce::String(pendingFxRemoveSlot_));

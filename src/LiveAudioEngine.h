@@ -37,6 +37,23 @@ class LiveAudioEngine final : private juce::AudioIODeviceCallback
 public:
     static constexpr int maxFx = 8;
 
+    // One last-owner vendor teardown, always on the control thread. No manual
+    // refcount-dependent releaseResources calls at scattered exit paths.
+    struct PluginRelease final
+    {
+        void operator()(juce::AudioPluginInstance* processor) const noexcept
+        {
+            if (!processor) return;
+            try { processor->releaseResources(); } catch (...) {}
+            delete processor;
+        }
+    };
+    static std::shared_ptr<juce::AudioPluginInstance> ownPlugin (
+        std::unique_ptr<juce::AudioPluginInstance> processor)
+    {
+        return {processor.release(),PluginRelease{}};
+    }
+
     struct Slot
     {
         std::shared_ptr<juce::AudioPluginInstance> processor;
@@ -220,20 +237,14 @@ public:
         independent_.close();
         detach();
         handoff_.resetAfterStop (graphOwned_.get());
-        // Device callback is detached. Reclaim a staged but unacknowledged FX
-        // transaction on the control thread; reused processors remain owned
-        // by graphOwned_ and must not be released twice.
-        if (stagedOwner_)
-            for (int i=0;i<stagedOwner_->count;++i)
-                if (auto& p=stagedOwner_->slots[i].processor; p && p.use_count()==1)
-                    p->releaseResources();
+        // Last owner releases vendor resources exactly once after detach.
+        // Reused instances remain valid until their final control-owned slot.
         stagedOwner_.reset();
         fxMovePhase_.store (0, std::memory_order_release);
         fxMovePendingOrder_.store (Graph::canonicalOrder, std::memory_order_relaxed);
         for (int i = 0; i < graphOwned_->count; ++i)
         {
-            if (graphOwned_->slots[i].processor) graphOwned_->slots[i].processor->releaseResources();
-            graphOwned_->slots[i] = Slot {};
+            graphOwned_->slots[i] = Slot {}; // last-owner control release
         }
         graphOwned_->count = 0;
         deviceManager_.closeAudioDevice();
@@ -506,10 +517,7 @@ public:
         if (retired != graphOwned_.get() || !stagedOwner_) return false;
         auto old = std::move (graphOwned_);
         graphOwned_ = std::move (stagedOwner_);
-        for (int i = 0; i < old->count; ++i)
-            if (auto& p=old->slots[i].processor; p && p.use_count()==1)
-                p->releaseResources(); // discarded only; retained vendor state/tails survive
-        old.reset(); // Third-party destruction exclusively on message thread.
+        old.reset(); // Vendor cleanup only on final CONTROL-owned reference.
         totalLatency_.store(graphOwned_->latency,std::memory_order_release);
         handoff_.completeRetirement();
         completedSwaps_.fetch_add (1, std::memory_order_relaxed);
@@ -579,15 +587,19 @@ public:
 
     bool publishFxEdit(std::unique_ptr<Graph> next,
                        juce::AudioIODevice* device,
-                       std::uint64_t expectedEpoch)
+                       std::uint64_t expectedEpoch,
+                       double expectedRate,int expectedFrames)
     {
         // All checks precede staging: a rejected edit must not alter the
         // currently audible graph or any accepted route revision.
         if(!next || !attached_ || !device || independent_.active() ||
            !directFence_.permitted() || handoff_.busy() ||
            fxMovePhase_.load(std::memory_order_acquire)!=0 ||
+           routeReconfiguring_.load(std::memory_order_acquire) ||
            device!=deviceManager_.getCurrentAudioDevice() ||
-           expectedEpoch!=deviceStartCount_.load(std::memory_order_acquire))
+           expectedEpoch!=deviceStartCount_.load(std::memory_order_acquire) ||
+           expectedRate!=device->getCurrentSampleRate() ||
+           expectedFrames!=juce::jmax(32,device->getCurrentBufferSizeSamples()))
             return false;
         prepareFxEditEnvelope(*next,device->getCurrentSampleRate());
         stagedOwner_=std::move(next);
@@ -628,17 +640,18 @@ public:
         if(!instance)return "Failed to instantiate VST3: "+error;
         const auto layout=armix::vst::prepareStereoEffectLayout(*instance);
         if(layout.isNotEmpty())return chosen->name+": "+layout;
-        try {instance->prepareToPlay(rate,frames);}
+        auto prepared=ownPlugin(std::move(instance));
+        int latency=0;
+        try {
+            prepared->prepareToPlay(rate,frames);
+            latency=prepared->getLatencySamples();
+        }
         catch(const std::exception& ex){return "VST3 prepare failed: "+juce::String(ex.what());}
         catch(...){return "VST3 prepare failed (unknown exception)";}
-        const auto latency=instance->getLatencySamples();
         // Explicit PDC gate: PRE/POST sends must never combine misaligned FX.
         // This rejects a new latent CH1 insert, even if bypassed at insertion.
         if(dryRoutingLab_.active() && latency!=0)
-        {
-            instance->releaseResources();
             return "Native sends require zero-latency CH1 FX until PDC is implemented";
-        }
         // Construct/prepare entirely on the native message thread. Existing
         // processor identities, binary state, Orbit and tails are shared with
         // the old graph until an acknowledged buffer-boundary swap.
@@ -647,17 +660,12 @@ public:
         added.name=chosen->name;added.catalogId=catalogId;
         added.path=filename;added.uid=uid;
         added.latency=latency;
-        added.processor=std::move(instance);
-        auto preparedNew=added.processor; // CONTROL-only failure rollback owner
+        added.processor=std::move(prepared);
         next->slots[next->count++]=std::move(added);
-        if(!publishFxEdit(std::move(next),device,epoch))
-        {
-            // A failed publication must clean up the newly prepared VST3
-            // after the candidate graph has relinquished its strong handle.
-            // Reused old instances remain in graphOwned_ and are never reset.
-            if(preparedNew.use_count()==1)preparedNew->releaseResources();
+        // A failed publish destroys the candidate on CONTROL, invoking
+        // PluginRelease only for newly unreferenced vendor instances.
+        if(!publishFxEdit(std::move(next),device,epoch,rate,frames))
             return "Audio device or FX graph changed during ADD; retry when stable";
-        }
         return {};
     }
 
@@ -748,13 +756,14 @@ public:
             const auto busError = armix::vst::prepareStereoEffectLayout (*processor);
             if (busError.isNotEmpty())
                 return "Unsupported VST3 bus layout for " + fx.name + ": " + busError;
+            auto owned=ownPlugin(std::move(processor));
             try
             {
-                // State is restored before insertion; live audio still uses the
-                // old plan until every new instance has finished construction.
-                processor->prepareToPlay (rate, buffer);
+                // Each prepared candidate has one control-thread cleanup owner,
+                // even if vendor restore or a later stage fails.
+                owned->prepareToPlay (rate, buffer);
                 if (fx.binary.getSize() > 0)
-                    processor->setStateInformation (
+                    owned->setStateInformation (
                         fx.binary.getData(), static_cast<int> (fx.binary.getSize()));
             }
             catch (...)
@@ -767,7 +776,7 @@ public:
             slot.path = fx.path;
             slot.uid = fx.uid;
             slot.bypass = fx.bypass;
-            slot.processor = std::move (processor);
+            slot.processor = std::move (owned);
             stagedSlots[static_cast<size_t> (i)] = std::move (slot);
         }
 
@@ -844,7 +853,9 @@ public:
         for(int i=index;i+1<next->count;++i)
             next->slots[i]=std::move(next->slots[i+1]);
         next->slots[--next->count]=Slot{};
-        return publishFxEdit(std::move(next),device,epoch);
+        return publishFxEdit(std::move(next),device,epoch,
+                             device->getCurrentSampleRate(),
+                             juce::jmax(32,device->getCurrentBufferSizeSamples()));
     }
 
     bool moveSlot (int from, int to)

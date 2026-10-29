@@ -21,8 +21,12 @@ struct Graph {
 };
 int main(){
   std::atomic<int> deleted{0};
+  std::atomic<int> released{0};
+  // Simulate vendor releaseResources exactly once when final CONTROL owner drops.
+  auto newVendor=[&](int id){return std::shared_ptr<Processor>(
+    new Processor(id,deleted),[&](Processor* p){released.fetch_add(1);delete p;});};
   auto original=std::make_unique<Graph>();
-  original->nodes[0]=std::make_shared<Processor>(1,deleted);
+  original->nodes[0]=newVendor(1);
   original->size=1;
   armix::rt::LiveGraphHandoff<Graph> publisher;
   publisher.initialize(original.get());
@@ -33,7 +37,7 @@ int main(){
     staged->nodes[0]=original->nodes[0];
     staged->size=1;
     if((k%2)==0) {
-      staged->nodes[1]=std::make_shared<Processor>(k+2,deleted);
+      staged->nodes[1]=newVendor(k+2);
       staged->size=2;
     }
     check(publisher.stage(staged.get()));
@@ -51,4 +55,8 @@ int main(){
   }
   original.reset();
   check(deleted.load()==1001);
+  check(released.load()==1001); // never two releases of reused processor
+  // Failed stage on control thread must also release a prepared vendor instance.
+  { auto cancelled=newVendor(9999); check(released.load()==1001); }
+  check(released.load()==1002);
 }

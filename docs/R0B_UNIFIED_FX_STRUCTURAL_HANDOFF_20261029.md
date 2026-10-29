@@ -12,3 +12,9 @@
 - A successful CI run does not prove zero physical crackle on ASIO/WASAPI: issue #15 stays open.
 - R0B still needs default single 10CH+4AUX session startup and removal of user-facing LAB/STOP dependency, hardware reconnect handling and race tests on actual drivers. Ch2–10 multi-FX, independent clock live structural edits, PDC and plugin-equipped full cross-device Shows remain separate gates.
 - Physical FAT: current DIRECT ASIO + WASAPI device, 0 VST baseline, CH1 ADD/REMOVE/MOVE/Orbit while AUX sends run, synthetic and real audio, recording continuous PCM and checking pops on each transition. No benchmark claims without source-labeled measurements.
+
+## Review hardening (single PR, no duplicate engine)
+- Last-owner `PluginRelease` releases third-party resources even for failed/stale vendor prepare, discarded recall and candidate rollback; no scattered `use_count()==1` decisions. Thread affinity remains the existing control-owner contract.
+- Rate/buffer/generation/reconfiguring guards checked at publish time; a stale prepared graph is refused.
+- An active retained Orbit stays paused through ADD/REMOVE until control-thread ACK, and is rebound to the new logical slot by pointer identity.
+- Existing Windows workflow now explicitly builds the structural stress target before CTest; no extra CI workflow or matrix.
