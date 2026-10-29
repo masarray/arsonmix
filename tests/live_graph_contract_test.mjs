@@ -87,6 +87,8 @@ test('R0B major milestone: ADD and REMOVE are prepared control-thread transactio
                      m.indexOf('if (timerTicks_ % 12',m.indexOf('if (engine_.finalizeGraphSwitch())')));
   assert.match(timer,/emitFxAddResult\(pendingFxAddRequestId_/);
   assert.match(timer,/FX_REMOVE_ACK/);
+  assert.match(timer,/orbit_\\.rebindSlot\\(target\\)/);
+  assert.match(add,/preparedNew\\.use_count\\(\\)==1/);
   const addUi=m.slice(m.indexOf('if (action == "addCatalog")',m.indexOf('if (action == "addScanFolder")')),
                       m.indexOf('else if (action == "fxRemove")'));
   assert.match(addUi,/FX_ADD_STAGED/);
