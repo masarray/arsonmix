@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include <array>
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstdint>
@@ -18,6 +19,11 @@
 namespace armix::dsp {
 class NativeMasterLoudness final {
 public:
+    NativeMasterLoudness() noexcept
+    {
+        for(int i=0;i<bins;++i)
+            binEnergy_[i]=std::pow(10.0,(-70.0+(i+0.5)*0.1+0.691)/10.0);
+    }
     struct Reading {
         bool supported=false, integratedValid=false, truePeakValid=false;
         double integratedLufs=0.0, dbtp=0.0;
@@ -36,7 +42,8 @@ public:
         framesProcessed_.store(0,std::memory_order_relaxed);
         quarterEnergy_.fill(0.0);
         for(auto& ch:history_)ch.fill(0.0f);
-        filters_={};
+        for(auto& f:pre_)f.z1=f.z2=0.0;
+        for(auto& f:rlb_)f.z1=f.z2=0.0;
         quarterOffset_=quarterSlot_=completeQuarters_=writeAt_=0;
         if(std::abs(rate-48000.0)>0.5)return; // NEVER invent LUFS at other rates
         constexpr double pi=3.1415926535897932384626433832795;
@@ -52,8 +59,6 @@ public:
             }
             for(auto& x:coeff_[phase])x/=norm; // unit DC gain
         }
-        for(int i=0;i<bins;++i)
-            binEnergy_[i]=std::pow(10.0,(-70.0+(i+0.5)*0.1+0.691)/10.0);
         enabled_.store(true,std::memory_order_release);
     }
 
@@ -136,6 +141,7 @@ public:
             out.integratedValid=std::isfinite(out.integratedLufs);
             out.gatedWindows=static_cast<std::uint64_t>(gatedCount);
         }
+        if(!enabled_.load(std::memory_order_acquire))return {};
         return out;
     }
 private:
