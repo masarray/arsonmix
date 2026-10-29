@@ -1,5 +1,8 @@
 # ArSonMix Routing R0/R1 — focused next-thread handoff (2026-10-29)
 
+> **NEXT-THREAD R0B ENTRYPOINT — 2026-10-29:** R0/R1/R0A + Gate A #152 + B1 #153 + significant B2 [#156](https://github.com/masarray/arsonmix/pull/156) now MERGED; B2 adds prepared live CH1 FX ADD/REMOVE lifecycle with stable original VST3/Orbit instances, no routine callback detach and native ACK/de-click. Exact-head 50/50 Windows CTests and packaging PASS [run 40871937375](https://github.com/masarray/arsonmix/actions/runs/40871937375). **NEXT meaningful milestone B3:** one always-on native 10CH+4AUX production session on a verified selected device; unpatched output SILENT, no automatic input remap/unmute, atomic route revisions, device-loss rollback, replace visible LAB/STOP only when native path accepted. R2 INTERNAL/AUX and R3 real hardware remain; zero-FX crackle #15 not closed. Do not repeat G0/B1/B2 or revive old #147/#151 branches.
+
+
 > **POST-HANDOFF UPDATE (2026-10-29):** G0 native Studio-busy negative ACK [#152](https://github.com/masarray/arsonmix/pull/152) and R0B B1 routed CH1 FX MOVE/de-click [#153](https://github.com/masarray/arsonmix/pull/153) are both MERGED. Stale #147/#151 are CLOSED/superseded. B1 preserved VST3/Orbit identity and used existing atomic phase ramp; exact-head Windows native/RT tests [40865180442](https://github.com/masarray/arsonmix/actions/runs/40865180442) PASS. **Next:** R0B #149 B2 prepared FX ADD/REMOVE shared lifetime, B3 one verified always-on muted 10CH+4AUX session with device-loss rollback. Then R2 INTERNAL/AUX UX and R3 hardware FAT; zero-FX #15 remains OPEN. Dated Gate A instructions below are retained as history, not repeat work.
 
 

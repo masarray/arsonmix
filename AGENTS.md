@@ -1,5 +1,8 @@
 # Repository instructions — ArSonMix (all future threads and AI coding agents)
 
+> **CURRENT ENGINE DELIVERY — 2026-10-29 post-#156:** [R0B #156](https://github.com/masarray/arsonmix/pull/156) MERGED into `main` as `e62d377` — CH1 FX ADD/REMOVE, MOVE and existing preset recall share the native prepared graph handoff in both legacy and routed 10CH+4AUX callbacks. No routine JUCE audio callback detach for FX ADD/REMOVE; original VST3 instances and Orbit remain stable with de-clicked buffer-boundary publication, last-control-owner teardown and positive GUI ACK only after publication. Exact-head Windows MSVC/native 50/50 CTest, package verifier PASS [40871937375](https://github.com/masarray/arsonmix/actions/runs/40871937375). **DO NOT REDO R0/R1/R0A/G0/B1/B2.** R0B #149 remains OPEN: B3 one always-on verified/muted native session startup and remove user LAB/STOP split; #15 real ASIO/WASAPI zero-FX physical crackle FAT unqualified. Verify newest main and open PRs before work.
+
+
 > **LATEST ROUTING STATUS — 2026-10-29 (post-#153):** Main contains Gate A ACK hardening via merged [#152](https://github.com/masarray/arsonmix/pull/152) (`72a4bfc`) and R0B B1 routed CH1 FX MOVE/de-click via merged [#153](https://github.com/masarray/arsonmix/pull/153) (`eb94203`, Windows native/RT tests and package verification PASS). #147 and #151 were closed as superseded; do not reopen or paste old UI. R0 premium workspace, R1 INPUT PATCH and R0A FX/Orbit remain delivered. **R0B #149 is still partial**: native unified startup, FX ADD/REMOVE/lifecycle, hardware #15 FAT not complete. Later R2/R3 outstanding. This paragraph overrides the older dated #147 OPEN assertions below; refresh live GitHub before coding.
 
 
