@@ -158,3 +158,32 @@ test('WebView2 avoids hidden-page reload and white underlay; startup uses opaque
   assert.match(read('src/ArSonMixStartupSplash.h'),/setOpaque \(true\)/);
   assert.doesNotMatch(native,/goToURL \(.*\);\s*\/\/ restore/);
 });
+
+test('P2 user field regressions: fixed catalog header, uniform material and original CH1 ADD after setup',()=>{
+  const monitor=read('web/monitor.js');
+  const splash=read('src/ArSonMixStartupSplash.h');
+  const standalone=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
+  const generatedCss=read('web/styles.css');
+  assert.match(ui,/<div class="ar-manager-table-scroll" role="rowgroup"/);
+  assert.ok(ui.indexOf('class="ar-plugin-row ar-plugin-header"') <
+            ui.indexOf('<div class="ar-manager-table-scroll" role="rowgroup"'));
+  assert.match(css,/#nativePluginManager .ar-manager-table-scroll::-webkit-scrollbar-thumb/);
+  assert.match(css,/#nativeFxSelector .ar-picker-categories\{/);
+  assert.match(css,/grid-template-columns:repeat\(7,minmax\(0,1fr\)\)/);
+  assert.match(css,/#nativePluginManager .ar-manager-action-group .native-btn\{/);
+  assert.match(css,/#nativeFxSelector .native-btn:active:not\(:disabled\)/);
+  assert.match(css,/#nativePluginManager .native-dialog-header .ar-dialog-close:active/);
+  assert.match(css,/--b180-color:#ff626c/);
+  assert.match(css,/font-family:"ArSonMix Inter"/);
+  assert.match(generatedCss,/font-size:11px!important;min-width:0/);
+  assert.ok(standalone.includes('<style>'+generatedCss+'</style>'),
+    'canonical standalone CSS must track the shared BTN-180 text size');
+  assert.match(bridge,/if\(lab\?\.active && \(i!==0 \|\| \(!!lab\.channelFxNames\?\.\[0\] && state\.chain\.length===0\)\)\)/);
+  assert.match(bridge,/if\(isMaster\|\|selected!==0\|\|\(fx&&state\.chain\.length===0\)\)/);
+  assert.match(bridge,/send\("addCatalog",\{id,requestId\}\)/);
+  assert.match(bridge,/Audio device is unavailable\. Open SETUP/);
+  assert.match(monitor,/document\.fonts\.ready\.then\(guiPaintReady,guiPaintReady\)/);
+  assert.match(native,/g\.fillAll \(juce::Colour \(0xff101921\)\);\s*if \(loaded\) return/);
+  assert.match(native,/splash_->setBounds \(window_->getBounds\(\)\)/);
+  assert.match(splash,/g\.fillAll \(juce::Colour \(0xff0b1823\)\)/);
+});
