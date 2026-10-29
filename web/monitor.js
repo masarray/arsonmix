@@ -120,6 +120,25 @@
 #arPatchFxResults button{padding:8px 10px;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:#203644;color:#e4f2f5;border:1px solid #344e5a;border-radius:3px;font:11px 'Segoe UI',Arial,sans-serif;cursor:pointer}
 #arPatchFxResults button:active{background:#316755}
 #arPatchFxCount{font-size:10px;color:#9fb8bf;min-height:13px}
+
+.arAuxMatrix{display:grid;grid-template-columns:74px repeat(4,minmax(90px,1fr));gap:2px;max-width:760px;background:#0c2029;border:1px solid #34505d;padding:3px;border-radius:3px}
+.arAuxMatrixHead{display:flex;align-items:center;justify-content:center;min-height:29px;font-size:10px;font-weight:600;color:#b8d4db;background:#253a46}
+.arAuxMatrixLabel{display:flex;align-items:center;padding:0 8px;color:#d5e7ea;font-size:10px;background:#223742}
+.arAuxMatrixCell{min-height:31px;background:#102730;color:#9bb4c0;border:1px solid #284451;border-radius:2px;font:600 10px 'Segoe UI',Arial,sans-serif;cursor:pointer}
+.arAuxMatrixCell[data-state=live]{background:#185040;color:#c4f2dc;border-color:#478c76}
+.arAuxMatrixCell[data-state=draft]{background:#73562a;color:#ffdfb0;border-color:#ab8040}
+.arAuxMatrixCell[data-state=removed]{background:#4a3336;color:#f5c4b6;border-color:#9b6661}
+.arAuxMatrixCell[aria-selected=true]{outline:2px solid #a3ddda;outline-offset:-3px}
+.arAuxMatrixCell:disabled{cursor:default;opacity:.55}
+.arAuxMatrixCell:focus-visible,.arAuxInspector :focus-visible{outline:2px solid #a3ddda;outline-offset:1px}
+.arAuxInspector{max-width:760px;min-height:56px;margin:6px 0 9px;padding:9px 10px;background:#162e39;border:1px solid #42606d;border-radius:3px;color:#c1d8df;font-size:10px}
+.arAuxInspector strong{display:block;margin-bottom:7px;color:#e3f2ef;font-size:11px}
+.arAuxInspectorLine{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px}
+.arAuxInspectorLine label{display:flex;gap:5px;align-items:center}
+.arAuxInspectorLine select{background:#0c2530;color:#deebec;border:1px solid #4e6d7a;padding:5px;font:11px 'Segoe UI',Arial,sans-serif}
+.arAuxInspector button{padding:5px 8px;background:#9eafb7;color:#1a3039;border:1px solid #647e8b;border-radius:3px;font:600 10px 'Segoe UI',Arial,sans-serif;cursor:pointer}
+.arAuxInspector button[data-aux-inspector-remove]{background:#9c7070;color:#fff}
+.arAuxMatrixNote{font-size:10px;color:#9db6bf;margin:6px 0}
 `; 
   document.head.appendChild(css);
   // Signal Check is declared in the permanent toolbar; footer holds status only.
@@ -157,13 +176,14 @@
     '<nav class="arPatchTabs" role="tablist" aria-label="Routing views"><button data-patch-tab="input" role="tab" aria-selected="true">INPUT PATCH</button><button data-patch-tab="internal" role="tab" aria-selected="false">INTERNAL / SENDS</button><button data-patch-tab="output" role="tab" aria-selected="false">OUTPUT PATCH</button></nav>' +
     '<section class="arPatchBody" id="arPatchInputPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>PHYSICAL INPUT → MIXER CHANNEL</strong><small>Click grid to assign. For stereo, select the L / R side. DRAFT becomes LIVE only after native ACK.</small></div><div class="arPatchPager"><button id="arPatchPrev" title="Previous hardware inputs">‹</button><span id="arPatchRange">NO INPUTS</span><button id="arPatchNext" title="Next hardware inputs">›</button></div></div>' +
     '<div class="arPatchViewport"><div id="arPatchGrid" class="arPatchGrid" role="grid" aria-label="Native input patch matrix"></div></div><div class="arPatchLegend"><span><b></b>UNPATCHED</span><span><b class="live"></b>LIVE · NATIVE ACK</span><span><b class="draft"></b>DRAFT · NOT APPLIED</span><span><b class="removed"></b>LIVE UNTIL APPLY</span></div><div class="arPatchInspector" id="arPatchInspector" role="status"><strong>10 CHANNEL INPUT PATCH</strong><span>Uses actual enabled ASIO/WASAPI hardware ports</span></div><div class="arPatchNote">No auto-unmute. Stale devices, incomplete stereo assignments and invalid physical ports are rejected before APPLY. One input can feed multiple channels.</div></section>' +
-    '<section class="arPatchBody arPatchHidden" id="arPatchInternalPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>CHANNEL CONTROL / INTERNAL SENDS</strong><small>Native channel controls, VST3 inserts, 4 AUX returns and PRE/POST sends.</small></div></div><div id="arRouteRows"></div><section id="arAuxReturns"><h3>4 DEDICATED AUX / FX RETURNS</h3><p>Independent stereo return with VST3, level and MAIN route.</p><div id="arAuxRows"></div></section><section id="arRouteSends"><h3>INTERNAL SENDS · PRE / POST FADER (MAX 32)</h3><div id="arSendRows"></div><button id="arAddSend">＋ ADD SEND</button></section></section>' +
+    '<section class="arPatchBody arPatchHidden" id="arPatchInternalPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>CHANNEL CONTROL / INTERNAL SENDS</strong><small>Native channel controls, VST3 inserts, 4 AUX returns and PRE/POST sends.</small></div></div><div id="arRouteRows"></div><section id="arAuxReturns"><h3>4 DEDICATED AUX / FX RETURNS</h3><p>Independent stereo return with VST3, level and MAIN route.</p><div id="arAuxRows"></div></section><section id="arRouteSends"><h3>CH → AUX SEND MATRIX · PRE / POST</h3><p class="arAuxMatrixNote">10 channels × 4 AUX returns. Select a cell to edit PRE/POST sends; output changes only after MUTE + APPLY.</p><div id="arAuxSendGrid" class="arAuxMatrix" role="grid" aria-label="Channel to AUX send matrix"></div><div id="arAuxSendInspector" class="arAuxInspector" role="group" aria-label="Selected AUX send inspector">Select a CH / AUX cell to inspect sends.</div><h3>ADVANCED · CH → CH SENDS</h3><p class="arAuxMatrixNote">Directed channel sends remain available; feedback loops are rejected before native APPLY.</p><div id="arSendRows"></div><button id="arAddSend">＋ ADD CH → CH SEND</button></section></section>' +
     '<section class="arPatchBody arPatchHidden" id="arPatchOutputPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>CURRENT HARDWARE OUTPUT</strong><small>Current hardware MAIN L/R is read-only. Configure output in AUDIO SETUP.</small></div></div><div id="arPatchOutputMap"></div><div class="arPatchNote">AUX-to-hardware-output patching is not available. Select physical device/output in AUDIO SETUP.</div></section>' +
     '<footer class="arPatchFooter"><div id="arRouteFeedback" role="status">Select actual input ports, then APPLY while output is muted.</div><div class="arRouteFoot"><button id="arPatchRevert">REVERT DRAFT</button><button id="arRouteSaveDry" title="Save real DRY-only Show (MUTED output and zero VST3)">SAVE DRY SHOW</button><button id="arRouteApply">APPLY ROUTING</button><button id="arRouteStop" class="arPatchHidden" hidden aria-hidden="true">STOP</button></div></footer><section id="arPatchFxPicker" role="dialog" aria-label="Choose native VST3" aria-modal="false"><label for="arPatchFxSearch">FIND VST3 · SHARED PICKER</label><input id="arPatchFxSearch" type="search" autocomplete="off" placeholder="Search plugin name or ID"><div id="arPatchFxResults"></div><div id="arPatchFxCount"></div></section></section>';
   document.body.appendChild(routeOverlay);
   const draftRoutes=Array.from({length:10},()=>({mode:"NONE",left:-1,right:-1,gain:0.25,pan:0,main:true,mute:false,solo:false,fxId:""}));
   const draftAux=Array.from({length:4},()=>({enabled:false,gain:1,main:true,mute:false,fxId:""}));
   const draftSends=[];
+  let selectedAuxPair=null; // editor-only; not a second audio graph
   let draftEpoch=0; // identity of the hardware used to draw these selectors
   function invalidateDraftForNewDevice(nextEpoch){
     if(draftEpoch===nextEpoch)return false;
@@ -174,6 +194,7 @@
     }
     for(const b of draftAux){b.enabled=false;b.gain=1;b.main=true;b.mute=false;b.fxId="";}
     draftSends.length=0;
+    selectedAuxPair=null;
     return true;
   }
   const safeRouteText=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -350,6 +371,39 @@
       if(v.mode==="STEREO"&&v.left===v.right)
         return ch+": L and R must be distinct physical input ports.";
     }
+    // Cheap GUI preflight; native decoder/PreparedRenderGraph is final
+    // authority for DAG, device epoch and atomic route publication.
+    if(draftSends.length>32)return "Maximum 32 combined CH and AUX sends.";
+    const edges=Array.from({length:10},()=>[]);
+    const pairs=new Set();
+    for(const send of draftSends){
+      const {from,to,tap}=send,gain=Number(send.gain),pan=Number(send.pan??0);
+      if(!Number.isInteger(from)||from<0||from>=10||!Number.isInteger(to)||to<0||to>=14)
+        return "Send source or destination is out of range.";
+      if(!["PRE","POST"].includes(tap)||!Number.isFinite(gain)||gain<0||gain>1||
+         !Number.isFinite(pan)||pan< -1||pan>1)return "Invalid PRE/POST send level or pan.";
+      if(draftRoutes[from].mode==="NONE")return "CH "+(from+1)+" must be connected before sending.";
+      if(to<10&&draftRoutes[to].mode==="NONE")
+        return "CH "+(to+1)+" must be assigned or BUS before receiving.";
+      if(to>=10&&!draftAux[to-10].enabled)
+        return "Enable AUX "+(to-9)+" before sending.";
+      const key=from+"/"+to+"/"+tap;
+      if(pairs.has(key))return "Duplicate "+tap+" send from CH "+(from+1)+".";
+      pairs.add(key);
+      if(to===from)return "Feedback loop: a channel cannot send to itself.";
+      if(to<10)edges[from].push(to);
+    }
+    const color=Array(10).fill(0);
+    const visit=n=>{
+      if(color[n]===1)return true;
+      if(color[n]===2)return false;
+      color[n]=1;
+      for(const dest of edges[n])if(visit(dest))return true;
+      color[n]=2;
+      return false;
+    };
+    for(let n=0;n<10;++n)
+      if(visit(n))return "Feedback loop in CH → CH sends. Remove a return path.";
     return "";
   }
   function renderPatchOutput(){
@@ -546,6 +600,7 @@
     });
     drawAux();
     drawSends();
+    drawAuxSendMatrix();
     updateRouteLabIdentity();
   }
   function drawAux(){
@@ -559,7 +614,7 @@
       '</div>').join('');
     parent.querySelectorAll('[data-aux-row]').forEach(row=>{
       const bus=draftAux[Number(row.dataset.auxRow)];
-      row.querySelector('[data-aux-enable]').addEventListener('change',e=>{bus.enabled=e.target.checked;});
+      row.querySelector('[data-aux-enable]').addEventListener('change',e=>{if(patchPending)return;bus.enabled=e.target.checked;drawAuxSendMatrix();});
       row.querySelector('[data-aux-gain]').addEventListener('change',e=>{bus.gain=Number(e.target.value);});
       row.querySelector('[data-aux-main]').addEventListener('change',e=>{bus.main=e.target.checked;});
     });
@@ -569,34 +624,156 @@
     row.querySelector('[data-route-left]').disabled=type==="NONE"||type==="BUS";
     row.querySelector('[data-route-right]').disabled=type!=="STEREO";
   }
+  // R2: bounded 10x4 AUX matrix. Every cell projects the existing
+  // draftSends array; no duplicate graph/model, no periodic repaint.
+  // One CH->AUX pair may legitimately have both PRE and POST taps.
+  function pairSends(from,to,list=draftSends){
+    return list.filter(s=>s.from===from&&s.to===to);
+  }
+  function pairSignature(list,from,to){
+    return pairSends(from,to,list).map(s=>[s.tap,Number(s.gain),Number(s.pan)||0].join(":")).sort().join("|");
+  }
+  function sendGainChoices(value){
+    const levels=[[.125,"−18 dB"],[.25,"−12 dB"],[.5,"−6 dB"],[1,"0 dB"]];
+    if(Number.isFinite(value)&&value>=0&&value<=1&&!levels.some(([v])=>Math.abs(value-v)<.00001))
+      levels.push([value,value===0?"−∞ dB":(20*Math.log10(value)).toFixed(1)+" dB"]);
+    return levels.map(([v,label])=>'<option value="'+v+'" '+(Math.abs(v-value)<.00001?'selected':'')+'>'+label+'</option>').join("");
+  }
+  function sendPanChoices(value){
+    const levels=[[-1,"L100"],[-.5,"L50"],[0,"CENTER"],[.5,"R50"],[1,"R100"]];
+    if(Number.isFinite(value)&&value>=-1&&value<=1&&!levels.some(([v])=>Math.abs(value-v)<.00001))
+      levels.push([value,"PAN "+Math.round(value*100)]);
+    return levels.map(([v,label])=>'<option value="'+v+'" '+(Math.abs(v-value)<.00001?'selected':'')+'>'+label+'</option>').join("");
+  }
+  function drawAuxSendMatrix(){
+    const grid=document.getElementById("arAuxSendGrid");
+    const native=state.dryRoutingLab||{};
+    const saved=native.ready&&Number(native.acceptedRoute?.deviceEpoch)===Number(draftEpoch)
+      &&Array.isArray(native.acceptedRoute?.sends)?native.acceptedRoute.sends:[];
+    let html='<div class="arAuxMatrixHead">SOURCE</div>';
+    for(let b=0;b<4;++b)html+='<div class="arAuxMatrixHead">AUX '+(b+1)+'</div>';
+    for(let from=0;from<10;++from){
+      html+='<div class="arAuxMatrixLabel">CH '+(from+1)+'</div>';
+      for(let bus=0;bus<4;++bus){
+        const to=10+bus,now=pairSends(from,to),was=pairSends(from,to,saved);
+        const changed=pairSignature(draftSends,from,to)!==pairSignature(saved,from,to);
+        const status=changed?(now.length?"draft":"removed"):(now.length?"live":"off");
+        const selected=selectedAuxPair?.from===from&&selectedAuxPair?.bus===bus;
+        const label=now.length?now.map(s=>s.tap==="PRE"?"PRE":"POST").join(" + "):"＋";
+        const desc='CH '+(from+1)+' to AUX '+(bus+1)+', '+
+          (now.length?label:was.length?"send removed":"no send");
+        html+='<button type="button" class="arAuxMatrixCell" role="gridcell" '+
+          'data-aux-matrix-from="'+from+'" data-aux-matrix-bus="'+bus+'" '+
+          'data-state="'+status+'" aria-selected="'+selected+'" aria-label="'+desc+
+          '" title="'+(now.length?label:was.length?"LIVE until APPLY":"Edit send in inspector")+
+          '"'+(patchPending?' disabled':'')+'>'+label+'</button>';
+      }
+    }
+    grid.innerHTML=html;
+    drawAuxSendInspector();
+  }
+  function drawAuxSendInspector(){
+    const root=document.getElementById("arAuxSendInspector");
+    if(!selectedAuxPair){root.textContent="Select a CH / AUX cell to inspect or create its sends.";return;}
+    const {from,bus}=selectedAuxPair,to=10+bus;
+    const sends=draftSends.map((send,index)=>({send,index}))
+      .filter(x=>x.send.from===from&&x.send.to===to)
+      .sort((a,b)=>a.send.tap.localeCompare(b.send.tap));
+    let html='<strong>CH '+(from+1)+' → AUX '+(bus+1)+' · DRAFT SEND INSPECTOR</strong>';
+    for(const {send,index} of sends){
+      html+='<div class="arAuxInspectorLine" data-aux-inspector-row="'+index+'">'+
+        '<b>'+send.tap+'</b><label>LEVEL <select data-aux-inspector-level aria-label="Send level">'+
+        sendGainChoices(Number(send.gain))+'</select></label>'+
+        '<label>PAN <select data-aux-inspector-pan aria-label="Send pan">'+
+        sendPanChoices(Number(send.pan)||0)+'</select></label>'+
+        '<button data-aux-inspector-remove title="Remove this draft tap">REMOVE</button></div>';
+    }
+    if(draftRoutes[from].mode==="NONE")
+      html+='<div class="arAuxMatrixNote">Assign CH '+(from+1)+' in INPUT PATCH before creating a send.</div>';
+    else if(!draftAux[bus].enabled)
+      html+='<div class="arAuxMatrixNote">Enable AUX '+(bus+1)+' above before creating a send.</div>';
+    else if(draftSends.length>=32)
+      html+='<div class="arAuxMatrixNote">32/32 native send limit reached. Remove another send first.</div>';
+    else for(const tap of ["PRE","POST"])
+      if(!sends.some(x=>x.send.tap===tap))
+        html+='<div class="arAuxInspectorLine"><button data-aux-inspector-create="'+tap+
+          '">＋ ADD '+tap+' SEND</button></div>';
+    root.innerHTML=html;
+    root.querySelectorAll("button,select").forEach(el=>{el.disabled=patchPending;});
+  }
+  document.getElementById("arAuxSendGrid").addEventListener("click",e=>{
+    const cell=e.target.closest("[data-aux-matrix-from][data-aux-matrix-bus]");
+    if(!cell||patchPending)return;
+    selectedAuxPair={from:Number(cell.dataset.auxMatrixFrom),bus:Number(cell.dataset.auxMatrixBus)};
+    drawAuxSendMatrix();
+  });
+  document.getElementById("arAuxSendInspector").addEventListener("click",e=>{
+    if(patchPending||!selectedAuxPair)return;
+    const add=e.target.closest("[data-aux-inspector-create]");
+    const remove=e.target.closest("[data-aux-inspector-remove]");
+    if(add){
+      const {from,bus}=selectedAuxPair,to=10+bus,tap=add.dataset.auxInspectorCreate;
+      if(!["PRE","POST"].includes(tap)||draftRoutes[from].mode==="NONE"||
+         !draftAux[bus].enabled||draftSends.length>=32||
+         draftSends.some(s=>s.from===from&&s.to===to&&s.tap===tap))return;
+      draftSends.push({from,to,tap,gain:.25,pan:0});
+      patchFeedback("DRAFT · "+tap+" send added. MUTE + APPLY to publish.");
+      drawAuxSendMatrix();
+    }else if(remove){
+      const index=Number(remove.closest("[data-aux-inspector-row]")?.dataset.auxInspectorRow);
+      if(!Number.isInteger(index)||index<0||index>=draftSends.length)return;
+      draftSends.splice(index,1);drawAuxSendMatrix();
+      patchFeedback("DRAFT · AUX send removed; native output unchanged.");
+    }
+  });
+  document.getElementById("arAuxSendInspector").addEventListener("change",e=>{
+    if(patchPending)return;
+    const row=e.target.closest("[data-aux-inspector-row]");
+    const index=Number(row?.dataset.auxInspectorRow);
+    if(!Number.isInteger(index)||index<0||index>=draftSends.length)return;
+    const send=draftSends[index],value=Number(e.target.value);
+    if(!Number.isFinite(value))return;
+    if(e.target.matches("[data-aux-inspector-level]")&&value>=0&&value<=1)send.gain=value;
+    if(e.target.matches("[data-aux-inspector-pan]")&&value>=-1&&value<=1)send.pan=value;
+    drawAuxSendMatrix();
+    patchFeedback("DRAFT · send level/pan changed; APPLY required.");
+  });
   function drawSends(){
+    // Advanced CH->CH routes remain accessible, using original send indices.
+    // AUX sends are edited ONLY through the matrix/inspector above.
     const el=document.getElementById("arSendRows");
     const channels=Array.from({length:10},(_,i)=>'<option value="'+i+'">CH '+(i+1)+'</option>');
-    const destinations=channels.concat(Array.from({length:4},(_,i)=>'<option value="'+(10+i)+'">AUX '+(i+1)+'</option>'));
     const listSelect=(options,value)=>options.map((option,i)=>option.replace('<option','<option '+(i===value?'selected':''))).join('');
-    el.innerHTML=draftSends.map((send,index)=>
+    el.innerHTML=draftSends.map((send,index)=>({send,index})).filter(x=>x.send.to<10).map(({send,index})=>
       '<div class="arSendRow" data-send-row="'+index+'">'+
       '<select data-send-from aria-label="Send source">'+listSelect(channels,send.from)+'</select>'+
-      '<select data-send-to aria-label="Send destination">'+listSelect(destinations,send.to)+'</select>'+
+      '<select data-send-to aria-label="Send destination">'+listSelect(channels,send.to)+'</select>'+
       '<select data-send-tap aria-label="Send tap">'+['PRE','POST'].map(t=>'<option '+(t===send.tap?'selected':'')+'>'+t+'</option>').join('')+'</select>'+
-      '<select data-send-gain aria-label="Send level">'+
-      [[.125,'−18 dB'],[.25,'−12 dB'],[.5,'−6 dB'],[1,'0 dB']].map(([v,l])=>'<option value="'+v+'" '+(v===send.gain?'selected':'')+'>'+l+'</option>').join('')+'</select>'+
+      '<select data-send-gain aria-label="Send level">'+sendGainChoices(Number(send.gain))+'</select>'+
       '<button data-send-remove aria-label="Remove send" title="Remove send">×</button></div>').join('');
     el.querySelectorAll('[data-send-row]').forEach(row=>{
       const i=Number(row.dataset.sendRow),m=draftSends[i];
-      row.querySelector('[data-send-from]').addEventListener('change',e=>{m.from=Number(e.target.value);});
-      row.querySelector('[data-send-to]').addEventListener('change',e=>{m.to=Number(e.target.value);});
-      row.querySelector('[data-send-tap]').addEventListener('change',e=>{m.tap=e.target.value;});
-      row.querySelector('[data-send-gain]').addEventListener('change',e=>{m.gain=Number(e.target.value);});
-      row.querySelector('[data-send-remove]').addEventListener('click',()=>{draftSends.splice(i,1);drawSends();});
+      row.querySelector('[data-send-from]').addEventListener('change',e=>{if(!patchPending)m.from=Number(e.target.value);});
+      row.querySelector('[data-send-to]').addEventListener('change',e=>{if(!patchPending)m.to=Number(e.target.value);});
+      row.querySelector('[data-send-tap]').addEventListener('change',e=>{if(!patchPending)m.tap=e.target.value;});
+      row.querySelector('[data-send-gain]').addEventListener('change',e=>{if(!patchPending)m.gain=Number(e.target.value);});
+      row.querySelector('[data-send-remove]').addEventListener('click',()=>{if(patchPending)return;draftSends.splice(i,1);drawSends();drawAuxSendMatrix();});
     });
-    document.getElementById("arAddSend").disabled=draftSends.length>=32;
+    document.getElementById("arAddSend").disabled=patchPending||draftSends.length>=32;
   }
   document.getElementById("arAddSend").addEventListener('click',()=>{
-    if(draftSends.length>=32)return;
-    // Draft only; no sound changes until native acknowledgement.
-    draftSends.push({from:0,to:1,tap:"POST",gain:.25});
+    if(patchPending||draftSends.length>=32)return;
+    // Prefer an eligible non-self destination; drafts never change audio.
+    let choice=null;
+    for(let from=0;from<10&&!choice;++from)
+      for(let to=0;to<10&&!choice;++to)
+        if(from!==to&&draftRoutes[from].mode!=="NONE"&&draftRoutes[to].mode!=="NONE"&&
+           !draftSends.some(s=>s.from===from&&s.to===to&&s.tap==="POST"))
+          choice={from,to,tap:"POST",gain:.25,pan:0};
+    if(!choice){patchFeedback("Assign two channels in INPUT PATCH before adding CH sends.");return;}
+    draftSends.push(choice);
     drawSends();
+    patchFeedback("DRAFT · CH send added; native DAG validation on APPLY.");
   });
   function updateRouteLabIdentity(){
     const d=state.dryRoutingLab||{};
@@ -688,6 +865,7 @@
     if(result && typeof result==="object" && "epoch" in result)state.dryRoutingLab=result;
     if(reply?.ok===true)hydrateAcceptedRoute();
     renderPatchMatrix();
+    if(patchTab==="internal")drawRoutes();
     if(patchTab==="output")renderPatchOutput();
     document.getElementById("arRouteFeedback").textContent=
       reply?.ok===false?("REJECTED · "+(reply.error||"Invalid route")):

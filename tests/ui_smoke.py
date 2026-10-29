@@ -1284,6 +1284,15 @@ async def main():
         await native.locator('[data-patch-tab="internal"]').click()
         assert await native.locator(".arPatchFxTrigger").count()==14
         assert await native.locator("select[data-route-fx],select[data-aux-fx]").count()==0
+        # R2 is lazy: fixed 40 CH→AUX cells and one inspector.
+        assert await native.locator("[data-aux-matrix-from][data-aux-matrix-bus]").count()==40
+        assert await native.locator("#arAuxSendGrid .arAuxMatrixHead").count()==5
+        assert await native.locator("#arSendRows .arSendRow").count()==0
+        await native.locator('[data-aux-matrix-from="0"][data-aux-matrix-bus="0"]').click()
+        assert "Assign CH 1" in await native.locator("#arAuxSendInspector").inner_text()
+        assert await native.locator("[data-aux-inspector-create]").count()==0
+        assert await native.evaluate(
+            "()=>window.__arMixSent.filter(x=>x.payload?.action==='routingDryApply').length")==0
         await native.evaluate("""()=>{
           const items=Array.from({length:1000},(_,i)=>({
             id:"vst-"+String(i).padStart(4,"0"),
@@ -1374,6 +1383,24 @@ async def main():
         }""")
         assert await cell.get_attribute("data-patch-state")=="live"
         assert await native.locator("#arRouteApply").is_enabled()
+        # Realistic AUX draft: explicitly enable return, add both taps,
+        # edit gain and REVERT. No native APPLY may fire from matrix edits.
+        await native.locator('[data-patch-tab="internal"]').click()
+        await native.locator('[data-aux-enable]').first.check()
+        await native.locator('[data-aux-matrix-from="0"][data-aux-matrix-bus="0"]').click()
+        assert await native.locator("[data-aux-inspector-create]").count()==2
+        count_before=await native.evaluate(
+            "()=>window.__arMixSent.filter(x=>x.payload?.action==='routingDryApply').length")
+        await native.locator('[data-aux-inspector-create="POST"]').click()
+        await native.locator('[data-aux-inspector-create="PRE"]').click()
+        assert await native.locator('[data-aux-inspector-row]').count()==2
+        assert await native.locator('[data-aux-matrix-from="0"][data-aux-matrix-bus="0"]').get_attribute("data-state")=="draft"
+        await native.locator('[data-aux-inspector-level]').first.select_option("0.5")
+        assert await native.evaluate(
+            "()=>window.__arMixSent.filter(x=>x.payload?.action==='routingDryApply').length")==count_before
+        await native.locator("#arPatchRevert").click()
+        assert await native.locator('[data-aux-matrix-from="0"][data-aux-matrix-bus="0"]').get_attribute("data-state")=="off"
+        await native.locator('[data-patch-tab="input"]').click()
         await native.locator('[data-patch-row="0"][data-patch-port="5"].arPatchCell').click()
         assert await native.locator('[data-patch-row="0"][data-patch-port="5"].arPatchCell').get_attribute("data-patch-state")=="draft"
         await native.locator("#arPatchRevert").click()
