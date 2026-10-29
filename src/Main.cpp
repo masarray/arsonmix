@@ -257,6 +257,11 @@ private:
     juce::String lastDirectRestoreError_;
     juce::var pendingPresetUI_;
     juce::String pendingPresetName_;
+    // B2: browser success follows callback ACK, never the staged candidate.
+    int pendingFxAddRequestId_ = -1;
+    juce::String pendingFxAddName_;
+    unsigned int pendingFxAddElapsedMs_ = 0;
+    bool pendingFxStructuralEdit_ = false;
 
     static std::uint64_t monotonicMilliseconds() noexcept
     {
@@ -1313,84 +1318,78 @@ private:
         }
         else if (action == "addCatalog")
         {
-            const auto requestId = static_cast<int> (args.getProperty ("requestId", 0));
-            if (engine_.hasTemporaryDiagnosticDevice())
+            const auto requestId=static_cast<int>(args.getProperty("requestId",0));
+            if(engine_.hasTemporaryDiagnosticDevice())
             {
-                const auto* blocked = catalog_.find (args.getProperty ("id", {}).toString());
-                const auto name = blocked ? blocked->name : juce::String ("Unknown VST3");
-                const auto error = juce::String ("Return to NORMAL before adding VST3 effects.");
-                emitFxAddResult (requestId, name, error, 0);
-                return emitNotice (error, true);
+                const auto* blocked=catalog_.find(args.getProperty("id",{}).toString());
+                const auto name=blocked?blocked->name:juce::String("Unknown VST3");
+                const auto error=juce::String("Return to NORMAL before adding VST3 effects.");
+                emitFxAddResult(requestId,name,error,0);
+                return emitNotice(error,true);
             }
-            const auto requestedId = args.getProperty ("id", {}).toString();
-            const auto* plugin = catalog_.find (requestedId);
-            const auto name = plugin != nullptr ? plugin->name : juce::String ("Unknown VST3");
-            const auto started = juce::Time::getMillisecondCounter();
+            const auto* plugin=catalog_.find(args.getProperty("id",{}).toString());
+            const auto name=plugin?plugin->name:juce::String("Unknown VST3");
+            const auto started=juce::Time::getMillisecondCounter();
             juce::String error;
-
-            if (plugin == nullptr)
-                error = "Plugin is no longer in the catalog. Rescan in PLUGINS and try again.";
+            const bool keepOrbit=orbit_.active();
+            if(!plugin)
+                error="Plugin is no longer in the catalog. Rescan in PLUGINS and try again.";
             else
             {
-                diagnostics_.record ("FX_ADD_REQUEST", name + " | " + plugin->path);
-                // Appending a new VST3 preserves existing AudioPluginInstance addresses.
-                // Orbit references a still-live processor and must continue through ADD.
-                // Pause notifications while JUCE reconfigures the FX callback.
-                const bool keepOrbit=orbit_.active();
+                diagnostics_.record("FX_ADD_REQUEST",name+" | "+plugin->path);
                 if(keepOrbit)orbit_.pauseForGraphEdit();
                 editorWindow_.reset();
-                try
-                {
-                    error = engine_.addVst3 (plugin->path, plugin->uid, plugin->key());
-                }
-                catch (const std::exception& ex)
-                {
-                    error = "VST3 instantiation threw an exception: " + juce::String (ex.what());
-                }
-                catch (...)
-                {
-                    error = "VST3 instantiation failed with an unknown exception";
-                }
-                if(keepOrbit)orbit_.resumeAfterGraphEdit();
+                try {error=engine_.addVst3(plugin->path,plugin->uid,plugin->key());}
+                catch(const std::exception& ex)
+                {error="VST3 instantiation threw an exception: "+juce::String(ex.what());}
+                catch(...) {error="VST3 instantiation failed with an unknown exception";}
             }
-            const auto elapsed = juce::Time::getMillisecondCounter() - started;
-            emitFxAddResult (requestId, name, error, elapsed);
-            if (error.isNotEmpty())
+            const auto elapsed=juce::Time::getMillisecondCounter()-started;
+            if(error.isNotEmpty())
             {
-                diagnostics_.record ("FX_LOAD_FAIL", name + " | " + error +
-                    " | elapsedMs=" + juce::String (elapsed));
-                emitNotice (name + ": " + error, true);
+                if(keepOrbit)orbit_.resumeAfterGraphEdit();
+                emitFxAddResult(requestId,name,error,elapsed);
+                diagnostics_.record("FX_LOAD_FAIL",name+" | "+error+
+                    " | elapsedMs="+juce::String(elapsed));
+                emitNotice(name+": "+error,true);
             }
             else
             {
-                diagnostics_.record ("FX_LOAD", name + " | elapsedMs=" + juce::String (elapsed));
-                ++fxGraphRevision_;
-                emitChain();
-                if (orbit_.active()) emitOrbitState (orbit_.slot());
-                emitNotice (name + " inserted into Channel 1 FX Rack.");
+                // A successful stage is NOT an active VST3. The timer sends
+                // the structured result only after audio callback publication.
+                pendingFxAddRequestId_=requestId;
+                pendingFxAddName_=name;
+                pendingFxAddElapsedMs_=elapsed;
+                pendingFxStructuralEdit_=true;
+                diagnostics_.record("FX_ADD_STAGED",name+
+                    " | prepareMs="+juce::String(elapsed));
+                emitNotice("Live FX graph transition prepared: "+name);
             }
         }
         else if (action == "fxRemove")
         {
-            if (engine_.hasTemporaryDiagnosticDevice())
-                return emitNotice ("Return to NORMAL before editing VST3.", true);
+            if(engine_.hasTemporaryDiagnosticDevice())
+                return emitNotice("Return to NORMAL before editing VST3.",true);
+            if(engine_.isGraphSwitchPending())
+                return emitNotice("Wait for the previous FX change to finish.",true);
             const auto* previous=orbit_.processor();
-            if(previous && engine_.pluginAt(slot)==previous)stopOrbit();
-            else orbit_.pauseForGraphEdit();
+            const bool removingOrbit=previous&&engine_.pluginAt(slot)==previous;
+            // Keep Orbit's vendor automation stopped until the actual graph
+            // is retired. A removed target must not receive parameter writes.
+            if(removingOrbit)stopOrbit();
+            else if(orbit_.active())orbit_.pauseForGraphEdit();
             editorWindow_.reset();
-            const bool changed=engine_.removeAt(slot);
-            if(previous && orbit_.active()){
-                int found=-1;
-                for(int i=0;i<engine_.chainSize();++i)
-                    if(engine_.pluginAt(i)==previous){found=i;break;}
-                if(found<0)stopOrbit();
-                else {orbit_.rebindSlot(found);orbit_.resumeAfterGraphEdit();}
+            const bool staged=engine_.removeAt(slot);
+            if(staged)
+            {
+                pendingFxStructuralEdit_=true;
+                diagnostics_.record("FX_REMOVE_STAGED",juce::String(slot));
+                emitNotice("FX removal prepared; awaiting audio graph ACK.");
             }
-            if(changed){
-                ++fxGraphRevision_;
-                diagnostics_.record("FX_REMOVE",juce::String(slot));
-                emitChain();
-                if(orbit_.active())emitOrbitState(orbit_.slot());
+            else
+            {
+                if(orbit_.active())orbit_.resumeAfterGraphEdit();
+                emitNotice("Cannot remove FX until audio device and graph are stable.",true);
             }
         }
         else if (action == "fxMove")
@@ -1600,6 +1599,27 @@ private:
             ++fxGraphRevision_;
             diagnostics_.record ("GRAPH_SWAP_ACK", pendingPresetName_);
             emitChain();
+            if(pendingFxStructuralEdit_)
+            {
+                if(orbit_.active())
+                {
+                    const auto* orbitPlugin=orbit_.processor();
+                    int slot=-1;
+                    for(int i=0;i<engine_.chainSize();++i)
+                        if(engine_.pluginAt(i)==orbitPlugin){slot=i;break;}
+                    if(slot<0)stopOrbit();
+                    else {orbit_.rebindSlot(slot);orbit_.resumeAfterGraphEdit();emitOrbitState(slot);}
+                }
+                if(pendingFxAddRequestId_>=0)
+                {
+                    emitFxAddResult(pendingFxAddRequestId_,pendingFxAddName_,{},pendingFxAddElapsedMs_);
+                    diagnostics_.record("FX_ADD_ACK",pendingFxAddName_);
+                    emitNotice(pendingFxAddName_+" inserted into Channel 1 FX Rack.");
+                }
+                pendingFxAddRequestId_=-1;
+                pendingFxAddName_.clear();
+                pendingFxStructuralEdit_=false;
+            }
             if (pendingPresetUI_.isObject() && browser_.loaded)
                 browser_.emitEventIfBrowserIsVisible ("arMixNativePresetLoaded", pendingPresetUI_);
             if (pendingPresetName_.isNotEmpty())
