@@ -86,3 +86,5 @@ test('native 12Hz status uses one capped shared visual meter scheduler',()=>{
 // Check the light-weight, source-labelled capture triage contract in the same
 // existing Node test invocation; no second CI job or browser required.
 import './audio_capture_triage_contract_test.mjs';
+// P0 #132: deterministic transactional browser snapshot regression tests.
+import './ui_snapshot_transaction_test.mjs';
