@@ -70,7 +70,7 @@ test('native plugin state and graph preserved',()=>{
 });
 
 test('startup never opens an audio device before the WebView2 GUI handshake',()=>{
- const constructor=main.slice(main.indexOf('ConsoleWindow()'),main.indexOf('~ConsoleWindow()'));
+ const constructor=main.slice(main.indexOf('explicit ConsoleWindow ('),main.indexOf('~ConsoleWindow()'));
  const ready=constructor.indexOf('browser_.goToURL');
  assert.ok(ready>=0,'GUI navigation must be started from constructor');
  assert.ok(!constructor.includes('engine_.start ('),'synchronous audio startup must not block the first WebView frame');
@@ -87,4 +87,18 @@ test('master readout remains native-unavailable until measured BS.1770/true peak
  assert.match(bridge,/lufs\.textContent="—"/);
  assert.match(bridge,/tp\.textContent="—"/);
  assert.doesNotMatch(app, /STREAM LEVELS <span>SIM<\/span>/);
+});
+
+test('startup uses splash before constructing WebView2 and native engine',()=>{
+ const splash=read('src/ArSonMixStartupSplash.h');
+ assert.match(splash,/class ArSonMixStartupSplash/);
+ assert.match(splash,/setOpaque \(true\)/);
+ assert.doesNotMatch(splash,/WebBrowserComponent|AudioDeviceManager|repaintTimer/);
+ const startup=main.slice(main.indexOf('class ConsoleApp final'));
+ assert.ok(startup.indexOf('make_unique<ArSonMixStartupSplash>') <
+           startup.indexOf('make_unique<ConsoleWindow>'));
+ assert.match(startup,/startTimer \(90\)/);
+ assert.match(startup,/if \(stage >= 2\)/);
+ assert.match(main,/onStartupStage_ \(1\)/);
+ assert.match(main,/onStartupStage_ \(2\)/);
 });
