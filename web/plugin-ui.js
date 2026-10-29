@@ -74,8 +74,7 @@
           <button id="arManagerFavorites" class="ar-favorites-filter" type="button" aria-pressed="${manager.favoritesOnly}">${favoriteIcon} FAVORITES</button>
           <span id="arManagerCount" aria-live="polite"></span>
         </div>
-        <div class="ar-manager-table-scroll">
-          <div class="ar-manager-table" role="table" aria-label="VST3 plugin catalog">
+        <div class="ar-manager-table" role="table" aria-label="VST3 plugin catalog">
             <div class="ar-plugin-row ar-plugin-header" role="row">
               <span role="columnheader" aria-label="Favorite">★</span>
               <button role="columnheader" data-armix-sort="name">Plugin <span class="ar-sort-symbol"></span></button>
@@ -85,8 +84,9 @@
               <button role="columnheader" data-armix-sort="category">Type <span class="ar-sort-symbol"></span></button>
               <button role="columnheader" data-armix-sort="path">File / location <span class="ar-sort-symbol"></span></button>
             </div>
-            <div id="arPluginManagerRows" role="rowgroup"></div>
-          </div>
+            <div class="ar-manager-table-scroll" role="rowgroup" aria-label="Scrollable VST3 plugin rows">
+              <div id="arPluginManagerRows"></div>
+            </div>
         </div>
         <button id="arManagerMore" class="ar-manager-more" type="button" hidden>Show more</button>
       </section>`;
