@@ -470,6 +470,12 @@ public:
     {
         if (std::isfinite (value)) masterGain_.store (juce::Decibels::decibelsToGain (juce::jlimit (-60.f, 10.f, value)));
     }
+    // Validated native Show recall uses exact linear 0 (true silence),
+    // not a lossy dB roundtrip through -60 dB.
+    void setMasterGainLinear(float value) noexcept {
+        if(std::isfinite(value) && value>=0.f && value<=2.f)
+            masterGain_.store(value,std::memory_order_release);
+    }
     void setChannelGainDb (float value) noexcept
     {
         if (std::isfinite (value)) channelGain_.store (juce::Decibels::decibelsToGain (juce::jlimit (-60.f, 10.f, value)));

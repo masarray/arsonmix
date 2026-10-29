@@ -36,6 +36,9 @@
     ".arRouteFoot{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-top:12px}.arRouteFoot button,.arRouteClose{color:#f0f7fa;background:#24475a;border:1px solid #587f91;border-radius:4px;padding:8px 12px;cursor:pointer}" +
     "#arRouteApply{background:#237566;border-color:#4ba48d}#arRouteStop{background:#50343c;border-color:#a8717c}" +
     "#arRouteFeedback{font-size:11px;min-height:18px;color:#8bdec1;margin-top:10px}" +
+    "#arSavedShows{margin:12px 0;padding:9px;background:#0c202b;border:1px solid #416071;border-radius:5px}" +
+    "#arSavedShows label{font-size:11px;color:#b6d9e1;margin-right:8px}#arSavedShowSelect{width:min(100%,340px);font-size:11px;color:#e3f0f5;background:#142b39;border:1px solid #547b8a;border-radius:4px;padding:7px}" +
+    "#arSavedShows button{padding:7px 10px;margin:4px;border:1px solid #517c89;border-radius:4px;background:#234657;color:#e3f0f5;cursor:pointer;font-size:11px}" +
     ".arAuxRow{display:grid;grid-template-columns:64px 52px 90px 70px 1fr;align-items:center;gap:7px;padding:7px;background:#0c202b;border-bottom:1px solid #36515f;font-size:11px}.arAuxRow label{display:flex;gap:4px;align-items:center}.arAuxRow select{min-width:0;width:100%;background:#0c202b;color:#dcecf3;border:1px solid #496b7a;padding:6px;border-radius:4px}#arAuxReturns h3{font-size:12px;color:#b1d4dd;margin:14px 0 8px}#arAuxReturns p{color:#90afbc;font-size:10px;margin:4px 0 7px}";
   document.head.appendChild(css);
   // Signal Check is declared in the permanent toolbar; footer holds status only.
@@ -73,6 +76,7 @@
     '<p>Real hardware routing test: independent stereo-compatible VST3 insert per channel, PRE/POST sends, and BUS returns. No portable route recall. Use headphones at LOW volume. ' +
     'The normal CH1 VST3 host resumes after STOP. Every port shown is from the device active input mask.</p>' +
     '<div id="arRouteRows"></div><section id="arAuxReturns"><h3>4 DEDICATED AUX / FX RETURNS · INPUT CH1–10 REMAIN AVAILABLE</h3><p>Each AUX has a separate stereo return, VST3, level and MASTER routing. PRE/POST sends may target AUX1–4 without consuming CH strips.</p><div id="arAuxRows"></div></section><section id="arRouteSends"><h3>INTERNAL SENDS · PRE / POST FADER (MAX 32)</h3><div id="arSendRows"></div><button id="arAddSend">＋ ADD SEND</button></section>' +
+    '<div id="arSavedShows"><label for="arSavedShowSelect">NATIVE SAVED SHOWS</label><select id="arSavedShowSelect"><option value="">Browse verified Shows...</option></select><button id="arShowBrowse">BROWSE SHOWS</button><button id="arShowRecall">RECALL SELECTED DRY</button><small>Current hardware ports only · output stays MUTED · no VST3 recall</small></div>' +
     '<div id="arRouteFeedback" role="status">Select channels, BUS returns and sends; APPLY is a native graph transaction.</div>' +
     '<div class="arRouteFoot"><button id="arRouteStop">STOP LAB</button><button id="arRouteSaveDry" title="Save acknowledged native route and current live controls, only when muted and with zero VST3">SAVE DRY SHOW</button><button id="arRouteApply">APPLY TO NATIVE AUDIO</button></div></section>';
   document.body.appendChild(routeOverlay);
@@ -301,10 +305,60 @@
       "Saving acknowledged 10 INPUT + 4 AUX DRY state to Studio/Shows (not a live recall)...";
     api.emitEvent("arMixAction",{action:"routingDryShowSave"});
   });
+  const savedShowSelect=document.getElementById("arSavedShowSelect");
+  document.getElementById("arShowBrowse").addEventListener("click",()=>{
+    document.getElementById("arRouteFeedback").textContent="Reading native Studio/Shows metadata...";
+    api.emitEvent("arMixAction",{action:"routingDryShowList"});
+  });
+  api.addEventListener("arMixNativeShowListAck",ack=>{
+    if(!ack?.ok){
+      document.getElementById("arRouteFeedback").textContent=
+        "SHOW BROWSE FAILED · "+String(ack?.error||"Unknown storage error");return;
+    }
+    const selected=savedShowSelect.value;
+    savedShowSelect.replaceChildren();
+    const placeholder=document.createElement("option");
+    placeholder.value="";placeholder.textContent="Select a saved native Show";
+    savedShowSelect.appendChild(placeholder);
+    for(const item of (Array.isArray(ack.items)?ack.items:[])){
+      if(!item || typeof item.id!=="string")continue;
+      const option=document.createElement("option");
+      option.value=item.id;option.textContent=String(item.name||item.id);
+      savedShowSelect.appendChild(option);
+    }
+    if(Array.from(savedShowSelect.options).some(o=>o.value===selected))
+      savedShowSelect.value=selected;
+    document.getElementById("arRouteFeedback").textContent=
+      "NATIVE SHOW BROWSE · "+(savedShowSelect.options.length-1)+" saved Shows (full verification on recall)";
+  });
+  document.getElementById("arShowRecall").addEventListener("click",()=>{
+    const showId=savedShowSelect.value;
+    if(!showId){
+      document.getElementById("arRouteFeedback").textContent=
+        "Browse and choose a saved native Show first.";return;
+    }
+    const d=state.dryRoutingLab||{};
+    if(!d.ready||!d.active||state.monitor||Number(d.fxCount)!==0) {
+      document.getElementById("arRouteFeedback").textContent=
+        "RECALL requires current native Routing LAB ACK, MUTED OUTPUT and zero VST3.";return;
+    }
+    document.getElementById("arRouteFeedback").textContent=
+      "Reading and verifying saved Show on IO worker; output remains muted...";
+    api.emitEvent("arMixAction",{action:"routingDryShowRecall",value:showId});
+  });
+  api.addEventListener("arMixNativeShowRecallAck",ack=>{
+    if(ack?.state&&typeof ack.state==="object")state.dryRoutingLab=ack.state;
+    document.getElementById("arRouteFeedback").textContent=ack?.ok
+      ? "NATIVE SHOW RECALL ACK · verified routing published · OUTPUT STAYS MUTED"
+      : "RECALL REJECTED · "+String(ack?.error||"Unknown native error");
+    if(ack?.ok){hydrateAcceptedRoute();drawRoutes();}
+    updateRouteLabIdentity();
+  });
   api.addEventListener("arMixNativeShowSaveAck",ack=>{
     document.getElementById("arRouteFeedback").textContent=ack?.ok
-      ? "NATIVE SHOW VERIFIED · "+String(ack.showId||"")+" · Studio/Shows · live recall not yet supported"
+      ? "NATIVE SHOW VERIFIED · "+String(ack.showId||"")+" · Studio/Shows"
       : "SHOW NOT SAVED · "+String(ack?.error||"Unknown storage failure");
+    if(ack?.ok)api.emitEvent("arMixAction",{action:"routingDryShowList"});
   });
   api.addEventListener("arMixRoutingLabAck",reply=>{
     const result=reply?.state||reply||{};
