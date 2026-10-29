@@ -938,11 +938,10 @@ private:
         const int slot = static_cast<int> (args.getProperty ("slot", -1));
         // User may adjust live levels, but cannot alter the persisted VST
         // library/preset while a background snapshot is being copied.
-        if (studioBackupBusy_ && (action.startsWith ("preset") ||
+        if ((studioBackupBusy_ || nativeShowBusy_) && (action.startsWith ("preset") ||
             action.startsWith ("import") || action.startsWith ("fx") ||
             action == "addCatalog" || action == "addScanFolder" ||
-            action == "scanVst3" || action == "routingDryApply" ||
-            action == "routingDryShowSave"))
+            action == "scanVst3" || action == "routingDryApply"))
             return emitNotice ("Studio backup in progress. Finish backup before editing saved FX or VST library.", true);
 
         // Structural plugin operations currently detach the original callback
@@ -1033,9 +1032,19 @@ private:
         }
         if (action == "routingDryShowSave")
         {
+            const auto reject=[this](const juce::String& reason) {
+                if(browser_.loaded) {
+                    auto ack=std::make_unique<juce::DynamicObject>();
+                    ack->setProperty("ok",false);
+                    ack->setProperty("error",reason);
+                    browser_.emitEventIfBrowserIsVisible("arMixNativeShowSaveAck",
+                        juce::var(ack.release()));
+                }
+                emitNotice("Show not saved: "+reason,true);
+            };
             if (nativeShowBusy_ || studioBackupBusy_ || catalog_.busy() ||
                 engine_.isGraphSwitchPending() || engine_.hasTemporaryDiagnosticDevice())
-                return emitNotice("Finish the current Studio task before capturing a native Show.",true);
+                return reject("Finish the current Studio task before capturing a native Show.");
             // Never save the unacknowledged JS draft. Message-thread capture
             // reads the accepted LIVE graph, updated faders and exact device epoch.
             // VST3 is fail-closed until a quiescent vendor state capture gate exists.
@@ -1045,7 +1054,7 @@ private:
                 engine_.status(),name,captured);
             if(error.isNotEmpty()) {
                 diagnostics_.record("NATIVE_SHOW_REJECTED",error);
-                return emitNotice("Show not saved: "+error,true);
+                return reject(error);
             }
             auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
             const bool started=nativeShowWorker_.launch(settingsDirectory(),
@@ -1071,7 +1080,7 @@ private:
                             juce::var(ack.release()));
                     }
                 });
-            if(!started)return emitNotice("Native Show worker is busy. No session was modified.",true);
+            if(!started)return reject("Native Show worker is busy. No session was modified.");
             nativeShowBusy_=true;
             return emitNotice("Saving ACK-verified dry routing to Studio/Shows on the IO worker.");
         }

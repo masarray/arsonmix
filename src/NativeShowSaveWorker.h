@@ -3,6 +3,7 @@
 #include "NativeShowStore.h"
 #include <juce_events/juce_events.h>
 #include <atomic>
+#include <exception>
 #include <functional>
 #include <memory>
 #include <utility>
@@ -45,17 +46,23 @@ private:
         show.currentSnapshotId=snapshot_.id;
         show.snapshotOrder.push_back(snapshot_.id);
         result.showId=show.id;
-        NativeShowStore store(studio_);
-        result.error=store.commit(show,{snapshot_},{});
-        if(result.error.isEmpty()) {
-            ShowV2 reread;
-            std::vector<SnapshotV2> snapshots;
-            result.error=store.load(show.id,reread,snapshots);
-            if(result.error.isEmpty() &&
-               (reread.currentSnapshotId!=snapshot_.id ||
-                snapshots.size()!=1 ||
-                Codec::encode(snapshots[0])!=Codec::encode(snapshot_)))
-                result.error="Saved DRY Show verification mismatch";
+        try {
+            NativeShowStore store(studio_);
+            result.error=store.commit(show,{snapshot_},{});
+            if(result.error.isEmpty()) {
+                ShowV2 reread;
+                std::vector<SnapshotV2> snapshots;
+                result.error=store.load(show.id,reread,snapshots);
+                if(result.error.isEmpty() &&
+                   (reread.currentSnapshotId!=snapshot_.id ||
+                    snapshots.size()!=1 ||
+                    Codec::encode(snapshots[0])!=Codec::encode(snapshot_)))
+                    result.error="Saved DRY Show verification mismatch";
+            }
+        } catch(const std::exception& e) {
+            result.error="Native Show IO exception: "+juce::String(e.what());
+        } catch(...) {
+            result.error="Unknown native Show IO exception; existing Shows untouched";
         }
         auto alive=alive_;
         auto done=finished_;
