@@ -129,13 +129,23 @@ public:
 
     // One actual physical -> FX -> PRE send -> fader -> POST send -> BUS ->
     // master path. FX lifetimes are external to the immutable routing plan.
+    // R0: an existing multi-insert CH1 rack is invoked from the SAME native
+    // routing render graph. Its callback-scoped lifetime is separately pinned
+    // by the host's LiveGraphHandoff cycle. Never allocate/copy/retain it here.
+    // No duplicate CH1 native insert may execute at the same time.
+    using ExternalStripFx=void(*)(void*,int,float*,float*,int) noexcept;
     bool process(const float* const* physical,int inputs,
                  float* left,float* right,int frames,
-                 RenderLevels* levels=nullptr) noexcept {
-        auto channelFx=[this](int strip,float* l,float* r,int samples) noexcept {
+                 RenderLevels* levels=nullptr,
+                 void* externalContext=nullptr,
+                 ExternalStripFx externalFx=nullptr) noexcept {
+        auto channelFx=[this,externalContext,externalFx]
+          (int strip,float* l,float* r,int samples) noexcept {
             if(strip<0||strip>=fxSlots)return;
             auto* instance=processors_[strip].get(); // no shared_ptr copy in RT
             if(instance)instance->render(l,r,samples);
+            else if(strip==0 && externalFx)
+                externalFx(externalContext,strip,l,r,samples);
         };
         return block_->process(physical,inputs,left,right,frames,channelFx,levels,&controls_);
     }

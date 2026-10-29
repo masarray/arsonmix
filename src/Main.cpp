@@ -1032,7 +1032,8 @@ private:
                 "Native 10-channel Routing LAB active: "+
                 juce::String(static_cast<int>(status.getProperty("fxCount",0)))+
                 " independent VST3 inserts, real PRE/POST sends. "
-                "Use low headphone volume; STOP LAB before normal CH1 VST3.");
+                "Existing CH1 FX Rack and Orbit stay bound to their original processors. "
+                "Structural CH1 FX changes remain gated until the next production lifecycle milestone.");
         }
         if (action == "routingDryShowSave")
         {
