@@ -1480,6 +1480,7 @@ private:
             webViewStartupNoticeSent_ = true;
             diagnostics_.record ("WEBVIEW2_GUI_READY_TIMEOUT", "No native ArSonMix UI handshake");
             engine_.stop();
+            if (onStartupStage_) onStartupStage_ (3); // dismiss splash before error dialog
             showWebViewStartupError ("The embedded mixer did not initialize in 10 seconds."
                                      " Check the WebView2 Runtime and browser-cache folder permissions.");
             return;
@@ -1633,7 +1634,7 @@ public:
         window_ = std::make_unique<ConsoleWindow> ([this] (int stage)
         {
             if (splash_) splash_->setStage (stage);
-            if (stage == 2)
+            if (stage >= 2)
             {
                 splash_.reset(); // no overlay over live mixer after engine init
                 if (window_) window_->toFront (true);
