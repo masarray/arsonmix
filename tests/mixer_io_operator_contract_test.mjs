@@ -38,3 +38,37 @@ test('native device inventory and packaged WebView2 assets are wired',()=>{
     assert.ok(main.includes('/'+f));
   }
 });
+
+test('G3 inline AUX sends mutate only one native routing draft with bounded PRE/POST semantics',()=>{
+  assert.match(gui,/__arMixStageAuxSendEdit/);
+  assert.match(gui,/__arMixStageAuxReturnEdit/);
+  assert.match(gui,/data-send-focus/);
+  assert.match(gui,/data-send-gain/);
+  assert.match(gui,/data-send-pan/);
+  assert.match(gui,/data-send-enable/);
+  assert.match(gui,/data-send-apply/);
+  assert.match(gui,/data-send-revert/);
+  assert.match(monitor,/window\.__arMixStageAuxSendEdit=/);
+  assert.match(monitor,/window\.__arMixStageAuxReturnEdit=/);
+  assert.match(monitor,/window\.__arMixRevertMixerDraft=/);
+  assert.match(monitor,/if\(draftSends\.length>=32\)/);
+  assert.match(monitor,/original\.gain=0|item\.gain=0/);
+  assert.match(monitor,/drawAuxSendMatrix\(\);drawSends\(\)/);
+  assert.match(monitor,/window\.dispatchEvent\(new Event\("arMixRoutingDraftChanged"\)\)/);
+  assert.match(monitor,/if\(patchPending\)return/);
+  assert.match(monitor,/if\(state\.monitor\)/);
+  assert.match(monitor,/api\.emitEvent\("arMixAction",\{action:"routingDryApply"/);
+  assert.doesNotMatch(gui,/createPluginInstance|AudioContext|AudioWorklet|processBlock/);
+});
+test('G3 is computed from authoritative PRE/POST native renderer, not a visual-only mixer',()=>{
+  const native=read('tests/dedicated_aux_bus_test.cpp');
+  assert.match(native,/SendTap::preFader/);
+  assert.match(native,/SendTap::postFader/);
+  assert.match(native,/Zero source fader: PRE-FADER send stays audible/);
+  assert.match(native,/duplicateSend/);
+  assert.match(native,/invalidCount/);
+  const css=read('web/mixer-io.css');
+  assert.match(css,/\.arSendEditor\[hidden\]/);
+  assert.match(css,/max-height:calc\(100dvh - 16px\)/);
+  assert.doesNotMatch(css,/backdrop-filter\s*:|filter\s*:\s*blur/);
+});

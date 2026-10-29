@@ -35,6 +35,81 @@
   overlay.id='arIOOverlay';overlay.hidden=true;
   overlay.innerHTML='<section class="arIOWindow" role="dialog" aria-modal="true" aria-label="ArSonMix hardware audio I/O"><header><div><small>ARSONMIX · AUDIO HARDWARE</small><h2>Audio I/O Setup</h2></div><button type="button" class="btn-180" data-io-close aria-label="Close Audio I/O">CLOSE</button></header><div class="arIOTop" id="arIOIdentity"></div><nav role="tablist" aria-label="Audio I/O views"><button class="btn-180 active" role="tab" data-io-tab="inputs">INPUTS</button><button class="btn-180" role="tab" data-io-tab="outputs">OUTPUTS</button><button class="btn-180" role="tab" data-io-tab="device">DEVICE</button></nav><div id="arIOBody" class="arIOBody"></div><footer><span id="arIOFeedback" role="status">Hardware changes require native ACK. Output stays MUTED on APPLY.</span><button type="button" class="btn-180" data-mix-apply>APPLY PATCH</button><button type="button" class="btn-180" data-io-advanced>DRIVER SETTINGS</button></footer></section>';
   document.body.appendChild(overlay);
+  // G3: ONE floating inspector follows the selected source/AUX, no new
+  // DSP graph, no heavyweight matrix, no layout shifts in the MIX strips.
+  const sendEditor=node('section','arSendEditor');
+  sendEditor.id='arSendEditor';sendEditor.hidden=true;
+  sendEditor.setAttribute('role','dialog');sendEditor.setAttribute('aria-label','Focused channel AUX sends');
+  document.body.appendChild(sendEditor);
+  let sendFocus=null,sendAnchor=null,sendFeedback='';
+  const gainOptions=[[0,'OFF'],[.125,'−18 dB'],[.25,'−12 dB'],[.5,'−6 dB'],[1,'0 dB']];
+  const panOptions=[[-1,'L100'],[-.5,'L50'],[0,'CENTER'],[.5,'R50'],[1,'R100']];
+  const sendValueOptions=(items,value)=>items.concat(
+    items.some(([v])=>Math.abs(v-value)<1e-6)?[]:[[value,value===0?'OFF':(20*Math.log10(Math.max(1e-8,value))).toFixed(1)+' dB']])
+    .map(([v,label])=>'<option value="'+v+'"'+(Math.abs(v-value)<1e-6?' selected':'')+'>'+label+'</option>').join('');
+  const showDb=g=>g>0?(20*Math.log10(g)).toFixed(0)+' dB':'OFF';
+  function positionSendEditor(){
+    if(sendEditor.hidden||!sendAnchor?.isConnected)return;
+    const rect=sendAnchor.getBoundingClientRect(),width=sendEditor.offsetWidth,height=sendEditor.offsetHeight;
+    const x=Math.max(8,Math.min(window.innerWidth-width-8,rect.right+9));
+    const y=Math.max(8,Math.min(window.innerHeight-height-8,rect.top-15));
+    sendEditor.style.left=x+'px';sendEditor.style.top=y+'px';
+  }
+  function closeSendEditor(){sendEditor.hidden=true;sendFocus=null;sendAnchor=null;}
+  function drawSendEditor(){
+    if(!sendFocus||sendEditor.hidden)return;
+    const {from,bus}=sendFocus,s=route();
+    if(!s.active||!s.ready||s.epoch!==sendFocus.epoch){closeSendEditor();return;}
+    const aux=s.draftAux?.[bus]||{enabled:false,gain:1,main:true,mute:false};
+    const sends=(s.draftSends||[]).filter(x=>x.from===from&&x.to===10+bus);
+    const off=s.pending;
+    const header='<header><div><small>CHANNEL '+(from+1)+' · INTERNAL SEND</small><strong>AUX '+(bus+1)+'</strong></div><button type="button" data-send-close aria-label="Close sends editor">×</button></header>';
+    const auxPanel='<div class="arSendReturn"><label><input type="checkbox" data-send-return="enabled"'+(aux.enabled?' checked':'')+'> RETURN ON</label>'+
+      '<label>RETURN <select data-send-return="gain">'+sendValueOptions(gainOptions,Number(aux.gain)||0)+'</select></label>'+
+      '<label><input type="checkbox" data-send-return="main"'+(aux.main?' checked':'')+'> MAIN</label>'+
+      '<label><input type="checkbox" data-send-return="mute"'+(aux.mute?' checked':'')+'> MUTE</label></div>';
+    let lines='';
+    for(const tap of ['PRE','POST']){
+      const item=sends.find(x=>x.tap===tap);
+      if(!item){
+        lines+='<div class="arSendEditLine"><strong>'+tap+'</strong><button class="btn-180" data-send-create="'+tap+'"'+
+           (off||!aux.enabled?' disabled':'')+'>＋ ADD '+tap+'</button></div>';continue;
+      }
+      lines+='<div class="arSendEditLine" data-send-tap="'+tap+'"><strong>'+tap+'</strong>'+
+        '<label><input type="checkbox" data-send-enable="'+tap+'"'+(item.gain>0?' checked':'')+
+        (off?' disabled':'')+'> ON</label>'+
+        '<label>LEVEL <select data-send-gain="'+tap+'"'+(off?' disabled':'')+'>'+
+          sendValueOptions(gainOptions,Number(item.gain))+'</select></label>'+
+        '<label>PAN <select data-send-pan="'+tap+'"'+(off?' disabled':'')+'>'+
+          panOptions.map(([v,label])=>'<option value="'+v+'"'+(Math.abs(Number(item.pan||0)-v)<1e-6?' selected':'')+'>'+label+'</option>').join('')+
+          '</select></label><button class="btn-180" data-send-remove="'+tap+'"'+(off?' disabled':'')+'>REMOVE</button></div>';
+    }
+    const accepted=s.acceptedRoute?.sends||[];
+    const liveSignature=JSON.stringify([
+      accepted.filter(x=>x.from===from&&x.to===10+bus),
+      s.acceptedRoute?.auxes?.[bus]||null
+    ]);
+    const draftSignature=JSON.stringify([sends,aux]);
+    sendEditor.innerHTML=header+'<p class="arSendNotice">PRE = after FX, before fader · POST = after fader. Changes stay DRAFT until native ACK.</p>'+
+      auxPanel+'<div class="arSendEditRows">'+lines+'</div><footer><span id="arSendFeedback" role="status">'+
+      (sendFeedback||(s.pending?'NATIVE APPLY PENDING':liveSignature!==draftSignature?'DRAFT · NOT LIVE':'NATIVE LIVE / UNCHANGED'))+
+      '</span><button type="button" class="btn-180" data-send-revert'+(off?' disabled':'')+'>REVERT</button>'+
+      '<button type="button" class="btn-180 arSendApply" data-send-apply'+(off||s.monitor?' disabled':'')+
+      '>APPLY · MUTED</button></footer>';
+    sendEditor.querySelectorAll('input,select').forEach(x=>{if(off)x.disabled=true;});
+    positionSendEditor();
+  }
+  function editSend(from,bus,anchor){
+    const s=route();if(!isNative()||!s.ready||s.pending)return;
+    sendFocus={from,bus,epoch:s.epoch};sendAnchor=anchor;sendFeedback='';
+    sendEditor.hidden=false;drawSendEditor();
+  }
+  function sendMutation(fn){
+    const result=fn();
+    sendFeedback=result?.ok?result.message:result?.error||'Routing controller unavailable';
+    refresh();drawSendEditor();
+  }
+
   function openIO(){document.getElementById('arRouteClose')?.click();overlay.hidden=false;refreshIO();if(isNative())backend.emitEvent('arMixAction',{action:'audioDeviceInventory'});}
   function closeIO(){overlay.hidden=true;}
   function setMode(next){
@@ -72,11 +147,35 @@
     const stage=strip.querySelector('.arBankStage');
     stage.textContent=!s.ready?'NO LIVE DEVICE':dirty?'DRAFT · NOT APPLIED':r.mode==='NONE'?'UNPATCHED · SILENT':'LIVE · NATIVE ACK';
     stage.dataset.state=!s.ready?'offline':dirty?'draft':r.mode==='NONE'?'offline':'live';
-    const sends=(s.draftSends||[]).filter(e=>e.from===i&&e.to>=10&&e.to<14);
+    // Four native AUX destinations are always visible, even when empty.
+    // Render only after a topology change, never on meter telemetry.
+    const slots=Array.from({length:4},(_,bus)=>{
+      const taps=(s.draftSends||[]).filter(e=>e.from===i&&e.to===10+bus);
+      const enabled=!!s.draftAux?.[bus]?.enabled;
+      const label=taps.length?taps.map(e=>e.tap+' '+showDb(Number(e.gain))).join(' / '):
+        (enabled?'＋ ADD SEND':'AUX OFF');
+      const accepted=(s.acceptedRoute?.sends||[]).filter(e=>e.from===i&&e.to===10+bus);
+      const savedAux=s.acceptedRoute?.auxes?.[bus];
+      const changed=JSON.stringify([taps,s.draftAux?.[bus]])!==
+                    JSON.stringify([accepted,savedAux]);
+      return {bus,label,enabled,state:changed?'draft':taps.length?'live':enabled?'ready':'off'};
+    });
+    const sig=JSON.stringify(slots);
     const holder=strip.querySelector('.arSendSummary');
-    const caption=sends.length?sends.slice(0,4).map(e=>'AUX'+(e.to-9)+' '+e.tap+' '+(e.gain<=0?'−∞':(20*Math.log10(e.gain)).toFixed(0)+'dB')):['NO AUX SENDS'];
-    const sig=caption.join('|');
-    if(holder.dataset.signature!==sig){holder.replaceChildren(...caption.map(c=>node('span','arSendChip',c)));holder.dataset.signature=sig;}
+    if(holder&&holder.dataset.signature!==sig){
+      const buttons=slots.map(item=>{
+        const b=node('button','arSendChip',item.label);
+        b.type='button';b.dataset.sendFocus=String(item.bus);
+        b.title='CH '+(i+1)+' → AUX '+(item.bus+1)+' · edit PRE/POST sends';
+        b.setAttribute('aria-label',b.title);
+        b.dataset.enabled=item.enabled?'true':'false';
+        b.dataset.state=item.state;
+        b.setAttribute('aria-label',b.title+' · '+item.state);
+        b.prepend(node('b','arSendDest','AUX'+(item.bus+1)));
+        return b;
+      });
+      holder.replaceChildren(...buttons);holder.dataset.signature=sig;
+    }
   }
   function refresh(){
     decorate();const s=route();
@@ -88,6 +187,7 @@
     toolbar.querySelector('[data-mix-apply]').disabled=!isNative()||!s.ready||!!s.pending||!!s.monitor;
     for(const strip of mixer.querySelectorAll('.strip[data-strip]'))refreshStrip(strip,s);
     if(!overlay.hidden)refreshIO();
+    if(!sendEditor.hidden)drawSendEditor();
   }
   function refreshIO(){
     const s=route(),id=el('arIOIdentity'),body=el('arIOBody');
@@ -166,14 +266,52 @@
     const b=e.target.closest('button');
     if(!b)return;
     if(b.dataset.nativeAction==='audioSetup'||b.dataset.ioOpen!==undefined){e.preventDefault();e.stopImmediatePropagation();openIO();return;}
-    if(b.dataset.mixMode){e.preventDefault();e.stopImmediatePropagation();setMode(b.dataset.mixMode);return;}
+    if(b.dataset.mixMode){e.preventDefault();e.stopImmediatePropagation();closeSendEditor();setMode(b.dataset.mixMode);return;}
+    if(b.dataset.sendFocus!==undefined){
+      e.preventDefault();e.stopImmediatePropagation();
+      editSend(Number(b.closest('[data-strip]')?.dataset.strip),Number(b.dataset.sendFocus),b);return;
+    }
+    if(b.dataset.sendClose!==undefined){e.preventDefault();closeSendEditor();return;}
+    if(b.dataset.sendCreate!==undefined||b.dataset.sendRemove!==undefined){
+      e.preventDefault();if(!sendFocus)return;
+      const tap=b.dataset.sendCreate||b.dataset.sendRemove;
+      sendMutation(()=>window.__arMixStageAuxSendEdit?.({...sendFocus,tap,
+        action:b.dataset.sendCreate!==undefined?'create':'remove'}));return;
+    }
+    if(b.dataset.sendRevert!==undefined){e.preventDefault();sendMutation(()=>window.__arMixRevertMixerDraft?.());return;}
+    if(b.dataset.sendApply!==undefined){
+      e.preventDefault();const result=window.__arMixApplyMixerDraft?.();
+      sendFeedback=result?.ok?'SUBMITTED · WAIT FOR NATIVE ACK':result?.error||'APPLY failed';
+      drawSendEditor();return;
+    }
     if(b.dataset.ioClose!==undefined){e.preventDefault();e.stopImmediatePropagation();closeIO();return;}
     if(b.dataset.ioTab){e.preventDefault();e.stopImmediatePropagation();ioTab=b.dataset.ioTab;lastSignature='';refreshIO();return;}
     if(b.dataset.ioAdvanced!==undefined){e.preventDefault();e.stopImmediatePropagation();closeIO();backend?.emitEvent?.('arMixAction',{action:'audioSetup'});return;}
     if(b.dataset.mixPatch){e.preventDefault();e.stopImmediatePropagation();const strip=b.closest('[data-strip]');window.__arMixOpenChannelPatch?.(Number(strip?.dataset.strip)||0,b.dataset.mixPatch);return;}
     if(b.dataset.mixApply!==undefined){e.preventDefault();e.stopImmediatePropagation();const response=window.__arMixApplyMixerDraft?.();if(response&&!response.ok)el('arIOFeedback').textContent=response.error;refresh();return;}
   },true);
-  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!overlay.hidden){closeIO();e.stopImmediatePropagation();}},true);
+  document.addEventListener('change',e=>{
+    if(sendEditor.hidden||!sendFocus||!sendEditor.contains(e.target))return;
+    const input=e.target;
+    if(input.dataset.sendReturn!==undefined){
+      const field=input.dataset.sendReturn;
+      sendMutation(()=>window.__arMixStageAuxReturnEdit?.(sendFocus.bus,field,
+        field==='gain'?Number(input.value):input.checked));
+    }else {
+      const field=input.dataset.sendGain!==undefined?'gain':
+        input.dataset.sendPan!==undefined?'pan':
+        input.dataset.sendEnable!==undefined?'enable':null;
+      if(!field)return;
+      const tap=input.dataset.sendGain||input.dataset.sendPan||input.dataset.sendEnable;
+      sendMutation(()=>window.__arMixStageAuxSendEdit?.({...sendFocus,tap,action:field,
+        value:field==='enable'?input.checked:Number(input.value)}));
+    }
+  },true);
+  document.addEventListener('keydown',e=>{
+    if(e.key!=='Escape')return;
+    if(!sendEditor.hidden){closeSendEditor();e.stopImmediatePropagation();}
+    else if(!overlay.hidden){closeIO();e.stopImmediatePropagation();}
+  },true);
   const observer=new MutationObserver(records=>{if(records.some(r=>r.type==='childList'))refresh();});
   observer.observe(mixer,{childList:true});
   backend?.addEventListener?.('arMixStatus',d=>{
@@ -184,7 +322,19 @@
     if(!overlay.hidden){const identity=(d.driver||'')+'/'+(d.rate||0)+'/'+(d.buffer||0);if(overlay.dataset.deviceIdentity!==identity){overlay.dataset.deviceIdentity=identity;refreshIO();}}
   });
   backend?.addEventListener?.('arMixAudioDeviceInventory',d=>{deviceInventory=d;lastSignature='';if(!overlay.hidden)refreshIO();});
-  backend?.addEventListener?.('arMixRoutingLabAck',ack=>{lastSignature='';el('arIOFeedback').textContent=ack?.ok?'NATIVE ACK · INPUT PATCH LIVE':'REJECTED · '+(ack?.error||'Routing unchanged');refresh();});
+  backend?.addEventListener?.('arMixRoutingLabAck',ack=>{
+    lastSignature='';
+    const message=ack?.ok?'NATIVE ACK · SENDS/ROUTING LIVE':'REJECTED · '+(ack?.error||'Native route unchanged');
+    el('arIOFeedback').textContent=message;
+    sendFeedback=message;
+    refresh();
+  });
   window.addEventListener('arMixRoutingDraftChanged',()=>{lastSignature='';refresh();});
+  window.addEventListener('resize',()=>positionSendEditor());
+  document.addEventListener('pointerdown',e=>{
+    if(!sendEditor.hidden&&!sendEditor.contains(e.target)&&!e.target.closest?.('[data-send-focus]')){
+      closeSendEditor();
+    }
+  },true);
   setMode('FX');
 })();
