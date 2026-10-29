@@ -67,7 +67,7 @@ async def main():
                 if width==1366 and mode=='SENDS':
                     await page.screenshot(path='mixer-shell-compact-1366.png')
             assert heights['SENDS']<heights['FX'],(width,height,heights)
-            assert abs(heights['ROUTE']-heights['FX'])<1.1,(width,height,heights)
+            assert heights['ROUTE']>heights['FX'],(width,height,heights)
             await page.locator('.left-rail [data-mix-mode="FX"]').click()
             assert abs(await assert_linked('FX RESTORE',width,height)-heights['FX'])<1.1
 

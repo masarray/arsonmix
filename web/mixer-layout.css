@@ -2,14 +2,15 @@
    Source of truth is the outer seven-row grid, not per-strip flex intrinsic sizing.
    No visual filters, blur, timers, geometry observers or DSP changes. */
 #app #mixer{
-  --ar-upper-height:163px;
+  --ar-upper-height:196px;
   --ar-control-height:97px;
   --ar-identity-height:61px;
   --ar-strip-head-height:35px;
   --ar-fader-read-height:35px;
   --ar-mute-height:41px;
 }
-#app #mixer[data-io-mode="SENDS"]{--ar-upper-height:180px}
+#app #mixer[data-io-mode="ROUTE"]{--ar-upper-height:163px}
+#app #mixer[data-io-mode="SENDS"]{--ar-upper-height:208px}
 #app #mixer > .strip,
 #app #mixer > #masterLeft.strip.master-strip{
   display:grid!important;
@@ -168,11 +169,12 @@
    All modes, channel list, utility commands and snapshots remain operable. */
 @media(max-height:790px){
   #app #mixer{
-    --ar-upper-height:129px;
+    --ar-upper-height:172px;
     --ar-control-height:87px;
     --ar-identity-height:49px;
   }
-  #app #mixer[data-io-mode="SENDS"]{--ar-upper-height:155px}
+  #app #mixer[data-io-mode="ROUTE"]{--ar-upper-height:148px}
+  #app #mixer[data-io-mode="SENDS"]{--ar-upper-height:185px}
   #app .left-rail .arRailHeading{height:19px;padding-top:3px}
   #app .left-rail .arMixerBankBar{gap:3px;padding:3px 6px 5px}
   #app .left-rail .arMixerBankInfo{height:19px;min-height:19px}
