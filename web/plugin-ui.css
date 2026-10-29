@@ -48,7 +48,7 @@
 #nativePluginManager .ar-manager-searchline{display:flex;align-items:center;gap:12px;flex:none;
   padding:9px 10px;background:#1b303a;border-bottom:1px solid #3c5361}
 #nativePluginManager .ar-manager-search{flex:1;max-width:440px;min-width:0;box-sizing:border-box;
-  font:11px inherit;font-family:inherit;color:#e1f2f8;background:#0b1c27;border:1px solid #456777;
+  font-family:inherit;font-size:11px;color:#e1f2f8;background:#0b1c27;border:1px solid #456777;
   border-radius:4px;height:29px;padding:5px 9px;outline:0}
 #nativePluginManager .ar-manager-search:focus-visible{border-color:#55b7ce;outline:1px solid #55b7ce}
 #nativePluginManager #arManagerCount{margin-left:auto;color:#94b2c1;font-size:10px;white-space:nowrap}
@@ -80,7 +80,7 @@
 #nativePluginManager .ar-plugin-file small{font-size:9px;color:#819ea9;margin-top:2px}
 #nativePluginManager .ar-manager-empty{font-size:11px;color:#9bb4c1;padding:24px;text-align:center}
 #nativePluginManager .ar-manager-more{flex:none;width:100%;height:28px;background:#1b3340;
-  color:#9ed0df;border:0;border-top:1px solid #385463;font:10px inherit;cursor:pointer}
+  color:#9ed0df;border:0;border-top:1px solid #385463;font-family:inherit;font-size:10px;cursor:pointer}
 #nativePluginManager .ar-manager-more[hidden]{display:none}
 #nativePluginManager .ar-manager-more:focus-visible{outline:2px solid #79d2e8;outline-offset:-2px}
 #nativePluginManager .ar-dialog-close,#nativeFxSelector .ar-dialog-close{
