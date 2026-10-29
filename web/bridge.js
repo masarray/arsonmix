@@ -28,7 +28,7 @@
 
   const send = (action, more = {}) => backend.emitEvent("arMixAction", {action, ...more});
   let fxNativeGesture=null,fxNativeBlockClick=false;
-  let pickerAnchor=null,pickerChannel=0,pickerSlot=0;
+  let pickerAnchor=null,pickerChannel=0,pickerSlot=0,pickerRouteMode=false;
   const state = {orbitActiveSlot:-1,catalog: [], chain: [], scanning: false, message: "Connecting to native host...",
     device: {}, presets: [], addRequestId:0, addError:"", pendingPlugin:"", filter: "", selectedCategory: "All", monitor: false, error: "", progress: {active:false,phase:"done",done:0,total:0,found:0,current:""}, adding:false};
 
@@ -204,15 +204,36 @@
     const isMaster=typeof masterSelected!=="undefined"&&masterSelected;
     const name=isMaster?"MASTER":(channels[selected]?.name||("CH "+(selected+1)));
     const fx=isMaster?"":(lab.channelFxNames?.[selected]||"");
-    workspace.innerHTML='<div class="native-panel" data-live-native="1">'+
-      cardHeader("Native FX · "+name,"One LIVE routing graph · one source of truth")+
-      '<div class="native-card"><h3>REAL VST3 PROCESSING</h3>'+
-      '<p class="native-sub">'+(isMaster?"MASTER inserts are not available in this mode":
-          fx?escapeHtml(fx)+" · independent native VST3 instance":
-          "DRY · no FX selected for this channel")+'</p>'+
-      '<button class="native-btn primary" data-native-routing-lab="1">CONFIGURE INPUT / FX / BUS / SENDS</button>'+
-      '<p class="native-sub">Fader, PAN, MUTE and SOLO now change LIVE DSP without rebuilding VST3. Structural changes stay in Routing LAB.</p></div></div>';
-    return;
+    // Keep the working CH1 multi-insert workflow even in production routing.
+    if(isMaster||selected!==0||fx){
+      const draft=window.__arMixGetRackFxDraft?.(selected);
+      const pending=draft?.id!==undefined?(draft.id?state.catalog.find(p=>p.id===draft.id)?.name||"Selected VST3":"DRY"):"";
+      workspace.innerHTML=`<div class="native-panel" data-live-native="1">
+        ${cardHeader("FX Rack · "+name,"FX workspace independent of ROUTING · verified native graph")}
+        <div class="native-toolbar" style="margin-bottom:10px">
+          <button class="native-btn" data-plugin-manager="1">PLUGIN MANAGER</button>
+          <button class="native-btn" data-native-routing-lab="1">OPEN ROUTING</button>
+          <span class="native-sub">Native routed FX · one insert per channel currently supported</span>
+        </div>
+        <div class="native-card" style="max-width:900px;min-height:0">
+          <h3>${escapeHtml(name)} · ROUTED FX</h3>
+          <div class="native-node">
+            <span class="node-index">01</span>
+            <span class="node-text">${escapeHtml(fx||"DRY · no insert")}
+              <small>${isMaster?"Master routed FX unavailable":fx?"Native routed VST3":"Choose a VST3 from the installed catalog"}</small></span>
+            <button class="native-btn primary" data-routed-fx="${selected}" ${isMaster?"disabled":""}>${fx?"REPLACE FX":"＋ ADD FX"}</button>
+            <button class="native-btn warn" data-routed-clear="${selected}" ${(!fx&&!draft)||isMaster?"disabled":""}>REMOVE</button>
+          </div>
+          ${draft?`<p class="native-status" style="margin-top:10px">PENDING DRAFT: ${escapeHtml(pending)} · NOT LIVE until native ACK</p>`:""}
+          <div class="native-toolbar" style="margin-top:12px">
+            <button class="native-btn primary" data-routed-apply="1" ${!draft||isMaster?"disabled":""}>APPLY FX · OUTPUT MUTED</button>
+            <span class="native-sub">Routing preserves the physical input. Native APPLY verifies device epoch, MUTE and graph revision.</span>
+          </div>
+        </div>
+      </div>`;
+      return;
+    }
+    // CH1 without a routed VST3 continues into its existing 8-slot rack.
   }
   const selected=typeof currentChannel==="number"?currentChannel:0;
   const isMaster=typeof masterSelected!=="undefined"&&masterSelected;
@@ -514,7 +535,7 @@
     const dlg=document.getElementById("nativeFxSelector");
     if(!dlg)return;
     const context=(pickerChannel===-1?"MASTER":"CH "+(pickerChannel+1))+
-      " · SLOT "+(pickerSlot+1)+(pickerChannel===0?" · LIVE VST3":" · ROUTING NOT CONNECTED");
+      " · SLOT "+(pickerSlot+1)+(pickerRouteMode?" · ROUTED FX DRAFT":pickerChannel===0?" · LIVE VST3":" · ROUTING NOT CONNECTED");
     pluginUi.renderPicker(dlg,state,context,fxCategories,classFor);
   }
   function renderPickerResults(){
@@ -540,11 +561,14 @@
     dlg.style.setProperty("--fx-arrow-x",Math.max(12,Math.min(w-20,rect.left+rect.width/2-left))+"px");
     dlg.classList.toggle("picker-above",above);
   }
-  function openPicker(anchor,channel=0,slot=state.chain.length){
+  function openPicker(anchor,channel=0,slot=state.chain.length,routeMode=false){
     clearPickerTarget();
     const row=anchor?.closest(".insert-slot,.master-fx-slot,.native-node");
     pickerAnchor=(row||anchor)?.isConnected?(row||anchor):document.querySelector('.nav button[data-view="FX RACK"]');
     pickerChannel=Number(channel);pickerSlot=Math.max(0,Number(slot)||0);
+    pickerRouteMode=!!routeMode;state.routedPickerMode=pickerRouteMode;
+    // A new FX insert opens the full catalog, not the search from a previous picker.
+    state.filter="";state.selectedCategory="All";state.addError="";
     pickerAnchor?.classList.add("fx-picker-target");
     renderPicker();showDialog("nativeFxSelector");positionPicker();
   }
@@ -637,7 +661,7 @@
   const orbitClose=document.querySelector('#nativeOrbit [data-close-modal]');
   if(orbitClose)orbitClose.innerHTML=iconSvg("close");
   createDialog("nativePluginManager","Plugin Manager");
-  pluginUi.init(()=>state);
+  pluginUi.init(()=>state,(id,value)=>send("setPluginFavorite",{id,value}));
   const hud=document.createElement("div");hud.id="nativeScanHud";hud.hidden=true;document.body.appendChild(hud);
 }
   function patchMixer(){
@@ -666,20 +690,28 @@
     const rack=track.querySelector(".rack");
     if(!rack)return;
     const lab=state.device?.dryRoutingLab;
-    if(lab?.active){
+    if(lab?.active && !(i===0 && state.chain.length>0 && !(lab.channelFxNames?.[0]||""))){
       const fx=lab.channelFxNames?.[i]||"";
-      const signature="live-lab-"+fx;
+      const signature="routed-fx-rack-"+i+"-"+fx;
       if(rack.dataset.nativeSig!==signature){
         rack.dataset.nativeSig=signature;
-        rack.innerHTML='<div class="insert-slot"><button class="insert '+(fx?"":"empty")+
-          '" data-native-routing-lab="1" title="Configure live channel FX and routing">'+
-          '<span class="insert-name">'+escapeHtml(fx||"＋ ROUTE / FX")+'</span></button></div>';
+        // One true native routed VST3 slot; never replace the six-row FX
+        // area with a misleading ROUTE/FX button.
+        rack.innerHTML=`<div class="insert-slot">
+          <button class="insert ${fx?"":"empty"}" data-routed-fx="${i}"
+            title="${fx?"Replace "+escapeHtml(fx):"Choose native routed FX on channel "+(i+1)}">
+            <span class="insert-name">${escapeHtml(fx||"＋ ADD FX")}</span>
+          </button></div>`+
+          Array.from({length:5},()=>`<div class="insert-slot">
+            <span class="insert empty ar-fx-reserved" title="Multi-insert is not yet supported for this channel"></span>
+          </div>`).join("");
       }
       track.removeAttribute("data-preview");
       rack.removeAttribute("data-preview");
-      track.title="LIVE native routing · channel "+(i+1)+" · FX: "+(fx||"DRY");
+      track.title="LIVE CH "+(i+1)+" · VST3 "+(fx||"DRY")+" · FX RACK to edit";
       return;
     }
+    // Keep original CH1 multi-insert rows when the routed engine is active.
     if(i!==0){
       if(rack.dataset.nativeSig!=="empty-nonlive"){
         rack.dataset.nativeSig="empty-nonlive";
@@ -830,10 +862,27 @@
   // Capture native controls before the legacy v0.3 demo handlers.
   document.addEventListener("click", function(e){
   if(fxNativeBlockClick){fxNativeBlockClick=false;e.preventDefault();e.stopImmediatePropagation();return;}
-  const el=e.target.closest("[data-native-unrouted],[data-native-action],[data-native-add],[data-native-fx],[data-fxpower],[data-master-insert],[data-master-power],[data-native-category],[data-go-native-rack],[data-insert],[data-plugin-picker],[data-plugin-manager],[data-my-sounds],[data-backup-studio],[data-preset-mute],[data-preset-save],[data-preset-load],[data-close-modal],[data-orbit-start],[data-orbit-stop]");
+  const el=e.target.closest("[data-routed-fx],[data-routed-clear],[data-routed-apply],[data-native-unrouted],[data-native-action],[data-native-add],[data-native-fx],[data-fxpower],[data-master-insert],[data-master-power],[data-native-category],[data-go-native-rack],[data-insert],[data-plugin-picker],[data-plugin-manager],[data-my-sounds],[data-backup-studio],[data-preset-mute],[data-preset-save],[data-preset-load],[data-close-modal],[data-orbit-start],[data-orbit-stop]");
   if(!el)return;
   e.preventDefault();e.stopImmediatePropagation();
 
+  if(el.hasAttribute("data-routed-fx")){
+    const channel=Number(el.dataset.routedFx);
+    if(!Number.isInteger(channel)||channel<0||channel>9)return;
+    openPicker(el,channel,0,true);return;
+  }
+  if(el.hasAttribute("data-routed-clear")){
+    const channel=Number(el.dataset.routedClear);
+    const result=window.__arMixStageRackFx?.(channel,"");
+    toStatus(result?.message||result?.error||"Native FX route editor unavailable");
+    if(result?.ok)repaint();
+    return;
+  }
+  if(el.hasAttribute("data-routed-apply")){
+    const result=window.__arMixApplyRackFx?.();
+    toStatus(result?.message||result?.error||"Native FX routing apply unavailable");
+    return;
+  }
   if(el.hasAttribute("data-native-unrouted")){
     const id=Number(el.dataset.nativeUnrouted),rack=el.closest(".rack,.master-fx-rack");
     const slot=rack?[...rack.children].indexOf(el.closest(".insert-slot,.master-fx-slot")):0;
@@ -930,6 +979,18 @@
   }
   if(el.dataset.nativeAdd){
     if(state.adding)return;
+    if(pickerRouteMode){
+      const result=window.__arMixStageRackFx?.(pickerChannel,el.dataset.nativeAdd);
+      if(result?.ok){
+        hideDialog("nativeFxSelector");
+        toStatus(result.message);
+        repaint();
+      }else{
+        state.addError=result?.error||"Native routed FX selection failed";
+        renderPickerFeedback();
+      }
+      return;
+    }
     if(pickerChannel!==0){
       toStatus("Native VST3 routing is not connected on "+(pickerChannel===-1?"MASTER":"CH "+(pickerChannel+1))+". No effect was loaded.");
       return;
@@ -1300,6 +1361,7 @@
     }
     if(changed)patchMixer();
   }
+  let lastRoutedFxSignature="";
   backend.addEventListener("arMixStatus",d=>{
     const labWasActive=!!state.device?.dryRoutingLab?.active;
     state.device=d;
@@ -1310,7 +1372,10 @@
     syncNativeMixerControls(d);
     // UI can switch between CH1 production and 10CH DSP without replacing
     // premium mixer geometry or rebuilding VST3 instances.
-    if(labWasActive!==!!lab?.active)repaint();
+    const routedFxSignature=lab?.active?(lab.channelFxNames||[]).join("|")+"|"+(lab.revision||0):"";
+    if(labWasActive!==!!lab?.active||lastRoutedFxSignature!==routedFxSignature){
+      lastRoutedFxSignature=routedFxSignature;repaint();
+    }
     const b=document.querySelector('[data-native-action="monitor"]');
     if(b){
       const label=state.monitor?"MUTE OUTPUT":"UNMUTE OUTPUT";

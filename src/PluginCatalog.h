@@ -19,6 +19,7 @@ struct CatalogEntry
     juce::String path, name, vendor, category;
     int uid = 0;
     int variant = 0;
+    bool favorite = false; // Portable user preference; never inferred from vendor scanner.
 
     juce::String key() const { return path + "|" + juce::String (uid) + "|" + juce::String (variant); }
 
@@ -32,6 +33,7 @@ struct CatalogEntry
         o->setProperty ("category", category);
         o->setProperty ("uid", uid);
         o->setProperty ("variant", variant);
+        o->setProperty ("favorite", favorite);
         return juce::var (o.release());
     }
 
@@ -44,6 +46,7 @@ struct CatalogEntry
         e.category = v.getProperty ("category", {}).toString();
         e.uid = static_cast<int> (v.getProperty ("uid", 0));
         e.variant = static_cast<int> (v.getProperty ("variant", 0));
+        e.favorite = static_cast<bool> (v.getProperty ("favorite", false));
         return e;
     }
 };
@@ -132,6 +135,22 @@ public:
         // The selected VST3 is copied on Scanner's non-audio thread.
         // Keep the original filename/bundle/resources and scan ONLY this copy.
         scan (juce::StringArray { file.getFullPathName() }, copyToVault);
+    }
+
+    // Preference writes only on the JUCE message thread, never during DSP processing.
+    // Stored alongside each catalog variant so the Studio backup carries favorites.
+    bool setFavorite (const juce::String& id, bool favorite)
+    {
+        for (auto& entry : entries_)
+            if (entry.key() == id)
+            {
+                if (entry.favorite == favorite) return true;
+                entry.favorite = favorite;
+                save();
+                if (onChanged) onChanged();
+                return true;
+            }
+        return false;
     }
 
     const CatalogEntry* find (const juce::String& id) const
@@ -251,7 +270,11 @@ private:
                     if (iter == owner.entries_.end())
                         owner.entries_.push_back (e);
                     else
+                    {
+                        const bool favorite = iter->favorite;
                         *iter = e;
+                        iter->favorite = favorite; // Rescan must NEVER erase user favorites.
+                    }
                 }
                 std::sort (owner.entries_.begin(), owner.entries_.end(),
                     [] (const CatalogEntry& a, const CatalogEntry& b)

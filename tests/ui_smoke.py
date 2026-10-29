@@ -1185,7 +1185,11 @@ async def main():
           window.__arMixMockEvents={};
           window.__JUCE__={backend:{
             emitEvent(){},
-            addEventListener(name,fn){window.__arMixMockEvents[name]=fn;}
+            // Real JUCE allows multiple bridge listeners for each event.
+            addEventListener(name,fn){
+              const previous=window.__arMixMockEvents[name];
+              window.__arMixMockEvents[name]=payload=>{if(previous)previous(payload);fn(payload);};
+            }
           }};
         })()""")
         await native.goto((project/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").as_uri())
@@ -1284,6 +1288,39 @@ async def main():
           };
           window.__arMixMockEvents.arMixStatus(window.__arPatchStatus);
         }""")
+        # P1 FX Rack regression: the native 10CH state must not erase plugin
+        # inserts or replace them with a ROUTING shortcut in the mixer.
+        await native.evaluate("""()=>{
+          window.__arMixMockEvents.arMixCatalog({scanning:false,message:"Ready",
+            items:Array.from({length:241},(_,i)=>({
+              id:"plugin-"+i,name:"Effect "+String(i).padStart(3,"0"),
+              vendor:"Vendor",category:"EQ",path:"C:\\\\Plugins\\\\Effect"+i+".vst3",favorite:i===7
+            }))
+          });
+          window.__arMixMockEvents.arMixStatus({
+            ...window.__arPatchStatus,
+            dryRoutingLab:{...window.__arPatchStatus.dryRoutingLab,
+              active:true,ready:true,revision:1,channelFxNames:Array.from({length:10},(_,i)=>i===1?"Native Reverb":"")}
+          });
+        }""")
+        assert await native.locator('[data-strip="1"] .rack .insert-slot').count()==6
+        assert await native.locator('[data-strip="1"] .rack [data-routed-fx="1"]').count()==1
+        assert "ROUTE / FX" not in (await native.locator('[data-strip="1"] .rack').inner_text())
+        await native.locator('[data-view="FX RACK"]').click()
+        await native.evaluate("()=>{currentChannel=1;renderRackWorkspace()}")
+        await native.wait_for_function("""()=>!!document.querySelector('#rackWorkspace [data-routed-fx="1"]')""")
+        assert await native.locator('#rackWorkspace [data-routed-apply]').count()==1
+        await native.locator('#rackWorkspace [data-routed-fx="1"]').click()
+        assert await native.locator('#arPickerRows [data-native-add]').count()==80
+        assert await native.locator('#arPickerRows .ar-picker-row').first.locator('.ar-favorite').count()==1
+        await native.locator('#arPickerRows [data-native-add]').first.click()
+        assert await native.locator('#rackWorkspace').get_by_text("PENDING DRAFT",exact=False).count()==1
+        await native.locator('#rackWorkspace [data-routed-apply]').click()
+        assert await native.evaluate("""()=>!window.__arMixSent.some(x=>
+          x.payload?.action==="routingDryApply")"""),"No input patch must not publish a routed FX change"
+        await native.evaluate('()=>document.getElementById("arPatchRevert").click()')
+        await native.evaluate("()=>window.__arMixMockEvents.arMixStatus(window.__arPatchStatus)")
+        await native.locator('[data-view="MIX"]').click()
         await native.locator('[data-view="SIGNAL FLOW"]').click()
         assert await native.locator("#arRoutingLabOverlay").evaluate(
             "(e)=>e.classList.contains('open')")
