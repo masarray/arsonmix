@@ -202,7 +202,7 @@
 .arAuxInspector{max-width:none;background:#203541;border-color:#496674}
 .arRouteRow{min-height:37px;background:#1b303b;border-color:#365362}
 .arAuxRow{min-height:36px;background:#1d333e;border-color:#3c5a66}
-.arPatchFxTrigger.btn-180{flex:1;display:flex;justify-content:flex-start;min-width:0;max-width:400px;overflow:hidden;text-overflow:ellipsis}
+.arPatchFxTrigger.btn-180{flex:1;display:flex;justify-content:flex-start;min-width:0;max-width:400px;overflow:hidden;text-overflow:ellipsis;text-transform:none!important}
 .arPatchPager button.btn-180{width:32px;min-width:32px;padding:0!important}
 #arRoutingLabPanel :is(button,select,input):focus-visible{outline:2px solid #b0e7f3;outline-offset:2px}
 @media(max-width:1240px){.arPatchTop{padding:9px 12px}.arPatchBody{padding:11px}.arPatchFooter{flex-wrap:wrap}.arPatchFooter .arRouteFoot{justify-content:flex-start}.arPatchTabs{padding:8px 11px}}
