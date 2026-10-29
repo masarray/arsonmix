@@ -873,6 +873,40 @@
   }
   // Exposed only to the existing native SIGNAL FLOW GUI; does not publish a
   // routing transaction or bypass the output-MUTE operator safety gate.
+  // Routing owns the only native 10CH/AUX plan. FX RACK may edit the
+  // channel's VST3 selection, but MUST stage it through the SAME routing
+  // draft/preflight/APPLY/ACK; no separate graph or implicit output unmute.
+  let rackFxDraft=null;
+  window.__arMixStageRackFx=(channel,id)=>{
+    const d=state.dryRoutingLab||{};
+    if(!d.active||!d.ready)return {ok:false,error:"Select a verified DIRECT audio device in AUDIO SETUP."};
+    if(patchPending)return {ok:false,error:"Routing change pending native acknowledgement."};
+    if(!Number.isInteger(channel)||channel<0||channel>=10)return {ok:false,error:"Invalid input channel."};
+    if(id&&!catalogNames.has(id))return {ok:false,error:"VST3 is not indexed; open Plugin Manager."};
+    if(channel===0&&id&&Number(state.chainCount)>0)
+      return {ok:false,error:"CH1 multi-insert rack is active. Remove the duplicate routed CH1 insert."};
+    // Preserve multiple rack edits in one draft; only first edit hydrates the
+    // authoritative native accepted route. On device epoch change, invalidate.
+    if(!rackFxDraft||draftEpoch!==Number(d.epoch)){
+      hydrateAcceptedRoute();
+      syncNativeLevelsToRouteDraft();
+    }
+    draftRoutes[channel].fxId=id;
+    rackFxDraft={channel,id,epoch:Number(d.epoch)};
+    if(patchTab==="internal"&&routeOverlay.classList.contains("open"))drawRoutes();
+    return {ok:true,name:id?catalogNames.get(id):"DRY",message:"FX DRAFT · Mute output, then APPLY FX. Existing live audio is unchanged."};
+  };
+  window.__arMixGetRackFxDraft=channel=>rackFxDraft?.epoch===Number(state.dryRoutingLab?.epoch)&&
+    rackFxDraft?.channel===channel?rackFxDraft:null;
+  window.__arMixApplyRackFx=()=>{
+    if(!rackFxDraft)return {ok:false,error:"No pending FX selection."};
+    if(patchPending)return {ok:false,error:"Native routing request already pending."};
+    if(state.monitor)return {ok:false,error:"MUTE OUTPUT before applying a structural FX edit."};
+    const failure=patchPreflight();
+    if(failure)return {ok:false,error:failure};
+    document.getElementById("arRouteApply").click();
+    return {ok:true,message:"FX change submitted. Live only after native route ACK."};
+  };
   window.__arMixOpenRoutingLab=openRoutingLab;
   window.__arMixOpenRouting=openRoutingLab;
   // Native toolbar action remains the approved SIGNAL FLOW data-view,
@@ -1029,6 +1063,7 @@
     showIdle();
     if(result && typeof result==="object" && "epoch" in result)state.dryRoutingLab=result;
     if(reply?.ok===true){
+      rackFxDraft=null; // Native ACK became authoritative, not the browser draft.
       if(result.acceptedRoute)hydrateAcceptedRoute();
       else {
         // CLEAR resets CH, FX, and the new R2 CH→AUX matrix draft together.
