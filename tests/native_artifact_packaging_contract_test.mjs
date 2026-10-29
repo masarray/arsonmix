@@ -61,8 +61,12 @@ test('production Windows workflow rejects a tiny 648KB zip, test EXE, or missing
   assert.ok(workflow.indexOf('scripts/verify_native_windows_artifact.ps1') <
             workflow.indexOf('uses: actions/upload-artifact@v4'));
 });
-test('physical test protocol differentiates actual native channel 1 and GUI-only channels', () => {
-  assert.match(fat, /native engine implements \*\*Channel 1\*\* only/i);
+test('physical hardware FAT documents verified 10CH and dedicated 4 AUX native mixer without claiming hardware qualification', () => {
+  assert.match(fat, /native 10CH \+ 4 AUX/i);
+  assert.match(fat, /UNPATCHED \/ SILENT/i);
+  assert.match(fat, /APPLY ROUTING/);
+  assert.match(fat, /CLEAR PATCH/);
+  assert.match(fat, /Experimental; not yet qualified for professional live audio/i);
   assert.match(fat, /OUTPUT_ONLY_TONE/);
   assert.match(fat, /CAPTURE_ONLY/);
   assert.match(fat, /DRY_THROUGH/);

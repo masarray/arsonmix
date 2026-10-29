@@ -85,6 +85,13 @@
 #arRouteApply{background:#95e1b6;border-color:#49a785;color:#18382f}
 #arPatchRevert{background:#b4c1c6}
 #arRouteSaveDry{background:#a5b9c1}
+#arNativeShowBrowser{margin-top:8px;padding:8px 12px;background:#122933;border-top:1px solid #43606c;color:#c4dce3}
+#arNativeShowBrowser[hidden]{display:none}
+.arNativeShowLine{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:10px}
+#arNativeShowSelect{flex:1;min-width:180px;max-width:500px;background:#0c202a;color:#e3f0f2;border:1px solid #517580;border-radius:3px;padding:6px;font:11px 'Segoe UI',Arial,sans-serif}
+#arNativeShowRecall{background:#a5dbbd;color:#173b2f;border:1px solid #3d906d;border-radius:3px;padding:6px 10px;font:600 10px 'Segoe UI',Arial,sans-serif;cursor:pointer}
+#arNativeShowRecall:disabled{opacity:.45;cursor:default}
+#arNativeShowStatus{flex-basis:100%;color:#a8c2c9;font-size:10px}
 #arPatchOutputMap{display:flex;gap:10px;flex-wrap:wrap}
 .arPatchOutput{flex:1 1 180px;padding:16px;background:#0b202a;border:1px solid #3e606e;border-radius:3px}
 .arPatchOutput b{display:block;margin-bottom:7px;color:#92e9c5;font-size:11px}
@@ -178,7 +185,7 @@
     '<div class="arPatchViewport"><div id="arPatchGrid" class="arPatchGrid" role="grid" aria-label="Native input patch matrix"></div></div><div class="arPatchLegend"><span><b></b>UNPATCHED</span><span><b class="live"></b>LIVE · NATIVE ACK</span><span><b class="draft"></b>DRAFT · NOT APPLIED</span><span><b class="removed"></b>LIVE UNTIL APPLY</span></div><div class="arPatchInspector" id="arPatchInspector" role="status"><strong>10 CHANNEL INPUT PATCH</strong><span>Uses actual enabled ASIO/WASAPI hardware ports</span></div><div class="arPatchNote">No auto-unmute. Stale devices, incomplete stereo assignments and invalid physical ports are rejected before APPLY. One input can feed multiple channels.</div></section>' +
     '<section class="arPatchBody arPatchHidden" id="arPatchInternalPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>CHANNEL CONTROL / INTERNAL SENDS</strong><small>Native channel controls, VST3 inserts, 4 AUX returns and PRE/POST sends.</small></div></div><div id="arRouteRows"></div><section id="arAuxReturns"><h3>4 DEDICATED AUX / FX RETURNS</h3><p>Independent stereo return with VST3, level and MAIN route.</p><div id="arAuxRows"></div></section><section id="arRouteSends"><h3>CH → AUX SEND MATRIX · PRE / POST</h3><p class="arAuxMatrixNote">10 channels × 4 AUX returns. Select a cell to edit PRE/POST sends; output changes only after MUTE + APPLY.</p><div id="arAuxSendGrid" class="arAuxMatrix" role="grid" aria-label="Channel to AUX send matrix"></div><div id="arAuxSendInspector" class="arAuxInspector" role="group" aria-label="Selected AUX send inspector">Select a CH / AUX cell to inspect sends.</div><h3>ADVANCED · CH → CH SENDS</h3><p class="arAuxMatrixNote">Directed channel sends remain available; feedback loops are rejected before native APPLY.</p><div id="arSendRows"></div><button id="arAddSend">＋ ADD CH → CH SEND</button></section></section>' +
     '<section class="arPatchBody arPatchHidden" id="arPatchOutputPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>CURRENT HARDWARE OUTPUT</strong><small>Current hardware MAIN L/R is read-only. Configure output in AUDIO SETUP.</small></div></div><div id="arPatchOutputMap"></div><div class="arPatchNote">AUX-to-hardware-output patching is not available. Select physical device/output in AUDIO SETUP.</div></section>' +
-    '<footer class="arPatchFooter"><div id="arRouteFeedback" role="status">Select actual input ports, then APPLY while output is muted.</div><div class="arRouteFoot"><button id="arPatchRevert">REVERT DRAFT</button><button id="arRouteSaveDry" title="Save real DRY-only Show (MUTED output and zero VST3)">SAVE DRY SHOW</button><button id="arRouteApply">APPLY ROUTING</button><button id="arRouteClear" title="Discard the native input patch; keep the mixer prepared and output muted">CLEAR PATCH</button></div></footer><section id="arPatchFxPicker" role="dialog" aria-label="Choose native VST3" aria-modal="false"><label for="arPatchFxSearch">FIND VST3 · SHARED PICKER</label><input id="arPatchFxSearch" type="search" autocomplete="off" placeholder="Search plugin name or ID"><div id="arPatchFxResults"></div><div id="arPatchFxCount"></div></section></section>';
+    '<footer class="arPatchFooter"><div id="arRouteFeedback" role="status">Select actual input ports, then APPLY while output is muted.</div><div class="arRouteFoot"><button id="arPatchRevert">REVERT DRAFT</button><button id="arRouteSaveDry" title="Save real DRY-only Show (MUTED output and zero VST3)">SAVE DRY SHOW</button><button id="arRouteBrowseShows" title="Browse verified native DRY Shows stored in Studio/Shows">BROWSE SHOWS</button><button id="arRouteApply">APPLY ROUTING</button><button id="arRouteClear" title="Discard the native input patch; keep the mixer prepared and output muted">CLEAR PATCH</button></div></footer><section id="arNativeShowBrowser" hidden role="region" aria-label="Native DRY Show browser"><div class="arNativeShowLine"><strong>NATIVE DRY SHOWS</strong><select id="arNativeShowSelect" aria-label="Select a saved native DRY Show"><option value="">Choose a saved Show...</option></select><button id="arNativeShowRecall" type="button" disabled>RECALL SELECTED DRY</button><span id="arNativeShowStatus" role="status">Browse saved routing snapshots; hardware OUTPUT remains MUTED on recall.</span></div></section><section id="arPatchFxPicker" role="dialog" aria-label="Choose native VST3" aria-modal="false"><label for="arPatchFxSearch">FIND VST3 · SHARED PICKER</label><input id="arPatchFxSearch" type="search" autocomplete="off" placeholder="Search plugin name or ID"><div id="arPatchFxResults"></div><div id="arPatchFxCount"></div></section></section>';
   document.body.appendChild(routeOverlay);
   const draftRoutes=Array.from({length:10},()=>({mode:"NONE",left:-1,right:-1,gain:0.25,pan:0,main:true,mute:false,solo:false,fxId:""}));
   const draftAux=Array.from({length:4},()=>({enabled:false,gain:1,main:true,mute:false,fxId:""}));
@@ -834,6 +841,7 @@
     // patchPreflight above already checked epoch, enabled ports and stereo.
     // Enter pending only after *every* synchronous rejection gate has passed.
     patchPending=true;
+    showIdle();
     renderPatchMatrix();
     document.getElementById("arRouteFeedback").textContent="Applying verified native route (output remains MUTED)...";
     api.emitEvent("arMixAction",{action:"routingDryApply",value:{
@@ -848,6 +856,7 @@
     if(state.monitor){patchFeedback("MUTE OUTPUT FIRST · clear routing while speakers are safe.");return;}
     if(!window.confirm("Clear all native INPUT PATCH assignments? OUTPUT remains MUTED."))return;
     patchPending=true;
+    showIdle();
     renderPatchMatrix();
     patchFeedback("Clearing physical input patch; native mixer remains prepared and SILENT...");
     api.emitEvent("arMixAction",{action:"routingDryStop"});
@@ -869,9 +878,87 @@
       ? "NATIVE SHOW VERIFIED · "+String(ack.showId||"")+" · Studio/Shows · live recall not yet supported"
       : "SHOW NOT SAVED · "+String(ack?.error||"Unknown storage failure");
   });
+  // P4 Stage 4: native Show browse/recall is explicit, worker-backed and
+  // fails silent. This UI never treats a localStorage scene as a native Show.
+  const nativeShowBrowser=document.getElementById("arNativeShowBrowser");
+  const nativeShowSelect=document.getElementById("arNativeShowSelect");
+  const nativeShowRecall=document.getElementById("arNativeShowRecall");
+  const nativeShowStatus=document.getElementById("arNativeShowStatus");
+  let nativeShowBusy=false;
+  const nativeShowUuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  function showIdle(){
+    nativeShowRecall.disabled=nativeShowBusy||patchPending||!nativeShowUuid.test(nativeShowSelect.value)||
+      !!state.monitor||!state.dryRoutingLab?.ready;
+  }
+  document.getElementById("arRouteBrowseShows").addEventListener("click",()=>{
+    if(nativeShowBusy)return;
+    nativeShowBrowser.hidden=false;
+    nativeShowSelect.replaceChildren(new Option("Loading saved native Shows...",""));
+    nativeShowStatus.textContent="Browsing Studio/Shows on native IO worker...";
+    nativeShowBusy=true;showIdle();
+    api.emitEvent("arMixAction",{action:"routingDryShowList"});
+  });
+  nativeShowSelect.addEventListener("change",showIdle);
+  nativeShowRecall.addEventListener("click",()=>{
+    if(nativeShowBusy||patchPending||state.monitor||!state.dryRoutingLab?.ready||
+       !nativeShowUuid.test(nativeShowSelect.value))return;
+    nativeShowBusy=true;showIdle();
+    nativeShowStatus.textContent="Reading SHA-verified Show; OUTPUT remains MUTED...";
+    api.emitEvent("arMixAction",{action:"routingDryShowRecall",value:nativeShowSelect.value});
+  });
+  api.addEventListener("arMixNativeShowListAck",reply=>{
+    nativeShowBusy=false;
+    nativeShowSelect.replaceChildren(new Option("Choose a native DRY Show...",""));
+    if(reply?.ok && Array.isArray(reply.items)){
+      for(const item of reply.items.slice(0,64)){
+        if(!nativeShowUuid.test(item?.id))continue;
+        nativeShowSelect.add(new Option(String(item.name||"Native DRY Show"),item.id));
+      }
+    }
+    nativeShowStatus.textContent=reply?.ok
+      ?(nativeShowSelect.options.length-1)+" saved native Shows; choose and RECALL while OUTPUT is MUTED."
+      :"SHOW BROWSE REJECTED · "+String(reply?.error||"Native IO unavailable");
+    showIdle();
+  });
+  api.addEventListener("arMixNativeShowRecallAck",reply=>{
+    nativeShowBusy=false;
+    if(reply?.ok && reply?.state){
+      // One authoritative acceptedRoute from native; no local draft can
+      // invent a LIVE mapping before the revisioned native publication ACK.
+      state.dryRoutingLab=reply.state;
+      hydrateAcceptedRoute();
+      syncNativeLevelsToRouteDraft();
+      if(patchTab==="internal")drawRoutes();
+      renderPatchMatrix();
+      updateRouteLabIdentity();
+    }
+    nativeShowStatus.textContent=reply?.ok
+      ?"NATIVE SHOW APPLIED · OUTPUT MUTED. Verify physical input mapping before unmute."
+      :"SHOW RECALL REJECTED · "+String(reply?.error||"Device/route changed");
+    showIdle();
+  });
+
+  document.getElementById("arRouteSaveDry").addEventListener("click",()=>{
+    const d=state.dryRoutingLab||{};
+    if(!d.ready || !d.active || !d.acceptedRoute || state.monitor ||
+       Number(d.fxCount)!==0 || Number(state.chainCount)!==0){
+      document.getElementById("arRouteFeedback").textContent=
+        "SAVE DRY SHOW requires an ACKnowledged native route, MUTED OUTPUT and zero VST3; no changes saved.";
+      return;
+    }
+    document.getElementById("arRouteFeedback").textContent=
+      "Saving acknowledged 10 INPUT + 4 AUX DRY state to Studio/Shows (not a live recall)...";
+    api.emitEvent("arMixAction",{action:"routingDryShowSave"});
+  });
+  api.addEventListener("arMixNativeShowSaveAck",ack=>{
+    document.getElementById("arRouteFeedback").textContent=ack?.ok
+      ? "NATIVE SHOW VERIFIED · "+String(ack.showId||"")+" · Studio/Shows · live recall not yet supported"
+      : "SHOW NOT SAVED · "+String(ack?.error||"Unknown storage failure");
+  });
   api.addEventListener("arMixRoutingLabAck",reply=>{
     const result=reply?.state||reply||{};
     patchPending=false;
+    showIdle();
     if(result && typeof result==="object" && "epoch" in result)state.dryRoutingLab=result;
     if(reply?.ok===true){
       if(result.acceptedRoute)hydrateAcceptedRoute();
