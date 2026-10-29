@@ -1300,6 +1300,22 @@ async def main():
         }""")
         assert patch_visual['rowCount']==10 and len(patch_visual['cols'])==8,patch_visual
 
+        # R3 screenshot audit: at 1680/1440 the CH format SELECT must show
+        # full NONE/MONO/STEREO/BUS labels and L/R must not collide with it.
+        route_cell_geometry=await native.evaluate("""()=>{
+          const row=document.querySelector('#arPatchGrid .arPatchChan');
+          const mode=row.querySelector('select[data-patch-mode]');
+          const side=row.querySelector('.arPatchSides');
+          const a=row.getBoundingClientRect(),b=mode.getBoundingClientRect(),
+                c=side.getBoundingClientRect();
+          return {rowWidth:Math.round(a.width),selectWidth:Math.round(b.width),
+                  leftGap:Math.round(c.left-b.right),rightGap:Math.round(a.right-c.right)};
+        }""")
+        assert route_cell_geometry['rowWidth']>=220,route_cell_geometry
+        assert route_cell_geometry['selectWidth']>=80,route_cell_geometry
+        assert route_cell_geometry['leftGap']>=0 and route_cell_geometry['rightGap']>=0,route_cell_geometry
+
+
         # R0: real desktop-workspace geometry, not a centered modal. Its
         # header, left rail and status bar stay reachable while editing.
         workspace_layout=await native.evaluate("""()=>{
@@ -1318,6 +1334,41 @@ async def main():
         assert workspace_layout['width']>workspace_layout['viewport']*.80,workspace_layout
         assert workspace_layout['backdrop']=='none',workspace_layout
         assert workspace_layout['routeRows']==0, "Input patch should not eagerly build 14 VST selectors"
+
+        # R3: the approved BTN-180 MATERIAL is used for routing actions,
+        # selected tabs, pager, L/R and Show controls. Grid cells stay
+        # flat semantic indicators; do not make 80 raised canvas buttons.
+        btn_visual=await native.evaluate("""()=>{
+          const shell=document.getElementById('arRoutingLabPanel');
+          const get=id=>document.getElementById(id);
+          const css=id=>getComputedStyle(get(id));
+          const roles=['arRouteClose','arPatchPrev','arPatchNext','arPatchRevert',
+            'arRouteSaveDry','arRouteBrowseShows','arRouteApply','arRouteClear',
+            'arNativeShowRecall','arAddSend'];
+          const safety=get('arRouteSafety');
+          const footer=get('arRouteFeedback').closest('.arPatchFooter');
+          return {
+            actions:roles.every(id=>get(id).classList.contains('btn-180')),
+            tabs:[...shell.querySelectorAll('[data-patch-tab]')].every(el=>el.classList.contains('btn-180')),
+            side:[...shell.querySelectorAll('[data-patch-side]')].every(el=>el.classList.contains('btn-180')),
+            cellsFlat:[...shell.querySelectorAll('.arPatchCell')].every(el=>!el.classList.contains('btn-180')),
+            safety:safety.dataset.safety,
+            label:safety.textContent,
+            font:css('arRoutingLabPanel').fontFamily,
+            outputColor:css('arRouteApply').backgroundColor,
+            neutralColor:css('arPatchRevert').backgroundColor,
+            footerWithin:footer.getBoundingClientRect().bottom<=shell.getBoundingClientRect().bottom+2,
+            noBlur:css('arRoutingLabPanel').backdropFilter==='none'&&
+                   css('arRouteApply').filter==='none'
+          };
+        }""")
+        assert btn_visual['actions'] and btn_visual['tabs'] and btn_visual['side'],btn_visual
+        assert btn_visual['cellsFlat'] and btn_visual['safety']=='muted',btn_visual
+        assert btn_visual['label']=='OUTPUT MUTED',btn_visual
+        assert 'ArSonMix Inter' in btn_visual['font'],btn_visual
+        assert btn_visual['outputColor']!=btn_visual['neutralColor'],btn_visual
+        assert btn_visual['footerWithin'] and btn_visual['noBlur'],btn_visual
+
         # R2: 1000 native-catalog plugins, but only ONE lazy chooser with
         # <=40 matched plugin rows (+ DRY); no 14x option-node explosion.
         await native.locator('[data-patch-tab="internal"]').click()

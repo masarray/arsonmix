@@ -303,3 +303,25 @@ test("R0B B3 routing GUI has one native engine, truthful UNPATCHED and safe CLEA
   assert.match(main,/ack->setProperty\("ok",error\.isEmpty\(\)\)/);
   assert.doesNotMatch(main,/Native CH1 path restored/);
 });
+
+
+test("R3 routing shares approved BTN-180 cap material, has a clear console hierarchy and fail-safe output status",()=>{
+  const controls=["arRouteClose","arPatchPrev","arPatchNext","arRouteApply","arRouteClear",
+    "arPatchRevert","arRouteSaveDry","arRouteBrowseShows","arNativeShowRecall","arAddSend"];
+  for(const id of controls)
+    assert.match(ui,new RegExp('<button class="btn-180(?: [^"]+)?" id="'+id+'"'));
+  assert.equal((ui.match(/class="btn-180" data-patch-tab=/g)||[]).length,3);
+  assert.match(ui,/id="arRouteSafety" data-safety="muted"/);
+  assert.match(ui,/safety\.dataset\.safety=mode/);
+  assert.match(ui,/setTextIfChanged\(safety,state\.monitor\?"OUTPUT ARMED":"OUTPUT MUTED"\)/);
+  assert.match(ui,/--b180-color:#91edac/);
+  assert.match(ui,/#arRouteClear\.btn-180\{--b180-color:#f1b7b5/);
+  assert.match(ui,/class="btn-180 arPatchFxTrigger"/);
+  assert.match(ui,/class="btn-180" data-aux-inspector-create/);
+  assert.match(ui,/class="btn-180" data-patch-side=/);
+  assert.match(ui,/class="btn-180" data-send-remove/);
+  assert.match(ui,/#arNativeShowBrowser\{order:3/);
+  assert.match(ui,/#arRoutingLabPanel\{font-family:"ArSonMix Inter"/);
+  assert.match(ui,/#arPatchGrid/);
+  assert.doesNotMatch(ui,/arPatchCell:hover|arAuxMatrixCell:hover|filter:blur\(|backdrop-filter:/);
+});

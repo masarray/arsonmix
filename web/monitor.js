@@ -34,12 +34,11 @@
 .arPatchBrand{font-size:14px;letter-spacing:.015em;font-weight:600;color:#edf6f8}
 .arPatchBrand em{font-size:10px;letter-spacing:.1em;margin-left:9px;color:#82d7d6;font-weight:600;font-style:normal}
 .arPatchSub{color:#a2bac5;font-size:10px;margin-top:5px;font-variant-numeric:tabular-nums}
-.arPatchTop button,.arPatchFooter button,.arPatchPager button,.arPatchTabs button{font:600 10px 'Segoe UI',Arial,sans-serif;border:1px solid #687b83;border-radius:3px;background:#bfc8ca;color:#162832;padding:7px 11px;cursor:pointer;white-space:nowrap;box-shadow:inset 0 1px #f3f7f7,inset 0 -2px #7f9097}
-.arPatchTop button:active,.arPatchFooter button:active,.arPatchPager button:active,.arPatchTabs button:active{box-shadow:inset 1px 2px 2px #344c59;transform:translateY(1px)}
+/* All control pads use existing shared .btn-180 material; not a competing cap. */
 .arPatchTop button:focus-visible,.arPatchFooter button:focus-visible,.arPatchPager button:focus-visible,.arPatchTabs button:focus-visible,.arPatchGrid button:focus-visible,#arRouteRows :focus-visible,#arAuxRows :focus-visible,#arSendRows :focus-visible{outline:2px solid #73cfe7;outline-offset:-2px}
 .arPatchTabs{flex:0 0 auto;display:flex;align-items:center;gap:5px;padding:6px 12px;background:#14252f;border-bottom:1px solid #304852}
-.arPatchTabs button{min-width:110px;padding:7px 13px;background:#9daeb5;color:#172b36;border-color:#5f7886}
-.arPatchTabs button[aria-selected=true]{background:#95e1b6;border-color:#4ea984;color:#12382f;box-shadow:inset 0 2px 3px #3a83605c,inset 0 -1px #caefdb}
+.arPatchTabs button{min-width:110px}
+.arPatchTabs button[aria-selected=true]{--b180-color:#91edac;--b180-border:#409e70;--b180-ink:#163b2b}
 .arPatchBody{flex:1 1 auto;min-height:0;overflow:auto;scrollbar-width:thin;scrollbar-color:#435b67 #111f29;padding:12px 15px 8px}
 .arPatchHeading{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:9px}
 .arPatchHeading strong{font-size:11px;font-weight:600;letter-spacing:.06em;color:#e6f2f5}
@@ -82,14 +81,14 @@
 .arPatchFooter{flex:0 0 auto;display:flex;gap:12px;align-items:center;justify-content:space-between;min-height:51px;padding:7px 12px;background:linear-gradient(#243642,#15252f);border-top:1px solid #4a616b}
 .arPatchFooter .arRouteFoot{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:0;justify-content:flex-end}
 #arRouteFeedback{flex:1 1 200px;min-width:120px;font-size:10px;line-height:1.35;color:#b2d8d7}
-#arRouteApply{background:#95e1b6;border-color:#49a785;color:#18382f}
+#arRouteApply{--b180-color:#91edac;--b180-border:#409e70;--b180-ink:#163b2b}
 #arPatchRevert{background:#b4c1c6}
 #arRouteSaveDry{background:#a5b9c1}
 #arNativeShowBrowser{margin-top:8px;padding:8px 12px;background:#122933;border-top:1px solid #43606c;color:#c4dce3}
 #arNativeShowBrowser[hidden]{display:none}
 .arNativeShowLine{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:10px}
 #arNativeShowSelect{flex:1;min-width:180px;max-width:500px;background:#0c202a;color:#e3f0f2;border:1px solid #517580;border-radius:3px;padding:6px;font:11px 'Segoe UI',Arial,sans-serif}
-#arNativeShowRecall{background:#a5dbbd;color:#173b2f;border:1px solid #3d906d;border-radius:3px;padding:6px 10px;font:600 10px 'Segoe UI',Arial,sans-serif;cursor:pointer}
+#arNativeShowRecall{--b180-color:#91edac;--b180-border:#409e70;--b180-ink:#163b2b}
 #arNativeShowRecall:disabled{opacity:.45;cursor:default}
 #arNativeShowStatus{flex-basis:100%;color:#a8c2c9;font-size:10px}
 #arPatchOutputMap{display:flex;gap:10px;flex-wrap:wrap}
@@ -113,8 +112,7 @@
 .arAuxRow{display:grid;grid-template-columns:60px 55px 105px 70px minmax(110px,1fr);gap:6px;align-items:center;padding:5px 8px;margin-bottom:2px;background:#132b35;border:1px solid #31505d;color:#d6e8f0;font-size:10px}
 .arAuxRow label{display:flex;align-items:center;gap:4px}
 .arSendRow{display:grid;grid-template-columns:minmax(85px,1fr) minmax(85px,1fr) 76px 87px 30px;gap:5px;margin-bottom:3px}
-.arSendRow button,#arAddSend{border:1px solid #607786;border-radius:3px;background:#a8b9bf;color:#243640;font:600 10px 'Segoe UI',Arial,sans-serif;padding:5px;cursor:pointer}
-.arSendRow button{background:#a36f71;color:#f5f4f5}
+.arSendRow button,#arAddSend{min-height:28px}.arSendRow button{--b180-color:#f1b7b5;--b180-border:#ad7778;--b180-ink:#4c1b26}
 @media(max-width:980px){#arRoutingLabOverlay{inset:61px 6px 29px 7px}.arPatchTop{padding:8px 10px}.arPatchBody{padding:9px}.arPatchTabs{padding:5px}.arPatchFooter{padding:7px}.arRouteRow{min-width:640px}.arPatchTabs button{min-width:0}}
 #arRoutingLabPanel{position:relative}
 .arPatchFxTrigger{display:block;flex:1;min-width:0;max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;padding:6px 9px;font:11px 'Segoe UI',Arial,sans-serif;color:#d6efe9;background:#132d35;border:1px solid #4a6b76;border-radius:3px;cursor:pointer}
@@ -143,9 +141,72 @@
 .arAuxInspectorLine{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px}
 .arAuxInspectorLine label{display:flex;gap:5px;align-items:center}
 .arAuxInspectorLine select{background:#0c2530;color:#deebec;border:1px solid #4e6d7a;padding:5px;font:11px 'Segoe UI',Arial,sans-serif}
-.arAuxInspector button{padding:5px 8px;background:#9eafb7;color:#1a3039;border:1px solid #647e8b;border-radius:3px;font:600 10px 'Segoe UI',Arial,sans-serif;cursor:pointer}
-.arAuxInspector button[data-aux-inspector-remove]{background:#9c7070;color:#fff}
+.arAuxInspector button{min-height:28px}.arAuxInspector button[data-aux-inspector-remove]{--b180-color:#f1b7b5;--b180-border:#ad7778;--b180-ink:#4c1b26}
 .arAuxMatrixNote{font-size:10px;color:#9db6bf;margin:6px 0}
+
+/* R3: shared BTN-180 cap + static console patchbay; grid remains flat indicators.
+   No blur, CSS filter, hover glows, pointer repaint or animation. */
+#arRoutingLabOverlay{background:#0d171e}
+#arRoutingLabPanel{font-family:"ArSonMix Inter",Inter,Arial,sans-serif;background:#101b23;border:1px solid #52616c;border-radius:5px}
+.arPatchTop{min-height:68px;padding:11px 17px;background:linear-gradient(#31434f,#1b2c37);gap:16px}
+.arPatchTitle{min-width:0;flex:1}
+.arPatchBrand{display:flex;align-items:center;gap:10px;font-size:17px;letter-spacing:.055em}
+.arPatchBrandMark{width:31px;height:28px;display:grid;place-items:center;border:1px solid #71969f;border-radius:3px;background:#16313b;color:#b2eddf;font-size:11px;letter-spacing:0}
+.arPatchBrand em{font-size:10px;letter-spacing:.13em;color:#91cdd0;margin-left:8px}
+.arPatchSub{margin:7px 0 0 41px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#b3c7ce}
+.arPatchHeaderActions{display:flex;align-items:center;gap:12px;flex-shrink:0}
+.arPatchSafety{display:inline-flex;align-items:center;gap:7px;min-height:28px;padding:0 12px;border:1px solid #547c71;border-radius:3px;background:#173a31;color:#a1e7bd;font-size:10px;font-weight:700;letter-spacing:.05em}
+.arPatchSafety::before{content:"";width:7px;height:7px;background:#89dfa6;border-radius:50%}
+.arPatchSafety[data-safety=armed]{color:#ffd2b9;background:#4b2925;border-color:#ab6051}
+.arPatchSafety[data-safety=armed]::before{background:#fbb184}
+#arRoutingLabPanel .btn-180{min-height:31px;height:31px;white-space:nowrap;line-height:1.15;padding:0 11px!important;font-family:"ArSonMix Inter",Arial,sans-serif;letter-spacing:.12px!important;font-size:10px!important}
+#arRouteClose.btn-180{min-width:34px;width:34px;padding:0!important;flex-shrink:0}
+#arRouteClose svg{display:block;pointer-events:none}
+.arPatchTabs{gap:8px;padding:9px 17px;background:#192a34;border-bottom:1px solid #354c59}
+.arPatchTabs button.btn-180{min-width:126px}
+.arPatchTabs button[aria-selected=true]{--b180-color:#91edac;--b180-border:#409e70;--b180-ink:#163b2b}
+.arPatchBody{padding:15px 18px 12px;background:#101c25}
+.arPatchHeading{margin-bottom:12px;flex-wrap:nowrap;align-items:flex-end}
+.arPatchHeading strong{font-size:12px;letter-spacing:.035em}
+.arPatchHeading small{font-size:10px;line-height:1.5}
+.arPatchViewport{border:1px solid #506571;border-radius:2px;background:#0b1821}
+.arPatchGrid{max-width:1300px;min-width:670px}
+.arPatchCorner,.arPatchPort,.arPatchChan,.arPatchCell{min-height:34px;border-right-color:#344b56;border-bottom-color:#2f4350}
+.arPatchCorner{background:#344853;padding:10px 12px}
+.arPatchPort{background:#304450;color:#ebf5f6}
+.arPatchChan{background:#1c303b;border-left-width:4px}
+.arPatchCell{background:#12242e;color:#526d7a}
+.arPatchCell[data-patch-state=live]{background:#26735e;color:#dbffe9;box-shadow:inset 0 0 0 1px #62a58c}
+.arPatchCell[data-patch-state=draft]{background:#87652f;color:#ffedca;box-shadow:inset 0 0 0 1px #c49b51}
+.arPatchCell[data-patch-state=removed]{background:#5f4546;color:#ffcebd;box-shadow:inset 0 0 0 1px #a67b76}
+.arPatchSides button.btn-180{width:29px;min-width:29px;height:27px;min-height:27px;padding:0!important}
+.arPatchSides button[aria-pressed=true]{--b180-color:#9ee5dd;--b180-border:#4c9c94;--b180-ink:#163d3b}
+.arPatchLegend{padding:10px 3px;gap:17px}
+.arPatchInspector{padding:11px 1px;border-top-color:#405561}
+.arPatchInspector strong{color:#9be7c9}
+.arPatchFooter{order:4;gap:12px;min-height:67px;padding:10px 15px;background:linear-gradient(#2a3a45,#1c2b35);border-top:1px solid #536771}
+.arPatchFooter .arRouteFoot{gap:7px;flex:1 1 480px;justify-content:flex-end}
+#arRouteFeedback{flex:1 1 270px;max-height:42px;overflow:auto;line-height:1.45}
+#arRouteApply.btn-180{--b180-color:#91edac;--b180-border:#409e70;--b180-ink:#163b2b;min-width:128px}
+#arRouteClear.btn-180{--b180-color:#f1b7b5;--b180-border:#ad7778;--b180-ink:#4c1b26}
+#arNativeShowBrowser{order:3;margin:0;padding:10px 17px;background:#142632;border-top:1px solid #445d68}
+.arNativeShowLine{gap:10px}
+#arNativeShowSelect{min-height:32px;max-width:390px;font-family:inherit}
+#arNativeShowStatus{line-height:1.4}
+.arAuxMatrix{max-width:none;grid-template-columns:78px repeat(4,minmax(85px,1fr));gap:3px;background:#0f222c;border:1px solid #4c6470;padding:5px}
+.arAuxMatrixHead{min-height:33px;background:#304450;color:#d7eced}
+.arAuxMatrixLabel{background:#243c47}
+.arAuxMatrixCell{min-height:36px;background:#112a35;border-color:#34505c}
+.arAuxMatrixCell[data-state=live]{background:#24725b;border-color:#519d7f}
+.arAuxMatrixCell[data-state=draft]{background:#86632e;border-color:#bd954d}
+.arAuxInspector{max-width:none;background:#203541;border-color:#496674}
+.arRouteRow{min-height:37px;background:#1b303b;border-color:#365362}
+.arAuxRow{min-height:36px;background:#1d333e;border-color:#3c5a66}
+.arPatchFxTrigger.btn-180{flex:1;display:flex;justify-content:flex-start;min-width:0;max-width:400px;overflow:hidden;text-overflow:ellipsis;text-transform:none!important}
+.arPatchPager button.btn-180{width:32px;min-width:32px;padding:0!important}
+#arRoutingLabPanel :is(button,select,input):focus-visible{outline:2px solid #b0e7f3;outline-offset:2px}
+@media(max-width:1240px){.arPatchTop{padding:9px 12px}.arPatchBody{padding:11px}.arPatchFooter{flex-wrap:wrap}.arPatchFooter .arRouteFoot{justify-content:flex-start}.arPatchTabs{padding:8px 11px}}
+@media(max-width:980px){.arPatchSub{max-width:450px}.arPatchBrand{font-size:14px}.arPatchTabs button.btn-180{min-width:0;flex:1}.arPatchBody{padding:10px}.arPatchHeaderActions{gap:6px}.arPatchFooter{gap:6px}.arPatchSafety{padding:0 7px}}
 `; 
   document.head.appendChild(css);
   // Signal Check is declared in the permanent toolbar; footer holds status only.
@@ -179,13 +240,13 @@
   const routeOverlay=document.createElement("div");
   routeOverlay.id="arRoutingLabOverlay";
   routeOverlay.innerHTML='<section id="arRoutingLabPanel" role="region" aria-label="ArSonMix routing workspace">' +
-    '<header class="arPatchTop"><div><div class="arPatchBrand">ArSonMix <em>ROUTING · INPUT / AUX / OUTPUT</em></div><div class="arPatchSub" id="arRouteIdentity">Reading current physical audio device...</div></div><button class="arRouteClose" id="arRouteClose">CLOSE ROUTING ×</button></header>' +
-    '<nav class="arPatchTabs" role="tablist" aria-label="Routing views"><button data-patch-tab="input" role="tab" aria-selected="true">INPUT PATCH</button><button data-patch-tab="internal" role="tab" aria-selected="false">INTERNAL / SENDS</button><button data-patch-tab="output" role="tab" aria-selected="false">OUTPUT PATCH</button></nav>' +
-    '<section class="arPatchBody" id="arPatchInputPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>PHYSICAL INPUT → MIXER CHANNEL</strong><small>Click grid to assign. For stereo, select the L / R side. DRAFT becomes LIVE only after native ACK.</small></div><div class="arPatchPager"><button id="arPatchPrev" title="Previous hardware inputs">‹</button><span id="arPatchRange">NO INPUTS</span><button id="arPatchNext" title="Next hardware inputs">›</button></div></div>' +
+    '<header class="arPatchTop"><div class="arPatchTitle"><div class="arPatchBrand"><span class="arPatchBrandMark">AR</span><span>ROUTING <em>PATCHBAY</em></span></div><div class="arPatchSub" id="arRouteIdentity">Reading current audio device...</div></div><div class="arPatchHeaderActions"><span class="arPatchSafety" id="arRouteSafety" data-safety="muted" role="status">OUTPUT MUTED</span><button class="btn-180 arRouteClose" id="arRouteClose" type="button" aria-label="Close routing window" title="Close routing window"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button></div></header>' +
+    '<nav class="arPatchTabs" role="tablist" aria-label="Routing views"><button class="btn-180" data-patch-tab="input" role="tab" aria-selected="true">INPUT PATCH</button><button class="btn-180" data-patch-tab="internal" role="tab" aria-selected="false">INTERNAL / SENDS</button><button class="btn-180" data-patch-tab="output" role="tab" aria-selected="false">OUTPUT PATCH</button></nav>' +
+    '<section class="arPatchBody" id="arPatchInputPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>PHYSICAL INPUT → MIXER CHANNEL</strong><small>Click grid to assign. For stereo, select the L / R side. DRAFT becomes LIVE only after native ACK.</small></div><div class="arPatchPager"><button class="btn-180" id="arPatchPrev" title="Previous hardware inputs">‹</button><span id="arPatchRange">NO INPUTS</span><button class="btn-180" id="arPatchNext" title="Next hardware inputs">›</button></div></div>' +
     '<div class="arPatchViewport"><div id="arPatchGrid" class="arPatchGrid" role="grid" aria-label="Native input patch matrix"></div></div><div class="arPatchLegend"><span><b></b>UNPATCHED</span><span><b class="live"></b>LIVE · NATIVE ACK</span><span><b class="draft"></b>DRAFT · NOT APPLIED</span><span><b class="removed"></b>LIVE UNTIL APPLY</span></div><div class="arPatchInspector" id="arPatchInspector" role="status"><strong>10 CHANNEL INPUT PATCH</strong><span>Uses actual enabled ASIO/WASAPI hardware ports</span></div><div class="arPatchNote">No auto-unmute. Stale devices, incomplete stereo assignments and invalid physical ports are rejected before APPLY. One input can feed multiple channels.</div></section>' +
-    '<section class="arPatchBody arPatchHidden" id="arPatchInternalPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>CHANNEL CONTROL / INTERNAL SENDS</strong><small>Native channel controls, VST3 inserts, 4 AUX returns and PRE/POST sends.</small></div></div><div id="arRouteRows"></div><section id="arAuxReturns"><h3>4 DEDICATED AUX / FX RETURNS</h3><p>Independent stereo return with VST3, level and MAIN route.</p><div id="arAuxRows"></div></section><section id="arRouteSends"><h3>CH → AUX SEND MATRIX · PRE / POST</h3><p class="arAuxMatrixNote">10 channels × 4 AUX returns. Select a cell to edit PRE/POST sends; output changes only after MUTE + APPLY.</p><div id="arAuxSendGrid" class="arAuxMatrix" role="grid" aria-label="Channel to AUX send matrix"></div><div id="arAuxSendInspector" class="arAuxInspector" role="group" aria-label="Selected AUX send inspector">Select a CH / AUX cell to inspect sends.</div><h3>ADVANCED · CH → CH SENDS</h3><p class="arAuxMatrixNote">Directed channel sends remain available; feedback loops are rejected before native APPLY.</p><div id="arSendRows"></div><button id="arAddSend">＋ ADD CH → CH SEND</button></section></section>' +
+    '<section class="arPatchBody arPatchHidden" id="arPatchInternalPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>CHANNEL CONTROL / INTERNAL SENDS</strong><small>Native channel controls, VST3 inserts, 4 AUX returns and PRE/POST sends.</small></div></div><div id="arRouteRows"></div><section id="arAuxReturns"><h3>4 DEDICATED AUX / FX RETURNS</h3><p>Independent stereo return with VST3, level and MAIN route.</p><div id="arAuxRows"></div></section><section id="arRouteSends"><h3>CH → AUX SEND MATRIX · PRE / POST</h3><p class="arAuxMatrixNote">10 channels × 4 AUX returns. Select a cell to edit PRE/POST sends; output changes only after MUTE + APPLY.</p><div id="arAuxSendGrid" class="arAuxMatrix" role="grid" aria-label="Channel to AUX send matrix"></div><div id="arAuxSendInspector" class="arAuxInspector" role="group" aria-label="Selected AUX send inspector">Select a CH / AUX cell to inspect sends.</div><h3>ADVANCED · CH → CH SENDS</h3><p class="arAuxMatrixNote">Directed channel sends remain available; feedback loops are rejected before native APPLY.</p><div id="arSendRows"></div><button class="btn-180" id="arAddSend">＋ ADD CH → CH SEND</button></section></section>' +
     '<section class="arPatchBody arPatchHidden" id="arPatchOutputPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>CURRENT HARDWARE OUTPUT</strong><small>Current hardware MAIN L/R is read-only. Configure output in AUDIO SETUP.</small></div></div><div id="arPatchOutputMap"></div><div class="arPatchNote">AUX-to-hardware-output patching is not available. Select physical device/output in AUDIO SETUP.</div></section>' +
-    '<footer class="arPatchFooter"><div id="arRouteFeedback" role="status">Select actual input ports, then APPLY while output is muted.</div><div class="arRouteFoot"><button id="arPatchRevert">REVERT DRAFT</button><button id="arRouteSaveDry" title="Save real DRY-only Show (MUTED output and zero VST3)">SAVE DRY SHOW</button><button id="arRouteBrowseShows" title="Browse verified native DRY Shows stored in Studio/Shows">BROWSE SHOWS</button><button id="arRouteApply">APPLY ROUTING</button><button id="arRouteClear" title="Discard the native input patch; keep the mixer prepared and output muted">CLEAR PATCH</button></div></footer><section id="arNativeShowBrowser" hidden role="region" aria-label="Native DRY Show browser"><div class="arNativeShowLine"><strong>NATIVE DRY SHOWS</strong><select id="arNativeShowSelect" aria-label="Select a saved native DRY Show"><option value="">Choose a saved Show...</option></select><button id="arNativeShowRecall" type="button" disabled>RECALL SELECTED DRY</button><span id="arNativeShowStatus" role="status">Browse saved routing snapshots; hardware OUTPUT remains MUTED on recall.</span></div></section><section id="arPatchFxPicker" role="dialog" aria-label="Choose native VST3" aria-modal="false"><label for="arPatchFxSearch">FIND VST3 · SHARED PICKER</label><input id="arPatchFxSearch" type="search" autocomplete="off" placeholder="Search plugin name or ID"><div id="arPatchFxResults"></div><div id="arPatchFxCount"></div></section></section>';
+    '<footer class="arPatchFooter"><div id="arRouteFeedback" role="status">Select actual input ports, then APPLY while output is muted.</div><div class="arRouteFoot"><button class="btn-180" id="arPatchRevert">REVERT DRAFT</button><button class="btn-180" id="arRouteSaveDry" title="Save real DRY-only Show (MUTED output and zero VST3)">SAVE DRY SHOW</button><button class="btn-180" id="arRouteBrowseShows" title="Browse verified native DRY Shows stored in Studio/Shows">BROWSE SHOWS</button><button class="btn-180" id="arRouteApply">APPLY ROUTING</button><button class="btn-180" id="arRouteClear" title="Discard the native input patch; keep the mixer prepared and output muted">CLEAR PATCH</button></div></footer><section id="arNativeShowBrowser" hidden role="region" aria-label="Native DRY Show browser"><div class="arNativeShowLine"><strong>NATIVE DRY SHOWS</strong><select id="arNativeShowSelect" aria-label="Select a saved native DRY Show"><option value="">Choose a saved Show...</option></select><button class="btn-180" id="arNativeShowRecall" type="button" disabled>RECALL SELECTED DRY</button><span id="arNativeShowStatus" role="status">Browse saved routing snapshots; hardware OUTPUT remains MUTED on recall.</span></div></section><section id="arPatchFxPicker" role="dialog" aria-label="Choose native VST3" aria-modal="false"><label for="arPatchFxSearch">FIND VST3 · SHARED PICKER</label><input id="arPatchFxSearch" type="search" autocomplete="off" placeholder="Search plugin name or ID"><div id="arPatchFxResults"></div><div id="arPatchFxCount"></div></section></section>';
   document.body.appendChild(routeOverlay);
   const draftRoutes=Array.from({length:10},()=>({mode:"NONE",left:-1,right:-1,gain:0.25,pan:0,main:true,mute:false,solo:false,fxId:""}));
   const draftAux=Array.from({length:4},()=>({enabled:false,gain:1,main:true,mute:false,fxId:""}));
@@ -214,7 +275,7 @@
   let fxPickerTarget=null;
   function fxCaption(id){return !id?"DRY · SELECT VST3":catalogNames.get(id)||"MISSING VST3 · RESELECT"}
   function fxButtonMarkup(kind,index,id){
-    return '<button type="button" class="arPatchFxTrigger" '+(kind==="ch"?"data-route-fx":"data-aux-fx")+
+    return '<button type="button" class="btn-180 arPatchFxTrigger" '+(kind==="ch"?"data-route-fx":"data-aux-fx")+
       ' data-fx-index="'+index+'" aria-haspopup="dialog" aria-expanded="false" aria-controls="arPatchFxPicker"'+
       ' title="'+safeRouteText(id||"DRY · no VST3")+'">'+safeRouteText(fxCaption(id))+'</button>';
   }
@@ -448,7 +509,7 @@
       patchGrid.innerHTML='<div class="arPatchEmpty">NO VERIFIED HARDWARE INPUTS · Choose a DIRECT ASIO / WASAPI device in AUDIO SETUP</div>';
       return;
     }
-    patchGrid.style.gridTemplateColumns="190px repeat("+patchPageSize+",minmax(58px,1fr))";
+    patchGrid.style.gridTemplateColumns="226px repeat("+patchPageSize+",minmax(58px,1fr))";
     let html='<div class="arPatchRow" role="row"><div class="arPatchCorner" role="columnheader">CHANNEL / FORMAT</div>';
     for(const port of shown)
       html+='<div class="arPatchPort" role="columnheader" data-patch-col="'+port.port+
@@ -464,9 +525,9 @@
         (changed?'draft':d.ready?'live':'idle')+'"><strong>CH '+String(i+1).padStart(2,"0")+'</strong>'+
         '<select data-patch-mode="'+i+'" aria-label="CH '+(i+1)+' input format">'+
         ['NONE','MONO','STEREO','BUS'].map(mode=>'<option value="'+mode+'"'+(v.mode===mode?' selected':'')+'>'+mode+'</option>').join("")+
-        '</select><span class="arPatchSides"><button data-patch-side="left" data-patch-row="'+i+
+        '</select><span class="arPatchSides"><button class="btn-180" data-patch-side="left" data-patch-row="'+i+
         '" aria-label="CH '+(i+1)+' assign left" aria-pressed="'+(patchSide[i]==="left")+'"'+(stereo?'':' disabled')+
-        '>L</button><button data-patch-side="right" data-patch-row="'+i+
+        '>L</button><button class="btn-180" data-patch-side="right" data-patch-row="'+i+
         '" aria-label="CH '+(i+1)+' assign right" aria-pressed="'+(patchSide[i]==="right")+'"'+(stereo?'':' disabled')+'>R</button></span></div>';
       for(const port of shown){
         const draftRole=patchRole(v,port.port),liveRole=patchRole(live,port.port);
@@ -693,7 +754,7 @@
         sendGainChoices(Number(send.gain))+'</select></label>'+
         '<label>PAN <select data-aux-inspector-pan aria-label="Send pan">'+
         sendPanChoices(Number(send.pan)||0)+'</select></label>'+
-        '<button data-aux-inspector-remove title="Remove this draft tap">REMOVE</button></div>';
+        '<button class="btn-180" data-aux-inspector-remove title="Remove this draft tap">REMOVE</button></div>';
     }
     if(draftRoutes[from].mode==="NONE")
       html+='<div class="arAuxMatrixNote">Assign CH '+(from+1)+' in INPUT PATCH before creating a send.</div>';
@@ -703,7 +764,7 @@
       html+='<div class="arAuxMatrixNote">32/32 native send limit reached. Remove another send first.</div>';
     else for(const tap of ["PRE","POST"])
       if(!sends.some(x=>x.send.tap===tap))
-        html+='<div class="arAuxInspectorLine"><button data-aux-inspector-create="'+tap+
+        html+='<div class="arAuxInspectorLine"><button class="btn-180" data-aux-inspector-create="'+tap+
           '">＋ ADD '+tap+' SEND</button></div>';
     root.innerHTML=html;
     root.querySelectorAll("button,select").forEach(el=>{el.disabled=patchPending;});
@@ -757,7 +818,7 @@
       '<select data-send-to aria-label="Send destination">'+listSelect(channels,send.to)+'</select>'+
       '<select data-send-tap aria-label="Send tap">'+['PRE','POST'].map(t=>'<option '+(t===send.tap?'selected':'')+'>'+t+'</option>').join('')+'</select>'+
       '<select data-send-gain aria-label="Send level">'+sendGainChoices(Number(send.gain))+'</select>'+
-      '<button data-send-remove aria-label="Remove send" title="Remove send">×</button></div>').join('');
+      '<button class="btn-180" data-send-remove aria-label="Remove send" title="Remove send">×</button></div>').join('');
     el.querySelectorAll('[data-send-row]').forEach(row=>{
       const i=Number(row.dataset.sendRow),m=draftSends[i];
       row.querySelector('[data-send-from]').addEventListener('change',e=>{if(!patchPending)m.from=Number(e.target.value);});
@@ -786,11 +847,16 @@
     const d=state.dryRoutingLab||{};
     const clear=document.getElementById("arRouteClear");
     if(clear)clear.disabled=patchPending||!d.acceptedRoute||!!state.monitor;
+    const safety=document.getElementById("arRouteSafety");
+    if(safety){
+      const mode=state.monitor?"armed":"muted";
+      if(safety.dataset.safety!==mode)safety.dataset.safety=mode;
+      setTextIfChanged(safety,state.monitor?"OUTPUT ARMED":"OUTPUT MUTED");
+    }
     const label=document.getElementById("arRouteIdentity");
     if(!label)return;
     setTextIfChanged(label,(d.active ? (d.ready?(d.acceptedRoute?"NATIVE PATCH LIVE":"NATIVE MIXER READY · UNPATCHED / SILENT"):"PATCH STALE — SILENT, REAPPLY"):"AWAITING VERIFIED DEVICE")+
-      " · device epoch "+(d.epoch||0)+" · rev "+(d.revision||0)+
-      " · "+(d.ports?.length||0)+" enabled inputs · "+(d.outputPorts?.length||0)+" outputs · "+(d.sendCount||0)+" channel sends · "+(d.auxSendCount||0)+" AUX sends · "+(d.auxCount||0)+" AUX");
+      " · "+(d.ports?.length||0)+" INPUTS · "+(d.outputPorts?.length||0)+" OUTPUTS · E"+(d.epoch||0)+" / R"+(d.revision||0));
   }
   function openRoutingLab(){
     hydrateAcceptedRoute();
