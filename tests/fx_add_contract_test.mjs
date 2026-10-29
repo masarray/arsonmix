@@ -15,7 +15,11 @@ test('every ADD click identifies request and reports result inside the open sele
   assert.match(js,/nativeAddFeedback/);
   assert.match(pluginUi,/FX NOT LOADED:/);
   assert.match(js,/window\.ArSonPluginUI/);
-  assert.match(js,/if\(result\.ok\)hideDialog\("nativeFxSelector"\)/);
+  assert.match(js,/if\(result\.ok\)\s*\{\s*hideDialog\("nativeFxSelector"\)/);
+  assert.match(js,/state\.addError="Audio device is unavailable/);
+  assert.match(js,/state\.chain=Array\.isArray\(nodes\)\?nodes:\[\]/);
+  // Never paint a fake inserted VST3 just because JS dispatched ADD.
+  assert.match(js,/arMixChain/);
   // Errors respond immediately; successful inserts ACK only AFTER the
   // audio callback swaps to the prepared graph and the control thread retires.
   assert.match(host,/emitFxAddResult \(requestId,name,error,elapsed\)/);
