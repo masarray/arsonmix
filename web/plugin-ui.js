@@ -3,7 +3,11 @@
   "use strict";
   // Native catalog-only renderer. No timers, filters run only on user input.
   const escapeHtml = v => String(v ?? "").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-  const manager={query:"",sort:"name",ascending:true,limit:120};
+  const manager={query:"",sort:"name",ascending:true,limit:120,favoritesOnly:false};
+  let pickerFavoritesOnly=false;
+  let pickerClassFor=()=> "Other",pickerChannel=0;
+  const favoriteIcon='<svg viewBox="0 0 24 24" aria-hidden="true" width="17" height="17"><path fill="currentColor" d="M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>';
+  const favoriteButton=p=>`<button type="button" class="ar-favorite ${p.favorite?"is-favorite":""}" data-ar-favorite="${escapeHtml(p.id)}" aria-label="${p.favorite?"Remove":"Add"} ${escapeHtml(p.name)} ${p.favorite?"from":"to"} favorites" title="${p.favorite?"Remove favorite":"Add favorite"}" aria-pressed="${!!p.favorite}">${favoriteIcon}</button>`;
   const pathParts=p=>{const v=String(p||"");const i=Math.max(v.lastIndexOf("/"),v.lastIndexOf("\\"));return {file:i<0?v:v.slice(i+1),folder:i<0?"":v.slice(0,i)}};
   const compare=(a,b)=>String(a??"").localeCompare(String(b??""),undefined,{sensitivity:"base",numeric:true});
   const categoryMatch=(p,category,classFor)=>category==="All"||classFor(p)===category;
@@ -11,12 +15,13 @@
     const list=dialog?.querySelector("#arPluginManagerRows");
     if(!list)return;
     const q=manager.query.trim().toLocaleLowerCase();
-    const filtered=state.catalog.filter(p=>!q||[p.name,p.vendor,p.category,p.path].join(" ").toLocaleLowerCase().includes(q));
+    const filtered=state.catalog.filter(p=>(!manager.favoritesOnly||p.favorite)&&(!q||[p.name,p.vendor,p.category,p.path].join(" ").toLocaleLowerCase().includes(q)));
     const direction=manager.ascending?1:-1;
     filtered.sort((a,b)=>direction*compare(a[manager.sort],b[manager.sort])||compare(a.name,b.name));
     list.innerHTML=filtered.length?filtered.slice(0,manager.limit).map(p=>{
       const path=pathParts(p.path),name=escapeHtml(p.name||path.file),vendor=escapeHtml(p.vendor||"Unknown");
       return `<div class="ar-plugin-row" role="row">
+        <span class="ar-plugin-star" role="cell">${favoriteButton(p)}</span>
         <span class="ar-plugin-name" role="cell" title="${name}">${name}</span>
         <span class="ar-plugin-state" role="cell">INDEXED</span>
         <span role="cell" class="ar-plugin-format">VST3</span>
@@ -28,6 +33,8 @@
     }).join(""):'<div class="ar-manager-empty">No matching plugins. Try another search or import a VST3.</div>';
     const count=dialog.querySelector("#arManagerCount");
     if(count)count.textContent=`${filtered.length} of ${state.catalog.length} indexed effects`;
+    const fav=dialog.querySelector("#arManagerFavorites");
+    if(fav){fav.setAttribute("aria-pressed",String(manager.favoritesOnly));fav.classList.toggle("on",manager.favoritesOnly);}
     const more=dialog.querySelector("#arManagerMore");
     if(more){more.hidden=filtered.length<=manager.limit;more.textContent=`Show more (${Math.min(120,filtered.length-manager.limit)} of ${filtered.length-manager.limit} remaining)`;}
     dialog.querySelectorAll("[data-armix-sort]").forEach(b=>{
@@ -64,11 +71,13 @@
         <div class="ar-manager-searchline">
           <input class="ar-manager-search" id="arManagerSearch" type="search" aria-label="Search indexed plugins"
             placeholder="Search plugins, vendors, category or path" value="${escapeHtml(manager.query)}" autocomplete="off">
+          <button id="arManagerFavorites" class="ar-favorites-filter" type="button" aria-pressed="${manager.favoritesOnly}">${favoriteIcon} FAVORITES</button>
           <span id="arManagerCount" aria-live="polite"></span>
         </div>
         <div class="ar-manager-table-scroll">
           <div class="ar-manager-table" role="table" aria-label="VST3 plugin catalog">
             <div class="ar-plugin-row ar-plugin-header" role="row">
+              <span role="columnheader" aria-label="Favorite">★</span>
               <button role="columnheader" data-armix-sort="name">Plugin <span class="ar-sort-symbol"></span></button>
               <span role="columnheader">Status</span>
               <span role="columnheader">Format</span>
@@ -84,15 +93,18 @@
     dialog.querySelector(".native-dialog-footer").textContent="INDEXED means catalogued, not load-verified. VST2 .dll is unsupported. Third-party scanning is not yet crash-isolated.";
     renderManagerRows(dialog,state);
   }
-  const filteredPicker=(state,classFor)=>state.catalog.filter(p=>categoryMatch(p,state.selectedCategory,classFor))
-    .filter(p=>[p.name,p.vendor,p.category].join(" ").toLocaleLowerCase().includes(state.filter.toLocaleLowerCase()));
+  const filteredPicker=(state,classFor)=>state.catalog.filter(p=>(!pickerFavoritesOnly||p.favorite)&&categoryMatch(p,state.selectedCategory,classFor))
+    .filter(p=>[p.name,p.vendor,p.category].join(" ").toLocaleLowerCase().includes(state.filter.toLocaleLowerCase()))
+    .sort((a,b)=>Number(!!b.favorite)-Number(!!a.favorite)||compare(a.name,b.name));
   function updatePickerRows(dialog,state,classFor,channel){
     if(!dialog)return;
+    pickerClassFor=classFor;pickerChannel=channel;
     const list=dialog.querySelector("#arPickerRows");
     if(!list)return;
     const matches=filteredPicker(state,classFor);
     list.innerHTML=matches.length?matches.slice(0,80).map(p=>`
       <div class="ar-picker-row" role="listitem">
+        ${favoriteButton(p)}
         <div class="ar-picker-details">
           <span class="ar-picker-name" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>
           <span class="ar-picker-sub" title="${escapeHtml((p.vendor||"Unknown vendor")+" · "+(p.category||"Effect"))}">
@@ -100,11 +112,13 @@
         </div>
         <span class="ar-picker-format">VST3</span>
         <button class="native-btn primary ar-picker-add" data-native-add="${escapeHtml(p.id)}"
-          ${state.chain.length>=8||state.adding||channel!==0?"disabled":""}
-          title="${channel===0?"Insert VST3 in Channel 1":"This channel does not have native FX routing"}">+ ADD</button>
+          ${state.adding||(!state.device?.dryRoutingLab?.active&&(state.chain.length>=8||channel!==0))||channel<0?"disabled":""}
+          title="${state.device?.dryRoutingLab?.active?"Stage native routed FX (requires muted APPLY)":"Insert CH1 VST3"}">+ ADD</button>
       </div>`).join(""):'<div class="ar-picker-empty">No matching effects. Open Plugin Manager to import or scan.</div>';
     const count=dialog.querySelector("#arPickerCount");
     if(count)count.textContent=`${matches.length} matching · ${Math.min(matches.length,80)} shown`;
+    const fav=dialog.querySelector("#arPickerFavorites");
+    if(fav){fav.setAttribute("aria-pressed",String(pickerFavoritesOnly));fav.classList.toggle("on",pickerFavoritesOnly);}
     dialog.querySelectorAll("[data-native-category]").forEach(button=>
       button.classList.toggle("on",button.dataset.nativeCategory===state.selectedCategory));
   }
@@ -125,6 +139,7 @@
         placeholder="Find an effect or vendor..." aria-label="Search VST3 effects"
         value="${escapeHtml(state.filter)}" autocomplete="off">
       <div class="native-category ar-picker-categories" aria-label="Effect type">
+        <button type="button" id="arPickerFavorites" class="ar-favorites-filter" aria-pressed="${pickerFavoritesOnly}">${favoriteIcon} FAVORITES</button>
         ${categories.map(c=>`<button class="native-btn ${c===state.selectedCategory?"on":""}"
           data-native-category="${escapeHtml(c)}">${escapeHtml(c)}</button>`).join("")}
       </div>
@@ -135,7 +150,7 @@
     updatePickerFeedback(dialog,state);
     updatePickerRows(dialog,state,classFor,context.startsWith("MASTER")?-1:Number(context.match(/CH (\d+)/)?.[1]||1)-1);
   }
-  function init(getState){
+  function init(getState,onFavorite){
     // Delegated once; no mousemove/hover/RAF, no focus-destroying rerenders on typing.
     document.addEventListener("input",e=>{
       if(e.target?.id!=="arManagerSearch")return;
@@ -143,6 +158,22 @@
       renderManagerRows(document.getElementById("nativePluginManager"),getState());
     });
     document.addEventListener("click",e=>{
+      const star=e.target.closest("[data-ar-favorite]");
+      if(star){
+        e.preventDefault();
+        const p=getState().catalog.find(item=>item.id===star.dataset.arFavorite);
+        if(p)onFavorite(p.id,!p.favorite);
+        return;
+      }
+      if(e.target.closest("#arManagerFavorites")){
+        manager.favoritesOnly=!manager.favoritesOnly;manager.limit=120;
+        renderManagerRows(document.getElementById("nativePluginManager"),getState());return;
+      }
+      if(e.target.closest("#arPickerFavorites")){
+        pickerFavoritesOnly=!pickerFavoritesOnly;
+        updatePickerRows(document.getElementById("nativeFxSelector"),getState(),pickerClassFor,pickerChannel);
+        return;
+      }
       const more=e.target.closest("#arManagerMore");
       if(more){manager.limit+=120;renderManagerRows(document.getElementById("nativePluginManager"),getState());return;}
       const sort=e.target.closest("#nativePluginManager [data-armix-sort]");
