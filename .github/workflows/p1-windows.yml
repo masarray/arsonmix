@@ -82,6 +82,7 @@ jobs:
             'tests/plugin_ui_contract_test.mjs'
             'tests/live_routing_ui_contract_test.mjs'
             'tests/mixer_io_operator_contract_test.mjs'
+            'tests/mixer_shell_contract_test.mjs'
             'tests/studio_backup_contract_test.mjs'
           )
           node --test $contracts

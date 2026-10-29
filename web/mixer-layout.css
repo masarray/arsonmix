@@ -1,0 +1,193 @@
+/* ArSonMix L2 mixer geometry — one vertically locked console, including MASTER.
+   Source of truth is the outer seven-row grid, not per-strip flex intrinsic sizing.
+   No visual filters, blur, timers, geometry observers or DSP changes. */
+#app #mixer{
+  --ar-upper-height:163px;
+  --ar-control-height:97px;
+  --ar-identity-height:61px;
+  --ar-strip-head-height:35px;
+  --ar-fader-read-height:35px;
+  --ar-mute-height:41px;
+}
+#app #mixer[data-io-mode="SENDS"]{--ar-upper-height:180px}
+#app #mixer > .strip,
+#app #mixer > #masterLeft.strip.master-strip{
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr);
+  grid-template-rows:
+    var(--ar-strip-head-height)
+    var(--ar-upper-height)
+    var(--ar-control-height)
+    var(--ar-mute-height)
+    var(--ar-fader-read-height)
+    minmax(110px,1fr)
+    var(--ar-identity-height);
+  align-content:stretch;
+  min-height:0;
+  height:100%;
+  overflow:hidden;
+}
+#app #mixer > .strip > .ch-id{grid-row:1;min-height:0;height:100%;min-width:0}
+#app #mixer > .strip > :is(.rack,.master-fx-rack,.arChannelBank){
+  grid-row:2;
+  grid-column:1;
+  min-height:0;
+  height:100%!important;
+  max-height:100%;
+  box-sizing:border-box;
+  overflow:hidden;
+}
+#app #mixer > .strip > :is(.strip-controls,.master-controls-zone){
+  grid-row:3;
+  grid-column:1;
+  height:100%!important;
+  min-height:0!important;
+  max-height:100%;
+  flex:none!important;
+  box-sizing:border-box;
+}
+#app #mixer > .strip > :is(.channel-actions,.master-actions){
+  grid-row:4;grid-column:1;
+  height:100%!important;min-height:0!important;max-height:100%;
+  flex:none!important;
+}
+#app #mixer > .strip > .db-display{
+  grid-row:5;grid-column:1;
+  min-height:0;height:100%;box-sizing:border-box;
+}
+#app #mixer > .strip > :is(.fader-zone,.master-fader-zone){
+  grid-row:6;grid-column:1;
+  min-height:0!important;
+  max-height:none;
+  height:100%;
+  flex:none!important;
+  box-sizing:border-box;
+}
+#app #mixer > .strip > :is(.strip-name,.master-strip-name){
+  grid-row:7;grid-column:1;
+  height:100%!important;min-height:0!important;
+  box-sizing:border-box;
+}
+#app #mixer > .strip > .arChannelBank{flex:none;min-height:0}
+#app #mixer[data-io-mode="SENDS"] .arSendBank{overflow:hidden}
+#app #mixer[data-io-mode="SENDS"] .arSendSummary{min-height:0;overflow:hidden}
+#app #mixer > #masterLeft .master-fx-rack{display:flex;flex-direction:column}
+
+/* eMotion LV1-inspired navigation hierarchy; original ArSonMix BTN-180 colors. */
+#app .toolbar-actions.arSegmentedToolbar{
+  justify-content:flex-end;min-width:0;
+}
+#app .toolbar-actions.arSegmentedToolbar .nav{
+  flex:0 1 395px!important;
+  width:auto!important;max-width:395px!important;
+  display:grid!important;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:0!important;
+  padding:2px;
+  background:#0b161f;
+  border:1px solid #435766;
+  border-radius:4px;
+  box-shadow:inset 0 1px 3px #02080c;
+}
+#app .toolbar-actions.arSegmentedToolbar .nav .btn-180{
+  flex:none!important;width:100%;min-width:0;
+  height:30px;min-height:30px;
+  border-radius:2px!important;
+  font:600 10px/1 "ArSonMix Inter","Segoe UI",Arial,sans-serif!important;
+  letter-spacing:.2px!important;
+}
+#app .toolbar-actions.arSegmentedToolbar .nav .btn-180.selected{
+  --b180-color:#b2e8a0;
+  --b180-ink:#17351d;
+}
+#app .toolbar-actions.arSegmentedToolbar .nav .btn-180 + .btn-180{margin-left:0}
+
+/* Use narrow left-side real estate, not an extra row above all faders. */
+#app .left-rail{flex-basis:168px;min-width:158px;max-width:180px}
+#app .left-rail .arRailModeSection{
+  order:0;flex:none;min-width:0;
+  background:#111d26;
+  border-bottom:1px solid #354957;
+}
+#app .left-rail .arRailHeading{
+  height:22px;padding:5px 8px 0;
+  font:600 9px/1.3 "ArSonMix Inter","Segoe UI",Arial,sans-serif;
+  letter-spacing:.55px;color:#91b9c7;
+  background:#1c2c36;
+}
+#app .left-rail .arMixerBankBar{
+  width:100%;height:auto;
+  display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  gap:5px;padding:5px 7px 8px;
+  background:#111d26;border:0;
+}
+#app .left-rail .arMixerBankModes{
+  grid-column:1/-1;width:100%;
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:3px;
+}
+#app .left-rail .arMixerBankModes button.btn-180{
+  width:100%;min-width:0;height:29px;min-height:29px;
+  padding:0 2px!important;
+  letter-spacing:.1px!important;
+}
+#app .left-rail .arMixerBankInfo{
+  grid-column:1/-1;
+  height:25px;min-height:25px;min-width:0;
+  display:flex;align-items:center;
+  padding:0 3px;
+  overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
+  font:9px/1.25 Consolas,monospace;
+}
+#app .left-rail .arMixerBankBar > button.btn-180{
+  width:100%;min-width:0;height:28px;min-height:28px;
+  font:600 9px/1 "ArSonMix Inter","Segoe UI",sans-serif!important;
+  padding:0 2px!important;
+}
+#app .left-rail .arRailUtilities{
+  flex:none;min-width:0;
+  border-top:1px solid #354957;background:#121f29;
+}
+#app .left-rail .arRailUtilityGrid{
+  padding:5px 7px 7px;
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:5px;
+}
+#app .left-rail .arRailUtilityGrid .btn-180{
+  width:100%;min-width:0;
+  height:28px;min-height:28px;
+  padding:0 2px!important;letter-spacing:0!important;
+  font:600 9px/1 "ArSonMix Inter","Segoe UI",sans-serif!important;
+  white-space:nowrap;
+}
+#app .left-rail .arRailUtilityGrid #arSignalOpen span{font-size:9px}
+#app .left-rail #channelList{min-height:78px;flex:1 1 78px}
+#app .left-rail .rail-bottom{flex:none}
+
+/* Only at short windows: optional preset widgets yield space to live controls.
+   All modes, channel list, utility commands and snapshots remain operable. */
+@media(max-height:790px){
+  #app #mixer{
+    --ar-upper-height:129px;
+    --ar-control-height:87px;
+    --ar-identity-height:49px;
+  }
+  #app #mixer[data-io-mode="SENDS"]{--ar-upper-height:155px}
+  #app .left-rail .arRailHeading{height:19px;padding-top:3px}
+  #app .left-rail .arMixerBankBar{gap:3px;padding:3px 6px 5px}
+  #app .left-rail .arMixerBankInfo{height:19px;min-height:19px}
+  #app .left-rail .arRailUtilityGrid{gap:4px;padding:4px 6px}
+  #app .left-rail .arRailUtilityGrid .btn-180{height:25px;min-height:25px}
+  #app .left-rail .arMixerBankBar > button.btn-180{height:25px;min-height:25px}
+  #app .left-rail .arMixerBankModes button.btn-180{height:25px;min-height:25px}
+  #app .left-rail .rail-presets button{height:23px;min-height:23px}
+}
+@media(max-height:690px){
+  #app .left-rail #presetList{display:none}
+  #app .left-rail #groupsList{max-height:80px}
+  #app .left-rail #channelList{min-height:65px}
+}
+@media(max-width:1100px){
+  #app .toolbar-actions.arSegmentedToolbar .nav{flex-basis:320px!important}
+  #app .left-rail{flex-basis:158px;min-width:158px}
+}

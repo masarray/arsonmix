@@ -370,12 +370,16 @@ async def main():
         assert await page.locator('.left-rail #saveFxPreset').inner_text()=='SAVE FX'
         assert await page.locator('.left-rail #menuScene').inner_text()=='EXPORT'
         assert await page.locator('.left-rail .rail-bottom button').count()==3
-        # Owner's global BTN-180 hardware recipe: 7 toolbar + 8 left rail.
+        # L2 workspace: 3 true navigation tabs + 17 rail controls (including native FX/ROUTE/SENDS).
         # Single solid face, identical resting 7-shadow model, no Button 19.
-        assert await page.locator('.toolbar-actions .nav button.btn-180').count()==7
-        assert await page.locator('.left-rail button.btn-180').count()==8
+        assert await page.locator('.toolbar-actions .nav button.btn-180').count()==3
+        assert await page.locator('.left-rail button.btn-180').count()==17
         assert await page.locator('.toolbar-actions .fx-nav,.left-rail .fx-nav').count()==0
         assert await page.locator('.left-rail .pushable,.left-rail .front,.left-rail .edge,.left-rail .shadow').count()==0
+        assert await page.locator('.left-rail [data-mix-mode]').count()==3
+        assert await page.locator('.left-rail #audioSetupBtn').count()==1
+        assert await page.locator('.toolbar-actions #audioSetupBtn').count()==0
+        assert await page.locator('.left-rail [data-my-sounds],.left-rail [data-plugin-manager],.left-rail #arSignalOpen').count()==3
         style=await page.evaluate("""()=>{
           const grab=q=>{const e=document.querySelector(q),s=getComputedStyle(e),r=e.getBoundingClientRect();
             return {face:s.backgroundColor,image:s.backgroundImage,ink:s.color,shadow:s.boxShadow,
