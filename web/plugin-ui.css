@@ -210,3 +210,133 @@
 .native-engine .native-panel .native-node .node-text small{
   display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap
 }
+
+/* P2 compact physical console consistency: one BTN-180 rest face everywhere.
+   A press is bright cyan; category/favorites selection latches cyan. No blur. */
+#nativePluginManager .native-btn,
+#nativeFxSelector .native-btn,
+#nativePluginManager .ar-favorites-filter,
+#nativeFxSelector .ar-favorites-filter {
+  --b180-color:var(--b180-off,#cbd1d1);
+  --b180-border:var(--b180-edge,#747f7f);
+  --b180-ink:var(--b180-off-ink,#172229);
+  border-radius:3px!important;
+  font-size:11px!important;
+  font-weight:650;
+  letter-spacing:.08px!important;
+  line-height:1.15!important;
+  min-height:34px;
+  text-transform:uppercase;
+  text-decoration:none;
+  white-space:nowrap;
+  font-family:"ArSonMix Inter","Segoe UI",sans-serif!important;
+}
+#nativeFxSelector .native-btn.on,
+#nativeFxSelector .native-btn[aria-pressed="true"],
+#nativePluginManager .native-btn.on,
+#nativePluginManager .native-btn[aria-pressed="true"],
+#nativePluginManager .ar-favorites-filter[aria-pressed="true"],
+#nativeFxSelector .ar-favorites-filter[aria-pressed="true"]{
+  --b180-color:#8ff0f4;
+  --b180-border:#3fa5b3;
+  --b180-ink:#10303a;
+}
+#nativePluginManager .native-btn:active:not(:disabled),
+#nativeFxSelector .native-btn:active:not(:disabled),
+#nativePluginManager .ar-favorites-filter:active,
+#nativeFxSelector .ar-favorites-filter:active{
+  --b180-color:#60ecf5;
+  --b180-border:#16acc2;
+  --b180-ink:#092b36;
+}
+#nativePluginManager .ar-manager-action-group{
+  display:flex;flex-wrap:wrap;gap:6px;align-items:center;
+}
+#nativePluginManager .ar-manager-action-group .ar-manager-label{
+  flex:0 0 107px;min-width:107px;
+}
+#nativePluginManager .ar-manager-action-group .native-btn{
+  flex:0 0 118px;width:118px;min-width:118px;max-width:118px;
+  padding:0 5px!important;min-height:35px;
+}
+#nativeFxSelector .native-dialog{
+  width:min(555px,calc(100vw - 20px));max-width:555px;
+}
+#nativeFxSelector .ar-picker-categories{
+  display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;
+  align-items:stretch;
+}
+#nativeFxSelector .ar-picker-categories .native-btn,
+#nativeFxSelector #arPickerFavorites{
+  width:100%;height:34px;min-width:0;min-height:34px;
+  padding:0 2px!important;
+  overflow:hidden;justify-content:center;
+  box-sizing:border-box;
+  font-size:10.5px!important;
+}
+#nativeFxSelector #arPickerFavorites{
+  display:flex;gap:2px;
+  --b180-shadow-surface:inset 5px 5px 2px -1px rgba(0,0,0,.18),
+  inset 0 0 1px 1px rgba(255,255,255,.14),
+  inset 0 1px 20px rgba(0,0,0,.12),
+  inset 0 -1px 2px rgba(0,0,0,.32),
+  0 0 0 1px var(--b180-border),
+  0 1px 1px rgba(0,0,0,.28),0 2px 3px rgba(0,0,0,.13);
+  border:1px solid var(--b180-border)!important;
+  box-shadow:var(--b180-shadow-surface)!important;
+  background:var(--b180-color)!important;
+  color:var(--b180-ink)!important;
+}
+#nativePluginManager #arManagerFavorites{
+  background:var(--b180-color)!important;
+  color:var(--b180-ink)!important;
+  border-color:var(--b180-border)!important;
+  box-shadow:var(--b180-shadow-surface)!important;
+  min-width:118px;min-height:34px;
+}
+#nativeFxSelector .ar-picker-categories .native-btn.on{
+  --b180-color:#8ff0f4;--b180-border:#3fa5b3;--b180-ink:#10303a;
+}
+#nativePluginManager .native-dialog-header .ar-dialog-close,
+#nativeFxSelector .native-dialog-header .ar-dialog-close{
+  flex:0 0 36px!important;width:36px!important;min-width:36px!important;
+  max-width:36px!important;height:36px!important;min-height:36px!important;
+  padding:0!important;aspect-ratio:1/1;border-radius:3px!important;
+  --b180-color:#cbd1d1;--b180-border:#727c7c;--b180-ink:#16232b;
+}
+#nativePluginManager .native-dialog-header .ar-dialog-close:active,
+#nativeFxSelector .native-dialog-header .ar-dialog-close:active{
+  --b180-color:#ff626c;--b180-border:#d32e40;--b180-ink:#4a0815;
+}
+#nativePluginManager .native-dialog-header .ar-dialog-close svg,
+#nativeFxSelector .native-dialog-header .ar-dialog-close svg{
+  width:20px;height:20px;pointer-events:none;
+}
+/* The catalog HEADER is a stationary sibling of the scroll viewport. */
+#nativePluginManager .ar-manager-table{
+  display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;
+}
+#nativePluginManager .ar-manager-table .ar-plugin-header{
+  position:relative;top:auto;z-index:2;flex:0 0 36px;
+}
+#nativePluginManager .ar-manager-table-scroll{
+  flex:1;min-height:0;overflow-x:hidden;overflow-y:auto;
+  scrollbar-width:thin;scrollbar-color:#597784 #122732;
+}
+#nativeFxSelector .ar-picker-results{
+  scrollbar-width:thin;scrollbar-color:#597784 #122732;
+}
+#nativePluginManager .ar-manager-table-scroll::-webkit-scrollbar,
+#nativeFxSelector .ar-picker-results::-webkit-scrollbar{width:10px}
+#nativePluginManager .ar-manager-table-scroll::-webkit-scrollbar-track,
+#nativeFxSelector .ar-picker-results::-webkit-scrollbar-track{
+  background:#122732;border-left:1px solid #344f5d
+}
+#nativePluginManager .ar-manager-table-scroll::-webkit-scrollbar-thumb,
+#nativeFxSelector .ar-picker-results::-webkit-scrollbar-thumb{
+  background:#597784;border:2px solid #122732;border-radius:5px
+}
+#nativePluginManager .ar-manager-table-scroll::-webkit-scrollbar-thumb:active,
+#nativeFxSelector .ar-picker-results::-webkit-scrollbar-thumb:active{
+  background:#69cddc
+}

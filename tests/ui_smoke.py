@@ -1288,6 +1288,71 @@ async def main():
           };
           window.__arMixMockEvents.arMixStatus(window.__arPatchStatus);
         }""")
+        # P2: Audio Setup may activate the always-on 10CH engine with DRY CH1.
+        # That must NOT downgrade CH1 to the routed one-slot picker. ADD is the
+        # original live graph transaction with an authoritative arMixChain ACK.
+        await native.evaluate("""()=>{
+          window.__arMixMockEvents.arMixStatus({
+            ...window.__arPatchStatus,connected:true,error:"",monitor:false,
+            dryRoutingLab:{...window.__arPatchStatus.dryRoutingLab,
+              active:true,ready:true,revision:1,
+              channelFxNames:Array(10).fill("")}
+          });
+        }""")
+        assert await native.locator('[data-strip="0"] .rack .insert-slot').count()==6
+        assert await native.locator('[data-strip="0"] .rack [data-plugin-picker="1"]').count()==6
+        assert await native.locator('[data-strip="0"] .rack [data-routed-fx="0"]').count()==0
+        await native.locator('[data-strip="0"] .rack [data-plugin-picker="1"]').first.click()
+        await native.locator('#arPickerRows [data-native-add]').first.click()
+        await native.wait_for_function("""()=>window.__arMixSent.some(
+          x=>x.payload?.action==="addCatalog")""",timeout=4000)
+        add_call=await native.evaluate("""()=>{
+          const x=window.__arMixSent.findLast(x=>x.payload?.action==="addCatalog");
+          return x.payload;
+        }""")
+        assert add_call["id"]=="plugin-0",add_call
+        await native.evaluate("""requestId=>{
+          window.__arMixMockEvents.arMixChain([{id:"plugin-0",name:"Effect 000",
+            latency:0,bypass:false}]);
+          window.__arMixMockEvents.arMixAddResult({requestId,ok:true});
+        }""",add_call["requestId"])
+        assert await native.locator('[data-strip="0"] .rack .native-insert-row').count()==1
+        assert await native.locator('[data-strip="0"] .rack').get_by_text("Effect 000").count()==1
+        await native.evaluate("""()=>{
+          window.__arMixMockEvents.arMixChain([]);
+          window.__arMixSent.length=0;
+        }""")
+        # Layout contract: category/manager controls match sizes; gray resting
+        # BTN-180 colors, cyan active, square close; header is outside scroll.
+        await native.locator('[data-plugin-manager="1"]').first.click()
+        ui_polish=await native.evaluate("""()=>{
+          const manager=document.querySelector('#nativePluginManager');
+          const buttons=[...manager.querySelectorAll('.ar-manager-action-group .native-btn')];
+          const sizes=buttons.map(e=>[Math.round(e.getBoundingClientRect().width),
+            Math.round(e.getBoundingClientRect().height)]);
+          const header=manager.querySelector('.ar-plugin-header');
+          const scroll=manager.querySelector('.ar-manager-table-scroll');
+          const close=manager.querySelector('[data-close-modal]').getBoundingClientRect();
+          const makeFace=e=>getComputedStyle(e).getPropertyValue('--b180-color').trim();
+          return {uniform:sizes.every(x=>x[0]===sizes[0][0]&&x[1]===sizes[0][1]),
+            resting:makeFace(buttons[0]),scrollHeader:!scroll.contains(header),
+            square:Math.abs(close.width-close.height)<=1,
+            font:getComputedStyle(buttons[0]).fontFamily};
+        }""")
+        assert ui_polish['uniform'] and ui_polish['scrollHeader'] and ui_polish['square'],ui_polish
+        assert 'ArSonMix Inter' in ui_polish['font'],ui_polish
+        assert 'var(--b180-off' in ui_polish['resting'] or ui_polish['resting']=='#cbd1d1',ui_polish
+        await native.locator('#nativePluginManager [data-close-modal]').click()
+        await native.locator('[data-strip="0"] .rack [data-plugin-picker="1"]').first.click()
+        picker_equal=await native.evaluate("""()=>{
+          const el=[...document.querySelectorAll('#nativeFxSelector .ar-picker-categories button')];
+          const dims=el.map(x=>[Math.round(x.getBoundingClientRect().width),
+             Math.round(x.getBoundingClientRect().height)]);
+          return {count:dims.length,same:dims.every(d=>d[0]===dims[0][0]&&d[1]===dims[0][1]),
+             all:el.find(x=>x.dataset.nativeCategory==="All")?.classList.contains("on")};
+        }""")
+        assert picker_equal['count']==7 and picker_equal['same'] and picker_equal['all'],picker_equal
+        await native.locator('#nativeFxSelector [data-close-modal]').click()
         # P1 FX Rack regression: the native 10CH state must not erase plugin
         # inserts or replace them with a ROUTING shortcut in the mixer.
         await native.evaluate("""()=>{

@@ -28,17 +28,23 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        auto area = getLocalBounds();
+        // Full HWND dark guard + centered, fixed-cost 740×420 vector artwork.
+        // Never reveal the browser's intermediate unpainted region.
+        g.fillAll (juce::Colour (0xff0b1823));
+        juce::Graphics::ScopedSaveState restore (g);
+        g.addTransform (juce::AffineTransform::translation (
+            float (getWidth() - 740) * 0.5f, float (getHeight() - 420) * 0.5f));
+        const int width = 740, height = 420;
         g.setGradientFill (juce::ColourGradient (
             juce::Colour (0xff0c2332), 0.0f, 0.0f,
-            juce::Colour (0xff030c15), (float) getWidth(), (float) getHeight(), false));
+            juce::Colour (0xff030c15), (float) width, (float) height, false));
         g.fillAll();
         // Mixer strips at the sides are deliberately low-contrast vectors,
         // not blurry images or animated native/WebView layers.
         for (int side = 0; side != 2; ++side)
             for (int i = 0; i != 3; ++i)
             {
-                const int x = side == 0 ? 13 + i * 51 : getWidth() - 59 - i * 51;
+                const int x = side == 0 ? 13 + i * 51 : width - 59 - i * 51;
                 const auto strip = juce::Rectangle<float> ((float) x, 54.0f, 42.0f, 288.0f);
                 g.setColour (juce::Colour (0xff122c3b).withAlpha (0.55f));
                 g.fillRoundedRectangle (strip, 3.0f);
@@ -57,7 +63,7 @@ public:
             }
 
         g.setColour (juce::Colour (0xff12bed4));
-        g.drawHorizontalLine (366, 26.0f, (float)getWidth() - 26.0f);
+        g.drawHorizontalLine (366, 26.0f, (float)width - 26.0f);
         g.setColour (juce::Colour (0xff09d5d5));
         g.setFont (juce::FontOptions (44.0f));
         g.drawText ("Ar", 194, 73, 77, 58, juce::Justification::centredRight);

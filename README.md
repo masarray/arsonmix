@@ -2,12 +2,14 @@
 
 **October 30, 2026 engineering status:** ArSonMix is an experimental Windows-first **10 input channel + 4 stereo AUX return + MASTER** mixer with real device-bound audio routing and VST3, not a hardware-qualified live/broadcast release. The native hardware 0-VST crackle issue [#15](https://github.com/masarray/arsonmix/issues/15) remains open. **Never interpret successful Windows CTest, GUI screenshots, or a workflow named Hardware FAT as proof of clean real-device audio.**
 
+The [approved GUI visual baseline](docs/GUI_BASELINE_LOCK_2026-10-25.md) remains the reference for compact FX racks, BTN-180 and layout; its historical channel count is superseded by the current mixer PRD.
+
 ## Start here — new canonical product and engineering plans
 1. [PRD v2.0 — Digital Mixer, per-channel FX/ROUTE/SENDS, custom hardware I/O, AUX buses](docs/PRD_ARSONMIX_PRO_MIXER_WORKSPACE_ROUTING_20261030.md)
 2. [ARD v2.0 — one audio graph, physical output patch, bus model, native ACK, staged execution](docs/ARD_PRD_MIXER_IO_AUX_BUS_REFORM_20261030.md)
 3. [Next-thread execution contract](docs/EXECUTION_HANDOFF_ARSONMIX_MIXER_REFORM_20261030.md)
 4. [FX Rack / Routing cross-thread regression guard](docs/FX_RACK_ROUTING_CROSS_THREAD_CONTRACT_20261030.md)
-5. [Smart Audio Engine safety architecture](docs/ARD_SMART_AUDIO_ENGINE_V1_2026-10-25.md) and [real hardware FAT runbook](docs/HARDWARE_FAT_GUI10_ENGINE_P012_20261027.md)
+5. [Smart Audio Engine safety architecture](docs/ARD_SMART_AUDIO_ENGINE_V1_2026-10-25.md), [implementation blueprint](docs/SMART_AUDIO_ENGINE_IMPLEMENTATION_BLUEPRINT.md), and [real hardware FAT runbook](docs/HARDWARE_FAT_GUI10_ENGINE_P012_20261027.md)
 
 The user-provided eMotion LV1, Studio One, Audition/DAW and FL-style wire references define the desired **workflow**, not an instruction to clone their artwork. Primary UX: stable MIX surface; FX/ROUTE/SENDS mode toggle, separate FX Rack and Routing workspaces, real INPUT/OUTPUT visibility in main window, native mono/stereo device matrix and proper AUX return processing. **Do not make Routing replace a channel's working VST3 inserts.** Do not expose raw JUCE audio configuration as the end-user product experience: keep JUCE audio backend but build an original capability-aware ArSonMix I/O screen.
 

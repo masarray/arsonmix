@@ -205,7 +205,7 @@
     const name=isMaster?"MASTER":(channels[selected]?.name||("CH "+(selected+1)));
     const fx=isMaster?"":(lab.channelFxNames?.[selected]||"");
     // Keep the working CH1 multi-insert workflow even in production routing.
-    if(isMaster||selected!==0||fx){
+    if(isMaster||selected!==0||(fx&&state.chain.length===0)){
       const draft=window.__arMixGetRackFxDraft?.(selected);
       const pending=draft?.id!==undefined?(draft.id?state.catalog.find(p=>p.id===draft.id)?.name||"Selected VST3":"DRY"):"";
       workspace.innerHTML=`<div class="native-panel" data-live-native="1">
@@ -690,7 +690,10 @@
     const rack=track.querySelector(".rack");
     if(!rack)return;
     const lab=state.device?.dryRoutingLab;
-    if(lab?.active && !(i===0 && state.chain.length>0 && !(lab.channelFxNames?.[0]||""))){
+    // CH1 keeps its real multi-insert rack after Audio Setup activates 10CH.
+    // Only use the one-slot routed presentation if CH1 has a routed FX and
+    // no legacy CH1 inserts. Catalog, graph and route status remain distinct.
+    if(lab?.active && (i!==0 || (!!lab.channelFxNames?.[0] && state.chain.length===0))){
       const fx=lab.channelFxNames?.[i]||"";
       const signature="routed-fx-rack-"+i+"-"+fx;
       if(rack.dataset.nativeSig!==signature){
@@ -711,7 +714,7 @@
       track.title="LIVE CH "+(i+1)+" · VST3 "+(fx||"DRY")+" · FX RACK to edit";
       return;
     }
-    // Keep original CH1 multi-insert rows when the routed engine is active.
+    // Keep original CH1 multi-insert rows even when its native route is active.
     if(i!==0){
       if(rack.dataset.nativeSig!=="empty-nonlive"){
         rack.dataset.nativeSig="empty-nonlive";
@@ -995,6 +998,11 @@
       toStatus("Native VST3 routing is not connected on "+(pickerChannel===-1?"MASTER":"CH "+(pickerChannel+1))+". No effect was loaded.");
       return;
     }
+    if(!state.device?.connected || state.device?.error){
+      state.addError="Audio device is unavailable. Open SETUP and select a verified ASIO/WASAPI input and output first.";
+      renderPickerFeedback();
+      return;
+    }
     const id=el.dataset.nativeAdd;
     const chosen=state.catalog.find(p=>p.id===id);
     state.adding=true;
@@ -1245,7 +1253,14 @@
     state.adding=false;
     state.pendingPlugin="";
     state.addError=result.ok?"":String(result.error||"Unknown VST3 loading failure");
-    if(result.ok)hideDialog("nativeFxSelector");
+    if(result.ok){
+      hideDialog("nativeFxSelector");
+      // The native callback must separately ACK its graph publication;
+      // arMixChain carries the authoritative visible loaded insert.
+      if(state.device?.dryRoutingLab?.active &&
+         !state.device?.dryRoutingLab?.acceptedRoute)
+        toStatus("VST3 inserted in CH1 rack. Assign the physical CH1 input in ROUTING before audio can be heard.");
+    }
     else{
       // Keep error in the open modal; toast behind backdrop is insufficient.
       renderPickerFeedback();renderPickerResults();
