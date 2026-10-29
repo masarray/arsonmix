@@ -69,7 +69,9 @@ test('premium fold and per-slot popover avoid rectangle border and global backdr
  assert.match(b,/#nativeFxSelector\{position:fixed;inset:0;display:block;padding:0/);
  assert.match(b,/background:transparent!important;backdrop-filter:none!important/);
  assert.match(b,/pickerAnchor\?\.classList\.add\("fx-picker-target"\)/);
- assert.match(pluginUi,/state\.chain\.length>=8\|\|state\.adding\|\|channel!==0/);
+ assert.match(pluginUi,/state\.routedPickerMode\?channel<0:\(state\.chain\.length>=8\|\|channel!==0\)/);
+ assert.match(b,/if\(pickerRouteMode\)/);
+ assert.match(b,/data-routed-fx/);
  assert.match(b,/const pluginUi=window\.ArSonPluginUI/);
  assert.ok(b.includes('data-context-fx="delete"'));
  assert.match(b,/native-node\.has-orbit/);
