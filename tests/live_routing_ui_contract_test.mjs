@@ -11,7 +11,7 @@ const main=readFileSync(new URL("../src/Main.cpp",import.meta.url),"utf8");
 const ui=readFileSync(new URL("../web/monitor.js",import.meta.url),"utf8");
 const bridge=readFileSync(new URL("../web/bridge.js",import.meta.url),"utf8");
 
-test("P1E is opt-in; all native VST3/clock/diagnostic paths protected",()=>{
+test("R0B unified native mixer keeps VST3/clock/diagnostic paths protected",()=>{
   assert.match(engine,/dryRoutingLab_\.active\(\)/);
   assert.match(engine,/!isOutputMuted\(\).*MUTE OUTPUT/);
   assert.match(engine,/setOutputMuted\(true\); \/\/ never expose CH1 unexpectedly/);
@@ -19,7 +19,7 @@ test("P1E is opt-in; all native VST3/clock/diagnostic paths protected",()=>{
   assert.match(engine,/dryRoutingLab_\.deviceStopped\(\)/);
   assert.match(engine,/dryRoutingLab_\.process\(inputs,inputChannels,outputs/);
   assert.match(engine,/std::shared_ptr<juce::AudioPluginInstance> processor/);
-  assert.match(engine,/if \(dryRoutingLab_\.active\(\)\) return "Stop DRY ROUTING LAB before preset recall"/);
+  assert.match(engine,/if \(dryRoutingLab_\.hasExplicitRoute\(\)\) return "CLEAR PATCH before recalling CH1 native preset"/);
   assert.match(lab,/publisher_\.publish/);
   assert.match(lab,/deviceEpoch_/);
   assert.match(lab,/Block::hardFrameLimit/);
@@ -143,7 +143,7 @@ test("P1J keeps real per-strip VST3 identity and tails across routing-only APPLY
   assert.match(lab,/next->prepared->reuse\(lane,\*prior,req\.id\)/);
   assert.match(lab,/continue; \/\/ NO disk scan/);
   assert.match(lab,/fxReused_\.store\(reusedCount/);
-  assert.match(lab,/acceptedRoute_=command/);
+  assert.match(lab,/acceptedRoute_=explicitSelection\?command:juce::var\(\)/);
   assert.match(lab,/setProperty\("acceptedRoute",acceptedRoute_\)/);
   assert.match(ui,/hydrateAcceptedRoute/);
   assert.match(ui,/saved\.deviceEpoch/);
@@ -254,4 +254,19 @@ test("R2 AUX matrix is a bounded draft projection with PRE/POST and explicit nat
   assert.match(ui,/if\(patchTab==="internal"\)drawRoutes\(\)/);
   assert.match(ui,/if\(patchPending\)return/);
   assert.doesNotMatch(ui,/arAuxMatrixCell:hover|backdrop-filter:|filter:blur\(/);
+});
+
+test("R0B B3 routing GUI has one native engine, truthful UNPATCHED and safe CLEAR PATCH",()=>{
+  assert.match(ui,/id="arRouteClear"/);
+  assert.doesNotMatch(ui,/id="arRouteStop"/);
+  assert.match(ui,/NATIVE MIXER READY · UNPATCHED \/ SILENT/);
+  assert.match(ui,/NATIVE ACK: INPUT PATCH CLEARED/);
+  assert.match(ui,/clear\.disabled=patchPending\|\|!d\.acceptedRoute\|\|!!state\.monitor/);
+  assert.match(ui,/action:"routingDryStop"/); // backward compatible event name
+  assert.match(ui,/if\(reply\?\.ok===true\)/);
+  assert.match(ui,/invalidateDraftForNewDevice\(0\)/);
+  assert.match(main,/const auto error=engine_\.clearProductionRouting\(\)/);
+  assert.match(main,/NATIVE_INPUT_PATCH_CLEARED/);
+  assert.match(main,/ack->setProperty\("ok",error\.isEmpty\(\)\)/);
+  assert.doesNotMatch(main,/Native CH1 path restored/);
 });

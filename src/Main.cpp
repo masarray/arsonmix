@@ -1114,12 +1114,25 @@ private:
         }
         if (action == "routingDryStop")
         {
-            engine_.disableDryRoutingLab();
-            diagnostics_.record("LIVE_DRY_ROUTING_LAB_STOP","Restored native CH1 production path");
-            if(browser_.loaded)
+            // Backward-compatible command name: CLEAR PATCH keeps the one
+            // native 10CH+4AUX topology, with ALL physical inputs disconnected.
+            // Never enable the legacy CH1 signal path on STOP or hotplug.
+            const auto error=engine_.clearProductionRouting();
+            diagnostics_.record(error.isEmpty()?"NATIVE_INPUT_PATCH_CLEARED":
+                                 "NATIVE_INPUT_PATCH_CLEAR_FAILED",
+                                error.isEmpty()?"No input assigned; output stays MUTED":error);
+            if(browser_.loaded) {
+                auto ack=std::make_unique<juce::DynamicObject>();
+                ack->setProperty("ok",error.isEmpty());
+                ack->setProperty("error",error);
+                ack->setProperty("state",engine_.status().getProperty("dryRoutingLab",{}));
                 browser_.emitEventIfBrowserIsVisible(
-                    "arMixRoutingLabAck",engine_.status().getProperty("dryRoutingLab",{}));
-            return emitNotice("DRY ROUTING LAB stopped. Native CH1 path restored.");
+                    "arMixRoutingLabAck",juce::var(ack.release()));
+            }
+            return emitNotice(error.isEmpty()
+                ?"All INPUT PATCH assignments cleared. Native mixer stays ready, OUTPUT MUTED."
+                :"Input patch cleared; native session is SILENT: "+error,
+                error.isNotEmpty());
         }
 
         if (action == "smartClock")
