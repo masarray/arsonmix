@@ -71,7 +71,9 @@
   font:500 9px/1.2 "ArSonMix Inter",sans-serif;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
-#app #mixer button.arSendChip[data-live="true"]{border-left-color:#6cc3db}
+#app #mixer button.arSendChip[data-state="live"]{border-left-color:#75dca8}
+#app #mixer button.arSendChip[data-state="draft"]{border-left-color:#e5c57b}
+#app #mixer button.arSendChip[data-state="ready"]{border-left-color:#6cc3db}
 #app #mixer button.arSendChip[data-enabled="false"]{color:#7f9da9}
 #app #mixer button.arSendChip:focus-visible{outline:2px solid #76dce9;outline-offset:-1px}
 #app #mixer .arSendDest{display:inline-flex;min-width:30px;font-weight:650;color:#78c5d8}
