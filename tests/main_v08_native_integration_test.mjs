@@ -70,7 +70,7 @@ test('native plugin state and graph preserved',()=>{
 });
 
 test('startup never opens an audio device before the WebView2 GUI handshake',()=>{
- const constructor=main.slice(main.indexOf('explicit ConsoleWindow('),main.indexOf('~ConsoleWindow()'));
+ const constructor=main.slice(main.indexOf('explicit ConsoleWindow ('),main.indexOf('~ConsoleWindow()'));
  const ready=constructor.indexOf('browser_.goToURL');
  assert.ok(ready>=0,'GUI navigation must be started from constructor');
  assert.ok(!constructor.includes('engine_.start ('),'synchronous audio startup must not block the first WebView frame');
