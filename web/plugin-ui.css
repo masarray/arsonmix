@@ -137,3 +137,58 @@
   #nativePluginManager .ar-manager-searchline{gap:7px}
   #nativePluginManager #arManagerCount{font-size:9px}
 }
+
+/* Operator controls: minimum 30px click targets, no tiny browser-default buttons. */
+#nativePluginManager .native-btn,
+#nativeFxSelector .native-btn {
+  font-size:11px;font-weight:560;min-height:32px;padding:7px 11px;
+  display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;
+  box-sizing:border-box;border-radius:4px;cursor:pointer
+}
+#nativePluginManager .ar-manager-action-group{gap:7px;padding:8px}
+#nativePluginManager .ar-manager-actions{gap:9px}
+#nativePluginManager .ar-manager-label{font-size:11px}
+#nativePluginManager .ar-manager-label small{font-size:10px}
+#nativePluginManager .ar-plugin-row{
+  grid-template-columns:40px minmax(150px,1.6fr) 69px 57px
+    minmax(92px,.85fr) minmax(95px,.85fr) minmax(190px,1.7fr);
+  min-height:39px
+}
+#nativePluginManager .ar-plugin-star{padding:2px 4px;text-align:center}
+#nativePluginManager .ar-plugin-header>span:first-child{text-align:center}
+#nativePluginManager .ar-manager-table{min-width:840px}
+#nativeFxSelector .ar-picker-row{grid-template-columns:33px minmax(0,1fr) 44px 70px;
+  min-height:57px;gap:8px;padding:7px 9px}
+#nativeFxSelector .ar-picker-add{width:70px;min-width:70px;min-height:32px;font-size:11px}
+#nativeFxSelector .ar-picker-categories .native-btn{padding:7px 10px;min-height:30px}
+#nativeFxSelector .native-dialog{min-width:0}
+#nativePluginManager .ar-favorite,#nativeFxSelector .ar-favorite {
+  display:inline-grid;place-items:center;width:29px;height:29px;min-height:29px;
+  padding:0;border:1px solid transparent;border-radius:4px;background:transparent;
+  color:#65818d;cursor:pointer;box-shadow:none;flex:none
+}
+#nativePluginManager .ar-favorite.is-favorite,
+#nativeFxSelector .ar-favorite.is-favorite {color:#ffd176}
+#nativePluginManager .ar-favorite:focus-visible,
+#nativeFxSelector .ar-favorite:focus-visible{outline:2px solid #6fd1e9}
+#nativePluginManager .ar-favorite svg,#nativeFxSelector .ar-favorite svg{
+  width:19px;height:19px;pointer-events:none
+}
+#nativePluginManager .ar-favorites-filter,
+#nativeFxSelector .ar-favorites-filter{
+  display:inline-flex;align-items:center;justify-content:center;gap:5px;
+  min-height:31px;border:1px solid #496575;border-radius:4px;
+  color:#bed8e3;background:#263e4b;white-space:nowrap;
+  padding:6px 10px;font-family:inherit;font-size:10px;font-weight:600;cursor:pointer
+}
+#nativePluginManager .ar-favorites-filter[aria-pressed=true],
+#nativeFxSelector .ar-favorites-filter[aria-pressed=true]{
+  color:#ffe39c;background:#50452b;border-color:#98804b
+}
+#nativePluginManager .ar-favorites-filter svg,#nativeFxSelector .ar-favorites-filter svg{
+  width:15px;height:15px
+}
+#nativeFxSelector .ar-picker-categories{align-items:center;gap:6px}
+#nativePluginManager .ar-manager-searchline{flex-wrap:wrap}
+#nativeFxSelector .ar-picker-row .ar-favorite{align-self:center}
+#nativeFxSelector .ar-picker-context{font-size:11px;line-height:1.3}
