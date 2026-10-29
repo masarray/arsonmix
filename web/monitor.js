@@ -5,6 +5,7 @@
   if (!api?.emitEvent || !api?.addEventListener) return;
   let state = {};
   let catalogItems = []; // native VST3 catalog, never a WebView file path
+  const catalogNames=new Map();
   const css = document.createElement("style");
   css.textContent = "#arSignalOverlay{display:none;position:fixed;inset:0;z-index:990;background:#020a10d9;align-items:center;justify-content:center}" +
     "#arSignalOverlay.open{display:flex}.arSignalPanel{width:min(710px,93vw);padding:16px;background:linear-gradient(#263d4b,#10212c 80%);border:1px solid #6a92a5;border-radius:9px;color:#d9eaf3;box-shadow:0 15px 55px #000c}" +
@@ -108,6 +109,17 @@
 .arSendRow button,#arAddSend{border:1px solid #607786;border-radius:3px;background:#a8b9bf;color:#243640;font:600 10px 'Segoe UI',Arial,sans-serif;padding:5px;cursor:pointer}
 .arSendRow button{background:#a36f71;color:#f5f4f5}
 @media(max-width:980px){#arRoutingLabOverlay{inset:61px 6px 29px 7px}.arPatchTop{padding:8px 10px}.arPatchBody{padding:9px}.arPatchTabs{padding:5px}.arPatchFooter{padding:7px}.arRouteRow{min-width:640px}.arPatchTabs button{min-width:0}}
+#arRoutingLabPanel{position:relative}
+.arPatchFxTrigger{display:block;flex:1;min-width:0;max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;padding:6px 9px;font:11px 'Segoe UI',Arial,sans-serif;color:#d6efe9;background:#132d35;border:1px solid #4a6b76;border-radius:3px;cursor:pointer}
+.arPatchFxTrigger:focus-visible,#arPatchFxPicker :focus-visible{outline:2px solid #73cfe7;outline-offset:1px}
+#arPatchFxPicker{display:none;position:absolute;top:112px;right:14px;z-index:20;box-sizing:border-box;width:min(390px,calc(100% - 28px));max-height:min(430px,calc(100% - 136px));background:#12242e;border:1px solid #537888;border-radius:4px;box-shadow:0 8px 16px #0008;padding:10px;gap:7px;color:#d4e6ed}
+#arPatchFxPicker.open{display:flex;flex-direction:column}
+#arPatchFxPicker label{font:600 11px 'Segoe UI',Arial,sans-serif;color:#9fd3d6}
+#arPatchFxSearch{box-sizing:border-box;width:100%;border:1px solid #63828c;border-radius:3px;background:#071720;color:#e5f5f5;padding:9px;font:12px 'Segoe UI',Arial,sans-serif}
+#arPatchFxResults{overflow:auto;min-height:0;scrollbar-width:thin;display:grid;align-content:start;gap:2px}
+#arPatchFxResults button{padding:8px 10px;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:#203644;color:#e4f2f5;border:1px solid #344e5a;border-radius:3px;font:11px 'Segoe UI',Arial,sans-serif;cursor:pointer}
+#arPatchFxResults button:active{background:#316755}
+#arPatchFxCount{font-size:10px;color:#9fb8bf;min-height:13px}
 `; 
   document.head.appendChild(css);
   // Signal Check is declared in the permanent toolbar; footer holds status only.
@@ -147,7 +159,7 @@
     '<div class="arPatchViewport"><div id="arPatchGrid" class="arPatchGrid" role="grid" aria-label="Native input patch matrix"></div></div><div class="arPatchLegend"><span><b></b>UNPATCHED</span><span><b class="live"></b>LIVE · NATIVE ACK</span><span><b class="draft"></b>DRAFT · NOT APPLIED</span><span><b class="removed"></b>LIVE UNTIL APPLY</span></div><div class="arPatchInspector" id="arPatchInspector" role="status"><strong>10 CHANNEL INPUT PATCH</strong><span>Uses actual enabled ASIO/WASAPI hardware ports</span></div><div class="arPatchNote">No auto-unmute. Stale devices, incomplete stereo assignments and invalid physical ports are rejected before APPLY. One input can feed multiple channels.</div></section>' +
     '<section class="arPatchBody arPatchHidden" id="arPatchInternalPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>CHANNEL CONTROL / INTERNAL SENDS</strong><small>Native channel controls, VST3 inserts, 4 AUX returns and PRE/POST sends.</small></div></div><div id="arRouteRows"></div><section id="arAuxReturns"><h3>4 DEDICATED AUX / FX RETURNS</h3><p>Independent stereo return with VST3, level and MAIN route.</p><div id="arAuxRows"></div></section><section id="arRouteSends"><h3>INTERNAL SENDS · PRE / POST FADER (MAX 32)</h3><div id="arSendRows"></div><button id="arAddSend">＋ ADD SEND</button></section></section>' +
     '<section class="arPatchBody arPatchHidden" id="arPatchOutputPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>CURRENT HARDWARE OUTPUT</strong><small>Current hardware MAIN L/R is read-only. Configure output in AUDIO SETUP.</small></div></div><div id="arPatchOutputMap"></div><div class="arPatchNote">AUX-to-hardware-output patching is not available. Select physical device/output in AUDIO SETUP.</div></section>' +
-    '<footer class="arPatchFooter"><div id="arRouteFeedback" role="status">Select actual input ports, then APPLY while output is muted.</div><div class="arRouteFoot"><button id="arPatchRevert">REVERT DRAFT</button><button id="arRouteSaveDry" title="Save real DRY-only Show (MUTED output and zero VST3)">SAVE DRY SHOW</button><button id="arRouteApply">APPLY ROUTING</button><button id="arRouteStop" class="arPatchHidden" hidden aria-hidden="true">STOP</button></div></footer></section>';
+    '<footer class="arPatchFooter"><div id="arRouteFeedback" role="status">Select actual input ports, then APPLY while output is muted.</div><div class="arRouteFoot"><button id="arPatchRevert">REVERT DRAFT</button><button id="arRouteSaveDry" title="Save real DRY-only Show (MUTED output and zero VST3)">SAVE DRY SHOW</button><button id="arRouteApply">APPLY ROUTING</button><button id="arRouteStop" class="arPatchHidden" hidden aria-hidden="true">STOP</button></div></footer><section id="arPatchFxPicker" role="dialog" aria-label="Choose native VST3" aria-modal="false"><label for="arPatchFxSearch">FIND VST3 · SHARED PICKER</label><input id="arPatchFxSearch" type="search" autocomplete="off" placeholder="Search plugin name or ID"><div id="arPatchFxResults"></div><div id="arPatchFxCount"></div></section></section>';
   document.body.appendChild(routeOverlay);
   const draftRoutes=Array.from({length:10},()=>({mode:"NONE",left:-1,right:-1,gain:0.25,pan:0,main:true,mute:false,solo:false,fxId:""}));
   const draftAux=Array.from({length:4},()=>({enabled:false,gain:1,main:true,mute:false,fxId:""}));
@@ -168,22 +180,81 @@
   const routeSelect=(port,value)=>'<option value="-1">—</option>'+port.map(p=>
     '<option value="'+Number(p.port)+'" '+(Number(p.port)===value?'selected':'')+'>'+
     safeRouteText(p.label||("Input "+(Number(p.port)+1)))+' (IN '+(Number(p.port)+1)+')</option>').join('');
-  function fxChoices(selected){
-    const options=['<option value="">DRY · no VST3</option>'];
-    for(const p of catalogItems){
-      // All names and IDs originate from native catalog; escaped for DOM.
-      if(!p?.id)continue;
-      options.push('<option value="'+safeRouteText(p.id)+'" '+(p.id===selected?'selected':'')+'>'+safeRouteText(p.name||p.id)+'</option>');
-    }
-    if(selected && !catalogItems.some(p=>p.id===selected))
-      options.push('<option value="'+safeRouteText(selected)+'" selected>UNAVAILABLE · reselect VST3</option>');
-    return options.join('');
+  const fxPicker=document.getElementById("arPatchFxPicker");
+  const fxSearch=document.getElementById("arPatchFxSearch");
+  const fxResults=document.getElementById("arPatchFxResults");
+  let fxPickerTarget=null;
+  function fxCaption(id){return !id?"DRY · SELECT VST3":catalogNames.get(id)||"MISSING VST3 · RESELECT"}
+  function fxButtonMarkup(kind,index,id){
+    return '<button type="button" class="arPatchFxTrigger" '+(kind==="ch"?"data-route-fx":"data-aux-fx")+
+      ' data-fx-index="'+index+'" aria-haspopup="dialog" aria-expanded="false" aria-controls="arPatchFxPicker"'+
+      ' title="'+safeRouteText(id||"DRY · no VST3")+'">'+safeRouteText(fxCaption(id))+'</button>';
   }
+  function closeFxPicker(focus=false){
+    const button=fxPickerTarget?.button;
+    if(button)button.setAttribute("aria-expanded","false");
+    fxPickerTarget=null;fxPicker.classList.remove("open");
+    if(focus&&button?.isConnected)button.focus();
+  }
+  function drawFxResults(){
+    if(!fxPickerTarget)return;
+    const query=fxSearch.value.trim().toLowerCase();
+    const items=['<button type="button" data-fx-picker-choice="">DRY · NO VST3</button>'];
+    let total=0;
+    for(const item of catalogItems){
+      if(query&&!item.search.includes(query))continue;
+      if(++total<=40)items.push('<button type="button" data-fx-picker-choice="'+safeRouteText(item.id)+
+        '" title="'+safeRouteText(item.id)+'">'+safeRouteText(item.name)+'</button>');
+    }
+    fxResults.innerHTML=items.join('');
+    document.getElementById("arPatchFxCount").textContent=total>40
+      ?"Showing 40 of "+total+" matches · narrow the search"
+      :total+" available VST3 · DRAFT until native APPLY";
+  }
+  function openFxPicker(kind,index,button){
+    if(patchPending||!button)return;
+    if(kind==="ch"&&(!Number.isInteger(index)||index<0||index>=draftRoutes.length))return;
+    if(kind==="aux"&&(!Number.isInteger(index)||index<0||index>=draftAux.length))return;
+    closeFxPicker();fxPickerTarget={kind,index,button};
+    button.setAttribute("aria-expanded","true");fxSearch.value="";
+    fxPicker.classList.add("open");drawFxResults();fxSearch.focus();
+  }
+  fxSearch.addEventListener("input",drawFxResults);
+  fxResults.addEventListener("click",e=>{
+    const selected=e.target.closest("[data-fx-picker-choice]");
+    if(!selected||!fxPickerTarget)return;
+    const id=selected.dataset.fxPickerChoice;
+    if(id&&!catalogNames.has(id))return; // trusted native catalog IDs only
+    const {kind,index,button}=fxPickerTarget;
+    (kind==="ch"?draftRoutes[index]:draftAux[index]).fxId=id;
+    button.textContent=fxCaption(id);button.title=id||"DRY · no VST3";
+    closeFxPicker(true);
+  });
+  routeOverlay.addEventListener("click",e=>{
+    const trigger=e.target.closest("[data-route-fx],[data-aux-fx]");
+    if(trigger)openFxPicker(trigger.hasAttribute("data-route-fx")?"ch":"aux",
+                            Number(trigger.dataset.fxIndex),trigger);
+    else if(fxPickerTarget&&!e.target.closest("#arPatchFxPicker"))closeFxPicker();
+  });
   api.addEventListener("arMixCatalog",message=>{
     const items=message?.items||message?.state?.items;
     if(!Array.isArray(items))return;
-    catalogItems=items.filter(p=>p&&typeof p.id==="string");
-    if(routeOverlay.classList.contains("open") && patchTab==="internal")drawRoutes();
+    catalogNames.clear();catalogItems=[];
+    for(const p of items){
+      if(!p||typeof p.id!=="string"||!p.id||catalogNames.has(p.id))continue;
+      const name=String(p.name||p.id);
+      catalogNames.set(p.id,name);
+      catalogItems.push({id:p.id,name,search:(name+" "+p.id).toLowerCase()});
+    }
+    // Do not destroy a channel's other draft form fields on catalog updates.
+    if(routeOverlay.classList.contains("open")&&patchTab==="internal"){
+      routeOverlay.querySelectorAll(".arPatchFxTrigger").forEach(button=>{
+        const kind=button.hasAttribute("data-route-fx")?"ch":"aux";
+        const model=kind==="ch"?draftRoutes[Number(button.dataset.fxIndex)]:draftAux[Number(button.dataset.fxIndex)];
+        if(model)button.textContent=fxCaption(model.fxId);
+      });
+      if(fxPickerTarget)drawFxResults();
+    }
   });
   // Rehydrate only from the native ACK/SSOT when opening the editor.
   // Browsing a panel or reloading the WebView must never accidentally erase
@@ -360,6 +431,7 @@
   }
   function selectPatchTab(tab){
     if(!["input","internal","output"].includes(tab))return;
+    if(tab!=="internal")closeFxPicker();
     patchTab=tab;
     routeOverlay.querySelectorAll("[data-patch-tab]").forEach(el=>
       el.setAttribute("aria-selected",String(el.dataset.patchTab===tab)));
@@ -459,7 +531,7 @@
       '<label title="Send directly to MAIN"><input type="checkbox" data-route-main '+(v.main?'checked':'')+'>MAIN</label>'+
       '<label title="Mute channel and sends"><input type="checkbox" data-route-mute '+(v.mute?'checked':'')+'>M</label>'+
       '<label title="Solo channel with upstream/downstream sends"><input type="checkbox" data-route-solo '+(v.solo?'checked':'')+'>S</label>'+
-      '</div><div class="arRoutePluginLine"><span>VST3 INSERT</span><select data-route-fx aria-label="CH '+(i+1)+' native VST3 insert">'+fxChoices(v.fxId)+'</select><small>one stereo-compatible instance · real FX</small></div></div>';
+      '</div><div class="arRoutePluginLine"><span>VST3 INSERT</span>'+fxButtonMarkup("ch",i,v.fxId)+'<small>one stereo-compatible instance · real FX</small></div></div>';
     }).join('');
     rows.querySelectorAll('[data-route-row]').forEach(row=>{
       const model=draftRoutes[Number(row.dataset.routeRow)];
@@ -470,7 +542,6 @@
       row.querySelector('[data-route-main]').addEventListener('change',e=>{model.main=e.target.checked;});
       row.querySelector('[data-route-mute]').addEventListener('change',e=>{model.mute=e.target.checked;});
       row.querySelector('[data-route-solo]').addEventListener('change',e=>{model.solo=e.target.checked;});
-      row.querySelector('[data-route-fx]').addEventListener('change',e=>{model.fxId=e.target.value;});
       refreshMode(row);
     });
     drawAux();
@@ -484,14 +555,13 @@
       '<label><input data-aux-enable type="checkbox" '+(bus.enabled?'checked':'')+'>ON</label>'+
       '<select data-aux-gain aria-label="AUX '+(i+1)+' level">'+routeGainChoices(bus.gain)+'</select>'+
       '<label><input data-aux-main type="checkbox" '+(bus.main?'checked':'')+'>MAIN</label>'+
-      '<select data-aux-fx aria-label="AUX '+(i+1)+' native VST3">'+fxChoices(bus.fxId)+'</select>'+
+      fxButtonMarkup("aux",i,bus.fxId)+
       '</div>').join('');
     parent.querySelectorAll('[data-aux-row]').forEach(row=>{
       const bus=draftAux[Number(row.dataset.auxRow)];
       row.querySelector('[data-aux-enable]').addEventListener('change',e=>{bus.enabled=e.target.checked;});
       row.querySelector('[data-aux-gain]').addEventListener('change',e=>{bus.gain=Number(e.target.value);});
       row.querySelector('[data-aux-main]').addEventListener('change',e=>{bus.main=e.target.checked;});
-      row.querySelector('[data-aux-fx]').addEventListener('change',e=>{bus.fxId=e.target.value;});
     });
   }
   function refreshMode(row){
@@ -541,6 +611,7 @@
     syncNativeLevelsToRouteDraft();
     // INPUT PATCH renders first. The ten VST3 selectors, four AUX selectors
     // and send controls are built only when INTERNAL is explicitly opened.
+    closeFxPicker();
     patchPage=0;
     routeOverlay.classList.add("open");
     selectPatchTab("input");
@@ -561,16 +632,18 @@
   // hides its workspace; ESC also returns focus to the existing ROUTING tab.
   document.addEventListener("click",event=>{
     if(!routeOverlay.classList.contains("open"))return;
-    if(event.target.closest('[data-view]:not([data-view="SIGNAL FLOW"]),[data-my-sounds],[data-plugin-manager],[data-native-action="audioSetup"],#arSignalOpen'))
-      routeOverlay.classList.remove("open");
+    if(event.target.closest('[data-view]:not([data-view="SIGNAL FLOW"]),[data-my-sounds],[data-plugin-manager],[data-native-action="audioSetup"],#arSignalOpen')){
+      closeFxPicker();routeOverlay.classList.remove("open");
+    }
   },true);
   document.addEventListener("keydown",event=>{
     if(event.key!=="Escape"||!routeOverlay.classList.contains("open"))return;
+    if(fxPickerTarget){closeFxPicker(true);return;}
     routeOverlay.classList.remove("open");
     document.querySelector('[data-view="SIGNAL FLOW"]')?.focus();
   });
   document.getElementById("arOpenRoutingLab").addEventListener("click",openRoutingLab);
-  document.getElementById("arRouteClose").addEventListener("click",()=>routeOverlay.classList.remove("open"));
+  document.getElementById("arRouteClose").addEventListener("click",()=>{closeFxPicker();routeOverlay.classList.remove("open");});
   routeOverlay.addEventListener("click",e=>{if(e.target===routeOverlay)routeOverlay.classList.remove("open");});
   document.getElementById("arRouteApply").addEventListener("click",()=>{
     const d=state.dryRoutingLab||{};
