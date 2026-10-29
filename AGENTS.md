@@ -1,5 +1,8 @@
 # Repository instructions — ArSonMix (all future threads and AI coding agents)
 
+> **LATEST ROUTING STATUS — 2026-10-29 (post-#153):** Main contains Gate A ACK hardening via merged [#152](https://github.com/masarray/arsonmix/pull/152) (`72a4bfc`) and R0B B1 routed CH1 FX MOVE/de-click via merged [#153](https://github.com/masarray/arsonmix/pull/153) (`eb94203`, Windows native/RT tests and package verification PASS). #147 and #151 were closed as superseded; do not reopen or paste old UI. R0 premium workspace, R1 INPUT PATCH and R0A FX/Orbit remain delivered. **R0B #149 is still partial**: native unified startup, FX ADD/REMOVE/lifecycle, hardware #15 FAT not complete. Later R2/R3 outstanding. This paragraph overrides the older dated #147 OPEN assertions below; refresh live GitHub before coding.
+
+
 > **ROUTING ENGINEERING HANDOFF (2026-10-29):** [docs/HANDOFF_ARSONMIX_ROUTING_R0_NEXT_THREAD_20261029.md](docs/HANDOFF_ARSONMIX_ROUTING_R0_NEXT_THREAD_20261029.md) is the concrete next-thread plan for integrated Routing R0, ACK PR #147, unified production R0B #149, INTERNAL/AUX R2 and real hardware R3. It complements, not supersedes, the global canonical reconciliation. Do not rebuild R0/R1 or regress FX/Orbit/audio callback.
 
 

@@ -1,5 +1,8 @@
 # ArSonMix Routing R0/R1 — focused next-thread handoff (2026-10-29)
 
+> **POST-HANDOFF UPDATE (2026-10-29):** G0 native Studio-busy negative ACK [#152](https://github.com/masarray/arsonmix/pull/152) and R0B B1 routed CH1 FX MOVE/de-click [#153](https://github.com/masarray/arsonmix/pull/153) are both MERGED. Stale #147/#151 are CLOSED/superseded. B1 preserved VST3/Orbit identity and used existing atomic phase ramp; exact-head Windows native/RT tests [40865180442](https://github.com/masarray/arsonmix/actions/runs/40865180442) PASS. **Next:** R0B #149 B2 prepared FX ADD/REMOVE shared lifetime, B3 one verified always-on muted 10CH+4AUX session with device-loss rollback. Then R2 INTERNAL/AUX UX and R3 hardware FAT; zero-FX #15 remains OPEN. Dated Gate A instructions below are retained as history, not repeat work.
+
+
 > **Read this AFTER `AGENTS.md` and `docs/CANONICAL_PROGRESS_RECONCILIATION_20261029.md`.** This handoff narrows the next thread to routing GUI and unified production graph. The canonical reconciliation remains authoritative for the whole product. Never assume this saved main SHA is current; fetch GitHub first.
 
 ## 0. Verified state and links

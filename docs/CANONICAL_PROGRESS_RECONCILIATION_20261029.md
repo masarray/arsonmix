@@ -1,5 +1,8 @@
 # ArSonMix — Canonical Progress Reconciliation & Next Execution (2026-10-29 17:55 WIB)
 
+> **POST-AUDIT UPDATE (2026-10-29):** Gate A [#152](https://github.com/masarray/arsonmix/pull/152) **MERGED** (`72a4bfc`); old #147/#151 **CLOSED/superseded**. R0B B1 [#153](https://github.com/masarray/arsonmix/pull/153) **MERGED** (`eb94203`): CH1 FX MOVE safely runs inside existing 10CH+4AUX callback with stable original VST3 instance/Orbit and atomic two-buffer de-click; exact-head Windows native/RT/ZIP [run 40865180442](https://github.com/masarray/arsonmix/actions/runs/40865180442) SUCCESS. **#149 still OPEN** for unified muted startup, live ADD/REMOVE/shared ownership and device rollback. R2/R3 and physical 0-FX crackle #15 FAT still OPEN. Older `#147 OPEN` and G0 pending instructions below are a superseded 17:55 WIB snapshot, NOT next actions.
+
+
 > **ROUTING-FOCUSED EXECUTION HANDOFF:** [docs/HANDOFF_ARSONMIX_ROUTING_R0_NEXT_THREAD_20261029.md](HANDOFF_ARSONMIX_ROUTING_R0_NEXT_THREAD_20261029.md) provides the exact R0/R1 done inventory, #147 overlap/negative-ACK merge gate, R0B #149, R2 INTERNAL/AUX UI, R3 native FAT and anti-regression checklist. Read it for Routing coding; this canonical document remains authoritative for all-project progress.
 
 
