@@ -935,6 +935,12 @@ public:
                        : deviceManager_.getCurrentAudioDevice();
         auto* capture = dual ? independent_.captureDevice() : d;
         o->setProperty ("dryRoutingLab",dryRoutingLab_.status(capture));
+        // NORMAL mode is never silently served by the legacy CH1 fallback.
+        // This state is for operator feedback; it does not authorize output.
+        o->setProperty ("productionRoutingState",
+            dryRoutingLab_.ready() ? "NATIVE_ROUTE_ACCEPTED"
+            : dryRoutingLab_.active() ? "NATIVE_ROUTE_STALE_FAIL_SILENT"
+            : "UNPATCHED_SILENT");
         o->setProperty ("connected", d != nullptr && capture != nullptr);
         o->setProperty ("adaptiveClockActive", dual);
         o->setProperty ("adaptiveClockFaulted", dual && independent_.faulted());
@@ -1422,6 +1428,27 @@ private:
                 if (outputs[c]) juce::FloatVectorOperations::clear (outputs[c], samples);
             directSuppressedFrames_.fetch_add (static_cast<std::uint64_t> (samples),
                                                std::memory_order_relaxed);
+            return;
+        }
+        // R0B B3: production NORMAL audio has a single native routing owner.
+        // Until a device-epoch-validated 10CH/4AUX route is published, output
+        // stays silent. Never fall back to legacy CH1 after STOP/hotplug or on
+        // first boot; that could feed an unrelated speaker without a patch.
+        // Diagnostic isolation is explicitly exempt so zero-FX hardware FAT
+        // still supports OUTPUT_ONLY_TONE/CAPTURE_ONLY/DRY_THROUGH.
+        // This gate executes BEFORE obtaining a VST graph lease, with only
+        // one atomic read and deterministic writes; no RT heap or device calls.
+        if (activeDiagnosticRoute == armix::diagnostics::Route::normal
+            && !dryRoutingLab_.active())
+        {
+            for (int c = 0; c < outputChannels; ++c)
+                if (outputs && outputs[c])
+                    juce::FloatVectorOperations::clear(outputs[c], samples);
+            inputPeak_.store(0.f, std::memory_order_relaxed);
+            postFxPeak_.store(0.f, std::memory_order_relaxed);
+            outputPeak_.store(0.f, std::memory_order_relaxed);
+            outputPeakL_.store(0.f, std::memory_order_relaxed);
+            outputPeakR_.store(0.f, std::memory_order_relaxed);
             return;
         }
         const auto cycle = handoff_.beginCycle();
