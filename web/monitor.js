@@ -25,7 +25,7 @@
   // R0 routing workspace. One static native-only skin sharing the main
   // console's graphite/steel/teal vocabulary. No mouse-hover repaint,
   // compositor filters, animated shadows, canvas or extra scheduler.
-  css.textContent += \`
+  css.textContent += `
 #arRoutingLabOverlay{display:none;position:fixed;inset:62px 7px 30px 168px;z-index:995;background:#111c24;min-width:0;min-height:0}
 #arRoutingLabOverlay.open{display:block}
 #arRoutingLabPanel{box-sizing:border-box;display:flex;flex-direction:column;width:100%;height:100%;min-width:0;min-height:0;overflow:hidden;background:linear-gradient(180deg,#1d303c 0%,#111e27 17%,#0d1821 100%);border:1px solid #3d525d;border-radius:3px;color:#dbeaf1}
@@ -108,7 +108,7 @@
 .arSendRow button,#arAddSend{border:1px solid #607786;border-radius:3px;background:#a8b9bf;color:#243640;font:600 10px 'Segoe UI',Arial,sans-serif;padding:5px;cursor:pointer}
 .arSendRow button{background:#a36f71;color:#f5f4f5}
 @media(max-width:980px){#arRoutingLabOverlay{inset:61px 6px 29px 7px}.arPatchTop{padding:8px 10px}.arPatchBody{padding:9px}.arPatchTabs{padding:5px}.arPatchFooter{padding:7px}.arRouteRow{min-width:640px}.arPatchTabs button{min-width:0}}
-\`;
+`; 
   document.head.appendChild(css);
   // Signal Check is declared in the permanent toolbar; footer holds status only.
   const overlay = document.createElement("div");
