@@ -855,8 +855,10 @@
     }
     const label=document.getElementById("arRouteIdentity");
     if(!label)return;
+    const liveSends=(Number(d.sendCount)||0)+(Number(d.auxSendCount)||0);
     setTextIfChanged(label,(d.active ? (d.ready?(d.acceptedRoute?"NATIVE PATCH LIVE":"NATIVE MIXER READY · UNPATCHED / SILENT"):"PATCH STALE — SILENT, REAPPLY"):"AWAITING VERIFIED DEVICE")+
-      " · "+(d.ports?.length||0)+" INPUTS · "+(d.outputPorts?.length||0)+" OUTPUTS · E"+(d.epoch||0)+" / R"+(d.revision||0));
+      " · "+(d.ports?.length||0)+" INPUTS · "+(d.outputPorts?.length||0)+" OUTPUTS · E"+(d.epoch||0)+" / R"+(d.revision||0)+
+      (liveSends?" · "+liveSends+" SENDS":""));
   }
   function openRoutingLab(){
     hydrateAcceptedRoute();

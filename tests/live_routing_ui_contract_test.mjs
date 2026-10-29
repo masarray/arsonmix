@@ -322,6 +322,6 @@ test("R3 routing shares approved BTN-180 cap material, has a clear console hiera
   assert.match(ui,/class="btn-180" data-send-remove/);
   assert.match(ui,/#arNativeShowBrowser\{order:3/);
   assert.match(ui,/#arRoutingLabPanel\{font-family:"ArSonMix Inter"/);
-  assert.match(ui,/#arPatchGrid/);
+  assert.match(ui,/id="arPatchGrid"/);
   assert.doesNotMatch(ui,/arPatchCell:hover|arAuxMatrixCell:hover|filter:blur\(|backdrop-filter:/);
 });
