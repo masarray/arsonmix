@@ -19,11 +19,15 @@ test('manual VST3 import physically copies whole plugin into the user workspace,
   assert.match(vault,/\.incoming-/);
   assert.match(vault,/staging\.moveFileTo \(finalFolder\)/);
   assert.match(vault,/rollback\.committed = true/);
-  assert.match(main,/Import and KEEP a VST3 module or bundle in this Studio/);
+  assert.match(main,/Select a \.vst3 plugin file/);
+  assert.match(main,/Select a \.vst3 bundle folder/);
+  assert.match(main,/canSelectFiles/);
+  assert.match(main,/canSelectDirectories/);
   assert.match(main,/chooseImport \(true\)/);
   assert.match(main,/chooseImport \(false\)/);
   assert.match(read('web/bridge.js'),/data-native-action="importVst3InPlace"/);
-  assert.match(read('web/bridge.js'),/ADD VST · KEEP IN STUDIO/);
+  assert.match(read('web/plugin-ui.js'),/IMPORT \.VST3 FILE/);
+  assert.match(read('web/plugin-ui.js'),/IMPORT BUNDLE/);
   assert.doesNotMatch(vault,/deleteRecursively\(\).*selected/);
 });
 test('no all-PC scan required for three manually selected VSTs; no third-party copy from audio callback',()=>{
