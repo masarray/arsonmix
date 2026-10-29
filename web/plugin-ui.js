@@ -34,7 +34,7 @@
     const count=dialog.querySelector("#arManagerCount");
     if(count)count.textContent=`${filtered.length} of ${state.catalog.length} indexed effects`;
     const fav=dialog.querySelector("#arManagerFavorites");
-    if(fav){fav.setAttribute("aria-pressed",String(manager.favoritesOnly));fav.classList.toggle("on",manager.favoritesOnly);}
+    if(fav){fav.setAttribute("aria-pressed",String(manager.favoritesOnly));fav.classList?.toggle("on",manager.favoritesOnly);}
     const more=dialog.querySelector("#arManagerMore");
     if(more){more.hidden=filtered.length<=manager.limit;more.textContent=`Show more (${Math.min(120,filtered.length-manager.limit)} of ${filtered.length-manager.limit} remaining)`;}
     dialog.querySelectorAll("[data-armix-sort]").forEach(b=>{
@@ -112,13 +112,13 @@
         </div>
         <span class="ar-picker-format">VST3</span>
         <button class="native-btn primary ar-picker-add" data-native-add="${escapeHtml(p.id)}"
-          ${state.adding||(!state.device?.dryRoutingLab?.active&&(state.chain.length>=8||channel!==0))||channel<0?"disabled":""}
-          title="${state.device?.dryRoutingLab?.active?"Stage native routed FX (requires muted APPLY)":"Insert CH1 VST3"}">+ ADD</button>
+          ${state.adding||(state.routedPickerMode?channel<0:(state.chain.length>=8||channel!==0))?"disabled":""}
+          title="${state.routedPickerMode?"Stage native routed FX (requires muted APPLY)":"Insert CH1 VST3"}">+ ADD</button>
       </div>`).join(""):'<div class="ar-picker-empty">No matching effects. Open Plugin Manager to import or scan.</div>';
     const count=dialog.querySelector("#arPickerCount");
     if(count)count.textContent=`${matches.length} matching · ${Math.min(matches.length,80)} shown`;
     const fav=dialog.querySelector("#arPickerFavorites");
-    if(fav){fav.setAttribute("aria-pressed",String(pickerFavoritesOnly));fav.classList.toggle("on",pickerFavoritesOnly);}
+    if(fav){fav.setAttribute("aria-pressed",String(pickerFavoritesOnly));fav.classList?.toggle("on",pickerFavoritesOnly);}
     dialog.querySelectorAll("[data-native-category]").forEach(button=>
       button.classList.toggle("on",button.dataset.nativeCategory===state.selectedCategory));
   }
