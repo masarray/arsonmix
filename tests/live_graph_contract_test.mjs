@@ -97,3 +97,25 @@ test('R0B major milestone: ADD and REMOVE are prepared control-thread transactio
   assert.match(addUi,/FX_ADD_STAGED/);
   assert.doesNotMatch(addUi,/\+\+fxGraphRevision_/);
 });
+
+
+test('R0B B3 NORMAL output is fail-silent while FX graph retirement still progresses',()=>{
+  const beginning=e.indexOf('void audioDeviceIOCallbackWithContext');
+  const fence=e.indexOf('if (!independent_.active()',beginning);
+  const lease=e.indexOf('const auto cycle = handoff_.beginCycle()',beginning);
+  const failSilent=e.indexOf('if (activeDiagnosticRoute == armix::diagnostics::Route::normal',beginning);
+  const callbackMetrics=e.indexOf('const std::uint64_t beginUs = clockMicros()',beginning);
+  assert.ok(beginning>=0 && fence>beginning && lease>fence &&
+    failSilent>lease && callbackMetrics>failSilent,
+    'DIRECT fence first, then FX cycle lease, then fail-silent native gate');
+  const gate=e.slice(failSilent,callbackMetrics);
+  assert.match(gate,/!dryRoutingLab_\.active\(\)/);
+  assert.match(gate,/FloatVectorOperations::clear\(outputs\[c\], samples\)/);
+  assert.match(gate,/outputPeakL_\.store\(0\.f/);
+  assert.match(gate,/handoff_\.endCycle\(cycle\)/,
+    'FX ADD/REMOVE and recall must ACK even when the production route is unpatched');
+  assert.doesNotMatch(gate,/detach\(|attach\(|new |malloc\(|prepareToPlay|processBlock|AudioDeviceManager/);
+  assert.match(e,/setProperty \("productionRoutingState",/);
+  assert.match(e,/"UNPATCHED_SILENT"/);
+  assert.match(e,/"NATIVE_ROUTE_STALE_FAIL_SILENT"/);
+});
