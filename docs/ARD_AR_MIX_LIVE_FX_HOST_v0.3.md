@@ -1,5 +1,8 @@
 # AR MIX Studio — Architecture Requirements & Design (ARD)
 
+> **HISTORICAL ARD ONLY (2026-10-25):** The current user-approved mixer UX/physical I/O/AUX planning authority is [PRD v2.0](PRD_ARSONMIX_PRO_MIXER_WORKSPACE_ROUTING_20261030.md) and [ARD v2.0](ARD_PRD_MIXER_IO_AUX_BUS_REFORM_20261030.md). This old proposed CH1-only/12ch mock/old roadmap is not current source truth. Keep its original reasoning as provenance; preserve Smart Audio realtime safety contract and native code tests. Do not rebuild v0.3 UI or hide FX Rack under routing.
+
+
 **Version:** 0.3.0 · **Date:** 25 October 2026 · **Status:** HISTORICAL 0.3 DESIGN; superseded for native-device architecture by Smart Audio Engine ARD v1.0 (NOT production readiness certification)  
 **Product:** Free and open-source Windows-first low-latency VST3 host for live karaoke, singers and livestream creators.  
 **Primary principle:** **FX Rack First, One-Click Live, Realtime First.**  

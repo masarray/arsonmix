@@ -1,5 +1,8 @@
 # ArSonMix — Canonical Progress Reconciliation & Next Execution (2026-10-29 17:55 WIB)
 
+> **SUPERSEDED FOR NEW UX/IO ROADMAP (2026-10-30):** Use [PRD v2.0](PRD_ARSONMIX_PRO_MIXER_WORKSPACE_ROUTING_20261030.md), [ARD v2.0](ARD_PRD_MIXER_IO_AUX_BUS_REFORM_20261030.md) and [new handoff](EXECUTION_HANDOFF_ARSONMIX_MIXER_REFORM_20261030.md). This file is the **2026-10-29 historical source verification and issue ledger**, not permission to reconstruct the old ROUTING-vs-FX overlay. Current base has 10CH+4AUX, CH1 actual multi-VST3, 1 routed VST3 per other lane, MAIN L/R physical output read-only; custom I/O and bus workflow are next. #15 hardware FAT is open. Old dates and PR-number plans below must be rechecked against current main before use.
+
+
 > **LATEST ROUTING UX 2026-10-30:** eMotion-informed but original ArSonMix console patchbay visual unification R3 [PR #164](https://github.com/masarray/arsonmix/pull/164) MERGED `71ab580`. Shared BTN-180 material on all routing operator controls, dense real 10CH INPUT matrix, 10×4 PRE/POST AUX, less noisy native session identity and explicit OUTPUT MUTE state. Proven exact-head Chromium 1440/1680 screenshots and native ACK workflow in [40956088106](https://github.com/masarray/arsonmix/actions/runs/40956088106) SUCCESS; main Windows compile pending and real hardware FAT #15 open. Do not reintroduce old flat beige routing buttons, stretched 159px input columns or CH NONE clipping. Source milestone design: `docs/R3_ROUTING_PATCHBAY_BTN180_VISUAL_SYSTEM_20261030.md`.
 
 

@@ -1,5 +1,8 @@
 # ArSonMix — CANONICAL NEXT-THREAD HANDOFF (2026-10-29)
 
+> **ENTRYPOINT SUPERSEDED 2026-10-30:** New threads **must start** at [EXECUTION_HANDOFF_ARSONMIX_MIXER_REFORM_20261030.md](EXECUTION_HANDOFF_ARSONMIX_MIXER_REFORM_20261030.md) and its canonical [ARD](ARD_PRD_MIXER_IO_AUX_BUS_REFORM_20261030.md)/[PRD](PRD_ARSONMIX_PRO_MIXER_WORKSPACE_ROUTING_20261030.md), NOT this old #129/old screenshot implementation sequence. Native MUTE, live FX identity and hardware FAT rules below still apply.
+
+
 > **STATUS SUPERSEDED BY LATER RECONCILIATION (2026-10-29 17:55 WIB):** See [canonical status after R1 and R0 premium routing merged](CANONICAL_PROGRESS_RECONCILIATION_20261029.md). The original handoff below remains historical evidence. Do not run its old next steps without checking current main / PR statuses; R0B is #149 and #147 is the open ACK fix.
 
 > CURRENT CONTINUATION ENTRYPOINT. Read this before editing. This supersedes status claims in the dated 2026-10-25/26/27/28 handoffs, NOT their historical engineering evidence. Every new thread must re-read live main, open PRs and CI because this snapshot can age.

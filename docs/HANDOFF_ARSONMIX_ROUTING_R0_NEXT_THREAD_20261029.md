@@ -1,5 +1,8 @@
 # ArSonMix Routing R0/R1 — focused next-thread handoff (2026-10-29)
 
+> **OLDER R0 HANDOFF — SUPERSEDED FOR GUI/IMPLEMENTATION PRIORITY (2026-10-30):** Follow [new G1/G2 reform handoff](EXECUTION_HANDOFF_ARSONMIX_MIXER_REFORM_20261030.md), [PRD](PRD_ARSONMIX_PRO_MIXER_WORKSPACE_ROUTING_20261030.md) and [ARD](ARD_PRD_MIXER_IO_AUX_BUS_REFORM_20261030.md). Keep the previous route-engine safety tests, but replace routing-first page behavior with MIX FX/ROUTE/SENDS toggle, standalone FX Rack, native custom I/O setup, proper AUX buses, and eventual real output patch.
+
+
 > **LATEST PRODUCTION HANDOFF 2026-10-29:** B3 native always-on unpatched verified 10CH+4AUX #160 MERGED; P4 native DRY Show SAVE→BROWSE→RECALL #163 MERGED as `5667eec`, exact-head Windows/CTest/package and Chromium PASS; release provenance fixed in `fb0193e` and final main Windows pack CI not yet confirmed. No duplicate FX/callback, P4 does not restore VST-equipped Shows or auto-unmute, device-bound physical port numbers require human validation. Existing hardware FAT #15 **OPEN**; no real-world crackle certification. Next release-relevant work: real-device 0-FX ASIO/WASAPI, output-only/capture-only/dry-through isolation, safe FX chain/Orbit, external GPU UI A/B, PDC and physical output patch. Stale B3/P4 'NEXT' lines below are HISTORICAL only. Concurrent plugin manager #161 is separate; preserve R2 internal send matrix and shipped GUI.
 
 

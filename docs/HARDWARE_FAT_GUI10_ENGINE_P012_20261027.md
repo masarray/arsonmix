@@ -1,4 +1,7 @@
 # ArSonMix — Windows real-hardware FAT (GUI 10CH + engine P0-12)
+
+> **2026-10-30 UX/HARDWARE FAT EXTENSION:** See [new PRD](PRD_ARSONMIX_PRO_MIXER_WORKSPACE_ROUTING_20261030.md) + [ARD](ARD_PRD_MIXER_IO_AUX_BUS_REFORM_20261030.md). In addition to below 0-FX and DRY Show checks, the next Windows build must be tested for MIX FX/ROUTE/SENDS toggles without lost CH1 plugins, custom hardware mono/stereo M/L/R inputs, truthful HW OUT1/2 (and no phantom extra OUT), four PRE/POST AUX sends and returns. Only native ACK may make a route LIVE; physical-output AUX/MON separately gated until actual engine. Zero-FX #15 remains unqualified.
+
 **Status:** Experimental; not yet qualified for professional live audio. No plugins are needed for the tests below.
 
 ## Validate the archive before running

@@ -1,5 +1,8 @@
 # ArSonMix — Smart Audio Engine ARD v1.0
 
+> **2026-10-30 PRODUCT/IMPLEMENTATION SCOPE UPDATE:** This document remains authoritative for P0 realtime safety and real-hardware qualification. Its historical 2026-10-25 statements about unimplemented 10CH graph are superseded for *current delivered software status* by [new PRD](PRD_ARSONMIX_PRO_MIXER_WORKSPACE_ROUTING_20261030.md), [ARD v2](ARD_PRD_MIXER_IO_AUX_BUS_REFORM_20261030.md) and current repo source. Do not interpret this as claiming the 10CH physical hardware FAT or zero-VST crackle #15 was fixed.
+
+
 **Date:** 2026-10-25  
 **Status:** APPROVED ARCHITECTURE DIRECTION / NOT YET IMPLEMENTED OR HARDWARE-QUALIFIED  
 **Applies to:** experimental native baseline `main@ab732c5060fdd63656a47cd59604a1c9f4fb0909` and subsequent changes  

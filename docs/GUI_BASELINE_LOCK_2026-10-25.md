@@ -1,5 +1,8 @@
 # APPROVED GUI BASELINE — ArSonMix v0.8
 
+> **VISUAL REFERENCE ONLY FOR 2026-10-30 PRODUCT WORK:** Approved 2026-10-25 GUI v0.8 art assets, metal faders and BTN-180 material remain reference; its old 12-channel/13-strip counts and navigation are **historical**, superseded by implemented 10 native input+4AUX+MASTER and [new PRD](PRD_ARSONMIX_PRO_MIXER_WORKSPACE_ROUTING_20261030.md)/[ARD](ARD_PRD_MIXER_IO_AUX_BUS_REFORM_20261030.md). Do not re-import full old HTML or erase channel VST rack.
+
+
 **Status: LOCKED / APPROVED by product owner — 2026-10-25.**
 
 This is the canonical cross-thread, cross-branch GUI checkpoint. It is a **visual/interaction design baseline**, not a Windows-native VST3 release or audio conformance statement.

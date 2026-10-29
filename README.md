@@ -1,65 +1,43 @@
-# ArSonMix — Live Mixer & VST3 Host
+# ArSonMix — Windows Live Mixer & Native VST3 Host
 
-> **MULTI-THEME HANDOFF (design/reference, not yet enabled in runtime):** The **exact** last approved Brushed Metal v1.0 CSS is now in [design-references/brushed-metal-v1.0/adapter.css](design-references/brushed-metal-v1.0/adapter.css). A new engineer should begin with [THEME_ENGINE_NEW_THREAD_HANDOFF](docs/THEME_ENGINE_NEW_THREAD_HANDOFF_2026-10-26.md), [reference reconstruction](design-references/brushed-metal-v1.0/README.md), [ARD](docs/ARD_MULTITHEME_ENGINE_V1_2026-10-26.md), and [T0–T7 implementation plan](docs/THEME_ENGINE_IMPLEMENTATION_PLAN_2026-10-26.md). **Never recreate the existing metal CSS from scratch or load its historical override wholesale into production.** GUI core owns geometry; theme owns appearance; FX insert/power always black-blue glass. Epic #44.
+**October 30, 2026 engineering status:** ArSonMix is an experimental Windows-first **10 input channel + 4 stereo AUX return + MASTER** mixer with real device-bound audio routing and VST3, not a hardware-qualified live/broadcast release. The native hardware 0-VST crackle issue [#15](https://github.com/masarray/arsonmix/issues/15) remains open. **Never interpret successful Windows CTest, GUI screenshots, or a workflow named Hardware FAT as proof of clean real-device audio.**
 
-**Project status (25 October 2026):** premium **GUI v0.8** is approved and locked in `main`. The P2.5/P2.5.1 JUCE Windows/VST3 code was integrated through PRs #13/#14 as an **experimental native-development baseline**. Hardware tests reported **severe crackling with zero VST3**, so native audio has FAILED its P0 hardware acceptance; this is not a stable or broadcast-ready release. The browser preview remains visual-only, with intentionally simulated meters.
+## Start here — new canonical product and engineering plans
+1. [PRD v2.0 — Digital Mixer, per-channel FX/ROUTE/SENDS, custom hardware I/O, AUX buses](docs/PRD_ARSONMIX_PRO_MIXER_WORKSPACE_ROUTING_20261030.md)
+2. [ARD v2.0 — one audio graph, physical output patch, bus model, native ACK, staged execution](docs/ARD_PRD_MIXER_IO_AUX_BUS_REFORM_20261030.md)
+3. [Next-thread execution contract](docs/EXECUTION_HANDOFF_ARSONMIX_MIXER_REFORM_20261030.md)
+4. [FX Rack / Routing cross-thread regression guard](docs/FX_RACK_ROUTING_CROSS_THREAD_CONTRACT_20261030.md)
+5. [Smart Audio Engine safety architecture](docs/ARD_SMART_AUDIO_ENGINE_V1_2026-10-25.md) and [real hardware FAT runbook](docs/HARDWARE_FAT_GUI10_ENGINE_P012_20261027.md)
 
-> **GUI SOURCE OF TRUTH — LOCKED:** [GUI v0.8 baseline](docs/GUI_BASELINE_LOCK_2026-10-25.md) · approved commit `343692fc9b702661a8455cca30f0ffd108907324` · merged in [PR #2](https://github.com/masarray/arsonmix/pull/2) · preserved as `checkpoint/gui-v0.8-approved-20261025`. **Do not restore the previous GUI from native-engine branches.**
+The user-provided eMotion LV1, Studio One, Audition/DAW and FL-style wire references define the desired **workflow**, not an instruction to clone their artwork. Primary UX: stable MIX surface; FX/ROUTE/SENDS mode toggle, separate FX Rack and Routing workspaces, real INPUT/OUTPUT visibility in main window, native mono/stereo device matrix and proper AUX return processing. **Do not make Routing replace a channel's working VST3 inserts.** Do not expose raw JUCE audio configuration as the end-user product experience: keep JUCE audio backend but build an original capability-aware ArSonMix I/O screen.
 
-ArSonMix is a Windows-first digital mixer and low-latency live VST3 host project for live vocals, karaoke and livestreaming. Its interface emphasizes fast **FX Rack / insert power**, tactile console controls, accurate channel identification and uncluttered mixing.
+## Correct current feature boundary
+- **Actual engine foundation:** ten native input lanes, four dedicated stereo AUX FX returns, bounded PRE/POST CH→CH and CH→AUX sends (32 edges), verified enabled ASIO/WASAPI DIRECT source pins, epoch/revisioned route ACK and safe muted/unpatched startup. These AUX returns are **internal mix paths**, not independently addressable physical headphone/output jacks.
+- **VST3:** CH1 has an existing working **multi-insert native vendor VST3 chain** with editor, reorder, bypass and Orbit for eligible DearVR plugins; the routed callback still processes it. Other routed input/AUX lanes currently support one native effect per lane/return. Their additional FX rows must not be advertised as eight active inserts before actual multichannel expansion.
+- **GUI:** MIX, FX RACK, ROUTING, SETUP and Show exist as evolving surfaces, with approved tactile metal faders, native meters and shared BTN-180 commands. As of this documentation update the requested comprehensive per-channel FX/ROUTE/SENDS switch and dedicated hardware I/O UI are **design goals, not completed features**.
+- **Routing output:** current MAIN L/R readback is **read-only**. Extra physical outputs, monitor/CUE, GROUP/DCA/MATRIX, arbitrarily routed AUX output and plugin delay compensation require further implementation and native tests.
+- **Show / portability:** experimental portable VST Studio and DRY native Show Save/Browse/Recall exist. Full VST3 binary-state session restore with output pin remapping and transaction rollback remains incomplete.
+- **Real-hardware quality:** low-end GPU UI and 0-FX ASIO/WASAPI crackle need separate physical FAT. Unmeasured render XRUN must not be reported as confirmed zero.
 
-## Open the approved mixer
+The original 2026-10-25 [v0.3 ARD](docs/ARD_AR_MIX_LIVE_FX_HOST_v0.3.md), historical GUI v0.8 lock and P1A/P1H stacked PRs remain engineering evidence for their dates. **Their CH1-only and old 12-channel/13-strip statements are superseded for current progress** by this status and actual latest main source. Never bulk merge historical unreviewed PRs into current main.
 
-- **Landing:** https://masarray.github.io/arsonmix/
-- **Interactive mixer:** https://masarray.github.io/arsonmix/preview/
-- **Standalone full-screen GUI:** https://masarray.github.io/arsonmix/preview/mixer.html
-- **Deployed commit:** https://masarray.github.io/arsonmix/preview/build.json
+## Browser GUI and Windows host
+- GUI preview: https://masarray.github.io/arsonmix/preview/ (visual preview may simulate meters and routing; not proof of real DSP).
+- Standalone GUI: https://masarray.github.io/arsonmix/preview/mixer.html
+- Actual source and releases: https://github.com/masarray/arsonmix
+- Windows native executable packages: https://github.com/masarray/arsonmix/actions/workflows/p1-windows.yml — choose a **successful, exact-main-SHA artifact**, verify BUILD_PROVENANCE.json. It is still experimental and requires real hardware testing.
 
-**Pages builds the canonical standalone GUI from `main`, after the main-branch Chromium smoke test succeeds.** The last visual sign-off is GUI v0.8; a later change must preserve the accepted design or obtain another explicit review.
-
-## Approved GUI v0.8 features
-
-- 12 color-coded input strips plus aligned stereo **MASTER strip #13**; full-height amber selected-strip highlight.
-- 6 visible FX inserts per strip and master; independent compact on/off bypass for occupied inserts and separate open/edit action.
-- Mirror-symmetric silver metal faders, distinct red master fader, relative no-jump pointer drag.
-- Compact horizontal PAN with L/C/R values, restrained illuminated fill and noticeable center detent; master PAN included.
-- Fixed hardware legend **MUTE** (red = muted); SOLO yellow, HPF green. Context-specific supplied metal button families, without global restyling.
-- Stereo master L/R display with peak holds and clip latches; two streaming reference readouts only: **LUFS-I** and **dBTP**.
-- Channel name/color/icon editor, quick-sound presets, mixer snapshots, explicit **SAVE SNAPSHOT / SAVE FX / EXPORT** actions.
-- One application toolbar, organized left rail, and GitHub Pages preview with SHA-aware reload.
-
-**Accuracy boundary:** The browser's LUFS-I, dBTP, peak and VU values are illustrative. They are **not ITU-R BS.1770 measurements** and do not prove audio loss, clipping or real-world latency. When integrating the native engine, use authentic DSP data and never mix fake demo metering into the live audio UI.
-
-## Working on the project / handing off to another thread
-
-**Start by reading [AGENTS.md](AGENTS.md) and [docs/GUI_BASELINE_LOCK_2026-10-25.md](docs/GUI_BASELINE_LOCK_2026-10-25.md).** The approved GUI is in `main`; do not use the historical GUI branch as the source for new designs. If working on native VST3, apply the engine to the new GUI contract rather than replacing `web/app.js`, `web/styles.css` or the standalone HTML with a stale copy.
-
-Native changes from the stacked PRs [#1](https://github.com/masarray/arsonmix/pull/1) and [#3–#10](https://github.com/masarray/arsonmix/pulls) are now incorporated into `main` through the reconciled integration [PR #13](https://github.com/masarray/arsonmix/pull/13). The earlier PRs remain as historical/review references; their code integration does **not** certify third-party VST3 stability or real-device audio. PR #11 contains older v0.5 visuals and must never override approved v0.8.
-
-## Local preview and tests
-
-Open `AR-MIX-Live-FX-Host-Standalone-v0.3.html` with Chrome/Edge for an offline GUI trial. The standalone's filename is historical; its content is the **approved v0.8 GUI**.
+## Engineering workflow / CI economy
+Read [AGENTS.md](AGENTS.md). Check latest main SHA, PRs and Actions before edits. Respect `web/styles-src` CSS ownership and generated `web/styles.css`; use shared `.btn-180` material. Do not replace the mixer HTML, introduce UI overlays hiding VST3 chains, or add multiple DSP callbacks. Target complete vertical slices, quick targeted local tests, then one exact-head Chromium and Windows MSVC/CTest/package build if needed; avoid needless CI and micro-PR churn.
 
 ```bash
 node --check web/app.js
-python tests/button_asset_test.py
-python tests/fader_asset_test.py
-python tests/pan_button_asset_test.py
-python tests/gui_baseline_lock_test.py
+node --check web/bridge.js
+node --check web/monitor.js
 python tests/ui_smoke.py
-python scripts/build_pages.py --out dist-pages --branch main
 ```
 
-The Chromium smoke test needs Playwright Chromium installed. `.github/workflows/ui-smoke.yml` runs it for pull requests and relevant `main` changes. The single `.github/workflows/pages-publish.yml` publisher runs **after successful main GUI smoke**. See [Pages runbook](docs/GITHUB_PAGES_PREVIEW.md).
+The full native CI verifies MSVC/CMake/CTest, GUI bundle and package provenance; CI does not certify real ASIO/WASAPI continuity. Hardware test: SIGNAL CHECK → MARK CRACKLE → COPY FULL REPORT, share device type, rate, buffer, audio path and an honest pass/fail.
 
-## Windows native host
-
-`main` contains experimental JUCE C++20 ASIO/WASAPI **Channel 1** realtime audio, VST3 scanning/import/catalog, editor, FX bypass, FabFilter/RX-compatible layout, diagnostics, native `.armix` preset saving and P2.5 prepared-graph recall. It preserves GUI v0.8, while Channels 2–12 and Master FX/PAN remain non-native previews. The display does **not** claim measured BS.1770 LUFS-I or dBTP. Live recall uses a de-click fade (not seamless DSP crossfade), and ADD/REMOVE/REORDER still detach callback. FabFilter, iZotope RX, and other third-party plugins require Windows hardware FAT before a stable release. [Experimental Windows CI builds](https://github.com/masarray/arsonmix/actions/workflows/p1-windows.yml) provide artifacts from passing runs.
-
-**P0 field support:** SIGNAL CHECK → **COPY FULL REPORT** copies the current native device, sample-rate/buffer, performance, source-labeled discontinuities and recent MARK CRACKLE events into the Windows clipboard for direct paste into the engineering thread. Experimental FIR/dual-clock code is a CI-tested core, not yet wired to physical WASAPI. [Detailed status and remaining gates](docs/P0_SMART_AUDIO_DIAGNOSTIC_AND_BRIDGE.md).
-
-**Current native architecture (read first):** [Smart Audio Engine ARD v1.0](docs/ARD_SMART_AUDIO_ENGINE_V1_2026-10-25.md) · [implementation blueprint](docs/SMART_AUDIO_ENGINE_IMPLEMENTATION_BLUEPRINT.md) · [zero-FX crackling P0 issue #15](https://github.com/masarray/arsonmix/issues/15). The [older architecture v0.3](docs/ARD_AR_MIX_LIVE_FX_HOST_v0.3.md) is historical and superseded where inconsistent. [GUI v0.8](docs/GUI_BASELINE_LOCK_2026-10-25.md) remains locked. No P2.6 expansion until 44.1/48 kHz dry audio FAT is clean; no public-live claims from green CI alone. Native code follows GUI v0.8, not the opposite.
-
-## License and assets
-
-The repository contains project code and user-supplied visual PNG artwork. Retain notices and verify redistribution permission for every external visual asset, VST3 binary, JUCE/ASIO/VST3 SDK and third-party dependency before public binary release. The GUI milestone is **not a native product release**.
+## License and bundled assets
+Keep original source/asset licenses and SDK notices. A public ArSonMix installer ships **without** the owner's personal VST3 files and presets; individual users may create their own portable private VST collection. Do not redistribute commercial VSTs, LV1 visuals or third-party proprietary screenshots without rights.

@@ -1,5 +1,8 @@
 # R3 Routing Patchbay Visual System — BTN-180 unification (2026-10-30)
 
+> **IMPORTANT: R3 VISUAL MILESTONE ≠ FINISHED PRODUCT.** New screenshots and [PRD v2](PRD_ARSONMIX_PRO_MIXER_WORKSPACE_ROUTING_20261030.md) require a stable MIX section FX/ROUTE/SENDS toggle, separate functioning FX RACK, native custom INPUT/OUTPUT patch UI and actual auxiliary bus flows. Use [ARD v2](ARD_PRD_MIXER_IO_AUX_BUS_REFORM_20261030.md), not R3 style rules, for feature scope. R3 BTN-180 paint may be reused only if it does not hide VST3 or misrepresent read-only output.
+
+
 ## Purpose
 Bring ArSonMix ROUTING up to a coherent professional mixing-console visual hierarchy, using the repo's **approved BUTTON 180** material for all operator command pads, not inventing a new button face. Reference the **information architecture** of Waves eMotion LV1 Patch (strong row/column matrix, stable patch states, distinct INPUT/INTERNAL/OUTPUT views) rather than copying its assets or claiming unsupported routing operations.
 

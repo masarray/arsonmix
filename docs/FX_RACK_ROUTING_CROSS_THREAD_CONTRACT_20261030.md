@@ -1,5 +1,8 @@
 # ArSonMix P1 — FX Rack and Routing ownership contract (2026-10-30)
 
+> **V2.0 WORKSPACE & AUDIO AUTHORITY:** [New PRD](PRD_ARSONMIX_PRO_MIXER_WORKSPACE_ROUTING_20261030.md) + [new ARD](ARD_PRD_MIXER_IO_AUX_BUS_REFORM_20261030.md) + [G1/G2 handoff](EXECUTION_HANDOFF_ARSONMIX_MIXER_REFORM_20261030.md). This 2026-10-30 P1 ownership invariant remains binding; expand it into MIX FX/ROUTE/SENDS and custom device IO. DO NOT confuse four internal AUX returns with physical output buses. Where this P1 document discusses only one routed VST per CH2–10, that remains the CURRENT technical limit, not the final product plan.
+
+
 ## Why this exists
 A recent Routing release replaced every strip's six visible FX insert rows with one `+ ROUTE / FX` button while `dryRoutingLab.active`. That removed the working FX workflow from the user's mixer. The FX editor must remain independent from the physical routing patchbay.
 
