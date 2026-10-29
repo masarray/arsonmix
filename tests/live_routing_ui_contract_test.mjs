@@ -205,3 +205,15 @@ test("R0 premium workspace is anchored to mixer chrome and lazily opens INTERNAL
  assert.match(ui,/routingDryApply/);
  assert.match(ui,/hydrateAcceptedRoute/);
 });
+test("R1 upstream Studio-IO rejection always releases native APPLY pending state",()=>{
+  const first=main.indexOf('if ((studioBackupBusy_ || nativeShowBusy_)');
+  const next=main.indexOf('// Structural plugin operations',first);
+  assert.ok(first>=0&&next>first);
+  const gate=main.slice(first,next);
+  assert.match(gate,/action=="routingDryApply"/);
+  assert.match(gate,/arMixRoutingLabAck/);
+  assert.match(gate,/setProperty\("ok",false\)/);
+  assert.match(ui,/patchPending=false/);
+  assert.match(ui,/if\(patchPending\)return/);
+});
+
