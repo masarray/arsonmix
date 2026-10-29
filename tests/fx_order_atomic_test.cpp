@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/FxOrderPlan.h"
 #include "../engine/core/FxMoveRamp.h"
+#include "../engine/core/FxStructuralEditPlan.h"
+#include <memory>
 #include <array>
 #include <atomic>
 #include <cstdlib>
@@ -47,6 +49,55 @@ int main()
                 check(Plan::physicalAt(next,to)==from);
                 check(Plan::moved(next,count,to,from)==Plan::canonical);
             }
+    // B2: all structural edits preserve the *logical* vendor instance order,
+    // including MOVE followed by REMOVE, and APPEND without old instance copies.
+    using Structural=armix::dsp::FxStructuralEditPlan;
+    for(int count=0;count<=8;++count)
+    {
+        for(int from=0;from<count;++from)
+        for(int to=0;to<count;++to)
+        {
+            const auto order=Plan::moved(Plan::canonical,count,from,to);
+            for(int removed=-1;removed<count;++removed)
+            for(int append=0;append<=1;++append)
+            {
+                const auto plan=Structural::make(order,count,removed,append);
+                const int next=count-(removed>=0?1:0)+append;
+                if(next>8){check(!plan.valid);continue;}
+                check(plan.valid&&plan.count==next);
+                int step=0;
+                std::array<bool,8> used{};
+                for(int i=0;i<count;++i)
+                {
+                    const int p=Plan::physicalAt(order,i);
+                    if(i==removed)continue;
+                    check(plan.sourcePhysical[step++]==p);
+                    check(!used[p]);used[p]=true;
+                }
+                if(append)check(plan.sourcePhysical[step++]==-1);
+                check(step==next);
+            }
+        }
+        // No move still must support an empty rack and a full rack.
+        const auto all=Structural::make(Plan::canonical,count,-1,count<8?1:0);
+        check(all.valid&&all.count==count+(count<8?1:0));
+    }
+    check(!Structural::make(Plan::canonical,8,-1,1).valid);
+    check(!Structural::make(Plan::canonical,1,1,0).valid);
+    check(!Structural::make(Plan::canonical,-1,-1,0).valid);
+    check(!Structural::make(Plan::canonical,3,-2,0).valid);
+    check(!Structural::make(Plan::canonical,2,-1,2).valid);
+    // Shared vendor ownership: old graph retirement cannot destroy a reused FX.
+    int retired=0;
+    auto vendor=std::shared_ptr<int>(new int(7),[&](int* p){++retired;delete p;});
+    auto oldGraph=vendor;
+    auto newGraph=vendor;
+    vendor.reset();
+    oldGraph.reset();
+    check(retired==0 && *newGraph==7);
+    newGraph.reset();
+    check(retired==1);
+
     // A callback never observes a partially written permutation.
     std::atomic<std::uint64_t> order {Plan::canonical};
     std::atomic<bool> running {true};
