@@ -1430,14 +1430,16 @@ private:
                                                std::memory_order_relaxed);
             return;
         }
+        const auto cycle = handoff_.beginCycle();
         // R0B B3: production NORMAL audio has a single native routing owner.
         // Until a device-epoch-validated 10CH/4AUX route is published, output
         // stays silent. Never fall back to legacy CH1 after STOP/hotplug or on
         // first boot; that could feed an unrelated speaker without a patch.
         // Diagnostic isolation is explicitly exempt so zero-FX hardware FAT
         // still supports OUTPUT_ONLY_TONE/CAPTURE_ONLY/DRY_THROUGH.
-        // This gate executes BEFORE obtaining a VST graph lease, with only
-        // one atomic read and deterministic writes; no RT heap or device calls.
+        // Keep the existing FX graph handoff progressing even when unpatched:
+        // a staged ADD/REMOVE must ACK and retire on the callback thread.
+        // Only atomic reads and deterministic output writes; no RT heap or I/O.
         if (activeDiagnosticRoute == armix::diagnostics::Route::normal
             && !dryRoutingLab_.active())
         {
@@ -1449,9 +1451,10 @@ private:
             outputPeak_.store(0.f, std::memory_order_relaxed);
             outputPeakL_.store(0.f, std::memory_order_relaxed);
             outputPeakR_.store(0.f, std::memory_order_relaxed);
+            handoff_.endCycle(cycle); // ACK prepared FX graph even in silence
             return;
         }
-        const auto cycle = handoff_.beginCycle();
+
         const std::uint64_t beginUs = clockMicros();
         const double periodUs = 1000000.0 * static_cast<double> (samples) / sampleRateHz_;
         // Scheduling gaps are NOT driver-confirmed xruns. Critically the
