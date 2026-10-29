@@ -6,7 +6,8 @@ Baseline `81c892f39996689c63b5704dcc060a9c42f0339d`; owner production mandate: [
 
 - `LiveChannelFxGraph` now has a strictly optional, callback-scoped, non-owning **CH1 external insert lane**. The host supplies its existing `LiveGraphHandoff::Cycle` lease while rendering native 10CH+4AUX: no second output mix, no second host, no VST instance copy, no new realtime allocation/lock.
 - The CH1 multi-insert rack is run in the same CH1 PRE/POST send/master topology, with exactly the original processor addresses and Orbit parameter ownership. Pre-existing vendor settings/tails are not reinitialized on route apply. Existing per-insert bypass envelopes execute in this lane.
-- Native apply refuses a duplicate native CH1 insert when the old rack is present; additionally rejects a non-zero-latency CH1 rack until PDC exists. Existing physical device/epoch, muted structural APPLY, graph revision, no active independent clock and real-port gates remain authoritative.
+- Native apply refuses duplicate CH1 inserts and any latency-reporting CH1 processor (including bypassed) until PDC exists. Re-enabling latent plugins during active routing is independently rejected.
+- DRY-only Show capture now checks the borrowed legacy CH1 FX count, not only the separate Routing LAB `fxCount`; missing count also fails closed. GUI SAVE gate and native regression test enforce this. Existing physical device/epoch, muted structural APPLY, graph revision, no active independent clock and real-port gates remain authoritative.
 - The old `LiveDryRoutingLab` / native UI action names remain as **internal compatibility** at this stage. Preserving controls and safety until R0B/R1 avoids presenting a broken main-window GUI.
 - New core regression asserts genuine CH1 external DSP inside a prepared 10-channel graph, one invocation per audio block, no RT allocation, no duplicate plugin instance, dry fallback identity. Existing graph and UI tests stay intact.
 

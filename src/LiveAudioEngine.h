@@ -763,6 +763,10 @@ public:
         if (index < 0 || index >= graphOwned_->count) return false;
         // Message-thread metadata and an atomic value consumed by the audio thread.
         const int physical = Graph::physicalAt (visibleFxOrder(), index);
+        // No PDC: a bypassed latent CH1 processor must not be re-enabled
+        // after routing was ACKed (otherwise parallel sends misalign).
+        if(dryRoutingLab_.active() && !value &&
+           graphOwned_->slots[physical].latency!=0)return false;
         graphOwned_->slots[physical].bypass = value;
         graphOwned_->bypassFlags[physical].store (value, std::memory_order_release);
         // Recompute the advertised steady-state graph latency on the control
@@ -835,8 +839,11 @@ public:
         if(!device)return "Select a verified DIRECT audio device first";
         // Without PDC, do not mix a latent CH1 chain with uncompensated
         // PRE/POST channel/AUX sends. Preserve existing rack and reject safely.
-        if(graphOwned_->count>0 && totalLatency_.load(std::memory_order_acquire)>0)
-            return "CH1 FX rack has latency: choose zero-latency plugin settings before live multi-channel routing";
+        // Include bypassed slots too: enabling them later must not introduce
+        // uncompensated latency into CH1 -> BUS/AUX signal paths.
+        for(int i=0;i<graphOwned_->count;++i)
+            if(graphOwned_->slots[i].latency!=0)
+                return "CH1 rack contains a latent VST3: zero-latency settings are required for native multi-channel sends";
         return dryRoutingLab_.apply(command,directFence_.permitted(),
                    independent_.active(),graphOwned_->count,fx,formats_,
                    device->getCurrentSampleRate(),

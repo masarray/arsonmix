@@ -41,6 +41,11 @@ public:
             return "Mute native output and use a single DIRECT device before SAVE";
         if(nativeStatus.getProperty("diagnosticRoute",{}).toString()!="NORMAL")
             return "Return diagnostic audio to NORMAL before SAVE";
+        // R0 CH1 borrowed processors live outside Routing LAB fxCount.
+        // Reject any vendor FX (and absent/invalid count) for DRY-only saves.
+        const auto borrowed=nativeStatus.getProperty("chainCount",{});
+        if(!borrowed.isInt() || static_cast<int>(borrowed)!=0)
+            return "CH1 FX Rack has VST3 state: cannot SAVE as a DRY-only Show";
         const auto lab=nativeStatus.getProperty("dryRoutingLab",{});
         if(!lab.isObject())return "Native Routing LAB has no published session";
         bool active=false,ready=false;

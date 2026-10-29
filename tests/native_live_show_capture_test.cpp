@@ -65,6 +65,7 @@ juce::var setup(){
     auto root=obj();
     set(root,"monitor",false);set(root,"adaptiveClockActive",false);
     set(root,"diagnosticRoute","NORMAL");
+    set(root,"chainCount",0); // independently owned CH1 vendor processor count
     set(root,"masterLinear",0.55);
     set(root,"masterMute",false);set(root,"masterMono",true);
     set(root,"dryRoutingLab",lab);
@@ -109,6 +110,13 @@ int main() {
     lab=plugin.getProperty("dryRoutingLab",{});
     set(lab,"fxCount",1);
     assert(NativeLiveShowCapture::captureDry(plugin,"Dry Routing Test",captured).isNotEmpty());
+    auto legacy=setup();set(legacy,"chainCount",2);
+    assert(NativeLiveShowCapture::captureDry(legacy,"Dry Routing Test",captured).isNotEmpty());
+    assert(Codec::encode(captured)==prior);
+    auto missing=setup();
+    missing.getDynamicObject()->removeProperty(juce::Identifier("chainCount"));
+    assert(NativeLiveShowCapture::captureDry(missing,"Dry Routing Test",captured).isNotEmpty());
+    assert(Codec::encode(captured)==prior);
     auto portsLost=setup();lab=portsLost.getProperty("dryRoutingLab",{});
     juce::Array<juce::var> ports;auto p=obj();set(p,"port",3);ports.add(p);
     set(lab,"ports",juce::var(ports));
