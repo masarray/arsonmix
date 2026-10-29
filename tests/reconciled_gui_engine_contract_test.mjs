@@ -50,7 +50,14 @@ test('JUCE native resources track the approved calibrated GUI without maintainin
   const cpp=read('src/Main.cpp');
   const sourceCss=read('web/styles-src/42-mixer-premium.css');
   const standalone=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
-  assert.match(cmake,/juce_add_binary_data\(ARMixAssets SOURCES\s+web\/index\.html web\/styles\.css web\/plugin-ui\.css web\/app\.js web\/plugin-ui\.js web\/bridge\.js web\/monitor\.js\)/);
+  // Verify legacy assets in original order, while allowing additive UI modules.
+  const assetList=cmake.match(/juce_add_binary_data\(ARMixAssets SOURCES\s+([^)]+)\)/)?.[1];
+  assert.ok(assetList,'native WebView2 source list missing');
+  const expected=['web/index.html','web/styles.css','web/plugin-ui.css','web/app.js',
+    'web/plugin-ui.js','web/bridge.js','web/monitor.js','web/mixer-io.js','web/mixer-io.css'];
+  const listed=assetList.trim().split(/\s+/);
+  for(const asset of expected) assert.ok(listed.includes(asset),'missing WebView2 asset '+asset);
+  assert.equal(new Set(listed).size,listed.length,'duplicate native WebView2 resource');
   for (const resource of ['index_html','styles_css','pluginui_css','app_js','pluginui_js','bridge_js','monitor_js']) {
     assert.ok(cpp.includes('BinaryData::'+resource),resource+' missing from WebView provider');
   }

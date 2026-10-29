@@ -56,7 +56,8 @@ jobs:
         run: |
           node --check web/app.js
           node --check web/plugin-ui.js
-          node --test tests/gui_workflow_contract_test.mjs tests/plugin_ui_contract_test.mjs tests/ci_workflow_efficiency_test.mjs tests/fx_drag_reorder_contract_test.mjs
+          node --check web/mixer-io.js
+          node --test tests/gui_workflow_contract_test.mjs tests/plugin_ui_contract_test.mjs tests/ci_workflow_efficiency_test.mjs tests/fx_drag_reorder_contract_test.mjs tests/mixer_io_operator_contract_test.mjs
       - name: Validate approved GUI checkpoint and single publisher
         run: python tests/gui_baseline_lock_test.py
       - name: Validate smart audio architecture handoff contract
@@ -74,6 +75,8 @@ jobs:
         run: python tests/pan_button_asset_test.py
       - name: Run mixer UI smoke tests
         run: python tests/ui_smoke.py
+      - name: Verify G1/G2 LIVE mixer bank and native I/O transaction
+        run: python tests/mixer_io_smoke.py
       - name: Verify MIX and FX RACK Auto Orbit workflow
         run: python tests/native_orbit_ui_smoke.py
       # Firefox perf is deliberate: main release verification or manual opt-in.
@@ -91,6 +94,12 @@ jobs:
           name: arsonmix-gui-baseline-smoke
           path: |
             native-orbit-ui-review.png
+            mixer-g1-g2-1366.png
+            mixer-g1-g2-1440.png
+            mixer-g1-g2-1680.png
+            mixer-g1-bank-fx-1680.png
+            mixer-g1-bank-route-1680.png
+            mixer-g1-bank-sends-1680.png
             fader-ui-smoke.png
             toolbar-global-btn180-pad.png
             device-green-on-palette-review.png

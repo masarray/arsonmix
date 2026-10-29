@@ -13,6 +13,14 @@ The [approved GUI visual baseline](docs/GUI_BASELINE_LOCK_2026-10-25.md) remains
 
 The user-provided eMotion LV1, Studio One, Audition/DAW and FL-style wire references define the desired **workflow**, not an instruction to clone their artwork. Primary UX: stable MIX surface; FX/ROUTE/SENDS mode toggle, separate FX Rack and Routing workspaces, real INPUT/OUTPUT visibility in main window, native mono/stereo device matrix and proper AUX return processing. **Do not make Routing replace a channel's working VST3 inserts.** Do not expose raw JUCE audio configuration as the end-user product experience: keep JUCE audio backend but build an original capability-aware ArSonMix I/O screen.
 
+## G1/G2 integration under review (PR #167)
+The mixer FX/ROUTE/SENDS bank and native source picker use one existing device-bound routing controller.
+Custom ArSonMix INPUTS/OUTPUTS/DEVICE panels include real input mapping and read-only MAIN L/R.
+Hardware driver, buffer and sample-rate changes still delegate to the existing verified JUCE device
+selector; fully custom hardware setup and physical output patch remain G2/G4 work.
+These additions are experimental and require Windows package verification and physical acceptance;
+**not an approved live-sound release**.
+
 ## Correct current feature boundary
 - **Actual engine foundation:** ten native input lanes, four dedicated stereo AUX FX returns, bounded PRE/POST CH→CH and CH→AUX sends (32 edges), verified enabled ASIO/WASAPI DIRECT source pins, epoch/revisioned route ACK and safe muted/unpatched startup. These AUX returns are **internal mix paths**, not independently addressable physical headphone/output jacks.
 - **VST3:** CH1 has an existing working **multi-insert native vendor VST3 chain** with editor, reorder, bypass and Orbit for eligible DearVR plugins; the routed callback still processes it. Other routed input/AUX lanes currently support one native effect per lane/return. Their additional FX rows must not be advertised as eight active inserts before actual multichannel expansion.

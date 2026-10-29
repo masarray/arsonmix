@@ -64,6 +64,10 @@ std::optional<juce::WebBrowserComponent::Resource> assetFor (const juce::String&
         { data = BinaryData::bridge_js; size = BinaryData::bridge_jsSize; mime = "text/javascript"; }
     else if (path == "/monitor.js")
         { data = BinaryData::monitor_js; size = BinaryData::monitor_jsSize; mime = "text/javascript"; }
+    else if (path == "/mixer-io.js")
+        { data = BinaryData::mixerio_js; size = BinaryData::mixerio_jsSize; mime = "text/javascript"; }
+    else if (path == "/mixer-io.css")
+        { data = BinaryData::mixerio_css; size = BinaryData::mixerio_cssSize; mime = "text/css"; }
     else return std::nullopt;
 
     juce::WebBrowserComponent::Resource resource;
@@ -1323,6 +1327,32 @@ private:
             if (browser_.loaded)
                 browser_.emitEventIfBrowserIsVisible ("arMixDiagnosticReportCopied", juce::var (response.release()));
             emitNotice ("Audio report copied! Paste it directly into the engineering chat.");
+        }
+        else if (action == "audioDeviceInventory")
+        {
+            // Enumeration only on explicit user request, on the JUCE message thread.
+            // Never reopen an audio endpoint or change the routing epoch here.
+            auto inventory=std::make_unique<juce::DynamicObject>();
+            juce::Array<juce::var> types;
+            auto& manager=engine_.devices();
+            for (auto* type : manager.getAvailableDeviceTypes())
+            {
+                if (type == nullptr) continue;
+                auto item=std::make_unique<juce::DynamicObject>();
+                item->setProperty ("name", type->getTypeName());
+                item->setProperty ("active", type->getTypeName() == manager.getCurrentAudioDeviceType());
+                juce::Array<juce::var> inputs, outputs;
+                for (const auto& label : type->getDeviceNames (true)) inputs.add (label);
+                for (const auto& label : type->getDeviceNames (false)) outputs.add (label);
+                item->setProperty ("inputs", juce::var (inputs));
+                item->setProperty ("outputs", juce::var (outputs));
+                types.add (juce::var (item.release()));
+            }
+            inventory->setProperty ("types", juce::var (types));
+            inventory->setProperty ("currentType", manager.getCurrentAudioDeviceType());
+            if (browser_.loaded)
+                browser_.emitEventIfBrowserIsVisible ("arMixAudioDeviceInventory",
+                    juce::var (inventory.release()));
         }
         else if (action == "audioSetup")
         {
