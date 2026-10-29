@@ -935,6 +935,81 @@
       draftSends:draftSends.map(r=>({...r}))
     };
   };
+  // G3 shared send controller: draft only. Native routing remains sole
+  // audio authority (validated device epoch, MUTE, APPLY and positive ACK).
+  const sendResumeGain=new Map();
+  const sendKey=(from,bus,tap)=>from+":"+bus+":"+tap;
+  function sendEditGate(from,bus){
+    const d=state.dryRoutingLab||{};
+    if(!d.active||!d.ready||Number(d.epoch)<=0)return "Select a verified DIRECT audio device.";
+    if(draftEpoch!==Number(d.epoch))return "Device epoch changed. Review hardware patch.";
+    if(patchPending)return "Native route APPLY is pending.";
+    if(!Number.isInteger(from)||from<0||from>=10||
+       !Number.isInteger(bus)||bus<0||bus>=4)return "Invalid channel/AUX index.";
+    return "";
+  }
+  function publishSendDraft(){
+    mixerDraftActive=true;
+    drawAuxSendMatrix();drawSends();
+    window.dispatchEvent(new Event("arMixRoutingDraftChanged"));
+  }
+  window.__arMixStageAuxSendEdit=({from,bus,tap,action,value}={})=>{
+    const fault=sendEditGate(from,bus);
+    if(fault)return {ok:false,error:fault};
+    if(!["PRE","POST"].includes(tap))return {ok:false,error:"Choose PRE or POST."};
+    const to=10+bus,key=sendKey(from,bus,tap);
+    const index=draftSends.findIndex(x=>x.from===from&&x.to===to&&x.tap===tap);
+    const item=index>=0?draftSends[index]:null;
+    if(action==="create"){
+      if(item)return {ok:false,error:"Send already exists."};
+      if(draftRoutes[from].mode==="NONE")return {ok:false,error:"Patch CH "+(from+1)+" physical input first."};
+      if(!draftAux[bus].enabled)return {ok:false,error:"Enable AUX "+(bus+1)+" return first."};
+      if(draftSends.length>=32)return {ok:false,error:"32 native sends maximum."};
+      draftSends.push({from,to,tap,gain:.25,pan:0});
+    }else if(!item)return {ok:false,error:"Send is missing; reopen inspector."};
+    else if(action==="remove"){draftSends.splice(index,1);sendResumeGain.delete(key);}
+    else if(action==="gain"){
+      const n=Number(value);
+      if(!Number.isFinite(n)||n<0||n>1)return {ok:false,error:"Gain must be 0–1."};
+      item.gain=n;if(n>0)sendResumeGain.set(key,n);
+    }else if(action==="pan"){
+      const n=Number(value);
+      if(!Number.isFinite(n)||n< -1||n>1)return {ok:false,error:"PAN must be -1 to +1."};
+      item.pan=n;
+    }else if(action==="enable"){
+      if(typeof value!=="boolean")return {ok:false,error:"Invalid send ON/OFF."};
+      if(!value){if(item.gain>0)sendResumeGain.set(key,item.gain);item.gain=0;}
+      else if(item.gain===0)item.gain=sendResumeGain.get(key)||.25;
+    }else return {ok:false,error:"Unsupported send edit."};
+    publishSendDraft();
+    return {ok:true,message:"SEND DRAFT · MUTE + APPLY required; live audio unchanged."};
+  };
+  window.__arMixStageAuxReturnEdit=(bus,field,value)=>{
+    const fault=sendEditGate(0,bus);
+    if(fault)return {ok:false,error:fault};
+    if(!["enabled","gain","mute","main"].includes(field))
+      return {ok:false,error:"Invalid AUX return field."};
+    if(field==="gain"){
+      const n=Number(value);
+      if(!Number.isFinite(n)||n<0||n>4)return {ok:false,error:"AUX gain must be 0–4."};
+      draftAux[bus].gain=n;
+    }else{
+      if(typeof value!=="boolean")return {ok:false,error:"Invalid AUX switch."};
+      if(field==="enabled"&&!value&&draftSends.some(x=>x.to===10+bus))
+        return {ok:false,error:"Remove AUX "+(bus+1)+" sends before disabling its return."};
+      draftAux[bus][field]=value;
+    }
+    drawAux();publishSendDraft();
+    return {ok:true,message:"AUX RETURN DRAFT · MUTE + APPLY required."};
+  };
+  window.__arMixRevertMixerDraft=()=>{
+    if(patchPending)return {ok:false,error:"Native APPLY is pending."};
+    rackFxDraft=null;mixerDraftActive=false;sendResumeGain.clear();
+    if(!hydrateAcceptedRoute())return {ok:false,error:"No accepted route available."};
+    drawAux();drawAuxSendMatrix();drawSends();renderPatchMatrix();
+    window.dispatchEvent(new Event("arMixRoutingDraftChanged"));
+    return {ok:true,message:"REVERTED · original native route unchanged."};
+  };
   window.__arMixStageChannelInput=(channel,mode,left,right)=>{
     const d=state.dryRoutingLab||{},epoch=Number(d.epoch)||0;
     if(!d.ready||!d.active||epoch<=0)return {ok:false,error:"No verified native DIRECT device."};
@@ -1125,6 +1200,7 @@
     if(reply?.ok===true){
       rackFxDraft=null; // Native ACK became authoritative, not the browser draft.
       mixerDraftActive=false;
+      sendResumeGain.clear();
       if(result.acceptedRoute)hydrateAcceptedRoute();
       else {
         // CLEAR resets CH, FX, and the new R2 CH→AUX matrix draft together.

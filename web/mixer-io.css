@@ -60,3 +60,78 @@
   --b180-border:#0d90aa;
   --b180-ink:#09252a;
 }
+
+/* G3 compact PRE/POST control: no extra DSP, no animated/blurred surfaces. */
+#app #mixer .arSendSummary{gap:3px}
+#app #mixer button.arSendChip{
+  all:unset;box-sizing:border-box;display:flex;align-items:center;gap:5px;
+  flex:1 1 0;min-height:0;padding:2px 4px;
+  border-left:2px solid #577d8c;border-bottom:1px solid #2b414d;
+  background:#102630;color:#c8e2e7;cursor:pointer;
+  font:500 9px/1.2 "ArSonMix Inter",sans-serif;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+#app #mixer button.arSendChip[data-live="true"]{border-left-color:#6cc3db}
+#app #mixer button.arSendChip[data-enabled="false"]{color:#7f9da9}
+#app #mixer button.arSendChip:focus-visible{outline:2px solid #76dce9;outline-offset:-1px}
+#app #mixer .arSendDest{display:inline-flex;min-width:30px;font-weight:650;color:#78c5d8}
+.arSendEditor[hidden]{display:none}
+.arSendEditor{
+  position:fixed;z-index:980;width:min(460px,calc(100vw - 16px));
+  max-height:calc(100dvh - 16px);overflow:auto;
+  box-sizing:border-box;background:#172a35;border:1px solid #547383;
+  border-radius:5px;color:#d5e7ee;box-shadow:0 9px 22px #0009;
+  font:11px/1.4 "ArSonMix Inter",sans-serif;
+  scrollbar-width:thin;scrollbar-color:#577887 #102530;
+}
+.arSendEditor>header{
+  display:flex;align-items:center;justify-content:space-between;
+  gap:8px;padding:9px 12px;background:#263c49;border-bottom:1px solid #4c6877;
+}
+.arSendEditor>header div{display:flex;flex-direction:column;gap:1px}
+.arSendEditor>header small{font-size:9px;color:#8fbacb;letter-spacing:.6px}
+.arSendEditor>header strong{font-size:14px;font-weight:650}
+.arSendEditor>header button{
+  width:32px;height:32px;aspect-ratio:1/1;
+  background:var(--b180-off,#cbd1d1);color:#18242a;
+  border:1px solid #81939b;border-radius:3px;cursor:pointer;
+  font:18px "ArSonMix Inter",sans-serif;
+}
+.arSendEditor>header button:active{background:#ff636d;border-color:#de4051}
+.arSendNotice{margin:0;padding:8px 12px;font-size:10px;color:#a3bfca}
+.arSendReturn{
+  display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;
+  background:#102632;border-top:1px solid #304c5b;border-bottom:1px solid #304c5b;
+}
+.arSendReturn label,.arSendEditLine label{display:inline-flex;align-items:center;gap:4px}
+.arSendEditor input[type="checkbox"]{accent-color:#66ccd7;width:15px;height:15px}
+.arSendEditor select{
+  height:29px;min-width:68px;padding:2px 5px;
+  color:#d6edf4;background:#0b1d28;border:1px solid #476879;
+  border-radius:3px;font:11px "ArSonMix Inter",sans-serif;
+}
+.arSendEditRows{display:flex;flex-direction:column;padding:7px 10px;gap:5px}
+.arSendEditLine{
+  display:flex;align-items:center;flex-wrap:wrap;gap:7px;min-height:39px;
+  padding:5px 6px;background:#122935;border:1px solid #375261;
+}
+.arSendEditLine>strong{min-width:38px;font-weight:650;color:#7ed0e0}
+.arSendEditor .btn-180{
+  min-height:31px;height:31px;font-size:10px!important;letter-spacing:.1px!important;
+  padding:0 9px!important;white-space:nowrap;
+}
+.arSendEditor .arSendEditLine [data-send-remove]{margin-left:auto}
+.arSendEditor>footer{
+  padding:9px 11px;display:flex;align-items:center;gap:6px;
+  background:#263b47;border-top:1px solid #486271;
+}
+.arSendEditor>footer [role="status"]{
+  flex:1;min-width:0;color:#9ec3ce;font-size:10px;
+}
+.arSendEditor>footer .arSendApply{
+  --b180-color:#8ce9af;--b180-border:#479f72;--b180-ink:#123c2a;
+}
+@media(max-height:790px){
+  #app #mixer button.arSendChip{padding:1px 3px;font-size:8.5px}
+  #app #mixer .arSendDest{min-width:26px}
+}

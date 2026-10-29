@@ -95,9 +95,83 @@ async def main():
             assert await page.locator("#mixer .rack").count()==10
             assert await page.locator("#mixer .fader-zone").count()==11
             await page.screenshot(path=f'mixer-g1-bank-{bank.lower()}-1680.png')
+        # G3 Studio One style: selected CH→AUX PRE/POST editor lives in
+        # SENDS mode; no routing patchbay opening, no fader/FX DOM teardown.
+        await page.locator('[data-mix-mode="SENDS"]').click()
+        assert await page.locator('[data-strip="0"] .arSendChip').count()==4
+        await page.locator('[data-strip="0"] [data-send-focus="0"]').click()
+        assert await page.locator('#arSendEditor').is_visible()
+        await page.locator('#arSendEditor [data-send-return="enabled"]').check()
+        await page.locator('#arSendEditor [data-send-create="POST"]').click()
+        assert await page.locator('#arSendEditor [data-send-tap="POST"]').count()==1
+        await page.locator('#arSendEditor [data-send-gain="POST"]').select_option("0.5")
+        await page.locator('#arSendEditor [data-send-pan="POST"]').select_option("0.5")
+        await page.locator('#arSendEditor [data-send-apply]').click()
+        actions=await page.evaluate("""() => window.__armixTestActions.filter(
+          x=>x.name==='arMixAction'&&x.data.action==='routingDryApply')""")
+        assert len(actions)==2,actions
+        g3=actions[-1]['data']['value']
+        assert g3['deviceEpoch']==4 and g3['revision']==4,g3
+        assert g3['auxes'][0]['enabled'] is True,g3
+        assert len(g3['sends'])==1,g3
+        assert (g3['sends'][0]['from']==0 and g3['sends'][0]['to']==10 and
+          g3['sends'][0]['tap']=='POST' and g3['sends'][0]['gain']==0.5 and
+          g3['sends'][0]['pan']==0.5),g3
+        await page.evaluate("""status => {
+          const native=status.dryRoutingLab;
+          native.revision=5;
+          native.acceptedRoute.auxes[0].enabled=true;
+          native.acceptedRoute.sends=[{from:0,to:10,tap:"POST",gain:.5,pan:.5}];
+          window.__armixTestEmit("arMixRoutingLabAck",{ok:true,state:native});
+          window.__armixTestEmit("arMixStatus",status);
+        }""",status)
+        assert "NATIVE ACK" in await page.locator('#arSendFeedback').inner_text()
+        assert await page.locator('#mixer [data-strip="0"] .rack .insert-slot').count()==6
+        # With speakers armed, SEND edit remains a draft and APPLY is gated.
+        await page.evaluate("""status=>{
+          status.monitor=true;
+          window.__armixTestEmit("arMixStatus",status);
+        }""",status)
+        await page.locator('#arSendEditor [data-send-gain="POST"]').select_option("0.25")
+        assert await page.locator('#arSendEditor [data-send-apply]').is_disabled()
+        assert len(await page.evaluate("""()=>window.__armixTestActions.filter(
+          x=>x.name==="arMixAction"&&x.data.action==="routingDryApply")"""))==2
+        # REVERT restores authoritative ACK and all other faders/FX unchanged.
+        await page.locator('#arSendEditor [data-send-revert]').click()
+        assert await page.locator('#arSendEditor [data-send-gain="POST"]').input_value()=="0.5"
+        await page.evaluate("""status=>{
+          status.monitor=false;window.__armixTestEmit("arMixStatus",status);
+        }""",status)
+        # Disabled send = actual native zero gain; re-enable restores previous
+        # level without creating a duplicate edge.
+        await page.locator('#arSendEditor [data-send-enable="POST"]').uncheck()
+        assert await page.locator('#arSendEditor [data-send-gain="POST"]').input_value()=="0"
+        await page.locator('#arSendEditor [data-send-enable="POST"]').check()
+        assert await page.locator('#arSendEditor [data-send-gain="POST"]').input_value()=="0.5"
+        await page.locator('#arSendEditor [data-send-revert]').click()
+        # Negative ACK keeps the old native route while UI shows rejection.
+        await page.locator('#arSendEditor [data-send-gain="POST"]').select_option("0.25")
+        await page.locator('#arSendEditor [data-send-apply]').click()
+        await page.evaluate("""status=>{
+          window.__armixTestEmit("arMixRoutingLabAck",
+            {ok:false,error:"Stale graph revision",state:status.dryRoutingLab});
+        }""",status)
+        assert "REJECTED" in await page.locator('#arSendFeedback').inner_text()
+        assert await page.locator('#arSendEditor [data-send-gain="POST"]').input_value()=="0.25"
+        await page.locator('#arSendEditor [data-send-revert]').click()
+        assert await page.locator('#arSendEditor [data-send-gain="POST"]').input_value()=="0.5"
+        # Unpatched CH2 may not create a send even with AUX1 already enabled.
+        result=await page.evaluate("""()=>window.__arMixStageAuxSendEdit({
+          from:1,bus:0,tap:"PRE",action:"create"})""")
+        assert result['ok'] is False and "Patch CH 2" in result['error'],result
+        for width in (1366,1440,1680):
+            await page.set_viewport_size({"width":width,"height":768})
+            await page.screenshot(path=f'mixer-g3-sends-{width}.png')
+            assert await page.locator('#arSendEditor').is_visible()
+        await page.locator('#arSendEditor [data-send-close]').click()
         assert not errors,errors
         await browser.close()
-        print("PASS: G1/G2 FX retention, stable faders, muted native input draft/ACK, real I/O, 3 viewport screenshots")
+        print("PASS: G1/G2 + G3 real PRE/POST draft, AUX return, 0-gain bypass, native ACK/reject/revert, stable rack and 3 viewports")
 
 if __name__=="__main__":
     asyncio.run(main())
