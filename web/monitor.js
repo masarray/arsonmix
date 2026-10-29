@@ -600,6 +600,8 @@
   });
   function updateRouteLabIdentity(){
     const d=state.dryRoutingLab||{};
+    const clear=document.getElementById("arRouteClear");
+    if(clear)clear.disabled=patchPending||!d.acceptedRoute||!!state.monitor;
     const label=document.getElementById("arRouteIdentity");
     if(!label)return;
     setTextIfChanged(label,(d.active ? (d.ready?(d.acceptedRoute?"NATIVE PATCH LIVE":"NATIVE MIXER READY · UNPATCHED / SILENT"):"PATCH STALE — SILENT, REAPPLY"):"AWAITING VERIFIED DEVICE")+
