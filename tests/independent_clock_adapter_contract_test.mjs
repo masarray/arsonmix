@@ -176,8 +176,10 @@ test('unexpected ASIO/WASAPI switch notifies user once from control thread',()=>
 test('P1: dry-through live microphone is NEVER exempted from DIRECT route fencing',()=>{
   const callback=engine.slice(engine.indexOf('void audioDeviceIOCallbackWithContext ('));
   const begin=callback.indexOf('const auto activeDiagnosticRoute =');
-  const end=callback.indexOf('const auto cycle = handoff_.beginCycle();');
+  const end=callback.indexOf('// R0B B3: production NORMAL audio');
   assert.ok(begin>=0 && end>begin);
+  // Bound this test to the DIRECT fence. The separate B3 gate below only
+  // controls unpatched NORMAL audio; it must not alter diagnostic exemptions.
   const gate=callback.slice(begin,end);
   assert.match(gate,/activeDiagnosticRoute != armix::diagnostics::Route::outputOnlyTone/);
   assert.match(gate,/activeDiagnosticRoute != armix::diagnostics::Route::captureOnly/);
