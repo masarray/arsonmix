@@ -29,6 +29,9 @@ if ($manifest.webView2LoaderMode -ne "JUCE_WEBVIEW2_LOADER_STATIC_LINKED_V1" -or
     $manifest.guiStartupVerification -ne "WEBVIEW2_PREFLIGHT_AND_AR_MIX_GUI_READY_HANDSHAKE") {
     throw "Missing Windows WebView2 startup / static loader provenance"
 }
+if ($manifest.nativeDSP -ne "NATIVE_10CH_4AUX__EXPLICIT_PHYSICAL_INPUT_PATCH__MAIN_LR_OUTPUT_ONLY") {
+    throw "Native mixer routing provenance is not the current 10CH/4AUX production graph"
+}
 if ($manifest.storageMode -ne "PORTABLE_MARKER__USER_STUDIO_EMPTY_AT_RELEASE") {
     throw "Public ZIP missing portable workspace mode provenance"
 }
@@ -61,6 +64,8 @@ $resources = @(
     @{Path="web/index.html"; Hash=$manifest.indexHtmlSha256},
     @{Path="web/app.js"; Hash=$manifest.appJsSha256},
     @{Path="web/styles.css"; Hash=$manifest.stylesCssSha256},
+    @{Path="web/plugin-ui.css"; Hash=$manifest.pluginUiCssSha256},
+    @{Path="web/plugin-ui.js"; Hash=$manifest.pluginUiJsSha256},
     @{Path="web/bridge.js"; Hash=$manifest.bridgeJsSha256},
     @{Path="web/monitor.js"; Hash=$manifest.monitorJsSha256}
 )

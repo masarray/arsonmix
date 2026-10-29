@@ -4,6 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const js=readFileSync('web/bridge.js','utf8');
+const pluginUi=readFileSync('web/plugin-ui.js','utf8');
 const host=readFileSync('src/Main.cpp','utf8');
 const dsp=readFileSync('src/LiveAudioEngine.h','utf8');
 const layout=readFileSync('src/VstBusLayout.h','utf8');
@@ -12,7 +13,8 @@ test('every ADD click identifies request and reports result inside the open sele
   assert.match(js,/send\("addCatalog",\{id,requestId\}\)/);
   assert.match(js,/backend\.addEventListener\("arMixAddResult"/);
   assert.match(js,/nativeAddFeedback/);
-  assert.match(js,/FX NOT LOADED:/);
+  assert.match(pluginUi,/FX NOT LOADED:/);
+  assert.match(js,/window\.ArSonPluginUI/);
   assert.match(js,/if\(result\.ok\)hideDialog\("nativeFxSelector"\)/);
   // Errors respond immediately; successful inserts ACK only AFTER the
   // audio callback swaps to the prepared graph and the control thread retires.
@@ -34,6 +36,7 @@ test('plugin load and preset restore both negotiate existing VST3 bus layouts',(
 });
 test('GUI paints actual indeterminate feedback before synchronous plugin instantiate',()=>{
   assert.match(js,/requestAnimationFrame\(\(\)=>requestAnimationFrame\(\(\)=>send\("addCatalog"/);
-  assert.match(js,/aria-live="polite"/);
+  assert.match(pluginUi,/aria-live="polite"/);
+  assert.match(pluginUi,/aria-busy/);
   assert.match(js,/state\.adding=true/);
 });

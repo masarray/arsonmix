@@ -265,7 +265,7 @@
   overlay=document.createElement("div");overlay.id=id;overlay.className="native-modal";overlay.hidden=true;
   overlay.innerHTML=`<div class="native-dialog ${small?"small":""}" role="dialog" aria-modal="true">
     <div class="native-dialog-header"><div><span class="eyebrow">AR MIX STUDIO</span><h2>${title}</h2></div>
-    <button class="native-btn" data-close-modal="${id}" aria-label="Close">✕</button></div>
+    <button class="native-btn ar-dialog-close" data-close-modal="${id}" aria-label="Close ${escapeHtml(title)}">${iconSvg("close")}</button></div>
     <div class="native-dialog-body"></div><div class="native-dialog-footer"></div>
   </div>`;
   document.body.appendChild(overlay);
@@ -313,7 +313,7 @@
   const iconSvg=(name)=>{
     // Google Material Icons vector paths (Apache-2.0), self-contained; no font/network.
     const paths={
-      close:"M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z",
+      close:"M6.4,19L5,17.6L10.6,12L5,6.4L6.4,5L12,10.6L17.6,5L19,6.4L13.4,12L19,17.6L17.6,19L12,13.4L6.4,19Z",
       play:"M8 5v14l11-7z",
       stop:"M6 6h12v12H6z",
       bin:"M6 7h12v2H6V7zm2 3h2v9H8v-9zm6 0h2v9h-2v-9zM9 4h6l1 2H8l1-2zm-2 6h10l-.7 11H7.7L7 10z"
@@ -508,38 +508,22 @@
     renderOrbit();
     send("orbitInspect",{slot,shape:orbit.selectedShape});
   }
-  function pluginRows(items,limit=180){
-  return items.length?items.slice(0,limit).map(p=>`<div class="native-result">
-    <span><b title="${escapeHtml(p.path)}">${escapeHtml(p.name)}</b>
-      <small>${escapeHtml(p.vendor||"Unknown vendor")} · ${escapeHtml(p.category||"Audio effect")}</small></span>
-    <span class="native-tag" style="flex:0">VST3</span>
-    <button class="native-btn primary" data-native-add="${escapeHtml(p.id)}"
-      ${state.chain.length>=8||state.adding||pickerChannel!==0?"disabled":""} title="${pickerChannel===0?"Insert native VST3":"Channel routing not yet connected"}">＋ ADD</button></div>`).join("")
-    :'<div class="native-empty">No matching installed VST3 effects. Open Plugin Manager to scan your folders.</div>';
-}
-  function filterPlugins(){
-  return state.catalog.filter(p=>state.selectedCategory==="All"||classFor(p)===state.selectedCategory)
-    .filter(p=>(p.name+" "+p.vendor+" "+p.category).toLowerCase().includes(state.filter.toLowerCase()));
-}
+  // Native catalog layouts live in plugin-ui.js; input nodes remain stable while filtering.
+  const pluginUi=window.ArSonPluginUI;
   function renderPicker(){
-  const dlg=document.getElementById("nativeFxSelector");
-  if(!dlg)return;
-  dlg.querySelector(".native-dialog-body").innerHTML=`
-    <div class="native-sub" style="margin-bottom:9px">INSERT → ${pickerChannel===-1?"MASTER":"CH "+(pickerChannel+1)} · SLOT ${pickerSlot+1}${pickerChannel===0?" · LIVE VST3":" · ROUTING NOT CONNECTED"}</div>
-    <input class="native-search" id="nativeVstSearch" placeholder="Search by plugin name, developer or category..."
-      value="${escapeHtml(state.filter)}">
-    <div class="native-category">${fxCategories.map(c=>`<button class="native-btn ${c===state.selectedCategory?"on":""}" data-native-category="${c}">${c}</button>`).join("")}</div>
-    <div id="nativeAddFeedback" aria-live="polite" role="status"
-      class="native-add-feedback ${state.addError?"error":state.adding?"waiting":""}"
-      style="${state.addError||state.adding?"":"display:none"}">
-      ${state.adding?`<span class="native-busy"></span>Loading ${escapeHtml(state.pendingPlugin)}…
-        Initializing VST3; this may take a moment.`:
-      state.addError?`<strong>FX NOT LOADED:</strong> ${escapeHtml(state.addError)}
-        <div style="margin-top:4px">Open PLUGINS to rescan or SIGNAL CHECK for diagnostic logs.</div>`:""}
-    </div>
-    <div style="max-height:430px;overflow:auto">${pluginRows(filterPlugins())}</div>`;
-  dlg.querySelector(".native-dialog-footer").innerHTML=`${state.catalog.length} available plugins · <a href="#" data-plugin-manager="1" style="color:#7fdfff">OPEN PLUGIN MANAGER</a> for scanning and import`;
-}
+    const dlg=document.getElementById("nativeFxSelector");
+    if(!dlg)return;
+    const context=(pickerChannel===-1?"MASTER":"CH "+(pickerChannel+1))+
+      " · SLOT "+(pickerSlot+1)+(pickerChannel===0?" · LIVE VST3":" · ROUTING NOT CONNECTED");
+    pluginUi.renderPicker(dlg,state,context,fxCategories,classFor);
+  }
+  function renderPickerResults(){
+    pluginUi.updatePickerRows(document.getElementById("nativeFxSelector"),state,classFor,pickerChannel);
+  }
+  function renderPickerFeedback(){
+    pluginUi.updatePickerFeedback(document.getElementById("nativeFxSelector"),state);
+  }
+
   function clearPickerTarget(){
     pickerAnchor?.classList.remove("fx-picker-target");
     pickerAnchor=null;
@@ -588,29 +572,9 @@
     <div class="native-progress-info"><span>${escapeHtml(p.current||"")}</span><span>${found} effects found</span></div>`;
 }
   function renderManager(){
-  const dlg=document.getElementById("nativePluginManager");
-  if(!dlg)return;
-  dlg.querySelector(".native-dialog-body").innerHTML=`
-    <div class="native-sub" style="margin-bottom:12px">MANAGE INSTALLED VST3 PLUGINS · SCANNING RUNS OFF THE AUDIO CALLBACK</div>
-    <div class="native-toolbar" style="margin-bottom:12px">
-      <button class="native-btn primary" data-native-action="importVst3" ${state.scanning?"disabled":""}>＋ ADD VST · KEEP IN STUDIO</button>
-      <button class="native-btn" data-native-action="importVst3InPlace" ${state.scanning?"disabled":""}>LOAD IN PLACE</button>
-      <button class="native-btn" data-native-action="addScanFolder" ${state.scanning?"disabled":""}>ADD REFERENCE FOLDER</button>
-      <button class="native-btn" data-native-action="scanVst3" ${state.scanning?"disabled":""}>SCAN SYSTEM (OPTIONAL)</button>
-    </div>
-    <div class="native-card" style="min-height:0;margin-bottom:12px">
-      <h3>${state.scanning?"SCANNING PLUGINS":"PLUGIN SCANNER"}</h3>
-      <div id="nativeManagerProgress">${state.scanning?scanProgressHtml():
-        `<div class="native-sub">${escapeHtml(state.message)} · ${state.catalog.length} cached effects</div>`}</div>
-    </div>
-    <div class="native-sub">Plugin catalog (${state.catalog.length}) — stored between launches</div>
-    <div style="max-height:260px;overflow:auto">${state.catalog.length?
-      state.catalog.slice(0,120).map(p=>`<div class="native-result"><span><b>${escapeHtml(p.name)}</b>
-        <small>${escapeHtml(p.vendor||"Unknown")} · ${escapeHtml(p.path)}</small></span></div>`).join("")
-        :'<div class="native-empty">No plugins indexed yet. Scan your standard folders or import a .vst3 file.</div>'}</div>`;
-  dlg.querySelector(".native-dialog-footer").textContent=
-    "VST2 DLL is not VST3. Scanning third-party binaries is not yet crash-isolated.";
-}
+    pluginUi.renderManager(document.getElementById("nativePluginManager"),state,scanProgressHtml);
+  }
+
   function updateProgress(){
   const p=state.progress||{};
   const hud=document.getElementById("nativeScanHud");
@@ -673,6 +637,7 @@
   const orbitClose=document.querySelector('#nativeOrbit [data-close-modal]');
   if(orbitClose)orbitClose.innerHTML=iconSvg("close");
   createDialog("nativePluginManager","Plugin Manager");
+  pluginUi.init(()=>state);
   const hud=document.createElement("div");hud.id="nativeScanHud";hud.hidden=true;document.body.appendChild(hud);
 }
   function patchMixer(){
@@ -935,7 +900,7 @@
     return;
   }
   if(el.hasAttribute("data-plugin-manager")){
-    renderManager();showDialog("nativePluginManager");return;
+    hideDialog("nativeFxSelector");renderManager();showDialog("nativePluginManager");return;
   }
   if(el.hasAttribute("data-plugin-picker")){
     const rack=el.closest(".rack");
@@ -990,7 +955,7 @@
   }
   if(el.dataset.nativeCategory){
     state.selectedCategory=el.dataset.nativeCategory;
-    renderPicker();return;
+    renderPickerResults();return;
   }
   const fx=el.dataset.nativeFx,slot=Number(el.dataset.slot);
   if(fx==="editor")send("fxEditor",{slot});
@@ -1071,11 +1036,7 @@
   document.addEventListener("input", function(e){
   if(e.target.id!=="nativeVstSearch")return;
   state.filter=e.target.value;
-  const pos=e.target.selectionStart;
-  renderPicker();
-  const input=document.querySelector("#nativeVstSearch");
-  input?.focus();
-  input?.setSelectionRange(pos,pos);
+  renderPickerResults(); // Preserve search input, caret, focus, and popup geometry.
 },true);
 
   // Persist numeric edits immediately; input[type=number] may not emit change
@@ -1198,7 +1159,7 @@
     const dialog=document.getElementById("nativePluginManager");
     if(dialog&&!dialog.hidden)renderManager();
     const picker=document.getElementById("nativeFxSelector");
-    if(picker&&!picker.hidden)renderPicker();
+    if(picker&&!picker.hidden)renderPickerResults();
     updateProgress();
   });
   backend.addEventListener("arMixChain",nodes=>{
@@ -1216,7 +1177,7 @@
     }
     repaint();
     const picker=document.getElementById("nativeFxSelector");
-    if(picker&&!picker.hidden)renderPicker();
+    if(picker&&!picker.hidden)renderPickerResults();
   });
   backend.addEventListener("arMixAddResult",result=>{
     if(Number(result.requestId)!==state.addRequestId)return;
@@ -1226,8 +1187,7 @@
     if(result.ok)hideDialog("nativeFxSelector");
     else{
       // Keep error in the open modal; toast behind backdrop is insufficient.
-      renderPicker();
-      document.getElementById("nativeAddFeedback")?.setAttribute("aria-busy","false");
+      renderPickerFeedback();renderPickerResults();
     }
   });
   backend.addEventListener("arMixNotice",data=>{
