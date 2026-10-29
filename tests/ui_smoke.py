@@ -475,6 +475,11 @@ async def main():
         await page.locator('#audioSetupBtn').click()
         assert await page.locator('#audioSetupBtn').evaluate(
             '(e)=>!e.classList.contains("active") && !e.classList.contains("selected")')
+        # SETUP now opens the real G1/G2 I/O overlay in both standalone and WebView2.
+        # Close it before testing underlying fader/MUTE pointer interactions.
+        assert await page.locator('#arIOOverlay').is_visible()
+        await page.locator('#arIOOverlay [data-io-close]').click()
+        assert not await page.locator('#arIOOverlay').is_visible()
         # Restore factory FX chain so this visual-button test cannot change later FX tests.
         await page.evaluate("""()=>{
           channels[0].inserts=[...initialFactoryChannels[0].inserts];
