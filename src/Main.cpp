@@ -82,7 +82,9 @@ juce::WebBrowserComponent::Options webViewOptions()
     return juce::WebBrowserComponent::Options{}
         .withBackend (juce::WebBrowserComponent::Options::Backend::webview2)
         .withWinWebView2Options (
-            juce::WebBrowserComponent::Options::WinWebView2{}.withUserDataFolder (folder));
+            juce::WebBrowserComponent::Options::WinWebView2{}.withUserDataFolder (folder)
+            .withBackgroundColour (juce::Colour (0xff101921)))
+        .withKeepPageLoadedWhenBrowserIsHidden();
 }
 
 void showWebViewStartupError (const juce::String& detail)
@@ -208,7 +210,11 @@ public:
         setResizeLimits (1100, 650, 3840, 2160);
         setContentNonOwned (&browser_, false);
         centreWithSize (1650, 930);
-        setVisible (true);
+        // Keep native main window hidden during its expensive initial WebView2
+        // construction. The opaque always-on-top splash owns first paint.
+        // After one control tick, reveal the PEER behind splash if WebView2
+        // requires a visible HWND to initialize. Never expose a white frame.
+        setVisible (false);
 
         // Begin WebView navigation BEFORE any synchronous JUCE driver setup.
         // Device startup on cold PCs otherwise blocks the very first GUI.
@@ -254,6 +260,7 @@ private:
     std::unique_ptr<AudioSetupWindow> audioSetupWindow_;
     juce::String startupError_, lastAudioXml_;
     bool initialStateSent_ = false;
+    bool webViewPeerWarmed_ = false;
     bool webViewStartupNoticeSent_ = false;
     juce::uint32 webViewStartupTick_ = 0;
     juce::uint32 guiReadyTick_ = 0;
@@ -1487,6 +1494,14 @@ private:
         {
             chooseImport (false, true); // Explicit external bundle reference.
         }
+        else if (action == "setPluginFavorite")
+        {
+            // User-owned portable catalog preference, not a VST instance edit.
+            const auto id = args.getProperty ("id", {}).toString();
+            const bool favorite = static_cast<bool> (args.getProperty ("value", false));
+            if (!catalog_.setFavorite (id, favorite))
+                emitNotice ("Favorite not changed: plugin is no longer indexed.", true);
+        }
         else if (action == "addCatalog")
         {
             const auto requestId = static_cast<int> (args.getProperty ("requestId", 0));
@@ -1728,6 +1743,15 @@ private:
     void timerCallback() override
     {
         ++timerTicks_;
+        // A hidden JUCE/WebView2 peer may defer first navigation. Expose the
+        // compositor behind the opaque startup splash after the first tick;
+        // the user sees the completed mixer only after the ready handshake.
+        if (!webViewPeerWarmed_)
+        {
+            webViewPeerWarmed_ = true;
+            setVisible (true);
+            toBack();
+        }
         // Existing message-thread 12 Hz timer: no extra worker or DSP work.
         // Never allow a hidden broken GUI to continue unattended audio.
         if (!browser_.loaded && !webViewStartupNoticeSent_ &&
