@@ -45,3 +45,21 @@ test('bypass is sample-smoothed on audio callback without control-thread CPU wor
  assert.match(e,/bypass\.shouldProcessWet\(\)/);
  assert.doesNotMatch(e.slice(e.indexOf('bool setBypass'),e.indexOf('bool removeAt')),/detach\(|prepareToPlay|releaseResources/);
 });
+
+test('R0B CH1 MOVE inside routed 10CH graph uses the same callback-boundary de-click',()=>{
+  const move=e.slice(e.indexOf('bool moveSlot'),e.indexOf('juce::String applyDryRoutingLab'));
+  assert.doesNotMatch(move,/dryRoutingLab_\.active\(\)\s*\|\|/);
+  assert.match(move,/FxOrderPlan::moved/);
+  assert.match(move,/fxMovePendingOrder_\.store/);
+  assert.doesNotMatch(move,/detach\(|attach\(|prepareToPlay|releaseResources/);
+  const begin=e.indexOf('if (dryRoutingLab_.active())',e.indexOf('callbackCount_.fetch_add'));
+  const end=e.indexOf('const bool enabled = monitor_',begin);
+  const routed=e.slice(begin,end);
+  assert.match(routed,/FxMoveRamp::gain\(routedFxMove,i,samples\)/);
+  assert.match(routed,/fxMovePhase_\.store\(2,std::memory_order_release\)/);
+  assert.match(routed,/fxMovePhase_\.store\(0,std::memory_order_release\)/);
+  assert.match(routed,/cycle\.graph->orderPacked\.store/);
+  assert.ok(routed.indexOf('FxMoveRamp::gain')<routed.indexOf('masterLoudness_.process'));
+  assert.match(routed,/audibleLeft=routedFxMove!=0\?movedPeakL:left/);
+  assert.doesNotMatch(routed,/detach\(|attach\(|prepareToPlay|releaseResources/);
+});
