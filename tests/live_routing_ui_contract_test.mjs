@@ -205,3 +205,22 @@ test("R0 premium workspace is anchored to mixer chrome and lazily opens INTERNAL
  assert.match(ui,/routingDryApply/);
  assert.match(ui,/hydrateAcceptedRoute/);
 });
+
+test("R1 Studio backup rejection sends one negative native ACK and leaves graph untouched",()=>{
+  const first=main.indexOf('if ((studioBackupBusy_ || nativeShowBusy_)');
+  const next=main.indexOf('// Structural plugin operations',first);
+  assert.ok(first>=0 && next>first);
+  const gate=main.slice(first,next);
+  assert.match(gate,/action == "routingDryApply"/);
+  assert.match(gate,/setProperty \("ok", false\)/);
+  assert.match(gate,/setProperty \("state", engine_\.status\(\)\.getProperty/);
+  assert.match(gate,/arMixRoutingLabAck/);
+  assert.ok(gate.indexOf("arMixRoutingLabAck") < gate.indexOf("return emitNotice"));
+  assert.doesNotMatch(gate,/enableDryRoutingLab|applyDryRoutingLab|disableDryRoutingLab/);
+  assert.match(ui,/if\(patchPending\)return/);
+  const apply=ui.slice(ui.indexOf('document.getElementById("arRouteApply").addEventListener'));
+  assert.ok(apply.indexOf("patchPreflight()")<apply.indexOf("patchPending=true"));
+  assert.ok(apply.indexOf("if(state.monitor)")<apply.indexOf("patchPending=true"));
+  assert.match(ui,/patchPending=false/);
+  assert.match(ui,/if\(reply\?\.ok===true\)hydrateAcceptedRoute\(\)/);
+});

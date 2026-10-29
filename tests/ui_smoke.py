@@ -1316,6 +1316,21 @@ async def main():
         assert action["channels"][0]["left"]==2 and action["channels"][0]["mode"]=="MONO",action
         assert action["channels"][1]["left"]==2 and action["channels"][1]["right"]==5,action
         assert await native.locator("#arRouteApply").is_disabled()
+        # Emulate the native Studio backup guard: rejection MUST release
+        # pending and preserve the uncommitted physical patch as DRAFT.
+        await native.evaluate("""()=>{
+          const d=window.__arPatchStatus.dryRoutingLab;
+          window.__arMixMockEvents.arMixRoutingLabAck({
+            ok:false,error:"Studio backup in progress",state:d
+          });
+        }""")
+        assert await native.locator("#arRouteApply").is_enabled()
+        assert "REJECTED" in await native.locator("#arRouteFeedback").inner_text()
+        assert await native.locator('[data-patch-row="0"][data-patch-port="2"].arPatchCell').get_attribute("data-patch-state")=="draft"
+        await native.locator("#arRouteApply").click()
+        assert await native.locator("#arRouteApply").is_disabled()
+        assert await native.evaluate("""()=>window.__arMixSent.filter(
+          x=>x.payload?.action==='routingDryApply').length""")==2
         await native.evaluate("""()=>{
           const d=window.__arPatchStatus.dryRoutingLab;
           d.active=true;d.ready=true;d.revision=1;
