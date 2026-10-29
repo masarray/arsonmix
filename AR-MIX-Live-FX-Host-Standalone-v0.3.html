@@ -2179,51 +2179,163 @@ function toggleBypass(idx){setFxBypass(currentChannel,idx,!bypassed[fxKey(curren
 const quickPresets={'Clean Vocal':['Noise Gate','Studio EQ','Vocal Compressor'],'Warm Karaoke':['Noise Gate','Studio EQ','Vocal Compressor','Studio Reverb'],'Live Broadcast':['Noise Gate','Dynamic EQ','De-Esser','Brickwall Limiter']};
 function applyQuickPreset(name){const c=channels[currentChannel];for(let i=0;i<8;i++){delete fxParams[fxKey(currentChannel,i)];delete bypassed[fxKey(currentChannel,i)]}pluginEditorIndex=null;setChain(c,quickPresets[name]||[]);document.querySelectorAll('[data-preset]').forEach(b=>b.classList.toggle('active',b.dataset.preset===name));flash('FX chain preset selected: '+name+' (UI only)');send('chainChanged',{chain:normalChain(c)},currentChannel)}
 function durableSession(){return {schemaVersion:1,version:'0.3-ui',channels:channels.map(c=>({id:c.id,name:c.name,icon:c.icon,color:c.color,inserts:[...c.inserts],fader:c.fader,pan:c.pan,trim:c.trim,mute:c.mute,solo:c.solo,hpf:c.hpf,stereo:c.stereo})),masterGain,masterPan,masterMute,masterMono,masterInserts:[...masterInserts],masterBypassed:{...masterBypassed},sceneIdx,selected:currentChannel,fxParams:structuredClone(fxParams),bypassed:{...bypassed}};}
-function persistSession(){try{localStorage.setItem('armix-v03-current',JSON.stringify(durableSession()));localStorage.setItem('armix-v03-snapshots',JSON.stringify(userSnapshots));localStorage.setItem('armix-v03-chains',JSON.stringify(savedChains));return true}catch{return false}}
-function saveFxChainPreset(){const name=prompt('Name this FX chain preset:','My Vocal Chain');if(!name)return;const key=name.trim().slice(0,60);if(!key)return;savedChains[key]={schemaVersion:1,inserts:[...normalChain(channels[currentChannel])],states:normalChain(channels[currentChannel]).map((_,i)=>({...getFxParams(currentChannel,i),bypass:!!bypassed[fxKey(currentChannel,i)]}))};persistSession();flash('FX chain preset saved: '+key)}
+// Browser-only preview state. One replaceable key makes storage failure atomic:
+// never write current/snapshot/chains as three independently committed records.
+const UI_STORAGE_KEY='armix-v03-workspace-v2';
+const isUiRecord=o=>o!==null&&typeof o==='object'&&!Array.isArray(o);
+function cleanSnapshotName(value){
+ if(typeof value!=='string')return '';
+ const name=value.trim().replace(/\s+/g,' ').slice(0,60);
+ if(!name||/[<>&"'\u0000-\u001f\u007f]/.test(name)||
+    ['__proto__','constructor','prototype'].includes(name.toLowerCase()))return '';
+ return name;
+}
+function validUiSession(session){
+ if(!isUiRecord(session)||session.schemaVersion!==1||
+    !Array.isArray(session.channels)||session.channels.length<channels.length)return false;
+ for(let i=0;i<channels.length;i++){
+   const c=session.channels[i];
+   if(!isUiRecord(c))return false;
+   if(c.inserts!==undefined&&(!Array.isArray(c.inserts)||c.inserts.length>8||
+      !c.inserts.every(x=>typeof x==='string'&&x.length<=160)))return false;
+   if(c.name!==undefined&&typeof c.name!=='string')return false;
+   for(const k of ['fader','pan','trim'])if(c[k]!==undefined&&!Number.isFinite(c[k]))return false;
+   for(const k of ['mute','solo','hpf'])if(c[k]!==undefined&&typeof c[k]!=='boolean')return false;
+ }
+ for(const k of ['masterGain','masterPan'])if(session[k]!==undefined&&!Number.isFinite(session[k]))return false;
+ for(const k of ['masterMute','masterMono'])if(session[k]!==undefined&&typeof session[k]!=='boolean')return false;
+ if(session.masterInserts!==undefined&&(!Array.isArray(session.masterInserts)||
+    session.masterInserts.length>6||!session.masterInserts.every(x=>typeof x==='string'&&x.length<=160)))return false;
+ for(const k of ['masterBypassed','fxParams','bypassed'])
+   if(session[k]!==undefined&&!isUiRecord(session[k]))return false;
+ return true;
+}
+function persistSession(current=durableSession(),snapshots=userSnapshots,chains=savedChains){
+ try{
+   if(!validUiSession(current)||!isUiRecord(snapshots)||!isUiRecord(chains))return false;
+   const payload=JSON.stringify({schemaVersion:2,current,snapshots,chains});
+   if(payload.length>2_000_000)return false; // bounded browser-only data, NOT a VST vault
+   localStorage.setItem(UI_STORAGE_KEY,payload); // one atomic replacement
+   return true;
+ }catch{return false}
+}
+function saveFxChainPreset(){
+ const name=prompt('Name this FX chain preset:','My Vocal Chain');
+ if(!name)return;
+ const key=cleanSnapshotName(name);
+ if(!key){flash('Invalid FX chain name');return}
+ const chain=normalChain(channels[currentChannel]);
+ const candidate={...savedChains,[key]:{schemaVersion:1,inserts:[...chain],states:chain.map((_,i)=>({...getFxParams(currentChannel,i),bypass:!!bypassed[fxKey(currentChannel,i)]}))}};
+ if(!persistSession(durableSession(),userSnapshots,candidate)){flash('FX chain NOT saved: storage unavailable');return}
+ savedChains=candidate;
+ flash('FX chain preset saved: '+key)
+}
 function recallFxChain(){const keys=Object.keys(savedChains);if(!keys.length){flash('No saved FX chains yet');return}const key=prompt('Enter FX chain preset name:\n'+keys.join('\n'),keys[0]);if(!key||!savedChains[key])return;setChain(channels[currentChannel],savedChains[key].inserts);savedChains[key].states?.forEach((v,i)=>{fxParams[fxKey(currentChannel,i)]={mix:v.mix,amount:v.amount,output:v.output};bypassed[fxKey(currentChannel,i)]=!!v.bypass});pluginEditorIndex=null;renderRackWorkspace();flash('FX chain recalled: '+key)}
 function saveMixerSnapshot(){
  const name=prompt('Save mixer snapshot — name:',scenes[sceneIdx]||'My Live Sound');
- if(name===null)return;
- const key=name.trim().replace(/\\s+/g,' ').slice(0,60);
- if(!key){flash('Enter a snapshot name');return}
- if(Object.prototype.hasOwnProperty.call(userSnapshots,key)&&!confirm('Replace existing snapshot "'+key+'"?'))return;
- const session=durableSession();
- const previous=userSnapshots[key];
- userSnapshots[key]={...session,savedAt:new Date().toISOString()};
- if(!scenes.includes(key))scenes.push(key);
- sceneIdx=scenes.indexOf(key);
- if(!persistSession()){
-   if(previous===undefined)delete userSnapshots[key];else userSnapshots[key]=previous;
-   flash('Snapshot NOT saved: storage unavailable');return;
+ if(name===null)return false;
+ const key=cleanSnapshotName(name);
+ if(!key){flash('Invalid snapshot name');return false}
+ if(Object.prototype.hasOwnProperty.call(userSnapshots,key)&&
+    !confirm('Replace existing snapshot "'+key+'"?'))return false;
+ const nextIdx=scenes.includes(key)?scenes.indexOf(key):scenes.length;
+ const nextCurrent=durableSession();
+ nextCurrent.sceneIdx=nextIdx;
+ const candidate={...userSnapshots,[key]:{...nextCurrent,savedAt:new Date().toISOString()}};
+ if(!persistSession(nextCurrent,candidate,savedChains)){
+   flash('Snapshot NOT saved: storage unavailable');return false;
  }
+ userSnapshots=candidate;
+ if(!scenes.includes(key))scenes.push(key);
+ sceneIdx=nextIdx;
  createSide();flash('Mixer snapshot saved: '+key+' (local UI state)');
+ return true;
 }
 function deleteMixerSnapshot(name){
- if(!Object.prototype.hasOwnProperty.call(userSnapshots,name))return;
- if(!confirm('Delete saved snapshot "'+name+'"?'))return;
- const previous=userSnapshots[name];delete userSnapshots[name];
- if(!persistSession()){userSnapshots[name]=previous;flash('Delete failed: storage unavailable');return}
- const index=scenes.indexOf(name);if(index>=4)scenes.splice(index,1);
- sceneIdx=Math.min(sceneIdx,scenes.length-1);createSide();flash('Snapshot deleted: '+name);
+ if(!Object.prototype.hasOwnProperty.call(userSnapshots,name))return false;
+ if(!confirm('Delete saved snapshot "'+name+'"?'))return false;
+ const index=scenes.indexOf(name);
+ const removed=index>=4;
+ const nextIdx=removed&&index<sceneIdx?sceneIdx-1:
+   removed&&index===sceneIdx?Math.min(sceneIdx,scenes.length-2):sceneIdx;
+ const candidate={...userSnapshots};
+ delete candidate[name];
+ const nextCurrent=durableSession();nextCurrent.sceneIdx=nextIdx;
+ if(!persistSession(nextCurrent,candidate,savedChains)){
+   flash('Delete failed: storage unavailable');return false;
+ }
+ userSnapshots=candidate;
+ if(removed)scenes.splice(index,1);
+ sceneIdx=nextIdx;createSide();flash('Snapshot deleted: '+name);
+ return true;
 }
-function applySession(session){if(!session||session.schemaVersion!==1||!Array.isArray(session.channels)||session.channels.length<channels.length){flash('Unsupported session format');return}for(let i=0;i<channels.length;i++){const src=session.channels[i],c=channels[i];
- c.stereo=i>=6; // Fixed 1–6 mono, 7–10 stereo across legacy snapshot migrations.
- if(typeof src.name==='string'&&src.name.trim())c.name=src.name.trim().slice(0,26);
- if(channelIcons.includes(src.icon))c.icon=src.icon;
- if(channelPalette.includes(src.color))c.color=src.color;
- for(const k of ['fader','pan','trim'])if(Number.isFinite(src[k]))c[k]=src[k];for(const k of ['mute','solo','hpf'])if(typeof src[k]==='boolean')c[k]=src[k];if(Array.isArray(src.inserts))c.inserts=src.inserts.filter(x=>typeof x==='string').slice(0,8)}masterGain=Number.isFinite(session.masterGain)?session.masterGain:-.1;masterPan=Number.isFinite(session.masterPan)?clamp(session.masterPan,-100,100):0;masterMute=!!session.masterMute;masterMono=!!session.masterMono;
+function applySession(session){
+ // Validate the COMPLETE shape before modifying ANY channel or emitting native controls.
+ if(!validUiSession(session)){flash('Unsupported or corrupted session format');return false}
+ for(let i=0;i<channels.length;i++){
+   const src=session.channels[i],c=channels[i];
+   c.stereo=i>=6; // Fixed 1–6 mono, 7–10 stereo across legacy snapshot migrations.
+   if(typeof src.name==='string'&&src.name.trim())c.name=src.name.trim().slice(0,26);
+   if(channelIcons.includes(src.icon))c.icon=src.icon;
+   if(channelPalette.includes(src.color))c.color=src.color;
+   for(const k of ['fader','pan','trim'])if(Number.isFinite(src[k]))c[k]=src[k];
+   for(const k of ['mute','solo','hpf'])if(typeof src[k]==='boolean')c[k]=src[k];
+   if(Array.isArray(src.inserts))c.inserts=[...src.inserts];
+ }
+ masterGain=Number.isFinite(session.masterGain)?session.masterGain:-.1;
+ masterPan=Number.isFinite(session.masterPan)?clamp(session.masterPan,-100,100):0;
+ masterMute=!!session.masterMute;masterMono=!!session.masterMono;
  send('masterMono',masterMono,-1);
- if(Array.isArray(session.masterInserts))masterInserts=session.masterInserts.filter(x=>typeof x==='string').slice(0,6);
- masterBypassed=(session.masterBypassed&&typeof session.masterBypassed==='object')?{...session.masterBypassed}:{};
- fxParams=(session.fxParams&&typeof session.fxParams==='object')?structuredClone(session.fxParams):{};bypassed=(session.bypassed&&typeof session.bypassed==='object')?{...session.bypassed}:{};pluginEditorIndex=null;renderMixer();renderMaster();if(view==='FX RACK')renderRackWorkspace()}
-function loadSnapshotByIndex(i){if(!Number.isInteger(i)||i<0||i>=scenes.length)return;sceneIdx=i;const name=scenes[sceneIdx];
- if(userSnapshots[name])applySession(userSnapshots[name]);
- else if(sceneIdx<4){const state=durableSession();state.channels=initialFactoryChannels.map(c=>({...c,inserts:[...c.inserts]}));state.masterGain=-.1;
-  const voicePresets=[quickPresets['Clean Vocal'],quickPresets['Warm Karaoke'],quickPresets['Live Broadcast'],quickPresets['Clean Vocal']];state.channels[0].inserts=[...voicePresets[sceneIdx]];applySession(state);flash('Factory snapshot recalled: '+name+' (UI only)')}
- createSide();persistSession()}
+ if(Array.isArray(session.masterInserts))masterInserts=[...session.masterInserts];
+ masterBypassed=isUiRecord(session.masterBypassed)?{...session.masterBypassed}:{};
+ fxParams=isUiRecord(session.fxParams)?structuredClone(session.fxParams):{};
+ bypassed=isUiRecord(session.bypassed)?{...session.bypassed}:{};
+ pluginEditorIndex=null;renderMixer();renderMaster();
+ if(view==='FX RACK')renderRackWorkspace();
+ return true;
+}
+function loadSnapshotByIndex(i){
+ if(!Number.isInteger(i)||i<0||i>=scenes.length)return false;
+ const name=scenes[i];
+ let session;
+ if(Object.prototype.hasOwnProperty.call(userSnapshots,name)){
+   session=userSnapshots[name];
+ }else if(i<4){
+   session=durableSession();
+   session.channels=initialFactoryChannels.map(c=>({...c,inserts:[...c.inserts]}));
+   session.masterGain=-.1;
+   const presets=[quickPresets['Clean Vocal'],quickPresets['Warm Karaoke'],
+                  quickPresets['Live Broadcast'],quickPresets['Clean Vocal']];
+   session.channels[0].inserts=[...presets[i]];
+ }else{return false}
+ if(!validUiSession(session)){
+   flash('Snapshot rejected: malformed or unsupported state');return false;
+ }
+ const restored={...session,sceneIdx:i};
+ // Durable commit FIRST. Rejection must not select/alter a scene in memory.
+ if(!persistSession(restored,userSnapshots,savedChains)){
+   flash('Snapshot NOT recalled: storage unavailable');return false;
+ }
+ if(!applySession(restored))return false;
+ sceneIdx=i;createSide();
+ flash('Snapshot recalled: '+name+' (UI only; native VST3 state unchanged)');
+ return true;
+}
 function exportSession(){const data=JSON.stringify({...durableSession(),savedChains,userSnapshots},null,2);const blob=new Blob([data],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='ar-mix-live-session.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1200);flash('Session JSON exported')}
-function importSession(){const f=document.createElement('input');f.type='file';f.accept='application/json,.json';f.onchange=async()=>{const file=f.files?.[0];if(!file)return;if(file.size>2_000_000){flash('Session too large');return}try{const obj=JSON.parse(await file.text());applySession(obj);persistSession();flash('Session loaded')}catch{flash('Invalid JSON session')}};f.click()}
+function importSession(){
+ const f=document.createElement('input');f.type='file';f.accept='application/json,.json';
+ f.onchange=async()=>{
+   const file=f.files?.[0];if(!file)return;
+   if(file.size>2_000_000){flash('Session too large');return}
+   try{
+     const obj=JSON.parse(await file.text());
+     if(!validUiSession(obj)){flash('Invalid session format');return}
+     if(!persistSession(obj,userSnapshots,savedChains)){flash('Session NOT imported: storage unavailable');return}
+     if(applySession(obj))flash('Session loaded (UI only)');
+   }catch{flash('Invalid JSON session')}
+ };
+ f.click();
+}
 // Single optimized console layout. The unused PRO/EASY switch is retired.
 $('app').classList.add('easy');
 $('pluginSearch').addEventListener('input',renderPluginBrowser);
@@ -2234,19 +2346,58 @@ $('identityName').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDe
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closePluginBrowser();closeChannelIdentity()}if((e.key==='Enter'||e.key===' ')&&e.target.matches('[data-editstrip]')){e.preventDefault();openChannelIdentity(+e.target.dataset.editstrip)}});
 document.addEventListener('change',e=>{if(e.target.id==='rackChannel'){currentChannel=+e.target.value;renderRackWorkspace();renderMixer()}});
 document.addEventListener('click',e=>{const id=e.target.closest('button')?.id;if(id==='saveFxFromRack')saveFxChainPreset();else if(id==='recallFxPreset')recallFxChain();else if(id==='openSetupFromFlow')$('audioSetupBtn')?.click();else if(id==='flowFxButton')setView('FX RACK');else if(id==='backMixer')setView('MIX')});
-let lastPersist=0;setInterval(()=>{if(Date.now()-lastPersist<2000)return;lastPersist=Date.now();persistSession()},5000);
-try{userSnapshots=JSON.parse(localStorage.getItem('armix-v03-snapshots')||'{}');savedChains=JSON.parse(localStorage.getItem('armix-v03-chains')||'{}');for(const k of Object.keys(userSnapshots))if(!scenes.includes(k))scenes.push(k)}catch{userSnapshots={};savedChains={}}
-
-createSide();renderMixer();renderMaster();try{let last=JSON.parse(localStorage.getItem('armix-v03-current'));if(!last)last=JSON.parse(localStorage.getItem('arMixStudioUI')); if(last&&last.channels?.length>=channels.length){last.channels.slice(0,channels.length).forEach((s,i)=>{if(typeof s.name==='string'&&s.name.trim())channels[i].name=s.name.trim().slice(0,26);
- if(channelIcons.includes(s.icon))channels[i].icon=s.icon;
- if(channelPalette.includes(s.color))channels[i].color=s.color;
- for(const k of ['fader','pan','trim','mute','solo','hpf'])if(s[k]!==undefined)channels[i][k]=s[k];if(Array.isArray(s.inserts))channels[i].inserts=s.inserts.filter(x=>typeof x==='string').slice(0,8)});sceneIdx=last.sceneIdx??0;masterGain=last.masterGain??-.1;masterPan=Number.isFinite(last.masterPan)?clamp(last.masterPan,-100,100):0;masterMute=!!last.masterMute;masterMono=!!last.masterMono;
-  send('masterMono',masterMono,-1);
-  if(Array.isArray(last.masterInserts))masterInserts=last.masterInserts.filter(x=>typeof x==='string').slice(0,6);
-  if(last.masterBypassed&&typeof last.masterBypassed==='object')masterBypassed={...last.masterBypassed};
-  if(last.bypassed&&typeof last.bypassed==='object')bypassed={...last.bypassed};
-  if(last.fxParams&&typeof last.fxParams==='object')fxParams=structuredClone(last.fxParams);
-  renderMixer();renderMaster();flash('Previous UI session restored')}}catch{}
+let lastPersist=0;
+setInterval(()=>{if(Date.now()-lastPersist<2000)return;lastPersist=Date.now();persistSession()},5000);
+let restoredUiSession=null,needsLegacyMigration=false;
+try{
+ const packed=localStorage.getItem(UI_STORAGE_KEY);
+ if(packed!==null){
+   const data=JSON.parse(packed);
+   if(!isUiRecord(data)||data.schemaVersion!==2||
+      !isUiRecord(data.snapshots)||!isUiRecord(data.chains))throw Error('Invalid UI workspace');
+   userSnapshots={};
+   for(const [name,session] of Object.entries(data.snapshots))
+     if(cleanSnapshotName(name)===name&&validUiSession(session))userSnapshots[name]=session;
+   savedChains={...data.chains};
+   restoredUiSession=validUiSession(data.current)?data.current:null;
+ }else{
+   // Read legacy keys only when no v2 envelope exists. Future saves use v2 exclusively.
+   const oldSnapshots=JSON.parse(localStorage.getItem('armix-v03-snapshots')||'{}');
+   const oldChains=JSON.parse(localStorage.getItem('armix-v03-chains')||'{}');
+   if(isUiRecord(oldSnapshots))for(const [name,session] of Object.entries(oldSnapshots))
+     if(cleanSnapshotName(name)===name&&validUiSession(session))userSnapshots[name]=session;
+   if(isUiRecord(oldChains))savedChains={...oldChains};
+   const oldCurrent=JSON.parse(localStorage.getItem('armix-v03-current')||'null')||
+     JSON.parse(localStorage.getItem('arMixStudioUI')||'null');
+   restoredUiSession=validUiSession(oldCurrent)?oldCurrent:null;
+   needsLegacyMigration=true;
+ }
+ for(const name of Object.keys(userSnapshots))if(!scenes.includes(name))scenes.push(name);
+}catch{userSnapshots={};savedChains={};restoredUiSession=null}
+createSide();renderMixer();renderMaster();
+try{
+ const last=restoredUiSession;
+ if(last){
+   last.channels.slice(0,channels.length).forEach((s,i)=>{
+     if(typeof s.name==='string'&&s.name.trim())channels[i].name=s.name.trim().slice(0,26);
+     if(channelIcons.includes(s.icon))channels[i].icon=s.icon;
+     if(channelPalette.includes(s.color))channels[i].color=s.color;
+     for(const k of ['fader','pan','trim','mute','solo','hpf'])if(s[k]!==undefined)channels[i][k]=s[k];
+     if(Array.isArray(s.inserts))channels[i].inserts=[...s.inserts];
+   });
+   sceneIdx=Number.isInteger(last.sceneIdx)?clamp(last.sceneIdx,0,scenes.length-1):0;
+   masterGain=Number.isFinite(last.masterGain)?last.masterGain:-.1;
+   masterPan=Number.isFinite(last.masterPan)?clamp(last.masterPan,-100,100):0;
+   masterMute=!!last.masterMute;masterMono=!!last.masterMono;
+   send('masterMono',masterMono,-1);
+   if(Array.isArray(last.masterInserts))masterInserts=[...last.masterInserts];
+   if(isUiRecord(last.masterBypassed))masterBypassed={...last.masterBypassed};
+   if(isUiRecord(last.bypassed))bypassed={...last.bypassed};
+   if(isUiRecord(last.fxParams))fxParams=structuredClone(last.fxParams);
+   createSide();renderMixer();renderMaster();flash('Previous UI session restored');
+ }
+ if(needsLegacyMigration)persistSession(); // idempotent one-key migration; never delete old data
+}catch{}
 // Stop all simulated animation work while the tab is hidden, and restart on
 // foregrounding. One owner per timer / RAF; never double-schedule on restore.
 document.addEventListener('visibilitychange',()=>{
