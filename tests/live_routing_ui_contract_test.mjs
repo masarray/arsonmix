@@ -237,3 +237,21 @@ test("R2 shared VST3 picker is lazy, bounded and draft-only, not 14 catalog drop
   assert.match(ui,/if\(tab!=="internal"\)closeFxPicker\(\)/);
   assert.match(ui,/if\(fxPickerTarget\)\{closeFxPicker\(true\);return;\}/);
 });
+
+test("R2 AUX matrix is a bounded draft projection with PRE/POST and explicit native ACK",()=>{
+  assert.match(ui,/id="arAuxSendGrid"/);
+  assert.match(ui,/role="grid" aria-label="Channel to AUX send matrix"/);
+  assert.match(ui,/for\(let from=0;from<10;\+\+from\)/);
+  assert.match(ui,/for\(let bus=0;bus<4;\+\+bus\)/);
+  assert.match(ui,/data-aux-matrix-from/);
+  assert.match(ui,/data-aux-inspector-create/);
+  assert.match(ui,/data-aux-inspector-level/);
+  assert.match(ui,/data-aux-inspector-pan/);
+  assert.match(ui,/draftSends\.push\(\{from,to,tap,gain:\.25,pan:0\}\)/);
+  assert.match(ui,/draftSends\.map\(s=>\(\{\.\.\.s\}\)\)/);
+  assert.match(ui,/pairs\.has\(key\)/);
+  assert.match(ui,/Feedback loop in CH/);
+  assert.match(ui,/if\(patchTab==="internal"\)drawRoutes\(\)/);
+  assert.match(ui,/if\(patchPending\)return/);
+  assert.doesNotMatch(ui,/arAuxMatrixCell:hover|backdrop-filter:|filter:blur\(/);
+});
