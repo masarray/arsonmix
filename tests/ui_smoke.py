@@ -1300,6 +1300,22 @@ async def main():
         }""")
         assert patch_visual['rowCount']==10 and len(patch_visual['cols'])==8,patch_visual
 
+        # R3 screenshot audit: at 1680/1440 the CH format SELECT must show
+        # full NONE/MONO/STEREO/BUS labels and L/R must not collide with it.
+        route_cell_geometry=await native.evaluate("""()=>{
+          const row=document.querySelector('#arPatchGrid .arPatchChan');
+          const mode=row.querySelector('select[data-patch-mode]');
+          const side=row.querySelector('.arPatchSides');
+          const a=row.getBoundingClientRect(),b=mode.getBoundingClientRect(),
+                c=side.getBoundingClientRect();
+          return {rowWidth:Math.round(a.width),selectWidth:Math.round(b.width),
+                  leftGap:Math.round(c.left-b.right),rightGap:Math.round(a.right-c.right)};
+        }""")
+        assert route_cell_geometry['rowWidth']>=220,route_cell_geometry
+        assert route_cell_geometry['selectWidth']>=80,route_cell_geometry
+        assert route_cell_geometry['leftGap']>=0 and route_cell_geometry['rightGap']>=0,route_cell_geometry
+
+
         # R0: real desktop-workspace geometry, not a centered modal. Its
         # header, left rail and status bar stay reachable while editing.
         workspace_layout=await native.evaluate("""()=>{
