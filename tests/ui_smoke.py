@@ -1169,6 +1169,27 @@ async def main():
           return Number.parseFloat(l.style.getPropertyValue('--led-lit'))>7 &&
             Number.parseFloat(r.style.getPropertyValue('--led-lit'))>7;
         }""",timeout=3000)
+        # Native P4 recall MUST synchronize MASTER even while 10CH Lab
+        # controls are acknowledged. The old bridge returned early here.
+        await native.evaluate("""()=>{
+          window.__arMixMockEvents.arMixStatus({
+            connected:true,error:'',driver:'Windows Audio',rate:48000,buffer:480,
+            monitor:false,channelDb:0,masterDb:-12,channelPan:0,
+            masterMute:true,masterMono:true,
+            inputPeak:0,peak:0,peakLeft:0,peakRight:0,
+            deviceOutputChannels:2,
+            dryRoutingLab:{active:true,ready:true,epoch:9,revision:5,
+              channelControls:Array.from({length:10},()=>({
+                db:0,pan:0,mute:false,solo:false
+              })),channelPeaks:Array(10).fill(0)}
+          });
+        }""")
+        await native.wait_for_function("""()=>{
+          const m=document.querySelector('[data-fader="master"]');
+          return Number(m?.getAttribute('aria-valuenow'))===-12 &&
+            document.querySelector('#masterMute')?.getAttribute('aria-pressed')==="true" &&
+            document.querySelector('#masterMode')?.getAttribute('aria-pressed')==="true";
+        }""",timeout=3000)
         assert not native_errors,native_errors
         await native.close()
         await browser.close()

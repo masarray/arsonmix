@@ -1326,7 +1326,8 @@ private:
             const bool routed=dryRoutingLab_.process(inputs,inputChannels,outputs,
                      outputChannels,samples,
                      masterGain_.load(std::memory_order_relaxed),
-                     !outputPermitted);
+                     !outputPermitted,
+                     masterMono_.load(std::memory_order_relaxed));
             // STOP can race after the outer active() check. Never leave a
             // callback's output untouched, and NEVER fall through into CH1.
             if(!routed) {

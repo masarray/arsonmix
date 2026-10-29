@@ -1256,6 +1256,29 @@
   for(const event of ["pointerdown","pointerup","pointercancel","wheel","keydown"])
     document.addEventListener(event,markNativeUiEdit,true);
   // A restored GUI-only snapshot must not masquerade as a live native setting.
+  // MASTER belongs to the same native SSOT in both the CH1 host and
+  // 10CH Routing LAB. Never return before syncing it on a recall ACK.
+  // Called on existing telemetry, no extra DOM polling/RAF work.
+  function syncNativeMasterControls(d,editing){
+    let changed=false;
+    const masterDb=Number(d.masterDb);
+    if(!editing && Number.isFinite(masterDb) &&
+       typeof masterGain!=="undefined" && Math.abs(masterGain-masterDb)>.05){
+      masterGain=masterDb;changed=true;
+      const fader=document.querySelector('[data-fader="master"]');
+      if(fader){fader.querySelector(".cap")?.style.setProperty("--pos",levelToTop(masterDb)+"%");fader.setAttribute("aria-valuenow",masterDb.toFixed(1));}
+      document.querySelectorAll(".master-db").forEach(e=>e.textContent=fmt(masterDb));
+    }
+    if(typeof masterMute!=="undefined" && typeof d.masterMute==="boolean" && masterMute!==d.masterMute){
+      masterMute=d.masterMute;changed=true;
+      const mute=document.querySelector("#masterMute");
+      if(mute){mute.classList.toggle("active",masterMute);mute.setAttribute("aria-pressed",String(masterMute));}
+    }
+    if(typeof masterMono!=="undefined" && typeof d.masterMono==="boolean" && masterMono!==d.masterMono){
+      setMasterMono(d.masterMono,false);changed=true;
+    }
+    return changed;
+  }
   function syncNativeMixerControls(d){
     if(typeof channels==="undefined" || !channels[0])return;
     const lab=d.dryRoutingLab;
@@ -1288,12 +1311,13 @@
           if(b){b.classList.toggle("active",ch[key]);b.setAttribute("aria-pressed",String(ch[key]));}
         }
       }
+      if(syncNativeMasterControls(d,editing))changed=true;
       if(changed)patchMixer();
       return;
     }
-    const channelDb=Number(d.channelDb), masterDb=Number(d.masterDb);
+    const channelDb=Number(d.channelDb);
     const channelPan=Math.round(Number(d.channelPan)*100);
-    if(!Number.isFinite(channelDb)||!Number.isFinite(masterDb)||!Number.isFinite(channelPan))return;
+    if(!Number.isFinite(channelDb)||!Number.isFinite(channelPan))return;
     const channel=channels[0];
     const editing=Date.now()<controlEditUntil ||
       (typeof drag!=="undefined" && drag && (drag.type==="fader" || drag.type==="pan"));
@@ -1324,20 +1348,7 @@
       const mute=document.querySelector('[data-mute="0"]');
       if(mute){mute.classList.toggle("active",channel.mute);mute.setAttribute("aria-pressed",String(channel.mute));}
     }
-    if(!editing && typeof masterGain!=="undefined" && Math.abs(masterGain-masterDb)>0.05){
-      masterGain=masterDb;changed=true;
-      const fader=document.querySelector('[data-fader="master"]');
-      if(fader){fader.querySelector(".cap")?.style.setProperty("--pos",levelToTop(masterDb)+"%");fader.setAttribute("aria-valuenow",masterDb.toFixed(1));}
-      document.querySelectorAll(".master-db").forEach(e=>e.textContent=fmt(masterDb));
-    }
-    if(typeof masterMute!=="undefined" && typeof d.masterMute==="boolean" && masterMute!==d.masterMute){
-      masterMute=d.masterMute;changed=true;
-      const mute=document.querySelector("#masterMute");
-      if(mute){mute.classList.toggle("active",masterMute);mute.setAttribute("aria-pressed",String(masterMute));}
-    }
-    if(typeof masterMono!=="undefined" && typeof d.masterMono==="boolean" && masterMono!==d.masterMono){
-      setMasterMono(d.masterMono,false);changed=true;
-    }
+    if(syncNativeMasterControls(d,editing))changed=true;
     if(changed)patchMixer();
   }
   backend.addEventListener("arMixStatus",d=>{

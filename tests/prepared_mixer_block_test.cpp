@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/PreparedMixerBlock.h"
+#include "../engine/core/MasterOutputMonoPolicy.h"
 #if defined(NDEBUG)
 #undef NDEBUG // P1D must run assertions even under MSVC Release.
 #endif
@@ -139,6 +140,21 @@ int main() {
     outputL.fill(999.f);outputR.fill(999.f);
     assert(!fold.process(audio,4,outputL.data(),outputR.data(),9,noFx));
     for(int i=0;i<9;++i)assert(outputL[i]==0.f&&outputR[i]==0.f);
+
+    // Real master output policy: mute primes full mono; live stereo <-> mono
+    // ramps without allocating or adding an output frame of latency.
+    armix::dsp::MasterOutputMonoPolicy monoPolicy;
+    float monoL=.3f,monoR=.7f;
+    monoPolicy.primeWhileMuted(true);
+    const auto monoAlloc=allocations.load(std::memory_order_relaxed);
+    monoPolicy.process(true,monoL,monoR);
+    assert(monoL==monoR && near(monoL,.5f));
+    assert(allocations.load(std::memory_order_relaxed)==monoAlloc);
+    for(int n=0;n<64;++n){monoL=.3f;monoR=.7f;monoPolicy.process(false,monoL,monoR);}
+    assert(monoPolicy.blend()==0.f && near(monoL,.3f)&&near(monoR,.7f));
+    for(int n=0;n<64;++n){monoL=.3f;monoR=.7f;monoPolicy.process(true,monoL,monoR);}
+    assert(monoPolicy.blend()==1.f && monoL==monoR);
+    assert(allocations.load(std::memory_order_relaxed)==monoAlloc);
 
     // Repeat block execution to verify no cumulative send residue / leakage.
     for(int i=0;i<1000;++i) {
