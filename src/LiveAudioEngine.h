@@ -648,9 +648,16 @@ public:
         added.path=filename;added.uid=uid;
         added.latency=latency;
         added.processor=std::move(instance);
+        auto preparedNew=added.processor; // CONTROL-only failure rollback owner
         next->slots[next->count++]=std::move(added);
         if(!publishFxEdit(std::move(next),device,epoch))
+        {
+            // A failed publication must clean up the newly prepared VST3
+            // after the candidate graph has relinquished its strong handle.
+            // Reused old instances remain in graphOwned_ and are never reset.
+            if(preparedNew.use_count()==1)preparedNew->releaseResources();
             return "Audio device or FX graph changed during ADD; retry when stable";
+        }
         return {};
     }
 
