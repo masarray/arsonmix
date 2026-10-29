@@ -33,6 +33,18 @@ The static loader is NOT the Chromium Runtime. Runtime installation and a physic
 
 **Rapid evidence to send:** screenshot of AUDIO SETUP showing actual device/rate/buffer; INPUT PATCH before/after LIVE ACK; short result for 0 VST3, CH1+CH2 independent route, AUX send, FX ADD/MOVE/REMOVE and CLEAR PATCH; full glitch report on failure.
 
+## Native Show SAVE / BROWSE / DRY RECALL acceptance (P4 #163)
+
+Perform this only after 0-VST3 output-only/capture-only/dry-through checks above.
+
+1. Select the real DIRECT interface, leave **OUTPUT MUTE ON**, choose one CH1 physical input and, if available, a second port for CH2. APPLY INPUT PATCH and confirm LIVE only after native ACK.
+2. In INTERNAL / SENDS, enable AUX1, select CH1→AUX1, create POST and optionally PRE, set level/pan, and APPLY while muted. Do not assume AUX1 is a physical output jack.
+3. Remove **every VST3** from CH1 and other lanes. Click **SAVE DRY SHOW**. A real native Show must receive a successful save ACK; it is stored in portable `Studio/Shows` with its verified generation, not browser localStorage.
+4. With OUTPUT still MUTED, change a strip fader or modify a routing draft and APPLY. Click **BROWSE SHOWS**, select the saved Show UUID/name, click **RECALL SELECTED DRY**. Verify the original CH input mapping, AUX PRE/POST sends and MASTER linear/MUTE/MONO settings are restored **only after positive native recall ACK**. Speakers must **remain MUTED** afterward.
+5. Negative gates: selecting a Show while OUTPUT is unmuted must not send recall; while native Show I/O runs, UNMUTE must be rejected, but emergency MUTE must always work. Physically change/replug the selected interface (while muted): stale epoch/revision or missing physical ports must reject recall, never revive an old route or auto-map the next device.
+6. With one vendor VST3 loaded, attempting DRY recall must fail closed; full VST-equipped Show restore is NOT implemented. After removing it, retry DRY recall. Listen at low headphones volume only after explicitly checking current physical routing and unmuting.
+7. Record **PASS/FAIL** for SAVE→BROWSE→RECALL, stale-device rejection, MUTE preservation, 10CH/AUX PRE/POST preservation, and MASTER controls. Any audible pop/crackle means hardware FAT remains failed regardless of green CI.
+
 ## How to interpret evidence
 - `AUDIO_GLITCH_WINDOW` contains up to 5 seconds of pre-marker differences from the existing 1Hz status polling. It NEVER proves the exact millisecond of a glitch.
 - `WASAPI_CAPTURE_DISCONTINUITY_FLAGS` can diagnose capture problems, not direct DAC render underruns; callback lateness is a **scheduling hint**, not hardware XRUN proof.
