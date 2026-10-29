@@ -71,7 +71,7 @@
   routeOverlay.innerHTML='<section id="arRoutingLabPanel" role="dialog" aria-modal="true" aria-label="Native 10-channel dry routing">' +
     '<div class="arSignalHeader"><div><h2>ArSonMix · Live Input Routing LAB</h2><small id="arRouteIdentity">Reading actual device ports...</small></div><button class="arRouteClose" id="arRouteClose">CLOSE ×</button></div>' +
     '<p>Real hardware routing test: independent stereo-compatible VST3 insert per channel, PRE/POST sends, and BUS returns. No portable route recall. Use headphones at LOW volume. ' +
-    'The normal CH1 VST3 host resumes after STOP. Every port shown is from the device active input mask.</p>' +
+    'Existing CH1 FX Rack and Orbit are preserved in the native route; a second CH1 insert is forbidden. Every port shown is from the device active input mask.</p>' +
     '<div id="arRouteRows"></div><section id="arAuxReturns"><h3>4 DEDICATED AUX / FX RETURNS · INPUT CH1–10 REMAIN AVAILABLE</h3><p>Each AUX has a separate stereo return, VST3, level and MASTER routing. PRE/POST sends may target AUX1–4 without consuming CH strips.</p><div id="arAuxRows"></div></section><section id="arRouteSends"><h3>INTERNAL SENDS · PRE / POST FADER (MAX 32)</h3><div id="arSendRows"></div><button id="arAddSend">＋ ADD SEND</button></section>' +
     '<div id="arRouteFeedback" role="status">Select channels, BUS returns and sends; APPLY is a native graph transaction.</div>' +
     '<div class="arRouteFoot"><button id="arRouteStop">STOP LAB</button><button id="arRouteSaveDry" title="Save acknowledged native route and current live controls, only when muted and with zero VST3">SAVE DRY SHOW</button><button id="arRouteApply">APPLY TO NATIVE AUDIO</button></div></section>';

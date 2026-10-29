@@ -80,6 +80,32 @@ static std::unique_ptr<LiveChannelFxGraph> makeGraph(float firstFx,float returnF
     return graph;
 }
 int main() {
+    // R0: existing CH1 FX chain may be rendered inside the SAME prepared
+    // ten-channel routing pass, without creating a second plugin or copying
+    // a processor. Verify exactly one call and zero callback heap allocation.
+    {
+        auto fx=makeGraph(2.f,1.f,false);
+        std::array<float,4> input{.4f,.4f,.4f,.4f};
+        std::array<float,4> silent{};
+        const float* pins[]{input.data(),silent.data(),silent.data()};
+        std::array<float,4> l{},r{};
+        int legacyCalls=0;
+        const auto external=+[](void* context,int strip,float* left,float* right,int count) noexcept {
+            assert(strip==0);
+            ++*static_cast<int*>(context);
+            for(int n=0;n<count;++n) {left[n]*=2.f;right[n]*=2.f;}
+        };
+        const auto before=heapCalls.load(std::memory_order_relaxed);
+        assert(fx->process(pins,3,l.data(),r.data(),4,nullptr,&legacyCalls,external));
+        assert(heapCalls.load(std::memory_order_relaxed)==before);
+        assert(legacyCalls==1);
+        // Input .4 * externally owned CH1 FX 2 * PRE send .5 = .4.
+        assert(near(l[0],.4f)&&near(r[0],.4f));
+        assert(fx->activeInserts()==0);
+        // Without the external lease the unmodified route remains dry.
+        assert(fx->process(pins,3,l.data(),r.data(),4));
+        assert(near(l[0],.2f)&&near(r[0],.2f));
+    }
     // This test executes actual JUCE AudioProcessor::processBlock for
     // DIFFERENT strip instances and a BUS return, no VST3 vendor binaries.
     using Publication=armix::rt::RealtimeRoutePublisher<LiveChannelFxGraph>;

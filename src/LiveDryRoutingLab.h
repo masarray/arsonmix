@@ -100,8 +100,11 @@ public:
         // Called by the native message thread only. Not callable from RT.
         if(!directPermitted || independentClock)
             return "Dry Routing LAB requires one verified DIRECT audio device";
-        if(loadedFx>0)
-            return "Disable/remove Channel 1 VST3 before DRY Routing LAB (no plugin state is touched)";
+        // Keep the existing multi-insert CH1 rack and vendor Orbit alive.
+        // Native CH1 insert and legacy CH1 rack are mutually exclusive;
+        // running both would process plugins twice and corrupt user sound.
+        if(loadedFx>0 && !selections[0].id.isEmpty())
+            return "CH1 has a live FX rack: remove the duplicate CH1 insert from this route";
         if(!command.isObject()) return "Invalid Dry Routing configuration";
         const auto currentEpoch=deviceEpoch_.load(std::memory_order_acquire);
         if(!registryValid_.load(std::memory_order_acquire))
@@ -324,7 +327,9 @@ public:
     // A failed run never falls through to an unrelated microphone/plugin path.
     bool process(const float* const* inputs,int inputCount,
                  float* const* outputs,int outputCount,int frames,
-                 float masterGain,bool masterMuted) noexcept {
+                 float masterGain,bool masterMuted,
+                 void* externalContext=nullptr,
+                 FxGraph::ExternalStripFx externalFx=nullptr) noexcept {
         if(!active())return false;
         for(auto& p:channelPeaks_)p.store(0.f,std::memory_order_relaxed);
         for(auto& p:auxPeaks_)p.store(0.f,std::memory_order_relaxed);
@@ -383,7 +388,8 @@ public:
                 shifted[c]=inputs&&inputs[c]?inputs[c]+offset:nullptr;
             armix::mixer::RenderLevels level;
             if(!snapshot->prepared->process(shifted.data(),inputCount,
-                   outputs[0]+offset,outputs[1]+offset,n,&level))
+                   outputs[0]+offset,outputs[1]+offset,n,&level,
+                   externalContext,externalFx))
                 return true;
             for(int ch=0;ch<count;++ch)
                 perChannelPeaks[ch]=std::max(perChannelPeaks[ch],level.channelPeak[ch]);
