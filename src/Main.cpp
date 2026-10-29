@@ -51,6 +51,10 @@ std::optional<juce::WebBrowserComponent::Resource> assetFor (const juce::String&
         { data = BinaryData::styles_css; size = BinaryData::styles_cssSize; mime = "text/css"; }
     else if (path == "/app.js")
         { data = BinaryData::app_js; size = BinaryData::app_jsSize; mime = "text/javascript"; }
+    else if (path == "/plugin-ui.js")
+        { data = BinaryData::plugin_ui_js; size = BinaryData::plugin_ui_jsSize; mime = "text/javascript"; }
+    else if (path == "/plugin-ui.css")
+        { data = BinaryData::plugin_ui_css; size = BinaryData::plugin_ui_cssSize; mime = "text/css"; }
     else if (path == "/bridge.js")
         { data = BinaryData::bridge_js; size = BinaryData::bridge_jsSize; mime = "text/javascript"; }
     else if (path == "/monitor.js")
