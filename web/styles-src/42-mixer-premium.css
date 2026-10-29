@@ -319,7 +319,7 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 #app #scenesList .list-item{min-width:0}
 #app #scenesList .scene-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
 #app #scenesList .scene-delete{flex:0 0 20px;height:18px;padding:0;border:1px solid #53646d;border-radius:2px;background:#26343c;color:#d0dbdf;font-size:14px;line-height:14px}
-#app #scenesList .scene-delete:hover{background:#40515a}
+#app #scenesList .scene-delete:focus-visible{background:#40515a}
 
 /* The mono meter has ONE LED slot, stereo/master TWO. Keep 7px fixed LEDs. */
 #app #mixer .fader-zone .vu-bank.is-mono{
