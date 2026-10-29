@@ -170,7 +170,7 @@
 .arPatchHeading strong{font-size:12px;letter-spacing:.035em}
 .arPatchHeading small{font-size:10px;line-height:1.5}
 .arPatchViewport{border:1px solid #506571;border-radius:2px;background:#0b1821}
-.arPatchGrid{max-width:none;min-width:670px}
+.arPatchGrid{max-width:1300px;min-width:670px}
 .arPatchCorner,.arPatchPort,.arPatchChan,.arPatchCell{min-height:34px;border-right-color:#344b56;border-bottom-color:#2f4350}
 .arPatchCorner{background:#344853;padding:10px 12px}
 .arPatchPort{background:#304450;color:#ebf5f6}
