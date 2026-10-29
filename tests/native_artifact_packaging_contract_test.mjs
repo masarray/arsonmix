@@ -61,8 +61,11 @@ test('production Windows workflow rejects a tiny 648KB zip, test EXE, or missing
   assert.ok(workflow.indexOf('scripts/verify_native_windows_artifact.ps1') <
             workflow.indexOf('uses: actions/upload-artifact@v4'));
 });
-test('physical test protocol differentiates actual native channel 1 and GUI-only channels', () => {
-  assert.match(fat, /native engine implements \*\*Channel 1\*\* only/i);
+test('physical FAT verifies the current native 10CH plus 4 AUX fail-muted startup', () => {
+  assert.match(fat, /native 10CH \+ 4 AUX/i);
+  assert.match(fat, /UNPATCHED \/ SILENT/);
+  assert.match(fat, /APPLY ROUTING/);
+  assert.match(fat, /CLEAR PATCH/);
   assert.match(fat, /OUTPUT_ONLY_TONE/);
   assert.match(fat, /CAPTURE_ONLY/);
   assert.match(fat, /DRY_THROUGH/);
@@ -72,11 +75,11 @@ test('physical test protocol differentiates actual native channel 1 and GUI-only
 });
 
 test('release proves exact calibrated GUI bytes are embedded in the executable, not just copied beside it', () => {
-  for (const field of ['indexHtmlSha256','appJsSha256','stylesCssSha256','bridgeJsSha256','monitorJsSha256','guiCalibration']) {
+  for (const field of ['indexHtmlSha256','appJsSha256','stylesCssSha256','pluginUiCssSha256','pluginUiJsSha256','bridgeJsSha256','monitorJsSha256','guiCalibration']) {
     assert.ok(packaging.includes(field+' = '), 'provenance missing '+field);
     assert.ok(verify.includes('manifest.'+field), 'verifier missing '+field);
   }
-  for (const file of ['web/index.html','web/app.js','web/styles.css','web/bridge.js','web/monitor.js']) {
+  for (const file of ['web/index.html','web/app.js','web/styles.css','web/plugin-ui.css','web/plugin-ui.js','web/bridge.js','web/monitor.js']) {
     assert.ok(verify.includes('Path="'+file+'"'), 'native resource not checked: '+file);
   }
   assert.match(verify,/IndexOf\(\$sourceText, \[StringComparison\]::Ordinal\)/);
@@ -85,6 +88,8 @@ test('release proves exact calibrated GUI bytes are embedded in the executable, 
     assert.ok(verify.includes('"'+marker+'"'), 'calibration marker absent: '+marker);
   }
   assert.match(packaging,/GAIN_10_TO_MINUS60_BLACK_DETENT_AT_38PX__VU_DBFS_INDEPENDENT_TICKS/);
+  assert.match(packaging,/NATIVE_10CH_4AUX__EXPLICIT_PHYSICAL_INPUT_PATCH__MAIN_LR_OUTPUT_ONLY/);
+  assert.match(verify,/manifest\.nativeDSP/);
 });
 
 test('latest BTN-180 GUI palette is an attested embedded native release requirement', () => {
