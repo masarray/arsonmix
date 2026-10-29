@@ -922,6 +922,26 @@ async def main():
             assert s['bank']['l']>=s['zone']['l']-1 and s['ruler']['r']<=s['zone']['r']+1,s
             assert all(abs(m['w']-14)<.3 for m in s['meters']),s
             assert s['rail']['w']>=36 and s['rail']['h']>150,s
+        # P0 screenshot regression: sleeping LCD glass, 10 CH + MASTER
+        # must share identical neutral black material regardless of track color.
+        lcd_glass=await page.evaluate("""()=>{
+          return [...document.querySelectorAll('#mixer .fader-zone .vu-bank')].map(bank=>{
+            const well=bank.querySelector('.vu-bars');
+            const face=bank.querySelector('.meter-unit .meter');
+            const wc=getComputedStyle(well),fc=getComputedStyle(face);
+            return {wellColor:wc.backgroundColor,faceColor:fc.backgroundColor,
+              width:Math.round(well.getBoundingClientRect().width),
+              leds:bank.querySelectorAll('.meter-fill').length,
+              inset:wc.boxShadow.includes('inset'),
+              filter:wc.filter,blur:wc.backdropFilter||'none'};
+          });
+        }""")
+        assert len(lcd_glass)==11,lcd_glass
+        assert all(v['wellColor']=='rgb(2, 7, 11)' and
+                   v['faceColor']=='rgb(1, 6, 10)' for v in lcd_glass),lcd_glass
+        assert all(v['inset'] and v['filter']=='none' and
+                   v['blur']=='none' for v in lcd_glass),lcd_glass
+        assert all(v['width']==(30 if v['leds']==2 else 14) for v in lcd_glass),lcd_glass
         # Mono's narrower well intentionally releases 16px to its fader.
         # Same-format strips retain precisely aligned central rail offsets.
         mono_x=[s['rail']['l']-s['zone']['l'] for s in module_layout[:10] if s['count']==1]
