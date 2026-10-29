@@ -4,6 +4,9 @@
 **Architecture:** [ARD v2.0](ARD_PRD_MIXER_IO_AUX_BUS_REFORM_20261030.md), [Execution Handoff](EXECUTION_HANDOFF_ARSONMIX_MIXER_REFORM_20261030.md).
 **Design evidence:** Nine user-provided reference screenshots: LV1 Classic channel modes, rack, faders, Studio One mono/stereo I/O grid, DAW bus sends and focused source/destination wires. Copy the workflow patterns, not proprietary branded pixels.
 
+## 0A. User-evidence and reference UX (normative companion)
+The [nine-image LV1/Studio One/FL workflow benchmark](GUI_WORKFLOW_BENCHMARK_20261030.md) describes precisely what to learn from physical-channel banks, Rack/Dyn/EQ/SENDS/ROUTE modes, Channel Focus, ALL overview, Studio One M/L/R logical-to-physical patch, shared FX BUS returns, and selected-edge visualization. Adopt familiar control hierarchy and state, NOT copied artwork or exact 80-channel counts. The [comment-derived VoC acceptance matrix](CUSTOMER_VOICE_REQUIREMENTS_20261030.md) prioritizes flexible ASIO/WASAPI I/O, multi-output buses, shared FX send/return, dynamic channels and field stability, while differentiating current implementation from requests. Both are binding planning inputs, not claims of finished features. For any product milestone, map one VoC ID to one native observable test, UI workflow and exact-head/physical FAT evidence. PR #167 G1/G2 MERGED at main@527e155 but full driver configuration, physical multi-output and hardware FAT are unfinished; issue #15 remains physically unqualified.
+
 ## 1. Product outcome
 A usable professional digital live mixer with a single low-latency audio graph and clear **INPUT → VST3 FX → PRE/POST SENDS → BUS → MASTER → REAL HARDWARE OUTPUT** on every channel. Today the core supports ten input channels plus four stereo AUX FX returns. Make the right features visible; never replace a working FX Rack with an unrelated ROUTING panel.
 
