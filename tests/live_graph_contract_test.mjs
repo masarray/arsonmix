@@ -97,3 +97,23 @@ test('R0B major milestone: ADD and REMOVE are prepared control-thread transactio
   assert.match(addUi,/FX_ADD_STAGED/);
   assert.doesNotMatch(addUi,/\+\+fxGraphRevision_/);
 });
+
+
+test('R0B B3 NORMAL output is fail-silent until native 10CH route is accepted',()=>{
+  const beginning=e.indexOf('void audioDeviceIOCallbackWithContext');
+  const fence=e.indexOf('if (!independent_.active()',beginning);
+  const failSilent=e.indexOf('if (activeDiagnosticRoute == armix::diagnostics::Route::normal',beginning);
+  const lease=e.indexOf('const auto cycle = handoff_.beginCycle()',beginning);
+  assert.ok(beginning>=0 && fence>beginning && failSilent>fence && lease>failSilent,
+            'route gate must run after DIRECT fence, before any VST cycle lease');
+  const gate=e.slice(failSilent,lease);
+  assert.match(gate,/!dryRoutingLab_\.active\(\)/);
+  assert.match(gate,/FloatVectorOperations::clear\(outputs\[c\], samples\)/);
+  assert.match(gate,/outputPeakL_\.store\(0\.f/);
+  assert.doesNotMatch(gate,/detach\(|attach\(|new |malloc\(|prepareToPlay|processBlock|AudioDeviceManager/);
+  assert.match(e,/setProperty \("productionRoutingState",/);
+  assert.match(e,/"UNPATCHED_SILENT"/);
+  assert.match(e,/"NATIVE_ROUTE_STALE_FAIL_SILENT"/);
+  const diagnostic=e.slice(failSilent,failSilent+250);
+  assert.doesNotMatch(diagnostic,/dryTest_/, 'real diagnostic routing must be controlled by explicit diagnosticRoute, not a browser flag');
+});
