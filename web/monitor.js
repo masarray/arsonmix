@@ -1261,7 +1261,15 @@
   }
   // Only a fully initialized WebView2 ArSonMix page sends this. An old-IE
   // navigation error can never mark the native engine GUI as loaded.
-  api.emitEvent("arMixGuiReady",{protocol:1});
+  // WebView2 navigation completion is NOT compositor completion. Wait for
+  // embedded Inter to settle and two visible paint opportunities before
+  // allowing JUCE to remove its full-window opaque startup cover.
+  // No polling/interval; normal app and mixer handlers are already installed.
+  const guiPaintReady=()=>requestAnimationFrame(()=>
+    requestAnimationFrame(()=>api.emitEvent("arMixGuiReady",{protocol:1})));
+  if(document.fonts?.ready)
+    document.fonts.ready.then(guiPaintReady,guiPaintReady);
+  else guiPaintReady();
   api.addEventListener("arMixStatus",d=>{state=d;repaint(d);});
   el("arSignalOpen")?.addEventListener("click",()=>{overlay.classList.add("open");repaint(state);});
   el("arSignalClose").addEventListener("click",()=>overlay.classList.remove("open"));
