@@ -255,3 +255,36 @@ test("R2 AUX matrix is a bounded draft projection with PRE/POST and explicit nat
   assert.match(ui,/if\(patchPending\)return/);
   assert.doesNotMatch(ui,/arAuxMatrixCell:hover|backdrop-filter:|filter:blur\(/);
 });
+
+test("P4 native DRY Shows browse and verified recall are worker-backed and ACK-owned",()=>{
+  const main=readFileSync(new URL("../src/Main.cpp",import.meta.url),"utf8");
+  const worker=readFileSync(new URL("../src/NativeShowSaveWorker.h",import.meta.url),"utf8");
+  const recall=readFileSync(new URL("../src/NativeDryShowRecall.h",import.meta.url),"utf8");
+  const engine=readFileSync(new URL("../src/LiveAudioEngine.h",import.meta.url),"utf8");
+  const lab=readFileSync(new URL("../src/LiveDryRoutingLab.h",import.meta.url),"utf8");
+  assert.match(main,/action == "routingDryShowList"/);
+  assert.match(main,/action == "routingDryShowRecall"/);
+  assert.match(main,/arMixNativeShowListAck/);
+  assert.match(main,/arMixNativeShowRecallAck/);
+  assert.match(main,/nativeShowWorker_\.read\(/);
+  assert.match(main,/result\.requestEpoch/);
+  assert.match(main,/result\.requestRevision/);
+  assert.match(main,/applyDryRoutingLab\(command,noVst3\)/);
+  assert.match(main,/setMasterGainLinear\(/);
+  assert.match(main,/if\(bool\(value\) && \(nativeShowBusy_ \|\| studioBackupBusy_\)\)/);
+  assert.match(worker,/store\.load\(requestedId_,show,saved\)/);
+  assert.match(worker,/if\(\+\+inspected>256\)/);
+  assert.match(worker,/result\.items\.resize\(64\)/);
+  assert.match(recall,/NativeDryRouteCommand::decode\(proposed,decoded,error\)/);
+  assert.match(recall,/Remove CH1 vendor FX/);
+  assert.match(recall,/!available\(ch\.inputA\)/);
+  assert.match(recall,/command=std::move\(proposed\)/);
+  assert.match(engine,/setMasterGainLinear\(float value\)/);
+  assert.match(lab,/masterMonoPolicy_\.process\(masterMono,l,r\)/);
+  assert.match(ui,/id="arRouteBrowseShows"/);
+  assert.match(ui,/id="arNativeShowBrowser"/);
+  assert.match(ui,/arMixNativeShowListAck/);
+  assert.match(ui,/arMixNativeShowRecallAck/);
+  assert.match(ui,/nativeShowUuid\.test\(nativeShowSelect\.value\)/);
+  assert.match(ui,/if\(reply\?\.ok && reply\?\.state\)/);
+});

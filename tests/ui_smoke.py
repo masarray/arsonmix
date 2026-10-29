@@ -1301,6 +1301,22 @@ async def main():
           window.__arMixMockEvents.arMixCatalog({items});
         }""")
         assert await native.locator(".arPatchFxTrigger").count()==14
+        # P4: native Show BROWSE is a worker-backed request, not a
+        # WebView disk access or an implicit LIVE routing mutation.
+        await native.locator("#arRouteBrowseShows").click()
+        assert await native.locator("#arNativeShowBrowser").is_visible()
+        assert await native.locator("#arNativeShowRecall").is_disabled()
+        assert await native.evaluate(
+          "()=>window.__arMixSent.some(x=>x.payload?.action==='routingDryShowList')")
+        await native.evaluate("""()=>window.__arMixMockEvents.arMixNativeShowListAck({
+          ok:true,items:[
+            {id:"12345678-1234-1234-1234-123456789abc",name:"My Verified DRY Show"},
+            {id:"../../unsafe",name:"NEVER TRUST PATHS"}
+          ]
+        })""")
+        assert await native.locator("#arNativeShowSelect option").count()==2
+        await native.locator("#arNativeShowSelect").select_option("12345678-1234-1234-1234-123456789abc")
+        assert await native.locator("#arNativeShowRecall").is_disabled()
         await native.locator('[data-route-fx]').first.click()
         assert await native.locator("#arPatchFxPicker").evaluate(
             "(e)=>e.classList.contains('open')")
@@ -1383,6 +1399,24 @@ async def main():
         }""")
         assert await cell.get_attribute("data-patch-state")=="live"
         assert await native.locator("#arRouteApply").is_enabled()
+        # Native Show recall sends one explicit UUID only when a verified
+        # device is ready and OUTPUT is muted. Rejection keeps route intact.
+        await native.locator("#arRouteBrowseShows").click()
+        await native.evaluate("""()=>window.__arMixMockEvents.arMixNativeShowListAck({
+          ok:true,items:[{id:"12345678-1234-1234-1234-123456789abc",name:"My Verified DRY Show"}]
+        })""")
+        await native.locator("#arNativeShowSelect").select_option("12345678-1234-1234-1234-123456789abc")
+        assert await native.locator("#arNativeShowRecall").is_enabled()
+        await native.locator("#arNativeShowRecall").click()
+        assert await native.evaluate("""()=>window.__arMixSent.some(x=>
+          x.payload?.action==="routingDryShowRecall" &&
+          x.payload.value==="12345678-1234-1234-1234-123456789abc")""")
+        assert await native.locator("#arNativeShowRecall").is_disabled()
+        await native.evaluate("""()=>window.__arMixMockEvents.arMixNativeShowRecallAck({
+          ok:false,error:"Device epoch changed"
+        })""")
+        assert "REJECTED" in await native.locator("#arNativeShowStatus").inner_text()
+
         # Realistic AUX draft: explicitly enable return, add both taps,
         # edit gain and REVERT. No native APPLY may fire from matrix edits.
         await native.locator('[data-patch-tab="internal"]').click()

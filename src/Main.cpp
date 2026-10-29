@@ -20,6 +20,7 @@
 #include "PortableWorkspace.h"
 #include "StudioBackup.h"
 #include "NativeLiveShowCapture.h"
+#include "NativeDryShowRecall.h"
 #include "NativeShowSaveWorker.h"
 #include <cstring>
 #include <optional>
@@ -1112,6 +1113,132 @@ private:
             nativeShowBusy_=true;
             return emitNotice("Saving ACK-verified dry routing to Studio/Shows on the IO worker.");
         }
+        if (action == "routingDryShowList")
+        {
+            auto rejectList=[this](const juce::String& error) {
+                if(browser_.loaded) {
+                    auto ack=std::make_unique<juce::DynamicObject>();
+                    ack->setProperty("ok",false);
+                    ack->setProperty("error",error);
+                    browser_.emitEventIfBrowserIsVisible(
+                        "arMixNativeShowListAck",juce::var(ack.release()));
+                }
+                emitNotice("Native Show browse rejected: "+error,true);
+            };
+            if(nativeShowBusy_ || studioBackupBusy_)
+                return rejectList("Finish current Show IO or USB backup first.");
+            auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
+            const auto started=nativeShowWorker_.list(settingsDirectory(),
+                [safe](armix::shows::NativeShowSaveWorker::Result result) {
+                    if(safe==nullptr)return;
+                    safe->nativeShowBusy_=false;
+                    auto ack=std::make_unique<juce::DynamicObject>();
+                    ack->setProperty("ok",result.ok());
+                    ack->setProperty("error",result.error);
+                    juce::Array<juce::var> items;
+                    for(const auto& item:result.items) {
+                        auto row=std::make_unique<juce::DynamicObject>();
+                        row->setProperty("id",item.id);
+                        row->setProperty("name",item.name);
+                        items.add(juce::var(row.release()));
+                    }
+                    ack->setProperty("items",juce::var(items));
+                    if(safe->browser_.loaded)
+                        safe->browser_.emitEventIfBrowserIsVisible(
+                            "arMixNativeShowListAck",juce::var(ack.release()));
+                    if(result.error.isNotEmpty())
+                        safe->emitNotice("Native Show browsing failed: "+result.error,true);
+                });
+            if(!started)return rejectList("Cannot start native Show browser.");
+            nativeShowBusy_=true;
+            return;
+        }
+        if (action == "routingDryShowRecall")
+        {
+            const auto id=value.toString();
+            auto reject=[this](const juce::String& error) {
+                if(browser_.loaded) {
+                    auto ack=std::make_unique<juce::DynamicObject>();
+                    ack->setProperty("ok",false);
+                    ack->setProperty("error",error);
+                    browser_.emitEventIfBrowserIsVisible(
+                        "arMixNativeShowRecallAck",juce::var(ack.release()));
+                }
+                emitNotice("Native DRY Show unchanged: "+error,true);
+            };
+            if(!armix::shows::detail::uuid(id))
+                return reject("Select a native Show UUID from the saved list.");
+            if(nativeShowBusy_ || studioBackupBusy_ || catalog_.busy() ||
+               engine_.isGraphSwitchPending() || !engine_.isOutputMuted())
+                return reject("Mute native output and finish ongoing Studio work.");
+            const auto d=engine_.status().getProperty("dryRoutingLab",{});
+            const auto ep=d.getProperty("epoch",{}),rev=d.getProperty("revision",{});
+            if(!static_cast<bool>(d.getProperty("ready",false)) ||
+               !(ep.isInt()||ep.isInt64()) ||
+               !(rev.isInt()||rev.isInt64()))
+                return reject("Current native Routing LAB must be active and ACK'd.");
+            const auto epoch=static_cast<juce::int64>(ep);
+            const auto revision=static_cast<juce::int64>(rev);
+            auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
+            const bool started=nativeShowWorker_.read(settingsDirectory(),
+                id,epoch,revision,
+                [safe](armix::shows::NativeShowSaveWorker::Result result) {
+                    if(safe==nullptr)return;
+                    juce::String error=result.error;
+                    juce::var command;
+                    if(error.isEmpty()) {
+                        const auto state=safe->engine_.status();
+                        const auto lab=state.getProperty("dryRoutingLab",{});
+                        const auto ep=static_cast<juce::int64>(
+                            lab.getProperty("epoch",juce::var(0)));
+                        const auto rev=static_cast<juce::int64>(
+                            lab.getProperty("revision",juce::var(0)));
+                        if(ep!=result.requestEpoch || rev!=result.requestRevision)
+                            error="Device epoch or route revision changed during disk read";
+                        else error=armix::shows::NativeDryShowRecall::prepare(
+                            result.loaded,state,command);
+                        if(error.isEmpty()) {
+                            try {
+                                std::array<LiveDryRoutingLab::FxSelection,
+                                           LiveDryRoutingLab::fxSlots> noVst3{};
+                                error=safe->engine_.applyDryRoutingLab(command,noVst3);
+                            } catch(const std::exception& ex) {
+                                error="Native DRY Show preparation exception: "+
+                                    juce::String(ex.what());
+                            } catch(...) {
+                                error="Native DRY Show preparation failed";
+                            }
+                        }
+                        if(error.isEmpty()) {
+                            // Only AFTER native graph publication, and while
+                            // physical output remains muted. Never auto-unmute.
+                            safe->engine_.setMasterGainLinear(
+                                static_cast<float>(result.loaded.masterGain));
+                            safe->engine_.setMasterMuted(result.loaded.masterMute);
+                            safe->engine_.setMasterMono(result.loaded.masterMono);
+                            safe->diagnostics_.record("NATIVE_DRY_SHOW_RECALLED",
+                                result.showId+" | "+result.snapshotId);
+                        }
+                    }
+                    safe->nativeShowBusy_=false;
+                    auto ack=std::make_unique<juce::DynamicObject>();
+                    ack->setProperty("ok",error.isEmpty());
+                    ack->setProperty("error",error);
+                    ack->setProperty("showId",result.showId);
+                    ack->setProperty("state",safe->engine_.status().getProperty(
+                        "dryRoutingLab",{}));
+                    if(safe->browser_.loaded)
+                        safe->browser_.emitEventIfBrowserIsVisible(
+                            "arMixNativeShowRecallAck",juce::var(ack.release()));
+                    if(error.isNotEmpty())
+                        safe->emitNotice("Native Show recall rejected: "+error,true);
+                    else safe->emitNotice(
+                        "Verified DRY Show applied to current native graph. Output remains MUTED; confirm physical routing before unmuting.");
+                });
+            if(!started)return reject("Cannot launch native Show readback worker.");
+            nativeShowBusy_=true;
+            return;
+        }
         if (action == "routingDryStop")
         {
             engine_.disableDryRoutingLab();
@@ -1528,6 +1655,12 @@ private:
         }
         else if (action == "monitor" && value.isBool())
         {
+            // Panic MUTE must always work. Do not arm speakers during
+            // Show readback or Studio USB backup.
+            if(bool(value) && (nativeShowBusy_ || studioBackupBusy_)) {
+                emitNotice("Finish Studio/Shows IO before unmuting hardware OUTPUT.",true);
+                return;
+            }
             engine_.setMonitorEnabled (bool (value));
             diagnostics_.record ("OUTPUT_MUTE", bool (value) ? "OFF" : "ON");
         }

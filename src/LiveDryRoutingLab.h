@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "../engine/core/PreparedMixerBlock.h"
+#include "../engine/core/MasterOutputMonoPolicy.h"
 #include "../engine/core/LiveChannelFxGraph.h"
 #include "VstBusLayout.h"
 #include "../engine/core/NativeDryRouteCommand.h"
@@ -329,7 +330,8 @@ public:
                  float* const* outputs,int outputCount,int frames,
                  float masterGain,bool masterMuted,
                  void* externalContext=nullptr,
-                 FxGraph::ExternalStripFx externalFx=nullptr) noexcept {
+                 FxGraph::ExternalStripFx externalFx=nullptr,
+                 bool masterMono=false) noexcept {
         if(!active())return false;
         for(auto& p:channelPeaks_)p.store(0.f,std::memory_order_relaxed);
         for(auto& p:auxPeaks_)p.store(0.f,std::memory_order_relaxed);
@@ -370,6 +372,7 @@ public:
         // Prime a 256-sample fade FROM ZERO for the first unmuted block.
         // Never interpolate any previously audible sample while muted.
         if(masterMuted) {
+            masterMonoPolicy_.primeWhileMuted(masterMono);
             fadeRemaining_=rampFrames;
             fadeFromL_=fadeFromR_=0.f;
             lastOutputL_=lastOutputR_=0.f;
@@ -406,6 +409,8 @@ public:
                     r=fadeFromR_+(r-fadeFromR_)*t;
                     --fadeRemaining_;
                 }
+                // Sample-smoothed, zero-heap dual-mono MASTER output policy.
+                masterMonoPolicy_.process(masterMono,l,r);
                 outputs[0][offset+i]=l;
                 outputs[1][offset+i]=r;
                 lastOutputL_=l;
@@ -496,6 +501,7 @@ public:
     }
 private:
     Publisher publisher_;
+    armix::dsp::MasterOutputMonoPolicy masterMonoPolicy_; // audio thread only
     std::array<ChannelEdit,count> channelEdits_{}; // JUCE message thread only
     std::array<juce::String,count> channelFxNames_{}; // status/control thread only
     std::array<juce::String,auxCount> auxFxNames_{}; // dedicated bus FX

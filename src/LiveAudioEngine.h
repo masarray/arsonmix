@@ -489,6 +489,12 @@ public:
     {
         if (std::isfinite (value)) masterGain_.store (juce::Decibels::decibelsToGain (juce::jlimit (-60.f, 10.f, value)));
     }
+    // Restored Show snapshots preserve exact linear zero, unlike a dB
+    // conversion clamped at -60 dB. Message thread, atomic publish only.
+    void setMasterGainLinear(float value) noexcept {
+        if(std::isfinite(value) && value>=0.f && value<=2.f)
+            masterGain_.store(value,std::memory_order_release);
+    }
     void setChannelGainDb (float value) noexcept
     {
         if (std::isfinite (value)) channelGain_.store (juce::Decibels::decibelsToGain (juce::jlimit (-60.f, 10.f, value)));
@@ -1498,7 +1504,8 @@ private:
             const bool routed=dryRoutingLab_.process(inputs,inputChannels,outputs,
                      outputChannels,samples,
                      masterGain_.load(std::memory_order_relaxed),
-                     !outputPermitted,&ch1Lease,&processLegacyChannelOne);
+                     !outputPermitted,&ch1Lease,&processLegacyChannelOne,
+                     masterMono_.load(std::memory_order_relaxed));
             // STOP can race after the outer active() check. Never leave a
             // callback's output untouched, and NEVER fall through into CH1.
             if(!routed) {
