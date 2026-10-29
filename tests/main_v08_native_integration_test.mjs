@@ -80,11 +80,14 @@ test('startup never opens an audio device before the WebView2 GUI handshake',()=
  assert.ok(readyGate>=0&&startup>readyGate);
  assert.ok(timer.includes('browser_.loaded')&&timer.includes('guiReadyTick_ < 150u'));
 });
-test('master readout remains native-unavailable until measured BS.1770/true peak exists',()=>{
- assert.match(app,/updateMasterAnalysisPreview\(-31\+/);
- assert.match(app,/\['masterLufs',lufs,-12\]/);
- assert.match(app,/\['masterDbtp',dbtp,-1\]/);
- assert.match(bridge,/lufs\.textContent="—"/);
- assert.match(bridge,/tp\.textContent="—"/);
+test('native LUFS/true peak are shown only with qualified live measurement provenance',()=>{
+ assert.match(app,/updateMasterAnalysisPreview\(-31\+/); // preview remains demo-only
+ assert.match(bridge,/MEASURED_48K_BS1770_K_4X_FIR/);
+ assert.match(bridge,/element\.classList\.toggle\("over-limit",measured&&value>limit\)/);
+ assert.match(src,/masterLoudness_\.process\(measured,juce::jmin\(outputChannels,2\),samples\)/);
+ assert.match(src,/masterLoudness_\.prepare \(sampleRateHz_\)/);
+ assert.match(src,/masterLoudness_\.prepare \(0\.0\)/);
+ assert.match(src,/masterAnalysisProvenance/);
+ assert.doesNotMatch(bridge,/lufs\.textContent="—"/);
  assert.doesNotMatch(app, /STREAM LEVELS <span>SIM<\/span>/);
 });
