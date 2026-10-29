@@ -204,15 +204,36 @@
     const isMaster=typeof masterSelected!=="undefined"&&masterSelected;
     const name=isMaster?"MASTER":(channels[selected]?.name||("CH "+(selected+1)));
     const fx=isMaster?"":(lab.channelFxNames?.[selected]||"");
-    workspace.innerHTML='<div class="native-panel" data-live-native="1">'+
-      cardHeader("Native FX · "+name,"One LIVE routing graph · one source of truth")+
-      '<div class="native-card"><h3>REAL VST3 PROCESSING</h3>'+
-      '<p class="native-sub">'+(isMaster?"MASTER inserts are not available in this mode":
-          fx?escapeHtml(fx)+" · independent native VST3 instance":
-          "DRY · no FX selected for this channel")+'</p>'+
-      '<button class="native-btn primary" data-native-routing-lab="1">CONFIGURE INPUT / FX / BUS / SENDS</button>'+
-      '<p class="native-sub">Fader, PAN, MUTE and SOLO now change LIVE DSP without rebuilding VST3. Structural changes stay in Routing LAB.</p></div></div>';
-    return;
+    // Keep the working CH1 multi-insert workflow even in production routing.
+    if(isMaster||selected!==0||fx){
+      const draft=window.__arMixGetRackFxDraft?.(selected);
+      const pending=draft?.id!==undefined?(draft.id?state.catalog.find(p=>p.id===draft.id)?.name||"Selected VST3":"DRY"):"";
+      workspace.innerHTML=`<div class="native-panel" data-live-native="1">
+        ${cardHeader("FX Rack · "+name,"FX workspace independent of ROUTING · verified native graph")}
+        <div class="native-toolbar" style="margin-bottom:10px">
+          <button class="native-btn" data-plugin-manager="1">PLUGIN MANAGER</button>
+          <button class="native-btn" data-native-routing-lab="1">OPEN ROUTING</button>
+          <span class="native-sub">Native routed FX · one insert per channel currently supported</span>
+        </div>
+        <div class="native-card" style="max-width:900px;min-height:0">
+          <h3>${escapeHtml(name)} · ROUTED FX</h3>
+          <div class="native-node">
+            <span class="node-index">01</span>
+            <span class="node-text">${escapeHtml(fx||"DRY · no insert")}
+              <small>${isMaster?"Master routed FX unavailable":fx?"Native routed VST3":"Choose a VST3 from the installed catalog"}</small></span>
+            <button class="native-btn primary" data-routed-fx="${selected}" ${isMaster?"disabled":""}>${fx?"REPLACE FX":"＋ ADD FX"}</button>
+            <button class="native-btn warn" data-routed-clear="${selected}" ${(!fx&&!draft)||isMaster?"disabled":""}>REMOVE</button>
+          </div>
+          ${draft?`<p class="native-status" style="margin-top:10px">PENDING DRAFT: ${escapeHtml(pending)} · NOT LIVE until native ACK</p>`:""}
+          <div class="native-toolbar" style="margin-top:12px">
+            <button class="native-btn primary" data-routed-apply="1" ${!draft||isMaster?"disabled":""}>APPLY FX · OUTPUT MUTED</button>
+            <span class="native-sub">Routing preserves the physical input. Native APPLY verifies device epoch, MUTE and graph revision.</span>
+          </div>
+        </div>
+      </div>`;
+      return;
+    }
+    // CH1 without a routed VST3 continues into its existing 8-slot rack.
   }
   const selected=typeof currentChannel==="number"?currentChannel:0;
   const isMaster=typeof masterSelected!=="undefined"&&masterSelected;
@@ -666,20 +687,28 @@
     const rack=track.querySelector(".rack");
     if(!rack)return;
     const lab=state.device?.dryRoutingLab;
-    if(lab?.active){
+    if(lab?.active && !(i===0 && state.chain.length>0 && !(lab.channelFxNames?.[0]||""))){
       const fx=lab.channelFxNames?.[i]||"";
-      const signature="live-lab-"+fx;
+      const signature="routed-fx-rack-"+i+"-"+fx;
       if(rack.dataset.nativeSig!==signature){
         rack.dataset.nativeSig=signature;
-        rack.innerHTML='<div class="insert-slot"><button class="insert '+(fx?"":"empty")+
-          '" data-native-routing-lab="1" title="Configure live channel FX and routing">'+
-          '<span class="insert-name">'+escapeHtml(fx||"＋ ROUTE / FX")+'</span></button></div>';
+        // One true native routed VST3 slot; never replace the six-row FX
+        // area with a misleading ROUTE/FX button.
+        rack.innerHTML=`<div class="insert-slot">
+          <button class="insert ${fx?"":"empty"}" data-routed-fx="${i}"
+            title="${fx?"Replace "+escapeHtml(fx):"Choose native routed FX on channel "+(i+1)}">
+            <span class="insert-name">${escapeHtml(fx||"＋ ADD FX")}</span>
+          </button></div>`+
+          Array.from({length:5},()=>`<div class="insert-slot">
+            <span class="insert empty ar-fx-reserved" title="Multi-insert is not yet supported for this channel"></span>
+          </div>`).join("");
       }
       track.removeAttribute("data-preview");
       rack.removeAttribute("data-preview");
-      track.title="LIVE native routing · channel "+(i+1)+" · FX: "+(fx||"DRY");
+      track.title="LIVE CH "+(i+1)+" · VST3 "+(fx||"DRY")+" · FX RACK to edit";
       return;
     }
+    // Keep original CH1 multi-insert rows when the routed engine is active.
     if(i!==0){
       if(rack.dataset.nativeSig!=="empty-nonlive"){
         rack.dataset.nativeSig="empty-nonlive";
