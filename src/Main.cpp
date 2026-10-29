@@ -112,8 +112,11 @@ public:
     // arMixGuiReady event arrives.
     void paint (juce::Graphics& g) override
     {
+        // Always paint the WebView2 host dark, including after loaded=true.
+        // On Windows minimize/restore the child compositor can repaint later;
+        // a transparent native parent used to reveal a white blank frame.
+        g.fillAll (juce::Colour (0xff101921));
         if (loaded) return;
-        g.fillAll (juce::Colour (0xff111b23));
         g.setColour (juce::Colour (0xff58cdeb));
         g.setFont (juce::FontOptions (22.0f, juce::Font::plain));
         g.drawText ("ArSonMix", getLocalBounds().withTrimmedTop (getHeight() / 2 - 36)
@@ -1949,6 +1952,13 @@ public:
                 if (window_) window_->toFront (true);
             }
         });
+        // Opaque cover exactly matches the large HWND, not a small 740×420
+        // card leaving white WebView2 edges exposed during first paint.
+        if (splash_ && window_)
+        {
+            splash_->setBounds (window_->getBounds());
+            splash_->toFront (true);
+        }
     }
     void shutdown() override
     {
