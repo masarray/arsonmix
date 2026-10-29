@@ -544,7 +544,7 @@ async def main():
         }""")
         assert all(b['width']>=77 and abs(b['mid']-header['device'])<=1 for b in header['buttons']),header
 
-        assert await page.locator('header .nav button').count()==7
+        assert await page.locator('header .nav button').count()==3
         assert await page.locator('footer.status button').count()==0
         assert await page.locator('[data-clear-all-clips]').count()==0
         architecture=await page.evaluate("""() => {
@@ -572,7 +572,7 @@ async def main():
         assert 'data:image/png;base64' not in architecture['chrome']
         assert not architecture['overflow']
         assert architecture['navBounds']['right']<=1680+1,architecture
-        assert await page.locator('.toolbar-actions .nav button').count()==7
+        assert await page.locator('.toolbar-actions .nav button').count()==3
         assert await page.locator('#masterLeft').evaluate(
             '(m)=>Math.abs(m.getBoundingClientRect().width-document.querySelector("[data-strip=\\\"0\\\"]").getBoundingClientRect().width)<=1')
         for key in ('Header','Bottom','Fader'):
@@ -1163,7 +1163,10 @@ async def main():
         await page.locator('[data-view="SIGNAL FLOW"]').click()
         assert await page.locator('.flow-node').count()==4
         await page.locator('#audioSetupBtn').click()
-        assert await page.locator('#toast').inner_text()=='Audio Setup is available in the Windows desktop app'
+        assert await page.locator('#arIOOverlay').is_visible()
+        assert await page.locator('#arIOBody select.arIOSource').count()==10
+        await page.locator('#arIOOverlay [data-io-close]').click()
+        assert not await page.locator('#arIOOverlay').is_visible()
         assert await page.locator('.setup-section').count()==0
         assert await page.locator('.editor').count()==0
         assert await page.locator('.status button').count()==0
