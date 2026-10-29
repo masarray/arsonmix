@@ -1185,7 +1185,11 @@ async def main():
           window.__arMixMockEvents={};
           window.__JUCE__={backend:{
             emitEvent(){},
-            addEventListener(name,fn){window.__arMixMockEvents[name]=fn;}
+            // Real JUCE allows multiple bridge listeners for each event.
+            addEventListener(name,fn){
+              const previous=window.__arMixMockEvents[name];
+              window.__arMixMockEvents[name]=payload=>{if(previous)previous(payload);fn(payload);};
+            }
           }};
         })()""")
         await native.goto((project/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").as_uri())
