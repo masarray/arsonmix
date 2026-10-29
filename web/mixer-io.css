@@ -1,0 +1,54 @@
+/* G1/G2: stable channel-bank geometry; FX rack remains mounted in every mode. */
+#app .workbench{display:flex;flex-direction:column}
+#app #mixer{flex:1;min-height:0;height:auto}
+.arMixerBankBar{height:36px;flex:none;display:flex;align-items:center;gap:7px;padding:3px 7px;background:#16242d;border-bottom:1px solid #425360}
+.arMixerBankModes{display:flex;gap:4px;flex:none}
+.arMixerBankBar .btn-180{height:29px;min-height:29px;font:600 10px/1 'Segoe UI',Arial,sans-serif}
+.arMixerBankModes .btn-180{width:64px;min-width:64px}
+.arMixerBankInfo{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font:10px Consolas,monospace;color:#9db4be}
+.arMixerBankBar .arMixApply{width:70px;flex:none}
+.arMixerBankBar .arMixIoOpen{width:90px;flex:none}
+#app #mixer .arChannelBank{display:none;flex:0 0 163px;height:163px;background:linear-gradient(#101d25,#182731);padding:8px 5px;border-bottom:2px solid #070e12;color:#bacbd3;min-width:0;overflow:hidden}
+#app #mixer[data-io-mode="ROUTE"] .strip[data-strip] > .rack,
+#app #mixer[data-io-mode="SENDS"] .strip[data-strip] > .rack{display:none!important}
+#app #mixer[data-io-mode="ROUTE"] .strip[data-strip] > .arChannelBank,
+#app #mixer[data-io-mode="SENDS"] .strip[data-strip] > .arChannelBank{display:flex}
+#app #mixer .arRouteBank,#app #mixer .arSendBank{display:none;flex:1;flex-direction:column;align-items:stretch;gap:7px;min-width:0}
+#app #mixer[data-io-mode="ROUTE"] .arRouteBank,
+#app #mixer[data-io-mode="SENDS"] .arSendBank{display:flex}
+#app #mixer .arBankTitle{font:600 9px/1.3 'Segoe UI',Arial,sans-serif;color:#8eaab9;letter-spacing:.25px}
+#app #mixer .arBankSource,#app #mixer .arBankOutput{height:29px;min-height:29px;display:flex;align-items:center;background:#08151d;color:#cee5ef;border:1px solid #3a505b;border-radius:2px;padding:0 4px;font:10px 'Segoe UI',Arial,sans-serif;min-width:0;width:100%}
+#app #mixer .arBankOutput{font-size:9px}
+#app #mixer .arBankStage{font:9px/1.3 Consolas,monospace;color:#9eabb6}
+#app #mixer .arBankStage[data-state="live"]{color:#78d99b}
+#app #mixer .arBankStage[data-state="draft"]{color:#e4c77a}
+#app #mixer .arBankPatch{min-height:29px;height:29px;margin-top:auto;font:600 9px 'Segoe UI',Arial,sans-serif}
+#app #mixer .arSendSummary{flex:1;min-height:0;display:flex;flex-direction:column;gap:4px;overflow:hidden}
+#app #mixer .arSendChip{display:block;padding:4px 5px;font:10px Consolas,monospace;background:#0c2029;color:#c6dde4;border-left:2px solid #4b879e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.arIOOverlay[hidden]{display:none}
+.arIOOverlay{position:fixed;inset:0;z-index:960;display:flex;align-items:center;justify-content:center;padding:18px;background:#040a10cf}
+.arIOWindow{width:min(920px,100%);max-height:min(760px,calc(100dvh - 36px));display:flex;flex-direction:column;min-height:0;background:#18252e;border:1px solid #556875;box-shadow:0 16px 38px #000c;color:#d1dee6;font:11px 'Segoe UI',Arial,sans-serif}
+.arIOWindow>header,.arIOWindow>footer{flex:none;display:flex;align-items:center;gap:9px;padding:10px 14px;background:#233440}
+.arIOWindow>header{justify-content:space-between;border-bottom:1px solid #58707b}
+.arIOWindow>header small{font-size:10px;color:#8fbacb;letter-spacing:.8px}
+.arIOWindow>header h2{font-size:16px;font-weight:550;margin:3px 0 0}
+.arIOWindow>footer{border-top:1px solid #485c66}
+.arIOWindow>footer span{min-width:0;flex:1;color:#a7c0ca}
+.arIOWindow .btn-180{height:32px;min-height:32px;padding:0 12px;font-size:10px}
+.arIOTop{flex:none;background:#0c1b24;padding:9px 14px;color:#8dd1dd;font:11px Consolas,monospace}
+.arIOWindow nav{display:flex;gap:4px;padding:8px 12px 0;flex:none}
+.arIOWindow nav .btn-180{min-width:116px}
+.arIOBody{padding:12px 16px;overflow:auto;min-height:120px;scrollbar-width:thin}
+.arIOHint{margin:3px 0 13px;color:#a9bcc5;font-size:11px;line-height:1.45}
+.arIOInputGrid{display:grid;grid-template-columns:minmax(160px,1fr) minmax(220px,2fr);gap:5px 10px;max-width:720px;align-items:center}
+.arIOGridLabel{font-size:10px;color:#86bccb;padding:6px 0}
+.arIOChannelName{height:32px;display:flex;align-items:center;border-bottom:1px solid #304550}
+.arIOInputGrid select{height:32px;min-width:0;width:100%;color:#d1e5ec;background:#0b1a23;border:1px solid #3b5562;border-radius:2px;padding:0 7px}
+.arIOInputGrid select:disabled{opacity:.48}
+.arIOOutputRow{display:flex;justify-content:space-between;gap:14px;max-width:610px;padding:14px 8px;margin:5px 0;border-bottom:1px solid #3a505b;background:#10222c}
+.arIOOutputRow span{color:#84c6d2}
+.arIODeviceType{display:flex;flex-direction:column;gap:5px;padding:9px 11px;margin:5px 0;background:#112530;border:1px solid #304653;font-size:11px}
+.arIODeviceType strong{font-weight:600;color:#d3edf1}
+.arIODeviceType span{color:#a8c1ca}
+@media(max-height:790px){#app #mixer .arChannelBank{height:129px;flex-basis:129px;padding:5px;gap:4px}#app #mixer .arRouteBank,#app #mixer .arSendBank{gap:4px}#app #mixer .arBankTitle{font-size:8px}#app #mixer .arBankSource,#app #mixer .arBankOutput{min-height:24px;height:24px}#app #mixer .arBankPatch{min-height:26px;height:26px}#app #mixer .arSendChip{padding:2px 4px}}
+@media(max-width:900px){.arMixerBankBar{gap:3px;padding:3px}.arMixerBankModes .btn-180{width:50px;min-width:50px}.arMixerBankInfo{font-size:9px}.arMixerBankBar .arMixIoOpen{width:78px}.arIOWindow>footer{flex-wrap:wrap}}

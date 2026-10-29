@@ -251,6 +251,7 @@
   const draftRoutes=Array.from({length:10},()=>({mode:"NONE",left:-1,right:-1,gain:0.25,pan:0,main:true,mute:false,solo:false,fxId:""}));
   const draftAux=Array.from({length:4},()=>({enabled:false,gain:1,main:true,mute:false,fxId:""}));
   const draftSends=[];
+  let mixerDraftActive=false; // Source edits from MIX/IO share this exact controller
   let selectedAuxPair=null; // editor-only; not a second audio graph
   let draftEpoch=0; // identity of the hardware used to draw these selectors
   function invalidateDraftForNewDevice(nextEpoch){
@@ -262,6 +263,7 @@
     }
     for(const b of draftAux){b.enabled=false;b.gain=1;b.main=true;b.mute=false;b.fxId="";}
     draftSends.length=0;
+    mixerDraftActive=false;
     selectedAuxPair=null;
     return true;
   }
@@ -864,7 +866,7 @@
   function openRoutingLab(){
     // Keep an intentional FX Rack draft when switching workspaces; otherwise
     // load only native ACK data. Device-epoch changes invalidate the draft.
-    if(!rackFxDraft||rackFxDraft.epoch!==Number(state.dryRoutingLab?.epoch)){
+    if((!rackFxDraft||rackFxDraft.epoch!==Number(state.dryRoutingLab?.epoch))&&!mixerDraftActive){
       rackFxDraft=null;
       hydrateAcceptedRoute();
     }
@@ -917,6 +919,56 @@
   };
   window.__arMixOpenRoutingLab=openRoutingLab;
   window.__arMixOpenRouting=openRoutingLab;
+  // G1/G2 adapters: expose a bounded snapshot and stage into the EXISTING
+  // DRAFT/ACK route; never create a second frontend or native audio graph.
+  window.__arMixRouteView=()=>{
+    const d=state.dryRoutingLab||{};
+    if(draftEpoch!==Number(d.epoch||0))hydrateAcceptedRoute();
+    return {
+      epoch:Number(d.epoch)||0,revision:Number(d.revision)||0,
+      ready:!!d.ready,active:!!d.active,monitor:!!state.monitor,
+      pending:patchPending,ports:patchPorts().map(p=>({port:p.port,label:p.label})),
+      outputPorts:Array.isArray(d.outputPorts)?d.outputPorts.slice():[],
+      acceptedRoute:d.acceptedRoute||null,
+      draftRoutes:draftRoutes.map(r=>({...r})),
+      draftAux:draftAux.map(r=>({...r})),
+      draftSends:draftSends.map(r=>({...r}))
+    };
+  };
+  window.__arMixStageChannelInput=(channel,mode,left,right)=>{
+    const d=state.dryRoutingLab||{},epoch=Number(d.epoch)||0;
+    if(!d.ready||!d.active||epoch<=0)return {ok:false,error:"No verified native DIRECT device."};
+    if(patchPending)return {ok:false,error:"Native route APPLY already pending."};
+    if(!Number.isInteger(channel)||channel<0||channel>=10)return {ok:false,error:"Invalid mixer channel."};
+    if(draftEpoch!==epoch)return {ok:false,error:"Device epoch changed. Reopen I/O and review pins."};
+    if(!["NONE","MONO","STEREO"].includes(mode))return {ok:false,error:"Use the full matrix for BUS routing."};
+    const active=new Set(patchPorts().map(p=>p.port));
+    if(mode==="MONO"&&!active.has(left))return {ok:false,error:"Selected mono hardware pin is unavailable."};
+    if(mode==="STEREO"&&(!active.has(left)||!active.has(right)||left===right))
+      return {ok:false,error:"Stereo L/R requires distinct enabled hardware pins."};
+    const target=draftRoutes[channel];
+    target.mode=mode;target.left=mode==="NONE"?-1:left;target.right=mode==="STEREO"?right:-1;
+    mixerDraftActive=true;renderPatchMatrix();updateRouteLabIdentity();
+    window.dispatchEvent(new Event("arMixRoutingDraftChanged"));
+    return {ok:true};
+  };
+  window.__arMixApplyMixerDraft=()=>{
+    if(patchPending)return {ok:false,error:"Native APPLY is already pending."};
+    if(state.monitor)return {ok:false,error:"MUTE OUTPUT before applying input routing."};
+    const failure=patchPreflight();
+    if(failure)return {ok:false,error:failure};
+    document.getElementById("arRouteApply").click(); // exact existing preflight + native ACK path
+    return {ok:patchPending,error:patchPending?"":"Route was not submitted."};
+  };
+  window.__arMixOpenChannelPatch=(channel,tab="input")=>{
+    if(!Number.isInteger(channel)||channel<0||channel>=10)return;
+    openRoutingLab();
+    selectPatchTab(tab==="internal"?"internal":"input");
+    const target=tab==="internal"?
+      document.getElementById("arAuxSendGrid")?.querySelector('[data-aux-from="'+channel+'"]'):
+      document.querySelectorAll("#arPatchGrid .arPatchRow")[channel+1];
+    target?.scrollIntoView?.({block:"nearest",inline:"nearest"});
+  };
   // Native toolbar action remains the approved SIGNAL FLOW data-view,
   // but ROUTING opens on the same click without an intermediate lab screen.
   document.addEventListener("click",event=>{
@@ -1072,6 +1124,7 @@
     if(result && typeof result==="object" && "epoch" in result)state.dryRoutingLab=result;
     if(reply?.ok===true){
       rackFxDraft=null; // Native ACK became authoritative, not the browser draft.
+      mixerDraftActive=false;
       if(result.acceptedRoute)hydrateAcceptedRoute();
       else {
         // CLEAR resets CH, FX, and the new R2 CH→AUX matrix draft together.
