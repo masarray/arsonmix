@@ -1348,7 +1348,18 @@
   if(document.fonts?.ready)
     document.fonts.ready.then(guiPaintReady,guiPaintReady);
   else guiPaintReady();
-  api.addEventListener("arMixStatus",d=>{state=d;repaint(d);});
+  api.addEventListener("arMixStatus",d=>{
+    state=d;
+    // Single controller owns epoch hydration even if the full PATCH workspace
+    // is closed. The status projection used by MIX is deliberately read-only.
+    // When PATCH is open, repaint() performs its own redraw/invalidation.
+    if(!routeOverlay.classList.contains("open") &&
+       draftEpoch!==(Number(d.dryRoutingLab?.epoch)||0)){
+      patchPending=false;
+      hydrateAcceptedRoute();
+    }
+    repaint(d);
+  });
   el("arSignalOpen")?.addEventListener("click",()=>{overlay.classList.add("open");repaint(state);});
   el("arSignalClose").addEventListener("click",()=>overlay.classList.remove("open"));
   el("arSignalMonitor").addEventListener("click",()=>api.emitEvent("arMixAction",{action:"monitor",value:!state.monitor}));

@@ -32,4 +32,5 @@ test('route status adapter never consumes the device epoch before the native con
   assert.ok(!projection.includes('hydrateAcceptedRoute('),'status snapshot mutates native route draft');
   assert.ok(!projection.includes('invalidateDraftForNewDevice('),'status snapshot resets device epoch');
   assert.ok(monitor.includes('if(draftEpoch!==(Number(d.dryRoutingLab?.epoch)||0))'),'epoch refresh gate missing');
+  assert.ok(monitor.includes('if(!routeOverlay.classList.contains("open") &&'),'status must initialize MIX when PATCH is closed');
 });
