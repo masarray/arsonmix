@@ -47,7 +47,7 @@
 .arPatchPager button{padding:4px 10px}
 .arPatchPager button:disabled,.arPatchFooter button:disabled{opacity:.45;cursor:default}
 .arPatchViewport{background:#0c1922;border:1px solid #354d5b;overflow:auto;scrollbar-width:thin;scrollbar-color:#415969 #0b1821;border-radius:3px}
-.arPatchGrid{display:grid;min-width:670px;width:100%;font-variant-numeric:tabular-nums}
+.arPatchGrid{display:grid;min-width:670px;max-width:1300px;width:100%;margin:0 auto;font-variant-numeric:tabular-nums}
 .arPatchRow{display:contents}
 .arPatchCorner,.arPatchPort,.arPatchChan,.arPatchCell{box-sizing:border-box;min-width:0;min-height:35px;border:0;border-right:1px solid #304652;border-bottom:1px solid #293d48}
 .arPatchCorner{position:sticky;left:0;z-index:2;padding:11px 10px;background:#314552;color:#e5f3f5;font-size:10px;font-weight:600}
