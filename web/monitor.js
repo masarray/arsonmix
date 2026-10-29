@@ -37,6 +37,9 @@
     "#arRouteApply{background:#237566;border-color:#4ba48d}#arRouteStop{background:#50343c;border-color:#a8717c}" +
     "#arRouteFeedback{font-size:11px;min-height:18px;color:#8bdec1;margin-top:10px}" +
     ".arAuxRow{display:grid;grid-template-columns:64px 52px 90px 70px 1fr;align-items:center;gap:7px;padding:7px;background:#0c202b;border-bottom:1px solid #36515f;font-size:11px}.arAuxRow label{display:flex;gap:4px;align-items:center}.arAuxRow select{min-width:0;width:100%;background:#0c202b;color:#dcecf3;border:1px solid #496b7a;padding:6px;border-radius:4px}#arAuxReturns h3{font-size:12px;color:#b1d4dd;margin:14px 0 8px}#arAuxReturns p{color:#90afbc;font-size:10px;margin:4px 0 7px}";
+  // R1 native-only patchbay: static CSS with cheap hover. No filter/blur/animations.
+  css.textContent += "\n#arRoutingLabOverlay{background:#06121ccc}\n#arRoutingLabPanel{width:min(1110px,97vw);max-height:92vh;padding:0;background:#182a36;border:1px solid #68808c;border-radius:7px;overflow:auto;box-shadow:0 12px 32px #0009}\n.arPatchTop{padding:15px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;background:linear-gradient(#344955,#1a2c38);border-bottom:1px solid #45606e}\n.arPatchBrand{font-size:16px;font-weight:800;letter-spacing:.025em;color:#ecf3f5}\n.arPatchBrand em{font-size:11px;font-style:normal;font-weight:650;color:#9bdfdf;letter-spacing:.12em;margin-left:8px}\n.arPatchSub{color:#b0c6d0;font-size:10px;margin-top:5px}\n.arPatchTabs{display:flex;gap:5px;padding:10px 19px;background:#142733;border-bottom:1px solid #334d5a}\n.arPatchTabs button{border:1px solid transparent;border-radius:3px;background:#182c39;color:#9cb5c1;font-size:11px;letter-spacing:.05em;font-weight:700;padding:9px 16px;cursor:pointer}\n.arPatchTabs button[aria-selected=true]{background:#2a5262;color:#eaf9fa;border-color:#6093a4}\n.arPatchTabs button:hover{background:#2d4553;color:#fff}\n.arPatchTabs button:focus-visible,.arPatchGrid button:focus-visible{outline:2px solid #91e8dc;outline-offset:-2px}\n.arPatchBody{padding:16px 20px 6px;min-height:360px}\n.arPatchHeading{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:12px}\n.arPatchHeading strong{color:#e1f2f5;font-size:12px;letter-spacing:.09em}\n.arPatchHeading small{display:block;margin-top:5px;font-size:10px;color:#a5c2cc}\n.arPatchPager{display:flex;align-items:center;gap:8px;color:#c2d4dc;font-size:10px}\n.arPatchPager button{border:1px solid #5a7b88;background:#253b48;border-radius:3px;color:#e6eff4;padding:6px 12px;cursor:pointer}\n.arPatchPager button:disabled{opacity:.3;cursor:default}\n.arPatchViewport{border:1px solid #426071;border-radius:4px;overflow:auto;background:#0c1d28}\n.arPatchGrid{display:grid;min-width:650px;width:100%;font-variant-numeric:tabular-nums}\n.arPatchCorner,.arPatchPort,.arPatchChan,.arPatchCell{min-width:0;box-sizing:border-box;min-height:39px;border:0;border-right:1px solid #25404e;border-bottom:1px solid #263d4b}\n.arPatchCorner{padding:13px 10px;position:sticky;left:0;z-index:2;background:#263d4a;color:#d3e9f0;font-size:10px;font-weight:700}\n.arPatchPort{background:#243b49;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#ebf5fa;font-size:10px;font-weight:750;padding:4px;white-space:nowrap}\n.arPatchPort small{color:#aac3ce;font-weight:400;font-size:9px;text-overflow:ellipsis;overflow:hidden;max-width:100%}\n.arPatchChan{position:sticky;left:0;z-index:1;background:#1c3240;display:flex;gap:7px;align-items:center;padding:5px 8px}\n.arPatchChan strong{font-size:11px;color:#edf7f9;min-width:42px}\n.arPatchChan select{width:86px;min-width:0;padding:5px;background:#0f2633;color:#dae9ef;border:1px solid #4c6876;border-radius:3px;font-size:10px}\n.arPatchSides{display:flex;gap:2px;margin-left:auto}\n.arPatchSides button{width:24px;height:26px;padding:0;border:1px solid #486b7a;background:#102935;color:#9ebfce;cursor:pointer;font-size:10px;border-radius:2px}\n.arPatchSides button[aria-pressed=true]{background:#456c7c;border-color:#9acbd5;color:#fff}\n.arPatchSides button:disabled{opacity:.25;cursor:default}\n.arPatchChan[data-status=live]{border-left:3px solid #51ccb6;padding-left:5px}\n.arPatchChan[data-status=draft]{border-left:3px solid #e6b968;padding-left:5px}\n.arPatchCell{cursor:pointer;display:flex;justify-content:center;align-items:center;background:#102631;color:#597887;font-size:11px;font-weight:750}\n.arPatchCell:hover,.arPatchCell.arPatchColHover{background:#2a4959;color:#f2fbfc}\n.arPatchCell[data-patch-state=live]{background:#145447;color:#a4f6df;box-shadow:inset 0 0 0 1px #428877}\n.arPatchCell[data-patch-state=draft]{background:#715532;color:#ffe3aa;box-shadow:inset 0 0 0 1px #c79651}\n.arPatchCell[data-patch-state=removed]{background:#453b40;color:#e9b49c;box-shadow:inset 0 0 0 1px #99755e}\n.arPatchCell[data-patch-state=live]:hover{background:#1e7564}\n.arPatchCell[data-patch-state=draft]:hover{background:#926936}\n.arPatchCell:disabled{cursor:not-allowed;opacity:.36}\n.arPatchLegend{display:flex;flex-wrap:wrap;gap:18px;align-items:center;padding:13px 1px;color:#b4cad2;font-size:10px}\n.arPatchLegend b{display:inline-block;width:9px;height:9px;vertical-align:middle;margin-right:6px;background:#233d4a;border:1px solid #7b97a4}\n.arPatchLegend b.live{background:#44bea9;border-color:#44bea9}\n.arPatchLegend b.draft{background:#dba858;border-color:#dba858}\n.arPatchLegend b.removed{background:#8a695a;border-color:#8a695a}\n.arPatchInspector{border-top:1px solid #385564;display:flex;gap:10px;align-items:center;justify-content:space-between;padding:12px 1px;font-size:11px;color:#b9cfd9}\n.arPatchInspector strong{color:#e5f2f6}\n.arPatchNote{color:#99b6c0;font-size:10px;margin:6px 1px 12px}\n.arPatchEmpty{padding:45px 10px;text-align:center;background:#102733;border:1px dashed #476575;color:#b8d2dc;font-size:12px}\n.arPatchHidden{display:none!important}\n.arPatchFooter{display:flex;align-items:center;justify-content:space-between;gap:15px;flex-wrap:wrap;padding:12px 20px;background:#1c303e;border-top:1px solid #395568}\n#arRouteFeedback{flex:1;min-width:230px;margin:0;font-size:11px;color:#bfe5e7}\n.arPatchFooter .arRouteFoot{margin:0}\n#arRouteApply{background:#1c6b61;border-color:#4da99d;color:#effffb;font-weight:750}\n#arRouteApply:disabled{opacity:.5;cursor:default}\n#arPatchRevert{background:#253d49;border:1px solid #658190}\n#arPatchOutputMap{display:flex;gap:14px;flex-wrap:wrap}\n.arPatchOutput{flex:1;min-width:170px;padding:22px 16px;border:1px solid #3b6273;border-radius:4px;background:#102834}\n.arPatchOutput b{display:block;color:#b4f1e5;margin-bottom:10px}.arPatchOutput span{font-size:11px;color:#aec8d1}\n@media(max-width:730px){.arPatchTop{padding:12px}.arPatchTabs{padding:8px}.arPatchTabs button{padding:9px 7px;font-size:9px}.arPatchBody{padding:10px}.arPatchFooter{padding:10px}}\n";
+  css.textContent += ".arPatchRow{display:contents}.arPatchPort.arPatchColHover{background:#385a69}.arPatchChan:hover{background:#294756}.arPatchUnavailable{opacity:.23;pointer-events:none}";
   document.head.appendChild(css);
   // Signal Check is declared in the permanent toolbar; footer holds status only.
   const overlay = document.createElement("div");
@@ -50,7 +53,7 @@
     '</div><div id="arSignalReason">Reading native audio state...</div>' +
     '<div class="arSignalActions"><button id="arSignalMonitor">MUTE OUTPUT</button>' +
       '<button id="arSignalDry">DRY TEST OFF</button><button id="arSignalSetup">AUDIO SETUP</button>' +
-    '<button id="arSignalLogs">OPEN DIAGNOSTIC LOG</button><button id="arOpenRoutingLab">ROUTING LAB · 10 CH</button></div>' +
+    '<button id="arSignalLogs">OPEN DIAGNOSTIC LOG</button><button id="arOpenRoutingLab">ROUTING · 10 CH</button></div>' +
     '<div id="arDiagnosticLab"><label for="arDiagnosticMode">P0 AUDIO ISOLATION</label>' +
       '<select id="arDiagnosticMode"><option value="NORMAL">NORMAL</option>' +
       '<option value="DRY_THROUGH">DRY THROUGH (0 FX)</option>' +
@@ -68,13 +71,14 @@
   // Selections are drafts until the native device validates and ACKs Apply.
   const routeOverlay=document.createElement("div");
   routeOverlay.id="arRoutingLabOverlay";
-  routeOverlay.innerHTML='<section id="arRoutingLabPanel" role="dialog" aria-modal="true" aria-label="Native 10-channel dry routing">' +
-    '<div class="arSignalHeader"><div><h2>ArSonMix · Live Input Routing LAB</h2><small id="arRouteIdentity">Reading actual device ports...</small></div><button class="arRouteClose" id="arRouteClose">CLOSE ×</button></div>' +
-    '<p>Real hardware routing test: independent stereo-compatible VST3 insert per channel, PRE/POST sends, and BUS returns. No portable route recall. Use headphones at LOW volume. ' +
-    'Existing CH1 FX Rack and Orbit are preserved in the native route; a second CH1 insert is forbidden. Every port shown is from the device active input mask.</p>' +
-    '<div id="arRouteRows"></div><section id="arAuxReturns"><h3>4 DEDICATED AUX / FX RETURNS · INPUT CH1–10 REMAIN AVAILABLE</h3><p>Each AUX has a separate stereo return, VST3, level and MASTER routing. PRE/POST sends may target AUX1–4 without consuming CH strips.</p><div id="arAuxRows"></div></section><section id="arRouteSends"><h3>INTERNAL SENDS · PRE / POST FADER (MAX 32)</h3><div id="arSendRows"></div><button id="arAddSend">＋ ADD SEND</button></section>' +
-    '<div id="arRouteFeedback" role="status">Select channels, BUS returns and sends; APPLY is a native graph transaction.</div>' +
-    '<div class="arRouteFoot"><button id="arRouteStop">STOP LAB</button><button id="arRouteSaveDry" title="Save acknowledged native route and current live controls, only when muted and with zero VST3">SAVE DRY SHOW</button><button id="arRouteApply">APPLY TO NATIVE AUDIO</button></div></section>';
+  routeOverlay.innerHTML='<section id="arRoutingLabPanel" role="dialog" aria-modal="true" aria-label="ArSonMix native input routing">' +
+    '<header class="arPatchTop"><div><div class="arPatchBrand">ArSonMix <em>ROUTING SYSTEM</em></div><div class="arPatchSub" id="arRouteIdentity">Reading current physical audio device...</div></div><button class="arRouteClose" id="arRouteClose">CLOSE ×</button></header>' +
+    '<nav class="arPatchTabs" role="tablist" aria-label="Routing views"><button data-patch-tab="input" role="tab" aria-selected="true">INPUT PATCH</button><button data-patch-tab="internal" role="tab" aria-selected="false">INTERNAL / SENDS</button><button data-patch-tab="output" role="tab" aria-selected="false">OUTPUT PATCH</button></nav>' +
+    '<section class="arPatchBody" id="arPatchInputPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>PHYSICAL INPUT → MIXER CHANNEL</strong><small>Click grid to assign. For stereo, select the L / R side. DRAFT becomes LIVE only after native ACK.</small></div><div class="arPatchPager"><button id="arPatchPrev" title="Previous hardware inputs">‹</button><span id="arPatchRange">NO INPUTS</span><button id="arPatchNext" title="Next hardware inputs">›</button></div></div>' +
+    '<div class="arPatchViewport"><div id="arPatchGrid" class="arPatchGrid" role="grid" aria-label="Native input patch matrix"></div></div><div class="arPatchLegend"><span><b></b>UNPATCHED</span><span><b class="live"></b>LIVE · NATIVE ACK</span><span><b class="draft"></b>DRAFT · NOT APPLIED</span><span><b class="removed"></b>LIVE UNTIL APPLY</span></div><div class="arPatchInspector" id="arPatchInspector" role="status"><strong>10 CHANNEL INPUT PATCH</strong><span>Uses actual enabled ASIO/WASAPI hardware ports</span></div><div class="arPatchNote">No auto-unmute. Stale devices, incomplete stereo assignments and invalid physical ports are rejected before APPLY. One input can feed multiple channels.</div></section>' +
+    '<section class="arPatchBody arPatchHidden" id="arPatchInternalPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>CHANNEL CONTROL / INTERNAL SENDS</strong><small>Real PRE/POST sends and 4 AUX buses. Full internal matrix follows in R2.</small></div></div><div id="arRouteRows"></div><section id="arAuxReturns"><h3>4 DEDICATED AUX / FX RETURNS</h3><p>Independent stereo return with VST3, level and MAIN route.</p><div id="arAuxRows"></div></section><section id="arRouteSends"><h3>INTERNAL SENDS · PRE / POST FADER (MAX 32)</h3><div id="arSendRows"></div><button id="arAddSend">＋ ADD SEND</button></section></section>' +
+    '<section class="arPatchBody arPatchHidden" id="arPatchOutputPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>CURRENT HARDWARE OUTPUT</strong><small>MAIN L/R mapping is read-only until real multi-output patching is implemented in R3.</small></div></div><div id="arPatchOutputMap"></div><div class="arPatchNote">AUX-to-hardware-output patching is not available. Select physical device/output in AUDIO SETUP.</div></section>' +
+    '<footer class="arPatchFooter"><div id="arRouteFeedback" role="status">Select actual input ports, then APPLY while output is muted.</div><div class="arRouteFoot"><button id="arPatchRevert">REVERT DRAFT</button><button id="arRouteSaveDry" title="Save real DRY-only Show (MUTED output and zero VST3)">SAVE DRY SHOW</button><button id="arRouteApply">APPLY ROUTING</button><button id="arRouteStop" class="arPatchHidden" hidden aria-hidden="true">STOP</button></div></footer></section>';
   document.body.appendChild(routeOverlay);
   const draftRoutes=Array.from({length:10},()=>({mode:"NONE",left:-1,right:-1,gain:0.25,pan:0,main:true,mute:false,solo:false,fxId:""}));
   const draftAux=Array.from({length:4},()=>({enabled:false,gain:1,main:true,mute:false,fxId:""}));
@@ -160,6 +164,226 @@
     return base.map(([v,label])=>
       '<option value="'+v+'" '+(Math.abs(v-current)<.00001?'selected':'')+'>'+label+'</option>').join('');
   }
+
+  // R1 patchbay projection. The native acceptedRoute and device epoch are
+  // authoritative; browser edits never mutate live audio on cell click.
+  const patchPageSize=8;
+  const patchSide=Array(10).fill("left");
+  let patchPage=0,patchPending=false,patchTab="input",hoveredPort=-1;
+  const patchGrid=document.getElementById("arPatchGrid");
+  function patchPorts(){
+    const source=state.dryRoutingLab?.ports;
+    if(!Array.isArray(source))return [];
+    const used=new Set();
+    return source.filter(p=>{
+      const n=p?.port;
+      if(!Number.isInteger(n)||n<0||n>255||used.has(n))return false;
+      used.add(n);return true;
+    });
+  }
+  function patchRole(route,physical){
+    if(!route)return "";
+    if(route.mode==="MONO" && Number(route.left)===physical)return "M";
+    if(route.mode==="STEREO"){
+      if(Number(route.left)===physical)return "L";
+      if(Number(route.right)===physical)return "R";
+    }
+    return "";
+  }
+  function patchRowChanged(draft,live){
+    return !live ? draft.mode!=="NONE" :
+      draft.mode!==live.mode ||
+      (["MONO","STEREO"].includes(draft.mode)&&Number(draft.left)!==Number(live.left)) ||
+      (draft.mode==="STEREO"&&Number(draft.right)!==Number(live.right));
+  }
+  function patchPreflight(){
+    const d=state.dryRoutingLab||{},ports=patchPorts();
+    if(!Number.isSafeInteger(draftEpoch)||draftEpoch<=0 ||draftEpoch!==Number(d.epoch))
+      return "Audio device changed. Refresh ROUTING and reselect the physical inputs.";
+    if(!ports.length)return "No active native input ports. Open AUDIO SETUP first.";
+    const active=new Set(ports.map(p=>p.port));
+    for(let i=0;i<draftRoutes.length;i++){
+      const v=draftRoutes[i],ch="CH "+(i+1);
+      if(v.mode==="MONO"&&!active.has(v.left))return ch+": select one active MONO input.";
+      if(v.mode==="STEREO"&&(!active.has(v.left)||!active.has(v.right)))
+        return ch+": assign both L and R before APPLY.";
+      if(v.mode==="STEREO"&&v.left===v.right)
+        return ch+": L and R must be distinct physical input ports.";
+    }
+    return "";
+  }
+  function renderPatchOutput(){
+    const pins=state.dryRoutingLab?.outputPorts;
+    const list=Array.isArray(pins)?pins:[];
+    document.getElementById("arPatchOutputMap").innerHTML=["MAIN L","MAIN R"].map((side,i)=>{
+      const n=list[i],valid=Number.isInteger(n)&&n>=0;
+      return '<div class="arPatchOutput"><b>'+side+'</b><span>'+
+        (valid?'DEVICE OUTPUT '+(n+1)+' · CURRENT / READ-ONLY':'NOT AVAILABLE · SETUP REQUIRED')+
+        '</span></div>';
+    }).join("");
+  }
+  function renderPatchMatrix(){
+    if(patchTab!=="input")return;
+    const d=state.dryRoutingLab||{},ports=patchPorts();
+    const pages=Math.max(1,Math.ceil(ports.length/patchPageSize));
+    patchPage=Math.min(Math.max(0,patchPage),pages-1);
+    const shown=ports.slice(patchPage*patchPageSize,(patchPage+1)*patchPageSize);
+    document.getElementById("arPatchPrev").disabled=patchPage===0;
+    document.getElementById("arPatchNext").disabled=patchPage>=pages-1;
+    document.getElementById("arPatchRange").textContent=ports.length?
+      "INPUT "+(patchPage*patchPageSize+1)+"–"+(patchPage*patchPageSize+shown.length)+" / "+ports.length:"NO ACTIVE INPUTS";
+    const old=d.ready&&d.acceptedRoute?.deviceEpoch===d.epoch&&
+      Array.isArray(d.acceptedRoute?.channels)?d.acceptedRoute.channels:[];
+    const dirty=draftRoutes.filter((v,i)=>patchRowChanged(v,old[i])).length;
+    document.getElementById("arPatchInspector").innerHTML=
+      '<strong>'+(d.ready?'NATIVE ROUTING · '+d.revision:'AWAITING NATIVE PATCH')+'</strong>'+
+      '<span>'+dirty+' channel patch changes · '+ports.length+' verified input ports · '+
+      (state.monitor?'OUTPUT ARMED — MUTE BEFORE APPLY':'OUTPUT MUTED · READY FOR SAFE APPLY')+'</span>';
+    const applied=document.getElementById("arRouteApply");
+    applied.disabled=patchPending||!ports.length;
+    applied.textContent=patchPending?"APPLYING…":"APPLY ROUTING";
+    if(!ports.length){
+      patchGrid.style.gridTemplateColumns="1fr";
+      patchGrid.innerHTML='<div class="arPatchEmpty">NO VERIFIED HARDWARE INPUTS · Choose a DIRECT ASIO / WASAPI device in AUDIO SETUP</div>';
+      return;
+    }
+    patchGrid.style.gridTemplateColumns="190px repeat("+patchPageSize+",minmax(58px,1fr))";
+    let html='<div class="arPatchRow" role="row"><div class="arPatchCorner" role="columnheader">CHANNEL / FORMAT</div>';
+    for(const port of shown)
+      html+='<div class="arPatchPort" role="columnheader" data-patch-col="'+port.port+
+        '" title="'+safeRouteText(port.label||"Audio Input")+'">IN '+(port.port+1)+
+        '<small>'+safeRouteText(port.label||"Physical input")+'</small></div>';
+    for(let k=shown.length;k<patchPageSize;k++)
+      html+='<div class="arPatchPort arPatchUnavailable" aria-hidden="true">—</div>';
+    html+='</div>';
+    for(let i=0;i<10;i++){
+      const v=draftRoutes[i],live=old[i],changed=patchRowChanged(v,live);
+      const stereo=v.mode==="STEREO";
+      html+='<div class="arPatchRow" role="row"><div class="arPatchChan" data-status="'+
+        (changed?'draft':d.ready?'live':'idle')+'"><strong>CH '+String(i+1).padStart(2,"0")+'</strong>'+
+        '<select data-patch-mode="'+i+'" aria-label="CH '+(i+1)+' input format">'+
+        ['NONE','MONO','STEREO','BUS'].map(mode=>'<option value="'+mode+'"'+(v.mode===mode?' selected':'')+'>'+mode+'</option>').join("")+
+        '</select><span class="arPatchSides"><button data-patch-side="left" data-patch-row="'+i+
+        '" aria-label="CH '+(i+1)+' assign left" aria-pressed="'+(patchSide[i]==="left")+'"'+(stereo?'':' disabled')+
+        '>L</button><button data-patch-side="right" data-patch-row="'+i+
+        '" aria-label="CH '+(i+1)+' assign right" aria-pressed="'+(patchSide[i]==="right")+'"'+(stereo?'':' disabled')+'>R</button></span></div>';
+      for(const port of shown){
+        const draftRole=patchRole(v,port.port),liveRole=patchRole(live,port.port);
+        const changedRole=!!draftRole && draftRole!==liveRole;
+        const status=draftRole?(changedRole?'draft':'live'):liveRole?'removed':'off';
+        const content=draftRole|| (liveRole?'−':'·');
+        const desc='CH '+(i+1)+' '+(v.mode==='STEREO'?'L/R':v.mode)+
+          ' ← '+safeRouteText(port.label||('Input '+(port.port+1)))+
+          ' · '+(status==='live'?'native confirmed':status==='draft'?'draft not applied':
+          status==='removed'?'live until APPLY':'unpatched');
+        html+='<button type="button" class="arPatchCell" role="gridcell" data-patch-row="'+i+
+          '" data-patch-port="'+port.port+'" data-patch-col="'+port.port+
+          '" data-patch-state="'+status+'" aria-pressed="'+!!draftRole+
+          '" aria-label="'+desc+'" title="'+desc+'"'+(patchPending?' disabled':'')+'>'+
+          content+'</button>';
+      }
+      for(let k=shown.length;k<patchPageSize;k++)
+        html+='<div class="arPatchCell arPatchUnavailable" aria-hidden="true">·</div>';
+      html+='</div>';
+    }
+    patchGrid.innerHTML=html;
+    hoveredPort=-1;
+  }
+  function selectPatchTab(tab){
+    if(!["input","internal","output"].includes(tab))return;
+    patchTab=tab;
+    routeOverlay.querySelectorAll("[data-patch-tab]").forEach(el=>
+      el.setAttribute("aria-selected",String(el.dataset.patchTab===tab)));
+    for(const section of ["input","internal","output"]){
+      document.getElementById("arPatch"+section[0].toUpperCase()+section.slice(1)+"Panel")
+        .classList.toggle("arPatchHidden",section!==tab);
+    }
+    if(tab==="input")renderPatchMatrix();
+    else if(tab==="internal")drawRoutes();
+    else renderPatchOutput();
+  }
+  function patchFeedback(message){
+    document.getElementById("arRouteFeedback").textContent=message;
+  }
+  routeOverlay.querySelector(".arPatchTabs").addEventListener("click",e=>{
+    const tab=e.target.closest("[data-patch-tab]");
+    if(tab)selectPatchTab(tab.dataset.patchTab);
+  });
+  document.getElementById("arPatchPrev").addEventListener("click",()=>{
+    if(patchPage>0){patchPage--;renderPatchMatrix();}
+  });
+  document.getElementById("arPatchNext").addEventListener("click",()=>{
+    if(patchPage+1<Math.ceil(patchPorts().length/patchPageSize)){patchPage++;renderPatchMatrix();}
+  });
+  patchGrid.addEventListener("change",e=>{
+    const el=e.target.closest("[data-patch-mode]");
+    if(!el||patchPending)return;
+    const row=Number(el.dataset.patchMode),v=draftRoutes[row],prior=v.mode;
+    const next=el.value;
+    if(!["NONE","MONO","STEREO","BUS"].includes(next))return;
+    v.mode=next;
+    if(next==="NONE"||next==="BUS"){v.left=-1;v.right=-1;}
+    else if(next==="MONO"){v.right=-1;}
+    else if(next==="STEREO"&&prior!=="STEREO"){v.right=-1;patchSide[row]="left";}
+    patchFeedback("DRAFT · CH "+(row+1)+" "+next+" · output unchanged until APPLY.");
+    renderPatchMatrix();
+  });
+  patchGrid.addEventListener("click",e=>{
+    if(patchPending)return;
+    const side=e.target.closest("[data-patch-side]");
+    if(side){
+      const i=Number(side.dataset.patchRow);
+      if(draftRoutes[i]?.mode==="STEREO"){patchSide[i]=side.dataset.patchSide;renderPatchMatrix();}
+      return;
+    }
+    const cell=e.target.closest("[data-patch-port]");
+    if(!cell)return;
+    const i=Number(cell.dataset.patchRow),port=Number(cell.dataset.patchPort),v=draftRoutes[i];
+    if(!Number.isInteger(i)||i<0||i>=10||!patchPorts().some(p=>p.port===port))return;
+    if(v.mode==="BUS"){patchFeedback("CH "+(i+1)+" is BUS receiver. Select MONO/STEREO before physical patch.");return;}
+    if(v.mode==="NONE"){v.mode="MONO";v.left=port;v.right=-1;}
+    else if(v.mode==="MONO"){
+      if(v.left===port){v.mode="NONE";v.left=-1;}else v.left=port;
+      v.right=-1;
+    }else if(v.mode==="STEREO"){
+      const side=patchSide[i];
+      const opposite=side==="left"?"right":"left";
+      if(v[side]!==port && v[opposite]===port){
+        patchFeedback("REJECTED DRAFT · CH "+(i+1)+" stereo L/R cannot use the same physical port.");
+        return;
+      }
+      v[side]=v[side]===port?-1:port;
+    }
+    patchFeedback("DRAFT · CH "+(i+1)+" input assignment edited. APPLY validates the real hardware route.");
+    renderPatchMatrix();
+  });
+  // Delegated hover changes only the visible physical column (at most 11
+  // DOM cells), not the matrix or all mixer meters. No frame/timer loop.
+  patchGrid.addEventListener("pointerover",e=>{
+    const cell=e.target.closest("[data-patch-port]");
+    const port=cell?Number(cell.dataset.patchPort):-1;
+    if(port===hoveredPort)return;
+    hoveredPort=port;
+    patchGrid.querySelectorAll("[data-patch-col]").forEach(n=>
+      n.classList.toggle("arPatchColHover",Number(n.dataset.patchCol)===port));
+  });
+  patchGrid.addEventListener("pointerleave",()=>{
+    if(hoveredPort<0)return;
+    hoveredPort=-1;
+    patchGrid.querySelectorAll(".arPatchColHover").forEach(n=>n.classList.remove("arPatchColHover"));
+  });
+  document.getElementById("arPatchRevert").addEventListener("click",()=>{
+    const d=state.dryRoutingLab||{};
+    if(!hydrateAcceptedRoute()){
+      invalidateDraftForNewDevice(0);
+      invalidateDraftForNewDevice(Number(d.epoch)||0);
+    }
+    syncNativeLevelsToRouteDraft();
+    drawRoutes();
+    renderPatchMatrix();
+    patchFeedback("DRAFT REVERTED · displayed input routes match last native ACK (or unpatched device).");
+  });
+
   function drawRoutes(){
     // An identical numbered input on another ASIO device is NOT the same
     // microphone. Clear all prior user intent if device epoch changed.
@@ -252,7 +476,7 @@
     const d=state.dryRoutingLab||{};
     const label=document.getElementById("arRouteIdentity");
     if(!label)return;
-    setTextIfChanged(label,(d.active ? (d.ready?"DRY LAB ACTIVE":"DRY LAB STALE — SILENT, REAPPLY"):"DRY LAB OFF")+
+    setTextIfChanged(label,(d.active ? (d.ready?"NATIVE PATCH LIVE":"PATCH STALE — SILENT, REAPPLY"):"AWAITING NATIVE PATCH")+
       " · device epoch "+(d.epoch||0)+" · rev "+(d.revision||0)+
       " · "+(d.ports?.length||0)+" enabled inputs · "+(d.outputPorts?.length||0)+" outputs · "+(d.sendCount||0)+" channel sends · "+(d.auxSendCount||0)+" AUX sends · "+(d.auxCount||0)+" AUX");
   }
@@ -260,17 +484,34 @@
     hydrateAcceptedRoute();
     syncNativeLevelsToRouteDraft();
     drawRoutes();
+    patchPage=0;
     routeOverlay.classList.add("open");
+    selectPatchTab("input");
     overlay.classList.remove("open");
   }
   // Exposed only to the existing native SIGNAL FLOW GUI; does not publish a
   // routing transaction or bypass the output-MUTE operator safety gate.
   window.__arMixOpenRoutingLab=openRoutingLab;
+  window.__arMixOpenRouting=openRoutingLab;
+  // Native toolbar action remains the approved SIGNAL FLOW data-view,
+  // but ROUTING opens on the same click without an intermediate lab screen.
+  document.addEventListener("click",event=>{
+    if(event.target.closest('[data-view="SIGNAL FLOW"]'))openRoutingLab();
+  });
+  const routingNav=document.querySelector('[data-view="SIGNAL FLOW"] span');
+  if(routingNav)routingNav.textContent="ROUTING";
   document.getElementById("arOpenRoutingLab").addEventListener("click",openRoutingLab);
   document.getElementById("arRouteClose").addEventListener("click",()=>routeOverlay.classList.remove("open"));
   routeOverlay.addEventListener("click",e=>{if(e.target===routeOverlay)routeOverlay.classList.remove("open");});
   document.getElementById("arRouteApply").addEventListener("click",()=>{
     const d=state.dryRoutingLab||{};
+    if(patchPending)return;
+    const failure=patchPreflight();
+    if(failure){patchFeedback("REJECTED · "+failure);return;}
+    if(state.monitor){patchFeedback("MUTE OUTPUT FIRST · structural routing cannot be applied while speakers are armed.");return;}
+    syncNativeLevelsToRouteDraft();
+    patchPending=true;
+    renderPatchMatrix();
     if(!draftEpoch || draftEpoch!==Number(d.epoch)){
       document.getElementById("arRouteFeedback").textContent=
         "DEVICE CHANGED · old channel assignments discarded. Re-select the actual physical inputs.";
@@ -308,7 +549,11 @@
   });
   api.addEventListener("arMixRoutingLabAck",reply=>{
     const result=reply?.state||reply||{};
+    patchPending=false;
     if(result && typeof result==="object" && "epoch" in result)state.dryRoutingLab=result;
+    if(reply?.ok===true)hydrateAcceptedRoute();
+    renderPatchMatrix();
+    if(patchTab==="output")renderPatchOutput();
     document.getElementById("arRouteFeedback").textContent=
       reply?.ok===false?("REJECTED · "+(reply.error||"Invalid route")):
       result.active?"NATIVE ACK: "+(Number(result.fxCount||0)+Number(state.chainCount||0))+" VST3 total (CH1 rack retained · "+(result.fxReused||0)+" native inserts preserved) · "+(result.auxCount||0)+" AUX · "+(result.auxSendCount||0)+" AUX sends · UNMUTE OUTPUT in SIGNAL CHECK":"NATIVE ACK: STOPPED · output remains MUTED for safety";
@@ -332,8 +577,8 @@
     Number(d?.overBudgetCount)===0;
   function diagnosis(d) {
     if(d.dryRoutingLab?.active) return d.dryRoutingLab.ready?
-      "Live 10-channel Routing LAB: "+(d.dryRoutingLab.fxCount||0)+" independent native VST3 inserts, PRE/POST sends and BUS returns. Use low headphone volume.":
-      "Routing LAB device generation changed. Output is SILENT until you remap the real device and APPLY again.";
+      "Live 10-channel native route: "+(d.dryRoutingLab.fxCount||0)+" independent native VST3 inserts, PRE/POST sends and BUS returns. Use low headphone volume.":
+      "Physical input mapping is STALE. Output is SILENT until the device is remapped and ACKed.";
     if(d.diagnosticRoute==="OUTPUT_ONLY_TONE") return "Output-only test: capture endpoint is disconnected. Listen for tone at low headphone volume and click MARK CRACKLE when audible.";
     if(d.diagnosticRoute==="CAPTURE_ONLY") return "Capture-only test: hardware render endpoint is disconnected. Observe capture input and backend discontinuity count; you should hear no audio.";
     if(d.diagnosticRoute==="DRY_THROUGH") return "Dry-through test: microphone to output with all VST3 bypassed. MARK CRACKLE at audible glitches.";
@@ -362,13 +607,18 @@
         setTextIfChanged(el,d.dryRoutingLab?.ready?(Math.round(Math.min(1,peak)*100)+"%"):"—");
       });
       if(draftEpoch!==(Number(d.dryRoutingLab?.epoch)||0)) {
+        patchPending=false;
         drawRoutes(); // fresh port names; reset stale user assignments
+        renderPatchMatrix();
+        if(patchTab==="output")renderPatchOutput();
         document.getElementById("arRouteFeedback").textContent=
           "AUDIO DEVICE CHANGED · all input assignments reset. Select ports again.";
       } else updateRouteLabIdentity();
     }
     setTextIfChanged(el("arSignalBadge"),!d.monitor ? "OUTPUT MUTED" : d.masterMute ? "MASTER MUTED" : d.channelMute ? "CH1 MUTED" : "OUTPUT ARMED");
-    el("arSignalBadge").style.color = d.monitor && !d.masterMute && !d.channelMute ? "#71e9cc" : "#e9be7c";
+    const outputBadge=el("arSignalBadge");
+    if(outputBadge)outputBadge.style.color =
+      d.monitor && !d.masterMute && !d.channelMute ? "#71e9cc" : "#e9be7c";
     const monitorButton=document.querySelector('[data-native-action="monitor"]');
     setTextIfChanged(monitorButton,d.monitor?"MUTE OUTPUT":"UNMUTE OUTPUT");
     // The original UI shell had fixed 48 kHz / 64-sample demo badges. Show
@@ -380,7 +630,7 @@
     const driverLabel=document.querySelector('.spec-device strong');
     setTextIfChanged(driverLabel,d.driver||"NO DRIVER");
     const liveLabel=document.querySelector('.status > span:first-child > b');
-    setTextIfChanged(liveLabel,d.dryRoutingLab?.active?"NATIVE 10CH FX LAB":"NATIVE CH1");
+    setTextIfChanged(liveLabel,d.dryRoutingLab?.ready?"NATIVE 10CH ROUTED":"NATIVE CH1 · UNPATCHED");
     const edition=document.querySelector('.status > span:last-child');
     setTextIfChanged(edition,d.dryRoutingLab?.active?
       "AR MIX P1H · REAL 10CH FX / BUS SENDS":"AR MIX P2 · CH1 NATIVE + UI PREVIEW");

@@ -1221,6 +1221,107 @@ async def main():
           return Number.parseFloat(l.style.getPropertyValue('--led-lit'))>7 &&
             Number.parseFloat(r.style.getPropertyValue('--led-lit'))>7;
         }""",timeout=3000)
+
+        # R1: native-backed Waves-style INPUT PATCH, not an image or browser
+        # mock-routing claim. Test real panel interaction against native ACKs.
+        await native.evaluate("""()=>{
+          window.__arMixSent=[];
+          window.__JUCE__.backend.emitEvent=(name,payload)=>
+            window.__arMixSent.push({name,payload});
+        }""")
+        await native.add_script_tag(path=str(project/"web/monitor.js"))
+        await native.evaluate("""()=>{
+          window.__arPatchRows=Array.from({length:10},()=>({
+            mode:"NONE",left:-1,right:-1,gain:.25,pan:0,main:true,
+            mute:false,solo:false,fxId:""
+          }));
+          window.__arPatchStatus={
+            connected:true,driver:"ASIO",rate:48000,buffer:128,monitor:false,
+            masterMute:false,channelMute:false,diagnosticRoute:"NORMAL",chainCount:0,
+            dryRoutingLab:{active:false,ready:false,epoch:77,revision:0,
+              ports:[{port:2,callback:0,label:"Input <Mic> & One"},
+                     {port:5,callback:1,label:"USB Input Six"}],
+              outputPorts:[0,1],channelControls:[],fxCount:0}
+          };
+          window.__arMixMockEvents.arMixStatus(window.__arPatchStatus);
+        }""")
+        await native.locator('[data-view="SIGNAL FLOW"]').click()
+        assert await native.locator("#arRoutingLabOverlay").evaluate(
+            "(e)=>e.classList.contains('open')")
+        assert await native.locator("#arPatchGrid [data-patch-row][data-patch-port]").count()==20
+        assert await native.locator("#arPatchGrid .arPatchCell").count()==80
+        patch_visual=await native.evaluate("""()=>{
+          const grid=document.querySelector('#arPatchGrid').getBoundingClientRect();
+          const cols=[...document.querySelectorAll('#arPatchGrid .arPatchPort')]
+            .map(x=>x.getBoundingClientRect().width);
+          const panel=document.querySelector('#arRoutingLabPanel').getBoundingClientRect();
+          return {grid:Math.round(grid.width),panel:Math.round(panel.width),
+                  cols:cols.map(Math.round),rowCount:
+                    document.querySelectorAll('#arPatchGrid .arPatchChan').length};
+        }""")
+        assert patch_visual['rowCount']==10 and len(patch_visual['cols'])==8,patch_visual
+        assert max(patch_visual['cols'])-min(patch_visual['cols'])<=1,patch_visual
+        assert all(58<=w<=140 for w in patch_visual['cols']),patch_visual
+        await native.screenshot(path=str(project/"native-input-patch-review-1680.png"))
+        await native.set_viewport_size({"width":1440,"height":820})
+        await native.screenshot(path=str(project/"native-input-patch-review-1440.png"))
+        await native.set_viewport_size({"width":1680,"height":920})
+        assert await native.locator("#arPatchGrid .arPatchRow").first.evaluate(
+            "(e)=>getComputedStyle(e).display")=="contents"
+        assert await native.locator(".arPatchPort").first.get_attribute("title")=="Input <Mic> & One"
+        cell=native.locator('[data-patch-row="0"][data-patch-port="2"].arPatchCell')
+        assert await cell.get_attribute("data-patch-state")=="off"
+        await cell.click()
+        assert await cell.get_attribute("data-patch-state")=="draft"
+        assert await cell.inner_text()=="M"
+        assert await native.evaluate(
+            "()=>window.__arMixSent.filter(x=>x.payload?.action==='routingDryApply').length")==0
+        await native.locator('[data-patch-mode="1"]').select_option("STEREO")
+        await native.locator('[data-patch-row="1"][data-patch-port="2"].arPatchCell').click()
+        await native.locator('[data-patch-row="1"][data-patch-side="right"]').click()
+        await native.locator('[data-patch-row="1"][data-patch-port="2"].arPatchCell').click()
+        assert "cannot use the same" in await native.locator("#arRouteFeedback").inner_text()
+        await native.locator('[data-patch-row="1"][data-patch-port="5"].arPatchCell').click()
+        assert await native.locator('[data-patch-row="1"][data-patch-port="5"].arPatchCell').inner_text()=="R"
+        await native.locator("#arRouteApply").click()
+        action=await native.evaluate("""()=>{
+          const actions=window.__arMixSent.filter(x=>x.payload?.action==='routingDryApply');
+          return actions.at(-1)?.payload?.value;
+        }""")
+        assert action["deviceEpoch"]==77 and action["revision"]==0,action
+        assert action["channels"][0]["left"]==2 and action["channels"][0]["mode"]=="MONO",action
+        assert action["channels"][1]["left"]==2 and action["channels"][1]["right"]==5,action
+        assert await native.locator("#arRouteApply").is_disabled()
+        await native.evaluate("""()=>{
+          const d=window.__arPatchStatus.dryRoutingLab;
+          d.active=true;d.ready=true;d.revision=1;
+          d.acceptedRoute={deviceEpoch:77,revision:0,
+            channels:window.__arMixSent.filter(x=>x.payload?.action==='routingDryApply').at(-1).payload.value.channels,
+            auxes:[],sends:[]};
+          window.__arMixMockEvents.arMixRoutingLabAck({ok:true,state:d});
+          window.__arMixMockEvents.arMixStatus(window.__arPatchStatus);
+        }""")
+        assert await cell.get_attribute("data-patch-state")=="live"
+        assert await native.locator("#arRouteApply").is_enabled()
+        await native.locator('[data-patch-row="0"][data-patch-port="5"].arPatchCell').click()
+        assert await native.locator('[data-patch-row="0"][data-patch-port="5"].arPatchCell').get_attribute("data-patch-state")=="draft"
+        await native.locator("#arPatchRevert").click()
+        assert await cell.get_attribute("data-patch-state")=="live"
+        await native.locator('[data-patch-tab="output"]').click()
+        assert "READ-ONLY" in await native.locator("#arPatchOutputPanel").inner_text()
+        assert await native.locator(".arPatchOutput").count()==2
+        await native.locator('[data-patch-tab="input"]').click()
+        await native.evaluate("""()=>{
+          const d=window.__arPatchStatus.dryRoutingLab;
+          d.epoch=78;d.revision=1;d.ready=false;d.active=false;
+          d.ports=[{port:9,callback:0,label:"Other interface"}];
+          d.acceptedRoute=null;
+          window.__arMixMockEvents.arMixStatus(window.__arPatchStatus);
+        }""")
+        assert await native.locator('[data-patch-row][data-patch-port]').count()==10
+        assert await native.locator('[data-patch-row="0"][data-patch-port="9"]').get_attribute("data-patch-state")=="off"
+        assert "DEVICE CHANGED" in await native.locator("#arRouteFeedback").inner_text()
+
         assert not native_errors,native_errors
         await native.close()
         await browser.close()
