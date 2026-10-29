@@ -946,7 +946,23 @@ private:
             action.startsWith ("import") || action.startsWith ("fx") ||
             action == "addCatalog" || action == "addScanFolder" ||
             action == "scanVst3" || action == "routingDryApply"))
-            return emitNotice ("Studio backup in progress. Finish backup before editing saved FX or VST library.", true);
+        {
+            const auto reason=juce::String(
+                "Studio backup in progress. Finish backup before editing saved FX or VST library.");
+            // R1 matrix must ALWAYS get a response after APPLY, including
+            // upstream rejection before the normal routing command handler.
+            // No graph or device state may be mutated while Studio IO is busy.
+            if(action=="routingDryApply" && browser_.loaded)
+            {
+                auto ack=std::make_unique<juce::DynamicObject>();
+                ack->setProperty("ok",false);
+                ack->setProperty("error",reason);
+                ack->setProperty("state",engine_.status().getProperty("dryRoutingLab",{}));
+                browser_.emitEventIfBrowserIsVisible(
+                    "arMixRoutingLabAck",juce::var(ack.release()));
+            }
+            return emitNotice(reason,true);
+        }
 
         // Structural plugin operations currently detach the original callback
         // and must never mutate a running independent render thread.
