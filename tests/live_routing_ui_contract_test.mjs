@@ -192,3 +192,16 @@ test("R1 matrix edits only device-bound draft and honors native revision ACK",()
   assert.doesNotMatch(ui,/filter\s*:\s*blur\(/);
   assert.match(ui,/document\.addEventListener\("click",event=>/);
 });
+
+
+test("R0 premium workspace is anchored to mixer chrome and lazily opens INTERNAL tab",()=>{
+ assert.match(ui,/role="region" aria-label="ArSonMix routing workspace"/);
+ assert.match(ui,/#arRoutingLabOverlay\{display:none;position:fixed;inset:62px 7px 30px 168px/);
+ assert.match(ui,/patchTab==="internal"\)drawRoutes\(\)/);
+ assert.match(ui,/if\(tab==="input"\)renderPatchMatrix\(\)/);
+ assert.doesNotMatch(ui,/arPatchCell:hover|arPatchColHover|hoveredPort/);
+ assert.doesNotMatch(ui,/backdrop-filter:|filter:blur\(/);
+ assert.match(ui,/event\.key!=="Escape"/);
+ assert.match(ui,/routingDryApply/);
+ assert.match(ui,/hydrateAcceptedRoute/);
+});

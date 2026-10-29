@@ -22,24 +22,93 @@
     "#arDiagnosticCopy{color:#e1f7f4;background:#166052;border:1px solid #34c8ac;border-radius:4px;padding:7px 12px;cursor:pointer}" +
     "#arDiagnosticCopyStatus{color:#8cdec9;font-size:10px}" +
     "#arSmartClockToggle{color:#f5eadb;background:#284961;border:1px solid #9bb2c5;border-radius:4px;padding:7px 12px;cursor:pointer}";
-  // No blur, no animated shaders or per-strip timer. Routing draws only
-  // on explicit user edit; existing native health polling stays at 12 Hz.
-  css.textContent +=
-    "#arRoutingLabOverlay{display:none;position:fixed;inset:0;z-index:995;background:#08121be8;align-items:center;justify-content:center}" +
-    "#arRoutingLabOverlay.open{display:flex}#arRoutingLabPanel{width:min(760px,94vw);max-height:86vh;overflow:auto;box-sizing:border-box;padding:16px;background:#172834;border:1px solid #637e8a;border-radius:8px;color:#dcecf3}" +
-    "#arRoutingLabPanel h2{font-size:17px;font-weight:600;margin:0 0 6px}#arRoutingLabPanel p{font-size:11px;line-height:1.6;color:#9cc5d4;margin:6px 0 13px}" +
-    ".arRoutePluginLine{grid-column:1/-1;display:flex;align-items:center;gap:8px;padding:1px 4px 5px;color:#9bbfc6;font-size:10px}.arRoutePluginLine select{min-width:0;max-width:460px;flex:1;padding:5px 7px;color:#dcecf3;background:#0d202b;border:1px solid #4d6879;border-radius:4px}.arRoutePluginLine small{color:#7fa4b1}" +
-    ".arRouteRow{display:grid;grid-template-columns:54px 82px minmax(65px,1fr) minmax(65px,1fr) 88px 148px;gap:6px;align-items:center;padding:5px 0;border-bottom:1px solid #2d4653}" +
-    ".arRouteRow label{font-size:11px;font-weight:600}.arRouteRow select{width:100%;min-width:0;padding:6px;background:#0d202b;border:1px solid #4d6879;border-radius:4px;color:#e1eef5;font-size:11px}" +
-    ".arRouteFlags{display:flex;gap:5px;align-items:center;font-size:10px}.arRouteFlags label{display:flex;gap:1px;align-items:center;font-size:10px;white-space:nowrap}.arRouteFlags input{width:12px;height:12px;margin:0}.arRoutePeak{display:block;color:#91dcd0;font-size:9px;font-variant-numeric:tabular-nums}" +
-    "#arRouteRows{overflow-x:auto}.arRouteRow{min-width:590px}#arRouteSends{margin-top:12px}#arRouteSends h3{font-size:12px;margin:8px 0;color:#b1d4dd}.arSendRow{display:grid;grid-template-columns:1fr 1fr 76px 83px 32px;gap:6px;margin-bottom:5px}.arSendRow select{width:100%;min-width:0;padding:6px;color:#e1eef5;background:#0d202b;border:1px solid #4d6879;border-radius:4px}.arSendRow button{border:1px solid #9a6060;background:#442930;color:#f3dadd;border-radius:4px}#arAddSend{font-size:10px;padding:6px 8px}" +
-    ".arRouteFoot{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-top:12px}.arRouteFoot button,.arRouteClose{color:#f0f7fa;background:#24475a;border:1px solid #587f91;border-radius:4px;padding:8px 12px;cursor:pointer}" +
-    "#arRouteApply{background:#237566;border-color:#4ba48d}#arRouteStop{background:#50343c;border-color:#a8717c}" +
-    "#arRouteFeedback{font-size:11px;min-height:18px;color:#8bdec1;margin-top:10px}" +
-    ".arAuxRow{display:grid;grid-template-columns:64px 52px 90px 70px 1fr;align-items:center;gap:7px;padding:7px;background:#0c202b;border-bottom:1px solid #36515f;font-size:11px}.arAuxRow label{display:flex;gap:4px;align-items:center}.arAuxRow select{min-width:0;width:100%;background:#0c202b;color:#dcecf3;border:1px solid #496b7a;padding:6px;border-radius:4px}#arAuxReturns h3{font-size:12px;color:#b1d4dd;margin:14px 0 8px}#arAuxReturns p{color:#90afbc;font-size:10px;margin:4px 0 7px}";
-  // R1 native-only patchbay: static CSS with cheap hover. No filter/blur/animations.
-  css.textContent += "\n#arRoutingLabOverlay{background:#06121ccc}\n#arRoutingLabPanel{width:min(1110px,97vw);max-height:92vh;padding:0;background:#182a36;border:1px solid #68808c;border-radius:7px;overflow:auto;box-shadow:0 12px 32px #0009}\n.arPatchTop{padding:15px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;background:linear-gradient(#344955,#1a2c38);border-bottom:1px solid #45606e}\n.arPatchBrand{font-size:16px;font-weight:800;letter-spacing:.025em;color:#ecf3f5}\n.arPatchBrand em{font-size:11px;font-style:normal;font-weight:650;color:#9bdfdf;letter-spacing:.12em;margin-left:8px}\n.arPatchSub{color:#b0c6d0;font-size:10px;margin-top:5px}\n.arPatchTabs{display:flex;gap:5px;padding:10px 19px;background:#142733;border-bottom:1px solid #334d5a}\n.arPatchTabs button{border:1px solid transparent;border-radius:3px;background:#182c39;color:#9cb5c1;font-size:11px;letter-spacing:.05em;font-weight:700;padding:9px 16px;cursor:pointer}\n.arPatchTabs button[aria-selected=true]{background:#2a5262;color:#eaf9fa;border-color:#6093a4}\n.arPatchTabs button:hover{background:#2d4553;color:#fff}\n.arPatchTabs button:focus-visible,.arPatchGrid button:focus-visible{outline:2px solid #91e8dc;outline-offset:-2px}\n.arPatchBody{padding:16px 20px 6px;min-height:360px}\n.arPatchHeading{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:12px}\n.arPatchHeading strong{color:#e1f2f5;font-size:12px;letter-spacing:.09em}\n.arPatchHeading small{display:block;margin-top:5px;font-size:10px;color:#a5c2cc}\n.arPatchPager{display:flex;align-items:center;gap:8px;color:#c2d4dc;font-size:10px}\n.arPatchPager button{border:1px solid #5a7b88;background:#253b48;border-radius:3px;color:#e6eff4;padding:6px 12px;cursor:pointer}\n.arPatchPager button:disabled{opacity:.3;cursor:default}\n.arPatchViewport{border:1px solid #426071;border-radius:4px;overflow:auto;background:#0c1d28}\n.arPatchGrid{display:grid;min-width:650px;width:100%;font-variant-numeric:tabular-nums}\n.arPatchCorner,.arPatchPort,.arPatchChan,.arPatchCell{min-width:0;box-sizing:border-box;min-height:39px;border:0;border-right:1px solid #25404e;border-bottom:1px solid #263d4b}\n.arPatchCorner{padding:13px 10px;position:sticky;left:0;z-index:2;background:#263d4a;color:#d3e9f0;font-size:10px;font-weight:700}\n.arPatchPort{background:#243b49;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#ebf5fa;font-size:10px;font-weight:750;padding:4px;white-space:nowrap}\n.arPatchPort small{color:#aac3ce;font-weight:400;font-size:9px;text-overflow:ellipsis;overflow:hidden;max-width:100%}\n.arPatchChan{position:sticky;left:0;z-index:1;background:#1c3240;display:flex;gap:7px;align-items:center;padding:5px 8px}\n.arPatchChan strong{font-size:11px;color:#edf7f9;min-width:42px}\n.arPatchChan select{width:86px;min-width:0;padding:5px;background:#0f2633;color:#dae9ef;border:1px solid #4c6876;border-radius:3px;font-size:10px}\n.arPatchSides{display:flex;gap:2px;margin-left:auto}\n.arPatchSides button{width:24px;height:26px;padding:0;border:1px solid #486b7a;background:#102935;color:#9ebfce;cursor:pointer;font-size:10px;border-radius:2px}\n.arPatchSides button[aria-pressed=true]{background:#456c7c;border-color:#9acbd5;color:#fff}\n.arPatchSides button:disabled{opacity:.25;cursor:default}\n.arPatchChan[data-status=live]{border-left:3px solid #51ccb6;padding-left:5px}\n.arPatchChan[data-status=draft]{border-left:3px solid #e6b968;padding-left:5px}\n.arPatchCell{cursor:pointer;display:flex;justify-content:center;align-items:center;background:#102631;color:#597887;font-size:11px;font-weight:750}\n.arPatchCell:hover,.arPatchCell.arPatchColHover{background:#2a4959;color:#f2fbfc}\n.arPatchCell[data-patch-state=live]{background:#145447;color:#a4f6df;box-shadow:inset 0 0 0 1px #428877}\n.arPatchCell[data-patch-state=draft]{background:#715532;color:#ffe3aa;box-shadow:inset 0 0 0 1px #c79651}\n.arPatchCell[data-patch-state=removed]{background:#453b40;color:#e9b49c;box-shadow:inset 0 0 0 1px #99755e}\n.arPatchCell[data-patch-state=live]:hover{background:#1e7564}\n.arPatchCell[data-patch-state=draft]:hover{background:#926936}\n.arPatchCell:disabled{cursor:not-allowed;opacity:.36}\n.arPatchLegend{display:flex;flex-wrap:wrap;gap:18px;align-items:center;padding:13px 1px;color:#b4cad2;font-size:10px}\n.arPatchLegend b{display:inline-block;width:9px;height:9px;vertical-align:middle;margin-right:6px;background:#233d4a;border:1px solid #7b97a4}\n.arPatchLegend b.live{background:#44bea9;border-color:#44bea9}\n.arPatchLegend b.draft{background:#dba858;border-color:#dba858}\n.arPatchLegend b.removed{background:#8a695a;border-color:#8a695a}\n.arPatchInspector{border-top:1px solid #385564;display:flex;gap:10px;align-items:center;justify-content:space-between;padding:12px 1px;font-size:11px;color:#b9cfd9}\n.arPatchInspector strong{color:#e5f2f6}\n.arPatchNote{color:#99b6c0;font-size:10px;margin:6px 1px 12px}\n.arPatchEmpty{padding:45px 10px;text-align:center;background:#102733;border:1px dashed #476575;color:#b8d2dc;font-size:12px}\n.arPatchHidden{display:none!important}\n.arPatchFooter{display:flex;align-items:center;justify-content:space-between;gap:15px;flex-wrap:wrap;padding:12px 20px;background:#1c303e;border-top:1px solid #395568}\n#arRouteFeedback{flex:1;min-width:230px;margin:0;font-size:11px;color:#bfe5e7}\n.arPatchFooter .arRouteFoot{margin:0}\n#arRouteApply{background:#1c6b61;border-color:#4da99d;color:#effffb;font-weight:750}\n#arRouteApply:disabled{opacity:.5;cursor:default}\n#arPatchRevert{background:#253d49;border:1px solid #658190}\n#arPatchOutputMap{display:flex;gap:14px;flex-wrap:wrap}\n.arPatchOutput{flex:1;min-width:170px;padding:22px 16px;border:1px solid #3b6273;border-radius:4px;background:#102834}\n.arPatchOutput b{display:block;color:#b4f1e5;margin-bottom:10px}.arPatchOutput span{font-size:11px;color:#aec8d1}\n@media(max-width:730px){.arPatchTop{padding:12px}.arPatchTabs{padding:8px}.arPatchTabs button{padding:9px 7px;font-size:9px}.arPatchBody{padding:10px}.arPatchFooter{padding:10px}}\n";
-  css.textContent += ".arPatchRow{display:contents}.arPatchPort.arPatchColHover{background:#385a69}.arPatchChan:hover{background:#294756}.arPatchUnavailable{opacity:.23;pointer-events:none}";
+  // R0 routing workspace. One static native-only skin sharing the main
+  // console's graphite/steel/teal vocabulary. No mouse-hover repaint,
+  // compositor filters, animated shadows, canvas or extra scheduler.
+  css.textContent += `
+#arRoutingLabOverlay{display:none;position:fixed;inset:62px 7px 30px 168px;z-index:995;background:#111c24;min-width:0;min-height:0}
+#arRoutingLabOverlay.open{display:block}
+#arRoutingLabPanel{box-sizing:border-box;display:flex;flex-direction:column;width:100%;height:100%;min-width:0;min-height:0;overflow:hidden;background:linear-gradient(180deg,#1d303c 0%,#111e27 17%,#0d1821 100%);border:1px solid #3d525d;border-radius:3px;color:#dbeaf1}
+.arPatchTop{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:55px;padding:9px 15px;background:linear-gradient(#2b3b46,#14232d);border-bottom:1px solid #435864}
+.arPatchBrand{font-size:14px;letter-spacing:.015em;font-weight:600;color:#edf6f8}
+.arPatchBrand em{font-size:10px;letter-spacing:.1em;margin-left:9px;color:#82d7d6;font-weight:600;font-style:normal}
+.arPatchSub{color:#a2bac5;font-size:10px;margin-top:5px;font-variant-numeric:tabular-nums}
+.arPatchTop button,.arPatchFooter button,.arPatchPager button,.arPatchTabs button{font:600 10px 'Segoe UI',Arial,sans-serif;border:1px solid #687b83;border-radius:3px;background:#bfc8ca;color:#162832;padding:7px 11px;cursor:pointer;white-space:nowrap;box-shadow:inset 0 1px #f3f7f7,inset 0 -2px #7f9097}
+.arPatchTop button:active,.arPatchFooter button:active,.arPatchPager button:active,.arPatchTabs button:active{box-shadow:inset 1px 2px 2px #344c59;transform:translateY(1px)}
+.arPatchTop button:focus-visible,.arPatchFooter button:focus-visible,.arPatchPager button:focus-visible,.arPatchTabs button:focus-visible,.arPatchGrid button:focus-visible,#arRouteRows :focus-visible,#arAuxRows :focus-visible,#arSendRows :focus-visible{outline:2px solid #73cfe7;outline-offset:-2px}
+.arPatchTabs{flex:0 0 auto;display:flex;align-items:center;gap:5px;padding:6px 12px;background:#14252f;border-bottom:1px solid #304852}
+.arPatchTabs button{min-width:110px;padding:7px 13px;background:#9daeb5;color:#172b36;border-color:#5f7886}
+.arPatchTabs button[aria-selected=true]{background:#95e1b6;border-color:#4ea984;color:#12382f;box-shadow:inset 0 2px 3px #3a83605c,inset 0 -1px #caefdb}
+.arPatchBody{flex:1 1 auto;min-height:0;overflow:auto;scrollbar-width:thin;scrollbar-color:#435b67 #111f29;padding:12px 15px 8px}
+.arPatchHeading{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:9px}
+.arPatchHeading strong{font-size:11px;font-weight:600;letter-spacing:.06em;color:#e6f2f5}
+.arPatchHeading small{display:block;margin-top:4px;font-size:10px;color:#a2b8c2}
+.arPatchPager{display:flex;align-items:center;gap:7px;font-size:10px;color:#b0c8d2}
+.arPatchPager button{padding:4px 10px}
+.arPatchPager button:disabled,.arPatchFooter button:disabled{opacity:.45;cursor:default}
+.arPatchViewport{background:#0c1922;border:1px solid #354d5b;overflow:auto;scrollbar-width:thin;scrollbar-color:#415969 #0b1821;border-radius:3px}
+.arPatchGrid{display:grid;min-width:670px;max-width:1300px;width:100%;margin:0 auto;font-variant-numeric:tabular-nums}
+.arPatchRow{display:contents}
+.arPatchCorner,.arPatchPort,.arPatchChan,.arPatchCell{box-sizing:border-box;min-width:0;min-height:35px;border:0;border-right:1px solid #304652;border-bottom:1px solid #293d48}
+.arPatchCorner{position:sticky;left:0;z-index:2;padding:11px 10px;background:#314552;color:#e5f3f5;font-size:10px;font-weight:600}
+.arPatchPort{background:#2b404c;color:#dbeaf2;font-size:10px;font-weight:600;padding:4px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.arPatchPort small{max-width:100%;font-size:9px;font-weight:400;color:#acc2cc;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.arPatchChan{position:sticky;left:0;z-index:1;display:flex;gap:6px;align-items:center;padding:3px 8px;background:#1c303b;border-left:3px solid #496271}
+.arPatchChan[data-status=live]{border-left-color:#52c6a7}
+.arPatchChan[data-status=draft]{border-left-color:#e1ae60}
+.arPatchChan strong{font-size:10px;font-weight:600;color:#edf4f6;min-width:44px}
+.arPatchChan select{min-width:0;width:85px;border:1px solid #52717e;border-radius:3px;background:#10242f;color:#e0edf2;font-size:10px;padding:4px}
+.arPatchSides{display:flex;gap:3px;margin-left:auto}
+.arPatchSides button{width:23px;height:23px;padding:0;color:#a8c0cb;border:1px solid #49616f;border-radius:3px;background:#122a35;font-size:10px}
+.arPatchSides button[aria-pressed=true]{color:#e8fff9;background:#286356;border-color:#4b9d83}
+.arPatchSides button:disabled{opacity:.3}
+.arPatchCell{display:flex;justify-content:center;align-items:center;background:#0b1c25;color:#547282;font-size:11px;font-weight:600;cursor:pointer}
+.arPatchCell[data-patch-state=live]{background:#174c40;color:#a7f0d7;box-shadow:inset 0 0 0 1px #3f8271}
+.arPatchCell[data-patch-state=draft]{background:#74592f;color:#ffe4b3;box-shadow:inset 0 0 0 1px #c89950}
+.arPatchCell[data-patch-state=removed]{background:#43383b;color:#e9b6a7;box-shadow:inset 0 0 0 1px #8e6760}
+.arPatchUnavailable{opacity:.25;pointer-events:none}
+.arPatchCell:disabled{opacity:.35;cursor:not-allowed}
+.arPatchEmpty{padding:34px 10px;text-align:center;color:#aec5d0;background:#102632;font-size:11px}
+.arPatchLegend{display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:9px 2px 5px;color:#aec5ce;font-size:10px}
+.arPatchLegend b{display:inline-block;width:9px;height:9px;margin-right:5px;background:#223946;border:1px solid #68808c;vertical-align:middle}
+.arPatchLegend b.live{background:#49c6a6;border-color:#49c6a6}
+.arPatchLegend b.draft{background:#e0b260;border-color:#e0b260}
+.arPatchLegend b.removed{background:#966f61;border-color:#966f61}
+.arPatchInspector{border-top:1px solid #344e5a;padding:9px 1px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:5px;font-size:10px;color:#afcad2}
+.arPatchInspector strong{font-weight:600;color:#e7f4f6}
+.arPatchNote{color:#91adb9;font-size:10px;margin:5px 0 10px}
+.arPatchHidden{display:none!important}
+.arPatchFooter{flex:0 0 auto;display:flex;gap:12px;align-items:center;justify-content:space-between;min-height:51px;padding:7px 12px;background:linear-gradient(#243642,#15252f);border-top:1px solid #4a616b}
+.arPatchFooter .arRouteFoot{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:0;justify-content:flex-end}
+#arRouteFeedback{flex:1 1 200px;min-width:120px;font-size:10px;line-height:1.35;color:#b2d8d7}
+#arRouteApply{background:#95e1b6;border-color:#49a785;color:#18382f}
+#arPatchRevert{background:#b4c1c6}
+#arRouteSaveDry{background:#a5b9c1}
+#arPatchOutputMap{display:flex;gap:10px;flex-wrap:wrap}
+.arPatchOutput{flex:1 1 180px;padding:16px;background:#0b202a;border:1px solid #3e606e;border-radius:3px}
+.arPatchOutput b{display:block;margin-bottom:7px;color:#92e9c5;font-size:11px}
+.arPatchOutput span{font-size:10px;color:#acc5cd}
+#arRouteRows{display:grid;gap:3px}
+.arRouteRow{display:grid;grid-template-columns:50px 80px minmax(70px,1fr) minmax(70px,1fr) 92px 145px;gap:5px;align-items:center;padding:5px 7px;background:#152935;border:1px solid #304957;border-radius:3px}
+.arRouteRow>label{font-size:10px;font-weight:600;color:#e3f0f4}
+.arRouteRow select,.arSendRow select,.arAuxRow select,.arRoutePluginLine select{box-sizing:border-box;width:100%;min-width:0;padding:5px;background:#0d222d;color:#dbeaf2;border:1px solid #436675;border-radius:3px;font:10px 'Segoe UI',Arial,sans-serif}
+.arRouteFlags{display:flex;gap:6px;align-items:center}
+.arRouteFlags label{display:flex;align-items:center;gap:3px;font-size:10px}
+.arRouteFlags input,.arAuxRow input{width:12px;height:12px;margin:0}
+.arRoutePeak{display:block;font-size:9px;color:#73d1c0;font-variant-numeric:tabular-nums}
+.arRoutePluginLine{grid-column:1/-1;display:flex;align-items:center;gap:7px;font-size:9px;color:#a5bfc8}
+.arRoutePluginLine select{max-width:450px;flex:1}
+.arRoutePluginLine small{font-size:9px;color:#8facb8}
+#arAuxReturns,#arRouteSends{margin-top:12px}
+#arAuxReturns h3,#arRouteSends h3{font-size:11px;color:#c5e2e8;font-weight:600;margin:0 0 7px}
+#arAuxReturns p{font-size:10px;color:#9db7c3;margin:0 0 7px}
+.arAuxRow{display:grid;grid-template-columns:60px 55px 105px 70px minmax(110px,1fr);gap:6px;align-items:center;padding:5px 8px;margin-bottom:2px;background:#132b35;border:1px solid #31505d;color:#d6e8f0;font-size:10px}
+.arAuxRow label{display:flex;align-items:center;gap:4px}
+.arSendRow{display:grid;grid-template-columns:minmax(85px,1fr) minmax(85px,1fr) 76px 87px 30px;gap:5px;margin-bottom:3px}
+.arSendRow button,#arAddSend{border:1px solid #607786;border-radius:3px;background:#a8b9bf;color:#243640;font:600 10px 'Segoe UI',Arial,sans-serif;padding:5px;cursor:pointer}
+.arSendRow button{background:#a36f71;color:#f5f4f5}
+@media(max-width:980px){#arRoutingLabOverlay{inset:61px 6px 29px 7px}.arPatchTop{padding:8px 10px}.arPatchBody{padding:9px}.arPatchTabs{padding:5px}.arPatchFooter{padding:7px}.arRouteRow{min-width:640px}.arPatchTabs button{min-width:0}}
+`; 
   document.head.appendChild(css);
   // Signal Check is declared in the permanent toolbar; footer holds status only.
   const overlay = document.createElement("div");
@@ -71,13 +140,13 @@
   // Selections are drafts until the native device validates and ACKs Apply.
   const routeOverlay=document.createElement("div");
   routeOverlay.id="arRoutingLabOverlay";
-  routeOverlay.innerHTML='<section id="arRoutingLabPanel" role="dialog" aria-modal="true" aria-label="ArSonMix native input routing">' +
-    '<header class="arPatchTop"><div><div class="arPatchBrand">ArSonMix <em>ROUTING SYSTEM</em></div><div class="arPatchSub" id="arRouteIdentity">Reading current physical audio device...</div></div><button class="arRouteClose" id="arRouteClose">CLOSE ×</button></header>' +
+  routeOverlay.innerHTML='<section id="arRoutingLabPanel" role="region" aria-label="ArSonMix routing workspace">' +
+    '<header class="arPatchTop"><div><div class="arPatchBrand">ArSonMix <em>ROUTING · INPUT / AUX / OUTPUT</em></div><div class="arPatchSub" id="arRouteIdentity">Reading current physical audio device...</div></div><button class="arRouteClose" id="arRouteClose">CLOSE ROUTING ×</button></header>' +
     '<nav class="arPatchTabs" role="tablist" aria-label="Routing views"><button data-patch-tab="input" role="tab" aria-selected="true">INPUT PATCH</button><button data-patch-tab="internal" role="tab" aria-selected="false">INTERNAL / SENDS</button><button data-patch-tab="output" role="tab" aria-selected="false">OUTPUT PATCH</button></nav>' +
     '<section class="arPatchBody" id="arPatchInputPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>PHYSICAL INPUT → MIXER CHANNEL</strong><small>Click grid to assign. For stereo, select the L / R side. DRAFT becomes LIVE only after native ACK.</small></div><div class="arPatchPager"><button id="arPatchPrev" title="Previous hardware inputs">‹</button><span id="arPatchRange">NO INPUTS</span><button id="arPatchNext" title="Next hardware inputs">›</button></div></div>' +
     '<div class="arPatchViewport"><div id="arPatchGrid" class="arPatchGrid" role="grid" aria-label="Native input patch matrix"></div></div><div class="arPatchLegend"><span><b></b>UNPATCHED</span><span><b class="live"></b>LIVE · NATIVE ACK</span><span><b class="draft"></b>DRAFT · NOT APPLIED</span><span><b class="removed"></b>LIVE UNTIL APPLY</span></div><div class="arPatchInspector" id="arPatchInspector" role="status"><strong>10 CHANNEL INPUT PATCH</strong><span>Uses actual enabled ASIO/WASAPI hardware ports</span></div><div class="arPatchNote">No auto-unmute. Stale devices, incomplete stereo assignments and invalid physical ports are rejected before APPLY. One input can feed multiple channels.</div></section>' +
-    '<section class="arPatchBody arPatchHidden" id="arPatchInternalPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>CHANNEL CONTROL / INTERNAL SENDS</strong><small>Real PRE/POST sends and 4 AUX buses. Full internal matrix follows in R2.</small></div></div><div id="arRouteRows"></div><section id="arAuxReturns"><h3>4 DEDICATED AUX / FX RETURNS</h3><p>Independent stereo return with VST3, level and MAIN route.</p><div id="arAuxRows"></div></section><section id="arRouteSends"><h3>INTERNAL SENDS · PRE / POST FADER (MAX 32)</h3><div id="arSendRows"></div><button id="arAddSend">＋ ADD SEND</button></section></section>' +
-    '<section class="arPatchBody arPatchHidden" id="arPatchOutputPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>CURRENT HARDWARE OUTPUT</strong><small>MAIN L/R mapping is read-only until real multi-output patching is implemented in R3.</small></div></div><div id="arPatchOutputMap"></div><div class="arPatchNote">AUX-to-hardware-output patching is not available. Select physical device/output in AUDIO SETUP.</div></section>' +
+    '<section class="arPatchBody arPatchHidden" id="arPatchInternalPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>CHANNEL CONTROL / INTERNAL SENDS</strong><small>Native channel controls, VST3 inserts, 4 AUX returns and PRE/POST sends.</small></div></div><div id="arRouteRows"></div><section id="arAuxReturns"><h3>4 DEDICATED AUX / FX RETURNS</h3><p>Independent stereo return with VST3, level and MAIN route.</p><div id="arAuxRows"></div></section><section id="arRouteSends"><h3>INTERNAL SENDS · PRE / POST FADER (MAX 32)</h3><div id="arSendRows"></div><button id="arAddSend">＋ ADD SEND</button></section></section>' +
+    '<section class="arPatchBody arPatchHidden" id="arPatchOutputPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>CURRENT HARDWARE OUTPUT</strong><small>Current hardware MAIN L/R is read-only. Configure output in AUDIO SETUP.</small></div></div><div id="arPatchOutputMap"></div><div class="arPatchNote">AUX-to-hardware-output patching is not available. Select physical device/output in AUDIO SETUP.</div></section>' +
     '<footer class="arPatchFooter"><div id="arRouteFeedback" role="status">Select actual input ports, then APPLY while output is muted.</div><div class="arRouteFoot"><button id="arPatchRevert">REVERT DRAFT</button><button id="arRouteSaveDry" title="Save real DRY-only Show (MUTED output and zero VST3)">SAVE DRY SHOW</button><button id="arRouteApply">APPLY ROUTING</button><button id="arRouteStop" class="arPatchHidden" hidden aria-hidden="true">STOP</button></div></footer></section>';
   document.body.appendChild(routeOverlay);
   const draftRoutes=Array.from({length:10},()=>({mode:"NONE",left:-1,right:-1,gain:0.25,pan:0,main:true,mute:false,solo:false,fxId:""}));
@@ -114,7 +183,7 @@
     const items=message?.items||message?.state?.items;
     if(!Array.isArray(items))return;
     catalogItems=items.filter(p=>p&&typeof p.id==="string");
-    if(routeOverlay.classList.contains("open"))drawRoutes();
+    if(routeOverlay.classList.contains("open") && patchTab==="internal")drawRoutes();
   });
   // Rehydrate only from the native ACK/SSOT when opening the editor.
   // Browsing a panel or reloading the WebView must never accidentally erase
@@ -169,7 +238,7 @@
   // authoritative; browser edits never mutate live audio on cell click.
   const patchPageSize=8;
   const patchSide=Array(10).fill("left");
-  let patchPage=0,patchPending=false,patchTab="input",hoveredPort=-1;
+  let patchPage=0,patchPending=false,patchTab="input";
   const patchGrid=document.getElementById("arPatchGrid");
   function patchPorts(){
     const source=state.dryRoutingLab?.ports;
@@ -287,7 +356,7 @@
       html+='</div>';
     }
     patchGrid.innerHTML=html;
-    hoveredPort=-1;
+
   }
   function selectPatchTab(tab){
     if(!["input","internal","output"].includes(tab))return;
@@ -357,21 +426,8 @@
     patchFeedback("DRAFT · CH "+(i+1)+" input assignment edited. APPLY validates the real hardware route.");
     renderPatchMatrix();
   });
-  // Delegated hover changes only the visible physical column (at most 11
-  // DOM cells), not the matrix or all mixer meters. No frame/timer loop.
-  patchGrid.addEventListener("pointerover",e=>{
-    const cell=e.target.closest("[data-patch-port]");
-    const port=cell?Number(cell.dataset.patchPort):-1;
-    if(port===hoveredPort)return;
-    hoveredPort=port;
-    patchGrid.querySelectorAll("[data-patch-col]").forEach(n=>
-      n.classList.toggle("arPatchColHover",Number(n.dataset.patchCol)===port));
-  });
-  patchGrid.addEventListener("pointerleave",()=>{
-    if(hoveredPort<0)return;
-    hoveredPort=-1;
-    patchGrid.querySelectorAll(".arPatchColHover").forEach(n=>n.classList.remove("arPatchColHover"));
-  });
+  // Pointer movement is entirely inert. Patch feedback is expressed only
+  // through clicked draft state or native ACK, never per-cell mouse events.
   document.getElementById("arPatchRevert").addEventListener("click",()=>{
     const d=state.dryRoutingLab||{};
     if(!hydrateAcceptedRoute()){
@@ -379,7 +435,7 @@
       invalidateDraftForNewDevice(Number(d.epoch)||0);
     }
     syncNativeLevelsToRouteDraft();
-    drawRoutes();
+    if(patchTab==="internal")drawRoutes();
     renderPatchMatrix();
     patchFeedback("DRAFT REVERTED · displayed input routes match last native ACK (or unpatched device).");
   });
@@ -483,7 +539,8 @@
   function openRoutingLab(){
     hydrateAcceptedRoute();
     syncNativeLevelsToRouteDraft();
-    drawRoutes();
+    // INPUT PATCH renders first. The ten VST3 selectors, four AUX selectors
+    // and send controls are built only when INTERNAL is explicitly opened.
     patchPage=0;
     routeOverlay.classList.add("open");
     selectPatchTab("input");
@@ -500,6 +557,18 @@
   });
   const routingNav=document.querySelector('[data-view="SIGNAL FLOW"] span');
   if(routingNav)routingNav.textContent="ROUTING";
+  // The main toolbar and left rail remain live. Leaving ROUTING immediately
+  // hides its workspace; ESC also returns focus to the existing ROUTING tab.
+  document.addEventListener("click",event=>{
+    if(!routeOverlay.classList.contains("open"))return;
+    if(event.target.closest('[data-view]:not([data-view="SIGNAL FLOW"]),[data-my-sounds],[data-plugin-manager],[data-native-action="audioSetup"],#arSignalOpen'))
+      routeOverlay.classList.remove("open");
+  },true);
+  document.addEventListener("keydown",event=>{
+    if(event.key!=="Escape"||!routeOverlay.classList.contains("open"))return;
+    routeOverlay.classList.remove("open");
+    document.querySelector('[data-view="SIGNAL FLOW"]')?.focus();
+  });
   document.getElementById("arOpenRoutingLab").addEventListener("click",openRoutingLab);
   document.getElementById("arRouteClose").addEventListener("click",()=>routeOverlay.classList.remove("open"));
   routeOverlay.addEventListener("click",e=>{if(e.target===routeOverlay)routeOverlay.classList.remove("open");});

@@ -1260,6 +1260,30 @@ async def main():
                     document.querySelectorAll('#arPatchGrid .arPatchChan').length};
         }""")
         assert patch_visual['rowCount']==10 and len(patch_visual['cols'])==8,patch_visual
+
+        # R0: real desktop-workspace geometry, not a centered modal. Its
+        # header, left rail and status bar stay reachable while editing.
+        workspace_layout=await native.evaluate("""()=>{
+          const panel=document.querySelector('#arRoutingLabPanel');
+          const cover=document.querySelector('#arRoutingLabOverlay');
+          const rect=cover.getBoundingClientRect();
+          const cs=getComputedStyle(cover);
+          return {role:panel.getAttribute('role'),
+                  left:Math.round(rect.left),top:Math.round(rect.top),
+                  width:Math.round(rect.width),height:Math.round(rect.height),
+                  viewport:innerWidth,backdrop:cs.backdropFilter,
+                  routeRows:document.querySelectorAll('#arRouteRows [data-route-row]').length}
+        }""")
+        assert workspace_layout['role']=='region',workspace_layout
+        assert 160<=workspace_layout['left']<=175 and 58<=workspace_layout['top']<=65,workspace_layout
+        assert workspace_layout['width']>workspace_layout['viewport']*.80,workspace_layout
+        assert workspace_layout['backdrop']=='none',workspace_layout
+        assert workspace_layout['routeRows']==0, "Input patch should not eagerly build 14 VST selectors"
+        normal_cell=native.locator('[data-patch-row="0"][data-patch-port="2"].arPatchCell')
+        idle_color=await normal_cell.evaluate('(e)=>getComputedStyle(e).backgroundColor')
+        await normal_cell.hover()
+        assert await normal_cell.evaluate('(e)=>getComputedStyle(e).backgroundColor')==idle_color
+
         assert max(patch_visual['cols'])-min(patch_visual['cols'])<=1,patch_visual
         assert all(58<=w<=140 for w in patch_visual['cols']),patch_visual
         await native.screenshot(path=str(project/"native-input-patch-review-1680.png"))
