@@ -624,6 +624,7 @@
   // through clicked draft state or native ACK, never per-cell mouse events.
   document.getElementById("arPatchRevert").addEventListener("click",()=>{
     const d=state.dryRoutingLab||{};
+    rackFxDraft=null;
     if(!hydrateAcceptedRoute()){
       invalidateDraftForNewDevice(0);
       invalidateDraftForNewDevice(Number(d.epoch)||0);
@@ -861,7 +862,12 @@
       (liveSends?" · "+liveSends+" SENDS":""));
   }
   function openRoutingLab(){
-    hydrateAcceptedRoute();
+    // Keep an intentional FX Rack draft when switching workspaces; otherwise
+    // load only native ACK data. Device-epoch changes invalidate the draft.
+    if(!rackFxDraft||rackFxDraft.epoch!==Number(state.dryRoutingLab?.epoch)){
+      rackFxDraft=null;
+      hydrateAcceptedRoute();
+    }
     syncNativeLevelsToRouteDraft();
     // INPUT PATCH renders first. The ten VST3 selectors, four AUX selectors
     // and send controls are built only when INTERNAL is explicitly opened.
