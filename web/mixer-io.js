@@ -85,8 +85,11 @@
           '</select></label><button class="btn-180" data-send-remove="'+tap+'"'+(off?' disabled':'')+'>REMOVE</button></div>';
     }
     const accepted=s.acceptedRoute?.sends||[];
-    const liveSignature=JSON.stringify(accepted.filter(x=>x.from===from&&x.to===10+bus));
-    const draftSignature=JSON.stringify(sends);
+    const liveSignature=JSON.stringify([
+      accepted.filter(x=>x.from===from&&x.to===10+bus),
+      s.acceptedRoute?.auxes?.[bus]||null
+    ]);
+    const draftSignature=JSON.stringify([sends,aux]);
     sendEditor.innerHTML=header+'<p class="arSendNotice">PRE = after FX, before fader · POST = after fader. Changes stay DRAFT until native ACK.</p>'+
       auxPanel+'<div class="arSendEditRows">'+lines+'</div><footer><span id="arSendFeedback" role="status">'+
       (sendFeedback||(s.pending?'NATIVE APPLY PENDING':liveSignature!==draftSignature?'DRAFT · NOT LIVE':'NATIVE LIVE / UNCHANGED'))+
@@ -151,7 +154,11 @@
       const enabled=!!s.draftAux?.[bus]?.enabled;
       const label=taps.length?taps.map(e=>e.tap+' '+showDb(Number(e.gain))).join(' / '):
         (enabled?'＋ ADD SEND':'AUX OFF');
-      return {bus,label,enabled,live:taps.length>0};
+      const accepted=(s.acceptedRoute?.sends||[]).filter(e=>e.from===i&&e.to===10+bus);
+      const savedAux=s.acceptedRoute?.auxes?.[bus];
+      const changed=JSON.stringify([taps,s.draftAux?.[bus]])!==
+                    JSON.stringify([accepted,savedAux]);
+      return {bus,label,enabled,state:changed?'draft':taps.length?'live':enabled?'ready':'off'};
     });
     const sig=JSON.stringify(slots);
     const holder=strip.querySelector('.arSendSummary');
@@ -162,7 +169,8 @@
         b.title='CH '+(i+1)+' → AUX '+(item.bus+1)+' · edit PRE/POST sends';
         b.setAttribute('aria-label',b.title);
         b.dataset.enabled=item.enabled?'true':'false';
-        b.dataset.live=item.live?'true':'false';
+        b.dataset.state=item.state;
+        b.setAttribute('aria-label',b.title+' · '+item.state);
         b.prepend(node('b','arSendDest','AUX'+(item.bus+1)));
         return b;
       });
