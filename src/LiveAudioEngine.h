@@ -655,13 +655,16 @@ public:
         const auto busError=armix::vst::prepareStereoEffectLayout(*instance);
         if(busError.isNotEmpty())return chosen->name+": "+busError;
 
+        // From here the control-only releaser handles EVERY exit path,
+        // including vendor exceptions, stale devices and failed publish.
+        auto prepared=ownPlugin(std::move(instance));
         // Vendor initialization is off RT while existing VST instances keep
         // rendering. Never detach/reopen the hardware callback for an insert.
         int latency=0;
         try
         {
-            instance->prepareToPlay(rate,buffer);
-            latency=instance->getLatencySamples();
+            prepared->prepareToPlay(rate,buffer);
+            latency=prepared->getLatencySamples();
         }
         catch (...)
         {
@@ -669,7 +672,6 @@ public:
         }
         if(dryRoutingLab_.active() && latency!=0)
         {
-            instance->releaseResources();
             return "This live multi-bus route needs a zero-latency VST3 until PDC is available";
         }
         if(epoch!=deviceStartCount_.load(std::memory_order_acquire) ||
@@ -678,7 +680,6 @@ public:
            buffer!=juce::jmax(32,device->getCurrentBufferSizeSamples()) ||
            !directFence_.permitted())
         {
-            instance->releaseResources();
             return "Audio device changed during VST3 preparation. Retry insert.";
         }
         Slot node;
@@ -687,7 +688,7 @@ public:
         node.path=filename;
         node.uid=uid;
         node.latency=latency;
-        node.processor=ownPlugin(std::move(instance));
+        node.processor=std::move(prepared);
         if(!stageStructuralEdit(-1,&node,rate))
             return "Cannot schedule a safe live FX insert; retry after graph ACK";
         return {};
