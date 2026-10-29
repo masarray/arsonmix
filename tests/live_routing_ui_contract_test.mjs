@@ -47,7 +47,9 @@ test("GUI exposes only truthful dry device routes and acknowledged commit",()=>{
 
 test("STOP-race is fail closed: all outputs are written to silence without CH1 fallback",()=>{
   const enter=engine.indexOf("if (dryRoutingLab_.active())",engine.indexOf("callbackCount_.fetch_add"));
-  const end=engine.indexOf("// Existing FX graph is excluded",enter);
+  // Bound the entire routed branch by the first statement of the legacy
+  // fallback, not by an informational comment that can change at each R0B slice.
+  const end=engine.indexOf("const bool enabled = monitor_",enter);
   assert.ok(enter>=0&&end>enter, "live audio callback LAB branch must exist");
   const branch=engine.slice(enter,end);
   assert.match(branch,/const bool routed=dryRoutingLab_\.process\(/);
