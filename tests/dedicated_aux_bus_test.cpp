@@ -124,4 +124,29 @@ int main(){
     fxInvocations.fill(0);
     assert(legacyBlock.process(input.data(),stripCount,outL.data(),outR.data(),frames,effects));
     assert(fxInvocations[0]==0 && fxInvocations[1]==0);
+    // R0B B3: a verified device may expose ten physical capture ports while
+    // a newly prepared production session has ZERO input assignments.
+    // This is a valid native 10CH+4AUX graph, not a CH1 fallback or an
+    // automatically guessed microphone-to-speaker route.
+    ChannelRoutingConfig unpatched;
+    SendRequest noSends;
+    AuxBusRequest noAux;
+    PreparedRenderGraph silentPlan;
+    assert(PreparedRenderGraph::compile(unpatched,activePorts,noSends,
+                                        silentPlan,error,noAux));
+    for(int ch=0;ch<stripCount;++ch)assert(!silentPlan.scheduled[ch]);
+    assert(!silentPlan.aux.active);
+    PreparedMixerBlock silent(silentPlan,frames);
+    outL.fill(123.f);outR.fill(456.f);
+    int silentFxCalls=0;
+    auto mustNotRunFx=[&](int,float*,float*,int) noexcept {++silentFxCalls;};
+    const auto beforeSilence=allocations.load(std::memory_order_relaxed);
+    assert(silent.process(input.data(),stripCount,outL.data(),outR.data(),
+                          frames,mustNotRunFx,&meters));
+    assert(allocations.load(std::memory_order_relaxed)==beforeSilence);
+    assert(silentFxCalls==0);
+    for(int i=0;i<frames;++i)assert(outL[i]==0.f&&outR[i]==0.f);
+    for(int ch=0;ch<stripCount;++ch)assert(meters.channelPeak[ch]==0.f);
+    for(int b=0;b<auxBusCount;++b)assert(meters.auxPeak[b]==0.f);
+
 }

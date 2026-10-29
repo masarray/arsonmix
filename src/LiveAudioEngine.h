@@ -119,10 +119,10 @@ public:
 
     juce::String start (const juce::XmlElement* savedSettings = nullptr)
     {
-        // A mixer behaves like a signal path: ready I/O flows automatically.
-        // The former MONITOR enable gate caused silent master/output confusion.
-        // Panic OUTPUT MUTE remains available at all times.
-        monitor_.store (true);
+        // No saved physical INPUT PATCH is automatically trusted on launch.
+        // A verified device starts with one native 10CH/4AUX SILENT topology;
+        // the user must explicitly patch inputs and arm OUTPUT separately.
+        monitor_.store (false, std::memory_order_release);
         directFence_.suspend(); // silence until the selected backend is verified
         asioPinnedRegistration_ = {};
         asioRegistrationScope_ = "NONE";
@@ -225,6 +225,9 @@ public:
         }
         if (savedAsioPreflight)
             asioRegistrationScope_ = "SAVED_PREFLIGHT_POSTOPEN_REGISTRATION_CONSISTENT";
+        const auto sessionError=startUnpatchedProductionSession();
+        if(sessionError.isNotEmpty())
+            return "Native production mixer cannot start: "+sessionError;
         return {};
     }
 
@@ -264,8 +267,15 @@ public:
     // Native AUDIO SETUP is the explicit user authorization boundary.
     // Suppress any live output while selecting/changing a device, even if JUCE
     // starts its new callback before the selector window is closed.
-    void beginManualAudioSetup() noexcept { directFence_.suspend(); }
-    bool finishManualAudioSetup() { return approveDirectRoute(); }
+    void beginManualAudioSetup() noexcept {
+        setOutputMuted(true);
+        directFence_.suspend();
+        dryRoutingLab_.disable(); // explicit control-thread reset; not RT
+    }
+    bool finishManualAudioSetup() {
+        if(!approveDirectRoute())return false;
+        return startUnpatchedProductionSession().isEmpty();
+    }
 
     // Device changes are exclusively CONTROL-THREAD transactions.
     // Normal ASIO / verified single-clock devices remain on the zero-SRC
@@ -300,7 +310,8 @@ public:
 
     juce::String setIndependentClockEnabled (bool wanted)
     {
-        if (dryRoutingLab_.active()) return "Stop DRY ROUTING LAB before changing the device clock";
+        if (dryRoutingLab_.hasExplicitRoute())
+            return "CLEAR PATCH and MUTE OUTPUT before changing the device clock";
         if (handoff_.busy()) return "Finish pending VST3 graph switch before changing audio backend";
         if (wanted == independent_.active() && !(savedDirectSetup_ && !wanted)) return {};
         if (wanted && savedDirectSetup_) return "Restore old device backend before another transition";
@@ -334,6 +345,9 @@ public:
             }
             savedDirectSetup_.reset();
             attach();
+            const auto sessionError=startUnpatchedProductionSession();
+            if(sessionError.isNotEmpty())
+                return "DIRECT restored but native mixer unpatched session failed: "+sessionError;
             return {};
         }
         // ASIO or another known direct hardware clock bypasses the SRC.
@@ -350,6 +364,13 @@ public:
         const auto identity = armix::device::WasapiEndpointIdentityGuard::resolve (
             original.inputDeviceName, original.outputDeviceName);
         if (!identity.ok()) return "Independent Windows endpoint preflight failed: " + identity.error;
+        // Only release the unpatched graph AFTER all opt-in backend
+        // preflight gates pass. A rejected unsupported driver must leave the
+        // native NORMAL mixer ready, not stranded without a session.
+        if(dryRoutingLab_.active()) {
+            setOutputMuted(true);
+            dryRoutingLab_.disable();
+        }
         directFence_.suspend(); // independent path bypasses only this DIRECT fence
         detach();
         deviceManager_.closeAudioDevice();
@@ -368,6 +389,7 @@ public:
                 {
                     savedDirectSetup_.reset();
                     attach();
+                    (void) startUnpatchedProductionSession(); // fail silent on rollback
                 }
                 else setOutputMuted (true);
             }
@@ -384,7 +406,8 @@ public:
     // user setup is restored on exit; temporary routes must not be persisted.
     juce::String setDiagnosticRoute (armix::diagnostics::Route wanted)
     {
-        if (dryRoutingLab_.active()) return "Stop DRY ROUTING LAB before changing SIGNAL CHECK";
+        if (dryRoutingLab_.hasExplicitRoute())
+            return "CLEAR PATCH and MUTE OUTPUT before changing SIGNAL CHECK";
         using Route = armix::diagnostics::Route;
         if (handoff_.busy()) return "Finish the pending FX graph transition first";
         if (independent_.active()) return "Disable independent clock mode before endpoint isolation tests";
@@ -392,7 +415,23 @@ public:
             !(wanted == Route::normal && savedLiveSetup_)) return {};
         if (wanted < Route::normal || wanted > Route::captureOnly)
             return "Unknown audio diagnostic route";
+        if(!savedLiveSetup_ && (wanted == Route::outputOnlyTone ||
+                               wanted == Route::captureOnly)) {
+            juce::AudioDeviceManager::AudioDeviceSetup current;
+            deviceManager_.getAudioDeviceSetup(current);
+            if(wanted == Route::outputOnlyTone && current.outputDeviceName.isEmpty())
+                return "Choose an audio output before starting the output-only test";
+            if(wanted == Route::captureOnly && current.inputDeviceName.isEmpty())
+                return "Choose an audio input before starting the capture-only test";
+        }
 
+        // Explicit diagnostic isolation is still available when no user patch
+        // is active. Release the silent production graph on CONTROL before
+        // selecting a one-sided device. No phantom hardware output or CH1 mix.
+        if(dryRoutingLab_.active()) {
+            setOutputMuted(true);
+            dryRoutingLab_.disable();
+        }
         // Muting the old/new combined backend callback during an intermediate
         // device restart prevents briefly leaking microphone audio when changing
         // from OUTPUT ONLY to CAPTURE ONLY (which first restores full duplex).
@@ -463,17 +502,22 @@ public:
             {
                 diagnosticRoute_.store (Route::normal, std::memory_order_release);
                 const auto rollback = deviceManager_.setAudioDeviceSetup (original, false);
-                if (rollback.isNotEmpty()) setOutputMuted (true);
+                if (rollback.isEmpty() && resumeVerifiedDirectRoute()) {
+                    (void) startUnpatchedProductionSession(); // original DIRECT, silent
+                } else setOutputMuted(true);
                 return "Unable to isolate endpoint: " + (error.isNotEmpty() ? error : "Device not available")
                      + (rollback.isNotEmpty() ? " | restore failed: " + rollback : juce::String());
             }
             savedLiveSetup_ = original;
         }
         diagnosticRoute_.store (wanted, std::memory_order_release);
-        if (wanted == Route::normal && !resumeVerifiedDirectRoute())
-        {
-            setOutputMuted (true);
-            return "Diagnostic DIRECT route identity changed; choose a device in AUDIO SETUP";
+        if(wanted == Route::normal) {
+            if(!resumeVerifiedDirectRoute()) {
+                setOutputMuted(true);
+                return "Diagnostic DIRECT route identity changed; choose a device in AUDIO SETUP";
+            }
+            const auto error=startUnpatchedProductionSession();
+            if(error.isNotEmpty())return "Cannot resume native production mixer: "+error;
         }
         return {};
     }
@@ -887,6 +931,28 @@ public:
         return true;
     }
 
+    // R0B B3 single graph owner: verified physical DIRECT device only.
+    // Never restore a previous device's input port numbers or auto-arm output.
+    // All plan preparation / JUCE vars remain on the control thread.
+    juce::String startUnpatchedProductionSession() {
+        setOutputMuted(true);
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device || !directFence_.permitted() || independent_.active())
+            return "No verified DIRECT full-duplex device";
+        return dryRoutingLab_.startUnpatchedSession(
+            directFence_.permitted(),independent_.active(),graphOwned_->count,
+            formats_,device->getCurrentSampleRate(),
+            juce::jmax(32,device->getCurrentBufferSizeSamples()));
+    }
+
+    // Historical STOP command retained as a safe CLEAR PATCH alias.
+    // Returning to legacy CH1 is explicitly forbidden in NORMAL production.
+    juce::String clearProductionRouting() {
+        setOutputMuted(true);
+        dryRoutingLab_.disable();
+        return startUnpatchedProductionSession();
+    }
+
     // Explicit message-thread transaction. NO VST is processed in this LAB.
     juce::String applyDryRoutingLab (
         const juce::var& command,
@@ -938,7 +1004,8 @@ public:
         // NORMAL mode is never silently served by the legacy CH1 fallback.
         // This state is for operator feedback; it does not authorize output.
         o->setProperty ("productionRoutingState",
-            dryRoutingLab_.ready() ? "NATIVE_ROUTE_ACCEPTED"
+            dryRoutingLab_.hasExplicitRoute() ? "NATIVE_ROUTE_ACCEPTED"
+            : dryRoutingLab_.ready() ? "NATIVE_UNPATCHED_SILENT"
             : dryRoutingLab_.active() ? "NATIVE_ROUTE_STALE_FAIL_SILENT"
             : "UNPATCHED_SILENT");
         o->setProperty ("connected", d != nullptr && capture != nullptr);

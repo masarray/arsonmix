@@ -1420,6 +1420,19 @@ async def main():
         assert await native.locator('[data-patch-row="0"][data-patch-port="9"]').get_attribute("data-patch-state")=="off"
         assert "DEVICE CHANGED" in await native.locator("#arRouteFeedback").inner_text()
 
+        # R0B B3: a verified device owns one prepared native session even when
+        # no source is assigned. READY != user-ACKed LIVE physical patch.
+        await native.evaluate("""()=>{
+          const d=window.__arPatchStatus.dryRoutingLab;
+          d.active=true;d.ready=true;d.revision=2;d.acceptedRoute=null;
+          d.hasAcceptedRoute=false;
+          window.__arMixMockEvents.arMixStatus(window.__arPatchStatus);
+        }""")
+        assert "UNPATCHED / SILENT" in await native.locator("#arRouteIdentity").inner_text()
+        assert await native.locator("#arRouteClear").is_disabled()
+        assert not await native.locator("#arRouteClear").evaluate("(e)=>e.hidden")
+        assert await native.locator("#arPatchGrid .arPatchCell.live").count()==0
+
         assert not native_errors,native_errors
         await native.close()
         await browser.close()

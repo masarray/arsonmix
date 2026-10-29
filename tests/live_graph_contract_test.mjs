@@ -119,3 +119,51 @@ test('R0B B3 NORMAL output is fail-silent while FX graph retirement still progre
   assert.match(e,/"UNPATCHED_SILENT"/);
   assert.match(e,/"NATIVE_ROUTE_STALE_FAIL_SILENT"/);
 });
+
+
+test('R0B B3 always-on native 10CH startup is verified, muted and unpatched',()=>{
+  const initial=e.slice(e.indexOf('juce::String start ('),e.indexOf('void stop()'));
+  assert.match(initial,/monitor_\.store \(false/);
+  assert.match(initial,/approveDirectRoute/);
+  assert.match(initial,/startUnpatchedProductionSession\(\)/);
+  assert.ok(initial.indexOf('approveDirectRoute')<initial.lastIndexOf('startUnpatchedProductionSession()'));
+  const start=e.slice(e.indexOf('juce::String startUnpatchedProductionSession()'),
+                      e.indexOf('juce::String clearProductionRouting()'));
+  assert.match(start,/setOutputMuted\(true\)/);
+  assert.match(start,/!directFence_\.permitted\(\)/);
+  assert.match(start,/startUnpatchedSession\(/);
+  assert.match(start,/device->getCurrentSampleRate\(\)/);
+  assert.doesNotMatch(start,/attach\(|detach\(|addAudioCallback|newGraph|startAudioDevice|openAudioDevice/);
+  const lab=readFileSync('src/LiveDryRoutingLab.h','utf8');
+  const factory=lab.slice(lab.indexOf('juce::String startUnpatchedSession'),
+                          lab.indexOf('juce::String apply ('));
+  assert.match(factory,/row->setProperty\("mode","NONE"\)/);
+  assert.match(factory,/row->setProperty\("left",-1\)/);
+  assert.match(factory,/row->setProperty\("right",-1\)/);
+  assert.match(factory,/const std::array<FxSelection,fxSlots> none\{\}/);
+  assert.match(factory,/const auto error=apply\(/);
+  assert.match(factory,/acceptedRoute_=juce::var\(\)/);
+  assert.doesNotMatch(factory,/autoMap|firstInput|callbackIndex|start\(|attach\(|detach\(/);
+  assert.match(lab,/setProperty\("hasAcceptedRoute",hasExplicitRoute\(\)\)/);
+  assert.match(e,/NATIVE_UNPATCHED_SILENT/);
+  const clear=e.slice(e.indexOf('juce::String clearProductionRouting()'),
+                      e.indexOf('// Explicit message-thread transaction.',e.indexOf('juce::String clearProductionRouting()')));
+  assert.match(clear,/dryRoutingLab_\.disable\(\)/);
+  assert.match(clear,/startUnpatchedProductionSession\(\)/);
+  assert.doesNotMatch(clear,/monitor_\.store\(true\)|setOutputMuted\(false\)/);
+});
+
+test('R0B B3 preserves diagnostic isolation without exposing an accepted patch',()=>{
+ const diagnostic=e.slice(e.indexOf('juce::String setDiagnosticRoute'),
+                          e.indexOf('armix::diagnostics::Route diagnosticRoute()'));
+ assert.match(diagnostic,/dryRoutingLab_\.hasExplicitRoute\(\)/);
+ assert.match(diagnostic,/dryRoutingLab_\.disable\(\)/);
+ assert.match(diagnostic,/startUnpatchedProductionSession\(\)/);
+ assert.match(diagnostic,/resumeVerifiedDirectRoute\(\)/);
+ const manual=e.slice(e.indexOf('void beginManualAudioSetup()'),
+                      e.indexOf('bool independentClockActive()'));
+ assert.match(manual,/setOutputMuted\(true\)/);
+ assert.match(manual,/dryRoutingLab_\.disable\(\)/);
+ assert.match(manual,/startUnpatchedProductionSession\(\)/);
+ assert.doesNotMatch(manual,/setOutputMuted\(false\)/);
+});
