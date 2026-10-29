@@ -9,7 +9,7 @@ The [approved GUI visual baseline](docs/GUI_BASELINE_LOCK_2026-10-25.md) remains
 2. [ARD v2.0 — one audio graph, physical output patch, bus model, native ACK, staged execution](docs/ARD_PRD_MIXER_IO_AUX_BUS_REFORM_20261030.md)
 3. [Next-thread execution contract](docs/EXECUTION_HANDOFF_ARSONMIX_MIXER_REFORM_20261030.md)
 4. [FX Rack / Routing cross-thread regression guard](docs/FX_RACK_ROUTING_CROSS_THREAD_CONTRACT_20261030.md)
-5. [Smart Audio Engine safety architecture](docs/ARD_SMART_AUDIO_ENGINE_V1_2026-10-25.md) and [real hardware FAT runbook](docs/HARDWARE_FAT_GUI10_ENGINE_P012_20261027.md)
+5. [Smart Audio Engine safety architecture](docs/ARD_SMART_AUDIO_ENGINE_V1_2026-10-25.md), [implementation blueprint](docs/SMART_AUDIO_ENGINE_IMPLEMENTATION_BLUEPRINT.md), and [real hardware FAT runbook](docs/HARDWARE_FAT_GUI10_ENGINE_P012_20261027.md)
 
 The user-provided eMotion LV1, Studio One, Audition/DAW and FL-style wire references define the desired **workflow**, not an instruction to clone their artwork. Primary UX: stable MIX surface; FX/ROUTE/SENDS mode toggle, separate FX Rack and Routing workspaces, real INPUT/OUTPUT visibility in main window, native mono/stereo device matrix and proper AUX return processing. **Do not make Routing replace a channel's working VST3 inserts.** Do not expose raw JUCE audio configuration as the end-user product experience: keep JUCE audio backend but build an original capability-aware ArSonMix I/O screen.
 
