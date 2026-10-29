@@ -66,6 +66,8 @@ test('physical hardware FAT documents verified 10CH and dedicated 4 AUX native m
   // while keeping hardware 0-FX crackle FAT explicitly unqualified.
   assert.match(packaging,/NATIVE_TEN_INPUT_CHANNELS_FOUR_DEDICATED_STEREO_AUX_RETURNS_MASTER__EXPLICIT_PATCH_ACK/);
   assert.match(packaging,/HARDWARE_FAT_UNQUALIFIED/);
+  assert.match(verify,/NATIVE_TEN_INPUT_CHANNELS_FOUR_DEDICATED_STEREO_AUX_RETURNS_MASTER__EXPLICIT_PATCH_ACK/);
+  assert.doesNotMatch(verify,/NATIVE_10CH_4AUX__EXPLICIT_PHYSICAL_INPUT_PATCH__MAIN_LR_OUTPUT_ONLY/);
   assert.doesNotMatch(packaging,/CHANNEL_1_ONLY__REMAINING_9_GUI_CHANNELS_NOT_REAL_AUDIO/);
   assert.match(fat, /native 10CH \+ 4 AUX/i);
   assert.match(fat, /UNPATCHED \/ SILENT/i);

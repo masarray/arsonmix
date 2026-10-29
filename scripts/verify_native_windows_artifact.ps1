@@ -29,7 +29,7 @@ if ($manifest.webView2LoaderMode -ne "JUCE_WEBVIEW2_LOADER_STATIC_LINKED_V1" -or
     $manifest.guiStartupVerification -ne "WEBVIEW2_PREFLIGHT_AND_AR_MIX_GUI_READY_HANDSHAKE") {
     throw "Missing Windows WebView2 startup / static loader provenance"
 }
-if ($manifest.nativeDSP -ne "NATIVE_10CH_4AUX__EXPLICIT_PHYSICAL_INPUT_PATCH__MAIN_LR_OUTPUT_ONLY") {
+if ($manifest.nativeDSP -ne "NATIVE_TEN_INPUT_CHANNELS_FOUR_DEDICATED_STEREO_AUX_RETURNS_MASTER__EXPLICIT_PATCH_ACK") {
     throw "Native mixer routing provenance is not the current 10CH/4AUX production graph"
 }
 if ($manifest.storageMode -ne "PORTABLE_MARKER__USER_STUDIO_EMPTY_AT_RELEASE") {
