@@ -998,6 +998,11 @@
       toStatus("Native VST3 routing is not connected on "+(pickerChannel===-1?"MASTER":"CH "+(pickerChannel+1))+". No effect was loaded.");
       return;
     }
+    if(!state.device?.connected || state.device?.error){
+      state.addError="Audio device is unavailable. Open SETUP and select a verified ASIO/WASAPI input and output first.";
+      renderPickerFeedback();
+      return;
+    }
     const id=el.dataset.nativeAdd;
     const chosen=state.catalog.find(p=>p.id===id);
     state.adding=true;
@@ -1248,7 +1253,14 @@
     state.adding=false;
     state.pendingPlugin="";
     state.addError=result.ok?"":String(result.error||"Unknown VST3 loading failure");
-    if(result.ok)hideDialog("nativeFxSelector");
+    if(result.ok){
+      hideDialog("nativeFxSelector");
+      // The native callback must separately ACK its graph publication;
+      // arMixChain carries the authoritative visible loaded insert.
+      if(state.device?.dryRoutingLab?.active &&
+         !state.device?.dryRoutingLab?.acceptedRoute)
+        toStatus("VST3 inserted in CH1 rack. Assign the physical CH1 input in ROUTING before audio can be heard.");
+    }
     else{
       // Keep error in the open modal; toast behind backdrop is insufficient.
       renderPickerFeedback();renderPickerResults();
