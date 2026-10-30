@@ -1401,16 +1401,25 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 #app #mixer .fader-zone .vu-bank .vu-bars .vu-tick::before{background:#516b78}
 #app #mixer .fader-zone .vu-bank .vu-bars .vu-tick span{color:#a0bbc5}
 
-/* RAIL1 — single machined 5px black slot across CH01–10 + MASTER.
-   Gain-dependent vertical masking previously divided the groove at the cap.
-   Only the 36×77 PNG thumb now moves; the narrow cyan-teal guide is static.
-   No animation, blur, filter, JS paint variable or extra pointer handler. */
+/* RAIL2 — user-reference fader: black ABOVE the silver/rose-gold thumb;
+   blue ONLY BELOW it, with a 40px soft rise in brightness.
+   The underlying 5px machined slot and symmetrical black sidewalls remain
+   physically continuous; only the tiny optical insert changes with gain.
+   Sampled guide hue from the supplied hardware reference: #3576b1.
+   No blur, filter, animation, new DOM/listener, RAF, or audio callback work. */
 #app #mixer .fader-zone .fader::after{
- background-color:#010407;
- background-image:linear-gradient(90deg,
-   #010407 0%,#02090d 17%,#0c3549 34%,
-   #2787a0 49%,#299f9d 50%,#2787a0 51%,
-   #0c3549 66%,#02090d 83%,#010407 100%);
+ background-color:#10171c;
+ background-image:
+   /* fixed inset dark sidewalls, visible above AND below the moving cap */
+   linear-gradient(90deg,#010508 0%,#03090f 18%,transparent 38%,
+     transparent 62%,#03090f 82%,#010508 100%),
+   /* upper cavity sleeps black; behind/below cap the lamp fades into blue */
+   linear-gradient(to bottom,
+     #12191e 0%,#12191e calc(var(--fader-cut,50%) + 26px),
+     #17324a calc(var(--fader-cut,50%) + 39px),
+     #275781 calc(var(--fader-cut,50%) + 52px),
+     #3576b1 calc(var(--fader-cut,50%) + 68px),
+     #3576b1 100%);
  box-shadow:inset 1px 0 #010406,inset -1px 0 #010406;
 }
 /* M5 — names start on the same horizontal guide as ADD FX (glyph=10px,
@@ -2206,7 +2215,7 @@ function makeStrip(ch,i){let inserts=ch.inserts.slice(0,6);while(inserts.length<
  <div class="ch-id">${i+1}</div><div class="rack">${inserts.map((n,j)=>`<div class="insert-slot ${n&&bypassed[fxKey(i,j)]?'is-bypassed':''}"><button class="insert ${!n?'empty':''}" data-insert="${i}:${j}" title="${n?'Open or replace '+safeText(n):'Add VST effect'}">${n?'':'<span class="insert-add-glyph" aria-hidden="true">＋</span>'}<span class="insert-name">${n? safeText(n):'ADD FX'}</span></button>${n?`<button type="button" class="fx-power ${bypassed[fxKey(i,j)]?'is-bypassed':''}" data-fxpower="${i}:${j}" aria-pressed="${!bypassed[fxKey(i,j)]}" aria-label="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}" title="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}">⏻</button>`:''}</div>`).join('')}</div>
  <div class="strip-controls"><div class="trim-row"><span class="mini-label">TRIM<br>dB</span><div class="mini-lcd" data-trim-read="${i}">${fmt(ch.trim)}</div></div>${knobMarkup('trim',i,ch.trim,'Trim')}<div class="pan-control">${panMarkup(ch,i)}<div class="pan-readline"><span aria-hidden="true">L</span><strong data-pan-read="${i}">${panText(ch.pan)}</strong><span aria-hidden="true">R</span></div></div><div class="utility-row"><button data-pre="${i}" class="btn-180 ${ch.pre?'active':''}">Ø</button><button data-hpf="${i}" class="btn-180 ${ch.hpf?'active':''}">HPF</button></div></div>
  <div class="channel-actions"><button class="btn-180 candy mute ${ch.mute?'active':''}" data-mute="${i}" aria-pressed="${ch.mute}">MUTE</button><button class="btn-180 candy solo ${ch.solo?'active':''}" data-solo="${i}" aria-pressed="${ch.solo}">SOLO</button></div>
- <div class="db-display" data-read="${i}">${fmt(ch.fader)}</div><div class="fader-zone"><div class="vu-bank ${ch.stereo?'is-stereo':'is-mono'}" role="group" aria-label="${safeText(ch.name)} ${ch.stereo?'stereo left and right meters':'mono meter'}"><div class="vu-bars">${ch.stereo?meterUnit(String(i)+'L','L')+meterUnit(String(i)+'R','R'):meterUnit(String(i),'')}${meterScaleMarkup()}</div></div><div class="fader" data-fader="${i}" role="slider" tabindex="0" aria-orientation="vertical" aria-label="${ch.name} fader" aria-valuemin="-60" aria-valuemax="10" aria-valuenow="${ch.fader}"><div class="fader-travel"><div class="cap" style="--pos:${levelToTop(ch.fader)}%"></div></div></div>${faderScaleMarkup()}</div></div>
+ <div class="db-display" data-read="${i}">${fmt(ch.fader)}</div><div class="fader-zone"><div class="vu-bank ${ch.stereo?'is-stereo':'is-mono'}" role="group" aria-label="${safeText(ch.name)} ${ch.stereo?'stereo left and right meters':'mono meter'}"><div class="vu-bars">${ch.stereo?meterUnit(String(i)+'L','L')+meterUnit(String(i)+'R','R'):meterUnit(String(i),'')}${meterScaleMarkup()}</div></div><div class="fader" data-fader="${i}" role="slider" tabindex="0" aria-orientation="vertical" aria-label="${ch.name} fader" aria-valuemin="-60" aria-valuemax="10" aria-valuenow="${ch.fader}" style="--fader-cut:${levelToTop(ch.fader)}%"><div class="fader-travel"><div class="cap" style="--pos:${levelToTop(ch.fader)}%"></div></div></div>${faderScaleMarkup()}</div></div>
  <div class="strip-name" data-editstrip="${i}" role="button" tabindex="0" aria-label="Double-click to edit ${safeText(ch.name)} name, icon and color" title="Double-click to edit channel identity"><span class="strip-caption">${safeText(ch.name)}</span><span class="track-icon">${safeText(ch.icon)}</span></div>
  </article>`}
 function renderMixer(){
@@ -2262,7 +2271,7 @@ function renderMaster(){
    <div class="vu-bars">${meterUnit('masterL','L')}${meterUnit('masterR','R')}${meterScaleMarkup()}</div>
   </div>
   <div class="fader" data-fader="master" role="slider" tabindex="0" aria-orientation="vertical"
-       aria-label="Main master fader" aria-valuemin="-60" aria-valuemax="10" aria-valuenow="${masterGain}">
+       aria-label="Main master fader" aria-valuemin="-60" aria-valuemax="10" aria-valuenow="${masterGain}" style="--fader-cut:${levelToTop(masterGain)}%">
     <div class="fader-travel"><div class="cap master-cap" style="--pos:${levelToTop(masterGain)}%"></div></div>
   </div>
   ${faderScaleMarkup()}
@@ -2291,7 +2300,7 @@ function setView(next){
  if(next==='SIGNAL FLOW')renderSignalFlow();
  if(next==='MIX')revealMixerChannel(currentChannel);
 }
-function updateFader(idx,value){if(idx==='master'){masterGain=clamp(value,-60,10);const host=document.querySelector('[data-fader="master"]');host.querySelector('.cap').style.setProperty('--pos',levelToTop(masterGain)+'%');host.setAttribute('aria-valuenow',masterGain.toFixed(1));$('masterLeft').querySelectorAll('.master-db').forEach(e=>e.textContent=fmt(masterGain));send('masterGain',masterGain,-1);return}const ch=channels[+idx];ch.fader=clamp(value,-60,10);const el=document.querySelector(`[data-fader="${idx}"]`);if(el){el.querySelector('.cap').style.setProperty('--pos',levelToTop(ch.fader)+'%');el.setAttribute('aria-valuenow',ch.fader.toFixed(1));document.querySelector(`[data-read="${idx}"]`).textContent=fmt(ch.fader)}send('faderDb',ch.fader,+idx)}
+function updateFader(idx,value){if(idx==='master'){masterGain=clamp(value,-60,10);const host=document.querySelector('[data-fader="master"]');host.querySelector('.cap').style.setProperty('--pos',levelToTop(masterGain)+'%');host.style.setProperty('--fader-cut',levelToTop(masterGain)+'%');host.setAttribute('aria-valuenow',masterGain.toFixed(1));$('masterLeft').querySelectorAll('.master-db').forEach(e=>e.textContent=fmt(masterGain));send('masterGain',masterGain,-1);return}const ch=channels[+idx];ch.fader=clamp(value,-60,10);const el=document.querySelector(`[data-fader="${idx}"]`);if(el){el.querySelector('.cap').style.setProperty('--pos',levelToTop(ch.fader)+'%');el.style.setProperty('--fader-cut',levelToTop(ch.fader)+'%');el.setAttribute('aria-valuenow',ch.fader.toFixed(1));document.querySelector(`[data-read="${idx}"]`).textContent=fmt(ch.fader)}send('faderDb',ch.fader,+idx)}
 function updatePan(idx,value,pointer=false){
  const master=idx==='master';
  const actual=master?masterPan:channels[idx].pan;

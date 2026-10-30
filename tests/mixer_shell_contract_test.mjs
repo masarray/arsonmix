@@ -44,21 +44,25 @@ test('VU dBFS ruler is housed with mono/stereo/master LCD bars',()=>{
   assert.match(css,/\.vu-bank\.is-mono \.vu-bars\{\s*flex:0 0 35px/);
   assert.match(css,/\.vu-bank\.is-stereo \.vu-bars/);
 });
-test('RAIL1 cavity is static and channel/master moves only the PNG cap',()=>{
+test('RAIL2 black upper slot, graduated blue lower guide and original PNG detent',()=>{
  const app=read('web/app.js'),native=read('web/bridge.js');
  const css=read('web/styles-src/42-mixer-premium.css');
- const start=css.indexOf('/* RAIL1 — single machined');
- const end=css.indexOf('/* M5 — names start',start);
- assert.ok(start>0 && end>start);
- const rail=css.slice(start,end);
- assert.match(rail,/background-image:linear-gradient\(90deg,/);
- assert.match(rail,/#299f9d 50%/);
+ const begin=css.indexOf('/* RAIL2 — user-reference');
+ const end=css.indexOf('/* M5 — names start',begin);
+ assert.ok(begin>0&&end>begin);
+ const rail=css.slice(begin,end);
+ assert.match(rail,/linear-gradient\(90deg,#010508/);
+ assert.match(rail,/linear-gradient\(to bottom,/);
+ assert.match(rail,/#12191e calc\(var\(--fader-cut,50%\) \+ 26px\)/);
+ assert.match(rail,/#3576b1 calc\(var\(--fader-cut,50%\) \+ 68px\)/);
  assert.match(rail,/inset 1px 0 #010406,inset -1px 0 #010406/);
- assert.doesNotMatch(rail,/--fader-open|linear-gradient\(to top|animation:|filter:|blur\(|transition:/);
+ assert.doesNotMatch(rail,/filter:|blur\(|animation:|transition:|backdrop-filter:/);
+ assert.equal((app.match(/style="--fader-cut:\$\{levelToTop/g)||[]).length,2);
+ assert.match(app,/host\.style\.setProperty\('--fader-cut'/);
+ assert.match(app,/el\.style\.setProperty\('--fader-cut'/);
+ assert.equal((native.match(/\.style\.setProperty\("--fader-cut",top\+"%"\)/g)||[]).length,3);
  assert.doesNotMatch(app,/--fader-open/);
  assert.doesNotMatch(native,/--fader-open/);
- assert.ok(app.includes("host.querySelector('.cap').style.setProperty('--pos'"));
- assert.ok(native.includes('querySelector(".cap")?.style.setProperty("--pos"'));
 });
 test('native mixer rack reconcile ignores meter/loudness text node replacement',()=>{
   const native=read('web/bridge.js');
@@ -69,10 +73,10 @@ test('native mixer rack reconcile ignores meter/loudness text node replacement',
   assert.match(native,/if\(needsMixerReconcile\(records\)\)syncView\(\)/);
   assert.doesNotMatch(native,/new MutationObserver\(\(\)=>syncView\(\)\)\.observe\(mixer/);
 });
-test('native gain readback moves exactly three PNG cap paths without repainting the rail',()=>{
+test('native gain readback moves all PNG caps with matched RAIL2 optical guide',()=>{
   const native=read('web/bridge.js');
   assert.equal((native.match(/\.querySelector\("\.cap"\)\?\.style\.setProperty\("--pos",top\+"%"\)/g)||[]).length,3);
-  assert.doesNotMatch(native,/--fader-open/);
+  assert.equal((native.match(/\.style\.setProperty\("--fader-cut",top\+"%"\)/g)||[]).length,3);
   assert.match(native,/element\.getAttribute\("aria-label"\)!==accessible/);
 });
 
@@ -108,9 +112,10 @@ test('M5 CLIP light is resettable per channel and MASTER; real PCM peak is sole 
 });
 test('M5 fader light is recessed, VST text aligned, no heavyweight hover visual',()=>{
  const css=read('web/styles-src/42-mixer-premium.css');
- const m5=css.slice(css.indexOf('/* RAIL1 — single machined'));
+ const m5=css.slice(css.indexOf('/* RAIL2 — user-reference'));
  assert.doesNotMatch(m5,/linear-gradient\(to top,transparent/);
- assert.match(m5,/background-image:linear-gradient\(90deg,/);
+ assert.match(m5,/linear-gradient\(90deg,#010508/);
+ assert.match(m5,/linear-gradient\(to bottom,/);
  assert.match(m5,/padding-left:17px/);
  assert.match(m5,/font:700 11px/);
  assert.match(m5,/\.clip-led\{[\s\S]*?height:12px/);
