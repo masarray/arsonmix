@@ -1,5 +1,7 @@
 # ArSonMix — ARD v2.0: Unified Mixer, Native Hardware I/O, FX Rack and AUX/Bus Routing
 
+**2026-10-30 native-connected hardware matrix implementation:** [implementation ARD](ARD_HARDWARE_AUDIO_IO_MATRIX_20261030.md), [operator PRD](PRD_HARDWARE_AUDIO_IO_MATRIX_20261030.md), [handoff](HANDOFF_HARDWARE_IO_MATRIX_20261030.md). Matrix crosspoints use existing `monitor.js` staging and the native ASIO/WASAPI route controller. UI-only incomplete stereo cannot publish audio; MAIN physical output requires ACK. Still fixed 10 live sources+4 AUX; MS3B MONITOR and DYN2 expansion are separate; #15 hardware FAT is open.
+
 **ADR FXF1 architecture amendment (2026-10-30):** [Factory VST3 bundle ADR](ADR_FACTORY_FX_BUNDLE_20261030.md) + [manifest schema](factoryfx-release-manifest.schema.json) and [six plugin PRD](PRD_FACTORY_FX_20261030.md), epic #185. FactoryFX/ contains only hash/identity/licence verified FIRST-PARTY VST3 built in independent sibling repos; Studio/Plugins/VST3 remains USER-owned and unshipped in public package. Reuse one PluginCatalog/LiveChannelFxGraph lifecycle and validated graph PDC/Show, no JUCE8/9 source linking, no RT scanning/hashing, no fake FX or blanket rescan. Crossrepo ASKPVST #60, ArSonEQ #6, ArSonVerb #4. Merged G5A #178 eight-slot graph foundation != full GUI multi-insert, and MS1 #184 mono/stereo native != general VST bus layout negotiation. Existing 10CH/4AUX/ACK and L2 #176 remain. #15 hardware quality gate separate.
 
 
