@@ -37,9 +37,15 @@ public:
         stopThread(-1);
     }
     bool launch(juce::File studio,SnapshotV2 snapshot,Completion completion) {
+        return launch(std::move(studio),std::move(snapshot),{},
+                      std::move(completion));
+    }
+    bool launch(juce::File studio,SnapshotV2 snapshot,
+                std::vector<BinaryState> binaryStates,Completion completion) {
         if(!reserve(Operation::save,std::move(studio),std::move(completion)) ||
            !detail::uuid(snapshot.id))return false;
         snapshot_=std::move(snapshot);
+        blobs_=std::move(binaryStates);
         if(startThread())return true;
         return false;
     }
@@ -98,7 +104,7 @@ private:
         show.currentSnapshotId=snapshot_.id;
         show.snapshotOrder.push_back(snapshot_.id);
         result.showId=show.id;
-        result.error=store.commit(show,{snapshot_},{});
+        result.error=store.commit(show,{snapshot_},blobs_);
         if(result.error.isNotEmpty())return;
         ShowV2 verified;
         std::vector<SnapshotV2> snapshots;
@@ -165,6 +171,7 @@ private:
     Operation operation_=Operation::save;
     juce::File studio_;
     SnapshotV2 snapshot_;
+    std::vector<BinaryState> blobs_; // captured on CONTROL, hashed/written on IO worker
     juce::String requestedId_;
     juce::int64 requestEpoch_=0,requestRevision_=0;
     Completion finished_;
