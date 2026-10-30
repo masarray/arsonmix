@@ -946,7 +946,9 @@
     const live=laneIds(saved);
     const pending=!!rackFxDraft&&rackFxDraft.epoch===Number(d.epoch);
     const ids=pending?laneIds(draftRoutes[channel]):live;
-    return {ids,live,pending,ready:!!d.ready,epoch:Number(d.epoch)||0,
+    const liveSlots=Array.isArray(d.fxInstances?.[channel])?d.fxInstances[channel]:[];
+    return {ids,live,liveSlots,pending,ready:!!d.ready,epoch:Number(d.epoch)||0,
+      revision:Number(d.revision)||0,
       monitoring:!!state.monitor,names:ids.map(id=>catalogNames.get(id)||"Missing VST3")};
   };
   window.__arMixStageRackFx=(channel,id,slot=0,operation="set")=>{
