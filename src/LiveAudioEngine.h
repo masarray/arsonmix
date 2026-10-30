@@ -266,7 +266,7 @@ public:
            diagnosticRoute_.load(std::memory_order_acquire)
                 !=armix::diagnostics::Route::normal)
             return "MUTE hardware OUTPUT, APPLY real input routing and use verified DIRECT before stream setup";
-        const auto* device=deviceManager_.getCurrentAudioDevice();
+        auto* device=deviceManager_.getCurrentAudioDevice();
         if(!device)return "Direct capture/output hardware is not available";
         return streamOutput_.open(selected,device->getName(),
                                   device->getCurrentSampleRate(),
@@ -290,6 +290,9 @@ public:
     // Emergency output mute, not a prerequisite for receiving audio.
     void setOutputMuted (bool mute) noexcept { monitor_.store (!mute, std::memory_order_release); }
     bool isOutputMuted() const noexcept { return !monitor_.load (std::memory_order_acquire); }
+    bool allOutputsDisarmed() const noexcept {
+        return isOutputMuted() && !streamOutput_.armed();
+    }
     bool directRouteAuthorized() const noexcept { return directFence_.permitted(); }
     bool unexpectedDirectRoute() const noexcept
     {
@@ -756,7 +759,7 @@ public:
     juce::String captureSnapshot (armix::storage::Snapshot& snapshot)
     {
         if (dryRoutingLab_.hasExplicitRoute()) return "CLEAR PATCH before capturing CH1 native FX state";
-        if (!isOutputMuted()) return "Mute hardware output before saving a native preset";
+        if (!allOutputsDisarmed()) return "MUTE physical output and DISARM STREAM before saving a native preset";
         if (handoff_.busy() || fxMovePhase_.load (std::memory_order_acquire) != 0) return "Finish pending FX graph transition before saving";
         snapshot.effects.clear();
         snapshot.channelDb = juce::Decibels::gainToDecibels (
@@ -973,6 +976,7 @@ public:
     // All plan preparation / JUCE vars remain on the control thread.
     juce::String startUnpatchedProductionSession() {
         setOutputMuted(true);
+        streamOutput_.disarm(); // never carry LIVE STREAM into a new unpatched graph
         auto* device=deviceManager_.getCurrentAudioDevice();
         if(!device || !directFence_.permitted() || independent_.active())
             return "No verified DIRECT full-duplex device";
@@ -986,6 +990,7 @@ public:
     // Returning to legacy CH1 is explicitly forbidden in NORMAL production.
     juce::String clearProductionRouting() {
         setOutputMuted(true);
+        streamOutput_.disarm();
         dryRoutingLab_.disable();
         return startUnpatchedProductionSession();
     }
@@ -995,7 +1000,7 @@ public:
         const juce::var& command,
         const LiveDryRoutingLab::FxSelections& fx,
         const LiveDryRoutingLab::FxRestores* restored=nullptr) {
-        if (!isOutputMuted()) return "MUTE OUTPUT before applying physical DRY LAB routing";
+        if (!allOutputsDisarmed()) return "MUTE hardware output and DISARM STREAM before APPLY routing";
         if (handoff_.busy()) return "A VST3 graph handoff is in progress";
         if (routeReconfiguring_.load(std::memory_order_acquire))
             return "Audio device is changing; retry when stable";
@@ -1047,7 +1052,7 @@ public:
     }
     juce::String captureRoutedFxStates(std::uint64_t epoch,std::uint64_t revision,
             std::vector<LiveDryRoutingLab::CapturedFxState>& states) noexcept {
-        if(!isOutputMuted()||independent_.active()||
+        if(!allOutputsDisarmed()||independent_.active()||
            routeReconfiguring_.load(std::memory_order_acquire)||
            diagnosticRoute_.load(std::memory_order_acquire)
               !=armix::diagnostics::Route::normal)

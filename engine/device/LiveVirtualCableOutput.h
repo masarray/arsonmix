@@ -45,8 +45,14 @@ class LiveVirtualCableOutput final {
             if(!owner.ready_.load(std::memory_order_acquire) ||
                !owner.armed_.load(std::memory_order_acquire) ||
                owner.fault_.load(std::memory_order_acquire))return;
-            // Separate render callback pulls PCM ONLY. Never runs MIX/FX.
-            owner.bridge_.pull(output,2,frames);
+            // CONSUMER lease: a control-thread REARM may reset ASRC state
+            // only when neither callback accesses its ring/FIR cursor.
+            owner.consumers_.fetch_add(1,std::memory_order_acq_rel);
+            if(owner.ready_.load(std::memory_order_acquire) &&
+               owner.armed_.load(std::memory_order_acquire) &&
+               !owner.fault_.load(std::memory_order_acquire))
+                owner.bridge_.pull(output,2,frames);
+            owner.consumers_.fetch_sub(1,std::memory_order_release);
         }
     };
 public:
@@ -124,9 +130,24 @@ public:
         name_.clear();endpointHash_.clear();targetMs_=renderRate_=0;
         fault_.store(false,std::memory_order_release);
     }
-    bool arm(bool requested) noexcept {
-        if(requested && (!ready() || faulted()))return false;
-        armed_.store(requested,std::memory_order_release);
+    bool arm(bool requested) {
+        if(!requested) {
+            armed_.store(false,std::memory_order_release);
+            return true;
+        }
+        if(!ready() || faulted())return false;
+        // Explicit re-arm is a hard session boundary. Merely pausing the
+        // SPSC cursors would replay old karaoke/microphone PCM into OBS.
+        // CONTROL thread closes both gates; callback readers use leases.
+        armed_.store(false,std::memory_order_release);
+        ready_.store(false,std::memory_order_release);
+        while(publishers_.load(std::memory_order_acquire)!=0 ||
+              consumers_.load(std::memory_order_acquire)!=0)
+            std::this_thread::yield(); // never on either RT callback
+        bridge_.resetStopped(); // ONLY when both callbacks are quiescent
+        if(faulted())return false;
+        ready_.store(true,std::memory_order_release);
+        armed_.store(true,std::memory_order_release);
         return true;
     }
     void disarm() noexcept {armed_.store(false,std::memory_order_release);}
@@ -165,6 +186,6 @@ private:
     juce::String name_,endpointHash_;
     double renderRate_=0,targetMs_=0;
     std::atomic<bool> ready_{false},armed_{false},fault_{false};
-    std::atomic<unsigned> publishers_{0};
+    std::atomic<unsigned> publishers_{0},consumers_{0};
 };
 } // namespace armix::device

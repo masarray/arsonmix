@@ -250,6 +250,25 @@ static void testLiveStreamGateAndObsClock()
     const auto stats=asrc.status();
     check(stats.pushedFrames==25600);
     check(stats.overflowFrames==0);
+
+    // OBS DISARM / REARM must discard the previous live microphone FIFO:
+    // no old vocals should play even if producer was paused for minutes.
+    AdaptiveClockBridge session;
+    check(session.prepare(48000,48000,2,4096,12.));
+    std::array<float,256> oldL{},oldR{},newL{},newR{};
+    oldL.fill(.55f);oldR.fill(.55f);
+    const float* oldIn[2]={oldL.data(),oldR.data()};
+    float* result[2]={newL.data(),newR.data()};
+    for(int i=0;i<8;++i)check(session.push(oldIn,2,256)==256);
+    session.pull(result,2,256);
+    session.resetStopped(); // same safe call made by control-thread ARM gate
+    session.pull(result,2,256);
+    for(int i=0;i<256;++i)check(newL[i]==0.f && newR[i]==0.f);
+    const float* fresh[2]={newL.data(),newR.data()};
+    for(int i=0;i<8;++i)check(session.push(fresh,2,256)==256);
+    session.pull(result,2,256);
+    for(int i=0;i<256;++i)check(newL[i]==0.f && newR[i]==0.f);
+    check(session.status().overflowFrames==0);
 }
 
 int main()

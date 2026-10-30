@@ -829,7 +829,7 @@ private:
             return emitNotice ("Finish VST import or FX recall before backing up Studio.", true);
         // Large USB copies cause disk contention even on an IO worker. Avoid
         // starting a backup during a live performance.
-        if (!engine_.isOutputMuted())
+        if (!engine_.allOutputsDisarmed())
             return emitNotice ("Mute audio output before starting backup to avoid USB IO disturbing live sound.", true);
         chooser_ = std::make_unique<juce::FileChooser> (
             "Choose a destination folder for a new ArSonMix backup",
@@ -843,7 +843,7 @@ private:
                 const auto destination = picker.getResult();
                 if (destination == juce::File()) return;
                 if (safe->studioBackupBusy_ || safe->nativeShowBusy_ || safe->catalog_.busy() ||
-                    safe->engine_.isGraphSwitchPending() || !safe->engine_.isOutputMuted())
+                    safe->engine_.isGraphSwitchPending() || !safe->engine_.allOutputsDisarmed())
                     return safe->emitNotice ("Plugin import/FX recall is active; backup was not started.", true);
                 const auto app = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
                 // Source and destination must both be writable/valid. No VST
@@ -1361,7 +1361,7 @@ private:
             if(!armix::shows::detail::uuid(id))
                 return reject("Select a native Show UUID from the saved list.");
             if(nativeShowBusy_ || studioBackupBusy_ || catalog_.busy() ||
-               engine_.isGraphSwitchPending() || !engine_.isOutputMuted())
+               engine_.isGraphSwitchPending() || !engine_.allOutputsDisarmed())
                 return reject("Mute native output and finish ongoing Studio work.");
             const auto d=engine_.status().getProperty("dryRoutingLab",{});
             const auto ep=d.getProperty("epoch",{}),rev=d.getProperty("revision",{});
@@ -1681,7 +1681,7 @@ private:
                 args.getProperty ("name", {}).toString());
             if (name.isEmpty())
                 return emitNotice ("Choose a valid preset name", true);
-            if (!engine_.isOutputMuted())
+            if (!engine_.allOutputsDisarmed())
                 return emitNotice ("Mute output in SIGNAL CHECK before saving a native sound preset. This avoids interrupting your live performance.", true);
             stopOrbit();
             closePluginEditor();
