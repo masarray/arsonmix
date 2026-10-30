@@ -36,6 +36,13 @@ async def main():
         assert await page.evaluate("()=>currentChannel===0")
         # One actual UI-only gain edit writes the versioned envelope after release.
         await page.evaluate("""()=>{
+          // set_content() has opaque about:blank origin: provide a deterministic
+          // storage sink rather than depending on browser localStorage rights.
+          const saved=new Map();
+          Object.defineProperty(window,'localStorage',{configurable:true,value:{
+            getItem:key=>saved.get(key)??null,
+            setItem:(key,value)=>saved.set(key,String(value))
+          }});
           window.__oldFader9=channels[9].fader;
           updateFader(9,-25.5);
           document.dispatchEvent(new Event('pointerup'));
