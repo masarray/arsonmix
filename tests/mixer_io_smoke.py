@@ -94,10 +94,13 @@ async def main():
         outputs=await page.locator('#arIOBody').inner_text()
         assert "HW OUT 1" in outputs and "HW OUT 2" in outputs,outputs
         assert await page.locator('[data-io-matrix-kind="outputs"]').count()==4
-        # A two-output device cannot map both MAIN sides onto the same pin.
+        # Swapping two occupied outputs is an atomic native draft, never L=R.
         await page.locator('[data-io-matrix-kind="outputs"][data-io-matrix-row="0"][data-io-matrix-pin="1"]').click()
-        assert 'distinct' in (await page.locator('#arIOFeedback').inner_text()).lower()
-        assert (await page.evaluate('()=>window.__arMixRouteView().draftMainOutputs'))==[0,1]
+        assert (await page.evaluate('()=>window.__arMixRouteView().draftMainOutputs'))==[1,0]
+        duplicate=await page.evaluate('()=>window.__arMixStageMainOutputs(1,1)')
+        assert duplicate['ok'] is False and 'different' in duplicate['error'],duplicate
+        assert (await page.evaluate('()=>window.__arMixRouteView().draftMainOutputs'))==[1,0]
+        await page.evaluate('()=>window.__arMixRevertMixerDraft()')
         assert "AUX1" in outputs and "not physical" in outputs,outputs
         await page.locator('[data-io-tab="device"]').click()
         await page.evaluate("""() => window.__armixTestEmit('arMixAudioDeviceInventory',{
