@@ -239,7 +239,8 @@ test("R2 shared VST3 picker is lazy, bounded and draft-only, not 14 catalog drop
   assert.match(ui,/fxSearch\.addEventListener\("input",drawFxResults\)/);
   assert.match(ui,/catalogNames\.set\(p\.id,name\)/);
   assert.match(ui,/model\.fxId/);
-  assert.match(ui,/button\.textContent=fxCaption\(id\)/);
+  assert.match(ui,/button\.textContent=fxCaption\(selectedRoute\.fxId\)/);
+  assert.match(ui,/selectedRoute\.fxIds=id\?\[id,\.\.\.previous\.slice\(1\)\]:previous\.slice\(1\)/);
   assert.doesNotMatch(ui,/fxChoices\(/);
   assert.doesNotMatch(ui,/<select data-route-fx/);
   assert.doesNotMatch(ui,/<select data-aux-fx/);
