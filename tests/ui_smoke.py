@@ -40,7 +40,9 @@ async def main():
             monoBank:mono.getBoundingClientRect().width,
             stereoBank:stereo.getBoundingClientRect().width,
             masterBars:bars(master).getBoundingClientRect().width,
-            physicalMono:mono.querySelectorAll('.meter').length,
+            rulerInsideLCD:[mono,stereo,master].every(bank=>
+               bars(bank).querySelector(':scope > .vu-scale')!==null),
+             physicalMono:mono.querySelectorAll('.meter').length,
             physicalStereo:stereo.querySelectorAll('.meter').length,
             innerShadow:style(bars(mono)).boxShadow,
             border:style(bars(mono)).borderTopWidth,
@@ -48,7 +50,8 @@ async def main():
             labels,kicker:!!read.querySelector('.master-info-kicker'),
             hot,edge};
         }""")
-        assert lcd['monoBars']==14 and lcd['stereoBars']==30 and lcd['masterBars']==30,lcd
+        assert lcd['monoBars']==35 and lcd['stereoBars']==51 and lcd['masterBars']==51,lcd
+        assert lcd['rulerInsideLCD'],lcd
         assert lcd['monoBank']==35 and lcd['stereoBank']==51,lcd
         assert lcd['physicalMono']==1 and lcd['physicalStereo']==2,lcd
         assert 'inset' in lcd['innerShadow'] and lcd['border']=='0px',lcd
@@ -930,6 +933,25 @@ async def main():
         assert len(calibrated['result'])==15,calibrated
         assert all(abs(x['error'])<=1 and x['inside'] for x in calibrated['result']),calibrated
         assert len(calibrated['vu'])==11 and all(abs(s['top'])<=2 and abs(s['bottom'])<=2 and all(abs(d)<=1.5 for d in s['ticks']) for s in calibrated['vu']),calibrated
+        # Verify blue lower slit follows the existing CH/MASTER gain controls,
+        # without introducing a second animation loop or reading audio DSP.
+        fader_light=await page.evaluate("""()=>{
+          const result=[];
+          for(const key of ['0','master']){
+            const f=document.querySelector('[data-fader="'+key+'"]');
+            const before=key==='master'?masterGain:channels[+key].fader;
+            updateFader(key,-60);
+            const off=Number.parseFloat(f.style.getPropertyValue('--fader-open'));
+            updateFader(key,10);
+            const full=Number.parseFloat(f.style.getPropertyValue('--fader-open'));
+            const paint=getComputedStyle(f,'::after').backgroundImage;
+            updateFader(key,before);
+            result.push({key,off,full,paint});
+          }
+          return result;
+        }""")
+        assert all(v['off']==0 and v['full']==100 and 'linear-gradient' in v['paint']
+                   for v in fader_light),fader_light
         assert await page.evaluate('meterPercentToDbfs(0)')==-60
         assert await page.evaluate('meterPercentToDbfs(80)')==-12
         assert await page.evaluate('meterPercentToDbfs(100)')==0
@@ -982,7 +1004,7 @@ async def main():
                    v['faceColor']=='rgb(1, 6, 10)' for v in lcd_glass),lcd_glass
         assert all(v['inset'] and v['filter']=='none' and
                    v['blur']=='none' for v in lcd_glass),lcd_glass
-        assert all(v['width']==(30 if v['leds']==2 else 14) for v in lcd_glass),lcd_glass
+        assert all(v['width']==(51 if v['leds']==2 else 35) for v in lcd_glass),lcd_glass
         # Mono's narrower well intentionally releases 16px to its fader.
         # Same-format strips retain precisely aligned central rail offsets.
         mono_x=[s['rail']['l']-s['zone']['l'] for s in module_layout[:10] if s['count']==1]
