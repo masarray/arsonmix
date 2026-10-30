@@ -22,6 +22,7 @@
 #include "NativeLiveShowCapture.h"
 #include "NativeDryShowRecall.h"
 #include "NativeShowSaveWorker.h"
+#include <algorithm>
 #include <cstring>
 #include <optional>
 #include <memory>
@@ -1210,7 +1211,7 @@ private:
             // reads the accepted LIVE graph, updated faders and exact device epoch.
             // VST3 is fail-closed until a quiescent vendor state capture gate exists.
             armix::shows::SnapshotV2 captured;
-            const auto name=juce::String("Dry Routing ")+juce::Time::getCurrentTime().formatted("%Y%m%d %H%M%S");
+            const auto name=juce::String("Native Show ")+juce::Time::getCurrentTime().formatted("%Y%m%d %H%M%S");
             const auto nativeStatus=engine_.status();
             const auto lab=nativeStatus.getProperty("dryRoutingLab",{});
             const auto epoch=static_cast<std::uint64_t>(
@@ -1285,8 +1286,8 @@ private:
                     }else{
                         safe->diagnostics_.record("NATIVE_FX_SHOW_SAVED",
                             result.showId+" | "+result.snapshotId);
-                        safe->emitNotice("Native Show with routed VST3 binary state saved and SHA-256 verified: "+
-                            result.name+". VST3 restoration is not yet qualified; recall remains gated.");
+                        safe->emitNotice("Verified Show saved with routed VST3 state: "+
+                            result.name+". Use BROWSE SHOWS and RECALL while OUTPUT is muted.");
                     }
                     if(safe->browser_.loaded) {
                         auto ack=std::make_unique<juce::DynamicObject>();

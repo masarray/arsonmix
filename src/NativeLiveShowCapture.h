@@ -5,10 +5,10 @@
 #include <juce_core/juce_core.h>
 #include <cmath>
 
-// P4 stage 3: message-thread native SSOT -> SHOW snapshot. This is deliberately
-// a DRY (zero vendor FX) capture: vendor getStateInformation() requires a
-// separately qualified processor-quiescence and thread-affinity protocol.
-// No UI draft or browser localStorage can become the saved audio truth.
+// Native SSOT -> Show skeleton. DRY-only callers remain fail-closed by
+// default; the G5E opt-in caller captures vendor state under the plugin's
+// processing gate, appends all verified FX blob hashes, then commits atomically.
+// No UI draft or browser localStorage becomes saved audio truth.
 namespace armix::shows {
 class NativeLiveShowCapture final {
     static bool numeric(const juce::var& v,double& n,double lo,double hi) {

@@ -1285,7 +1285,7 @@
       updateRouteLabIdentity();
     }
     nativeShowStatus.textContent=reply?.ok
-      ?"SHOW + FX RESTORED · OUTPUT MUTED. Verify physical routing and plugin sound before unmute."
+      ?"SHOW RESTORED · OUTPUT MUTED. Verify physical routing and plugin sound before unmute."
       :"SHOW RECALL REJECTED · "+String(reply?.error||"Device/route changed");
     showIdle();
   });

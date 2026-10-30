@@ -9,6 +9,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <new>
 using namespace armix::mixer;
 
