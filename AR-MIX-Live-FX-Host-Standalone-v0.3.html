@@ -1456,7 +1456,7 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
   --ar-fader-read-height:35px;
   --ar-mute-height:41px;
 }
-#app #mixer[data-io-mode="ROUTE"]{--ar-upper-height:163px}
+#app #mixer[data-io-mode="ROUTE"]{--ar-upper-height:224px}
 #app #mixer[data-io-mode="SENDS"]{--ar-upper-height:208px}
 #app #mixer > .strip,
 #app #mixer > #masterLeft.strip.master-strip{
@@ -1620,7 +1620,7 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
     --ar-control-height:87px;
     --ar-identity-height:49px;
   }
-  #app #mixer[data-io-mode="ROUTE"]{--ar-upper-height:148px}
+  #app #mixer[data-io-mode="ROUTE"]{--ar-upper-height:195px}
   #app #mixer[data-io-mode="SENDS"]{--ar-upper-height:185px}
   #app .left-rail .arRailHeading{height:19px;padding-top:3px}
   #app .left-rail .arMixerBankBar{gap:3px;padding:3px 6px 5px}
@@ -1639,6 +1639,13 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 @media(max-width:1100px){
   #app .toolbar-actions.arSegmentedToolbar .nav{flex-basis:320px!important}
   #app .left-rail{flex-basis:158px;min-width:158px}
+}
+
+/* L2 ROUTE ergonomic height gate: preserve a >=95px active fader on a 600px
+   viewport by letting only the shared upper bank shrink. Never move individual
+   channel faders or detach FX racks when changing bank mode. */
+@media(max-height:690px){
+ #app #mixer[data-io-mode="ROUTE"]{--ar-upper-height:165px}
 }
 </style>
 <style id="arsonmix-mixer-io-css">/* G1/G2: stable channel-bank geometry; FX rack remains mounted in every mode. */
@@ -1850,6 +1857,18 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 .arIOPortFriendly{position:absolute;bottom:24px;left:50%;display:block;width:92px;max-width:92px;color:#bdcdd6;text-align:left;font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transform:rotate(-43deg);transform-origin:0% 100%;pointer-events:none}
 .arIOPortIndex{display:block;width:100%;padding-top:3px;border-top:1px solid #526878;text-align:center;color:#dfedf1;font-size:10px}
 @media(max-height:670px){.arIOPortTitle{height:63px;min-height:63px}.arIOPortFriendly{bottom:19px;width:72px;max-width:72px}}
+
+/* Master always mounts six same-height FX slot cells. Disabled rows are
+   explicit: independent native MASTER VST3 audio is not implemented yet. */
+#app #mixer #masterLeft .native-master-fx-locked .master-insert{
+ display:flex;align-items:center;gap:5px;width:100%;min-width:0;
+ opacity:1;color:#849aa8!important;cursor:not-allowed;
+ background:linear-gradient(#22333e,#101c23 60%,#1b2b33)!important;
+}
+#app #mixer #masterLeft .native-master-fx-locked .insert-name{
+ white-space:nowrap;text-overflow:ellipsis;overflow:hidden;font-weight:600;
+}
+#app #mixer #masterLeft .native-master-fx-locked .insert-add-glyph{color:#7796a5}
 </style></head>
 <body>
 <div id="app" class="app">
