@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/LiveChannelFxGraph.h"
+#include "../engine/core/NativeOutputPairTap.h"
 #include "../engine/core/RealtimeRoutePublisher.h"
 #if defined(NDEBUG)
 #undef NDEBUG
@@ -345,6 +346,27 @@ int main() {
         assert(GainFx::released==released+1); // other graph FX retired
         editorLease.reset();
         assert(GainFx::living==0&&GainFx::released==released+2);
+    }
+    // MS3A2: selected sparse MAIN outputs 5/6, not legacy 1/2.
+    // The same native PCM tap is shared by de-click and loudness.
+    {
+        std::array<std::array<float,8>,6> physical{};
+        float* outputs[6]{};
+        for(int i=0;i<6;++i)outputs[i]=physical[static_cast<size_t>(i)].data();
+        const auto tapped=NativeOutputPairTap::select(outputs,6,{{4,5}});
+        assert(tapped[0]==outputs[4]&&tapped[1]==outputs[5]);
+        tapped[0][0]=0.7f;tapped[1][0]=-0.4f;
+        assert(physical[0][0]==0.f&&physical[1][0]==0.f);
+        assert(near(physical[4][0],0.7f)&&near(physical[5][0],-0.4f));
+        for(const auto invalid:{std::array<int,2>{{-1,-1}},
+                                std::array<int,2>{{4,4}},
+                                std::array<int,2>{{4,6}}}) {
+            const auto tap=NativeOutputPairTap::select(outputs,6,invalid);
+            assert(tap[0]==nullptr&&tap[1]==nullptr);
+        }
+        outputs[5]=nullptr;
+        const auto absent=NativeOutputPairTap::select(outputs,6,{{4,5}});
+        assert(absent[0]==nullptr&&absent[1]==nullptr);
     }
     // Tests above use a real JUCE AudioProcessor processing seam. Vendor
     // VST3 formats and sound quality require separate Windows hardware FAT.
