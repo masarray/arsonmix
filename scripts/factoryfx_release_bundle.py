@@ -61,19 +61,18 @@ def read_lock(path):
         if pid not in OWNED or pid in seen:
             fail("unknown/duplicate factory product ID")
         seen.add(pid)
-        if p["sourceRepo"] != OWNED[pid][0] and not (
-            pid == "arsonkupik-enhancer" and p["sourceRepo"] == "masarray/askp-vst"
-        ):
+        expected_source = "masarray/askp-vst" if pid == "arsonkupik-enhancer" else OWNED[pid][0]
+        if p["sourceRepo"] != expected_source:
             fail(pid + ": unexpected DSP source repository")
         if not all(isinstance(p[k], str) and TOKEN.fullmatch(p[k])
                    for k in ("version", "releaseTag", "assetName")):
             fail(pid + ": unsafe release identity")
-        if not p["assetName"].lower().endswith(".zip") or "windows" not in p["assetName"].lower() or "vst3" not in p["assetName"].lower():
+        if not p["assetName"].lower().endswith(".zip") or "windows" not in p["assetName"].lower() or "x64" not in p["assetName"].lower() or "vst3" not in p["assetName"].lower():
             fail(pid + ": only Windows x64 VST3 ZIP distributions allowed")
         if not (HEX(p["artifactSha256"], 64) and HEX(p["sourceCommit"], 40)
                 and HEX(p["vst3ClassId"], 32)):
             fail(pid + ": unpinned artifact/source/class identity")
-        if type(p["hostUniqueId"]) is not int or not (-2147483648 <= p["hostUniqueId"] <= 2147483647):
+        if type(p["hostUniqueId"]) is not int or p["hostUniqueId"] == 0 or not (-2147483648 <= p["hostUniqueId"] <= 2147483647):
             fail(pid + ": exact JUCE PluginDescription UID required")
         if p["licenseReview"] != "approved" or p["hostQualification"] != "passed":
             fail(pid + ": licence/host acceptance is not approved")
