@@ -707,7 +707,7 @@
           <div class="master-fx-slot insert-slot native-master-fx-locked">
             <button type="button" class="master-insert insert empty" disabled aria-disabled="true"
               aria-label="Master FX slot ${slot+1} unavailable: native Master FX DSP not implemented"
-              title="MASTER FX not yet implemented in the native audio graph">
+              title="MASTER FX · UNAVAILABLE — native DSP lane not yet implemented">
               ${slot===0?"":'<span class="master-insert-add insert-add-glyph" aria-hidden="true">＋</span>'}
               <span class="insert-name">${slot===0?"FX UNAVAILABLE":"ADD FX"}</span>
             </button>
