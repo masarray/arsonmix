@@ -33,6 +33,12 @@ public:
         juce::String id,path,name;
         int uid=0;
     };
+    struct CapturedFxState final {
+        int lane=0,slot=0;
+        juce::String catalogId,instanceId;
+        bool bypass=false;
+        juce::MemoryBlock binary;
+    };
     static constexpr int count=armix::mixer::stripCount;
     static constexpr int auxCount=armix::mixer::auxBusCount;
     static constexpr int fxSlots=count+auxCount;
@@ -384,6 +390,44 @@ public:
            expectedRevision!=revision()||token.isEmpty())return {};
         const auto* fx=publisher_.controlPrepared(expectedEpoch,expectedRevision);
         return fx?fx->leaseInsert(lane,slot,token):FxGraph::InstanceLease{};
+    }
+
+    // Transactional FX binary capture, CONTROL only. The caller has muted
+    // hardware output before entering. A busy vendor gate rejects the entire
+    // capture immediately; there is no retry spin or audio callback I/O.
+    juce::String captureRoutedFxStates(std::uint64_t expectedEpoch,
+                                      std::uint64_t expectedRevision,
+                                      std::vector<CapturedFxState>& out) noexcept {
+        if(!hasExplicitRoute()||epoch()!=expectedEpoch||
+           revision()!=expectedRevision)
+            return "Native route changed before FX state capture";
+        const auto* graph=publisher_.controlPrepared(expectedEpoch,expectedRevision);
+        if(!graph)return "Accepted FX graph unavailable";
+        std::vector<CapturedFxState> prepared;
+        std::size_t totalBytes=0;
+        try {
+            for(int lane=0;lane<fxSlots;++lane)
+                for(int slot=0;slot<graph->insertsOn(lane);++slot) {
+                    CapturedFxState row;
+                    row.lane=lane;row.slot=slot;
+                    row.catalogId=graph->insertId(lane,slot);
+                    row.instanceId=graph->insertInstanceId(lane,slot);
+                    row.bypass=graph->insertBypassed(lane,slot);
+                    const auto instance=graph->leaseInsert(lane,slot,row.instanceId);
+                    if(!instance||row.catalogId.isEmpty()||
+                       !instance->tryCaptureState(row.binary))
+                        return "Vendor FX state busy/failed: lane "+
+                            juce::String(lane+1)+" slot "+juce::String(slot+1);
+                    totalBytes+=row.binary.getSize();
+                    if(totalBytes>128U*1024U*1024U)
+                        return "Native Show FX state exceeds 128 MB";
+                    prepared.push_back(std::move(row));
+                }
+        } catch(...) {return "Native FX state capture failed";}
+        if(epoch()!=expectedEpoch||revision()!=expectedRevision)
+            return "Native route changed during FX state capture";
+        out=std::move(prepared);
+        return {};
     }
 
     void disable() noexcept {
