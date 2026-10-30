@@ -38,7 +38,7 @@ int main(){
     const auto noFx=[](int,float*,float*,int) noexcept {};
     assert(block.process(inputs,3,l.data(),r.data(),2,noFx));
     // PRE is independent from source fader=0, POST is silent.
-    assert(near(l[0],.5f) && near(r[0],.5f));
+    assert(near(l[0],.5f*std::sqrt(.5f)) && near(r[0],.5f*std::sqrt(.5f)));
     assert(graph.sends.receivesInternalAudio(1));
     assert(graph.sends.receivesInternalAudio(2));
 
@@ -88,7 +88,7 @@ int main(){
         decoded.channels,ports,decoded.sends,graph,fault,decoded.aux));
     PreparedMixerBlock dedicatedBlock(graph,64);
     assert(dedicatedBlock.process(inputs,3,l.data(),r.data(),2,noFx));
-    assert(near(l[0],.5f)&&near(r[0],.5f)); // AUX PRE audible at CH1 -inf
+    assert(near(l[0],.5f*std::sqrt(.5f))&&near(r[0],.5f*std::sqrt(.5f))); // mono AUX PRE at -3dB
     // Invalid destination or disabled AUX must fail with unchanged result.
     auxRows.getReference(0).getDynamicObject()->setProperty("enabled",false);
     assert(!NativeDryRouteCommand::decode(dedicated,decoded,error));

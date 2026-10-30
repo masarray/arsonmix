@@ -99,15 +99,18 @@ int main() {
         assert(fx->process(pins,3,l.data(),r.data(),4,nullptr,&legacyCalls,external));
         assert(heapCalls.load(std::memory_order_relaxed)==before);
         assert(legacyCalls==1);
-        // Input .4 * externally owned CH1 FX 2 * PRE send .5 = .4.
-        assert(near(l[0],.4f)&&near(r[0],.4f));
+        // Mono CH1 PRE at center is attenuated sqrt(.5) per side.
+        constexpr float monoCenter=0.7071067811865475f;
+        assert(near(l[0],.4f*2.f*.5f*monoCenter)&&
+               near(r[0],.4f*2.f*.5f*monoCenter));
         assert(fx->activeInserts()==0);
         // Without the external lease the unmodified route remains dry.
         assert(fx->process(pins,3,l.data(),r.data(),4));
-        assert(near(l[0],.2f)&&near(r[0],.2f));
+        assert(near(l[0],.4f*.5f*monoCenter)&&near(r[0],.4f*.5f*monoCenter));
     }
     // This test executes actual JUCE AudioProcessor::processBlock for
     // DIFFERENT strip instances and a BUS return, no VST3 vendor binaries.
+    constexpr float monoPreCenter=0.7071067811865475f;
     using Publication=armix::rt::RealtimeRoutePublisher<LiveChannelFxGraph>;
     Publication routes;
     auto first=std::make_unique<Publication::Snapshot>();
@@ -127,9 +130,9 @@ int main() {
         RenderLevels meters;
         assert(fx->process(phys,3,l.data(),r.data(),4,&meters));
         assert(heapCalls.load(std::memory_order_relaxed)==before);
-        // .4 input * CH1 FX 3 * PRE .5 * BUS FX 2 == 1.2
-        assert(near(l[0],1.2f)&&near(r[0],1.2f));
-        assert(near(meters.channelPeak[1],1.2f));
+        // .4 * CH1 FX 3 * PRE .5 * mono center * BUS FX 2.
+        assert(near(l[0],1.2f*monoPreCenter)&&near(r[0],1.2f*monoPreCenter));
+        assert(near(meters.channelPeak[1],1.2f*monoPreCenter));
         assert(near(meters.channelPeak[0],0.f)); // fader zero, PRE audible
         auto newer=std::make_unique<Publication::Snapshot>();
         newer->deviceEpoch=11;newer->graphRevision=2;
@@ -138,7 +141,7 @@ int main() {
         assert(!routes.pollRetirement()); // first graph still reader-leased
         assert(GainFx::living==4); // 2 FX per graph; no shared pointers
         assert(fx->process(phys,3,l.data(),r.data(),4));
-        assert(near(l[0],1.2f));
+        assert(near(l[0],1.2f*monoPreCenter));
     }
     assert(routes.pollRetirement());
     assert(GainFx::living==2); // old VST instances retired off audio thread
@@ -146,8 +149,8 @@ int main() {
         auto lease=routes.acquire();
         assert(lease.get(11));
         assert(lease.get(11)->prepared->process(phys,3,l.data(),r.data(),4));
-        // .4 * 2 * .5 * 4 = 1.6
-        assert(near(l[0],1.6f));
+        // .4 * 2 * .5 * mono center * BUS FX 4.
+        assert(near(l[0],1.6f*monoPreCenter));
         assert(!lease.get(12)); // stale driver epoch is silent
     }
     routes.unpublish();
@@ -199,7 +202,7 @@ int main() {
             const auto allocated=heapCalls.load(std::memory_order_relaxed);
             assert(live.get(71)->prepared->process(phys,3,l.data(),r.data(),4));
             assert(heapCalls.load(std::memory_order_relaxed)==allocated);
-            assert(near(l[0],1.2f)); // original FX gain preserved
+            assert(near(l[0],1.2f*monoPreCenter)); // original FX gain preserved
         }
         stable.unpublish();
         assert(stable.pollRetirement());
@@ -232,8 +235,8 @@ int main() {
         const auto before=heapCalls.load(std::memory_order_relaxed);
         assert(fx->process(phys,3,l.data(),r.data(),4,&levels));
         assert(heapCalls.load(std::memory_order_relaxed)==before);
-        assert(near(l[0],1.2f)&&near(r[0],1.2f));
-        assert(near(levels.auxPeak[0],1.2f));
+        assert(near(l[0],1.2f*monoPreCenter)&&near(r[0],1.2f*monoPreCenter));
+        assert(near(levels.auxPeak[0],1.2f*monoPreCenter));
         auto second=std::make_unique<LiveChannelFxGraph>(plan,32,32);
         assert(second->reuse(0,*fx,"source-vst3"));
         assert(second->reuse(stripCount,*fx,"aux-vst3"));
@@ -243,7 +246,7 @@ int main() {
         fx.reset(); // AUX processor must remain live in second graph
         assert(GainFx::released==oldReleased);
         assert(second->process(phys,3,l.data(),r.data(),4,&levels));
-        assert(near(l[0],1.2f));
+        assert(near(l[0],1.2f*monoPreCenter));
         assert(GainFx::prepared==oldPrepared);
         second.reset();
         assert(GainFx::released==oldReleased+2);

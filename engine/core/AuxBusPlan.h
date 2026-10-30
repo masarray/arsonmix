@@ -32,7 +32,7 @@ struct AuxBusRequest final {
 };
 enum class AuxFault : std::uint8_t {
     none, invalidCount, invalidBus, invalidStrip, disabledTarget,
-    invalidTap, invalidGain, invalidPan, duplicateSend
+    invalidTap, invalidGain, invalidPan, invalidSourceFormat, duplicateSend
 };
 struct AuxError final {
     AuxFault fault=AuxFault::none;
@@ -50,8 +50,12 @@ struct AuxBusPlan final {
     int edgeCount=0;
     bool active=false;
 
-    static bool compile(const AuxBusRequest& requested,AuxBusPlan& out,AuxError& error) noexcept {
+    static bool compile(const AuxBusRequest& requested,AuxBusPlan& out,AuxError& error,
+                        std::span<const ChannelFormat> sourceFormats={}) noexcept {
         error={};
+        if(!sourceFormats.empty() && sourceFormats.size()!=stripCount){
+            error={AuxFault::invalidSourceFormat,-1};return false;
+        }
         if(requested.count<0||requested.count>maxAuxSends){
             error={AuxFault::invalidCount,-1};return false;
         }
@@ -83,6 +87,10 @@ struct AuxBusPlan final {
                 error={AuxFault::invalidPan,i};return false;
             }
             if(!s.enabled)continue;
+            if(!sourceFormats.empty() && sourceFormats[s.source]!=ChannelFormat::mono &&
+               sourceFormats[s.source]!=ChannelFormat::stereo){
+                error={AuxFault::invalidSourceFormat,i};return false;
+            }
             if(!requested.buses[s.destination].enabled){
                 error={AuxFault::disabledTarget,i};return false;
             }
@@ -103,8 +111,13 @@ struct AuxBusPlan final {
             const auto& s=requested.sends[i];
             if(!s.enabled)continue;
             auto& e=candidate.edges[next[s.source]++];
-            e={s.destination,s.tap,s.gain*(s.pan>0.f?1.f-s.pan:1.f),
-                                  s.gain*(s.pan<0.f?1.f+s.pan:1.f)};
+            const bool monoPre=s.tap==SendTap::preFader &&
+                !sourceFormats.empty() && sourceFormats[s.source]==ChannelFormat::mono;
+            e={s.destination,s.tap,
+               monoPre?s.gain*std::sqrt(0.5f*(1.f-s.pan)):
+                   s.gain*(s.pan>0.f?1.f-s.pan:1.f),
+               monoPre?s.gain*std::sqrt(0.5f*(1.f+s.pan)):
+                   s.gain*(s.pan<0.f?1.f+s.pan:1.f)};
         }
         out=candidate;
         return true;

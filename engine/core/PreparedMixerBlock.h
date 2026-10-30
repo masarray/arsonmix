@@ -55,11 +55,13 @@ struct PreparedRenderGraph final {
             error.fault = RenderFault::invalidChannelRouting;
             return false;
         }
-        if (!ChannelSendPlan::compile(sendsRequest, candidate.sends, error.sends)) {
+        if (!ChannelSendPlan::compile(sendsRequest, candidate.sends, error.sends,
+                                      candidate.channels.effectiveFormats)) {
             error.fault = RenderFault::invalidSendRouting;
             return false;
         }
-        if (!AuxBusPlan::compile(requestedAux,candidate.aux,error.aux)){
+        if (!AuxBusPlan::compile(requestedAux,candidate.aux,error.aux,
+                                candidate.channels.effectiveFormats)){
             error.fault=RenderFault::invalidAuxRouting;
             return false;
         }

@@ -55,28 +55,30 @@ int main() {
         assert(allocations.load(std::memory_order_relaxed)==before);
         return std::pair{left[127],right[127]};
     };
+    // Mono PRE uses equal-power center pan (-3 dB per side).
+    // CH1 .8 * send .5 * sqrt(.5) plus CH3 stereo .2/.3.
+    constexpr float monoPre=.8f*.5f*0.7071067811865475f;
     auto [l,r]=run();
-    // CH1 FX PRE .8*.5=.4, plus independent stereo CH3 .2/.3
-    assert(near(l,.6f)&&near(r,.7f));
+    assert(near(l,.2f+monoPre)&&near(r,.3f+monoPre));
     assert(controls.set(0,0.f,0.f,true,false,false));
     std::tie(l,r)=run();
-    assert(near(l,.6f)&&near(r,.7f)); // fader 0 does NOT kill PRE
+    assert(near(l,.2f+monoPre)&&near(r,.3f+monoPre)); // fader 0 does NOT kill PRE
     assert(controls.set(0,0.f,0.f,true,true,false));
     std::tie(l,r)=run();
     assert(near(l,.2f)&&near(r,.3f)); // MUTE does kill PRE
     assert(controls.set(0,0.f,0.f,true,false,true));
     std::tie(l,r)=run();
-    assert(near(l,.4f)&&near(r,.4f)); // SOLO keeps CH1 and BUS descendant
+    assert(near(l,monoPre)&&near(r,monoPre)); // SOLO keeps CH1 and BUS descendant
     assert(controls.set(0,0.f,0.f,true,false,false));
     assert(controls.set(2,1.f,-1.f,false,false,false));
     std::tie(l,r)=run();
-    assert(near(l,.6f)&&near(r,.4f)); // stereo left balance only
+    assert(near(l,.2f+monoPre)&&near(r,monoPre)); // stereo left balance only
     assert(controls.set(1,0.f,0.f,false,false,false));
     std::tie(l,r)=run();
     assert(near(l,.2f)&&near(r,0.f)); // bus fader updates without graph build
     assert(controls.set(1,1.f,0.f,false,false,false));
     std::tie(l,r)=run();
-    assert(near(l,.6f)&&near(r,.4f));
+    assert(near(l,.2f+monoPre)&&near(r,monoPre));
 
     // Revision/epoch-fenced control editing leaves unchanged topology and
     // the same instance intact (one writer, no plugin publication/recreate).
