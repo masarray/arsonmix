@@ -1299,7 +1299,9 @@
   });
   backend.addEventListener("arMixRoutingFxBypassAck",ack=>{
     if(ack?.state&&state.device)state.device.dryRoutingLab=ack.state;
+    const synchronized=ack?.ok&&window.__arMixAcceptFxBypassAck?.(ack.state);
     if(ack?.ok) {
+      if(!synchronized)toStatus("FX ACK received; refresh native route status.");
       repaint(); // no optimistic power lamp: native state is authoritative
       toStatus("Native VST3 bypass acknowledged · zero-latency fade.");
     } else toStatus("FX BYPASS REJECTED · "+String(ack?.error||"stale graph"));
