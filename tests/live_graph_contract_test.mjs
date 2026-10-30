@@ -178,7 +178,7 @@ test('R0B B3 unpatched session preserves CH1 presets and zero-PDC gates only on 
   assert.match(restore,/dryRoutingLab_\.hasExplicitRoute\(\)/);
   assert.doesNotMatch(capture,/dryRoutingLab_\.active\(\)/);
   assert.doesNotMatch(restore,/dryRoutingLab_\.active\(\)/);
-  assert.match(capture,/isOutputMuted\(\)/);
+  assert.match(capture,/allOutputsDisarmed\(\)/);
   assert.match(restore,/handoff_\.stage/);
   assert.match(e,/if\(dryRoutingLab_\.hasExplicitRoute\(\) && latency!=0\)/);
   assert.match(e,/if\(dryRoutingLab_\.hasExplicitRoute\(\) && !value &&/);

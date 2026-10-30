@@ -13,7 +13,7 @@ const bridge=readFileSync(new URL("../web/bridge.js",import.meta.url),"utf8");
 
 test("R0B unified native mixer keeps VST3/clock/diagnostic paths protected",()=>{
   assert.match(engine,/dryRoutingLab_\.active\(\)/);
-  assert.match(engine,/!isOutputMuted\(\).*MUTE OUTPUT/);
+  assert.match(engine,/!allOutputsDisarmed\(\).*DISARM STREAM/);
   assert.match(engine,/setOutputMuted\(true\); \/\/ never expose CH1 unexpectedly/);
   assert.match(engine,/dryRoutingLab_\.prepareDevice\(d\)/);
   assert.match(engine,/dryRoutingLab_\.deviceStopped\(\)/);

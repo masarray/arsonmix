@@ -1478,39 +1478,39 @@ private:
             nativeShowBusy_=true;
             return;
         }
-        // STREAM1: explicit companion WASAPI output for OBS virtual cable.
+        // OUTPUT1: generic selected auxiliary playback destination.
         // Device selection, ASRC preparation and callback attach are CONTROL
         // thread operations. Only the existing native mixer produces PCM.
-        if(action=="streamOutputConnect" ||
-           action=="streamOutputArm" || action=="streamOutputStop") {
+        if(action=="secondaryOutputConnect" ||
+           action=="secondaryOutputArm" || action=="secondaryOutputStop") {
             juce::String error;
             if(studioBackupBusy_ || nativeShowBusy_)
-                error="Complete active Show/backup operation before editing stream output";
-            else if(action=="streamOutputConnect") {
+                error="Complete active Show/backup operation before editing secondary output";
+            else if(action=="secondaryOutputConnect") {
                 if(!value.isString() || value.toString().length()>240)
                     error="Select a real named Windows playback endpoint";
-                else error=engine_.connectStreamOutput(value.toString());
-            } else if(action=="streamOutputArm") {
-                if(!value.isBool()) error="Expected explicit Stream ARM true/false";
-                else error=engine_.armStreamOutput(bool(value));
-            } else engine_.disconnectStreamOutput();
+                else error=engine_.connectSecondaryOutput(value.toString());
+            } else if(action=="secondaryOutputArm") {
+                if(!value.isBool()) error="Expected explicit Secondary output ARM true/false";
+                else error=engine_.armSecondaryOutput(bool(value));
+            } else engine_.disconnectSecondaryOutput();
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("ok",error.isEmpty());
             ack->setProperty("error",error);
             const auto latest=engine_.status();
-            ack->setProperty("ready",latest.getProperty("streamOutputReady",false));
-            ack->setProperty("armed",latest.getProperty("streamOutputArmed",false));
-            ack->setProperty("endpoint",latest.getProperty("streamOutputName",""));
+            ack->setProperty("ready",latest.getProperty("secondaryOutputReady",false));
+            ack->setProperty("armed",latest.getProperty("secondaryOutputArmed",false));
+            ack->setProperty("endpoint",latest.getProperty("secondaryOutputName",""));
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
-                "arMixStreamOutputAck",juce::var(ack.release()));
-            diagnostics_.record(error.isEmpty()?"STREAM_OUTPUT_CHANGED":"STREAM_OUTPUT_REJECTED",
+                "arMixSecondaryOutputAck",juce::var(ack.release()));
+            diagnostics_.record(error.isEmpty()?"SECONDARY_OUTPUT_CHANGED":"SECONDARY_OUTPUT_REJECTED",
                 error.isNotEmpty()?error:action);
             return emitNotice(error.isNotEmpty()?error:
-                (action=="streamOutputStop"?"OBS virtual-cable output disconnected":
-                 action=="streamOutputArm"?(engine_.streamArmed()
-                    ?"LIVE STREAM ARMED — choose cable recording input in OBS":
-                     "LIVE STREAM DISARMED"):
-                    "WASAPI cable opened. ARM STREAM explicitly to send live MAIN."),
+                (action=="secondaryOutputStop"?"Additional playback output disconnected":
+                 action=="secondaryOutputArm"?(engine_.secondaryArmed()
+                    ?"SECONDARY OUTPUT ARMED — MAIN mapped to selected playback endpoint":
+                     "SECONDARY OUTPUT DISARMED"):
+                    "Playback endpoint connected. ARM OUTPUT to send MAIN."),
                 error.isNotEmpty());
         }
         if (action == "routingDryStop")

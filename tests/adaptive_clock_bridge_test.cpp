@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/device/AdaptiveClockBridge.h"
 #include "../engine/device/ClockBridgeSizing.h"
-#include "../engine/core/LiveStreamTapPolicy.h"
+#include "../engine/core/LiveOutputRouteGate.h"
 #include "../engine/device/BridgeContinuityGate.h"
 #include <array>
 #include <cmath>
@@ -215,24 +215,24 @@ static void testLiveBridgeContinuityFailback()
 }
 
 
-static void testLiveStreamGateAndObsClock()
+static void testLiveOutputRouteGateAndIndependentClock()
 {
-    using P=armix::mixer::LiveStreamTapPolicy;
-    const auto onlyOBS=P::evaluate(true,true,true,true,true,false,true);
-    check(onlyOBS.renderMain && onlyOBS.stream && !onlyOBS.hardware);
+    using P=armix::mixer::LiveOutputRouteGate;
+    const auto onlySecondary=P::evaluate(true,true,true,true,true,false,true);
+    check(onlySecondary.renderMain && onlySecondary.secondary && !onlySecondary.hardware);
     const auto onlyHardware=P::evaluate(true,true,true,true,true,true,false);
-    check(onlyHardware.renderMain && onlyHardware.hardware && !onlyHardware.stream);
+    check(onlyHardware.renderMain && onlyHardware.hardware && !onlyHardware.secondary);
     const auto both=P::evaluate(true,true,true,true,true,true,true);
-    check(both.renderMain && both.hardware && both.stream);
+    check(both.renderMain && both.hardware && both.secondary);
     for(int bit=0;bit<5;++bit){
         bool gates[5]={true,true,true,true,true};
         gates[bit]=false;
         auto g=P::evaluate(gates[0],gates[1],gates[2],gates[3],gates[4],
                            true,true);
-        check(!g.renderMain && !g.hardware && !g.stream);
+        check(!g.renderMain && !g.hardware && !g.secondary);
     }
     const auto muted=P::evaluate(true,true,true,true,true,false,false);
-    check(!muted.renderMain && !muted.hardware && !muted.stream);
+    check(!muted.renderMain && !muted.hardware && !muted.secondary);
     // A separate OBS playback endpoint requires real ASRC buffering, NOT a
     // 0ms claim. Existing FIR testRate() covers 44.1/48k and ±300ppm clocks.
     using namespace armix::device;
@@ -273,7 +273,7 @@ static void testLiveStreamGateAndObsClock()
 
 int main()
 {
-    testLiveStreamGateAndObsClock();
+    testLiveOutputRouteGateAndIndependentClock();
     testLiveBridgeContinuityFailback();
     testNonFiniteCapture();
     const double passband = spectralRms (1000.);
