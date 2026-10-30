@@ -2,6 +2,7 @@
 #include "../engine/core/MixerRoutingPlan.h"
 #include "../engine/core/DynamicChannelRoster.h"
 #include "../engine/core/DynamicPreparedMixerBlock.h"
+#include "../engine/core/LegacyLiveGraphMigration.h"
 #include <array>
 #if defined(NDEBUG)
 #undef NDEBUG // Never skip P1A assertions in Release native CTest.
@@ -335,7 +336,105 @@ static void verifyDynamicDualBusPcm() {
     assert(live.channelCount()==66);
 }
 
+
+static void verifyLegacyToDynamicProductionPcmParity() {
+    // This is a real legacy PreparedMixerBlock vs new ChannelId kernel A/B.
+    // Sparse device ports, CH->BUS, channel AUX POST send, independent
+    // physical MONITOR mix, master pan+post-FX mono and FX slot identity.
+    constexpr std::array<int,4> ports{3,0,4,7};
+    ChannelRoutingConfig channels;
+    channels.stripsAndMaster.strips[0]={
+        SourceMode::mono,3,-1,.5f,-.3f,false,false};
+    channels.stripsAndMaster.strips[1]={
+        SourceMode::stereo,4,7,.75f,.2f,false,false};
+    channels.formats[2]=ChannelFormat::stereo; // internal BUS receiver
+    channels.stripsAndMaster.master={1.1f,.1f,false,true};
+    SendRequest sends;
+    sends.toMaster[0]=false;
+    sends.count=1;
+    sends.sends[0]={0,2,SendTap::postFader,.3f,-.3f,true};
+    AuxBusRequest aux;
+    aux.buses[0]={true,true,false,.8f};
+    aux.count=1;
+    aux.sends[0]={1,0,SendTap::postFader,.25f,.1f,true};
+    std::array<float,stripCount+auxBusCount> monitorGains{};
+    monitorGains[0]=.25f;
+    monitorGains[stripCount]=.3f;
+    LegacyMigratedGraph migrated;
+    LegacyMigrationError migrationError;
+    assert(LegacyGraphMigration::compile(
+        channels,ports,sends,aux,true,monitorGains,64,
+        2u*1024u*1024u,migrated,migrationError));
+    assert(migrated.roster.size()==stripCount+auxBusCount+2);
+    assert(migrated.ids.legacyFxIndex(migrated.ids.inputs[0])==0);
+    assert(migrated.ids.legacyFxIndex(migrated.ids.aux[0])==stripCount);
+    assert(migrated.ids.legacyFxIndex(migrated.ids.main)==-1);
+    assert(migrated.ids.legacyFxIndex(migrated.ids.monitor)==-2);
+    PreparedRenderGraph oldGraph;
+    RenderError error;
+    assert(PreparedRenderGraph::compile(channels,ports,sends,oldGraph,error,aux));
+    PreparedMixerBlock oldBlock(oldGraph,64);
+    std::array<float,64> mono{},unrelated{},stereoL{},stereoR{};
+    for(int i=0;i<64;++i){
+        mono[i]=.2f+.001f*i;
+        unrelated[i]=.8f;
+        stereoL[i]=.15f+.002f*i;stereoR[i]=.35f-.001f*i;
+    }
+    const float* device[]{mono.data(),unrelated.data(),stereoL.data(),stereoR.data()};
+    std::array<float,64> oldL{},oldR{},oldML{},oldMR{},nowL{},nowR{},nowML{},nowMR{};
+    int oldFxCount=0,newFxCount=0;
+    const auto effect=[&](int slot,float* l,float* r,int frames) noexcept {
+        if(slot==0)for(int i=0;i<frames;++i){l[i]*=1.2f;r[i]*=1.2f;}
+        if(slot==stripCount)for(int i=0;i<frames;++i){l[i]*=.9f;r[i]*=.9f;}
+        if(slot==-1)for(int i=0;i<frames;++i){l[i]*=.8f;r[i]*=.8f;}
+    };
+    auto oldFx=[&](int slot,float* l,float* r,int frames) noexcept {
+        ++oldFxCount;effect(slot,l,r,frames);
+    };
+    auto newFx=[&](ChannelId id,float* l,float* r,int frames) noexcept {
+        ++newFxCount;
+        effect(migrated.ids.legacyFxIndex(id),l,r,frames);
+    };
+    assert(oldBlock.process(device,4,oldL.data(),oldR.data(),64,oldFx,
+                            nullptr,nullptr,&monitorGains,oldML.data(),oldMR.data()));
+    assert(migrated.pcm.process(device,4,nowL.data(),nowR.data(),64,newFx,
+                                nowML.data(),nowMR.data()));
+    assert(oldFxCount>0&&newFxCount>0);
+    for(int i=0;i<64;++i){
+        assert(close(oldL[i],nowL[i],3.e-5f));
+        assert(close(oldR[i],nowR[i],3.e-5f));
+        assert(close(oldML[i],nowML[i],3.e-5f));
+        assert(close(oldMR[i],nowMR[i],3.e-5f));
+    }
+    // The PCM renderer remains VALID when control-plane rejects a bad
+    // physical patch; no implicit device port or accepted graph mutation.
+    const auto before=migrated.pcm.scratchBytes();
+    channels.stripsAndMaster.strips[1].inputB=123;
+    assert(!LegacyGraphMigration::compile(
+        channels,ports,sends,aux,true,monitorGains,64,
+        2u*1024u*1024u,migrated,migrationError));
+    assert(migrationError.fault==LegacyMigrationFault::invalidLegacyPlan);
+    assert(before==migrated.pcm.scratchBytes());
+    assert(migrated.pcm.process(device,4,nowL.data(),nowR.data(),64,newFx,
+                                nowML.data(),nowMR.data()));
+    for(int i=0;i<64;++i)assert(close(oldL[i],nowL[i],3.e-5f));
+    channels.stripsAndMaster.strips[1].inputB=7;
+    assert(!LegacyGraphMigration::compile(
+        channels,ports,sends,aux,true,monitorGains,64,16,
+        migrated,migrationError));
+    assert(migrationError.fault==LegacyMigrationFault::invalidDynamicGraph);
+    assert(migrationError.dynamic.fault==DynamicGraphFault::scratchBudget);
+    // Negative acceptance: malformed MON send is rejected before any PCM.
+    monitorGains[0]=std::numeric_limits<float>::quiet_NaN();
+    assert(!LegacyGraphMigration::compile(
+        channels,ports,sends,aux,true,monitorGains,64,
+        2u*1024u*1024u,migrated,migrationError));
+    assert(migrationError.fault==LegacyMigrationFault::invalidMonitorGains);
+    assert(migrated.pcm.channelCount()==stripCount+auxBusCount+2);
+}
+
 int main() {
+    verifyLegacyToDynamicProductionPcmParity();
     verifyDynamicDualBusPcm();
     verifyDynamicPreparedPcm();
     verifyDynamicChannelRoster();
