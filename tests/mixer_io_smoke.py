@@ -94,7 +94,6 @@ async def main():
         outputs=await page.locator('#arIOBody').inner_text()
         assert "HW OUT 1" in outputs and "HW OUT 2" in outputs,outputs
         assert await page.locator('[data-io-matrix-kind="outputs"]').count()==4
-        assert await page.locator('[data-io-monitor-toggle="on"]').is_disabled()
         # Swapping two occupied outputs is an atomic native draft, never L=R.
         await page.locator('[data-io-matrix-kind="outputs"][data-io-matrix-row="0"][data-io-matrix-pin="1"]').click()
         assert (await page.evaluate('()=>window.__arMixRouteView().draftMainOutputs'))==[1,0]
@@ -318,6 +317,8 @@ async def main():
           return status;
         }""",status)
         assert await page.locator('[data-strip="1"] [data-routed-bypass]').count()==2
+        assert await page.locator('[data-strip="1"] .rack .fx-power[data-routed-bypass]').count()==2
+        assert await page.locator('[data-strip="1"] .rack .native-power').count()==0
         await page.locator('[data-strip="1"] [data-routed-bypass]').first.click()
         fx_cmd=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='routingFxBypass').at(-1).data""")

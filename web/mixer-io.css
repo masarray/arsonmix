@@ -208,6 +208,18 @@
 .arIOPortIndex{display:block;width:100%;padding-top:3px;border-top:1px solid #526878;text-align:center;color:#dfedf1;font-size:10px}
 @media(max-height:670px){.arIOPortTitle{height:63px;min-height:63px}.arIOPortFriendly{bottom:19px;width:72px;max-width:72px}}
 
+/* Master always mounts six same-height FX slot cells. Disabled rows are
+   explicit: independent native MASTER VST3 audio is not implemented yet. */
+#app #mixer #masterLeft .native-master-fx-locked .master-insert{
+ display:flex;align-items:center;gap:5px;width:100%;min-width:0;
+ opacity:1;color:#849aa8!important;cursor:not-allowed;
+ background:linear-gradient(#22333e,#101c23 60%,#1b2b33)!important;
+}
+#app #mixer #masterLeft .native-master-fx-locked .insert-name{
+ white-space:nowrap;text-overflow:ellipsis;overflow:hidden;font-weight:600;
+}
+#app #mixer #masterLeft .native-master-fx-locked .insert-add-glyph{color:#7796a5}
+
 /* MS3B independent monitor crosspatch: simple layout, no blur or pointer work. */
 .arIOMonitorControls{display:flex;align-items:center;gap:9px;min-height:40px;margin:9px 0;padding:7px 10px;background:#273742;border:1px solid #4b6474}
 .arIOMonitorControls>.btn-180{height:28px;min-height:28px;flex:none}
