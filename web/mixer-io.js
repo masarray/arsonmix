@@ -371,14 +371,20 @@
   function matrixOutputPin(side,pin){
     const s=route(),ports=matrixPorts(s,'outputs');
     if(!hardwareReady(s)||!ports.includes(pin))return matrixSay('Output pin unavailable or APPLY pending.');
-    const chosen=s.draftMainOutputs?.length===2?s.draftMainOutputs:s.mainOutputs;
+    const chosen=s.draftMainOutputs?.length===2?s.draftMainOutputs:
+      s.mainOutputs?.length===2?s.mainOutputs:ports.slice(0,2);
     if(!Array.isArray(chosen)||chosen.length!==2)return matrixSay('MAIN output pair is unavailable: choose a verified stereo device.');
-    const pair=chosen.slice();pair[side]=pin;
+    const pair=chosen.slice(),oldPin=pair[side];
+    if(oldPin===pin)return matrixSay('This output is already assigned.');
+    pair[side]=pin;
+    // A 2-out interface must allow L/R exchange without ever staging L==R.
+    if(pair[0]===pair[1])pair[1-side]=oldPin;
     if(pair[0]===pair[1])return matrixSay('MAIN LEFT and RIGHT require distinct hardware output pins.');
     const result=window.__arMixStageMainOutputs?.(pair[0],pair[1]);
     matrixSay(result?.ok?'MAIN DRAFT · HW '+(pair[0]+1)+'/'+(pair[1]+1)+' · MUTE + APPLY':result?.error||'Output patch rejected');
     lastSignature='';refresh();
   }
+  const genericInterfaceSvg='data:image/svg+xml;charset=utf-8,'+encodeURIComponent("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 340 150\" role=\"img\" aria-label=\"Generic audio interface\">\n  <title>Generic rack audio interface</title>\n  <rect x=\"22\" y=\"18\" width=\"296\" height=\"107\" rx=\"13\" fill=\"#10191f\" stroke=\"#8199a5\" stroke-width=\"3\"/>\n  <rect x=\"31\" y=\"27\" width=\"278\" height=\"88\" rx=\"8\" fill=\"#25343d\" stroke=\"#364b58\"/>\n  <path d=\"M36 40h267\" stroke=\"#607988\" stroke-width=\"1\"/>\n  <circle cx=\"85\" cy=\"72\" r=\"22\" fill=\"#0d161d\" stroke=\"#849eab\" stroke-width=\"3\"/>\n  <circle cx=\"85\" cy=\"72\" r=\"12\" fill=\"#25343d\" stroke=\"#718794\" stroke-width=\"2\"/>\n  <circle cx=\"145\" cy=\"72\" r=\"22\" fill=\"#0d161d\" stroke=\"#849eab\" stroke-width=\"3\"/>\n  <circle cx=\"145\" cy=\"72\" r=\"12\" fill=\"#25343d\" stroke=\"#718794\" stroke-width=\"2\"/>\n  <path d=\"M85 60v24M73 72h24M145 60v24M133 72h24\" stroke=\"#536b78\" stroke-width=\"2\"/>\n  <circle cx=\"221\" cy=\"72\" r=\"21\" fill=\"#0f1b22\" stroke=\"#9db4bf\" stroke-width=\"3\"/>\n  <circle cx=\"221\" cy=\"72\" r=\"13\" fill=\"#293b46\" stroke=\"#657f8e\"/>\n  <path d=\"M221 58v8\" stroke=\"#aedce6\" stroke-width=\"3\" stroke-linecap=\"round\"/>\n  <circle cx=\"270\" cy=\"55\" r=\"4\" fill=\"#70c992\"/>\n  <circle cx=\"283\" cy=\"55\" r=\"4\" fill=\"#6e8b9b\"/>\n  <circle cx=\"270\" cy=\"67\" r=\"4\" fill=\"#5c7886\"/>\n  <circle cx=\"283\" cy=\"67\" r=\"4\" fill=\"#5c7886\"/>\n  <rect x=\"260\" y=\"87\" width=\"33\" height=\"7\" rx=\"2\" fill=\"#10181f\" stroke=\"#637d8b\"/>\n  <circle cx=\"40\" cy=\"35\" r=\"3\" fill=\"#899ea8\"/><circle cx=\"300\" cy=\"35\" r=\"3\" fill=\"#899ea8\"/>\n  <text x=\"85\" y=\"106\" text-anchor=\"middle\" fill=\"#c0d1d9\" font-family=\"sans-serif\" font-size=\"9\">INPUT 1</text>\n  <text x=\"145\" y=\"106\" text-anchor=\"middle\" fill=\"#c0d1d9\" font-family=\"sans-serif\" font-size=\"9\">INPUT 2</text>\n  <text x=\"221\" y=\"105\" text-anchor=\"middle\" fill=\"#c0d1d9\" font-family=\"sans-serif\" font-size=\"9\">MONITOR</text>\n</svg>");
   function refreshIO(){
     const s=route(),id=el('arIOIdentity'),body=el('arIOBody');
     matrixResetIfDeviceChanged(s);
@@ -397,7 +403,7 @@
     lastSignature=signature;body.replaceChildren();
     if(ioTab!=='device'){
       const identity=node('div','arIOHardwareHeader');
-      const art=node('img','arIOHardwareArt');art.src='assets/audio-interface.svg';
+      const art=node('img','arIOHardwareArt');art.src=window.location.protocol==='file:'?genericInterfaceSvg:'assets/audio-interface.svg';
       art.alt='Generic audio interface illustration (not an identified physical device)';
       const textWrap=node('div','arIOHardwareText');
       textWrap.append(node('small','','AUDIO INTERFACE · DRIVER REPORTED'),
