@@ -1012,6 +1012,15 @@ public:
            independent_.active())return {};
         return dryRoutingLab_.leaseFxEditor(lane,slot,epoch,revision,instanceId);
     }
+    juce::String captureRoutedFxStates(std::uint64_t epoch,std::uint64_t revision,
+            std::vector<LiveDryRoutingLab::CapturedFxState>& states) noexcept {
+        if(!isOutputMuted()||independent_.active()||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           diagnosticRoute_.load(std::memory_order_acquire)
+              !=armix::diagnostics::Route::normal)
+            return "MUTE OUTPUT and use verified DIRECT before FX state capture";
+        return dryRoutingLab_.captureRoutedFxStates(epoch,revision,states);
+    }
     bool dryRoutingLabActive() const noexcept {return dryRoutingLab_.active();}
     void pollDryRoutingLab() noexcept {dryRoutingLab_.poll();}
 
