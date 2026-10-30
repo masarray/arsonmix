@@ -31,6 +31,10 @@ struct Send final {
 };
 struct Strip final {
     int source = 0;       // armix::mixer::SourceMode: disconnected/mono/stereo
+    // V4: 1=MONO, 2=STEREO. 0 is only an in-memory legacy sentinel for
+    // programmatic construction; V4 always writes explicit actual width.
+    // The physical source format is independent of processing channel width.
+    int channelFormat = 0;
     int inputA = -1, inputB = -1; // DEVICE-LOCAL physical indexes; never auto-applied
     double fader = 1.0, pan = 0.0; // DSP linear gain, not GUI dB
     bool mute = false, solo = false, toMaster = true;
@@ -161,9 +165,9 @@ public:
     static juce::String encode(const SnapshotV2& s) {
         auto v=detail::object();
         detail::commonWrite(v,s.id,s.name,s.createdMs,s.modifiedMs);
-        // V3 is mandatory for AUX-aware snapshots: old V2 readers must fail
-        // closed instead of silently dropping four AUX returns on re-save.
-        detail::put(v,"schemaVersion",3);
+        // V4 records the independent channel processing width; V3 lacked
+        // this field and V2 also lacked AUX returns. Old readers fail closed.
+        detail::put(v,"schemaVersion",4);
         detail::put(v,"format","arsonmix.native.snapshot");
         detail::put(v,"sourceBuild",s.sourceBuild);
         auto master=detail::object();
@@ -176,6 +180,8 @@ public:
             auto c=detail::object();
             detail::put(c,"id","ch-"+juce::String(i+1).paddedLeft('0',3));
             detail::put(c,"source",ch.source);
+            detail::put(c,"channelFormat",ch.channelFormat==0
+                ? (ch.source==2 || ch.busReturn ? 2 : 1) : ch.channelFormat);
             detail::put(c,"inputA",ch.inputA);detail::put(c,"inputB",ch.inputB);
             detail::put(c,"fader",ch.fader);detail::put(c,"pan",ch.pan);
             detail::put(c,"mute",ch.mute);detail::put(c,"solo",ch.solo);
@@ -235,7 +241,10 @@ public:
     static bool decode(const juce::String& json,SnapshotV2& out) {
         if(json.getNumBytesAsUTF8()>maxJsonBytes) return false;
         const auto v=juce::JSON::parse(json);
-        if(!detail::header(v,"arsonmix.native.snapshot",2,3)) return false;
+        if(!detail::header(v,"arsonmix.native.snapshot",2,4)) return false;
+        int version=0;
+        if(!detail::integer(detail::get(v,"schemaVersion"),version,2,4))
+            return false;
         SnapshotV2 next;
         if(!detail::common(v,next.id,next.name,next.createdMs,next.modifiedMs) ||
            !detail::str(detail::get(v,"sourceBuild"),next.sourceBuild,80,false))
@@ -272,6 +281,15 @@ public:
             if(!busField.isVoid() && !detail::flag(busField,ch.busReturn))
                 return false;
             if(ch.busReturn && ch.source!=0) return false;
+            // V2/V3 migration infers exactly the original native v1 format.
+            // Never silently discard a new typed width from a downgraded file.
+            const auto width=detail::get(rec,"channelFormat");
+            if(version==4){
+                if(!detail::integer(width,ch.channelFormat,1,2))return false;
+            } else {
+                if(!width.isVoid())return false;
+                ch.channelFormat=(ch.source==2 || ch.busReturn)?2:1;
+            }
             if((ch.source==0 && (ch.inputA!=-1||ch.inputB!=-1)) ||
                (ch.source==1 && (ch.inputA<0||ch.inputB!=-1)) ||
                (ch.source==2 && (ch.inputA<0||ch.inputB<0||ch.inputA==ch.inputB)))
@@ -296,9 +314,6 @@ public:
         // partially provided AUX record is never accepted silently.
         const auto auxv=detail::get(v,"auxReturns");
         const auto auxsv=detail::get(v,"auxSends");
-        int version=0;
-        if(!detail::integer(detail::get(v,"schemaVersion"),version,2,3))
-            return false;
         if(version==2) {
             if(!auxv.isVoid() || !auxsv.isVoid()) return false;
             out=std::move(next); return true;

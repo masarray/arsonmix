@@ -110,6 +110,10 @@ public:
             const auto mode=row.getProperty("mode",{}).toString();
             strip.busReturn=(mode=="BUS");
             strip.source=mode=="MONO"?1:mode=="STEREO"?2:0;
+            const auto actualFormat=parsed.channels.formats[i];
+            strip.channelFormat=actualFormat==armix::mixer::ChannelFormat::mono?1:
+                actualFormat==armix::mixer::ChannelFormat::stereo?2:
+                (strip.source==2 || strip.busReturn?2:1); // legacy v1 fallback
             strip.inputA=strip.source!=0?parsedStrip.inputA:-1;
             strip.inputB=strip.source==2?parsedStrip.inputB:-1;
             if(strip.source!=0 &&

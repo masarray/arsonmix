@@ -173,6 +173,45 @@ async def main():
             await page.screenshot(path=f'mixer-g3-sends-{width}.png')
             assert await page.locator('#arSendEditor').is_visible()
         await page.locator('#arSendEditor [data-send-close]').click()
+        # MS1: true channel processing width is independent of physical SOURCE.
+        # The draft must travel through the SAME versioned native APPLY path.
+        await page.locator('[data-mix-mode="ROUTE"]').click()
+        await page.locator('[data-strip="0"] .arBankChannelFormat').select_option('STEREO')
+        assert await page.locator('[data-strip="0"] .arBankChannelFormat').input_value()=='STEREO'
+        assert 'DRAFT' in await page.locator('[data-strip="0"] .arBankStage').inner_text()
+        draft=await page.evaluate('()=>window.__arMixRouteView().draftRoutes[0]')
+        assert draft['mode']=='MONO' and draft['channelFormat']=='STEREO',draft
+        result=await page.evaluate('()=>window.__arMixApplyMixerDraft()')
+        assert result['ok'],result
+        typed=await page.evaluate("""() => window.__armixTestActions.filter(
+          a=>a.name==='arMixAction'&&a.data.action==='routingDryApply').at(-1).data.value""")
+        assert typed['schemaVersion']==2 and typed['deviceEpoch']==4 and typed['revision']==5,typed
+        row=typed['channels'][0]
+        assert (row['sourceKind']=='PHYSICAL' and row['sourceFormat']=='MONO' and
+                row['channelFormat']=='STEREO' and row['left']==0),row
+        # Native negative ACK does not overwrite the accepted processing format.
+        await page.evaluate("""status => {
+          window.__armixTestEmit('arMixRoutingLabAck',
+              {ok:false,error:'Stale graph revision',state:status.dryRoutingLab});
+        }""",status)
+        assert 'DRAFT' in await page.locator('[data-strip="0"] .arBankStage').inner_text()
+        result=await page.evaluate('()=>window.__arMixRevertMixerDraft()')
+        assert result['ok'],result
+        assert await page.locator('[data-strip="0"] .arBankChannelFormat').input_value()=='MONO'
+        # PATCH has a second control for CHANNEL width distinct from SOURCE mode.
+        await page.evaluate('()=>window.__arMixOpenChannelPatch(0)')
+        fmt=page.locator('[data-patch-channel-format="0"]')
+        assert await fmt.input_value()=='MONO'
+        await fmt.select_option('STEREO')
+        stateDraft=await page.evaluate('()=>window.__arMixRouteView().draftRoutes[0]')
+        assert stateDraft['mode']=='MONO' and stateDraft['channelFormat']=='STEREO'
+        await page.locator('#arRouteClose').click()
+        # L2 all eleven faders remain aligned even after repeated mode changes.
+        for bank in ('SENDS','FX','ROUTE','FX','SENDS','ROUTE'):
+            await page.locator(f'[data-mix-mode="{bank}"]').click()
+            tops=await page.locator('#mixer .fader-zone').evaluate_all(
+                '(els)=>els.map(x=>x.getBoundingClientRect().top)')
+            assert max(tops)-min(tops)<1.1,(bank,tops)
         assert not errors,errors
         await browser.close()
         print("PASS: G1/G2 + G3 real PRE/POST draft, AUX return, 0-gain bypass, native ACK/reject/revert, stable rack and 3 viewports")
