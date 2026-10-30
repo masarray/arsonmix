@@ -463,7 +463,10 @@ public:
         for(int c=0;c<outputCount;++c)
             if(outputs && outputs[c])
                 juce::FloatVectorOperations::clear(outputs[c],frames);
-        if(!outputs||outputCount<2||!outputs[0]||!outputs[1] ||
+        // Do not require callback ports 0/1 to be writable when MAIN is
+        // actually routed to another verified pair. Validate the selected
+        // destinations against the leased graph below.
+        if(!outputs||outputCount<2 ||
            outputCount!=callbackOutputCount_.load(std::memory_order_acquire) ||
            inputCount<0 || inputCount>armix::device::LiveInputPortRegistry::limit) {
             topologyFault_.store(true,std::memory_order_release);
