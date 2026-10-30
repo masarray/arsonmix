@@ -94,6 +94,7 @@ async def main():
         outputs=await page.locator('#arIOBody').inner_text()
         assert "HW OUT 1" in outputs and "HW OUT 2" in outputs,outputs
         assert await page.locator('[data-io-matrix-kind="outputs"]').count()==4
+        assert await page.locator('[data-io-monitor-toggle="on"]').is_disabled()
         # Swapping two occupied outputs is an atomic native draft, never L=R.
         await page.locator('[data-io-matrix-kind="outputs"][data-io-matrix-row="0"][data-io-matrix-pin="1"]').click()
         assert (await page.evaluate('()=>window.__arMixRouteView().draftMainOutputs'))==[1,0]
@@ -365,36 +366,23 @@ async def main():
         await page.locator('[data-io-matrix-kind="outputs"][data-io-matrix-row="0"][data-io-matrix-pin="4"]').click()
         await page.locator('[data-io-matrix-kind="outputs"][data-io-matrix-row="1"][data-io-matrix-pin="5"]').click()
         assert await page.evaluate("""()=>window.__arMixRouteView().draftMainOutputs.join(',')""")=='4,5'
+        # MS3B: enable real independent MONITOR only on unused physical HW1/2.
+        await page.locator('[data-io-monitor-toggle="on"]').click()
+        assert await page.locator('[data-io-matrix-kind="outputs"]').count()==16
+        assert await page.evaluate("""()=>window.__arMixRouteView().draftMonitorOutputs""")==[0,1]
+        await page.locator('[data-io-matrix-kind="outputs"][data-io-matrix-row="2"][data-io-matrix-pin="4"]').click()
+        assert await page.evaluate("""()=>window.__arMixRouteView().draftMonitorOutputs""")==[0,1]
+        await page.locator('.arIOMonitorSends summary').click()
+        await page.locator('.arIOMonitorSend[data-lane="0"]').select_option('0.5')
+        assert await page.evaluate("""()=>window.__arMixRouteView().draftMonitorSends[0]""")==0.5
+        assert await page.evaluate("""()=>window.__arMixRouteView().monitorOutputs""")==[]
         await page.locator('#arIOOverlay [data-mix-apply]').click()
         command=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='routingDryApply').at(-1).data.value""")
         assert command['mainOutputs']==[4,5],command
-        # MS3B: MAIN→5/6 and independent MONITOR→1/2 must be carried
-        # by one structural native APPLY; no phantom virtual output.
-        status=await page.evaluate("""status=>{
-          const cmd=window.__armixTestActions.filter(x=>
-            x.name==='arMixAction'&&x.data.action==='routingDryApply').at(-1).data.value;
-          status.dryRoutingLab.mainOutputs=[4,5];
-          status.dryRoutingLab.revision++;
-          status.dryRoutingLab.acceptedRoute=cmd;
-          window.__armixTestEmit('arMixRoutingLabAck',{ok:true,state:status.dryRoutingLab});
-          window.__armixTestEmit('arMixStatus',status);
-          return status;
-        }""",status)
-        await page.locator('[data-io-tab="outputs"]').click()
-        assert await page.locator('[data-monitor-enable]').count()==1
-        await page.locator('[data-monitor-enable]').click()
-        assert await page.evaluate("""()=>window.__arMixRouteView().draftMonitorOutputs.join(',')""")=='0,1'
-        await page.locator('.arIOMonitorSends summary').click()
-        await page.locator('.arIOMonitorSend[data-lane="0"]').select_option('0.5')
-        assert await page.evaluate("""()=>window.__arMixRouteView().draftMonitorSends[0]""")==.5
-        await page.locator('#arIOOverlay [data-mix-apply]').click()
-        cmd=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
-          x.name==='arMixAction'&&x.data.action==='routingDryApply').at(-1).data.value""")
-        assert cmd['mainOutputs']==[4,5],cmd
-        assert cmd['monitorOutputs']==[0,1],cmd
-        assert len(cmd['monitorSends'])==14 and cmd['monitorSends'][0]==.5,cmd
-        assert all(g==0 for g in cmd['monitorSends'][1:]),cmd
+        assert command['monitorOutputs']==[0,1],command
+        assert len(command['monitorSends'])==14 and command['monitorSends'][0]==.5,command
+        assert all(x==0 for x in command['monitorSends'][1:]),command
         assert not errors,errors
         await browser.close()
         print("PASS: G1/G2 + G3 real PRE/POST draft, AUX return, 0-gain bypass, native ACK/reject/revert, stable rack and 3 viewports")
