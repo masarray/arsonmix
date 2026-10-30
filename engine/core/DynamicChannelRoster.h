@@ -117,7 +117,9 @@ public:
                     row.sends.clear(); // never duplicate live sends / feedback topology implicitly
                 } else {
                     if(!validRole(op.role)) {result.fault=ChannelEditFault::invalidValue;break;}
+                    if(!validFormat(op.format)) {result.fault=ChannelEditFault::invalidValue;break;}
                     row.role=op.role;
+                    row.format=op.format;
                 }
                 row.id={next++};
                 if(!op.text.empty())row.name=op.text;

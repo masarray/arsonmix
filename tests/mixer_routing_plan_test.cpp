@@ -19,9 +19,18 @@ static void verifyDynamicChannelRoster() {
     for(std::size_t i=0;i<128;++i){
         ChannelEdit a;a.kind=ChannelEdit::Kind::add;a.position=i;addOps.push_back(a);
     }
+    // Add must honor stereo format at creation; invalid formats roll back.
+    addOps[3].format=ProcessingFormat::stereo;
     auto result=bank.edit(0,addOps);
     assert(result.ok()&&bank.size()==128&&result.createdIds.size()==128);
     const auto first=result.createdIds.front(),last=result.createdIds.back();
+    assert(bank.find(result.createdIds[3])->format==ProcessingFormat::stereo);
+    assert(bank.find(result.createdIds[2])->format==ProcessingFormat::mono);
+    auto badAdd=ChannelEdit{};badAdd.kind=ChannelEdit::Kind::add;
+    badAdd.position=bank.size();badAdd.format=static_cast<ProcessingFormat>(255);
+    auto invalidFormat=bank.edit(1,std::span<const ChannelEdit>(&badAdd,1));
+    assert(invalidFormat.fault==ChannelEditFault::invalidValue);
+    assert(bank.revision()==1&&bank.size()==128);
     auto format=ChannelEdit{};format.kind=ChannelEdit::Kind::setFormat;
     format.id=last;format.format=ProcessingFormat::stereo;
     auto fx=ChannelEdit{};fx.kind=ChannelEdit::Kind::addInsertReference;
