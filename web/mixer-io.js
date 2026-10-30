@@ -115,6 +115,7 @@
     document.getElementById('arRouteClose')?.click();
     if(['inputs','outputs','device'].includes(tab))ioTab=tab;
     if(Number.isInteger(channel)&&channel>=0&&channel<10)focusedInput=channel;
+    if(overlay.hidden)advancedMatrixOpen=false;
     overlay.hidden=false;lastSignature='';refreshIO();
     if(isNative())backend.emitEvent('arMixAction',{action:'audioDeviceInventory'});
     if(Number.isInteger(channel))overlay.querySelector('[data-io-quick-row="'+channel+'"]')?.scrollIntoView({block:'nearest'});
@@ -208,6 +209,7 @@
   // IO-MATRIX: reusable presentation of the existing native 10-channel graph.
   // Never publish a second graph, guess a missing pin, or stage incomplete L/R.
   const matrixDraft=new Map(), matrixSide=new Map();
+  let advancedMatrixOpen=false;
   const matrixPage={inputs:0,outputs:0}, matrixPageSize=8;
   let matrixEpoch=-1, matrixMessage='';
   const hardwareReady=s=>isNative()&&s.ready&&s.active&&!s.pending;
@@ -511,7 +513,12 @@
       s.outputPorts,s.mainOutputs,s.draftMainOutputs,s.monitorOutputs,s.draftMonitorOutputs,s.monitorSends,s.draftMonitorSends,s.ports,deviceInventory,matrixPage[ioTab],monitorSendsExpanded,
       [...matrixDraft],[...matrixSide]]);
     if(lastSignature===signature)return;
-    lastSignature=signature;body.replaceChildren();
+    lastSignature=signature;
+    // Preserves two-step stereo L/R selection across each native DRAFT render.
+    // Closing the advanced matrix mid-edit made its crosspoints inaccessible.
+    const previous=body.querySelector('.arIOAdvancedMatrix');
+    if(previous)advancedMatrixOpen=previous.open;
+    body.replaceChildren();
     if(ioTab!=='device'){
       const identity=node('div','arIOHardwareHeader');
       const art=node('span','arIOHardwareIcon','I/O');art.setAttribute('aria-hidden','true');
@@ -525,6 +532,7 @@
       if(ioTab==='inputs'){
         body.appendChild(makeQuickInputs(s));
         const advanced=node('details','arIOAdvancedMatrix');
+        advanced.open=advancedMatrixOpen;
         advanced.appendChild(node('summary','','ADVANCED M / L / R CROSSPOINT · SAME NATIVE ROUTING'));
         advanced.appendChild(makeMatrix(s,ioTab));
         body.appendChild(advanced);
