@@ -190,7 +190,7 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 
 /* P0 FADER BED RECOVERY, main-aligned from PR #102 (visual CSS ONLY).
    Full-height smooth graphite metal folds; zero white rectangular border.
-   No blur, gradients, interactive filters, animation or pointer listeners.
+   Static paint only; no blur, filter, animation or pointer listeners.
    Recess width is bounded to the actual rail so CH1-10/MASTER VU and rulers
    remain unobstructed on narrower displays. 36×77 PNG and 38px detent kept. */
 #app #mixer .fader-zone .fader{
@@ -201,7 +201,8 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
   content:"";position:absolute;top:0;bottom:0;left:50%;
   width:min(46px,100%);transform:translateX(-50%);
   z-index:0;pointer-events:none;box-sizing:border-box;
-  background:#26343c;border:0;border-radius:6px;
+  background:linear-gradient(90deg,#15232c 0%,#283741 13%,#2a3942 48%,#283741 87%,#15232c 100%);
+  border:0;border-radius:6px;
   box-shadow:
     inset 0 4px 4px -3px #070e13,
     inset 0 -4px 4px -3px #070e13,
@@ -427,25 +428,16 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 #app #mixer .fader-zone .vu-bank .vu-bars .vu-tick::before{background:#516b78}
 #app #mixer .fader-zone .vu-bank .vu-bars .vu-tick span{color:#a0bbc5}
 
-/* The 5px lower fader slit illuminates blue from the bottom toward the
-   cap position. Updates use the EXISTING fader input handler only:
-   no new listeners, animation, filters, blur, extra RAF or new DSP work. */
+/* RAIL1 — single machined 5px black slot across CH01–10 + MASTER.
+   Gain-dependent vertical masking previously divided the groove at the cap.
+   Only the 36×77 PNG thumb now moves; the narrow cyan-teal guide is static.
+   No animation, blur, filter, JS paint variable or extra pointer handler. */
 #app #mixer .fader-zone .fader::after{
-  background:linear-gradient(to top,
-    #0c4481 0%,
-    #278de5 var(--fader-open,0%),
-    #05090c var(--fader-open,0%),
-    #05090c 100%);
-}
-
-/* M5 — light is recessed INSIDE the 5px machined slot: graphite occludes
-   both sidewalls, narrow blue centre only below the existing cap position.
-   Two tiny static gradients; no blur, filter, shadow animation, extra RAF. */
-#app #mixer .fader-zone .fader::after{
- background-color:#020609;
- background-image:
-  linear-gradient(to top,transparent 0%,transparent var(--fader-open,0%),#020609 var(--fader-open,0%),#020609 100%),
-  linear-gradient(90deg,#010407 0%,#0a1d2e 24%,#2474b4 49%,#0b2840 68%,#010407 100%);
+ background-color:#010407;
+ background-image:linear-gradient(90deg,
+   #010407 0%,#02090d 17%,#0c3549 34%,
+   #2787a0 49%,#299f9d 50%,#2787a0 51%,
+   #0c3549 66%,#02090d 83%,#010407 100%);
  box-shadow:inset 1px 0 #010406,inset -1px 0 #010406;
 }
 /* M5 — names start on the same horizontal guide as ADD FX (glyph=10px,

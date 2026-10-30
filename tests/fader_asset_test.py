@@ -83,12 +83,13 @@ assert 'class="btn-180 master-mode' in js
 for marker in (
     "P0 FADER BED RECOVERY",
     "width:min(46px,100%)",
-    "background:#26343c;border:0;border-radius:6px",
+    "background:linear-gradient(90deg,#15232c 0%,#283741 13%,#2a3942 48%,#283741 87%,#15232c 100%)",
     "inset 0 4px 4px -3px #070e13",
     "inset 0 -4px 4px -3px #070e13",
     "inset 4px 0 5px -4px #081116",
     "inset -4px 0 5px -4px #081116",
     "width:5px;transform:translateX(-50%)",
+    "#299f9d 50%",
     "#app #mixer .fader-zone .fader-travel{z-index:1}",
 ):
     assert marker in finish, "Latest fader recess lost from source: "+marker
