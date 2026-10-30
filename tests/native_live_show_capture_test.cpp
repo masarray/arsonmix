@@ -217,7 +217,8 @@ int main() {
         set(currentLab,"mainOutputs",juce::var(mainPair));
         juce::var restored;
         assert(NativeDryShowRecall::prepare(snaps[0],patched,restored).isEmpty());
-        const auto* actual=restored.getProperty("mainOutputs",{}).getArray();
+        const auto pairValue=restored.getProperty("mainOutputs",{});
+        const auto* actual=pairValue.getArray();
         assert(actual&&actual->size()==2);
         assert(static_cast<int>(actual->getReference(0))==4);
         assert(static_cast<int>(actual->getReference(1))==5);
