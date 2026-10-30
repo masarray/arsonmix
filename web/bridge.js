@@ -1405,7 +1405,7 @@
         if(!editing&&Number.isFinite(db)&&Math.abs(ch.fader-db)>.05){
           ch.fader=db;changed=true;
           const f=document.querySelector('[data-fader="'+i+'"]');
-          if(f){const top=levelToTop(db);f.querySelector(".cap")?.style.setProperty("--pos",top+"%");f.setAttribute("aria-valuenow",db.toFixed(1));}
+          if(f){const top=levelToTop(db);f.querySelector(".cap")?.style.setProperty("--pos",top+"%");f.style.setProperty("--fader-cut",top+"%");f.setAttribute("aria-valuenow",db.toFixed(1));}
           const read=document.querySelector('[data-read="'+i+'"]');
           if(read)read.textContent=fmt(db);
         }
@@ -1435,7 +1435,7 @@
     if(!editing && Math.abs(channel.fader-channelDb)>0.05){
       channel.fader=channelDb;changed=true;
       const fader=document.querySelector('[data-fader="0"]');
-      if(fader){const top=levelToTop(channelDb);fader.querySelector(".cap")?.style.setProperty("--pos",top+"%");fader.setAttribute("aria-valuenow",channelDb.toFixed(1));}
+      if(fader){const top=levelToTop(channelDb);fader.querySelector(".cap")?.style.setProperty("--pos",top+"%");fader.style.setProperty("--fader-cut",top+"%");fader.setAttribute("aria-valuenow",channelDb.toFixed(1));}
       const read=document.querySelector('[data-read="0"]');
       if(read)read.textContent=fmt(channelDb);
     }
@@ -1461,7 +1461,7 @@
     if(!editing && typeof masterGain!=="undefined" && Math.abs(masterGain-masterDb)>0.05){
       masterGain=masterDb;changed=true;
       const fader=document.querySelector('[data-fader="master"]');
-      if(fader){const top=levelToTop(masterDb);fader.querySelector(".cap")?.style.setProperty("--pos",top+"%");fader.setAttribute("aria-valuenow",masterDb.toFixed(1));}
+      if(fader){const top=levelToTop(masterDb);fader.querySelector(".cap")?.style.setProperty("--pos",top+"%");fader.style.setProperty("--fader-cut",top+"%");fader.setAttribute("aria-valuenow",masterDb.toFixed(1));}
       document.querySelectorAll(".master-db").forEach(e=>e.textContent=fmt(masterDb));
     }
     if(typeof masterMute!=="undefined" && typeof d.masterMute==="boolean" && masterMute!==d.masterMute){

@@ -1400,16 +1400,25 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 #app #mixer .fader-zone .vu-bank .vu-bars .vu-tick::before{background:#516b78}
 #app #mixer .fader-zone .vu-bank .vu-bars .vu-tick span{color:#a0bbc5}
 
-/* RAIL1 — single machined 5px black slot across CH01–10 + MASTER.
-   Gain-dependent vertical masking previously divided the groove at the cap.
-   Only the 36×77 PNG thumb now moves; the narrow cyan-teal guide is static.
-   No animation, blur, filter, JS paint variable or extra pointer handler. */
+/* RAIL2 — user-reference fader: black ABOVE the silver/rose-gold thumb;
+   blue ONLY BELOW it, with a 40px soft rise in brightness.
+   The underlying 5px machined slot and symmetrical black sidewalls remain
+   physically continuous; only the tiny optical insert changes with gain.
+   Sampled guide hue from the supplied hardware reference: #3576b1.
+   No blur, filter, animation, new DOM/listener, RAF, or audio callback work. */
 #app #mixer .fader-zone .fader::after{
- background-color:#010407;
- background-image:linear-gradient(90deg,
-   #010407 0%,#02090d 17%,#0c3549 34%,
-   #2787a0 49%,#299f9d 50%,#2787a0 51%,
-   #0c3549 66%,#02090d 83%,#010407 100%);
+ background-color:#10171c;
+ background-image:
+   /* fixed inset dark sidewalls, visible above AND below the moving cap */
+   linear-gradient(90deg,#010508 0%,#03090f 18%,transparent 38%,
+     transparent 62%,#03090f 82%,#010508 100%),
+   /* upper cavity sleeps black; behind/below cap the lamp fades into blue */
+   linear-gradient(to bottom,
+     #12191e 0%,#12191e calc(var(--fader-cut,50%) + 26px),
+     #17324a calc(var(--fader-cut,50%) + 39px),
+     #275781 calc(var(--fader-cut,50%) + 52px),
+     #3576b1 calc(var(--fader-cut,50%) + 68px),
+     #3576b1 100%);
  box-shadow:inset 1px 0 #010406,inset -1px 0 #010406;
 }
 /* M5 — names start on the same horizontal guide as ADD FX (glyph=10px,

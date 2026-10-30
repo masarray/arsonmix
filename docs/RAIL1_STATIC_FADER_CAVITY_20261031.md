@@ -1,3 +1,7 @@
+# RAIL1 historical correction
+
+RAIL1 (PR #213) was rejected by the operator after screenshot inspection: a static teal full-height guide illuminated the upper black groove, unlike the supplied fader reference. Superseded by [RAIL2](RAIL2_REFERENCE_BLACK_TOP_BLUE_BOTTOM_20261031.md). Keep this as background audit, not an active UI specification.
+
 # RAIL1: single machined fader slot with static cyan-teal guide
 
 Source baseline: `59b81e51e16e35cebf165a6ce711ff750741c15f`, 31 October 2026. GUI-only milestone; preserves L2 #176 and GUI-M1 #211.
