@@ -282,6 +282,33 @@ async def main():
         assert reverted['ok'],reverted
         assert await page.evaluate("""()=>window.__arMixFxLaneView(1).ids.join('|')""")=="eq-pro|rv-pro"
         assert await page.locator('[data-strip="1"] .rack .insert-slot').count()==6
+        # G5C native instance tokens are authoritative: the row power must
+        # emit a fenced control event, not set a fake local bypass lamp.
+        status=await page.evaluate("""status=>{
+          const lanes=Array.from({length:14},()=>[]);
+          lanes[1]=[
+            {instanceId:'g5c-101',catalogId:'eq-pro',bypassed:false},
+            {instanceId:'g5c-102',catalogId:'rv-pro',bypassed:false}];
+          status.dryRoutingLab.fxInstances=lanes;
+          window.__armixTestEmit('arMixRoutingFxBypassAck',
+            {ok:true,state:status.dryRoutingLab});
+          return status;
+        }""",status)
+        assert await page.locator('[data-strip="1"] [data-routed-bypass]').count()==2
+        await page.locator('[data-strip="1"] [data-routed-bypass]').first.click()
+        fx_cmd=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.name==='arMixAction'&&x.data.action==='routingFxBypass').at(-1).data""")
+        assert fx_cmd['channel']==1 and fx_cmd['slot']==0,fx_cmd
+        assert fx_cmd['instanceId']=='g5c-101' and fx_cmd['value'] is True,fx_cmd
+        assert fx_cmd['deviceEpoch']==4 and fx_cmd['revision']==status['dryRoutingLab']['revision'],fx_cmd
+        status=await page.evaluate("""status=>{
+          status.dryRoutingLab.fxInstances[1][0].bypassed=true;
+          window.__armixTestEmit('arMixRoutingFxBypassAck',
+            {ok:true,state:status.dryRoutingLab});
+          return status;
+        }""",status)
+        assert await page.locator('[data-strip="1"] [data-routed-bypass]').first.get_attribute('aria-pressed')=='false'
+        assert await page.evaluate("""()=>window.__arMixFxLaneView(1).liveSlots[0].bypassed""") is True
         assert not errors,errors
         await browser.close()
         print("PASS: G1/G2 + G3 real PRE/POST draft, AUX return, 0-gain bypass, native ACK/reject/revert, stable rack and 3 viewports")
