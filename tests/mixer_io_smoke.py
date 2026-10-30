@@ -229,6 +229,8 @@ async def main():
           return status;
         }""",status)
         assert "LIVE" in await page.locator('[data-strip="1"] .arBankStage').inner_text()
+        g5before=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.name==='arMixAction'&&x.data.action==='routingDryApply').length""")
         # G5B: two actual, indexed native VST3s on CH2 use ONE route
         # transaction (no JS AudioContext); reorder/remove are DRAFT until ACK.
         await page.evaluate("""() => window.__armixTestEmit('arMixCatalog',{
@@ -245,9 +247,9 @@ async def main():
         assert await page.locator('[data-strip="1"] .rack .insert-slot').count()==6
         assert await page.locator('[data-strip="1"] .rack .ar-routed-loaded').count()==2
         # No automatic output unmute or implicit native APPLY.
-        g5before=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
+        g5after=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='routingDryApply').length""")
-        assert g5before==4,g5before
+        assert g5after==g5before,(g5before,g5after)
         queued=await page.evaluate("""()=>window.__arMixApplyRackFx()""")
         assert queued['ok'],queued
         g5=await page.evaluate("""()=>window.__armixTestActions.filter(x=>

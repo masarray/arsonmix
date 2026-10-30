@@ -327,9 +327,13 @@
     if(id&&!catalogNames.has(id))return; // trusted native catalog IDs only
     const {kind,index,button}=fxPickerTarget;
     const selectedRoute=kind==="ch"?draftRoutes[index]:draftAux[index];
-    selectedRoute.fxId=id;
-    selectedRoute.fxIds=id?[id]:[]; // ROUTING's compact picker edits the first/only slot
-    button.textContent=fxCaption(id);button.title=id||"DRY · no VST3";
+    // Compact ROUTING chooser modifies slot 0 only. Preserve the rest
+    // of the native chain rather than silently deleting seven plugins.
+    const previous=laneIds(selectedRoute);
+    selectedRoute.fxIds=id?[id,...previous.slice(1)]:previous.slice(1);
+    selectedRoute.fxId=selectedRoute.fxIds[0]||"";
+    button.textContent=fxCaption(selectedRoute.fxId);
+    button.title=selectedRoute.fxId||"DRY · no VST3";
     closeFxPicker(true);
   });
   routeOverlay.addEventListener("click",e=>{
@@ -698,7 +702,7 @@
       '<label title="Send directly to MAIN"><input type="checkbox" data-route-main '+(v.main?'checked':'')+'>MAIN</label>'+
       '<label title="Mute channel and sends"><input type="checkbox" data-route-mute '+(v.mute?'checked':'')+'>M</label>'+
       '<label title="Solo channel with upstream/downstream sends"><input type="checkbox" data-route-solo '+(v.solo?'checked':'')+'>S</label>'+
-      '</div><div class="arRoutePluginLine"><span>VST3 INSERT</span>'+fxButtonMarkup("ch",i,v.fxId)+'<small>one stereo-compatible instance · real FX</small></div></div>';
+      '</div><div class="arRoutePluginLine"><span>VST3 INSERT</span>'+fxButtonMarkup("ch",i,v.fxId)+'<small>Up to 8 VST3 · edit chain in FX RACK</small></div></div>';
     }).join('');
     rows.querySelectorAll('[data-route-row]').forEach(row=>{
       const model=draftRoutes[Number(row.dataset.routeRow)];
