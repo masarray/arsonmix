@@ -323,7 +323,7 @@ async def main():
           return {
             layers:(slit.backgroundImage.match(/linear-gradient/g)||[]).length,
             masterLayers:(master.backgroundImage.match(/linear-gradient/g)||[]).length,
-            centerBlue:slit.backgroundImage.includes('rgb(53, 118, 177)'),
+            centerBlue:slit.backgroundImage.includes('rgb(39, 191, 216)'),
             occupiedX:Math.round(occupied.getBoundingClientRect().left+
               parseFloat(style.paddingLeft)-occupied.closest('.insert').getBoundingClientRect().left),
             emptyX:Math.round(empty.getBoundingClientRect().left+
@@ -333,7 +333,7 @@ async def main():
             ellipsis:style.textOverflow,clipHeight:parseFloat(clip.height)
           };
         }""")
-        assert m5['layers']==2 and m5['masterLayers']==2 and m5['centerBlue'],m5
+        assert m5['layers']==3 and m5['masterLayers']==3 and m5['centerBlue'],m5
         assert abs(m5['occupiedX']-m5['emptyX'])<=1,m5
         assert m5['font']>=11 and m5['weight']>=700 and m5['ellipsis']=='ellipsis',m5
         assert m5['clipHeight']>=12,m5
@@ -1023,7 +1023,7 @@ async def main():
         assert len(calibrated['result'])==15,calibrated
         assert all(abs(x['error'])<=1 and x['inside'] for x in calibrated['result']),calibrated
         assert len(calibrated['vu'])==11 and all(abs(s['top'])<=2 and abs(s['bottom'])<=2 and all(abs(d)<=1.5 for d in s['ticks']) for s in calibrated['vu']),calibrated
-        # RAIL2: reference requires black above cap and BLUE below it.
+        # RAIL3: black above cap, glowing cyan below, fading to black at foot.
         # At both endpoints and the original gain, optical cutoff follows
         # silver/rose-gold PNG detent; channel and MASTER stay synchronized.
         fader_rail=await page.evaluate("""()=>{
@@ -1044,7 +1044,8 @@ async def main():
             updateFader(key,old);
             result.push({key,min,max,
               hasBlack:initial.includes('rgb(18, 25, 30)'),
-              hasBlue:initial.includes('rgb(53, 118, 177)'),
+              hasBlue:initial.includes('rgb(39, 191, 216)'),
+              hasBottomOcclusion:initial.includes('rgb(1, 6, 10) 100%'),
               layers:(initial.match(/linear-gradient/g)||[]).length,
               endsDifferent:atMin!==atMax,
               capMoved:capMin!==capMax,
@@ -1055,7 +1056,8 @@ async def main():
           return result;
         }""")
         assert all(v['min']==100 and v['max']==0 and v['hasBlack'] and
-                   v['hasBlue'] and v['layers']==2 and v['endsDifferent'] and
+                   v['hasBlue'] and v['hasBottomOcclusion'] and
+                   v['layers']==3 and v['endsDifferent'] and
                    v['capMoved'] and v['synchronized'] and v['width']==5
                    for v in fader_rail),fader_rail
         assert await page.evaluate('meterPercentToDbfs(0)')==-60

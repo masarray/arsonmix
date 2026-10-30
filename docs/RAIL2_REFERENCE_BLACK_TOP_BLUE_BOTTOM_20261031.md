@@ -1,3 +1,7 @@
+## RAIL3 correction (2026-10-31)
+
+The RAIL2 steel-blue light reached the physical bottom at full intensity, causing an unnatural flat lower stripe. RAIL3 supersedes that color/ending with cyan and a dark lower-edge falloff; see [RAIL3](RAIL3_CYAN_FADE_TO_BLACK_20261031.md). Preserve RAIL2's black above-cap behavior and the existing thumb/optical cutoff synchronization.
+
 # RAIL2 — black above the thumb, smoothly illuminated steel-blue below
 
 Date: 2026-10-31. This is the operator's explicit correction to RAIL1 #213, not a feature redesign.

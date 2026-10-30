@@ -44,17 +44,23 @@ test('VU dBFS ruler is housed with mono/stereo/master LCD bars',()=>{
   assert.match(css,/\.vu-bank\.is-mono \.vu-bars\{\s*flex:0 0 35px/);
   assert.match(css,/\.vu-bank\.is-stereo \.vu-bars/);
 });
-test('RAIL2 black upper slot, graduated blue lower guide and original PNG detent',()=>{
+test('RAIL3 black upper slot and cyan lower guide with black-foot fade, PNG detent preserved',()=>{
  const app=read('web/app.js'),native=read('web/bridge.js');
  const css=read('web/styles-src/42-mixer-premium.css');
- const begin=css.indexOf('/* RAIL2 — user-reference');
+ const begin=css.indexOf('/* RAIL3 — operator-approved');
  const end=css.indexOf('/* M5 — names start',begin);
  assert.ok(begin>0&&end>begin);
  const rail=css.slice(begin,end);
  assert.match(rail,/linear-gradient\(90deg,#010508/);
  assert.match(rail,/linear-gradient\(to bottom,/);
  assert.match(rail,/#12191e calc\(var\(--fader-cut,50%\) \+ 26px\)/);
- assert.match(rail,/#3576b1 calc\(var\(--fader-cut,50%\) \+ 68px\)/);
+ assert.match(rail,/#27bfd8 calc\(var\(--fader-cut,50%\) \+ 68px\)/);
+ assert.match(rail,/transparent 62%/);
+ assert.match(rail,/rgba\(1,6,10,\.52\) 86%/);
+ assert.match(rail,/rgba\(1,6,10,\.85\) 94%/);
+ assert.match(rail,/#01060a 100%/);
+ assert.equal((rail.match(/linear-gradient\(/g)||[]).length,3);
+ assert.ok(rail.indexOf('rgba(1,6,10,.52) 86%')<rail.indexOf('#01060a 100%'));
  assert.match(rail,/inset 1px 0 #010406,inset -1px 0 #010406/);
  assert.doesNotMatch(rail,/filter:|blur\(|animation:|transition:|backdrop-filter:/);
  assert.equal((app.match(/style="--fader-cut:\$\{levelToTop/g)||[]).length,2);
@@ -112,7 +118,7 @@ test('M5 CLIP light is resettable per channel and MASTER; real PCM peak is sole 
 });
 test('M5 fader light is recessed, VST text aligned, no heavyweight hover visual',()=>{
  const css=read('web/styles-src/42-mixer-premium.css');
- const m5=css.slice(css.indexOf('/* RAIL2 — user-reference'));
+ const m5=css.slice(css.indexOf('/* RAIL3 — operator-approved'));
  assert.doesNotMatch(m5,/linear-gradient\(to top,transparent/);
  assert.match(m5,/linear-gradient\(90deg,#010508/);
  assert.match(m5,/linear-gradient\(to bottom,/);
