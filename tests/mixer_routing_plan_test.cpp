@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/MixerRoutingPlan.h"
+#include "../engine/core/DynamicChannelRoster.h"
 #include <array>
 #if defined(NDEBUG)
 #undef NDEBUG // Never skip P1A assertions in Release native CTest.
@@ -11,7 +12,82 @@
 using namespace armix::mixer;
 static bool close(float a,float b,float tol=1.e-5f){return std::abs(a-b)<tol;}
 
+
+static void verifyDynamicChannelRoster() {
+    DynamicChannelRoster bank;
+    std::vector<ChannelEdit> addOps;
+    for(std::size_t i=0;i<128;++i){
+        ChannelEdit a;a.kind=ChannelEdit::Kind::add;a.position=i;addOps.push_back(a);
+    }
+    // Add must honor stereo format at creation; invalid formats roll back.
+    addOps[3].format=ProcessingFormat::stereo;
+    auto result=bank.edit(0,addOps);
+    assert(result.ok()&&bank.size()==128&&result.createdIds.size()==128);
+    const auto first=result.createdIds.front(),last=result.createdIds.back();
+    assert(bank.find(result.createdIds[3])->format==ProcessingFormat::stereo);
+    assert(bank.find(result.createdIds[2])->format==ProcessingFormat::mono);
+    auto badAdd=ChannelEdit{};badAdd.kind=ChannelEdit::Kind::add;
+    badAdd.position=bank.size();badAdd.format=static_cast<ProcessingFormat>(255);
+    auto invalidFormat=bank.edit(1,std::span<const ChannelEdit>(&badAdd,1));
+    assert(invalidFormat.fault==ChannelEditFault::invalidValue);
+    assert(bank.revision()==1&&bank.size()==128);
+    auto format=ChannelEdit{};format.kind=ChannelEdit::Kind::setFormat;
+    format.id=last;format.format=ProcessingFormat::stereo;
+    auto fx=ChannelEdit{};fx.kind=ChannelEdit::Kind::addInsertReference;
+    fx.id=last;fx.text="vst3:example";
+    const std::vector<ChannelEdit> cfg{format,fx};
+    result=bank.edit(1,cfg);
+    assert(result.ok()&&bank.find(last)->format==ProcessingFormat::stereo);
+    assert(bank.find(last)->insertCatalogIds.size()==1);
+    assert(bank.find(first)->insertCatalogIds.empty());
+    auto move=ChannelEdit{};move.kind=ChannelEdit::Kind::move;
+    move.id=last;move.position=0;
+    result=bank.edit(2,std::span<const ChannelEdit>(&move,1));
+    assert(result.ok()&&bank.channels().front().id==last);
+    auto dup=ChannelEdit{};dup.kind=ChannelEdit::Kind::duplicate;
+    dup.id=last;dup.position=1;
+    result=bank.edit(3,std::span<const ChannelEdit>(&dup,1));
+    assert(result.ok()&&result.createdIds.size()==1);
+    const auto copyId=result.createdIds.front();
+    assert(copyId!=last&&bank.find(copyId)->insertCatalogIds==bank.find(last)->insertCatalogIds);
+    assert(bank.find(copyId)->sends.empty());
+    auto send=ChannelEdit{};send.kind=ChannelEdit::Kind::addSendReference;
+    send.id=last;send.target=copyId;send.value=.5f;
+    result=bank.edit(4,std::span<const ChannelEdit>(&send,1));
+    assert(result.ok()&&bank.find(last)->sends[0].destination==copyId);
+    auto erase=ChannelEdit{};erase.kind=ChannelEdit::Kind::remove;erase.id=copyId;
+    result=bank.edit(5,std::span<const ChannelEdit>(&erase,1));
+    assert(result.fault==ChannelEditFault::linkedDestination&&bank.revision()==5);
+    auto rename=ChannelEdit{};rename.kind=ChannelEdit::Kind::rename;
+    rename.id=last;rename.text="Lead Vocal";
+    auto invalid=ChannelEdit{};invalid.kind=ChannelEdit::Kind::setPan;
+    invalid.id=first;invalid.value=std::numeric_limits<float>::quiet_NaN();
+    const std::vector<ChannelEdit> reject{rename,invalid};
+    result=bank.edit(5,reject);
+    assert(result.fault==ChannelEditFault::invalidValue&&bank.revision()==5);
+    assert(bank.find(last)->name!="Lead Vocal");
+    result=bank.edit(4,std::span<const ChannelEdit>(&rename,1));
+    assert(result.fault==ChannelEditFault::staleRevision);
+    DynamicChannelRoster small({sizeof(ChannelStripDefinition)*2+100,8,32});
+    const std::vector<ChannelEdit> over{addOps[0],addOps[1],addOps[2]};
+    result=small.edit(0,over);
+    assert(result.fault==ChannelEditFault::budgetExceeded&&small.size()==0);
+    assert(small.revision()==0);
+    result=small.edit(0,std::span<const ChannelEdit>(&addOps[0],1));
+    assert(result.ok()&&small.channels().front().id.value==1);
+    DynamicChannelRoster large;
+    std::vector<ChannelEdit> bulk;bulk.reserve(1024);
+    for(std::size_t i=0;i<1024;++i){
+        ChannelEdit a;a.kind=ChannelEdit::Kind::add;a.position=i;bulk.push_back(a);
+    }
+    result=large.edit(0,bulk);
+    assert(result.ok()&&large.size()==1024);
+    assert(large.channels().back().id.value==1024);
+    assert(large.channels().back().insertCatalogIds.empty());
+}
+
 int main() {
+    verifyDynamicChannelRoster();
     Configuration cfg;
     Plan plan;Error err;
     assert(Plan::compile(cfg,2,plan,err));
