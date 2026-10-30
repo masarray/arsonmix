@@ -47,7 +47,10 @@ public:
     using FxSelections=std::array<std::array<FxSelection,maxFxPerLane>,fxSlots>;
     struct FxRestore final {
         bool present=false,bypass=false;
-        juce::MemoryBlock binary; // immutable verified state copied on CONTROL
+        // Borrowed only while synchronous APPLY builds candidate processors.
+        // The IO result owns the verified bytes until APPLY returns, so even
+        // a 128 MB Show needs no duplicated state buffers on the UI thread.
+        const juce::MemoryBlock* binary=nullptr;
     };
     using FxRestores=std::array<std::array<FxRestore,maxFxPerLane>,fxSlots>;
     struct ChannelEdit {
@@ -172,7 +175,8 @@ public:
                 const bool selected=selections[lane][slot].id.isNotEmpty();
                 const auto& state=(*restores)[lane][slot];
                 if(selected!=state.present ||
-                   (state.present && state.binary.getSize()>8U*1024U*1024U))
+                   (state.present && (!state.binary ||
+                       state.binary->getSize()>8U*1024U*1024U)))
                     return "Show FX state incomplete or oversized: lane "+
                            juce::String(lane+1)+" slot "+juce::String(slot+1);
             }
@@ -307,8 +311,8 @@ public:
                 if(restores) {
                     const auto& saved=(*restores)[lane][slot];
                     try {
-                        instance->setStateInformation(saved.binary.getData(),
-                            static_cast<int>(saved.binary.getSize()));
+                        instance->setStateInformation(saved.binary->getData(),
+                            static_cast<int>(saved.binary->getSize()));
                     } catch(const std::exception& ex) {
                         return label+": vendor VST3 restore failed: "+juce::String(ex.what());
                     } catch(...) {return label+": vendor VST3 restore failed";}

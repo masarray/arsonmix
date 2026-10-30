@@ -1420,7 +1420,7 @@ private:
                                         auto& target=restores[lane][slot];
                                         target.present=true;
                                         target.bypass=ref.bypass;
-                                        target.binary=binary->bytes;
+                                        target.binary=&binary->bytes; // synchronous borrow
                                     }
                                     return {};
                                 };

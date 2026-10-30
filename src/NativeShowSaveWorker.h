@@ -90,10 +90,13 @@ private:
         blobs_.shrink_to_fit();
         auto alive=alive_;
         auto done=finished_;
+        // A 128 MB vendor-blob result must not be copied by std::function
+        // when JUCE queues an async callback on the message thread.
+        auto delivered=std::make_shared<Result>(std::move(result));
         juce::MessageManager::callAsync(
-            [alive,done=std::move(done),result=std::move(result)]() mutable {
+            [alive,done=std::move(done),delivered]() mutable {
                 if(alive->load(std::memory_order_acquire)&&done)
-                    done(std::move(result));
+                    done(std::move(*delivered));
             });
     }
     void save(NativeShowStore& store,Result& result) {
