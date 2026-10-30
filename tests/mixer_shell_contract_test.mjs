@@ -120,3 +120,17 @@ test('L2 route and VST inserts use one consistent six-row native rack with locke
  assert.match(src,/loaded\?"":'<span class="insert-add-glyph"/);
  assert.match(css,/@media\(max-height:690px\)\{[\s\S]*?--ar-upper-height:165px/);
 });
+
+test('GUI-M1 MASTER stays pinned and channel focus never remounts',()=>{
+ const app=read('web/app.js'),css=read('web/mixer-layout.css');
+ assert.ok(css.includes('position:sticky;right:0'));
+ assert.ok(app.includes('function revealMixerChannel(i)'));
+ assert.ok(app.includes('revealMixerChannel(i);'));
+ const slice=app.slice(app.indexOf('function revealMixerChannel('),app.indexOf('function focusChannel('));
+ for(const forbidden of ['renderMixer(', 'setInterval(', 'requestAnimationFrame(', 'emitEvent('])assert.ok(!slice.includes(forbidden),forbidden);
+});
+test('GUI-M1 PATCH uses real physical columns only',()=>{
+ const src=read('web/monitor.js');
+ assert.ok(src.includes('const visibleCount=shown.length'));
+ assert.ok(!src.includes('for(let k=shown.length;k<patchPageSize;k++)'));
+});

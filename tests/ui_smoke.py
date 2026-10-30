@@ -1591,7 +1591,10 @@ async def main():
         assert await native.locator("#arRoutingLabOverlay").evaluate(
             "(e)=>e.classList.contains('open')")
         assert await native.locator("#arPatchGrid [data-patch-row][data-patch-port]").count()==20
-        assert await native.locator("#arPatchGrid .arPatchCell").count()==80
+        # One crosspoint per *actual* hardware input, not 8 placeholders per row.
+        assert await native.locator("#arPatchGrid .arPatchPort").count()==2
+        assert await native.locator("#arPatchGrid .arPatchCell").count()==20
+        assert await native.locator("#arPatchGrid .arPatchUnavailable").count()==0
         patch_visual=await native.evaluate("""()=>{
           const grid=document.querySelector('#arPatchGrid').getBoundingClientRect();
           const cols=[...document.querySelectorAll('#arPatchGrid .arPatchPort')]
@@ -1601,7 +1604,7 @@ async def main():
                   cols:cols.map(Math.round),rowCount:
                     document.querySelectorAll('#arPatchGrid .arPatchChan').length};
         }""")
-        assert patch_visual['rowCount']==10 and len(patch_visual['cols'])==8,patch_visual
+        assert patch_visual['rowCount']==10 and len(patch_visual['cols'])==2,patch_visual
 
         # R3 screenshot audit: at 1680/1440 the CH format SELECT must show
         # full NONE/MONO/STEREO/BUS labels and L/R must not collide with it.

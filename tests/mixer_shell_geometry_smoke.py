@@ -62,6 +62,21 @@ async def main():
                 assert await page.locator('#mixer .rack').count()==10
                 assert await page.locator('#masterLeft .fader-zone').count()==1
                 heights[mode]=await assert_linked(mode,width,height)
+                # MASTER remains visible on small laptop screens, including scroll.
+                assert await page.evaluate("""() => {
+                    const m=document.querySelector('#masterLeft').getBoundingClientRect();
+                    const v=document.querySelector('#mixer').getBoundingClientRect();
+                    return m.left>=v.left-2 && m.right<=v.right+2;
+                }"""),(mode,width,height,'MASTER clipped')
+                # Selecting CH10 from sidebar exposes it before MASTER.
+                await page.locator('#channelList [data-choose="9"]').click()
+                assert await page.evaluate("""() => {
+                    const s=document.querySelector('[data-strip="9"]').getBoundingClientRect();
+                    const m=document.querySelector('#masterLeft').getBoundingClientRect();
+                    const v=document.querySelector('#mixer').getBoundingClientRect();
+                    return s.left>=v.left-2 && s.right<=m.left+2;
+                }"""),(mode,width,height,'CH10 obscured by MASTER')
+                await page.locator('#channelList [data-choose="0"]').click()
                 if width==1680:
                     await page.screenshot(path=f'mixer-shell-{mode.lower()}-1680.png')
                 if width==1366 and mode=='SENDS':

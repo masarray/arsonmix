@@ -568,17 +568,21 @@
     applied.textContent=patchPending?"APPLYING…":"APPLY ROUTING";
     if(!ports.length){
       patchGrid.style.gridTemplateColumns="1fr";
+      patchGrid.style.minWidth="0";patchGrid.style.maxWidth="none";
       patchGrid.innerHTML='<div class="arPatchEmpty">NO VERIFIED HARDWARE INPUTS · Choose a DIRECT ASIO / WASAPI device in AUDIO SETUP</div>';
       return;
     }
-    patchGrid.style.gridTemplateColumns="286px repeat("+patchPageSize+",minmax(58px,1fr))";
+    // Page size caps enumeration, not the number of hardware crosspoints.
+    const visibleCount=shown.length;
+    patchGrid.style.gridTemplateColumns="286px repeat("+visibleCount+",minmax(58px,1fr))";
+    patchGrid.style.minWidth=(286+visibleCount*58)+"px";
+    patchGrid.style.maxWidth=(286+visibleCount*98)+"px";
+    patchGrid.style.marginLeft="0";
     let html='<div class="arPatchRow" role="row"><div class="arPatchCorner" role="columnheader">CHANNEL / FORMAT</div>';
     for(const port of shown)
       html+='<div class="arPatchPort" role="columnheader" data-patch-col="'+port.port+
         '" title="'+safeRouteText(port.label||"Audio Input")+'">IN '+(port.port+1)+
         '<small>'+safeRouteText(port.label||"Physical input")+'</small></div>';
-    for(let k=shown.length;k<patchPageSize;k++)
-      html+='<div class="arPatchPort arPatchUnavailable" aria-hidden="true">—</div>';
     html+='</div>';
     for(let i=0;i<10;i++){
       const v=draftRoutes[i],live=old[i],changed=patchRowChanged(v,live);
@@ -608,8 +612,6 @@
           '" aria-label="'+desc+'" title="'+desc+'"'+(patchPending?' disabled':'')+'>'+
           content+'</button>';
       }
-      for(let k=shown.length;k<patchPageSize;k++)
-        html+='<div class="arPatchCell arPatchUnavailable" aria-hidden="true">·</div>';
       html+='</div>';
     }
     patchGrid.innerHTML=html;
