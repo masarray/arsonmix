@@ -698,14 +698,19 @@
       track.dataset.fxPreview="1";
       track.title="Native MASTER fader/meters live; MASTER insert FX is not implemented";
       const masterRack=track.querySelector(".master-fx-rack");
-      if(masterRack&&masterRack.dataset.nativeSig!=="empty-nonlive"){
-        masterRack.dataset.nativeSig="empty-nonlive";
-        masterRack.innerHTML=`<div class="master-fx-slot">
-          <span class="master-insert empty ar-fx-reserved" title="Master FX processing is not implemented in the native graph">
-            <span class="insert-name">MASTER FX · UNAVAILABLE</span>
-          </span></div>`+
-          Array.from({length:5},()=>`<div class="master-fx-slot">
-            <span class="master-insert empty ar-fx-reserved" title="Native Master FX slots require G5 engine support"></span>
+      if(masterRack&&masterRack.dataset.nativeSig!=="master-locked-six"){
+        masterRack.dataset.nativeSig="master-locked-six";
+        // Six full-size chrome insert rows, never one label + five blanks.
+        // Disabled is intentional: native Master has NO independent FX lane.
+        // Do not open a fake plugin picker or publish an unacknowledged graph.
+        masterRack.innerHTML=Array.from({length:6},(_,slot)=>`
+          <div class="master-fx-slot insert-slot native-master-fx-locked">
+            <button type="button" class="master-insert insert empty" disabled aria-disabled="true"
+              aria-label="Master FX slot ${slot+1} unavailable: native Master FX DSP not implemented"
+              title="MASTER FX · UNAVAILABLE — native DSP lane not yet implemented">
+              ${slot===0?"":'<span class="master-insert-add insert-add-glyph" aria-hidden="true">＋</span>'}
+              <span class="insert-name">${slot===0?"FX UNAVAILABLE":"ADD FX"}</span>
+            </button>
           </div>`).join("");
       }
       const pan=track.querySelector('[data-pan="master"]');
@@ -729,19 +734,21 @@
         rack.dataset.nativeSig=signature;
         rack.innerHTML=Array.from({length:6},(_,slot)=>{
           const loaded=slot<ids.length;
-          const label=loaded?names[slot]||"VST3":"＋ ADD FX";
+          const label=loaded?names[slot]||"VST3":"ADD FX";
           const disabled=slot>ids.length;
           const actual=!view.pending&&loaded&&slots[slot]?.catalogId===ids[slot]
             ?slots[slot]:null;
-          return `<div class="insert-slot native-insert-row">
+          return `<div class="insert-slot native-insert-row ${actual?.bypassed?"is-bypassed":""}">
             <button class="insert ${loaded?"":"empty"} ${loaded?"ar-routed-loaded":""}"
               data-routed-fx="${i}" data-routed-slot="${slot}" ${disabled?"disabled":""}
               title="${loaded?"Replace":"Insert"} native FX in CH ${i+1} · slot ${slot+1}">
+              ${loaded?"":'<span class="insert-add-glyph" aria-hidden="true">＋</span>'}
               <span class="insert-name">${escapeHtml(label)}</span>
             </button>
-            ${actual?`<button class="native-power ${actual.bypassed?"is-off":""}"
+            ${actual?`<button type="button" class="fx-power ${actual.bypassed?"is-bypassed":""}"
               data-routed-bypass="${i}" data-routed-slot="${slot}"
-              aria-pressed="${!actual.bypassed}" title="${actual.bypassed?"Enable":"Bypass"} native FX">⏻</button>`:""}</div>`;
+              aria-pressed="${!actual.bypassed}" aria-label="${actual.bypassed?"Enable":"Bypass"} ${escapeHtml(label)}"
+              title="${actual.bypassed?"Enable":"Bypass"} native FX">⏻</button>`:""}</div>`;
         }).join("");
       }
       track.removeAttribute("data-preview");rack.removeAttribute("data-preview");
@@ -771,7 +778,7 @@
         <button class="insert" data-native-fx="editor" data-slot="${i}"
           title="Open ${escapeHtml(p.name)}" aria-label="Edit ${escapeHtml(p.name)}">
           <span class="insert-name">${escapeHtml(p.name)}</span></button>
-        <button type="button" class="fx-power native-power ${p.bypass?"is-bypassed is-off":""}"
+        <button type="button" class="fx-power ${p.bypass?"is-bypassed":""}"
           data-native-fx="bypass" data-slot="${i}" aria-pressed="${!p.bypass}"
           title="${p.bypass?"Enable":"Bypass"} ${escapeHtml(p.name)}">⏻</button>
       </div>`).join("")+

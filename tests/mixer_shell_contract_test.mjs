@@ -11,6 +11,7 @@ test('mixer shell is a presentation module, not a second audio engine',()=>{
   assert.match(css,/grid-template-rows:/);
   assert.match(css,/minmax\(110px,1fr\)/);
   assert.match(css,/--ar-upper-height:208px/);
+  assert.match(css,/#app #mixer\[data-io-mode="ROUTE"\]\{--ar-upper-height:224px\}/);
   assert.doesNotMatch(script,/routingDryApply|createPluginInstance|AudioContext|processBlock|setInterval|requestAnimationFrame/);
 });
 test('new shell resources are in the exact native WebView2 asset list',()=>{
@@ -107,4 +108,15 @@ test('M5 fader light is recessed, VST text aligned, no heavyweight hover visual'
  assert.match(m5,/font:700 11px/);
  assert.match(m5,/\.clip-led\{[\s\S]*?height:12px/);
  assert.doesNotMatch(m5,/(?:^|\s)(?:filter|backdrop-filter|animation|transition|will-change):/);
+});
+
+test('L2 route and VST inserts use one consistent six-row native rack with locked Master',()=>{
+ const src=read('web/bridge.js'),css=read('web/mixer-layout.css');
+ assert.match(src,/Array\.from\(\{length:6\},\(_,slot\)=>/);
+ assert.match(src,/master-locked-six/);
+ assert.match(src,/class="master-insert insert empty" disabled aria-disabled="true"/);
+ assert.match(src,/slot===0\?"FX UNAVAILABLE":"ADD FX"/);
+ assert.match(src,/class="fx-power \$\{actual\.bypassed\?"is-bypassed":""\}"/);
+ assert.match(src,/loaded\?"":'<span class="insert-add-glyph"/);
+ assert.match(css,/@media\(max-height:690px\)\{[\s\S]*?--ar-upper-height:165px/);
 });
