@@ -655,14 +655,14 @@ async def main():
           return {id:f.dataset.fader,rail:rail.width,bay:parseFloat(bay.width),
             fill:bay.backgroundColor,edge:bay.boxShadow,border:bay.borderTopWidth,
             top:bay.top,bottom:bay.bottom,slit:parseFloat(slit.width),
-            slitColor:slit.backgroundColor,capWidth:cap.getBoundingClientRect().width};
+            slitPaint:slit.backgroundImage,capWidth:cap.getBoundingClientRect().width};
         })""")
         assert len(fader_recess)==11,fader_recess
         assert all(x['bay']>=30 and x['bay']<=46.1 and x['bay']<=x['rail']+.1
             and x['fill']=='rgb(38, 52, 60)' and x['border']=='0px'
             and 'inset' in x['edge'] and x['top']=='0px'
             and x['bottom']=='0px' and x['slit']==5
-            and x['slitColor']=='rgb(5, 9, 12)' and x['capWidth']==36
+            and 'linear-gradient' in x['slitPaint'] and x['capWidth']==36
             for x in fader_recess),fader_recess
 
         # Both resting states share depth; while pointer is down only, cap sinks 1px
