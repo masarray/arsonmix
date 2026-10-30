@@ -47,6 +47,11 @@ target_link_libraries(ARMixConsole PRIVATE
 
 include(CTest)
 if(BUILD_TESTING)
+  juce_add_console_app(ARMixFactoryFxRegistryTests PRODUCT_NAME "ArSonMix Factory FX Integrity Tests")
+  target_sources(ARMixFactoryFxRegistryTests PRIVATE tests/factory_fx_registry_test.cpp src/FactoryFxRegistry.h)
+  target_link_libraries(ARMixFactoryFxRegistryTests PRIVATE juce::juce_core juce::juce_cryptography juce::juce_recommended_config_flags)
+  target_compile_features(ARMixFactoryFxRegistryTests PRIVATE cxx_std_20)
+  add_test(NAME FactoryFxVerifiedManifestAndNegativePathGate COMMAND ARMixFactoryFxRegistryTests)
   add_executable(ARMixFxStructuralHandoffTests tests/live_fx_structural_handoff_test.cpp)
   target_compile_features(ARMixFxStructuralHandoffTests PRIVATE cxx_std_20)
   add_test(NAME R0BStructuralFxAckAndControlThreadRetirement COMMAND ARMixFxStructuralHandoffTests)

@@ -41,7 +41,7 @@ struct Registry final
     {
         if (s.length() != size) return false;
         for (auto c : s)
-            if (! juce::CharacterFunctions::getHexDigitValue (c) >= 0) return false;
+            if (juce::CharacterFunctions::getHexDigitValue (c) < 0) return false;
         return true;
     }
 
