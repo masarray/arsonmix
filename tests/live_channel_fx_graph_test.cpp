@@ -280,6 +280,22 @@ int main() {
         assert(multi->process(pins,3,wetL.data(),wetR.data(),4));
         assert(heapCalls.load(std::memory_order_relaxed)==heapBefore);
         assert(near(wetL[0],cleanL[0]*6.f)&&near(wetR[0],cleanR[0]*6.f));
+        // G5C native PCM gate: bypass really changes signal while preserving
+        // dry continuity, without callback allocations or plugin replacement.
+        const auto stableToken=multi->insertInstanceId(1,0);
+        assert(stableToken.isNotEmpty());
+        assert(!multi->setInsertBypass(1,0,"stale-token",true));
+        assert(multi->setInsertBypass(1,0,stableToken,true));
+        const auto bypassHeap=heapCalls.load(std::memory_order_relaxed);
+        for(int n=0;n<130;++n)
+            assert(multi->process(pins,3,wetL.data(),wetR.data(),4));
+        assert(heapCalls.load(std::memory_order_relaxed)==bypassHeap);
+        assert(multi->insertBypassed(1,0));
+        assert(near(wetL[0],cleanL[0]*3.f));
+        assert(multi->setInsertBypass(1,0,stableToken,false));
+        for(int n=0;n<130;++n)
+            assert(multi->process(pins,3,wetL.data(),wetR.data(),4));
+        assert(near(wetL[0],cleanL[0]*6.f));
         const auto* firstAddress=multi->instanceProcessor(1,0);
         const auto* secondAddress=multi->instanceProcessor(1,1);
         const int releaseBefore=GainFx::released;
@@ -289,6 +305,11 @@ int main() {
         assert(reordered->reuseAt(1,1,*multi,0,"first-id"));
         assert(reordered->instanceProcessor(1,0)==secondAddress);
         assert(reordered->instanceProcessor(1,1)==firstAddress);
+        assert(reordered->insertInstanceId(1,1)==stableToken);
+        assert(!reordered->setInsertBypass(1,0,stableToken,true));
+        assert(reordered->setInsertBypass(1,1,stableToken,true));
+        assert(reordered->insertBypassed(1,1));
+        assert(reordered->setInsertBypass(1,1,stableToken,false));
         assert(reordered->insertsOn(1)==2&&reordered->activeInserts()==2);
         multi.reset(); // old snapshot retired; new lease keeps both vendor instances
         assert(GainFx::released==releaseBefore);
