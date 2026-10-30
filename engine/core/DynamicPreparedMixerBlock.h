@@ -30,6 +30,7 @@ struct DynamicGraphRequest final {
     int physicalInputs=0;
     int maxFrames=512;
     std::size_t maxScratchBytes=64U*1024U*1024U; // admission, not channel-count cap
+    bool mainMonoAfterFx=false; // legacy MAIN mono occurs after MAIN VST+balance
 };
 enum class DynamicGraphFault : std::uint8_t {
     none, noMaster, multipleMasters, invalidFrameCapacity,
@@ -133,6 +134,7 @@ public:
         if(main==notScheduled){error.fault=DynamicGraphFault::noMaster;return false;}
         next.main_=main;
         next.monitor_=monitor;
+        next.mainMonoAfterFx_=req.mainMonoAfterFx;
         for(const auto& patch:req.sources) {
             const auto it=byId.find(patch.id.value);
             if(it==byId.end()){error={DynamicGraphFault::missingSource,patch.id};return false;}
@@ -176,9 +178,18 @@ public:
                     error={DynamicGraphFault::duplicateSend,rows[i].id};
                     return false;
                 }
-                const float factor=rows[i].format==ProcessingFormat::mono &&
-                                   send.preFader?0.7071067811865475f:1.f;
-                outgoing[i].push_back({to,send.gain*factor,send.gain*factor,send.preFader});
+                if(!std::isfinite(send.pan)||send.pan< -1.f||send.pan>1.f){
+                    error={DynamicGraphFault::invalidSendDestination,rows[i].id};
+                    return false;
+                }
+                const bool monoPre=rows[i].format==ProcessingFormat::mono && send.preFader;
+                const float gl=monoPre?
+                    send.gain*std::sqrt(.5f*(1.f-send.pan)):
+                    send.gain*(send.pan>0.f?1.f-send.pan:1.f);
+                const float gr=monoPre?
+                    send.gain*std::sqrt(.5f*(1.f+send.pan)):
+                    send.gain*(send.pan<0.f?1.f+send.pan:1.f);
+                outgoing[i].push_back({to,gl,gr,send.preFader});
                 parents[to].push_back(i);
                 ++indegree[to];
             }
@@ -364,6 +375,14 @@ public:
             std::copy_n(source+block,frames,r);
         };
         copySink(main_,outputL,outputR);
+        if(mainMonoAfterFx_) {
+            // Mirror legacy master: balance+gain happen within MAIN, then
+            // true mono folds after the master insert, never before it.
+            for(int f=0;f<frames;++f) {
+                const float mono=.5f*(outputL[f]+outputR[f]);
+                outputL[f]=mono;outputR[f]=mono;
+            }
+        }
         if(monitorL)copySink(monitor_,monitorL,monitorR);
         return true;
     }
@@ -373,6 +392,7 @@ private:
     std::vector<std::size_t> renderOrder_;
     std::vector<float> scratch_;
     std::size_t main_=notScheduled,monitor_=notScheduled;
+    bool mainMonoAfterFx_=false;
     int capacity_=0;
 };
 } // namespace armix::mixer

@@ -25,6 +25,7 @@ struct ChannelSendRef final {
     ChannelId destination{};
     float gain=1.f;
     bool preFader=false;
+    float pan=0.f; // send-only balance: PRE mono uses equal-power coefficients
 };
 struct ChannelStripDefinition final {
     ChannelId id{};
@@ -62,6 +63,7 @@ struct ChannelEdit final {
     float value=0.f;
     bool enabled=false;      // mute/solo value (or future enable operation)
     bool preFader=false;     // send tap at construction, no hidden POST default
+    float sendPan=0.f;      // independent send PAN, never channel fader PAN
     std::string text;
 };
 struct ChannelEditResult final {
@@ -191,9 +193,10 @@ public:
                         result.fault=ChannelEditFault::invalidValue;
                     else if(it->sends.size()>=budget_.maximumSendsPerChannel)
                         result.fault=ChannelEditFault::budgetExceeded;
-                    else if(!std::isfinite(op.value)||op.value<0.f||op.value>4.f)
+                    else if(!std::isfinite(op.value)||op.value<0.f||op.value>4.f||
+                            !std::isfinite(op.sendPan)||op.sendPan< -1.f||op.sendPan>1.f)
                         result.fault=ChannelEditFault::invalidValue;
-                    else it->sends.push_back({op.target,op.value,op.preFader});
+                    else it->sends.push_back({op.target,op.value,op.preFader,op.sendPan});
                     break;
                 default:result.fault=ChannelEditFault::invalidAction;break;
                 }
