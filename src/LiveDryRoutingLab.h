@@ -168,6 +168,28 @@ public:
         if(deviceEpoch_.load(std::memory_order_acquire)!=currentEpoch ||
            !registryValid_.load(std::memory_order_acquire))
             return "Audio input map changed during routing preparation";
+        // MS3A explicit MAIN output destination by *physical* port ID.
+        // Resolve against JUCE's validated sparse callback mask. Never use
+        // port ID as an array subscript; an 8-output device may be sparse.
+        const auto rawMain=command.getProperty("mainOutputs",juce::var());
+        int mainLeft=0,mainRight=1;
+        if(!rawMain.isVoid()){
+            const auto* pins=rawMain.getArray();
+            if(!pins||pins->size()!=2||!pins->getReference(0).isInt()||
+               !pins->getReference(1).isInt())
+                return "MAIN output patch requires two physical port IDs";
+            const int physicalLeft=static_cast<int>(pins->getReference(0));
+            const int physicalRight=static_cast<int>(pins->getReference(1));
+            const int available=callbackOutputCount_.load(std::memory_order_acquire);
+            mainLeft=mainRight=-1;
+            for(int i=0;i<available;++i){
+                const auto pin=enabledOutputPorts_[i].load(std::memory_order_relaxed);
+                if(pin==physicalLeft)mainLeft=i;
+                if(pin==physicalRight)mainRight=i;
+            }
+            if(mainLeft<0||mainRight<0||mainLeft==mainRight)
+                return "MAIN output patch uses inactive or duplicate physical ports";
+        }
         const auto expectedEpoch=static_cast<std::uint64_t>(
             static_cast<juce::int64>(command.getProperty("deviceEpoch",juce::var(0))));
         const auto expectedRevision=static_cast<std::uint64_t>(
@@ -203,6 +225,9 @@ public:
              juce::jlimit(32,Block::hardFrameLimit,deviceFrames));
         if(!next->prepared || next->prepared->capacity()==0)
             return "Cannot allocate routing workspace";
+        if(!next->prepared->setMainOutputPair(
+              mainLeft,mainRight,callbackOutputCount_.load(std::memory_order_acquire)))
+            return "MAIN output patch references invalid callback channels";
         std::array<ChannelEdit,count> proposed{};
         for(int i=0;i<count;++i) {
             const auto& strip=cfg.stripsAndMaster.strips[i];
@@ -468,6 +493,18 @@ public:
             lastOutputL_=lastOutputR_=0.f;
             return true;
         }
+        // Callback destinations come only from the leased immutable graph.
+        // If a driver restarts or changes topology, silence all outputs.
+        const int outLeft=snapshot->prepared->mainOutputLeft();
+        const int outRight=snapshot->prepared->mainOutputRight();
+        if(outLeft<0||outRight<0||outLeft==outRight||
+           outLeft>=outputCount||outRight>=outputCount||
+           !outputs[outLeft]||!outputs[outRight]){
+            topologyFault_.store(true,std::memory_order_release);
+            return true;
+        }
+        float* const mainL=outputs[outLeft];
+        float* const mainR=outputs[outRight];
         if(snapshot->graphRevision!=audioRevision_ || generation!=audioEpoch_) {
             audioRevision_=snapshot->graphRevision;
             audioEpoch_=generation;
@@ -499,7 +536,7 @@ public:
                 shifted[c]=inputs&&inputs[c]?inputs[c]+offset:nullptr;
             armix::mixer::RenderLevels level;
             if(!snapshot->prepared->process(shifted.data(),inputCount,
-                   outputs[0]+offset,outputs[1]+offset,n,&level,
+                   mainL+offset,mainR+offset,n,&level,
                    externalContext,externalFx))
                 return true;
             for(int ch=0;ch<count;++ch)
@@ -508,8 +545,8 @@ public:
                 perAuxPeaks[b]=std::max(perAuxPeaks[b],level.auxPeak[b]);
             const float g=std::clamp(masterGain,0.f,2.f);
             for(int i=0;i<n;++i) {
-                float l=outputs[0][offset+i]*g;
-                float r=outputs[1][offset+i]*g;
+                float l=mainL[offset+i]*g;
+                float r=mainR[offset+i]*g;
                 if(fadeRemaining_>0) {
                     const float t=1.f-static_cast<float>(fadeRemaining_-1)/
                                            static_cast<float>(rampFrames);
@@ -519,8 +556,8 @@ public:
                 }
                 // Sample-smoothed, zero-heap dual-mono MASTER output policy.
                 masterMonoPolicy_.process(masterMono,l,r);
-                outputs[0][offset+i]=l;
-                outputs[1][offset+i]=r;
+                mainL[offset+i]=l;
+                mainR[offset+i]=r;
                 lastOutputL_=l;
                 lastOutputR_=r;
                 peakL=std::max(peakL,std::abs(l));
@@ -620,6 +657,17 @@ public:
                 outputPorts.add(enabledOutputPorts_[i].load(std::memory_order_relaxed));
         }
         out->setProperty("outputPorts",juce::var(outputPorts));
+        juce::Array<juce::var> liveMain;
+        const auto* mainGraph=publisher_.controlPrepared(epoch(),revision());
+        if(mainGraph&&ready()&&registryValid_.load(std::memory_order_acquire)){
+            const int l=mainGraph->mainOutputLeft(),r=mainGraph->mainOutputRight();
+            const int n=callbackOutputCount_.load(std::memory_order_acquire);
+            if(l>=0&&r>=0&&l<n&&r<n){
+                liveMain.add(enabledOutputPorts_[l].load(std::memory_order_relaxed));
+                liveMain.add(enabledOutputPorts_[r].load(std::memory_order_relaxed));
+            }
+        }
+        out->setProperty("mainOutputs",juce::var(liveMain));
         out->setProperty("note","Native 10CH+4AUX production mixer; unpatched startup is SILENT. Explicit input assignment/ACK required. Hardware FAT unqualified.");
         return juce::var(out.release());
     }
