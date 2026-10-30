@@ -57,7 +57,7 @@
 .arPatchChan[data-status=live]{border-left-color:#52c6a7}
 .arPatchChan[data-status=draft]{border-left-color:#e1ae60}
 .arPatchChan strong{font-size:10px;font-weight:600;color:#edf4f6;min-width:42px}
-.arPatchChan select{min-width:0;width:75px;border:1px solid #52717e;border-radius:3px;background:#10242f;color:#e0edf2;font-size:10px;padding:4px}
+.arPatchChan select{min-width:0;width:85px;border:1px solid #52717e;border-radius:3px;background:#10242f;color:#e0edf2;font-size:10px;padding:4px}
 .arPatchChan select[data-patch-channel-format]{width:62px;flex:0 0 62px;color:#a4ecd1;border-color:#4d8e83}
 .arPatchSides{display:flex;gap:3px;margin-left:auto}
 .arPatchSides button{width:23px;height:23px;padding:0;color:#a8c0cb;border:1px solid #49616f;border-radius:3px;background:#122a35;font-size:10px}
@@ -433,7 +433,7 @@
     return "";
   }
   function patchRowChanged(draft,live){
-    return !live ? draft.mode!=="NONE" :
+    return !live ? draft.mode!=="NONE" || draft.channelFormat!=="MONO" :
       draft.mode!==live.mode ||
       draft.channelFormat!==(validChannelFormat(live.channelFormat)
         ?live.channelFormat:legacyFormat(live.mode)) ||
