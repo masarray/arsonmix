@@ -72,3 +72,22 @@ test('G3 is computed from authoritative PRE/POST native renderer, not a visual-o
   assert.match(css,/max-height:calc\(100dvh - 16px\)/);
   assert.doesNotMatch(css,/backdrop-filter\s*:|filter\s*:\s*blur/);
 });
+
+test('MS1 typed native processing format stays independent of physical source and bounded to existing L2 bank',()=>{
+  const decoder=read('engine/core/NativeDryRouteCommand.h');
+  const lab=read('src/LiveDryRoutingLab.h');
+  const css=read('web/mixer-io.css');
+  assert.match(decoder,/schemaVersion/);
+  assert.match(decoder,/sourceKind.*expectedKind/);
+  assert.match(decoder,/sourceFormat.*expectedSourceFormat/);
+  assert.match(decoder,/channelFormat.*"MONO"/);
+  assert.match(monitor,/window\.__arMixStageChannelFormat=/);
+  assert.match(monitor,/schemaVersion:2/);
+  assert.match(monitor,/channels:draftRoutes\.map\(typedSource\)/);
+  assert.match(monitor,/data-patch-channel-format/);
+  assert.match(monitor,/draft\.channelFormat/);
+  assert.match(gui,/class="arBankChannelFormat"/);
+  assert.match(gui,/__arMixStageChannelFormat/);
+  assert.match(css,/\.arBankFormatRow\{display:flex/);
+  assert.match(lab,/strip\.source==armix::mixer::SourceMode::mono/);
+});

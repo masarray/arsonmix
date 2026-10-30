@@ -137,3 +137,13 @@
   #app #mixer button.arSendChip{padding:1px 3px;font-size:8.5px}
   #app #mixer .arSendDest{min-width:26px}
 }
+
+/* R5 MS1: channel processing width shares the old stage row, NOT a new
+   mixer vertical track. The L2 11-strip fader/MASTER geometry is immutable. */
+#app #mixer .arBankFormatRow{display:flex;align-items:center;gap:3px;min-width:0;min-height:16px;height:16px}
+#app #mixer .arBankChannelFormat{width:53px;flex:0 0 53px;min-width:0;height:16px;padding:0 1px;
+  background:#103a36;color:#a9ead4;border:1px solid #457c71;border-radius:2px;
+  font:600 9px/1 "ArSonMix Inter",sans-serif}
+#app #mixer .arBankChannelFormat:disabled{opacity:.45}
+#app #mixer .arBankFormatRow .arBankStage{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:8px}
+#app #mixer .arBankChannelFormat:focus-visible{outline:2px solid #73cfe7;outline-offset:1px}

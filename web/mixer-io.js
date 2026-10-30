@@ -122,7 +122,7 @@
     for(const strip of mixer.querySelectorAll('.strip[data-strip]')){
       if(strip.querySelector('.arChannelBank'))continue;
       const bank=node('div','arChannelBank');
-      bank.innerHTML='<div class="arRouteBank"><span class="arBankTitle">PHYSICAL INPUT</span><select class="arBankSource" aria-label="Physical channel input source"></select><span class="arBankTitle">OUTPUT DESTINATION</span><span class="arBankOutput">MAIN · UNKNOWN</span><span class="arBankStage">NATIVE PATCH REQUIRED</span><button class="btn-180 arBankPatch" data-mix-patch="input">OPEN INPUT PATCH</button></div><div class="arSendBank"><span class="arBankTitle">AUX SENDS · PRE / POST</span><div class="arSendSummary"></div><button class="btn-180 arBankPatch" data-mix-patch="internal">EDIT AUX SENDS</button></div>';
+      bank.innerHTML='<div class="arRouteBank"><span class="arBankTitle">PHYSICAL INPUT</span><select class="arBankSource" aria-label="Physical channel input source"></select><span class="arBankTitle">OUTPUT DESTINATION</span><span class="arBankOutput">MAIN · UNKNOWN</span><div class="arBankFormatRow"><select class="arBankChannelFormat" aria-label="Independent channel processing format" title="Processing MONO / STEREO independent from hardware input"><option value="MONO">CH M</option><option value="STEREO">CH L/R</option></select><span class="arBankStage">NATIVE PATCH REQUIRED</span></div><button class="btn-180 arBankPatch" data-mix-patch="input">OPEN INPUT PATCH</button></div><div class="arSendBank"><span class="arBankTitle">AUX SENDS · PRE / POST</span><div class="arSendSummary"></div><button class="btn-180 arBankPatch" data-mix-patch="internal">EDIT AUX SENDS</button></div>';
       strip.querySelector('.rack')?.insertAdjacentElement('afterend',bank);
     }
   }
@@ -134,7 +134,9 @@
     }
     if(select.value!==current)select.value=current;
   }
-  function channelState(s,i){return s.draftRoutes?.[i]||s.acceptedRoute?.channels?.[i]||{mode:'NONE',left:-1,right:-1};}
+  const channelFormat=r=>['MONO','STEREO'].includes(r?.channelFormat)?
+    r.channelFormat:(['BUS','STEREO'].includes(r?.mode)?'STEREO':'MONO');
+  function channelState(s,i){return s.draftRoutes?.[i]||s.acceptedRoute?.channels?.[i]||{mode:'NONE',channelFormat:'MONO',left:-1,right:-1};}
   function refreshStrip(strip,s){
     const i=Number(strip.dataset.strip),r=channelState(s,i);
     const source=strip.querySelector('.arBankSource'),output=strip.querySelector('.arBankOutput');
@@ -142,8 +144,12 @@
     const current=valueFor(r);
     populate(source,portsFor(s,r),current);
     source.dataset.channel=String(i);source.disabled=!isNative()||!s.ready||!!s.pending;
+    const format=strip.querySelector('.arBankChannelFormat');
+    if(format){format.value=channelFormat(r);format.dataset.channel=String(i);
+      format.disabled=!isNative()||!s.ready||!!s.pending;}
     output.textContent=r.mode==='NONE'?'UNPATCHED · NO INPUT':r.main?outputLabel(s):'MAIN OFF · SEND PATH ONLY';
-    const accepted=s.acceptedRoute?.channels?.[i],dirty=current!==valueFor(accepted);
+    const accepted=s.acceptedRoute?.channels?.[i],
+      dirty=current!==valueFor(accepted)||channelFormat(r)!==channelFormat(accepted);
     const stage=strip.querySelector('.arBankStage');
     stage.textContent=!s.ready?'NO LIVE DEVICE':dirty?'DRAFT · NOT APPLIED':r.mode==='NONE'?'UNPATCHED · SILENT':'LIVE · NATIVE ACK';
     stage.dataset.state=!s.ready?'offline':dirty?'draft':r.mode==='NONE'?'offline':'live';
@@ -254,6 +260,16 @@
   }
   document.addEventListener('change',e=>{
     if(e.target.matches('.arBankSource,.arIOSource'))changeSource(e.target);
+    if(e.target.matches('.arBankChannelFormat')){
+      const response=window.__arMixStageChannelFormat?.(
+        Number(e.target.dataset.channel),e.target.value);
+      if(!response?.ok){
+        const message=response?.error||'Native format change unavailable';
+        el('arIOFeedback').textContent=message;
+        if(typeof window.flash==='function')window.flash(message);
+      }
+      lastSignature='';refresh();
+    }
   },true);
   // The legacy native VST3 bridge registers document capture before this module.
   // Window capture intercepts only AUDIO SETUP, without changing FX/Orbit ownership.

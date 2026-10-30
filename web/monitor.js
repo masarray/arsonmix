@@ -56,8 +56,9 @@
 .arPatchChan{position:sticky;left:0;z-index:1;display:flex;gap:6px;align-items:center;padding:3px 8px;background:#1c303b;border-left:3px solid #496271}
 .arPatchChan[data-status=live]{border-left-color:#52c6a7}
 .arPatchChan[data-status=draft]{border-left-color:#e1ae60}
-.arPatchChan strong{font-size:10px;font-weight:600;color:#edf4f6;min-width:44px}
-.arPatchChan select{min-width:0;width:85px;border:1px solid #52717e;border-radius:3px;background:#10242f;color:#e0edf2;font-size:10px;padding:4px}
+.arPatchChan strong{font-size:10px;font-weight:600;color:#edf4f6;min-width:42px}
+.arPatchChan select{min-width:0;width:75px;border:1px solid #52717e;border-radius:3px;background:#10242f;color:#e0edf2;font-size:10px;padding:4px}
+.arPatchChan select[data-patch-channel-format]{width:62px;flex:0 0 62px;color:#a4ecd1;border-color:#4d8e83}
 .arPatchSides{display:flex;gap:3px;margin-left:auto}
 .arPatchSides button{width:23px;height:23px;padding:0;color:#a8c0cb;border:1px solid #49616f;border-radius:3px;background:#122a35;font-size:10px}
 .arPatchSides button[aria-pressed=true]{color:#e8fff9;background:#286356;border-color:#4b9d83}
@@ -248,7 +249,15 @@
     '<section class="arPatchBody arPatchHidden" id="arPatchOutputPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>CURRENT HARDWARE OUTPUT</strong><small>Current hardware MAIN L/R is read-only. Configure output in AUDIO SETUP.</small></div></div><div id="arPatchOutputMap"></div><div class="arPatchNote">AUX-to-hardware-output patching is not available. Select physical device/output in AUDIO SETUP.</div></section>' +
     '<footer class="arPatchFooter"><div id="arRouteFeedback" role="status">Select actual input ports, then APPLY while output is muted.</div><div class="arRouteFoot"><button class="btn-180" id="arPatchRevert">REVERT DRAFT</button><button class="btn-180" id="arRouteSaveDry" title="Save real DRY-only Show (MUTED output and zero VST3)">SAVE DRY SHOW</button><button class="btn-180" id="arRouteBrowseShows" title="Browse verified native DRY Shows stored in Studio/Shows">BROWSE SHOWS</button><button class="btn-180" id="arRouteApply">APPLY ROUTING</button><button class="btn-180" id="arRouteClear" title="Discard the native input patch; keep the mixer prepared and output muted">CLEAR PATCH</button></div></footer><section id="arNativeShowBrowser" hidden role="region" aria-label="Native DRY Show browser"><div class="arNativeShowLine"><strong>NATIVE DRY SHOWS</strong><select id="arNativeShowSelect" aria-label="Select a saved native DRY Show"><option value="">Choose a saved Show...</option></select><button class="btn-180" id="arNativeShowRecall" type="button" disabled>RECALL SELECTED DRY</button><span id="arNativeShowStatus" role="status">Browse saved routing snapshots; hardware OUTPUT remains MUTED on recall.</span></div></section><section id="arPatchFxPicker" role="dialog" aria-label="Choose native VST3" aria-modal="false"><label for="arPatchFxSearch">FIND VST3 · SHARED PICKER</label><input id="arPatchFxSearch" type="search" autocomplete="off" placeholder="Search plugin name or ID"><div id="arPatchFxResults"></div><div id="arPatchFxCount"></div></section></section>';
   document.body.appendChild(routeOverlay);
-  const draftRoutes=Array.from({length:10},()=>({mode:"NONE",left:-1,right:-1,gain:0.25,pan:0,main:true,mute:false,solo:false,fxId:""}));
+  // Processing channel width is independent of the hardware source mode.
+  // The native graph is still the sole audio source of truth; these are DRAFTS.
+  const legacyFormat=mode=>mode==="STEREO"||mode==="BUS"?"STEREO":"MONO";
+  const validChannelFormat=value=>value==="MONO"||value==="STEREO";
+  const typedSource=row=>({...row,
+    sourceKind:row.mode==="BUS"?"BUS":row.mode==="NONE"?"NONE":"PHYSICAL",
+    sourceFormat:row.mode==="MONO"||row.mode==="STEREO"?row.mode:"NONE",
+    channelFormat:row.channelFormat});
+  const draftRoutes=Array.from({length:10},()=>({mode:"NONE",channelFormat:"MONO",left:-1,right:-1,gain:0.25,pan:0,main:true,mute:false,solo:false,fxId:""}));
   const draftAux=Array.from({length:4},()=>({enabled:false,gain:1,main:true,mute:false,fxId:""}));
   const draftSends=[];
   let mixerDraftActive=false; // Source edits from MIX/IO share this exact controller
@@ -258,7 +267,7 @@
     if(draftEpoch===nextEpoch)return false;
     draftEpoch=nextEpoch;
     for(const route of draftRoutes) {
-      route.mode="NONE";route.left=-1;route.right=-1;route.gain=0.25;route.pan=0;
+      route.mode="NONE";route.channelFormat="MONO";route.left=-1;route.right=-1;route.gain=0.25;route.pan=0;
       route.main=true;route.mute=false;route.solo=false;route.fxId="";
     }
     for(const b of draftAux){b.enabled=false;b.gain=1;b.main=true;b.mute=false;b.fxId="";}
@@ -355,10 +364,12 @@
     invalidateDraftForNewDevice(Number(d.epoch)||0);
     if(!d.ready||!saved||Number(saved.deviceEpoch)!==Number(d.epoch)||
        !Array.isArray(saved.channels)||saved.channels.length!==10)return false;
-    const keys=["mode","left","right","gain","pan","main","mute","solo","fxId"];
+    const keys=["mode","channelFormat","left","right","gain","pan","main","mute","solo","fxId"];
     for(let i=0;i<10;i++){
       const source=saved.channels[i];
       if(!source||typeof source!=="object")return false;
+      draftRoutes[i].channelFormat=validChannelFormat(source.channelFormat)
+        ? source.channelFormat:legacyFormat(source.mode);
       for(const key of keys)
         if(Object.prototype.hasOwnProperty.call(source,key))
           draftRoutes[i][key]=source[key];
@@ -424,6 +435,8 @@
   function patchRowChanged(draft,live){
     return !live ? draft.mode!=="NONE" :
       draft.mode!==live.mode ||
+      draft.channelFormat!==(validChannelFormat(live.channelFormat)
+        ?live.channelFormat:legacyFormat(live.mode)) ||
       (["MONO","STEREO"].includes(draft.mode)&&Number(draft.left)!==Number(live.left)) ||
       (draft.mode==="STEREO"&&Number(draft.right)!==Number(live.right));
   }
@@ -435,6 +448,8 @@
     const active=new Set(ports.map(p=>p.port));
     for(let i=0;i<draftRoutes.length;i++){
       const v=draftRoutes[i],ch="CH "+(i+1);
+      if(!validChannelFormat(v.channelFormat))
+        return ch+": processing format must be MONO or STEREO.";
       if(v.mode==="MONO"&&!active.has(v.left))return ch+": select one active MONO input.";
       if(v.mode==="STEREO"&&(!active.has(v.left)||!active.has(v.right)))
         return ch+": assign both L and R before APPLY.";
@@ -511,7 +526,7 @@
       patchGrid.innerHTML='<div class="arPatchEmpty">NO VERIFIED HARDWARE INPUTS · Choose a DIRECT ASIO / WASAPI device in AUDIO SETUP</div>';
       return;
     }
-    patchGrid.style.gridTemplateColumns="226px repeat("+patchPageSize+",minmax(58px,1fr))";
+    patchGrid.style.gridTemplateColumns="286px repeat("+patchPageSize+",minmax(58px,1fr))";
     let html='<div class="arPatchRow" role="row"><div class="arPatchCorner" role="columnheader">CHANNEL / FORMAT</div>';
     for(const port of shown)
       html+='<div class="arPatchPort" role="columnheader" data-patch-col="'+port.port+
@@ -527,6 +542,8 @@
         (changed?'draft':d.ready?'live':'idle')+'"><strong>CH '+String(i+1).padStart(2,"0")+'</strong>'+
         '<select data-patch-mode="'+i+'" aria-label="CH '+(i+1)+' input format">'+
         ['NONE','MONO','STEREO','BUS'].map(mode=>'<option value="'+mode+'"'+(v.mode===mode?' selected':'')+'>'+mode+'</option>').join("")+
+        '</select><select data-patch-channel-format="'+i+'" title="Native processing channel format — separate from source" aria-label="CH '+(i+1)+' processing format">'+
+        ['MONO','STEREO'].map(fmt=>'<option value="'+fmt+'"'+(v.channelFormat===fmt?' selected':'')+'>'+ (fmt==="MONO"?"CH M":"CH L/R") +'</option>').join("")+
         '</select><span class="arPatchSides"><button class="btn-180" data-patch-side="left" data-patch-row="'+i+
         '" aria-label="CH '+(i+1)+' assign left" aria-pressed="'+(patchSide[i]==="left")+'"'+(stereo?'':' disabled')+
         '>L</button><button class="btn-180" data-patch-side="right" data-patch-row="'+i+
@@ -581,12 +598,25 @@
     if(patchPage+1<Math.ceil(patchPorts().length/patchPageSize)){patchPage++;renderPatchMatrix();}
   });
   patchGrid.addEventListener("change",e=>{
+    if(patchPending)return;
+    const format=e.target.closest("[data-patch-channel-format]");
+    if(format){
+      const i=Number(format.dataset.patchChannelFormat);
+      if(!draftRoutes[i]||!validChannelFormat(format.value))return;
+      draftRoutes[i].channelFormat=format.value;mixerDraftActive=true;
+      patchFeedback("DRAFT · CH "+(i+1)+" PROCESSING "+format.value+
+        " · physical source unchanged · MUTE + APPLY required.");
+      renderPatchMatrix();window.dispatchEvent(new Event("arMixRoutingDraftChanged"));
+      return;
+    }
     const el=e.target.closest("[data-patch-mode]");
-    if(!el||patchPending)return;
+    if(!el)return;
     const row=Number(el.dataset.patchMode),v=draftRoutes[row],prior=v.mode;
     const next=el.value;
     if(!["NONE","MONO","STEREO","BUS"].includes(next))return;
     v.mode=next;
+    if(prior==="NONE"&&next!=="NONE")v.channelFormat=legacyFormat(next);
+    mixerDraftActive=true;
     if(next==="NONE"||next==="BUS"){v.left=-1;v.right=-1;}
     else if(next==="MONO"){v.right=-1;}
     else if(next==="STEREO"&&prior!=="STEREO"){v.right=-1;patchSide[row]="left";}
@@ -606,7 +636,7 @@
     const i=Number(cell.dataset.patchRow),port=Number(cell.dataset.patchPort),v=draftRoutes[i];
     if(!Number.isInteger(i)||i<0||i>=10||!patchPorts().some(p=>p.port===port))return;
     if(v.mode==="BUS"){patchFeedback("CH "+(i+1)+" is BUS receiver. Select MONO/STEREO before physical patch.");return;}
-    if(v.mode==="NONE"){v.mode="MONO";v.left=port;v.right=-1;}
+    if(v.mode==="NONE"){v.mode="MONO";v.channelFormat="MONO";v.left=port;v.right=-1;}
     else if(v.mode==="MONO"){
       if(v.left===port){v.mode="NONE";v.left=-1;}else v.left=port;
       v.right=-1;
@@ -646,8 +676,10 @@
     rows.innerHTML=Array.from({length:10},(_,i)=>{
       const v=draftRoutes[i];
       return '<div class="arRouteRow" data-route-row="'+i+'"><label>CH '+(i+1)+'<small class="arRoutePeak" data-route-peak="'+i+'"></small></label>'+
-      '<select data-route-mode aria-label="CH '+(i+1)+' format">'+
+      '<select data-route-mode aria-label="CH '+(i+1)+' physical source type">'+
       ['NONE','MONO','STEREO','BUS'].map(m=>'<option value="'+m+'" '+(v.mode===m?'selected':'')+'>'+m+'</option>').join('')+'</select>'+
+      '<select data-route-channel-format aria-label="CH '+(i+1)+' independent processing format" title="Native channel format separate from physical source">'+
+      ['MONO','STEREO'].map(f=>'<option value="'+f+'" '+(v.channelFormat===f?'selected':'')+'>'+f+'</option>').join('')+'</select>'+
       '<select data-route-left aria-label="CH '+(i+1)+' hardware left">'+routeSelect(ports,v.left)+'</select>'+
       '<select data-route-right aria-label="CH '+(i+1)+' hardware right">'+routeSelect(ports,v.right)+'</select>'+
       '<select data-route-gain aria-label="CH '+(i+1)+' test level">'+
@@ -660,7 +692,14 @@
     }).join('');
     rows.querySelectorAll('[data-route-row]').forEach(row=>{
       const model=draftRoutes[Number(row.dataset.routeRow)];
-      row.querySelector('[data-route-mode]').addEventListener('change',e=>{model.mode=e.target.value;refreshMode(row);});
+      row.querySelector('[data-route-mode]').addEventListener('change',e=>{
+        const was=model.mode;model.mode=e.target.value;
+        if(was==="NONE"&&model.mode!=="NONE")model.channelFormat=legacyFormat(model.mode);
+        mixerDraftActive=true;refreshMode(row);
+      });
+      row.querySelector('[data-route-channel-format]').addEventListener('change',e=>{
+        if(validChannelFormat(e.target.value)){model.channelFormat=e.target.value;mixerDraftActive=true;}
+      });
       row.querySelector('[data-route-left]').addEventListener('change',e=>{model.left=Number(e.target.value);});
       row.querySelector('[data-route-right]').addEventListener('change',e=>{model.right=Number(e.target.value);});
       row.querySelector('[data-route-gain]').addEventListener('change',e=>{model.gain=Number(e.target.value);});
@@ -1012,6 +1051,18 @@
     window.dispatchEvent(new Event("arMixRoutingDraftChanged"));
     return {ok:true,message:"REVERTED · original native route unchanged."};
   };
+  window.__arMixStageChannelFormat=(channel,format)=>{
+    const d=state.dryRoutingLab||{},epoch=Number(d.epoch)||0;
+    if(!d.ready||!d.active||epoch<=0)return {ok:false,error:"No verified native DIRECT device."};
+    if(patchPending)return {ok:false,error:"Native routing APPLY is pending."};
+    if(!Number.isInteger(channel)||channel<0||channel>=10 ||
+       !validChannelFormat(format))return {ok:false,error:"Invalid channel or processing format."};
+    if(draftEpoch!==epoch)return {ok:false,error:"Device changed: review INPUT PATCH first."};
+    draftRoutes[channel].channelFormat=format;
+    mixerDraftActive=true;renderPatchMatrix();updateRouteLabIdentity();
+    window.dispatchEvent(new Event("arMixRoutingDraftChanged"));
+    return {ok:true,message:"DRAFT · channel processing "+format+" · MUTE + APPLY to activate."};
+  };
   window.__arMixStageChannelInput=(channel,mode,left,right)=>{
     const d=state.dryRoutingLab||{},epoch=Number(d.epoch)||0;
     if(!d.ready||!d.active||epoch<=0)return {ok:false,error:"No verified native DIRECT device."};
@@ -1024,6 +1075,7 @@
     if(mode==="STEREO"&&(!active.has(left)||!active.has(right)||left===right))
       return {ok:false,error:"Stereo L/R requires distinct enabled hardware pins."};
     const target=draftRoutes[channel];
+    if(target.mode==="NONE" && mode!=="NONE")target.channelFormat=legacyFormat(mode);
     target.mode=mode;target.left=mode==="NONE"?-1:left;target.right=mode==="STEREO"?right:-1;
     mixerDraftActive=true;renderPatchMatrix();updateRouteLabIdentity();
     window.dispatchEvent(new Event("arMixRoutingDraftChanged"));
@@ -1084,8 +1136,9 @@
     renderPatchMatrix();
     document.getElementById("arRouteFeedback").textContent="Applying verified native route (output remains MUTED)...";
     api.emitEvent("arMixAction",{action:"routingDryApply",value:{
+      schemaVersion:2,
       deviceEpoch:draftEpoch,revision:Number(d.revision)||0,
-      channels:draftRoutes.map(c=>({...c})),
+      channels:draftRoutes.map(typedSource),
       auxes:draftAux.map(b=>({...b})),
       sends:draftSends.map(s=>({...s}))
     }});

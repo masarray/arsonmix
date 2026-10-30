@@ -203,8 +203,13 @@ public:
         std::array<ChannelEdit,count> proposed{};
         for(int i=0;i<count;++i) {
             const auto& strip=cfg.stripsAndMaster.strips[i];
+            // The runtime control's bool denotes MONO PAN law, not merely
+            // the selected plugin processing width. A single physical MONO
+            // input projected into a stereo channel must keep equal-power
+            // panning, never jump +3 dB when a live fader or PAN changes.
             proposed[i]={strip.faderLinear,strip.pan,strip.mute,strip.solo,
-                plan.channels.effectiveFormats[i]==armix::mixer::ChannelFormat::mono};
+                plan.channels.effectiveFormats[i]==armix::mixer::ChannelFormat::mono ||
+                strip.source==armix::mixer::SourceMode::mono};
             if(!next->prepared->setStripControl(i,proposed[i].linear,
                    proposed[i].pan,proposed[i].mono,
                    proposed[i].mute,proposed[i].solo))

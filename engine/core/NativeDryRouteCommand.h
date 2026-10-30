@@ -25,6 +25,14 @@ struct NativeDryRouteCommand final {
         if(!rows || rows->size()!=stripCount) {
             problem="Exactly 10 channel assignments are required";return false;
         }
+        // R5/MS1 wire version 2 separates physical source from processing format.
+        // Legacy v1 (missing schemaVersion) remains readable for existing Shows.
+        const auto rawVersion=request.getProperty("schemaVersion",juce::var());
+        const int version=rawVersion.isVoid()?1:rawVersion.isInt()
+            ? static_cast<int>(rawVersion):-1;
+        if(version!=1 && version!=2) {
+            problem="Unsupported routing schemaVersion (expected 1 or 2)";return false;
+        }
         NativeDryRouteCommand candidate;
         std::array<juce::String,stripCount> modeNames {};
         for(int i=0;i<stripCount;++i) {
@@ -32,6 +40,26 @@ struct NativeDryRouteCommand final {
             if(!row.isObject()){problem="Invalid channel assignment";return false;}
             const auto mode=row.getProperty("mode",{}).toString();
             modeNames[i]=mode;
+            // Legacy source mode remains the decoder's cross-version codec;
+            // V2 requires independent typed fields and rejects contradictions.
+            const auto sourceKind=row.getProperty("sourceKind",{}).toString();
+            const auto sourceFormat=row.getProperty("sourceFormat",{}).toString();
+            const auto channelFormat=row.getProperty("channelFormat",{}).toString();
+            if(version==2){
+                const juce::String expectedKind=mode=="BUS"?"BUS":
+                    mode=="NONE"?"NONE":"PHYSICAL";
+                const juce::String expectedSourceFormat=
+                    (mode=="MONO"||mode=="STEREO")?mode:"NONE";
+                if(sourceKind!=expectedKind || sourceFormat!=expectedSourceFormat ||
+                   (channelFormat!="MONO" && channelFormat!="STEREO")){
+                    problem="CH "+juce::String(i+1)+
+                        ": sourceKind/sourceFormat/channelFormat mismatch";
+                    return false;
+                }
+            } else if(row.hasProperty("channelFormat") ||
+                      row.hasProperty("sourceKind") || row.hasProperty("sourceFormat")){
+                problem="Typed channel fields require schemaVersion 2";return false;
+            }
             const auto left=row.getProperty("left",-1);
             const auto right=row.getProperty("right",-1);
             const auto gain=row.getProperty("gain",.25);
@@ -69,6 +97,9 @@ struct NativeDryRouteCommand final {
             } else {
                 problem="Channel must be NONE, MONO, STEREO or BUS";return false;
             }
+            if(version==2)
+                candidate.channels.formats[i]=channelFormat=="MONO"
+                    ? ChannelFormat::mono:ChannelFormat::stereo;
         }
         // Dedicated AUX 1..4 are independent from the ten physical INPUTs.
         // Old sessions without auxes remain backward compatible and silent.

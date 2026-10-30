@@ -103,4 +103,62 @@ int main(){
     assert(NativeDryRouteCommand::decode(legacy,decoded,error));
     assert(decoded.sends.count==0);
     assert(decoded.sends.toMaster[0]==false);
+
+    // MS1 versioned live native decode: source physical format and channel
+    // processing format are distinct. The SAME existing prepared graph
+    // executes this PCM, including a mono-source-to-stereo channel and a
+    // mono BUS receiver (with no fabricated capture pin).
+    auto typed=juce::JSON::parse(json);
+    typed.getDynamicObject()->setProperty("schemaVersion",2);
+    for(int i=0;i<stripCount;++i){
+        auto& row=typed.getProperty("channels",juce::var())
+                           .getArray()->getReference(i);
+        const auto mode=row.getProperty("mode",{}).toString();
+        row.getDynamicObject()->setProperty("sourceKind",mode=="BUS"?"BUS":
+            mode=="NONE"?"NONE":"PHYSICAL");
+        row.getDynamicObject()->setProperty("sourceFormat",
+            (mode=="MONO"||mode=="STEREO")?mode:"NONE");
+        row.getDynamicObject()->setProperty("channelFormat",
+            i==0?"STEREO":i==1?"MONO":"STEREO");
+    }
+    NativeDryRouteCommand v2;
+    assert(NativeDryRouteCommand::decode(typed,v2,error));
+    assert(v2.channels.stripsAndMaster.strips[0].source==SourceMode::mono);
+    assert(v2.channels.formats[0]==ChannelFormat::stereo);
+    assert(v2.channels.stripsAndMaster.strips[1].source==SourceMode::disconnected);
+    assert(v2.channels.formats[1]==ChannelFormat::mono);
+    assert(v2.channels.formats[2]==ChannelFormat::stereo);
+    assert(PreparedRenderGraph::compile(v2.channels,ports,v2.sends,graph,fault));
+    assert(graph.channels.effectiveFormats[0]==ChannelFormat::stereo);
+    assert(graph.channels.effectiveFormats[1]==ChannelFormat::mono);
+    assert(graph.scheduled[1] && graph.sends.receivesInternalAudio(1));
+    PreparedMixerBlock formatBlock(graph,64);
+    assert(formatBlock.process(inputs,3,l.data(),r.data(),2,noFx));
+    // Source physical[0]=1: PRE 0.5 into mono receiver; mono pan center
+    // should be sqrt(1/2), not un-normalized stereo BALANCE.
+    assert(near(l[0],0.5f*0.70710678118f));
+    assert(near(r[0],0.5f*0.70710678118f));
+
+    // Fail-closed: one type mismatch, old decoded plan unchanged.
+    const auto before=v2;
+    auto* ch0=typed.getProperty("channels",juce::var())
+                    .getArray()->getReference(0).getDynamicObject();
+    ch0->setProperty("sourceKind","BUS");
+    assert(!NativeDryRouteCommand::decode(typed,v2,error));
+    assert(v2.channels.formats[0]==before.channels.formats[0]);
+    ch0->setProperty("sourceKind","PHYSICAL");
+    ch0->setProperty("channelFormat","WIDE");
+    assert(!NativeDryRouteCommand::decode(typed,v2,error));
+    ch0->setProperty("channelFormat","STEREO");
+    ch0->removeProperty("channelFormat");
+    assert(!NativeDryRouteCommand::decode(typed,v2,error));
+    ch0->setProperty("channelFormat","STEREO");
+    ch0->setProperty("sourceFormat","STEREO"); // physical mono source
+    assert(!NativeDryRouteCommand::decode(typed,v2,error));
+    assert(v2.channels.formats[0]==ChannelFormat::stereo);
+    // v1 rejects accidental typed partial fields so older payloads cannot
+    // silently believe a channel format was applied.
+    typed.getDynamicObject()->setProperty("schemaVersion",1);
+    assert(!NativeDryRouteCommand::decode(typed,v2,error));
+    assert(v2.channels.formats[1]==ChannelFormat::mono);
 }
