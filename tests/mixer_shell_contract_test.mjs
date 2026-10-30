@@ -67,3 +67,9 @@ test('native readback updates blue lower slit with cap on all channel/master pat
   assert.equal((native.match(/style\.setProperty\("--fader-open",\(100-top\)\.toFixed\(3\)\+"%"\)/g)||[]).length,3);
   assert.match(native,/element\.getAttribute\("aria-label"\)!==accessible/);
 });
+
+test('routing FX draft explicitly reconciles the native mixer without telemetry DOM work',()=>{
+  const native=read('web/bridge.js'),routes=read('web/monitor.js');
+  assert.match(native,/window\.addEventListener\("arMixRoutingDraftChanged",syncView\)/);
+  assert.match(routes,/window\.dispatchEvent\(new Event\("arMixRoutingDraftChanged"\)\)/);
+});

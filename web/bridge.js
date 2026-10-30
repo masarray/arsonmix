@@ -807,6 +807,10 @@
   new MutationObserver(records=>{
     if(needsMixerReconcile(records))syncView();
   }).observe(mixer,{childList:true,subtree:true});
+  // Controller-owned draft/ACK state changes carry semantic intent. Listen to
+  // this event instead of relying on an unrelated meter text mutation to
+  // make a routed FX draft visible in all eleven strip presentations.
+  window.addEventListener("arMixRoutingDraftChanged",syncView);
   // Opens the existing native Routing LAB, not a second mixer/editor.
   document.addEventListener("click",event=>{
     if(!event.target.closest("[data-native-routing-lab]"))return;
