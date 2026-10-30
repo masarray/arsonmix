@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "PreparedMixerBlock.h"
+#include "FxBypassEnvelope.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <algorithm>
 #include <array>
@@ -8,6 +9,7 @@
 #include <cstdint>
 #include <memory>
 #include <utility>
+#include <vector>
 
 // P1J: routing plans are replaceable; vendor FX instances are NOT routing
 // plans. Identical catalog ID + same device epoch reuses the exact instance
@@ -29,13 +31,24 @@ public:
         juce::MidiBuffer midi;
         const juce::String catalogId;
         const juce::String name;
+        const juce::String instanceId; // stable through MOVE; never a slot index
+        std::atomic<bool> bypassRequested{false};
+        armix::dsp::FxBypassEnvelope bypassFade; // RT exclusive state
+        std::vector<float> dryLeft,dryRight; // CONTROL allocation
+        inline static std::atomic<std::uint64_t> nextId{1};
         std::atomic_flag processing=ATOMIC_FLAG_INIT;
         std::atomic<unsigned> contention{0};
         std::atomic<unsigned> exceptions{0};
 
-        FxInstance(std::unique_ptr<Processor> p,juce::String id,juce::String label)
-            : processor(std::move(p)),catalogId(std::move(id)),name(std::move(label)) {
-            midi.ensureSize(1024); // CONTROL, before publication
+        FxInstance(std::unique_ptr<Processor> p,juce::String id,juce::String label,
+                   int maxSamples)
+            : processor(std::move(p)),catalogId(std::move(id)),name(std::move(label)),
+              instanceId("g5c-"+juce::String(static_cast<juce::int64>(
+                  nextId.fetch_add(1,std::memory_order_relaxed)))),
+              dryLeft(static_cast<std::size_t>(maxSamples)),
+              dryRight(static_cast<std::size_t>(maxSamples)) {
+            midi.ensureSize(1024);
+            bypassFade.prepare(false,processor?processor->getSampleRate():48000.0,0);
         }
         FxInstance(const FxInstance&)=delete;
         FxInstance& operator=(const FxInstance&)=delete;
@@ -54,17 +67,38 @@ public:
                 juce::FloatVectorOperations::clear(right,samples);
                 return;
             }
+            // G5C: atomic request from control; fade and scratch RT-owned.
+            bypassFade.request(bypassRequested.load(std::memory_order_relaxed));
+            if(bypassFade.fullyBypassed()) {
+                processing.clear(std::memory_order_release);
+                return;
+            }
+            if(samples<=0 || static_cast<std::size_t>(samples)>dryLeft.size()) {
+                juce::FloatVectorOperations::clear(left,std::max(0,samples));
+                juce::FloatVectorOperations::clear(right,std::max(0,samples));
+                processing.clear(std::memory_order_release);
+                return;
+            }
+            const bool fading=bypassFade.transitioning();
+            if(fading) {
+                juce::FloatVectorOperations::copy(dryLeft.data(),left,samples);
+                juce::FloatVectorOperations::copy(dryRight.data(),right,samples);
+            }
             try {
                 float* planar[]{left,right};
                 juce::AudioBuffer<float> buffer(planar,2,samples);
                 midi.clear();
                 processor->processBlock(buffer,midi);
             } catch(...) {
-                // Vendor faults must never unwind through the JUCE callback.
-                // A SEH crash still requires out-of-process isolation.
+                // Vendor exceptions must never unwind through the callback.
                 exceptions.fetch_add(1,std::memory_order_relaxed);
                 juce::FloatVectorOperations::clear(left,samples);
                 juce::FloatVectorOperations::clear(right,samples);
+            }
+            if(fading)for(int i=0;i<samples;++i) {
+                const auto mix=bypassFade.next();
+                left[i]=left[i]*mix.wet+dryLeft[static_cast<std::size_t>(i)]*mix.dry;
+                right[i]=right[i]*mix.wet+dryRight[static_cast<std::size_t>(i)]*mix.dry;
             }
             processing.clear(std::memory_order_release);
         }
@@ -103,6 +137,24 @@ public:
         return strip>=0&&strip<fxSlots&&position>=0&&position<counts_[strip]
             ?processors_[strip][position]->catalogId:empty;
     }
+    const juce::String& insertInstanceId(int strip,int position=0) const noexcept {
+        static const juce::String empty;
+        return strip>=0&&strip<fxSlots&&position>=0&&position<counts_[strip]
+            ?processors_[strip][position]->instanceId:empty;
+    }
+    bool insertBypassed(int strip,int position) const noexcept {
+        return strip>=0&&strip<fxSlots&&position>=0&&position<counts_[strip]
+            ?processors_[strip][position]->bypassRequested.load(std::memory_order_relaxed):false;
+    }
+    bool setInsertBypass(int strip,int position,const juce::String& token,
+                         bool bypass) noexcept {
+        if(strip<0||strip>=fxSlots||position<0||position>=counts_[strip]||
+           token.isEmpty())return false;
+        auto* fx=processors_[strip][position].get();
+        if(!fx||fx->instanceId!=token)return false;
+        fx->bypassRequested.store(bypass,std::memory_order_release);
+        return true;
+    }
     const Processor* instanceProcessor(int strip,int position=0) const noexcept {
         return strip>=0&&strip<fxSlots&&position>=0&&position<counts_[strip]
             ?processors_[strip][position]->processor.get():nullptr;
@@ -137,7 +189,7 @@ public:
            position<0||position>=maxInsertsPerStrip||!processor)
             return false;
         processors_[strip][position]=std::make_shared<FxInstance>(
-            std::move(processor),catalogId,name);
+            std::move(processor),catalogId,name,pluginQuantum_);
         ++counts_[strip];++activeInserts_;
         return true;
     }
