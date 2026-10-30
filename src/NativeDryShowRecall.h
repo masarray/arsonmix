@@ -139,6 +139,31 @@ public:
         put(proposed,"schemaVersion",2);
         put(proposed,"deviceEpoch",currentEpoch);
         put(proposed,"revision",currentRevision);
+        // MS3A integration: Show FX/routing recall is NOT a device patch
+        // migration. Retain the current verified physical MAIN destination
+        // pair, never silently reset to hardware outputs 1/2. Physical pin
+        // assignments are deliberately NOT serialized into portable Shows.
+        const auto liveMain=lab.getProperty("mainOutputs",juce::var());
+        if(!liveMain.isVoid()) {
+            const auto* pair=liveMain.getArray();
+            const auto* valid=lab.getProperty("outputPorts",juce::var()).getArray();
+            if(!pair||pair->size()!=2||!valid)
+                return "Current physical MAIN output patch is unavailable";
+            const auto left=pair->getReference(0),right=pair->getReference(1);
+            if(!left.isInt()||!right.isInt() ||
+               static_cast<int>(left)==static_cast<int>(right))
+                return "Current physical MAIN output pair is invalid";
+            bool foundLeft=false,foundRight=false;
+            for(const auto& pin:*valid) {
+                if(pin.isInt()) {
+                    foundLeft|=static_cast<int>(pin)==static_cast<int>(left);
+                    foundRight|=static_cast<int>(pin)==static_cast<int>(right);
+                }
+            }
+            if(!foundLeft||!foundRight)
+                return "Current MAIN output pin is not enabled on this device";
+            put(proposed,"mainOutputs",liveMain);
+        }
         put(proposed,"channels",juce::var(channels));
         put(proposed,"auxes",juce::var(auxes));
         put(proposed,"sends",juce::var(sends));
