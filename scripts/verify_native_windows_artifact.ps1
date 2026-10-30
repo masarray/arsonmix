@@ -24,7 +24,7 @@ foreach ($name in $expected) {
 if ($LASTEXITCODE -ne 0) { throw "FactoryFX resource, manifest or licence gate failed" }
 $factoryPath = Join-Path $OutputDir "FactoryFX"
 $topDirs = @(Get-ChildItem -LiteralPath $OutputDir -Directory | ForEach-Object Name)
-if (@(Compare-Object -ReferenceObject @("FactoryFX") -DifferenceObject $topDirs).Count -ne 0 -and $topDirs.Count -gt 0) {
+if (@($topDirs | Where-Object { $_ -ne "FactoryFX" }).Count -gt 0) {
     throw "Unapproved directory in public release: $($topDirs -join ', ')"
 }
 $actual = @(Get-ChildItem -LiteralPath $OutputDir -File | ForEach-Object Name)
