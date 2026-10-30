@@ -1330,6 +1330,21 @@ async def main():
         }""",add_call["requestId"])
         assert await native.locator('[data-strip="0"] .rack .native-insert-row').count()==1
         assert await native.locator('[data-strip="0"] .rack').get_by_text("Effect 000").count()==1
+        # Applied/real native CH1 insert: green and indented; empty slots not
+        # falsely highlighted. MASTER is a read-only preview, not fake ADD FX.
+        rack_type=await native.evaluate("""()=>{
+          const active=document.querySelector('#mixer [data-strip="0"] .native-insert-row .insert-name');
+          const c=getComputedStyle(active),button=active.closest('.insert');
+          const padding=parseFloat(getComputedStyle(button).paddingLeft);
+          const master=document.querySelector('#mixer .master-strip .master-fx-rack');
+          return {color:c.color,font:parseFloat(c.fontSize),weight:parseInt(c.fontWeight),
+            indent:padding,masterFakeAdd:master.querySelectorAll('[data-native-unrouted="-1"]').length,
+            masterLabel:master.textContent.trim()};
+        }""")
+        assert rack_type['font']>=11 and rack_type['weight']>=600 and rack_type['indent']>=15,rack_type
+        assert rack_type['color']=='rgb(145, 239, 182)',rack_type
+        assert rack_type['masterFakeAdd']==0 and 'UNAVAILABLE' in rack_type['masterLabel'],rack_type
+
         await native.evaluate("""()=>{
           window.__arMixMockEvents.arMixChain([]);
           window.__arMixSent.length=0;
@@ -1352,6 +1367,20 @@ async def main():
             font:getComputedStyle(buttons[0]).fontFamily};
         }""")
         assert ui_polish['uniform'] and ui_polish['scrollHeader'] and ui_polish['square'],ui_polish
+        manager_hierarchy=await native.evaluate("""()=>{
+          const groups=[...document.querySelectorAll('#nativePluginManager .ar-manager-action-group')];
+          return groups.map(group=>{
+            const head=group.querySelector('.ar-manager-label').getBoundingClientRect();
+            const buttons=[...group.querySelectorAll('.native-btn')].map(b=>b.getBoundingClientRect());
+            const area=group.getBoundingClientRect();
+            return {captionAbove:buttons.every(b=>head.bottom<=b.top+1),
+              within:buttons.every(b=>b.left>=area.left-.5&&b.right<=area.right+.5),
+              captions:group.querySelector('.ar-manager-label').innerText};
+          });
+        }""")
+        assert len(manager_hierarchy)==2 and all(x['captionAbove'] and x['within'] for x in manager_hierarchy),manager_hierarchy
+        assert 'KEEP IN STUDIO' in manager_hierarchy[0]['captions'],manager_hierarchy
+
         assert 'ArSonMix Inter' in ui_polish['font'],ui_polish
         assert 'var(--b180-off' in ui_polish['resting'] or ui_polish['resting']=='#cbd1d1',ui_polish
         await native.locator('#nativePluginManager [data-close-modal]').click()

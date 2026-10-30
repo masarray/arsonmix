@@ -397,20 +397,20 @@
 }
 /* Keep filled/active native inserts easy to read without lighting empty slots.
    Actual CH1 and native routed CH2–10 only; preview/master never looks live. */
-#app.native-engine #mixer .rack .native-insert-row>.insert,
-#app.native-engine #mixer .rack .insert:not(.empty)[data-routed-fx]{
+.native-engine #app #mixer .rack .native-insert-row>.insert,
+.native-engine #app #mixer .rack .insert:not(.empty)[data-routed-fx]{
   padding-left:16px!important;
 }
-#app.native-engine #mixer .rack .native-insert-row .insert-name,
-#app.native-engine #mixer .rack .insert:not(.empty)[data-routed-fx] .insert-name{
+.native-engine #app #mixer .rack .native-insert-row .insert-name,
+.native-engine #app #mixer .rack .insert:not(.empty)[data-routed-fx] .insert-name{
   color:#91efb6!important;
   font:650 11px/1.2 "ArSonMix Inter",sans-serif!important;
   letter-spacing:.06px;
   text-overflow:ellipsis;white-space:nowrap;overflow:hidden;display:block;
 }
-#app.native-engine #mixer .rack .native-insert-row.is-bypassed .insert-name{
+.native-engine #app #mixer .rack .native-insert-row.is-bypassed .insert-name{
   color:#8da6a3!important;font-weight:550!important;
 }
-#app.native-engine #mixer .rack .insert.empty .insert-name{
+.native-engine #app #mixer .rack .insert.empty .insert-name{
   color:#72cce5;
 }
