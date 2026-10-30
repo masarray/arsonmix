@@ -940,13 +940,26 @@
   let rackFxDraft=null;
   const laneIds=route=>Array.isArray(route?.fxIds)
     ?route.fxIds.slice(0,8):route?.fxId?[route.fxId]:[];
+  // The bridge receives an exact native bypass ACK. Transfer only its
+  // accepted graph telemetry into this controller before repaint, without
+  // modifying a pending structural route draft or triggering a second APPLY.
+  window.__arMixAcceptFxBypassAck=status=>{
+    if(!status||typeof status!=="object")return false;
+    const current=state.dryRoutingLab||{};
+    if(Number(current.epoch)!==Number(status.epoch)||
+       Number(current.revision)!==Number(status.revision))return false;
+    state.dryRoutingLab=status;
+    return true;
+  };
   window.__arMixFxLaneView=channel=>{
     const d=state.dryRoutingLab||{};
     const saved=d.acceptedRoute?.channels?.[channel];
     const live=laneIds(saved);
     const pending=!!rackFxDraft&&rackFxDraft.epoch===Number(d.epoch);
     const ids=pending?laneIds(draftRoutes[channel]):live;
-    return {ids,live,pending,ready:!!d.ready,epoch:Number(d.epoch)||0,
+    const liveSlots=Array.isArray(d.fxInstances?.[channel])?d.fxInstances[channel]:[];
+    return {ids,live,liveSlots,pending,ready:!!d.ready,epoch:Number(d.epoch)||0,
+      revision:Number(d.revision)||0,
       monitoring:!!state.monitor,names:ids.map(id=>catalogNames.get(id)||"Missing VST3")};
   };
   window.__arMixStageRackFx=(channel,id,slot=0,operation="set")=>{

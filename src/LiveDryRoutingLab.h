@@ -360,6 +360,19 @@ public:
         return true;
     }
 
+    // Live, nonstructural FX power control; all guards bound to a real ACK.
+    bool setFxBypass(int lane,int slot,std::uint64_t expectedEpoch,
+                     std::uint64_t expectedRevision,const juce::String& token,
+                     bool bypass) noexcept {
+        if(lane<0||lane>=fxSlots||slot<0||slot>=maxFxPerLane||
+           !hasExplicitRoute()||expectedEpoch!=epoch()||
+           expectedRevision!=revision()||token.isEmpty())return false;
+        return publisher_.updateActiveControl(expectedEpoch,expectedRevision,
+            [&](FxGraph& fx) noexcept {
+                return fx.setInsertBypass(lane,slot,token,bypass);
+            });
+    }
+
     void disable() noexcept {
         userPatched_.store(false,std::memory_order_release);
         enabled_.store(false,std::memory_order_release);
@@ -534,6 +547,21 @@ public:
         out->setProperty("fxReused",fxReused_.load(std::memory_order_relaxed));
         // Only the message thread calls status(), never the audio callback.
         if(active() && ready())out->setProperty("acceptedRoute",acceptedRoute_);
+        juce::Array<juce::var> liveFxInstances;
+        const auto* prepared=hasExplicitRoute()
+            ?publisher_.controlPrepared(epoch(),revision()):nullptr;
+        for(int lane=0;lane<fxSlots;++lane) {
+            juce::Array<juce::var> slots;
+            if(prepared)for(int slot=0;slot<prepared->insertsOn(lane);++slot) {
+                auto item=std::make_unique<juce::DynamicObject>();
+                item->setProperty("instanceId",prepared->insertInstanceId(lane,slot));
+                item->setProperty("catalogId",prepared->insertId(lane,slot));
+                item->setProperty("bypassed",prepared->insertBypassed(lane,slot));
+                slots.add(juce::var(item.release()));
+            }
+            liveFxInstances.add(juce::var(slots));
+        }
+        out->setProperty("fxInstances",juce::var(liveFxInstances));
         juce::Array<juce::var> controls,fxNames;
         for(int i=0;i<count;++i) {
             const auto& st=channelEdits_[i];

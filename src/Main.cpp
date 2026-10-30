@@ -993,21 +993,24 @@ private:
         if ((studioBackupBusy_ || nativeShowBusy_) && (action.startsWith ("preset") ||
             action.startsWith ("import") || action.startsWith ("fx") ||
             action == "addCatalog" || action == "addScanFolder" ||
-            action == "scanVst3" || action == "routingDryApply"))
+            action == "scanVst3" || action == "routingDryApply" ||
+            action == "routingFxBypass"))
         {
             const auto reason=juce::String(
                 "Studio backup in progress. Finish backup before editing saved FX or VST library.");
             // R1 matrix must ALWAYS get a response after APPLY, including
             // upstream rejection before the normal routing command handler.
             // No graph or device state may be mutated while Studio IO is busy.
-            if(action=="routingDryApply" && browser_.loaded)
+            if((action=="routingDryApply" || action=="routingFxBypass") &&
+               browser_.loaded)
             {
                 auto ack=std::make_unique<juce::DynamicObject>();
                 ack->setProperty("ok",false);
                 ack->setProperty("error",reason);
                 ack->setProperty("state",engine_.status().getProperty("dryRoutingLab",{}));
                 browser_.emitEventIfBrowserIsVisible(
-                    "arMixRoutingLabAck",juce::var(ack.release()));
+                    action=="routingDryApply"?"arMixRoutingLabAck":"arMixRoutingFxBypassAck",
+                    juce::var(ack.release()));
             }
             return emitNotice(reason,true);
         }
@@ -1106,6 +1109,30 @@ private:
                 " independent VST3 inserts, real PRE/POST sends. "
                 "Existing CH1 FX Rack and Orbit stay bound to their original processors. "
                 "Structural CH1 FX changes remain gated until the next production lifecycle milestone.");
+        }
+        // G5C native per-instance BYPASS never recompiles the graph and
+        // does not require muting the output. All identity gates must agree.
+        if (action == "routingFxBypass") {
+            const int lane=static_cast<int>(args.getProperty("channel",-1));
+            const auto token=args.getProperty("instanceId",{}).toString();
+            const auto epoch=static_cast<std::uint64_t>(
+                static_cast<juce::int64>(args.getProperty("deviceEpoch",juce::var(0))));
+            const auto revision=static_cast<std::uint64_t>(
+                static_cast<juce::int64>(args.getProperty("revision",juce::var(0))));
+            const bool ok=value.isBool()&&engine_.setDryRoutingLabFxBypass(
+                lane,slot,epoch,revision,token,static_cast<bool>(value));
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("ok",ok);
+            ack->setProperty("error",ok?juce::String():
+                "FX bypass rejected: route revision, instance or device changed");
+            ack->setProperty("state",engine_.status().getProperty("dryRoutingLab",{}));
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                "arMixRoutingFxBypassAck",juce::var(ack.release()));
+            if(ok)diagnostics_.record("ROUTED_FX_BYPASS",
+                "CH/AUX "+juce::String(lane+1)+" slot "+juce::String(slot+1)+
+                (static_cast<bool>(value)?" OFF":" ON"));
+            else emitNotice("FX bypass rejected: refresh the FX Rack after native ACK.",true);
+            return;
         }
         if (action == "routingDryShowSave")
         {
