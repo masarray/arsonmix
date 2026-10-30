@@ -243,7 +243,7 @@
     controls.append(headline,pager);wrap.appendChild(controls);
     const viewport=node('div','arIOCrossScroll');
     const grid=node('div','arIOMatrix');
-    grid.style.gridTemplateColumns='minmax(166px,1fr) 96px repeat('+shown.length+',minmax(39px,1fr))';
+    grid.style.gridTemplateColumns='minmax(166px,1fr) 96px'+(shown.length?' repeat('+shown.length+',minmax(39px,1fr))':'');
     grid.setAttribute('role','grid');
     grid.setAttribute('aria-label',kind==='inputs'?'Logical input to hardware patch':'Logical main output to hardware patch');
     grid.append(node('div','arIOMatrixCorner','LOGICAL BUS / CHANNEL'),node('div','arIOMatrixCorner','SOURCE'));
