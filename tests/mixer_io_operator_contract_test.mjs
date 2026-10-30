@@ -22,10 +22,15 @@ test('FX rack stays mounted, mixer bank only changes presentation',()=>{
   assert.doesNotMatch(gui,/new AudioContext|AudioWorklet|createPluginInstance|processBlock/);
   assert.match(read('web/mixer-io.css'),/\.rack\{display:none!important\}/);
 });
-test('physical output is readback only; AUX returns not labeled hardware jacks',()=>{
+test('MS3A MAIN physical output patch stages through existing muted native route ACK; AUX is internal',()=>{
   assert.match(gui,/s\.outputPorts/);
-  assert.match(gui,/READ ONLY/);
+  assert.match(gui,/__arMixStageMainOutputs/);
+  assert.match(gui,/\.arIOMainOutput/);
+  assert.match(gui,/remaining output channels stay silent|Remaining output channels stay silent/);
   assert.match(gui,/internal stereo FX returns/);
+  assert.match(monitor,/window\.__arMixStageMainOutputs/);
+  assert.match(monitor,/mainOutputs:draftMainOutputs/);
+  assert.match(monitor,/routingDryApply/);
   assert.doesNotMatch(gui,/audioSelectDevice|setCurrentAudioDeviceType/);
 });
 test('native device inventory and packaged WebView2 assets are wired',()=>{
