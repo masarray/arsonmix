@@ -187,3 +187,21 @@ test('P2 user field regressions: fixed catalog header, uniform material and orig
   assert.match(native,/splash_->setBounds \(window_->getBounds\(\)\)/);
   assert.match(splash,/g\.fillAll \(juce::Colour \(0xff0b1823\)\)/);
 });
+
+test('G5 UI safety: compact Studio One-like browser and native insert truth',()=>{
+  assert.match(ui,/KEEP IN STUDIO/);
+  assert.match(ui,/LINK INSTALLED/);
+  assert.match(ui,/Show favorite plugins only/);
+  assert.match(ui,/c==="Dynamics"\?"COMP"/);
+  assert.match(ui,/data-native-category="\$\{escapeHtml\(c\)\}"/);
+  assert.match(css,/grid-template-columns:36px repeat\(6,minmax\(0,1fr\)\)/);
+  assert.match(css,/\.ar-manager-action-group \.ar-manager-label/);
+  assert.match(css,/\.rack \.native-insert-row \.insert-name/);
+  assert.match(css,/#nativeFxSelector #arPickerFavorites svg/);
+  assert.match(bridge,/MASTER FX · UNAVAILABLE/);
+  assert.doesNotMatch(bridge,/data-native-unrouted="-1"/);
+  assert.match(bridge,/Multi-insert is not yet supported for this channel/);
+  assert.match(bridge,/state\.chain\.slice\(0,6\)/);
+  assert.match(bridge,/data-routed-fx/);
+  assert.match(bridge,/data-native-fx="editor"/);
+});

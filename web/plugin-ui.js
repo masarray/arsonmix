@@ -49,16 +49,16 @@
     dialog.querySelector(".native-dialog-body").innerHTML=`
       <div class="ar-manager-actions">
         <div class="ar-manager-action-group">
-          <span class="ar-manager-label">IMPORT INTO STUDIO <small>Portable copy</small></span>
-          <button class="native-btn primary" data-native-action="importVst3" ${state.scanning?"disabled":""}>+ IMPORT .VST3 FILE</button>
-          <button class="native-btn primary" data-native-action="importVst3Bundle" ${state.scanning?"disabled":""}>+ IMPORT BUNDLE</button>
+          <span class="ar-manager-label">KEEP IN STUDIO <small>Portable copy</small></span>
+          <button class="native-btn primary" data-native-action="importVst3" ${state.scanning?"disabled":""} title="Copy a VST3 module into your portable Studio">IMPORT FILE</button>
+          <button class="native-btn primary" data-native-action="importVst3Bundle" ${state.scanning?"disabled":""} title="Copy the complete VST3 bundle into Studio">IMPORT BUNDLE</button>
         </div>
         <div class="ar-manager-action-group">
-          <span class="ar-manager-label">EXTERNAL PLUGINS <small>Reference original</small></span>
-          <button class="native-btn" data-native-action="importVst3InPlace" ${state.scanning?"disabled":""}>LINK FILE</button>
-          <button class="native-btn" data-native-action="importVst3BundleInPlace" ${state.scanning?"disabled":""}>LINK BUNDLE</button>
-          <button class="native-btn" data-native-action="addScanFolder" ${state.scanning?"disabled":""}>ADD FOLDER</button>
-          <button class="native-btn" data-native-action="scanVst3" ${state.scanning?"disabled":""}>SCAN SYSTEM</button>
+          <span class="ar-manager-label">LINK INSTALLED <small>Original location</small></span>
+          <button class="native-btn" data-native-action="importVst3InPlace" ${state.scanning?"disabled":""} title="Use an existing VST3 file without copying it">LINK FILE</button>
+          <button class="native-btn" data-native-action="importVst3BundleInPlace" ${state.scanning?"disabled":""} title="Use an existing VST3 bundle without copying it">LINK BUNDLE</button>
+          <button class="native-btn" data-native-action="addScanFolder" ${state.scanning?"disabled":""} title="Add a plugin folder to search paths">ADD FOLDER</button>
+          <button class="native-btn" data-native-action="scanVst3" ${state.scanning?"disabled":""} title="Discover installed VST3 plugins">SCAN VST3</button>
         </div>
       </div>
       <section class="ar-manager-scan" aria-label="Plugin scanner status">
@@ -139,9 +139,9 @@
         placeholder="Find an effect or vendor..." aria-label="Search VST3 effects"
         value="${escapeHtml(state.filter)}" autocomplete="off">
       <div class="native-category ar-picker-categories" aria-label="Effect type">
-        <button type="button" id="arPickerFavorites" class="ar-favorites-filter" aria-pressed="${pickerFavoritesOnly}">${favoriteIcon} FAVORITES</button>
+        <button type="button" id="arPickerFavorites" class="ar-favorites-filter" aria-label="Favorites only" title="Show favorite plugins only" aria-pressed="${pickerFavoritesOnly}">${favoriteIcon}</button>
         ${categories.map(c=>`<button class="native-btn ${c===state.selectedCategory?"on":""}"
-          data-native-category="${escapeHtml(c)}">${escapeHtml(c)}</button>`).join("")}
+          data-native-category="${escapeHtml(c)}" aria-label="${escapeHtml(c)} plugins" title="${escapeHtml(c)} plugins">${c==="Dynamics"?"COMP":escapeHtml(c)}</button>`).join("")}
       </div>
       <div id="nativeAddFeedback" aria-live="polite" role="status" hidden></div>
       <div id="arPickerRows" class="ar-picker-results" role="list" aria-label="Matching VST3 effects"></div>`;

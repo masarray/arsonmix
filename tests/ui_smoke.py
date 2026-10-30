@@ -1358,12 +1358,21 @@ async def main():
         await native.locator('[data-strip="0"] .rack [data-plugin-picker="1"]').first.click()
         picker_equal=await native.evaluate("""()=>{
           const el=[...document.querySelectorAll('#nativeFxSelector .ar-picker-categories button')];
-          const dims=el.map(x=>[Math.round(x.getBoundingClientRect().width),
-             Math.round(x.getBoundingClientRect().height)]);
-          return {count:dims.length,same:dims.every(d=>d[0]===dims[0][0]&&d[1]===dims[0][1]),
-             all:el.find(x=>x.dataset.nativeCategory==="All")?.classList.contains("on")};
+          const star=el[0].getBoundingClientRect(),dims=el.slice(1).map(x=>x.getBoundingClientRect());
+          const within=el.every(x=>{
+            const r=x.getBoundingClientRect(),p=x.parentElement.getBoundingClientRect();
+            return r.left>=p.left-.5&&r.right<=p.right+.5&&r.width>0;
+          });
+          const manager=document.querySelector('#nativePluginManager');
+          return {count:el.length,labels:el.slice(1).map(x=>x.textContent.trim()),
+            same:dims.every(d=>Math.abs(d.width-dims[0].width)<=1),
+            iconOnly:!el[0].textContent.trim()&&el[0].getAttribute('aria-label')==='Favorites only',
+            star:Math.abs(star.width-36)<=1,within,
+            all:el.find(x=>x.dataset.nativeCategory==="All")?.classList.contains("on")};
         }""")
         assert picker_equal['count']==7 and picker_equal['same'] and picker_equal['all'],picker_equal
+        assert picker_equal['iconOnly'] and picker_equal['star'] and picker_equal['within'],picker_equal
+        assert 'COMP' in picker_equal['labels'] and 'Dynamics' not in picker_equal['labels'],picker_equal
         await native.locator('#nativeFxSelector [data-close-modal]').click()
         # P1 FX Rack regression: the native 10CH state must not erase plugin
         # inserts or replace them with a ROUTING shortcut in the mixer.
