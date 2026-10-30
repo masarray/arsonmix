@@ -52,6 +52,11 @@ jobs:
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
+      - name: Fast offline FactoryFX release and integrity contract tests
+        shell: pwsh
+        run: |
+          python -m unittest discover -s scripts/tests -p test_factoryfx_release_bundle.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Checkout JUCE 8 pinned
         uses: actions/checkout@v4
         with:
@@ -94,11 +99,6 @@ jobs:
             'tests/studio_backup_contract_test.mjs'
           )
           node --test $contracts
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Fast offline FactoryFX release and integrity contract tests
-        shell: pwsh
-        run: |
-          python -m unittest discover -s scripts/tests -p test_factoryfx_release_bundle.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Configure Windows x64
         shell: pwsh
