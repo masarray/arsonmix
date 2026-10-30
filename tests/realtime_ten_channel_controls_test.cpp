@@ -57,7 +57,7 @@ int main() {
     };
     // Mono PRE uses equal-power center pan (-3 dB per side).
     // CH1 .8 * send .5 * sqrt(.5) plus CH3 stereo .2/.3.
-    constexpr float monoPre=.8f*.5f*std::sqrt(.5f);
+    constexpr float monoPre=.8f*.5f*0.7071067811865475f;
     auto [l,r]=run();
     assert(near(l,.2f+monoPre)&&near(r,.3f+monoPre));
     assert(controls.set(0,0.f,0.f,true,false,false));
