@@ -367,10 +367,23 @@ async def main():
         await page.locator('[data-io-matrix-kind="outputs"][data-io-matrix-row="0"][data-io-matrix-pin="4"]').click()
         await page.locator('[data-io-matrix-kind="outputs"][data-io-matrix-row="1"][data-io-matrix-pin="5"]').click()
         assert await page.evaluate("""()=>window.__arMixRouteView().draftMainOutputs.join(',')""")=='4,5'
+        # MS3B: enable real independent MONITOR only on unused physical HW1/2.
+        await page.locator('[data-io-monitor-toggle="on"]').click()
+        assert await page.locator('[data-io-matrix-kind="outputs"]').count()==16
+        assert await page.evaluate("""()=>window.__arMixRouteView().draftMonitorOutputs""")==[0,1]
+        await page.locator('[data-io-matrix-kind="outputs"][data-io-matrix-row="2"][data-io-matrix-pin="4"]').click()
+        assert await page.evaluate("""()=>window.__arMixRouteView().draftMonitorOutputs""")==[0,1]
+        await page.locator('.arIOMonitorSends summary').click()
+        await page.locator('.arIOMonitorSend[data-lane="0"]').select_option('0.5')
+        assert await page.evaluate("""()=>window.__arMixRouteView().draftMonitorSends[0]""")==0.5
+        assert await page.evaluate("""()=>window.__arMixRouteView().monitorOutputs""")==[]
         await page.locator('#arIOOverlay [data-mix-apply]').click()
         command=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='routingDryApply').at(-1).data.value""")
         assert command['mainOutputs']==[4,5],command
+        assert command['monitorOutputs']==[0,1],command
+        assert len(command['monitorSends'])==14 and command['monitorSends'][0]==.5,command
+        assert all(x==0 for x in command['monitorSends'][1:]),command
         assert not errors,errors
         await browser.close()
         print("PASS: G1/G2 + G3 real PRE/POST draft, AUX return, 0-gain bypass, native ACK/reject/revert, stable rack and 3 viewports")

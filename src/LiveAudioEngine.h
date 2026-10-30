@@ -1654,16 +1654,19 @@ private:
             // CH1 output on top or copy vendor processors into another graph.
             LegacyChannelOneLease ch1Lease{this,cycle.graph};
             std::array<int,2> nativeMainPair{{-1,-1}};
+            std::array<int,2> nativeMonitorPair{{-1,-1}};
             const bool routed=dryRoutingLab_.process(inputs,inputChannels,outputs,
                      outputChannels,samples,
                      masterGain_.load(std::memory_order_relaxed),
                      !outputPermitted,&ch1Lease,&processLegacyChannelOne,
                      masterMono_.load(std::memory_order_relaxed),
-                     &nativeMainPair);
+                     &nativeMainPair,&nativeMonitorPair);
             // Constant-time, callback-local physical PCM tap. Nothing is
             // reconfigured or acquired from another graph generation.
             const auto nativeMain=armix::mixer::NativeOutputPairTap::select(
                 outputs,outputChannels,nativeMainPair);
+            const auto nativeMonitor=armix::mixer::NativeOutputPairTap::select(
+                outputs,outputChannels,nativeMonitorPair);
             // STOP can race after the outer active() check. Never leave a
             // callback's output untouched, and NEVER fall through into CH1.
             if(!routed) {
@@ -1683,8 +1686,11 @@ private:
             // without touching third-party plugin lifecycle on the callback.
             if(routedFxMove!=0 || cycle.fadeOut || cycle.fadeIn) {
                 const float step=samples>1?1.f/static_cast<float>(samples-1):0.f;
-                for(int c=0;c<2;++c) {
-                    auto* const out=nativeMain[static_cast<std::size_t>(c)];
+                // Fade both INDEPENDENT physical buses on FX MOVE or graph
+                // handoff, not only MAIN. Same callback, no second DSP pass.
+                for(int c=0;c<4;++c) {
+                    auto* const out=c<2?nativeMain[static_cast<std::size_t>(c)]
+                        :nativeMonitor[static_cast<std::size_t>(c-2)];
                     if(!out)continue;
                     float peak=0.f;
                     for(int i=0;i<samples;++i) {
@@ -1714,10 +1720,6 @@ private:
             // while every physical output on the current device is silent.
             if(routed && outputGate.secondary && nativeMain[0] && nativeMain[1])
                 secondaryOutput_.publish(nativeMain[0],nativeMain[1],samples);
-            if(!outputGate.hardware)
-                for(int channel=0;channel<outputChannels;++channel)
-                    if(outputs && outputs[channel])
-                        juce::FloatVectorOperations::clear(outputs[channel],samples);
             // MS3A2: loudness/dBTP measure the same selected hardware
             // destination as the actual MAIN render and FX move fade.
             const float* measured[2] = {nativeMain[0],nativeMain[1]};
@@ -1742,6 +1744,12 @@ private:
                 slowCallbacks_.fetch_add(1,std::memory_order_relaxed);
             if(static_cast<double>(elapsed)>periodUs)
                 overBudgetCallbacks_.fetch_add(1,std::memory_order_relaxed);
+            // Secondary PCM is already copied; preserve logical MAIN meter
+            // evidence before disarming the physical MAIN/MONITOR pins.
+            if(!outputGate.hardware)
+                for(int channel=0;channel<outputChannels;++channel)
+                    if(outputs && outputs[channel])
+                        juce::FloatVectorOperations::clear(outputs[channel],samples);
             return;
         }
         const bool enabled = monitor_.load (std::memory_order_relaxed)
