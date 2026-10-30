@@ -21,6 +21,7 @@ class LiveChannelFxGraph final {
 public:
     static constexpr int channels=stripCount;
     static constexpr int fxSlots=stripCount+auxBusCount;
+    static constexpr int maxInsertsPerStrip=8; // fixed capacity, no RT allocation
     using Processor=juce::AudioProcessor;
 
     struct FxInstance final {
@@ -68,7 +69,8 @@ public:
             processing.clear(std::memory_order_release);
         }
     };
-    using FxBank=std::array<std::shared_ptr<FxInstance>,fxSlots>;
+    using FxRack=std::array<std::shared_ptr<FxInstance>,maxInsertsPerStrip>;
+    using FxBank=std::array<FxRack,fxSlots>;
 
     explicit LiveChannelFxGraph(const PreparedRenderGraph& plan,int frames,int pluginQuantum=512)
         : block_(std::make_unique<PreparedMixerBlock>(plan,frames)),
@@ -88,43 +90,60 @@ public:
                          bool mono,bool mute,bool solo) noexcept {
         return controls_.set(channel,gain,pan,mono,mute,solo);
     }
-    const juce::String& insertName(int strip) const noexcept {
-        static const juce::String empty;
-        return strip>=0&&strip<fxSlots&&processors_[strip]
-            ?processors_[strip]->name:empty;
+    int insertsOn(int strip) const noexcept {
+        return strip>=0&&strip<fxSlots?counts_[strip]:0;
     }
-    const juce::String& insertId(int strip) const noexcept {
+    const juce::String& insertName(int strip,int position=0) const noexcept {
         static const juce::String empty;
-        return strip>=0&&strip<fxSlots&&processors_[strip]
-            ?processors_[strip]->catalogId:empty;
+        return strip>=0&&strip<fxSlots&&position>=0&&position<counts_[strip]
+            ?processors_[strip][position]->name:empty;
     }
-    const Processor* instanceProcessor(int strip) const noexcept {
-        return strip>=0&&strip<fxSlots&&processors_[strip]
-            ?processors_[strip]->processor.get():nullptr;
+    const juce::String& insertId(int strip,int position=0) const noexcept {
+        static const juce::String empty;
+        return strip>=0&&strip<fxSlots&&position>=0&&position<counts_[strip]
+            ?processors_[strip][position]->catalogId:empty;
+    }
+    const Processor* instanceProcessor(int strip,int position=0) const noexcept {
+        return strip>=0&&strip<fxSlots&&position>=0&&position<counts_[strip]
+            ?processors_[strip][position]->processor.get():nullptr;
     }
 
-    // CONTROL thread: called BEFORE publication. Only same-strip and
-    // identical catalog identity can be reused; the caller verifies the
-    // same device epoch, sample-rate and prepared audio quantum.
+    // Immutable in the RT callback. Caller uses an unpublished graph and
+    // preserves epoch, sample-rate, quantum and plugin identity externally.
+    // A move reuses the SAME FxInstance from another position of this lane.
+    // Never reuse an instance twice in one new rack.
+    bool reuseAt(int strip,int target,const LiveChannelFxGraph& previous,
+                 int previousPosition,const juce::String& catalogId) {
+        if(strip<0||strip>=fxSlots||target!=counts_[strip]||
+           target<0||target>=maxInsertsPerStrip||
+           previousPosition<0||previousPosition>=previous.counts_[strip]||
+           catalogId.isEmpty()||previous.pluginQuantum_!=pluginQuantum_)
+            return false;
+        const auto& original=previous.processors_[strip][previousPosition];
+        if(!original||original->catalogId!=catalogId)return false;
+        for(int i=0;i<counts_[strip];++i)
+            if(processors_[strip][i]==original)return false;
+        processors_[strip][target]=original; // shared_ptr CONTROL only
+        ++counts_[strip];++activeInserts_;
+        return true;
+    }
     bool reuse(int strip,const LiveChannelFxGraph& previous,
                const juce::String& catalogId) {
-        if(strip<0||strip>=fxSlots||catalogId.isEmpty()||
-           processors_[strip]||!previous.processors_[strip]||
-           previous.insertId(strip)!=catalogId||
-           previous.pluginQuantum_!=pluginQuantum_)return false;
-        processors_[strip]=previous.processors_[strip]; // CONTROL only
-        ++activeInserts_;
+        return reuseAt(strip,0,previous,0,catalogId);
+    }
+    bool installAt(int strip,int position,std::unique_ptr<Processor> processor,
+                   const juce::String& name,const juce::String& catalogId={}) {
+        if(strip<0||strip>=fxSlots||position!=counts_[strip]||
+           position<0||position>=maxInsertsPerStrip||!processor)
+            return false;
+        processors_[strip][position]=std::make_shared<FxInstance>(
+            std::move(processor),catalogId,name);
+        ++counts_[strip];++activeInserts_;
         return true;
     }
-
     bool install(int strip,std::unique_ptr<Processor> processor,
                  const juce::String& name,const juce::String& catalogId={}) {
-        if(strip<0||strip>=fxSlots||!processor||processors_[strip])
-            return false;
-        processors_[strip]=std::make_shared<FxInstance>(
-            std::move(processor),catalogId,name);
-        ++activeInserts_;
-        return true;
+        return installAt(strip,0,std::move(processor),name,catalogId);
     }
 
     // One actual physical -> FX -> PRE send -> fader -> POST send -> BUS ->
@@ -142,9 +161,13 @@ public:
         auto channelFx=[this,externalContext,externalFx]
           (int strip,float* l,float* r,int samples) noexcept {
             if(strip<0||strip>=fxSlots)return;
-            auto* instance=processors_[strip].get(); // no shared_ptr copy in RT
-            if(instance)instance->render(l,r,samples);
-            else if(strip==0 && externalFx)
+            const int count=counts_[strip]; // immutable, prepared OFF RT
+            if(count>0) {
+                for(int slot=0;slot<count;++slot) {
+                    auto* instance=processors_[strip][slot].get();
+                    instance->render(l,r,samples); // no shared_ptr copies or RT heap use
+                }
+            } else if(strip==0 && externalFx)
                 externalFx(externalContext,strip,l,r,samples);
         };
         return block_->process(physical,inputs,left,right,frames,channelFx,levels,&controls_);
@@ -154,6 +177,7 @@ private:
     std::unique_ptr<PreparedMixerBlock> block_;
     RealtimeStripControls controls_ {};
     FxBank processors_ {};
+    std::array<std::uint8_t,fxSlots> counts_ {};
     int activeInserts_=0;
     int pluginQuantum_=512;
 };
