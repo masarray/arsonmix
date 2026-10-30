@@ -6,7 +6,7 @@
   const mixer=document.getElementById('mixer');
   const host=document.querySelector('.workbench');
   if(!mixer||!host)return;
-  let mode='FX', lastStatus={}, deviceInventory=null, ioTab='inputs', lastSignature='';
+  let mode='FX', lastStatus={}, deviceInventory=null, ioTab='inputs', lastSignature='', focusedInput=2;
   let monitorSendsExpanded=false;
   const el=id=>document.getElementById(id);
   const node=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n;};
@@ -34,7 +34,7 @@
   host.insertBefore(toolbar,mixer);
   const overlay=node('div','arIOOverlay');
   overlay.id='arIOOverlay';overlay.hidden=true;
-  overlay.innerHTML='<section class="arIOWindow" role="dialog" aria-modal="true" aria-label="ArSonMix hardware audio I/O"><header><div><small>ArSonMiX · AUDIO HARDWARE</small><h2>Audio I/O Setup</h2></div><button type="button" class="btn-180" data-io-close aria-label="Close Audio I/O">CLOSE</button></header><div class="arIOTop" id="arIOIdentity"></div><nav role="tablist" aria-label="Audio I/O views"><button class="btn-180 active" role="tab" data-io-tab="inputs">INPUTS</button><button class="btn-180" role="tab" data-io-tab="outputs">OUTPUTS</button><button class="btn-180" role="tab" data-io-tab="device">DEVICE</button></nav><div id="arIOBody" class="arIOBody"></div><footer><span id="arIOFeedback" role="status">Hardware changes require native ACK. Output stays MUTED on APPLY.</span><button type="button" class="btn-180" data-io-revert>REVERT DRAFT</button><button type="button" class="btn-180" data-mix-apply>APPLY PATCH</button><button type="button" class="btn-180" data-io-advanced>DRIVER SETTINGS</button></footer></section>';
+  overlay.innerHTML='<section class="arIOWindow" role="dialog" aria-modal="true" aria-label="ArSonMix hardware audio I/O"><header><div><small>ArSonMiX · AUDIO HARDWARE</small><h2>Audio I/O Setup · Mixer Routing</h2></div><button type="button" class="btn-180" data-io-close aria-label="Close Audio I/O">CLOSE</button></header><div class="arIOTop" id="arIOIdentity"></div><nav role="tablist" aria-label="Audio I/O views"><button class="btn-180 active" role="tab" data-io-tab="inputs">INPUT ROUTING</button><button class="btn-180" role="tab" data-io-tab="outputs">OUTPUT ROUTING</button><button class="btn-180" role="tab" data-io-tab="device">DEVICE / DRIVER</button></nav><div id="arIOBody" class="arIOBody"></div><footer><span id="arIOFeedback" role="status">Hardware changes require native ACK. Output stays MUTED on APPLY.</span><button type="button" class="btn-180" data-io-revert>REVERT DRAFT</button><button type="button" class="btn-180" data-mix-apply>APPLY PATCH</button><button type="button" class="btn-180" data-io-internal>ADVANCED BUS / FX</button><button type="button" class="btn-180" data-io-advanced>DRIVER SETTINGS</button></footer></section>';
   document.body.appendChild(overlay);
   // G3: ONE floating inspector follows the selected source/AUX, no new
   // DSP graph, no heavyweight matrix, no layout shifts in the MIX strips.
@@ -111,7 +111,16 @@
     refresh();drawSendEditor();
   }
 
-  function openIO(){document.getElementById('arRouteClose')?.click();overlay.hidden=false;lastSignature='';refreshIO();if(isNative())backend.emitEvent('arMixAction',{action:'audioDeviceInventory'});}
+  function openIO(tab='inputs',channel=null){
+    document.getElementById('arRouteClose')?.click();
+    if(['inputs','outputs','device'].includes(tab))ioTab=tab;
+    if(Number.isInteger(channel)&&channel>=0&&channel<10)focusedInput=channel;
+    if(overlay.hidden)advancedMatrixOpen=false;
+    overlay.hidden=false;lastSignature='';refreshIO();
+    if(isNative())backend.emitEvent('arMixAction',{action:'audioDeviceInventory'});
+    if(Number.isInteger(channel))overlay.querySelector('[data-io-quick-row="'+channel+'"]')?.scrollIntoView({block:'nearest'});
+  }
+  window.__arMixOpenAudioIO=openIO;
   function closeIO(){overlay.hidden=true;matrixDraft.clear();matrixSide.clear();matrixMessage='';}
   function setMode(next){
     if(!['FX','ROUTE','SENDS'].includes(next))return;
@@ -200,6 +209,7 @@
   // IO-MATRIX: reusable presentation of the existing native 10-channel graph.
   // Never publish a second graph, guess a missing pin, or stage incomplete L/R.
   const matrixDraft=new Map(), matrixSide=new Map();
+  let advancedMatrixOpen=false;
   const matrixPage={inputs:0,outputs:0}, matrixPageSize=8;
   let matrixEpoch=-1, matrixMessage='';
   const hardwareReady=s=>isNative()&&s.ready&&s.active&&!s.pending;
@@ -227,6 +237,88 @@
     const r=channelState(s,i),pending=matrixDraft.get(i);
     return pending&&pending.epoch===s.epoch?pending:r;
   }
+
+  // The operator-first source patch is only a controller for monitor.js.
+  // Mono and stereo can use ANY driver-reported enabled capture pins.
+  function makeQuickInputs(s){
+    const section=node('section','arIOQuickPatch');
+    section.setAttribute('aria-label','Route audio interface input to mixer channel');
+    const title=node('header','arIOQuickHeader');
+    const words=node('div','');
+    words.append(node('strong','','1 · INTERFACE INPUT → MIXER CHANNEL'),
+      node('small','','Choose a channel, mono/stereo source and actual driver input(s). STAGE → MUTE → APPLY.'));
+    const jump=node('select','arIOJump');
+    jump.dataset.ioJump='1';jump.setAttribute('aria-label','Find mixer channel');
+    for(let i=0;i<10;i++){
+      const opt=node('option','','CH '+String(i+1).padStart(2,'0')+' · '+matrixLogicalName(i));
+      opt.value=String(i);opt.selected=i===focusedInput;jump.appendChild(opt);
+    }
+    title.append(words,jump);section.appendChild(title);
+    const verified=portList(s);
+    section.appendChild(node('p','arIOQuickGuide',verified.length?
+      verified.length+' driver-reported capture pins · physical and virtual inputs appear only if enabled by this driver.' :
+      'NO INPUT PINS · select an audio interface in DEVICE / DRIVER to enable routing.'));
+    const headings=node('div','arIOQuickColumns');
+    for(const label of ['MIX CHANNEL','SOURCE','INPUT / LEFT','RIGHT','NATIVE STATE'])headings.appendChild(node('span','',label));
+    section.appendChild(headings);
+    function sourceSelect(channel,side,value){
+      const select=node('select','arIOQuickPin');
+      select.dataset.ioQuickPin=side;select.setAttribute('aria-label','CH '+(channel+1)+' '+side+' input port');
+      const blank=node('option','','Choose input…');blank.value='-1';select.appendChild(blank);
+      for(const pin of verified){
+        const option=node('option','','IN '+(pin.port+1)+' · '+portName(pin));
+        option.value=String(pin.port);option.selected=pin.port===value;select.appendChild(option);
+      }
+      return select;
+    }
+    for(let i=0;i<10;i++){
+      const r=channelState(s,i),accepted=s.acceptedRoute?.channels?.[i];
+      const row=node('div','arIOQuickRow');row.dataset.ioQuickRow=String(i);
+      row.dataset.state=!s.ready?'offline':valueFor(r)!==valueFor(accepted)?'draft':
+        r.mode==='NONE'?'empty':'live';
+      const identity=node('div','arIOQuickIdentity');
+      identity.append(node('strong','','CH '+String(i+1).padStart(2,'0')),node('small','',matrixLogicalName(i)));
+      const mode=node('select','arIOQuickMode');mode.dataset.ioQuickMode='1';
+      mode.setAttribute('aria-label','CH '+(i+1)+' physical input type');
+      for(const pair of [['NONE','NO INPUT'],['MONO','MONO'],['STEREO','STEREO'],
+        ...(r.mode==='BUS'?[['BUS','INTERNAL BUS']]:[])]){
+        const option=node('option','',pair[1]);option.value=pair[0];option.selected=r.mode===pair[0];mode.appendChild(option);
+      }
+      const left=sourceSelect(i,'left',r.left),right=sourceSelect(i,'right',r.right);
+      left.disabled=!hardwareReady(s)||r.mode==='NONE'||r.mode==='BUS';
+      right.disabled=!hardwareReady(s)||r.mode!=='STEREO';
+      mode.disabled=!hardwareReady(s)||r.mode==='BUS';
+      const action=node('div','arIOQuickAction');
+      const stage=node('button','btn-180 arIOQuickStage','STAGE');
+      stage.dataset.ioQuickStage='1';stage.type='button';
+      stage.disabled=!hardwareReady(s)||r.mode==='BUS';
+      action.append(stage,node('small','arIOQuickState',r.mode==='BUS'?'INTERNAL BUS':
+        !s.ready?'NO DEVICE':row.dataset.state==='draft'?'DRAFT · NOT LIVE':
+        row.dataset.state==='live'?'LIVE · ACK':'UNPATCHED'));
+      row.append(identity,mode,left,right,action);section.appendChild(row);
+    }
+    section.appendChild(node('p','arIOQuickFooter','STAGE is not audible. MUTE output → APPLY PATCH → wait for NATIVE ACK to make the assignment live.'));
+    return section;
+  }
+  function stageQuickInput(button){
+    const row=button.closest('[data-io-quick-row]'),channel=Number(row?.dataset.ioQuickRow);
+    const s=route(),pins=new Set(matrixPorts(s,'inputs'));
+    if(!row||!Number.isInteger(channel)||channel<0||channel>=10||!hardwareReady(s))
+      return matrixSay('Choose an active driver and wait for any previous APPLY.');
+    const mode=row.querySelector('[data-io-quick-mode]').value,
+      left=Number(row.querySelector('[data-io-quick-pin="left"]').value),
+      right=Number(row.querySelector('[data-io-quick-pin="right"]').value);
+    if(mode==='MONO'&&!pins.has(left))return matrixSay('CH '+(channel+1)+' · choose a valid mono input.');
+    if(mode==='STEREO'&&(!pins.has(left)||!pins.has(right)||left===right))
+      return matrixSay('CH '+(channel+1)+' · choose two DISTINCT driver-reported L/R inputs.');
+    if(!['NONE','MONO','STEREO'].includes(mode))return matrixSay('Use ADVANCED BUS / FX for internal sources.');
+    focusedInput=channel;matrixDraft.delete(channel);
+    const result=window.__arMixStageChannelInput?.(channel,mode,mode==='NONE'?-1:left,mode==='STEREO'?right:-1);
+    matrixSay(result?.ok?'CH '+(channel+1)+' · '+(mode==='NONE'?'INPUT REMOVED':
+      mode==='MONO'?'MONO INPUT '+(left+1):'STEREO INPUT '+(left+1)+'/'+(right+1))+
+      ' → DRAFT · MUTE OUTPUT → APPLY PATCH → NATIVE ACK':result?.error||'Native input patch unavailable');
+    lastSignature='';refresh();
+  }
   function makeMatrix(s,kind){
     const ports=matrixPorts(s,kind),maxPage=Math.max(0,Math.ceil(ports.length/matrixPageSize)-1);
     matrixPage[kind]=Math.min(maxPage,Math.max(0,matrixPage[kind]));
@@ -234,7 +326,7 @@
     const wrap=node('section','arIOCrosspatch');
     wrap.setAttribute('aria-label',kind==='inputs'?'Physical input crosspatch':'Physical output crosspatch');
     const controls=node('div','arIOMatrixToolbar');
-    const headline=node('strong','',kind==='inputs'?'INPUT PATCH · M / L / R':'OUTPUT PATCH · MAIN / MONITOR L / R');
+    const headline=node('strong','',kind==='inputs'?'ADVANCED INPUT CROSSPOINTS · M / L / R':'HARDWARE OUTPUT CROSSPOINTS · MAIN / MONITOR');
     const pager=node('div','arIOPager');
     const prev=node('button','arIOPageButton','‹');prev.type='button';prev.dataset.ioPage='-1';
     prev.disabled=page===0;prev.setAttribute('aria-label','Previous physical port bank');
@@ -253,7 +345,7 @@
       const h=node('div','arIOPortTitle');
       h.append(node('span','arIOPortFriendly',kind==='inputs'?(p?.label||'Input '+(pin+1)):'HW OUT '+(pin+1)),
         node('b','arIOPortIndex',String(pin+1)));
-      h.title=(p?.label||'Hardware output '+(pin+1))+' · enabled physical pin';
+      h.title=(kind==='inputs'?(p?.label||'Input '+(pin+1)):'Output '+(pin+1))+' · verified driver pin';
       h.setAttribute('role','columnheader');
       grid.appendChild(h);
     }
@@ -406,7 +498,6 @@
       'MONITOR needs two verified unused output pins.');
     lastSignature='';refresh();
   }
-  const genericInterfaceSvg='data:image/svg+xml;charset=utf-8,'+encodeURIComponent("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 340 150\" role=\"img\" aria-label=\"Generic audio interface\">\n  <title>Generic rack audio interface</title>\n  <rect x=\"22\" y=\"18\" width=\"296\" height=\"107\" rx=\"13\" fill=\"#10191f\" stroke=\"#8199a5\" stroke-width=\"3\"/>\n  <rect x=\"31\" y=\"27\" width=\"278\" height=\"88\" rx=\"8\" fill=\"#25343d\" stroke=\"#364b58\"/>\n  <path d=\"M36 40h267\" stroke=\"#607988\" stroke-width=\"1\"/>\n  <circle cx=\"85\" cy=\"72\" r=\"22\" fill=\"#0d161d\" stroke=\"#849eab\" stroke-width=\"3\"/>\n  <circle cx=\"85\" cy=\"72\" r=\"12\" fill=\"#25343d\" stroke=\"#718794\" stroke-width=\"2\"/>\n  <circle cx=\"145\" cy=\"72\" r=\"22\" fill=\"#0d161d\" stroke=\"#849eab\" stroke-width=\"3\"/>\n  <circle cx=\"145\" cy=\"72\" r=\"12\" fill=\"#25343d\" stroke=\"#718794\" stroke-width=\"2\"/>\n  <path d=\"M85 60v24M73 72h24M145 60v24M133 72h24\" stroke=\"#536b78\" stroke-width=\"2\"/>\n  <circle cx=\"221\" cy=\"72\" r=\"21\" fill=\"#0f1b22\" stroke=\"#9db4bf\" stroke-width=\"3\"/>\n  <circle cx=\"221\" cy=\"72\" r=\"13\" fill=\"#293b46\" stroke=\"#657f8e\"/>\n  <path d=\"M221 58v8\" stroke=\"#aedce6\" stroke-width=\"3\" stroke-linecap=\"round\"/>\n  <circle cx=\"270\" cy=\"55\" r=\"4\" fill=\"#70c992\"/>\n  <circle cx=\"283\" cy=\"55\" r=\"4\" fill=\"#6e8b9b\"/>\n  <circle cx=\"270\" cy=\"67\" r=\"4\" fill=\"#5c7886\"/>\n  <circle cx=\"283\" cy=\"67\" r=\"4\" fill=\"#5c7886\"/>\n  <rect x=\"260\" y=\"87\" width=\"33\" height=\"7\" rx=\"2\" fill=\"#10181f\" stroke=\"#637d8b\"/>\n  <circle cx=\"40\" cy=\"35\" r=\"3\" fill=\"#899ea8\"/><circle cx=\"300\" cy=\"35\" r=\"3\" fill=\"#899ea8\"/>\n  <text x=\"85\" y=\"106\" text-anchor=\"middle\" fill=\"#c0d1d9\" font-family=\"sans-serif\" font-size=\"9\">INPUT 1</text>\n  <text x=\"145\" y=\"106\" text-anchor=\"middle\" fill=\"#c0d1d9\" font-family=\"sans-serif\" font-size=\"9\">INPUT 2</text>\n  <text x=\"221\" y=\"105\" text-anchor=\"middle\" fill=\"#c0d1d9\" font-family=\"sans-serif\" font-size=\"9\">MONITOR</text>\n</svg>");
   function refreshIO(){
     const s=route(),id=el('arIOIdentity'),body=el('arIOBody');
     matrixResetIfDeviceChanged(s);
@@ -422,11 +513,15 @@
       s.outputPorts,s.mainOutputs,s.draftMainOutputs,s.monitorOutputs,s.draftMonitorOutputs,s.monitorSends,s.draftMonitorSends,s.ports,deviceInventory,matrixPage[ioTab],monitorSendsExpanded,
       [...matrixDraft],[...matrixSide]]);
     if(lastSignature===signature)return;
-    lastSignature=signature;body.replaceChildren();
+    lastSignature=signature;
+    // Preserves two-step stereo L/R selection across each native DRAFT render.
+    // Closing the advanced matrix mid-edit made its crosspoints inaccessible.
+    const previous=body.querySelector('.arIOAdvancedMatrix');
+    if(previous)advancedMatrixOpen=previous.open;
+    body.replaceChildren();
     if(ioTab!=='device'){
       const identity=node('div','arIOHardwareHeader');
-      const art=node('img','arIOHardwareArt');art.src=window.location.protocol==='file:'?genericInterfaceSvg:'assets/audio-interface.svg';
-      art.alt='Generic audio interface illustration (not an identified physical device)';
+      const art=node('span','arIOHardwareIcon','I/O');art.setAttribute('aria-hidden','true');
       const textWrap=node('div','arIOHardwareText');
       textWrap.append(node('small','','AUDIO INTERFACE · DRIVER REPORTED'),
         node('strong','',lastStatus.driver||'NO ACTIVE DRIVER'),
@@ -434,23 +529,17 @@
           ?matrixPorts(s,'inputs').length+' verified inputs · map to logical mixer channels'
           :matrixPorts(s,'outputs').length+' verified outputs · patch only supported physical buses'));
       identity.append(art,textWrap);body.appendChild(identity);
-      body.appendChild(makeMatrix(s,ioTab));
+      if(ioTab==='inputs'){
+        body.appendChild(makeQuickInputs(s));
+        const advanced=node('details','arIOAdvancedMatrix');
+        advanced.open=advancedMatrixOpen;
+        advanced.appendChild(node('summary','','ADVANCED M / L / R CROSSPOINT · SAME NATIVE ROUTING'));
+        advanced.appendChild(makeMatrix(s,ioTab));
+        body.appendChild(advanced);
+      }else body.appendChild(makeMatrix(s,ioTab));
     }
     if(ioTab==='inputs'){
-      const details=node('details','arIOQuickMap');
-      details.appendChild(node('summary','','QUICK INPUT SELECTION · ACCESSIBLE ALTERNATIVE'));
-      const quick=node('div','arIOInputGrid');
-      quick.append(node('strong','arIOGridLabel','LOGICAL CHANNEL'),node('strong','arIOGridLabel','PHYSICAL SOURCE'));
-      for(let i=0;i<10;i++){
-        const r=channelState(s,i);
-        quick.appendChild(node('span','arIOChannelName','CH '+String(i+1).padStart(2,'0')+' · '+matrixLogicalName(i)));
-        const select=node('select','arIOSource');
-        select.dataset.channel=String(i);select.setAttribute('aria-label','CH '+(i+1)+' physical input');
-        populate(select,portsFor(s,r),valueFor(r));select.disabled=!hardwareReady(s);
-        quick.appendChild(select);
-      }
-      details.appendChild(quick);body.appendChild(details);
-      body.appendChild(node('p','arIOHint','Physical source width and channel processing width are separate. For BUS receivers or complex internal paths use ROUTING.'));
+      body.appendChild(node('p','arIOHint','MAONO PS22 virtual inputs appear here ONLY if its selected driver enumerates them as capture ports. Configure MAONO Routing Center and select the appropriate PS22 ASIO/recording endpoint in DEVICE / DRIVER. Separate Windows capture endpoints cannot be silently combined into one device. Processing MONO/STEREO is independent of physical source mode.'));
     }else if(ioTab==='outputs'){
       const monitorEnabled=s.draftMonitorOutputs?.length===2;
       const monitorControl=node('div','arIOMonitorControls');
@@ -534,6 +623,20 @@
     lastSignature='';refresh();
   }
   document.addEventListener('change',e=>{
+    if(e.target.matches('[data-io-quick-mode]')){
+      const row=e.target.closest('[data-io-quick-row]'),mode=e.target.value;
+      const left=row.querySelector('[data-io-quick-pin="left"]'),
+        right=row.querySelector('[data-io-quick-pin="right"]');
+      left.disabled=mode==='NONE'||mode==='BUS';
+      right.disabled=mode!=='STEREO';
+      if(mode!=='STEREO')right.value='-1';
+      return;
+    }
+    if(e.target.matches('[data-io-jump]')){
+      focusedInput=Number(e.target.value);
+      overlay.querySelector('[data-io-quick-row="'+focusedInput+'"]')?.scrollIntoView({block:'nearest'});
+      return;
+    }
     if(e.target.matches('.arIOMatrixMode')){matrixModeChange(e.target);return;}
     if(e.target.matches('.arIOMonitorSend')){
       const result=window.__arMixStageMonitorSend?.(Number(e.target.dataset.lane),Number(e.target.value));
@@ -590,6 +693,12 @@
       sendFeedback=result?.ok?'SUBMITTED · WAIT FOR NATIVE ACK':result?.error||'APPLY failed';
       drawSendEditor();return;
     }
+    if(b.dataset.ioQuickStage!==undefined){
+      e.preventDefault();e.stopImmediatePropagation();stageQuickInput(b);return;
+    }
+    if(b.dataset.ioInternal!==undefined){
+      e.preventDefault();e.stopImmediatePropagation();closeIO();window.__arMixOpenRoutingLab?.();return;
+    }
     if(b.dataset.ioMatrixPin!==undefined){
       e.preventDefault();e.stopImmediatePropagation();
       const row=Number(b.dataset.ioMatrixRow),pin=Number(b.dataset.ioMatrixPin);
@@ -620,7 +729,13 @@
     if(b.dataset.ioClose!==undefined){e.preventDefault();e.stopImmediatePropagation();closeIO();return;}
     if(b.dataset.ioTab){e.preventDefault();e.stopImmediatePropagation();ioTab=b.dataset.ioTab;matrixMessage='';lastSignature='';refreshIO();return;}
     if(b.dataset.ioAdvanced!==undefined){e.preventDefault();e.stopImmediatePropagation();closeIO();backend?.emitEvent?.('arMixAction',{action:'audioSetup'});return;}
-    if(b.dataset.mixPatch){e.preventDefault();e.stopImmediatePropagation();const strip=b.closest('[data-strip]');window.__arMixOpenChannelPatch?.(Number(strip?.dataset.strip)||0,b.dataset.mixPatch);return;}
+    if(b.dataset.mixPatch){
+      e.preventDefault();e.stopImmediatePropagation();
+      const strip=b.closest('[data-strip]'),channel=Number(strip?.dataset.strip)||0;
+      if(b.dataset.mixPatch==='input')openIO('inputs',channel);
+      else window.__arMixOpenChannelPatch?.(channel,b.dataset.mixPatch);
+      return;
+    }
     if(b.dataset.mixApply!==undefined){e.preventDefault();e.stopImmediatePropagation();const response=window.__arMixApplyMixerDraft?.();if(response&&!response.ok)el('arIOFeedback').textContent=response.error;refresh();return;}
   },true);
   document.addEventListener('change',e=>{

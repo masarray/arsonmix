@@ -132,3 +132,21 @@ test('MS3B independent physical MONITOR publishes in existing native ACK transac
   assert.match(block,/monitorGains/);
   assert.doesNotMatch(gui,/AudioContext|AudioWorklet|createPluginInstance|processBlock/);
 });
+
+
+test('PATCH1 operator-first mono and nonadjacent stereo stage into ONE native transaction',()=>{
+  const css=read('web/mixer-io.css');
+  assert.match(gui,/function makeQuickInputs\(s\)/);
+  assert.match(gui,/function stageQuickInput\(button\)/);
+  assert.match(gui,/__arMixStageChannelInput\?\.\(channel,mode/);
+  assert.match(gui,/mode==='STEREO'.*left===right/);
+  assert.match(gui,/window\.__arMixOpenAudioIO=openIO/);
+  assert.match(gui,/if\(b\.dataset\.mixPatch==='input'\)openIO\('inputs',channel\)/);
+  assert.match(gui,/matrixPorts\(s,'inputs'\)/);
+  assert.match(gui,/SAME NATIVE ROUTING/);
+  assert.match(gui,/A separate Windows capture endpoints cannot be silently combined|Separate Windows capture endpoints cannot be silently combined/);
+  assert.match(css,/\.arIOQuickPatch\{/);
+  assert.match(css,/\.arIOQuickRow\[data-state="draft"\]/);
+  assert.match(css,/\.arIOQuickRow\[data-state="live"\]/);
+  assert.doesNotMatch(css,/backdrop-filter\s*:|filter\s*:\s*blur/);
+});
