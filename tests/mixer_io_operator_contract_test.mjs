@@ -26,12 +26,30 @@ test('MS3A MAIN physical output patch stages through existing muted native route
   assert.match(gui,/s\.outputPorts/);
   assert.match(gui,/__arMixStageMainOutputs/);
   assert.match(gui,/\.arIOMainOutput/);
-  assert.match(gui,/remaining output channels stay silent|Remaining output channels stay silent/);
+  assert.match(gui,/All unassigned outputs remain silent/);
   assert.match(gui,/internal stereo FX returns/);
   assert.match(monitor,/window\.__arMixStageMainOutputs/);
   assert.match(monitor,/mainOutputs:draftMainOutputs/);
   assert.match(monitor,/routingDryApply/);
   assert.doesNotMatch(gui,/audioSelectDevice|setCurrentAudioDeviceType/);
+});
+test('MS3B independently mixes real hardware MONITOR through same native draft and ACK',()=>{
+  const native=read('src/LiveDryRoutingLab.h');
+  const graph=read('engine/core/LiveChannelFxGraph.h');
+  const dsp=read('engine/core/PreparedMixerBlock.h');
+  assert.match(gui,/__arMixStageMonitorPatch/);
+  assert.match(gui,/__arMixStageMonitorSend/);
+  assert.match(gui,/monitorEnable/);
+  assert.match(monitor,/window\.__arMixStageMonitorPatch=/);
+  assert.match(monitor,/window\.__arMixStageMonitorSend=/);
+  assert.match(monitor,/monitorOutputs:draftMonitorOutputs/);
+  assert.match(monitor,/monitorSends:draftMonitorSends/);
+  assert.match(native,/setMonitorOutputBus/);
+  assert.match(native,/monitorL\?monitorL\+offset:null/);
+  assert.match(graph,/monitorEnabled_/);
+  assert.match(dsp,/monitorGains/);
+  assert.match(gui,/matrixOutputPin\(row,pin\)/); // #206 matrix preserved
+  assert.doesNotMatch(gui,/AudioWorklet|new AudioContext|processBlock/);
 });
 test('native device inventory and packaged WebView2 assets are wired',()=>{
   assert.match(main,/action == "audioDeviceInventory"/);

@@ -264,6 +264,8 @@
   let selectedAuxPair=null; // editor-only; not a second audio graph
   let draftEpoch=0; // identity of the hardware used to draw these selectors
   let draftMainOutputs=[]; // physical port IDs (2), never callback offsets
+  let draftMonitorOutputs=[]; // empty means independently muted/disabled bus
+  let draftMonitorSends=Array(14).fill(0); // 10 CH + four AUX POST taps
   function invalidateDraftForNewDevice(nextEpoch){
     if(draftEpoch===nextEpoch)return false;
     draftEpoch=nextEpoch;
@@ -276,6 +278,8 @@
     mixerDraftActive=false;
     selectedAuxPair=null;
     draftMainOutputs=[];
+    draftMonitorOutputs=[];
+    draftMonitorSends=Array(14).fill(0);
     return true;
   }
   const safeRouteText=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -395,6 +399,10 @@
       }
     draftMainOutputs=Array.isArray(saved.mainOutputs)&&saved.mainOutputs.length===2
       ?saved.mainOutputs.slice():[];
+    draftMonitorOutputs=Array.isArray(saved.monitorOutputs)&&saved.monitorOutputs.length===2
+      ?saved.monitorOutputs.slice():[];
+    draftMonitorSends=Array.isArray(saved.monitorSends)&&saved.monitorSends.length===14
+      ?saved.monitorSends.slice():Array(14).fill(0);
     draftSends.length=0;
     if(Array.isArray(saved.sends))
       for(const send of saved.sends.slice(0,32))
@@ -1027,9 +1035,41 @@
     const ports=Array.isArray(d.outputPorts)?d.outputPorts:[];
     if(!ports.includes(left)||!ports.includes(right)||left===right)
       return {ok:false,error:"MAIN requires two different active output pins"};
+    if(draftMonitorOutputs.some(p=>p===left||p===right))
+      return {ok:false,error:"MAIN and MONITOR must own different hardware output pins"};
     draftMainOutputs=[left,right];mixerDraftActive=true;
     window.dispatchEvent(new Event("arMixRoutingDraftChanged"));
     return {ok:true,message:"MAIN OUTPUT DRAFT · MUTE OUTPUT → APPLY → native ACK"};
+  };
+  window.__arMixStageMonitorPatch=(left,right)=>{
+    const d=state.dryRoutingLab||{};
+    if(!d.ready||patchPending||draftEpoch!==Number(d.epoch))
+      return {ok:false,error:"Native device changed or routing pending"};
+    if(left===-1&&right===-1){
+      draftMonitorOutputs=[];draftMonitorSends=Array(14).fill(0);
+    }else{
+      const ports=Array.isArray(d.outputPorts)?d.outputPorts:[];
+      const main=draftMainOutputs.length===2?draftMainOutputs:
+        (Array.isArray(d.mainOutputs)&&d.mainOutputs.length===2?d.mainOutputs:ports.slice(0,2));
+      if(!ports.includes(left)||!ports.includes(right)||left===right||
+         main.includes(left)||main.includes(right))
+        return {ok:false,error:"MONITOR needs two unused verified physical output pins"};
+      draftMonitorOutputs=[left,right];
+    }
+    mixerDraftActive=true;
+    window.dispatchEvent(new Event("arMixRoutingDraftChanged"));
+    return {ok:true,message:"MONITOR DRAFT · OUTPUT MUTE → APPLY → native ACK"};
+  };
+  window.__arMixStageMonitorSend=(lane,gain)=>{
+    const d=state.dryRoutingLab||{};
+    if(!d.ready||patchPending||draftEpoch!==Number(d.epoch)||
+       draftMonitorOutputs.length!==2)return {ok:false,error:"Enable MONITOR first"};
+    if(!Number.isInteger(lane)||lane<0||lane>=14||
+       !Number.isFinite(gain)||gain<0||gain>1)
+      return {ok:false,error:"Invalid MONITOR send level"};
+    draftMonitorSends[lane]=gain;mixerDraftActive=true;
+    window.dispatchEvent(new Event("arMixRoutingDraftChanged"));
+    return {ok:true,message:"MONITOR SEND DRAFT · APPLY required"};
   };
   window.__arMixRouteView=()=>{
     const d=state.dryRoutingLab||{};
@@ -1043,6 +1083,10 @@
       outputPorts:Array.isArray(d.outputPorts)?d.outputPorts.slice():[],
       mainOutputs:Array.isArray(d.mainOutputs)?d.mainOutputs.slice():[],
       draftMainOutputs:draftMainOutputs.slice(),
+      monitorOutputs:Array.isArray(d.monitorOutputs)?d.monitorOutputs.slice():[],
+      monitorSends:Array.isArray(d.monitorSends)?d.monitorSends.slice():[],
+      draftMonitorOutputs:draftMonitorOutputs.slice(),
+      draftMonitorSends:draftMonitorSends.slice(),
       acceptedRoute:d.acceptedRoute||null,
       draftRoutes:draftRoutes.map(r=>({...r,fxIds:laneIds(r)})),
       draftAux:draftAux.map(r=>({...r,fxIds:laneIds(r)})),
@@ -1214,6 +1258,10 @@
       mainOutputs:draftMainOutputs.length===2?draftMainOutputs.slice():(
         Array.isArray(d.mainOutputs)&&d.mainOutputs.length===2?d.mainOutputs.slice():
         (Array.isArray(d.outputPorts)?d.outputPorts.slice(0,2):[])),
+      ...(draftMonitorOutputs.length===2?{
+        monitorOutputs:draftMonitorOutputs.slice(),
+        monitorSends:draftMonitorSends.slice()
+      }:{}),
       channels:draftRoutes.map(r=>({...typedSource(r),fxIds:laneIds(r)})),
       auxes:draftAux.map(b=>({...b,fxIds:laneIds(b)})),
       sends:draftSends.map(s=>({...s}))

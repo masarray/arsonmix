@@ -369,6 +369,32 @@ async def main():
         command=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='routingDryApply').at(-1).data.value""")
         assert command['mainOutputs']==[4,5],command
+        # MS3B: MAIN→5/6 and independent MONITOR→1/2 must be carried
+        # by one structural native APPLY; no phantom virtual output.
+        status=await page.evaluate("""status=>{
+          const cmd=window.__armixTestActions.filter(x=>
+            x.name==='arMixAction'&&x.data.action==='routingDryApply').at(-1).data.value;
+          status.dryRoutingLab.mainOutputs=[4,5];
+          status.dryRoutingLab.revision++;
+          status.dryRoutingLab.acceptedRoute=cmd;
+          window.__armixTestEmit('arMixRoutingLabAck',{ok:true,state:status.dryRoutingLab});
+          window.__armixTestEmit('arMixStatus',status);
+          return status;
+        }""",status)
+        await page.locator('[data-io-tab="outputs"]').click()
+        assert await page.locator('[data-monitor-enable]').count()==1
+        await page.locator('[data-monitor-enable]').click()
+        assert await page.evaluate("""()=>window.__arMixRouteView().draftMonitorOutputs.join(',')""")=='0,1'
+        await page.locator('.arIOMonitorSends summary').click()
+        await page.locator('.arIOMonitorSend[data-lane="0"]').select_option('0.5')
+        assert await page.evaluate("""()=>window.__arMixRouteView().draftMonitorSends[0]""")==.5
+        await page.locator('#arIOOverlay [data-mix-apply]').click()
+        cmd=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.name==='arMixAction'&&x.data.action==='routingDryApply').at(-1).data.value""")
+        assert cmd['mainOutputs']==[4,5],cmd
+        assert cmd['monitorOutputs']==[0,1],cmd
+        assert len(cmd['monitorSends'])==14 and cmd['monitorSends'][0]==.5,cmd
+        assert all(g==0 for g in cmd['monitorSends'][1:]),cmd
         assert not errors,errors
         await browser.close()
         print("PASS: G1/G2 + G3 real PRE/POST draft, AUX return, 0-gain bypass, native ACK/reject/revert, stable rack and 3 viewports")

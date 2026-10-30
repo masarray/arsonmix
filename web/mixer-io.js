@@ -7,6 +7,7 @@
   const host=document.querySelector('.workbench');
   if(!mixer||!host)return;
   let mode='FX', lastStatus={}, deviceInventory=null, ioTab='inputs', lastSignature='';
+  let monitorSendsExpanded=false;
   const el=id=>document.getElementById(id);
   const node=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n;};
   const route=()=>window.__arMixRouteView?.()||{ports:[],outputPorts:[],draftRoutes:[],draftSends:[],draftAux:[],ready:false,epoch:0,monitor:false};
@@ -397,7 +398,7 @@
     overlay.querySelector('[data-mix-apply]').disabled=!hardwareReady(s)||!!matrixDraft.size||s.monitor;
     overlay.querySelector('[data-io-revert]').disabled=!isNative()||s.pending;
     const signature=ioTab+'|'+JSON.stringify([s.epoch,s.revision,s.pending,s.draftRoutes,
-      s.outputPorts,s.mainOutputs,s.draftMainOutputs,s.ports,deviceInventory,matrixPage[ioTab],
+      s.outputPorts,s.mainOutputs,s.draftMainOutputs,s.monitorOutputs,s.draftMonitorOutputs,s.draftMonitorSends,s.ports,deviceInventory,matrixPage[ioTab],
       [...matrixDraft],[...matrixSide]]);
     if(lastSignature===signature)return;
     lastSignature=signature;body.replaceChildren();
@@ -448,8 +449,58 @@
         row.append(node('strong','',label),selector);details.appendChild(row);
       }
       body.appendChild(details);
+      // MS3B: one additional stereo output bus shares the existing DSP graph.
+      // Keep #206 matrix visualization fully intact, then expose a compact
+      // independent MONITOR patch with the same MUTE/APPLY/native ACK.
+      const monPorts=Array.isArray(s.draftMonitorOutputs)?s.draftMonitorOutputs:
+        (Array.isArray(s.monitorOutputs)?s.monitorOutputs:[]);
+      const available=ports.filter(p=>!draft.includes(p));
+      body.appendChild(node('p','arIOHint','MONITOR · independent POST-fader mix, 10 channel + 4 AUX send sources. Requires two unused physical output pins.'));
+      for(const [i,label] of ['MONITOR LEFT','MONITOR RIGHT'].entries()){
+        const row=node('label','arIOOutputRow'),selector=node('select','arIOMonitorOutput');
+        selector.dataset.side=String(i);
+        selector.setAttribute('aria-label',label+' hardware output');
+        for(const p of available){
+          const opt=node('option','','HW OUT '+(p+1));
+          opt.value=String(p);
+          opt.selected=(monPorts.length===2?monPorts[i]:available[i])===p;
+          selector.appendChild(opt);
+        }
+        selector.disabled=!hardwareReady(s)||available.length<2;
+        row.append(node('strong','',label),selector);body.appendChild(row);
+      }
+      const active=monPorts.length===2;
+      const toggle=node('button','btn-180',active?'DISABLE MONITOR':'ENABLE MONITOR');
+      toggle.type='button';
+      toggle.dataset[active?'monitorDisable':'monitorEnable']='';
+      toggle.disabled=!hardwareReady(s)||(!active&&available.length<2);
+      body.appendChild(toggle);
+      if(active){
+        const group=node('details','arIOMonitorSends');
+        group.open=monitorSendsExpanded;
+        group.appendChild(node('summary','','MONITOR SENDS · CH1–10 / AUX1–4'));
+        const gains=s.draftMonitorSends?.length===14?s.draftMonitorSends:Array(14).fill(0);
+        for(let i=0;i<14;++i){
+          const row=node('label','arIOOutputRow');
+          row.appendChild(node('strong','',i<10?'CH '+(i+1):'AUX '+(i-9)));
+          const select=node('select','arIOMonitorSend');
+          select.dataset.lane=String(i);
+          select.setAttribute('aria-label','MONITOR send '+(i<10?'CH '+(i+1):'AUX '+(i-9)));
+          const levels=[[0,'OFF'],[.125,'-18 dB'],[.25,'-12 dB'],[.5,'-6 dB'],[1,'0 dB']];
+          if(!levels.some(([v])=>v===gains[i]))levels.push([gains[i],'CUSTOM']);
+          for(const [v,label] of levels){
+            const opt=node('option','',label);
+            opt.value=String(v);opt.selected=v===gains[i];
+            select.appendChild(opt);
+          }
+          select.disabled=!hardwareReady(s);
+          row.appendChild(select);group.appendChild(row);
+        }
+        group.addEventListener('toggle',()=>{monitorSendsExpanded=group.open});
+        body.appendChild(group);
+      }
       body.appendChild(node('p','arIOHint','LIVE MAIN: '+(accepted.length===2?'HW '+(accepted[0]+1)+'/'+(accepted[1]+1):'UNAVAILABLE')+
-        ' · Remaining output channels stay silent unless a separate native bus is implemented. AUX1–4 are internal stereo FX returns, not physical output sockets.'));
+        ' · MONITOR is a separate hardware bus, not a MAIN duplicate. All unassigned outputs remain silent. AUX1–4 are internal stereo FX returns.'));
     }else{
       body.appendChild(node('p','arIOHint','Use DRIVER SETTINGS to choose a JUCE-reported ASIO/WASAPI endpoint, sample rate and buffer. A valid native reopen invalidates old hardware patches; sound remains safely muted.'));
       if(!deviceInventory?.types?.length)body.appendChild(node('p','arIOHint','No device inventory yet · select a verified Windows audio device.'));
@@ -479,6 +530,21 @@
     lastSignature='';refresh();
   }
   document.addEventListener('change',e=>{
+    if(e.target.matches('.arIOMonitorOutput')){
+      const rows=[...overlay.querySelectorAll('.arIOMonitorOutput')];
+      const r=route();
+      if(rows.length!==2||r.draftMonitorOutputs?.length!==2)return;
+      const pins=rows.map(x=>Number(x.value));
+      const result=window.__arMixStageMonitorPatch?.(pins[0],pins[1]);
+      matrixSay(result?.ok?result.message:result?.error||'Invalid MONITOR hardware pins');
+      lastSignature='';refresh();return;
+    }
+    if(e.target.matches('.arIOMonitorSend')){
+      const result=window.__arMixStageMonitorSend?.(
+        Number(e.target.dataset.lane),Number(e.target.value));
+      matrixSay(result?.ok?result.message:result?.error||'Invalid MONITOR send');
+      lastSignature='';refresh();return;
+    }
     if(e.target.matches('.arIOMatrixMode')){matrixModeChange(e.target);return;}
     if(e.target.matches('.arIOMainOutput')){
       const s=route(),selectors=[...overlay.querySelectorAll('.arIOMainOutput')];
@@ -552,6 +618,18 @@
       const result=window.__arMixRevertMixerDraft?.();
       if(result?.ok){matrixDraft.clear();matrixSide.clear();}
       matrixSay(result?.ok?'DRAFT REVERTED · native route unchanged':result?.error||'Cannot revert while APPLY is pending');
+      lastSignature='';refresh();return;
+    }
+    if(b.dataset.monitorEnable!==undefined||b.dataset.monitorDisable!==undefined){
+      e.preventDefault();e.stopImmediatePropagation();
+      let result;
+      if(b.dataset.monitorDisable!==undefined)result=window.__arMixStageMonitorPatch?.(-1,-1);
+      else {
+        const rows=[...overlay.querySelectorAll('.arIOMonitorOutput')];
+        result=rows.length===2?window.__arMixStageMonitorPatch?.(
+          Number(rows[0].value),Number(rows[1].value)):null;
+      }
+      matrixSay(result?.ok?result.message:result?.error||'MONITOR requires unused output pins');
       lastSignature='';refresh();return;
     }
     if(b.dataset.ioClose!==undefined){e.preventDefault();e.stopImmediatePropagation();closeIO();return;}

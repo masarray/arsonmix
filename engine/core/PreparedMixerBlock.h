@@ -205,13 +205,24 @@ public:
     bool process(const float* const* physical, int callbackInputCount,
                  float* outputL, float* outputR, int frames, Fx&& processFx,
                  RenderLevels* observed=nullptr,
-                 const RealtimeStripControls* live=nullptr) noexcept {
+                 const RealtimeStripControls* live=nullptr,
+                 const std::array<float,stripCount+auxBusCount>* monitorGains=nullptr,
+                 float* monitorL=nullptr,float* monitorR=nullptr) noexcept {
         static_assert(std::is_nothrow_invocable_v<Fx&,int,float*,float*,int>,
                       "DSP hook must be noexcept and realtime bounded");
         if (observed) *observed={};
         if (frames<=0 || !outputL || !outputR)return false;
         std::fill_n(outputL,frames,0.f);
         std::fill_n(outputR,frames,0.f);
+        if((monitorL==nullptr)!=(monitorR==nullptr) ||
+           (monitorL && (!monitorGains || monitorL==monitorR ||
+                         monitorL==outputL || monitorL==outputR ||
+                         monitorR==outputL || monitorR==outputR)))
+            return false;
+        if(monitorL) {
+            std::fill_n(monitorL,frames,0.f);
+            std::fill_n(monitorR,frames,0.f);
+        }
         if (capacity_==0 || frames>capacity_ || callbackInputCount<0)
             return false;
         for(int i=0;i<stripCount;++i) {
@@ -306,6 +317,7 @@ public:
             graph.aux.dispatch(strip,SendTap::preFader,l,r,
                                auxLeft_.data(),auxRight_.data(),frames);
             float peak=0.f;
+            const float monitorGain=monitorL?(*monitorGains)[strip]:0.f;
             if(live) {
                 // A block-linear fader/PAN ramp avoids zipper clicks at the
                 // native callback rate. UI sends at most one target per rAF.
@@ -316,6 +328,10 @@ public:
                 for(int f=0;f<frames;++f) {
                     if(f<ramp){lv+=dL;rv+=dR;}
                     l[f]*=lv;r[f]*=rv;
+                    if(monitorGain>0.f) {
+                        monitorL[f]+=l[f]*monitorGain;
+                        monitorR[f]+=r[f]*monitorGain;
+                    }
                     peak=std::max(peak,std::max(std::abs(l[f]),std::abs(r[f])));
                     if(graph.sends.toMaster[strip]) {
                         masterL_[f]+=l[f];masterR_[f]+=r[f];
@@ -325,6 +341,10 @@ public:
             }else for(int f=0;f<frames;++f) {
                 l[f]*=gl;
                 r[f]*=gr;
+                if(monitorGain>0.f) {
+                    monitorL[f]+=l[f]*monitorGain;
+                    monitorR[f]+=r[f]*monitorGain;
+                }
                 peak=std::max(peak,std::max(std::abs(l[f]),std::abs(r[f])));
                 if(graph.sends.toMaster[strip]) {
                     masterL_[f]+=l[f];
@@ -346,8 +366,13 @@ public:
             float* const l=auxLeft_[b],* const r=auxRight_[b];
             processFx(stripCount+b,l,r,frames);
             float peak=0.f;
+            const float monitorGain=monitorL?(*monitorGains)[stripCount+b]:0.f;
             for(int f=0;f<frames;++f) {
                 const float vl=l[f]*bus.gain,vr=r[f]*bus.gain;
+                if(!bus.mute && monitorGain>0.f) {
+                    monitorL[f]+=vl*monitorGain;
+                    monitorR[f]+=vr*monitorGain;
+                }
                 peak=std::max(peak,std::max(std::abs(vl),std::abs(vr)));
                 if(bus.toMaster && !bus.mute){
                     masterL_[f]+=vl;
