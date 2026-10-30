@@ -278,7 +278,8 @@ async def main():
         assert await page.evaluate("""()=>window.__arMixFxLaneView(1).ids.join('|')""")=="rv-pro|eq-pro"
         assert await page.evaluate("""()=>window.__arMixFxLaneView(1).live.join('|')""")=="eq-pro|rv-pro"
         # Stage is reversible; routing device must not be reopened.
-        await page.locator('#arPatchRevert').click()
+        reverted=await page.evaluate("()=>window.__arMixRevertMixerDraft()")
+        assert reverted['ok'],reverted
         assert await page.evaluate("""()=>window.__arMixFxLaneView(1).ids.join('|')""")=="eq-pro|rv-pro"
         assert await page.locator('[data-strip="1"] .rack .insert-slot').count()==6
         assert not errors,errors
