@@ -1247,6 +1247,22 @@ async def main():
         assert native_static["native"] and native_static["fxPreview"]=="1",native_static
         assert native_static["masterPreview"] is None,native_static
         assert native_static["leftOpacity"]=="1" and native_static["rightOpacity"]=="1",native_static
+        # Text updates inside MASTER LCD must not re-run 11-strip rack repair.
+        native_hotpath=await native.evaluate("""async()=>{
+          await new Promise(resolve=>setTimeout(resolve,0));
+          const rack=document.querySelector('#mixer [data-strip="0"] .rack');
+          const saved=rack.dataset.nativeSig;
+          rack.dataset.nativeSig='__meter_text_must_not_trigger_rack__';
+          document.querySelector('#masterLufs').textContent='−13.2';
+          await new Promise(resolve=>setTimeout(resolve,0));
+          const idle=rack.dataset.nativeSig==='__meter_text_must_not_trigger_rack__';
+          if(saved===undefined)delete rack.dataset.nativeSig;
+          else rack.dataset.nativeSig=saved;
+          renderMaster();
+          await new Promise(resolve=>setTimeout(resolve,0));
+          return {idle,masterReconciled:document.querySelector('#masterLeft').dataset.fxPreview==='1'};
+        }""")
+        assert native_hotpath=={"idle":True,"masterReconciled":True},native_hotpath
         assert native_static["ch2Preview"]=="1" and native_static["ch2Opacity"]=="0",native_static
         # Real plugin-manager and picker layout regression on Chromium:
         # catalog pagination, stable search node and non-overlapping ADD button.
