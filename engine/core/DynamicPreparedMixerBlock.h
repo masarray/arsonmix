@@ -34,7 +34,7 @@ struct DynamicGraphRequest final {
 enum class DynamicGraphFault : std::uint8_t {
     none, noMaster, multipleMasters, invalidFrameCapacity,
     invalidPhysicalCount, missingSource, invalidSource,
-    invalidSendDestination, mainFeedback, cycle, invalidChannel,
+    invalidSendDestination, duplicateSend, mainFeedback, cycle, invalidChannel,
     scratchBudget, overflow
 };
 struct DynamicGraphError final {
@@ -153,6 +153,18 @@ public:
                 const auto to=it->second;
                 if(i==main) {error={DynamicGraphFault::mainFeedback,rows[i].id};return false;}
                 if(to==i) {error={DynamicGraphFault::cycle,rows[i].id};return false;}
+                // A duplicate edge would sum the same send twice and can
+                // cause unexpectedly loud signal. Different taps are legal.
+                const bool duplicate=std::any_of(
+                    outgoing[i].begin(),outgoing[i].end(),
+                    [&](const Edge& existing) {
+                        return existing.destination==to &&
+                               existing.pre==send.preFader;
+                    });
+                if(duplicate) {
+                    error={DynamicGraphFault::duplicateSend,rows[i].id};
+                    return false;
+                }
                 const float factor=rows[i].format==ProcessingFormat::mono &&
                                    send.preFader?0.7071067811865475f:1.f;
                 outgoing[i].push_back({to,send.gain*factor,send.gain*factor,send.preFader});

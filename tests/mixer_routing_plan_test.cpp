@@ -191,6 +191,27 @@ static void verifyDynamicPreparedPcm() {
     assert(!DynamicPreparedMixerBlock::compile(bank,request,renderer,error));
     assert(error.fault==DynamicGraphFault::mainFeedback);
     assert(renderer.process(physical,2,l.data(),r.data(),32,fx));
+    // Duplicate (same source, destination, tap) must reject atomically:
+    // previous active render block must remain safe and unchanged.
+    DynamicChannelRoster two;
+    ChannelEdit aIn;aIn.kind=Kind::add;aIn.position=0;
+    ChannelEdit aMaster;aMaster.kind=Kind::add;aMaster.position=1;
+    aMaster.role=ChannelRole::main;aMaster.format=ProcessingFormat::stereo;
+    std::vector<ChannelEdit> twinCreates{aIn,aMaster};
+    auto twinIds=two.edit(0,twinCreates);
+    assert(twinIds.ok()&&twinIds.createdIds.size()==2);
+    ChannelEdit link;link.kind=Kind::addSendReference;
+    link.id=twinIds.createdIds[0];link.target=twinIds.createdIds[1];
+    link.value=1.f;
+    std::array<ChannelEdit,2> twinLinks{link,link};
+    assert(two.edit(1,twinLinks).ok());
+    DynamicGraphRequest twinReq;
+    twinReq.maxFrames=32;twinReq.physicalInputs=1;
+    twinReq.sources={{twinIds.createdIds[0],0,-1,false}};
+    assert(!DynamicPreparedMixerBlock::compile(two,twinReq,renderer,error));
+    assert(error.fault==DynamicGraphFault::duplicateSend);
+    assert(renderer.channelCount()==128);
+    assert(renderer.process(physical,2,l.data(),r.data(),32,fx));
     // 1024 disconnected channels cost only MAIN scratch, NOT 1024 FX
     // allocations. No fixed ten/twelve-channel implementation limit.
     DynamicChannelRoster big;
