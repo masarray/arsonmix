@@ -7,8 +7,11 @@
   document.documentElement.classList.add("native-engine");
   // Both the historical --level contract and the compositor-backed meter cap.
   // This bridge runs only inside JUCE; native endpoint telemetry is unchanged.
-  function paintMeter(el,value){
+  function paintMeter(el,value,rawPeak){
     if(!el)return;
+    // Latch at raw native full scale, never on mapped LED percentage.
+    if(Number.isFinite(rawPeak)&&rawPeak>=1)
+      window.__arMixLatchNativeClip?.(el.dataset.meter,rawPeak);
     const level=Math.max(0,Math.min(100,Number(value)||0));
     if(typeof window.__arMixSetNativeMeterTarget==="function")
       window.__arMixSetNativeMeterTarget(el,level);
@@ -1499,14 +1502,26 @@
     // with source cadence and fought the shared elapsed-time ballistics.
     // UI animation is capped at 29.4fps; native peaks remain unmodified.
     if(lab?.active&&lab.ready&&Array.isArray(lab.channelPeaks)){
-      for(let i=0;i<Math.min(10,lab.channelPeaks.length);++i)
-        paintMeter(document.querySelector('[data-meter="'+i+'"]'),
-                   percent(Number(lab.channelPeaks[i])||0));
-    }else paintMeter(document.querySelector('[data-meter="0"]'),percent(d.inputPeak));
+      for(let i=0;i<Math.min(10,lab.channelPeaks.length);++i){
+        const raw=Number(lab.channelPeaks[i])||0,lit=percent(raw);
+        const mono=document.querySelector('[data-meter="'+i+'"]');
+        if(mono)paintMeter(mono,lit,raw);
+        else{
+          // Native channelPeaks is one aggregate per strip, not separate
+          // stereo-side measurements. Both bars show the SAME strip peak.
+          paintMeter(document.querySelector('[data-meter="'+i+'L"]'),lit,raw);
+          paintMeter(document.querySelector('[data-meter="'+i+'R"]'),lit,raw);
+        }
+      }
+    }else{
+      const raw=Number(d.inputPeak)||0;
+      paintMeter(document.querySelector('[data-meter="0"]'),percent(raw),raw);
+    }
+    const rawL=Number(d.peakLeft)||0,rawR=Number(d.peakRight)||0;
     paintMeter(document.querySelector('[data-meter="masterL"]')||
-      document.getElementById("masterMeterL"),percent(d.peakLeft));
+      document.getElementById("masterMeterL"),percent(rawL),rawL);
     paintMeter(document.querySelector('[data-meter="masterR"]')||
-      document.getElementById("masterMeterR"),percent(d.peakRight));
+      document.getElementById("masterMeterR"),percent(rawR),rawR);
     paintMeter(document.getElementById("masterMeterAux"),percent(d.peak));
     // Native measurement is valid ONLY with an explicit qualified 48k DIRECT
     // provenance. Never substitute sample peak for dBTP, or demo LUFS.

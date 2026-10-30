@@ -1410,6 +1410,37 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
     #05090c var(--fader-open,0%),
     #05090c 100%);
 }
+
+/* M5 — light is recessed INSIDE the 5px machined slot: graphite occludes
+   both sidewalls, narrow blue centre only below the existing cap position.
+   Two tiny static gradients; no blur, filter, shadow animation, extra RAF. */
+#app #mixer .fader-zone .fader::after{
+ background-color:#020609;
+ background-image:
+  linear-gradient(to top,transparent 0%,transparent var(--fader-open,0%),#020609 var(--fader-open,0%),#020609 100%),
+  linear-gradient(90deg,#010407 0%,#0a1d2e 24%,#2474b4 49%,#0b2840 68%,#010407 100%);
+ box-shadow:inset 1px 0 #010406,inset -1px 0 #010406;
+}
+/* M5 — names start on the same horizontal guide as ADD FX (glyph=10px,
+   gap=5px). VST3 identity remains readable, power is a separate target. */
+#app #mixer .strip .rack .insert-slot .insert:not(.empty) .insert-name,
+#app #mixer #masterLeft .master-fx-slot .master-insert:not(.empty) .insert-name{
+ padding-left:15px;
+ color:#7af2d8!important;
+ font:700 11px/1.15 'Segoe UI',Arial,sans-serif!important;
+ letter-spacing:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+#app #mixer #masterLeft .master-fx-slot .master-insert:not(.empty) .insert-name{padding-left:13px}
+#app #mixer .strip .rack .insert-slot.is-bypassed .insert-name,
+#app #mixer .strip .rack .native-insert-row.is-bypassed .insert-name,
+#app #mixer #masterLeft .master-fx-slot.is-bypassed .insert-name{color:#7a929b!important}
+/* The visible CLIP light stays narrow; its 12px button is easier to reset.
+   Semantic click/keyboard handler and the meter dimensions are unchanged. */
+#app #mixer .meter .clip-led{
+ top:0;height:12px;padding:3px 0 1px;
+ background-clip:content-box;border:0;box-shadow:none;
+}
+#app #mixer .meter .clip-led.latched{box-shadow:none!important}
 </style>
 <style id="arsonmix-mixer-layout-css">/* ArSonMix L2 mixer geometry — one vertically locked console, including MASTER.
    Source of truth is the outer seven-row grid, not per-strip flex intrinsic sizing.
@@ -1838,6 +1869,15 @@ function resetClip(key){
  const entry=meterNodes.get(key);if(entry?.peak){entry.peak.style.bottom='0%';entry.peakValue=-1}
 }
 function syncClipLeds(){document.querySelectorAll('[data-clip]').forEach(e=>e.classList.toggle('latched',!!clipLatch[e.dataset.clip]))}
+// Raw native peak at full-scale (not display-percent interpolation) latches.
+function latchClip(key){
+ if(clipLatch[key])return;
+ clipLatch[key]=true;
+ meterNode(key)?.clip?.classList.add('latched');
+}
+window.__arMixLatchNativeClip=(key,peak)=>{
+ if(Number.isFinite(peak)&&peak>=1)latchClip(key);
+};
 // Cache per-meter nodes across preview frames, rebuilding on mixer re-render.
 // Styling a full-height bar with a compositor transform avoids 14 cyclic height
 // reflows per meter tick. No native meter or DSP data path is affected.
@@ -1999,10 +2039,7 @@ function updateMeterVisual(key,level,now){
      meter.peak.style.bottom=(step/10)+'%';
    }
  }
- if(value>=97&&!clipLatch[key]){
-   clipLatch[key]=true;
-   meter.clip?.classList.add('latched');
- }
+ if(value>=97)latchClip(key);
 }
 
 function flushUiParams(){uiFlushScheduled=false;const bridge=window.__JUCE__?.backend;if(bridge?.emitEvent)for(const event of pendingUiParams.values())bridge.emitEvent('arMixParameter',event);pendingUiParams.clear()}

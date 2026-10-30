@@ -1,0 +1,12 @@
+# M5 — Machined fader internal blue, operator CLIP latch and native VST text
+
+Source baseline `main@0801cc8f661001e0e97e0783f9dbaec7522613e7`. Operator request: blue must shine **from inside the black metal slot**, not paint over it; CLIP lamp click must really reset the held peak; loaded VST label indent/weight/color must follow the FX power light without adding iGPU cost.
+
+## Changes
+1. Channel/MASTER fader pseudo-element continues to be **5px** inside existing machined graphite fold, but now composites two tiny static gradients: vertical gain gate reuses existing `--fader-open` (zero events), and narrow inner cobalt illumination is flanked by almost-black slot edges. This is not a blur/glow/filter, does not modify 36×77 cap PNG or its 38px detent, and adds zero RAFs/layers. No new hover work.
+2. Real native `arMixStatus` supplies RAW PCM sample peaks to the same existing meter painter. At a full-scale sample peak >=1, the LED latches once; clicking the existing semantic per-channel or MASTER-L/R CLIP button clears local latch and held peak. Continued clipping legitimately re-latches at the next native telemetry sample. The reset is a display acknowledgement, not an audio attenuator or hardware reset. Native stereo `channelPeaks` currently reports only **aggregate per-strip peak**: two stereo display columns repeat it and are NOT independently measured. MASTER L/R use separate native peaks.
+3. Filled VST labels gain 15px leading inset matching glyph+gap of **ADD FX**; static 11px 700 green/cyan akin to power ON, bypass steel, with ellipsis. Applies to routed CH1-10, CH1 legacy vendor rack, and MASTER preview. FX power remains its own button and live-rack native ACK behavior unchanged. CLIP button becomes 12px tall hit region but remains 8px painted via content background clip.
+
+## Regression gates
+- Existing 11-strip L2 responsive 1366/1440/1680 geometry, 7px fixed LED palette, physical meter readback, live routing DRAFT/ACK, FX drag and six compact slots remain unchanged. Browser Playwright tests click-reset, master independent clip, 0.99 vs 1.0 raw threshold, re-latch, groove two layers, font position/size/truncation and hitbox.
+- Deterministic compiled `web/styles.css`, standalone CSS+JS byte parity and existing Node contracts. Native source compiled via one Windows MSVC/CTest package on exact main after PR. No unsupported low-end iGPU p95 claim, no hallucinated real render XRUN, #15 crackle real-device FAT still pending.
