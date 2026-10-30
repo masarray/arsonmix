@@ -146,7 +146,8 @@ public:
         const auto liveMain=lab.getProperty("mainOutputs",juce::var());
         if(!liveMain.isVoid()) {
             const auto* pair=liveMain.getArray();
-            const auto* valid=lab.getProperty("outputPorts",juce::var()).getArray();
+            const auto livePorts=lab.getProperty("outputPorts",juce::var());
+            const auto* valid=livePorts.getArray();
             if(!pair||pair->size()!=2||!valid)
                 return "Current physical MAIN output patch is unavailable";
             const auto left=pair->getReference(0),right=pair->getReference(1);
