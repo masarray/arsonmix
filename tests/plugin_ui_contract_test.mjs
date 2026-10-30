@@ -151,7 +151,7 @@ test('real routed FX rack remains separate from Routing and respects native appl
   assert.match(engine,/reuseAt\(lane,slot,\*prior,old,req.id\)/);
   assert.match(monitor,/window\.__arMixFxLaneView=channel/);
   assert.match(monitor,/window\.__arMixStageRackFx=\(channel,id,slot=0,operation="set"\)/);
-  assert.match(monitor,/fxIds:laneIds\(c\)/);
+  assert.match(monitor,/channels:draftRoutes\.map\(r=>\(\{\.\.\.typedSource\(r\),fxIds:laneIds\(r\)\}\)\)/);
   assert.match(bridge,/data-routed-move/);
   assert.match(bridge,/data-routed-slot/);
   assert.ok(!bridge.includes('＋ ROUTE / FX'));
@@ -207,7 +207,9 @@ test('G5 UI safety: compact Studio One-like browser and native insert truth',()=
   assert.match(css,/#nativeFxSelector #arPickerFavorites svg/);
   assert.match(bridge,/MASTER FX · UNAVAILABLE/);
   assert.doesNotMatch(bridge,/data-native-unrouted="-1"/);
-  assert.match(bridge,/Multi-insert is not yet supported for this channel/);
+  assert.match(bridge,/Array\.from\(\{length:8\}/);
+  assert.match(bridge,/data-routed-lane/);
+  assert.match(bridge,/ar-routed-loaded/);
   assert.match(bridge,/state\.chain\.slice\(0,6\)/);
   assert.match(bridge,/data-routed-fx/);
   assert.match(bridge,/data-native-fx="editor"/);

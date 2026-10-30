@@ -140,7 +140,7 @@ test('R0B B3 always-on native 10CH startup is verified, muted and unpatched',()=
   assert.match(factory,/row->setProperty\("mode","NONE"\)/);
   assert.match(factory,/row->setProperty\("left",-1\)/);
   assert.match(factory,/row->setProperty\("right",-1\)/);
-  assert.match(factory,/const std::array<FxSelection,fxSlots> none\{\}/);
+  assert.match(factory,/const FxSelections none\{\}/);
   assert.match(factory,/return apply\(/);
   assert.match(factory,/sampleRate,deviceFrames,false\)/);
   assert.doesNotMatch(factory,/autoMap|firstInput|callbackIndex|start\(|attach\(|detach\(/);
