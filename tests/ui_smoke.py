@@ -1294,7 +1294,7 @@ async def main():
         assert await page.locator('.flow-node').count()==4
         await page.locator('#audioSetupBtn').click()
         assert await page.locator('#arIOOverlay').is_visible()
-        assert await page.locator('#arIOBody select.arIOSource').count()==10
+        assert await page.locator('#arIOBody .arIOQuickRow').count()==10
         await page.locator('#arIOOverlay [data-io-close]').click()
         assert not await page.locator('#arIOOverlay').is_visible()
         assert await page.locator('.setup-section').count()==0
