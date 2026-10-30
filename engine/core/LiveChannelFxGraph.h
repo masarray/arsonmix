@@ -104,7 +104,7 @@ public:
         }
     };
     using InstanceLease=std::shared_ptr<FxInstance>; // CONTROL only; never copy on callback
-    using FxRack=std::array<InstanceLease,maxInsertsPerStrip>;
+    using FxRack=std::array<std::shared_ptr<FxInstance>,maxInsertsPerStrip>;
     using FxBank=std::array<FxRack,fxSlots>;
 
     explicit LiveChannelFxGraph(const PreparedRenderGraph& plan,int frames,int pluginQuantum=512)
