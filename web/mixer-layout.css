@@ -73,6 +73,9 @@
 #app #mixer[data-io-mode="SENDS"] .arSendBank{overflow:hidden}
 #app #mixer[data-io-mode="SENDS"] .arSendSummary{min-height:0;overflow:hidden}
 #app #mixer > #masterLeft .master-fx-rack{display:flex;flex-direction:column}
+/* Compact live console: MASTER remains accessible while input bank scrolls.
+   Keep L2 seven-row meter/fader geometry unchanged. */
+#app #mixer > #masterLeft{position:sticky;right:0;z-index:3;background-color:#151f28}
 
 /* eMotion LV1-inspired navigation hierarchy; original ArSonMix BTN-180 colors. */
 #app .toolbar-actions.arSegmentedToolbar{

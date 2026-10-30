@@ -1520,6 +1520,9 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 #app #mixer[data-io-mode="SENDS"] .arSendBank{overflow:hidden}
 #app #mixer[data-io-mode="SENDS"] .arSendSummary{min-height:0;overflow:hidden}
 #app #mixer > #masterLeft .master-fx-rack{display:flex;flex-direction:column}
+/* Compact live console: MASTER remains accessible while input bank scrolls.
+   Keep L2 seven-row meter/fader geometry unchanged. */
+#app #mixer > #masterLeft{position:sticky;right:0;z-index:3;background-color:#151f28}
 
 /* eMotion LV1-inspired navigation hierarchy; original ArSonMix BTN-180 colors. */
 #app .toolbar-actions.arSegmentedToolbar{
@@ -2294,6 +2297,7 @@ function setView(next){
  $('rackWorkspace').classList.toggle('hidden',!['FX RACK','SIGNAL FLOW'].includes(next));
  if(next==='FX RACK')renderRackWorkspace();
  if(next==='SIGNAL FLOW')renderSignalFlow();
+ if(next==='MIX')revealMixerChannel(currentChannel);
 }
 function updateFader(idx,value){if(idx==='master'){masterGain=clamp(value,-60,10);const host=document.querySelector('[data-fader="master"]');host.querySelector('.cap').style.setProperty('--pos',levelToTop(masterGain)+'%');host.style.setProperty('--fader-open',(100-levelToTop(masterGain)).toFixed(3)+'%');host.setAttribute('aria-valuenow',masterGain.toFixed(1));$('masterLeft').querySelectorAll('.master-db').forEach(e=>e.textContent=fmt(masterGain));send('masterGain',masterGain,-1);return}const ch=channels[+idx];ch.fader=clamp(value,-60,10);const el=document.querySelector(`[data-fader="${idx}"]`);if(el){el.querySelector('.cap').style.setProperty('--pos',levelToTop(ch.fader)+'%');el.style.setProperty('--fader-open',(100-levelToTop(ch.fader)).toFixed(3)+'%');el.setAttribute('aria-valuenow',ch.fader.toFixed(1));document.querySelector(`[data-read="${idx}"]`).textContent=fmt(ch.fader)}send('faderDb',ch.fader,+idx)}
 function updatePan(idx,value,pointer=false){
@@ -2314,6 +2318,17 @@ function updatePan(idx,value,pointer=false){
 function updateKnob(el,value){let idx=+el.dataset.ch,param=el.dataset.knob;
  if(param==='phones'){phones=clamp(value,-60,10);el.style.setProperty('--angle',phones/24*130+'deg');const rd=document.querySelector('[data-phones-read]');if(rd)rd.textContent=fmt(phones);send('phonesDb',phones,-1);return}
  const c=channels[idx];if(param==='pan'){updatePan(idx,value)}else{c.trim=+clamp(value,-24,24).toFixed(1);el.style.setProperty('--angle',c.trim/24*130+'deg');document.querySelector(`[data-trim-read="${idx}"]`).textContent=fmt(c.trim);send('trimDb',c.trim,idx)}}
+// Reveal the selected input in the scrollable bank without hiding it behind MASTER.
+// No DSP events, plugin remount, timers, animations or per-pointer work.
+function revealMixerChannel(i){
+ const mixer=$('mixer'),strip=mixer?.querySelector('[data-strip="'+i+'"]');
+ if(!strip||mixer.classList.contains('hidden'))return;
+ const target=strip.getBoundingClientRect(),view=mixer.getBoundingClientRect();
+ const master=$('masterLeft'),reserved=master?master.getBoundingClientRect().width:0;
+ const left=view.left+1,right=view.right-reserved-1;
+ if(target.left<left)mixer.scrollLeft+=target.left-left;
+ else if(target.right>right)mixer.scrollLeft+=target.right-right;
+}
 function focusChannel(i){
  if(i<0||i>=channels.length||(i===currentChannel&&!masterSelected))return;
  masterSelected=false;currentChannel=i;
@@ -2330,6 +2345,7 @@ function chooseChannel(i){
  if(i<0||i>=channels.length){flash('Additional bank channels are not populated in this UI study');return}
  // Stable strip, meter and VST3 rack DOM identities across selection.
  focusChannel(i);
+ revealMixerChannel(i);
  if(view==='FX RACK')renderRackWorkspace();
 }
 function toggleState(i,key){channels[i][key]=!channels[i][key];const btn=document.querySelector(`[data-${key}="${i}"]`);if(btn){btn.classList.toggle('active',channels[i][key]);btn.setAttribute('aria-pressed',String(channels[i][key]))}send(key,channels[i][key],i)}
