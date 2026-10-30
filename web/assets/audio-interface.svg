@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 150" role="img" aria-label="Generic audio interface">
+  <title>Generic rack audio interface</title>
+  <rect x="22" y="18" width="296" height="107" rx="13" fill="#10191f" stroke="#8199a5" stroke-width="3"/>
+  <rect x="31" y="27" width="278" height="88" rx="8" fill="#25343d" stroke="#364b58"/>
+  <path d="M36 40h267" stroke="#607988" stroke-width="1"/>
+  <circle cx="85" cy="72" r="22" fill="#0d161d" stroke="#849eab" stroke-width="3"/>
+  <circle cx="85" cy="72" r="12" fill="#25343d" stroke="#718794" stroke-width="2"/>
+  <circle cx="145" cy="72" r="22" fill="#0d161d" stroke="#849eab" stroke-width="3"/>
+  <circle cx="145" cy="72" r="12" fill="#25343d" stroke="#718794" stroke-width="2"/>
+  <path d="M85 60v24M73 72h24M145 60v24M133 72h24" stroke="#536b78" stroke-width="2"/>
+  <circle cx="221" cy="72" r="21" fill="#0f1b22" stroke="#9db4bf" stroke-width="3"/>
+  <circle cx="221" cy="72" r="13" fill="#293b46" stroke="#657f8e"/>
+  <path d="M221 58v8" stroke="#aedce6" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="270" cy="55" r="4" fill="#70c992"/>
+  <circle cx="283" cy="55" r="4" fill="#6e8b9b"/>
+  <circle cx="270" cy="67" r="4" fill="#5c7886"/>
+  <circle cx="283" cy="67" r="4" fill="#5c7886"/>
+  <rect x="260" y="87" width="33" height="7" rx="2" fill="#10181f" stroke="#637d8b"/>
+  <circle cx="40" cy="35" r="3" fill="#899ea8"/><circle cx="300" cy="35" r="3" fill="#899ea8"/>
+  <text x="85" y="106" text-anchor="middle" fill="#c0d1d9" font-family="sans-serif" font-size="9">INPUT 1</text>
+  <text x="145" y="106" text-anchor="middle" fill="#c0d1d9" font-family="sans-serif" font-size="9">INPUT 2</text>
+  <text x="221" y="105" text-anchor="middle" fill="#c0d1d9" font-family="sans-serif" font-size="9">MONITOR</text>
+</svg>
