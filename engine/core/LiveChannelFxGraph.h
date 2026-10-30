@@ -60,6 +60,24 @@ public:
                 catch(...) { /* vendor cleanup cannot unwind graph retirement */ }
             }
         }
+        // G5E: vendor binary state capture is CONTROL only. This is the same
+        // fail-closed gate used by realtime processBlock. While control owns
+        // the gate, a racing muted callback returns silence without waiting.
+        bool tryCaptureState(juce::MemoryBlock& out) noexcept {
+            if(!processor || processing.test_and_set(std::memory_order_acquire))
+                return false;
+            bool ok=false;
+            try {
+                juce::MemoryBlock candidate;
+                processor->getStateInformation(candidate);
+                if(candidate.getSize()<=8U*1024U*1024U) {
+                    out=std::move(candidate);
+                    ok=true;
+                }
+            } catch(...) { ok=false; }
+            processing.clear(std::memory_order_release);
+            return ok;
+        }
         void render(float* left,float* right,int samples) noexcept {
             if(processing.test_and_set(std::memory_order_acquire)) {
                 contention.fetch_add(1,std::memory_order_relaxed);
