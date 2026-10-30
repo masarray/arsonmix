@@ -4,6 +4,7 @@
 #include <juce_events/juce_events.h>
 #include "PortableWorkspace.h"
 #include "PluginVault.h"
+#include "FactoryFxRegistry.h"
 #include <algorithm>
 #if JUCE_WINDOWS
  #include <objbase.h>
@@ -20,6 +21,8 @@ struct CatalogEntry
     int uid = 0;
     int variant = 0;
     bool favorite = false; // Portable user preference; never inferred from vendor scanner.
+    bool factory = false; // Verified app-managed binary, not user Vault.
+    juce::String factoryProductId;
 
     juce::String key() const { return path + "|" + juce::String (uid) + "|" + juce::String (variant); }
 
@@ -34,6 +37,8 @@ struct CatalogEntry
         o->setProperty ("uid", uid);
         o->setProperty ("variant", variant);
         o->setProperty ("favorite", favorite);
+        o->setProperty ("source", factory ? "factory" : "user");
+        if (factory) o->setProperty ("factoryProductId", factoryProductId);
         return juce::var (o.release());
     }
 
@@ -47,6 +52,8 @@ struct CatalogEntry
         e.uid = static_cast<int> (v.getProperty ("uid", 0));
         e.variant = static_cast<int> (v.getProperty ("variant", 0));
         e.favorite = static_cast<bool> (v.getProperty ("favorite", false));
+        e.factory = v.getProperty ("source", {}).toString() == "factory";
+        e.factoryProductId = v.getProperty ("factoryProductId", {}).toString();
         return e;
     }
 };
@@ -109,6 +116,14 @@ public:
         scan ({ p });
     }
 
+    void scanFactoryIfPresent()
+    {
+        // Fast existence check; all manifest hashing and VST discovery run on worker.
+        if (! busy() && armix::factory::Registry::manifestAt (
+                armix::factory::Registry::executableRoot()).existsAsFile())
+            scan ({}, false, true);
+    }
+
     void scanDefaults()
     {
         juce::VST3PluginFormat format;
@@ -146,6 +161,11 @@ public:
             {
                 if (entry.favorite == favorite) return true;
                 entry.favorite = favorite;
+                if (entry.factory)
+                {
+                    if (favorite) factoryFavorites_.addIfNotAlreadyThere (entry.factoryProductId);
+                    else factoryFavorites_.removeString (entry.factoryProductId);
+                }
                 save();
                 if (onChanged) onChanged();
                 return true;
@@ -181,6 +201,7 @@ private:
         PluginCatalog& owner_;
         juce::StringArray requested_;
         bool copyToVault_ = false;
+        bool factoryOnly_ = false;
 
         void run() override
         {
@@ -191,8 +212,15 @@ private:
             juce::VST3PluginFormat format;
             juce::StringArray allCandidates;
             juce::String importErrors;
+            const auto factory = factoryOnly_
+                ? armix::factory::Registry::discover (armix::factory::Registry::executableRoot())
+                : armix::factory::Discovery{};
+            if (factoryOnly_ && ! factory.ok()) importErrors = factory.error;
             // 1. Enumerate candidates. Total cannot be estimated here.
             owner_.phase_.store (1, std::memory_order_release);
+            if (factoryOnly_ && factory.ok())
+                for (const auto& item : factory.candidates)
+                    allCandidates.addIfNotAlreadyThere (item.path);
             for (const auto& requested : requested_)
             {
                 if (threadShouldExit()) break;
@@ -241,13 +269,35 @@ private:
                     {
                         const auto* desc = descriptions[i];
                         if (desc == nullptr || desc->isInstrument) continue;
-                        found.push_back ({ desc->fileOrIdentifier, desc->name,
-                                           desc->manufacturerName, desc->category,
-                                           desc->uniqueId, i });
+                        CatalogEntry entry { desc->fileOrIdentifier, desc->name,
+                                             desc->manufacturerName, desc->category,
+                                             desc->uniqueId, i };
+                        if (factoryOnly_)
+                        {
+                            const auto it = std::find_if (factory.candidates.begin(), factory.candidates.end(),
+                                [path, desc] (const armix::factory::Candidate& approved)
+                                { return approved.path == path && approved.hostUniqueId == desc->uniqueId; });
+                            if (it == factory.candidates.end()) continue;
+                            entry.factory = true;
+                            entry.factoryProductId = it->productId;
+                        }
+                        found.push_back (std::move (entry));
                     }
                 }
                 owner_.found_.store (static_cast<int> (found.size()), std::memory_order_relaxed);
                 owner_.completed_.store (n + 1, std::memory_order_release);
+            }
+            if (factoryOnly_ && importErrors.isEmpty())
+            {
+                for (const auto& approved : factory.candidates)
+                    if (std::none_of (found.begin(), found.end(),
+                        [&approved] (const CatalogEntry& e)
+                        { return e.factory && e.factoryProductId == approved.productId; }))
+                    {
+                        importErrors = approved.productId + ": declared VST3 host UID not found";
+                        found.clear(); // All-or-nothing factory verification, never partial success.
+                        break;
+                    }
             }
             {
                 const juce::ScopedLock lock (owner_.progressLock_);
@@ -259,14 +309,19 @@ private:
             // Completion is delivered by a SafePointer owned by the UI host,
             // so destruction cannot dereference the window after shutdown.
             auto lifetime = owner_.lifetime_;
+            const bool wasFactoryScan = factoryOnly_;
             juce::MessageManager::callAsync ([&owner = owner_, lifetime, results = std::move (found),
-                                              importErrors]() mutable
+                                              importErrors, wasFactoryScan]() mutable
             {
                 if (! lifetime->load()) return;
-                for (const auto& e : results)
+                if (wasFactoryScan)
+                    owner.entries_.erase (std::remove_if (owner.entries_.begin(), owner.entries_.end(),
+                        [] (const CatalogEntry& e) { return e.factory; }), owner.entries_.end());
+                for (auto e : results)
                 {
                     const auto iter = std::find_if (owner.entries_.begin(), owner.entries_.end(),
                         [&e] (const CatalogEntry& old) { return old.key() == e.key(); });
+                    if (e.factory) e.favorite = owner.factoryFavorites_.contains (e.factoryProductId);
                     if (iter == owner.entries_.end())
                         owner.entries_.push_back (e);
                     else
@@ -280,7 +335,7 @@ private:
                     [] (const CatalogEntry& a, const CatalogEntry& b)
                     { return a.name.compareIgnoreCase (b.name) < 0; });
                 owner.scanMessage_ = importErrors.isNotEmpty()
-                    ? "Import incomplete: " + importErrors
+                    ? (wasFactoryScan ? importErrors : "Import incomplete: " + importErrors)
                     : (results.empty()
                         ? "No compatible VST3 effects found; check plugin architecture and vendor dependencies."
                         : "Ready: " + juce::String (results.size()) + " VST3 variants inspected");
@@ -292,7 +347,7 @@ private:
         }
     };
 
-    void scan (const juce::StringArray& paths, bool copyToVault = false)
+    void scan (const juce::StringArray& paths, bool copyToVault = false, bool factoryOnly = false)
     {
         if (busy()) return;
         completed_.store (0);
@@ -301,12 +356,13 @@ private:
         phase_.store (1);
         { const juce::ScopedLock lock (progressLock_); current_.clear(); }
         scanning_.store (true);
-        scanMessage_ = copyToVault
-            ? "Importing selected VST3 into Studio (only chosen module)..."
-            : "Scanning VST3 metadata (background)...";
+        scanMessage_ = factoryOnly ? "Verifying bundled Factory VST3..." :
+            (copyToVault ? "Importing selected VST3 into Studio (only chosen module)..."
+                         : "Scanning VST3 metadata (background)...");
         if (onChanged) onChanged();
         worker_.requested_ = paths;
         worker_.copyToVault_ = copyToVault;
+        worker_.factoryOnly_ = factoryOnly;
         worker_.startThread();
     }
 
@@ -324,13 +380,17 @@ private:
                     if (resolved == juce::File()) continue;
                     entry.path = resolved.getFullPathName();
                 }
-                if (entry.path.isNotEmpty())
+                if (! entry.factory && entry.path.isNotEmpty())
                     entries_.push_back (std::move (entry));
             }
         const auto storedFolders = json.getProperty ("folders", {});
         if (auto* folders = storedFolders.getArray())
             for (const auto& folder : *folders)
                 customFolders_.addIfNotAlreadyThere (folder.toString());
+        const auto storedFactoryFavorites = json.getProperty ("factoryFavorites", {});
+        if (auto* favorites = storedFactoryFavorites.getArray())
+            for (const auto& id : *favorites)
+                factoryFavorites_.addIfNotAlreadyThere (id.toString());
         scanMessage_ = "Ready - " + juce::String (entries_.size()) + " cached VST3 effects";
     }
 
@@ -340,6 +400,7 @@ private:
         juce::Array<juce::var> list, folders;
         for (const auto& entry : entries_)
         {
+            if (entry.factory) continue; // Never persist an unverified factory binary path.
             auto item = entry.toVar();
             item.getDynamicObject()->setProperty ("path",
                 armix::storage::PortableWorkspace::encode (dataFolder_, juce::File (entry.path)));
@@ -349,13 +410,16 @@ private:
         o->setProperty ("schemaVersion", 1);
         o->setProperty ("items", juce::var (list));
         o->setProperty ("folders", juce::var (folders));
+        juce::Array<juce::var> factoryFav;
+        for (const auto& id : factoryFavorites_) factoryFav.add (id);
+        o->setProperty ("factoryFavorites", juce::var (factoryFav));
         dataFolder_.getChildFile ("plugin-catalog.json")
             .replaceWithText (juce::JSON::toString (juce::var (o.release()), true));
     }
 
     juce::File dataFolder_;
     std::vector<CatalogEntry> entries_;
-    juce::StringArray customFolders_;
+    juce::StringArray customFolders_, factoryFavorites_;
     std::atomic<bool> alive_ { true }, scanning_ { false };
     std::shared_ptr<std::atomic<bool>> lifetime_ = std::make_shared<std::atomic<bool>> (true);
     mutable juce::CriticalSection progressLock_;

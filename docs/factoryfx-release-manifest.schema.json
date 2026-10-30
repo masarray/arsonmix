@@ -47,7 +47,8 @@
           "licenseReview",
           "entitlementPolicy",
           "notices",
-          "files"
+          "files",
+          "hostUniqueId"
         ],
         "properties": {
           "productId": {
@@ -137,6 +138,10 @@
                 }
               }
             }
+          },
+          "hostUniqueId": {
+            "type": "integer",
+            "description": "Exact JUCE VST3PluginFormat PluginDescription.uniqueId from host qualification (not the 16-byte FUID)."
           }
         }
       }
