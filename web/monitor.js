@@ -263,6 +263,7 @@
   let mixerDraftActive=false; // Source edits from MIX/IO share this exact controller
   let selectedAuxPair=null; // editor-only; not a second audio graph
   let draftEpoch=0; // identity of the hardware used to draw these selectors
+  let draftMainOutputs=[]; // physical port IDs (2), never callback offsets
   function invalidateDraftForNewDevice(nextEpoch){
     if(draftEpoch===nextEpoch)return false;
     draftEpoch=nextEpoch;
@@ -274,6 +275,7 @@
     draftSends.length=0;
     mixerDraftActive=false;
     selectedAuxPair=null;
+    draftMainOutputs=[];
     return true;
   }
   const safeRouteText=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -391,6 +393,8 @@
         draftAux[b].fxIds=Array.isArray(src.fxIds)?src.fxIds.slice(0,8):src.fxId?[src.fxId]:[];
         draftAux[b].fxId=draftAux[b].fxIds[0]||"";
       }
+    draftMainOutputs=Array.isArray(saved.mainOutputs)&&saved.mainOutputs.length===2
+      ?saved.mainOutputs.slice():[];
     draftSends.length=0;
     if(Array.isArray(saved.sends))
       for(const send of saved.sends.slice(0,32))
@@ -1014,6 +1018,19 @@
   window.__arMixOpenRouting=openRoutingLab;
   // G1/G2 adapters: expose a bounded snapshot and stage into the EXISTING
   // DRAFT/ACK route; never create a second frontend or native audio graph.
+  // Shared INPUT/OUTPUT route draft: only the existing MUTE/APPLY/ACK may
+  // publish this new physical destination; OUTPUT panel never touches DSP.
+  window.__arMixStageMainOutputs=(left,right)=>{
+    const d=state.dryRoutingLab||{};
+    if(!d.ready||patchPending)return {ok:false,error:"Native route is not ready"};
+    if(draftEpoch!==Number(d.epoch))return {ok:false,error:"Device changed; refresh patch"};
+    const ports=Array.isArray(d.outputPorts)?d.outputPorts:[];
+    if(!ports.includes(left)||!ports.includes(right)||left===right)
+      return {ok:false,error:"MAIN requires two different active output pins"};
+    draftMainOutputs=[left,right];mixerDraftActive=true;
+    window.dispatchEvent(new Event("arMixRoutingDraftChanged"));
+    return {ok:true,message:"MAIN OUTPUT DRAFT · MUTE OUTPUT → APPLY → native ACK"};
+  };
   window.__arMixRouteView=()=>{
     const d=state.dryRoutingLab||{};
     // Read-only telemetry projection. Never mutate the draft/epoch here:
@@ -1024,6 +1041,8 @@
       ready:!!d.ready,active:!!d.active,monitor:!!state.monitor,
       pending:patchPending,ports:patchPorts().map(p=>({port:p.port,label:p.label})),
       outputPorts:Array.isArray(d.outputPorts)?d.outputPorts.slice():[],
+      mainOutputs:Array.isArray(d.mainOutputs)?d.mainOutputs.slice():[],
+      draftMainOutputs:draftMainOutputs.slice(),
       acceptedRoute:d.acceptedRoute||null,
       draftRoutes:draftRoutes.map(r=>({...r,fxIds:laneIds(r)})),
       draftAux:draftAux.map(r=>({...r,fxIds:laneIds(r)})),
@@ -1192,6 +1211,9 @@
     api.emitEvent("arMixAction",{action:"routingDryApply",value:{
       schemaVersion:2,
       deviceEpoch:draftEpoch,revision:Number(d.revision)||0,
+      mainOutputs:draftMainOutputs.length===2?draftMainOutputs.slice():(
+        Array.isArray(d.mainOutputs)&&d.mainOutputs.length===2?d.mainOutputs.slice():
+        (Array.isArray(d.outputPorts)?d.outputPorts.slice(0,2):[])),
       channels:draftRoutes.map(r=>({...typedSource(r),fxIds:laneIds(r)})),
       auxes:draftAux.map(b=>({...b,fxIds:laneIds(b)})),
       sends:draftSends.map(s=>({...s}))

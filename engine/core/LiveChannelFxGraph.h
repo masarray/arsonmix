@@ -120,6 +120,16 @@ public:
 
     int capacity() const noexcept{return block_?block_->capacity():0;}
     int maxFramesPerPlugin() const noexcept {return pluginQuantum_;}
+    // MS3A: one immutable output destination pair per published topology.
+    // These are callback indices within the verified active output mask,
+    // never invented adjacent physical pin numbers.
+    bool setMainOutputPair(int left,int right,int count) noexcept {
+        if(left<0||right<0||left>=count||right>=count||left==right)return false;
+        mainOutputLeft_=left;mainOutputRight_=right;
+        return true;
+    }
+    int mainOutputLeft() const noexcept{return mainOutputLeft_;}
+    int mainOutputRight() const noexcept{return mainOutputRight_;}
     int activeInserts() const noexcept{return activeInserts_;}
     bool setStripControl(int channel,float gain,float pan,
                          bool mono,bool mute,bool solo) noexcept {
@@ -241,5 +251,6 @@ private:
     std::array<std::uint8_t,fxSlots> counts_ {};
     int activeInserts_=0;
     int pluginQuantum_=512;
+    int mainOutputLeft_=0,mainOutputRight_=1;
 };
 } // namespace armix::mixer

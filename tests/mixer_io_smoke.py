@@ -329,6 +329,24 @@ async def main():
           {ok:true,instanceId:'g5c-101'})""")
         assert await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='routingFxEditor').length""")==before_editor+1
+        # MS3A: changing MAIN physical destination is one native APPLY,
+        # not a UI preview and never silently unmutes audio.
+        await page.evaluate("""status=>{
+          status.dryRoutingLab.outputPorts=[0,1,4,5];
+          status.dryRoutingLab.mainOutputs=[0,1];
+          window.__armixTestEmit('arMixStatus',status);
+        }""",status)
+        await page.locator('[data-io-open]').click()
+        await page.locator('[data-io-tab="outputs"]').click()
+        selects=page.locator('.arIOMainOutput')
+        assert await selects.count()==2
+        await selects.nth(0).select_option('4')
+        await selects.nth(1).select_option('5')
+        assert await page.evaluate("""()=>window.__arMixRouteView().draftMainOutputs.join(',')""")=='4,5'
+        await page.locator('#arIOOverlay [data-mix-apply]').click()
+        command=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.name==='arMixAction'&&x.data.action==='routingDryApply').at(-1).data.value""")
+        assert command['mainOutputs']==[4,5],command
         assert not errors,errors
         await browser.close()
         print("PASS: G1/G2 + G3 real PRE/POST draft, AUX return, 0-gain bypass, native ACK/reject/revert, stable rack and 3 viewports")

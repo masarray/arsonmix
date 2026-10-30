@@ -24,7 +24,7 @@
     return options;
   };
   const outputLabel=s=>{
-    const out=s.outputPorts||[];
+    const out=s.mainOutputs?.length===2?s.mainOutputs:s.outputPorts||[];
     return s.ready&&Number.isInteger(out[0])&&Number.isInteger(out[1])?
       'MAIN → HW '+(out[0]+1)+'/'+(out[1]+1):'MAIN → NO HW OUTPUT';
   };
@@ -201,7 +201,7 @@
     if(id.textContent!==status)id.textContent=status;
     overlay.querySelectorAll('[data-io-tab]').forEach(b=>{b.classList.toggle('active',b.dataset.ioTab===ioTab);b.setAttribute('aria-selected',String(b.dataset.ioTab===ioTab));});
     overlay.querySelector('[data-mix-apply]').disabled=!isNative()||!s.ready||s.monitor||s.pending;
-    const signature=ioTab+'|'+JSON.stringify([s.epoch,s.revision,s.pending,s.draftRoutes,s.outputPorts,s.ports,deviceInventory]);
+    const signature=ioTab+'|'+JSON.stringify([s.epoch,s.revision,s.pending,s.draftRoutes,s.outputPorts,s.mainOutputs,s.draftMainOutputs,s.ports,deviceInventory]);
     if(lastSignature===signature)return;
     lastSignature=signature;body.replaceChildren();
     if(ioTab==='inputs'){
@@ -221,14 +221,25 @@
       body.appendChild(grid);
       body.appendChild(node('p','arIOHint','For non-adjacent stereo L/R or BUS, open the full Routing patch matrix.'));
     }else if(ioTab==='outputs'){
-      body.appendChild(node('p','arIOHint','Physical MAIN L/R readback from the current device. Independent AUX / monitor hardware output is not yet supported.'));
+      body.appendChild(node('p','arIOHint','MAIN stereo output is now a real native patch. Select two verified physical pins and APPLY while OUTPUT is MUTED; other pins remain SILENT.'));
       const ports=Array.isArray(s.outputPorts)?s.outputPorts:[];
+      const accepted=s.mainOutputs?.length===2?s.mainOutputs:ports.slice(0,2);
+      const draft=s.draftMainOutputs?.length===2?s.draftMainOutputs:accepted;
       for(const [i,label] of ['MAIN LEFT','MAIN RIGHT'].entries()){
-        const p=ports[i];
-        const row=node('div','arIOOutputRow');
-        row.append(node('strong','',label),node('span','',s.ready&&Number.isInteger(p)&&p>=0?'HW OUT '+(p+1)+' · READ ONLY':'NOT AVAILABLE · NO VERIFIED OUTPUT'));
+        const row=node('label','arIOOutputRow');
+        const selector=node('select','arIOMainOutput');
+        selector.dataset.side=String(i);
+        selector.setAttribute('aria-label',label+' destination');
+        for(const p of ports)if(Number.isInteger(p)&&p>=0){
+          const option=node('option','','HW OUT '+(p+1));
+          option.value=String(p);option.selected=p===draft[i];
+          selector.appendChild(option);
+        }
+        selector.disabled=!isNative()||!s.ready||!!s.pending||ports.length<2;
+        row.append(node('strong','',label),selector);
         body.appendChild(row);
       }
+      body.appendChild(node('p','arIOHint','LIVE MAIN: '+(accepted.length===2?'HW '+(accepted[0]+1)+'/'+(accepted[1]+1):'UNAVAILABLE')+'. Remaining output channels stay silent. MONITOR/Matrix independent hardware buses are the next MS3 gate.'));
       body.appendChild(node('p','arIOHint','AUX1–4 are internal stereo FX returns, not physical output sockets.'));
     }else{
       body.appendChild(node('p','arIOHint','Actual driver types and endpoint names reported by JUCE. To change rate, buffer, or endpoint safely, use DRIVER SETTINGS; output is muted during reconfiguration.'));
@@ -259,6 +270,15 @@
     lastSignature='';refresh();
   }
   document.addEventListener('change',e=>{
+    if(e.target.matches('.arIOMainOutput')){
+      const s=route(),selectors=[...overlay.querySelectorAll('.arIOMainOutput')];
+      if(selectors.length!==2)return;
+      const pins=selectors.map(x=>Number(x.value));
+      const result=window.__arMixStageMainOutputs?.(pins[0],pins[1]);
+      if(!result?.ok){el('arIOFeedback').textContent=result?.error||'Invalid MAIN output';}
+      else el('arIOFeedback').textContent=result.message;
+      lastSignature='';refresh();return;
+    }
     if(e.target.matches('.arBankSource,.arIOSource'))changeSource(e.target);
     if(e.target.matches('.arBankChannelFormat')){
       const response=window.__arMixStageChannelFormat?.(
