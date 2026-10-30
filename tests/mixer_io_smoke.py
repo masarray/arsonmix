@@ -309,6 +309,25 @@ async def main():
         }""",status)
         assert await page.locator('[data-strip="1"] [data-routed-bypass]').first.get_attribute('aria-pressed')=='false'
         assert await page.evaluate("""()=>window.__arMixFxLaneView(1).liveSlots[0].bypassed""") is True
+        # G5D: FX RACK editor opens the exact committed vendor instance, not
+        # a catalog preview or stale/position-only CH1 editor.
+        await page.locator('[data-view="FX RACK"]').click()
+        await page.wait_for_function("""()=>document.querySelector(
+          '#rackWorkspace [data-routed-editor="1"][data-routed-slot="0"]')!==null""")
+        editor_button=page.locator('#rackWorkspace [data-routed-editor="1"][data-routed-slot="0"]')
+        assert await editor_button.is_enabled()
+        before_editor=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.name==='arMixAction'&&x.data.action==='routingFxEditor').length""")
+        await editor_button.click()
+        editor=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.name==='arMixAction'&&x.data.action==='routingFxEditor').at(-1).data""")
+        assert editor['channel']==1 and editor['slot']==0,editor
+        assert editor['instanceId']=='g5c-101' and editor['deviceEpoch']==4,editor
+        assert editor['revision']==status['dryRoutingLab']['revision'],editor
+        await page.evaluate("""()=>window.__armixTestEmit('arMixRoutingFxEditorAck',
+          {ok:true,instanceId:'g5c-101'})""")
+        assert await page.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.name==='arMixAction'&&x.data.action==='routingFxEditor').length""")==before_editor+1
         assert not errors,errors
         await browser.close()
         print("PASS: G1/G2 + G3 real PRE/POST draft, AUX return, 0-gain bypass, native ACK/reject/revert, stable rack and 3 viewports")

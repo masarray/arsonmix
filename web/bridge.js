@@ -223,6 +223,8 @@
             <small>${loaded?(pending?"DRAFT · not live":"Native VST3 insert"):"Empty FX slot"}</small></span>
           <button class="native-btn" data-routed-fx="${selected}" data-routed-slot="${slot}"
             ${isMaster||slot>ids.length?"disabled":""}>${loaded?"REPLACE":"＋ ADD"}</button>
+          <button class="native-btn" data-routed-editor="${selected}" data-routed-slot="${slot}"
+            ${!actual||isMaster?"disabled":""} title="Open real native VST3 editor">EDIT</button>
           <button class="native-btn ${actual&&!actual.bypassed?"on":""}" data-routed-bypass="${selected}" data-routed-slot="${slot}"
             ${!actual||isMaster?"disabled":""} aria-pressed="${!!actual&&!actual.bypassed}"
             title="Native zero-latency per-instance bypass">${actual?.bypassed?"OFF · ENABLE":"ON · BYPASS"}</button>
@@ -894,10 +896,22 @@
   // Capture native controls before the legacy v0.3 demo handlers.
   document.addEventListener("click", function(e){
   if(fxNativeBlockClick){fxNativeBlockClick=false;e.preventDefault();e.stopImmediatePropagation();return;}
-  const el=e.target.closest("[data-routed-fx],[data-routed-bypass],[data-routed-clear],[data-routed-move],[data-routed-apply],[data-native-unrouted],[data-native-action],[data-native-add],[data-native-fx],[data-fxpower],[data-master-insert],[data-master-power],[data-native-category],[data-go-native-rack],[data-insert],[data-plugin-picker],[data-plugin-manager],[data-my-sounds],[data-backup-studio],[data-preset-mute],[data-preset-save],[data-preset-load],[data-close-modal],[data-orbit-start],[data-orbit-stop]");
+  const el=e.target.closest("[data-routed-fx],[data-routed-editor],[data-routed-bypass],[data-routed-clear],[data-routed-move],[data-routed-apply],[data-native-unrouted],[data-native-action],[data-native-add],[data-native-fx],[data-fxpower],[data-master-insert],[data-master-power],[data-native-category],[data-go-native-rack],[data-insert],[data-plugin-picker],[data-plugin-manager],[data-my-sounds],[data-backup-studio],[data-preset-mute],[data-preset-save],[data-preset-load],[data-close-modal],[data-orbit-start],[data-orbit-stop]");
   if(!el)return;
   e.preventDefault();e.stopImmediatePropagation();
 
+  if(el.hasAttribute("data-routed-editor")){
+    const channel=Number(el.dataset.routedEditor),index=Number(el.dataset.routedSlot);
+    const view=window.__arMixFxLaneView?.(channel)||{};
+    const live=Array.isArray(view.liveSlots)?view.liveSlots[index]:null;
+    if(view.pending||!view.ready||!live?.instanceId||
+       view.live?.[index]!==live.catalogId){
+      toStatus("This FX editor is not LIVE. APPLY or refresh the route.");return;
+    }
+    send("routingFxEditor",{channel,slot:index,instanceId:live.instanceId,
+      deviceEpoch:view.epoch,revision:view.revision});
+    return;
+  }
   if(el.hasAttribute("data-routed-bypass")){
     const channel=Number(el.dataset.routedBypass),index=Number(el.dataset.routedSlot);
     const view=window.__arMixFxLaneView?.(channel)||{};
@@ -1296,6 +1310,10 @@
     repaint();
     const picker=document.getElementById("nativeFxSelector");
     if(picker&&!picker.hidden)renderPickerResults();
+  });
+  backend.addEventListener("arMixRoutingFxEditorAck",ack=>{
+    toStatus(ack?.ok?"Native VST3 editor opened.":
+      "EDITOR REJECTED · "+String(ack?.error||"stale instance"));
   });
   backend.addEventListener("arMixRoutingFxBypassAck",ack=>{
     if(ack?.state&&state.device)state.device.dryRoutingLab=ack.state;

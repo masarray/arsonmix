@@ -1003,6 +1003,15 @@ public:
                !=armix::diagnostics::Route::normal)return false;
         return dryRoutingLab_.setFxBypass(lane,slot,epoch,revision,instanceId,bypass);
     }
+    armix::mixer::LiveChannelFxGraph::InstanceLease leaseRoutedFxForEditor(
+            int lane,int slot,std::uint64_t epoch,std::uint64_t revision,
+            const juce::String& instanceId) const noexcept {
+        if(routeReconfiguring_.load(std::memory_order_acquire)||
+           diagnosticRoute_.load(std::memory_order_acquire)
+               !=armix::diagnostics::Route::normal ||
+           independent_.active())return {};
+        return dryRoutingLab_.leaseFxEditor(lane,slot,epoch,revision,instanceId);
+    }
     bool dryRoutingLabActive() const noexcept {return dryRoutingLab_.active();}
     void pollDryRoutingLab() noexcept {dryRoutingLab_.poll();}
 
