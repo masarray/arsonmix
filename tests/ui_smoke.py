@@ -370,12 +370,16 @@ async def main():
         assert await page.locator('.left-rail #saveFxPreset').inner_text()=='SAVE FX'
         assert await page.locator('.left-rail #menuScene').inner_text()=='EXPORT'
         assert await page.locator('.left-rail .rail-bottom button').count()==3
-        # Owner's global BTN-180 hardware recipe: 7 toolbar + 8 left rail.
+        # L2 workspace: 3 true navigation tabs + 17 rail controls (including native FX/ROUTE/SENDS).
         # Single solid face, identical resting 7-shadow model, no Button 19.
-        assert await page.locator('.toolbar-actions .nav button.btn-180').count()==7
-        assert await page.locator('.left-rail button.btn-180').count()==8
+        assert await page.locator('.toolbar-actions .nav button.btn-180').count()==3
+        assert await page.locator('.left-rail button.btn-180').count()==17
         assert await page.locator('.toolbar-actions .fx-nav,.left-rail .fx-nav').count()==0
         assert await page.locator('.left-rail .pushable,.left-rail .front,.left-rail .edge,.left-rail .shadow').count()==0
+        assert await page.locator('.left-rail [data-mix-mode]').count()==3
+        assert await page.locator('.left-rail #audioSetupBtn').count()==1
+        assert await page.locator('.toolbar-actions #audioSetupBtn').count()==0
+        assert await page.locator('.left-rail [data-my-sounds],.left-rail [data-plugin-manager],.left-rail #arSignalOpen').count()==3
         style=await page.evaluate("""()=>{
           const grab=q=>{const e=document.querySelector(q),s=getComputedStyle(e),r=e.getBoundingClientRect();
             return {face:s.backgroundColor,image:s.backgroundImage,ink:s.color,shadow:s.boxShadow,
@@ -471,6 +475,11 @@ async def main():
         await page.locator('#audioSetupBtn').click()
         assert await page.locator('#audioSetupBtn').evaluate(
             '(e)=>!e.classList.contains("active") && !e.classList.contains("selected")')
+        # SETUP now opens the real G1/G2 I/O overlay in both standalone and WebView2.
+        # Close it before testing underlying fader/MUTE pointer interactions.
+        assert await page.locator('#arIOOverlay').is_visible()
+        await page.locator('#arIOOverlay [data-io-close]').click()
+        assert not await page.locator('#arIOOverlay').is_visible()
         # Restore factory FX chain so this visual-button test cannot change later FX tests.
         await page.evaluate("""()=>{
           channels[0].inserts=[...initialFactoryChannels[0].inserts];
@@ -535,7 +544,7 @@ async def main():
         }""")
         assert all(b['width']>=77 and abs(b['mid']-header['device'])<=1 for b in header['buttons']),header
 
-        assert await page.locator('header .nav button').count()==7
+        assert await page.locator('header .nav button').count()==3
         assert await page.locator('footer.status button').count()==0
         assert await page.locator('[data-clear-all-clips]').count()==0
         architecture=await page.evaluate("""() => {
@@ -563,7 +572,7 @@ async def main():
         assert 'data:image/png;base64' not in architecture['chrome']
         assert not architecture['overflow']
         assert architecture['navBounds']['right']<=1680+1,architecture
-        assert await page.locator('.toolbar-actions .nav button').count()==7
+        assert await page.locator('.toolbar-actions .nav button').count()==3
         assert await page.locator('#masterLeft').evaluate(
             '(m)=>Math.abs(m.getBoundingClientRect().width-document.querySelector("[data-strip=\\\"0\\\"]").getBoundingClientRect().width)<=1')
         for key in ('Header','Bottom','Fader'):
@@ -1154,7 +1163,10 @@ async def main():
         await page.locator('[data-view="SIGNAL FLOW"]').click()
         assert await page.locator('.flow-node').count()==4
         await page.locator('#audioSetupBtn').click()
-        assert await page.locator('#toast').inner_text()=='Audio Setup is available in the Windows desktop app'
+        assert await page.locator('#arIOOverlay').is_visible()
+        assert await page.locator('#arIOBody select.arIOSource').count()==10
+        await page.locator('#arIOOverlay [data-io-close]').click()
+        assert not await page.locator('#arIOOverlay').is_visible()
         assert await page.locator('.setup-section').count()==0
         assert await page.locator('.editor').count()==0
         assert await page.locator('.status button').count()==0
@@ -1642,7 +1654,16 @@ async def main():
           d.acceptedRoute=null;
           window.__arMixMockEvents.arMixStatus(window.__arPatchStatus);
         }""")
-        assert await native.locator('[data-patch-row][data-patch-port]').count()==10
+        epoch_cell_count=await native.locator('[data-patch-row][data-patch-port]').count()
+        if epoch_cell_count!=10:
+            epoch_debug=await native.evaluate("""() => ({
+              activeTab:[...document.querySelectorAll('[data-patch-tab]')].filter(x=>x.getAttribute('aria-selected')==='true').map(x=>x.dataset.patchTab),
+              gridText:document.querySelector('#arPatchGrid')?.innerText.slice(0,400),
+              incoming:window.__arPatchStatus?.dryRoutingLab?.ports,
+              controller:window.__arMixRouteView?.()?.ports,
+              epoch:window.__arMixRouteView?.()?.epoch
+            })""")
+            assert epoch_cell_count==10,(epoch_cell_count,epoch_debug)
         assert await native.locator('[data-patch-row="0"][data-patch-port="9"]').get_attribute("data-patch-state")=="off"
         assert "DEVICE CHANGED" in await native.locator("#arRouteFeedback").inner_text()
 

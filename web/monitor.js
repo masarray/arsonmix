@@ -923,7 +923,9 @@
   // DRAFT/ACK route; never create a second frontend or native audio graph.
   window.__arMixRouteView=()=>{
     const d=state.dryRoutingLab||{};
-    if(draftEpoch!==Number(d.epoch||0))hydrateAcceptedRoute();
+    // Read-only telemetry projection. Never mutate the draft/epoch here:
+    // this listener may run before the routing controller's arMixStatus
+    // callback and would swallow device-epoch invalidation (stale patch UI).
     return {
       epoch:Number(d.epoch)||0,revision:Number(d.revision)||0,
       ready:!!d.ready,active:!!d.active,monitor:!!state.monitor,
@@ -1346,7 +1348,18 @@
   if(document.fonts?.ready)
     document.fonts.ready.then(guiPaintReady,guiPaintReady);
   else guiPaintReady();
-  api.addEventListener("arMixStatus",d=>{state=d;repaint(d);});
+  api.addEventListener("arMixStatus",d=>{
+    state=d;
+    // Single controller owns epoch hydration even if the full PATCH workspace
+    // is closed. The status projection used by MIX is deliberately read-only.
+    // When PATCH is open, repaint() performs its own redraw/invalidation.
+    if(!routeOverlay.classList.contains("open") &&
+       draftEpoch!==(Number(d.dryRoutingLab?.epoch)||0)){
+      patchPending=false;
+      hydrateAcceptedRoute();
+    }
+    repaint(d);
+  });
   el("arSignalOpen")?.addEventListener("click",()=>{overlay.classList.add("open");repaint(state);});
   el("arSignalClose").addEventListener("click",()=>overlay.classList.remove("open"));
   el("arSignalMonitor").addEventListener("click",()=>api.emitEvent("arMixAction",{action:"monitor",value:!state.monitor}));
