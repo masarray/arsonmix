@@ -76,9 +76,28 @@ async def main():
         await page.locator('#audioSetupBtn').click()
         assert await page.locator('#arIOOverlay').is_visible()
         assert await page.locator('#arIOBody select.arIOSource').count()==10
+        # IO-MATRIX: real input pins, no implied right channel, no second DSP graph.
+        assert await page.locator('[data-io-row-mode]').count()==10
+        assert await page.locator('[data-io-matrix-kind="inputs"]').count()==20
+        await page.locator('[data-io-row-mode="1"]').select_option('STEREO')
+        assert await page.locator('.arIOWindow [data-mix-apply]').is_disabled()
+        assert (await page.evaluate('()=>window.__arMixRouteView().draftRoutes[1].mode'))=='NONE'
+        await page.locator('[data-io-matrix-kind="inputs"][data-io-matrix-row="1"][data-io-matrix-pin="0"]').click()
+        assert (await page.evaluate('()=>window.__arMixRouteView().draftRoutes[1].mode'))=='NONE'
+        assert 'incomplete' in (await page.locator('#arIOFeedback').inner_text()).lower()
+        await page.locator('[data-io-matrix-kind="inputs"][data-io-matrix-row="1"][data-io-matrix-pin="1"]').click()
+        pair=await page.evaluate('()=>window.__arMixRouteView().draftRoutes[1]')
+        assert pair['mode']=='STEREO' and pair['left']==0 and pair['right']==1,pair
+        # Preserve the pre-test accepted route for later AUX negative tests.
+        await page.evaluate('()=>window.__arMixRevertMixerDraft()')
         await page.locator('[data-io-tab="outputs"]').click()
         outputs=await page.locator('#arIOBody').inner_text()
         assert "HW OUT 1" in outputs and "HW OUT 2" in outputs,outputs
+        assert await page.locator('[data-io-matrix-kind="outputs"]').count()==4
+        # A two-output device cannot map both MAIN sides onto the same pin.
+        await page.locator('[data-io-matrix-kind="outputs"][data-io-matrix-row="0"][data-io-matrix-pin="1"]').click()
+        assert 'distinct' in (await page.locator('#arIOFeedback').inner_text()).lower()
+        assert (await page.evaluate('()=>window.__arMixRouteView().draftMainOutputs'))==[0,1]
         assert "AUX1" in outputs and "not physical" in outputs,outputs
         await page.locator('[data-io-tab="device"]').click()
         await page.evaluate("""() => window.__armixTestEmit('arMixAudioDeviceInventory',{
