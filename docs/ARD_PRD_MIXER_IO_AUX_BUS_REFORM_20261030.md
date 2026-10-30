@@ -1,5 +1,8 @@
 # ArSonMix — ARD v2.0: Unified Mixer, Native Hardware I/O, FX Rack and AUX/Bus Routing
 
+**ADR R5 issue map:** [#173](https://github.com/masarray/arsonmix/issues/173) source/channel native format; [#174](https://github.com/masarray/arsonmix/issues/174) typed bus/send conversions; [#175](https://github.com/masarray/arsonmix/issues/175) real physical output patch; #95 FX/PDC, #15 hardware FAT. #143 was CLOSED after earlier patch UX and must not be treated as output plan completion.
+
+
 **Date:** 2026-10-30 | **Status:** CANONICAL TARGET ARCHITECTURE — implementation is milestone-gated, not automatically delivered.  
 **Audited source baseline:** `main@3b89c86` (verify HEAD before every edit; source moves in parallel threads).  
 **Read together with:** [Product PRD](PRD_ARSONMIX_PRO_MIXER_WORKSPACE_ROUTING_20261030.md), [Execution Handoff](EXECUTION_HANDOFF_ARSONMIX_MIXER_REFORM_20261030.md), [FX/Routing cross-thread guard](FX_RACK_ROUTING_CROSS_THREAD_CONTRACT_20261030.md), [Smart Audio Engine ARD](ARD_SMART_AUDIO_ENGINE_V1_2026-10-25.md), [P0 Hardware FAT](HARDWARE_FAT_GUI10_ENGINE_P012_20261027.md). This architecture supersedes the *navigation/routing roadmap* in the old v0.3 ARD, not its reusable tests or safety constraints.

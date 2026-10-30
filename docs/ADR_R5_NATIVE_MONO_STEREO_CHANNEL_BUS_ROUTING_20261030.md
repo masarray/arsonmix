@@ -1,4 +1,7 @@
 # ADR-R5 — Native Mono/Stereo Channel, Bus and Audio I/O Contract
+
+**Issue orchestration (2026-10-30):** [MS1 channel #173](https://github.com/masarray/arsonmix/issues/173) → [MS2 bus/send #174](https://github.com/masarray/arsonmix/issues/174) → [MS3 independent physical output #175](https://github.com/masarray/arsonmix/issues/175) → MS4 [#95](https://github.com/masarray/arsonmix/issues/95). Umbrella #170, earlier source routing #109, crackle FAT #15. **Issue #143 is CLOSED historical routing UI, not an open physical-output implementation.**
+
 Date: 2026-10-30 | Status: CANONICAL TARGET — not a claim of implementation
 Read with canonical PRD v2.0 / ARD v2.0, GUI_WORKFLOW_BENCHMARK_20261030.md, issue #170, and current source. Source baseline main@890cc310: G1/G2 and G3 merged; physical hardware FAT #15 unresolved. References: https://www.waves.com/emotion-lv1-tutorial-3-3-channel-window-inputs and https://www.waves.com/emotion-lv1-tutorial-3-6-channel-window-aux-sends; official Studio One Audio I/O Setup mono/stereo logical patch workflow.
 
@@ -66,7 +69,7 @@ Test by deterministic C++/CTest, native ACK/negative ACK, js smoke, exact-head W
 ## ADR-R5-006 — implementation milestone boundaries and code owners
 MS1 [meaningful vertical slice]: independent v2 source/channel format codec, legacy migration, correct control-thread compile and native effectiveFormat status; actual mono/stereo conversion/pan and channel format flip UI; regression and Windows ZIP. Touch ChannelRoutingContract.h, NativeDryRouteCommand.h, PreparedMixerBlock.h, LiveDryRoutingLab.h, mixer-io.js, monitor.js, focused tests; preserve CH1 FX. Existing #109 becomes baseline dependency.
 MS2 [format-aware send/bus]: typed MONO/STEREO bus receivers and edge conversions, mono send pan / stereo balance, AUX return and Group policies, VST bus layout/PDC planning. No MON physical output yet. Reuse existing prepared graph; no parallel DSP graph.
-MS3 [physical output]: extend existing issue #143, not a competing patcher. Native multi-out bus->render ports and M/L/R hardware matrix; 2-output reject and 8-output simultaneous MAIN/MON proof. GUI focused channel/bus inspector, logical I/O naming; no phantom outputs.
+MS3 [physical output]: execute #175; historical #143 is closed and only an input/patch UX reference, not a competing output plan. Native multi-out bus->render ports and M/L/R hardware matrix; 2-output reject and 8-output simultaneous MAIN/MON proof. GUI focused channel/bus inspector, logical I/O naming; no phantom outputs.
 MS4 [quality]: all-channel FX multi-insert (#95), plug-in bus negotiation and bounded PDC, full portable Show state and recovery, #15 hardware qualification. Channel bank capacity expansion after performance evidence.
 
 Work sequence core tests -> typed native command -> prepared graph -> actual native ACK -> UX -> exact-head CI ZIP -> hardware FAT. Parallel coding must partition owners; C++ routing shared file owned by one integration owner, GUI controller shared file by one owner; reconcile current main before every PR and avoid stale #115/#117/#128 bulk merges. No GPU-heavy filters or full mixer DOM replacement on format change.
