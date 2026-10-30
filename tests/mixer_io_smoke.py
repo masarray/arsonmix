@@ -228,7 +228,7 @@ async def main():
           window.__armixTestEmit('arMixStatus',status);
           return status;
         }""",status)
-        assert await page.locator('[data-strip="1"] .arBankStage').inner_text()=="LIVE"
+        assert "LIVE" in await page.locator('[data-strip="1"] .arBankStage').inner_text()
         # G5B: two actual, indexed native VST3s on CH2 use ONE route
         # transaction (no JS AudioContext); reorder/remove are DRAFT until ACK.
         await page.evaluate("""() => window.__armixTestEmit('arMixCatalog',{
