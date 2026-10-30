@@ -1,5 +1,8 @@
 # ArSonMix — PRD v2.0: Pro Digital Mixer, Channel Modes, Hardware I/O and AUX/BUS
 
+**Factory FX operator outcome:** official completed ArSonMix release includes genuine first-party EQ/COMP/REVERB/HARMONY/COLOR/ArSonKuPik VST3 (not six preview icons), while every user can still import their own VST3 to Studio. [Factory FX PRD](PRD_FACTORY_FX_20261030.md), [ADR](ADR_FACTORY_FX_BUNDLE_20261030.md), [tracked epic #185](https://github.com/masarray/arsonmix/issues/185). Factory modules must be immutable verified VST3 bundles, manifest/class-ID-backed, on-demand plugin editor and full Show state, installed/portable parity. Only two original existing candidates to integrate first: ASKPVST published v0.5.26 (owner entitlement needed) and ArSonEQ on development branch (no default-main package); Reverb outbound licence undecided, other effects unbuilt. No bundled Factory FX claimed today.
+
+
 **R6 authoritative execution update (audited main@8251bd6e):** [real source capability / architecture matrix](R6_CURRENT_STATE_ARCHITECTURE_EXECUTION_20261030.md), [selected-channel/bus/PATCH workflow acceptance](R6_OPERATOR_WORKFLOW_CONTRACT_20261030.md). [L2 #176](https://github.com/masarray/arsonmix/issues/176) is MERGED/owner-accepted and must not be visually regressed: identical 11 fader heights, left rail FX/ROUTE/SENDS, only three top workspaces. G3 is merged; standalone channelFormat MS1, format-aware bus MS2, hardware outputs MS3 and uniform plugin/PDC MS4 are goals, not delivered. Each feature requires actual native samples, positive/negative ACK, GUI geometry and exact-head Windows ZIP. One control graph, mutable drafts only until native APPLY.
 
 
