@@ -402,3 +402,38 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 #app #masterLeft .master-fader-zone .vu-bank .vu-bars{
  flex:0 0 30px;min-width:30px;max-width:30px;width:30px;
 }
+
+/* M4: Keep dBFS ticks inside the same sleeping-black LCD housing as the
+   fixed-color LED bars. Native meter paint and L2 35/51px bank widths remain. */
+#app #mixer .fader-zone .vu-bank .vu-bars{
+  display:flex;align-items:stretch;justify-content:flex-start;gap:2px;
+  flex:0 0 51px;width:51px;min-width:51px;max-width:51px;
+  box-sizing:border-box;overflow:hidden;
+  background-color:#02070b;
+  background-image:linear-gradient(90deg,#0b1a20 0%,#020609 13%,#010408 61%,#07131a 100%);
+  border-radius:5px;
+}
+#app #mixer .fader-zone .vu-bank.is-stereo .vu-bars,
+#app #masterLeft .master-fader-zone .vu-bank .vu-bars{
+  flex:0 0 51px;width:51px;min-width:51px;max-width:51px;
+}
+#app #mixer .fader-zone .vu-bank.is-mono .vu-bars{
+  flex:0 0 35px;width:35px;min-width:35px;max-width:35px;
+}
+#app #mixer .fader-zone .vu-bank .vu-bars .vu-scale{
+  position:relative;flex:0 0 19px;width:19px;min-width:19px;
+  color:#a0bcc7;pointer-events:none;
+}
+#app #mixer .fader-zone .vu-bank .vu-bars .vu-tick::before{background:#516b78}
+#app #mixer .fader-zone .vu-bank .vu-bars .vu-tick span{color:#a0bbc5}
+
+/* The 5px lower fader slit illuminates blue from the bottom toward the
+   cap position. Updates use the EXISTING fader input handler only:
+   no new listeners, animation, filters, blur, extra RAF or new DSP work. */
+#app #mixer .fader-zone .fader::after{
+  background:linear-gradient(to top,
+    #0c4481 0%,
+    #278de5 var(--fader-open,0%),
+    #05090c var(--fader-open,0%),
+    #05090c 100%);
+}

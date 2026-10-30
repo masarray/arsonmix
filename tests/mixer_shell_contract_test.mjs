@@ -34,3 +34,21 @@ test('route status adapter never consumes the device epoch before the native con
   assert.ok(monitor.includes('if(draftEpoch!==(Number(d.dryRoutingLab?.epoch)||0))'),'epoch refresh gate missing');
   assert.ok(monitor.includes('if(!routeOverlay.classList.contains("open") &&'),'status must initialize MIX when PATCH is closed');
 });
+
+test('VU dBFS ruler is housed with mono/stereo/master LCD bars',()=>{
+  const app=read('web/app.js'),css=read('web/styles-src/42-mixer-premium.css');
+  assert.match(app,/<div class="vu-bars">\$\{ch\.stereo\?[^\n]*\$\{meterScaleMarkup\(\)\}<\/div><\/div>/);
+  assert.match(app,/<div class="vu-bars">\$\{meterUnit\('masterL','L'\)\}[^\n]*\$\{meterScaleMarkup\(\)\}<\/div>/);
+  assert.match(css,/#app #mixer \.fader-zone \.vu-bank \.vu-bars \.vu-scale\{/);
+  assert.match(css,/\.vu-bank\.is-mono \.vu-bars\{\s*flex:0 0 35px/);
+  assert.match(css,/\.vu-bank\.is-stereo \.vu-bars/);
+});
+test('gain tracking lights lower slit on channel and MASTER without heavy visual effects',()=>{
+  const app=read('web/app.js'),css=read('web/styles-src/42-mixer-premium.css');
+  assert.equal((app.match(/style="--fader-open:\$\{\+\(100-levelToTop/g)||[]).length,2);
+  assert.ok(app.includes("host.style.setProperty('--fader-open'"));
+  assert.ok(app.includes("el.style.setProperty('--fader-open'"));
+  const finish=css.slice(css.indexOf('/* M4: Keep dBFS ticks'));
+  assert.ok(finish.includes('background:linear-gradient(to top,'));
+  assert.doesNotMatch(finish,/(?:^|\s)(?:filter|backdrop-filter|animation|transition):/);
+});
