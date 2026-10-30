@@ -340,3 +340,77 @@
 #nativeFxSelector .ar-picker-results::-webkit-scrollbar-thumb:active{
   background:#69cddc
 }
+
+/* G5 operator-clarity gate: preserve tactile BTN-180, remove label collisions.
+   Treat each manager action group as its own compact two-row control block. */
+#nativePluginManager .ar-manager-actions{
+  display:grid;grid-template-columns:minmax(265px,.65fr) minmax(505px,1.35fr);
+  gap:8px;align-items:stretch;
+}
+#nativePluginManager .ar-manager-action-group,
+#nativePluginManager .ar-manager-action-group:last-child{
+  min-width:0;display:flex;flex-wrap:wrap;align-content:start;align-items:center;
+  justify-content:flex-start;gap:6px;padding:8px 9px;box-sizing:border-box;
+}
+#nativePluginManager .ar-manager-action-group .ar-manager-label{
+  flex:0 0 100%;width:100%;min-width:0;margin:0 0 1px;
+  flex-direction:row;align-items:baseline;gap:8px;
+  font:650 10px/1.2 "ArSonMix Inter",sans-serif;
+  letter-spacing:.15px;white-space:nowrap;
+}
+#nativePluginManager .ar-manager-action-group .ar-manager-label small{
+  font:450 10px/1.2 "ArSonMix Inter",sans-serif;
+  margin:0;color:#8faab7;letter-spacing:0;
+}
+#nativePluginManager .ar-manager-action-group .native-btn{
+  flex:0 0 114px;min-width:114px;max-width:114px;width:114px;
+  height:34px;min-height:34px;padding:0 4px!important;
+  font:650 10.5px/1.1 "ArSonMix Inter",sans-serif!important;
+  overflow:hidden;text-overflow:ellipsis;
+}
+@media(max-width:930px){
+  #nativePluginManager .ar-manager-actions{grid-template-columns:1fr}
+  #nativePluginManager .ar-manager-action-group .native-btn{
+    flex:1 1 112px;max-width:none;
+  }
+}
+/* Picker: fixed square STAR, six equal-width mode keys.
+   COMP is a visual alias only; category remains 'Dynamics'. */
+#nativeFxSelector .ar-picker-categories{
+  display:grid;grid-template-columns:36px repeat(6,minmax(0,1fr));
+  gap:4px;align-items:stretch;min-width:0;
+}
+#nativeFxSelector .ar-picker-categories .native-btn{
+  min-width:0;width:100%;height:34px;min-height:34px;
+  padding:0 2px!important;box-sizing:border-box;
+  font:650 10px/1 "ArSonMix Inter",sans-serif!important;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+#nativeFxSelector #arPickerFavorites{
+  width:36px!important;min-width:36px!important;max-width:36px!important;
+  height:34px!important;min-height:34px!important;
+  padding:0!important;display:grid;place-items:center;
+}
+#nativeFxSelector #arPickerFavorites svg{width:19px;height:19px}
+#nativeFxSelector #arPickerFavorites:focus-visible{
+  outline:2px solid #74d7eb;outline-offset:1px;
+}
+/* Keep filled/active native inserts easy to read without lighting empty slots.
+   Actual CH1 and native routed CH2–10 only; preview/master never looks live. */
+.native-engine #app #mixer .rack .native-insert-row>.insert,
+.native-engine #app #mixer .rack .insert:not(.empty)[data-routed-fx]{
+  padding-left:16px!important;
+}
+.native-engine #app #mixer .rack .native-insert-row .insert-name,
+.native-engine #app #mixer .rack .insert:not(.empty)[data-routed-fx] .insert-name{
+  color:#91efb6!important;
+  font:650 11px/1.2 "ArSonMix Inter",sans-serif!important;
+  letter-spacing:.06px;
+  text-overflow:ellipsis;white-space:nowrap;overflow:hidden;display:block;
+}
+.native-engine #app #mixer .rack .native-insert-row.is-bypassed .insert-name{
+  color:#8da6a3!important;font-weight:550!important;
+}
+.native-engine #app #mixer .rack .insert.empty .insert-name{
+  color:#72cce5;
+}

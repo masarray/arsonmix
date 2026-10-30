@@ -672,14 +672,17 @@
     if(track.classList.contains("master-strip")){
       track.removeAttribute("data-preview");
       track.dataset.fxPreview="1";
-      track.title="Master FX and master PAN are visual previews; Master fader and meters are native";
+      track.title="Native MASTER fader/meters live; MASTER insert FX is not implemented";
       const masterRack=track.querySelector(".master-fx-rack");
       if(masterRack&&masterRack.dataset.nativeSig!=="empty-nonlive"){
         masterRack.dataset.nativeSig="empty-nonlive";
-        masterRack.innerHTML=Array.from({length:6},()=>`<div class="master-fx-slot">
-          <button class="master-insert empty" data-native-unrouted="-1" title="Master FX is not routed to native DSP">
-            <span class="master-insert-add" aria-hidden="true">＋</span><span class="insert-name">ADD FX</span>
-          </button></div>`).join("");
+        masterRack.innerHTML=`<div class="master-fx-slot">
+          <span class="master-insert empty ar-fx-reserved" title="Master FX processing is not implemented in the native graph">
+            <span class="insert-name">MASTER FX · UNAVAILABLE</span>
+          </span></div>`+
+          Array.from({length:5},()=>`<div class="master-fx-slot">
+            <span class="master-insert empty ar-fx-reserved" title="Native Master FX slots require G5 engine support"></span>
+          </div>`).join("");
       }
       const pan=track.querySelector('[data-pan="master"]');
       if(pan){pan.removeAttribute("tabindex");pan.style.pointerEvents="none";pan.title="Master PAN DSP not yet implemented";}

@@ -249,6 +249,57 @@ int main() {
         assert(GainFx::released==oldReleased+2);
         assert(GainFx::living==0);
     }
+    // G5A: actual sequential processors on CH2 with bounded 8-slot racks,
+    // atomic-snapshot-compatible reuse from a different position, and NO
+    // callback allocation. This is the DSP foundation, not the GUI protocol.
+    {
+        constexpr std::array ports{2,5,9};
+        ChannelRoutingConfig config;
+        config.stripsAndMaster.strips[1]={SourceMode::mono,5,-1,1.f,0.f,false,false};
+        SendRequest sends;
+        PreparedRenderGraph routing;RenderError error;
+        assert(PreparedRenderGraph::compile(config,ports,sends,routing,error));
+        auto baseline=std::make_unique<LiveChannelFxGraph>(routing,32,32);
+        auto multi=std::make_unique<LiveChannelFxGraph>(routing,32,32);
+        auto first=std::make_unique<GainFx>(2.f);
+        auto second=std::make_unique<GainFx>(3.f);
+        first->prepareToPlay(48000,32);
+        second->prepareToPlay(48000,32);
+        assert(!multi->installAt(1,1,std::make_unique<GainFx>(9.f),"gap"));
+        assert(multi->installAt(1,0,std::move(first),"FIRST","first-id"));
+        assert(multi->installAt(1,1,std::move(second),"SECOND","second-id"));
+        assert(multi->activeInserts()==2&&multi->insertsOn(1)==2);
+        assert(multi->insertId(1,1)=="second-id");
+        assert(!multi->installAt(1,1,std::make_unique<GainFx>(9.f),"duplicate"));
+        assert(!multi->installAt(1,8,std::make_unique<GainFx>(9.f),"overflow"));
+        std::array<float,4> source{.2f,.2f,.2f,.2f},zero{};
+        const float* pins[]{zero.data(),source.data(),zero.data()};
+        std::array<float,4> cleanL{},cleanR{},wetL{},wetR{};
+        const auto heapBefore=heapCalls.load(std::memory_order_relaxed);
+        assert(baseline->process(pins,3,cleanL.data(),cleanR.data(),4));
+        assert(multi->process(pins,3,wetL.data(),wetR.data(),4));
+        assert(heapCalls.load(std::memory_order_relaxed)==heapBefore);
+        assert(near(wetL[0],cleanL[0]*6.f)&&near(wetR[0],cleanR[0]*6.f));
+        const auto* firstAddress=multi->instanceProcessor(1,0);
+        const auto* secondAddress=multi->instanceProcessor(1,1);
+        const int releaseBefore=GainFx::released;
+        auto reordered=std::make_unique<LiveChannelFxGraph>(routing,32,32);
+        assert(reordered->reuseAt(1,0,*multi,1,"second-id"));
+        assert(!reordered->reuseAt(1,1,*multi,1,"second-id")); // same instance twice
+        assert(reordered->reuseAt(1,1,*multi,0,"first-id"));
+        assert(reordered->instanceProcessor(1,0)==secondAddress);
+        assert(reordered->instanceProcessor(1,1)==firstAddress);
+        assert(reordered->insertsOn(1)==2&&reordered->activeInserts()==2);
+        multi.reset(); // old snapshot retired; new lease keeps both vendor instances
+        assert(GainFx::released==releaseBefore);
+        const auto beforeReplay=heapCalls.load(std::memory_order_relaxed);
+        assert(reordered->process(pins,3,wetL.data(),wetR.data(),4));
+        assert(heapCalls.load(std::memory_order_relaxed)==beforeReplay);
+        assert(near(wetL[0],cleanL[0]*6.f));
+        reordered.reset();
+        assert(GainFx::released==releaseBefore+2);
+        assert(GainFx::living==0);
+    }
     // Tests above use a real JUCE AudioProcessor processing seam. Vendor
     // VST3 formats and sound quality require separate Windows hardware FAT.
 }

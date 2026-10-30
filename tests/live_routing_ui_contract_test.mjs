@@ -91,7 +91,11 @@ test("P1G is real native BUS/send, not a cosmetic routing picker",()=>{
 
 test("P1H independently instantiates and processes real JUCE FX in 10 native lanes",()=>{
   const fx=readFileSync(new URL("../engine/core/LiveChannelFxGraph.h",import.meta.url),"utf8");
-  assert.match(fx,/std::array<std::shared_ptr<FxInstance>,fxSlots>/);
+  assert.match(fx,/using FxRack=std::array<std::shared_ptr<FxInstance>,maxInsertsPerStrip>/);
+  assert.match(fx,/using FxBank=std::array<FxRack,fxSlots>/);
+  assert.match(fx,/static constexpr int maxInsertsPerStrip=8/);
+  assert.match(fx,/int insertsOn\(int strip\)/);
+  assert.match(fx,/for\(int slot=0;slot<count;\+\+slot\)/);
   assert.match(fx,/processor->processBlock\(buffer,midi\)/);
   assert.match(fx,/processor->releaseResources\(\)/);
   assert.match(lab,/std::make_unique<FxGraph>\(plan/);
@@ -137,7 +141,10 @@ test("P1J keeps real per-strip VST3 identity and tails across routing-only APPLY
   assert.match(fx,/processing\.test_and_set/);
   assert.match(fx,/processing\.clear/);
   assert.match(fx,/bool reuse\(int strip,const LiveChannelFxGraph& previous/);
-  assert.match(fx,/previous\.insertId\(strip\)!=catalogId/);
+  assert.match(fx,/original->catalogId!=catalogId/);
+  assert.match(fx,/previous.pluginQuantum_!=pluginQuantum_/);
+  assert.match(fx,/processors_\[strip\]\[i\]==original/);
+  assert.match(fx,/reuseAt\(strip,0,previous,0,catalogId\)/);
   assert.match(publisher,/controlPrepared\(std::uint64_t epoch/);
   assert.match(lab,/publisher_\.controlPrepared\(currentEpoch,expectedRevision\)/);
   assert.match(lab,/next->prepared->reuse\(lane,\*prior,req\.id\)/);
