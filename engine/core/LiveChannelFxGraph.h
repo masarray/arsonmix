@@ -103,6 +103,7 @@ public:
             processing.clear(std::memory_order_release);
         }
     };
+    using InstanceLease=std::shared_ptr<FxInstance>; // CONTROL only; never copy on callback
     using FxRack=std::array<std::shared_ptr<FxInstance>,maxInsertsPerStrip>;
     using FxBank=std::array<FxRack,fxSlots>;
 
@@ -154,6 +155,14 @@ public:
         if(!fx||fx->instanceId!=token)return false;
         fx->bypassRequested.store(bypass,std::memory_order_release);
         return true;
+    }
+    // Same opaque token used by the native BYPASS ACK. A vendor editor takes
+    // an owner lease ONLY on the message thread, never in process().
+    InstanceLease leaseInsert(int strip,int position,const juce::String& token) const noexcept {
+        if(strip<0||strip>=fxSlots||position<0||position>=counts_[strip]||
+           token.isEmpty())return {};
+        const auto& fx=processors_[strip][position];
+        return fx&&fx->instanceId==token?fx:InstanceLease{};
     }
     const Processor* instanceProcessor(int strip,int position=0) const noexcept {
         return strip>=0&&strip<fxSlots&&position>=0&&position<counts_[strip]

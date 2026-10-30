@@ -321,6 +321,28 @@ int main() {
         assert(GainFx::released==releaseBefore+2);
         assert(GainFx::living==0);
     }
+    // G5D: a native vendor editor keeps its processor alive across retirement
+    // on CONTROL only, and stale positions cannot lease the same processor.
+    {
+        auto graph=makeGraph(2.f,1.f);
+        const auto token=graph->insertInstanceId(0,0);
+        const auto released=GainFx::released;
+        auto editorLease=graph->leaseInsert(0,0,token);
+        assert(editorLease && editorLease->instanceId==token);
+        assert(!graph->leaseInsert(0,1,token));
+        assert(!graph->leaseInsert(0,0,"stale-editor"));
+        const auto before=heapCalls.load(std::memory_order_relaxed);
+        std::array<float,4> source{.1f,.1f,.1f,.1f},silent{},l{},r{};
+        const float* pins[]{source.data(),silent.data(),silent.data()};
+        // Old graph's RT samples still require no smart-pointer bookkeeping.
+        assert(graph->process(pins,3,l.data(),r.data(),4));
+        assert(heapCalls.load(std::memory_order_relaxed)==before);
+        graph.reset();
+        assert(GainFx::living==1); // only leased instance remains
+        assert(GainFx::released==released+1); // other graph FX retired
+        editorLease.reset();
+        assert(GainFx::living==0&&GainFx::released==released+2);
+    }
     // Tests above use a real JUCE AudioProcessor processing seam. Vendor
     // VST3 formats and sound quality require separate Windows hardware FAT.
 }

@@ -373,6 +373,19 @@ public:
             });
     }
 
+    // Quiescent message-thread identity lease for the vendor's native GUI.
+    // Shared lifetime is independent of route reorder, but not authority:
+    // an editor request MUST match the current accepted route.
+    FxGraph::InstanceLease leaseFxEditor(int lane,int slot,
+             std::uint64_t expectedEpoch,std::uint64_t expectedRevision,
+             const juce::String& token) const noexcept {
+        if(lane<0||lane>=fxSlots||slot<0||slot>=maxFxPerLane||
+           !hasExplicitRoute()||expectedEpoch!=epoch()||
+           expectedRevision!=revision()||token.isEmpty())return {};
+        const auto* fx=publisher_.controlPrepared(expectedEpoch,expectedRevision);
+        return fx?fx->leaseInsert(lane,slot,token):FxGraph::InstanceLease{};
+    }
+
     void disable() noexcept {
         userPatched_.store(false,std::memory_order_release);
         enabled_.store(false,std::memory_order_release);

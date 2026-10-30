@@ -244,7 +244,7 @@ public:
         stopTimer();
         orbit_.stop();
         catalog_.onChanged = nullptr;
-        editorWindow_.reset();
+        closePluginEditor();
         audioSetupWindow_.reset();
         engine_.devices().removeChangeListener (this);
         engine_.stop();
@@ -268,6 +268,10 @@ private:
     bool studioBackupBusy_ = false;
     std::unique_ptr<juce::FileChooser> chooser_;
     juce::File lastPluginFolder_ = juce::File::getSpecialLocation (juce::File::userHomeDirectory);
+    // Destruction order: editorWindow_ releases its JUCE GUI BEFORE the
+    // retained vendor processor lease. No vendor destructor runs on RT.
+    armix::mixer::LiveChannelFxGraph::InstanceLease routedEditorOwner_;
+    juce::int64 routedEditorEpoch_=0;
     std::unique_ptr<PluginEditorWindow> editorWindow_;
     std::unique_ptr<AudioSetupWindow> audioSetupWindow_;
     juce::String startupError_, lastAudioXml_;
@@ -515,6 +519,13 @@ private:
     {
         if (browser_.loaded)
             browser_.emitEventIfBrowserIsVisible ("arMixPresets", presets_.list());
+    }
+
+    void closePluginEditor() noexcept {
+        // JUCE destroys the editor before releasing the owner's processor.
+        editorWindow_.reset();
+        routedEditorOwner_.reset();
+        routedEditorEpoch_=0;
     }
 
     void emitChain()
@@ -1083,6 +1094,9 @@ private:
                                 "AUX "+juce::String(b+1));
             }
             if(error.isEmpty()) {
+                // Structural replacement can remove the vendor object.
+                // Close its editor before attempting graph publication.
+                closePluginEditor();
                 try {
                     error=engine_.applyDryRoutingLab(value,selected);
                 } catch(const std::exception& ex) {
@@ -1132,6 +1146,49 @@ private:
                 "CH/AUX "+juce::String(lane+1)+" slot "+juce::String(slot+1)+
                 (static_cast<bool>(value)?" OFF":" ON"));
             else emitNotice("FX bypass rejected: refresh the FX Rack after native ACK.",true);
+            return;
+        }
+        if (action == "routingFxEditor") {
+            const int lane=static_cast<int>(args.getProperty("channel",-1));
+            const auto token=args.getProperty("instanceId",{}).toString();
+            const auto epoch=static_cast<std::uint64_t>(
+                static_cast<juce::int64>(args.getProperty("deviceEpoch",juce::var(0))));
+            const auto revision=static_cast<std::uint64_t>(
+                static_cast<juce::int64>(args.getProperty("revision",juce::var(0))));
+            bool opened=false;
+            juce::String error="FX editor unavailable: device, revision or instance changed";
+            if(!nativeShowBusy_&&!studioBackupBusy_&&!engine_.isGraphSwitchPending()) {
+                const auto owner=engine_.leaseRoutedFxForEditor(
+                    lane,slot,epoch,revision,token);
+                if(owner && owner->processor) {
+                    try {
+                        if(auto* editor=owner->processor->createEditorIfNeeded()) {
+                            closePluginEditor();
+                            routedEditorOwner_=owner;
+                            routedEditorEpoch_=static_cast<juce::int64>(epoch);
+                            editorWindow_=std::make_unique<PluginEditorWindow>(
+                                owner->processor->getName(),editor);
+                            opened=true;
+                            error.clear();
+                        } else error="This VST3 has no native editor";
+                    } catch(const std::exception& ex) {
+                        closePluginEditor();
+                        error="Vendor editor failed: "+juce::String(ex.what());
+                    } catch(...) {
+                        closePluginEditor();
+                        error="Vendor editor failed (plugin exception)";
+                    }
+                }
+            }
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("ok",opened);
+            ack->setProperty("error",error);
+            ack->setProperty("instanceId",token);
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                "arMixRoutingFxEditorAck",juce::var(ack.release()));
+            if(opened)diagnostics_.record("ROUTED_FX_EDITOR_OPENED",
+                "lane="+juce::String(lane)+" slot="+juce::String(slot));
+            else emitNotice(error,true);
             return;
         }
         if (action == "routingDryShowSave")
@@ -1274,6 +1331,7 @@ private:
                             result.loaded,state,command);
                         if(error.isEmpty()) {
                             try {
+                                safe->closePluginEditor();
                                 LiveDryRoutingLab::FxSelections noVst3{};
                                 error=safe->engine_.applyDryRoutingLab(command,noVst3);
                             } catch(const std::exception& ex) {
@@ -1318,6 +1376,7 @@ private:
             // Backward-compatible command name: CLEAR PATCH keeps the one
             // native 10CH+4AUX topology, with ALL physical inputs disconnected.
             // Never enable the legacy CH1 signal path on STOP or hotplug.
+            closePluginEditor();
             const auto error=engine_.clearProductionRouting();
             diagnostics_.record(error.isEmpty()?"NATIVE_INPUT_PATCH_CLEARED":
                                  "NATIVE_INPUT_PATCH_CLEAR_FAILED",
@@ -1341,7 +1400,7 @@ private:
             if (!value.isBool()) return emitNotice ("Invalid smart clock command", true);
             // Close third-party editors before device/processor preparation.
             stopOrbit();
-            editorWindow_.reset();
+            closePluginEditor();
             const auto error = engine_.setIndependentClockEnabled (bool (value));
             if (error.isNotEmpty())
             {
@@ -1483,7 +1542,7 @@ private:
             if (!engine_.isOutputMuted())
                 return emitNotice ("Mute output in SIGNAL CHECK before saving a native sound preset. This avoids interrupting your live performance.", true);
             stopOrbit();
-            editorWindow_.reset();
+            closePluginEditor();
             armix::storage::Snapshot snapshot;
             snapshot.name = name;
             auto error = engine_.captureSnapshot (snapshot);
@@ -1508,7 +1567,7 @@ private:
             if (engine_.isGraphSwitchPending())
                 return emitNotice ("FX recall is already transitioning; retry shortly.", true);
             stopOrbit();
-            editorWindow_.reset();
+            closePluginEditor();
             armix::storage::Snapshot snapshot;
             auto error = presets_.load (name, snapshot);
             if (error.isEmpty()) error = engine_.restoreSnapshot (snapshot);
@@ -1601,7 +1660,7 @@ private:
                 // Orbit retains the same vendor instance across the prepared graph handoff.
                 const bool keepOrbit=orbit_.active();
                 if(keepOrbit)orbit_.pauseForGraphEdit();
-                editorWindow_.reset();
+                closePluginEditor();
                 try
                 {
                     error = engine_.addVst3 (plugin->path, plugin->uid, plugin->key());
@@ -1641,7 +1700,7 @@ private:
             const auto* previous=orbit_.processor();
             const bool removedOrbit=previous && engine_.pluginAt(slot)==previous;
             if(orbit_.active())orbit_.pauseForGraphEdit();
-            editorWindow_.reset();
+            closePluginEditor();
             const bool changed=engine_.removeAt(slot);
             if(changed) {
                 // Orbit stays paused until the callback and control thread
@@ -1772,7 +1831,7 @@ private:
             // Never open an editor for an old graph waiting to be destroyed.
             if (engine_.isGraphSwitchPending())
                 return emitNotice ("FX recall is transitioning; open the editor after recall completes.", true);
-            editorWindow_.reset();
+            closePluginEditor();
             if (auto* processor = engine_.pluginAt (slot))
             {
                 if (auto* editor = processor->createEditorIfNeeded())
@@ -1809,6 +1868,7 @@ private:
     {
         // Save device state only after a real change, not on every 3-second tick.
         deviceSettingsDirty_ = true;
+        if(routedEditorOwner_)closePluginEditor();
         diagnostics_.record ("DEVICE_CHANGE", "Device manager event");
     }
 
@@ -1962,6 +2022,25 @@ private:
         if (catalog_.busy() && timerTicks_ % 3 == 0)
             emitScanProgress();
         auto state = engine_.status();
+        if(routedEditorOwner_) {
+            // Unplug/reopen may bypass normal GUI actions. Never keep a
+            // vendor editor on an invalid device epoch or removed instance.
+            const auto route=state.getProperty("dryRoutingLab",{});
+            bool retained=false;
+            if(static_cast<bool>(route.getProperty("ready",false)) &&
+               static_cast<juce::int64>(route.getProperty("epoch",juce::var(0)))
+                   ==routedEditorEpoch_) {
+                const auto rows=route.getProperty("fxInstances",juce::var());
+                if(const auto* lanes=rows.getArray())
+                    for(const auto& lane:*lanes)
+                        if(const auto* slots=lane.getArray())
+                            for(const auto& slot:*slots)
+                                if(slot.getProperty("instanceId",{}).toString()
+                                      ==routedEditorOwner_->instanceId)
+                                    retained=true;
+            }
+            if(!retained)closePluginEditor();
+        }
         annotateRecovery (state);
         state.getDynamicObject()->setProperty ("diagnosticsDropped",
             static_cast<double> (diagnostics_.lostRecords()));
