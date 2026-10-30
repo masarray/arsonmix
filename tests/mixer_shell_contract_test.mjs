@@ -52,3 +52,18 @@ test('gain tracking lights lower slit on channel and MASTER without heavy visual
   assert.ok(finish.includes('background:linear-gradient(to top,'));
   assert.doesNotMatch(finish,/(?:^|\s)(?:filter|backdrop-filter|animation|transition):/);
 });
+
+test('native mixer rack reconcile ignores meter/loudness text node replacement',()=>{
+  const native=read('web/bridge.js');
+  assert.match(native,/const needsMixerReconcile=records=>records\.some/);
+  assert.match(native,/target===mixer/);
+  assert.match(native,/target\.id==="masterLeft"/);
+  assert.match(native,/target\.classList\.contains\("rack"\)/);
+  assert.match(native,/if\(needsMixerReconcile\(records\)\)syncView\(\)/);
+  assert.doesNotMatch(native,/new MutationObserver\(\(\)=>syncView\(\)\)\.observe\(mixer/);
+});
+test('native readback updates blue lower slit with cap on all channel/master paths',()=>{
+  const native=read('web/bridge.js');
+  assert.equal((native.match(/style\.setProperty\("--fader-open",\(100-top\)\.toFixed\(3\)\+"%"\)/g)||[]).length,3);
+  assert.match(native,/element\.getAttribute\("aria-label"\)!==accessible/);
+});

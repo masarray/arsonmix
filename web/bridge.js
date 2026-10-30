@@ -798,7 +798,15 @@
   new MutationObserver(()=>syncView()).observe(workspace,{childList:true});
   // renderMaster() replaces descendants without replacing the mixer root.
   // Reapply the disabled native-only controls after each Master redraw.
-  new MutationObserver(()=>syncView()).observe(mixer,{childList:true,subtree:true});
+  // Only structural edits need native rack reconciliation. Native LUFS/dBTP
+  // text and meter labels change independently of any channel topology.
+  const needsMixerReconcile=records=>records.some(({target})=>
+    target===mixer || (target.nodeType===1 && (
+      target.id==="masterLeft" || target.classList.contains("rack") ||
+      target.classList.contains("master-fx-rack"))));
+  new MutationObserver(records=>{
+    if(needsMixerReconcile(records))syncView();
+  }).observe(mixer,{childList:true,subtree:true});
   // Opens the existing native Routing LAB, not a second mixer/editor.
   document.addEventListener("click",event=>{
     if(!event.target.closest("[data-native-routing-lab]"))return;
@@ -1365,7 +1373,7 @@
         if(!editing&&Number.isFinite(db)&&Math.abs(ch.fader-db)>.05){
           ch.fader=db;changed=true;
           const f=document.querySelector('[data-fader="'+i+'"]');
-          if(f){f.querySelector(".cap")?.style.setProperty("--pos",levelToTop(db)+"%");f.setAttribute("aria-valuenow",db.toFixed(1));}
+          if(f){const top=levelToTop(db);f.querySelector(".cap")?.style.setProperty("--pos",top+"%");f.style.setProperty("--fader-open",(100-top).toFixed(3)+"%");f.setAttribute("aria-valuenow",db.toFixed(1));}
           const read=document.querySelector('[data-read="'+i+'"]');
           if(read)read.textContent=fmt(db);
         }
@@ -1395,7 +1403,7 @@
     if(!editing && Math.abs(channel.fader-channelDb)>0.05){
       channel.fader=channelDb;changed=true;
       const fader=document.querySelector('[data-fader="0"]');
-      if(fader){fader.querySelector(".cap")?.style.setProperty("--pos",levelToTop(channelDb)+"%");fader.setAttribute("aria-valuenow",channelDb.toFixed(1));}
+      if(fader){const top=levelToTop(channelDb);fader.querySelector(".cap")?.style.setProperty("--pos",top+"%");fader.style.setProperty("--fader-open",(100-top).toFixed(3)+"%");fader.setAttribute("aria-valuenow",channelDb.toFixed(1));}
       const read=document.querySelector('[data-read="0"]');
       if(read)read.textContent=fmt(channelDb);
     }
@@ -1421,7 +1429,7 @@
     if(!editing && typeof masterGain!=="undefined" && Math.abs(masterGain-masterDb)>0.05){
       masterGain=masterDb;changed=true;
       const fader=document.querySelector('[data-fader="master"]');
-      if(fader){fader.querySelector(".cap")?.style.setProperty("--pos",levelToTop(masterDb)+"%");fader.setAttribute("aria-valuenow",masterDb.toFixed(1));}
+      if(fader){const top=levelToTop(masterDb);fader.querySelector(".cap")?.style.setProperty("--pos",top+"%");fader.style.setProperty("--fader-open",(100-top).toFixed(3)+"%");fader.setAttribute("aria-valuenow",masterDb.toFixed(1));}
       document.querySelectorAll(".master-db").forEach(e=>e.textContent=fmt(masterDb));
     }
     if(typeof masterMute!=="undefined" && typeof d.masterMute==="boolean" && masterMute!==d.masterMute){
@@ -1484,8 +1492,9 @@
       const label=measured?value.toFixed(1):"—";
       if(element.textContent!==label)element.textContent=label;
       element.classList.toggle("over-limit",measured&&value>limit);
-      element.setAttribute("aria-label",measured?
-         ("Native measured "+unit+" "+label):(unit+" unavailable"));
+      const accessible=measured?"Native measured "+unit+" "+label:unit+" unavailable";
+       if(element.getAttribute("aria-label")!==accessible)
+         element.setAttribute("aria-label",accessible);
     }
     const lcd=document.querySelector("#masterLeft .master-analysis");
     if(lcd){
