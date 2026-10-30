@@ -216,6 +216,7 @@ public:
     {
         settingsDirectory().createDirectory();
         catalog_.onChanged = [this] { emitCatalog(); emitScanProgress(); };
+        catalog_.scanFactoryIfPresent(); // Only the signed-off local manifest; never global VST scans.
         setUsingNativeTitleBar (true);
         setResizable (true, true);
         setResizeLimits (1100, 650, 3840, 2160);

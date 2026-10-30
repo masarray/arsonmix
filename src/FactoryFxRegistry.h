@@ -41,7 +41,7 @@ struct Registry final
     {
         if (s.length() != size) return false;
         for (auto c : s)
-            if (! juce::CharacterFunctions::isHexDigit (c)) return false;
+            if (! juce::CharacterFunctions::getHexDigitValue (c) >= 0) return false;
         return true;
     }
 
@@ -53,7 +53,7 @@ struct Registry final
             s.contains ("//") || s.containsChar ('\\'))
             return false;
         for (auto c : s)
-            if (! (juce::CharacterFunctions::isLetterOrDigit (c) ||
+            if (! ((juce::CharacterFunctions::isAscii (c) && juce::CharacterFunctions::isLetterOrDigit (c)) ||
                    c == '/' || c == '_' || c == '-' || c == '.'))
                 return false;
         return true;
