@@ -311,6 +311,7 @@ async def main():
         assert await page.evaluate("""()=>window.__arMixFxLaneView(1).liveSlots[0].bypassed""") is True
         # G5D: FX RACK editor opens the exact committed vendor instance, not
         # a catalog preview or stale/position-only CH1 editor.
+        await page.evaluate("()=>focusChannel(1)")
         await page.locator('[data-view="FX RACK"]').click()
         await page.wait_for_function("""()=>document.querySelector(
           '#rackWorkspace [data-routed-editor="1"][data-routed-slot="0"]')!==null""")
