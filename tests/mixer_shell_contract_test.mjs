@@ -69,9 +69,10 @@ test('native mixer rack reconcile ignores meter/loudness text node replacement',
   assert.match(native,/if\(needsMixerReconcile\(records\)\)syncView\(\)/);
   assert.doesNotMatch(native,/new MutationObserver\(\(\)=>syncView\(\)\)\.observe\(mixer/);
 });
-test('native readback updates blue lower slit with cap on all channel/master paths',()=>{
+test('native gain readback moves exactly three PNG cap paths without repainting the rail',()=>{
   const native=read('web/bridge.js');
-  assert.equal((native.match(/style\.setProperty\("--fader-open",\(100-top\)\.toFixed\(3\)\+"%"\)/g)||[]).length,3);
+  assert.equal((native.match(/\.querySelector\("\.cap"\)\?\.style\.setProperty\("--pos",top\+"%"\)/g)||[]).length,3);
+  assert.doesNotMatch(native,/--fader-open/);
   assert.match(native,/element\.getAttribute\("aria-label"\)!==accessible/);
 });
 
