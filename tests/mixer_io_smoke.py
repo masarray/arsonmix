@@ -360,10 +360,10 @@ async def main():
         }""",status)
         await page.locator('[data-io-open]').click()
         await page.locator('[data-io-tab="outputs"]').click()
-        selects=page.locator('.arIOMainOutput')
-        assert await selects.count()==2
-        await selects.nth(0).select_option('4')
-        await selects.nth(1).select_option('5')
+        # Exercise actual sparse-pin OUTPUT crosspoints, not hidden fallback dropdowns.
+        assert await page.locator('.arIOMainOutput').count()==2
+        await page.locator('[data-io-matrix-kind="outputs"][data-io-matrix-row="0"][data-io-matrix-pin="4"]').click()
+        await page.locator('[data-io-matrix-kind="outputs"][data-io-matrix-row="1"][data-io-matrix-pin="5"]').click()
         assert await page.evaluate("""()=>window.__arMixRouteView().draftMainOutputs.join(',')""")=='4,5'
         await page.locator('#arIOOverlay [data-mix-apply]').click()
         command=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
