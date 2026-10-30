@@ -206,6 +206,28 @@ int main() {
     assert(parsed.channels.formats[1]==armix::mixer::ChannelFormat::stereo);
     assert(parsed.sends.count==1&&parsed.aux.count==2);
     assert(parsed.aux.sends[0].destination==0);
+    // MS3A physical output patch is a live DEVICE decision, not a Show
+    // portability field. FX Show Recall may not silently route speakers
+    // back to hardware outputs 1/2 when the operator chose 5/6.
+    {
+        auto patched=setup();
+        auto currentLab=patched.getProperty("dryRoutingLab",{});
+        juce::Array<juce::var> enabled{0,1,4,5},mainPair{4,5};
+        set(currentLab,"outputPorts",juce::var(enabled));
+        set(currentLab,"mainOutputs",juce::var(mainPair));
+        juce::var restored;
+        assert(NativeDryShowRecall::prepare(snaps[0],patched,restored).isEmpty());
+        const auto* actual=restored.getProperty("mainOutputs",{}).getArray();
+        assert(actual&&actual->size()==2);
+        assert(static_cast<int>(actual->getReference(0))==4);
+        assert(static_cast<int>(actual->getReference(1))==5);
+        juce::Array<juce::var> duplicate{4,4};
+        set(currentLab,"mainOutputs",juce::var(duplicate));
+        assert(NativeDryShowRecall::prepare(snaps[0],patched,restored).isNotEmpty());
+        juce::Array<juce::var> missing{4,7};
+        set(currentLab,"mainOutputs",juce::var(missing));
+        assert(NativeDryShowRecall::prepare(snaps[0],patched,restored).isNotEmpty());
+    }
     const auto previous=juce::JSON::toString(prepared,false);
 
     // Full real native MS1 DRY Show round-trip: mono physical -> STEREO
