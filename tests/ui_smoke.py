@@ -1472,6 +1472,17 @@ async def main():
         assert rack_type['font']>=11 and rack_type['weight']>=600 and rack_type['indent']>=15 and rack_type['innerIndent']==6,rack_type
         assert rack_type['color']=='rgb(145, 239, 182)',rack_type
         assert rack_type['masterFakeAdd']==0 and 'UNAVAILABLE' in rack_type['masterLabel'],rack_type
+        # Real MASTER DSP is unavailable, but visual rack is SIX equal rows.
+        master_rows=await native.evaluate("""()=>{
+          const rows=[...document.querySelectorAll('#masterLeft .master-fx-rack .master-fx-slot')];
+          return {count:rows.length,buttons:rows.filter(r=>r.querySelector('button.master-insert')).length,
+            locked:rows.every(r=>r.querySelector('button.master-insert:disabled[aria-disabled="true"]')),
+            content:rows.every(r=>r.querySelector('.insert-name')?.textContent.trim()),
+            spread:Math.max(...rows.map(r=>r.getBoundingClientRect().height))-
+              Math.min(...rows.map(r=>r.getBoundingClientRect().height))};
+        }""")
+        assert master_rows['count']==6 and master_rows['buttons']==6 and master_rows['locked'],master_rows
+        assert master_rows['content'] and master_rows['spread']<1,master_rows
 
         await native.evaluate("""()=>{
           window.__arMixMockEvents.arMixChain([]);
@@ -1557,6 +1568,9 @@ async def main():
         assert await native.locator('[data-strip="1"] .rack .insert-slot').count()==6
         assert await native.locator('[data-strip="1"] .rack [data-routed-fx="1"]').count()==6
         assert await native.locator('[data-strip="1"] .rack .ar-routed-loaded').count()==1
+        assert await native.locator('[data-strip="1"] .rack .insert-add-glyph').count()==5
+        assert all(x.strip()=='ADD FX' for x in
+          (await native.locator('[data-strip="1"] .rack .insert.empty .insert-name').all_inner_texts()))
         assert "ROUTE / FX" not in (await native.locator('[data-strip="1"] .rack').inner_text())
         await native.locator('[data-view="FX RACK"]').click()
         await native.evaluate("()=>{currentChannel=1;renderRackWorkspace()}")

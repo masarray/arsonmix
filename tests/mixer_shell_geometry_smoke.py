@@ -67,7 +67,19 @@ async def main():
                 if width==1366 and mode=='SENDS':
                     await page.screenshot(path='mixer-shell-compact-1366.png')
             assert heights['SENDS']<heights['FX'],(width,height,heights)
-            assert heights['ROUTE']>heights['FX'],(width,height,heights)
+            # ROUTE now reserves MORE vertical space than SENDS, all eleven
+            # strips shrink the identical fader row. Every route widget must
+            # be entirely inside its bank, never spill over into PAN/TRIM.
+            if mode=='ROUTE':
+                bounds=await page.evaluate("""()=>[...document.querySelectorAll('#mixer .strip[data-strip]')].map(strip=>{
+                  const bank=strip.querySelector('.arChannelBank').getBoundingClientRect();
+                  const children=[...strip.querySelectorAll('.arRouteBank > *')].map(x=>x.getBoundingClientRect());
+                  return {bankTop:bank.top,bankBottom:bank.bottom,
+                    inside:children.every(x=>x.top>=bank.top-1&&x.bottom<=bank.bottom+1),
+                    patched:strip.querySelector('.arBankPatch').getBoundingClientRect().bottom<=bank.bottom+1};
+                })""")
+                assert all(x['inside'] and x['patched'] for x in bounds),(width,height,bounds)
+            assert heights['ROUTE']<heights['SENDS'],(width,height,heights)
             await page.locator('.left-rail [data-mix-mode="FX"]').click()
             assert abs(await assert_linked('FX RESTORE',width,height)-heights['FX'])<1.1
 

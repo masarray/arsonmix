@@ -317,6 +317,8 @@ async def main():
           return status;
         }""",status)
         assert await page.locator('[data-strip="1"] [data-routed-bypass]').count()==2
+        assert await page.locator('[data-strip="1"] .rack .fx-power[data-routed-bypass]').count()==2
+        assert await page.locator('[data-strip="1"] .rack .native-power').count()==0
         await page.locator('[data-strip="1"] [data-routed-bypass]').first.click()
         fx_cmd=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='routingFxBypass').at(-1).data""")
