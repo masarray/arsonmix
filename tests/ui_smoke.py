@@ -1465,10 +1465,11 @@ async def main():
           const padding=parseFloat(getComputedStyle(button).paddingLeft);
           const master=document.querySelector('#mixer .master-strip .master-fx-rack');
           return {color:c.color,font:parseFloat(c.fontSize),weight:parseInt(c.fontWeight),
-            indent:padding,masterFakeAdd:master.querySelectorAll('[data-native-unrouted="-1"]').length,
+            indent:padding,innerIndent:parseFloat(c.paddingLeft),
+            masterFakeAdd:master.querySelectorAll('[data-native-unrouted="-1"]').length,
             masterLabel:master.textContent.trim()};
         }""")
-        assert rack_type['font']>=11 and rack_type['weight']>=600 and rack_type['indent']>=15,rack_type
+        assert rack_type['font']>=11 and rack_type['weight']>=600 and rack_type['indent']>=15 and rack_type['innerIndent']==6,rack_type
         assert rack_type['color']=='rgb(145, 239, 182)',rack_type
         assert rack_type['masterFakeAdd']==0 and 'UNAVAILABLE' in rack_type['masterLabel'],rack_type
 
