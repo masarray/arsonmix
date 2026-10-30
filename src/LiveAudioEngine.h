@@ -962,7 +962,7 @@ public:
     // Explicit message-thread transaction. NO VST is processed in this LAB.
     juce::String applyDryRoutingLab (
         const juce::var& command,
-        const std::array<LiveDryRoutingLab::FxSelection,LiveDryRoutingLab::fxSlots>& fx) {
+        const LiveDryRoutingLab::FxSelections& fx) {
         if (!isOutputMuted()) return "MUTE OUTPUT before applying physical DRY LAB routing";
         if (handoff_.busy()) return "A VST3 graph handoff is in progress";
         if (routeReconfiguring_.load(std::memory_order_acquire))

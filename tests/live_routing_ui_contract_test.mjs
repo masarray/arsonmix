@@ -147,8 +147,11 @@ test("P1J keeps real per-strip VST3 identity and tails across routing-only APPLY
   assert.match(fx,/reuseAt\(strip,0,previous,0,catalogId\)/);
   assert.match(publisher,/controlPrepared\(std::uint64_t epoch/);
   assert.match(lab,/publisher_\.controlPrepared\(currentEpoch,expectedRevision\)/);
-  assert.match(lab,/next->prepared->reuse\(lane,\*prior,req\.id\)/);
-  assert.match(lab,/continue; \/\/ NO disk scan/);
+  assert.match(lab,/next->prepared->reuseAt\(lane,slot,\*prior,old,req\.id\)/);
+  assert.match(lab,/next->prepared->installAt\(lane,slot,/);
+  assert.match(lab,/if\(hole\)return label/);
+  assert.match(lab,/std::array<bool,maxFxPerLane> consumed/);
+  assert.match(lab,/if\(reused\)continue; \/\/ DO NOT restart/);
   assert.match(lab,/fxReused_\.store\(reusedCount/);
   assert.match(lab,/acceptedRoute_=explicitSelection\?command:juce::var\(\)/);
   assert.match(lab,/setProperty\("acceptedRoute",acceptedRoute_\)/);

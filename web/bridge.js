@@ -204,30 +204,43 @@
     const isMaster=typeof masterSelected!=="undefined"&&masterSelected;
     const name=isMaster?"MASTER":(channels[selected]?.name||("CH "+(selected+1)));
     const fx=isMaster?"":(lab.channelFxNames?.[selected]||"");
-    // Keep the working CH1 multi-insert workflow even in production routing.
+    // Native route ACK is the only LIVE truth. G5B supports eight ordered
+    // inserts on CH2..10; CH1's existing vendor/Orbit chain stays untouched.
     if(isMaster||selected!==0||(fx&&state.chain.length===0)){
-      const draft=window.__arMixGetRackFxDraft?.(selected);
-      const pending=draft?.id!==undefined?(draft.id?state.catalog.find(p=>p.id===draft.id)?.name||"Selected VST3":"DRY"):"";
+      const view=window.__arMixFxLaneView?.(selected)||{};
+      const ids=Array.isArray(view.ids)?view.ids:[];
+      const liveIds=Array.isArray(view.live)?view.live:[];
+      const names=Array.isArray(view.names)?view.names:[];
+      const pending=!!view.pending;
+      const nodes=Array.from({length:8},(_,slot)=>{
+        const loaded=slot<ids.length, label=names[slot]||"ADD FX";
+        return `<div class="native-node" data-routed-lane="${selected}" data-routed-slot="${slot}">
+          <span class="node-index">${String(slot+1).padStart(2,"0")}</span>
+          <span class="node-text">${escapeHtml(label)}
+            <small>${loaded?(pending?"DRAFT · not live":"Native VST3 insert"):"Empty FX slot"}</small></span>
+          <button class="native-btn" data-routed-fx="${selected}" data-routed-slot="${slot}"
+            ${isMaster||slot>ids.length?"disabled":""}>${loaded?"REPLACE":"＋ ADD"}</button>
+          <button class="native-btn" data-routed-move="${selected}" data-routed-slot="${slot}" data-routed-direction="up"
+            ${isMaster||!loaded||slot===0?"disabled":""}>↑</button>
+          <button class="native-btn" data-routed-move="${selected}" data-routed-slot="${slot}" data-routed-direction="down"
+            ${isMaster||!loaded||slot===ids.length-1?"disabled":""}>↓</button>
+          <button class="native-btn warn" data-routed-clear="${selected}" data-routed-slot="${slot}"
+            ${isMaster||!loaded?"disabled":""}>REMOVE</button></div>`;
+      }).join("");
       workspace.innerHTML=`<div class="native-panel" data-live-native="1">
-        ${cardHeader("FX Rack · "+name,"FX workspace independent of ROUTING · verified native graph")}
+        ${cardHeader("FX Rack · "+name,"Independent FX chain · one verified native graph")}
         <div class="native-toolbar" style="margin-bottom:10px">
           <button class="native-btn" data-plugin-manager="1">PLUGIN MANAGER</button>
-          <button class="native-btn" data-native-routing-lab="1">OPEN ROUTING</button>
-          <span class="native-sub">Native routed FX · one insert per channel currently supported</span>
+          <button class="native-btn" data-native-routing-lab="1">ROUTING</button>
+          <span class="native-sub">${isMaster?"MASTER DSP unavailable":ids.length+"/8 ordered VST3 inserts"}</span>
         </div>
-        <div class="native-card" style="max-width:900px;min-height:0">
-          <h3>${escapeHtml(name)} · ROUTED FX</h3>
-          <div class="native-node">
-            <span class="node-index">01</span>
-            <span class="node-text">${escapeHtml(fx||"DRY · no insert")}
-              <small>${isMaster?"Master routed FX unavailable":fx?"Native routed VST3":"Choose a VST3 from the installed catalog"}</small></span>
-            <button class="native-btn primary" data-routed-fx="${selected}" ${isMaster?"disabled":""}>${fx?"REPLACE FX":"＋ ADD FX"}</button>
-            <button class="native-btn warn" data-routed-clear="${selected}" ${(!fx&&!draft)||isMaster?"disabled":""}>REMOVE</button>
-          </div>
-          ${draft?`<p class="native-status" style="margin-top:10px">PENDING DRAFT: ${escapeHtml(pending)} · NOT LIVE until native ACK</p>`:""}
+        <div class="native-card" style="max-width:960px;min-height:0">
+          <h3>${escapeHtml(name)} · FX CHAIN</h3>
+          <div class="native-nodes">${isMaster?'<div class="native-status">MASTER FX not yet connected to native DSP.</div>':nodes}</div>
+          ${pending?'<p class="native-status">FX DRAFT · not live until native ACK</p>':""}
           <div class="native-toolbar" style="margin-top:12px">
-            <button class="native-btn primary" data-routed-apply="1" ${!draft||isMaster?"disabled":""}>APPLY FX · OUTPUT MUTED</button>
-            <span class="native-sub">Routing preserves the physical input. Native APPLY verifies device epoch, MUTE and graph revision.</span>
+            <button class="native-btn" data-routed-apply="1" ${!pending||isMaster?"disabled":""}>APPLY FX · MUTED</button>
+            <span class="native-sub">Changes require muted output, verified device epoch and positive ACK; old graph stays live on failure.</span>
           </div>
         </div>
       </div>`;
@@ -697,24 +710,25 @@
     // Only use the one-slot routed presentation if CH1 has a routed FX and
     // no legacy CH1 inserts. Catalog, graph and route status remain distinct.
     if(lab?.active && (i!==0 || (!!lab.channelFxNames?.[0] && state.chain.length===0))){
-      const fx=lab.channelFxNames?.[i]||"";
-      const signature="routed-fx-rack-"+i+"-"+fx;
+      const view=window.__arMixFxLaneView?.(i)||{};
+      const ids=view.ids||[],names=view.names||[];
+      const signature="native-rack-"+i+"-"+ids.join("|")+"-"+!!view.pending;
       if(rack.dataset.nativeSig!==signature){
         rack.dataset.nativeSig=signature;
-        // One true native routed VST3 slot; never replace the six-row FX
-        // area with a misleading ROUTE/FX button.
-        rack.innerHTML=`<div class="insert-slot">
-          <button class="insert ${fx?"":"empty"}" data-routed-fx="${i}"
-            title="${fx?"Replace "+escapeHtml(fx):"Choose native routed FX on channel "+(i+1)}">
-            <span class="insert-name">${escapeHtml(fx||"＋ ADD FX")}</span>
-          </button></div>`+
-          Array.from({length:5},()=>`<div class="insert-slot">
-            <span class="insert empty ar-fx-reserved" title="Multi-insert is not yet supported for this channel"></span>
-          </div>`).join("");
+        rack.innerHTML=Array.from({length:6},(_,slot)=>{
+          const loaded=slot<ids.length;
+          const label=loaded?names[slot]||"VST3":"＋ ADD FX";
+          const disabled=slot>ids.length;
+          return `<div class="insert-slot">
+            <button class="insert ${loaded?"":"empty"} ${loaded?"ar-routed-loaded":""}"
+              data-routed-fx="${i}" data-routed-slot="${slot}" ${disabled?"disabled":""}
+              title="${loaded?"Replace":"Insert"} native FX in CH ${i+1} · slot ${slot+1}">
+              <span class="insert-name">${escapeHtml(label)}</span>
+            </button></div>`;
+        }).join("");
       }
-      track.removeAttribute("data-preview");
-      rack.removeAttribute("data-preview");
-      track.title="LIVE CH "+(i+1)+" · VST3 "+(fx||"DRY")+" · FX RACK to edit";
+      track.removeAttribute("data-preview");rack.removeAttribute("data-preview");
+      track.title="LIVE CH "+(i+1)+" · "+ids.length+" native VST3 inserts";
       return;
     }
     // Keep original CH1 multi-insert rows even when its native route is active.
@@ -868,19 +882,27 @@
   // Capture native controls before the legacy v0.3 demo handlers.
   document.addEventListener("click", function(e){
   if(fxNativeBlockClick){fxNativeBlockClick=false;e.preventDefault();e.stopImmediatePropagation();return;}
-  const el=e.target.closest("[data-routed-fx],[data-routed-clear],[data-routed-apply],[data-native-unrouted],[data-native-action],[data-native-add],[data-native-fx],[data-fxpower],[data-master-insert],[data-master-power],[data-native-category],[data-go-native-rack],[data-insert],[data-plugin-picker],[data-plugin-manager],[data-my-sounds],[data-backup-studio],[data-preset-mute],[data-preset-save],[data-preset-load],[data-close-modal],[data-orbit-start],[data-orbit-stop]");
+  const el=e.target.closest("[data-routed-fx],[data-routed-clear],[data-routed-move],[data-routed-apply],[data-native-unrouted],[data-native-action],[data-native-add],[data-native-fx],[data-fxpower],[data-master-insert],[data-master-power],[data-native-category],[data-go-native-rack],[data-insert],[data-plugin-picker],[data-plugin-manager],[data-my-sounds],[data-backup-studio],[data-preset-mute],[data-preset-save],[data-preset-load],[data-close-modal],[data-orbit-start],[data-orbit-stop]");
   if(!el)return;
   e.preventDefault();e.stopImmediatePropagation();
 
   if(el.hasAttribute("data-routed-fx")){
     const channel=Number(el.dataset.routedFx);
     if(!Number.isInteger(channel)||channel<0||channel>9)return;
-    openPicker(el,channel,0,true);return;
+    openPicker(el,channel,Number(el.dataset.routedSlot)||0,true);return;
   }
   if(el.hasAttribute("data-routed-clear")){
     const channel=Number(el.dataset.routedClear);
-    const result=window.__arMixStageRackFx?.(channel,"");
+    const result=window.__arMixStageRackFx?.(channel,"",Number(el.dataset.routedSlot)||0,"remove");
     toStatus(result?.message||result?.error||"Native FX route editor unavailable");
+    if(result?.ok)repaint();
+    return;
+  }
+  if(el.hasAttribute("data-routed-move")){
+    const channel=Number(el.dataset.routedMove);
+    const result=window.__arMixStageRackFx?.(channel,"",Number(el.dataset.routedSlot)||0,
+      el.dataset.routedDirection==="up"?"up":"down");
+    toStatus(result?.message||result?.error||"Native FX move unavailable");
     if(result?.ok)repaint();
     return;
   }
@@ -986,7 +1008,7 @@
   if(el.dataset.nativeAdd){
     if(state.adding)return;
     if(pickerRouteMode){
-      const result=window.__arMixStageRackFx?.(pickerChannel,el.dataset.nativeAdd);
+      const result=window.__arMixStageRackFx?.(pickerChannel,el.dataset.nativeAdd,pickerSlot,"set");
       if(result?.ok){
         hideDialog("nativeFxSelector");
         toStatus(result.message);
