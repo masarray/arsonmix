@@ -1036,7 +1036,7 @@ private:
             // Legacy fxId remains slot 0. Ordered fxIds[] enables G5B while
             // preserving the same device epoch/revision/MUTE/ACK transaction.
             // Never accept caller-supplied filesystem paths.
-            const resolveLane=[&](const juce::var& row,int lane,const juce::String& label) {
+            const auto resolveLane=[&](const juce::var& row,int lane,const juce::String& label) {
                 const auto raw=row.getProperty("fxIds",juce::var());
                 const auto old=row.getProperty("fxId",juce::var()).toString();
                 juce::StringArray ids;
@@ -1246,8 +1246,7 @@ private:
                             result.loaded,state,command);
                         if(error.isEmpty()) {
                             try {
-                                std::array<LiveDryRoutingLab::FxSelection,
-                                           LiveDryRoutingLab::fxSlots> noVst3{};
+                                LiveDryRoutingLab::FxSelections noVst3{};
                                 error=safe->engine_.applyDryRoutingLab(command,noVst3);
                             } catch(const std::exception& ex) {
                                 error="Native DRY Show preparation exception: "+
