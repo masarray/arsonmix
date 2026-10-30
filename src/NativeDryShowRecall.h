@@ -78,6 +78,11 @@ public:
                 return "Saved physical input port is not enabled on current device; remap manually";
             auto v=object();
             put(v,"mode",mode);
+            // Build native routing command V2: a mono physical microphone
+            // may restore a STEREO processing channel without inventing R.
+            put(v,"sourceKind",mode=="BUS"?"BUS":mode=="NONE"?"NONE":"PHYSICAL");
+            put(v,"sourceFormat",mode=="MONO"||mode=="STEREO"?mode:"NONE");
+            put(v,"channelFormat",ch.channelFormat==2?"STEREO":"MONO");
             put(v,"left",ch.inputA);
             put(v,"right",ch.inputB);
             put(v,"gain",ch.fader);
@@ -118,6 +123,7 @@ public:
             sends.add(row);
         }
         auto proposed=object();
+        put(proposed,"schemaVersion",2);
         put(proposed,"deviceEpoch",currentEpoch);
         put(proposed,"revision",currentRevision);
         put(proposed,"channels",juce::var(channels));

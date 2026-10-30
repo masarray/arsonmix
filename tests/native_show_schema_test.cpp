@@ -41,6 +41,12 @@ int main() {
     snap.id=b;snap.name="Soundcheck 01";snap.sourceBuild="p1j";
     snap.createdMs=show.createdMs;snap.modifiedMs=show.modifiedMs;
     snap.strips[0].source=2;
+    snap.strips[0].channelFormat=1; // Stereo physical source -> MONO channel
+    snap.strips[1].source=1;
+    snap.strips[1].channelFormat=2; // Mono physical source -> STEREO channel
+    snap.strips[1].inputA=7;
+    snap.strips[2].busReturn=true;
+    snap.strips[2].channelFormat=1; // BUS receives MONO with no physical input
     snap.strips[0].inputA=3;snap.strips[0].inputB=5; // sparse physical pins
     snap.strips[0].pan=-0.32;snap.strips[0].fader=0.75;
     snap.strips[0].mute=true;
@@ -61,6 +67,8 @@ int main() {
     assert(Codec::decode(encoded,loaded));
     assert(Codec::encode(loaded)==encoded);
     assert(loaded.strips[0].inputA==3&&loaded.strips[0].inputB==5);
+    assert(loaded.strips[0].channelFormat==1 && loaded.strips[1].channelFormat==2);
+    assert(loaded.strips[2].busReturn && loaded.strips[2].channelFormat==1);
     assert(loaded.strips[0].fx[0].stateSha256==juce::String::repeatedString("a",64));
     assert(loaded.strips[0].sends[0].preFader);
     assert(loaded.strips[6].solo&&!loaded.strips[6].toMaster);
@@ -99,13 +107,37 @@ int main() {
     assert(!Codec::decode(Codec::encode(broken),loaded));
     broken=snap;broken.auxSends.resize(maxAuxSendsPerSnapshot+1);
     assert(!Codec::decode(Codec::encode(broken),loaded));
-    // Compatible older V2 snapshot without the AUX extension: all AUX off.
+    // V4 invalid width and fake downgraded typed data reject atomically.
+    auto invalidFormat=juce::JSON::parse(encoded);
+    auto invalidRows=invalidFormat.getProperty("strips",{}).getArray();
+    invalidRows->getReference(0).getDynamicObject()->setProperty("channelFormat",3);
+    assert(!Codec::decode(juce::JSON::toString(invalidFormat),loaded));
+    assert(loaded.strips[0].channelFormat==1);
+
+    // Older V3 AUX-aware snapshots did not have processing format.
+    auto legacyV3=juce::JSON::parse(encoded);
+    auto* oldRows=legacyV3.getProperty("strips",{}).getArray();
+    for(auto& row:*oldRows)row.getDynamicObject()->removeProperty("channelFormat");
+    legacyV3.getDynamicObject()->setProperty("schemaVersion",3);
+    assert(Codec::decode(juce::JSON::toString(legacyV3),loaded));
+    assert(loaded.strips[0].channelFormat==2); // native v1 physical stereo
+    assert(loaded.strips[1].channelFormat==1); // native v1 physical mono
+    assert(loaded.strips[2].channelFormat==2); // native v1 BUS stereo
+    auto forgedV3=juce::JSON::parse(encoded);
+    forgedV3.getDynamicObject()->setProperty("schemaVersion",3);
+    assert(!Codec::decode(juce::JSON::toString(forgedV3),loaded));
+
+    // Compatible older V2 snapshot without the AUX extension or format:
+    // no implicit BUS mono processing or hidden loss of a real V4 field.
     auto legacy=juce::JSON::parse(encoded);
+    auto* oldRowsV2=legacy.getProperty("strips",{}).getArray();
+    for(auto& row:*oldRowsV2)row.getDynamicObject()->removeProperty("channelFormat");
     legacy.getDynamicObject()->removeProperty("auxReturns");
     legacy.getDynamicObject()->removeProperty("auxSends");
     legacy.getDynamicObject()->setProperty("schemaVersion",2);
     assert(Codec::decode(juce::JSON::toString(legacy),loaded));
     assert(!loaded.aux[0].enabled && loaded.auxSends.empty());
+    assert(loaded.strips[0].channelFormat==2 && loaded.strips[1].channelFormat==1);
     // Never allow AUX-bearing data to masquerade as V2; older clients would
     // otherwise silently discard it when saving the Show.
     auto downgrade=juce::JSON::parse(encoded);
