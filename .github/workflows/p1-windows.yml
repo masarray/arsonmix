@@ -17,7 +17,7 @@ on:
       - 'scripts/factoryfx_release_bundle.py'
       - 'config/factoryfx-approved-releases.json'
       - 'config/factoryfx-notices/**'
-      - 'tests/test_factoryfx_release_bundle.py'
+      - 'scripts/tests/test_factoryfx_release_bundle.py'
       - '.github/workflows/p1-windows.yml'
   # GUI-only PRs receive browser checks; they need not compile JUCE on every edit.
   # A merged GUI change is still packaged once on main, or manually for FAT.
@@ -35,7 +35,7 @@ on:
       - 'scripts/factoryfx_release_bundle.py'
       - 'config/factoryfx-approved-releases.json'
       - 'config/factoryfx-notices/**'
-      - 'tests/test_factoryfx_release_bundle.py'
+      - 'scripts/tests/test_factoryfx_release_bundle.py'
       - '.github/workflows/p1-windows.yml'
   workflow_dispatch:
 
@@ -98,7 +98,7 @@ jobs:
       - name: Fast offline FactoryFX release and integrity contract tests
         shell: pwsh
         run: |
-          python -m unittest discover -s tests -p test_factoryfx_release_bundle.py -v
+          python -m unittest discover -s scripts/tests -p test_factoryfx_release_bundle.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Configure Windows x64
         shell: pwsh
