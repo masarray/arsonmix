@@ -67,7 +67,7 @@ int main(){
     assert(allocations.load(std::memory_order_relaxed)==before);
     // All 10 physical sources MIX into MAIN independently of AUX slots.
     const float direct=10.f*.1f*std::sqrt(.5f);
-    const float auxA=.1f*.5f*2.f*.5f;
+    const float auxA=.1f*.5f*std::sqrt(.5f)*2.f*.5f; // mono PRE pan center
     const float auxB=.1f*std::sqrt(.5f)*.25f*3.f;
     assert(near(outL[0],direct+auxA+auxB));
     assert(near(outR[0],direct+auxA+auxB));
@@ -75,6 +75,14 @@ int main(){
     assert(near(meters.auxPeak[0],auxA)); // after bus gain 0.5
     assert(near(meters.auxPeak[1],auxB));
     assert(near(meters.channelPeak[9],.1f*std::sqrt(.5f)));
+
+    // Shared stereo AUX receives an explicitly left-panned mono PRE send.
+    // The right output must not inherit phantom mono power.
+    aux.sends[0].pan=-1.f;
+    assert(PreparedRenderGraph::compile(cfg,activePorts,legacy,plan,error,aux));
+    assert(near(plan.aux.edges[0].leftGain,.5f));
+    assert(near(plan.aux.edges[0].rightGain,0.f));
+    aux.sends[0].pan=0.f;
 
     // Zero source fader: PRE-FADER send stays audible, no source direct.
     cfg.stripsAndMaster.strips[0].faderLinear=0.f;

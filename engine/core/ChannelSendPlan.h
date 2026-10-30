@@ -23,7 +23,7 @@ struct SendDefinition final {
     int destination = -1;
     SendTap tap = SendTap::postFader;
     float gain = 1.f;
-    float pan = 0.f; // stereo BALANCE, not mono equal-power panning
+    float pan = 0.f; // mono PRE equal-power pan; stereo/POST balance (see compile)
     bool enabled = true;
 };
 struct SendRequest final {
@@ -34,7 +34,7 @@ struct SendRequest final {
 };
 enum class SendFault : std::uint8_t {
     none, tooManySends, invalidCount, invalidStrip, selfFeedback,
-    invalidTap, invalidGain, invalidPan, duplicateSend, cycleDetected
+    invalidTap, invalidGain, invalidPan, invalidSourceFormat, duplicateSend, cycleDetected
 };
 struct SendError final {
     SendFault fault = SendFault::none;
@@ -66,8 +66,14 @@ struct ChannelSendPlan final {
 
     static bool compile(const SendRequest& requested,
                         ChannelSendPlan& destination,
-                        SendError& error) noexcept {
+                        SendError& error,
+                        std::span<const ChannelFormat> sourceFormats={}) noexcept {
         error = {};
+        // Legacy isolated planners may omit formats; the live prepared graph
+        // always supplies its validated effective per-channel formats.
+        if (!sourceFormats.empty() && sourceFormats.size()!=stripCount) {
+            error.fault=SendFault::invalidSourceFormat;return false;
+        }
         if (requested.count < 0) {
             error.fault = SendFault::invalidCount; return false;
         }
@@ -106,6 +112,10 @@ struct ChannelSendPlan final {
                 }
             }
             if (!s.enabled) continue;
+            if (!sourceFormats.empty() && sourceFormats[s.source]!=ChannelFormat::mono &&
+                sourceFormats[s.source]!=ChannelFormat::stereo) {
+                error={SendFault::invalidSourceFormat,i,s.source};return false;
+            }
             ++outgoingCount[s.source];
             ++indegree[s.destination];
             candidate.receivesInternal[s.destination]=true;
@@ -121,8 +131,17 @@ struct ChannelSendPlan final {
             auto& e=candidate.orderedEdges[next[s.source]++];
             e.destination=s.destination;
             e.tap=s.tap;
-            e.leftGain=s.gain*(s.pan>0.f?1.f-s.pan:1.f);
-            e.rightGain=s.gain*(s.pan<0.f?1.f+s.pan:1.f);
+            // PRE is taken after FX, before channel fader/PAN. The mono
+            // scratch has identical L/R samples: project it once using
+            // equal-power coefficients, without fabricating a second input.
+            // POST already contains the channel's own PAN; preserve its
+            // existing stereo balance pending an independent mono POST tap.
+            const bool monoPre=s.tap==SendTap::preFader &&
+                !sourceFormats.empty() && sourceFormats[s.source]==ChannelFormat::mono;
+            e.leftGain=monoPre?s.gain*std::sqrt(0.5f*(1.f-s.pan)):
+                s.gain*(s.pan>0.f?1.f-s.pan:1.f);
+            e.rightGain=monoPre?s.gain*std::sqrt(0.5f*(1.f+s.pan)):
+                s.gain*(s.pan<0.f?1.f+s.pan:1.f);
         }
         // Kahn's algorithm; deterministic ascending tie-break between strips.
         std::array<bool,stripCount> emitted {};

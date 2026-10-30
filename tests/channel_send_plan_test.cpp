@@ -117,6 +117,45 @@ int main() {
     cfg.sends[cfg.count++]={9,0,SendTap::postFader,1.f,0.f,true};
     assert(!ChannelSendPlan::compile(cfg,plan,err)&&err.fault==SendFault::cycleDetected);
 
+    // MS2A native PRE-send source format: mono uses an equal-power
+    // projection, stereo remains independent BALANCE with no crossfeed.
+    // POST remains pre-existing balance until mono post-pan is separated.
+    cfg=SendRequest{};
+    cfg.count=1;
+    cfg.sends[0]={0,1,SendTap::preFader,1.f,0.f,true};
+    std::array<ChannelFormat,stripCount> formats{};
+    formats.fill(ChannelFormat::stereo);
+    formats[0]=ChannelFormat::mono;
+    assert(ChannelSendPlan::compile(cfg,plan,err,formats));
+    assert(close(plan.orderedEdges[0].leftGain,std::sqrt(.5f)));
+    assert(close(plan.orderedEdges[0].rightGain,std::sqrt(.5f)));
+    cfg.sends[0].pan=-1.f;
+    assert(ChannelSendPlan::compile(cfg,plan,err,formats));
+    assert(close(plan.orderedEdges[0].leftGain,1.f));
+    assert(close(plan.orderedEdges[0].rightGain,0.f));
+    cfg.sends[0].pan=1.f;
+    assert(ChannelSendPlan::compile(cfg,plan,err,formats));
+    assert(close(plan.orderedEdges[0].leftGain,0.f));
+    assert(close(plan.orderedEdges[0].rightGain,1.f));
+    cfg.sends[0].pan=0.f;
+    formats[0]=ChannelFormat::stereo;
+    assert(ChannelSendPlan::compile(cfg,plan,err,formats));
+    assert(close(plan.orderedEdges[0].leftGain,1.f));
+    assert(close(plan.orderedEdges[0].rightGain,1.f));
+    formats[0]=ChannelFormat::mono;
+    cfg.sends[0].tap=SendTap::postFader;
+    assert(ChannelSendPlan::compile(cfg,plan,err,formats));
+    assert(close(plan.orderedEdges[0].leftGain,1.f));
+    assert(close(plan.orderedEdges[0].rightGain,1.f));
+    const auto acceptedFormatPlan=plan;
+    formats[0]=ChannelFormat::followSource; // not a resolved graph format
+    assert(!ChannelSendPlan::compile(cfg,plan,err,formats));
+    assert(err.fault==SendFault::invalidSourceFormat);
+    assert(plan.orderedEdges[0].leftGain==acceptedFormatPlan.orderedEdges[0].leftGain);
+    formats[0]=ChannelFormat::mono;
+    assert(!ChannelSendPlan::compile(cfg,plan,err,std::span<const ChannelFormat>(formats.data(),1)));
+    assert(err.fault==SendFault::invalidSourceFormat);
+
     // Cross-module regression: fader=-infinity MUST NOT gate PRE-FADER sends.
     // Raw source access and post-fader/master activity are independent.
     ChannelRoutingConfig physical;

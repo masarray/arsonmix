@@ -67,11 +67,12 @@ int main() {
     assert(mixer.process(audio,4,outputL.data(),outputR.data(),4,fx,&levels));
     assert(allocations.load(std::memory_order_relaxed)==before); // No RT heap
     constexpr float monoPost=.4f*2.f*.5f*.70710678118f;
-    assert(near(outputL[0],.2f+monoPost*.25f*2.f+.4f));
-    assert(near(outputR[0],.6f+monoPost*.25f*2.f+.2f));
+    constexpr float preMono=.4f*2.f*.5f*.70710678118f;
+    assert(near(outputL[0],.2f+monoPost*.25f*2.f+preMono));
+    assert(near(outputR[0],.6f+monoPost*.25f*2.f+preMono*.5f));
     assert(near(levels.channelPeak[0],monoPost));
     assert(near(levels.channelPeak[2],monoPost*.25f*2.f));
-    assert(near(levels.channelPeak[3],.4f));
+    assert(near(levels.channelPeak[3],preMono));
     assert(near(levels.masterPeakL,outputL[0]));
     assert(near(levels.masterPeakR,outputR[0]));
     assert(chainCalls==5 && visited[0]==0 && visited[1]==1 &&
@@ -84,8 +85,9 @@ int main() {
     PreparedMixerBlock faderZero(graph,8);
     auto noFx = [](int,float*,float*,int) noexcept {};
     assert(faderZero.process(audio,4,outputL.data(),outputR.data(),4,noFx));
-    // pre send .4*.5=.2; music .2/.6; CH3 and CH4 order-independent
-    assert(near(outputL[0],.4f)&&near(outputR[0],.8f));
+    // Mono PRE send projects at -3dB center into a stereo BUS return.
+    assert(near(outputL[0],.2f+.4f*.5f*.70710678118f));
+    assert(near(outputR[0],.6f+.4f*.5f*.70710678118f));
 
     // Duplicate L/R callback port, out-of-range physical input, feedback
     // self-loop, and send-cycle all reject atomically.
@@ -113,7 +115,7 @@ int main() {
     assert(!graph.scheduled[1]);
     PreparedMixerBlock soloMix(graph,8);
     assert(soloMix.process(audio,4,outputL.data(),outputR.data(),4,noFx));
-    assert(near(outputL[0],.4f*.5f + .4f*.5f*.70710678f*.25f));
+    assert(near(outputL[0],.4f*.5f*.70710678f + .4f*.5f*.70710678f*.25f));
     assert(near(outputR[0],outputL[0]));
     // Muting solo source also removes the solo arbitration: music audible.
     channels.stripsAndMaster.strips[0].mute=true;
