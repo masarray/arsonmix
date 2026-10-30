@@ -1211,25 +1211,82 @@ private:
             // VST3 is fail-closed until a quiescent vendor state capture gate exists.
             armix::shows::SnapshotV2 captured;
             const auto name=juce::String("Dry Routing ")+juce::Time::getCurrentTime().formatted("%Y%m%d %H%M%S");
-            const auto error=armix::shows::NativeLiveShowCapture::captureDry(
-                engine_.status(),name,captured);
+            const auto nativeStatus=engine_.status();
+            const auto lab=nativeStatus.getProperty("dryRoutingLab",{});
+            const auto epoch=static_cast<std::uint64_t>(
+                static_cast<juce::int64>(lab.getProperty("epoch",juce::var(0))));
+            const auto revision=static_cast<std::uint64_t>(
+                static_cast<juce::int64>(lab.getProperty("revision",juce::var(0))));
+            auto error=armix::shows::NativeLiveShowCapture::captureDry(
+                nativeStatus,name,captured,true);
+            std::vector<armix::shows::BinaryState> blobs;
+            if(error.isEmpty()) {
+                // Do not read vendor parameters while an editor is open.
+                // Output MUST already be muted by captureDry and the engine.
+                closePluginEditor();
+                std::vector<LiveDryRoutingLab::CapturedFxState> vendorStates;
+                error=engine_.captureRoutedFxStates(epoch,revision,vendorStates);
+                if(error.isEmpty()) {
+                    const auto expected=lab.getProperty("fxCount",juce::var());
+                    if(!expected.isInt() ||
+                       static_cast<int>(expected)!=static_cast<int>(vendorStates.size()))
+                        error="Native FX count changed during Show capture";
+                }
+                if(error.isEmpty()) {
+                    juce::StringArray seen;
+                    try {
+                        for(const auto& state:vendorStates) {
+                            const auto* catalog=catalog_.find(state.catalogId);
+                            if(!catalog||state.lane<0||
+                               state.lane>=LiveDryRoutingLab::fxSlots ||
+                               state.slot<0||state.slot>=LiveDryRoutingLab::maxFxPerLane) {
+                                error="VST3 catalog identity missing during Show capture";break;
+                            }
+                            auto& fx=state.lane<LiveDryRoutingLab::count
+                                ?captured.strips[static_cast<std::size_t>(state.lane)].fx
+                                :captured.aux[static_cast<std::size_t>(
+                                    state.lane-LiveDryRoutingLab::count)].fx;
+                            if(static_cast<int>(fx.size())!=state.slot) {
+                                error="FX snapshot slot order changed";break;
+                            }
+                            armix::shows::BinaryState binary;
+                            binary.bytes=state.binary;
+                            binary.sha256=juce::SHA256(binary.bytes).toHexString();
+                            fx.push_back({catalog->key(),catalog->uid,binary.sha256,
+                                          state.bypass});
+                            if(!seen.contains(binary.sha256)) {
+                                seen.add(binary.sha256);
+                                blobs.push_back(std::move(binary));
+                            }
+                        }
+                        if(error.isEmpty()) {
+                            captured.sourceBuild="G5E_NATIVE_FX_SHOW_CAPTURE";
+                            armix::shows::SnapshotV2 verified;
+                            if(!armix::shows::Codec::decode(
+                                armix::shows::Codec::encode(captured),verified))
+                                error="Native Show FX binary references invalid";
+                            else captured=std::move(verified);
+                        }
+                    } catch(...) {error="VST3 Show capture allocation or hashing failure";}
+                }
+            }
             if(error.isNotEmpty()) {
                 diagnostics_.record("NATIVE_SHOW_REJECTED",error);
                 return reject(error);
             }
             auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
             const bool started=nativeShowWorker_.launch(settingsDirectory(),
-                std::move(captured),[safe](armix::shows::NativeShowSaveWorker::Result result) {
+                std::move(captured),std::move(blobs),[safe](armix::shows::NativeShowSaveWorker::Result result) {
                     if(safe==nullptr)return;
                     safe->nativeShowBusy_=false;
                     if(!result.ok()) {
                         safe->diagnostics_.record("NATIVE_SHOW_SAVE_FAIL",result.error);
                         safe->emitNotice("Native Show not saved: "+result.error,true);
                     }else{
-                        safe->diagnostics_.record("NATIVE_DRY_SHOW_SAVED",
+                        safe->diagnostics_.record("NATIVE_FX_SHOW_SAVED",
                             result.showId+" | "+result.snapshotId);
-                        safe->emitNotice("Native DRY Show saved and verified in Studio/Shows: "+
-                            result.name+". FX-equipped Show capture/recall is not available yet.");
+                        safe->emitNotice("Native Show with routed VST3 binary state saved and SHA-256 verified: "+
+                            result.name+". VST3 restoration is not yet qualified; recall remains gated.");
                     }
                     if(safe->browser_.loaded) {
                         auto ack=std::make_unique<juce::DynamicObject>();
@@ -1243,7 +1300,7 @@ private:
                 });
             if(!started)return reject("Native Show worker is busy. No session was modified.");
             nativeShowBusy_=true;
-            return emitNotice("Saving ACK-verified dry routing to Studio/Shows on the IO worker.");
+            return emitNotice("Saving ACK-verified routing and binary VST3 state on the Show IO worker.");
         }
         if (action == "routingDryShowList")
         {
