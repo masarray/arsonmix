@@ -742,13 +742,14 @@ async def main():
           const bay=getComputedStyle(f,'::before'),slit=getComputedStyle(f,'::after');
           const rail=f.getBoundingClientRect(),cap=f.querySelector('.cap');
           return {id:f.dataset.fader,rail:rail.width,bay:parseFloat(bay.width),
-            fill:bay.backgroundColor,edge:bay.boxShadow,border:bay.borderTopWidth,
+            fold:bay.backgroundImage,edge:bay.boxShadow,border:bay.borderTopWidth,
             top:bay.top,bottom:bay.bottom,slit:parseFloat(slit.width),
             slitPaint:slit.backgroundImage,capWidth:cap.getBoundingClientRect().width};
         })""")
         assert len(fader_recess)==11,fader_recess
         assert all(x['bay']>=30 and x['bay']<=46.1 and x['bay']<=x['rail']+.1
-            and x['fill']=='rgb(38, 52, 60)' and x['border']=='0px'
+            and 'linear-gradient(90deg' in x['fold'] and 'rgb(42, 57, 66)' in x['fold']
+            and x['border']=='0px'
             and 'inset' in x['edge'] and x['top']=='0px'
             and x['bottom']=='0px' and x['slit']==5
             and 'linear-gradient' in x['slitPaint'] and x['capWidth']==36
