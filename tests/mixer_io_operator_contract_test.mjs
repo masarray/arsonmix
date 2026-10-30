@@ -106,9 +106,9 @@ test('IO-MATRIX uses only verified pins, dual-step stereo draft and native ACK w
   assert.match(gui,/__arMixStageChannelInput\?\./);
   assert.match(gui,/__arMixStageMainOutputs\?\./);
   assert.match(gui,/!hardwareReady\(s\)/);
-  assert.match(gui,/data-io-matrix-kind/);
+  assert.match(gui,/\.dataset\.ioMatrixKind/);
   assert.match(gui,/s\.mainOutputs/);
-  assert.match(gui,/data-io-row-mode/);
+  assert.match(gui,/\.dataset\.ioRowMode/);
   assert.match(css,/\.arIOMatrixCell\[data-assigned="true"\]/);
   assert.doesNotMatch(css,/backdrop-filter\s*:|filter\s*:\s*blur/);
   assert.match(main,/assets\/audio-interface\.svg/);
