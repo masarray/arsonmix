@@ -88,3 +88,23 @@ test('P1 UI-only session save is bounded dirty-event based, not a 5s poll',()=>{
  assert.match(src,/window\.addEventListener\('pagehide',flushUiAutosave\)/);
  assert.doesNotMatch(src,/lastPersist/);
 });
+
+test('M5 CLIP light is resettable per channel and MASTER; real PCM peak is sole native latch source',()=>{
+ const app=read('web/app.js'),bridge=read('web/bridge.js');
+ assert.match(app,/window\.__arMixLatchNativeClip=\(key,peak\)=>/);
+ assert.match(app,/Number\.isFinite\(peak\)&&peak>=1/);
+ assert.match(app,/if\(b\.dataset\.clip!==undefined\)\{resetClip\(b\.dataset\.clip\);return\}/);
+ assert.match(bridge,/window\.__arMixLatchNativeClip\?\.\(el\.dataset\.meter,rawPeak\)/);
+ assert.match(bridge,/percent\(rawL\),rawL/);
+ assert.match(bridge,/percent\(rawR\),rawR/);
+});
+test('M5 fader light is recessed, VST text aligned, no heavyweight hover visual',()=>{
+ const css=read('web/styles-src/42-mixer-premium.css');
+ const m5=css.slice(css.indexOf('/* M5 — light is recessed INSIDE'));
+ assert.match(m5,/linear-gradient\(to top,transparent/);
+ assert.match(m5,/linear-gradient\(90deg,#010407/);
+ assert.match(m5,/padding-left:17px/);
+ assert.match(m5,/font:700 11px/);
+ assert.match(m5,/\.clip-led\{[\s\S]*?height:12px/);
+ assert.doesNotMatch(m5,/(?:^|\s)(?:filter|backdrop-filter|animation|transition|will-change):/);
+});

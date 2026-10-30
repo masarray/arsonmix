@@ -32,6 +32,15 @@ function resetClip(key){
  const entry=meterNodes.get(key);if(entry?.peak){entry.peak.style.bottom='0%';entry.peakValue=-1}
 }
 function syncClipLeds(){document.querySelectorAll('[data-clip]').forEach(e=>e.classList.toggle('latched',!!clipLatch[e.dataset.clip]))}
+// Raw native peak at full-scale (not display-percent interpolation) latches.
+function latchClip(key){
+ if(clipLatch[key])return;
+ clipLatch[key]=true;
+ meterNode(key)?.clip?.classList.add('latched');
+}
+window.__arMixLatchNativeClip=(key,peak)=>{
+ if(Number.isFinite(peak)&&peak>=1)latchClip(key);
+};
 // Cache per-meter nodes across preview frames, rebuilding on mixer re-render.
 // Styling a full-height bar with a compositor transform avoids 14 cyclic height
 // reflows per meter tick. No native meter or DSP data path is affected.
@@ -193,10 +202,7 @@ function updateMeterVisual(key,level,now){
      meter.peak.style.bottom=(step/10)+'%';
    }
  }
- if(value>=97&&!clipLatch[key]){
-   clipLatch[key]=true;
-   meter.clip?.classList.add('latched');
- }
+ if(value>=97)latchClip(key);
 }
 
 function flushUiParams(){uiFlushScheduled=false;const bridge=window.__JUCE__?.backend;if(bridge?.emitEvent)for(const event of pendingUiParams.values())bridge.emitEvent('arMixParameter',event);pendingUiParams.clear()}

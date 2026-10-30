@@ -288,6 +288,55 @@ async def main():
           return result;
         }""")
         assert restored=={'peak':'45%','clip':True},restored
+        # M5 operator CLIP: native RAW full-scale peak latches, lamp button
+        # resets peak hold. MASTER L/R use separate raw keys and never cross-clear.
+        lamp=await page.evaluate("""()=>{
+          const ch=document.querySelector('[data-clip="0"]'),
+            l=document.querySelector('[data-clip="masterL"]'),
+            r=document.querySelector('[data-clip="masterR"]');
+          window.__arMixLatchNativeClip('0',0.99);
+          const safe=!ch.classList.contains('latched');
+          window.__arMixLatchNativeClip('0',1);
+          window.__arMixLatchNativeClip('masterL',1.2);
+          const latched=ch.classList.contains('latched')&&l.classList.contains('latched');
+          peakHold['0']={value:97,until:Infinity};
+          ch.click();
+          const cleared=!clipLatch['0']&&!ch.classList.contains('latched')&&!('0' in peakHold);
+          const stillMaster=l.classList.contains('latched');
+          l.click();
+          const masterCleared=!l.classList.contains('latched')&&!r.classList.contains('latched');
+          window.__arMixLatchNativeClip('0',1.1);
+          const relatch=ch.classList.contains('latched');
+          ch.click();
+          return {safe,latched,cleared,stillMaster,masterCleared,relatch};
+        }""")
+        assert all(lamp.values()),lamp
+        # M5 static recessed 5px blue behind graphite sidewalls, occupied VST
+        # label aligned with ADD FX, no re-render or native instance mutation.
+        m5=await page.evaluate("""()=>{
+          const slit=getComputedStyle(document.querySelector('[data-fader="0"]'),'::after'),
+            master=getComputedStyle(document.querySelector('[data-fader="master"]'),'::after');
+          const occupied=document.querySelector('.strip .rack .insert:not(.empty) .insert-name');
+          const empty=document.querySelector('.strip .rack .insert.empty .insert-name');
+          const style=getComputedStyle(occupied);
+          const clip=getComputedStyle(document.querySelector('[data-clip="0"]'));
+          return {
+            layers:(slit.backgroundImage.match(/linear-gradient/g)||[]).length,
+            masterLayers:(master.backgroundImage.match(/linear-gradient/g)||[]).length,
+            centerBlue:slit.backgroundImage.includes('rgb(36, 116, 180)'),
+            occupiedX:Math.round(occupied.getBoundingClientRect().left+
+              parseFloat(style.paddingLeft)-occupied.closest('.insert').getBoundingClientRect().left),
+            emptyX:Math.round(empty.getBoundingClientRect().left+
+              parseFloat(getComputedStyle(empty).paddingLeft)-
+              empty.closest('.insert').getBoundingClientRect().left),
+            font:parseFloat(style.fontSize),weight:parseInt(style.fontWeight),
+            ellipsis:style.textOverflow,clipHeight:parseFloat(clip.height)
+          };
+        }""")
+        assert m5['layers']==2 and m5['masterLayers']==2 and m5['centerBlue'],m5
+        assert abs(m5['occupiedX']-m5['emptyX'])<=1,m5
+        assert m5['font']>=11 and m5['weight']>=700 and m5['ellipsis']=='ellipsis',m5
+        assert m5['clipHeight']>=12,m5
         await page.evaluate('scheduleDemoMeter()')
         # No per-event idle fader work: drag listener is attached only on pointerdown.
         assert await page.evaluate('drag===null')
@@ -1416,10 +1465,11 @@ async def main():
           const padding=parseFloat(getComputedStyle(button).paddingLeft);
           const master=document.querySelector('#mixer .master-strip .master-fx-rack');
           return {color:c.color,font:parseFloat(c.fontSize),weight:parseInt(c.fontWeight),
-            indent:padding,masterFakeAdd:master.querySelectorAll('[data-native-unrouted="-1"]').length,
+            indent:padding,innerIndent:parseFloat(c.paddingLeft),
+            masterFakeAdd:master.querySelectorAll('[data-native-unrouted="-1"]').length,
             masterLabel:master.textContent.trim()};
         }""")
-        assert rack_type['font']>=11 and rack_type['weight']>=600 and rack_type['indent']>=15,rack_type
+        assert rack_type['font']>=11 and rack_type['weight']>=600 and rack_type['indent']>=15 and rack_type['innerIndent']==6,rack_type
         assert rack_type['color']=='rgb(145, 239, 182)',rack_type
         assert rack_type['masterFakeAdd']==0 and 'UNAVAILABLE' in rack_type['masterLabel'],rack_type
 
