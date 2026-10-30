@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/device/AdaptiveClockBridge.h"
 #include "../engine/device/ClockBridgeSizing.h"
+#include "../engine/core/LiveOutputRouteGate.h"
 #include "../engine/device/BridgeContinuityGate.h"
 #include <array>
 #include <cmath>
@@ -213,8 +214,66 @@ static void testLiveBridgeContinuityFailback()
     check(tripped); // proven real FIR/FIFO starvation, not synthetic counters
 }
 
+
+static void testLiveOutputRouteGateAndIndependentClock()
+{
+    using P=armix::mixer::LiveOutputRouteGate;
+    const auto onlySecondary=P::evaluate(true,true,true,true,true,false,true);
+    check(onlySecondary.renderMain && onlySecondary.secondary && !onlySecondary.hardware);
+    const auto onlyHardware=P::evaluate(true,true,true,true,true,true,false);
+    check(onlyHardware.renderMain && onlyHardware.hardware && !onlyHardware.secondary);
+    const auto both=P::evaluate(true,true,true,true,true,true,true);
+    check(both.renderMain && both.hardware && both.secondary);
+    for(int bit=0;bit<5;++bit){
+        bool gates[5]={true,true,true,true,true};
+        gates[bit]=false;
+        auto g=P::evaluate(gates[0],gates[1],gates[2],gates[3],gates[4],
+                           true,true);
+        check(!g.renderMain && !g.hardware && !g.secondary);
+    }
+    const auto muted=P::evaluate(true,true,true,true,true,false,false);
+    check(!muted.renderMain && !muted.hardware && !muted.secondary);
+    // A separate OBS playback endpoint requires real ASRC buffering, NOT a
+    // 0ms claim. Existing FIR testRate() covers 44.1/48k and ±300ppm clocks.
+    using namespace armix::device;
+    const auto cfg=ClockBridgeSizing::choose(48000.,44100.,128,256,
+                                             AdaptiveClockBridge::taps,
+                                             32768,24.);
+    check(cfg.valid && cfg.targetMs>=24.0);
+    AdaptiveClockBridge asrc;
+    check(asrc.prepare(48000.,44100.,2,32768,cfg.targetMs));
+    std::array<float,128> mainL{},mainR{};
+    const float* main[2]={mainL.data(),mainR.data()};
+    mainL.fill(.15f);mainR.fill(-.12f);
+    for(int n=0;n<200;++n)
+        check(asrc.push(main,2,128)==128);
+    const auto stats=asrc.status();
+    check(stats.pushedFrames==25600);
+    check(stats.overflowFrames==0);
+
+    // OBS DISARM / REARM must discard the previous live microphone FIFO:
+    // no old vocals should play even if producer was paused for minutes.
+    AdaptiveClockBridge session;
+    check(session.prepare(48000,48000,2,4096,12.));
+    std::array<float,256> oldL{},oldR{},newL{},newR{};
+    oldL.fill(.55f);oldR.fill(.55f);
+    const float* oldIn[2]={oldL.data(),oldR.data()};
+    float* result[2]={newL.data(),newR.data()};
+    for(int i=0;i<8;++i)check(session.push(oldIn,2,256)==256);
+    session.pull(result,2,256);
+    session.resetStopped(); // same safe call made by control-thread ARM gate
+    session.pull(result,2,256);
+    for(int i=0;i<256;++i)check(newL[i]==0.f && newR[i]==0.f);
+    const float* fresh[2]={newL.data(),newR.data()};
+    for(int i=0;i<8;++i)check(session.push(fresh,2,256)==256);
+    session.pull(result,2,256);
+    for(int i=0;i<256;++i)check(newL[i]==0.f && newR[i]==0.f);
+    check(session.status().overflowFrames==0);
+}
+
 int main()
 {
+    testLiveOutputRouteGateAndIndependentClock();
     testLiveBridgeContinuityFailback();
     testNonFiniteCapture();
     const double passband = spectralRms (1000.);
