@@ -33,7 +33,7 @@
   host.insertBefore(toolbar,mixer);
   const overlay=node('div','arIOOverlay');
   overlay.id='arIOOverlay';overlay.hidden=true;
-  overlay.innerHTML='<section class="arIOWindow" role="dialog" aria-modal="true" aria-label="ArSonMix hardware audio I/O"><header><div><small>ArSonMiX · AUDIO HARDWARE</small><h2>Audio I/O Setup</h2></div><button type="button" class="btn-180" data-io-close aria-label="Close Audio I/O">CLOSE</button></header><div class="arIOTop" id="arIOIdentity"></div><nav role="tablist" aria-label="Audio I/O views"><button class="btn-180 active" role="tab" data-io-tab="inputs">INPUTS</button><button class="btn-180" role="tab" data-io-tab="outputs">OUTPUTS</button><button class="btn-180" role="tab" data-io-tab="device">DEVICE</button></nav><div id="arIOBody" class="arIOBody"></div><footer><span id="arIOFeedback" role="status">Hardware changes require native ACK. Output stays MUTED on APPLY.</span><button type="button" class="btn-180" data-mix-apply>APPLY PATCH</button><button type="button" class="btn-180" data-io-advanced>DRIVER SETTINGS</button></footer></section>';
+  overlay.innerHTML='<section class="arIOWindow" role="dialog" aria-modal="true" aria-label="ArSonMix hardware audio I/O"><header><div><small>ArSonMiX · AUDIO HARDWARE</small><h2>Audio I/O Setup</h2></div><button type="button" class="btn-180" data-io-close aria-label="Close Audio I/O">CLOSE</button></header><div class="arIOTop" id="arIOIdentity"></div><nav role="tablist" aria-label="Audio I/O views"><button class="btn-180 active" role="tab" data-io-tab="inputs">INPUTS</button><button class="btn-180" role="tab" data-io-tab="outputs">OUTPUTS</button><button class="btn-180" role="tab" data-io-tab="device">DEVICE</button></nav><div id="arIOBody" class="arIOBody"></div><footer><span id="arIOFeedback" role="status">Hardware changes require native ACK. Output stays MUTED on APPLY.</span><button type="button" class="btn-180" data-io-revert>REVERT DRAFT</button><button type="button" class="btn-180" data-mix-apply>APPLY PATCH</button><button type="button" class="btn-180" data-io-advanced>DRIVER SETTINGS</button></footer></section>';
   document.body.appendChild(overlay);
   // G3: ONE floating inspector follows the selected source/AUX, no new
   // DSP graph, no heavyweight matrix, no layout shifts in the MIX strips.
@@ -249,7 +249,9 @@
     grid.append(node('div','arIOMatrixCorner','LOGICAL BUS / CHANNEL'),node('div','arIOMatrixCorner','SOURCE'));
     for(const pin of shown){
       const p=portList(s).find(x=>x.port===pin);
-      const h=node('div','arIOPortTitle',kind==='outputs'?'HW OUT '+(pin+1):''+(pin+1));
+      const h=node('div','arIOPortTitle');
+      h.append(node('span','arIOPortFriendly',kind==='inputs'?(p?.label||'Input '+(pin+1)):'HW OUT '+(pin+1)),
+        node('b','arIOPortIndex',String(pin+1)));
       h.title=(p?.label||'Hardware output '+(pin+1))+' · enabled physical pin';
       h.setAttribute('role','columnheader');
       grid.appendChild(h);
@@ -387,6 +389,7 @@
       b.setAttribute('aria-selected',String(active));
     });
     overlay.querySelector('[data-mix-apply]').disabled=!hardwareReady(s)||!!matrixDraft.size||s.monitor;
+    overlay.querySelector('[data-io-revert]').disabled=!isNative()||s.pending;
     const signature=ioTab+'|'+JSON.stringify([s.epoch,s.revision,s.pending,s.draftRoutes,
       s.outputPorts,s.mainOutputs,s.draftMainOutputs,s.ports,deviceInventory,matrixPage[ioTab],
       [...matrixDraft],[...matrixSide]]);
@@ -537,6 +540,13 @@
       e.preventDefault();e.stopImmediatePropagation();
       matrixPage[ioTab]=Math.max(0,matrixPage[ioTab]+Number(b.dataset.ioPage));
       lastSignature='';refreshIO();return;
+    }
+    if(b.dataset.ioRevert!==undefined){
+      e.preventDefault();e.stopImmediatePropagation();
+      const result=window.__arMixRevertMixerDraft?.();
+      if(result?.ok){matrixDraft.clear();matrixSide.clear();}
+      matrixSay(result?.ok?'DRAFT REVERTED · native route unchanged':result?.error||'Cannot revert while APPLY is pending');
+      lastSignature='';refresh();return;
     }
     if(b.dataset.ioClose!==undefined){e.preventDefault();e.stopImmediatePropagation();closeIO();return;}
     if(b.dataset.ioTab){e.preventDefault();e.stopImmediatePropagation();ioTab=b.dataset.ioTab;matrixMessage='';lastSignature='';refreshIO();return;}
