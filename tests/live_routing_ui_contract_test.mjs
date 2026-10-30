@@ -267,7 +267,7 @@ test("R2 AUX matrix is a bounded draft projection with PRE/POST and explicit nat
   assert.doesNotMatch(ui,/arAuxMatrixCell:hover|backdrop-filter:|filter:blur\(/);
 });
 
-test("P4 native DRY Shows browse and verified recall are worker-backed and ACK-owned",()=>{
+test("G5E native Shows browse and hash-verified FX recall are worker-backed and ACK-owned",()=>{
   const main=readFileSync(new URL("../src/Main.cpp",import.meta.url),"utf8");
   const worker=readFileSync(new URL("../src/NativeShowSaveWorker.h",import.meta.url),"utf8");
   const recall=readFileSync(new URL("../src/NativeDryShowRecall.h",import.meta.url),"utf8");
@@ -280,16 +280,25 @@ test("P4 native DRY Shows browse and verified recall are worker-backed and ACK-o
   assert.match(main,/nativeShowWorker_\.read\(/);
   assert.match(main,/result\.requestEpoch/);
   assert.match(main,/result\.requestRevision/);
-  assert.match(main,/applyDryRoutingLab\(command,noVst3\)/);
+  assert.match(main,/applyDryRoutingLab\(\s*command,selections,&restores\)/);
+  assert.match(main,/result\.loadedStates/);
+  assert.match(main,/entry->uid!=ref\.uid/);
+  assert.match(main,/safe->closePluginEditor\(\)/);
   assert.match(main,/setMasterGainLinear\(/);
   assert.match(main,/if\(bool\(value\) && \(nativeShowBusy_ \|\| studioBackupBusy_\)\)/);
-  assert.match(worker,/store\.load\(requestedId_,show,saved\)/);
+  assert.match(worker,/store\.loadWithStates\(requestedId_,show,saved,result\.loadedStates\)/);
+  assert.match(worker,/store\.commit\(show,\{snapshot_\},blobs_\)/);
+  assert.match(worker,/delivered=std::make_shared<Result>/);
   assert.match(worker,/if\(\+\+inspected>256\)/);
   assert.match(worker,/result\.items\.resize\(64\)/);
   assert.match(recall,/NativeDryRouteCommand::decode\(proposed,decoded,error\)/);
   assert.match(recall,/Remove CH1 vendor FX/);
   assert.match(recall,/!available\(ch\.inputA\)/);
   assert.match(recall,/command=std::move\(proposed\)/);
+  assert.match(recall,/allowVerifiedFx/);
+  assert.match(lab,/instance->setStateInformation\(saved\.binary->getData\(\)/);
+  assert.match(lab,/if\(prior && !restores\)/);
+  assert.match(lab,/Publisher::Result::applied/);
   assert.match(engine,/setMasterGainLinear\(float value\)/);
   assert.match(lab,/masterMonoPolicy_\.process\(masterMono,l,r\)/);
   assert.match(ui,/id="arRouteBrowseShows"/);

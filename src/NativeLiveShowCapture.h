@@ -5,10 +5,10 @@
 #include <juce_core/juce_core.h>
 #include <cmath>
 
-// P4 stage 3: message-thread native SSOT -> SHOW snapshot. This is deliberately
-// a DRY (zero vendor FX) capture: vendor getStateInformation() requires a
-// separately qualified processor-quiescence and thread-affinity protocol.
-// No UI draft or browser localStorage can become the saved audio truth.
+// Native SSOT -> Show skeleton. DRY-only callers remain fail-closed by
+// default; the G5E opt-in caller captures vendor state under the plugin's
+// processing gate, appends all verified FX blob hashes, then commits atomically.
+// No UI draft or browser localStorage becomes saved audio truth.
 namespace armix::shows {
 class NativeLiveShowCapture final {
     static bool numeric(const juce::var& v,double& n,double lo,double hi) {
@@ -31,7 +31,8 @@ public:
     // preserve the caller's prior accepted snapshot in its entirety.
     static juce::String captureDry(const juce::var& nativeStatus,
                                    const juce::String& cleanName,
-                                   SnapshotV2& out) {
+                                   SnapshotV2& out,
+                                   bool allowCapturedRoutedFx=false) {
         if(!detail::name(cleanName))return "Invalid Show snapshot name";
         if(!nativeStatus.isObject())return "Native audio status unavailable";
         bool outputArmed=true,independent=false;
@@ -58,7 +59,8 @@ public:
            epoch<=0 || rev<=0)
             return "Native route device epoch/revision missing";
         const auto fxCount=lab.getProperty("fxCount",{});
-        if(!fxCount.isInt()||static_cast<int>(fxCount)!=0)
+        if(!fxCount.isInt()||static_cast<int>(fxCount)<0 ||
+           (!allowCapturedRoutedFx && static_cast<int>(fxCount)!=0))
             return "Live VST3 requires safe vendor state quiescence; DRY-only SAVE";
         const auto route=lab.getProperty("acceptedRoute",{});
         juce::int64 routeEpoch=0,routeRev=0;
@@ -103,7 +105,8 @@ public:
             const auto& row=channels->getReference(i);
             const auto& ctrl=controls->getReference(i);
             if(!row.isObject()||!ctrl.isObject() ||
-               row.getProperty("fxId",{}).toString().isNotEmpty())
+               (!allowCapturedRoutedFx &&
+                row.getProperty("fxId",{}).toString().isNotEmpty()))
                 return "Uncaptured VST3 or incomplete channel state";
             auto& strip=next.strips[static_cast<size_t>(i)];
             const auto& parsedStrip=parsed.channels.stripsAndMaster.strips[i];
@@ -132,7 +135,8 @@ public:
         }
         for(int i=0;i<armix::mixer::auxBusCount;++i) {
             const auto& row=buses->getReference(i);
-            if(!row.isObject()||row.getProperty("fxId",{}).toString().isNotEmpty())
+            if(!row.isObject()||(!allowCapturedRoutedFx &&
+               row.getProperty("fxId",{}).toString().isNotEmpty()))
                 return "Uncaptured AUX VST3 cannot be saved as DRY";
             auto& bus=next.aux[static_cast<size_t>(i)];
             const auto& input=parsed.aux.buses[i];

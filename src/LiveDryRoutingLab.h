@@ -17,6 +17,7 @@
 #include <exception>
 #include <memory>
 #include <span>
+#include <vector>
 
 // P1E — user-opt-in, *DRY / NO VST3* physical multichannel routing laboratory.
 // Uses the P1D core already on main, not a competing mixer/DSP engine.
@@ -33,11 +34,25 @@ public:
         juce::String id,path,name;
         int uid=0;
     };
+    struct CapturedFxState final {
+        int lane=0,slot=0;
+        juce::String catalogId,instanceId;
+        bool bypass=false;
+        juce::MemoryBlock binary;
+    };
     static constexpr int count=armix::mixer::stripCount;
     static constexpr int auxCount=armix::mixer::auxBusCount;
     static constexpr int fxSlots=count+auxCount;
     static constexpr int maxFxPerLane=FxGraph::maxInsertsPerStrip;
     using FxSelections=std::array<std::array<FxSelection,maxFxPerLane>,fxSlots>;
+    struct FxRestore final {
+        bool present=false,bypass=false;
+        // Borrowed only while synchronous APPLY builds candidate processors.
+        // The IO result owns the verified bytes until APPLY returns, so even
+        // a 128 MB Show needs no duplicated state buffers on the UI thread.
+        const juce::MemoryBlock* binary=nullptr;
+    };
+    using FxRestores=std::array<std::array<FxRestore,maxFxPerLane>,fxSlots>;
     struct ChannelEdit {
         float linear=1.f, pan=0.f;
         bool mute=false, solo=false, mono=false;
@@ -143,7 +158,8 @@ public:
                         bool independentClock, int loadedFx,
                         const FxSelections& selections,
                         juce::AudioPluginFormatManager& formats,
-                        double sampleRate,int deviceFrames,bool explicitSelection=true) {
+                        double sampleRate,int deviceFrames,bool explicitSelection=true,
+                        const FxRestores* restores=nullptr) {
         // Called by the native message thread only. Not callable from RT.
         if(!directPermitted || independentClock)
             return "Dry Routing LAB requires one verified DIRECT audio device";
@@ -154,6 +170,16 @@ public:
                 [](const auto& fx){return fx.id.isNotEmpty();}))
             return "CH1 has a live FX rack: remove the duplicate CH1 insert from this route";
         if(!command.isObject()) return "Invalid Dry Routing configuration";
+        if(restores)for(int lane=0;lane<fxSlots;++lane)
+            for(int slot=0;slot<maxFxPerLane;++slot) {
+                const bool selected=selections[lane][slot].id.isNotEmpty();
+                const auto& state=(*restores)[lane][slot];
+                if(selected!=state.present ||
+                   (state.present && (!state.binary ||
+                       state.binary->getSize()>8U*1024U*1024U)))
+                    return "Show FX state incomplete or oversized: lane "+
+                           juce::String(lane+1)+" slot "+juce::String(slot+1);
+            }
         const auto currentEpoch=deviceEpoch_.load(std::memory_order_acquire);
         if(!registryValid_.load(std::memory_order_acquire))
             return "Audio device has no validated active capture ports";
@@ -266,8 +292,10 @@ public:
                 if(!scheduled)
                     return label+": assign a physical source/enable return before loading VST3";
                 bool reused=false;
-                if(prior){
-                    // Keep exact position first to preserve duplicate-ID instances.
+                if(prior && !restores){
+                    // Restoring a Show MUST create independent prepared VST
+                    // instances; never call setStateInformation on a live one.
+                    // Keep exact position first for ordinary graph edits.
                     // Reorder searches other old positions only if necessary.
                     for(int pass=0;pass<2&&!reused;++pass)
                         for(int old=0;old<prior->insertsOn(lane);++old) {
@@ -305,11 +333,24 @@ public:
                 } catch(const std::exception& ex) {
                     return label+": prepare failed: "+juce::String(ex.what());
                 } catch(...) {return label+": prepare failed";}
+                if(restores) {
+                    const auto& saved=(*restores)[lane][slot];
+                    try {
+                        instance->setStateInformation(saved.binary->getData(),
+                            static_cast<int>(saved.binary->getSize()));
+                    } catch(const std::exception& ex) {
+                        return label+": vendor VST3 restore failed: "+juce::String(ex.what());
+                    } catch(...) {return label+": vendor VST3 restore failed";}
+                }
                 if(instance->getLatencySamples()!=0)
                     return label+": VST3 slot "+juce::String(slot+1)+
                         " reports latency; PDC is not yet implemented";
                 if(!next->prepared->installAt(lane,slot,std::move(instance),chosen->name,req.id))
                     return label+": invalid prepared insert slot";
+                if(restores && (*restores)[lane][slot].bypass &&
+                   !next->prepared->setInsertBypass(lane,slot,
+                       next->prepared->insertInstanceId(lane,slot),true))
+                    return label+": cannot restore plugin bypass";
                 ++insertCount;
             }
         }
@@ -409,6 +450,44 @@ public:
            expectedRevision!=revision()||token.isEmpty())return {};
         const auto* fx=publisher_.controlPrepared(expectedEpoch,expectedRevision);
         return fx?fx->leaseInsert(lane,slot,token):FxGraph::InstanceLease{};
+    }
+
+    // Transactional FX binary capture, CONTROL only. The caller has muted
+    // hardware output before entering. A busy vendor gate rejects the entire
+    // capture immediately; there is no retry spin or audio callback I/O.
+    juce::String captureRoutedFxStates(std::uint64_t expectedEpoch,
+                                      std::uint64_t expectedRevision,
+                                      std::vector<CapturedFxState>& out) noexcept {
+        if(!hasExplicitRoute()||epoch()!=expectedEpoch||
+           revision()!=expectedRevision)
+            return "Native route changed before FX state capture";
+        const auto* graph=publisher_.controlPrepared(expectedEpoch,expectedRevision);
+        if(!graph)return "Accepted FX graph unavailable";
+        std::vector<CapturedFxState> prepared;
+        std::size_t totalBytes=0;
+        try {
+            for(int lane=0;lane<fxSlots;++lane)
+                for(int slot=0;slot<graph->insertsOn(lane);++slot) {
+                    CapturedFxState row;
+                    row.lane=lane;row.slot=slot;
+                    row.catalogId=graph->insertId(lane,slot);
+                    row.instanceId=graph->insertInstanceId(lane,slot);
+                    row.bypass=graph->insertBypassed(lane,slot);
+                    const auto instance=graph->leaseInsert(lane,slot,row.instanceId);
+                    if(!instance||row.catalogId.isEmpty()||
+                       !instance->tryCaptureState(row.binary))
+                        return "Vendor FX state busy/failed: lane "+
+                            juce::String(lane+1)+" slot "+juce::String(slot+1);
+                    totalBytes+=row.binary.getSize();
+                    if(totalBytes>128U*1024U*1024U)
+                        return "Native Show FX state exceeds 128 MB";
+                    prepared.push_back(std::move(row));
+                }
+        } catch(...) {return "Native FX state capture failed";}
+        if(epoch()!=expectedEpoch||revision()!=expectedRevision)
+            return "Native route changed during FX state capture";
+        out=std::move(prepared);
+        return {};
     }
 
     void disable() noexcept {

@@ -9,6 +9,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <new>
 using namespace armix::mixer;
 
@@ -47,8 +48,13 @@ public:
     void setCurrentProgram(int)override{}
     const juce::String getProgramName(int)override{return {};}
     void changeProgramName(int,const juce::String&)override{}
-    void getStateInformation(juce::MemoryBlock&)override{}
-    void setStateInformation(const void*,int)override{}
+    void getStateInformation(juce::MemoryBlock& out)override{
+        out.append(&gain_,sizeof(gain_));
+    }
+    void setStateInformation(const void* data,int size)override{
+        if(data&&size==static_cast<int>(sizeof(gain_)))
+            std::memcpy(&gain_,data,sizeof(gain_));
+    }
 private:
     float gain_;
 };
@@ -286,6 +292,27 @@ int main() {
         // G5C native PCM gate: bypass really changes signal while preserving
         // dry continuity, without callback allocations or plugin replacement.
         const auto stableToken=multi->insertInstanceId(1,0);
+        // G5E: capturing an actual JUCE vendor state is a CONTROL operation,
+        // not an RT callback allocation or a graph instance replacement.
+        {
+            auto owner=multi->leaseInsert(1,0,stableToken);
+            assert(owner);
+            juce::MemoryBlock bytes;
+            assert(owner->tryCaptureState(bytes));
+            assert(bytes.getSize()==sizeof(float));
+            // Restore into an independent vendor instance, never mutate the
+            // audible graph's reused processor before publication.
+            GainFx candidate(9.f);
+            candidate.setStateInformation(bytes.getData(),
+                static_cast<int>(bytes.getSize()));
+            std::array<float,4> left{.25f,.25f,.25f,.25f},right=left;
+            float* output[]{left.data(),right.data()};
+            juce::AudioBuffer<float> buffer(output,2,4);
+            juce::MidiBuffer midi;
+            candidate.processBlock(buffer,midi);
+            assert(near(left[0],.5f));
+            assert(owner->instanceId==stableToken);
+        }
         assert(stableToken.isNotEmpty());
         assert(!multi->setInsertBypass(1,0,"stale-token",true));
         assert(multi->setInsertBypass(1,0,stableToken,true));

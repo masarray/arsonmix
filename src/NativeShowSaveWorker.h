@@ -27,6 +27,7 @@ public:
         juce::int64 requestEpoch=0,requestRevision=0;
         std::vector<Summary> items;
         SnapshotV2 loaded;
+        std::vector<BinaryState> loadedStates; // fully checked bytes from IO worker
         bool ok() const noexcept {return error.isEmpty();}
     };
     using Completion=std::function<void(Result)>;
@@ -37,9 +38,15 @@ public:
         stopThread(-1);
     }
     bool launch(juce::File studio,SnapshotV2 snapshot,Completion completion) {
+        return launch(std::move(studio),std::move(snapshot),{},
+                      std::move(completion));
+    }
+    bool launch(juce::File studio,SnapshotV2 snapshot,
+                std::vector<BinaryState> binaryStates,Completion completion) {
         if(!reserve(Operation::save,std::move(studio),std::move(completion)) ||
            !detail::uuid(snapshot.id))return false;
         snapshot_=std::move(snapshot);
+        blobs_=std::move(binaryStates);
         if(startThread())return true;
         return false;
     }
@@ -79,12 +86,17 @@ private:
         } catch(...) {
             result.error="Unknown native Show IO exception; session unchanged";
         }
+        blobs_.clear(); // release captured bytes on IO thread after commit
+        blobs_.shrink_to_fit();
         auto alive=alive_;
         auto done=finished_;
+        // A 128 MB vendor-blob result must not be copied by std::function
+        // when JUCE queues an async callback on the message thread.
+        auto delivered=std::make_shared<Result>(std::move(result));
         juce::MessageManager::callAsync(
-            [alive,done=std::move(done),result=std::move(result)]() mutable {
+            [alive,done=std::move(done),delivered]() mutable {
                 if(alive->load(std::memory_order_acquire)&&done)
-                    done(std::move(result));
+                    done(std::move(*delivered));
             });
     }
     void save(NativeShowStore& store,Result& result) {
@@ -98,7 +110,7 @@ private:
         show.currentSnapshotId=snapshot_.id;
         show.snapshotOrder.push_back(snapshot_.id);
         result.showId=show.id;
-        result.error=store.commit(show,{snapshot_},{});
+        result.error=store.commit(show,{snapshot_},blobs_);
         if(result.error.isNotEmpty())return;
         ShowV2 verified;
         std::vector<SnapshotV2> snapshots;
@@ -147,7 +159,7 @@ private:
         result.showId=requestedId_;
         ShowV2 show;
         std::vector<SnapshotV2> saved;
-        result.error=store.load(requestedId_,show,saved);
+        result.error=store.loadWithStates(requestedId_,show,saved,result.loadedStates);
         if(result.error.isNotEmpty())return;
         if(show.currentSnapshotId.isEmpty()) {
             result.error="Saved Show has no current snapshot";return;
@@ -165,6 +177,7 @@ private:
     Operation operation_=Operation::save;
     juce::File studio_;
     SnapshotV2 snapshot_;
+    std::vector<BinaryState> blobs_; // captured on CONTROL, hashed/written on IO worker
     juce::String requestedId_;
     juce::int64 requestEpoch_=0,requestRevision_=0;
     Completion finished_;

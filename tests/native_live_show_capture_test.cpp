@@ -115,6 +115,51 @@ int main() {
     lab=plugin.getProperty("dryRoutingLab",{});
     set(lab,"fxCount",1);
     assert(NativeLiveShowCapture::captureDry(plugin,"Dry Routing Test",captured).isNotEmpty());
+    // G5E opt-in: the conventional DRY capture still rejects native FX.
+    // Only the caller that also captured verified binary state can later
+    // attach FX references and atomically commit a complete Show.
+    SnapshotV2 withFx;
+    assert(NativeLiveShowCapture::captureDry(
+        plugin,"Verified FX Show",withFx,true).isEmpty());
+    assert(withFx.strips[0].fx.empty());
+    BinaryState vendor;
+    vendor.bytes.append("native state",12);
+    vendor.sha256=juce::SHA256(vendor.bytes).toHexString();
+    withFx.strips[0].fx.push_back({"test-vendor",123,vendor.sha256,false});
+    SnapshotV2 withFxChecked;
+    assert(Codec::decode(Codec::encode(withFx),withFxChecked));
+    auto fxHome=juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("ArSonMixNativeG5EState","",false);
+    assert(fxHome.createDirectory().wasOk());
+    NativeShowStore fxStore(fxHome);
+    ShowV2 fxShow;
+    fxShow.id=juce::Uuid().toDashedString().toLowerCase();
+    fxShow.name=withFx.name;
+    fxShow.createdMs=withFx.createdMs;
+    fxShow.modifiedMs=withFx.modifiedMs;
+    fxShow.currentSnapshotId=withFx.id;
+    fxShow.snapshotOrder={withFx.id};
+    assert(fxStore.commit(fxShow,{withFx},{}).isNotEmpty());
+    assert(fxStore.commit(fxShow,{withFx},{vendor}).isEmpty());
+    ShowV2 fxLoaded;std::vector<SnapshotV2> fxSnapshots;
+    assert(fxStore.load(fxShow.id,fxLoaded,fxSnapshots).isEmpty());
+    assert(fxSnapshots.size()==1 &&
+           fxSnapshots[0].strips[0].fx[0].stateSha256==vendor.sha256);
+    juce::var restoredCommand;
+    assert(NativeDryShowRecall::prepare(
+        fxSnapshots[0],setup(),restoredCommand).isNotEmpty());
+    assert(NativeDryShowRecall::prepare(
+        fxSnapshots[0],setup(),restoredCommand,true).isEmpty());
+    auto stateRows=restoredCommand.getProperty("channels",{}).getArray();
+    assert(stateRows&&stateRows->size()==10);
+    auto fxIds=stateRows->getReference(0).getProperty("fxIds",{}).getArray();
+    assert(fxIds&&fxIds->size()==1&&fxIds->getReference(0).toString()=="test-vendor");
+    std::vector<BinaryState> fxRestored;
+    ShowV2 loadedMeta;std::vector<SnapshotV2> loadedSnapshots;
+    assert(fxStore.loadWithStates(
+        fxShow.id,loadedMeta,loadedSnapshots,fxRestored).isEmpty());
+    assert(fxRestored.size()==1&&fxRestored[0].bytes==vendor.bytes);
+    fxHome.deleteRecursively();
     auto legacy=setup();set(legacy,"chainCount",2);
     assert(NativeLiveShowCapture::captureDry(legacy,"Dry Routing Test",captured).isNotEmpty());
     assert(Codec::encode(captured)==prior);
@@ -161,6 +206,29 @@ int main() {
     assert(parsed.channels.formats[1]==armix::mixer::ChannelFormat::stereo);
     assert(parsed.sends.count==1&&parsed.aux.count==2);
     assert(parsed.aux.sends[0].destination==0);
+    // MS3A physical output patch is a live DEVICE decision, not a Show
+    // portability field. FX Show Recall may not silently route speakers
+    // back to hardware outputs 1/2 when the operator chose 5/6.
+    {
+        auto patched=setup();
+        auto currentLab=patched.getProperty("dryRoutingLab",{});
+        juce::Array<juce::var> enabled{0,1,4,5},mainPair{4,5};
+        set(currentLab,"outputPorts",juce::var(enabled));
+        set(currentLab,"mainOutputs",juce::var(mainPair));
+        juce::var restored;
+        assert(NativeDryShowRecall::prepare(snaps[0],patched,restored).isEmpty());
+        const auto pairValue=restored.getProperty("mainOutputs",{});
+        const auto* actual=pairValue.getArray();
+        assert(actual&&actual->size()==2);
+        assert(static_cast<int>(actual->getReference(0))==4);
+        assert(static_cast<int>(actual->getReference(1))==5);
+        juce::Array<juce::var> duplicate{4,4};
+        set(currentLab,"mainOutputs",juce::var(duplicate));
+        assert(NativeDryShowRecall::prepare(snaps[0],patched,restored).isNotEmpty());
+        juce::Array<juce::var> missing{4,7};
+        set(currentLab,"mainOutputs",juce::var(missing));
+        assert(NativeDryShowRecall::prepare(snaps[0],patched,restored).isNotEmpty());
+    }
     const auto previous=juce::JSON::toString(prepared,false);
 
     // Full real native MS1 DRY Show round-trip: mono physical -> STEREO
