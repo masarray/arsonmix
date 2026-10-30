@@ -214,3 +214,57 @@ test('G5 UI safety: compact Studio One-like browser and native insert truth',()=
   assert.match(bridge,/data-routed-fx/);
   assert.match(bridge,/data-native-fx="editor"/);
 });
+
+
+test('FXF1 factory tabs use source metadata only, never invent unshipped effects',()=>{
+  const {component,dialog,listeners}=loadRenderer();
+  const state={catalog:[
+    {...entries(1)[0],id:'factory-verified',name:'ArSonEQ',source:'factory',factoryProductId:'arson-eq'},
+    {...entries(1)[0],id:'user-import',name:'My Compressor',source:'user'},
+  ],chain:[],scanning:false,message:'Ready',filter:'',selectedCategory:'All',
+  adding:false,addError:'',pendingPlugin:'',routedPickerMode:false};
+  component.renderPicker(dialog,state,'CH 1 · SLOT 1 · LIVE VST3',['All'],()=> 'EQ');
+  component.init(()=>state,()=>{});
+  assert.equal((dialog.querySelector('#arPickerRows').innerHTML.match(/class="ar-picker-row"/g)||[]).length,2);
+  const clickScope=(scope,target)=>listeners.click({target:{
+    closest(sel){return sel==='[data-ar-source-scope]'?
+      {dataset:{arSourceScope:scope,arScopeTarget:target}}:null;}
+  }});
+  clickScope('FACTORY','picker');
+  let rows=dialog.querySelector('#arPickerRows').innerHTML;
+  assert.match(rows,/ArSonEQ/);
+  assert.doesNotMatch(rows,/My Compressor/);
+  assert.match(rows,/FACTORY/);
+  clickScope('USER','picker');
+  rows=dialog.querySelector('#arPickerRows').innerHTML;
+  assert.doesNotMatch(rows,/ArSonEQ/);
+  assert.match(rows,/My Compressor/);
+  clickScope('ALL','picker');
+  assert.equal((dialog.querySelector('#arPickerRows').innerHTML.match(/class="ar-picker-row"/g)||[]).length,2);
+  component.renderManager(dialog,state,()=>'<span>Ready</span>');
+  clickScope('FACTORY','manager');
+  rows=dialog.querySelector('#arPluginManagerRows').innerHTML;
+  assert.match(rows,/ArSonEQ/);
+  assert.doesNotMatch(rows,/My Compressor/);
+});
+
+test('FXF1 manifest parser is fail-closed and factory entries do not persist in user vault',()=>{
+  const factory=read('src/FactoryFxRegistry.h');
+  const catalog=read('src/PluginCatalog.h');
+  const schema=JSON.parse(read('docs/factoryfx-release-manifest.schema.json'));
+  assert.equal(schema.properties.plugins.items.properties.hostUniqueId.type,'integer');
+  for(const product of ['arson-eq','arson-comp','arson-verb','arson-harmony',
+                        'arson-color','arsonkupik-enhancer'])
+    assert.ok(schema.properties.plugins.items.properties.productId.enum.includes(product));
+  assert.match(factory,/getHexDigitValue \(c\) < 0/);
+  assert.match(factory,/SHA256 \(binary\)/);
+  assert.match(factory,/production-six/);
+  assert.match(factory,/licenseReview/);
+  assert.match(factory,/contained \(appRoot, bundle\)/);
+  assert.match(catalog,/scanFactoryIfPresent/);
+  assert.match(catalog,/factoryOnly_/);
+  assert.match(catalog,/factoryFavorites_/);
+  assert.match(catalog,/if \(entry.factory\) continue/);
+  assert.match(native,/catalog_\.scanFactoryIfPresent\(\)/);
+  assert.match(cmake,/FactoryFxVerifiedManifestAndNegativePathGate/);
+});

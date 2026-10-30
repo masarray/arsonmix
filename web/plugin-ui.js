@@ -122,7 +122,7 @@
         <button class="native-btn primary ar-picker-add" data-native-add="${escapeHtml(p.id)}"
           ${state.adding||(state.routedPickerMode?channel<0:(state.chain.length>=8||channel!==0))?"disabled":""}
           title="${state.routedPickerMode?"Stage native routed FX (requires muted APPLY)":"Insert CH1 VST3"}">+ ADD</button>
-      </div>`).join(""):'<div class="ar-picker-empty">No matching effects. Open Plugin Manager to import or scan.</div>';
+      </div>`).join(""):`<div class="ar-picker-empty">${pickerScope==="FACTORY"?"No verified Factory FX included in this package.":"No matching effects. Open Plugin Manager to import or scan."}</div>`;
     const count=dialog.querySelector("#arPickerCount");
     if(count)count.textContent=`${matches.length} matching · ${Math.min(matches.length,80)} shown`;
     dialog.querySelectorAll('[data-ar-scope-target="picker"]').forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.arSourceScope===pickerScope)));
