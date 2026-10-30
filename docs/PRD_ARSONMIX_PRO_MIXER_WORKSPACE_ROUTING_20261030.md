@@ -1,5 +1,7 @@
 # ArSonMix — PRD v2.0: Pro Digital Mixer, Channel Modes, Hardware I/O and AUX/BUS
 
+**2026-10-30 hardware setup implementation addendum:** [crosspoint PRD](PRD_HARDWARE_AUDIO_IO_MATRIX_20261030.md) adds real verified-pin M/L/R input and MAIN output matrices reusing the existing native epoch/revision ACK controller. This is a focused operator UX milestone, not a second DSP engine or completion of physical MONITOR/DYN2/zero-FX hardware FAT. The existing descriptions below are architectural goals and may reflect earlier implementation states.
+
 **Factory FX operator outcome:** official completed ArSonMix release includes genuine first-party EQ/COMP/REVERB/HARMONY/COLOR/ArSonKuPik VST3 (not six preview icons), while every user can still import their own VST3 to Studio. [Factory FX PRD](PRD_FACTORY_FX_20261030.md), [ADR](ADR_FACTORY_FX_BUNDLE_20261030.md), [tracked epic #185](https://github.com/masarray/arsonmix/issues/185). Factory modules must be immutable verified VST3 bundles, manifest/class-ID-backed, on-demand plugin editor and full Show state, installed/portable parity. Only two original existing candidates to integrate first: ASKPVST published v0.5.26 (owner entitlement needed) and ArSonEQ on development branch (no default-main package); Reverb outbound licence undecided, other effects unbuilt. No bundled Factory FX claimed today.
 
 
