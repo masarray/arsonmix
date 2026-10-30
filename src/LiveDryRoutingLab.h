@@ -531,7 +531,9 @@ public:
                  float masterGain,bool masterMuted,
                  void* externalContext=nullptr,
                  FxGraph::ExternalStripFx externalFx=nullptr,
-                 bool masterMono=false) noexcept {
+                 bool masterMono=false,
+                 std::array<int,2>* actualOutputPair=nullptr) noexcept {
+        if(actualOutputPair)*actualOutputPair={{-1,-1}};
         if(!active())return false;
         for(auto& p:channelPeaks_)p.store(0.f,std::memory_order_relaxed);
         for(auto& p:auxPeaks_)p.store(0.f,std::memory_order_relaxed);
@@ -587,6 +589,10 @@ public:
         }
         float* const mainL=outputs[outLeft];
         float* const mainR=outputs[outRight];
+        // Return the callback indices from THIS leased prepared graph.
+        // The post-render FX transition and meters must not re-read a
+        // potentially newer route or assume hardware channels 0/1.
+        if(actualOutputPair)*actualOutputPair={{outLeft,outRight}};
         if(snapshot->graphRevision!=audioRevision_ || generation!=audioEpoch_) {
             audioRevision_=snapshot->graphRevision;
             audioEpoch_=generation;

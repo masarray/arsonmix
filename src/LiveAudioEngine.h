@@ -19,6 +19,7 @@
 #include "../engine/core/RealtimeHealthHistogram.h"
 #include "../engine/core/CallbackCadenceEvidence.h"
 #include "../engine/core/FxBypassEnvelope.h"
+#include "../engine/core/NativeOutputPairTap.h"
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -1596,11 +1597,17 @@ private:
             // execute in ONE stereo output render pass. Never mix a parallel
             // CH1 output on top or copy vendor processors into another graph.
             LegacyChannelOneLease ch1Lease{this,cycle.graph};
+            std::array<int,2> nativeMainPair{{-1,-1}};
             const bool routed=dryRoutingLab_.process(inputs,inputChannels,outputs,
                      outputChannels,samples,
                      masterGain_.load(std::memory_order_relaxed),
                      !outputPermitted,&ch1Lease,&processLegacyChannelOne,
-                     masterMono_.load(std::memory_order_relaxed));
+                     masterMono_.load(std::memory_order_relaxed),
+                     &nativeMainPair);
+            // Constant-time, callback-local physical PCM tap. Nothing is
+            // reconfigured or acquired from another graph generation.
+            const auto nativeMain=armix::mixer::NativeOutputPairTap::select(
+                outputs,outputChannels,nativeMainPair);
             // STOP can race after the outer active() check. Never leave a
             // callback's output untouched, and NEVER fall through into CH1.
             if(!routed) {
@@ -1620,8 +1627,8 @@ private:
             // without touching third-party plugin lifecycle on the callback.
             if(routedFxMove!=0 || cycle.fadeOut || cycle.fadeIn) {
                 const float step=samples>1?1.f/static_cast<float>(samples-1):0.f;
-                for(int c=0;c<juce::jmin(outputChannels,2);++c) {
-                    auto* const out=outputs?outputs[c]:nullptr;
+                for(int c=0;c<2;++c) {
+                    auto* const out=nativeMain[static_cast<std::size_t>(c)];
                     if(!out)continue;
                     float peak=0.f;
                     for(int i=0;i<samples;++i) {
@@ -1645,13 +1652,10 @@ private:
                     fxMovePhase_.store(0,std::memory_order_release);
             }
             if(cycle.fadeOut)handoff_.endCycle(cycle); // RT pointer publish only
-            // Read actual hardware-bound MASTER PCM, never browser preview.
-            // A fixed stack view; no VST/JSON/heap/locks in the audio callback.
-            const float* measured[2] = {
-                outputs && outputChannels>0 ? outputs[0] : nullptr,
-                outputs && outputChannels>1 ? outputs[1] : nullptr
-            };
-            masterLoudness_.process(measured,juce::jmin(outputChannels,2),samples);
+            // MS3A2: loudness/dBTP measure the same selected hardware
+            // destination as the actual MAIN render and FX move fade.
+            const float* measured[2] = {nativeMain[0],nativeMain[1]};
+            masterLoudness_.process(measured,2,samples);
             // Only actually routed audio can produce a live output meter.
             const float left=routed?dryRoutingLab_.peakLeft():0.f;
             const float right=routed?dryRoutingLab_.peakRight():0.f;
