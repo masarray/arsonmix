@@ -17,6 +17,39 @@ async def main():
         await page.set_content((project/"AR-MIX-Live-FX-Host-Standalone-v0.3.html").read_text())
         assert await page.locator(".strip").count()==11
         assert await page.locator("#channelList [data-choose]").count()==10
+        # Selection must not detach meter/rack descendants or invalidate VST3 anchors.
+        await page.evaluate("""()=>{
+          window.__focusNodes=[...document.querySelectorAll('#mixer .strip')];
+          window.__focusMeter=document.querySelector('[data-meter="0"]');
+          window.__focusRack=document.querySelector('[data-strip="0"] .rack');
+        }""")
+        await page.locator('#channelList [data-choose="7"]').click()
+        retained=await page.evaluate("""()=>({
+          strips:[...document.querySelectorAll('#mixer .strip')].every((el,i)=>el===window.__focusNodes[i]),
+          meter:document.querySelector('[data-meter="0"]')===window.__focusMeter,
+          rack:document.querySelector('[data-strip="0"] .rack')===window.__focusRack,
+          focused:currentChannel===7&&document.querySelector('[data-strip="7"]').classList.contains('selected'),
+          rail:document.querySelector('#channelList [data-choose="7"]').classList.contains('selected')
+        })""")
+        assert all(retained.values()),retained
+        await page.locator('#channelList [data-choose="0"]').click()
+        assert await page.evaluate("()=>currentChannel===0")
+        # One actual UI-only gain edit writes the versioned envelope after release.
+        await page.evaluate("""()=>{
+          window.__oldFader9=channels[9].fader;
+          updateFader(9,-25.5);
+          document.dispatchEvent(new Event('pointerup'));
+        }""")
+        await page.wait_for_function("""()=>{
+          const json=localStorage.getItem('armix-v03-workspace-v2');
+          if(!json)return false;
+          try{return JSON.parse(json).current.channels[9].fader===-25.5}
+          catch{return false}
+        }""",timeout=5000)
+        await page.evaluate("""()=>{
+          updateFader(9,window.__oldFader9);
+          document.dispatchEvent(new Event('pointerup'));
+        }""")
         assert await page.locator("[data-strip=\"10\"], [data-strip=\"11\"]").count()==0
 
         # P0 visual fix: mono gets ONE recessed LED slot, stereo gets TWO.
