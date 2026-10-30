@@ -115,6 +115,37 @@ int main() {
     lab=plugin.getProperty("dryRoutingLab",{});
     set(lab,"fxCount",1);
     assert(NativeLiveShowCapture::captureDry(plugin,"Dry Routing Test",captured).isNotEmpty());
+    // G5E opt-in: the conventional DRY capture still rejects native FX.
+    // Only the caller that also captured verified binary state can later
+    // attach FX references and atomically commit a complete Show.
+    SnapshotV2 withFx;
+    assert(NativeLiveShowCapture::captureDry(
+        plugin,"Verified FX Show",withFx,true).isEmpty());
+    assert(withFx.strips[0].fx.empty());
+    BinaryState vendor;
+    vendor.bytes.append("native state",12);
+    vendor.sha256=juce::SHA256(vendor.bytes).toHexString();
+    withFx.strips[0].fx.push_back({"test-vendor",123,vendor.sha256,false});
+    SnapshotV2 withFxChecked;
+    assert(Codec::decode(Codec::encode(withFx),withFxChecked));
+    auto fxHome=juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("ArSonMixNativeG5EState","",false);
+    assert(fxHome.createDirectory().wasOk());
+    NativeShowStore fxStore(fxHome);
+    ShowV2 fxShow;
+    fxShow.id=juce::Uuid().toDashedString().toLowerCase();
+    fxShow.name=withFx.name;
+    fxShow.createdMs=withFx.createdMs;
+    fxShow.modifiedMs=withFx.modifiedMs;
+    fxShow.currentSnapshotId=withFx.id;
+    fxShow.snapshotOrder={withFx.id};
+    assert(fxStore.commit(fxShow,{withFx},{}).isNotEmpty());
+    assert(fxStore.commit(fxShow,{withFx},{vendor}).isEmpty());
+    ShowV2 fxLoaded;std::vector<SnapshotV2> fxSnapshots;
+    assert(fxStore.load(fxShow.id,fxLoaded,fxSnapshots).isEmpty());
+    assert(fxSnapshots.size()==1 &&
+           fxSnapshots[0].strips[0].fx[0].stateSha256==vendor.sha256);
+    fxHome.deleteRecursively();
     auto legacy=setup();set(legacy,"chainCount",2);
     assert(NativeLiveShowCapture::captureDry(legacy,"Dry Routing Test",captured).isNotEmpty());
     assert(Codec::encode(captured)==prior);
