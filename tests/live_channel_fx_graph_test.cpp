@@ -100,7 +100,7 @@ int main() {
         assert(heapCalls.load(std::memory_order_relaxed)==before);
         assert(legacyCalls==1);
         // Mono CH1 PRE at center is attenuated sqrt(.5) per side.
-        constexpr float monoCenter=std::sqrt(.5f);
+        constexpr float monoCenter=0.7071067811865475f;
         assert(near(l[0],.4f*2.f*.5f*monoCenter)&&
                near(r[0],.4f*2.f*.5f*monoCenter));
         assert(fx->activeInserts()==0);
@@ -110,7 +110,7 @@ int main() {
     }
     // This test executes actual JUCE AudioProcessor::processBlock for
     // DIFFERENT strip instances and a BUS return, no VST3 vendor binaries.
-    constexpr float monoPreCenter=std::sqrt(.5f);
+    constexpr float monoPreCenter=0.7071067811865475f;
     using Publication=armix::rt::RealtimeRoutePublisher<LiveChannelFxGraph>;
     Publication routes;
     auto first=std::make_unique<Publication::Snapshot>();
