@@ -23,7 +23,8 @@ class NativeDryShowRecall final {
 public:
     static juce::String prepare(const SnapshotV2& saved,
                                 const juce::var& status,
-                                juce::var& command) {
+                                juce::var& command,
+                                bool allowVerifiedFx=false) {
         SnapshotV2 canonical;
         if(!Codec::decode(Codec::encode(saved),canonical))
             return "Saved Show failed native schema validation";
@@ -47,7 +48,7 @@ public:
            !static_cast<bool>(lab.getProperty("active",{})))
             return "Select a verified DIRECT native 10CH device before recall";
         const auto fx=lab.getProperty("fxCount",{});
-        if(!fx.isInt() || static_cast<int>(fx)!=0)
+        if(!fx.isInt() || (!allowVerifiedFx && static_cast<int>(fx)!=0))
             return "Stop native VST3 inserts before restoring a DRY Show";
         juce::int64 currentEpoch=0,currentRevision=0;
         if(!epoch(lab.getProperty("epoch",{}),currentEpoch) ||
@@ -70,7 +71,8 @@ public:
         juce::Array<juce::var> channels,auxes,sends;
         for(int i=0;i<armix::mixer::stripCount;++i) {
             const auto& ch=canonical.strips[static_cast<size_t>(i)];
-            if(!ch.fx.empty())return "Vendor VST3 state recall is not yet supported";
+            if(!ch.fx.empty()&&!allowVerifiedFx)
+                return "Vendor VST3 state recall is not yet supported";
             const juce::String mode=ch.source==1?"MONO":ch.source==2?
                 "STEREO":ch.busReturn?"BUS":"NONE";
             if(ch.source>0 &&
@@ -90,7 +92,12 @@ public:
             put(v,"mute",ch.mute);
             put(v,"solo",ch.solo);
             put(v,"main",ch.toMaster);
-            put(v,"fxId","");
+            put(v,"fxId",ch.fx.empty()?juce::String():ch.fx.front().catalogId);
+            if(allowVerifiedFx) {
+                juce::Array<juce::var> ids;
+                for(const auto& ref:ch.fx)ids.add(ref.catalogId);
+                put(v,"fxIds",juce::var(ids));
+            }
             channels.add(v);
             for(const auto& s:ch.sends) {
                 auto row=object();
@@ -104,13 +111,19 @@ public:
         }
         for(int b=0;b<armix::mixer::auxBusCount;++b) {
             const auto& bus=canonical.aux[static_cast<size_t>(b)];
-            if(!bus.fx.empty())return "Vendor AUX VST3 state recall is not supported";
+            if(!bus.fx.empty()&&!allowVerifiedFx)
+                return "Vendor AUX VST3 state recall is not supported";
             auto row=object();
             put(row,"enabled",bus.enabled);
             put(row,"main",bus.toMaster);
             put(row,"mute",bus.mute);
             put(row,"gain",bus.gain);
-            put(row,"fxId","");
+            put(row,"fxId",bus.fx.empty()?juce::String():bus.fx.front().catalogId);
+            if(allowVerifiedFx) {
+                juce::Array<juce::var> ids;
+                for(const auto& ref:bus.fx)ids.add(ref.catalogId);
+                put(row,"fxIds",juce::var(ids));
+            }
             auxes.add(row);
         }
         for(const auto& s:canonical.auxSends) {

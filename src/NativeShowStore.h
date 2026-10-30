@@ -147,6 +147,47 @@ public:
         return {};
     }
 
+    // G5E2: retrieve bytes only AFTER validating the complete generation,
+    // and verify every byte again before returning a transferable snapshot.
+    // The IO worker owns all filesystem work, never the audio callback.
+    juce::String loadWithStates(const juce::String& id,ShowV2& show,
+                               std::vector<SnapshotV2>& snapshots,
+                               std::vector<BinaryState>& binary) const {
+        const auto generation=currentGeneration(id);
+        if(!generation.isDirectory())return "Current Show generation missing";
+        ShowV2 candidate;std::vector<SnapshotV2> items;
+        auto error=load(id,candidate,items);
+        if(error.isNotEmpty())return error;
+        if(currentGeneration(id)!=generation)return "Show generation changed while reading";
+        std::set<juce::String> hashes;
+        for(const auto& snap:items) {
+            for(const auto& strip:snap.strips)
+                for(const auto& fx:strip.fx)hashes.insert(fx.stateSha256.toLowerCase());
+            for(const auto& aux:snap.aux)
+                for(const auto& fx:aux.fx)hashes.insert(fx.stateSha256.toLowerCase());
+        }
+        if(hashes.size()>maxBlobsPerCommit)return "Too many vendor states";
+        std::vector<BinaryState> verified;
+        juce::int64 total=0;
+        for(const auto& hash:hashes) {
+            if(!validHash(hash))return "Unsafe vendor state hash";
+            const auto file=generation.getChildFile("blobs").getChildFile(hash+".bin");
+            if(!file.existsAsFile()||file.getSize()<0||
+               file.getSize()>maxBlobBytes)return "Vendor state missing or oversized";
+            total+=file.getSize();
+            if(total>maxGenerationBytes)return "Vendor state exceeds Show budget";
+            BinaryState state;state.sha256=hash;
+            if(!file.loadFileAsData(state.bytes) ||
+               juce::SHA256(state.bytes).toHexString()!=hash)
+                return "Vendor binary changed during readback";
+            verified.push_back(std::move(state));
+        }
+        if(currentGeneration(id)!=generation)return "Show pointer changed during read";
+        show=std::move(candidate);snapshots=std::move(items);
+        binary=std::move(verified);
+        return {};
+    }
+
     juce::File currentGeneration(const juce::String& showId) const {
         if(!detail::uuid(showId))return {};
         const auto base=root_.getChildFile(showId.toLowerCase());

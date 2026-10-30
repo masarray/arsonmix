@@ -145,6 +145,20 @@ int main() {
     assert(fxStore.load(fxShow.id,fxLoaded,fxSnapshots).isEmpty());
     assert(fxSnapshots.size()==1 &&
            fxSnapshots[0].strips[0].fx[0].stateSha256==vendor.sha256);
+    juce::var restoredCommand;
+    assert(NativeDryShowRecall::prepare(
+        fxSnapshots[0],setup(),restoredCommand).isNotEmpty());
+    assert(NativeDryShowRecall::prepare(
+        fxSnapshots[0],setup(),restoredCommand,true).isEmpty());
+    auto stateRows=restoredCommand.getProperty("channels",{}).getArray();
+    assert(stateRows&&stateRows->size()==10);
+    auto fxIds=stateRows->getReference(0).getProperty("fxIds",{}).getArray();
+    assert(fxIds&&fxIds->size()==1&&fxIds->getReference(0).toString()=="test-vendor");
+    std::vector<BinaryState> fxRestored;
+    ShowV2 loadedMeta;std::vector<SnapshotV2> loadedSnapshots;
+    assert(fxStore.loadWithStates(
+        fxShow.id,loadedMeta,loadedSnapshots,fxRestored).isEmpty());
+    assert(fxRestored.size()==1&&fxRestored[0].bytes==vendor.bytes);
     fxHome.deleteRecursively();
     auto legacy=setup();set(legacy,"chainCount",2);
     assert(NativeLiveShowCapture::captureDry(legacy,"Dry Routing Test",captured).isNotEmpty());

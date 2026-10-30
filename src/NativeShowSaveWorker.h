@@ -27,6 +27,7 @@ public:
         juce::int64 requestEpoch=0,requestRevision=0;
         std::vector<Summary> items;
         SnapshotV2 loaded;
+        std::vector<BinaryState> loadedStates; // fully checked bytes from IO worker
         bool ok() const noexcept {return error.isEmpty();}
     };
     using Completion=std::function<void(Result)>;
@@ -85,6 +86,8 @@ private:
         } catch(...) {
             result.error="Unknown native Show IO exception; session unchanged";
         }
+        blobs_.clear(); // release captured bytes on IO thread after commit
+        blobs_.shrink_to_fit();
         auto alive=alive_;
         auto done=finished_;
         juce::MessageManager::callAsync(
@@ -153,7 +156,7 @@ private:
         result.showId=requestedId_;
         ShowV2 show;
         std::vector<SnapshotV2> saved;
-        result.error=store.load(requestedId_,show,saved);
+        result.error=store.loadWithStates(requestedId_,show,saved,result.loadedStates);
         if(result.error.isNotEmpty())return;
         if(show.currentSnapshotId.isEmpty()) {
             result.error="Saved Show has no current snapshot";return;

@@ -47,8 +47,13 @@ public:
     void setCurrentProgram(int)override{}
     const juce::String getProgramName(int)override{return {};}
     void changeProgramName(int,const juce::String&)override{}
-    void getStateInformation(juce::MemoryBlock&)override{}
-    void setStateInformation(const void*,int)override{}
+    void getStateInformation(juce::MemoryBlock& out)override{
+        out.append(&gain_,sizeof(gain_));
+    }
+    void setStateInformation(const void* data,int size)override{
+        if(data&&size==static_cast<int>(sizeof(gain_)))
+            std::memcpy(&gain_,data,sizeof(gain_));
+    }
 private:
     float gain_;
 };
@@ -293,7 +298,18 @@ int main() {
             assert(owner);
             juce::MemoryBlock bytes;
             assert(owner->tryCaptureState(bytes));
-            assert(bytes.getSize()<=8U*1024U*1024U);
+            assert(bytes.getSize()==sizeof(float));
+            // Restore into an independent vendor instance, never mutate the
+            // audible graph's reused processor before publication.
+            GainFx candidate(9.f);
+            candidate.setStateInformation(bytes.getData(),
+                static_cast<int>(bytes.getSize()));
+            std::array<float,4> left{.25f,.25f,.25f,.25f},right=left;
+            float* output[]{left.data(),right.data()};
+            juce::AudioBuffer<float> buffer(output,2,4);
+            juce::MidiBuffer midi;
+            candidate.processBlock(buffer,midi);
+            assert(near(left[0],.5f));
             assert(owner->instanceId==stableToken);
         }
         assert(stableToken.isNotEmpty());

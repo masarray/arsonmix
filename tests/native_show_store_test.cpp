@@ -58,6 +58,22 @@ int main() {
  assert(loaded.channelSafes[3]);
  assert(retrieved.size()==1 && retrieved[0].strips[0].inputB==5);
  assert(retrieved[0].strips[0].fx[0].stateSha256==blob.sha256);
+ // G5E2: the same immutable generation must deliver the exact vendor
+ // binary bytes to the CONTROL thread before any candidate graph exists.
+ ShowV2 fxShow;std::vector<SnapshotV2> fxSnaps;
+ std::vector<BinaryState> restoredStates;
+ assert(store.loadWithStates(show.id,fxShow,fxSnaps,restoredStates).isEmpty());
+ assert(restoredStates.size()==2);
+ bool sawInput=false,sawAux=false;
+ for(const auto& state:restoredStates) {
+     if(state.sha256==blob.sha256) {
+         sawInput=true;assert(state.bytes==blob.bytes);
+     }
+     if(state.sha256==auxBlob.sha256) {
+         sawAux=true;assert(state.bytes==auxBlob.bytes);
+     }
+ }
+ assert(sawInput&&sawAux);
  assert(retrieved[0].aux[0].enabled && retrieved[0].aux[0].gain==0.6);
  assert(retrieved[0].auxSends.size()==1 && retrieved[0].auxSends[0].preFader);
  assert(retrieved[0].aux[0].fx.size()==1 &&

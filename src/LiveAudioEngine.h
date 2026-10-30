@@ -962,7 +962,8 @@ public:
     // Explicit message-thread transaction. NO VST is processed in this LAB.
     juce::String applyDryRoutingLab (
         const juce::var& command,
-        const LiveDryRoutingLab::FxSelections& fx) {
+        const LiveDryRoutingLab::FxSelections& fx,
+        const LiveDryRoutingLab::FxRestores* restored=nullptr) {
         if (!isOutputMuted()) return "MUTE OUTPUT before applying physical DRY LAB routing";
         if (handoff_.busy()) return "A VST3 graph handoff is in progress";
         if (routeReconfiguring_.load(std::memory_order_acquire))
@@ -984,7 +985,8 @@ public:
         return dryRoutingLab_.apply(command,directFence_.permitted(),
                    independent_.active(),graphOwned_->count,fx,formats_,
                    device->getCurrentSampleRate(),
-                   juce::jmax(32,device->getCurrentBufferSizeSamples()));
+                   juce::jmax(32,device->getCurrentBufferSizeSamples()),
+                   true,restored);
     }
     void disableDryRoutingLab() noexcept {
         setOutputMuted(true); // never expose CH1 unexpectedly on STOP

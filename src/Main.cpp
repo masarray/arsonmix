@@ -1385,17 +1385,64 @@ private:
                         if(ep!=result.requestEpoch || rev!=result.requestRevision)
                             error="Device epoch or route revision changed during disk read";
                         else error=armix::shows::NativeDryShowRecall::prepare(
-                            result.loaded,state,command);
+                            result.loaded,state,command,true);
                         if(error.isEmpty()) {
+                            // All blob bytes were hash-verified on the IO worker.
+                            // Resolve the exact current native catalog UID and
+                            // build a fully prepared candidate, never mutate
+                            // existing vendor processors still in the RT graph.
                             try {
-                                safe->closePluginEditor();
-                                LiveDryRoutingLab::FxSelections noVst3{};
-                                error=safe->engine_.applyDryRoutingLab(command,noVst3);
+                                LiveDryRoutingLab::FxSelections selections{};
+                                LiveDryRoutingLab::FxRestores restores{};
+                                const auto attach=[&](int lane,
+                                    const std::vector<armix::shows::FxRef>& refs)
+                                      ->juce::String {
+                                    if(refs.size()>LiveDryRoutingLab::maxFxPerLane)
+                                        return "FX Show rack exceeds live insert capacity";
+                                    for(size_t slot=0;slot<refs.size();++slot) {
+                                        const auto& ref=refs[slot];
+                                        const auto* entry=safe->catalog_.find(ref.catalogId);
+                                        if(!entry || entry->uid!=ref.uid)
+                                            return "Saved VST3 missing/changed in current catalog: "+
+                                                ref.catalogId;
+                                        const auto binary=std::find_if(
+                                            result.loadedStates.begin(),
+                                            result.loadedStates.end(),
+                                            [&](const armix::shows::BinaryState& b) {
+                                                return b.sha256.equalsIgnoreCase(ref.stateSha256);
+                                            });
+                                        if(binary==result.loadedStates.end() ||
+                                           binary->bytes.getSize()>8U*1024U*1024U)
+                                            return "Verified vendor binary state missing: "+
+                                                ref.catalogId;
+                                        selections[lane][slot]={
+                                            entry->key(),entry->path,entry->name,entry->uid};
+                                        auto& target=restores[lane][slot];
+                                        target.present=true;
+                                        target.bypass=ref.bypass;
+                                        target.binary=binary->bytes;
+                                    }
+                                    return {};
+                                };
+                                for(int lane=0;lane<LiveDryRoutingLab::fxSlots &&
+                                               error.isEmpty();++lane) {
+                                    if(lane<LiveDryRoutingLab::count)
+                                        error=attach(lane,result.loaded.strips[
+                                            static_cast<size_t>(lane)].fx);
+                                    else error=attach(lane,result.loaded.aux[
+                                        static_cast<size_t>(
+                                            lane-LiveDryRoutingLab::count)].fx);
+                                }
+                                if(error.isEmpty()) {
+                                    safe->closePluginEditor();
+                                    error=safe->engine_.applyDryRoutingLab(
+                                        command,selections,&restores);
+                                }
                             } catch(const std::exception& ex) {
-                                error="Native DRY Show preparation exception: "+
+                                error="Native VST3 Show preflight exception: "+
                                     juce::String(ex.what());
                             } catch(...) {
-                                error="Native DRY Show preparation failed";
+                                error="Native VST3 Show preflight failed";
                             }
                         }
                         if(error.isEmpty()) {
@@ -1405,7 +1452,7 @@ private:
                                 static_cast<float>(result.loaded.masterGain));
                             safe->engine_.setMasterMuted(result.loaded.masterMute);
                             safe->engine_.setMasterMono(result.loaded.masterMono);
-                            safe->diagnostics_.record("NATIVE_DRY_SHOW_RECALLED",
+                            safe->diagnostics_.record("NATIVE_VST3_SHOW_RECALLED",
                                 result.showId+" | "+result.snapshotId);
                         }
                     }
@@ -1422,7 +1469,7 @@ private:
                     if(error.isNotEmpty())
                         safe->emitNotice("Native Show recall rejected: "+error,true);
                     else safe->emitNotice(
-                        "Verified DRY Show applied to current native graph. Output remains MUTED; confirm physical routing before unmuting.");
+                        "Verified native Show routing and VST3 state restored in a newly prepared graph. OUTPUT remains MUTED; verify physical routing and plugin sound before unmuting.");
                 });
             if(!started)return reject("Cannot launch native Show readback worker.");
             nativeShowBusy_=true;
