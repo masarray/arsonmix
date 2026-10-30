@@ -1,0 +1,41 @@
+name: FactoryFX upstream release intake (lightweight)
+on:
+  schedule:
+    # Detection only: no native build, no asset download, no release promotion.
+    - cron: '17 1 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: factoryfx-upstream-intake
+  cancel-in-progress: false
+
+jobs:
+  candidates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Observe pinned upstream repositories (metadata only)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/factoryfx_upstream_watch.py
+      - name: Propose upstream release intake, never silently ship
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ github.token }}
+          add-paths: config/factoryfx-upstream-candidates.json
+          commit-message: 'chore(factoryfx): record latest upstream release candidates'
+          branch: bot/factoryfx-release-candidates
+          delete-branch: true
+          title: 'FactoryFX: review new EQ/Verb/Enhancer releases (metadata only)'
+          body: |
+            Upstream release discovery only. NO plugin is qualified, downloaded,
+            licensed, shipped or enabled by this PR.
+            Inspect provenance, complete Windows VST3 ZIP, host UID/CID,
+            licence/entitlement and Show migration before separately promoting
+            an immutable SHA256 in config/factoryfx-approved-releases.json.
+            See docs/FACTORYFX_RELEASE_INTAKE_20261031.md.

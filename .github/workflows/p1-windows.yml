@@ -14,6 +14,10 @@ on:
       - 'tests/*.cpp'
       - 'scripts/package_native_windows.ps1'
       - 'scripts/verify_native_windows_artifact.ps1'
+      - 'scripts/factoryfx_release_bundle.py'
+      - 'config/factoryfx-approved-releases.json'
+      - 'config/factoryfx-notices/**'
+      - 'scripts/tests/test_factoryfx_release_bundle.py'
       - '.github/workflows/p1-windows.yml'
   # GUI-only PRs receive browser checks; they need not compile JUCE on every edit.
   # A merged GUI change is still packaged once on main, or manually for FAT.
@@ -28,6 +32,10 @@ on:
       - 'tests/ci_workflow_efficiency_test.mjs'
       - 'scripts/package_native_windows.ps1'
       - 'scripts/verify_native_windows_artifact.ps1'
+      - 'scripts/factoryfx_release_bundle.py'
+      - 'config/factoryfx-approved-releases.json'
+      - 'config/factoryfx-notices/**'
+      - 'scripts/tests/test_factoryfx_release_bundle.py'
       - '.github/workflows/p1-windows.yml'
   workflow_dispatch:
 
@@ -44,6 +52,11 @@ jobs:
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
+      - name: Fast offline FactoryFX release and integrity contract tests
+        shell: pwsh
+        run: |
+          python -m unittest discover -s scripts/tests -p test_factoryfx_release_bundle.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Checkout JUCE 8 pinned
         uses: actions/checkout@v4
         with:
@@ -102,6 +115,11 @@ jobs:
         shell: pwsh
         run: |
           & ./scripts/package_native_windows.ps1 -BuildDir build -OutputDir dist
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Stage ONLY legally approved and host-qualified Factory VST3 bundles
+        shell: pwsh
+        run: |
+          python scripts/factoryfx_release_bundle.py stage --lock config/factoryfx-approved-releases.json --output dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Independently verify release ZIP and embedded GUI/engine before upload
         shell: pwsh

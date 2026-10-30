@@ -18,3 +18,6 @@ FXF1 = qualified existing original EQ/Enhancer binaries, manifest/cache/picker, 
 FXF2 = genuine Reverb/Comp/Harmony/Color VST3 packages and presets, full six-effect bundle.
 FXF3 = atomic updates, Show migration, licensing robustness, measured low-spec GUI and long hardware soak.
 The source code milestones MS1/G5A are merged but **not proof that Factory FX is packed**. Actual release proof requires exact source artifact SHA256, whole VST3 resources, host tests, legal approval, Windows ZIP and real hardware FAT. #15 crackle remains independent release blocker.
+
+## 2026-10-31 executable release-intake addition
+The binding release-intake/Windows package implementation is in [FactoryFX cross-repo release handoff](FACTORYFX_RELEASE_INTAKE_20261031.md). All new ArSonEQ/ArSonVerb/ArSonKuPik public releases are monitored by low-cost metadata PR; they become factory modules **only after** owner-approved licence/entitlement and SHA-pinned host qualification. This updates deployment mechanics, **not** the original six-plugin goal or any claim of bundled binaries. A release candidate is not an installed FactoryFX module.

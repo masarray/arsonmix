@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "observed": [
+    {
+      "productId": "arson-eq",
+      "distributionRepo": "masarray/arson-eq",
+      "releaseTag": null,
+      "publishedAt": null,
+      "windowsVst3Asset": null
+    },
+    {
+      "productId": "arson-verb",
+      "distributionRepo": "masarray/arsonverb",
+      "releaseTag": null,
+      "publishedAt": null,
+      "windowsVst3Asset": null
+    },
+    {
+      "productId": "arsonkupik-enhancer",
+      "distributionRepo": "masarray/vst-enhancer",
+      "releaseTag": "v0.5.26",
+      "publishedAt": "2026-08-23T23:40:39Z",
+      "windowsVst3Asset": "ArSonKuPik-v0.5.26-Windows-x64-VST3.zip"
+    }
+  ]
+}
