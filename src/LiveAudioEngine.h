@@ -10,6 +10,8 @@
 #include "../engine/dsp/NativeMasterLoudness.h"
 #include "DiagnosticTone.h"
 #include "../engine/device/JuceIndependentClockDevice.h"
+#include "../engine/device/LiveVirtualCableOutput.h"
+#include "../engine/core/LiveStreamTapPolicy.h"
 #include "../engine/device/AsioPriorityDeviceManager.h"
 #include "../engine/device/AsioRegistryIdentityProbe.h"
 #include "../engine/device/DirectRouteFence.h"
@@ -238,6 +240,7 @@ public:
         directFence_.suspend();
         asioPinnedRegistration_ = {};
         asioRegistrationScope_ = "NONE";
+        streamOutput_.stop(); // stop independent OBS consumer before audio graph teardown
         independent_.close();
         detach();
         handoff_.resetAfterStop (graphOwned_.get());
@@ -254,6 +257,33 @@ public:
         deviceManager_.closeAudioDevice();
         dryRoutingLab_.poll();
     }
+
+    // Stream MAIN to a separately clocked WASAPI playback endpoint selected
+    // by the operator (e.g. VB-CABLE Input). No second MIX/FX engine.
+    juce::String connectStreamOutput(const juce::String& selected) {
+        if(!isOutputMuted() || independent_.active() ||
+           !directFence_.permitted() || !dryRoutingLab_.hasExplicitRoute() ||
+           diagnosticRoute_.load(std::memory_order_acquire)
+                !=armix::diagnostics::Route::normal)
+            return "MUTE hardware OUTPUT, APPLY real input routing and use verified DIRECT before stream setup";
+        const auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device)return "Direct capture/output hardware is not available";
+        return streamOutput_.open(selected,device->getName(),
+                                  device->getCurrentSampleRate(),
+                                  device->getCurrentBufferSizeSamples());
+    }
+    juce::String armStreamOutput(bool wanted) {
+        if(wanted && (independent_.active() || !directFence_.permitted() ||
+           !dryRoutingLab_.hasExplicitRoute() ||
+           routeReconfiguring_.load(std::memory_order_acquire) ||
+           diagnosticRoute_.load(std::memory_order_acquire)
+                !=armix::diagnostics::Route::normal))
+            return "Stream needs accepted native route and verified DIRECT clock";
+        return streamOutput_.arm(wanted) ? juce::String() :
+            juce::String("Stream endpoint is unavailable or has a device fault; reconnect explicitly");
+    }
+    void disconnectStreamOutput(){streamOutput_.stop();}
+    bool streamArmed() const noexcept{return streamOutput_.armed();}
 
     void setMonitorEnabled (bool value) noexcept { monitor_.store (value); }
     bool isMonitorEnabled() const noexcept { return monitor_.load(); }
@@ -1044,6 +1074,20 @@ public:
             : dryRoutingLab_.active() ? "NATIVE_ROUTE_STALE_FAIL_SILENT"
             : "UNPATCHED_SILENT");
         o->setProperty ("connected", d != nullptr && capture != nullptr);
+        // WASAPI virtual cable output is a second CLOCK only, not another
+        // DSP graph. These metrics are real ASRC frames, not driver XRUNs.
+        o->setProperty ("streamOutputReady",streamOutput_.ready());
+        o->setProperty ("streamOutputArmed",streamOutput_.armed());
+        o->setProperty ("streamOutputFault",streamOutput_.faulted());
+        o->setProperty ("streamOutputName",streamOutput_.name());
+        o->setProperty ("streamOutputEndpointHash",streamOutput_.endpointHash());
+        o->setProperty ("streamOutputRate",streamOutput_.rate());
+        o->setProperty ("streamOutputBridgeMs",streamOutput_.targetMs());
+        const auto streamFifo=streamOutput_.status();
+        o->setProperty ("streamOutputFrames",static_cast<double>(streamFifo.renderedFrames));
+        o->setProperty ("streamOutputUnderflow",static_cast<double>(streamFifo.underflowFrames));
+        o->setProperty ("streamOutputPriming",static_cast<double>(streamFifo.primingFrames));
+        o->setProperty ("streamOutputOverflow",static_cast<double>(streamFifo.overflowFrames));
         o->setProperty ("adaptiveClockActive", dual);
         o->setProperty ("adaptiveClockFaulted", dual && independent_.faulted());
         o->setProperty ("adaptiveClockMode", dual ? "INDEPENDENT_WASAPI_RENDER_MASTER" : "DIRECT");
@@ -1302,6 +1346,7 @@ private:
     std::atomic<std::uint64_t> directSuppressedFrames_ {0};
     juce::String startupFallbackReason_; // control-thread-only startup diagnostics
     armix::device::JuceIndependentClockDevice independent_;
+    armix::device::LiveVirtualCableOutput streamOutput_;
     std::optional<juce::AudioDeviceManager::AudioDeviceSetup> savedDirectSetup_;
     juce::AudioPluginFormatManager formats_;
     std::unique_ptr<Graph> graphOwned_ {std::make_unique<Graph>()};
@@ -1400,6 +1445,7 @@ private:
 
     void audioDeviceAboutToStart (juce::AudioIODevice* d) override
     {
+        streamOutput_.invalidateSource(); // source clock may have changed
         dryRoutingLab_.prepareDevice(d); // exact active mask, before callback
         if (!independent_.active())
         {
@@ -1444,6 +1490,7 @@ private:
 
     void audioDeviceStopped() override
     {
+        streamOutput_.invalidateSource(); // explicit reconnect required after device stop
         masterLoudness_.prepare (0.0); // clear validity across device epoch
         dryRoutingLab_.deviceStopped();
         deviceStopCount_.fetch_add (1, std::memory_order_relaxed);
@@ -1588,11 +1635,15 @@ private:
         // DirectFence was already checked above; no output to unknown device.
         if (dryRoutingLab_.active())
         {
-            const bool outputPermitted = monitor_.load(std::memory_order_relaxed)
-              && !routeReconfiguring_.load(std::memory_order_acquire)
-              && !masterMute_.load(std::memory_order_relaxed)
-              && activeDiagnosticRoute == armix::diagnostics::Route::normal
-              && !independent_.active();
+            const auto streamGate=armix::mixer::LiveStreamTapPolicy::evaluate(
+                dryRoutingLab_.active(),
+                directFence_.permitted() && !independent_.active(),
+                activeDiagnosticRoute == armix::diagnostics::Route::normal,
+                !routeReconfiguring_.load(std::memory_order_acquire),
+                !masterMute_.load(std::memory_order_relaxed),
+                monitor_.load(std::memory_order_relaxed),
+                streamOutput_.armed());
+            const bool outputPermitted=streamGate.renderMain;
             // Both native 10CH routing and the existing CH1 vendor FX chain
             // execute in ONE stereo output render pass. Never mix a parallel
             // CH1 output on top or copy vendor processors into another graph.
@@ -1652,6 +1703,16 @@ private:
                     fxMovePhase_.store(0,std::memory_order_release);
             }
             if(cycle.fadeOut)handoff_.endCycle(cycle); // RT pointer publish only
+            // STREAM1: publish the SAME post-FX, post-fader, de-clicked MAIN
+            // PCM once. The virtual endpoint never invokes MIX/VST3 again.
+            // Hardware monitor mute remains INDEPENDENT: streaming may run
+            // while every physical output on the current device is silent.
+            if(routed && streamGate.stream && nativeMain[0] && nativeMain[1])
+                streamOutput_.publish(nativeMain[0],nativeMain[1],samples);
+            if(!streamGate.hardware)
+                for(int channel=0;channel<outputChannels;++channel)
+                    if(outputs && outputs[channel])
+                        juce::FloatVectorOperations::clear(outputs[channel],samples);
             // MS3A2: loudness/dBTP measure the same selected hardware
             // destination as the actual MAIN render and FX move fade.
             const float* measured[2] = {nativeMain[0],nativeMain[1]};

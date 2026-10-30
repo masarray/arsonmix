@@ -1478,6 +1478,41 @@ private:
             nativeShowBusy_=true;
             return;
         }
+        // STREAM1: explicit companion WASAPI output for OBS virtual cable.
+        // Device selection, ASRC preparation and callback attach are CONTROL
+        // thread operations. Only the existing native mixer produces PCM.
+        if(action=="streamOutputConnect" ||
+           action=="streamOutputArm" || action=="streamOutputStop") {
+            juce::String error;
+            if(studioBackupBusy_ || nativeShowBusy_)
+                error="Complete active Show/backup operation before editing stream output";
+            else if(action=="streamOutputConnect") {
+                if(!value.isString() || value.toString().length()>240)
+                    error="Select a real named Windows playback endpoint";
+                else error=engine_.connectStreamOutput(value.toString());
+            } else if(action=="streamOutputArm") {
+                if(!value.isBool()) error="Expected explicit Stream ARM true/false";
+                else error=engine_.armStreamOutput(bool(value));
+            } else engine_.disconnectStreamOutput();
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("ok",error.isEmpty());
+            ack->setProperty("error",error);
+            const auto latest=engine_.status();
+            ack->setProperty("ready",latest.getProperty("streamOutputReady",false));
+            ack->setProperty("armed",latest.getProperty("streamOutputArmed",false));
+            ack->setProperty("endpoint",latest.getProperty("streamOutputName",""));
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                "arMixStreamOutputAck",juce::var(ack.release()));
+            diagnostics_.record(error.isEmpty()?"STREAM_OUTPUT_CHANGED":"STREAM_OUTPUT_REJECTED",
+                error.isNotEmpty()?error:action);
+            return emitNotice(error.isNotEmpty()?error:
+                (action=="streamOutputStop"?"OBS virtual-cable output disconnected":
+                 action=="streamOutputArm"?(engine_.streamArmed()
+                    ?"LIVE STREAM ARMED — choose cable recording input in OBS":
+                     "LIVE STREAM DISARMED"):
+                    "WASAPI cable opened. ARM STREAM explicitly to send live MAIN."),
+                error.isNotEmpty());
+        }
         if (action == "routingDryStop")
         {
             // Backward-compatible command name: CLEAR PATCH keeps the one

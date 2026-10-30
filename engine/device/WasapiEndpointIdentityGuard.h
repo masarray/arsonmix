@@ -75,6 +75,51 @@ public:
         return {};
     }
 
+
+    // ASIO MAIN -> independent WASAPI virtual-cable output requires render-
+    // only identity verification. No invented/unused WASAPI capture endpoint.
+    struct RenderSelection {
+        std::wstring name, id;
+        bool valid() const noexcept{return !name.empty() && !id.empty();}
+    };
+    struct RenderResult {
+        RenderSelection selection;
+        juce::String error;
+        bool ok() const noexcept{return selection.valid() && error.isEmpty();}
+    };
+    static RenderResult resolveRender(const juce::String& label) {
+        if(label.isEmpty())return {{}, "Choose an explicit stream output endpoint"};
+        const HRESULT hr=CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
+        if(FAILED(hr) && hr!=RPC_E_CHANGED_MODE)
+            return {{}, "Cannot inspect Windows render endpoint identities"};
+        struct Guard {bool owns;~Guard(){if(owns)CoUninitialize();}}
+            guard{hr==S_OK||hr==S_FALSE};
+        Microsoft::WRL::ComPtr<IMMDeviceEnumerator> device;
+        if(FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator),nullptr,
+                 CLSCTX_INPROC_SERVER,IID_PPV_ARGS(device.GetAddressOf()))))
+            return {{}, "Windows render endpoint enumerator unavailable"};
+        std::vector<EndpointIdentityPolicy::Endpoint> endpoints;
+        if(!scan(device.Get(),eRender,EndpointIdentityPolicy::Role::render,endpoints))
+            return {{}, "Cannot enumerate active Windows playback endpoints"};
+        RenderSelection found;
+        int n=0;
+        const std::wstring wanted(label.toWideCharPointer());
+        for(const auto& e:endpoints)
+            if(e.name==wanted){found={e.name,e.id};++n;}
+        if(n!=1)return {{}, n==0 ? "Selected playback endpoint missing" :
+                     "Duplicate endpoint names; select an unambiguous device"};
+        return {std::move(found),{}};
+    }
+    static juce::String verifyRender(const RenderSelection& expected,
+                                     const juce::String& openedName) {
+        if(!expected.valid() ||
+           expected.name!=std::wstring(openedName.toWideCharPointer()))
+            return "WASAPI opened an unexpected playback endpoint";
+        auto current=resolveRender(openedName);
+        if(!current.ok())return current.error;
+        return current.selection.id==expected.id ? juce::String() :
+               juce::String("WASAPI playback endpoint ID changed during open");
+    }
     static juce::String fingerprint (const std::wstring& id)
     {
         // Diagnostic correlation only, never a cryptographic identity.
@@ -161,6 +206,19 @@ public:
     {
         return "Windows WASAPI endpoint identity guard unavailable";
     }
+    struct RenderSelection {
+        std::wstring name,id;
+        bool valid() const noexcept{return false;}
+    };
+    struct RenderResult {
+        RenderSelection selection;
+        juce::String error;
+        bool ok() const noexcept{return false;}
+    };
+    static RenderResult resolveRender(const juce::String&)
+    {return {{}, "WASAPI virtual cable requires Windows"};}
+    static juce::String verifyRender(const RenderSelection&,const juce::String&)
+    {return "WASAPI virtual cable requires Windows";}
     static juce::String fingerprint (const std::wstring&) { return {}; }
 };
 } // namespace armix::device

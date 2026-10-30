@@ -23,6 +23,14 @@
     "#arDiagnosticCopy{color:#e1f7f4;background:#166052;border:1px solid #34c8ac;border-radius:4px;padding:7px 12px;cursor:pointer}" +
     "#arDiagnosticCopyStatus{color:#8cdec9;font-size:10px}" +
     "#arSmartClockToggle{color:#f5eadb;background:#284961;border:1px solid #9bb2c5;border-radius:4px;padding:7px 12px;cursor:pointer}";
+  css.textContent +=
+    "#arStreamStrip{margin-top:9px;padding:8px 10px;border:1px solid #385b67;background:#10252f;color:#c3e2e9;font-size:10px}" +
+    "#arStreamStrip strong{font-size:11px;font-weight:500;color:#b0e9e2}" +
+    "#arStreamControls{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-top:6px}" +
+    "#arStreamDevice{flex:1;min-width:175px;max-width:290px;background:#102d3b;color:#e4f0f4;border:1px solid #547582;border-radius:3px;padding:5px;font-size:10px}" +
+    "#arStreamControls button{border:1px solid #527682;background:#214051;color:#e4f2f5;border-radius:3px;padding:5px 8px;font-size:10px;cursor:pointer}" +
+    "#arStreamControls button:disabled{opacity:.42;cursor:default}" +
+    "#arStreamStatus{margin-top:6px;color:#accad2;line-height:1.45;overflow-wrap:anywhere}";
   // R0 routing workspace. One static native-only skin sharing the main
   // console's graphite/steel/teal vocabulary. No mouse-hover repaint,
   // compositor filters, animated shadows, canvas or extra scheduler.
@@ -223,6 +231,14 @@
     '<div class="arSignalActions"><button id="arSignalMonitor">MUTE OUTPUT</button>' +
       '<button id="arSignalDry">DRY TEST OFF</button><button id="arSignalSetup">AUDIO SETUP</button>' +
     '<button id="arSignalLogs">OPEN DIAGNOSTIC LOG</button><button id="arOpenRoutingLab">ROUTING · 10 CH</button></div>' +
+    '<section id="arStreamStrip" aria-label="OBS virtual cable output">' +
+      '<strong>LIVE STREAM OUT · OBS / VIRTUAL CABLE</strong>' +
+      '<div id="arStreamControls"><select id="arStreamDevice" aria-label="WASAPI virtual cable playback device"><option value="">Select actual Windows playback endpoint...</option></select>' +
+      '<button id="arStreamRefresh" type="button" title="Refresh real Windows playback devices">REFRESH</button>' +
+      '<button id="arStreamConnect" type="button">CONNECT</button>' +
+      '<button id="arStreamArm" type="button">ARM STREAM</button>' +
+      '<button id="arStreamStop" type="button">DISCONNECT</button></div>' +
+      '<div id="arStreamStatus" role="status">Select installed virtual cable playback, then CONNECT while hardware output is MUTED.</div></section>' +
     '<div id="arDiagnosticLab"><label for="arDiagnosticMode">P0 AUDIO ISOLATION</label>' +
       '<select id="arDiagnosticMode"><option value="NORMAL">NORMAL</option>' +
       '<option value="DRY_THROUGH">DRY THROUGH (0 FX)</option>' +
@@ -1426,6 +1442,27 @@
     el("arDiagnosticMode").value=d.diagnosticRoute||"NORMAL";
     el("arSignalMonitor").textContent=d.monitor?"MUTE OUTPUT":"UNMUTE OUTPUT";
     el("arSignalDry").textContent=d.dryTest?"DRY TEST ON":"DRY TEST OFF";
+    // Live STREAM endpoint is a separate WASAPI playback clock with an
+    // operator-selected cable. A physical MAIN mute does NOT mute STREAM.
+    // Keep the controls compact; never fabricate "OBS connected" status.
+    const streamConnected=!!d.streamOutputReady;
+    const streamArmed=!!d.streamOutputArmed;
+    el("arStreamConnect").disabled=!!d.monitor || !!d.adaptiveClockActive ||
+      !d.directRouteAuthorized || !d.dryRoutingLab?.acceptedRoute;
+    el("arStreamArm").disabled=!streamConnected || !!d.streamOutputFault ||
+      !d.dryRoutingLab?.acceptedRoute || !!d.adaptiveClockActive;
+    el("arStreamStop").disabled=!streamConnected && !d.streamOutputFault;
+    setTextIfChanged(el("arStreamArm"),streamArmed?"DISARM STREAM":"ARM STREAM");
+    setTextIfChanged(el("arStreamStatus"),
+      d.streamOutputFault?"STREAM FAULT / SOURCE CLOCK CHANGED · DISCONNECT AND RECONNECT":
+      !streamConnected?"STREAM DISCONNECTED · choose installed WASAPI cable playback endpoint":
+      (streamArmed?"STREAM LIVE":"STREAM CONNECTED · not armed")+
+      " · "+String(d.streamOutputName||"")+
+      " · "+Math.round(Number(d.streamOutputRate)||0)+" Hz / ASRC "+
+      (Number(d.streamOutputBridgeMs)||0).toFixed(1)+" ms"+
+      " · FIFO underflow "+(d.streamOutputUnderflow||0)+
+      " / overflow "+(d.streamOutputOverflow||0)+
+      ". OBS must capture matching CABLE OUTPUT.");
     const trial=captureFaultEvidence(d);
     el("arSmartClockToggle").textContent=d.adaptiveClockActive?
       "SMART CLOCK: INDEPENDENT (BETA)":trial?"TRY INDEPENDENT CLOCK (BETA)":"SMART CLOCK: DIRECT";
@@ -1453,7 +1490,7 @@
     if(fxInfo)el("arHealthPanel").textContent+=" | FX: "+fxInfo;
     el("arSignalFooter").textContent=(d.driver||"Audio")+" · "+(d.rate||0)+" Hz / "+(d.buffer||0)+
       " samples · "+(d.deviceInputChannels||0)+" active input / "+(d.deviceOutputChannels||0)+" active output channels · "+
-      (d.latencySamples||0)+" samples plugin latency. Choose hardware output using AUDIO SETUP; Main L/R and Streaming are UI previews.";
+      (d.latencySamples||0)+" samples plugin latency. Hardware MAIN via AUDIO SETUP; OBS STREAM uses separately armed WASAPI cable with ASRC buffering. No 0ms latency claim.";
   }
   // Only a fully initialized WebView2 ArSonMix page sends this. An old-IE
   // navigation error can never mark the native engine GUI as loaded.
@@ -1478,7 +1515,50 @@
     }
     repaint(d);
   });
-  el("arSignalOpen")?.addEventListener("click",()=>{overlay.classList.add("open");repaint(state);});
+  let streamPending=false;
+  const requestStreamInventory=()=>
+    api.emitEvent("arMixAction",{action:"audioDeviceInventory"});
+  api.addEventListener("arMixAudioDeviceInventory",data=>{
+    const available=Array.isArray(data?.types)?data.types.find(x=>x.name==="Windows Audio"):null;
+    const options=Array.isArray(available?.outputs)?available.outputs:[];
+    const select=el("arStreamDevice");
+    const chosen=select.value||state.streamOutputName||"";
+    select.replaceChildren(new Option("Select actual Windows playback endpoint...",""));
+    for(const name of [...new Set(options.filter(x=>typeof x==="string"&&x.length<=240))])
+      select.add(new Option(name,name));
+    if([...select.options].some(x=>x.value===chosen))select.value=chosen;
+  });
+  el("arStreamRefresh").addEventListener("click",requestStreamInventory);
+  el("arStreamConnect").addEventListener("click",()=>{
+    if(streamPending || state.monitor || state.adaptiveClockActive)return;
+    const selected=el("arStreamDevice").value;
+    if(!selected){
+      setTextIfChanged(el("arStreamStatus"),"Select a real Windows playback device; install a virtual cable if none exists.");
+      return;
+    }
+    streamPending=true;
+    api.emitEvent("arMixAction",{action:"streamOutputConnect",value:selected});
+  });
+  el("arStreamArm").addEventListener("click",()=>{
+    if(streamPending || !state.streamOutputReady)return;
+    streamPending=true;
+    api.emitEvent("arMixAction",{action:"streamOutputArm",value:!state.streamOutputArmed});
+  });
+  el("arStreamStop").addEventListener("click",()=>{
+    if(streamPending)return;
+    streamPending=true;
+    api.emitEvent("arMixAction",{action:"streamOutputStop"});
+  });
+  api.addEventListener("arMixStreamOutputAck",d=>{
+    streamPending=false;
+    if(!d?.ok)setTextIfChanged(el("arStreamStatus"),
+      "STREAM REJECTED · "+String(d?.error||"Device or native route unavailable"));
+  });
+  el("arSignalOpen")?.addEventListener("click",()=>{
+    overlay.classList.add("open");
+    requestStreamInventory();
+    repaint(state);
+  });
   el("arSignalClose").addEventListener("click",()=>overlay.classList.remove("open"));
   el("arSignalMonitor").addEventListener("click",()=>api.emitEvent("arMixAction",{action:"monitor",value:!state.monitor}));
   el("arSignalDry").addEventListener("click",()=>api.emitEvent("arMixAction",{action:"dryTest",value:!state.dryTest}));

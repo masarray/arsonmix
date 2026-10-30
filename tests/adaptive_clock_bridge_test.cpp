@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/device/AdaptiveClockBridge.h"
 #include "../engine/device/ClockBridgeSizing.h"
+#include "../engine/core/LiveStreamTapPolicy.h"
 #include "../engine/device/BridgeContinuityGate.h"
 #include <array>
 #include <cmath>
@@ -213,8 +214,47 @@ static void testLiveBridgeContinuityFailback()
     check(tripped); // proven real FIR/FIFO starvation, not synthetic counters
 }
 
+
+static void testLiveStreamGateAndObsClock()
+{
+    using P=armix::mixer::LiveStreamTapPolicy;
+    const auto onlyOBS=P::evaluate(true,true,true,true,true,false,true);
+    check(onlyOBS.renderMain && onlyOBS.stream && !onlyOBS.hardware);
+    const auto onlyHardware=P::evaluate(true,true,true,true,true,true,false);
+    check(onlyHardware.renderMain && onlyHardware.hardware && !onlyHardware.stream);
+    const auto both=P::evaluate(true,true,true,true,true,true,true);
+    check(both.renderMain && both.hardware && both.stream);
+    for(int bit=0;bit<5;++bit){
+        bool gates[5]={true,true,true,true,true};
+        gates[bit]=false;
+        auto g=P::evaluate(gates[0],gates[1],gates[2],gates[3],gates[4],
+                           true,true);
+        check(!g.renderMain && !g.hardware && !g.stream);
+    }
+    const auto muted=P::evaluate(true,true,true,true,true,false,false);
+    check(!muted.renderMain && !muted.hardware && !muted.stream);
+    // A separate OBS playback endpoint requires real ASRC buffering, NOT a
+    // 0ms claim. Existing FIR testRate() covers 44.1/48k and ±300ppm clocks.
+    using namespace armix::device;
+    const auto cfg=ClockBridgeSizing::choose(48000.,44100.,128,256,
+                                             AdaptiveClockBridge::taps,
+                                             32768,24.);
+    check(cfg.valid && cfg.targetMs>=24.0);
+    AdaptiveClockBridge asrc;
+    check(asrc.prepare(48000.,44100.,2,32768,cfg.targetMs));
+    std::array<float,128> mainL{},mainR{};
+    const float* main[2]={mainL.data(),mainR.data()};
+    mainL.fill(.15f);mainR.fill(-.12f);
+    for(int n=0;n<200;++n)
+        check(asrc.push(main,2,128)==128);
+    const auto stats=asrc.status();
+    check(stats.pushedFrames==25600);
+    check(stats.overflowFrames==0);
+}
+
 int main()
 {
+    testLiveStreamGateAndObsClock();
     testLiveBridgeContinuityFailback();
     testNonFiniteCapture();
     const double passband = spectralRms (1000.);
