@@ -1,5 +1,8 @@
 # ArSonMix — ARD v2.0: Unified Mixer, Native Hardware I/O, FX Rack and AUX/Bus Routing
 
+**R6 engineering correction / precedence (2026-10-30):** [current code audit and implementable native slices](R6_CURRENT_STATE_ARCHITECTURE_EXECUTION_20261030.md) and [professional GUI operator contract](R6_OPERATOR_WORKFLOW_CONTRACT_20261030.md) override earlier statements in this file that still refer to G1/G2 as future work. Latest audited main@8251bd6e already includes L2 #171 and G3 #168; protect immutable [L2 #176](https://github.com/masarray/arsonmix/issues/176), no master fader shrink or top toolbar. Source/channel MONO/STEREO coupling, stereo-only VST adapter, non-format-aware sends and only MAIN HW0/1 remain open; don't mark future typed groups, master FX, hardware monitor outs or full Show LIVE. Preserve one native graph, plugin ownership and revisioned epoch ACK. Implementation issues #173/#174/#175 then #95; #15 hardware zero-VST release gate runs parallel.
+
+
 **ADR R5 issue map:** [#173](https://github.com/masarray/arsonmix/issues/173) source/channel native format; [#174](https://github.com/masarray/arsonmix/issues/174) typed bus/send conversions; [#175](https://github.com/masarray/arsonmix/issues/175) real physical output patch; #95 FX/PDC, #15 hardware FAT. #143 was CLOSED after earlier patch UX and must not be treated as output plan completion.
 
 

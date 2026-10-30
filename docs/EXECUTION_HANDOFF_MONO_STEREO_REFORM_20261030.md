@@ -1,5 +1,8 @@
 # EXECUTION HANDOFF — Mono/Stereo Native Channel / Bus Reform
 
+**R6 current-state amendment (2026-10-30):** [R6 native roadmap](R6_CURRENT_STATE_ARCHITECTURE_EXECUTION_20261030.md) and [L2-preserving GUI contract](R6_OPERATOR_WORKFLOW_CONTRACT_20261030.md). Re-read current main SHA; original main@890cc310 snapshot below is historical. L2 GUI #171 is MERGED and frozen by #176; G3 #168 is MERGED. Don't rebuild old mixer shell. Start #173 whole independent channel mono/stereo native+GUI slice, then #174 typed buses/sends, #175 multi-output, #95 PDC/multi-FX; #15 physical crackle in parallel. No decorative channel toggle / fake Master FX and no extra height in CH1–10 or MASTER.
+
+
 **Current execution issues:** [MS1 #173](https://github.com/masarray/arsonmix/issues/173), [MS2 #174](https://github.com/masarray/arsonmix/issues/174), [MS3 #175](https://github.com/masarray/arsonmix/issues/175), then #95 multi-insert/PDC. #143 historical CLOSED, #170 umbrella, #15 hardware FAT blocker. Cross-thread work and PR ownership follow these numbers and latest HEAD.
 
 Date 2026-10-30 | ADR: ADR_R5_NATIVE_MONO_STEREO_CHANNEL_BUS_ROUTING_20261030.md

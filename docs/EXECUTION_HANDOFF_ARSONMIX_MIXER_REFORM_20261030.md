@@ -1,5 +1,8 @@
 # ARSONMIX — 2026-10-30 NEXT-THREAD EXECUTION HANDOFF (CANONICAL)
 
+**R6 override (2026-10-30):** This historical G1/G2 handoff is NOT the current work queue. [Audited R6 architecture/current status](R6_CURRENT_STATE_ARCHITECTURE_EXECUTION_20261030.md), [operator UX contract](R6_OPERATOR_WORKFLOW_CONTRACT_20261030.md) and #176 L2 shell supersede it. Main@8251bd6e includes G1/G2, G3 and L2; next milestone #173 native mono/stereo, then #174 typed FX/group buses, #175 multi-hardware outputs, #95 FX/PDC and parallel #15. Keep all 11 faders linked, original VST CH1 Orbit, native ACK/MUTE, and existing left rail. Treat old statements below as historical for their date.
+
+
 **This is the starting point for a new implementation thread.** Read in this order:
 1. [PRD v2.0 — operator UX and bus requirements](PRD_ARSONMIX_PRO_MIXER_WORKSPACE_ROUTING_20261030.md)
 2. [ARD v2.0 — graph, I/O, safety, data model, milestones, tests](ARD_PRD_MIXER_IO_AUX_BUS_REFORM_20261030.md)
