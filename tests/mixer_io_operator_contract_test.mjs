@@ -26,7 +26,7 @@ test('MS3A MAIN physical output patch stages through existing muted native route
   assert.match(gui,/s\.outputPorts/);
   assert.match(gui,/__arMixStageMainOutputs/);
   assert.match(gui,/\.arIOMainOutput/);
-  assert.match(gui,/remaining output channels stay silent|Remaining output channels stay silent/);
+  assert.match(gui,/Only native-ACKed MAIN\/MONITOR pairs can carry sound/);
   assert.match(gui,/internal stereo FX returns/);
   assert.match(monitor,/window\.__arMixStageMainOutputs/);
   assert.match(monitor,/mainOutputs:draftMainOutputs/);
@@ -113,4 +113,22 @@ test('IO-MATRIX uses only verified pins, dual-step stereo draft and native ACK w
   assert.doesNotMatch(css,/backdrop-filter\s*:|filter\s*:\s*blur/);
   assert.match(main,/assets\/audio-interface\.svg/);
   assert.match(cmake,/web\/assets\/audio-interface\.svg/);
+});
+
+test('MS3B independent physical MONITOR publishes in existing native ACK transaction',()=>{
+  const native=read('src/LiveDryRoutingLab.h');
+  const graph=read('engine/core/LiveChannelFxGraph.h');
+  const block=read('engine/core/PreparedMixerBlock.h');
+  assert.match(gui,/matrixOutputPin\(row,pin\)/);
+  assert.match(gui,/arIOMonitorSendGrid/);
+  assert.match(gui,/__arMixStageMonitorPatch/);
+  assert.match(gui,/__arMixStageMonitorSend/);
+  assert.match(monitor,/window\.__arMixStageMonitorPatch/);
+  assert.match(monitor,/window\.__arMixStageMonitorSend/);
+  assert.match(monitor,/monitorOutputs:draftMonitorOutputs\.slice\(\)/);
+  assert.match(native,/setMonitorOutputBus/);
+  assert.match(native,/monitorPeakL_/);
+  assert.match(graph,/monitorEnabled_/);
+  assert.match(block,/monitorGains/);
+  assert.doesNotMatch(gui,/AudioContext|AudioWorklet|createPluginInstance|processBlock/);
 });

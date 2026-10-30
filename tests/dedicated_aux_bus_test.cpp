@@ -163,4 +163,55 @@ int main(){
     for(int ch=0;ch<stripCount;++ch)assert(meters.channelPeak[ch]==0.f);
     for(int b=0;b<auxBusCount;++b)assert(meters.auxPeak[b]==0.f);
 
+    // MS3B independent MAIN/MONITOR PCM. Two physical channels are routed
+    // to different buses in ONE pass; monitor does not rerun any VST.
+    {
+        ChannelRoutingConfig cfg2;
+        cfg2.stripsAndMaster.strips[0]=
+            {SourceMode::mono,0,-1,1.f,0.f,false,false};
+        cfg2.stripsAndMaster.strips[1]=
+            {SourceMode::mono,1,-1,1.f,0.f,false,false};
+        std::array<int,2> pins{0,1};
+        SendRequest sends2;
+        sends2.toMaster[0]=true;
+        // SendRequest is legacy MAIN-ON by default. Explicitly disable
+        // CH2→MAIN; otherwise both signals mix into MAIN and this is not
+        // a genuine independent output bus regression.
+        sends2.toMaster[1]=false;
+        // CH2 is MONITOR-only even when it does NOT feed MAIN.
+        PreparedRenderGraph routed;
+        RenderError failure;
+        assert(PreparedRenderGraph::compile(cfg2,pins,sends2,routed,failure));
+        PreparedMixerBlock single(routed,frames);
+        std::array<float,frames> mainL{},mainR{},monL{},monR{};
+        std::array<float,frames> mic1{},mic2{};
+        mic1.fill(.2f);mic2.fill(.4f);
+        const float* physical[2]{mic1.data(),mic2.data()};
+        std::array<float,stripCount+auxBusCount> monGains{};
+        monGains[1]=.75f;
+        int firstFx=0,secondFx=0,masterFx=0;
+        auto fxOnce=[&](int lane,float*,float*,int) noexcept {
+            if(lane==0)++firstFx;
+            if(lane==1)++secondFx;
+            if(lane==-1)++masterFx;
+        };
+        const auto beforeMonitor=allocations.load(std::memory_order_relaxed);
+        assert(single.process(physical,2,mainL.data(),mainR.data(),frames,
+                              fxOnce,nullptr,nullptr,&monGains,
+                              monL.data(),monR.data()));
+        assert(allocations.load(std::memory_order_relaxed)==beforeMonitor);
+        assert(firstFx==1&&secondFx==1&&masterFx==1);
+        const float monoCenter=std::sqrt(.5f);
+        for(int f=0;f<frames;++f) {
+            assert(near(mainL[f],.2f*monoCenter));
+            assert(near(mainR[f],.2f*monoCenter));
+            assert(near(monL[f],.4f*monoCenter*.75f));
+            assert(near(monR[f],.4f*monoCenter*.75f));
+        }
+        // Output buffers overlap: no implicit mixing or dual-ownership.
+        assert(!single.process(physical,2,mainL.data(),mainR.data(),frames,
+                               fxOnce,nullptr,nullptr,&monGains,
+                               mainL.data(),mainR.data()));
+    }
+
 }

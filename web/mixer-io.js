@@ -7,6 +7,7 @@
   const host=document.querySelector('.workbench');
   if(!mixer||!host)return;
   let mode='FX', lastStatus={}, deviceInventory=null, ioTab='inputs', lastSignature='';
+  let monitorSendsExpanded=false;
   const el=id=>document.getElementById(id);
   const node=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n;};
   const route=()=>window.__arMixRouteView?.()||{ports:[],outputPorts:[],draftRoutes:[],draftSends:[],draftAux:[],ready:false,epoch:0,monitor:false};
@@ -233,7 +234,7 @@
     const wrap=node('section','arIOCrosspatch');
     wrap.setAttribute('aria-label',kind==='inputs'?'Physical input crosspatch':'Physical output crosspatch');
     const controls=node('div','arIOMatrixToolbar');
-    const headline=node('strong','',kind==='inputs'?'INPUT PATCH · M / L / R':'OUTPUT PATCH · MAIN L / R');
+    const headline=node('strong','',kind==='inputs'?'INPUT PATCH · M / L / R':'OUTPUT PATCH · MAIN / MONITOR L / R');
     const pager=node('div','arIOPager');
     const prev=node('button','arIOPageButton','‹');prev.type='button';prev.dataset.ioPage='-1';
     prev.disabled=page===0;prev.setAttribute('aria-label','Previous physical port bank');
@@ -256,13 +257,15 @@
       h.setAttribute('role','columnheader');
       grid.appendChild(h);
     }
-    const rowCount=kind==='inputs'?10:2;
+    const rowCount=kind==='inputs'?10:(s.draftMonitorOutputs?.length===2?4:2);
     for(let i=0;i<rowCount;i++){
       const r=kind==='inputs'?matrixInputState(s,i):null;
       const draft=kind==='inputs'?channelState(s,i):null;
       const label=node('div','arIOMatrixRowName');
-      label.append(node('strong','',kind==='inputs'?'CH '+String(i+1).padStart(2,'0'):i===0?'MAIN LEFT':'MAIN RIGHT'),
-        node('small','',kind==='inputs'?matrixLogicalName(i):'STEREO MAIN'));
+      const monRow=kind==='outputs'&&i>=2;
+      label.append(node('strong','',kind==='inputs'?'CH '+String(i+1).padStart(2,'0'):
+        (monRow?'MONITOR ':'MAIN ')+(i%2===0?'LEFT':'RIGHT')),
+        node('small','',kind==='inputs'?matrixLogicalName(i):monRow?'POST MIX':'STEREO MAIN'));
       if(kind==='inputs'&&r?.mode==='STEREO'){
         const sides=node('div','arIOMatrixSides');
         for(const side of ['L','R']){
@@ -285,24 +288,25 @@
         format.appendChild(select);
         format.appendChild(node('small','',r?.mode==='STEREO'?'CLICK L OR R':r?.mode==='BUS'?'BUS · ROUTING':(draft?.channelFormat==='STEREO'?'CH L/R':'CH M')));
       }else{
-        format.append(node('strong','',i===0?'LEFT':'RIGHT'),node('small','','HW OUTPUT'));
+        format.append(node('strong','',i%2===0?'LEFT':'RIGHT'),node('small','',monRow?'MON BUS':'HW OUTPUT'));
       }
       grid.append(label,format);
       for(const pin of shown){
         const v=kind==='inputs'?r:null;
         const assigned=kind==='inputs'?(v?.mode==='MONO'&&v?.left===pin?'M':
           v?.mode==='STEREO'&&v?.left===pin?'L':v?.mode==='STEREO'&&v?.right===pin?'R':''):
-          ((s.draftMainOutputs?.length===2?s.draftMainOutputs:s.mainOutputs||[])[i]===pin?(i===0?'L':'R'):'');
+          ((monRow?s.draftMonitorOutputs:(s.draftMainOutputs?.length===2?
+             s.draftMainOutputs:s.mainOutputs||[]))[i%2]===pin?(i%2===0?'L':'R'):'');
         const button=node('button','arIOMatrixCell',assigned||'·');
         button.type='button';button.dataset.ioMatrixPin=String(pin);
         button.dataset.ioMatrixRow=String(i);button.dataset.ioMatrixKind=kind;
         button.dataset.assigned=assigned?'true':'false';
         const accepted=kind==='inputs'?s.acceptedRoute?.channels?.[i]:null;
         const live=kind==='inputs'?(accepted?.mode===v?.mode&&accepted?.left===v?.left&&accepted?.right===v?.right):
-          ((s.mainOutputs||[])[i]===pin);
+          ((monRow?s.monitorOutputs:s.mainOutputs||[])[i%2]===pin);
         button.dataset.stage=live?'live':'draft';
         button.setAttribute('role','gridcell');
-        button.setAttribute('aria-label',(kind==='inputs'?'Channel '+(i+1):i===0?'MAIN left':'MAIN right')+
+        button.setAttribute('aria-label',(kind==='inputs'?'Channel '+(i+1):(monRow?'MONITOR ':'MAIN ')+(i%2===0?'left':'right'))+
           ' hardware pin '+(pin+1)+(assigned?' assigned '+assigned:' not assigned'));
         button.setAttribute('aria-pressed',String(!!assigned));
         button.title=assigned?assigned+' · HW '+(pin+1):'Patch HW '+(pin+1);
@@ -368,20 +372,38 @@
     }
     lastSignature='';refresh();
   }
-  function matrixOutputPin(side,pin){
-    const s=route(),ports=matrixPorts(s,'outputs');
-    if(!hardwareReady(s)||!ports.includes(pin))return matrixSay('Output pin unavailable or APPLY pending.');
-    const chosen=s.draftMainOutputs?.length===2?s.draftMainOutputs:
+  // Both physical buses belong to the SAME native routing transaction.
+  function matrixOutputPin(row,pin){
+    const s=route(),ports=matrixPorts(s,'outputs'),mon=row>=2,side=row%2;
+    if(!hardwareReady(s)||!ports.includes(pin))
+      return matrixSay('Output pin unavailable or native APPLY pending.');
+    const chosen=mon?s.draftMonitorOutputs:s.draftMainOutputs?.length===2?s.draftMainOutputs:
       s.mainOutputs?.length===2?s.mainOutputs:ports.slice(0,2);
-    if(!Array.isArray(chosen)||chosen.length!==2)return matrixSay('MAIN output pair is unavailable: choose a verified stereo device.');
-    const pair=chosen.slice(),oldPin=pair[side];
-    if(oldPin===pin)return matrixSay('This output is already assigned.');
+    if(!Array.isArray(chosen)||chosen.length!==2)
+      return matrixSay('Enable a verified stereo output pair first.');
+    const pair=chosen.slice(),old=pair[side];
+    if(old===pin)return matrixSay('This output is already assigned.');
     pair[side]=pin;
-    // A 2-out interface must allow L/R exchange without ever staging L==R.
-    if(pair[0]===pair[1])pair[1-side]=oldPin;
-    if(pair[0]===pair[1])return matrixSay('MAIN LEFT and RIGHT require distinct hardware output pins.');
-    const result=window.__arMixStageMainOutputs?.(pair[0],pair[1]);
-    matrixSay(result?.ok?'MAIN DRAFT · HW '+(pair[0]+1)+'/'+(pair[1]+1)+' · MUTE + APPLY':result?.error||'Output patch rejected');
+    if(pair[0]===pair[1])pair[1-side]=old; // atomic L/R swap
+    if(pair[0]===pair[1])return matrixSay('Different output pins required.');
+    const result=mon?window.__arMixStageMonitorPatch?.(pair[0],pair[1]):
+      window.__arMixStageMainOutputs?.(pair[0],pair[1]);
+    matrixSay(result?.ok?(mon?'MONITOR':'MAIN')+' DRAFT · HW '+
+      (pair[0]+1)+'/'+(pair[1]+1)+' · MUTE + APPLY':result?.error||'Output patch rejected');
+    lastSignature='';refresh();
+  }
+  function stageMonitorEnable(enabled){
+    const s=route(),ports=matrixPorts(s,'outputs');
+    if(!hardwareReady(s))return matrixSay('Select a verified DIRECT device.');
+    const main=s.draftMainOutputs?.length===2?s.draftMainOutputs:
+      s.mainOutputs?.length===2?s.mainOutputs:ports.slice(0,2);
+    const free=ports.filter(pin=>!main.includes(pin));
+    // Only real unused pins are suggested; they stay DRAFT until ACK.
+    const result=enabled?free.length>=2&&window.__arMixStageMonitorPatch?.(free[0],free[1]):
+      window.__arMixStageMonitorPatch?.(-1,-1);
+    matrixSay(result?.ok?(enabled?'MONITOR DRAFT ENABLED · review pins and POST sends':
+      'MONITOR DRAFT DISABLED · native APPLY required'):result?.error||
+      'MONITOR needs two verified unused output pins.');
     lastSignature='';refresh();
   }
   const genericInterfaceSvg='data:image/svg+xml;charset=utf-8,'+encodeURIComponent("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 340 150\" role=\"img\" aria-label=\"Generic audio interface\">\n  <title>Generic rack audio interface</title>\n  <rect x=\"22\" y=\"18\" width=\"296\" height=\"107\" rx=\"13\" fill=\"#10191f\" stroke=\"#8199a5\" stroke-width=\"3\"/>\n  <rect x=\"31\" y=\"27\" width=\"278\" height=\"88\" rx=\"8\" fill=\"#25343d\" stroke=\"#364b58\"/>\n  <path d=\"M36 40h267\" stroke=\"#607988\" stroke-width=\"1\"/>\n  <circle cx=\"85\" cy=\"72\" r=\"22\" fill=\"#0d161d\" stroke=\"#849eab\" stroke-width=\"3\"/>\n  <circle cx=\"85\" cy=\"72\" r=\"12\" fill=\"#25343d\" stroke=\"#718794\" stroke-width=\"2\"/>\n  <circle cx=\"145\" cy=\"72\" r=\"22\" fill=\"#0d161d\" stroke=\"#849eab\" stroke-width=\"3\"/>\n  <circle cx=\"145\" cy=\"72\" r=\"12\" fill=\"#25343d\" stroke=\"#718794\" stroke-width=\"2\"/>\n  <path d=\"M85 60v24M73 72h24M145 60v24M133 72h24\" stroke=\"#536b78\" stroke-width=\"2\"/>\n  <circle cx=\"221\" cy=\"72\" r=\"21\" fill=\"#0f1b22\" stroke=\"#9db4bf\" stroke-width=\"3\"/>\n  <circle cx=\"221\" cy=\"72\" r=\"13\" fill=\"#293b46\" stroke=\"#657f8e\"/>\n  <path d=\"M221 58v8\" stroke=\"#aedce6\" stroke-width=\"3\" stroke-linecap=\"round\"/>\n  <circle cx=\"270\" cy=\"55\" r=\"4\" fill=\"#70c992\"/>\n  <circle cx=\"283\" cy=\"55\" r=\"4\" fill=\"#6e8b9b\"/>\n  <circle cx=\"270\" cy=\"67\" r=\"4\" fill=\"#5c7886\"/>\n  <circle cx=\"283\" cy=\"67\" r=\"4\" fill=\"#5c7886\"/>\n  <rect x=\"260\" y=\"87\" width=\"33\" height=\"7\" rx=\"2\" fill=\"#10181f\" stroke=\"#637d8b\"/>\n  <circle cx=\"40\" cy=\"35\" r=\"3\" fill=\"#899ea8\"/><circle cx=\"300\" cy=\"35\" r=\"3\" fill=\"#899ea8\"/>\n  <text x=\"85\" y=\"106\" text-anchor=\"middle\" fill=\"#c0d1d9\" font-family=\"sans-serif\" font-size=\"9\">INPUT 1</text>\n  <text x=\"145\" y=\"106\" text-anchor=\"middle\" fill=\"#c0d1d9\" font-family=\"sans-serif\" font-size=\"9\">INPUT 2</text>\n  <text x=\"221\" y=\"105\" text-anchor=\"middle\" fill=\"#c0d1d9\" font-family=\"sans-serif\" font-size=\"9\">MONITOR</text>\n</svg>");
@@ -397,7 +419,7 @@
     overlay.querySelector('[data-mix-apply]').disabled=!hardwareReady(s)||!!matrixDraft.size||s.monitor;
     overlay.querySelector('[data-io-revert]').disabled=!isNative()||s.pending;
     const signature=ioTab+'|'+JSON.stringify([s.epoch,s.revision,s.pending,s.draftRoutes,
-      s.outputPorts,s.mainOutputs,s.draftMainOutputs,s.ports,deviceInventory,matrixPage[ioTab],
+      s.outputPorts,s.mainOutputs,s.draftMainOutputs,s.monitorOutputs,s.draftMonitorOutputs,s.monitorSends,s.draftMonitorSends,s.ports,deviceInventory,matrixPage[ioTab],monitorSendsExpanded,
       [...matrixDraft],[...matrixSide]]);
     if(lastSignature===signature)return;
     lastSignature=signature;body.replaceChildren();
@@ -430,6 +452,39 @@
       details.appendChild(quick);body.appendChild(details);
       body.appendChild(node('p','arIOHint','Physical source width and channel processing width are separate. For BUS receivers or complex internal paths use ROUTING.'));
     }else if(ioTab==='outputs'){
+      const monitorEnabled=s.draftMonitorOutputs?.length===2;
+      const monitorControl=node('div','arIOMonitorControls');
+      const toggle=node('button','btn-180',monitorEnabled?'DISABLE MONITOR':'ENABLE MONITOR · DRAFT');
+      toggle.type='button';toggle.dataset.ioMonitorToggle=monitorEnabled?'off':'on';
+      toggle.disabled=!hardwareReady(s)||(!monitorEnabled&&matrixPorts(s,'outputs').length<4);
+      monitorControl.append(toggle,node('span','',monitorEnabled?
+        'HW '+(s.draftMonitorOutputs[0]+1)+'/'+(s.draftMonitorOutputs[1]+1)+' · separate POST mix':
+        'Needs two unused hardware output pins · native APPLY required'));
+      body.appendChild(monitorControl);
+      if(monitorEnabled){
+        const fold=node('details','arIOMonitorSends');fold.open=monitorSendsExpanded;
+        fold.appendChild(node('summary','','MONITOR SENDS · CH01–10 + AUX1–4 · POST-FADER'));
+        const gains=s.draftMonitorSends?.length===14?s.draftMonitorSends:Array(14).fill(0);
+        const rows=node('div','arIOMonitorSendGrid');
+        for(let i=0;i<14;i++){
+          const row=node('label','arIOMonitorSendRow');
+          row.appendChild(node('span','',i<10?'CH '+String(i+1).padStart(2,'0'):'AUX '+(i-9)));
+          const select=node('select','arIOMonitorSend');select.dataset.lane=String(i);
+          select.setAttribute('aria-label','Monitor POST gain '+(i<10?'CH '+(i+1):'AUX '+(i-9)));
+          const options=[[0,'OFF'],[.125,'−18 dB'],[.25,'−12 dB'],[.5,'−6 dB'],[1,'0 dB']];
+          if(!options.some(([value])=>value===gains[i]))options.push([gains[i],'CUSTOM']);
+          for(const [value,name] of options){
+            const o=node('option','',name);o.value=String(value);o.selected=value===gains[i];select.appendChild(o);
+          }
+          select.disabled=!hardwareReady(s);row.appendChild(select);rows.appendChild(row);
+        }
+        fold.appendChild(rows);fold.addEventListener('toggle',()=>{monitorSendsExpanded=fold.open});
+        body.appendChild(fold);
+      }
+      const monitorLive=s.monitorOutputs?.length===2?s.monitorOutputs:[];
+      body.appendChild(node('p','arIOHint','LIVE MONITOR: '+
+        (monitorLive.length===2?'HW '+(monitorLive[0]+1)+'/'+(monitorLive[1]+1):'DISABLED')+
+        ' · Independent POST-fader mix; all changes require MUTE → APPLY → ACK.'));
       const details=node('details','arIOQuickMap');
       details.appendChild(node('summary','','QUICK OUTPUT SELECTION · ACCESSIBLE ALTERNATIVE'));
       const accepted=s.mainOutputs?.length===2?s.mainOutputs:[];
@@ -449,7 +504,7 @@
       }
       body.appendChild(details);
       body.appendChild(node('p','arIOHint','LIVE MAIN: '+(accepted.length===2?'HW '+(accepted[0]+1)+'/'+(accepted[1]+1):'UNAVAILABLE')+
-        ' · Remaining output channels stay silent unless a separate native bus is implemented. AUX1–4 are internal stereo FX returns, not physical output sockets.'));
+        ' · Only native-ACKed MAIN/MONITOR pairs can carry sound. AUX1–4 are internal stereo FX returns, not physical output sockets.'));
     }else{
       body.appendChild(node('p','arIOHint','Use DRIVER SETTINGS to choose a JUCE-reported ASIO/WASAPI endpoint, sample rate and buffer. A valid native reopen invalidates old hardware patches; sound remains safely muted.'));
       if(!deviceInventory?.types?.length)body.appendChild(node('p','arIOHint','No device inventory yet · select a verified Windows audio device.'));
@@ -480,6 +535,11 @@
   }
   document.addEventListener('change',e=>{
     if(e.target.matches('.arIOMatrixMode')){matrixModeChange(e.target);return;}
+    if(e.target.matches('.arIOMonitorSend')){
+      const result=window.__arMixStageMonitorSend?.(Number(e.target.dataset.lane),Number(e.target.value));
+      matrixSay(result?.ok?'MONITOR SEND DRAFT · APPLY required':result?.error||'MONITOR send rejected');
+      lastSignature='';refresh();return;
+    }
     if(e.target.matches('.arIOMainOutput')){
       const s=route(),selectors=[...overlay.querySelectorAll('.arIOMainOutput')];
       if(selectors.length!==2)return;
@@ -553,6 +613,9 @@
       if(result?.ok){matrixDraft.clear();matrixSide.clear();}
       matrixSay(result?.ok?'DRAFT REVERTED · native route unchanged':result?.error||'Cannot revert while APPLY is pending');
       lastSignature='';refresh();return;
+    }
+    if(b.dataset.ioMonitorToggle!==undefined){
+      e.preventDefault();e.stopImmediatePropagation();stageMonitorEnable(b.dataset.ioMonitorToggle==='on');return;
     }
     if(b.dataset.ioClose!==undefined){e.preventDefault();e.stopImmediatePropagation();closeIO();return;}
     if(b.dataset.ioTab){e.preventDefault();e.stopImmediatePropagation();ioTab=b.dataset.ioTab;matrixMessage='';lastSignature='';refreshIO();return;}
