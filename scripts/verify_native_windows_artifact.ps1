@@ -18,6 +18,15 @@ foreach ($name in $expected) {
         throw "Distribution is missing required file: $name"
     }
 }
+# Verify FactoryFX only when an exact reviewed lock explicitly authorizes it.
+# App-only engineering ZIPs remain unchanged; a missing approved module fails.
+& python scripts/factoryfx_release_bundle.py verify --lock config/factoryfx-approved-releases.json --output $OutputDir
+if ($LASTEXITCODE -ne 0) { throw "FactoryFX resource, manifest or licence gate failed" }
+$factoryPath = Join-Path $OutputDir "FactoryFX"
+$topDirs = @(Get-ChildItem -LiteralPath $OutputDir -Directory | ForEach-Object Name)
+if (@(Compare-Object -ReferenceObject @("FactoryFX") -DifferenceObject $topDirs).Count -ne 0 -and $topDirs.Count -gt 0) {
+    throw "Unapproved directory in public release: $($topDirs -join ', ')"
+}
 $actual = @(Get-ChildItem -LiteralPath $OutputDir -File | ForEach-Object Name)
 if (@(Compare-Object -ReferenceObject $expected -DifferenceObject $actual).Count -ne 0) {
     throw "Unapproved files inside release distribution: $($actual -join ', ')"
@@ -127,7 +136,21 @@ try {
     $zip = [System.IO.Compression.ZipFile]::OpenRead($archivePath)
     try {
         $names = @($zip.Entries | ForEach-Object FullName)
-        if (@(Compare-Object -ReferenceObject $expected -DifferenceObject $names).Count -ne 0) {
+        # ZIP includes VST3 directories. Compare actual FILE entries to all
+        # reviewed FactoryFX files; directory entries themselves are harmless.
+        $expectedZipFiles = @($expected)
+        $factoryZipFiles = @()
+        if (Test-Path -LiteralPath $factoryPath -PathType Container) {
+            $distRoot = (Resolve-Path -LiteralPath $OutputDir).Path
+            foreach ($file in Get-ChildItem -LiteralPath $factoryPath -File -Recurse) {
+                $rel = [IO.Path]::GetRelativePath($distRoot, $file.FullName).Replace('\\', '/')
+                $expectedZipFiles += $rel
+                $factoryZipFiles += $rel
+            }
+        }
+        $names = @($zip.Entries | Where-Object { -not $_.FullName.EndsWith('/') } |
+            ForEach-Object { $_.FullName.Replace('\\', '/') })
+        if (@(Compare-Object -ReferenceObject $expectedZipFiles -DifferenceObject $names).Count -ne 0) {
             throw "ZIP does not contain exactly the verified distribution files"
         }
         $entry = $zip.GetEntry("ArSonMix-GUI10CH-P012-Windows-x64.exe")
@@ -143,6 +166,20 @@ try {
             $stream.Dispose()
         }
         if ($inZipHash -ne $appHash) { throw "ZIP entry hash mismatch" }
+        foreach ($rel in $factoryZipFiles) {
+            $item = $zip.GetEntry($rel)
+            if ($null -eq $item) { throw "FactoryFX file missing in ZIP: $rel" }
+            $itemStream = $item.Open()
+            $factoryHash = [Security.Cryptography.SHA256]::Create()
+            try {
+                $inside = [BitConverter]::ToString($factoryHash.ComputeHash($itemStream)).Replace("-", "").ToLowerInvariant()
+            } finally {
+                $itemStream.Dispose()
+                $factoryHash.Dispose()
+            }
+            $outside = (Get-FileHash -LiteralPath (Join-Path $OutputDir $rel) -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($inside -ne $outside) { throw "FactoryFX ZIP file digest differs: $rel" }
+        }
     } finally {
         $zip.Dispose()
     }
