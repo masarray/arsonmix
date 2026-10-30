@@ -286,6 +286,16 @@ int main() {
         // G5C native PCM gate: bypass really changes signal while preserving
         // dry continuity, without callback allocations or plugin replacement.
         const auto stableToken=multi->insertInstanceId(1,0);
+        // G5E: capturing an actual JUCE vendor state is a CONTROL operation,
+        // not an RT callback allocation or a graph instance replacement.
+        {
+            auto owner=multi->leaseInsert(1,0,stableToken);
+            assert(owner);
+            juce::MemoryBlock bytes;
+            assert(owner->tryCaptureState(bytes));
+            assert(bytes.getSize()<=8U*1024U*1024U);
+            assert(owner->instanceId==stableToken);
+        }
         assert(stableToken.isNotEmpty());
         assert(!multi->setInsertBypass(1,0,"stale-token",true));
         assert(multi->setInsertBypass(1,0,stableToken,true));
