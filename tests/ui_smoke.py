@@ -1663,7 +1663,7 @@ async def main():
         assert 160<=workspace_layout['left']<=175 and 58<=workspace_layout['top']<=65,workspace_layout
         assert workspace_layout['width']>workspace_layout['viewport']*.80,workspace_layout
         assert workspace_layout['backdrop']=='none',workspace_layout
-        assert workspace_layout['routeRows']==14, "Advanced bus mode builds its 10 channel and 4 AUX editors once"
+        assert workspace_layout['routeRows']==10, "Advanced routing keeps ten distinct native channel editors"
 
         # R3: the approved BTN-180 MATERIAL is used for routing actions,
         # selected tabs, pager, L/R and Show controls. Grid cells stay
