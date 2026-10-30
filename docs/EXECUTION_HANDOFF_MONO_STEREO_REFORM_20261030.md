@@ -1,4 +1,7 @@
 # EXECUTION HANDOFF — Mono/Stereo Native Channel / Bus Reform
+
+**Current execution issues:** [MS1 #173](https://github.com/masarray/arsonmix/issues/173), [MS2 #174](https://github.com/masarray/arsonmix/issues/174), [MS3 #175](https://github.com/masarray/arsonmix/issues/175), then #95 multi-insert/PDC. #143 historical CLOSED, #170 umbrella, #15 hardware FAT blocker. Cross-thread work and PR ownership follow these numbers and latest HEAD.
+
 Date 2026-10-30 | ADR: ADR_R5_NATIVE_MONO_STEREO_CHANNEL_BUS_ROUTING_20261030.md
 Read README, AGENTS, canonical PRD/ARD, UI benchmark and current code HEAD first. This file extends, not replaces, EXECUTION_HANDOFF_ARSONMIX_MIXER_REFORM_20261030.md.
 

@@ -1,5 +1,8 @@
 # ArSonMix — PRD v2.0: Pro Digital Mixer, Channel Modes, Hardware I/O and AUX/BUS
 
+**Implementation owners:** mono/stereo channel [MS1 #173](https://github.com/masarray/arsonmix/issues/173), format-aware sends/bus [MS2 #174](https://github.com/masarray/arsonmix/issues/174), independent mono/stereo physical output [MS3 #175](https://github.com/masarray/arsonmix/issues/175). Closed #143 is only historical input/routing work; not output DSP proof. [Umbrella #170](https://github.com/masarray/arsonmix/issues/170).
+
+
 **Date:** 2026-10-30 | **Status:** CANONICAL PRODUCT TARGET (not a claim of completed implementation). 
 **Architecture:** [ARD v2.0](ARD_PRD_MIXER_IO_AUX_BUS_REFORM_20261030.md), [Execution Handoff](EXECUTION_HANDOFF_ARSONMIX_MIXER_REFORM_20261030.md).
 **Design evidence:** Nine user-provided reference screenshots: LV1 Classic channel modes, rack, faders, Studio One mono/stereo I/O grid, DAW bus sends and focused source/destination wires. Copy the workflow patterns, not proprietary branded pixels.

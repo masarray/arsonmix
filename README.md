@@ -1,5 +1,8 @@
 # ArSonMix — Windows Live Mixer & Native VST3 Host
 
+**R5 milestone issues:** [MS1 #173](https://github.com/masarray/arsonmix/issues/173), [MS2 #174](https://github.com/masarray/arsonmix/issues/174), [MS3 #175](https://github.com/masarray/arsonmix/issues/175); [product epic #170](https://github.com/masarray/arsonmix/issues/170). #143 is CLOSED historical routing GUI, not physical multi-output delivery.
+
+
 **October 30, 2026 engineering status:** ArSonMix is an experimental Windows-first **10 input channel + 4 stereo AUX return + MASTER** mixer with real device-bound audio routing and VST3, not a hardware-qualified live/broadcast release. The native hardware 0-VST crackle issue [#15](https://github.com/masarray/arsonmix/issues/15) remains open. **Never interpret successful Windows CTest, GUI screenshots, or a workflow named Hardware FAT as proof of clean real-device audio.**
 
 The [approved GUI visual baseline](docs/GUI_BASELINE_LOCK_2026-10-25.md) remains the reference for compact FX racks, BTN-180 and layout; its historical channel count is superseded by the current mixer PRD.
