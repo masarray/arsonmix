@@ -1455,7 +1455,12 @@
     // premium mixer geometry or rebuilding VST3 instances.
     const routedFxSignature=lab?.active?(lab.channelFxNames||[]).join("|")+"|"+(lab.revision||0):"";
     if(labWasActive!==!!lab?.active||lastRoutedFxSignature!==routedFxSignature){
-      lastRoutedFxSignature=routedFxSignature;repaint();
+      lastRoutedFxSignature=routedFxSignature;
+      repaint(); // Display current status now, preserving native control response.
+      // Later routing listeners can hydrate the accepted FX graph during this
+      // same dispatch. Coalesce one POST-dispatch rack reconciliation instead
+      // of depending on unrelated meter/LUFS DOM mutations for correctness.
+      syncView();
     }
     const b=document.querySelector('[data-native-action="monitor"]');
     if(b){
