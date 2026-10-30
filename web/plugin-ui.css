@@ -414,3 +414,9 @@
 .native-engine #app #mixer .rack .insert.empty .insert-name{
   color:#72cce5;
 }
+
+/* Lightweight Factory / User selector: no blur, no layer or mixer geometry changes. */
+#nativeFxSelector .ar-plugin-scopes,#nativePluginManager .ar-plugin-scopes{display:flex;gap:4px;padding:4px 0 7px;flex-wrap:wrap}
+#nativeFxSelector .ar-plugin-scopes button,#nativePluginManager .ar-plugin-scopes button{border:1px solid #405765;border-radius:4px;background:#172c38;color:#acc4cf;padding:5px 10px;font:500 10px "ArSonMix Inter",sans-serif;cursor:pointer}
+#nativeFxSelector .ar-plugin-scopes button[aria-pressed="true"],#nativePluginManager .ar-plugin-scopes button[aria-pressed="true"]{background:#205363;border-color:#4db1be;color:#e5f8fb}
+#nativeFxSelector .ar-plugin-scopes button:focus-visible,#nativePluginManager .ar-plugin-scopes button:focus-visible{outline:1px solid #76cfdd;outline-offset:1px}

@@ -287,6 +287,18 @@ private:
                 owner_.found_.store (static_cast<int> (found.size()), std::memory_order_relaxed);
                 owner_.completed_.store (n + 1, std::memory_order_release);
             }
+            if (factoryOnly_ && importErrors.isEmpty())
+            {
+                for (const auto& approved : factory.candidates)
+                    if (std::none_of (found.begin(), found.end(),
+                        [&approved] (const CatalogEntry& e)
+                        { return e.factory && e.factoryProductId == approved.productId; }))
+                    {
+                        importErrors = approved.productId + ": declared VST3 host UID not found";
+                        found.clear(); // All-or-nothing factory verification, never partial success.
+                        break;
+                    }
+            }
             {
                 const juce::ScopedLock lock (owner_.progressLock_);
                 owner_.current_.clear();
