@@ -22,6 +22,9 @@ const levelToTop=db=>+(clamp((10-db)/70,0,1)*100).toFixed(3);
 const fmt=db=>db===-Infinity?'−∞':`${db>0?'+':''}${db.toFixed(1)} dB`;
 // UI side throttling is distinct from the native realtime control plane.
 const pendingUiParams=new Map();let uiFlushScheduled=false;
+// Session persistence is never serialized inside an audio-control hot path.
+let uiSessionReady=false,uiSessionDirty=false,uiSaveTimer=0,uiSaveSince=0;
+function markUiSessionDirty(){if(uiSessionReady)uiSessionDirty=true;}
 const peakHold=Object.create(null),clipLatch=Object.create(null);
 function resetClip(key){
  clipLatch[key]=false;delete peakHold[key];
@@ -198,6 +201,7 @@ function updateMeterVisual(key,level,now){
 
 function flushUiParams(){uiFlushScheduled=false;const bridge=window.__JUCE__?.backend;if(bridge?.emitEvent)for(const event of pendingUiParams.values())bridge.emitEvent('arMixParameter',event);pendingUiParams.clear()}
 function send(param,value,ch=currentChannel){
+ markUiSessionDirty();
  const event={channel:ch+1,parameter:param,value};
  // P1I: native routing token rejects UI gestures from stale device graphs.
  const liveToken=window.__armixRouteToken;
@@ -385,7 +389,12 @@ function focusMaster(){
  document.querySelectorAll('.strip').forEach(strip=>strip.classList.toggle('selected',strip.id==='masterLeft'));
  document.querySelectorAll('#channelList [data-choose]').forEach(row=>row.classList.remove('selected'));
 }
-function chooseChannel(i){if(i<0||i>=channels.length){flash('Additional bank channels are not populated in this UI study');return}currentChannel=i;renderMixer();if(view==='FX RACK')renderRackWorkspace()}
+function chooseChannel(i){
+ if(i<0||i>=channels.length){flash('Additional bank channels are not populated in this UI study');return}
+ // Stable strip, meter and VST3 rack DOM identities across selection.
+ focusChannel(i);
+ if(view==='FX RACK')renderRackWorkspace();
+}
 function toggleState(i,key){channels[i][key]=!channels[i][key];const btn=document.querySelector(`[data-${key}="${i}"]`);if(btn){btn.classList.toggle('active',channels[i][key]);btn.setAttribute('aria-pressed',String(channels[i][key]))}send(key,channels[i][key],i)}
 document.addEventListener('click',e=>{const b=e.target.closest('button,[data-choose],[data-scene],[data-group]');
  const icon=e.target.closest('[data-icon-choice]'),color=e.target.closest('[data-color-choice]');
@@ -415,7 +424,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('button,[data-cho
  if(b.dataset.chainremove!==undefined){removePlugin(+b.dataset.chainremove);return}
  if(b.dataset.chainbypass!==undefined){toggleBypass(+b.dataset.chainbypass);return}
  if(b.dataset.chainedit!==undefined){pluginEditorIndex=+b.dataset.chainedit;renderRackWorkspace();return}
- if(b.dataset.chanselect!==undefined){chooseChannel(+b.dataset.chanselect);renderRackWorkspace();return}
+ if(b.dataset.chanselect!==undefined){chooseChannel(+b.dataset.chanselect);return}
  if(b.dataset.pluginname){insertPlugin(b.dataset.pluginname);return}
  if(b.dataset.category){activeCategory=b.dataset.category;renderPluginBrowser();return}
  if(b.dataset.group!==undefined){flash('Group selection — interface placeholder');return}
@@ -686,7 +695,7 @@ function getFxParams(ch,slot){const k=fxKey(ch,slot);return fxParams[k]??(fxPara
 function moveFxMeta(ch,from,to){const a=fxKey(ch,from),b=fxKey(ch,to),tmp=fxParams[a];fxParams[a]=fxParams[b];fxParams[b]=tmp;const bo=bypassed[a];bypassed[a]=bypassed[b];bypassed[b]=bo}
 function shiftFxMetaRight(ch,at,len){for(let i=len;i>at;i--){fxParams[fxKey(ch,i)]=fxParams[fxKey(ch,i-1)];bypassed[fxKey(ch,i)]=bypassed[fxKey(ch,i-1)]}delete fxParams[fxKey(ch,at)];delete bypassed[fxKey(ch,at)]}
 function shiftFxMetaLeft(ch,at,len){for(let i=at;i<len-1;i++){fxParams[fxKey(ch,i)]=fxParams[fxKey(ch,i+1)];bypassed[fxKey(ch,i)]=bypassed[fxKey(ch,i+1)]}delete fxParams[fxKey(ch,len-1)];delete bypassed[fxKey(ch,len-1)]}
-function setChain(ch,chain){ch.inserts=chain.slice(0,8);renderMixer();if(view==='FX RACK')renderRackWorkspace()}
+function setChain(ch,chain){ch.inserts=chain.slice(0,8);markUiSessionDirty();renderMixer();if(view==='FX RACK')renderRackWorkspace()}
 function focusOptions(){return channels.map((c,i)=>`<option value="${i}" ${i===currentChannel?'selected':''}>${i+1} · ${safeText(c.name)}</option>`).join('')}
 function renderRackWorkspace(){let c=channels[currentChannel];let chain=normalChain(c);$('rackWorkspace').innerHTML=`<div class="feature-top"><div><span class="eyebrow">YOUR SOUND · CORE WORKFLOW</span><h2>FX Rack — ${safeText(c.name)}</h2><p>Build your signature vocal sound. Add, reorder, bypass, and store your VST chain.</p></div><div style="display:flex;gap:7px"><select id="rackChannel" class="ghost-action" aria-label="Choose channel">${focusOptions()}</select><button class="ghost-action" id="recallFxPreset">LOAD CHAIN</button><button class="action" id="saveFxFromRack">SAVE FX CHAIN</button></div></div><div class="rack-layout"><div class="chain-list"><div class="chain-end">● AUDIO INPUT · ${safeText(c.name)}</div><div class="chain-path">↓</div>${chain.map((name,i)=>`<div class="chain-node ${bypassed[currentChannel+':'+i]?'dimmed':''}"><span class="chain-index">${String(i+1).padStart(2,'0')}</span><span class="chain-name"><b>${safeText(name)}</b><small>${safeText(pluginCatalog.find(p=>p.name===name)?.hint||'VST3 plugin · mock chain state')}</small></span><button data-chainedit="${i}" title="Open plugin controls">EDIT</button><button data-chainbypass="${i}" class="${bypassed[fxKey(currentChannel,i)]?'is-bypassed':'power-on'}" aria-pressed="${!bypassed[fxKey(currentChannel,i)]}" aria-label="${bypassed[fxKey(currentChannel,i)]?'Enable':'Bypass'} ${safeText(name)}" title="${bypassed[fxKey(currentChannel,i)]?'Enable':'Bypass'} ${safeText(name)}">⏻</button><button data-chainmove="-1" data-index="${i}" title="Move up" ${i===0?'disabled':''}>↑</button><button data-chainmove="1" data-index="${i}" title="Move down" ${i===chain.length-1?'disabled':''}>↓</button><button data-chainremove="${i}" title="Remove FX">×</button></div><div class="chain-path">↓</div>`).join('')}<button class="chain-add" data-addplugin="1">＋ ADD VST3 EFFECT</button><div class="chain-path">↓</div><div class="chain-end">◎ OUTPUT · MASTER / STREAM</div></div>${pluginEditorIndex!==null&&pluginEditorIndex<chain.length?pluginInspector(currentChannel,pluginEditorIndex):`<div class="guide-panel"><h3>Ready-to-use Sound</h3><p>Start with a preset, then personalize your FX chain. No complex routing required.</p><div>${['Clean Vocal','Warm Karaoke','Live Broadcast'].map(s=>`<button class="guide-chip" data-preset="${s}">${s}</button>`).join('')}</div><h3 style="margin-top:20px">Make it sound better</h3><p>Recommended signal path:</p><p>Noise Gate → EQ → Compressor → De-Esser → Reverb</p><h3 style="margin-top:20px">Demo status</h3><p>Plugin names and bypass buttons currently change visual state only. Installed VST3 scanning and DSP are scheduled for the native engine phase.</p></div>`}</div>`}
 function pluginInspector(ch,slot){const name=normalChain(channels[ch])[slot],v=getFxParams(ch,slot);return `<div class="guide-panel plugin-inspector"><span class="eyebrow">FX EDITOR · DEMO PARAMETERS</span><h3>${safeText(name)}</h3><p>These generic controls demonstrate the editing and preset workflow. The real VST3 editor will replace them when connected.</p><label>Mix <output data-fxread="mix">${v.mix}%</output><input type="range" min="0" max="100" value="${v.mix}" data-fxparam="mix" data-slot="${slot}"></label><label>Amount <output data-fxread="amount">${v.amount}%</output><input type="range" min="0" max="100" value="${v.amount}" data-fxparam="amount" data-slot="${slot}"></label><label>Output <output data-fxread="output">${v.output>0?'+':''}${v.output} dB</output><input type="range" min="-24" max="12" value="${v.output}" data-fxparam="output" data-slot="${slot}"></label><button id="closeFxInspector" class="ghost-action" style="margin-top:20px;width:100%">CLOSE EDITOR</button></div>`}
@@ -913,15 +922,36 @@ function importSession(){
 // Single optimized console layout. The unused PRO/EASY switch is retired.
 $('app').classList.add('easy');
 $('pluginSearch').addEventListener('input',renderPluginBrowser);
-document.addEventListener('input',e=>{const el=e.target;if(!el.dataset.fxparam)return;const slot=+el.dataset.slot,key=el.dataset.fxparam;if(!['mix','amount','output'].includes(key))return;const v=getFxParams(currentChannel,slot);v[key]=+el.value;const out=el.closest('label')?.querySelector('output');if(out)out.textContent=key==='output'?`${v[key]>0?'+':''}${v[key]} dB`:`${v[key]}%`;send('fxDemoParam',{slot,key,value:v[key]},currentChannel)});
+document.addEventListener('input',e=>{const el=e.target;if(!el.dataset.fxparam)return;const slot=+el.dataset.slot,key=el.dataset.fxparam;if(!['mix','amount','output'].includes(key))return;const v=getFxParams(currentChannel,slot);v[key]=+el.value;markUiSessionDirty();const out=el.closest('label')?.querySelector('output');if(out)out.textContent=key==='output'?`${v[key]>0?'+':''}${v[key]} dB`:`${v[key]}%`;send('fxDemoParam',{slot,key,value:v[key]},currentChannel)});
 $('pluginModal').addEventListener('click',e=>{if(e.target===$('pluginModal'))closePluginBrowser()});
 $('channelIdentity').addEventListener('click',e=>{if(e.target===$('channelIdentity'))closeChannelIdentity()});
 $('identityName').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();commitChannelIdentity()}});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closePluginBrowser();closeChannelIdentity()}if((e.key==='Enter'||e.key===' ')&&e.target.matches('[data-editstrip]')){e.preventDefault();openChannelIdentity(+e.target.dataset.editstrip)}});
-document.addEventListener('change',e=>{if(e.target.id==='rackChannel'){currentChannel=+e.target.value;renderRackWorkspace();renderMixer()}});
+document.addEventListener('change',e=>{if(e.target.id==='rackChannel')chooseChannel(+e.target.value)});
 document.addEventListener('click',e=>{const id=e.target.closest('button')?.id;if(id==='saveFxFromRack')saveFxChainPreset();else if(id==='recallFxPreset')recallFxChain();else if(id==='openSetupFromFlow')$('audioSetupBtn')?.click();else if(id==='flowFxButton')setView('FX RACK');else if(id==='backMixer')setView('MIX')});
-let lastPersist=0;
-setInterval(()=>{if(Date.now()-lastPersist<2000)return;lastPersist=Date.now();persistSession()},5000);
+// The UI-only envelope remains one atomic storage transaction, never a 5s
+// idle poll. Pointermove sets only the dirty bit; release schedules one save.
+function flushUiAutosave(){
+ if(uiSaveTimer){clearTimeout(uiSaveTimer);uiSaveTimer=0}
+ if(!uiSessionDirty)return;
+ if(persistSession()){uiSessionDirty=false;uiSaveSince=0}
+ // Storage failures retain dirty state; never claim the write succeeded.
+}
+function scheduleUiAutosave(){
+ if(!uiSessionDirty)return;
+ if(!uiSaveSince)uiSaveSince=Date.now();
+ if(uiSaveTimer)clearTimeout(uiSaveTimer);
+ const delay=Math.min(1800,Math.max(0,8500-(Date.now()-uiSaveSince)));
+ uiSaveTimer=setTimeout(flushUiAutosave,delay);
+}
+document.addEventListener('click',scheduleUiAutosave);
+document.addEventListener('pointerup',scheduleUiAutosave);
+document.addEventListener('pointercancel',scheduleUiAutosave);
+document.addEventListener('keyup',scheduleUiAutosave);
+document.addEventListener('change',scheduleUiAutosave);
+document.addEventListener('input',e=>{if(e.target.dataset.fxparam)scheduleUiAutosave()});
+document.addEventListener('visibilitychange',()=>{if(document.hidden)flushUiAutosave()});
+window.addEventListener('pagehide',flushUiAutosave);
 let restoredUiSession=null,needsLegacyMigration=false;
 try{
  const packed=localStorage.getItem(UI_STORAGE_KEY);
@@ -972,6 +1002,7 @@ try{
  }
  if(needsLegacyMigration)persistSession(); // idempotent one-key migration; never delete old data
 }catch{}
+uiSessionReady=true; // Bootstrap restore is not an operator gesture.
 // Stop all simulated animation work while the tab is hidden, and restart on
 // foregrounding. One owner per timer / RAF; never double-schedule on restore.
 document.addEventListener('visibilitychange',()=>{

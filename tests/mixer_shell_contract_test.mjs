@@ -73,3 +73,18 @@ test('routing FX draft explicitly reconciles the native mixer without telemetry 
   assert.match(native,/window\.addEventListener\("arMixRoutingDraftChanged",syncView\)/);
   assert.match(routes,/window\.dispatchEvent\(new Event\("arMixRoutingDraftChanged"\)\)/);
 });
+
+test('P1 channel selection retains all strip and meter nodes',()=>{
+ const src=read('web/app.js');
+ assert.match(src,/function chooseChannel\(i\)\{[\s\S]*?focusChannel\(i\);/);
+ assert.match(src,/if\(e\.target\.id==='rackChannel'\)chooseChannel\(\+e\.target\.value\)/);
+ assert.doesNotMatch(src,/currentChannel=i;renderMixer\(\)/);
+});
+test('P1 UI-only session save is bounded dirty-event based, not a 5s poll',()=>{
+ const src=read('web/app.js');
+ assert.match(src,/function markUiSessionDirty\(\)/);
+ assert.match(src,/function flushUiAutosave\(\)/);
+ assert.match(src,/Math\.min\(1800,Math\.max\(0,8500-/);
+ assert.match(src,/window\.addEventListener\('pagehide',flushUiAutosave\)/);
+ assert.doesNotMatch(src,/lastPersist/);
+});
