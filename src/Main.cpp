@@ -69,6 +69,8 @@ std::optional<juce::WebBrowserComponent::Resource> assetFor (const juce::String&
         { data = BinaryData::mixerio_js; size = BinaryData::mixerio_jsSize; mime = "text/javascript"; }
     else if (path == "/mixer-io.css")
         { data = BinaryData::mixerio_css; size = BinaryData::mixerio_cssSize; mime = "text/css"; }
+    else if (path == "/assets/audio-interface.svg")
+        { data = BinaryData::audiointerface_svg; size = BinaryData::audiointerface_svgSize; mime = "image/svg+xml"; }
     else if (path == "/mixer-layout.js")
         { data = BinaryData::mixerlayout_js; size = BinaryData::mixerlayout_jsSize; mime = "text/javascript"; }
     else if (path == "/mixer-layout.css")

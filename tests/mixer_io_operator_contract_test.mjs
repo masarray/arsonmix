@@ -96,3 +96,21 @@ test('MS1 typed native processing format stays independent of physical source an
   assert.match(css,/\.arBankFormatRow\{display:flex/);
   assert.match(lab,/strip\.source==armix::mixer::SourceMode::mono/);
 });
+
+test('IO-MATRIX uses only verified pins, dual-step stereo draft and native ACK without new DSP',()=>{
+  const css=read('web/mixer-io.css');
+  assert.match(gui,/matrixPorts\(s,kind\)/);
+  assert.match(gui,/matrixPageSize=8/);
+  assert.match(gui,/const matrixDraft=new Map\(\)/);
+  assert.match(gui,/candidate\.left===candidate\.right/);
+  assert.match(gui,/__arMixStageChannelInput\?\./);
+  assert.match(gui,/__arMixStageMainOutputs\?\./);
+  assert.match(gui,/!hardwareReady\(s\)/);
+  assert.match(gui,/\.dataset\.ioMatrixKind/);
+  assert.match(gui,/s\.mainOutputs/);
+  assert.match(gui,/\.dataset\.ioRowMode/);
+  assert.match(css,/\.arIOMatrixCell\[data-assigned="true"\]/);
+  assert.doesNotMatch(css,/backdrop-filter\s*:|filter\s*:\s*blur/);
+  assert.match(main,/assets\/audio-interface\.svg/);
+  assert.match(cmake,/web\/assets\/audio-interface\.svg/);
+});

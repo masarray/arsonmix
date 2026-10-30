@@ -147,3 +147,63 @@
 #app #mixer .arBankChannelFormat:disabled{opacity:.45}
 #app #mixer .arBankFormatRow .arBankStage{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:8px}
 #app #mixer .arBankChannelFormat:focus-visible{outline:2px solid #73cfe7;outline-offset:1px}
+
+/* IO-MATRIX: restrained Studio-style crosspatch; native inventory only.
+   No backdrop/filter/animation or per-pointer painter. */
+.arIOWindow{width:min(1000px,100%);max-height:min(810px,calc(100dvh - 30px));background:#1b2025;border-color:#4f5962;border-radius:5px;box-shadow:0 12px 28px #0009}
+.arIOWindow>header{background:#292e34;padding:9px 15px}
+.arIOWindow>header h2{font-size:15px;font-weight:550}
+.arIOWindow>header small{letter-spacing:.6px;color:#90c4de}
+.arIOWindow>footer{background:#252d33}
+.arIOTop{background:#151c23;color:#bdd1dd;letter-spacing:.1px}
+.arIOWindow nav{padding:9px 14px 0;background:#1b2025}
+.arIOWindow nav .btn-180{border-radius:2px;min-width:100px;height:29px;min-height:29px}
+.arIOWindow .arIOBody{padding:12px 15px 13px;background:#20252b}
+.arIOHardwareHeader{display:flex;align-items:center;gap:16px;min-height:106px;padding:9px 15px;margin-bottom:9px;background:linear-gradient(100deg,#30363b,#292f35);border:1px solid #444f58}
+.arIOHardwareArt{width:195px;height:88px;object-fit:contain;flex:none}
+.arIOHardwareText{display:flex;flex-direction:column;min-width:0;gap:5px;color:#d7e0e7}
+.arIOHardwareText small{font-size:9px;letter-spacing:.8px;color:#a3b7c5}
+.arIOHardwareText strong{font-size:13px;font-weight:600;overflow-wrap:anywhere}
+.arIOHardwareText span{font-size:10px;color:#a9bcc8}
+.arIOCrosspatch{border:1px solid #485660;background:#292e33}
+.arIOMatrixToolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 10px;background:#333b42;border-bottom:1px solid #52616a}
+.arIOMatrixToolbar strong{font-size:10px;letter-spacing:.3px;font-weight:600;color:#c7dce7}
+.arIOPager{display:flex;align-items:center;gap:6px;color:#a8bac7;font:10px Consolas,monospace}
+.arIOPageButton{width:25px;height:24px;background:#3d4c57;color:#bcd4de;border:1px solid #586b75;border-radius:2px;cursor:pointer;font-size:17px}
+.arIOPageButton:disabled{opacity:.35;cursor:default}
+.arIOCrossScroll{overflow-x:auto;scrollbar-width:thin}
+.arIOMatrix{display:grid;gap:2px;min-width:540px;align-items:stretch;padding:6px;background:#252b30}
+.arIOMatrixCorner,.arIOPortTitle{min-height:33px;display:flex;align-items:end;justify-content:center;padding:4px 2px;box-sizing:border-box;color:#a3b9c5;font:600 9px/1.2 'ArSonMix Inter','Segoe UI',sans-serif;letter-spacing:.1px}
+.arIOMatrixCorner:first-child{justify-content:flex-start;padding-left:9px}
+.arIOPortTitle{color:#b9cbd4;writing-mode:initial;text-align:center;white-space:nowrap}
+.arIOMatrixRowName{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;min-height:35px;padding:4px 8px;background:#353c42;color:#d4e2e9;box-sizing:border-box;border-left:3px solid #5c7b90}
+.arIOMatrixRowName>strong{font:600 11px 'ArSonMix Inter',sans-serif;white-space:nowrap}
+.arIOMatrixRowName>small{font-size:9px;color:#96aebc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.arIOMatrixSides{display:flex;gap:3px;margin-left:auto}
+.arIOSideButton{height:22px;min-width:24px;border:1px solid #61737e;background:#3e4a54;color:#c9d9e1;border-radius:2px;cursor:pointer;font-size:10px}
+.arIOSideButton[aria-pressed="true"]{color:#f0faff;background:#477fa8;border-color:#6da5d1}
+.arIOSideButton:disabled{opacity:.45;cursor:default}
+.arIOMatrixFormat{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;background:#323b42;color:#a9cde0}
+.arIOMatrixFormat strong{font-size:10px}
+.arIOMatrixFormat small{font-size:8px;color:#a3b7c2;white-space:nowrap}
+.arIOMatrixMode{min-width:0;width:90%;height:24px;border-radius:2px;border:1px solid #607685;background:#222e38;color:#d8eaf3;font:10px 'ArSonMix Inter','Segoe UI',sans-serif}
+.arIOMatrixMode:disabled{opacity:.5}
+.arIOMatrixCell{display:flex;align-items:center;justify-content:center;min-height:35px;box-sizing:border-box;background:#343b40;border:1px solid #49525a;border-radius:1px;color:#657580;cursor:pointer;font:600 11px/1 'ArSonMix Inter','Segoe UI',sans-serif}
+.arIOMatrixCell:hover:not(:disabled){border-color:#8caebe;background:#3e4b54}
+.arIOMatrixCell[data-assigned="true"]{color:#fff;background:#477fa8;border-color:#78acd1}
+.arIOMatrixCell[data-assigned="true"][data-stage="live"]{background:#3b7568;border-color:#76baa2}
+.arIOMatrixCell:disabled{opacity:.48;cursor:default}
+.arIOMatrixCell:focus-visible,.arIOPageButton:focus-visible,.arIOSideButton:focus-visible{outline:2px solid #a2e3f0;outline-offset:0}
+.arIOMatrixLegend{padding:8px 10px;margin:0;border-top:1px solid #3f4e57;color:#a6b9c4;font-size:10px;line-height:1.4}
+.arIOQuickMap{margin:9px 1px;padding:6px 8px;background:#252f38;border:1px solid #3e505d}
+.arIOQuickMap summary{cursor:pointer;color:#91bdda;font-size:10px;letter-spacing:.1px}
+.arIOQuickMap .arIOInputGrid{padding:8px 0;max-width:100%}
+.arIOQuickMap .arIOOutputRow{padding:6px 8px;margin:4px 0;background:#273741}
+.arIOQuickMap .arIOMainOutput{background:#132530;color:#d4ebf3;border:1px solid #527180;min-width:125px;padding:5px}
+@media(max-width:760px){.arIOHardwareHeader{min-height:74px;padding:6px 9px;gap:6px}.arIOHardwareArt{width:112px;height:65px}.arIOHardwareText strong{font-size:11px}.arIOWindow .arIOBody{padding:8px}.arIOMatrix{min-width:540px}.arIOMatrixRowName>small{max-width:70px}}
+@media(max-height:670px){.arIOHardwareHeader{min-height:63px}.arIOHardwareArt{height:54px;width:120px}.arIOWindow .arIOBody{padding-top:7px}.arIOMatrixCell{min-height:29px}.arIOMatrixRowName{min-height:29px}}
+
+.arIOPortTitle{height:80px;min-height:80px;position:relative;overflow:visible;align-items:end;padding:0 0 4px}
+.arIOPortFriendly{position:absolute;bottom:24px;left:50%;display:block;width:92px;max-width:92px;color:#bdcdd6;text-align:left;font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transform:rotate(-43deg);transform-origin:0% 100%;pointer-events:none}
+.arIOPortIndex{display:block;width:100%;padding-top:3px;border-top:1px solid #526878;text-align:center;color:#dfedf1;font-size:10px}
+@media(max-height:670px){.arIOPortTitle{height:63px;min-height:63px}.arIOPortFriendly{bottom:19px;width:72px;max-width:72px}}
