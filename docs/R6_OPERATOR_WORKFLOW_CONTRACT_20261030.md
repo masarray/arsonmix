@@ -1,4 +1,7 @@
 # R6 — Professional Console GUI / Workflow Acceptance Contract
+
+**CROSS-THREAD RECONCILIATION — 2026-10-30:** [New canonical high-level MS0–MS7 product roadmap](ROADMAP_LV1_STUDIO_PRO_MIXER_PARITY_20261030.md), merged at main@d8d70a6, owns milestone numbering and benchmark facts including current **Fender Studio Pro 8.2** naming. This R6 document is a lower-level native architecture/UX acceptance companion, **not a competing product roadmap**. Read roadmap MS0 (#15 hardware), MS1 (#173), MS2 (#174), MS3 (#175), MS4 (#95/IN-FLIGHT G5A draft PR #178), MS5 (#179 Channel Focus/Sends-on-Faders), MS6 (#180/#85 Show and portability), MS7 release hardening. UX PATCH/FX truth is [#182](https://github.com/masarray/arsonmix/issues/182), complementary to #179; preserve L2 #176. PR #178 is DRAFT and unmerged; its ten changed files include LiveChannelFxGraph.h and web/bridge.js/plugin-ui.js and must be reconciled by exact HEAD before any GUI or audio graph edit. The earlier narrower R5 shorthand MS4+portability below is historical; **MS6 owns portable Shows in current product milestone numbering**. Hardware quality remains unqualified even if CI is green.
+
 Date 2026-10-30. Companion: R6_CURRENT_STATE_ARCHITECTURE_EXECUTION_20261030.md. Design requirements do not imply engine delivered.
 
 ## Fixed shell inherited from approved #176
