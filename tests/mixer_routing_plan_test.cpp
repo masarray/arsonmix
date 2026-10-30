@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/MixerRoutingPlan.h"
 #include "../engine/core/DynamicChannelRoster.h"
+#include "../engine/core/DynamicPreparedMixerBlock.h"
 #include <array>
 #if defined(NDEBUG)
 #undef NDEBUG // Never skip P1A assertions in Release native CTest.
@@ -86,7 +87,109 @@ static void verifyDynamicChannelRoster() {
     assert(large.channels().back().insertCatalogIds.empty());
 }
 
+
+static void verifyDynamicPreparedPcm() {
+    using Kind=ChannelEdit::Kind;
+    DynamicChannelRoster bank;
+    std::vector<ChannelEdit> creates;
+    for(int i=0;i<128;++i){
+        ChannelEdit op;op.kind=Kind::add;op.position=creates.size();
+        op.role=i==127?ChannelRole::main:ChannelRole::input;
+        op.format=i==127?ProcessingFormat::stereo:ProcessingFormat::mono;
+        creates.push_back(op);
+    }
+    auto result=bank.edit(0,creates);
+    assert(result.ok()&&bank.size()==128);
+    const auto ids=result.createdIds;
+    std::vector<ChannelEdit> sends;
+    for(int i=0;i<127;++i){
+        ChannelEdit op;op.kind=Kind::addSendReference;op.id=ids[i];
+        op.target=ids[127];op.value=1.f;sends.push_back(op);
+    }
+    assert(bank.edit(bank.revision(),sends).ok());
+    DynamicGraphRequest request;
+    request.physicalInputs=2;
+    request.maxFrames=32;
+    request.sources={{ids[0],0,-1,false},{ids[10],1,-1,false},
+                     {ids[31],0,-1,false},{ids[63],1,-1,false},
+                     {ids[126],0,-1,false}};
+    DynamicPreparedMixerBlock renderer;
+    DynamicGraphError error;
+    assert(DynamicPreparedMixerBlock::compile(bank,request,renderer,error));
+    assert(renderer.channelCount()==128);
+    assert(renderer.activeChannels()==128); // all 127 linked receivers + MAIN
+    std::array<float,32> a{},b{},l{},r{};
+    a.fill(.2f);b.fill(.4f);
+    const float* physical[]{a.data(),b.data()};
+    int fxCalls=0;
+    const auto fx=[&](ChannelId id,float* left,float* right,int frames) noexcept {
+        ++fxCalls;
+        const float multiplier=id==ids[31]?2.f:1.f;
+        for(int i=0;i<frames;++i){left[i]*=multiplier;right[i]*=multiplier;}
+    };
+    assert(renderer.process(physical,2,l.data(),r.data(),32,fx));
+    assert(fxCalls==128); // one reusable FX invocation path for CH1..CH128
+    constexpr float center=.7071067811865475f;
+    // Mono INPUT -> mono fader (-3dB); ST master -> all contributions sum.
+    assert(close(l[0],(.2f+.4f+.2f*2.f+.4f+.2f)*center));
+    assert(close(r[0],l[0]));
+    // Duplicate IDs remain independent; moving a channel changes UI order
+    // only, the send destination is the stable MAIN id.
+    ChannelEdit move;move.kind=Kind::move;move.id=ids[63];move.position=0;
+    assert(bank.edit(bank.revision(),std::span<const ChannelEdit>(&move,1)).ok());
+    assert(DynamicPreparedMixerBlock::compile(bank,request,renderer,error));
+    assert(renderer.process(physical,2,l.data(),r.data(),32,fx));
+    assert(close(l[0],(.2f+.4f+.2f*2.f+.4f+.2f)*center));
+    // Muting CH32 does not affect CH1, CH11, CH64 or CH127.
+    ChannelEdit muted;muted.kind=Kind::setFader;muted.id=ids[31];muted.value=0.f;
+    assert(bank.edit(bank.revision(),std::span<const ChannelEdit>(&muted,1)).ok());
+    assert(DynamicPreparedMixerBlock::compile(bank,request,renderer,error));
+    assert(renderer.process(physical,2,l.data(),r.data(),32,fx));
+    assert(close(l[0],(.2f+.4f+.4f+.2f)*center));
+    // All 128 have the exact same audio FX/route API, but nonpatched
+    // descriptors must not allocate a plugin or provide fake input.
+    auto wrong=request;
+    wrong.sources.push_back({ids[10],0,-1,false});
+    const auto previous=renderer.channelCount();
+    assert(!DynamicPreparedMixerBlock::compile(bank,wrong,renderer,error));
+    assert(error.fault==DynamicGraphFault::invalidSource);
+    assert(renderer.channelCount()==previous);
+    assert(renderer.process(physical,2,l.data(),r.data(),32,fx));
+    assert(close(l[0],(.2f+.4f+.4f+.2f)*center));
+    // Cycle must be caught by the compiler, previous audio remains valid.
+    auto cycle=ChannelEdit{};cycle.kind=Kind::addSendReference;
+    cycle.id=ids[127];cycle.target=ids[10];cycle.value=1.f;
+    assert(bank.edit(bank.revision(),std::span<const ChannelEdit>(&cycle,1)).ok());
+    assert(!DynamicPreparedMixerBlock::compile(bank,request,renderer,error));
+    assert(error.fault==DynamicGraphFault::mainFeedback);
+    assert(renderer.process(physical,2,l.data(),r.data(),32,fx));
+    // 1024 disconnected channels cost only MAIN scratch, NOT 1024 FX
+    // allocations. No fixed ten/twelve-channel implementation limit.
+    DynamicChannelRoster big;
+    std::vector<ChannelEdit> large;
+    for(int i=0;i<1024;++i){
+        ChannelEdit op;op.kind=Kind::add;op.position=large.size();
+        op.role=i==1023?ChannelRole::main:ChannelRole::input;
+        op.format=ProcessingFormat::stereo;
+        large.push_back(op);
+    }
+    assert(big.edit(0,large).ok());
+    DynamicGraphRequest zero;
+    zero.maxFrames=256;zero.maxScratchBytes=4096;
+    assert(DynamicPreparedMixerBlock::compile(big,zero,renderer,error));
+    assert(renderer.channelCount()==1024 && renderer.activeChannels()==1);
+    assert(renderer.scratchBytes()==2048);
+    assert(renderer.process(nullptr,0,l.data(),r.data(),32,fx));
+    assert(l[0]==0.f&&r[0]==0.f);
+    // Full active graph cannot ignore operator memory admission limit.
+    zero.maxScratchBytes=32;
+    assert(!DynamicPreparedMixerBlock::compile(big,zero,renderer,error));
+    assert(error.fault==DynamicGraphFault::scratchBudget);
+    assert(renderer.channelCount()==1024&&renderer.scratchBytes()==2048);
+}
+
 int main() {
+    verifyDynamicPreparedPcm();
     verifyDynamicChannelRoster();
     Configuration cfg;
     Plan plan;Error err;

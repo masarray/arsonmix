@@ -1,5 +1,8 @@
 # Repository instructions — ArSonMix (all future threads and AI coding agents)
 
+> **DYN1A DYNAMIC PCM ENGINE CONTRACT (2026-10-30):** [DYN1A handoff](docs/DYN1A_DYNAMIC_NATIVE_PCM_20261030.md), [#192](https://github.com/masarray/arsonmix/issues/192). New `DynamicPreparedMixerBlock.h` is **offline replacement-ready PCM kernel**, O(V+E) validated runtime DAG and budgeted scratch. **NOT YET LIVE JUCE**, not a second callback, no user Add Channel. DYN1B must replace the current *single* 10CH graph in `LiveDryRoutingLab` and migrate CH1 vendor/Orbit identity and complete AUX/Show/MUTE/ACK semantics before GUI DYN2. Never falsely claim 64-channel VST3 host parity from a callback FX stand-in. Keep #15 zero-FX hardware and #174/#175/#197/#198 dependencies. No heavy CI for docs-only changes.
+
+
 > **DYNAMIC CHANNEL OWNER DIRECTIVE (2026-10-30):** [DYN epic #192](https://github.com/masarray/arsonmix/issues/192) + [DYN0 source/next-gate handoff](docs/DYN0_DYNAMIC_CHANNEL_ROSTER_20261030.md). All channels CH1..N must share one native channel DSP/FX control model, same capabilities and stable ID; channel count is runtime-configured by resource budget, not fixed 10/12 or physical port count. Current main still ships real fixed 10CH+4 AUX with special legacy CH1 plugin path—DYN0 creates only safe non-RT roster, **NOT LIVE dynamic audio, GUI +CHANNEL or 128CH certification**. Next DYN1 must migrate the existing ONE prepared render graph and CH1 state without branch regression; next DYN2 must build native-ACKed +CHANNEL and banked/virtualized UI. Reconcile MS2 #189, G5C #190 and Factory FX #188 before editing shared DSP/GUI. Preserve muted APPLY→ACK, L2 #176 and P0 hardware #15; never add a parallel callback, fake LIVE buttons or heavy CI for docs only.
 
 
