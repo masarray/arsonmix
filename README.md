@@ -6,6 +6,8 @@ The [approved GUI visual baseline](docs/GUI_BASELINE_LOCK_2026-10-25.md) remains
 
 **Product/GUI research (2026-10-30):** [LV1 / Studio One / FL workflow benchmark](docs/GUI_WORKFLOW_BENCHMARK_20261030.md) and [YouTube customer voice -> verified feature requirements](docs/CUSTOMER_VOICE_REQUIREMENTS_20261030.md) are normative companions to the PRD/ARD. They define interaction acceptance and prioritization, not delivered native capability. Third-party reference screenshots are not redistributed.
 
+**Mono/Stereo native roadmap (ADR R5, 2026-10-30):** [Independent source/channel/bus format architecture](docs/ADR_R5_NATIVE_MONO_STEREO_CHANNEL_BUS_ROUTING_20261030.md) and [cross-thread execution handoff](docs/EXECUTION_HANDOFF_MONO_STEREO_REFORM_20261030.md) are mandatory before altering input modes, FX, send routing or hardware I/O. G3 native AUX PRE/POST editor is now merged on reviewed main@890cc310; the format flip/mono buses, PDC and independent physical outputs are not yet implemented. See [product epic #170](https://github.com/masarray/arsonmix/issues/170).
+
 ## Start here — new canonical product and engineering plans
 1. [PRD v2.0 — Digital Mixer, per-channel FX/ROUTE/SENDS, custom hardware I/O, AUX buses](docs/PRD_ARSONMIX_PRO_MIXER_WORKSPACE_ROUTING_20261030.md)
 2. [ARD v2.0 — one audio graph, physical output patch, bus model, native ACK, staged execution](docs/ARD_PRD_MIXER_IO_AUX_BUS_REFORM_20261030.md)

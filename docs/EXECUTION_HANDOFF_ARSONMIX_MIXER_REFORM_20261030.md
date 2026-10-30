@@ -6,6 +6,9 @@
 3. [FX Rack / Routing ownership](FX_RACK_ROUTING_CROSS_THREAD_CONTRACT_20261030.md)
 4. [Native Smart Audio ARD](ARD_SMART_AUDIO_ENGINE_V1_2026-10-25.md), [baseline FAT](HARDWARE_FAT_GUI10_ENGINE_P012_20261027.md) and current source code.
 
+## New canonical sequencing note — ADR R5 overrides stale G1/G2 next-step text
+Before any further channel format, bus, hardware-output or FX layout work, read [ADR R5 Mono/Stereo](ADR_R5_NATIVE_MONO_STEREO_CHANNEL_BUS_ROUTING_20261030.md) and [R5 execution handoff](EXECUTION_HANDOFF_MONO_STEREO_REFORM_20261030.md). This document is a HISTORICAL earlier G1/G2 implementation handoff: G1/G2 #167 and G3 native AUX editor were merged by main@890cc310. Do not repeat its "next milestone G1+G2" or replace the new mixer-io.js. Current next primary vertical slice is MS1 native/GUI independent mono/stereo channel processing with legacy codec and tests; then MS2 typed buses/send conversion, MS3 real mono/stereo physical outputs via #143, MS4 FX/PDC/Show. #15 zero-FX FAT remains separate blocking qualification. Read latest main SHA before any edit.
+
 ## 1. Why this reform is necessary
 The user showed 9 digital-mixer/DAW reference screenshots: eMotion LV1 live mixer and FX/ROUTE mode banks, Studio One custom hardware input-output matrix, DAW channel sends to Bus1/Bus2/Bus3, and selected source-to-destination FL-style wires. They want **a usable mixer**: INPUT and OUTPUT on the main window, all channel VST insert racks preserved, one-click FX/ROUTE/SENDS switching, real mono/stereo hardware pin maps and true AUX bus routing. Previous R3 styling optimized visual patch cells but failed the essential workflow when switching to routing replaced the working FX Rack.
 
