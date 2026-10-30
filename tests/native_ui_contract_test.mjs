@@ -20,8 +20,8 @@ test('native app never runs demo sine meters',()=>{
   assert.ok(app.indexOf('meterRAF=requestAnimationFrame(t=>{meterRAF=0;meters(t)});',scheduler)>scheduler);
 });
 test('native meter reads DSP and hides only the nine unrouted input channels',()=>{
-  assert.ok(bridge.includes('percent(d.inputPeak)'),'CH1 uses native audio input peak');
-  assert.ok(bridge.includes('percent(d.peakLeft)') && bridge.includes('percent(d.peakRight)'),'real output L/R peak inputs');
+  assert.ok(bridge.includes('const raw=Number(d.inputPeak)||0') && bridge.includes('percent(raw),raw'),'CH1 uses native audio input peak');
+  assert.ok(bridge.includes('const rawL=Number(d.peakLeft)||0,rawR=Number(d.peakRight)||0') && bridge.includes('percent(rawL),rawL') && bridge.includes('percent(rawR),rawR'),'real output L/R peak inputs');
   assert.ok(bridge.includes('percent(d.peak)'),'master aux uses native output peak');
   assert.ok(bridge.includes('window.__arMixSetNativeMeterTarget(el,level)'),'native data is fed to bounded visual presenter');
   assert.ok(!bridge.includes('liveInputLevel-5'),'remove callback-cadence smoothing');
@@ -72,5 +72,5 @@ test('MASTER stereo meters are never hidden by native preview CSS',()=>{
   assert.ok(masterBranch.includes('track.removeAttribute("data-preview")'));
   assert.ok(masterBranch.includes('track.dataset.fxPreview="1"'));
   assert.ok(!masterBranch.includes('track.dataset.preview="1"'));
-  assert.ok(bridge.includes('percent(d.peakLeft)')&&bridge.includes('percent(d.peakRight)'));
+  assert.ok(bridge.includes('const rawL=Number(d.peakLeft)||0,rawR=Number(d.peakRight)||0') && bridge.includes('percent(rawL),rawL') && bridge.includes('percent(rawR),rawR'));
 });
