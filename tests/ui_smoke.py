@@ -324,9 +324,10 @@ async def main():
             layers:(slit.backgroundImage.match(/linear-gradient/g)||[]).length,
             masterLayers:(master.backgroundImage.match(/linear-gradient/g)||[]).length,
             centerBlue:slit.backgroundImage.includes('rgb(36, 116, 180)'),
-            occupiedX:Math.round(occupied.getBoundingClientRect().left-
-              occupied.closest('.insert').getBoundingClientRect().left),
-            emptyX:Math.round(empty.getBoundingClientRect().left-
+            occupiedX:Math.round(occupied.getBoundingClientRect().left+
+              parseFloat(style.paddingLeft)-occupied.closest('.insert').getBoundingClientRect().left),
+            emptyX:Math.round(empty.getBoundingClientRect().left+
+              parseFloat(getComputedStyle(empty).paddingLeft)-
               empty.closest('.insert').getBoundingClientRect().left),
             font:parseFloat(style.fontSize),weight:parseInt(style.fontWeight),
             ellipsis:style.textOverflow,clipHeight:parseFloat(clip.height)

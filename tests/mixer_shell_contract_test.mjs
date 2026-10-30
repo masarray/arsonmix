@@ -103,7 +103,7 @@ test('M5 fader light is recessed, VST text aligned, no heavyweight hover visual'
  const m5=css.slice(css.indexOf('/* M5 — light is recessed INSIDE'));
  assert.match(m5,/linear-gradient\(to top,transparent/);
  assert.match(m5,/linear-gradient\(90deg,#010407/);
- assert.match(m5,/padding-left:15px/);
+ assert.match(m5,/padding-left:17px/);
  assert.match(m5,/font:700 11px/);
  assert.match(m5,/\.clip-led\{[\s\S]*?height:12px/);
  assert.doesNotMatch(m5,/(?:^|\s)(?:filter|backdrop-filter|animation|transition|will-change):/);
