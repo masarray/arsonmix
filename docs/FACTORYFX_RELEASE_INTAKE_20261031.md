@@ -58,7 +58,7 @@ and native VST editor lifecycle stay the only processing path.
 
 ## Commands
 - Pure offline intake/integrity tests:
-  `python -m unittest discover -s tests -p test_factoryfx_release_bundle.py -v`
+  `python -m unittest discover -s scripts/tests -p test_factoryfx_release_bundle.py -v`
 - Observe release candidates (public API only):
   `python scripts/factoryfx_upstream_watch.py`
 - Produce approved FactoryFX staging after packaging the JUCE EXE:
