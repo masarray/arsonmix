@@ -202,3 +202,8 @@
 .arIOQuickMap .arIOMainOutput{background:#132530;color:#d4ebf3;border:1px solid #527180;min-width:125px;padding:5px}
 @media(max-width:760px){.arIOHardwareHeader{min-height:74px;padding:6px 9px;gap:6px}.arIOHardwareArt{width:112px;height:65px}.arIOHardwareText strong{font-size:11px}.arIOWindow .arIOBody{padding:8px}.arIOMatrix{min-width:540px}.arIOMatrixRowName>small{max-width:70px}}
 @media(max-height:670px){.arIOHardwareHeader{min-height:63px}.arIOHardwareArt{height:54px;width:120px}.arIOWindow .arIOBody{padding-top:7px}.arIOMatrixCell{min-height:29px}.arIOMatrixRowName{min-height:29px}}
+
+.arIOPortTitle{height:80px;min-height:80px;position:relative;overflow:visible;align-items:end;padding:0 0 4px}
+.arIOPortFriendly{position:absolute;bottom:24px;left:50%;display:block;width:92px;max-width:92px;color:#bdcdd6;text-align:left;font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transform:rotate(-43deg);transform-origin:0% 100%;pointer-events:none}
+.arIOPortIndex{display:block;width:100%;padding-top:3px;border-top:1px solid #526878;text-align:center;color:#dfedf1;font-size:10px}
+@media(max-height:670px){.arIOPortTitle{height:63px;min-height:63px}.arIOPortFriendly{bottom:19px;width:72px;max-width:72px}}
