@@ -89,7 +89,9 @@ for marker in (
     "inset 4px 0 5px -4px #081116",
     "inset -4px 0 5px -4px #081116",
     "width:5px;transform:translateX(-50%)",
-    "#3576b1 calc(var(--fader-cut,50%) + 68px)",
+    "#27bfd8 calc(var(--fader-cut,50%) + 68px)",
+    "rgba(1,6,10,.52) 86%",
+    "#01060a 100%",
     "#app #mixer .fader-zone .fader-travel{z-index:1}",
 ):
     assert marker in finish, "Latest fader recess lost from source: "+marker

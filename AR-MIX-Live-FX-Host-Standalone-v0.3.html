@@ -1401,25 +1401,28 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 #app #mixer .fader-zone .vu-bank .vu-bars .vu-tick::before{background:#516b78}
 #app #mixer .fader-zone .vu-bank .vu-bars .vu-tick span{color:#a0bbc5}
 
-/* RAIL2 — user-reference fader: black ABOVE the silver/rose-gold thumb;
-   blue ONLY BELOW it, with a 40px soft rise in brightness.
-   The underlying 5px machined slot and symmetrical black sidewalls remain
-   physically continuous; only the tiny optical insert changes with gain.
-   Sampled guide hue from the supplied hardware reference: #3576b1.
-   No blur, filter, animation, new DOM/listener, RAF, or audio callback work. */
+/* RAIL3 — operator-approved hardware fader: upper slot unlit black;
+   below the thumb cyan blooms smoothly, then rolls off into black at the foot.
+   The groove is physically ONE 5px machined slot; black sidewalls are static.
+   Three bounded CSS gradients over a tiny area; no blur, shadows animation,
+   filters, extra DOM, observer, RAF, DSP or additional gain handlers. */
 #app #mixer .fader-zone .fader::after{
  background-color:#10171c;
  background-image:
-   /* fixed inset dark sidewalls, visible above AND below the moving cap */
+   /* fixed black edge occlusion throughout the physical slot */
    linear-gradient(90deg,#010508 0%,#03090f 18%,transparent 38%,
      transparent 62%,#03090f 82%,#010508 100%),
-   /* upper cavity sleeps black; behind/below cap the lamp fades into blue */
+   /* fade light back into the machined black well at the lower end */
+   linear-gradient(to bottom,transparent 0%,transparent 62%,
+     rgba(1,6,10,.10) 72%,rgba(1,6,10,.52) 86%,
+     rgba(1,6,10,.85) 94%,#01060a 100%),
+   /* above cap black, under cap dark -> gentle cyan; follows existing detent */
    linear-gradient(to bottom,
      #12191e 0%,#12191e calc(var(--fader-cut,50%) + 26px),
-     #17324a calc(var(--fader-cut,50%) + 39px),
-     #275781 calc(var(--fader-cut,50%) + 52px),
-     #3576b1 calc(var(--fader-cut,50%) + 68px),
-     #3576b1 100%);
+     #0e2e39 calc(var(--fader-cut,50%) + 39px),
+     #176d85 calc(var(--fader-cut,50%) + 52px),
+     #27bfd8 calc(var(--fader-cut,50%) + 68px),
+     #27bfd8 100%);
  box-shadow:inset 1px 0 #010406,inset -1px 0 #010406;
 }
 /* M5 — names start on the same horizontal guide as ADD FX (glyph=10px,
