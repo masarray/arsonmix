@@ -7,6 +7,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <cmath>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -148,6 +149,22 @@ public:
     }
     int mainOutputLeft() const noexcept{return mainOutputLeft_;}
     int mainOutputRight() const noexcept{return mainOutputRight_;}
+    // MS3B: independent MONITOR stereo bus with 10 CH + 4 AUX POST sends.
+    // One prepared FX render produces both hardware destinations.
+    bool setMonitorOutputBus(int left,int right,int outputCount,
+                             const std::array<float,fxSlots>& gains) noexcept {
+        if(left<0||right<0||left>=outputCount||right>=outputCount||
+           left==right||left==mainOutputLeft_||left==mainOutputRight_||
+           right==mainOutputLeft_||right==mainOutputRight_)return false;
+        for(float v:gains)if(!std::isfinite(v)||v<0.f||v>1.f)return false;
+        monitorLeft_=left;monitorRight_=right;
+        monitorGains_=gains;monitorEnabled_=true;
+        return true;
+    }
+    bool monitorEnabled() const noexcept{return monitorEnabled_;}
+    int monitorOutputLeft() const noexcept{return monitorLeft_;}
+    int monitorOutputRight() const noexcept{return monitorRight_;}
+    const std::array<float,fxSlots>& monitorGains() const noexcept{return monitorGains_;}
     int activeInserts() const noexcept{return activeInserts_;}
     bool setStripControl(int channel,float gain,float pan,
                          bool mono,bool mute,bool solo) noexcept {
@@ -246,7 +263,8 @@ public:
                  float* left,float* right,int frames,
                  RenderLevels* levels=nullptr,
                  void* externalContext=nullptr,
-                 ExternalStripFx externalFx=nullptr) noexcept {
+                 ExternalStripFx externalFx=nullptr,
+                 float* monitorL=nullptr,float* monitorR=nullptr) noexcept {
         auto channelFx=[this,externalContext,externalFx]
           (int strip,float* l,float* r,int samples) noexcept {
             if(strip<0||strip>=fxSlots)return;
@@ -259,7 +277,10 @@ public:
             } else if(strip==0 && externalFx)
                 externalFx(externalContext,strip,l,r,samples);
         };
-        return block_->process(physical,inputs,left,right,frames,channelFx,levels,&controls_);
+        if(monitorEnabled_ && (!monitorL||!monitorR))return false;
+        return block_->process(physical,inputs,left,right,frames,channelFx,levels,
+                               &controls_,monitorEnabled_?&monitorGains_:nullptr,
+                               monitorL,monitorR);
     }
 
 private:
@@ -270,5 +291,8 @@ private:
     int activeInserts_=0;
     int pluginQuantum_=512;
     int mainOutputLeft_=0,mainOutputRight_=1;
+    int monitorLeft_=-1,monitorRight_=-1;
+    bool monitorEnabled_=false;
+    std::array<float,fxSlots> monitorGains_{};
 };
 } // namespace armix::mixer

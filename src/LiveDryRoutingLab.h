@@ -216,6 +216,42 @@ public:
             if(mainLeft<0||mainRight<0||mainLeft==mainRight)
                 return "MAIN output patch uses inactive or duplicate physical ports";
         }
+        // Optional independent MONITOR mix: resolve physical pins through
+        // the actual sparse enabled output mask, disjoint from MAIN.
+        const auto rawMonitor=command.getProperty("monitorOutputs",juce::var());
+        std::array<float,fxSlots> monitorSends{};
+        bool monitorEnabled=false;
+        int monitorLeft=-1,monitorRight=-1;
+        if(!rawMonitor.isVoid()) {
+            const auto* pins=rawMonitor.getArray();
+            const auto sendsValue=command.getProperty("monitorSends",juce::var());
+            const auto* gains=sendsValue.getArray();
+            if(!pins||pins->size()!=2||!gains||gains->size()!=fxSlots ||
+               !pins->getReference(0).isInt()||!pins->getReference(1).isInt())
+                return "MONITOR requires two physical pins and 14 send gains";
+            const int physL=static_cast<int>(pins->getReference(0));
+            const int physR=static_cast<int>(pins->getReference(1));
+            const int n=callbackOutputCount_.load(std::memory_order_acquire);
+            for(int i=0;i<n;++i) {
+                const int physical=enabledOutputPorts_[i].load(std::memory_order_relaxed);
+                if(physical==physL)monitorLeft=i;
+                if(physical==physR)monitorRight=i;
+            }
+            if(monitorLeft<0||monitorRight<0||monitorLeft==monitorRight||
+               monitorLeft==mainLeft||monitorLeft==mainRight||
+               monitorRight==mainLeft||monitorRight==mainRight)
+                return "MONITOR pins unavailable, duplicated or already used by MAIN";
+            for(int i=0;i<fxSlots;++i) {
+                const auto v=gains->getReference(i);
+                if(!(v.isInt()||v.isDouble()))
+                    return "MONITOR sends require numeric gain levels";
+                const double gain=static_cast<double>(v);
+                if(!std::isfinite(gain)||gain<0.0||gain>1.0)
+                    return "MONITOR gain must be between 0 and 1";
+                monitorSends[i]=static_cast<float>(gain);
+            }
+            monitorEnabled=true;
+        }
         const auto expectedEpoch=static_cast<std::uint64_t>(
             static_cast<juce::int64>(command.getProperty("deviceEpoch",juce::var(0))));
         const auto expectedRevision=static_cast<std::uint64_t>(
@@ -254,6 +290,10 @@ public:
         if(!next->prepared->setMainOutputPair(
               mainLeft,mainRight,callbackOutputCount_.load(std::memory_order_acquire)))
             return "MAIN output patch references invalid callback channels";
+        if(monitorEnabled && !next->prepared->setMonitorOutputBus(
+             monitorLeft,monitorRight,callbackOutputCount_.load(std::memory_order_acquire),
+             monitorSends))
+            return "MONITOR output ownership or send plan invalid";
         std::array<ChannelEdit,count> proposed{};
         for(int i=0;i<count;++i) {
             const auto& strip=cfg.stripsAndMaster.strips[i];
@@ -532,14 +572,18 @@ public:
                  void* externalContext=nullptr,
                  FxGraph::ExternalStripFx externalFx=nullptr,
                  bool masterMono=false,
-                 std::array<int,2>* actualOutputPair=nullptr) noexcept {
+                 std::array<int,2>* actualOutputPair=nullptr,
+                 std::array<int,2>* actualMonitorPair=nullptr) noexcept {
         if(actualOutputPair)*actualOutputPair={{-1,-1}};
+        if(actualMonitorPair)*actualMonitorPair={{-1,-1}};
         if(!active())return false;
         for(auto& p:channelPeaks_)p.store(0.f,std::memory_order_relaxed);
         for(auto& p:auxPeaks_)p.store(0.f,std::memory_order_relaxed);
         // Stale meters must never survive a failed device/epoch mapping.
         peakL_.store(0.f,std::memory_order_relaxed);
         peakR_.store(0.f,std::memory_order_relaxed);
+        monitorPeakL_.store(0.f,std::memory_order_relaxed);
+        monitorPeakR_.store(0.f,std::memory_order_relaxed);
         if(frames<=0)return true;
         for(int c=0;c<outputCount;++c)
             if(outputs && outputs[c])
@@ -589,6 +633,20 @@ public:
         }
         float* const mainL=outputs[outLeft];
         float* const mainR=outputs[outRight];
+        float* monitorL=nullptr;
+        float* monitorR=nullptr;
+        if(snapshot->prepared->monitorEnabled()) {
+            const int l=snapshot->prepared->monitorOutputLeft();
+            const int r=snapshot->prepared->monitorOutputRight();
+            if(l<0||r<0||l>=outputCount||r>=outputCount||
+               l==r||l==outLeft||l==outRight||r==outLeft||r==outRight||
+               !outputs[l]||!outputs[r]) {
+                topologyFault_.store(true,std::memory_order_release);
+                return true;
+            }
+            monitorL=outputs[l];monitorR=outputs[r];
+            if(actualMonitorPair)*actualMonitorPair={{l,r}};
+        }
         // Return the callback indices from THIS leased prepared graph.
         // The post-render FX transition and meters must not re-read a
         // potentially newer route or assume hardware channels 0/1.
@@ -615,7 +673,7 @@ public:
         // no heap allocation or new processing object inside callback.
         std::array<const float*,armix::device::LiveInputPortRegistry::limit> shifted{};
         const int max=snapshot->prepared->maxFramesPerPlugin();
-        float peakL=0.f,peakR=0.f;
+        float peakL=0.f,peakR=0.f,monitorPeakL=0.f,monitorPeakR=0.f;
         std::array<float,count> perChannelPeaks{};
         std::array<float,auxCount> perAuxPeaks{};
         for(int offset=0;offset<frames;offset+=max) {
@@ -625,8 +683,16 @@ public:
             armix::mixer::RenderLevels level;
             if(!snapshot->prepared->process(shifted.data(),inputCount,
                    mainL+offset,mainR+offset,n,&level,
-                   externalContext,externalFx))
+                   externalContext,externalFx,
+                   monitorL?monitorL+offset:nullptr,
+                   monitorR?monitorR+offset:nullptr)) {
+                // A failed DSP pass must never leak partially rendered
+                // MAIN/MONITOR PCM into an armed physical output.
+                for(int c=0;c<outputCount;++c)
+                    if(outputs[c])juce::FloatVectorOperations::clear(outputs[c],frames);
+                topologyFault_.store(true,std::memory_order_release);
                 return true;
+            }
             for(int ch=0;ch<count;++ch)
                 perChannelPeaks[ch]=std::max(perChannelPeaks[ch],level.channelPeak[ch]);
             for(int b=0;b<auxCount;++b)
@@ -635,11 +701,15 @@ public:
             for(int i=0;i<n;++i) {
                 float l=mainL[offset+i]*g;
                 float r=mainR[offset+i]*g;
+                // Both physical buses must prime from SILENCE on global
+                // output unmute. MONITOR deliberately has no master gain,
+                // but shares the same 256-sample startup de-click ramp.
+                float busRamp=1.f;
                 if(fadeRemaining_>0) {
-                    const float t=1.f-static_cast<float>(fadeRemaining_-1)/
-                                           static_cast<float>(rampFrames);
-                    l=fadeFromL_+(l-fadeFromL_)*t;
-                    r=fadeFromR_+(r-fadeFromR_)*t;
+                    busRamp=1.f-static_cast<float>(fadeRemaining_-1)/
+                                          static_cast<float>(rampFrames);
+                    l=fadeFromL_+(l-fadeFromL_)*busRamp;
+                    r=fadeFromR_+(r-fadeFromR_)*busRamp;
                     --fadeRemaining_;
                 }
                 // Sample-smoothed, zero-heap dual-mono MASTER output policy.
@@ -650,8 +720,18 @@ public:
                 lastOutputR_=r;
                 peakL=std::max(peakL,std::abs(l));
                 peakR=std::max(peakR,std::abs(r));
+                if(monitorL) {
+                    const float ml=monitorL[offset+i]*busRamp;
+                    const float mr=monitorR[offset+i]*busRamp;
+                    monitorL[offset+i]=ml;
+                    monitorR[offset+i]=mr;
+                    monitorPeakL=std::max(monitorPeakL,std::abs(ml));
+                    monitorPeakR=std::max(monitorPeakR,std::abs(mr));
+                }
             }
         }
+        monitorPeakL_.store(monitorPeakL,std::memory_order_relaxed);
+        monitorPeakR_.store(monitorPeakR,std::memory_order_relaxed);
         peakL_.store(peakL,std::memory_order_relaxed);
         peakR_.store(peakR,std::memory_order_relaxed);
         for(int ch=0;ch<count;++ch)
@@ -671,6 +751,8 @@ public:
         out->setProperty("revision",static_cast<juce::int64>(revision()));
         out->setProperty("peakL",peakL_.load(std::memory_order_relaxed));
         out->setProperty("peakR",peakR_.load(std::memory_order_relaxed));
+        out->setProperty("monitorPeakL",monitorPeakL_.load(std::memory_order_relaxed));
+        out->setProperty("monitorPeakR",monitorPeakR_.load(std::memory_order_relaxed));
         out->setProperty("sendCount",sendCount_.load(std::memory_order_relaxed));
         out->setProperty("fxCount",fxCount_.load(std::memory_order_relaxed));
         out->setProperty("auxCount",auxCountActive_.load(std::memory_order_relaxed));
@@ -756,11 +838,26 @@ public:
             }
         }
         out->setProperty("mainOutputs",juce::var(liveMain));
+        juce::Array<juce::var> liveMonitor,liveMonitorSends;
+        if(mainGraph && mainGraph->monitorEnabled() &&
+           ready() && registryValid_.load(std::memory_order_acquire)) {
+            const int l=mainGraph->monitorOutputLeft();
+            const int r=mainGraph->monitorOutputRight();
+            const int n=callbackOutputCount_.load(std::memory_order_acquire);
+            if(l>=0&&r>=0&&l<n&&r<n) {
+                liveMonitor.add(enabledOutputPorts_[l].load(std::memory_order_relaxed));
+                liveMonitor.add(enabledOutputPorts_[r].load(std::memory_order_relaxed));
+                for(float gain:mainGraph->monitorGains())liveMonitorSends.add(gain);
+            }
+        }
+        out->setProperty("monitorOutputs",juce::var(liveMonitor));
+        out->setProperty("monitorSends",juce::var(liveMonitorSends));
         out->setProperty("note","Native 10CH+4AUX production mixer; unpatched startup is SILENT. Explicit input assignment/ACK required. Hardware FAT unqualified.");
         return juce::var(out.release());
     }
 private:
     Publisher publisher_;
+    std::atomic<float> monitorPeakL_{0.f},monitorPeakR_{0.f};
     armix::dsp::MasterOutputMonoPolicy masterMonoPolicy_; // audio thread only
     std::array<ChannelEdit,count> channelEdits_{}; // JUCE message thread only
     std::array<juce::String,count> channelFxNames_{}; // status/control thread only

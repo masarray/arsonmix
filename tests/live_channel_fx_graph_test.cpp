@@ -9,6 +9,7 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <limits>
 #include <cstdlib>
 #include <cstring>
 #include <new>
@@ -394,6 +395,25 @@ int main() {
         outputs[5]=nullptr;
         const auto absent=NativeOutputPairTap::select(outputs,6,{{4,5}});
         assert(absent[0]==nullptr&&absent[1]==nullptr);
+    }
+    // MS3B: 2-output devices cannot host a second physical stereo bus.
+    // An 8-output device admits independent 1/2 MAIN and 5/6 MONITOR
+    // without duplicate ownership, fabricated pins, or invalid send gain.
+    {
+        auto graph=makeGraph(1.f,1.f);
+        std::array<float,LiveChannelFxGraph::fxSlots> sends{};
+        sends[1]=.5f;
+        assert(!graph->setMonitorOutputBus(2,3,2,sends));
+        assert(!graph->setMonitorOutputBus(0,1,8,sends));
+        assert(!graph->setMonitorOutputBus(4,4,8,sends));
+        assert(!graph->setMonitorOutputBus(4,8,8,sends));
+        sends[1]=std::numeric_limits<float>::quiet_NaN();
+        assert(!graph->setMonitorOutputBus(4,5,8,sends));
+        sends[1]=.5f;
+        assert(graph->setMonitorOutputBus(4,5,8,sends));
+        assert(graph->monitorEnabled());
+        assert(graph->monitorOutputLeft()==4&&graph->monitorOutputRight()==5);
+        assert(near(graph->monitorGains()[1],.5f));
     }
     // Tests above use a real JUCE AudioProcessor processing seam. Vendor
     // VST3 formats and sound quality require separate Windows hardware FAT.

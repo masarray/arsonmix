@@ -23,6 +23,14 @@
     "#arDiagnosticCopy{color:#e1f7f4;background:#166052;border:1px solid #34c8ac;border-radius:4px;padding:7px 12px;cursor:pointer}" +
     "#arDiagnosticCopyStatus{color:#8cdec9;font-size:10px}" +
     "#arSmartClockToggle{color:#f5eadb;background:#284961;border:1px solid #9bb2c5;border-radius:4px;padding:7px 12px;cursor:pointer}";
+  css.textContent +=
+    "#arStreamStrip{margin-top:9px;padding:8px 10px;border:1px solid #385b67;background:#10252f;color:#c3e2e9;font-size:10px}" +
+    "#arStreamStrip strong{font-size:11px;font-weight:500;color:#b0e9e2}" +
+    "#arStreamControls{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-top:6px}" +
+    "#arStreamDevice{flex:1;min-width:175px;max-width:290px;background:#102d3b;color:#e4f0f4;border:1px solid #547582;border-radius:3px;padding:5px;font-size:10px}" +
+    "#arStreamControls button{border:1px solid #527682;background:#214051;color:#e4f2f5;border-radius:3px;padding:5px 8px;font-size:10px;cursor:pointer}" +
+    "#arStreamControls button:disabled{opacity:.42;cursor:default}" +
+    "#arStreamStatus{margin-top:6px;color:#accad2;line-height:1.45;overflow-wrap:anywhere}";
   // R0 routing workspace. One static native-only skin sharing the main
   // console's graphite/steel/teal vocabulary. No mouse-hover repaint,
   // compositor filters, animated shadows, canvas or extra scheduler.
@@ -246,7 +254,16 @@
     '<section class="arPatchBody" id="arPatchInputPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>PHYSICAL INPUT → MIXER CHANNEL</strong><small>Click grid to assign. For stereo, select the L / R side. DRAFT becomes LIVE only after native ACK.</small></div><div class="arPatchPager"><button class="btn-180" id="arPatchPrev" title="Previous hardware inputs">‹</button><span id="arPatchRange">NO INPUTS</span><button class="btn-180" id="arPatchNext" title="Next hardware inputs">›</button></div></div>' +
     '<div class="arPatchViewport"><div id="arPatchGrid" class="arPatchGrid" role="grid" aria-label="Native input patch matrix"></div></div><div class="arPatchLegend"><span><b></b>UNPATCHED</span><span><b class="live"></b>LIVE · NATIVE ACK</span><span><b class="draft"></b>DRAFT · NOT APPLIED</span><span><b class="removed"></b>LIVE UNTIL APPLY</span></div><div class="arPatchInspector" id="arPatchInspector" role="status"><strong>10 CHANNEL INPUT PATCH</strong><span>Uses actual enabled ASIO/WASAPI hardware ports</span></div><div class="arPatchNote">No auto-unmute. Stale devices, incomplete stereo assignments and invalid physical ports are rejected before APPLY. One input can feed multiple channels.</div></section>' +
     '<section class="arPatchBody arPatchHidden" id="arPatchInternalPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>CHANNEL CONTROL / INTERNAL SENDS</strong><small>Native channel controls, VST3 inserts, 4 AUX returns and PRE/POST sends.</small></div></div><div id="arRouteRows"></div><section id="arAuxReturns"><h3>4 DEDICATED AUX / FX RETURNS</h3><p>Independent stereo return with VST3, level and MAIN route.</p><div id="arAuxRows"></div></section><section id="arRouteSends"><h3>CH → AUX SEND MATRIX · PRE / POST</h3><p class="arAuxMatrixNote">10 channels × 4 AUX returns. Select a cell to edit PRE/POST sends; output changes only after MUTE + APPLY.</p><div id="arAuxSendGrid" class="arAuxMatrix" role="grid" aria-label="Channel to AUX send matrix"></div><div id="arAuxSendInspector" class="arAuxInspector" role="group" aria-label="Selected AUX send inspector">Select a CH / AUX cell to inspect sends.</div><h3>ADVANCED · CH → CH SENDS</h3><p class="arAuxMatrixNote">Directed channel sends remain available; feedback loops are rejected before native APPLY.</p><div id="arSendRows"></div><button class="btn-180" id="arAddSend">＋ ADD CH → CH SEND</button></section></section>' +
-    '<section class="arPatchBody arPatchHidden" id="arPatchOutputPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>CURRENT HARDWARE OUTPUT</strong><small>Current hardware MAIN L/R is read-only. Configure output in AUDIO SETUP.</small></div></div><div id="arPatchOutputMap"></div><div class="arPatchNote">AUX-to-hardware-output patching is not available. Select physical device/output in AUDIO SETUP.</div></section>' +
+    '<section class="arPatchBody arPatchHidden" id="arPatchOutputPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>OUTPUT PATCH · HARDWARE + SOFTWARE</strong><small>Map MAIN output on the selected ASIO/WASAPI device; optionally duplicate MAIN to another output device.</small></div></div><div id="arPatchOutputMap"></div><div class="arPatchNote">Independent bus-to-device routes beyond MAIN require the native output bus matrix milestone.</div>' +
+    '<section id="arStreamStrip" aria-label="Secondary playback output">' +
+      '<strong>ADDITIONAL OUTPUT · MAIN TO DEVICE</strong>' +
+      '<div id="arStreamControls"><select id="arStreamDevice" aria-label="Additional device playback endpoint"><option value="">Select actual Windows playback endpoint...</option></select>' +
+      '<button id="arStreamRefresh" type="button" title="Refresh real Windows playback devices">REFRESH</button>' +
+      '<button id="arStreamConnect" type="button">CONNECT</button>' +
+      '<button id="arStreamArm" type="button">ARM OUTPUT</button>' +
+      '<button id="arStreamStop" type="button">DISCONNECT</button></div>' +
+      '<div id="arStreamStatus" role="status">Choose a playback endpoint available on Windows. Hardware or virtual devices are both supported.</div></section>' +
+    '</section>' +
     '<footer class="arPatchFooter"><div id="arRouteFeedback" role="status">Select actual input ports, then APPLY while output is muted.</div><div class="arRouteFoot"><button class="btn-180" id="arPatchRevert">REVERT DRAFT</button><button class="btn-180" id="arRouteSaveDry" title="Save real native VST3 state, routing and AUX sends while OUTPUT is muted">SAVE SHOW</button><button class="btn-180" id="arRouteBrowseShows" title="Browse SHA-verified native Shows stored in Studio/Shows">BROWSE SHOWS</button><button class="btn-180" id="arRouteApply">APPLY ROUTING</button><button class="btn-180" id="arRouteClear" title="Discard the native input patch; keep the mixer prepared and output muted">CLEAR PATCH</button></div></footer><section id="arNativeShowBrowser" hidden role="region" aria-label="Native Show browser"><div class="arNativeShowLine"><strong>NATIVE SHOWS</strong><select id="arNativeShowSelect" aria-label="Select a saved native Show"><option value="">Choose a saved Show...</option></select><button class="btn-180" id="arNativeShowRecall" type="button" disabled>RECALL SELECTED</button><span id="arNativeShowStatus" role="status">Browse saved routing snapshots; hardware OUTPUT remains MUTED on recall.</span></div></section><section id="arPatchFxPicker" role="dialog" aria-label="Choose native VST3" aria-modal="false"><label for="arPatchFxSearch">FIND VST3 · SHARED PICKER</label><input id="arPatchFxSearch" type="search" autocomplete="off" placeholder="Search plugin name or ID"><div id="arPatchFxResults"></div><div id="arPatchFxCount"></div></section></section>';
   document.body.appendChild(routeOverlay);
   // Processing channel width is independent of the hardware source mode.
@@ -264,6 +281,8 @@
   let selectedAuxPair=null; // editor-only; not a second audio graph
   let draftEpoch=0; // identity of the hardware used to draw these selectors
   let draftMainOutputs=[]; // physical port IDs (2), never callback offsets
+  let draftMonitorOutputs=[]; // empty means independently muted/disabled bus
+  let draftMonitorSends=Array(14).fill(0); // 10 CH + four AUX POST taps
   function invalidateDraftForNewDevice(nextEpoch){
     if(draftEpoch===nextEpoch)return false;
     draftEpoch=nextEpoch;
@@ -276,6 +295,8 @@
     mixerDraftActive=false;
     selectedAuxPair=null;
     draftMainOutputs=[];
+    draftMonitorOutputs=[];
+    draftMonitorSends=Array(14).fill(0);
     return true;
   }
   const safeRouteText=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -395,6 +416,10 @@
       }
     draftMainOutputs=Array.isArray(saved.mainOutputs)&&saved.mainOutputs.length===2
       ?saved.mainOutputs.slice():[];
+    draftMonitorOutputs=Array.isArray(saved.monitorOutputs)&&saved.monitorOutputs.length===2
+      ?saved.monitorOutputs.slice():[];
+    draftMonitorSends=Array.isArray(saved.monitorSends)&&saved.monitorSends.length===14
+      ?saved.monitorSends.slice():Array(14).fill(0);
     draftSends.length=0;
     if(Array.isArray(saved.sends))
       for(const send of saved.sends.slice(0,32))
@@ -459,6 +484,8 @@
       (draft.mode==="STEREO"&&Number(draft.right)!==Number(live.right));
   }
   function patchPreflight(){
+    if(state.secondaryOutputArmed)
+      return "DISARM ADDITIONAL OUTPUT before APPLY routing.";
     const d=state.dryRoutingLab||{},ports=patchPorts();
     if(!Number.isSafeInteger(draftEpoch)||draftEpoch<=0 ||draftEpoch!==Number(d.epoch))
       return "Audio device changed. Refresh ROUTING and reselect the physical inputs.";
@@ -1027,9 +1054,41 @@
     const ports=Array.isArray(d.outputPorts)?d.outputPorts:[];
     if(!ports.includes(left)||!ports.includes(right)||left===right)
       return {ok:false,error:"MAIN requires two different active output pins"};
+    if(draftMonitorOutputs.some(p=>p===left||p===right))
+      return {ok:false,error:"MAIN and MONITOR must own different hardware output pins"};
     draftMainOutputs=[left,right];mixerDraftActive=true;
     window.dispatchEvent(new Event("arMixRoutingDraftChanged"));
     return {ok:true,message:"MAIN OUTPUT DRAFT · MUTE OUTPUT → APPLY → native ACK"};
+  };
+  window.__arMixStageMonitorPatch=(left,right)=>{
+    const d=state.dryRoutingLab||{};
+    if(!d.ready||patchPending||draftEpoch!==Number(d.epoch))
+      return {ok:false,error:"Native device changed or routing pending"};
+    if(left===-1&&right===-1){
+      draftMonitorOutputs=[];draftMonitorSends=Array(14).fill(0);
+    }else{
+      const ports=Array.isArray(d.outputPorts)?d.outputPorts:[];
+      const main=draftMainOutputs.length===2?draftMainOutputs:
+        (Array.isArray(d.mainOutputs)&&d.mainOutputs.length===2?d.mainOutputs:ports.slice(0,2));
+      if(!ports.includes(left)||!ports.includes(right)||left===right||
+         main.includes(left)||main.includes(right))
+        return {ok:false,error:"MONITOR needs two unused verified physical output pins"};
+      draftMonitorOutputs=[left,right];
+    }
+    mixerDraftActive=true;
+    window.dispatchEvent(new Event("arMixRoutingDraftChanged"));
+    return {ok:true,message:"MONITOR DRAFT · OUTPUT MUTE → APPLY → native ACK"};
+  };
+  window.__arMixStageMonitorSend=(lane,gain)=>{
+    const d=state.dryRoutingLab||{};
+    if(!d.ready||patchPending||draftEpoch!==Number(d.epoch)||
+       draftMonitorOutputs.length!==2)return {ok:false,error:"Enable MONITOR first"};
+    if(!Number.isInteger(lane)||lane<0||lane>=14||
+       !Number.isFinite(gain)||gain<0||gain>1)
+      return {ok:false,error:"Invalid MONITOR send level"};
+    draftMonitorSends[lane]=gain;mixerDraftActive=true;
+    window.dispatchEvent(new Event("arMixRoutingDraftChanged"));
+    return {ok:true,message:"MONITOR SEND DRAFT · APPLY required"};
   };
   window.__arMixRouteView=()=>{
     const d=state.dryRoutingLab||{};
@@ -1043,6 +1102,10 @@
       outputPorts:Array.isArray(d.outputPorts)?d.outputPorts.slice():[],
       mainOutputs:Array.isArray(d.mainOutputs)?d.mainOutputs.slice():[],
       draftMainOutputs:draftMainOutputs.slice(),
+      monitorOutputs:Array.isArray(d.monitorOutputs)?d.monitorOutputs.slice():[],
+      monitorSends:Array.isArray(d.monitorSends)?d.monitorSends.slice():[],
+      draftMonitorOutputs:draftMonitorOutputs.slice(),
+      draftMonitorSends:draftMonitorSends.slice(),
       acceptedRoute:d.acceptedRoute||null,
       draftRoutes:draftRoutes.map(r=>({...r,fxIds:laneIds(r)})),
       draftAux:draftAux.map(r=>({...r,fxIds:laneIds(r)})),
@@ -1214,6 +1277,10 @@
       mainOutputs:draftMainOutputs.length===2?draftMainOutputs.slice():(
         Array.isArray(d.mainOutputs)&&d.mainOutputs.length===2?d.mainOutputs.slice():
         (Array.isArray(d.outputPorts)?d.outputPorts.slice(0,2):[])),
+      ...(draftMonitorOutputs.length===2?{
+        monitorOutputs:draftMonitorOutputs.slice(),
+        monitorSends:draftMonitorSends.slice()
+      }:{}),
       channels:draftRoutes.map(r=>({...typedSource(r),fxIds:laneIds(r)})),
       auxes:draftAux.map(b=>({...b,fxIds:laneIds(b)})),
       sends:draftSends.map(s=>({...s}))
@@ -1415,6 +1482,27 @@
     const edition=document.querySelector('.status > span:last-child');
     setTextIfChanged(edition,d.dryRoutingLab?.active?
       "AR MIX P1H · REAL 10CH FX / BUS SENDS":"AR MIX P2 · CH1 NATIVE + UI PREVIEW");
+    // Live STREAM endpoint is a separate WASAPI playback clock with an
+    // operator-selected device. A physical MAIN mute does NOT mute STREAM.
+    // Keep the controls compact; never claim a device is active without native ACK.
+    const streamConnected=!!d.secondaryOutputReady;
+    const streamArmed=!!d.secondaryOutputArmed;
+    el("arStreamConnect").disabled=!!d.monitor || !!d.adaptiveClockActive ||
+      !d.directRouteAuthorized || !d.dryRoutingLab?.acceptedRoute;
+    el("arStreamArm").disabled=!streamConnected || !!d.secondaryOutputFault ||
+      !d.dryRoutingLab?.acceptedRoute || !!d.adaptiveClockActive;
+    el("arStreamStop").disabled=!streamConnected && !d.secondaryOutputFault;
+    setTextIfChanged(el("arStreamArm"),streamArmed?"DISARM OUTPUT":"ARM OUTPUT");
+    setTextIfChanged(el("arStreamStatus"),
+      d.secondaryOutputFault?"OUTPUT FAULT / SOURCE CLOCK CHANGED · DISCONNECT AND RECONNECT":
+      !streamConnected?"OUTPUT DISCONNECTED · select Windows playback device":
+      (streamArmed?"OUTPUT ACTIVE":"OUTPUT CONNECTED · not armed")+
+      " · "+String(d.secondaryOutputName||"")+
+      " · "+Math.round(Number(d.secondaryOutputRate)||0)+" Hz / ASRC "+
+      (Number(d.secondaryOutputBridgeMs)||0).toFixed(1)+" ms"+
+      " · FIFO underflow "+(d.secondaryOutputUnderflow||0)+
+      " / overflow "+(d.secondaryOutputOverflow||0)+
+      ". For external apps choose their corresponding capture device if applicable.");
     if (!overlay.classList.contains("open")) return;
     el("arInputName").textContent=d.dryRoutingLab?.active?"NATIVE 10 CH INPUTS":d.diagnosticRoute==="OUTPUT_ONLY_TONE"?"INTERNAL TEST TONE":d.inputDevice||"Input device";
     el("arFxName").textContent=d.dryRoutingLab?.active?(String(d.dryRoutingLab.fxCount||0)+" NATIVE VST3"):d.diagnosticRoute==="OUTPUT_ONLY_TONE"?"NO INPUT / NO FX":d.diagnosticRoute!=="NORMAL"?"NO FX":d.dryTest?"DRY BYPASS":"VST3 Chain";
@@ -1453,7 +1541,7 @@
     if(fxInfo)el("arHealthPanel").textContent+=" | FX: "+fxInfo;
     el("arSignalFooter").textContent=(d.driver||"Audio")+" · "+(d.rate||0)+" Hz / "+(d.buffer||0)+
       " samples · "+(d.deviceInputChannels||0)+" active input / "+(d.deviceOutputChannels||0)+" active output channels · "+
-      (d.latencySamples||0)+" samples plugin latency. Choose hardware output using AUDIO SETUP; Main L/R and Streaming are UI previews.";
+      (d.latencySamples||0)+" samples plugin latency. Hardware MAIN via AUDIO SETUP; Secondary output uses user-selected WASAPI endpoint with ASRC for distinct clock. No 0ms latency claim.";
   }
   // Only a fully initialized WebView2 ArSonMix page sends this. An old-IE
   // navigation error can never mark the native engine GUI as loaded.
@@ -1478,7 +1566,51 @@
     }
     repaint(d);
   });
-  el("arSignalOpen")?.addEventListener("click",()=>{overlay.classList.add("open");repaint(state);});
+  let streamPending=false;
+  const requestStreamInventory=()=>
+    api.emitEvent("arMixAction",{action:"audioDeviceInventory"});
+  api.addEventListener("arMixAudioDeviceInventory",data=>{
+    const available=Array.isArray(data?.types)?data.types.find(x=>x.name==="Windows Audio"):null;
+    const options=Array.isArray(available?.outputs)?available.outputs:[];
+    const select=el("arStreamDevice");
+    const chosen=select.value||state.secondaryOutputName||"";
+    select.replaceChildren(new Option("Select actual Windows playback endpoint...",""));
+    for(const name of [...new Set(options.filter(x=>typeof x==="string"&&x.length<=240))])
+      select.add(new Option(name,name));
+    if([...select.options].some(x=>x.value===chosen))select.value=chosen;
+  });
+  el("arStreamRefresh").addEventListener("click",requestStreamInventory);
+  document.querySelector('[data-patch-tab="output"]')?.addEventListener("click",requestStreamInventory);
+  el("arStreamConnect").addEventListener("click",()=>{
+    if(streamPending || state.monitor || state.adaptiveClockActive)return;
+    const selected=el("arStreamDevice").value;
+    if(!selected){
+      setTextIfChanged(el("arStreamStatus"),"Select an available Windows playback device.");
+      return;
+    }
+    streamPending=true;
+    api.emitEvent("arMixAction",{action:"secondaryOutputConnect",value:selected});
+  });
+  el("arStreamArm").addEventListener("click",()=>{
+    if(streamPending || !state.secondaryOutputReady)return;
+    streamPending=true;
+    api.emitEvent("arMixAction",{action:"secondaryOutputArm",value:!state.secondaryOutputArmed});
+  });
+  el("arStreamStop").addEventListener("click",()=>{
+    if(streamPending)return;
+    streamPending=true;
+    api.emitEvent("arMixAction",{action:"secondaryOutputStop"});
+  });
+  api.addEventListener("arMixSecondaryOutputAck",d=>{
+    streamPending=false;
+    if(!d?.ok)setTextIfChanged(el("arStreamStatus"),
+      "STREAM REJECTED · "+String(d?.error||"Device or native route unavailable"));
+  });
+  el("arSignalOpen")?.addEventListener("click",()=>{
+    overlay.classList.add("open");
+    requestStreamInventory();
+    repaint(state);
+  });
   el("arSignalClose").addEventListener("click",()=>overlay.classList.remove("open"));
   el("arSignalMonitor").addEventListener("click",()=>api.emitEvent("arMixAction",{action:"monitor",value:!state.monitor}));
   el("arSignalDry").addEventListener("click",()=>api.emitEvent("arMixAction",{action:"dryTest",value:!state.dryTest}));

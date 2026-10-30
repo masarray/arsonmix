@@ -10,6 +10,8 @@
 #include "../engine/dsp/NativeMasterLoudness.h"
 #include "DiagnosticTone.h"
 #include "../engine/device/JuceIndependentClockDevice.h"
+#include "../engine/device/LiveSecondaryOutputDevice.h"
+#include "../engine/core/LiveOutputRouteGate.h"
 #include "../engine/device/AsioPriorityDeviceManager.h"
 #include "../engine/device/AsioRegistryIdentityProbe.h"
 #include "../engine/device/DirectRouteFence.h"
@@ -238,6 +240,7 @@ public:
         directFence_.suspend();
         asioPinnedRegistration_ = {};
         asioRegistrationScope_ = "NONE";
+        secondaryOutput_.stop(); // stop independent OBS consumer before audio graph teardown
         independent_.close();
         detach();
         handoff_.resetAfterStop (graphOwned_.get());
@@ -255,11 +258,41 @@ public:
         dryRoutingLab_.poll();
     }
 
+    // Route MAIN to a user-selected secondary playback device
+    // (hardware or software). No second MIX/FX engine.
+    juce::String connectSecondaryOutput(const juce::String& selected) {
+        if(!isOutputMuted() || independent_.active() ||
+           !directFence_.permitted() || !dryRoutingLab_.hasExplicitRoute() ||
+           diagnosticRoute_.load(std::memory_order_acquire)
+                !=armix::diagnostics::Route::normal)
+            return "MUTE hardware OUTPUT, APPLY real input routing and use verified DIRECT before secondary device setup";
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device)return "Direct capture/output hardware is not available";
+        return secondaryOutput_.open(selected,device->getName(),
+                                  device->getCurrentSampleRate(),
+                                  device->getCurrentBufferSizeSamples());
+    }
+    juce::String armSecondaryOutput(bool wanted) {
+        if(wanted && (independent_.active() || !directFence_.permitted() ||
+           !dryRoutingLab_.hasExplicitRoute() ||
+           routeReconfiguring_.load(std::memory_order_acquire) ||
+           diagnosticRoute_.load(std::memory_order_acquire)
+                !=armix::diagnostics::Route::normal))
+            return "Secondary output requires accepted native route and verified DIRECT clock";
+        return secondaryOutput_.arm(wanted) ? juce::String() :
+            juce::String("Secondary playback endpoint is unavailable or has a device fault; reconnect explicitly");
+    }
+    void disconnectSecondaryOutput(){secondaryOutput_.stop();}
+    bool secondaryArmed() const noexcept{return secondaryOutput_.armed();}
+
     void setMonitorEnabled (bool value) noexcept { monitor_.store (value); }
     bool isMonitorEnabled() const noexcept { return monitor_.load(); }
     // Emergency output mute, not a prerequisite for receiving audio.
     void setOutputMuted (bool mute) noexcept { monitor_.store (!mute, std::memory_order_release); }
     bool isOutputMuted() const noexcept { return !monitor_.load (std::memory_order_acquire); }
+    bool allOutputsDisarmed() const noexcept {
+        return isOutputMuted() && !secondaryOutput_.armed();
+    }
     bool directRouteAuthorized() const noexcept { return directFence_.permitted(); }
     bool unexpectedDirectRoute() const noexcept
     {
@@ -726,7 +759,7 @@ public:
     juce::String captureSnapshot (armix::storage::Snapshot& snapshot)
     {
         if (dryRoutingLab_.hasExplicitRoute()) return "CLEAR PATCH before capturing CH1 native FX state";
-        if (!isOutputMuted()) return "Mute hardware output before saving a native preset";
+        if (!allOutputsDisarmed()) return "MUTE physical output and DISARM STREAM before saving a native preset";
         if (handoff_.busy() || fxMovePhase_.load (std::memory_order_acquire) != 0) return "Finish pending FX graph transition before saving";
         snapshot.effects.clear();
         snapshot.channelDb = juce::Decibels::gainToDecibels (
@@ -943,6 +976,7 @@ public:
     // All plan preparation / JUCE vars remain on the control thread.
     juce::String startUnpatchedProductionSession() {
         setOutputMuted(true);
+        secondaryOutput_.disarm(); // never carry LIVE STREAM into a new unpatched graph
         auto* device=deviceManager_.getCurrentAudioDevice();
         if(!device || !directFence_.permitted() || independent_.active())
             return "No verified DIRECT full-duplex device";
@@ -956,6 +990,7 @@ public:
     // Returning to legacy CH1 is explicitly forbidden in NORMAL production.
     juce::String clearProductionRouting() {
         setOutputMuted(true);
+        secondaryOutput_.disarm();
         dryRoutingLab_.disable();
         return startUnpatchedProductionSession();
     }
@@ -965,7 +1000,7 @@ public:
         const juce::var& command,
         const LiveDryRoutingLab::FxSelections& fx,
         const LiveDryRoutingLab::FxRestores* restored=nullptr) {
-        if (!isOutputMuted()) return "MUTE OUTPUT before applying physical DRY LAB routing";
+        if (!allOutputsDisarmed()) return "MUTE hardware output and DISARM STREAM before APPLY routing";
         if (handoff_.busy()) return "A VST3 graph handoff is in progress";
         if (routeReconfiguring_.load(std::memory_order_acquire))
             return "Audio device is changing; retry when stable";
@@ -1017,7 +1052,7 @@ public:
     }
     juce::String captureRoutedFxStates(std::uint64_t epoch,std::uint64_t revision,
             std::vector<LiveDryRoutingLab::CapturedFxState>& states) noexcept {
-        if(!isOutputMuted()||independent_.active()||
+        if(!allOutputsDisarmed()||independent_.active()||
            routeReconfiguring_.load(std::memory_order_acquire)||
            diagnosticRoute_.load(std::memory_order_acquire)
               !=armix::diagnostics::Route::normal)
@@ -1044,6 +1079,20 @@ public:
             : dryRoutingLab_.active() ? "NATIVE_ROUTE_STALE_FAIL_SILENT"
             : "UNPATCHED_SILENT");
         o->setProperty ("connected", d != nullptr && capture != nullptr);
+        // WASAPI virtual cable output is a second CLOCK only, not another
+        // DSP graph. These metrics are real ASRC frames, not driver XRUNs.
+        o->setProperty ("secondaryOutputReady",secondaryOutput_.ready());
+        o->setProperty ("secondaryOutputArmed",secondaryOutput_.armed());
+        o->setProperty ("secondaryOutputFault",secondaryOutput_.faulted());
+        o->setProperty ("secondaryOutputName",secondaryOutput_.name());
+        o->setProperty ("secondaryOutputEndpointHash",secondaryOutput_.endpointHash());
+        o->setProperty ("secondaryOutputRate",secondaryOutput_.rate());
+        o->setProperty ("secondaryOutputBridgeMs",secondaryOutput_.targetMs());
+        const auto streamFifo=secondaryOutput_.status();
+        o->setProperty ("secondaryOutputFrames",static_cast<double>(streamFifo.renderedFrames));
+        o->setProperty ("secondaryOutputUnderflow",static_cast<double>(streamFifo.underflowFrames));
+        o->setProperty ("secondaryOutputPriming",static_cast<double>(streamFifo.primingFrames));
+        o->setProperty ("secondaryOutputOverflow",static_cast<double>(streamFifo.overflowFrames));
         o->setProperty ("adaptiveClockActive", dual);
         o->setProperty ("adaptiveClockFaulted", dual && independent_.faulted());
         o->setProperty ("adaptiveClockMode", dual ? "INDEPENDENT_WASAPI_RENDER_MASTER" : "DIRECT");
@@ -1302,6 +1351,7 @@ private:
     std::atomic<std::uint64_t> directSuppressedFrames_ {0};
     juce::String startupFallbackReason_; // control-thread-only startup diagnostics
     armix::device::JuceIndependentClockDevice independent_;
+    armix::device::LiveSecondaryOutputDevice secondaryOutput_;
     std::optional<juce::AudioDeviceManager::AudioDeviceSetup> savedDirectSetup_;
     juce::AudioPluginFormatManager formats_;
     std::unique_ptr<Graph> graphOwned_ {std::make_unique<Graph>()};
@@ -1400,6 +1450,7 @@ private:
 
     void audioDeviceAboutToStart (juce::AudioIODevice* d) override
     {
+        secondaryOutput_.invalidateSource(); // source clock may have changed
         dryRoutingLab_.prepareDevice(d); // exact active mask, before callback
         if (!independent_.active())
         {
@@ -1444,6 +1495,7 @@ private:
 
     void audioDeviceStopped() override
     {
+        secondaryOutput_.invalidateSource(); // explicit reconnect required after device stop
         masterLoudness_.prepare (0.0); // clear validity across device epoch
         dryRoutingLab_.deviceStopped();
         deviceStopCount_.fetch_add (1, std::memory_order_relaxed);
@@ -1588,26 +1640,33 @@ private:
         // DirectFence was already checked above; no output to unknown device.
         if (dryRoutingLab_.active())
         {
-            const bool outputPermitted = monitor_.load(std::memory_order_relaxed)
-              && !routeReconfiguring_.load(std::memory_order_acquire)
-              && !masterMute_.load(std::memory_order_relaxed)
-              && activeDiagnosticRoute == armix::diagnostics::Route::normal
-              && !independent_.active();
+            const auto outputGate=armix::mixer::LiveOutputRouteGate::evaluate(
+                dryRoutingLab_.active(),
+                directFence_.permitted() && !independent_.active(),
+                activeDiagnosticRoute == armix::diagnostics::Route::normal,
+                !routeReconfiguring_.load(std::memory_order_acquire),
+                !masterMute_.load(std::memory_order_relaxed),
+                monitor_.load(std::memory_order_relaxed),
+                secondaryOutput_.armed());
+            const bool outputPermitted=outputGate.renderMain;
             // Both native 10CH routing and the existing CH1 vendor FX chain
             // execute in ONE stereo output render pass. Never mix a parallel
             // CH1 output on top or copy vendor processors into another graph.
             LegacyChannelOneLease ch1Lease{this,cycle.graph};
             std::array<int,2> nativeMainPair{{-1,-1}};
+            std::array<int,2> nativeMonitorPair{{-1,-1}};
             const bool routed=dryRoutingLab_.process(inputs,inputChannels,outputs,
                      outputChannels,samples,
                      masterGain_.load(std::memory_order_relaxed),
                      !outputPermitted,&ch1Lease,&processLegacyChannelOne,
                      masterMono_.load(std::memory_order_relaxed),
-                     &nativeMainPair);
+                     &nativeMainPair,&nativeMonitorPair);
             // Constant-time, callback-local physical PCM tap. Nothing is
             // reconfigured or acquired from another graph generation.
             const auto nativeMain=armix::mixer::NativeOutputPairTap::select(
                 outputs,outputChannels,nativeMainPair);
+            const auto nativeMonitor=armix::mixer::NativeOutputPairTap::select(
+                outputs,outputChannels,nativeMonitorPair);
             // STOP can race after the outer active() check. Never leave a
             // callback's output untouched, and NEVER fall through into CH1.
             if(!routed) {
@@ -1627,8 +1686,11 @@ private:
             // without touching third-party plugin lifecycle on the callback.
             if(routedFxMove!=0 || cycle.fadeOut || cycle.fadeIn) {
                 const float step=samples>1?1.f/static_cast<float>(samples-1):0.f;
-                for(int c=0;c<2;++c) {
-                    auto* const out=nativeMain[static_cast<std::size_t>(c)];
+                // Fade both INDEPENDENT physical buses on FX MOVE or graph
+                // handoff, not only MAIN. Same callback, no second DSP pass.
+                for(int c=0;c<4;++c) {
+                    auto* const out=c<2?nativeMain[static_cast<std::size_t>(c)]
+                        :nativeMonitor[static_cast<std::size_t>(c-2)];
                     if(!out)continue;
                     float peak=0.f;
                     for(int i=0;i<samples;++i) {
@@ -1652,6 +1714,12 @@ private:
                     fxMovePhase_.store(0,std::memory_order_release);
             }
             if(cycle.fadeOut)handoff_.endCycle(cycle); // RT pointer publish only
+            // OUTPUT1: publish the SAME post-FX, post-fader, de-clicked MAIN
+            // PCM once. The virtual endpoint never invokes MIX/VST3 again.
+            // Hardware monitor mute remains INDEPENDENT: streaming may run
+            // while every physical output on the current device is silent.
+            if(routed && outputGate.secondary && nativeMain[0] && nativeMain[1])
+                secondaryOutput_.publish(nativeMain[0],nativeMain[1],samples);
             // MS3A2: loudness/dBTP measure the same selected hardware
             // destination as the actual MAIN render and FX move fade.
             const float* measured[2] = {nativeMain[0],nativeMain[1]};
@@ -1676,6 +1744,12 @@ private:
                 slowCallbacks_.fetch_add(1,std::memory_order_relaxed);
             if(static_cast<double>(elapsed)>periodUs)
                 overBudgetCallbacks_.fetch_add(1,std::memory_order_relaxed);
+            // Secondary PCM is already copied; preserve logical MAIN meter
+            // evidence before disarming the physical MAIN/MONITOR pins.
+            if(!outputGate.hardware)
+                for(int channel=0;channel<outputChannels;++channel)
+                    if(outputs && outputs[channel])
+                        juce::FloatVectorOperations::clear(outputs[channel],samples);
             return;
         }
         const bool enabled = monitor_.load (std::memory_order_relaxed)

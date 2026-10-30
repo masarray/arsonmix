@@ -178,7 +178,7 @@ test('R0B B3 unpatched session preserves CH1 presets and zero-PDC gates only on 
   assert.match(restore,/dryRoutingLab_\.hasExplicitRoute\(\)/);
   assert.doesNotMatch(capture,/dryRoutingLab_\.active\(\)/);
   assert.doesNotMatch(restore,/dryRoutingLab_\.active\(\)/);
-  assert.match(capture,/isOutputMuted\(\)/);
+  assert.match(capture,/allOutputsDisarmed\(\)/);
   assert.match(restore,/handoff_\.stage/);
   assert.match(e,/if\(dryRoutingLab_\.hasExplicitRoute\(\) && latency!=0\)/);
   assert.match(e,/if\(dryRoutingLab_\.hasExplicitRoute\(\) && !value &&/);
@@ -207,4 +207,15 @@ test('R0B B3 never processes MASTER FX, strips or AUX until explicit ACK',()=>{
   assert.match(empty,/sampleRate,deviceFrames,false/);
   assert.match(lab,/userPatched_\.store\(false,std::memory_order_release\)/);
   assert.match(lab,/std::atomic<bool> userPatched_\{false\}/);
+});
+
+test('OUTPUT1 secondary MAIN stays meter-visible before physically muted MAIN/MONITOR buffers are cleared',()=>{
+  const source=readFileSync(new URL('../src/LiveAudioEngine.h',import.meta.url),'utf8');
+  const controller=readFileSync(new URL('../web/monitor.js',import.meta.url),'utf8');
+  const a=source.indexOf('secondaryOutput_.publish(nativeMain[0],nativeMain[1],samples)');
+  const b=source.indexOf('masterLoudness_.process(measured,2,samples)',a);
+  const c=source.indexOf('if(!outputGate.hardware)',b);
+  assert.ok(a>=0&&b>a&&c>b,'secondary PCM publish → MAIN meter → physical output clear');
+  assert.match(source,/nativeMonitorPair/);
+  assert.match(controller,/if\(state\.secondaryOutputArmed\)[\s\S]{0,130}DISARM ADDITIONAL OUTPUT before APPLY routing/);
 });

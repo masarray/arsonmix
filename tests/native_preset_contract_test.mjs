@@ -24,8 +24,8 @@ test('ZIP archive does not extract untrusted paths to disk',()=>{
   assert.doesNotMatch(io,/uncompressTo|uncompressEntry/);
 });
 test('muted-only safety and transactional read',()=>{
-  assert.match(main,/!engine_\.isOutputMuted\(\)/);
-  assert.match(engine,/if \(!isOutputMuted\(\)\)/);
+  assert.match(main,/!engine_\.allOutputsDisarmed\(\)/);
+  assert.match(engine,/if \(!allOutputsDisarmed\(\)\)/);
   assert.match(io,/output = std::move \(temp\)/);
 });
 test('separate native My Sounds not browser-only preset',()=>{
