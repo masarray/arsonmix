@@ -95,8 +95,8 @@ test('M5 CLIP light is resettable per channel and MASTER; real PCM peak is sole 
  assert.match(app,/Number\.isFinite\(peak\)&&peak>=1/);
  assert.match(app,/if\(b\.dataset\.clip!==undefined\)\{resetClip\(b\.dataset\.clip\);return\}/);
  assert.match(bridge,/window\.__arMixLatchNativeClip\?\.\(el\.dataset\.meter,rawPeak\)/);
- assert.match(bridge,/percent\(rawL\),rawL/);
- assert.match(bridge,/percent\(rawR\),rawR/);
+ assert.match(bridge,/percent\(d\.peakLeft\),rawL/);
+ assert.match(bridge,/percent\(d\.peakRight\),rawR/);
 });
 test('M5 fader light is recessed, VST text aligned, no heavyweight hover visual',()=>{
  const css=read('web/styles-src/42-mixer-premium.css');

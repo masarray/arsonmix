@@ -1515,13 +1515,13 @@
       }
     }else{
       const raw=Number(d.inputPeak)||0;
-      paintMeter(document.querySelector('[data-meter="0"]'),percent(raw),raw);
+      paintMeter(document.querySelector('[data-meter="0"]'),percent(d.inputPeak),raw);
     }
     const rawL=Number(d.peakLeft)||0,rawR=Number(d.peakRight)||0;
     paintMeter(document.querySelector('[data-meter="masterL"]')||
-      document.getElementById("masterMeterL"),percent(rawL),rawL);
+      document.getElementById("masterMeterL"),percent(d.peakLeft),rawL);
     paintMeter(document.querySelector('[data-meter="masterR"]')||
-      document.getElementById("masterMeterR"),percent(rawR),rawR);
+      document.getElementById("masterMeterR"),percent(d.peakRight),rawR);
     paintMeter(document.getElementById("masterMeterAux"),percent(d.peak));
     // Native measurement is valid ONLY with an explicit qualified 48k DIRECT
     // provenance. Never substitute sample peak for dBTP, or demo LUFS.
