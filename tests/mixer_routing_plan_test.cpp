@@ -104,7 +104,9 @@ static void verifyDynamicPreparedPcm() {
     std::vector<ChannelEdit> sends;
     for(int i=0;i<127;++i){
         ChannelEdit op;op.kind=Kind::addSendReference;op.id=ids[i];
-        op.target=ids[127];op.value=1.f;sends.push_back(op);
+        op.target=ids[127];op.value=1.f;
+        if(i==0)op.preFader=true; // PRE source must ignore its own fader
+        sends.push_back(op);
     }
     assert(bank.edit(bank.revision(),sends).ok());
     DynamicGraphRequest request;
@@ -117,7 +119,7 @@ static void verifyDynamicPreparedPcm() {
     DynamicGraphError error;
     assert(DynamicPreparedMixerBlock::compile(bank,request,renderer,error));
     assert(renderer.channelCount()==128);
-    assert(renderer.activeChannels()==128); // all 127 linked receivers + MAIN
+    assert(renderer.activeChannels()==6); // five patched lanes + MAIN, not 128 silent FX callbacks
     std::array<float,32> a{},b{},l{},r{};
     a.fill(.2f);b.fill(.4f);
     const float* physical[]{a.data(),b.data()};
@@ -128,7 +130,7 @@ static void verifyDynamicPreparedPcm() {
         for(int i=0;i<frames;++i){left[i]*=multiplier;right[i]*=multiplier;}
     };
     assert(renderer.process(physical,2,l.data(),r.data(),32,fx));
-    assert(fxCalls==128); // one reusable FX invocation path for CH1..CH128
+    assert(fxCalls==6); // identical FX seam on all audible CH1/11/32/64/127 + MAIN
     constexpr float center=.7071067811865475f;
     // Mono INPUT -> mono fader (-3dB); ST master -> all contributions sum.
     assert(close(l[0],(.2f+.4f+.2f*2.f+.4f+.2f)*center));
@@ -143,6 +145,32 @@ static void verifyDynamicPreparedPcm() {
     // Muting CH32 does not affect CH1, CH11, CH64 or CH127.
     ChannelEdit muted;muted.kind=Kind::setFader;muted.id=ids[31];muted.value=0.f;
     assert(bank.edit(bank.revision(),std::span<const ChannelEdit>(&muted,1)).ok());
+    assert(DynamicPreparedMixerBlock::compile(bank,request,renderer,error));
+    assert(renderer.process(physical,2,l.data(),r.data(),32,fx));
+    assert(close(l[0],(.2f+.4f+.4f+.2f)*center));
+    // CH1 uses PRE-send: its fader zero must NOT silence MAIN.
+    ChannelEdit zeroFader;zeroFader.kind=Kind::setFader;
+    zeroFader.id=ids[0];zeroFader.value=0.f;
+    assert(bank.edit(bank.revision(),std::span<const ChannelEdit>(&zeroFader,1)).ok());
+    assert(DynamicPreparedMixerBlock::compile(bank,request,renderer,error));
+    assert(renderer.process(physical,2,l.data(),r.data(),32,fx));
+    assert(close(l[0],(.2f+.4f+.4f+.2f)*center));
+    // MUTE does suppress PRE; unchanged independent send destinations.
+    ChannelEdit mute;mute.kind=Kind::setMute;mute.id=ids[0];mute.enabled=true;
+    assert(bank.edit(bank.revision(),std::span<const ChannelEdit>(&mute,1)).ok());
+    assert(DynamicPreparedMixerBlock::compile(bank,request,renderer,error));
+    assert(renderer.process(physical,2,l.data(),r.data(),32,fx));
+    assert(close(l[0],(.4f+.4f+.2f)*center));
+    mute.enabled=false;
+    assert(bank.edit(bank.revision(),std::span<const ChannelEdit>(&mute,1)).ok());
+    ChannelEdit solo;solo.kind=Kind::setSolo;solo.id=ids[10];solo.enabled=true;
+    assert(bank.edit(bank.revision(),std::span<const ChannelEdit>(&solo,1)).ok());
+    assert(DynamicPreparedMixerBlock::compile(bank,request,renderer,error));
+    assert(renderer.activeChannels()==2); // CH11 + MAIN only
+    assert(renderer.process(physical,2,l.data(),r.data(),32,fx));
+    assert(close(l[0],.4f*center));
+    solo.enabled=false;
+    assert(bank.edit(bank.revision(),std::span<const ChannelEdit>(&solo,1)).ok());
     assert(DynamicPreparedMixerBlock::compile(bank,request,renderer,error));
     assert(renderer.process(physical,2,l.data(),r.data(),32,fx));
     assert(close(l[0],(.2f+.4f+.4f+.2f)*center));

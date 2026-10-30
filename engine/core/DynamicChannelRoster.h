@@ -52,7 +52,7 @@ enum class ChannelEditFault : std::uint8_t {
 struct ChannelEdit final {
     enum class Kind : std::uint8_t {
         add, duplicate, remove, move, rename, setFormat, setFader, setPan,
-        addInsertReference, addSendReference
+        setMute, setSolo, addInsertReference, addSendReference
     } kind=Kind::add;
     ChannelId id{};       // existing channel (except add)
     ChannelId target{};   // send destination
@@ -60,6 +60,8 @@ struct ChannelEdit final {
     ChannelRole role=ChannelRole::input;
     ProcessingFormat format=ProcessingFormat::mono;
     float value=0.f;
+    bool enabled=false;      // mute/solo value (or future enable operation)
+    bool preFader=false;     // send tap at construction, no hidden POST default
     std::string text;
 };
 struct ChannelEditResult final {
@@ -172,6 +174,12 @@ public:
                         result.fault=ChannelEditFault::invalidValue;
                     else it->pan=op.value;
                     break;
+                case ChannelEdit::Kind::setMute:
+                    it->mute=op.enabled;
+                    break;
+                case ChannelEdit::Kind::setSolo:
+                    it->solo=op.enabled;
+                    break;
                 case ChannelEdit::Kind::addInsertReference:
                     if(op.text.empty() || op.text.size()>256 ||
                        it->insertCatalogIds.size()>=budget_.maximumInsertSlotsPerChannel)
@@ -185,7 +193,7 @@ public:
                         result.fault=ChannelEditFault::budgetExceeded;
                     else if(!std::isfinite(op.value)||op.value<0.f||op.value>4.f)
                         result.fault=ChannelEditFault::invalidValue;
-                    else it->sends.push_back({op.target,op.value,false});
+                    else it->sends.push_back({op.target,op.value,op.preFader});
                     break;
                 default:result.fault=ChannelEditFault::invalidAction;break;
                 }

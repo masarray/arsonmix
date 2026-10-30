@@ -210,8 +210,26 @@ public:
                 for(const auto& edge:outgoing[*k])
                     if(next.lanes_[edge.destination].enabled &&
                        reachesMain[edge.destination])reachesMain[*k]=1;
+        // Reverse reachability alone would schedule 128 silent lanes with
+        // sends to MAIN. Include only actual capture sources, explicit FX
+        // generator lanes, and descendants; preserve empty MAIN for mute.
+        std::vector<unsigned char> hasSignal(rows.size(),0);
+        for(std::size_t i=0;i<rows.size();++i)
+            hasSignal[i]=static_cast<unsigned char>(
+                next.lanes_[i].inputL>=0 || !rows[i].insertCatalogIds.empty());
+        for(const auto i:order) {
+            if(!next.lanes_[i].enabled || !hasSignal[i])continue;
+            for(const auto& edge:outgoing[i])
+                if(next.lanes_[edge.destination].enabled)
+                    hasSignal[edge.destination]=1;
+        }
         for(const auto i:order)
-            if(reachesMain[i])next.renderOrder_.push_back(i);
+            if(reachesMain[i] && (hasSignal[i] || i==main))
+                next.renderOrder_.push_back(i);
+        // Edges must only target retained scratch lanes. This is distinct
+        // from "reachable from MAIN": a silent incoming lane has no slot.
+        std::vector<unsigned char> scheduled(rows.size(),0);
+        for(const auto i:next.renderOrder_)scheduled[i]=1;
 
         const auto active=next.renderOrder_.size();
         const std::size_t frame=static_cast<std::size_t>(req.maxFrames);
@@ -222,9 +240,9 @@ public:
         for(std::size_t i=0;i<rows.size();++i) {
             auto& lane=next.lanes_[i];
             lane.first=next.edges_.size();
-            if(reachesMain[i]) {
+            if(scheduled[i]) {
                 for(const auto& edge:outgoing[i])
-                    if(reachesMain[edge.destination])next.edges_.push_back(edge);
+                    if(scheduled[edge.destination])next.edges_.push_back(edge);
             }
             lane.last=next.edges_.size();
         }
