@@ -111,7 +111,7 @@
   }
 
   function openIO(){document.getElementById('arRouteClose')?.click();overlay.hidden=false;lastSignature='';refreshIO();if(isNative())backend.emitEvent('arMixAction',{action:'audioDeviceInventory'});}
-  function closeIO(){overlay.hidden=true;}
+  function closeIO(){overlay.hidden=true;matrixDraft.clear();matrixSide.clear();matrixMessage='';}
   function setMode(next){
     if(!['FX','ROUTE','SENDS'].includes(next))return;
     mode=next;mixer.dataset.ioMode=mode;
@@ -190,7 +190,7 @@
       (s.ready?'E'+s.epoch+' / R'+(s.revision||0)+' · '+portList(s).length+' IN · '+(s.outputPorts?.length||0)+' OUT · '+(s.monitor?'OUTPUT ARMED':'OUTPUT MUTED'):'NO VERIFIED DEVICE · OUTPUT MUTED'):
       'WEB PREVIEW · NO LIVE AUDIO';
     if(info.textContent!==caption)info.textContent=caption;
-    toolbar.querySelector('[data-mix-apply]').disabled=!isNative()||!s.ready||!!s.pending||!!s.monitor;
+    toolbar.querySelector('[data-mix-apply]').disabled=!isNative()||!s.ready||!!s.pending||!!s.monitor||(!overlay.hidden&&matrixDraft.size>0);
     for(const strip of mixer.querySelectorAll('.strip[data-strip]'))refreshStrip(strip,s);
     if(!overlay.hidden)refreshIO();
     if(!sendEditor.hidden)drawSendEditor();
@@ -249,7 +249,7 @@
     grid.append(node('div','arIOMatrixCorner','LOGICAL BUS / CHANNEL'),node('div','arIOMatrixCorner','SOURCE'));
     for(const pin of shown){
       const p=portList(s).find(x=>x.port===pin);
-      const h=node('div','arIOPortTitle',''+(pin+1));
+      const h=node('div','arIOPortTitle',kind==='outputs'?'HW OUT '+(pin+1):''+(pin+1));
       h.title=(p?.label||'Hardware output '+(pin+1))+' · enabled physical pin';
       h.setAttribute('role','columnheader');
       grid.appendChild(h);
