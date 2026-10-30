@@ -24,10 +24,21 @@ Reference: Waves eMotion LV1 Mixer Window overview and Layer Mode documentation.
 - All action controls retain ArSonMix BTN-180. Status and hardware controls use existing bindings.
 - No second signal graph, no independent routing state, no fake physical outputs, no front-end polling.
 
-## Provenance / concurrency
+## Provenance / concurrency — reconciled after merge
 
-This is a presentation-only L2 change on the main branch following merged #167. #168 implements G3 AUX sends on `web/mixer-io.js` and `web/mixer-io.css`; L2 deliberately does **not** edit those files. New `web/mixer-layout.js` and `web/mixer-layout.css` load after the G1/G2 modules, so a later G3 merge retains its inline editor unchanged.
+**MERGED + APPROVED as current GUI baseline:** [PR #171](https://github.com/masarray/arsonmix/pull/171) squash `2ddd434ebb7bfa1b98d9396ff15c79ba857ca12b`, verified by Chromium workflow [40976822422](https://github.com/masarray/arsonmix/actions/runs/40976822422) **SUCCESS** and Windows MSVC/native-RT/CTest/package workflow [40976822381](https://github.com/masarray/arsonmix/actions/runs/40976822381) **SUCCESS**. Permanently tracked in [Issue #176](https://github.com/masarray/arsonmix/issues/176).
+
+The predecessor [#167](https://github.com/masarray/arsonmix/pull/167) (G1/G2) and [#168](https://github.com/masarray/arsonmix/pull/168) (G3 native AUX SENDS inspector) were both merged BEFORE L2. L2 deliberately did **not** overwrite their `web/mixer-io.js` or `web/mixer-io.css` and instead puts `web/mixer-layout.js` / `web/mixer-layout.css` after those modules. The main-branch [ADR R5 #172](https://github.com/masarray/arsonmix/pull/172) and product orchestration #177 are compatible architecture/docs work; future R5 source/channel/bus-format UX MUST retain this exact shared fader/meter grid and no phantom physical port mapping.
+
+**Future-thread contract:** read this document and #176 first, preserve all eleven lower-strip coordinates and muted native ACK; no extra mixer toolbar, shorter MASTER, duplicate UI controllers, more costly blur, or pasted proprietary eMotion LV1 assets. This document asserts only GUI/CI evidence; physical 0FX hardware crackle [#15](https://github.com/masarray/arsonmix/issues/15) remains unqualified.
 
 ## Acceptance gate
 
 `tests/mixer_shell_geometry_smoke.py` checks bounding-box equality for header, upper bank, controls, MUTE, numeric readout, fader, scale, meter and channel name on CH1–CH10 and MASTER at four viewport sizes and all three banks, including a full `renderMixer()` redraw. It checks that SENDS shrinks **all** faders and returning to FX expands **all**. Screenshots plus existing `tests/ui_smoke.py`, `tests/mixer_io_smoke.py` and native MSVC/CTest must pass. Physical ASIO continuity remains a separate FAT; success here does not clear issue #15.
+
+## Verified visual and regression gate
+
+- `tests/mixer_shell_geometry_smoke.py` measured all eleven sources and MASTER at 1680×920, 1440×768, 1366×768 and 1024×720 across FX / ROUTE / SENDS and repeated `renderMixer()`, with aligned fader, meter, scale, mute and bottom identity (<1.1px tolerance).
+- `tests/ui_smoke.py`, `tests/mixer_io_smoke.py`, `tests/mixer_shell_contract_test.mjs`, resource/standalone parity, native WebView2 package checks all passed at the L2 HEAD prior to merging.
+- Protect lower-strip alignment when ADR R5 adds mono/stereo input source and channel-processing-format selectors: use the focused channel panel or shared upper bank, **not independent track heights**.
+- No real physical hardware quality claim. The native MSVC build and package are engineering checks, not user ASIO FAT.
