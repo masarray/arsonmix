@@ -35,7 +35,7 @@ enum class DynamicGraphFault : std::uint8_t {
     none, noMaster, multipleMasters, invalidFrameCapacity,
     invalidPhysicalCount, missingSource, invalidSource,
     invalidSendDestination, duplicateSend, mainFeedback, cycle, invalidChannel,
-    scratchBudget, overflow
+    scratchBudget, overflow, multipleMonitors, monitorFeedback
 };
 struct DynamicGraphError final {
     DynamicGraphFault fault=DynamicGraphFault::none;
@@ -92,7 +92,7 @@ public:
         next.lanes_.reserve(rows.size());
         std::unordered_map<std::uint64_t,std::size_t> byId;
         byId.reserve(rows.size());
-        std::size_t main=notScheduled;
+        std::size_t main=notScheduled,monitor=notScheduled;
         for(std::size_t i=0;i<rows.size();++i) {
             const auto& row=rows[i];
             if(row.id.value==0 || !std::isfinite(row.faderLinear) ||
@@ -108,6 +108,15 @@ public:
                     error={DynamicGraphFault::multipleMasters,row.id};return false;
                 }
                 main=i;
+            } else if(row.role==ChannelRole::monitor) {
+                if(monitor!=notScheduled) {
+                    error={DynamicGraphFault::multipleMonitors,row.id};return false;
+                }
+                monitor=i;
+            } else if(row.role!=ChannelRole::input &&
+                      row.role!=ChannelRole::fxReturn &&
+                      row.role!=ChannelRole::group) {
+                error={DynamicGraphFault::invalidChannel,row.id};return false;
             }
             Lane lane;
             lane.id=row.id;lane.format=row.format;lane.role=row.role;
@@ -123,6 +132,7 @@ public:
         }
         if(main==notScheduled){error.fault=DynamicGraphFault::noMaster;return false;}
         next.main_=main;
+        next.monitor_=monitor;
         for(const auto& patch:req.sources) {
             const auto it=byId.find(patch.id.value);
             if(it==byId.end()){error={DynamicGraphFault::missingSource,patch.id};return false;}
@@ -152,6 +162,7 @@ public:
                 }
                 const auto to=it->second;
                 if(i==main) {error={DynamicGraphFault::mainFeedback,rows[i].id};return false;}
+                if(i==monitor) {error={DynamicGraphFault::monitorFeedback,rows[i].id};return false;}
                 if(to==i) {error={DynamicGraphFault::cycle,rows[i].id};return false;}
                 // A duplicate edge would sum the same send twice and can
                 // cause unexpectedly loud signal. Different taps are legal.
@@ -212,16 +223,19 @@ public:
             next.lanes_[i].enabled=next.lanes_[i].enabled &&
                                     (!anySolo || solos[i]!=0);
 
-        // Live lanes are only those that can actually reach MAIN.
-        // Adding 1,024 disconnected descriptors does NOT reserve 2,048
-        // huge per-channel scratch buffers or invoke 1,024 VST callbacks.
-        std::vector<unsigned char> reachesMain(rows.size(),0);
-        if(next.lanes_[main].enabled)reachesMain[main]=1;
+        // One immutable render schedule serves BOTH logical output sinks.
+        // Active monitor-only channels must not vanish merely because they
+        // do not route to MAIN. Disconnected descriptors remain scratch-free.
+        std::vector<unsigned char> reachesOutput(rows.size(),0);
+        if(next.lanes_[main].enabled)reachesOutput[main]=1;
+        if(monitor!=notScheduled && next.lanes_[monitor].enabled)
+            reachesOutput[monitor]=1;
         for(auto k=order.rbegin();k!=order.rend();++k)
             if(next.lanes_[*k].enabled)
                 for(const auto& edge:outgoing[*k])
                     if(next.lanes_[edge.destination].enabled &&
-                       reachesMain[edge.destination])reachesMain[*k]=1;
+                       reachesOutput[edge.destination])
+                        reachesOutput[*k]=1;
         // Reverse reachability alone would schedule 128 silent lanes with
         // sends to MAIN. Include only actual capture sources, explicit FX
         // generator lanes, and descendants; preserve empty MAIN for mute.
@@ -236,7 +250,7 @@ public:
                     hasSignal[edge.destination]=1;
         }
         for(const auto i:order)
-            if(reachesMain[i] && (hasSignal[i] || i==main))
+            if(reachesOutput[i] && (hasSignal[i] || i==main || i==monitor))
                 next.renderOrder_.push_back(i);
         // Edges must only target retained scratch lanes. This is distinct
         // from "reachable from MAIN": a silent incoming lane has no slot.
@@ -267,10 +281,21 @@ public:
 
     template<class Fx>
     bool process(const float* const* physical,int physicalCount,
-                 float* outputL,float* outputR,int frames,Fx&& processFx) noexcept {
+                 float* outputL,float* outputR,int frames,Fx&& processFx,
+                 float* monitorL=nullptr,float* monitorR=nullptr) noexcept {
         if(frames<=0 || !outputL || !outputR)return false;
+        if(outputL==outputR ||
+           (monitorL==nullptr)!=(monitorR==nullptr) ||
+           (monitor_!=notScheduled && !monitorL) ||
+           (monitorL && (monitorL==monitorR || monitorL==outputL ||
+                         monitorL==outputR || monitorR==outputL ||
+                         monitorR==outputR)))return false;
         std::fill_n(outputL,frames,0.f);
         std::fill_n(outputR,frames,0.f);
+        if(monitorL){
+            std::fill_n(monitorL,frames,0.f);
+            std::fill_n(monitorR,frames,0.f);
+        }
         if(frames>capacity_ || physicalCount<0)return false;
         const auto block=static_cast<std::size_t>(capacity_);
         // Prepared active scratch only; zero-patched lanes cost nothing.
@@ -328,14 +353,18 @@ public:
                 }
             }
         }
-        if(main_!=notScheduled && lanes_[main_].enabled) {
-            const auto& master=lanes_[main_];
-            if(master.slot<renderOrder_.size()){
-                const float* const l=scratch_.data()+master.slot*2*block;
-                const float* const r=l+block;
-                std::copy_n(l,frames,outputL);std::copy_n(r,frames,outputR);
-            }
-        }
+        // Output roles are terminal sinks; copy each independently from
+        // the SAME preallocated render graph. No second FX traversal.
+        const auto copySink=[&](std::size_t sink,float* l,float* r) noexcept {
+            if(sink==notScheduled || !lanes_[sink].enabled)return;
+            const auto slot=lanes_[sink].slot;
+            if(slot>=renderOrder_.size())return;
+            const float* const source=scratch_.data()+slot*2*block;
+            std::copy_n(source,frames,l);
+            std::copy_n(source+block,frames,r);
+        };
+        copySink(main_,outputL,outputR);
+        if(monitorL)copySink(monitor_,monitorL,monitorR);
         return true;
     }
 private:
@@ -343,7 +372,7 @@ private:
     std::vector<Edge> edges_;
     std::vector<std::size_t> renderOrder_;
     std::vector<float> scratch_;
-    std::size_t main_=notScheduled;
+    std::size_t main_=notScheduled,monitor_=notScheduled;
     int capacity_=0;
 };
 } // namespace armix::mixer

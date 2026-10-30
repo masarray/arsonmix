@@ -237,7 +237,106 @@ static void verifyDynamicPreparedPcm() {
     assert(renderer.channelCount()==1024&&renderer.scratchBytes()==2048);
 }
 
+
+static void verifyDynamicDualBusPcm() {
+    using Kind=ChannelEdit::Kind;
+    DynamicChannelRoster bank;
+    // 64 input channels, one MAIN and one independent MONITOR sink.
+    // Each ordinary channel uses the SAME stable ChannelId + FX seam.
+    std::vector<ChannelEdit> creates;
+    for(int i=0;i<66;++i) {
+        ChannelEdit e;e.kind=Kind::add;e.position=creates.size();
+        e.role=i==64?ChannelRole::main:i==65?ChannelRole::monitor:ChannelRole::input;
+        e.format=i>=64?ProcessingFormat::stereo:ProcessingFormat::mono;
+        creates.push_back(e);
+    }
+    const auto added=bank.edit(0,creates);
+    assert(added.ok()&&bank.size()==66);
+    const auto ids=added.createdIds;
+    const auto link=[&](int from,int to,float gain,bool pre=false){
+        ChannelEdit e;e.kind=Kind::addSendReference;e.id=ids[from];e.target=ids[to];
+        e.value=gain;e.preFader=pre;return e;
+    };
+    const std::vector<ChannelEdit> connections {
+        link(0,64,1.f),link(0,65,.5f),
+        link(31,65,1.f), // CH32 is MONITOR-only; do not leak into MAIN.
+        link(63,64,1.f)  // CH64 is MAIN-only.
+    };
+    assert(bank.edit(bank.revision(),connections).ok());
+    DynamicGraphRequest req;
+    req.physicalInputs=3;req.maxFrames=64;
+    req.sources={{ids[0],0,-1,false},{ids[31],1,-1,false},{ids[63],2,-1,false}};
+    DynamicPreparedMixerBlock live;
+    DynamicGraphError error;
+    assert(DynamicPreparedMixerBlock::compile(bank,req,live,error));
+    assert(live.channelCount()==66 && live.activeChannels()==5);
+    std::array<float,64> a{},b{},d{},mainL{},mainR{},monL{},monR{};
+    a.fill(.2f);b.fill(.4f);d.fill(.6f);
+    const float* inputs[]{a.data(),b.data(),d.data()};
+    int fxCalls=0;
+    const auto fx=[&](ChannelId,float*,float*,int) noexcept {++fxCalls;};
+    assert(live.process(inputs,3,mainL.data(),mainR.data(),64,fx,
+                        monL.data(),monR.data()));
+    constexpr float center=.7071067811865475f;
+    assert(fxCalls==5); // exactly three channels + two sinks, NO duplicate FX.
+    assert(close(mainL[0],(.2f+.6f)*center));
+    assert(close(mainR[0],mainL[0]));
+    assert(close(monL[0],(.2f*.5f+.4f)*center));
+    assert(close(monR[0],monL[0]));
+    // Monitor-only session is independent of MAIN mute, including PRE send.
+    ChannelEdit muteMain;muteMain.kind=Kind::setMute;muteMain.id=ids[64];
+    muteMain.enabled=true;
+    assert(bank.edit(bank.revision(),std::span<const ChannelEdit>(&muteMain,1)).ok());
+    assert(DynamicPreparedMixerBlock::compile(bank,req,live,error));
+    assert(live.activeChannels()==3); // CH1, CH32 and MONITOR
+    assert(live.process(inputs,3,mainL.data(),mainR.data(),64,fx,
+                        monL.data(),monR.data()));
+    assert(mainL[0]==0.f && mainR[0]==0.f);
+    assert(close(monL[0],(.2f*.5f+.4f)*center));
+    // Reordering CH32 must never change the output bus/channel references.
+    ChannelEdit move;move.kind=Kind::move;move.id=ids[31];move.position=0;
+    assert(bank.edit(bank.revision(),std::span<const ChannelEdit>(&move,1)).ok());
+    assert(DynamicPreparedMixerBlock::compile(bank,req,live,error));
+    assert(live.process(inputs,3,mainL.data(),mainR.data(),64,fx,
+                        monL.data(),monR.data()));
+    assert(close(monL[0],(.2f*.5f+.4f)*center));
+    // Bounded stereo output aliases must fail CLOSED before writing PCM.
+    assert(!live.process(inputs,3,mainL.data(),mainR.data(),64,fx,
+                         monL.data(),monL.data()));
+    assert(!live.process(inputs,3,mainL.data(),mainR.data(),64,fx));
+    // A second MONITOR must reject transactionally: previous live block remains.
+    ChannelEdit dupMonitor;dupMonitor.kind=Kind::add;
+    dupMonitor.position=bank.size();dupMonitor.role=ChannelRole::monitor;
+    const auto newMon=bank.edit(bank.revision(),std::span<const ChannelEdit>(&dupMonitor,1));
+    assert(newMon.ok());
+    assert(!DynamicPreparedMixerBlock::compile(bank,req,live,error));
+    assert(error.fault==DynamicGraphFault::multipleMonitors);
+    assert(live.channelCount()==66);
+    assert(live.process(inputs,3,mainL.data(),mainR.data(),64,fx,
+                        monL.data(),monR.data()));
+    assert(close(monL[0],(.2f*.5f+.4f)*center));
+    // The MONITOR sink cannot create a feedback path into any ordinary bus.
+    DynamicChannelRoster feedback;
+    std::vector<ChannelEdit> fCreate(3);
+    for(int i=0;i<3;++i) {
+        fCreate[i].kind=Kind::add;fCreate[i].position=i;
+        fCreate[i].role=i==0?ChannelRole::input:i==1?ChannelRole::main:ChannelRole::monitor;
+        fCreate[i].format=i==0?ProcessingFormat::mono:ProcessingFormat::stereo;
+    }
+    const auto fIds=feedback.edit(0,fCreate);
+    assert(fIds.ok());
+    ChannelEdit bad;bad.kind=Kind::addSendReference;bad.id=fIds.createdIds[2];
+    bad.target=fIds.createdIds[0];bad.value=1.f;
+    assert(feedback.edit(1,std::span<const ChannelEdit>(&bad,1)).ok());
+    DynamicGraphRequest fReq;fReq.physicalInputs=1;fReq.maxFrames=64;
+    fReq.sources={{fIds.createdIds[0],0,-1,false}};
+    assert(!DynamicPreparedMixerBlock::compile(feedback,fReq,live,error));
+    assert(error.fault==DynamicGraphFault::monitorFeedback);
+    assert(live.channelCount()==66);
+}
+
 int main() {
+    verifyDynamicDualBusPcm();
     verifyDynamicPreparedPcm();
     verifyDynamicChannelRoster();
     Configuration cfg;

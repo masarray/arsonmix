@@ -1,5 +1,7 @@
 # Repository instructions — ArSonMix (all future threads and AI coding agents)
 
+> **DYN1B-1 DUAL-SINK PCM GATE (2026-10-31):** [Dynamic MAIN+MONITOR kernel evidence](docs/DYN1B_DUAL_SINK_RUNTIME_PCM_20261031.md). This is a control-prepared ChannelId renderer, not a user-facing +CHANNEL or a replacement for the existing live native FX graph. It handles MONITOR-only sources in the same immutable render schedule, two nonaliasing output buffers, singleton output sinks, and compile rejection/rollback. DYN1B-2 must migrate the *existing* 10CH+4 AUX FX, legacy CH1 VST/editor/Orbit/Show state and device epoch/revision MUTE→APPLY before any DYN2 virtualized channel management. Do not create a second callback or claim 66-channel hardware parity.
+
 > **FXF2 FACTORY RELEASE ADMISSION (2026-10-31):** Read [cross-repo release handoff](docs/FACTORYFX_RELEASE_INTAKE_20261031.md) before FactoryFX packaging. EQ (\`arson-eq\`), Verb (\`arsonverb\`) and Enhancer (public distributor \`vst-enhancer\`, private DSP \`askp-vst\`) supply independently versioned VST3s; NEVER merge plugin DSP into the mixer host. The lightweight release watch proposes metadata only. Only a reviewed, SHA256-pinned \`config/factoryfx-approved-releases.json\` plus matching notice, exact VST3 CID/JUCE host UID, legality/entitlement and host FAT may enter canonical Windows ZIP. Until approved lock is nonempty, the bundle contains NO claimed factory plugins. No RT download/hash, no parallel DSP graph or plugin swap during live playback. Preserve OUTPUT1/MS3B and #15 hardware FAT.
 
 
