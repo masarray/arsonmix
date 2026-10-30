@@ -116,7 +116,7 @@ def zip_members(z, bundle):
         mode = info.external_attr >> 16
         if stat.S_ISLNK(mode):
             fail("symlink inside VST3 archive")
-        positions = [i for i, x in enumerate(parts) if x == bundle]
+        positions = [i for i, x in enumerate(parts[:2]) if x == bundle]
         if len(positions) != 1:
             # Standalone EXEs and foreign plugins must never enter the factory.
             continue
