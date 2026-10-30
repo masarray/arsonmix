@@ -1609,6 +1609,11 @@ async def main():
         await native.locator('[data-view="SIGNAL FLOW"]').click()
         assert await native.locator("#arRoutingLabOverlay").evaluate(
             "(e)=>e.classList.contains('open')")
+        # PATCH now opens Advanced BUS / SENDS / FX. Hardware source routing is
+        # canonical in AUDIO I/O; view the old grid only when explicitly asked.
+        assert await native.locator('[data-patch-tab="internal"]').get_attribute('aria-selected')=='true'
+        assert await native.locator('#arPatchHardwareSetup').is_visible()
+        await native.locator('[data-patch-tab="input"]').click()
         assert await native.locator("#arPatchGrid [data-patch-row][data-patch-port]").count()==20
         # One crosspoint per *actual* hardware input, not 8 placeholders per row.
         assert await native.locator("#arPatchGrid .arPatchPort").count()==2
@@ -1658,7 +1663,7 @@ async def main():
         assert 160<=workspace_layout['left']<=175 and 58<=workspace_layout['top']<=65,workspace_layout
         assert workspace_layout['width']>workspace_layout['viewport']*.80,workspace_layout
         assert workspace_layout['backdrop']=='none',workspace_layout
-        assert workspace_layout['routeRows']==0, "Input patch should not eagerly build 14 VST selectors"
+        assert workspace_layout['routeRows']==14, "Advanced bus mode builds its 10 channel and 4 AUX editors once"
 
         # R3: the approved BTN-180 MATERIAL is used for routing actions,
         # selected tabs, pager, L/R and Show controls. Grid cells stay
