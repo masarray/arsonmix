@@ -212,6 +212,76 @@ async def main():
             tops=await page.locator('#mixer .fader-zone').evaluate_all(
                 '(els)=>els.map(x=>x.getBoundingClientRect().top)')
             assert max(tops)-min(tops)<1.1,(bank,tops)
+        # MS1 may leave a channel-format draft; ACKed state is authoritative.
+        await page.evaluate("()=>window.__arMixRevertMixerDraft()")
+        # Assign a REAL separate physical port first; the second FX lane
+        # cannot publish an unpatched/missing CH2.
+        await page.locator('[data-mix-mode="ROUTE"]').click()
+        await page.locator('[data-strip="1"] select.arBankSource').select_option("MONO:1")
+        await page.locator('.arMixerBankBar [data-mix-apply]').click()
+        status=await page.evaluate("""status=>{
+          const payload=window.__armixTestActions.filter(x=>
+            x.name==='arMixAction'&&x.data.action==='routingDryApply').at(-1).data.value;
+          status.dryRoutingLab.revision=6;
+          status.dryRoutingLab.acceptedRoute=payload;
+          window.__armixTestEmit('arMixRoutingLabAck',{ok:true,state:status.dryRoutingLab});
+          window.__armixTestEmit('arMixStatus',status);
+          return status;
+        }""",status)
+        assert "LIVE" in await page.locator('[data-strip="1"] .arBankStage').inner_text()
+        g5before=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.name==='arMixAction'&&x.data.action==='routingDryApply').length""")
+        # G5B: two actual, indexed native VST3s on CH2 use ONE route
+        # transaction (no JS AudioContext); reorder/remove are DRAFT until ACK.
+        await page.evaluate("""() => window.__armixTestEmit('arMixCatalog',{
+          items:[{id:'eq-pro',name:'EQ Pro',vendor:'Test',category:'EQ',path:'test.vst3'},
+                 {id:'rv-pro',name:'Reverb Pro',vendor:'Test',category:'Reverb',path:'rv.vst3'}]
+        })""")
+        await page.locator('[data-mix-mode="FX"]').click()
+        stage=await page.evaluate("""()=>{
+          return [window.__arMixStageRackFx(1,'eq-pro',0,'set'),
+                  window.__arMixStageRackFx(1,'rv-pro',1,'set')];
+        }""")
+        assert all(x['ok'] for x in stage),stage
+        await page.wait_for_function("""()=>window.__arMixFxLaneView(1).ids.length===2""")
+        assert await page.locator('[data-strip="1"] .rack .insert-slot').count()==6
+        assert await page.locator('[data-strip="1"] .rack .ar-routed-loaded').count()==2
+        # No automatic output unmute or implicit native APPLY.
+        g5after=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.name==='arMixAction'&&x.data.action==='routingDryApply').length""")
+        assert g5after==g5before,(g5before,g5after)
+        queued=await page.evaluate("""()=>window.__arMixApplyRackFx()""")
+        assert queued['ok'],queued
+        g5=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.name==='arMixAction'&&x.data.action==='routingDryApply').at(-1).data.value""")
+        assert g5['channels'][1]['fxIds']==['eq-pro','rv-pro'],g5
+        assert g5['channels'][1]['fxId']=='eq-pro',g5
+        # Rejected APPLY must keep the previous native live graph unchanged.
+        await page.evaluate("""status=>{
+          window.__armixTestEmit('arMixRoutingLabAck',
+            {ok:false,error:'FX plugin rejected',state:status.dryRoutingLab});
+        }""",status)
+        assert await page.evaluate("""()=>window.__arMixFxLaneView(1).live.length""")==0
+        # Re-submit after rejection, native ACK makes both inserts live.
+        await page.evaluate("""()=>window.__arMixApplyRackFx()""")
+        status=await page.evaluate("""status=>{
+          const payload=window.__armixTestActions.filter(x=>
+            x.name==='arMixAction'&&x.data.action==='routingDryApply').at(-1).data.value;
+          status.dryRoutingLab.revision++;
+          status.dryRoutingLab.acceptedRoute={...payload};
+          window.__armixTestEmit('arMixRoutingLabAck',{ok:true,state:status.dryRoutingLab});
+          window.__armixTestEmit('arMixStatus',status);
+          return status;
+        }""",status)
+        assert await page.evaluate("""()=>window.__arMixFxLaneView(1).live.join('|')""")=="eq-pro|rv-pro"
+        await page.evaluate("""()=>window.__arMixStageRackFx(1,'',1,'up')""")
+        assert await page.evaluate("""()=>window.__arMixFxLaneView(1).ids.join('|')""")=="rv-pro|eq-pro"
+        assert await page.evaluate("""()=>window.__arMixFxLaneView(1).live.join('|')""")=="eq-pro|rv-pro"
+        # Stage is reversible; routing device must not be reopened.
+        reverted=await page.evaluate("()=>window.__arMixRevertMixerDraft()")
+        assert reverted['ok'],reverted
+        assert await page.evaluate("""()=>window.__arMixFxLaneView(1).ids.join('|')""")=="eq-pro|rv-pro"
+        assert await page.locator('[data-strip="1"] .rack .insert-slot').count()==6
         assert not errors,errors
         await browser.close()
         print("PASS: G1/G2 + G3 real PRE/POST draft, AUX return, 0-gain bypass, native ACK/reject/revert, stable rack and 3 viewports")

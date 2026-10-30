@@ -36,6 +36,8 @@ public:
     static constexpr int count=armix::mixer::stripCount;
     static constexpr int auxCount=armix::mixer::auxBusCount;
     static constexpr int fxSlots=count+auxCount;
+    static constexpr int maxFxPerLane=FxGraph::maxInsertsPerStrip;
+    using FxSelections=std::array<std::array<FxSelection,maxFxPerLane>,fxSlots>;
     struct ChannelEdit {
         float linear=1.f, pan=0.f;
         bool mute=false, solo=false, mono=false;
@@ -129,7 +131,7 @@ public:
             channels.add(juce::var(row.release()));
         }
         request->setProperty("channels",juce::var(channels));
-        const std::array<FxSelection,fxSlots> none{};
+        const FxSelections none{};
         // Same publisher/graph as a real user APPLY, but no authorization.
         // Never briefly advertise a synthetic route as LIVE.
         return apply(juce::var(request.release()),directPermitted,
@@ -139,7 +141,7 @@ public:
 
     juce::String apply (const juce::var& command, bool directPermitted,
                         bool independentClock, int loadedFx,
-                        const std::array<FxSelection,fxSlots>& selections,
+                        const FxSelections& selections,
                         juce::AudioPluginFormatManager& formats,
                         double sampleRate,int deviceFrames,bool explicitSelection=true) {
         // Called by the native message thread only. Not callable from RT.
@@ -148,7 +150,8 @@ public:
         // Keep the existing multi-insert CH1 rack and vendor Orbit alive.
         // Native CH1 insert and legacy CH1 rack are mutually exclusive;
         // running both would process plugins twice and corrupt user sound.
-        if(loadedFx>0 && !selections[0].id.isEmpty())
+        if(loadedFx>0 && std::any_of(selections[0].begin(),selections[0].end(),
+                [](const auto& fx){return fx.id.isNotEmpty();}))
             return "CH1 has a live FX rack: remove the duplicate CH1 insert from this route";
         if(!command.isObject()) return "Invalid Dry Routing configuration";
         const auto currentEpoch=deviceEpoch_.load(std::memory_order_acquire);
@@ -224,58 +227,66 @@ public:
         const auto* prior=publisher_.controlPrepared(currentEpoch,expectedRevision);
         int insertCount=0,reusedCount=0;
         for(int lane=0;lane<fxSlots;++lane) {
-            const auto& req=selections[lane];
-            if(req.id.isEmpty())continue;
             const bool scheduled=lane<count?plan.scheduled[lane]:
                 plan.aux.buses[lane-count].enabled;
             const juce::String label=lane<count
                 ?"CH "+juce::String(lane+1)
                 :"AUX "+juce::String(lane-count+1);
-            if(!scheduled)
-                return label+": enable a real input/return before adding VST3";
-            if(prior && next->prepared->reuse(lane,*prior,req.id)) {
+            bool hole=false;
+            std::array<bool,maxFxPerLane> consumed{};
+            for(int slot=0;slot<maxFxPerLane;++slot) {
+                const auto& req=selections[lane][slot];
+                if(req.id.isEmpty()){hole=true;continue;}
+                if(hole)return label+": FX chain must be contiguous; remove empty slots";
+                if(!scheduled)
+                    return label+": assign a physical source/enable return before loading VST3";
+                bool reused=false;
+                if(prior){
+                    // Keep exact position first to preserve duplicate-ID instances.
+                    // Reorder searches other old positions only if necessary.
+                    for(int pass=0;pass<2&&!reused;++pass)
+                        for(int old=0;old<prior->insertsOn(lane);++old) {
+                            if(consumed[old] || (pass==0)!=(old==slot) ||
+                               prior->insertId(lane,old)!=req.id)continue;
+                            if(next->prepared->reuseAt(lane,slot,*prior,old,req.id)){
+                                consumed[old]=true;reused=true;++insertCount;++reusedCount;break;
+                            }
+                        }
+                }
+                if(reused)continue; // DO NOT restart unchanged vendor/Orbit/tail.
+                if(!(sampleRate>0.0) || deviceFrames<=0)
+                    return "Audio device sample rate or buffer size is invalid";
+                auto* fmt=formats.getFormat(0);
+                if(!fmt || !fmt->fileMightContainThisPluginType(req.path))
+                    return label+": VST3 module unavailable; rescan catalog";
+                juce::OwnedArray<juce::PluginDescription> descriptions;
+                fmt->findAllTypesForFile(descriptions,req.path);
+                juce::PluginDescription* chosen=nullptr;
+                for(auto* item:descriptions)
+                    if(item && item->uniqueId==req.uid && !item->isInstrument)
+                        {chosen=item;break;}
+                if(!chosen)
+                    return label+": selected effect identity is unavailable or instrument";
+                juce::String pluginError;
+                auto instance=formats.createPluginInstance(*chosen,sampleRate,
+                    juce::jmax(32,deviceFrames),pluginError);
+                if(!instance)
+                    return label+": slot "+juce::String(slot+1)+
+                        " VST3 instantiation failed: "+pluginError;
+                const auto layoutError=armix::vst::prepareStereoEffectLayout(*instance);
+                if(layoutError.isNotEmpty())return label+": "+layoutError;
+                try {
+                    instance->prepareToPlay(sampleRate,juce::jmax(32,deviceFrames));
+                } catch(const std::exception& ex) {
+                    return label+": prepare failed: "+juce::String(ex.what());
+                } catch(...) {return label+": prepare failed";}
+                if(instance->getLatencySamples()!=0)
+                    return label+": VST3 slot "+juce::String(slot+1)+
+                        " reports latency; PDC is not yet implemented";
+                if(!next->prepared->installAt(lane,slot,std::move(instance),chosen->name,req.id))
+                    return label+": invalid prepared insert slot";
                 ++insertCount;
-                ++reusedCount;
-                continue; // NO disk scan, NO plugin prepare, NO tail/state reset
             }
-            if(!(sampleRate>0.0) || deviceFrames<=0)
-                return "Audio device sample rate or buffer size is invalid";
-            auto* fmt=formats.getFormat(0);
-            if(!fmt || !fmt->fileMightContainThisPluginType(req.path))
-                return label+": VST3 module is unavailable; rescan catalog";
-            juce::OwnedArray<juce::PluginDescription> descriptions;
-            fmt->findAllTypesForFile(descriptions,req.path);
-            juce::PluginDescription* chosen=nullptr;
-            for(auto* item:descriptions)
-                if(item && item->uniqueId==req.uid && !item->isInstrument)
-                    {chosen=item;break;}
-            if(!chosen)
-                return label+": selected VST3 effect identity not found (instrument plugins are unsupported)";
-            juce::String pluginError;
-            auto instance=formats.createPluginInstance(*chosen,sampleRate,
-                juce::jmax(32,deviceFrames),pluginError);
-            if(!instance)
-                return label+": VST3 instantiation failed: "+pluginError;
-            const auto layoutError=armix::vst::prepareStereoEffectLayout(*instance);
-            if(layoutError.isNotEmpty())
-                return label+": "+layoutError;
-            try {
-                instance->prepareToPlay(sampleRate,
-                    juce::jmax(32,deviceFrames));
-            } catch(const std::exception& ex) {
-                return label+": plugin prepare failed: "+juce::String(ex.what());
-            } catch(...) {
-                return label+": plugin prepare failed (unknown exception)";
-            }
-            // Uncompensated latent inserts produce comb filtering in PRE/POST
-            // sends. Until native PDC exists, reject instead of lying about
-            // phase accuracy or silent extra buffer latency.
-            if(instance->getLatencySamples()!=0)
-                return label+
-                    ": this VST3 reports latency; choose zero-latency mode until PDC is implemented";
-            if(!next->prepared->install(lane,std::move(instance),chosen->name,req.id))
-                return label+": duplicate or invalid VST3 insert";
-            ++insertCount;
         }
         const auto epochAtPublish=deviceEpoch_.load(std::memory_order_acquire);
         if(!registryValid_.load(std::memory_order_acquire) ||
@@ -298,9 +309,9 @@ public:
                 // enter ANY channel/master vendor DSP or produce sound.
                 userPatched_.store(explicitSelection,std::memory_order_release);
                 channelEdits_=proposed; // control thread SSOT for this route revision
-                for(int i=0;i<count;++i)channelFxNames_[i]=selections[i].name;
+                for(int i=0;i<count;++i)channelFxNames_[i]=selections[i][0].name;
                 for(int b=0;b<auxCount;++b)
-                    auxFxNames_[b]=selections[count+b].name;
+                    auxFxNames_[b]=selections[count+b][0].name;
                 auxCountActive_.store(
                     static_cast<int>(std::count_if(plan.aux.buses.begin(),
                         plan.aux.buses.end(),

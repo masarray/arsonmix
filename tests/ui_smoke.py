@@ -1412,24 +1412,33 @@ async def main():
               vendor:"Vendor",category:"EQ",path:"C:\\\\Plugins\\\\Effect"+i+".vst3",favorite:i===7
             }))
           });
+          const route={deviceEpoch:77,revision:0,
+            channels:Array.from({length:10},(_,i)=>({
+              mode:"NONE",channelFormat:"MONO",left:-1,right:-1,
+              gain:.25,pan:0,main:true,mute:false,solo:false,
+              fxId:i===1?"plugin-1":"",fxIds:i===1?["plugin-1"]:[] })),
+            auxes:Array.from({length:4},()=>({enabled:false,gain:1,main:true,mute:false,fxId:"",fxIds:[]})),
+            sends:[]};
           window.__arMixMockEvents.arMixStatus({
             ...window.__arPatchStatus,
             dryRoutingLab:{...window.__arPatchStatus.dryRoutingLab,
-              active:true,ready:true,revision:1,channelFxNames:Array.from({length:10},(_,i)=>i===1?"Native Reverb":"")}
+              active:true,ready:true,revision:1,acceptedRoute:route,
+              channelFxNames:Array.from({length:10},(_,i)=>i===1?"Effect 001":"")}
           });
         }""")
         assert await native.locator('[data-strip="1"] .rack .insert-slot').count()==6
-        assert await native.locator('[data-strip="1"] .rack [data-routed-fx="1"]').count()==1
+        assert await native.locator('[data-strip="1"] .rack [data-routed-fx="1"]').count()==6
+        assert await native.locator('[data-strip="1"] .rack .ar-routed-loaded').count()==1
         assert "ROUTE / FX" not in (await native.locator('[data-strip="1"] .rack').inner_text())
         await native.locator('[data-view="FX RACK"]').click()
         await native.evaluate("()=>{currentChannel=1;renderRackWorkspace()}")
         await native.wait_for_function("""()=>!!document.querySelector('#rackWorkspace [data-routed-fx="1"]')""")
         assert await native.locator('#rackWorkspace [data-routed-apply]').count()==1
-        await native.locator('#rackWorkspace [data-routed-fx="1"]').click()
+        await native.locator('#rackWorkspace [data-routed-fx="1"]').first.click()
         assert await native.locator('#arPickerRows [data-native-add]').count()==80
         assert await native.locator('#arPickerRows .ar-picker-row').first.locator('.ar-favorite').count()==1
         await native.locator('#arPickerRows [data-native-add]').first.click()
-        assert await native.locator('#rackWorkspace').get_by_text("PENDING DRAFT",exact=False).count()==1
+        assert await native.locator('#rackWorkspace').get_by_text("FX DRAFT",exact=False).count()>=1
         await native.locator('#rackWorkspace [data-routed-apply]').click()
         assert await native.evaluate("""()=>!window.__arMixSent.some(x=>
           x.payload?.action==="routingDryApply")"""),"No input patch must not publish a routed FX change"

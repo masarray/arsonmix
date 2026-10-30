@@ -1031,44 +1031,52 @@ private:
         // existing 1-channel VST3 production chain. Explicit Apply/Stop.
         if (action == "routingDryApply")
         {
-            std::array<LiveDryRoutingLab::FxSelection,LiveDryRoutingLab::fxSlots> selected{};
+            LiveDryRoutingLab::FxSelections selected{};
             juce::String error;
-            const auto rowsValue=value.getProperty("channels",juce::var());
-            auto* rows=rowsValue.getArray();
-            // Catalog IDs, never caller paths, are the only trusted VST3
-            // identities. Missing/changed catalog entries FAIL the entire
-            // transaction before any third-party instantiation.
-            if(rows && rows->size()==LiveDryRoutingLab::count) {
-                for(int i=0;i<rows->size();++i) {
-                    const auto id=rows->getReference(i).getProperty("fxId",{}).toString();
-                    if(id.isEmpty())continue;
+            // Legacy fxId remains slot 0. Ordered fxIds[] enables G5B while
+            // preserving the same device epoch/revision/MUTE/ACK transaction.
+            // Never accept caller-supplied filesystem paths.
+            const auto resolveLane=[&](const juce::var& row,int lane,const juce::String& label) {
+                const auto raw=row.getProperty("fxIds",juce::var());
+                const auto old=row.getProperty("fxId",juce::var()).toString();
+                juce::StringArray ids;
+                if(!raw.isVoid()) {
+                    auto* array=raw.getArray();
+                    if(!array || array->size()>LiveDryRoutingLab::maxFxPerLane) {
+                        error=label+": FX chain must have at most 8 entries";return;
+                    }
+                    for(const auto& value:*array) {
+                        if(!value.isString()) {error=label+": FX ID must be a string";return;}
+                        ids.add(value.toString());
+                    }
+                    if(old.isNotEmpty() && (ids.isEmpty()||ids[0]!=old)) {
+                        error=label+": legacy fxId conflicts with ordered fxIds";return;
+                    }
+                }else if(old.isNotEmpty())ids.add(old);
+                for(int slot=0;slot<ids.size();++slot) {
+                    const auto id=ids[slot];
+                    if(id.isEmpty()){error=label+": FX chain contains empty slot";return;}
                     const auto* entry=catalog_.find(id);
                     if(!entry) {
-                        error="CH "+juce::String(i+1)+
-                            ": VST3 unavailable in catalog. Rescan or select DRY.";
-                        break;
+                        error=label+": slot "+juce::String(slot+1)+
+                            " VST3 missing from catalog. Rescan before APPLY.";return;
                     }
-                    selected[i]={entry->key(),entry->path,entry->name,entry->uid};
+                    selected[lane][slot]={entry->key(),entry->path,entry->name,entry->uid};
                 }
-            }
-            // Dedicated AUX catalog IDs come only from the trusted native
-            // VST3 catalog, NEVER untrusted WebView file paths.
+            };
+            const auto rowsValue=value.getProperty("channels",juce::var());
+            auto* rows=rowsValue.getArray();
+            if(rows&&rows->size()==LiveDryRoutingLab::count)
+                for(int i=0;i<rows->size()&&error.isEmpty();++i)
+                    resolveLane(rows->getReference(i),i,"CH "+juce::String(i+1));
             const auto auxValue=value.getProperty("auxes",juce::var());
-            if(error.isEmpty() && !auxValue.isVoid()){
+            if(error.isEmpty()&&!auxValue.isVoid()){
                 auto* auxRows=auxValue.getArray();
                 if(!auxRows||auxRows->size()!=LiveDryRoutingLab::auxCount)
                     error="Exactly four AUX returns are required";
-                else for(int b=0;b<LiveDryRoutingLab::auxCount;++b){
-                    const auto id=auxRows->getReference(b).getProperty("fxId",{}).toString();
-                    if(id.isEmpty())continue;
-                    const auto* entry=catalog_.find(id);
-                    if(!entry){
-                        error="AUX "+juce::String(b+1)+": VST3 missing in catalog";
-                        break;
-                    }
-                    selected[LiveDryRoutingLab::count+b]=
-                        {entry->key(),entry->path,entry->name,entry->uid};
-                }
+                else for(int b=0;b<LiveDryRoutingLab::auxCount&&error.isEmpty();++b)
+                    resolveLane(auxRows->getReference(b),LiveDryRoutingLab::count+b,
+                                "AUX "+juce::String(b+1));
             }
             if(error.isEmpty()) {
                 try {
@@ -1238,8 +1246,7 @@ private:
                             result.loaded,state,command);
                         if(error.isEmpty()) {
                             try {
-                                std::array<LiveDryRoutingLab::FxSelection,
-                                           LiveDryRoutingLab::fxSlots> noVst3{};
+                                LiveDryRoutingLab::FxSelections noVst3{};
                                 error=safe->engine_.applyDryRoutingLab(command,noVst3);
                             } catch(const std::exception& ex) {
                                 error="Native DRY Show preparation exception: "+

@@ -83,7 +83,7 @@ test('MS1 typed native processing format stays independent of physical source an
   assert.match(decoder,/channelFormat.*"MONO"/);
   assert.match(monitor,/window\.__arMixStageChannelFormat=/);
   assert.match(monitor,/schemaVersion:2/);
-  assert.match(monitor,/channels:draftRoutes\.map\(typedSource\)/);
+  assert.match(monitor,/channels:draftRoutes\.map\(r=>\(\{\.\.\.typedSource\(r\),fxIds:laneIds\(r\)\}\)\)/);
   assert.match(monitor,/data-patch-channel-format/);
   assert.match(monitor,/draft\.channelFormat/);
   assert.match(gui,/class="arBankChannelFormat"/);

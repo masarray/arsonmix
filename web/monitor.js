@@ -257,8 +257,8 @@
     sourceKind:row.mode==="BUS"?"BUS":row.mode==="NONE"?"NONE":"PHYSICAL",
     sourceFormat:row.mode==="MONO"||row.mode==="STEREO"?row.mode:"NONE",
     channelFormat:row.channelFormat});
-  const draftRoutes=Array.from({length:10},()=>({mode:"NONE",channelFormat:"MONO",left:-1,right:-1,gain:0.25,pan:0,main:true,mute:false,solo:false,fxId:""}));
-  const draftAux=Array.from({length:4},()=>({enabled:false,gain:1,main:true,mute:false,fxId:""}));
+  const draftRoutes=Array.from({length:10},()=>({mode:"NONE",channelFormat:"MONO",left:-1,right:-1,gain:0.25,pan:0,main:true,mute:false,solo:false,fxId:"",fxIds:[]}));
+  const draftAux=Array.from({length:4},()=>({enabled:false,gain:1,main:true,mute:false,fxId:"",fxIds:[]}));
   const draftSends=[];
   let mixerDraftActive=false; // Source edits from MIX/IO share this exact controller
   let selectedAuxPair=null; // editor-only; not a second audio graph
@@ -268,9 +268,9 @@
     draftEpoch=nextEpoch;
     for(const route of draftRoutes) {
       route.mode="NONE";route.channelFormat="MONO";route.left=-1;route.right=-1;route.gain=0.25;route.pan=0;
-      route.main=true;route.mute=false;route.solo=false;route.fxId="";
+      route.main=true;route.mute=false;route.solo=false;route.fxId="";route.fxIds=[];
     }
-    for(const b of draftAux){b.enabled=false;b.gain=1;b.main=true;b.mute=false;b.fxId="";}
+    for(const b of draftAux){b.enabled=false;b.gain=1;b.main=true;b.mute=false;b.fxId="";b.fxIds=[];}
     draftSends.length=0;
     mixerDraftActive=false;
     selectedAuxPair=null;
@@ -326,8 +326,14 @@
     const id=selected.dataset.fxPickerChoice;
     if(id&&!catalogNames.has(id))return; // trusted native catalog IDs only
     const {kind,index,button}=fxPickerTarget;
-    (kind==="ch"?draftRoutes[index]:draftAux[index]).fxId=id;
-    button.textContent=fxCaption(id);button.title=id||"DRY · no VST3";
+    const selectedRoute=kind==="ch"?draftRoutes[index]:draftAux[index];
+    // Compact ROUTING chooser modifies slot 0 only. Preserve the rest
+    // of the native chain rather than silently deleting seven plugins.
+    const previous=laneIds(selectedRoute);
+    selectedRoute.fxIds=id?[id,...previous.slice(1)]:previous.slice(1);
+    selectedRoute.fxId=selectedRoute.fxIds[0]||"";
+    button.textContent=fxCaption(selectedRoute.fxId);
+    button.title=selectedRoute.fxId||"DRY · no VST3";
     closeFxPicker(true);
   });
   routeOverlay.addEventListener("click",e=>{
@@ -373,10 +379,18 @@
       for(const key of keys)
         if(Object.prototype.hasOwnProperty.call(source,key))
           draftRoutes[i][key]=source[key];
+      draftRoutes[i].fxIds=Array.isArray(source.fxIds)
+        ?source.fxIds.slice(0,8):source.fxId?[source.fxId]:[];
+      draftRoutes[i].fxId=draftRoutes[i].fxIds[0]||"";
     }
     if(Array.isArray(saved.auxes)&&saved.auxes.length===4)
-      for(let b=0;b<4;b++)for(const key of ["enabled","gain","main","mute","fxId"])
-        if(Object.prototype.hasOwnProperty.call(saved.auxes[b]||{},key))draftAux[b][key]=saved.auxes[b][key];
+      for(let b=0;b<4;b++){
+        for(const key of ["enabled","gain","main","mute","fxId"])
+          if(Object.prototype.hasOwnProperty.call(saved.auxes[b]||{},key))draftAux[b][key]=saved.auxes[b][key];
+        const src=saved.auxes[b]||{};
+        draftAux[b].fxIds=Array.isArray(src.fxIds)?src.fxIds.slice(0,8):src.fxId?[src.fxId]:[];
+        draftAux[b].fxId=draftAux[b].fxIds[0]||"";
+      }
     draftSends.length=0;
     if(Array.isArray(saved.sends))
       for(const send of saved.sends.slice(0,32))
@@ -688,7 +702,7 @@
       '<label title="Send directly to MAIN"><input type="checkbox" data-route-main '+(v.main?'checked':'')+'>MAIN</label>'+
       '<label title="Mute channel and sends"><input type="checkbox" data-route-mute '+(v.mute?'checked':'')+'>M</label>'+
       '<label title="Solo channel with upstream/downstream sends"><input type="checkbox" data-route-solo '+(v.solo?'checked':'')+'>S</label>'+
-      '</div><div class="arRoutePluginLine"><span>VST3 INSERT</span>'+fxButtonMarkup("ch",i,v.fxId)+'<small>one stereo-compatible instance · real FX</small></div></div>';
+      '</div><div class="arRoutePluginLine"><span>VST3 INSERT</span>'+fxButtonMarkup("ch",i,v.fxId)+'<small>Up to 8 VST3 · edit chain in FX RACK</small></div></div>';
     }).join('');
     rows.querySelectorAll('[data-route-row]').forEach(row=>{
       const model=draftRoutes[Number(row.dataset.routeRow)];
@@ -924,24 +938,51 @@
   // channel's VST3 selection, but MUST stage it through the SAME routing
   // draft/preflight/APPLY/ACK; no separate graph or implicit output unmute.
   let rackFxDraft=null;
-  window.__arMixStageRackFx=(channel,id)=>{
+  const laneIds=route=>Array.isArray(route?.fxIds)
+    ?route.fxIds.slice(0,8):route?.fxId?[route.fxId]:[];
+  window.__arMixFxLaneView=channel=>{
     const d=state.dryRoutingLab||{};
-    if(!d.active||!d.ready)return {ok:false,error:"Select a verified DIRECT audio device in AUDIO SETUP."};
-    if(patchPending)return {ok:false,error:"Routing change pending native acknowledgement."};
+    const saved=d.acceptedRoute?.channels?.[channel];
+    const live=laneIds(saved);
+    const pending=!!rackFxDraft&&rackFxDraft.epoch===Number(d.epoch);
+    const ids=pending?laneIds(draftRoutes[channel]):live;
+    return {ids,live,pending,ready:!!d.ready,epoch:Number(d.epoch)||0,
+      monitoring:!!state.monitor,names:ids.map(id=>catalogNames.get(id)||"Missing VST3")};
+  };
+  window.__arMixStageRackFx=(channel,id,slot=0,operation="set")=>{
+    const d=state.dryRoutingLab||{};
+    if(!d.active||!d.ready)return {ok:false,error:"Select a verified DIRECT audio device."};
+    if(patchPending)return {ok:false,error:"Wait for the previous native ACK."};
     if(!Number.isInteger(channel)||channel<0||channel>=10)return {ok:false,error:"Invalid input channel."};
-    if(id&&!catalogNames.has(id))return {ok:false,error:"VST3 is not indexed; open Plugin Manager."};
-    if(channel===0&&id&&Number(state.chainCount)>0)
-      return {ok:false,error:"CH1 multi-insert rack is active. Remove the duplicate routed CH1 insert."};
-    // Preserve multiple rack edits in one draft; only first edit hydrates the
-    // authoritative native accepted route. On device epoch change, invalidate.
-    if(!rackFxDraft||draftEpoch!==Number(d.epoch)){
-      hydrateAcceptedRoute();
-      syncNativeLevelsToRouteDraft();
+    if(!Number.isInteger(slot)||slot<0||slot>=8)return {ok:false,error:"FX insert slot must be 1–8."};
+    if(operation==="set"&&id&&!catalogNames.has(id))
+      return {ok:false,error:"VST3 is not indexed; open Plugin Manager."};
+    if(channel===0&&Number(state.chainCount)>0)
+      return {ok:false,error:"CH1 legacy FX chain is active; use its original FX Rack."};
+    if(!rackFxDraft||rackFxDraft.epoch!==Number(d.epoch)){
+      hydrateAcceptedRoute();syncNativeLevelsToRouteDraft();
     }
-    draftRoutes[channel].fxId=id;
-    rackFxDraft={channel,id,epoch:Number(d.epoch)};
+    const current=laneIds(draftRoutes[channel]);
+    if(operation==="set"){
+      if(slot>current.length)return {ok:false,error:"Fill preceding FX slots first."};
+      if(id)current[slot]=id;
+      else if(slot<current.length)current.splice(slot,1);
+    }else if(operation==="remove"){
+      if(slot>=current.length)return {ok:false,error:"No VST3 in this slot."};
+      current.splice(slot,1);
+    }else if(operation==="up"||operation==="down"){
+      const dest=slot+(operation==="up"?-1:1);
+      if(slot>=current.length||dest<0||dest>=current.length)
+        return {ok:false,error:"Cannot move outside the active FX chain."};
+      [current[slot],current[dest]]=[current[dest],current[slot]];
+    }else return {ok:false,error:"Unknown FX edit operation."};
+    draftRoutes[channel].fxIds=current;
+    draftRoutes[channel].fxId=current[0]||"";
+    rackFxDraft={channel,id:current[slot]||"",slot,ids:current.slice(),epoch:Number(d.epoch)};
     if(patchTab==="internal"&&routeOverlay.classList.contains("open"))drawRoutes();
-    return {ok:true,name:id?catalogNames.get(id):"DRY",message:"FX DRAFT · Mute output, then APPLY FX. Existing live audio is unchanged."};
+    window.dispatchEvent(new Event("arMixRoutingDraftChanged"));
+    return {ok:true,ids:current.slice(),name:id?catalogNames.get(id):"DRY",
+      message:"FX DRAFT · "+current.length+"/8 inserts. MUTE OUTPUT → APPLY → native ACK."};
   };
   window.__arMixGetRackFxDraft=channel=>rackFxDraft?.epoch===Number(state.dryRoutingLab?.epoch)&&
     rackFxDraft?.channel===channel?rackFxDraft:null;
@@ -971,8 +1012,8 @@
       pending:patchPending,ports:patchPorts().map(p=>({port:p.port,label:p.label})),
       outputPorts:Array.isArray(d.outputPorts)?d.outputPorts.slice():[],
       acceptedRoute:d.acceptedRoute||null,
-      draftRoutes:draftRoutes.map(r=>({...r})),
-      draftAux:draftAux.map(r=>({...r})),
+      draftRoutes:draftRoutes.map(r=>({...r,fxIds:laneIds(r)})),
+      draftAux:draftAux.map(r=>({...r,fxIds:laneIds(r)})),
       draftSends:draftSends.map(r=>({...r}))
     };
   };
@@ -1138,8 +1179,8 @@
     api.emitEvent("arMixAction",{action:"routingDryApply",value:{
       schemaVersion:2,
       deviceEpoch:draftEpoch,revision:Number(d.revision)||0,
-      channels:draftRoutes.map(typedSource),
-      auxes:draftAux.map(b=>({...b})),
+      channels:draftRoutes.map(r=>({...typedSource(r),fxIds:laneIds(r)})),
+      auxes:draftAux.map(b=>({...b,fxIds:laneIds(b)})),
       sends:draftSends.map(s=>({...s}))
     }});
   });
