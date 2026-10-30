@@ -249,7 +249,7 @@
   const routeOverlay=document.createElement("div");
   routeOverlay.id="arRoutingLabOverlay";
   routeOverlay.innerHTML='<section id="arRoutingLabPanel" role="region" aria-label="ArSonMix routing workspace">' +
-    '<header class="arPatchTop"><div class="arPatchTitle"><div class="arPatchBrand"><span class="arPatchBrandMark">AR</span><span>ROUTING <em>PATCHBAY</em></span></div><div class="arPatchSub" id="arRouteIdentity">Reading current audio device...</div></div><div class="arPatchHeaderActions"><span class="arPatchSafety" id="arRouteSafety" data-safety="muted" role="status">OUTPUT MUTED</span><button class="btn-180 arRouteClose" id="arRouteClose" type="button" aria-label="Close routing window" title="Close routing window"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button></div></header>' +
+    '<header class="arPatchTop"><div class="arPatchTitle"><div class="arPatchBrand"><span class="arPatchBrandMark">AR</span><span>ADVANCED <em>BUS ROUTING</em></span></div><div class="arPatchSub" id="arRouteIdentity">Reading current audio device...</div></div><div class="arPatchHeaderActions"><span class="arPatchSafety" id="arRouteSafety" data-safety="muted" role="status">OUTPUT MUTED</span><button class="btn-180" id="arPatchHardwareSetup" type="button" title="Assign device pins to a mixer channel in Audio I/O Setup">AUDIO I/O · INPUT PATCH</button><button class="btn-180 arRouteClose" id="arRouteClose" type="button" aria-label="Close routing window" title="Close routing window"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button></div></header>' +
     '<nav class="arPatchTabs" role="tablist" aria-label="Routing views"><button class="btn-180" data-patch-tab="input" role="tab" aria-selected="true">INPUT PATCH</button><button class="btn-180" data-patch-tab="internal" role="tab" aria-selected="false">INTERNAL / SENDS</button><button class="btn-180" data-patch-tab="output" role="tab" aria-selected="false">OUTPUT PATCH</button></nav>' +
     '<section class="arPatchBody" id="arPatchInputPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>PHYSICAL INPUT → MIXER CHANNEL</strong><small>Click grid to assign. For stereo, select the L / R side. DRAFT becomes LIVE only after native ACK.</small></div><div class="arPatchPager"><button class="btn-180" id="arPatchPrev" title="Previous hardware inputs">‹</button><span id="arPatchRange">NO INPUTS</span><button class="btn-180" id="arPatchNext" title="Next hardware inputs">›</button></div></div>' +
     '<div class="arPatchViewport"><div id="arPatchGrid" class="arPatchGrid" role="grid" aria-label="Native input patch matrix"></div></div><div class="arPatchLegend"><span><b></b>UNPATCHED</span><span><b class="live"></b>LIVE · NATIVE ACK</span><span><b class="draft"></b>DRAFT · NOT APPLIED</span><span><b class="removed"></b>LIVE UNTIL APPLY</span></div><div class="arPatchInspector" id="arPatchInspector" role="status"><strong>10 CHANNEL INPUT PATCH</strong><span>Uses actual enabled ASIO/WASAPI hardware ports</span></div><div class="arPatchNote">No auto-unmute. Stale devices, incomplete stereo assignments and invalid physical ports are rejected before APPLY. One input can feed multiple channels.</div></section>' +
@@ -962,7 +962,7 @@
     closeFxPicker();
     patchPage=0;
     routeOverlay.classList.add("open");
-    selectPatchTab("input");
+    selectPatchTab("internal");
     overlay.classList.remove("open");
   }
   // Exposed only to the existing native SIGNAL FLOW GUI; does not publish a
@@ -1044,6 +1044,9 @@
     return {ok:true,message:"FX change submitted. Live only after native route ACK."};
   };
   window.__arMixOpenRoutingLab=openRoutingLab;
+  document.getElementById("arPatchHardwareSetup")?.addEventListener("click",()=>{
+    window.__arMixOpenAudioIO?.("inputs");
+  });
   window.__arMixOpenRouting=openRoutingLab;
   // G1/G2 adapters: expose a bounded snapshot and stage into the EXISTING
   // DRAFT/ACK route; never create a second frontend or native audio graph.
@@ -1241,8 +1244,8 @@
   document.addEventListener("click",event=>{
     if(event.target.closest('[data-view="SIGNAL FLOW"]'))openRoutingLab();
   });
-  const routingNav=document.querySelector('[data-view="SIGNAL FLOW"] span');
-  if(routingNav)routingNav.textContent="ROUTING";
+  // L2 top PATCH label stays unchanged. Advanced routing opens internally,
+  // while the hardware source selector lives in one canonical Audio I/O Setup.
   // The main toolbar and left rail remain live. Leaving ROUTING immediately
   // hides its workspace; ESC also returns focus to the existing ROUTING tab.
   document.addEventListener("click",event=>{

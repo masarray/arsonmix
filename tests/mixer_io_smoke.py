@@ -75,7 +75,11 @@ async def main():
         assert "LIVE" in await page.locator('[data-strip="0"] .arBankStage').inner_text()
         await page.locator('#audioSetupBtn').click()
         assert await page.locator('#arIOOverlay').is_visible()
-        assert await page.locator('#arIOBody select.arIOSource').count()==10
+        assert await page.locator('#arIOBody .arIOQuickRow').count()==10
+        # Operator-first mapper is visible; crosspoint is explicitly advanced.
+        assert await page.locator('#arIOQuickPatch, .arIOQuickPatch').count()==1
+        assert await page.locator('[data-io-quick-row]').count()==10
+        await page.locator('.arIOAdvancedMatrix summary').click()
         # IO-MATRIX: real input pins, no implied right channel, no second DSP graph.
         assert await page.locator('[data-io-row-mode]').count()==10
         assert await page.locator('[data-io-matrix-kind="inputs"]').count()==20
@@ -384,6 +388,71 @@ async def main():
         assert command['monitorOutputs']==[0,1],command
         assert len(command['monitorSends'])==14 and command['monitorSends'][0]==.5,command
         assert all(x==0 for x in command['monitorSends'][1:]),command
+
+        # PATCH1: real-world operator acceptance using a fake native driver
+        # inventory. Sparse MAONO virtual pins must never be invented by UI.
+        await page.goto((root/"web/index.html").as_uri())
+        status=await page.evaluate("""() => {
+          const channels=Array.from({length:10},()=>({
+            mode:'NONE',left:-1,right:-1,channelFormat:'MONO',
+            gain:.25,pan:0,main:true,mute:false,solo:false,fxId:''}));
+          const auxes=Array.from({length:4},()=>({
+            enabled:false,gain:1,main:true,mute:false,fxId:''}));
+          const dryRoutingLab={active:true,ready:true,epoch:21,revision:3,
+            ports:[{port:0,label:'MAONO Mic In 1'},
+              {port:1,label:'MAONO Mic In 2'},
+              {port:4,label:'MAONO VC In L'},
+              {port:7,label:'MAONO VC In R'}],
+            outputPorts:[0,1],mainOutputs:[0,1],
+            acceptedRoute:{deviceEpoch:21,channels,auxes,sends:[]}};
+          const status={connected:true,driver:'ASIO · MAONO PS22 MOCK',
+            rate:48000,buffer:128,monitor:false,chainCount:0,dryRoutingLab};
+          window.__armixTestEmit('arMixStatus',status);
+          return status;
+        }""")
+        await page.locator('#audioSetupBtn').click()
+        assert await page.locator('.arIOQuickPatch').is_visible()
+        assert await page.locator('[data-io-quick-row]').count()==10
+        assert await page.locator('[data-io-quick-row="2"] [data-io-quick-pin="left"] option').count()==5
+        # Input 1 -> CH3, without remapping other channels.
+        ch3=page.locator('[data-io-quick-row="2"]')
+        await ch3.locator('[data-io-quick-mode]').select_option('MONO')
+        await ch3.locator('[data-io-quick-pin="left"]').select_option('0')
+        await ch3.locator('[data-io-quick-stage]').click()
+        draft=await page.evaluate('()=>window.__arMixRouteView().draftRoutes[2]')
+        assert draft['mode']=='MONO' and draft['left']==0,draft
+        assert 'DRAFT' in await page.locator('[data-io-quick-row="2"] .arIOQuickState').inner_text()
+        # MAONO VC L/R, sparse non-adjacent driver pins 5 and 8 -> CH6.
+        ch6=page.locator('[data-io-quick-row="5"]')
+        await ch6.locator('[data-io-quick-mode]').select_option('STEREO')
+        await ch6.locator('[data-io-quick-pin="left"]').select_option('4')
+        await ch6.locator('[data-io-quick-pin="right"]').select_option('7')
+        await ch6.locator('[data-io-quick-stage]').click()
+        draft=await page.evaluate('()=>window.__arMixRouteView().draftRoutes[5]')
+        assert draft['mode']=='STEREO' and draft['left']==4 and draft['right']==7,draft
+        # Exactly one muted native route transaction for both assignments.
+        await page.locator('#arIOOverlay [data-mix-apply]').click()
+        staged=await page.evaluate("""() => window.__armixTestActions.filter(x=>
+          x.name==='arMixAction'&&x.data.action==='routingDryApply')""")
+        assert len(staged)==1,staged
+        payload=staged[0]['data']['value']
+        assert payload['deviceEpoch']==21 and payload['revision']==3,payload
+        assert payload['channels'][2]['mode']=='MONO' and payload['channels'][2]['left']==0,payload
+        assert payload['channels'][5]['mode']=='STEREO' and payload['channels'][5]['left']==4 and payload['channels'][5]['right']==7,payload
+        # Accepted graph only becomes LIVE following the native ACK/status.
+        status=await page.evaluate("""status=>{
+          status.dryRoutingLab.revision=4;
+          status.dryRoutingLab.acceptedRoute.channels[2]={
+            ...status.dryRoutingLab.acceptedRoute.channels[2],mode:'MONO',left:0};
+          status.dryRoutingLab.acceptedRoute.channels[5]={
+            ...status.dryRoutingLab.acceptedRoute.channels[5],mode:'STEREO',left:4,right:7};
+          window.__armixTestEmit('arMixRoutingLabAck',{ok:true,state:status.dryRoutingLab});
+          window.__armixTestEmit('arMixStatus',status);
+          return status;
+        }""",status)
+        assert 'LIVE' in await page.locator('[data-io-quick-row="2"] .arIOQuickState').inner_text()
+        assert 'LIVE' in await page.locator('[data-io-quick-row="5"] .arIOQuickState').inner_text()
+        await page.screenshot(path="mixer-patch1-maono-ch3-ch6-1366.png")
         assert not errors,errors
         await browser.close()
         print("PASS: G1/G2 + G3 real PRE/POST draft, AUX return, 0-gain bypass, native ACK/reject/revert, stable rack and 3 viewports")
