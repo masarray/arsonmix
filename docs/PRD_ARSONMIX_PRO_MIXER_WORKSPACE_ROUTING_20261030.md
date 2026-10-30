@@ -1,5 +1,8 @@
 # ArSonMix — PRD v2.0: Pro Digital Mixer, Channel Modes, Hardware I/O and AUX/BUS
 
+**R6 authoritative execution update (audited main@8251bd6e):** [real source capability / architecture matrix](R6_CURRENT_STATE_ARCHITECTURE_EXECUTION_20261030.md), [selected-channel/bus/PATCH workflow acceptance](R6_OPERATOR_WORKFLOW_CONTRACT_20261030.md). [L2 #176](https://github.com/masarray/arsonmix/issues/176) is MERGED/owner-accepted and must not be visually regressed: identical 11 fader heights, left rail FX/ROUTE/SENDS, only three top workspaces. G3 is merged; standalone channelFormat MS1, format-aware bus MS2, hardware outputs MS3 and uniform plugin/PDC MS4 are goals, not delivered. Each feature requires actual native samples, positive/negative ACK, GUI geometry and exact-head Windows ZIP. One control graph, mutable drafts only until native APPLY.
+
+
 **Implementation owners:** mono/stereo channel [MS1 #173](https://github.com/masarray/arsonmix/issues/173), format-aware sends/bus [MS2 #174](https://github.com/masarray/arsonmix/issues/174), independent mono/stereo physical output [MS3 #175](https://github.com/masarray/arsonmix/issues/175). Closed #143 is only historical input/routing work; not output DSP proof. [Umbrella #170](https://github.com/masarray/arsonmix/issues/170).
 
 

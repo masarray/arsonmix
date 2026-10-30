@@ -1,4 +1,7 @@
 # ArSonMix — Canonical GUI Workflow Benchmark: eMotion LV1 Classic/v17, Studio One, Focused Routing
+
+**R6 compatibility note (2026-10-30):** [audited feature boundaries](R6_CURRENT_STATE_ARCHITECTURE_EXECUTION_20261030.md), [new operator workflow](R6_OPERATOR_WORKFLOW_CONTRACT_20261030.md), [L2 GUI owner baseline #176](https://github.com/masarray/arsonmix/issues/176). LV1 channel format flip and selected-channel mode, Studio One M/L/R I/O grid and Bussing semantics are requirements; current physical source MONO/STEREO and G3 AUX SENDS are not proof independently typed channel/bus and hardware output. Left rail owns FX/ROUTE/SENDS and every fader stays aligned. Never copy branded artwork.
+
 Date: 2026-10-30 | Status: PRODUCT / UX DESIGN CONTRACT (not an implementation claim)
 Companions: PRD_ARSONMIX_PRO_MIXER_WORKSPACE_ROUTING_20261030.md; ARD_PRD_MIXER_IO_AUX_BUS_REFORM_20261030.md; CUSTOMER_VOICE_REQUIREMENTS_20261030.md.
 Source baseline updated: main@527e155 (#166 and #167 merged). FX/ROUTE/SENDS and custom INPUTS/OUTPUTS/DEVICE GUI are present, but custom driver/rate/buffer setup, independent physical output patch, G3 inline sends and real hardware FAT remain unfinished. Preserve latest approved ArSonMix GUI assets, web/styles-src/20-button-180.css, FX Rack and native graph.
