@@ -940,6 +940,17 @@
   let rackFxDraft=null;
   const laneIds=route=>Array.isArray(route?.fxIds)
     ?route.fxIds.slice(0,8):route?.fxId?[route.fxId]:[];
+  // The bridge receives an exact native bypass ACK. Transfer only its
+  // accepted graph telemetry into this controller before repaint, without
+  // modifying a pending structural route draft or triggering a second APPLY.
+  window.__arMixAcceptFxBypassAck=status=>{
+    if(!status||typeof status!=="object")return false;
+    const current=state.dryRoutingLab||{};
+    if(Number(current.epoch)!==Number(status.epoch)||
+       Number(current.revision)!==Number(status.revision))return false;
+    state.dryRoutingLab=status;
+    return true;
+  };
   window.__arMixFxLaneView=channel=>{
     const d=state.dryRoutingLab||{};
     const saved=d.acceptedRoute?.channels?.[channel];
