@@ -44,16 +44,22 @@ test('VU dBFS ruler is housed with mono/stereo/master LCD bars',()=>{
   assert.match(css,/\.vu-bank\.is-mono \.vu-bars\{\s*flex:0 0 35px/);
   assert.match(css,/\.vu-bank\.is-stereo \.vu-bars/);
 });
-test('gain tracking lights lower slit on channel and MASTER without heavy visual effects',()=>{
-  const app=read('web/app.js'),css=read('web/styles-src/42-mixer-premium.css');
-  assert.equal((app.match(/style="--fader-open:\$\{\+\(100-levelToTop/g)||[]).length,2);
-  assert.ok(app.includes("host.style.setProperty('--fader-open'"));
-  assert.ok(app.includes("el.style.setProperty('--fader-open'"));
-  const finish=css.slice(css.indexOf('/* M4: Keep dBFS ticks'));
-  assert.ok(finish.includes('background:linear-gradient(to top,'));
-  assert.doesNotMatch(finish,/(?:^|\s)(?:filter|backdrop-filter|animation|transition):/);
+test('RAIL1 cavity is static and channel/master moves only the PNG cap',()=>{
+ const app=read('web/app.js'),native=read('web/bridge.js');
+ const css=read('web/styles-src/42-mixer-premium.css');
+ const start=css.indexOf('/* RAIL1 — single machined');
+ const end=css.indexOf('/* M5 — names start',start);
+ assert.ok(start>0 && end>start);
+ const rail=css.slice(start,end);
+ assert.match(rail,/background-image:linear-gradient\(90deg,/);
+ assert.match(rail,/#299f9d 50%/);
+ assert.match(rail,/inset 1px 0 #010406,inset -1px 0 #010406/);
+ assert.doesNotMatch(rail,/--fader-open|linear-gradient\(to top|animation:|filter:|blur\(|transition:/);
+ assert.doesNotMatch(app,/--fader-open/);
+ assert.doesNotMatch(native,/--fader-open/);
+ assert.ok(app.includes("host.querySelector('.cap').style.setProperty('--pos'"));
+ assert.ok(native.includes('querySelector(".cap")?.style.setProperty("--pos"'));
 });
-
 test('native mixer rack reconcile ignores meter/loudness text node replacement',()=>{
   const native=read('web/bridge.js');
   assert.match(native,/const needsMixerReconcile=records=>records\.some/);
@@ -101,9 +107,9 @@ test('M5 CLIP light is resettable per channel and MASTER; real PCM peak is sole 
 });
 test('M5 fader light is recessed, VST text aligned, no heavyweight hover visual',()=>{
  const css=read('web/styles-src/42-mixer-premium.css');
- const m5=css.slice(css.indexOf('/* M5 — light is recessed INSIDE'));
- assert.match(m5,/linear-gradient\(to top,transparent/);
- assert.match(m5,/linear-gradient\(90deg,#010407/);
+ const m5=css.slice(css.indexOf('/* RAIL1 — single machined'));
+ assert.doesNotMatch(m5,/linear-gradient\(to top,transparent/);
+ assert.match(m5,/background-image:linear-gradient\(90deg,/);
  assert.match(m5,/padding-left:17px/);
  assert.match(m5,/font:700 11px/);
  assert.match(m5,/\.clip-led\{[\s\S]*?height:12px/);

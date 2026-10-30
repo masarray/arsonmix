@@ -323,7 +323,7 @@ async def main():
           return {
             layers:(slit.backgroundImage.match(/linear-gradient/g)||[]).length,
             masterLayers:(master.backgroundImage.match(/linear-gradient/g)||[]).length,
-            centerBlue:slit.backgroundImage.includes('rgb(36, 116, 180)'),
+            centerBlue:slit.backgroundImage.includes('rgb(41, 159, 157)'),
             occupiedX:Math.round(occupied.getBoundingClientRect().left+
               parseFloat(style.paddingLeft)-occupied.closest('.insert').getBoundingClientRect().left),
             emptyX:Math.round(empty.getBoundingClientRect().left+
@@ -333,7 +333,7 @@ async def main():
             ellipsis:style.textOverflow,clipHeight:parseFloat(clip.height)
           };
         }""")
-        assert m5['layers']==2 and m5['masterLayers']==2 and m5['centerBlue'],m5
+        assert m5['layers']==1 and m5['masterLayers']==1 and m5['centerBlue'],m5
         assert abs(m5['occupiedX']-m5['emptyX'])<=1,m5
         assert m5['font']>=11 and m5['weight']>=700 and m5['ellipsis']=='ellipsis',m5
         assert m5['clipHeight']>=12,m5
@@ -1022,25 +1022,35 @@ async def main():
         assert len(calibrated['result'])==15,calibrated
         assert all(abs(x['error'])<=1 and x['inside'] for x in calibrated['result']),calibrated
         assert len(calibrated['vu'])==11 and all(abs(s['top'])<=2 and abs(s['bottom'])<=2 and all(abs(d)<=1.5 for d in s['ticks']) for s in calibrated['vu']),calibrated
-        # Verify blue lower slit follows the existing CH/MASTER gain controls,
-        # without introducing a second animation loop or reading audio DSP.
-        fader_light=await page.evaluate("""()=>{
+        # RAIL1: the dark cavity and teal guide never change as gain moves.
+        # CH and MASTER keep the original PNG detent, ARIA and audio commands.
+        fader_rail=await page.evaluate("""()=>{
           const result=[];
           for(const key of ['0','master']){
             const f=document.querySelector('[data-fader="'+key+'"]');
-            const before=key==='master'?masterGain:channels[+key].fader;
+            const old=key==='master'?masterGain:channels[+key].fader;
+            const paint=()=>getComputedStyle(f,'::after');
+            const original=paint().backgroundImage;
+            const oldCap=f.querySelector('.cap').style.getPropertyValue('--pos');
             updateFader(key,-60);
-            const off=Number.parseFloat(f.style.getPropertyValue('--fader-open'));
+            const atMin=paint().backgroundImage;
+            const capMin=f.querySelector('.cap').style.getPropertyValue('--pos');
             updateFader(key,10);
-            const full=Number.parseFloat(f.style.getPropertyValue('--fader-open'));
-            const paint=getComputedStyle(f,'::after').backgroundImage;
-            updateFader(key,before);
-            result.push({key,off,full,paint});
+            const atMax=paint().backgroundImage;
+            const capMax=f.querySelector('.cap').style.getPropertyValue('--pos');
+            updateFader(key,old);
+            result.push({key,steady:original===atMin&&atMin===atMax,
+              noFill:!f.style.getPropertyValue('--fader-open'),
+              width:parseFloat(paint().width),
+              blueTeal:original.includes('rgb(41, 159, 157)'),
+              capMoved:capMin!==capMax,
+              restored:oldCap===f.querySelector('.cap').style.getPropertyValue('--pos')});
           }
           return result;
         }""")
-        assert all(v['off']==0 and v['full']==100 and 'linear-gradient' in v['paint']
-                   for v in fader_light),fader_light
+        assert all(v['steady'] and v['noFill'] and v['blueTeal'] and
+                   v['width']==5 and v['capMoved'] and v['restored']
+                   for v in fader_rail),fader_rail
         assert await page.evaluate('meterPercentToDbfs(0)')==-60
         assert await page.evaluate('meterPercentToDbfs(80)')==-12
         assert await page.evaluate('meterPercentToDbfs(100)')==0
