@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "DynamicNativeSessionPublisher.h"
+#include <algorithm>
 #include <cstdint>
 #include <span>
 #include <string>
