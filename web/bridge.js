@@ -183,7 +183,7 @@
     .native-engine .fx-picker-target{outline:1px solid #7ccac3;outline-offset:-1px}
   `;
   document.head.appendChild(css);
-  document.getElementById("engineBadge").textContent="NATIVE CH1 · ORBIT";
+  document.getElementById("engineBadge").textContent="NATIVE 10CH · VST3";
   const workspace = document.querySelector("#rackWorkspace");
   const mixer = document.querySelector("#mixer");
   const currentTab = () => document.querySelector(".nav button.selected")?.dataset.view;
@@ -206,7 +206,11 @@
   function fxLaneSnapshot(channel,master=false) {
     const lab=state.device?.dryRoutingLab;
     const legacy=!master&&channel===0&&(state.chain.length>0||!lab?.channelFxNames?.[0]);
-    const routed=!master&&!legacy&&!!lab?.active&&!!lab?.ready;
+    // Display an actionable live lane ONLY after an accepted physical or
+    // native BUS route; an empty prepared graph does not process channel FX.
+    const accepted=lab?.acceptedRoute?.channels?.[channel];
+    const patched=accepted&&accepted.mode&&accepted.mode!=="NONE";
+    const routed=!master&&!legacy&&!!lab?.active&&!!lab?.ready&&!!patched;
     const view=routed?(window.__arMixFxLaneView?.(channel)||{}):{};
     const ids=Array.isArray(view.ids)?view.ids:[];
     const instances=Array.isArray(view.liveSlots)?view.liveSlots:[];
@@ -1004,22 +1008,21 @@
   if(el.hasAttribute("data-plugin-manager")){
     hideDialog("nativeFxSelector");renderManager();showDialog("nativePluginManager");return;
   }
-  if(el.hasAttribute("data-plugin-picker")){
-    const rack=el.closest(".rack");
-    const slot=rack?[...rack.children].indexOf(el.closest(".insert-slot")):state.chain.length;
-    openPicker(el,0,state.chain.length);return;
-  }
-  if(el.hasAttribute("data-insert")){
+  if(el.hasAttribute("data-plugin-picker")||el.hasAttribute("data-insert")){
+    // Cover both legacy v0.3 strip markup and the native compact FX slot.
+    // A stale demo DOM must never route CH02+ FX to the CH01 VST lease.
     const article=el.closest(".strip");
     const idx=Number(article?.dataset.strip??0);
-    if(idx!==0){
-      const toast=document.querySelector("#toast");
-      if(toast){toast.textContent="Native VST3 is currently available on Channel 1 only.";toast.classList.add("show");
-        setTimeout(()=>toast.classList.remove("show"),2200);}
-      return;
+    const lane=fxLaneSnapshot(idx);
+    const slot=lane.items.length;
+    if(lane.mode==="routed"){
+      openPicker(el,idx,slot,true);return;
     }
-    const slot=Number(el.dataset.insert?.split(":")[1]||state.chain.length);
-    openPicker(el,idx,slot);return;
+    if(idx===0&&lane.mode==="legacy"){
+      openPicker(el,0,state.chain.length,false);return;
+    }
+    toStatus("CH "+(idx+1)+" has no accepted native input/BUS route. Open ROUTING, select a verified source, MUTE OUTPUT and APPLY before loading VST3.");
+    return;
   }
   if(el.hasAttribute("data-go-native-rack")){
     document.querySelector('.nav button[data-view="FX RACK"]')?.click();return;
@@ -1469,20 +1472,22 @@
       d.connected?`${d.driver} · ${Math.round(d.rate)} Hz / ${d.buffer} · ${state.chain.length} LIVE VST3 · ${d.latencySamples||0} samples FX latency`
       :"NO AUDIO DEVICE · SELECT AUDIO SETUP";
     toStatus(text);
-    // Only CH1 and master are sourced from a real native audio callback.
-    // No fixed "-5 per telemetry callback" smoothing: its speed changed
-    // with source cadence and fought the shared elapsed-time ballistics.
+    // Per-strip L/R are measured independently after native FX/fader/PAN.
+    // Never paint an aggregate max twice: that falsely reports dual-mono.
     // UI animation is capped at 29.4fps; native peaks remain unmodified.
     if(lab?.active&&lab.ready&&Array.isArray(lab.channelPeaks)){
+      const nativeLeft=Array.isArray(lab.channelPeaksL)?lab.channelPeaksL:[];
+      const nativeRight=Array.isArray(lab.channelPeaksR)?lab.channelPeaksR:[];
       for(let i=0;i<Math.min(10,lab.channelPeaks.length);++i){
-        const raw=Number(lab.channelPeaks[i])||0,lit=percent(raw);
+        const raw=Number(lab.channelPeaks[i])||0;
         const mono=document.querySelector('[data-meter="'+i+'"]');
-        if(mono)paintMeter(mono,lit,raw);
+        if(mono)paintMeter(mono,percent(raw),raw);
         else{
-          // Native channelPeaks is one aggregate per strip, not separate
-          // stereo-side measurements. Both bars show the SAME strip peak.
-          paintMeter(document.querySelector('[data-meter="'+i+'L"]'),lit,raw);
-          paintMeter(document.querySelector('[data-meter="'+i+'R"]'),lit,raw);
+          // On older engines without stereo provenance show silence, not
+          // fabricated identical L/R readings.
+          const rawL=Number(nativeLeft[i])||0,rawR=Number(nativeRight[i])||0;
+          paintMeter(document.querySelector('[data-meter="'+i+'L"]'),percent(rawL),rawL);
+          paintMeter(document.querySelector('[data-meter="'+i+'R"]'),percent(rawR),rawR);
         }
       }
     }else{

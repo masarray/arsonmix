@@ -77,6 +77,8 @@ test("P1G is real native BUS/send, not a cosmetic routing picker",()=>{
   assert.match(lab,/JuceActivePortSnapshot::capture/);
   assert.match(lab,/callbackOutputCount_\.load/);
   assert.match(lab,/level\.channelPeak\[ch\]/);
+  assert.match(lab,/level\.channelPeakL\[ch\]/);
+  assert.match(lab,/level\.channelPeakR\[ch\]/);
   assert.match(ui,/\['NONE','MONO','STEREO','BUS'\]/);
   assert.match(ui,/data-route-main/);
   assert.match(ui,/data-route-mute/);
@@ -129,6 +131,11 @@ test("P1I binds premium 10CH console to REAL native RT graph without FX restart"
   assert.match(publisher,/updateActiveControl/);
   assert.match(bridge,/window\.__armixRouteToken/);
   assert.match(bridge,/lab\.channelPeaks/);
+  assert.match(bridge,/lab\.channelPeaksL/);
+  assert.match(bridge,/lab\.channelPeaksR/);
+  assert.doesNotMatch(bridge,/paintMeter\(document\.querySelector\('\[data-meter="'\+i\+'L"\]'\),lit,raw\)/);
+  assert.doesNotMatch(bridge,/Native VST3 is currently available on Channel 1 only/);
+  assert.match(bridge,/openPicker\(el,idx,slot,true\)/);
   assert.match(bridge,/data-native-routing-lab/);
 });
 

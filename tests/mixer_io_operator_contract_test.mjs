@@ -515,7 +515,9 @@ test('P0 First Sound separates RAW capture, post-fader PCM and physical output A
   assert.match(monitor,/if sound persists|sound must stop|If sound persists/i);
   assert.match(engine,/const bool outputPermitted=outputGate\.renderMain/);
   assert.match(engine,/if\(!outputGate\.hardware\)/);
-  assert.match(core,/observed\) observed->channelPeak\[strip\]=peak/);
+  assert.match(core,/observed->channelPeak\[strip\]=peak/);
+  assert.match(core,/observed->channelPeakL\[strip\]=peakL/);
+  assert.match(core,/observed->channelPeakR\[strip\]=peakR/);
   assert.match(css,/\.arIOAudioPath>\.arIOPathStart/);
   assert.doesNotMatch(gui,/new AudioContext|AudioWorklet|processBlock|createPluginInstance/);
 });

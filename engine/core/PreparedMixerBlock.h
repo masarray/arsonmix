@@ -155,6 +155,8 @@ private:
 
 struct RenderLevels final {
     std::array<float,stripCount> channelPeak {};
+    // Actual independent post-fader PCM peaks. Keep the aggregate for older telemetry.
+    std::array<float,stripCount> channelPeakL {}, channelPeakR {};
     std::array<float,auxBusCount> auxPeak {};
     float masterPeakL = 0.f, masterPeakR = 0.f;
 };
@@ -427,7 +429,7 @@ public:
             if(live)dispatchLiveAux(strip,SendTap::preFader,l,r,frames);
             else graph.aux.dispatch(strip,SendTap::preFader,l,r,
                                     auxLeft_.data(),auxRight_.data(),frames);
-            float peak=0.f;
+            float peak=0.f, peakL=0.f, peakR=0.f;
             const float monitorGain=monitorL?(*monitorGains)[strip]:0.f;
             if(live) {
                 // A block-linear fader/PAN ramp avoids zipper clicks at the
@@ -443,7 +445,10 @@ public:
                         monitorBusL[f]+=l[f]*monitorGain;
                         monitorBusR[f]+=r[f]*monitorGain;
                     }
-                    peak=std::max(peak,std::max(std::abs(l[f]),std::abs(r[f])));
+                    const float sampleL=std::abs(l[f]), sampleR=std::abs(r[f]);
+                    peakL=std::max(peakL,sampleL);
+                    peakR=std::max(peakR,sampleR);
+                    peak=std::max(peak,std::max(sampleL,sampleR));
                     if(graph.sends.toMaster[strip]) {
                         masterL_[f]+=l[f];masterR_[f]+=r[f];
                     }
@@ -456,13 +461,20 @@ public:
                     monitorBusL[f]+=l[f]*monitorGain;
                     monitorBusR[f]+=r[f]*monitorGain;
                 }
-                peak=std::max(peak,std::max(std::abs(l[f]),std::abs(r[f])));
+                const float sampleL=std::abs(l[f]), sampleR=std::abs(r[f]);
+                peakL=std::max(peakL,sampleL);
+                peakR=std::max(peakR,sampleR);
+                peak=std::max(peak,std::max(sampleL,sampleR));
                 if(graph.sends.toMaster[strip]) {
                     masterL_[f]+=l[f];
                     masterR_[f]+=r[f];
                 }
             }
-            if(observed) observed->channelPeak[strip]=peak;
+            if(observed) {
+                observed->channelPeak[strip]=peak;
+                observed->channelPeakL[strip]=peakL;
+                observed->channelPeakR[strip]=peakR;
+            }
             graph.sends.dispatch(strip,SendTap::postFader,l,r,
                                  left_.data(),right_.data(),frames);
             if(live)dispatchLiveAux(strip,SendTap::postFader,l,r,frames);

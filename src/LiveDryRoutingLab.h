@@ -107,6 +107,8 @@ public:
         // acceptedRoute_ is a JUCE var owned by the CONTROL thread and must
         // never be mutated from the device thread. Epoch gates hide stale data.
         for(auto& p:channelPeaks_)p.store(0.f,std::memory_order_relaxed);
+        for(auto& p:channelPeaksL_)p.store(0.f,std::memory_order_relaxed);
+        for(auto& p:channelPeaksR_)p.store(0.f,std::memory_order_relaxed);
         for(auto& p:auxPeaks_)p.store(0.f,std::memory_order_relaxed);
         peakL_.store(0.f,std::memory_order_relaxed);
         peakR_.store(0.f,std::memory_order_relaxed);
@@ -642,6 +644,8 @@ public:
         acceptedRoute_=juce::var(); // control-thread STOP only
         for(auto& n:auxFxNames_)n.clear();
         for(auto& p:channelPeaks_)p.store(0.f,std::memory_order_relaxed);
+        for(auto& p:channelPeaksL_)p.store(0.f,std::memory_order_relaxed);
+        for(auto& p:channelPeaksR_)p.store(0.f,std::memory_order_relaxed);
         for(auto& p:auxPeaks_)p.store(0.f,std::memory_order_relaxed);
     }
     void poll() noexcept {publisher_.pollRetirement();} // message thread
@@ -677,6 +681,8 @@ public:
         if(actualMonitorPair)*actualMonitorPair={{-1,-1}};
         if(!active())return false;
         for(auto& p:channelPeaks_)p.store(0.f,std::memory_order_relaxed);
+        for(auto& p:channelPeaksL_)p.store(0.f,std::memory_order_relaxed);
+        for(auto& p:channelPeaksR_)p.store(0.f,std::memory_order_relaxed);
         for(auto& p:auxPeaks_)p.store(0.f,std::memory_order_relaxed);
         // Stale meters must never survive a failed device/epoch mapping.
         peakL_.store(0.f,std::memory_order_relaxed);
@@ -786,6 +792,7 @@ public:
         }
         float peakL=0.f,peakR=0.f,monitorPeakL=0.f,monitorPeakR=0.f;
         std::array<float,count> perChannelPeaks{};
+        std::array<float,count> perChannelPeaksL{},perChannelPeaksR{};
         std::array<float,auxCount> perAuxPeaks{};
         for(int offset=0;offset<frames;offset+=max) {
             const int n=std::min(max,frames-offset);
@@ -802,8 +809,11 @@ public:
                 topologyFault_.store(true,std::memory_order_release);
                 silence();return true;
             }
-            for(int ch=0;ch<count;++ch)
+            for(int ch=0;ch<count;++ch) {
                 perChannelPeaks[ch]=std::max(perChannelPeaks[ch],level.channelPeak[ch]);
+                perChannelPeaksL[ch]=std::max(perChannelPeaksL[ch],level.channelPeakL[ch]);
+                perChannelPeaksR[ch]=std::max(perChannelPeaksR[ch],level.channelPeakR[ch]);
+            }
             for(int b=0;b<auxCount;++b)
                 perAuxPeaks[b]=std::max(perAuxPeaks[b],level.auxPeak[b]);
             const float g=std::clamp(masterGain,0.f,2.f);
@@ -850,8 +860,11 @@ public:
         monitorPeakR_.store(monitorPeakR,std::memory_order_relaxed);
         peakL_.store(peakL,std::memory_order_relaxed);
         peakR_.store(peakR,std::memory_order_relaxed);
-        for(int ch=0;ch<count;++ch)
+        for(int ch=0;ch<count;++ch) {
             channelPeaks_[ch].store(perChannelPeaks[ch],std::memory_order_relaxed);
+            channelPeaksL_[ch].store(perChannelPeaksL[ch],std::memory_order_relaxed);
+            channelPeaksR_[ch].store(perChannelPeaksR[ch],std::memory_order_relaxed);
+        }
         for(int b=0;b<auxCount;++b)
             auxPeaks_[b].store(perAuxPeaks[b],std::memory_order_relaxed);
         return true;
@@ -915,6 +928,13 @@ public:
         juce::Array<juce::var> levels;
         for(const auto& p:channelPeaks_)levels.add(p.load(std::memory_order_relaxed));
         out->setProperty("channelPeaks",juce::var(levels));
+        // Native 10-channel source is already post-fader; stereo meters
+        // must never duplicate its aggregated max onto both L/R LEDs.
+        juce::Array<juce::var> leftLevels,rightLevels;
+        for(const auto& p:channelPeaksL_)leftLevels.add(p.load(std::memory_order_relaxed));
+        for(const auto& p:channelPeaksR_)rightLevels.add(p.load(std::memory_order_relaxed));
+        out->setProperty("channelPeaksL",juce::var(leftLevels));
+        out->setProperty("channelPeaksR",juce::var(rightLevels));
         juce::Array<juce::var> ports;
         if(device && registryValid_.load(std::memory_order_acquire)) {
             const auto generation=epoch();
@@ -999,6 +1019,7 @@ private:
     std::atomic<int> fxCount_{0};
     std::atomic<int> fxReused_{0};
     std::array<std::atomic<float>,count> channelPeaks_{};
+    std::array<std::atomic<float>,count> channelPeaksL_{},channelPeaksR_{};
     // Exclusive render-producer state. Bounded fade starts from the exact
     // previously output sample, preventing a topology switch discontinuity.
     static constexpr int rampFrames=256;

@@ -1587,7 +1587,34 @@ async def main():
               channelFxNames:Array.from({length:10},(_,i)=>i===1?"Effect 001":"")}
           });
         }""")
+        # A native rack WITHOUT an accepted source must not pretend its FX
+        # will process audio: it correctly shows the unpatched state.
         assert await native.locator('[data-strip="1"] .rack .insert-slot').count()==6
+        assert await native.locator('[data-strip="1"] .rack [data-routed-fx="1"]').count()==0
+        assert await native.locator('[data-strip="1"]').get_attribute("title") is not None
+        # Now ACK a genuinely PATCHED channel 2 stereo input. Only this
+        # transition is allowed to expose independently routed native FX.
+        await native.evaluate("""()=>{
+          const base=window.__arPatchStatus;
+          const previous=base.dryRoutingLab||{};
+          const accepted={
+            deviceEpoch:77,revision:2,
+            channels:Array.from({length:10},(_,i)=>({
+              mode:i===1?"STEREO":"NONE",channelFormat:i===1?"STEREO":"MONO",
+              left:i===1?0:-1,right:i===1?1:-1,gain:.25,pan:0,
+              main:true,mute:false,solo:false,
+              fxId:i===1?"plugin-1":"",fxIds:i===1?["plugin-1"]:[]
+            })),
+            auxes:Array.from({length:4},()=>({
+              enabled:false,gain:1,main:true,mute:false,fxId:"",fxIds:[]})),
+            sends:[]
+          };
+          window.__arMixMockEvents.arMixStatus({
+            ...base,dryRoutingLab:{...previous,active:true,ready:true,
+              revision:2,acceptedRoute:accepted,
+              channelFxNames:Array.from({length:10},(_,i)=>i===1?"Effect 001":"")}
+          });
+        }""")
         assert await native.locator('[data-strip="1"] .rack [data-routed-fx="1"]').count()==6
         assert await native.locator('[data-strip="1"] .rack .ar-routed-loaded').count()==1
         assert await native.locator('[data-strip="1"] .rack .insert-add-glyph').count()==5
@@ -1603,9 +1630,8 @@ async def main():
         assert await native.locator('#arPickerRows .ar-picker-row').first.locator('.ar-favorite').count()==1
         await native.locator('#arPickerRows [data-native-add]').first.click()
         assert await native.locator('#rackWorkspace').get_by_text("FX DRAFT",exact=False).count()>=1
-        await native.locator('#rackWorkspace [data-routed-apply]').click()
-        assert await native.evaluate("""()=>!window.__arMixSent.some(x=>
-          x.payload?.action==="routingDryApply")"""),"No input patch must not publish a routed FX change"
+        assert await native.evaluate("()=>window.__arMixGetRackFxDraft?.(1)?.channel===1"),\
+          "CH2 FX must stage in CH2's native routing graph, not CH1's legacy rack."
         await native.evaluate('()=>document.getElementById("arPatchRevert").click()')
         await native.evaluate("()=>window.__arMixMockEvents.arMixStatus(window.__arPatchStatus)")
         await native.locator('[data-view="MIX"]').click()
