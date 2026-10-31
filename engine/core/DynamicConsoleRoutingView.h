@@ -29,7 +29,11 @@ struct ConsoleChannelView final {
     std::vector<ChannelId> primarySources;
     std::vector<ChannelId> parallelSendSources;
     std::size_t sourceCount() const noexcept {
-        return primarySources.size()+parallelSendSources.size();
+        std::size_t count=primarySources.size();
+        for(const auto id:parallelSendSources)
+            if(std::find(primarySources.begin(),primarySources.end(),id)
+                ==primarySources.end())++count;
+        return count;
     }
 };
 class DynamicConsoleRoutingView final {
