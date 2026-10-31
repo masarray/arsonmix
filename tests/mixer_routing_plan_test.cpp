@@ -964,7 +964,76 @@ static void verifyDynamicInPlacePhysicalIOBuffers() {
     assert(host.acceptedRevision()==1);
 }
 
+// M3E physical-operator cutover fixture: all TEN native input identities
+// exist before a new independent GROUP is created. The two selected source
+// lanes are NOT duplicated at MAIN after the exclusive OUT rewrite, and
+// the Group fader changes REAL PCM without recompiling/restarting a device.
+static void verifyM3ELiveIndependentBusProductionPcm() {
+    DynamicChannelRoster source;
+    std::array<ChannelEdit,11> additions{};
+    for(int i=0;i<11;++i) {
+        auto& op=additions[static_cast<std::size_t>(i)];
+        op.kind=ChannelEdit::Kind::add;
+        op.position=static_cast<std::size_t>(i);
+        op.role=i==10?ChannelRole::main:ChannelRole::input;
+        op.format=i==10?ProcessingFormat::stereo:ProcessingFormat::mono;
+        op.text=i==10?"MAIN":"CH "+std::to_string(i+1);
+    }
+    auto r=source.edit(0,additions);
+    assert(r.ok() && r.createdIds.size()==11);
+    const auto mainId=r.createdIds[10];
+    std::array<ChannelEdit,2> links{};
+    for(int i=0;i<2;++i){
+        links[i].kind=ChannelEdit::Kind::setPrimaryOutput;
+        links[i].id=r.createdIds[i];links[i].target=mainId;
+    }
+    assert(source.edit(1,links).ok());
+    DynamicGraphRequest req;
+    req.physicalInputs=2;req.maxFrames=64;
+    req.sources={{r.createdIds[0],0,-1,false},
+                 {r.createdIds[1],1,-1,false}};
+    DynamicNativeSessionPublisher live;
+    constexpr std::uint64_t epoch=491;
+    assert(live.commit(source,req,0,epoch,epoch,true).ok());
+    auto staged=source;
+    const std::array<ChannelId,2> selected{r.createdIds[0],r.createdIds[1]};
+    const auto group=staged.createBusForSelected(
+        staged.revision(),selected,"VOCAL GROUP",ChannelRole::group);
+    assert(group.ok()&&group.createdIds.size()==1);
+    assert(group.createdIds[0].value==12&&staged.size()==12);
+    const auto out=staged.find(group.createdIds[0]);
+    assert(out&&out->role==ChannelRole::group);
+    assert(live.commit(staged,req,1,epoch,epoch,true).ok());
+    const auto* view=live.acceptedRouting(epoch,2);
+    assert(view&&view->find(group.createdIds[0])->sourceCount()==2);
+    assert(view->find(selected[0])->primaryOutput==group.createdIds[0]);
+    assert(view->find(selected[1])->primaryOutput==group.createdIds[0]);
+    assert(view->find(group.createdIds[0])->primaryOutput==mainId);
+    std::array<float,64> mic1{},mic2{},outL{},outR{};
+    mic1.fill(.2f);mic2.fill(.3f);
+    const float* inputs[]={mic1.data(),mic2.data()};
+    const auto noFx=[](ChannelId,float*,float*,int) noexcept {};
+    constexpr float center=.7071067811865475f;
+    assert(live.render(epoch,inputs,2,outL.data(),outR.data(),
+                       64,false,noFx));
+    assert(close(outL[63],(.2f+.3f)*center));
+    assert(close(outR[63],(.2f+.3f)*center));
+    assert(live.setChannelMix(epoch,2,group.createdIds[0],.5f,0.f));
+    assert(live.render(epoch,inputs,2,outL.data(),outR.data(),
+                       64,false,noFx));
+    assert(close(outL[63],(.2f+.3f)*center*.5f));
+    assert(close(outR[63],(.2f+.3f)*center*.5f));
+    assert(live.acceptedRevision()==2);
+    auto failure=live.commit(staged,req,2,epoch,epoch,false);
+    assert(failure.fault==DynamicNativeSessionPublisher::Fault::outputArmed);
+    assert(live.acceptedRevision()==2);
+    assert(!live.render(epoch+1,inputs,2,outL.data(),outR.data(),
+                        64,false,noFx));
+    assert(outL[63]==0.f&&outR[63]==0.f);
+}
+
 int main() {
+    verifyM3ELiveIndependentBusProductionPcm();
     verifyDynamicInPlacePhysicalIOBuffers();
     verifyDynamicChannelIdLiveControls();
     verifyDynamicNativeSessionPublication();
