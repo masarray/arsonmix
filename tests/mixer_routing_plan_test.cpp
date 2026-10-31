@@ -3,6 +3,7 @@
 #include "../engine/core/DynamicChannelRoster.h"
 #include "../engine/core/DynamicPreparedMixerBlock.h"
 #include "../engine/core/LegacyLiveGraphMigration.h"
+#include "../engine/core/DynamicNativeSessionPublisher.h"
 #include <array>
 #if defined(NDEBUG)
 #undef NDEBUG // Never skip P1A assertions in Release native CTest.
@@ -15,6 +16,119 @@ using namespace armix::mixer;
 static bool close(float a,float b,float tol=1.e-5f){return std::abs(a-b)<tol;}
 
 
+
+
+// M3B: ChannelId graph is published through the SAME RT gate used by the
+// incumbent native graph. Real PCM is rendered via ONE leased snapshot;
+// no second callback, CH10 borrowed bus, or fake browser audio.
+static void verifyDynamicNativeSessionPublication() {
+    using Kind=ChannelEdit::Kind;
+    DynamicChannelRoster roster;
+    std::vector<ChannelEdit> create;
+    for(int i=0;i<14;++i){
+        ChannelEdit row;row.kind=Kind::add;row.position=create.size();
+        row.role=i==12?ChannelRole::main:i==13?ChannelRole::monitor:ChannelRole::input;
+        row.format=i>=12?ProcessingFormat::stereo:ProcessingFormat::mono;
+        row.text=i==12?"MAIN":i==13?"MONITOR":"AUDIO "+std::to_string(i+1);
+        create.push_back(row);
+    }
+    const auto a=roster.edit(0,create);
+    assert(a.ok() && a.createdIds.size()==14);
+    const auto lead=a.createdIds[0],backing=a.createdIds[1];
+    const auto mainId=a.createdIds[12],mon=a.createdIds[13];
+    std::array<ChannelEdit,3> edges{};
+    for(int i=0;i<2;++i){
+        edges[i].kind=Kind::setPrimaryOutput;
+        edges[i].id=a.createdIds[i];edges[i].target=mainId;
+    }
+    edges[2].kind=Kind::addSendReference;
+    edges[2].id=backing;edges[2].target=mon;edges[2].value=.2f;
+    assert(roster.edit(roster.revision(),edges).ok());
+    const std::array<ChannelId,2> vocals{lead,backing};
+    const auto vocal=roster.createBusForSelected(
+       roster.revision(),vocals,"NEW VOCAL BUS",ChannelRole::group);
+    assert(vocal.ok()&&roster.size()==15);
+    const auto group=vocal.createdIds.front();
+    const std::array<ChannelId,1> fxSource{lead};
+    const auto fx=roster.createBusForSelected(
+       roster.revision(),fxSource,"NEW REVERB",ChannelRole::fxReturn,.25f);
+    assert(fx.ok()&&roster.size()==16);
+    DynamicGraphRequest request;request.physicalInputs=2;request.maxFrames=32;
+    request.sources={{lead,0,-1,false},{backing,1,-1,false}};
+    DynamicNativeSessionPublisher host;
+    auto ack=host.commit(roster,request,0,21,21,true);
+    assert(ack.ok()&&ack.revision==1&&host.acceptedRevision()==1);
+    assert(!host.commit(roster,request,1,21,21,false).ok());
+    assert(host.acceptedRevision()==1);
+    std::array<float,32> micA{},micB{},mainL{},mainR{},monL{},monR{};
+    micA.fill(.2f);micB.fill(.4f);
+    const float* physical[]={micA.data(),micB.data()};
+    constexpr float center=.7071067811865475f;
+    const float oldExpected=(2.f*(.2f+.4f)+.25f*.2f)*center;
+    int fxCalls=0;
+    const auto effect=[&](ChannelId id,float* l,float* r,int count) noexcept {
+        ++fxCalls;
+        if(id==group)for(int i=0;i<count;++i){l[i]*=2.f;r[i]*=2.f;}
+    };
+    assert(host.render(21,physical,2,mainL.data(),mainR.data(),32,
+                       false,effect,monL.data(),monR.data()));
+    assert(close(mainL[0],oldExpected)&&close(mainR[0],oldExpected));
+    assert(close(monL[0],.4f*center*.2f)&&close(monR[0],.4f*center*.2f));
+    assert(fxCalls==6); // two inputs + Group + FX return + Main + Monitor
+    // Output MUTE is a hard PCM gate: no native DSP callback, no auto-arm.
+    const int processed=fxCalls;
+    assert(!host.render(21,physical,2,mainL.data(),mainR.data(),32,
+                        true,effect,monL.data(),monR.data()));
+    assert(mainL[0]==0.f&&monL[0]==0.f&&fxCalls==processed);
+    // Wrong epoch/port count are silence, preserving the accepted snapshot.
+    assert(!host.render(22,physical,2,mainL.data(),mainR.data(),32,
+                        false,effect,monL.data(),monR.data()));
+    assert(!host.render(21,physical,1,mainL.data(),mainR.data(),32,
+                        false,effect,monL.data(),monR.data()));
+    assert(!host.render(21,physical,2,mainL.data(),mainR.data(),32,
+                        false,effect)); // MONITOR is a required separate sink
+    assert(mainL[0]==0.f&&host.acceptedRevision()==1);
+    // Wrong device epoch, stale revision, armed output and BAD CYCLE are
+    // rejected WITHOUT removing the old accepted graph.
+    assert(host.commit(roster,request,1,20,21,true).fault==
+           DynamicNativeSessionPublisher::Fault::staleDevice);
+    assert(host.commit(roster,request,0,21,21,true).fault==
+           DynamicNativeSessionPublisher::Fault::staleRevision);
+    ChannelEdit cycle;cycle.kind=Kind::addSendReference;
+    cycle.id=mainId;cycle.target=lead;cycle.value=1.f;
+    assert(roster.edit(roster.revision(),std::span<const ChannelEdit>(&cycle,1)).ok());
+    const auto failed=host.commit(roster,request,1,21,21,true);
+    assert(failed.fault==DynamicNativeSessionPublisher::Fault::invalidGraph);
+    assert(failed.graphError.fault==DynamicGraphFault::mainFeedback);
+    assert(host.acceptedRevision()==1);
+    assert(host.render(21,physical,2,mainL.data(),mainR.data(),32,
+                       false,effect,monL.data(),monR.data()));
+    assert(close(mainL[0],oldExpected));
+    // Recovery from a bad control draft requires rebuilding a safe candidate,
+    // not mutating a graph already leased by the real audio callback.
+    DynamicChannelRoster clean;
+    auto created=clean.edit(0,create);
+    assert(created.ok());
+    assert(clean.edit(clean.revision(),edges).ok());
+    auto groupAgain=clean.createBusForSelected(
+        clean.revision(),vocals,"VOCAL BUS",ChannelRole::group);
+    assert(groupAgain.ok()&&groupAgain.createdIds.front()==group);
+    assert(clean.createBusForSelected(
+        clean.revision(),fxSource,"REVERB",ChannelRole::fxReturn,.25f).ok());
+    ChannelEdit none;none.kind=Kind::setPrimaryOutput;
+    none.id=backing;none.target={}; // monitor SEND remains active
+    assert(clean.edit(clean.revision(),std::span<const ChannelEdit>(&none,1)).ok());
+    ack=host.commit(clean,request,1,21,21,true);
+    assert(ack.ok()&&ack.revision==2);
+    assert(host.render(21,physical,2,mainL.data(),mainR.data(),32,
+                       false,effect,monL.data(),monR.data()));
+    assert(close(mainL[0],(2.f*.2f+.25f*.2f)*center));
+    assert(close(monL[0],.4f*center*.2f));
+    host.unpublish();host.pollRetirement();
+    assert(!host.render(21,physical,2,mainL.data(),mainR.data(),32,
+                        false,effect,monL.data(),monR.data()));
+    assert(mainL[0]==0.f&&monL[0]==0.f);
+}
 
 static void verifyStudioConsoleBusBatchPcm() {
     using Kind=ChannelEdit::Kind;
@@ -676,6 +790,7 @@ static void verifyRealtimeAuxMasterPcmBothOutputs() {
 }
 
 int main() {
+    verifyDynamicNativeSessionPublication();
     verifyStudioConsoleBusBatchPcm();
     verifyRealtimeAuxMasterPcmBothOutputs();
     verifyRealtimeAuxPostGainWithoutGraphRebuild();

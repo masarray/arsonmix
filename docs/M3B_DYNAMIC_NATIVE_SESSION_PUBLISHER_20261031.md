@@ -1,0 +1,13 @@
+# M3B — Callback-ready native dynamic ChannelId session publisher
+Date: 2026-10-31 · PRD/ARD/Handoff v3 · Owner #192
+
+## Delivered source contract
+- \`engine/core/DynamicNativeSessionPublisher.h\` owns exactly one \`RealtimeRoutePublisher<Prepared>\`; accepted snapshot contains one DynamicPreparedMixerBlock with 64-bit ChannelIds, true physical callback count, independent optional MAIN+MONITOR and bounded scratch. This code does not instantiate any JUCE audio device/callback or copy processors.
+- \`commit()\` executes ONE preallocated graph compile on the native/control writer, rejects armed physical outputs, old revision, changed device epoch and invalid cycles without replacing accepted audio. Publication reuses existing single-reader-gated epoch/revision/retirement mechanism; prepared pointer lifetime is pinned by a read lease.
+- \`render()\` is designed for invocation from the **existing single JUCE callback** *instead of* \`LiveChannelFxGraph::process\` after the pending VST lifecycle migration. No heap/mutex/spin/plugin instantiation inside render. It uses stable-ID FX adapter, bounded frames/pins, single callback producer gate, optional independent monitor PCM, fail-silent on missing epoch/ports/monitor, and MUTE gate.
+- \`tests/mixer_routing_plan_test.cpp::verifyDynamicNativeSessionPublication()\` creates twelve independent input channel IDs + MAIN + MONITOR + NEW GROUP + FX RETURN (16 logical lanes), routes Mic1+Mic2 to Vocal Bus and Mic1 parallel to FX. It runs actual PCM through group-specific simulated effect callback, tests both MAIN and MONITOR, output mute preventing FX, stale-device/stale revision/armed-output and main-feedback compile rejection, safe restoration of a new revision and output silence on unpublish.
+
+## Critical boundary / next live cutover gate
+This does **NOT** mean native M3 dynamic tracks have been switched on in the released GUI. \`src/LiveAudioEngine.h\` still owns the one current \`LiveDryRoutingLab\` callback, including CH1 LegacyChannelOneLease, native VST3 bank on CH2–N, M2B 10CH + 4AUX, DEVICE4, Show and factory admission. Running old and new paths together would double process audio and is forbidden.
+
+Next meaningful M3C must migrate the incumbent CH1 vendor FX/Orbit, native all-lane VST3 instance ownership, realtime per-ChannelId fader/send controls, Show chunks, physical output pair/secondary clock and source alias mapping, then replace the existing DSP render call atomically via the same epoch/revision/ACK. Confirm sample-by-sample 0FX legacy parity and hardware #15 crackle before enabling + CHANNEL, + BUS or visual BUS fan-in in the real UI. Do not add an unsafe second callback or expose a fake feature.
