@@ -159,7 +159,8 @@ static void verifyUniversalChannelIdFxLeaseAndLivePcm() {
     returnFx.inserts.push_back(newFx(2.f,"fx-return-gain"));
     std::array<Bank::Assignment,4> assignments{first,eleven,groupOwner,returnFx};
     Bank bank;
-    assert(Bank::prepare(epoch,native.acceptedRevision(),assignments,bank)==
+    // The accepted FX owner and native PCM must share the NEXT graph revision.
+    assert(Bank::prepare(epoch,native.acceptedRevision()+1,assignments,bank)==
            Bank::Fault::none);
     assert(bank.lanes()==4&&bank.insertCount(ch11)==1&&
            bank.insertCount(bus)==1&&bank.insertCount(ret)==1);
@@ -178,14 +179,36 @@ static void verifyUniversalChannelIdFxLeaseAndLivePcm() {
     assert(migrated->instanceId==token);
     original.reset(); // vendor instances retained by bank, no new VST3 scan
     assert(GainFx::living>=4);
+    auto acceptedOwner=std::make_shared<Bank>(std::move(bank));
+    DynamicNativeSessionPublisher::FxPlan ownerPlan;
+    ownerPlan.owner=std::static_pointer_cast<void>(acceptedOwner);
+    ownerPlan.context=acceptedOwner.get();
+    ownerPlan.render=+[](void* ctx,ChannelId id,float* l,float* r,int n) noexcept {
+        (*static_cast<Bank*>(ctx))(id,l,r,n);
+    };
+    assert(ownerPlan.valid());
+    // A mismatched raw callback context cannot be published or overwrite a
+    // working hardware graph. This is not a UI flag or an unchecked pointer.
+    auto wrong=ownerPlan;wrong.context=nullptr;
+    assert(native.commit(roster,req,1,epoch,epoch,true,std::move(wrong)).fault==
+           DynamicNativeSessionPublisher::Fault::invalidCandidate);
+    assert(native.acceptedRevision()==1);
+    assert(native.commit(roster,req,1,epoch,epoch,true,ownerPlan).ok());
+    assert(native.acceptedRevision()==2);
+    // Only the accepted snapshot retains the vendor bank; local control
+    // holders can retire without losing a live VST during callback.
+    acceptedOwner.reset();
     std::array<float,32> mic{},music{},left{},right{};
     mic.fill(.2f);music.fill(.1f);
     const float* pins[]{mic.data(),music.data()};
+    int legacyFallbackCalls=0;
+    const auto legacyFx=[&](ChannelId,float*,float*,int) noexcept {
+        ++legacyFallbackCalls;
+    };
     const auto beforeHeap=heapCalls.load(std::memory_order_relaxed);
     assert(native.render(epoch,pins,2,left.data(),right.data(),32,false,
-                         [&bank](ChannelId id,float* l,float* r,int n) noexcept {
-                             bank(id,l,r,n);
-                         }));
+                         legacyFx));
+    assert(legacyFallbackCalls==0); // never dual-render M4 + M5
     assert(heapCalls.load(std::memory_order_relaxed)==beforeHeap);
     constexpr float center=.7071067811865475f;
     // Main: (CH1 .2*2 + CH11 .1*4) * mono pan * GROUP FX3
@@ -193,17 +216,25 @@ static void verifyUniversalChannelIdFxLeaseAndLivePcm() {
     assert(near(left[31],((.2f*2.f+.1f*4.f)*3.f+
                          (.1f*4.f)*.5f*2.f)*center));
     assert(near(left[31],right[31]));
-    assert(native.setChannelMix(epoch,1,bus,.5f,0.f));
+    assert(native.setChannelMix(epoch,2,bus,.5f,0.f));
     assert(native.render(epoch,pins,2,left.data(),right.data(),32,false,
-                         [&bank](ChannelId id,float* l,float* r,int n) noexcept {
-                             bank(id,l,r,n);
-                         }));
+                         legacyFx));
+    assert(legacyFallbackCalls==0);
     assert(near(left[31],((.2f*2.f+.1f*4.f)*3.f*.5f+
                          (.1f*4.f)*.5f*2.f)*center));
+    // A structural recompile carries the same M4 VST3 lease and accepted
+    // Group gain. In real production the control thread must serialize
+    // the same revision/epoch and never recreate vendor state.
+    assert(roster.rememberLiveMix(bus,.5f,0.f));
+    assert(native.commit(roster,req,2,epoch,epoch,true,ownerPlan).ok());
+    assert(native.acceptedRevision()==3);
+    assert(native.render(epoch,pins,2,left.data(),right.data(),32,false,
+                         legacyFx));
+    assert(near(left[31],((.2f*2.f+.1f*4.f)*3.f*.5f+
+                         (.1f*4.f)*.5f*2.f)*center));
+    assert(legacyFallbackCalls==0);
     assert(!native.render(epoch+1,pins,2,left.data(),right.data(),32,false,
-                          [&bank](ChannelId id,float* l,float* r,int n) noexcept {
-                              bank(id,l,r,n);
-                          }));
+                          legacyFx));
     assert(left[31]==0.f&&right[31]==0.f);
 }
 
