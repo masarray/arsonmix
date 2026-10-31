@@ -58,12 +58,18 @@ public:
            static_cast<int>(status.getProperty("sendCount",0))!=0 ||
            static_cast<int>(status.getProperty("auxSendCount",0))!=0)
             return "M3E dry Bus pilot requires 0 VST3, AUX and prior Sends; preserve existing route";
-        const auto mons=status.getProperty("monitorOutputs",{}).getArray();
+        // juce::var owns each Array; never retain getArray() from a
+        // temporary property value (would dangle before native preparation).
+        const auto monitorsValue=status.getProperty("monitorOutputs",{});
+        const auto portsValue=status.getProperty("ports",{});
+        const auto outputsValue=status.getProperty("outputPorts",{});
+        const auto mainValue=status.getProperty("mainOutputs",{});
+        const auto* mons=monitorsValue.getArray();
         if(mons&&!mons->isEmpty())
             return "M3E dry Bus pilot needs MONITOR disabled; preserve existing monitor patch";
-        const auto* ports=status.getProperty("ports",{}).getArray();
-        const auto* outs=status.getProperty("outputPorts",{}).getArray();
-        const auto* main=status.getProperty("mainOutputs",{}).getArray();
+        const auto* ports=portsValue.getArray();
+        const auto* outs=outputsValue.getArray();
+        const auto* main=mainValue.getArray();
         if(!ports||!outs||!main||main->size()!=2||
            ports->size()!=actualInputs||outs->size()!=actualOutputs)
             return "Native INPUT/MAIN readback changed; retry after DEVICE/APPLY ACK";
@@ -157,8 +163,14 @@ public:
         return {};
     }
 
-    void stop() noexcept {
+    // Safe device lifecycle invalidation; never publish stale routing after
+    // ASIO port masks or callback generations change. No allocation here.
+    void invalidate() noexcept {
         active_.store(false,std::memory_order_release);
+        generation_.fetch_add(1,std::memory_order_release);
+    }
+    void stop() noexcept {
+        invalidate();
         generation_.fetch_add(1,std::memory_order_release);
         // Keep publisher alive across device stop. Old prepared snapshots are
         // retired only after native callback lease release on control poll.
