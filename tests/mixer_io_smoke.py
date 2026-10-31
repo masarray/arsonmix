@@ -764,10 +764,40 @@ async def main():
           currentType:'ASIO',
           active:{backend:'ASIO',captureDevice:'MAONO PS22',playbackDevice:'MAONO PS22',
             open:true,deviceGeneration:51,enabledInputs:[0,1,4,7],
+            enabledOutputs:[0,1],outputNames:['MAONO Main L','MAONO Main R'],
             inputNames:['MAONO Mic In 1','MAONO Mic In 2','Unused 3','Unused 4',
               'MAONO VC In L','Unused 6','Unused 7','MAONO VC In R']},
           types:[{name:'ASIO',active:true,separate:false,
             inputs:['MAONO PS22'],outputs:['MAONO PS22']}]})""")
+        # DEVICE4: name one logical stereo INPUT over sparse verified hardware,
+        # then rename and remove it. Metadata must not emit routingDryApply.
+        await page.locator('[data-io-tab="device"]').click()
+        assert await page.locator('.arIOSoftwareGrid').is_visible()
+        count_before=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.name==='arMixAction'&&x.data.action==='routingDryApply').length""")
+        await page.locator('[data-io-software-add="STEREO"]').click()
+        await page.locator('.arIOSoftwareNameEdit').fill('Studio USB Music')
+        await page.locator('[data-io-software-pin="4"][data-io-software-index="-1"]').click()
+        await page.locator('[data-io-software-action="save"]').click()
+        assert 'INCOMPLETE' in await page.locator('#arIOFeedback').inner_text()
+        await page.locator('[data-io-software-pin="7"][data-io-software-index="-1"]').click()
+        await page.locator('[data-io-software-action="save"]').click()
+        assert await page.locator('.arIOSoftwareName strong').get_by_text('Studio USB Music').count()==1
+        assert await page.locator('.arIOSoftwareGrid [data-stage="saved"][data-assigned="true"]').count()==2
+        await page.locator('[data-io-software-action="edit"][data-io-software-index="0"]').click()
+        await page.locator('.arIOSoftwareNameEdit').fill('Studio PC Music')
+        await page.locator('[data-io-software-action="save"]').click()
+        assert await page.locator('.arIOSoftwareName strong').get_by_text('Studio PC Music').count()==1
+        # Direct hardware crosspatch remains usable across stereo side changes.
+        await page.locator('.arIODeviceDirectMatrix summary').click()
+        assert await page.locator('.arIODeviceDirectMatrix').evaluate('(e)=>e.open')
+        await page.locator('.arIODeviceDirectMatrix [data-io-matrix-side="R"][data-io-matrix-row="5"]').click()
+        assert await page.locator('.arIODeviceDirectMatrix').evaluate('(e)=>e.open')
+        await page.locator('[data-io-software-action="remove"][data-io-software-index="0"]').click()
+        assert await page.locator('.arIOSoftwareName strong').get_by_text('Studio PC Music').count()==0
+        count_after=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.name==='arMixAction'&&x.data.action==='routingDryApply').length""")
+        assert count_before==count_after,(count_before,count_after)
         await page.locator('#arIOOverlay [data-io-close]').click()
         await page.locator('[data-focus-step="source"]').click()
         await page.locator('.arSourceAliasManager summary').click()
