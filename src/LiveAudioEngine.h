@@ -1275,6 +1275,23 @@ public:
         o->setProperty ("callbackBudgetSamples", static_cast<double> (histogram.total));
         o->setProperty ("inputPeak", inputPeak_.load());
         o->setProperty ("inputPeakProvenance", "RAW_PCM_BEFORE_HARDWARE_MUTE");
+        // First Sound: JUCE supplies callback-COMPACT input channels.
+        // Do not confuse indices with ASIO pin numbers. The GUI may map
+        // them to driver labels only using same-epoch native enabled masks.
+        // All arrays are assembled on control/status thread, never RT.
+        juce::Array<juce::var> callbackPeaks, callbackSignalBlocks;
+        const int observedPorts=juce::jlimit(0,armix::rt::CaptureBoundaryEvidence::maxObservedPorts,
+            callbackInputs_.load(std::memory_order_relaxed));
+        for (int c=0;c<observedPorts;++c) {
+            callbackPeaks.add(captureBoundary_.portPeak(c));
+            callbackSignalBlocks.add(static_cast<double>(captureBoundary_.portSignalBlocks(c)));
+        }
+        o->setProperty ("captureCallbackPeaks",juce::var(callbackPeaks));
+        o->setProperty ("captureCallbackSignalBlocks",juce::var(callbackSignalBlocks));
+        o->setProperty ("captureObservationBlocks",
+            static_cast<double>(captureObservationBlocks_.load(std::memory_order_relaxed)));
+        o->setProperty ("capturePortProvenance",
+            "JUCE_COMPACT_CALLBACK_ORDER_RAW_BEFORE_ROUTING_AND_OUTPUT_MUTE");
         o->setProperty ("captureSignalBlocks",static_cast<double>(captureSignalBlocks_.load(std::memory_order_relaxed)));
         o->setProperty ("captureZeroHeadCandidateBlocks",static_cast<double>(captureBoundary_.candidateBlocks()));
         o->setProperty ("captureZeroHeadCandidateFrames",static_cast<double>(captureBoundary_.candidateFrames()));
@@ -1440,6 +1457,7 @@ private:
     std::atomic<float> masterGain_ { 1.f }, channelGain_ { 1.f }, channelPan_ { 0.f };
     std::atomic<float> inputPeak_ { 0.f }, postFxPeak_ { 0.f }, outputPeak_ { 0.f };
     std::atomic<std::uint64_t> captureSignalBlocks_ {0}; // per native device epoch
+    std::atomic<std::uint64_t> captureObservationBlocks_ {0}; // per native device epoch, even UNPATCHED
     armix::rt::CaptureBoundaryEvidence captureBoundary_; // callback-only PCM continuity
     std::atomic<float> outputPeakL_ { 0.f }, outputPeakR_ { 0.f };
     std::atomic<int> callbackInputs_ { 0 }, callbackOutputs_ { 0 };
@@ -1530,7 +1548,10 @@ private:
         }
         inputPeak_.store(0.f,std::memory_order_relaxed);
         captureSignalBlocks_.store(0,std::memory_order_relaxed);
+        captureObservationBlocks_.store(0,std::memory_order_relaxed);
         captureBoundary_.reset(); // only between device generations
+        callbackInputs_.store(0,std::memory_order_relaxed);
+        callbackOutputs_.store(0,std::memory_order_relaxed);
         deviceStartCount_.fetch_add (1, std::memory_order_relaxed);
         sampleRateHz_ = juce::jmax (1.0, d->getCurrentSampleRate());
         diagnosticTone_.prepare (sampleRateHz_); // device stopped; no RT allocation
@@ -1569,6 +1590,11 @@ private:
         masterLoudness_.prepare (0.0); // clear validity across device epoch
         dryRoutingLab_.deviceStopped();
         deviceStopCount_.fetch_add (1, std::memory_order_relaxed);
+        callbackInputs_.store(0,std::memory_order_relaxed);
+        callbackOutputs_.store(0,std::memory_order_relaxed);
+        inputPeak_.store(0.f,std::memory_order_relaxed);
+        captureObservationBlocks_.store(0,std::memory_order_relaxed);
+        captureBoundary_.reset(); // no stale pin peaks after disconnect
         inputPeak_.store (0.f);
         outputPeak_.store (0.f);
     }
@@ -1667,10 +1693,22 @@ private:
         if (activeDiagnosticRoute == armix::diagnostics::Route::normal
             && !dryRoutingLab_.active())
         {
+            // P0: SILENT output must not mean blind capture diagnostics.
+            // A verified ASIO/WASAPI callback can carry PCM before any
+            // mixer route is accepted. Reuse the existing single native
+            // capture-evidence pass here; never run VST/routing or allocate.
+            const float observedPeak=captureBoundary_.observe(inputs,
+                juce::jmin(inputChannels,armix::rt::CaptureBoundaryEvidence::maxObservedPorts),samples);
+            captureObservationBlocks_.fetch_add(1,std::memory_order_relaxed);
+            callbackInputs_.store(inputChannels,std::memory_order_relaxed);
+            callbackOutputs_.store(outputChannels,std::memory_order_relaxed);
+            callbackCount_.fetch_add(1,std::memory_order_relaxed);
+            if(observedPeak>armix::rt::CaptureBoundaryEvidence::tailSignalThreshold)
+                captureSignalBlocks_.fetch_add(1,std::memory_order_relaxed);
             for (int c = 0; c < outputChannels; ++c)
                 if (outputs && outputs[c])
                     juce::FloatVectorOperations::clear(outputs[c], samples);
-            inputPeak_.store(0.f, std::memory_order_relaxed);
+            inputPeak_.store(juce::jmin(1.f,observedPeak),std::memory_order_relaxed);
             postFxPeak_.store(0.f, std::memory_order_relaxed);
             outputPeak_.store(0.f, std::memory_order_relaxed);
             outputPeakL_.store(0.f, std::memory_order_relaxed);
@@ -1723,6 +1761,7 @@ private:
             // Scan bounded verified callback channels, no allocation or lock.
             const float rawCapturePeak=captureBoundary_.observe(
                 inputs,juce::jmin(inputChannels,armix::device::LiveInputPortRegistry::limit),samples);
+            captureObservationBlocks_.fetch_add(1,std::memory_order_relaxed);
             if(rawCapturePeak>0.0005f)
                 captureSignalBlocks_.fetch_add(1,std::memory_order_relaxed);
             // Both native 10CH routing and the existing CH1 vendor FX chain
