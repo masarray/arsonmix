@@ -241,6 +241,44 @@ test('SOURCE quick switch is live only for verified same format; structural fall
 });
 
 
+test('P0 FIRST SOUND raw capture has per-pin native callback truth BEFORE route and output ARM',()=>{
+  const native=read('src/LiveAudioEngine.h');
+  const pcm=read('engine/core/CaptureBoundaryEvidence.h');
+  const ui=read('web/mixer-io.js');
+  const html=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
+  const css=read('web/mixer-io.css');
+  const start=native.indexOf('// P0: SILENT output must not mean blind capture diagnostics.');
+  assert.ok(start>0,'unpatched native callback must retain actual PCM observation');
+  const end=native.indexOf('const std::uint64_t beginUs',start);
+  assert.ok(end>start,'early mute-only callback path must precede full DSP renderer');
+  const early=native.slice(start,end);
+  assert.match(early,/captureBoundary_\.observe\(inputs/);
+  assert.match(early,/captureObservationBlocks_\.fetch_add\(1/);
+  assert.match(early,/callbackInputs_\.store\(inputChannels/);
+  assert.match(early,/inputPeak_\.store\(juce::jmin\(1\.f,observedPeak\)/);
+  assert.doesNotMatch(early,/processLegacyChannelOne|processBlock\(/);
+  assert.match(native,/captureCallbackPeaks/);
+  assert.match(native,/captureCallbackSignalBlocks/);
+  assert.match(native,/capturePortProvenance/);
+  assert.match(native,/captureObservationBlocks/);
+  assert.match(native,/captureBoundary_\.reset\(\); \/\/ no stale pin peaks after disconnect/);
+  assert.match(pcm,/maxObservedPorts = 64/);
+  assert.match(pcm,/float portPeak\(int callbackPort\) const noexcept/);
+  assert.match(pcm,/portSignalBlocks\(int callbackPort\) const noexcept/);
+  assert.match(pcm,/perPortPeak_\[port\]\.store\(channelPeak/);
+  assert.match(ui,/const capturePinSummary=\(\)=>/);
+  assert.match(ui,/a\.deviceGeneration\)!==Number\(d\.deviceGeneration\)/);
+  assert.match(ui,/a\.inputNames\?\.\[port\]/);
+  assert.match(ui,/RAW INPUTS SILENT/);
+  assert.match(ui,/RAW PCM NOW/);
+  assert.match(ui,/arIODeviceCaptureEvidence/);
+  const jsTag='<script id="arsonmix-mixer-io-js">';
+  const cssTag='<style id="arsonmix-mixer-io-css">';
+  assert.equal(html.slice(html.indexOf(jsTag)+jsTag.length,html.indexOf('</script>',html.indexOf(jsTag))),
+               ui,'WebView + standalone exact raw PCM UI parity');
+  assert.equal(html.slice(html.indexOf(cssTag)+cssTag.length,html.indexOf('</style>',html.indexOf(cssTag))),
+               css,'WebView + standalone exact raw PCM style parity');
+});
 test('P0 MAONO: staged ASIO switch never advertises live audio and cannot APPLY while output armed',()=>{
   const js=read('web/mixer-io.js');
   const main=read('src/Main.cpp');
