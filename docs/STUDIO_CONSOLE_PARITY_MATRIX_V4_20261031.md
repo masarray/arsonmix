@@ -1,5 +1,12 @@
-# Studio One Console → ArSonMiX feature traceability ledger v4 (2026-10-31)
-**Snapshot source:** `main@6022a4fc0218decac694568d73c772a634eba37a`. This is an engineering audit of repo code and merged-PR evidence, NOT a rendered-GUI screenshot inspection or physical FAT certificate. Refresh main SHA whenever this file is used. Benchmark only applicable realtime Console features. **Legend:** LIVE=merged runtime capability; PARTIAL=limited true native; OFFLINE=unit-tested control/PCM not in app callback; ABSENT=not implemented; FAT=physical proof missing.
+# Studio One / Audition / eMotion LV1 → ArSonMiX feature evidence ledger v4.1 (2026-11-01)
+
+> **CURRENT STATUS OVERLAY — 2026-11-01, \`main@9f66d085\` (supersedes snapshot table below):** FAST2 #259/FAST3 single AUDIO I/O APPLY **merged** (no START AUDIO); #258 independent stereo L/R native meters + FX entry and #260 atomic fader/PAN **merged**; #261 common CH1 native empty rack + independently staged multi-channel native FX Console **merged** (post-merge Chromium PASS, combined Windows pending at audit). Real production callback is still fixed **10CH+4AUX with occupied CH1 legacy VST special-case**. \`DynamicPreparedMixerBlock\` etc remain offline until full-fidelity production cutover. #263 one dry GROUP callback is **DRAFT/PILOT**; it does not support FX/AUX/sends/MONITOR/Show or CH11+ dynamic inputs. #251 WASAPI de-click is experimental default-OFF. FactoryFX approved plugin list empty, issue #15 0FX physical crackle FAT OPEN. The v4 table below is a **2026-10-31 historical truth table**, not a live feature inventory. The binding current plan is [PRD v4.1](PRD_ARSONMIX_LIVE_STUDIO_CONSOLE_PARITY_V4_20261031.md), [ARD v4.1](ARD_ARSONMIX_LIVE_STUDIO_CONSOLE_PARITY_V4_20261031.md), [Handoff v4.1](HANDOFF_ARSONMIX_STUDIO_CONSOLE_V4_20261031.md).
+
+**Changed acceptance priority from the original table:** HW04 now uses one APPLY; FX01 has merged #261 UI/native draft ownership but still lacks full ChannelId CH1..N parity; CH01/BUS01/BUS02/BUS03 remain **unqualified end-to-end** (restricted #263 GROUP cannot replace the normal live mix); FX02/PDC/Listen and dynamic Show still pending; RELEASE remains hardware-BLOCKED. Do not close these lines because of a screenshot, offline PCM proof or single dry Group.
+
+---
+
+**Historical snapshot source:** `main@6022a4fc0218decac694568d73c772a634eba37a`. This is an engineering audit of repo code and merged-PR evidence, NOT a rendered-GUI screenshot inspection or physical FAT certificate. Refresh main SHA whenever this file is used. Benchmark only applicable realtime Console features. **Legend:** LIVE=merged runtime capability; PARTIAL=limited true native; OFFLINE=unit-tested control/PCM not in app callback; ABSENT=not implemented; FAT=physical proof missing.
 
 | ID | Studio Console equivalent (actual expected workflow) | ArSonMiX status at snapshot | Evidence / necessary next step | Priority |
 | --- | --- | --- | --- | --- |
