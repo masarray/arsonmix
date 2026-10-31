@@ -763,6 +763,7 @@ private:
         o->setProperty("rate",device!=nullptr&&device->isOpen()?device->getCurrentSampleRate():0.0);
         o->setProperty("buffer",device!=nullptr&&device->isOpen()?device->getCurrentBufferSizeSamples():0);
         o->setProperty("open",device!=nullptr&&device->isOpen());
+        o->setProperty("authorized",engine_.directRouteAuthorized());
         o->setProperty("outputMuted",engine_.isOutputMuted());
         o->setProperty("deviceGeneration",engine_.status().getProperty("deviceGeneration",0));
         juce::Array<juce::var> inputNames,outputNames,inputPins,outputPins,rates,buffers;
@@ -816,7 +817,9 @@ private:
             static_cast<double>(args.getProperty("expectedDeviceGeneration",{})) !=
                 static_cast<double>(oldGeneration))
             return send(false,"REJECTED","Stale device generation; refresh DEVICE / DRIVER");
+        const auto nativeRoute=engine_.status().getProperty("dryRoutingLab",{});
         if(nativeShowBusy_||studioBackupBusy_||engine_.isGraphSwitchPending()||
+            static_cast<bool>(nativeRoute.getProperty("pending",false))||
             engine_.independentClockActive()||engine_.hasTemporaryDiagnosticDevice()||
             !engine_.allOutputsDisarmed())
             return send(false,"REJECTED",
@@ -905,6 +908,12 @@ private:
 
         // Full device transaction: never enable audio during an intermediate
         // backend auto-open, and never persist an unverified partial selection.
+        // A missing prior endpoint can leave the direct callback detached;
+        // reuse the existing explicit replacement path instead of creating a
+        // second callback or trusting the unreachable device.
+        if(engine_.hasPendingDirectRestore() &&
+           !engine_.abandonPendingDirectRestoreForSetup())
+            return send(false,"REJECTED","Failed to prepare an explicit replacement for the missing device");
         const auto start=monotonicMilliseconds();
         engine_.beginManualAudioSetup();
         if(!unchangedDevice)manager.setCurrentAudioDeviceType(typeName,false);
