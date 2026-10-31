@@ -651,7 +651,14 @@ async def main():
         # cannot publish an unpatched/missing CH2.
         await page.locator('[data-mix-mode="ROUTE"]').click()
         await page.locator('[data-strip="1"] select.arBankSource').select_option("MONO:1")
-        assert "PENDING" in await page.locator('[data-strip="1"] .arBankStage').inner_text()
+        source_phase=await page.evaluate("""()=>({
+          text:document.querySelector('[data-strip="1"] .arBankStage')?.textContent,
+          fast:window.__arMixFastAudioState?.(),
+          route:window.__arMixRouteView?.(),
+          io:document.getElementById('arIOFeedback')?.textContent,
+          lastActions:window.__armixTestActions.slice(-4)
+        })""")
+        assert "PENDING" in source_phase['text'],source_phase
         status=await page.evaluate("""status=>{
           const payload=window.__armixTestActions.filter(x=>
             x.name==='arMixAction'&&x.data.action==='routingDryApply').at(-1).data.value;
