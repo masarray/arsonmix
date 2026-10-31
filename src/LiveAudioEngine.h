@@ -1810,12 +1810,67 @@ private:
             LegacyChannelOneLease ch1Lease{this,cycle.graph};
             std::array<int,2> nativeMainPair{{-1,-1}};
             std::array<int,2> nativeMonitorPair{{-1,-1}};
-            const bool routed=dryRoutingLab_.process(inputs,inputChannels,outputs,
+            // M3E: one native callback, ONE selected producer. The dynamic
+            // ChannelId graph replaces (never sums with) the old dry graph
+            // only following an exact ACK of a 0FX GROUP+MAIN session.
+            const bool studioBus=liveStudioBus_.active();
+            float studioPeakL=0.f,studioPeakR=0.f;
+            bool routed=false;
+            if(studioBus) {
+                const auto pair=liveStudioBus_.mainPair();
+                const bool valid=liveStudioBus_.activeFor(
+                    dryRoutingLab_.epoch(),inputChannels,outputChannels) &&
+                    outputs&&pair[0]>=0&&pair[1]>=0&&
+                    pair[0]<outputChannels&&pair[1]<outputChannels&&
+                    pair[0]!=pair[1]&&outputs[pair[0]]&&outputs[pair[1]];
+                if(valid) {
+                    nativeMainPair=pair;
+                    routed=liveStudioBus_.render(dryRoutingLab_.epoch(),
+                        inputs,inputChannels,outputs[pair[0]],outputs[pair[1]],
+                        samples,!outputPermitted);
+                    if(routed) {
+                        const auto generation=liveStudioBus_.generation();
+                        if(studioBusAudioGeneration_!=generation) {
+                            studioBusAudioGeneration_=generation;
+                            studioBusFadeRemaining_=256;
+                        }
+                        const float master=juce::jlimit(0.f,2.f,
+                            masterGain_.load(std::memory_order_relaxed));
+                        const bool mono=masterMono_.load(std::memory_order_relaxed);
+                        for(int i=0;i<samples;++i) {
+                            float l=outputs[pair[0]][i]*master;
+                            float r=outputs[pair[1]][i]*master;
+                            if(mono)l=r=.5f*(l+r); // post-fader master mono
+                            if(studioBusFadeRemaining_>0) {
+                                const float fade=1.f-static_cast<float>(
+                                    studioBusFadeRemaining_-1)/256.f;
+                                l*=fade;r*=fade;
+                                --studioBusFadeRemaining_;
+                            }
+                            outputs[pair[0]][i]=l;
+                            outputs[pair[1]][i]=r;
+                            studioPeakL=juce::jmax(studioPeakL,std::abs(l));
+                            studioPeakR=juce::jmax(studioPeakR,std::abs(r));
+                        }
+                    }
+                }
+                if(!routed)studioBusFadeRemaining_=256;
+                // Only AFTER the dynamically prepared graph has consumed all
+                // input PCM may unused hardware outputs be cleared (ASIO
+                // input/output buffer aliasing is supported).
+                for(int c=0;c<outputChannels;++c)
+                    if(outputs&&outputs[c]&&
+                       (!routed||c!=pair[0]&&c!=pair[1]))
+                        juce::FloatVectorOperations::clear(outputs[c],samples);
+            }else {
+                routed=dryRoutingLab_.process(inputs,inputChannels,outputs,
                      outputChannels,samples,
                      masterGain_.load(std::memory_order_relaxed),
                      !outputPermitted,&ch1Lease,&processLegacyChannelOne,
                      masterMono_.load(std::memory_order_relaxed),
                      &nativeMainPair,&nativeMonitorPair);
+                studioBusFadeRemaining_=256;
+            }
             // Constant-time, callback-local physical PCM tap. Nothing is
             // reconfigured or acquired from another graph generation.
             const auto nativeMain=armix::mixer::NativeOutputPairTap::select(
@@ -1880,8 +1935,8 @@ private:
             const float* measured[2] = {nativeMain[0],nativeMain[1]};
             masterLoudness_.process(measured,2,samples);
             // Only actually routed audio can produce a live output meter.
-            const float left=routed?dryRoutingLab_.peakLeft():0.f;
-            const float right=routed?dryRoutingLab_.peakRight():0.f;
+            const float left=routed?(studioBus?studioPeakL:dryRoutingLab_.peakLeft()):0.f;
+            const float right=routed?(studioBus?studioPeakR:dryRoutingLab_.peakRight()):0.f;
             const float audibleLeft=(routedFxMove!=0||cycle.fadeOut||cycle.fadeIn)?movedPeakL:left;
             const float audibleRight=(routedFxMove!=0||cycle.fadeOut||cycle.fadeIn)?movedPeakR:right;
             inputPeak_.store(juce::jmin(1.f,rawCapturePeak),std::memory_order_relaxed);
