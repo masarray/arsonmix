@@ -345,7 +345,7 @@
       s.acceptedRoute?.auxes?.[bus]||null
     ]);
     const draftSignature=JSON.stringify([sends,aux]);
-    sendEditor.innerHTML=header+'<p class="arSendNotice">PRE = after FX, before fader · POST = after fader. Changes stay DRAFT until native ACK.</p>'+
+    sendEditor.innerHTML=header+'<p class="arSendNotice">PRE and structural edits: MUTE + APPLY · existing POST LEVEL and AUX RETURN LEVEL: realtime native ACK.</p>'+
       auxPanel+'<div class="arSendEditRows">'+lines+'</div><footer><span id="arSendFeedback" role="status">'+
       (sendFeedback||(s.pending?'NATIVE APPLY PENDING':liveSignature!==draftSignature?'DRAFT · NOT LIVE':'NATIVE LIVE / UNCHANGED'))+
       '</span><button type="button" class="btn-180" data-send-revert'+(off?' disabled':'')+'>REVERT</button>'+
@@ -358,6 +358,12 @@
     const s=route();if(!isNative()||!s.ready||s.pending)return;
     sendFocus={from,bus,epoch:s.epoch};sendAnchor=anchor;sendFeedback='';
     sendEditor.hidden=false;drawSendEditor();
+  }
+  function sendEditorLiveReady(focus){
+    const s=route();
+    return !!focus&&isNative()&&s.active&&s.ready&&!s.pending&&
+      s.epoch===focus.epoch&&!s.draftActive&&
+      !!s.acceptedRoute?.auxes?.[focus.bus]?.enabled;
   }
   function sendMutation(fn){
     const result=fn();
@@ -1419,16 +1425,29 @@
     const input=e.target;
     if(input.dataset.sendReturn!==undefined){
       const field=input.dataset.sendReturn;
-      sendMutation(()=>window.__arMixStageAuxReturnEdit?.(sendFocus.bus,field,
-        field==='gain'?Number(input.value):input.checked));
+      // Existing accepted AUX master gain is a live parameter; the
+      // return enable/main/mute controls still alter structural topology.
+      if(field==='gain' && sendEditorLiveReady(sendFocus)){
+        sendMutation(()=>window.__arMixSetLiveAuxMasterGain?.(
+          sendFocus.bus,Number(input.value)));
+      }else sendMutation(()=>window.__arMixStageAuxReturnEdit?.(
+        sendFocus.bus,field,field==='gain'?Number(input.value):input.checked));
     }else {
       const field=input.dataset.sendGain!==undefined?'gain':
         input.dataset.sendPan!==undefined?'pan':
         input.dataset.sendEnable!==undefined?'enable':null;
       if(!field)return;
       const tap=input.dataset.sendGain||input.dataset.sendPan||input.dataset.sendEnable;
-      sendMutation(()=>window.__arMixStageAuxSendEdit?.({...sendFocus,tap,action:field,
-        value:field==='enable'?input.checked:Number(input.value)}));
+      // The same existing native send parameter authority used by SEND
+      // FADERS serves the focused editor. No second routing controller.
+      if(field==='gain'&&tap==='POST'&&sendEditorLiveReady(sendFocus) &&
+         (route().acceptedRoute?.sends||[]).some(x=>x.from===sendFocus.from&&
+           x.to===10+sendFocus.bus&&x.tap==='POST')){
+        sendMutation(()=>window.__arMixSetLiveAuxSendGain?.({
+          from:sendFocus.from,bus:sendFocus.bus,gain:Number(input.value)}));
+      }else sendMutation(()=>window.__arMixStageAuxSendEdit?.(
+        {...sendFocus,tap,action:field,
+          value:field==='enable'?input.checked:Number(input.value)}));
     }
   },true);
   document.addEventListener('keydown',e=>{
