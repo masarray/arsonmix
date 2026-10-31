@@ -1027,7 +1027,7 @@
       const unmatched=node('option','','CURRENT · '+value+' (not in current driver list)');
       unmatched.value=String(value);field.appendChild(unmatched);
     }
-    field.value=String(value||'');
+    field.value=String(value??'');
     field.disabled=disabled||!options.length;
     return field;
   }
