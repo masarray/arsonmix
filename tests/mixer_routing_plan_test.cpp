@@ -868,6 +868,22 @@ static void verifyDynamicChannelIdLiveControls() {
     assert(host.setChannelMix(123,1,group,0.f,0.f));
     assert(host.setParallelSendGain(123,1,mic,fx,false,.5f));
     assert(render()&&close(left[63],.8f*center*.5f*.5f));
+    // M3E: a stereo fader/PAN update is one coherent atomic coefficient pair,
+    // not independent L/R stores that the callback can observe half-applied.
+    // With exclusive GROUP muted, the MIC FX send alone provides both paths.
+    assert(host.setParallelSendGain(123,1,mic,fx,false,1.f));
+    assert(host.setChannelMix(123,1,mic,.8f,-1.f));
+    assert(render());
+    assert(close(left[63],.8f*.8f));  // hard left, all FX return
+    assert(close(right[63],0.f));
+    assert(host.setChannelMix(123,1,mic,.8f,1.f));
+    assert(render());
+    assert(close(left[63],0.f));
+    assert(close(right[63],.8f*.8f)); // hard right, same graph
+    assert(host.setChannelMix(123,1,mic,.8f,0.f));
+    assert(render());
+    assert(close(left[63],.8f*.8f*center));
+    assert(close(right[63],.8f*.8f*center));
     const auto retained=host.acceptedRevision();
     assert(retained==1);
     // The native physical MUTE gate applies even if a live target is nonzero.
