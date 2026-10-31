@@ -291,7 +291,7 @@ test('P0 MAONO: one APPLY MUTE-ACKs before switching and native ARM',()=>{
   assert.match(js,/applyMutePending=true/);
   assert.match(js,/action:'monitor',value:false/);
   assert.match(guard,/s\?\.pending/);
-  assert.match(guard,/Maono MIC or VC In 3\+4/);
+  assert.match(guard,/MAONO MIC\/VC IN pins and channel source/);
   assert.match(js,/ASIO DEVICE SELECTED · NOT ACTIVE · current engine still uses/);
   assert.match(js,/const blocked=deviceSwitchBlocker\(route\(\)\)/);
   assert.match(js,/const deviceBlocker=deviceSwitchBlocker\(s\)/);
@@ -515,4 +515,17 @@ test('FAST2 APPLY is the single operator action; native MUTE/route/ARM ACKs rema
   assert.match(m,/expectedEpoch:Number\(d.epoch\)/);
   assert.match(native,/arMixAudioArmAck/);
   assert.ok(html.includes(io),'WebView and standalone must share exact FAST2 UI');
+});
+
+test('FAST3 single APPLY stays enabled while output ARMED; safe route ACK and hardware arm remain separate native fences',()=>{
+ const io=read('web/mixer-io.js'),html=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
+ const controller=read('web/monitor.js');
+ assert.match(io,/\(!deviceDirty\(\)&&!hardwareReady\(s\)\)/);
+ assert.doesNotMatch(io,/\(!deviceDirty\(\)&&\(!hardwareReady\(s\)\|\|!!lastStatus.monitor\)\)/);
+ assert.match(io,/window\.__arMixApplyAndActivate\?\.\(\)/);
+ assert.match(io,/if\(lastStatus.monitor\)\{\s*applyMutePending=true/);
+ assert.match(controller,/phase:"mute-custom"/);
+ assert.match(controller,/phase:"custom-patch"/);
+ assert.match(controller,/arMixAudioArmAck/);
+ assert.ok(html.includes(io),'Standalone mirrors the actual FAST3 operator controller');
 });

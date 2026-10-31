@@ -4590,8 +4590,8 @@ scheduleDemoMeter();
     if(!a.open||a.authorized===false)return 'SELECT ASIO/WINDOWS AUDIO, then APPLY DEVICE';
     const maono=/maono/i.test(String(a.captureDevice||'')+' '+String(a.playbackDevice||''));
     return /ASIO/i.test(a.backend||'')&&maono?
-      'ASIO OPEN · expand HARDWARE PIN ENABLE, select the actual Maono MIC or VC In 3+4 ports, then APPLY DEVICE again. Next select CH input sources, APPLY.':
-      'DEVICE OPEN · verify enabled INPUT/OUTPUT pins, choose CH input sources, APPLY.';
+      'ASIO OPEN · select verified MAONO MIC/VC IN pins and channel source, then APPLY. Changing the driver may require a separate reopen and verified pin refresh.':
+      'DEVICE OPEN · select verified INPUT/OUTPUT pins and channel source, then APPLY once to route and ARM.';
   };
   function deviceApply(){
     if(!isNative()||deviceBusy||!deviceDraft||!deviceInventory?.active)return;
@@ -4848,10 +4848,10 @@ scheduleDemoMeter();
     overlay.querySelector('[data-io-device-apply]').hidden=ioTab!=='device';
     overlay.querySelector('[data-io-device-revert]').hidden=ioTab!=='device';
     const deviceBlocker=deviceSwitchBlocker(s);
-    overlay.querySelector('[data-io-device-apply]').disabled=!!deviceBlocker||deviceBusy||applyMutePending||deviceMatrixWaitEpoch!==null||!!window.__arMixFastAudioState?.().pending||(!deviceDirty()&&(!hardwareReady(s)||!!lastStatus.monitor));
+    overlay.querySelector('[data-io-device-apply]').disabled=!!deviceBlocker||deviceBusy||applyMutePending||deviceMatrixWaitEpoch!==null||!!window.__arMixFastAudioState?.().pending||(!deviceDirty()&&!hardwareReady(s));
     overlay.querySelector('[data-io-device-apply]').textContent=deviceBusy||applyMutePending?'APPLYING…':'APPLY';
     overlay.querySelector('[data-io-device-apply]').title=deviceBlocker||
-      (deviceDirty()?'Commit selected device then verify physical pin readback':'No pending device edit');
+      (deviceDirty()?'APPLY DEVICE → VERIFY PORTS → ROUTE ACK → ARM (ONE OPERATOR ACTION)':'APPLY accepted route and ARM output; no separate START AUDIO');
     overlay.querySelector('[data-io-device-revert]').disabled=deviceBusy||!deviceDirty();
     overlay.querySelector('[data-mix-apply]').disabled=!hardwareReady(s)||!!matrixDraft.size||
       (ioTab==='device'&&deviceDirty());
