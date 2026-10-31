@@ -462,10 +462,11 @@ async def main():
         assert await page.locator('.left-rail #saveFxPreset').inner_text()=='SAVE FX'
         assert await page.locator('.left-rail #menuScene').inner_text()=='EXPORT'
         assert await page.locator('.left-rail .rail-bottom button').count()==3
-        # L2 workspace: 3 true navigation tabs + 17 rail controls (including native FX/ROUTE/SENDS).
-        # Single solid face, identical resting 7-shadow model, no Button 19.
+        # L2 workspace: original 17 rail controls plus one purposeful MS5 SEND FADERS toggle.
+        # Its optional AUX selector is not a button; preserve the original operator commands.
         assert await page.locator('.toolbar-actions .nav button.btn-180').count()==3
-        assert await page.locator('.left-rail button.btn-180').count()==17
+        assert await page.locator('.left-rail button.btn-180').count()==18
+        assert await page.locator('.left-rail [data-sof-toggle]').count()==1
         assert await page.locator('.toolbar-actions .fx-nav,.left-rail .fx-nav').count()==0
         assert await page.locator('.left-rail .pushable,.left-rail .front,.left-rail .edge,.left-rail .shadow').count()==0
         assert await page.locator('.left-rail [data-mix-mode]').count()==3
