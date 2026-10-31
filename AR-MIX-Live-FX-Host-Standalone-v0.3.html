@@ -2157,6 +2157,18 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 @media(max-width:660px){
   .arIODeviceFields,.arIODevicePins{grid-template-columns:minmax(0,1fr)}
 }
+
+/* SOURCE2: small inline operator picker, no blur/glow/filter or layout churn. */
+.arSourceChooser[hidden]{display:none!important}
+.arSourceChooser{position:absolute;z-index:75;top:78px;left:180px;width:min(350px,calc(100vw - 206px));max-height:min(520px,75vh);overflow:auto;background:#15252f;border:1px solid #496574;border-radius:5px;padding:9px;box-shadow:0 12px 30px #0009;color:#e0ebef}
+.arSourceChooserTop{display:flex;align-items:center;justify-content:space-between;gap:8px;font:600 11px/1.5 sans-serif;letter-spacing:.03em;margin-bottom:7px}
+.arSourceChooserTop button{padding:3px 8px}
+.arSourceChooserChoices{display:grid;gap:4px}
+.arSourceChoice,.arSourceAdvanced{display:block;width:100%;text-align:left;border:1px solid #385867;background:#203540;color:#dce8ed;border-radius:3px;padding:7px 9px;font-size:11px;cursor:pointer}
+.arSourceChoice[aria-pressed=true]{border-color:#55bca7;background:#205245;color:#eafff8}
+.arSourceChoice:hover:not(:disabled),.arSourceAdvanced:hover{border-color:#8dbcc5}
+.arSourceChoice:disabled{opacity:.45;cursor:default}
+.arSourceChooserNote{font-size:10px;line-height:1.5;color:#bbcad1;margin-top:8px}
 </style></head>
 <body>
 <div id="app" class="app">
@@ -3335,6 +3347,72 @@ scheduleDemoMeter();
       focusFlow.dataset.nativeState=ack&&!s.pending?'accepted':'unverified';
     }
   }
+  // SOURCE2: compact, directly actionable source chooser on the selected strip.
+  // No second routing owner, no invented virtual port, no browser DSP.
+  const sourceChooser=node('div','arSourceChooser');
+  sourceChooser.hidden=true;
+  sourceChooser.setAttribute('role','dialog');
+  sourceChooser.setAttribute('aria-label','Choose verified channel input source');
+  sourceChooser.innerHTML='<div class="arSourceChooserTop"><span data-source-title>INPUT SOURCE</span><button type="button" class="btn-180" data-source-close aria-label="Close input source chooser">×</button></div><div class="arSourceChooserChoices" data-source-choices></div><div class="arSourceChooserNote" data-source-note role="status"></div>';
+  host.insertBefore(sourceChooser,mixer);
+  let sourceChooserChannel=-1;
+  const sourceChoices=sourceChooser.querySelector('[data-source-choices]');
+  const sourceNote=sourceChooser.querySelector('[data-source-note]');
+  const closeSourceChooser=()=>{
+    sourceChooser.hidden=true;sourceChooserChannel=-1;
+  };
+  const renderSourceChooser=()=>{
+    if(sourceChooser.hidden||sourceChooserChannel<0)return;
+    const s=route(),r=s.acceptedRoute?.channels?.[sourceChooserChannel];
+    sourceChooser.querySelector('[data-source-title]').textContent=
+      'CH '+String(sourceChooserChannel+1).padStart(2,'0')+' · VERIFIED SOURCE';
+    sourceChoices.replaceChildren();
+    const pins=portList(s);
+    const values=portsFor(s,r||{mode:'NONE',left:-1,right:-1});
+    const current=valueFor(r);
+    for(const [value,title] of values){
+      if(value!=='NONE'&&value!=='CUSTOM'&&
+         !value.startsWith('MONO:')&&!value.startsWith('STEREO:'))continue;
+      // CUSTOM is a pointer to Advanced Patch, never an invented pin.
+      const button=node('button','arSourceChoice',title);
+      button.type='button';button.dataset.sourceChoice=value;
+      button.setAttribute('aria-pressed',String(value===current));
+      button.disabled=!!s.pending||!s.ready;
+      sourceChoices.appendChild(button);
+    }
+    const advanced=node('button','arSourceAdvanced','ADVANCED PATCH · NONADJACENT L/R');
+    advanced.type='button';advanced.dataset.sourceAdvanced='';
+    sourceChoices.appendChild(advanced);
+    sourceNote.textContent=!s.ready?'No verified native driver input ports':
+      s.monitor?'MUTE OUTPUT to safely change SOURCE · no automatic unmute':
+      'Selecting SOURCE commits via existing native routing; wait for ACK';
+  };
+  const openSourceChooser=channel=>{
+    if(!Number.isInteger(channel)||channel<0||channel>=10)return;
+    sourceChooserChannel=channel;sourceChooser.hidden=false;
+    renderSourceChooser();
+  };
+  sourceChooser.addEventListener('click',event=>{
+    if(event.target.closest('[data-source-close]')){closeSourceChooser();return;}
+    if(event.target.closest('[data-source-advanced]')){
+      const ch=sourceChooserChannel;closeSourceChooser();openIO('inputs',ch);return;
+    }
+    const button=event.target.closest('[data-source-choice]');
+    if(!button||sourceChooserChannel<0)return;
+    const [mode,a,b]=button.dataset.sourceChoice.split(':');
+    if(!['NONE','MONO','STEREO'].includes(mode))return;
+    const channel=sourceChooserChannel;
+    const outcome=window.__arMixCommitMutedSource?.(
+      channel,mode,mode==='NONE'?-1:Number(a),mode==='STEREO'?Number(b):-1);
+    sourceNote.textContent=outcome?.ok?
+      outcome.pending?'SOURCE PENDING · WAIT NATIVE ACK':
+        'SOURCE ALREADY ACTIVE · NATIVE ACK':
+      outcome?.error||'Native source route rejected';
+    if(!outcome?.ok)return;
+    if(outcome.pending)quickSourcePending={
+      channel,epoch:outcome.epoch,value:button.dataset.sourceChoice};
+    renderSourceChooser();
+  });
   // MS5: explicit Sends-on-Faders control, scoped to a single real AUX return.
   // MAIN fader DOM and all audio controls remain resident and unmodified.
   const sofControls=node('div','arSofControls');
@@ -4308,10 +4386,7 @@ scheduleDemoMeter();
     const step=button.dataset.focusStep;
     if(step==='source'){
       if(!route().ready)openIO('device');
-      else {
-        setMode('ROUTE');
-        strip?.querySelector('.arBankSource')?.focus();
-      }
+      else openSourceChooser(index);
     } else if(step==='fx'){
       setMode('FX');
       if(typeof chooseChannel==='function')chooseChannel(index);
@@ -4323,6 +4398,9 @@ scheduleDemoMeter();
       editSend(index,found?found.to-10:0,button);
     } else if(step==='output')openIO('outputs',index);
   });
+  document.addEventListener('keydown',event=>{
+    if(event.key==='Escape'&&!sourceChooser.hidden)closeSourceChooser();
+  },true);
   document.addEventListener('click',event=>{
     if(event.target.closest?.('#arChannelFocus,[data-focus-step]'))return;
     const strip=event.target.closest?.('.strip[data-strip],[data-choose],[data-chanselect]');
@@ -4512,6 +4590,11 @@ scheduleDemoMeter();
     el('arIOFeedback').textContent=message;
     sendFeedback=message;
     refresh();
+    if(!sourceChooser.hidden){
+      sourceNote.textContent=ack?.ok?'NATIVE SOURCE ACK · OUTPUT REMAINS MUTED':
+        'SOURCE REJECTED · '+(ack?.error||'Route unchanged');
+      renderSourceChooser();
+    }
   });
   window.addEventListener('arMixRoutingDraftChanged',()=>{lastSignature='';refresh();});
   window.addEventListener('arMixAuxMasterGainResult',event=>{

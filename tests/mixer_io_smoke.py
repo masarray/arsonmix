@@ -80,7 +80,14 @@ async def main():
         await page.locator('[data-focus-step="fx"]').click()
         assert await page.locator('#mixer').get_attribute('data-io-mode')=='FX'
         await page.locator('[data-focus-step="source"]').click()
-        assert await page.locator('#mixer').get_attribute('data-io-mode')=='ROUTE'
+        assert await page.locator('.arSourceChooser').is_visible()
+        assert await page.locator('.arSourceChoice').count()>=2
+        assert await page.locator('.arSourceChoice[aria-pressed="true"]').count()==1
+        await page.locator('[data-source-close]').click()
+        assert not await page.locator('.arSourceChooser').is_visible()
+        # The legacy strip selector is intentionally available in ROUTE
+        # mode; selected-channel SOURCE no longer changes the global bank.
+        await page.locator('[data-mix-mode="ROUTE"]').click()
         # Physical SOURCE changes while output is ARMED must fail closed:
         # no silent MUTE, graph mutation, or fake LIVE acknowledgement.
         await page.evaluate("""status=>{
