@@ -325,3 +325,17 @@ test('M1 SOURCE safe unmuted handoff uses native input crossfade with immutable 
  assert.match(block,/fade\.remaining=64/);
  assert.doesNotMatch(ui,/new AudioContext\(/);
 });
+
+test('M1 focused SEND editor uses native live gain for accepted POST and AUX RETURN without structural APPLY',()=>{
+ const gui=read('web/mixer-io.js'),html=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
+ for(const src of [gui,html]){
+  assert.match(src,/function sendEditorLiveReady\(focus\)/);
+  assert.match(src,/__arMixSetLiveAuxMasterGain\?\.\(/);
+  assert.match(src,/__arMixSetLiveAuxSendGain\?\.\(/);
+  assert.match(src,/field==='gain'&&tap==='POST'&&sendEditorLiveReady/);
+  assert.match(src,/x\.tap==='POST'/);
+  assert.match(src,/__arMixStageAuxSendEdit\?\.\(/);
+  assert.match(src,/__arMixStageAuxReturnEdit\?\.\(/);
+  assert.match(src,/PRE and structural edits: MUTE \+ APPLY/);
+ }
+});
