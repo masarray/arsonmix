@@ -268,7 +268,7 @@ test('SOURCE2 selected-channel popover selects verified physical ports without a
  const js=read('web/mixer-io.js');
  assert.match(js,/function refreshFocus\(s\)/);
  assert.match(js,/const openSourceChooser=channel=>/);
- assert.match(js,/window\.__arMixCommitMutedSource\?\.\(/);
+ assert.match(js,/window\.__arMixCommitSelectedSource\?\.\(/);
  assert.match(js,/sourceNote\.textContent/);
  assert.match(js,/sourceChooser\.addEventListener\('click'/);
  assert.match(js,/portsFor\(s,r\|\|/);
@@ -302,8 +302,26 @@ test('M1 named input sources are persisted only for native device and enabled pi
   assert.match(src,/const validAlias=\(a,pins\)=>/);
   assert.match(src,/localStorage\.setItem\(key,JSON\.stringify\(items\)\)/);
   assert.match(src,/const aliasValue=a=>/);
-  assert.match(src,/window\.__arMixCommitMutedSource\?\.\(/);
+  assert.match(src,/window\.__arMixCommitSelectedSource\?\.\(/);
   assert.match(src,/data-source-alias-save/);
   assert.match(src,/if\(!sourceIdentity\(route\(\)\)\)deviceRefresh\(\)/);
  }
+});
+
+
+test('M1 SOURCE safe unmuted handoff uses native input crossfade with immutable FX graph',()=>{
+ const ui=read('web/mixer-io.js'),monitor=read('web/monitor.js');
+ const main=read('src/Main.cpp'),engine=read('src/LiveAudioEngine.h');
+ const lab=read('src/LiveDryRoutingLab.h'),block=read('engine/core/PreparedMixerBlock.h');
+ assert.match(ui,/window\.__arMixCommitSelectedSource\?\.\(/);
+ assert.match(ui,/arMixSourceSwitchResult/);
+ assert.match(monitor,/window\.__arMixCommitSelectedSource=/);
+ assert.match(monitor,/action:"routingSourceSwitch"/);
+ assert.match(monitor,/arMixSourceSwitchAck/);
+ assert.match(main,/action=="routingSourceSwitch"/);
+ assert.match(engine,/switchDryRoutingLabSource\(/);
+ assert.match(lab,/switchPhysicalSource\(/);
+ assert.match(block,/physicalTarget_\[strip\]\.store/);
+ assert.match(block,/fade\.remaining=64/);
+ assert.doesNotMatch(ui,/new AudioContext\(/);
 });

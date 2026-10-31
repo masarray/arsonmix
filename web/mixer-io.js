@@ -185,7 +185,7 @@
         const button=node('button','arSourceChoice',label);
         button.type='button';button.dataset.sourceChoice=value;
         button.setAttribute('aria-pressed',String(value===current));
-        button.disabled=!!s.pending||!s.ready;
+        button.disabled=!!s.pending||!!quickSourcePending||!s.ready;
         line.appendChild(button);
         const remove=node('button','arSourceAliasRemove','×');
         remove.type='button';remove.dataset.sourceAliasRemove=String(i);
@@ -201,7 +201,7 @@
       const button=node('button','arSourceChoice',title);
       button.type='button';button.dataset.sourceChoice=value;
       button.setAttribute('aria-pressed',String(value===current));
-      button.disabled=!!s.pending||!s.ready;
+      button.disabled=!!s.pending||!!quickSourcePending||!s.ready;
       sourceChoices.appendChild(button);
     }
     const advanced=node('button','arSourceAdvanced','ADVANCED PATCH · NONADJACENT L/R');
@@ -218,8 +218,8 @@
       'Saved for this verified device and enabled-pin layout · native ACK required':
       'Awaiting actual driver inventory; naming disabled until hardware is verified';
     sourceNote.textContent=!s.ready?'No verified native driver input ports':
-      s.monitor?'MUTE OUTPUT to safely change SOURCE · no automatic unmute':
-      'Selecting SOURCE commits via existing native routing; wait for ACK';
+      s.monitor?'Same-format physical input changes use native 64-sample crossfade · new patch or format requires MUTE':
+      'Choose verified source; native ACK required before it is LIVE';
   };
   const openSourceChooser=channel=>{
     if(!Number.isInteger(channel)||channel<0||channel>=10)return;
@@ -262,7 +262,7 @@
     const [mode,a,b]=button.dataset.sourceChoice.split(':');
     if(!['NONE','MONO','STEREO'].includes(mode))return;
     const channel=sourceChooserChannel;
-    const outcome=window.__arMixCommitMutedSource?.(
+    const outcome=window.__arMixCommitSelectedSource?.(
       channel,mode,mode==='NONE'?-1:Number(a),mode==='STEREO'?Number(b):-1);
     sourceNote.textContent=outcome?.ok?
       outcome.pending?'SOURCE PENDING · WAIT NATIVE ACK':
@@ -270,7 +270,7 @@
       outcome?.error||'Native source route rejected';
     if(!outcome?.ok)return;
     if(outcome.pending)quickSourcePending={
-      channel,epoch:outcome.epoch,value:button.dataset.sourceChoice};
+      channel,epoch:outcome.epoch,value:button.dataset.sourceChoice,live:!!outcome.live};
     renderSourceChooser();
   });
   // MS5: explicit Sends-on-Faders control, scoped to a single real AUX return.
@@ -1190,10 +1190,10 @@
     const value=select.value,parts=value.split(':');
     const mode=parts[0],left=mode==='NONE'?-1:Number(parts[1]),right=mode==='STEREO'?Number(parts[2]):-1;
     const direct=select.classList.contains('arBankSource');
-    const response=direct?window.__arMixCommitMutedSource?.(channel,mode,left,right):
+    const response=direct?window.__arMixCommitSelectedSource?.(channel,mode,left,right):
       window.__arMixStageChannelInput?.(channel,mode,left,right);
     if(response?.pending)quickSourcePending={channel,epoch:response.epoch,
-      value:valueFor({mode,left,right})};
+      value:valueFor({mode,left,right}),live:!!response.live};
     if(!response?.ok){
       const message=response?.error||'Native INPUT PATCH unavailable';
       el('arIOFeedback').textContent=message;
@@ -1488,6 +1488,19 @@
       sourceNote.textContent=ack?.ok?'NATIVE SOURCE ACK · OUTPUT REMAINS MUTED':
         'SOURCE REJECTED · '+(ack?.error||'Route unchanged');
       renderSourceChooser();
+    }
+  });
+  window.addEventListener('arMixSourceSwitchResult',event=>{
+    const result=event.detail||{};
+    if(quickSourcePending?.live&&quickSourcePending.channel===result.channel)
+      quickSourcePending=null;
+    const s=route();
+    lastSignature='';refresh();
+    if(!sourceChooser.hidden){
+      renderSourceChooser();
+      sourceNote.textContent=result.ok?
+        'SOURCE ACK · 64-SAMPLE INPUT CROSSFADE · FX AND BUS UNCHANGED':
+        'SOURCE REJECTED · '+(result.error||'Verified route unchanged');
     }
   });
   window.addEventListener('arMixRoutingDraftChanged',()=>{lastSignature='';refresh();});
