@@ -60,6 +60,11 @@ if(BUILD_TESTING)
   add_executable(ARMixMixerRoutingTests tests/mixer_routing_plan_test.cpp)
   target_compile_features(ARMixMixerRoutingTests PRIVATE cxx_std_20)
   add_test(NAME TenStripStaticRoutingAndMaster COMMAND ARMixMixerRoutingTests)
+  # M3D atomic native Session: the accepted Console roster cannot advance
+  # without a successful epoch/revision-gated PCM publication.
+  add_executable(ARMixDynamicAcceptedSessionTests tests/dynamic_accepted_session_test.cpp)
+  target_compile_features(ARMixDynamicAcceptedSessionTests PRIVATE cxx_std_20)
+  add_test(NAME M3DAtomicStudioBusFxChannelSessionRollback COMMAND ARMixDynamicAcceptedSessionTests)
   add_executable(ARMixChannelRoutingContractTests tests/channel_routing_contract_test.cpp)
   target_compile_features(ARMixChannelRoutingContractTests PRIVATE cxx_std_20)
   add_test(NAME MonoStereoSparsePhysicalPortRouting COMMAND ARMixChannelRoutingContractTests)
