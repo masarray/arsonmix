@@ -15,6 +15,111 @@ using namespace armix::mixer;
 static bool close(float a,float b,float tol=1.e-5f){return std::abs(a-b)<tol;}
 
 
+
+static void verifyStudioConsoleBusBatchPcm() {
+    using Kind=ChannelEdit::Kind;
+    DynamicChannelRoster bank;
+    std::array<ChannelEdit,3> create{};
+    for(int i=0;i<3;++i){
+        create[i].kind=Kind::add;create[i].position=static_cast<std::size_t>(i);
+        create[i].role=i==2?ChannelRole::main:ChannelRole::input;
+        create[i].format=i==2?ProcessingFormat::stereo:ProcessingFormat::mono;
+        create[i].text=i==0?"Lead Vocal":i==1?"Backing Vocal":"MAIN";
+    }
+    auto made=bank.edit(0,create);
+    assert(made.ok()&&bank.size()==3);
+    const auto a=made.createdIds[0],b=made.createdIds[1];
+    const auto mainId=made.createdIds[2];
+    std::array<ChannelEdit,2> outs{};
+    for(int i=0;i<2;++i){
+        outs[i].kind=Kind::setPrimaryOutput;
+        outs[i].id=made.createdIds[static_cast<std::size_t>(i)];
+        outs[i].target=mainId;
+    }
+    assert(bank.edit(bank.revision(),outs).ok());
+    const std::array<ChannelId,2> vocalIds{a,b};
+    auto groupResult=bank.createBusForSelected(bank.revision(),vocalIds,
+                                               "VOCAL BUS",ChannelRole::group);
+    assert(groupResult.ok()&&groupResult.createdIds.size()==1);
+    const auto vocalBus=groupResult.createdIds[0];
+    assert(bank.size()==4&&bank.find(vocalBus)->role==ChannelRole::group);
+    for(const auto id:vocalIds){
+        const auto& sends=bank.find(id)->sends;
+        assert(sends.size()==1&&sends.front().primaryOutput);
+        assert(sends.front().destination==vocalBus);
+    }
+    assert(bank.find(vocalBus)->sends.front().destination==mainId);
+    // FX return is a NEW logical lane, not a borrowed physical input strip.
+    // It adds a parallel send while preserving selected source primary OUT.
+    const std::array<ChannelId,1> fxSource{a};
+    auto fxResult=bank.createBusForSelected(bank.revision(),fxSource,
+                                            "FX REVERB",ChannelRole::fxReturn,.25f);
+    assert(fxResult.ok()&&bank.size()==5);
+    const auto fxBus=fxResult.createdIds.front();
+    assert(bank.find(fxBus)->role==ChannelRole::fxReturn);
+    assert(bank.find(a)->sends.size()==2);
+    assert(bank.find(a)->sends[0].destination==vocalBus);
+    assert(bank.find(a)->sends[0].primaryOutput);
+    assert(bank.find(a)->sends[1].destination==fxBus);
+    assert(!bank.find(a)->sends[1].primaryOutput);
+    // Selecting OUT:NONE removes just the primary destination. SEND
+    // remains audible, so CONSOLE should present a SEND ONLY label.
+    ChannelEdit output;output.kind=Kind::setPrimaryOutput;
+    output.id=a;output.target={};
+    assert(bank.edit(bank.revision(),std::span<const ChannelEdit>(&output,1)).ok());
+    assert(bank.find(a)->sends.size()==1);
+    assert(bank.find(a)->sends[0].destination==fxBus);
+    output.target=vocalBus;
+    assert(bank.edit(bank.revision(),std::span<const ChannelEdit>(&output,1)).ok());
+    // One prepared PCM graph, source -> GROUP (2x insert) -> MAIN,
+    // plus parallel Lead Vocal -> FX bus (.25) -> MAIN.
+    DynamicGraphRequest req;
+    req.physicalInputs=2;req.maxFrames=32;
+    req.sources={{a,0,-1,false},{b,1,-1,false}};
+    DynamicPreparedMixerBlock render;
+    DynamicGraphError error;
+    assert(DynamicPreparedMixerBlock::compile(bank,req,render,error));
+    assert(render.channelCount()==5&&render.activeChannels()==5);
+    std::array<float,32> micA{},micB{},l{},r{};
+    micA.fill(.2f);micB.fill(.4f);
+    const float* inputs[]{micA.data(),micB.data()};
+    int fxCalls=0;
+    const auto fx=[&](ChannelId id,float* left,float* right,int frames) noexcept {
+        ++fxCalls;
+        if(id==vocalBus)
+            for(int i=0;i<frames;++i){left[i]*=2.f;right[i]*=2.f;}
+    };
+    assert(render.process(inputs,2,l.data(),r.data(),32,fx));
+    constexpr float center=.7071067811865475f;
+    const float expected=(2.f*(.2f+.4f)+.25f*.2f)*center;
+    assert(close(l[0],expected)&&close(r[0],expected));
+    assert(fxCalls==5);
+    // Duplicate selected IDs, nonexistent IDs and stale revisions fail
+    // with zero alteration to the accepted roster and existing PCM graph.
+    const auto revision=bank.revision();
+    const std::array<ChannelId,2> duplicate{a,a};
+    auto rejected=bank.createBusForSelected(revision,duplicate,
+                                            "INVALID",ChannelRole::group);
+    assert(rejected.fault==ChannelEditFault::invalidAction);
+    rejected=bank.createBusForSelected(revision-1,vocalIds,
+                                      "STALE",ChannelRole::group);
+    assert(rejected.fault==ChannelEditFault::staleRevision);
+    const std::array<ChannelId,1> missing{ChannelId{999999}};
+    rejected=bank.createBusForSelected(revision,missing,
+                                      "MISSING",ChannelRole::group);
+    assert(rejected.fault==ChannelEditFault::missingChannel);
+    assert(bank.size()==5&&bank.revision()==revision);
+    assert(render.process(inputs,2,l.data(),r.data(),32,fx));
+    assert(close(l[0],expected));
+    // OUT NONE without any SEND removes source from actual PCM graph.
+    ChannelEdit clearOutput;clearOutput.kind=Kind::setPrimaryOutput;
+    clearOutput.id=b;clearOutput.target={};
+    assert(bank.edit(revision,std::span<const ChannelEdit>(&clearOutput,1)).ok());
+    assert(DynamicPreparedMixerBlock::compile(bank,req,render,error));
+    assert(render.process(inputs,2,l.data(),r.data(),32,fx));
+    assert(close(l[0],(2.f*.2f+.25f*.2f)*center));
+}
+
 static void verifyDynamicChannelRoster() {
     DynamicChannelRoster bank;
     std::vector<ChannelEdit> addOps;
@@ -370,6 +475,29 @@ static void verifyLegacyToDynamicProductionPcmParity() {
     assert(migrated.ids.legacyFxIndex(migrated.ids.aux[0])==stripCount);
     assert(migrated.ids.legacyFxIndex(migrated.ids.main)==-1);
     assert(migrated.ids.legacyFxIndex(migrated.ids.monitor)==-2);
+    // M3: legacy implicit MAIN paths are now marked PRIMARY, not ordinary
+    // parallel SENDs. Otherwise a migrated Studio subgroup would double
+    // its dry output (old direct MAIN plus new BUS -> MAIN).
+    const auto& direct=migrated.roster.find(migrated.ids.inputs[1])->sends;
+    assert(std::any_of(direct.begin(),direct.end(),[&](const auto& edge){
+        return edge.destination==migrated.ids.main && edge.primaryOutput;
+    }));
+    const auto& auxDirect=migrated.roster.find(migrated.ids.aux[0])->sends;
+    assert(std::any_of(auxDirect.begin(),auxDirect.end(),[&](const auto& edge){
+        return edge.destination==migrated.ids.main && edge.primaryOutput;
+    }));
+    DynamicChannelRoster audition=migrated.roster; // only control-side clone
+    const std::array<ChannelId,1> toBus{migrated.ids.inputs[1]};
+    const auto newBus=audition.createBusForSelected(
+        audition.revision(),toBus,"MIGRATED VOCAL BUS",ChannelRole::group);
+    assert(newBus.ok() && audition.size()==migrated.roster.size()+1);
+    const auto& redirected=audition.find(migrated.ids.inputs[1])->sends;
+    assert(std::none_of(redirected.begin(),redirected.end(),[&](const auto& edge){
+        return edge.primaryOutput && edge.destination==migrated.ids.main;
+    }));
+    assert(std::any_of(redirected.begin(),redirected.end(),[&](const auto& edge){
+        return edge.primaryOutput && edge.destination==newBus.createdIds.front();
+    }));
     PreparedRenderGraph oldGraph;
     RenderError error;
     assert(PreparedRenderGraph::compile(channels,ports,sends,oldGraph,error,aux));
@@ -548,6 +676,7 @@ static void verifyRealtimeAuxMasterPcmBothOutputs() {
 }
 
 int main() {
+    verifyStudioConsoleBusBatchPcm();
     verifyRealtimeAuxMasterPcmBothOutputs();
     verifyRealtimeAuxPostGainWithoutGraphRebuild();
     verifyLegacyToDynamicProductionPcmParity();
