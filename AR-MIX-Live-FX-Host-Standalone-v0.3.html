@@ -3262,7 +3262,7 @@ scheduleDemoMeter();
   let mode='FX', lastStatus={}, deviceInventory=null, ioTab='device', lastSignature='', focusedInput=2;
   let monitorSendsExpanded=false;
   // DEVICE1: staged selections are UI-only; only positive native ACK changes active hardware.
-  let deviceDraft=null,deviceBusy=false,deviceNote='',deviceRequest='',deviceRequestSeq=0,lastDeviceRefresh=0;
+  let deviceDraft=null,deviceBusy=false,deviceNote='',deviceRequest='',deviceRequestSeq=0,lastDeviceRefresh=0,lastDeviceRescan=0;
   // Pending SOURCE ACK is a UI projection only; monitor.js owns the native route.
   let quickSourcePending=null;
   const el=id=>document.getElementById(id);
@@ -4083,10 +4083,20 @@ scheduleDemoMeter();
       (deviceSameEndpoint(d)&&
         (!pinsEqual(d.enabledInputs,a.enabledInputs)||!pinsEqual(d.enabledOutputs,a.enabledOutputs))));
   }
-  function deviceRefresh(){
+  function deviceRefresh(rescan=false){
     if(!isNative()||deviceBusy)return;
-    const now=Date.now();if(now-lastDeviceRefresh<1000)return;
-    lastDeviceRefresh=now;backend.emitEvent('arMixAction',{action:'audioDeviceInventory'});
+    const now=Date.now();
+    if(rescan){
+      if(now-lastDeviceRescan<1000)return; // one vendor scan per user action burst
+      lastDeviceRescan=now;
+      deviceNote='SCANNING DRIVER LIST · output must be MUTED';
+    }else{
+      if(now-lastDeviceRefresh<300)return;
+      lastDeviceRefresh=now;
+    }
+    backend.emitEvent('arMixAction',{
+      action:rescan?'audioDeviceRefresh':'audioDeviceInventory'
+    });
   }
   function deviceApply(){
     if(!isNative()||deviceBusy||!deviceDraft||!deviceInventory?.active)return;
@@ -4132,7 +4142,7 @@ scheduleDemoMeter();
         'NO VERIFIED DEVICE · select a reported interface and APPLY DEVICE'));
     if(!types.length){
       panel.appendChild(node('p','arIODeviceEmpty',
-        isNative()?'Scanning actual Windows drivers. Use REFRESH DEVICE LIST if needed.':
+        isNative()?'No devices reported in the cached list. MUTE outputs, then press REFRESH DEVICE LIST to rescan.':
           'Hardware cannot be changed in a browser-only preview.'));
     } else if(d){
       const t=deviceType(d.backend),separate=!!t?.separate;
@@ -4479,7 +4489,7 @@ scheduleDemoMeter();
     if(b.dataset.ioClose!==undefined){e.preventDefault();e.stopImmediatePropagation();closeIO();return;}
     if(b.dataset.ioTab){e.preventDefault();e.stopImmediatePropagation();ioTab=b.dataset.ioTab;matrixMessage='';lastSignature='';refreshIO();return;}
     if(b.dataset.ioRefreshDevice!==undefined){
-      e.preventDefault();e.stopImmediatePropagation();deviceRefresh();return;
+      e.preventDefault();e.stopImmediatePropagation();deviceRefresh(true);return;
     }
     if(b.dataset.ioDeviceApply!==undefined){
       e.preventDefault();e.stopImmediatePropagation();deviceApply();return;
@@ -4564,6 +4574,13 @@ scheduleDemoMeter();
     const hadDraft=deviceDirty();
     deviceInventory=d;
     if(!hadDraft&&!deviceBusy)deviceDraft=makeDeviceDraft();
+    if(d?.scanState==='SCANNED')
+      deviceNote='DEVICE LIST REFRESHED · '+Number(d.scanDurationMs||0).toFixed(0)+' ms · output remains MUTED';
+    else if(d?.scanState==='BLOCKED_ARMED')
+      deviceNote='REFRESH REJECTED · MUTE MAIN/OUTPUT1 and finish audio transitions first';
+    else if(d?.scanState==='SCAN_ERROR')
+      deviceNote='DRIVER SCAN FAILED · current device remains unchanged';
+    // CACHED is a non-disruptive snapshot; do not erase pending operator notes.
     lastSignature='';if(!overlay.hidden)refreshIO();
   });
   backend?.addEventListener?.('arMixAudioDeviceApplyAck',ack=>{
