@@ -9,6 +9,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <unordered_set>
 
 // DYN0: control-thread session model, NOT a second renderer or a LIVE audio graph.
 // One state type serves every future input, return, group, monitor and master.
@@ -26,6 +27,7 @@ struct ChannelSendRef final {
     float gain=1.f;
     bool preFader=false;
     float pan=0.f; // send-only balance: PRE mono uses equal-power coefficients
+    bool primaryOutput=false; // OUT selector edge, not a parallel SEND
 };
 struct ChannelStripDefinition final {
     ChannelId id{};
@@ -53,7 +55,7 @@ enum class ChannelEditFault : std::uint8_t {
 struct ChannelEdit final {
     enum class Kind : std::uint8_t {
         add, duplicate, remove, move, rename, setFormat, setFader, setPan,
-        setMute, setSolo, addInsertReference, addSendReference
+        setMute, setSolo, addInsertReference, addSendReference, setPrimaryOutput
     } kind=Kind::add;
     ChannelId id{};       // existing channel (except add)
     ChannelId target{};   // send destination
@@ -63,6 +65,7 @@ struct ChannelEdit final {
     float value=0.f;
     bool enabled=false;      // mute/solo value (or future enable operation)
     bool preFader=false;     // send tap at construction, no hidden POST default
+    bool primaryOutput=false; // exclusive OUT edge, independent of parallel SEND
     float sendPan=0.f;      // independent send PAN, never channel fader PAN
     std::string text;
 };
@@ -189,15 +192,34 @@ public:
                     else it->insertCatalogIds.push_back(op.text);
                     break;
                 case ChannelEdit::Kind::addSendReference:
-                    if(op.target.value==0 || op.target==op.id || seek(op.target)==candidate.end())
+                    if(op.primaryOutput && std::any_of(it->sends.begin(),it->sends.end(),
+                        [](const auto& s){return s.primaryOutput;}))
+                        result.fault=ChannelEditFault::invalidValue;
+                    else if(op.target.value==0 || op.target==op.id || seek(op.target)==candidate.end())
                         result.fault=ChannelEditFault::invalidValue;
                     else if(it->sends.size()>=budget_.maximumSendsPerChannel)
                         result.fault=ChannelEditFault::budgetExceeded;
                     else if(!std::isfinite(op.value)||op.value<0.f||op.value>4.f||
                             !std::isfinite(op.sendPan)||op.sendPan< -1.f||op.sendPan>1.f)
                         result.fault=ChannelEditFault::invalidValue;
-                    else it->sends.push_back({op.target,op.value,op.preFader,op.sendPan});
+                    else it->sends.push_back({op.target,op.value,op.preFader,op.sendPan,op.primaryOutput});
                     break;
+                case ChannelEdit::Kind::setPrimaryOutput: {
+                    if(it->role==ChannelRole::main || it->role==ChannelRole::monitor ||
+                       op.target==op.id || (op.target.value && seek(op.target)==candidate.end())) {
+                        result.fault=ChannelEditFault::invalidValue;break;
+                    }
+                    auto& edges=it->sends;
+                    edges.erase(std::remove_if(edges.begin(),edges.end(),
+                        [](const auto& x){return x.primaryOutput;}),edges.end());
+                    if(op.target.value) {
+                        if(edges.size()>=budget_.maximumSendsPerChannel) {
+                            result.fault=ChannelEditFault::budgetExceeded;break;
+                        }
+                        edges.push_back({op.target,1.f,false,0.f,true});
+                    }
+                    break;
+                }
                 default:result.fault=ChannelEditFault::invalidAction;break;
                 }
                 if(result.fault!=ChannelEditFault::none)break;
@@ -213,6 +235,77 @@ public:
         channels_.swap(candidate);
         nextId_=next;
         result.revision=++revision_;
+        return result;
+    }
+
+    // One Studio Console transaction: new independent BUS + multi-source
+    // primary output reroute, or FX return + parallel sends. CONTROL THREAD.
+    // Caller must compile one native graph and publish with device epoch/ACK.
+    ChannelEditResult createBusForSelected(
+        std::uint64_t expectedRevision,std::span<const ChannelId> selected,
+        std::string name,ChannelRole role,float parallelGain=.25f) {
+        ChannelEditResult result;result.revision=revision_;
+        if(expectedRevision!=revision_) {
+            result.fault=ChannelEditFault::staleRevision;return result;
+        }
+        if((role!=ChannelRole::group && role!=ChannelRole::fxReturn) ||
+           selected.empty() || !validName(name) ||
+           !std::isfinite(parallelGain)||parallelGain<0.f||parallelGain>4.f ||
+           revision_==std::numeric_limits<std::uint64_t>::max()) {
+            result.fault=ChannelEditFault::invalidAction;return result;
+        }
+        if(nextId_==0 || nextId_==std::numeric_limits<std::uint64_t>::max()) {
+            result.fault=ChannelEditFault::idExhausted;return result;
+        }
+        auto candidate=channels_;
+        auto mainIt=std::find_if(candidate.begin(),candidate.end(),
+            [](const auto& row){return row.role==ChannelRole::main;});
+        if(mainIt==candidate.end() || std::count_if(candidate.begin(),candidate.end(),
+            [](const auto& row){return row.role==ChannelRole::main;})!=1) {
+            result.fault=ChannelEditFault::invalidAction;return result;
+        }
+        const auto mainId=mainIt->id;
+        const ChannelId busId{nextId_};
+        std::unordered_set<std::uint64_t> seen;
+        seen.reserve(selected.size());
+        for(std::size_t i=0;i<selected.size();++i) {
+            const auto id=selected[i];
+            result.actionIndex=i;
+            if(id.value==0 || !seen.insert(id.value).second) {
+                result.fault=ChannelEditFault::invalidAction;return result;
+            }
+            auto it=std::find_if(candidate.begin(),candidate.end(),
+                [id](const auto& row){return row.id==id;});
+            if(it==candidate.end()) {
+                result.fault=ChannelEditFault::missingChannel;return result;
+            }
+            if(it->role==ChannelRole::main || it->role==ChannelRole::monitor) {
+                result.fault=ChannelEditFault::invalidValue;return result;
+            }
+            if(role==ChannelRole::group) {
+                it->sends.erase(std::remove_if(it->sends.begin(),it->sends.end(),
+                    [](const auto& edge){return edge.primaryOutput;}),
+                    it->sends.end());
+            }
+            if(it->sends.size()>=budget_.maximumSendsPerChannel) {
+                result.fault=ChannelEditFault::budgetExceeded;return result;
+            }
+            it->sends.push_back({busId,role==ChannelRole::group?1.f:parallelGain,
+                                 false,0.f,role==ChannelRole::group});
+        }
+        ChannelStripDefinition bus;
+        bus.id=busId;bus.role=role;bus.format=ProcessingFormat::stereo;
+        bus.name=std::move(name);
+        bus.sends.push_back({mainId,1.f,false,0.f,true});
+        const auto position=static_cast<std::size_t>(mainIt-candidate.begin());
+        candidate.insert(candidate.begin()+static_cast<std::ptrdiff_t>(position),
+                         std::move(bus));
+        if(!withinBudget(candidate)) {
+            result.fault=ChannelEditFault::budgetExceeded;return result;
+        }
+        channels_.swap(candidate);
+        ++nextId_;result.revision=++revision_;
+        result.createdIds.push_back(busId);
         return result;
     }
 
