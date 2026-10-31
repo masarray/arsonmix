@@ -1275,7 +1275,7 @@
       deviceDirty()||!hardwareReady(route())));
     start.setAttribute('aria-label',lastStatus.monitor?'Mute physical output':
       'Start verified live routing and arm hardware output');
-    activeLine.appendChild(start);
+    if(lastStatus.monitor)activeLine.appendChild(start);
     const accepted=route().acceptedRoute?.channels||[];
     const used=accepted.map((r,i)=>r.mode==='MONO'||r.mode==='STEREO'?
       'CH'+String(i+1).padStart(2,'0'):null).filter(Boolean);
