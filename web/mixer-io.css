@@ -607,6 +607,7 @@
 .arIODeviceStartAudio:disabled{opacity:.5;cursor:default}
 .arIODeviceFirstSound{padding:6px 11px;background:#1d3139;color:#b9d7df;
   font:10px/1.45 "ArSonMix Inter","Segoe UI",sans-serif;border-bottom:1px solid #36525d}
+.arIODeviceCaptureEvidence{padding:5px 11px;font:10px/1.45 "ArSonMix Inter","Segoe UI",sans-serif;color:#a5d5de;background:#132b34;overflow-wrap:anywhere;letter-spacing:0}
 .arIOSoftwareUsedBy{font-size:9px;color:#99ccbd;white-space:nowrap}
 .arIOSoftwareName{flex-wrap:wrap}
 
