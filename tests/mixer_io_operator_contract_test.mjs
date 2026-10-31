@@ -247,8 +247,11 @@ test('P0 FIRST SOUND raw capture has per-pin native callback truth BEFORE route 
   const ui=read('web/mixer-io.js');
   const html=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
   const css=read('web/mixer-io.css');
-  const early=native.slice(native.indexOf('if (activeDiagnosticRoute == armix::diagnostics::Route::normal\n            && !dryRoutingLab_.active())'),
-                           native.indexOf('const std::uint64_t beginUs',native.indexOf('if (activeDiagnosticRoute == armix::diagnostics::Route::normal\n            && !dryRoutingLab_.active())')));
+  const start=native.indexOf('// P0: SILENT output must not mean blind capture diagnostics.');
+  assert.ok(start>0,'unpatched native callback must retain actual PCM observation');
+  const end=native.indexOf('const std::uint64_t beginUs',start);
+  assert.ok(end>start,'early mute-only callback path must precede full DSP renderer');
+  const early=native.slice(start,end);
   assert.match(early,/captureBoundary_\.observe\(inputs/);
   assert.match(early,/captureObservationBlocks_\.fetch_add\(1/);
   assert.match(early,/callbackInputs_\.store\(inputChannels/);
