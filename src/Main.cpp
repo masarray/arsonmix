@@ -745,6 +745,214 @@ private:
             browser_.emitEventIfBrowserIsVisible ("arMixScanProgress", catalog_.progress());
     }
 
+
+    // DEVICE1: the WebView2 matrix is the operator GUI; JUCE remains the
+    // single device owner. No hardware calls ever run from the audio callback.
+    juce::var currentDeviceSnapshot() const
+    {
+        // This readback is used for UI and ACK, never to claim that a staged
+        // select value is already open/playing on hardware.
+        auto o=std::make_unique<juce::DynamicObject>();
+        auto& manager=const_cast<LiveAudioEngine&>(engine_).devices();
+        juce::AudioDeviceManager::AudioDeviceSetup setup;
+        manager.getAudioDeviceSetup(setup);
+        auto* device=manager.getCurrentAudioDevice();
+        o->setProperty("backend",manager.getCurrentAudioDeviceType());
+        o->setProperty("captureDevice",setup.inputDeviceName);
+        o->setProperty("playbackDevice",setup.outputDeviceName);
+        o->setProperty("rate",device!=nullptr&&device->isOpen()?device->getCurrentSampleRate():0.0);
+        o->setProperty("buffer",device!=nullptr&&device->isOpen()?device->getCurrentBufferSizeSamples():0);
+        o->setProperty("open",device!=nullptr&&device->isOpen());
+        o->setProperty("outputMuted",engine_.isOutputMuted());
+        o->setProperty("deviceGeneration",engine_.status().getProperty("deviceGeneration",0));
+        juce::Array<juce::var> inputNames,outputNames,inputPins,outputPins,rates,buffers;
+        if(device!=nullptr&&device->isOpen()) {
+            const auto inputs=device->getInputChannelNames();
+            const auto outputs=device->getOutputChannelNames();
+            const auto inputMask=device->getActiveInputChannels();
+            const auto outputMask=device->getActiveOutputChannels();
+            for(int i=0;i<juce::jmin(64,inputs.size());++i) {
+                inputNames.add(inputs[i]);
+                if(inputMask[i])inputPins.add(i);
+            }
+            for(int i=0;i<juce::jmin(64,outputs.size());++i) {
+                outputNames.add(outputs[i]);
+                if(outputMask[i])outputPins.add(i);
+            }
+            for(const auto value:device->getAvailableSampleRates()) rates.add(value);
+            for(const auto value:device->getAvailableBufferSizes()) buffers.add(value);
+            o->setProperty("hasControlPanel",device->hasControlPanel());
+        }else o->setProperty("hasControlPanel",false);
+        o->setProperty("inputNames",juce::var(inputNames));
+        o->setProperty("outputNames",juce::var(outputNames));
+        o->setProperty("enabledInputs",juce::var(inputPins));
+        o->setProperty("enabledOutputs",juce::var(outputPins));
+        o->setProperty("rates",juce::var(rates));
+        o->setProperty("buffers",juce::var(buffers));
+        return juce::var(o.release());
+    }
+
+    void applyCustomAudioDevice(const juce::var& args)
+    {
+        // Synchronous manager operations stay on JUCE's established message
+        // thread. A vendor driver may block; never pretend JS async fixes it.
+        const auto id=args.getProperty("requestId",{}).toString().substring(0,64);
+        const auto oldGeneration=engine_.status().getProperty("deviceGeneration",0);
+        auto send=[&](bool ok,const juce::String& state,const juce::String& error)
+        {
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",id);
+            ack->setProperty("ok",ok);
+            ack->setProperty("state",state);
+            ack->setProperty("error",error);
+            ack->setProperty("active",currentDeviceSnapshot());
+            ack->setProperty("outputMuted",engine_.isOutputMuted());
+            if(browser_.loaded)
+                browser_.emitEventIfBrowserIsVisible("arMixAudioDeviceApplyAck",juce::var(ack.release()));
+        };
+        if(id.isEmpty()||id.length()>64||!(args.getProperty("expectedDeviceGeneration",{}).isDouble()||
+                args.getProperty("expectedDeviceGeneration",{}).isInt()||
+                args.getProperty("expectedDeviceGeneration",{}).isInt64())||
+            static_cast<double>(args.getProperty("expectedDeviceGeneration",{})) !=
+                static_cast<double>(oldGeneration))
+            return send(false,"REJECTED","Stale device generation; refresh DEVICE / DRIVER");
+        if(nativeShowBusy_||studioBackupBusy_||engine_.isGraphSwitchPending()||
+            engine_.independentClockActive()||engine_.hasTemporaryDiagnosticDevice()||
+            !engine_.allOutputsDisarmed())
+            return send(false,"REJECTED",
+                "MUTE MAIN and secondary output; finish Show/FX/diagnostic/clock transition first");
+        const auto config=args.getProperty("config",{});
+        if(!config.isObject())return send(false,"REJECTED","Missing device configuration");
+        const auto typeName=config.getProperty("backend",{}).toString();
+        const auto capture=config.getProperty("captureDevice",{}).toString();
+        const auto playback=config.getProperty("playbackDevice",{}).toString();
+        if(typeName.isEmpty()||capture.isEmpty()||playback.isEmpty()||
+           typeName.length()>160||capture.length()>250||playback.length()>250)
+            return send(false,"REJECTED","Choose actual capture and playback devices");
+        auto& manager=engine_.devices();
+        juce::AudioIODeviceType* selectedType=nullptr;
+        for(auto* type:manager.getAvailableDeviceTypes())
+            if(type!=nullptr&&type->getTypeName()==typeName)selectedType=type;
+        if(selectedType==nullptr)return send(false,"REJECTED","Audio backend is not installed");
+        // Do not let JS submit arbitrary names or combine unmatched ASIO devices.
+        const auto namesIn=selectedType->getDeviceNames(true);
+        const auto namesOut=selectedType->getDeviceNames(false);
+        if(!namesIn.contains(capture)||!namesOut.contains(playback)||
+            (!selectedType->hasSeparateInputsAndOutputs()&&capture!=playback))
+            return send(false,"REJECTED","Device names or duplex pairing are not reported by JUCE");
+        auto sample=config.getProperty("sampleRate",{}), period=config.getProperty("bufferSize",{});
+        if(!(sample.isInt()||sample.isDouble()||sample.isInt64())||
+           !(period.isInt()||period.isDouble()||period.isInt64()))
+            return send(false,"REJECTED","Rate and buffer must be numeric or AUTO (0)");
+        const double rate=static_cast<double>(sample);
+        const double block=static_cast<double>(period);
+        if(!std::isfinite(rate)||!std::isfinite(block)||
+           (rate!=0&&(rate<8000||rate>384000))||
+           (block!=0&&(block<16||block>8192||std::floor(block)!=block)))
+            return send(false,"REJECTED","Invalid device sample rate or buffer size");
+        const bool unchangedDevice=manager.getCurrentAudioDeviceType()==typeName;
+        juce::AudioDeviceManager::AudioDeviceSetup before;
+        manager.getAudioDeviceSetup(before);
+        const auto previousType=manager.getCurrentAudioDeviceType();
+        const bool sameEndpoint=unchangedDevice&&before.inputDeviceName==capture
+                             &&before.outputDeviceName==playback;
+        juce::AudioDeviceManager::AudioDeviceSetup candidate=before;
+        candidate.inputDeviceName=capture;
+        candidate.outputDeviceName=playback;
+        candidate.sampleRate=rate;
+        candidate.bufferSize=static_cast<int>(block);
+        // Pins are explicit only when candidate is the CURRENT active device.
+        // Other device pin labels do not exist until JUCE actually opens it.
+        // Its first APPLY uses safe defaults; then users refine real pin masks.
+        const auto pinInput=config.getProperty("enabledInputs",{});
+        const auto pinOutput=config.getProperty("enabledOutputs",{});
+        if(sameEndpoint && pinInput.isArray() && pinOutput.isArray()) {
+            const auto* active=manager.getCurrentAudioDevice();
+            if(active==nullptr||!active->isOpen())
+                return send(false,"REJECTED","Current device is not open; refresh");
+            const auto inCount=juce::jmin(64,active->getInputChannelNames().size());
+            const auto outCount=juce::jmin(64,active->getOutputChannelNames().size());
+            auto parsePins=[](const juce::var& values,int limit,juce::BigInteger& mask)->bool {
+                const auto* array=values.getArray();
+                if(array==nullptr||array->size()>64)return false;
+                for(const auto& p:*array) {
+                    if(!(p.isInt()||p.isInt64()))return false;
+                    const int index=static_cast<int>(p);
+                    if(index<0||index>=limit||mask[index])return false;
+                    mask.setBit(index);
+                }
+                return true;
+            };
+            juce::BigInteger inMask,outMask;
+            if(!parsePins(pinInput,inCount,inMask)||!parsePins(pinOutput,outCount,outMask)||
+               inMask.countNumberOfSetBits()<1||outMask.countNumberOfSetBits()<2)
+                return send(false,"REJECTED","Choose >=1 verified capture and >=2 playback pins");
+            candidate.useDefaultInputChannels=false;
+            candidate.useDefaultOutputChannels=false;
+            candidate.inputChannels=inMask;
+            candidate.outputChannels=outMask;
+        }else {
+            candidate.useDefaultInputChannels=true;
+            candidate.useDefaultOutputChannels=true;
+        }
+        const auto* active=manager.getCurrentAudioDevice();
+        if(sameEndpoint && active!=nullptr && active->isOpen()) {
+            if(rate>0&&!active->getAvailableSampleRates().contains(rate))
+                return send(false,"REJECTED","Requested sample rate not reported by selected device");
+            if(block>0&&!active->getAvailableBufferSizes().contains(static_cast<int>(block)))
+                return send(false,"REJECTED","Requested buffer size not reported by selected device");
+        }
+
+        // Full device transaction: never enable audio during an intermediate
+        // backend auto-open, and never persist an unverified partial selection.
+        const auto start=monotonicMilliseconds();
+        engine_.beginManualAudioSetup();
+        if(!unchangedDevice)manager.setCurrentAudioDeviceType(typeName,false);
+        auto error=manager.getCurrentAudioDeviceType()==typeName
+            ?manager.setAudioDeviceSetup(candidate,true)
+            :juce::String("Selected audio backend could not be opened");
+        juce::AudioDeviceManager::AudioDeviceSetup actual;
+        manager.getAudioDeviceSetup(actual);
+        auto* opened=manager.getCurrentAudioDevice();
+        if(error.isEmpty()&&(opened==nullptr||!opened->isOpen()||
+              manager.getCurrentAudioDeviceType()!=typeName||
+              actual.inputDeviceName!=capture||actual.outputDeviceName!=playback||
+              (rate>0&&std::abs(actual.sampleRate-rate)>1.0)||
+              (block>0&&actual.bufferSize!=static_cast<int>(block))||
+              (!candidate.useDefaultInputChannels&&actual.inputChannels!=candidate.inputChannels)||
+              (!candidate.useDefaultOutputChannels&&actual.outputChannels!=candidate.outputChannels)))
+            error="Driver readback mismatch; device setting was not accepted";
+        if(error.isEmpty()&&!engine_.finishManualAudioSetup())
+            error="Device opened but direct safe production session was rejected";
+        if(error.isEmpty()) {
+            deviceSettingsDirty_=true;
+            directRestore_.cancel();
+            diagnostics_.record("CUSTOM_AUDIO_APPLY_OK",
+                typeName+" | "+juce::String(static_cast<int>(monotonicMilliseconds()-start))+" ms");
+            return send(true,"ACCEPTED_MUTED",{});
+        }
+        // One rollback, never blind default endpoint fallback, no auto-unmute.
+        engine_.beginManualAudioSetup();
+        if(manager.getCurrentAudioDeviceType()!=previousType&&previousType.isNotEmpty())
+            manager.setCurrentAudioDeviceType(previousType,false);
+        const auto restored=previousType.isNotEmpty()&&
+            manager.getCurrentAudioDeviceType()==previousType&&
+            manager.setAudioDeviceSetup(before,true).isEmpty();
+        juce::AudioDeviceManager::AudioDeviceSetup checked;
+        manager.getAudioDeviceSetup(checked);
+        const bool verified=restored&&
+            checked.inputDeviceName==before.inputDeviceName&&
+            checked.outputDeviceName==before.outputDeviceName&&
+            checked.inputChannels==before.inputChannels&&
+            checked.outputChannels==before.outputChannels&&
+            manager.getCurrentAudioDevice()!=nullptr&&
+            manager.getCurrentAudioDevice()->isOpen()&&engine_.finishManualAudioSetup();
+        diagnostics_.record("CUSTOM_AUDIO_APPLY_FAIL",error+" | rollback="+
+            (verified?"RESTORED":"RECOVERY_REQUIRED")+" | "+
+            juce::String(static_cast<int>(monotonicMilliseconds()-start))+" ms");
+        send(false,verified?"RESTORED_MUTED":"RECOVERY_REQUIRED",error);
+    }
+
     void showDeviceSetup()
     {
         diagnostics_.record ("SETUP", "Open audio device setup");
@@ -1603,34 +1811,34 @@ private:
         }
         else if (action == "audioDeviceInventory")
         {
-            // Enumeration only on explicit user request, on the JUCE message thread.
-            // Never reopen an audio endpoint or change the routing epoch here.
+            // Explicit inventory request: no device re-open, no output arm.
             auto inventory=std::make_unique<juce::DynamicObject>();
             juce::Array<juce::var> types;
             auto& manager=engine_.devices();
-            for (auto* type : manager.getAvailableDeviceTypes())
-            {
-                if (type == nullptr) continue;
-                // Explicit user-triggered enumeration on the JUCE message
-                // thread. Inactive WASAPI/DirectSound/ASIO types may not
-                // have been scanned yet; listing getDeviceNames alone can
-                // misleadingly show NO devices. Never scan in audio RT.
+            for(auto* type:manager.getAvailableDeviceTypes()) {
+                if(type==nullptr)continue;
                 type->scanForDevices();
                 auto item=std::make_unique<juce::DynamicObject>();
-                item->setProperty ("name", type->getTypeName());
-                item->setProperty ("active", type->getTypeName() == manager.getCurrentAudioDeviceType());
-                juce::Array<juce::var> inputs, outputs;
-                for (const auto& label : type->getDeviceNames (true)) inputs.add (label);
-                for (const auto& label : type->getDeviceNames (false)) outputs.add (label);
-                item->setProperty ("inputs", juce::var (inputs));
-                item->setProperty ("outputs", juce::var (outputs));
-                types.add (juce::var (item.release()));
+                item->setProperty("name",type->getTypeName());
+                item->setProperty("active",type->getTypeName()==manager.getCurrentAudioDeviceType());
+                item->setProperty("separate",type->hasSeparateInputsAndOutputs());
+                juce::Array<juce::var> inputs,outputs;
+                for(const auto& n:type->getDeviceNames(true))inputs.add(n);
+                for(const auto& n:type->getDeviceNames(false))outputs.add(n);
+                item->setProperty("inputs",juce::var(inputs));
+                item->setProperty("outputs",juce::var(outputs));
+                types.add(juce::var(item.release()));
             }
-            inventory->setProperty ("types", juce::var (types));
-            inventory->setProperty ("currentType", manager.getCurrentAudioDeviceType());
-            if (browser_.loaded)
-                browser_.emitEventIfBrowserIsVisible ("arMixAudioDeviceInventory",
-                    juce::var (inventory.release()));
+            inventory->setProperty("types",juce::var(types));
+            inventory->setProperty("currentType",manager.getCurrentAudioDeviceType());
+            inventory->setProperty("active",currentDeviceSnapshot());
+            if(browser_.loaded)
+                browser_.emitEventIfBrowserIsVisible("arMixAudioDeviceInventory",
+                    juce::var(inventory.release()));
+        }
+        else if (action == "audioDeviceApply")
+        {
+            applyCustomAudioDevice(args);
         }
         else if (action == "audioSetup")
         {
