@@ -986,18 +986,27 @@ async def main():
         await named.click()
         native=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='routingDryApply')""")
-        assert len(native)==2,native
+        # A third source choice from the selected channel auto-submits one
+        # more guarded transaction; metadata edits did NOT submit anything.
+        assert len(native)==count_after+1,native
         target=native[-1]['data']['value']['channels'][selected]
         assert target['mode']=='STEREO' and target['left']==4 and target['right']==7,target
-        status=await page.evaluate("""({status,selected})=>{
-          status.dryRoutingLab.revision=5;
-          status.dryRoutingLab.acceptedRoute.channels[selected]={
-            ...status.dryRoutingLab.acceptedRoute.channels[selected],
-            mode:'STEREO',left:4,right:7};
-          window.__armixTestEmit('arMixRoutingLabAck',{ok:true,state:status.dryRoutingLab});
-          window.__armixTestEmit('arMixStatus',status);
-          return status;
-        }""",{"status":status,"selected":selected})
+        status=await page.evaluate("""status=>{
+          const lab=status.dryRoutingLab;
+          const cmd=window.__armixTestActions.filter(x=>
+            x.data?.action==='routingDryApply').at(-1).data.value;
+          lab.revision=cmd.revision+1;lab.hasAcceptedRoute=true;
+          lab.acceptedRoute={deviceEpoch:lab.epoch,channels:cmd.channels,
+            auxes:cmd.auxes,sends:cmd.sends};
+          window.__armixTestEmit('arMixRoutingLabAck',{ok:true,state:lab});
+          window.__armixTestEmit('arMixStatus',status);return status;
+        }""",status)
+        assert not await page.evaluate("()=>window.__arMixRouteView().pending")
+        await page.evaluate("""status=>window.__armixTestEmit('arMixAudioArmAck',{
+          ok:false,armed:false,deviceEpoch:status.dryRoutingLab.epoch,
+          error:'Output remains muted for device-rebind negative test'
+        })""",status)
+        assert not await page.evaluate("()=>window.__arMixFastAudioState().pending")
         assert 'MAONO Virtual Stereo' in await page.locator('[data-focus-source]').inner_text()
         # An altered pin mask must NOT inherit the saved alias or silently remap.
         await page.evaluate("""()=>window.__armixTestEmit('arMixAudioDeviceInventory',{
