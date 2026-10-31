@@ -3,6 +3,7 @@
 #include "DynamicChannelRoster.h"
 #include <algorithm>
 #include <atomic>
+#include <bit>
 #include <memory>
 #include <cmath>
 #include <cstddef>
@@ -62,9 +63,26 @@ class DynamicPreparedMixerBlock final {
     };
     // Immutable topology + atomics for live control targets. Callback-only
     // smoothed state is preallocated per accepted graph revision.
+    // One atomic pair prevents a PAN/fader request crossing the callback
+    // between separate L and R loads. A torn stereo target can cause a
+    // transient image/level jump even with sample ramps. 64-bit atomics are
+    // required lock-free: callback must never invoke a hidden mutex.
+    struct StereoGainPair final {
+        float left=1.f,right=1.f;
+    };
+    static constexpr std::uint64_t packGainPair(float left,float right) noexcept {
+        return (static_cast<std::uint64_t>(std::bit_cast<std::uint32_t>(right))<<32) |
+            std::bit_cast<std::uint32_t>(left);
+    }
+    static constexpr StereoGainPair unpackGainPair(std::uint64_t both) noexcept {
+        return {std::bit_cast<float>(static_cast<std::uint32_t>(both)),
+                std::bit_cast<float>(static_cast<std::uint32_t>(both>>32))};
+    }
     struct ChannelTarget final {
-        std::atomic<float> left{1.f},right{1.f};
-        float appliedL=1.f,appliedR=1.f;
+        static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
+            "Realtime stereo mixer requires lock-free 64-bit atomic targets");
+        std::atomic<std::uint64_t> both{packGainPair(1.f,1.f)};
+        float appliedL=1.f,appliedR=1.f; // audio thread only
     };
     struct SendTarget final {
         std::atomic<float> gain{1.f};
@@ -93,8 +111,8 @@ public:
                 gain*(pan>0.f?1.f-pan:1.f);
             const float right=mono?gain*std::sqrt(.5f*(1.f+pan)):
                 gain*(pan<0.f?1.f+pan:1.f);
-            channelTargets_[i].left.store(left,std::memory_order_release);
-            channelTargets_[i].right.store(right,std::memory_order_release);
+            channelTargets_[i].both.store(
+                packGainPair(left,right),std::memory_order_release);
             return true;
         }
         return false;
@@ -337,8 +355,8 @@ public:
         next.channelTargets_=std::make_unique<ChannelTarget[]>(rows.size());
         for(std::size_t i=0;i<rows.size();++i) {
             auto& target=next.channelTargets_[i];
-            target.left.store(next.lanes_[i].gainL,std::memory_order_relaxed);
-            target.right.store(next.lanes_[i].gainR,std::memory_order_relaxed);
+            target.both.store(packGainPair(next.lanes_[i].gainL,
+                next.lanes_[i].gainR),std::memory_order_relaxed);
             target.appliedL=next.lanes_[i].gainL;
             target.appliedR=next.lanes_[i].gainR;
         }
@@ -427,8 +445,9 @@ public:
                 target.applied=goal;
             }
             auto& controls=channelTargets_[i];
-            const float goalL=controls.left.load(std::memory_order_acquire);
-            const float goalR=controls.right.load(std::memory_order_acquire);
+            const auto goal=unpackGainPair(
+                controls.both.load(std::memory_order_acquire));
+            const float goalL=goal.left,goalR=goal.right;
             const int ramp=std::min(frames,64);
             const float stepL=(goalL-controls.appliedL)/static_cast<float>(ramp);
             const float stepR=(goalR-controls.appliedR)/static_cast<float>(ramp);
