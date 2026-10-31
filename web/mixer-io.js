@@ -1487,7 +1487,7 @@
     overlay.querySelector('[data-io-device-apply]').hidden=ioTab!=='device';
     overlay.querySelector('[data-io-device-revert]').hidden=ioTab!=='device';
     const deviceBlocker=deviceSwitchBlocker(s);
-    overlay.querySelector('[data-io-device-apply]').disabled=!!deviceBlocker||deviceBusy||applyMutePending||!!window.__arMixFastAudioState?.().pending||(!deviceDirty()&&(!hardwareReady(s)||!!lastStatus.monitor));
+    overlay.querySelector('[data-io-device-apply]').disabled=!!deviceBlocker||deviceBusy||applyMutePending||deviceMatrixWaitEpoch!==null||!!window.__arMixFastAudioState?.().pending||(!deviceDirty()&&(!hardwareReady(s)||!!lastStatus.monitor));
     overlay.querySelector('[data-io-device-apply]').textContent=deviceBusy||applyMutePending?'APPLYING…':'APPLY';
     overlay.querySelector('[data-io-device-apply]').title=deviceBlocker||
       (deviceDirty()?'Commit selected device then verify physical pin readback':'No pending device edit');
