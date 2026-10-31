@@ -494,30 +494,25 @@ test('P0 actual raw PCM before MUTE and native route/output state remain indepen
 });
 
 
-test('P0 First Sound separates RAW capture, post-fader PCM and physical output ARM',()=>{
-  const css=read('web/mixer-io.css');
-  const engine=read('src/LiveAudioEngine.h');
+test('FAST2 APPLY is the single operator action; native MUTE/route/ARM ACKs remain separate',()=>{
+  const io=read('web/mixer-io.js'),m=read('web/monitor.js');
+  const html=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
+  const native=read('src/Main.cpp');
   const core=read('engine/core/PreparedMixerBlock.h');
-  const main=read('src/Main.cpp');
-  assert.match(gui,/data-audio-path-mixer/);
-  assert.match(gui,/data-io-start-audio disabled/);
-  assert.match(gui,/function startAudioBlocked\(\)/);
-  assert.match(gui,/start\.disabled=startAudioBlocked\(\)/);
-  assert.match(gui,/start\.disabled=startAudioBlocked\(\)/);
-  assert.match(gui,/window\.__arMixStartLiveAudio\?\.\(\)/);
-  assert.match(monitor,/window\.__arMixStartLiveAudio=/);
-  assert.match(monitor,/action:"monitor",value:true/);
-  assert.match(monitor,/expectedEpoch:Number\(d\.epoch\),expectedRevision:Number\(d\.revision\)/);
-  assert.match(main,/engine_\.liveOutputArmFault\(\)/);
-  assert.match(monitor,/const mixed=patched\.some\(i=>Number\(meter\[i\]\)>0\.0002\)/);
-  assert.match(monitor,/const mainPcm=Number\(d\.peak\)>0\.0002/);
-  assert.match(monitor,/ArSonMix physical MAIN is SAFE-MUTED/);
-  assert.match(monitor,/if sound persists|sound must stop|If sound persists/i);
-  assert.match(engine,/const bool outputPermitted=outputGate\.renderMain/);
-  assert.match(engine,/if\(!outputGate\.hardware\)/);
-  assert.match(core,/observed->channelPeak\[strip\]=peak/);
   assert.match(core,/observed->channelPeakL\[strip\]=peakL/);
   assert.match(core,/observed->channelPeakR\[strip\]=peakR/);
-  assert.match(css,/\.arIOAudioPath>\.arIOPathStart/);
-  assert.doesNotMatch(gui,/new AudioContext|AudioWorklet|processBlock|createPluginInstance/);
+  assert.match(io,/capturePinSummary/);
+  assert.match(io,/applyMutePending/);
+  assert.match(io,/applyAfterDevice/);
+  assert.match(io,/deviceApply\(\)/);
+  assert.match(io,/function sendDeviceRequest\(\)/);
+  assert.match(io,/if\(lastStatus.monitor\)activeLine.appendChild\(start\)/);
+  assert.match(io,/window.__arMixApplyAndActivate\?\.\(\)/);
+  assert.match(m,/window.__arMixApplyAndActivate=/);
+  assert.match(m,/phase:"mute-custom"/);
+  assert.match(m,/phase:"custom-patch"/);
+  assert.match(m,/if\(verified\)fastAudioArm\(result\)/);
+  assert.match(m,/expectedEpoch:Number\(d.epoch\)/);
+  assert.match(native,/arMixAudioArmAck/);
+  assert.ok(html.includes(io),'WebView and standalone must share exact FAST2 UI');
 });

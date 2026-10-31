@@ -108,10 +108,8 @@ async def main():
         assert await page.locator('#arIOAudioPath').is_visible()
         assert await page.locator('#arIOAudioPath [data-io-signal-check]').is_visible()
         assert await page.locator('#arIOAudioPath [data-audio-path-mixer]').is_visible()
-        assert await page.locator('#arIOAudioPath [data-io-start-audio]').is_visible()
-        # The test has no authorized device inventory. Top-level START must
-        # remain disabled and cannot synthesize a hardware ARM.
-        assert await page.locator('#arIOAudioPath [data-io-start-audio]').is_disabled()
+        # FAST2: one APPLY only. No second START AUDIO button is rendered.
+        assert await page.locator('#arIOAudioPath [data-io-start-audio]').count()==0
         await page.locator('#arIOAudioPath [data-io-signal-check]').click()
         assert await page.locator('#arSignalOverlay').evaluate("(e)=>e.classList.contains('open')")
         await page.locator('#arSignalClose').click()

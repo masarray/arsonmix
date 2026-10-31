@@ -3370,7 +3370,7 @@ scheduleDemoMeter();
   let mode='FX', lastStatus={}, deviceInventory=null, ioTab='device', lastSignature='', focusedInput=2;
   let monitorSendsExpanded=false;
   // DEVICE1: staged selections are UI-only; only positive native ACK changes active hardware.
-  let deviceDraft=null,deviceBusy=false,deviceNote='',deviceRequest='',deviceRequestSeq=0,lastDeviceRefresh=0,lastDeviceRescan=0;
+  let deviceDraft=null,deviceBusy=false,deviceNote='',deviceRequest='',deviceRequestSeq=0,lastDeviceRefresh=0,lastDeviceRescan=0,applyMutePending=false,applyAfterDevice=null,applyBaseEpoch=0;
   let deviceMatrixView='inputs',deviceMatrixWaitEpoch=null; // Never display old hardware pins after an APPLY ACK.
   // Pending SOURCE ACK is a UI projection only; monitor.js owns the native route.
   let quickSourcePending=null;
@@ -3817,7 +3817,7 @@ scheduleDemoMeter();
   overlay.innerHTML='<section class="arIOWindow" role="dialog" aria-modal="true" aria-label="ArSonMix hardware audio I/O"><header><div><small>ArSonMiX · AUDIO HARDWARE</small><h2>Audio Setup · Windows Devices & Routing</h2></div><button type="button" class="btn-180" data-io-close aria-label="Close Audio I/O">CLOSE</button></header><div class="arIOTop" id="arIOIdentity"></div><nav role="tablist" aria-label="Audio I/O views"><button class="btn-180 active" role="tab" data-io-tab="device">DEVICE / DRIVER</button><button class="btn-180" role="tab" data-io-tab="inputs">INPUT ROUTING</button><button class="btn-180" role="tab" data-io-tab="outputs">OUTPUT ROUTING</button></nav><div id="arIOBody" class="arIOBody"></div><footer><span id="arIOFeedback" role="status">Hardware changes require native ACK. Output stays MUTED on APPLY.</span><button type="button" class="btn-180" data-io-revert>REVERT DRAFT</button><button type="button" class="btn-180" data-mix-apply>APPLY PATCH</button><button type="button" class="btn-180" data-io-internal>ADVANCED BUS / FX</button><button type="button" class="btn-180" data-io-device-revert hidden>REVERT DEVICE</button><button type="button" class="btn-180 arIODeviceApply" data-io-device-apply hidden>APPLY DEVICE</button></footer></section>';
   document.body.appendChild(overlay);
   const audioPath=node('div','arIOAudioPath');audioPath.id='arIOAudioPath';
-  audioPath.innerHTML='<span data-audio-path-input>RAW INPUT · WAIT</span><span data-audio-path-route>ROUTE · WAIT</span><span data-audio-path-mixer>MIXER · WAIT</span><span data-audio-path-output>OUTPUT · WAIT</span><button type="button" class="btn-180 arIOPathStart" data-io-start-audio disabled>START AUDIO</button><button type="button" class="btn-180" data-io-signal-check>OPEN SIGNAL CHECK</button><small data-audio-path-reason role="status"></small>';
+  audioPath.innerHTML='<span data-audio-path-input>CAPTURE · WAIT</span><span data-audio-path-route>ROUTE · WAIT</span><span data-audio-path-mixer>MIXER · WAIT</span><span data-audio-path-output>OUTPUT · WAIT</span><button type="button" class="btn-180" data-io-signal-check>OPEN SIGNAL CHECK</button><small data-audio-path-reason role="status"></small>';
   overlay.querySelector('.arIOWindow').insertBefore(audioPath,el('arIOBody'));
   // Native first-sound capture truth: callback-order peaks are mapped to
   // actual driver pin names ONLY if the hardware inventory belongs to the
@@ -3857,21 +3857,9 @@ scheduleDemoMeter();
     }
     const d=window.__arMixAudioPathView?.(lastStatus);
     if(!d)return;
-    for(const [key,value] of [['input',d.input],['route',d.route],['mixer',d.mixer],['output',d.output],['reason',d.message]]){
+    for(const [key,value] of [['input',d.input],['route',d.route],['output',d.output],['reason',d.message]]){
       const n=audioPath.querySelector('[data-audio-path-'+key+']');
       if(n&&n.textContent!==value)n.textContent=value;
-    }
-    // Same native START/ACK action as DEVICE/DRIVER. No duplicate host path,
-    // automatic unmute, optimistic status or periodic full DOM rebuild.
-    const start=audioPath.querySelector('[data-io-start-audio]');
-    if(start){
-      const pending=!!window.__arMixFastAudioState?.().pending;
-      const label=lastStatus.monitor?'MUTE OUTPUT':pending?'STARTING…':'START AUDIO';
-      if(start.textContent!==label)start.textContent=label;
-      start.disabled=startAudioBlocked();
-      start.setAttribute('aria-label',lastStatus.monitor?
-        'Mute hardware output immediately':
-        'Arm verified physical MAIN only after native route ACK');
     }
   }
   // G3: ONE floating inspector follows the selected source/AUX, no new
@@ -4221,7 +4209,7 @@ scheduleDemoMeter();
       (s.ready?'E'+s.epoch+' / R'+(s.revision||0)+' · '+portList(s).length+' IN · '+(s.outputPorts?.length||0)+' OUT · '+(s.monitor?'OUTPUT ARMED':'OUTPUT MUTED'):'NO VERIFIED DEVICE · OUTPUT MUTED'):
       'WEB PREVIEW · NO LIVE AUDIO';
     if(info.textContent!==caption)info.textContent=caption;
-    toolbar.querySelector('[data-mix-apply]').disabled=!isNative()||!s.ready||!!s.pending||!!s.monitor||(!overlay.hidden&&matrixDraft.size>0);
+    toolbar.querySelector('[data-mix-apply]').disabled=!isNative()||!s.ready||!!s.pending||(!overlay.hidden&&matrixDraft.size>0);
     for(const strip of mixer.querySelectorAll('.strip[data-strip]'))refreshStrip(strip,s);
     if(!overlay.hidden)refreshIO();
     if(!sendEditor.hidden)drawSendEditor();
@@ -4568,16 +4556,6 @@ scheduleDemoMeter();
       (deviceSameEndpoint(d)&&
         (!pinsEqual(d.enabledInputs,a.enabledInputs)||!pinsEqual(d.enabledOutputs,a.enabledOutputs))));
   }
-  // Shared safety gate for BOTH visible START AUDIO buttons. The top
-  // transport cannot bypass a staged device change, invalid hardware,
-  // pending route/FX transaction or the existing native ACK handshake.
-  function startAudioBlocked(){
-    if(!isNative())return true;
-    if(lastStatus.monitor)return false; // emergency physical MUTE always allowed
-    const quick=window.__arMixFastAudioState?.()||{};
-    return deviceBusy||!!quick.pending||!deviceInventory?.active?.open||
-      !deviceSameEndpoint(deviceDraft)||deviceDirty()||!hardwareReady(route());
-  }
   function deviceRefresh(rescan=false){
     if(!isNative()||deviceBusy)return;
     const now=Date.now();
@@ -4601,7 +4579,7 @@ scheduleDemoMeter();
     if(deviceBusy)return 'DEVICE SWITCH IN PROGRESS · wait for native readback';
     if(!deviceDraft||!deviceInventory?.active)return 'REFRESH DEVICE INVENTORY';
     if(lastStatus.secondaryOutputArmed)return 'STEP 1 · DISARM SECONDARY STREAM in SIGNAL CHECK before changing driver';
-    if(s?.monitor||lastStatus.monitor)return 'STEP 1 · PRESS MUTE OUTPUT above before APPLY DEVICE';
+    // APPLY performs native MUTE first if the output is armed.
     if(s?.pending)return 'WAIT · finish native routing APPLY/ACK before changing driver';
     if(!deviceDraft.backend||!deviceDraft.captureDevice||!deviceDraft.playbackDevice)
       return 'SELECT A VALID DUPLEX AUDIO INTERFACE';
@@ -4612,15 +4590,30 @@ scheduleDemoMeter();
     if(!a.open||a.authorized===false)return 'SELECT ASIO/WINDOWS AUDIO, then APPLY DEVICE';
     const maono=/maono/i.test(String(a.captureDevice||'')+' '+String(a.playbackDevice||''));
     return /ASIO/i.test(a.backend||'')&&maono?
-      'ASIO OPEN · expand HARDWARE PIN ENABLE, select the actual Maono MIC or VC In 3+4 ports, then APPLY DEVICE again. Next select CH input sources, APPLY PATCH and START AUDIO.':
-      'DEVICE OPEN · verify enabled INPUT/OUTPUT pins, choose CH input sources, APPLY PATCH and START AUDIO.';
+      'ASIO OPEN · expand HARDWARE PIN ENABLE, select the actual Maono MIC or VC In 3+4 ports, then APPLY DEVICE again. Next select CH input sources, APPLY.':
+      'DEVICE OPEN · verify enabled INPUT/OUTPUT pins, choose CH input sources, APPLY.';
   };
   function deviceApply(){
     if(!isNative()||deviceBusy||!deviceDraft||!deviceInventory?.active)return;
     const d=deviceDraft,a=deviceInventory.active;
     const blocked=deviceSwitchBlocker(route());
     if(blocked){deviceNote=blocked;lastSignature='';refreshIO();return;}
-    if(!deviceDirty())return;
+    if(!deviceDirty()){
+      const result=window.__arMixApplyAndActivate?.();
+      deviceNote=result?.ok?'APPLY ACCEPTED · NATIVE ACK PENDING':'APPLY REJECTED · '+(result?.error||'Route not ready');
+      lastSignature='';refreshIO();return;
+    }
+    if(lastStatus.monitor){
+      applyMutePending=true;
+      backend.emitEvent('arMixAction',{action:'monitor',value:false});
+      deviceNote='APPLY · WAITING FOR HARDWARE MUTE ACK';return;
+    }
+    sendDeviceRequest();
+  }
+  function sendDeviceRequest(){
+    if(!deviceDirty()||deviceBusy)return;
+    const d=deviceDraft,a=deviceInventory.active;
+    applyBaseEpoch=Number(route().epoch)||0;
     // Changing hardware is a structural transaction, not a fader parameter.
     deviceRequest='device-'+Date.now()+'-'+(++deviceRequestSeq);
     deviceBusy=true;deviceNote='APPLYING · OUTPUT MUTED · waiting for native readback';
@@ -4671,19 +4664,21 @@ scheduleDemoMeter();
     // stages the real native route then independently ARM-ACKs hardware.
     const quick=window.__arMixFastAudioState?.()||{};
     const start=node('button','btn-180 arIODeviceStartAudio',
-      lastStatus.monitor?'MUTE OUTPUT':quick.pending?'STARTING…':'START AUDIO');
-    start.type='button';start.dataset.ioStartAudio='1';
-    start.disabled=startAudioBlocked();
+      'MUTE OUTPUT');
+    start.type='button';start.dataset.ioStartAudio='1';start.hidden=!lastStatus.monitor;
+    start.disabled=!isNative()||(!lastStatus.monitor&&(
+      deviceBusy||!!quick.pending||!a.open||!deviceSameEndpoint(deviceDraft)||
+      deviceDirty()||!hardwareReady(route())));
     start.setAttribute('aria-label',lastStatus.monitor?'Mute physical output':
       'Start verified live routing and arm hardware output');
-    activeLine.appendChild(start);
+    if(lastStatus.monitor)activeLine.appendChild(start);
     const accepted=route().acceptedRoute?.channels||[];
     const used=accepted.map((r,i)=>r.mode==='MONO'||r.mode==='STEREO'?
       'CH'+String(i+1).padStart(2,'0'):null).filter(Boolean);
     const firstSound=node('div','arIODeviceFirstSound',quick.message||(
       lastStatus.monitor?'OUTPUT ARMED · '+used.join(' + ')+' → MAIN → HARDWARE':
-      used.length?used.join(' + ')+' → MAIN ready · START AUDIO to hear sound':
-      'FIRST SOUND · START AUDIO maps CH01/CH02 to verified input pins, applies once, then arms MAIN'));
+      used.length?used.join(' + ')+' → MAIN ready · APPLY to hear sound':
+      'FIRST SOUND · APPLY maps verified input pins, routes and arms MAIN'));
     panel.appendChild(firstSound);
     // Lightweight text-only 12 Hz live native meter. It remains truthful
     // when OUTPUT MUTED and when no mixer patch has been created yet.
@@ -4691,6 +4686,7 @@ scheduleDemoMeter();
     captureRow.id='arIODeviceCaptureEvidence';
     captureRow.setAttribute('aria-label','Verified raw input PCM before mixer routing');
     panel.appendChild(captureRow);
+
 
     if(!types.length&&!a.open)
       panel.appendChild(node('p','arIODeviceEmpty',
@@ -4828,7 +4824,7 @@ scheduleDemoMeter();
       }else matrixSection.appendChild(makeMatrix(s,deviceMatrixView));
       matrixSection.appendChild(node('p','arIODeviceMatrixNote',
         deviceMatrixView==='inputs'?
-        'Named inputs are reusable SOURCES. START AUDIO builds a verified initial route; only native ACK confirms sound routing.':
+        'Named inputs are reusable SOURCES. APPLY builds a verified initial route; only native ACK confirms sound routing.':
         'MAIN / MONITOR outputs use muted APPLY PATCH and native ACK.'));
     }
     body.appendChild(matrixSection);
@@ -4846,17 +4842,18 @@ scheduleDemoMeter();
     });
     overlay.dataset.activeTab=ioTab;
     const matrixInDevice=ioTab==='device'&&deviceSameEndpoint(deviceDraft)&&hardwareReady(s);
-    overlay.querySelector('[data-mix-apply]').hidden=ioTab==='device'&&!matrixInDevice;
+    overlay.querySelector('[data-mix-apply]').hidden=ioTab==='device';
     overlay.querySelector('[data-io-revert]').hidden=ioTab==='device'&&!matrixInDevice;
     overlay.querySelector('[data-io-internal]').hidden=ioTab==='device';
     overlay.querySelector('[data-io-device-apply]').hidden=ioTab!=='device';
     overlay.querySelector('[data-io-device-revert]').hidden=ioTab!=='device';
     const deviceBlocker=deviceSwitchBlocker(s);
-    overlay.querySelector('[data-io-device-apply]').disabled=!deviceDirty()||!!deviceBlocker;
+    overlay.querySelector('[data-io-device-apply]').disabled=!!deviceBlocker||deviceBusy||applyMutePending||!!window.__arMixFastAudioState?.().pending||(!deviceDirty()&&(!hardwareReady(s)||!!lastStatus.monitor));
+    overlay.querySelector('[data-io-device-apply]').textContent=deviceBusy||applyMutePending?'APPLYING…':'APPLY';
     overlay.querySelector('[data-io-device-apply]').title=deviceBlocker||
       (deviceDirty()?'Commit selected device then verify physical pin readback':'No pending device edit');
     overlay.querySelector('[data-io-device-revert]').disabled=deviceBusy||!deviceDirty();
-    overlay.querySelector('[data-mix-apply]').disabled=!hardwareReady(s)||!!matrixDraft.size||s.monitor||
+    overlay.querySelector('[data-mix-apply]').disabled=!hardwareReady(s)||!!matrixDraft.size||
       (ioTab==='device'&&deviceDirty());
     overlay.querySelector('[data-io-revert]').disabled=!isNative()||s.pending;
     const signature=ioTab+'|'+JSON.stringify([s.epoch,s.revision,s.pending,s.draftRoutes,
@@ -5095,7 +5092,7 @@ scheduleDemoMeter();
     }
     if(b.dataset.sendRevert!==undefined){e.preventDefault();sendMutation(()=>window.__arMixRevertMixerDraft?.());return;}
     if(b.dataset.sendApply!==undefined){
-      e.preventDefault();const result=window.__arMixApplyMixerDraft?.();
+      e.preventDefault();const result=window.__arMixApplyAndActivate?.();
       sendFeedback=result?.ok?'SUBMITTED · WAIT FOR NATIVE ACK':result?.error||'APPLY failed';
       drawSendEditor();return;
     }
@@ -5108,8 +5105,8 @@ scheduleDemoMeter();
     if(b.dataset.ioStartAudio!==undefined){
       e.preventDefault();e.stopImmediatePropagation();
       const result=window.__arMixStartLiveAudio?.();
-      deviceNote=result?.ok?'START AUDIO requested · native ACK required':
-        'START REJECTED · '+(result?.error||'Native device not ready');
+      deviceNote=result?.ok?'APPLY requested · native ACK required':
+        'APPLY REJECTED · '+(result?.error||'Native device not ready');
       lastSignature='';refreshIO();return;
     }
     if(b.dataset.ioSoftwareAdd){
@@ -5220,7 +5217,7 @@ scheduleDemoMeter();
       else window.__arMixOpenChannelPatch?.(channel,b.dataset.mixPatch);
       return;
     }
-    if(b.dataset.mixApply!==undefined){e.preventDefault();e.stopImmediatePropagation();const response=window.__arMixApplyMixerDraft?.();if(response&&!response.ok)el('arIOFeedback').textContent=response.error;refresh();return;}
+    if(b.dataset.mixApply!==undefined){e.preventDefault();e.stopImmediatePropagation();const response=window.__arMixApplyAndActivate?.();if(response&&!response.ok)el('arIOFeedback').textContent=response.error;refresh();return;}
   },true);
   document.addEventListener('input',e=>{
     if(e.target.matches('.arIOSoftwareNameEdit')&&softwareEdit)
@@ -5293,6 +5290,11 @@ scheduleDemoMeter();
   focusFlow.hidden=mixer.classList.contains('hidden');
   backend?.addEventListener?.('arMixStatus',d=>{
     lastStatus=d;
+    if(applyAfterDevice && Number(d?.deviceGeneration)===applyAfterDevice.generation && d?.driver===applyAfterDevice.driver && d?.inputDevice===applyAfterDevice.capture && d?.outputDevice===applyAfterDevice.playback && Number(d?.dryRoutingLab?.epoch)>0 && d?.dryRoutingLab?.ready && d?.dryRoutingLab?.active){
+      applyAfterDevice=null;
+      const result=window.__arMixApplyAndActivate?.();
+      deviceNote=result?.ok?'APPLY · NATIVE ROUTE/ARM ACK PENDING':'APPLY REJECTED · '+(result?.error||'Source not ready');
+    }
     // 12Hz native telemetry: update only when topology, epoch or safety changes.
     const s=d.dryRoutingLab||{},key=JSON.stringify([s.epoch,s.revision,s.ready,s.ports,s.outputPorts,s.acceptedRoute,d.monitor,d.masterMute]);
     if(window.__armixIoStatusKey!==key){window.__armixIoStatusKey=key;lastSignature='';refresh();}
@@ -5316,6 +5318,7 @@ scheduleDemoMeter();
     // CACHED is a non-disruptive snapshot; do not erase pending operator notes.
     lastSignature='';if(!overlay.hidden)refreshIO();
   });
+  backend?.addEventListener?.('arMixAudioArmAck',ack=>{ if(applyMutePending){ applyMutePending=false; if(ack?.ok&&!ack.armed){lastStatus.monitor=false;sendDeviceRequest();}else deviceNote='APPLY MUTE REJECTED'; } });
   backend?.addEventListener?.('arMixAudioDeviceApplyAck',ack=>{
     if(!deviceBusy||ack?.requestId!==deviceRequest)return;
     deviceBusy=false;deviceRequest='';
@@ -5326,6 +5329,7 @@ scheduleDemoMeter();
     if(ack?.active?.open&&Number(ack.active.deviceGeneration)!==oldGeneration)
       deviceMatrixWaitEpoch=route().epoch;
     deviceDraft=makeDeviceDraft();
+    if(ack?.ok&&ack?.active?.open)applyAfterDevice={generation:Number(ack.active.deviceGeneration),capture:ack.active.captureDevice,playback:ack.active.playbackDevice,driver:ack.active.backend};
     deviceNote=ack?.ok?'DEVICE ACCEPTED · OUTPUT MUTED · '+devicePinNextStep():
       (ack?.state||'REJECTED')+' · '+(ack?.error||'Check driver and retry');
     // Same real routing controller sees the new device epoch via normal status.
@@ -5366,7 +5370,7 @@ scheduleDemoMeter();
   });
   window.addEventListener('arMixRoutingDraftChanged',()=>{lastSignature='';refresh();});
   window.addEventListener('arMixFastAudioResult',event=>{
-    deviceNote=event.detail?.message||'START AUDIO';
+    deviceNote=event.detail?.message||'APPLY';
     lastSignature='';if(!overlay.hidden)refreshIO();
   });
   window.addEventListener('arMixAuxMasterGainResult',event=>{
