@@ -612,8 +612,11 @@
 .arIOSoftwareName{flex-wrap:wrap}
 
 /* P0 independent native PCM / routing / output proof: flat, static, compact. */
-.arIOAudioPath{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:5px;align-items:center;padding:7px 11px;background:#0e2630;border-block:1px solid #3c5b68;color:#c7e0e8;font:10px/1.4 "Segoe UI",sans-serif}
+.arIOAudioPath{display:grid;grid-template-columns:repeat(4,minmax(0,1fr)) auto auto;gap:5px;align-items:center;padding:7px 11px;background:#0e2630;border-block:1px solid #3c5b68;color:#c7e0e8;font:10px/1.4 "Segoe UI",sans-serif}
 .arIOAudioPath>span{padding:5px 7px;border-left:2px solid #5b91a1;background:#142e39;min-width:0;overflow-wrap:anywhere}
 .arIOAudioPath>small{grid-column:1/-1;color:#d9d0ad;font-size:10px;line-height:1.4;overflow-wrap:anywhere}
 .arIOAudioPath>button{min-height:26px;white-space:nowrap}
-@media(max-width:850px){.arIOAudioPath{grid-template-columns:repeat(2,minmax(0,1fr))}.arIOAudioPath>small{grid-column:1/-1}}
+.arIOAudioPath>.arIOPathStart{--b180-color:#9de9c1;--b180-border:#39936f;--b180-ink:#133c2b}
+.arIOAudioPath>.arIOPathStart:disabled{opacity:.48;cursor:default}
+@media(max-width:950px){.arIOAudioPath{grid-template-columns:repeat(4,minmax(0,1fr))}.arIOAudioPath>button{grid-column:span 2}.arIOAudioPath>small{grid-column:1/-1}}
+@media(max-width:650px){.arIOAudioPath{grid-template-columns:repeat(2,minmax(0,1fr))}.arIOAudioPath>button{grid-column:span 1}}

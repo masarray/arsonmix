@@ -82,18 +82,36 @@ async def main():
           callbackCount:10,callbackInputChannels:2,inputPeak:0,monitor:false,
           dryRoutingLab:{ready:true,hasAcceptedRoute:true}
         })""")
-        assert silent['input']=='NO PCM IN CURRENT BLOCK',silent
+        assert silent['input']=='NO RAW CAPTURE PCM',silent
         assert silent['route']=='NATIVE ROUTE ACK' and silent['output']=='OUTPUT SAFE-MUTED',silent
+        assert silent['mixer']=='MIXER · WAIT ARM',silent
         assert 'CABLE Input' in silent['message'],silent
+        muted=await page.evaluate("""()=>window.__arMixAudioPathView({
+          connected:true,inputDevice:'CABLE Output (VB-Audio Virtual Cable)',
+          callbackCount:11,callbackInputChannels:2,inputPeak:.14,monitor:false,
+          dryRoutingLab:{ready:true,hasAcceptedRoute:true,
+            acceptedRoute:{channels:[{mode:'MONO'}]},channelPeaks:[0]}
+        })""")
+        assert muted['input']=='RAW CAPTURE PCM',muted
+        assert muted['mixer']=='MIXER · WAIT ARM' and muted['output']=='OUTPUT SAFE-MUTED',muted
+        assert 'direct monitor' in muted['message'].lower(),muted
         audible=await page.evaluate("""()=>window.__arMixAudioPathView({
           connected:true,inputDevice:'CABLE Output (VB-Audio Virtual Cable)',
-          callbackCount:11,callbackInputChannels:2,inputPeak:.14,monitor:true,
-          dryRoutingLab:{ready:true,hasAcceptedRoute:true}
+          callbackCount:11,callbackInputChannels:2,inputPeak:.14,peak:.035,monitor:true,
+          dryRoutingLab:{ready:true,hasAcceptedRoute:true,
+            acceptedRoute:{channels:[{mode:'MONO'}]},channelPeaks:[.09]}
         })""")
-        assert audible['input']=='PCM DETECTED' and audible['output']=='OUTPUT ARMED',audible
+        assert audible['input']=='RAW CAPTURE PCM' and audible['mixer']=='POST-FADER PCM',audible
+        assert audible['output']=='MAIN PCM · ARMED',audible
+        assert 'sound must stop' in audible['message'],audible
         await page.evaluate("()=>window.__arMixOpenAudioIO('device')")
         assert await page.locator('#arIOAudioPath').is_visible()
         assert await page.locator('#arIOAudioPath [data-io-signal-check]').is_visible()
+        assert await page.locator('#arIOAudioPath [data-audio-path-mixer]').is_visible()
+        assert await page.locator('#arIOAudioPath [data-io-start-audio]').is_visible()
+        # The test has no authorized device inventory. Top-level START must
+        # remain disabled and cannot synthesize a hardware ARM.
+        assert await page.locator('#arIOAudioPath [data-io-start-audio]').is_disabled()
         await page.locator('#arIOAudioPath [data-io-signal-check]').click()
         assert await page.locator('#arSignalOverlay').evaluate("(e)=>e.classList.contains('open')")
         await page.locator('#arSignalClose').click()
@@ -231,8 +249,8 @@ async def main():
         assert await page.locator('.arIODevicePatchMatrix .arIOMatrixCell').count()>0
         # FAST1: one gesture un-mutes a previously ACKed real input route;
         # hardware action is still fenced to epoch/revision.
-        assert await page.locator('[data-io-start-audio]').is_visible()
-        await page.locator('[data-io-start-audio]').click()
+        assert await page.locator('#arIOAudioPath [data-io-start-audio]').is_visible()
+        await page.locator('#arIOAudioPath [data-io-start-audio]').click()
         arm=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='monitor'&&x.data.value===true)""")
         assert len(arm)==1,arm
@@ -242,8 +260,8 @@ async def main():
           ok:true,armed:true,deviceEpoch:4,error:''})""")
         await page.evaluate("""status=>{status.monitor=true;
           window.__armixTestEmit('arMixStatus',status)}""",status)
-        assert await page.locator('[data-io-start-audio]').inner_text()=='MUTE OUTPUT'
-        await page.locator('[data-io-start-audio]').click()
+        assert await page.locator('#arIOAudioPath [data-io-start-audio]').inner_text()=='MUTE OUTPUT'
+        await page.locator('#arIOAudioPath [data-io-start-audio]').click()
         muted=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='monitor'&&x.data.value===false)""")
         assert len(muted)==1,muted
@@ -1001,7 +1019,7 @@ async def main():
           types:[{name:'ASIO',active:true,separate:false,
             inputs:['Mock Interface'],outputs:['Mock Interface']}]
         })""")
-        await qp.locator('[data-io-start-audio]').click()
+        await qp.locator('#arIOAudioPath [data-io-start-audio]').click()
         requests=await qp.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.data?.action==='routingDryApply')""")
         assert len(requests)==1,requests

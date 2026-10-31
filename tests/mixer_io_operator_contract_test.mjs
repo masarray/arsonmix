@@ -457,7 +457,8 @@ test('FAST1 one gesture uses native routing ACK then fenced physical ARM, with p
  assert.match(io,/dataset\.ioStartAudio/);
  assert.match(io,/LIVE ON /);
  assert.match(io,/ASSIGN CH/);
- assert.match(io,/start\.disabled=!isNative\(\)\|\|\(!lastStatus\.monitor/);
+ assert.match(io,/function startAudioBlocked\(\)/);
+ assert.match(io,/start\.disabled=startAudioBlocked\(\)/);
  assert.match(control,/window\.__arMixStartLiveAudio=/);
  assert.match(control,/fastAudioPending=\{phase:"patch"/);
  assert.match(control,/if\(verified\)fastAudioArm\(result\)/);
@@ -490,4 +491,31 @@ test('P0 actual raw PCM before MUTE and native route/output state remain indepen
   assert.match(f,/OPEN SIGNAL CHECK/);
  }
  assert.doesNotMatch(io,/new AudioContext\(/);
+});
+
+
+test('P0 First Sound separates RAW capture, post-fader PCM and physical output ARM',()=>{
+  const css=read('web/mixer-io.css');
+  const engine=read('src/LiveAudioEngine.h');
+  const core=read('engine/core/PreparedMixerBlock.h');
+  const main=read('src/Main.cpp');
+  assert.match(gui,/data-audio-path-mixer/);
+  assert.match(gui,/data-io-start-audio disabled/);
+  assert.match(gui,/function startAudioBlocked\(\)/);
+  assert.match(gui,/start\.disabled=startAudioBlocked\(\)/);
+  assert.match(gui,/start\.disabled=startAudioBlocked\(\)/);
+  assert.match(gui,/window\.__arMixStartLiveAudio\?\.\(\)/);
+  assert.match(monitor,/window\.__arMixStartLiveAudio=/);
+  assert.match(monitor,/action:"monitor",value:true/);
+  assert.match(monitor,/expectedEpoch:Number\(d\.epoch\),expectedRevision:Number\(d\.revision\)/);
+  assert.match(main,/engine_\.liveOutputArmFault\(\)/);
+  assert.match(monitor,/const mixed=patched\.some\(i=>Number\(meter\[i\]\)>0\.0002\)/);
+  assert.match(monitor,/const mainPcm=Number\(d\.peak\)>0\.0002/);
+  assert.match(monitor,/ArSonMix physical MAIN is SAFE-MUTED/);
+  assert.match(monitor,/if sound persists|sound must stop|If sound persists/i);
+  assert.match(engine,/const bool outputPermitted=outputGate\.renderMain/);
+  assert.match(engine,/if\(!outputGate\.hardware\)/);
+  assert.match(core,/observed\) observed->channelPeak\[strip\]=peak/);
+  assert.match(css,/\.arIOAudioPath>\.arIOPathStart/);
+  assert.doesNotMatch(gui,/new AudioContext|AudioWorklet|processBlock|createPluginInstance/);
 });
