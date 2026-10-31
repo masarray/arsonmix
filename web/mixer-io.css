@@ -599,3 +599,10 @@
 @media(max-width:700px){.arIODeviceChoose{grid-template-columns:minmax(0,1fr)}
 .arIODeviceInterfaceGroup{grid-template-columns:minmax(0,1fr)}
 .arIODeviceMatrixHeading{flex-wrap:wrap}}
+
+/* P0 independent native PCM / routing / output proof: flat, static, compact. */
+.arIOAudioPath{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:5px;align-items:center;padding:7px 11px;background:#0e2630;border-block:1px solid #3c5b68;color:#c7e0e8;font:10px/1.4 "Segoe UI",sans-serif}
+.arIOAudioPath>span{padding:5px 7px;border-left:2px solid #5b91a1;background:#142e39;min-width:0;overflow-wrap:anywhere}
+.arIOAudioPath>small{grid-column:1/-1;color:#d9d0ad;font-size:10px;line-height:1.4;overflow-wrap:anywhere}
+.arIOAudioPath>button{min-height:26px;white-space:nowrap}
+@media(max-width:850px){.arIOAudioPath{grid-template-columns:repeat(2,minmax(0,1fr))}.arIOAudioPath>small{grid-column:1/-1}}
