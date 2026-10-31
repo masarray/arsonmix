@@ -2,6 +2,8 @@
 
 31 October 2026 · baseline main 71bcd715 · source to channel workflow, no second engine.
 
+> **HISTORICAL DELIVERY — PATCH1 #218, IMPLEMENTED, NOT FINAL UX CONTRACT.** Its per-row STAGE → manual MUTE → APPLY procedure remains the *current safety behavior* only. After the formal eMotion LV1 / Fender Studio Pro benchmark on 2026-10-31, the **future operator workflow** is defined in [PATCH2 PRD](PRD_HARDWARE_AUDIO_IO_MATRIX_20261030.md) and [PATCH2 ARD](ARD_HARDWARE_AUDIO_IO_MATRIX_20261030.md): configure named logical sources once, then choose an existing source directly on the channel. Do not remove current safety gates until native safe switching and physical FAT are proven.
+
 ## Operator workflow
 
 - AUDIO I/O → INPUT ROUTING → CH03 → MONO → IN 1 → STAGE. Then MUTE output → APPLY PATCH → wait for NATIVE ACK. Live audio never changes from selecting a draft.

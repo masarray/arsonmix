@@ -14,11 +14,13 @@ On CH2–10 show only actually supported VST3 slots. Master FX placeholder requi
 ## BUS + Sends workflow
 A named AUX1 Reverb is ONE shared stereo FX return with real native signal and meter/fader. Selecting AUX1 shows source channels' PRE/POST send levels and correct mono/stereo pan from a single focused grid. FX AUX is internal processing, not a physical headphone output. GROUP, MONITOR, MATRIX, DCA are distinct types and must not appear LIVE before their native engines exist. Sends-on-Faders (future) shows a highly visible selected bus/mode; it cannot silently control MAIN faders.
 
-## PATCH workflow
-INPUT: logical channel/source row against only enabled physical input columns. Add/rename mono/stereo logical sources in a native-backed later milestone; nonadjacent stereo physical pins are valid if enabled. Two-input device = two columns by default.
-INTERNAL: source→bus routing with selected-edge highlighting, independent tap state and cycle/duplicate rejection; no entire web of lines every frame.
-OUTPUT: named logical bus and independently verified physical render pin. MAIN L/R is currently read-only. With native MS3, STEREO bus→two distinct ports or MONO bus→one port supported. 2-output device rejects MONITOR 3/4.
-Every structural change stages DRAFT, requires MUTED APPLY, waits for native ACK; no auto-unmute or misleading LIVE state. Invalid plugin layout, stale device, missing ports and audio feedback must yield concise operator language and no lost accepted state.
+## PATCH workflow — PATCH2 verified-benchmark revision (2026-10-31)
+The former PATCH1 matrix-first interaction is a delivered baseline, NOT the target daily workflow. The [PATCH2 PRD](PRD_HARDWARE_AUDIO_IO_MATRIX_20261030.md) and [PATCH2 ARD](ARD_HARDWARE_AUDIO_IO_MATRIX_20261030.md) supersede its operator guidance. **Waves LV1** offers direct source selection on the selected channel and global filtered patching. **Fender Studio Pro** defines reusable named software I/O channel aliases in Audio Setup and selects those from the console channel. Source picker must be discoverable on the mixer without opening PATCH.
+
+- **Ordinary use, after device setup:** CH03 SOURCE → MAONO Input 1 (Mono); CH06 SOURCE → MAONO driver-verified Virtual L/R (Stereo). Target ≤2 actions, ACK-backed, no routine per-row STAGE or manual global MUTE/APPLY; NOT IMPLEMENTED until the native live-safe single-input transaction and issue #15 physical FAT pass. Currently retain PATCH1 MUTE→APPLY→ACK honestly and do not claim seamless switching.
+- **AUDIO SETUP:** driver, rate, buffer, actual sparse hardware pins; configure and name reusable mono/stereo logical sources once; stable device-specific profile/Show remap. No fabricated virtual channels or implicit aggregation of independent Windows capture endpoints.
+- **ADVANCED PATCH:** INPUT = verified physical/logical source → channel with clear signal direction; OUTPUT = real MAIN/MONITOR/OUTPUT1 capabilities only; INTERNAL = supported sends/buses only. One shared routing controller, accepted vs pending status and rollback; no fake group/DCA/device-to-device grid.
+- **Audio safety:** native source-only quick-switch must preflight epoch/revision, compile immutable prepared graph off audio thread, handoff safely at block boundary, avoid discontinuity/crackle, preserve plugin/aux state and existing operator mute. Structural and unsafe changes still require explicit guarded APPLY and no auto-unmute. Reject without losing previous audio.
 
 ## Operator acceptance journeys
 A) MIC1 MONO source → STEREO-format Lead Vocal while same physical pin selected; correct native sample result, no phantom R and no fader shift.
