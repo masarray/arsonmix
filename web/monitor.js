@@ -1227,6 +1227,46 @@
         error:matched?"":String(ack?.error||"Native route changed; gain NOT applied")}
     }));
   });
+  // M1 AUX MASTER: one existing enabled FX-return fader, ACK and epoch bound.
+  // Structural AUX enabling/mute/toMaster/FX replacement still uses APPLY.
+  let auxMasterRequestId=1;
+  const auxMasterPending=new Map();
+  window.__arMixSetLiveAuxMasterGain=(bus,value)=>{
+    const d=state.dryRoutingLab||{},gain=Number(value);
+    if(!Number.isInteger(bus)||bus<0||bus>=4||!Number.isFinite(gain)||
+       gain<0||gain>4)return {ok:false,error:"Invalid AUX master gain."};
+    if(!d.active||!d.ready||!d.acceptedRoute||
+       patchPending||draftEpoch!==Number(d.epoch)||mixerDraftActive||
+       rackFxDraft||!Array.isArray(d.acceptedRoute.auxes)||
+       !d.acceptedRoute.auxes[bus]?.enabled)
+      return {ok:false,error:"AUX master unavailable: finish DRAFT and APPLY the enabled bus first."};
+    if(auxMasterPending.has(bus))
+      return {ok:false,error:"Wait for previous AUX master native ACK."};
+    const requestId=auxMasterRequestId++;
+    auxMasterPending.set(bus,requestId);
+    api.emitEvent("arMixAction",{action:"routingAuxBusGain",
+      bus,requestId,deviceEpoch:Number(d.epoch),revision:Number(d.revision),
+      value:gain});
+    return {ok:true,pending:true,message:"AUX MASTER PENDING · NATIVE ACK"};
+  };
+  api.addEventListener("arMixAuxBusGainAck",ack=>{
+    const bus=Number(ack?.bus),id=Number(ack?.requestId);
+    if(auxMasterPending.get(bus)!==id)return;
+    auxMasterPending.delete(bus);
+    const next=ack?.state||{},now=state.dryRoutingLab||{};
+    const ok=ack?.ok===true&&next.epoch===now.epoch&&
+      next.revision===now.revision&&next.acceptedRoute&&!patchPending&&
+      !mixerDraftActive;
+    if(ok){
+      state.dryRoutingLab=next;
+      hydrateAcceptedRoute();
+      drawAux();drawAuxSendMatrix();
+      window.dispatchEvent(new Event("arMixRoutingDraftChanged"));
+    }
+    window.dispatchEvent(new CustomEvent("arMixAuxMasterGainResult",{
+      detail:{ok:!!ok,bus,gain:Number(ack?.gain),
+        error:ok?"":String(ack?.error||"AUX native ACK stale; refresh device")}}));
+  });
   window.__arMixStageAuxReturnEdit=(bus,field,value)=>{
     const fault=sendEditGate(0,bus);
     if(fault)return {ok:false,error:fault};

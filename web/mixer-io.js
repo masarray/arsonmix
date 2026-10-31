@@ -36,10 +36,68 @@
   const toolbar=node('div','arMixerBankBar');
   toolbar.innerHTML='<div class="arMixerBankModes" role="group" aria-label="Mixer channel bank"><button type="button" class="btn-180 active" data-mix-mode="FX" aria-pressed="true">FX</button><button type="button" class="btn-180" data-mix-mode="ROUTE" aria-pressed="false">ROUTE</button><button type="button" class="btn-180" data-mix-mode="SENDS" aria-pressed="false">SENDS</button></div><div class="arMixerBankInfo" id="arMixerBankInfo" role="status">NO HARDWARE · PREVIEW</div><button type="button" class="btn-180 arMixApply" data-mix-apply title="MUTE OUTPUT first; native ACK required">APPLY</button><button type="button" class="btn-180 arMixIoOpen" data-io-open>AUDIO I/O</button>';
   host.insertBefore(toolbar,mixer);
+  // One genuinely selected-channel journey, NOT another DSP or source registry.
+  // Four compact steps show ACKNOWLEDGED state, never stage a hidden graph.
+  const focusFlow=node('div','arChannelSignalFlow');
+  focusFlow.setAttribute('aria-label','Selected live mixer channel signal flow');
+  focusFlow.innerHTML='<span class="arFocusIndex" data-focus-channel>CH 01</span>'+
+    '<button type="button" data-focus-step="source" title="Select verified physical input">SOURCE <span data-focus-source>UNPATCHED</span></button>'+
+    '<button type="button" data-focus-step="fx" title="Open existing native insert rack">FX <span data-focus-fx>0 INSERTS</span></button>'+
+    '<button type="button" data-focus-step="sends" title="Open channel AUX sends">SEND <span data-focus-sends>NO AUX</span></button>'+
+    '<button type="button" data-focus-step="output" title="Open verified output routing">OUT <span data-focus-out>NO OUTPUT</span></button>';
+  // mixer-layout.js moves the whole toolbar into the LEFT RAIL.
+  // The selected channel overview is therefore a separate compact WORKBENCH
+  // row; placing it in toolbar would jam 4 steps into 168px of sidebar.
+  host.insertBefore(focusFlow,mixer);
+  let focusIndex=0,focusSignature='';
+  const focusSet=(q,value)=>{
+    const target=focusFlow.querySelector(q);
+    if(target&&target.textContent!==value)target.textContent=value;
+  };
+  const selectedInputChannel=()=>{
+    const chosen=mixer.querySelector('.strip[data-strip].selected');
+    const i=chosen?Number(chosen.dataset.strip):focusIndex;
+    return Number.isInteger(i)&&i>=0&&i<10?i:0;
+  };
+  function refreshFocus(s){
+    const i=selectedInputChannel(),r=s.acceptedRoute?.channels?.[i];
+    const ack=!!s.ready&&!!s.active&&!!r&&Number(s.acceptedRoute.deviceEpoch)===Number(s.epoch);
+    const driverPins=portList(s);
+    const names=id=>driverPins.find(p=>p.port===id)?.label;
+    let source='UNPATCHED';
+    if(ack&&r.mode==='MONO')
+      source=names(r.left)||'PIN '+(Number(r.left)+1)+' · VERIFY';
+    if(ack&&r.mode==='STEREO')
+      source=(names(r.left)||'L'+(Number(r.left)+1))+' / '+
+        (names(r.right)||'R'+(Number(r.right)+1));
+    if(ack&&r.mode==='BUS')source='INTERNAL BUS';
+    if(!ack)source='NO NATIVE ACK';
+    const routed=ack?lastStatus.dryRoutingLab?.fxInstances?.[i]:null;
+    const inserts=Array.isArray(routed)?routed.length:0;
+    const legacy=i===0?Math.max(0,Number(lastStatus.chainCount)||0):0;
+    const fx=(inserts+legacy)+' VST3'+(legacy&&inserts?' · SPLIT OWNERS':'');
+    const sends=ack&&Array.isArray(s.acceptedRoute.sends)?
+      s.acceptedRoute.sends.filter(x=>x.from===i&&x.to>=10&&x.to<14):[];
+    const sendsText=sends.length?sends.map(x=>'AUX'+(x.to-9)+' '+x.tap).join(' / '):'NO AUX';
+    const outputs=s.mainOutputs?.length===2?s.mainOutputs:[];
+    const dest=ack&&r.main&&outputs.length===2?
+      'MAIN HW '+(outputs[0]+1)+'/'+(outputs[1]+1):
+      ack&&r.main?'MAIN · NO PIN':ack?'SEND ONLY':'NO OUTPUT';
+    const sig=JSON.stringify([i,source,fx,sendsText,dest,ack,s.pending]);
+    if(sig!==focusSignature){
+      focusIndex=i;focusSignature=sig;
+      focusSet('[data-focus-channel]','CH '+String(i+1).padStart(2,'0'));
+      focusSet('[data-focus-source]',source);
+      focusSet('[data-focus-fx]',fx);
+      focusSet('[data-focus-sends]',sendsText);
+      focusSet('[data-focus-out]',dest);
+      focusFlow.dataset.nativeState=ack&&!s.pending?'accepted':'unverified';
+    }
+  }
   // MS5: explicit Sends-on-Faders control, scoped to a single real AUX return.
   // MAIN fader DOM and all audio controls remain resident and unmodified.
   const sofControls=node('div','arSofControls');
-  sofControls.innerHTML='<select data-sof-bus aria-label="Sends on Faders AUX destination"><option value="0">AUX 1</option><option value="1">AUX 2</option><option value="2">AUX 3</option><option value="3">AUX 4</option></select><button type="button" class="btn-180" data-sof-toggle aria-pressed="false">SEND FADERS</button>';
+  sofControls.innerHTML='<select data-sof-bus aria-label="Sends on Faders AUX destination"><option value="0">AUX 1</option><option value="1">AUX 2</option><option value="2">AUX 3</option><option value="3">AUX 4</option></select><button type="button" class="btn-180" data-sof-toggle aria-pressed="false">SEND FADERS</button><label class="arAuxMasterInline" title="Native AUX return gain — live, after AUX inserts">AUX MASTER <input type="range" data-aux-master min="-60" max="6" step=".5" value="0" aria-label="Selected AUX master return level"><output data-aux-master-read>0.0 dB</output></label>';
   sofControls.hidden=true;toolbar.appendChild(sofControls);
   const overlay=node('div','arIOOverlay');
   overlay.id='arIOOverlay';overlay.hidden=true;
@@ -157,6 +215,18 @@
     sofControls.hidden=mode!=='SENDS';
     const selector=sofControls.querySelector('[data-sof-bus]');
     const toggle=sofControls.querySelector('[data-sof-toggle]');
+    const auxLevel=sofControls.querySelector('[data-aux-master]');
+    const auxRead=sofControls.querySelector('[data-aux-master-read]');
+    const busSelected=Number(selector.value);
+    const acceptedBus=s.acceptedRoute?.auxes?.[busSelected];
+    const enabled=!!acceptedBus?.enabled&&!s.pending&&s.ready&&isNative();
+    const currentGain=Number(acceptedBus?.gain);
+    const db=Number.isFinite(currentGain)&&currentGain>0
+      ?Math.max(-60,Math.min(6,20*Math.log10(currentGain))):-60;
+    auxLevel.disabled=!enabled;
+    if(document.activeElement!==auxLevel)auxLevel.value=String(db);
+    const readText=enabled?(db<=-60?'OFF':db.toFixed(1)+' dB'):'AUX OFF';
+    if(auxRead.textContent!==readText)auxRead.textContent=readText;
     if(sofBus>=0&&(!isNative()||!s.ready||!s.active||s.epoch!==sofEpoch)){
       leaveSof();sofStatus('SEND FADERS EXITED · DEVICE CHANGED');
     }
@@ -368,6 +438,7 @@
     if(!overlay.hidden)refreshIO();
     if(!sendEditor.hidden)drawSendEditor();
     sofRefresh(s);
+    refreshFocus(s);
   }
 
   // IO-MATRIX: reusable presentation of the existing native 10-channel graph.
@@ -972,6 +1043,50 @@
       lastSignature='';refresh();
     }
   },true);
+  // AUX return fader updates only after release/keyboard change; native
+  // DSP ramps it inside one callback. Never touch the MAIN fader or rack.
+  sofControls.addEventListener('change',event=>{
+    if(event.target.matches('[data-sof-bus]')){sofMessage='';refresh();return;}
+    if(!event.target.matches('[data-aux-master]'))return;
+    const bus=Number(sofControls.querySelector('[data-sof-bus]').value);
+    const db=Number(event.target.value);
+    const gain=db<=-60?0:Math.pow(10,db/20);
+    const answer=window.__arMixSetLiveAuxMasterGain?.(bus,+gain.toFixed(7));
+    sofMessage=answer?.ok?'AUX MASTER · WAIT NATIVE ACK':
+      answer?.error||'AUX master unavailable';
+    refresh();
+  });
+  // Channel focus is intentionally lightweight: point into existing MIX
+  // modes and native controller, never create a parallel mixer/FX model.
+  focusFlow.addEventListener('click',event=>{
+    const button=event.target.closest('[data-focus-step]');
+    if(!button)return;
+    event.preventDefault();
+    const index=selectedInputChannel();
+    const strip=mixer.querySelector('[data-strip="'+index+'"]');
+    const step=button.dataset.focusStep;
+    if(step==='source'){
+      if(!route().ready)openIO('device');
+      else {
+        setMode('ROUTE');
+        strip?.querySelector('.arBankSource')?.focus();
+      }
+    } else if(step==='fx'){
+      setMode('FX');
+      if(typeof chooseChannel==='function')chooseChannel(index);
+      strip?.querySelector('.rack')?.scrollIntoView?.({block:'nearest',inline:'nearest'});
+    } else if(step==='sends'){
+      setMode('SENDS');
+      const sends=route().acceptedRoute?.sends||[];
+      const found=sends.find(x=>x.from===index&&x.to>=10&&x.to<14);
+      editSend(index,found?found.to-10:0,button);
+    } else if(step==='output')openIO('outputs',index);
+  });
+  document.addEventListener('click',event=>{
+    if(event.target.closest?.('#arChannelFocus,[data-focus-step]'))return;
+    const strip=event.target.closest?.('.strip[data-strip],[data-choose],[data-chanselect]');
+    if(strip)refreshFocus(route());
+  });
   // The legacy native VST3 bridge registers document capture before this module.
   // Window capture intercepts only AUDIO SETUP, without changing FX/Orbit ownership.
   window.addEventListener('click',e=>{
@@ -1112,8 +1227,13 @@
     if(!sendEditor.hidden){closeSendEditor();e.stopImmediatePropagation();}
     else if(!overlay.hidden){closeIO();e.stopImmediatePropagation();}
   },true);
-  const observer=new MutationObserver(records=>{if(records.some(r=>r.type==='childList'))refresh();});
-  observer.observe(mixer,{childList:true});
+  const observer=new MutationObserver(records=>{
+    if(records.some(r=>r.type==='childList'))refresh();
+    if(records.some(r=>r.attributeName==='class'))
+      focusFlow.hidden=mixer.classList.contains('hidden');
+  });
+  observer.observe(mixer,{childList:true,attributes:true,attributeFilter:['class']});
+  focusFlow.hidden=mixer.classList.contains('hidden');
   backend?.addEventListener?.('arMixStatus',d=>{
     lastStatus=d;
     // 12Hz native telemetry: update only when topology, epoch or safety changes.
@@ -1153,6 +1273,12 @@
     refresh();
   });
   window.addEventListener('arMixRoutingDraftChanged',()=>{lastSignature='';refresh();});
+  window.addEventListener('arMixAuxMasterGainResult',event=>{
+    const ack=event.detail||{};
+    sofMessage=ack.ok?'AUX '+(ack.bus+1)+' MASTER · LIVE NATIVE ACK':
+      'AUX MASTER REJECTED · '+(ack.error||'Stale device');
+    refresh();
+  });
   window.addEventListener('arMixAuxSendGainResult',event=>{
     const a=event.detail||{};
     if(sofBus>=0&&a.bus===sofBus){
