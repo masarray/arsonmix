@@ -291,7 +291,7 @@ test('P0 MAONO: one APPLY MUTE-ACKs before switching and native ARM',()=>{
   assert.match(js,/applyMutePending=true/);
   assert.match(js,/action:'monitor',value:false/);
   assert.match(guard,/s\?\.pending/);
-  assert.match(guard,/Maono MIC or VC In 3\+4/);
+  assert.match(guard,/MAONO MIC\/VC IN pins and channel source/);
   assert.match(js,/ASIO DEVICE SELECTED · NOT ACTIVE · current engine still uses/);
   assert.match(js,/const blocked=deviceSwitchBlocker\(route\(\)\)/);
   assert.match(js,/const deviceBlocker=deviceSwitchBlocker\(s\)/);
