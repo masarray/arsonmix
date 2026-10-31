@@ -1,3 +1,5 @@
+> **DEVICE SETUP INTEGRATION (2026-10-31):** This PATCH2 PRD governs routine SOURCE selection and patch behavior. For the separate *real ASIO/WASAPI device/driver/rate/buffer and enabled-pin configuration inside the existing matrix*, see [Custom Device PRD](PRD_CUSTOM_AUDIO_DEVICE_SETUP_20261031.md), [ARD](ARD_CUSTOM_AUDIO_DEVICE_SETUP_20261031.md) and [handoff](HANDOFF_CUSTOM_AUDIO_DEVICE_SETUP_20261031.md). Native JUCE popup remains the current fallback; custom device APPLY is still **NOT IMPLEMENTED**.
+
 
 # ArSonMiX — Professional Audio Source & Patch UX PRD (PATCH2)
 
