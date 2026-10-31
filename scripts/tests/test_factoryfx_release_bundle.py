@@ -99,6 +99,43 @@ class BundleTests(unittest.TestCase):
             with zipfile.ZipFile(p) as z, self.assertRaises(ValueError):
                 bundle.zip_members(z, "ArSonEQ.vst3")
 
+    def test_arsoncomp_ci_layout_is_factory_vst3_only(self):
+        """Real sibling CI uses Plugin/ArSonComp.vst3, not VST3/; no Standalone."""
+        (self.notices / "arson-comp.txt").write_text(
+            "Reviewed Comp redistribution fixture only", encoding="utf-8")
+        comp_zip = self.root / "comp.zip"
+        with zipfile.ZipFile(comp_zip, "w") as z:
+            z.writestr("Plugin/ArSonComp.vst3/Contents/x86_64-win/ArSonComp.vst3",
+                       b"fake-comp-module")
+            z.writestr("Plugin/ArSonComp.vst3/Contents/Resources/moduleinfo.json",
+                       b'{"name":"ArSonComp"}')
+            z.writestr("Standalone/ArSonComp.exe", b"this-must-never-ship")
+        comp = dict(self.approved, productId="arson-comp",
+                    sourceRepo="masarray/arson-comp",
+                    assetName="ArSonComp-Windows-x64-VST3.zip",
+                    artifactSha256=hashlib.sha256(comp_zip.read_bytes()).hexdigest())
+        self.save_lock(comp)
+        with patch.object(bundle, "download_release",
+                          side_effect=lambda _p, target: shutil.copyfile(comp_zip, target)):
+            bundle.stage(bundle.read_lock(self.lock), self.output, self.notices)
+        bundle.verify(bundle.read_lock(self.lock), self.output, self.notices)
+        root = self.output / "FactoryFX"
+        manifest = json.loads((root / "factoryfx-manifest.json").read_text())
+        self.assertEqual(manifest["plugins"][0]["productId"], "arson-comp")
+        self.assertEqual(manifest["plugins"][0]["category"], "COMP")
+        self.assertTrue((root / "ArSonComp/ArSonComp.vst3/Contents/x86_64-win/ArSonComp.vst3").is_file())
+        self.assertFalse((root / "Standalone").exists())
+        self.assertFalse(list(root.rglob("*.exe")))
+
+    def test_arsoncomp_rejects_mixed_duplicate_bundle_roots(self):
+        zip_path = self.root / "duplicate-comp.zip"
+        with zipfile.ZipFile(zip_path, "w") as z:
+            for root in ("Plugin", "VST3"):
+                z.writestr(f"{root}/ArSonComp.vst3/Contents/x86_64-win/ArSonComp.vst3",
+                           b"duplicate module")
+        with zipfile.ZipFile(zip_path) as z, self.assertRaises(ValueError):
+            bundle.zip_members(z, "ArSonComp.vst3")
+
     def test_extra_factory_file_is_rejected(self):
         with patch.object(bundle, "download_release",
                           side_effect=lambda _p, target: shutil.copyfile(self.archive, target)):
@@ -116,9 +153,27 @@ class WatchTests(unittest.TestCase):
                             assets=[{"name": "ArSonKuPik-v0.5.26-Windows-x64-VST3.zip"}])
             return None
         snapshot = watch.snapshot(fake)
-        self.assertEqual(len(snapshot["observed"]), 3)
+        self.assertEqual(len(snapshot["observed"]), 4)
+        self.assertEqual([x["productId"] for x in snapshot["observed"]],
+                         ["arson-eq", "arson-comp", "arson-verb", "arsonkupik-enhancer"])
         self.assertIsNone(snapshot["observed"][0]["releaseTag"])
-        self.assertEqual(snapshot["observed"][2]["releaseTag"], "v0.5.26")
+        self.assertIsNone(snapshot["observed"][1]["releaseTag"])
+        self.assertEqual(snapshot["observed"][3]["releaseTag"], "v0.5.26")
+
+    def test_comp_published_release_is_detected_but_never_approved(self):
+        def fake(repo):
+            if repo == "masarray/arson-comp":
+                return dict(tag_name="v0.1.0", published_at="2026-10-31T00:00:00Z",
+                            assets=[{"name": "ArSonComp-v0.1.0-Windows-x64-VST3.zip"},
+                                    {"name": "ArSonComp-v0.1.0-Windows-Standalone.zip"}])
+            return None
+        snapshot = watch.snapshot(fake)
+        row = snapshot["observed"][1]
+        self.assertEqual(row["productId"], "arson-comp")
+        self.assertEqual(row["windowsVst3Asset"], "ArSonComp-v0.1.0-Windows-x64-VST3.zip")
+        self.assertEqual(row["releaseTag"], "v0.1.0")
+        self.assertNotIn("approved", json.dumps(row))
+
 
 
 if __name__ == "__main__":
