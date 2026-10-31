@@ -2072,6 +2072,39 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 .arIOOverlay[data-active-tab="device"] .arIOWindow footer [data-io-revert],
 .arIOOverlay[data-active-tab="device"] .arIOWindow footer [data-io-internal],
 .arIOOverlay[data-active-tab="device"] .arIOWindow footer [data-io-advanced]{display:none!important}
+
+
+/* DEVICE1 — compact, hardware-truthful, one native device manager.
+   No blur, animated glow or per-pointer layout work. */
+.arIODeviceControl{display:flex;flex-direction:column;gap:12px;max-width:none}
+.arIODeviceSummary{margin:0;background:#10232d;border-left:3px solid #60c8cc;
+  padding:9px 11px;color:#c3e3e9;font:500 11px/1.5 "ArSonMix Inter","Segoe UI",sans-serif}
+.arIODeviceFields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px}
+.arIODeviceField{display:flex;flex-direction:column;gap:5px;min-width:0;
+  font:600 10px/1.4 "ArSonMix Inter","Segoe UI",sans-serif;color:#99c0ce;letter-spacing:.2px}
+.arIODeviceField select{box-sizing:border-box;width:100%;height:32px;min-width:0;padding:0 9px;
+  background:#0d2029;color:#e0eef3;border:1px solid #466374;border-radius:3px;
+  font:500 11px "ArSonMix Inter","Segoe UI",sans-serif}
+.arIODeviceField select:disabled{opacity:.52;cursor:not-allowed}
+.arIODeviceField select:focus-visible,.arIODevicePin:focus-visible{
+  outline:2px solid #89dce2;outline-offset:1px}
+.arIODeviceControl .arIODeviceNote{color:#a9c1cb;font:10px/1.5 "ArSonMix Inter",sans-serif;margin:0}
+.arIODevicePins{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.arIODevicePinGroup{min-width:0;min-height:60px;max-height:178px;overflow:auto;
+  padding:8px 10px;background:#11232d;border:1px solid #344f5b;scrollbar-width:thin}
+.arIODevicePinGroup>strong{display:block;padding:2px 0 8px;color:#a3d6e1;
+  font:600 10px "ArSonMix Inter",sans-serif}
+.arIODevicePinGroup>small{display:block;color:#8faebc;font:10px/1.5 "ArSonMix Inter",sans-serif}
+.arIODevicePinRow{display:flex;align-items:center;gap:8px;min-height:25px;cursor:pointer;
+  font:10px "ArSonMix Inter","Segoe UI",sans-serif;color:#c4dce5}
+.arIODevicePinRow input{accent-color:#34b6ca;width:14px;height:14px;flex:none;margin:0}
+.arIODevicePinRow:hover{background:#1c3741}
+.arIODeviceActions{display:flex;justify-content:flex-start;gap:9px}
+.arIOWindow [hidden]{display:none!important}
+.arIOWindow .arIODeviceApply{--b180-color:#a5eef0;--b180-border:#2fa0ac;--b180-ink:#09292c}
+@media(max-width:660px){
+  .arIODeviceFields,.arIODevicePins{grid-template-columns:minmax(0,1fr)}
+}
 </style></head>
 <body>
 <div id="app" class="app">
