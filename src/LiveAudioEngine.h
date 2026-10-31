@@ -1244,6 +1244,8 @@ public:
         o->setProperty ("callbackP99BeyondDeadline", histogram.p99Ceiling < 0);
         o->setProperty ("callbackBudgetSamples", static_cast<double> (histogram.total));
         o->setProperty ("inputPeak", inputPeak_.load());
+        o->setProperty ("inputPeakProvenance", "RAW_PCM_BEFORE_HARDWARE_MUTE");
+        o->setProperty ("captureSignalBlocks",static_cast<double>(captureSignalBlocks_.load(std::memory_order_relaxed)));
         o->setProperty ("postFxPeak", postFxPeak_.load());
         o->setProperty ("peak", outputPeak_.load());
         o->setProperty ("peakLeft", outputPeakL_.load());
@@ -1403,6 +1405,7 @@ private:
     std::atomic<bool> monitor_ { false }, channelMute_ { false }, masterMute_ { false }, masterMono_ { false }, dryTest_ { false };
     std::atomic<float> masterGain_ { 1.f }, channelGain_ { 1.f }, channelPan_ { 0.f };
     std::atomic<float> inputPeak_ { 0.f }, postFxPeak_ { 0.f }, outputPeak_ { 0.f };
+    std::atomic<std::uint64_t> captureSignalBlocks_ {0}; // per device epoch
     std::atomic<float> outputPeakL_ { 0.f }, outputPeakR_ { 0.f };
     std::atomic<int> callbackInputs_ { 0 }, callbackOutputs_ { 0 };
     std::atomic<unsigned long long> callbackCount_ { 0 };
@@ -1490,6 +1493,8 @@ private:
             directFence_.observeStart (backend.toRawUTF8(), name.toRawUTF8(),
                                        inputMask.toRawUTF8(), outputMask.toRawUTF8());
         }
+        inputPeak_.store(0.f,std::memory_order_relaxed);
+        captureSignalBlocks_.store(0,std::memory_order_relaxed);
         deviceStartCount_.fetch_add (1, std::memory_order_relaxed);
         sampleRateHz_ = juce::jmax (1.0, d->getCurrentSampleRate());
         diagnosticTone_.prepare (sampleRateHz_); // device stopped; no RT allocation
@@ -1678,6 +1683,16 @@ private:
                 monitor_.load(std::memory_order_relaxed),
                 secondaryOutput_.armed());
             const bool outputPermitted=outputGate.renderMain;
+            // Native input PCM must remain observable even with safe output MUTE.
+            // Scan bounded verified callback channels, no allocation or lock.
+            float rawCapturePeak=0.f;
+            if(inputs && inputChannels>0)
+                for(int c=0;c<juce::jmin(inputChannels,armix::device::LiveInputPortRegistry::limit);++c)
+                    if(const float* const src=inputs[c])
+                        for(int i=0;i<samples;++i)
+                            rawCapturePeak=juce::jmax(rawCapturePeak,std::abs(src[i]));
+            if(rawCapturePeak>0.0005f)
+                captureSignalBlocks_.fetch_add(1,std::memory_order_relaxed);
             // Both native 10CH routing and the existing CH1 vendor FX chain
             // execute in ONE stereo output render pass. Never mix a parallel
             // CH1 output on top or copy vendor processors into another graph.
@@ -1758,7 +1773,7 @@ private:
             const float right=routed?dryRoutingLab_.peakRight():0.f;
             const float audibleLeft=(routedFxMove!=0||cycle.fadeOut||cycle.fadeIn)?movedPeakL:left;
             const float audibleRight=(routedFxMove!=0||cycle.fadeOut||cycle.fadeIn)?movedPeakR:right;
-            inputPeak_.store(0.f,std::memory_order_relaxed);
+            inputPeak_.store(juce::jmin(1.f,rawCapturePeak),std::memory_order_relaxed);
             postFxPeak_.store(juce::jmin(1.f,juce::jmax(left,right)),std::memory_order_relaxed);
             outputPeakL_.store(juce::jmin(1.f,audibleLeft),std::memory_order_relaxed);
             outputPeakR_.store(juce::jmin(1.f,audibleRight),std::memory_order_relaxed);
