@@ -1834,7 +1834,7 @@
       const routes=result?.acceptedRoute?.channels||[];
       const verified=reply?.ok===true&&result.ready===true&&
         result.hasAcceptedRoute===true&&Number(result.epoch)===pending.epoch&&
-        pending.pins.every((pin,i)=>routes[i]?.mode==="MONO"&&routes[i]?.left===pin);
+        (pending.phase==="custom-patch"?routes.some(r=>r.mode==="MONO"||r.mode==="STEREO"):pending.pins.every((pin,i)=>routes[i]?.mode==="MONO"&&routes[i]?.left===pin));
       if(verified)fastAudioArm(result);
       else fastAudioNotify("START STOPPED · route ACK failed or device changed. OUTPUT remains MUTED.");
     }
