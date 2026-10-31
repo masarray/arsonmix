@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/LiveChannelFxGraph.h"
+#include "../engine/core/DynamicChannelFxLeaseBank.h"
+#include "../engine/core/DynamicNativeSessionPublisher.h"
 #include "../engine/core/NativeOutputPairTap.h"
 #include "../engine/core/RealtimeRoutePublisher.h"
 #if defined(NDEBUG)
@@ -87,7 +89,123 @@ static std::unique_ptr<LiveChannelFxGraph> makeGraph(float firstFx,float returnF
     assert(graph->maxFramesPerPlugin()==32); // clamp minimum safe plugin quantum
     return graph;
 }
+// M5: real M4 JUCE plugin instances survive ChannelId graph migration.
+// CH11 and FX Return are not borrowed legacy strips: they receive their own
+// native processor leases and execute in the same prepared PCM schedule.
+static void verifyUniversalChannelIdFxLeaseAndLivePcm() {
+    using Bank=DynamicChannelFxLeaseBank;
+    DynamicChannelRoster roster;
+    std::array<ChannelEdit,4> adds{};
+    for(int i=0;i<4;++i) {
+        auto& op=adds[static_cast<std::size_t>(i)];
+        op.kind=ChannelEdit::Kind::add;
+        op.position=static_cast<std::size_t>(i);
+        op.role=i==2?ChannelRole::fxReturn:i==3?ChannelRole::main:ChannelRole::input;
+        op.format=i<2?ProcessingFormat::mono:ProcessingFormat::stereo;
+        op.text=i==0?"CH1":i==1?"CH11":i==2?"FX RETURN":"MAIN";
+    }
+    const auto created=roster.edit(0,adds);
+    assert(created.ok()&&created.createdIds.size()==4);
+    const auto ch1=created.createdIds[0],ch11=created.createdIds[1];
+    const auto ret=created.createdIds[2],main=created.createdIds[3];
+    std::vector<ChannelEdit> wire;
+    const auto link=[&](ChannelId src,ChannelId dst,bool primary,
+                        float gain=1.f) {
+        ChannelEdit op;op.kind=ChannelEdit::Kind::addSendReference;
+        op.id=src;op.target=dst;op.value=gain;op.primaryOutput=primary;
+        wire.push_back(std::move(op));
+    };
+    link(ch1,main,true);
+    link(ch11,main,true);
+    link(ret,main,true);
+    link(ch11,ret,false,.5f);
+    ChannelEdit marker;marker.kind=ChannelEdit::Kind::addInsertReference;
+    marker.id=ret;marker.text="native-vst3-fx-return";
+    wire.push_back(std::move(marker));
+    assert(roster.edit(roster.revision(),wire).ok());
+    const std::array<ChannelId,2> selected{ch1,ch11};
+    const auto group=roster.createBusForSelected(
+        roster.revision(),selected,"VOCAL GROUP",ChannelRole::group);
+    assert(group.ok()&&group.createdIds.size()==1);
+    const auto bus=group.createdIds[0];
+    assert(roster.find(ch11)->primaryOutput==bus);
+    assert(roster.find(bus)->primaryOutput==main);
+
+    DynamicGraphRequest req;
+    req.physicalInputs=2;req.maxFrames=64;
+    req.sources={{ch1,0,-1,false},{ch11,1,-1,false}};
+    DynamicNativeSessionPublisher native;
+    constexpr std::uint64_t epoch=991;
+    assert(native.commit(roster,req,0,epoch,epoch,true).ok());
+
+    auto original=makeGraph(2.f,3.f);
+    Bank::Assignment first,groupOwner;
+    assert(Bank::captureLegacy(0,ch1,ProcessingFormat::mono,*original,first));
+    assert(Bank::captureLegacy(1,bus,ProcessingFormat::stereo,*original,groupOwner));
+    // These are genuinely new CH11/FX Return native instances. The M4
+    // vendor processor ownership class and binary state path are reused.
+    const auto newFx=[&](float g,const char* catalog)->Bank::Lease {
+        auto p=std::make_unique<GainFx>(g);
+        p->prepareToPlay(48000.0,64);
+        return std::make_shared<LiveChannelFxGraph::FxInstance>(
+            std::move(p),juce::String(catalog),juce::String(catalog),64);
+    };
+    Bank::Assignment eleven;eleven.id=ch11;eleven.format=ProcessingFormat::mono;
+    eleven.inserts.push_back(newFx(4.f,"ch11-gain"));
+    Bank::Assignment returnFx;returnFx.id=ret;returnFx.format=ProcessingFormat::stereo;
+    returnFx.inserts.push_back(newFx(2.f,"fx-return-gain"));
+    std::array<Bank::Assignment,4> assignments{first,eleven,groupOwner,returnFx};
+    Bank bank;
+    assert(Bank::prepare(epoch,native.acceptedRevision(),assignments,bank)==
+           Bank::Fault::none);
+    assert(bank.lanes()==4&&bank.insertCount(ch11)==1&&
+           bank.insertCount(bus)==1&&bank.insertCount(ret)==1);
+    assert(bank.ownerForControl(ch1,0)&&
+           (*bank.ownerForControl(ch1,0))->instanceId==
+              original->insertInstanceId(0,0));
+    Bank blocked;
+    std::array<Bank::Assignment,2> alias{first,groupOwner};
+    alias[1].id=ch11;
+    alias[1].inserts=first.inserts; // same native processor twice
+    assert(Bank::prepare(epoch,2,alias,blocked)==Bank::Fault::duplicateInstance);
+    assert(blocked.lanes()==0);
+    assert(Bank::prepare(epoch,2,assignments,blocked)==Bank::Fault::none);
+    const auto token=original->insertInstanceId(0,0);
+    auto migrated=*bank.ownerForControl(ch1,0);
+    assert(migrated->instanceId==token);
+    original.reset(); // vendor instances retained by bank, no new VST3 scan
+    assert(GainFx::living>=4);
+    std::array<float,64> mic{},music{},left{},right{};
+    mic.fill(.2f);music.fill(.1f);
+    const float* pins[]{mic.data(),music.data()};
+    const auto beforeHeap=heapCalls.load(std::memory_order_relaxed);
+    assert(native.render(epoch,pins,2,left.data(),right.data(),64,false,
+                         [&bank](ChannelId id,float* l,float* r,int n) noexcept {
+                             bank(id,l,r,n);
+                         }));
+    assert(heapCalls.load(std::memory_order_relaxed)==beforeHeap);
+    constexpr float center=.7071067811865475f;
+    // Main: (CH1 .2*2 + CH11 .1*4) * mono pan * GROUP FX3
+    //     + CH11 post-send .5 * FX Return VST2 (no extra dry source).
+    assert(near(left[63],((.2f*2.f+.1f*4.f)*3.f+
+                         (.1f*4.f)*.5f*2.f)*center));
+    assert(near(left[63],right[63]));
+    assert(native.setChannelMix(epoch,1,bus,.5f,0.f));
+    assert(native.render(epoch,pins,2,left.data(),right.data(),64,false,
+                         [&bank](ChannelId id,float* l,float* r,int n) noexcept {
+                             bank(id,l,r,n);
+                         }));
+    assert(near(left[63],((.2f*2.f+.1f*4.f)*3.f*.5f+
+                         (.1f*4.f)*.5f*2.f)*center));
+    assert(!native.render(epoch+1,pins,2,left.data(),right.data(),64,false,
+                          [&bank](ChannelId id,float* l,float* r,int n) noexcept {
+                              bank(id,l,r,n);
+                          }));
+    assert(left[63]==0.f&&right[63]==0.f);
+}
+
 int main() {
+    verifyUniversalChannelIdFxLeaseAndLivePcm();
     // R0: existing CH1 FX chain may be rendered inside the SAME prepared
     // ten-channel routing pass, without creating a second plugin or copying
     // a processor. Verify exactly one call and zero callback heap allocation.
