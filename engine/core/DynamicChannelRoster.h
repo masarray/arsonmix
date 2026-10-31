@@ -90,6 +90,33 @@ public:
         return it==channels_.end()?nullptr:&*it;
     }
 
+    // CONTROL THREAD ONLY. A realtime parameter target must survive the
+    // next structural BUS/SHOW recompile without incrementing graph topology
+    // revision. Caller updates the native atomic DSP target FIRST and calls
+    // this only after its epoch/revision-validated acceptance.
+    bool rememberLiveMix(ChannelId id,float gain,float pan) noexcept {
+        if(!id.value || !std::isfinite(gain) || gain<0.f || gain>4.f ||
+           !std::isfinite(pan) || pan< -1.f || pan>1.f)return false;
+        for(auto& row:channels_)if(row.id==id) {
+            row.faderLinear=gain;row.pan=pan;return true;
+        }
+        return false;
+    }
+    bool rememberLiveParallelSend(ChannelId id,ChannelId destination,
+                                  bool preFader,float gain) noexcept {
+        if(!id.value || !destination.value || !std::isfinite(gain) ||
+           gain<0.f || gain>4.f)return false;
+        for(auto& row:channels_)if(row.id==id){
+            for(auto& link:row.sends)
+                if(link.destination==destination &&
+                   link.preFader==preFader && !link.primaryOutput) {
+                    link.gain=gain;return true;
+                }
+            return false;
+        }
+        return false;
+    }
+
     // A single structural transaction. All mutation and allocations occur on
     // control thread. Validation failures never change the accepted draft.
     // This does NOT publish audio; the existing muted native APPLY owns LIVE.
