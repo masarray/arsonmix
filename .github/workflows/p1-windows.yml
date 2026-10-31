@@ -12,6 +12,9 @@ on:
       - 'AR-MIX-Live-FX-Host-Standalone-v0.3.html'
       - 'scripts/build_ui_css.py'
       - 'tests/*.cpp'
+      # Native Windows gate executes this JS integration contract; source-only
+      # contract corrections must not leave a stale failed release gate.
+      - 'tests/live_routing_ui_contract_test.mjs'
       - 'scripts/package_native_windows.ps1'
       - 'scripts/verify_native_windows_artifact.ps1'
       - 'scripts/factoryfx_release_bundle.py'
