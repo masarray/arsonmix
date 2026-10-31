@@ -6,8 +6,10 @@
   const mixer=document.getElementById('mixer');
   const host=document.querySelector('.workbench');
   if(!mixer||!host)return;
-  let mode='FX', lastStatus={}, deviceInventory=null, ioTab='inputs', lastSignature='', focusedInput=2;
+  let mode='FX', lastStatus={}, deviceInventory=null, ioTab='device', lastSignature='', focusedInput=2;
   let monitorSendsExpanded=false;
+  // Pending SOURCE ACK is a UI projection only; monitor.js owns the native route.
+  let quickSourcePending=null;
   const el=id=>document.getElementById(id);
   const node=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n;};
   const route=()=>window.__arMixRouteView?.()||{ports:[],outputPorts:[],draftRoutes:[],draftSends:[],draftAux:[],ready:false,epoch:0,monitor:false};
@@ -39,7 +41,7 @@
   sofControls.hidden=true;toolbar.appendChild(sofControls);
   const overlay=node('div','arIOOverlay');
   overlay.id='arIOOverlay';overlay.hidden=true;
-  overlay.innerHTML='<section class="arIOWindow" role="dialog" aria-modal="true" aria-label="ArSonMix hardware audio I/O"><header><div><small>ArSonMiX · AUDIO HARDWARE</small><h2>Audio I/O Setup · Mixer Routing</h2></div><button type="button" class="btn-180" data-io-close aria-label="Close Audio I/O">CLOSE</button></header><div class="arIOTop" id="arIOIdentity"></div><nav role="tablist" aria-label="Audio I/O views"><button class="btn-180 active" role="tab" data-io-tab="inputs">INPUT ROUTING</button><button class="btn-180" role="tab" data-io-tab="outputs">OUTPUT ROUTING</button><button class="btn-180" role="tab" data-io-tab="device">DEVICE / DRIVER</button></nav><div id="arIOBody" class="arIOBody"></div><footer><span id="arIOFeedback" role="status">Hardware changes require native ACK. Output stays MUTED on APPLY.</span><button type="button" class="btn-180" data-io-revert>REVERT DRAFT</button><button type="button" class="btn-180" data-mix-apply>APPLY PATCH</button><button type="button" class="btn-180" data-io-internal>ADVANCED BUS / FX</button><button type="button" class="btn-180" data-io-advanced>DRIVER SETTINGS</button></footer></section>';
+  overlay.innerHTML='<section class="arIOWindow" role="dialog" aria-modal="true" aria-label="ArSonMix hardware audio I/O"><header><div><small>ArSonMiX · AUDIO HARDWARE</small><h2>Audio Setup · Windows Devices & Routing</h2></div><button type="button" class="btn-180" data-io-close aria-label="Close Audio I/O">CLOSE</button></header><div class="arIOTop" id="arIOIdentity"></div><nav role="tablist" aria-label="Audio I/O views"><button class="btn-180 active" role="tab" data-io-tab="device">DEVICE / DRIVER</button><button class="btn-180" role="tab" data-io-tab="inputs">INPUT ROUTING</button><button class="btn-180" role="tab" data-io-tab="outputs">OUTPUT ROUTING</button></nav><div id="arIOBody" class="arIOBody"></div><footer><span id="arIOFeedback" role="status">Hardware changes require native ACK. Output stays MUTED on APPLY.</span><button type="button" class="btn-180" data-io-revert>REVERT DRAFT</button><button type="button" class="btn-180" data-mix-apply>APPLY PATCH</button><button type="button" class="btn-180" data-io-internal>ADVANCED BUS / FX</button><button type="button" class="btn-180" data-io-advanced>OPEN WINDOWS DEVICE SELECTOR</button></footer></section>';
   document.body.appendChild(overlay);
   // G3: ONE floating inspector follows the selected source/AUX, no new
   // DSP graph, no heavyweight matrix, no layout shifts in the MIX strips.
@@ -268,7 +270,7 @@
       event.stopImmediatePropagation();event.preventDefault();
     }
   },true);
-  function openIO(tab='inputs',channel=null){
+  function openIO(tab='device',channel=null){
     document.getElementById('arRouteClose')?.click();
     if(['inputs','outputs','device'].includes(tab))ioTab=tab;
     if(Number.isInteger(channel)&&channel>=0&&channel<10)focusedInput=channel;
@@ -290,7 +292,7 @@
     for(const strip of mixer.querySelectorAll('.strip[data-strip]')){
       if(strip.querySelector('.arChannelBank'))continue;
       const bank=node('div','arChannelBank');
-      bank.innerHTML='<div class="arRouteBank"><span class="arBankTitle">PHYSICAL INPUT</span><select class="arBankSource" aria-label="Physical channel input source"></select><span class="arBankTitle">OUTPUT DESTINATION</span><span class="arBankOutput">MAIN · UNKNOWN</span><div class="arBankFormatRow"><select class="arBankChannelFormat" aria-label="Independent channel processing format" title="Processing MONO / STEREO independent from hardware input"><option value="MONO">CH M</option><option value="STEREO">CH L/R</option></select><span class="arBankStage">NATIVE PATCH REQUIRED</span></div><button class="btn-180 arBankPatch" data-mix-patch="input">OPEN INPUT PATCH</button></div><div class="arSendBank"><span class="arBankTitle">AUX SENDS · PRE / POST</span><div class="arSendSummary"></div><button class="btn-180 arBankPatch" data-mix-patch="internal">EDIT AUX SENDS</button></div>';
+      bank.innerHTML='<div class="arRouteBank"><span class="arBankTitle">INPUT SOURCE · NATIVE</span><select class="arBankSource" aria-label="Physical channel input source"></select><span class="arBankTitle">OUTPUT DESTINATION</span><span class="arBankOutput">MAIN · UNKNOWN</span><div class="arBankFormatRow"><select class="arBankChannelFormat" aria-label="Independent channel processing format" title="Processing MONO / STEREO independent from hardware input"><option value="MONO">CH M</option><option value="STEREO">CH L/R</option></select><span class="arBankStage">NATIVE PATCH REQUIRED</span></div><button class="btn-180 arBankPatch" data-mix-patch="input">OPEN INPUT PATCH</button></div><div class="arSendBank"><span class="arBankTitle">AUX SENDS · PRE / POST</span><div class="arSendSummary"></div><button class="btn-180 arBankPatch" data-mix-patch="internal">EDIT AUX SENDS</button></div>';
       strip.querySelector('.rack')?.insertAdjacentElement('afterend',bank);
     }
   }
@@ -311,7 +313,7 @@
     if(!source||!output)return;
     const current=valueFor(r);
     populate(source,portsFor(s,r),current);
-    source.dataset.channel=String(i);source.disabled=!isNative()||!s.ready||!!s.pending;
+    source.dataset.channel=String(i);source.disabled=!isNative()||!s.ready||!!s.pending||!!quickSourcePending;
     const format=strip.querySelector('.arBankChannelFormat');
     if(format){format.value=channelFormat(r);format.dataset.channel=String(i);
       format.disabled=!isNative()||!s.ready||!!s.pending;}
@@ -319,8 +321,9 @@
     const accepted=s.acceptedRoute?.channels?.[i],
       dirty=current!==valueFor(accepted)||channelFormat(r)!==channelFormat(accepted);
     const stage=strip.querySelector('.arBankStage');
-    stage.textContent=!s.ready?'NO LIVE DEVICE':dirty?'DRAFT · NOT APPLIED':r.mode==='NONE'?'UNPATCHED · SILENT':'LIVE · NATIVE ACK';
-    stage.dataset.state=!s.ready?'offline':dirty?'draft':r.mode==='NONE'?'offline':'live';
+    const sourcePending=quickSourcePending?.channel===i&&quickSourcePending.epoch===s.epoch;
+    stage.textContent=!s.ready?'NO LIVE DEVICE':sourcePending?'PENDING · NATIVE ACK':dirty?'DRAFT · NOT APPLIED':r.mode==='NONE'?'UNPATCHED · SILENT':'LIVE · NATIVE ACK';
+    stage.dataset.state=!s.ready?'offline':sourcePending?'draft':dirty?'draft':r.mode==='NONE'?'offline':'live';
     // Four native AUX destinations are always visible, even when empty.
     // Render only after a topology change, never on meter telemetry.
     const slots=Array.from({length:4},(_,bus)=>{
@@ -666,6 +669,7 @@
       const active=b.dataset.ioTab===ioTab;b.classList.toggle('active',active);
       b.setAttribute('aria-selected',String(active));
     });
+    overlay.dataset.activeTab=ioTab;
     overlay.querySelector('[data-mix-apply]').disabled=!hardwareReady(s)||!!matrixDraft.size||s.monitor;
     overlay.querySelector('[data-io-revert]').disabled=!isNative()||s.pending;
     const signature=ioTab+'|'+JSON.stringify([s.epoch,s.revision,s.pending,s.draftRoutes,
@@ -754,15 +758,57 @@
       body.appendChild(node('p','arIOHint','LIVE MAIN: '+(accepted.length===2?'HW '+(accepted[0]+1)+'/'+(accepted[1]+1):'UNAVAILABLE')+
         ' · Only native-ACKed MAIN/MONITOR pairs can carry sound. AUX1–4 are internal stereo FX returns, not physical output sockets.'));
     }else{
-      body.appendChild(node('p','arIOHint','Use DRIVER SETTINGS to choose a JUCE-reported ASIO/WASAPI endpoint, sample rate and buffer. A valid native reopen invalidates old hardware patches; sound remains safely muted.'));
-      if(!deviceInventory?.types?.length)body.appendChild(node('p','arIOHint','No device inventory yet · select a verified Windows audio device.'));
-      for(const type of deviceInventory?.types||[]){
-        const card=node('div','arIODeviceType');
-        card.append(node('strong','',type.name+(type.active?' · CURRENT':'')));
-        card.appendChild(node('span','','IN: '+(type.inputs?.join(', ')||'NONE')));
-        card.appendChild(node('span','','OUT: '+(type.outputs?.join(', ')||'NONE')));
-        body.appendChild(card);
+      // Present the REAL JUCE device inventory, not a mock backend selector.
+      // Backend/device/rate/buffer changes happen only inside the existing
+      // safe native AudioDeviceSelectorComponent (no second device manager).
+      const setup=node('section','arIORealDeviceSetup');
+      setup.setAttribute('aria-label','Select an actual Windows audio device');
+      const summary=node('div','arIORealDeviceSummary');
+      summary.append(node('strong','','1 · AUDIO DRIVER & DEVICE'),
+        node('small','',!isNative()?'WEB PREVIEW · Windows audio devices cannot be listed here':
+          'Native JUCE device selector · changing hardware requires route review'));
+      const chooser=node('button','btn-180 arIODeviceChoose','SELECT AUDIO DRIVER / DEVICE…');
+      chooser.type='button';chooser.dataset.ioAdvanced='1';
+      chooser.disabled=!isNative();
+      const refresh=node('button','btn-180 arIODeviceRefresh','REFRESH DEVICE LIST');
+      refresh.type='button';refresh.dataset.ioRefreshDevice='1';refresh.disabled=!isNative();
+      const actions=node('div','arIODeviceActions');actions.append(chooser,refresh);
+      setup.append(summary,actions);
+      setup.appendChild(node('p','arIODeviceNote',
+        'The Windows selector provides driver type, capture/playback device, enabled input/output channels, sample rate and buffer. Selecting a different driver never auto-unmutes output.'));
+      const backends=node('div','arIOBackendStatus');
+      const types=Array.isArray(deviceInventory?.types)?deviceInventory.types:[];
+      const backendType=(kind)=>types.find(t=>kind==='WASAPI'
+        ?String(t.name).startsWith('Windows Audio')
+        :kind==='ASIO'?t.name==='ASIO':t.name==='DirectSound');
+      for(const [kind,title] of [['ASIO','ASIO'],['WASAPI','WASAPI · Windows Audio'],['DirectSound','DirectSound · legacy']]){
+        const item=backendType(kind);
+        const tag=node('span','arIOBackendBadge',kind+' · '+(item?'DETECTED':'NOT REPORTED'));
+        tag.dataset.available=item?'yes':'no';
+        tag.title=item?'Driver enumerated by JUCE':
+          isNative()?'Not reported by this running native JUCE backend':'Native inventory unavailable in web preview';
+        backends.appendChild(tag);
       }
+      setup.appendChild(backends);
+      const inventory=node('section','arIODeviceInventory');
+      inventory.setAttribute('aria-label','Driver-reported ASIO WASAPI DirectSound capture and playback devices');
+      if(!types.length){
+        inventory.appendChild(node('p','arIODeviceEmpty',
+          isNative()?'Reading available Windows audio backends… press REFRESH if empty.':
+            'PREVIEW ONLY · Open the Windows EXE to detect installed drivers, ASIO interfaces, WASAPI or DirectSound devices.'));
+      }else{
+        for(const type of types){
+          const card=node('div','arIODeviceType');
+          card.dataset.active=type.active?'true':'false';
+          const backendName=String(type.name).startsWith('Windows Audio')
+            ?type.name+' · WASAPI':String(type.name);
+          const title=node('strong','',backendName+(type.active?' · CURRENT':''));
+          const input=node('span','','CAPTURE · '+(type.inputs?.length?type.inputs.join(' · '):'NONE REPORTED'));
+          const output=node('span','','PLAYBACK · '+(type.outputs?.length?type.outputs.join(' · '):'NONE REPORTED'));
+          card.append(title,input,output);inventory.appendChild(card);
+        }
+      }
+      setup.appendChild(inventory);body.appendChild(setup);
     }
     const hint=!isNative()?'PREVIEW ONLY · no native hardware':
       s.monitor?'MUTE OUTPUT BEFORE APPLY':s.pending?'WAITING FOR NATIVE ACK':
@@ -773,7 +819,11 @@
     const channel=Number(select.dataset.channel);
     const value=select.value,parts=value.split(':');
     const mode=parts[0],left=mode==='NONE'?-1:Number(parts[1]),right=mode==='STEREO'?Number(parts[2]):-1;
-    const response=window.__arMixStageChannelInput?.(channel,mode,left,right);
+    const direct=select.classList.contains('arBankSource');
+    const response=direct?window.__arMixCommitMutedSource?.(channel,mode,left,right):
+      window.__arMixStageChannelInput?.(channel,mode,left,right);
+    if(response?.pending)quickSourcePending={channel,epoch:response.epoch,
+      value:valueFor({mode,left,right})};
     if(!response?.ok){
       const message=response?.error||'Native INPUT PATCH unavailable';
       el('arIOFeedback').textContent=message;
@@ -828,12 +878,13 @@
   window.addEventListener('click',e=>{
     const setup=e.target.closest?.('[data-native-action="audioSetup"]');
     if(!setup)return;
-    e.preventDefault();e.stopImmediatePropagation();openIO();
+    e.preventDefault();e.stopImmediatePropagation();openIO('device');
   },true);
   document.addEventListener('click',e=>{
     const b=e.target.closest('button');
     if(!b)return;
-    if(b.dataset.nativeAction==='audioSetup'||b.dataset.ioOpen!==undefined){e.preventDefault();e.stopImmediatePropagation();openIO();return;}
+    if(b.dataset.nativeAction==='audioSetup'){e.preventDefault();e.stopImmediatePropagation();openIO('device');return;}
+    if(b.dataset.ioOpen!==undefined){e.preventDefault();e.stopImmediatePropagation();openIO('inputs');return;}
     if(b.dataset.sofToggle!==undefined){e.preventDefault();e.stopImmediatePropagation();sofToggle();return;}
     if(b.dataset.sofAdd!==undefined){
       e.preventDefault();e.stopImmediatePropagation();
@@ -894,7 +945,16 @@
     }
     if(b.dataset.ioClose!==undefined){e.preventDefault();e.stopImmediatePropagation();closeIO();return;}
     if(b.dataset.ioTab){e.preventDefault();e.stopImmediatePropagation();ioTab=b.dataset.ioTab;matrixMessage='';lastSignature='';refreshIO();return;}
-    if(b.dataset.ioAdvanced!==undefined){e.preventDefault();e.stopImmediatePropagation();closeIO();backend?.emitEvent?.('arMixAction',{action:'audioSetup'});return;}
+    if(b.dataset.ioRefreshDevice!==undefined){
+      e.preventDefault();e.stopImmediatePropagation();
+      if(isNative())backend.emitEvent('arMixAction',{action:'audioDeviceInventory'});
+      return;
+    }
+    if(b.dataset.ioAdvanced!==undefined){
+      e.preventDefault();e.stopImmediatePropagation();
+      if(!isNative())return;
+      closeIO();backend.emitEvent('arMixAction',{action:'audioSetup'});return;
+    }
     if(b.dataset.mixPatch){
       e.preventDefault();e.stopImmediatePropagation();
       const strip=b.closest('[data-strip]'),channel=Number(strip?.dataset.strip)||0;
@@ -937,6 +997,13 @@
   });
   backend?.addEventListener?.('arMixAudioDeviceInventory',d=>{deviceInventory=d;lastSignature='';if(!overlay.hidden)refreshIO();});
   backend?.addEventListener?.('arMixRoutingLabAck',ack=>{
+    if(quickSourcePending){
+      const requested=quickSourcePending;
+      quickSourcePending=null;
+      if(ack?.ok!==true)window.__arMixRevertMixerDraft?.();
+      else if(valueFor(ack?.state?.acceptedRoute?.channels?.[requested.channel])!==requested.value)
+        matrixMessage='SOURCE ACK MISMATCH · inspect native accepted route';
+    }
     lastSignature='';
     const message=ack?.ok?'NATIVE ACK · SENDS/ROUTING LIVE':'REJECTED · '+(ack?.error||'Native route unchanged');
     matrixMessage=message;
