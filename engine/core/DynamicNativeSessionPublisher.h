@@ -25,9 +25,11 @@ public:
         std::shared_ptr<void> owner; // CONTROL-only copy/destruction
         void* context=nullptr;       // unchanged owner.get(), RT raw pointer
         void (*render)(void*,ChannelId,float*,float*,int) noexcept=nullptr;
+        std::uint64_t deviceEpoch=0,graphRevision=0;
         bool valid() const noexcept {
-            return (!owner&&!context&&!render) ||
-                   (owner&&context==owner.get()&&render);
+            return (!owner&&!context&&!render&&!deviceEpoch&&!graphRevision) ||
+                   (owner&&context==owner.get()&&render&&
+                    deviceEpoch>0&&graphRevision>0);
         }
     };
 private:
@@ -66,7 +68,9 @@ public:
                         bool allOutputsDisarmed,
                         FxPlan fx={}) {
         CommitResult report;report.revision=publisher_.lastRevision();
-        if(!fx.valid()) {
+        if(!fx.valid() ||
+           (fx.owner && (fx.deviceEpoch!=proposedDeviceEpoch ||
+                         fx.graphRevision!=expectedRevision+1))) {
             report.fault=Fault::invalidCandidate;return report;
         }
         if(proposedDeviceEpoch==0 ||

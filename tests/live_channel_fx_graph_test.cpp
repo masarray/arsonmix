@@ -186,6 +186,7 @@ static void verifyUniversalChannelIdFxLeaseAndLivePcm() {
     ownerPlan.render=+[](void* ctx,ChannelId id,float* l,float* r,int n) noexcept {
         (*static_cast<Bank*>(ctx))(id,l,r,n);
     };
+    ownerPlan.deviceEpoch=epoch;ownerPlan.graphRevision=2;
     assert(ownerPlan.valid());
     // A mismatched raw callback context cannot be published or overwrite a
     // working hardware graph. This is not a UI flag or an unchecked pointer.
@@ -226,7 +227,21 @@ static void verifyUniversalChannelIdFxLeaseAndLivePcm() {
     // Group gain. In real production the control thread must serialize
     // the same revision/epoch and never recreate vendor state.
     assert(roster.rememberLiveMix(bus,.5f,0.f));
-    assert(native.commit(roster,req,2,epoch,epoch,true,ownerPlan).ok());
+    // A structurally new graph must NOT silently accept an old-revision
+    // FX binding, even when the raw processor pointers are still alive.
+    assert(native.commit(roster,req,2,epoch,epoch,true,ownerPlan).fault==
+           DynamicNativeSessionPublisher::Fault::invalidCandidate);
+    assert(native.acceptedRevision()==2);
+    Bank refreshed;
+    assert(Bank::prepare(epoch,3,assignments,refreshed)==Bank::Fault::none);
+    auto refreshedOwner=std::make_shared<Bank>(std::move(refreshed));
+    auto refreshedPlan=ownerPlan;
+    refreshedPlan.owner=std::static_pointer_cast<void>(refreshedOwner);
+    refreshedPlan.context=refreshedOwner.get();
+    refreshedPlan.graphRevision=3;
+    const auto originalProcessors=GainFx::living;
+    assert(native.commit(roster,req,2,epoch,epoch,true,refreshedPlan).ok());
+    assert(GainFx::living==originalProcessors); // reuse, never rebuild VST
     assert(native.acceptedRevision()==3);
     assert(native.render(epoch,pins,2,left.data(),right.data(),32,false,
                          legacyFx));
