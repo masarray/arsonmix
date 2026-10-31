@@ -1654,6 +1654,15 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 @media(max-height:690px){
  #app #mixer[data-io-mode="ROUTE"]{--ar-upper-height:165px}
 }
+
+/* Small user-switchable channel processing format + adaptive bank navigation. */
+#app #mixer > .strip > .ch-id{position:relative}
+#app #mixer .arFormatBadge{position:absolute;right:3px;top:2px;min-width:24px;height:17px;padding:0 3px;border:1px solid #536b77;border-radius:3px;background:#253945;color:#d9edf4;font:500 9px/15px 'Segoe UI',sans-serif;cursor:pointer}
+#app #mixer .arFormatBadge:focus-visible{outline:1px solid #8fcfe4;outline-offset:1px}
+#app .arMixerChannelPager{display:flex;align-items:center;gap:5px;margin-left:auto;flex-shrink:0}
+#app .arMixerChannelPager .btn-180{width:25px;min-width:25px;height:24px;padding:0;font-size:15px}
+#app .arMixerChannelPager .btn-180:disabled{opacity:.36;cursor:default}
+#app .arMixerPagerLabel{font:500 10px/1.1 'Segoe UI',sans-serif;color:#b9cbd2;min-width:91px;text-align:center;white-space:nowrap}
 </style>
 <style id="arsonmix-mixer-io-css">/* G1/G2: stable channel-bank geometry; FX rack remains mounted in every mode. */
 #app .workbench{display:flex;flex-direction:column}
@@ -2604,12 +2613,31 @@ function commitChannelIdentity(){
 window.addEventListener('resize',positionChannelIdentity);
 $('mixer').addEventListener('scroll',positionChannelIdentity,{passive:true});
 function makeStrip(ch,i){let inserts=ch.inserts.slice(0,6);while(inserts.length<6) inserts.push('');return `<article class="strip ${i===currentChannel?'selected':''}" data-strip="${i}" style="--ch:${ch.color||colors[i]}">
- <div class="ch-id">${i+1}</div><div class="rack">${inserts.map((n,j)=>`<div class="insert-slot ${n&&bypassed[fxKey(i,j)]?'is-bypassed':''}"><button class="insert ${!n?'empty':''}" data-insert="${i}:${j}" title="${n?'Open or replace '+safeText(n):'Add VST effect'}">${n?'':'<span class="insert-add-glyph" aria-hidden="true">＋</span>'}<span class="insert-name">${n? safeText(n):'ADD FX'}</span></button>${n?`<button type="button" class="fx-power ${bypassed[fxKey(i,j)]?'is-bypassed':''}" data-fxpower="${i}:${j}" aria-pressed="${!bypassed[fxKey(i,j)]}" aria-label="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}" title="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}">⏻</button>`:''}</div>`).join('')}</div>
+ <div class="ch-id">${i+1}<button type="button" class="arFormatBadge" data-channel-format-toggle="${i}" aria-label="Switch CH ${i+1} processing format" title="MONO / STEREO">${ch.stereo?'ST':'M'}</button></div><div class="rack">${inserts.map((n,j)=>`<div class="insert-slot ${n&&bypassed[fxKey(i,j)]?'is-bypassed':''}"><button class="insert ${!n?'empty':''}" data-insert="${i}:${j}" title="${n?'Open or replace '+safeText(n):'Add VST effect'}">${n?'':'<span class="insert-add-glyph" aria-hidden="true">＋</span>'}<span class="insert-name">${n? safeText(n):'ADD FX'}</span></button>${n?`<button type="button" class="fx-power ${bypassed[fxKey(i,j)]?'is-bypassed':''}" data-fxpower="${i}:${j}" aria-pressed="${!bypassed[fxKey(i,j)]}" aria-label="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}" title="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}">⏻</button>`:''}</div>`).join('')}</div>
  <div class="strip-controls"><div class="trim-row"><span class="mini-label">TRIM<br>dB</span><div class="mini-lcd" data-trim-read="${i}">${fmt(ch.trim)}</div></div>${knobMarkup('trim',i,ch.trim,'Trim')}<div class="pan-control">${panMarkup(ch,i)}<div class="pan-readline"><span aria-hidden="true">L</span><strong data-pan-read="${i}">${panText(ch.pan)}</strong><span aria-hidden="true">R</span></div></div><div class="utility-row"><button data-pre="${i}" class="btn-180 ${ch.pre?'active':''}">Ø</button><button data-hpf="${i}" class="btn-180 ${ch.hpf?'active':''}">HPF</button></div></div>
  <div class="channel-actions"><button class="btn-180 candy mute ${ch.mute?'active':''}" data-mute="${i}" aria-pressed="${ch.mute}">MUTE</button><button class="btn-180 candy solo ${ch.solo?'active':''}" data-solo="${i}" aria-pressed="${ch.solo}">SOLO</button></div>
  <div class="db-display" data-read="${i}">${fmt(ch.fader)}</div><div class="fader-zone"><div class="vu-bank ${ch.stereo?'is-stereo':'is-mono'}" role="group" aria-label="${safeText(ch.name)} ${ch.stereo?'stereo left and right meters':'mono meter'}"><div class="vu-bars">${ch.stereo?meterUnit(String(i)+'L','L')+meterUnit(String(i)+'R','R'):meterUnit(String(i),'')}${meterScaleMarkup()}</div></div><div class="fader" data-fader="${i}" role="slider" tabindex="0" aria-orientation="vertical" aria-label="${ch.name} fader" aria-valuemin="-60" aria-valuemax="10" aria-valuenow="${ch.fader}" style="--fader-cut:${levelToTop(ch.fader)}%"><div class="fader-travel"><div class="cap" style="--pos:${levelToTop(ch.fader)}%"></div></div></div>${faderScaleMarkup()}</div></div>
  <div class="strip-name" data-editstrip="${i}" role="button" tabindex="0" aria-label="Double-click to edit ${safeText(ch.name)} name, icon and color" title="Double-click to edit channel identity"><span class="strip-caption">${safeText(ch.name)}</span><span class="track-icon">${safeText(ch.icon)}</span></div>
  </article>`}
+// Native accepted channel format owns visible meter layout; no index-based rule.
+// Replace only meter nodes, not the FX rack/fader or full mixer (low-spec GPU).
+function syncStripFormat(i,format){
+ if(!Number.isInteger(i)||i<0||i>=channels.length||!['MONO','STEREO'].includes(format))return false;
+ const ch=channels[i],stereo=format==='STEREO';
+ if(ch.stereo===stereo)return true;
+ ch.stereo=stereo;
+ const strip=document.querySelector('#mixer [data-strip="'+i+'"]'),bank=strip?.querySelector('.vu-bank'),bars=bank?.querySelector('.vu-bars');
+ if(bank&&bars){
+   bank.classList.toggle('is-stereo',stereo);bank.classList.toggle('is-mono',!stereo);
+   bank.setAttribute('aria-label',ch.name+(stereo?' stereo L/R meters':' mono meter'));
+   bars.innerHTML=(stereo?meterUnit(i+'L','L')+meterUnit(i+'R','R'):meterUnit(String(i),''))+meterScaleMarkup();
+   for(const key of [String(i),i+'L',i+'R']){meterNodes.delete(key);delete peakHold[key];delete clipLatch[key];}
+ }
+ const button=strip?.querySelector('[data-channel-format-toggle]');
+ if(button)button.textContent=stereo?'ST':'M';
+ markUiSessionDirty();return true;
+}
+window.__arMixSyncAcceptedChannelFormat=syncStripFormat;
 function renderMixer(){
  const x=$('mixer'),scroll=x.scrollLeft;
  x.innerHTML=channels.map(makeStrip).join('')+'<article id="masterLeft" class="strip master-strip '+(masterSelected?'selected':'')+'" aria-label="Master output channel"></article>';
@@ -2754,6 +2782,18 @@ document.addEventListener('click',e=>{const b=e.target.closest('button,[data-cho
  if(b.dataset.pluginManager!==undefined){flash('Plugin Manager is available in the Windows desktop app');return}
  if(b.dataset.mySounds!==undefined){flash('Native VST3 presets are available in the Windows desktop app');return}
  if(b.dataset.choose!==undefined){chooseChannel(+b.dataset.choose);return}
+ if(b.dataset.channelFormatToggle!==undefined){
+   const i=Number(b.dataset.channelFormatToggle);
+   if(!Number.isInteger(i)||i<0||i>=channels.length)return;
+   const next=channels[i].stereo?'MONO':'STEREO';
+   if(window.__JUCE__?.backend?.emitEvent){
+     const staged=window.__arMixStageChannelFormat?.(i,next);
+     if(!staged?.ok){flash(staged?.error||'Verified native format unavailable');return}
+     const result=window.__arMixApplyAndActivate?.();
+     flash(result?.ok?'CH '+(i+1)+' '+next+' · WAIT NATIVE ACK':result?.error||'Native APPLY rejected');
+   }else{syncStripFormat(i,next);persistSession();flash('CH '+(i+1)+' '+next+' · PREVIEW ONLY');}
+   return;
+ }
  if(b.dataset.mute!==undefined){toggleState(+b.dataset.mute,'mute');return}if(b.dataset.solo!==undefined){toggleState(+b.dataset.solo,'solo');return}
  if(b.dataset.pre!==undefined){let i=+b.dataset.pre;channels[i].pre=!channels[i].pre;b.classList.toggle('active');send('phase',channels[i].pre,i);return}
  if(b.dataset.hpf!==undefined){let i=+b.dataset.hpf;channels[i].hpf=!channels[i].hpf;b.classList.toggle('active');send('hpf',channels[i].hpf,i);return}
@@ -3129,7 +3169,7 @@ function validUiSession(session){
       !c.inserts.every(x=>typeof x==='string'&&x.length<=160)))return false;
    if(c.name!==undefined&&typeof c.name!=='string')return false;
    for(const k of ['fader','pan','trim'])if(c[k]!==undefined&&!Number.isFinite(c[k]))return false;
-   for(const k of ['mute','solo','hpf'])if(c[k]!==undefined&&typeof c[k]!=='boolean')return false;
+   for(const k of ['mute','solo','hpf','stereo'])if(c[k]!==undefined&&typeof c[k]!=='boolean')return false;
  }
  for(const k of ['masterGain','masterPan'])if(session[k]!==undefined&&!Number.isFinite(session[k]))return false;
  for(const k of ['masterMute','masterMono'])if(session[k]!==undefined&&typeof session[k]!=='boolean')return false;
@@ -3203,7 +3243,7 @@ function applySession(session){
  if(!validUiSession(session)){flash('Unsupported or corrupted session format');return false}
  for(let i=0;i<channels.length;i++){
    const src=session.channels[i],c=channels[i];
-   c.stereo=i>=6; // Fixed 1–6 mono, 7–10 stereo across legacy snapshot migrations.
+   if(typeof src.stereo==='boolean')c.stereo=src.stereo; // Never overwrite saved format from CH number.
    if(typeof src.name==='string'&&src.name.trim())c.name=src.name.trim().slice(0,26);
    if(channelIcons.includes(src.icon))c.icon=src.icon;
    if(channelPalette.includes(src.color))c.color=src.color;
@@ -3334,6 +3374,7 @@ try{
      if(channelPalette.includes(s.color))channels[i].color=s.color;
      for(const k of ['fader','pan','trim','mute','solo','hpf'])if(s[k]!==undefined)channels[i][k]=s[k];
      if(Array.isArray(s.inserts))channels[i].inserts=[...s.inserts];
+     if(typeof s.stereo==='boolean')channels[i].stereo=s.stereo;
    });
    sceneIdx=Number.isInteger(last.sceneIdx)?clamp(last.sceneIdx,0,scenes.length-1):0;
    masterGain=Number.isFinite(last.masterGain)?last.masterGain:-.1;
@@ -3792,7 +3833,7 @@ scheduleDemoMeter();
     const [mode,a,b]=button.dataset.sourceChoice.split(':');
     if(!['NONE','MONO','STEREO'].includes(mode))return;
     const channel=sourceChooserChannel;
-    const outcome=window.__arMixCommitSelectedSource?.(
+    const outcome=commitSourceInOneGesture(
       channel,mode,mode==='NONE'?-1:Number(a),mode==='STEREO'?Number(b):-1);
     sourceNote.textContent=outcome?.ok?
       outcome.pending?'SOURCE PENDING · WAIT NATIVE ACK':
@@ -4166,8 +4207,10 @@ scheduleDemoMeter();
     if(format){format.value=channelFormat(r);format.dataset.channel=String(i);
       format.disabled=!isNative()||!s.ready||!!s.pending;}
     output.textContent=r.mode==='NONE'?'UNPATCHED · NO INPUT':r.main?outputLabel(s):'MAIN OFF · SEND PATH ONLY';
-    const accepted=s.acceptedRoute?.channels?.[i],
-      dirty=current!==valueFor(accepted)||channelFormat(r)!==channelFormat(accepted);
+    const accepted=s.acceptedRoute?.channels?.[i];
+    // ACKED native format, never the pending draft, controls mono vs stereo meter count.
+    if(isNative()&&accepted)window.__arMixSyncAcceptedChannelFormat?.(i,channelFormat(accepted));
+    const dirty=current!==valueFor(accepted)||channelFormat(r)!==channelFormat(accepted);
     const stage=strip.querySelector('.arBankStage');
     const sourcePending=quickSourcePending?.channel===i&&quickSourcePending.epoch===s.epoch;
     stage.textContent=!s.ready?'NO LIVE DEVICE':sourcePending?'PENDING · NATIVE ACK':dirty?'DRAFT · NOT APPLIED':r.mode==='NONE'?'UNPATCHED · SILENT':'LIVE · NATIVE ACK';
@@ -4301,7 +4344,7 @@ scheduleDemoMeter();
       right.disabled=!hardwareReady(s)||r.mode!=='STEREO';
       mode.disabled=!hardwareReady(s)||r.mode==='BUS';
       const action=node('div','arIOQuickAction');
-      const stage=node('button','btn-180 arIOQuickStage','STAGE');
+      const stage=node('button','btn-180 arIOQuickStage','USE INPUT');
       stage.dataset.ioQuickStage='1';stage.type='button';
       stage.disabled=!hardwareReady(s)||r.mode==='BUS';
       action.append(stage,node('small','arIOQuickState',r.mode==='BUS'?'INTERNAL BUS':
@@ -4309,7 +4352,7 @@ scheduleDemoMeter();
         row.dataset.state==='live'?'LIVE · ACK':'UNPATCHED'));
       row.append(identity,mode,left,right,action);section.appendChild(row);
     }
-    section.appendChild(node('p','arIOQuickFooter','STAGE is not audible. MUTE output → APPLY PATCH → wait for NATIVE ACK to make the assignment live.'));
+    section.appendChild(node('p','arIOQuickFooter','Select verified inputs, click USE INPUT. Native routing handles any required safe mute, ACK and re-arm automatically.'));
     return section;
   }
   function stageQuickInput(button){
@@ -4325,10 +4368,12 @@ scheduleDemoMeter();
       return matrixSay('CH '+(channel+1)+' · choose two DISTINCT driver-reported L/R inputs.');
     if(!['NONE','MONO','STEREO'].includes(mode))return matrixSay('Use ADVANCED BUS / FX for internal sources.');
     focusedInput=channel;matrixDraft.delete(channel);
-    const result=window.__arMixStageChannelInput?.(channel,mode,mode==='NONE'?-1:left,mode==='STEREO'?right:-1);
+    const result=commitSourceInOneGesture(channel,mode,mode==='NONE'?-1:left,mode==='STEREO'?right:-1);
+    if(result?.pending)quickSourcePending={channel,epoch:result.epoch,
+      value:valueFor({mode,left,right}),live:!!result.live};
     matrixSay(result?.ok?'CH '+(channel+1)+' · '+(mode==='NONE'?'INPUT REMOVED':
       mode==='MONO'?'MONO INPUT '+(left+1):'STEREO INPUT '+(left+1)+'/'+(right+1))+
-      ' → DRAFT · MUTE OUTPUT → APPLY PATCH → NATIVE ACK':result?.error||'Native input patch unavailable');
+      (result.pending?' · WAIT NATIVE ACK':' · ALREADY ACCEPTED'):result?.error||'Native input patch unavailable');
     lastSignature='';refresh();
   }
   function makeMatrix(s,kind){
@@ -4952,12 +4997,24 @@ scheduleDemoMeter();
       s.ready?'E'+s.epoch+' · Native APPLY required for input edits':'CHOOSE A VERIFIED DIRECT DEVICE';
     el('arIOFeedback').textContent=(ioTab==='device'?deviceNote:matrixMessage)||hint;
   }
+  // Operator makes one choice. Same-format moves use the native source ramp;
+  // structural moves use FAST3's safe MUTE -> graph ACK -> guarded ARM internally.
+  function commitSourceInOneGesture(channel,mode,left,right){
+    const s=route(),accepted=s.acceptedRoute?.channels?.[channel];
+    if(accepted?.mode===mode&&['MONO','STEREO'].includes(mode))
+      return window.__arMixCommitSelectedSource?.(channel,mode,left,right);
+    const staged=window.__arMixStageChannelInput?.(channel,mode,left,right);
+    if(!staged?.ok)return staged||{ok:false,error:'Native staging unavailable'};
+    const committed=window.__arMixApplyAndActivate?.();
+    return committed?.ok?{ok:true,pending:true,live:false,epoch:s.epoch}:
+      {ok:false,error:committed?.error||'Safe native APPLY rejected'};
+  }
   function changeSource(select){
     const channel=Number(select.dataset.channel);
     const value=select.value,parts=value.split(':');
     const mode=parts[0],left=mode==='NONE'?-1:Number(parts[1]),right=mode==='STEREO'?Number(parts[2]):-1;
     const direct=select.classList.contains('arBankSource');
-    const response=direct?window.__arMixCommitSelectedSource?.(channel,mode,left,right):
+    const response=direct?commitSourceInOneGesture(channel,mode,left,right):
       window.__arMixStageChannelInput?.(channel,mode,left,right);
     if(response?.pending)quickSourcePending={channel,epoch:response.epoch,
       value:valueFor({mode,left,right}),live:!!response.live};
@@ -5002,6 +5059,10 @@ scheduleDemoMeter();
     if(e.target.matches('.arBankChannelFormat')){
       const response=window.__arMixStageChannelFormat?.(
         Number(e.target.dataset.channel),e.target.value);
+      if(response?.ok){
+        const applied=window.__arMixApplyAndActivate?.();
+        if(!applied?.ok)el('arIOFeedback').textContent=applied?.error||'Format APPLY rejected';
+      }
       if(!response?.ok){
         const message=response?.error||'Native format change unavailable';
         el('arIOFeedback').textContent=message;
@@ -5144,7 +5205,7 @@ scheduleDemoMeter();
           if(!sourceChooser.hidden)renderSourceChooser();refreshFocus(s);
         }else softwareSay('Could not update device-specific source names.');
       }else if(action==='use'){
-        const alias=items[index],result=window.__arMixCommitSelectedSource?.(
+        const alias=items[index],result=commitSourceInOneGesture(
           focusedInput,alias.mode,alias.left,alias.mode==='STEREO'?alias.right:-1);
         if(result?.pending)quickSourcePending={
           channel:focusedInput,epoch:result.epoch,value:aliasValue(alias),live:!!result.live};
@@ -5450,6 +5511,40 @@ scheduleDemoMeter();
     if(document.getElementById('mixer')?.classList.contains('hidden'))
       nav.querySelector('[data-view="MIX"]')?.click();
   },true);
+  // Adaptive bank paging of real input strips only. MAIN remains sticky.
+  const mixer=document.getElementById('mixer');
+  if(mixer&&!document.getElementById('arMixChannelPager')){
+    const pager=document.createElement('div');pager.id='arMixChannelPager';pager.className='arMixerChannelPager';
+    const prev=document.createElement('button');prev.type='button';prev.className='btn-180';prev.textContent='‹';
+    prev.setAttribute('aria-label','Previous mixer channel bank');
+    const label=document.createElement('span');label.className='arMixerPagerLabel';
+    const next=document.createElement('button');next.type='button';next.className='btn-180';next.textContent='›';
+    next.setAttribute('aria-label','Next mixer channel bank');
+    pager.append(prev,label,next);nav.parentElement?.append(pager);
+    const strips=()=>[...mixer.querySelectorAll('[data-strip]')];
+    const pageSize=()=>{
+      const first=strips()[0];if(!first)return 1;
+      const master=document.getElementById('masterLeft')?.getBoundingClientRect().width||0;
+      return Math.max(1,Math.floor((mixer.clientWidth-master)/(first.getBoundingClientRect().width||1)));
+    };
+    const firstVisible=()=>Math.max(0,strips().findIndex(s=>s.getBoundingClientRect().right>mixer.getBoundingClientRect().left+4));
+    const refresh=()=>{
+      const all=strips(),at=firstVisible(),count=pageSize();
+      label.textContent=all.length?'CH '+String(at+1).padStart(2,'0')+'–'+
+        String(Math.min(all.length,at+count)).padStart(2,'0')+' / '+all.length:'NO CHANNELS';
+      prev.disabled=!at;next.disabled=!all.length||at+count>=all.length;
+    };
+    const jump=dir=>{
+      const all=strips();if(!all.length)return;
+      const index=Math.max(0,Math.min(all.length-1,firstVisible()+dir*pageSize()));
+      mixer.scrollLeft+=all[index].getBoundingClientRect().left-mixer.getBoundingClientRect().left;
+      refresh();
+    };
+    prev.addEventListener('click',()=>jump(-1));next.addEventListener('click',()=>jump(1));
+    mixer.addEventListener('scroll',refresh,{passive:true});
+    if(typeof ResizeObserver==='function')new ResizeObserver(refresh).observe(mixer);
+    refresh();
+  }
   document.documentElement.dataset.arMixerShell='rail-modes';
 })();
 </script>

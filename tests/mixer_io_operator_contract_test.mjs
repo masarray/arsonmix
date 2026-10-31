@@ -529,3 +529,23 @@ test('FAST3 single APPLY stays enabled while output ARMED; safe route ACK and ha
  assert.match(controller,/arMixAudioArmAck/);
  assert.ok(html.includes(io),'Standalone mirrors the actual FAST3 operator controller');
 });
+
+// Real native format must select the strip meter shape, never a fixed CH range.
+test('R7 accepted mono/stereo format controls meter topology on any input lane',()=>{
+ const app=read('web/app.js'),io=read('web/mixer-io.js');
+ assert.match(app,/function syncStripFormat\(i,format\)/);
+ assert.match(app,/window\.__arMixSyncAcceptedChannelFormat=syncStripFormat/);
+ assert.match(io,/__arMixSyncAcceptedChannelFormat\?\.\(i,channelFormat\(accepted\)\)/);
+ assert.doesNotMatch(app,/c\.stereo=i>=6/);
+ assert.match(app,/typeof src\.stereo==='boolean'/);
+ assert.match(app,/data-channel-format-toggle/);
+});
+test('R7 one gesture uses existing native safety and real input names',()=>{
+ const io=read('web/mixer-io.js'),app=read('web/app.js');
+ assert.match(io,/function commitSourceInOneGesture\(/);
+ assert.match(io,/__arMixCommitSelectedSource\?\.\(channel,mode,left,right\)/);
+ assert.match(io,/__arMixApplyAndActivate\?\.\(\)/);
+ assert.match(io,/USE INPUT/);
+ assert.match(app,/__arMixApplyAndActivate\?\.\(\)/);
+ assert.match(read('web/mixer-layout.js'),/arMixChannelPager/);
+});
