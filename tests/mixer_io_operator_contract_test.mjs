@@ -169,3 +169,27 @@ test('PATCH1 operator-first mono and nonadjacent stereo stage into ONE native tr
   assert.match(css,/\.arIOQuickRow\[data-state="live"\]/);
   assert.doesNotMatch(css,/backdrop-filter\s*:|filter\s*:\s*blur/);
 });
+
+test('SETUP1 actual JUCE device picker and available ASIO WASAPI DirectSound backend',()=>{
+ const io=read('web/mixer-io.js'),native=read('src/Main.cpp'),cm=read('CMakeLists.txt');
+ for(const flag of ['JUCE_ASIO=1','JUCE_WASAPI=1','JUCE_DIRECTSOUND=1'])assert.ok(cm.includes(flag));
+ assert.match(native,/manager, 1, 64, 1, 64, false, false, false, false/);
+ assert.match(native,/action == "audioSetup"/);
+ assert.match(native,/action == "audioDeviceInventory"/);
+ assert.match(io,/function openIO\(tab='device',channel=null\)/);
+ assert.match(io,/arIODeviceChoose/);
+ assert.match(io,/arIOBackendBadge/);
+ assert.match(io,/DirectSound · legacy/);
+ assert.match(io,/backend\.emitEvent\('arMixAction',\{action:'audioSetup'\}\)/);
+ assert.doesNotMatch(io,/audioSelectDevice|setCurrentAudioDeviceType/);
+});
+test('SETUP1 honest bus patch has real AUX/MAIN/MONITOR navigation, no fake GROUP DCA',()=>{
+ const patch=read('web/monitor.js');
+ assert.match(patch,/AUX \/ BUSSING/);
+ assert.match(patch,/arBusJumpSends/);
+ assert.match(patch,/arBusJumpReturns/);
+ assert.match(patch,/arBusJumpOutputs/);
+ assert.match(patch,/NOT IMPLEMENTED: AUDIO GROUP · DCA · MATRIX · CUE/);
+ assert.match(patch,/window\.__arMixOpenAudioIO\?\.\("outputs"\)/);
+ assert.match(patch,/drawAuxSendMatrix\(\)/);
+});

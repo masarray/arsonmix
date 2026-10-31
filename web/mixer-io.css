@@ -387,3 +387,31 @@
   #app .left-rail .arSofControls .btn-180{height:25px;min-height:25px}
   #app #mixer .arSofTarget{height:16px;font-size:7px}
 }
+
+/* SETUP1: expose real JUCE hardware controls, not a second device manager.
+   Compact native inventory, restrained graphite, no blur or animation. */
+.arIORealDeviceSetup{border:1px solid #4f6979;background:#12242f;border-radius:3px;padding:11px 13px;display:grid;gap:9px}
+.arIORealDeviceSummary{display:flex;flex-direction:column;gap:4px}
+.arIORealDeviceSummary>strong{color:#daf0f5;font:650 12px "ArSonMix Inter",sans-serif}
+.arIORealDeviceSummary>small{color:#a9bfcc;font:10px "ArSonMix Inter",sans-serif}
+.arIODeviceActions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.arIODeviceActions .btn-180{min-height:32px;height:32px;padding:0 12px;font-size:10px}
+.arIODeviceChoose{--b180-color:#a0dbe7;--b180-border:#518696;--b180-ink:#153743}
+.arIODeviceActions .btn-180:disabled{opacity:.45;cursor:not-allowed}
+.arIODeviceNote{margin:0;color:#a7c4d0;line-height:1.45;font-size:10px}
+.arIOBackendStatus{display:flex;gap:6px;flex-wrap:wrap}
+.arIOBackendBadge{padding:5px 8px;border:1px solid #485f6c;background:#142d37;
+ color:#afc9d4;font:600 10px "ArSonMix Inter",sans-serif;border-radius:2px}
+.arIOBackendBadge[data-available="yes"]{border-color:#367867;color:#91d7b6}
+.arIOBackendBadge[data-available="no"]{color:#8398a5}
+.arIODeviceInventory{display:grid;gap:6px;max-height:40vh;overflow:auto;scrollbar-width:thin}
+.arIODeviceType{display:flex;flex-direction:column;gap:3px;padding:8px 10px;
+ border:1px solid #365463;background:#1b303c;min-width:0;color:#a9c4d1;font-size:10px}
+.arIODeviceType[data-active="true"]{border-left:3px solid #61c6a5}
+.arIODeviceType strong{font-size:11px;color:#e1eef2;font-weight:600}
+.arIODeviceType span{overflow-wrap:anywhere}
+.arIODeviceEmpty{margin:0;padding:10px;color:#adbfca;font-size:11px}
+.arIOOverlay[data-active-tab="device"] .arIOWindow footer [data-mix-apply],
+.arIOOverlay[data-active-tab="device"] .arIOWindow footer [data-io-revert],
+.arIOOverlay[data-active-tab="device"] .arIOWindow footer [data-io-internal],
+.arIOOverlay[data-active-tab="device"] .arIOWindow footer [data-io-advanced]{display:none!important}

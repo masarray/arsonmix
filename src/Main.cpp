@@ -170,8 +170,12 @@ public:
         setUsingNativeTitleBar (true);
         setResizable (true, true);
         setResizeLimits (580, 430, 1300, 1000);
+        // Selector bounds are MAXIMUM enable-able device pins, not the two
+        // mixer output channels. A 2x2 limit hid additional ASIO/virtual
+        // MAONO capture pins and physical MONITOR 3/4. Actual enabled pin
+        // masks still come exclusively from the chosen JUCE audio device.
         auto* selector = new juce::AudioDeviceSelectorComponent (
-            manager, 1, 2, 1, 2, false, false, false, false);
+            manager, 1, 64, 1, 64, false, false, false, false);
         // The JUCE selector refreshes its own preferred height while devices
         // enumerate. It must NOT drive the top-level peer's dimensions.
         // Fixed window ownership avoids Windows DPI / first-show stretching.

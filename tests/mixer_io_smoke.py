@@ -75,6 +75,22 @@ async def main():
         assert "LIVE" in await page.locator('[data-strip="0"] .arBankStage').inner_text()
         await page.locator('#audioSetupBtn').click()
         assert await page.locator('#arIOOverlay').is_visible()
+        assert await page.locator('[data-io-tab="device"]').get_attribute('aria-selected')=='true'
+        assert await page.locator('.arIORealDeviceSetup').is_visible()
+        await page.evaluate("""()=>window.__armixTestEmit('arMixAudioDeviceInventory',{
+          currentType:'ASIO',types:[
+            {name:'ASIO',active:true,inputs:['MAONO Mic In','MAONO Virtual L','MAONO Virtual R'],outputs:['MAONO Out 1','MAONO Out 2']},
+            {name:'Windows Audio',active:false,inputs:['Windows Microphone'],outputs:['Windows Speakers']},
+            {name:'DirectSound',active:false,inputs:['Legacy Mic'],outputs:['Legacy Speakers']}
+          ]})""")
+        assert await page.locator('.arIOBackendBadge[data-available="yes"]').count()==3
+        assert 'MAONO Virtual L' in await page.locator('.arIODeviceInventory').inner_text()
+        await page.locator('.arIODeviceChoose').click()
+        assert await page.locator('#arIOOverlay').is_hidden()
+        assert await page.evaluate("""()=>window.__armixTestActions.some(x=>
+          x.name==='arMixAction'&&x.data.action==='audioSetup')""")
+        await page.locator('#audioSetupBtn').click()
+        await page.locator('[data-io-tab="inputs"]').click()
         assert await page.locator('#arIOBody .arIOQuickRow').count()==10
         # Operator-first mapper is visible; crosspoint is explicitly advanced.
         assert await page.locator('#arIOQuickPatch, .arIOQuickPatch').count()==1
@@ -441,6 +457,7 @@ async def main():
           return status;
         }""")
         await page.locator('#audioSetupBtn').click()
+        await page.locator('[data-io-tab="inputs"]').click()
         assert await page.locator('.arIOQuickPatch').is_visible()
         assert await page.locator('[data-io-quick-row]').count()==10
         assert await page.locator('[data-io-quick-row="2"] [data-io-quick-pin="left"] option').count()==5
