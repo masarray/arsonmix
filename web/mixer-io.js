@@ -140,8 +140,9 @@
     slider.style.setProperty('--sof-position',(100*(sofDb(g)+60)/60).toFixed(2)+'%');
     slider.setAttribute('aria-valuenow',sofDb(g).toFixed(1));
     slider.setAttribute('aria-valuetext',sofRead(g));
-    const read=layer.closest('[data-strip]')?.querySelector('.arSofRead');
-    if(read)read.textContent=sofRead(g);
+    // A CSS pseudo-readout survives native meter/control textContent updates.
+    const read=layer.closest('[data-strip]')?.querySelector('.db-display');
+    if(read)read.dataset.sofText=sofRead(g);
   }
   function sofStatus(message){
     sofMessage=message;
@@ -176,9 +177,7 @@
         else{original.setAttribute('tabindex','0');original.removeAttribute('aria-hidden');}
       }
       const db=strip.querySelector('.db-display');
-      let read=db?.querySelector('.arSofRead');
-      if(active&&db&&!read){read=node('span','arSofRead');db.appendChild(read);}
-      if(read)read.hidden=!active;
+      if(db&&!active)delete db.dataset.sofText;
       if(!active||!layer)continue;
       layer.querySelector('.arSofTarget').textContent='AUX '+(sofBus+1)+' · POST';
       const item=sofExisting(s,ch);
@@ -189,7 +188,7 @@
       slider.setAttribute('aria-label','Channel '+(ch+1)+' POST send to AUX '+(sofBus+1));
       slider.setAttribute('aria-disabled',String(!!s.pending));
       if(item&&(!sofDrag||sofDrag.ch!==ch))sofPaintLayer(layer,Number(item.gain));
-      else if(!item&&read)read.textContent='NO SEND';
+      else if(!item&&db)db.dataset.sofText='NO SEND';
     }
     if(active&&!sofMessage){
       const aux=s.draftAux?.[sofBus];
