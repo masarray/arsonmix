@@ -748,12 +748,12 @@ private:
 
     // DEVICE1: the WebView2 matrix is the operator GUI; JUCE remains the
     // single device owner. No hardware calls ever run from the audio callback.
-    juce::var currentDeviceSnapshot() const
+    juce::var currentDeviceSnapshot()
     {
         // This readback is used for UI and ACK, never to claim that a staged
         // select value is already open/playing on hardware.
         auto o=std::make_unique<juce::DynamicObject>();
-        auto& manager=const_cast<LiveAudioEngine&>(engine_).devices();
+        auto& manager=engine_.devices();
         juce::AudioDeviceManager::AudioDeviceSetup setup;
         manager.getAudioDeviceSetup(setup);
         auto* device=manager.getCurrentAudioDevice();
