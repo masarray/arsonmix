@@ -749,7 +749,13 @@ async def main():
         await page.locator('#arIOOverlay [data-mix-apply]').click()
         command=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='routingDryApply').at(-1).data.value""")
-        assert command['mainOutputs']==[4,5],command
+        debug=await page.evaluate("""()=>({
+          fast:window.__arMixFastAudioState?.(),
+          route:window.__arMixRouteView?.(),
+          feedback:document.querySelector('#arIOFeedback')?.textContent,
+          events:window.__armixTestActions.filter(x=>x.name==='arMixAction').slice(-6)
+        })""")
+        assert command['mainOutputs']==[4,5],(command,debug)
         assert command['monitorOutputs']==[0,1],command
         assert len(command['monitorSends'])==14 and command['monitorSends'][0]==.5,command
         assert all(x==0 for x in command['monitorSends'][1:]),command
