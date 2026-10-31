@@ -58,6 +58,15 @@ static void verifyDynamicNativeSessionPublication() {
     DynamicNativeSessionPublisher host;
     auto ack=host.commit(roster,request,0,21,21,true);
     assert(ack.ok()&&ack.revision==1&&host.acceptedRevision()==1);
+    const auto* projected=host.acceptedRouting(21,1);
+    assert(projected && projected->rosterRevision==roster.revision());
+    assert(projected->find(group)->primarySources.size()==2);
+    assert(projected->find(group)->sourceCount()==2);
+    assert(projected->find(fx.createdIds.front())->parallelSendSources.size()==1);
+    assert(projected->find(lead)->primaryOutput==group);
+    assert(projected->find(lead)->parallelSends.size()==1);
+    assert(projected->find(lead)->parallelSends[0].destination==fx.createdIds.front());
+    assert(!host.acceptedRouting(22,1) && !host.acceptedRouting(21,0));
     assert(!host.commit(roster,request,1,21,21,false).ok());
     assert(host.acceptedRevision()==1);
     std::array<float,32> micA{},micB{},mainL{},mainR{},monL{},monR{};
@@ -120,6 +129,11 @@ static void verifyDynamicNativeSessionPublication() {
     assert(clean.edit(clean.revision(),std::span<const ChannelEdit>(&none,1)).ok());
     ack=host.commit(clean,request,1,21,21,true);
     assert(ack.ok()&&ack.revision==2);
+    assert(!host.acceptedRouting(21,1));
+    const auto* revised=host.acceptedRouting(21,2);
+    assert(revised && !revised->find(backing)->primaryOutput.value);
+    assert(revised->find(backing)->parallelSends.size()==1);
+    assert(revised->find(group)->sourceCount()==1);
     assert(host.render(21,physical,2,mainL.data(),mainR.data(),32,
                        false,effect,monL.data(),monR.data()));
     assert(close(mainL[0],(2.f*.2f+.25f*.2f)*center));
@@ -789,7 +803,81 @@ static void verifyRealtimeAuxMasterPcmBothOutputs() {
     assert(close(left[0],initial));
 }
 
+// M3C: actual dynamic PCM through GROUP and parallel FX, but continuous
+// ChannelId fader/pan/send do not rebuild the graph or mute the device.
+static void verifyDynamicChannelIdLiveControls() {
+    using Kind=ChannelEdit::Kind;
+    DynamicChannelRoster roster;
+    std::array<ChannelEdit,4> create{};
+    for(int i=0;i<4;++i){
+        create[i].kind=Kind::add;create[i].position=static_cast<std::size_t>(i);
+        create[i].role=i==0?ChannelRole::input:i==1?ChannelRole::group:
+                       i==2?ChannelRole::fxReturn:ChannelRole::main;
+        create[i].format=i==0?ProcessingFormat::mono:ProcessingFormat::stereo;
+        create[i].text=std::to_string(i);
+    }
+    const auto rows=roster.edit(0,create);assert(rows.ok());
+    const auto mic=rows.createdIds[0],group=rows.createdIds[1];
+    const auto fx=rows.createdIds[2],main=rows.createdIds[3];
+    std::array<ChannelEdit,4> links{};
+    links[0].kind=Kind::setPrimaryOutput;links[0].id=mic;links[0].target=group;
+    links[1].kind=Kind::setPrimaryOutput;links[1].id=group;links[1].target=main;
+    links[2].kind=Kind::setPrimaryOutput;links[2].id=fx;links[2].target=main;
+    links[3].kind=Kind::addSendReference;links[3].id=mic;
+    links[3].target=fx;links[3].value=.25f;links[3].preFader=false;
+    assert(roster.edit(roster.revision(),links).ok());
+    DynamicGraphRequest req;req.physicalInputs=1;req.maxFrames=64;
+    req.sources={{mic,0,-1,false}};
+    DynamicNativeSessionPublisher host;
+    auto ack=host.commit(roster,req,0,123,123,true);
+    assert(ack.ok()&&ack.revision==1);
+    std::array<float,64> input{},left{},right{};
+    input.fill(.8f);
+    const float* physical[]={input.data()};
+    const auto fxNone=[](ChannelId,float*,float*,int) noexcept {};
+    auto render=[&](){
+        return host.render(123,physical,1,left.data(),right.data(),64,
+                           false,fxNone);
+    };
+    constexpr float center=.7071067811865475f;
+    assert(render()&&close(left[0],.8f*center*1.25f));
+    assert(host.setChannelMix(123,1,mic,.5f,0.f));
+    assert(host.acceptedRevision()==1); // no structural graph swap
+    assert(render());
+    assert(left[0]>.8f*center*.5f*1.25f);
+    assert(close(left[63],.8f*center*.5f*1.25f));
+    assert(host.setParallelSendGain(123,1,mic,fx,false,.5f));
+    assert(render()&&close(left[63],.8f*center*.5f*1.5f));
+    assert(host.setChannelMix(123,1,group,.5f,0.f));
+    assert(render()&&close(left[63],.8f*center*.5f*(.5f+.5f)));
+    // Exclusive output can NEVER be mistaken for a parallel SEND.
+    assert(!host.setParallelSendGain(123,1,group,main,false,0.f));
+    assert(!host.setParallelSendGain(123,1,mic,main,false,1.f));
+    assert(!host.setParallelSendGain(123,1,mic,fx,true,1.f));
+    assert(!host.setParallelSendGain(122,1,mic,fx,false,1.f));
+    assert(!host.setChannelMix(123,0,mic,1.f,0.f));
+    assert(!host.setChannelMix(122,1,mic,1.f,0.f));
+    assert(!host.setChannelMix(123,1,ChannelId{999},1.f,0.f));
+    assert(!host.setChannelMix(123,1,mic,
+           std::numeric_limits<float>::quiet_NaN(),0.f));
+    assert(!host.setParallelSendGain(123,1,mic,fx,false,-1.f));
+    assert(render()&&close(right[63],.8f*center*.5f));
+    assert(host.setParallelSendGain(123,1,mic,fx,false,0.f));
+    assert(render()&&close(left[63],.8f*center*.25f));
+    // Full suppression of primary output still leaves independent FX send.
+    assert(host.setChannelMix(123,1,group,0.f,0.f));
+    assert(host.setParallelSendGain(123,1,mic,fx,false,.5f));
+    assert(render()&&close(left[63],.8f*center*.5f*.5f));
+    const auto retained=host.acceptedRevision();
+    assert(retained==1);
+    // The native physical MUTE gate applies even if a live target is nonzero.
+    assert(!host.render(123,physical,1,left.data(),right.data(),64,
+                        true,fxNone));
+    assert(left[63]==0.f&&right[63]==0.f);
+}
+
 int main() {
+    verifyDynamicChannelIdLiveControls();
     verifyDynamicNativeSessionPublication();
     verifyStudioConsoleBusBatchPcm();
     verifyRealtimeAuxMasterPcmBothOutputs();

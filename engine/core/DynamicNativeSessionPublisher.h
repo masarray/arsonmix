@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "DynamicPreparedMixerBlock.h"
+#include "DynamicConsoleRoutingView.h"
 #include "RealtimeRoutePublisher.h"
 #include <algorithm>
 #include <atomic>
@@ -19,6 +20,7 @@ namespace armix::mixer {
 class DynamicNativeSessionPublisher final {
     struct Prepared final {
         DynamicPreparedMixerBlock graph;
+        DynamicConsoleRoutingView routing;
         int physicalInputs=0;
         bool monitor=false;
     };
@@ -66,6 +68,11 @@ public:
         auto prepared=std::make_unique<Prepared>();
         if(!DynamicPreparedMixerBlock::compile(
               roster,request,prepared->graph,report.graphError)) {
+            report.fault=Fault::invalidGraph;return report;
+        }
+        // The Console data and PCM schedule must originate from one and the
+        // same accepted roster. No browser-side inferred BUS assignments.
+        if(!DynamicConsoleRoutingView::build(roster,prepared->routing)) {
             report.fault=Fault::invalidGraph;return report;
         }
         prepared->physicalInputs=request.physicalInputs;
@@ -142,6 +149,35 @@ public:
         rendering_.clear(std::memory_order_release);
         if(!ok)clearOutputs();
         return ok;
+    }
+
+    // CONTROL ONLY; pointer is valid until the next structural commit.
+    // The caller must COPY needed fields before yielding the writer thread.
+    // Future WebView event serializes this only after native ACK, never draft.
+    const DynamicConsoleRoutingView* acceptedRouting(
+        std::uint64_t epoch,std::uint64_t revision) const noexcept {
+        const auto* current=publisher_.controlPrepared(epoch,revision);
+        return current?&current->routing:nullptr;
+    }
+
+    // M3C realtime parameters on the accepted ChannelId graph ONLY.
+    // Caller must propagate the real device epoch and native ACK revision.
+    // Rejected/stale edits leave the last accepted PCM unchanged.
+    bool setChannelMix(std::uint64_t epoch,std::uint64_t revision,
+                       ChannelId id,float gain,float pan) noexcept {
+        return publisher_.updateActiveControl(epoch,revision,
+            [&](Prepared& active) noexcept {
+                return active.graph.setChannelMix(id,gain,pan);
+            });
+    }
+    bool setParallelSendGain(std::uint64_t epoch,std::uint64_t revision,
+                             ChannelId source,ChannelId destination,
+                             bool preFader,float gain) noexcept {
+        return publisher_.updateActiveControl(epoch,revision,
+            [&](Prepared& active) noexcept {
+                return active.graph.setParallelSendGain(
+                    source,destination,preFader,gain);
+            });
     }
 
     // CONTROL ONLY; never destroy the last live graph in a callback.
