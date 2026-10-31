@@ -1127,6 +1127,35 @@ private:
                 "Existing CH1 FX Rack and Orbit stay bound to their original processors. "
                 "Structural CH1 FX changes remain gated until the next production lifecycle milestone.");
         }
+        // M1 operator realtime PARAM: existing AUX POST gain changes while
+        // audio is running. Structural sends remain guarded MUTE/APPLY.
+        if(action=="routingAuxSendGain") {
+            const int source=static_cast<int>(args.getProperty("from",-1));
+            const int bus=static_cast<int>(args.getProperty("bus",-1));
+            const int requestId=static_cast<int>(args.getProperty("requestId",0));
+            const auto ep=args.getProperty("deviceEpoch",juce::var());
+            const auto rv=args.getProperty("revision",juce::var());
+            const bool number=value.isDouble()||value.isInt();
+            const float gain=number?static_cast<float>(static_cast<double>(value)):-1.f;
+            const bool ok=!nativeShowBusy_&&!studioBackupBusy_&&!ep.isVoid()&&!rv.isVoid() &&
+                number && requestId>0 &&
+                engine_.setDryRoutingLabAuxSendGain(source,bus,
+                    static_cast<std::uint64_t>(static_cast<juce::int64>(ep)),
+                    static_cast<std::uint64_t>(static_cast<juce::int64>(rv)),gain);
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("ok",ok);
+            ack->setProperty("requestId",requestId);
+            ack->setProperty("from",source);
+            ack->setProperty("bus",bus);
+            ack->setProperty("gain",static_cast<double>(gain));
+            ack->setProperty("error",ok?juce::String():
+                "Live AUX gain rejected: route revision/device changed or POST send missing");
+            ack->setProperty("state",engine_.status().getProperty("dryRoutingLab",{}));
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                "arMixAuxSendGainAck",juce::var(ack.release()));
+            if(!ok)emitNotice("Live AUX send rejected; refresh accepted routing.",true);
+            return;
+        }
         // G5C native per-instance BYPASS never recompiles the graph and
         // does not require muting the output. All identity gates must agree.
         if (action == "routingFxBypass") {

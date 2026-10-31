@@ -433,7 +433,63 @@ static void verifyLegacyToDynamicProductionPcmParity() {
     assert(migrated.pcm.channelCount()==stripCount+auxBusCount+2);
 }
 
+
+static void verifyRealtimeAuxPostGainWithoutGraphRebuild() {
+    using namespace armix::mixer;
+    const std::array<int,2> pins{0,1};
+    ChannelRoutingConfig routing;
+    routing.stripsAndMaster.strips[0]=
+        {SourceMode::mono,0,-1,1.f,0.f,false,false};
+    SendRequest sends;
+    sends.toMaster[0]=false; // isolated AUX-only channel.
+    AuxBusRequest aux;
+    aux.buses[0]={true,true,false,1.f};
+    aux.count=1;
+    aux.sends[0]={0,0,SendTap::postFader,.25f,0.f,true};
+    PreparedRenderGraph graph;
+    RenderError error;
+    assert(PreparedRenderGraph::compile(routing,pins,sends,graph,error,aux));
+    PreparedMixerBlock block(graph,64);
+    RealtimeStripControls controls;
+    assert(controls.set(0,1.f,0.f,true,false,false));
+    std::array<float,64> input{},spare{},l{},r{};
+    input.fill(.8f);spare.fill(0.f);
+    const float* sources[]={input.data(),spare.data()};
+    const auto noFx=[](int,float*,float*,int) noexcept {};
+    assert(block.process(sources,2,l.data(),r.data(),64,noFx,nullptr,&controls));
+    constexpr float center=.7071067811865475f;
+    const float expected=.8f*center*.25f;
+    assert(close(l[0],expected)&&close(r[63],expected));
+    assert(close(block.auxSendGain(0,0,SendTap::postFader),.25f));
+    const auto originalPlan=block.plan().aux.edges[0].initialGain;
+    assert(block.setAuxSendGain(0,0,SendTap::postFader,.5f));
+    assert(block.process(sources,2,l.data(),r.data(),64,noFx,nullptr,&controls));
+    assert(l[0]>expected && l[0]<expected*2.f);
+    assert(close(l[63],expected*2.f));
+    assert(block.process(sources,2,l.data(),r.data(),64,noFx,nullptr,&controls));
+    assert(close(l[0],expected*2.f) && close(r[63],expected*2.f));
+    assert(block.setAuxSendGain(0,0,SendTap::postFader,0.f));
+    assert(block.process(sources,2,l.data(),r.data(),64,noFx,nullptr,&controls));
+    assert(l[0]>0.f && close(l[63],0.f));
+    assert(block.process(sources,2,l.data(),r.data(),64,noFx,nullptr,&controls));
+    assert(close(l[0],0.f)&&close(r[63],0.f));
+    // Parameter edits cannot invent PRE edges, AUX2 or foreign channels.
+    assert(!block.setAuxSendGain(0,0,SendTap::preFader,1.f));
+    assert(!block.setAuxSendGain(0,1,SendTap::postFader,1.f));
+    assert(!block.setAuxSendGain(1,0,SendTap::postFader,1.f));
+    assert(!block.setAuxSendGain(0,0,SendTap::postFader,2.f));
+    assert(!block.setAuxSendGain(0,0,SendTap::postFader,
+                                std::numeric_limits<float>::quiet_NaN()));
+    assert(close(block.plan().aux.edges[0].initialGain,originalPlan));
+    // Muted source remains silent even when send target is nonzero.
+    assert(block.setAuxSendGain(0,0,SendTap::postFader,1.f));
+    assert(controls.set(0,1.f,0.f,true,true,false));
+    assert(block.process(sources,2,l.data(),r.data(),64,noFx,nullptr,&controls));
+    assert(close(l[63],0.f));
+}
+
 int main() {
+    verifyRealtimeAuxPostGainWithoutGraphRebuild();
     verifyLegacyToDynamicProductionPcmParity();
     verifyDynamicDualBusPcm();
     verifyDynamicPreparedPcm();

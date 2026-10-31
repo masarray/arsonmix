@@ -192,7 +192,7 @@
     }
     if(active&&!sofMessage){
       const aux=s.draftAux?.[sofBus];
-      const text=aux?.enabled?'AUX '+(sofBus+1)+' SEND FADERS · POST · DRAFT until ACK':'AUX '+(sofBus+1)+' RETURN OFF · enable in SENDS';
+      const text=aux?.enabled?'AUX '+(sofBus+1)+' · LIVE POST LEVEL (ACK) · NEW SEND REQUIRES APPLY':'AUX '+(sofBus+1)+' RETURN OFF · enable in SENDS';
       el('arMixerBankInfo').textContent=text;
     }else if(active&&sofMessage)el('arMixerBankInfo').textContent=sofMessage;
   }
@@ -213,10 +213,13 @@
     if(sofBus<0||mode!=='SENDS'||s.epoch!==sofEpoch||!s.ready||s.pending){
       sofStatus('SEND EDIT BLOCKED · STALE DEVICE / APPLY PENDING');return false;
     }
-    const r=window.__arMixStageAuxSendEdit?.({
-      from:channel,bus:sofBus,tap:'POST',action,...(action==='gain'?{value}:{} )
-    });
-    sofMessage=r?.ok?'AUX '+(sofBus+1)+' POST · DRAFT / MUTE + APPLY':r?.error||'Native send unavailable';
+    // Ordinary level changes remain LIVE; new edges change topology.
+    const r=action==='gain'
+      ?window.__arMixSetLiveAuxSendGain?.({from:channel,bus:sofBus,gain:value})
+      :window.__arMixStageAuxSendEdit?.({from:channel,bus:sofBus,tap:'POST',action});
+    sofMessage=r?.ok?(action==='gain'?'AUX '+(sofBus+1)+' · NATIVE PARAM REQUEST · WAIT ACK':
+      'AUX '+(sofBus+1)+' · NEW POST DRAFT · MUTE + APPLY'):
+      r?.error||'Native send unavailable';
     refresh();return !!r?.ok;
   }
   function sofFinish(event,cancel=false){
@@ -942,6 +945,14 @@
     refresh();
   });
   window.addEventListener('arMixRoutingDraftChanged',()=>{lastSignature='';refresh();});
+  window.addEventListener('arMixAuxSendGainResult',event=>{
+    const a=event.detail||{};
+    if(sofBus>=0&&a.bus===sofBus){
+      sofMessage=a.ok?'AUX '+(sofBus+1)+' · LIVE LEVEL ACK · MAIN FADER UNCHANGED':
+        'LIVE SEND REJECTED · '+(a.error||'Review device and route');
+      refresh();
+    }
+  });
   window.addEventListener('resize',()=>positionSendEditor());
   document.addEventListener('pointerdown',e=>{
     if(!sendEditor.hidden&&!sendEditor.contains(e.target)&&!e.target.closest?.('[data-send-focus]')){
