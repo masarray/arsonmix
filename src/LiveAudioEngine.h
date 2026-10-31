@@ -1089,6 +1089,9 @@ public:
         return {};
     }
     bool studioBusLive() const noexcept {return liveStudioBus_.active();}
+    bool setStudioBusGain(std::uint64_t epoch,std::uint64_t revision,float linear) noexcept {
+        return liveStudioBus_.setGroupGain(epoch,revision,linear);
+    }
 
     juce::String switchDryRoutingLabSource(int strip,std::uint64_t epoch,
             std::uint64_t revision,const juce::String& mode,
