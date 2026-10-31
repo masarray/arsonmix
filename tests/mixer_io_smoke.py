@@ -118,7 +118,13 @@ async def main():
               pending:window.__arMixRouteView()?.pending,
               monitor:window.__arMixRouteView()?.monitor
             })""")
-            assert len(switching)==1,(switching,diagnostic)
+            probe=await page.evaluate("""()=>({
+              result:window.__arMixCommitSelectedSource(0,'MONO',1,-1),
+              sent:window.__armixTestActions.filter(x=>
+                x.name==='arMixAction'&&x.data.action==='routingSourceSwitch'),
+              actions:window.__armixTestActions.filter(x=>x.name==='arMixAction').slice(-5)
+            })""")
+            assert len(switching)==1,(switching,diagnostic,probe)
         assert switching[0]['data']['requestId']==1 and switching[0]['data']['channel']==0
         assert switching[0]['data']['left']==1 and switching[0]['data']['deviceEpoch']==4
         assert (await page.evaluate("""()=>window.__armixTestActions.filter(x=>
