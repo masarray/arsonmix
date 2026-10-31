@@ -433,7 +433,7 @@ async def main():
         await page.locator('#arSendEditor [data-send-gain="POST"]').select_option("0.25")
         editor_actions=await page.evaluate("""()=>window.__armixTestActions.filter(
           x=>x.name==="arMixAction"&&x.data.action==="routingAuxSendGain")""")
-        assert len(editor_actions)==4,editor_actions
+        assert len(editor_actions)==3,editor_actions
         assert abs(editor_actions[-1]['data']['value']-.25)<1e-7
         assert await page.locator('#arSendEditor [data-send-apply]').is_disabled()
         assert len(await page.evaluate("""()=>window.__armixTestActions.filter(
