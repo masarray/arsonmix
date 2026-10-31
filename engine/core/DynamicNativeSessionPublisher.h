@@ -144,6 +144,26 @@ public:
         return ok;
     }
 
+    // M3C realtime parameters on the accepted ChannelId graph ONLY.
+    // Caller must propagate the real device epoch and native ACK revision.
+    // Rejected/stale edits leave the last accepted PCM unchanged.
+    bool setChannelMix(std::uint64_t epoch,std::uint64_t revision,
+                       ChannelId id,float gain,float pan) noexcept {
+        return publisher_.updateActiveControl(epoch,revision,
+            [&](Prepared& active) noexcept {
+                return active.graph.setChannelMix(id,gain,pan);
+            });
+    }
+    bool setParallelSendGain(std::uint64_t epoch,std::uint64_t revision,
+                             ChannelId source,ChannelId destination,
+                             bool preFader,float gain) noexcept {
+        return publisher_.updateActiveControl(epoch,revision,
+            [&](Prepared& active) noexcept {
+                return active.graph.setParallelSendGain(
+                    source,destination,preFader,gain);
+            });
+    }
+
     // CONTROL ONLY; never destroy the last live graph in a callback.
     void unpublish() noexcept {publisher_.unpublish();}
     void pollRetirement() noexcept {publisher_.pollRetirement();}
