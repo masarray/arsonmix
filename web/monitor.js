@@ -1393,6 +1393,55 @@
     return {ok:true,pending:true,epoch:Number(d.epoch),
       message:"SOURCE PENDING · native ACK required; output remains MUTED."};
   };
+
+  // M1 input-only same-format crossfade. This updates one atomic physical PCM
+  // source in the existing native graph, never changes FX/bus/output topology.
+  let liveSourceRequestId=1,liveSourcePending=null;
+  window.__arMixCommitSelectedSource=(channel,mode,left,right)=>{
+    const d=state.dryRoutingLab||{},r=d.acceptedRoute?.channels?.[channel];
+    if(!r||r.mode!==mode||!["MONO","STEREO"].includes(mode))
+      return window.__arMixCommitMutedSource(channel,mode,left,right);
+    if(!d.ready||!d.active||draftEpoch!==Number(d.epoch)||
+       patchPending||mixerDraftActive||rackFxDraft||nativeShowBusy||
+       studioBackupBusy||liveSendPending.size)
+      return {ok:false,error:"Finish native APPLY, FX/SEND draft or Show before SOURCE switching."};
+    if(liveSourcePending)return {ok:false,error:"Wait for previous SOURCE native ACK."};
+    const active=new Set(patchPorts().map(p=>p.port));
+    if(!active.has(left)||(mode==="STEREO"&&(!active.has(right)||left===right)))
+      return {ok:false,error:"SOURCE requires verified enabled driver pins."};
+    const targetRight=mode==="STEREO"?right:-1;
+    if(r.left===left&&r.right===targetRight)
+      return {ok:true,unchanged:true,message:"SOURCE ALREADY ACKNOWLEDGED"};
+    const id=liveSourceRequestId++;
+    liveSourcePending={id,channel,mode,left,right:targetRight,
+      epoch:Number(d.epoch),revision:Number(d.revision)};
+    api.emitEvent("arMixAction",{action:"routingSourceSwitch",
+      requestId:id,channel,mode,left,right:targetRight,
+      deviceEpoch:Number(d.epoch),revision:Number(d.revision)});
+    return {ok:true,pending:true,live:true,epoch:Number(d.epoch),
+      message:"LIVE INPUT CROSSFADE · WAIT NATIVE ACK"};
+  };
+  api.addEventListener("arMixSourceSwitchAck",ack=>{
+    const p=liveSourcePending;
+    if(!p||Number(ack?.requestId)!==p.id||Number(ack?.channel)!==p.channel)return;
+    liveSourcePending=null;
+    const next=ack?.state||{},old=state.dryRoutingLab||{};
+    const accepted=next.acceptedRoute?.channels?.[p.channel];
+    const ok=ack?.ok===true&&Number(next.epoch)===p.epoch&&
+      Number(next.revision)===p.revision&&Number(old.epoch)===p.epoch&&
+      Number(old.revision)===p.revision&&accepted?.mode===p.mode&&
+      accepted.left===p.left&&accepted.right===p.right;
+    if(ok){
+      state.dryRoutingLab=next;
+      hydrateAcceptedRoute();
+      renderPatchMatrix();updateRouteLabIdentity();
+      window.dispatchEvent(new Event("arMixRoutingDraftChanged"));
+    }
+    window.dispatchEvent(new CustomEvent("arMixSourceSwitchResult",{detail:{
+      ok,channel:p.channel,
+      error:ok?"":String(ack?.error||"Source changed or native ACK mismatch")
+    }}));
+  });
   window.__arMixOpenChannelPatch=(channel,tab="input")=>{
     if(!Number.isInteger(channel)||channel<0||channel>=10)return;
     openRoutingLab();
