@@ -3875,7 +3875,7 @@ scheduleDemoMeter();
     a.length===b.length&&a.every((v,i)=>v===b[i]);
   function deviceDirty(){
     const d=deviceDraft,a=deviceInventory?.active;
-    return !!d&&(!a?.open||d.backend!==a.backend||d.captureDevice!==a.captureDevice||
+    return !!d&&(!a?.open||a.authorized===false||d.backend!==a.backend||d.captureDevice!==a.captureDevice||
       d.playbackDevice!==a.playbackDevice||
       (d.sampleRate>0&&d.sampleRate!==Number(a.rate))||
       (d.bufferSize>0&&d.bufferSize!==Number(a.buffer))||
@@ -3926,7 +3926,7 @@ scheduleDemoMeter();
     const panel=node('section','arIORealDeviceSetup arIODeviceControl');
     panel.appendChild(node('p','arIODeviceSummary',
       !isNative()?'WEB PREVIEW · connect the Windows application to configure real hardware':
-      a.open?'ACTIVE · '+a.backend+' · '+a.captureDevice+' → '+a.playbackDevice+
+      a.open&&a.authorized!==false?'ACTIVE · '+a.backend+' · '+a.captureDevice+' → '+a.playbackDevice+
         ' · '+a.rate+' Hz / '+a.buffer+' samples':
         'NO VERIFIED DEVICE · select a reported interface and APPLY DEVICE'));
     if(!types.length){
