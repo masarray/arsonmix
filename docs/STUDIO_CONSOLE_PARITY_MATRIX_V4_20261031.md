@@ -30,6 +30,9 @@
 | FX05 | Serial and parallel Splitter, frequency-band processing | ABSENT | Original DSP implementation with PDC; don't copy proprietary FX | P2 |
 | FX06 | Latency compensation for branched buses/FX and hardware inserts | ABSENT / gated for CH1 latent FX | `LiveAudioEngine.h` refuses nonzero-latency CH1 in native sends | P0/P1 |
 | FX07 | External hardware insert with measured round trip | ABSENT | P2 device-bound send/return + feedback protection + PDC | P2 |
+| SRC01 | Live external instrument/Aux input and optional VST3 instrument PCM source, no MIDI timeline | PARTIAL physical Aux/route; VSTi generation ABSENT | Separate VSTi class + safe realtime MIDI controller + audio-output ChannelId, not an arranger | P2 |
+| IO08 | Surround/multichannel software I/O channel modes where device/plugin supports it | ABSENT beyond current mono/stereo plan | Format-aware dynamic graph and per-bus VST3 negotiation after stereo parity | P2 |
+| MON00 | Talkback/dim/mono check tied to actual Cue/Monitor hardware | PARTIAL Master mono; no verified Talkback | Explicit mic-to-Cue route, anti-feedback and momentary-safe controls | P1/P2 |
 | MON01 | Independent MAIN and MONITOR physical buses | PARTIAL LIVE | Existing callback native MAIN/MONITOR; full role semantics TBD | P0 |
 | MON02 | Listen Bus, Solo through Listen, PFL/AFL, Dim | ABSENT | Create isolated signal sink independent MAIN and safe outputs | P1 |
 | MON03 | Multiple independent Cue mixes/monitor mix sources | PARTIAL limited monitor sends | True Cue controls, monitoring destinations and memory safety | P1 |
