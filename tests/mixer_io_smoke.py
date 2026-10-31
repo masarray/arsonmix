@@ -91,19 +91,61 @@ async def main():
         assert await page.locator('#arIOOverlay').is_visible()
         assert await page.locator('[data-io-tab="device"]').get_attribute('aria-selected')=='true'
         assert await page.locator('.arIORealDeviceSetup').is_visible()
+        # DEVICE1: actual driver dropdown, not a cosmetic inventory/native popup.
         await page.evaluate("""()=>window.__armixTestEmit('arMixAudioDeviceInventory',{
-          currentType:'ASIO',types:[
-            {name:'ASIO',active:true,inputs:['MAONO Mic In','MAONO Virtual L','MAONO Virtual R'],outputs:['MAONO Out 1','MAONO Out 2']},
-            {name:'Windows Audio',active:false,inputs:['Windows Microphone'],outputs:['Windows Speakers']},
-            {name:'DirectSound',active:false,inputs:['Legacy Mic'],outputs:['Legacy Speakers']}
+          currentType:'ASIO',
+          active:{backend:'ASIO',captureDevice:'MAONO PS22',playbackDevice:'MAONO PS22',
+            rate:48000,buffer:128,open:true,deviceGeneration:7,outputMuted:true,
+            inputNames:['Mic 1','Virtual L','Virtual R','Mic 4'],
+            outputNames:['Output 1','Output 2','Monitor 3','Monitor 4'],
+            enabledInputs:[0,1,2,3],enabledOutputs:[0,1,2,3],
+            rates:[44100,48000],buffers:[64,128,256]},
+          types:[
+            {name:'ASIO',active:true,separate:false,inputs:['MAONO PS22'],outputs:['MAONO PS22']},
+            {name:'Windows Audio',active:false,separate:true,
+              inputs:['Windows Microphone'],outputs:['Windows Speakers']},
+            {name:'DirectSound',active:false,separate:true,
+              inputs:['Legacy Mic'],outputs:['Legacy Speakers']}
           ]})""")
-        assert await page.locator('.arIOBackendBadge[data-available="yes"]').count()==3
-        assert 'MAONO Virtual L' in await page.locator('.arIODeviceInventory').inner_text()
-        await page.locator('.arIODeviceChoose').click()
-        assert await page.locator('#arIOOverlay').is_hidden()
-        assert await page.evaluate("""()=>window.__armixTestActions.some(x=>
-          x.name==='arMixAction'&&x.data.action==='audioSetup')""")
-        await page.locator('#audioSetupBtn').click()
+        assert await page.locator('.arIODeviceBackend').is_visible()
+        assert await page.locator('.arIODevicePin').count()==8
+        assert await page.locator('.arIODeviceCapture').is_disabled()
+        assert await page.locator('.arIODeviceRate').input_value()=='48000'
+        assert await page.locator('[data-io-device-apply]').is_disabled()
+        # Staging sample rate may not reopen any hardware automatically.
+        await page.locator('.arIODeviceBuffer').select_option('256')
+        assert await page.locator('[data-io-device-apply]').is_enabled()
+        assert not await page.evaluate("""()=>window.__armixTestActions.some(x=>
+          x.name==='arMixAction'&&x.data.action==='audioDeviceApply')""")
+        await page.locator('[data-io-device-apply]').click()
+        actions=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.name==='arMixAction'&&x.data.action==='audioDeviceApply')""")
+        assert len(actions)==1,actions
+        assert actions[0]['data']['config']['bufferSize']==256,actions
+        assert actions[0]['data']['expectedDeviceGeneration']==7,actions
+        assert await page.locator('[data-io-device-apply]').is_disabled()
+        # Stale ACK cannot falsely accept/relabel the driver's real state.
+        await page.evaluate("""()=>window.__armixTestEmit('arMixAudioDeviceApplyAck',{
+          requestId:'stale',ok:true,state:'ACCEPTED_MUTED'})""")
+        assert await page.locator('[data-io-device-apply]').is_disabled()
+        await page.evaluate("""action=>window.__armixTestEmit('arMixAudioDeviceApplyAck',{
+          requestId:action.requestId,ok:true,state:'ACCEPTED_MUTED',
+          active:{backend:'ASIO',captureDevice:'MAONO PS22',playbackDevice:'MAONO PS22',
+            rate:48000,buffer:256,open:true,deviceGeneration:8,outputMuted:true,
+            inputNames:['Mic 1','Virtual L','Virtual R','Mic 4'],
+            outputNames:['Output 1','Output 2','Monitor 3','Monitor 4'],
+            enabledInputs:[0,1,2,3],enabledOutputs:[0,1,2,3],
+            rates:[44100,48000],buffers:[64,128,256]}})""",actions[0]['data'])
+        assert await page.locator('.arIODeviceBuffer').input_value()=='256'
+        assert 'ACCEPTED' in await page.locator('#arIOFeedback').inner_text()
+        assert await page.locator('[data-io-device-apply]').is_disabled()
+        # Separate capture/playback choice for WASAPI is a DRAFT only.
+        await page.locator('.arIODeviceBackend').select_option('Windows Audio')
+        assert await page.locator('.arIODeviceCapture').is_enabled()
+        assert await page.locator('.arIODevicePlayback').input_value()=='Windows Speakers'
+        assert await page.locator('.arIODeviceRate').input_value()=='0'
+        await page.locator('[data-io-device-revert]').click()
+        assert await page.locator('.arIODeviceBackend').input_value()=='ASIO'
         await page.locator('[data-io-tab="inputs"]').click()
         assert await page.locator('#arIOBody .arIOQuickRow').count()==10
         # Operator-first mapper is visible; crosspoint is explicitly advanced.
