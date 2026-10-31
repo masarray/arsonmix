@@ -249,8 +249,8 @@ async def main():
         assert await page.locator('.arIODevicePatchMatrix .arIOMatrixCell').count()>0
         # FAST1: one gesture un-mutes a previously ACKed real input route;
         # hardware action is still fenced to epoch/revision.
-        assert await page.locator('[data-io-start-audio]').is_visible()
-        await page.locator('[data-io-start-audio]').click()
+        assert await page.locator('#arIOAudioPath [data-io-start-audio]').is_visible()
+        await page.locator('#arIOAudioPath [data-io-start-audio]').click()
         arm=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='monitor'&&x.data.value===true)""")
         assert len(arm)==1,arm
@@ -260,8 +260,8 @@ async def main():
           ok:true,armed:true,deviceEpoch:4,error:''})""")
         await page.evaluate("""status=>{status.monitor=true;
           window.__armixTestEmit('arMixStatus',status)}""",status)
-        assert await page.locator('[data-io-start-audio]').inner_text()=='MUTE OUTPUT'
-        await page.locator('[data-io-start-audio]').click()
+        assert await page.locator('#arIOAudioPath [data-io-start-audio]').inner_text()=='MUTE OUTPUT'
+        await page.locator('#arIOAudioPath [data-io-start-audio]').click()
         muted=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='monitor'&&x.data.value===false)""")
         assert len(muted)==1,muted
@@ -1019,7 +1019,7 @@ async def main():
           types:[{name:'ASIO',active:true,separate:false,
             inputs:['Mock Interface'],outputs:['Mock Interface']}]
         })""")
-        await qp.locator('[data-io-start-audio]').click()
+        await qp.locator('#arIOAudioPath [data-io-start-audio]').click()
         requests=await qp.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.data?.action==='routingDryApply')""")
         assert len(requests)==1,requests
