@@ -9,7 +9,7 @@
   let mode='FX', lastStatus={}, deviceInventory=null, ioTab='device', lastSignature='', focusedInput=2;
   let monitorSendsExpanded=false;
   // DEVICE1: staged selections are UI-only; only positive native ACK changes active hardware.
-  let deviceDraft=null,deviceBusy=false,deviceNote='',deviceRequest='',deviceRequestSeq=0,lastDeviceRefresh=0,lastDeviceRescan=0;
+  let deviceDraft=null,deviceBusy=false,deviceNote='',deviceRequest='',deviceRequestSeq=0,lastDeviceRefresh=0,lastDeviceRescan=0,applyMutePending=false,applyAfterDevice=null,applyBaseEpoch=0;
   let deviceMatrixView='inputs',deviceMatrixWaitEpoch=null; // Never display old hardware pins after an APPLY ACK.
   // Pending SOURCE ACK is a UI projection only; monitor.js owns the native route.
   let quickSourcePending=null;
@@ -1183,7 +1183,7 @@
     if(deviceBusy)return 'DEVICE SWITCH IN PROGRESS · wait for native readback';
     if(!deviceDraft||!deviceInventory?.active)return 'REFRESH DEVICE INVENTORY';
     if(lastStatus.secondaryOutputArmed)return 'STEP 1 · DISARM SECONDARY STREAM in SIGNAL CHECK before changing driver';
-    if(s?.monitor||lastStatus.monitor)return 'STEP 1 · PRESS MUTE OUTPUT above before APPLY DEVICE';
+    // APPLY performs native MUTE first if the output is armed.
     if(s?.pending)return 'WAIT · finish native routing APPLY/ACK before changing driver';
     if(!deviceDraft.backend||!deviceDraft.captureDevice||!deviceDraft.playbackDevice)
       return 'SELECT A VALID DUPLEX AUDIO INTERFACE';
@@ -1194,8 +1194,8 @@
     if(!a.open||a.authorized===false)return 'SELECT ASIO/WINDOWS AUDIO, then APPLY DEVICE';
     const maono=/maono/i.test(String(a.captureDevice||'')+' '+String(a.playbackDevice||''));
     return /ASIO/i.test(a.backend||'')&&maono?
-      'ASIO OPEN · expand HARDWARE PIN ENABLE, select the actual Maono MIC or VC In 3+4 ports, then APPLY DEVICE again. Next select CH input sources, APPLY PATCH and START AUDIO.':
-      'DEVICE OPEN · verify enabled INPUT/OUTPUT pins, choose CH input sources, APPLY PATCH and START AUDIO.';
+      'ASIO OPEN · expand HARDWARE PIN ENABLE, select the actual Maono MIC or VC In 3+4 ports, then APPLY DEVICE again. Next select CH input sources, APPLY.':
+      'DEVICE OPEN · verify enabled INPUT/OUTPUT pins, choose CH input sources, APPLY.';
   };
   function deviceApply(){
     if(!isNative()||deviceBusy||!deviceDraft||!deviceInventory?.active)return;
@@ -1253,8 +1253,8 @@
     // stages the real native route then independently ARM-ACKs hardware.
     const quick=window.__arMixFastAudioState?.()||{};
     const start=node('button','btn-180 arIODeviceStartAudio',
-      lastStatus.monitor?'MUTE OUTPUT':quick.pending?'STARTING…':'START AUDIO');
-    start.type='button';start.dataset.ioStartAudio='1';
+      'MUTE OUTPUT');
+    start.type='button';start.dataset.ioStartAudio='1';start.hidden=!lastStatus.monitor;
     start.disabled=!isNative()||(!lastStatus.monitor&&(
       deviceBusy||!!quick.pending||!a.open||!deviceSameEndpoint(deviceDraft)||
       deviceDirty()||!hardwareReady(route())));
@@ -1266,8 +1266,8 @@
       'CH'+String(i+1).padStart(2,'0'):null).filter(Boolean);
     const firstSound=node('div','arIODeviceFirstSound',quick.message||(
       lastStatus.monitor?'OUTPUT ARMED · '+used.join(' + ')+' → MAIN → HARDWARE':
-      used.length?used.join(' + ')+' → MAIN ready · START AUDIO to hear sound':
-      'FIRST SOUND · START AUDIO maps CH01/CH02 to verified input pins, applies once, then arms MAIN'));
+      used.length?used.join(' + ')+' → MAIN ready · APPLY to hear sound':
+      'FIRST SOUND · APPLY maps verified input pins, routes and arms MAIN'));
     panel.appendChild(firstSound);
 
     if(!types.length&&!a.open)
@@ -1406,7 +1406,7 @@
       }else matrixSection.appendChild(makeMatrix(s,deviceMatrixView));
       matrixSection.appendChild(node('p','arIODeviceMatrixNote',
         deviceMatrixView==='inputs'?
-        'Named inputs are reusable SOURCES. START AUDIO builds a verified initial route; only native ACK confirms sound routing.':
+        'Named inputs are reusable SOURCES. APPLY builds a verified initial route; only native ACK confirms sound routing.':
         'MAIN / MONITOR outputs use muted APPLY PATCH and native ACK.'));
     }
     body.appendChild(matrixSection);
