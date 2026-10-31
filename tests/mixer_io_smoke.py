@@ -282,24 +282,29 @@ async def main():
         assert await page.locator('.arIODeviceDriverButton[aria-pressed="true"]').inner_text()=='ASIO'
         assert await page.locator('.arIODevicePatchMatrix').is_visible()
         assert await page.locator('.arIODevicePatchMatrix .arIOMatrixCell').count()>0
-        # FAST2: a single APPLY arms previously ACKed real input routing;
-        # hardware action is still fenced to epoch/revision.
+        # FAST3 source one-gesture has already completed an ARM ACK above.
+        # This separate DEVICE APPLY must produce ONE new guarded arm, not
+        # an absolute total of one for the entire operator test session.
         assert await page.locator('#arIOAudioPath [data-io-start-audio]').count()==0
+        arm_before=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.name==='arMixAction'&&x.data.action==='monitor'&&x.data.value===true).length""")
         await page.locator('[data-io-device-apply]').click()
         arm=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='monitor'&&x.data.value===true)""")
-        assert len(arm)==1,arm
-        assert arm[0]['data']['expectedEpoch']==4,arm
-        assert arm[0]['data']['expectedRevision']==4,arm
+        assert len(arm)==arm_before+1,arm
+        assert arm[-1]['data']['expectedEpoch']==4,arm
+        assert arm[-1]['data']['expectedRevision']==4,arm
         await page.evaluate("""()=>window.__armixTestEmit('arMixAudioArmAck',{
           ok:true,armed:true,deviceEpoch:4,error:''})""")
         await page.evaluate("""status=>{status.monitor=true;
           window.__armixTestEmit('arMixStatus',status)}""",status)
         assert await page.locator('[data-io-start-audio]').inner_text()=='MUTE OUTPUT'
+        mute_before=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.name==='arMixAction'&&x.data.action==='monitor'&&x.data.value===false).length""")
         await page.locator('[data-io-start-audio]').click()
         muted=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='monitor'&&x.data.value===false)""")
-        assert len(muted)==1,muted
+        assert len(muted)==mute_before+1,muted
         await page.evaluate("""status=>{status.monitor=false;
           window.__armixTestEmit('arMixStatus',status)}""",status)
         assert await page.locator('.arIODeviceDriverButton').nth(1).is_enabled()
