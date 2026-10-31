@@ -109,22 +109,7 @@ async def main():
         await page.locator('.arSourceChoice[data-source-choice="MONO:1"]').click()
         switching=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='routingSourceSwitch')""")
-        if len(switching)!=1:
-            diagnostic=await page.evaluate("""()=>({
-              note:document.querySelector('[data-source-note]')?.textContent,
-              selected:document.querySelector('.strip[data-strip].selected')?.dataset.strip,
-              route:window.__arMixRouteView()?.acceptedRoute?.channels?.[0],
-              canSwitch:typeof window.__arMixCommitSelectedSource,
-              pending:window.__arMixRouteView()?.pending,
-              monitor:window.__arMixRouteView()?.monitor
-            })""")
-            probe=await page.evaluate("""()=>({
-              result:window.__arMixCommitSelectedSource(0,'MONO',1,-1),
-              sent:window.__armixTestActions.filter(x=>
-                x.name==='arMixAction'&&x.data.action==='routingSourceSwitch'),
-              actions:window.__armixTestActions.filter(x=>x.name==='arMixAction').slice(-5)
-            })""")
-            assert len(switching)==1,(switching,diagnostic,probe)
+        assert len(switching)==1,(switching,await page.locator('[data-source-note]').inner_text())
         assert switching[0]['data']['requestId']==1 and switching[0]['data']['channel']==0
         assert switching[0]['data']['left']==1 and switching[0]['data']['deviceEpoch']==4
         assert (await page.evaluate("""()=>window.__armixTestActions.filter(x=>

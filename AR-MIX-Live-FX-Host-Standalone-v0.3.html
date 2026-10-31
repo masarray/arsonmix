@@ -3538,6 +3538,10 @@ scheduleDemoMeter();
     if(outcome.pending)quickSourcePending={
       channel,epoch:outcome.epoch,value:button.dataset.sourceChoice,live:!!outcome.live};
     renderSourceChooser();
+    sourceNote.textContent=outcome.pending?
+      outcome.live?'LIVE SOURCE PENDING · 64-SAMPLE RAMP · WAIT NATIVE ACK':
+        'MUTED SOURCE APPLY PENDING · WAIT NATIVE ACK':
+      'SOURCE ALREADY ACKNOWLEDGED';
   });
   // MS5: explicit Sends-on-Faders control, scoped to a single real AUX return.
   // MAIN fader DOM and all audio controls remain resident and unmodified.

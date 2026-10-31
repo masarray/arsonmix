@@ -1403,7 +1403,7 @@
       return window.__arMixCommitMutedSource(channel,mode,left,right);
     if(!d.ready||!d.active||draftEpoch!==Number(d.epoch)||
        patchPending||mixerDraftActive||rackFxDraft||nativeShowBusy||
-       studioBackupBusy||liveSendPending.size)
+       liveSendPending.size)
       return {ok:false,error:"Finish native APPLY, FX/SEND draft or Show before SOURCE switching."};
     if(liveSourcePending)return {ok:false,error:"Wait for previous SOURCE native ACK."};
     const active=new Set(patchPorts().map(p=>p.port));
