@@ -106,7 +106,7 @@ def zip_members(z, bundle):
     seen = set()
     total = 0
     for info in z.infolist():
-        # Ignore zip folder markers and unrelated top-level build metadata.
+        # Ignore zip folder markers and unrelated top-level build metadata.\n        # Owned JUCE Windows packages use VST3/<bundle> or Plugin/<bundle>.
         if info.is_dir():
             continue
         pp = PurePosixPath(info.filename)
@@ -121,7 +121,7 @@ def zip_members(z, bundle):
             # Standalone EXEs and foreign plugins must never enter the factory.
             continue
         i = positions[0]
-        if i > 1 or (i == 1 and parts[0] not in ("VST3", "vst3")):
+        if i > 1 or (i == 1 and parts[0] not in ("VST3", "vst3", "Plugin")):
             fail("unexpected VST3 archive root")
         sub = parts[i + 1:]
         if not sub:
