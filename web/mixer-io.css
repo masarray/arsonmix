@@ -411,8 +411,6 @@
 .arIODeviceType strong{font-size:11px;color:#e1eef2;font-weight:600}
 .arIODeviceType span{overflow-wrap:anywhere}
 .arIODeviceEmpty{margin:0;padding:10px;color:#adbfca;font-size:11px}
-.arIOOverlay[data-active-tab="device"] .arIOWindow footer [data-mix-apply],
-.arIOOverlay[data-active-tab="device"] .arIOWindow footer [data-io-revert],
 .arIOOverlay[data-active-tab="device"] .arIOWindow footer [data-io-internal],
 .arIOOverlay[data-active-tab="device"] .arIOWindow footer [data-io-advanced]{display:none!important}
 
@@ -525,3 +523,52 @@
 .arSourceAliasFields [data-source-alias-name]{grid-column:span 2}
 .arSourceAliasFields [data-source-alias-save]{grid-column:span 2}
 .arSourceAliasFields small{font:10px 'Segoe UI',Arial,sans-serif}
+
+
+/* DEVICE3: Studio-style single audio workflow — two driver choices, actual
+   interface dropdown, then the existing native INPUT/OUTPUT M/L/R matrix.
+   Flat controls with no blur, glow, animation, or pointer-time layout work. */
+.arIODeviceControl{gap:8px}
+.arIODeviceActiveLine{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  min-height:42px;padding:8px 11px;background:#162b34;border-left:3px solid #5fb8c5;color:#d0e8eb}
+.arIODeviceActiveLine>div{display:flex;flex-direction:column;min-width:0;gap:3px;font:10px "ArSonMix Inter","Segoe UI",sans-serif}
+.arIODeviceActiveLine strong{font-weight:550;font-size:11px;overflow-wrap:anywhere}
+.arIODeviceMicro{font:600 9px "ArSonMix Inter","Segoe UI",sans-serif;letter-spacing:.5px;color:#91bdcb}
+.arIODeviceActiveFlag{font-size:9px;font-weight:600;color:#99ded7;white-space:nowrap}
+.arIODeviceChoose{display:grid;grid-template-columns:minmax(225px,.9fr) minmax(320px,1.8fr);gap:12px;
+  padding:8px 10px;background:#1b2d37;border:1px solid #3d5260}
+.arIODeviceDriverGroup{display:flex;flex-direction:column;gap:6px}
+.arIODeviceDriverToggle{display:flex;align-items:center;gap:2px;padding:3px;background:#0b1b24;
+  border:1px solid #48606c;border-radius:5px;max-width:100%}
+.arIODeviceDriverButton{flex:1;min-width:0;min-height:30px;padding:0 8px;
+  border:1px solid transparent;border-radius:3px;background:transparent;color:#a7bcc9;
+  font:600 10px "ArSonMix Inter","Segoe UI",sans-serif;cursor:pointer}
+.arIODeviceDriverButton[aria-pressed="true"]{background:#2588aa;border-color:#55b2d2;color:#f5fcff}
+.arIODeviceDriverButton:disabled{opacity:.35;cursor:not-allowed}
+.arIODeviceDriverButton:focus-visible,.arIODeviceMatrixTab:focus-visible{outline:2px solid #a6e8ed;outline-offset:2px}
+.arIODeviceInterfaceGroup{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:end}
+.arIODeviceInterfaceGroup .arIODeviceField:first-child:last-of-type{grid-column:1 / -1}
+.arIODeviceAdvanced,.arIODeviceOther{border:1px solid #39505b;background:#12252f;padding:0 10px}
+.arIODeviceAdvanced>summary,.arIODeviceOther>summary{padding:8px 1px;color:#a7c2d0;cursor:pointer;font:550 10px "ArSonMix Inter","Segoe UI",sans-serif}
+.arIODeviceAdvanced .arIODeviceFields{padding-bottom:10px}
+.arIODeviceAdvanced .arIODevicePins{padding-bottom:9px}
+.arIODeviceActions{align-items:center}
+.arIODevicePending{font:10px/1.4 "ArSonMix Inter",sans-serif;color:#e6c38a}
+.arIODevicePatchMatrix{margin-top:10px;border:1px solid #48606c;background:#202a31}
+.arIODeviceMatrixHeading{display:flex;justify-content:space-between;align-items:center;gap:12px;
+  padding:6px 10px;background:#293844}
+.arIODeviceMatrixHeading>strong{font:600 10px "ArSonMix Inter",sans-serif;color:#c5e1e9;letter-spacing:.2px}
+.arIODeviceMatrixSwitch{display:flex;gap:3px}
+.arIODeviceMatrixTab{min-height:27px;padding:0 13px;background:#1a2b35;border:1px solid #4f6775;
+  border-radius:2px;color:#a8c2ce;font:600 10px "ArSonMix Inter",sans-serif;cursor:pointer}
+.arIODeviceMatrixTab[aria-pressed="true"]{background:#2b8eaf;color:#f5fcff;border-color:#6dcef0}
+.arIODevicePatchMatrix .arIOCrosspatch{border:0}
+.arIODevicePatchMatrix .arIOMatrixToolbar{padding:5px 9px}
+.arIODevicePatchMatrix .arIOPortTitle{height:65px;min-height:65px}
+.arIODevicePatchMatrix .arIOMatrixCell,.arIODevicePatchMatrix .arIOMatrixRowName{min-height:30px}
+.arIODevicePatchMatrix .arIOMatrixCorner{min-height:30px}
+.arIODeviceMatrixEmpty{padding:22px 10px;color:#a4c1ce;font:11px/1.5 "ArSonMix Inter",sans-serif}
+.arIODeviceMatrixNote{padding:4px 10px;color:#94b1bd;font:10px "ArSonMix Inter",sans-serif}
+@media(max-width:700px){.arIODeviceChoose{grid-template-columns:minmax(0,1fr)}
+.arIODeviceInterfaceGroup{grid-template-columns:minmax(0,1fr)}
+.arIODeviceMatrixHeading{flex-wrap:wrap}}

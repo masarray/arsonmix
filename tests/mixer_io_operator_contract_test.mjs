@@ -339,3 +339,19 @@ test('M1 focused SEND editor uses native live gain for accepted POST and AUX RET
   assert.match(src,/PRE and structural edits: MUTE \+ APPLY/);
  }
 });
+
+
+test('DEVICE3 studio toggle opens only verified hardware crosspoints and preserves active endpoint truth',()=>{
+ const io=read('web/mixer-io.js'),css=read('web/mixer-io.css');
+ assert.match(io,/function selectDeviceBackend\(name\)/);
+ assert.match(io,/data\.?ioBackendSelect|dataset\.ioBackendSelect/);
+ assert.match(io,/arIODeviceDriverToggle/);
+ assert.match(io,/arIODevicePatchMatrix/);
+ assert.match(io,/makeMatrix\(s,deviceMatrixView\)/);
+ assert.match(io,/if\(!live\)/);
+ assert.match(io,/CURRENT AUDIO DEVICE · NATIVE READBACK/);
+ assert.match(io,/const playback=hasActive\?active\.playbackDevice/);
+ assert.match(io,/const capture=hasActive\?active\.captureDevice/);
+ assert.match(css,/\.arIODeviceDriverButton\[aria-pressed="true"\]/);
+ assert.doesNotMatch(css,/backdrop-filter\s*:/);
+});

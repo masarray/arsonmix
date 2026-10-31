@@ -201,7 +201,23 @@ async def main():
         refreshed=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='audioDeviceRefresh')""")
         assert len(refreshed)==1,refreshed
-        assert await page.locator('.arIODeviceBackend').is_visible()
+        # DEVICE3: ASIO/Windows two-mode toggle + real active port M/L/R matrix.
+        assert await page.locator('.arIODeviceDriverButton').count()==2
+        assert await page.locator('.arIODeviceDriverButton[aria-pressed="true"]').inner_text()=='ASIO'
+        assert await page.locator('.arIODevicePatchMatrix').is_visible()
+        assert await page.locator('.arIODevicePatchMatrix .arIOMatrixCell').count()>0
+        assert await page.locator('.arIODeviceDriverButton').nth(1).is_enabled()
+        await page.locator('.arIODeviceDriverButton').nth(1).click()
+        assert 'APPLY DEVICE first' in await page.locator('.arIODeviceMatrixEmpty').inner_text()
+        # Selecting another backend is only a draft; the real matrix must not
+        # silently display pins belonging to a different device/clock.
+        assert await page.locator('.arIODevicePatchMatrix .arIOMatrixCell').count()==0
+        await page.locator('[data-io-device-revert]').click()
+        assert await page.locator('.arIODevicePatchMatrix .arIOMatrixCell').count()>0
+        await page.locator('.arIODeviceMatrixTab').last.click()
+        assert await page.locator('.arIODevicePatchMatrix .arIOMatrixCell').count()>0
+        await page.locator('.arIODeviceMatrixTab').first.click()
+        await page.locator('.arIODeviceAdvanced summary').click()
         assert await page.locator('.arIODevicePin').count()==8
         assert await page.locator('.arIODeviceCapture').is_disabled()
         assert await page.locator('.arIODeviceRate').input_value()=='48000'
@@ -231,15 +247,17 @@ async def main():
             enabledInputs:[0,1,2,3],enabledOutputs:[0,1,2,3],
             rates:[44100,48000],buffers:[64,128,256]}})""",actions[0]['data'])
         assert await page.locator('.arIODeviceBuffer').input_value()=='256'
+        assert await page.locator('.arIODevicePatchMatrix .arIOMatrixCell').count()==0
+        assert 'Waiting for' in await page.locator('.arIODeviceMatrixEmpty').inner_text()
         assert 'ACCEPTED' in await page.locator('#arIOFeedback').inner_text()
         assert await page.locator('[data-io-device-apply]').is_disabled()
         # Separate capture/playback choice for WASAPI is a DRAFT only.
-        await page.locator('.arIODeviceBackend').select_option('Windows Audio')
+        await page.locator('.arIODeviceDriverButton').nth(1).click()
         assert await page.locator('.arIODeviceCapture').is_enabled()
         assert await page.locator('.arIODevicePlayback').input_value()=='Windows Speakers'
         assert await page.locator('.arIODeviceRate').input_value()=='0'
         await page.locator('[data-io-device-revert]').click()
-        assert await page.locator('.arIODeviceBackend').input_value()=='ASIO'
+        assert await page.locator('.arIODeviceDriverButton[aria-pressed="true"]').inner_text()=='ASIO'
         await page.locator('[data-io-tab="inputs"]').click()
         assert await page.locator('#arIOBody .arIOQuickRow').count()==10
         # Operator-first mapper is visible; crosspoint is explicitly advanced.

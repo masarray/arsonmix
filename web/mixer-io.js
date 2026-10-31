@@ -10,6 +10,7 @@
   let monitorSendsExpanded=false;
   // DEVICE1: staged selections are UI-only; only positive native ACK changes active hardware.
   let deviceDraft=null,deviceBusy=false,deviceNote='',deviceRequest='',deviceRequestSeq=0,lastDeviceRefresh=0,lastDeviceRescan=0;
+  let deviceMatrixView='inputs',deviceMatrixWaitEpoch=null; // Never display old hardware pins after an APPLY ACK.
   // Pending SOURCE ACK is a UI projection only; monitor.js owns the native route.
   let quickSourcePending=null;
   const el=id=>document.getElementById(id);
@@ -940,18 +941,33 @@
     deviceInventory.active.captureDevice===d.captureDevice&&
     deviceInventory.active.playbackDevice===d.playbackDevice;
   function makeDeviceDraft(){
-    const a=deviceInventory?.active||{},types=deviceInventory?.types||[];
-    const backend=types.some(t=>t.name===a.backend)?a.backend:types[0]?.name||'';
-    const t=deviceType(backend);
-    const playback=t?.outputs?.includes(a.playbackDevice)?a.playbackDevice:t?.outputs?.[0]||'';
-    const capture=t?.inputs?.includes(a.captureDevice)?a.captureDevice:
-      t?.separate?t?.inputs?.[0]||'':playback;
-    const same=backend===a.backend&&playback===a.playbackDevice&&capture===a.captureDevice;
+    const active=deviceInventory?.active||{},types=deviceInventory?.types||[];
+    // DEVICE3: NEVER replace an already-open endpoint with the first entry
+    // just because JUCE exposes a different input/output device name list.
+    // This is essential for WASAPI capture CABLE Output -> Realtek playback.
+    const backend=active.backend||types.find(t=>/ASIO/i.test(t.name))?.name||
+      types.find(t=>/Windows Audio|WASAPI/i.test(t.name))?.name||types[0]?.name||'';
+    const type=deviceType(backend);
+    const hasActive=!!active.open&&active.backend===backend;
+    const playback=hasActive?active.playbackDevice||'' :type?.outputs?.[0]||'';
+    const capture=hasActive?active.captureDevice||'' :
+      type?.separate?type?.inputs?.[0]||'':playback;
     return {backend,captureDevice:capture,playbackDevice:playback,
-      sampleRate:same&&a.rate?Number(a.rate):0,
-      bufferSize:same&&a.buffer?Number(a.buffer):0,
-      enabledInputs:same?[...(a.enabledInputs||[])]:null,
-      enabledOutputs:same?[...(a.enabledOutputs||[])]:null};
+      sampleRate:hasActive&&active.rate?Number(active.rate):0,
+      bufferSize:hasActive&&active.buffer?Number(active.buffer):0,
+      enabledInputs:hasActive?[...(active.enabledInputs||[])]:null,
+      enabledOutputs:hasActive?[...(active.enabledOutputs||[])]:null};
+  }
+  function selectDeviceBackend(name){
+    if(deviceBusy||!isNative())return;
+    const t=deviceType(name);if(!t||deviceDraft?.backend===name)return;
+    const playback=t.outputs?.[0]||'',capture=t.separate?t.inputs?.[0]||'':playback;
+    const a=deviceInventory?.active||{};
+    deviceDraft=(a.backend===name&&a.open)?makeDeviceDraft():
+      {backend:name,captureDevice:capture,playbackDevice:playback,
+        sampleRate:0,bufferSize:0,enabledInputs:null,enabledOutputs:null};
+    deviceNote='DRIVER DRAFT · output unchanged until APPLY DEVICE';
+    lastSignature='';refreshIO();
   }
   const pinsEqual=(a,b)=>Array.isArray(a)&&Array.isArray(b)&&
     a.length===b.length&&a.every((v,i)=>v===b[i]);
@@ -1007,79 +1023,155 @@
     for(const [v,label] of options){
       const opt=node('option','',label);opt.value=String(v);field.appendChild(opt);
     }
-    if(options.some(([v])=>String(v)===String(value)))field.value=String(value);
+    if(value!==''&&!options.some(([v])=>String(v)===String(value))){
+      const unmatched=node('option','','CURRENT · '+value+' (not in current driver list)');
+      unmatched.value=String(value);field.appendChild(unmatched);
+    }
+    field.value=String(value??'');
     field.disabled=disabled||!options.length;
     return field;
   }
   function renderCustomDevice(body){
     const a=deviceInventory?.active||{},types=deviceInventory?.types||[];
-    if(!deviceDraft&&types.length)deviceDraft=makeDeviceDraft();
-    const d=deviceDraft;
+    if(!deviceDraft&&(types.length||a.open))deviceDraft=makeDeviceDraft();
+    const d=deviceDraft,selected=deviceType(d?.backend);
     const panel=node('section','arIORealDeviceSetup arIODeviceControl');
-    panel.appendChild(node('p','arIODeviceSummary',
-      !isNative()?'WEB PREVIEW · connect the Windows application to configure real hardware':
-      a.open&&a.authorized!==false?'ACTIVE · '+a.backend+' · '+a.captureDevice+' → '+a.playbackDevice+
-        ' · '+a.rate+' Hz / '+a.buffer+' samples':
-        'NO VERIFIED DEVICE · select a reported interface and APPLY DEVICE'));
-    if(!types.length){
+    const activeLine=node('div','arIODeviceActiveLine');
+    const activeText=node('div','');
+    activeText.append(
+      node('span','arIODeviceMicro','CURRENT AUDIO DEVICE · NATIVE READBACK'),
+      node('strong','',a.open&&a.authorized!==false?
+        a.backend+' · '+a.captureDevice+' → '+a.playbackDevice:
+        'NO AUTHORIZED AUDIO DEVICE'),
+      node('span','',a.open?Number(a.rate||0).toLocaleString('en-US')+' Hz · '+a.buffer+
+        ' samples · '+(a.outputMuted?'OUTPUT MUTED':'CHECK LIVE OUTPUT'):
+        'Select a driver and audio interface below'));
+    activeLine.append(activeText,node('span','arIODeviceActiveFlag',
+      a.open&&a.authorized!==false?'ACTIVE':'NOT READY'));
+    panel.appendChild(activeLine);
+
+    if(!types.length&&!a.open)
       panel.appendChild(node('p','arIODeviceEmpty',
-        isNative()?'No devices reported in the cached list. MUTE outputs, then press REFRESH DEVICE LIST to rescan.':
-          'Hardware cannot be changed in a browser-only preview.'));
-    } else if(d){
-      const t=deviceType(d.backend),separate=!!t?.separate;
-      const fields=node('div','arIODeviceFields');
-      fields.appendChild(deviceField('DRIVER / BACKEND',deviceSelect('arIODeviceBackend',
-        d.backend,types.map(t=>[t.name,t.name]),deviceBusy||!isNative())));
-      fields.appendChild(deviceField(separate?'CAPTURE DEVICE':'AUDIO INTERFACE',
-        deviceSelect('arIODeviceCapture',d.captureDevice,(t?.inputs||[]).map(n=>[n,n]),
-          deviceBusy||!isNative()||!separate)));
-      fields.appendChild(deviceField('PLAYBACK DEVICE',deviceSelect('arIODevicePlayback',
-        d.playbackDevice,(t?.outputs||[]).map(n=>[n,n]),deviceBusy||!isNative())));
-      const same=deviceSameEndpoint(d);
-      const rateOpts=[[0,'AUTO · driver default']];
-      const bufferOpts=[[0,'AUTO · driver default']];
-      if(same){
-        const rates=[...new Set([...(a.rates||[]),a.rate].filter(v=>Number(v)>0))];
-        const periods=[...new Set([...(a.buffers||[]),a.buffer].filter(v=>Number(v)>0))];
-        for(const v of rates)rateOpts.push([Number(v),Number(v)/1000+' kHz']);
-        for(const v of periods)bufferOpts.push([Number(v),v+' samples']);
+        'No reported Windows audio devices. Refresh driver list while all outputs are MUTED.'));
+    if(d){
+      const choose=node('div','arIODeviceChoose');
+      const driver=node('div','arIODeviceDriverGroup');
+      driver.appendChild(node('span','arIODeviceMicro','AUDIO SYSTEM'));
+      const toggle=node('div','arIODeviceDriverToggle');
+      toggle.setAttribute('role','group');
+      toggle.setAttribute('aria-label','Audio system: ASIO or Windows Audio');
+      const asio=types.find(t=>/^ASIO$/i.test(t.name));
+      const windows=types.find(t=>/^(Windows Audio|WASAPI)$/i.test(t.name));
+      for(const [label,type] of [['ASIO',asio],['WINDOWS AUDIO',windows]]){
+        const button=node('button','arIODeviceDriverButton',label);
+        button.type='button';button.dataset.ioBackendSelect=type?.name||'';
+        button.disabled=deviceBusy||!isNative()||!type;
+        button.setAttribute('aria-pressed',String(!!type&&d.backend===type.name));
+        button.title=type?'Choose '+type.name+' · changes are staged':'This backend is not installed';
+        toggle.appendChild(button);
       }
-      fields.appendChild(deviceField('SAMPLE RATE',deviceSelect('arIODeviceRate',
-        d.sampleRate,rateOpts,deviceBusy||!isNative())));
-      fields.appendChild(deviceField('BUFFER / PERIOD',deviceSelect('arIODeviceBuffer',
-        d.bufferSize,bufferOpts,deviceBusy||!isNative())));
-      panel.appendChild(fields);
-      panel.appendChild(node('p','arIODeviceNote',same?
-        'These rates, buffers and channel pins are reported by the OPEN JUCE device.':
-        'New interface: rate/buffer AUTO and default pin masks on first APPLY. Edit verified pins after it opens. No guessed capabilities.'));
+      driver.appendChild(toggle);choose.appendChild(driver);
+      const chosen=selected||{inputs:[],outputs:[],separate:false};
+      const interfaceGroup=node('div','arIODeviceInterfaceGroup');
+      interfaceGroup.appendChild(deviceField(chosen.separate?'PLAYBACK DEVICE':'AUDIO INTERFACE',
+        deviceSelect('arIODevicePlayback',d.playbackDevice,
+          (chosen.outputs||[]).map(n=>[n,n]),deviceBusy||!isNative())));
+      if(chosen.separate){
+        interfaceGroup.appendChild(deviceField('CAPTURE DEVICE',
+          deviceSelect('arIODeviceCapture',d.captureDevice,
+            (chosen.inputs||[]).map(n=>[n,n]),deviceBusy||!isNative())));
+      }else{
+        // Keep the unified duplex field in the DOM for native/smoke parity;
+        // the user should not see two misleading ASIO selectors.
+        const linked=node('input','arIODeviceCapture');linked.type='hidden';
+        linked.value=d.captureDevice;linked.disabled=true;interfaceGroup.appendChild(linked);
+      }
+      choose.appendChild(interfaceGroup);panel.appendChild(choose);
+      if(types.some(t=>t.name!==asio?.name&&t.name!==windows?.name)){
+        const other=node('details','arIODeviceOther');
+        other.appendChild(node('summary','','OTHER AUDIO BACKENDS'));
+        other.appendChild(deviceField('BACKEND',
+          deviceSelect('arIODeviceBackend',d.backend,types.map(t=>[t.name,t.name]),
+            deviceBusy||!isNative())));
+        panel.appendChild(other);
+      }else{
+        const hidden=node('input','arIODeviceBackend');hidden.type='hidden';
+        hidden.value=d.backend;panel.appendChild(hidden);
+      }
+      const same=deviceSameEndpoint(d),advanced=node('details','arIODeviceAdvanced');
+      advanced.appendChild(node('summary','','BUFFER / SAMPLE RATE / HARDWARE PIN ENABLE'));
+      const fields=node('div','arIODeviceFields');
+      const rateOpts=[[0,'AUTO · driver default']],bufferOpts=[[0,'AUTO · driver default']];
+      if(same){
+        for(const v of [...new Set([...(a.rates||[]),a.rate].filter(v=>Number(v)>0))])
+          rateOpts.push([Number(v),Number(v)/1000+' kHz']);
+        for(const v of [...new Set([...(a.buffers||[]),a.buffer].filter(v=>Number(v)>0))])
+          bufferOpts.push([Number(v),v+' samples']);
+      }
+      fields.appendChild(deviceField('SAMPLE RATE',
+        deviceSelect('arIODeviceRate',d.sampleRate,rateOpts,deviceBusy||!isNative())));
+      fields.appendChild(deviceField('BUFFER / PERIOD',
+        deviceSelect('arIODeviceBuffer',d.bufferSize,bufferOpts,deviceBusy||!isNative())));
+      advanced.appendChild(fields);
       const pins=node('div','arIODevicePins');
-      for(const [direction,names,selected] of [
+      for(const [direction,names,selectedPins] of [
         ['INPUT',same?a.inputNames:[],d.enabledInputs],
         ['OUTPUT',same?a.outputNames:[],d.enabledOutputs]]){
         const side=node('div','arIODevicePinGroup');
-        side.appendChild(node('strong','',direction+' HARDWARE PINS'+(same?' · DRIVER REPORTED':' · AFTER APPLY')));
-        if(!same||!names?.length){
-          side.appendChild(node('small','',same?'No reported pins':'Select and APPLY this interface first'));
-        }else{
-          names.forEach((name,index)=>{
-            const lbl=node('label','arIODevicePinRow');
-            const cb=node('input','arIODevicePin');cb.type='checkbox';
-            cb.dataset.devicePinDirection=direction;cb.value=String(index);
-            cb.checked=Array.isArray(selected)&&selected.includes(index);
-            cb.disabled=deviceBusy||!isNative();
-            lbl.append(cb,node('span','',String(index+1).padStart(2,'0')+' · '+name));
-            side.appendChild(lbl);
-          });
-        }
+        side.appendChild(node('strong','',direction+' · DRIVER PORT ENABLE'));
+        if(!same||!names?.length)
+          side.appendChild(node('small','',
+            'Available after this device is opened and acknowledged by JUCE'));
+        else names.forEach((name,index)=>{
+          const lbl=node('label','arIODevicePinRow');
+          const cb=node('input','arIODevicePin');cb.type='checkbox';
+          cb.dataset.devicePinDirection=direction;cb.value=String(index);
+          cb.checked=Array.isArray(selectedPins)&&selectedPins.includes(index);
+          cb.disabled=deviceBusy||!isNative();
+          lbl.append(cb,node('span','',String(index+1).padStart(2,'0')+' · '+name));
+          side.appendChild(lbl);
+        });
         pins.appendChild(side);
       }
-      panel.appendChild(pins);
+      advanced.appendChild(pins);panel.appendChild(advanced);
     }
-    const row=node('div','arIODeviceActions');
-    const refresh=node('button','btn-180 arIODeviceRefresh','REFRESH DEVICE LIST');
-    refresh.type='button';refresh.dataset.ioRefreshDevice='1';refresh.disabled=deviceBusy||!isNative();
-    row.appendChild(refresh);panel.appendChild(row);
-    body.appendChild(panel);
+    const actions=node('div','arIODeviceActions');
+    const refresh=node('button','btn-180 arIODeviceRefresh','REFRESH DEVICES');
+    refresh.type='button';refresh.dataset.ioRefreshDevice='1';
+    refresh.disabled=deviceBusy||!isNative();
+    actions.appendChild(refresh);
+    if(d&&!deviceSameEndpoint(d))
+      actions.appendChild(node('span','arIODevicePending',
+        'SELECTED DEVICE IS A DRAFT · APPLY DEVICE TO OPEN ITS PORTS'));
+    panel.appendChild(actions);body.appendChild(panel);
+
+    const matrixSection=node('section','arIODevicePatchMatrix');
+    const heading=node('div','arIODeviceMatrixHeading');
+    heading.appendChild(node('strong','','AUDIO I/O · REAL PORT MATRIX'));
+    const tabs=node('div','arIODeviceMatrixSwitch');
+    for(const [value,label] of [['inputs','INPUTS'],['outputs','OUTPUTS']]){
+      const b=node('button','arIODeviceMatrixTab',label);b.type='button';
+      b.dataset.ioMatrixView=value;
+      b.setAttribute('aria-pressed',String(deviceMatrixView===value));
+      tabs.appendChild(b);
+    }
+    heading.appendChild(tabs);matrixSection.appendChild(heading);
+    const live=!!d&&deviceSameEndpoint(d)&&a.authorized!==false;
+    const s=route();
+    if(deviceMatrixWaitEpoch!==null&&s.epoch!==deviceMatrixWaitEpoch&&s.ready&&s.active)
+      deviceMatrixWaitEpoch=null;
+    if(!live){
+      matrixSection.appendChild(node('p','arIODeviceMatrixEmpty',
+        'APPLY DEVICE first. The M/L/R matrix will show only pins actually enabled and reported by the new driver.'));
+    }else if(!hardwareReady(s)||deviceMatrixWaitEpoch!==null){
+      matrixSection.appendChild(node('p','arIODeviceMatrixEmpty',
+        'Waiting for the native routing session and verified hardware ports. No virtual ports are invented.'));
+    }else{
+      matrixSection.appendChild(makeMatrix(s,deviceMatrixView));
+      matrixSection.appendChild(node('p','arIODeviceMatrixNote',
+        'Blue = staged patch · Green = native ACK. Map M or L/R here, then APPLY PATCH with outputs MUTED.'));
+    }
+    body.appendChild(matrixSection);
   }
 
   function refreshIO(){
@@ -1092,18 +1184,20 @@
       b.setAttribute('aria-selected',String(active));
     });
     overlay.dataset.activeTab=ioTab;
-    overlay.querySelector('[data-mix-apply]').hidden=ioTab==='device';
-    overlay.querySelector('[data-io-revert]').hidden=ioTab==='device';
+    const matrixInDevice=ioTab==='device'&&deviceSameEndpoint(deviceDraft)&&hardwareReady(s);
+    overlay.querySelector('[data-mix-apply]').hidden=ioTab==='device'&&!matrixInDevice;
+    overlay.querySelector('[data-io-revert]').hidden=ioTab==='device'&&!matrixInDevice;
     overlay.querySelector('[data-io-internal]').hidden=ioTab==='device';
     overlay.querySelector('[data-io-device-apply]').hidden=ioTab!=='device';
     overlay.querySelector('[data-io-device-revert]').hidden=ioTab!=='device';
     overlay.querySelector('[data-io-device-apply]').disabled=!isNative()||deviceBusy||!deviceDirty()||
       !!s.pending||s.monitor||!!lastStatus.secondaryOutputArmed;
     overlay.querySelector('[data-io-device-revert]').disabled=deviceBusy||!deviceDirty();
-    overlay.querySelector('[data-mix-apply]').disabled=!hardwareReady(s)||!!matrixDraft.size||s.monitor;
+    overlay.querySelector('[data-mix-apply]').disabled=!hardwareReady(s)||!!matrixDraft.size||s.monitor||
+      (ioTab==='device'&&deviceDirty());
     overlay.querySelector('[data-io-revert]').disabled=!isNative()||s.pending;
     const signature=ioTab+'|'+JSON.stringify([s.epoch,s.revision,s.pending,s.draftRoutes,
-      s.outputPorts,s.mainOutputs,s.draftMainOutputs,s.monitorOutputs,s.draftMonitorOutputs,s.monitorSends,s.draftMonitorSends,s.ports,deviceInventory,deviceDraft,deviceBusy,deviceNote,matrixPage[ioTab],monitorSendsExpanded,
+      s.outputPorts,s.mainOutputs,s.draftMainOutputs,s.monitorOutputs,s.draftMonitorOutputs,s.monitorSends,s.draftMonitorSends,s.ports,deviceInventory,deviceDraft,deviceBusy,deviceNote,matrixPage[ioTab==='device'?deviceMatrixView:ioTab],deviceMatrixView,monitorSendsExpanded,
       [...matrixDraft],[...matrixSide]]);
     if(lastSignature===signature)return;
     lastSignature=signature;
@@ -1359,7 +1453,8 @@
     }
     if(b.dataset.ioPage!==undefined){
       e.preventDefault();e.stopImmediatePropagation();
-      matrixPage[ioTab]=Math.max(0,matrixPage[ioTab]+Number(b.dataset.ioPage));
+      const pageKind=ioTab==='device'?deviceMatrixView:ioTab;
+      matrixPage[pageKind]=Math.max(0,matrixPage[pageKind]+Number(b.dataset.ioPage));
       lastSignature='';refreshIO();return;
     }
     if(b.dataset.ioRevert!==undefined){
@@ -1374,6 +1469,16 @@
     }
     if(b.dataset.ioClose!==undefined){e.preventDefault();e.stopImmediatePropagation();closeIO();return;}
     if(b.dataset.ioTab){e.preventDefault();e.stopImmediatePropagation();ioTab=b.dataset.ioTab;matrixMessage='';lastSignature='';refreshIO();return;}
+    if(b.dataset.ioMatrixView){
+      e.preventDefault();e.stopImmediatePropagation();
+      deviceMatrixView=b.dataset.ioMatrixView;
+      lastSignature='';refreshIO();return;
+    }
+    if(b.dataset.ioBackendSelect!==undefined){
+      e.preventDefault();e.stopImmediatePropagation();
+      if(b.dataset.ioBackendSelect)selectDeviceBackend(b.dataset.ioBackendSelect);
+      return;
+    }
     if(b.dataset.ioRefreshDevice!==undefined){
       e.preventDefault();e.stopImmediatePropagation();deviceRefresh(true);return;
     }
@@ -1398,10 +1503,7 @@
     const target=e.target;
     if(overlay.hidden||ioTab!=='device'||deviceBusy||!deviceDraft)return;
     if(target.matches('.arIODeviceBackend')){
-      const t=deviceType(target.value);
-      const playback=t?.outputs?.[0]||'',capture=t?.separate?t?.inputs?.[0]||'':playback;
-      deviceDraft={backend:target.value,captureDevice:capture,playbackDevice:playback,
-        sampleRate:0,bufferSize:0,enabledInputs:null,enabledOutputs:null};
+      selectDeviceBackend(target.value);return;
     }else if(target.matches('.arIODevicePlayback')){
       deviceDraft.playbackDevice=target.value;
       if(!deviceType(deviceDraft.backend)?.separate)deviceDraft.captureDevice=target.value;
@@ -1486,7 +1588,12 @@
   backend?.addEventListener?.('arMixAudioDeviceApplyAck',ack=>{
     if(!deviceBusy||ack?.requestId!==deviceRequest)return;
     deviceBusy=false;deviceRequest='';
+    const oldGeneration=Number(deviceInventory?.active?.deviceGeneration)||0;
     if(deviceInventory&&ack?.active)deviceInventory.active=ack.active;
+    // A completed device APPLY can reopen hardware before the routing
+    // controller has delivered its new epoch: no stale matrix crosspoints.
+    if(ack?.active?.open&&Number(ack.active.deviceGeneration)!==oldGeneration)
+      deviceMatrixWaitEpoch=route().epoch;
     deviceDraft=makeDeviceDraft();
     deviceNote=ack?.ok?'ACCEPTED · NATIVE DEVICE VERIFIED · OUTPUT MUTED':
       (ack?.state||'REJECTED')+' · '+(ack?.error||'Check driver and retry');
