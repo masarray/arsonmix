@@ -466,6 +466,7 @@ async def main():
         assert await page.locator('#arSendEditor [data-send-gain="POST"]').input_value()=="0.5"
         await page.locator('#arSendEditor [data-send-revert]').click()
         # Reject a structural PAN draft: native graph must stay unchanged.
+        accepted_pan=await page.locator('#arSendEditor [data-send-pan="POST"]').input_value()
         await page.locator('#arSendEditor [data-send-pan="POST"]').select_option("0.5")
         await page.locator('#arSendEditor [data-send-apply]').click()
         await page.evaluate("""status=>{
@@ -475,7 +476,7 @@ async def main():
         assert "REJECTED" in await page.locator('#arSendFeedback').inner_text()
         assert await page.locator('#arSendEditor [data-send-pan="POST"]').input_value()=="0.5"
         await page.locator('#arSendEditor [data-send-revert]').click()
-        assert await page.locator('#arSendEditor [data-send-pan="POST"]').input_value()=="0"
+        assert await page.locator('#arSendEditor [data-send-pan="POST"]').input_value()==accepted_pan
         # Unpatched CH2 may not create a send even with AUX1 already enabled.
         result=await page.evaluate("""()=>window.__arMixStageAuxSendEdit({
           from:1,bus:0,tap:"PRE",action:"create"})""")
