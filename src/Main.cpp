@@ -867,7 +867,7 @@ private:
         const auto pinInput=config.getProperty("enabledInputs",{});
         const auto pinOutput=config.getProperty("enabledOutputs",{});
         if(sameEndpoint && pinInput.isArray() && pinOutput.isArray()) {
-            const auto* active=manager.getCurrentAudioDevice();
+            auto* active=manager.getCurrentAudioDevice();
             if(active==nullptr||!active->isOpen())
                 return send(false,"REJECTED","Current device is not open; refresh");
             const auto inCount=juce::jmin(64,active->getInputChannelNames().size());
@@ -895,7 +895,7 @@ private:
             candidate.useDefaultInputChannels=true;
             candidate.useDefaultOutputChannels=true;
         }
-        const auto* active=manager.getCurrentAudioDevice();
+        auto* active=manager.getCurrentAudioDevice();
         if(sameEndpoint && active!=nullptr && active->isOpen()) {
             if(rate>0&&!active->getAvailableSampleRates().contains(rate))
                 return send(false,"REJECTED","Requested sample rate not reported by selected device");
