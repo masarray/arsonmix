@@ -1,3 +1,5 @@
+> **SUPERSEDED ARCHITECTURE SCOPE — READ [ARD v4: One Native Realtime Console Graph](ARD_ARSONMIX_LIVE_STUDIO_CONSOLE_PARITY_V4_20261031.md) FIRST.** V3 remains historical M3 bridge rationale. As of audit #244 is MERGED but not wired into LIVE callback; v4 owns new FX/Live parameter/PDC/Listen/Show/GUI contracts and forbids concurrent render graphs. Check current main before implementing.
+
 # ArSonMix ARD v3.0 — Single ChannelId Graph and Studio-style Bus Workflow
 Date: 31 October 2026 · Technical architecture for #192, #95, #174 and #15
 
