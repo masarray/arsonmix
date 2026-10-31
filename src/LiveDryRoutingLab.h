@@ -684,9 +684,15 @@ public:
         monitorPeakL_.store(0.f,std::memory_order_relaxed);
         monitorPeakR_.store(0.f,std::memory_order_relaxed);
         if(frames<=0)return true;
-        for(int c=0;c<outputCount;++c)
-            if(outputs && outputs[c])
-                juce::FloatVectorOperations::clear(outputs[c],frames);
+        // Defer physical output writes until all capture pointers have been
+        // read into the preallocated native graph. Clearing outputs here can
+        // erase aliased JUCE/driver input PCM before the CH strips consume it.
+        // Every failed/unpatched/MUTED route still uses this fail-silent gate.
+        const auto silence=[&]() noexcept {
+            if(!outputs)return;
+            for(int c=0;c<outputCount;++c)
+                if(outputs[c])juce::FloatVectorOperations::clear(outputs[c],frames);
+        };
         // Do not require callback ports 0/1 to be writable when MAIN is
         // actually routed to another verified pair. Validate the selected
         // destinations against the leased graph below.
@@ -694,12 +700,14 @@ public:
            outputCount!=callbackOutputCount_.load(std::memory_order_acquire) ||
            inputCount<0 || inputCount>armix::device::LiveInputPortRegistry::limit) {
             topologyFault_.store(true,std::memory_order_release);
-            return true;
+            silence();return true;
         }
-        if(topologyFault_.load(std::memory_order_acquire))return true;
+        if(topologyFault_.load(std::memory_order_acquire)) {
+            silence();silence();return true;
+        }
         if(inputCount!=callbackInputCount_.load(std::memory_order_acquire)) {
             topologyFault_.store(true,std::memory_order_release);
-            return true;
+            silence();return true;
         }
         // A prepared graph does NOT authorize physical inputs: skip ALL
         // channel, AUX and MASTER vendor processing until explicit native ACK.
@@ -707,7 +715,7 @@ public:
         if(!userPatched_.load(std::memory_order_acquire)) {
             fadeRemaining_=0;
             lastOutputL_=lastOutputR_=0.f;
-            return true;
+            silence();return true;
         }
         const auto generation=epoch();
         auto lease=publisher_.acquire();
@@ -718,7 +726,7 @@ public:
                 topologyFault_.store(true,std::memory_order_release);
             fadeRemaining_=0;
             lastOutputL_=lastOutputR_=0.f;
-            return true;
+            silence();return true;
         }
         // Callback destinations come only from the leased immutable graph.
         // If a driver restarts or changes topology, silence all outputs.
@@ -728,7 +736,7 @@ public:
            outLeft>=outputCount||outRight>=outputCount||
            !outputs[outLeft]||!outputs[outRight]){
             topologyFault_.store(true,std::memory_order_release);
-            return true;
+            silence();return true;
         }
         float* const mainL=outputs[outLeft];
         float* const mainR=outputs[outRight];
@@ -741,7 +749,7 @@ public:
                l==r||l==outLeft||l==outRight||r==outLeft||r==outRight||
                !outputs[l]||!outputs[r]) {
                 topologyFault_.store(true,std::memory_order_release);
-                return true;
+                silence();return true;
             }
             monitorL=outputs[l];monitorR=outputs[r];
             if(actualMonitorPair)*actualMonitorPair={{l,r}};
@@ -766,12 +774,16 @@ public:
             fadeRemaining_=rampFrames;
             fadeFromL_=fadeFromR_=0.f;
             lastOutputL_=lastOutputR_=0.f;
-            return true;
+            silence();return true;
         }
         // Large/variable JUCE quantum is chunked using stack pointer views;
         // no heap allocation or new processing object inside callback.
         std::array<const float*,armix::device::LiveInputPortRegistry::limit> shifted{};
         const int max=snapshot->prepared->maxFramesPerPlugin();
+        if(max<=0) {
+            topologyFault_.store(true,std::memory_order_release);
+            silence();return true;
+        }
         float peakL=0.f,peakR=0.f,monitorPeakL=0.f,monitorPeakR=0.f;
         std::array<float,count> perChannelPeaks{};
         std::array<float,auxCount> perAuxPeaks{};
@@ -787,10 +799,8 @@ public:
                    monitorR?monitorR+offset:nullptr)) {
                 // A failed DSP pass must never leak partially rendered
                 // MAIN/MONITOR PCM into an armed physical output.
-                for(int c=0;c<outputCount;++c)
-                    if(outputs[c])juce::FloatVectorOperations::clear(outputs[c],frames);
                 topologyFault_.store(true,std::memory_order_release);
-                return true;
+                silence();return true;
             }
             for(int ch=0;ch<count;++ch)
                 perChannelPeaks[ch]=std::max(perChannelPeaks[ch],level.channelPeak[ch]);
@@ -829,6 +839,13 @@ public:
                 }
             }
         }
+        // All input PCM has been staged/processed by the native graph.
+        // Only now silence unselected physical ports; do not clobber an
+        // aliased MAIN/MONITOR destination reported twice by a driver.
+        for(int c=0;c<outputCount;++c)
+            if(outputs[c] && outputs[c]!=mainL && outputs[c]!=mainR &&
+               outputs[c]!=monitorL && outputs[c]!=monitorR)
+                juce::FloatVectorOperations::clear(outputs[c],frames);
         monitorPeakL_.store(monitorPeakL,std::memory_order_relaxed);
         monitorPeakR_.store(monitorPeakR,std::memory_order_relaxed);
         peakL_.store(peakL,std::memory_order_relaxed);
