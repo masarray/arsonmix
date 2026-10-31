@@ -4,7 +4,7 @@ Owners: issue #185, canonical ADR `ADR_FACTORY_FX_BUNDLE_20261030.md` and PRD `P
 
 ## Product behavior, without another DSP host
 ArSonMix is a LIVE Windows ASIO/WASAPI VST3 mixer, not an audio editor.
-Keep `ArSonEQ`, `ArSonVerb` and `ArSonKuPik Enhancer` as separately
+Keep `ArSonEQ`, `ArSonComp`, `ArSonVerb` and `ArSonKuPik Enhancer` as separately
 built/signed-or-attested VST3 packages from their own repositories. FXF2
 does not fork algorithms, copy JUCE9 into JUCE8, create a parallel audio
 callback, add Web Audio effects or replace L2 / all-channel FX Rack.
@@ -104,3 +104,35 @@ factory entry as actually installed with working DSP. Application
 portable/install parity, CH1–N multi-insert/bypass, Save/Recall, plugin
 latency/PDC, real ASIO/WASAPI audio, CPU and cold GUI tests must pass.
 Do not mark upstream candidate PR merged as a factory release shipped.
+
+## 2026-10-31 ArSonComp fourth sibling reconciliation (supersedes older Comp readiness snapshot)
+- Public source repository: `masarray/arson-comp`. As verified on 2026-10-31,
+  `main@57ad06ba` still has README/LICENSE only. Real DSP and JUCE VST3
+  code is on PR #1 `feat/zero-latency-compressor@80a41f52`, CI Windows/Linux
+  `41156358804` SUCCESS. It is an engineering artifact, NOT a public release;
+  no GitHub Releases exist yet. Do not attempt to build Comp from `main`.
+- The sibling targets Windows x64 JUCE8 VST3 + standalone, manufacturer
+  `ArSn`, plugin `ArCp`, product `ArSonComp`, version `0.1.0`.
+  Current CI uploads a complete `Plugin/ArSonComp.vst3` with a separate
+  `Standalone/ArSonComp.exe`. The *official approved public* release must
+  provide an exact SHA-qualified `...Windows-x64-VST3.zip`, stable actual
+  VST3 CID, exact ArSonMix JUCE host UID, appropriate AGPL/JUCE notices and
+  an unambiguous code/release build provenance. The packager now supports
+  both `Plugin/<bundle>` (ArSonComp CI layout) and `VST3/<bundle>` but
+  extracts ONLY `<bundle>.vst3`, never a Standalone EXE. Wrong roots,
+  duplicate VST3 resources and unreviewed binaries fail closed.
+- Automatic upstream watcher includes the FOUR sibling distributions
+  (`arson-eq`, `arson-comp`, `arsonverb`, `vst-enhancer`). A new Comp
+  release appears as *review candidate*, not automatically activated.
+  `config/factoryfx-approved-releases.json` remains EMPTY until every
+  selected item passes source/release SHA, licence and runtime host gates.
+- Release acceptance for Comp: true mono/stereo, actual VST3 host
+  discovery, 2+ instances, zero added plugin samples (NOT zero roundtrip
+  device latency), external sidechain where supported, parameter ID/state
+  migration, native bypass and mute-safe graph transaction. Run 44.1/48/96
+  kHz / actual buffer sizes, Save/Recall Show, real Windows audio/hardware,
+  CPU, idle GUI lifecycle and pluginval or a second Windows host.
+- All four Factory FX products must ultimately be bundled with ArSonMix
+  official portable ZIP/installer after qualification; the existing
+  Factory/My Plugins picker and native FX graph must be reused. No
+  hard-coded VST source branch checkout or unreviewed binary in the app.

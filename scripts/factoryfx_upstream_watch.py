@@ -9,6 +9,7 @@ from pathlib import Path
 
 PRODUCTS = [
     ("arson-eq", "masarray/arson-eq"),
+    ("arson-comp", "masarray/arson-comp"),
     ("arson-verb", "masarray/arsonverb"),
     ("arsonkupik-enhancer", "masarray/vst-enhancer"),
 ]

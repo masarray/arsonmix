@@ -31,7 +31,7 @@ jobs:
           commit-message: 'chore(factoryfx): record latest upstream release candidates'
           branch: bot/factoryfx-release-candidates
           delete-branch: true
-          title: 'FactoryFX: review new EQ/Verb/Enhancer releases (metadata only)'
+          title: 'FactoryFX: review new EQ/Comp/Verb/Enhancer releases (metadata only)'
           body: |
             Upstream release discovery only. NO plugin is qualified, downloaded,
             licensed, shipped or enabled by this PR.
