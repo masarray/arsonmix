@@ -285,6 +285,33 @@ public:
     void disconnectSecondaryOutput(){secondaryOutput_.stop();}
     bool secondaryArmed() const noexcept{return secondaryOutput_.armed();}
 
+    // FAST1: control-thread output arm preflight; physical MUTE always works.
+    // No auto-arm on device reopen, no RT allocation or driver reconfiguration.
+    juce::String liveOutputArmFault()
+    {
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if (!device || !device->isOpen() || !directFence_.permitted()
+            || independent_.active())
+            return "Select a verified DIRECT ASIO/Windows Audio device first.";
+        if (routeReconfiguring_.load(std::memory_order_acquire) || handoff_.busy()
+            || !dryRoutingLab_.active() || !dryRoutingLab_.ready()
+            || !dryRoutingLab_.hasExplicitRoute())
+            return "Apply a real INPUT PATCH and wait for native routing ACK.";
+        if (device->getActiveOutputChannels().countNumberOfSetBits()<2)
+            return "MAIN needs two verified hardware output pins.";
+        const auto readback=dryRoutingLab_.status(device);
+        const auto accepted=readback.getProperty("acceptedRoute",juce::var());
+        const auto channels=accepted.getProperty("channels",juce::var());
+        const auto* rows=channels.getArray();
+        if (!rows) return "No native-accepted channel mapping available.";
+        bool physicalSource=false;
+        for (const auto& row:*rows)
+            if(row.getProperty("mode",juce::var()).toString()=="MONO" ||
+               row.getProperty("mode",juce::var()).toString()=="STEREO")
+            {physicalSource=true;break;}
+        if (!physicalSource)return "No physical input assigned. Connect CH1/CH2 first.";
+        return {};
+    }
     void setMonitorEnabled (bool value) noexcept { monitor_.store (value); }
     bool isMonitorEnabled() const noexcept { return monitor_.load(); }
     // Emergency output mute, not a prerequisite for receiving audio.
@@ -1088,6 +1115,8 @@ public:
             return "MUTE OUTPUT and use verified DIRECT before FX state capture";
         return dryRoutingLab_.captureRoutedFxStates(epoch,revision,states);
     }
+    std::uint64_t dryRoutingLabEpoch() const noexcept {return dryRoutingLab_.epoch();}
+    std::uint64_t dryRoutingLabRevision() const noexcept {return dryRoutingLab_.revision();}
     bool dryRoutingLabActive() const noexcept {return dryRoutingLab_.active();}
     void pollDryRoutingLab() noexcept {dryRoutingLab_.poll();}
 
@@ -1405,7 +1434,7 @@ private:
     std::atomic<bool> monitor_ { false }, channelMute_ { false }, masterMute_ { false }, masterMono_ { false }, dryTest_ { false };
     std::atomic<float> masterGain_ { 1.f }, channelGain_ { 1.f }, channelPan_ { 0.f };
     std::atomic<float> inputPeak_ { 0.f }, postFxPeak_ { 0.f }, outputPeak_ { 0.f };
-    std::atomic<std::uint64_t> captureSignalBlocks_ {0}; // per device epoch
+    std::atomic<std::uint64_t> captureSignalBlocks_ {0}; // per native device epoch
     std::atomic<float> outputPeakL_ { 0.f }, outputPeakR_ { 0.f };
     std::atomic<int> callbackInputs_ { 0 }, callbackOutputs_ { 0 };
     std::atomic<unsigned long long> callbackCount_ { 0 };

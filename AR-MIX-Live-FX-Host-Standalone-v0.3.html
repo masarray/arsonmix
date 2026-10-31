@@ -2257,6 +2257,15 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 .arIODeviceInterfaceGroup{grid-template-columns:minmax(0,1fr)}
 .arIODeviceMatrixHeading{flex-wrap:wrap}}
 
+/* FAST1 First Sound: lightweight explicit START / MUTE on the same device. */
+.arIODeviceStartAudio{--b180-color:#9de9c1;--b180-border:#39936f;--b180-ink:#133c2b;
+  min-width:112px;min-height:30px;font-size:10px;white-space:nowrap}
+.arIODeviceStartAudio:disabled{opacity:.5;cursor:default}
+.arIODeviceFirstSound{padding:6px 11px;background:#1d3139;color:#b9d7df;
+  font:10px/1.45 "ArSonMix Inter","Segoe UI",sans-serif;border-bottom:1px solid #36525d}
+.arIOSoftwareUsedBy{font-size:9px;color:#99ccbd;white-space:nowrap}
+.arIOSoftwareName{flex-wrap:wrap}
+
 /* P0 independent native PCM / routing / output proof: flat, static, compact. */
 .arIOAudioPath{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:5px;align-items:center;padding:7px 11px;background:#0e2630;border-block:1px solid #3c5b68;color:#c7e0e8;font:10px/1.4 "Segoe UI",sans-serif}
 .arIOAudioPath>span{padding:5px 7px;border-left:2px solid #5b91a1;background:#142e39;min-width:0;overflow-wrap:anywhere}
@@ -3550,13 +3559,17 @@ scheduleDemoMeter();
         const name=node('strong','',a.name);name.title=a.name;label.appendChild(name);
         const controls=node('div','arIOSoftwareRowActions');
         for(const [act,word] of [['edit','EDIT'],['remove','REMOVE'],
-          ['use','→ CH '+String(focusedInput+1).padStart(2,'0')]]){
+          ['use','ASSIGN CH'+String(focusedInput+1).padStart(2,'0')]]){
           const b=node('button','arIOSoftwareMini',word);b.type='button';
           b.dataset.ioSoftwareAction=act;b.dataset.ioSoftwareIndex=String(index);
           b.disabled=!key||!hardwareReady(s)||deviceDirty()||!!s.pending;
           controls.appendChild(b);
         }
         label.appendChild(controls);
+        const usedBy=(s.acceptedRoute?.channels||[]).map((r,i)=>
+          valueFor(r)===aliasValue(a)?'CH'+String(i+1).padStart(2,'0'):null).filter(Boolean);
+        label.appendChild(node('small','arIOSoftwareUsedBy',
+          usedBy.length?'LIVE ON '+usedBy.join(', '):'NOT ASSIGNED'));
       }
       const format=node('div','arIOMatrixFormat arIOSoftwareFormat');
       format.appendChild(node('strong','',value.mode));
@@ -4567,11 +4580,31 @@ scheduleDemoMeter();
         a.backend+' · '+a.captureDevice+' → '+a.playbackDevice:
         'NO AUTHORIZED AUDIO DEVICE'),
       node('span','',a.open?Number(a.rate||0).toLocaleString('en-US')+' Hz · '+a.buffer+
-        ' samples · '+(a.outputMuted?'OUTPUT MUTED':'CHECK LIVE OUTPUT'):
+        ' samples · '+(lastStatus.monitor?'OUTPUT ARMED':'OUTPUT MUTED'):
         'Select a driver and audio interface below'));
     activeLine.append(activeText,node('span','arIODeviceActiveFlag',
       a.open&&a.authorized!==false?'ACTIVE':'NOT READY'));
     panel.appendChild(activeLine);
+    // Operator-first First Sound action: the existing monitor.js controller
+    // stages the real native route then independently ARM-ACKs hardware.
+    const quick=window.__arMixFastAudioState?.()||{};
+    const start=node('button','btn-180 arIODeviceStartAudio',
+      lastStatus.monitor?'MUTE OUTPUT':quick.pending?'STARTING…':'START AUDIO');
+    start.type='button';start.dataset.ioStartAudio='1';
+    start.disabled=!isNative()||(!lastStatus.monitor&&(
+      deviceBusy||!!quick.pending||!a.open||!deviceSameEndpoint(deviceDraft)||
+      deviceDirty()||!hardwareReady(route())));
+    start.setAttribute('aria-label',lastStatus.monitor?'Mute physical output':
+      'Start verified live routing and arm hardware output');
+    activeLine.appendChild(start);
+    const accepted=route().acceptedRoute?.channels||[];
+    const used=accepted.map((r,i)=>r.mode==='MONO'||r.mode==='STEREO'?
+      'CH'+String(i+1).padStart(2,'0'):null).filter(Boolean);
+    const firstSound=node('div','arIODeviceFirstSound',quick.message||(
+      lastStatus.monitor?'OUTPUT ARMED · '+used.join(' + ')+' → MAIN → HARDWARE':
+      used.length?used.join(' + ')+' → MAIN ready · START AUDIO to hear sound':
+      'FIRST SOUND · START AUDIO maps CH01/CH02 to verified input pins, applies once, then arms MAIN'));
+    panel.appendChild(firstSound);
 
     if(!types.length&&!a.open)
       panel.appendChild(node('p','arIODeviceEmpty',
@@ -4701,7 +4734,7 @@ scheduleDemoMeter();
       }else matrixSection.appendChild(makeMatrix(s,deviceMatrixView));
       matrixSection.appendChild(node('p','arIODeviceMatrixNote',
         deviceMatrixView==='inputs'?
-        'Named inputs appear in channel SOURCE. Only native routing ACK makes audio live.':
+        'Named inputs are reusable SOURCES. START AUDIO builds a verified initial route; only native ACK confirms sound routing.':
         'MAIN / MONITOR outputs use muted APPLY PATCH and native ACK.'));
     }
     body.appendChild(matrixSection);
@@ -4732,7 +4765,8 @@ scheduleDemoMeter();
     overlay.querySelector('[data-io-revert]').disabled=!isNative()||s.pending;
     const signature=ioTab+'|'+JSON.stringify([s.epoch,s.revision,s.pending,s.draftRoutes,
       s.outputPorts,s.mainOutputs,s.draftMainOutputs,s.monitorOutputs,s.draftMonitorOutputs,s.monitorSends,s.draftMonitorSends,s.ports,deviceInventory,deviceDraft,deviceBusy,deviceNote,matrixPage[ioTab==='device'?deviceMatrixView:ioTab],deviceMatrixView,monitorSendsExpanded,
-      [...matrixDraft],[...matrixSide],softwareEdit,softwarePage,sourceIdentity(s),sourceAliases(s)]);
+      [...matrixDraft],[...matrixSide],softwareEdit,softwarePage,sourceIdentity(s),sourceAliases(s),
+      !!lastStatus.monitor,window.__arMixFastAudioState?.()]);
     if(lastSignature===signature)return;
     lastSignature=signature;
     // Preserves two-step stereo L/R selection across each native DRAFT render.
@@ -4975,6 +5009,13 @@ scheduleDemoMeter();
     if(b.dataset.ioInternal!==undefined){
       e.preventDefault();e.stopImmediatePropagation();closeIO();window.__arMixOpenRoutingLab?.();return;
     }
+    if(b.dataset.ioStartAudio!==undefined){
+      e.preventDefault();e.stopImmediatePropagation();
+      const result=window.__arMixStartLiveAudio?.();
+      deviceNote=result?.ok?'START AUDIO requested · native ACK required':
+        'START REJECTED · '+(result?.error||'Native device not ready');
+      lastSignature='';refreshIO();return;
+    }
     if(b.dataset.ioSoftwareAdd){
       e.preventDefault();e.stopImmediatePropagation();beginSoftwareInput(b.dataset.ioSoftwareAdd);return;
     }
@@ -5157,10 +5198,10 @@ scheduleDemoMeter();
   backend?.addEventListener?.('arMixStatus',d=>{
     lastStatus=d;
     // 12Hz native telemetry: update only when topology, epoch or safety changes.
-    const s=d.dryRoutingLab||{},key=JSON.stringify([s.epoch,s.revision,s.ready,s.ports,s.outputPorts,s.acceptedRoute,d.monitor]);
+    const s=d.dryRoutingLab||{},key=JSON.stringify([s.epoch,s.revision,s.ready,s.ports,s.outputPorts,s.acceptedRoute,d.monitor,d.masterMute]);
     if(window.__armixIoStatusKey!==key){window.__armixIoStatusKey=key;lastSignature='';refresh();}
     if(!overlay.hidden){
-      refreshAudioPath(); // text-only 12Hz, no matrix DOM churn
+      refreshAudioPath(); // P0 text-only 12Hz; no matrix DOM churn
       const identity=(d.driver||'')+'/'+(d.rate||0)+'/'+(d.buffer||0);
       if(overlay.dataset.deviceIdentity!==identity){overlay.dataset.deviceIdentity=identity;refreshIO();}
     }
@@ -5228,6 +5269,10 @@ scheduleDemoMeter();
     }
   });
   window.addEventListener('arMixRoutingDraftChanged',()=>{lastSignature='';refresh();});
+  window.addEventListener('arMixFastAudioResult',event=>{
+    deviceNote=event.detail?.message||'START AUDIO';
+    lastSignature='';if(!overlay.hidden)refreshIO();
+  });
   window.addEventListener('arMixAuxMasterGainResult',event=>{
     const ack=event.detail||{};
     sofMessage=ack.ok?'AUX '+(ack.bus+1)+' MASTER · LIVE NATIVE ACK':
