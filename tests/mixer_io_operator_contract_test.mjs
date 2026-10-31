@@ -78,6 +78,29 @@ test('G3 is computed from authoritative PRE/POST native renderer, not a visual-o
   assert.doesNotMatch(css,/backdrop-filter\s*:|filter\s*:\s*blur/);
 });
 
+test('M1 AUX MASTER and selected-channel workflow share one native graph and ACK',()=>{
+  const native=read('engine/core/PreparedMixerBlock.h');
+  const graph=read('engine/core/LiveChannelFxGraph.h');
+  const lab=read('src/LiveDryRoutingLab.h');
+  const engine=read('src/LiveAudioEngine.h');
+  const css=read('web/mixer-io.css');
+  assert.match(native,/bool setAuxBusGain\(int bus,float gain\)/);
+  assert.match(native,/auxBusTarget_\[b\]\.load\(std::memory_order_acquire\)/);
+  assert.match(graph,/block_->setAuxBusGain\(bus,gain\)/);
+  assert.match(lab,/publisher_\.updateActiveControl\(expectedEpoch,expectedRevision/);
+  assert.match(engine,/setDryRoutingLabAuxBusGain/);
+  assert.match(main,/routingAuxBusGain/);
+  assert.match(monitor,/arMixAuxBusGainAck/);
+  assert.match(gui,/__arMixSetLiveAuxMasterGain/);
+  assert.match(gui,/arChannelSignalFlow/);
+  assert.match(gui,/refreshFocus\(s\)/);
+  assert.match(gui,/data-focus-step="source"/);
+  assert.match(gui,/data-focus-step="fx"/);
+  assert.match(gui,/data-focus-step="sends"/);
+  assert.match(gui,/data-focus-step="output"/);
+  assert.match(css,/\.arChannelSignalFlow/);
+  assert.doesNotMatch(css,/backdrop-filter\s*:|filter\s*:\s*blur/);
+});
 test('MS5/M1 Sends-on-Faders live POST gain uses native ACK; topology remains guarded',()=>{
   const css=read('web/mixer-io.css');
   assert.match(gui,/data-sof-bus/);

@@ -180,6 +180,11 @@ public:
             auxTarget_[e].store(v,std::memory_order_relaxed);
             auxApplied_[e]=v;
         }
+        for(int b=0;b<auxBusCount;++b){
+            const float gain=plan_.aux.buses[b].gain;
+            auxBusTarget_[b].store(gain,std::memory_order_relaxed);
+            auxBusApplied_[b]=gain;
+        }
         if(!capacity_)return;
         for(int i=0;i<stripCount;++i) {
             left_[i]=backing_.data()+static_cast<std::size_t>(2*i)*capacity_;
@@ -216,6 +221,19 @@ public:
                 return true;
             }
         return false;
+    }
+    // AUX master is a live fader, never a topology change. It scales the
+    // already-rendered AUX FX return for both MAIN and MONITOR after inserts.
+    bool setAuxBusGain(int bus,float gain) noexcept {
+        if(bus<0||bus>=auxBusCount||!plan_.aux.active||
+           !plan_.aux.buses[bus].enabled||!std::isfinite(gain)||
+           gain<0.f||gain>4.f)return false;
+        auxBusTarget_[bus].store(gain,std::memory_order_release);
+        return true;
+    }
+    float auxBusGain(int bus) const noexcept {
+        return bus>=0&&bus<auxBusCount&&plan_.aux.buses[bus].enabled
+          ?auxBusTarget_[bus].load(std::memory_order_acquire):-1.f;
     }
     float auxSendGain(int source,int bus,SendTap tap) const noexcept {
         if(source<0||source>=stripCount||bus<0||bus>=auxBusCount)return -1.f;
@@ -397,8 +415,15 @@ public:
             processFx(stripCount+b,l,r,frames);
             float peak=0.f;
             const float monitorGain=monitorL?(*monitorGains)[stripCount+b]:0.f;
+            const float target=live
+                ?auxBusTarget_[b].load(std::memory_order_acquire):bus.gain;
+            const float start=live?auxBusApplied_[b]:bus.gain;
+            const int ramp=std::min(frames,64);
+            const float step=(target-start)/static_cast<float>(ramp);
+            float current=start;
             for(int f=0;f<frames;++f) {
-                const float vl=l[f]*bus.gain,vr=r[f]*bus.gain;
+                if(f<ramp)current+=step;
+                const float vl=l[f]*current,vr=r[f]*current;
                 if(!bus.mute && monitorGain>0.f) {
                     monitorL[f]+=vl*monitorGain;
                     monitorR[f]+=vr*monitorGain;
@@ -409,6 +434,7 @@ public:
                     masterR_[f]+=vr;
                 }
             }
+            if(live)auxBusApplied_[b]=target;
             if(observed)observed->auxPeak[b]=peak;
         }
         processFx(-1,masterL_,masterR_,frames);
@@ -463,6 +489,8 @@ private:
     std::array<float,stripCount> preGate_{},lastGainL_{},lastGainR_{};
     std::array<std::atomic<float>,maxAuxSends> auxTarget_{};
     std::array<float,maxAuxSends> auxApplied_{}; // callback thread exclusive
+    std::array<std::atomic<float>,auxBusCount> auxBusTarget_{};
+    std::array<float,auxBusCount> auxBusApplied_{}; // callback thread exclusive
     std::array<bool,stripCount> rampPrimed_{};
     float* masterL_=nullptr;
     float* masterR_=nullptr;
