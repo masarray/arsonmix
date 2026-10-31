@@ -263,6 +263,15 @@ test('P0 MAONO: staged ASIO switch never advertises live audio and cannot APPLY 
   assert.match(main,/opened->getActiveInputChannels\(\)!=actual\.inputChannels/);
   assert.match(main,/opened->getCurrentSampleRate\(\)-actual\.sampleRate/);
   assert.match(engine,/return isOutputMuted\(\) && !secondaryOutput_\.armed\(\)/);
+  const standalone=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
+  const jsTag='<script id="arsonmix-mixer-io-js">';
+  const cssTag='<style id="arsonmix-mixer-io-css">';
+  const inlineJs=standalone.slice(standalone.indexOf(jsTag)+jsTag.length,
+                                  standalone.indexOf('</script>',standalone.indexOf(jsTag)));
+  const inlineCss=standalone.slice(standalone.indexOf(cssTag)+cssTag.length,
+                                   standalone.indexOf('</style>',standalone.indexOf(cssTag)));
+  assert.equal(inlineJs,js,'standalone and native mixer I/O must ship identical device gates');
+  assert.equal(inlineCss,read('web/mixer-io.css'),'standalone and native device layout must match');
   assert.doesNotMatch(guard,/emitEvent\(/,'guard must never secretly switch or rearm hardware');
 });
 
