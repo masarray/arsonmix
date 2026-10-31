@@ -391,7 +391,8 @@ test('FAST1 one gesture uses native routing ACK then fenced physical ARM, with p
  assert.match(control,/if\(verified\)fastAudioArm\(result\)/);
  assert.match(control,/expectedEpoch:Number\(d.epoch\)/);
  assert.match(control,/arMixAudioArmAck/);
- assert.match(control,/if\(!d.monitor\) return "OUTPUT MUTED/);
+ assert.match(control,/const output=!d.monitor\?"OUTPUT SAFE-MUTED"/);
+ assert.match(control,/window\.__arMixAudioPathView=/);
  assert.match(native,/engine_\.liveOutputArmFault\(\)/);
  assert.match(native,/arMixAudioArmAck/);
  assert.match(engine,/juce::String liveOutputArmFault\(\)/);
