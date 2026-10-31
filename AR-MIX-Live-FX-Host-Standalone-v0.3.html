@@ -5488,7 +5488,16 @@ scheduleDemoMeter();
   feedback.setAttribute('role','status');
   const live=document.createElement('div');
   live.className='arStudioBusLive';
-  panel.append(title,picked,action,feedback,live);
+  const groupFader=document.createElement('label');
+  groupFader.className='arStudioBusFader';
+  groupFader.textContent='GROUP FADER';
+  const gain=document.createElement('input');
+  gain.type='range';gain.min='-60';gain.max='10';gain.step='0.5';
+  gain.value='0';gain.setAttribute('aria-label','Native Group Bus fader dB');
+  const gainRead=document.createElement('small');
+  gainRead.textContent='0.0 dB';
+  groupFader.append(gain,gainRead);
+  panel.append(title,picked,action,feedback,live,groupFader);
   anchor.after(panel);
   const route=()=>status?.dryRoutingLab||{};
   const accepted=()=>status?.studioBus||{};
@@ -5522,8 +5531,16 @@ scheduleDemoMeter();
     action.title=liveNow?'MUTE output and return to legacy 10CH route':
       '0FX native Group pilot · MUTE output first · Add new Bus ChannelId and route selected inputs exclusively';
     live.hidden=!liveNow;
-    if(liveNow)live.textContent=String(b.name||'GROUP')+' · '+(b.sources||[]).join(', ')+
-      ' → MAIN · NATIVE PCM';
+    groupFader.hidden=!liveNow;
+    gain.disabled=!liveNow||!native;
+    if(liveNow){
+      live.textContent=String(b.name||'GROUP')+' · '+(b.sources||[]).join(', ')+
+        ' → MAIN · NATIVE PCM';
+      if(document.activeElement!==gain && Number.isFinite(Number(b.gainDb)))
+        gain.value=String(Number(b.gainDb));
+      gainRead.textContent=Number(gain.value)<=-60?'−∞ dB':
+        Number(gain.value).toFixed(1)+' dB';
+    }
     if(!native)feedback.textContent='Web preview only · no hardware audio';
     else if(!feedback.textContent)feedback.textContent=
       '0FX pilot · verify native capture, MUTE output, then create Group';
@@ -5546,6 +5563,26 @@ scheduleDemoMeter();
     last=i;
     render();
   },true);
+  let lastGainSent=0;
+  const sendGain=force=>{
+    const b=accepted(),now=performance.now();
+    if(!native||!b.active||!Number.isFinite(Number(gain.value)))return;
+    gainRead.textContent=Number(gain.value)<=-60?'−∞ dB':
+      Number(gain.value).toFixed(1)+' dB';
+    if(!force&&now-lastGainSent<40)return; // bound UI→native control traffic
+    lastGainSent=now;
+    backend.emitEvent('arMixAction',{
+      action:'studioBusGain',requestId:++serial,
+      epoch:Number(b.epoch)||0,revision:Number(b.revision)||0,
+      db:Number(gain.value)
+    });
+  };
+  gain.addEventListener('input',()=>sendGain(false));
+  gain.addEventListener('change',()=>sendGain(true));
+  backend?.addEventListener?.('arMixStudioBusGainAck',ack=>{
+    if(ack?.ok!==true)feedback.textContent=
+      'GROUP FADER REJECTED · '+String(ack?.error||'Stale graph');
+  });
   action.addEventListener('click',()=>{
     if(!native||pending)return;
     const d=route(),b=accepted(),stop=!!b.active;
