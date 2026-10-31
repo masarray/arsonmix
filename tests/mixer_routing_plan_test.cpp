@@ -475,6 +475,29 @@ static void verifyLegacyToDynamicProductionPcmParity() {
     assert(migrated.ids.legacyFxIndex(migrated.ids.aux[0])==stripCount);
     assert(migrated.ids.legacyFxIndex(migrated.ids.main)==-1);
     assert(migrated.ids.legacyFxIndex(migrated.ids.monitor)==-2);
+    // M3: legacy implicit MAIN paths are now marked PRIMARY, not ordinary
+    // parallel SENDs. Otherwise a migrated Studio subgroup would double
+    // its dry output (old direct MAIN plus new BUS -> MAIN).
+    const auto& direct=migrated.roster.find(migrated.ids.inputs[1])->sends;
+    assert(std::any_of(direct.begin(),direct.end(),[&](const auto& edge){
+        return edge.destination==migrated.ids.main && edge.primaryOutput;
+    }));
+    const auto& auxDirect=migrated.roster.find(migrated.ids.aux[0])->sends;
+    assert(std::any_of(auxDirect.begin(),auxDirect.end(),[&](const auto& edge){
+        return edge.destination==migrated.ids.main && edge.primaryOutput;
+    }));
+    DynamicChannelRoster audition=migrated.roster; // only control-side clone
+    const std::array<ChannelId,1> toBus{migrated.ids.inputs[1]};
+    const auto newBus=audition.createBusForSelected(
+        audition.revision(),toBus,"MIGRATED VOCAL BUS",ChannelRole::group);
+    assert(newBus.ok() && audition.size()==migrated.roster.size()+1);
+    const auto& redirected=audition.find(migrated.ids.inputs[1])->sends;
+    assert(std::none_of(redirected.begin(),redirected.end(),[&](const auto& edge){
+        return edge.primaryOutput && edge.destination==migrated.ids.main;
+    }));
+    assert(std::any_of(redirected.begin(),redirected.end(),[&](const auto& edge){
+        return edge.primaryOutput && edge.destination==newBus.createdIds.front();
+    }));
     PreparedRenderGraph oldGraph;
     RenderError error;
     assert(PreparedRenderGraph::compile(channels,ports,sends,oldGraph,error,aux));
