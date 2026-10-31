@@ -1814,7 +1814,7 @@
       else window.__arMixOpenChannelPatch?.(channel,b.dataset.mixPatch);
       return;
     }
-    if(b.dataset.mixApply!==undefined){e.preventDefault();e.stopImmediatePropagation();const response=window.__arMixApplyMixerDraft?.();if(response&&!response.ok)el('arIOFeedback').textContent=response.error;refresh();return;}
+    if(b.dataset.mixApply!==undefined){e.preventDefault();e.stopImmediatePropagation();const response=window.__arMixApplyAndActivate?.();if(response&&!response.ok)el('arIOFeedback').textContent=response.error;refresh();return;}
   },true);
   document.addEventListener('input',e=>{
     if(e.target.matches('.arIOSoftwareNameEdit')&&softwareEdit)
