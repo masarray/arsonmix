@@ -442,6 +442,18 @@ async def main():
           return status;
         }""",status)
         assert "NATIVE ACK" in await page.locator('#arSendFeedback').inner_text()
+        # G3 SENDS invokes FAST3 protected one-APPLY, so positive routing
+        # ACK alone is NOT the whole transaction. The mock must complete
+        # its subsequent native ARM ACK; otherwise unrelated actions remain
+        # correctly rejected as 'transaction still pending'.
+        status=await page.evaluate("""status=>{
+          window.__armixTestEmit('arMixAudioArmAck',{
+            ok:true,armed:true,deviceEpoch:status.dryRoutingLab.epoch});
+          status.monitor=true;
+          window.__armixTestEmit('arMixStatus',status);
+          return status;
+        }""",status)
+        assert not await page.evaluate("()=>window.__arMixFastAudioState().pending")
         # The AUX master is a separate native realtime parameter on the same
         # prepared graph, after AUX VST3 and before BOTH physical sinks.
         master=page.locator('[data-aux-master]')
@@ -651,14 +663,7 @@ async def main():
         # cannot publish an unpatched/missing CH2.
         await page.locator('[data-mix-mode="ROUTE"]').click()
         await page.locator('[data-strip="1"] select.arBankSource').select_option("MONO:1")
-        source_phase=await page.evaluate("""()=>({
-          text:document.querySelector('[data-strip="1"] .arBankStage')?.textContent,
-          fast:window.__arMixFastAudioState?.(),
-          route:window.__arMixRouteView?.(),
-          io:document.getElementById('arIOFeedback')?.textContent,
-          lastActions:window.__armixTestActions.slice(-4)
-        })""")
-        assert "PENDING" in source_phase['text'],source_phase
+        assert "PENDING" in await page.locator('[data-strip="1"] .arBankStage').inner_text()
         status=await page.evaluate("""status=>{
           const payload=window.__armixTestActions.filter(x=>
             x.name==='arMixAction'&&x.data.action==='routingDryApply').at(-1).data.value;
