@@ -115,6 +115,15 @@ async def main():
             {name:'DirectSound',active:false,separate:true,
               inputs:['Legacy Mic'],outputs:['Legacy Speakers']}
           ]})""")
+        # DEVICE2: opening custom panel reads cached hardware, never rescans vendors.
+        native_actions=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.name==='arMixAction')""")
+        assert any(x['data']['action']=='audioDeviceInventory' for x in native_actions)
+        assert not any(x['data']['action']=='audioDeviceRefresh' for x in native_actions)
+        await page.locator('[data-io-refresh-device]').click()
+        refreshed=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.name==='arMixAction'&&x.data.action==='audioDeviceRefresh')""")
+        assert len(refreshed)==1,refreshed
         assert await page.locator('.arIODeviceBackend').is_visible()
         assert await page.locator('.arIODevicePin').count()==8
         assert await page.locator('.arIODeviceCapture').is_disabled()

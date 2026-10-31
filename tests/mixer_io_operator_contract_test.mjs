@@ -239,3 +239,27 @@ test('SOURCE1 mute-only instant SOURCE uses one native ACK; armed output is reje
  assert.match(monitor,/window\.__arMixRevertMixerDraft\(\)/);
  assert.doesNotMatch(io,/new AudioContext\(/);
 });
+
+
+test('DEVICE2 native device list is cached on overlay open; explicit scan is fail-closed',()=>{
+ const native=read('src/Main.cpp'),gui=read('web/mixer-io.js');
+ const section=native.slice(native.indexOf('else if (action == "audioDeviceInventory")'),
+                            native.indexOf('else if (action == "audioDeviceApply")'));
+ assert.match(section,/emitDeviceInventory\(false\)/);
+ assert.match(section,/action == "audioDeviceRefresh"/);
+ assert.match(section,/emitDeviceInventory\(true\)/);
+ assert.doesNotMatch(section,/scanForDevices/);
+ const inventory=native.slice(native.indexOf('void emitDeviceInventory('),
+                              native.indexOf('juce::var currentDeviceSnapshot()'));
+ assert.match(inventory,/explicitRescan && scanSafe/);
+ assert.match(inventory,/engine_\.allOutputsDisarmed\(\)/);
+ assert.match(inventory,/type->scanForDevices\(\)/);
+ assert.match(inventory,/scanDurationMs/);
+ assert.match(gui,/rescan\?'audioDeviceRefresh':'audioDeviceInventory'/);
+ assert.match(gui,/SCAN_ERROR|BLOCKED_ARMED/);
+ const apply=native.slice(native.indexOf('void applyCustomAudioDevice('),
+                          native.indexOf('void showDeviceSetup()',native.indexOf('void applyCustomAudioDevice(')));
+ assert.match(apply,/opened->getActiveInputChannels\(\)!=actual\.inputChannels/);
+ assert.match(apply,/opened->getActiveOutputChannels\(\)!=actual\.outputChannels/);
+ assert.match(apply,/opened->getCurrentBufferSizeSamples\(\)!=actual\.bufferSize/);
+});
