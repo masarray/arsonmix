@@ -588,8 +588,12 @@ async def main():
           return status;
         }""",status)
         assert await page.locator('#arSendEditor [data-send-gain="POST"]').input_value()=="0.5"
-        await page.evaluate("""status=>{
+        # Keep the Python fixture synchronized with the JS status snapshot:
+        # Playwright arguments are serialized, not references. Without this
+        # assignment later ACK mocks accidentally re-ARM the previous output.
+        status=await page.evaluate("""status=>{
           status.monitor=false;window.__armixTestEmit("arMixStatus",status);
+          return status;
         }""",status)
         # Enable/disable is still structural, even for an existing POST edge.
         await page.locator('#arSendEditor [data-send-enable="POST"]').uncheck()
