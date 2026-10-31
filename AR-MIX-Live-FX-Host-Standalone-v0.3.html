@@ -1988,15 +1988,15 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
   --b180-color:#94e8ed;--b180-border:#0c91a5;--b180-ink:#0d3037;
 }
 #app #mixer .arSofLayer[hidden],#app #mixer .arSofFader[hidden],
-#app #mixer .arSofAdd[hidden],#app #mixer .arSofRead[hidden]{display:none!important}
+#app #mixer .arSofAdd[hidden]{display:none!important}
 #app #mixer[data-sof-active="true"] .strip[data-strip] .fader-zone [data-fader]{
   visibility:hidden;pointer-events:none;
 }
 #app #mixer[data-sof-active="true"] .strip[data-strip] .gain-scale{opacity:.5}
 #app #mixer .db-display{position:relative}
-#app #mixer .arSofRead{
-  position:absolute;inset:0;display:grid;place-items:center;
-  background:#102934;color:#9ce5d5;
+#app #mixer[data-sof-active="true"] .strip[data-strip] .db-display[data-read]::after{
+  content:attr(data-sof-text);position:absolute;inset:0;
+  display:grid;place-items:center;background:#102934;color:#9ce5d5;
   font:550 11px/1.2 Consolas,monospace;letter-spacing:0;
   text-shadow:none;border-bottom:1px solid #366476;
 }
@@ -3268,8 +3268,9 @@ scheduleDemoMeter();
     slider.style.setProperty('--sof-position',(100*(sofDb(g)+60)/60).toFixed(2)+'%');
     slider.setAttribute('aria-valuenow',sofDb(g).toFixed(1));
     slider.setAttribute('aria-valuetext',sofRead(g));
-    const read=layer.closest('[data-strip]')?.querySelector('.arSofRead');
-    if(read)read.textContent=sofRead(g);
+    // A CSS pseudo-readout survives native meter/control textContent updates.
+    const read=layer.closest('[data-strip]')?.querySelector('.db-display');
+    if(read)read.dataset.sofText=sofRead(g);
   }
   function sofStatus(message){
     sofMessage=message;
@@ -3304,9 +3305,7 @@ scheduleDemoMeter();
         else{original.setAttribute('tabindex','0');original.removeAttribute('aria-hidden');}
       }
       const db=strip.querySelector('.db-display');
-      let read=db?.querySelector('.arSofRead');
-      if(active&&db&&!read){read=node('span','arSofRead');db.appendChild(read);}
-      if(read)read.hidden=!active;
+      if(db&&!active)delete db.dataset.sofText;
       if(!active||!layer)continue;
       layer.querySelector('.arSofTarget').textContent='AUX '+(sofBus+1)+' · POST';
       const item=sofExisting(s,ch);
@@ -3317,7 +3316,7 @@ scheduleDemoMeter();
       slider.setAttribute('aria-label','Channel '+(ch+1)+' POST send to AUX '+(sofBus+1));
       slider.setAttribute('aria-disabled',String(!!s.pending));
       if(item&&(!sofDrag||sofDrag.ch!==ch))sofPaintLayer(layer,Number(item.gain));
-      else if(!item&&read)read.textContent='NO SEND';
+      else if(!item&&db)db.dataset.sofText='NO SEND';
     }
     if(active&&!sofMessage){
       const aux=s.draftAux?.[sofBus];
