@@ -41,7 +41,7 @@ test("GUI exposes only truthful dry device routes and acknowledged commit",()=>{
   assert.match(main,/arMixRoutingLabAck/);
   // Default 10 fake preview strips are intentionally not made into VST3
   // controls by the dry hardware test.
-  assert.match(bridge,/if\(i!==0\)/);
+  assert.match(bridge,/const lane=fxLaneSnapshot\(i\)/);
   assert.match(bridge,/track\.dataset\.preview="1"/);
 });
 

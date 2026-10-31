@@ -134,8 +134,8 @@ test('L2 route and VST inserts use one consistent six-row native rack with locke
  assert.match(src,/master-locked-six/);
  assert.match(src,/class="master-insert insert empty" disabled aria-disabled="true"/);
  assert.match(src,/slot===0\?"FX UNAVAILABLE":"ADD FX"/);
- assert.match(src,/class="fx-power \$\{actual\.bypassed\?"is-bypassed":""\}"/);
- assert.match(src,/loaded\?"":'<span class="insert-add-glyph"/);
+  assert.match(src,/class="fx-power /);
+  assert.match(src,/function fxSlotMarkup\(lane,slot,compact=false\)/);
  assert.match(css,/@media\(max-height:690px\)\{[\s\S]*?--ar-upper-height:165px/);
 });
 

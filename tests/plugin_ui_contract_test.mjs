@@ -136,7 +136,7 @@ test('favorites sort to top, remain searchable and serialize in the portable cat
 test('real routed FX rack remains separate from Routing and respects native apply/ACK',()=>{
   const monitor=read('web/monitor.js');
   const engine=read('src/LiveDryRoutingLab.h');
-  assert.match(bridge,/CH1 without a routed VST3 continues into its existing 8-slot rack/);
+  assert.match(bridge,/M2 single console presenter/);
   assert.match(bridge,/native-rack-/);
   assert.match(bridge,/data-routed-fx=/);
   assert.match(bridge,/data-routed-apply="1"/);
@@ -185,8 +185,8 @@ test('P2 user field regressions: fixed catalog header, uniform material and orig
   assert.match(generatedCss,/font-size:11px!important;min-width:0/);
   assert.ok(standalone.includes('<style>'+generatedCss+'</style>'),
     'canonical standalone CSS must track the shared BTN-180 text size');
-  assert.match(bridge,/if\(lab\?\.active && \(i!==0 \|\| \(!!lab\.channelFxNames\?\.\[0\] && state\.chain\.length===0\)\)\)/);
-  assert.match(bridge,/if\(isMaster\|\|selected!==0\|\|\(fx&&state\.chain\.length===0\)\)/);
+  assert.match(bridge,/function fxLaneSnapshot\(channel,master=false\)/);
+  assert.match(bridge,/function fxSlotMarkup\(lane,slot,compact=false\)/);
   assert.match(bridge,/send\("addCatalog",\{id,requestId\}\)/);
   assert.match(bridge,/Audio device is unavailable\. Open SETUP/);
   assert.match(monitor,/document\.fonts\.ready\.then\(guiPaintReady,guiPaintReady\)/);
@@ -208,9 +208,9 @@ test('G5 UI safety: compact Studio One-like browser and native insert truth',()=
   assert.match(bridge,/MASTER FX · UNAVAILABLE/);
   assert.doesNotMatch(bridge,/data-native-unrouted="-1"/);
   assert.match(bridge,/Array\.from\(\{length:8\}/);
-  assert.match(bridge,/data-routed-lane/);
-  assert.match(bridge,/ar-routed-loaded/);
-  assert.match(bridge,/state\.chain\.slice\(0,6\)/);
+  assert.match(bridge,/data-fx-lane/);
+  assert.match(bridge,/fxSlotMarkup\(lane,slot,true\)/);
+  assert.match(bridge,/Array\.from\(\{length:6\},\(_,slot\)=>fxSlotMarkup\(lane,slot,true\)\)/);
   assert.match(bridge,/data-routed-fx/);
   assert.match(bridge,/data-native-fx="editor"/);
 });
@@ -267,4 +267,11 @@ test('FXF1 manifest parser is fail-closed and factory entries do not persist in 
   assert.match(catalog,/if \(entry.factory\) continue/);
   assert.match(native,/catalog_\.scanFactoryIfPresent\(\)/);
   assert.match(cmake,/FactoryFxVerifiedManifestAndNegativePathGate/);
+});
+
+test('M2 one FX presenter and native BUS staging have shared safety gates',()=>{
+  const monitor=read('web/monitor.js');
+  for(const term of ['function fxLaneSnapshot','function fxSlotMarkup','data-bus-create','__arMixStageBusFromSelected'])assert.ok(bridge.includes(term));
+  for(const term of ['row.mode="BUS"','kind==="group"','draftSends.push({from:source,to:target,tap:"POST"','const issue=patchPreflight()','Object.assign(row,previousRow)','openRoutingLab()','No unused native strip for BUS'])assert.ok(monitor.includes(term));
+  assert.doesNotMatch(bridge,/if\(lab\?\.active && \(i!==0/);
 });
