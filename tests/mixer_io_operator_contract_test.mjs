@@ -419,7 +419,8 @@ test('FAST1 one gesture uses native routing ACK then fenced physical ARM, with p
  assert.match(io,/dataset\.ioStartAudio/);
  assert.match(io,/LIVE ON /);
  assert.match(io,/ASSIGN CH/);
- assert.match(io,/start\.disabled=!isNative\(\)\|\|\(!lastStatus\.monitor/);
+ assert.match(io,/function startAudioBlocked\(\)/);
+ assert.match(io,/start\.disabled=startAudioBlocked\(\)/);
  assert.match(control,/window\.__arMixStartLiveAudio=/);
  assert.match(control,/fastAudioPending=\{phase:"patch"/);
  assert.match(control,/if\(verified\)fastAudioArm\(result\)/);
