@@ -521,3 +521,48 @@ test('P0 First Sound separates RAW capture, post-fader PCM and physical output A
   assert.match(css,/\.arIOAudioPath>\.arIOPathStart/);
   assert.doesNotMatch(gui,/new AudioContext|AudioWorklet|processBlock|createPluginInstance/);
 });
+
+test('M3E live independent GROUP uses exactly one JUCE producer and native ACKed gain, not borrowed CH10',()=>{
+  const engine=read('src/LiveAudioEngine.h');
+  const session=read('src/LiveDynamicBusSession.h');
+  const js=read('web/studio-bus.js');
+  const css=read('web/studio-bus.css');
+  const standalone=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
+  const cm=read('CMakeLists.txt');
+  const index=read('web/index.html');
+  assert.match(engine,/liveStudioBus_\.createForSelected\(/);
+  assert.match(engine,/const bool studioBus=liveStudioBus_\.active\(\)/);
+  assert.match(engine,/routed=liveStudioBus_\.render\(/);
+  assert.match(engine,/\}else \{\s*routed=dryRoutingLab_\.process\(/);
+  assert.match(engine,/liveStudioBus_\.invalidate\(\)/);
+  assert.match(engine,/if\(liveStudioBus_\.active\(\)\)return "M3E live Group active/);
+  assert.match(engine,/if\(liveStudioBus_\.active\(\)\)return false/);
+  assert.match(session,/createBusForSelected\(/);
+  assert.match(session,/ChannelRole::group/);
+  assert.match(session,/publisher_\.commit\(roster,req/);
+  assert.match(session,/publisher_\.render\(epoch,inputs,inputCount/);
+  assert.match(session,/publisher_\.setChannelMix\(epoch,revision,group_,linear,0\.f\)/);
+  assert.match(session,/\bactualMainL_\.store\(left/);
+  assert.match(session,/\bactualMainR_\.store\(right/);
+  assert.match(session,/MONITOR disabled/);
+  assert.match(session,/0 VST3, AUX and prior Sends/);
+  assert.match(session,/out->setProperty\("sourceCount"/);
+  assert.match(main,/action=="studioBusCreateForSelected"/);
+  assert.match(main,/action=="studioBusGain"/);
+  assert.match(main,/arMixStudioBusAck/);
+  assert.match(main,/arMixStudioBusGainAck/);
+  assert.match(js,/Ctrl\/Shift\+click channel names to select/);
+  assert.match(js,/arMixStudioBusAck/);
+  assert.match(js,/arMixStudioBusGainAck/);
+  assert.match(js,/GROUP LIVE · native prepared PCM ACK/);
+  assert.doesNotMatch(js,/new AudioContext\(|AudioWorklet|\.createOscillator\(/);
+  assert.match(index,/studio-bus\.js/);
+  assert.match(index,/studio-bus\.css/);
+  assert.match(cm,/web\/studio-bus\.js web\/studio-bus\.css/);
+  assert.match(cm,/src\/LiveDynamicBusSession\.h/);
+  const inline=(tag,close)=>standalone.slice(
+    standalone.indexOf(tag)+tag.length,
+    standalone.indexOf(close,standalone.indexOf(tag)+tag.length));
+  assert.equal(inline('<script id="arsonmix-studio-bus-js">','</script>'),js);
+  assert.equal(inline('<style id="arsonmix-studio-bus-css">','</style>'),css);
+});
