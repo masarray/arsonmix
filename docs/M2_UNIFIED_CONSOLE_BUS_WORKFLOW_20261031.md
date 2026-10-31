@@ -31,3 +31,9 @@ Audio, Bus and FX strips use inserts/sends, subgroup output sums into bus, FX se
 
 ## Follow-up architecture gate, no parallel DSP
 Only one live native ChannelId-based graph, same native instance lease for CH1..N, FX bus, group and main, topology precompile control-thread, stable ID, full VST3 state, safe de-click handoff and PDC. Do not merge any old 10CH prototype branch into main to simulate dynamic add. Check current main and #232 device-owner PR before changes to JUCE audio graph.
+
+## M2B integrated milestone: Multi-source BUS and FX SEND routing
+- A previously ACKed BUS can now accept multiple native CH inputs through the same FX Rack using SEND TO EXISTING BUS → OUTPUT → BUS or FX SEND → BUS.
+- Exclusive group routing disables source direct MAIN, unity POST to BUS; parallel FX sends at linear .25 retain direct dry MAIN. Native DAG prevents feedback/self-loop and a duplicate edge. BUS-to-BUS nesting only when legal.
+- Reuses existing audio graph, 10-CH capacity, same epoch/revision/MUTE/APPLY/ACK. Safe failure retains previously accepted route. A BUS is selectable only after native ACK, not a browser draft.
+- No falsely claimed arbitrary new runtime channels/independent FX bus role, native master VST/PDC, physical latency or #15 FAT.

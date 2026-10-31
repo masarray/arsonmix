@@ -275,3 +275,14 @@ test('M2 one FX presenter and native BUS staging have shared safety gates',()=>{
   for(const term of ['row.mode="BUS"','kind==="group"','draftSends.push({from:source,to:target,tap:"POST"','const issue=patchPreflight()','Object.assign(row,previousRow)','openRoutingLab()','No unused native strip for BUS'])assert.ok(monitor.includes(term));
   assert.doesNotMatch(bridge,/if\(lab\?\.active && \(i!==0/);
 });
+
+test('M2B existing BUS supports group, parallel FX, rollback and feedback safety',()=>{
+  const m=read('web/monitor.js');
+  for(const part of ['SEND TO EXISTING BUS','data-bus-target','data-bus-assign="group"',
+    'data-bus-assign="fx"','__arMixStageSendToBus'])
+    assert.ok(bridge.includes(part)||m.includes(part),part);
+  for(const part of ['source===target','d.acceptedRoute.channels[target]?.mode!=="BUS"',
+    'draftRoutes[source].main=originalMain','const issue=patchPreflight()',
+    'mixerDraftActive=true','Native 32-send budget reached'])
+    assert.ok(m.includes(part),part);
+});

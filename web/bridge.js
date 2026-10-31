@@ -49,6 +49,7 @@
   const css = document.createElement("style");
   css.textContent = `
     .native-toolbar{display:flex;flex-wrap:wrap;gap:7px;align-items:center}
+    .native-bus-target{font:11px inherit;background:#10242f;color:#d9eaf1;border:1px solid #507184;border-radius:4px;max-width:175px;min-height:29px;padding:4px 7px;outline-offset:2px}
     .native-btn{font:inherit;color:#d6e9ef;padding:8px 12px;border:1px solid #48677a;border-radius:6px;
        background:linear-gradient(180deg,#405c70 0%,#243846 47%,#0d1e29 100%);cursor:pointer;
        box-shadow:inset 0 1px 1px #93badc70,0 2px 3px #0008}
@@ -267,7 +268,20 @@
     const selected=typeof currentChannel==="number"?currentChannel:0;
     const isMaster=typeof masterSelected!=="undefined"&&masterSelected;
     const lane=fxLaneSnapshot(selected,isMaster);
-    const name=isMaster?"MASTER":channels[selected]?.name||("CH "+(selected+1));
+    const accepted=state.device?.dryRoutingLab?.acceptedRoute?.channels||[];
+    const isBus=Array.isArray(accepted)&&accepted[selected]?.mode==="BUS";
+    const name=isMaster?"MASTER":(isBus?"BUS · ":"")+
+      (channels[selected]?.name||("CH "+(selected+1)));
+    const busTargets=Array.isArray(accepted)?accepted.flatMap((r,i)=>
+      r?.mode==="BUS"&&i!==selected?[i]:[]):[];
+    const busAttach=busTargets.length?'<div class="native-toolbar" style="margin-bottom:10px">'+
+      '<span class="native-sub">SEND TO EXISTING BUS</span>'+
+      '<select class="native-bus-target" data-bus-target aria-label="Native BUS destination">'+
+      busTargets.map(i=>'<option value="'+i+'">BUS · CH '+(i+1)+
+        ' · '+escapeHtml(channels[i]?.name||("CH "+(i+1)))+'</option>').join("")+
+      '</select><button class="native-btn" data-bus-assign="group" title="Route entire source to chosen BUS">OUTPUT → BUS</button>'+
+      '<button class="native-btn" data-bus-assign="fx" title="Keep MAIN and send parallel POST audio">FX SEND → BUS</button>'+
+      '</div>':"";
     const nodes=Array.from({length:8},(_,slot)=>fxSlotMarkup(lane,slot)).join("");
     const canBus=lane.mode==="legacy"||lane.mode==="routed";
     workspace.innerHTML='<div class="native-panel" data-live-native="1">'+
@@ -280,7 +294,7 @@
       (lane.mode==="legacy"?'<button class="native-btn" data-my-sounds="1">SAVE / RECALL</button>':"")+
       '<span class="native-sub">'+(lane.mode==="master"?"MASTER FX · UNAVAILABLE":
         lane.mode==="unpatched"?"PATCH INPUT TO ENABLE FX":lane.items.length+"/8 VST3 INSERTS")+'</span></div>'+
-      '<div class="native-card" style="max-width:960px;min-height:0"><h3>'+
+      (canBus?busAttach:"")+'<div class="native-card" style="max-width:960px;min-height:0"><h3>'+
       escapeHtml(name)+' · FX CHAIN</h3><div class="native-nodes">'+nodes+'</div>'+
       (lane.pending?'<p class="native-status">FX DRAFT · waiting for native APPLY/ACK</p>':"")+
       (lane.mode==="routed"?'<div class="native-toolbar" style="margin-top:10px">'+
@@ -855,10 +869,17 @@
   // Capture native controls before the legacy v0.3 demo handlers.
   document.addEventListener("click", function(e){
   if(fxNativeBlockClick){fxNativeBlockClick=false;e.preventDefault();e.stopImmediatePropagation();return;}
-  const el=e.target.closest("[data-routed-fx],[data-routed-editor],[data-routed-bypass],[data-routed-clear],[data-routed-move],[data-routed-apply],[data-bus-create],[data-native-unrouted],[data-native-action],[data-native-add],[data-native-fx],[data-fxpower],[data-master-insert],[data-master-power],[data-native-category],[data-go-native-rack],[data-insert],[data-plugin-picker],[data-plugin-manager],[data-my-sounds],[data-backup-studio],[data-preset-mute],[data-preset-save],[data-preset-load],[data-close-modal],[data-orbit-start],[data-orbit-stop]");
+  const el=e.target.closest("[data-routed-fx],[data-routed-editor],[data-routed-bypass],[data-routed-clear],[data-routed-move],[data-routed-apply],[data-bus-create],[data-bus-assign],[data-native-unrouted],[data-native-action],[data-native-add],[data-native-fx],[data-fxpower],[data-master-insert],[data-master-power],[data-native-category],[data-go-native-rack],[data-insert],[data-plugin-picker],[data-plugin-manager],[data-my-sounds],[data-backup-studio],[data-preset-mute],[data-preset-save],[data-preset-load],[data-close-modal],[data-orbit-start],[data-orbit-stop]");
   if(!el)return;
   e.preventDefault();e.stopImmediatePropagation();
 
+  if(el.hasAttribute("data-bus-assign")){
+    const source=typeof currentChannel==="number"?currentChannel:0;
+    const target=Number(document.querySelector("#rackWorkspace [data-bus-target]")?.value);
+    const result=window.__arMixStageSendToBus?.({source,target,kind:el.dataset.busAssign});
+    toStatus(result?.message||result?.error||"Native BUS assignment unavailable");
+    return;
+  }
   if(el.hasAttribute("data-bus-create")){
     const selected=typeof currentChannel==="number"?currentChannel:0;
     const result=window.__arMixStageBusFromSelected?.({
