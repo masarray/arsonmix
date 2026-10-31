@@ -1,3 +1,5 @@
+> **DEVICE SETUP OWNER LOCK (2026-10-31):** PATCH2 maintains the same one native route controller. Complete the pre-existing DEVICE / DRIVER tab via [custom JUCE device ARD](ARD_CUSTOM_AUDIO_DEVICE_SETUP_20261031.md), [PRD](PRD_CUSTOM_AUDIO_DEVICE_SETUP_20261031.md), [handoff](HANDOFF_CUSTOM_AUDIO_DEVICE_SETUP_20261031.md). ONE AudioDeviceManager, one WebView2 matrix, validated driver/endpoint/pin APPLY, native readback, muted rollback. Custom hardware setup is still **NOT IMPLEMENTED**; do not treat inventory cards or native JUCE popup as completion.
+
 
 # ArSonMiX — Audio Source/Patch Architecture Decision (PATCH2 ARD)
 
