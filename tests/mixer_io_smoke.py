@@ -775,6 +775,90 @@ async def main():
         assert await page.locator('[data-source-alias-save]').is_disabled()
         await page.screenshot(path="mixer-patch1-maono-ch3-ch6-1366.png")
         assert not errors,errors
+        # M2B independent browser-native routing graph (same browser process):
+        # create group, ACK, route a second CH into that same existing BUS.
+        bp=await browser.new_page(viewport={"width":1366,"height":768})
+        bus_errors=[]
+        bp.on("pageerror",lambda e:bus_errors.append(str(e)))
+        await bp.add_init_script("""(()=>{
+          const listeners={};window.__armixTestActions=[];
+          window.__JUCE__={backend:{
+            addEventListener(name,fn){(listeners[name]??=[]).push(fn)},
+            emitEvent(name,data){window.__armixTestActions.push({name,data})}
+          }};
+          window.__armixTestEmit=(name,data)=>(listeners[name]||[]).forEach(fn=>fn(data));
+        })();""")
+        await bp.goto((root/"web/index.html").as_uri())
+        await bp.evaluate("""()=>{
+          const channels=Array.from({length:10},(_,i)=>({
+            mode:i<2?'MONO':'NONE',channelFormat:'MONO',left:i<2?i:-1,
+            right:-1,gain:.25,pan:0,main:true,mute:false,solo:false,
+            fxId:'',fxIds:[]}));
+          const auxes=Array.from({length:4},()=>({
+            enabled:false,gain:1,main:true,mute:false,fxId:'',fxIds:[]}));
+          const d={active:true,ready:true,epoch:45,revision:3,
+            ports:[{port:0,label:'Mic 1'},{port:1,label:'Mic 2'}],
+            outputPorts:[0,1],channelControls:[],
+            acceptedRoute:{deviceEpoch:45,channels,auxes,sends:[]}};
+          window.__busDevice={connected:true,driver:'ASIO',
+            monitor:false,chainCount:0,dryRoutingLab:d};
+          window.__armixTestEmit('arMixStatus',window.__busDevice);
+        }""")
+        created=await bp.evaluate("""()=>({
+          action:window.__arMixStageBusFromSelected({source:0,kind:'group'}),
+          draft:window.__arMixRouteView()})""")
+        assert created['action']['ok'],created
+        bus=created['action']['target']
+        assert created['draft']['draftRoutes'][bus]['mode']=='BUS',created
+        assert created['draft']['draftRoutes'][bus]['gain']==1,created
+        assert created['draft']['draftRoutes'][0]['main'] is False,created
+        assert not await bp.evaluate("""()=>window.__armixTestActions.some(
+          x=>x.data?.action==='routingDryApply')""")
+        await bp.locator('#arRouteApply').click()
+        assert await bp.evaluate("""()=>window.__armixTestActions.some(
+          x=>x.data?.action==='routingDryApply')""")
+        await bp.evaluate("""()=>{
+          const view=window.__arMixRouteView();
+          const d=window.__busDevice.dryRoutingLab;
+          d.acceptedRoute={...d.acceptedRoute,
+            channels:view.draftRoutes,auxes:view.draftAux,sends:view.draftSends};
+          d.revision=4;
+          window.__armixTestEmit('arMixRoutingLabAck',{ok:true,state:d});
+          window.__armixTestEmit('arMixStatus',window.__busDevice);
+        }""")
+        await bp.locator('#arRouteClose').click()
+        await bp.locator('[data-view="FX RACK"]').click()
+        await bp.evaluate('()=>{currentChannel=1;renderRackWorkspace()}')
+        assert await bp.locator('#rackWorkspace [data-bus-target] option').count()==1
+        assert await bp.locator('#rackWorkspace [data-bus-target]').input_value()==str(bus)
+        # Existing BUS accepts a second input; no new strip is allocated.
+        await bp.locator('#rackWorkspace [data-bus-assign="group"]').click()
+        send=await bp.evaluate('()=>window.__arMixRouteView()')
+        assert send['draftRoutes'][1]['main'] is False,send
+        assert send['draftRoutes'][bus]['mode']=='BUS',send
+        assert len(send['draftSends'])==2,send
+        assert any(e['from']==1 and e['to']==bus and e['gain']==1
+                   for e in send['draftSends']),send
+        assert len(await bp.evaluate("""()=>window.__armixTestActions.filter(
+          x=>x.data?.action==='routingDryApply')"""))==1
+        assert (await bp.evaluate('()=>window.__arMixRevertMixerDraft()'))['ok']
+        await bp.locator('#arRouteClose').click()
+        await bp.locator('[data-view="FX RACK"]').click()
+        await bp.evaluate('()=>{currentChannel=1;renderRackWorkspace()}')
+        await bp.locator('#rackWorkspace [data-bus-assign="fx"]').click()
+        fxsend=await bp.evaluate('()=>window.__arMixRouteView()')
+        assert fxsend['draftRoutes'][1]['main'] is True,fxsend
+        assert any(e['from']==1 and e['to']==bus and e['gain']==.25
+                   for e in fxsend['draftSends']),fxsend
+        assert (await bp.evaluate('()=>window.__arMixRevertMixerDraft()'))['ok']
+        self_cycle=await bp.evaluate("""target=>window.__arMixStageSendToBus({
+          source:target,target,kind:'fx'})""",bus)
+        assert not self_cycle['ok'] and 'Feedback' in self_cycle['error']
+        duplicate=await bp.evaluate("""target=>window.__arMixStageSendToBus({
+          source:0,target,kind:'fx'})""",bus)
+        assert not duplicate['ok'] and 'already' in duplicate['error']
+        assert not bus_errors,bus_errors
+        await bp.close()
         await browser.close()
         print("PASS: G1/G2 + G3 real PRE/POST draft, AUX return, 0-gain bypass, native ACK/reject/revert, stable rack and 3 viewports")
 
