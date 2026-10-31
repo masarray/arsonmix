@@ -9,7 +9,7 @@
   const native=!!window.__JUCE__?.backend?.emitEvent;
   const backend=window.__JUCE__?.backend;
   const selected=new Set();
-  let last=-1,request='',pending=false,status=null,lastEpoch='';
+  let last=-1,request=0,serial=0,pending=false,status=null,lastEpoch='';
   const panel=document.createElement('section');
   panel.id='arStudioBusControls';
   panel.className='arStudioBusControls';
@@ -90,7 +90,7 @@
     const indices=selectedList();
     if(!stop&&!indices.length)return;
     // A user action, never 12Hz telemetry, is allowed to submit one event.
-    request='bus-'+Date.now()+'-'+Math.random().toString(36).slice(2);
+    request=++serial;
     pending=true;
     feedback.textContent=stop?'STOPPING · waiting for native ACK':
       'CREATING · waiting for native graph ACK';
@@ -105,7 +105,7 @@
   });
   backend?.addEventListener?.('arMixStudioBusAck',ack=>{
     if(!pending||ack?.requestId!==request)return;
-    pending=false;request='';
+    pending=false;request=0;
     feedback.textContent=ack?.ok?
       (ack.session?.active?'GROUP LIVE · native prepared PCM ACK':'GROUP STOPPED · native ACK'):
       'REJECTED · '+String(ack?.error||'Live graph unchanged');
