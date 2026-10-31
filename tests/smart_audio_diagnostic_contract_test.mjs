@@ -151,3 +151,15 @@ test('P0 capture block-head evidence is a single-pass RT heuristic, not invented
  assert.match(cmake,/P0CaptureZeroHeadBoundaryCandidates/);
  assert.match(flow,/ARMixCaptureBoundaryTests/);
 });
+
+
+test('P0 direct WASAPI guarded stereo de-click keeps normal RT PCM zero-copy',()=>{
+ const repair=read('engine/core/CaptureClickRepair.h');
+ assert.match(engine,/captureRepairScratch_\.setSize \(2, maxFrames/);
+ assert.match(engine,/wasapiDirectCapture_\.load/);
+ assert.match(engine,/const float\* const\* renderInputs=inputs/);
+ assert.match(engine,/captureClickRepair_\.process\(/);
+ assert.match(engine,/dryRoutingLab_\.process\(renderInputs/);
+ assert.match(engine,/captureDeClickProvenance/);
+ assert.match(repair,/STEREO_WASAPI_ZERO_HEAD_BOUNDED_DECLICK_NOT_CLOCK_DRIFT_OR_RENDER_XRUN_FIX/);
+});

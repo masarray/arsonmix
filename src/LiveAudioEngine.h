@@ -21,6 +21,7 @@
 #include "../engine/core/RealtimeHealthHistogram.h"
 #include "../engine/core/CallbackCadenceEvidence.h"
 #include "../engine/core/CaptureBoundaryEvidence.h"
+#include "../engine/core/CaptureClickRepair.h"
 #include "../engine/core/FxBypassEnvelope.h"
 #include "../engine/core/NativeOutputPairTap.h"
 #include <array>
@@ -99,6 +100,7 @@ public:
     {
         formats_.addFormat (std::make_unique<juce::VST3PluginFormat>());
         scratch_.setSize (2, maxFrames, false, true, false);
+        captureRepairScratch_.setSize (2, maxFrames, false, true, false);
         // One reusable preallocated stereo dry snapshot for transient FX bypass.
         dryScratch_.setSize (2, maxFrames, false, true, false);
         handoff_.initialize (graphOwned_.get());
@@ -1280,6 +1282,10 @@ public:
         o->setProperty ("captureZeroHeadCandidateFrames",static_cast<double>(captureBoundary_.candidateFrames()));
         o->setProperty ("captureNonFiniteSamples",static_cast<double>(captureBoundary_.nonFiniteSamples()));
         o->setProperty ("captureZeroHeadProvenance",armix::rt::CaptureBoundaryEvidence::provenance());
+        o->setProperty ("captureDeClickBlocks",static_cast<double>(captureClickRepair_.repairedBlocks()));
+        o->setProperty ("captureDeClickFrames",static_cast<double>(captureClickRepair_.repairedFrames()));
+        o->setProperty ("captureSanitizedSamples",static_cast<double>(captureClickRepair_.sanitizedSamples()));
+        o->setProperty ("captureDeClickProvenance",armix::rt::CaptureClickRepair::provenance());
         o->setProperty ("postFxPeak", postFxPeak_.load());
         o->setProperty ("peak", outputPeak_.load());
         o->setProperty ("peakLeft", outputPeakL_.load());
@@ -1428,6 +1434,7 @@ private:
     std::atomic<std::uint64_t> fxMovePendingOrder_ {Graph::canonicalOrder};
     bool attached_ = false;
     juce::AudioBuffer<float> scratch_;
+    juce::AudioBuffer<float> captureRepairScratch_; // prepared stereo exceptional path
     juce::AudioBuffer<float> dryScratch_;
     armix::dsp::NativeMasterLoudness masterLoudness_;
     armix::diagnostics::DiagnosticTone diagnosticTone_;
@@ -1441,6 +1448,8 @@ private:
     std::atomic<float> inputPeak_ { 0.f }, postFxPeak_ { 0.f }, outputPeak_ { 0.f };
     std::atomic<std::uint64_t> captureSignalBlocks_ {0}; // per native device epoch
     armix::rt::CaptureBoundaryEvidence captureBoundary_; // callback-only PCM continuity
+    armix::rt::CaptureClickRepair captureClickRepair_;
+    std::atomic<bool> wasapiDirectCapture_{false};
     std::atomic<float> outputPeakL_ { 0.f }, outputPeakR_ { 0.f };
     std::atomic<int> callbackInputs_ { 0 }, callbackOutputs_ { 0 };
     std::atomic<unsigned long long> callbackCount_ { 0 };
@@ -1531,6 +1540,9 @@ private:
         inputPeak_.store(0.f,std::memory_order_relaxed);
         captureSignalBlocks_.store(0,std::memory_order_relaxed);
         captureBoundary_.reset(); // only between device generations
+        captureClickRepair_.reset();
+        wasapiDirectCapture_.store(d->getTypeName()=="Windows Audio",
+                                    std::memory_order_release);
         deviceStartCount_.fetch_add (1, std::memory_order_relaxed);
         sampleRateHz_ = juce::jmax (1.0, d->getCurrentSampleRate());
         diagnosticTone_.prepare (sampleRateHz_); // device stopped; no RT allocation
@@ -1721,17 +1733,42 @@ private:
             const bool outputPermitted=outputGate.renderMain;
             // Native input PCM must remain observable even with safe output MUTE.
             // Scan bounded verified callback channels, no allocation or lock.
+            const auto priorCandidateBlocks=captureBoundary_.candidateBlocks();
+            const auto priorCandidateFrames=captureBoundary_.candidateFrames();
+            const auto priorInvalidSamples=captureBoundary_.nonFiniteSamples();
             const float rawCapturePeak=captureBoundary_.observe(
                 inputs,juce::jmin(inputChannels,armix::device::LiveInputPortRegistry::limit),samples);
             if(rawCapturePeak>0.0005f)
                 captureSignalBlocks_.fetch_add(1,std::memory_order_relaxed);
+            // Use PR #247's ONE existing raw capture scan to trigger a
+            // conditional de-click copy. The common case stays zero-copy and
+            // bit-identical through the single native mixer. Never change
+            // JUCE's const input pointers or retry/reopen on the RT thread.
+            const float* const* renderInputs=inputs;
+            std::array<const float*,2> guardedInputs{};
+            if(wasapiDirectCapture_.load(std::memory_order_relaxed) &&
+               inputChannels==2 && inputs && inputs[0] && inputs[1] &&
+               samples<=maxFrames) {
+                const bool zeroCandidate=captureBoundary_.candidateBlocks()!=priorCandidateBlocks;
+                const auto addedFrames=captureBoundary_.candidateFrames()-priorCandidateFrames;
+                const int head=zeroCandidate && addedFrames<=static_cast<std::uint64_t>(samples)
+                    ?static_cast<int>(addedFrames):0;
+                const bool nonFinite=captureBoundary_.nonFiniteSamples()!=priorInvalidSamples;
+                float* const destL=captureRepairScratch_.getWritePointer(0);
+                float* const destR=captureRepairScratch_.getWritePointer(1);
+                if(captureClickRepair_.process(inputs,inputChannels,samples,
+                                               head,nonFinite,destL,destR)) {
+                    guardedInputs={{destL,destR}};
+                    renderInputs=guardedInputs.data();
+                }
+            } else captureClickRepair_.clearCarry();
             // Both native 10CH routing and the existing CH1 vendor FX chain
             // execute in ONE stereo output render pass. Never mix a parallel
             // CH1 output on top or copy vendor processors into another graph.
             LegacyChannelOneLease ch1Lease{this,cycle.graph};
             std::array<int,2> nativeMainPair{{-1,-1}};
             std::array<int,2> nativeMonitorPair{{-1,-1}};
-            const bool routed=dryRoutingLab_.process(inputs,inputChannels,outputs,
+            const bool routed=dryRoutingLab_.process(renderInputs,inputChannels,outputs,
                      outputChannels,samples,
                      masterGain_.load(std::memory_order_relaxed),
                      !outputPermitted,&ch1Lease,&processLegacyChannelOne,

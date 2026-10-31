@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/CaptureBoundaryEvidence.h"
+#include "../engine/core/CaptureClickRepair.h"
 #include <array>
 #include <cstdlib>
 #include <cmath>
@@ -52,4 +53,50 @@ int main() {
  l.fill(0);r.fill(0);p.observe(in,2,480);
  check(p.candidateBlocks()==0);
  check(std::strstr(P::provenance(),"NOT_DRIVER_XRUN")!=nullptr);
+ // One 480-frame buffer's candidate at most; no new FIFO/latency.
+ P evidence;
+ armix::rt::CaptureClickRepair repair;
+ std::array<float,480> outL{},outR{};
+ repair.reset();evidence.reset();
+ l.fill(.125f);r.fill(-.125f);
+ auto beforeBlock=evidence.candidateBlocks(),beforeFrames=evidence.candidateFrames();
+ evidence.observe(in,2,480);
+ check(!repair.process(in,2,480,0,false,outL.data(),outR.data()));
+ check(repair.repairedBlocks()==0);
+ for(int i=0;i<64;++i)l[i]=r[i]=0.f;
+ beforeBlock=evidence.candidateBlocks();beforeFrames=evidence.candidateFrames();
+ evidence.observe(in,2,480);
+ check(evidence.candidateBlocks()==beforeBlock+1);
+ const int head=static_cast<int>(evidence.candidateFrames()-beforeFrames);
+ check(head==64);
+ check(repair.process(in,2,480,head,false,outL.data(),outR.data()));
+ check(outL[0]>.12f&&outL[63]==0.f&&outL[64]>0.f&&outL[64]<.01f);
+ check(outR[0]<-.12f&&outR[63]==0.f&&r[0]==0.f); // immutable source
+ check(repair.repairedBlocks()==1&&repair.repairedFrames()==128);
+ // Full-block silence after a signal is NOT concealed as fake music.
+ l.fill(.125f);r.fill(-.125f);
+ evidence.observe(in,2,480);
+ repair.process(in,2,480,0,false,outL.data(),outR.data());
+ l.fill(0.f);r.fill(0.f);
+ evidence.observe(in,2,480);
+ check(!repair.process(in,2,480,480,false,outL.data(),outR.data()));
+ // Single-channel zero and honest music produce no repair.
+ l.fill(.125f);r.fill(-.125f);
+ repair.process(in,2,480,0,false,outL.data(),outR.data());
+ for(int i=0;i<64;++i)l[i]=0.f;
+ check(!repair.process(in,2,480,0,false,outL.data(),outR.data()));
+ // Non-finite PCM only enters prepared scratch on exceptional blocks.
+ l.fill(.25f);r.fill(-.25f);
+ l[21]=std::numeric_limits<float>::quiet_NaN();
+ check(repair.process(in,2,480,0,true,outL.data(),outR.data()));
+ check(outL[21]==0.f&&std::isfinite(outL[21])&&repair.sanitizedSamples()==1);
+ repair.reset();evidence.reset();
+ check(repair.repairedBlocks()==0&&repair.sanitizedSamples()==0);
+ l.fill(.125f);r.fill(-.125f);
+ for(int i=0;i<100000;++i){
+   evidence.observe(in,2,480);
+   check(!repair.process(in,2,480,0,false,outL.data(),outR.data()));
+ }
+ check(repair.repairedBlocks()==0&&repair.sanitizedSamples()==0);
+ check(std::strstr(armix::rt::CaptureClickRepair::provenance(),"NOT_CLOCK_DRIFT")!=nullptr);
 }
