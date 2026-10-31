@@ -7,7 +7,7 @@ const gui=read('web/mixer-io.js'),monitor=read('web/monitor.js');
 const main=read('src/Main.cpp'),cmake=read('CMakeLists.txt'),html=read('web/index.html');
 test('single native controller stages MONO/STEREO through muted APPLY + revision ACK',()=>{
   assert.match(gui,/__arMixStageChannelInput/);
-  assert.match(gui,/__arMixApplyMixerDraft/);
+  assert.match(gui,/__arMixApplyAndActivate/);
   assert.match(monitor,/patchPreflight\(\)/);
   assert.match(monitor,/window\.__arMixApplyMixerDraft/);
   assert.match(monitor,/routingDryApply/);
