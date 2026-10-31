@@ -78,6 +78,25 @@ test('G3 is computed from authoritative PRE/POST native renderer, not a visual-o
   assert.doesNotMatch(css,/backdrop-filter\s*:|filter\s*:\s*blur/);
 });
 
+test('MS5 Sends-on-Faders controls real POST AUX draft, not MAIN fader or a second DSP',()=>{
+  const css=read('web/mixer-io.css');
+  assert.match(gui,/data-sof-bus/);
+  assert.match(gui,/data-sof-toggle/);
+  assert.match(gui,/function sofToggle\(\)/);
+  assert.match(gui,/function sofStage\(channel,action,value\)/);
+  assert.match(gui,/tap:'POST',action/);
+  assert.match(gui,/s\.epoch!==sofEpoch/);
+  assert.match(gui,/s\.pending/);
+  assert.match(gui,/if\(next!=='SENDS'&&sofBus>=0\)leaveSof\(\)/);
+  assert.match(gui,/function sofMove\(event\)/);
+  assert.match(gui,/document\.addEventListener\('pointerup'/);
+  assert.match(gui,/mixer\.dataset\.sofActive=String\(active\)/);
+  assert.match(css,/\.arSofLayer\{/);
+  assert.match(css,/\[data-sof-active="true"\]/);
+  assert.doesNotMatch(css,/backdrop-filter\s*:|filter\s*:\s*blur/);
+  assert.doesNotMatch(gui,/new AudioContext|AudioWorklet|requestAnimationFrame/);
+});
+
 test('MS1 typed native processing format stays independent of physical source and bounded to existing L2 bank',()=>{
   const decoder=read('engine/core/NativeDryRouteCommand.h');
   const lab=read('src/LiveDryRoutingLab.h');

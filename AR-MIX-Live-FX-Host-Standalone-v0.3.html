@@ -1965,6 +1965,85 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
  .arIOQuickHeader{flex-wrap:wrap}
  .arIOJump{max-width:none;width:100%}
 }
+
+
+/* MS5 — native-backed AUX POST Sends-on-Faders.
+   Absolute readouts and overlays retain L2 row geometry; no blur/RAF. */
+#app .left-rail .arSofControls{
+  grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  gap:5px;min-width:0;
+}
+#app .left-rail .arSofControls[hidden]{display:none!important}
+#app .left-rail .arSofControls select{
+  min-width:0;height:28px;padding:0 3px;border:1px solid #4a7080;
+  background:#0e2530;color:#aee5e7;border-radius:2px;
+  font:500 10px "ArSonMix Inter","Segoe UI",sans-serif;
+}
+#app .left-rail .arSofControls .btn-180{
+  min-width:0;width:100%;height:28px;min-height:28px;
+  font:550 9px/1 "ArSonMix Inter","Segoe UI",sans-serif!important;
+  padding:0 3px!important;white-space:nowrap;
+}
+#app .left-rail .arSofControls .btn-180[aria-pressed="true"]{
+  --b180-color:#94e8ed;--b180-border:#0c91a5;--b180-ink:#0d3037;
+}
+#app #mixer .arSofLayer[hidden],#app #mixer .arSofFader[hidden],
+#app #mixer .arSofAdd[hidden]{display:none!important}
+#app #mixer[data-sof-active="true"] .strip[data-strip] .fader-zone [data-fader]{
+  visibility:hidden;pointer-events:none;
+}
+#app #mixer[data-sof-active="true"] .strip[data-strip] .gain-scale{opacity:.5}
+#app #mixer .db-display{position:relative}
+#app #mixer[data-sof-active="true"] .strip[data-strip] .db-display[data-read]::after{
+  content:attr(data-sof-text);position:absolute;inset:0;
+  display:grid;place-items:center;background:#102934;color:#9ce5d5;
+  font:550 11px/1.2 Consolas,monospace;letter-spacing:0;
+  text-shadow:none;border-bottom:1px solid #366476;
+}
+#app #mixer .arSofLayer{
+  position:absolute;z-index:8;right:21px;top:3px;bottom:5px;width:40px;
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  background:linear-gradient(90deg,#11262e,#192f37 50%,#11252d);
+  border-left:1px solid #315665;border-right:1px solid #315665;
+}
+#app #mixer .arSofTarget{
+  width:100%;height:20px;display:grid;place-items:center;
+  color:#a7e0e6;font:600 8px/1 "ArSonMix Inter",sans-serif;
+  white-space:nowrap;letter-spacing:0;
+}
+#app #mixer .arSofAdd{
+  width:36px;height:30px;margin:auto 0;padding:0 1px;
+  background:#173b46;border:1px solid #599baa;border-radius:2px;
+  color:#b6edf0;font:600 9px/1 "ArSonMix Inter",sans-serif;
+}
+#app #mixer .arSofAdd:disabled{opacity:.4;cursor:not-allowed}
+#app #mixer .arSofFader{
+  flex:1;min-height:44px;position:relative;width:37px;
+  touch-action:none;cursor:ns-resize;outline-offset:-2px;
+}
+#app #mixer .arSofFader::before{
+  content:"";position:absolute;top:8px;bottom:8px;left:calc(50% - 4px);
+  width:8px;background:#040b10;border:1px solid #4c747c;
+  box-shadow:inset 0 1px 2px #000;
+}
+#app #mixer .arSofThumb{
+  position:absolute;z-index:1;left:50%;
+  bottom:clamp(8px,var(--sof-position,0%),calc(100% - 8px));
+  width:33px;height:16px;transform:translate(-50%,50%);
+  border:1px solid #91c8cf;border-radius:3px;
+  background:linear-gradient(#7a9da8 0%,#213d49 42%,#1a303b 55%,#7295a0 100%);
+  box-shadow:0 1px 2px #000a;pointer-events:none;
+}
+#app #mixer .arSofFader.is-dragging .arSofThumb{
+  background:linear-gradient(#a0d2da,#2c6871 55%,#7cabb4);
+}
+#app #mixer .arSofFader[aria-disabled="true"]{cursor:not-allowed;opacity:.5}
+#app #mixer .arSofFader:focus-visible{outline:2px solid #82e3e7}
+@media(max-height:790px){
+  #app .left-rail .arSofControls select,
+  #app .left-rail .arSofControls .btn-180{height:25px;min-height:25px}
+  #app #mixer .arSofTarget{height:16px;font-size:7px}
+}
 </style></head>
 <body>
 <div id="app" class="app">
@@ -3081,6 +3160,11 @@ scheduleDemoMeter();
   const toolbar=node('div','arMixerBankBar');
   toolbar.innerHTML='<div class="arMixerBankModes" role="group" aria-label="Mixer channel bank"><button type="button" class="btn-180 active" data-mix-mode="FX" aria-pressed="true">FX</button><button type="button" class="btn-180" data-mix-mode="ROUTE" aria-pressed="false">ROUTE</button><button type="button" class="btn-180" data-mix-mode="SENDS" aria-pressed="false">SENDS</button></div><div class="arMixerBankInfo" id="arMixerBankInfo" role="status">NO HARDWARE · PREVIEW</div><button type="button" class="btn-180 arMixApply" data-mix-apply title="MUTE OUTPUT first; native ACK required">APPLY</button><button type="button" class="btn-180 arMixIoOpen" data-io-open>AUDIO I/O</button>';
   host.insertBefore(toolbar,mixer);
+  // MS5: explicit Sends-on-Faders control, scoped to a single real AUX return.
+  // MAIN fader DOM and all audio controls remain resident and unmodified.
+  const sofControls=node('div','arSofControls');
+  sofControls.innerHTML='<select data-sof-bus aria-label="Sends on Faders AUX destination"><option value="0">AUX 1</option><option value="1">AUX 2</option><option value="2">AUX 3</option><option value="3">AUX 4</option></select><button type="button" class="btn-180" data-sof-toggle aria-pressed="false">SEND FADERS</button>';
+  sofControls.hidden=true;toolbar.appendChild(sofControls);
   const overlay=node('div','arIOOverlay');
   overlay.id='arIOOverlay';overlay.hidden=true;
   overlay.innerHTML='<section class="arIOWindow" role="dialog" aria-modal="true" aria-label="ArSonMix hardware audio I/O"><header><div><small>ArSonMiX · AUDIO HARDWARE</small><h2>Audio I/O Setup · Mixer Routing</h2></div><button type="button" class="btn-180" data-io-close aria-label="Close Audio I/O">CLOSE</button></header><div class="arIOTop" id="arIOIdentity"></div><nav role="tablist" aria-label="Audio I/O views"><button class="btn-180 active" role="tab" data-io-tab="inputs">INPUT ROUTING</button><button class="btn-180" role="tab" data-io-tab="outputs">OUTPUT ROUTING</button><button class="btn-180" role="tab" data-io-tab="device">DEVICE / DRIVER</button></nav><div id="arIOBody" class="arIOBody"></div><footer><span id="arIOFeedback" role="status">Hardware changes require native ACK. Output stays MUTED on APPLY.</span><button type="button" class="btn-180" data-io-revert>REVERT DRAFT</button><button type="button" class="btn-180" data-mix-apply>APPLY PATCH</button><button type="button" class="btn-180" data-io-internal>ADVANCED BUS / FX</button><button type="button" class="btn-180" data-io-advanced>DRIVER SETTINGS</button></footer></section>';
@@ -3092,6 +3176,10 @@ scheduleDemoMeter();
   sendEditor.setAttribute('role','dialog');sendEditor.setAttribute('aria-label','Focused channel AUX sends');
   document.body.appendChild(sendEditor);
   let sendFocus=null,sendAnchor=null,sendFeedback='';
+  let sofBus=-1,sofEpoch=0,sofMessage='',sofDrag=null;
+  const sofDb=g=>g<=0?-60:Math.max(-60,Math.min(0,20*Math.log10(g)));
+  const sofGain=db=>db<=-60?0:Math.min(1,Math.pow(10,Math.min(0,db)/20));
+  const sofRead=g=>g<=0?'OFF':sofDb(g).toFixed(1)+' dB';
   const gainOptions=[[0,'OFF'],[.125,'−18 dB'],[.25,'−12 dB'],[.5,'−6 dB'],[1,'0 dB']];
   const panOptions=[[-1,'L100'],[-.5,'L50'],[0,'CENTER'],[.5,'R50'],[1,'R100']];
   const sendValueOptions=(items,value)=>items.concat(
@@ -3160,6 +3248,151 @@ scheduleDemoMeter();
     refresh();drawSendEditor();
   }
 
+  // MS5 Sends-on-Faders: no second audio model. One native POST send per channel
+  // is edited only on release/keyboard; drag movement paints CSS without
+  // rebuilding the mixer, invoking plugins, or dispatching audio parameters.
+  function leaveSof(){
+    if(sofDrag){document.removeEventListener('pointermove',sofMove);
+      sofDrag.slider.classList.remove('is-dragging');sofDrag=null;}
+    sofBus=-1;sofEpoch=0;sofMessage='';
+    mixer.removeAttribute('data-sof-active');
+    sofControls.querySelector('[data-sof-bus]').disabled=false;
+    sofControls.querySelector('[data-sof-toggle]').setAttribute('aria-pressed','false');
+  }
+  function sofExisting(s,channel){
+    return (s.draftSends||[]).find(x=>x.from===channel&&x.to===10+sofBus&&x.tap==='POST');
+  }
+  function sofPaintLayer(layer,gain){
+    const g=Number.isFinite(gain)?Math.max(0,Math.min(1,gain)):0;
+    const slider=layer.querySelector('.arSofFader');
+    slider.style.setProperty('--sof-position',(100*(sofDb(g)+60)/60).toFixed(2)+'%');
+    slider.setAttribute('aria-valuenow',sofDb(g).toFixed(1));
+    slider.setAttribute('aria-valuetext',sofRead(g));
+    // A CSS pseudo-readout survives native meter/control textContent updates.
+    const read=layer.closest('[data-strip]')?.querySelector('.db-display');
+    if(read)read.dataset.sofText=sofRead(g);
+  }
+  function sofStatus(message){
+    sofMessage=message;
+    const status=el('arMixerBankInfo');
+    if(status)status.textContent=message;
+  }
+  function sofRefresh(s){
+    sofControls.hidden=mode!=='SENDS';
+    const selector=sofControls.querySelector('[data-sof-bus]');
+    const toggle=sofControls.querySelector('[data-sof-toggle]');
+    if(sofBus>=0&&(!isNative()||!s.ready||!s.active||s.epoch!==sofEpoch)){
+      leaveSof();sofStatus('SEND FADERS EXITED · DEVICE CHANGED');
+    }
+    const active=sofBus>=0&&mode==='SENDS';
+    mixer.dataset.sofActive=String(active);
+    selector.disabled=active;
+    toggle.textContent=active?'EXIT · AUX '+(sofBus+1):'SEND FADERS';
+    toggle.setAttribute('aria-pressed',String(active));
+    for(const strip of mixer.querySelectorAll('.strip[data-strip]')){
+      const ch=Number(strip.dataset.strip),zone=strip.querySelector('.fader-zone');
+      if(!zone)continue;
+      let layer=zone.querySelector('.arSofLayer');
+      if(active&&!layer){
+        layer=node('div','arSofLayer');
+        layer.innerHTML='<small class="arSofTarget"></small><button type="button" class="arSofAdd" data-sof-add title="Stage native POST send">＋ POST</button><div class="arSofFader" data-sof-fader role="slider" tabindex="0" aria-orientation="vertical" aria-valuemin="-60" aria-valuemax="0"><span class="arSofThumb" aria-hidden="true"></span></div>';
+        zone.appendChild(layer);
+      }
+      if(layer)layer.hidden=!active;
+      const original=zone.querySelector('[data-fader]');
+      if(original){
+        if(active){original.setAttribute('tabindex','-1');original.setAttribute('aria-hidden','true');}
+        else{original.setAttribute('tabindex','0');original.removeAttribute('aria-hidden');}
+      }
+      const db=strip.querySelector('.db-display');
+      if(db&&!active)delete db.dataset.sofText;
+      if(!active||!layer)continue;
+      layer.querySelector('.arSofTarget').textContent='AUX '+(sofBus+1)+' · POST';
+      const item=sofExisting(s,ch);
+      const add=layer.querySelector('[data-sof-add]'),slider=layer.querySelector('[data-sof-fader]');
+      add.hidden=!!item;slider.hidden=!item;
+      add.disabled=!!s.pending||!s.draftAux?.[sofBus]?.enabled;
+      add.title=!s.draftAux?.[sofBus]?.enabled?'Enable AUX '+(sofBus+1)+' return in SENDS first':'Stage POST send for CH '+(ch+1);
+      slider.setAttribute('aria-label','Channel '+(ch+1)+' POST send to AUX '+(sofBus+1));
+      slider.setAttribute('aria-disabled',String(!!s.pending));
+      if(item&&(!sofDrag||sofDrag.ch!==ch))sofPaintLayer(layer,Number(item.gain));
+      else if(!item&&db)db.dataset.sofText='NO SEND';
+    }
+    if(active&&!sofMessage){
+      const aux=s.draftAux?.[sofBus];
+      const text=aux?.enabled?'AUX '+(sofBus+1)+' SEND FADERS · POST · DRAFT until ACK':'AUX '+(sofBus+1)+' RETURN OFF · enable in SENDS';
+      el('arMixerBankInfo').textContent=text;
+    }else if(active&&sofMessage)el('arMixerBankInfo').textContent=sofMessage;
+  }
+  function sofToggle(){
+    if(sofBus>=0){leaveSof();refresh();return;}
+    const s=route(),bus=Number(sofControls.querySelector('[data-sof-bus]').value);
+    if(mode!=='SENDS'||!isNative()||!s.ready||!s.active||s.pending||!Number.isInteger(bus)||bus<0||bus>=4){
+      sofStatus('SELECT DIRECT DEVICE · SENDS MODE · NO APPLY PENDING');return;
+    }
+    if(!s.draftAux?.[bus]?.enabled){
+      sofStatus('ENABLE AUX '+(bus+1)+' RETURN IN SENDS BEFORE ENTERING');return;
+    }
+    closeSendEditor();sofBus=bus;sofEpoch=s.epoch;sofMessage='';
+    refresh();
+  }
+  function sofStage(channel,action,value){
+    const s=route();
+    if(sofBus<0||mode!=='SENDS'||s.epoch!==sofEpoch||!s.ready||s.pending){
+      sofStatus('SEND EDIT BLOCKED · STALE DEVICE / APPLY PENDING');return false;
+    }
+    const r=window.__arMixStageAuxSendEdit?.({
+      from:channel,bus:sofBus,tap:'POST',action,...(action==='gain'?{value}:{} )
+    });
+    sofMessage=r?.ok?'AUX '+(sofBus+1)+' POST · DRAFT / MUTE + APPLY':r?.error||'Native send unavailable';
+    refresh();return !!r?.ok;
+  }
+  function sofFinish(event,cancel=false){
+    const d=sofDrag;
+    if(!d||d.pointerId!==event.pointerId)return;
+    sofDrag=null;
+    document.removeEventListener('pointermove',sofMove);
+    d.slider.classList.remove('is-dragging');
+    if(!cancel&&Math.abs(d.db-d.startDb)>0.005)sofStage(d.ch,'gain',+sofGain(d.db).toFixed(7));
+    else refresh();
+  }
+  function sofMove(event){
+    const d=sofDrag;
+    if(!d||d.pointerId!==event.pointerId)return;
+    d.db=Math.max(-60,Math.min(0,d.startDb+(d.startY-event.clientY)*60/d.travel));
+    if(d.slider.isConnected)sofPaintLayer(d.slider.closest('.arSofLayer'),sofGain(d.db));
+  }
+  document.addEventListener('pointerdown',event=>{
+    const slider=event.target.closest?.('[data-sof-fader]');
+    if(!slider||sofBus<0||sofDrag)return;
+    const ch=Number(slider.closest('[data-strip]')?.dataset.strip),s=route(),item=sofExisting(s,ch);
+    if(!item||s.pending||s.epoch!==sofEpoch)return;
+    const rect=slider.getBoundingClientRect();
+    sofDrag={ch,slider,pointerId:event.pointerId,startY:event.clientY,
+      travel:Math.max(24,rect.height-18),startDb:sofDb(item.gain),db:sofDb(item.gain)};
+    slider.classList.add('is-dragging');
+    slider.setPointerCapture?.(event.pointerId);
+    document.addEventListener('pointermove',sofMove,{passive:true});
+    event.preventDefault();
+  },true);
+  document.addEventListener('pointerup',event=>sofFinish(event),true);
+  document.addEventListener('pointercancel',event=>sofFinish(event,true),true);
+  document.addEventListener('keydown',event=>{
+    const slider=event.target.closest?.('[data-sof-fader]');
+    if(!slider||sofBus<0)return;
+    const step={ArrowUp:.5,ArrowDown:-.5,PageUp:5,PageDown:-5};
+    if(!(event.key in step)&&!['Home','End'].includes(event.key))return;
+    event.preventDefault();event.stopImmediatePropagation();
+    const ch=Number(slider.closest('[data-strip]')?.dataset.strip),item=sofExisting(route(),ch);
+    if(!item)return;
+    const db=event.key==='Home'?-60:event.key==='End'?0:sofDb(item.gain)+step[event.key];
+    sofStage(ch,'gain',+sofGain(Math.max(-60,Math.min(0,db))).toFixed(7));
+  },true);
+  document.addEventListener('click',event=>{
+    if(sofBus>=0&&event.target.closest?.('[data-sof-fader]')){
+      event.stopImmediatePropagation();event.preventDefault();
+    }
+  },true);
   function openIO(tab='inputs',channel=null){
     document.getElementById('arRouteClose')?.click();
     if(['inputs','outputs','device'].includes(tab))ioTab=tab;
@@ -3173,6 +3406,7 @@ scheduleDemoMeter();
   function closeIO(){overlay.hidden=true;matrixDraft.clear();matrixSide.clear();matrixMessage='';}
   function setMode(next){
     if(!['FX','ROUTE','SENDS'].includes(next))return;
+    if(next!=='SENDS'&&sofBus>=0)leaveSof();
     mode=next;mixer.dataset.ioMode=mode;
     toolbar.querySelectorAll('[data-mix-mode]').forEach(b=>{const selected=b.dataset.mixMode===mode;b.classList.toggle('active',selected);b.setAttribute('aria-pressed',String(selected));});
     refresh();
@@ -3253,6 +3487,7 @@ scheduleDemoMeter();
     for(const strip of mixer.querySelectorAll('.strip[data-strip]'))refreshStrip(strip,s);
     if(!overlay.hidden)refreshIO();
     if(!sendEditor.hidden)drawSendEditor();
+    sofRefresh(s);
   }
 
   // IO-MATRIX: reusable presentation of the existing native 10-channel graph.
@@ -3724,6 +3959,13 @@ scheduleDemoMeter();
     const b=e.target.closest('button');
     if(!b)return;
     if(b.dataset.nativeAction==='audioSetup'||b.dataset.ioOpen!==undefined){e.preventDefault();e.stopImmediatePropagation();openIO();return;}
+    if(b.dataset.sofToggle!==undefined){e.preventDefault();e.stopImmediatePropagation();sofToggle();return;}
+    if(b.dataset.sofAdd!==undefined){
+      e.preventDefault();e.stopImmediatePropagation();
+      const ch=Number(b.closest('[data-strip]')?.dataset.strip);
+      if(sofBus>=0&&Number.isInteger(ch))sofStage(ch,'create');
+      return;
+    }
     if(b.dataset.mixMode){e.preventDefault();e.stopImmediatePropagation();closeSendEditor();setMode(b.dataset.mixMode);return;}
     if(b.dataset.sendFocus!==undefined){
       e.preventDefault();e.stopImmediatePropagation();

@@ -157,6 +157,36 @@ async def main():
         }""",status)
         assert "NATIVE ACK" in await page.locator('#arSendFeedback').inner_text()
         assert await page.locator('#mixer [data-strip="0"] .rack .insert-slot').count()==6
+        # MS5 operator journey: select one real AUX and flip visible channel
+        # faders to POST sends without moving MAIN faders or remounting FX.
+        await page.locator('#arSendEditor [data-send-close]').click()
+        main_fader=await page.locator('[data-fader="0"]').get_attribute('aria-valuenow')
+        await page.evaluate("()=>window.__sofMainFaderRef=document.querySelector('[data-fader=\"0\"]')")
+        await page.locator('[data-sof-bus]').select_option('0')
+        await page.locator('[data-sof-toggle]').click()
+        assert await page.locator('#mixer').get_attribute('data-sof-active')=='true'
+        assert await page.locator('[data-strip="0"] .arSofFader').is_visible()
+        assert '-6.0' in await page.locator('[data-strip="0"] .db-display').evaluate(
+            "(e)=>getComputedStyle(e,'::after').content")
+        assert await page.locator('[data-fader="0"]').get_attribute('aria-hidden')=='true'
+        await page.locator('[data-strip="0"] [data-sof-fader]').focus()
+        await page.keyboard.press('End')
+        staged_gain=await page.evaluate("""()=>window.__arMixRouteView().draftSends.find(
+          s=>s.from===0&&s.to===10&&s.tap==='POST').gain""")
+        assert abs(staged_gain-1)<1e-7,staged_gain
+        assert status['dryRoutingLab']['acceptedRoute']['sends'][0]['gain']==.5
+        assert await page.locator('[data-fader="0"]').get_attribute('aria-valuenow')==main_fader
+        assert await page.evaluate("()=>document.querySelector('[data-fader=\"0\"]')===window.__sofMainFaderRef")
+        actions=await page.evaluate("""()=>window.__armixTestActions.filter(
+          x=>x.name==='arMixAction'&&x.data.action==='routingDryApply')""")
+        assert len(actions)==2,actions  # no sound change until APPLY
+        # EXIT or mode switch never commits a draft or alters MAIN.
+        await page.locator('[data-sof-toggle]').click()
+        assert await page.locator('#mixer').get_attribute('data-sof-active')=='false'
+        assert await page.locator('[data-fader="0"]').get_attribute('aria-hidden') is None
+        assert await page.evaluate('()=>window.__arMixRevertMixerDraft().ok')
+        await page.locator('[data-strip="0"] [data-send-focus="0"]').click()
+        assert await page.locator('#arSendEditor [data-send-gain="POST"]').input_value()=='0.5'
         # With speakers armed, SEND edit remains a draft and APPLY is gated.
         await page.evaluate("""status=>{
           status.monitor=true;

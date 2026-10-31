@@ -308,3 +308,82 @@
  .arIOQuickHeader{flex-wrap:wrap}
  .arIOJump{max-width:none;width:100%}
 }
+
+
+/* MS5 — native-backed AUX POST Sends-on-Faders.
+   Absolute readouts and overlays retain L2 row geometry; no blur/RAF. */
+#app .left-rail .arSofControls{
+  grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  gap:5px;min-width:0;
+}
+#app .left-rail .arSofControls[hidden]{display:none!important}
+#app .left-rail .arSofControls select{
+  min-width:0;height:28px;padding:0 3px;border:1px solid #4a7080;
+  background:#0e2530;color:#aee5e7;border-radius:2px;
+  font:500 10px "ArSonMix Inter","Segoe UI",sans-serif;
+}
+#app .left-rail .arSofControls .btn-180{
+  min-width:0;width:100%;height:28px;min-height:28px;
+  font:550 9px/1 "ArSonMix Inter","Segoe UI",sans-serif!important;
+  padding:0 3px!important;white-space:nowrap;
+}
+#app .left-rail .arSofControls .btn-180[aria-pressed="true"]{
+  --b180-color:#94e8ed;--b180-border:#0c91a5;--b180-ink:#0d3037;
+}
+#app #mixer .arSofLayer[hidden],#app #mixer .arSofFader[hidden],
+#app #mixer .arSofAdd[hidden]{display:none!important}
+#app #mixer[data-sof-active="true"] .strip[data-strip] .fader-zone [data-fader]{
+  visibility:hidden;pointer-events:none;
+}
+#app #mixer[data-sof-active="true"] .strip[data-strip] .gain-scale{opacity:.5}
+#app #mixer .db-display{position:relative}
+#app #mixer[data-sof-active="true"] .strip[data-strip] .db-display[data-read]::after{
+  content:attr(data-sof-text);position:absolute;inset:0;
+  display:grid;place-items:center;background:#102934;color:#9ce5d5;
+  font:550 11px/1.2 Consolas,monospace;letter-spacing:0;
+  text-shadow:none;border-bottom:1px solid #366476;
+}
+#app #mixer .arSofLayer{
+  position:absolute;z-index:8;right:21px;top:3px;bottom:5px;width:40px;
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  background:linear-gradient(90deg,#11262e,#192f37 50%,#11252d);
+  border-left:1px solid #315665;border-right:1px solid #315665;
+}
+#app #mixer .arSofTarget{
+  width:100%;height:20px;display:grid;place-items:center;
+  color:#a7e0e6;font:600 8px/1 "ArSonMix Inter",sans-serif;
+  white-space:nowrap;letter-spacing:0;
+}
+#app #mixer .arSofAdd{
+  width:36px;height:30px;margin:auto 0;padding:0 1px;
+  background:#173b46;border:1px solid #599baa;border-radius:2px;
+  color:#b6edf0;font:600 9px/1 "ArSonMix Inter",sans-serif;
+}
+#app #mixer .arSofAdd:disabled{opacity:.4;cursor:not-allowed}
+#app #mixer .arSofFader{
+  flex:1;min-height:44px;position:relative;width:37px;
+  touch-action:none;cursor:ns-resize;outline-offset:-2px;
+}
+#app #mixer .arSofFader::before{
+  content:"";position:absolute;top:8px;bottom:8px;left:calc(50% - 4px);
+  width:8px;background:#040b10;border:1px solid #4c747c;
+  box-shadow:inset 0 1px 2px #000;
+}
+#app #mixer .arSofThumb{
+  position:absolute;z-index:1;left:50%;
+  bottom:clamp(8px,var(--sof-position,0%),calc(100% - 8px));
+  width:33px;height:16px;transform:translate(-50%,50%);
+  border:1px solid #91c8cf;border-radius:3px;
+  background:linear-gradient(#7a9da8 0%,#213d49 42%,#1a303b 55%,#7295a0 100%);
+  box-shadow:0 1px 2px #000a;pointer-events:none;
+}
+#app #mixer .arSofFader.is-dragging .arSofThumb{
+  background:linear-gradient(#a0d2da,#2c6871 55%,#7cabb4);
+}
+#app #mixer .arSofFader[aria-disabled="true"]{cursor:not-allowed;opacity:.5}
+#app #mixer .arSofFader:focus-visible{outline:2px solid #82e3e7}
+@media(max-height:790px){
+  #app .left-rail .arSofControls select,
+  #app .left-rail .arSofControls .btn-180{height:25px;min-height:25px}
+  #app #mixer .arSofTarget{height:16px;font-size:7px}
+}
