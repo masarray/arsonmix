@@ -703,7 +703,7 @@ public:
             silence();return true;
         }
         if(topologyFault_.load(std::memory_order_acquire)) {
-            silence();silence();return true;
+            silence();return true;
         }
         if(inputCount!=callbackInputCount_.load(std::memory_order_acquire)) {
             topologyFault_.store(true,std::memory_order_release);
@@ -711,7 +711,7 @@ public:
         }
         // A prepared graph does NOT authorize physical inputs: skip ALL
         // channel, AUX and MASTER vendor processing until explicit native ACK.
-        // One atomic read; output and every meter were already zeroed above.
+        // One atomic read; outputs are cleared by the fail-silent gate above.
         if(!userPatched_.load(std::memory_order_acquire)) {
             fadeRemaining_=0;
             lastOutputL_=lastOutputR_=0.f;
@@ -766,7 +766,7 @@ public:
             fadeFromR_=lastOutputR_;
         }
         // Strict output mute wins over every topology fade. Output buffers
-        // were zeroed before reading the graph, so skip all muted DSP work.
+        // are cleared by the fail-silent gate, so skip all muted DSP work.
         // Prime a 256-sample fade FROM ZERO for the first unmuted block.
         // Never interpolate any previously audible sample while muted.
         if(masterMuted) {
