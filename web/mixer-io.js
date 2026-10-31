@@ -496,7 +496,7 @@
     }
     const d=window.__arMixAudioPathView?.(lastStatus);
     if(!d)return;
-    for(const [key,value] of [['input',d.input],['route',d.route],['output',d.output],['reason',d.message]]){
+    for(const [key,value] of [['input',d.input],['route',d.route],['mixer',d.mixer],['output',d.output],['reason',d.message]]){
       const n=audioPath.querySelector('[data-audio-path-'+key+']');
       if(n&&n.textContent!==value)n.textContent=value;
     }
