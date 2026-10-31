@@ -98,6 +98,43 @@ async def main():
         assert await page.evaluate("""()=>window.__armixTestActions.filter(
           x=>x.name==='arMixAction'&&x.data.action==='routingDryApply').length""")==1
         assert (await page.evaluate("()=>window.__arMixRouteView().draftRoutes[1].mode"))=='NONE'
+        # M1: an ALREADY PATCHED MONO channel may change physical input
+        # while output is ARMED: one native source PARAM/ACK and no APPLY.
+        await page.locator('[data-mix-mode="FX"]').click()
+        await page.locator('[data-focus-step="source"]').click()
+        assert await page.locator('.arSourceChooser').is_visible()
+        await page.locator('.arSourceChoice[data-source-choice="MONO:1"]').click()
+        switching=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.name==='arMixAction'&&x.data.action==='routingSourceSwitch')""")
+        assert len(switching)==1,switching
+        assert switching[0]['data']['requestId']==1 and switching[0]['data']['channel']==0
+        assert switching[0]['data']['left']==1 and switching[0]['data']['deviceEpoch']==4
+        assert (await page.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.name==='arMixAction'&&x.data.action==='routingDryApply').length"""))==1
+        assert 'Microphone 1' in await page.locator('[data-focus-source]').inner_text()
+        # Stale request cannot impersonate the first accepted switch.
+        await page.evaluate("""status=>window.__armixTestEmit('arMixSourceSwitchAck',{
+          ok:true,requestId:321,channel:0,state:status.dryRoutingLab})""",status)
+        assert 'Microphone 1' in await page.locator('[data-focus-source]').inner_text()
+        status=await page.evaluate("""status=>{
+          status.dryRoutingLab.acceptedRoute.channels[0].left=1;
+          window.__armixTestEmit('arMixSourceSwitchAck',{
+            ok:true,requestId:1,channel:0,state:status.dryRoutingLab});
+          window.__armixTestEmit('arMixStatus',status);return status;
+        }""",status)
+        assert 'Microphone 2' in await page.locator('[data-focus-source]').inner_text()
+        # Restore original source to keep other mixer regression fixtures stable.
+        await page.locator('.arSourceChoice[data-source-choice="MONO:0"]').click()
+        status=await page.evaluate("""status=>{
+          status.dryRoutingLab.acceptedRoute.channels[0].left=0;
+          window.__armixTestEmit('arMixSourceSwitchAck',{
+            ok:true,requestId:2,channel:0,state:status.dryRoutingLab});
+          window.__armixTestEmit('arMixStatus',status);return status;
+        }""",status)
+        assert 'Microphone 1' in await page.locator('[data-focus-source]').inner_text()
+        assert (await page.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.name==='arMixAction'&&x.data.action==='routingDryApply').length"""))==1
+        await page.locator('[data-source-close]').click()
         await page.evaluate("""status=>{
           status.monitor=false;
           window.__armixTestEmit('arMixStatus',status);
