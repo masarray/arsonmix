@@ -7,6 +7,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <type_traits>
 #include <utility>
@@ -174,6 +175,13 @@ public:
                 : 0u, 0.f) {
         if (!validCapacity(maxFrames))
             capacity_=0;
+        for(int i=0;i<stripCount;++i){
+            const auto& s=plan_.channels.base.strips[i];
+            const auto pair=s.mode==SourceMode::disconnected
+                ?invalidSourcePair:packSourcePair(s.inputA,s.inputB);
+            physicalTarget_[i].store(pair,std::memory_order_relaxed);
+            physicalBlend_[i]={pair,pair,0};
+        }
         // All gain targets exist before ANY audio thread sees the candidate.
         for(int e=0;e<plan_.aux.edgeCount;++e){
             const float v=plan_.aux.edges[e].initialGain;
@@ -207,6 +215,21 @@ public:
 
     int capacity() const noexcept { return capacity_; }
     const PreparedRenderGraph& plan() const noexcept {return plan_;}
+
+    // M1: CONTROL writes one atomic verified callback source pair; audio thread
+    // performs a 64-sample input crossfade BEFORE processing the same FX rack.
+    // Only an existing same-format physical channel may switch without mute.
+    bool setPhysicalSource(int strip,SourceMode mode,int left,int right) noexcept {
+        if(strip<0||strip>=stripCount||mode==SourceMode::disconnected||
+           plan_.channels.base.strips[strip].mode!=mode)return false;
+        const int n=plan_.channels.inputPorts.enabledCount;
+        if(left<0||left>=n||right<0||right>=n||
+           (mode==SourceMode::mono&&left!=right)||
+           (mode==SourceMode::stereo&&left==right))return false;
+        physicalTarget_[strip].store(packSourcePair(left,right),
+                                     std::memory_order_release);
+        return true;
+    }
 
     // Message-thread-only target update; immutable edge topology/pan/FX ownership.
     // Only an ALREADY EXISTING POST edge may be adjusted while output is live.
@@ -296,16 +319,45 @@ public:
             const auto& source=graph.channels.base.strips[strip];
             // Incoming sends are already in l/r. Add actual hardware only
             // when that port is valid; never overwrite internal bus returns.
-            if (source.mode!=SourceMode::disconnected &&
-                physical && source.inputA>=0 &&
-                source.inputA<callbackInputCount &&
-                source.inputB>=0 && source.inputB<callbackInputCount &&
-                physical[source.inputA] && physical[source.inputB]) {
-                const auto* const a=physical[source.inputA];
-                const auto* const b=physical[source.inputB];
-                for(int f=0;f<frames;++f) {
-                    l[f]+=a[f];
-                    r[f]+=b[f];
+            if(source.mode!=SourceMode::disconnected&&physical){
+                auto& fade=physicalBlend_[strip]; // audio-producer owned
+                const auto request=physicalTarget_[strip].load(std::memory_order_acquire);
+                // Mid-fade requests coalesce to the latest target, but never
+                // interrupt a currently audible ramp with a discontinuity.
+                if(fade.remaining==0&&request!=fade.target){
+                    fade.previous=fade.target;
+                    fade.target=request;
+                    fade.remaining=64;
+                }
+                const auto valid=[&](std::uint32_t pair) noexcept {
+                    const int a=static_cast<int>(pair&0xffffu);
+                    const int b=static_cast<int>((pair>>16)&0xffffu);
+                    return pair!=invalidSourcePair&&a<callbackInputCount&&
+                        b<callbackInputCount&&physical[a]&&physical[b];
+                };
+                const int a=static_cast<int>(fade.target&0xffffu);
+                const int b=static_cast<int>((fade.target>>16)&0xffffu);
+                if(fade.remaining==0){
+                    if(valid(fade.target))for(int f=0;f<frames;++f){
+                        l[f]+=physical[a][f];r[f]+=physical[b][f];
+                    }
+                }else{
+                    const int oldA=static_cast<int>(fade.previous&0xffffu);
+                    const int oldB=static_cast<int>((fade.previous>>16)&0xffffu);
+                    const bool oldGood=valid(fade.previous),newGood=valid(fade.target);
+                    for(int f=0;f<frames;++f){
+                        const float t=1.f-static_cast<float>(--fade.remaining)/64.f;
+                        if(oldGood){l[f]+=physical[oldA][f]*(1.f-t);
+                                    r[f]+=physical[oldB][f]*(1.f-t);}
+                        if(newGood){l[f]+=physical[a][f]*t;
+                                    r[f]+=physical[b][f]*t;}
+                        if(fade.remaining==0){
+                            if(newGood)for(int j=f+1;j<frames;++j){
+                                l[j]+=physical[a][j];r[j]+=physical[b][j];
+                            }
+                            break;
+                        }
+                    }
                 }
             }
             // Channel MONO includes internally received stereo sends.
@@ -450,6 +502,15 @@ public:
         return true;
     }
 private:
+    static constexpr std::uint32_t invalidSourcePair=0xffffffffu;
+    static constexpr std::uint32_t packSourcePair(int left,int right) noexcept {
+        return static_cast<std::uint32_t>(left)|
+               (static_cast<std::uint32_t>(right)<<16);
+    }
+    struct PhysicalSourceFade final {
+        std::uint32_t previous=invalidSourcePair,target=invalidSourcePair;
+        int remaining=0; // callback-thread-only, never shared with GUI
+    };
     // Audio-thread exclusive smoothing state plus atomically published gain
     // targets. No lock, heap, plugin recreation or per-block graph compile.
     // POST/PRE edge identity and normalized PAN are immutable per revision.
@@ -487,6 +548,8 @@ private:
     std::array<float*,stripCount> right_{};
     std::array<float*,auxBusCount> auxLeft_{},auxRight_{};
     std::array<float,stripCount> preGate_{},lastGainL_{},lastGainR_{};
+    std::array<std::atomic<std::uint32_t>,stripCount> physicalTarget_{};
+    std::array<PhysicalSourceFade,stripCount> physicalBlend_{};
     std::array<std::atomic<float>,maxAuxSends> auxTarget_{};
     std::array<float,maxAuxSends> auxApplied_{}; // callback thread exclusive
     std::array<std::atomic<float>,auxBusCount> auxBusTarget_{};
