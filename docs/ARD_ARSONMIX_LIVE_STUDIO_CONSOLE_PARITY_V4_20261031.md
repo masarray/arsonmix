@@ -4,6 +4,8 @@ Updated: 2026-11-01. Binding architecture for v4.1 PRD. **Architecture target; i
 
 ## v4.1 production convergence ADR — 2026-11-01 (overrides historical milestone sequencing below)
 
+**Verified integrated code CI (main runtime cf05c5ff):** [Windows MSVC/CTest/package run 41246078563](https://github.com/masarray/arsonmix/actions/runs/41246078563) **SUCCESS**; [Chromium run 41246078556](https://github.com/masarray/arsonmix/actions/runs/41246078556) **SUCCESS**. Windows artifact **ArSonMix-GUI10CH-P012-Verified-Hardware-FAT-Windows-x64** (Actions artifact ID 13059402923, source SHA cf05c5ff6fdbb768f40d5d3619ec6be6074e9433) is a **physical FAT candidate**, NOT a stable release or evidence that hardware #15 passes.
+
 **Verified starting point:** `main@9f66d085` (merged #258/#259/FAST3/#260/#261). Real fixed 10CH+4AUX `LiveDryRoutingLab` + existing CH1 legacy VST fallback is still the currently shipped callback. `DynamicChannelRoster.h`, `DynamicPreparedMixerBlock.h`, `DynamicNativeSessionPublisher.h`, `LegacyLiveGraphMigration.h` provide tested ingredients, **not** a production fully dynamic ChannelId host. #263 adds a real one-GROUP dry-only callback pilot but explicitly blocks VST/AUX/sends/MONITOR/Show; its HEAD is divergent and DRAFT. The one-APPLY hardware contract has changed since FAST1: no START AUDIO UI. Issue #15 physical crackle remains open. See [reconciled status](RECONCILED_PROGRESS_ARSONMIX_20261101.md).
 
 ### A. One audio owner, one accepted graph and a single identity model

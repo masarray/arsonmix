@@ -4,6 +4,8 @@ Updated: 2026-11-01. Product contract for #170, #192, #95, #173–180. **Binding
 
 ## v4.1 corrective release contract — 2026-11-01 (normative; overrides stale v4 wording below)
 
+**Verified integrated code CI (main runtime cf05c5ff):** [Windows MSVC/CTest/package run 41246078563](https://github.com/masarray/arsonmix/actions/runs/41246078563) **SUCCESS**; [Chromium run 41246078556](https://github.com/masarray/arsonmix/actions/runs/41246078556) **SUCCESS**. Windows artifact **ArSonMix-GUI10CH-P012-Verified-Hardware-FAT-Windows-x64** (Actions artifact ID 13059402923, source SHA cf05c5ff6fdbb768f40d5d3619ec6be6074e9433) is a **physical FAT candidate**, NOT a stable release or evidence that hardware #15 passes.
+
 **Evidence baseline:** `main@9f66d085` includes merged FAST2 #259 + FAST3 (`f62e9d65`) **ONE AUDIO I/O APPLY, no START AUDIO**, #258 true independent stereo peak/FX entry, #260 atomic stereo PAN/fader targets, and #261 unified native FX Console (`cf05c5ff`). UI CI passed on merged #261; Windows combined CI had not completed at this audit. This remains fixed **10 input + 4 internal stereo AUX** inside the shipping callback, including a special CH1 legacy VST lease when occupied. `DynamicChannelRoster` and `DynamicPreparedMixerBlock` prove expandable ChannelId PCM off-live; #263 is a **draft restricted one-GROUP dry-only pilot**, not production support for FX/AUX/monitor/Show with dynamic buses. #251 WASAPI de-click is default-OFF experimental. Zero-FX real-hardware issue #15 remains OPEN. Inspect [live reconciliation](RECONCILED_PROGRESS_ARSONMIX_20261101.md) before claiming progress.
 
 ### Product thesis — live mixer, not audio workstation

@@ -10,6 +10,8 @@ Updated: 2026-11-01. **Execution plan, not a status claim.** Read in order:
 
 ## v4.1 EXECUTION LOCK — 2026-11-01 (authoritative; old A/B/C/D tasks below are background)
 
+**Verified integrated code CI (main runtime cf05c5ff):** [Windows MSVC/CTest/package run 41246078563](https://github.com/masarray/arsonmix/actions/runs/41246078563) **SUCCESS**; [Chromium run 41246078556](https://github.com/masarray/arsonmix/actions/runs/41246078556) **SUCCESS**. Windows artifact **ArSonMix-GUI10CH-P012-Verified-Hardware-FAT-Windows-x64** (Actions artifact ID 13059402923, source SHA cf05c5ff6fdbb768f40d5d3619ec6be6074e9433) is a **physical FAT candidate**, NOT a stable release or evidence that hardware #15 passes.
+
 **Starting GitHub fact:** `main@9f66d085` (FAST2 #259 / FAST3 one-APPLY, #258 stereo peaks, #260 atomic PAN, #261 common native FX draft merged; Windows combined CI pending when audited, Chromium passed). Today's live callback still executes 10 fixed input + 4 AUX with occupied CH1 vendor FX legacy path. Dynamic roster/publisher PCM is off-live; #263 DRAFT accepts only one dry GROUP if no FX/AUX/sends/MONITOR/Show. **Do not merge #263 as full live dynamic mixer.** #251 default-OFF beta de-click is not a proven #15 cure. This section supersedes 2026-10-31 commit/PR/START-AUDIO instructions lower in the file.
 
 ### Stop the progress loop — two large integration deliverables, physical P0 in parallel
