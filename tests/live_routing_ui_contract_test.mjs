@@ -200,7 +200,9 @@ test("R1 matrix edits only device-bound draft and honors native revision ACK",()
   assert.match(ui,/patchPending=true/);
   assert.match(ui,/hydrateAcceptedRoute/);
   assert.match(ui,/arMixRoutingLabAck/);
-  assert.match(ui,/selectPatchTab\("input"\)/);
+  // PATCH1 delegates ordinary physical input routing to native Audio I/O.
+  assert.match(ui,/window\.__arMixOpenAudioIO\?\.\("inputs"\)/);
+  assert.match(ui,/selectPatchTab\("internal"\)/);
   assert.match(ui,/window\.__arMixOpenRouting=openRoutingLab/);
   assert.doesNotMatch(ui,/filter\s*:\s*blur\(/);
   assert.match(ui,/document\.addEventListener\("click",event=>/);
