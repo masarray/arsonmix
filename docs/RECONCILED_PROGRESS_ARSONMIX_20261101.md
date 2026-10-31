@@ -1,3 +1,5 @@
+> **DESIGN UPDATE (1 Nov 2026, documentation only; latest audit main cad535e6):** [PRD v5](PRD_ARSONMIX_OPERATOR_FIRST_LIVE_MIXER_V5_20261101.md) / [ARD v5](ARD_ARSONMIX_UNIVERSAL_REALTIME_CONSOLE_V5_20261101.md) are the canonical operator workflow and engine design decisions informed by Studio Pro Console, LV1 and Adobe Audition. Product still has fixed 10 input + 4 AUX live; #265 UI mono/stereo/source/bank is a DRAFT pending CI, #263 dry-only Group is a DRAFT, #15 hardware quality is open. **No production DSP/GUI feature was added by this documentation commit.** The status snapshot below refers to its own indicated commit, not current branch head.
+
 # ArSonMiX — authoritative realtime mixer progress reconciliation (1 Nov 2026)
 
 ## RECONCILIATION UPDATE — main@cf05c5ff (1 Nov 2026; supersedes historical sections below)

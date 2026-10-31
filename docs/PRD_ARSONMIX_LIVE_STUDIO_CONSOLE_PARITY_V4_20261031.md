@@ -1,3 +1,5 @@
+> **SUPERSEDED FOR PRODUCT WORKFLOW / 2026-11-01:** Canonical [PRD v5.0 — Operator-First Live Mixer Console](PRD_ARSONMIX_OPERATOR_FIRST_LIVE_MIXER_V5_20261101.md). This v4.1 document is historical engineering context; do not use old UX sequencing or static channel assumptions as active requirements. [ARD v5.0](ARD_ARSONMIX_UNIVERSAL_REALTIME_CONSOLE_V5_20261101.md) is its companion. No new features are certified by this document-only update.
+
 # ArSonMiX PRD v4.1 — Live Performance VST Host Mixer / Studio One Console parity
 Updated: 2026-11-01. Product contract for #170, #192, #95, #173–180. **Binding product target, not an assertion that features already work.**
 

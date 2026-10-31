@@ -1,3 +1,5 @@
+> **SUPERSEDED FOR ENGINE/GUI EXECUTION / 2026-11-01:** Canonical [ARD v5.0 — Universal Realtime Mixer Graph](ARD_ARSONMIX_UNIVERSAL_REALTIME_CONSOLE_V5_20261101.md) and [PRD v5.0](PRD_ARSONMIX_OPERATOR_FIRST_LIVE_MIXER_V5_20261101.md). Preserve useful safety invariants below; historical v4.1 code and roadmap are evidence, not current cutover instructions. No real-time engine changes are implied by this docs commit.
+
 # ArSonMiX ARD v4.1 — One native realtime console engine / Studio One mixer-feature parity
 Updated: 2026-11-01. Binding architecture for v4.1 PRD. **Architecture target; implementation status lives in parity matrix and current GitHub source.** Technical owner #192/#95/#15.
 
