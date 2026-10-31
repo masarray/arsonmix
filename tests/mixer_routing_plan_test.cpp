@@ -876,7 +876,80 @@ static void verifyDynamicChannelIdLiveControls() {
     assert(left[63]==0.f&&right[63]==0.f);
 }
 
+// M3D / hardware buffer contract: the source callback pointers are allowed
+// to alias physical MAIN and MONITOR output storage. The renderer must read
+// every physical input before clearing/writing any output, and must keep
+// one native render pass with the original accepted route + VST adapter.
+static void verifyDynamicInPlacePhysicalIOBuffers() {
+    using Kind=ChannelEdit::Kind;
+    DynamicChannelRoster roster;
+    std::array<ChannelEdit,4> create{};
+    for(int i=0;i<4;++i) {
+        auto& e=create[i];
+        e.kind=Kind::add;e.position=static_cast<std::size_t>(i);
+        e.role=i<2?ChannelRole::input:
+               i==2?ChannelRole::main:ChannelRole::monitor;
+        e.format=i<2?ProcessingFormat::mono:ProcessingFormat::stereo;
+        e.text=i==0?"MIC A":i==1?"MIC B":
+               i==2?"MAIN":"MONITOR";
+    }
+    const auto added=roster.edit(0,create);
+    assert(added.ok()&&added.createdIds.size()==4);
+    const auto micA=added.createdIds[0],micB=added.createdIds[1];
+    const auto mainId=added.createdIds[2],monId=added.createdIds[3];
+    std::array<ChannelEdit,3> edges{};
+    edges[0].kind=Kind::setPrimaryOutput;
+    edges[0].id=micA;edges[0].target=mainId;
+    edges[1].kind=Kind::setPrimaryOutput;
+    edges[1].id=micB;edges[1].target=mainId;
+    edges[2].kind=Kind::addSendReference;
+    edges[2].id=micB;edges[2].target=monId;
+    edges[2].value=.35f;
+    assert(roster.edit(roster.revision(),edges).ok());
+    DynamicGraphRequest request;
+    request.physicalInputs=4;
+    request.maxFrames=32;
+    request.sources={{micA,0,-1,false},{micB,1,-1,false}};
+    DynamicNativeSessionPublisher host;
+    assert(host.commit(roster,request,0,91,91,true).ok());
+    const auto noFx=[](ChannelId,float*,float*,int) noexcept {};
+    std::array<float,32> a{},b{},unusedL{},unusedR{};
+    for(int i=0;i<32;++i) {
+        a[i]=.13f+static_cast<float>(i)*.002f;
+        b[i]=.31f-static_cast<float>(i)*.003f;
+        unusedL[i]=.8f;unusedR[i]=-.3f;
+    }
+    std::array<float,32> expectedL{},expectedR{},expectedMonL{},expectedMonR{};
+    const float* normalInputs[]={a.data(),b.data(),unusedL.data(),unusedR.data()};
+    assert(host.render(91,normalInputs,4,expectedL.data(),expectedR.data(),
+                       32,false,noFx,expectedMonL.data(),expectedMonR.data()));
+    // Four separate physical input callback buffers are ALSO the four
+    // writable output buffers (MAIN L/R, MONITOR L/R). No preliminary
+    // output clear may destroy an unconsumed input sample.
+    auto inPlaceA=a,inPlaceB=b,inPlaceML=unusedL,inPlaceMR=unusedR;
+    const float* sharedInputs[]={inPlaceA.data(),inPlaceB.data(),
+                                 inPlaceML.data(),inPlaceMR.data()};
+    assert(host.render(91,sharedInputs,4,inPlaceA.data(),inPlaceB.data(),
+                       32,false,noFx,inPlaceML.data(),inPlaceMR.data()));
+    for(int i=0;i<32;++i) {
+        assert(close(inPlaceA[i],expectedL[i],1.e-6f));
+        assert(close(inPlaceB[i],expectedR[i],1.e-6f));
+        assert(close(inPlaceML[i],expectedMonL[i],1.e-6f));
+        assert(close(inPlaceMR[i],expectedMonR[i],1.e-6f));
+    }
+    assert(expectedL[0]>.2f&&expectedMonL[0]>.05f);
+    // A rejected epoch still fails completely silent, even for aliased
+    // input/output storage, without releasing the accepted native graph.
+    assert(!host.render(90,sharedInputs,4,inPlaceA.data(),inPlaceB.data(),
+                        32,false,noFx,inPlaceML.data(),inPlaceMR.data()));
+    for(int i=0;i<32;++i)
+        assert(inPlaceA[i]==0.f&&inPlaceB[i]==0.f&&
+               inPlaceML[i]==0.f&&inPlaceMR[i]==0.f);
+    assert(host.acceptedRevision()==1);
+}
+
 int main() {
+    verifyDynamicInPlacePhysicalIOBuffers();
     verifyDynamicChannelIdLiveControls();
     verifyDynamicNativeSessionPublication();
     verifyStudioConsoleBusBatchPcm();
