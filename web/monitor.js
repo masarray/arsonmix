@@ -1759,6 +1759,31 @@
     fastAudioNotify("CH01"+(pins.length>1?"/CH02":"")+" → MAIN · WAITING FOR NATIVE PATCH ACK");
     return {ok:true,pending:true,phase:"patch"};
   };
+  // One explicit APPLY owns patch ACK -> physical ARM, no second START.
+  const submitFastCustomPatch=()=>{
+    const d=state.dryRoutingLab||{};
+    fastAudioPending={phase:"custom-patch",epoch:Number(d.epoch)};
+    const result=window.__arMixApplyMixerDraft();
+    if(!result?.ok){fastAudioPending=null;return result;}
+    fastAudioNotify("APPLY · WAIT FOR NATIVE ROUTING ACK");
+    return {ok:true,pending:true};
+  };
+  window.__arMixApplyAndActivate=()=>{
+    const d=state.dryRoutingLab||{};
+    if(fastAudioPending||patchPending||nativeShowBusy||liveSendPending.size)
+      return {ok:false,error:"Native transaction still pending."};
+    if(mixerDraftActive||rackFxDraft){
+      if(state.monitor){
+        fastAudioPending={phase:"mute-custom",epoch:Number(d.epoch)};
+        api.emitEvent("arMixAction",{action:"monitor",value:false});
+        fastAudioNotify("APPLY · SAFE MUTE → ROUTE → ARM");
+        return {ok:true,pending:true};
+      }
+      return submitFastCustomPatch();
+    }
+    if(state.monitor)return {ok:true,pending:false,message:"OUTPUT ALREADY LIVE"};
+    return window.__arMixStartLiveAudio();
+  };
   window.__arMixFastAudioState=()=>({pending:!!fastAudioPending,message:fastAudioMessage});
   api.addEventListener("arMixAudioArmAck",ack=>{
     if(fastAudioPending?.phase!=="arm")return;
