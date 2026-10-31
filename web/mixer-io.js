@@ -1207,6 +1207,17 @@
       deviceNote=result?.ok?'APPLY ACCEPTED · NATIVE ACK PENDING':'APPLY REJECTED · '+(result?.error||'Route not ready');
       lastSignature='';refreshIO();return;
     }
+    if(lastStatus.monitor){
+      applyMutePending=true;
+      backend.emitEvent('arMixAction',{action:'monitor',value:false});
+      deviceNote='APPLY · WAITING FOR HARDWARE MUTE ACK';return;
+    }
+    sendDeviceRequest();
+  }
+  function sendDeviceRequest(){
+    if(!deviceDirty()||deviceBusy)return;
+    const d=deviceDraft,a=deviceInventory.active;
+    applyBaseEpoch=Number(route().epoch)||0;
     // Changing hardware is a structural transaction, not a fader parameter.
     deviceRequest='device-'+Date.now()+'-'+(++deviceRequestSeq);
     deviceBusy=true;deviceNote='APPLYING · OUTPUT MUTED · waiting for native readback';
