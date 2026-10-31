@@ -157,8 +157,9 @@ async def main():
         # The legacy strip selector is intentionally available in ROUTE
         # mode; selected-channel SOURCE no longer changes the global bank.
         await page.locator('[data-mix-mode="ROUTE"]').click()
-        # Physical SOURCE changes while output is ARMED must fail closed:
-        # no silent MUTE, graph mutation, or fake LIVE acknowledgement.
+        # R7: an unpatched CH uses ONE operator gesture. While OUTPUT is
+        # ARMED it first requests an explicit guarded MUTE; it must NOT
+        # publish a structural route or fake accepted/live readback yet.
         await page.evaluate("""status=>{
           status.monitor=true;
           window.__armixTestEmit('arMixStatus',status);
@@ -166,6 +167,18 @@ async def main():
         await page.locator('[data-strip="1"] select.arBankSource').select_option('MONO:1')
         assert await page.evaluate("""()=>window.__armixTestActions.filter(
           x=>x.name==='arMixAction'&&x.data.action==='routingDryApply').length""")==1
+        assert (await page.evaluate("()=>window.__arMixRouteView().draftRoutes[1].mode"))=='MONO'
+        assert (await page.evaluate("()=>window.__arMixRouteView().acceptedRoute.channels[1].mode"))=='NONE'
+        assert await page.evaluate("""()=>window.__armixTestActions.some(
+          x=>x.name==='arMixAction'&&x.data.action==='monitor'&&x.data.value===false)""")
+        # An explicit negative hardware mute acknowledgement must leave
+        # accepted audio unchanged. Revert the uncommitted draft.
+        rejected=await page.evaluate("""status=>{
+          window.__armixTestEmit('arMixAudioArmAck',{
+            ok:false,armed:true,deviceEpoch:status.dryRoutingLab.epoch});
+          return window.__arMixRevertMixerDraft();
+        }""",status)
+        assert rejected['ok'],rejected
         assert (await page.evaluate("()=>window.__arMixRouteView().draftRoutes[1].mode"))=='NONE'
         # M1: an ALREADY PATCHED MONO channel may change physical input
         # while output is ARMED: one native source PARAM/ACK and no APPLY.
