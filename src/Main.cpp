@@ -1582,6 +1582,11 @@ private:
             for (auto* type : manager.getAvailableDeviceTypes())
             {
                 if (type == nullptr) continue;
+                // Explicit user-triggered enumeration on the JUCE message
+                // thread. Inactive WASAPI/DirectSound/ASIO types may not
+                // have been scanned yet; listing getDeviceNames alone can
+                // misleadingly show NO devices. Never scan in audio RT.
+                type->scanForDevices();
                 auto item=std::make_unique<juce::DynamicObject>();
                 item->setProperty ("name", type->getTypeName());
                 item->setProperty ("active", type->getTypeName() == manager.getCurrentAudioDeviceType());
