@@ -4562,7 +4562,7 @@ scheduleDemoMeter();
         a.backend+' · '+a.captureDevice+' → '+a.playbackDevice:
         'NO AUTHORIZED AUDIO DEVICE'),
       node('span','',a.open?Number(a.rate||0).toLocaleString('en-US')+' Hz · '+a.buffer+
-        ' samples · '+(a.outputMuted?'OUTPUT MUTED':'CHECK LIVE OUTPUT'):
+        ' samples · '+(lastStatus.monitor?'OUTPUT ARMED':'OUTPUT MUTED'):
         'Select a driver and audio interface below'));
     activeLine.append(activeText,node('span','arIODeviceActiveFlag',
       a.open&&a.authorized!==false?'ACTIVE':'NOT READY'));
@@ -4573,8 +4573,9 @@ scheduleDemoMeter();
     const start=node('button','btn-180 arIODeviceStartAudio',
       lastStatus.monitor?'MUTE OUTPUT':quick.pending?'STARTING…':'START AUDIO');
     start.type='button';start.dataset.ioStartAudio='1';
-    start.disabled=deviceBusy||!!quick.pending||!isNative()||!a.open||
-      !deviceSameEndpoint(deviceDraft)||deviceDirty()||!hardwareReady(route());
+    start.disabled=!isNative()||(!lastStatus.monitor&&(
+      deviceBusy||!!quick.pending||!a.open||!deviceSameEndpoint(deviceDraft)||
+      deviceDirty()||!hardwareReady(route())));
     start.setAttribute('aria-label',lastStatus.monitor?'Mute physical output':
       'Start verified live routing and arm hardware output');
     activeLine.appendChild(start);
@@ -4745,7 +4746,8 @@ scheduleDemoMeter();
     overlay.querySelector('[data-io-revert]').disabled=!isNative()||s.pending;
     const signature=ioTab+'|'+JSON.stringify([s.epoch,s.revision,s.pending,s.draftRoutes,
       s.outputPorts,s.mainOutputs,s.draftMainOutputs,s.monitorOutputs,s.draftMonitorOutputs,s.monitorSends,s.draftMonitorSends,s.ports,deviceInventory,deviceDraft,deviceBusy,deviceNote,matrixPage[ioTab==='device'?deviceMatrixView:ioTab],deviceMatrixView,monitorSendsExpanded,
-      [...matrixDraft],[...matrixSide],softwareEdit,softwarePage,sourceIdentity(s),sourceAliases(s)]);
+      [...matrixDraft],[...matrixSide],softwareEdit,softwarePage,sourceIdentity(s),sourceAliases(s),
+      !!lastStatus.monitor,window.__arMixFastAudioState?.()]);
     if(lastSignature===signature)return;
     lastSignature=signature;
     // Preserves two-step stereo L/R selection across each native DRAFT render.
