@@ -280,7 +280,8 @@ async def main():
         assert await page.locator('.arIODevicePin').count()==8
         assert await page.locator('.arIODeviceCapture').is_disabled()
         assert await page.locator('.arIODeviceRate').input_value()=='48000'
-        assert await page.locator('[data-io-device-apply]').is_disabled()
+        # FAST2: APPLY remains enabled on an accepted device to ARM real MAIN.
+        assert await page.locator('[data-io-device-apply]').is_enabled()
         # Staging sample rate may not reopen any hardware automatically.
         await page.locator('.arIODeviceBuffer').select_option('256')
         assert await page.locator('[data-io-device-apply]').is_enabled()
