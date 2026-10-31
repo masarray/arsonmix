@@ -128,15 +128,18 @@ static void verifyUniversalChannelIdFxLeaseAndLivePcm() {
         roster.revision(),selected,"VOCAL GROUP",ChannelRole::group);
     assert(group.ok()&&group.createdIds.size()==1);
     const auto bus=group.createdIds[0];
-    assert(roster.find(ch11)->primaryOutput==bus);
-    assert(roster.find(bus)->primaryOutput==main);
+    // The accepted routing view, not a UI draft, proves exclusive primary OUT.
 
     DynamicGraphRequest req;
-    req.physicalInputs=2;req.maxFrames=64;
+    req.physicalInputs=2;req.maxFrames=32;
     req.sources={{ch1,0,-1,false},{ch11,1,-1,false}};
     DynamicNativeSessionPublisher native;
     constexpr std::uint64_t epoch=991;
     assert(native.commit(roster,req,0,epoch,epoch,true).ok());
+    const auto* view=native.acceptedRouting(epoch,1);
+    assert(view&&view->find(ch11)&&view->find(bus));
+    assert(view->find(ch11)->primaryOutput==bus);
+    assert(view->find(bus)->primaryOutput==main);
 
     auto original=makeGraph(2.f,3.f);
     Bank::Assignment first,groupOwner;
@@ -175,11 +178,11 @@ static void verifyUniversalChannelIdFxLeaseAndLivePcm() {
     assert(migrated->instanceId==token);
     original.reset(); // vendor instances retained by bank, no new VST3 scan
     assert(GainFx::living>=4);
-    std::array<float,64> mic{},music{},left{},right{};
+    std::array<float,32> mic{},music{},left{},right{};
     mic.fill(.2f);music.fill(.1f);
     const float* pins[]{mic.data(),music.data()};
     const auto beforeHeap=heapCalls.load(std::memory_order_relaxed);
-    assert(native.render(epoch,pins,2,left.data(),right.data(),64,false,
+    assert(native.render(epoch,pins,2,left.data(),right.data(),32,false,
                          [&bank](ChannelId id,float* l,float* r,int n) noexcept {
                              bank(id,l,r,n);
                          }));
@@ -187,21 +190,21 @@ static void verifyUniversalChannelIdFxLeaseAndLivePcm() {
     constexpr float center=.7071067811865475f;
     // Main: (CH1 .2*2 + CH11 .1*4) * mono pan * GROUP FX3
     //     + CH11 post-send .5 * FX Return VST2 (no extra dry source).
-    assert(near(left[63],((.2f*2.f+.1f*4.f)*3.f+
+    assert(near(left[31],((.2f*2.f+.1f*4.f)*3.f+
                          (.1f*4.f)*.5f*2.f)*center));
-    assert(near(left[63],right[63]));
+    assert(near(left[31],right[31]));
     assert(native.setChannelMix(epoch,1,bus,.5f,0.f));
-    assert(native.render(epoch,pins,2,left.data(),right.data(),64,false,
+    assert(native.render(epoch,pins,2,left.data(),right.data(),32,false,
                          [&bank](ChannelId id,float* l,float* r,int n) noexcept {
                              bank(id,l,r,n);
                          }));
-    assert(near(left[63],((.2f*2.f+.1f*4.f)*3.f*.5f+
+    assert(near(left[31],((.2f*2.f+.1f*4.f)*3.f*.5f+
                          (.1f*4.f)*.5f*2.f)*center));
-    assert(!native.render(epoch+1,pins,2,left.data(),right.data(),64,false,
+    assert(!native.render(epoch+1,pins,2,left.data(),right.data(),32,false,
                           [&bank](ChannelId id,float* l,float* r,int n) noexcept {
                               bank(id,l,r,n);
                           }));
-    assert(left[63]==0.f&&right[63]==0.f);
+    assert(left[31]==0.f&&right[31]==0.f);
 }
 
 int main() {
