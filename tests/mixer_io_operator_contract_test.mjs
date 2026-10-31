@@ -228,9 +228,9 @@ test('SETUP1 honest bus patch has real AUX/MAIN/MONITOR navigation, no fake GROU
 });
 
 
-test('SOURCE1 mute-only instant SOURCE uses one native ACK; armed output is rejected',()=>{
+test('SOURCE quick switch is live only for verified same format; structural fallback remains muted',()=>{
  const io=read('web/mixer-io.js'),monitor=read('web/monitor.js');
- assert.match(io,/__arMixCommitMutedSource\?\.\(channel,mode,left,right\)/);
+ assert.match(io,/__arMixCommitSelectedSource\?\.\(channel,mode,left,right\)/);
  assert.match(io,/quickSourcePending/);
  assert.match(io,/PENDING · NATIVE ACK/);
  assert.match(monitor,/window\.__arMixCommitMutedSource=/);
@@ -268,10 +268,60 @@ test('SOURCE2 selected-channel popover selects verified physical ports without a
  const js=read('web/mixer-io.js');
  assert.match(js,/function refreshFocus\(s\)/);
  assert.match(js,/const openSourceChooser=channel=>/);
- assert.match(js,/window\.__arMixCommitMutedSource\?\.\(/);
+ assert.match(js,/window\.__arMixCommitSelectedSource\?\.\(/);
  assert.match(js,/sourceNote\.textContent/);
  assert.match(js,/sourceChooser\.addEventListener\('click'/);
  assert.match(js,/portsFor\(s,r\|\|/);
  assert.match(js,/NONADJACENT L\/R/);
  assert.doesNotMatch(js,/new AudioContext\(/);
+});
+
+
+test('M1 faders send continuous coalesced ACK-backed params without structural APPLY',()=>{
+ const gui=read('web/mixer-io.js'),monitor=read('web/monitor.js'),html=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
+ assert.match(gui,/sofControls\.addEventListener\('input',sendAuxMaster\)/);
+ assert.match(gui,/const now=performance\.now\(\)/);
+ assert.match(gui,/Math\.abs\(d\.db-d\.lastSentDb\)>=\.25/);
+ assert.match(gui,/window\.__arMixSetLiveAuxSendGain\?\.\(/);
+ assert.match(monitor,/const liveSendLatest=new Map\(\)/);
+ assert.match(monitor,/const auxMasterLatest=new Map\(\)/);
+ assert.match(monitor,/LIVE SEND COALESCED/);
+ assert.match(monitor,/AUX MASTER COALESCED/);
+ assert.match(monitor,/if\(matched&&latest!==undefined/);
+ assert.match(monitor,/if\(ok&&latest!==undefined/);
+ assert.match(html,/Math\.abs\(d\.db-d\.lastSentDb\)>=\.25/);
+});
+
+
+test('M1 named input sources are persisted only for native device and enabled pin identity',()=>{
+ const ui=read('web/mixer-io.js');
+ const html=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
+ for(const src of [ui,html]){
+  assert.match(src,/const sourceIdentity=s=>/);
+  assert.match(src,/d\.backend,d\.captureDevice,pins\.map/);
+  assert.match(src,/const validAlias=\(a,pins\)=>/);
+  assert.match(src,/localStorage\.setItem\(key,JSON\.stringify\(items\)\)/);
+  assert.match(src,/const aliasValue=a=>/);
+  assert.match(src,/window\.__arMixCommitSelectedSource\?\.\(/);
+  assert.match(src,/data-source-alias-save/);
+  assert.match(src,/if\(!sourceIdentity\(route\(\)\)\)deviceRefresh\(\)/);
+ }
+});
+
+
+test('M1 SOURCE safe unmuted handoff uses native input crossfade with immutable FX graph',()=>{
+ const ui=read('web/mixer-io.js'),monitor=read('web/monitor.js');
+ const main=read('src/Main.cpp'),engine=read('src/LiveAudioEngine.h');
+ const lab=read('src/LiveDryRoutingLab.h'),block=read('engine/core/PreparedMixerBlock.h');
+ assert.match(ui,/window\.__arMixCommitSelectedSource\?\.\(/);
+ assert.match(ui,/arMixSourceSwitchResult/);
+ assert.match(monitor,/window\.__arMixCommitSelectedSource=/);
+ assert.match(monitor,/action:"routingSourceSwitch"/);
+ assert.match(monitor,/arMixSourceSwitchAck/);
+ assert.match(main,/action=="routingSourceSwitch"/);
+ assert.match(engine,/switchDryRoutingLabSource\(/);
+ assert.match(lab,/switchPhysicalSource\(/);
+ assert.match(block,/physicalTarget_\[strip\]\.store/);
+ assert.match(block,/fade\.remaining=64/);
+ assert.doesNotMatch(ui,/new AudioContext\(/);
 });

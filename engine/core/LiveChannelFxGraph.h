@@ -165,6 +165,9 @@ public:
     int monitorOutputLeft() const noexcept{return monitorLeft_;}
     int monitorOutputRight() const noexcept{return monitorRight_;}
     const std::array<float,fxSlots>& monitorGains() const noexcept{return monitorGains_;}
+    bool switchPhysicalSource(int strip,SourceMode mode,int left,int right) noexcept {
+        return block_&&block_->setPhysicalSource(strip,mode,left,right);
+    }
     // M1: native realtime send fader on an EXISTING validated AUX POST edge.
     // Same prepared graph, no VST instance change or global mute.
     bool setAuxBusGain(int bus,float gain) noexcept {
