@@ -1,6 +1,6 @@
 # PRD — Custom Audio Device Setup inside the existing ArSonMiX I/O Matrix
 
-**Revision:** 2026-10-31 · **Status:** APPROVED IMPLEMENTATION TARGET / NOT YET CODED · **Scope:** Windows realtime mixer, no DAW/editor.  
+**Revision:** 2026-10-31 · **Status:** PROPOSED IMPLEMENTATION CONTRACT / NOT YET CODED · **Scope:** Windows realtime mixer, no DAW/editor.  
 **Read with:** [ARD](ARD_CUSTOM_AUDIO_DEVICE_SETUP_20261031.md) and [handoff](HANDOFF_CUSTOM_AUDIO_DEVICE_SETUP_20261031.md). Existing [PATCH2 PRD](PRD_HARDWARE_AUDIO_IO_MATRIX_20261030.md), [PATCH2 ARD](ARD_HARDWARE_AUDIO_IO_MATRIX_20261030.md), [product truth](PRODUCT_TRUTH_CROSS_THREAD_20261031.md), and #224 are authoritative for routing/engine constraints.
 
 ## 1. Problem proven from the repository
