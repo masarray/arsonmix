@@ -42,7 +42,7 @@ test('DAW reorder preserves real chain identity, metadata, and bypass',()=>{
 });
 test('native has six consistent empty inserts and one DSP reorder per drop',()=>{
  assert.match(bridge,/Array.from\(\{length:6\}/);
- assert.match(bridge,/Math.max\(0,6-Math.min\(state.chain.length,6\)\)/);
+  assert.match(bridge,/Array\.from\(\{length:6\},\(_,slot\)=>fxSlotMarkup\(lane,slot,true\)\)/);
  assert.match(bridge,/fx-drag-ghost/);
  assert.match(bridge,/send\("fxMove",\{slot:from,value:to-from\}\)/);
  assert.doesNotMatch(bridge,/FX FULL/);

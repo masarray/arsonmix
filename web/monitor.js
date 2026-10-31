@@ -279,6 +279,7 @@
   const draftAux=Array.from({length:4},()=>({enabled:false,gain:1,main:true,mute:false,fxId:"",fxIds:[]}));
   const draftSends=[];
   let mixerDraftActive=false; // Source edits from MIX/IO share this exact controller
+  let busDraftTarget=-1; // Protect newly created BUS unity fader from stale native readback
   let selectedAuxPair=null; // editor-only; not a second audio graph
   let draftEpoch=0; // identity of the hardware used to draw these selectors
   let draftMainOutputs=[]; // physical port IDs (2), never callback offsets
@@ -294,6 +295,7 @@
     for(const b of draftAux){b.enabled=false;b.gain=1;b.main=true;b.mute=false;b.fxId="";b.fxIds=[];}
     draftSends.length=0;
     mixerDraftActive=false;
+    busDraftTarget=-1;
     selectedAuxPair=null;
     draftMainOutputs=[];
     draftMonitorOutputs=[];
@@ -433,6 +435,7 @@
     // Changes performed on the main mixer must survive the next STRUCTURAL
     // APPLY; never roll back a musician's fader/PAN when editing a send.
     for(let i=0;i<Math.min(10,d.channelControls.length);++i){
+      if(mixerDraftActive && i===busDraftTarget)continue; // BUS starts at staged unity, never old unused-strip fader
       const s=d.channelControls[i],r=draftRoutes[i];
       const db=Number(s?.db),pan=Number(s?.pan);
       if(Number.isFinite(db))
@@ -714,6 +717,7 @@
   document.getElementById("arPatchRevert").addEventListener("click",()=>{
     const d=state.dryRoutingLab||{};
     rackFxDraft=null;
+    busDraftTarget=-1;
     if(!hydrateAcceptedRoute()){
       invalidateDraftForNewDevice(0);
       invalidateDraftForNewDevice(Number(d.epoch)||0);
@@ -1052,6 +1056,102 @@
     if(failure)return {ok:false,error:failure};
     document.getElementById("arRouteApply").click();
     return {ok:true,message:"FX change submitted. Live only after native route ACK."};
+  };
+  // Studio-style Bussing for CURRENT physical mixer capacity: an unused
+  // native CH can become a real stereo BUS receiver, not a ghost UI strip.
+  // True runtime ADD CHANNEL/ADD BUS requires ChannelId live graph cutover.
+  window.__arMixStageBusFromSelected=({source,kind}={})=>{
+    const d=state.dryRoutingLab||{};
+    if(!Number.isInteger(source)||source<0||source>=draftRoutes.length||
+       !["group","fx"].includes(kind))
+      return {ok:false,error:"Select a valid mixer channel and BUS type."};
+    if(!d.active||!d.ready||!d.acceptedRoute||patchPending||
+       mixerDraftActive||rackFxDraft||Number(d.epoch)!==draftEpoch)
+      return {ok:false,error:"Finish existing routing draft and verify the active device first."};
+    if(state.monitor||state.secondaryOutputArmed)
+      return {ok:false,error:"MUTE/DISARM physical outputs before changing BUS topology."};
+    if(draftRoutes[source].mode==="NONE")
+      return {ok:false,error:"Assign a real source or existing BUS to the selected channel first."};
+    if(draftSends.length>=32)
+      return {ok:false,error:"Native send graph has reached its current 32-send budget."};
+    const target=Array.from({length:draftRoutes.length},(_,i)=>draftRoutes.length-1-i)
+      .find(i=>i!==source&&draftRoutes[i].mode==="NONE"&&
+        !draftRoutes[i].fxId&&!(draftRoutes[i].fxIds||[]).length&&
+        !draftSends.some(edge=>edge.from===i||edge.to===i));
+    if(target===undefined)
+      return {ok:false,error:"No unused native strip for BUS. Existing 10CH engine is full; dynamic ChannelId expansion is not yet LIVE."};
+    // FX SEND preserves dry-to-MAIN; GROUP reroutes its direct output to
+    // prevent unintentional dry doubling (sends to other destinations remain).
+    const row=draftRoutes[target];
+    const previousRow={...row,fxIds:row.fxIds?.slice()||[]};
+    const sourceWasMain=draftRoutes[source].main;
+    row.mode="BUS";row.channelFormat="STEREO";
+    row.left=-1;row.right=-1;row.gain=1;row.pan=0;
+    row.main=true;row.mute=false;row.solo=false;row.fxId="";row.fxIds=[];
+    if(kind==="group")draftRoutes[source].main=false;
+    draftSends.push({from:source,to:target,tap:"POST",
+      gain:kind==="fx"?0.25:1,pan:0});
+    const issue=patchPreflight();
+    if(issue){
+      draftSends.pop();
+      if(kind==="group")draftRoutes[source].main=sourceWasMain;
+      Object.assign(row,previousRow);
+      return {ok:false,error:"BUS rejected by native route preflight: "+issue};
+    }
+    mixerDraftActive=true;
+    busDraftTarget=target;
+    window.dispatchEvent(new Event("arMixRoutingDraftChanged"));
+    openRoutingLab(); // Exactly the existing route authority; NO live sound yet.
+    patchFeedback("BUS DRAFT · CH "+(source+1)+" → CH "+(target+1)+
+      (kind==="fx"?" FX SEND":" SUBGROUP")+
+      " · MUTE → APPLY → native ACK. Channel/Bus count remains 10.");
+    return {ok:true,target,kind,
+      message:"CH "+(target+1)+" staged as "+(kind==="fx"?"FX BUS":"GROUP BUS")+
+      "; real audio ONLY after native APPLY and ACK."};
+  };
+  // Existing-BUS multi-source routing shares the SAME native DAG and ACK.
+  // No fake CH11, new AudioProcessorGraph or additional audio callback.
+  window.__arMixStageSendToBus=({source,target,kind}={})=>{
+    const d=state.dryRoutingLab||{};
+    if(!Number.isInteger(source)||source<0||source>=draftRoutes.length||
+       !Number.isInteger(target)||target<0||target>=draftRoutes.length||
+       !["group","fx"].includes(kind))
+      return {ok:false,error:"Invalid channel, native BUS or route mode."};
+    if(source===target)return {ok:false,error:"Feedback: BUS cannot send to itself."};
+    if(!d.active||!d.ready||!d.acceptedRoute||patchPending||
+       mixerDraftActive||rackFxDraft||Number(d.epoch)!==draftEpoch)
+      return {ok:false,error:"Finish existing draft and verify native device first."};
+    if(state.monitor||state.secondaryOutputArmed)
+      return {ok:false,error:"MUTE/DISARM physical outputs before assigning a BUS."};
+    if(draftRoutes[source].mode==="NONE"||draftRoutes[target].mode!=="BUS")
+      return {ok:false,error:"Source must be patched and destination an existing BUS."};
+    if(!Array.isArray(d.acceptedRoute.channels)||
+       d.acceptedRoute.channels[target]?.mode!=="BUS")
+      return {ok:false,error:"BUS is not accepted in the native graph."};
+    if(draftSends.length>=32)return {ok:false,error:"Native 32-send budget reached."};
+    if(draftSends.some(s=>s.from===source&&s.to===target))
+      return {ok:false,error:"BUS already receives this channel; edit its SEND instead."};
+    if(kind==="group"&&!draftRoutes[source].main&&
+       draftSends.some(s=>s.from===source&&s.to<10&&draftRoutes[s.to]?.mode==="BUS"))
+      return {ok:false,error:"Source already belongs to a subgroup; remove old route first."};
+    const originalMain=draftRoutes[source].main;
+    if(kind==="group")draftRoutes[source].main=false;
+    draftSends.push({from:source,to:target,tap:"POST",gain:kind==="fx"?0.25:1,pan:0});
+    const issue=patchPreflight();
+    if(issue){
+      draftSends.pop();
+      draftRoutes[source].main=originalMain;
+      return {ok:false,error:"BUS send rejected: "+issue};
+    }
+    mixerDraftActive=true;
+    window.dispatchEvent(new Event("arMixRoutingDraftChanged"));
+    openRoutingLab(); // Only DRAFT; native graph remains unchanged.
+    patchFeedback("SEND DRAFT · CH "+(source+1)+" → BUS CH "+(target+1)+
+      " · "+(kind==="fx"?"PARALLEL FX":"SUBGROUP")+
+      " · MUTE → APPLY → native ACK.");
+    return {ok:true,source,target,kind,
+      message:"CH "+(source+1)+" → BUS CH "+(target+1)+
+        " staged; only LIVE after native route ACK."};
   };
   window.__arMixOpenRoutingLab=openRoutingLab;
   document.getElementById("arPatchHardwareSetup")?.addEventListener("click",()=>{
@@ -1605,7 +1705,7 @@
       rackFxDraft=null; // Native ACK became authoritative, not the browser draft.
       mixerDraftActive=false;
       sendResumeGain.clear();
-      if(result.acceptedRoute)hydrateAcceptedRoute();
+      if(result.acceptedRoute){busDraftTarget=-1;hydrateAcceptedRoute();}
       else {
         // CLEAR resets CH, FX, and the new R2 CH→AUX matrix draft together.
         invalidateDraftForNewDevice(0);

@@ -49,6 +49,7 @@
   const css = document.createElement("style");
   css.textContent = `
     .native-toolbar{display:flex;flex-wrap:wrap;gap:7px;align-items:center}
+    .native-bus-target{font:11px inherit;background:#10242f;color:#d9eaf1;border:1px solid #507184;border-radius:4px;max-width:175px;min-height:29px;padding:4px 7px;outline-offset:2px}
     .native-btn{font:inherit;color:#d6e9ef;padding:8px 12px;border:1px solid #48677a;border-radius:6px;
        background:linear-gradient(180deg,#405c70 0%,#243846 47%,#0d1e29 100%);cursor:pointer;
        box-shadow:inset 0 1px 1px #93badc70,0 2px 3px #0008}
@@ -199,111 +200,108 @@
     return `<div class="native-hdr"><div><span class="eyebrow">AR MIX · NATIVE VST3 ENGINE</span>
       <h2>${escapeHtml(title)}</h2><div class="native-sub">${escapeHtml(subtitle)}</div></div></div>`;
   }
-  function renderRack(){
-  if(!workspace || currentTab()!=="FX RACK") return;
-  const lab=state.device?.dryRoutingLab;
-  if(lab?.active) {
+  // M2 single console presenter. CH1 without a routed VST3 continues into its
+  // existing 8-slot rack until the original VST lease/Orbit migrates to the
+  // common prepared graph. No "native-rack-" duplicate visual renderer.
+  function fxLaneSnapshot(channel,master=false) {
+    const lab=state.device?.dryRoutingLab;
+    const legacy=!master&&channel===0&&(state.chain.length>0||!lab?.channelFxNames?.[0]);
+    const routed=!master&&!legacy&&!!lab?.active&&!!lab?.ready;
+    const view=routed?(window.__arMixFxLaneView?.(channel)||{}):{};
+    const ids=Array.isArray(view.ids)?view.ids:[];
+    const instances=Array.isArray(view.liveSlots)?view.liveSlots:[];
+    const items=legacy?state.chain.map(p=>({
+      name:p.name||"VST3",bypassed:!!p.bypass,live:true
+    })):routed?ids.map((id,i)=>({
+      name:view.names?.[i]||"VST3",bypassed:!!instances[i]?.bypassed,
+      live:!view.pending&&instances[i]?.catalogId===id&&!!instances[i]?.instanceId
+    })):[];
+    return {channel,mode:master?"master":legacy?"legacy":routed?"routed":"unpatched",
+      items,pending:!!view.pending};
+  }
+  function fxSlotMarkup(lane,slot,compact=false) {
+    const p=lane.items[slot],filled=!!p;
+    const native=lane.mode==="legacy",routed=lane.mode==="routed";
+    // All empty chrome rows are actionable; native insert goes to the next
+    // contiguous VST3 slot rather than silently creating a hole.
+    const canChoose=slot<8;
+    const routedSlot=filled?slot:lane.items.length;
+    const open=native?(filled?'data-native-fx="editor" data-slot="'+slot+'"':
+      canChoose?'data-plugin-picker="1"':'disabled'):
+      routed&&(filled||canChoose)?'data-routed-fx="'+lane.channel+'" data-routed-slot="'+routedSlot+'"':'disabled';
+    const power=native?'data-native-fx="bypass" data-slot="'+slot+'"':
+      'data-routed-bypass="'+lane.channel+'" data-routed-slot="'+slot+'"';
+    const move=direction=>native?'data-native-fx="'+direction+'" data-slot="'+slot+'"':
+      'data-routed-move="'+lane.channel+'" data-routed-slot="'+slot+'" data-routed-direction="'+direction+'"';
+    const remove=native?'data-native-fx="remove" data-slot="'+slot+'"':
+      'data-routed-clear="'+lane.channel+'" data-routed-slot="'+slot+'"';
+    const label=filled?p.name:"ADD FX";
+    const status=lane.pending?"DRAFT · NOT LIVE":filled?(p.live?"NATIVE VST3":"NOT ACKNOWLEDGED"):
+      lane.mode==="master"?"MASTER FX UNAVAILABLE":lane.mode==="unpatched"?"SOURCE NOT PATCHED":"EMPTY FX SLOT";
+    const live=filled&&p.live&&!lane.pending;
+    const marker=native&&filled?' data-native-move="'+slot+'"':"";
+    const cl=(compact?"insert-slot"+(filled?" native-insert-row":""):"native-node")+
+      (p?.bypassed?" is-bypassed":"")+
+      (native&&state.orbitActiveSlot===slot?" has-orbit":"");
+    if(compact)return '<div class="'+cl+'"'+marker+'>'+
+      '<button class="insert '+(filled?(routed?" ar-routed-loaded":""):"empty")+'" '+open+
+        ' title="'+escapeHtml(status)+'">'+(filled?"":'<span class="insert-add-glyph">＋</span>')+
+        '<span class="insert-name">'+escapeHtml(label)+'</span></button>'+
+      (filled?'<button class="fx-power '+(p.bypassed?"is-bypassed":"")+
+        '" '+power+(live?"":" disabled")+' aria-pressed="'+(live&&!p.bypassed)+'">⏻</button>':"")+
+      '</div>';
+    return '<div class="'+cl+'"'+marker+' data-fx-lane="'+lane.channel+'" data-fx-slot="'+slot+'">'+
+      '<span class="node-index">'+String(slot+1).padStart(2,"0")+'</span>'+
+      '<span class="node-text">'+escapeHtml(label)+'<small>'+status+'</small></span>'+
+      '<button class="native-btn" '+open+'>'+(filled?(routed?"REPLACE":"EDIT"):"＋ ADD")+'</button>'+
+      (routed&&filled?'<button class="native-btn" data-routed-editor="'+lane.channel+
+        '" data-routed-slot="'+slot+'" '+(live?"":"disabled")+'>EDIT</button>':"")+
+      (filled?'<button class="native-btn" '+power+(live?"":" disabled")+
+        ' aria-pressed="'+(live&&!p.bypassed)+'">'+(p.bypassed?"OFF · ENABLE":"ON · BYPASS")+'</button>'+
+        '<button class="native-btn" '+move("up")+(slot?"":" disabled")+'>↑</button>'+
+        '<button class="native-btn" '+move("down")+(slot<lane.items.length-1?"":" disabled")+'>↓</button>'+
+        '<button class="native-btn warn" '+remove+'>REMOVE</button>':"")+
+      '</div>';
+  }
+  function renderRack() {
+    if(!workspace||currentTab()!=="FX RACK")return;
     const selected=typeof currentChannel==="number"?currentChannel:0;
     const isMaster=typeof masterSelected!=="undefined"&&masterSelected;
-    const name=isMaster?"MASTER":(channels[selected]?.name||("CH "+(selected+1)));
-    const fx=isMaster?"":(lab.channelFxNames?.[selected]||"");
-    // Native route ACK is the only LIVE truth. G5B supports eight ordered
-    // inserts on CH2..10; CH1's existing vendor/Orbit chain stays untouched.
-    if(isMaster||selected!==0||(fx&&state.chain.length===0)){
-      const view=window.__arMixFxLaneView?.(selected)||{};
-      const ids=Array.isArray(view.ids)?view.ids:[];
-      const liveIds=Array.isArray(view.live)?view.live:[];
-      const liveSlots=Array.isArray(view.liveSlots)?view.liveSlots:[];
-      const names=Array.isArray(view.names)?view.names:[];
-      const pending=!!view.pending;
-      const nodes=Array.from({length:8},(_,slot)=>{
-        const loaded=slot<ids.length, label=names[slot]||"ADD FX";
-        const actual=!pending&&loaded&&liveSlots[slot]?.catalogId===ids[slot]
-          ?liveSlots[slot]:null;
-        return `<div class="native-node" data-routed-lane="${selected}" data-routed-slot="${slot}">
-          <span class="node-index">${String(slot+1).padStart(2,"0")}</span>
-          <span class="node-text">${escapeHtml(label)}
-            <small>${loaded?(pending?"DRAFT · not live":"Native VST3 insert"):"Empty FX slot"}</small></span>
-          <button class="native-btn" data-routed-fx="${selected}" data-routed-slot="${slot}"
-            ${isMaster||slot>ids.length?"disabled":""}>${loaded?"REPLACE":"＋ ADD"}</button>
-          <button class="native-btn" data-routed-editor="${selected}" data-routed-slot="${slot}"
-            ${!actual||isMaster?"disabled":""} title="Open real native VST3 editor">EDIT</button>
-          <button class="native-btn ${actual&&!actual.bypassed?"on":""}" data-routed-bypass="${selected}" data-routed-slot="${slot}"
-            ${!actual||isMaster?"disabled":""} aria-pressed="${!!actual&&!actual.bypassed}"
-            title="Native zero-latency per-instance bypass">${actual?.bypassed?"OFF · ENABLE":"ON · BYPASS"}</button>
-          <button class="native-btn" data-routed-move="${selected}" data-routed-slot="${slot}" data-routed-direction="up"
-            ${isMaster||!loaded||slot===0?"disabled":""}>↑</button>
-          <button class="native-btn" data-routed-move="${selected}" data-routed-slot="${slot}" data-routed-direction="down"
-            ${isMaster||!loaded||slot===ids.length-1?"disabled":""}>↓</button>
-          <button class="native-btn warn" data-routed-clear="${selected}" data-routed-slot="${slot}"
-            ${isMaster||!loaded?"disabled":""}>REMOVE</button></div>`;
-      }).join("");
-      workspace.innerHTML=`<div class="native-panel" data-live-native="1">
-        ${cardHeader("FX Rack · "+name,"Independent FX chain · one verified native graph")}
-        <div class="native-toolbar" style="margin-bottom:10px">
-          <button class="native-btn" data-plugin-manager="1">PLUGIN MANAGER</button>
-          <button class="native-btn" data-native-routing-lab="1">ROUTING</button>
-          <span class="native-sub">${isMaster?"MASTER DSP unavailable":ids.length+"/8 ordered VST3 inserts"}</span>
-        </div>
-        <div class="native-card" style="max-width:960px;min-height:0">
-          <h3>${escapeHtml(name)} · FX CHAIN</h3>
-          <div class="native-nodes">${isMaster?'<div class="native-status">MASTER FX not yet connected to native DSP.</div>':nodes}</div>
-          ${pending?'<p class="native-status">FX DRAFT · not live until native ACK</p>':""}
-          <div class="native-toolbar" style="margin-top:12px">
-            <button class="native-btn" data-routed-apply="1" ${!pending||isMaster?"disabled":""}>APPLY FX · MUTED</button>
-            <span class="native-sub">Changes require muted output, verified device epoch and positive ACK; old graph stays live on failure.</span>
-          </div>
-        </div>
-      </div>`;
-      return;
-    }
-    // CH1 without a routed VST3 continues into its existing 8-slot rack.
+    const lane=fxLaneSnapshot(selected,isMaster);
+    const accepted=state.device?.dryRoutingLab?.acceptedRoute?.channels||[];
+    const isBus=Array.isArray(accepted)&&accepted[selected]?.mode==="BUS";
+    const name=isMaster?"MASTER":(isBus?"BUS · ":"")+
+      (channels[selected]?.name||("CH "+(selected+1)));
+    const busTargets=Array.isArray(accepted)?accepted.flatMap((r,i)=>
+      r?.mode==="BUS"&&i!==selected?[i]:[]):[];
+    const busAttach=busTargets.length?'<div class="native-toolbar" style="margin-bottom:10px">'+
+      '<span class="native-sub">SEND TO EXISTING BUS</span>'+
+      '<select class="native-bus-target" data-bus-target aria-label="Native BUS destination">'+
+      busTargets.map(i=>'<option value="'+i+'">BUS · CH '+(i+1)+
+        ' · '+escapeHtml(channels[i]?.name||("CH "+(i+1)))+'</option>').join("")+
+      '</select><button class="native-btn" data-bus-assign="group" title="Route entire source to chosen BUS">OUTPUT → BUS</button>'+
+      '<button class="native-btn" data-bus-assign="fx" title="Keep MAIN and send parallel POST audio">FX SEND → BUS</button>'+
+      '</div>':"";
+    const nodes=Array.from({length:8},(_,slot)=>fxSlotMarkup(lane,slot)).join("");
+    const canBus=lane.mode==="legacy"||lane.mode==="routed";
+    workspace.innerHTML='<div class="native-panel" data-live-native="1">'+
+      cardHeader("FX Rack · "+name,"One native console layout · inserts and routing")+
+      '<div class="native-toolbar" style="margin-bottom:10px">'+
+      '<button class="native-btn" data-plugin-manager="1">PLUGIN MANAGER</button>'+
+      '<button class="native-btn" data-native-routing-lab="1">ROUTING</button>'+
+      (canBus?'<button class="native-btn" data-bus-create="group" title="Create an actual subgroup in an unused native lane">＋ BUS</button>'+
+        '<button class="native-btn" data-bus-create="fx" title="Create a real FX send return in an unused native lane">＋ FX BUS</button>':"")+
+      (lane.mode==="legacy"?'<button class="native-btn" data-my-sounds="1">SAVE / RECALL</button>':"")+
+      '<span class="native-sub">'+(lane.mode==="master"?"MASTER FX · UNAVAILABLE":
+        lane.mode==="unpatched"?"PATCH INPUT TO ENABLE FX":lane.items.length+"/8 VST3 INSERTS")+'</span></div>'+
+      (canBus?busAttach:"")+'<div class="native-card" style="max-width:960px;min-height:0"><h3>'+
+      escapeHtml(name)+' · FX CHAIN</h3><div class="native-nodes">'+nodes+'</div>'+
+      (lane.pending?'<p class="native-status">FX DRAFT · waiting for native APPLY/ACK</p>':"")+
+      (lane.mode==="routed"?'<div class="native-toolbar" style="margin-top:10px">'+
+        '<button class="native-btn" data-routed-apply="1" '+(lane.pending?"":"disabled")+
+        '>APPLY FX · MUTED</button><span class="native-sub">Structural edits require muted outputs and accepted native ACK.</span></div>':"")+
+      '</div></div>';
   }
-  const selected=typeof currentChannel==="number"?currentChannel:0;
-  const isMaster=typeof masterSelected!=="undefined"&&masterSelected;
-  if(isMaster||selected!==0){
-    const label=isMaster?"MASTER":(typeof channels!=="undefined"&&channels[selected]?.name)||("Channel "+(selected+1));
-    workspace.innerHTML=`<div class="native-panel" data-live-native="1">
-      ${cardHeader("FX Rack · "+label,"Same DAW insert layout across all mixer channels")}
-      <div class="native-card" style="max-width:920px">
-        <h3>${escapeHtml(label)} · FX CHAIN</h3>
-        <div class="native-sub">This bus is not yet connected to independent native VST3 processing. Its inserts are unavailable for audio until channel routing is implemented.</div>
-        <div class="native-nodes" style="margin-top:12px">
-          ${Array.from({length:6},(_,i)=>`<button class="native-btn" data-native-unrouted="${isMaster?-1:selected}" style="text-align:left">＋ ADD FX</button>`).join("")}
-        </div>
-      </div>
-    </div>`;
-    return;
-  }
-  workspace.innerHTML=`<div class="native-panel" data-live-native="1">
-    ${cardHeader("Live FX Chain · Vocal Input","Arrange your real VST3 effects here. Use ＋ ADD FX to choose from your installed catalog.")}
-    <div class="native-toolbar" style="margin-bottom:12px">
-      <button class="native-btn primary" data-plugin-picker="1">＋ ADD FX</button>
-      <button class="native-btn" data-plugin-manager="1">PLUGIN MANAGER</button>
-      <button class="native-btn" data-my-sounds="1">SAVE / RECALL</button>
-      <span class="native-sub">${state.chain.length}/8 live effects · Real-time processor chain (Channel 1)</span>
-    </div>
-    <div class="native-card" style="max-width:920px">
-      <h3>MIC INPUT → PROCESSING → MAIN OUTPUT</h3>
-      <div class="native-nodes">
-        <div class="native-status">INPUT 1 / MICROPHONE</div>
-        ${state.chain.map((p,i)=>`<div class="native-node ${p.bypass?"is-bypassed":""} ${state.orbitActiveSlot===i?"has-orbit":""}" data-native-move="${i}">
-          <span class="node-index">${String(i+1).padStart(2,"0")}</span>
-          <span class="node-text">${escapeHtml(p.name)}<small>${p.latency||0} samples processing latency</small></span>
-          <button class="native-btn" data-native-fx="editor" data-slot="${i}">EDIT</button>
-          <button class="native-btn ${p.bypass?"":"on"}" data-native-fx="bypass" data-slot="${i}" aria-pressed="${!p.bypass}" title="Instantly ${p.bypass?"enable":"bypass"} this plugin without stopping audio">⏻ ${p.bypass?"OFF · ENABLE":"ON · BYPASS"}</button>
-          <button class="native-btn" data-native-fx="up" data-slot="${i}" ${i===0?"disabled":""}>↑</button>
-          <button class="native-btn" data-native-fx="down" data-slot="${i}" ${i===state.chain.length-1?"disabled":""}>↓</button>
-          <button class="native-btn warn" data-native-fx="remove" data-slot="${i}">×</button>
-        </div>`).join("")}
-        ${state.chain.length===0?'<div class="native-empty">No FX loaded yet · Click ＋ ADD FX to insert a real VST3.</div>':""}
-        <button class="native-btn" data-plugin-picker="1" style="align-self:start">＋ ADD NEXT EFFECT</button>
-        <div class="native-status">MASTER OUTPUT / STREAM</div>
-      </div>
-    </div>
-    <p class="native-sub" style="margin-top:13px">Bypass can change without stopping the audio callback. Live chain edits briefly restart processing; avoid editing FX while performing. Bypass is real-time safe.</p>
-  </div>`;
-}
   function createDialog(id,title,small=false){
   let overlay=document.getElementById(id);
   if(overlay)return overlay;
@@ -721,71 +719,24 @@
     }
     const rack=track.querySelector(".rack");
     if(!rack)return;
-    const lab=state.device?.dryRoutingLab;
-    // CH1 keeps its real multi-insert rack after Audio Setup activates 10CH.
-    // Only use the one-slot routed presentation if CH1 has a routed FX and
-    // no legacy CH1 inserts. Catalog, graph and route status remain distinct.
-    if(lab?.active && (i!==0 || (!!lab.channelFxNames?.[0] && state.chain.length===0))){
-      const view=window.__arMixFxLaneView?.(i)||{};
-      const ids=view.ids||[],names=view.names||[],slots=view.liveSlots||[];
-      const signature="native-rack-"+i+"-"+ids.join("|")+"-"+!!view.pending+
-        "-"+slots.map(s=>s.instanceId+":"+!!s.bypassed).join("|");
-      if(rack.dataset.nativeSig!==signature){
-        rack.dataset.nativeSig=signature;
-        rack.innerHTML=Array.from({length:6},(_,slot)=>{
-          const loaded=slot<ids.length;
-          const label=loaded?names[slot]||"VST3":"ADD FX";
-          const disabled=slot>ids.length;
-          const actual=!view.pending&&loaded&&slots[slot]?.catalogId===ids[slot]
-            ?slots[slot]:null;
-          return `<div class="insert-slot native-insert-row ${actual?.bypassed?"is-bypassed":""}">
-            <button class="insert ${loaded?"":"empty"} ${loaded?"ar-routed-loaded":""}"
-              data-routed-fx="${i}" data-routed-slot="${slot}" ${disabled?"disabled":""}
-              title="${loaded?"Replace":"Insert"} native FX in CH ${i+1} · slot ${slot+1}">
-              ${loaded?"":'<span class="insert-add-glyph" aria-hidden="true">＋</span>'}
-              <span class="insert-name">${escapeHtml(label)}</span>
-            </button>
-            ${actual?`<button type="button" class="fx-power ${actual.bypassed?"is-bypassed":""}"
-              data-routed-bypass="${i}" data-routed-slot="${slot}"
-              aria-pressed="${!actual.bypassed}" aria-label="${actual.bypassed?"Enable":"Bypass"} ${escapeHtml(label)}"
-              title="${actual.bypassed?"Enable":"Bypass"} native FX">⏻</button>`:""}</div>`;
-        }).join("");
-      }
-      track.removeAttribute("data-preview");rack.removeAttribute("data-preview");
-      track.title="LIVE CH "+(i+1)+" · "+ids.length+" native VST3 inserts";
-      return;
+    const lane=fxLaneSnapshot(i);
+    // CH1 and all routed channels now share one physical FX strip widget.
+    // Only command mapping varies until CH1 vendor lease/Orbit migration.
+    const signature=lane.mode+"|"+lane.pending+"|"+lane.items.map((p,slot)=>
+      slot+":"+p.name+":"+p.bypassed+":"+p.live).join("|");
+    if(rack.dataset.nativeSig!==signature){
+      rack.dataset.nativeSig=signature;
+      rack.innerHTML=Array.from({length:6},(_,slot)=>fxSlotMarkup(lane,slot,true)).join("");
     }
-    // Keep original CH1 multi-insert rows even when its native route is active.
-    if(i!==0){
-      if(rack.dataset.nativeSig!=="empty-nonlive"){
-        rack.dataset.nativeSig="empty-nonlive";
-        rack.innerHTML=Array.from({length:6},()=>`<div class="insert-slot">
-          <button class="insert empty" data-native-unrouted="${i}" title="FX Rack · channel source not routed">
-            <span class="insert-add-glyph" aria-hidden="true">＋</span><span class="insert-name">ADD FX</span>
-          </button></div>`).join("");
-      }
-      rack.dataset.preview="1";
-      track.dataset.preview="1";
-      track.querySelectorAll(".meter-peak").forEach(x=>x.style.display="none");
-      track.title=`${track.querySelector(".strip-name")?.textContent?.trim()||"Channel"} — visual preview only; native I/O not wired`;
-      return;
+    const unpatched=lane.mode==="unpatched";
+    if(unpatched){
+      rack.dataset.preview="1";track.dataset.preview="1";
+      track.querySelectorAll(".meter-peak").forEach(el=>el.style.display="none");
+    }else{
+      rack.removeAttribute("data-preview");track.removeAttribute("data-preview");
     }
-    const signature=state.chain.map(p=>p.id+"|"+p.bypass).join(",");
-    if(rack.dataset.nativeSig===signature)return;
-    rack.dataset.nativeSig=signature;
-    rack.innerHTML=state.chain.slice(0,6).map((p,i)=>
-      `<div class="insert-slot native-insert-row ${p.bypass?"is-bypassed":""} ${state.orbitActiveSlot===i?"has-orbit":""}" data-native-move="${i}">
-        <button class="insert" data-native-fx="editor" data-slot="${i}"
-          title="Open ${escapeHtml(p.name)}" aria-label="Edit ${escapeHtml(p.name)}">
-          <span class="insert-name">${escapeHtml(p.name)}</span></button>
-        <button type="button" class="fx-power ${p.bypass?"is-bypassed":""}"
-          data-native-fx="bypass" data-slot="${i}" aria-pressed="${!p.bypass}"
-          title="${p.bypass?"Enable":"Bypass"} ${escapeHtml(p.name)}">⏻</button>
-      </div>`).join("")+
-      Array.from({length:Math.max(0,6-Math.min(state.chain.length,6))},()=>
-        `<div class="insert-slot"><button class="insert empty" data-plugin-picker="1" aria-label="Add VST3 to Channel 1">
-          <span class="insert-add-glyph" aria-hidden="true">＋</span><span class="insert-name">ADD FX</span>
-        </button></div>`).join("");
+    track.title="CH "+(i+1)+" · "+lane.items.length+" VST3 inserts"+
+      (unpatched?" · SOURCE UNPATCHED":"");
   });
 }
   // Orbit lighting changes a class on existing rows. Never replace the row
@@ -918,10 +869,24 @@
   // Capture native controls before the legacy v0.3 demo handlers.
   document.addEventListener("click", function(e){
   if(fxNativeBlockClick){fxNativeBlockClick=false;e.preventDefault();e.stopImmediatePropagation();return;}
-  const el=e.target.closest("[data-routed-fx],[data-routed-editor],[data-routed-bypass],[data-routed-clear],[data-routed-move],[data-routed-apply],[data-native-unrouted],[data-native-action],[data-native-add],[data-native-fx],[data-fxpower],[data-master-insert],[data-master-power],[data-native-category],[data-go-native-rack],[data-insert],[data-plugin-picker],[data-plugin-manager],[data-my-sounds],[data-backup-studio],[data-preset-mute],[data-preset-save],[data-preset-load],[data-close-modal],[data-orbit-start],[data-orbit-stop]");
+  const el=e.target.closest("[data-routed-fx],[data-routed-editor],[data-routed-bypass],[data-routed-clear],[data-routed-move],[data-routed-apply],[data-bus-create],[data-bus-assign],[data-native-unrouted],[data-native-action],[data-native-add],[data-native-fx],[data-fxpower],[data-master-insert],[data-master-power],[data-native-category],[data-go-native-rack],[data-insert],[data-plugin-picker],[data-plugin-manager],[data-my-sounds],[data-backup-studio],[data-preset-mute],[data-preset-save],[data-preset-load],[data-close-modal],[data-orbit-start],[data-orbit-stop]");
   if(!el)return;
   e.preventDefault();e.stopImmediatePropagation();
 
+  if(el.hasAttribute("data-bus-assign")){
+    const source=typeof currentChannel==="number"?currentChannel:0;
+    const target=Number(document.querySelector("#rackWorkspace [data-bus-target]")?.value);
+    const result=window.__arMixStageSendToBus?.({source,target,kind:el.dataset.busAssign});
+    toStatus(result?.message||result?.error||"Native BUS assignment unavailable");
+    return;
+  }
+  if(el.hasAttribute("data-bus-create")){
+    const selected=typeof currentChannel==="number"?currentChannel:0;
+    const result=window.__arMixStageBusFromSelected?.({
+      source:selected,kind:el.dataset.busCreate});
+    toStatus(result?.message||result?.error||"Native BUS controller unavailable");
+    return;
+  }
   if(el.hasAttribute("data-routed-editor")){
     const channel=Number(el.dataset.routedEditor),index=Number(el.dataset.routedSlot);
     const view=window.__arMixFxLaneView?.(channel)||{};
@@ -1042,7 +1007,7 @@
   if(el.hasAttribute("data-plugin-picker")){
     const rack=el.closest(".rack");
     const slot=rack?[...rack.children].indexOf(el.closest(".insert-slot")):state.chain.length;
-    openPicker(el,0,slot<0?state.chain.length:slot);return;
+    openPicker(el,0,state.chain.length);return;
   }
   if(el.hasAttribute("data-insert")){
     const article=el.closest(".strip");
