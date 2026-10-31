@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 #include <unordered_set>
+#include <unordered_map>
 
 // DYN0: control-thread session model, NOT a second renderer or a LIVE audio graph.
 // One state type serves every future input, return, group, monitor and master.
@@ -258,6 +259,12 @@ public:
             result.fault=ChannelEditFault::idExhausted;return result;
         }
         auto candidate=channels_;
+        // One O(N) stable-ID lookup; a 1000-channel group assignment must
+        // not scan all descriptors for each source selected in the Console.
+        std::unordered_map<std::uint64_t,std::size_t> indexById;
+        indexById.reserve(candidate.size());
+        for(std::size_t i=0;i<candidate.size();++i)
+            indexById.emplace(candidate[i].id.value,i);
         auto mainIt=std::find_if(candidate.begin(),candidate.end(),
             [](const auto& row){return row.role==ChannelRole::main;});
         if(mainIt==candidate.end() || std::count_if(candidate.begin(),candidate.end(),
@@ -274,11 +281,11 @@ public:
             if(id.value==0 || !seen.insert(id.value).second) {
                 result.fault=ChannelEditFault::invalidAction;return result;
             }
-            auto it=std::find_if(candidate.begin(),candidate.end(),
-                [id](const auto& row){return row.id==id;});
-            if(it==candidate.end()) {
+            const auto found=indexById.find(id.value);
+            if(found==indexById.end()) {
                 result.fault=ChannelEditFault::missingChannel;return result;
             }
+            auto it=candidate.begin()+static_cast<std::ptrdiff_t>(found->second);
             if(it->role==ChannelRole::main || it->role==ChannelRole::monitor) {
                 result.fault=ChannelEditFault::invalidValue;return result;
             }
