@@ -458,7 +458,42 @@
   const audioPath=node('div','arIOAudioPath');audioPath.id='arIOAudioPath';
   audioPath.innerHTML='<span data-audio-path-input>CAPTURE · WAIT</span><span data-audio-path-route>ROUTE · WAIT</span><span data-audio-path-output>OUTPUT · WAIT</span><button type="button" class="btn-180" data-io-signal-check>OPEN SIGNAL CHECK</button><small data-audio-path-reason role="status"></small>';
   overlay.querySelector('.arIOWindow').insertBefore(audioPath,el('arIOBody'));
+  // Native first-sound capture truth: callback-order peaks are mapped to
+  // actual driver pin names ONLY if the hardware inventory belongs to the
+  // same device generation. No virtual channels are inferred from labels.
+  const capturePinSummary=()=>{
+    const d=lastStatus||{},a=deviceInventory?.active||{};
+    if(!a.open||a.authorized===false)return 'RAW INPUT · NO VERIFIED DEVICE';
+    const count=Number(d.callbackInputChannels)||0,blocks=Number(d.captureObservationBlocks)||0;
+    if(!blocks||count<=0)return 'RAW INPUT · WAITING FOR FIRST CAPTURE BLOCK (OUTPUT can stay MUTED)';
+    const peaks=Array.isArray(d.captureCallbackPeaks)?d.captureCallbackPeaks:[];
+    const counts=Array.isArray(d.captureCallbackSignalBlocks)?d.captureCallbackSignalBlocks:[];
+    const pins=Array.isArray(a.enabledInputs)?a.enabledInputs:[];
+    if(Number(a.deviceGeneration)!==Number(d.deviceGeneration)||pins.length!==count||
+       peaks.length!==count||counts.length!==count)
+      return 'RAW INPUT · DRIVER MASK/GENERATION CHANGED · REFRESH DEVICES; pin labels not trusted';
+    const live=[],heard=[];let quiet=0;
+    for(let i=0;i<count;++i){
+      const port=pins[i],name=String(a.inputNames?.[port]||'INPUT '+(port+1));
+      const label=name+' [pin '+(port+1)+']';
+      const v=Number(peaks[i])||0;
+      if(v>0.0005)live.push(label+' '+Math.max(-90,20*Math.log10(v)).toFixed(0)+' dBFS');
+      else if(Number(counts[i])>0)heard.push(label);
+      else quiet++;
+    }
+    return live.length?
+      'RAW PCM NOW · '+live.slice(0,4).join(' · ')+(live.length>4?' · +'+(live.length-4)+' more':'')+
+      (quiet?' · '+quiet+' silent':''):
+      heard.length?'RAW PCM SEEN SINCE OPEN · '+heard.slice(0,4).join(' · ')+
+        (quiet?' · '+quiet+' silent':''):
+      'RAW INPUTS SILENT · '+count+' enabled capture pins · check MIC/VC routing and source feeder';
+  };
   function refreshAudioPath(){
+    const captureLabel=document.getElementById('arIODeviceCaptureEvidence');
+    if(captureLabel){
+      const value=capturePinSummary();
+      if(captureLabel.textContent!==value)captureLabel.textContent=value;
+    }
     const d=window.__arMixAudioPathView?.(lastStatus);
     if(!d)return;
     for(const [key,value] of [['input',d.input],['route',d.route],['output',d.output],['reason',d.message]]){
@@ -1269,6 +1304,12 @@
       used.length?used.join(' + ')+' → MAIN ready · START AUDIO to hear sound':
       'FIRST SOUND · START AUDIO maps CH01/CH02 to verified input pins, applies once, then arms MAIN'));
     panel.appendChild(firstSound);
+    // Lightweight text-only 12 Hz live native meter. It remains truthful
+    // when OUTPUT MUTED and when no mixer patch has been created yet.
+    const captureRow=node('div','arIODeviceCaptureEvidence',capturePinSummary());
+    captureRow.id='arIODeviceCaptureEvidence';
+    captureRow.setAttribute('aria-label','Verified raw input PCM before mixer routing');
+    panel.appendChild(captureRow);
 
     if(!types.length&&!a.open)
       panel.appendChild(node('p','arIODeviceEmpty',
