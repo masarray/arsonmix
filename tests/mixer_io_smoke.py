@@ -109,7 +109,16 @@ async def main():
         await page.locator('.arSourceChoice[data-source-choice="MONO:1"]').click()
         switching=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='routingSourceSwitch')""")
-        assert len(switching)==1,switching
+        if len(switching)!=1:
+            diagnostic=await page.evaluate("""()=>({
+              note:document.querySelector('[data-source-note]')?.textContent,
+              selected:document.querySelector('.strip[data-strip].selected')?.dataset.strip,
+              route:window.__arMixRouteView()?.acceptedRoute?.channels?.[0],
+              canSwitch:typeof window.__arMixCommitSelectedSource,
+              pending:window.__arMixRouteView()?.pending,
+              monitor:window.__arMixRouteView()?.monitor
+            })""")
+            assert len(switching)==1,(switching,diagnostic)
         assert switching[0]['data']['requestId']==1 and switching[0]['data']['channel']==0
         assert switching[0]['data']['left']==1 and switching[0]['data']['deviceEpoch']==4
         assert (await page.evaluate("""()=>window.__armixTestActions.filter(x=>
