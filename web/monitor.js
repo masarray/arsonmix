@@ -1822,32 +1822,47 @@
     d?.backendXrunMeaning==="WASAPI_CAPTURE_DISCONTINUITIES_ONLY" &&
     Number(d?.backendXrunCount)>=3 &&
     Number(d?.overBudgetCount)===0;
+  // One native 12 Hz status projection shared by SIGNAL CHECK and Audio I/O.
+  // An accepted topology does not prove capture PCM or armed playback.
+  window.__arMixAudioPathView=(d={})=>{
+    const r=d.dryRoutingLab||{},normal=(d.diagnosticRoute||"NORMAL")==="NORMAL";
+    const callback=!!d.connected&&Number(d.callbackCount)>0&&Number(d.callbackInputChannels)>0;
+    const peak=Math.max(0,Number(d.inputPeak)||0);
+    const captured=callback&&peak>0.0005;
+    const routed=normal&&!!r.ready&&!!r.hasAcceptedRoute&&!r.topologyFault;
+    const input=!d.connected?"DEVICE CLOSED":!callback?"NO CAPTURE CALLBACK":captured?"PCM DETECTED":"NO PCM IN CURRENT BLOCK";
+    const route=!normal?"DIAGNOSTIC MODE":!r.ready?"UNPATCHED / STALE":r.hasAcceptedRoute?"NATIVE ROUTE ACK":"INPUT PATCH REQUIRED";
+    const output=!d.monitor?"OUTPUT SAFE-MUTED":d.masterMute?"MASTER MUTED":!routed?"OUTPUT BLOCKED":"OUTPUT ARMED";
+    let message;
+    if(d.error)message="Audio driver error: "+d.error;
+    else if(!d.connected)message="No device connected. Select real capture and render endpoints in AUDIO I/O.";
+    else if(!callback)message="No active native capture callback. Check selected device and input pin masks.";
+    else if(!normal)message="Diagnostic mode active; return to NORMAL for mixer routing.";
+    else if(!routed)message="No native INPUT→MAIN route ACK. Patch real driver pins and use guarded APPLY.";
+    else if(captureFaultEvidence(d))
+      message="WASAPI capture discontinuities recorded with no FX and no DSP overload. This is not proof of render underruns. Compare wired DIRECT versus TRY INDEPENDENT CLOCK (BETA) deliberately with low headphone volume; never switch automatically.";
+    else if(!captured){
+      message=/cable output/i.test(String(d.inputDevice||""))
+        ?"No input PCM in this block. VB-Cable CABLE Output is the recording endpoint: the player must send to Windows playback CABLE Input, not Realtek Speakers."
+        :"No capture PCM in this block. Send a steady source signal and inspect the selected input and enabled physical pins.";
+      if(!d.monitor)message+=" MAIN is also SAFE-MUTED. Press START AUDIO in AUDIO SETUP at low volume after verifying input.";
+    }else if(!d.monitor)message="Capture PCM detected but physical MAIN is SAFE-MUTED. Press START AUDIO in AUDIO SETUP to arm at low headphone volume.";
+    else if(d.masterMute)message="Capture PCM detected but MASTER MUTE is active.";
+    else if((Number(d.postFxPeak)||0)<0.0002)message="Capture PCM present, but routed audio is silent. Check channel SOURCE, fader, mute and FX.";
+    else if((Number(d.peak)||0)<0.0002)message="Post-FX PCM present but hardware MAIN is silent. Check MASTER fader and output pin patch.";
+    else message="Input PCM and MAIN PCM detected. If silent at speakers, inspect Windows playback level, output endpoint and cables.";
+    return {input,route,output,message,inputPeak:peak,captureSignalBlocks:Number(d.captureSignalBlocks)||0};
+  };
   function diagnosis(d) {
-    if(!d.connected) return "No audio device connected. Open AUDIO SETUP.";
-    if(!d.monitor) return "OUTPUT MUTED · press START AUDIO in AUDIO SETUP to connect and arm.";
-    if(d.masterMute) return "MASTER MUTED · disable Master MUTE.";
-    if(d.dryRoutingLab?.active) return d.dryRoutingLab.ready?
-      "Live 10-channel native route: "+(d.dryRoutingLab.fxCount||0)+" independent native VST3 inserts, PRE/POST sends and BUS returns. Use low headphone volume.":
-      "Physical input mapping is STALE. Output is SILENT until the device is remapped and ACKed.";
-    if(d.diagnosticRoute==="OUTPUT_ONLY_TONE") return "Output-only test: capture endpoint is disconnected. Listen for tone at low headphone volume and click MARK CRACKLE when audible.";
-    if(d.diagnosticRoute==="CAPTURE_ONLY") return "Capture-only test: hardware render endpoint is disconnected. Observe capture input and backend discontinuity count; you should hear no audio.";
-    if(d.diagnosticRoute==="DRY_THROUGH") return "Dry-through test: microphone to output with all VST3 bypassed. MARK CRACKLE at audible glitches.";
-    if (d.error) return "Audio driver error: "+d.error;
-    if (!d.connected) return "No audio device connected. Open AUDIO SETUP.";
-    if (!d.deviceOutputChannels) return "No active output channels. Select a headphone/speaker output in AUDIO SETUP.";
-    // Mute is checked before ready/active: no misleading live claim.
-    if (d.masterMute) return "MASTER MUTED: switch off the master MUTE button.";
-    if (d.channelMute) return "CHANNEL 1 MUTED: switch off Lead Vocal MUTE.";
-    if(captureFaultEvidence(d))
-      return "Capture dropouts recorded with NO FX and no DSP overruns ("+
-        Math.floor(Number(d.backendXrunCount))+" capture flags). This is not proof of render underruns. " +
-        "Compare DIRECT with TRY INDEPENDENT CLOCK for your VB-Cable → headphone route. " +
-        "Switching reopens devices; use low headphone volume and change only when safe.";
-    if ((d.inputPeak||0)>.006 && (d.postFxPeak||0)<.0002) return "Mic input is detected but VST3 output is silent. Enable DRY TEST to bypass all plugins.";
-    if ((d.postFxPeak||0)>.003 && (d.peak||0)<.0002) return "Post-FX audio exists, but hardware output is silent. Check faders, mutes and output settings.";
-    if ((d.peak||0)>.003) return "Samples reach the output buffer. If you cannot hear them, check your interface mixer, physical output selection and headphone volume.";
-    if ((d.inputPeak||0)<.0005) return "Microphone signal is low/absent. Check the selected ASIO/WASAPI input and gain.";
-    return "Output armed. Speak into the microphone and inspect all three meters.";
+    if(d.dryRoutingLab?.active)return window.__arMixAudioPathView(d).message;
+    if(d.diagnosticRoute==="OUTPUT_ONLY_TONE")return "Output-only test: capture disconnected. Listen at low volume.";
+    if(d.diagnosticRoute==="CAPTURE_ONLY")return "Capture-only test: output disconnected; no audio expected.";
+    if(d.diagnosticRoute==="DRY_THROUGH")return "Dry-through test: input to output, no VST3.";
+    if(d.error)return "Audio driver error: "+d.error;
+    if(!d.connected)return "No audio device connected. Open AUDIO I/O.";
+    if(!d.monitor)return "OUTPUT SAFE-MUTED. Use SIGNAL CHECK when routing is ready.";
+    if(d.masterMute)return "MASTER MUTED. Disable MASTER MUTE.";
+    return (Number(d.inputPeak)||0)>0.0005?"Input PCM detected; inspect output.":"No input PCM in current block; inspect capture.";
   }
   function repaint(d) {
     if(routeOverlay.classList.contains("open")){
@@ -1910,7 +1925,7 @@
     el("arInputName").textContent=d.dryRoutingLab?.active?"NATIVE 10 CH INPUTS":d.diagnosticRoute==="OUTPUT_ONLY_TONE"?"INTERNAL TEST TONE":d.inputDevice||"Input device";
     el("arFxName").textContent=d.dryRoutingLab?.active?(String(d.dryRoutingLab.fxCount||0)+" NATIVE VST3"):d.diagnosticRoute==="OUTPUT_ONLY_TONE"?"NO INPUT / NO FX":d.diagnosticRoute!=="NORMAL"?"NO FX":d.dryTest?"DRY BYPASS":"VST3 Chain";
     el("arOutputName").textContent=d.outputDevice||"Output device";
-    el("arInputBar").style.width=percent(d.dryRoutingLab?.active?Math.max(d.dryRoutingLab.peakL||0,d.dryRoutingLab.peakR||0):d.inputPeak)+"%";
+    el("arInputBar").style.width=percent(d.inputPeak)+"%";
     el("arFxBar").style.width=percent(d.postFxPeak)+"%";
     el("arOutputBar").style.width=percent(d.peak)+"%";
     el("arSignalReason").textContent=diagnosis(d);
