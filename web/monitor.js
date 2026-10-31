@@ -1757,6 +1757,8 @@
     else if(!callback)message="No active native capture callback. Check selected device and input pin masks.";
     else if(!normal)message="Diagnostic mode active; return to NORMAL for mixer routing.";
     else if(!routed)message="No native INPUT→MAIN route ACK. Patch real driver pins and use guarded APPLY.";
+    else if(captureFaultEvidence(d))
+      message="WASAPI capture discontinuities recorded with no FX and no DSP overload. This is not proof of render underruns. Compare wired DIRECT versus TRY INDEPENDENT CLOCK (BETA) deliberately with low headphone volume; never switch automatically.";
     else if(!captured){
       message=/cable output/i.test(String(d.inputDevice||""))
         ?"No input PCM in this block. VB-Cable CABLE Output is the recording endpoint: the player must send to Windows playback CABLE Input, not Realtek Speakers."
