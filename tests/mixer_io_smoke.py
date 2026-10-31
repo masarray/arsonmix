@@ -722,6 +722,15 @@ async def main():
           {ok:true,instanceId:'g5c-101'})""")
         assert await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='routingFxEditor').length""")==before_editor+1
+        # The synthetic driver must ACK/REJECT any pending FAST2 hardware
+        # ARM before another structural route APPLY. Real native hosts send
+        # this event; the smoke fixture does not unless we explicitly emit it.
+        await page.evaluate("""()=>{
+          if(window.__arMixFastAudioState?.().pending)
+            window.__armixTestEmit('arMixAudioArmAck',{
+              ok:false,armed:false,deviceEpoch:4,error:'synthetic ARM rejection'});
+        }""")
+        assert not await page.evaluate("()=>window.__arMixFastAudioState?.().pending")
         # MS3A: changing MAIN physical destination is one native APPLY,
         # not a UI preview and never silently unmutes audio.
         await page.evaluate("""status=>{
