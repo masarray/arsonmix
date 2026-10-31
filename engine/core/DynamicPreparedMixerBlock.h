@@ -2,6 +2,8 @@
 #pragma once
 #include "DynamicChannelRoster.h"
 #include <algorithm>
+#include <atomic>
+#include <memory>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -46,8 +48,8 @@ struct DynamicGraphError final {
 class DynamicPreparedMixerBlock final {
     struct Edge final {
         std::size_t destination=0;
-        float gainL=0.f,gainR=0.f;
-        bool pre=false;
+        float panL=0.f,panR=0.f,initialGain=1.f;
+        bool pre=false,primary=false;
     };
     struct Lane final {
         ChannelId id{};
@@ -57,6 +59,16 @@ class DynamicPreparedMixerBlock final {
         bool inputStereo=false,enabled=false;
         float gainL=1.f,gainR=1.f;
         std::size_t first=0,last=0,slot=0;
+    };
+    // Immutable topology + atomics for live control targets. Callback-only
+    // smoothed state is preallocated per accepted graph revision.
+    struct ChannelTarget final {
+        std::atomic<float> left{1.f},right{1.f};
+        float appliedL=1.f,appliedR=1.f;
+    };
+    struct SendTarget final {
+        std::atomic<float> gain{1.f};
+        float applied=1.f;
     };
     static constexpr std::size_t notScheduled=std::numeric_limits<std::size_t>::max();
 public:
@@ -69,6 +81,43 @@ public:
     std::size_t activeChannels() const noexcept {return renderOrder_.size();}
     int capacity() const noexcept {return capacity_;}
     std::size_t scratchBytes() const noexcept {return scratch_.size()*sizeof(float);}
+    // CONTROL ONLY. Stable ChannelId lookup is outside the audio callback.
+    // Does not replace the prepared audio graph, modify DSP topology, or
+    // instantiate/copy a VST3 plugin. Audible gain is dezippered in process().
+    bool setChannelMix(ChannelId id,float gain,float pan) noexcept {
+        if(!id.value || !std::isfinite(gain) || gain<0.f || gain>4.f ||
+           !std::isfinite(pan) || pan< -1.f || pan>1.f)return false;
+        for(std::size_t i=0;i<lanes_.size();++i)if(lanes_[i].id==id) {
+            const bool mono=lanes_[i].format==ProcessingFormat::mono;
+            const float left=mono?gain*std::sqrt(.5f*(1.f-pan)):
+                gain*(pan>0.f?1.f-pan:1.f);
+            const float right=mono?gain*std::sqrt(.5f*(1.f+pan)):
+                gain*(pan<0.f?1.f+pan:1.f);
+            channelTargets_[i].left.store(left,std::memory_order_release);
+            channelTargets_[i].right.store(right,std::memory_order_release);
+            return true;
+        }
+        return false;
+    }
+    // Change gain ONLY on an existing parallel send (PRE or POST).
+    // Exclusive primary OUT and source/destination edits stay structural.
+    bool setParallelSendGain(ChannelId source,ChannelId destination,
+                             bool preFader,float gain) noexcept {
+        if(!source.value || !destination.value || !std::isfinite(gain) ||
+           gain<0.f || gain>4.f)return false;
+        for(const auto& lane:lanes_)if(lane.id==source) {
+            for(std::size_t e=lane.first;e<lane.last;++e){
+                const auto& edge=edges_[e];
+                if(lanes_[edge.destination].id==destination &&
+                   edge.pre==preFader && !edge.primary) {
+                    sendTargets_[e].gain.store(gain,std::memory_order_release);
+                    return true;
+                }
+            }
+            return false;
+        }
+        return false;
+    }
     bool contains(ChannelId id) const noexcept {
         return std::any_of(lanes_.begin(),lanes_.end(),
             [id](const Lane& x){return x.id==id;});
@@ -183,13 +232,12 @@ public:
                     return false;
                 }
                 const bool monoPre=rows[i].format==ProcessingFormat::mono && send.preFader;
-                const float gl=monoPre?
-                    send.gain*std::sqrt(.5f*(1.f-send.pan)):
-                    send.gain*(send.pan>0.f?1.f-send.pan:1.f);
-                const float gr=monoPre?
-                    send.gain*std::sqrt(.5f*(1.f+send.pan)):
-                    send.gain*(send.pan<0.f?1.f+send.pan:1.f);
-                outgoing[i].push_back({to,gl,gr,send.preFader});
+                const float gl=monoPre?std::sqrt(.5f*(1.f-send.pan)):
+                    (send.pan>0.f?1.f-send.pan:1.f);
+                const float gr=monoPre?std::sqrt(.5f*(1.f+send.pan)):
+                    (send.pan<0.f?1.f+send.pan:1.f);
+                outgoing[i].push_back({to,gl,gr,send.gain,send.preFader,
+                                       send.primaryOutput});
                 parents[to].push_back(i);
                 ++indegree[to];
             }
@@ -286,6 +334,20 @@ public:
         std::size_t slot=0;
         for(auto i:next.renderOrder_)next.lanes_[i].slot=slot++;
         next.scratch_.assign(active*2*frame,0.f);
+        next.channelTargets_=std::make_unique<ChannelTarget[]>(rows.size());
+        for(std::size_t i=0;i<rows.size();++i) {
+            auto& target=next.channelTargets_[i];
+            target.left.store(next.lanes_[i].gainL,std::memory_order_relaxed);
+            target.right.store(next.lanes_[i].gainR,std::memory_order_relaxed);
+            target.appliedL=next.lanes_[i].gainL;
+            target.appliedR=next.lanes_[i].gainR;
+        }
+        next.sendTargets_=std::make_unique<SendTarget[]>(next.edges_.size());
+        for(std::size_t e=0;e<next.edges_.size();++e){
+            const float initial=next.edges_[e].initialGain;
+            next.sendTargets_[e].gain.store(initial,std::memory_order_relaxed);
+            next.sendTargets_[e].applied=initial;
+        }
         destination=std::move(next);
         return true;
     }
@@ -346,22 +408,47 @@ public:
                 const auto& receiver=lanes_[edge.destination];
                 float* const dl=scratch_.data()+receiver.slot*2*block;
                 float* const dr=dl+block;
+                auto& target=sendTargets_[e];
+                const float goal=target.gain.load(std::memory_order_acquire);
+                const int ramp=std::min(frames,64);
+                const float step=(goal-target.applied)/static_cast<float>(ramp);
+                float applied=target.applied;
                 for(int f=0;f<frames;++f){
-                    dl[f]+=l[f]*edge.gainL;dr[f]+=r[f]*edge.gainR;
+                    if(f<ramp)applied+=step;
+                    dl[f]+=l[f]*applied*edge.panL;
+                    dr[f]+=r[f]*applied*edge.panR;
                 }
+                target.applied=goal;
             }
+            auto& controls=channelTargets_[i];
+            const float goalL=controls.left.load(std::memory_order_acquire);
+            const float goalR=controls.right.load(std::memory_order_acquire);
+            const int ramp=std::min(frames,64);
+            const float stepL=(goalL-controls.appliedL)/static_cast<float>(ramp);
+            const float stepR=(goalR-controls.appliedR)/static_cast<float>(ramp);
+            float currentL=controls.appliedL,currentR=controls.appliedR;
             for(int f=0;f<frames;++f){
-                l[f]*=lane.gainL;r[f]*=lane.gainR;
+                if(f<ramp){currentL+=stepL;currentR+=stepR;}
+                l[f]*=currentL;r[f]*=currentR;
             }
+            controls.appliedL=goalL;controls.appliedR=goalR;
             for(std::size_t e=lane.first;e<lane.last;++e) {
                 const auto& edge=edges_[e];
                 if(edge.pre)continue;
                 const auto& receiver=lanes_[edge.destination];
                 float* const dl=scratch_.data()+receiver.slot*2*block;
                 float* const dr=dl+block;
+                auto& target=sendTargets_[e];
+                const float goal=target.gain.load(std::memory_order_acquire);
+                const int ramp=std::min(frames,64);
+                const float step=(goal-target.applied)/static_cast<float>(ramp);
+                float applied=target.applied;
                 for(int f=0;f<frames;++f){
-                    dl[f]+=l[f]*edge.gainL;dr[f]+=r[f]*edge.gainR;
+                    if(f<ramp)applied+=step;
+                    dl[f]+=l[f]*applied*edge.panL;
+                    dr[f]+=r[f]*applied*edge.panR;
                 }
+                target.applied=goal;
             }
         }
         // Output roles are terminal sinks; copy each independently from
@@ -391,6 +478,8 @@ private:
     std::vector<Edge> edges_;
     std::vector<std::size_t> renderOrder_;
     std::vector<float> scratch_;
+    std::unique_ptr<ChannelTarget[]> channelTargets_;
+    std::unique_ptr<SendTarget[]> sendTargets_;
     std::size_t main_=notScheduled,monitor_=notScheduled;
     bool mainMonoAfterFx_=false;
     int capacity_=0;
