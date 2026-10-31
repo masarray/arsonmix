@@ -363,13 +363,19 @@ public:
            (monitorL && (monitorL==monitorR || monitorL==outputL ||
                          monitorL==outputR || monitorR==outputL ||
                          monitorR==outputR)))return false;
-        std::fill_n(outputL,frames,0.f);
-        std::fill_n(outputR,frames,0.f);
-        if(monitorL){
-            std::fill_n(monitorL,frames,0.f);
-            std::fill_n(monitorR,frames,0.f);
+        // A JUCE driver can expose input and output backed by the same PCM
+        // storage. Failure still clears every output; successful processing
+        // must defer that clear until ALL input sources have been read into
+        // their own prepared scratch lanes (including independent MONITOR).
+        if(frames>capacity_ || physicalCount<0) {
+            std::fill_n(outputL,frames,0.f);
+            std::fill_n(outputR,frames,0.f);
+            if(monitorL){
+                std::fill_n(monitorL,frames,0.f);
+                std::fill_n(monitorR,frames,0.f);
+            }
+            return false;
         }
-        if(frames>capacity_ || physicalCount<0)return false;
         const auto block=static_cast<std::size_t>(capacity_);
         // Prepared active scratch only; zero-patched lanes cost nothing.
         for(const auto i:renderOrder_){
@@ -450,6 +456,17 @@ public:
                 }
                 target.applied=goal;
             }
+        }
+        // Physical input PCM has been fully staged and processed into
+        // scratch. Only NOW may output buffers be cleared: on supported
+        // in-place/aliased hardware buffers an earlier clear would erase the
+        // input before the source strips consumed it. This adds no allocation,
+        // copy, lock, callback, DSP pass or latency.
+        std::fill_n(outputL,frames,0.f);
+        std::fill_n(outputR,frames,0.f);
+        if(monitorL){
+            std::fill_n(monitorL,frames,0.f);
+            std::fill_n(monitorR,frames,0.f);
         }
         // Output roles are terminal sinks; copy each independently from
         // the SAME preallocated render graph. No second FX traversal.
