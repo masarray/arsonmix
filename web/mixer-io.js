@@ -28,6 +28,57 @@
     if(current!=='NONE'&&!options.some(v=>v[0]===current))options.push([current,'CUSTOM L/R · PATCH']);
     return options;
   };
+
+  // M1 named logical inputs: PRESENTATION aliases for verified native hardware
+  // pins. Every choice still commits through the single native route authority.
+  // Profile is bound to backend + capture device + the entire active pin/name
+  // signature; never remap silently when the driver or enabled pins change.
+  const aliasStorePrefix='armix:named-source:v1:';
+  let aliasCacheKey='',aliasCache=[];
+  const sourceIdentity=s=>{
+    const d=deviceInventory?.active,pins=portList(s),enabled=d?.enabledInputs;
+    if(!isNative()||!s.ready||!d?.open||!d.backend||!d.captureDevice||
+       !Array.isArray(enabled)||!pins.length||pins.length!==enabled.length)return '';
+    const p=pins.map(x=>x.port).sort((a,b)=>a-b);
+    const e=enabled.map(Number).sort((a,b)=>a-b);
+    if(!p.every((v,i)=>v===e[i]))return '';
+    const names=Array.isArray(d.inputNames)?d.inputNames:[];
+    if(!pins.every(x=>names[x.port]===x.label))return '';
+    // Device names are NOT guaranteed stable operating-system IDs; on any
+    // changed label/pin list, the prior aliases are deliberately unavailable.
+    return aliasStorePrefix+encodeURIComponent(JSON.stringify([
+      d.backend,d.captureDevice,pins.map(x=>[x.port,x.label]).sort((a,b)=>a[0]-b[0])]));
+  };
+  const validAlias=(a,pins)=>{
+    const used=new Set(pins.map(x=>x.port));
+    return !!a&&typeof a.name==='string'&&a.name.length>0&&a.name.length<=32&&
+      (a.mode==='MONO'||a.mode==='STEREO')&&
+      Number.isInteger(a.left)&&used.has(a.left)&&
+      (a.mode==='MONO'?(a.right===-1):
+        Number.isInteger(a.right)&&a.left!==a.right&&used.has(a.right));
+  };
+  const sourceAliases=s=>{
+    const key=sourceIdentity(s);
+    if(key!==aliasCacheKey){
+      aliasCacheKey=key;aliasCache=[];
+      if(key)try {
+        const value=JSON.parse(localStorage.getItem(key)||'[]');
+        if(Array.isArray(value))aliasCache=value.slice(0,32).filter(x=>validAlias(x,portList(s)));
+      }catch{} // blocked storage does not interrupt native routing
+    }
+    return key?aliasCache:[];
+  };
+  const saveSourceAliases=(s,items)=>{
+    const key=sourceIdentity(s);
+    if(!key)return false;
+    try {
+      localStorage.setItem(key,JSON.stringify(items));
+      aliasCacheKey=key;aliasCache=items;
+      return true;
+    }catch{return false;}
+  };
+  const aliasValue=a=>a.mode+':'+a.left+(a.mode==='STEREO'?':'+a.right:'');
+  const namedRoute=(s,r)=>sourceAliases(s).find(a=>aliasValue(a)===valueFor(r));
   const outputLabel=s=>{
     const out=s.mainOutputs?.length===2?s.mainOutputs:s.outputPorts||[];
     return s.ready&&Number.isInteger(out[0])&&Number.isInteger(out[1])?
@@ -71,6 +122,7 @@
       source=(names(r.left)||'L'+(Number(r.left)+1))+' / '+
         (names(r.right)||'R'+(Number(r.right)+1));
     if(ack&&r.mode==='BUS')source='INTERNAL BUS';
+    if(ack&&r.mode!=='NONE'&&r.mode!=='BUS')source=namedRoute(s,r)?.name||source;
     if(!ack)source='NO NATIVE ACK';
     const routed=ack?lastStatus.dryRoutingLab?.fxInstances?.[i]:null;
     const inserts=Array.isArray(routed)?routed.length:0;
@@ -100,11 +152,16 @@
   sourceChooser.hidden=true;
   sourceChooser.setAttribute('role','dialog');
   sourceChooser.setAttribute('aria-label','Choose verified channel input source');
-  sourceChooser.innerHTML='<div class="arSourceChooserTop"><span data-source-title>INPUT SOURCE</span><button type="button" class="btn-180" data-source-close aria-label="Close input source chooser">×</button></div><div class="arSourceChooserChoices" data-source-choices></div><div class="arSourceChooserNote" data-source-note role="status"></div>';
+  sourceChooser.innerHTML='<div class="arSourceChooserTop"><span data-source-title>INPUT SOURCE</span><button type="button" class="btn-180" data-source-close aria-label="Close input source chooser">×</button></div><input class="arSourceSearch" data-source-search type="search" placeholder="Find named or hardware source..." aria-label="Search verified sources"><div class="arSourceChooserChoices" data-source-choices></div><details class="arSourceAliasManager"><summary>MANAGE NAMED INPUTS</summary><div class="arSourceAliasFields"><input data-source-alias-name maxlength="32" placeholder="Name: Mic 1 / Virtual L-R" aria-label="New source name"><select data-source-alias-mode aria-label="Source format"><option value="MONO">MONO</option><option value="STEREO">STEREO</option></select><select data-source-alias-left aria-label="Input left or mono pin"></select><select data-source-alias-right aria-label="Input right pin"></select><button type="button" class="btn-180" data-source-alias-save>SAVE SOURCE</button></div><small data-source-alias-help>Requires a verified device inventory; routes still require native ACK.</small></details><div class="arSourceChooserNote" data-source-note role="status"></div>';
   host.insertBefore(sourceChooser,mixer);
   let sourceChooserChannel=-1;
   const sourceChoices=sourceChooser.querySelector('[data-source-choices]');
   const sourceNote=sourceChooser.querySelector('[data-source-note]');
+  const aliasNameInput=sourceChooser.querySelector('[data-source-alias-name]');
+  const aliasLeft=sourceChooser.querySelector('[data-source-alias-left]');
+  const aliasRight=sourceChooser.querySelector('[data-source-alias-right]');
+  const aliasMode=sourceChooser.querySelector('[data-source-alias-mode]');
+  const aliasSearch=sourceChooser.querySelector('[data-source-search]');
   const closeSourceChooser=()=>{
     sourceChooser.hidden=true;sourceChooserChannel=-1;
   };
@@ -117,29 +174,85 @@
     const pins=portList(s);
     const values=portsFor(s,r||{mode:'NONE',left:-1,right:-1});
     const current=valueFor(r);
+    const aliases=sourceAliases(s),search=aliasSearch.value.trim().toLowerCase();
+    const matched=title=>!search||title.toLowerCase().includes(search);
+    if(aliases.length){
+      for(let i=0;i<aliases.length;++i){
+        const a=aliases[i],value=aliasValue(a),label=a.name+' · '+a.mode+' · '+
+          (a.left+1)+(a.mode==='STEREO'?'/'+(a.right+1):'');
+        if(!matched(label))continue;
+        const line=node('div','arSourceAliasRow');
+        const button=node('button','arSourceChoice',label);
+        button.type='button';button.dataset.sourceChoice=value;
+        button.setAttribute('aria-pressed',String(value===current));
+        button.disabled=!!s.pending||!!quickSourcePending||!s.ready;
+        line.appendChild(button);
+        const remove=node('button','arSourceAliasRemove','×');
+        remove.type='button';remove.dataset.sourceAliasRemove=String(i);
+        remove.title='Remove only this name, not hardware routing';
+        line.appendChild(remove);sourceChoices.appendChild(line);
+      }
+    }
     for(const [value,title] of values){
+      if(!matched(title))continue;
       if(value!=='NONE'&&value!=='CUSTOM'&&
          !value.startsWith('MONO:')&&!value.startsWith('STEREO:'))continue;
       // CUSTOM is a pointer to Advanced Patch, never an invented pin.
       const button=node('button','arSourceChoice',title);
       button.type='button';button.dataset.sourceChoice=value;
       button.setAttribute('aria-pressed',String(value===current));
-      button.disabled=!!s.pending||!s.ready;
+      button.disabled=!!s.pending||!!quickSourcePending||!s.ready;
       sourceChoices.appendChild(button);
     }
     const advanced=node('button','arSourceAdvanced','ADVANCED PATCH · NONADJACENT L/R');
     advanced.type='button';advanced.dataset.sourceAdvanced='';
-    sourceChoices.appendChild(advanced);
+    if(matched('ADVANCED PATCH'))sourceChoices.appendChild(advanced);
+    const previousLeft=aliasLeft.value,previousRight=aliasRight.value;
+    const pinOptions=pins.map(p=>[String(p.port),portName(p)]);
+    populate(aliasLeft,pinOptions,previousLeft||String(pins[0]?.port??''));
+    populate(aliasRight,pinOptions,previousRight||String(pins[1]?.port??pins[0]?.port??''));
+    aliasRight.disabled=aliasMode.value!=='STEREO';
+    const identified=!!sourceIdentity(s);
+    sourceChooser.querySelector('[data-source-alias-save]').disabled=!identified;
+    sourceChooser.querySelector('[data-source-alias-help]').textContent=identified?
+      'Saved for this verified device and enabled-pin layout · native ACK required':
+      'Awaiting actual driver inventory; naming disabled until hardware is verified';
     sourceNote.textContent=!s.ready?'No verified native driver input ports':
-      s.monitor?'MUTE OUTPUT to safely change SOURCE · no automatic unmute':
-      'Selecting SOURCE commits via existing native routing; wait for ACK';
+      s.monitor?'Same-format physical input changes use native 64-sample crossfade · new patch or format requires MUTE':
+      'Choose verified source; native ACK required before it is LIVE';
   };
   const openSourceChooser=channel=>{
     if(!Number.isInteger(channel)||channel<0||channel>=10)return;
     sourceChooserChannel=channel;sourceChooser.hidden=false;
+    if(!sourceIdentity(route()))deviceRefresh(); // cached JUCE readback, not a vendor rescan
     renderSourceChooser();
   };
+  sourceChooser.addEventListener('input',event=>{
+    if(event.target===aliasSearch)renderSourceChooser();
+  });
+  aliasMode.addEventListener('change',()=>{aliasRight.disabled=aliasMode.value!=='STEREO';});
   sourceChooser.addEventListener('click',event=>{
+    const remove=event.target.closest('[data-source-alias-remove]');
+    if(remove){
+      const s=route(),items=sourceAliases(s).slice(),index=Number(remove.dataset.sourceAliasRemove);
+      if(Number.isInteger(index)&&index>=0&&index<items.length&&
+         saveSourceAliases(s,items.filter((_,i)=>i!==index))){
+        sourceNote.textContent='SOURCE NAME REMOVED · live hardware route unchanged';
+        renderSourceChooser();refreshFocus(s);
+      }return;
+    }
+    if(event.target.closest('[data-source-alias-save]')){
+      const s=route(),a={name:aliasNameInput.value.trim(),mode:aliasMode.value,
+        left:Number(aliasLeft.value),right:aliasMode.value==='MONO'?-1:Number(aliasRight.value)};
+      if(!validAlias(a,portList(s))){sourceNote.textContent='INVALID NAME OR HARDWARE L/R PAIR';return;}
+      const items=sourceAliases(s).filter(x=>x.name.toLowerCase()!==a.name.toLowerCase());
+      if(items.length>=32){sourceNote.textContent='32 NAMED SOURCES MAXIMUM';return;}
+      if(saveSourceAliases(s,[...items,a])){
+        aliasNameInput.value='';aliasSearch.value='';renderSourceChooser();refreshFocus(s);
+        sourceNote.textContent='NAMED SOURCE SAVED · choose it to request native routing';
+      }else sourceNote.textContent='DEVICE/LOCAL STORAGE UNAVAILABLE · not saved';
+      return;
+    }
     if(event.target.closest('[data-source-close]')){closeSourceChooser();return;}
     if(event.target.closest('[data-source-advanced]')){
       const ch=sourceChooserChannel;closeSourceChooser();openIO('inputs',ch);return;
@@ -149,7 +262,7 @@
     const [mode,a,b]=button.dataset.sourceChoice.split(':');
     if(!['NONE','MONO','STEREO'].includes(mode))return;
     const channel=sourceChooserChannel;
-    const outcome=window.__arMixCommitMutedSource?.(
+    const outcome=window.__arMixCommitSelectedSource?.(
       channel,mode,mode==='NONE'?-1:Number(a),mode==='STEREO'?Number(b):-1);
     sourceNote.textContent=outcome?.ok?
       outcome.pending?'SOURCE PENDING · WAIT NATIVE ACK':
@@ -157,8 +270,12 @@
       outcome?.error||'Native source route rejected';
     if(!outcome?.ok)return;
     if(outcome.pending)quickSourcePending={
-      channel,epoch:outcome.epoch,value:button.dataset.sourceChoice};
+      channel,epoch:outcome.epoch,value:button.dataset.sourceChoice,live:!!outcome.live};
     renderSourceChooser();
+    sourceNote.textContent=outcome.pending?
+      outcome.live?'LIVE SOURCE PENDING · 64-SAMPLE RAMP · WAIT NATIVE ACK':
+        'MUTED SOURCE APPLY PENDING · WAIT NATIVE ACK':
+      'SOURCE ALREADY ACKNOWLEDGED';
   });
   // MS5: explicit Sends-on-Faders control, scoped to a single real AUX return.
   // MAIN fader DOM and all audio controls remain resident and unmodified.
@@ -248,9 +365,8 @@
     refresh();drawSendEditor();
   }
 
-  // MS5 Sends-on-Faders: no second audio model. One native POST send per channel
-  // is edited only on release/keyboard; drag movement paints CSS without
-  // rebuilding the mixer, invoking plugins, or dispatching audio parameters.
+  // M1: one native POST send, one in-flight ACK per edge, coalesced continuous
+  // drag input (not a per-pointer DOM rerender, FX action or structural APPLY).
   function leaveSof(){
     if(sofDrag){document.removeEventListener('pointermove',sofMove);
       sofDrag.slider.classList.remove('is-dragging');sofDrag=null;}
@@ -368,7 +484,9 @@
     sofDrag=null;
     document.removeEventListener('pointermove',sofMove);
     d.slider.classList.remove('is-dragging');
-    if(!cancel&&Math.abs(d.db-d.startDb)>0.005)sofStage(d.ch,'gain',+sofGain(d.db).toFixed(7));
+    if(cancel&&d.sent)sofStage(d.ch,'gain',+sofGain(d.startDb).toFixed(7));
+    else if(!cancel&&Math.abs(d.db-d.startDb)>0.005)
+      sofStage(d.ch,'gain',+sofGain(d.db).toFixed(7));
     else refresh();
   }
   function sofMove(event){
@@ -376,6 +494,15 @@
     if(!d||d.pointerId!==event.pointerId)return;
     d.db=Math.max(-60,Math.min(0,d.startDb+(d.startY-event.clientY)*60/d.travel));
     if(d.slider.isConnected)sofPaintLayer(d.slider.closest('.arSofLayer'),sofGain(d.db));
+    // Native ACK backpressure keeps at most one pending IPC command. While
+    // dragging, only the latest target is retained; the audio DSP de-zippers.
+    const now=performance.now();
+    if(Math.abs(d.db-d.lastSentDb)>=.25 && now-d.lastSentAt>=25){
+      const response=window.__arMixSetLiveAuxSendGain?.({
+        from:d.ch,bus:sofBus,gain:+sofGain(d.db).toFixed(7)});
+      if(response?.ok){d.sent=true;d.lastSentDb=d.db;d.lastSentAt=now;}
+      else if(response?.error)sofStatus(response.error);
+    }
   }
   document.addEventListener('pointerdown',event=>{
     const slider=event.target.closest?.('[data-sof-fader]');
@@ -384,7 +511,8 @@
     if(!item||s.pending||s.epoch!==sofEpoch)return;
     const rect=slider.getBoundingClientRect();
     sofDrag={ch,slider,pointerId:event.pointerId,startY:event.clientY,
-      travel:Math.max(24,rect.height-18),startDb:sofDb(item.gain),db:sofDb(item.gain)};
+      travel:Math.max(24,rect.height-18),startDb:sofDb(item.gain),db:sofDb(item.gain),
+      lastSentDb:sofDb(item.gain),lastSentAt:0,sent:false};
     slider.classList.add('is-dragging');
     slider.setPointerCapture?.(event.pointerId);
     document.addEventListener('pointermove',sofMove,{passive:true});
@@ -1066,10 +1194,10 @@
     const value=select.value,parts=value.split(':');
     const mode=parts[0],left=mode==='NONE'?-1:Number(parts[1]),right=mode==='STEREO'?Number(parts[2]):-1;
     const direct=select.classList.contains('arBankSource');
-    const response=direct?window.__arMixCommitMutedSource?.(channel,mode,left,right):
+    const response=direct?window.__arMixCommitSelectedSource?.(channel,mode,left,right):
       window.__arMixStageChannelInput?.(channel,mode,left,right);
     if(response?.pending)quickSourcePending={channel,epoch:response.epoch,
-      value:valueFor({mode,left,right})};
+      value:valueFor({mode,left,right}),live:!!response.live};
     if(!response?.ok){
       const message=response?.error||'Native INPUT PATCH unavailable';
       el('arIOFeedback').textContent=message;
@@ -1119,18 +1247,23 @@
       lastSignature='';refresh();
     }
   },true);
-  // AUX return fader updates only after release/keyboard change; native
-  // DSP ramps it inside one callback. Never touch the MAIN fader or rack.
-  sofControls.addEventListener('change',event=>{
-    if(event.target.matches('[data-sof-bus]')){sofMessage='';refresh();return;}
+  // AUX MASTER is a real continuous parameter as well; input and release
+  // share the same bounded native ACK/coalescing controller.
+  const sendAuxMaster=event=>{
     if(!event.target.matches('[data-aux-master]'))return;
     const bus=Number(sofControls.querySelector('[data-sof-bus]').value);
     const db=Number(event.target.value);
     const gain=db<=-60?0:Math.pow(10,db/20);
     const answer=window.__arMixSetLiveAuxMasterGain?.(bus,+gain.toFixed(7));
-    sofMessage=answer?.ok?'AUX MASTER · WAIT NATIVE ACK':
-      answer?.error||'AUX master unavailable';
-    refresh();
+    if(!answer?.ok)sofMessage=answer?.error||'AUX master unavailable';
+    const read=sofControls.querySelector('[data-aux-master-read]');
+    if(read)read.textContent=db<=-60?'OFF':db.toFixed(1)+' dB';
+  };
+  sofControls.addEventListener('input',sendAuxMaster);
+  sofControls.addEventListener('change',event=>{
+    if(event.target.matches('[data-sof-bus]')){sofMessage='';refresh();return;}
+    if(!event.target.matches('[data-aux-master]'))return;
+    sendAuxMaster(event);
   });
   // Channel focus is intentionally lightweight: point into existing MIX
   // modes and native controller, never create a parallel mixer/FX model.
@@ -1321,6 +1454,7 @@
     const hadDraft=deviceDirty();
     deviceInventory=d;
     if(!hadDraft&&!deviceBusy)deviceDraft=makeDeviceDraft();
+    if(!sourceChooser.hidden){renderSourceChooser();refreshFocus(route());}
     if(d?.scanState==='SCANNED')
       deviceNote='DEVICE LIST REFRESHED · '+Number(d.scanDurationMs||0).toFixed(0)+' ms · output remains MUTED';
     else if(d?.scanState==='BLOCKED_ARMED')
@@ -1358,6 +1492,19 @@
       sourceNote.textContent=ack?.ok?'NATIVE SOURCE ACK · OUTPUT REMAINS MUTED':
         'SOURCE REJECTED · '+(ack?.error||'Route unchanged');
       renderSourceChooser();
+    }
+  });
+  window.addEventListener('arMixSourceSwitchResult',event=>{
+    const result=event.detail||{};
+    if(quickSourcePending?.live&&quickSourcePending.channel===result.channel)
+      quickSourcePending=null;
+    const s=route();
+    lastSignature='';refresh();
+    if(!sourceChooser.hidden){
+      renderSourceChooser();
+      sourceNote.textContent=result.ok?
+        'SOURCE ACK · 64-SAMPLE INPUT CROSSFADE · FX AND BUS UNCHANGED':
+        'SOURCE REJECTED · '+(result.error||'Verified route unchanged');
     }
   });
   window.addEventListener('arMixRoutingDraftChanged',()=>{lastSignature='';refresh();});

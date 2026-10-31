@@ -149,4 +149,42 @@ int main() {
         assert(allocations.load(std::memory_order_relaxed)==pre);
         assert(near(outputL[0],.4f*.70710678f));
     }
+    // M1 physical source: real PCM tap changes without graph recompile,
+    // plugin recreation, output mute or any audio-thread allocation.
+    {
+        constexpr std::array hardware {0,1,2};
+        ChannelRoutingConfig ch;
+        ch.stripsAndMaster.strips[0]={SourceMode::mono,0,-1,1.f,0.f,false,false};
+        SendRequest direct;
+        direct.toMaster[0]=true;
+        PreparedRenderGraph compiled;RenderError reason;
+        assert(PreparedRenderGraph::compile(ch,hardware,direct,compiled,reason));
+        PreparedMixerBlock live(compiled,128);
+        std::array<float,128> microphone{},alternate{},silent{};
+        microphone.fill(.2f);alternate.fill(.8f);
+        const float* inputs[]={microphone.data(),alternate.data(),silent.data()};
+        std::array<float,128> left{},right{};
+        auto fx=[](int,float*,float*,int) noexcept {};
+        assert(!live.setPhysicalSource(0,SourceMode::stereo,1,2));
+        assert(!live.setPhysicalSource(0,SourceMode::mono,1,2));
+        assert(!live.setPhysicalSource(0,SourceMode::mono,20,20));
+        assert(!live.setPhysicalSource(3,SourceMode::mono,1,1));
+        assert(live.process(inputs,3,left.data(),right.data(),128,fx));
+        const float old=left[127],newValue=.8f*.70710678118f;
+        assert(near(old,.2f*.70710678118f));
+        assert(live.setPhysicalSource(0,SourceMode::mono,1,1));
+        const auto allocationsBefore=allocations.load(std::memory_order_relaxed);
+        assert(live.process(inputs,3,left.data(),right.data(),128,fx));
+        assert(allocations.load(std::memory_order_relaxed)==allocationsBefore);
+        assert(left[0]>old&&left[0]<newValue);
+        assert(left[0]<left[31]&&left[31]<left[63]);
+        assert(near(left[63],newValue,0.0001f));
+        assert(near(left[127],newValue,0.0001f));
+        assert(live.setPhysicalSource(0,SourceMode::mono,0,0));
+        assert(live.process(inputs,3,left.data(),right.data(),128,fx));
+        assert(near(left[63],old,0.0001f));
+        assert(left[0]>old&&left[0]<newValue);
+        assert(near(right[63],old,0.0001f));
+    }
+
 }

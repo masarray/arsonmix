@@ -128,6 +128,46 @@ async def main():
         assert await page.evaluate("""()=>window.__armixTestActions.filter(
           x=>x.name==='arMixAction'&&x.data.action==='routingDryApply').length""")==1
         assert (await page.evaluate("()=>window.__arMixRouteView().draftRoutes[1].mode"))=='NONE'
+        # M1: an ALREADY PATCHED MONO channel may change physical input
+        # while output is ARMED: one native source PARAM/ACK and no APPLY.
+        await page.locator('[data-mix-mode="FX"]').click()
+        # SOURCE follows the selected strip, not the previous editable row.
+        await page.evaluate("()=>chooseChannel(0)")
+        assert await page.locator('#mixer [data-strip="0"]').evaluate("(e)=>e.classList.contains('selected')")
+        await page.locator('[data-focus-step="source"]').click()
+        assert await page.locator('.arSourceChooser').is_visible()
+        await page.locator('.arSourceChoice[data-source-choice="MONO:1"]').click()
+        switching=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.name==='arMixAction'&&x.data.action==='routingSourceSwitch')""")
+        assert len(switching)==1,(switching,await page.locator('[data-source-note]').inner_text())
+        assert switching[0]['data']['requestId']==1 and switching[0]['data']['channel']==0
+        assert switching[0]['data']['left']==1 and switching[0]['data']['deviceEpoch']==4
+        assert (await page.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.name==='arMixAction'&&x.data.action==='routingDryApply').length"""))==1
+        assert 'Microphone 1' in await page.locator('[data-focus-source]').inner_text()
+        # Stale request cannot impersonate the first accepted switch.
+        await page.evaluate("""status=>window.__armixTestEmit('arMixSourceSwitchAck',{
+          ok:true,requestId:321,channel:0,state:status.dryRoutingLab})""",status)
+        assert 'Microphone 1' in await page.locator('[data-focus-source]').inner_text()
+        status=await page.evaluate("""status=>{
+          status.dryRoutingLab.acceptedRoute.channels[0].left=1;
+          window.__armixTestEmit('arMixSourceSwitchAck',{
+            ok:true,requestId:1,channel:0,state:status.dryRoutingLab});
+          window.__armixTestEmit('arMixStatus',status);return status;
+        }""",status)
+        assert 'Microphone 2' in await page.locator('[data-focus-source]').inner_text()
+        # Restore original source to keep other mixer regression fixtures stable.
+        await page.locator('.arSourceChoice[data-source-choice="MONO:0"]').click()
+        status=await page.evaluate("""status=>{
+          status.dryRoutingLab.acceptedRoute.channels[0].left=0;
+          window.__armixTestEmit('arMixSourceSwitchAck',{
+            ok:true,requestId:2,channel:0,state:status.dryRoutingLab});
+          window.__armixTestEmit('arMixStatus',status);return status;
+        }""",status)
+        assert 'Microphone 1' in await page.locator('[data-focus-source]').inner_text()
+        assert (await page.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.name==='arMixAction'&&x.data.action==='routingDryApply').length"""))==1
+        await page.locator('[data-source-close]').click()
         await page.evaluate("""status=>{
           status.monitor=false;
           window.__armixTestEmit('arMixStatus',status);
@@ -333,6 +373,15 @@ async def main():
         live_actions=await page.evaluate("""()=>window.__armixTestActions.filter(
           x=>x.name==='arMixAction'&&x.data.action==='routingAuxSendGain')""")
         assert len(live_actions)==1,live_actions
+        # During the first native ACK flight, newer moves must only replace
+        # one queued value. Returning to the in-flight target drops the queue.
+        queued=await page.evaluate("""()=>({
+          first:window.__arMixSetLiveAuxSendGain({from:0,bus:0,gain:.3}),
+          second:window.__arMixSetLiveAuxSendGain({from:0,bus:0,gain:1}),
+          count:window.__armixTestActions.filter(x=>
+            x.name==='arMixAction'&&x.data.action==='routingAuxSendGain').length
+        })""")
+        assert queued['first']['queued'] and queued['second']['queued'] and queued['count']==1,queued
         gain_command=live_actions[-1]['data']
         assert gain_command['from']==0 and gain_command['bus']==0
         assert gain_command['deviceEpoch']==4 and gain_command['revision']==5
@@ -672,6 +721,58 @@ async def main():
         }""",status)
         assert 'LIVE' in await page.locator('[data-io-quick-row="2"] .arIOQuickState').inner_text()
         assert 'LIVE' in await page.locator('[data-io-quick-row="5"] .arIOQuickState').inner_text()
+        # M1: a user-defined sparse stereo pair is selectable in CHANNEL SOURCE
+        # only when the real device identity and *all* active pins match.
+        await page.evaluate("""()=>window.__armixTestEmit('arMixAudioDeviceInventory',{
+          currentType:'ASIO',
+          active:{backend:'ASIO',captureDevice:'MAONO PS22',playbackDevice:'MAONO PS22',
+            open:true,deviceGeneration:51,enabledInputs:[0,1,4,7],
+            inputNames:['MAONO Mic In 1','MAONO Mic In 2','Unused 3','Unused 4',
+              'MAONO VC In L','Unused 6','Unused 7','MAONO VC In R']},
+          types:[{name:'ASIO',active:true,separate:false,
+            inputs:['MAONO PS22'],outputs:['MAONO PS22']}]})""")
+        await page.locator('#arIOOverlay [data-io-close]').click()
+        await page.locator('[data-focus-step="source"]').click()
+        await page.locator('.arSourceAliasManager summary').click()
+        await page.locator('[data-source-alias-name]').fill('MAONO Virtual Stereo')
+        await page.locator('[data-source-alias-mode]').select_option('STEREO')
+        await page.locator('[data-source-alias-left]').select_option('4')
+        await page.locator('[data-source-alias-right]').select_option('7')
+        assert await page.locator('[data-source-alias-save]').is_enabled()
+        await page.locator('[data-source-alias-save]').click()
+        named=page.locator('[data-source-choice="STEREO:4:7"]')
+        assert await named.count()==1
+        assert 'MAONO Virtual Stereo' in await named.inner_text()
+        selected=await page.evaluate("""()=>Number(
+          document.querySelector('.strip[data-strip].selected')?.dataset.strip||0)""")
+        await named.click()
+        native=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.name==='arMixAction'&&x.data.action==='routingDryApply')""")
+        assert len(native)==2,native
+        target=native[-1]['data']['value']['channels'][selected]
+        assert target['mode']=='STEREO' and target['left']==4 and target['right']==7,target
+        status=await page.evaluate("""({status,selected})=>{
+          status.dryRoutingLab.revision=5;
+          status.dryRoutingLab.acceptedRoute.channels[selected]={
+            ...status.dryRoutingLab.acceptedRoute.channels[selected],
+            mode:'STEREO',left:4,right:7};
+          window.__armixTestEmit('arMixRoutingLabAck',{ok:true,state:status.dryRoutingLab});
+          window.__armixTestEmit('arMixStatus',status);
+          return status;
+        }""",{"status":status,"selected":selected})
+        assert 'MAONO Virtual Stereo' in await page.locator('[data-focus-source]').inner_text()
+        # An altered pin mask must NOT inherit the saved alias or silently remap.
+        await page.evaluate("""()=>window.__armixTestEmit('arMixAudioDeviceInventory',{
+          currentType:'ASIO',
+          active:{backend:'ASIO',captureDevice:'MAONO PS22',playbackDevice:'MAONO PS22',
+            open:true,deviceGeneration:52,enabledInputs:[0,1,4],
+            inputNames:['MAONO Mic In 1','MAONO Mic In 2','Unused 3','Unused 4','MAONO VC In L']},
+          types:[{name:'ASIO',active:true,separate:false,
+            inputs:['MAONO PS22'],outputs:['MAONO PS22']}]})""")
+        # The old pin route may still appear as CUSTOM for inspection; the
+        # device-bound named alias itself MUST disappear on mask mismatch.
+        assert await page.locator('.arSourceAliasRow [data-source-choice="STEREO:4:7"]').count()==0
+        assert await page.locator('[data-source-alias-save]').is_disabled()
         await page.screenshot(path="mixer-patch1-maono-ch3-ch6-1366.png")
         assert not errors,errors
         await browser.close()

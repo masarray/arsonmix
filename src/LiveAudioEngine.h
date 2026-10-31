@@ -1028,6 +1028,17 @@ public:
         setOutputMuted(true); // never expose CH1 unexpectedly on STOP
         dryRoutingLab_.disable();
     }
+    juce::String switchDryRoutingLabSource(int strip,std::uint64_t epoch,
+            std::uint64_t revision,const juce::String& mode,
+            int left,int right) noexcept {
+        if(independent_.active()||routeReconfiguring_.load(std::memory_order_acquire)||
+           handoff_.busy()||!directFence_.permitted()||
+           diagnosticRoute_.load(std::memory_order_acquire)
+               !=armix::diagnostics::Route::normal||
+           savedDirectSetup_||savedLiveSetup_)
+            return "SOURCE SWITCH: live DIRECT device or graph unavailable";
+        return dryRoutingLab_.switchPhysicalSource(strip,epoch,revision,mode,left,right);
+    }
     bool setDryRoutingLabParameter(int strip,std::uint64_t epoch,
             std::uint64_t revision,const juce::String& parameter,
             float value) noexcept {
