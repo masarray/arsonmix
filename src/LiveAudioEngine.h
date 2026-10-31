@@ -7,6 +7,7 @@
 #include "VstBusLayout.h"
 #include "LiveGraphHandoff.h"
 #include "LiveDryRoutingLab.h"
+#include "LiveDynamicBusSession.h"
 #include "../engine/dsp/NativeMasterLoudness.h"
 #include "DiagnosticTone.h"
 #include "../engine/device/JuceIndependentClockDevice.h"
@@ -1028,6 +1029,7 @@ public:
         const juce::var& command,
         const LiveDryRoutingLab::FxSelections& fx,
         const LiveDryRoutingLab::FxRestores* restored=nullptr) {
+        if(liveStudioBus_.active())return "M3E live Group active: MUTE OUTPUT and STOP GROUP before editing legacy routing/FX";
         if (!allOutputsDisarmed()) return "MUTE hardware output and DISARM STREAM before APPLY routing";
         if (handoff_.busy()) return "A VST3 graph handoff is in progress";
         if (routeReconfiguring_.load(std::memory_order_acquire))
@@ -1054,8 +1056,39 @@ public:
     }
     void disableDryRoutingLab() noexcept {
         setOutputMuted(true); // never expose CH1 unexpectedly on STOP
+        liveStudioBus_.invalidate();
         dryRoutingLab_.disable();
     }
+    // Actual single-callback dynamic GROUP operator command. No additional
+    // device, signal path, VST instance or hidden borrowed input strip.
+    juce::String applyStudioBusForSelected(
+        const armix::mixer::LiveDynamicBusSession::Selection& selected) {
+        if(!allOutputsDisarmed())return "MUTE MAIN and DISARM STREAM first";
+        if(!directFence_.permitted()||independent_.active()||
+           diagnosticRoute()!=armix::diagnostics::Route::normal||
+           savedDirectSetup_||savedLiveSetup_||handoff_.busy()||
+           routeReconfiguring_.load(std::memory_order_acquire))
+            return "Studio Bus requires stable DIRECT ASIO/WASAPI with no graph transition";
+        if(!dryRoutingLab_.hasExplicitRoute()||graphOwned_->count!=0)
+            return "Studio Bus dry pilot requires ACKed input route and empty legacy CH1 VST rack";
+        auto* const device=deviceManager_.getCurrentAudioDevice();
+        if(!device||!device->isOpen())return "DIRECT audio device is not open";
+        const auto status=dryRoutingLab_.status(device);
+        return liveStudioBus_.createForSelected(
+            status.getProperty("acceptedRoute",{}),status,selected,
+            dryRoutingLab_.epoch(),
+            device->getActiveInputChannels().countNumberOfSetBits(),
+            device->getActiveOutputChannels().countNumberOfSetBits(),
+            juce::jmax(32,device->getCurrentBufferSizeSamples()),
+            allOutputsDisarmed());
+    }
+    juce::String stopStudioBus() {
+        if(!allOutputsDisarmed())return "MUTE hardware MAIN and DISARM STREAM before STOP GROUP";
+        liveStudioBus_.stop();
+        return {};
+    }
+    bool studioBusLive() const noexcept {return liveStudioBus_.active();}
+
     juce::String switchDryRoutingLabSource(int strip,std::uint64_t epoch,
             std::uint64_t revision,const juce::String& mode,
             int left,int right) noexcept {
@@ -1124,12 +1157,14 @@ public:
     juce::var status()
     {
         dryRoutingLab_.poll(); // off-RT reclaim after callback quiescence
+        liveStudioBus_.poll();
         auto o = std::make_unique<juce::DynamicObject>();
         const bool dual = independent_.active();
         auto* d = dual ? independent_.renderDevice()
                        : deviceManager_.getCurrentAudioDevice();
         auto* capture = dual ? independent_.captureDevice() : d;
         o->setProperty ("dryRoutingLab",dryRoutingLab_.status(capture));
+        o->setProperty ("studioBus",liveStudioBus_.status());
         // NORMAL mode is never silently served by the legacy CH1 fallback.
         // This state is for operator feedback; it does not authorize output.
         o->setProperty ("productionRoutingState",
@@ -1449,6 +1484,9 @@ private:
     armix::dsp::NativeMasterLoudness masterLoudness_;
     armix::diagnostics::DiagnosticTone diagnosticTone_;
     LiveDryRoutingLab dryRoutingLab_;
+    armix::mixer::LiveDynamicBusSession liveStudioBus_; // same JUCE callback, dry-only pilot
+    std::uint64_t studioBusAudioGeneration_=0; // AUDIO only
+    int studioBusFadeRemaining_=0;             // AUDIO only
     std::atomic<armix::diagnostics::Route> diagnosticRoute_ {armix::diagnostics::Route::normal};
     std::atomic<bool> routeReconfiguring_ {false};
     std::optional<juce::AudioDeviceManager::AudioDeviceSetup> savedLiveSetup_;
@@ -1536,6 +1574,7 @@ private:
     void audioDeviceAboutToStart (juce::AudioIODevice* d) override
     {
         secondaryOutput_.invalidateSource(); // source clock may have changed
+        liveStudioBus_.invalidate(); // no old BUS survives a new hardware pin mask
         dryRoutingLab_.prepareDevice(d); // exact active mask, before callback
         if (!independent_.active())
         {
@@ -1587,6 +1626,7 @@ private:
     void audioDeviceStopped() override
     {
         secondaryOutput_.invalidateSource(); // explicit reconnect required after device stop
+        liveStudioBus_.invalidate();
         masterLoudness_.prepare (0.0); // clear validity across device epoch
         dryRoutingLab_.deviceStopped();
         deviceStopCount_.fetch_add (1, std::memory_order_relaxed);
