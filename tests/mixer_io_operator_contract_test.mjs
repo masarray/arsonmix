@@ -239,3 +239,15 @@ test('SOURCE1 mute-only instant SOURCE uses one native ACK; armed output is reje
  assert.match(monitor,/window\.__arMixRevertMixerDraft\(\)/);
  assert.doesNotMatch(io,/new AudioContext\(/);
 });
+
+test('SOURCE2 selected-channel popover selects verified physical ports without a second router',()=>{
+ const js=read('web/mixer-io.js');
+ assert.match(js,/function refreshFocus\(s\)/);
+ assert.match(js,/const openSourceChooser=channel=>/);
+ assert.match(js,/window\.__arMixCommitMutedSource\?\.\(/);
+ assert.match(js,/sourceNote\.textContent/);
+ assert.match(js,/sourceChooser\.addEventListener\('click'/);
+ assert.match(js,/portsFor\(s,r\|\|/);
+ assert.match(js,/NONADJACENT L\/R/);
+ assert.doesNotMatch(js,/new AudioContext\(/);
+});
