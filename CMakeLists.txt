@@ -65,6 +65,10 @@ if(BUILD_TESTING)
   add_executable(ARMixDynamicAcceptedSessionTests tests/dynamic_accepted_session_test.cpp)
   target_compile_features(ARMixDynamicAcceptedSessionTests PRIVATE cxx_std_20)
   add_test(NAME M3DAtomicStudioBusFxChannelSessionRollback COMMAND ARMixDynamicAcceptedSessionTests)
+  # Windows release workflow builds ARMixMixerRoutingTests explicitly, then runs
+  # all CTests. Make its native session regression a build dependency so the
+  # new executable is actually present (without editing the CI target list).
+  add_dependencies(ARMixMixerRoutingTests ARMixDynamicAcceptedSessionTests)
   add_executable(ARMixChannelRoutingContractTests tests/channel_routing_contract_test.cpp)
   target_compile_features(ARMixChannelRoutingContractTests PRIVATE cxx_std_20)
   add_test(NAME MonoStereoSparsePhysicalPortRouting COMMAND ARMixChannelRoutingContractTests)
