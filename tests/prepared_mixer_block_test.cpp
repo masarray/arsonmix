@@ -71,6 +71,13 @@ int main() {
     assert(near(outputL[0],.2f+monoPost*.25f*2.f+preMono));
     assert(near(outputR[0],.6f+monoPost*.25f*2.f+preMono*.5f));
     assert(near(levels.channelPeak[0],monoPost));
+    // TRUE stereo: CH2 hardware L=.2, R=.6 must not mirror an aggregate peak.
+    assert(near(levels.channelPeakL[1],.2f));
+    assert(near(levels.channelPeakR[1],.6f));
+    assert(near(levels.channelPeak[1],.6f));
+    // MONO: genuinely equal PCM after mono projection is correct.
+    assert(near(levels.channelPeakL[0],monoPost));
+    assert(near(levels.channelPeakR[0],monoPost));
     assert(near(levels.channelPeak[2],monoPost*.25f*2.f));
     assert(near(levels.channelPeak[3],preMono));
     assert(near(levels.masterPeakL,outputL[0]));
