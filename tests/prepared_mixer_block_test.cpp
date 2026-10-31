@@ -187,4 +187,59 @@ int main() {
         assert(near(right[63],old,0.0001f));
     }
 
+    // P0 PRODUCTION: native 10CH kernel must safely support in-place JUCE
+    // capture/output backing memory without clearing a later physical input.
+    // Independent MONITOR summing must also defer physical writes until
+    // source PCM for ALL channels is consumed. No new callback/DSP graph.
+    {
+        constexpr std::array<int,4> callbackPorts{0,1,2,3};
+        ChannelRoutingConfig route;
+        for(int i=0;i<4;++i)
+            route.stripsAndMaster.strips[i]={
+                SourceMode::mono,i,-1,1.f,0.f,false,false};
+        SendRequest sends4;
+        for(int i=0;i<4;++i)sends4.toMaster[i]=true;
+        PreparedRenderGraph plan;RenderError fault;
+        assert(PreparedRenderGraph::compile(route,callbackPorts,
+                                            sends4,plan,fault));
+        PreparedMixerBlock live(plan,32);
+        std::array<float,stripCount+auxBusCount> monGains{};
+        for(int i=0;i<4;++i)monGains[i]=.10f*(i+1);
+        std::array<float,32> a{},b{},c{},d{};
+        for(int i=0;i<32;++i){
+            a[i]=.16f+.001f*i; b[i]=.25f-.001f*i;
+            c[i]=.13f+.002f*i; d[i]=.06f+.001f*i;
+        }
+        const float* sources[]={a.data(),b.data(),c.data(),d.data()};
+        std::array<float,32> expectedL{},expectedR{},expectedML{},expectedMR{};
+        const auto noVst=[](int,float*,float*,int) noexcept {};
+        assert(live.process(sources,4,expectedL.data(),expectedR.data(),32,
+                            noVst,nullptr,nullptr,&monGains,
+                            expectedML.data(),expectedMR.data()));
+        auto inPlaceL=a,inPlaceR=b,inPlaceML=c,inPlaceMR=d;
+        const float* shared[]={inPlaceL.data(),inPlaceR.data(),
+                               inPlaceML.data(),inPlaceMR.data()};
+        const auto beforeInPlace=allocations.load(std::memory_order_relaxed);
+        assert(live.process(shared,4,inPlaceL.data(),inPlaceR.data(),32,
+                            noVst,nullptr,nullptr,&monGains,
+                            inPlaceML.data(),inPlaceMR.data()));
+        assert(allocations.load(std::memory_order_relaxed)==beforeInPlace);
+        for(int i=0;i<32;++i){
+            assert(near(inPlaceL[i],expectedL[i]));
+            assert(near(inPlaceR[i],expectedR[i]));
+            assert(near(inPlaceML[i],expectedML[i]));
+            assert(near(inPlaceMR[i],expectedMR[i]));
+        }
+        assert(expectedL[0]>0.f&&expectedML[0]>0.f);
+        // Prolonged production PCM with 0 FX does not allocate or grow
+        // retained buffers on the callback, including MONITOR processing.
+        for(int k=0;k<10000;++k) {
+            inPlaceL=a;inPlaceR=b;inPlaceML=c;inPlaceMR=d;
+            assert(live.process(shared,4,inPlaceL.data(),inPlaceR.data(),
+                                32,noVst,nullptr,nullptr,&monGains,
+                                inPlaceML.data(),inPlaceMR.data()));
+        }
+        assert(allocations.load(std::memory_order_relaxed)==beforeInPlace);
+    }
+
 }
