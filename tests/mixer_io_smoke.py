@@ -166,7 +166,8 @@ async def main():
         await page.locator('[data-sof-toggle]').click()
         assert await page.locator('#mixer').get_attribute('data-sof-active')=='true'
         assert await page.locator('[data-strip="0"] .arSofFader').is_visible()
-        assert '-6.0' in await page.locator('[data-strip="0"] .arSofRead').inner_text()
+        assert '-6.0' in await page.locator('[data-strip="0"] .db-display').evaluate(
+            "(e)=>getComputedStyle(e,'::after').content")
         assert await page.locator('[data-fader="0"]').get_attribute('aria-hidden')=='true'
         await page.locator('[data-strip="0"] [data-sof-fader]').focus()
         await page.keyboard.press('End')
