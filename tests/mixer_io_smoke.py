@@ -81,6 +81,24 @@ async def main():
           ok:true,armed:true,deviceEpoch:status.dryRoutingLab.epoch
         })""",status)
         assert not (await page.evaluate("()=>window.__arMixFastAudioState().pending"))
+        # R7: one MONO physical input can feed a user-selected STEREO
+        # processing channel. Native ACCEPTED channelFormat (not channel
+        # index/draft) alone determines single vs independent L/R meter DOM.
+        status=await page.evaluate("""status=>{
+          status.dryRoutingLab.acceptedRoute.channels[0].channelFormat='STEREO';
+          window.__armixTestEmit('arMixStatus',status);
+          return status;
+        }""",status)
+        assert await page.locator('[data-strip="0"] .vu-bank.is-stereo [data-meter]').count()==2
+        assert await page.locator('[data-strip="0"] [data-meter="0L"]').count()==1
+        assert await page.locator('[data-strip="0"] [data-meter="0R"]').count()==1
+        status=await page.evaluate("""status=>{
+          status.dryRoutingLab.acceptedRoute.channels[0].channelFormat='MONO';
+          window.__armixTestEmit('arMixStatus',status);
+          return status;
+        }""",status)
+        assert await page.locator('[data-strip="0"] .vu-bank.is-mono [data-meter]').count()==1
+        assert await page.locator('[data-strip="0"] [data-meter="0"]').count()==1
         # P0: verify real capture signal, accepted route and safe output are
         # three separate pieces of evidence, not optimistic LIVE labels.
         silent=await page.evaluate("""()=>window.__arMixAudioPathView({
