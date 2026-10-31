@@ -58,6 +58,15 @@ static void verifyDynamicNativeSessionPublication() {
     DynamicNativeSessionPublisher host;
     auto ack=host.commit(roster,request,0,21,21,true);
     assert(ack.ok()&&ack.revision==1&&host.acceptedRevision()==1);
+    const auto* projected=host.acceptedRouting(21,1);
+    assert(projected && projected->rosterRevision==roster.revision());
+    assert(projected->find(group)->primarySources.size()==2);
+    assert(projected->find(group)->sourceCount()==2);
+    assert(projected->find(fx.createdIds.front())->parallelSendSources.size()==1);
+    assert(projected->find(lead)->primaryOutput==group);
+    assert(projected->find(lead)->parallelSends.size()==1);
+    assert(projected->find(lead)->parallelSends[0].destination==fx.createdIds.front());
+    assert(!host.acceptedRouting(22,1) && !host.acceptedRouting(21,0));
     assert(!host.commit(roster,request,1,21,21,false).ok());
     assert(host.acceptedRevision()==1);
     std::array<float,32> micA{},micB{},mainL{},mainR{},monL{},monR{};
@@ -120,6 +129,11 @@ static void verifyDynamicNativeSessionPublication() {
     assert(clean.edit(clean.revision(),std::span<const ChannelEdit>(&none,1)).ok());
     ack=host.commit(clean,request,1,21,21,true);
     assert(ack.ok()&&ack.revision==2);
+    assert(!host.acceptedRouting(21,1));
+    const auto* revised=host.acceptedRouting(21,2);
+    assert(revised && !revised->find(backing)->primaryOutput.value);
+    assert(revised->find(backing)->parallelSends.size()==1);
+    assert(revised->find(group)->sourceCount()==1);
     assert(host.render(21,physical,2,mainL.data(),mainR.data(),32,
                        false,effect,monL.data(),monR.data()));
     assert(close(mainL[0],(2.f*.2f+.25f*.2f)*center));
