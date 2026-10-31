@@ -83,7 +83,7 @@
 
   // DEVICE4: named software inputs are aliases for verified physical ports,
   // NOT new streams. Only SOURCE2/native ACK can make them audible on channels.
-  let softwareEdit=null,softwarePage=0;
+  let softwareEdit=null,softwarePage=0,directMatrixOpen=false;
   const softwarePageSize=8;
   function softwareSay(message){
     if(ioTab==='device')deviceNote=message;
@@ -1335,6 +1335,8 @@
       if(deviceMatrixView==='inputs'){
         matrixSection.appendChild(makeSoftwareInputs(s));
         const direct=node('details','arIODeviceDirectMatrix');
+        direct.open=directMatrixOpen;
+        direct.addEventListener('toggle',()=>{directMatrixOpen=direct.open;});
         direct.appendChild(node('summary','','DIRECT MIXER CHANNEL PATCH · CH01–10'));
         direct.appendChild(makeMatrix(s,deviceMatrixView));
         matrixSection.appendChild(direct);
@@ -1378,6 +1380,8 @@
     // Closing the advanced matrix mid-edit made its crosspoints inaccessible.
     const previous=body.querySelector('.arIOAdvancedMatrix');
     if(previous)advancedMatrixOpen=previous.open;
+    const previousDirect=body.querySelector('.arIODeviceDirectMatrix');
+    if(previousDirect)directMatrixOpen=previousDirect.open;
     body.replaceChildren();
     if(ioTab!=='device'){
       const identity=node('div','arIOHardwareHeader');

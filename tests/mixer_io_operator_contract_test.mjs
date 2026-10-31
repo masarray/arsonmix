@@ -366,6 +366,8 @@ test('DEVICE4 Studio matrix names map actual JUCE pins, reuse SOURCE2/native ACK
  assert.match(io,/sourceIdentity\(s\)/);
  assert.match(io,/__arMixCommitSelectedSource\?\.\(/);
  assert.match(io,/DIRECT MIXER CHANNEL PATCH · CH01–10/);
+ assert.match(io,/directMatrixOpen=direct.open/);
+ assert.match(io,/previousDirect.open/);
  assert.match(io,/dataset\.ioSoftwarePin/);
  assert.doesNotMatch(io,/new AudioContext\(/);
  assert.match(style,/\.arIOSoftwareGrid/);
