@@ -254,7 +254,6 @@ static void verifyUniversalChannelIdFxLeaseAndLivePcm() {
 }
 
 int main() {
-    verifyUniversalChannelIdFxLeaseAndLivePcm();
     // R0: existing CH1 FX chain may be rendered inside the SAME prepared
     // ten-channel routing pass, without creating a second plugin or copying
     // a processor. Verify exactly one call and zero callback heap allocation.
@@ -582,6 +581,11 @@ int main() {
         assert(graph->monitorOutputLeft()==4&&graph->monitorOutputRight()==5);
         assert(near(graph->monitorGains()[1],.5f));
     }
+    // Run M5 AFTER the legacy suite: older M4 tests use absolute global
+    // GainFx::living/released counters as their own lifetime oracle. Running
+    // M5 before them changes those historical baseline counts, not DSP.
+    // M5 additionally asserts zero heap and valid vendor leases itself.
+    verifyUniversalChannelIdFxLeaseAndLivePcm();
     // Tests above use a real JUCE AudioProcessor processing seam. Vendor
     // VST3 formats and sound quality require separate Windows hardware FAT.
 }
