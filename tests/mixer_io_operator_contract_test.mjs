@@ -78,12 +78,15 @@ test('G3 is computed from authoritative PRE/POST native renderer, not a visual-o
   assert.doesNotMatch(css,/backdrop-filter\s*:|filter\s*:\s*blur/);
 });
 
-test('MS5 Sends-on-Faders controls real POST AUX draft, not MAIN fader or a second DSP',()=>{
+test('MS5/M1 Sends-on-Faders live POST gain uses native ACK; topology remains guarded',()=>{
   const css=read('web/mixer-io.css');
   assert.match(gui,/data-sof-bus/);
   assert.match(gui,/data-sof-toggle/);
   assert.match(gui,/function sofToggle\(\)/);
   assert.match(gui,/function sofStage\(channel,action,value\)/);
+  assert.match(gui,/__arMixSetLiveAuxSendGain/);
+  assert.match(monitor,/arMixAuxSendGainAck/);
+  assert.match(monitor,/routingAuxSendGain/);
   assert.match(gui,/tap:'POST',action/);
   assert.match(gui,/s\.epoch!==sofEpoch/);
   assert.match(gui,/s\.pending/);

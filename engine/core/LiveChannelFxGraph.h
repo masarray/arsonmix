@@ -165,6 +165,12 @@ public:
     int monitorOutputLeft() const noexcept{return monitorLeft_;}
     int monitorOutputRight() const noexcept{return monitorRight_;}
     const std::array<float,fxSlots>& monitorGains() const noexcept{return monitorGains_;}
+    // M1: native realtime send fader on an EXISTING validated AUX POST edge.
+    // Same prepared graph, no VST instance change or global mute.
+    bool setAuxSendGain(int source,int bus,float gain) noexcept {
+        return block_ && block_->setAuxSendGain(
+            source,bus,SendTap::postFader,gain);
+    }
     int activeInserts() const noexcept{return activeInserts_;}
     bool setStripControl(int channel,float gain,float pan,
                          bool mono,bool mute,bool solo) noexcept {

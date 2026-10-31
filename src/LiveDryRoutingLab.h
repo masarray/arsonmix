@@ -466,6 +466,36 @@ public:
         return true;
     }
 
+    // Operator M1: one POST gain is a realtime PARAMETER, never topology.
+    // The accepted send identity must exist and match THIS device epoch.
+    // The UI may adjust it while physical output is ARMED; no new plugin,
+    // graph, callback or device restart occurs.
+    bool setAuxSendGain(int source,int bus,std::uint64_t expectedEpoch,
+                        std::uint64_t expectedRevision,float gain) noexcept {
+        if(source<0||source>=count||bus<0||bus>=auxCount||
+           !std::isfinite(gain)||gain<0.f||gain>1.f||
+           !ready()||!hasExplicitRoute()||
+           expectedEpoch!=epoch()||expectedRevision!=revision())return false;
+        auto sends=acceptedRoute_.getProperty("sends",juce::var());
+        auto* list=sends.getArray();
+        if(!list)return false;
+        juce::var* accepted=nullptr;
+        for(auto& item:*list) {
+            if(static_cast<int>(item.getProperty("from",-1))==source &&
+               static_cast<int>(item.getProperty("to",-1))==count+bus &&
+               item.getProperty("tap",{}).toString()=="POST") {
+                accepted=&item;break;
+            }
+        }
+        if(!accepted)return false; // No implicit creation of an AUX edge.
+        if(!publisher_.updateActiveControl(expectedEpoch,expectedRevision,
+           [&](FxGraph& fx) noexcept {
+               return fx.setAuxSendGain(source,bus,gain);
+           }))return false;
+        accepted->getDynamicObject()->setProperty("gain",static_cast<double>(gain));
+        return true;
+    }
+
     // Live, nonstructural FX power control; all guards bound to a real ACK.
     bool setFxBypass(int lane,int slot,std::uint64_t expectedEpoch,
                      std::uint64_t expectedRevision,const juce::String& token,

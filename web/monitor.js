@@ -1166,6 +1166,57 @@
     publishSendDraft();
     return {ok:true,message:"SEND DRAFT · MUTE + APPLY required; live audio unchanged."};
   };
+  // M1: separate live PARAM lane for existing POST AUX edges only.
+  // No optimistic LIVE readback: acceptedRoute is updated solely by native ACK.
+  // Creating/removing sends, editing PRE/PAN or enabling AUX is STRUCTURAL.
+  let liveSendRequestId=1;
+  const liveSendPending=new Map();
+  window.__arMixSetLiveAuxSendGain=({from,bus,gain}={})=>{
+    const fault=sendEditGate(from,bus);
+    if(fault)return {ok:false,error:fault};
+    if(mixerDraftActive||rackFxDraft)
+      return {ok:false,error:"Finish or REVERT structural DRAFT before live send fader."};
+    const n=Number(gain),d=state.dryRoutingLab||{};
+    if(!Number.isFinite(n)||n<0||n>1)
+      return {ok:false,error:"Live gain must be 0–1."};
+    if(!Array.isArray(d.acceptedRoute?.sends))
+      return {ok:false,error:"No acknowledged native AUX send graph."};
+    const key=sendKey(from,bus,"POST");
+    if(liveSendPending.has(key))
+      return {ok:false,error:"Wait for the previous native send ACK."};
+    const source=d.acceptedRoute.sends.find(s=>s.from===from&&
+      s.to===10+bus&&s.tap==="POST");
+    if(!source)
+      return {ok:false,error:"Create and APPLY this POST send before adjusting it LIVE."};
+    if(!draftAux[bus]?.enabled||!draftSends.some(s=>s.from===from&&
+      s.to===10+bus&&s.tap==="POST"))
+      return {ok:false,error:"AUX return or accepted POST send unavailable."};
+    const requestId=liveSendRequestId++;
+    liveSendPending.set(key,requestId);
+    api.emitEvent("arMixAction",{action:"routingAuxSendGain",
+      requestId,from,bus,deviceEpoch:Number(d.epoch),revision:Number(d.revision),
+      value:n});
+    return {ok:true,message:"LIVE SEND REQUESTED · waiting for native ACK",pending:true};
+  };
+  api.addEventListener("arMixAuxSendGainAck",ack=>{
+    const from=Number(ack?.from),bus=Number(ack?.bus);
+    const key=sendKey(from,bus,"POST");
+    if(liveSendPending.get(key)!==Number(ack?.requestId))return;
+    liveSendPending.delete(key);
+    const next=ack?.state||{},current=state.dryRoutingLab||{};
+    const matched=ack?.ok===true && next.epoch===current.epoch &&
+      next.revision===current.revision&&next.acceptedRoute;
+    if(matched&&!mixerDraftActive&&!patchPending){
+      state.dryRoutingLab=next;
+      hydrateAcceptedRoute();
+      drawAuxSendMatrix();drawSends();
+      window.dispatchEvent(new Event("arMixRoutingDraftChanged"));
+    }
+    window.dispatchEvent(new CustomEvent("arMixAuxSendGainResult",{
+      detail:{ok:!!matched,from,bus,gain:Number(ack?.gain),
+        error:matched?"":String(ack?.error||"Native route changed; gain NOT applied")}
+    }));
+  });
   window.__arMixStageAuxReturnEdit=(bus,field,value)=>{
     const fault=sendEditGate(0,bus);
     if(fault)return {ok:false,error:fault};

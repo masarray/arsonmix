@@ -171,15 +171,47 @@ async def main():
         assert await page.locator('[data-fader="0"]').get_attribute('aria-hidden')=='true'
         await page.locator('[data-strip="0"] [data-sof-fader]').focus()
         await page.keyboard.press('End')
-        staged_gain=await page.evaluate("""()=>window.__arMixRouteView().draftSends.find(
+        # M1: fader move issues a LIVE parameter command, not a new
+        # MUTE/APPLY topology request, and does not optimistically paint LIVE.
+        live_actions=await page.evaluate("""()=>window.__armixTestActions.filter(
+          x=>x.name==='arMixAction'&&x.data.action==='routingAuxSendGain')""")
+        assert len(live_actions)==1,live_actions
+        gain_command=live_actions[-1]['data']
+        assert gain_command['from']==0 and gain_command['bus']==0
+        assert gain_command['deviceEpoch']==4 and gain_command['revision']==5
+        assert abs(gain_command['value']-1)<1e-7
+        before_ack=await page.evaluate("""()=>window.__arMixRouteView().draftSends.find(
           s=>s.from===0&&s.to===10&&s.tap==='POST').gain""")
-        assert abs(staged_gain-1)<1e-7,staged_gain
-        assert status['dryRoutingLab']['acceptedRoute']['sends'][0]['gain']==.5
+        assert abs(before_ack-.5)<1e-7,before_ack
+        status=await page.evaluate("""status=>{
+          const d=status.dryRoutingLab;
+          d.acceptedRoute.sends[0].gain=1;
+          window.__armixTestEmit('arMixAuxSendGainAck',{
+            ok:true,requestId:1,from:0,bus:0,gain:1,state:d});
+          window.__armixTestEmit('arMixStatus',status);
+          return status;
+        }""",status)
+        native_gain=await page.evaluate("""()=>window.__arMixRouteView().draftSends.find(
+          s=>s.from===0&&s.to===10&&s.tap==='POST').gain""")
+        assert abs(native_gain-1)<1e-7,native_gain
+        # Restore .5 by another LIVE request and ACK, preserving the
+        # remaining existing structural-draft regression suite.
+        live_return=await page.evaluate("""()=>window.__arMixSetLiveAuxSendGain({
+          from:0,bus:0,gain:.5})""")
+        assert live_return['ok'],live_return
+        status=await page.evaluate("""status=>{
+          const d=status.dryRoutingLab;
+          d.acceptedRoute.sends[0].gain=.5;
+          window.__armixTestEmit('arMixAuxSendGainAck',{
+            ok:true,requestId:2,from:0,bus:0,gain:.5,state:d});
+          window.__armixTestEmit('arMixStatus',status);
+          return status;
+        }""",status)
         assert await page.locator('[data-fader="0"]').get_attribute('aria-valuenow')==main_fader
         assert await page.evaluate("()=>document.querySelector('[data-fader=\"0\"]')===window.__sofMainFaderRef")
         actions=await page.evaluate("""()=>window.__armixTestActions.filter(
           x=>x.name==='arMixAction'&&x.data.action==='routingDryApply')""")
-        assert len(actions)==2,actions  # no sound change until APPLY
+        assert len(actions)==2,actions  # live PARAM never triggered structural APPLY
         # EXIT or mode switch never commits a draft or alters MAIN.
         await page.locator('[data-sof-toggle]').click()
         assert await page.locator('#mixer').get_attribute('data-sof-active')=='false'

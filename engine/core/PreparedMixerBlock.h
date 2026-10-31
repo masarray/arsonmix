@@ -174,6 +174,12 @@ public:
                 : 0u, 0.f) {
         if (!validCapacity(maxFrames))
             capacity_=0;
+        // All gain targets exist before ANY audio thread sees the candidate.
+        for(int e=0;e<plan_.aux.edgeCount;++e){
+            const float v=plan_.aux.edges[e].initialGain;
+            auxTarget_[e].store(v,std::memory_order_relaxed);
+            auxApplied_[e]=v;
+        }
         if(!capacity_)return;
         for(int i=0;i<stripCount;++i) {
             left_[i]=backing_.data()+static_cast<std::size_t>(2*i)*capacity_;
@@ -196,6 +202,28 @@ public:
 
     int capacity() const noexcept { return capacity_; }
     const PreparedRenderGraph& plan() const noexcept {return plan_;}
+
+    // Message-thread-only target update; immutable edge topology/pan/FX ownership.
+    // Only an ALREADY EXISTING POST edge may be adjusted while output is live.
+    // This index lookup is on CONTROL, never inside the audio callback.
+    bool setAuxSendGain(int source,int bus,SendTap tap,float gain) noexcept {
+        if(source<0||source>=stripCount||bus<0||bus>=auxBusCount||
+           tap!=SendTap::postFader||!std::isfinite(gain)||gain<0.f||gain>1.f)
+            return false;
+        for(int e=plan_.aux.offset[source];e<plan_.aux.offset[source+1];++e)
+            if(plan_.aux.edges[e].bus==bus && plan_.aux.edges[e].tap==tap){
+                auxTarget_[e].store(gain,std::memory_order_release);
+                return true;
+            }
+        return false;
+    }
+    float auxSendGain(int source,int bus,SendTap tap) const noexcept {
+        if(source<0||source>=stripCount||bus<0||bus>=auxBusCount)return -1.f;
+        for(int e=plan_.aux.offset[source];e<plan_.aux.offset[source+1];++e)
+            if(plan_.aux.edges[e].bus==bus && plan_.aux.edges[e].tap==tap)
+                return auxTarget_[e].load(std::memory_order_acquire);
+        return -1.f;
+    }
 
     // FX callback signature: void(int stripId, float* L, float* R, int frames)
     // noexcept, with stripId=-1 for the master FX chain. This interface is
@@ -314,8 +342,9 @@ public:
             }
             graph.sends.dispatch(strip,SendTap::preFader,l,r,
                                  left_.data(),right_.data(),frames);
-            graph.aux.dispatch(strip,SendTap::preFader,l,r,
-                               auxLeft_.data(),auxRight_.data(),frames);
+            if(live)dispatchLiveAux(strip,SendTap::preFader,l,r,frames);
+            else graph.aux.dispatch(strip,SendTap::preFader,l,r,
+                                    auxLeft_.data(),auxRight_.data(),frames);
             float peak=0.f;
             const float monitorGain=monitorL?(*monitorGains)[strip]:0.f;
             if(live) {
@@ -354,8 +383,9 @@ public:
             if(observed) observed->channelPeak[strip]=peak;
             graph.sends.dispatch(strip,SendTap::postFader,l,r,
                                  left_.data(),right_.data(),frames);
-            graph.aux.dispatch(strip,SendTap::postFader,l,r,
-                               auxLeft_.data(),auxRight_.data(),frames);
+            if(live)dispatchLiveAux(strip,SendTap::postFader,l,r,frames);
+            else graph.aux.dispatch(strip,SendTap::postFader,l,r,
+                                    auxLeft_.data(),auxRight_.data(),frames);
         }
         // Dedicated AUX returns execute AFTER all ten source strips.
         // Input channel count NEVER decreases when an AUX is enabled.
@@ -394,6 +424,35 @@ public:
         return true;
     }
 private:
+    // Audio-thread exclusive smoothing state plus atomically published gain
+    // targets. No lock, heap, plugin recreation or per-block graph compile.
+    // POST/PRE edge identity and normalized PAN are immutable per revision.
+    void dispatchLiveAux(int source,SendTap tap,const float* l,const float* r,
+                         int frames) noexcept {
+        if(!plan_.aux.active)return;
+        for(int e=plan_.aux.offset[source];e<plan_.aux.offset[source+1];++e){
+            const auto& edge=plan_.aux.edges[e];
+            if(edge.tap!=tap)continue;
+            float* dl=auxLeft_[edge.bus],* dr=auxRight_[edge.bus];
+            if(!dl||!dr)continue;
+            const float target=auxTarget_[e].load(std::memory_order_acquire);
+            const float start=auxApplied_[e];
+            const int ramp=std::min(frames,64);
+            if(std::abs(target-start)<1.e-7f){
+                const float gl=target*edge.leftPan,gr=target*edge.rightPan;
+                for(int f=0;f<frames;++f){dl[f]+=l[f]*gl;dr[f]+=r[f]*gr;}
+            }else{
+                const float step=(target-start)/static_cast<float>(ramp);
+                float current=start;
+                for(int f=0;f<frames;++f){
+                    if(f<ramp)current+=step;
+                    dl[f]+=l[f]*current*edge.leftPan;
+                    dr[f]+=r[f]*current*edge.rightPan;
+                }
+            }
+            auxApplied_[e]=target;
+        }
+    }
     static bool validCapacity(int f) noexcept {return f>0 && f<=hardFrameLimit;}
     const PreparedRenderGraph plan_;
     int capacity_=0;
@@ -402,6 +461,8 @@ private:
     std::array<float*,stripCount> right_{};
     std::array<float*,auxBusCount> auxLeft_{},auxRight_{};
     std::array<float,stripCount> preGate_{},lastGainL_{},lastGainR_{};
+    std::array<std::atomic<float>,maxAuxSends> auxTarget_{};
+    std::array<float,maxAuxSends> auxApplied_{}; // callback thread exclusive
     std::array<bool,stripCount> rampPrimed_{};
     float* masterL_=nullptr;
     float* masterR_=nullptr;

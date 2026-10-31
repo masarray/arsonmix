@@ -43,6 +43,9 @@ struct AuxBusPlan final {
         int bus=-1;
         SendTap tap=SendTap::postFader;
         float leftGain=0.f,rightGain=0.f;
+        // Normalized PAN factors are independent from the initial 0..1 gain.
+        // Allows real-time automation even when the edge was compiled at 0.
+        float leftPan=0.f,rightPan=0.f,initialGain=0.f;
     };
     std::array<AuxBusDefinition,auxBusCount> buses{};
     std::array<Edge,maxAuxSends> edges{};
@@ -113,11 +116,12 @@ struct AuxBusPlan final {
             auto& e=candidate.edges[next[s.source]++];
             const bool monoPre=s.tap==SendTap::preFader &&
                 !sourceFormats.empty() && sourceFormats[s.source]==ChannelFormat::mono;
-            e={s.destination,s.tap,
-               monoPre?s.gain*std::sqrt(0.5f*(1.f-s.pan)):
-                   s.gain*(s.pan>0.f?1.f-s.pan:1.f),
-               monoPre?s.gain*std::sqrt(0.5f*(1.f+s.pan)):
-                   s.gain*(s.pan<0.f?1.f+s.pan:1.f)};
+            const float leftPan=monoPre?std::sqrt(0.5f*(1.f-s.pan)):
+                                      (s.pan>0.f?1.f-s.pan:1.f);
+            const float rightPan=monoPre?std::sqrt(0.5f*(1.f+s.pan)):
+                                       (s.pan<0.f?1.f+s.pan:1.f);
+            e={s.destination,s.tap,s.gain*leftPan,s.gain*rightPan,
+               leftPan,rightPan,s.gain};
         }
         out=candidate;
         return true;
