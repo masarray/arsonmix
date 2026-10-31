@@ -116,9 +116,10 @@ public:
             op.id=id;op.enabled=enabled;ops.push_back(std::move(op));
         };
         const auto link=[&](ChannelId from,ChannelId to,float gain,
-                            float pan=0.f,bool pre=false){
+                            float pan=0.f,bool pre=false,bool primary=false){
             ChannelEdit op;op.kind=ChannelEdit::Kind::addSendReference;
             op.id=from;op.target=to;op.value=gain;op.sendPan=pan;op.preFader=pre;
+            op.primaryOutput=primary;
             ops.push_back(std::move(op));
         };
         for(int i=0;i<stripCount;++i){
@@ -128,7 +129,7 @@ public:
             editValue(id,ChannelEdit::Kind::setPan,cfg.pan);
             if(cfg.mute)mute(id,true);
             if(cfg.solo)solo(id,true);
-            if(channelSends.toMaster[i])link(id,next.ids.main,1.f);
+            if(channelSends.toMaster[i])link(id,next.ids.main,1.f,0.f,false,true);
             if(monitorEnabled && monitorGains[i]>0.f)
                 link(id,next.ids.monitor,monitorGains[i]);
         }
@@ -149,7 +150,7 @@ public:
             ChannelEdit marker;marker.kind=ChannelEdit::Kind::addInsertReference;
             marker.id=id;marker.text="legacy:aux-rack";
             ops.push_back(std::move(marker));
-            if(cfg.toMaster)link(id,next.ids.main,1.f);
+            if(cfg.toMaster)link(id,next.ids.main,1.f,0.f,false,true);
             if(monitorEnabled && monitorGains[stripCount+b]>0.f)
                 link(id,next.ids.monitor,monitorGains[stripCount+b]);
         }
