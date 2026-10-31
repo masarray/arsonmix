@@ -2,6 +2,7 @@
 #include "../engine/core/LiveChannelFxGraph.h"
 #include "../engine/core/DynamicChannelFxLeaseBank.h"
 #include "../engine/core/DynamicNativeSessionPublisher.h"
+#include "../engine/core/UnifiedLegacyProductionAdmission.h"
 #include "../engine/core/NativeOutputPairTap.h"
 #include "../engine/core/RealtimeRoutePublisher.h"
 #if defined(NDEBUG)
@@ -251,6 +252,108 @@ static void verifyUniversalChannelIdFxLeaseAndLivePcm() {
     assert(!native.render(epoch+1,pins,2,left.data(),right.data(),32,false,
                           legacyFx));
     assert(left[31]==0.f&&right[31]==0.f);
+}
+
+// M-U1 full-fidelity preparation: 10 CH + 4 AUX + M4 VST owners,
+// sparse verified input ports, independent physical MAIN and MONITOR,
+// PRE/POST and native Show/epoch rejection. Compare actual old M4 processor
+// output with the same owners in ONE new atomic ChannelId publication.
+static void verifyMU1LegacyM4FxFullMigrationAndMonitorPcm() {
+    constexpr std::array<int,4> ports{3,0,4,7};
+    ChannelRoutingConfig channels;
+    channels.stripsAndMaster.strips[0]={
+        SourceMode::mono,3,-1,.5f,-.3f,false,false};
+    channels.stripsAndMaster.strips[1]={
+        SourceMode::stereo,4,7,.75f,.2f,false,false};
+    channels.formats[2]=ChannelFormat::stereo;
+    channels.stripsAndMaster.master={1.1f,.1f,false,true};
+    SendRequest sends;
+    sends.toMaster[0]=false;sends.count=1;
+    sends.sends[0]={0,2,SendTap::postFader,.3f,-.3f,true};
+    AuxBusRequest aux;
+    aux.buses[0]={true,true,false,.8f};
+    aux.count=1;
+    aux.sends[0]={1,0,SendTap::postFader,.25f,.1f,true};
+    std::array<float,stripCount+auxBusCount> monitorGains{};
+    monitorGains[0]=.25f;monitorGains[stripCount]=.3f;
+    PreparedRenderGraph legacyGraph;
+    RenderError legacyError;
+    assert(PreparedRenderGraph::compile(channels,ports,sends,
+                                       legacyGraph,legacyError,aux));
+    auto legacy=std::make_unique<LiveChannelFxGraph>(legacyGraph,32,32);
+    assert(legacy->setMonitorOutputBus(2,3,4,monitorGains));
+    auto ch1=std::make_unique<GainFx>(1.2f);
+    auto returnFx=std::make_unique<GainFx>(.9f);
+    ch1->prepareToPlay(48000,32);
+    returnFx->prepareToPlay(48000,32);
+    assert(legacy->install(0,std::move(ch1),"CH1 VST3","m4-ch1"));
+    assert(legacy->install(stripCount,std::move(returnFx),"AUX VST3","m4-aux"));
+    const auto oldCh1=legacy->insertInstanceId(0,0);
+    const auto oldAux=legacy->insertInstanceId(stripCount,0);
+    std::array<float,32> mono{},unrelated{},stL{},stR{};
+    for(int i=0;i<32;++i){
+        mono[i]=.2f+.001f*i;unrelated[i]=.8f;
+        stL[i]=.15f+.002f*i;stR[i]=.35f-.001f*i;
+    }
+    const float* physical[]{mono.data(),unrelated.data(),stL.data(),stR.data()};
+    std::array<float,32> legacyL{},legacyR{},legacyML{},legacyMR{};
+    assert(legacy->process(physical,4,legacyL.data(),legacyR.data(),32,
+                           nullptr,nullptr,nullptr,legacyML.data(),legacyMR.data()));
+    DynamicNativeSessionPublisher publisher;
+    UnifiedLegacyAccepted accepted;
+    constexpr std::uint64_t epoch=565;
+    VerifiedNativeOutputs outputs{4,0,1,2,3,true};
+    const auto good=UnifiedLegacyProductionAdmission::compileAndCommit(
+        channels,ports,sends,aux,monitorGains,*legacy,false,outputs,
+        32,2u*1024u*1024u,0,epoch,epoch,true,publisher,accepted);
+    assert(good.ok());
+    assert(publisher.acceptedRevision()==1);
+    assert(accepted.deviceEpoch==epoch&&accepted.pcmRevision==1);
+    assert(accepted.graph.roster.size()==stripCount+auxBusCount+2);
+    assert(accepted.graph.request.sources.size()==2);
+    assert(accepted.fxOwners->insertCount(accepted.graph.ids.inputs[0])==1);
+    assert(accepted.fxOwners->insertCount(accepted.graph.ids.aux[0])==1);
+    assert((*accepted.fxOwners->ownerForControl(
+        accepted.graph.ids.inputs[0],0))->instanceId==oldCh1);
+    assert((*accepted.fxOwners->ownerForControl(
+        accepted.graph.ids.aux[0],0))->instanceId==oldAux);
+    // Actual FX ownership survives the old M4 graph retirement.
+    legacy.reset();
+    std::array<float,32> dynamicL{},dynamicR{},dynamicML{},dynamicMR{};
+    const auto mustNeverCall=[&](ChannelId,float*,float*,int) noexcept {
+        assert(false && "M4 processor may not render twice");
+    };
+    const auto before=heapCalls.load(std::memory_order_relaxed);
+    assert(publisher.render(epoch,physical,4,dynamicL.data(),dynamicR.data(),
+                            32,false,mustNeverCall,
+                            dynamicML.data(),dynamicMR.data()));
+    assert(heapCalls.load(std::memory_order_relaxed)==before);
+    for(int i=0;i<32;++i) {
+        assert(near(legacyL[i],dynamicL[i]));
+        assert(near(legacyR[i],dynamicR[i]));
+        assert(near(legacyML[i],dynamicML[i]));
+        assert(near(legacyMR[i],dynamicMR[i]));
+    }
+    // Faults are non-destructive: no external CH1 Orbit state dropped, no
+    // wrong-speaker output, no stale hardware, no armed graph recreation.
+    auto bad=UnifiedLegacyProductionAdmission::compileAndCommit(
+        channels,ports,sends,aux,monitorGains,
+        // use a new empty graph only for rejecting BEFORE any instance access
+        *([](const PreparedRenderGraph& g)->LiveChannelFxGraph* {
+           static std::unique_ptr<LiveChannelFxGraph> candidate;
+           if(!candidate)candidate=std::make_unique<LiveChannelFxGraph>(g,32,32);
+           return candidate.get();
+         })(legacyGraph),
+        true,outputs,32,2u*1024u*1024u,1,epoch,epoch,true,
+        publisher,accepted);
+    assert(bad.fault==UnifiedLegacyProductionAdmission::Fault::invalidOutputPins ||
+           bad.fault==UnifiedLegacyProductionAdmission::Fault::legacyCh1ExternalFx);
+    assert(publisher.acceptedRevision()==1);
+    assert(accepted.fxOwners->insertCount(accepted.graph.ids.inputs[0])==1);
+    assert(!publisher.render(epoch+1,physical,4,dynamicL.data(),
+                             dynamicR.data(),32,false,mustNeverCall,
+                             dynamicML.data(),dynamicMR.data()));
+    assert(dynamicL[31]==0.f&&dynamicR[31]==0.f);
 }
 
 int main() {
@@ -586,6 +689,7 @@ int main() {
     // M5 before them changes those historical baseline counts, not DSP.
     // M5 additionally asserts zero heap and valid vendor leases itself.
     verifyUniversalChannelIdFxLeaseAndLivePcm();
+    verifyMU1LegacyM4FxFullMigrationAndMonitorPcm();
     // Tests above use a real JUCE AudioProcessor processing seam. Vendor
     // VST3 formats and sound quality require separate Windows hardware FAT.
 }
