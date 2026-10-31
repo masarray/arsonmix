@@ -75,6 +75,10 @@ std::optional<juce::WebBrowserComponent::Resource> assetFor (const juce::String&
         { data = BinaryData::mixerlayout_js; size = BinaryData::mixerlayout_jsSize; mime = "text/javascript"; }
     else if (path == "/mixer-layout.css")
         { data = BinaryData::mixerlayout_css; size = BinaryData::mixerlayout_cssSize; mime = "text/css"; }
+    else if (path == "/studio-bus.js")
+        { data = BinaryData::studiobus_js; size = BinaryData::studiobus_jsSize; mime = "text/javascript"; }
+    else if (path == "/studio-bus.css")
+        { data = BinaryData::studiobus_css; size = BinaryData::studiobus_cssSize; mime = "text/css"; }
     else return std::nullopt;
 
     juce::WebBrowserComponent::Resource resource;
