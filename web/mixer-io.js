@@ -1886,6 +1886,11 @@
   focusFlow.hidden=mixer.classList.contains('hidden');
   backend?.addEventListener?.('arMixStatus',d=>{
     lastStatus=d;
+    if(applyAfterDevice && Number(d?.deviceGeneration)===applyAfterDevice.generation && Number(d?.dryRoutingLab?.epoch)>applyAfterDevice.epoch && d?.dryRoutingLab?.ready && d?.dryRoutingLab?.active){
+      applyAfterDevice=null;
+      const result=window.__arMixApplyAndActivate?.();
+      deviceNote=result?.ok?'APPLY · NATIVE ROUTE/ARM ACK PENDING':'APPLY REJECTED · '+(result?.error||'Source not ready');
+    }
     // 12Hz native telemetry: update only when topology, epoch or safety changes.
     const s=d.dryRoutingLab||{},key=JSON.stringify([s.epoch,s.revision,s.ready,s.ports,s.outputPorts,s.acceptedRoute,d.monitor,d.masterMute]);
     if(window.__armixIoStatusKey!==key){window.__armixIoStatusKey=key;lastSignature='';refresh();}
