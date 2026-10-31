@@ -77,6 +77,36 @@ async def main():
         assert "LIVE" in await page.locator('[data-strip="0"] .arBankStage').inner_text()
         assert 'Microphone 1' in await page.locator('[data-focus-source]').inner_text()
         assert 'MAIN' in await page.locator('[data-focus-out]').inner_text()
+        # M2 Studio-style BUS: one existing empty native lane, no phantom
+        # CH11; group re-routes direct MAIN, parallel FX BUS preserves dry.
+        # Both remain DRAFT until the operator explicitly MUTES/APPLIES/ACKs.
+        group=await page.evaluate("""()=>({
+          result:window.__arMixStageBusFromSelected({source:0,kind:'group'}),
+          view:window.__arMixRouteView()
+        })""")
+        assert group['result']['ok'],group
+        bus=group['result']['target']
+        assert group['view']['draftRoutes'][bus]['mode']=='BUS',group
+        assert group['view']['draftRoutes'][bus]['gain']==1,group
+        assert group['view']['draftRoutes'][0]['main'] is False,group
+        assert any(x['from']==0 and x['to']==bus and x['gain']==1
+                   for x in group['view']['draftSends']),group
+        assert (await page.evaluate("""()=>window.__armixTestActions.filter(
+          x=>x.name==='arMixAction'&&x.data.action==='routingDryApply').length"""))==1
+        assert (await page.evaluate("()=>window.__arMixRevertMixerDraft()"))['ok']
+        await page.locator('#arRouteClose').click()
+        fxbus=await page.evaluate("""()=>({
+          result:window.__arMixStageBusFromSelected({source:0,kind:'fx'}),
+          view:window.__arMixRouteView()
+        })""")
+        assert fxbus['result']['ok'] and fxbus['result']['target']==bus,fxbus
+        assert fxbus['view']['draftRoutes'][0]['main'] is True,fxbus
+        assert any(x['from']==0 and x['to']==bus and x['gain']==.25
+                   for x in fxbus['view']['draftSends']),fxbus
+        assert (await page.evaluate("()=>window.__arMixRevertMixerDraft()"))['ok']
+        await page.locator('#arRouteClose').click()
+        assert (await page.evaluate("""()=>window.__armixTestActions.filter(
+          x=>x.name==='arMixAction'&&x.data.action==='routingDryApply').length"""))==1
         await page.locator('[data-focus-step="fx"]').click()
         assert await page.locator('#mixer').get_attribute('data-io-mode')=='FX'
         await page.locator('[data-focus-step="source"]').click()
