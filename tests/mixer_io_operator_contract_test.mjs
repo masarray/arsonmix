@@ -275,3 +275,19 @@ test('SOURCE2 selected-channel popover selects verified physical ports without a
  assert.match(js,/NONADJACENT L\/R/);
  assert.doesNotMatch(js,/new AudioContext\(/);
 });
+
+
+test('M1 faders send continuous coalesced ACK-backed params without structural APPLY',()=>{
+ const gui=read('web/mixer-io.js'),monitor=read('web/monitor.js'),html=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
+ assert.match(gui,/sofControls\.addEventListener\('input',sendAuxMaster\)/);
+ assert.match(gui,/const now=performance\.now\(\)/);
+ assert.match(gui,/Math\.abs\(d\.db-d\.lastSentDb\)>=\.25/);
+ assert.match(gui,/window\.__arMixSetLiveAuxSendGain\?\.\(/);
+ assert.match(monitor,/const liveSendLatest=new Map\(\)/);
+ assert.match(monitor,/const auxMasterLatest=new Map\(\)/);
+ assert.match(monitor,/LIVE SEND COALESCED/);
+ assert.match(monitor,/AUX MASTER COALESCED/);
+ assert.match(monitor,/if\(matched&&latest!==undefined/);
+ assert.match(monitor,/if\(ok&&latest!==undefined/);
+ assert.match(html,/Math\.abs\(d\.db-d\.lastSentDb\)>=\.25/);
+});

@@ -248,9 +248,8 @@
     refresh();drawSendEditor();
   }
 
-  // MS5 Sends-on-Faders: no second audio model. One native POST send per channel
-  // is edited only on release/keyboard; drag movement paints CSS without
-  // rebuilding the mixer, invoking plugins, or dispatching audio parameters.
+  // M1: one native POST send, one in-flight ACK per edge, coalesced continuous
+  // drag input (not a per-pointer DOM rerender, FX action or structural APPLY).
   function leaveSof(){
     if(sofDrag){document.removeEventListener('pointermove',sofMove);
       sofDrag.slider.classList.remove('is-dragging');sofDrag=null;}
@@ -368,7 +367,9 @@
     sofDrag=null;
     document.removeEventListener('pointermove',sofMove);
     d.slider.classList.remove('is-dragging');
-    if(!cancel&&Math.abs(d.db-d.startDb)>0.005)sofStage(d.ch,'gain',+sofGain(d.db).toFixed(7));
+    if(cancel&&d.sent)sofStage(d.ch,'gain',+sofGain(d.startDb).toFixed(7));
+    else if(!cancel&&Math.abs(d.db-d.startDb)>0.005)
+      sofStage(d.ch,'gain',+sofGain(d.db).toFixed(7));
     else refresh();
   }
   function sofMove(event){
@@ -376,6 +377,15 @@
     if(!d||d.pointerId!==event.pointerId)return;
     d.db=Math.max(-60,Math.min(0,d.startDb+(d.startY-event.clientY)*60/d.travel));
     if(d.slider.isConnected)sofPaintLayer(d.slider.closest('.arSofLayer'),sofGain(d.db));
+    // Native ACK backpressure keeps at most one pending IPC command. While
+    // dragging, only the latest target is retained; the audio DSP de-zippers.
+    const now=performance.now();
+    if(Math.abs(d.db-d.lastSentDb)>=.25 && now-d.lastSentAt>=25){
+      const response=window.__arMixSetLiveAuxSendGain?.({
+        from:d.ch,bus:sofBus,gain:+sofGain(d.db).toFixed(7)});
+      if(response?.ok){d.sent=true;d.lastSentDb=d.db;d.lastSentAt=now;}
+      else if(response?.error)sofStatus(response.error);
+    }
   }
   document.addEventListener('pointerdown',event=>{
     const slider=event.target.closest?.('[data-sof-fader]');
@@ -384,7 +394,8 @@
     if(!item||s.pending||s.epoch!==sofEpoch)return;
     const rect=slider.getBoundingClientRect();
     sofDrag={ch,slider,pointerId:event.pointerId,startY:event.clientY,
-      travel:Math.max(24,rect.height-18),startDb:sofDb(item.gain),db:sofDb(item.gain)};
+      travel:Math.max(24,rect.height-18),startDb:sofDb(item.gain),db:sofDb(item.gain),
+      lastSentDb:sofDb(item.gain),lastSentAt:0,sent:false};
     slider.classList.add('is-dragging');
     slider.setPointerCapture?.(event.pointerId);
     document.addEventListener('pointermove',sofMove,{passive:true});
@@ -1119,18 +1130,23 @@
       lastSignature='';refresh();
     }
   },true);
-  // AUX return fader updates only after release/keyboard change; native
-  // DSP ramps it inside one callback. Never touch the MAIN fader or rack.
-  sofControls.addEventListener('change',event=>{
-    if(event.target.matches('[data-sof-bus]')){sofMessage='';refresh();return;}
+  // AUX MASTER is a real continuous parameter as well; input and release
+  // share the same bounded native ACK/coalescing controller.
+  const sendAuxMaster=event=>{
     if(!event.target.matches('[data-aux-master]'))return;
     const bus=Number(sofControls.querySelector('[data-sof-bus]').value);
     const db=Number(event.target.value);
     const gain=db<=-60?0:Math.pow(10,db/20);
     const answer=window.__arMixSetLiveAuxMasterGain?.(bus,+gain.toFixed(7));
-    sofMessage=answer?.ok?'AUX MASTER · WAIT NATIVE ACK':
-      answer?.error||'AUX master unavailable';
-    refresh();
+    if(!answer?.ok)sofMessage=answer?.error||'AUX master unavailable';
+    const read=sofControls.querySelector('[data-aux-master-read]');
+    if(read)read.textContent=db<=-60?'OFF':db.toFixed(1)+' dB';
+  };
+  sofControls.addEventListener('input',sendAuxMaster);
+  sofControls.addEventListener('change',event=>{
+    if(event.target.matches('[data-sof-bus]')){sofMessage='';refresh();return;}
+    if(!event.target.matches('[data-aux-master]'))return;
+    sendAuxMaster(event);
   });
   // Channel focus is intentionally lightweight: point into existing MIX
   // modes and native controller, never create a parallel mixer/FX model.

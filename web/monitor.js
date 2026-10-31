@@ -1181,6 +1181,10 @@
   // Creating/removing sends, editing PRE/PAN or enabling AUX is STRUCTURAL.
   let liveSendRequestId=1;
   const liveSendPending=new Map();
+  // Bounded last-write-wins coalescing: one native request in flight per edge.
+  // No route/GUI state is promoted until ACK; no unbounded pointer backlog.
+  const liveSendLatest=new Map();
+  const liveSendInFlightGain=new Map();
   window.__arMixSetLiveAuxSendGain=({from,bus,gain}={})=>{
     const fault=sendEditGate(from,bus);
     if(fault)return {ok:false,error:fault};
@@ -1192,8 +1196,6 @@
     if(!Array.isArray(d.acceptedRoute?.sends))
       return {ok:false,error:"No acknowledged native AUX send graph."};
     const key=sendKey(from,bus,"POST");
-    if(liveSendPending.has(key))
-      return {ok:false,error:"Wait for the previous native send ACK."};
     const source=d.acceptedRoute.sends.find(s=>s.from===from&&
       s.to===10+bus&&s.tap==="POST");
     if(!source)
@@ -1201,7 +1203,16 @@
     if(!draftAux[bus]?.enabled||!draftSends.some(s=>s.from===from&&
       s.to===10+bus&&s.tap==="POST"))
       return {ok:false,error:"AUX return or accepted POST send unavailable."};
+    if(liveSendPending.has(key)){
+      // Replace the target; only the latest gesture is useful to the engine.
+      if(Math.abs(n-liveSendInFlightGain.get(key))<1e-7)liveSendLatest.delete(key);
+      else liveSendLatest.set(key,n);
+      return {ok:true,pending:true,queued:true,message:"LIVE SEND COALESCED · WAIT ACK"};
+    }
+    if(Math.abs(n-Number(source.gain))<1e-7)
+      return {ok:true,unchanged:true,message:"LIVE SEND ALREADY ACKNOWLEDGED"};
     const requestId=liveSendRequestId++;
+    liveSendInFlightGain.set(key,n);
     liveSendPending.set(key,requestId);
     api.emitEvent("arMixAction",{action:"routingAuxSendGain",
       requestId,from,bus,deviceEpoch:Number(d.epoch),revision:Number(d.revision),
@@ -1213,6 +1224,7 @@
     const key=sendKey(from,bus,"POST");
     if(liveSendPending.get(key)!==Number(ack?.requestId))return;
     liveSendPending.delete(key);
+    liveSendInFlightGain.delete(key);
     const next=ack?.state||{},current=state.dryRoutingLab||{};
     const matched=ack?.ok===true && next.epoch===current.epoch &&
       next.revision===current.revision&&next.acceptedRoute;
@@ -1226,11 +1238,18 @@
       detail:{ok:!!matched,from,bus,gain:Number(ack?.gain),
         error:matched?"":String(ack?.error||"Native route changed; gain NOT applied")}
     }));
+    const latest=liveSendLatest.get(key);
+    liveSendLatest.delete(key);
+    // The ACK has updated the one authoritative accepted route; no speculative LIVE.
+    if(matched&&latest!==undefined&&Math.abs(latest-Number(ack.gain))>=1e-7)
+      window.__arMixSetLiveAuxSendGain({from,bus,gain:latest});
   });
   // M1 AUX MASTER: one existing enabled FX-return fader, ACK and epoch bound.
   // Structural AUX enabling/mute/toMaster/FX replacement still uses APPLY.
   let auxMasterRequestId=1;
   const auxMasterPending=new Map();
+  const auxMasterLatest=new Map();
+  const auxMasterInFlightGain=new Map();
   window.__arMixSetLiveAuxMasterGain=(bus,value)=>{
     const d=state.dryRoutingLab||{},gain=Number(value);
     if(!Number.isInteger(bus)||bus<0||bus>=4||!Number.isFinite(gain)||
@@ -1240,9 +1259,15 @@
        rackFxDraft||!Array.isArray(d.acceptedRoute.auxes)||
        !d.acceptedRoute.auxes[bus]?.enabled)
       return {ok:false,error:"AUX master unavailable: finish DRAFT and APPLY the enabled bus first."};
-    if(auxMasterPending.has(bus))
-      return {ok:false,error:"Wait for previous AUX master native ACK."};
+    if(auxMasterPending.has(bus)){
+      if(Math.abs(gain-auxMasterInFlightGain.get(bus))<1e-7)auxMasterLatest.delete(bus);
+      else auxMasterLatest.set(bus,gain);
+      return {ok:true,pending:true,queued:true,message:"AUX MASTER COALESCED · WAIT ACK"};
+    }
+    if(Math.abs(gain-Number(d.acceptedRoute.auxes[bus].gain))<1e-7)
+      return {ok:true,unchanged:true,message:"AUX MASTER ALREADY ACKNOWLEDGED"};
     const requestId=auxMasterRequestId++;
+    auxMasterInFlightGain.set(bus,gain);
     auxMasterPending.set(bus,requestId);
     api.emitEvent("arMixAction",{action:"routingAuxBusGain",
       bus,requestId,deviceEpoch:Number(d.epoch),revision:Number(d.revision),
@@ -1253,6 +1278,7 @@
     const bus=Number(ack?.bus),id=Number(ack?.requestId);
     if(auxMasterPending.get(bus)!==id)return;
     auxMasterPending.delete(bus);
+    auxMasterInFlightGain.delete(bus);
     const next=ack?.state||{},now=state.dryRoutingLab||{};
     const ok=ack?.ok===true&&next.epoch===now.epoch&&
       next.revision===now.revision&&next.acceptedRoute&&!patchPending&&
@@ -1266,6 +1292,10 @@
     window.dispatchEvent(new CustomEvent("arMixAuxMasterGainResult",{
       detail:{ok:!!ok,bus,gain:Number(ack?.gain),
         error:ok?"":String(ack?.error||"AUX native ACK stale; refresh device")}}));
+    const latest=auxMasterLatest.get(bus);
+    auxMasterLatest.delete(bus);
+    if(ok&&latest!==undefined&&Math.abs(latest-Number(ack.gain))>=1e-7)
+      window.__arMixSetLiveAuxMasterGain(bus,latest);
   });
   window.__arMixStageAuxReturnEdit=(bus,field,value)=>{
     const fault=sendEditGate(0,bus);
