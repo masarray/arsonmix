@@ -1,0 +1,56 @@
+# ArSonMiX — Single Product Truth & Cross-Thread Reconciliation
+31 October 2026 | reconciled against `main@4acc88e2674561a9a3059ebff0c80c58c96c5269` | canonical decision record, **not** a claimed live release.
+
+## 1. The product (non-negotiable)
+ArSonMiX is ONE Windows-first, realtime PC digital live mixer / native VST3 host for karaoke, performance, podcast, radio, livestream and arbitrary operator-selected physical/virtual audio destinations. It is **not** a DAW/timeline editor, OBS plugin, virtual-cable-only streamer, eMotion LV1 SoundGrid implementation or a mere UI demo. The user configures hardware/software destinations; the mixer must not assume one output device type. Target zero *avoidable mixer-added* delay and measurable low end-to-end latency; neither Windows driver roundtrip nor arbitrary VST processing can be claimed absolute zero milliseconds.
+
+One native session/port registry, one JUCE audio callback, one prepared audio graph, one VST instance lease owner, one native routing authority, explicit hardware IDs and ACK. `web/monitor.js` owns route DRAFT/LIVE, not independent routing data in each panel. `web/mixer-io.js`, MIX, CHANNEL, PATCH and FX RACK are **different views of that same session**. No second DSP in JavaScript.
+
+## 2. Actual feature truth at this reconciliation (do not blend states)
+| Domain | Already merged/observed in source | Critical missing or **not certified** |
+|---|---|---|
+| Live PCM | **10 input + 4 internal stereo AUX returns**, native realtime VST3 host; MAIN + independent physical MONITOR pair, optional one user-selected secondary stereo MAIN playback endpoint with clock bridge (#203/#209). | Arbitrary multi-device input aggregation, freely configurable groups, DCA/matrix/cue, multiple independent user output busses and physically verified sound stability. |
+| Source patch | PATCH1 real driver-pin M/L/R and compact Input Routing in AUDIO I/O (#206/#218). CH3 physical Input1 + CH6 MAONO virtual L/R tested with **mock device ports**, not user's physical PS22. | PATCH2 direct `CH SOURCE → named logical input` ≤2 actions not implemented; live-safe source switch not delivered (#220 docs only). Do not invent MAONO virtual pins if native driver does not enumerate them. |
+| Faders/SENDS | Main faders, PRE/POST AUX sends and MS5 Sends-on-Faders (#219) with current DRAFT→MUTE→APPLY→ACK route transaction. | Fader-like **continuous ACK-backed send gain** during performance without structural graph rebuild/manual global mute; selected AUX master focus. PATCH/MUTE/ACK remains required for structural edits only. |
+| FX | Native FX host/graph and CH1 legacy/Orbit ownership; routed CH/AUX VST states and Show features exist with capability restrictions. | Same proven editable live VST insert capability on every CH/AUX/MASTER, full mono/stereo bus negotiation, PDC and native MASTER rack. `web/bridge.js` explicitly labels MASTER FX unavailable. |
+| Dynamic channels | DYN0 roster, DYN1A/1B offline runtime ChannelId PCM, DYN1B-2A 10CH+4AUX legacy PCM A/B bridge (#212/#215). | **NO live CH11+**, no real Add/Remove/Duplicate/Reorder GUI with native session ACK, no one-pass dynamic live VST lease/Show migration. |
+| Factory FX | #210 approved manifest/hash/release watcher and Windows ZIP admission. | `config/factoryfx-approved-releases.json` currently has `plugins: []`; no first-party VST3 shipped by default. Independent ArSonEQ/Comp/Verb/Harmony/Color/Enhancer qualification and licensing remain. |
+| GUI | L2 aligned 11 faders, RAIL3 material, pinned MASTER, crosspatch, ROUTE/SENDS modes, native WebView2 (#176/#211/#216). | Selected CHANNEL overview connecting SOURCE→FX→SEND→BUS→PHYSICAL OUT; no duplicate navigation; low-spec iGPU responsiveness unqualified (#56). |
+| Quality & delivery | Exact-head source/Chromium/MSVC/CTest/ZIP automation and downloadable Windows hardware-FAT candidate. Most recent native gate at `498ded667` run **41152162311 SUCCESS**. | Issue #15 zero-VST crackle remains OPEN; no certified hardware latency/stability, endpoint disconnect/soak or complete user FAT. A verified ZIP is **not** verified audio. |
+
+## 3. The core wrong turn: treat a mixer like a configuration database
+A working soundman makes routine volume, pan, SEND, MUTE/SOLO and authorized plugin parameter movements WHILE audio flows. Routing topology, device format, plugin instantiation, Show structural recall and physical output ownership are a **different category** that requires prepared control-thread commits and explicit safety.
+
+Do not impose `STAGE → manual MUTE → APPLY` on every normal send-fader gesture. However do **not** globally remove output-mute gates from unsafe structural changes merely to reduce clicks. Build a typed operation classification and a single native controller:
+- `CONTINUOUS_RT_PARAM`: gain/fader/pan/send level/mute/solo/bypass when proven safe. Coalesce GUI events, bounded smoothing/atomic generation, ACK for readback, **no device restart, no graph rebuild, no required global output mute**.
+- `SAFE_SOURCE_SWITCH`: selected channel choosing already-verified named source, validate same device epoch, pre-prepare change off RT and crossfade at safe boundary. Only advertise seamless two-action PATCH2 when implementation and physical tests actually pass; otherwise use existing guarded route editing.
+- `STRUCTURAL_MUTATION`: add/remove/reorder lanes/FX, new bus, physical output allocation, device change or incompatible Show. Immutable graph compile off RT; output MUTE/guarded APPLY, epoch+revision ACK, rollback and no auto-unmute.
+
+This classification is the missing architectural contract uniting PATCH2, MS5 and DYN1B. Never use green LIVE badge for an unacknowledged change.
+
+## 4. The one normal operator workflow — must become end-to-end audible
+**Initial device setup once:** select ASIO/WASAPI device and actual enabled input/output ports, create reusable named logical mono/stereo sources (e.g. `Mic 1`, `PS22 Virtual Stereo` ONLY when enumerated); persist device-specific bindings and require remap when unavailable.
+**MIX (day to day):** select CH03 → SOURCE `Mic 1` → direct safe switch + native ACK; select CH06 → SOURCE `PS22 Virtual Stereo` → ACK. Adjust native CH fader, pan, mute/solo and FX without opening a routing modal.
+**CHANNEL focus:** selected strip exposes physical source vs processing format, full real native insert chain, send gains with PRE/POST, logical destination and actual hardware output. No layout jump, editor remount or invented MASTER FX.
+**AUX/MONITOR:** select AUX bus once → send-fader flip → adjust CH sends *live* without changing FOH MAIN faders; visible AUX identity, output and ONE shared FX return. Separate MONITOR physical output needs genuine >=4 output device, no fake ports.
+**ADVANCED PATCH:** global matrix only for power users, setup/recovery/bulk patch; cells have clear FROM→TO and DRAFT vs native accepted. Device reconfiguration and structural changes use deliberate guarded commits.
+**SHOW:** save/restore verified vendor state and device mappings safely; structural recall does not auto-unmute or silently reset CH1 Orbit.
+**OUTPUT:** default real output; optional independently clocked secondary user-selected destination; do not prescribe OBS/virtual cable.
+
+## 5. Priority reset: THREE integrated user-verifiable milestones, not dozens of PRs
+**M0 — FIELD FIRST + P0 reliability** (#15/#205/#56): Windows native package on exact successful main SHA; 2x2 direct wired ASIO/WASAPI zero-FX output tone, capture and dry pass; actual source/output patch readback, physical pop/crackle evidence, low-spec GPU pointer response. Repeat virtual/BT as isolated cross-clock scenarios, not a starting baseline. No live-release badge before 30-minute uninterrupted wired zero-FX soak and explicit operator FAT evidence.
+**M1 — OPERATOR FLOW + safe realtime controls** (#170/#179/#182; PATCH2 and MS5): one **selected CHANNEL** source→FX→sends→bus→output workflow, input naming/quick switch only with native safe handoff, continuous POST-send gain to AUX without global output mute, one visible AUX master/return and typed safe structural APPLY. End-to-end acceptance: MIC→CH3, driver-verified PS22 L/R→CH6, send both to single AUX return and independently control MAIN/MONITOR during audible playback.
+**M2 — ONE full dynamic native graph and FX/Show parity** (#192/#95/#180/#185): migrate current CH1 legacy VST lease/editor+10CH+4 AUX to ChannelId in one callback, retain MAIN/MONITOR/OUTPUT1 and real VST binary state, then release resource-bounded ADD/REMOVE/DUPLICATE/REORDER with banked GUI; complete native MASTER insert/PDC and legally approved FactoryFX. No live +CHANNEL prior to physical PCM and plugin-state parity.
+
+M0 runs in parallel and blocks product certification; M1 gives users a real mixer workflow sooner. M2 must never fork the engine or postpone physical acceptance indefinitely.
+
+## 6. Ownership, source precedence, and CI economy
+1. **Current executable code + exact SHA + native ACK/physical evidence** override dated wording in older ARD/PRD/README and old PR descriptions. GUI mock tests prove interactions/port validation, NOT PS22 physical sound.
+2. Product decisions: **THIS file** + [PATCH2 PRD](PRD_HARDWARE_AUDIO_IO_MATRIX_20261030.md) + [PATCH2 ARD](ARD_HARDWARE_AUDIO_IO_MATRIX_20261030.md); detailed implementation: [existing convergence gate](CONVERGENCE_RELEASE_GATE_20261031.md), [MS5](MS5_NATIVE_AUX_SENDS_ON_FADERS_20261031.md), and [DYN1B bridge](DYN1B_LEGACY_PARITY_BRIDGE_20261031.md). Older AGENTS paragraphs and roadmap dated snapshots are history, not simultaneously binding targets.
+3. Native audio/driver/FX owner: `src/LiveAudioEngine.h`, `src/LiveDryRoutingLab.h`, `engine/core/*` and relevant JUCE host. Operator state owner: `web/monitor.js`. Presenter owner: MIX/FX/IO WebView modules; CSS geometry lock L2/RAIL3; readonly status from native; no global refactor without cross-owner diff audit.
+4. Keep 18 divergent historical open PRs quarantined, no broad automatic merges. Review the unique missing behavior only. Documentation-only changes should not invoke heavy Windows CI.
+5. An accepted milestone must provide: **an operator task that works end to end**, source SHA, real native output/ACK, negative test, exact-head CI, downloadable verified FAT build and the specific required hardware result. Only mark `RELEASE QUALIFIED` when physical evidence exists.
+6. Current 2026-10-31 blocker evidence: Windows CI for MS5 merge `28ca1ff9` failed JS contract, later fixes `eda23364` and `498ded667` restored exact-head Windows gate SUCCESS (41152162311); do not cite the old failure as the current branch status. Most recent `4acc88e` is PATCH2 **docs only** and does not deliver its direct SOURCE picker.
+
+## 7. Mandatory future-thread handoff (read before any code/PR)
+State current `main` SHA and concurrent changed paths; name ONE of M0/M1/M2, show exactly which user-facing behavior will become executable, map UI→authoritative native transaction→PCM→hardware output, prove whether LIVE vs offline, preserve L2/RAIL3 and plugin/Show identity; compare with the latest PATCH2 and this file; use one coherent CI-gated branch. Do not call a draft, docs, offline DSP, browser simulation, or Windows build alone a finished professional mixer feature.
