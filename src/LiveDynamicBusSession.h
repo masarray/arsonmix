@@ -61,6 +61,10 @@ public:
             return "M3E dry Bus pilot requires 0 VST3, AUX and prior Sends; preserve existing route";
         // juce::var owns each Array; never retain getArray() from a
         // temporary property value (would dangle before native preparation).
+        const auto controlsValue=status.getProperty("channelControls",{});
+        const auto* effective=controlsValue.getArray();
+        if(!effective||effective->size()!=10)
+            return "Native effective channel controls unavailable; refuse to reset live faders";
         const auto monitorsValue=status.getProperty("monitorOutputs",{});
         const auto portsValue=status.getProperty("ports",{});
         const auto outputsValue=status.getProperty("outputPorts",{});
@@ -103,7 +107,9 @@ public:
             row.role=i==10?ChannelRole::main:ChannelRole::input;
             const auto mode=i==10?juce::String("STEREO"):
                 (*rows)[i].getProperty("mode",{}).toString();
-            row.format=mode=="STEREO"?ProcessingFormat::stereo:ProcessingFormat::mono;
+            const auto format=i==10?juce::String("STEREO"):
+                (*rows)[i].getProperty("channelFormat",mode).toString();
+            row.format=format=="STEREO"?ProcessingFormat::stereo:ProcessingFormat::mono;
             row.text=i==10?"MAIN":"CH "+std::to_string(i+1);
             if(i!=10 && mode!="NONE"&&mode!="MONO"&&mode!="STEREO")
                 return "Legacy BUS/unsupported source needs full Show migration; route unchanged";
@@ -115,6 +121,7 @@ public:
         if(!first.ok()||first.createdIds.size()!=11)
             return "Native dynamic ChannelId allocation rejected";
         std::vector<ChannelEdit> links;
+        links.reserve(55);
         DynamicGraphRequest req;
         req.physicalInputs=actualInputs;
         req.maxFrames=frames;
@@ -122,6 +129,28 @@ public:
         for(int i=0;i<10;++i){
             const auto& row=(*rows)[i];
             const auto mode=row.getProperty("mode",{}).toString();
+            const auto& state=(*effective)[i];
+            const double linear=static_cast<double>(state.getProperty("linear",-1.0));
+            const double pan=static_cast<double>(state.getProperty("pan",999.0))/100.0;
+            if(!std::isfinite(linear)||linear<0.0||linear>4.0||
+               !std::isfinite(pan)||pan< -1.0||pan>1.0)
+                return "Native live source fader/PAN readback invalid; route unchanged";
+            ChannelEdit gainEdit;gainEdit.kind=ChannelEdit::Kind::setFader;
+            gainEdit.id=first.createdIds[i];gainEdit.value=static_cast<float>(linear);
+            links.push_back(std::move(gainEdit));
+            ChannelEdit panEdit;panEdit.kind=ChannelEdit::Kind::setPan;
+            panEdit.id=first.createdIds[i];panEdit.value=static_cast<float>(pan);
+            links.push_back(std::move(panEdit));
+            if(static_cast<bool>(state.getProperty("mute",false))) {
+                ChannelEdit mute;mute.kind=ChannelEdit::Kind::setMute;
+                mute.id=first.createdIds[i];mute.enabled=true;
+                links.push_back(std::move(mute));
+            }
+            if(static_cast<bool>(state.getProperty("solo",false))) {
+                ChannelEdit solo;solo.kind=ChannelEdit::Kind::setSolo;
+                solo.id=first.createdIds[i];solo.enabled=true;
+                links.push_back(std::move(solo));
+            }
             if(mode=="NONE")continue;
             const int inL=findInput(static_cast<int>(row.getProperty("left",-1)));
             const int inR=mode=="STEREO"?
@@ -130,10 +159,15 @@ public:
                (mode=="STEREO"&&(inR<0||inR>=actualInputs||inL==inR)))
                 return "Physical capture port absent from current driver readback";
             req.sources.push_back({first.createdIds[i],inL,inR,mode=="STEREO"});
-            ChannelEdit link;
-            link.kind=ChannelEdit::Kind::setPrimaryOutput;
-            link.id=first.createdIds[i];link.target=first.createdIds[10];
-            links.push_back(std::move(link));
+            // OUT NONE is a real operator route, not implicitly MAIN.
+            // Selected channels are redirected to GROUP by the following
+            // atomic createBusForSelected even if their old OUT was NONE.
+            if(static_cast<bool>(row.getProperty("main",true))) {
+                ChannelEdit link;
+                link.kind=ChannelEdit::Kind::setPrimaryOutput;
+                link.id=first.createdIds[i];link.target=first.createdIds[10];
+                links.push_back(std::move(link));
+            }
         }
         const auto wired=roster.edit(roster.revision(),links);
         if(!wired.ok())return "Unable to create source to MAIN routing";
