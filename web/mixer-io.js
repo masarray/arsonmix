@@ -1439,17 +1439,18 @@
     });
     overlay.dataset.activeTab=ioTab;
     const matrixInDevice=ioTab==='device'&&deviceSameEndpoint(deviceDraft)&&hardwareReady(s);
-    overlay.querySelector('[data-mix-apply]').hidden=ioTab==='device'&&!matrixInDevice;
+    overlay.querySelector('[data-mix-apply]').hidden=ioTab==='device';
     overlay.querySelector('[data-io-revert]').hidden=ioTab==='device'&&!matrixInDevice;
     overlay.querySelector('[data-io-internal]').hidden=ioTab==='device';
     overlay.querySelector('[data-io-device-apply]').hidden=ioTab!=='device';
     overlay.querySelector('[data-io-device-revert]').hidden=ioTab!=='device';
     const deviceBlocker=deviceSwitchBlocker(s);
-    overlay.querySelector('[data-io-device-apply]').disabled=!deviceDirty()||!!deviceBlocker;
+    overlay.querySelector('[data-io-device-apply]').disabled=!!deviceBlocker||deviceBusy||applyMutePending||!!window.__arMixFastAudioState?.().pending||(!deviceDirty()&&(!hardwareReady(s)||!!lastStatus.monitor));
+    overlay.querySelector('[data-io-device-apply]').textContent=deviceBusy||applyMutePending?'APPLYING…':'APPLY';
     overlay.querySelector('[data-io-device-apply]').title=deviceBlocker||
       (deviceDirty()?'Commit selected device then verify physical pin readback':'No pending device edit');
     overlay.querySelector('[data-io-device-revert]').disabled=deviceBusy||!deviceDirty();
-    overlay.querySelector('[data-mix-apply]').disabled=!hardwareReady(s)||!!matrixDraft.size||s.monitor||
+    overlay.querySelector('[data-mix-apply]').disabled=!hardwareReady(s)||!!matrixDraft.size||
       (ioTab==='device'&&deviceDirty());
     overlay.querySelector('[data-io-revert]').disabled=!isNative()||s.pending;
     const signature=ioTab+'|'+JSON.stringify([s.epoch,s.revision,s.pending,s.draftRoutes,
