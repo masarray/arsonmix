@@ -188,6 +188,38 @@ int main() {
                            true,processFx,ml.data(),mr.data()));
     assert(l[63]==0.f && ml[63]==0.f);
     assert(render()&&near(ml[63],persisted));
+    // Studio Console Add Bus without selection: distinct non-input ID,
+    // empty source count, default OUT -> MAIN, no phantom audible signal.
+    applied=session.createBus(session.acceptedRosterRevision(),6,
+        "EMPTY MUSIC BUS",ChannelRole::group,route,epoch,epoch,true);
+    assert(applied.ok()&&applied.edit.createdIds.size()==1);
+    const auto empty=applied.edit.createdIds.front();
+    assert(empty.value==8 && session.acceptedRoster().size()==8);
+    const auto* emptyView=session.acceptedRouting(epoch,7);
+    assert(emptyView && emptyView->find(empty)->sourceCount()==0);
+    assert(emptyView->find(empty)->primaryOutput==main);
+    assert(render() && near(ml[63],persisted));
+
+    // Studio Remove Bus reconnects the original primary source to MAIN but
+    // cannot redirect an OUT NONE channel, or destroy its independent sends.
+    rejected=session.removeBus(session.acceptedRosterRevision(),7,
+        main,route,epoch,epoch,true);
+    assert(rejected.fault==DynamicAcceptedSession::Fault::editRejected);
+    assert(session.acceptedGraphRevision()==7);
+    applied=session.removeBus(session.acceptedRosterRevision(),7,
+        newest,route,epoch,epoch,true);
+    assert(applied.ok() && !session.acceptedRoster().find(newest));
+    const auto* reconnected=session.acceptedRouting(epoch,8);
+    assert(reconnected && reconnected->find(micA)->primaryOutput==main);
+    assert(!reconnected->find(micB)->primaryOutput.value);
+    assert(reconnected->find(micA)->parallelSends.size()==2);
+    assert(render() && near(l[63],.1f*center*(1.f+.25f*.5f)));
+    assert(near(ml[63],persisted));
+    applied=session.removeBus(session.acceptedRosterRevision(),8,
+        empty,route,epoch,epoch,true);
+    assert(applied.ok() && session.acceptedRoster().size()==6);
+    assert(session.acceptedGraphRevision()==9);
+    assert(render() && near(ml[63],persisted));
     session.unpublish();
     session.pollRetirement();
     assert(!session.render(epoch,inputs,2,l.data(),r.data(),64,
