@@ -496,6 +496,26 @@ public:
         return true;
     }
 
+    // M1: an existing ENABLED AUX FX return has its own realtime master
+    // fader, applied after AUX inserts and before both MAIN and MONITOR.
+    // Only one GUI/control writer, never plugin/graph changes in the callback.
+    bool setAuxBusGain(int bus,std::uint64_t expectedEpoch,
+                       std::uint64_t expectedRevision,float gain) noexcept {
+        if(bus<0||bus>=auxCount||!std::isfinite(gain)||gain<0.f||gain>4.f||
+           !ready()||!hasExplicitRoute()||expectedEpoch!=epoch()||
+           expectedRevision!=revision())return false;
+        auto auxes=acceptedRoute_.getProperty("auxes",juce::var());
+        auto* arr=auxes.getArray();
+        if(!arr||bus>=arr->size()||!(*arr)[bus].getProperty("enabled",false))
+            return false;
+        if(!publisher_.updateActiveControl(expectedEpoch,expectedRevision,
+            [&](FxGraph& fx) noexcept {return fx.setAuxBusGain(bus,gain);}))
+            return false;
+        if(auto* obj=(*arr)[bus].getDynamicObject())
+            obj->setProperty("gain",static_cast<double>(gain));
+        return true;
+    }
+
     // Live, nonstructural FX power control; all guards bound to a real ACK.
     bool setFxBypass(int lane,int slot,std::uint64_t expectedEpoch,
                      std::uint64_t expectedRevision,const juce::String& token,

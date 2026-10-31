@@ -488,7 +488,67 @@ static void verifyRealtimeAuxPostGainWithoutGraphRebuild() {
     assert(close(l[63],0.f));
 }
 
+
+static void verifyRealtimeAuxMasterPcmBothOutputs() {
+    using namespace armix::mixer;
+    constexpr std::array<int,2> pins{0,1};
+    ChannelRoutingConfig routing;
+    routing.stripsAndMaster.strips[0]=
+        {SourceMode::mono,0,-1,1.f,0.f,false,false};
+    SendRequest sends;
+    sends.toMaster[0]=false;
+    AuxBusRequest aux;
+    aux.buses[0]={true,true,false,1.f};
+    aux.count=1;
+    aux.sends[0]={0,0,SendTap::postFader,.25f,0.f,true};
+    PreparedRenderGraph graph;
+    RenderError error;
+    assert(PreparedRenderGraph::compile(routing,pins,sends,graph,error,aux));
+    PreparedMixerBlock block(graph,64);
+    RealtimeStripControls controls;
+    assert(controls.set(0,1.f,0.f,true,false,false));
+    std::array<float,64> mic{},silence{},left{},right{},monitorL{},monitorR{};
+    mic.fill(.8f);
+    const float* inputs[]={mic.data(),silence.data()};
+    std::array<float,stripCount+auxBusCount> monitor{};
+    monitor[stripCount]=.5f;
+    const auto noFx=[](int,float*,float*,int) noexcept {};
+    const auto render=[&]{
+        return block.process(inputs,2,left.data(),right.data(),64,noFx,
+                             nullptr,&controls,&monitor,monitorL.data(),monitorR.data());
+    };
+    const float initial=.8f*.7071067811865475f*.25f;
+    assert(render());
+    assert(close(left[0],initial) && close(right[63],initial));
+    assert(close(monitorL[63],initial*.5f));
+    assert(close(block.auxBusGain(0),1.f));
+    assert(block.setAuxBusGain(0,2.f));
+    assert(render());
+    assert(left[0]>initial && left[0]<initial*2.f);
+    assert(close(left[63],initial*2.f) &&
+           close(monitorR[63],initial));
+    assert(render());
+    assert(close(left[0],initial*2.f));
+    assert(block.setAuxBusGain(0,0.f));
+    assert(render());
+    assert(left[0]>0.f && close(left[63],0.f));
+    assert(close(monitorR[63],0.f));
+    assert(render());
+    assert(close(left[0],0.f));
+    assert(!block.setAuxBusGain(-1,1.f));
+    assert(!block.setAuxBusGain(1,1.f)); // nonexistent AUX2
+    assert(!block.setAuxBusGain(0,-.01f));
+    assert(!block.setAuxBusGain(0,4.1f));
+    assert(!block.setAuxBusGain(0,std::numeric_limits<float>::quiet_NaN()));
+    assert(close(block.auxBusGain(0),0.f));
+    assert(close(block.plan().aux.buses[0].gain,1.f)); // topology immutable
+    // Legacy offline/no-live-control path still uses immutable compiled gain.
+    assert(block.process(inputs,2,left.data(),right.data(),64,noFx));
+    assert(close(left[0],initial));
+}
+
 int main() {
+    verifyRealtimeAuxMasterPcmBothOutputs();
     verifyRealtimeAuxPostGainWithoutGraphRebuild();
     verifyLegacyToDynamicProductionPcmParity();
     verifyDynamicDualBusPcm();

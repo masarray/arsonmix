@@ -415,3 +415,55 @@
 .arIOOverlay[data-active-tab="device"] .arIOWindow footer [data-io-revert],
 .arIOOverlay[data-active-tab="device"] .arIOWindow footer [data-io-internal],
 .arIOOverlay[data-active-tab="device"] .arIOWindow footer [data-io-advanced]{display:none!important}
+
+/* M1 CHANNEL FOCUS: one thin native-ACK signal-flow header across the workbench,
+   never packed into RAIL3/sidebar. No blur, animations or per-pointer redraw. */
+#app .workbench .arChannelSignalFlow{
+  box-sizing:border-box;flex:none;display:flex;align-items:stretch;gap:4px;
+  width:100%;height:35px;padding:3px 5px;min-width:0;
+  border-bottom:1px solid #425966;background:linear-gradient(#23353e,#15242d);
+  color:#d3e6eb;font:500 10px/1.2 "ArSonMix Inter","Segoe UI",sans-serif;
+}
+#app .workbench .arChannelSignalFlow[hidden]{display:none!important}
+#app .arChannelSignalFlow .arFocusIndex{
+  flex:0 0 51px;display:grid;place-items:center;
+  background:#14272f;border:1px solid #37535f;color:#b8edf0;
+  font:600 10px Consolas,monospace;
+}
+#app .arChannelSignalFlow button{
+  flex:1 1 0;min-width:0;max-width:none;display:flex;align-items:center;gap:6px;
+  background:#10232d;border:1px solid #38505d;padding:0 7px;
+  color:#a2c4ce;font:600 9px "ArSonMix Inter","Segoe UI",sans-serif;
+  cursor:pointer;white-space:nowrap;text-align:left;
+}
+#app .arChannelSignalFlow button span{
+  flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;color:#e1ebef;font:500 9px Consolas,monospace;
+}
+#app .arChannelSignalFlow[data-native-state="unverified"] button span{
+  color:#baa88c;
+}
+#app .arChannelSignalFlow button:hover{background:#203b48;border-color:#4c8894}
+#app .arChannelSignalFlow button:focus-visible{
+  outline:2px solid #81dfe5;outline-offset:-2px;
+}
+/* Existing MS5 rail lives in a strict two-column grid. AUX MASTER occupies one
+   additional short row, preserving the existing mode buttons and RAIL3. */
+#app .left-rail .arSofControls .arAuxMasterInline{
+  grid-column:1/-1;display:flex;align-items:center;gap:5px;min-width:0;
+  height:29px;padding:0 5px;background:#0e2530;border:1px solid #3d6676;
+  color:#a9d5de;font:550 8px "ArSonMix Inter","Segoe UI",sans-serif;
+}
+#app .left-rail .arAuxMasterInline input{
+  flex:1 1 auto;width:36px;min-width:0;accent-color:#52b5c2;
+}
+#app .left-rail .arAuxMasterInline input:disabled{opacity:.38}
+#app .left-rail .arAuxMasterInline output{
+  flex:0 0 43px;text-align:right;color:#d5edf2;
+  font:9px Consolas,monospace;white-space:nowrap;
+}
+@media(max-width:1080px){
+  #app .arChannelSignalFlow button{padding:0 4px;gap:3px;font-size:8px}
+  #app .arChannelSignalFlow button span{font-size:8px}
+  #app .arChannelSignalFlow .arFocusIndex{flex-basis:45px}
+}

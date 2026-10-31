@@ -167,6 +167,9 @@ public:
     const std::array<float,fxSlots>& monitorGains() const noexcept{return monitorGains_;}
     // M1: native realtime send fader on an EXISTING validated AUX POST edge.
     // Same prepared graph, no VST instance change or global mute.
+    bool setAuxBusGain(int bus,float gain) noexcept {
+        return block_&&block_->setAuxBusGain(bus,gain);
+    }
     bool setAuxSendGain(int source,int bus,float gain) noexcept {
         return block_ && block_->setAuxSendGain(
             source,bus,SendTap::postFader,gain);

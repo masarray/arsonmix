@@ -22,6 +22,8 @@ async def main():
         await page.goto((root/"web/index.html").as_uri())
         assert await page.locator("#mixer .rack").count()==10
         assert await page.locator("#mixer .arChannelBank").count()==10
+        assert await page.locator('.arChannelSignalFlow [data-focus-step]').count()==4
+        assert 'NO NATIVE ACK' in await page.locator('[data-focus-source]').inner_text()
         assert await page.locator("[data-mix-mode]").count()==3
         status=await page.evaluate("""() => {
           const ch=Array.from({length:10},()=>({mode:'NONE',left:-1,right:-1,gain:.25,pan:0,main:true,mute:false,solo:false,fxId:''}));
@@ -73,6 +75,12 @@ async def main():
           return status;
         }""",status)
         assert "LIVE" in await page.locator('[data-strip="0"] .arBankStage').inner_text()
+        assert 'Microphone 1' in await page.locator('[data-focus-source]').inner_text()
+        assert 'MAIN' in await page.locator('[data-focus-out]').inner_text()
+        await page.locator('[data-focus-step="fx"]').click()
+        assert await page.locator('#mixer').get_attribute('data-io-mode')=='FX'
+        await page.locator('[data-focus-step="source"]').click()
+        assert await page.locator('#mixer').get_attribute('data-io-mode')=='ROUTE'
         # Physical SOURCE changes while output is ARMED must fail closed:
         # no silent MUTE, graph mutation, or fake LIVE acknowledgement.
         await page.evaluate("""status=>{
@@ -186,6 +194,37 @@ async def main():
           return status;
         }""",status)
         assert "NATIVE ACK" in await page.locator('#arSendFeedback').inner_text()
+        # The AUX master is a separate native realtime parameter on the same
+        # prepared graph, after AUX VST3 and before BOTH physical sinks.
+        master=page.locator('[data-aux-master]')
+        assert await master.is_enabled()
+        await master.evaluate("(e)=>{e.value='-6';e.dispatchEvent(new Event('change',{bubbles:true}))}")
+        param=await page.evaluate("""()=>window.__armixTestActions.filter(
+          x=>x.name==='arMixAction'&&x.data.action==='routingAuxBusGain')""")
+        assert len(param)==1,param
+        assert param[0]['data']['bus']==0 and param[0]['data']['revision']==5,param
+        assert abs(param[0]['data']['value']-10**(-6/20))<.00001,param
+        assert status['dryRoutingLab']['acceptedRoute']['auxes'][0]['gain']==1
+        status=await page.evaluate("""status=>{
+          const d=status.dryRoutingLab;
+          d.acceptedRoute.auxes[0].gain=Math.pow(10,-6/20);
+          window.__armixTestEmit('arMixAuxBusGainAck',{
+            ok:true,bus:0,requestId:1,gain:d.acceptedRoute.auxes[0].gain,state:d});
+          window.__armixTestEmit('arMixStatus',status);
+          return status;
+        }""",status)
+        assert '-6.0' in await page.locator('[data-aux-master-read]').inner_text()
+        assert await page.evaluate("""()=>window.__armixTestActions.filter(
+          x=>x.name==='arMixAction'&&x.data.action==='routingDryApply').length""")==2
+        # Return AUX master to unity for the remaining legacy G3 tests.
+        await master.evaluate("(e)=>{e.value='0';e.dispatchEvent(new Event('change',{bubbles:true}))}")
+        status=await page.evaluate("""status=>{
+          const d=status.dryRoutingLab;d.acceptedRoute.auxes[0].gain=1;
+          window.__armixTestEmit('arMixAuxBusGainAck',{
+            ok:true,bus:0,requestId:2,gain:1,state:d});
+          window.__armixTestEmit('arMixStatus',status);
+          return status;
+        }""",status)
         assert await page.locator('#mixer [data-strip="0"] .rack .insert-slot').count()==6
         # MS5 operator journey: select one real AUX and flip visible channel
         # faders to POST sends without moving MAIN faders or remounting FX.
