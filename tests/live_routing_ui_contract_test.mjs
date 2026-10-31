@@ -136,6 +136,12 @@ test("P1I binds premium 10CH console to REAL native RT graph without FX restart"
   assert.doesNotMatch(bridge,/paintMeter\(document\.querySelector\('\[data-meter="'\+i\+'L"\]'\),lit,raw\)/);
   assert.doesNotMatch(bridge,/Native VST3 is currently available on Channel 1 only/);
   assert.match(bridge,/openPicker\(el,idx,slot,true\)/);
+  assert.match(bridge,/const nativePatched=!master/);
+  assert.match(bridge,/const routed=nativePatched&&!legacy/);
+  assert.match(ui,/rackFxDraft\.channels\.includes\(channel\)/);
+  assert.match(ui,/const channels=new Set\(/);
+  assert.match(ui,/for\(const channel of rackFxDraft\.channels\)/);
+  assert.match(bridge,/window\.__arMixOpenChannelPatch\?\.\(id,"input"\)/);
   assert.match(bridge,/data-native-routing-lab/);
 });
 

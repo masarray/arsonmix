@@ -74,3 +74,23 @@ test('MASTER stereo meters are never hidden by native preview CSS',()=>{
   assert.ok(!masterBranch.includes('track.dataset.preview="1"'));
   assert.ok(bridge.includes('percent(d.peakLeft)')&&bridge.includes('percent(d.peakRight)'));
 });
+
+// M4 verified-source, all-channel FX contract: a native channel must be
+// selected by its ACKed physical route, not by a CH1-only UI fallback.
+test('M4 FX console keeps channel routing and plugin identity per native lane',()=>{
+  const routes=readFileSync('web/monitor.js','utf8');
+  assert.match(bridge,/const nativePatched=!master/);
+  assert.match(bridge,/const routed=nativePatched&&!legacy/);
+  assert.match(routes,/rackFxDraft\.channels\.includes\(channel\)/);
+  assert.match(routes,/channels:\[\.\.\.channels\]\.sort/);
+  assert.match(routes,/for\(const channel of rackFxDraft\.channels\)/);
+  assert.match(routes,/draftRoutes\[channel\]\.fxIds=current/);
+  assert.match(routes,/action:"routingDryApply"/);
+  assert.match(bridge,/window\.__arMixOpenChannelPatch\?\.\(id,"input"\)/);
+  assert.match(bridge,/data-routed-fx=/);
+  assert.match(bridge,/data-routed-bypass=/);
+  assert.match(bridge,/data-routed-editor=/);
+  assert.match(bridge,/lab\.channelPeaksL/);
+  assert.match(bridge,/lab\.channelPeaksR/);
+  assert.doesNotMatch(bridge,/Native VST3 is currently available on Channel 1 only/);
+});

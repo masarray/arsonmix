@@ -1600,8 +1600,9 @@ async def main():
           const accepted={
             deviceEpoch:77,revision:2,
             channels:Array.from({length:10},(_,i)=>({
-              mode:i===1?"STEREO":"NONE",channelFormat:i===1?"STEREO":"MONO",
-              left:i===1?0:-1,right:i===1?1:-1,gain:.25,pan:0,
+              mode:i===0?"MONO":i===1||i===2?"STEREO":"NONE",
+              channelFormat:i===1||i===2?"STEREO":"MONO",
+              left:i<3?0:-1,right:i===1||i===2?1:-1,gain:.25,pan:0,
               main:true,mute:false,solo:false,
               fxId:i===1?"plugin-1":"",fxIds:i===1?["plugin-1"]:[]
             })),
@@ -1632,8 +1633,35 @@ async def main():
         assert await native.locator('#rackWorkspace').get_by_text("FX DRAFT",exact=False).count()>=1
         assert await native.evaluate("()=>window.__arMixGetRackFxDraft?.(1)?.channel===1"),\
           "CH2 FX must stage in CH2's native routing graph, not CH1's legacy rack."
-        await native.evaluate('()=>document.getElementById("arPatchRevert").click()')
+        # M4: two different native racks share ONE pending routing graph,
+        # preserve both plugin selections and expose independent draft flags.
+        multi=await native.evaluate("""()=>{
+          const staged=window.__arMixStageRackFx?.(2,"plugin-4",0,"set");
+          const ch1=window.__arMixFxLaneView?.(0)||{};
+          const ch2=window.__arMixFxLaneView?.(1)||{};
+          const ch3=window.__arMixFxLaneView?.(2)||{};
+          const first=window.__arMixGetRackFxDraft?.(1);
+          const second=window.__arMixGetRackFxDraft?.(2);
+          return {ok:staged?.ok,first:first?.ids,second:second?.ids,
+            count:first?.channels.length,stagedChannels:first?.channels,
+            pending:[ch1.pending,ch2.pending,ch3.pending],
+            ids:[ch2.ids[0],ch3.ids[0]],other:ch1.ids.length};
+        }""")
+        assert multi['ok'] and multi['count']==2 and multi['stagedChannels']==[1,2],multi
+        assert multi['pending']==[False,True,True],multi
+        # Plugin Manager ranks favorites ahead of alphabetic names; the
+        # semantic contract is identity isolation, never list ordering.
+        assert multi['ids'][0]==multi['first'][0] and multi['ids'][0]!='plugin-1',multi
+        assert multi['ids'][1]=='plugin-4' and multi['second']==['plugin-4'],multi
+        assert await native.locator('[data-strip="0"] .rack [data-routed-fx="0"]').count()==6
+        await native.locator('#rackWorkspace [data-routed-apply]').click()
+        assert await native.evaluate("""()=>!window.__arMixSent.some(x=>
+          x.payload?.action==="routingDryApply")"""),\
+          "No mock source may assert a real native APPLY without valid hardware provenance."
+        # Restore native reference BEFORE reverting drafts. Otherwise the
+        # temporary CH1 live route leaks into unrelated unpatched scenarios.
         await native.evaluate("()=>window.__arMixMockEvents.arMixStatus(window.__arPatchStatus)")
+        await native.evaluate('()=>document.getElementById("arPatchRevert").click()')
         await native.locator('[data-view="MIX"]').click()
         await native.locator('[data-view="SIGNAL FLOW"]').click()
         assert await native.locator("#arRoutingLabOverlay").evaluate(

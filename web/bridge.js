@@ -205,12 +205,14 @@
   // common prepared graph. No "native-rack-" duplicate visual renderer.
   function fxLaneSnapshot(channel,master=false) {
     const lab=state.device?.dryRoutingLab;
-    const legacy=!master&&channel===0&&(state.chain.length>0||!lab?.channelFxNames?.[0]);
-    // Display an actionable live lane ONLY after an accepted physical or
-    // native BUS route; an empty prepared graph does not process channel FX.
+    // A native-patched CH1 with NO legacy inserts uses the exact same
+    // 8-slot native graph/controller as CH2–CH10. Keep the original VST3
+    // lease/Orbit only when it actually owns legacy inserts.
     const accepted=lab?.acceptedRoute?.channels?.[channel];
     const patched=accepted&&accepted.mode&&accepted.mode!=="NONE";
-    const routed=!master&&!legacy&&!!lab?.active&&!!lab?.ready&&!!patched;
+    const nativePatched=!master&&!!lab?.active&&!!lab?.ready&&!!patched;
+    const legacy=!master&&channel===0&&(state.chain.length>0||!nativePatched);
+    const routed=nativePatched&&!legacy;
     const view=routed?(window.__arMixFxLaneView?.(channel)||{}):{};
     const ids=Array.isArray(view.ids)?view.ids:[];
     const instances=Array.isArray(view.liveSlots)?view.liveSlots:[];
@@ -777,7 +779,12 @@
   // Controller-owned draft/ACK state changes carry semantic intent. Listen to
   // this event instead of relying on an unrelated meter text mutation to
   // make a routed FX draft visible in all eleven strip presentations.
-  window.addEventListener("arMixRoutingDraftChanged",syncView);
+  window.addEventListener("arMixRoutingDraftChanged",()=>{
+    // Draft changes are operator events (not 30fps telemetry). Keep the
+    // focused FX rack synchronized even when its shell is already native.
+    if(currentTab()==="FX RACK")renderRack();
+    syncView();
+  });
   // Opens the existing native Routing LAB, not a second mixer/editor.
   document.addEventListener("click",event=>{
     if(!event.target.closest("[data-native-routing-lab]"))return;
@@ -941,9 +948,12 @@
     return;
   }
   if(el.hasAttribute("data-native-unrouted")){
-    const id=Number(el.dataset.nativeUnrouted),rack=el.closest(".rack,.master-fx-rack");
-    const slot=rack?[...rack.children].indexOf(el.closest(".insert-slot,.master-fx-slot")):0;
-    openPicker(el,id,Math.max(0,slot));return;
+    // An unpatched strip has no PCM to process. Route a REAL physical
+    // source instead of offering a catalog with a nonfunctional FX button.
+    const id=Number(el.dataset.nativeUnrouted);
+    toStatus("CH "+(id+1)+" · INPUT NOT PATCHED. Choose a verified hardware source before using its FX rack.");
+    window.__arMixOpenChannelPatch?.(id,"input");
+    return;
   }
   if(el.dataset.closeModal){if(el.dataset.closeModal==="nativeOrbit")hideOrbit();else hideDialog(el.dataset.closeModal);return;}
   if(el.hasAttribute("data-orbit-start")){

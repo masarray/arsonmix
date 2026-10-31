@@ -88,7 +88,9 @@ test('native gain readback moves all PNG caps with matched RAIL2 optical guide',
 
 test('routing FX draft explicitly reconciles the native mixer without telemetry DOM work',()=>{
   const native=read('web/bridge.js'),routes=read('web/monitor.js');
-  assert.match(native,/window\.addEventListener\("arMixRoutingDraftChanged",syncView\)/);
+  assert.match(native,/window\.addEventListener\("arMixRoutingDraftChanged",\(\)=>\{/);
+  assert.match(native,/if\(currentTab\(\)==="FX RACK"\)renderRack\(\);/);
+  assert.match(native,/syncView\(\);/);
   assert.match(routes,/window\.dispatchEvent\(new Event\("arMixRoutingDraftChanged"\)\)/);
 });
 

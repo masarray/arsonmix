@@ -54,7 +54,9 @@ test('native has six consistent empty inserts and one DSP reorder per drop',()=>
  assert.match(bridge,/fx-context-delete/);
  assert.match(bridge,/pickerAnchor/);
  assert.match(bridge,/data\.activeSlot/);
- assert.match(bridge,/openPicker\(el,id,Math.max\(0,slot\)\)/);
+ // Unpatched channels must open a real input patch, not an inert FX picker.
+ assert.match(bridge,/window\.__arMixOpenChannelPatch\?\.\(id,"input"\)/);
+ assert.doesNotMatch(bridge,/openPicker\(el,id,Math.max\(0,slot\)\)/);
  assert.match(native,/moreThanOneInstanceAllowed\(\) override \{ return false; \}/);
 });
 

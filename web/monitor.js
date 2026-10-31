@@ -1002,7 +1002,10 @@
     const d=state.dryRoutingLab||{};
     const saved=d.acceptedRoute?.channels?.[channel];
     const live=laneIds(saved);
-    const pending=!!rackFxDraft&&rackFxDraft.epoch===Number(d.epoch);
+    // One structural APPLY can include several independent CH racks. A
+    // draft on CH2 must never turn CH3's ACKed FX into a fake draft.
+    const pending=!!rackFxDraft&&rackFxDraft.epoch===Number(d.epoch)&&
+      rackFxDraft.channels.includes(channel);
     const ids=pending?laneIds(draftRoutes[channel]):live;
     const liveSlots=Array.isArray(d.fxInstances?.[channel])?d.fxInstances[channel]:[];
     return {ids,live,liveSlots,pending,ready:!!d.ready,epoch:Number(d.epoch)||0,
@@ -1020,8 +1023,17 @@
     if(channel===0&&Number(state.chainCount)>0)
       return {ok:false,error:"CH1 legacy FX chain is active; use its original FX Rack."};
     if(!rackFxDraft||rackFxDraft.epoch!==Number(d.epoch)){
-      hydrateAcceptedRoute();syncNativeLevelsToRouteDraft();
+      // Do not erase independent channel/bus edits already staged in the
+      // same epoch. Otherwise hydrate only native ACK data, never mock GUI.
+      if(mixerDraftActive){
+        if(draftEpoch!==Number(d.epoch))
+          return {ok:false,error:"Device changed; revert stale routing before editing FX."};
+      }else if(!hydrateAcceptedRoute())
+        return {ok:false,error:"No native routing ACK. Patch a physical input first."};
+      syncNativeLevelsToRouteDraft();
     }
+    if(draftRoutes[channel]?.mode==="NONE")
+      return {ok:false,error:"CH "+(channel+1)+" has no physical/BUS source. Patch it before assigning live FX."};
     const current=laneIds(draftRoutes[channel]);
     if(operation==="set"){
       if(slot>current.length)return {ok:false,error:"Fill preceding FX slots first."};
@@ -1038,20 +1050,28 @@
     }else return {ok:false,error:"Unknown FX edit operation."};
     draftRoutes[channel].fxIds=current;
     draftRoutes[channel].fxId=current[0]||"";
-    rackFxDraft={channel,id:current[slot]||"",slot,ids:current.slice(),epoch:Number(d.epoch)};
+    const channels=new Set(rackFxDraft?.epoch===Number(d.epoch)?rackFxDraft.channels:[]);
+    channels.add(channel);
+    rackFxDraft={channel,id:current[slot]||"",slot,ids:current.slice(),
+      channels:[...channels].sort((a,b)=>a-b),epoch:Number(d.epoch)};
     if(patchTab==="internal"&&routeOverlay.classList.contains("open"))drawRoutes();
     window.dispatchEvent(new Event("arMixRoutingDraftChanged"));
     return {ok:true,ids:current.slice(),name:id?catalogNames.get(id):"DRY",
-      message:"FX DRAFT · "+current.length+"/8 inserts. MUTE OUTPUT → APPLY → native ACK."};
+      message:"FX DRAFT · CH "+(channel+1)+" · "+current.length+"/8 inserts · "+
+        rackFxDraft.channels.length+" channel(s) staged. MUTE OUTPUT → APPLY once → native ACK."};
   };
   window.__arMixGetRackFxDraft=channel=>rackFxDraft?.epoch===Number(state.dryRoutingLab?.epoch)&&
-    rackFxDraft?.channel===channel?rackFxDraft:null;
+    rackFxDraft?.channels.includes(channel)?
+    {...rackFxDraft,channel,ids:laneIds(draftRoutes[channel])}:null;
   window.__arMixApplyRackFx=()=>{
     if(!rackFxDraft)return {ok:false,error:"No pending FX selection."};
     if(patchPending)return {ok:false,error:"Native routing request already pending."};
     if(state.monitor)return {ok:false,error:"MUTE OUTPUT before applying a structural FX edit."};
-    if(draftRoutes[rackFxDraft.channel]?.mode==="NONE")
-      return {ok:false,error:"Assign a physical input to this channel in ROUTING before applying its FX."};
+    if(Number(state.dryRoutingLab?.epoch)!==rackFxDraft.epoch||draftEpoch!==rackFxDraft.epoch)
+      return {ok:false,error:"Native device changed. REVERT and verify physical patch before APPLY."};
+    for(const channel of rackFxDraft.channels)
+      if(draftRoutes[channel]?.mode==="NONE")
+        return {ok:false,error:"CH "+(channel+1)+" needs a physical/BUS source before applying FX."};
     const failure=patchPreflight();
     if(failure)return {ok:false,error:failure};
     document.getElementById("arRouteApply").click();
