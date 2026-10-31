@@ -1,12 +1,28 @@
 # ArSonMiX — authoritative realtime mixer progress reconciliation (1 Nov 2026)
 
-**Audited baseline:** GitHub `main@0ed375f4cbf70bffa0832055eeb28096fe546509` after merged #257. This is a **point-in-time status ledger**, not a replacement for the [PRD v4](PRD_ARSONMIX_LIVE_STUDIO_CONSOLE_PARITY_V4_20261031.md), [ARD v4](ARD_ARSONMIX_LIVE_STUDIO_CONSOLE_PARITY_V4_20261031.md) or [engineering handoff v4](HANDOFF_ARSONMIX_STUDIO_CONSOLE_V4_20261031.md). Refresh main + PR SHA + exact-head checks before any further engineering.
+## RECONCILIATION UPDATE — main@cf05c5ff (1 Nov 2026; supersedes historical sections below)
+
+**Source and merge evidence:** `main@cf05c5ff6fdbb768f40d5d3619ec6be6074e9433` now includes merged #258 (native L/R meters + CH2–10 routed FX access), #260 (atomic stereo fader/pan target), #259 (FAST2 AUDIO I/O one APPLY, no START AUDIO), subsequent FAST3 `f62e9d65` (single APPLY on ARMED route with guarded native ACK and emergency MUTE), and **#261 M4 unified native FX Console** (CH1 native-patched empty rack uses native path, independent multi-channel FX draft, one guarded native routing APPLY, no fake FX on an unpatched source). #261 PR-head Windows native and Chromium passed at `fa478fa2`; **post-merge combined `main@cf05c5ff` Windows/Chromium checks were triggered but not yet complete at this audit**. No physical hardware FAT certification is implied.
+
+**Still genuinely LIVE:** one JUCE audio callback with existing fixed **10 physical input strips + 4 internal stereo AUX**, MAIN/MONITOR/selected secondary output and legacy CH1 vendor FX lease when occupied. Native channel-format selection MONO/STEREO exists for those fixed strips, independently of physical source format, but **no universal `+CHANNEL CH11..N` user-facing production callback**. Source proof: `web/monitor.js` creates `draftRoutes` with `length:10`; `src/LiveAudioEngine.h` still invokes `LiveDryRoutingLab` and has `processLegacyChannelOne`; `web/app.js` retains historic ten-channel snapshot assumptions. Prepared `DynamicChannelRoster`/`DynamicPreparedMixerBlock` supports ChannelIds, mono/stereo and Group PCM, but it is not equivalent to shipped arbitrary live channels.
+
+**#263 M3E Group is DRAFT/PILOT**, PR-head `5300149c` Windows/Chromium pass, but branch diverges from current main. It routes a real *independent* Group into the one production callback for a narrowly defined dry case; **rejects a normal mix with VST3/AUX/sends/MONITOR/Show** and does not add live CH11+ or mono/stereo FX-parity across CH1..N. Do not merge/advertise it as full Studio One/Adobe Audition workflow. Reconcile #261 FX leases and FAST3 one-APPLY before integration; see PR #263 review comment. **#251 WASAPI capture de-click remains opt-in BETA/default OFF** pending matched hardware A/B, not an audio-dropout cure. FactoryFX approved release manifest remains empty.
+
+**Nonnegotiable next production milestone:** one prepared stable-ID `ChannelId` graph owns CH1..N with identical source/format/MONO/STEREO/FX/send/group/meter/fader/solo/mute/Show behavior, typed Group/FX/Monitor/Main bus destinations, output device independence, immutable off-callback graph publication, and rollback on stale epoch/revision/invalid VST bus layout/resource limit. Runtime capacity is hardware and measured deadline-budget limited (not literal infinite CPU). GUI `+CHANNEL MONO/STEREO`, `+BUS`, `+FX BUS` and bank virtualization are ACK-backed, no pretend browser audio. Preserve original compact L2 shell, no blur, no new DAW arranger.
+
+**Physical P0 gate is still BLOCKED:** #15 (0FX crackle, PCM continuity, MAONO ASIO vs WASAPI/VB-Cable) and audible confirmation source → CH fader/MUTE/FX → MASTER → chosen hardware are not satisfied by CI. Test emergency MUTE/MASTER MUTE against direct-monitoring bypass and require controlled 30-minute dry continuity plus 1FX/multiFX and safe hotplug before release.
+
+This section is the **current status authority for this reconciliation**; the older `0ed375f4` ledger below is retained as a timestamped historical audit, not a live PR/CI status.
+
+---
+
+**Historical audited baseline (superseded above):** GitHub `main@0ed375f4cbf70bffa0832055eeb28096fe546509` after merged #257. This is a **point-in-time status ledger**, not a replacement for the [PRD v4](PRD_ARSONMIX_LIVE_STUDIO_CONSOLE_PARITY_V4_20261031.md), [ARD v4](ARD_ARSONMIX_LIVE_STUDIO_CONSOLE_PARITY_V4_20261031.md) or [engineering handoff v4](HANDOFF_ARSONMIX_STUDIO_CONSOLE_V4_20261031.md). Refresh main + PR SHA + exact-head checks before any further engineering.
 
 ## Product contract
 
 Windows-first, low-latency, **LIVE PERFORMANCE** native digital mixer and VST3 host for stage, karaoke, podcast and broadcast. Studio One/Fender Studio Pro **Console**, not its DAW timeline/editor. Source, audio interface and physical/virtual output are **operator-selectable**; OBS or VB-Cable is NOT required. One JUCE callback, one accepted active mixer graph; avoid RT allocations/locks/device reopens, VST instance lifecycle in audio callback, JS DSP, false visual meters, automatic unsafe ARM, or literal "zero milliseconds" claims. Compact premium GUI must remain responsive on modest iGPU hardware.
 
-## Verified CURRENT merged main and delivery evidence
+## Historical verified main and delivery evidence (main@0ed375f4)
 
 | Area | Actually merged & tested in main | Hard boundaries |
 | --- | --- | --- |
@@ -19,7 +35,7 @@ Windows-first, low-latency, **LIVE PERFORMANCE** native digital mixer and VST3 h
 
 **Exact-head software CI:** [Windows x64 JUCE/MSVC native/CTest + archive, SUCCESS](https://github.com/masarray/arsonmix/actions/runs/41221285441) and [Chromium UI smoke, SUCCESS](https://github.com/masarray/arsonmix/actions/runs/41221285550), both on `main@0ed375f4`. Windows artifact `ArSonMix-GUI10CH-P012-Verified-Hardware-FAT-Windows-x64` is available in that run. It is a **FAT candidate**, NOT proof of actual MAONO audio, zero glitches, input latency or release quality. No production GitHub Release identified at audit.
 
-## OPEN PR ledger — no optimistic merging
+## Historical open PR ledger — status at main@0ed375f4
 
 1. [#259 FAST2 one AUDIO I/O APPLY](https://github.com/masarray/arsonmix/pull/259): OPEN at `437dc25bd641`. Proposed device MUTE → device APPLY/epoch → native routing ACK → output ARM in one guarded operator gesture; removes separate START AUDIO. **NOT merged**; latest Chromium UI run [41222903673](https://github.com/masarray/arsonmix/actions/runs/41222903673) **FAILED** at `build_ui_css.py --check` with standalone HTML source/embed drift; multiple previous commits also failed. No evidence of successful latest head. Verify canonical source-to-standalone parity BEFORE another CI attempt. Fix source-owned JS → standalone embed parity, then run targeted tests BEFORE a new browser/Windows CI. Do not describe new one-APPLY flow as shipped today.
 2. [#258 per-channel L/R and CH2–10 FX entry](https://github.com/masarray/arsonmix/pull/258): **DRAFT** at `75ddf061ebd4`. Separate post-fader L/R native meters (currently old GUI aggregates) plus real native routed FX stage for CH2–10. [Chromium 41221771644](https://github.com/masarray/arsonmix/actions/runs/41221771644) **SUCCESS**; [Windows native 41221771629](https://github.com/masarray/arsonmix/actions/runs/41221771629) **SUCCESS** at final audit on the exact PR head. Still **DRAFT** and requires explicit integration review and user physical 2-channel L/R + CH2–CH10 VST3 verification before merge/production claims. Overlaps #259 in `tests/mixer_io_operator_contract_test.mjs`.
