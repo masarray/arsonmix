@@ -228,9 +228,9 @@ test('SETUP1 honest bus patch has real AUX/MAIN/MONITOR navigation, no fake GROU
 });
 
 
-test('SOURCE1 mute-only instant SOURCE uses one native ACK; armed output is rejected',()=>{
+test('SOURCE quick switch is live only for verified same format; structural fallback remains muted',()=>{
  const io=read('web/mixer-io.js'),monitor=read('web/monitor.js');
- assert.match(io,/__arMixCommitMutedSource\?\.\(channel,mode,left,right\)/);
+ assert.match(io,/__arMixCommitSelectedSource\?\.\(channel,mode,left,right\)/);
  assert.match(io,/quickSourcePending/);
  assert.match(io,/PENDING · NATIVE ACK/);
  assert.match(monitor,/window\.__arMixCommitMutedSource=/);
