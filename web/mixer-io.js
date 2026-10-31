@@ -1920,6 +1920,7 @@
     if(ack?.active?.open&&Number(ack.active.deviceGeneration)!==oldGeneration)
       deviceMatrixWaitEpoch=route().epoch;
     deviceDraft=makeDeviceDraft();
+    if(ack?.ok&&ack?.active?.open)applyAfterDevice={generation:Number(ack.active.deviceGeneration),epoch:applyBaseEpoch};
     deviceNote=ack?.ok?'DEVICE ACCEPTED · OUTPUT MUTED · '+devicePinNextStep():
       (ack?.state||'REJECTED')+' · '+(ack?.error||'Check driver and retry');
     // Same real routing controller sees the new device epoch via normal status.
