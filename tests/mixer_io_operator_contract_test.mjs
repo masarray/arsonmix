@@ -355,3 +355,21 @@ test('DEVICE3 studio toggle opens only verified hardware crosspoints and preserv
  assert.match(css,/\.arIODeviceDriverButton\[aria-pressed="true"\]/);
  assert.doesNotMatch(css,/backdrop-filter\s*:/);
 });
+
+
+test('DEVICE4 Studio matrix names map actual JUCE pins, reuse SOURCE2/native ACK, never create fake buses',()=>{
+ const io=read('web/mixer-io.js'),style=read('web/mixer-io.css');
+ const standalone=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
+ assert.match(io,/function makeSoftwareInputs\(s\)/);
+ assert.match(io,/function saveSoftwareInput\(\)/);
+ assert.match(io,/saveSourceAliases\(s,next\)/);
+ assert.match(io,/sourceIdentity\(s\)/);
+ assert.match(io,/__arMixCommitSelectedSource\?\.\(/);
+ assert.match(io,/DIRECT MIXER CHANNEL PATCH · CH01–10/);
+ assert.match(io,/dataset\.ioSoftwarePin/);
+ assert.doesNotMatch(io,/new AudioContext\(/);
+ assert.match(style,/\.arIOSoftwareGrid/);
+ assert.doesNotMatch(style,/backdrop-filter\s*:/);
+ assert.ok(standalone.includes(io),'Standalone embeds same JS');
+ assert.ok(standalone.includes(style),'Standalone embeds same CSS');
+});

@@ -148,6 +148,33 @@
 #app #mixer .arBankFormatRow .arBankStage{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:8px}
 #app #mixer .arBankChannelFormat:focus-visible{outline:2px solid #73cfe7;outline-offset:1px}
 
+
+/* DEVICE4: compact names and hardware pins, never repaint per pointer */
+.arIOSoftware{border:1px solid #52616a;background:#292f35;margin-top:8px}
+.arIOSoftwareHead{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:7px;padding:8px 10px;background:#36414a}
+.arIOSoftwareHead>div:first-child{display:flex;flex-direction:column;gap:3px}
+.arIOSoftwareHead strong{font-size:11px;font-weight:600;color:#d6e8f1}
+.arIOSoftwareHead small{font-size:10px;color:#aabdc9}
+.arIOSoftwareActions,.arIOSoftwareRowActions{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.arIOSoftwareActions .btn-180{font-size:10px;height:27px;min-height:27px;padding:3px 9px}
+.arIOSoftwarePager{display:flex;align-items:center;justify-content:flex-end;gap:7px;padding:4px 9px;background:#29323a;color:#b1c4d1;font:10px Consolas,monospace}
+.arIOSoftwareName{flex-wrap:nowrap;min-width:0;gap:5px}
+.arIOSoftwareName>strong{overflow:hidden;text-overflow:ellipsis;min-width:42px;flex:1}
+.arIOSoftwareRowActions{margin-left:auto;flex-wrap:nowrap}
+.arIOSoftwareMini{height:23px;min-height:23px;padding:2px 5px;border:1px solid #627988;border-radius:2px;background:#354650;color:#c6ddea;font:600 9px 'ArSonMix Inter',sans-serif;white-space:nowrap;cursor:pointer}
+.arIOSoftwareMini:hover:not(:disabled){background:#436071}
+.arIOSoftwareMini:disabled{opacity:.4;cursor:default}
+.arIOSoftwareNameEdit{min-width:68px;width:100%;max-width:142px;height:24px;box-sizing:border-box;border:1px solid #83adc4;background:#202d37;color:#f1f9ff;padding:2px 6px;font:11px 'ArSonMix Inter',sans-serif}
+.arIOSoftwareFormat .arIOMatrixSides{margin:2px auto 0}
+.arIOSoftwareGrid .arIOMatrixRowName{min-height:38px}
+.arIOSoftwareGrid .arIOMatrixCell[data-stage="saved"][data-assigned="true"]{background:#45657a;border-color:#78a5bd;color:#eff9ff}
+.arIOSoftwareGrid .arIOMatrixCell[data-stage="draft"][data-assigned="true"]{background:#826438;border-color:#c9a06c;color:#fff0cc}
+.arIOSoftwareHint{padding:8px 10px;margin:0;color:#b5c7d1;font-size:10px}
+.arIODeviceDirectMatrix{margin-top:9px;border:1px solid #425762}
+.arIODeviceDirectMatrix>summary{cursor:pointer;padding:9px;background:#303b45;color:#b7d1de;font-size:10px}
+.arIOSoftwareMini:focus-visible,.arIOSoftwareNameEdit:focus-visible{outline:2px solid #a2e3f0;outline-offset:1px}
+@media(max-width:760px){.arIOSoftwareName{flex-wrap:wrap}.arIOSoftwareRowActions{margin-left:0}}
+
 /* IO-MATRIX: restrained Studio-style crosspatch; native inventory only.
    No backdrop/filter/animation or per-pointer painter. */
 .arIOWindow{width:min(1000px,100%);max-height:min(810px,calc(100dvh - 30px));background:#1b2025;border-color:#4f5962;border-radius:5px;box-shadow:0 12px 28px #0009}

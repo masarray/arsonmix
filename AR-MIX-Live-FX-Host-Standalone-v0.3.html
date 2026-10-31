@@ -1805,6 +1805,33 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 #app #mixer .arBankFormatRow .arBankStage{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:8px}
 #app #mixer .arBankChannelFormat:focus-visible{outline:2px solid #73cfe7;outline-offset:1px}
 
+
+/* DEVICE4: compact names and hardware pins, never repaint per pointer */
+.arIOSoftware{border:1px solid #52616a;background:#292f35;margin-top:8px}
+.arIOSoftwareHead{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:7px;padding:8px 10px;background:#36414a}
+.arIOSoftwareHead>div:first-child{display:flex;flex-direction:column;gap:3px}
+.arIOSoftwareHead strong{font-size:11px;font-weight:600;color:#d6e8f1}
+.arIOSoftwareHead small{font-size:10px;color:#aabdc9}
+.arIOSoftwareActions,.arIOSoftwareRowActions{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.arIOSoftwareActions .btn-180{font-size:10px;height:27px;min-height:27px;padding:3px 9px}
+.arIOSoftwarePager{display:flex;align-items:center;justify-content:flex-end;gap:7px;padding:4px 9px;background:#29323a;color:#b1c4d1;font:10px Consolas,monospace}
+.arIOSoftwareName{flex-wrap:nowrap;min-width:0;gap:5px}
+.arIOSoftwareName>strong{overflow:hidden;text-overflow:ellipsis;min-width:42px;flex:1}
+.arIOSoftwareRowActions{margin-left:auto;flex-wrap:nowrap}
+.arIOSoftwareMini{height:23px;min-height:23px;padding:2px 5px;border:1px solid #627988;border-radius:2px;background:#354650;color:#c6ddea;font:600 9px 'ArSonMix Inter',sans-serif;white-space:nowrap;cursor:pointer}
+.arIOSoftwareMini:hover:not(:disabled){background:#436071}
+.arIOSoftwareMini:disabled{opacity:.4;cursor:default}
+.arIOSoftwareNameEdit{min-width:68px;width:100%;max-width:142px;height:24px;box-sizing:border-box;border:1px solid #83adc4;background:#202d37;color:#f1f9ff;padding:2px 6px;font:11px 'ArSonMix Inter',sans-serif}
+.arIOSoftwareFormat .arIOMatrixSides{margin:2px auto 0}
+.arIOSoftwareGrid .arIOMatrixRowName{min-height:38px}
+.arIOSoftwareGrid .arIOMatrixCell[data-stage="saved"][data-assigned="true"]{background:#45657a;border-color:#78a5bd;color:#eff9ff}
+.arIOSoftwareGrid .arIOMatrixCell[data-stage="draft"][data-assigned="true"]{background:#826438;border-color:#c9a06c;color:#fff0cc}
+.arIOSoftwareHint{padding:8px 10px;margin:0;color:#b5c7d1;font-size:10px}
+.arIODeviceDirectMatrix{margin-top:9px;border:1px solid #425762}
+.arIODeviceDirectMatrix>summary{cursor:pointer;padding:9px;background:#303b45;color:#b7d1de;font-size:10px}
+.arIOSoftwareMini:focus-visible,.arIOSoftwareNameEdit:focus-visible{outline:2px solid #a2e3f0;outline-offset:1px}
+@media(max-width:760px){.arIOSoftwareName{flex-wrap:wrap}.arIOSoftwareRowActions{margin-left:0}}
+
 /* IO-MATRIX: restrained Studio-style crosspatch; native inventory only.
    No backdrop/filter/animation or per-pointer painter. */
 .arIOWindow{width:min(1000px,100%);max-height:min(810px,calc(100dvh - 30px));background:#1b2025;border-color:#4f5962;border-radius:5px;box-shadow:0 12px 28px #0009}
@@ -3393,6 +3420,170 @@ scheduleDemoMeter();
   };
   const aliasValue=a=>a.mode+':'+a.left+(a.mode==='STEREO'?':'+a.right:'');
   const namedRoute=(s,r)=>sourceAliases(s).find(a=>aliasValue(a)===valueFor(r));
+
+  // DEVICE4: named software inputs are aliases for verified physical ports,
+  // NOT new streams. Only SOURCE2/native ACK can make them audible on channels.
+  let softwareEdit=null,softwarePage=0;
+  const softwarePageSize=8;
+  function softwareSay(message){
+    if(ioTab==='device')deviceNote=message;
+    matrixSay(message);
+  }
+  function beginSoftwareInput(mode,index=-1){
+    const s=route(),key=sourceIdentity(s),items=sourceAliases(s);
+    if(!hardwareReady(s)||!deviceSameEndpoint(deviceDraft)||deviceDirty()||!key)
+      return softwareSay('Select and ACK a verified audio interface before editing software inputs.');
+    if(index===-1&&items.length>=32)return softwareSay('32 named inputs maximum per device.');
+    const prior=index>=0?items[index]:null;
+    if(index>=0&&!prior)return softwareSay('Software input no longer exists.');
+    const names=new Set(items.map(x=>x.name.toLowerCase()));
+    let number=1;while(names.has(('Input '+number).toLowerCase()))number++;
+    softwareEdit={key,index,originalName:prior?.name||'',name:prior?.name||'Input '+number,
+      mode:prior?.mode||mode,left:prior?.left??-1,right:prior?.right??-1,side:'L'};
+    softwareSay('SOFTWARE INPUT DRAFT · map M or L/R then SAVE I/O.');
+    lastSignature='';refreshIO();
+  }
+  function saveSoftwareInput(){
+    const s=route(),d=softwareEdit,items=sourceAliases(s);
+    if(!d||d.key!==sourceIdentity(s)||!hardwareReady(s)||!deviceSameEndpoint(deviceDraft)||deviceDirty())
+      return softwareSay('Device changed or is pending. Review enabled hardware pins.');
+    const value={name:d.name.trim(),mode:d.mode,left:d.left,
+      right:d.mode==='MONO'?-1:d.right};
+    if(!validAlias(value,portList(s)))
+      return softwareSay('INCOMPLETE M/L/R · provide a name and valid distinct driver pins.');
+    const old=d.index<0?-1:items.findIndex(x=>x.name===d.originalName);
+    if(d.index>=0&&old<0)return softwareSay('Software input changed elsewhere; reopen to edit.');
+    if(items.some((x,i)=>i!==old&&x.name.toLowerCase()===value.name.toLowerCase()))
+      return softwareSay('Software input name already exists on this device.');
+    const next=items.slice();
+    if(old<0)next.push(value);else next[old]=value;
+    if(!saveSourceAliases(s,next))return softwareSay('Device profile save failed (storage unavailable).');
+    softwareEdit=null;
+    softwareSay('SOFTWARE INPUT SAVED · choose it in a mixer SOURCE; sound is unchanged.');
+    if(!sourceChooser.hidden)renderSourceChooser();
+    refreshFocus(s);lastSignature='';refreshIO();
+  }
+  function assignSoftwarePin(index,pin){
+    const s=route(),items=sourceAliases(s);
+    if(!hardwareReady(s)||!portList(s).some(p=>p.port===pin)||deviceDirty())
+      return softwareSay('Hardware pin not verified. Review DEVICE / DRIVER.');
+    if(!softwareEdit||softwareEdit.index!==index)beginSoftwareInput(items[index]?.mode,index);
+    const d=softwareEdit;
+    if(!d||d.key!==sourceIdentity(s))return;
+    if(d.mode==='MONO'){d.left=pin;d.right=-1;}
+    else {
+      if(d.side==='L'&&d.right===pin||d.side==='R'&&d.left===pin)
+        return softwareSay('STEREO L/R must use two different hardware pins.');
+      if(d.side==='L'){d.left=pin;d.side='R';}
+      else {d.right=pin;d.side='L';}
+    }
+    softwareSay('SOFTWARE I/O DRAFT · SAVE I/O to publish this named input.');
+    lastSignature='';refreshIO();
+  }
+  function makeSoftwareInputs(s){
+    const ports=portList(s),items=sourceAliases(s),key=sourceIdentity(s);
+    if(softwareEdit?.key!==key)softwareEdit=null;
+    const section=node('section','arIOSoftware');
+    section.setAttribute('aria-label','Named software audio input mapping');
+    const head=node('div','arIOSoftwareHead'),intro=node('div','');
+    intro.append(node('strong','','SOFTWARE INPUTS · M / L / R'),
+      node('small','','Name your verified interface inputs, then assign them to mixer SOURCE.'));
+    const actions=node('div','arIOSoftwareActions');
+    for(const [mode,label] of [['MONO','+ ADD MONO'],['STEREO','+ ADD STEREO']]){
+      const b=node('button','btn-180',label);b.type='button';b.dataset.ioSoftwareAdd=mode;
+      b.disabled=!key||!hardwareReady(s)||deviceDirty()||items.length>=32;
+      actions.appendChild(b);
+    }
+    head.append(intro,actions);section.appendChild(head);
+    const maxPage=Math.max(0,Math.ceil(ports.length/softwarePageSize)-1);
+    softwarePage=Math.min(softwarePage,maxPage);
+    const shown=ports.slice(softwarePage*softwarePageSize,(softwarePage+1)*softwarePageSize);
+    const pager=node('div','arIOSoftwarePager');
+    const prev=node('button','arIOPageButton','‹');prev.type='button';
+    prev.dataset.ioSoftwarePage='-1';prev.disabled=softwarePage===0;
+    const next=node('button','arIOPageButton','›');next.type='button';
+    next.dataset.ioSoftwarePage='1';next.disabled=softwarePage>=maxPage;
+    pager.append(prev,node('span','',ports.length?(softwarePage*softwarePageSize+1)+'–'+
+      (softwarePage*softwarePageSize+shown.length)+' / '+ports.length+' PORTS':'NO VERIFIED INPUTS'),next);
+    section.appendChild(pager);
+    if(!key)section.appendChild(node('p','arIOSoftwareHint',
+      'No verified capture pins. Enable actual driver inputs and wait for native ACK.'));
+    const viewport=node('div','arIOCrossScroll arIOSoftwareScroll');
+    const grid=node('div','arIOMatrix arIOSoftwareGrid');grid.setAttribute('role','grid');
+    grid.setAttribute('aria-label','Software inputs to real hardware pins');
+    grid.style.gridTemplateColumns='minmax(220px,1fr) 75px'+
+      (shown.length?' repeat('+shown.length+',minmax(47px,1fr))':'');
+    grid.append(node('div','arIOMatrixCorner','SOFTWARE INPUT / NAME'),
+      node('div','arIOMatrixCorner','FORMAT'));
+    for(const p of shown){
+      const h=node('div','arIOPortTitle');
+      h.append(node('span','arIOPortFriendly',portName(p)),
+        node('b','arIOPortIndex',String(p.port+1)));
+      h.title=portName(p)+' · actual hardware input '+(p.port+1);
+      h.setAttribute('role','columnheader');grid.appendChild(h);
+    }
+    const rows=items.map((a,index)=>({a,index}));
+    if(softwareEdit?.index===-1)rows.push({a:softwareEdit,index:-1});
+    if(!rows.length)section.appendChild(node('p','arIOSoftwareHint',
+      'Add Mono or Stereo, click the hardware M/L/R cells, and SAVE I/O. Direct CH patch remains available below.'));
+    for(const {a,index} of rows){
+      const draft=softwareEdit?.index===index&&softwareEdit.key===key;
+      const value=draft?softwareEdit:a;
+      const label=node('div','arIOMatrixRowName arIOSoftwareName');
+      if(draft){
+        const field=node('input','arIOSoftwareNameEdit');field.type='text';
+        field.maxLength=32;field.value=value.name;
+        field.dataset.ioSoftwareName='1';field.setAttribute('aria-label','Software input name');
+        label.appendChild(field);
+        for(const [act,word] of [['save','SAVE'],['cancel','CANCEL']]){
+          const b=node('button','arIOSoftwareMini',word);b.type='button';
+          b.dataset.ioSoftwareAction=act;label.appendChild(b);
+        }
+      }else{
+        const name=node('strong','',a.name);name.title=a.name;label.appendChild(name);
+        const controls=node('div','arIOSoftwareRowActions');
+        for(const [act,word] of [['edit','EDIT'],['remove','REMOVE'],
+          ['use','→ CH '+String(focusedInput+1).padStart(2,'0')]]){
+          const b=node('button','arIOSoftwareMini',word);b.type='button';
+          b.dataset.ioSoftwareAction=act;b.dataset.ioSoftwareIndex=String(index);
+          b.disabled=!key||!hardwareReady(s)||deviceDirty()||!!s.pending;
+          controls.appendChild(b);
+        }
+        label.appendChild(controls);
+      }
+      const format=node('div','arIOMatrixFormat arIOSoftwareFormat');
+      format.appendChild(node('strong','',value.mode));
+      if(draft&&value.mode==='STEREO'){
+        const sides=node('div','arIOMatrixSides');
+        for(const side of ['L','R']){
+          const b=node('button','arIOSideButton',side);b.type='button';
+          b.dataset.ioSoftwareSide=side;
+          b.setAttribute('aria-pressed',String(value.side===side));
+          sides.appendChild(b);
+        }
+        format.appendChild(sides);
+      }else format.appendChild(node('small','',value.mode==='MONO'?'M':'L / R'));
+      grid.append(label,format);
+      for(const p of shown){
+        const pin=p.port;
+        const assigned=value.mode==='MONO'&&value.left===pin?'M':
+          value.mode==='STEREO'&&value.left===pin?'L':
+          value.mode==='STEREO'&&value.right===pin?'R':'';
+        const cell=node('button','arIOMatrixCell',assigned||'·');cell.type='button';
+        cell.dataset.ioSoftwarePin=String(pin);cell.dataset.ioSoftwareIndex=String(index);
+        cell.dataset.assigned=String(!!assigned);cell.dataset.stage=draft?'draft':'saved';
+        cell.setAttribute('aria-pressed',String(!!assigned));
+        cell.setAttribute('aria-label',value.name+' · '+portName(p)+(assigned?' mapped '+assigned:' unmapped'));
+        cell.disabled=!key||!hardwareReady(s)||deviceDirty()||!!s.pending;
+        grid.appendChild(cell);
+      }
+    }
+    viewport.appendChild(grid);section.appendChild(viewport);
+    section.appendChild(node('p','arIOMatrixLegend',
+      'M = mono · L/R = stereo · Blue = saved name · Amber = unsaved draft. SAVE I/O stores metadata; choosing SOURCE requires real native ACK.'));
+    return section;
+  }
+
   const outputLabel=s=>{
     const out=s.mainOutputs?.length===2?s.mainOutputs:s.outputPorts||[];
     return s.ready&&Number.isInteger(out[0])&&Number.isInteger(out[1])?
@@ -3975,6 +4166,7 @@ scheduleDemoMeter();
     if(matrixEpoch===s.epoch)return;
     const old=matrixEpoch;
     matrixEpoch=s.epoch;matrixDraft.clear();matrixSide.clear();
+    softwareEdit=null;softwarePage=0;
     matrixPage.inputs=0;matrixPage.outputs=0;
     if(old!==-1)matrixSay('Device generation changed · review physical pins before APPLY.');
   }
@@ -4480,9 +4672,17 @@ scheduleDemoMeter();
       matrixSection.appendChild(node('p','arIODeviceMatrixEmpty',
         'Waiting for the native routing session and verified hardware ports. No virtual ports are invented.'));
     }else{
-      matrixSection.appendChild(makeMatrix(s,deviceMatrixView));
+      if(deviceMatrixView==='inputs'){
+        matrixSection.appendChild(makeSoftwareInputs(s));
+        const direct=node('details','arIODeviceDirectMatrix');
+        direct.appendChild(node('summary','','DIRECT MIXER CHANNEL PATCH · CH01–10'));
+        direct.appendChild(makeMatrix(s,deviceMatrixView));
+        matrixSection.appendChild(direct);
+      }else matrixSection.appendChild(makeMatrix(s,deviceMatrixView));
       matrixSection.appendChild(node('p','arIODeviceMatrixNote',
-        'Blue = staged patch · Green = native ACK. Map M or L/R here, then APPLY PATCH with outputs MUTED.'));
+        deviceMatrixView==='inputs'?
+        'Named inputs appear in channel SOURCE. Only native routing ACK makes audio live.':
+        'MAIN / MONITOR outputs use muted APPLY PATCH and native ACK.'));
     }
     body.appendChild(matrixSection);
   }
@@ -4511,7 +4711,7 @@ scheduleDemoMeter();
     overlay.querySelector('[data-io-revert]').disabled=!isNative()||s.pending;
     const signature=ioTab+'|'+JSON.stringify([s.epoch,s.revision,s.pending,s.draftRoutes,
       s.outputPorts,s.mainOutputs,s.draftMainOutputs,s.monitorOutputs,s.draftMonitorOutputs,s.monitorSends,s.draftMonitorSends,s.ports,deviceInventory,deviceDraft,deviceBusy,deviceNote,matrixPage[ioTab==='device'?deviceMatrixView:ioTab],deviceMatrixView,monitorSendsExpanded,
-      [...matrixDraft],[...matrixSide]]);
+      [...matrixDraft],[...matrixSide],softwareEdit,softwarePage,sourceIdentity(s),sourceAliases(s)]);
     if(lastSignature===signature)return;
     lastSignature=signature;
     // Preserves two-step stereo L/R selection across each native DRAFT render.
@@ -4752,6 +4952,52 @@ scheduleDemoMeter();
     if(b.dataset.ioInternal!==undefined){
       e.preventDefault();e.stopImmediatePropagation();closeIO();window.__arMixOpenRoutingLab?.();return;
     }
+    if(b.dataset.ioSoftwareAdd){
+      e.preventDefault();e.stopImmediatePropagation();beginSoftwareInput(b.dataset.ioSoftwareAdd);return;
+    }
+    if(b.dataset.ioSoftwarePage!==undefined){
+      e.preventDefault();e.stopImmediatePropagation();
+      softwarePage=Math.max(0,softwarePage+Number(b.dataset.ioSoftwarePage));
+      lastSignature='';refreshIO();return;
+    }
+    if(b.dataset.ioSoftwareSide){
+      e.preventDefault();e.stopImmediatePropagation();
+      if(softwareEdit){softwareEdit.side=b.dataset.ioSoftwareSide;lastSignature='';refreshIO();}
+      return;
+    }
+    if(b.dataset.ioSoftwarePin!==undefined){
+      e.preventDefault();e.stopImmediatePropagation();
+      assignSoftwarePin(Number(b.dataset.ioSoftwareIndex),Number(b.dataset.ioSoftwarePin));return;
+    }
+    if(b.dataset.ioSoftwareAction){
+      e.preventDefault();e.stopImmediatePropagation();
+      const s=route(),items=sourceAliases(s),index=Number(b.dataset.ioSoftwareIndex);
+      const action=b.dataset.ioSoftwareAction;
+      if(action==='save'){saveSoftwareInput();return;}
+      if(action==='cancel'){
+        softwareEdit=null;softwareSay('SOFTWARE I/O DRAFT CANCELLED · native audio unchanged');
+      }else if(!hardwareReady(s)||deviceDirty()||!deviceSameEndpoint(deviceDraft)||!sourceIdentity(s)){
+        softwareSay('Hardware not ready; software input unchanged.');
+      }else if(!Number.isInteger(index)||index<0||index>=items.length){
+        softwareSay('Software input no longer exists.');
+      }else if(action==='edit'){beginSoftwareInput(items[index].mode,index);return;}
+      else if(action==='remove'){
+        if(saveSourceAliases(s,items.filter((_,i)=>i!==index))){
+          softwareEdit=null;softwareSay('NAME REMOVED · existing native channel routes unchanged.');
+          if(!sourceChooser.hidden)renderSourceChooser();refreshFocus(s);
+        }else softwareSay('Could not update device-specific source names.');
+      }else if(action==='use'){
+        const alias=items[index],result=window.__arMixCommitSelectedSource?.(
+          focusedInput,alias.mode,alias.left,alias.mode==='STEREO'?alias.right:-1);
+        if(result?.pending)quickSourcePending={
+          channel:focusedInput,epoch:result.epoch,value:aliasValue(alias),live:!!result.live};
+        softwareSay(result?.ok?(result.pending?
+          'CH '+(focusedInput+1)+' SOURCE PENDING · WAIT NATIVE ACK':
+          'SOURCE ALREADY ACKNOWLEDGED'):
+          result?.error||'Native source switch rejected');
+      }
+      lastSignature='';refresh();return;
+    }
     if(b.dataset.ioMatrixPin!==undefined){
       e.preventDefault();e.stopImmediatePropagation();
       const row=Number(b.dataset.ioMatrixRow),pin=Number(b.dataset.ioMatrixPin);
@@ -4811,6 +5057,10 @@ scheduleDemoMeter();
       return;
     }
     if(b.dataset.mixApply!==undefined){e.preventDefault();e.stopImmediatePropagation();const response=window.__arMixApplyMixerDraft?.();if(response&&!response.ok)el('arIOFeedback').textContent=response.error;refresh();return;}
+  },true);
+  document.addEventListener('input',e=>{
+    if(e.target.matches('.arIOSoftwareNameEdit')&&softwareEdit)
+      softwareEdit.name=e.target.value;
   },true);
   document.addEventListener('change',e=>{
     const target=e.target;
