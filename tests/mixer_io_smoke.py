@@ -161,7 +161,7 @@ async def main():
         # faders to POST sends without moving MAIN faders or remounting FX.
         await page.locator('#arSendEditor [data-send-close]').click()
         main_fader=await page.locator('[data-fader="0"]').get_attribute('aria-valuenow')
-        base_fader=await page.locator('[data-fader="0"]').evaluate('(e)=>e')
+        await page.evaluate("()=>window.__sofMainFaderRef=document.querySelector('[data-fader=\"0\"]')")
         await page.locator('[data-sof-bus]').select_option('0')
         await page.locator('[data-sof-toggle]').click()
         assert await page.locator('#mixer').get_attribute('data-sof-active')=='true'
@@ -175,7 +175,7 @@ async def main():
         assert abs(staged_gain-1)<1e-7,staged_gain
         assert status['dryRoutingLab']['acceptedRoute']['sends'][0]['gain']==.5
         assert await page.locator('[data-fader="0"]').get_attribute('aria-valuenow')==main_fader
-        assert await page.locator('[data-fader="0"]').evaluate('(e)=>e')==base_fader
+        assert await page.evaluate("()=>document.querySelector('[data-fader=\"0\"]')===window.__sofMainFaderRef")
         actions=await page.evaluate("""()=>window.__armixTestActions.filter(
           x=>x.name==='arMixAction'&&x.data.action==='routingDryApply')""")
         assert len(actions)==2,actions  # no sound change until APPLY
