@@ -1,3 +1,5 @@
+> **SUPERSEDED EXECUTION PLAN — READ [LIVE CONSOLE HANDOFF v4](HANDOFF_ARSONMIX_STUDIO_CONSOLE_V4_20261031.md) FIRST.** This document describes historical M3 foundations only; #242 and #244 are merged at v4 audit main, not pending. Follow v4 milestones for realtime callback cutover, GUI Studio Console, native MASTER/FX/PDC/Cue and physical FAT. Do not merge old branches blindly.
+
 # Handoff v3 — implement true Studio-style ArSonMix Console
 Date: 31 October 2026 · Engineering execution / physical FAT
 
