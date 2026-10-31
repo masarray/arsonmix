@@ -399,3 +399,21 @@ test('FAST1 one gesture uses native routing ACK then fenced physical ARM, with p
  assert.doesNotMatch(control,/new AudioContext\(/);
  assert.ok(html.includes(io),'Standalone JS must be identical');
 });
+
+test('P0 actual raw PCM before MUTE and native route/output state remain independent',()=>{
+ const cpp=read('src/LiveAudioEngine.h'),ui=read('web/monitor.js'),io=read('web/mixer-io.js');
+ const standalone=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
+ assert.match(cpp,/float rawCapturePeak=0\.f/);
+ assert.match(cpp,/captureSignalBlocks_\.fetch_add/);
+ assert.match(cpp,/RAW_PCM_BEFORE_HARDWARE_MUTE/);
+ assert.match(cpp,/inputPeak_\.store\(juce::jmin\(1\.f,rawCapturePeak\)/);
+ assert.match(ui,/window\.__arMixAudioPathView=/);
+ assert.match(ui,/CABLE Input/);
+ assert.match(ui,/arInputBar"\)\.style\.width=percent\(d\.inputPeak\)/);
+ for(const f of [io,standalone]){
+  assert.match(f,/data-io-signal-check/);
+  assert.match(f,/refreshAudioPath\(\)/);
+  assert.match(f,/OPEN SIGNAL CHECK/);
+ }
+ assert.doesNotMatch(io,/new AudioContext\(/);
+});
