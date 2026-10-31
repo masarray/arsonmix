@@ -2157,6 +2157,18 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 @media(max-width:660px){
   .arIODeviceFields,.arIODevicePins{grid-template-columns:minmax(0,1fr)}
 }
+
+/* SOURCE2: small inline operator picker, no blur/glow/filter or layout churn. */
+.arSourceChooser[hidden]{display:none!important}
+.arSourceChooser{position:absolute;z-index:75;top:78px;left:180px;width:min(350px,calc(100vw - 206px));max-height:min(520px,75vh);overflow:auto;background:#15252f;border:1px solid #496574;border-radius:5px;padding:9px;box-shadow:0 12px 30px #0009;color:#e0ebef}
+.arSourceChooserTop{display:flex;align-items:center;justify-content:space-between;gap:8px;font:600 11px/1.5 sans-serif;letter-spacing:.03em;margin-bottom:7px}
+.arSourceChooserTop button{padding:3px 8px}
+.arSourceChooserChoices{display:grid;gap:4px}
+.arSourceChoice,.arSourceAdvanced{display:block;width:100%;text-align:left;border:1px solid #385867;background:#203540;color:#dce8ed;border-radius:3px;padding:7px 9px;font-size:11px;cursor:pointer}
+.arSourceChoice[aria-pressed=true]{border-color:#55bca7;background:#205245;color:#eafff8}
+.arSourceChoice:hover:not(:disabled),.arSourceAdvanced:hover{border-color:#8dbcc5}
+.arSourceChoice:disabled{opacity:.45;cursor:default}
+.arSourceChooserNote{font-size:10px;line-height:1.5;color:#bbcad1;margin-top:8px}
 </style></head>
 <body>
 <div id="app" class="app">
