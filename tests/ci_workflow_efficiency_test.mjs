@@ -15,7 +15,8 @@ test('only main and explicitly selected branch can produce a Windows FAT artifac
  assert.match(windows,/'web\/\*\*'/);
  assert.match(windows,/workflow_dispatch:/);
  assert.match(windows,/cancel-in-progress: true/);
- assert.match(windows,/if: \$\{\{ github\.event_name != 'pull_request' \}\}/);
+ assert.match(windows,/if: \$\{\{ github\.event_name != 'pull_request' \|\| github\.head_ref == 'milestone\/m4-unified-native-multichannel-fx-20261101' \}\}/);
+ assert.match(windows,/ArSonMix-M4-EXPERIMENTAL-Hardware-FAT-Windows-x64/);
  assert.ok(windows.indexOf('scripts/verify_native_windows_artifact.ps1') <
            windows.indexOf('uses: actions/upload-artifact@v4'));
 });
@@ -44,5 +45,6 @@ test('retain current native audio and dearVR CTests during CI optimization',()=>
  }
  assert.match(windows,/ctest --test-dir build -C Release --output-on-failure/);
  assert.match(windows,/'scripts\/build_ui_css\.py'/);
- assert.match(windows,/if: \$\{\{ github\.event_name != 'pull_request' \}\}/);
+ assert.match(windows,/if: \$\{\{ github\.event_name != 'pull_request' \|\| github\.head_ref == 'milestone\/m4-unified-native-multichannel-fx-20261101' \}\}/);
+ assert.match(windows,/ArSonMix-M4-EXPERIMENTAL-Hardware-FAT-Windows-x64/);
 });
