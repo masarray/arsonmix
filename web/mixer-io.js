@@ -28,6 +28,57 @@
     if(current!=='NONE'&&!options.some(v=>v[0]===current))options.push([current,'CUSTOM L/R · PATCH']);
     return options;
   };
+
+  // M1 named logical inputs: PRESENTATION aliases for verified native hardware
+  // pins. Every choice still commits through the single native route authority.
+  // Profile is bound to backend + capture device + the entire active pin/name
+  // signature; never remap silently when the driver or enabled pins change.
+  const aliasStorePrefix='armix:named-source:v1:';
+  let aliasCacheKey='',aliasCache=[];
+  const sourceIdentity=s=>{
+    const d=deviceInventory?.active,pins=portList(s),enabled=d?.enabledInputs;
+    if(!isNative()||!s.ready||!d?.open||!d.backend||!d.captureDevice||
+       !Array.isArray(enabled)||!pins.length||pins.length!==enabled.length)return '';
+    const p=pins.map(x=>x.port).sort((a,b)=>a-b);
+    const e=enabled.map(Number).sort((a,b)=>a-b);
+    if(!p.every((v,i)=>v===e[i]))return '';
+    const names=Array.isArray(d.inputNames)?d.inputNames:[];
+    if(!pins.every(x=>names[x.port]===x.label))return '';
+    // Device names are NOT guaranteed stable operating-system IDs; on any
+    // changed label/pin list, the prior aliases are deliberately unavailable.
+    return aliasStorePrefix+encodeURIComponent(JSON.stringify([
+      d.backend,d.captureDevice,pins.map(x=>[x.port,x.label]).sort((a,b)=>a[0]-b[0])]));
+  };
+  const validAlias=(a,pins)=>{
+    const used=new Set(pins.map(x=>x.port));
+    return !!a&&typeof a.name==='string'&&a.name.length>0&&a.name.length<=32&&
+      (a.mode==='MONO'||a.mode==='STEREO')&&
+      Number.isInteger(a.left)&&used.has(a.left)&&
+      (a.mode==='MONO'?(a.right===-1):
+        Number.isInteger(a.right)&&a.left!==a.right&&used.has(a.right));
+  };
+  const sourceAliases=s=>{
+    const key=sourceIdentity(s);
+    if(key!==aliasCacheKey){
+      aliasCacheKey=key;aliasCache=[];
+      if(key)try {
+        const value=JSON.parse(localStorage.getItem(key)||'[]');
+        if(Array.isArray(value))aliasCache=value.slice(0,32).filter(x=>validAlias(x,portList(s)));
+      }catch{} // blocked storage does not interrupt native routing
+    }
+    return key?aliasCache:[];
+  };
+  const saveSourceAliases=(s,items)=>{
+    const key=sourceIdentity(s);
+    if(!key)return false;
+    try {
+      localStorage.setItem(key,JSON.stringify(items));
+      aliasCacheKey=key;aliasCache=items;
+      return true;
+    }catch{return false;}
+  };
+  const aliasValue=a=>a.mode+':'+a.left+(a.mode==='STEREO'?':'+a.right:'');
+  const namedRoute=(s,r)=>sourceAliases(s).find(a=>aliasValue(a)===valueFor(r));
   const outputLabel=s=>{
     const out=s.mainOutputs?.length===2?s.mainOutputs:s.outputPorts||[];
     return s.ready&&Number.isInteger(out[0])&&Number.isInteger(out[1])?
@@ -71,6 +122,7 @@
       source=(names(r.left)||'L'+(Number(r.left)+1))+' / '+
         (names(r.right)||'R'+(Number(r.right)+1));
     if(ack&&r.mode==='BUS')source='INTERNAL BUS';
+    if(ack&&r.mode!=='NONE'&&r.mode!=='BUS')source=namedRoute(s,r)?.name||source;
     if(!ack)source='NO NATIVE ACK';
     const routed=ack?lastStatus.dryRoutingLab?.fxInstances?.[i]:null;
     const inserts=Array.isArray(routed)?routed.length:0;
@@ -100,11 +152,16 @@
   sourceChooser.hidden=true;
   sourceChooser.setAttribute('role','dialog');
   sourceChooser.setAttribute('aria-label','Choose verified channel input source');
-  sourceChooser.innerHTML='<div class="arSourceChooserTop"><span data-source-title>INPUT SOURCE</span><button type="button" class="btn-180" data-source-close aria-label="Close input source chooser">×</button></div><div class="arSourceChooserChoices" data-source-choices></div><div class="arSourceChooserNote" data-source-note role="status"></div>';
+  sourceChooser.innerHTML='<div class="arSourceChooserTop"><span data-source-title>INPUT SOURCE</span><button type="button" class="btn-180" data-source-close aria-label="Close input source chooser">×</button></div><input class="arSourceSearch" data-source-search type="search" placeholder="Find named or hardware source..." aria-label="Search verified sources"><div class="arSourceChooserChoices" data-source-choices></div><details class="arSourceAliasManager"><summary>MANAGE NAMED INPUTS</summary><div class="arSourceAliasFields"><input data-source-alias-name maxlength="32" placeholder="Name: Mic 1 / Virtual L-R" aria-label="New source name"><select data-source-alias-mode aria-label="Source format"><option value="MONO">MONO</option><option value="STEREO">STEREO</option></select><select data-source-alias-left aria-label="Input left or mono pin"></select><select data-source-alias-right aria-label="Input right pin"></select><button type="button" class="btn-180" data-source-alias-save>SAVE SOURCE</button></div><small data-source-alias-help>Requires a verified device inventory; routes still require native ACK.</small></details><div class="arSourceChooserNote" data-source-note role="status"></div>';
   host.insertBefore(sourceChooser,mixer);
   let sourceChooserChannel=-1;
   const sourceChoices=sourceChooser.querySelector('[data-source-choices]');
   const sourceNote=sourceChooser.querySelector('[data-source-note]');
+  const aliasNameInput=sourceChooser.querySelector('[data-source-alias-name]');
+  const aliasLeft=sourceChooser.querySelector('[data-source-alias-left]');
+  const aliasRight=sourceChooser.querySelector('[data-source-alias-right]');
+  const aliasMode=sourceChooser.querySelector('[data-source-alias-mode]');
+  const aliasSearch=sourceChooser.querySelector('[data-source-search]');
   const closeSourceChooser=()=>{
     sourceChooser.hidden=true;sourceChooserChannel=-1;
   };
@@ -117,7 +174,27 @@
     const pins=portList(s);
     const values=portsFor(s,r||{mode:'NONE',left:-1,right:-1});
     const current=valueFor(r);
+    const aliases=sourceAliases(s),search=aliasSearch.value.trim().toLowerCase();
+    const matched=title=>!search||title.toLowerCase().includes(search);
+    if(aliases.length){
+      for(let i=0;i<aliases.length;++i){
+        const a=aliases[i],value=aliasValue(a),label=a.name+' · '+a.mode+' · '+
+          (a.left+1)+(a.mode==='STEREO'?'/'+(a.right+1):'');
+        if(!matched(label))continue;
+        const line=node('div','arSourceAliasRow');
+        const button=node('button','arSourceChoice',label);
+        button.type='button';button.dataset.sourceChoice=value;
+        button.setAttribute('aria-pressed',String(value===current));
+        button.disabled=!!s.pending||!s.ready;
+        line.appendChild(button);
+        const remove=node('button','arSourceAliasRemove','×');
+        remove.type='button';remove.dataset.sourceAliasRemove=String(i);
+        remove.title='Remove only this name, not hardware routing';
+        line.appendChild(remove);sourceChoices.appendChild(line);
+      }
+    }
     for(const [value,title] of values){
+      if(!matched(title))continue;
       if(value!=='NONE'&&value!=='CUSTOM'&&
          !value.startsWith('MONO:')&&!value.startsWith('STEREO:'))continue;
       // CUSTOM is a pointer to Advanced Patch, never an invented pin.
@@ -129,7 +206,17 @@
     }
     const advanced=node('button','arSourceAdvanced','ADVANCED PATCH · NONADJACENT L/R');
     advanced.type='button';advanced.dataset.sourceAdvanced='';
-    sourceChoices.appendChild(advanced);
+    if(matched('ADVANCED PATCH'))sourceChoices.appendChild(advanced);
+    const previousLeft=aliasLeft.value,previousRight=aliasRight.value;
+    const pinOptions=pins.map(p=>[String(p.port),portName(p)]);
+    populate(aliasLeft,pinOptions,previousLeft||String(pins[0]?.port??''));
+    populate(aliasRight,pinOptions,previousRight||String(pins[1]?.port??pins[0]?.port??''));
+    aliasRight.disabled=aliasMode.value!=='STEREO';
+    const identified=!!sourceIdentity(s);
+    sourceChooser.querySelector('[data-source-alias-save]').disabled=!identified;
+    sourceChooser.querySelector('[data-source-alias-help]').textContent=identified?
+      'Saved for this verified device and enabled-pin layout · native ACK required':
+      'Awaiting actual driver inventory; naming disabled until hardware is verified';
     sourceNote.textContent=!s.ready?'No verified native driver input ports':
       s.monitor?'MUTE OUTPUT to safely change SOURCE · no automatic unmute':
       'Selecting SOURCE commits via existing native routing; wait for ACK';
@@ -137,9 +224,35 @@
   const openSourceChooser=channel=>{
     if(!Number.isInteger(channel)||channel<0||channel>=10)return;
     sourceChooserChannel=channel;sourceChooser.hidden=false;
+    if(!sourceIdentity(route()))deviceRefresh(); // cached JUCE readback, not a vendor rescan
     renderSourceChooser();
   };
+  sourceChooser.addEventListener('input',event=>{
+    if(event.target===aliasSearch)renderSourceChooser();
+  });
+  aliasMode.addEventListener('change',()=>{aliasRight.disabled=aliasMode.value!=='STEREO';});
   sourceChooser.addEventListener('click',event=>{
+    const remove=event.target.closest('[data-source-alias-remove]');
+    if(remove){
+      const s=route(),items=sourceAliases(s).slice(),index=Number(remove.dataset.sourceAliasRemove);
+      if(Number.isInteger(index)&&index>=0&&index<items.length&&
+         saveSourceAliases(s,items.filter((_,i)=>i!==index))){
+        sourceNote.textContent='SOURCE NAME REMOVED · live hardware route unchanged';
+        renderSourceChooser();refreshFocus(s);
+      }return;
+    }
+    if(event.target.closest('[data-source-alias-save]')){
+      const s=route(),a={name:aliasNameInput.value.trim(),mode:aliasMode.value,
+        left:Number(aliasLeft.value),right:aliasMode.value==='MONO'?-1:Number(aliasRight.value)};
+      if(!validAlias(a,portList(s))){sourceNote.textContent='INVALID NAME OR HARDWARE L/R PAIR';return;}
+      const items=sourceAliases(s).filter(x=>x.name.toLowerCase()!==a.name.toLowerCase());
+      if(items.length>=32){sourceNote.textContent='32 NAMED SOURCES MAXIMUM';return;}
+      if(saveSourceAliases(s,[...items,a])){
+        aliasNameInput.value='';aliasSearch.value='';renderSourceChooser();refreshFocus(s);
+        sourceNote.textContent='NAMED SOURCE SAVED · choose it to request native routing';
+      }else sourceNote.textContent='DEVICE/LOCAL STORAGE UNAVAILABLE · not saved';
+      return;
+    }
     if(event.target.closest('[data-source-close]')){closeSourceChooser();return;}
     if(event.target.closest('[data-source-advanced]')){
       const ch=sourceChooserChannel;closeSourceChooser();openIO('inputs',ch);return;
@@ -1337,6 +1450,7 @@
     const hadDraft=deviceDirty();
     deviceInventory=d;
     if(!hadDraft&&!deviceBusy)deviceDraft=makeDeviceDraft();
+    if(!sourceChooser.hidden){renderSourceChooser();refreshFocus(route());}
     if(d?.scanState==='SCANNED')
       deviceNote='DEVICE LIST REFRESHED · '+Number(d.scanDurationMs||0).toFixed(0)+' ms · output remains MUTED';
     else if(d?.scanState==='BLOCKED_ARMED')

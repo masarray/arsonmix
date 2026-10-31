@@ -291,3 +291,19 @@ test('M1 faders send continuous coalesced ACK-backed params without structural A
  assert.match(monitor,/if\(ok&&latest!==undefined/);
  assert.match(html,/Math\.abs\(d\.db-d\.lastSentDb\)>=\.25/);
 });
+
+
+test('M1 named input sources are persisted only for native device and enabled pin identity',()=>{
+ const ui=read('web/mixer-io.js');
+ const html=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
+ for(const src of [ui,html]){
+  assert.match(src,/const sourceIdentity=s=>/);
+  assert.match(src,/d\.backend,d\.captureDevice,pins\.map/);
+  assert.match(src,/const validAlias=\(a,pins\)=>/);
+  assert.match(src,/localStorage\.setItem\(key,JSON\.stringify\(items\)\)/);
+  assert.match(src,/const aliasValue=a=>/);
+  assert.match(src,/window\.__arMixCommitMutedSource\?\.\(/);
+  assert.match(src,/data-source-alias-save/);
+  assert.match(src,/if\(!sourceIdentity\(route\(\)\)\)deviceRefresh\(\)/);
+ }
+});
