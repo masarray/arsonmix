@@ -2333,14 +2333,41 @@ private:
         }
         else if (action == "monitor" && value.isBool())
         {
-            // Panic MUTE must always work. Do not arm speakers during
-            // Show readback or Studio USB backup.
-            if(bool(value) && (nativeShowBusy_ || studioBackupBusy_)) {
-                emitNotice("Finish Studio/Shows IO before unmuting hardware OUTPUT.",true);
-                return;
+            // P0 panic MUTE is always accepted. Explicit ARM is verified
+            // against the actual native route, never against UI appearance.
+            const bool arm=bool(value);
+            juce::String fault;
+            if (arm && (nativeShowBusy_ || studioBackupBusy_))
+                fault="Finish Show/backup work before arming hardware OUTPUT.";
+            const auto expectedEpoch=args.getProperty("expectedEpoch",juce::var());
+            const auto expectedRevision=args.getProperty("expectedRevision",juce::var());
+            if (arm && fault.isEmpty() && !expectedEpoch.isVoid() &&
+                static_cast<std::uint64_t>(static_cast<juce::int64>(expectedEpoch))
+                    !=engine_.dryRoutingLabEpoch())
+                fault="Audio device changed during START AUDIO; recheck routing.";
+            if (arm && fault.isEmpty() && !expectedRevision.isVoid() &&
+                static_cast<std::uint64_t>(static_cast<juce::int64>(expectedRevision))
+                    !=engine_.dryRoutingLabRevision())
+                fault="Native route revision changed; review hardware patch.";
+            // Isolated output-tone testing remains supported in SIGNAL CHECK.
+            if (arm && fault.isEmpty() &&
+                engine_.diagnosticRoute()==armix::diagnostics::Route::normal)
+                fault=engine_.liveOutputArmFault();
+            if (fault.isEmpty()) {
+                engine_.setMonitorEnabled(arm);
+                diagnostics_.record("OUTPUT_MUTE",arm?"OFF":"ON");
             }
-            engine_.setMonitorEnabled (bool (value));
-            diagnostics_.record ("OUTPUT_MUTE", bool (value) ? "OFF" : "ON");
+            if (browser_.loaded) {
+                auto ack=std::make_unique<juce::DynamicObject>();
+                ack->setProperty("ok",fault.isEmpty());
+                ack->setProperty("armed",engine_.isMonitorEnabled());
+                ack->setProperty("error",fault);
+                ack->setProperty("deviceEpoch",
+                    static_cast<double>(engine_.dryRoutingLabEpoch()));
+                browser_.emitEventIfBrowserIsVisible("arMixAudioArmAck",
+                    juce::var(ack.release()));
+            }
+            if (fault.isNotEmpty()) emitNotice(fault,true);
         }
         else if (action == "dryTest" && value.isBool())
         {
