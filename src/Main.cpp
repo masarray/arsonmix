@@ -748,6 +748,56 @@ private:
 
     // DEVICE1: the WebView2 matrix is the operator GUI; JUCE remains the
     // single device owner. No hardware calls ever run from the audio callback.
+    // DEVICE2: reading the device list must never repeatedly scan vendor
+    // drivers simply because the user opened the I/O matrix. JUCE has already
+    // enumerated device types during normal startup. An explicit REFRESH is the
+    // only additional scan, and is refused while any output is armed.
+    void emitDeviceInventory(bool explicitRescan)
+    {
+        const bool scanSafe=engine_.allOutputsDisarmed()
+            && !engine_.independentClockActive()
+            && !engine_.hasTemporaryDiagnosticDevice()
+            && !engine_.isGraphSwitchPending()
+            && !nativeShowBusy_ && !studioBackupBusy_;
+        const auto started=monotonicMilliseconds();
+        juce::String scanState=explicitRescan?(scanSafe?"SCANNED":"BLOCKED_ARMED"):"CACHED";
+        auto inventory=std::make_unique<juce::DynamicObject>();
+        juce::Array<juce::var> types;
+        auto& manager=engine_.devices();
+        for(auto* type:manager.getAvailableDeviceTypes())
+        {
+            if(type==nullptr)continue;
+            if(explicitRescan && scanSafe)
+            {
+                try { type->scanForDevices(); }
+                catch(const std::exception&) { scanState="SCAN_ERROR"; }
+                catch(...) { scanState="SCAN_ERROR"; }
+            }
+            auto item=std::make_unique<juce::DynamicObject>();
+            item->setProperty("name",type->getTypeName());
+            item->setProperty("active",type->getTypeName()==manager.getCurrentAudioDeviceType());
+            item->setProperty("separate",type->hasSeparateInputsAndOutputs());
+            juce::Array<juce::var> inputs,outputs;
+            for(const auto& n:type->getDeviceNames(true))inputs.add(n);
+            for(const auto& n:type->getDeviceNames(false))outputs.add(n);
+            item->setProperty("inputs",juce::var(inputs));
+            item->setProperty("outputs",juce::var(outputs));
+            types.add(juce::var(item.release()));
+        }
+        const auto elapsed=monotonicMilliseconds()-started;
+        inventory->setProperty("types",juce::var(types));
+        inventory->setProperty("currentType",manager.getCurrentAudioDeviceType());
+        inventory->setProperty("active",currentDeviceSnapshot());
+        inventory->setProperty("scanState",scanState);
+        inventory->setProperty("scanDurationMs",static_cast<double>(elapsed));
+        if(explicitRescan)
+            diagnostics_.record("DEVICE_REFRESH",
+                scanState+" | "+juce::String(static_cast<juce::int64>(elapsed))+" ms");
+        if(browser_.loaded)
+            browser_.emitEventIfBrowserIsVisible("arMixAudioDeviceInventory",
+                juce::var(inventory.release()));
+    }
+
     juce::var currentDeviceSnapshot()
     {
         // This readback is used for UI and ACK, never to claim that a staged
@@ -929,7 +979,13 @@ private:
               (rate>0&&std::abs(actual.sampleRate-rate)>1.0)||
               (block>0&&actual.bufferSize!=static_cast<int>(block))||
               (!candidate.useDefaultInputChannels&&actual.inputChannels!=candidate.inputChannels)||
-              (!candidate.useDefaultOutputChannels&&actual.outputChannels!=candidate.outputChannels)))
+              (!candidate.useDefaultOutputChannels&&actual.outputChannels!=candidate.outputChannels)||
+              opened->getActiveInputChannels()!=actual.inputChannels||
+              opened->getActiveOutputChannels()!=actual.outputChannels||
+              opened->getActiveInputChannels().countNumberOfSetBits()<1||
+              opened->getActiveOutputChannels().countNumberOfSetBits()<2||
+              std::abs(opened->getCurrentSampleRate()-actual.sampleRate)>1.0||
+              opened->getCurrentBufferSizeSamples()!=actual.bufferSize))
             error="Driver readback mismatch; device setting was not accepted";
         if(error.isEmpty()&&!engine_.finishManualAudioSetup())
             error="Device opened but direct safe production session was rejected";
@@ -1845,30 +1901,13 @@ private:
         }
         else if (action == "audioDeviceInventory")
         {
-            // Explicit inventory request: no device re-open, no output arm.
-            auto inventory=std::make_unique<juce::DynamicObject>();
-            juce::Array<juce::var> types;
-            auto& manager=engine_.devices();
-            for(auto* type:manager.getAvailableDeviceTypes()) {
-                if(type==nullptr)continue;
-                type->scanForDevices();
-                auto item=std::make_unique<juce::DynamicObject>();
-                item->setProperty("name",type->getTypeName());
-                item->setProperty("active",type->getTypeName()==manager.getCurrentAudioDeviceType());
-                item->setProperty("separate",type->hasSeparateInputsAndOutputs());
-                juce::Array<juce::var> inputs,outputs;
-                for(const auto& n:type->getDeviceNames(true))inputs.add(n);
-                for(const auto& n:type->getDeviceNames(false))outputs.add(n);
-                item->setProperty("inputs",juce::var(inputs));
-                item->setProperty("outputs",juce::var(outputs));
-                types.add(juce::var(item.release()));
-            }
-            inventory->setProperty("types",juce::var(types));
-            inventory->setProperty("currentType",manager.getCurrentAudioDeviceType());
-            inventory->setProperty("active",currentDeviceSnapshot());
-            if(browser_.loaded)
-                browser_.emitEventIfBrowserIsVisible("arMixAudioDeviceInventory",
-                    juce::var(inventory.release()));
+            // Fast read-only snapshot, no forced third-party ASIO scan.
+            emitDeviceInventory(false);
+        }
+        else if (action == "audioDeviceRefresh")
+        {
+            // Slow vendor rescan: deliberate operator request, MUTE required.
+            emitDeviceInventory(true);
         }
         else if (action == "audioDeviceApply")
         {
