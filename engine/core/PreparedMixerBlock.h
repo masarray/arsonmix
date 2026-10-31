@@ -165,12 +165,13 @@ struct RenderLevels final {
 class PreparedMixerBlock final {
 public:
     // The maximum is an implementation bound, NOT an OS device promise.
-    // Allocations are constructor-only; 20 strip lanes + optional 8 AUX + 2 master.
+    // Allocations are constructor-only; 20 strip lanes + 2 master + 2
+    // monitor scratch + optional 8 AUX. No RT allocation or secondary DSP pass.
     static constexpr int hardFrameLimit = 8192;
     PreparedMixerBlock(const PreparedRenderGraph& plan, int maxFrames)
         : plan_(plan), capacity_(maxFrames),
           backing_(validCapacity(maxFrames)
-                ? static_cast<std::size_t>(stripCount*2+2+
+                ? static_cast<std::size_t>(stripCount*2+4+
                     (plan.aux.active?auxBusCount*2:0))*maxFrames
                 : 0u, 0.f) {
         if (!validCapacity(maxFrames))
@@ -200,9 +201,11 @@ public:
         }
         masterL_=backing_.data()+static_cast<std::size_t>(stripCount*2)*capacity_;
         masterR_=masterL_+capacity_;
+        monitorScratchL_=masterR_+capacity_;
+        monitorScratchR_=monitorScratchL_+capacity_;
         if(plan.aux.active){
             for(int b=0;b<auxBusCount;++b){
-                auxLeft_[b]=masterR_+capacity_+
+                auxLeft_[b]=monitorScratchR_+capacity_+
                     static_cast<std::size_t>(b*2)*capacity_;
                 auxRight_[b]=auxLeft_[b]+capacity_;
             }
@@ -281,19 +284,28 @@ public:
                       "DSP hook must be noexcept and realtime bounded");
         if (observed) *observed={};
         if (frames<=0 || !outputL || !outputR)return false;
-        std::fill_n(outputL,frames,0.f);
-        std::fill_n(outputR,frames,0.f);
-        if((monitorL==nullptr)!=(monitorR==nullptr) ||
-           (monitorL && (!monitorGains || monitorL==monitorR ||
-                         monitorL==outputL || monitorL==outputR ||
-                         monitorR==outputL || monitorR==outputR)))
+        // A physical callback may expose aliased input/output PCM. Rejected
+        // buffer contracts still clear physical outputs; successful mixing
+        // must consume ALL capture sources before writing to output storage.
+        const bool portsValid=outputL!=outputR &&
+            ((monitorL==nullptr)==(monitorR==nullptr)) &&
+            (!monitorL || (monitorGains && monitorL!=monitorR &&
+               monitorL!=outputL && monitorL!=outputR &&
+               monitorR!=outputL && monitorR!=outputR));
+        if (!portsValid || capacity_==0 || frames>capacity_ ||
+            callbackInputCount<0) {
+            std::fill_n(outputL,frames,0.f);
+            if(outputR!=outputL)std::fill_n(outputR,frames,0.f);
+            if(monitorL)std::fill_n(monitorL,frames,0.f);
+            if(monitorR && monitorR!=monitorL)std::fill_n(monitorR,frames,0.f);
             return false;
-        if(monitorL) {
-            std::fill_n(monitorL,frames,0.f);
-            std::fill_n(monitorR,frames,0.f);
         }
-        if (capacity_==0 || frames>capacity_ || callbackInputCount<0)
-            return false;
+        float* const monitorBusL=monitorL?monitorScratchL_:nullptr;
+        float* const monitorBusR=monitorR?monitorScratchR_:nullptr;
+        if(monitorBusL) {
+            std::fill_n(monitorBusL,frames,0.f);
+            std::fill_n(monitorBusR,frames,0.f);
+        }
         for(int i=0;i<stripCount;++i) {
             std::fill_n(left_[i],frames,0.f);
             std::fill_n(right_[i],frames,0.f);
@@ -428,8 +440,8 @@ public:
                     if(f<ramp){lv+=dL;rv+=dR;}
                     l[f]*=lv;r[f]*=rv;
                     if(monitorGain>0.f) {
-                        monitorL[f]+=l[f]*monitorGain;
-                        monitorR[f]+=r[f]*monitorGain;
+                        monitorBusL[f]+=l[f]*monitorGain;
+                        monitorBusR[f]+=r[f]*monitorGain;
                     }
                     peak=std::max(peak,std::max(std::abs(l[f]),std::abs(r[f])));
                     if(graph.sends.toMaster[strip]) {
@@ -441,8 +453,8 @@ public:
                 l[f]*=gl;
                 r[f]*=gr;
                 if(monitorGain>0.f) {
-                    monitorL[f]+=l[f]*monitorGain;
-                    monitorR[f]+=r[f]*monitorGain;
+                    monitorBusL[f]+=l[f]*monitorGain;
+                    monitorBusR[f]+=r[f]*monitorGain;
                 }
                 peak=std::max(peak,std::max(std::abs(l[f]),std::abs(r[f])));
                 if(graph.sends.toMaster[strip]) {
@@ -477,8 +489,8 @@ public:
                 if(f<ramp)current+=step;
                 const float vl=l[f]*current,vr=r[f]*current;
                 if(!bus.mute && monitorGain>0.f) {
-                    monitorL[f]+=vl*monitorGain;
-                    monitorR[f]+=vr*monitorGain;
+                    monitorBusL[f]+=vl*monitorGain;
+                    monitorBusR[f]+=vr*monitorGain;
                 }
                 peak=std::max(peak,std::max(std::abs(vl),std::abs(vr)));
                 if(bus.toMaster && !bus.mute){
@@ -497,6 +509,12 @@ public:
             outputR[f]=masterR_[f];
             peakL=std::max(peakL,std::abs(outputL[f]));
             peakR=std::max(peakR,std::abs(outputR[f]));
+        }
+        if(monitorBusL) {
+            // Physical input PCM is fully consumed and the independent MONITOR
+            // bus is already summed: publish once, with no extra FX traversal.
+            std::copy_n(monitorBusL,frames,monitorL);
+            std::copy_n(monitorBusR,frames,monitorR);
         }
         if(observed){observed->masterPeakL=peakL; observed->masterPeakR=peakR;}
         return true;
@@ -557,5 +575,7 @@ private:
     std::array<bool,stripCount> rampPrimed_{};
     float* masterL_=nullptr;
     float* masterR_=nullptr;
+    float* monitorScratchL_=nullptr;
+    float* monitorScratchR_=nullptr;
 };
 } // namespace armix::mixer
