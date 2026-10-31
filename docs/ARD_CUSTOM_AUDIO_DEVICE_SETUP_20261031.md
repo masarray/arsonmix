@@ -1,6 +1,6 @@
 # ARD — Custom WebView2 Audio Device Setup backed by the existing JUCE manager
 
-**Revision:** 2026-10-31 · **Status:** DESIGN / NOT YET IMPLEMENTED  
+**Revision:** 2026-10-31 · **Status:** DEVICE1 baseline implemented in #228 (native build + CTest PASS); original architectural hardening items and physical FAT remain open  
 **Companion:** [PRD](PRD_CUSTOM_AUDIO_DEVICE_SETUP_20261031.md) · [handoff](HANDOFF_CUSTOM_AUDIO_DEVICE_SETUP_20261031.md) · [PATCH2 ARD](ARD_HARDWARE_AUDIO_IO_MATRIX_20261030.md) · [product truth](PRODUCT_TRUTH_CROSS_THREAD_20261031.md).
 
 ## A. Current source reality and change boundary
