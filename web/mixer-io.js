@@ -2030,6 +2030,14 @@
   window.addEventListener('arMixRoutingDraftChanged',()=>{lastSignature='';refresh();});
   window.addEventListener('arMixFastAudioResult',event=>{
     deviceNote=event.detail?.message||'APPLY';
+    // Negative hardware MUTE/ARM/route ACK must never leave source choices
+    // permanently disabled. The accepted native route is unchanged; keep
+    // its visible state and let the operator retry or REVERT the draft.
+    if(/REJECTED|STOPPED|CANCELLED|FAILED|ABORTED/.test(deviceNote)){
+      quickSourcePending=null;
+      matrixMessage=deviceNote;
+      lastSignature='';refresh();
+    }
     lastSignature='';if(!overlay.hidden)refreshIO();
   });
   window.addEventListener('arMixAuxMasterGainResult',event=>{

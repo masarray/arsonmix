@@ -557,3 +557,10 @@ test('R7 FX Rack on unpatched CH2–10 opens native input selector, not CH1 VST 
  assert.match(bridge,/__arMixOpenAudioIO\?\.\('inputs',idx\)/);
  assert.doesNotMatch(bridge,/CH "\+\(idx\+1\)\+" has no accepted native input\/BUS route\. Open ROUTING/);
 });
+
+test('R7 negative hardware ACK releases blocked source controls',()=>{
+ const io=read('web/mixer-io.js');
+ assert.match(io,/if\(\/REJECTED\|STOPPED\|CANCELLED\|FAILED\|ABORTED\/\.test\(deviceNote\)\)/);
+ assert.match(io,/quickSourcePending=null/);
+ assert.match(io,/matrixMessage=deviceNote/);
+});
