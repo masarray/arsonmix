@@ -1327,6 +1327,49 @@ private:
         // M1 RT source switch on an existing physical channel. Unlike
         // structural routingDryApply, it does not unpatch outputs, rebuild
         // VST3s, or restart the device; input PCM fades inside one graph.
+        // M3E genuinely live Dynamic Group. Native command is the ONLY
+        // structural authority. IDs are assigned by C++, never by the web
+        // Console; ACK contains revision-scoped native source fan-in.
+        if(action=="studioBusCreateForSelected" || action=="studioBusStop") {
+            const int requestId=static_cast<int>(args.getProperty("requestId",0));
+            juce::String error;
+            armix::mixer::LiveDynamicBusSession::Selection selection;
+            const auto expectedEpoch=args.getProperty("expectedEpoch",{});
+            const auto expectedRevision=args.getProperty("expectedRevision",{});
+            if(requestId<=0||nativeShowBusy_||studioBackupBusy_||
+               expectedEpoch.isVoid()||expectedRevision.isVoid()||
+               static_cast<juce::int64>(expectedEpoch)!=
+                   static_cast<juce::int64>(engine_.dryRoutingLabEpoch())||
+               static_cast<juce::int64>(expectedRevision)!=
+                   static_cast<juce::int64>(engine_.dryRoutingLabRevision()))
+                error="Stale native device/route or Show/backup in progress";
+            else if(action=="studioBusCreateForSelected") {
+                const auto values=args.getProperty("channels",{});
+                const auto* indices=values.getArray();
+                if(!indices||indices->isEmpty()||indices->size()>10)
+                    error="Select 1–10 physical-input channels";
+                else {
+                    selection.count=indices->size();
+                    for(int i=0;i<selection.count;++i){
+                        if(!(*indices)[i].isInt()) {
+                            error="Channel indices must be validated integers";
+                            break;
+                        }
+                        selection.channels[i]=static_cast<int>((*indices)[i]);
+                    }
+                    if(error.isEmpty())error=engine_.applyStudioBusForSelected(selection);
+                }
+            } else error=engine_.stopStudioBus();
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",requestId);
+            ack->setProperty("ok",error.isEmpty());
+            ack->setProperty("error",error);
+            ack->setProperty("session",engine_.status().getProperty("studioBus",{}));
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                "arMixStudioBusAck",juce::var(ack.release()));
+            if(error.isNotEmpty())emitNotice(error,true);
+            return;
+        }
         if(action=="routingSourceSwitch"){
             const int requestId=static_cast<int>(args.getProperty("requestId",0));
             const int channel=static_cast<int>(args.getProperty("channel",-1));
