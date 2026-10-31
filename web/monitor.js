@@ -1759,8 +1759,41 @@
     fastAudioNotify("CH01"+(pins.length>1?"/CH02":"")+" → MAIN · WAITING FOR NATIVE PATCH ACK");
     return {ok:true,pending:true,phase:"patch"};
   };
+  // One explicit APPLY owns patch ACK -> physical ARM, no second START.
+  const submitFastCustomPatch=()=>{
+    const d=state.dryRoutingLab||{};
+    fastAudioPending={phase:"custom-patch",epoch:Number(d.epoch)};
+    const result=window.__arMixApplyMixerDraft();
+    if(!result?.ok){fastAudioPending=null;return result;}
+    fastAudioNotify("APPLY · WAIT FOR NATIVE ROUTING ACK");
+    return {ok:true,pending:true};
+  };
+  window.__arMixApplyAndActivate=()=>{
+    const d=state.dryRoutingLab||{};
+    if(fastAudioPending||patchPending||nativeShowBusy||liveSendPending.size)
+      return {ok:false,error:"Native transaction still pending."};
+    if(mixerDraftActive||rackFxDraft){
+      if(state.monitor){
+        fastAudioPending={phase:"mute-custom",epoch:Number(d.epoch)};
+        api.emitEvent("arMixAction",{action:"monitor",value:false});
+        fastAudioNotify("APPLY · SAFE MUTE → ROUTE → ARM");
+        return {ok:true,pending:true};
+      }
+      return submitFastCustomPatch();
+    }
+    if(state.monitor)return {ok:true,pending:false,message:"OUTPUT ALREADY LIVE"};
+    return window.__arMixStartLiveAudio();
+  };
   window.__arMixFastAudioState=()=>({pending:!!fastAudioPending,message:fastAudioMessage});
   api.addEventListener("arMixAudioArmAck",ack=>{
+    if(fastAudioPending?.phase==="mute-custom"){
+      const p=fastAudioPending;fastAudioPending=null;
+      if(!ack?.ok||ack?.armed||Number(ack.deviceEpoch)!==p.epoch)return fastAudioNotify("APPLY MUTE ACK REJECTED");
+      state.monitor=false;
+      const next=submitFastCustomPatch();
+      if(!next?.ok)fastAudioNotify("APPLY REJECTED · "+next.error);
+      return;
+    }
     if(fastAudioPending?.phase!=="arm")return;
     const expected=fastAudioPending;
     fastAudioPending=null;
@@ -1796,12 +1829,12 @@
         :result.active&&result.ready?"NATIVE ACK: INPUT PATCH CLEARED · 10CH+4AUX engine ready, output MUTED"
         :"NATIVE ROUTE UNAVAILABLE · output remains SILENT";
     updateRouteLabIdentity();
-    if(fastAudioPending?.phase==="patch"){
+    if(fastAudioPending?.phase==="patch"||fastAudioPending?.phase==="custom-patch"){
       const pending=fastAudioPending;fastAudioPending=null;
       const routes=result?.acceptedRoute?.channels||[];
       const verified=reply?.ok===true&&result.ready===true&&
         result.hasAcceptedRoute===true&&Number(result.epoch)===pending.epoch&&
-        pending.pins.every((pin,i)=>routes[i]?.mode==="MONO"&&routes[i]?.left===pin);
+        (pending.phase==="custom-patch"?routes.some(r=>r.mode==="MONO"||r.mode==="STEREO"):pending.pins.every((pin,i)=>routes[i]?.mode==="MONO"&&routes[i]?.left===pin));
       if(verified)fastAudioArm(result);
       else fastAudioNotify("START STOPPED · route ACK failed or device changed. OUTPUT remains MUTED.");
     }
@@ -1832,18 +1865,10 @@
     const routed=normal&&!!r.ready&&!!r.hasAcceptedRoute&&!r.topologyFault;
     const input=!d.connected?"DEVICE CLOSED":!callback?"NO CAPTURE CALLBACK":captured?"RAW CAPTURE PCM":"NO RAW CAPTURE PCM";
     const route=!normal?"DIAGNOSTIC MODE":!r.ready?"UNPATCHED / STALE":r.hasAcceptedRoute?"NATIVE ROUTE ACK":"INPUT PATCH REQUIRED";
-    // Capture peak is BEFORE the mixer. Native channel peaks are after
-    // source selection, inserts and the fader; never label raw PCM as mixed.
-    const acceptedChannels=Array.isArray(r.acceptedRoute?.channels)?r.acceptedRoute.channels:[];
-    const patched=acceptedChannels.map((row,i)=>
-      row?.mode==="MONO"||row?.mode==="STEREO"?i:-1).filter(i=>i>=0);
-    const meter=Array.isArray(r.channelPeaks)?r.channelPeaks:[];
-    const mixed=patched.some(i=>Number(meter[i])>0.0002);
-    const mainPcm=Number(d.peak)>0.0002;
-    const mixer=!routed?"MIXER · NOT READY":!d.monitor?"MIXER · WAIT ARM":
-      mixed?"POST-FADER PCM":"POST-FADER SILENT";
-    const output=!d.monitor?"OUTPUT SAFE-MUTED":d.masterMute?"MASTER MUTED":
-      !routed?"OUTPUT BLOCKED":mainPcm?"MAIN PCM · ARMED":"OUTPUT ARMED · SILENT";
+    const peaks=Array.isArray(r.channelPeaks)?r.channelPeaks:[];
+    const mixed=peaks.some(x=>Number(x)>0.0002);
+    const mixer=mixed?"POST-FADER PCM":d.monitor?"MIXER · NO PCM":"MIXER · WAIT ARM";
+    const output=!d.monitor?"OUTPUT SAFE-MUTED":d.masterMute?"MASTER MUTED":!routed?"OUTPUT BLOCKED":Number(d.peak)>0.0002?"MAIN PCM · ARMED":"OUTPUT ARMED · NO MAIN PCM";
     let message;
     if(d.error)message="Audio driver error: "+d.error;
     else if(!d.connected)message="No device connected. Select real capture and render endpoints in AUDIO I/O.";
@@ -1856,12 +1881,12 @@
       message=/cable output/i.test(String(d.inputDevice||""))
         ?"No input PCM in this block. VB-Cable CABLE Output is the recording endpoint: the player must send to Windows playback CABLE Input, not Realtek Speakers."
         :"No capture PCM in this block. Send a steady source signal and inspect the selected input and enabled physical pins.";
-      if(!d.monitor)message+=" MAIN is also SAFE-MUTED. Press START AUDIO in AUDIO SETUP at low volume after verifying input.";
-    }else if(!d.monitor)message="Raw capture detected, but ArSonMix physical MAIN is SAFE-MUTED: this headphone sound is NOT proof of mixer playback. Check MAONO direct monitor/loopback or Windows Listen to this device, then press START AUDIO at low volume.";
-    else if(d.masterMute)message="Capture present but MASTER MUTE is active. If sound persists, check interface direct monitoring or another Windows playback route.";
-    else if(!mixed)message="Raw capture detected but no PCM after an accepted channel fader. Check patched channel SOURCE, MUTE, fader and native FX.";
-    else if(!mainPcm)message="Post-fader channel PCM exists but native MAIN is silent. Check bus/sends, MASTER fader, mute, and physical pin routing.";
-    else message="Native post-fader and MAIN PCM detected with output armed. To prove the sound is from ArSonMix, MUTE the active channel or MASTER: sound must stop. If not, disable direct monitoring/Windows parallel playback.";
+      if(!d.monitor)message+=" MAIN is also SAFE-MUTED. Press APPLY in AUDIO I/O at low volume after verifying input.";
+    }else if(!d.monitor)message="Capture PCM detected but physical MAIN is SAFE-MUTED. Press APPLY in AUDIO I/O to arm at low headphone volume; disable hardware direct monitor if doubling the signal.";
+    else if(d.masterMute)message="Capture PCM detected but MASTER MUTE is active.";
+    else if((Number(d.postFxPeak ?? d.peak)||0)<0.0002)message="Capture PCM present, but routed audio is silent. Check channel SOURCE, fader, mute and FX.";
+    else if((Number(d.peak)||0)<0.0002)message="Post-FX PCM present but hardware MAIN is silent. Check MASTER fader and output pin patch.";
+    else message="Input and MAIN PCM measured. Press MUTE OUTPUT: sound must stop; otherwise audio bypasses ArSonMix. If silent, inspect Windows output and cables.";
     return {input,route,mixer,output,message,inputPeak:peak,captureSignalBlocks:Number(d.captureSignalBlocks)||0};
   };
   function diagnosis(d) {
@@ -1933,7 +1958,7 @@
       " / overflow "+(d.secondaryOutputOverflow||0)+
       ". For external apps choose their corresponding capture device if applicable.");
     if (!overlay.classList.contains("open")) return;
-    el("arInputName").textContent=d.dryRoutingLab?.active?"RAW CAPTURE · NOT FADER PCM":d.diagnosticRoute==="OUTPUT_ONLY_TONE"?"INTERNAL TEST TONE":d.inputDevice||"Input device";
+    el("arInputName").textContent=d.dryRoutingLab?.active?"NATIVE 10 CH INPUTS":d.diagnosticRoute==="OUTPUT_ONLY_TONE"?"INTERNAL TEST TONE":d.inputDevice||"Input device";
     el("arFxName").textContent=d.dryRoutingLab?.active?(String(d.dryRoutingLab.fxCount||0)+" NATIVE VST3"):d.diagnosticRoute==="OUTPUT_ONLY_TONE"?"NO INPUT / NO FX":d.diagnosticRoute!=="NORMAL"?"NO FX":d.dryTest?"DRY BYPASS":"VST3 Chain";
     el("arOutputName").textContent=d.outputDevice||"Output device";
     el("arInputBar").style.width=percent(d.inputPeak)+"%";

@@ -108,10 +108,8 @@ async def main():
         assert await page.locator('#arIOAudioPath').is_visible()
         assert await page.locator('#arIOAudioPath [data-io-signal-check]').is_visible()
         assert await page.locator('#arIOAudioPath [data-audio-path-mixer]').is_visible()
-        assert await page.locator('#arIOAudioPath [data-io-start-audio]').is_visible()
-        # The test has no authorized device inventory. Top-level START must
-        # remain disabled and cannot synthesize a hardware ARM.
-        assert await page.locator('#arIOAudioPath [data-io-start-audio]').is_disabled()
+        # FAST2: one APPLY only. No second START AUDIO button is rendered.
+        assert await page.locator('#arIOAudioPath [data-io-start-audio]').count()==0
         await page.locator('#arIOAudioPath [data-io-signal-check]').click()
         assert await page.locator('#arSignalOverlay').evaluate("(e)=>e.classList.contains('open')")
         await page.locator('#arSignalClose').click()
@@ -247,10 +245,10 @@ async def main():
         assert await page.locator('.arIODeviceDriverButton[aria-pressed="true"]').inner_text()=='ASIO'
         assert await page.locator('.arIODevicePatchMatrix').is_visible()
         assert await page.locator('.arIODevicePatchMatrix .arIOMatrixCell').count()>0
-        # FAST1: one gesture un-mutes a previously ACKed real input route;
+        # FAST2: a single APPLY arms previously ACKed real input routing;
         # hardware action is still fenced to epoch/revision.
-        assert await page.locator('#arIOAudioPath [data-io-start-audio]').is_visible()
-        await page.locator('#arIOAudioPath [data-io-start-audio]').click()
+        assert await page.locator('#arIOAudioPath [data-io-start-audio]').count()==0
+        await page.locator('[data-io-device-apply]').click()
         arm=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='monitor'&&x.data.value===true)""")
         assert len(arm)==1,arm
@@ -260,8 +258,8 @@ async def main():
           ok:true,armed:true,deviceEpoch:4,error:''})""")
         await page.evaluate("""status=>{status.monitor=true;
           window.__armixTestEmit('arMixStatus',status)}""",status)
-        assert await page.locator('#arIOAudioPath [data-io-start-audio]').inner_text()=='MUTE OUTPUT'
-        await page.locator('#arIOAudioPath [data-io-start-audio]').click()
+        assert await page.locator('[data-io-start-audio]').inner_text()=='MUTE OUTPUT'
+        await page.locator('[data-io-start-audio]').click()
         muted=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='monitor'&&x.data.value===false)""")
         assert len(muted)==1,muted
@@ -282,7 +280,8 @@ async def main():
         assert await page.locator('.arIODevicePin').count()==8
         assert await page.locator('.arIODeviceCapture').is_disabled()
         assert await page.locator('.arIODeviceRate').input_value()=='48000'
-        assert await page.locator('[data-io-device-apply]').is_disabled()
+        # FAST2: APPLY remains enabled on an accepted device to ARM real MAIN.
+        assert await page.locator('[data-io-device-apply]').is_enabled()
         # Staging sample rate may not reopen any hardware automatically.
         await page.locator('.arIODeviceBuffer').select_option('256')
         assert await page.locator('[data-io-device-apply]').is_enabled()
@@ -723,6 +722,15 @@ async def main():
           {ok:true,instanceId:'g5c-101'})""")
         assert await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='routingFxEditor').length""")==before_editor+1
+        # The synthetic driver must ACK/REJECT any pending FAST2 hardware
+        # ARM before another structural route APPLY. Real native hosts send
+        # this event; the smoke fixture does not unless we explicitly emit it.
+        await page.evaluate("""()=>{
+          if(window.__arMixFastAudioState?.().pending)
+            window.__armixTestEmit('arMixAudioArmAck',{
+              ok:false,armed:false,deviceEpoch:4,error:'synthetic ARM rejection'});
+        }""")
+        assert not await page.evaluate("()=>window.__arMixFastAudioState?.().pending")
         # MS3A: changing MAIN physical destination is one native APPLY,
         # not a UI preview and never silently unmutes audio.
         await page.evaluate("""status=>{
@@ -750,7 +758,13 @@ async def main():
         await page.locator('#arIOOverlay [data-mix-apply]').click()
         command=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='routingDryApply').at(-1).data.value""")
-        assert command['mainOutputs']==[4,5],command
+        debug=await page.evaluate("""()=>({
+          fast:window.__arMixFastAudioState?.(),
+          route:window.__arMixRouteView?.(),
+          feedback:document.querySelector('#arIOFeedback')?.textContent,
+          events:window.__armixTestActions.filter(x=>x.name==='arMixAction').slice(-6)
+        })""")
+        assert command['mainOutputs']==[4,5],(command,debug)
         assert command['monitorOutputs']==[0,1],command
         assert len(command['monitorSends'])==14 and command['monitorSends'][0]==.5,command
         assert all(x==0 for x in command['monitorSends'][1:]),command
@@ -1019,7 +1033,7 @@ async def main():
           types:[{name:'ASIO',active:true,separate:false,
             inputs:['Mock Interface'],outputs:['Mock Interface']}]
         })""")
-        await qp.locator('#arIOAudioPath [data-io-start-audio]').click()
+        await qp.locator('[data-io-device-apply]').click()
         requests=await qp.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.data?.action==='routingDryApply')""")
         assert len(requests)==1,requests

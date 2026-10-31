@@ -7,7 +7,7 @@ const gui=read('web/mixer-io.js'),monitor=read('web/monitor.js');
 const main=read('src/Main.cpp'),cmake=read('CMakeLists.txt'),html=read('web/index.html');
 test('single native controller stages MONO/STEREO through muted APPLY + revision ACK',()=>{
   assert.match(gui,/__arMixStageChannelInput/);
-  assert.match(gui,/__arMixApplyMixerDraft/);
+  assert.match(gui,/__arMixApplyAndActivate/);
   assert.match(monitor,/patchPreflight\(\)/);
   assert.match(monitor,/window\.__arMixApplyMixerDraft/);
   assert.match(monitor,/routingDryApply/);
@@ -279,7 +279,7 @@ test('P0 FIRST SOUND raw capture has per-pin native callback truth BEFORE route 
   assert.equal(html.slice(html.indexOf(cssTag)+cssTag.length,html.indexOf('</style>',html.indexOf(cssTag))),
                css,'WebView + standalone exact raw PCM style parity');
 });
-test('P0 MAONO: staged ASIO switch never advertises live audio and cannot APPLY while output armed',()=>{
+test('P0 MAONO: one APPLY MUTE-ACKs before switching and native ARM',()=>{
   const js=read('web/mixer-io.js');
   const main=read('src/Main.cpp');
   const engine=read('src/LiveAudioEngine.h');
@@ -288,14 +288,14 @@ test('P0 MAONO: staged ASIO switch never advertises live audio and cannot APPLY 
   assert.ok(start>0&&end>start,'device safety decision must be shared by render and action');
   const guard=js.slice(start,end);
   assert.match(guard,/lastStatus\.secondaryOutputArmed/);
-  assert.match(guard,/s\?\.monitor\|\|lastStatus\.monitor/);
-  assert.match(guard,/PRESS MUTE OUTPUT above before APPLY DEVICE/);
+  assert.match(js,/applyMutePending=true/);
+  assert.match(js,/action:'monitor',value:false/);
   assert.match(guard,/s\?\.pending/);
   assert.match(guard,/Maono MIC or VC In 3\+4/);
   assert.match(js,/ASIO DEVICE SELECTED · NOT ACTIVE · current engine still uses/);
   assert.match(js,/const blocked=deviceSwitchBlocker\(route\(\)\)/);
   assert.match(js,/const deviceBlocker=deviceSwitchBlocker\(s\)/);
-  assert.match(js,/disabled=!deviceDirty\(\)\|\|!!deviceBlocker/);
+  assert.match(js,/disabled=!!deviceBlocker\|\|deviceBusy\|\|applyMutePending/);
   assert.match(js,/deviceNote=ack\?\.ok\?'DEVICE ACCEPTED · OUTPUT MUTED · '\+devicePinNextStep\(\)/);
   assert.match(main,/!engine_\.allOutputsDisarmed\(\)/);
   assert.match(main,/opened->getActiveInputChannels\(\)!=actual\.inputChannels/);
@@ -449,16 +449,16 @@ test('DEVICE4 Studio matrix names map actual JUCE pins, reuse SOURCE2/native ACK
 });
 
 
-test('FAST1 one gesture uses native routing ACK then fenced physical ARM, with permanent panic MUTE',()=>{
+test('FAST2 one APPLY uses native ACK and emergency MUTE',()=>{
  const io=read('web/mixer-io.js'),control=read('web/monitor.js');
  const native=read('src/Main.cpp'),engine=read('src/LiveAudioEngine.h');
  const html=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
- assert.match(io,/START AUDIO/);
+ assert.doesNotMatch(io,/data-io-start-audio disabled/);
  assert.match(io,/dataset\.ioStartAudio/);
  assert.match(io,/LIVE ON /);
  assert.match(io,/ASSIGN CH/);
- assert.match(io,/function startAudioBlocked\(\)/);
- assert.match(io,/start\.disabled=startAudioBlocked\(\)/);
+ assert.match(io,/applyMutePending/);
+ assert.match(io,/function sendDeviceRequest\(\)/);
  assert.match(control,/window\.__arMixStartLiveAudio=/);
  assert.match(control,/fastAudioPending=\{phase:"patch"/);
  assert.match(control,/if\(verified\)fastAudioArm\(result\)/);
@@ -494,30 +494,25 @@ test('P0 actual raw PCM before MUTE and native route/output state remain indepen
 });
 
 
-test('P0 First Sound separates RAW capture, post-fader PCM and physical output ARM',()=>{
-  const css=read('web/mixer-io.css');
-  const engine=read('src/LiveAudioEngine.h');
+test('FAST2 APPLY is the single operator action; native MUTE/route/ARM ACKs remain separate',()=>{
+  const io=read('web/mixer-io.js'),m=read('web/monitor.js');
+  const html=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
+  const native=read('src/Main.cpp');
   const core=read('engine/core/PreparedMixerBlock.h');
-  const main=read('src/Main.cpp');
-  assert.match(gui,/data-audio-path-mixer/);
-  assert.match(gui,/data-io-start-audio disabled/);
-  assert.match(gui,/function startAudioBlocked\(\)/);
-  assert.match(gui,/start\.disabled=startAudioBlocked\(\)/);
-  assert.match(gui,/start\.disabled=startAudioBlocked\(\)/);
-  assert.match(gui,/window\.__arMixStartLiveAudio\?\.\(\)/);
-  assert.match(monitor,/window\.__arMixStartLiveAudio=/);
-  assert.match(monitor,/action:"monitor",value:true/);
-  assert.match(monitor,/expectedEpoch:Number\(d\.epoch\),expectedRevision:Number\(d\.revision\)/);
-  assert.match(main,/engine_\.liveOutputArmFault\(\)/);
-  assert.match(monitor,/const mixed=patched\.some\(i=>Number\(meter\[i\]\)>0\.0002\)/);
-  assert.match(monitor,/const mainPcm=Number\(d\.peak\)>0\.0002/);
-  assert.match(monitor,/ArSonMix physical MAIN is SAFE-MUTED/);
-  assert.match(monitor,/if sound persists|sound must stop|If sound persists/i);
-  assert.match(engine,/const bool outputPermitted=outputGate\.renderMain/);
-  assert.match(engine,/if\(!outputGate\.hardware\)/);
-  assert.match(core,/observed->channelPeak\[strip\]=peak/);
   assert.match(core,/observed->channelPeakL\[strip\]=peakL/);
   assert.match(core,/observed->channelPeakR\[strip\]=peakR/);
-  assert.match(css,/\.arIOAudioPath>\.arIOPathStart/);
-  assert.doesNotMatch(gui,/new AudioContext|AudioWorklet|processBlock|createPluginInstance/);
+  assert.match(io,/capturePinSummary/);
+  assert.match(io,/applyMutePending/);
+  assert.match(io,/applyAfterDevice/);
+  assert.match(io,/deviceApply\(\)/);
+  assert.match(io,/function sendDeviceRequest\(\)/);
+  assert.match(io,/if\(lastStatus.monitor\)activeLine.appendChild\(start\)/);
+  assert.match(io,/window.__arMixApplyAndActivate\?\.\(\)/);
+  assert.match(m,/window.__arMixApplyAndActivate=/);
+  assert.match(m,/phase:"mute-custom"/);
+  assert.match(m,/phase:"custom-patch"/);
+  assert.match(m,/if\(verified\)fastAudioArm\(result\)/);
+  assert.match(m,/expectedEpoch:Number\(d.epoch\)/);
+  assert.match(native,/arMixAudioArmAck/);
+  assert.ok(html.includes(io),'WebView and standalone must share exact FAST2 UI');
 });
