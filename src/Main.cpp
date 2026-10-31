@@ -1334,6 +1334,30 @@ private:
         // M3E genuinely live Dynamic Group. Native command is the ONLY
         // structural authority. IDs are assigned by C++, never by the web
         // Console; ACK contains revision-scoped native source fan-in.
+        if(action=="studioBusGain") {
+            const int requestId=static_cast<int>(args.getProperty("requestId",0));
+            const auto ep=args.getProperty("epoch",{});
+            const auto rv=args.getProperty("revision",{});
+            const auto db=args.getProperty("db",{});
+            const bool validNumber=db.isDouble()||db.isInt();
+            const double fader=validNumber?static_cast<double>(db):-999.0;
+            const bool valid=requestId>0&&!ep.isVoid()&&!rv.isVoid()&&
+                std::isfinite(fader)&&fader>=-60.0&&fader<=10.0;
+            const float gain=valid?(fader<=-60.0?0.f:
+                std::pow(10.f,static_cast<float>(fader)/20.f)):0.f;
+            const bool ok=valid&&engine_.setStudioBusGain(
+                static_cast<std::uint64_t>(static_cast<juce::int64>(ep)),
+                static_cast<std::uint64_t>(static_cast<juce::int64>(rv)),gain);
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",requestId);
+            ack->setProperty("ok",ok);
+            ack->setProperty("error",ok?juce::String():
+                juce::String("Stale GROUP epoch/revision or invalid fader"));
+            ack->setProperty("session",engine_.status().getProperty("studioBus",{}));
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                "arMixStudioBusGainAck",juce::var(ack.release()));
+            return;
+        }
         if(action=="studioBusCreateForSelected" || action=="studioBusStop") {
             const int requestId=static_cast<int>(args.getProperty("requestId",0));
             juce::String error;
