@@ -1324,6 +1324,35 @@ private:
 
         // A user-controlled hardware dry routing FAT, not a change to the
         // existing 1-channel VST3 production chain. Explicit Apply/Stop.
+        // M1 RT source switch on an existing physical channel. Unlike
+        // structural routingDryApply, it does not unpatch outputs, rebuild
+        // VST3s, or restart the device; input PCM fades inside one graph.
+        if(action=="routingSourceSwitch"){
+            const int requestId=static_cast<int>(args.getProperty("requestId",0));
+            const int channel=static_cast<int>(args.getProperty("channel",-1));
+            const auto mode=args.getProperty("mode",juce::var()).toString();
+            const auto ep=args.getProperty("deviceEpoch",juce::var());
+            const auto rv=args.getProperty("revision",juce::var());
+            const int left=static_cast<int>(args.getProperty("left",-1));
+            const int right=static_cast<int>(args.getProperty("right",-1));
+            const juce::String error=requestId>0&&!ep.isVoid()&&!rv.isVoid()&&
+                !nativeShowBusy_&&!studioBackupBusy_?
+                engine_.switchDryRoutingLabSource(channel,
+                    static_cast<std::uint64_t>(static_cast<juce::int64>(ep)),
+                    static_cast<std::uint64_t>(static_cast<juce::int64>(rv)),
+                    mode,left,right):
+                juce::String("SOURCE SWITCH: stale request or Show/backup busy");
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",requestId);
+            ack->setProperty("channel",channel);
+            ack->setProperty("ok",error.isEmpty());
+            ack->setProperty("error",error);
+            ack->setProperty("state",engine_.status().getProperty("dryRoutingLab",{}));
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                "arMixSourceSwitchAck",juce::var(ack.release()));
+            if(error.isNotEmpty())emitNotice(error,true);
+            return;
+        }
         if (action == "routingDryApply")
         {
             LiveDryRoutingLab::FxSelections selected{};

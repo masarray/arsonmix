@@ -436,6 +436,55 @@ public:
         }
     }
 
+    // M1 direct-source parameter: only same-format physical→physical
+    // input on an ALREADY scheduled channel. Route DAG, VST3 lease, FX
+    // identity and hardware output ownership are immutable. Epoch/revision
+    // and actual enabled sparse port mask are checked on CONTROL thread.
+    juce::String switchPhysicalSource(int strip,std::uint64_t expectedEpoch,
+            std::uint64_t expectedRevision,const juce::String& mode,
+            int physicalLeft,int physicalRight) noexcept {
+        if(strip<0||strip>=count||!hasExplicitRoute()||
+           expectedEpoch!=epoch()||expectedRevision!=revision()||
+           topologyFault_.load(std::memory_order_acquire))
+            return "SOURCE SWITCH: stale native device, graph or channel";
+        if(mode!="MONO"&&mode!="STEREO")
+            return "SOURCE SWITCH: existing MONO/STEREO format required";
+        auto channels=acceptedRoute_.getProperty("channels",juce::var());
+        auto* rows=channels.getArray();
+        if(!rows||rows->size()!=count)
+            return "SOURCE SWITCH: missing accepted input routing";
+        auto& row=rows->getReference(strip);
+        if(row.getProperty("mode",{}).toString()!=mode)
+            return "SOURCE SWITCH: channel format/topology change requires MUTE + APPLY";
+        const int n=portCount_.load(std::memory_order_acquire);
+        int callbackLeft=-1,callbackRight=-1;
+        for(int i=0;i<n;++i){
+            const int p=enabledPorts_[i].load(std::memory_order_relaxed);
+            if(p==physicalLeft)callbackLeft=i;
+            if(p==physicalRight)callbackRight=i;
+        }
+        if(mode=="MONO")callbackRight=callbackLeft;
+        if(callbackLeft<0||callbackRight<0||
+           (mode=="STEREO"&&(callbackLeft==callbackRight||physicalLeft==physicalRight)))
+            return "SOURCE SWITCH: input is not in verified enabled device pins";
+        if(expectedEpoch!=epoch()||!registryValid_.load(std::memory_order_acquire))
+            return "SOURCE SWITCH: audio device changed during selection";
+        const auto format=mode=="MONO"
+            ?armix::mixer::SourceMode::mono:armix::mixer::SourceMode::stereo;
+        if(!publisher_.updateActiveControl(expectedEpoch,expectedRevision,
+            [&](FxGraph& fx) noexcept {
+                return fx.switchPhysicalSource(strip,format,callbackLeft,callbackRight);
+            }))
+            return "SOURCE SWITCH: native graph rejected same-format input";
+        // This is the authoritative native parameter target, not an
+        // unacknowledged browser draft. The callback fades PCM over 64 samples.
+        if(auto* object=row.getDynamicObject()){
+            object->setProperty("left",physicalLeft);
+            object->setProperty("right",mode=="STEREO"?physicalRight:-1);
+        }
+        return {};
+    }
+
     // Native live control path. Only the JUCE message thread writes. No
     // graph recompilation, VST3 instantiation or callback detach.
     // Browser carries the exact acknowledged route token to reject stale
