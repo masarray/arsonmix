@@ -345,6 +345,25 @@ public:
     // Normal ASIO / verified single-clock devices remain on the zero-SRC
     // JUCE direct callback. Independent capture/render is opt-in in P0.
     bool independentClockActive() const noexcept { return independent_.active(); }
+    // P0 hardware experiment: OFF by default and never persisted. The user
+    // must explicitly mute MAIN before enabling/disabling this heuristic.
+    // Native callback still owns all repair history; no control-thread reset.
+    juce::String setCaptureDeClickEnabled (bool wanted)
+    {
+        if (monitor_.load (std::memory_order_acquire))
+            return "MUTE OUTPUT before toggling experimental capture de-click";
+        if (independent_.active() || hasPendingDirectRestore())
+            return "Return to verified DIRECT audio before capture de-click A/B";
+        if (diagnosticRoute() != armix::diagnostics::Route::normal)
+            return "Return SIGNAL CHECK to NORMAL before capture de-click A/B";
+        if (wanted && (deviceManager_.getCurrentAudioDevice() == nullptr ||
+            deviceManager_.getCurrentAudioDeviceType() != "Windows Audio" ||
+            !wasapiDirectCapture_.load (std::memory_order_acquire)))
+            return "Experimental capture de-click is only available on a verified DIRECT Windows Audio device";
+        captureDeClickRequested_.store (wanted, std::memory_order_release);
+        return {};
+    }
+
     // Control-thread-only: true after an unsuccessful DIRECT rollback.
     // The original endpoint selection is retained for bounded recovery.
     bool hasPendingDirectRestore() const noexcept { return savedDirectSetup_.has_value(); }
@@ -1282,6 +1301,10 @@ public:
         o->setProperty ("captureZeroHeadCandidateFrames",static_cast<double>(captureBoundary_.candidateFrames()));
         o->setProperty ("captureNonFiniteSamples",static_cast<double>(captureBoundary_.nonFiniteSamples()));
         o->setProperty ("captureZeroHeadProvenance",armix::rt::CaptureBoundaryEvidence::provenance());
+        o->setProperty ("captureDeClickEnabled",captureDeClickRequested_.load(std::memory_order_acquire));
+        o->setProperty ("captureDeClickEligible",wasapiDirectCapture_.load(std::memory_order_acquire)
+            && !independent_.active() && diagnosticRoute()==armix::diagnostics::Route::normal);
+        o->setProperty ("captureDeClickDefault","OFF_EXPLICIT_HARDWARE_AB_ONLY");
         o->setProperty ("captureDeClickBlocks",static_cast<double>(captureClickRepair_.repairedBlocks()));
         o->setProperty ("captureDeClickFrames",static_cast<double>(captureClickRepair_.repairedFrames()));
         o->setProperty ("captureSanitizedSamples",static_cast<double>(captureClickRepair_.sanitizedSamples()));
@@ -1449,6 +1472,7 @@ private:
     std::atomic<std::uint64_t> captureSignalBlocks_ {0}; // per native device epoch
     armix::rt::CaptureBoundaryEvidence captureBoundary_; // callback-only PCM continuity
     armix::rt::CaptureClickRepair captureClickRepair_;
+    std::atomic<bool> captureDeClickRequested_{false}; // no auto restart/Show arm
     std::atomic<bool> wasapiDirectCapture_{false};
     std::atomic<float> outputPeakL_ { 0.f }, outputPeakR_ { 0.f };
     std::atomic<int> callbackInputs_ { 0 }, callbackOutputs_ { 0 };
@@ -1541,6 +1565,7 @@ private:
         captureSignalBlocks_.store(0,std::memory_order_relaxed);
         captureBoundary_.reset(); // only between device generations
         captureClickRepair_.reset();
+        captureDeClickRequested_.store(false,std::memory_order_release); // device generations fail closed
         wasapiDirectCapture_.store(d->getTypeName()=="Windows Audio",
                                     std::memory_order_release);
         deviceStartCount_.fetch_add (1, std::memory_order_relaxed);
@@ -1746,7 +1771,8 @@ private:
             // JUCE's const input pointers or retry/reopen on the RT thread.
             const float* const* renderInputs=inputs;
             std::array<const float*,2> guardedInputs{};
-            if(wasapiDirectCapture_.load(std::memory_order_relaxed) &&
+            if(captureDeClickRequested_.load(std::memory_order_relaxed) &&
+               wasapiDirectCapture_.load(std::memory_order_relaxed) &&
                inputChannels==2 && inputs && inputs[0] && inputs[1] &&
                samples<=maxFrames) {
                 const bool zeroCandidate=captureBoundary_.candidateBlocks()!=priorCandidateBlocks;

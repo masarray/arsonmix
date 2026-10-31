@@ -239,6 +239,7 @@
       '<option value="CAPTURE_ONLY">CAPTURE ONLY · SILENT OUTPUT</option></select>' +
       '<button id="arDiagnosticMark">MARK CRACKLE</button>' +
       '<button id="arSmartClockToggle" title="Experimental independent capture/render clock synchronization">SMART CLOCK: DIRECT</button>' +
+      '<button id="arCaptureDeClickToggle" title="Explicit 0-FX A/B only: mute output before switching. OFF after every device restart.">CAPTURE DE-CLICK: OFF</button>' +
       '<button id="arDiagnosticCopy" title="Copies native driver settings, recent events and timing data">COPY FULL REPORT</button>' +
       '<span id="arDiagnosticCopyStatus" role="status">One click → paste to ChatGPT</span></div>' +
     '<div id="arHealthPanel" style="padding:8px 0;font:11px monospace;color:#8ad6e0"></div>' +
@@ -1935,6 +1936,11 @@
     const trial=captureFaultEvidence(d);
     el("arSmartClockToggle").textContent=d.adaptiveClockActive?
       "SMART CLOCK: INDEPENDENT (BETA)":trial?"TRY INDEPENDENT CLOCK (BETA)":"SMART CLOCK: DIRECT";
+    el("arCaptureDeClickToggle").textContent=d.captureDeClickEnabled?
+      "CAPTURE DE-CLICK: ON (BETA)":"CAPTURE DE-CLICK: OFF";
+    el("arCaptureDeClickToggle").disabled=!!d.monitor ||
+      (!d.captureDeClickEnabled && !d.captureDeClickEligible);
+    el("arCaptureDeClickToggle").title="Manual mute-required A/B test only; never auto-enabled. Zero-head detection is a heuristic and may also match legitimate silence.";
     el("arSmartClockToggle").title=trial?
       "Explicit A/B test for recorded WASAPI capture dropouts. Opens separate capture/render devices; can add latency. No automatic switch.":
       "Manual independent capture/render clock control";
@@ -1948,6 +1954,10 @@
       " | device starts/stops "+(d.deviceStartCount||0)+"/"+(d.deviceStopCount||0)+
       " | backend XRUN "+(d.backendXrunCount??"N/A")+
       " ("+(d.backendXrunMeaning||"UNKNOWN")+")"+
+      " | zero-head candidates "+(d.captureZeroHeadCandidateBlocks||0)+
+      " / "+(d.captureZeroHeadCandidateFrames||0)+"f"+
+      " | de-click "+(d.captureDeClickBlocks||0)+" blocks / "+(d.captureDeClickFrames||0)+"f"+
+      " | sanitization "+(d.captureSanitizedSamples||0)+
       " | Render underflow UNOBSERVABLE via JUCE (timing NOT xruns)"+
       " | Clock "+(d.adaptiveClockMode||"DIRECT")+
       (d.adaptiveClockActive?" | FIFO "+(d.bridgeOccupancyFrames||0)+"f"+
@@ -2040,6 +2050,8 @@
     api.emitEvent("arMixAction",{action:"diagnosticMark"}));
   el("arSmartClockToggle").addEventListener("click",()=>
     api.emitEvent("arMixAction",{action:"smartClock",value:!state.adaptiveClockActive}));
+  el("arCaptureDeClickToggle").addEventListener("click",()=>
+    api.emitEvent("arMixAction",{action:"captureDeClick",value:!state.captureDeClickEnabled}));
   el("arDiagnosticCopy").addEventListener("click",()=>{
     el("arDiagnosticCopyStatus").textContent="Preparing report...";
     api.emitEvent("arMixAction",{action:"copyDiagnosticReport"});
