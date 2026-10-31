@@ -101,6 +101,9 @@ async def main():
         # M1: an ALREADY PATCHED MONO channel may change physical input
         # while output is ARMED: one native source PARAM/ACK and no APPLY.
         await page.locator('[data-mix-mode="FX"]').click()
+        # SOURCE follows the selected strip, not the previous editable row.
+        await page.evaluate("()=>chooseChannel(0)")
+        assert await page.locator('#mixer [data-strip="0"]').evaluate("(e)=>e.classList.contains('selected')")
         await page.locator('[data-focus-step="source"]').click()
         assert await page.locator('.arSourceChooser').is_visible()
         await page.locator('.arSourceChoice[data-source-choice="MONO:1"]').click()
