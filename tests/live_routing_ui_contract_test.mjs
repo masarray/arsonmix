@@ -287,7 +287,8 @@ test("G5E native Shows browse and hash-verified FX recall are worker-backed and 
   assert.match(main,/entry->uid!=ref\.uid/);
   assert.match(main,/safe->closePluginEditor\(\)/);
   assert.match(main,/setMasterGainLinear\(/);
-  assert.match(main,/if\(bool\(value\) && \(nativeShowBusy_ \|\| studioBackupBusy_\)\)/);
+  assert.match(main,/if \(arm && \(nativeShowBusy_ \|\| studioBackupBusy_\)\)/);
+  assert.match(main,/engine_\.liveOutputArmFault\(\)/);
   assert.match(worker,/store\.loadWithStates\(requestedId_,show,saved,result\.loadedStates\)/);
   assert.match(worker,/store\.commit\(show,\{snapshot_\},blobs_\)/);
   assert.match(worker,/delivered=std::make_shared<Result>/);
