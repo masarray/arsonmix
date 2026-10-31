@@ -626,8 +626,10 @@ async def main():
         assert 'DRAFT' in await page.locator('[data-strip="0"] .arBankStage').inner_text()
         draft=await page.evaluate('()=>window.__arMixRouteView().draftRoutes[0]')
         assert draft['mode']=='MONO' and draft['channelFormat']=='STEREO',draft
-        result=await page.evaluate('()=>window.__arMixApplyMixerDraft()')
-        assert result['ok'],result
+        # R7 format picker auto-submits the existing guarded one-APPLY
+        # transaction. A second manual APPLY is correctly rejected while
+        # that first native request is in flight, so do NOT submit twice.
+        assert await page.evaluate("()=>window.__arMixFastAudioState().pending")
         typed=await page.evaluate("""() => window.__armixTestActions.filter(
           a=>a.name==='arMixAction'&&a.data.action==='routingDryApply').at(-1).data.value""")
         assert typed['schemaVersion']==2 and typed['deviceEpoch']==4 and typed['revision']==5,typed
