@@ -124,7 +124,9 @@
   // is edited only on release/keyboard; drag movement paints CSS without
   // rebuilding the mixer, invoking plugins, or dispatching audio parameters.
   function leaveSof(){
-    sofBus=-1;sofEpoch=0;sofMessage='';sofDrag=null;
+    if(sofDrag){document.removeEventListener('pointermove',sofMove);
+      sofDrag.slider.classList.remove('is-dragging');sofDrag=null;}
+    sofBus=-1;sofEpoch=0;sofMessage='';
     mixer.removeAttribute('data-sof-active');
     sofControls.querySelector('[data-sof-bus]').disabled=false;
     sofControls.querySelector('[data-sof-toggle]').setAttribute('aria-pressed','false');
