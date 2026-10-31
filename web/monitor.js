@@ -1829,7 +1829,7 @@
         :result.active&&result.ready?"NATIVE ACK: INPUT PATCH CLEARED · 10CH+4AUX engine ready, output MUTED"
         :"NATIVE ROUTE UNAVAILABLE · output remains SILENT";
     updateRouteLabIdentity();
-    if(fastAudioPending?.phase==="patch"){
+    if(fastAudioPending?.phase==="patch"||fastAudioPending?.phase==="custom-patch"){
       const pending=fastAudioPending;fastAudioPending=null;
       const routes=result?.acceptedRoute?.channels||[];
       const verified=reply?.ok===true&&result.ready===true&&
