@@ -1,3 +1,5 @@
+> **LATEST DEVICE SETUP DESIGN (2026-10-31, not shipped):** Cross-thread decision: keep JUCE as the only device/DSP backend while replacing the current inventory-only DEVICE tab/native JUCE setup popup with a working custom WebView2 Audio I/O panel. See [PRD](PRD_CUSTOM_AUDIO_DEVICE_SETUP_20261031.md), [ARD](ARD_CUSTOM_AUDIO_DEVICE_SETUP_20261031.md), [handoff](HANDOFF_CUSTOM_AUDIO_DEVICE_SETUP_20261031.md). No separate audio manager or source controller; fail-closed muted device APPLY, actual hardware readback; physical #15 remains unresolved.
+
 # ArSonMiX — Single Product Truth & Cross-Thread Reconciliation
 31 October 2026 | reconciled against `main@4acc88e2674561a9a3059ebff0c80c58c96c5269` | canonical decision record, **not** a claimed live release.
 
