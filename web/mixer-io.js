@@ -455,6 +455,17 @@
   overlay.id='arIOOverlay';overlay.hidden=true;
   overlay.innerHTML='<section class="arIOWindow" role="dialog" aria-modal="true" aria-label="ArSonMix hardware audio I/O"><header><div><small>ArSonMiX · AUDIO HARDWARE</small><h2>Audio Setup · Windows Devices & Routing</h2></div><button type="button" class="btn-180" data-io-close aria-label="Close Audio I/O">CLOSE</button></header><div class="arIOTop" id="arIOIdentity"></div><nav role="tablist" aria-label="Audio I/O views"><button class="btn-180 active" role="tab" data-io-tab="device">DEVICE / DRIVER</button><button class="btn-180" role="tab" data-io-tab="inputs">INPUT ROUTING</button><button class="btn-180" role="tab" data-io-tab="outputs">OUTPUT ROUTING</button></nav><div id="arIOBody" class="arIOBody"></div><footer><span id="arIOFeedback" role="status">Hardware changes require native ACK. Output stays MUTED on APPLY.</span><button type="button" class="btn-180" data-io-revert>REVERT DRAFT</button><button type="button" class="btn-180" data-mix-apply>APPLY PATCH</button><button type="button" class="btn-180" data-io-internal>ADVANCED BUS / FX</button><button type="button" class="btn-180" data-io-device-revert hidden>REVERT DEVICE</button><button type="button" class="btn-180 arIODeviceApply" data-io-device-apply hidden>APPLY DEVICE</button></footer></section>';
   document.body.appendChild(overlay);
+  const audioPath=node('div','arIOAudioPath');audioPath.id='arIOAudioPath';
+  audioPath.innerHTML='<span data-audio-path-input>CAPTURE · WAIT</span><span data-audio-path-route>ROUTE · WAIT</span><span data-audio-path-output>OUTPUT · WAIT</span><button type="button" class="btn-180" data-io-signal-check>OPEN SIGNAL CHECK</button><small data-audio-path-reason role="status"></small>';
+  overlay.querySelector('.arIOWindow').insertBefore(audioPath,el('arIOBody'));
+  function refreshAudioPath(){
+    const d=window.__arMixAudioPathView?.(lastStatus);
+    if(!d)return;
+    for(const [key,value] of [['input',d.input],['route',d.route],['output',d.output],['reason',d.message]]){
+      const n=audioPath.querySelector('[data-audio-path-'+key+']');
+      if(n&&n.textContent!==value)n.textContent=value;
+    }
+  }
   // G3: ONE floating inspector follows the selected source/AUX, no new
   // DSP graph, no heavyweight matrix, no layout shifts in the MIX strips.
   const sendEditor=node('section','arSendEditor');
@@ -1376,6 +1387,7 @@
   function refreshIO(){
     const s=route(),id=el('arIOIdentity'),body=el('arIOBody');
     matrixResetIfDeviceChanged(s);
+    refreshAudioPath();
     const status=(lastStatus.driver||'NO DEVICE')+' · '+(Number(lastStatus.rate)||0)+' Hz · '+(Number(lastStatus.buffer)||0)+' samples';
     if(id.textContent!==status)id.textContent=status;
     overlay.querySelectorAll('[data-io-tab]').forEach(b=>{
@@ -1722,6 +1734,10 @@
     if(b.dataset.ioMonitorToggle!==undefined){
       e.preventDefault();e.stopImmediatePropagation();stageMonitorEnable(b.dataset.ioMonitorToggle==='on');return;
     }
+    if(b.dataset.ioSignalCheck!==undefined){
+      e.preventDefault();e.stopImmediatePropagation();closeIO();
+      document.getElementById('arSignalOpen')?.click();return;
+    }
     if(b.dataset.ioClose!==undefined){e.preventDefault();e.stopImmediatePropagation();closeIO();return;}
     if(b.dataset.ioTab){e.preventDefault();e.stopImmediatePropagation();ioTab=b.dataset.ioTab;matrixMessage='';lastSignature='';refreshIO();return;}
     if(b.dataset.ioMatrixView){
@@ -1828,7 +1844,11 @@
     // 12Hz native telemetry: update only when topology, epoch or safety changes.
     const s=d.dryRoutingLab||{},key=JSON.stringify([s.epoch,s.revision,s.ready,s.ports,s.outputPorts,s.acceptedRoute,d.monitor,d.masterMute]);
     if(window.__armixIoStatusKey!==key){window.__armixIoStatusKey=key;lastSignature='';refresh();}
-    if(!overlay.hidden){const identity=(d.driver||'')+'/'+(d.rate||0)+'/'+(d.buffer||0);if(overlay.dataset.deviceIdentity!==identity){overlay.dataset.deviceIdentity=identity;refreshIO();}}
+    if(!overlay.hidden){
+      refreshAudioPath(); // P0 text-only 12Hz; no matrix DOM churn
+      const identity=(d.driver||'')+'/'+(d.rate||0)+'/'+(d.buffer||0);
+      if(overlay.dataset.deviceIdentity!==identity){overlay.dataset.deviceIdentity=identity;refreshIO();}
+    }
   });
   backend?.addEventListener?.('arMixAudioDeviceInventory',d=>{
     const hadDraft=deviceDirty();
