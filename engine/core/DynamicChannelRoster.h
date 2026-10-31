@@ -266,6 +266,95 @@ public:
         return result;
     }
 
+    // Studio Console Add Bus / Add FX Channel: allocate a fresh independent
+    // stereo ChannelId, OUT -> MAIN, without borrowing an input or requiring
+    // a selection. CONTROL only; native graph publication is separate.
+    ChannelEditResult createStandaloneBus(std::uint64_t expectedRevision,
+                                         std::string name,ChannelRole role) {
+        ChannelEditResult result;result.revision=revision_;
+        if(expectedRevision!=revision_) {
+            result.fault=ChannelEditFault::staleRevision;return result;
+        }
+        if((role!=ChannelRole::group && role!=ChannelRole::fxReturn) ||
+           !validName(name) ||
+           revision_==std::numeric_limits<std::uint64_t>::max()) {
+            result.fault=ChannelEditFault::invalidAction;return result;
+        }
+        if(nextId_==0 || nextId_==std::numeric_limits<std::uint64_t>::max()) {
+            result.fault=ChannelEditFault::idExhausted;return result;
+        }
+        auto candidate=channels_;
+        const auto mainIt=std::find_if(candidate.begin(),candidate.end(),
+            [](const auto& row){return row.role==ChannelRole::main;});
+        if(mainIt==candidate.end() ||
+           std::count_if(candidate.begin(),candidate.end(),
+             [](const auto& row){return row.role==ChannelRole::main;})!=1) {
+            result.fault=ChannelEditFault::invalidAction;return result;
+        }
+        ChannelStripDefinition bus;
+        bus.id={nextId_};bus.role=role;bus.format=ProcessingFormat::stereo;
+        bus.name=std::move(name);
+        bus.sends.push_back({mainIt->id,1.f,false,0.f,true});
+        const auto position=static_cast<std::size_t>(mainIt-candidate.begin());
+        candidate.insert(candidate.begin()+static_cast<std::ptrdiff_t>(position),
+                         std::move(bus));
+        if(!withinBudget(candidate)) {
+            result.fault=ChannelEditFault::budgetExceeded;return result;
+        }
+        channels_.swap(candidate);result.createdIds.push_back({nextId_++});
+        result.revision=++revision_;return result;
+    }
+
+    // Studio Console Remove Bus: reconnect incoming exclusive primary OUT to
+    // MAIN, intentionally detach SENDs addressed to the removed Bus. This is
+    // one guarded topology transaction; the caller must publish it or roll
+    // back the entire candidate. Never silently delete an INPUT, MAIN or MON.
+    ChannelEditResult removeBusAndRestoreSources(
+        std::uint64_t expectedRevision,ChannelId id) {
+        ChannelEditResult result;result.revision=revision_;
+        if(expectedRevision!=revision_) {
+            result.fault=ChannelEditFault::staleRevision;return result;
+        }
+        if(!id.value || revision_==std::numeric_limits<std::uint64_t>::max()) {
+            result.fault=ChannelEditFault::invalidAction;return result;
+        }
+        auto candidate=channels_;
+        const auto target=std::find_if(candidate.begin(),candidate.end(),
+            [id](const auto& row){return row.id==id;});
+        if(target==candidate.end()) {
+            result.fault=ChannelEditFault::missingChannel;return result;
+        }
+        if(target->role!=ChannelRole::group && target->role!=ChannelRole::fxReturn) {
+            result.fault=ChannelEditFault::invalidValue;return result;
+        }
+        const auto main=std::find_if(candidate.begin(),candidate.end(),
+            [](const auto& row){return row.role==ChannelRole::main;});
+        if(main==candidate.end() ||
+           std::count_if(candidate.begin(),candidate.end(),
+              [](const auto& row){return row.role==ChannelRole::main;})!=1) {
+            result.fault=ChannelEditFault::invalidAction;return result;
+        }
+        const ChannelId mainId=main->id;
+        for(auto& row:candidate) {
+            if(row.id==id)continue;
+            auto& sends=row.sends;
+            for(auto& link:sends)
+                if(link.destination==id && link.primaryOutput)
+                    link.destination=mainId;
+            sends.erase(std::remove_if(sends.begin(),sends.end(),
+                [id](const auto& link){
+                    return link.destination==id && !link.primaryOutput;
+                }),sends.end());
+        }
+        candidate.erase(std::find_if(candidate.begin(),candidate.end(),
+            [id](const auto& row){return row.id==id;}));
+        if(!withinBudget(candidate)) {
+            result.fault=ChannelEditFault::budgetExceeded;return result;
+        }
+        channels_.swap(candidate);
+        result.revision=++revision_;return result;
+    }
+
     // One Studio Console transaction: new independent BUS + multi-source
     // primary output reroute, or FX return + parallel sends. CONTROL THREAD.
     // Caller must compile one native graph and publish with device epoch/ACK.
