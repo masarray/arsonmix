@@ -404,7 +404,7 @@ test('FAST1 one gesture uses native routing ACK then fenced physical ARM, with p
 test('P0 actual raw PCM before MUTE and native route/output state remain independent',()=>{
  const cpp=read('src/LiveAudioEngine.h'),ui=read('web/monitor.js'),io=read('web/mixer-io.js');
  const standalone=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
- assert.match(cpp,/const float rawCapturePeak=captureBoundary_\\.observe\\(/);
+ assert.match(cpp,/const float rawCapturePeak=captureBoundary_\.observe\(/);
  assert.match(cpp,/captureZeroHeadProvenance/);
  assert.match(cpp,/captureSignalBlocks_\.fetch_add/);
  assert.match(cpp,/RAW_PCM_BEFORE_HARDWARE_MUTE/);
