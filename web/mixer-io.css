@@ -599,3 +599,12 @@
 @media(max-width:700px){.arIODeviceChoose{grid-template-columns:minmax(0,1fr)}
 .arIODeviceInterfaceGroup{grid-template-columns:minmax(0,1fr)}
 .arIODeviceMatrixHeading{flex-wrap:wrap}}
+
+/* FAST1 First Sound: lightweight explicit START / MUTE on the same device. */
+.arIODeviceStartAudio{--b180-color:#9de9c1;--b180-border:#39936f;--b180-ink:#133c2b;
+  min-width:112px;min-height:30px;font-size:10px;white-space:nowrap}
+.arIODeviceStartAudio:disabled{opacity:.5;cursor:default}
+.arIODeviceFirstSound{padding:6px 11px;background:#1d3139;color:#b9d7df;
+  font:10px/1.45 "ArSonMix Inter","Segoe UI",sans-serif;border-bottom:1px solid #36525d}
+.arIOSoftwareUsedBy{font-size:9px;color:#99ccbd;white-space:nowrap}
+.arIOSoftwareName{flex-wrap:wrap}
