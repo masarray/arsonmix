@@ -9,6 +9,13 @@
       "windowsVst3Asset": null
     },
     {
+      "productId": "arson-comp",
+      "distributionRepo": "masarray/arson-comp",
+      "releaseTag": null,
+      "publishedAt": null,
+      "windowsVst3Asset": null
+    },
+    {
       "productId": "arson-verb",
       "distributionRepo": "masarray/arsonverb",
       "releaseTag": null,
