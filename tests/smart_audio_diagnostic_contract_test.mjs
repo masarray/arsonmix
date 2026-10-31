@@ -133,3 +133,21 @@ test('clock bridge has no callback alloc / blocking and is gated behind independ
   assert.match(policy,/clockSharedByHardware/);
   assert.match(policy,/unsupportedClockAdapter/);
 });
+
+test('P0 capture block-head evidence is a single-pass RT heuristic, not invented renderer xrun',()=>{
+ const probe=read('engine/core/CaptureBoundaryEvidence.h');
+ const fixture=read('tests/capture_boundary_evidence_test.cpp');
+ assert.match(probe,/class CaptureBoundaryEvidence final/);
+ assert.match(probe,/std::atomic<std::uint64_t> candidateBlocks_/);
+ assert.match(probe,/EXACT_ZERO_CAPTURE_BLOCK_HEAD_AFTER_NONZERO_TAIL_HEURISTIC_NOT_DRIVER_XRUN/);
+ assert.match(engine,/captureBoundary_\.observe\(/);
+ assert.match(engine,/captureBoundary_\.reset\(\)/);
+ assert.match(engine,/captureZeroHeadCandidateBlocks/);
+ assert.match(engine,/captureZeroHeadCandidateFrames/);
+ assert.match(engine,/captureZeroHeadProvenance/);
+ assert.match(engine,/captureNonFiniteSamples/);
+ assert.doesNotMatch(engine,/rawCapturePeak=juce::jmax\(/);
+ assert.match(fixture,/100000/);
+ assert.match(cmake,/P0CaptureZeroHeadBoundaryCandidates/);
+ assert.match(flow,/ARMixCaptureBoundaryTests/);
+});

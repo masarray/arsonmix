@@ -20,6 +20,7 @@
 #include "../engine/core/FxMoveRamp.h"
 #include "../engine/core/RealtimeHealthHistogram.h"
 #include "../engine/core/CallbackCadenceEvidence.h"
+#include "../engine/core/CaptureBoundaryEvidence.h"
 #include "../engine/core/FxBypassEnvelope.h"
 #include "../engine/core/NativeOutputPairTap.h"
 #include <array>
@@ -1275,6 +1276,10 @@ public:
         o->setProperty ("inputPeak", inputPeak_.load());
         o->setProperty ("inputPeakProvenance", "RAW_PCM_BEFORE_HARDWARE_MUTE");
         o->setProperty ("captureSignalBlocks",static_cast<double>(captureSignalBlocks_.load(std::memory_order_relaxed)));
+        o->setProperty ("captureZeroHeadCandidateBlocks",static_cast<double>(captureBoundary_.candidateBlocks()));
+        o->setProperty ("captureZeroHeadCandidateFrames",static_cast<double>(captureBoundary_.candidateFrames()));
+        o->setProperty ("captureNonFiniteSamples",static_cast<double>(captureBoundary_.nonFiniteSamples()));
+        o->setProperty ("captureZeroHeadProvenance",armix::rt::CaptureBoundaryEvidence::provenance());
         o->setProperty ("postFxPeak", postFxPeak_.load());
         o->setProperty ("peak", outputPeak_.load());
         o->setProperty ("peakLeft", outputPeakL_.load());
@@ -1435,6 +1440,7 @@ private:
     std::atomic<float> masterGain_ { 1.f }, channelGain_ { 1.f }, channelPan_ { 0.f };
     std::atomic<float> inputPeak_ { 0.f }, postFxPeak_ { 0.f }, outputPeak_ { 0.f };
     std::atomic<std::uint64_t> captureSignalBlocks_ {0}; // per native device epoch
+    armix::rt::CaptureBoundaryEvidence captureBoundary_; // callback-only PCM continuity
     std::atomic<float> outputPeakL_ { 0.f }, outputPeakR_ { 0.f };
     std::atomic<int> callbackInputs_ { 0 }, callbackOutputs_ { 0 };
     std::atomic<unsigned long long> callbackCount_ { 0 };
@@ -1524,6 +1530,7 @@ private:
         }
         inputPeak_.store(0.f,std::memory_order_relaxed);
         captureSignalBlocks_.store(0,std::memory_order_relaxed);
+        captureBoundary_.reset(); // only between device generations
         deviceStartCount_.fetch_add (1, std::memory_order_relaxed);
         sampleRateHz_ = juce::jmax (1.0, d->getCurrentSampleRate());
         diagnosticTone_.prepare (sampleRateHz_); // device stopped; no RT allocation
@@ -1714,12 +1721,8 @@ private:
             const bool outputPermitted=outputGate.renderMain;
             // Native input PCM must remain observable even with safe output MUTE.
             // Scan bounded verified callback channels, no allocation or lock.
-            float rawCapturePeak=0.f;
-            if(inputs && inputChannels>0)
-                for(int c=0;c<juce::jmin(inputChannels,armix::device::LiveInputPortRegistry::limit);++c)
-                    if(const float* const src=inputs[c])
-                        for(int i=0;i<samples;++i)
-                            rawCapturePeak=juce::jmax(rawCapturePeak,std::abs(src[i]));
+            const float rawCapturePeak=captureBoundary_.observe(
+                inputs,juce::jmin(inputChannels,armix::device::LiveInputPortRegistry::limit),samples);
             if(rawCapturePeak>0.0005f)
                 captureSignalBlocks_.fetch_add(1,std::memory_order_relaxed);
             // Both native 10CH routing and the existing CH1 vendor FX chain
