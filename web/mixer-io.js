@@ -1909,6 +1909,7 @@
     // CACHED is a non-disruptive snapshot; do not erase pending operator notes.
     lastSignature='';if(!overlay.hidden)refreshIO();
   });
+  backend?.addEventListener?.('arMixAudioArmAck',ack=>{ if(applyMutePending){ applyMutePending=false; if(ack?.ok&&!ack.armed){lastStatus.monitor=false;sendDeviceRequest();}else deviceNote='APPLY MUTE REJECTED'; } });
   backend?.addEventListener?.('arMixAudioDeviceApplyAck',ack=>{
     if(!deviceBusy||ack?.requestId!==deviceRequest)return;
     deviceBusy=false;deviceRequest='';
