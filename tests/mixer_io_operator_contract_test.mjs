@@ -173,19 +173,26 @@ test('PATCH1 operator-first mono and nonadjacent stereo stage into ONE native tr
   assert.doesNotMatch(css,/backdrop-filter\s*:|filter\s*:\s*blur/);
 });
 
-test('SETUP1 actual JUCE device picker and available ASIO WASAPI DirectSound backend',()=>{
+test('DEVICE1 existing matrix drives real JUCE manager with gated native readback, no selector popup',()=>{
  const io=read('web/mixer-io.js'),native=read('src/Main.cpp'),cm=read('CMakeLists.txt');
  for(const flag of ['JUCE_ASIO=1','JUCE_WASAPI=1','JUCE_DIRECTSOUND=1'])assert.ok(cm.includes(flag));
- assert.match(native,/manager, 1, 64, 1, 64, false, false, false, false/);
- assert.match(native,/action == "audioSetup"/);
- assert.match(native,/action == "audioDeviceInventory"/);
+ assert.match(native,/manager, 1, 64, 1, 64, false, false, false, false/); // hidden fallback only
+ assert.match(native,/action == "audioDeviceApply"/);
+ assert.match(native,/setAudioDeviceSetup\(candidate,true\)/);
+ assert.match(native,/beginManualAudioSetup\(\)/);
+ assert.match(native,/finishManualAudioSetup\(\)/);
+ assert.match(native,/RESTORED_MUTED/);
+ assert.match(native,/RECOVERY_REQUIRED/);
+ assert.match(native,/arMixAudioDeviceApplyAck/);
  assert.match(io,/function openIO\(tab='device',channel=null\)/);
- assert.match(io,/arIODeviceChoose/);
- assert.match(io,/arIOBackendBadge/);
- assert.match(io,/DirectSound · legacy/);
- assert.match(io,/backend\.emitEvent\('arMixAction',\{action:'audioSetup'\}\)/);
+ for(const name of ['arIODeviceBackend','arIODeviceCapture','arIODevicePlayback',
+                    'arIODeviceRate','arIODeviceBuffer','arIODevicePin','arIODeviceApply'])
+   assert.ok(io.includes(name));
+ assert.match(io,/backend\.emitEvent\('arMixAction',\{action:'audioDeviceApply'/);
+ assert.doesNotMatch(io,/backend\.emitEvent\('arMixAction',\{action:'audioSetup'\}\)/);
  assert.doesNotMatch(io,/audioSelectDevice|setCurrentAudioDeviceType/);
 });
+
 test('SETUP1 honest bus patch has real AUX/MAIN/MONITOR navigation, no fake GROUP DCA',()=>{
  const patch=read('web/monitor.js');
  assert.match(patch,/AUX \/ BUSSING/);
