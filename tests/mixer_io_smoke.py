@@ -425,39 +425,57 @@ async def main():
         assert await page.evaluate('()=>window.__arMixRevertMixerDraft().ok')
         await page.locator('[data-strip="0"] [data-send-focus="0"]').click()
         assert await page.locator('#arSendEditor [data-send-gain="POST"]').input_value()=='0.5'
-        # With speakers armed, SEND edit remains a draft and APPLY is gated.
+        # M1 unified editor: existing POST LEVEL is LIVE while speakers
+        # are armed. Topology remains protected by the muted APPLY gate.
         await page.evaluate("""status=>{
-          status.monitor=true;
-          window.__armixTestEmit("arMixStatus",status);
+          status.monitor=true;window.__armixTestEmit("arMixStatus",status);
         }""",status)
         await page.locator('#arSendEditor [data-send-gain="POST"]').select_option("0.25")
+        editor_actions=await page.evaluate("""()=>window.__armixTestActions.filter(
+          x=>x.name==="arMixAction"&&x.data.action==="routingAuxSendGain")""")
+        assert len(editor_actions)==4,editor_actions
+        assert abs(editor_actions[-1]['data']['value']-.25)<1e-7
         assert await page.locator('#arSendEditor [data-send-apply]').is_disabled()
         assert len(await page.evaluate("""()=>window.__armixTestActions.filter(
           x=>x.name==="arMixAction"&&x.data.action==="routingDryApply")"""))==2
-        # REVERT restores authoritative ACK and all other faders/FX unchanged.
-        await page.locator('#arSendEditor [data-send-revert]').click()
+        status=await page.evaluate("""status=>{
+          const d=status.dryRoutingLab;d.acceptedRoute.sends[0].gain=.25;
+          window.__armixTestEmit("arMixAuxSendGainAck",{
+            ok:true,requestId:3,from:0,bus:0,gain:.25,state:d});
+          window.__armixTestEmit("arMixStatus",status);
+          return status;
+        }""",status)
+        assert await page.locator('#arSendEditor [data-send-gain="POST"]').input_value()=="0.25"
+        # Return gain using the same LIVE controller and native ACK.
+        await page.locator('#arSendEditor [data-send-gain="POST"]').select_option("0.5")
+        status=await page.evaluate("""status=>{
+          const d=status.dryRoutingLab;d.acceptedRoute.sends[0].gain=.5;
+          window.__armixTestEmit("arMixAuxSendGainAck",{
+            ok:true,requestId:4,from:0,bus:0,gain:.5,state:d});
+          window.__armixTestEmit("arMixStatus",status);
+          return status;
+        }""",status)
         assert await page.locator('#arSendEditor [data-send-gain="POST"]').input_value()=="0.5"
         await page.evaluate("""status=>{
           status.monitor=false;window.__armixTestEmit("arMixStatus",status);
         }""",status)
-        # Disabled send = actual native zero gain; re-enable restores previous
-        # level without creating a duplicate edge.
+        # Enable/disable is still structural, even for an existing POST edge.
         await page.locator('#arSendEditor [data-send-enable="POST"]').uncheck()
         assert await page.locator('#arSendEditor [data-send-gain="POST"]').input_value()=="0"
         await page.locator('#arSendEditor [data-send-enable="POST"]').check()
         assert await page.locator('#arSendEditor [data-send-gain="POST"]').input_value()=="0.5"
         await page.locator('#arSendEditor [data-send-revert]').click()
-        # Negative ACK keeps the old native route while UI shows rejection.
-        await page.locator('#arSendEditor [data-send-gain="POST"]').select_option("0.25")
+        # Reject a structural PAN draft: native graph must stay unchanged.
+        await page.locator('#arSendEditor [data-send-pan="POST"]').select_option("0.5")
         await page.locator('#arSendEditor [data-send-apply]').click()
         await page.evaluate("""status=>{
           window.__armixTestEmit("arMixRoutingLabAck",
             {ok:false,error:"Stale graph revision",state:status.dryRoutingLab});
         }""",status)
         assert "REJECTED" in await page.locator('#arSendFeedback').inner_text()
-        assert await page.locator('#arSendEditor [data-send-gain="POST"]').input_value()=="0.25"
+        assert await page.locator('#arSendEditor [data-send-pan="POST"]').input_value()=="0.5"
         await page.locator('#arSendEditor [data-send-revert]').click()
-        assert await page.locator('#arSendEditor [data-send-gain="POST"]').input_value()=="0.5"
+        assert await page.locator('#arSendEditor [data-send-pan="POST"]').input_value()=="0"
         # Unpatched CH2 may not create a send even with AUX1 already enabled.
         result=await page.evaluate("""()=>window.__arMixStageAuxSendEdit({
           from:1,bus:0,tap:"PRE",action:"create"})""")
