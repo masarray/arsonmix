@@ -241,6 +241,31 @@ test('SOURCE quick switch is live only for verified same format; structural fall
 });
 
 
+test('P0 MAONO: staged ASIO switch never advertises live audio and cannot APPLY while output armed',()=>{
+  const js=read('web/mixer-io.js');
+  const main=read('src/Main.cpp');
+  const engine=read('src/LiveAudioEngine.h');
+  const start=js.indexOf('const deviceSwitchBlocker=s=>');
+  const end=js.indexOf('function deviceApply()',start);
+  assert.ok(start>0&&end>start,'device safety decision must be shared by render and action');
+  const guard=js.slice(start,end);
+  assert.match(guard,/lastStatus\.secondaryOutputArmed/);
+  assert.match(guard,/s\?\.monitor\|\|lastStatus\.monitor/);
+  assert.match(guard,/PRESS MUTE OUTPUT above before APPLY DEVICE/);
+  assert.match(guard,/s\?\.pending/);
+  assert.match(guard,/Maono MIC or VC In 3\+4/);
+  assert.match(js,/ASIO DEVICE SELECTED · NOT ACTIVE · current engine still uses/);
+  assert.match(js,/const blocked=deviceSwitchBlocker\(route\(\)\)/);
+  assert.match(js,/const deviceBlocker=deviceSwitchBlocker\(s\)/);
+  assert.match(js,/disabled=!deviceDirty\(\)\|\|!!deviceBlocker/);
+  assert.match(js,/deviceNote=ack\?\.ok\?'DEVICE ACCEPTED · OUTPUT MUTED · '\+devicePinNextStep\(\)/);
+  assert.match(main,/!engine_\.allOutputsDisarmed\(\)/);
+  assert.match(main,/opened->getActiveInputChannels\(\)!=actual\.inputChannels/);
+  assert.match(main,/opened->getCurrentSampleRate\(\)-actual\.sampleRate/);
+  assert.match(engine,/return isOutputMuted\(\) && !secondaryOutput_\.armed\(\)/);
+  assert.doesNotMatch(guard,/emitEvent\(/,'guard must never secretly switch or rearm hardware');
+});
+
 test('DEVICE2 native device list is cached on overlay open; explicit scan is fail-closed',()=>{
  const native=read('src/Main.cpp'),gui=read('web/mixer-io.js');
  const section=native.slice(native.indexOf('else if (action == "audioDeviceInventory")'),
