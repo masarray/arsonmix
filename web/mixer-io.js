@@ -1202,7 +1202,11 @@
     const d=deviceDraft,a=deviceInventory.active;
     const blocked=deviceSwitchBlocker(route());
     if(blocked){deviceNote=blocked;lastSignature='';refreshIO();return;}
-    if(!deviceDirty())return;
+    if(!deviceDirty()){
+      const result=window.__arMixApplyAndActivate?.();
+      deviceNote=result?.ok?'APPLY ACCEPTED · NATIVE ACK PENDING':'APPLY REJECTED · '+(result?.error||'Route not ready');
+      lastSignature='';refreshIO();return;
+    }
     // Changing hardware is a structural transaction, not a fader parameter.
     deviceRequest='device-'+Date.now()+'-'+(++deviceRequestSeq);
     deviceBusy=true;deviceNote='APPLYING · OUTPUT MUTED · waiting for native readback';
