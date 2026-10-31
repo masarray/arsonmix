@@ -279,7 +279,7 @@ test('P0 FIRST SOUND raw capture has per-pin native callback truth BEFORE route 
   assert.equal(html.slice(html.indexOf(cssTag)+cssTag.length,html.indexOf('</style>',html.indexOf(cssTag))),
                css,'WebView + standalone exact raw PCM style parity');
 });
-test('P0 MAONO: staged ASIO switch never advertises live audio and cannot APPLY while output armed',()=>{
+test('P0 MAONO: one APPLY MUTE-ACKs before switching and native ARM',()=>{
   const js=read('web/mixer-io.js');
   const main=read('src/Main.cpp');
   const engine=read('src/LiveAudioEngine.h');
@@ -288,14 +288,14 @@ test('P0 MAONO: staged ASIO switch never advertises live audio and cannot APPLY 
   assert.ok(start>0&&end>start,'device safety decision must be shared by render and action');
   const guard=js.slice(start,end);
   assert.match(guard,/lastStatus\.secondaryOutputArmed/);
-  assert.match(guard,/s\?\.monitor\|\|lastStatus\.monitor/);
-  assert.match(guard,/PRESS MUTE OUTPUT above before APPLY DEVICE/);
+  assert.match(js,/applyMutePending=true/);
+  assert.match(js,/action:'monitor',value:false/);
   assert.match(guard,/s\?\.pending/);
   assert.match(guard,/Maono MIC or VC In 3\+4/);
   assert.match(js,/ASIO DEVICE SELECTED · NOT ACTIVE · current engine still uses/);
   assert.match(js,/const blocked=deviceSwitchBlocker\(route\(\)\)/);
   assert.match(js,/const deviceBlocker=deviceSwitchBlocker\(s\)/);
-  assert.match(js,/disabled=!deviceDirty\(\)\|\|!!deviceBlocker/);
+  assert.match(js,/disabled=!!deviceBlocker\|\|deviceBusy\|\|applyMutePending/);
   assert.match(js,/deviceNote=ack\?\.ok\?'DEVICE ACCEPTED · OUTPUT MUTED · '\+devicePinNextStep\(\)/);
   assert.match(main,/!engine_\.allOutputsDisarmed\(\)/);
   assert.match(main,/opened->getActiveInputChannels\(\)!=actual\.inputChannels/);
@@ -449,16 +449,16 @@ test('DEVICE4 Studio matrix names map actual JUCE pins, reuse SOURCE2/native ACK
 });
 
 
-test('FAST1 one gesture uses native routing ACK then fenced physical ARM, with permanent panic MUTE',()=>{
+test('FAST2 one APPLY uses native ACK and emergency MUTE',()=>{
  const io=read('web/mixer-io.js'),control=read('web/monitor.js');
  const native=read('src/Main.cpp'),engine=read('src/LiveAudioEngine.h');
  const html=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
- assert.match(io,/START AUDIO/);
+ assert.doesNotMatch(io,/data-io-start-audio disabled/);
  assert.match(io,/dataset\.ioStartAudio/);
  assert.match(io,/LIVE ON /);
  assert.match(io,/ASSIGN CH/);
- assert.match(io,/function startAudioBlocked\(\)/);
- assert.match(io,/start\.disabled=startAudioBlocked\(\)/);
+ assert.match(io,/applyMutePending/);
+ assert.match(io,/function sendDeviceRequest\(\)/);
  assert.match(control,/window\.__arMixStartLiveAudio=/);
  assert.match(control,/fastAudioPending=\{phase:"patch"/);
  assert.match(control,/if\(verified\)fastAudioArm\(result\)/);
