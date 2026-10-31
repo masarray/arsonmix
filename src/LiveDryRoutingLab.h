@@ -3,6 +3,7 @@
 #include "../engine/core/PreparedMixerBlock.h"
 #include "../engine/core/MasterOutputMonoPolicy.h"
 #include "../engine/core/LiveChannelFxGraph.h"
+#include "../engine/core/DynamicChannelFxLeaseBank.h"
 #include "VstBusLayout.h"
 #include "../engine/core/NativeDryRouteCommand.h"
 #include "../engine/device/JuceActivePortSnapshot.h"
@@ -564,6 +565,57 @@ public:
             return false;
         if(auto* obj=(*arr)[bus].getDynamicObject())
             obj->setProperty("gain",static_cast<double>(gain));
+        return true;
+    }
+
+    // M5 native ChannelId VST3 migration: capture actual current M4 vendor
+    // processor LEASES, not catalog names or copied binary state. The writer
+    // must hold these control-owned leases within its new published dynamic
+    // PCM snapshot until final callback retirement. No callback activity,
+    // device reopen, preset restoration or rack instantiation occurs here.
+    // The host's special legacy CH1 external chain remains a SEPARATE lease;
+    // do not cut over a loaded external CH1 graph without transferring it.
+    bool captureDynamicFxLeases(
+            std::uint64_t expectedEpoch,std::uint64_t expectedRevision,
+            std::span<const armix::mixer::ChannelId> laneIds,
+            armix::mixer::DynamicChannelFxLeaseBank& destination,
+            juce::String& error) const {
+        using Bank=armix::mixer::DynamicChannelFxLeaseBank;
+        if(laneIds.size()!=static_cast<std::size_t>(fxSlots) ||
+           !hasExplicitRoute() || !ready() ||
+           expectedEpoch!=epoch() || expectedRevision!=revision()) {
+            error="M5: native epoch/revision or 10CH+4AUX FX roster stale";
+            return false;
+        }
+        const FxGraph* current=publisher_.controlPrepared(expectedEpoch,expectedRevision);
+        if(!current) {
+            error="M5: no current M4 prepared vendor FX graph";
+            return false;
+        }
+        std::vector<Bank::Assignment> staged;
+        staged.reserve(fxSlots);
+        for(int lane=0;lane<fxSlots;++lane) {
+            Bank::Assignment slot;
+            // Mono input is projected into the prepared stereo plugin rack;
+            // the actual negotiated M4 VST is always stereo. The native
+            // ChannelId PCM renderer owns mono pan law before GROUP sends.
+            const auto format=armix::mixer::ProcessingFormat::stereo;
+            if(!Bank::captureLegacy(lane,laneIds[static_cast<std::size_t>(lane)],
+                                    format,*current,slot)) {
+                error="M5: failed to retain M4 VST3 token for lane "+
+                      juce::String(lane);
+                return false;
+            }
+            staged.push_back(std::move(slot));
+        }
+        const auto fault=Bank::prepare(expectedEpoch,expectedRevision,staged,
+                                      destination);
+        if(fault!=Bank::Fault::none) {
+            error="M5: ChannelId VST lease migration rejected, fault "+
+                  juce::String(static_cast<int>(fault));
+            return false;
+        }
+        error.clear();
         return true;
     }
 
