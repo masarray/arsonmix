@@ -1,0 +1,10 @@
+/* M3E: compact native Group pilot; no blur, filter, box-shadow or heavy card. */
+.arStudioBusControls{box-sizing:border-box;display:grid;gap:5px;padding:8px 8px 7px;margin:4px 3px 5px;border-top:1px solid #3a5766;border-bottom:1px solid #334a55;background:#182932;min-width:0}
+.arStudioBusTitle{color:#83c2d3;font:600 10px/1.2 "ArSonMix Inter","Segoe UI",sans-serif;letter-spacing:.35px}
+.arStudioBusSelection{font:10px/1.35 "ArSonMix Inter","Segoe UI",sans-serif;color:#bfd1da;overflow-wrap:anywhere}
+.arStudioBusControls .arStudioBusAction{height:29px;min-height:29px;font:600 10px "ArSonMix Inter","Segoe UI",sans-serif;white-space:normal}
+.arStudioBusControls .arStudioBusAction:disabled{opacity:.48;cursor:not-allowed}
+.arStudioBusFeedback,.arStudioBusLive{font:9px/1.4 "ArSonMix Inter","Segoe UI",sans-serif;color:#b4cad4;overflow-wrap:anywhere}
+.arStudioBusLive{color:#91dfc8}
+#channelList [data-choose].arBusSelected{outline:1px solid #70b6c3;outline-offset:-1px;background:#24414c}
+.strip[data-strip].arBusSelected .strip-name{outline:1px solid #78b7c5;outline-offset:-1px}
