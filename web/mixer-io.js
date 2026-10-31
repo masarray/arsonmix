@@ -10,7 +10,7 @@
   let monitorSendsExpanded=false;
   // DEVICE1: staged selections are UI-only; only positive native ACK changes active hardware.
   let deviceDraft=null,deviceBusy=false,deviceNote='',deviceRequest='',deviceRequestSeq=0,lastDeviceRefresh=0,lastDeviceRescan=0;
-  let deviceMatrixView='inputs'; // INPUTS/OUTPUTS reuse the existing native M/L/R patch controller.
+  let deviceMatrixView='inputs',deviceMatrixWaitEpoch=null; // Never display old hardware pins after an APPLY ACK.
   // Pending SOURCE ACK is a UI projection only; monitor.js owns the native route.
   let quickSourcePending=null;
   const el=id=>document.getElementById(id);
@@ -1158,10 +1158,12 @@
     heading.appendChild(tabs);matrixSection.appendChild(heading);
     const live=!!d&&deviceSameEndpoint(d)&&a.authorized!==false;
     const s=route();
+    if(deviceMatrixWaitEpoch!==null&&s.epoch!==deviceMatrixWaitEpoch&&s.ready&&s.active)
+      deviceMatrixWaitEpoch=null;
     if(!live){
       matrixSection.appendChild(node('p','arIODeviceMatrixEmpty',
         'APPLY DEVICE first. The M/L/R matrix will show only pins actually enabled and reported by the new driver.'));
-    }else if(!hardwareReady(s)){
+    }else if(!hardwareReady(s)||deviceMatrixWaitEpoch!==null){
       matrixSection.appendChild(node('p','arIODeviceMatrixEmpty',
         'Waiting for the native routing session and verified hardware ports. No virtual ports are invented.'));
     }else{
@@ -1586,7 +1588,12 @@
   backend?.addEventListener?.('arMixAudioDeviceApplyAck',ack=>{
     if(!deviceBusy||ack?.requestId!==deviceRequest)return;
     deviceBusy=false;deviceRequest='';
+    const oldGeneration=Number(deviceInventory?.active?.deviceGeneration)||0;
     if(deviceInventory&&ack?.active)deviceInventory.active=ack.active;
+    // A completed device APPLY can reopen hardware before the routing
+    // controller has delivered its new epoch: no stale matrix crosspoints.
+    if(ack?.active?.open&&Number(ack.active.deviceGeneration)!==oldGeneration)
+      deviceMatrixWaitEpoch=route().epoch;
     deviceDraft=makeDeviceDraft();
     deviceNote=ack?.ok?'ACCEPTED · NATIVE DEVICE VERIFIED · OUTPUT MUTED':
       (ack?.state||'REJECTED')+' · '+(ack?.error||'Check driver and retry');

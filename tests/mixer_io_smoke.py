@@ -247,6 +247,8 @@ async def main():
             enabledInputs:[0,1,2,3],enabledOutputs:[0,1,2,3],
             rates:[44100,48000],buffers:[64,128,256]}})""",actions[0]['data'])
         assert await page.locator('.arIODeviceBuffer').input_value()=='256'
+        assert await page.locator('.arIODevicePatchMatrix .arIOMatrixCell').count()==0
+        assert 'Waiting for' in await page.locator('.arIODeviceMatrixEmpty').inner_text()
         assert 'ACCEPTED' in await page.locator('#arIOFeedback').inner_text()
         assert await page.locator('[data-io-device-apply]').is_disabled()
         # Separate capture/playback choice for WASAPI is a DRAFT only.
