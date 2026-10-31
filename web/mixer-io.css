@@ -331,15 +331,15 @@
   --b180-color:#94e8ed;--b180-border:#0c91a5;--b180-ink:#0d3037;
 }
 #app #mixer .arSofLayer[hidden],#app #mixer .arSofFader[hidden],
-#app #mixer .arSofAdd[hidden],#app #mixer .arSofRead[hidden]{display:none!important}
+#app #mixer .arSofAdd[hidden]{display:none!important}
 #app #mixer[data-sof-active="true"] .strip[data-strip] .fader-zone [data-fader]{
   visibility:hidden;pointer-events:none;
 }
 #app #mixer[data-sof-active="true"] .strip[data-strip] .gain-scale{opacity:.5}
 #app #mixer .db-display{position:relative}
-#app #mixer .arSofRead{
-  position:absolute;inset:0;display:grid;place-items:center;
-  background:#102934;color:#9ce5d5;
+#app #mixer[data-sof-active="true"] .strip[data-strip] .db-display[data-read]::after{
+  content:attr(data-sof-text);position:absolute;inset:0;
+  display:grid;place-items:center;background:#102934;color:#9ce5d5;
   font:550 11px/1.2 Consolas,monospace;letter-spacing:0;
   text-shadow:none;border-bottom:1px solid #366476;
 }
