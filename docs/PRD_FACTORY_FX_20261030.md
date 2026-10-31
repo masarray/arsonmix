@@ -20,4 +20,16 @@ FXF3 = atomic updates, Show migration, licensing robustness, measured low-spec G
 The source code milestones MS1/G5A are merged but **not proof that Factory FX is packed**. Actual release proof requires exact source artifact SHA256, whole VST3 resources, host tests, legal approval, Windows ZIP and real hardware FAT. #15 crackle remains independent release blocker.
 
 ## 2026-10-31 executable release-intake addition
-The binding release-intake/Windows package implementation is in [FactoryFX cross-repo release handoff](FACTORYFX_RELEASE_INTAKE_20261031.md). All new ArSonEQ/ArSonVerb/ArSonKuPik public releases are monitored by low-cost metadata PR; they become factory modules **only after** owner-approved licence/entitlement and SHA-pinned host qualification. This updates deployment mechanics, **not** the original six-plugin goal or any claim of bundled binaries. A release candidate is not an installed FactoryFX module.
+The binding release-intake/Windows package implementation is in [FactoryFX cross-repo release handoff](FACTORYFX_RELEASE_INTAKE_20261031.md). All new ArSonEQ/ArSonComp/ArSonVerb/ArSonKuPik public releases are monitored by low-cost metadata PR; they become factory modules **only after** owner-approved licence/entitlement and SHA-pinned host qualification. This updates deployment mechanics, **not** the original six-plugin goal or any claim of bundled binaries. A release candidate is not an installed FactoryFX module.
+
+## 2026-10-31 verified ArSonComp availability correction
+The earlier audit line saying COMP has no verified sibling repository is
+**superseded**. `masarray/arson-comp` contains implemented engine,
+VST3/standalone, editor, automation, presets and tests on the
+`feat/zero-latency-compressor` feature branch (PR #1). Windows/Linux
+CI passed at `80a41f52`; no public GitHub Release or qualified ArSonMix
+binary exists at this audit. The watcher and stage verifier therefore add
+Comp as the FOURTH source without mislabeling the plugin installed.
+The owner-approved six-plugin factory target and remaining release gates
+are unchanged. Zero *plugin-added* sample delay is not zero total
+host/device I/O latency.
