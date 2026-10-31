@@ -947,6 +947,59 @@ async def main():
         assert not duplicate['ok'] and 'already' in duplicate['error']
         assert not bus_errors,bus_errors
         await bp.close()
+        # FAST1 first-boot path: no user patch yet. A single click stages
+        # CH1/CH2 once, verifies revisioned ACK, THEN emits ARM. No extra engine.
+        qp=await browser.new_page(viewport={"width":1366,"height":768})
+        await qp.add_init_script("""(()=>{
+          const listeners={};window.__armixTestActions=[];
+          window.__JUCE__={backend:{
+            addEventListener(k,f){(listeners[k]??=[]).push(f)},
+            emitEvent(k,d){window.__armixTestActions.push({name:k,data:d})}
+          }};
+          window.__armixTestEmit=(k,d)=>(listeners[k]||[]).forEach(f=>f(d));
+        })()""")
+        await qp.goto((root/"web/index.html").as_uri())
+        init=await qp.evaluate("""()=>{
+          const channels=Array.from({length:10},()=>({mode:'NONE',left:-1,right:-1,
+            channelFormat:'MONO',gain:.25,pan:0,main:true,mute:false,solo:false,fxId:''}));
+          const auxes=Array.from({length:4},()=>({enabled:false,gain:1,main:true,mute:false,fxId:''}));
+          const lab={active:true,ready:true,epoch:31,revision:2,hasAcceptedRoute:false,
+            ports:[{port:0,label:'Mic A'},{port:1,label:'Mic B'}],
+            outputPorts:[0,1],mainOutputs:[0,1],
+            acceptedRoute:{deviceEpoch:31,channels,auxes,sends:[]}};
+          const status={connected:true,directRouteAuthorized:true,driver:'ASIO',
+            rate:48000,buffer:128,monitor:false,masterMute:false,chainCount:0,dryRoutingLab:lab};
+          window.__quickBoot=status;window.__armixTestEmit('arMixStatus',status);return status;
+        }""")
+        await qp.locator('#audioSetupBtn').click()
+        await qp.evaluate("""()=>window.__armixTestEmit('arMixAudioDeviceInventory',{
+          currentType:'ASIO',active:{backend:'ASIO',captureDevice:'Mock Interface',playbackDevice:'Mock Interface',
+            open:true,authorized:true,deviceGeneration:6,enabledInputs:[0,1],enabledOutputs:[0,1],
+            inputNames:['Mic A','Mic B'],outputNames:['Main L','Main R']},
+          types:[{name:'ASIO',active:true,separate:false,
+            inputs:['Mock Interface'],outputs:['Mock Interface']}]
+        })""")
+        await qp.locator('[data-io-start-audio]').click()
+        requests=await qp.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.data?.action==='routingDryApply')""")
+        assert len(requests)==1,requests
+        req=requests[0]['data']['value']
+        assert req['channels'][0]['mode']=='MONO' and req['channels'][0]['left']==0,req
+        assert req['channels'][1]['mode']=='MONO' and req['channels'][1]['left']==1,req
+        assert await qp.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.data?.action==='monitor'&&x.data.value===true).length""")==0
+        await qp.evaluate("""()=>{const d=window.__quickBoot.dryRoutingLab;
+          const req=window.__armixTestActions.find(x=>x.data?.action==='routingDryApply').data.value;
+          d.revision=3;d.hasAcceptedRoute=true;
+          d.acceptedRoute={deviceEpoch:31,channels:req.channels,auxes:req.auxes,sends:req.sends};
+          window.__armixTestEmit('arMixRoutingLabAck',{ok:true,state:d});
+          window.__armixTestEmit('arMixStatus',window.__quickBoot);
+        }""")
+        armed=await qp.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.data?.action==='monitor'&&x.data.value===true)""")
+        assert len(armed)==1 and armed[0]['data']['expectedEpoch']==31,armed
+        assert armed[0]['data']['expectedRevision']==3,armed
+        await qp.close()
         await browser.close()
         print("PASS: G1/G2 + G3 real PRE/POST draft, AUX return, 0-gain bypass, native ACK/reject/revert, stable rack and 3 viewports")
 
