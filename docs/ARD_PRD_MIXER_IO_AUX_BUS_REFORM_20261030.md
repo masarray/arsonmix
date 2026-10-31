@@ -1,3 +1,5 @@
+> **SUPERSEDED AS CURRENT PRIORITY BY STUDIO CONSOLE v3 (2026-10-31):** [PRD v3](PRD_STUDIO_CONSOLE_DYNAMIC_LIVE_V3_20261031.md) · [ARD v3](ARD_STUDIO_CONSOLE_DYNAMIC_LIVE_V3_20261031.md) · [implementation handoff v3](HANDOFF_STUDIO_CONSOLE_M3_M5_20261031.md). This earlier file remains historical detail. Existing 10CH native M2B and DEVICE4 are merged; live dynamic CH/BUS and common CH1 vendor lifecycle are NOT complete. Read v3 and current main before acting. Safety/Show/zero-FX hardware requirements here still apply.
+
 # ArSonMix — ARD v2.0: Unified Mixer, Native Hardware I/O, FX Rack and AUX/Bus Routing
 
 **2026-10-30 native-connected hardware matrix implementation:** [implementation ARD](ARD_HARDWARE_AUDIO_IO_MATRIX_20261030.md), [operator PRD](PRD_HARDWARE_AUDIO_IO_MATRIX_20261030.md), [handoff](HANDOFF_HARDWARE_IO_MATRIX_20261030.md). Matrix crosspoints use existing `monitor.js` staging and the native ASIO/WASAPI route controller. UI-only incomplete stereo cannot publish audio; MAIN physical output requires ACK. Still fixed 10 live sources+4 AUX; MS3B MONITOR and DYN2 expansion are separate; #15 hardware FAT is open.
