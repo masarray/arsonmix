@@ -465,7 +465,10 @@ async def main():
         # L2 workspace: original 17 rail controls plus one purposeful MS5 SEND FADERS toggle.
         # Its optional AUX selector is not a button; preserve the original operator commands.
         assert await page.locator('.toolbar-actions .nav button.btn-180').count()==3
-        assert await page.locator('.left-rail button.btn-180').count()==18
+        # The additional live GROUP button belongs to M3E. Keep the original
+        # 18 rail commands stable; verify the new real Bus action separately.
+        assert await page.locator('.left-rail button.btn-180:not(.arStudioBusAction)').count()==18
+        assert await page.locator('.left-rail button.arStudioBusAction').count()==1
         assert await page.locator('.left-rail [data-sof-toggle]').count()==1
         assert await page.locator('.toolbar-actions .fx-nav,.left-rail .fx-nav').count()==0
         assert await page.locator('.left-rail .pushable,.left-rail .front,.left-rail .edge,.left-rail .shadow').count()==0
