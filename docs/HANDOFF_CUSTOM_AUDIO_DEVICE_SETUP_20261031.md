@@ -1,6 +1,6 @@
 # HANDOFF — Implement Custom Device Setup in the existing ArSonMiX Audio I/O Matrix
 
-**Revision:** 2026-10-31 · **Execution handoff, NOT code completion**  
+**Revision:** 2026-10-31 · **Execution handoff: DEVICE1 core implemented in #228; complete remaining hardware FAT, regression and follow-up hardening**  
 **Start from current merged main, not an old PR branch.** Read in order: [product truth](PRODUCT_TRUTH_CROSS_THREAD_20261031.md), [PRD](PRD_CUSTOM_AUDIO_DEVICE_SETUP_20261031.md), [ARD](ARD_CUSTOM_AUDIO_DEVICE_SETUP_20261031.md), [PATCH2 ARD](ARD_HARDWARE_AUDIO_IO_MATRIX_20261030.md), [SOURCE1/#224](SOURCE1_NATIVE_MUTED_FAST_COMMIT_20261031.md), `AGENTS.md`.
 
 ## 0. Product and source lock
