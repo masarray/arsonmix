@@ -456,14 +456,26 @@
   overlay.innerHTML='<section class="arIOWindow" role="dialog" aria-modal="true" aria-label="ArSonMix hardware audio I/O"><header><div><small>ArSonMiX · AUDIO HARDWARE</small><h2>Audio Setup · Windows Devices & Routing</h2></div><button type="button" class="btn-180" data-io-close aria-label="Close Audio I/O">CLOSE</button></header><div class="arIOTop" id="arIOIdentity"></div><nav role="tablist" aria-label="Audio I/O views"><button class="btn-180 active" role="tab" data-io-tab="device">DEVICE / DRIVER</button><button class="btn-180" role="tab" data-io-tab="inputs">INPUT ROUTING</button><button class="btn-180" role="tab" data-io-tab="outputs">OUTPUT ROUTING</button></nav><div id="arIOBody" class="arIOBody"></div><footer><span id="arIOFeedback" role="status">Hardware changes require native ACK. Output stays MUTED on APPLY.</span><button type="button" class="btn-180" data-io-revert>REVERT DRAFT</button><button type="button" class="btn-180" data-mix-apply>APPLY PATCH</button><button type="button" class="btn-180" data-io-internal>ADVANCED BUS / FX</button><button type="button" class="btn-180" data-io-device-revert hidden>REVERT DEVICE</button><button type="button" class="btn-180 arIODeviceApply" data-io-device-apply hidden>APPLY DEVICE</button></footer></section>';
   document.body.appendChild(overlay);
   const audioPath=node('div','arIOAudioPath');audioPath.id='arIOAudioPath';
-  audioPath.innerHTML='<span data-audio-path-input>CAPTURE · WAIT</span><span data-audio-path-route>ROUTE · WAIT</span><span data-audio-path-output>OUTPUT · WAIT</span><button type="button" class="btn-180" data-io-signal-check>OPEN SIGNAL CHECK</button><small data-audio-path-reason role="status"></small>';
+  audioPath.innerHTML='<span data-audio-path-input>RAW INPUT · WAIT</span><span data-audio-path-route>ROUTE · WAIT</span><span data-audio-path-mixer>MIXER · WAIT</span><span data-audio-path-output>OUTPUT · WAIT</span><button type="button" class="btn-180 arIOPathStart" data-io-start-audio disabled>START AUDIO</button><button type="button" class="btn-180" data-io-signal-check>OPEN SIGNAL CHECK</button><small data-audio-path-reason role="status"></small>';
   overlay.querySelector('.arIOWindow').insertBefore(audioPath,el('arIOBody'));
   function refreshAudioPath(){
     const d=window.__arMixAudioPathView?.(lastStatus);
     if(!d)return;
-    for(const [key,value] of [['input',d.input],['route',d.route],['output',d.output],['reason',d.message]]){
+    for(const [key,value] of [['input',d.input],['route',d.route],['mixer',d.mixer],['output',d.output],['reason',d.message]]){
       const n=audioPath.querySelector('[data-audio-path-'+key+']');
       if(n&&n.textContent!==value)n.textContent=value;
+    }
+    // Same native START/ACK action as DEVICE/DRIVER. No duplicate host path,
+    // automatic unmute, optimistic status or periodic full DOM rebuild.
+    const start=audioPath.querySelector('[data-io-start-audio]');
+    if(start){
+      const pending=!!window.__arMixFastAudioState?.().pending;
+      const label=lastStatus.monitor?'MUTE OUTPUT':pending?'STARTING…':'START AUDIO';
+      if(start.textContent!==label)start.textContent=label;
+      start.disabled=startAudioBlocked();
+      start.setAttribute('aria-label',lastStatus.monitor?
+        'Mute hardware output immediately':
+        'Arm verified physical MAIN only after native route ACK');
     }
   }
   // G3: ONE floating inspector follows the selected source/AUX, no new
@@ -1160,6 +1172,16 @@
       (deviceSameEndpoint(d)&&
         (!pinsEqual(d.enabledInputs,a.enabledInputs)||!pinsEqual(d.enabledOutputs,a.enabledOutputs))));
   }
+  // Shared safety gate for BOTH visible START AUDIO buttons. The top
+  // transport cannot bypass a staged device change, invalid hardware,
+  // pending route/FX transaction or the existing native ACK handshake.
+  function startAudioBlocked(){
+    if(!isNative())return true;
+    if(lastStatus.monitor)return false; // emergency physical MUTE always allowed
+    const quick=window.__arMixFastAudioState?.()||{};
+    return deviceBusy||!!quick.pending||!deviceInventory?.active?.open||
+      !deviceSameEndpoint(deviceDraft)||deviceDirty()||!hardwareReady(route());
+  }
   function deviceRefresh(rescan=false){
     if(!isNative()||deviceBusy)return;
     const now=Date.now();
@@ -1255,9 +1277,7 @@
     const start=node('button','btn-180 arIODeviceStartAudio',
       lastStatus.monitor?'MUTE OUTPUT':quick.pending?'STARTING…':'START AUDIO');
     start.type='button';start.dataset.ioStartAudio='1';
-    start.disabled=!isNative()||(!lastStatus.monitor&&(
-      deviceBusy||!!quick.pending||!a.open||!deviceSameEndpoint(deviceDraft)||
-      deviceDirty()||!hardwareReady(route())));
+    start.disabled=startAudioBlocked();
     start.setAttribute('aria-label',lastStatus.monitor?'Mute physical output':
       'Start verified live routing and arm hardware output');
     activeLine.appendChild(start);
