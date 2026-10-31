@@ -303,6 +303,15 @@ async def main():
         live_actions=await page.evaluate("""()=>window.__armixTestActions.filter(
           x=>x.name==='arMixAction'&&x.data.action==='routingAuxSendGain')""")
         assert len(live_actions)==1,live_actions
+        # During the first native ACK flight, newer moves must only replace
+        # one queued value. Returning to the in-flight target drops the queue.
+        queued=await page.evaluate("""()=>({
+          first:window.__arMixSetLiveAuxSendGain({from:0,bus:0,gain:.3}),
+          second:window.__arMixSetLiveAuxSendGain({from:0,bus:0,gain:1}),
+          count:window.__armixTestActions.filter(x=>
+            x.name==='arMixAction'&&x.data.action==='routingAuxSendGain').length
+        })""")
+        assert queued['first']['queued'] and queued['second']['queued'] and queued['count']==1,queued
         gain_command=live_actions[-1]['data']
         assert gain_command['from']==0 and gain_command['bus']==0
         assert gain_command['deviceEpoch']==4 and gain_command['revision']==5
@@ -690,7 +699,9 @@ async def main():
             inputNames:['MAONO Mic In 1','MAONO Mic In 2','Unused 3','Unused 4','MAONO VC In L']},
           types:[{name:'ASIO',active:true,separate:false,
             inputs:['MAONO PS22'],outputs:['MAONO PS22']}]})""")
-        assert await page.locator('[data-source-choice="STEREO:4:7"]').count()==0
+        # The old pin route may still appear as CUSTOM for inspection; the
+        # device-bound named alias itself MUST disappear on mask mismatch.
+        assert await page.locator('.arSourceAliasRow [data-source-choice="STEREO:4:7"]').count()==0
         assert await page.locator('[data-source-alias-save]').is_disabled()
         await page.screenshot(path="mixer-patch1-maono-ch3-ch6-1366.png")
         assert not errors,errors
