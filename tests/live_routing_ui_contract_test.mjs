@@ -52,11 +52,17 @@ test("STOP-race is fail closed: all outputs are written to silence without CH1 f
   const end=engine.indexOf("const bool enabled = monitor_",enter);
   assert.ok(enter>=0&&end>enter, "live audio callback LAB branch must exist");
   const branch=engine.slice(enter,end);
-  assert.match(branch,/const bool routed=dryRoutingLab_\.process\(/);
+  // The new M3E GROUP is an EXCLUSIVE producer inside this SAME callback.
+  // STOP-race must still silence all physical outputs, with no legacy CH1
+  // fallback and never summing dynamic + legacy PCM.
+  assert.match(branch,/bool routed=false/);
+  assert.match(branch,/if\(studioBus\)\s*\{/);
+  assert.match(branch,/routed=liveStudioBus_\.render\(/);
+  assert.match(branch,/\}else\s*\{\s*routed=dryRoutingLab_\.process\(/);
   assert.match(branch,/if\(!routed\)\s*\{\s*for\(int c=0;c<outputChannels;\+\+c\)/);
   assert.match(branch,/juce::FloatVectorOperations::clear\(outputs\[c\],samples\)/);
-  assert.match(branch,/const float left=routed\?dryRoutingLab_\.peakLeft\(\):0\.f/);
-  assert.match(branch,/const float right=routed\?dryRoutingLab_\.peakRight\(\):0\.f/);
+  assert.match(branch,/const float left=routed\?\(studioBus\?studioPeakL:dryRoutingLab_\.peakLeft\(\)\):0\.f/);
+  assert.match(branch,/const float right=routed\?\(studioBus\?studioPeakR:dryRoutingLab_\.peakRight\(\)\):0\.f/);
 });
 test("MUTE gate precedes processing and suppresses previous audible crossfade",()=>{
   const start=lab.indexOf("if(snapshot->graphRevision!=audioRevision_");
