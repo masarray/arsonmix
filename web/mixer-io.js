@@ -1175,14 +1175,34 @@
       action:rescan?'audioDeviceRefresh':'audioDeviceInventory'
     });
   }
+  // P0 MAONO: the stage/ACK boundary must be understandable in the SAME
+  // dialog. A blue ASIO selection is never mistaken for an opened ASIO
+  // device, and a disabled APPLY must explain the exact safety blocker.
+  const deviceSwitchBlocker=s=>{
+    if(!isNative())return 'NATIVE APP REQUIRED · browser preview cannot open hardware';
+    if(deviceBusy)return 'DEVICE SWITCH IN PROGRESS · wait for native readback';
+    if(!deviceDraft||!deviceInventory?.active)return 'REFRESH DEVICE INVENTORY';
+    if(lastStatus.secondaryOutputArmed)return 'STEP 1 · DISARM SECONDARY STREAM in SIGNAL CHECK before changing driver';
+    if(s?.monitor||lastStatus.monitor)return 'STEP 1 · PRESS MUTE OUTPUT above before APPLY DEVICE';
+    if(s?.pending)return 'WAIT · finish native routing APPLY/ACK before changing driver';
+    if(!deviceDraft.backend||!deviceDraft.captureDevice||!deviceDraft.playbackDevice)
+      return 'SELECT A VALID DUPLEX AUDIO INTERFACE';
+    return '';
+  };
+  const devicePinNextStep=()=>{
+    const a=deviceInventory?.active||{};
+    if(!a.open||a.authorized===false)return 'SELECT ASIO/WINDOWS AUDIO, then APPLY DEVICE';
+    const maono=/maono/i.test(String(a.captureDevice||'')+' '+String(a.playbackDevice||''));
+    return /ASIO/i.test(a.backend||'')&&maono?
+      'ASIO OPEN · expand HARDWARE PIN ENABLE, select the actual Maono MIC or VC In 3+4 ports, then APPLY DEVICE again. Next select CH input sources, APPLY PATCH and START AUDIO.':
+      'DEVICE OPEN · verify enabled INPUT/OUTPUT pins, choose CH input sources, APPLY PATCH and START AUDIO.';
+  };
   function deviceApply(){
     if(!isNative()||deviceBusy||!deviceDraft||!deviceInventory?.active)return;
     const d=deviceDraft,a=deviceInventory.active;
-    if(route().monitor||lastStatus.monitor||lastStatus.secondaryOutputArmed) {
-      deviceNote='MUTE MAIN and secondary output in SIGNAL CHECK before APPLY DEVICE';
-      lastSignature='';refreshIO();return;
-    }
-    if(!d.backend||!d.captureDevice||!d.playbackDevice||!deviceDirty())return;
+    const blocked=deviceSwitchBlocker(route());
+    if(blocked){deviceNote=blocked;lastSignature='';refreshIO();return;}
+    if(!deviceDirty())return;
     // Changing hardware is a structural transaction, not a fader parameter.
     deviceRequest='device-'+Date.now()+'-'+(++deviceRequestSeq);
     deviceBusy=true;deviceNote='APPLYING · OUTPUT MUTED · waiting for native readback';
@@ -1342,7 +1362,15 @@
     actions.appendChild(refresh);
     if(d&&!deviceSameEndpoint(d))
       actions.appendChild(node('span','arIODevicePending',
-        'SELECTED DEVICE IS A DRAFT · APPLY DEVICE TO OPEN ITS PORTS'));
+        'ASIO DEVICE SELECTED · NOT ACTIVE · current engine still uses '+String(a.backend||'NO DEVICE')));
+    // No extra buttons or heavy cards: one state-derived instruction beside
+    // the driver selector, independent from a stale transient feedback note.
+    if(d&&deviceDirty())
+      actions.appendChild(node('span','arIODevicePending arIODeviceNextStep',
+        deviceSwitchBlocker(route())||'STEP 2 · CLICK APPLY DEVICE · physical output stays MUTED'));
+    else if(a.open)
+      actions.appendChild(node('span','arIODevicePending arIODeviceNextStep',
+        devicePinNextStep()));
     panel.appendChild(actions);body.appendChild(panel);
 
     const matrixSection=node('section','arIODevicePatchMatrix');
@@ -1401,8 +1429,10 @@
     overlay.querySelector('[data-io-internal]').hidden=ioTab==='device';
     overlay.querySelector('[data-io-device-apply]').hidden=ioTab!=='device';
     overlay.querySelector('[data-io-device-revert]').hidden=ioTab!=='device';
-    overlay.querySelector('[data-io-device-apply]').disabled=!isNative()||deviceBusy||!deviceDirty()||
-      !!s.pending||s.monitor||!!lastStatus.secondaryOutputArmed;
+    const deviceBlocker=deviceSwitchBlocker(s);
+    overlay.querySelector('[data-io-device-apply]').disabled=!deviceDirty()||!!deviceBlocker;
+    overlay.querySelector('[data-io-device-apply]').title=deviceBlocker||
+      (deviceDirty()?'Commit selected device then verify physical pin readback':'No pending device edit');
     overlay.querySelector('[data-io-device-revert]').disabled=deviceBusy||!deviceDirty();
     overlay.querySelector('[data-mix-apply]').disabled=!hardwareReady(s)||!!matrixDraft.size||s.monitor||
       (ioTab==='device'&&deviceDirty());
@@ -1874,7 +1904,7 @@
     if(ack?.active?.open&&Number(ack.active.deviceGeneration)!==oldGeneration)
       deviceMatrixWaitEpoch=route().epoch;
     deviceDraft=makeDeviceDraft();
-    deviceNote=ack?.ok?'ACCEPTED · NATIVE DEVICE VERIFIED · OUTPUT MUTED':
+    deviceNote=ack?.ok?'DEVICE ACCEPTED · OUTPUT MUTED · '+devicePinNextStep():
       (ack?.state||'REJECTED')+' · '+(ack?.error||'Check driver and retry');
     // Same real routing controller sees the new device epoch via normal status.
     lastSignature='';if(!overlay.hidden)refreshIO();
