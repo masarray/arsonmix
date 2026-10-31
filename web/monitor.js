@@ -1786,6 +1786,14 @@
   };
   window.__arMixFastAudioState=()=>({pending:!!fastAudioPending,message:fastAudioMessage});
   api.addEventListener("arMixAudioArmAck",ack=>{
+    if(fastAudioPending?.phase==="mute-custom"){
+      const p=fastAudioPending;fastAudioPending=null;
+      if(!ack?.ok||ack?.armed||Number(ack.deviceEpoch)!==p.epoch)return fastAudioNotify("APPLY MUTE ACK REJECTED");
+      state.monitor=false;
+      const next=submitFastCustomPatch();
+      if(!next?.ok)fastAudioNotify("APPLY REJECTED · "+next.error);
+      return;
+    }
     if(fastAudioPending?.phase!=="arm")return;
     const expected=fastAudioPending;
     fastAudioPending=null;
