@@ -88,6 +88,51 @@ public:
                        std::move(result));
     }
 
+    // Add an empty GROUP or FX Channel, directly OUT -> MAIN, exactly as a
+    // Console create command. No hardware input channel is consumed.
+    Result createBus(std::uint64_t expectedRosterRevision,
+                     std::uint64_t expectedGraphRevision,
+                     std::string name,ChannelRole role,
+                     const DynamicGraphRequest& route,
+                     std::uint64_t expectedDeviceEpoch,
+                     std::uint64_t activeDeviceEpoch,
+                     bool allOutputsDisarmed) {
+        Result result=preflight(expectedRosterRevision,expectedGraphRevision);
+        if(!result.ok())return result;
+        auto candidate=accepted_;
+        result.edit=candidate.createStandaloneBus(
+            expectedRosterRevision,std::move(name),role);
+        if(!result.edit.ok()) {
+            result.fault=Fault::editRejected;return result;
+        }
+        return publish(std::move(candidate),route,expectedGraphRevision,
+                       expectedDeviceEpoch,activeDeviceEpoch,allOutputsDisarmed,
+                       std::move(result));
+    }
+
+    // Delete an existing GROUP or FX return, atomically rerouting primary
+    // senders to MAIN and removing addressed parallel Sends. Rejected PCM
+    // compile leaves the old Bus and its audio completely intact.
+    Result removeBus(std::uint64_t expectedRosterRevision,
+                     std::uint64_t expectedGraphRevision,
+                     ChannelId busId,
+                     const DynamicGraphRequest& route,
+                     std::uint64_t expectedDeviceEpoch,
+                     std::uint64_t activeDeviceEpoch,
+                     bool allOutputsDisarmed) {
+        Result result=preflight(expectedRosterRevision,expectedGraphRevision);
+        if(!result.ok())return result;
+        auto candidate=accepted_;
+        result.edit=candidate.removeBusAndRestoreSources(
+            expectedRosterRevision,busId);
+        if(!result.edit.ok()) {
+            result.fault=Fault::editRejected;return result;
+        }
+        return publish(std::move(candidate),route,expectedGraphRevision,
+                       expectedDeviceEpoch,activeDeviceEpoch,allOutputsDisarmed,
+                       std::move(result));
+    }
+
     // Live routine controls change ONLY accepted edges/nodes. Persist values
     // in the accepted roster after native atomics were ACKed so subsequent
     // compiled snapshots preserve the exact last known mixer levels.
