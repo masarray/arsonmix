@@ -331,6 +331,7 @@ public:
     // Suppress any live output while selecting/changing a device, even if JUCE
     // starts its new callback before the selector window is closed.
     void beginManualAudioSetup() noexcept {
+        liveStudioBus_.invalidate(); // driver/pin change cannot inherit a native GROUP
         setOutputMuted(true);
         directFence_.suspend();
         dryRoutingLab_.disable(); // explicit control-thread reset; not RT
@@ -1092,6 +1093,7 @@ public:
     juce::String switchDryRoutingLabSource(int strip,std::uint64_t epoch,
             std::uint64_t revision,const juce::String& mode,
             int left,int right) noexcept {
+        if(liveStudioBus_.active())return "STOP live GROUP first; its source graph is authoritative";
         if(independent_.active()||routeReconfiguring_.load(std::memory_order_acquire)||
            handoff_.busy()||!directFence_.permitted()||
            diagnosticRoute_.load(std::memory_order_acquire)
@@ -1103,10 +1105,14 @@ public:
     bool setDryRoutingLabParameter(int strip,std::uint64_t epoch,
             std::uint64_t revision,const juce::String& parameter,
             float value) noexcept {
+        // The old 10CH parameter publisher is inactive while a new dynamic
+        // Group owns PCM; never ACK a fader that does not reach the callback.
+        if(liveStudioBus_.active())return false;
         return dryRoutingLab_.setChannelParameter(strip,epoch,revision,parameter,value);
     }
     bool setDryRoutingLabAuxBusGain(int bus,std::uint64_t epoch,
             std::uint64_t revision,float gain) noexcept {
+        if(liveStudioBus_.active())return false;
         if(independent_.active()||routeReconfiguring_.load(std::memory_order_acquire)||
            diagnosticRoute_.load(std::memory_order_acquire)
                !=armix::diagnostics::Route::normal||
@@ -1116,6 +1122,7 @@ public:
     }
     bool setDryRoutingLabAuxSendGain(int source,int bus,std::uint64_t epoch,
             std::uint64_t revision,float gain) noexcept {
+        if(liveStudioBus_.active())return false;
         if(independent_.active()||routeReconfiguring_.load(std::memory_order_acquire)||
            diagnosticRoute_.load(std::memory_order_acquire)
                !=armix::diagnostics::Route::normal||
@@ -1126,6 +1133,7 @@ public:
     bool setDryRoutingLabFxBypass(int lane,int slot,std::uint64_t epoch,
             std::uint64_t revision,const juce::String& instanceId,
             bool bypass) noexcept {
+        if(liveStudioBus_.active())return false;
         if(routeReconfiguring_.load(std::memory_order_acquire)||
            diagnosticRoute_.load(std::memory_order_acquire)
                !=armix::diagnostics::Route::normal)return false;
@@ -1142,6 +1150,7 @@ public:
     }
     juce::String captureRoutedFxStates(std::uint64_t epoch,std::uint64_t revision,
             std::vector<LiveDryRoutingLab::CapturedFxState>& states) noexcept {
+        if(liveStudioBus_.active())return "STOP live GROUP before native Show/FX capture";
         if(!allOutputsDisarmed()||independent_.active()||
            routeReconfiguring_.load(std::memory_order_acquire)||
            diagnosticRoute_.load(std::memory_order_acquire)
