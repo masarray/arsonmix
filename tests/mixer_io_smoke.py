@@ -75,6 +75,28 @@ async def main():
           window.__armixTestEmit('arMixStatus',status);
           return status;
         }""",status)
+        # P0: verify real capture signal, accepted route and safe output are
+        # three separate pieces of evidence, not optimistic LIVE labels.
+        silent=await page.evaluate("""()=>window.__arMixAudioPathView({
+          connected:true,inputDevice:'CABLE Output (VB-Audio Virtual Cable)',
+          callbackCount:10,callbackInputChannels:2,inputPeak:0,monitor:false,
+          dryRoutingLab:{ready:true,hasAcceptedRoute:true}
+        })""")
+        assert silent['input']=='NO PCM IN CURRENT BLOCK',silent
+        assert silent['route']=='NATIVE ROUTE ACK' and silent['output']=='OUTPUT SAFE-MUTED',silent
+        assert 'CABLE Input' in silent['message'],silent
+        audible=await page.evaluate("""()=>window.__arMixAudioPathView({
+          connected:true,inputDevice:'CABLE Output (VB-Audio Virtual Cable)',
+          callbackCount:11,callbackInputChannels:2,inputPeak:.14,monitor:true,
+          dryRoutingLab:{ready:true,hasAcceptedRoute:true}
+        })""")
+        assert audible['input']=='PCM DETECTED' and audible['output']=='OUTPUT ARMED',audible
+        await page.evaluate("()=>window.__arMixOpenAudioIO('device')")
+        assert await page.locator('#arIOAudioPath').is_visible()
+        assert await page.locator('#arIOAudioPath [data-io-signal-check]').is_visible()
+        await page.locator('#arIOAudioPath [data-io-signal-check]').click()
+        assert await page.locator('#arSignalOverlay').evaluate("(e)=>e.classList.contains('open')")
+        await page.locator('#arSignalClose').click()
         assert "LIVE" in await page.locator('[data-strip="0"] .arBankStage').inner_text()
         assert 'Microphone 1' in await page.locator('[data-focus-source]').inner_text()
         assert 'MAIN' in await page.locator('[data-focus-out]').inner_text()
