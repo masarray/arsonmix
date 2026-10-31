@@ -1,3 +1,5 @@
+> **SUPERSEDED PRODUCT SCOPE — READ [PRD v4: Full Live Studio One Console Parity](PRD_ARSONMIX_LIVE_STUDIO_CONSOLE_PARITY_V4_20261031.md) FIRST.** This v3 document is retained as historical M3 engineering context only. Product is LIVE VST3 digital mixer, NOT timeline/arranger/audio editor. V4 adds full Channel/Bus/FX/VCA/Listen/Cue/Scenes/I/O parity and current merged #244 dynamic publisher status; all v3 "not yet merged" notes can be stale.
+
 # ArSonMix PRD v3.0 — Studio Console workflow for REAL-TIME mixing
 Date: 31 October 2026 · Primary product requirement · Owner: #170 / #192
 
