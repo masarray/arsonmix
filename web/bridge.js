@@ -298,6 +298,7 @@
       (canBus?'<button class="native-btn" data-bus-create="group" title="Create an actual subgroup in an unused native lane">＋ BUS</button>'+
         '<button class="native-btn" data-bus-create="fx" title="Create a real FX send return in an unused native lane">＋ FX BUS</button>':"")+
       (lane.mode==="legacy"?'<button class="native-btn" data-my-sounds="1">SAVE / RECALL</button>':"")+
+      (lane.mode==="unpatched"?'<button class="native-btn" data-fx-source="'+selected+'">CHOOSE INPUT → ACTIVATE FX</button>':"")+
       '<span class="native-sub">'+(lane.mode==="master"?"MASTER FX · UNAVAILABLE":
         lane.mode==="unpatched"?"PATCH INPUT TO ENABLE FX":lane.items.length+"/8 VST3 INSERTS")+'</span></div>'+
       (canBus?busAttach:"")+'<div class="native-card" style="max-width:960px;min-height:0"><h3>'+
@@ -785,6 +786,14 @@
     if(currentTab()==="FX RACK")renderRack();
     syncView();
   });
+  // Same source picker for the unpatched focused FX Rack. Native source
+  // admission remains the only audio truth; this is control UI only.
+  document.addEventListener("click",event=>{
+    const button=event.target.closest("[data-fx-source]");
+    if(!button)return;
+    event.preventDefault();event.stopImmediatePropagation();
+    window.__arMixOpenAudioIO?.('inputs',Number(button.dataset.fxSource));
+  },true);
   // Opens the existing native Routing LAB, not a second mixer/editor.
   document.addEventListener("click",event=>{
     if(!event.target.closest("[data-native-routing-lab]"))return;
@@ -1031,7 +1040,10 @@
     if(idx===0&&lane.mode==="legacy"){
       openPicker(el,0,state.chain.length,false);return;
     }
-    toStatus("CH "+(idx+1)+" has no accepted native input/BUS route. Open ROUTING, select a verified source, MUTE OUTPUT and APPLY before loading VST3.");
+    // No fake VST3 activation: open the exact channel's verified source
+    // selector instead of a dead-end or CH1-only fallback.
+    window.__arMixOpenAudioIO?.('inputs',idx);
+    toStatus("CH "+(idx+1)+" · choose a verified INPUT; guarded native APPLY/ACK will activate its FX route.");
     return;
   }
   if(el.hasAttribute("data-go-native-rack")){

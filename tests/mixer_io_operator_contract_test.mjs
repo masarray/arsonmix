@@ -549,3 +549,11 @@ test('R7 one gesture uses existing native safety and real input names',()=>{
  assert.match(app,/__arMixApplyAndActivate\?\.\(\)/);
  assert.match(read('web/mixer-layout.js'),/arMixChannelPager/);
 });
+
+test('R7 FX Rack on unpatched CH2–10 opens native input selector, not CH1 VST lease',()=>{
+ const bridge=read('web/bridge.js');
+ assert.match(bridge,/data-fx-source/);
+ assert.match(bridge,/__arMixOpenAudioIO\?\.\('inputs',Number\(button\.dataset\.fxSource\)\)/);
+ assert.match(bridge,/__arMixOpenAudioIO\?\.\('inputs',idx\)/);
+ assert.doesNotMatch(bridge,/CH "\+\(idx\+1\)\+" has no accepted native input\/BUS route\. Open ROUTING/);
+});

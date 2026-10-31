@@ -75,6 +75,12 @@ async def main():
           window.__armixTestEmit('arMixStatus',status);
           return status;
         }""",status)
+        # FAST3: the first accepted routing APPLY triggers guarded ARM.
+        # Complete its actual native ACK before the next operator action.
+        await page.evaluate("""status=>window.__armixTestEmit('arMixAudioArmAck',{
+          ok:true,armed:true,deviceEpoch:status.dryRoutingLab.epoch
+        })""",status)
+        assert not (await page.evaluate("()=>window.__arMixFastAudioState().pending"))
         # P0: verify real capture signal, accepted route and safe output are
         # three separate pieces of evidence, not optimistic LIVE labels.
         silent=await page.evaluate("""()=>window.__arMixAudioPathView({
