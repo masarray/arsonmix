@@ -376,6 +376,31 @@ test('DEVICE4 Studio matrix names map actual JUCE pins, reuse SOURCE2/native ACK
  assert.ok(standalone.includes(style),'Standalone embeds same CSS');
 });
 
+
+test('FAST1 one gesture uses native routing ACK then fenced physical ARM, with permanent panic MUTE',()=>{
+ const io=read('web/mixer-io.js'),control=read('web/monitor.js');
+ const native=read('src/Main.cpp'),engine=read('src/LiveAudioEngine.h');
+ const html=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
+ assert.match(io,/START AUDIO/);
+ assert.match(io,/dataset\.ioStartAudio/);
+ assert.match(io,/LIVE ON /);
+ assert.match(io,/ASSIGN CH/);
+ assert.match(io,/start\.disabled=!isNative\(\)\|\|\(!lastStatus\.monitor/);
+ assert.match(control,/window\.__arMixStartLiveAudio=/);
+ assert.match(control,/fastAudioPending=\{phase:"patch"/);
+ assert.match(control,/if\(verified\)fastAudioArm\(result\)/);
+ assert.match(control,/expectedEpoch:Number\(d.epoch\)/);
+ assert.match(control,/arMixAudioArmAck/);
+ assert.match(control,/const output=!d.monitor\?"OUTPUT SAFE-MUTED"/);
+ assert.match(control,/window\.__arMixAudioPathView=/);
+ assert.match(native,/engine_\.liveOutputArmFault\(\)/);
+ assert.match(native,/arMixAudioArmAck/);
+ assert.match(engine,/juce::String liveOutputArmFault\(\)/);
+ assert.match(engine,/dryRoutingLab_\.hasExplicitRoute\(\)/);
+ assert.doesNotMatch(control,/new AudioContext\(/);
+ assert.ok(html.includes(io),'Standalone JS must be identical');
+});
+
 test('P0 actual raw PCM before MUTE and native route/output state remain independent',()=>{
  const cpp=read('src/LiveAudioEngine.h'),ui=read('web/monitor.js'),io=read('web/mixer-io.js');
  const standalone=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
