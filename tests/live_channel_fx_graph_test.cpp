@@ -336,20 +336,39 @@ static void verifyMU1LegacyM4FxFullMigrationAndMonitorPcm() {
     }
     // Faults are non-destructive: no external CH1 Orbit state dropped, no
     // wrong-speaker output, no stale hardware, no armed graph recreation.
+    LiveChannelFxGraph blockedLegacy(legacyGraph,32,32);
+    assert(blockedLegacy.setMonitorOutputBus(2,3,4,monitorGains));
     auto bad=UnifiedLegacyProductionAdmission::compileAndCommit(
-        channels,ports,sends,aux,monitorGains,
-        // use a new empty graph only for rejecting BEFORE any instance access
-        *([](const PreparedRenderGraph& g)->LiveChannelFxGraph* {
-           static std::unique_ptr<LiveChannelFxGraph> candidate;
-           if(!candidate)candidate=std::make_unique<LiveChannelFxGraph>(g,32,32);
-           return candidate.get();
-         })(legacyGraph),
+        channels,ports,sends,aux,monitorGains,blockedLegacy,
         true,outputs,32,2u*1024u*1024u,1,epoch,epoch,true,
         publisher,accepted);
-    assert(bad.fault==UnifiedLegacyProductionAdmission::Fault::invalidOutputPins ||
-           bad.fault==UnifiedLegacyProductionAdmission::Fault::legacyCh1ExternalFx);
+    assert(bad.fault==UnifiedLegacyProductionAdmission::Fault::legacyCh1ExternalFx);
+    auto wrongPins=outputs;
+    wrongPins.monitorR=0; // same physical output as MAIN
+    bad=UnifiedLegacyProductionAdmission::compileAndCommit(
+        channels,ports,sends,aux,monitorGains,blockedLegacy,
+        false,wrongPins,32,2u*1024u*1024u,1,epoch,epoch,true,
+        publisher,accepted);
+    assert(bad.fault==UnifiedLegacyProductionAdmission::Fault::invalidOutputPins);
+    bad=UnifiedLegacyProductionAdmission::compileAndCommit(
+        channels,ports,sends,aux,monitorGains,blockedLegacy,
+        false,outputs,32,2u*1024u*1024u,1,epoch,epoch+1,true,
+        publisher,accepted);
+    assert(bad.fault==UnifiedLegacyProductionAdmission::Fault::staleHardware);
+    bad=UnifiedLegacyProductionAdmission::compileAndCommit(
+        channels,ports,sends,aux,monitorGains,blockedLegacy,
+        false,outputs,32,2u*1024u*1024u,1,epoch,epoch,false,
+        publisher,accepted);
+    assert(bad.fault==UnifiedLegacyProductionAdmission::Fault::outputArmed);
     assert(publisher.acceptedRevision()==1);
     assert(accepted.fxOwners->insertCount(accepted.graph.ids.inputs[0])==1);
+    assert(publisher.render(epoch,physical,4,dynamicL.data(),dynamicR.data(),
+                            32,false,mustNeverCall,
+                            dynamicML.data(),dynamicMR.data()));
+    for(int i=0;i<32;++i){
+        assert(near(legacyL[i],dynamicL[i]));
+        assert(near(legacyMR[i],dynamicMR[i]));
+    }
     assert(!publisher.render(epoch+1,physical,4,dynamicL.data(),
                              dynamicR.data(),32,false,mustNeverCall,
                              dynamicML.data(),dynamicMR.data()));

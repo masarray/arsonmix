@@ -36,3 +36,11 @@ Top global console contracts are consistent:
 5. Keep existing M4/FAST3 one-APPLY and emergency MUTE, adaptive channel bank R7, P0 #15 0FX crackle evidence and realtime performance counters intact.
 
 **Honest status:** This is a substantive native FX/state migration seam with real processor PCM tests, **not yet a publicly usable full dynamic Studio One-equivalent Console**. No physical zero-latency guarantee and no field MAONO PS22 FAT has been executed for this M5 branch.
+
+## M-U1 full native admission transaction — added after initial M5 bridge
+
+`engine/core/UnifiedLegacyProductionAdmission.h` now composes the **existing** `LegacyGraphMigration` of the full 10-input + 4-AUX scene, FX PRE/POST sends, MAIN, independent MONITOR, effective mono/stereo format and physical capture port order with the actual M4 `FxInstance` ownership into **one native accepted PCM+VST publication**. `LegacyMigratedGraph.request` is retained verbatim from the validated old physical port map, not recreated from browser controls. A single snapshot binds hardware output callback pairs, exact device epoch, next PCM graph revision and all 14 M4 FX lane leases. Existing committed session/PCM/plugins remain unmodified on failed migration.
+
+The new native golden test renders real JUCE M4 processors BEFORE the conversion and compares it to output from the same instance objects AFTER the legacy graph owner is destroyed: MAIN L/R and independently routed MONITOR L/R, channel→bus sends and AUX return. It also checks no RT allocation, wrong physical MAIN/MONITOR alias, hotplug epoch, OUTPUT ARMED, external CH1/Orbit owner admission and post-reject audio continuity. A successful test is preparation evidence only; the production callback is NOT yet switched, hardware FAT is still required.
+
+**Critical safety gate:** an occupied legacy external CH1 FX chain/Orbit is explicitly rejected, not discarded or accidentally duplicated. The next M-U1 phase must migrate that separate owner and Show/editor state, then atomically choose the unified render in `LiveAudioEngine`; only after that can unrestricted +CHANNEL, Group Selected and +FX Return UI become live.
