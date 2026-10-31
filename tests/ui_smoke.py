@@ -1740,6 +1740,11 @@ async def main():
         assert await native.locator("#arNativeShowSelect option").count()==2
         await native.locator("#arNativeShowSelect").select_option("12345678-1234-1234-1234-123456789abc")
         assert await native.locator("#arNativeShowRecall").is_disabled()
+        # SETUP1: Native CH/FX editors are explicitly in an Advanced disclosure;
+        # AUX buses and sends remain visible without opening channel configuration.
+        assert await native.locator('#arBusCapability').is_visible()
+        assert await native.locator('[data-bus-cap="missing"]').is_visible()
+        await native.locator('.arRouteChannelAdvanced summary').click()
         await native.locator('[data-route-fx]').first.click()
         assert await native.locator("#arPatchFxPicker").evaluate(
             "(e)=>e.classList.contains('open')")
