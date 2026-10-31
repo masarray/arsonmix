@@ -19,34 +19,34 @@ Official benchmark:
 - https://fenderstudiopromanual.fender.com/en/Content/Setup_Topics/Set_Up_Your_Audio_Device.htm
 
 ## Main snapshot during v4 authoring; ALWAYS refresh
-At first read \`6022a4fc0218decac694568d73c772a634eba37a\`:
+At first read `6022a4fc0218decac694568d73c772a634eba37a`:
 - #223/#231/#238 real native POST send + AUX gain, #240 DEVICE4 software source aliases, #241 raw capture while mute, #243 FAST1 explicit route ACK→hardware ARM all merged.
-- #242 native control-side \`createBusForSelected\` with independent ChannelId + PCM; #244 M3B **merged** dynamic publisher with verified 16-lane offline native C++ tests; **live \`LiveAudioEngine\` still calls legacy \`LiveDryRoutingLab::process\`**. Don't confuse callback-ready with live switched-on.
-- Current \`NativeShowSchema\` and browser arrays fix 10 CH. CH1 uses legacy vendor/Orbit VST ownership; native Master FX UI intentionally disabled, native PDC incomplete. M2 +BUS still borrows unused CH as interim.
-- Exact main Windows and Chromium CI at this baseline are SUCCESS, physical FAT (issue #15, old 0FX crackle) still OPEN, no certified audible hardware/latency claim. Factory plugin lock \`config/factoryfx-approved-releases.json\` has empty plugins array. Do not bulk merge stale #225/#229 or previous callback branches.
+- #242 native control-side `createBusForSelected` with independent ChannelId + PCM; #244 M3B **merged** dynamic publisher with verified 16-lane offline native C++ tests; **live `LiveAudioEngine` still calls legacy `LiveDryRoutingLab::process`**. Don't confuse callback-ready with live switched-on.
+- Current `NativeShowSchema` and browser arrays fix 10 CH. CH1 uses legacy vendor/Orbit VST ownership; native Master FX UI intentionally disabled, native PDC incomplete. M2 +BUS still borrows unused CH as interim.
+- Exact main Windows and Chromium CI at this baseline are SUCCESS, physical FAT (issue #15, old 0FX crackle) still OPEN, no certified audible hardware/latency claim. Factory plugin lock `config/factoryfx-approved-releases.json` has empty plugins array. Do not bulk merge stale #225/#229 or previous callback branches.
 
 ## Anti-naive non-negotiable implementation rules
 **One** master mix DSP graph per callback. Extend existing C++ source, do not rewrite from scratch or run old and new renders at the same time. GUI never owns PCM. One canonical native ChannelId roster/graph, plugin instance lifecycle, device epoch, request/revision ACK, and session store. GUI only projects accepted snapshot. RT callback: NO heap, mutex/blocking, disk, logging, WebView, enumerate, VST instantiation/prepare/delete, graph sort or unbounded spin. All new code must be bounded/snapshot-based, resource-budget admitted and small enough for low-end CPU/iGPU. Do not over-architect by introducing generic job schedulers or duplicate managers. Keep one old golden PCM test for each migrated subsystem. Always compare source HEAD and active PR owners.
 
 ## Milestone A — native production graph cutover (M3C; blocker for all dynamic GUI)
-**Inputs:** \`engine/core/DynamicChannelRoster.h\`, \`DynamicPreparedMixerBlock.h\`, \`DynamicNativeSessionPublisher.h\`, \`LegacyLiveGraphMigration.h\`, \`src/LiveAudioEngine.h\`, \`src/LiveDryRoutingLab.h\`, \`src/NativeShowSchema.h\`, live FX lease modules.
+**Inputs:** `engine/core/DynamicChannelRoster.h`, `DynamicPreparedMixerBlock.h`, `DynamicNativeSessionPublisher.h`, `LegacyLiveGraphMigration.h`, `src/LiveAudioEngine.h`, `src/LiveDryRoutingLab.h`, `src/NativeShowSchema.h`, live FX lease modules.
 **Work:**
 1. Baseline existing real 10CH+4 AUX PRE/POST, CH1 legacy FX and remaining routed VST, fader/pan/mute/solo, input ordinal translation, native MAIN/MONITOR/secondary and Show. Build golden PCM with 0FX, CH1 VST bypass and stereo/mono, nonadjacent hardware L/R, send gains, solo and Master mono (AFTER plugin).
 2. Build **one** ChannelId→FX lease adapter for all strips, migrate CH1 plugin ownership without closing vendor editor/Orbit or changing state chunk; prepare and tear down off RT. Preserve routing/Show identity and real physical outputs.
-3. Adapt \`DynamicNativeSessionPublisher\` to active audio graph, preserve hard safety gates and source/secondary PCM taps. Switch existing callback to one prepared render producer under accepted epoch/revision; never sum two engines. Prepare retirement and "rollback to old accepted snapshot" before activation.
+3. Adapt `DynamicNativeSessionPublisher` to active audio graph, preserve hard safety gates and source/secondary PCM taps. Switch existing callback to one prepared render producer under accepted epoch/revision; never sum two engines. Prepare retirement and "rollback to old accepted snapshot" before activation.
 4. Ensure live native parameter updates cover fader, mute/solo, pan, POST send, AUX returns in new graph; sample dezipper deterministic, old UI ACK semantics preserved.
 5. First 10CH+4AUX golden sample-by-sample PCM matched within appropriately justified FP tolerance; then activate 12 independent IDs + new Group + new FX Return with real actual VST3 processing and correct MAIN and MONITOR. Entire thing must be inside the **existing** callback (not C++ offline test only). Reject stale, malformed, cycles, duplicate routes, output-armed unsafe commit and resource budget.
 6. Only after actual callback parity does new native session status advertise dynamic channel capability. Browser Add Channel stays disabled until that flag is true.
 **Gates:** Windows MSVC build/CTest on exact head, native PCM A/B, instrumented zero callback allocation and bounded deadline, rollback/epoch regression, old Show snapshot preserve, 2 real physical mic→new Group/FX→MAIN/Monitor FAT when hardware is accessible. No breaking CH1/plugin identities.
 
 ## Milestone B — daily operator Studio Console (native ACKed, not placeholder)
-**Ownership:** \`web/app.js\`, \`web/bridge.js\`, \`web/mixer-io.js\`, \`web/monitor.js\`, \`web/mixer-layout.js\`, \`web/styles-src/\`, generated standalone HTML, C++ native session commands.
+**Ownership:** `web/app.js`, `web/bridge.js`, `web/mixer-io.js`, `web/monitor.js`, `web/mixer-layout.js`, `web/styles-src/`, generated standalone HTML, C++ native session commands.
 **Work:**
-1. Project native \`AcceptedSessionSnapshot\` keyed ChannelId; retire static \`const channels=raw.map()\` and fixed draft arrays as live truth without breaking demo-only static preview. Keep one routing controller in monitor.js. Keyed strip reconciliation; selected channel via stable ID not strip index, view order independent from source pin.
+1. Project native `AcceptedSessionSnapshot` keyed ChannelId; retire static `const channels=raw.map()` and fixed draft arrays as live truth without breaking demo-only static preview. Keep one routing controller in monitor.js. Keyed strip reconciliation; selected channel via stable ID not strip index, view order independent from source pin.
 2. Implement Add Mono/Stereo Channel, Add Bus, Add Bus for Selected Channels, Add FX Channel, rename/reorder/duplicate/delete; all structural actions native transaction/ACK + guarded resource admission. Interop with existing M2 borrowed-lane sessions and old Show; do not silently rewrite accepted routes.
-3. Implement Ctrl/Shift multi-select and one atomic \`createBusForSelected\`: selected inputs primary out exclusively to new Group, preserve parallel SEND, bus to MAIN; display actual fan-in and sender list, hide/show sources, selected highlight, OUT NONE/SEND ONLY.
-4. Add complete per-strip \`IN\`, \`OUT\`, \`SEND\` selectors with actual verified device and signal path; drag native installed VST3 to SEND creates true FX Return with safe prepared lease, not fake JS catalog. FX insert move/copy/replace/sidechain via same native instance controller.
-5. Consistent GUI role strips (Input/Group/FX/VCA/Main/Listen), pinned MASTER, compact/expand/narrow banks and channel search. GUI update events must not trigger full mixer DOM \`innerHTML\` during fader drags or meters; preserve layout and hover perf on ordinary Windows iGPU.
+3. Implement Ctrl/Shift multi-select and one atomic `createBusForSelected`: selected inputs primary out exclusively to new Group, preserve parallel SEND, bus to MAIN; display actual fan-in and sender list, hide/show sources, selected highlight, OUT NONE/SEND ONLY.
+4. Add complete per-strip `IN`, `OUT`, `SEND` selectors with actual verified device and signal path; drag native installed VST3 to SEND creates true FX Return with safe prepared lease, not fake JS catalog. FX insert move/copy/replace/sidechain via same native instance controller.
+5. Consistent GUI role strips (Input/Group/FX/VCA/Main/Listen), pinned MASTER, compact/expand/narrow banks and channel search. GUI update events must not trigger full mixer DOM `innerHTML` during fader drags or meters; preserve layout and hover perf on ordinary Windows iGPU.
 **Operator acceptance:** click Audio Setup choose MAONO/ASIO or standard WASAPI, START AUDIO→Mic1 accepted; select MIC1+MIC2→Add Bus, attach plugin to bus, create separate FX Return via SEND, hear accurate dry+wet PCM; no extra channel consumed and no fake status. Out-of-budget/cycle rejected with old audio intact.
 
 ## Milestone C — complete VST3 / PDC / Listen-Cue mixer
@@ -65,9 +65,9 @@ At first read \`6022a4fc0218decac694568d73c772a634eba37a\`:
 - On standard integrated GPU: pointer drag/hover, FX dialog, extended channel banks, 30Hz truth-based meter while audio armed; no mouse sluggishness, meter layout shift or notable callback spikes from UI.
 
 ## CI economy / Git safety
-- One owner per shared file/PR. Read exact latest \`main\`, compare current PR \`#244\` lineage (if merged, never blindly remerge), prepare dedicated branch from main, preserve recent device/source/UI fixes. No stale full-file overwrite. Update AGENTS/read-first contract only when status actually changes; no duplicated competing roadmaps.
+- One owner per shared file/PR. Read exact latest `main`, compare current PR `#244` lineage (if merged, never blindly remerge), prepare dedicated branch from main, preserve recent device/source/UI fixes. No stale full-file overwrite. Update AGENTS/read-first contract only when status actually changes; no duplicated competing roadmaps.
 - Cheap local source/contracts, static JS syntax, golden native unit tests FIRST; then one meaningful PR with exact-head Chromium + Windows native/C++ CTest/ZIP. No workflow matrix fanout for documentation-only changes; don't waste CI for tiny cosmetic commits.
-- For CSS/HTML: edit canonical modular \`web/styles-src\` owner; regenerate \`web/styles.css\`, \`web/mixer-io.js\` and matching standalone HTML script/style by approved deterministic build; parity regression required.
+- For CSS/HTML: edit canonical modular `web/styles-src` owner; regenerate `web/styles.css`, `web/mixer-io.js` and matching standalone HTML script/style by approved deterministic build; parity regression required.
 - CI is software proof, not physical evidence. PR body must state exact native audibility, mouse perf, plugin state and HW FAT separately. No unconditional "Studio One parity", "zero latency" or "production ready" badges until required acceptance is satisfied.
 
 ## Merge sequence
