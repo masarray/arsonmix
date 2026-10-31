@@ -17,7 +17,8 @@ test("R0B unified native mixer keeps VST3/clock/diagnostic paths protected",()=>
   assert.match(engine,/setOutputMuted\(true\); \/\/ never expose CH1 unexpectedly/);
   assert.match(engine,/dryRoutingLab_\.prepareDevice\(d\)/);
   assert.match(engine,/dryRoutingLab_\.deviceStopped\(\)/);
-  assert.match(engine,/dryRoutingLab_\.process\(inputs,inputChannels,outputs/);
+  assert.match(engine,/dryRoutingLab_\.process\(renderInputs,inputChannels,outputs/);
+  assert.match(engine,/const float\* const\* renderInputs=inputs/);
   assert.match(engine,/std::shared_ptr<juce::AudioPluginInstance> processor/);
   assert.match(engine,/if \(dryRoutingLab_\.hasExplicitRoute\(\)\) return "CLEAR PATCH before recalling CH1 native preset"/);
   assert.match(lab,/publisher_\.publish/);

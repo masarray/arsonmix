@@ -2010,6 +2010,20 @@ private:
             emitNotice ("Audio diagnostic: " + selected +
                 ". Use low headphone volume and MARK CRACKLE on audible faults.");
         }
+        else if (action == "captureDeClick")
+        {
+            const bool wanted=bool(value);
+            const auto error=engine_.setCaptureDeClickEnabled(wanted);
+            if(error.isNotEmpty()) {
+                diagnostics_.record("CAPTURE_DECLICK_REJECT",error);
+                return emitNotice(error,true);
+            }
+            diagnostics_.record("CAPTURE_DECLICK_EXPERIMENT",
+                wanted?"ENABLED_MANUALLY_MUTED_DIRECT_ONLY":"DISABLED_MANUALLY");
+            emitNotice(wanted
+                ? "Experimental WASAPI capture de-click ON (not an xrun fix). START AUDIO manually; MARK CRACKLE for A/B evidence."
+                : "Experimental capture de-click OFF; direct PCM untouched.");
+        }
         else if (action == "diagnosticMark")
         {
             const auto status = engine_.status();

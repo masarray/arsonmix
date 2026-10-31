@@ -151,3 +151,32 @@ test('P0 capture block-head evidence is a single-pass RT heuristic, not invented
  assert.match(cmake,/P0CaptureZeroHeadBoundaryCandidates/);
  assert.match(flow,/ARMixCaptureBoundaryTests/);
 });
+
+
+test('P0 direct WASAPI guarded stereo de-click keeps normal RT PCM zero-copy',()=>{
+ const repair=read('engine/core/CaptureClickRepair.h');
+ assert.match(engine,/captureRepairScratch_\.setSize \(2, maxFrames/);
+ assert.match(engine,/wasapiDirectCapture_\.load/);
+ assert.match(engine,/const float\* const\* renderInputs=inputs/);
+ assert.match(engine,/captureClickRepair_\.process\(/);
+ assert.match(engine,/dryRoutingLab_\.process\(renderInputs/);
+ assert.match(engine,/captureDeClickProvenance/);
+ assert.match(repair,/STEREO_WASAPI_ZERO_HEAD_BOUNDED_DECLICK_NOT_CLOCK_DRIFT_OR_RENDER_XRUN_FIX/);
+});
+
+test('P0 WASAPI de-click defaults OFF and is only explicitly enabled under muted DIRECT hardware A/B',()=>{
+ const app=read('src/Main.cpp'),ui=read('web/monitor.js');
+ assert.match(engine,/captureDeClickRequested_\{false\}/);
+ assert.match(engine,/captureDeClickRequested_\.store\(false,std::memory_order_release\)/);
+ assert.match(engine,/if\(captureDeClickRequested_\.load/);
+ assert.match(engine,/setCaptureDeClickEnabled \(bool wanted\)/);
+ assert.match(engine,/MUTE OUTPUT before toggling experimental capture de-click/);
+ assert.match(engine,/diagnosticRoute\(\) != armix::diagnostics::Route::normal/);
+ assert.match(engine,/captureDeClickDefault/);
+ assert.match(app,/action == "captureDeClick"/);
+ assert.match(app,/CAPTURE_DECLICK_EXPERIMENT/);
+ assert.match(ui,/id="arCaptureDeClickToggle"/);
+ assert.match(ui,/captureDeClickEnabled/);
+ assert.match(ui,/captureZeroHeadCandidateFrames/);
+ assert.match(ui,/action:"captureDeClick"/);
+});
