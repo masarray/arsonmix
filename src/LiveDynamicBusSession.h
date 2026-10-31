@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <span>
 #include <string>
@@ -154,6 +155,7 @@ public:
         roster_=std::move(roster);
         group_=bus.createdIds.front();
         main_=first.createdIds[10];
+        groupGain_.store(1.f,std::memory_order_relaxed);
         actualMainL_.store(left,std::memory_order_relaxed);
         actualMainR_.store(right,std::memory_order_relaxed);
         inputCount_.store(actualInputs,std::memory_order_relaxed);
@@ -175,6 +177,19 @@ public:
         // Keep publisher alive across device stop. Old prepared snapshots are
         // retired only after native callback lease release on control poll.
         publisher_.unpublish();
+    }
+    // A real GROUP fader: one native ChannelId atomic target, smoothed on
+    // the audio thread. No structural APPLY, VST rebuild or device STOP.
+    bool setGroupGain(std::uint64_t epoch,std::uint64_t revision,
+                      float linear) noexcept {
+        if(!active()||epoch!=epoch_.load(std::memory_order_acquire)||
+           !std::isfinite(linear)||linear<0.f||linear>4.f)
+            return false;
+        if(!publisher_.setChannelMix(epoch,revision,group_,linear,0.f))
+            return false;
+        (void)roster_.rememberLiveMix(group_,linear,0.f);
+        groupGain_.store(linear,std::memory_order_release);
+        return true;
     }
     void poll() noexcept {publisher_.pollRetirement();}
     bool active() const noexcept {return active_.load(std::memory_order_acquire);}
@@ -199,6 +214,8 @@ public:
         out->setProperty("revision",static_cast<juce::int64>(publisher_.acceptedRevision()));
         out->setProperty("groupChannelId",static_cast<juce::int64>(group_.value));
         out->setProperty("mainChannelId",static_cast<juce::int64>(main_.value));
+        const float fader=groupGain_.load(std::memory_order_acquire);
+        out->setProperty("gainDb",fader>0.f?20.0*std::log10(fader):-60.0);
         if(active()) {
             const auto* accepted=publisher_.acceptedRouting(epoch_.load(),
                 publisher_.acceptedRevision());
@@ -230,5 +247,6 @@ private:
     std::atomic<bool> active_{false};
     std::atomic<std::uint64_t> epoch_{0},generation_{0};
     std::atomic<int> inputCount_{-1},actualMainL_{-1},actualMainR_{-1};
+    std::atomic<float> groupGain_{1.f};
 };
 } // namespace armix::mixer
