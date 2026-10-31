@@ -676,6 +676,16 @@ async def main():
           return status;
         }""",status)
         assert "LIVE" in await page.locator('[data-strip="1"] .arBankStage').inner_text()
+        # Accepted source automatically begins the final guarded hardware
+        # ARM. Reject ARM deliberately for this G5 structural/FX fixture:
+        # the new source route remains accepted, output remains safely
+        # MUTED, and the next edit is not blocked by an unanswered ACK.
+        assert await page.evaluate("()=>window.__arMixFastAudioState().pending")
+        await page.evaluate("""status=>window.__armixTestEmit('arMixAudioArmAck',{
+          ok:false,armed:false,deviceEpoch:status.dryRoutingLab.epoch,
+          error:'Test output intentionally kept muted for FX edits'
+        })""",status)
+        assert not await page.evaluate("()=>window.__arMixFastAudioState().pending")
         g5before=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='routingDryApply').length""")
         # G5B: two actual, indexed native VST3s on CH2 use ONE route
