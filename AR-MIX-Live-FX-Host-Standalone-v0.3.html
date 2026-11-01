@@ -6353,7 +6353,10 @@ scheduleDemoMeter();
   if(mixer){
     const syncMainDock=()=>{
       const rect=mixer.getBoundingClientRect();
-      const width=window.innerWidth<=1250?148:155;
+      // Actual MASTER includes the original 2px rail edge and padding;
+      // do not assume its CSS flex-basis equals its rendered outer width.
+      const width=mixer.querySelector('#masterLeft')?.getBoundingClientRect().width||
+        (window.innerWidth<=1250?148:155);
       mixer.style.setProperty('--ar-main-dock-left',Math.round(rect.right-width)+'px');
       mixer.style.setProperty('--ar-main-dock-top',Math.round(rect.top)+'px');
       mixer.style.setProperty('--ar-main-dock-height',Math.round(rect.height)+'px');
