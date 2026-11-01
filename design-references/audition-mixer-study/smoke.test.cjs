@@ -510,6 +510,10 @@ check(node('info').textContent.includes('SPLIT REJECTED') &&
 field(5,'input','None');
 check(strip(1).includes('⇢3'), 'Removing one split receiver keeps remaining three receivers intact');
 check(node('info').textContent.includes('demo binding only'), 'Demo split UI remains clearly non-native');
+field(1,'output','SOURCE ONLY (No Main)');
+check(strip(1).includes('<option value="SOURCE ONLY (No Main)" selected>') &&
+ node('info').textContent.includes('SOURCE ONLY (no direct Main)'),
+ 'CH1 may be capture/source-only so four split processing paths do not force a fifth direct MAIN dry feed');
 node('reset').dispatch('click');
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
