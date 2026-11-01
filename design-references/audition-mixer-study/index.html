@@ -1903,14 +1903,14 @@ function savePluginPreferences(){
  }));}catch(error){/* Manager still works without browser storage. */}
 }
 const tracksEl=document.getElementById('tracks'),masterEl=document.getElementById('master'),info=document.getElementById('info');
-let nextId=1,nextGroup=1,tracks=[],master,preview=false,meterFrame=0,lastTick=0,clipboard=null,scenes=[],sofEnabled=false,sofTarget="Bus A",wireSourceId=1,wireEdges=[],nextWireId=1,wireMode='send',wireAnchorId=null;
+let nextId=1,nextGroup=1,tracks=[],master,preview=false,meterFrame=0,lastTick=0,clipboard=null,scenes=[],sofEnabled=false,sofTarget="Bus A",wireSourceId=1,wireEdges=[],nextWireId=1,wireMode='send',wireAnchorId=null,wireHoverId=null;
 const clone=x=>JSON.parse(JSON.stringify(x));
 const selection=()=>tracks.concat(master).filter(t=>t.selected);
 const make=(name,kind,color)=>{
  const id=nextId++;
  return {id,name,kind,color,icon:kind==='master'?'◎':kind==='bus'?'⊞':kind==='fx'?'◉':'♩',group:null,safe:false,format:'stereo',input:'None',output:kind==='master'?'Default Output':'Master',fx:Array(8).fill('None'),slotBypass:Array(8).fill(false),fxOn:true,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,activeSend:0,sendSlots:Array.from({length:16},()=>({send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0})),eq:true,pan:0,trim:0,mute:false,solo:false,cue:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
 };
-function init(){nextId=1;nextGroup=1;wireSourceId=1;wireEdges=[];nextWireId=1;wireMode='send';wireAnchorId=null;document.getElementById('wireMode').value='send';tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
+function init(){nextId=1;nextGroup=1;wireSourceId=1;wireEdges=[];nextWireId=1;wireMode='send';wireAnchorId=null;wireHoverId=null;document.getElementById('wireMode').value='send';tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const option=(values,selected)=>values.map(x=>'<option value="'+escapeHtml(x)+'"'+(x===selected?' selected':'')+'>'+escapeHtml(x)+'</option>').join('');
 // DEMO mult is a source binding, not a Group sum or copied JS audio engine.
@@ -2204,7 +2204,7 @@ function refreshStrip(t){
 }
 function selectTrack(t,add=false){
  const changedSource=!add&&t.kind==='audio'&&wireSourceId!==t.id;
- if(changedSource){wireSourceId=t.id;wireAnchorId=null;}
+ if(changedSource){wireSourceId=t.id;wireAnchorId=null;wireHoverId=null;}
  if(!add){tracks.forEach(x=>x.selected=false);master.selected=false;t.selected=true;}
  else t.selected=!t.selected;
  document.querySelectorAll('.strip').forEach(el=>{const item=tracks.concat(master).find(x=>x.id===Number(el.dataset.id));el.classList.toggle('selected',!!item&&item.selected);});
@@ -2236,7 +2236,9 @@ function renderWireRouting(){
  svg.setAttribute('viewBox','0 0 '+vp.width+' '+vp.height);
  const x0=from.left-vp.left+from.width/2,y0=from.top-vp.top+from.height*.5;
  const paths=[];
- for(const edge of outgoingWires(source.id)){
+ const visibleEdges=outgoingWires(source.id).map(e=>({...e,preview:false}));
+ if(wireHoverId!==null&&wireHoverId!==source.id&&!wireFor(source.id,wireHoverId))visibleEdges.push({destId:wireHoverId,mode:wireMode,preview:true});
+ for(const edge of visibleEdges){
   const dest=tracks.find(t=>t.id===edge.destId);
   if(!dest)continue;
   const el=viewport.querySelector?.('.strip[data-id="'+dest.id+'"] .wire-socket');
@@ -2245,9 +2247,9 @@ function renderWireRouting(){
   const x1=rect.left-vp.left+rect.width/2,y1=rect.top-vp.top+rect.height*.5;
   const bend=Math.min(17,Math.max(9,Math.abs(x1-x0)*.04));
   const d='M '+x0.toFixed(1)+' '+y0.toFixed(1)+' C '+x0.toFixed(1)+' '+(y0-bend).toFixed(1)+', '+x1.toFixed(1)+' '+(y1-bend).toFixed(1)+', '+x1.toFixed(1)+' '+y1.toFixed(1);
-  const color=edge.mode==='split'?'#9bd7fa':'#a6f095';
-  paths.push('<path d="'+d+'" stroke="#071d1b" stroke-width="6" opacity=".85" fill="none" stroke-linecap="round"/>'+
-   '<path d="'+d+'" stroke="'+color+'" stroke-width="1.8" opacity=".94" fill="none" stroke-linecap="round"/>');
+  const color=edge.preview?'#f7d78c':edge.mode==='split'?'#9bd7fa':'#a6f095';
+  paths.push('<path d="'+d+'" stroke="#071d1b" stroke-width="'+(edge.preview?3:6)+'" opacity="'+(edge.preview?'.42':'.85')+'" fill="none" stroke-linecap="round"/>'+
+   '<path d="'+d+'" stroke="'+color+'" stroke-width="'+(edge.preview?1.4:1.8)+'" opacity="'+(edge.preview?'.84':'.94')+'" fill="none" stroke-linecap="round"'+(edge.preview?' stroke-dasharray="5 5"':'')+'/>');
  }
  svg.innerHTML=paths.join('');
 }
@@ -2463,6 +2465,9 @@ document.querySelector('.console-body').addEventListener('click',e=>{
 });
 document.querySelector('.console-body').addEventListener('dblclick',e=>{
  const t=findTrack(e.target);if(!t)return;
+ if(e.target.closest?.('.wire-gain')){
+  const el=e.target.closest('.wire-gain');el.value='0';handleField({target:el,type:'change'});return;
+ }
  if(e.target.classList.contains('fader')){t.level=0;refreshStrip(t);say(t.name+' fader reset to 0.0 dB');}
  if(e.target.classList.contains('center-pan')){t.pan=0;refreshStrip(t);say(t.name+' pan centered');}
  if(e.target.closest('.footer-label,.strip-identity-top'))openChannelIdentity(t,e.target);
@@ -2493,6 +2498,27 @@ document.querySelector('.console-body').addEventListener('drop',e=>{
   refreshStrip(t);say('Copied '+source.fx[from]+' from '+source.name+' to '+t.name+' slot '+(to+1));
  }
 });
+document.querySelector('.console-body').addEventListener('pointerover',e=>{
+ const btn=e.target.closest?.('[data-action="wireRoute"]');
+ const t=btn?findTrack(btn):null;
+ if(!t||t.kind==='master'||t.id===wireSourceId||wireHoverId===t.id)return;
+ wireHoverId=t.id;renderWireRouting();
+});
+document.querySelector('.console-body').addEventListener('pointerout',e=>{
+ if(wireHoverId===null)return;
+ const btn=e.target.closest?.('[data-action="wireRoute"]');
+ if(!btn)return;
+ if(e.relatedTarget?.closest?.('[data-action="wireRoute"]')===btn)return;
+ wireHoverId=null;renderWireRouting();
+});
+document.querySelector('.console-body').addEventListener('wheel',e=>{
+ const el=e.target.closest?.('.wire-gain');
+ if(!el||!Number.isFinite(e.deltaY)||e.deltaY===0)return;
+ e.preventDefault?.();
+ const prev=Number(el.value)||0,change=e.deltaY>0?-1:1;
+ el.value=String(Math.max(-60,Math.min(6,prev+change)));
+ handleField({target:el,type:'change'});
+},{passive:false});
 document.querySelector('.console-body').addEventListener('mousedown',e=>{
  if(e.target.closest?.('.wire-tray')||e.target.closest?.('[data-action="wireRoute"]')||e.target.closest?.('[data-action="wireRemove"]')||e.target.closest?.('[data-field="wireGain"]'))return; // source remains unchanged on any wire control
  const t=findTrack(e.target);if(t)selectTrack(t,e.ctrlKey||e.metaKey||e.shiftKey);
