@@ -754,8 +754,13 @@ static void verifyFirstSoundOnePinNativeSourceDraft() {
     assert(production.process(nativePins,1,mainL.data(),mainR.data(),4,&levels));
     assert(heapCalls.load(std::memory_order_relaxed)==beforeMute);
     assert(mainL[0]>0.f && mainR[0]>0.f);
-    assert(mainL[0]>mainL[1] && mainL[1]>mainL[2]);
-    assert(mainR[0]>mainR[1] && mainR[1]>mainR[2]);
+    // RAW physical microphone samples increase across the test block.
+    // Compare actual per-frame GAIN envelope after removing input amplitude,
+    // otherwise a correct fade is incorrectly rejected as nonmonotonic.
+    assert(mainL[0]/mic[0]>mainL[1]/mic[1] &&
+           mainL[1]/mic[1]>mainL[2]/mic[2]);
+    assert(mainR[0]/mic[0]>mainR[1]/mic[1] &&
+           mainR[1]/mic[1]>mainR[2]/mic[2]);
     assert(near(mainL[3],0.f) && near(mainR[3],0.f));
     mainL.fill(1.f);mainR.fill(1.f);
     assert(production.process(nativePins,1,mainL.data(),mainR.data(),4,&levels));
@@ -785,6 +790,64 @@ static void verifyFirstSoundOnePinNativeSourceDraft() {
         decoded.channels,stereoPhysical,routed,issue));
     assert(routed.effectiveFormats[2]==armix::mixer::ChannelFormat::mono);
     assert(routed.foldStereoToMono[2]);
+
+    // SOURCE/VST3 lifecycle migration at production M4 graph granularity:
+    // both verified physical pins belong to one unchanged device epoch.
+    // Selecting another MONO pin must preserve the very SAME prepared
+    // JUCE processor (state/editor/tail identity), not silently rebuild it.
+    juce::var beforeSwap;
+    assert(NativeVerifiedSourcePatch::prepare(
+        typed,6,"MONO",5,-1,stereoPhysical,17,9,beforeSwap).isEmpty());
+    armix::mixer::NativeDryRouteCommand oldCommand;
+    assert(armix::mixer::NativeDryRouteCommand::decode(
+        beforeSwap,oldCommand,error));
+    armix::mixer::PreparedRenderGraph oldPlan;
+    assert(armix::mixer::PreparedRenderGraph::compile(
+        oldCommand.channels,stereoPhysical,oldCommand.sends,oldPlan,
+        renderError,oldCommand.aux));
+    auto firstFxGraph=std::make_unique<armix::mixer::LiveChannelFxGraph>(
+        oldPlan,64,64);
+    auto nativeFx=std::make_unique<GainFx>(2.f);
+    nativeFx->prepareToPlay(48000,64);
+    assert(firstFxGraph->install(6,std::move(nativeFx),
+           "CH07 native vendor FX","ch07-stable-vendor-id"));
+    const auto* originalInstance=firstFxGraph->instanceProcessor(6);
+    assert(originalInstance!=nullptr);
+    const std::array<float,4> secondPin{{.1f,.2f,.3f,.4f}};
+    const float* twoNativeInputs[]{mic.data(),secondPin.data()};
+    std::array<float,4> oldMainL{},oldMainR{};
+    const auto beforeOldRender=heapCalls.load(std::memory_order_relaxed);
+    assert(firstFxGraph->process(twoNativeInputs,2,oldMainL.data(),
+                                 oldMainR.data(),4));
+    assert(heapCalls.load(std::memory_order_relaxed)==beforeOldRender);
+    assert(oldMainL[0]>0.f && oldMainR[0]>0.f);
+    juce::var afterSwap;
+    assert(NativeVerifiedSourcePatch::prepare(
+        beforeSwap,6,"MONO",7,-1,stereoPhysical,17,10,afterSwap).isEmpty());
+    armix::mixer::NativeDryRouteCommand switchedCommand;
+    assert(armix::mixer::NativeDryRouteCommand::decode(
+        afterSwap,switchedCommand,error));
+    armix::mixer::PreparedRenderGraph switchedPlan;
+    assert(armix::mixer::PreparedRenderGraph::compile(
+        switchedCommand.channels,stereoPhysical,switchedCommand.sends,
+        switchedPlan,renderError,switchedCommand.aux));
+    auto secondFxGraph=std::make_unique<armix::mixer::LiveChannelFxGraph>(
+        switchedPlan,64,64);
+    assert(secondFxGraph->reuseAt(6,0,*firstFxGraph,0,"ch07-stable-vendor-id"));
+    assert(secondFxGraph->instanceProcessor(6)==originalInstance);
+    firstFxGraph.reset(); // old control graph retired; vendor must stay alive
+    assert(secondFxGraph->instanceProcessor(6)==originalInstance);
+    std::array<float,4> newMainL{},newMainR{};
+    const auto beforeNewRender=heapCalls.load(std::memory_order_relaxed);
+    assert(secondFxGraph->process(twoNativeInputs,2,newMainL.data(),
+                                  newMainR.data(),4));
+    assert(heapCalls.load(std::memory_order_relaxed)==beforeNewRender);
+    assert(newMainL[0]>0.f && newMainR[0]>0.f);
+    // Exactly one FX call and one real new source: 0.1 / 0.25 amplitude.
+    assert(near(newMainL[0]/oldMainL[0],.4f));
+    assert(near(newMainR[0]/oldMainR[0],.4f));
+    assert(typedSource.getArray()->getReference(6)
+        .getProperty("mode","").toString()=="NONE");
 }
 
 // V8 S0: a C++ fixture, built with the SAME header serializer installed in
