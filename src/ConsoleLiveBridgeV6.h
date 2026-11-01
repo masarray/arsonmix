@@ -118,6 +118,16 @@ public:
             if(peaksL.isArray())object->setProperty("channelPeaksL",peaksL);
             if(peaksR.isArray())object->setProperty("channelPeaksR",peaksR);
             if(inserts.isArray())object->setProperty("fxInstances",inserts);
+            const auto topo=route.getProperty("acceptedRoute",juce::var());
+            if(topo.isObject()) {
+                const auto sends=topo.getProperty("sends",juce::var());
+                const auto returns=topo.getProperty("auxes",juce::var());
+                if(sends.isArray())object->setProperty("acceptedSends",sends);
+                if(returns.isArray())object->setProperty("auxReturns",returns);
+            }
+            const auto monitorSends=route.getProperty("monitorSends",juce::var());
+            if(monitorSends.isArray())
+                object->setProperty("monitorSends",monitorSends);
             const auto main=route.getProperty("mainOutputs",juce::var());
             if(main.isArray())object->setProperty("mainOutputs",main);
             const auto monitor=route.getProperty("monitorOutputs",juce::var());
@@ -295,6 +305,34 @@ public:
                         accepted=engine.setDryRoutingLabParameter(
                             lane,ep,m4Revision,key,control);
                         if(!accepted)error="NATIVE_CONTROL_REJECTED";
+                    }
+                } else if(operation=="CONNECT_AUX_SEND") {
+                    const auto bus=payload.getProperty("auxIndex",{});
+                    const auto tapName=payload.getProperty("tap","POST").toString();
+                    const auto gain=payload.getProperty("value",{});
+                    const auto pan=payload.getProperty("pan",juce::var(0.0));
+                    if(!bus.isInt()||static_cast<int>(bus)<0||
+                       static_cast<int>(bus)>=armix::mixer::auxBusCount)
+                        error="INVALID_AUX_RETURN";
+                    else if(tapName!="PRE"&&tapName!="POST")
+                        error="INVALID_SEND_TAP";
+                    else if((!gain.isInt()&&!gain.isDouble())||
+                            (!pan.isInt()&&!pan.isDouble()))
+                        error="INVALID_SEND_GAIN_OR_PAN";
+                    else {
+                        const double level=static_cast<double>(gain);
+                        const double balance=static_cast<double>(pan);
+                        if(!std::isfinite(level)||level<0.||level>1.||
+                           !std::isfinite(balance)||balance< -1.||balance>1.)
+                            error="INVALID_SEND_GAIN_OR_PAN";
+                        else {
+                            error=engine.connectDryRoutingLabAuxSend(
+                                lane,static_cast<int>(bus),ep,m4Revision,
+                                tapName=="PRE"?armix::mixer::SendTap::preFader:
+                                               armix::mixer::SendTap::postFader,
+                                static_cast<float>(level),static_cast<float>(balance));
+                            accepted=error.isEmpty();
+                        }
                     }
                 } else if(operation=="SET_MONITOR_LEVEL") {
                     const auto raw=payload.getProperty("value",{});

@@ -1131,6 +1131,27 @@ public:
             return false;
         return dryRoutingLab_.setAuxSendGain(source,bus,epoch,revision,gain,tap);
     }
+    juce::String connectDryRoutingLabAuxSend(int source,int bus,
+            std::uint64_t epoch,std::uint64_t revision,
+            armix::mixer::SendTap tap,float gain,float pan) {
+        if(independent_.active()||routeReconfiguring_.load(std::memory_order_acquire)||
+           handoff_.busy()||!directFence_.permitted()||
+           diagnosticRoute_.load(std::memory_order_acquire)
+               !=armix::diagnostics::Route::normal||
+           savedDirectSetup_||savedLiveSetup_)
+            return "AUX CONNECT: DIRECT device or VST graph handoff unavailable";
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device)return "AUX CONNECT: no verified audio interface";
+        try {
+            return dryRoutingLab_.connectPreparedAuxSend(
+                source,bus,epoch,revision,tap,gain,pan,
+                directFence_.permitted(),independent_.active(),graphOwned_->count,
+                formats_,device->getCurrentSampleRate(),
+                juce::jmax(32,device->getCurrentBufferSizeSamples()));
+        } catch(...) {
+            return "AUX CONNECT: failed native preparation; previous route retained";
+        }
+    }
     bool setDryRoutingLabMonitorSendGain(int source,std::uint64_t epoch,
             std::uint64_t revision,float gain) noexcept {
         if(independent_.active()||routeReconfiguring_.load(std::memory_order_acquire)||

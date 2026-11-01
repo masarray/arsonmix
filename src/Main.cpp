@@ -1582,6 +1582,43 @@ private:
             if(!ok)emitNotice("Live AUX send rejected; refresh accepted routing.",true);
             return;
         }
+        // One-click SEND -> existing real AUX VST3 RETURN. The structural
+        // graph transaction prepares/validates and retains the same processor
+        // owner; no unfiltered empty AUX can duplicate dry MAIN.
+        if(action=="routingAuxConnect") {
+            const int from=static_cast<int>(args.getProperty("from",-1));
+            const int bus=static_cast<int>(args.getProperty("bus",-1));
+            const int requestId=static_cast<int>(args.getProperty("requestId",0));
+            const auto ep=args.getProperty("deviceEpoch",juce::var());
+            const auto rv=args.getProperty("revision",juce::var());
+            const auto kind=args.getProperty("tap","POST").toString();
+            const auto rawGain=args.getProperty("gain",juce::var());
+            const auto rawPan=args.getProperty("pan",juce::var(0.0));
+            const bool valid=requestId>0&&!nativeShowBusy_&&!studioBackupBusy_&&
+                (ep.isInt()||ep.isInt64())&&(rv.isInt()||rv.isInt64())&&
+                (rawGain.isInt()||rawGain.isDouble())&&
+                (rawPan.isInt()||rawPan.isDouble())&&
+                (kind=="PRE"||kind=="POST");
+            const juce::String error=valid?engine_.connectDryRoutingLabAuxSend(
+                from,bus,static_cast<std::uint64_t>(static_cast<juce::int64>(ep)),
+                static_cast<std::uint64_t>(static_cast<juce::int64>(rv)),
+                kind=="PRE"?armix::mixer::SendTap::preFader:
+                            armix::mixer::SendTap::postFader,
+                static_cast<float>(static_cast<double>(rawGain)),
+                static_cast<float>(static_cast<double>(rawPan))):
+                juce::String("AUX CONNECT: invalid or stale request");
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("ok",error.isEmpty());
+            ack->setProperty("requestId",requestId);
+            ack->setProperty("from",from);
+            ack->setProperty("bus",bus);
+            ack->setProperty("tap",kind);
+            ack->setProperty("error",error);
+            ack->setProperty("state",engine_.status().getProperty("dryRoutingLab",{}));
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                "arMixAuxConnectAck",juce::var(ack.release()));
+            return;
+        }
         // Same installed M4 callback owns independent MONITOR output pins.
         // Move input or AUX return's own MONITOR SEND at audio rate without
         // touching MAIN/FX or changing the physical port map.
