@@ -1,5 +1,5 @@
-# ArSonMix PRD v5.0 — Operator-First Live Mixer Console
-Date: 2026-11-01 | Status: **NORMATIVE PRODUCT TARGET, NOT SHIPPED FEATURE ATTESTATION** | Supersedes the workflow and priorities in PRD v4.1. Companion: [ARD v5.0](ARD_ARSONMIX_UNIVERSAL_REALTIME_CONSOLE_V5_20261101.md).
+# ArSonMix PRD v5.1 — Operator-First Live Mixer Console
+Date: 2026-11-01 | Updated: 2026-11-01, mandatory puzzle-socket delivery amendment | Status: **NORMATIVE PRODUCT TARGET, NOT SHIPPED FEATURE ATTESTATION** | Supersedes the workflow and priorities in PRD v4.1. Companion: [ARD v5.0](ARD_ARSONMIX_UNIVERSAL_REALTIME_CONSOLE_V5_20261101.md).
 
 ## 1. Product promise and non-goals
 
@@ -112,3 +112,30 @@ Distinguish **READY / PENDING / LIVE / MUTED / REQUIRES DEVICE CHANGE / REJECTED
 Audited **main cad535e67c764f471b01da5b04984bd3d97c47b6**. Live callback remains fixed **10 input + 4 AUX**, CH1 special when the old vendor chain is occupied. Offline ChannelId roster/PCM/publisher and restricted #263 Group pilot are not equivalent to a fully dynamic live engine. FAST3 one-APPLY exists, but many visible manual STAGE/MUTE labels and legacy paths remain. **Draft PR #265** proposes format/meter/native-source bank UI fixes but is **not merged** and must pass exact-head CI; no claim that CH11+ or full online bus additions have shipped. Factory FX lock is empty. Hardware issue [#15](https://github.com/masarray/arsonmix/issues/15) remains unqualified.
 
 Issue epic: [#192](https://github.com/masarray/arsonmix/issues/192). Existing architecture constraints: [ADR R5](ADR_R5_NATIVE_MONO_STEREO_CHANNEL_BUS_ROUTING_20261030.md); latest attested code ledger [reconciliation](RECONCILED_PROGRESS_ARSONMIX_20261101.md). Historical PRD v4.1 retained as audit evidence, superseded for UX decisions by this document.
+
+## 8. MANDATORY V5.1 PRODUCT DELIVERY AMENDMENT — PUZZLE SOCKET V8
+
+**Effective 2026-11-01.** This section is normative over the historical G0–G4 sequencing above; none of the existing product capabilities, visual quality or realtime safety requirements are reduced. The **implementation integration authority** is [Puzzle Socket v8](PUZZLE_INTEGRATION_CONTRACT_V8_20261101.md), with a machine-readable required-fields source in [contracts/console-puzzle-v8.json](../contracts/console-puzzle-v8.json). Product scope remains a realtime **LIVE DIGITAL MIXER** and VST3 host, *not* a DAW timeline/audio editor. Benchmark Studio One/Adobe Audition **Mixer/Console** and eMotion LV1 operator workflows by behavior, not copyrighted visuals.
+
+### P8.1 One complete operator product, not three prototypes
+The user will only be asked to test a **feature-complete integrated Windows mixer** after internal G1–G3 proof. No partial 'First Sound' EXE, synthetic GUI, separate ENGINE/FAT trial, or screenshot is customer UAT. An engineering rig is responsible for pre-UAT physical QA when available; an unavailable rig is honestly **PENDING**, not CLEAN/PASS.
+
+A routine operator session must be possible from ONE compact Console: select ASIO or Windows Audio device and real enabled input/output endpoints in a compact drawer, then select **IN, processing M/ST, actual VST3 inserts/editor/bypass/reorder, PRE/POST SEND, primary OUT, PAN, MUTE, SOLO, fader and true native meter** on each accepted channel. Main is pinned. Normal source changes require one user action with native ACK; the big 10-row patch matrix, logical software-input alias wizard and manual STAGE→MUTE→APPLY→ARM are not mandatory. Advanced Patch remains available separately. GUI stays light on ordinary Windows/iGPU hardware and must not fake LIVE or plugin/port availability.
+
+**Physical SOURCE != channel processing format.** On an interface with exactly one verified input pin the user may choose Mono IN1 and optionally stereo DSP processing through an admitted conversion, but never physical STEREO IN1/IN1. If the selected recording endpoint is VB-Cable CABLE Output, raw input is silent until a feeder application plays to CABLE Input; choosing Realtek playback alone cannot supply the cable capture. Distinguish device open, route ACK, raw capture PCM, processed channel PCM, MAIN PCM and output armed with actual callback telemetry.
+
+### P8.2 User-visible acceptance = one complete musical flow
+All features below must coexist in one app and one verified integrated SHA:
+- CH07 can accept physical IN1 and CH02 can independently accept physical IN2 where the active driver reports both; no hardcoded CH1 and no phantom pins.
+- Both can own **actual** VST3 inserts, bypass/reorder and open real editors without breaking DSP or losing vendor state.
+- A real dynamic CH11 can be created; Group Selected is a **serial** primary output to MAIN without double-dry; wet FX Return is a **parallel** PRE/POST send path, not a renamed CH10 input.
+- MAIN output and independent MONITOR/Cue physical/virtual endpoints can be chosen from compatible verified destinations; faders, mute, solo, pan and sends change native sound; Show save/reopen restores stable channel identities, plugin chunks and routing with safe remap/rejection.
+- Structural graph/FX edit failures preserve previously accepted audio; routine continuous mixing does not require global MUTE/restarting device; reject unsuitable layouts and unstable drivers. Report actual latency, not an acoustic 0ms guarantee.
+- Performance on standard Windows hardware, coherent native WebView assets, and physical 0FX/full-FX acoustic verification are release conditions; issue #15 remains a blocker until evidence exists.
+
+### P8.3 Three puzzle owners, measurable delivery
+**ENGINE #266** supplies one native callback + accepted ChannelId graph + real source/output pin/PCM/FX/Show authority. **GUI #271** consumes that exact graph and sends intents, never invents DSP/ports or its own accepted state. **INTEGRATION #270** owns the single cross-layer fixture/test, combined CI and packaging. PR #279 contains the executable socket preflight; it is a *contract check*, not sound certification.
+
+Each owner must produce a **Puzzle Handoff** on [epic #192](https://github.com/masarray/arsonmix/issues/192): source SHA and changed files, one shared fixture version/hash, real operation supported by the installed callback or explicit NOT CONNECTED, tests at that SHA, cross-owner blocker and its corrective code change. A standalone green CI, offline Group or browser screenshot is not accepted as milestone completion.
+
+**Exit sequence:** S0 same producer fixture + consumer + validator → S1 actual native callback one-input/direct-console complete sound path → S2 complete two-VST3/dynamic/Group/Return/Monitor/Show mixer → S3 one exact-SHA Windows/Chromium/package, independent hardware qualification or explicit PENDING → only then user UAT. Do not reduce scope or skip a failed gate for speed.
