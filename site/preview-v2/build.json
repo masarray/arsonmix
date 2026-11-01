@@ -1,14 +1,13 @@
 {
-  "version": "preview-v6.2",
+  "version": "preview-v7",
   "route": "/preview-v2/",
   "kind": "GUI_REFERENCE_ONLY",
   "live_audio": false,
   "source_pr": 278,
   "source_branch": "design/audition-mixer-reference-isolated-20261101",
-  "source_sha": "87b9b8fc909410a4e27c9791fd04d3bed26af894",
-  "visual_theme": "One-Console Graphite Metal + Crystal BTN180",
-  "identity": "12 original legacy colors and icons, paired colored top/bottom nameplates, name/icon/color popover, dynamic Master routing label",
-  "arrows": "Exact owner-provided SVG 24x24 paths and #1f1f1f fill; toolbar vertically aligned",
-  "checks": "134/134 source/DOM/event acceptance checks PASS; real V6 pixel screenshot QA remains unexecuted",
-  "note": "Reference GUI only: no native ASIO/VST3."
+  "source_sha": "ca12568a3ff2db95affb36a8540ea277e25b588b",
+  "visual_design": "Rebalanced 30%-40% shorter FX rack, graphite brighter chassis vs dark recessed fader pocket, 26x55 original silver/rose scaled fader, 15x32 PAN/send thumb moved down, state-colored thin selected border, satin steel buttons",
+  "workflow": "Double-click or F2 opens channel name/icon/color picker; Plugin Manager modeless, movable, minimizable and independently usable during FX insertion; 10+Master fixed bank",
+  "tests": "140/140 source/DOM/business acceptance checks pass; real Chromium screenshot/layout QA workflow added and running",
+  "note": "GUI demo, simulated meters, NO native VST3 scan or ASIO sound."
 }
