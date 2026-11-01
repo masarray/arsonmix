@@ -982,7 +982,7 @@
       const stage=node('button','btn-180 arIOQuickStage','USE INPUT');
       stage.dataset.ioQuickStage='1';stage.type='button';
       stage.disabled=!hardwareReady(s)||r.mode==='BUS'||!!quickSourcePending||
-        (displayMode==='STEREO'&&(verified.length<2||displayLeft===r.right));
+        !validPhysicalRoute({mode:displayMode,left:displayLeft,right:r.right},verified);
       action.append(stage,node('small','arIOQuickState',r.mode==='BUS'?'INTERNAL BUS':
         !s.ready?'NO DEVICE':!validLive?'INVALID L/R · SELECT MONO':
         row.dataset.state==='draft'?'DRAFT · NOT LIVE':
@@ -1687,7 +1687,23 @@
     }
     lastSignature='';refresh();
   }
+  // Reflect input pin validity immediately, without a new DOM render or a
+  // second routing writer. The actual click still uses the native preflight.
+  function syncQuickInputAction(row){
+    if(!row)return;
+    const mode=row.querySelector('[data-io-quick-mode]')?.value;
+    const left=Number(row.querySelector('[data-io-quick-pin="left"]')?.value);
+    const right=Number(row.querySelector('[data-io-quick-pin="right"]')?.value);
+    const s=route(),valid=validPhysicalRoute({mode,left,right},portList(s));
+    const button=row.querySelector('[data-io-quick-stage]');
+    if(button)button.disabled=!hardwareReady(s)||!!quickSourcePending||mode==='BUS'||!valid;
+    const reason=row.querySelector('.arIOQuickState');
+    if(reason)reason.textContent=valid?'READY · USE INPUT':'INVALID INPUT · CHECK MONO/L/R PINS';
+  }
   document.addEventListener('change',e=>{
+    if(e.target.matches('[data-io-quick-pin]')){
+      syncQuickInputAction(e.target.closest('[data-io-quick-row]'));return;
+    }
     if(e.target.matches('[data-io-quick-mode]')){
       const row=e.target.closest('[data-io-quick-row]'),mode=e.target.value;
       const left=row.querySelector('[data-io-quick-pin="left"]'),
@@ -1695,6 +1711,7 @@
       left.disabled=mode==='NONE'||mode==='BUS';
       right.disabled=mode!=='STEREO';
       if(mode!=='STEREO')right.value='-1';
+      syncQuickInputAction(row);
       return;
     }
     if(e.target.matches('[data-io-jump]')){

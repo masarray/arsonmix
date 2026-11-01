@@ -686,7 +686,7 @@ async def main():
           window.__armixTestEmit('arMixStatus',status);
           return status;
         }""",status)
-        assert "LIVE" in await page.locator('[data-strip="1"] .arBankStage').inner_text()
+        assert "ROUTE ACK" in await page.locator('[data-strip="1"] .arBankStage').inner_text()
         # Accepted source automatically begins the final guarded hardware
         # ARM. Reject ARM deliberately for this G5 structural/FX fixture:
         # the new source route remains accepted, output remains safely
@@ -1033,6 +1033,53 @@ async def main():
         assert await page.locator('[data-source-alias-save]').is_disabled()
         await page.screenshot(path="mixer-patch1-maono-ch3-ch6-1366.png")
         assert not errors,errors
+        # User's real failure mode: ONE capture pin, stale STEREO L=R display.
+        # A positive native route revision must not be shown as playable LIVE.
+        one=await browser.new_page(viewport={"width":1366,"height":768})
+        one_errors=[]
+        one.on("pageerror",lambda e:one_errors.append(str(e)))
+        await one.add_init_script("""(()=>{
+          const listeners={};window.__armixTestActions=[];
+          window.__JUCE__={backend:{
+            addEventListener(name,fn){(listeners[name]??=[]).push(fn)},
+            emitEvent(name,data){window.__armixTestActions.push({name,data})}
+          }};
+          window.__armixTestEmit=(name,data)=>(listeners[name]||[]).forEach(fn=>fn(data));
+        })();""")
+        await one.goto((root/"web/index.html").as_uri())
+        await one.evaluate("""()=>{
+          const channels=Array.from({length:10},(_,i)=>({
+            mode:i===0?'STEREO':'NONE',left:i===0?0:-1,
+            right:i===0?0:-1,channelFormat:'STEREO',
+            gain:1,pan:0,main:true,mute:false,solo:false,fxId:''}));
+          const auxes=Array.from({length:4},()=>({
+            enabled:false,gain:1,main:true,mute:false,fxId:''}));
+          const lab={active:true,ready:true,epoch:77,revision:4,
+            ports:[{port:0,label:'VB-Cable Mono Recording'}],
+            outputPorts:[0,1],mainOutputs:[0,1],hasAcceptedRoute:true,
+            acceptedRoute:{deviceEpoch:77,channels,auxes,sends:[]}};
+          window.__armixTestEmit('arMixStatus',{
+            connected:true,directRouteAuthorized:true,driver:'Windows Audio',
+            inputDevice:'CABLE Output',outputDevice:'Realtek Speakers',
+            monitor:false,rate:48000,buffer:480,inputPeak:0,
+            callbackCount:123,callbackInputChannels:1,dryRoutingLab:lab});
+          window.__arMixOpenAudioIO('inputs');
+        }""")
+        assert await one.locator('[data-io-quick-row]').count()==1
+        assert 'INVALID L/R' in await one.locator('.arIOQuickState').inner_text()
+        assert await one.locator('[data-io-quick-stage]').is_disabled()
+        assert 'ROUTE ACK' not in await one.locator('[data-strip="0"] .arBankStage').inner_text()
+        await one.locator('[data-io-quick-mode]').select_option('MONO')
+        assert await one.locator('[data-io-quick-stage]').is_enabled()
+        await one.locator('[data-io-quick-stage]').click()
+        sent=await one.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.name==='arMixAction'&&x.data.action==='routingDryApply')""")
+        assert len(sent)==1,sent
+        assert sent[0]['data']['value']['channels'][0]['mode']=='MONO',sent
+        assert sent[0]['data']['value']['channels'][0]['left']==0,sent
+        assert sent[0]['data']['value']['channels'][0]['right']==-1,sent
+        assert not one_errors,one_errors
+        await one.close()
         # M2B independent browser-native routing graph (same browser process):
         # create group, ACK, route a second CH into that same existing BUS.
         bp=await browser.new_page(viewport={"width":1366,"height":768})
