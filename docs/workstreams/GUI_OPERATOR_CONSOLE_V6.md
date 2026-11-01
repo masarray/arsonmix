@@ -1,3 +1,5 @@
+> **SUPERSEDED FOR DELIVERY ORDER:** use [GUI v7](GUI_DELIVERY_V7.md) and [RELEASE TRAIN v7](../RELEASE_TRAIN_UNIVERSAL_CONSOLE_V7_20261101.md). #274/#275 are patches into GUI #271, not new GUI owners. Do not request partial EXE tests.
+
 # GUI WORKSTREAM — ArSonMix Operator Console v6
 **Branch owner:** `work/operator-console-v6` from `main@bb6dff6b`. **UI issue:** created as separate owner, links from epic [#192](https://github.com/masarray/arsonmix/issues/192). **Engine owner** remains [PR #266](https://github.com/masarray/arsonmix/pull/266). Canonical [execution lock](../EXECUTION_LOCK_UNIVERSAL_LIVE_CONSOLE_V6_20261101.md), PRD/ARD v5. Do not implement a duplicate routing/audio engine.
 

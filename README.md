@@ -1,3 +1,5 @@
+> **Current coordinated delivery:** [RELEASE TRAIN v7](docs/RELEASE_TRAIN_UNIVERSAL_CONSOLE_V7_20261101.md) · [ENGINE](docs/workstreams/ENGINE_DELIVERY_V7.md) · [GUI](docs/workstreams/GUI_DELIVERY_V7.md) · [INTEGRATION](docs/workstreams/INTEGRATION_RELEASE_DELIVERY_V7.md). The owner will be asked for UAT only after one integrated feature-complete Windows mixer; do not send individual First Sound/partial staging EXEs as a finished product.
+
 # ArSonMix — Native Realtime Live Mixer and VST3 Host
 
 A Windows-first **live performance digital mixing console** for stage, karaoke, podcast/radio and flexible physical/virtual output, using the *console workflows* of Studio One / Adobe Audition and *live banking/routing* concepts of Waves eMotion LV1. Not a timeline/DAW audio editor, recorder or OBS-only utility.

@@ -1,3 +1,5 @@
+> **ACTIVE RELEASE ORCHESTRATION v7 (2026-11-01):** [ONE PRODUCT RELEASE TRAIN](docs/RELEASE_TRAIN_UNIVERSAL_CONSOLE_V7_20261101.md) and owner packets [ENGINE](docs/workstreams/ENGINE_DELIVERY_V7.md), [GUI](docs/workstreams/GUI_DELIVERY_V7.md), [INTEGRATION/RELEASE](docs/workstreams/INTEGRATION_RELEASE_DELIVERY_V7.md). Complete one real feature-parity Windows mixer BEFORE requesting owner/customer UAT. PRD/ARD v5 remain normative product/architecture; v7 supersedes older v6 delivery sequencing, not v6 realtime safety. #274/#275 are GUI patch sources and #276 is partial staging, not a final user build.
+
 # ArSonMix — SINGLE EXECUTION AUTHORITY (v6 / 2026-11-01)
 
 **READ FIRST:** [PRD v5](docs/PRD_ARSONMIX_OPERATOR_FIRST_LIVE_MIXER_V5_20261101.md) + [ARD v5](docs/ARD_ARSONMIX_UNIVERSAL_REALTIME_CONSOLE_V5_20261101.md) + [EXECUTION LOCK v6](docs/EXECUTION_LOCK_UNIVERSAL_LIVE_CONSOLE_V6_20261101.md). Workstream handoffs: [ENGINE](docs/workstreams/ENGINE_UNIVERSAL_CONSOLE_V6.md), [GUI](docs/workstreams/GUI_OPERATOR_CONSOLE_V6.md), [INTEGRATION/FAT](docs/workstreams/INTEGRATION_FAT_CONSOLE_V6.md).
