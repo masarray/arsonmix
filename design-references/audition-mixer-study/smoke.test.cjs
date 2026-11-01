@@ -475,5 +475,40 @@ check(html.includes('.console-body .section-rail .rail-cell.route{height:var(--r
  html.includes('.console-body .section-rail .rail-cell.fx{height:var(--fx-h)!important') &&
  html.includes('.console-body .section-rail .rail-cell.send{height:var(--send-h)!important'),
  'Route/FX/Send section rail and strips use identical physical height tokens');
+
+\n// V9: elastic rack vs invariant fader and glass LCD-meter material.
+check(html.includes('V9: CONSOLE MECHANICAL LAYOUT') &&
+ html.includes('--fader-fixed-h:clamp(198px,31vh,300px)') &&
+ html.includes('.console-body:not(.collapsed-fx) .strip .fx-section{') &&
+ html.includes('flex:1 1 var(--fx-h)!important') &&
+ html.includes('.console-body:not(.collapsed-fx) .strip .fader-section{') &&
+ html.includes('flex:0 0 var(--fader-fixed-h)!important'),
+ 'V9 FX rack absorbs Route/Send reclaimed height instead of remapping fader travel');
+check(html.includes('.console-body:not(.collapsed-fx) .section-rail .rail-cell.fx{') &&
+ html.includes('.console-body:not(.collapsed-fx) .section-rail .rail-cell.fader{'),
+ 'Rail and all channel strips share stable fader/elastic FX height contracts');
+check(html.includes('.console-body .strip .meter-box .vu-bars::after{') &&
+ html.includes('linear-gradient(103deg,#e4faff17') &&
+ html.includes('.console-body .strip .meter-box .meter-lane::after{') &&
+ html.includes('repeating-linear-gradient(to top,transparent 0px,transparent 5px') &&
+ html.includes('.console-body .strip .meter-box .peak.clipping{'),
+ 'Glass LCD dual-lane meter has stationary color zones, 7px sections and distinct clip optics');
+// Four independent inputs listen to CH1 using source identity, not four input-to-one summing.
+node('reset').dispatch('click');
+check(strip(2).includes('<option value="CH01 PRE-FX SPLIT">'),
+ 'CH2 IN selector exposes CH1 PRE-FX split source as a distinct channel feed');
+[2,3,4,5].forEach(id=>field(id,'input','CH01 PRE-FX SPLIT'));
+check(strip(1).includes('class="split-count"') &&
+ strip(1).includes('⇢4'),'Source CH1 shows FOUR independently routed target channels');
+[2,3,4,5].forEach(id=>check(strip(id).includes('<option value="CH01 PRE-FX SPLIT" selected>'),
+ 'CH'+id+' owns separate selected CH1 split SourceBinding'));
+field(1,'input','CH02 PRE-FX SPLIT');
+check(node('info').textContent.includes('SPLIT REJECTED') &&
+ strip(1).includes('<option value="None" selected>'),
+ 'Circular channel split CH2→CH1→CH2 rejected and previous source preserved');
+field(5,'input','None');
+check(strip(1).includes('⇢3'), 'Removing one split receiver keeps remaining three receivers intact');
+check(node('info').textContent.includes('demo binding only'), 'Demo split UI remains clearly non-native');
+node('reset').dispatch('click');
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
