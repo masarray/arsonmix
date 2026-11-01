@@ -224,3 +224,20 @@ test('S0 shared v8 contract rejects absent native pins, fake ACK and mutated gra
  const rollback=copy(ev);rollback[3].payload.device.outputArmed=true;
  assert.throws(()=>verifyNativeS0(rollback),/changed accepted graph/);
 });
+
+// S0 regression: a portable fixture binary that ignores argv must NEVER
+// masquerade as JUCE's native WebView producer or grant product acceptance.
+import {assertExplicitS0Exporter} from '../scripts/run_console_native_s0.mjs';
+test('portable C++ generator that ignores invalid argv is BLOCKED from native S0',()=>{
+ assert.throws(()=>assertExplicitS0Exporter('/fake/fixture',
+   ()=>Buffer.from('{"events":[]}')),
+   /C\+\+ binary ignored unknown flag/);
+ let called=0;
+ assert.doesNotThrow(()=>assertExplicitS0Exporter('/fake/native',()=>{
+   called++;const err=new Error('unsupported option');err.status=2;throw err;
+ }));
+ assert.equal(called,1);
+ const crash=new Error('timed out');crash.code='ETIMEDOUT';
+ assert.throws(()=>assertExplicitS0Exporter('/fake/crash',()=>{throw crash}),
+   /timed out/);
+});

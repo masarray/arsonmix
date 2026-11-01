@@ -38,10 +38,30 @@ export function verifyNativeS0(events){
   deviceEpoch:s.device.epoch,revision:s.graph.revision,
   requestId:cmd.requestId};
 }
+export function assertExplicitS0Exporter(generator,execute=execFileSync){
+ req(typeof generator==='string'&&generator.length>0,'native exporter path required');
+ let rejected=false;
+ try{
+  execute(resolve(generator),['--arsonmix-s0-deliberately-unsupported-option'],{
+   encoding:null,maxBuffer:1024*1024,timeout:15000,windowsHide:true,
+   stdio:['ignore','pipe','pipe']
+  });
+ }catch(e){
+  // A nonzero process exit is the only supported response to invalid argv.
+  if(e&&((typeof e.status==='number'&&e.status!==0)||
+      e.code==='ENOENT'||e.code==='EACCES'))rejected=true;
+  else throw e; // timeout/signal/crash is NOT evidence of proper argument parsing
+ }
+ req(rejected,'C++ binary ignored unknown flag; portable fixture is NOT an actual JUCE exporter');
+}
 export function generateS0({generator,output,sourceSha}){
  req(/^[a-f0-9]{40}$/.test(sourceSha||''),'full source SHA required');
  req(generator&&output,'C++ exporter and single output JSON required');
- const buf=execFileSync(resolve(generator),['--emit-console-s0-json'],
+ const binary=resolve(generator);
+ // A portable C++ sample that silently ignores argv must NEVER be accepted
+ // as a callable JUCE native event exporter. Unknown command MUST fail.
+ assertExplicitS0Exporter(binary,execFileSync);
+ const buf=execFileSync(binary,['--emit-console-s0-json'],
   {encoding:null,maxBuffer:8*1024*1024,timeout:15000,windowsHide:true});
  let data;try{data=JSON.parse(buf.toString('utf8'))}
  catch{block('C++ stdout must contain a single JSON object')}
