@@ -185,6 +185,7 @@ async def main():
         # S1: distinct RAW, channel and MAIN truth. MAIN measurements do not
         # turn all unpatched/AUX/group strips into invented active PCM.
         live_meter=snapshot()
+        live_meter["graph"]["channels"][6]["source"]={"portId":"in:0","physicalPins":[0]}
         live_meter["telemetry"].update({
           "rawCapturePresent":True,"rawCapturePeak":0.4,"mainPcmPresent":True,
           "channelMeterRmsPeak":{
@@ -202,6 +203,7 @@ async def main():
         meter_burst=[]
         for n in range(80):
             s=snapshot()
+            s["graph"]["channels"][6]["source"]={"portId":"in:0","physicalPins":[0]}
             s["telemetry"]["rawCapturePresent"]=True
             s["telemetry"]["rawCapturePeak"]=0.4
             s["telemetry"]["mainPcmPresent"]=True
