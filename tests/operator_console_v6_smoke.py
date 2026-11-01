@@ -138,8 +138,14 @@ async def main():
           'arMixConsoleAck',{requestId:id,status:'REJECTED',errorCode:'LOOP'})""", op["requestId"])
         assert await page.locator('[data-op="SET_PRIMARY_OUT"][data-id="ch-07"]').input_value() == "MAIN"
         await page.locator('[data-op="OPEN_INSERT_EDITOR"][data-id="ch-07"]').first.click()
-        assert await page.evaluate("""() => window.__v6Test.sent.filter(
-          x=>x.event==='arMixConsoleIntent').at(-1).payload.op""") == "OPEN_INSERT_EDITOR"
+        editor_debug = await page.evaluate("""() => ({
+          intents:window.__v6Test.sent.filter(x=>x.event==='arMixConsoleIntent').slice(-3),
+          state:window.__arMixV6ReadOnly(),
+          node:[...document.querySelectorAll('[data-op="OPEN_INSERT_EDITOR"][data-id="ch-07"]')]
+            .map(el=>({enabled:!el.disabled,html:el.outerHTML.slice(0,250)})),
+          focus:document.activeElement?.outerHTML?.slice(0,250)
+        })""")
+        assert editor_debug["intents"][-1]["payload"]["op"] == "OPEN_INSERT_EDITOR", editor_debug
         current = await page.evaluate("""() => window.__v6Test.sent.filter(
           x=>x.event==='arMixConsoleIntent').at(-1).payload.requestId""")
         await page.evaluate("""id=>window.__v6Test.publish(
