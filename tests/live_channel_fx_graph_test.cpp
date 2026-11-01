@@ -6,6 +6,7 @@
 #include "../engine/core/NativeOutputPairTap.h"
 #include "../engine/core/RealtimeRoutePublisher.h"
 #include "../src/ConsoleLiveBridgeV6.h"
+#include "../src/NativeVerifiedSourcePatch.h"
 #if defined(NDEBUG)
 #undef NDEBUG
 #endif
@@ -558,7 +559,7 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
     auto device=snap.getProperty("device",{});
     auto graph=snap.getProperty("graph",{});
     auto measured=snap.getProperty("telemetry",{});
-    assert(snap.getProperty("schemaVersion",0)==6);
+    assert(static_cast<int>(snap.getProperty("schemaVersion",0))==6);
     assert(!static_cast<bool>(snap.getProperty("productionCallbackLive",true)));
     assert(device.getProperty("epoch","").toString()=="9007199254740993");
     assert(static_cast<bool>(device.getProperty("outputArmed",false)));
@@ -573,13 +574,13 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
     auto ins=device.getProperty("inputEndpoints",{});
     auto outs=device.getProperty("outputEndpoints",{});
     assert(ins.getArray()->size()==1 && outs.getArray()->size()==2);
-    assert(ins.getArray()->getReference(0).getProperty("port",0)==2);
+    assert(static_cast<int>(ins.getArray()->getReference(0).getProperty("port",0))==2);
     assert(static_cast<double>(ins.getArray()->getReference(0)
         .getProperty("rawPeak",0.0))==.25);
     assert(static_cast<bool>(ins.getArray()->getReference(0)
         .getProperty("rawPresent",false)));
-    assert(outs.getArray()->getReference(0).getProperty("port",0)==1);
-    assert(outs.getArray()->getReference(1).getProperty("port",0)==4);
+    assert(static_cast<int>(outs.getArray()->getReference(0).getProperty("port",0))==1);
+    assert(static_cast<int>(outs.getArray()->getReference(1).getProperty("port",0))==4);
     const auto diagnostic=snap.getProperty("legacyM4",{});
     assert(diagnostic.getProperty("routingRevision","").toString()=="77");
     Bridge bridge;
@@ -613,7 +614,59 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
     assert(!Bridge::decodeDecimal(juce::var("01"),decoded));
     assert(!Bridge::decodeDecimal(juce::var(9007199254740993.0),decoded));
     // No request above mutates the genuinely accepted M4 hardware route.
-    assert(live.getProperty("dryRoutingLab",{}).getProperty("revision",0)==77);
+    assert(static_cast<int>(live.getProperty("dryRoutingLab",{}).getProperty("revision",0))==77);
+}
+
+// G1 physical First Sound: one enabled callback pin becomes a MONO
+// production source in ONE native mutation. No fabricated stereo IN1/IN1,
+// no accidental modification of the last accepted M4 request on failure.
+static void verifyFirstSoundOnePinNativeSourceDraft() {
+    using armix::mixer::NativeVerifiedSourcePatch;
+    auto command=std::make_unique<juce::DynamicObject>();
+    command->setProperty("deviceEpoch",juce::int64(17));
+    command->setProperty("revision",juce::int64(8));
+    juce::Array<juce::var> sources;
+    for(int c=0;c<10;++c) {
+        auto ch=std::make_unique<juce::DynamicObject>();
+        ch->setProperty("mode","NONE");
+        ch->setProperty("left",-1);
+        ch->setProperty("right",-1);
+        ch->setProperty("gain",.25);
+        ch->setProperty("pan",0.0);
+        sources.add(juce::var(ch.release()));
+    }
+    command->setProperty("channels",juce::var(sources));
+    const auto accepted=juce::var(command.release());
+    const std::array<int,1> physical{{5}};
+    juce::var candidate;
+    assert(NativeVerifiedSourcePatch::prepare(accepted,6,"MONO",5,-1,
+        physical,17,9,candidate).isEmpty());
+    const auto draftChannels=candidate.getProperty("channels",juce::var());
+    const auto* acceptedChannels=accepted.getProperty("channels",juce::var()).getArray();
+    const auto* changed=draftChannels.getArray();
+    assert(changed && changed->size()==10 && acceptedChannels &&
+           acceptedChannels->size()==10);
+    assert(changed->getReference(6).getProperty("mode","").toString()=="MONO");
+    assert(static_cast<int>(changed->getReference(6).getProperty("left",-1))==5);
+    assert(static_cast<int>(changed->getReference(6).getProperty("right",0))==-1);
+    assert(acceptedChannels->getReference(6).getProperty("mode","").toString()=="NONE");
+    assert(candidate.getProperty("revision",{}).toString()=="9");
+    candidate=juce::var();
+    assert(NativeVerifiedSourcePatch::prepare(accepted,6,"STEREO",5,5,
+        physical,17,9,candidate).isNotEmpty());
+    assert(candidate.isVoid());
+    assert(NativeVerifiedSourcePatch::prepare(accepted,6,"STEREO",5,7,
+        physical,17,9,candidate).isNotEmpty());
+    assert(NativeVerifiedSourcePatch::prepare(accepted,6,"MONO",4,-1,
+        physical,17,9,candidate).isNotEmpty());
+    assert(NativeVerifiedSourcePatch::prepare(accepted,6,"MONO",5,-1,
+        physical,18,9,candidate).isNotEmpty());
+    assert(acceptedChannels->getReference(6).getProperty("mode","").toString()=="NONE");
+    const std::array<int,2> stereoPhysical{{5,7}};
+    assert(NativeVerifiedSourcePatch::prepare(accepted,2,"STEREO",5,7,
+        stereoPhysical,17,9,candidate).isEmpty());
+    const auto stereoRows=candidate.getProperty("channels",juce::var());
+    assert(stereoRows.getArray()->getReference(2).getProperty("mode","").toString()=="STEREO");
 }
 
 int main() {
@@ -988,6 +1041,7 @@ int main() {
     verifyOccupiedExternalCh1Owner();
     verifySourceFormatIndependentPanPcmParity();
     verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch();
+    verifyFirstSoundOnePinNativeSourceDraft();
     // Tests above use a real JUCE AudioProcessor processing seam. Vendor
     // VST3 formats and sound quality require separate Windows hardware FAT.
 }

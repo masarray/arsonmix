@@ -6,6 +6,7 @@
 #include "../engine/core/DynamicChannelFxLeaseBank.h"
 #include "VstBusLayout.h"
 #include "../engine/core/NativeDryRouteCommand.h"
+#include "NativeVerifiedSourcePatch.h"
 #include "../engine/device/JuceActivePortSnapshot.h"
 #include "../engine/core/RealtimeRoutePublisher.h"
 #include "../engine/device/LiveInputPortRegistry.h"
@@ -412,6 +413,11 @@ public:
                 // displays an acknowledged immutable copy; draft changes
                 // never update this until graph publication succeeds.
                 acceptedRoute_=explicitSelection?command:juce::var();
+                // Retain the REAL prepared (possibly UNPATCHED/SILENT) M4
+                // input topology so a single native SOURCE selection can
+                // compile the first mono route. No UI draft is authoritative.
+                sourceTemplate_=command;
+                acceptedFxSelections_=selections;
                 // Release-store only AFTER a valid immutable graph publishes.
                 // Even if OUTPUT is mistakenly armed, unpatched renders never
                 // enter ANY channel/master vendor DSP or produce sound.
@@ -485,6 +491,71 @@ public:
             object->setProperty("right",mode=="STEREO"?physicalRight:-1);
         }
         return {};
+    }
+
+    // A source changing from NONE to MONO/STEREO needs a new prepared
+    // topology. A source changing physical pin within the same format uses
+    // the existing zero-heap atomic source switch above. Both cases are
+    // handled through ONE native command and ONE ACK, not GUI APPLY wizard.
+    // All heavy preparation/reuse and deep cloning happen on message thread.
+    juce::String repatchPhysicalSource(int strip,std::uint64_t expectedEpoch,
+            std::uint64_t expectedRevision,const juce::String& mode,
+            int physicalLeft,int physicalRight,bool directPermitted,
+            bool independentClock,int occupiedCh1Fx,
+            juce::AudioPluginFormatManager& formats,double sampleRate,
+            int deviceFrames)
+    {
+        if(!ready() || !registryValid_.load(std::memory_order_acquire) ||
+           topologyFault_.load(std::memory_order_acquire) ||
+           expectedEpoch!=epoch() || expectedRevision!=revision() ||
+           !sourceTemplate_.isObject())
+            return "SOURCE: native device, graph or accepted template stale";
+        const auto sourceRows=sourceTemplate_.getProperty("channels",juce::var());
+        const auto* rows=sourceRows.getArray();
+        if(!rows || strip<0 || strip>=count || rows->size()!=count)
+            return "SOURCE: target channel unavailable";
+        // Preserve the proven live-safe atomic path for an already scheduled
+        // channel. Never force a vendor graph rebuild for ordinary pin moves.
+        if(hasExplicitRoute() &&
+           rows->getReference(strip).getProperty("mode",{}).toString()==mode)
+            return switchPhysicalSource(strip,expectedEpoch,expectedRevision,
+                                        mode,physicalLeft,physicalRight);
+        const int available=portCount_.load(std::memory_order_acquire);
+        if(available<=0||available>armix::device::LiveInputPortRegistry::limit)
+            return "SOURCE: driver did not verify active capture pins";
+        std::array<int,armix::device::LiveInputPortRegistry::limit> pins{};
+        for(int i=0;i<available;++i)
+            pins[i]=enabledPorts_[i].load(std::memory_order_relaxed);
+        juce::var staged;
+        const auto error=armix::mixer::NativeVerifiedSourcePatch::prepare(
+            sourceTemplate_,strip,mode,physicalLeft,physicalRight,
+            {pins.data(),static_cast<std::size_t>(available)},
+            expectedEpoch,expectedRevision,staged);
+        if(error.isNotEmpty())return error;
+        // Preserve every currently ACKed fader, pan, MUTE and SOLO. The
+        // template may predate atomic live controls; reusing it verbatim
+        // would silently reset a musician's mix after a SOURCE selection.
+        auto stagedRows=staged.getProperty("channels",juce::var());
+        auto* editable=stagedRows.getArray();
+        if(!editable || editable->size()!=count)
+            return "SOURCE: prepared input document malformed";
+        for(int i=0;i<count;++i) {
+            auto* row=editable->getReference(i).getDynamicObject();
+            if(!row)return "SOURCE: missing acknowledged channel control";
+            const auto& c=channelEdits_[i];
+            row->setProperty("gain",static_cast<double>(c.linear));
+            row->setProperty("pan",static_cast<double>(c.pan));
+            row->setProperty("mute",c.mute);
+            row->setProperty("solo",c.solo);
+        }
+        if(expectedEpoch!=epoch() || expectedRevision!=revision() ||
+           !registryValid_.load(std::memory_order_acquire))
+            return "SOURCE: device changed during preparation; accepted mix preserved";
+        // Same M4 publisher, same plugin lease/FX state and physical MAIN
+        // outputs. Existing 256-frame topology crossfade is performed by
+        // its ONE installed callback. Compilation/publish failures roll back.
+        return apply(staged,directPermitted,independentClock,occupiedCh1Fx,
+                     acceptedFxSelections_,formats,sampleRate,deviceFrames,true);
     }
 
     // Native live control path. Only the JUCE message thread writes. No
@@ -693,6 +764,8 @@ public:
         fxCount_.store(0,std::memory_order_relaxed);
         fxReused_.store(0,std::memory_order_relaxed);
         acceptedRoute_=juce::var(); // control-thread STOP only
+        sourceTemplate_=juce::var();
+        acceptedFxSelections_=FxSelections{};
         for(auto& n:auxFxNames_)n.clear();
         for(auto& p:channelPeaks_)p.store(0.f,std::memory_order_relaxed);
         for(auto& p:channelPeaksL_)p.store(0.f,std::memory_order_relaxed);
@@ -1052,6 +1125,8 @@ private:
     std::array<std::atomic<float>,auxCount> auxPeaks_{};
     std::atomic<int> auxCountActive_{0},auxSendCount_{0};
     juce::var acceptedRoute_; // native ACK only, no UI preview/localStorage truth
+    juce::var sourceTemplate_; // last prepared M4 template, including SILENT/NONE startup
+    FxSelections acceptedFxSelections_{}; // CONTROL ONLY: original VST3 identity for FX reuse
     // All data shared between JUCE device lifecycle and GUI/control reads
     // are atomic; the callback never enumerates masks or channel names.
     std::array<std::atomic<int>,armix::device::LiveInputPortRegistry::limit> enabledPorts_{};
