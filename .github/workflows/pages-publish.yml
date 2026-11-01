@@ -49,7 +49,11 @@ jobs:
           node --check web/app.js
           python tests/gui_baseline_lock_test.py
           python scripts/build_pages.py --out dist-pages --sha "$SOURCE_SHA" --branch main
-          cmp AR-MIX-Live-FX-Host-Standalone-v0.3.html dist-pages/preview/mixer.html
+          if [ -f site/preview/candidate.json ]; then
+            cmp site/preview/mixer.html dist-pages/preview/mixer.html
+          else
+            cmp AR-MIX-Live-FX-Host-Standalone-v0.3.html dist-pages/preview/mixer.html
+          fi
           python tests/button_asset_test.py
           python tests/fader_asset_test.py
           python tests/pan_button_asset_test.py

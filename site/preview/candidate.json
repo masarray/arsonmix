@@ -1,0 +1,9 @@
+{
+  "kind": "DRAFT_GUI_QA_ONLY",
+  "source_pr": 271,
+  "source_branch": "work/operator-console-v6",
+  "source_sha": "8c4205dd166c9f8933d8b303f630f567db9ca157",
+  "ci_run": 41308197501,
+  "ci_conclusion": "success",
+  "note": "Pinned actual M4 source from GUI PR#271, not a released or native-certified binary."
+}
