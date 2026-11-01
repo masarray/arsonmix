@@ -1903,14 +1903,14 @@ function savePluginPreferences(){
  }));}catch(error){/* Manager still works without browser storage. */}
 }
 const tracksEl=document.getElementById('tracks'),masterEl=document.getElementById('master'),info=document.getElementById('info');
-let nextId=1,nextGroup=1,tracks=[],master,preview=false,meterFrame=0,lastTick=0,clipboard=null,scenes=[],sofEnabled=false,sofTarget="Bus A",wireSourceId=1,wireEdges=[],nextWireId=1,wireMode='send';
+let nextId=1,nextGroup=1,tracks=[],master,preview=false,meterFrame=0,lastTick=0,clipboard=null,scenes=[],sofEnabled=false,sofTarget="Bus A",wireSourceId=1,wireEdges=[],nextWireId=1,wireMode='send',wireAnchorId=null;
 const clone=x=>JSON.parse(JSON.stringify(x));
 const selection=()=>tracks.concat(master).filter(t=>t.selected);
 const make=(name,kind,color)=>{
  const id=nextId++;
  return {id,name,kind,color,icon:kind==='master'?'◎':kind==='bus'?'⊞':kind==='fx'?'◉':'♩',group:null,safe:false,format:'stereo',input:'None',output:kind==='master'?'Default Output':'Master',fx:Array(8).fill('None'),slotBypass:Array(8).fill(false),fxOn:true,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,activeSend:0,sendSlots:Array.from({length:16},()=>({send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0})),eq:true,pan:0,trim:0,mute:false,solo:false,cue:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
 };
-function init(){nextId=1;nextGroup=1;wireSourceId=1;wireEdges=[];nextWireId=1;wireMode='send';document.getElementById('wireMode').value='send';tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
+function init(){nextId=1;nextGroup=1;wireSourceId=1;wireEdges=[];nextWireId=1;wireMode='send';wireAnchorId=null;document.getElementById('wireMode').value='send';tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const option=(values,selected)=>values.map(x=>'<option value="'+escapeHtml(x)+'"'+(x===selected?' selected':'')+'>'+escapeHtml(x)+'</option>').join('');
 // DEMO mult is a source binding, not a Group sum or copied JS audio engine.
@@ -1992,6 +1992,26 @@ function wireConnect(source,dest){
  if(wireIsCycle(source.id,dest.id)){say('WIRE REJECTED: feedback loop · existing signal graph preserved');return false;}
  wireEdges.push({id:nextWireId++,sourceId:source.id,destId:dest.id,mode:wireMode,levelDb:0,enabled:true});
  render();say('WIRE '+source.name+' → '+dest.name+' · '+(wireMode==='send'?'FOLLOW FADER SEND':'INDEPENDENT PRE FX')+' · DEMO ONLY · no native PCM');
+ return true;
+}
+
+function wireConnectRange(source,anchorId,finalId){
+ const bankCapacityNow=bankCapacity(),page=Number(document.getElementById('bankSelect').value)||0;
+ const filter=document.getElementById('viewFilter').value;
+ const shown=tracks.filter(t=>filter==='all'||(filter==='solo'?t.solo:t.kind===filter))
+  .slice(page*bankCapacityNow,(page+1)*bankCapacityNow);
+ const a=shown.findIndex(x=>x.id===anchorId),b=shown.findIndex(x=>x.id===finalId);
+ if(a<0||b<0){say('WIRE RANGE: select two destination arrows in the SAME visible bank');return false;}
+ const batch=shown.slice(Math.min(a,b),Math.max(a,b)+1)
+  .filter(t=>t.kind!=='master'&&t.id!==source.id&&!wireFor(source.id,t.id));
+ if(!batch.length){say('WIRE RANGE: destinations already linked');return false;}
+ // Batch is fail-closed: do not apply some edges then discover a loop later.
+ if(batch.some(t=>wireIsCycle(source.id,t.id))){
+  say('WIRE RANGE REJECTED: a destination would create a feedback loop; no links changed');return false;
+ }
+ for(const t of batch)wireEdges.push({id:nextWireId++,sourceId:source.id,destId:t.id,
+  mode:wireMode,levelDb:0,enabled:true});
+ render();say(source.name+' → '+batch.length+' destinations linked with SHIFT · GUI DEMO ONLY');
  return true;
 }
 function wireDbText(db){return db<=-60?'−∞':(db>0?'+':'')+Number(db).toFixed(0)+' dB';}
@@ -2184,7 +2204,7 @@ function refreshStrip(t){
 }
 function selectTrack(t,add=false){
  const changedSource=!add&&t.kind==='audio'&&wireSourceId!==t.id;
- if(changedSource)wireSourceId=t.id;
+ if(changedSource){wireSourceId=t.id;wireAnchorId=null;}
  if(!add){tracks.forEach(x=>x.selected=false);master.selected=false;t.selected=true;}
  else t.selected=!t.selected;
  document.querySelectorAll('.strip').forEach(el=>{const item=tracks.concat(master).find(x=>x.id===Number(el.dataset.id));el.classList.toggle('selected',!!item&&item.selected);});
@@ -2203,7 +2223,7 @@ function renderWireRouting(){
  const svg=document.getElementById('wireLayer'),viewport=document.getElementById('viewport');
  const source=tracks.find(t=>t.id===wireSourceId&&t.kind==='audio');
  const legend=document.getElementById('wireLegend'),main=document.getElementById('wireMaster');
- if(legend)legend.textContent=source?'CH'+String(source.id).padStart(2,'0')+' ⇢ '+wireOutgoingCount(source.id)+' targets · routing is a demo':'Select source · click destination arrows';
+ if(legend)legend.textContent=source?'CH'+String(source.id).padStart(2,'0')+' ⇢ '+wireOutgoingCount(source.id)+' · click arrows / Shift-range · DEMO':'Select source · click destination arrows';
  if(main&&source){
   const direct=source.output!=='SOURCE ONLY (No Main)';
   main.textContent=direct?'MAIN ON':'MAIN OFF';main.setAttribute('aria-pressed',String(direct));
@@ -2280,7 +2300,7 @@ function refreshScenes(){
 }
 function saveScene(){
  const name='Scene '+(scenes.length+1);
- scenes.push({name,nextId,nextGroup,wireEdges:clone(wireEdges),nextWireId,wireMode,wireSourceId,tracks:clone(tracks),master:clone(master),filter:document.getElementById('viewFilter').value,narrow:document.querySelector('.console-body').classList.contains('narrow'),density:document.querySelector('.console-body').dataset.density||'comfort'});
+ scenes.push({name,nextId,nextGroup,wireEdges:clone(wireEdges),nextWireId,wireMode,wireSourceId,wireAnchorId,tracks:clone(tracks),master:clone(master),filter:document.getElementById('viewFilter').value,narrow:document.querySelector('.console-body').classList.contains('narrow'),density:document.querySelector('.console-body').dataset.density||'comfort'});
  refreshScenes();document.getElementById('sceneSelect').value=String(scenes.length-1);
  say('Scene saved: '+scenes[scenes.length-1].name+' · local reference session only');
 }
@@ -2291,7 +2311,7 @@ function recallScene(){
  const scene=scenes[Number(value)];if(!scene)return;
  const protectedChannels=new Map(tracks.concat(master).filter(t=>t.safe).map(t=>[t.id,clone(t)]));
  nextId=scene.nextId;nextGroup=scene.nextGroup;tracks=clone(scene.tracks);master=clone(scene.master);
- wireEdges=clone(scene.wireEdges||[]);nextWireId=scene.nextWireId||1;wireMode=scene.wireMode||'send';wireSourceId=scene.wireSourceId||1;document.getElementById('wireMode').value=wireMode;
+ wireEdges=clone(scene.wireEdges||[]);nextWireId=scene.nextWireId||1;wireMode=scene.wireMode||'send';wireSourceId=scene.wireSourceId||1;wireAnchorId=scene.wireAnchorId??null;document.getElementById('wireMode').value=wireMode;
  tracks=tracks.map(t=>protectedChannels.get(t.id)||t);
  for(const [id,t] of protectedChannels){if(t.kind!=='master'&&!tracks.some(ch=>ch.id===id))tracks.push(t);}
  if(protectedChannels.has(master.id))master=protectedChannels.get(master.id);
@@ -2420,8 +2440,9 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  if(a==='wireRoute'||a==='wireRemove'){
   const source=tracks.find(x=>x.id===wireSourceId&&x.kind==='audio');
   if(!source||t.kind==='master'||t.id===source.id){say('Select one source and another destination');return;}
-  if(a==='wireRemove'){const edge=wireFor(source.id,t.id);if(!edge)return;wireEdges=wireEdges.filter(x=>x.id!==edge.id);render();say('WIRE disconnected '+source.name+' → '+t.name+' · GUI DEMO ONLY');return;}
-  wireConnect(source,t);return;
+  if(a==='wireRemove'){const edge=wireFor(source.id,t.id);if(!edge)return;wireEdges=wireEdges.filter(x=>x.id!==edge.id);wireAnchorId=t.id;render();say('WIRE disconnected '+source.name+' → '+t.name+' · GUI DEMO ONLY');return;}
+  if(e.shiftKey&&wireAnchorId!==null){wireConnectRange(source,wireAnchorId,t.id);wireAnchorId=t.id;return;}
+  wireConnect(source,t);wireAnchorId=t.id;return;
  }
  if(a==='rename'||a==='editIdentity')return; // double-click edits; single-click selects
  if(a==='format'&&t.kind==='audio'){t.format=t.format==='mono'?'stereo':'mono';refreshStrip(t);say(t.name+' processing → '+t.format.toUpperCase()+' · physical source '+t.input+' unchanged (reference only)');return;}
