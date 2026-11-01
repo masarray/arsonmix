@@ -664,16 +664,15 @@ button:disabled{opacity:.45;cursor:not-allowed}
   </div>
   <main class="console-pane">
     <div class="mixer-title"><span class="accent"></span><span class="panel-name">Live Mixer</span><span class="panel-sub">▤</span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
-    <section class="console-body collapsed-fx collapsed-send collapsed-eq" data-density="comfort" aria-label="Live mixing console">
+    <section class="console-body collapsed-send" data-density="comfort" aria-label="Live mixing console">
       <aside class="section-rail" aria-label="Mixer section icons">
         <button class="rail-cell route" data-section="route" aria-expanded="true" title="Collapse / expand Inputs and Outputs">⇥</button>
         <button class="rail-cell fx collapsed" data-section="fx" aria-expanded="false" title="Collapse / expand Effects">fx</button>
         <button class="rail-cell send collapsed" data-section="send" aria-expanded="false" title="Collapse / expand Sends">↪</button>
-        <button class="rail-cell eq collapsed" data-section="eq" aria-expanded="false" title="Collapse / expand Equalizer">▥</button>
         <div class="rail-cell pan" title="Pan">◉</div>
         <div class="rail-cell trim" title="Digital input trim"><small>TRIM</small></div>
         <div class="rail-cell switch" title="Mute / Solo / Cue / Monitor"><small>M S C</small></div>
-        <div class="rail-cell fader" title="Level and meter">dB<br>│<br>│<br>│</div>
+        <div class="rail-cell fader" title="Level and meter">dB</div>
         <div class="rail-cell footer" title="Track labels"><small>▦</small></div>
       </aside>
       <div class="tracks-viewport" id="viewport" tabindex="0" aria-label="Visible channel bank; use upper arrow buttons for more channels"><div class="tracks" id="tracks"></div></div>
@@ -745,10 +744,9 @@ function sectionFx(t){
  }
  return out+'</div></div>';
 }
-const eqSvg='<span class="eq-status-quiet" aria-hidden="true">EQ</span>';
 function sectionSend(t){
  if(t.kind==='master'||t.kind==='fx')return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><span class="sendtag">No Sends</span></div></div>';
- return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><select class="send-slot" data-field="activeSend" title="Select send slot 1–16" aria-label="Send slot">'+option(Array.from({length:16},(_,i)=>'S'+(i+1)),'S'+(t.activeSend+1))+'</select><span class="send-compact" title="Active send destination">'+escapeHtml(t.send==='None'?'No send':t.send)+'</span><span class="push"></span><button class="mini power '+(t.sendOn?'on':'')+'" data-action="sendOn" title="Enable Send">⏻</button><button class="mini pre '+(t.pre?'on':'')+'" data-action="pre" title="Toggle Pre/Post send">'+(t.pre?'Pre':'Pst')+'</button></div><select class="send-select" data-field="send" aria-label="Send destination">'+option(channelOptions(t,'send'),t.send)+'</select><div class="sendlevel"><label>↳</label><input type="range" min="-60" max="6" step="1" value="'+t.sendLevel+'" data-field="sendLevel" title="Send level"><output>'+formatDb(t.sendLevel)+'</output></div><div class="sendlevel send-pan"><label>◉</label><input type="range" min="-100" max="100" step="1" value="'+t.sendPan+'" data-field="sendPan" title="Send stereo pan" aria-label="Send pan"><output>'+(t.sendPan===0?'C':t.sendPan<0?'L'+Math.abs(t.sendPan):'R'+t.sendPan)+'</output></div></div>';
+ return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><select class="send-slot" data-field="activeSend" title="Select send slot 1–16" aria-label="Send slot">'+option(Array.from({length:16},(_,i)=>'S'+(i+1)),'S'+(t.activeSend+1))+'</select><span class="send-compact" title="Active send destination">'+escapeHtml(t.send==='None'?'No send':t.send)+'</span><span class="push"></span><button class="mini power '+(t.sendOn?'on':'')+'" data-action="sendOn" title="Enable Send">⏻</button><button class="mini pre '+(t.pre?'on':'')+'" data-action="pre" title="Toggle Pre/Post send">'+(t.pre?'Pre':'Pst')+'</button></div><select class="send-select" data-field="send" aria-label="Send destination">'+option(channelOptions(t,'send'),t.send)+'</select><div class="sendlevel"><label>↳</label><input type="range" min="-60" max="6" step="1" value="'+t.sendLevel+'" data-field="sendLevel" title="Send level"><output>'+formatDb(t.sendLevel)+'</output></div></div>';
 }
 function formatDb(n){return n<=-60?'-∞':(n>0?'+':'')+Number(n).toFixed(1);}
 function panLabel(n){return Number(n)===0?'C':n<0?'L'+Math.abs(n):'R'+n;}
@@ -774,17 +772,24 @@ function strip(t){
  else code+='<div class="route-field"><span class="route-caption">IN</span><span class="route-identity">SUM BUS</span></div>';
  code+='<div class="route-field"><span class="route-caption">OUT</span><select class="route-select" data-field="output" title="Primary output" aria-label="'+escapeHtml(t.name)+' output">'+option(channelOptions(t,'output'),t.output)+'</select></div></div>';
  code+=sectionFx(t)+sectionSend(t);
- code+='<div class="section eq-section '+(t.eq?'':'off')+'"><div class="eq-header"><span class="sym">▥</span><small style="font-size:9px;color:#959b9d">EQ</small><span class="push"></span><button class="mini power '+(t.eq?'on':'')+'" data-action="eq" title="Enable/disable EQ">⏻</button></div><button class="eq-line" data-action="eq" title="Toggle track EQ" aria-label="Toggle track EQ">'+eqSvg+'</button></div>';
  code+='<div class="section pan-section"><span class="pan-icon" title="Pan / Balance">PAN</span><span class="pan-control" style="'+panStyle(t.pan)+'"><input class="center-pan" type="range" min="-100" max="100" step="1" value="'+t.pan+'" data-field="pan" title="Pan from center; release near center to snap; double-click to center" aria-label="Channel pan; double-click center"></span><output>'+panLabel(t.pan)+'</output></div>';
  code+='<div class="section trim-section"><span class="trim-label" title="Digital input trim">TRIM</span><input class="trim-control" type="range" min="-24" max="24" step="0.5" value="'+t.trim+'" data-field="trim" aria-label="Digital trim dB" title="Digital trim (-24..+24dB)"><output class="trim-value">'+formatDb(t.trim)+'</output></div>';
- code+='<div class="section switch-section"><button class="switch mute '+(t.mute?'on':'')+'" data-action="mute" title="Mute channel" aria-pressed="'+t.mute+'"><span class="switch-full">MUTE</span><span class="switch-short">M</span></button><button class="switch solo '+(t.solo?'on':'')+'" data-action="solo" title="Solo channel" aria-pressed="'+t.solo+'"><span class="switch-full">SOLO</span><span class="switch-short">S</span></button>'+(t.kind!=='master'?'<button class="switch cue '+(t.cue?'on':'')+'" data-action="cue" title="Cue / PFL to separate monitor bus (visual only)" aria-pressed="'+t.cue+'">PFL</button>':'')+(t.kind==='audio'?'<button class="switch mon '+(t.mon?'on':'')+'" data-action="mon" title="Input monitor (visual only)" aria-pressed="'+t.mon+'">I</button>':'')+'</div>';
+ code+='<div class="section switch-section">'
+   +'<button class="switch btn-180 mute '+(t.mute?'on':'')+'" data-action="mute" title="Mute channel" aria-pressed="'+t.mute+'">MUTE</button>'
+   +'<button class="switch btn-180 solo '+(t.solo?'on':'')+'" data-action="solo" title="Solo channel" aria-pressed="'+t.solo+'">SOLO</button>'
+   +'<button class="switch btn-180 cue '+(t.cue?'on':'')+'" data-action="cue" title="Cue / PFL monitor bus (reference only)" aria-pressed="'+t.cue+'">PFL</button></div>';
  code+=sectionFader(t);
  code+='<div class="bottom-section"><div class="db-value">'+(sofEnabled&&t.kind==='audio'?'S ': '')+formatDb(sofEnabled&&t.kind==='audio'?getSofLevel(t):t.level)+'</div><div class="footer-label '+(t.kind==='master'?'master-label':t.kind==='bus'?'bus-label':'')+'"><span class="name" data-action="rename" title="Double-click to rename">'+escapeHtml(t.name)+'</span><div class="color-strip"></div></div></div></article>';
  return code;
 }
 function bankCapacity(){
- const width=document.getElementById('viewport').clientWidth||0;
- return width?Math.max(1,Math.min(10,Math.floor(width/112))):10;
+ const body=document.querySelector('.console-body');
+ const panel=body?.clientWidth||0;
+ // Width budget is shared between n source strips + one equal-sized, pinned MAIN.
+ // Never grow the last partial bank; empty slots keep exactly the same grid track width.
+ const dock=pluginOpen?Math.min(330,Math.floor(panel*.36)):0;
+ const usable=panel?Math.max(0,panel-28-dock):0;
+ return usable ? Math.max(1,Math.min(10,Math.floor(usable/116)-1)) : 10;
 }
 function render(){
  const filter=document.getElementById('viewFilter').value;
@@ -795,7 +800,9 @@ function render(){
  selector.innerHTML=Array.from({length:count},(_,i)=>'<option value="'+i+'">CH '+String(i*capacity+1).padStart(2,'0')+'–'+String(Math.min(visible.length,(i+1)*capacity)).padStart(2,'0')+'</option>').join('');
  selector.value=String(page);
  const bankTracks=visible.slice(page*capacity,(page+1)*capacity);
- if(tracksEl.style?.setProperty)tracksEl.style.setProperty('--bank-columns',String(bankTracks.length||1));
+ const root=document.querySelector('.console-body');
+ if(root.style?.setProperty)root.style.setProperty('--bank-capacity',String(capacity));
+ if(tracksEl.style?.setProperty)tracksEl.style.setProperty('--bank-columns',String(capacity));
  tracksEl.innerHTML=bankTracks.map(strip).join('');
  updateSofTargets();
  masterEl.innerHTML=strip(master);
@@ -821,9 +828,9 @@ function setDensity(mode){
  const density=['comfort','standard','compact'].includes(mode)?mode:'comfort';
  const root=document.querySelector('.console-body'),compact=density==='compact';
  root.dataset.density=density;
- const widths={comfort:'142px',standard:'130px',compact:'114px'};
+ const widths={comfort:'0px',standard:'0px',compact:'0px'};
  const parent=document.querySelector('.console-pane');
- if(parent?.style?.setProperty)parent.style.setProperty('--master-w',widths[density]);
+ // Equal widths now come from the console grid, not a separate Master preset.
  root.classList.toggle('narrow',compact);
  document.getElementById('densitySelect').value=density;
  render();
@@ -1070,7 +1077,7 @@ document.querySelector('.console-body').addEventListener('mousedown',e=>{const t
 document.querySelector('.section-rail').addEventListener('click',e=>{
  const button=e.target.closest('[data-section]');if(!button)return;
  const name=button.dataset.section,body=document.querySelector('.console-body');
- if(body.classList.contains('narrow')&&['fx','send','eq'].includes(name)){
+ if(body.classList.contains('narrow')&&['fx','send'].includes(name)){
   say('Exit Narrow view before expanding '+name.toUpperCase());return;
  }
  const collapsed=body.classList.toggle('collapsed-'+name);
