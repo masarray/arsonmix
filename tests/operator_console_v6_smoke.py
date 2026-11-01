@@ -10,7 +10,7 @@ from playwright.async_api import async_playwright
 ROOT = Path(__file__).resolve().parents[1]
 OPS = [
     "SET_SOURCE", "SET_PROCESSING_FORMAT", "SET_PRIMARY_OUT",
-    "PICK_INSERT_FILE", "SET_INSERT_BYPASS", "OPEN_INSERT_EDITOR",
+    "PICK_INSERT_FILE", "SET_INSERT_BYPASS", "OPEN_INSERT_EDITOR", "MOVE_INSERT",
     "ADD_SEND", "SET_SEND_TAP", "SET_SEND_LEVEL", "SET_FADER",
     "SET_PAN", "SET_MUTE", "SET_SOLO", "CREATE_CHANNEL",
 ]
@@ -118,10 +118,14 @@ async def main():
         await page.evaluate("""id=>window.__v6Test.publish('arMixConsoleAck',
           {requestId:id,status:'ACCEPTED',newRevision:4})""", accepted_id)
         assert await page.locator('[data-op="SET_SOURCE"][data-id="ch-07"]').input_value() == ""
+        assert await page.locator('[data-op="SET_SOURCE"][data-id="ch-07"]').is_disabled()
         next_state = snapshot(revision=4)
         next_state["graph"]["channels"][6]["source"] = {"portId": "IN-1"}
+        next_state["graph"]["channels"][6]["inserts"].append(
+            {"id": "fx-07b", "name": "Second VST3", "bypassed": False})
         await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)", next_state)
         assert await page.locator('[data-op="SET_SOURCE"][data-id="ch-07"]').input_value() == "IN-1"
+        assert await page.locator('[data-op="SET_SOURCE"][data-id="ch-07"]').is_enabled()
         assert "NO VERIFIED PCM" in await page.locator(
             '[data-status-id="ch-07"]').inner_text()
 
@@ -133,13 +137,22 @@ async def main():
         await page.evaluate("""id=>window.__v6Test.publish(
           'arMixConsoleAck',{requestId:id,status:'REJECTED',errorCode:'LOOP'})""", op["requestId"])
         assert await page.locator('[data-op="SET_PRIMARY_OUT"][data-id="ch-07"]').input_value() == "MAIN"
-        await page.locator('[data-op="OPEN_INSERT_EDITOR"][data-id="ch-07"]').click()
+        await page.locator('[data-op="OPEN_INSERT_EDITOR"][data-id="ch-07"]').first.click()
         assert await page.evaluate("""() => window.__v6Test.sent.filter(
           x=>x.event==='arMixConsoleIntent').at(-1).payload.op""") == "OPEN_INSERT_EDITOR"
         current = await page.evaluate("""() => window.__v6Test.sent.filter(
           x=>x.event==='arMixConsoleIntent').at(-1).payload.requestId""")
         await page.evaluate("""id=>window.__v6Test.publish(
           'arMixConsoleAck',{requestId:id,status:'REJECTED',errorCode:'EDITOR_UNAVAILABLE'})""", current)
+        fx_rows = page.locator('[data-channel-id="ch-07"] .arV6FxSlot')
+        await fx_rows.first.drag_to(fx_rows.nth(1))
+        move = await page.evaluate("""() => window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').at(-1).payload""")
+        assert move["op"] == "MOVE_INSERT"
+        assert move["payload"] == {"insertId": "fx-07", "beforeInsertId": "fx-07b"}
+        await page.evaluate("""id=>window.__v6Test.publish(
+          'arMixConsoleAck',{requestId:id,status:'REJECTED',errorCode:'ORDER_UNSAFE'})""", move["requestId"])
+        assert await fx_rows.first.get_attribute("data-fx-id") == "fx-07"
         await page.locator('[data-op="SET_SEND_TAP"][data-id="ch-07"]').click()
         tap = await page.evaluate("""() => window.__v6Test.sent.filter(
           x=>x.event==='arMixConsoleIntent').at(-1).payload""")
@@ -154,6 +167,17 @@ async def main():
         assert send["op"] == "SET_SEND_LEVEL" and send["payload"]["sendId"] == "send-07"
         await page.locator(".arV6SendMode").select_option("")
         assert await page.locator('[data-op="SET_FADER"][data-id="ch-07"]').input_value() == "-3"
+        await page.evaluate("""() => window.__v6FaderReference =
+          document.querySelector('[data-op="SET_FADER"][data-id="ch-07"]')""")
+        param = snapshot(revision=4)
+        param["graph"]["channels"][6]["source"] = {"portId": "IN-1"}
+        param["graph"]["channels"][6]["inserts"].append(
+            {"id": "fx-07b", "name": "Second VST3", "bypassed": False})
+        param["graph"]["channels"][6]["controls"]["faderDb"] = -11
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)", param)
+        assert await page.locator('[data-op="SET_FADER"][data-id="ch-07"]').input_value() == "-11"
+        assert await page.evaluate("""() => window.__v6FaderReference ===
+          document.querySelector('[data-op="SET_FADER"][data-id="ch-07"]')""")
 
         # A new channel exists only after a full native roster snapshot.
         page.on("dialog", lambda d: asyncio.create_task(d.accept("MONO")))
@@ -172,6 +196,7 @@ async def main():
 
         # Device epoch regression is refused; no downgrade or fake readiness.
         await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)", snapshot(revision=4))
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)", snapshot(revision=99,epoch=6))
         assert await page.locator("#arV6Lanes .arV6Strip").count() == 11
 
         # 4 desktop widths and 3 heights: meter/fader zones aligned, MAIN pinned.
