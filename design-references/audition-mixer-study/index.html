@@ -972,6 +972,9 @@ button:disabled{opacity:.45;cursor:not-allowed}
 /* Hard layout invariant: one physical width for all VU/fader modules and Master. */
 .console-body .tracks>.strip{box-sizing:border-box;min-width:0!important;max-width:none!important}
 .console-body #master{box-sizing:border-box}
+
+/* Match the source GUI gain ruler: +10/0/−60, while VU remains 0…−60 dBFS. */
+.console-body .fader-box:focus-within::before{box-shadow:inset 0 0 0 1px #82cddd,inset 0 4px 4px -3px #070e13,inset 0 -4px 4px -3px #070e13!important}
 </style>
 </head>
 <body>
@@ -1105,11 +1108,11 @@ function panLabel(n){return Number(n)===0?'C':n<0?'L'+Math.abs(n):'R'+n;}
 function panStyle(n){const left=Math.min(50,50+n/2),right=Math.max(50,50+n/2);return '--pan-start:'+left+'%;--pan-end:'+right+'%';}
 function rangePct(v,min,max){return Math.max(0,Math.min(100,100*(Number(v)-min)/(max-min)));}
 function faderPercent(value,isSend){
- const min=-60,max=isSend?6:15;
+ const min=-60,max=isSend?6:10;
  return Math.max(0,Math.min(100,((Number(value)-min)/(max-min))*100));
 }
 function sectionFader(t){
- const isSend=sofEnabled&&t.kind==='audio',value=isSend?getSofLevel(t):t.level,percent=faderPercent(value,isSend),gainMax=isSend?6:15;
+ const isSend=sofEnabled&&t.kind==='audio',value=isSend?getSofLevel(t):t.level,percent=faderPercent(value,isSend),gainMax=isSend?6:10;
  const vuTicks=[0,-6,-12,-18,-24,-36,-48,-60],gainTicks=[gainMax,0,-6,-12,-24,-36,-48,-60];
  const vuScale=vuTicks.map(v=>'<span class="vu-tick" style="top:'+(-v/60*100)+'%"><span>'+v+'</span></span>').join('');
  const gainScale=gainTicks.map(v=>'<span class="gain-tick '+(v===0?'major':'')+'" style="top:'+((gainMax-v)/(gainMax+60)*100)+'%"><span>'+(v<=-60?'−∞':v>0?'+'+v:v)+'</span></span>').join('');
@@ -1346,7 +1349,7 @@ function handleField(event){
  if(t.group&&!event.altKey){
   const delta=t.level-old;
   tracks.filter(peer=>peer.group===t.group&&peer.id!==t.id).forEach(peer=>{
-   peer.level=Math.max(-60,Math.min(15,Math.round((peer.level+delta)*10)/10));
+   peer.level=Math.max(-60,Math.min(10,Math.round((peer.level+delta)*10)/10));
    const other=document.querySelector('.strip[data-id="'+peer.id+'"]');
    if(other){const fader=other.querySelector('.fader'),db=other.querySelector('.db-value');if(fader)fader.value=peer.level;if(db)db.textContent=formatDb(peer.level);syncFaderVisual(peer,other);}
   });
