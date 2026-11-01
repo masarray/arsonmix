@@ -5,7 +5,7 @@
   "sourceSHAs": {
     "ENGINE": "06957b4f9672d398341ce439b65347dd926f472b",
     "GUI": "87d6e85fe4deaf48e9aa6ec384643150ba5edabd",
-    "FAT": "140840fad3342bca28e81ad3ece2641021a51407"
+    "FAT": "89607b5de3e62d24ab75a5a99c44bc1294773e67"
   },
   "machineContract": "contracts/console-puzzle-v8.json",
   "fixture": "tests/fixtures/console-v8-native-unready.json",
@@ -98,5 +98,7 @@
     "run": 41290067368,
     "result": "IN_PROGRESS_AT_COMPOSITION"
   },
-  "fatHead": "140840fad3342bca28e81ad3ece2641021a51407"
+  "fatHead": "140840fad3342bca28e81ad3ece2641021a51407",
+  "lastS0Hardening": "UNKNOWN_ARG_PROBE_MUST_EXPLICITLY_REJECT_NOT_CRASH",
+  "producerUnknownArgEvidence": "NEEDS_NONZERO_AND_ARSONMIX_S0_UNSUPPORTED_ARGUMENT"
 }

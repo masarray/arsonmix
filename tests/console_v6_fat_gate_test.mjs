@@ -228,19 +228,30 @@ test('S0 shared v8 contract rejects absent native pins, fake ACK and mutated gra
 // S0 regression: a portable fixture binary that ignores argv must NEVER
 // masquerade as JUCE's native WebView producer or grant product acceptance.
 import {assertExplicitS0Exporter} from '../scripts/run_console_native_s0.mjs';
-test('portable C++ generator that ignores invalid argv is BLOCKED from native S0',()=>{
+test('native S0 exporter must deliberately reject unknown CLI, not crash/fail/ignore',()=>{
  assert.throws(()=>assertExplicitS0Exporter('/fake/fixture',
    ()=>Buffer.from('{"events":[]}')),
    /C\+\+ binary ignored unknown flag/);
- let called=0;
+ let calls=0;
  assert.doesNotThrow(()=>assertExplicitS0Exporter('/fake/native',()=>{
-   called++;const err=new Error('unsupported option');err.status=2;throw err;
+   calls++;
+   const e=new Error('unsupported CLI');
+   e.status=64;e.stderr=Buffer.from('ARSONMIX_S0_UNSUPPORTED_ARGUMENT');
+   throw e;
  }));
- assert.equal(called,1);
- const crash=new Error('timed out');crash.code='ETIMEDOUT';
- assert.throws(()=>assertExplicitS0Exporter('/fake/crash',()=>{throw crash}),
-   /timed out/);
+ assert.equal(calls,1);
+ for(const failure of [
+   {status:3221226505,stderr:Buffer.from('Assertion failed')},
+   {code:'ENOENT'},
+   {status:2,stderr:Buffer.from('unrelated failed CTest')},
+   {code:'ETIMEDOUT'}
+ ]){
+   assert.throws(()=>assertExplicitS0Exporter('/fake/crash',()=>{
+     const e=new Error('failed native process');Object.assign(e,failure);throw e;
+   }),/probe crashed, failed to execute, or lacked explicit rejection marker/);
+ }
 });
+
 
 
 // Source-only phase gate must NEVER call portable golden/live M4 a universal
