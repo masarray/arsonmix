@@ -307,6 +307,21 @@ async def main():
         assert tap["payload"] == {"sendId": "send-07", "tap": "PRE"}
         await page.evaluate("""id=>window.__v6Test.publish(
           'arMixConsoleAck',{requestId:id,status:'REJECTED',deviceEpoch:'7',graphRevision:'4',rosterRevision:'4',errorCode:'UNSUPPORTED'})""", tap["requestId"])
+        # Direct SEND slider uses native SET_SEND_LEVEL; no optimistic DSP.
+        gain=page.locator('[data-op="SET_SEND_LEVEL"][data-id="7"][data-send="send-07"]')
+        assert await gain.is_enabled()
+        assert await gain.input_value()=="-6"
+        await gain.evaluate("(el)=>{el.value='-12';el.dispatchEvent(new Event('change',{bubbles:true}))}")
+        gain_cmd=await page.evaluate("""()=>window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').at(-1).payload""")
+        assert gain_cmd["operation"]=="SET_SEND_LEVEL"
+        assert gain_cmd["payload"]=={"sendId":"send-07","levelDb":-12}
+        assert await gain.input_value()=="-6"
+        await page.evaluate("""id=>window.__v6Test.publish(
+          'arMixConsoleAck',{requestId:id,status:'REJECTED',deviceEpoch:'7',
+          graphRevision:'4',rosterRevision:'4',errorCode:'GAIN_BUSY'})""",gain_cmd["requestId"])
+        assert await gain.input_value()=="-6"
+        assert await page.locator('[data-send-id="send-07"] .arV6SendDb').inner_text()=="-6.0 dB"
         await page.locator(".arV6SendMode").select_option("1001")
         await page.locator('[data-op="SET_FADER"][data-id="7"]').evaluate(
             "(el)=>{el.value='-12';el.dispatchEvent(new Event('change',{bubbles:true}))}")

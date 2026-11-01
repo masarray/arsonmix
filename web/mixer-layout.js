@@ -581,7 +581,18 @@
       const toggle=button(send.tap==='PRE'?'PRE':'POST',{'data-op':'SET_SEND_TAP',
         'data-id':ch.id,'data-send':clean(send.id)});
       line.append(toggle);
-      section.append(line);
+      const gain=h('label','arV6SendGain');
+      const db=Number(send.levelDb),verified=Number.isFinite(db);
+      const slider=h('input','arV6SendLevel');
+      slider.type='range';slider.min='-60';slider.max='12';slider.step='.5';
+      slider.value=String(verified?clamp(db,-60,12):0);
+      slider.dataset.op='SET_SEND_LEVEL';slider.dataset.id=ch.id;
+      slider.dataset.send=clean(send.id);
+      slider.dataset.hasAcceptedLevel=String(verified);
+      slider.setAttribute('aria-label',(ch.name||ch.id)+' '+(send.name||send.targetId)+' send gain dB');
+      slider.disabled=!can('SET_SEND_LEVEL',ch.id)||!verified;
+      gain.append(slider,h('output','arV6SendDb',verified?db.toFixed(1)+' dB':'—'));
+      line.append(gain);section.append(line);
     }
     const select=selectField('+ TO','ADD_SEND',ch.id,targets,'','NO NATIVE SEND BUS');
     section.append(select);return section;
@@ -702,7 +713,8 @@
     if(!accepted)return;
     for(const node of root.querySelectorAll('[data-op]')){
       const op=node.dataset.op,id=node.dataset.id||null;
-      node.disabled=!can(op,id);
+      node.disabled=!can(op,id)||
+        op==='SET_SEND_LEVEL'&&node.dataset.hasAcceptedLevel!=='true';
     }
     add.disabled=!can('CREATE_CHANNEL');
     const caps=accepted.graph.capabilities||{};
@@ -759,6 +771,14 @@
         const send=(ch.sends||[]).find(x=>String(x.id)===node.dataset.sendId);
         const tap=node.querySelector('[data-op="SET_SEND_TAP"]');
         if(send&&tap)tap.textContent=send.tap==='PRE'?'PRE':'POST';
+        const gain=node.querySelector('.arV6SendLevel');
+        if(gain){
+          const db=Number(send?.levelDb),verified=!!send&&Number.isFinite(db);
+          gain.dataset.hasAcceptedLevel=String(verified);
+          gain.value=String(verified?clamp(db,-60,12):0);
+          const out=node.querySelector('.arV6SendDb');
+          if(out)out.textContent=verified?db.toFixed(1)+' dB':'—';
+        }
       }
     }
     syncFaderMode();refreshMeters();applyPresentation();
@@ -909,6 +929,12 @@
     else if(op==='SET_PAN'){
       const value=Number(n.value),snapped=Math.abs(value)<=4?0:value;
       sendIntent(op,id,{value:snapped}); // ACK/snapshot, no optimistic PAN.
+    }
+    else if(op==='SET_SEND_LEVEL'){
+      const send=(ch.sends||[]).find(s=>String(s.id)===n.dataset.send);
+      const value=Number(n.value);
+      if(send&&Number.isFinite(Number(send.levelDb))&&Number.isFinite(value))
+        sendIntent('SET_SEND_LEVEL',id,{sendId:send.id,levelDb:clamp(value,-60,12)});
     }
     else if(op==='SET_FADER'){
       if(modeSend){
