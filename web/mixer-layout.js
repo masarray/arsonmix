@@ -103,6 +103,22 @@
     if(typeof ResizeObserver==='function')new ResizeObserver(refresh).observe(mixer);
     refresh();
   }
+  // MAIN lives in the original #mixer DOM (app.js still owns its native
+  // meter/FX/fader). In CONSOLE it is viewport-fixed, not a false sticky
+  // child at the end of a horizontally scrolling 10-strip flex track.
+  // Geometry is recomputed ONLY on resize, not on pointer/meter/scroll.
+  if(mixer){
+    const syncMainDock=()=>{
+      const rect=mixer.getBoundingClientRect();
+      const width=window.innerWidth<=1250?148:155;
+      mixer.style.setProperty('--ar-main-dock-left',Math.round(rect.right-width)+'px');
+      mixer.style.setProperty('--ar-main-dock-top',Math.round(rect.top)+'px');
+      mixer.style.setProperty('--ar-main-dock-height',Math.round(rect.height)+'px');
+    };
+    if(typeof ResizeObserver==='function')new ResizeObserver(syncMainDock).observe(mixer);
+    window.addEventListener('resize',syncMainDock,{passive:true});
+    syncMainDock();
+  }
   // Studio-like channel selection and FX navigation are presentation-only.
   const channelList=rail.querySelector('#channelList');
   channelList?.addEventListener('keydown',event=>{
