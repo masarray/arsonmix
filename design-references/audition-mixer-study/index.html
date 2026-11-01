@@ -45,7 +45,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .mixer-title .panel-name{font-weight:600}
 .mixer-title .panel-sub{color:#8f9295}
 .mixer-title .right{margin-left:auto;color:#808488;font-size:10px}
-.console-body{flex:1;min-height:0;display:flex;overflow:hidden;--route-h:59px;--fx-h:119px;--send-h:66px;--eq-h:49px;--pan-h:35px;--auto-h:23px;--switch-h:31px;--footer-h:53px}
+.console-body{flex:1;min-height:0;display:flex;overflow:hidden;--route-h:59px;--fx-h:119px;--send-h:84px;--eq-h:49px;--pan-h:35px;--auto-h:23px;--switch-h:31px;--footer-h:53px}
 .section-rail{flex:0 0 33px;width:33px;display:flex;flex-direction:column;border-right:1px solid #060707;background:#262729;box-shadow:inset -1px 0 #343537;text-align:center}
 .rail-cell{border:0;background:transparent;cursor:default;display:flex;align-items:center;justify-content:center;border-bottom:1px solid #111;color:#a0a3a5;flex:none;font-size:15px}
 .rail-cell small{font-size:9px;color:#8d9294}
@@ -122,6 +122,8 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .sendlevel label{font-size:9px;color:#8f9498}
 .sendlevel input{width:60px;height:9px;accent-color:#8eaab3}
 .sendlevel output{font-size:9px;color:#a7aaad;margin-left:auto}
+.send-pan label{color:#7eb1c0}
+@media(max-height:610px){.console-body{--route-h:45px;--fx-h:80px;--send-h:60px;--eq-h:27px;--pan-h:28px;--auto-h:18px;--switch-h:25px;--footer-h:42px}.send-pan{display:none}.fxslot-row{height:15px}.fx-section .subhead,.send-header{height:16px}.eq-line{display:none}.eq-header{height:25px}}
 .eq-section{height:var(--eq-h)}
 .eq-header{height:18px;display:flex;align-items:center;gap:4px}
 .eq-header .sym{font-size:13px;color:#a1a3a4}
@@ -173,7 +175,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 ::-webkit-scrollbar{height:11px;width:9px}
 ::-webkit-scrollbar-track{background:#262728}
 ::-webkit-scrollbar-thumb{background:#55585b;border:2px solid #292a2b;border-radius:6px}
-@media(max-height:750px){.console-body{--route-h:54px;--fx-h:105px;--send-h:62px;--eq-h:43px;--pan-h:32px;--auto-h:22px;--switch-h:29px;--footer-h:45px}.fxslot-row{height:17px}.fx-section .subhead{height:18px}.footer-label{height:26px}.db-value{height:14px}.eq-line{height:20px}}
+@media(max-height:750px){.console-body{--route-h:54px;--fx-h:105px;--send-h:76px;--eq-h:43px;--pan-h:32px;--auto-h:22px;--switch-h:29px;--footer-h:45px}.fxslot-row{height:17px}.fx-section .subhead{height:18px}.footer-label{height:26px}.db-value{height:14px}.eq-line{height:20px}}
 @media(max-width:1000px){.menu-bar{gap:10px}.short-help{display:none}.strip{width:98px;flex-basis:98px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;animation:none!important}}
 </style>
@@ -226,7 +228,7 @@ const clone=x=>JSON.parse(JSON.stringify(x));
 const selection=()=>tracks.concat(master).filter(t=>t.selected);
 const make=(name,kind,color)=>{
  const id=nextId++;
- return {id,name,kind,color,input:kind==='master'?'None':kind==='bus'?'None':'Default Stereo',output:kind==='master'?'Default Output':'Master',fx:['None','None','None','None'],slotBypass:[false,false,false,false],fxOn:true,fxPost:false,send:'None',sendOn:false,pre:false,sendLevel:-6,eq:true,pan:0,automation:'Read',mute:false,solo:false,arm:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
+ return {id,name,kind,color,input:kind==='master'?'None':kind==='bus'?'None':'Default Stereo',output:kind==='master'?'Default Output':'Master',fx:['None','None','None','None'],slotBypass:[false,false,false,false],fxOn:true,fxPost:false,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,eq:true,pan:0,automation:'Read',mute:false,solo:false,arm:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
 };
 function init(){nextId=1;tracks=INIT.map((name,i)=>make(name,'audio',COLORS[i]));tracks.push(make('Bus A','bus','#826b9a'));master=make('Master','master','#5a8ca8');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -246,7 +248,7 @@ function sectionFx(t){
 const eqSvg='<svg viewBox="0 0 90 20" preserveAspectRatio="none" aria-hidden="true"><path d="M0 15 L14 15 Q22 15 29 9 T43 9 Q52 11 58 7 T75 8 Q82 9 90 5"/></svg>';
 function sectionSend(t){
  if(t.kind==='master')return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><span class="sendtag">No Sends on Master</span></div></div>';
- return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><span class="sendtag">S1</span><span class="push"></span><button class="mini power '+(t.sendOn?'on':'')+'" data-action="sendOn" title="Enable Send">⏻</button><button class="mini pre '+(t.pre?'on':'')+'" data-action="pre" title="Toggle Pre/Post send">'+(t.pre?'Pre':'Post')+'</button></div><select class="send-select" data-field="send" aria-label="Send destination">'+option(channelOptions(t,'send'),t.send)+'</select><div class="sendlevel"><label>↳</label><input type="range" min="-60" max="6" step="1" value="'+t.sendLevel+'" data-field="sendLevel" title="Send level"><output>'+formatDb(t.sendLevel)+'</output></div></div>';
+ return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><span class="sendtag">S1</span><span class="push"></span><button class="mini power '+(t.sendOn?'on':'')+'" data-action="sendOn" title="Enable Send">⏻</button><button class="mini pre '+(t.pre?'on':'')+'" data-action="pre" title="Toggle Pre/Post send">'+(t.pre?'Pre':'Post')+'</button></div><select class="send-select" data-field="send" aria-label="Send destination">'+option(channelOptions(t,'send'),t.send)+'</select><div class="sendlevel"><label>↳</label><input type="range" min="-60" max="6" step="1" value="'+t.sendLevel+'" data-field="sendLevel" title="Send level"><output>'+formatDb(t.sendLevel)+'</output></div><div class="sendlevel send-pan"><label>◉</label><input type="range" min="-100" max="100" step="1" value="'+t.sendPan+'" data-field="sendPan" title="Send stereo pan" aria-label="Send pan"><output>'+(t.sendPan===0?'C':t.sendPan<0?'L'+Math.abs(t.sendPan):'R'+t.sendPan)+'</output></div></div>';
 }
 function formatDb(n){return n<=-60?'-∞':(n>0?'+':'')+Number(n).toFixed(1);}
 function sectionFader(t){
@@ -300,7 +302,7 @@ function wouldFeedback(source,destination){
  }
  return false;
 }
-const COPY_KEYS=['fx','slotBypass','fxOn','fxPost','send','sendOn','pre','sendLevel','eq','pan','automation','mute','solo','level'];
+const COPY_KEYS=['fx','slotBypass','fxOn','fxPost','send','sendOn','pre','sendLevel','sendPan','eq','pan','automation','mute','solo','level'];
 function copyChannels(){
  const src=selection()[0];if(!src){say('Select a channel to copy settings');return;}
  clipboard=Object.fromEntries(COPY_KEYS.map(k=>[k,clone(src[k])]));
@@ -311,7 +313,7 @@ function pasteChannels(){
  const list=selection();if(!list.length){say('Select destination channels before pasting');return;}
  for(const t of list){
   for(const k of COPY_KEYS){
-   if(t.kind==='master'&&['send','sendOn','pre','sendLevel'].includes(k))continue;
+   if(t.kind==='master'&&['send','sendOn','pre','sendLevel','sendPan'].includes(k))continue;
    if((k==='send')&&wouldFeedback(t,clipboard[k]))continue;
    t[k]=clone(clipboard[k]);
   }
@@ -348,6 +350,7 @@ function handleField(event){
  else if(field==='level'){t.level=Number(el.value);const root=el.closest('.strip');root.querySelector('.db-value').textContent=formatDb(t.level);if(event.type==='change')say(t.name+' fader '+formatDb(t.level)+' dB');}
  else if(field==='pan'){t.pan=Number(el.value);el.nextElementSibling.textContent=t.pan===0?'C':t.pan<0?'L'+Math.abs(t.pan):'R'+t.pan;if(event.type==='change')say(t.name+' pan '+el.nextElementSibling.textContent);}
  else if(field==='sendLevel'){t.sendLevel=Number(el.value);el.nextElementSibling.textContent=formatDb(t.sendLevel);}
+ else if(field==='sendPan'){t.sendPan=Number(el.value);el.nextElementSibling.textContent=t.sendPan===0?'C':t.sendPan<0?'L'+Math.abs(t.sendPan):'R'+t.sendPan;}
  else if(field==='output'){
   if(wouldFeedback(t,el.value)){say('Routing rejected: this output would create a bus feedback loop.');refreshStrip(t);return;}
   t.output=el.value;say(t.name+' output → '+el.value);
@@ -364,7 +367,7 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  const a=btn.dataset.action;
  if(a==='rename')return;
  if(a==='slotPower'){const slot=Number(btn.dataset.slot);if(t.fx[slot]==='None'){say(t.name+': choose an effect before toggling bypass');return;}t.slotBypass[slot]=!t.slotBypass[slot];refreshStrip(t);say(t.name+': FX '+(slot+1)+(t.slotBypass[slot]?' bypassed':' enabled'));return;}
- if(a==='fxPost'){t.fxPost=!t.fxPost;refreshStrip(t);say(t.name+': effects now '+(t.fxPost?'post':'pre')+' fader · reference only');return;}
+ if(a==='fxPost'){t.fxPost=!t.fxPost;refreshStrip(t);say(t.name+': effects position '+(t.fxPost?'post':'pre')+' fader · visual only');return;}
  if(a==='eq')t.eq=!t.eq;
  else if(a==='fxOn')t.fxOn=!t.fxOn;
  else if(a==='pre')t.pre=!t.pre;
@@ -437,7 +440,9 @@ function animateMeters(ts){
  if(ts-lastTick>80){lastTick=ts;meterFrame++;
  const anySolo=tracks.some(t=>t.solo);
  tracks.concat(master).forEach((t,i)=>{
- const suppressed=t.mute||(anySolo&&!t.solo&&t.kind==='audio');
+ const routedThroughSoloBus=t.kind==='audio'&&tracks.some(bus=>bus.kind==='bus'&&bus.solo&&t.output===bus.name);
+ const fedBySoloChannel=t.kind==='bus'&&tracks.some(ch=>ch.solo&&(ch.output===t.name||ch.send===t.name));
+ const suppressed=t.mute||(anySolo&&!t.solo&&!routedThroughSoloBus&&!fedBySoloChannel&&t.kind!=='master');
  const modulation=.46+.23*Math.sin(meterFrame*.13+i*1.21)+.17*Math.sin(meterFrame*.31+i*2.2);
  const db=Number(t.level);
  const level=suppressed?0:Math.max(0,Math.min(95,modulation*80+(db*.78)));
