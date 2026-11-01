@@ -211,8 +211,8 @@ check(html.includes('.console-body.collapsed-route .route-field{display:none}') 
       'No stale expanded CSS declarations in collapsed route and send');
 check(html.includes('right:var(--master-w)!important') && html.includes('--channel-w'),
       'Plugin overlay and pinned Master use coherent single-width channel geometry');
-check(html.includes('.console-body.plugin-open #viewport{margin-right:var(--plugin-w)}') && html.includes('dock=pluginOpen?'),
-      'Plugin opening adjusts bank capacity without covering fixed Master');
+check(html.includes('.plugin-browser{position:absolute!important') && html.includes('margin-right:0!important') && html.includes('const dock=0;'),
+      'Floating Manager is independent from bank width and never triggers channel resize');
 check(html.includes('function bankCapacity()') && html.includes('Math.floor(usable/130)'),
       'Bank slot count protects full VU/rail width with no bottom scrollbar');
 
@@ -249,12 +249,11 @@ check(html.includes('class="console-body collapsed-send"') && !strip(1).includes
 check(!strip(1).includes('eq-section') && !html.includes('<button class="rail-cell eq'),
  'EQ row and section control are removed: EQ is accessed as an FX plugin');
 node('pluginsButton').dispatch('click');
-check(node('body').classList.contains('plugin-open') &&
- html.includes('.console-body.plugin-open #viewport{margin-right:var(--plugin-w)}'),
- 'Plugin Manager docks beside bank, reserving physical width');
+check(node('pluginBrowser').hidden===false && !node('body').classList.contains('plugin-open'),
+ 'Plugin Manager floats independently without changing mixer channel widths');
 node('pluginClose').dispatch('click');
-check(!node('body').classList.contains('plugin-open'),
- 'Closing Plugin Manager restores full 10-strip width');
+check(node('pluginBrowser').hidden===true,
+ 'Closing floating Plugin Manager leaves fixed bank untouched');
 node('body').clientWidth=1180;filter('all');
 check(count()===7,'At smaller desktop viewport capacity decreases without stretching');
 node('body').clientWidth=1680;filter('all');
@@ -263,9 +262,8 @@ check(count()===10,'At 1680px viewport returns to ten source channels plus equal
 
 check(!strip(1).includes('data-action="mon"')&&!strip(1).includes('data-field="sendPan"'),
       'I monitor button and stereo Send PAN removed without changing preserved session model');
-check(strip(1).includes('class="trim-control ari-horizontal"') &&
-      strip(1).includes('data-field="level"'),
-      'Trim uses original PAN thumb material; fader remains a separate accessible gain input');
+check(!strip(1).includes('trim-section') && strip(1).includes('data-field="level"'),
+      'TRIM row removed, fader remains an accessible gain input');
 check(html.includes('--b180-shadow-surface') &&
       html.includes('inset 5px 5px 2px -1px rgba(0,0,0,.18)') &&
       html.includes('inset 3px 2px 2px -1px rgba(0,0,0,.50)'),
@@ -287,12 +285,47 @@ node('bankNext').dispatch('click');
 check(count()===1 && node('tracks').style.getPropertyValue('--bank-columns')==='10',
   'CH11 single partial bank retains ten constant-size columns: no gigantic Bus fader');
 node('pluginsButton').dispatch('click');
-check(Number(node('tracks').style.getPropertyValue('--bank-columns'))<10 &&
+check(node('tracks').style.getPropertyValue('--bank-columns')==='10' &&
  node('pane').style.getPropertyValue('--master-w')===node('body').style.getPropertyValue('--channel-w'),
- 'Plugin docking lowers capacity and keeps channel/Master widths identical');
+ 'Floating Manager never reduces channel count or changes Master slot width');
 node('pluginClose').dispatch('click');
 check(node('tracks').style.getPropertyValue('--bank-columns')==='10',
-  'Closing Plugin Manager restores fixed ten-slot bank');
+  'Closing floating Manager preserves unchanged ten-slot bank');
 node('bankPrev').dispatch('click');
+
+// V5: ADD FX is NOT Plugin Manager. Picker is contextual and keyboard-searchable.
+node('reset').dispatch('click');
+const chooseFX={dataset:{action:'openPlugin',slot:'0'},
+ closest:k=>k==='.strip'?{dataset:{id:1}}:null};
+node('body').handlers.click({target:{closest:k=>k==='[data-action]'?chooseFX:null}});
+check(node('fastPicker').hidden===false && node('pluginBrowser').hidden===true,
+  'Clicking Add FX opens quick effect picker; Plugin Manager remains CLOSED');
+check(node('fastResults').innerHTML.includes('Parametric Equalizer'),
+  'Quick picker shows effect database, not plugin scan/path settings');
+node('fastSearch').value='reverb';node('fastSearch').dispatch('input');
+check(node('fastResults').innerHTML.includes('Studio Reverb') &&
+ !node('fastResults').innerHTML.includes('Parametric Equalizer'),
+  'Fast picker search narrows effect list while typing');
+node('fastResults').handlers.click({target:{closest:k=>k==='[data-fast-id]'?{dataset:{fastId:'demo-2'}}:null}});
+check(node('fastPicker').hidden===true && strip(1).includes('Studio Reverb'),
+  'One click inserts selected FX and immediately closes fast picker');
+check(html.includes('style="--fader-fill:') && html.includes('--fader-y:') &&
+ html.includes("box.style.setProperty('--fader-y'"),
+ 'Fader cap initial paint and live pointer movement use same gain position');
+check(html.includes("addEventListener('pointerdown'") &&
+ html.includes("addEventListener('pointermove'") &&
+ html.includes('setFaderFromPointer'),
+ 'Real pointer drag movement and release are implemented for the full fader well');
+check(!strip(1).includes('trim-section') && !html.includes('<div class="rail-cell trim"'),
+ 'TRIM UI completely removed');
+check(html.includes("Math.abs(value)<=8") && html.includes('panStyle(value)'),
+ 'PAN uses an eight-point center-snap deadzone and center-origin fill');
+check(html.includes('background-image:none!important') &&
+ html.includes('width:29px!important;height:62px!important'),
+ 'Slim fixed-ratio silver/rose cap on a naturally black non-luminous groove');
+check(html.includes('VST3 SEARCH LOCATIONS') &&
+ html.includes('window.ArSonMixNativePlugins?.scan'),
+ 'Floating Plugin Manager exposes VST3 paths and native-only scan capability gate');
+
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
