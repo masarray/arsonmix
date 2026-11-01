@@ -43,7 +43,8 @@ public:
         device->setProperty("inputEndpoints",physicalInputs.isArray()
             ?physicalInputs:juce::var(juce::Array<juce::var>{}));
         juce::Array<juce::var> outputs;
-        if(const auto* enabled=route.getProperty("outputPorts",juce::var()).getArray()) {
+        const auto enabledOutputPins=route.getProperty("outputPorts",juce::var());
+        if(const auto* enabled=enabledOutputPins.getArray()) {
             for(int i=0;i<enabled->size();++i){
                 const auto p=enabled->getReference(i);
                 if(!p.isInt())continue;
