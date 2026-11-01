@@ -308,7 +308,7 @@ check(node('fastResults').innerHTML.includes('Studio Reverb') &&
  !node('fastResults').innerHTML.includes('Parametric Equalizer'),
   'Fast picker search narrows effect list while typing');
 node('fastResults').handlers.click({target:{closest:k=>k==='[data-fast-id]'?{dataset:{fastId:'v5-reverb'}}:null}});
-check(node('fastPicker').hidden===true && strip(1).includes('Studio Reverb'),
+filter('all');check(node('fastPicker').hidden===true && strip(1).includes('Studio Reverb'),
   'One click inserts selected FX and immediately closes fast picker');
 check(html.includes('style="--fader-fill:') && html.includes('--fader-y:') &&
  html.includes("box.style.setProperty('--fader-y'"),
