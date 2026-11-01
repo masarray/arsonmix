@@ -748,3 +748,23 @@
    flex-basis:148px;min-width:148px;max-width:148px;
  }
 }
+
+
+/* Main dock geometry is measured by a ResizeObserver on the single mixer
+   viewport. Unlike position:sticky on the final flex child, this is always
+   visible at scrollLeft=0 and after any bank navigation. */
+#app #mixer[data-io-mode="CONSOLE"]{
+  padding-right:155px;
+  scroll-padding-right:155px;
+}
+#app #mixer[data-io-mode="CONSOLE"] > #masterLeft{
+  position:fixed!important;
+  right:auto!important;
+  left:var(--ar-main-dock-left,calc(100vw - 161px))!important;
+  top:var(--ar-main-dock-top,92px)!important;
+  height:var(--ar-main-dock-height,calc(100dvh - 122px))!important;
+  z-index:7;
+}
+@media(max-width:1250px){
+ #app #mixer[data-io-mode="CONSOLE"]{padding-right:148px;scroll-padding-right:148px}
+}
