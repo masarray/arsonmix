@@ -1,16 +1,17 @@
 # ArSonMix — CLEAN REPOSITORY AND SINGLE EXECUTION PATH
 **Reconciled:** 2026-11-01, main before documentation commit `0012b6a0fd20bebdadc68cbcb9f056083fbe5836`.
-**Verified API snapshot:** 24 open PR and 21 issue-only open tickets **before** cleanup → **4 open PR and 8 issue-only open tickets AFTER**. All 20 obsolete PRs and 13 redundant/historical issues were closed with individual reasons and pointers. Closed != merged, fulfilled, deleted or code discarded. Branch commits and past conversations remain available.
+**Verified API snapshot:** 24 open PR and 21 issue-only open tickets **before** cleanup → **4 open PR after backlog cleanup, then 3 open PR and 8 open issue-only tickets AFTER R7 #265 merged**. All 20 obsolete PRs and 13 redundant/historical issues were closed with individual reasons and pointers. Closed != merged, fulfilled, deleted or code discarded. Branch commits and past conversations remain available.
 **Authoritative specs:** [PRD v5](PRD_ARSONMIX_OPERATOR_FIRST_LIVE_MIXER_V5_20261101.md) and [ARD v5](ARD_ARSONMIX_UNIVERSAL_REALTIME_CONSOLE_V5_20261101.md). Supersede obsolete v2–v4 instructions. Historical metrics are date-scoped.
 
-## 1. Four open PRs — purpose, isolation, exact gate
+## 1. Three open PRs — purpose, isolation, exact gate
 
 | PR | Current authority | HEAD audited | CI / qualification | Merge decision |
 |---|---|---|---|---|
 | [#266 M-U1 native graph admission](https://github.com/masarray/arsonmix/pull/266) | **PRIMARY engine integration branch** | `2bbf9f08b549` | [Windows MSVC/CTest RUN 41252951831](https://github.com/masarray/arsonmix/actions/runs/41252951831) **SUCCESS** on this commit. Native processor/PCM tests; no real hardware FAT | Continue *within this branch*: external CH1/Orbit lease, native Show, callback switch, approved output, device restore. **DO NOT claim M-U1 done or release** merely from the tests. Retain draft until a full-fidelity callback cutover or explicitly label a limited foundation merge. |
-| [#265 R7 channel/source/GUI](https://github.com/masarray/arsonmix/pull/265) | **Single UI integration branch** | `d57c3431a52c` | Latest [Chromium RUN 41250145548](https://github.com/masarray/arsonmix/actions/runs/41250145548) **CANCELLED**; prior regression tests failed on changed one-APPLY semantics. No exact-head green UI CI | Rebase onto latest main, reconcile changed source/format ACK tests and native control authority. Do not merge broken smoke or pretend a UI-format flip is live PCM. Preserve approved fader geometry and standalone parity. |
 | [#251 WASAPI capture de-click](https://github.com/masarray/arsonmix/pull/251) | **ISOLATED P0 experiment**, converted to DRAFT | `291886812d4a` | Opt-in/default OFF; no matched physical ASIO/WASAPI evidence; **#15 unresolved** | **NO MERGE** until physical 0FX soak and verified capture vs render discontinuities plus safe rejection of legitimate silence. |
 | [#225 FactoryFX ArSonComp intake](https://github.com/masarray/arsonmix/pull/225) | Separate plugin packaging/distributor owner | `12ed338e335a` | Release candidate/provenance and native host tests still needed; approved production FX manifest empty | Park as DRAFT. No factory plugin binary shipped merely from metadata; requires signatures/rights/manifest/CID/host FAT checks under #185. |
+
+**R7 GUI #265 is now MERGED**, after exact-head Chromium rerun [41250145548](https://github.com/masarray/arsonmix/actions/runs/41250145548) **SUCCESS**, squash commit [c2b9cd45](https://github.com/masarray/arsonmix/commit/c2b9cd45fb0ad81ba10aae2bec7ee9cf1bc7f031) into main. Native single/dual channel meters, M/ST/restore, one-gesture source and adaptive bank code are integrated. The **post-merge Windows [41255077433](https://github.com/masarray/arsonmix/actions/runs/41255077433) and Chromium [41255077432](https://github.com/masarray/arsonmix/actions/runs/41255077432)** runs were in progress at this reconciliation. No #15 physical FAT or CH11 universal engine proof.
 
 **PR 263** independent dry-only Group: **CLOSED superseded**. Its single callback pilot rejects any normal FX/AUX/MONITOR/Show, conflicts with #266 and does not establish production Group parity. Reference tests selectively, never merge the obsolete patch.
 **PR 229** FactoryFX reconciliation: **CLOSED duplicate** of #225 plus superseded documentation. Do not work in two FactoryFX branches.
@@ -43,7 +44,7 @@ Closing a stale branch is **not** source deletion. Retrieve isolated tests or en
 
 - **LIVE in current main 0012b6a0:** one JUCE callback fixed **10 input + 4 AUX**, VST3 on native patched fixed channels, special occupied CH1 external VST3/Orbit path, MAIN/MONITOR + optional secondary consumer, FAST3 guarded one-APPLY, internal DSP mono/stereo formats and some native L/R meters. FactoryFX bundled lock remains empty. Browser format/meter fixed-index bugs are not yet repaired in main.
 - **#266 M-U1 code-only candidate:** actual M4 vendor FxInstance owner leases + ChannelId-keyed `DynamicChannelFxLeaseBank`, `UnifiedLegacyProductionAdmission` PCM/FX/MONITOR tests. **LiveAudioEngine callback is not switched**; external occupied CH1 VST/Orbit explicitly rejected; Show/editor/device-ARM parity not done. Windows exact-head green is valid *test evidence* only.
-- **#265 R7 GUI candidate:** channel M/ST toggle, accepted mono/dual meter projection, bank paging, source one-gesture. No CH11 generated, no universal active plugin before source. **Chromium exact-head not green**; blocked.
+- **#265 R7 MERGED:** channel M/ST toggle, accepted mono/dual meter projection, bank paging, source one-gesture entered main at c2b9cd45 after exact-head Chromium CI PASS. No CH11 generated, no universal active plugin before source. Post-merge exact-main CI and device FAT must still be verified.
 - **#251 de-click:** exploratory, DEFAULT OFF; #15 real dry glitch and any driver clock-domain xrun remain unresolved.
 - **#225 FactoryFX:** release watch metadata and manifest work; not proof of installed/approved plugin bundle.
 
@@ -51,7 +52,7 @@ Closing a stale branch is **not** source deletion. Retrieve isolated tests or en
 
 **ENGINE OWNER #266 — M-U1 (no new parallel PR):** continue CH1/Orbit and all real M4 FX leases, Show/vendor chunks, 10+4 PCM + physical MAIN/MONITOR, exact hardware pin topology, optional secondary, and one callback selection. Test real plugin migration with no allocation/locks in callback, rollback/stale epoch, sample compare, exact-head Windows native and output FAT candidate. Reject dry-only Group fallback. One control-thread graph pointer and safe retirement. Do not add CH11 GUI before this.
 
-**GUI OWNER #265 — R7 (no new overlapping PR):** update to current main and fast/negative ACK workflow, fix failing/cancelled Chromium smoke, 1/2 native meter on ANY input channel, no fake true FX on unpatched CH. Bank navigation and +CHANNEL skeleton only when real dynamic native ACK capability exists. Full named source selection must be retryable after rejected MUTE/route/ARM. Preserve source-owned standalone and L2.
+**GUI R7 — MERGED, regression owner #176 / future M-U2:** #265 was merged in main after Chromium success, including native ACK meter geometry, M/ST and bank arrows. Keep tests and final Win/Chromium main checks; **do not open another UI-only PR**. Future true +CHANNEL, FX before source and Group/FX Return controls must be integrated with native M-U1/M-U2 on issue #192, not simulated in JS.
 
 **AFTER M-U1 — M-U2 on same canonical graph (single substantive integration):** CH11 true native processing, Group Selected with already FX-bearing sources and AUX/MONITOR/Show retained, separate genuine FX Return and independent mixer bank; physical output user choice. No reuse of input slots as bus, no second DSP callback.
 
@@ -63,4 +64,4 @@ Closing a stale branch is **not** source deletion. Retrieve isolated tests or en
 
 For any code PR: latest `main` and PR diff; one owner per file; exact base/head; explicitly state callback actually executing and what is only control/offline. Need target-specific native CTests + JS Chromium and any relevant Windows packaging run with exact head SHA. Hardware release claim only after #15 FAT. **Do not force everyone to await new documentation or open duplicate issue/PR.** Docs-only commits do not need expensive CI. One run after meaningful integration, not many redundant PRs.
 
-**Workspace status on completion:** Open PR=4 (all DRAFT); open issue-only=8. Source commits and histories intact. Ready for controlled implementation of #266 and #265—not a declaration that Studio One/LV1 parity exists.
+**Workspace status after R7 merge:** Open PR=3 (all DRAFT: #266, #251, #225); open issue-only=8. #265 is MERGED, and exact-main post-merge CI was triggered. Current integration owner = native #266. Source commits and histories intact. Ready for controlled implementation of #266 and #265—not a declaration that Studio One/LV1 parity exists.
