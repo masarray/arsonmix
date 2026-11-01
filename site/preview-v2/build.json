@@ -1,13 +1,13 @@
 {
-  "version": "preview-v7",
+  "version": "preview-v8",
   "route": "/preview-v2/",
   "kind": "GUI_REFERENCE_ONLY",
   "live_audio": false,
   "source_pr": 278,
   "source_branch": "design/audition-mixer-reference-isolated-20261101",
-  "source_sha": "ca12568a3ff2db95affb36a8540ea277e25b588b",
-  "visual_design": "Rebalanced 30%-40% shorter FX rack, graphite brighter chassis vs dark recessed fader pocket, 26x55 original silver/rose scaled fader, 15x32 PAN/send thumb moved down, state-colored thin selected border, satin steel buttons",
-  "workflow": "Double-click or F2 opens channel name/icon/color picker; Plugin Manager modeless, movable, minimizable and independently usable during FX insertion; 10+Master fixed bank",
-  "tests": "140/140 source/DOM/business acceptance checks pass; real Chromium screenshot/layout QA workflow added and running",
-  "note": "GUI demo, simulated meters, NO native VST3 scan or ASIO sound."
+  "source_sha": "537dcb97d1b086817ddbfac4938d310573feef11",
+  "milestone": "Adaptive 150/125/105 density-aware bank; consistent 32px rail and equal-width Master; reveal new channel; deterministic FX/Route/Send collapse",
+  "tests": "150/150 DOM/source/geometry-harness smoke checks passed; Chromium screenshot QA not certified",
+  "review_required": "Chromium visual signoff at 1366x768,1680x900,1920x1080 including all FX/SEND/ROUTE expansion states",
+  "note": "Simulated meters only. Does not scan or instantiate real VST3 plugins, process ASIO PCM, or modify production mixer."
 }
