@@ -563,9 +563,9 @@ check(!!pot,'Connected PRE FX wire has a stable edge ID for gain control');
 const gainTarget={dataset:{field:'wireGain',wireId:pot[1]},value:'-12',
  style:{setProperty(){}},parentElement:{style:{setProperty(){}}},closest:k=>k==='.strip'?{dataset:{id:8}}:null};
 node('body').handlers.change({target:gainTarget,type:'change'});
+const gainNotice=node('info').textContent.includes('-12 dB');
 filter('all');
-check(strip(8).includes('value="-12" data-field="wireGain"') &&
- node('info').textContent.includes('-12 dB'),
+check(strip(8).includes('value="-12" data-field="wireGain"') && gainNotice,
  'Each wire has its own -60..+6 dB calibrated hardware-pot gain');
 node('saveScene').dispatch('click');
 wireTo(8);
