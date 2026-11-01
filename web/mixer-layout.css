@@ -203,3 +203,12 @@
 @media(max-height:690px){
  #app #mixer[data-io-mode="ROUTE"]{--ar-upper-height:165px}
 }
+
+/* Small user-switchable channel processing format + adaptive bank navigation. */
+#app #mixer > .strip > .ch-id{position:relative}
+#app #mixer .arFormatBadge{position:absolute;right:3px;top:2px;min-width:24px;height:17px;padding:0 3px;border:1px solid #536b77;border-radius:3px;background:#253945;color:#d9edf4;font:500 9px/15px 'Segoe UI',sans-serif;cursor:pointer}
+#app #mixer .arFormatBadge:focus-visible{outline:1px solid #8fcfe4;outline-offset:1px}
+#app .arMixerChannelPager{display:flex;align-items:center;gap:5px;margin-left:auto;flex-shrink:0}
+#app .arMixerChannelPager .btn-180{width:25px;min-width:25px;height:24px;padding:0;font-size:15px}
+#app .arMixerChannelPager .btn-180:disabled{opacity:.36;cursor:default}
+#app .arMixerPagerLabel{font:500 10px/1.1 'Segoe UI',sans-serif;color:#b9cbd2;min-width:91px;text-align:center;white-space:nowrap}

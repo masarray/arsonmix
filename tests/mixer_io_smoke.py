@@ -75,6 +75,30 @@ async def main():
           window.__armixTestEmit('arMixStatus',status);
           return status;
         }""",status)
+        # FAST3: the first accepted routing APPLY triggers guarded ARM.
+        # Complete its actual native ACK before the next operator action.
+        await page.evaluate("""status=>window.__armixTestEmit('arMixAudioArmAck',{
+          ok:true,armed:true,deviceEpoch:status.dryRoutingLab.epoch
+        })""",status)
+        assert not (await page.evaluate("()=>window.__arMixFastAudioState().pending"))
+        # R7: one MONO physical input can feed a user-selected STEREO
+        # processing channel. Native ACCEPTED channelFormat (not channel
+        # index/draft) alone determines single vs independent L/R meter DOM.
+        status=await page.evaluate("""status=>{
+          status.dryRoutingLab.acceptedRoute.channels[0].channelFormat='STEREO';
+          window.__armixTestEmit('arMixStatus',status);
+          return status;
+        }""",status)
+        assert await page.locator('[data-strip="0"] .vu-bank.is-stereo [data-meter]').count()==2
+        assert await page.locator('[data-strip="0"] [data-meter="0L"]').count()==1
+        assert await page.locator('[data-strip="0"] [data-meter="0R"]').count()==1
+        status=await page.evaluate("""status=>{
+          status.dryRoutingLab.acceptedRoute.channels[0].channelFormat='MONO';
+          window.__armixTestEmit('arMixStatus',status);
+          return status;
+        }""",status)
+        assert await page.locator('[data-strip="0"] .vu-bank.is-mono [data-meter]').count()==1
+        assert await page.locator('[data-strip="0"] [data-meter="0"]').count()==1
         # P0: verify real capture signal, accepted route and safe output are
         # three separate pieces of evidence, not optimistic LIVE labels.
         silent=await page.evaluate("""()=>window.__arMixAudioPathView({
@@ -157,8 +181,9 @@ async def main():
         # The legacy strip selector is intentionally available in ROUTE
         # mode; selected-channel SOURCE no longer changes the global bank.
         await page.locator('[data-mix-mode="ROUTE"]').click()
-        # Physical SOURCE changes while output is ARMED must fail closed:
-        # no silent MUTE, graph mutation, or fake LIVE acknowledgement.
+        # R7: an unpatched CH uses ONE operator gesture. While OUTPUT is
+        # ARMED it first requests an explicit guarded MUTE; it must NOT
+        # publish a structural route or fake accepted/live readback yet.
         await page.evaluate("""status=>{
           status.monitor=true;
           window.__armixTestEmit('arMixStatus',status);
@@ -166,6 +191,18 @@ async def main():
         await page.locator('[data-strip="1"] select.arBankSource').select_option('MONO:1')
         assert await page.evaluate("""()=>window.__armixTestActions.filter(
           x=>x.name==='arMixAction'&&x.data.action==='routingDryApply').length""")==1
+        assert (await page.evaluate("()=>window.__arMixRouteView().draftRoutes[1].mode"))=='MONO'
+        assert (await page.evaluate("()=>window.__arMixRouteView().acceptedRoute.channels[1].mode"))=='NONE'
+        assert await page.evaluate("""()=>window.__armixTestActions.some(
+          x=>x.name==='arMixAction'&&x.data.action==='monitor'&&x.data.value===false)""")
+        # An explicit negative hardware mute acknowledgement must leave
+        # accepted audio unchanged. Revert the uncommitted draft.
+        rejected=await page.evaluate("""status=>{
+          window.__armixTestEmit('arMixAudioArmAck',{
+            ok:false,armed:true,deviceEpoch:status.dryRoutingLab.epoch});
+          return window.__arMixRevertMixerDraft();
+        }""",status)
+        assert rejected['ok'],rejected
         assert (await page.evaluate("()=>window.__arMixRouteView().draftRoutes[1].mode"))=='NONE'
         # M1: an ALREADY PATCHED MONO channel may change physical input
         # while output is ARMED: one native source PARAM/ACK and no APPLY.
@@ -245,24 +282,29 @@ async def main():
         assert await page.locator('.arIODeviceDriverButton[aria-pressed="true"]').inner_text()=='ASIO'
         assert await page.locator('.arIODevicePatchMatrix').is_visible()
         assert await page.locator('.arIODevicePatchMatrix .arIOMatrixCell').count()>0
-        # FAST2: a single APPLY arms previously ACKed real input routing;
-        # hardware action is still fenced to epoch/revision.
+        # FAST3 source one-gesture has already completed an ARM ACK above.
+        # This separate DEVICE APPLY must produce ONE new guarded arm, not
+        # an absolute total of one for the entire operator test session.
         assert await page.locator('#arIOAudioPath [data-io-start-audio]').count()==0
+        arm_before=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.name==='arMixAction'&&x.data.action==='monitor'&&x.data.value===true).length""")
         await page.locator('[data-io-device-apply]').click()
         arm=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='monitor'&&x.data.value===true)""")
-        assert len(arm)==1,arm
-        assert arm[0]['data']['expectedEpoch']==4,arm
-        assert arm[0]['data']['expectedRevision']==4,arm
+        assert len(arm)==arm_before+1,arm
+        assert arm[-1]['data']['expectedEpoch']==4,arm
+        assert arm[-1]['data']['expectedRevision']==4,arm
         await page.evaluate("""()=>window.__armixTestEmit('arMixAudioArmAck',{
           ok:true,armed:true,deviceEpoch:4,error:''})""")
         await page.evaluate("""status=>{status.monitor=true;
           window.__armixTestEmit('arMixStatus',status)}""",status)
         assert await page.locator('[data-io-start-audio]').inner_text()=='MUTE OUTPUT'
+        mute_before=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.name==='arMixAction'&&x.data.action==='monitor'&&x.data.value===false).length""")
         await page.locator('[data-io-start-audio]').click()
         muted=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='monitor'&&x.data.value===false)""")
-        assert len(muted)==1,muted
+        assert len(muted)==mute_before+1,muted
         await page.evaluate("""status=>{status.monitor=false;
           window.__armixTestEmit('arMixStatus',status)}""",status)
         assert await page.locator('.arIODeviceDriverButton').nth(1).is_enabled()
@@ -400,6 +442,18 @@ async def main():
           return status;
         }""",status)
         assert "NATIVE ACK" in await page.locator('#arSendFeedback').inner_text()
+        # G3 SENDS invokes FAST3 protected one-APPLY, so positive routing
+        # ACK alone is NOT the whole transaction. The mock must complete
+        # its subsequent native ARM ACK; otherwise unrelated actions remain
+        # correctly rejected as 'transaction still pending'.
+        status=await page.evaluate("""status=>{
+          window.__armixTestEmit('arMixAudioArmAck',{
+            ok:true,armed:true,deviceEpoch:status.dryRoutingLab.epoch});
+          status.monitor=true;
+          window.__armixTestEmit('arMixStatus',status);
+          return status;
+        }""",status)
+        assert not await page.evaluate("()=>window.__arMixFastAudioState().pending")
         # The AUX master is a separate native realtime parameter on the same
         # prepared graph, after AUX VST3 and before BOTH physical sinks.
         master=page.locator('[data-aux-master]')
@@ -534,8 +588,12 @@ async def main():
           return status;
         }""",status)
         assert await page.locator('#arSendEditor [data-send-gain="POST"]').input_value()=="0.5"
-        await page.evaluate("""status=>{
+        # Keep the Python fixture synchronized with the JS status snapshot:
+        # Playwright arguments are serialized, not references. Without this
+        # assignment later ACK mocks accidentally re-ARM the previous output.
+        status=await page.evaluate("""status=>{
           status.monitor=false;window.__armixTestEmit("arMixStatus",status);
+          return status;
         }""",status)
         # Enable/disable is still structural, even for an existing POST edge.
         await page.locator('#arSendEditor [data-send-enable="POST"]').uncheck()
@@ -572,8 +630,10 @@ async def main():
         assert 'DRAFT' in await page.locator('[data-strip="0"] .arBankStage').inner_text()
         draft=await page.evaluate('()=>window.__arMixRouteView().draftRoutes[0]')
         assert draft['mode']=='MONO' and draft['channelFormat']=='STEREO',draft
-        result=await page.evaluate('()=>window.__arMixApplyMixerDraft()')
-        assert result['ok'],result
+        # R7 format picker auto-submits the existing guarded one-APPLY
+        # transaction. A second manual APPLY is correctly rejected while
+        # that first native request is in flight, so do NOT submit twice.
+        assert await page.evaluate("()=>window.__arMixFastAudioState().pending")
         typed=await page.evaluate("""() => window.__armixTestActions.filter(
           a=>a.name==='arMixAction'&&a.data.action==='routingDryApply').at(-1).data.value""")
         assert typed['schemaVersion']==2 and typed['deviceEpoch']==4 and typed['revision']==5,typed
@@ -620,6 +680,16 @@ async def main():
           return status;
         }""",status)
         assert "LIVE" in await page.locator('[data-strip="1"] .arBankStage').inner_text()
+        # Accepted source automatically begins the final guarded hardware
+        # ARM. Reject ARM deliberately for this G5 structural/FX fixture:
+        # the new source route remains accepted, output remains safely
+        # MUTED, and the next edit is not blocked by an unanswered ACK.
+        assert await page.evaluate("()=>window.__arMixFastAudioState().pending")
+        await page.evaluate("""status=>window.__armixTestEmit('arMixAudioArmAck',{
+          ok:false,armed:false,deviceEpoch:status.dryRoutingLab.epoch,
+          error:'Test output intentionally kept muted for FX edits'
+        })""",status)
+        assert not await page.evaluate("()=>window.__arMixFastAudioState().pending")
         g5before=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='routingDryApply').length""")
         # G5B: two actual, indexed native VST3s on CH2 use ONE route
@@ -795,15 +865,40 @@ async def main():
         assert await page.locator('.arIOQuickPatch').is_visible()
         assert await page.locator('[data-io-quick-row]').count()==10
         assert await page.locator('[data-io-quick-row="2"] [data-io-quick-pin="left"] option').count()==5
-        # Input 1 -> CH3, without remapping other channels.
+        # R7: each USE INPUT commits the existing guarded native route
+        # automatically, without a second STAGE/MUTE/APPLY button ritual.
+        # Complete each ACK before selecting the next channel; overlapping
+        # structural requests must remain rejected until the prior finishes.
         ch3=page.locator('[data-io-quick-row="2"]')
         await ch3.locator('[data-io-quick-mode]').select_option('MONO')
         await ch3.locator('[data-io-quick-pin="left"]').select_option('0')
         await ch3.locator('[data-io-quick-stage]').click()
         draft=await page.evaluate('()=>window.__arMixRouteView().draftRoutes[2]')
         assert draft['mode']=='MONO' and draft['left']==0,draft
-        assert 'DRAFT' in await page.locator('[data-io-quick-row="2"] .arIOQuickState').inner_text()
-        # MAONO VC L/R, sparse non-adjacent driver pins 5 and 8 -> CH6.
+        sent=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
+          x.name==='arMixAction'&&x.data.action==='routingDryApply')""")
+        assert len(sent)==1,sent
+        first=sent[0]['data']['value']
+        assert first['deviceEpoch']==21 and first['revision']==3,first
+        assert first['channels'][2]['mode']=='MONO' and first['channels'][2]['left']==0,first
+        status=await page.evaluate("""status=>{
+          const lab=status.dryRoutingLab;
+          const payload=window.__armixTestActions.filter(x=>
+            x.data?.action==='routingDryApply').at(-1).data.value;
+          lab.revision=4;lab.hasAcceptedRoute=true;
+          lab.acceptedRoute={deviceEpoch:21,channels:payload.channels,auxes:payload.auxes,
+            sends:payload.sends};
+          window.__armixTestEmit('arMixRoutingLabAck',{ok:true,state:lab});
+          window.__armixTestEmit('arMixStatus',status);return status;
+        }""",status)
+        assert 'LIVE' in await ch3.locator('.arIOQuickState').inner_text()
+        await page.evaluate("""status=>window.__armixTestEmit('arMixAudioArmAck',{
+          ok:false,armed:false,deviceEpoch:status.dryRoutingLab.epoch,
+          error:'Output kept safely muted during multi-source setup'
+        })""",status)
+        assert not await page.evaluate("()=>window.__arMixFastAudioState().pending")
+        # Sparse driver pins 5/8 -> CH6 stereo, independent of CH3's
+        # accepted mono processing and with no fabricated adjacent R pin.
         ch6=page.locator('[data-io-quick-row="5"]')
         await ch6.locator('[data-io-quick-mode]').select_option('STEREO')
         await ch6.locator('[data-io-quick-pin="left"]').select_option('4')
@@ -811,28 +906,29 @@ async def main():
         await ch6.locator('[data-io-quick-stage]').click()
         draft=await page.evaluate('()=>window.__arMixRouteView().draftRoutes[5]')
         assert draft['mode']=='STEREO' and draft['left']==4 and draft['right']==7,draft
-        # Exactly one muted native route transaction for both assignments.
-        await page.locator('#arIOOverlay [data-mix-apply]').click()
-        staged=await page.evaluate("""() => window.__armixTestActions.filter(x=>
+        sent=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='routingDryApply')""")
-        assert len(staged)==1,staged
-        payload=staged[0]['data']['value']
-        assert payload['deviceEpoch']==21 and payload['revision']==3,payload
-        assert payload['channels'][2]['mode']=='MONO' and payload['channels'][2]['left']==0,payload
-        assert payload['channels'][5]['mode']=='STEREO' and payload['channels'][5]['left']==4 and payload['channels'][5]['right']==7,payload
-        # Accepted graph only becomes LIVE following the native ACK/status.
+        assert len(sent)==2,sent
+        second=sent[-1]['data']['value']
+        assert second['deviceEpoch']==21 and second['revision']==4,second
+        assert second['channels'][2]['mode']=='MONO' and second['channels'][2]['left']==0,second
+        assert second['channels'][5]['mode']=='STEREO' and second['channels'][5]['left']==4 and second['channels'][5]['right']==7,second
         status=await page.evaluate("""status=>{
-          status.dryRoutingLab.revision=4;
-          status.dryRoutingLab.acceptedRoute.channels[2]={
-            ...status.dryRoutingLab.acceptedRoute.channels[2],mode:'MONO',left:0};
-          status.dryRoutingLab.acceptedRoute.channels[5]={
-            ...status.dryRoutingLab.acceptedRoute.channels[5],mode:'STEREO',left:4,right:7};
-          window.__armixTestEmit('arMixRoutingLabAck',{ok:true,state:status.dryRoutingLab});
-          window.__armixTestEmit('arMixStatus',status);
-          return status;
+          const lab=status.dryRoutingLab;
+          const payload=window.__armixTestActions.filter(x=>
+            x.data?.action==='routingDryApply').at(-1).data.value;
+          lab.revision=5;lab.hasAcceptedRoute=true;
+          lab.acceptedRoute={deviceEpoch:21,channels:payload.channels,auxes:payload.auxes,
+            sends:payload.sends};
+          window.__armixTestEmit('arMixRoutingLabAck',{ok:true,state:lab});
+          window.__armixTestEmit('arMixStatus',status);return status;
         }""",status)
-        assert 'LIVE' in await page.locator('[data-io-quick-row="2"] .arIOQuickState').inner_text()
-        assert 'LIVE' in await page.locator('[data-io-quick-row="5"] .arIOQuickState').inner_text()
+        assert 'LIVE' in await ch6.locator('.arIOQuickState').inner_text()
+        await page.evaluate("""status=>window.__armixTestEmit('arMixAudioArmAck',{
+          ok:false,armed:false,deviceEpoch:status.dryRoutingLab.epoch,
+          error:'Output intentionally stays muted in this fixture'
+        })""",status)
+        assert not await page.evaluate("()=>window.__arMixFastAudioState().pending")
         # M1: a user-defined sparse stereo pair is selectable in CHANNEL SOURCE
         # only when the real device identity and *all* active pins match.
         await page.evaluate("""()=>window.__armixTestEmit('arMixAudioDeviceInventory',{
@@ -890,18 +986,27 @@ async def main():
         await named.click()
         native=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='routingDryApply')""")
-        assert len(native)==2,native
+        # A third source choice from the selected channel auto-submits one
+        # more guarded transaction; metadata edits did NOT submit anything.
+        assert len(native)==count_after+1,native
         target=native[-1]['data']['value']['channels'][selected]
         assert target['mode']=='STEREO' and target['left']==4 and target['right']==7,target
-        status=await page.evaluate("""({status,selected})=>{
-          status.dryRoutingLab.revision=5;
-          status.dryRoutingLab.acceptedRoute.channels[selected]={
-            ...status.dryRoutingLab.acceptedRoute.channels[selected],
-            mode:'STEREO',left:4,right:7};
-          window.__armixTestEmit('arMixRoutingLabAck',{ok:true,state:status.dryRoutingLab});
-          window.__armixTestEmit('arMixStatus',status);
-          return status;
-        }""",{"status":status,"selected":selected})
+        status=await page.evaluate("""status=>{
+          const lab=status.dryRoutingLab;
+          const cmd=window.__armixTestActions.filter(x=>
+            x.data?.action==='routingDryApply').at(-1).data.value;
+          lab.revision=cmd.revision+1;lab.hasAcceptedRoute=true;
+          lab.acceptedRoute={deviceEpoch:lab.epoch,channels:cmd.channels,
+            auxes:cmd.auxes,sends:cmd.sends};
+          window.__armixTestEmit('arMixRoutingLabAck',{ok:true,state:lab});
+          window.__armixTestEmit('arMixStatus',status);return status;
+        }""",status)
+        assert not await page.evaluate("()=>window.__arMixRouteView().pending")
+        await page.evaluate("""status=>window.__armixTestEmit('arMixAudioArmAck',{
+          ok:false,armed:false,deviceEpoch:status.dryRoutingLab.epoch,
+          error:'Output remains muted for device-rebind negative test'
+        })""",status)
+        assert not await page.evaluate("()=>window.__arMixFastAudioState().pending")
         assert 'MAONO Virtual Stereo' in await page.locator('[data-focus-source]').inner_text()
         # An altered pin mask must NOT inherit the saved alias or silently remap.
         await page.evaluate("""()=>window.__armixTestEmit('arMixAudioDeviceInventory',{
