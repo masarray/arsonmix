@@ -144,7 +144,7 @@ filter('all');
 check(!html.includes('8 Inserts · drag to reorder'),'FX strip no longer displays a long wrapping header');
 check(html.includes('white-space:nowrap;overflow:hidden;text-overflow:ellipsis'),
   'FX labels use single-line truncation');
-check(html.includes('.console-body.collapsed-fx .fxslot-list{display:none}'),
+check(html.includes('.console-body.collapsed-fx .fxslot-list,.console-body.narrow .fxslot-list{display:none}'),
   'Collapsing FX hides the scroll container, not only its children');
 check(html.includes('grid-template-columns:10px minmax(0,1fr) 28px'),
   'Send controls have constrained slider/dB columns');
