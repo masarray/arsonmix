@@ -1830,6 +1830,15 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
 .console-body:not(.collapsed-send) .strip .fx-section .subhead{
  flex:0 0 24px!important;height:24px!important;min-height:24px!important;
 }
+
+/* P0 physical center PAN tick: clear C detent without heavy decorative chrome. */
+.console-body .strip .pan-control{position:relative}
+.console-body .strip .pan-control::after{
+ content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,9px);
+ height:5px;width:1px;background:#c0d9e7b3;box-shadow:0 0 2px #a6c7d5aa;
+ pointer-events:none;
+}
+.console-body .strip .pan-control.is-centered::after{background:#a2e3cf!important}
 </style>
 </head>
 <body>
@@ -2123,7 +2132,7 @@ function strip(t){
  else code+='<div class="route-field"><span class="route-caption">IN</span><span class="route-identity">SUM BUS</span></div>';
  code+='<div class="route-field"><span class="route-caption">OUT</span><select class="route-select" data-field="output" title="Primary output" aria-label="'+escapeHtml(t.name)+' output">'+option(channelOptions(t,'output'),t.output)+'</select></div></div>';
  code+=sectionFx(t)+sectionSend(t);
- code+='<div class="section pan-section"><span class="pan-icon" title="Pan / Balance">PAN</span><span class="pan-control" style="'+panStyle(t.pan)+'"><input class="center-pan" type="range" min="-100" max="100" step="1" value="'+t.pan+'" data-field="pan" title="Pan from center; release near center to snap; double-click to center" aria-label="Channel pan; double-click center"></span><output>'+panLabel(t.pan)+'</output></div>';
+ code+='<div class="section pan-section"><span class="pan-icon" title="Pan / Balance">PAN</span><span class="pan-control '+(t.pan===0?'is-centered':'')+'" style="'+panStyle(t.pan)+'"><input class="center-pan" type="range" min="-100" max="100" step="1" value="'+t.pan+'" data-field="pan" title="PAN center detent: capture ±7, hold ±12; release snaps center; double-click resets" aria-label="Channel pan; center detent" aria-valuetext="'+(t.pan===0?'Center':t.pan<0?'Left '+Math.abs(t.pan):'Right '+t.pan)+'"></span><output>'+panLabel(t.pan)+'</output></div>';
 
  code+='<div class="section switch-section">'
    +'<button class="switch mute '+(t.mute?'on':'')+'" data-action="mute" title="Mute channel" aria-pressed="'+t.mute+'">MUTE</button>'
@@ -2427,7 +2436,27 @@ function handleField(event){
  }
  if(event.type==='change')say(t.name+' fader '+formatDb(t.level)+' dB'+(t.group?' (linked '+t.group+')':''));
 }
- else if(field==='pan'){let value=Number(el.value);if(event.type==='change'&&Math.abs(value)<=8&&!event.altKey){value=0;el.value='0';}t.pan=value;const wrapper=el.closest('.pan-control');if(wrapper)wrapper.setAttribute('style',panStyle(value));const label=wrapper?wrapper.nextElementSibling:el.nextElementSibling;if(label)label.textContent=panLabel(value);if(event.type==='change')say(t.name+' pan '+panLabel(value));}
+ else if(field==='pan'){
+  let value=Number(el.value);if(!Number.isFinite(value))return;
+  value=Math.max(-100,Math.min(100,value));
+  // Hardware-like center detent: capture inside ±7, hold through ±12,
+  // release outside ±12. A finished drag inside ±12 snaps to dead center.
+  // Keyboard arrows remain fine-resolution (bypass sticky detent).
+  const keyboard=el.dataset.panKeyboard==='true';
+  const bypass=!!event.altKey||el.dataset.panAltPointer==='true';
+  const latched=el.dataset.panDetent==='true';
+  const range=event.type==='change'?12:latched?12:7;
+  if(!keyboard&&!bypass&&Math.abs(value)<=range){value=0;el.value='0';}
+  el.dataset.panDetent=String(!keyboard&&value===0&&!bypass);
+  if(event.type==='change')delete el.dataset.panKeyboard;
+  t.pan=value;
+  el.setAttribute?.('aria-valuetext',value===0?'Center':value<0?'Left '+Math.abs(value):'Right '+value);
+  const wrapper=el.closest('.pan-control');
+  if(wrapper){wrapper.setAttribute('style',panStyle(value));wrapper.classList?.toggle('is-centered',value===0);}
+  const label=wrapper?wrapper.nextElementSibling:el.nextElementSibling;
+  if(label)label.textContent=panLabel(value);
+  if(event.type==='change')say(t.name+' pan '+panLabel(value));
+}
  else if(field==='trim'){t.trim=Number(el.value);if(el.style?.setProperty)el.style.setProperty('--range-pct',rangePct(t.trim,-24,24)+'%');const readout=el.closest('.trim-section')?.querySelector('.trim-value');if(readout)readout.textContent=formatDb(t.trim);if(event.type==='change')say(t.name+' digital trim '+formatDb(t.trim)+' dB');}
  else if(field==='sendLevel'){t.sendLevel=Number(el.value);if(el.style?.setProperty)el.style.setProperty('--range-pct',rangePct(t.sendLevel,-60,6)+'%');el.nextElementSibling.textContent=formatDb(t.sendLevel);}
  else if(field==='sendPan'){t.sendPan=Number(el.value);el.nextElementSibling.textContent=t.sendPan===0?'C':t.sendPan<0?'L'+Math.abs(t.sendPan):'R'+t.sendPan;}
@@ -2471,6 +2500,8 @@ function setFaderFromPointer(ev,gesture){
 }
 consoleBody.addEventListener('pointerdown',ev=>{
  if(ev.button!==undefined&&ev.button!==0)return;
+ const pan=ev.target.closest?.('.center-pan');
+ if(pan){delete pan.dataset.panKeyboard;pan.dataset.panAltPointer=String(!!ev.altKey);return;}
  const box=ev.target.closest?.('.fader-box');
  if(!box)return;
  const input=box.querySelector('.fader'),travel=box.querySelector('.fader-travel');
@@ -2485,6 +2516,8 @@ window.addEventListener('pointermove',ev=>{
  setFaderFromPointer(ev,faderGesture);
 });
 function finishFaderPointer(ev){
+ for(const pan of consoleBody.querySelectorAll?.('.center-pan[data-pan-alt-pointer]')||[])
+  delete pan.dataset.panAltPointer;
  if(!faderGesture||ev.pointerId!==faderGesture.pointerId)return;
  setFaderFromPointer(ev,faderGesture);
  const g=faderGesture;faderGesture=null;
@@ -2493,8 +2526,17 @@ function finishFaderPointer(ev){
  if(t)say(t.name+' fader '+formatDb(sofEnabled&&t.kind==='audio'?getSofLevel(t):t.level)+' dB');
 }
 window.addEventListener('pointerup',finishFaderPointer);
-window.addEventListener('pointercancel',ev=>{if(faderGesture&&ev.pointerId===faderGesture.pointerId)faderGesture=null;});
+window.addEventListener('pointercancel',ev=>{
+ if(faderGesture&&ev.pointerId===faderGesture.pointerId)faderGesture=null;
+ for(const pan of consoleBody.querySelectorAll?.('.center-pan[data-pan-alt-pointer]')||[])
+  delete pan.dataset.panAltPointer;
+});
 
+consoleBody.addEventListener('keydown',event=>{
+ const el=event.target.closest?.('.center-pan');
+ if(el&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','PageUp','PageDown','Home','End'].includes(event.key))
+  el.dataset.panKeyboard='true';
+});
 document.querySelector('.console-body').addEventListener('input',handleField);
 document.querySelector('.console-body').addEventListener('change',handleField);
 document.querySelector('.console-body').addEventListener('click',e=>{
