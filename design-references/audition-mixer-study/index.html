@@ -1668,6 +1668,66 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
 .console-body .strip .fader-readout{font-variant-numeric:tabular-nums!important;color:#a7f1ff!important}
 .console-body .strip .split-count{font:600 9px/1.2 Consolas,monospace;color:#b5e8f1;
  border:1px solid #5d8291;border-radius:2px;padding:1px 2px;white-space:nowrap}
+
+/* V11 — FL-style selectable source/target wiring in the MIDDLE (SEND/BUS) strip.
+   Only visual reference. Default SEND rack collapsed, its wire tray stays visible.
+   Do not move hardware faders, clip VU or shrink expandable FX slot rack. */
+.console-body.collapsed-send{--send-h:53px!important}
+.console-body:not(.collapsed-send){--send-h:129px!important}
+.console-body .section-rail .rail-cell.send{
+  height:var(--send-h)!important;min-height:var(--send-h)!important;
+  flex:0 0 var(--send-h)!important;
+  background:linear-gradient(#263b45,#1d303a)!important;
+  color:#a4d6e2!important;
+}
+.console-body .strip .send-section{
+  display:flex!important;flex-direction:column!important;
+  height:var(--send-h)!important;min-height:var(--send-h)!important;
+  flex:0 0 var(--send-h)!important;overflow:hidden!important;
+}
+.console-body .strip .wire-tray{
+  display:flex!important;align-items:center!important;justify-content:center!important;
+  width:100%;min-width:0;min-height:29px;flex:0 0 29px;
+  margin-top:auto;padding:2px 4px 3px;box-sizing:border-box;
+  background:linear-gradient(#1b323b,#10242d 40%,#07171e)!important;
+  border-top:1px solid #63808b66;box-shadow:inset 0 2px #d4f5ff0e;
+}
+.console-body .strip .wire-socket{
+  display:flex;align-items:center;justify-content:center;gap:5px;
+  flex:1;max-width:100%;min-width:0;height:24px;
+  border:1px solid #45616f;border-radius:3px;
+  color:#a7c4cf;background:linear-gradient(#314653,#182e39 48%,#162a34);
+  box-shadow:inset 0 1px #a9deef2a,0 1px #0009;
+  font:600 9px/1 Arial,sans-serif!important;
+  cursor:pointer;user-select:none;
+}
+.console-body .strip .wire-socket:hover:not(:disabled){
+  color:#edfff5;border-color:#9ee6b5;background:linear-gradient(#37534e,#193c38);
+}
+.console-body .strip .wire-socket .wire-arrow{font-size:14px;font-weight:700;line-height:13px}
+.console-body .strip .wire-socket.is-source{
+  color:#132d18;border-color:#7dcb6c;background:linear-gradient(#bded9c,#65b96c)!important;
+  box-shadow:inset 0 1px #efffcb,0 1px #06190c!important;
+}
+.console-body .strip .wire-socket.is-linked{
+  color:#ccffe0;border-color:#64c383;background:linear-gradient(#286b4f,#13432e)!important;
+  box-shadow:inset 0 1px #b9ffcb24,0 1px #010d05!important;
+}
+.console-body .strip .wire-socket:disabled{cursor:default;opacity:1}
+.console-body .strip .wire-socket:focus-visible{outline:1px solid #c7fbe0;outline-offset:1px}
+.wire-legend{
+  margin-left:auto;color:#a4e3bd;font:600 10px/1 'Segoe UI',Arial,sans-serif;
+  border:1px solid #46675c;padding:3px 7px;border-radius:2px;
+  background:linear-gradient(#1e3730,#142823);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.mixer-title .wire-legend + .right{margin-left:0}
+.tracks-viewport{position:relative!important;isolation:isolate}
+.routing-wire-overlay{
+  position:absolute;inset:0;width:100%;height:100%;overflow:hidden;
+  z-index:6;pointer-events:none;contain:paint;
+}
+@media(max-width:1000px){.wire-legend{max-width:220px}}
+@media(max-height:680px){.console-body.collapsed-send{--send-h:49px!important}}
 </style>
 </head>
 <body>
@@ -1711,7 +1771,7 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
     </details>
   </div>
   <main class="console-pane">
-    <div class="mixer-title"><span class="accent"></span><span class="panel-name">Live Mixer</span><span class="panel-sub">▤</span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
+    <div class="mixer-title"><span class="accent"></span><span class="panel-name">Live Mixer</span><span class="panel-sub">▤</span><span class="wire-legend" id="wireLegend" aria-live="polite">WIRE · CH01 → click arrows below FX</span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
     <section class="console-body collapsed-send" data-density="comfort" aria-label="Live mixing console">
       <aside class="section-rail" aria-label="Mixer section icons">
         <div class="rail-cell identity" title="Channel identity">CH</div>
@@ -1724,7 +1784,7 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
         <div class="rail-cell fader" title="Level and meter">dB</div>
         <div class="rail-cell footer" title="Track labels"><small>▦</small></div>
       </aside>
-      <div class="tracks-viewport" id="viewport" tabindex="0" aria-label="Visible channel bank; use upper arrow buttons for more channels"><div class="tracks" id="tracks"></div></div>
+      <div class="tracks-viewport" id="viewport" tabindex="0" aria-label="Visible channel bank; use upper arrow buttons for more channels"><div class="tracks" id="tracks"></div><svg id="wireLayer" class="routing-wire-overlay" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"></svg></div>
       <div id="master"></div>
     </section>
     <div id="channelIdentity" class="channel-identity" role="dialog" aria-label="Edit channel name icon and color" hidden>
@@ -1790,14 +1850,14 @@ function savePluginPreferences(){
  }));}catch(error){/* Manager still works without browser storage. */}
 }
 const tracksEl=document.getElementById('tracks'),masterEl=document.getElementById('master'),info=document.getElementById('info');
-let nextId=1,nextGroup=1,tracks=[],master,preview=false,meterFrame=0,lastTick=0,clipboard=null,scenes=[],sofEnabled=false,sofTarget="Bus A";
+let nextId=1,nextGroup=1,tracks=[],master,preview=false,meterFrame=0,lastTick=0,clipboard=null,scenes=[],sofEnabled=false,sofTarget="Bus A",wireSourceId=1;
 const clone=x=>JSON.parse(JSON.stringify(x));
 const selection=()=>tracks.concat(master).filter(t=>t.selected);
 const make=(name,kind,color)=>{
  const id=nextId++;
  return {id,name,kind,color,icon:kind==='master'?'◎':kind==='bus'?'⊞':kind==='fx'?'◉':'♩',group:null,safe:false,format:'stereo',input:'None',output:kind==='master'?'Default Output':'Master',fx:Array(8).fill('None'),slotBypass:Array(8).fill(false),fxOn:true,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,activeSend:0,sendSlots:Array.from({length:16},()=>({send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0})),eq:true,pan:0,trim:0,mute:false,solo:false,cue:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
 };
-function init(){nextId=1;nextGroup=1;tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
+function init(){nextId=1;nextGroup=1;wireSourceId=1;tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const option=(values,selected)=>values.map(x=>'<option value="'+escapeHtml(x)+'"'+(x===selected?' selected':'')+'>'+escapeHtml(x)+'</option>').join('');
 // DEMO mult is a source binding, not a Group sum or copied JS audio engine.
@@ -1846,9 +1906,17 @@ function sectionFx(t){
  }
  return out+'</div></div>';
 }
+function wireTray(t){
+ const source=tracks.find(x=>x.id===wireSourceId&&x.kind==='audio');
+ const isSource=!!source&&source.id===t.id;
+ const link=parseSplitSource(t.input),connected=!!(source&&t.kind==='audio'&&link?.sourceId===source.id);
+ const canWire=!!(source&&t.kind==='audio'&&!isSource);
+ const label=!source?'NO SOURCE':isSource?'SOURCE':t.kind!=='audio'?'AUX/MAIN':connected?'CONNECTED':'CONNECT';
+ return '<div class="wire-tray"><button type="button" class="wire-socket'+(isSource?' is-source':'')+(connected?' is-linked':'')+'" data-action="wireRoute" aria-pressed="'+connected+'" aria-label="'+escapeHtml(t.name)+' · '+label+'" title="'+escapeHtml(label+(source?' · from '+source.name:'')+' · GUI only')+'" '+(canWire?'':'disabled')+'><span class="wire-arrow" aria-hidden="true">'+(isSource?'▼':connected?'◆':'△')+'</span><span class="wire-label">'+(isSource?'SOURCE':connected?'LINKED':t.kind==='audio'?'WIRE':t.kind==='master'?'MAIN':'BUS')+'</span></button></div>';
+}
 function sectionSend(t){
- if(t.kind==='master'||t.kind==='fx')return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><span class="sendtag">No Sends</span></div></div>';
- return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><select class="send-slot" data-field="activeSend" title="Select send slot 1–16" aria-label="Send slot">'+option(Array.from({length:16},(_,i)=>'S'+(i+1)),'S'+(t.activeSend+1))+'</select><span class="send-compact" title="Active send destination">'+escapeHtml(t.send==='None'?'No send':t.send)+'</span><span class="push"></span><button class="mini power '+(t.sendOn?'on':'')+'" data-action="sendOn" title="Enable Send">⏻</button><button class="mini pre '+(t.pre?'on':'')+'" data-action="pre" title="Toggle Pre/Post send">'+(t.pre?'Pre':'Pst')+'</button></div><select class="send-select" data-field="send" aria-label="Send destination">'+option(channelOptions(t,'send'),t.send)+'</select><div class="sendlevel"><label>LEVEL</label><input class="ari-horizontal" type="range" min="-60" max="6" step="1" value="'+t.sendLevel+'" style="--range-pct:'+rangePct(t.sendLevel,-60,6)+'%" data-field="sendLevel" title="Send level"><output>'+formatDb(t.sendLevel)+'</output></div></div>';
+ if(t.kind==='master'||t.kind==='fx')return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><span class="sendtag">No Sends</span></div>'+wireTray(t)+'</div>';
+ return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><select class="send-slot" data-field="activeSend" title="Select send slot 1–16" aria-label="Send slot">'+option(Array.from({length:16},(_,i)=>'S'+(i+1)),'S'+(t.activeSend+1))+'</select><span class="send-compact" title="Active send destination">'+escapeHtml(t.send==='None'?'No send':t.send)+'</span><span class="push"></span><button class="mini power '+(t.sendOn?'on':'')+'" data-action="sendOn" title="Enable Send">⏻</button><button class="mini pre '+(t.pre?'on':'')+'" data-action="pre" title="Toggle Pre/Post send">'+(t.pre?'Pre':'Pst')+'</button></div><select class="send-select" data-field="send" aria-label="Send destination">'+option(channelOptions(t,'send'),t.send)+'</select><div class="sendlevel"><label>LEVEL</label><input class="ari-horizontal" type="range" min="-60" max="6" step="1" value="'+t.sendLevel+'" style="--range-pct:'+rangePct(t.sendLevel,-60,6)+'%" data-field="sendLevel" title="Send level"><output>'+formatDb(t.sendLevel)+'</output></div>'+wireTray(t)+'</div>';
 }
 function formatDb(n){return n<=-60?'-∞':(n>0?'+':'')+Number(n).toFixed(1);}
 function panLabel(n){return Number(n)===0?'C':n<0?'L'+Math.abs(n):'R'+n;}
