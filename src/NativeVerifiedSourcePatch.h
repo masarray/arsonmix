@@ -49,6 +49,22 @@ struct NativeVerifiedSourcePatch final {
         if(!list || list->size()!=10 || !list->getReference(channel).isObject())
             return "SOURCE: accepted patch channel layout unavailable";
         auto* row=list->getReference(channel).getDynamicObject();
+        // Native routing v2 separates SOURCE format from the processing
+        // channel width. A source is not audible if only the old "mode"
+        // field changes: NativeDryRouteCommand::decode will reject the stale
+        // sourceKind/sourceFormat. Keep selected channelFormat intact so a
+        // one-pin MONO microphone may feed STEREO processing without IN2.
+        const auto schema=copy.getProperty("schemaVersion",juce::var());
+        if(!schema.isVoid() && (!schema.isInt() ||
+             (static_cast<int>(schema)!=1 && static_cast<int>(schema)!=2)))
+            return "SOURCE: unsupported accepted native route version";
+        if(schema.isInt() && static_cast<int>(schema)==2) {
+            const auto width=row->getProperty("channelFormat",{}).toString();
+            if(width!="MONO" && width!="STEREO")
+                return "SOURCE: native processing format missing or invalid";
+            row->setProperty("sourceKind","PHYSICAL");
+            row->setProperty("sourceFormat",mode);
+        }
         row->setProperty("mode",mode);
         row->setProperty("left",physicalLeft);
         row->setProperty("right",mode=="STEREO"?physicalRight:-1);
