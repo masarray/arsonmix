@@ -59,7 +59,7 @@ struct NativeVerifiedSourcePatch final {
              (static_cast<int>(schema)!=1 && static_cast<int>(schema)!=2)))
             return "SOURCE: unsupported accepted native route version";
         if(schema.isInt() && static_cast<int>(schema)==2) {
-            const auto width=row->getProperty("channelFormat",{}).toString();
+            const auto width=row->getProperty("channelFormat").toString();
             if(width!="MONO" && width!="STEREO")
                 return "SOURCE: native processing format missing or invalid";
             row->setProperty("sourceKind","PHYSICAL");
