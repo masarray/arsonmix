@@ -312,7 +312,7 @@
   }
   function normalizeSnapshot(payload){
     const raw=payload?.snapshot||payload;
-    if(!raw||typeof raw!=='object')return null;
+    if(!raw||typeof raw!=='object'||raw.schemaVersion!==6)return null;
     // The new main integration/ConsoleNativeContractV6.h readback has a
     // flat, control-thread-only shape. It does NOT assert physical LIVE.
     if(raw.schemaVersion===6&&!raw.graph&&Array.isArray(raw.channels)){
