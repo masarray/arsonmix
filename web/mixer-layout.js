@@ -169,6 +169,8 @@
   const byId=new Map();
   const pending=new Map();
   const pendingTargets=new Set();
+  const awaitingSnapshot=new Map();
+  let snapshotSerial=0;
   const operationCaps={
     SET_SOURCE:'SET_SOURCE',SET_PROCESSING_FORMAT:'SET_PROCESSING_FORMAT',
     SET_PRIMARY_OUT:'SET_PRIMARY_OUT',ADD_INSERT:'ADD_INSERT',
@@ -231,7 +233,7 @@
   }
   function can(op,id){
     if(!supported(op))return false;
-    if(op==='CREATE_CHANNEL')return !!accepted.graph.capabilities.dynamicChannels;
+    if(op==='CREATE_CHANNEL')return !!accepted.graph.capabilities.dynamicChannels && !pendingTargets.has('@roster');
     if(op==='ADD_INSERT'&&!accepted?.catalog?.plugins?.length)return false;
     if(!id)return true;
     const ch=byId.get(id);
@@ -250,8 +252,10 @@
     const requestId=instance+':'+(++requestSeq);
     const command={requestId,baseRevision:accepted.graph.revision,
       deviceEpoch:accepted.device.epoch,op,targetChannelId:id||null,payload:payload||{}};
-    pending.set(requestId,{op,id,baseRevision:command.baseRevision,epoch:command.deviceEpoch});
+    pending.set(requestId,{op,id,baseRevision:command.baseRevision,epoch:command.deviceEpoch,
+      snapshotSerial});
     if(id)pendingTargets.add(id);
+    else if(op==='CREATE_CHANNEL')pendingTargets.add('@roster');
     showFeedback('PENDING · '+op+' · awaiting native ACK');
     refreshDisabled();
     backend.emitEvent('arMixConsoleIntent',command);
@@ -262,18 +266,26 @@
     if(!ack||typeof ack.requestId!=='string')return;
     const intent=pending.get(ack.requestId);if(!intent)return;
     pending.delete(ack.requestId);
-    if(intent.id)pendingTargets.delete(intent.id);
+    const target=intent.id||'@roster';
     if(ack.status==='ACCEPTED'){
-      // ACK is NOT a replacement graph. No channel/route/FX mutation before
-      // a full accepted snapshot arrives; telemetry is never guessed.
+      // A realtime ACK may use the same graph revision: require an actual
+      // snapshot received after this gesture before releasing the control.
+      const requiredRevision=Number.isSafeInteger(ack.newRevision)?
+        ack.newRevision:intent.baseRevision;
+      if(snapshotSerial>intent.snapshotSerial&&accepted?.device?.epoch===intent.epoch&&
+         accepted?.graph?.revision>=requiredRevision){
+        pendingTargets.delete(target);
+      }else{
+        awaitingSnapshot.set(ack.requestId,{...intent,requiredRevision});
+      }
       showFeedback('ACCEPTED · '+intent.op+' · synchronizing native snapshot');
       requestSnapshot();
     }else{
+      pendingTargets.delete(target);
       showFeedback((ack.status==='REQUIRES_DEVICE_CHANGE'?'REQUIRES DEVICE · ':'REJECTED · ')+
         clean(ack.errorCode||ack.message||'Native rejected request')+' · accepted audio preserved');
-      // Also request authoritative recovery after stale revision/device.
       requestSnapshot();
-      render();
+      refreshAcceptedControls();
     }
     refreshDisabled();
   }
@@ -296,16 +308,32 @@
       return false;
     }
     if(acceptedNative&&!fromNative)return false;
+    if(fromNative&&acceptedNative&&accepted&&s.device.epoch<accepted.device.epoch)return false;
     if(fromNative&&acceptedNative&&accepted&&s.device.epoch===accepted.device.epoch&&
       s.graph.revision<accepted.graph.revision)return false;
+    const priorEpoch=acceptedNative?accepted?.device?.epoch:null;
     const structure=s.device.epoch+':'+s.graph.revision+':'+s.graph.channels.map(c=>c.id).join('|');
     accepted=s;acceptedNative=!!fromNative;
+    snapshotSerial++;
     byId.clear();
     for(const c of s.graph.channels)byId.set(c.id,c);
+    if(fromNative&&priorEpoch!==null&&priorEpoch!==s.device.epoch){
+      // Device replacement invalidates all old intents and controls; never
+      // replay them into an unrelated callback/port inventory.
+      pending.clear();pendingTargets.clear();awaitingSnapshot.clear();
+      showFeedback('DEVICE CHANGED · native source and destination inventory refreshed');
+    }
+    for(const [requestId,task] of awaitingSnapshot){
+      if(task.epoch===s.device.epoch&&snapshotSerial>task.snapshotSerial&&
+        s.graph.revision>=task.requiredRevision){
+        awaitingSnapshot.delete(requestId);
+        pendingTargets.delete(task.id||'@roster');
+      }
+    }
     if(structure!==lastStructure||root.dataset.demo!==String(!fromNative)){
       lastStructure=structure;render();
     }else{
-      refreshMeters();refreshDisabled();updateHeader();
+      refreshAcceptedControls();refreshDisabled();updateHeader();
     }
     root.dataset.demo=String(!fromNative);
     setVisible(true);
@@ -356,7 +384,7 @@
     section.append(h('span','arV6SectionTitle','VST3 INSERTS'));
     const list=Array.isArray(ch.inserts)?ch.inserts:[];
     for(const fx of list){
-      const row=h('div','arV6FxSlot');
+      const row=h('div','arV6FxSlot');row.dataset.fxId=clean(fx.id);
       row.append(button(fx.name||fx.pluginName||'VST3',{'data-op':'OPEN_INSERT_EDITOR',
         'data-id':ch.id,'data-insert':clean(fx.id)}));
       const bypass=button(fx.bypassed?'OFF':'ON',{'data-op':'SET_INSERT_BYPASS',
@@ -381,7 +409,7 @@
     const sends=Array.isArray(ch.sends)?ch.sends:[];
     const targets=(accepted.graph.destinations||[]).filter(x=>x.acceptsSend===true);
     for(const send of sends){
-      const line=h('div','arV6Send');
+      const line=h('div','arV6Send');line.dataset.sendId=clean(send.id);
       line.append(h('span','arV6SendName',clean(send.name||send.targetId)));
       const toggle=button(send.tap==='PRE'?'PRE':'POST',{'data-op':'SET_SEND_TAP',
         'data-id':ch.id,'data-send':clean(send.id)});
@@ -503,6 +531,43 @@
       }
     }
   }
+  function refreshAcceptedControls(){
+    for(const strip of root.querySelectorAll('[data-channel-id]')){
+      const ch=byId.get(strip.dataset.channelId);
+      if(!ch)continue;
+      const choose=(op,value)=>{
+        const field=strip.querySelector('select[data-op="'+op+'"]');
+        if(!field)return;
+        const actual=typeof value==='string'?value:'';
+        if([...field.options].some(o=>o.value===actual))field.value=actual;
+      };
+      choose('SET_SOURCE',ch.source?.portId||ch.source?.id||'');
+      choose('SET_PROCESSING_FORMAT',ch.processingFormat||'');
+      choose('SET_PRIMARY_OUT',ch.primaryOut?.id||(typeof ch.primaryOut==='string'?ch.primaryOut:''));
+      choose('ADD_SEND','');
+      const pan=strip.querySelector('[data-op="SET_PAN"]');
+      if(pan)pan.value=String(Number(ch.controls?.pan)||0);
+      for(const op of ['SET_MUTE','SET_SOLO']){
+        const n=strip.querySelector('button[data-op="'+op+'"]');
+        if(n)n.setAttribute('aria-pressed',String(!!ch.controls?.[op==='SET_MUTE'?'mute':'solo']));
+      }
+      for(const node of strip.querySelectorAll('.arV6FxSlot')){
+        const fx=(ch.inserts||[]).find(x=>String(x.id)===node.dataset.fxId);
+        const power=node.querySelector('[data-op="SET_INSERT_BYPASS"]');
+        if(fx&&power){
+          power.textContent=fx.bypassed?'OFF':'ON';
+          power.classList.toggle('isOff',!!fx.bypassed);
+          power.setAttribute('aria-pressed',String(!fx.bypassed));
+        }
+      }
+      for(const node of strip.querySelectorAll('.arV6Send')){
+        const send=(ch.sends||[]).find(x=>String(x.id)===node.dataset.sendId);
+        const tap=node.querySelector('[data-op="SET_SEND_TAP"]');
+        if(send&&tap)tap.textContent=send.tap==='PRE'?'PRE':'POST';
+      }
+    }
+    syncFaderMode();refreshMeters();
+  }
   function syncFaderMode(){
     for(const range of root.querySelectorAll('.arV6Fader')){
       const ch=byId.get(range.dataset.id);
@@ -608,8 +673,8 @@
         else showFeedback('UNAVAILABLE · No native send on this channel');
       }else sendIntent(op,id,{valueDb:Number(n.value)});
     }
-    // Native snapshot (not the locally manipulated HTML select/range) owns truth.
-    if(accepted)render();
+    // Restore only accepted controls without remounting meters or fader nodes.
+    if(accepted){refreshAcceptedControls();refreshDisabled();}
   });
   if(native){
     backend.addEventListener('arMixConsoleSnapshot',s=>receiveSnapshot(s,true));
