@@ -1303,6 +1303,194 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
  .command-bar .sep{display:none}
 }
 
+
+/* V7 CRITICAL VISUAL REBALANCE — measured against the 1666x888 owner screenshot.
+   Hierarchy: chrome header > route > compact FX insert rack > sends/PAN > direct
+   mute/solo/PFL > tactile fader + peak meters. NO web-style blue black voids. */
+:root {
+ --am-metal-base:#15232c;
+ --am-metal-panel:#22333d;
+ --am-metal-raised:#2b3f4b;
+ --am-metal-edge:#41515b;
+ --am-metal-inset:#060d12;
+ --am-text-primary:#e1ebee;
+ --am-text-muted:#afc0c6;
+ --am-accent:#6cb9ca;
+}
+/* CSS variable on parent rail and strips drives identical FX geometry. */
+.console-body:not(.collapsed-fx){--fx-h:clamp(111px,13.5vh,137px)!important}
+.console-body.collapsed-fx{--fx-h:23px!important}
+.console-body .strip{
+ background:linear-gradient(90deg,#1e2e39 0%,#2a3c46 10%,#293943 52%,#25343e 92%,#1d2b35 100%)!important;
+ border-right:1px solid #0b151c!important;
+ box-shadow:inset 1px 0 #74889439,inset -1px 0 #0b161c!important;
+}
+.console-body .strip.selected{
+ position:relative!important;z-index:2!important;
+ background:linear-gradient(90deg,#22343f,#30434c 12%,#2c3e48 90%,#20303a)!important;
+ box-shadow:inset 0 0 0 1px var(--ch),inset 0 0 0 2px #111e26b5!important;
+}
+.console-body .strip .route-section{background:linear-gradient(#293b46,#23343d)!important}
+.console-body .strip .fx-section{
+ background:linear-gradient(#1f303a,#22333c)!important;
+ height:var(--fx-h)!important;min-height:var(--fx-h)!important;flex:0 0 var(--fx-h)!important;
+}
+.console-body .strip .send-section{background:#263843!important}
+.console-body .strip .pan-section{background:#293b46!important}
+.console-body .strip .switch-section{background:#2c3e48!important}
+.console-body .strip .subhead{background:linear-gradient(#233946,#1c2e39)!important}
+.console-body .strip .section{
+ border-bottom:1px solid #0d2029b0!important;
+ box-shadow:inset 0 -1px #73899529!important;
+}
+.console-body .strip .fxslot-list{background:transparent!important;overflow-y:auto!important;overflow-x:hidden!important;scrollbar-width:thin}
+.console-body .strip .fxslot-row{background:#1b2c35!important;border-bottom:1px solid #475b6440!important}
+.console-body .strip .fxslot-row:hover{background:#304956!important}
+.console-body .strip .fx-pick{font-weight:550!important;font-size:10px!important;color:#c4dfd0!important}
+.console-body .strip .fx-pick.empty{color:#80ccdf!important}
+.console-body .strip .route-select{background-color:#132630!important;border-color:#526672!important}
+.console-body .strip .route-caption{color:#b1c5cf!important}
+/* Old glossy plastic buttons looked bolted on from a different application.
+   All header and live controls share fine-edged satin/brushed steel. */
+.command-bar{
+ background:linear-gradient(#334752,#243743 46%,#1d303a)!important;
+ border-top:1px solid #65808c3b!important;
+ border-bottom:1px solid #0c171f!important;
+}
+.command-bar .tool,
+.command-bar .more-tools summary.tool,
+.more-tools-panel .tool,
+.identity-actions .console-control{
+ display:inline-flex!important;align-items:center!important;justify-content:center!important;
+ min-width:0!important;height:29px!important;min-height:29px!important;max-height:29px!important;
+ border:1px solid #536773!important;border-radius:3px!important;
+ background:linear-gradient(#405460,#2c3f4c 47%,#263845 48%,#314550)!important;
+ color:#e6eef2!important;text-shadow:0 1px #000b!important;
+ box-shadow:inset 0 1px #ffffff23,inset 0 -1px #101c25,0 1px 1px #0005!important;
+ font:600 10px/1.1 "Segoe UI",Arial,sans-serif!important;
+ letter-spacing:0!important;padding:0 10px!important;text-transform:none!important;
+ filter:none!important;transform:none!important;
+}
+.command-bar .tool:hover:not(:disabled),
+.more-tools-panel .tool:hover:not(:disabled),
+.identity-actions .console-control:hover{
+ background:linear-gradient(#4b6571,#354c59 48%,#304651 49%,#3a5360)!important;
+ color:#fff!important;
+}
+.command-bar .tool:active:not(:disabled),.identity-actions .console-control:active{
+ background:linear-gradient(#1a2b35,#304350)!important;
+ box-shadow:inset 1px 2px 3px #0009,0 1px #67808c22!important;
+}
+.command-bar .tool[aria-pressed="true"],.command-bar .more-tools[open] summary.tool{
+ background:linear-gradient(#406575,#244956)!important;
+ border-color:#5595a8!important;color:#c7eff9!important;
+}
+.command-bar .bank-arrow{padding:0!important;width:31px!important}
+.command-bar .bank-arrow svg{display:block!important;width:24px!important;height:24px!important}
+.command-bar .bank-arrow svg path{fill:#e0eef3!important}
+/* Preserve user's exact SVG path and element fill; display on dark face via CSS path override. */
+.command-bar .toolbar-select,.command-bar .density-select{background-color:#132733!important;border-color:#5a7280!important}
+.console-body .switch-section .switch{
+ display:flex!important;align-items:center!important;justify-content:center!important;
+ width:100%!important;min-width:0!important;height:29px!important;min-height:29px!important;
+ flex:none!important;padding:0 2px!important;
+ background:linear-gradient(#52616a,#334751 47%,#2b3d47 48%,#3e515d)!important;
+ border:1px solid #617681!important;border-radius:3px!important;
+ color:#e8f3f7!important;text-shadow:0 1px #000a!important;
+ box-shadow:inset 0 1px #ffffff31,inset 0 -1px #0f1c25,0 1px 2px #0006!important;
+ font:700 10px/1 "Segoe UI",Arial,sans-serif!important;letter-spacing:0!important;
+ filter:none!important;
+}
+.console-body .switch-section .switch:hover{border-color:#91a9b3!important;filter:brightness(1.05)!important}
+.console-body .switch-section .switch.on.mute{
+ background:linear-gradient(#ad5660,#7f303c)!important;border-color:#c16e78!important;color:#fff4f4!important;
+}
+.console-body .switch-section .switch.on.solo{
+ background:linear-gradient(#d3b365,#a58439)!important;border-color:#e9cb80!important;color:#1d251b!important;text-shadow:0 1px #ffffff66!important;
+}
+.console-body .switch-section .switch.on.cue{
+ background:linear-gradient(#64b9c3,#307783)!important;border-color:#85d4da!important;color:#081b22!important;text-shadow:0 1px #ffffff44!important;
+}
+/* User screenshot: lighten chassis, keep recess visibly DARKER and deeply machined. */
+.console-body .strip .fader-section{
+ background:linear-gradient(90deg,#253640,#30434e 15%,#2c3f49 78%,#22343e)!important;
+ padding:6px 6px 6px!important;
+}
+.console-body .fader-workspace{grid-template-columns:49px minmax(35px,1fr) 25px!important;gap:2px!important}
+.console-body .fader-box{
+ background:linear-gradient(90deg,#111f27,#1b2c35 18%,#1d3038 80%,#101e26)!important;
+}
+.console-body .fader-box::before{
+ width:min(36px,100%)!important;border-radius:5px!important;
+ background:linear-gradient(90deg,#050b10 0%,#0d1a22 14%,#101d25 50%,#0b1720 86%,#040a0f 100%)!important;
+ box-shadow:inset 2px 1px 5px #000c,inset -1px 0 #7d899122,0 1px #ffffff20!important;
+}
+.console-body .fader-box::after{
+ background-color:#010508!important;background-image:none!important;
+ top:27px!important;bottom:27px!important;
+ width:5px!important;box-shadow:inset 1px 0 #000,inset -1px 0 #1b2b32!important;
+}
+.console-body .fader-travel{top:27px!important;bottom:27px!important}
+.console-body .fader-travel .cap{
+ width:26px!important;height:55px!important;
+ background:var(--ari-silver) center/26px 55px no-repeat!important;
+ image-rendering:auto!important;
+ filter:drop-shadow(1px 2px 1px #0008)!important;
+}
+.console-body .strip.master .fader-travel .cap{background:var(--ari-rose) center/26px 55px no-repeat!important}
+.console-body .fader-box .fader{top:27px!important;bottom:27px!important;height:calc(100% - 54px)!important}
+.console-body .gain-scale-travel{top:27px!important;bottom:27px!important}
+.console-body .meter-box{
+ background:linear-gradient(90deg,#050d13 0%,#010507 25%,#03080c 72%,#152630 100%)!important;
+ box-shadow:inset 2px 1px 5px #0009,inset 0 0 0 1px #3f5b6744!important;
+}
+.console-body .meter-box .vu-bars{
+ background:linear-gradient(90deg,#111f27,#010508 24%,#010507 78%,#101c23)!important;
+}
+.console-body .fader-head{
+ background:linear-gradient(#07151d,#0a1c26)!important;
+ box-shadow:inset 0 1px 4px #000c!important;
+}
+.console-body .strip .bottom-section{background:#253944!important}
+/* Slider: original assets, smaller thumb, deliberately 3px lower than the rail center. */
+.console-body .center-pan::-webkit-slider-thumb,
+.console-body .ari-horizontal::-webkit-slider-thumb{
+ width:15px!important;height:32px!important;margin-top:-12px!important;
+ background:var(--ari-pan) center/15px 32px no-repeat!important;
+ border:0!important;box-shadow:none!important;
+}
+.console-body .center-pan::-moz-range-thumb,
+.console-body .ari-horizontal::-moz-range-thumb{
+ width:15px!important;height:32px!important;
+ background:var(--ari-pan) center/15px 32px no-repeat!important;
+}
+.console-body .pan-control .center-pan{margin-top:3px!important}
+.console-body .sendlevel .ari-horizontal{margin-top:3px!important}
+/* Modeless Plugin Manager — draggable and resizable, no scrim, no forced strip reflow. */
+.plugin-browser{
+ position:absolute!important;right:14px!important;left:auto;top:40px!important;bottom:auto!important;
+ width:min(408px,calc(100% - 32px))!important;
+ height:min(536px,calc(100% - 54px))!important;
+ max-height:calc(100% - 54px)!important;
+ resize:both!important;min-width:min(310px,calc(100% - 32px))!important;min-height:210px!important;
+ border:1px solid #637f8b!important;border-radius:6px!important;
+ background:#1b2b35!important;box-shadow:0 10px 26px #000a,0 0 0 1px #0d1c25!important;
+ overflow:hidden!important;pointer-events:auto!important;
+}
+.plugin-browser:not([hidden]) .plugin-head{cursor:move!important;touch-action:none!important;user-select:none!important}
+.plugin-head{background:linear-gradient(#3b5260,#223944)!important}
+.plugin-head-title{pointer-events:none!important}
+.plugin-head button{cursor:pointer!important}
+.plugin-minimize{height:28px;min-width:28px;background:#324956;border:1px solid #58717c;color:#dbeaf0;font-size:17px;border-radius:3px}
+.plugin-browser.minimized{
+ height:48px!important;min-height:48px!important;max-height:48px!important;resize:none!important;
+}
+.plugin-browser.minimized > :not(.plugin-head){display:none!important}
+.plugin-browser[hidden]{display:none!important}
+/* Header drag updates inline left/top: must overrule old fixed right/top CSS !important. */
+.plugin-browser[style*="left:"]{right:auto!important}
+.plugin-browser[style*="top:"]{top:var(--floating-top,40px)}
+
 </style>
 </head>
 <body>
@@ -1966,15 +2154,15 @@ plugEl('pluginDragHandle').addEventListener('pointerdown',ev=>{
  pluginWindowMove={pointerId:ev.pointerId,dx:ev.clientX-r.left,dy:ev.clientY-r.top};
  plugEl('pluginDragHandle').setPointerCapture?.(ev.pointerId);
 });
-window.addEventListener('pointermove',ev=>{
+plugEl('pluginDragHandle').addEventListener('pointermove',ev=>{
  if(pluginWindowMove&&ev.pointerId===pluginWindowMove.pointerId)positionPluginWindow(ev);
 });
-window.addEventListener('pointerup',ev=>{
+plugEl('pluginDragHandle').addEventListener('pointerup',ev=>{
  if(!pluginWindowMove||ev.pointerId!==pluginWindowMove.pointerId)return;
  positionPluginWindow(ev);pluginWindowMove=null;
  plugEl('pluginDragHandle').releasePointerCapture?.(ev.pointerId);
 });
-window.addEventListener('pointercancel',ev=>{
+plugEl('pluginDragHandle').addEventListener('pointercancel',ev=>{
  if(pluginWindowMove&&ev.pointerId===pluginWindowMove.pointerId)pluginWindowMove=null;
 });
 plugEl('pluginMinimize').addEventListener('click',()=>{
