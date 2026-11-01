@@ -28,6 +28,13 @@ async def check(f):
         await page.evaluate("x=>window.__s0.publish('arMixConsoleSnapshot',x)",n)
         after=await page.evaluate("()=>window.__arMixV6ReadOnly()")
         assert after['revision']==state['revision'] and after['pendingCount']==0
+        malformed=json.loads(json.dumps(s))
+        malformed['device'].pop('enabledInputs',None)
+        await page.evaluate("x=>window.__s0.publish('arMixConsoleSnapshot',x)",malformed)
+        rejected=await page.evaluate("()=>window.__arMixV6ReadOnly()")
+        assert rejected['revision']==state['revision']
+        assert rejected['epoch']==state['epoch']
+        assert rejected['visibleChannelIds']==[], 'invalid native pin inventory caused ghost channel'
         await b.close()
     print('S0_CPP_TO_GUI_SCHEMA_PASS_NOT_PCM')
 if __name__=='__main__':
