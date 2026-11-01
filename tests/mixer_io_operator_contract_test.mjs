@@ -575,3 +575,37 @@ test('hardware input CH1/CH2/CH10 selectable on the mixer itself without an IO m
  assert.match(css,/\.arChannelQuickInput\{/);
  assert.doesNotMatch(css,/backdrop-filter|filter:blur/);
 });
+
+test('First Sound focuses exactly one native channel; software matrix is opt-in',()=>{
+ const io=read('web/mixer-io.js'),css=read('web/mixer-io.css');
+ assert.match(io,/lastSignature='', focusedInput=0/);
+ assert.match(io,/for\(const i of \[focusedInput\]\)/);
+ assert.match(io,/arIODeviceMatrixDetails/);
+ assert.match(io,/if\(!advancedDeviceOpen\)return/);
+ assert.match(io,/NEXT · ROUTE INPUT TO MIXER/);
+ assert.match(io,/ioTab==='inputs'&&!advancedMatrixOpen/);
+ assert.match(css,/\.arIODeviceMatrixDetails/);
+ assert.match(css,/\.arIOQuickOutput/);
+});
+test('First Sound never reports invalid stereo pins as live or invents capture PCM',()=>{
+ const io=read('web/mixer-io.js'),monitor=read('web/monitor.js');
+ assert.match(io,/const validPhysicalRoute=\(r,ports\)=>/);
+ assert.match(io,/pins\.size>=2&&r\.left!==r\.right/);
+ assert.match(io,/const suggested=verified\.length===1&&r\.mode==='NONE'/);
+ assert.match(io,/INVALID L\/R · SELECT MONO/);
+ assert.match(io,/ROUTE ACK · CHECK RAW PCM/);
+ assert.match(monitor,/Stereo L\/R requires distinct enabled hardware pins/);
+});
+
+test('First Sound output panel renders accepted MAIN pin truth, not a dangling removed quick-map local',()=>{
+ const io=read('web/mixer-io.js');
+ assert.match(io,/const accepted=s\.mainOutputs\?\.length===2\?s\.mainOutputs:\[\]/);
+ assert.match(io,/LIVE MAIN: /);
+ assert.match(io,/AUX1–4 are internal stereo FX returns, not physical output sockets/);
+});
+
+test('First Sound channel chooser remounts exactly one focused native route row',()=>{
+ const io=read('web/mixer-io.js');
+ assert.match(io,/focusedInput=Number\(e\.target\.value\);\s*\/\/ The focused operator row/);
+ assert.match(io,/lastSignature='';refreshIO\(\);/);
+});

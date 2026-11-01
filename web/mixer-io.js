@@ -6,7 +6,7 @@
   const mixer=document.getElementById('mixer');
   const host=document.querySelector('.workbench');
   if(!mixer||!host)return;
-  let mode='FX', lastStatus={}, deviceInventory=null, ioTab='device', lastSignature='', focusedInput=2;
+  let mode='FX', lastStatus={}, deviceInventory=null, ioTab='device', lastSignature='', focusedInput=0;
   let monitorSendsExpanded=false;
   // DEVICE1: staged selections are UI-only; only positive native ACK changes active hardware.
   let deviceDraft=null,deviceBusy=false,deviceNote='',deviceRequest='',deviceRequestSeq=0,lastDeviceRefresh=0,lastDeviceRescan=0,applyMutePending=false,applyAfterDevice=null,applyBaseEpoch=0;
@@ -20,6 +20,14 @@
   const portName=p=>String(p.label||('INPUT '+(p.port+1)));
   const portList=s=>Array.isArray(s.ports)?s.ports.filter(p=>Number.isInteger(p.port)&&p.port>=0):[];
   const valueFor=r=>r?.mode==='MONO'?'MONO:'+r.left:r?.mode==='STEREO'?'STEREO:'+r.left+':'+r.right:'NONE';
+  // Graph ACK alone cannot validate a source after hardware masks change.
+  const validPhysicalRoute=(r,ports)=>{
+    const pins=new Set(ports.map(p=>p.port));
+    if(r?.mode==='NONE'||r?.mode==='BUS')return true;
+    if(r?.mode==='MONO')return pins.has(r.left);
+    if(r?.mode==='STEREO')return pins.size>=2&&r.left!==r.right&&pins.has(r.left)&&pins.has(r.right);
+    return false;
+  };
   const portsFor=(s,select)=>{
     const current=valueFor(select);
     const options=[['NONE','UNPATCHED']];
@@ -83,7 +91,7 @@
 
   // DEVICE4: named software inputs are aliases for verified physical ports,
   // NOT new streams. Only SOURCE2/native ACK can make them audible on channels.
-  let softwareEdit=null,softwarePage=0,directMatrixOpen=false;
+  let softwareEdit=null,softwarePage=0,directMatrixOpen=false,advancedDeviceOpen=false;
   const softwarePageSize=8;
   function softwareSay(message){
     if(ioTab==='device')deviceNote=message;
@@ -828,8 +836,9 @@
     const dirty=current!==valueFor(accepted)||channelFormat(r)!==channelFormat(accepted);
     const stage=strip.querySelector('.arBankStage');
     const sourcePending=quickSourcePending?.channel===i&&quickSourcePending.epoch===s.epoch;
-    stage.textContent=!s.ready?'NO LIVE DEVICE':sourcePending?'PENDING · NATIVE ACK':dirty?'DRAFT · NOT APPLIED':r.mode==='NONE'?'UNPATCHED · SILENT':'LIVE · NATIVE ACK';
-    stage.dataset.state=!s.ready?'offline':sourcePending?'draft':dirty?'draft':r.mode==='NONE'?'offline':'live';
+    const pinsValid=validPhysicalRoute(accepted,portList(s));
+    stage.textContent=!s.ready?'NO LIVE DEVICE':!pinsValid?'INVALID SOURCE PINS · FIX IN AUDIO I/O':sourcePending?'PENDING · NATIVE ACK':dirty?'DRAFT · NOT APPLIED':r.mode==='NONE'?'UNPATCHED · SILENT':'ROUTE ACK · CHECK RAW PCM';
+    stage.dataset.state=!s.ready||!pinsValid?'offline':sourcePending?'draft':dirty?'draft':r.mode==='NONE'?'offline':'live';
     // Four native AUX destinations are always visible, even when empty.
     // Render only after a topology change, never on meter telemetry.
     const slots=Array.from({length:4},(_,bus)=>{
@@ -915,8 +924,8 @@
     section.setAttribute('aria-label','Route audio interface input to mixer channel');
     const title=node('header','arIOQuickHeader');
     const words=node('div','');
-    words.append(node('strong','','1 · INTERFACE INPUT → MIXER CHANNEL'),
-      node('small','','Choose a channel, mono/stereo source and actual driver input(s). STAGE → MUTE → APPLY.'));
+    words.append(node('strong','','ROUTE INPUT TO MIXER'),
+      node('small','','Choose a verified source, then USE INPUT. Native safe APPLY → ACK → ARM runs automatically.'));
     const jump=node('select','arIOJump');
     jump.dataset.ioJump='1';jump.setAttribute('aria-label','Find mixer channel');
     for(let i=0;i<10;i++){
@@ -926,7 +935,9 @@
     title.append(words,jump);section.appendChild(title);
     const verified=portList(s);
     section.appendChild(node('p','arIOQuickGuide',verified.length?
-      verified.length+' ENABLED capture pin(s). Missing IN 2? Enable that physical pin in DEVICE / DRIVER first.' :
+      verified.length+' ENABLED capture pin(s). '+(verified.length===1?
+        'This device provides one input: use MONO. STEREO requires two different pins.':
+        'For STEREO, choose distinct LEFT and RIGHT pins.') :
       'NO INPUT PINS · select an audio interface in DEVICE / DRIVER to enable routing.'));
     const headings=node('div','arIOQuickColumns');
     for(const label of ['MIX CHANNEL','SOURCE','INPUT / LEFT','RIGHT','NATIVE STATE'])headings.appendChild(node('span','',label));
@@ -941,10 +952,16 @@
       }
       return select;
     }
-    for(let i=0;i<10;i++){
+    // The 10 lanes remain addressable by the channel chooser. Present only
+    // the focused patch; there is one guarded action, not ten APPLY buttons.
+    for(const i of [focusedInput]){
       const r=channelState(s,i),accepted=s.acceptedRoute?.channels?.[i];
+      const suggested=verified.length===1&&r.mode==='NONE';
+      const displayMode=suggested?'MONO':r.mode;
+      const displayLeft=suggested?verified[0].port:r.left;
+      const validLive=validPhysicalRoute(accepted,verified);
       const row=node('div','arIOQuickRow');row.dataset.ioQuickRow=String(i);
-      row.dataset.state=!s.ready?'offline':valueFor(r)!==valueFor(accepted)?'draft':
+      row.dataset.state=!s.ready?'offline':!validLive?'invalid':valueFor(r)!==valueFor(accepted)?'draft':
         r.mode==='NONE'?'empty':'live';
       const identity=node('div','arIOQuickIdentity');
       identity.append(node('strong','','CH '+String(i+1).padStart(2,'0')),node('small','',matrixLogicalName(i)));
@@ -952,22 +969,27 @@
       mode.setAttribute('aria-label','CH '+(i+1)+' physical input type');
       for(const pair of [['NONE','NO INPUT'],['MONO','MONO'],['STEREO','STEREO'],
         ...(r.mode==='BUS'?[['BUS','INTERNAL BUS']]:[])]){
-        const option=node('option','',pair[1]);option.value=pair[0];option.selected=r.mode===pair[0];mode.appendChild(option);
+        const option=node('option','',pair[1]);option.value=pair[0];
+        option.selected=displayMode===pair[0];
+        if(pair[0]==='STEREO'&&verified.length<2&&displayMode!=='STEREO')option.disabled=true;
+        mode.appendChild(option);
       }
-      const left=sourceSelect(i,'left',r.left),right=sourceSelect(i,'right',r.right);
-      left.disabled=!hardwareReady(s)||r.mode==='NONE'||r.mode==='BUS';
-      right.disabled=!hardwareReady(s)||r.mode!=='STEREO';
+      const left=sourceSelect(i,'left',displayLeft),right=sourceSelect(i,'right',r.right);
+      left.disabled=!hardwareReady(s)||displayMode==='NONE'||displayMode==='BUS';
+      right.disabled=!hardwareReady(s)||displayMode!=='STEREO';
       mode.disabled=!hardwareReady(s)||r.mode==='BUS';
       const action=node('div','arIOQuickAction');
       const stage=node('button','btn-180 arIOQuickStage','USE INPUT');
       stage.dataset.ioQuickStage='1';stage.type='button';
-      stage.disabled=!hardwareReady(s)||r.mode==='BUS';
+      stage.disabled=!hardwareReady(s)||r.mode==='BUS'||!!quickSourcePending||
+        !validPhysicalRoute({mode:displayMode,left:displayLeft,right:r.right},verified);
       action.append(stage,node('small','arIOQuickState',r.mode==='BUS'?'INTERNAL BUS':
-        !s.ready?'NO DEVICE':row.dataset.state==='draft'?'DRAFT · NOT LIVE':
-        row.dataset.state==='live'?'LIVE · ACK':'UNPATCHED'));
+        !s.ready?'NO DEVICE':!validLive?'INVALID L/R · SELECT MONO':
+        row.dataset.state==='draft'?'DRAFT · NOT LIVE':
+        row.dataset.state==='live'?'ROUTE ACK · CHECK RAW PCM':'READY TO PATCH'));
       row.append(identity,mode,left,right,action);section.appendChild(row);
     }
-    section.appendChild(node('p','arIOQuickFooter','Select verified inputs, click USE INPUT. Native routing handles any required safe mute, ACK and re-arm automatically.'));
+    section.appendChild(node('p','arIOQuickFooter','A route ACK confirms the channel patch, not incoming sound. For VB-Cable, play into CABLE Input; ArSonMix records CABLE Output.'));
     return section;
   }
   function stageQuickInput(button){
@@ -1449,8 +1471,24 @@
     else if(a.open)
       actions.appendChild(node('span','arIODevicePending arIODeviceNextStep',
         devicePinNextStep()));
-    panel.appendChild(actions);body.appendChild(panel);
-
+    panel.appendChild(actions);
+    const next=node('button','btn-180 arIODeviceRouteNext','NEXT · ROUTE INPUT TO MIXER');
+    next.type='button';next.dataset.ioNextInput='1';
+    next.disabled=!hardwareReady(route())||deviceDirty()||deviceBusy;
+    panel.appendChild(next);body.appendChild(panel);
+    // Use synchronous operator input instead of a deferred <details> toggle:
+    // status refresh can replace the dialog DOM before the browser's
+    // asynchronous toggle event arrives and silently close the matrix.
+    const matrixFold=node('section','arIODeviceMatrixDetails');
+    const matrixToggle=node('button','arIODeviceMatrixToggle',
+      (advancedDeviceOpen?'HIDE':'ADVANCED')+' · SOFTWARE INPUT ALIASES / HARDWARE MATRIX');
+    matrixToggle.type='button';matrixToggle.dataset.ioDeviceMatrixToggle='1';
+    matrixToggle.setAttribute('aria-expanded',String(advancedDeviceOpen));
+    matrixFold.appendChild(matrixToggle);
+    body.appendChild(matrixFold);
+    // Do not build 10xN crosspoint DOM when the operator is selecting a
+    // sound card. This drastically reduces unnecessary WebView work.
+    if(!advancedDeviceOpen)return;
     const matrixSection=node('section','arIODevicePatchMatrix');
     const heading=node('div','arIODeviceMatrixHeading');
     heading.appendChild(node('strong','','AUDIO I/O · REAL PORT MATRIX'));
@@ -1487,7 +1525,7 @@
         'Named inputs are reusable SOURCES. APPLY builds a verified initial route; only native ACK confirms sound routing.':
         'MAIN / MONITOR outputs use muted APPLY PATCH and native ACK.'));
     }
-    body.appendChild(matrixSection);
+    matrixFold.appendChild(matrixSection);
   }
 
   function refreshIO(){
@@ -1502,8 +1540,12 @@
     });
     overlay.dataset.activeTab=ioTab;
     const matrixInDevice=ioTab==='device'&&deviceSameEndpoint(deviceDraft)&&hardwareReady(s);
-    overlay.querySelector('[data-mix-apply]').hidden=ioTab==='device';
-    overlay.querySelector('[data-io-revert]').hidden=ioTab==='device'&&!matrixInDevice;
+    // Quick USE INPUT is one transaction. Advanced crosspoint edits can
+    // still stage multiple changes and explicitly APPLY PATCH.
+    overlay.querySelector('[data-mix-apply]').hidden=ioTab==='device'||
+      (ioTab==='inputs'&&!advancedMatrixOpen);
+    overlay.querySelector('[data-io-revert]').hidden=ioTab==='device'||
+      (ioTab==='inputs'&&!advancedMatrixOpen);
     overlay.querySelector('[data-io-internal]').hidden=ioTab==='device';
     overlay.querySelector('[data-io-device-apply]').hidden=ioTab!=='device';
     overlay.querySelector('[data-io-device-revert]').hidden=ioTab!=='device';
@@ -1546,7 +1588,31 @@
         advanced.appendChild(node('summary','','ADVANCED M / L / R CROSSPOINT · SAME NATIVE ROUTING'));
         advanced.appendChild(makeMatrix(s,ioTab));
         body.appendChild(advanced);
-      }else body.appendChild(makeMatrix(s,ioTab));
+      }else{
+        // Two verified outputs are sufficient for first sound; the physical
+        // output crosspoint remains under advanced disclosure.
+        const ports=matrixPorts(s,'outputs');
+        const pair=s.draftMainOutputs?.length===2?s.draftMainOutputs:s.mainOutputs||[];
+        const quickOut=node('section','arIOQuickOutput');
+        quickOut.appendChild(node('strong','','MAIN · PHYSICAL PLAYBACK'));
+        for(const [i,label] of ['LEFT','RIGHT'].entries()){
+          const row=node('label','arIOOutputRow');
+          const selector=node('select','arIOMainOutput');
+          selector.dataset.side=String(i);selector.setAttribute('aria-label','MAIN '+label+' verified output');
+          for(const port of ports){
+            const option=node('option','','OUT '+(port+1));
+            option.value=String(port);option.selected=pair[i]===port;selector.appendChild(option);
+          }
+          selector.disabled=!hardwareReady(s)||ports.length<2;
+          row.append(node('span','',label),selector);quickOut.appendChild(row);
+        }
+        quickOut.appendChild(node('small','','Choose two distinct pins, then APPLY PATCH.'));
+        body.appendChild(quickOut);
+        const advanced=node('details','arIOAdvancedMatrix');
+        advanced.open=advancedMatrixOpen;
+        advanced.appendChild(node('summary','','ADVANCED · MAIN / MONITOR CROSSPOINT'));
+        advanced.appendChild(makeMatrix(s,ioTab));body.appendChild(advanced);
+      }
     }
     if(ioTab==='inputs'){
       body.appendChild(node('p','arIOHint','MAONO PS22 virtual inputs appear here ONLY if its selected driver enumerates them as capture ports. Configure MAONO Routing Center and select the appropriate PS22 ASIO/recording endpoint in DEVICE / DRIVER. Separate Windows capture endpoints cannot be silently combined into one device. Processing MONO/STEREO is independent of physical source mode.'));
@@ -1584,24 +1650,9 @@
       body.appendChild(node('p','arIOHint','LIVE MONITOR: '+
         (monitorLive.length===2?'HW '+(monitorLive[0]+1)+'/'+(monitorLive[1]+1):'DISABLED')+
         ' · Independent POST-fader mix; all changes require MUTE → APPLY → ACK.'));
-      const details=node('details','arIOQuickMap');
-      details.appendChild(node('summary','','QUICK OUTPUT SELECTION · ACCESSIBLE ALTERNATIVE'));
+
+      // Accepted physical MAIN pins, NEVER an inferred/draft destination.
       const accepted=s.mainOutputs?.length===2?s.mainOutputs:[];
-      const draft=s.draftMainOutputs?.length===2?s.draftMainOutputs:accepted;
-      const ports=matrixPorts(s,'outputs');
-      for(const [i,label] of ['MAIN LEFT','MAIN RIGHT'].entries()){
-        const row=node('label','arIOOutputRow');
-        const selector=node('select','arIOMainOutput');
-        selector.dataset.side=String(i);
-        selector.setAttribute('aria-label',label+' destination');
-        for(const p of ports){
-          const option=node('option','','HW OUT '+(p+1));
-          option.value=String(p);option.selected=p===draft[i];selector.appendChild(option);
-        }
-        selector.disabled=!hardwareReady(s)||ports.length<2;
-        row.append(node('strong','',label),selector);details.appendChild(row);
-      }
-      body.appendChild(details);
       body.appendChild(node('p','arIOHint','LIVE MAIN: '+(accepted.length===2?'HW '+(accepted[0]+1)+'/'+(accepted[1]+1):'UNAVAILABLE')+
         ' · Only native-ACKed MAIN/MONITOR pairs can carry sound. AUX1–4 are internal stereo FX returns, not physical output sockets.'));
     }else{
@@ -1640,7 +1691,23 @@
     }
     lastSignature='';refresh();
   }
+  // Reflect input pin validity immediately, without a new DOM render or a
+  // second routing writer. The actual click still uses the native preflight.
+  function syncQuickInputAction(row){
+    if(!row)return;
+    const mode=row.querySelector('[data-io-quick-mode]')?.value;
+    const left=Number(row.querySelector('[data-io-quick-pin="left"]')?.value);
+    const right=Number(row.querySelector('[data-io-quick-pin="right"]')?.value);
+    const s=route(),valid=validPhysicalRoute({mode,left,right},portList(s));
+    const button=row.querySelector('[data-io-quick-stage]');
+    if(button)button.disabled=!hardwareReady(s)||!!quickSourcePending||mode==='BUS'||!valid;
+    const reason=row.querySelector('.arIOQuickState');
+    if(reason)reason.textContent=valid?'READY · USE INPUT':'INVALID INPUT · CHECK MONO/L/R PINS';
+  }
   document.addEventListener('change',e=>{
+    if(e.target.matches('[data-io-quick-pin]')){
+      syncQuickInputAction(e.target.closest('[data-io-quick-row]'));return;
+    }
     if(e.target.matches('[data-io-quick-mode]')){
       const row=e.target.closest('[data-io-quick-row]'),mode=e.target.value;
       const left=row.querySelector('[data-io-quick-pin="left"]'),
@@ -1648,11 +1715,15 @@
       left.disabled=mode==='NONE'||mode==='BUS';
       right.disabled=mode!=='STEREO';
       if(mode!=='STEREO')right.value='-1';
+      syncQuickInputAction(row);
       return;
     }
     if(e.target.matches('[data-io-jump]')){
       focusedInput=Number(e.target.value);
-      overlay.querySelector('[data-io-quick-row="'+focusedInput+'"]')?.scrollIntoView({block:'nearest'});
+      // The focused operator row is the ONLY mounted row. Recreate it
+      // synchronously from authoritative draft/native readback, not by
+      // scrolling to an absent one of ten stale rows.
+      lastSignature='';refreshIO();
       return;
     }
     if(e.target.matches('.arIOMatrixMode')){matrixModeChange(e.target);return;}
@@ -1771,6 +1842,15 @@
       e.preventDefault();const result=window.__arMixApplyAndActivate?.();
       sendFeedback=result?.ok?'SUBMITTED · WAIT FOR NATIVE ACK':result?.error||'APPLY failed';
       drawSendEditor();return;
+    }
+    if(b.dataset.ioDeviceMatrixToggle!==undefined){
+      e.preventDefault();e.stopImmediatePropagation();
+      advancedDeviceOpen=!advancedDeviceOpen;
+      lastSignature='';refreshIO();return;
+    }
+    if(b.dataset.ioNextInput!==undefined){
+      e.preventDefault();e.stopImmediatePropagation();
+      ioTab='inputs';matrixMessage='';lastSignature='';refreshIO();return;
     }
     if(b.dataset.ioQuickStage!==undefined){
       e.preventDefault();e.stopImmediatePropagation();stageQuickInput(b);return;

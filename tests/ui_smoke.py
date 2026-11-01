@@ -1297,7 +1297,8 @@ async def main():
         assert await page.locator('#arIOOverlay').is_visible()
         assert await page.locator('.arIORealDeviceSetup').count()==1
         await page.locator('[data-io-tab="inputs"]').click()
-        assert await page.locator('#arIOBody .arIOQuickRow').count()==10
+        assert await page.locator('#arIOBody .arIOQuickRow').count()==1
+        assert await page.locator('#arIOBody [data-io-jump] option').count()==10
         await page.locator('#arIOOverlay [data-io-close]').click()
         assert not await page.locator('#arIOOverlay').is_visible()
         assert await page.locator('.setup-section').count()==0
