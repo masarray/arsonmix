@@ -11,12 +11,12 @@ function node(name){
  const x={value:name==='viewFilter'?'all':'',innerHTML:'',textContent:'',scrollLeft:0,dataset:{},handlers,
   classList:{contains:k=>classes.has(k),add:k=>classes.add(k),remove:k=>classes.delete(k),
    toggle(k,force){const on=force===undefined?!classes.has(k):!!force;on?classes.add(k):classes.delete(k);return on;}},
-  style:{setProperty(){}},setAttribute(){},addEventListener(k,cb){handlers[k]=cb;},
+  style:{_vars:{},setProperty(k,v){this._vars[k]=String(v)},getPropertyValue(k){return this._vars[k]||''}},setAttribute(){},addEventListener(k,cb){handlers[k]=cb;},
   querySelector(){return null;},
   dispatch(k){assert.ok(handlers[k],name+' '+k+' handler missing');handlers[k]({target:x});}};
  elements.set(name,x);return x;
 }
-const document={getElementById:node,querySelector:k=>k==='.console-body'?node('body'):k==='.section-rail'?node('rail'):null,querySelectorAll:()=>[]};
+const document={getElementById:node,querySelector:k=>k==='.console-body'?node('body'):k==='.section-rail'?node('rail'):k==='.console-pane'?node('pane'):null,querySelectorAll:()=>[]};
 const fakeWindow={handlers:{},addEventListener(k,fn){this.handlers[k]=fn;}};
 vm.runInNewContext(script,{document,window:fakeWindow,requestAnimationFrame(){}},{timeout:3000});
 function check(ok,title){assert.ok(ok,title);cases.push(title);}
@@ -275,5 +275,24 @@ check(html.includes('data:image/png;base64')&&html.includes('background:var(--ar
 check(html.includes('aria-label="Simulated')===false || strip(1).includes('dBFS meter'),
       'Demo meter explicitly reported in dBFS, not misleading gain scale');
 
+
+// Geometry contract checks use the exact JavaScript width equation, without a fake browser pass.
+node('body').clientWidth=1680;node('bankSelect').value='0';filter('all');
+check(node('tracks').style.getPropertyValue('--bank-columns')==='10',
+  'Primary bank uses exactly ten equal grid columns at 1680px');
+check(node('pane').style.getPropertyValue('--master-w')===
+      node('body').style.getPropertyValue('--channel-w'),
+  'Master + dock offset equal one channel slot width to the CSS subpixel');
+node('bankNext').dispatch('click');
+check(count()===1 && node('tracks').style.getPropertyValue('--bank-columns')==='10',
+  'CH11 single partial bank retains ten constant-size columns: no gigantic Bus fader');
+node('pluginsButton').dispatch('click');
+check(Number(node('tracks').style.getPropertyValue('--bank-columns'))<10 &&
+ node('pane').style.getPropertyValue('--master-w')===node('body').style.getPropertyValue('--channel-w'),
+ 'Plugin docking lowers capacity and keeps channel/Master widths identical');
+node('pluginClose').dispatch('click');
+check(node('tracks').style.getPropertyValue('--bank-columns')==='10',
+  'Closing Plugin Manager restores fixed ten-slot bank');
+node('bankPrev').dispatch('click');
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
