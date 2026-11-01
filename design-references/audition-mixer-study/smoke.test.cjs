@@ -295,6 +295,7 @@ node('bankPrev').dispatch('click');
 
 // V5: ADD FX is NOT Plugin Manager. Picker is contextual and keyboard-searchable.
 node('reset').dispatch('click');
+check(registry.setPluginCatalog([{id:'v5-reverb',name:'Studio Reverb',kind:'effect',format:'VST3',status:'ready',category:'Reverb'}, {id:'v5-eq',name:'Parametric Equalizer',kind:'effect',format:'VST3',status:'ready',category:'EQ'}]),'Demo plugin registry for quick picker seeded after manifest-import tests');
 const chooseFX={dataset:{action:'openPlugin',slot:'0'},
  closest:k=>k==='.strip'?{dataset:{id:1}}:null};
 node('body').handlers.click({target:{closest:k=>k==='[data-action]'?chooseFX:null}});
@@ -306,7 +307,7 @@ node('fastSearch').value='reverb';node('fastSearch').dispatch('input');
 check(node('fastResults').innerHTML.includes('Studio Reverb') &&
  !node('fastResults').innerHTML.includes('Parametric Equalizer'),
   'Fast picker search narrows effect list while typing');
-node('fastResults').handlers.click({target:{closest:k=>k==='[data-fast-id]'?{dataset:{fastId:'demo-2'}}:null}});
+node('fastResults').handlers.click({target:{closest:k=>k==='[data-fast-id]'?{dataset:{fastId:'v5-reverb'}}:null}});
 check(node('fastPicker').hidden===true && strip(1).includes('Studio Reverb'),
   'One click inserts selected FX and immediately closes fast picker');
 check(html.includes('style="--fader-fill:') && html.includes('--fader-y:') &&
