@@ -1,16 +1,15 @@
 {
-  "version": "preview-v12.1",
-  "kind": "GUI_REFERENCE_ONLY",
+  "version": "preview-v12.2",
   "source_pr": 278,
-  "source_branch": "design/audition-mixer-reference-isolated-20261101",
-  "source_sha": "753d20c7b188acfe4adab946b3a6c8a5c588cd38",
-  "source_content_sha": "da3df21b92cc45bb3e78339e397c2d8b4a493a39",
+  "source_sha": "0abd3580e2887caa16e19344b93fdc416ef79bb3",
+  "source_content_sha": "28244a40ab125112bafc663e30da31f49c281a3c",
   "routes": [
     "/preview/mixer.html",
     "/preview-v2/"
   ],
+  "kind": "ISOLATED_GUI_REFERENCE",
   "live_audio": false,
-  "design": "Source-first FL-style 1:N wire graph, Gain pot per edge, direct-MAIN socket, bulk Shift-range and safety guards; P0 adaptive fader/FX and physical PAN detent convergence",
-  "tests": "192/192 local JS/DOM smoke passes; Chromium main workflow currently pending exact new commit",
-  "note": "Simulated meters. No native ASIO/VST3 audio, no accepted PCM graph ACK. Visual approval and real FAT still required."
+  "milestone": "FL-style routing sockets, 1:N / N:1 send topology, independent gain, SHIFT bulk link, direct MAIN, dynamic SVG cables; approved P0 proportional fader + PAN detent restored",
+  "tests": "192/192 local workflow checks passed; exact Chromium CI must confirm before published status",
+  "native": "NOT implemented: realtime PCM wire execution, native ACK, ASIO callback changes, genuine VST3 or meter values"
 }
