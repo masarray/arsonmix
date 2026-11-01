@@ -968,6 +968,10 @@ button:disabled{opacity:.45;cursor:not-allowed}
  box-shadow:inset 1px 0 #010406,inset -1px 0 #010406;
 }
 
+
+/* Hard layout invariant: one physical width for all VU/fader modules and Master. */
+.console-body .tracks>.strip{box-sizing:border-box;min-width:0!important;max-width:none!important}
+.console-body #master{box-sizing:border-box}
 </style>
 </head>
 <body>
@@ -1155,7 +1159,12 @@ function render(){
  if(root.style?.setProperty){
   root.style.setProperty('--bank-capacity',String(capacity));
   const panel=root.clientWidth||0,dock=pluginOpen?Math.min(330,Math.floor(panel*.36)):0;
-  if(panel)root.style.setProperty('--channel-w',((panel-28-dock)/(capacity+1)).toFixed(3)+'px');
+  if(panel){
+   const unit=((panel-28-dock)/(capacity+1)).toFixed(3)+'px';
+   root.style.setProperty('--channel-w',unit);
+   const pane=document.querySelector('.console-pane');
+   if(pane?.style?.setProperty)pane.style.setProperty('--master-w',unit);
+  }
  }
  if(tracksEl.style?.setProperty)tracksEl.style.setProperty('--bank-columns',String(capacity));
  tracksEl.innerHTML=bankTracks.map(strip).join('');
