@@ -888,7 +888,14 @@ static void verifyNativePuzzleV8FixtureAndWire() {
     assert(source.is_open());
     const std::string checked((std::istreambuf_iterator<char>(source)),
                               std::istreambuf_iterator<char>());
-    assert(expected==checked);
+    // Git on Windows can checkout a one-line JSON fixture with CRLF.
+    // The native stdout generator deliberately emits canonical LF; accept
+    // only the OS newline conversion, never changed JSON data.
+    std::string canonical=checked;
+    if(canonical.size()==expected.size()+1 &&
+       canonical.size()>=2 && canonical.substr(canonical.size()-2)=="\r\n")
+        canonical.erase(canonical.size()-2,1);
+    assert(expected==canonical);
     const auto parsed=juce::JSON::parse(juce::String::fromUTF8(expected.c_str()));
     assert(parsed.isObject());
     const auto events=parsed.getProperty("events",{});

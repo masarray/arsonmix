@@ -105,7 +105,17 @@ public:
         // universal CREATE/GROUP/INSERT until one ChannelId callback owns it.
         w.productionCallbackLive=false;
         const auto bytes=PuzzleV8Wire::snapshot(w);
-        return juce::JSON::parse(juce::String::fromUTF8(bytes.c_str()));
+        auto actual=juce::JSON::parse(juce::String::fromUTF8(bytes.c_str()));
+        // Optional diagnosed M4 accepted controls are sourced from the
+        // installed JUCE control thread, not stale immutable routing faders.
+        // UNREADY fixture stays byte-identical; these are NOT ChannelIds.
+        const auto controls=route.getProperty("liveChannelControls",juce::var());
+        if(controls.isArray()) {
+            const auto legacy=actual.getProperty("legacyM4",{});
+            if(auto* object=legacy.getDynamicObject())
+                object->setProperty("liveChannelControls",controls);
+        }
+        return actual;
     }
 
     // Exact native wire: opaque, unique-per-editor requestId and uint64

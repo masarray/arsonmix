@@ -1019,7 +1019,27 @@ public:
         out->setProperty("auxPeaks",juce::var(auxPeaks));
         out->setProperty("fxReused",fxReused_.load(std::memory_order_relaxed));
         // Only the message thread calls status(), never the audio callback.
-        if(active() && ready())out->setProperty("acceptedRoute",acceptedRoute_);
+        // Atomic fader/PAN/MUTE/SOLO changes do NOT recompile the immutable
+        // route; do not expose its original fader values as the CURRENT
+        // accepted sound. Report the RT control target for every real strip.
+        // This is M4 diagnostic data, NOT a fabricated ChannelId roster.
+        if(active() && ready()) {
+            out->setProperty("acceptedRoute",acceptedRoute_);
+            juce::Array<juce::var> liveControls;
+            for(int i=0;i<count;++i) {
+                auto lane=std::make_unique<juce::DynamicObject>();
+                const auto& c=channelEdits_[i]; // single JUCE control thread
+                lane->setProperty("slot",i);
+                lane->setProperty("gainLinear",static_cast<double>(c.linear));
+                lane->setProperty("faderDb",c.linear>0.f
+                    ?20.*std::log10(static_cast<double>(c.linear)):-60.);
+                lane->setProperty("pan",static_cast<double>(c.pan)*100.);
+                lane->setProperty("mute",c.mute);
+                lane->setProperty("solo",c.solo);
+                liveControls.add(juce::var(lane.release()));
+            }
+            out->setProperty("liveChannelControls",juce::var(liveControls));
+        }
         juce::Array<juce::var> liveFxInstances;
         const auto* prepared=hasExplicitRoute()
             ?publisher_.controlPrepared(epoch(),revision()):nullptr;
