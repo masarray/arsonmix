@@ -6,7 +6,7 @@
   const mixer=document.getElementById('mixer');
   const host=document.querySelector('.workbench');
   if(!mixer||!host)return;
-  let mode='FX', lastStatus={}, deviceInventory=null, ioTab='device', lastSignature='', focusedInput=2;
+  let mode='FX', lastStatus={}, deviceInventory=null, ioTab='device', lastSignature='', focusedInput=0;
   let monitorSendsExpanded=false;
   // DEVICE1: staged selections are UI-only; only positive native ACK changes active hardware.
   let deviceDraft=null,deviceBusy=false,deviceNote='',deviceRequest='',deviceRequestSeq=0,lastDeviceRefresh=0,lastDeviceRescan=0,applyMutePending=false,applyAfterDevice=null,applyBaseEpoch=0;
@@ -1521,7 +1521,10 @@
     });
     overlay.dataset.activeTab=ioTab;
     const matrixInDevice=ioTab==='device'&&deviceSameEndpoint(deviceDraft)&&hardwareReady(s);
-    overlay.querySelector('[data-mix-apply]').hidden=ioTab==='device';
+    overlay.querySelector('[data-mix-apply]').hidden=ioTab==='device'||
+      (ioTab==='inputs'&&!advancedMatrixOpen);
+    overlay.querySelector('[data-mix-apply]').textContent=
+      ioTab==='outputs'?'APPLY MAIN OUT':'APPLY ADVANCED';
     overlay.querySelector('[data-io-revert]').hidden=ioTab==='device'&&!matrixInDevice;
     overlay.querySelector('[data-io-internal]').hidden=ioTab==='device';
     overlay.querySelector('[data-io-device-apply]').hidden=ioTab!=='device';
@@ -1564,7 +1567,11 @@
         body.appendChild(makeQuickInputs(s));
         const advanced=node('details','arIOAdvancedMatrix');
         advanced.open=advancedMatrixOpen;
-        advanced.appendChild(node('summary','','ADVANCED M / L / R CROSSPOINT · SAME NATIVE ROUTING'));
+        advanced.addEventListener('toggle',()=>{
+          advancedMatrixOpen=advanced.open;
+          overlay.querySelector('[data-mix-apply]').hidden=!advanced.open;
+        });
+        advanced.appendChild(node('summary','','ADVANCED · MANUAL INPUT CROSSPOINTS'));
         advanced.appendChild(makeMatrix(s,ioTab));
         body.appendChild(advanced);
       }else{
