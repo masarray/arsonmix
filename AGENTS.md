@@ -27,6 +27,15 @@ At verified `main@bb6dff6b`: native [Windows CTest/package #41263965810](https:/
 - One cohesive vertical PR per lane, no microscopic CI churn. Focused tests before one Windows MSVC/CTest+packaging and Chromium+Playwright at promotion. Logs first on red; do not weaken RT allocation/PCM/device/FX assertions for green.
 - CSS source is `web/styles-src/**`; `web/styles.css` and `AR-MIX-Live-FX-Host-Standalone-v0.3.html` must be updated by the deterministic generator `scripts/build_ui_css.py`. Preserve correct fader/LED/native bridge; do not hand-edit generated assets alone.
 - Release only exact-head source SHA + verified EXE and artifact, with physical 0FX 30min and integrated 2-input/2-plugin/Group/Return/Monitor FAT. #15 remains open until actual acoustic evidence. Do not claim 0ms physical latency.
-- Older 2026-10-25–31 R5/L2/G1/G2/BTN-180 or alternate 'LATEST' instructions in Git history are **historical**, not active strategy; asset regression history is preserved at [v0.8 baseline](docs/GUI_BASELINE_LOCK_2026-10-25.md) but v6 remains authoritative. Historical engineering research only (superseded by v5/v6): [Smart Audio ARD](docs/ARD_SMART_AUDIO_ENGINE_V1_2026-10-25.md) and [implementation blueprint](docs/SMART_AUDIO_ENGINE_IMPLEMENTATION_BLUEPRINT.md), retained for P0 hardware investigation and regression provenance.; use v5 specs and this v6 lock for priorities. Approved visual details may be reused without overriding operator-first function.
+- Older 2026-10-25–31 R5/L2/G1/G2/BTN-180 or alternate 'LATEST' instructions in Git history are **historical**, not active strategy; use v5 specs and this v6 lock for priorities. Approved visual details may be reused without overriding operator-first function.
 
 **There are no unattended background coding agents merely because a GitHub issue/branch exists. Separate developer sessions must explicitly be started with the linked workstream handoffs.**
+
+## Historical diagnostics and visual references (NOT active execution authority)
+
+Retained for traceable physical hardware diagnostics under [#15](https://github.com/masarray/arsonmix/issues/15):
+- [Smart Audio Engine ARD — archival render/device-clock analysis](docs/ARD_SMART_AUDIO_ENGINE_V1_2026-10-25.md).
+- [Smart Audio Engine Implementation Blueprint — archival ASIO/WASAPI FAT details](docs/SMART_AUDIO_ENGINE_IMPLEMENTATION_BLUEPRINT.md).
+- [Original approved GUI baseline — archival visual comparison](docs/GUI_BASELINE_LOCK_2026-10-25.md).
+
+These explain prior device-clock evidence and fader/LED design. For **current feature architecture, priority and execution**, the PRD/ARD v5 and execution lock v6 at the top of this document take precedence. The historical specs do not override native ChannelId admission or justify an extra render callback.
