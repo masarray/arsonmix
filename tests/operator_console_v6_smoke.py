@@ -75,7 +75,7 @@ async def main():
         })()""")
         await page.goto((ROOT / "web/index.html").as_uri())
         assert await page.locator("#arV6Console").is_hidden()
-        assert await page.locator("#mixer > .strip").count() == 13
+        assert await page.locator("#mixer > .strip").count() == 11
         assert await page.evaluate(
             "()=>window.__v6Test.sent.some(x=>x.event==='arMixConsoleSubscribe')")
         # Exact C++ ENGINE v8 fixture: S0 must remain readback-only.
@@ -103,7 +103,7 @@ async def main():
         }
         await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",flat)
         assert await page.locator("#arV6Console").is_hidden()
-        assert await page.locator("#mixer > .strip").count() == 13
+        assert await page.locator("#mixer > .strip").count() == 11
         first = snapshot()
         # A native publisher must use exact decimal-string ChannelIds,
         # including values beyond JavaScript's 53-bit integer precision.
@@ -132,6 +132,14 @@ async def main():
         assert sent["payload"] == {"portId":"in:0","physicalPins":[0]}
         assert await page.locator('[data-op="SET_SOURCE"][data-id="7"]').input_value() == ""
         assert "PENDING" in await page.locator(".arV6Message").inner_text()
+
+        # Incomplete native ACK cannot unlock controls or change accepted SOURCE.
+        await page.evaluate("""(requestId) => window.__v6Test.publish(
+          'arMixConsoleAck',{requestId,status:'ACCEPTED',newRevision:999})""",
+          sent["requestId"])
+        assert "INVALID NATIVE ACK" in await page.locator(".arV6Message").inner_text()
+        assert await page.locator('[data-op="SET_SOURCE"][data-id="7"]').is_disabled()
+        assert await page.locator('[data-op="SET_SOURCE"][data-id="7"]').input_value() == ""
 
         # Failed intent leaves accepted route untouched, with no invented LIVE.
         await page.evaluate("""(requestId) => window.__v6Test.publish(
