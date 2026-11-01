@@ -1,3 +1,5 @@
+> **SUPERSEDED FOR DELIVERY ORDER:** current implementation packets are [ENGINE v7](ENGINE_DELIVERY_V7.md) and [RELEASE TRAIN v7](../RELEASE_TRAIN_UNIVERSAL_CONSOLE_V7_20261101.md). Keep this v6 document as technical history/safety reference; no customer test until G4.
+
 # ENGINE WORKSTREAM — ArSonMix Universal Live Console v6
 **Branch/PR owner:** existing [draft PR #266](https://github.com/masarray/arsonmix/pull/266) only, plus epic [#192](https://github.com/masarray/arsonmix/issues/192). Do **NOT** start another native dynamic-engine implementation. Canonical scope is [PRD v5](../PRD_ARSONMIX_OPERATOR_FIRST_LIVE_MIXER_V5_20261101.md) + [ARD v5](../ARD_ARSONMIX_UNIVERSAL_REALTIME_CONSOLE_V5_20261101.md) + [execution lock](../EXECUTION_LOCK_UNIVERSAL_LIVE_CONSOLE_V6_20261101.md).
 

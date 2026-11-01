@@ -1,3 +1,5 @@
+> **SUPERSEDED FOR DELIVERY ORDER:** use [INTEGRATION/RELEASE v7](INTEGRATION_RELEASE_DELIVERY_V7.md) and [RELEASE TRAIN v7](../RELEASE_TRAIN_UNIVERSAL_CONSOLE_V7_20261101.md). #276 is staging only; final UAT after G4 integrated product.
+
 # INTEGRATION / RELEASE / HARDWARE FAT WORKSTREAM — ArSonMix v6
 **Coordination epic:** [issue #192](https://github.com/masarray/arsonmix/issues/192). **Hardware root issue:** [#15](https://github.com/masarray/arsonmix/issues/15). **Native PR:** [#266](https://github.com/masarray/arsonmix/pull/266). **UI branch:** `work/operator-console-v6`. Read [execution lock](../EXECUTION_LOCK_UNIVERSAL_LIVE_CONSOLE_V6_20261101.md), PRD/ARD v5. This lane coordinates, tests and releases; it does not invent a separate graph or own engine/GUI implementation files.
 
