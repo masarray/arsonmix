@@ -316,7 +316,7 @@
 #app .arV6NoMaster{padding:15px;color:#e2ae97;font-size:11px}
 #app .arV6Strip{
   --v6-strip-color:#5f9ab1;
-  display:grid;grid-template-rows:37px minmax(235px,auto) 52px minmax(105px,1fr) 26px;
+  display:grid;grid-template-rows:37px 235px 52px minmax(105px,1fr) 26px;
   flex:0 0 167px;width:167px;min-height:0;height:100%;
   padding:0 7px 5px;border-right:1px solid #354955;
   background:linear-gradient(90deg,#1b2b35 0%,#263741 14%,#263741 87%,#15252e);
@@ -422,13 +422,13 @@
  #app .arV6SendMode{max-width:105px}
 }
 @media(max-height:790px){
- #app .arV6Strip{grid-template-rows:32px minmax(197px,auto) 45px minmax(85px,1fr) 22px}
+ #app .arV6Strip{grid-template-rows:32px 197px 45px minmax(85px,1fr) 22px}
  #app .arV6Upper{grid-template-rows:27px 27px minmax(74px,1fr) minmax(43px,auto) 27px;padding-top:3px}
  #app .arV6Top{min-height:44px}
  #app .arV6Console .arV6Button{min-height:22px}
 }
 @media(max-height:690px){
- #app .arV6Strip{grid-template-rows:28px minmax(160px,auto) 40px minmax(75px,1fr) 18px}
+ #app .arV6Strip{grid-template-rows:28px 160px 40px minmax(75px,1fr) 18px}
  #app .arV6Upper{grid-template-rows:24px 24px minmax(54px,1fr) minmax(34px,auto) 24px}
  #app .arV6SectionTitle{font-size:8px}
  #app .arV6FxSlot .arV6Button{min-height:18px}
