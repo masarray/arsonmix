@@ -58,6 +58,7 @@ class DynamicPreparedMixerBlock final {
         ChannelRole role=ChannelRole::input;
         int inputL=-1,inputR=-1;
         bool inputStereo=false,enabled=false;
+        bool monoPan=false; // mono source/processing, independent of VST rack width
         float gainL=1.f,gainR=1.f;
         std::size_t first=0,last=0,slot=0;
     };
@@ -77,6 +78,17 @@ class DynamicPreparedMixerBlock final {
     static constexpr StereoGainPair unpackGainPair(std::uint64_t both) noexcept {
         return {std::bit_cast<float>(static_cast<std::uint32_t>(both)),
                 std::bit_cast<float>(static_cast<std::uint32_t>(both>>32))};
+    }
+    // True microphone mono uses equal-power PAN even when a stereo VST rack
+    // processes its duplicated L/R PCM. A stereo physical source uses
+    // balance PAN unless explicitly folded to mono processing. Computing
+    // the coefficient is CONTROL-only; the callback reads one atomic pair.
+    static StereoGainPair coefficients(bool monoPan,float gain,float pan) noexcept {
+        if(monoPan)
+            return {gain*std::sqrt(.5f*(1.f-pan)),
+                    gain*std::sqrt(.5f*(1.f+pan))};
+        return {gain*(pan>0.f?1.f-pan:1.f),
+                gain*(pan<0.f?1.f+pan:1.f)};
     }
     struct ChannelTarget final {
         static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
@@ -106,13 +118,9 @@ public:
         if(!id.value || !std::isfinite(gain) || gain<0.f || gain>4.f ||
            !std::isfinite(pan) || pan< -1.f || pan>1.f)return false;
         for(std::size_t i=0;i<lanes_.size();++i)if(lanes_[i].id==id) {
-            const bool mono=lanes_[i].format==ProcessingFormat::mono;
-            const float left=mono?gain*std::sqrt(.5f*(1.f-pan)):
-                gain*(pan>0.f?1.f-pan:1.f);
-            const float right=mono?gain*std::sqrt(.5f*(1.f+pan)):
-                gain*(pan<0.f?1.f+pan:1.f);
+            const auto gains=coefficients(lanes_[i].monoPan,gain,pan);
             channelTargets_[i].both.store(
-                packGainPair(left,right),std::memory_order_release);
+                packGainPair(gains.left,gains.right),std::memory_order_release);
             return true;
         }
         return false;
@@ -189,13 +197,7 @@ public:
             Lane lane;
             lane.id=row.id;lane.format=row.format;lane.role=row.role;
             lane.enabled=!row.mute;
-            if(row.format==ProcessingFormat::mono) {
-                lane.gainL=row.faderLinear*std::sqrt(0.5f*(1.f-row.pan));
-                lane.gainR=row.faderLinear*std::sqrt(0.5f*(1.f+row.pan));
-            }else{
-                lane.gainL=row.faderLinear*(row.pan>0.f?1.f-row.pan:1.f);
-                lane.gainR=row.faderLinear*(row.pan<0.f?1.f+row.pan:1.f);
-            }
+            lane.monoPan=row.format==ProcessingFormat::mono;
             next.lanes_.push_back(lane);
         }
         if(main==notScheduled){error.fault=DynamicGraphFault::noMaster;return false;}
@@ -215,6 +217,15 @@ public:
             }
             lane.inputL=patch.inputL;lane.inputR=patch.inputR;
             lane.inputStereo=patch.stereo;
+            // The channel SOURCE and the INSERT PROCESSING FORMAT are
+            // independent. Mono mic -> stereo VST still retains mono PAN.
+            if(!patch.stereo)lane.monoPan=true;
+        }
+        for(std::size_t i=0;i<rows.size();++i) {
+            const auto gains=coefficients(next.lanes_[i].monoPan,
+                                          rows[i].faderLinear,rows[i].pan);
+            next.lanes_[i].gainL=gains.left;
+            next.lanes_[i].gainR=gains.right;
         }
 
         // Stable-ID edges are resolved exactly ONCE; all runtime references

@@ -449,6 +449,68 @@ static void verifyOccupiedExternalCh1Owner() {
     assert(publisher.acceptedRevision()==1);
 }
 
+// M-U1 source/processing format independence: a mono microphone through a
+// stereo native rack must retain the same equal-power PAN as M4. Conversely
+// physical stereo folded to mono processing must not become stereo-balance.
+// Compare exact physical L/R PCM for all four source/format combinations.
+static void verifySourceFormatIndependentPanPcmParity() {
+    struct Case {bool sourceStereo,processStereo;float pan;};
+    constexpr std::array<Case,6> cases{{
+        {false,false,-.6f},{false,true,-.6f},
+        {false,true,.6f},{true,false,.6f},
+        {true,false,-.6f},{true,true,.6f}
+    }};
+    constexpr std::array<int,2> ports{3,7};
+    std::array<float,32> mic{},micR{};
+    for(int i=0;i<32;++i){
+        mic[i]=.15f+.001f*i;
+        micR[i]=.35f-.002f*i;
+    }
+    const float* physical[]{mic.data(),micR.data()};
+    constexpr std::uint64_t epoch=800;
+    const auto noFx=+[](ChannelId,float*,float*,int) noexcept {};
+    for(const auto& choice:cases) {
+        ChannelRoutingConfig cfg;
+        cfg.stripsAndMaster.strips[0]={
+            choice.sourceStereo?SourceMode::stereo:SourceMode::mono,
+            3,choice.sourceStereo?7:-1,.7f,choice.pan,false,false
+        };
+        cfg.formats[0]=choice.processStereo?
+            ChannelFormat::stereo:ChannelFormat::mono;
+        SendRequest sends;AuxBusRequest aux;
+        PreparedRenderGraph oldRoute;RenderError legacyError;
+        assert(PreparedRenderGraph::compile(
+            cfg,ports,sends,oldRoute,legacyError,aux));
+        auto old=std::make_unique<LiveChannelFxGraph>(oldRoute,32,32);
+        assert(old->setStripControl(0,.7f,choice.pan,
+                                  !choice.sourceStereo||!choice.processStereo,
+                                  false,false));
+        std::array<float,32> oldL{},oldR{},nativeL{},nativeR{};
+        assert(old->process(physical,2,oldL.data(),oldR.data(),32));
+        DynamicNativeSessionPublisher native;
+        UnifiedLegacyAccepted accepted;
+        std::array<float,stripCount+auxBusCount> monitor{};
+        VerifiedNativeOutputs outs{2,0,1,-1,-1,false};
+        auto admission=UnifiedLegacyProductionAdmission::compileAndCommit(
+            cfg,ports,sends,aux,monitor,*old,false,outs,
+            32,2u*1024u*1024u,0,epoch,epoch,true,native,accepted);
+        assert(admission.ok());
+        const auto before=heapCalls.load(std::memory_order_relaxed);
+        assert(native.render(epoch,physical,2,nativeL.data(),
+                             nativeR.data(),32,false,noFx));
+        assert(heapCalls.load(std::memory_order_relaxed)==before);
+        for(int i=0;i<32;++i){
+            assert(near(nativeL[i],oldL[i]));
+            assert(near(nativeR[i],oldR[i]));
+        }
+        // A stale physical endpoint must fail silent and not change ACK.
+        assert(!native.render(epoch+1,physical,2,nativeL.data(),
+                              nativeR.data(),32,false,noFx));
+        assert(nativeL[31]==0.f&&nativeR[31]==0.f);
+        assert(native.acceptedRevision()==1);
+    }
+}
+
 int main() {
     // R0: existing CH1 FX chain may be rendered inside the SAME prepared
     // ten-channel routing pass, without creating a second plugin or copying
@@ -819,6 +881,7 @@ int main() {
     verifyUniversalChannelIdFxLeaseAndLivePcm();
     verifyMU1LegacyM4FxFullMigrationAndMonitorPcm();
     verifyOccupiedExternalCh1Owner();
+    verifySourceFormatIndependentPanPcmParity();
     // Tests above use a real JUCE AudioProcessor processing seam. Vendor
     // VST3 formats and sound quality require separate Windows hardware FAT.
 }
