@@ -14,7 +14,7 @@ async def main():
         await page.locator('.left-rail [data-mix-mode="FX"]').wait_for()
         assert await page.locator('.toolbar-actions .nav [data-view]').count()==3
         assert await page.locator('.toolbar-actions [data-native-action="audioSetup"]').count()==0
-        assert await page.locator('.left-rail [data-mix-mode]').count()==3
+        assert await page.locator('.left-rail [data-mix-mode]').count()==4
         assert await page.locator('.left-rail [data-my-sounds]').count()==1
         assert await page.locator('.left-rail [data-plugin-manager]').count()==1
         assert await page.locator('.left-rail #audioSetupBtn').count()==1
@@ -22,6 +22,7 @@ async def main():
         assert await page.locator('.workbench > .arMixerBankBar').count()==0
         assert await page.locator('.arRailModeSection > .arMixerBankBar').count()==1
         assert await page.locator('#mixer > .strip').count()==11
+        assert await page.locator('#mixer').get_attribute('data-io-mode')=='CONSOLE'
 
         async def geometry():
             return await page.evaluate("""() => {
@@ -104,7 +105,7 @@ async def main():
 
         # Full repaint must recreate only strip internals, not left-rail controls.
         await page.evaluate('renderMixer()')
-        assert await page.locator('.left-rail [data-mix-mode]').count()==3
+        assert await page.locator('.left-rail [data-mix-mode]').count()==4
         assert await page.locator('#mixer > .strip').count()==11
         await assert_linked('RENDER',1024,720)
         assert not errors,errors
