@@ -2973,36 +2973,36 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 /* v7 G1 operator hardware drawer. Unlike the former 920x700 blocking
    wizard, device management is a narrow edge drawer; channel controls and
    MAIN remain visible behind a light scrim, without new routing ownership. */
-.arIOOverlay{
+#arIOOverlay{
   padding:0;justify-content:flex-end;align-items:stretch;
   background:rgba(4,10,16,.48);
 }
-.arIOOverlay .arIOWindow{
+#arIOOverlay .arIOWindow{
   width:min(760px,100vw);height:100dvh;max-height:100dvh;
   border:0;border-left:1px solid #5b7785;border-radius:0;
   background:#13232c;box-shadow:-9px 0 22px #0005;
 }
-.arIOOverlay[data-active-tab="device"] .arIOWindow{
+#arIOOverlay[data-active-tab="device"] .arIOWindow{
   width:min(594px,100vw);
 }
-.arIOWindow>header{
+#arIOOverlay .arIOWindow>header{
   min-height:43px;padding:7px 11px;gap:5px;
 }
-.arIOWindow>header h2{font-size:13px;font-weight:550;margin:0}
-.arIOWindow>header small{font-size:9px}
-.arIOTop{padding:5px 11px;font-size:10px}
-.arIOWindow nav{
+#arIOOverlay .arIOWindow>header h2{font-size:13px;font-weight:550;margin:0}
+#arIOOverlay .arIOWindow>header small{font-size:9px}
+#arIOOverlay .arIOTop{padding:5px 11px;font-size:10px}
+#arIOOverlay .arIOWindow nav{
   padding:5px 8px;gap:0;background:#142934;
 }
-.arIOWindow nav .btn-180{
+#arIOOverlay .arIOWindow nav .btn-180{
   flex:1 1 0;min-width:0;height:29px;min-height:29px;
   padding:0 5px;font-size:9px;letter-spacing:0;
 }
-.arIOBody{
+#arIOOverlay .arIOBody{
   padding:8px 10px;overflow-y:auto;min-height:0;overscroll-behavior:contain;
 }
-.arIOWindow>footer{padding:7px 10px;min-height:43px;gap:5px}
-.arIOWindow>footer .btn-180{height:28px;min-height:28px}
+#arIOOverlay .arIOWindow>footer{padding:7px 10px;min-height:43px;gap:5px}
+#arIOOverlay .arIOWindow>footer .btn-180{height:28px;min-height:28px}
 .arIODevicePinGroup .arIODevicePinRow{
   min-height:27px;
 }
@@ -3016,14 +3016,14 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
   color:#a5d0de!important;
 }
 @media(max-width:640px){
-  .arIOOverlay .arIOWindow,.arIOOverlay[data-active-tab="device"] .arIOWindow{
+  #arIOOverlay .arIOWindow,#arIOOverlay[data-active-tab="device"] .arIOWindow{
     width:100vw;
   }
 }
 @media(max-height:640px){
-  .arIOBody{padding:6px 9px}
-  .arIOTop{padding:3px 9px}
-  .arIOWindow nav{padding:3px 8px}
+  #arIOOverlay .arIOBody{padding:6px 9px}
+  #arIOOverlay .arIOTop{padding:3px 9px}
+  #arIOOverlay .arIOWindow nav{padding:3px 8px}
 }
 </style></head>
 <body>
