@@ -222,10 +222,11 @@ function send(param,value,ch=currentChannel){
 function flash(message){const x=$('toast');x.textContent=message;x.classList.add('show');clearTimeout(timer);timer=setTimeout(()=>x.classList.remove('show'),1500)}
 function createSide(){
  const labels=channels.map(c=>c.name);
- $('channelList').innerHTML=labels.map((label,i)=>`<div class="list-item ${i===currentChannel?'selected':''}" data-choose="${i}"><span class="swatch" style="background:${channels[i].color||colors[i%colors.length]}"></span><span class="index">${i+1}</span><span>${safeText(label)}</span></div>`).join('');
+ $('channelList').innerHTML=labels.map((label,i)=>`<div class="list-item ${i===currentChannel?'selected':''}" data-choose="${i}" role="button" tabindex="0" aria-current="${i===currentChannel?'true':'false'}" aria-label="Select channel ${i+1}: ${safeText(label)}"><span class="swatch" style="background:${channels[i].color||colors[i%colors.length]}"></span><span class="index">${i+1}</span><span>${safeText(label)}</span></div>`).join('');
  $('groupsList').innerHTML=['Drums','Band','Vocals','FX','All Music','All Vocals'].map((x,i)=>`<div class="list-item" data-group="${i}"><span class="swatch" style="background:${colors[(i+4)%12]}"></span><span class="index">${i+1}</span><span>${x}</span></div>`).join('');
  $('scenesList').innerHTML=scenes.map((x,i)=>`<div class="list-item ${i===sceneIdx?'selected':''}" data-scene="${i}" title="Recall ${safeText(x)}"><span class="swatch" style="background:${i===sceneIdx?'#23bce9':'#283d4a'};width:8px;height:14px"></span><span class="scene-name">${safeText(x)}</span>${userSnapshots[x]?`<button class="scene-delete" type="button" data-delete-scene="${safeText(x)}" title="Delete saved snapshot" aria-label="Delete ${safeText(x)}">×</button>`:''}</div>`).join('');
  $('currentScene').innerHTML=`Snapshot: <b>${scenes[sceneIdx]}</b><span>▾</span>`;
+ window.dispatchEvent(new Event('arMixChannelFocus'));
 }
 function knobMarkup(param,ch,value,label,small=false){let angle=(param==='pan'?value/100*130:value/24*130);return `<button class="knob ${small?'small':''}" data-knob="${param}" data-ch="${ch}" data-value="${value}" style="--angle:${angle}deg" title="Drag vertically or scroll to change ${label}" aria-label="${label}"></button>`}
 function panText(v){return v===0?'C':(v<0?'L':'R')+' '+Math.abs(v)}
@@ -377,7 +378,7 @@ function setMasterMono(value,emit=true){
 function setView(next){
  if(next!=='MIX'&&next!=='FX RACK'&&next!=='SIGNAL FLOW')return;
  view=next;
- document.querySelectorAll('[data-view]').forEach(btn=>btn.classList.toggle('selected',btn.dataset.view===next));
+ document.querySelectorAll('[data-view]').forEach(btn=>{const active=btn.dataset.view===next;btn.classList.toggle('selected',active);btn.setAttribute('aria-current',active?'page':'false')});
  $('mixer').classList.toggle('hidden',next!=='MIX');
  $('rackWorkspace').classList.toggle('hidden',!['FX RACK','SIGNAL FLOW'].includes(next));
  if(next==='FX RACK')renderRackWorkspace();
@@ -418,13 +419,15 @@ function focusChannel(i){
  if(i<0||i>=channels.length||(i===currentChannel&&!masterSelected))return;
  masterSelected=false;currentChannel=i;
  document.querySelectorAll('.strip').forEach(strip=>strip.classList.toggle('selected',strip.dataset.strip!==undefined&&+strip.dataset.strip===i));
- document.querySelectorAll('#channelList [data-choose]').forEach(row=>row.classList.toggle('selected',+row.dataset.choose===i));
+ document.querySelectorAll('#channelList [data-choose]').forEach(row=>{const active=+row.dataset.choose===i;row.classList.toggle('selected',active);row.setAttribute('aria-current',String(active))});
+ window.dispatchEvent(new Event('arMixChannelFocus'));
 }
 function focusMaster(){
  if(masterSelected)return;
  masterSelected=true;
  document.querySelectorAll('.strip').forEach(strip=>strip.classList.toggle('selected',strip.id==='masterLeft'));
- document.querySelectorAll('#channelList [data-choose]').forEach(row=>row.classList.remove('selected'));
+ document.querySelectorAll('#channelList [data-choose]').forEach(row=>{row.classList.remove('selected');row.setAttribute('aria-current','false')});
+ window.dispatchEvent(new Event('arMixChannelFocus'));
 }
 function chooseChannel(i){
  if(i<0||i>=channels.length){flash('Additional bank channels are not populated in this UI study');return}

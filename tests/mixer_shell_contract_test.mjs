@@ -154,3 +154,17 @@ test('GUI-M1 PATCH uses real physical columns only',()=>{
  assert.ok(src.includes('const visibleCount=shown.length'));
  assert.ok(!src.includes('for(let k=shown.length;k<patchPageSize;k++)'));
 });
+
+test('operator-first console keyboard and contextual workflow stay presentation-only',()=>{
+ const app=read('web/app.js'),shell=read('web/mixer-layout.js'),css=read('web/mixer-layout.css');
+ assert.match(app,/data-choose="\$\{i\}" role="button" tabindex="0"/);
+ assert.match(app,/aria-current="\$\{i===currentChannel\?'true':'false'\}"/);
+ assert.match(shell,/window\.addEventListener\('arMixChannelFocus',syncStripContext\)/);
+ assert.match(shell,/channelList\?\.addEventListener\('keydown'/);
+ assert.match(shell,/channelList\?\.addEventListener\('dblclick'/);
+ assert.match(shell,/const tabs=\{'Digit1':'MIX','Digit2':'FX RACK','Digit3':'SIGNAL FLOW'\}/);
+ assert.match(shell,/const layers=\{'KeyF':'FX','KeyR':'ROUTE','KeyS':'SENDS'\}/);
+ assert.match(css,/\.toolbar \.scene-select\{display:none!important\}/);
+ assert.match(css,/\.rail-presets\{\s*display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+ assert.doesNotMatch(shell,/AudioContext|processBlock|setInterval|addEventListener\(['"]pointermove/);
+});

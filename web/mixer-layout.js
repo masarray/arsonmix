@@ -15,7 +15,18 @@
   modeSection.className='arRailModeSection';
   modeSection.setAttribute('aria-label','Mixer layer modes');
   const heading=document.createElement('div');
-  heading.className='arRailHeading';heading.textContent='CHANNEL MODE';
+  heading.className='arRailHeading arRailContextHeading';
+  const modeTitle=document.createElement('span');modeTitle.textContent='STRIP VIEW';
+  const activeStrip=document.createElement('span');activeStrip.className='arRailFocus';
+  heading.append(modeTitle,activeStrip);
+  const syncStripContext=()=>{
+    const selected=rail.querySelector('#channelList [data-choose].selected');
+    const id=Number(selected?.dataset.choose);
+    const name=selected?.lastElementChild?.textContent?.trim()||'';
+    const label=selected&&Number.isInteger(id)?'CH '+String(id+1).padStart(2,'0')+' · '+name:'MAIN';
+    if(activeStrip.textContent!==label){activeStrip.textContent=label;activeStrip.title=label;}
+  };
+  window.addEventListener('arMixChannelFocus',syncStripContext);
   modeSection.append(heading,bank);
   rail.insertBefore(modeSection,document.getElementById('channelList'));
   bank.setAttribute('aria-label','Channel processing and routing mode');
@@ -43,6 +54,12 @@
     button.setAttribute('aria-label',names[button.dataset.view]||button.textContent.trim());
   }
   nav.setAttribute('aria-label','Workspace tabs');
+  for(const button of nav.querySelectorAll('[data-view]')){
+    button.setAttribute('aria-current',button.classList.contains('selected')?'page':'false');
+    button.title=(button.title?button.title+' · ':'')+
+      ({'MIX':'Alt+1','FX RACK':'Alt+2','SIGNAL FLOW':'Alt+3'}[button.dataset.view]||'');
+  }
+  syncStripContext();
   document.querySelector('.toolbar-actions')?.classList.add('arSegmentedToolbar');
 
   // Bank modes are operational even when the full FX/PATCH workspace is open.
@@ -85,6 +102,43 @@
     mixer.addEventListener('scroll',refresh,{passive:true});
     if(typeof ResizeObserver==='function')new ResizeObserver(refresh).observe(mixer);
     refresh();
+  }
+  // Studio-like channel selection and FX navigation are presentation-only.
+  const channelList=rail.querySelector('#channelList');
+  channelList?.addEventListener('keydown',event=>{
+    const current=event.target.closest?.('[data-choose]');
+    if(!current)return;
+    if(event.key==='Enter'||event.key===' '){
+      event.preventDefault();current.click();return;
+    }
+    if(event.key!=='ArrowDown'&&event.key!=='ArrowUp')return;
+    const rows=Array.from(channelList.querySelectorAll('[data-choose]'));
+    const currentIndex=rows.indexOf(current);
+    if(currentIndex<0)return;
+    event.preventDefault();
+    const next=rows[Math.min(rows.length-1,Math.max(0,currentIndex+(event.key==='ArrowDown'?1:-1)))];
+    next?.focus();next?.click();
+  });
+  channelList?.addEventListener('dblclick',event=>{
+    if(!event.target.closest?.('[data-choose]'))return;
+    nav.querySelector('[data-view="FX RACK"]')?.click();
+  });
+  // No audio/routing writes, idle pointer listeners, or periodic DOM work.
+  window.addEventListener('keydown',event=>{
+    if(!event.altKey||event.ctrlKey||event.metaKey||event.shiftKey||event.repeat||event.defaultPrevented)return;
+    const target=event.target;
+    if(target?.closest?.('input,textarea,select,[contenteditable],[role="dialog"]'))return;
+    if(document.querySelector('.modal:not(.hidden),[role="dialog"].open'))return;
+    const tabs={'Digit1':'MIX','Digit2':'FX RACK','Digit3':'SIGNAL FLOW'};
+    const layers={'KeyF':'FX','KeyR':'ROUTE','KeyS':'SENDS'};
+    const view=tabs[event.code],layer=layers[event.code];
+    if(!view&&!layer)return;
+    event.preventDefault();
+    if(view)nav.querySelector('[data-view="'+view+'"]')?.click();
+    else rail.querySelector('[data-mix-mode="'+layer+'"]')?.click();
+  });
+  for(const button of rail.querySelectorAll('[data-mix-mode]')){
+    button.title=(button.title?button.title+' · ':'')+'Alt+'+button.dataset.mixMode[0];
   }
   document.documentElement.dataset.arMixerShell='rail-modes';
 })();

@@ -212,3 +212,47 @@
 #app .arMixerChannelPager .btn-180{width:25px;min-width:25px;height:24px;padding:0;font-size:15px}
 #app .arMixerChannelPager .btn-180:disabled{opacity:.36;cursor:default}
 #app .arMixerPagerLabel{font:500 10px/1.1 'Segoe UI',sans-serif;color:#b9cbd2;min-width:91px;text-align:center;white-space:nowrap}
+
+
+/* Operator-first hierarchy, no new panels or changes to the seven-row mixer. */
+#app .toolbar .project{
+  width:auto;max-width:185px;min-width:0;flex:0 1 185px;
+  font-weight:400;color:#a9b8c1;
+}
+#app .toolbar .scene-select{display:none!important} /* Snapshot also lives in the rail. */
+#app .left-rail .arRailContextHeading{
+  display:flex;align-items:center;gap:5px;justify-content:space-between;
+  overflow:hidden;white-space:nowrap;
+}
+#app .left-rail .arRailContextHeading > span:first-child{flex:none}
+#app .left-rail .arRailFocus{
+  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  color:#c3d3da;font-size:9px;font-weight:500;letter-spacing:0;
+}
+#app .left-rail .rail-section-title{
+  height:21px;min-height:21px;border-top:1px solid #35434b;
+  background:#17232b;color:#9fb7c3;font-weight:500;letter-spacing:.35px;
+}
+#app .left-rail .rail-presets{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:3px;padding:4px 6px 5px;min-width:0;
+}
+#app .left-rail .rail-presets .btn-180{
+  min-width:0;width:100%;height:26px;min-height:26px;
+  padding:0 3px!important;white-space:normal;
+  font:500 9px/1.15 "ArSonMix Inter","Segoe UI",sans-serif!important;
+  letter-spacing:0!important;
+}
+#app .left-rail .scenes-list .list-item:not(.selected){color:#9daeb7}
+#app .left-rail .arRailUtilities{
+  background:#121d25;border-top:1px solid #2e414b;
+}
+#app .left-rail .arRailUtilities .arRailHeading{
+  background:#17232b;color:#94adba;font-weight:500;
+}
+#app #channelList [data-choose]:focus-visible{
+  outline:1px solid #75bfd8;outline-offset:-2px;
+}
+@media(max-width:1366px){
+  #app .toolbar .project{max-width:130px;flex-basis:130px}
+}
