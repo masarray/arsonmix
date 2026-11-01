@@ -646,6 +646,14 @@ check(node('master').innerHTML.includes('MAIN ON') &&
  node('wireMaster').textContent==='MAIN ON',
  'Second click on pinned MASTER socket restores direct Main without creating send edges');
 node('reset').dispatch('click');
+// Existing legacy SEND S1 into Bus A must not gain a SECOND identical wire path.
+node('body').clientWidth=1680;node('reset').dispatch('click');
+node('bankSelect').value='1';node('bankSelect').dispatch('change');
+wireTo(11);
+check(node('info').textContent.includes('already sends to Bus A via SEND slot') &&
+ !node('tracks').innerHTML.includes('wire-socket is-linked'),
+ 'FL wire refuses duplicate audible legacy SEND to Bus A rather than summing unexpectedly');
+node('reset').dispatch('click');
 node('reset').dispatch('click');
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
