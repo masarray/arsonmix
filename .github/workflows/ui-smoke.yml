@@ -98,6 +98,7 @@ jobs:
         with:
           name: arsonmix-gui-baseline-smoke
           path: |
+            mixer-m4-unified-1366.png
             audio-setup-one-pin-1366.png
             operator-console-v6-1680-900.png
             operator-console-v6-1366-768.png
