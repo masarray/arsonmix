@@ -1406,7 +1406,7 @@
         hidden.value=d.backend;panel.appendChild(hidden);
       }
       const same=deviceSameEndpoint(d),advanced=node('details','arIODeviceAdvanced');
-      advanced.appendChild(node('summary','','BUFFER / SAMPLE RATE / HARDWARE PIN ENABLE'));
+      advanced.appendChild(node('summary','','ADVANCED · BUFFER / SAMPLE RATE'));
       const fields=node('div','arIODeviceFields');
       const rateOpts=[[0,'AUTO · driver default']],bufferOpts=[[0,'AUTO · driver default']];
       if(same){
@@ -1421,6 +1421,12 @@
         deviceSelect('arIODeviceBuffer',d.bufferSize,bufferOpts,deviceBusy||!isNative())));
       advanced.appendChild(fields);
       const pins=node('div','arIODevicePins');
+      const pinHeading=node('div','arIOPinHeading');
+      const enabledCount=Array.isArray(d.enabledInputs)?d.enabledInputs.length:0;
+      pinHeading.append(node('strong','','HARDWARE PORTS · ENABLE INPUTS / OUTPUTS'),
+        node('span','',enabledCount+' capture pin(s) selected · '+(enabledCount<2?
+          'MONO ONLY until a second distinct input is enabled':'MONO / STEREO PAIRS POSSIBLE')));
+      panel.appendChild(pinHeading);
       for(const [direction,names,selectedPins] of [
         ['INPUT',same?a.inputNames:[],d.enabledInputs],
         ['OUTPUT',same?a.outputNames:[],d.enabledOutputs]]){
@@ -1440,7 +1446,9 @@
         });
         pins.appendChild(side);
       }
-      advanced.appendChild(pins);panel.appendChild(advanced);
+      // Input/output pin enabling is a BASIC step, not an advanced matrix.
+      // The original native device draft/ACK path remains unchanged.
+      panel.appendChild(pins);panel.appendChild(advanced);
     }
     const actions=node('div','arIODeviceActions');
     const refresh=node('button','btn-180 arIODeviceRefresh','REFRESH DEVICES');
