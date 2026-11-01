@@ -620,6 +620,361 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .console-body .strip.master .footer-label{background:#453b36!important}
 .console-body .fader,.console-body .center-pan{filter:none!important;transition:none!important}
 
+
+/* Unaltered operator-approved BTN-180 recipe, copied from web/styles-src/20-button-180.css */
+/* Button 180 is the ONE shared material for channel, MASTER, toolbar and left-rail pads. */
+/* BUTTON 180 — one identical RESTING surface for OFF and ON.
+   Semantic colors alone define the latched state; only the transient :active
+   pointer press moves the cap inward by 1px without changing its layout slot. */
+:root{
+ --b180-off:#cbd1d1;--b180-edge:#747f7f;--b180-off-ink:#172229;
+ --b180-color:var(--b180-off);--b180-border:var(--b180-edge);
+ --b180-ink:var(--b180-off-ink);
+ --b180-on-cyan:#94e8ed;--b180-on-green:#91edac;
+ --b180-on-magenta:#edb8df;--b180-on-purple:#d6b9f0;
+ --b180-on-mute:#f99aa4;--b180-on-solo:#f4d479;
+ --b180-on-stereo:#9dd2f0;
+}
+:is(.btn-180,.toolbar .nav button.btn-180,.toolbar .spec-device,.left-rail .tabs button.btn-180,
+.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
+.left-rail .rail-presets button.btn-180,.left-rail .rail-bottom button.btn-180,
+#masterLeft .master-tools button,.native-btn){
+ /* Exact same inset + outside-edge model as the previously approved ON face.
+    All layers are shared; only --b180-border is allowed to tint the edge. */
+ --b180-shadow-surface:
+  inset 5px 5px 2px -1px rgba(0,0,0,.18),
+  inset 0 0 1px 1px rgba(255,255,255,.14),
+  inset 0 1px 20px rgba(0,0,0,.12),
+  inset 0 -1px 2px rgba(0,0,0,.32),
+  0 0 0 1px var(--b180-border),
+  0 1px 1px rgba(0,0,0,.28),
+  0 2px 3px rgba(0,0,0,.13);
+ border:1px solid var(--b180-border)!important;
+ letter-spacing:1px;
+ padding:8px 20px;
+ font-size:14px;
+ text-transform:uppercase;
+ border-radius:3px!important;
+ outline:none;
+ transform:translateY(0px)!important;
+ position:relative;
+ /* Shared geometry and shading; OFF/ON are merely different colorways. */
+ box-shadow:var(--b180-shadow-surface)!important;
+ background:var(--b180-color)!important;
+ filter:none!important;
+ color:var(--b180-ink)!important;
+ text-shadow:0 1px 0 rgba(255,255,255,.16)!important;
+ transition:background-color 45ms linear, border-color 45ms linear, color 0ms, transform 0ms!important;
+ font-family:Arial,Helvetica,sans-serif;
+ cursor:pointer;text-decoration:none;user-select:none;
+ display:inline-flex;justify-content:center;align-items:center;
+ font-weight:700;
+}
+:is(.btn-180,.toolbar .nav button.btn-180,.toolbar .spec-device,.left-rail .tabs button.btn-180,
+.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
+.left-rail .rail-presets button.btn-180,.left-rail .rail-bottom button.btn-180,
+#masterLeft .master-tools button,.native-btn):disabled{
+ pointer-events:none;opacity:.65;color:#7e7e7e!important;
+ background:#dcdcdc!important;box-shadow:none!important;
+ text-shadow:none!important;border:none!important;
+}
+/* Glass glint is drawn by inset shadows only; no pseudo-elements. */
+:is(.btn-180,.toolbar .nav button.btn-180,.toolbar .spec-device,.left-rail .tabs button.btn-180,
+.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
+.left-rail .rail-presets button.btn-180,.left-rail .rail-bottom button.btn-180,
+#masterLeft .master-tools button,.native-btn)::before,:is(.btn-180,.toolbar .nav button.btn-180,.toolbar .spec-device,.left-rail .tabs button.btn-180,
+.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
+.left-rail .rail-presets button.btn-180,.left-rail .rail-bottom button.btn-180,
+#masterLeft .master-tools button,.native-btn)::after{content:none!important}
+:is(.btn-180,.toolbar .nav button.btn-180,.toolbar .spec-device,.left-rail .tabs button.btn-180,
+.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
+.left-rail .rail-presets button.btn-180,.left-rail .rail-bottom button.btn-180,
+#masterLeft .master-tools button,.native-btn):focus-visible{outline:2px solid #9ceaff;outline-offset:1px}
+/* Geometry-only accommodation for 27–34px mixer slots. */
+:is(.btn-180,.toolbar .nav button.btn-180,.toolbar .spec-device,.left-rail .tabs button.btn-180,
+.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
+.left-rail .rail-presets button.btn-180,.left-rail .rail-bottom button.btn-180,
+#masterLeft .master-tools button,.native-btn){padding:0 3px!important;letter-spacing:.12px!important;font-size:11px!important;min-width:0}
+.toolbar .nav button.btn-180{letter-spacing:.35px!important}
+.left-rail .rail-presets button.btn-180{text-align:left;justify-content:flex-start;padding:0 9px!important}
+.toolbar .spec-device{text-transform:none;letter-spacing:0!important}
+/* Semantic ON palette is defined exactly once after the recessed state. */
+#masterLeft .master-actions .master-stereo-badge{
+ border:1px solid #4b6779;background:linear-gradient(#233a49,#102635 60%,#203442);
+ box-shadow:inset 0 1px 2px #020c18c0,0 1px 0 #68859940;color:#a9d6e6;cursor:default
+}
+
+/* Latching OFF/ON must NOT alter material, depth or layout. The physical
+   press response below exists only while :active, never on .active/.selected. */
+/* Latch LED colors only; dark captions are legible on bright faces. */
+/* Native dialog buttons keep native cyan; toolbar and rail states below
+   each have ONE scope owner, with no competing earlier palette selectors. */
+:is(.native-btn.primary,.native-btn.on){--b180-color:#22bbcc;--b180-border:#087b8e;--b180-ink:#041c27}
+/* Utility ON is exclusively cyan, owned by the more specific scoped rule below. */
+:is(.strip .channel-actions .mute.active,#masterLeft #masterMute.active,
+ .native-btn.warn){--b180-color:var(--b180-on-mute);--b180-border:#b14a5f;--b180-ink:#32151e}
+.strip .channel-actions .solo.active{--b180-color:var(--b180-on-solo);--b180-border:#a48337;--b180-ink:#2b210b}
+#masterLeft .master-tools button.active{--b180-color:var(--b180-on-purple);--b180-border:#8668b8;--b180-ink:#26163c}
+:is(.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
+ #masterLeft .master-tools button,.toolbar .nav button.btn-180,.left-rail .tabs button.btn-180,
+ .left-rail .rail-presets button.btn-180,.left-rail .rail-bottom button.btn-180,.native-btn){
+ color:var(--b180-ink,#f2f8fb)!important;
+}
+/* Keep pre-refactor fixed-sized buttons and their existing rails.
+   The strip name is painted above the A/B shadow, not moved away. */
+.strip .fader-tools,#masterLeft .master-tools{position:relative;z-index:1;isolation:isolate}
+.strip .strip-name,#masterLeft .master-strip-name{position:relative;z-index:2;isolation:isolate}
+/* No odd vertical displacement of the active nav relative to its neighbors. */
+
+/* Issue #56: passive hover has no filter or animated shadow.
+   Preserve all seven resting / seven pressed shadows and 1px tactile response.
+   Historical brightness is isolated to opt-in baseline A/B only. */
+
+/* Hardware tactility: brief pointer/keyboard activation presses the SAME cap
+   1px into the control panel. The layout and hit target stay the same; only
+   the rendered face shifts, while the lower cast shadow collapses inward.
+   Identical response for gray OFF and colored ON; no persistent pressed skin. */
+:is(.btn-180,.toolbar .nav button.btn-180,.toolbar .spec-device,
+ .strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
+ #masterLeft .master-actions button,#masterLeft .master-tools button,
+ .left-rail .tabs button.btn-180,.left-rail .rail-presets button.btn-180,
+ .left-rail .rail-bottom button.btn-180,.native-btn):active:not(:disabled){
+ transform:translateY(1px)!important;
+ box-shadow:
+  inset 3px 2px 2px -1px rgba(0,0,0,.50),
+  inset 0 0 1px 0 rgba(255,255,255,.14),
+  inset 0 1px 15px rgba(0,0,0,.29),
+  inset 0 -1px 2px rgba(0,0,0,.32),
+  0 0 0 1px var(--b180-border),
+  0 1px 1px rgba(0,0,0,.28),
+  0 2px 3px rgba(0,0,0,.13)!important;
+}
+
+/* OFF uses the same shared material with a brighter light-steel face.
+   Bright ON color recipes above remain untouched. */
+:is(.toolbar .spec-device,
+ .strip .channel-actions .candy,.strip .utility-row button,
+ #masterLeft .master-actions button,#masterLeft .master-tools button,
+ .left-rail .tabs button.btn-180,.left-rail .rail-presets button.btn-180,
+ .left-rail .rail-bottom button.btn-180):not(.active):not(.selected):not(.on):not([aria-pressed="true"]){
+ --b180-color:var(--b180-off);--b180-border:var(--b180-edge);
+ --b180-ink:var(--b180-off-ink);
+ color:var(--b180-ink)!important;
+}
+@media(prefers-reduced-motion:reduce){
+ :is(.toolbar .nav button.btn-180,.toolbar .spec-device,.strip .channel-actions .candy,
+ .strip .utility-row button,.left-rail button.btn-180){transition:none!important}
+}
+
+/* Scope-specific ON palette: only variables change; all keys share
+   the same seven-layer pad and exact press recipe above. */
+#app .toolbar-actions .nav button.btn-180.selected{
+ --b180-color:#e5f4a2;--b180-border:#8baf48;--b180-ink:#1c2b14;
+}
+#app .left-rail button.btn-180:is(.selected,.active){
+ --b180-color:var(--b180-on-magenta);--b180-border:#ad6d9f;--b180-ink:#32172f;
+}
+/* Polarity/HPF share the gentle cyan pad; MUTE/SOLO keep their alert palettes. */
+#app #mixer .strip .utility-row button.btn-180.active{
+ --b180-color:var(--b180-on-cyan);--b180-border:#38909e;--b180-ink:#12323c;
+}
+#app .left-rail .rail-presets button.btn-180{text-transform:none}
+#app .toolbar-actions .nav button.btn-180{height:34px;min-height:34px;min-width:77px;padding:0 10px!important;letter-spacing:.35px!important}
+#app .left-rail button.btn-180 > span,
+#app .toolbar-actions .nav button.btn-180 > span{transform:none!important;transition:none!important}
+
+/* Device is a standard toolbar-size BTN-180 pad, not the old cyan-caption spec.
+   Green indicates verified connected native audio status only. Preview is OFF. */
+#app .toolbar .spec-device{
+ height:34px;min-height:34px;
+ padding:0 10px!important;letter-spacing:.35px!important;
+}
+#app .toolbar .spec-device #headerDriver{
+ color:var(--b180-ink)!important;
+}
+#app .toolbar .spec-device.on{
+ --b180-color:var(--b180-on-green);
+ --b180-border:#3a9b68;
+ --b180-ink:#113322;
+}
+/* Toolbar actions are NEUTRAL when idle, green only for selected/active.
+   One solid repaint on state change, never a hover filter or glow. */
+#app .toolbar-actions .nav button.btn-180:not(.selected):not(.active):not([aria-pressed="true"]){
+ --b180-color:var(--b180-off);--b180-border:var(--b180-edge);
+ --b180-ink:var(--b180-off-ink);
+}
+#app .toolbar-actions .nav button.btn-180:is(.selected,.active,[aria-pressed="true"]){
+ --b180-color:#b2e8a0;--b180-border:#649c62;--b180-ink:#1a361d;
+}
+/* P0 low-end GPU: hover does not repaint BTN-180. Focus-visible,
+   1px hardware press, shared static shadows and semantic ON stay unchanged. */
+
+
+/* V4 production artwork recipes port. All section dimensions are shared by Master. */
+.console-body{--fx-h:173px;--eq-h:0px;--trim-h:43px;--switch-h:42px;--send-h:23px;--footer-h:46px;--channel-w:148px}
+.console-body:not(.collapsed-fx){--fx-h:173px}
+.console-body:not(.collapsed-send){--send-h:103px}
+.console-body .section-rail .rail-cell.fader{min-height:145px}
+.console-body #master{flex:0 0 var(--channel-w)!important;width:var(--channel-w)!important;min-width:var(--channel-w)!important;max-width:var(--channel-w)!important}
+.console-body #master>.strip.master{width:100%!important;min-width:0!important;max-width:100%!important}
+.console-body .tracks{grid-template-columns:repeat(var(--bank-columns,10),minmax(0,1fr))!important}
+.console-body .switch-section{height:var(--switch-h)!important;flex:0 0 var(--switch-h)!important;display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:5px!important;padding:5px 5px 6px!important}
+.console-body .switch.btn-180{
+ width:100%!important;height:29px!important;min-height:29px!important;min-width:0!important;max-width:none!important;flex:none!important;
+ border:1px solid var(--b180-border)!important;border-radius:3px!important;
+ color:var(--b180-ink)!important;background:var(--b180-color)!important;
+ box-shadow:var(--b180-shadow-surface)!important;
+ font:700 10px/1 Arial,Helvetica,sans-serif!important;letter-spacing:.12px!important;padding:0 2px!important;
+ text-transform:uppercase!important;text-shadow:0 1px 0 rgba(255,255,255,.16)!important;
+}
+.console-body .switch.btn-180.on.mute{--b180-color:var(--b180-on-mute);--b180-border:#b14a5f;--b180-ink:#32151e}
+.console-body .switch.btn-180.on.solo{--b180-color:var(--b180-on-solo);--b180-border:#a48337;--b180-ink:#2b210b}
+.console-body .switch.btn-180.on.cue{--b180-color:var(--b180-on-cyan);--b180-border:#38909e;--b180-ink:#12323c}
+.console-body .switch.btn-180:active:not(:disabled){
+ transform:translateY(1px)!important;
+ box-shadow:
+  inset 3px 2px 2px -1px rgba(0,0,0,.50),
+  inset 0 0 1px 0 rgba(255,255,255,.14),
+  inset 0 1px 15px rgba(0,0,0,.29),
+  inset 0 -1px 2px rgba(0,0,0,.32),
+  0 0 0 1px var(--b180-border),
+  0 1px 1px rgba(0,0,0,.28),
+  0 2px 3px rgba(0,0,0,.13)!important;
+}
+.console-body .fader-workspace{display:grid!important;grid-template-columns:51px minmax(36px,1fr) 26px!important;gap:3px!important;min-width:0!important;overflow:hidden!important}
+.console-body .meter-box{
+ grid-column:1!important;width:51px!important;max-width:51px!important;min-width:51px!important;
+ display:flex!important;align-items:stretch!important;gap:0!important;padding:0!important;
+ border:0!important;border-radius:4px!important;
+ background:#080f14!important;box-shadow:inset 0 3px 3px #0008!important;
+}
+.console-body .meter-box .vu-bars{
+ box-sizing:border-box;flex:0 0 30px;width:30px;min-width:30px;max-width:30px;
+ display:flex;align-items:stretch;justify-content:flex-end;gap:2px;position:relative;
+ padding:12px 1px 13px;overflow:hidden;
+ background:linear-gradient(90deg,#0b1a20 0%,#020609 13%,#010408 61%,#07131a 100%);
+ border-radius:5px;box-shadow:inset 0 4px 4px -3px #070e13,inset 0 -4px 4px -3px #070e13,
+ inset 4px 0 5px -4px #081116,inset -4px 0 5px -4px #081116;
+}
+.console-body .meter-box.mono .vu-bars{justify-content:center}
+.console-body .meter-box .meter-lane{
+ position:relative;width:10px;flex:0 0 10px;max-width:10px;min-width:10px;height:100%;
+ border:0;border-radius:2px;
+ background:#080f14;box-shadow:inset 0 1px 2px #0009,inset 1px 0 2px #000c,inset -1px 0 2px #000b;
+}
+.console-body .meter-box .meter-fill{
+ left:0!important;right:0!important;top:0;bottom:0;height:100%;
+ background:linear-gradient(to top,#15cf69 0%,#39ed79 48%,#c4e934 70%,#ffce26 82%,#ff8b20 90%,#f74635 100%)!important;
+ clip-path:inset(calc(100% - var(--lit,0%)) 0 0)!important;
+ transition:none!important;box-shadow:none!important;
+}
+.console-body .meter-box .meter-lane::before{
+ content:"";position:absolute;inset:0;z-index:2;
+ background:repeating-linear-gradient(to top,transparent 0 5px,#061018 5px 7px);
+ pointer-events:none;
+}
+.console-body .meter-box .vu-scale{position:relative;flex:0 0 19px;width:19px;min-width:19px;color:#a0bbc5;font:8px/1 Consolas,monospace;pointer-events:none}
+.console-body .meter-box .vu-scale-travel{position:absolute;top:12px;bottom:13px;left:0;right:0}
+.console-body .meter-box .vu-tick{position:absolute;left:0;right:0;top:var(--tick);height:0;white-space:nowrap}
+.console-body .meter-box .vu-tick::before{content:"";position:absolute;top:0;left:0;width:3px;height:1px;background:#516b78}
+.console-body .meter-box .vu-tick span{position:absolute;left:4px;top:-5px;font:8px/10px Consolas,monospace}
+.console-body .meter-box .peak{top:3px!important;left:2px!important;right:auto!important;width:26px!important;height:6px!important}
+.console-body .fader-box{
+ grid-column:2!important;position:relative!important;isolation:isolate;
+ min-width:36px!important;width:100%!important;overflow:visible!important;
+ border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;
+}
+.console-body .fader-box::before{
+ content:"";position:absolute;top:0!important;bottom:0!important;left:50%!important;
+ width:min(46px,100%)!important;transform:translateX(-50%)!important;
+ z-index:0;pointer-events:none;box-sizing:border-box;
+ background:linear-gradient(90deg,#15232c 0%,#283741 13%,#2a3942 48%,#283741 87%,#15232c 100%)!important;
+ border:0!important;border-radius:6px!important;
+ box-shadow:inset 0 4px 4px -3px #070e13,inset 0 -4px 4px -3px #070e13,
+   inset 4px 0 5px -4px #081116,inset -4px 0 5px -4px #081116!important;
+}
+.console-body .fader-box::after{
+ content:"";position:absolute;left:50%!important;top:38px!important;bottom:39px!important;width:5px!important;
+ transform:translateX(-50%)!important;z-index:1;pointer-events:none;
+ border:0!important;opacity:1!important;max-height:none!important;height:auto!important;
+}
+.console-body .fader-travel{
+ position:absolute;top:38px;bottom:39px;left:0;right:0;pointer-events:none;z-index:3;
+}
+.console-body .fader-travel .cap{
+ position:absolute;top:var(--fader-y,50%);left:50%;transform:translate(-50%,-50%);
+ width:36px;height:77px;border:0;border-radius:0;
+ background:var(--ari-silver) center/36px 77px no-repeat;
+ pointer-events:none;filter:none;box-shadow:none;
+}
+.console-body .strip.master .fader-travel .cap{background:var(--ari-rose) center/36px 77px no-repeat}
+.console-body .fader-box .fader{
+ position:absolute;z-index:4;top:38px;bottom:39px;left:50%;transform:translateX(-50%);
+ width:36px!important;height:calc(100% - 77px)!important;min-height:10px!important;
+ writing-mode:vertical-lr!important;direction:rtl!important;cursor:ns-resize;
+ opacity:0!important;-webkit-appearance:none!important;appearance:none!important;
+ pointer-events:auto;
+}
+.console-body .fader-scale{grid-column:3!important;position:relative;flex:none!important;width:26px!important;min-width:26px!important;padding:0!important;background:none!important}
+.console-body .gain-scale-travel{position:absolute;top:38px;bottom:39px;left:0;right:0}
+.console-body .gain-tick{position:absolute;top:0;height:0;left:0;right:0}
+.console-body .gain-tick::before{content:"";position:absolute;left:1px;top:0;height:1px;width:3px;background:#687d89}
+.console-body .gain-tick.major::before{width:6px;background:#a4b9c4}
+.console-body .gain-tick span{position:absolute;top:-6px;left:8px;right:0;text-align:right;font:9px/12px Consolas,monospace;white-space:nowrap;color:#a8b9c3}
+.console-body .trim-section{height:var(--trim-h)!important;flex:0 0 var(--trim-h)!important;display:grid!important;grid-template-columns:26px minmax(0,1fr) 31px!important;gap:3px!important;align-items:center!important}
+.console-body .trim-label,.console-body .sendlevel label{color:#9cb0b8;font:9px/1 'Segoe UI',Arial,sans-serif}
+.console-body .ari-horizontal{
+ -webkit-appearance:none!important;appearance:none!important;min-width:0!important;width:100%!important;
+ height:40px!important;min-height:40px!important;margin:0!important;padding:0!important;
+ background:transparent!important;cursor:ew-resize;
+}
+.console-body .ari-horizontal::-webkit-slider-runnable-track{
+ height:5px!important;border-radius:2px!important;border:1px solid #06090b!important;
+ background:linear-gradient(to right,#35b1cb 0%,#35b1cb var(--range-pct,50%),#0b151a var(--range-pct,50%),#0b151a 100%)!important;
+ box-shadow:inset 0 1px 2px #000,inset 0 -1px #50616a50!important;
+}
+.console-body .ari-horizontal::-webkit-slider-thumb{
+ -webkit-appearance:none!important;appearance:none!important;width:18px!important;height:40px!important;
+ margin-top:-18px!important;border:0!important;border-radius:0!important;
+ background:var(--ari-pan) center/18px 40px no-repeat!important;box-shadow:none!important;
+}
+.console-body .ari-horizontal::-moz-range-track{height:5px;border-radius:2px;border:1px solid #06090b;background:linear-gradient(to right,#35b1cb 0%,#35b1cb var(--range-pct,50%),#0b151a var(--range-pct,50%),#0b151a 100%)}
+.console-body .ari-horizontal::-moz-range-thumb{width:18px!important;height:40px!important;border:0!important;border-radius:0!important;background:var(--ari-pan) center/18px 40px no-repeat!important}
+.console-body .send-section .sendlevel{height:42px!important;min-height:42px!important;flex:0 0 42px!important;display:grid!important;grid-template-columns:29px minmax(0,1fr) 27px!important;gap:2px!important}
+.console-body .send-section .sendlevel output{font:9px Consolas,monospace}
+
+/* Exact RAIL3 source copied from web/styles-src/42-mixer-premium.css — operator-approved hardware fader: upper slot unlit black;
+   below the thumb cyan blooms smoothly, then rolls off into black at the foot.
+   The groove is physically ONE 5px machined slot; black sidewalls are static.
+   Three bounded CSS gradients over a tiny area; no blur, shadows animation,
+   filters, extra DOM, observer, RAF, DSP or additional gain handlers. */
+.console-body .fader-box::after{
+ background-color:#10171c;
+ background-image:
+   /* fixed black edge occlusion throughout the physical slot */
+   linear-gradient(90deg,#010508 0%,#03090f 18%,transparent 38%,
+     transparent 62%,#03090f 82%,#010508 100%),
+   /* fade light back into the machined black well at the lower end */
+   linear-gradient(to bottom,transparent 0%,transparent 62%,
+     rgba(1,6,10,.10) 72%,rgba(1,6,10,.52) 86%,
+     rgba(1,6,10,.85) 94%,#01060a 100%),
+   /* above cap black, under cap dark -> gentle cyan; follows existing detent */
+   linear-gradient(to bottom,
+     #12191e 0%,#12191e calc(var(--fader-cut,50%) + 26px),
+     #0e2e39 calc(var(--fader-cut,50%) + 39px),
+     #176d85 calc(var(--fader-cut,50%) + 52px),
+     #27bfd8 calc(var(--fader-cut,50%) + 68px),
+     #27bfd8 100%);
+ box-shadow:inset 1px 0 #010406,inset -1px 0 #010406;
+}
+
+
+/* Hard layout invariant: one physical width for all VU/fader modules and Master. */
+.console-body .tracks>.strip{box-sizing:border-box;min-width:0!important;max-width:none!important}
+.console-body #master{box-sizing:border-box}
+
+/* Match the source GUI gain ruler: +10/0/−60, while VU remains 0…−60 dBFS. */
+.console-body .fader-box:focus-within::before{box-shadow:inset 0 0 0 1px #82cddd,inset 0 4px 4px -3px #070e13,inset 0 -4px 4px -3px #070e13!important}
 </style>
 </head>
 <body>
@@ -664,16 +1019,15 @@ button:disabled{opacity:.45;cursor:not-allowed}
   </div>
   <main class="console-pane">
     <div class="mixer-title"><span class="accent"></span><span class="panel-name">Live Mixer</span><span class="panel-sub">▤</span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
-    <section class="console-body collapsed-fx collapsed-send collapsed-eq" data-density="comfort" aria-label="Live mixing console">
+    <section class="console-body collapsed-send" data-density="comfort" aria-label="Live mixing console">
       <aside class="section-rail" aria-label="Mixer section icons">
         <button class="rail-cell route" data-section="route" aria-expanded="true" title="Collapse / expand Inputs and Outputs">⇥</button>
         <button class="rail-cell fx collapsed" data-section="fx" aria-expanded="false" title="Collapse / expand Effects">fx</button>
         <button class="rail-cell send collapsed" data-section="send" aria-expanded="false" title="Collapse / expand Sends">↪</button>
-        <button class="rail-cell eq collapsed" data-section="eq" aria-expanded="false" title="Collapse / expand Equalizer">▥</button>
         <div class="rail-cell pan" title="Pan">◉</div>
         <div class="rail-cell trim" title="Digital input trim"><small>TRIM</small></div>
         <div class="rail-cell switch" title="Mute / Solo / Cue / Monitor"><small>M S C</small></div>
-        <div class="rail-cell fader" title="Level and meter">dB<br>│<br>│<br>│</div>
+        <div class="rail-cell fader" title="Level and meter">dB</div>
         <div class="rail-cell footer" title="Track labels"><small>▦</small></div>
       </aside>
       <div class="tracks-viewport" id="viewport" tabindex="0" aria-label="Visible channel bank; use upper arrow buttons for more channels"><div class="tracks" id="tracks"></div></div>
@@ -745,26 +1099,28 @@ function sectionFx(t){
  }
  return out+'</div></div>';
 }
-const eqSvg='<span class="eq-status-quiet" aria-hidden="true">EQ</span>';
 function sectionSend(t){
  if(t.kind==='master'||t.kind==='fx')return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><span class="sendtag">No Sends</span></div></div>';
- return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><select class="send-slot" data-field="activeSend" title="Select send slot 1–16" aria-label="Send slot">'+option(Array.from({length:16},(_,i)=>'S'+(i+1)),'S'+(t.activeSend+1))+'</select><span class="send-compact" title="Active send destination">'+escapeHtml(t.send==='None'?'No send':t.send)+'</span><span class="push"></span><button class="mini power '+(t.sendOn?'on':'')+'" data-action="sendOn" title="Enable Send">⏻</button><button class="mini pre '+(t.pre?'on':'')+'" data-action="pre" title="Toggle Pre/Post send">'+(t.pre?'Pre':'Pst')+'</button></div><select class="send-select" data-field="send" aria-label="Send destination">'+option(channelOptions(t,'send'),t.send)+'</select><div class="sendlevel"><label>↳</label><input type="range" min="-60" max="6" step="1" value="'+t.sendLevel+'" data-field="sendLevel" title="Send level"><output>'+formatDb(t.sendLevel)+'</output></div><div class="sendlevel send-pan"><label>◉</label><input type="range" min="-100" max="100" step="1" value="'+t.sendPan+'" data-field="sendPan" title="Send stereo pan" aria-label="Send pan"><output>'+(t.sendPan===0?'C':t.sendPan<0?'L'+Math.abs(t.sendPan):'R'+t.sendPan)+'</output></div></div>';
+ return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><select class="send-slot" data-field="activeSend" title="Select send slot 1–16" aria-label="Send slot">'+option(Array.from({length:16},(_,i)=>'S'+(i+1)),'S'+(t.activeSend+1))+'</select><span class="send-compact" title="Active send destination">'+escapeHtml(t.send==='None'?'No send':t.send)+'</span><span class="push"></span><button class="mini power '+(t.sendOn?'on':'')+'" data-action="sendOn" title="Enable Send">⏻</button><button class="mini pre '+(t.pre?'on':'')+'" data-action="pre" title="Toggle Pre/Post send">'+(t.pre?'Pre':'Pst')+'</button></div><select class="send-select" data-field="send" aria-label="Send destination">'+option(channelOptions(t,'send'),t.send)+'</select><div class="sendlevel"><label>LEVEL</label><input class="ari-horizontal" type="range" min="-60" max="6" step="1" value="'+t.sendLevel+'" style="--range-pct:'+rangePct(t.sendLevel,-60,6)+'%" data-field="sendLevel" title="Send level"><output>'+formatDb(t.sendLevel)+'</output></div></div>';
 }
 function formatDb(n){return n<=-60?'-∞':(n>0?'+':'')+Number(n).toFixed(1);}
 function panLabel(n){return Number(n)===0?'C':n<0?'L'+Math.abs(n):'R'+n;}
 function panStyle(n){const left=Math.min(50,50+n/2),right=Math.max(50,50+n/2);return '--pan-start:'+left+'%;--pan-end:'+right+'%';}
+function rangePct(v,min,max){return Math.max(0,Math.min(100,100*(Number(v)-min)/(max-min)));}
 function faderPercent(value,isSend){
- const min=-60,max=isSend?6:15;
+ const min=-60,max=isSend?6:10;
  return Math.max(0,Math.min(100,((Number(value)-min)/(max-min))*100));
 }
 function sectionFader(t){
- const isSend=sofEnabled&&t.kind==='audio',value=isSend?getSofLevel(t):t.level;
- const ticks=[isSend?'+6':'+15','0','-6','-12','-24','-36','-48','-∞'];
+ const isSend=sofEnabled&&t.kind==='audio',value=isSend?getSofLevel(t):t.level,percent=faderPercent(value,isSend),gainMax=isSend?6:10;
+ const vuTicks=[0,-6,-12,-18,-24,-36,-48,-60],gainTicks=[gainMax,0,-6,-12,-24,-36,-48,-60];
+ const vuScale=vuTicks.map(v=>'<span class="vu-tick" style="top:'+(-v/60*100)+'%"><span>'+v+'</span></span>').join('');
+ const gainScale=gainTicks.map(v=>'<span class="gain-tick '+(v===0?'major':'')+'" style="top:'+((gainMax-v)/(gainMax+60)*100)+'%"><span>'+(v<=-60?'−∞':v>0?'+'+v:v)+'</span></span>').join('');
  return '<div class="fader-section"><div class="fader-head"><output class="fader-readout" aria-label="'+escapeHtml(t.name)+' level">'+(isSend?'SEND ':'')+formatDb(value)+' dB</output><span class="clip-indicator '+(t.clip?'clipping':'')+'" title="Demo clip latch">CLIP</span></div>'
  +'<div class="fader-workspace">'
- +'<div class="meter-box '+(t.format==='mono'?'mono':'stereo')+'" aria-label="Simulated '+(t.format==='mono'?'mono':'stereo')+' peak meter"><div class="meter-lane"><div class="meter-fill left"></div></div>'+(t.format==='mono'?'':'<div class="meter-lane"><div class="meter-fill right"></div></div>')+'<div class="peak '+(t.clip?'clipping':'')+'"></div></div>'
- +'<div class="fader-box" style="--fader-fill:'+faderPercent(value,isSend)+'%;--fader-lit:'+(faderPercent(value,isSend)/100)+'"><input class="fader" type="range" min="-60" max="'+(isSend?6:15)+'" value="'+value+'" step=".1" data-field="level" title="'+(isSend?'SEND to '+escapeHtml(sofTarget):'Main level')+'" aria-label="'+escapeHtml(t.name)+' volume"></div>'
- +'<div class="fader-scale">'+ticks.map(x=>'<span>'+x+'</span>').join('')+'</div></div></div>';
+ +'<div class="meter-box '+(t.format==='mono'?'mono':'stereo')+'" aria-label="Simulated '+(t.format==='mono'?'mono':'stereo')+' dBFS meter"><div class="vu-bars"><div class="meter-lane"><div class="meter-fill left"></div></div>'+(t.format==='mono'?'':'<div class="meter-lane"><div class="meter-fill right"></div></div>')+'</div><div class="vu-scale"><div class="vu-scale-travel">'+vuScale+'</div></div><div class="peak '+(t.clip?'clipping':'')+'"></div></div>'
+ +'<div class="fader-box" style="--fader-fill:'+percent+'%;--fader-lit:'+(percent/100)+';--fader-frac:'+(percent/100)+'"><div class="fader-travel"><div class="cap" aria-hidden="true"></div></div><input class="fader" type="range" min="-60" max="'+gainMax+'" value="'+value+'" step=".1" data-field="level" title="'+(isSend?'SEND to '+escapeHtml(sofTarget):'Main level')+'" aria-label="'+escapeHtml(t.name)+' volume"></div>'
+ +'<div class="fader-scale"><div class="gain-scale-travel">'+gainScale+'</div></div></div></div>';
 }
 function strip(t){
  let code='<article class="strip '+t.kind+(t.selected?' selected':'')+'" data-id="'+t.id+'" style="--track-color:'+t.color+'" aria-label="'+escapeHtml(t.name)+' channel">';
@@ -774,17 +1130,24 @@ function strip(t){
  else code+='<div class="route-field"><span class="route-caption">IN</span><span class="route-identity">SUM BUS</span></div>';
  code+='<div class="route-field"><span class="route-caption">OUT</span><select class="route-select" data-field="output" title="Primary output" aria-label="'+escapeHtml(t.name)+' output">'+option(channelOptions(t,'output'),t.output)+'</select></div></div>';
  code+=sectionFx(t)+sectionSend(t);
- code+='<div class="section eq-section '+(t.eq?'':'off')+'"><div class="eq-header"><span class="sym">▥</span><small style="font-size:9px;color:#959b9d">EQ</small><span class="push"></span><button class="mini power '+(t.eq?'on':'')+'" data-action="eq" title="Enable/disable EQ">⏻</button></div><button class="eq-line" data-action="eq" title="Toggle track EQ" aria-label="Toggle track EQ">'+eqSvg+'</button></div>';
  code+='<div class="section pan-section"><span class="pan-icon" title="Pan / Balance">PAN</span><span class="pan-control" style="'+panStyle(t.pan)+'"><input class="center-pan" type="range" min="-100" max="100" step="1" value="'+t.pan+'" data-field="pan" title="Pan from center; release near center to snap; double-click to center" aria-label="Channel pan; double-click center"></span><output>'+panLabel(t.pan)+'</output></div>';
- code+='<div class="section trim-section"><span class="trim-label" title="Digital input trim">TRIM</span><input class="trim-control" type="range" min="-24" max="24" step="0.5" value="'+t.trim+'" data-field="trim" aria-label="Digital trim dB" title="Digital trim (-24..+24dB)"><output class="trim-value">'+formatDb(t.trim)+'</output></div>';
- code+='<div class="section switch-section"><button class="switch mute '+(t.mute?'on':'')+'" data-action="mute" title="Mute channel" aria-pressed="'+t.mute+'"><span class="switch-full">MUTE</span><span class="switch-short">M</span></button><button class="switch solo '+(t.solo?'on':'')+'" data-action="solo" title="Solo channel" aria-pressed="'+t.solo+'"><span class="switch-full">SOLO</span><span class="switch-short">S</span></button>'+(t.kind!=='master'?'<button class="switch cue '+(t.cue?'on':'')+'" data-action="cue" title="Cue / PFL to separate monitor bus (visual only)" aria-pressed="'+t.cue+'">PFL</button>':'')+(t.kind==='audio'?'<button class="switch mon '+(t.mon?'on':'')+'" data-action="mon" title="Input monitor (visual only)" aria-pressed="'+t.mon+'">I</button>':'')+'</div>';
+ code+='<div class="section trim-section"><span class="trim-label" title="Digital input trim">TRIM</span><input class="trim-control ari-horizontal" type="range" min="-24" max="24" step="0.5" value="'+t.trim+'" style="--range-pct:'+rangePct(t.trim,-24,24)+'%" data-field="trim" aria-label="Digital trim dB" title="Digital trim (-24..+24dB)"><output class="trim-value">'+formatDb(t.trim)+'</output></div>';
+ code+='<div class="section switch-section">'
+   +'<button class="switch btn-180 mute '+(t.mute?'on':'')+'" data-action="mute" title="Mute channel" aria-pressed="'+t.mute+'">MUTE</button>'
+   +'<button class="switch btn-180 solo '+(t.solo?'on':'')+'" data-action="solo" title="Solo channel" aria-pressed="'+t.solo+'">SOLO</button>'
+   +'<button class="switch btn-180 cue '+(t.cue?'on':'')+'" data-action="cue" title="Cue / PFL monitor bus (reference only)" aria-pressed="'+t.cue+'">PFL</button></div>';
  code+=sectionFader(t);
  code+='<div class="bottom-section"><div class="db-value">'+(sofEnabled&&t.kind==='audio'?'S ': '')+formatDb(sofEnabled&&t.kind==='audio'?getSofLevel(t):t.level)+'</div><div class="footer-label '+(t.kind==='master'?'master-label':t.kind==='bus'?'bus-label':'')+'"><span class="name" data-action="rename" title="Double-click to rename">'+escapeHtml(t.name)+'</span><div class="color-strip"></div></div></div></article>';
  return code;
 }
 function bankCapacity(){
- const width=document.getElementById('viewport').clientWidth||0;
- return width?Math.max(1,Math.min(10,Math.floor(width/112))):10;
+ const body=document.querySelector('.console-body');
+ const panel=body?.clientWidth||0;
+ // Width budget is shared between n source strips + one equal-sized, pinned MAIN.
+ // Never grow the last partial bank; empty slots keep exactly the same grid track width.
+ const dock=pluginOpen?Math.min(330,Math.floor(panel*.36)):0;
+ const usable=panel?Math.max(0,panel-28-dock):0;
+ return usable ? Math.max(1,Math.min(10,Math.floor(usable/130)-1)) : 10;
 }
 function render(){
  const filter=document.getElementById('viewFilter').value;
@@ -795,7 +1158,18 @@ function render(){
  selector.innerHTML=Array.from({length:count},(_,i)=>'<option value="'+i+'">CH '+String(i*capacity+1).padStart(2,'0')+'–'+String(Math.min(visible.length,(i+1)*capacity)).padStart(2,'0')+'</option>').join('');
  selector.value=String(page);
  const bankTracks=visible.slice(page*capacity,(page+1)*capacity);
- if(tracksEl.style?.setProperty)tracksEl.style.setProperty('--bank-columns',String(bankTracks.length||1));
+ const root=document.querySelector('.console-body');
+ if(root.style?.setProperty){
+  root.style.setProperty('--bank-capacity',String(capacity));
+  const panel=root.clientWidth||0,dock=pluginOpen?Math.min(330,Math.floor(panel*.36)):0;
+  if(panel){
+   const unit=((panel-28-dock)/(capacity+1)).toFixed(3)+'px';
+   root.style.setProperty('--channel-w',unit);
+   const pane=document.querySelector('.console-pane');
+   if(pane?.style?.setProperty)pane.style.setProperty('--master-w',unit);
+  }
+ }
+ if(tracksEl.style?.setProperty)tracksEl.style.setProperty('--bank-columns',String(capacity));
  tracksEl.innerHTML=bankTracks.map(strip).join('');
  updateSofTargets();
  masterEl.innerHTML=strip(master);
@@ -813,7 +1187,7 @@ function syncFaderVisual(t,element){
  const readout=root.querySelector('.fader-readout');
  if(readout)readout.textContent=(isSend?'SEND ':'')+value+' dB';
  const box=root.querySelector('.fader-box');
- if(box?.style?.setProperty){box.style.setProperty('--fader-fill',faderPercent(v,isSend)+'%');box.style.setProperty('--fader-lit',String(faderPercent(v,isSend)/100));}
+ if(box?.style?.setProperty){box.style.setProperty('--fader-fill',faderPercent(v,isSend)+'%');box.style.setProperty('--fader-lit',String(faderPercent(v,isSend)/100));box.style.setProperty('--fader-frac',String(faderPercent(v,isSend)/100));}
  const db=root.querySelector('.db-value');
  if(db)db.textContent=(isSend?'S ':'')+value;
 }
@@ -821,9 +1195,7 @@ function setDensity(mode){
  const density=['comfort','standard','compact'].includes(mode)?mode:'comfort';
  const root=document.querySelector('.console-body'),compact=density==='compact';
  root.dataset.density=density;
- const widths={comfort:'142px',standard:'130px',compact:'114px'};
- const parent=document.querySelector('.console-pane');
- if(parent?.style?.setProperty)parent.style.setProperty('--master-w',widths[density]);
+ // Equal widths now come from the shared bank width budget.
  root.classList.toggle('narrow',compact);
  document.getElementById('densitySelect').value=density;
  render();
@@ -977,7 +1349,7 @@ function handleField(event){
  if(t.group&&!event.altKey){
   const delta=t.level-old;
   tracks.filter(peer=>peer.group===t.group&&peer.id!==t.id).forEach(peer=>{
-   peer.level=Math.max(-60,Math.min(15,Math.round((peer.level+delta)*10)/10));
+   peer.level=Math.max(-60,Math.min(10,Math.round((peer.level+delta)*10)/10));
    const other=document.querySelector('.strip[data-id="'+peer.id+'"]');
    if(other){const fader=other.querySelector('.fader'),db=other.querySelector('.db-value');if(fader)fader.value=peer.level;if(db)db.textContent=formatDb(peer.level);syncFaderVisual(peer,other);}
   });
@@ -985,8 +1357,8 @@ function handleField(event){
  if(event.type==='change')say(t.name+' fader '+formatDb(t.level)+' dB'+(t.group?' (linked '+t.group+')':''));
 }
  else if(field==='pan'){let value=Number(el.value);if(event.type==='change'&&Math.abs(value)<=5&&!event.altKey){value=0;el.value='0';}t.pan=value;const wrapper=el.closest('.pan-control');if(wrapper)wrapper.setAttribute('style',panStyle(value));const label=wrapper?wrapper.nextElementSibling:el.nextElementSibling;if(label)label.textContent=panLabel(value);if(event.type==='change')say(t.name+' pan '+panLabel(value));}
- else if(field==='trim'){t.trim=Number(el.value);const readout=el.closest('.trim-section')?.querySelector('.trim-value');if(readout)readout.textContent=formatDb(t.trim);if(event.type==='change')say(t.name+' digital trim '+formatDb(t.trim)+' dB');}
- else if(field==='sendLevel'){t.sendLevel=Number(el.value);el.nextElementSibling.textContent=formatDb(t.sendLevel);}
+ else if(field==='trim'){t.trim=Number(el.value);if(el.style?.setProperty)el.style.setProperty('--range-pct',rangePct(t.trim,-24,24)+'%');const readout=el.closest('.trim-section')?.querySelector('.trim-value');if(readout)readout.textContent=formatDb(t.trim);if(event.type==='change')say(t.name+' digital trim '+formatDb(t.trim)+' dB');}
+ else if(field==='sendLevel'){t.sendLevel=Number(el.value);if(el.style?.setProperty)el.style.setProperty('--range-pct',rangePct(t.sendLevel,-60,6)+'%');el.nextElementSibling.textContent=formatDb(t.sendLevel);}
  else if(field==='sendPan'){t.sendPan=Number(el.value);el.nextElementSibling.textContent=t.sendPan===0?'C':t.sendPan<0?'L'+Math.abs(t.sendPan):'R'+t.sendPan;}
  else if(field==='activeSend'){const slot=Number(el.value.slice(1))-1;if(slot<0||slot>=16)return;openSendSlot(t,slot);refreshStrip(t);say(t.name+' · selected Send '+(slot+1));return;}
  else if(field==='output'){
@@ -1070,7 +1442,7 @@ document.querySelector('.console-body').addEventListener('mousedown',e=>{const t
 document.querySelector('.section-rail').addEventListener('click',e=>{
  const button=e.target.closest('[data-section]');if(!button)return;
  const name=button.dataset.section,body=document.querySelector('.console-body');
- if(body.classList.contains('narrow')&&['fx','send','eq'].includes(name)){
+ if(body.classList.contains('narrow')&&['fx','send'].includes(name)){
   say('Exit Narrow view before expanding '+name.toUpperCase());return;
  }
  const collapsed=body.classList.toggle('collapsed-'+name);

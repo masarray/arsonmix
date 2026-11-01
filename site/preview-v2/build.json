@@ -1,20 +1,14 @@
 {
-  "version": "preview-v3",
+  "version": "preview-v4",
   "route": "/preview-v2/",
   "kind": "GUI_REFERENCE_ONLY",
   "live_audio": false,
   "source_pr": 278,
   "source_branch": "design/audition-mixer-reference-isolated-20261101",
-  "source_sha": "0dcd1907d07980e96794ca74833b33b0391ea66f",
+  "source_sha": "76dec72db06369e36d9d5e430454583cbffd9d8c",
   "source_path": "design-references/audition-mixer-study/index.html",
-  "features": [
-    "Original ArSonMix faders and PAN asset",
-    "10 fitted channel strips + pinned Master",
-    "Top arrows for extra banks",
-    "No bottom horizontal scrollbar",
-    "Docked plugin manager",
-    "Quiet FX/Send/EQ Mix default"
-  ],
-  "tests": "98/98 zero-dependency DOM checks; real Chromium geometry not yet certified",
-  "note": "Reference only. Production ASIO, native VST3 and meter not connected."
+  "reference_art": "Original FADER-ARI-SILVER, FADER-ARI-ROSEGOLD, PAN-SLIDER 36x77 / 18x40",
+  "visual_contract": "BTN-180 exact historical recipe, calibrated VU dBFS and RAIL3 fader, equal 10+Master bank width, fixed last page, FX Rack priority, no EQ row/SendPan/Input I",
+  "checks": "106/106 zero-dependency JS DOM and width contract smoke passed; Chromium visual-layout audit authored but not executed on this V4 reference",
+  "note": "UI demo with simulated meters, no native ASIO/VST3 audio confirmation."
 }
