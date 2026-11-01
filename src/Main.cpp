@@ -1420,7 +1420,8 @@ private:
             const auto ep=args.getProperty("deviceEpoch",juce::var());
             const auto rv=args.getProperty("revision",juce::var());
             const bool safe=requestId>0&&channel>=0&&channel<LiveDryRoutingLab::count&&
-                ep.isInt64()&&rv.isInt64()&&!nativeShowBusy_&&
+                (ep.isInt()||ep.isInt64())&&
+                (rv.isInt()||rv.isInt64())&&!nativeShowBusy_&&
                 !studioBackupBusy_&&!engine_.isGraphSwitchPending();
             const juce::String error=safe?
                 engine_.repatchDryRoutingLabChannel(channel,
