@@ -408,6 +408,13 @@ check(node('channelIdentity').hidden===true &&
 node('bankSelect').value='0';node('bankSelect').dispatch('change');
 check(strip(1).includes('<option value="Vocal Bus" selected>'),
  'Renaming Bus A preserves live routing in existing Host send');
+const editMaster={dataset:{action:'editIdentity'},closest:k=>k==='.strip'?{dataset:{id:12}}:null};
+node('body').handlers.click({target:{closest:k=>k==='[data-action]'?editMaster:null}});
+node('identityName').value='Main Stereo';
+node('identitySave').dispatch('click');
+check(node('master').innerHTML.includes('Main Stereo') &&
+ strip(1).includes('<option value="Main Stereo" selected>'),
+ 'Renaming Master updates all channel OUT choices and live routing references');
 node('reset').dispatch('click');
 
 console.log('PASS '+cases.length+' reference mixer DOM checks');
