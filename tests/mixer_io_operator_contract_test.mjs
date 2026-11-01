@@ -26,8 +26,8 @@ test('MS3A MAIN physical output patch stages through existing muted native route
   assert.match(gui,/s\.outputPorts/);
   assert.match(gui,/__arMixStageMainOutputs/);
   assert.match(gui,/\.arIOMainOutput/);
-  assert.match(gui,/Selection is DRAFT until native APPLY\/ACK/);
-  assert.match(gui,/AUX1–4 are internal FX returns, not hardware ports/);
+  assert.match(gui,/Only native-ACKed MAIN\/MONITOR pairs can carry sound/);
+  assert.match(gui,/internal stereo FX returns/);
   assert.match(monitor,/window\.__arMixStageMainOutputs/);
   assert.match(monitor,/mainOutputs:draftMainOutputs/);
   assert.match(monitor,/routingDryApply/);
@@ -574,4 +574,25 @@ test('hardware input CH1/CH2/CH10 selectable on the mixer itself without an IO m
  assert.match(io,/ENABLED capture pin\(s\)/);
  assert.match(css,/\.arChannelQuickInput\{/);
  assert.doesNotMatch(css,/backdrop-filter|filter:blur/);
+});
+
+test('First Sound focuses exactly one native channel; software matrix is opt-in',()=>{
+ const io=read('web/mixer-io.js'),css=read('web/mixer-io.css');
+ assert.match(io,/lastSignature='', focusedInput=0/);
+ assert.match(io,/for\(const i of \[focusedInput\]\)/);
+ assert.match(io,/arIODeviceMatrixDetails/);
+ assert.match(io,/if\(!advancedDeviceOpen\)return/);
+ assert.match(io,/NEXT · ROUTE INPUT TO MIXER/);
+ assert.match(io,/ioTab==='inputs'&&!advancedMatrixOpen/);
+ assert.match(css,/\.arIODeviceMatrixDetails/);
+ assert.match(css,/\.arIOQuickOutput/);
+});
+test('First Sound never reports invalid stereo pins as live or invents capture PCM',()=>{
+ const io=read('web/mixer-io.js'),monitor=read('web/monitor.js');
+ assert.match(io,/const validPhysicalRoute=\(r,ports\)=>/);
+ assert.match(io,/pins\.size>=2&&r\.left!==r\.right/);
+ assert.match(io,/const suggested=verified\.length===1&&r\.mode==='NONE'/);
+ assert.match(io,/INVALID L\/R · SELECT MONO/);
+ assert.match(io,/ROUTE ACK · CHECK RAW PCM/);
+ assert.match(monitor,/Stereo L\/R requires distinct enabled hardware pins/);
 });

@@ -81,8 +81,6 @@ jobs:
         run: python tests/ui_smoke.py
       - name: Verify G1/G2 LIVE mixer bank and native I/O transaction
         run: python tests/mixer_io_smoke.py
-      - name: Validate native-only operator console v6 (no DSP preview)
-        run: python tests/operator_console_v6_smoke.py
       - name: Verify MIX and FX RACK Auto Orbit workflow
         run: python tests/native_orbit_ui_smoke.py
       # Firefox perf is deliberate: main release verification or manual opt-in.

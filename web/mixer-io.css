@@ -636,109 +636,24 @@
 #app #mixer .arChannelQuickInput:focus-visible{outline:1px solid #7ad2e9;outline-offset:0}
 #app #mixer .arFormatBadge{top:0;height:15px;line-height:13px}
 
-
-/* DEVICE/ROUTING 2026-11-01: one primary decision at a time.
-   Advanced crosspoints are never necessary for ordinary mono input routing.
-   No blur, glow filters, animated layout, large cards or second GUI router. */
-#arIOOverlay .arIOWindow{
-  width:min(920px,calc(100vw - 28px));
-  max-height:min(700px,calc(100dvh - 28px));
-  border-radius:5px;
-  background:#15232d;
-}
-#arIOOverlay .arIOWindow>header{padding:8px 13px;min-height:42px}
-#arIOOverlay .arIOWindow>header small{font-size:9px;letter-spacing:.6px}
-#arIOOverlay .arIOWindow>header h2{font-size:15px;font-weight:500}
-#arIOOverlay .arIOTop{padding:5px 13px;font-size:10px}
-#arIOOverlay .arIOWindow nav{
-  padding:6px 10px;gap:0;border-bottom:1px solid #3c5663;background:#172933;
-}
-#arIOOverlay .arIOWindow nav .btn-180{
-  flex:1 1 0;min-width:0;height:30px;min-height:30px;border-radius:0;
-  font-size:10px;letter-spacing:.1px;
-}
-#arIOOverlay .arIOBody{padding:9px 12px;scrollbar-width:thin}
-#arIOOverlay .arIOAudioPath{padding:5px 11px;gap:4px}
-#arIOOverlay .arIOAudioPath>span{font-size:9px;padding:4px 6px}
-#arIOOverlay .arIOAudioPath>small{font-size:10px}
-#arIOOverlay .arIOWindow>footer{gap:6px;padding:7px 10px}
-#arIOOverlay .arIOWindow>footer .btn-180{height:28px;min-height:28px;padding:0 9px}
-#arIOOverlay .arIOWindow>footer [data-io-internal]{margin-left:0}
-#arIOOverlay .arIODevicePatchMatrix{
-  display:block;margin:9px 0 0;background:#162731;border:1px solid #355566;
-}
-#arIOOverlay .arIODevicePatchMatrix>.arIODeviceMatrixHeading{
-  display:flex;list-style:none;cursor:pointer;min-height:32px;align-items:center;
-  padding:6px 10px;color:#adc7d3;font-weight:500;
-}
-#arIOOverlay .arIODevicePatchMatrix>.arIODeviceMatrixHeading::-webkit-details-marker{display:none}
-#arIOOverlay .arIODevicePatchMatrix>.arIODeviceMatrixHeading:before{
-  content:'▸';margin-right:8px;color:#80b5c9;
-}
-#arIOOverlay .arIODevicePatchMatrix[open]>.arIODeviceMatrixHeading:before{content:'▾'}
-#arIOOverlay .arIODevicePatchMatrix:not([open])>:not(summary){display:none!important}
-#arIOOverlay .arIOQuickPatch{max-width:100%;overflow:visible}
-#arIOOverlay .arIOQuickColumns{display:none}
-#arIOOverlay .arIOQuickHeader{min-height:47px;padding:7px 10px}
-#arIOOverlay .arIOQuickGuide{
-  padding:9px 10px;font-size:11px;color:#a7d3df;background:#1c303b;
-}
-#arIOOverlay .arIOQuickRow{
-  grid-template-columns:minmax(100px,1fr) minmax(105px,1fr) minmax(135px,1.6fr)
-    minmax(135px,1.6fr) minmax(113px,1.2fr);
-  min-height:64px;padding:8px 11px;background:#172b36;
-  gap:8px;border-bottom:1px solid #3c5764;
-}
-#arIOOverlay .arIOQuickRow[hidden]{display:none!important}
-#arIOOverlay .arIOQuickRow[data-state="invalid"]{
-  box-shadow:inset 3px 0 #da9965;background:#302b27;
-}
-#arIOOverlay .arIOQuickRow[data-state="invalid"] .arIOQuickState{color:#ffcb9a}
-#arIOOverlay .arIOQuickRow .arIOQuickState{font-size:10px;line-height:1.25}
-#arIOOverlay .arIOQuickRow .arIOQuickStage{min-height:28px}
-#arIOOverlay .arIOQuickFooter{
-  background:#13242d;padding:9px 11px;margin:0;line-height:1.4;
-  font-size:10px;color:#9ec4d0;
-}
-#arIOOverlay .arIOJump{max-width:235px;width:235px}
-#arIOOverlay .arIOSimpleMain{
-  background:#162a35;border:1px solid #496675;padding:12px 13px;margin:0 0 9px;
-  color:#cfe3ec;
-}
-#arIOOverlay .arIOSimpleMain>strong{
-  color:#d7edf5;font:600 12px/1.3 "Segoe UI",sans-serif;
-}
-#arIOOverlay .arIOSimpleMain p{
-  margin:5px 0 11px;color:#9dbac9;line-height:1.35;font-size:10px;
-}
-#arIOOverlay .arIOSimpleMainRow{
-  display:grid;grid-template-columns:1fr 1fr;gap:12px;
-}
-#arIOOverlay .arIOSimpleMainField{display:flex;flex-direction:column;gap:6px}
-#arIOOverlay .arIOSimpleMainField>span{color:#84c8d8;font:600 10px/1.1 "Segoe UI",sans-serif}
-#arIOOverlay .arIOSimpleMainField>select{
-  width:100%;height:33px;min-width:0;padding:5px 8px;
-  background:#091c26;color:#deedf3;border:1px solid #548091;border-radius:3px;
-  font:11px/1.3 "Segoe UI",sans-serif;
-}
-#arIOOverlay .arIOSimpleMainField>select:disabled{opacity:.45}
-#arIOOverlay .arIOAdvancedMatrix{margin:7px 0}
-#arIOOverlay .arIOAdvancedMatrix>summary{
-  cursor:pointer;color:#95b5c3;background:#172a35;border:1px solid #415a66;
-  padding:8px 10px;font-size:10px;
-}
-#arIOOverlay .arIOAdvancedMatrix:not([open])>*:not(summary){display:none!important}
-@media(max-width:780px){
- #arIOOverlay .arIOWindow nav .btn-180{font-size:9px}
- #arIOOverlay .arIOQuickRow{
-  grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;
- }
- #arIOOverlay .arIOQuickRow .arIOQuickAction{grid-column:span 2}
- #arIOOverlay .arIOJump{width:180px;max-width:48%}
-}
-@media(max-height:700px){
- #arIOOverlay .arIOWindow{max-height:calc(100dvh - 12px)}
- #arIOOverlay .arIOBody{padding:6px 10px}
- #arIOOverlay .arIOAudioPath{grid-template-columns:repeat(4,minmax(0,1fr))}
- #arIOOverlay .arIOAudioPath>button{grid-column:span 2}
-}
+/* FIRST SOUND — narrow normal route, advanced pin matrix on explicit request */
+.arIODeviceMatrixDetails{margin:9px 0 0;background:#182630;border:1px solid #425c6b}
+.arIODeviceMatrixDetails>summary{cursor:pointer;padding:10px 13px;color:#b1cbd8;
+ font:500 11px/1.4 "ArSonMix Inter","Segoe UI",sans-serif}
+.arIODeviceMatrixDetails .arIODevicePatchMatrix{margin:0;border:0;border-top:1px solid #415767}
+.arIODeviceRouteNext{display:block;width:100%;margin:9px 0 0;
+ --b180-color:#a4e6dd;--b180-border:#389b89;--b180-ink:#123c37}
+.arIODeviceRouteNext:disabled{opacity:.5}
+.arIOQuickPatch .arIOQuickRow{min-height:55px}
+.arIOQuickPatch .arIOQuickGuide{font-size:11px;color:#bed8e4}
+.arIOQuickPatch .arIOQuickStage{min-width:80px!important}
+.arIOQuickRow[data-state="invalid"]{box-shadow:inset 3px 0 #e0a268}
+.arIOQuickRow[data-state="invalid"] .arIOQuickState{color:#f1c18e}
+.arIOQuickOutput{display:flex;flex-wrap:wrap;align-items:center;gap:13px;
+ padding:12px;background:#172a36;border:1px solid #496977}
+.arIOQuickOutput>strong{font-size:11px;font-weight:600;color:#d1e8ee}
+.arIOQuickOutput .arIOOutputRow{display:flex;align-items:center;gap:7px;margin:0}
+.arIOQuickOutput .arIOMainOutput{min-width:102px;height:31px;padding:3px 7px;
+ background:#102530;border:1px solid #618091;color:#e6f2f5}
+.arIOQuickOutput>small{color:#aec9d5;font-size:10px}
+@media(max-width:720px){.arIOQuickOutput>strong{flex-basis:100%}.arIOJump{max-width:52%}}
