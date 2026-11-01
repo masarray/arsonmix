@@ -216,7 +216,7 @@ check(html.includes('right:var(--master-w)!important') && html.includes('--chann
       'Plugin overlay and pinned Master use coherent single-width channel geometry');
 check(html.includes('.plugin-browser{position:absolute!important') && html.includes('margin-right:0!important') && html.includes('Floating Plugin Manager must never consume a mixer bank'),
       'Floating Manager is independent from bank width and never triggers channel resize');
-check(html.includes('function bankCapacity()') && html.includes('Math.floor(usable/minimum)') && html.includes('const DENSITY_WIDTH=Object.freeze({comfort:150,standard:125,compact:105})'),
+check(html.includes('function bankCapacity()') && html.includes('Math.floor((usable+2)/minimum)') && html.includes('const DENSITY_WIDTH=Object.freeze({comfort:150,standard:125,compact:105})'),
       'Bank slot count protects full VU/rail width with no bottom scrollbar');
 
 
