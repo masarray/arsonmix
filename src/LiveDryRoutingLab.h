@@ -3,8 +3,10 @@
 #include "../engine/core/PreparedMixerBlock.h"
 #include "../engine/core/MasterOutputMonoPolicy.h"
 #include "../engine/core/LiveChannelFxGraph.h"
+#include "../engine/core/DynamicChannelFxLeaseBank.h"
 #include "VstBusLayout.h"
 #include "../engine/core/NativeDryRouteCommand.h"
+#include "NativeVerifiedSourcePatch.h"
 #include "../engine/device/JuceActivePortSnapshot.h"
 #include "../engine/core/RealtimeRoutePublisher.h"
 #include "../engine/device/LiveInputPortRegistry.h"
@@ -132,12 +134,19 @@ public:
             return "Clear the active input patch before creating an unpatched session";
         if(active() && ready() && !hasExplicitRoute())return {};
         auto request=std::make_unique<juce::DynamicObject>();
+        // New silent sessions use typed v2 from the first callback so the
+        // operator can choose MONO/STEREO processing BEFORE a physical IN.
+        // Old saved v1 Shows remain readable by NativeDryRouteCommand.
+        request->setProperty("schemaVersion",2);
         request->setProperty("deviceEpoch",static_cast<juce::int64>(epoch()));
         request->setProperty("revision",static_cast<juce::int64>(revision()));
         juce::Array<juce::var> channels;
         for(int i=0;i<count;++i) {
             auto row=std::make_unique<juce::DynamicObject>();
             row->setProperty("mode","NONE");
+            row->setProperty("sourceKind","NONE");
+            row->setProperty("sourceFormat","NONE");
+            row->setProperty("channelFormat","STEREO");
             row->setProperty("left",-1);
             row->setProperty("right",-1);
             row->setProperty("gain",0.25);
@@ -411,6 +420,11 @@ public:
                 // displays an acknowledged immutable copy; draft changes
                 // never update this until graph publication succeeds.
                 acceptedRoute_=explicitSelection?command:juce::var();
+                // Retain the REAL prepared (possibly UNPATCHED/SILENT) M4
+                // input topology so a single native SOURCE selection can
+                // compile the first mono route. No UI draft is authoritative.
+                sourceTemplate_=command;
+                acceptedFxSelections_=selections;
                 // Release-store only AFTER a valid immutable graph publishes.
                 // Even if OUTPUT is mistakenly armed, unpatched renders never
                 // enter ANY channel/master vendor DSP or produce sound.
@@ -486,6 +500,207 @@ public:
         return {};
     }
 
+    // A source changing from NONE to MONO/STEREO needs a new prepared
+    // topology. A source changing physical pin within the same format uses
+    // the existing zero-heap atomic source switch above. Both cases are
+    // handled through ONE native command and ONE ACK, not GUI APPLY wizard.
+    // All heavy preparation/reuse and deep cloning happen on message thread.
+    juce::String repatchPhysicalSource(int strip,std::uint64_t expectedEpoch,
+            std::uint64_t expectedRevision,const juce::String& mode,
+            int physicalLeft,int physicalRight,bool directPermitted,
+            bool independentClock,int occupiedCh1Fx,
+            juce::AudioPluginFormatManager& formats,double sampleRate,
+            int deviceFrames)
+    {
+        if(!ready() || !registryValid_.load(std::memory_order_acquire) ||
+           topologyFault_.load(std::memory_order_acquire) ||
+           expectedEpoch!=epoch() || expectedRevision!=revision() ||
+           !sourceTemplate_.isObject())
+            return "SOURCE: native device, graph or accepted template stale";
+        const auto sourceRows=sourceTemplate_.getProperty("channels",juce::var());
+        const auto* rows=sourceRows.getArray();
+        if(!rows || strip<0 || strip>=count || rows->size()!=count)
+            return "SOURCE: target channel unavailable";
+        // Preserve the proven live-safe atomic path for an already scheduled
+        // channel. Never force a vendor graph rebuild for ordinary pin moves.
+        if(hasExplicitRoute() &&
+           rows->getReference(strip).getProperty("mode",{}).toString()==mode)
+            return switchPhysicalSource(strip,expectedEpoch,expectedRevision,
+                                        mode,physicalLeft,physicalRight);
+        const int available=portCount_.load(std::memory_order_acquire);
+        if(available<=0||available>armix::device::LiveInputPortRegistry::limit)
+            return "SOURCE: driver did not verify active capture pins";
+        std::array<int,armix::device::LiveInputPortRegistry::limit> pins{};
+        for(int i=0;i<available;++i)
+            pins[i]=enabledPorts_[i].load(std::memory_order_relaxed);
+        juce::var staged;
+        const auto error=armix::mixer::NativeVerifiedSourcePatch::prepare(
+            sourceTemplate_,strip,mode,physicalLeft,physicalRight,
+            {pins.data(),static_cast<std::size_t>(available)},
+            expectedEpoch,expectedRevision,staged);
+        if(error.isNotEmpty())return error;
+        return publishRevisedTopology(staged,expectedEpoch,expectedRevision,
+             directPermitted,independentClock,occupiedCh1Fx,formats,
+             sampleRate,deviceFrames);
+    }
+
+    // One-click channel OUT and format: the existing native M4 routing/FX
+    // graph is the sole PCM owner. Prepare OUT/format on the JUCE control
+    // thread, then publish with exactly the same epoch/VST3 lease/Show
+    // rollback transaction as SOURCE. No device restart or UI-side routing.
+    juce::String repatchChannelStructure(int strip,
+            std::uint64_t expectedEpoch,std::uint64_t expectedRevision,
+            const juce::String& operation,const juce::String& requested,
+            bool directPermitted,bool independentClock,int occupiedCh1Fx,
+            juce::AudioPluginFormatManager& formats,double sampleRate,
+            int deviceFrames) {
+        if(!ready()||!registryValid_.load(std::memory_order_acquire)||
+           topologyFault_.load(std::memory_order_acquire)||
+           epoch()!=expectedEpoch||revision()!=expectedRevision||
+           !sourceTemplate_.isObject())
+            return "CHANNEL PATCH: native device or graph is stale";
+        if(strip<0||strip>=count)
+            return "CHANNEL PATCH: invalid native channel";
+        // This preserves all source pins, AUX taps, master and monitor
+        // destinations, original VST3 vendor state and all other channels.
+        auto staged=juce::JSON::parse(juce::JSON::toString(sourceTemplate_,false));
+        if(!staged.isObject())return "CHANNEL PATCH: cannot clone accepted graph";
+        auto rows=staged.getProperty("channels",juce::var());
+        auto* list=rows.getArray();
+        if(!list||list->size()!=count||
+           !list->getReference(strip).isObject())
+            return "CHANNEL PATCH: no accepted channel row";
+        auto* row=list->getReference(strip).getDynamicObject();
+        if(operation=="SET_PRIMARY_OUT") {
+            if(requested!="MAIN"&&requested!="NONE")
+                return "CHANNEL PATCH: only MAIN and NONE are installed M4 outputs";
+            row->setProperty("main",requested=="MAIN");
+        } else if(operation=="SET_PROCESSING_FORMAT") {
+            if(requested!="MONO"&&requested!="STEREO")
+                return "CHANNEL PATCH: processing format must be MONO or STEREO";
+            const auto schema=staged.getProperty("schemaVersion",juce::var());
+            if(!schema.isInt() || static_cast<int>(schema)!=2)
+                return "CHANNEL PATCH: typed processing format requires native schema v2";
+            row->setProperty("channelFormat",requested);
+        } else return "CHANNEL PATCH: unsupported graph operation";
+        return publishRevisedTopology(staged,expectedEpoch,expectedRevision,
+             directPermitted,independentClock,occupiedCh1Fx,formats,
+             sampleRate,deviceFrames);
+    }
+
+    // Operator one-action AUX send connection: prepare a real parallel
+    // edge in the SAME M4 graph that owns the channel VST3/AUX rack.
+    // The recipient must already own a genuine prepared effect. An empty
+    // AUX summed into MAIN doubles the dry path and is rejected.
+    juce::String connectPreparedAuxSend(int source,int bus,
+            std::uint64_t expectedEpoch,std::uint64_t expectedRevision,
+            armix::mixer::SendTap tap,float gain,float pan,
+            bool directPermitted,bool independentClock,int occupiedCh1Fx,
+            juce::AudioPluginFormatManager& formats,double sampleRate,
+            int deviceFrames) {
+        if(!hasExplicitRoute()||!ready()||!registryValid_.load(std::memory_order_acquire)||
+           epoch()!=expectedEpoch||revision()!=expectedRevision||
+           topologyFault_.load(std::memory_order_acquire)||
+           source<0||source>=count||bus<0||bus>=auxCount||
+           (tap!=armix::mixer::SendTap::preFader&&
+            tap!=armix::mixer::SendTap::postFader)||
+           !std::isfinite(gain)||gain<0.f||gain>1.f||
+           !std::isfinite(pan)||pan< -1.f||pan>1.f)
+            return "AUX CONNECT: invalid source, send or stale native graph";
+        const auto* old=publisher_.controlPrepared(expectedEpoch,expectedRevision);
+        if(!old||old->insertsOn(count+bus)<=0)
+            return "AUX CONNECT: insert a real effect on AUX first; an empty return doubles dry MAIN";
+        auto staged=juce::JSON::parse(juce::JSON::toString(sourceTemplate_,false));
+        if(!staged.isObject())return "AUX CONNECT: accepted topology unavailable";
+        const auto lanes=staged.getProperty("channels",juce::var());
+        const auto* sources=lanes.getArray();
+        if(!sources||sources->size()!=count||
+           sources->getReference(source).getProperty("mode","NONE").toString()=="NONE")
+            return "AUX CONNECT: select a verified physical source first";
+        auto aux=staged.getProperty("auxes",juce::var());
+        if(aux.isVoid()) {
+            juce::Array<juce::var> defaults;
+            for(int b=0;b<auxCount;++b) {
+                auto row=std::make_unique<juce::DynamicObject>();
+                row->setProperty("enabled",false);
+                row->setProperty("main",true);
+                row->setProperty("mute",false);
+                row->setProperty("gain",1.0);
+                defaults.add(juce::var(row.release()));
+            }
+            staged.getDynamicObject()->setProperty("auxes",juce::var(defaults));
+            aux=staged.getProperty("auxes",juce::var());
+        }
+        auto* auxes=aux.getArray();
+        if(!auxes||auxes->size()!=auxCount)return "AUX CONNECT: corrupt return roster";
+        auto* returnRow=auxes->getReference(bus).getDynamicObject();
+        if(!returnRow)return "AUX CONNECT: invalid return";
+        if(!static_cast<bool>(returnRow->getProperty("enabled"))) {
+            returnRow->setProperty("enabled",true);
+            returnRow->setProperty("main",true); // one-click parallel effect to MAIN
+        }
+        auto rawSends=staged.getProperty("sends",juce::var());
+        if(rawSends.isVoid()) {
+            staged.getDynamicObject()->setProperty("sends",
+                juce::var(juce::Array<juce::var>{}));
+            rawSends=staged.getProperty("sends",juce::var());
+        }
+        auto* sendRows=rawSends.getArray();
+        if(!sendRows)return "AUX CONNECT: invalid accepted sends";
+        juce::DynamicObject* existing=nullptr;
+        for(auto& item:*sendRows) {
+            if(static_cast<int>(item.getProperty("from",-1))==source &&
+               static_cast<int>(item.getProperty("to",-1))==count+bus) {
+                existing=item.getDynamicObject();
+                if(!existing)return "AUX CONNECT: invalid existing edge";
+                break;
+            }
+        }
+        if(!existing) {
+            if(sendRows->size()>=armix::mixer::maxChannelSends)
+                return "AUX CONNECT: send capacity exhausted";
+            auto row=std::make_unique<juce::DynamicObject>();
+            existing=row.get();
+            sendRows->add(juce::var(row.release()));
+        }
+        existing->setProperty("from",source);
+        existing->setProperty("to",count+bus);
+        existing->setProperty("tap",tap==armix::mixer::SendTap::preFader?"PRE":"POST");
+        existing->setProperty("gain",static_cast<double>(gain));
+        existing->setProperty("pan",static_cast<double>(pan));
+        return publishRevisedTopology(staged,expectedEpoch,expectedRevision,
+            directPermitted,independentClock,occupiedCh1Fx,formats,
+            sampleRate,deviceFrames);
+    }
+
+    // Both SOURCE and channel structure edits share one graph compiler,
+    // VST3 lease policy and rollback path. Keep fast faders/pan/mute/solo
+    // on their separate atomic parameter path without any compilation.
+    juce::String publishRevisedTopology(juce::var& staged,
+            std::uint64_t expectedEpoch,std::uint64_t expectedRevision,
+            bool directPermitted,bool independentClock,int occupiedCh1Fx,
+            juce::AudioPluginFormatManager& formats,double sampleRate,
+            int deviceFrames) {
+        auto stagedRows=staged.getProperty("channels",juce::var());
+        auto* editable=stagedRows.getArray();
+        if(!editable||editable->size()!=count)
+            return "CHANNEL PATCH: malformed native topology";
+        for(int i=0;i<count;++i) {
+            auto* row=editable->getReference(i).getDynamicObject();
+            if(!row)return "CHANNEL PATCH: missing native channel";
+            const auto& c=channelEdits_[i];
+            row->setProperty("gain",static_cast<double>(c.linear));
+            row->setProperty("pan",static_cast<double>(c.pan));
+            row->setProperty("mute",c.mute);
+            row->setProperty("solo",c.solo);
+        }
+        if(expectedEpoch!=epoch()||expectedRevision!=revision()||
+           !registryValid_.load(std::memory_order_acquire))
+            return "CHANNEL PATCH: device changed; previous mix preserved";
+        return apply(staged,directPermitted,independentClock,occupiedCh1Fx,
+                     acceptedFxSelections_,formats,sampleRate,deviceFrames,true);
+    }
+
     // Native live control path. Only the JUCE message thread writes. No
     // graph recompilation, VST3 instantiation or callback detach.
     // Browser carries the exact acknowledged route token to reject stale
@@ -516,12 +731,15 @@ public:
         return true;
     }
 
-    // Operator M1: one POST gain is a realtime PARAMETER, never topology.
-    // The accepted send identity must exist and match THIS device epoch.
+    // Real AUX FX RETURN: one existing PRE or POST send has an independent
+    // realtime level. The tap/destination/edge identity are immutable here.
+    // A single render of source PCM, vendor VST, and AUX return remains
+    // authoritative on the installed JUCE callback.
     // The UI may adjust it while physical output is ARMED; no new plugin,
     // graph, callback or device restart occurs.
     bool setAuxSendGain(int source,int bus,std::uint64_t expectedEpoch,
-                        std::uint64_t expectedRevision,float gain) noexcept {
+                        std::uint64_t expectedRevision,float gain,
+                        armix::mixer::SendTap tap=armix::mixer::SendTap::postFader) noexcept {
         if(source<0||source>=count||bus<0||bus>=auxCount||
            !std::isfinite(gain)||gain<0.f||gain>1.f||
            !ready()||!hasExplicitRoute()||
@@ -533,14 +751,15 @@ public:
         for(auto& item:*list) {
             if(static_cast<int>(item.getProperty("from",-1))==source &&
                static_cast<int>(item.getProperty("to",-1))==count+bus &&
-               item.getProperty("tap",{}).toString()=="POST") {
+               item.getProperty("tap",{}).toString()==
+                   (tap==armix::mixer::SendTap::preFader?"PRE":"POST")) {
                 accepted=&item;break;
             }
         }
         if(!accepted)return false; // No implicit creation of an AUX edge.
         if(!publisher_.updateActiveControl(expectedEpoch,expectedRevision,
            [&](FxGraph& fx) noexcept {
-               return fx.setAuxSendGain(source,bus,gain);
+               return fx.setAuxSendGain(source,bus,tap,gain);
            }))return false;
         accepted->getDynamicObject()->setProperty("gain",static_cast<double>(gain));
         return true;
@@ -563,6 +782,79 @@ public:
             return false;
         if(auto* obj=(*arr)[bus].getDynamicObject())
             obj->setProperty("gain",static_cast<double>(gain));
+        return true;
+    }
+
+    // Independent physical MONITOR/CUE bus: control only changes one
+    // existing send's target. PRE/POST AUX and MAIN VST PCM remain unchanged.
+    // If no verified distinct MONITOR output pair exists, reject.
+    bool setMonitorSendGain(int source,std::uint64_t expectedEpoch,
+                            std::uint64_t expectedRevision,float gain) noexcept {
+        if(source<0||source>=fxSlots||!std::isfinite(gain)||
+           gain<0.f||gain>1.f||!hasExplicitRoute()||
+           expectedEpoch!=epoch()||expectedRevision!=revision())
+            return false;
+        auto gains=acceptedRoute_.getProperty("monitorSends",juce::var());
+        auto* array=gains.getArray();
+        const auto* current=publisher_.controlPrepared(expectedEpoch,expectedRevision);
+        if(!array||array->size()!=fxSlots||!current||
+           !current->monitorEnabled())return false;
+        if(!publisher_.updateActiveControl(expectedEpoch,expectedRevision,
+            [&](FxGraph& fx) noexcept {
+                return fx.setMonitorSendGain(source,gain);
+            }))return false;
+        array->set(source,static_cast<double>(gain)); // same accepted topology
+        return true;
+    }
+
+    // M5 native ChannelId VST3 migration: capture actual current M4 vendor
+    // processor LEASES, not catalog names or copied binary state. The writer
+    // must hold these control-owned leases within its new published dynamic
+    // PCM snapshot until final callback retirement. No callback activity,
+    // device reopen, preset restoration or rack instantiation occurs here.
+    // The host's special legacy CH1 external chain remains a SEPARATE lease;
+    // do not cut over a loaded external CH1 graph without transferring it.
+    bool captureDynamicFxLeases(
+            std::uint64_t expectedEpoch,std::uint64_t expectedRevision,
+            std::span<const armix::mixer::ChannelId> laneIds,
+            armix::mixer::DynamicChannelFxLeaseBank& destination,
+            juce::String& error) const {
+        using Bank=armix::mixer::DynamicChannelFxLeaseBank;
+        if(laneIds.size()!=static_cast<std::size_t>(fxSlots) ||
+           !hasExplicitRoute() || !ready() ||
+           expectedEpoch!=epoch() || expectedRevision!=revision()) {
+            error="M5: native epoch/revision or 10CH+4AUX FX roster stale";
+            return false;
+        }
+        const FxGraph* current=publisher_.controlPrepared(expectedEpoch,expectedRevision);
+        if(!current) {
+            error="M5: no current M4 prepared vendor FX graph";
+            return false;
+        }
+        std::vector<Bank::Assignment> staged;
+        staged.reserve(fxSlots);
+        for(int lane=0;lane<fxSlots;++lane) {
+            Bank::Assignment slot;
+            // Mono input is projected into the prepared stereo plugin rack;
+            // the actual negotiated M4 VST is always stereo. The native
+            // ChannelId PCM renderer owns mono pan law before GROUP sends.
+            const auto format=armix::mixer::ProcessingFormat::stereo;
+            if(!Bank::captureLegacy(lane,laneIds[static_cast<std::size_t>(lane)],
+                                    format,*current,slot)) {
+                error="M5: failed to retain M4 VST3 token for lane "+
+                      juce::String(lane);
+                return false;
+            }
+            staged.push_back(std::move(slot));
+        }
+        const auto fault=Bank::prepare(expectedEpoch,expectedRevision,staged,
+                                      destination);
+        if(fault!=Bank::Fault::none) {
+            error="M5: ChannelId VST lease migration rejected, fault "+
+                  juce::String(static_cast<int>(fault));
+            return false;
+        }
+        error.clear();
         return true;
     }
 
@@ -641,6 +933,8 @@ public:
         fxCount_.store(0,std::memory_order_relaxed);
         fxReused_.store(0,std::memory_order_relaxed);
         acceptedRoute_=juce::var(); // control-thread STOP only
+        sourceTemplate_=juce::var();
+        acceptedFxSelections_=FxSelections{};
         for(auto& n:auxFxNames_)n.clear();
         for(auto& p:channelPeaks_)p.store(0.f,std::memory_order_relaxed);
         for(auto& p:channelPeaksL_)p.store(0.f,std::memory_order_relaxed);
@@ -893,7 +1187,9 @@ public:
         out->setProperty("auxFxNames",juce::var(auxNames));
         out->setProperty("auxPeaks",juce::var(auxPeaks));
         out->setProperty("fxReused",fxReused_.load(std::memory_order_relaxed));
-        // Only the message thread calls status(), never the audio callback.
+        // Control-thread snapshot; the existing channelControls property
+        // below is the single authoritative atomic-target readback, while
+        // acceptedRoute remains the immutable topology of the same revision.
         if(active() && ready())out->setProperty("acceptedRoute",acceptedRoute_);
         juce::Array<juce::var> liveFxInstances;
         const auto* prepared=hasExplicitRoute()
@@ -1000,6 +1296,8 @@ private:
     std::array<std::atomic<float>,auxCount> auxPeaks_{};
     std::atomic<int> auxCountActive_{0},auxSendCount_{0};
     juce::var acceptedRoute_; // native ACK only, no UI preview/localStorage truth
+    juce::var sourceTemplate_; // last prepared M4 template, including SILENT/NONE startup
+    FxSelections acceptedFxSelections_{}; // CONTROL ONLY: original VST3 identity for FX reuse
     // All data shared between JUCE device lifecycle and GUI/control reads
     // are atomic; the callback never enumerates masks or channel names.
     std::array<std::atomic<int>,armix::device::LiveInputPortRegistry::limit> enabledPorts_{};

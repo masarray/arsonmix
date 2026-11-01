@@ -44,6 +44,9 @@ struct LegacyMigratedGraph final {
         32u*1024u*1024u,8u,static_cast<std::size_t>(maxChannelSends+maxAuxSends+2)}};
     DynamicPreparedMixerBlock pcm{};
     LegacyChannelIds ids{};
+    // Exact verified physical SOURCE request, preserved for a single native
+    // admission. Never reconstruct callback port ordinals from a GUI draft.
+    DynamicGraphRequest request{};
     std::uint64_t revision=0;
 };
 
@@ -187,6 +190,7 @@ public:
                                                next.pcm,error.dynamic)){
             error.fault=LegacyMigrationFault::invalidDynamicGraph;return false;
         }
+        next.request=std::move(request);
         next.revision=next.roster.revision();
         destination=std::move(next); // publish only after caller's native MUTE/epoch ACK
         return true;
