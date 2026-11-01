@@ -315,6 +315,10 @@ async def main():
         assert await page.locator('.arIODevicePatchMatrix').evaluate('(e)=>e.open')
         # Details toggle is asynchronous; rendering the costly matrix only
         # AFTER toggle is intentional, not a race to be hidden by time.sleep.
+        await page.locator('.arIODeviceDirectMatrix > summary').wait_for(state='visible')
+        # Matrix itself is an opt-in nested inspector; its individual cells
+        # must be visible only after expanding that native crosspoint layer.
+        await page.locator('.arIODeviceDirectMatrix > summary').click()
         await page.locator('.arIODevicePatchMatrix .arIOMatrixCell').first.wait_for(state='visible')
         assert await page.locator('.arIODevicePatchMatrix .arIOMatrixCell').count()>0
         # FAST3 source one-gesture has already completed an ARM ACK above.
