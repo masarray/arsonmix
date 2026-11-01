@@ -306,6 +306,32 @@ public:
                             lane,ep,m4Revision,key,control);
                         if(!accepted)error="NATIVE_CONTROL_REJECTED";
                     }
+                } else if(operation=="SET_SEND_LEVEL") {
+                    // Existing PRE/POST AUX edge: realtime gain target only.
+                    // No new bus, VST3 instance, graph rebuild or driver stop.
+                    const auto bus=payload.getProperty("auxIndex",{});
+                    const auto level=payload.getProperty("value",{});
+                    const auto tap=payload.getProperty("tap","POST").toString();
+                    if(!bus.isInt() || static_cast<int>(bus)<0 ||
+                       static_cast<int>(bus)>=armix::mixer::auxBusCount)
+                        error="INVALID_AUX_RETURN";
+                    else if(tap!="PRE"&&tap!="POST")
+                        error="INVALID_SEND_TAP";
+                    else if(!level.isInt()&&!level.isDouble())
+                        error="INVALID_SEND_GAIN";
+                    else {
+                        const double value=static_cast<double>(level);
+                        if(!std::isfinite(value)||value<0.||value>1.)
+                            error="INVALID_SEND_GAIN";
+                        else {
+                            accepted=engine.setDryRoutingLabAuxSendGain(
+                                lane,static_cast<int>(bus),ep,m4Revision,
+                                static_cast<float>(value),
+                                tap=="PRE"?armix::mixer::SendTap::preFader:
+                                           armix::mixer::SendTap::postFader);
+                            if(!accepted)error="NATIVE_SEND_NOT_ADMITTED";
+                        }
+                    }
                 } else if(operation=="CONNECT_AUX_SEND") {
                     const auto bus=payload.getProperty("auxIndex",{});
                     const auto tapName=payload.getProperty("tap","POST").toString();
