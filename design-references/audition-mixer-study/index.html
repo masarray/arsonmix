@@ -1771,7 +1771,7 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
     </details>
   </div>
   <main class="console-pane">
-    <div class="mixer-title"><span class="accent"></span><span class="panel-name">Live Mixer</span><span class="panel-sub">▤</span><span class="wire-legend" id="wireLegend" aria-live="polite">WIRE · CH01 → click arrows below FX</span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
+    <div class="mixer-title"><span class="accent"></span><span class="panel-name">Live Mixer</span><span class="panel-sub">▤</span><label class="wire-mode-label" for="wireMode">WIRE</label><select class="wire-mode-select" id="wireMode" title="Signal routing: FL-style post-fader or independent pre-FX source" aria-label="Wire routing mode"><option value="send">Follow Fader</option><option value="split">Independent (Pre FX)</option></select><button class="wire-master" id="wireMaster" type="button" title="Toggle direct source feed to Master" aria-pressed="true">MAIN ON</button><span class="wire-legend" id="wireLegend" aria-live="polite">CH01 · click destination arrows</span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
     <section class="console-body collapsed-send" data-density="comfort" aria-label="Live mixing console">
       <aside class="section-rail" aria-label="Mixer section icons">
         <div class="rail-cell identity" title="Channel identity">CH</div>
@@ -1850,14 +1850,14 @@ function savePluginPreferences(){
  }));}catch(error){/* Manager still works without browser storage. */}
 }
 const tracksEl=document.getElementById('tracks'),masterEl=document.getElementById('master'),info=document.getElementById('info');
-let nextId=1,nextGroup=1,tracks=[],master,preview=false,meterFrame=0,lastTick=0,clipboard=null,scenes=[],sofEnabled=false,sofTarget="Bus A",wireSourceId=1;
+let nextId=1,nextGroup=1,tracks=[],master,preview=false,meterFrame=0,lastTick=0,clipboard=null,scenes=[],sofEnabled=false,sofTarget="Bus A",wireSourceId=1,wireEdges=[],nextWireId=1,wireMode='send';
 const clone=x=>JSON.parse(JSON.stringify(x));
 const selection=()=>tracks.concat(master).filter(t=>t.selected);
 const make=(name,kind,color)=>{
  const id=nextId++;
  return {id,name,kind,color,icon:kind==='master'?'◎':kind==='bus'?'⊞':kind==='fx'?'◉':'♩',group:null,safe:false,format:'stereo',input:'None',output:kind==='master'?'Default Output':'Master',fx:Array(8).fill('None'),slotBypass:Array(8).fill(false),fxOn:true,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,activeSend:0,sendSlots:Array.from({length:16},()=>({send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0})),eq:true,pan:0,trim:0,mute:false,solo:false,cue:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
 };
-function init(){nextId=1;nextGroup=1;wireSourceId=1;tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
+function init(){nextId=1;nextGroup=1;wireSourceId=1;wireEdges=[];nextWireId=1;wireMode='send';document.getElementById('wireMode').value='send';tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const option=(values,selected)=>values.map(x=>'<option value="'+escapeHtml(x)+'"'+(x===selected?' selected':'')+'>'+escapeHtml(x)+'</option>').join('');
 // DEMO mult is a source binding, not a Group sum or copied JS audio engine.
@@ -1906,13 +1906,55 @@ function sectionFx(t){
  }
  return out+'</div></div>';
 }
+
+/* V12 wire graph is independent of receiver IN; multiple send sources may sum.
+   This is a GUI reference edge model, NOT native PCM/GraphRevision admission. */
+function wireFor(src,dst){return wireEdges.find(e=>e.sourceId===src&&e.destId===dst&&e.enabled);}
+function outgoingWires(id){return wireEdges.filter(e=>e.enabled&&e.sourceId===id);}
+function wireOutgoingCount(id){return outgoingWires(id).length+tracks.filter(t=>parseSplitSource(t.input)?.sourceId===id&&!wireFor(id,t.id)).length;}
+function wireIsCycle(sourceId,destId){
+ if(sourceId===destId)return true;
+ const visited=new Set(),stack=[destId];
+ while(stack.length){
+  const id=stack.pop();if(id===sourceId)return true;
+  if(visited.has(id))continue;visited.add(id);
+  for(const edge of wireEdges)if(edge.enabled&&edge.sourceId===id)stack.push(edge.destId);
+  for(const track of tracks)if(parseSplitSource(track.input)?.sourceId===id)stack.push(track.id);
+  const track=tracks.find(t=>t.id===id);
+  if(track&&track.kind!=='master'){
+   const output=tracks.find(t=>t.name===track.output&&(t.kind==='bus'||t.kind==='fx'));
+   if(output)stack.push(output.id);
+   if(track.kind==='bus')for(const slot of track.sendSlots)if(slot.sendOn){
+    const downstream=tracks.find(t=>t.name===slot.send);
+    if(downstream)stack.push(downstream.id);
+   }
+  }
+ }
+ return false;
+}
+function wireConnect(source,dest){
+ if(!source||source.kind!=='audio'||!dest||dest.kind==='master'||source.id===dest.id)return false;
+ const old=wireFor(source.id,dest.id);
+ if(old){wireEdges=wireEdges.filter(e=>e.id!==old.id);render();say('WIRE removed '+source.name+' → '+dest.name+' · GUI DEMO');return true;}
+ if(wireIsCycle(source.id,dest.id)){say('WIRE REJECTED: feedback loop · existing signal graph preserved');return false;}
+ wireEdges.push({id:nextWireId++,sourceId:source.id,destId:dest.id,mode:wireMode,levelDb:0,enabled:true});
+ render();say('WIRE '+source.name+' → '+dest.name+' · '+(wireMode==='send'?'FOLLOW FADER SEND':'INDEPENDENT PRE FX')+' · DEMO ONLY · no native PCM');
+ return true;
+}
+function wireDbText(db){return db<=-60?'−∞':(db>0?'+':'')+Number(db).toFixed(0)+' dB';}
+function wireGainPercent(db){return Math.max(0,Math.min(100,(Number(db)+60)/66*100));}
 function wireTray(t){
  const source=tracks.find(x=>x.id===wireSourceId&&x.kind==='audio');
  const isSource=!!source&&source.id===t.id;
- const link=parseSplitSource(t.input),connected=!!(source&&t.kind==='audio'&&link?.sourceId===source.id);
- const canWire=!!(source&&t.kind==='audio'&&!isSource);
- const label=!source?'NO SOURCE':isSource?'SOURCE':t.kind!=='audio'?'AUX/MAIN':connected?'CONNECTED':'CONNECT';
- return '<div class="wire-tray"><button type="button" class="wire-socket'+(isSource?' is-source':'')+(connected?' is-linked':'')+'" data-action="wireRoute" aria-pressed="'+connected+'" aria-label="'+escapeHtml(t.name)+' · '+label+'" title="'+escapeHtml(label+(source?' · from '+source.name:'')+' · GUI only')+'" '+(canWire?'':'disabled')+'><span class="wire-arrow" aria-hidden="true">'+(isSource?'▼':connected?'◆':'△')+'</span><span class="wire-label">'+(isSource?'SOURCE':connected?'LINKED':t.kind==='audio'?'WIRE':t.kind==='master'?'MAIN':'BUS')+'</span></button></div>';
+ const edge=source?wireFor(source.id,t.id):null,linked=!!edge;
+ const canWire=!!(source&&t.kind!=='master'&&!isSource);
+ const label=!source?'NO SOURCE':isSource?'SOURCE':t.kind==='master'?'MAIN':linked?'CONNECTED':'CONNECT';
+ const icon=isSource?'▼':linked?'◆':'△';
+ let controls='<button type="button" class="wire-socket'+(isSource?' is-source':'')+(linked?' is-linked':'')+'" data-action="wireRoute" aria-pressed="'+linked+'" aria-label="'+escapeHtml(t.name)+' · '+label+'" title="'+escapeHtml(label+' · '+(linked?(edge.mode==='send'?'Post-fader Send':'Pre FX Mult'):'Click to wire')+' · demo only')+'" '+(canWire?'':'disabled')+'><span class="wire-arrow" aria-hidden="true">'+icon+'</span><span class="wire-label">'+(isSource?'SOURCE':linked?'LINKED':t.kind==='master'?'MAIN':t.kind==='audio'?'WIRE':'BUS')+'</span></button>';
+ if(linked){
+  controls+='<label class="wire-pot" title="'+escapeHtml(source.name+' → '+t.name+' · '+wireDbText(edge.levelDb))+'"><input class="wire-gain" type="range" min="-60" max="6" step="1" value="'+edge.levelDb+'" data-field="wireGain" data-wire-id="'+edge.id+'" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%" aria-label="Wire send level '+escapeHtml(source.name)+' to '+escapeHtml(t.name)+'"></label><button type="button" class="wire-disconnect" data-action="wireRemove" title="Disconnect '+escapeHtml(source.name)+' → '+escapeHtml(t.name)+'" aria-label="Disconnect '+escapeHtml(t.name)+' from '+escapeHtml(source.name)+'">×</button>';
+ }
+ return '<div class="wire-tray'+(linked?' linked':'')+'">'+controls+'</div>';
 }
 function sectionSend(t){
  if(t.kind==='master'||t.kind==='fx')return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><span class="sendtag">No Sends</span></div>'+wireTray(t)+'</div>';
@@ -1940,7 +1982,7 @@ function sectionFader(t){
 function strip(t){
  let code='<article class="strip '+t.kind+(t.selected?' selected':'')+'" data-id="'+t.id+'" style="--track-color:'+t.color+';--ch:'+t.color+'" aria-label="'+escapeHtml(t.name)+' channel">';
  code+='<button type="button" class="strip-identity-top" data-action="editIdentity" title="Double-click to edit channel identity · F2" aria-label="Double-click to edit '+escapeHtml(t.name)+' channel identity"><span class="identity-number">'+(t.kind==='master'?'MASTER':'CH '+String(t.id).padStart(2,'0'))+'</span><span class="identity-name">'+escapeHtml(t.name)+'</span><span class="identity-symbol" aria-hidden="true">'+escapeHtml(iconFor(t))+'</span></button>';
- code+='<div class="section route-section"><div class="route-top"><span class="route-indicator">'+(t.kind==='audio'?'▥':t.kind==='bus'?'↪':t.kind==='fx'?'∿':'➜')+'</span>'+(t.safe?'<span class="safe-marker" title="Snapshot safe · recall protected">SAFE</span>':'')+(t.group?'<span class="group-indicator" title="Linked group '+escapeHtml(t.group)+'">'+escapeHtml(t.group)+'</span>':'')+(t.kind==='audio'?'<button class="mini format-badge" data-action="format" title="Processing width M/ST (preserves physical input source)">'+(t.format==='mono'?'M':'ST')+'</button>':'')+(t.kind==='audio'&&splitFanout(t)?'<span class="split-count" title="GUI-only split destinations · no native PCM">⇢'+splitFanout(t)+'</span>':'')+'<button class="mini phase '+(t.phase?'on':'')+'" data-action="phase" title="Reverse polarity">'+(t.phase?'Ø':'⊘')+'</button></div>';
+ code+='<div class="section route-section"><div class="route-top"><span class="route-indicator">'+(t.kind==='audio'?'▥':t.kind==='bus'?'↪':t.kind==='fx'?'∿':'➜')+'</span>'+(t.safe?'<span class="safe-marker" title="Snapshot safe · recall protected">SAFE</span>':'')+(t.group?'<span class="group-indicator" title="Linked group '+escapeHtml(t.group)+'">'+escapeHtml(t.group)+'</span>':'')+(t.kind==='audio'?'<button class="mini format-badge" data-action="format" title="Processing width M/ST (preserves physical input source)">'+(t.format==='mono'?'M':'ST')+'</button>':'')+(t.kind==='audio'&&wireOutgoingCount(t.id)?'<span class="split-count" title="GUI-only routing destinations · no native PCM">⇢'+wireOutgoingCount(t.id)+'</span>':'')+'<button class="mini phase '+(t.phase?'on':'')+'" data-action="phase" title="Reverse polarity">'+(t.phase?'Ø':'⊘')+'</button></div>';
  if(t.kind==='audio')code+='<div class="route-field"><span class="route-caption">IN</span><select class="route-select" data-field="input" title="Input source (demo choices)" aria-label="'+escapeHtml(t.name)+' input">'+option(channelOptions(t,'input'),t.input)+'</select></div>';
  else if(t.kind==='bus'||t.kind==='fx')code+='<div class="route-field"><span class="route-caption">IN</span><span class="route-identity">'+(t.kind==='bus'?'GROUP':'FX RETURN')+'</span></div>';
  else code+='<div class="route-field"><span class="route-caption">IN</span><span class="route-identity">SUM BUS</span></div>';
