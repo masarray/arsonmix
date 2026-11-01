@@ -134,12 +134,19 @@ public:
             return "Clear the active input patch before creating an unpatched session";
         if(active() && ready() && !hasExplicitRoute())return {};
         auto request=std::make_unique<juce::DynamicObject>();
+        // New silent sessions use typed v2 from the first callback so the
+        // operator can choose MONO/STEREO processing BEFORE a physical IN.
+        // Old saved v1 Shows remain readable by NativeDryRouteCommand.
+        request->setProperty("schemaVersion",2);
         request->setProperty("deviceEpoch",static_cast<juce::int64>(epoch()));
         request->setProperty("revision",static_cast<juce::int64>(revision()));
         juce::Array<juce::var> channels;
         for(int i=0;i<count;++i) {
             auto row=std::make_unique<juce::DynamicObject>();
             row->setProperty("mode","NONE");
+            row->setProperty("sourceKind","NONE");
+            row->setProperty("sourceFormat","NONE");
+            row->setProperty("channelFormat","STEREO");
             row->setProperty("left",-1);
             row->setProperty("right",-1);
             row->setProperty("gain",0.25);
