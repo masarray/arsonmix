@@ -1180,6 +1180,69 @@ async def main():
         assert len(armed)==1 and armed[0]['data']['expectedEpoch']==31,armed
         assert armed[0]['data']['expectedRevision']==3,armed
         await qp.close()
+
+        # Field screenshot regression: one enabled VB-Cable/recording pin may
+        # ONLY be selected as mono. Do not fabricate a second R endpoint.
+        one=await browser.new_page(viewport={"width":1366,"height":768})
+        await one.add_init_script("""(() => {
+          const listeners={};
+          window.__armixTestActions=[];
+          window.__JUCE__={backend:{
+            addEventListener(name,fn){(listeners[name]??=[]).push(fn)},
+            emitEvent(name,data){window.__armixTestActions.push({name,data})}
+          }};
+          window.__armixTestEmit=(name,datum)=>(listeners[name]||[]).forEach(fn=>fn(datum));
+        })();""")
+        await one.goto((root/"web/index.html").as_uri())
+        await one.evaluate("""() => {
+          const channels=Array.from({length:10},()=>({
+            mode:'NONE',left:-1,right:-1,gain:.25,pan:0,main:true,
+            mute:false,solo:false,fxId:''}));
+          const auxes=Array.from({length:4},()=>({
+            enabled:false,gain:1,main:true,mute:false,fxId:''}));
+          const lab={active:true,ready:true,epoch:51,revision:3,
+            ports:[{port:0,label:'CABLE Output capture pin 1'}],
+            outputPorts:[0,1],
+            acceptedRoute:{deviceEpoch:51,channels,auxes,sends:[]}};
+          window.__armixTestEmit('arMixStatus',{
+            connected:true,directRouteAuthorized:true,driver:'Windows Audio',
+            rate:48000,buffer:480,monitor:false,masterMute:false,
+            chainCount:0,dryRoutingLab:lab});
+          window.__armixTestEmit('arMixAudioDeviceInventory',{
+            currentType:'Windows Audio',
+            active:{backend:'Windows Audio',
+              captureDevice:'CABLE Output (VB-Audio Virtual Cable)',
+              playbackDevice:'Realtek HD Audio 2nd output',open:true,
+              authorized:true,deviceGeneration:51,enabledInputs:[0],
+              enabledOutputs:[0,1],inputNames:['CABLE recording'],
+              outputNames:['Speakers L','Speakers R']},
+            types:[{name:'Windows Audio',active:true,separate:true,
+              inputs:['CABLE Output (VB-Audio Virtual Cable)'],
+              outputs:['Realtek HD Audio 2nd output']}]});
+        }""")
+        await one.locator('#audioSetupBtn').click()
+        assert await one.locator('.arIODevicePin').count()==3
+        assert 'MONO ONLY' in await one.locator('.arIOPinHeading').inner_text()
+        assert not await one.locator('.arIODevicePatchMatrix').evaluate('(e)=>e.open')
+        await one.locator('[data-io-tab="inputs"]').click()
+        assert await one.locator('[data-io-quick-row]:visible').count()==1
+        ch1=one.locator('[data-io-quick-row="0"]')
+        assert await ch1.locator('[data-io-quick-mode] option[value="STEREO"]').is_disabled()
+        await ch1.locator('[data-io-quick-mode]').select_option('MONO')
+        await ch1.locator('[data-io-quick-pin="left"]').select_option('0')
+        await ch1.locator('[data-io-quick-stage]').click()
+        sent=await one.evaluate("""() => window.__armixTestActions.filter(
+          x=>x.name==='arMixAction'&&x.data.action==='routingDryApply')""")
+        assert len(sent)==1,sent
+        assert sent[0]['data']['value']['channels'][0]['mode']=='MONO',sent
+        assert sent[0]['data']['value']['channels'][0]['left']==0,sent
+        assert sent[0]['data']['value']['channels'][0]['right']==-1,sent
+        # A pending routing command does not claim input PCM, MAIN sound, or
+        # output ARM. These require native acceptance and capture telemetry.
+        assert not await one.evaluate("""() => window.__armixTestActions.some(
+          x=>x.data?.action==='monitor'&&x.data.value===true)""")
+        await one.screenshot(path='audio-setup-one-pin-1366.png')
+        await one.close()
         await browser.close()
         print("PASS: G1/G2 + G3 real PRE/POST draft, AUX return, 0-gain bypass, native ACK/reject/revert, stable rack and 3 viewports")
 
