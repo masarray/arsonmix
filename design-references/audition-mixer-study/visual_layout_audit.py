@@ -40,8 +40,8 @@ def assert_geometry(page, label: str):
     result = page.evaluate("""() => {
       const pick = (selector) => document.querySelector(selector);
       const bounds = el => {
-        const {top, bottom, width, height} = el.getBoundingClientRect();
-        return {top, bottom, width, height};
+        const {left, right, top, bottom, width, height} = el.getBoundingClientRect();
+        return {left, right, top, bottom, width, height};
       };
       const sections = [
         ['route', '.route-section'], ['fx', '.fx-section'],
@@ -89,7 +89,7 @@ def assert_geometry(page, label: str):
       const masterRect = bounds(master);
       if (panel && !panel.hidden && bounds(panel).bottom > innerHeight + 1)
         issues.push('Plugin overlay exceeds viewport');
-      if (panel && !panel.hidden && bounds(panel).right > masterRect.top * 0 + masterRect.width + masterRect.left + 1)
+      if (panel && !panel.hidden && bounds(panel).right > masterRect.left + 1)
         issues.push('Plugin overlay covers pinned Master');
       return issues;
     }""")
