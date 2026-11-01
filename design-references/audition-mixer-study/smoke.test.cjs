@@ -29,8 +29,11 @@ check(node('master').innerHTML.includes('Master'),'pinned Master');
 node('copy').dispatch('click');node('addTrack').dispatch('click');node('paste').dispatch('click');
 check(node('info').textContent.includes('Pasted compatible'),'copy/paste');
 node('addFx').dispatch('click');check(node('trackCount').textContent.includes('1 FX return'),'FX Return creation');
+check(node('tracks').innerHTML.includes('FX 1'),'New FX Return is revealed on its bank immediately');
 filter('fx');check(count()===1,'FX Return filter');filter('all');
 node('addBus').dispatch('click');check(node('trackCount').textContent.includes('2 bus'),'Bus creation');
+check(node('tracks').innerHTML.includes('Bus B'),'New Bus is visible immediately, not selected offscreen');
+node('bankSelect').value='0';node('bankSelect').dispatch('change');
 field(15,'output','Bus A');check(node('info').textContent.includes('output → Bus A'),'bus route');
 field(11,'output','Bus B');check(node('info').textContent.includes('Routing rejected'),'feedback detection');
 field(1,'activeSend','S2');check(node('info').textContent.includes('Send 2'),'send slot switch');
@@ -449,5 +452,28 @@ check(html.includes('.console-body .section-rail .rail-cell.switch{') &&
  html.includes('flex:0 0 var(--switch-h)!important') &&
  html.includes('max-height:var(--switch-h)!important'),
  'V7 Chromium-caught M/S/C rail row cannot stretch from generic .switch flex:1');
+// V8 responsive geometry tests simulate actual element widths, not Chromium pixel QA.
+node('reset').dispatch('click');
+node('body').clientWidth=1366;node('rail').clientWidth=32;
+node('densitySelect').value='comfort';node('densitySelect').dispatch('change');
+check(count()===7,'Comfort 1366px reserves at least 150px per source and pinned MAIN');
+check(Math.abs(parseFloat(node('body').style.getPropertyValue('--channel-w'))-166.75)<0.02,
+ 'MAIN and source channel use one rail-adjusted width budget');
+node('densitySelect').value='standard';node('densitySelect').dispatch('change');
+check(count()===9,'Standard 1366px shows nine readable 125px+ strips');
+node('densitySelect').value='compact';node('densitySelect').dispatch('change');
+check(count()===10,'Compact 1366px shows ten 105px+ strips');
+node('densitySelect').value='comfort';node('densitySelect').dispatch('change');
+node('addTrack').dispatch('click');
+check(node('tracks').innerHTML.includes('Track 11') &&
+ node('bankSelect').value==='1','Add Audio reveals its new channel even when bank must change');
+check(html.includes('.console-body.collapsed-route .strip .route-section .route-field{display:none!important}') &&
+ html.includes('.console-body.collapsed-send .strip .send-section .sendlevel{display:none!important}') &&
+ html.includes('.console-body.collapsed-fx .strip .fxslot-list{display:none!important}'),
+ 'Collapse hides route/FX/Send contents despite high-specificity expanded CSS');
+check(html.includes('.console-body .section-rail .rail-cell.route{height:var(--route-h)!important') &&
+ html.includes('.console-body .section-rail .rail-cell.fx{height:var(--fx-h)!important') &&
+ html.includes('.console-body .section-rail .rail-cell.send{height:var(--send-h)!important'),
+ 'Route/FX/Send section rail and strips use identical physical height tokens');
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
