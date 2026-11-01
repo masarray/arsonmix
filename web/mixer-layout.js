@@ -203,10 +203,24 @@
   let draggingFx=null;
   // Numeric decimal wire identifiers are required by integration/ConsoleNativeContractV6.h.
   // Never downcast native 64-bit ChannelId, device epoch, or graph revision.
-  const decimal=v=>typeof v==='string'&&/^(0|[1-9][0-9]*)$/.test(v)?
-    v:(Number.isSafeInteger(v)&&v>=0?String(v):null);
+  // Wire uint64 identities are canonical decimal STRINGS, not JS numbers.
+  // Reject overflow and noncanonical aliases before BigInt comparisons.
+  const decimal=v=>typeof v==='string'&&/^(0|[1-9][0-9]*)$/.test(v)&&
+    BigInt(v)<=18446744073709551615n?v:null;
   const ge=(a,b)=>a!==null&&b!==null&&BigInt(a)>=BigInt(b);
-  const instance='v6';
+  // A reconnect must not replay the prior editor's request IDs. Retain a
+  // single session prefix for this WebView lifetime; each new WebView gets
+  // a cryptographically random prefix when secure randomness is available.
+  const instance=(()=>{
+    const bytes=new Uint8Array(16);
+    try{
+      window.crypto.getRandomValues(bytes);
+      return 'gui-'+Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
+    }catch{
+      return 'gui-'+Date.now().toString(36)+'-'+
+        Math.random().toString(36).slice(2,14);
+    }
+  })();
   let feedback='';
   const root=h('section','arV6Console');root.id='arV6Console';
   root.setAttribute('aria-label','ArSonMix universal operator console');
@@ -275,7 +289,7 @@
   }
   function sendIntent(op,id,payload){
     if(!can(op,id)){showFeedback('UNAVAILABLE · Native capability or channel authorization missing');return false}
-    const requestId=String(++requestSeq);
+    const requestId=instance+':'+String(++requestSeq);
     const command={requestId,deviceEpoch:accepted.device.epoch,
       baseGraphRevision:accepted.graph.revision,
       baseRosterRevision:accepted.graph.rosterRevision,
@@ -324,7 +338,7 @@
     const ids=new Set();
     for(const c of s.graph.channels){
       // JS numeric conversion corrupts 64-bit identities: reject such a wire.
-      if(!c||typeof c.id!=='string'||!c.id||ids.has(c.id))return false;
+      if(!c||decimal(c.id)===null||ids.has(c.id))return false;
       ids.add(c.id);
     }
     return true;
