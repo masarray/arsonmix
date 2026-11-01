@@ -6637,79 +6637,114 @@ scheduleDemoMeter();
     return true;
   }
   function receiveAck(data){
-    const ack=data?.ack||data;
-    if(!ack||typeof ack.requestId!=='string')return;
-    const intent=pending.get(ack.requestId);if(!intent)return;
-    pending.delete(ack.requestId);
-    const target=intent.id||'@roster';
-    if(ack.status==='ACCEPTED'||ack.status==='acceptedGraph'){
-      // A realtime ACK can keep the revision. Require a fresh readback, not
-      // only a positive ACK. All revisions stay decimal strings.
-      const requiredRevision=decimal(ack.graphRevision??ack.newRevision)??intent.baseRevision;
-      if(snapshotSerial>intent.snapshotSerial&&accepted?.device?.epoch===intent.epoch&&
-         ge(accepted?.graph?.revision,requiredRevision)){
+    const a=data?.ack||data;
+    if(!a||typeof a.requestId!=='string')return;
+    const task=pending.get(a.requestId);if(!task)return;
+    const epoch=decimal(a.deviceEpoch),rev=decimal(a.graphRevision),roster=decimal(a.rosterRevision);
+    if(!['ACCEPTED','REJECTED','REQUIRES_DEVICE_CHANGE'].includes(a.status)||
+       epoch===null||rev===null||roster===null||epoch!==task.epoch||
+       typeof a.errorCode!=='string'){
+      showFeedback('INVALID NATIVE ACK · accepted route unchanged');return;
+    }
+    pending.delete(a.requestId);
+    const target=task.id||'@roster';
+    if(a.status==='ACCEPTED'){
+      if(BigInt(rev)<BigInt(task.baseRevision)||
+         BigInt(roster)<BigInt(task.baseRosterRevision)){
         pendingTargets.delete(target);
+        showFeedback('INVALID ACK REVISION · accepted route unchanged');
       }else{
-        awaitingSnapshot.set(ack.requestId,{...intent,requiredRevision});
+        const wait={...task,requiredRevision:rev,requiredRoster:roster};
+        if(ackMatches(wait))pendingTargets.delete(target);
+        else awaitingSnapshot.set(a.requestId,wait);
+        showFeedback('ACCEPTED · '+task.op+' · awaiting exact native graph + roster');
       }
-      showFeedback('ACCEPTED · '+intent.op+' · synchronizing native snapshot');
       requestSnapshot();
     }else{
       pendingTargets.delete(target);
-      showFeedback((ack.status==='REQUIRES_DEVICE_CHANGE'?'REQUIRES DEVICE · ':'REJECTED · ')+
-        clean(ack.errorCode||ack.message||'Native rejected request')+' · accepted audio preserved');
-      requestSnapshot();
-      refreshAcceptedControls();
+      showFeedback((a.status==='REQUIRES_DEVICE_CHANGE'?'REQUIRES DEVICE · ':'REJECTED · ')+
+        clean(a.errorCode||'INVALID REJECTION')+' · previous accepted route preserved');
+      requestSnapshot();refreshAcceptedControls();
     }
     refreshDisabled();
   }
+  function ackMatches(wait){
+    return acceptedNative&&snapshotSerial>wait.snapshotSerial&&
+      accepted?.device?.epoch===wait.epoch&&
+      accepted?.graph?.revision===wait.requiredRevision&&
+      accepted?.graph?.rosterRevision===wait.requiredRoster;
+  }
   function validSnapshot(s){
-    if(!s||typeof s!=='object'||s.schemaVersion!==6||!s.device||!s.graph)return false;
-    if(decimal(s.device.epoch)===null||decimal(s.graph.revision)===null||
-      decimal(s.graph.rosterRevision)===null)return false;
-    if(!Array.isArray(s.graph.channels)||!s.graph.capabilities)return false;
-    const ids=new Set();
-    for(const c of s.graph.channels){
-      // JS numeric conversion corrupts 64-bit identities: reject such a wire.
-      if(!c||decimal(c.id)===null||ids.has(c.id))return false;
-      ids.add(c.id);
+    // Mirror the required v8 producer wire: never infer physical masks,
+    // capabilities, PCM or accepted ChannelIds from browser/M4 fallback.
+    if(!s||s.schemaVersion!==6||typeof s.productionCallbackLive!=='boolean'||
+       !s.device||!s.graph||!s.telemetry)return false;
+    const d=s.device,g=s.graph,c=g.capabilities,t=s.telemetry;
+    if(decimal(d.epoch)===null||decimal(g.revision)===null||
+       decimal(g.rosterRevision)===null||typeof d.backend!=='string'||
+       typeof d.captureDevice!=='string'||typeof d.playbackDevice!=='string'||
+       typeof d.outputArmed!=='boolean'||!Array.isArray(d.inputEndpoints)||
+       !Array.isArray(d.outputEndpoints)||!Array.isArray(d.enabledInputs)||
+       !Array.isArray(d.enabledOutputs)||!Array.isArray(g.channels)||
+       !Array.isArray(g.destinations)||!c||!Array.isArray(c.supportedOps))
+      return false;
+    const pins=a=>a.every(v=>Number.isSafeInteger(v)&&v>=0&&v<=255)&&
+      new Set(a).size===a.length;
+    if(!pins(d.enabledInputs)||!pins(d.enabledOutputs))return false;
+    for(const [type,endpoints,mask] of [['in',d.inputEndpoints,d.enabledInputs],
+      ['out',d.outputEndpoints,d.enabledOutputs]]){
+      const ids=new Set(),cb=new Set();
+      for(const e of endpoints){
+        if(!e||!mask.includes(e.port)||e.id!==type+':'+e.port||
+           !Number.isSafeInteger(e.callback)||e.callback<0||
+           typeof e.label!=='string'||!e.label||typeof e.active!=='boolean'||
+           ids.has(e.id)||cb.has(e.callback))return false;
+        ids.add(e.id);cb.add(e.callback);
+      }
     }
+    for(const key of ['callbackOwnsChannelIds','fullVendorFxMigration','showAndOutputParity',
+      'physicalCaptureMapped','dynamicChannels','groups','fxReturns','monitor','sendsOnFaders'])
+      if(typeof c[key]!=='boolean')return false;
+    if(c.supportedOps.some(op=>typeof op!=='string'||!/^[A-Z_]+$/.test(op))||
+       new Set(c.supportedOps).size!==c.supportedOps.length)return false;
+    if(s.productionCallbackLive){
+      if(d.epoch==='0'||!c.callbackOwnsChannelIds||!c.fullVendorFxMigration||
+         !c.showAndOutputParity||!c.physicalCaptureMapped)return false;
+    }else if(g.channels.length||c.supportedOps.length)return false;
+    const ids=new Set(),roles=['INPUT','GROUP','FX_RETURN','MONITOR','MAIN','AUX'];
+    for(const ch of g.channels){
+      if(!ch||decimal(ch.id)===null||ch.id==='0'||ids.has(ch.id)||
+         !roles.includes(ch.role)||!['MONO','STEREO'].includes(ch.processingFormat)||
+         typeof ch.name!=='string'||!Array.isArray(ch.inserts)||!Array.isArray(ch.sends))return false;
+      ids.add(ch.id);
+    }
+    for(const ch of g.channels){
+      if(ch.primaryOutId!==undefined&&ch.primaryOutId!==null&&
+         !ids.has(ch.primaryOutId))return false;
+      if(ch.source){
+        const x=ch.source;
+        if(ch.role!=='INPUT'||typeof x.portId!=='string'||
+           !Array.isArray(x.physicalPins)||!pins(x.physicalPins)||
+           ![1,2].includes(x.physicalPins.length)||
+           !x.physicalPins.every(p=>d.enabledInputs.includes(p))||
+           !d.inputEndpoints.some(p=>p.id===x.portId&&p.active))return false;
+      }
+      for(const send of ch.sends)
+        if(!ids.has(send.targetId)||send.targetId===ch.id||
+           !['PRE','POST'].includes(send.tap))return false;
+      if(ch.role==='GROUP'&&!c.groups||ch.role==='FX_RETURN'&&!c.fxReturns||
+         ch.role==='MONITOR'&&!c.monitor)return false;
+    }
+    if(g.destinations.some(dst=>!dst||!ids.has(dst.id)))return false;
+    if(typeof t.rawCapturePresent!=='boolean'||typeof t.mainPcmPresent!=='boolean'||
+       typeof t.monitorPcmPresent!=='boolean'||typeof t.rawCapturePeak!=='number'||
+       !Number.isFinite(t.rawCapturePeak)||t.rawCapturePeak<0)return false;
     return true;
   }
   function normalizeSnapshot(payload){
     const raw=payload?.snapshot||payload;
-    if(!raw||typeof raw!=='object'||raw.schemaVersion!==6)return null;
-    // The new main integration/ConsoleNativeContractV6.h readback has a
-    // flat, control-thread-only shape. It does NOT assert physical LIVE.
-    if(raw.schemaVersion===6&&!raw.graph&&Array.isArray(raw.channels)){
-      const caps=raw.capabilities||{};
-      return {schemaVersion:6,productionCallbackLive:raw.productionCallbackLive===true &&
-        caps.callbackOwnsChannelIds===true,
-        device:{epoch:decimal(raw.deviceEpoch),backend:'NATIVE GRAPH READBACK',
-          sampleRate:null,bufferFrames:null,outputArmed:false,
-          inputEndpoints:[],outputEndpoints:[]},
-        graph:{revision:decimal(raw.graphRevision),
-          rosterRevision:decimal(raw.rosterRevision),
-          channels:raw.channels.map(ch=>({...ch,
-            role:clean(ch.role).toUpperCase(),
-            processingFormat:clean(ch.processingFormat).toUpperCase(),
-            source:null,primaryOut:ch.primaryOutId||null,
-            inserts:[],controls:{},
-            sends:(ch.sends||[]).map(s=>({
-              targetId:s.destinationId,tap:s.preFader?'PRE':'POST',name:s.destinationId
-            }))})),
-          destinations:[],capabilities:{dynamicChannels:!!caps.addChannel,
-            groups:!!caps.group,fxReturns:!!caps.fxReturn,monitor:!!caps.monitor,
-            sendsOnFaders:false,supportedOps:[]}},
-        telemetry:{rawCapturePresent:false,channelMeterRmsPeak:{}}};
-    }
-    if(!raw.device||!raw.graph)return null;
-    const caps=raw.graph.capabilities||{};
-    return {...raw,schemaVersion:6,
-      productionCallbackLive:raw.productionCallbackLive===true&&caps.callbackOwnsChannelIds===true,
-      device:{...raw.device,epoch:decimal(raw.device.epoch)},
-      graph:{...raw.graph,revision:decimal(raw.graph.revision),
-        rosterRevision:decimal(raw.graph.rosterRevision??raw.graph.revision)}};
+    // Flat M4 readback is not the universal v8 device inventory.
+    return raw&&typeof raw==='object'&&raw.schemaVersion===6?raw:null;
   }
   function receiveSnapshot(data,fromNative){
     const s=normalizeSnapshot(data);
@@ -6723,7 +6758,10 @@ scheduleDemoMeter();
     if(fromNative&&acceptedNative&&accepted&&s.device.epoch===accepted.device.epoch&&
       BigInt(s.graph.revision)<BigInt(accepted.graph.revision))return false;
     const priorEpoch=acceptedNative?accepted?.device?.epoch:null;
-    const structure=s.device.epoch+':'+s.graph.revision+':'+s.graph.channels.map(c=>c.id).join('|');
+    const structure=s.device.epoch+':'+s.graph.rosterRevision+':'+
+      s.graph.channels.map(c=>[c.id,c.role,c.processingFormat,c.primaryOutId,
+        (c.inserts||[]).map(f=>f.id).join(','),(c.sends||[]).map(x=>x.id).join(',')].join(':')).join('|')+
+      ':'+s.graph.capabilities.supportedOps.join('|');
     accepted=s;acceptedNative=!!fromNative;
     snapshotSerial++;
     byId.clear();
@@ -6735,8 +6773,7 @@ scheduleDemoMeter();
       showFeedback('DEVICE CHANGED · native source and destination inventory refreshed');
     }
     for(const [requestId,task] of awaitingSnapshot){
-      if(task.epoch===s.device.epoch&&snapshotSerial>task.snapshotSerial&&
-        ge(s.graph.revision,task.requiredRevision)){
+      if(ackMatches(task)){
         awaitingSnapshot.delete(requestId);
         pendingTargets.delete(task.id||'@roster');
       }
@@ -6844,7 +6881,7 @@ scheduleDemoMeter();
     const name=h('strong','arV6Name',ch.name||ch.id);name.title=ch.id;
     head.append(roleName,name);elStrip.append(head);
     const sourceSection=h('div','arV6Upper');
-    const sources=(accepted.device.inputEndpoints||[]).filter(p=>p.active!==false && p.available!==false);
+    const sources=(accepted.device.inputEndpoints||[]).filter(p=>p.active===true && accepted.device.enabledInputs.includes(p.port));
     if(role==='INPUT')sourceSection.append(selectField('IN','SET_SOURCE',ch.id,sources,
       ch.source?.portId||ch.source?.id||'','NO VERIFIED INPUT'));
     else sourceSection.append(h('div','arV6Field arV6FixedField','IN   ·   '+role));
@@ -6854,7 +6891,7 @@ scheduleDemoMeter();
     sourceSection.append(fxSection(ch),sendSection(ch));
     const outs=(accepted.graph.destinations||[]).concat(accepted.device.outputEndpoints||[]);
     sourceSection.append(selectField('OUT','SET_PRIMARY_OUT',ch.id,outs,
-      ch.primaryOut?.id||ch.primaryOut||'','NO VERIFIED OUT'));
+      ch.primaryOutId||ch.primaryOut?.id||ch.primaryOut||'','NO VERIFIED OUT'));
     elStrip.append(sourceSection);
     const controls=h('div','arV6Controls');
     const pan=h('label','arV6Pan');pan.append(h('span','','PAN'));
@@ -6893,8 +6930,9 @@ scheduleDemoMeter();
     if(!accepted.device.outputArmed)return 'OUTPUT DISARMED';
     const t=accepted.telemetry||{};
     // Do not infer LIVE from a port label, snapshot or demo LED alone.
-    if(t.rawCapturePresent!==true)return 'NO VERIFIED PCM';
-    return 'ACCEPTED / AUDIO ARMED';
+    if(t.rawCapturePresent!==true)return 'NO RAW CAPTURE PCM';
+    if(t.mainPcmPresent!==true)return 'RAW PCM · MAIN PCM UNVERIFIED';
+    return 'MAIN PCM VERIFIED · OUTPUT ARMED';
   }
   function updateHeader(){
     const d=accepted?.device||{},g=accepted?.graph||{};
@@ -6961,7 +6999,7 @@ scheduleDemoMeter();
       };
       choose('SET_SOURCE',ch.source?.portId||ch.source?.id||'');
       choose('SET_PROCESSING_FORMAT',ch.processingFormat||'');
-      choose('SET_PRIMARY_OUT',ch.primaryOut?.id||(typeof ch.primaryOut==='string'?ch.primaryOut:''));
+      choose('SET_PRIMARY_OUT',ch.primaryOutId||ch.primaryOut?.id||(typeof ch.primaryOut==='string'?ch.primaryOut:''));
       choose('ADD_SEND','');
       const pan=strip.querySelector('[data-op="SET_PAN"]');
       if(pan)pan.value=String(Number(ch.controls?.pan)||0);
