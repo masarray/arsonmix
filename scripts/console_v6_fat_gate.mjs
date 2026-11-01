@@ -183,25 +183,116 @@ export function checkPcm(p){
  must(required.every(k=>seen.has(k)),'missing PCM cases: '+required.filter(k=>!seen.has(k)).join(','));
  return {pcmCases:seen.size,note:'numerical evidence only; synthetic fixtures are not live hardware proof'};
 }
+// Gate G3: release evidence must be the ACTUAL files, not plausible-looking
+// 64-character claims. Still cannot authenticate CI results or human hearing.
+const bundleFile=(dist,name,label)=>{
+ must(typeof name==='string'&&name.length>0&&name.length<=140&&
+   /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)&&!name.includes('..'),
+   label+': use one safe basename inside the distribution directory');
+ return join(dist,name);
+};
+const verifiedHash=(p,expected,label)=>{
+ must(is64(expected),label+': SHA-256 digest required');
+ must(hash(p)===expected,label+': actual file SHA-256 mismatch');
+};
 export function checkRelease(r,dist){
  must(is40(r?.sourceSha),'release: exact source SHA required');
- must(r.nativeCI?.sourceSha===r.sourceSha&&r.nativeCI?.conclusion==='success','release: same-source Windows CI PASS required');
- must(r.chromiumCI?.sourceSha===r.sourceSha&&r.chromiumCI?.conclusion==='success','release: same-source Chromium CI PASS required');
- for(const ci of [r.nativeCI,r.chromiumCI])must(/^https:\/\/github\.com\/masarray\/arsonmix\/actions\/runs\/[0-9]+$/.test(ci.url||''),'release: GitHub CI run URL required');
- const m=json(join(dist,'BUILD_PROVENANCE.json'));
- must(m.sourceCommit===r.sourceSha,'release: package sourceCommit mismatches exact CI SHA');
- must(m.fatStatus==='EXPERIMENTAL_NOT_HARDWARE_QUALIFIED','release: package cannot self-certify hardware');
- must(m.peMachine==='AMD64 (0x8664)'&&m.peSubsystem==='WINDOWS_GUI (2)'&&m.webView2LoaderMode==='JUCE_WEBVIEW2_LOADER_STATIC_LINKED_V1','release: Windows x64 GUI/WebView2 provenance missing');
- must(is64(m.exeSha256)&&m.exeSha256===hash(join(dist,m.executable)),'release: EXE SHA-256 does not match actual packaged bytes');
- must(r.exeSha256===m.exeSha256,'release: evidence EXE SHA mismatch');
- must(r.nativeCTest==='PASS'&&r.chromiumPlaywright==='PASS'&&r.windowsVerifier==='PASS','release: existing CTest/Chromium/package verifier proof missing');
- must(is64(r.artifactSha256)&&is64(r.traceSha256)&&is64(r.pcmSha256),'release: ZIP/trace/PCM evidence digests required');
+ must(r.nativeCI?.sourceSha===r.sourceSha&&r.nativeCI?.conclusion==='success',
+   'release: same-source Windows CI PASS required');
+ must(r.chromiumCI?.sourceSha===r.sourceSha&&r.chromiumCI?.conclusion==='success',
+   'release: same-source Chromium CI PASS required');
+ for(const ci of [r.nativeCI,r.chromiumCI])
+   must(/^https:\/\/github\.com\/masarray\/arsonmix\/actions\/runs\/[0-9]+$/.test(ci.url||''),
+     'release: GitHub CI run URL required');
+ must(r.nativeCTest==='PASS'&&r.chromiumPlaywright==='PASS'&&
+   r.windowsVerifier==='PASS',
+   'release: CTest, Playwright and real Windows package verification required');
+ const folder=resolve(dist);
+ const m=json(join(folder,'BUILD_PROVENANCE.json'));
+ must(m.sourceCommit===r.sourceSha,'release: packaged sourceCommit mismatches exact CI SHA');
+ must(m.fatStatus==='EXPERIMENTAL_NOT_HARDWARE_QUALIFIED',
+   'release: package cannot self-certify hardware');
+ must(m.peMachine==='AMD64 (0x8664)'&&m.peSubsystem==='WINDOWS_GUI (2)'&&
+   m.webView2LoaderMode==='JUCE_WEBVIEW2_LOADER_STATIC_LINKED_V1',
+   'release: Windows x64 GUI/WebView2 provenance missing');
+ const exePath=bundleFile(folder,m.executable,'release exe path');
+ must(is64(m.exeSha256),'release: manifest EXE SHA missing');
+ verifiedHash(exePath,m.exeSha256,'release EXE');
+ must(r.exeSha256===m.exeSha256,'release: EXE evidence digest mismatch');
+ const artifacts=r.artifacts;
+ must(artifacts&&typeof artifacts==='object','release: actual evidence filenames required');
+ const names=['zip','nativeTrace','nativePcm','hardwareReport'];
+ const namesSeen=new Set();
+ const files={};
+ for(const name of names){
+   const file=artifacts[name];
+   files[name]=bundleFile(folder,file,'release '+name);
+   must(!namesSeen.has(file)&&file!==m.executable&&file!=='BUILD_PROVENANCE.json',
+     'release: distinct real evidence files required');
+   namesSeen.add(file);
+ }
+ verifiedHash(files.zip,r.artifactSha256,'release ZIP');
+ verifiedHash(files.nativeTrace,r.traceSha256,'release native ACK trace');
+ verifiedHash(files.nativePcm,r.pcmSha256,'release native PCM samples');
+ const zipBytes=readFileSync(files.zip);
+ must(zipBytes.length>=4&&zipBytes[0]===0x50&&zipBytes[1]===0x4b&&
+   zipBytes[2]===0x03&&zipBytes[3]===0x04,
+   'release: artifact must be a ZIP; full contents verified by Windows PowerShell verifier');
+ const trace=json(files.nativeTrace),pcm=json(files.nativePcm);
+ must(trace.provenance?.kind==='NATIVE_JUCE'&&
+   trace.provenance.sourceSha===r.sourceSha&&
+   trace.provenance.producer==='JUCE_WEBVIEW',
+   'release: native WebView producer evidence required; SYNTHETIC not eligible');
+ const verifiedTrace=checkTrace(trace);
+ must(verifiedTrace.provenance==='NATIVE_JUCE',
+   'release: cannot qualify synthetic trace');
+ must(pcm.provenance?.kind==='NATIVE_JUCE'&&
+   pcm.provenance.sourceSha===r.sourceSha&&
+   pcm.provenance.producer==='JUCE_CALLBACK',
+   'release: actual JUCE callback PCM provenance required; SYNTHETIC not eligible');
+ const verifiedPcm=checkPcm(pcm);
+ // Native graph admission gate: the final accepted runtime snapshot must
+ // expose the real universal roster, routes and live capabilities.
+ const finalEvent=trace.events[trace.events.length-1];
+ must(finalEvent?.event==='arMixConsoleSnapshot',
+   'release: no final accepted native snapshot');
+ const s=finalEvent.payload,caps=s.graph.capabilities;
+ must(s.productionCallbackLive===true&&
+   caps.callbackOwnsChannelIds===true&&
+   caps.fullVendorFxMigration===true&&caps.showAndOutputParity===true&&
+   caps.physicalCaptureMapped===true&&caps.dynamicChannels===true&&
+   caps.groups===true&&caps.fxReturns===true&&caps.monitor===true,
+   'release: full production ChannelId/VST/Show/physical output capabilities not LIVE');
+ const roles=s.graph.channels.map(x=>x.role);
+ for(const role of ['GROUP','FX_RETURN','MONITOR','MAIN'])
+   must(roles.includes(role),'release: missing live '+role+' channel');
+ must(roles.filter(x=>x==='INPUT').length>=11,
+   'release: CH11 native callback not present');
+ must(s.device.outputArmed===true&&
+   s.telemetry.rawCapturePresent===true&&
+   s.telemetry.mainPcmPresent===true&&
+   s.telemetry.monitorPcmPresent===true,
+   'release: real raw/MAIN/MONITOR PCM and physical output arm required');
  const h=r.hardware;
- must(h&&h.issue===15&&h.status==='PENDING_HUMAN_REVIEW','release: issue #15 physical review must remain open');
- must(h.backend&&h.sampleRate>0&&h.bufferFrames>0&&Array.isArray(h.inputPins)&&h.inputPins.length>0&&Array.isArray(h.outputPins)&&h.outputPins.length>0&&h.wired===true&&h.testDurationSeconds>=1800,'release: wired 0FX physical 30min evidence required');
- must(h.outputOnlyTone==='RECORDED'&&h.captureOnly==='RECORDED'&&h.dry0Fx==='RECORDED'&&is64(h.fullReportSha256),'release: OUTPUT_ONLY_TONE, CAPTURE_ONLY, 0FX and full report required');
- must(h.verifiedHumanWitness===true&&typeof h.witnessId==='string'&&h.witnessId.length>=3,'release: human witness review required');
- return {stage:'EVIDENCE_INTAKE_COMPLETE__ACOUSTIC_REVIEW_REQUIRED',certified:false,sourceSha:r.sourceSha,exeSha256:m.exeSha256};
+ must(h&&h.issue===15&&h.status==='PENDING_HUMAN_REVIEW',
+   'release: hardware issue #15 must stay under human review');
+ must(h.backend&&h.sampleRate>0&&h.bufferFrames>0&&
+   Array.isArray(h.inputPins)&&h.inputPins.length>0&&
+   Array.isArray(h.outputPins)&&h.outputPins.length>0&&
+   h.wired===true&&h.testDurationSeconds>=1800,
+   'release: wired 0FX physical 30min evidence required');
+ must(h.outputOnlyTone==='RECORDED'&&h.captureOnly==='RECORDED'&&
+   h.dry0Fx==='RECORDED'&&is64(h.fullReportSha256),
+   'release: OUTPUT_ONLY_TONE, CAPTURE_ONLY, 0FX and full report required');
+ verifiedHash(files.hardwareReport,h.fullReportSha256,'release hardware report');
+ must(h.verifiedHumanWitness===true&&
+   typeof h.witnessId==='string'&&h.witnessId.length>=3,
+   'release: independent human witness required');
+ return {stage:'EVIDENCE_INTAKE_COMPLETE__ACOUSTIC_REVIEW_REQUIRED',
+   certified:false,sourceSha:r.sourceSha,exeSha256:m.exeSha256,
+   pcmCases:verifiedPcm.pcmCases,ackEvents:verifiedTrace.acceptedCommands+
+   verifiedTrace.rejectedCommands,
+   evidenceFilesHashed:names.length};
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
  try{

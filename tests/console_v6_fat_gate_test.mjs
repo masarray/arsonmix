@@ -95,17 +95,108 @@ test('MONITOR distinct device destination and independent mute; MASTER silence',
  const b=pcm();b.cases[2].samples.mainAfterMonitorMute=zero(dry);assert.throws(()=>checkPcm(b),/cannot change MAIN/);
  const c=pcm();c.cases[3].samples.mainAfterMute=dry;assert.throws(()=>checkPcm(c),/MASTER mute/);
 });
-test('exact SHA Windows+Chromium CI, EXE hash, manual 0FX 30-minute gate',()=>{
+test('exact-source full native evidence rejects forged digest, mock PCM, missing live roles and 0FX report',()=>{
  const dir=mkdtempSync(join(tmpdir(),'arsonmix-fat-'));
- try{
- const exe=Buffer.from('SYNTHETIC EXE HASH FIXTURE');const h=createHash('sha256').update(exe).digest('hex'),sha='a'.repeat(40);
- writeFileSync(join(dir,'test.exe'),exe);
- writeFileSync(join(dir,'BUILD_PROVENANCE.json'),JSON.stringify({sourceCommit:sha,executable:'test.exe',exeSha256:h,fatStatus:'EXPERIMENTAL_NOT_HARDWARE_QUALIFIED',peMachine:'AMD64 (0x8664)',peSubsystem:'WINDOWS_GUI (2)',webView2LoaderMode:'JUCE_WEBVIEW2_LOADER_STATIC_LINKED_V1'}));
- const r={sourceSha:sha,nativeCI:{sourceSha:sha,conclusion:'success',url:'https://github.com/masarray/arsonmix/actions/runs/123'},chromiumCI:{sourceSha:sha,conclusion:'success',url:'https://github.com/masarray/arsonmix/actions/runs/124'},exeSha256:h,artifactSha256:h,traceSha256:h,pcmSha256:h,nativeCTest:'PASS',chromiumPlaywright:'PASS',windowsVerifier:'PASS',hardware:{issue:15,status:'PENDING_HUMAN_REVIEW',wired:true,backend:'ASIO',sampleRate:48000,bufferFrames:480,inputPins:[0],outputPins:[0,1],testDurationSeconds:1800,outputOnlyTone:'RECORDED',captureOnly:'RECORDED',dry0Fx:'RECORDED',fullReportSha256:h,verifiedHumanWitness:true,witnessId:'operator1'}};
- assert.equal(checkRelease(r,dir).certified,false);
- const stale=copy(r);stale.chromiumCI.sourceSha='b'.repeat(40);assert.throws(()=>checkRelease(stale,dir),/Chromium CI/);
- const tampered=copy(r);tampered.exeSha256='f'.repeat(64);assert.throws(()=>checkRelease(tampered,dir),/EXE SHA mismatch/);
- const short=copy(r);short.hardware.testDurationSeconds=1799;assert.throws(()=>checkRelease(short,dir),/30min/);
- const noOperator=copy(r);noOperator.hardware.verifiedHumanWitness=false;assert.throws(()=>checkRelease(noOperator,dir),/human witness/);
- }finally{rmSync(dir,{recursive:true,force:true})}
+ try {
+  const sha='a'.repeat(40);
+  const hashBytes=data=>createHash('sha256').update(data).digest('hex');
+  const persist=(file,data)=>{
+   const bytes=Buffer.isBuffer(data)?data:Buffer.from(typeof data==='string'?data:JSON.stringify(data));
+   writeFileSync(join(dir,file),bytes);
+   return hashBytes(bytes);
+  };
+  const exeHash=persist('console.exe','EXE FIXTURE ONLY');
+  persist('BUILD_PROVENANCE.json',{
+   sourceCommit:sha,executable:'console.exe',exeSha256:exeHash,
+   fatStatus:'EXPERIMENTAL_NOT_HARDWARE_QUALIFIED',
+   peMachine:'AMD64 (0x8664)',peSubsystem:'WINDOWS_GUI (2)',
+   webView2LoaderMode:'JUCE_WEBVIEW2_LOADER_STATIC_LINKED_V1'});
+  const traceFixture=trace();
+  traceFixture.provenance={kind:'NATIVE_JUCE',sourceSha:sha,producer:'JUCE_WEBVIEW'};
+  const liveCaps={
+   callbackOwnsChannelIds:true,fullVendorFxMigration:true,
+   showAndOutputParity:true,physicalCaptureMapped:true,dynamicChannels:true,
+   groups:true,fxReturns:true,monitor:true,
+   supportedOps:['SET_FADER','SET_SOURCE']};
+  const channels=Array.from({length:11},(_,i)=>({
+   id:String(i+1),role:'INPUT',source:{physicalPins:[i%2]}}));
+  channels.push(...[
+   {id:'50',role:'GROUP'}, {id:'51',role:'FX_RETURN'},
+   {id:'52',role:'MONITOR'}, {id:'53',role:'MAIN'}]);
+  for(const item of traceFixture.events){
+   if(item.event!=='arMixConsoleSnapshot')continue;
+   item.payload.productionCallbackLive=true;
+   item.payload.device.outputArmed=true;
+   item.payload.graph.capabilities=liveCaps;
+   item.payload.graph.channels=channels;
+   item.payload.telemetry={
+    rawCapturePresent:true,mainPcmPresent:true,monitorPcmPresent:true};
+  }
+  const pcmFixture=pcm();
+  pcmFixture.provenance={kind:'NATIVE_JUCE',sourceSha:sha,producer:'JUCE_CALLBACK'};
+  const archiveHash=persist('release.zip',Buffer.from('PK\x03\x04synthetic-zip-header-only'));
+  const traceHash=persist('trace.json',traceFixture);
+  const pcmHash=persist('pcm.json',pcmFixture);
+  const reportHash=persist('audio-report.txt','SYNTHETIC HARDWARE QA TEST FIXTURE — NOT AUDIO CERTIFICATION');
+  const record={
+   sourceSha:sha,exeSha256:exeHash,
+   nativeCI:{sourceSha:sha,conclusion:'success',url:'https://github.com/masarray/arsonmix/actions/runs/123'},
+   chromiumCI:{sourceSha:sha,conclusion:'success',url:'https://github.com/masarray/arsonmix/actions/runs/124'},
+   nativeCTest:'PASS',chromiumPlaywright:'PASS',windowsVerifier:'PASS',
+   artifactSha256:archiveHash,traceSha256:traceHash,pcmSha256:pcmHash,
+   artifacts:{zip:'release.zip',nativeTrace:'trace.json',nativePcm:'pcm.json',
+    hardwareReport:'audio-report.txt'},
+   hardware:{issue:15,status:'PENDING_HUMAN_REVIEW',wired:true,
+    backend:'ASIO',sampleRate:48000,bufferFrames:480,inputPins:[0,1],
+    outputPins:[0,1],testDurationSeconds:1800,outputOnlyTone:'RECORDED',
+    captureOnly:'RECORDED',dry0Fx:'RECORDED',
+    fullReportSha256:reportHash,verifiedHumanWitness:true,witnessId:'qa1'}
+  };
+  // Even a fully structural synthetic test fixture never sets certified=true.
+  const accepted=checkRelease(record,dir);
+  assert.equal(accepted.certified,false);
+  assert.equal(accepted.evidenceFilesHashed,4);
+  assert.equal(accepted.pcmCases,4);
+  const wrongSha=copy(record);
+  wrongSha.chromiumCI.sourceSha='b'.repeat(40);
+  assert.throws(()=>checkRelease(wrongSha,dir),/Chromium CI/);
+  const tampered=copy(record);
+  tampered.artifactSha256='f'.repeat(64);
+  assert.throws(()=>checkRelease(tampered,dir),/release ZIP: actual file SHA-256 mismatch/);
+  const tamperedHardware=copy(record);
+  tamperedHardware.hardware.fullReportSha256='f'.repeat(64);
+  assert.throws(()=>checkRelease(tamperedHardware,dir),/release hardware report: actual file SHA-256 mismatch/);
+  const syntheticTrace=copy(traceFixture);
+  syntheticTrace.provenance.kind='SYNTHETIC';
+  const syntheticTraceHash=persist('trace.json',syntheticTrace);
+  const fromFake=copy(record);
+  fromFake.traceSha256=syntheticTraceHash;
+  assert.throws(()=>checkRelease(fromFake,dir),/native WebView producer evidence required/);
+  persist('trace.json',traceFixture);
+  const syntheticPcm=copy(pcmFixture);
+  syntheticPcm.provenance.kind='SYNTHETIC';
+  const syntheticPcmHash=persist('pcm.json',syntheticPcm);
+  const fakePcm=copy(record);
+  fakePcm.pcmSha256=syntheticPcmHash;
+  assert.throws(()=>checkRelease(fakePcm,dir),/actual JUCE callback PCM provenance required/);
+  persist('pcm.json',pcmFixture);
+  const missingRole=copy(traceFixture);
+  for(const e of missingRole.events)
+   if(e.event==='arMixConsoleSnapshot')
+    e.payload.graph.channels=e.payload.graph.channels.filter(ch=>ch.role!=='FX_RETURN');
+  const missingRoleHash=persist('trace.json',missingRole);
+  const noGroup=copy(record);
+  noGroup.traceSha256=missingRoleHash;
+  assert.throws(()=>checkRelease(noGroup,dir),/missing live FX_RETURN channel/);
+  persist('trace.json',traceFixture);
+  const shorter=copy(record);
+  shorter.hardware.testDurationSeconds=1799;
+  assert.throws(()=>checkRelease(shorter,dir),/30min/);
+  const missingWitness=copy(record);
+  missingWitness.hardware.verifiedHumanWitness=false;
+  assert.throws(()=>checkRelease(missingWitness,dir),/human witness/);
+  const pathTraversal=copy(record);
+  pathTraversal.artifacts.zip='../release.zip';
+  assert.throws(()=>checkRelease(pathTraversal,dir),/safe basename/);
+ }finally {rmSync(dir,{recursive:true,force:true})}
 });
