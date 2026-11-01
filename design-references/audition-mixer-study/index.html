@@ -32,7 +32,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .tool.primary{color:#c1e2ea}
 .sep{height:18px;width:1px;background:#171819;margin:0 3px}
 .short-help{margin-left:auto;color:#848a8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px}
-.console-pane{flex:1;min-height:0;display:flex;flex-direction:column;background:#202122}
+.console-pane{flex:1;min-height:0;display:flex;flex-direction:column;background:#202122;position:relative}
 .mixer-title{height:24px;display:flex;align-items:center;padding:0 9px;flex:none;border-bottom:1px solid #0f1010;background:#292a2b;gap:9px}
 .mixer-title .accent{height:12px;width:3px;background:#55afcb}
 .mixer-title .panel-name{font-weight:600}
@@ -186,6 +186,48 @@ button:disabled{opacity:.45;cursor:not-allowed}
 @media(max-width:1000px){.short-help{display:none}.strip{width:98px;flex-basis:98px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;animation:none!important}}
 @media(max-height:610px){.console-body{--route-h:45px;--fx-h:80px;--send-h:60px;--eq-h:27px;--pan-h:28px;--auto-h:18px;--switch-h:25px;--footer-h:42px}.send-pan{display:none}.fxslot-row{height:15px}.fx-section .subhead,.send-header{height:16px}.eq-line{display:none}.eq-header{height:25px}}
+
+/* Single-window plugin browser: light solid overlay, no blur/animated shadows. */
+.plugin-browser[hidden]{display:none!important}
+.plugin-browser{position:absolute;z-index:20;top:24px;bottom:0;right:111px;width:min(350px,calc(100% - 148px));display:flex;flex-direction:column;background:#282b2d;border-left:1px solid #55646a;border-top:1px solid #55646a;box-shadow:-4px 1px 8px #151617b8;color:#c9ccce;min-height:0}
+.plugin-head{height:47px;flex:none;border-bottom:1px solid #16191a;display:flex;align-items:center;padding:7px 10px;background:#313638}
+.plugin-head-title{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;font-size:11px;letter-spacing:.035em}
+.plugin-target{font-size:10px;color:#81b5c7;letter-spacing:normal;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.plugin-close{background:transparent;border:0;color:#aeb7bc;font-size:23px;width:24px;height:26px;line-height:24px}
+.plugin-close:hover{color:#fff;background:#4b5052}
+.plugin-search-row{height:41px;display:flex;align-items:center;padding:5px 9px;flex:none}
+.plugin-search-row input{min-width:0;width:100%;height:29px;border:1px solid #485156;border-radius:2px;padding:4px 8px;background:#171c1e;color:#e1e7e9;outline-offset:0}
+.plugin-filters{height:34px;display:flex;gap:6px;padding:0 9px 6px;flex:none}
+.plugin-filters select{min-width:0;flex:1;height:26px;background:#33383a;color:#cbd0d2;border:1px solid #505559;padding:0 4px;font-size:10px}
+.plugin-headings{height:22px;flex:none;padding:4px 9px;display:flex;justify-content:space-between;color:#89989e;font-size:9px;border-bottom:1px solid #171a1c}
+.plugin-results{flex:1;min-height:0;overflow-y:auto;background:#25282a}
+.plugin-item{min-height:48px;padding:5px 7px;border-bottom:1px solid #1a1c1d;display:flex;gap:5px;align-items:center}
+.plugin-item:hover{background:#30383b}
+.plugin-choose{flex:1;min-width:0;background:transparent;border:0;padding:3px 1px;text-align:left;display:flex;flex-direction:column;gap:4px}
+.plugin-name{font-size:11px;color:#e0e3e4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.plugin-meta{font-size:9px;color:#899da6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.plugin-labels{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex:none;font-size:9px;color:#87969c}
+.plugin-pill{color:#a6b6bb;border:1px solid #495156;padding:1px 4px;border-radius:2px}
+.plugin-pill.problem{color:#da9990;border-color:#85554f}
+.plugin-flag{width:21px;height:22px;background:transparent;border:0;color:#777e82;font-size:15px;flex:none;padding:0}
+.plugin-flag.starred{color:#d3b86b}
+.plugin-flag:hover{background:#465055;color:#e6e9eb}
+.plugin-item.disabled .plugin-choose{opacity:.5}
+.plugin-empty{padding:20px 12px;text-align:center;color:#88979b;font-size:11px}
+.plugin-footer{height:36px;flex:none;display:flex;align-items:center;padding:0 7px;gap:6px;border-top:1px solid #181a1b;font-size:10px}
+.plugin-footer span{flex:1;color:#a0afb6}
+.plugin-footer button{background:#393d40;border:1px solid #4f575b;color:#bcc6ca;border-radius:2px;padding:4px 6px;font-size:10px}
+.plugin-footer button:disabled{color:#657175;opacity:1;cursor:not-allowed}
+.plugin-disclaimer{padding:7px 9px;flex:none;color:#c2ac85;background:#35322d;font-size:9px;line-height:1.3}
+.fxslot-list{height:calc(100% - 21px);overflow:auto;scrollbar-width:thin;scrollbar-color:#485052 #282b2d}
+.fxslot-row{cursor:default}
+.fx-pick{flex:1;min-width:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;appearance:none;background:transparent;border:0;height:18px;padding:0 2px;color:#bdcad0;font-size:10px;cursor:pointer}
+.fx-pick.empty{color:#7c8589}
+.fx-pick:hover,.fx-pick:focus-visible{background:#3d4c52}
+.fx-remove{height:17px;width:14px;padding:0;border:0;background:transparent;color:#657379;flex:none;cursor:pointer}
+.fx-remove:hover{background:#553a38;color:#f4c1b9}
+@media(max-width:940px){.plugin-browser{right:111px;width:min(310px,calc(100% - 148px))}}
+
 </style>
 </head>
 <body>
@@ -194,7 +236,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
   <div class="command-bar" role="toolbar" aria-label="Mixer demonstration controls">
     <button class="tool primary" id="addTrack" title="Add an audio channel">+ Audio</button>
     <button class="tool" id="addBus" title="Add a bus to the mixer">+ Bus</button>
-    <button class="tool" id="addFx" title="Add a send-only FX Return">+ FX Return</button>
+    <button class="tool" id="addFx" title="Add a send-only FX Return">+ FX Return</button><button class="tool primary" id="pluginsButton" title="Plugin browser / manager (F8)" aria-controls="pluginBrowser" aria-expanded="false">Plugins · F8</button>
     <span class="sep"></span>
     <button class="tool" id="mode" aria-pressed="false" title="Studio One-inspired narrow-channel console mode">Narrow</button>
     <label class="toolbar-label" for="viewFilter">Channels</label><select id="viewFilter" class="toolbar-select" aria-label="Show channel types"><option value="all">All</option><option value="audio">Audio</option><option value="bus">Buses</option><option value="fx">FX Returns</option><option value="solo">Solo</option></select>
@@ -222,6 +264,15 @@ button:disabled{opacity:.45;cursor:not-allowed}
       <div class="tracks-viewport" id="viewport" tabindex="0" aria-label="Horizontal mixer track list"><div class="tracks" id="tracks"></div></div>
       <div id="master"></div>
     </section>
+    <aside id="pluginBrowser" class="plugin-browser" aria-label="Effects plugin manager" hidden>
+      <div class="plugin-head"><div class="plugin-head-title"><span>PLUGIN MANAGER</span><span id="pluginTarget" class="plugin-target">Select a channel FX slot</span></div><button class="plugin-close" id="pluginClose" title="Close plugin manager" aria-label="Close plugin manager">×</button></div>
+      <div class="plugin-search-row"><input type="search" id="pluginSearch" autocomplete="off" spellcheck="false" placeholder="Search effects or vendor…   F8" aria-label="Find effects"></div>
+      <div class="plugin-filters"><select id="pluginCategory" aria-label="Plugin category"><option value="all">All effects</option><option value="EQ">EQ / Filter</option><option value="Dynamics">Dynamics</option><option value="Reverb">Reverb</option><option value="Delay">Delay</option><option value="Modulation">Modulation</option><option value="Utility">Utility</option></select><select id="pluginView" aria-label="Plugin list"><option value="all">Available</option><option value="favorites">★ Favorites</option><option value="recent">Recent</option><option value="hidden">Hidden</option></select></div>
+      <div class="plugin-headings"><span>NAME · VENDOR</span><span>FORMAT / STATE</span></div>
+      <div id="pluginResults" class="plugin-results" role="list" aria-label="Available effects"></div>
+      <div class="plugin-footer"><span id="pluginCount">Reference catalog</span><button id="pluginImport" title="Import plugin metadata from a JSON registry exported by a scanner">Import list…</button><input type="file" id="pluginFile" accept=".json,application/json" hidden><button disabled id="pluginScan" title="Requires native VST3 scanner; not present in this HTML reference">Scan VST3</button></div>
+      <div class="plugin-disclaimer">DEMO EFFECTS · no actual VST3 is scanned, instantiated or loaded. Native plugin registry is not connected.</div>
+    </aside>
   </main>
   <footer class="status-bar"><span class="state" id="transport">Stopped</span><span id="info" class="last-action" role="status" aria-live="polite">Interactive visual reference. Changes are local to this mockup.</span><span class="warning">SIMULATED METERS · NO REAL AUDIO</span></footer>
 </div>
@@ -231,13 +282,16 @@ button:disabled{opacity:.45;cursor:not-allowed}
 const COLORS=['#3b98a1','#598e72','#af9258','#a6676f','#6b88b4','#9180b5','#9e9571','#63958d','#a8799e','#6083a0'];
 const INIT=['Host','Interview','Sound FX','Music Bed','Vocal 1','Vocal 2','Guitar','Keyboard','Playback','Ambience'];
 const FX=['None','Parametric Equalizer','Dynamics Processing','Studio Reverb','DeEsser','Hard Limiter','Tube-modeled Compressor','Delay','Chorus','Multiband Compressor','Graphic Equalizer','Echo'];
+const CATEGORIES={'Parametric Equalizer':'EQ','Graphic Equalizer':'EQ','Dynamics Processing':'Dynamics','Hard Limiter':'Dynamics','Tube-modeled Compressor':'Dynamics','Multiband Compressor':'Dynamics',DeEsser:'Dynamics','Studio Reverb':'Reverb',Delay:'Delay',Echo:'Delay',Chorus:'Modulation'};
+let pluginCatalog=FX.filter(x=>x!=='None').map((name,i)=>({id:'demo-'+i,name,vendor:'Reference Effect',category:CATEGORIES[name]||'Utility',format:'DEMO',status:'demo',latencySamples:null,favorite:i<3,hidden:false}));
+let pluginRecent=[],activeFxTarget=null,pluginOpen=false;
 const tracksEl=document.getElementById('tracks'),masterEl=document.getElementById('master'),info=document.getElementById('info');
 let nextId=1,nextGroup=1,tracks=[],master,preview=false,meterFrame=0,lastTick=0,clipboard=null,scenes=[];
 const clone=x=>JSON.parse(JSON.stringify(x));
 const selection=()=>tracks.concat(master).filter(t=>t.selected);
 const make=(name,kind,color)=>{
  const id=nextId++;
- return {id,name,kind,color,group:null,input:kind==='master'?'None':kind==='bus'?'None':'Default Stereo',output:kind==='master'?'Default Output':'Master',fx:['None','None','None','None'],slotBypass:[false,false,false,false],fxOn:true,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,activeSend:0,sendSlots:Array.from({length:16},()=>({send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0})),eq:true,pan:0,trim:0,mute:false,solo:false,cue:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
+ return {id,name,kind,color,group:null,input:kind==='master'?'None':kind==='bus'?'None':'Default Stereo',output:kind==='master'?'Default Output':'Master',fx:Array(8).fill('None'),slotBypass:Array(8).fill(false),fxOn:true,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,activeSend:0,sendSlots:Array.from({length:16},()=>({send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0})),eq:true,pan:0,trim:0,mute:false,solo:false,cue:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
 };
 function init(){nextId=1;nextGroup=1;tracks=INIT.map((name,i)=>make(name,'audio',COLORS[i]));tracks.push(make('Bus A','bus','#826b9a'));master=make('Master','master','#5a8ca8');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -248,11 +302,11 @@ const channelOptions=(t,type)=>{
  return ['None',...tracks.filter(x=>(x.kind==='bus'||x.kind==='fx')&&x.id!==t.id).map(x=>x.name)];
 };
 function sectionFx(t){
- let s='<div class="section fx-section"><div class="subhead"><span class="sym">fx</span><span class="hint">Effects</span><span class="push"></span><button class="mini power '+(t.fxOn?'on':'')+'" data-action="fxOn" title="Bypass entire FX rack" aria-label="Toggle effects">⏻</button></div>';
+ let s='<div class="section fx-section"><div class="subhead"><span class="sym">fx</span><span class="hint">8 Inserts · drag to reorder</span><span class="push"></span><button class="mini power '+(t.fxOn?'on':'')+'" data-action="fxOn" title="Bypass entire FX rack" aria-label="Toggle effects">⏻</button></div><div class="fxslot-list">';
  t.fx.forEach((v,i)=>{
- s+='<div class="fxslot-row" draggable="true" data-slot="'+i+'" title="Select an effect or drag to reorder"><button class="mini power '+(v!=='None'&&!t.slotBypass[i]?'on':'')+'" data-action="slotPower" data-slot="'+i+'" title="Toggle individual effect">⏻</button><select class="fx-select '+(v==='None'?'empty':'')+'" data-field="fx" data-slot="'+i+'" aria-label="FX slot '+(i+1)+'">'+option(FX,v)+'</select><span class="grip" title="Drag reorder">⠿</span></div>';
+ s+='<div class="fxslot-row" draggable="true" data-slot="'+i+'" title="Insert '+(i+1)+' · drag to reorder"><button class="mini power '+(v!=='None'&&!t.slotBypass[i]?'on':'')+'" data-action="slotPower" data-slot="'+i+'" title="Toggle individual effect">⏻</button><button class="fx-pick '+(v==='None'?'empty':'')+'" data-action="openPlugin" data-slot="'+i+'" aria-label="Choose plugin for '+escapeHtml(t.name)+' insert '+(i+1)+'">'+(v==='None'?'+'+(i+1)+' · Add effect':escapeHtml(v))+'</button><button class="fx-remove" data-action="removeFx" data-slot="'+i+'" title="Remove insert '+(i+1)+'">×</button><span class="grip" title="Drag reorder">⠿</span></div>';
  });
- return s+'</div>';
+ return s+'</div></div>';
 }
 const eqSvg='<svg viewBox="0 0 90 20" preserveAspectRatio="none" aria-hidden="true"><path d="M0 15 L14 15 Q22 15 29 9 T43 9 Q52 11 58 7 T75 8 Q82 9 90 5"/></svg>';
 function sectionSend(t){
@@ -416,6 +470,8 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  const t=findTrack(btn);if(!t)return;
  const a=btn.dataset.action;
  if(a==='rename')return;
+ if(a==='openPlugin'){openPluginBrowser(t,Number(btn.dataset.slot));return;}
+ if(a==='removeFx'){const i=Number(btn.dataset.slot);t.fx[i]='None';t.slotBypass[i]=false;refreshStrip(t);say(t.name+' · cleared FX insert '+(i+1));return;}
  if(a==='slotPower'){const slot=Number(btn.dataset.slot);if(t.fx[slot]==='None'){say(t.name+': choose an effect before toggling bypass');return;}t.slotBypass[slot]=!t.slotBypass[slot];refreshStrip(t);say(t.name+': FX '+(slot+1)+(t.slotBypass[slot]?' bypassed':' enabled'));return;}
  if(a==='eq')t.eq=!t.eq;
  else if(a==='fxOn')t.fxOn=!t.fxOn;
@@ -502,6 +558,104 @@ document.getElementById('addBus').addEventListener('click',()=>{
 });
 document.getElementById('clearCue').addEventListener('click',()=>{tracks.forEach(t=>t.cue=false);master.cue=false;render();say('All Cue / PFL requests cleared · no hardware monitor connected');});
 document.getElementById('reset').addEventListener('click',()=>{if(preview)togglePreview();document.getElementById('viewFilter').value='all';document.querySelector('.console-body').classList.remove('narrow');document.getElementById('mode').classList.remove('active');document.getElementById('mode').setAttribute('aria-pressed','false');init();say('Reference mixer reset; saved scenes remain available.');});
+
+// Browser-only catalog contract. Only the native host can actually scan or instantiate VST3.
+const plugEl=id=>document.getElementById(id);
+function pluginTargetLabel(){
+ const t=activeFxTarget&&tracks.concat(master).find(x=>x.id===activeFxTarget.channelId);
+ return t? t.name+' · Insert '+(activeFxTarget.slot+1):'Select a channel + insert slot';
+}
+function setBrowser(open){
+ pluginOpen=!!open;plugEl('pluginBrowser').hidden=!pluginOpen;
+ plugEl('pluginsButton').setAttribute('aria-expanded',String(pluginOpen));
+ if(pluginOpen){renderPluginCatalog();const input=plugEl('pluginSearch');if(input.focus)input.focus();}
+}
+function openPluginBrowser(t,slot){
+ const first=t||selection()[0]||tracks[0];
+ if(first){
+  const empty=first.fx.findIndex(x=>x==='None');
+  activeFxTarget={channelId:first.id,slot:Number.isInteger(slot)?slot:empty<0?0:empty};
+ }
+ plugEl('pluginTarget').textContent=pluginTargetLabel();
+ setBrowser(true);
+}
+function catalogById(id){return pluginCatalog.find(p=>p.id===id);}
+function renderPluginCatalog(){
+ const q=String(plugEl('pluginSearch').value||'').trim().toLowerCase();
+ const cat=plugEl('pluginCategory').value||'all';
+ const mode=plugEl('pluginView').value||'all';
+ const list=pluginCatalog.filter(p=>{
+  if(cat!=='all'&&p.category!==cat)return false;
+  if(mode==='favorites'&&!p.favorite)return false;
+  if(mode==='recent'&&!pluginRecent.includes(p.id))return false;
+  if(mode==='hidden'&&!p.hidden)return false;
+  if(mode!=='hidden'&&p.hidden)return false;
+  return [p.name,p.vendor,p.category,p.format].join(' ').toLowerCase().includes(q);
+ }).sort((a,b)=> mode==='recent'?pluginRecent.indexOf(a.id)-pluginRecent.indexOf(b.id):a.name.localeCompare(b.name));
+ plugEl('pluginResults').innerHTML=list.length?list.map(p=>{
+  const isBad=p.status==='error'||p.status==='disabled';
+  const status=p.status==='demo'?'UI only':p.status==='ready'?'Listed':p.status==='error'?'Error':'Disabled';
+  const latency=p.latencySamples==null?'Latency unknown':p.latencySamples+' smp (reported)';
+  return '<div class="plugin-item '+(isBad?'disabled':'')+'" role="listitem"><button class="plugin-choose" data-plugin-action="choose" data-plugin-id="'+escapeHtml(p.id)+'" '+(isBad||p.hidden?'disabled':'')+' title="Assign to selected FX insert"><span class="plugin-name">'+escapeHtml(p.name)+'</span><span class="plugin-meta">'+escapeHtml(p.vendor)+' · '+escapeHtml(p.category)+' · '+escapeHtml(latency)+'</span></button><div class="plugin-labels"><span class="plugin-pill '+(isBad?'problem':'')+'">'+escapeHtml(p.format)+'</span><span>'+status+'</span></div><button class="plugin-flag '+(p.favorite?'starred':'')+'" data-plugin-action="fav" data-plugin-id="'+escapeHtml(p.id)+'" aria-label="'+(p.favorite?'Unfavorite':'Favorite')+' '+escapeHtml(p.name)+'" title="Toggle favorite">★</button><button class="plugin-flag" data-plugin-action="hide" data-plugin-id="'+escapeHtml(p.id)+'" aria-label="'+(p.hidden?'Show':'Hide')+' '+escapeHtml(p.name)+'" title="Hide or show effect">'+(p.hidden?'◉':'⊘')+'</button></div>';
+ }).join(''):'<div class="plugin-empty">No effects match · try another category or clear the search.</div>';
+ plugEl('pluginCount').textContent=list.length+' shown / '+pluginCatalog.length+' listed';
+}
+function insertCatalogPlugin(id){
+ const plugin=catalogById(id);
+ if(!plugin||plugin.hidden||plugin.status==='error'||plugin.status==='disabled'){say('This effect is not available for insertion.');return;}
+ if(!activeFxTarget){say('Choose a channel FX insert before loading an effect.');return;}
+ const t=tracks.concat(master).find(x=>x.id===activeFxTarget.channelId);
+ if(!t||!Number.isInteger(activeFxTarget.slot)||activeFxTarget.slot<0||activeFxTarget.slot>=t.fx.length){say('Selected FX slot is no longer available.');return;}
+ t.fx[activeFxTarget.slot]=plugin.name;t.slotBypass[activeFxTarget.slot]=false;
+ pluginRecent=[plugin.id,...pluginRecent.filter(x=>x!==plugin.id)].slice(0,20);
+ refreshStrip(t);setBrowser(false);
+ say(t.name+' · FX '+(activeFxTarget.slot+1)+' → '+plugin.name+' · GUI reference only (no native DSP)');
+}
+function acceptPluginManifest(items){
+ if(!Array.isArray(items)||items.length>512)return false;
+ const added=[];const ids=new Set();
+ for(const item of items){
+  if(!item||typeof item.name!=='string'||!item.name.trim()||item.kind!=='effect')continue;
+  const name=item.name.trim().slice(0,80);
+  const vendor=typeof item.vendor==='string'?item.vendor.slice(0,60):'Unknown vendor';
+  const format=['VST3','VST2','AU','CLAP','Native'].includes(item.format)?item.format:'Unknown';
+  const status=['ready','disabled','error'].includes(item.status)?item.status:'disabled';
+  const category=['EQ','Dynamics','Reverb','Delay','Modulation','Utility'].includes(item.category)?item.category:'Utility';
+  const id=typeof item.id==='string'?item.id.slice(0,100):name+'@'+vendor+'@'+format;
+  if(ids.has(id))continue;ids.add(id);
+  added.push({id,name,vendor,category,format,status,latencySamples:Number.isFinite(item.latencySamples)&&item.latencySamples>=0?Math.round(item.latencySamples):null,favorite:false,hidden:false});
+ }
+ if(!added.length)return false;
+ pluginCatalog=added;pluginRecent=[];
+ renderPluginCatalog();say('Imported '+added.length+' plugin metadata records · not a native scan, no plugin instantiated');
+ return true;
+}
+plugEl('pluginsButton').addEventListener('click',()=>pluginOpen?setBrowser(false):openPluginBrowser());
+plugEl('pluginClose').addEventListener('click',()=>setBrowser(false));
+plugEl('pluginSearch').addEventListener('input',renderPluginCatalog);
+plugEl('pluginCategory').addEventListener('change',renderPluginCatalog);
+plugEl('pluginView').addEventListener('change',renderPluginCatalog);
+plugEl('pluginResults').addEventListener('click',e=>{
+ const btn=e.target.closest('[data-plugin-action]');if(!btn)return;
+ const plugin=catalogById(btn.dataset.pluginId);if(!plugin)return;
+ const a=btn.dataset.pluginAction;
+ if(a==='fav')plugin.favorite=!plugin.favorite;
+ else if(a==='hide')plugin.hidden=!plugin.hidden;
+ else if(a==='choose'){insertCatalogPlugin(plugin.id);return;}
+ renderPluginCatalog();
+});
+plugEl('pluginImport').addEventListener('click',()=>{if(plugEl('pluginFile').click)plugEl('pluginFile').click();});
+plugEl('pluginFile').addEventListener('change',e=>{
+ const file=e.target.files&&e.target.files[0];if(!file)return;
+ if(file.size>2000000){say('Plugin metadata JSON too large (2 MB maximum)');return;}
+ const reader=new FileReader();
+ reader.onload=()=>{try{const data=JSON.parse(reader.result);if(!acceptPluginManifest(data)){say('No valid effect entries in JSON. Expected [{name,kind:"effect",format,status,...}]');}}catch(error){say('Invalid plugin metadata JSON.');}};
+ reader.readAsText(file);
+ e.target.value='';
+});
+// Explicitly metadata-only integration point; does not scan filesystem or instantiate FX.
+window.ArSonMixReference=Object.freeze({setPluginCatalog:acceptPluginManifest});
+
 function togglePreview(){
  preview=!preview;
  const b=document.getElementById('preview');
@@ -537,6 +691,8 @@ window.addEventListener('keydown',e=>{
   if(e.key.toLowerCase()==='v'){e.preventDefault();pasteChannels();return;}
   if(e.key.toLowerCase()==='g'){e.preventDefault();e.shiftKey?ungroupSelected():groupSelected();return;}
  }
+ if(e.key==='F8'&&!textEntry){e.preventDefault();pluginOpen?setBrowser(false):openPluginBrowser();return;}
+ if(e.key==='Escape'&&pluginOpen){setBrowser(false);return;}
  if(e.key==='Escape'&&preview)togglePreview();
  if(e.target===document.body&&e.key==='ArrowRight')document.getElementById('viewport').scrollLeft+=102;
  if(e.target===document.body&&e.key==='ArrowLeft')document.getElementById('viewport').scrollLeft-=102;
