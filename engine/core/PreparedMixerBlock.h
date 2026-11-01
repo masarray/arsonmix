@@ -283,6 +283,7 @@ public:
             monitorApplied_[i]=monitorGoal_[i]=gains[i];
             monitorRemaining_[i]=0;
         }
+        monitorPrimed_=true;
     }
 
     // FX callback signature: void(int stripId, float* L, float* R, int frames)
@@ -317,6 +318,19 @@ public:
             if(monitorL)std::fill_n(monitorL,frames,0.f);
             if(monitorR && monitorR!=monitorL)std::fill_n(monitorR,frames,0.f);
             return false;
+        }
+        // Also support direct PreparedMixerBlock users (no JUCE FxGraph
+        // wrapper): the first real MONITOR render starts at its approved
+        // levels, never with a fake 64-frame fade from an unpatched zero.
+        if(monitorL && !monitorPrimed_) {
+            for(int i=0;i<stripCount+auxBusCount;++i) {
+                const float gain=liveMonitorGains
+                    ?(*liveMonitorGains)[i].load(std::memory_order_acquire)
+                    :(*monitorGains)[i];
+                monitorApplied_[i]=monitorGoal_[i]=gain;
+                monitorRemaining_[i]=0;
+            }
+            monitorPrimed_=true;
         }
         float* const monitorBusL=monitorL?monitorScratchL_:nullptr;
         float* const monitorBusR=monitorR?monitorScratchR_:nullptr;
@@ -660,6 +674,7 @@ private:
     std::array<int,maxAuxSends> auxRampRemaining_{};
     std::array<float,stripCount+auxBusCount> monitorApplied_{},monitorGoal_{};
     std::array<int,stripCount+auxBusCount> monitorRemaining_{};
+    bool monitorPrimed_=false; // sole audio producer except prepublish seeding
     std::array<std::atomic<float>,auxBusCount> auxBusTarget_{};
     std::array<float,auxBusCount> auxBusApplied_{}; // callback thread exclusive
     std::array<bool,stripCount> rampPrimed_{};
