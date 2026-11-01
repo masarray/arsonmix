@@ -134,7 +134,7 @@ check(strip(1).includes('>ST</button>')&&strip(1).includes('Simulated stereo pea
 check(strip(1).includes('<option value="None" selected>None</option>'),'Flipping channel format does not invent an input patch');
 toggleFormat();filter('all');
 check(strip(1).includes('>M</button>')&&strip(1).includes('Simulated mono peak meter'),'Stereo→Mono restores mono controls');
-field(1,'input','Input 1 (Mono)');
+field(1,'input','Input 1 (Mono)');filter('all');
 check(strip(1).includes('<option value="Input 1 (Mono)" selected>Input 1 (Mono)</option>'),
       'Single enabled mono pin selected explicitly');
 toggleFormat();filter('all');
