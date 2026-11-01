@@ -969,7 +969,14 @@
       stage.disabled=!hardwareReady(s)||r.mode==='BUS';
       const stereoInvalid=r.mode==='STEREO'&&(!verified.some(p=>p.port===r.left)||
         !verified.some(p=>p.port===r.right)||r.left===r.right);
-      if(stereoInvalid)row.dataset.state='invalid';
+      if(stereoInvalid){
+        row.dataset.state='invalid';
+        // On a one-pin device, the accepted legacy stereo L=R route cannot
+        // be usable stereo. Offer ONE explicit native-safe MONO correction.
+        if(verified.length===1&&verified[0].port===r.left){
+          stage.textContent='FIX AS MONO';stage.dataset.ioQuickFix='1';
+        }
+      }
       action.append(stage,node('small','arIOQuickState',stereoInvalid?
         'INVALID STEREO · SELECT DISTINCT L/R':r.mode==='BUS'?'INTERNAL BUS':
         !s.ready?'NO DEVICE':row.dataset.state==='draft'?'DRAFT · NOT LIVE':
@@ -984,7 +991,8 @@
     const s=route(),pins=new Set(matrixPorts(s,'inputs'));
     if(!row||!Number.isInteger(channel)||channel<0||channel>=10||!hardwareReady(s))
       return matrixSay('Choose an active driver and wait for any previous APPLY.');
-    const mode=row.querySelector('[data-io-quick-mode]').value,
+    const mode=button.dataset.ioQuickFix==='1'?'MONO':
+        row.querySelector('[data-io-quick-mode]').value,
       left=Number(row.querySelector('[data-io-quick-pin="left"]').value),
       right=Number(row.querySelector('[data-io-quick-pin="right"]').value);
     if(mode==='MONO'&&!pins.has(left))return matrixSay('CH '+(channel+1)+' · choose a valid mono input.');
