@@ -358,6 +358,8 @@ node('reset').dispatch('click');
 node('reset').dispatch('click');
 check(html.includes('M14,17L9,12l5-5V17Z') && html.includes('M10,17V7l5,5l-5,5Z'),
  'Owner-provided solid SVG bank arrows are used unchanged');
+check((html.match(/width="24" height="24" fill="#1f1f1f" aria-hidden="true"/g)||[]).length===2,
+ 'Both arrows reproduce the exact owner supplied 24x24 SVG fill and physical dimensions');
 check(html.includes('class="tool btn-180') &&
  html.includes('class="tool btn-180 bank-arrow"') &&
  html.includes('class="tool btn-180" id="sofToggle"'),
