@@ -1148,8 +1148,8 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
  height:29px!important;padding:0!important;
 }
 .command-bar .bank-arrow svg{
- width:20px!important;height:20px!important;display:block!important;
- color:#183039!important;fill:currentColor!important;
+ width:24px!important;height:24px!important;display:block!important;
+ color:#1f1f1f!important;fill:#1f1f1f!important;
  flex:none!important;pointer-events:none!important;
 }
 .command-bar .bank-arrow:disabled{opacity:.54!important}
@@ -1311,9 +1311,9 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
   <div class="command-bar" role="toolbar" aria-label="Live mixer controls">
     <button class="tool btn-180 primary" id="pluginsButton" title="Search and assign FX plugins (F8)" aria-controls="pluginBrowser" aria-expanded="false">Plugins · F8</button>
     <span class="sep"></span>
-    <span class="toolbar-label">BANK</span><button class="tool btn-180 bank-arrow" id="bankPrev" title="Previous bank" aria-label="Previous channel bank"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M14,17L9,12l5-5V17Z"/></svg></button>
+    <span class="toolbar-label">BANK</span><button class="tool btn-180 bank-arrow" id="bankPrev" title="Previous bank" aria-label="Previous channel bank"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="#1f1f1f" aria-hidden="true"><path d="M14,17L9,12l5-5V17Z"/></svg></button>
     <select class="toolbar-select" id="bankSelect" aria-label="Mixer bank"><option value="0">CH 01–10</option></select>
-    <button class="tool btn-180 bank-arrow" id="bankNext" title="Next bank" aria-label="Next channel bank"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M10,17V7l5,5l-5,5Z"/></svg></button>
+    <button class="tool btn-180 bank-arrow" id="bankNext" title="Next bank" aria-label="Next channel bank"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="#1f1f1f" aria-hidden="true"><path d="M10,17V7l5,5l-5,5Z"/></svg></button>
     <label class="toolbar-label" for="densitySelect">VIEW</label><select id="densitySelect" class="density-select" aria-label="Channel strip size"><option value="comfort" selected>Comfort</option><option value="standard">Standard</option><option value="compact">Compact</option></select>
     <span class="sep"></span>
     <button class="tool btn-180" id="sofToggle" title="Mix Aux and FX sends using the channel faders" aria-pressed="false">Sends on Faders</button>
