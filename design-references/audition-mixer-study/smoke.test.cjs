@@ -125,12 +125,12 @@ node('pluginClose').dispatch('click');
 // Explicit channel format + patch safety; do not infer stereo from a single input pin.
 node('reset').dispatch('click');
 check(strip(1).includes('data-action="format"')&&strip(1).includes('>M</button>'),'Live mono input strip shows Mono format badge');
-check(strip(1).includes('Simulated mono peak meter'),'Mono strip draws a mono meter');
+check(strip(1).includes('Simulated mono dBFS meter'),'Mono strip draws a mono meter');
 const toggleFormat=()=>node('body').handlers.click({target:{closest:k=>k==='[data-action]'?{
  dataset:{action:'format'},closest:q=>q==='.strip'?{dataset:{id:1}}:null
 }:null}});
 toggleFormat();filter('all');
-check(strip(1).includes('>ST</button>')&&strip(1).includes('Simulated stereo peak meter'),'Flipping Mono→Stereo changes format and meter');
+check(strip(1).includes('>ST</button>')&&strip(1).includes('Simulated stereo dBFS meter'),'Flipping Mono→Stereo changes format and meter');
 check(strip(1).includes('<option value="None" selected>None</option>'),'Flipping channel format does not invent an input patch');
 toggleFormat();filter('all');
 check(strip(1).includes('>M</button>')&&strip(1).includes('Simulated mono peak meter'),'Stereo→Mono restores mono controls');
@@ -159,15 +159,12 @@ check(html.includes('.console-body.collapsed-fx .fxslot-list,.console-body.narro
 check(html.includes('grid-template-columns:10px minmax(0,1fr) 28px'),
   'Send controls have constrained slider/dB columns');
 check(html.includes('.console-body.collapsed-fx{--fx-h:23px}') &&
-  html.includes('.console-body.collapsed-send{--send-h:23px}') &&
-  html.includes('.console-body.collapsed-eq{--eq-h:23px}'),
-  'All collapsed rows share the same compact height variable');
-check(html.includes('flex:0 0 var(--fx-h)') &&
-  html.includes('flex:0 0 var(--send-h)') &&
-  html.includes('flex:0 0 var(--eq-h)'),
-  'Section heights cannot shrink independently of section rail');
+  html.includes('.console-body.collapsed-send{--send-h:23px}'),
+  'FX and SEND folds share compact-height tokens');
+check(html.includes('flex:0 0 var(--fx-h)') && html.includes('flex:0 0 var(--send-h)'),
+  'FX and SEND bands cannot shrink independently of section rail');
 const rail=node('rail'),body=node('body');
-for(const name of ['fx','send','eq','route']){
+for(const name of ['fx','send','route']){
  const flags=new Set(),attrs={};
  const button={dataset:{section:name},classList:{toggle(k,on){on?flags.add(k):flags.delete(k);return on;}},setAttribute(k,v){attrs[k]=v;}};
  const target={closest:k=>k==='[data-section]'?button:null};
@@ -182,7 +179,8 @@ for(const name of ['fx','send','eq','route']){
 
 // Comfort / Senior operational ergonomics regression (visual-reference only).
 check(html.includes('data-density="comfort"'),'Comfort view is default on first load');
-check(html.includes('--strip-w:150px;--master-w:152px'),'Comfort channel and pinned Master widths');
+check(html.includes("root.style.setProperty('--channel-w'") && html.includes('grid-template-columns:repeat(var(--bank-columns,10)'),
+      'Master and source strips share ONE calculated slot width, including partial banks');
 check(html.includes('data-field="input"') && strip(1).includes('class="route-caption">IN</span>') &&
       strip(1).includes('class="route-caption">OUT</span>'),
       'Source and primary output have labeled separate rows');
@@ -190,13 +188,11 @@ check(strip(1).includes('class="fader-head"') && strip(1).includes('class="fader
       'Fader dB numeric display is above the tactile fader');
 check(strip(1).includes('class="clip-indicator') && strip(1).includes('class="meter-box mono"'),
       'Mono strip includes explicit clip LED and one meter lane');
-check(strip(1).includes('class="switch-full">MUTE</span>') &&
-      strip(1).includes('class="switch-full">SOLO</span>'),
-      'Comfort mode has full MUTE and SOLO labels');
-check(html.includes('.console-body .fader-box:before') &&
-      html.includes('.console-body .fader-box:after') &&
-      html.includes('var(--fader-fill,0%)'),
-      'Tactile well, fader slot and track-colored fader progression are present');
+check(strip(1).includes('class="switch btn-180 mute') && strip(1).includes('class="switch btn-180 solo') && strip(1).includes('class="switch btn-180 cue'),
+      'Three equal-width manual BTN-180 buttons MUTE, SOLO, PFL, no I');
+check(html.includes('.console-body .fader-box::before') && html.includes('.console-body .fader-box::after') &&
+      html.includes('.fader-travel .cap') && html.includes('RAIL3'),
+      'Calibrated old fader housing and cap travel restored with original RAIL3 material');
 check(html.includes('.console-body .meter-lane:before') &&
       html.includes('repeating-linear-gradient(to top,transparent'),
       'Segmented LED meter overlays are present');
@@ -211,16 +207,14 @@ density.value='comfort';density.dispatch('change');
 check(node('body').dataset.density==='comfort'&&!node('body').classList.contains('narrow'),
       'Comfort restores full effects, send and EQ visibility');
 check(html.includes('.console-body.collapsed-route .route-field{display:none}') &&
-      html.includes('.console-body.collapsed-send .send-section .send-select,.console-body.collapsed-send .send-section .sendlevel{display:none}') &&
-      html.includes('.console-body.collapsed-eq .eq-section .eq-line{display:none}'),
-      'No stale expanded CSS declarations in collapsed route, send, EQ');
-check(html.includes('right:var(--master-w)!important'),
-      'Plugin overlay reserves actual pinned Master width across density presets');
-check(html.includes('.console-pane{--master-w:142px;--plugin-w:') &&
-      html.includes("parent.style.setProperty('--master-w',widths[density])"),
-      'Plugin overlay offset is inherited from pane and refreshed when density changes');
-check(html.includes('function bankCapacity()') && html.includes('Math.min(10,Math.floor(width/112))'),
-      'Live bank fits ten channels maximum without a bottom scrollbar');
+      html.includes('.console-body.collapsed-send .send-section .send-select,.console-body.collapsed-send .send-section .sendlevel{display:none}'),
+      'No stale expanded CSS declarations in collapsed route and send');
+check(html.includes('right:var(--master-w)!important') && html.includes('--channel-w'),
+      'Plugin overlay and pinned Master use coherent single-width channel geometry');
+check(html.includes('.console-body.plugin-open #viewport{margin-right:var(--plugin-w)}') && html.includes('dock=pluginOpen?'),
+      'Plugin opening adjusts bank capacity without covering fixed Master');
+check(html.includes('function bankCapacity()') && html.includes('Math.floor(usable/130)'),
+      'Bank slot count protects full VU/rail width with no bottom scrollbar');
 
 
 // V3 integrated visual/layout behavior: no bottom-scrollbar and 10-channel bank.
@@ -246,16 +240,14 @@ check(html.includes('--ari-silver:url(data:image/png;base64,iVBORw0KGgo') &&
 check(html.includes('width:36px!important;height:77px!important') &&
  html.includes('width:18px!important;height:40px!important'),
  'Natural 36x77 fader and 18x40 pan dimensions preserved');
-check(html.includes('grid-template-columns:25px minmax(0,1fr) 24px!important') &&
+check(html.includes('grid-template-columns:51px minmax(36px,1fr) 26px!important') &&
  strip(1).indexOf('class="meter-box mono"')<strip(1).indexOf('class="fader-box"') &&
  strip(1).indexOf('class="fader-box"')<strip(1).indexOf('class="fader-scale"'),
  'Fader paint and DOM use left VU, central fader, right ruler');
-check(html.includes('class="console-body collapsed-fx collapsed-send collapsed-eq"') &&
- html.includes('class="rail-cell fx collapsed"') &&
- !strip(1).includes('Add effect</button><button class="fx-remove"'),
- 'Mix default starts with clean collapsed processing and single Add FX affordance');
-check(!strip(1).includes('Q22 15 29 9') && html.includes('eq-status-quiet'),
- 'Inactive EQ decoration removed from every strip');
+check(html.includes('class="console-body collapsed-send"') && !strip(1).includes('Add effect</button><button class="fx-remove"'),
+ 'Mix default prioritizes expanded FX rack and only one Add FX affordance');
+check(!strip(1).includes('eq-section') && !html.includes('data-section="eq"'),
+ 'EQ row and section control are removed: EQ is accessed as an FX plugin');
 node('pluginsButton').dispatch('click');
 check(node('body').classList.contains('plugin-open') &&
  html.includes('.console-body.plugin-open #viewport{margin-right:var(--plugin-w)}'),
@@ -263,10 +255,25 @@ check(node('body').classList.contains('plugin-open') &&
 node('pluginClose').dispatch('click');
 check(!node('body').classList.contains('plugin-open'),
  'Closing Plugin Manager restores full 10-strip width');
-node('viewport').clientWidth=980;filter('all');
-check(count()===8,'At narrow viewport bank capacity decreases to protect input readability');
-node('viewport').clientWidth=1200;filter('all');
-check(count()===10,'At desktop viewport bank capacity restores ten visible strips');
+node('body').clientWidth=1180;filter('all');
+check(count()===7,'At smaller desktop viewport capacity decreases without stretching');
+node('body').clientWidth=1680;filter('all');
+check(count()===10,'At 1680px viewport returns to ten source channels plus equal Master');
+
+
+check(!strip(1).includes('data-action="mon"')&&!strip(1).includes('data-field="sendPan"'),
+      'I monitor button and stereo Send PAN removed without changing preserved session model');
+check(strip(1).includes('class="trim-control ari-horizontal"') &&
+      strip(1).includes('data-field="level"'),
+      'Trim uses original PAN thumb material; fader remains a separate accessible gain input');
+check(html.includes('--b180-shadow-surface') &&
+      html.includes('inset 5px 5px 2px -1px rgba(0,0,0,.18)') &&
+      html.includes('inset 3px 2px 2px -1px rgba(0,0,0,.50)'),
+      'Exact seven-layer BTN-180 resting and physical-press shadows imported from old source');
+check(html.includes('data:image/png;base64')&&html.includes('background:var(--ari-rose) center/36px 77px'),
+      'Original 36×77 channel and RoseGold Master cap used within the exact detent travel');
+check(html.includes('aria-label="Simulated')===false || strip(1).includes('dBFS meter'),
+      'Demo meter explicitly reported in dBFS, not misleading gain scale');
 
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
