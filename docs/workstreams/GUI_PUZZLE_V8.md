@@ -1,3 +1,5 @@
+> **MANDATORY UX SPECIFICATION AMENDMENT:** [PRD v5.2 §9](../PRD_ARSONMIX_OPERATOR_FIRST_LIVE_MIXER_V5_20261101.md) and [ARD v5.2 §K](../ARD_ARSONMIX_UNIVERSAL_REALTIME_CONSOLE_V5_20261101.md) designate [PR #278](https://github.com/masarray/arsonmix/pull/278) as the user-approved single Console UI baseline. Adapt it in GUI #271 as real WebView native renderer; no legacy workbench/tab wizard fallback as finished UI. Publish every #278 control→native op mapping in issue #192. Do not import fake meters/catalog/ports or confuse linked faders with native Group Bus. This supersedes older GUI layout goals in this packet.
+
 # THREAD B — GUI: binding puzzle handoff (PR #271)
 
 **READ FIRST:** [PRD v5.1](../PRD_ARSONMIX_OPERATOR_FIRST_LIVE_MIXER_V5_20261101.md) §8, [ARD v5.1](../ARD_ARSONMIX_UNIVERSAL_REALTIME_CONSOLE_V5_20261101.md) §J, [v8 socket](../PUZZLE_INTEGRATION_CONTRACT_V8_20261101.md), [machine inventory](../../contracts/console-puzzle-v8.json). Continue #271 as the SINGLE GUI branch; #274 generated asset and #275 First Sound are source patches to selectively reconcile, not competing product releases. Do not modify src/**, engine/core/**, or FAT workflow YAML.

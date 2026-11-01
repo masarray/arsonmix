@@ -1,5 +1,5 @@
-# ArSonMix PRD v5.1 — Operator-First Live Mixer Console
-Date: 2026-11-01 | Updated: 2026-11-01, mandatory puzzle-socket delivery amendment | Status: **NORMATIVE PRODUCT TARGET, NOT SHIPPED FEATURE ATTESTATION** | Supersedes the workflow and priorities in PRD v4.1. Companion: [ARD v5.0](ARD_ARSONMIX_UNIVERSAL_REALTIME_CONSOLE_V5_20261101.md).
+# ArSonMix PRD v5.2 — Operator-First Live Mixer Console
+Date: 2026-11-01 | Updated: 2026-11-01, user-approved PR #278 one-console design lock (v5.2) | Status: **NORMATIVE PRODUCT TARGET, NOT SHIPPED FEATURE ATTESTATION** | Supersedes the workflow and priorities in PRD v4.1. Companion: [ARD v5.2](ARD_ARSONMIX_UNIVERSAL_REALTIME_CONSOLE_V5_20261101.md).
 
 ## 1. Product promise and non-goals
 
@@ -139,3 +139,44 @@ All features below must coexist in one app and one verified integrated SHA:
 Each owner must produce a **Puzzle Handoff** on [epic #192](https://github.com/masarray/arsonmix/issues/192): source SHA and changed files, one shared fixture version/hash, real operation supported by the installed callback or explicit NOT CONNECTED, tests at that SHA, cross-owner blocker and its corrective code change. A standalone green CI, offline Group or browser screenshot is not accepted as milestone completion.
 
 **Exit sequence:** S0 same producer fixture + consumer + validator → S1 actual native callback one-input/direct-console complete sound path → S2 complete two-VST3/dynamic/Group/Return/Monitor/Show mixer → S3 one exact-SHA Windows/Chromium/package, independent hardware qualification or explicit PENDING → only then user UAT. Do not reduce scope or skip a failed gate for speed.
+
+
+## 9. NORMATIVE V5.2 PRODUCT DESIGN LOCK — USER-APPROVED PR #278 MIXER WORKFLOW
+
+**Approved 2026-11-01; precedence:** This §9 overrides any older GUI navigation/layout defaults in this PRD, v7, v8 handoffs or legacy M4 workbench. **The user explicitly selected [PR #278](https://github.com/masarray/arsonmix/pull/278), \`design-references/audition-mixer-study/index.html\` at its reviewed design-study baseline, as the correct visual and workflow direction.** This is the primary product design reference; the source remains isolated as an interactive browser study and **does not produce audio**. Adopt its **geometry, visual hierarchy, and fast interactions**, not its simulated audio, dummy device labels, fake plugin instances, or DOM full-rebuild implementation. No competing GUI concept or fresh redesign without explicit owner decision. [ARD v5.2 §K](ARD_ARSONMIX_UNIVERSAL_REALTIME_CONSOLE_V5_20261101.md) specifies the engineering realization.
+
+### P9.1. Product identity: DAW-grade mixer experience, NOT a DAW editor
+ArSonMix is a **native realtime virtual digital mixer** (karaoke, stage, podcast, radio, livestream) with **Adobe Audition Multitrack MIXER as the primary single-window interaction/geometric reference** and Studio One/Fender Studio Pro Console as secondary **productivity** patterns (narrow strips, channel banks, multi-selection, copy/paste, groups, scenes and flexible plugin operations). eMotion LV1 informs live cue/sends/banking and operational reliability. No timeline, waveform editing, song sequencer, READ/WRITE/TOUCH automation lanes, MIDI arranger or DAW transport/record-arm workflow. In #278, remove \`auto-section\` as DAW automation; **input TRIM remains useful**. Do not copy copyrighted app assets or misleading OEM labels.
+
+### P9.2. Exact operator homepage and strip anatomy
+**On launch the main window IS the live Mixer Console**, not Audio Setup, signal-flow editor or an engineering workbench. One uninterrupted horizontal strip surface, compact title/action bar and a small collapsible section rail. Each strip aligns in consistent horizontal bands across channels (top→bottom):
+1. **IN and OUT directly selectable on every eligible strip**, actual ASIO/WASAPI capture/render pins and native Bus roles; format M/ST is a separate adjacent processing-width choice where supported.
+2. **VST3 insert rack:** ordered, real slots with enable/bypass, drag-reorder, click slot→search/add effect, double-click/open editor, safe add/remove; no detached FX-workspace prerequisite.
+3. **SENDS:** actual available slots, destination, PRE/POST, enabled state and send level/pan; Sends-on-Faders for fast monitor/FX mixes. #278's 16-slot demonstration is a UX scalability reference, NOT permission to advertise 16 working sends when native has only four.
+4. **EQ/trim and PAN:** compact EQ access to actual plugin/native EQ only, digital gain trim, pan center snap with a bipolar track filled from center toward L/R (not a left-origin fill).
+5. **MUTE/SOLO/CUE controls**, native safety semantics and no recording/DAW automation toggles.
+6. **FADER and real fixed-color L/R LED peak meters:** green→yellow→red thresholds stay in place; only segments reached by actual PCM light up, clipping latches appropriately. No simulated/animated random meter in production.
+7. **Channel name, role/color and selection** at footer. Always **pin MASTER/MAIN** on right and keep a consistent visible signal path. Input, Bus, FX Return, Monitor and MAIN remain semantically distinct native roles; no CH10 relabel trick.
+
+Horizontal banking, Narrow mode, filter by channel role/solo, collapsible rail, Ctrl/Shift multi-select, inline rename and Ctrl+C/Ctrl+V settings copy must be available as in #278. Copy/paste never silently reassigns physical I/O, driver ownership, or hardware device selection. Avoid excessive modal layering, 10-row patch wizard, mandatory Software Input alias creation, repeated STAGE→MUTE→APPLY→ARM and three separate FX/ROUTE/SENDS workspaces for common use. Expert matrix may exist under a deliberately optional **Advanced Routing** surface; device choice is ONE compact drawer.
+
+### P9.3. The immediate live-audio interaction contract
+User flow MUST be: launch → select real audio interface/device ONCE → choose \`IN1\` directly on CH07 (one gesture) → actual capture signal on native channel meter → fader/VST3/Send edits with immediate audible low-latency effect → choose legal output on MAIN/monitor. No full device stop/reopen or global mute for routine fader, pan, FX bypass or safe channel source changes; structural plugin/graph mutations may internally prepare/swap and ACK. UI does not show technical revision numbers as a user task. Playback/capture availability and PCM are distinct truth states; no fake stereo pin pair on a one-pin device; VB-Cable capture remains silent unless fed by the playback side of that cable. Latency is physically nonzero depending on driver/buffers/plugin chain; aim for minimum safe realtime roundtrip, don't claim literal zero ms.
+
+### P9.4. Menu/feature semantics that cannot be conflated
+- **\`LINK FADERS\`** (relative level + optional linked mute/solo across selected channels) is a control group. It is NOT a DSP summing Group Bus. \`ROUTE TO GROUP BUS\` creates/chooses a native **serial Group Bus**, with exactly one primary dry path onward to MAIN. Both controls must be named/behave distinctly.
+- **\`FX RETURN\`** is a native parallel wet receive path; bus and send cycles rejected. Source sends PRE/POST with correct gain/pan, no doubled dry.
+- **\`SCENE / SHOW\`** stores/restores real native accepted mixer state and VST3 vendor chunks; optional Scene Safe protects live targets. Demo state-only Scene Save is unacceptable.
+- **\`PLUGIN MANAGER (F8)\`** searches native scanned/validated VST3 catalog with category, vendor, favorites/recent/hidden and real load/editor/bypass/reorder. Demo JSON/import and dummy plugin list are not production functionality; scanner/errors never block realtime audio callback.
+- **\`CUE/PFL / MONITOR\`** requires real separate monitor DSP/output support before enabling, no demo-only illuminated buttons. No fake arming/record functions from a DAW.
+
+### P9.5. Non-negotiable operator acceptance journeys
+1. From ONE Console select device, direct \`CH07 IN1\` and MAIN output without modal setup workflow; on one-pin interface see \`IN1 MONO\` only.
+2. Select \`CH02 IN2\` independently where real pin 2 exists; load/bypass/reorder two genuine VST3 effects while audio remains continuous and corresponding native meters respond.
+3. Multi-select channels, **LINK FADERS** with relative changes; separately create **Group Bus**, route selected primary outputs to bus→MAIN and verify no duplicate dry. Add true FX Return and POST/PRE sends in parallel.
+4. Find/install/select plugin from native Plugin Manager, open actual vendor editor; switch narrow/filters/banks without losing pinned MASTER or mutating DSP.
+5. Save/recall actual Scene/Show with stable ChannelIds; use Cue/PFL/Monitor if backend supports real legal endpoint; input/device fault shows clear no-PCM status, not false LIVE.
+6. Verify all controls in actual packaged Windows WebView2 build (not just the #278 HTML demo), 1024×600, 1366×768, 1680×900 and standard iGPU; no heavy blur, glow, hover-triggered full DOM rerender, jitter or excessive large fonts/cards.
+7. FAT validates one exact combined engine+GUI+test SHA and independent hardware evidence when available; if not, mark acoustic QA PENDING without passing certification. User UAT only after feature-complete integrated candidate.
+
+**Priority enforcement:** When UX conflicts arise, this user-approved #278 workflow wins for operator interaction. ARD RT/thread safety, physical truth, plugin lease ownership, ChannelId semantics, accepted native ACK, and sound integrity remain inviolable. ENGINE #266 serves the controls; GUI #271 implements the production screen in \`web/**\`; INTEGRATION #270 tests the operator journey. No parallel standalone UI as another release product.
