@@ -2,6 +2,7 @@
 #pragma once
 #include <juce_core/juce_core.h>
 #include "../integration/ConsoleNativeContractV6.h"
+#include "../engine/core/ConsolePuzzleV8Wire.h"
 #include <cstdint>
 #include <deque>
 #include <cmath>
@@ -22,118 +23,77 @@ public:
     // Source: LiveAudioEngine::status() with its real JUCE callback telemetry,
     // driver active masks and epoch. No browser invented physical pins.
     static juce::var snapshot(const juce::var& live) {
-        const auto route=live.getProperty("dryRoutingLab",{});
-        const auto ep=decimalFromNative(route.getProperty("epoch",juce::var()));
-        auto result=std::make_unique<juce::DynamicObject>();
-        result->setProperty("schemaVersion",schemaVersion);
-        result->setProperty("productionCallbackLive",false);
-
-        auto device=std::make_unique<juce::DynamicObject>();
-        device->setProperty("epoch",ep);
-        device->setProperty("backend",live.getProperty("driver","").toString());
-        device->setProperty("captureDevice",live.getProperty("inputDevice","").toString());
-        device->setProperty("playbackDevice",live.getProperty("outputDevice","").toString());
-        device->setProperty("sampleRate",live.getProperty("rate",juce::var()));
-        device->setProperty("bufferFrames",live.getProperty("buffer",juce::var()));
-        const bool routeAccepted=static_cast<bool>(route.getProperty("ready",false)) &&
+        // Single actual native producer for both JUCE WebView and S0
+        // fixture. No JSON shape authored by the JS/GUI.
+        PuzzleV8Snapshot w;
+        const auto route=live.getProperty("dryRoutingLab",juce::var());
+        w.epoch=decimalFromNative(route.getProperty("epoch",juce::var())).toStdString();
+        w.legacyRoutingRevision=decimalFromNative(
+            route.getProperty("revision",juce::var())).toStdString();
+        w.legacyActive=static_cast<bool>(route.getProperty("active",false));
+        w.legacyRouteAccepted=static_cast<bool>(route.getProperty("ready",false)) &&
             static_cast<bool>(route.getProperty("hasAcceptedRoute",false));
-        const bool direct=static_cast<bool>(live.getProperty("directRouteAuthorized",false));
-        const bool armed=static_cast<bool>(live.getProperty("monitor",false)) &&
-            static_cast<bool>(live.getProperty("connected",false)) &&
-            direct && routeAccepted;
-        device->setProperty("outputArmed",armed);
-        // Exact enabled physical pin maps to JUCE callback ordinal; raw
-        // samples are measured by the installed input callback BEFORE MUTE.
-        // Omit per-pin evidence if the native observation is unavailable.
-        const auto physicalInputs=route.getProperty("ports",juce::var());
-        const auto perPort=live.getProperty("captureCallbackPeaks",juce::var());
-        const auto* observed=perPort.getArray();
-        juce::Array<juce::var> inputEndpoints;
-        if(const auto* pins=physicalInputs.getArray())
-            for(const auto& pin:*pins) {
-                const auto cb=static_cast<int>(pin.getProperty("callback",-1));
-                const auto phys=pin.getProperty("port",juce::var());
-                if(!phys.isInt()||cb<0)continue;
-                auto obj=std::make_unique<juce::DynamicObject>();
-                obj->setProperty("port",phys);
-                obj->setProperty("callback",cb);
-                obj->setProperty("label",pin.getProperty("label",""));
-                if(observed && cb<observed->size()) {
-                    const auto value=observed->getReference(cb);
-                    if(value.isDouble()||value.isInt()) {
-                        const auto peak=static_cast<double>(value);
-                        if(std::isfinite(peak)&&peak>=0.) {
-                            obj->setProperty("rawPeak",peak);
-                            obj->setProperty("rawPresent",peak>0.0005);
+        w.backend=live.getProperty("driver","").toString().toStdString();
+        w.captureDevice=live.getProperty("inputDevice","").toString().toStdString();
+        w.playbackDevice=live.getProperty("outputDevice","").toString().toStdString();
+        const double rate=static_cast<double>(live.getProperty("rate",0.));
+        if(std::isfinite(rate) && rate>0. && rate<=384000.)
+            w.sampleRate=static_cast<int>(rate);
+        const int frames=static_cast<int>(live.getProperty("buffer",0));
+        if(frames>0)w.bufferFrames=frames;
+        const bool connected=static_cast<bool>(live.getProperty("connected",false));
+        w.outputArmed=connected && w.legacyRouteAccepted &&
+            static_cast<bool>(live.getProperty("monitor",false)) &&
+            static_cast<bool>(live.getProperty("directRouteAuthorized",false));
+        const auto peak=static_cast<double>(live.getProperty("inputPeak",0.));
+        if(std::isfinite(peak) && peak>=0.)w.rawCapturePeak=peak;
+        w.rawCapturePresent=connected &&
+            static_cast<double>(live.getProperty("callbackCount",0.))>0. &&
+            static_cast<int>(live.getProperty("callbackInputChannels",0))>0 &&
+            w.rawCapturePeak>0.0005;
+        w.mainPcmPresent=w.outputArmed &&
+            static_cast<double>(live.getProperty("peak",0.))>0.0002;
+        w.monitorPcmPresent=w.outputArmed &&
+            static_cast<double>(route.getProperty("monitorPeakL",0.))>0.0002;
+        const auto pins=route.getProperty("ports",juce::var());
+        const auto peaks=live.getProperty("captureCallbackPeaks",juce::var());
+        const auto* readings=peaks.getArray();
+        if(const auto* physical=pins.getArray())
+            for(const auto& p:*physical) {
+                const auto number=p.getProperty("port",juce::var());
+                const auto ordinal=p.getProperty("callback",juce::var());
+                if(!number.isInt()||!ordinal.isInt())continue;
+                PuzzleV8Pin pin;
+                pin.port=static_cast<int>(number);
+                pin.callback=static_cast<int>(ordinal);
+                if(pin.port<0 || pin.callback<0)continue;
+                pin.label=p.getProperty("label","").toString().toStdString();
+                if(readings && pin.callback<readings->size()) {
+                    const auto value=readings->getReference(pin.callback);
+                    if(value.isInt()||value.isDouble()) {
+                        const auto peakValue=static_cast<double>(value);
+                        if(std::isfinite(peakValue)&&peakValue>=0.) {
+                            pin.hasRawPeak=true;pin.rawPeak=peakValue;
                         }
                     }
                 }
-                inputEndpoints.add(juce::var(obj.release()));
+                w.inputs.push_back(std::move(pin));
             }
-        device->setProperty("inputEndpoints",juce::var(inputEndpoints));
-        juce::Array<juce::var> outputs;
-        const auto enabledOutputPins=route.getProperty("outputPorts",juce::var());
-        if(const auto* enabled=enabledOutputPins.getArray()) {
-            for(int i=0;i<enabled->size();++i){
-                const auto p=enabled->getReference(i);
-                if(!p.isInt())continue;
-                auto item=std::make_unique<juce::DynamicObject>();
-                item->setProperty("port",p);
-                item->setProperty("callback",i);
-                outputs.add(juce::var(item.release()));
+        const auto outputs=route.getProperty("outputPorts",juce::var());
+        if(const auto* ports=outputs.getArray())
+            for(int ordinal=0;ordinal<ports->size();++ordinal) {
+                const auto value=ports->getReference(ordinal);
+                if(!value.isInt())continue;
+                const int physical=static_cast<int>(value);
+                if(physical<0)continue;
+                w.outputs.push_back({physical,ordinal,{},{},0.});
             }
-        }
-        device->setProperty("outputEndpoints",juce::var(outputs));
-        result->setProperty("device",juce::var(device.release()));
-
-        // No universal roster or stable ChannelId exists in the installed M4
-        // audio callback yet. In particular, never present "CH10 FX Return"
-        // as a true wet FX_RETURN node and never advertise +CHANNEL/GROUP.
-        auto graph=std::make_unique<juce::DynamicObject>();
-        graph->setProperty("revision","0");
-        graph->setProperty("rosterRevision","0");
-        graph->setProperty("channels",juce::var(juce::Array<juce::var>{}));
-        graph->setProperty("destinations",juce::var(juce::Array<juce::var>{}));
-        auto capabilities=std::make_unique<juce::DynamicObject>();
-        capabilities->setProperty("callbackOwnsChannelIds",false);
-        capabilities->setProperty("fullVendorFxMigration",false);
-        capabilities->setProperty("showAndOutputParity",false);
-        capabilities->setProperty("physicalCaptureMapped",false);
-        capabilities->setProperty("dynamicChannels",false);
-        capabilities->setProperty("groups",false);
-        capabilities->setProperty("fxReturns",false);
-        capabilities->setProperty("monitor",false);
-        capabilities->setProperty("sendsOnFaders",false);
-        capabilities->setProperty("supportedOps",juce::var(juce::Array<juce::var>{}));
-        graph->setProperty("capabilities",juce::var(capabilities.release()));
-        result->setProperty("graph",juce::var(graph.release()));
-
-        auto telemetry=std::make_unique<juce::DynamicObject>();
-        const auto peak=static_cast<double>(live.getProperty("inputPeak",0.0));
-        const auto callbackCount=static_cast<double>(live.getProperty("callbackCount",0.0));
-        const auto callbackInputs=static_cast<int>(live.getProperty("callbackInputChannels",0));
-        const bool raw=static_cast<bool>(live.getProperty("connected",false)) &&
-            callbackCount>0 && callbackInputs>0 && peak>0.0005;
-        telemetry->setProperty("rawCapturePresent",raw);
-        telemetry->setProperty("rawCapturePeak",peak);
-        telemetry->setProperty("mainPcmPresent",armed &&
-            static_cast<double>(live.getProperty("peak",0.0))>0.0002);
-        telemetry->setProperty("monitorPcmPresent",armed &&
-            static_cast<double>(route.getProperty("monitorPeakL",0.0))>0.0002);
-        telemetry->setProperty("channelMeterRmsPeak",juce::var(juce::Array<juce::var>{}));
-        result->setProperty("telemetry",juce::var(telemetry.release()));
-
-        // Separate LEGACY diagnostic metadata cannot be mistaken for accepted
-        // ChannelId graph revisions. Output remains governed by old M4.
-        auto legacy=std::make_unique<juce::DynamicObject>();
-        legacy->setProperty("active",static_cast<bool>(route.getProperty("active",false)));
-        legacy->setProperty("routeAccepted",routeAccepted);
-        legacy->setProperty("routingRevision",decimalFromNative(
-            route.getProperty("revision",juce::var())));
-        legacy->setProperty("channelPeaks",route.getProperty("channelPeaks",
-            juce::var(juce::Array<juce::var>{})));
-        result->setProperty("legacyM4",juce::var(legacy.release()));
-        return juce::var(result.release());
+        // Authoritative installed renderer is still the old M4 PCM graph.
+        // Never promote CH10's label to a real wet FX_RETURN or advertise
+        // universal CREATE/GROUP/INSERT until one ChannelId callback owns it.
+        w.productionCallbackLive=false;
+        const auto bytes=PuzzleV8Wire::snapshot(w);
+        return juce::JSON::parse(juce::String::fromUTF8(bytes.c_str()));
     }
 
     // Exact native wire: opaque, unique-per-editor requestId and uint64
@@ -145,15 +105,9 @@ public:
         const auto request=intent.getProperty("requestId",juce::var());
         const auto id=request.isString()?request.toString():juce::String{};
         const auto requestBytes=id.toStdString();
-        auto ack=std::make_unique<juce::DynamicObject>();
-        ack->setProperty("requestId",id);
-        ack->setProperty("status","REJECTED");
         const auto device=acceptedSnapshot.getProperty("device",{});
         const auto graph=acceptedSnapshot.getProperty("graph",{});
         const auto epoch=device.getProperty("epoch","0").toString();
-        ack->setProperty("deviceEpoch",epoch);
-        ack->setProperty("graphRevision",graph.getProperty("revision","0"));
-        ack->setProperty("rosterRevision",graph.getProperty("rosterRevision","0"));
         juce::String fault="UNIVERSAL_CALLBACK_NOT_READY";
         if(!armix::integration::validConsoleRequestId(requestBytes))
             fault="INVALID_REQUEST_ID";
@@ -191,9 +145,15 @@ public:
                     fault="INVALID_CHANNEL_ID";
             }
         }
-        ack->setProperty("errorCode",fault);
-        ack->setProperty("productionCallbackLive",false);
-        return juce::var(ack.release());
+        PuzzleV8Ack ack;
+        ack.requestId=requestBytes;
+        ack.status="REJECTED";
+        ack.deviceEpoch=epoch.toStdString();
+        ack.graphRevision=graph.getProperty("revision","0").toString().toStdString();
+        ack.rosterRevision=graph.getProperty("rosterRevision","0").toString().toStdString();
+        ack.errorCode=fault.toStdString();
+        const auto bytes=PuzzleV8Wire::ack(ack);
+        return juce::JSON::parse(juce::String::fromUTF8(bytes.c_str()));
     }
 
     static bool decodeDecimal(const juce::var& raw,std::uint64_t& result) noexcept {
