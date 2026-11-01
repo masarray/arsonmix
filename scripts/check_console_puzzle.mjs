@@ -20,6 +20,7 @@ export const SOCKET_PATHS=Object.freeze({
  nativeRunner:'scripts/run_console_native_s0.mjs',
  nativeProof:'scripts/verify_console_s0_native_fixture.mjs',
  nativeSource:'src/LiveDryRoutingLab.h',
+ nativeTest:'tests/live_channel_fx_graph_test.cpp',
  machine:'contracts/console-puzzle-v8.json'
 });
 const c=(id,passes,owner,action)=>({id,pass:Boolean(passes),owner,action});
@@ -35,7 +36,9 @@ export function inspectPuzzleSources(s,fixtureSha256=''){
  const acceptedRoster=/\bw\.channels\s*=|\.channels\.push_back|accepted.*ChannelId/.test(native) &&
     !/^\s*\/\/.*\bw\.channels\s*=/m.test(native);
  const scopes=[
-   c('V8_MACHINE_CONTRACT',machine.includes('"schemaVersion"')&&machine.includes('"required"'),
+   c('V8_MACHINE_CONTRACT',machine.includes('"schemaVersion"')&&
+     machine.includes('"requiredSnapshotFields"')&&machine.includes('"intentRequired"')&&
+     machine.includes('"ackRequired"'),
      'SHARED #279','Restore machine-readable v8 schema/required-key inventory'),
    c('S0_SINGLE_CPP_SERIALIZER',
      native.includes('PuzzleV8Wire::snapshot(w)')&&
@@ -71,7 +74,7 @@ export function inspectPuzzleSources(s,fixtureSha256=''){
      fat.includes('enabledInputs')&&fat.includes('enabledOutputs')&&
      fatTest.includes('integration/console-v6/fixtures.json')&&
      runner.includes('puzzle-seam.mjs')&&
-     machine.includes('"ConsoleSnapshot"'),
+     machine.includes('"requiredSnapshotFields"'),
      'FAT #270','Use merged v8 machine socket and keep synthetic fixtures non-production'),
    c('S1_INSTALLED_LEGACY_NATIVE_CONTROLS',
      dispatch.includes('processProductionIntent')&&

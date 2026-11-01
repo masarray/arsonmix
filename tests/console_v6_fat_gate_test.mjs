@@ -259,7 +259,7 @@ test('shared #279 release preflight blocks even a source with working M4 control
   nativeSource:'bool process(',
   fat:'enabledInputs enabledOutputs',
   fatTest:'integration/console-v6/fixtures.json',
-  machine:'"schemaVersion" "required" "ConsoleSnapshot"'
+  machine:'"schemaVersion" "requiredSnapshotFields" "intentRequired" "ackRequired"'
  };
  const got=inspectPuzzleSources(src,'a'.repeat(64));
  assert.equal(got.portableFixtureMatch,true);
