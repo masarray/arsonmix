@@ -27,6 +27,7 @@ on:
       - 'tests/native_ui_contract_test.mjs'
       - 'tests/native_orbit_ui_smoke.py'
       - 'tests/ci_workflow_efficiency_test.mjs'
+      - 'tests/console_v6_fat_gate_test.mjs'
       - '.github/workflows/ui-smoke.yml'
       - '.github/workflows/pages-publish.yml'
   workflow_dispatch:
@@ -65,7 +66,7 @@ jobs:
           node --check web/plugin-ui.js
           node --check web/mixer-io.js
           node --check web/mixer-layout.js
-          node --test tests/gui_workflow_contract_test.mjs tests/plugin_ui_contract_test.mjs tests/ci_workflow_efficiency_test.mjs tests/fx_drag_reorder_contract_test.mjs tests/mixer_io_operator_contract_test.mjs tests/mixer_shell_contract_test.mjs
+          node --test tests/gui_workflow_contract_test.mjs tests/plugin_ui_contract_test.mjs tests/ci_workflow_efficiency_test.mjs tests/console_v6_fat_gate_test.mjs tests/fx_drag_reorder_contract_test.mjs tests/mixer_io_operator_contract_test.mjs tests/mixer_shell_contract_test.mjs
       - name: Validate approved GUI checkpoint and single publisher
         run: python tests/gui_baseline_lock_test.py
       - name: Validate smart audio architecture handoff contract
