@@ -126,6 +126,22 @@ async def main():
         # A leading-zero alias must not be accepted even from the JUCE bridge.
         await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)", malformed)
         assert await page.locator("#arV6Console").is_hidden()
+        # A physical source must name an active endpoint that belongs to
+        # the SAME verified pin set, never a different active IN label.
+        wrong_pin=snapshot(revision=98)
+        wrong_pin["graph"]["channels"][1]["source"]={"portId":"in:0","physicalPins":[1]}
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",wrong_pin)
+        assert await page.locator("#arV6Console").is_hidden()
+        inactive_pin=snapshot(revision=98)
+        inactive_pin["device"]["inputEndpoints"][1]["active"]=False
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",inactive_pin)
+        assert await page.locator("#arV6Console").is_hidden()
+        # Native feedback-loop defects must fail closed before UI admission.
+        cyclic=snapshot(revision=98)
+        cyclic["graph"]["channels"][-3]["primaryOutId"]="1002"
+        cyclic["graph"]["channels"][-2]["primaryOutId"]="1001"
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",cyclic)
+        assert await page.locator("#arV6Console").is_hidden()
         await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)", first)
         await page.locator("#arV6Console").wait_for(state="visible")
         assert await page.locator("#arV6Lanes .arV6Strip").count() == 12
@@ -254,7 +270,12 @@ async def main():
             x => x.event === 'arMixConsoleIntent').at(-1).payload""")
         assert sent["operation"] == "SET_SOURCE" and sent["targetChannelId"] == "7"
         assert sent["baseGraphRevision"] == "3" and sent["deviceEpoch"] == "7"
-        assert sent["baseRosterRevision"] == "3" and sent["requestId"].startswith("gui-") and sent["requestId"].endswith(":1")
+        assert sent["baseRosterRevision"] == "3"
+        ids=await page.evaluate("""()=>window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').map(x=>x.payload.requestId)""")
+        assert len(ids)==len(set(ids)) and all(
+          x.startswith("gui-") and x.rsplit(":",1)[-1].isdigit() for x in ids)
+        assert ids[-1]==sent["requestId"]
         assert sent["payload"] == {"portId":"in:0"}
         assert await page.locator('[data-op="SET_SOURCE"][data-id="7"]').input_value() == ""
         assert "PENDING" in await page.locator(".arV6Message").inner_text()
