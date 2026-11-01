@@ -222,5 +222,51 @@ check(html.includes('.console-pane{--master-w:142px;--plugin-w:') &&
 check(html.includes('function bankCapacity()') && html.includes('Math.min(10,Math.floor(width/112))'),
       'Live bank fits ten channels maximum without a bottom scrollbar');
 
+
+// V3 integrated visual/layout behavior: no bottom-scrollbar and 10-channel bank.
+node('reset').dispatch('click');
+check(count()===10 && node('bankSelect').value==='0',
+ 'Mix opens with 10 fitted channel strips, fixed Master is separate');
+node('bankNext').dispatch('click');
+check(node('bankSelect').value==='1'&&count()===1&&node('tracks').innerHTML.includes('Bus A'),
+ 'Top right arrow opens remaining bank without horizontal dragging');
+node('bankPrev').dispatch('click');
+check(node('bankSelect').value==='0'&&count()===10,
+ 'Top left arrow restores first 10-channel bank');
+check(html.includes('overflow:hidden!important;scrollbar-width:none!important') &&
+ html.includes('.console-body #viewport::-webkit-scrollbar{display:none!important'),
+ 'Viewport has no horizontal scrollbar on browser engines');
+check(html.includes('grid-template-columns:repeat(var(--bank-columns,10),minmax(0,1fr))') &&
+ html.includes("tracksEl.style.setProperty('--bank-columns'"),
+ 'Visible strip widths are evenly computed from current bank size');
+check(html.includes('--ari-silver:url(data:image/png;base64,iVBORw0KGgo') &&
+ html.includes('--ari-rose:url(data:image/png;base64,iVBORw0KGgo') &&
+ html.includes('--ari-pan:url(data:image/png;base64,iVBORw0KGgo'),
+ 'Original three ARI PNG artwork assets embedded, no external CDN');
+check(html.includes('width:36px!important;height:77px!important') &&
+ html.includes('width:18px!important;height:40px!important'),
+ 'Natural 36x77 fader and 18x40 pan dimensions preserved');
+check(html.includes('grid-template-columns:25px minmax(0,1fr) 24px!important') &&
+ strip(1).indexOf('class="meter-box mono"')<strip(1).indexOf('class="fader-box"') &&
+ strip(1).indexOf('class="fader-box"')<strip(1).indexOf('class="fader-scale"'),
+ 'Fader paint and DOM use left VU, central fader, right ruler');
+check(html.includes('class="console-body collapsed-fx collapsed-send collapsed-eq"') &&
+ html.includes('class="rail-cell fx collapsed"') &&
+ !strip(1).includes('Add effect</button><button class="fx-remove"'),
+ 'Mix default starts with clean collapsed processing and single Add FX affordance');
+check(!strip(1).includes('Q22 15 29 9') && html.includes('eq-status-quiet'),
+ 'Inactive EQ decoration removed from every strip');
+node('pluginsButton').dispatch('click');
+check(node('body').classList.contains('plugin-open') &&
+ html.includes('.console-body.plugin-open #viewport{margin-right:var(--plugin-w)}'),
+ 'Plugin Manager docks beside bank, reserving physical width');
+node('pluginClose').dispatch('click');
+check(!node('body').classList.contains('plugin-open'),
+ 'Closing Plugin Manager restores full 10-strip width');
+node('viewport').clientWidth=980;filter('all');
+check(count()===8,'At narrow viewport bank capacity decreases to protect input readability');
+node('viewport').clientWidth=1200;filter('all');
+check(count()===10,'At desktop viewport bank capacity restores ten visible strips');
+
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
