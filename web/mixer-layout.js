@@ -73,10 +73,10 @@
   const mixer=document.getElementById('mixer');
   if(mixer&&!document.getElementById('arMixChannelPager')){
     const pager=document.createElement('div');pager.id='arMixChannelPager';pager.className='arMixerChannelPager';
-    const prev=document.createElement('button');prev.type='button';prev.className='btn-180';prev.textContent='‹';
+    const prev=document.createElement('button');prev.type='button';prev.className='btn-180';prev.innerHTML='<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M14,17L9,12l5-5V17Z"/></svg>';
     prev.setAttribute('aria-label','Previous mixer channel bank');
     const label=document.createElement('span');label.className='arMixerPagerLabel';
-    const next=document.createElement('button');next.type='button';next.className='btn-180';next.textContent='›';
+    const next=document.createElement('button');next.type='button';next.className='btn-180';next.innerHTML='<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M10,17V7l5,5l-5,5Z"/></svg>';
     next.setAttribute('aria-label','Next mixer channel bank');
     pager.append(prev,label,next);nav.parentElement?.append(pager);
     const strips=()=>[...mixer.querySelectorAll('[data-strip]')];

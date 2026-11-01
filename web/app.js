@@ -266,19 +266,38 @@ function closeChannelIdentity(){
  document.querySelectorAll('.strip.identity-editing').forEach(el=>el.classList.remove('identity-editing'));
 }
 function commitChannelIdentity(){
- if(editingChannel<0)return;const index=editingChannel;
- const name=$('identityName').value.trim().replace(/\s+/g,' ').slice(0,26);
+ if(editingChannel<0)return;
+ const index=editingChannel, name=$('identityName').value.trim().replace(/\s+/g,' ').slice(0,26);
  if(!name){flash('Enter a channel name');$('identityName').focus();return}
- channels[index].name=name;channels[index].icon=channelIcons.includes(editingIcon)?editingIcon:'♩';
- channels[index].color=channelPalette.includes(editingColor)?editingColor:colors[index];
- closeChannelIdentity();currentChannel=index;renderMixer();
+ if(channels.some((c,i)=>i!==index&&c.name.trim().toLowerCase()===name.toLowerCase())){
+   flash('Channel name already used');$('identityName').focus();return;
+ }
+ const ch=channels[index];
+ ch.name=name;ch.icon=channelIcons.includes(editingIcon)?editingIcon:'♩';
+ ch.color=channelPalette.includes(editingColor)?editingColor:colors[index];
+ closeChannelIdentity();currentChannel=index;
+ // UI identity is not a native graph change. Do not remount any live FX/fader node.
+ const strip=document.querySelector('#mixer [data-strip="'+index+'"]');
+ if(strip){
+   strip.style.setProperty('--ch',ch.color);
+   for(const [sel,val] of [['.arChannelTopName',ch.name],['.arChannelTopIcon',ch.icon],
+       ['.strip-name .strip-caption',ch.name],['.strip-name .track-icon',ch.icon]]){
+     const item=strip.querySelector(sel);if(item)item.textContent=val;
+   }
+   strip.querySelector('[data-identity-open]')?.setAttribute('aria-label','Edit '+ch.name+' name, icon and color');
+   strip.querySelector('[data-editstrip]')?.setAttribute('aria-label','Double-click to edit '+ch.name+' name, icon and color');
+   strip.querySelector('[data-fader]')?.setAttribute('aria-label',ch.name+' fader');
+   const meter=strip.querySelector('.vu-bank');
+   if(meter)meter.setAttribute('aria-label',ch.name+(ch.stereo?' stereo left and right meters':' mono meter'));
+ }
+ createSide();
  if(view==='FX RACK')renderRackWorkspace();
- persistSession();flash('Channel identity updated');
+ persistSession();flash('Channel label updated · native audio route unchanged');
 }
 window.addEventListener('resize',positionChannelIdentity);
 $('mixer').addEventListener('scroll',positionChannelIdentity,{passive:true});
 function makeStrip(ch,i){let inserts=ch.inserts.slice(0,6);while(inserts.length<6) inserts.push('');return `<article class="strip ${i===currentChannel?'selected':''}" data-strip="${i}" style="--ch:${ch.color||colors[i]}">
- <div class="ch-id">${i+1}<button type="button" class="arFormatBadge" data-channel-format-toggle="${i}" aria-label="Switch CH ${i+1} processing format" title="MONO / STEREO">${ch.stereo?'ST':'M'}</button></div><div class="rack">${inserts.map((n,j)=>`<div class="insert-slot ${n&&bypassed[fxKey(i,j)]?'is-bypassed':''}"><button class="insert ${!n?'empty':''}" data-insert="${i}:${j}" title="${n?'Open or replace '+safeText(n):'Add VST effect'}">${n?'':'<span class="insert-add-glyph" aria-hidden="true">＋</span>'}<span class="insert-name">${n? safeText(n):'ADD FX'}</span></button>${n?`<button type="button" class="fx-power ${bypassed[fxKey(i,j)]?'is-bypassed':''}" data-fxpower="${i}:${j}" aria-pressed="${!bypassed[fxKey(i,j)]}" aria-label="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}" title="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}">⏻</button>`:''}</div>`).join('')}</div>
+ <div class="ch-id"><span class="arChannelNumber">CH ${String(i+1).padStart(2,'0')}</span><button type="button" class="arChannelTopIdentity" data-identity-open="${i}" title="Edit channel name, icon and color" aria-label="Edit ${safeText(ch.name)} name, icon and color"><span class="arChannelTopIcon" aria-hidden="true">${safeText(ch.icon)}</span><span class="arChannelTopName">${safeText(ch.name)}</span></button><button type="button" class="arFormatBadge" data-channel-format-toggle="${i}" aria-label="Switch CH ${i+1} processing format" title="MONO / STEREO">${ch.stereo?'ST':'M'}</button></div><div class="rack">${inserts.map((n,j)=>`<div class="insert-slot ${n&&bypassed[fxKey(i,j)]?'is-bypassed':''}"><button class="insert ${!n?'empty':''}" data-insert="${i}:${j}" title="${n?'Open or replace '+safeText(n):'Add VST effect'}">${n?'':'<span class="insert-add-glyph" aria-hidden="true">＋</span>'}<span class="insert-name">${n? safeText(n):'ADD FX'}</span></button>${n?`<button type="button" class="fx-power ${bypassed[fxKey(i,j)]?'is-bypassed':''}" data-fxpower="${i}:${j}" aria-pressed="${!bypassed[fxKey(i,j)]}" aria-label="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}" title="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}">⏻</button>`:''}</div>`).join('')}</div>
  <div class="strip-controls"><div class="trim-row"><span class="mini-label">TRIM<br>dB</span><div class="mini-lcd" data-trim-read="${i}">${fmt(ch.trim)}</div></div>${knobMarkup('trim',i,ch.trim,'Trim')}<div class="pan-control">${panMarkup(ch,i)}<div class="pan-readline"><span aria-hidden="true">L</span><strong data-pan-read="${i}">${panText(ch.pan)}</strong><span aria-hidden="true">R</span></div></div><div class="utility-row"><button data-pre="${i}" class="btn-180 ${ch.pre?'active':''}">Ø</button><button data-hpf="${i}" class="btn-180 ${ch.hpf?'active':''}">HPF</button></div></div>
  <div class="channel-actions"><button class="btn-180 candy mute ${ch.mute?'active':''}" data-mute="${i}" aria-pressed="${ch.mute}">MUTE</button><button class="btn-180 candy solo ${ch.solo?'active':''}" data-solo="${i}" aria-pressed="${ch.solo}">SOLO</button></div>
  <div class="db-display" data-read="${i}">${fmt(ch.fader)}</div><div class="fader-zone"><div class="vu-bank ${ch.stereo?'is-stereo':'is-mono'}" role="group" aria-label="${safeText(ch.name)} ${ch.stereo?'stereo left and right meters':'mono meter'}"><div class="vu-bars">${ch.stereo?meterUnit(String(i)+'L','L')+meterUnit(String(i)+'R','R'):meterUnit(String(i),'')}${meterScaleMarkup()}</div></div><div class="fader" data-fader="${i}" role="slider" tabindex="0" aria-orientation="vertical" aria-label="${ch.name} fader" aria-valuemin="-60" aria-valuemax="10" aria-valuenow="${ch.fader}" style="--fader-cut:${levelToTop(ch.fader)}%"><div class="fader-travel"><div class="cap" style="--pos:${levelToTop(ch.fader)}%"></div></div></div>${faderScaleMarkup()}</div></div>
@@ -305,7 +324,7 @@ function syncStripFormat(i,format){
 window.__arMixSyncAcceptedChannelFormat=syncStripFormat;
 function renderMixer(){
  const x=$('mixer'),scroll=x.scrollLeft;
- x.innerHTML=channels.map(makeStrip).join('')+'<article id="masterLeft" class="strip master-strip '+(masterSelected?'selected':'')+'" aria-label="Master output channel"></article>';
+ x.innerHTML=channels.map(makeStrip).join('')+'<article id="masterLeft" class="strip master-strip '+(masterSelected?'selected':'')+'" style="--ch:#b98a99" aria-label="Master output channel"></article>';
  renderMaster();x.scrollLeft=scroll;createSide();
 }
 let masterGain=-.1,masterPan=0,masterMute=false,masterMono=false,phones=-12,masterInserts=['Studio EQ','Brickwall Limiter'],masterBypassed={},pendingMasterSlot=null;
@@ -327,7 +346,7 @@ const meterPercentToDbfs=p=>clamp(p,0,100)*.6-60;
 function meterUnit(key,label){return `<div class="meter-unit"><div class="meter" data-meter-key="${key}"><button type="button" class="clip-led" data-clip="${key}" title="Clear latched clip — ${label}" aria-label="Clear ${label} clip indication"></button><div class="meter-signal-area"><div class="meter-fill" data-meter="${key}" style="--level:6%"></div><div class="meter-peak" aria-hidden="true"></div></div></div><span class="meter-channel-label" aria-hidden="true">${label||''}</span></div>`}
 function renderMaster(){
  const host=$('masterLeft');if(!host)return;
- host.innerHTML=`<div class="ch-id master-ch-id">MASTER</div>
+ host.innerHTML=`<div class="ch-id master-ch-id"><span>MAIN</span><span class="arMasterTopIdentity" aria-hidden="true"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m11 5-5 4H3v6h3l5 4V5Z"/><path d="M15 9a5 5 0 0 1 0 6M18 6a9 9 0 0 1 0 12"/></svg><span>MASTER</span></span></div>
  <div class="master-fx-rack">${masterFxRows()}</div>
  <div class="strip-controls master-controls-zone">
   <div class="master-analysis" role="group" aria-label="LUFS integrated loudness and dBTP true peak" title="Browser demo is simulated; actual native loudness/true peak not implemented">
@@ -449,6 +468,11 @@ document.addEventListener('click',e=>{const b=e.target.closest('button,[data-cho
  if(b.dataset.pluginManager!==undefined){flash('Plugin Manager is available in the Windows desktop app');return}
  if(b.dataset.mySounds!==undefined){flash('Native VST3 presets are available in the Windows desktop app');return}
  if(b.dataset.choose!==undefined){chooseChannel(+b.dataset.choose);return}
+ if(b.dataset.identityOpen!==undefined){
+   const index=Number(b.dataset.identityOpen);
+   if(Number.isInteger(index)&&index>=0&&index<channels.length)openChannelIdentity(index);
+   return;
+ }
  if(b.dataset.channelFormatToggle!==undefined){
    const i=Number(b.dataset.channelFormatToggle);
    if(!Number.isInteger(i)||i<0||i>=channels.length)return;
