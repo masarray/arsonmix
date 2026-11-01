@@ -18,6 +18,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <new>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 using namespace armix::mixer;
 
 static std::atomic<std::size_t> heapCalls{0};
@@ -574,6 +577,13 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
     auto ins=device.getProperty("inputEndpoints",{});
     auto outs=device.getProperty("outputEndpoints",{});
     assert(ins.getArray()->size()==1 && outs.getArray()->size()==2);
+    const auto acceptedInputs=device.getProperty("enabledInputs",{});
+    const auto acceptedOutputs=device.getProperty("enabledOutputs",{});
+    assert(acceptedInputs.getArray() && acceptedInputs.getArray()->size()==1);
+    assert(acceptedOutputs.getArray() && acceptedOutputs.getArray()->size()==2);
+    assert(static_cast<int>(acceptedInputs.getArray()->getReference(0))==2);
+    assert(static_cast<int>(acceptedOutputs.getArray()->getReference(0))==1);
+    assert(static_cast<int>(acceptedOutputs.getArray()->getReference(1))==4);
     assert(static_cast<int>(ins.getArray()->getReference(0).getProperty("port",0))==2);
     assert(static_cast<double>(ins.getArray()->getReference(0)
         .getProperty("rawPeak",0.0))==.25);
@@ -668,6 +678,62 @@ static void verifyFirstSoundOnePinNativeSourceDraft() {
         stereoPhysical,17,9,candidate).isEmpty());
     const auto stereoRows=candidate.getProperty("channels",juce::var());
     assert(stereoRows.getArray()->getReference(2).getProperty("mode","").toString()=="STEREO");
+}
+
+// V8 S0: a C++ fixture, built with the SAME header serializer installed in
+// JUCE WebView, never hand-maintained by GUI/FAT. No real audio device exists
+// for this UNREADY fixture and it intentionally has no dynamic capabilities.
+static void verifyNativePuzzleV8FixtureAndWire() {
+    using namespace armix::console;
+    PuzzleV8Snapshot fixtureSource;
+    fixtureSource.epoch="0";
+    PuzzleV8Ack rejected;
+    rejected.requestId="native-fixture-session:1";
+    const auto expected=PuzzleV8Wire::fixture(fixtureSource,rejected);
+    const auto fixtureFile=std::filesystem::path(__FILE__).parent_path()/
+        "fixtures"/"console-v8-native-unready.json";
+    std::ifstream source(fixtureFile,std::ios::binary);
+    assert(source.is_open());
+    const std::string checked((std::istreambuf_iterator<char>(source)),
+                              std::istreambuf_iterator<char>());
+    assert(expected==checked);
+    const auto parsed=juce::JSON::parse(juce::String::fromUTF8(expected.c_str()));
+    assert(parsed.isObject());
+    const auto snap=parsed.getProperty("snapshot",{});
+    const auto device=snap.getProperty("device",{});
+    const auto graph=snap.getProperty("graph",{});
+    const auto telem=snap.getProperty("telemetry",{});
+    const auto ack=parsed.getProperty("ack",{});
+    assert(static_cast<int>(snap.getProperty("schemaVersion",0))==6);
+    assert(!static_cast<bool>(snap.getProperty("productionCallbackLive",true)));
+    assert(device.getProperty("enabledInputs",{}).getArray()->isEmpty());
+    assert(device.getProperty("enabledOutputs",{}).getArray()->isEmpty());
+    assert(device.getProperty("inputEndpoints",{}).getArray()->isEmpty());
+    assert(device.getProperty("outputEndpoints",{}).getArray()->isEmpty());
+    assert(device.getProperty("sampleRate",{}).isVoid());
+    assert(graph.getProperty("channels",{}).getArray()->isEmpty());
+    assert(graph.getProperty("capabilities",{})
+        .getProperty("supportedOps",{}).getArray()->isEmpty());
+    assert(!static_cast<bool>(telem.getProperty("mainPcmPresent",true)));
+    assert(ack.getProperty("requestId","").toString()=="native-fixture-session:1");
+    assert(ack.getProperty("status","").toString()=="REJECTED");
+    PuzzleV8Snapshot withPins;
+    withPins.inputs.push_back({5,0,"Mic \"1\"\n",true,.25});
+    withPins.outputs.push_back({7,0,"PHYS OUT8",false,0.});
+    const auto physical=juce::JSON::parse(juce::String::fromUTF8(
+        PuzzleV8Wire::snapshot(withPins).c_str()));
+    const auto physicalDev=physical.getProperty("device",{});
+    const auto inputMask=physicalDev.getProperty("enabledInputs",{});
+    const auto outputMask=physicalDev.getProperty("enabledOutputs",{});
+    assert(inputMask.getArray()->size()==1 &&
+        static_cast<int>(inputMask.getArray()->getReference(0))==5);
+    assert(outputMask.getArray()->size()==1 &&
+        static_cast<int>(outputMask.getArray()->getReference(0))==7);
+    const auto in=physicalDev.getProperty("inputEndpoints",{});
+    assert(in.getArray()->getReference(0).getProperty("label","").toString()==
+           "Mic \"1\"\n");
+    assert(static_cast<double>(in.getArray()->getReference(0)
+        .getProperty("rawPeak",0.))==.25);
 }
 
 int main() {
@@ -1043,6 +1109,7 @@ int main() {
     verifySourceFormatIndependentPanPcmParity();
     verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch();
     verifyFirstSoundOnePinNativeSourceDraft();
+    verifyNativePuzzleV8FixtureAndWire();
     // Tests above use a real JUCE AudioProcessor processing seam. Vendor
     // VST3 formats and sound quality require separate Windows hardware FAT.
 }
