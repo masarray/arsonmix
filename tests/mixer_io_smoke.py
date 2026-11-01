@@ -401,7 +401,8 @@ async def main():
         assert duplicate['ok'] is False and 'different' in duplicate['error'],duplicate
         assert (await page.evaluate('()=>window.__arMixRouteView().draftMainOutputs'))==[1,0]
         await page.evaluate('()=>window.__arMixRevertMixerDraft()')
-        assert "AUX1" in outputs and "not physical" in outputs,outputs
+        assert "MAIN OUTPUT" in outputs and "STEREO PAIR" in outputs,outputs
+        assert "Select two different enabled hardware outputs" in outputs,outputs
         await page.locator('[data-io-tab="device"]').click()
         await page.evaluate("""() => window.__armixTestEmit('arMixAudioDeviceInventory',{
           types:[{name:'ASIO',active:true,inputs:['Mic 1','Mic 2'],outputs:['Out 1','Out 2']}]
@@ -820,8 +821,11 @@ async def main():
         }""",status)
         await page.locator('[data-io-open]').click()
         await page.locator('[data-io-tab="outputs"]').click()
-        # Exercise actual sparse-pin OUTPUT crosspoints, not hidden fallback dropdowns.
+        # Normal operator sees the simple MAIN L/R selectors. Detailed pin
+        # crosspoints are available only after explicitly opening Advanced.
         assert await page.locator('.arIOMainOutput').count()==2
+        if not await page.locator('.arIOAdvancedMatrix').evaluate('(e)=>e.open'):
+            await page.locator('.arIOAdvancedMatrix > summary').click()
         await page.locator('[data-io-matrix-kind="outputs"][data-io-matrix-row="0"][data-io-matrix-pin="4"]').click()
         await page.locator('[data-io-matrix-kind="outputs"][data-io-matrix-row="1"][data-io-matrix-pin="5"]').click()
         assert await page.evaluate("""()=>window.__arMixRouteView().draftMainOutputs.join(',')""")=='4,5'
@@ -956,6 +960,9 @@ async def main():
         # DEVICE4: name one logical stereo INPUT over sparse verified hardware,
         # then rename and remove it. Metadata must not emit routingDryApply.
         await page.locator('[data-io-tab="device"]').click()
+        # Names/crosspoints are expert controls, not the default First Sound flow.
+        if not await page.locator('.arIODevicePatchMatrix').evaluate('(e)=>e.open'):
+            await page.locator('.arIODevicePatchMatrix > summary').click()
         assert await page.locator('.arIOSoftwareGrid').is_visible()
         count_before=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='routingDryApply').length""")
