@@ -513,8 +513,10 @@ async def main():
         await page.get_by_role("button",name="Selected channels and native group actions").click()
         operator=page.locator("#arV6SelectionPanel")
         assert await operator.is_visible()
-        link=page.get_by_role("button",name="Link selected faders using native relative control group")
-        unlink=page.get_by_role("button",name="Unlink selected faders using native relative control group")
+        link=page.get_by_role("button",
+          name="Link selected faders using native relative control group",exact=True)
+        unlink=page.get_by_role("button",
+          name="Unlink selected faders using native relative control group",exact=True)
         assert await link.is_enabled() and await unlink.is_disabled()
         await link.click()
         cmd=await page.evaluate("""()=>window.__v6Test.sent.filter(
