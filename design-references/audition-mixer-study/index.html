@@ -2019,18 +2019,21 @@ function wireGainPercent(db){return Math.max(0,Math.min(100,(Number(db)+60)/66*1
 function wireTray(t){
  const source=tracks.find(x=>x.id===wireSourceId&&x.kind==='audio');
  const isSource=!!source&&source.id===t.id;
- const edge=source?wireFor(source.id,t.id):null,linked=!!edge;
- const canWire=!!(source&&t.kind!=='master'&&!isSource);
- const label=!source?'NO SOURCE':isSource?'SOURCE':t.kind==='master'?'MAIN':linked?'CONNECTED':'CONNECT';
+ const isMain=t.kind==='master';
+ const edge=!isMain&&source?wireFor(source.id,t.id):null;
+ const linked=isMain?!!source&&source.output==='Master':!!edge;
+ const canWire=!!(source&&!isSource);
+ const label=!source?'NO SOURCE':isSource?'SOURCE':isMain?(linked?'MAIN ON':'MAIN OFF'):linked?'CONNECTED':'CONNECT';
  const icon=isSource?'▼':linked?'◆':'△';
- let controls='<button type="button" class="wire-socket'+(isSource?' is-source':'')+(linked?' is-linked':'')+'" data-action="wireRoute" aria-pressed="'+linked+'" aria-label="'+escapeHtml(t.name)+' · '+label+'" title="'+escapeHtml(label+' · '+(linked?(edge.mode==='send'?'Post-fader Send':'Pre FX Mult'):'Click to wire')+' · demo only')+'" '+(canWire?'':'disabled')+'><span class="wire-arrow" aria-hidden="true">'+icon+'</span><span class="wire-label">'+(isSource?'SOURCE':linked?'LINKED':t.kind==='master'?'MAIN':t.kind==='audio'?'WIRE':'BUS')+'</span></button>';
- if(linked){
+ const modeLabel=linked&&!isMain?(edge.mode==='send'?'Post-fader Send':'Pre FX Mult'):'Click to wire';
+ let controls='<button type="button" class="wire-socket'+(isSource?' is-source':'')+(linked?' is-linked':'')+'" data-action="wireRoute" aria-pressed="'+linked+'" aria-label="'+escapeHtml(t.name)+' · '+label+'" title="'+escapeHtml(label+' · '+modeLabel+' · GUI DEMO')+'" '+(canWire?'':'disabled')+'><span class="wire-arrow" aria-hidden="true">'+icon+'</span><span class="wire-label">'+(isSource?'SOURCE':isMain?(linked?'MAIN ON':'MAIN OFF'):linked?'LINKED':t.kind==='audio'?'WIRE':'BUS')+'</span></button>';
+ if(linked&&!isMain){
   controls+='<label class="wire-pot" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%;--wire-deg:'+(-135+wireGainPercent(edge.levelDb)*2.7).toFixed(1)+'deg" title="'+escapeHtml(source.name+' → '+t.name+' · '+wireDbText(edge.levelDb))+'"><input class="wire-gain" type="range" min="-60" max="6" step="1" value="'+edge.levelDb+'" data-field="wireGain" data-wire-id="'+edge.id+'" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%" aria-label="Wire send level '+escapeHtml(source.name)+' to '+escapeHtml(t.name)+'"></label><button type="button" class="wire-disconnect" data-action="wireRemove" title="Disconnect '+escapeHtml(source.name)+' → '+escapeHtml(t.name)+'" aria-label="Disconnect '+escapeHtml(t.name)+' from '+escapeHtml(source.name)+'">×</button>';
  }
  return '<div class="wire-tray'+(linked?' linked':'')+'">'+controls+'</div>';
 }
 function sectionSend(t){
- if(t.kind==='master'||t.kind==='fx')return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><span class="sendtag">No Sends</span></div>'+wireTray(t)+'</div>';
+ if(t.kind==='master'||t.kind==='fx')return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><span class="sendtag">'+(t.kind==='master'?'MAIN OUTPUT':'FX RETURN')+'</span></div>'+wireTray(t)+'</div>';
  return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><select class="send-slot" data-field="activeSend" title="Select send slot 1–16" aria-label="Send slot">'+option(Array.from({length:16},(_,i)=>'S'+(i+1)),'S'+(t.activeSend+1))+'</select><span class="send-compact" title="Active send destination">'+escapeHtml(t.send==='None'?'No send':t.send)+'</span><span class="push"></span><button class="mini power '+(t.sendOn?'on':'')+'" data-action="sendOn" title="Enable Send">⏻</button><button class="mini pre '+(t.pre?'on':'')+'" data-action="pre" title="Toggle Pre/Post send">'+(t.pre?'Pre':'Pst')+'</button></div><select class="send-select" data-field="send" aria-label="Send destination">'+option(channelOptions(t,'send'),t.send)+'</select><div class="sendlevel"><label>LEVEL</label><input class="ari-horizontal" type="range" min="-60" max="6" step="1" value="'+t.sendLevel+'" style="--range-pct:'+rangePct(t.sendLevel,-60,6)+'%" data-field="sendLevel" title="Send level"><output>'+formatDb(t.sendLevel)+'</output></div>'+wireTray(t)+'</div>';
 }
 function formatDb(n){return n<=-60?'-∞':(n>0?'+':'')+Number(n).toFixed(1);}
@@ -2225,7 +2228,7 @@ function renderWireRouting(){
  const legend=document.getElementById('wireLegend'),main=document.getElementById('wireMaster');
  if(legend)legend.textContent=source?'CH'+String(source.id).padStart(2,'0')+' ⇢ '+wireOutgoingCount(source.id)+' · click arrows / Shift-range · DEMO':'Select source · click destination arrows';
  if(main&&source){
-  const direct=source.output!=='SOURCE ONLY (No Main)';
+  const direct=source.output==='Master';
   main.textContent=direct?'MAIN ON':'MAIN OFF';main.setAttribute('aria-pressed',String(direct));
   main.title='Direct source output: '+source.output+' · click to toggle Main only when currently mapped to Main or Source Only';
  }
@@ -2441,7 +2444,8 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  const a=btn.dataset.action;
  if(a==='wireRoute'||a==='wireRemove'){
   const source=tracks.find(x=>x.id===wireSourceId&&x.kind==='audio');
-  if(!source||t.kind==='master'||t.id===source.id){say('Select one source and another destination');return;}
+  if(!source||t.id===source.id){say('Select a source and another destination');return;}
+  if(t.kind==='master'){toggleDirectMain();return;}
   if(a==='wireRemove'){const edge=wireFor(source.id,t.id);if(!edge)return;wireEdges=wireEdges.filter(x=>x.id!==edge.id);wireAnchorId=t.id;render();say('WIRE disconnected '+source.name+' → '+t.name+' · GUI DEMO ONLY');return;}
   if(e.shiftKey&&wireAnchorId!==null){wireConnectRange(source,wireAnchorId,t.id);wireAnchorId=t.id;return;}
   wireConnect(source,t);wireAnchorId=t.id;return;
@@ -2570,7 +2574,7 @@ document.getElementById('wireMode').addEventListener('change',()=>{
  wireMode=selected==='split'?'split':'send';
  say('WIRE MODE '+(wireMode==='send'?'FOLLOW FADER (FL-style send)':'INDEPENDENT (pre-insert mult)')+' · new edges only · GUI DEMO');
 });
-document.getElementById('wireMaster').addEventListener('click',()=>{
+function toggleDirectMain(){
  const t=tracks.find(x=>x.id===wireSourceId&&x.kind==='audio');
  if(!t)return;
  if(t.output!=='Master'&&t.output!=='SOURCE ONLY (No Main)'){
@@ -2578,7 +2582,8 @@ document.getElementById('wireMaster').addEventListener('click',()=>{
  }
  t.output=t.output==='Master'?'SOURCE ONLY (No Main)':'Master';
  render();say(t.name+(t.output==='Master'?' direct MAIN enabled':' direct MAIN disconnected')+' · wire feeds unchanged · DEMO ONLY');
-});
+}
+document.getElementById('wireMaster').addEventListener('click',toggleDirectMain);
 document.getElementById('sofToggle').addEventListener('click',()=>toggleSof());
 document.getElementById('sofTarget').addEventListener('change',()=>{sofTarget=document.getElementById('sofTarget').value;render();say('Sends target: '+sofTarget);});
 document.getElementById('addTrack').addEventListener('click',()=>{
