@@ -249,17 +249,50 @@
   const add=button('+ CHANNEL',{'data-op':'CREATE_CHANNEL'});
   const patch=button('PATCH',{'aria-label':'Open advanced patch'});
   const narrow=button('NARROW',{'aria-pressed':'false','aria-label':'Toggle narrow channel bank'});
+  const roleFilter=h('select','arV6Select arV6Filter');
+  roleFilter.setAttribute('aria-label','Filter visible mixer channels');
+  for(const [value,label] of [['ALL','ALL'],['INPUT','INPUT'],['GROUP','BUS'],
+    ['FX_RETURN','FX RTN'],['AUX','AUX'],['MONITOR','MON'],['SOLO','SOLO']]){
+    const option=h('option','',label);option.value=value;roleFilter.append(option);
+  }
   const back=button('V6 CONSOLE',{'aria-label':'Return to operator console'});
   back.id='arV6Return';back.hidden=true;
-  tools.append(bankPrev,bankLabel,bankNext,sendMode,roleSelect,add,narrow,patch);
+  tools.append(bankPrev,bankLabel,bankNext,roleFilter,sendMode,roleSelect,add,narrow,patch);
   top.append(identification,tools);
   const message=h('div','arV6Message');message.setAttribute('role','status');
   const body=h('div','arV6Body');
+  const sectionRail=h('aside','arV6SectionRail');
+  sectionRail.setAttribute('aria-label','Synchronized mixer section collapse');
+  sectionRail.append(h('span','arV6RailCell arV6RailHeader','▦'));
+  for(const [section,text,label] of [
+    ['io','I/O','Collapse or expand native input and output rows'],
+    ['fx','FX','Collapse or expand VST3 insert section'],
+    ['send','SND','Collapse or expand send section']]){
+    const control=button(text,{'data-section':section,'aria-expanded':'true','aria-label':label});
+    control.classList.add('arV6RailCell','arV6RailToggle');
+    sectionRail.append(control);
+  }
+  sectionRail.append(h('span','arV6RailCell arV6RailPan','PAN'));
+  sectionRail.append(h('span','arV6RailCell arV6RailFader','dB'));
+  sectionRail.append(h('span','arV6RailCell arV6RailStatus','•'));
   const lanes=h('div','arV6Lanes');lanes.id='arV6Lanes';lanes.setAttribute('aria-label','Channel banks');
   const main=h('div','arV6Main');main.id='arV6Main';main.setAttribute('aria-label','Pinned main output');
-  body.append(lanes,main);
+  body.append(sectionRail,lanes,main);
   root.append(top,message,body);
   mount.append(root);
+  sectionRail.addEventListener('click',event=>{
+    const control=event.target.closest('[data-section]');
+    if(!control)return;
+    const key='collapse'+control.dataset.section;
+    const collapsed=root.dataset[key]!=='true';
+    root.dataset[key]=String(collapsed);
+    control.setAttribute('aria-expanded',String(!collapsed));
+    control.classList.toggle('isCollapsed',collapsed);
+    // Shared CSS variables resize every strip and rail atomically.
+    // No channel topology change and no fader/meter DOM remount.
+    refreshBanks();
+  });
+  roleFilter.addEventListener('change',()=>applyPresentation());
   narrow.addEventListener('click',()=>{
     const compact=root.dataset.narrow!=='true';
     root.dataset.narrow=String(compact);
@@ -562,17 +595,18 @@
     const name=h('strong','arV6Name',ch.name||ch.id);name.title=ch.id;
     head.append(roleName,name);elStrip.append(head);
     const sourceSection=h('div','arV6Upper');
+    const routeSection=h('div','arV6Route');
     const sources=(accepted.device.inputEndpoints||[]).filter(p=>p.active===true && accepted.device.enabledInputs.includes(p.port));
-    if(role==='INPUT')sourceSection.append(selectField('IN','SET_SOURCE',ch.id,sources,
+    if(role==='INPUT')routeSection.append(selectField('IN','SET_SOURCE',ch.id,sources,
       ch.source?.portId||ch.source?.id||'','NO VERIFIED INPUT'));
-    else sourceSection.append(h('div','arV6Field arV6FixedField','IN   ·   '+role));
-    const formats=['MONO','STEREO'].map(s=>({id:s,name:s}));
-    sourceSection.append(selectField('M/ST','SET_PROCESSING_FORMAT',ch.id,formats,
-      ch.processingFormat||'','NATIVE FORMAT'));
-    sourceSection.append(fxSection(ch),sendSection(ch));
+    else routeSection.append(h('div','arV6Field arV6FixedField','IN   ·   '+role));
     const outs=(accepted.graph.destinations||[]).concat(accepted.device.outputEndpoints||[]);
-    sourceSection.append(selectField('OUT','SET_PRIMARY_OUT',ch.id,outs,
+    routeSection.append(selectField('OUT','SET_PRIMARY_OUT',ch.id,outs,
       ch.primaryOutId||ch.primaryOut?.id||ch.primaryOut||'','NO VERIFIED OUT'));
+    const formats=['MONO','STEREO'].map(s=>({id:s,name:s}));
+    routeSection.append(selectField('M/ST','SET_PROCESSING_FORMAT',ch.id,formats,
+      ch.processingFormat||'','NATIVE FORMAT'));
+    sourceSection.append(routeSection,fxSection(ch),sendSection(ch));
     elStrip.append(sourceSection);
     const controls=h('div','arV6Controls');
     const pan=h('label','arV6Pan');pan.append(h('span','','PAN'));
@@ -633,6 +667,18 @@
     root.dataset.demo=String(!acceptedNative);
     root.dataset.armed=String(acceptedNative&&accepted?.productionCallbackLive===true&&!!d.outputArmed);
   }
+  function applyPresentation(){
+    const value=roleFilter.value;
+    for(const strip of lanes.querySelectorAll('.arV6Strip')){
+      const ch=byId.get(strip.dataset.channelId);
+      const match=ch&&(value==='ALL'||value==='SOLO'&&ch.controls?.solo===true||
+        ch.role===value);
+      strip.hidden=!match;
+    }
+    // Presentational filters cannot alter native roster nor hide pinned MAIN.
+    if(lanes.querySelector('.arV6Strip:not([hidden])')===null)lanes.scrollLeft=0;
+    refreshBanks();
+  }
   function render(){
     if(!accepted)return;
     updateHeader();
@@ -650,7 +696,7 @@
     const cap=accepted.graph.capabilities||{};
     sendMode.disabled=!acceptedNative||!cap.sendsOnFaders;
     add.disabled=!can('CREATE_CHANNEL');
-    refreshDisabled();syncFaderMode();refreshMeters();refreshBanks();
+    refreshDisabled();syncFaderMode();refreshMeters();applyPresentation();
   }
   function refreshDisabled(){
     if(!accepted)return;
@@ -715,7 +761,7 @@
         if(send&&tap)tap.textContent=send.tap==='PRE'?'PRE':'POST';
       }
     }
-    syncFaderMode();refreshMeters();
+    syncFaderMode();refreshMeters();applyPresentation();
   }
   function syncFaderMode(){
     for(const range of root.querySelectorAll('.arV6Fader')){
@@ -762,8 +808,9 @@
     }
   }
   function refreshBanks(){
-    const total=lanes.children.length;
-    const child=lanes.querySelector('.arV6Strip');
+    const visible=[...lanes.querySelectorAll('.arV6Strip:not([hidden])')];
+    const total=visible.length;
+    const child=visible[0];
     const width=child?.getBoundingClientRect().width||172;
     const perPage=Math.max(1,Math.floor(lanes.clientWidth/width));
     const at=Math.max(0,Math.round(lanes.scrollLeft/width));
@@ -771,7 +818,7 @@
     bankPrev.disabled=at===0;bankNext.disabled=at+perPage>=total;
   }
   function jump(dir){
-    const first=lanes.querySelector('.arV6Strip');
+    const first=lanes.querySelector('.arV6Strip:not([hidden])');
     if(!first)return;
     const perPage=Math.max(1,Math.floor(lanes.clientWidth/first.getBoundingClientRect().width));
     lanes.scrollBy({left:dir*perPage*first.getBoundingClientRect().width,behavior:'auto'});
