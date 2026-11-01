@@ -1437,7 +1437,7 @@ const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>'
 const option=(values,selected)=>values.map(x=>'<option value="'+escapeHtml(x)+'"'+(x===selected?' selected':'')+'>'+escapeHtml(x)+'</option>').join('');
 const channelOptions=(t,type)=>{
  if(type==='input')return t.kind==='audio'?['None','Input 1 (Mono)','Input 2 (Mono)','Input 1 + 2 (Stereo)','CABLE Output L','CABLE Output R','CABLE Output L/R (Stereo)']:['None'];
- if(type==='output')return t.kind==='master'?['Default Output','Output 1 + 2','Speakers (Realtek)','Virtual Cable']:['Master',...tracks.filter(x=>x.kind==='bus'&&x.id!==t.id).map(x=>x.name),'Output 1 + 2'];
+ if(type==='output')return t.kind==='master'?['Default Output','Output 1 + 2','Speakers (Realtek)','Virtual Cable']:[master.name,...tracks.filter(x=>x.kind==='bus'&&x.id!==t.id).map(x=>x.name),'Output 1 + 2'];
  return ['None',...tracks.filter(x=>(x.kind==='bus'||x.kind==='fx')&&x.id!==t.id).map(x=>x.name)];
 };
 function sectionFx(t){

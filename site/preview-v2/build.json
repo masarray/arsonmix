@@ -1,13 +1,14 @@
 {
-  "version": "preview-v6.1",
+  "version": "preview-v6.2",
   "route": "/preview-v2/",
   "kind": "GUI_REFERENCE_ONLY",
   "live_audio": false,
   "source_pr": 278,
   "source_branch": "design/audition-mixer-reference-isolated-20261101",
-  "source_sha": "9931c9d7c2c6ec3737136a4fd4b17a5cd74623cd",
-  "visual_theme": "Graphite metal with legacy synchronized top/bottom colored channel names and icon picker",
-  "buttons": "Brighter crystal BTN180 unchanged 7-layer material, exact owner 24x24 SVG bank arrows, vertical alignment 29px",
-  "checks": "133/133 zero-dependency event/DOM checks PASS, dedicated rendered-pixel V6 QA pending",
-  "note": "No actual PCM/VST3 engine in this HTML preview."
+  "source_sha": "87b9b8fc909410a4e27c9791fd04d3bed26af894",
+  "visual_theme": "One-Console Graphite Metal + Crystal BTN180",
+  "identity": "12 original legacy colors and icons, paired colored top/bottom nameplates, name/icon/color popover, dynamic Master routing label",
+  "arrows": "Exact owner-provided SVG 24x24 paths and #1f1f1f fill; toolbar vertically aligned",
+  "checks": "134/134 source/DOM/event acceptance checks PASS; real V6 pixel screenshot QA remains unexecuted",
+  "note": "Reference GUI only: no native ASIO/VST3."
 }
