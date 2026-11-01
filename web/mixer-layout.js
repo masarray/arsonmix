@@ -389,9 +389,9 @@
       row.dataset.fxId=clean(fx.id);row.dataset.id=ch.id;
       row.draggable=can('MOVE_INSERT',ch.id);
       row.append(button(fx.name||fx.pluginName||'VST3',{'data-op':'OPEN_INSERT_EDITOR',
-        'data-id':ch.id,'data-insert':clean(fx.id)}));
+        'data-id':ch.id,'data-native-insert-id':clean(fx.id)}));
       const bypass=button(fx.bypassed?'OFF':'ON',{'data-op':'SET_INSERT_BYPASS',
-        'data-id':ch.id,'data-insert':clean(fx.id),'aria-pressed':String(!fx.bypassed)});
+        'data-id':ch.id,'data-native-insert-id':clean(fx.id),'aria-pressed':String(!fx.bypassed)});
       bypass.classList.toggle('isOff',!!fx.bypassed);row.append(bypass);
       section.append(row);
     }
@@ -666,10 +666,10 @@
     if(op==='SET_MUTE')sendIntent(op,id,{value:!ch.controls?.mute});
     else if(op==='SET_SOLO')sendIntent(op,id,{value:!ch.controls?.solo});
     else if(op==='SET_INSERT_BYPASS'){
-      const fx=(ch.inserts||[]).find(x=>String(x.id)===n.dataset.insert);
+      const fx=(ch.inserts||[]).find(x=>String(x.id)===n.dataset.nativeInsertId);
       if(fx)sendIntent(op,id,{insertId:fx.id,bypassed:!fx.bypassed});
     }
-    else if(op==='OPEN_INSERT_EDITOR')sendIntent(op,id,{insertId:n.dataset.insert});
+    else if(op==='OPEN_INSERT_EDITOR')sendIntent(op,id,{insertId:n.dataset.nativeInsertId});
     else if(op==='SET_SEND_TAP'){
       const send=(ch.sends||[]).find(x=>String(x.id)===n.dataset.send);
       if(send)sendIntent(op,id,{sendId:send.id,tap:send.tap==='PRE'?'POST':'PRE'});
