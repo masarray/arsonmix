@@ -72,10 +72,10 @@ check(node('pluginResults').innerHTML.includes('Chorus'),'Hidden effect discover
 pluginAction('hide','demo-7');
 node('pluginView').value='all';node('pluginView').dispatch('change');
 pluginAction('choose','demo-2');
-check(plug.hidden===true,'Plugin inserts and browser closes');
+check(plug.hidden===false,'Modeless Plugin Manager stays open while inserting FX');
 filter('all');
 check(strip(1).includes('Studio Reverb'),'FX insert changes in channel strip');
-node('pluginsButton').dispatch('click');
+node('pluginClose').dispatch('click');node('pluginsButton').dispatch('click');
 node('pluginView').value='recent';node('pluginView').dispatch('change');
 check(node('pluginResults').innerHTML.includes('Studio Reverb'),'Recent plugin filter');
 node('pluginClose').dispatch('click');
@@ -188,8 +188,8 @@ check(strip(1).includes('class="fader-head"') && strip(1).includes('class="fader
       'Fader dB numeric display is above the tactile fader');
 check(strip(1).includes('class="clip-indicator') && strip(1).includes('class="meter-box mono"'),
       'Mono strip includes explicit clip LED and one meter lane');
-check(strip(1).includes('class="switch btn-180 mute') && strip(1).includes('class="switch btn-180 solo') && strip(1).includes('class="switch btn-180 cue'),
-      'Three equal-width manual BTN-180 buttons MUTE, SOLO, PFL, no I');
+check(strip(1).includes('class="switch mute') && strip(1).includes('class="switch solo') && strip(1).includes('class="switch cue'),
+      'Three equal-width brushed-metal buttons MUTE, SOLO, PFL, no I');
 check(html.includes('.console-body .fader-box::before') && html.includes('.console-body .fader-box::after') &&
       html.includes('.fader-travel .cap') && html.includes('RAIL3'),
       'Calibrated old fader housing and cap travel restored with original RAIL3 material');
@@ -322,8 +322,8 @@ check(!strip(1).includes('trim-section') && !html.includes('<div class="rail-cel
 check(html.includes("Math.abs(value)<=8") && html.includes('panStyle(value)'),
  'PAN uses an eight-point center-snap deadzone and center-origin fill');
 check(html.includes('background-image:none!important') &&
- html.includes('width:29px!important;height:62px!important'),
- 'Slim fixed-ratio silver/rose cap on a naturally black non-luminous groove');
+ html.includes('width:26px!important;height:55px!important'),
+ 'V7 compact 26x55 silver/rose fader on deeply recessed graphite slot');
 check(html.includes('VST3 SEARCH LOCATIONS') &&
  html.includes('window.ArSonMixNativePlugins?.scan'),
  'Floating Plugin Manager exposes VST3 paths and native-only scan capability gate');
@@ -360,14 +360,15 @@ check(html.includes('M14,17L9,12l5-5V17Z') && html.includes('M10,17V7l5,5l-5,5Z'
  'Owner-provided solid SVG bank arrows are used unchanged');
 check((html.match(/width="24" height="24" fill="#1f1f1f" aria-hidden="true"/g)||[]).length===2,
  'Both arrows reproduce the exact owner supplied 24x24 SVG fill and physical dimensions');
-check(html.includes('class="tool btn-180') &&
- html.includes('class="tool btn-180 bank-arrow"') &&
- html.includes('class="tool btn-180" id="sofToggle"'),
- 'Main header interactions use the shared historical BTN-180 material');
-check(html.includes('--b180-off:var(--am-crystal)') &&
- html.includes('--am-crystal:#e7eff0') &&
- html.includes('box-shadow:var(--b180-shadow-surface)'),
- 'Crystal-plastic button whitened slightly while retaining original seven-layer surface');
+check(html.includes('class="tool bank-arrow"') &&
+ html.includes('class="tool" id="sofToggle"') &&
+ !html.includes('class="tool btn-180') &&
+ html.includes('background:linear-gradient(#405460,#2c3f4c'),
+ 'V7 main header uses satin metal, with no mismatching plastic BTN-180');
+check(html.includes('.console-body .switch-section .switch{') &&
+ html.includes('background:linear-gradient(#52616a,#334751') &&
+ !strip(1).includes('btn-180'),
+ 'V7 strip MUTE SOLO PFL use quiet satin-metal state buttons');
 check(html.includes('.command-bar>*,.command-bar>label,.command-bar>.sep') &&
  html.includes('align-self:center!important') && html.includes('min-height:29px!important'),
  'Header labels, arrows, selectors and button caps align vertically to common centerline');
@@ -391,11 +392,11 @@ check(node('master').innerHTML.includes('class="strip-identity-top"') &&
  'Pinned Master has same top/bottom identity hierarchy in rose metal');
 node('bankSelect').value='1';node('bankSelect').dispatch('change');
 const editBus={dataset:{action:'editIdentity'},closest:k=>k==='.strip'?{dataset:{id:11}}:null};
-node('body').handlers.click({target:{closest:k=>k==='[data-action]'?editBus:null}});
+node('body').handlers.dblclick({target:{closest:k=>k==='.strip'?{dataset:{id:11}}:k==='.footer-label,.strip-identity-top'?{}:null,classList:{contains:()=>false}}});
 check(node('channelIdentity').hidden===false &&
  node('identityName').value==='Bus A' &&
  node('identityIcons').innerHTML.includes('data-identity-icon="🎹"'),
- 'Clicking channel identity opens editable legacy name/icon/color palette');
+ 'Double-clicking identity opens editable legacy name/icon/color palette');
 node('identityColors').handlers.click({target:{closest:k=>k==='[data-identity-color]'?{dataset:{identityColor:'#c32974'}}:null}});
 node('identityIcons').handlers.click({target:{closest:k=>k==='[data-identity-icon]'?{dataset:{identityIcon:'🎹'}}:null}});
 node('identityName').value='Vocal Bus';
@@ -409,13 +410,40 @@ node('bankSelect').value='0';node('bankSelect').dispatch('change');
 check(strip(1).includes('<option value="Vocal Bus" selected>'),
  'Renaming Bus A preserves live routing in existing Host send');
 const editMaster={dataset:{action:'editIdentity'},closest:k=>k==='.strip'?{dataset:{id:12}}:null};
-node('body').handlers.click({target:{closest:k=>k==='[data-action]'?editMaster:null}});
+node('body').handlers.dblclick({target:{closest:k=>k==='.strip'?{dataset:{id:12}}:k==='.footer-label,.strip-identity-top'?{}:null,classList:{contains:()=>false}}});
 node('identityName').value='Main Stereo';
 node('identitySave').dispatch('click');
 check(node('master').innerHTML.includes('Main Stereo') &&
  strip(1).includes('<option value="Main Stereo" selected>'),
  'Renaming Master updates all channel OUT choices and live routing references');
 node('reset').dispatch('click');
+
+
+// V7 professionally proportioned mixer + independent floating manager contract.
+check(html.includes('--fx-h:clamp(111px,13.5vh,137px)') &&
+ html.includes('.console-body .strip .fader-section') &&
+ html.includes('background:linear-gradient(90deg,#253640,#30434e'),
+ 'FX rack shortened 30%-40%; remaining space goes to lighter tactile fader body');
+check(html.includes('.console-body .fader-box::before') &&
+ html.includes('background:linear-gradient(90deg,#050b10 0%,#0d1a22') &&
+ html.includes('width:min(36px,100%)'),
+ 'Fader cutout black graphite recess contrasts against brighter metal chassis');
+check(html.includes('width:15px!important;height:32px!important') &&
+ html.includes('margin-top:-12px!important') &&
+ html.includes('margin-top:3px!important'),
+ 'PAN/send horizontal thumbs smaller, preserving asset ratio and sitting lower');
+check(html.includes('inset 0 0 0 1px var(--ch)') &&
+ html.includes('.console-body .strip.selected'),
+ 'Selected channel receives 1px identity-colored border instead of universal cyan');
+check(html.includes('id="pluginDragHandle"') &&
+ html.includes('id="pluginMinimize"') &&
+ html.includes('resize:both!important') &&
+ html.includes("pluginDragHandle').addEventListener('pointermove'"),
+ 'Plugin Manager is modeless, draggable, resizable, minimizable');
+check(html.includes("if(a==='rename'||a==='editIdentity')return;") &&
+ html.includes("e.target.closest('.footer-label,.strip-identity-top')") &&
+ html.includes("if(e.key!=='F2'&&e.key!=='Enter')"),
+ 'Single click only selects; double-click or keyboard F2 edits channel identity');
 
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
