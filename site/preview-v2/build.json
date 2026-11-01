@@ -1,23 +1,24 @@
 {
-  "version": "preview-v5",
+  "version": "preview-v6",
   "route": "/preview-v2/",
   "kind": "GUI_REFERENCE_ONLY",
   "live_audio": false,
   "source_pr": 278,
   "source_branch": "design/audition-mixer-reference-isolated-20261101",
-  "source_sha": "8dd122fb855658dba87e244987f03ea664be5b04",
+  "source_sha": "8b42d37e897e6987ba541e53f52b554eddb2e3e3",
   "source_path": "design-references/audition-mixer-study/index.html",
-  "features": [
-    "Contextual Add FX fast picker with search and single-click insert",
-    "Separate floating Plugin Manager",
-    "Native-only scan path UI and manifest import",
-    "Fader pointer-drag & visual cap synchronized",
-    "Pan snaps to center",
-    "Complete IN/OUT rows",
-    "No TRIM, EQ row, Send Pan or I",
-    "Natural black slot, 29x62 proportional old silver/RoseGold cap",
-    "10 channel bank plus equal Master"
-  ],
-  "tests": "121/121 JS DOM and pointer-geometry checks PASS; pixel-browser screenshot review not independently completed",
-  "note": "Static demo; no filesystem scan or real audio in GitHub Pages."
+  "legacy_gui": "/preview/",
+  "visual_theme": "V6 One Console / One Material",
+  "visual_tokens": {
+    "base": "#0B161E",
+    "panel": "#14232C",
+    "raised": "#20313B",
+    "plastic": "#E7EFF0",
+    "accent": "#66CBDD"
+  },
+  "identity": "Historical 12 old-GUI icons/palette; channel name/icon/color editable; same color-coded top+bottom; rename updates outputs/sends",
+  "buttons": "All header action buttons now original BTN-180 crystal; user-provided exact triangular left/right SVG paths; vertically aligned toolbar",
+  "functional": "Original FX fast picker, floating plugin manager, fader pointer drag and center-snapping pan preserved",
+  "checks": "132/132 zero-dependency JS DOM/business acceptance checks PASS; real dedicated V6 browser screenshot QA not yet executed",
+  "note": "Static UI reference with simulated meters, NOT native ASIO audio or live VST3."
 }

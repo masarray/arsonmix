@@ -1055,45 +1055,293 @@ button:disabled{opacity:.45;cursor:not-allowed}
 /* V5 live surface: more FX rack where vertical room exists, no forced tall rack at 768px. */
 .console-body:not(.collapsed-fx){--fx-h:clamp(155px,24vh,225px)!important}
 .console-body.collapsed-fx{--fx-h:23px!important}
+
+/* V6 CONSOLIDATED COLOR/MATERIAL SYSTEM — owner-approved old chrome with new Console UX.
+   Design tokens: navy metal body + two-tone channel nameplates; BTN-180 plastic face.
+   No heavy card shadows on the mixer; active colors are state/identity only. */
+:root{
+ --am-metal-base:#0b161e;
+ --am-metal-panel:#14232c;
+ --am-metal-raised:#20313b;
+ --am-metal-edge:#334956;
+ --am-metal-inset:#030a0f;
+ --am-text-primary:#dae9ef;
+ --am-text-muted:#94b1bd;
+ --am-accent:#66cbdd;
+ --am-crystal:#e7eff0;
+ --b180-off:var(--am-crystal);
+ --b180-edge:#899aa0;
+ --b180-off-ink:#12212a;
+}
+html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)}
+.app{background:var(--am-metal-base)!important}
+.window-title{
+ height:29px!important;background:linear-gradient(#172833,#0c1922)!important;
+ border-bottom:1px solid #293c47!important;color:var(--am-text-primary)!important;
+}
+.window-title .logo{color:#75d4ec!important}
+.window-title .file-name{color:#b8cbd4!important}
+.window-title .study{color:#7f9eaa!important}
+.command-bar{
+ height:44px!important;min-height:44px!important;flex:0 0 44px!important;
+ display:flex!important;align-items:center!important;gap:8px!important;
+ background:linear-gradient(#263742,#182832 52%,#101e27)!important;
+ border-top:1px solid #44525b!important;border-bottom:1px solid #030b10!important;
+ box-shadow:inset 0 1px #4b657044,inset 0 -1px #0009!important;
+}
+.command-bar>*,.command-bar>label,.command-bar>.sep{
+ align-self:center!important;vertical-align:middle!important;
+}
+.command-bar .tool.btn-180,
+.command-bar .more-tools summary.tool.btn-180,
+.more-tools-panel button.tool.btn-180{
+ --b180-color:var(--am-crystal);
+ --b180-border:#87969c;
+ --b180-ink:#12212a;
+ display:inline-flex!important;align-items:center!important;justify-content:center!important;
+ height:29px!important;min-height:29px!important;max-height:29px!important;
+ flex:0 0 auto!important;min-width:0!important;
+ padding:0 10px!important;font:700 10px/1 Arial,Helvetica,sans-serif!important;
+ letter-spacing:.11px!important;white-space:nowrap!important;text-transform:none!important;
+ background:var(--b180-color)!important;color:var(--b180-ink)!important;
+ border:1px solid var(--b180-border)!important;box-shadow:var(--b180-shadow-surface)!important;
+ text-shadow:0 1px #fff5!important;border-radius:3px!important;
+}
+.command-bar .tool.btn-180:hover:not(:disabled),
+.command-bar .more-tools summary.tool.btn-180:hover{
+ --b180-color:#f3f9fa;
+ --b180-border:#a6b9bd;
+}
+.command-bar .tool.btn-180.active,
+.command-bar .tool.btn-180[aria-pressed="true"],
+.command-bar .more-tools[open] summary.tool.btn-180{
+ --b180-color:#aee7ea;--b180-border:#5d9eac;--b180-ink:#0c2932;
+}
+.command-bar .tool.btn-180:active:not(:disabled){
+ transform:translateY(1px)!important;
+ box-shadow:
+  inset 3px 2px 2px -1px rgba(0,0,0,.50),
+  inset 0 0 1px 0 rgba(255,255,255,.14),
+  inset 0 1px 15px rgba(0,0,0,.29),
+  inset 0 -1px 2px rgba(0,0,0,.32),
+  0 0 0 1px var(--b180-border),
+  0 1px 1px rgba(0,0,0,.28),
+  0 2px 3px rgba(0,0,0,.13)!important;
+}
+.command-bar .toolbar-select,
+.command-bar .density-select{
+ height:29px!important;min-height:29px!important;max-height:29px!important;
+ box-sizing:border-box!important;margin:0!important;
+ background-color:#0c1a23!important;color:#d9e8ef!important;
+ border:1px solid #506370!important;border-radius:3px!important;
+ font:500 11px/1 "Segoe UI",Arial,sans-serif!important;
+ padding:0 20px 0 7px!important;align-self:center!important;
+}
+.command-bar .toolbar-label{
+ display:inline-flex!important;align-items:center!important;justify-content:center!important;
+ min-height:29px!important;height:29px!important;font:600 9px/1 "Segoe UI",Arial,sans-serif!important;
+ letter-spacing:.055em!important;color:#a7bdc8!important;
+}
+.command-bar .sep{height:18px!important;margin:0 1px!important;background:#46607077!important}
+.command-bar .bank-arrow{
+ width:31px!important;min-width:31px!important;max-width:31px!important;
+ height:29px!important;padding:0!important;
+}
+.command-bar .bank-arrow svg{
+ width:20px!important;height:20px!important;display:block!important;
+ color:#183039!important;fill:currentColor!important;
+ flex:none!important;pointer-events:none!important;
+}
+.command-bar .bank-arrow:disabled{opacity:.54!important}
+.command-bar .short-help{color:#91a9b6!important}
+.mixer-title{
+ height:25px!important;flex:0 0 25px!important;
+ background:linear-gradient(#1e303b,#101f29)!important;
+ border-top:1px solid #324653!important;border-bottom:1px solid #040c11!important;
+ color:#c5dde7!important;
+}
+.mixer-title .accent{background:#6bccdc!important}
+.mixer-title .right{color:#90aab7!important}
+.console-pane,.console-body,.tracks-viewport{background:var(--am-metal-base)!important}
+.console-body{--identity-h:29px!important;--footer-h:50px!important}
+.console-body .rail-cell.identity{
+ display:flex!important;height:var(--identity-h)!important;flex:0 0 var(--identity-h)!important;
+ align-items:center;justify-content:center;background:linear-gradient(#2b414e,#122631)!important;
+ color:#d9edf3!important;font:600 10px/1 Arial,sans-serif!important;
+ border-bottom:2px solid #61c9de!important;
+}
+.console-body .strip{
+ --ch:var(--track-color,#5f91ad);
+ background:linear-gradient(90deg,#101f28 0%,#172732 9%,#16232c 88%,#101e26)!important;
+ border-right:1px solid #040c12!important;
+ box-shadow:inset 1px 0 #546f7940!important;
+}
+.console-body .strip.selected{
+ background:linear-gradient(90deg,#192f39,#1b3039 50%,#14232c)!important;
+ box-shadow:inset 2px 0 #8ed1e2!important;
+}
+.console-body .strip-identity-top{
+ width:100%!important;min-width:0!important;flex:0 0 var(--identity-h)!important;
+ height:var(--identity-h)!important;min-height:var(--identity-h)!important;
+ display:grid!important;grid-template-columns:auto minmax(0,1fr) 19px!important;
+ column-gap:5px!important;align-items:center!important;padding:0 6px!important;
+ margin:0!important;border:0!important;border-radius:0!important;
+ border-bottom:2px solid var(--ch)!important;
+ color:#f3f9fb!important;
+ background:
+  linear-gradient(180deg,color-mix(in srgb,var(--ch) 78%,#1f3946),
+                         color-mix(in srgb,var(--ch) 56%,#07131b))!important;
+ box-shadow:inset 0 1px #ffffff36,inset 0 -1px #0008!important;
+ font:600 10px/1.1 "Segoe UI",Arial,sans-serif!important;
+ text-align:left!important;cursor:pointer!important;text-shadow:0 1px #0009!important;
+}
+.console-body .strip-identity-top:hover{filter:brightness(1.10)!important}
+.console-body .strip-identity-top .identity-number{
+ opacity:.89!important;letter-spacing:.025em!important;
+ font:700 9px/1 Arial,sans-serif!important;white-space:nowrap!important;
+}
+.console-body .strip-identity-top .identity-name{
+ overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;
+ font-weight:600!important;font-size:11px!important;text-align:center!important;
+}
+.console-body .strip-identity-top .identity-symbol{
+ display:flex;align-items:center;justify-content:center;
+ width:19px;height:22px;font-size:14px!important;line-height:1!important;
+}
+.console-body .strip .route-section,
+.console-body .strip .fx-section,
+.console-body .strip .send-section,
+.console-body .strip .pan-section,
+.console-body .strip .switch-section{
+ background:#152631!important;
+}
+.console-body .strip .route-section{background:linear-gradient(#142732,#11212b)!important}
+.console-body .strip .fx-section{background:#11222c!important}
+.console-body .strip .send-section{background:#15252e!important}
+.console-body .strip .pan-section{background:#172833!important}
+.console-body .strip .switch-section{background:#162731!important}
+.console-body .strip .subhead{background:#10222c!important}
+.console-body .strip .section{border-bottom:1px solid #34515e44!important}
+.console-body .route-section .route-select{color:#e0eff4!important;background-color:#0c1d27!important;border-color:#34515f!important}
+.console-body .strip .fader-section{background:#0c1922!important}
+.console-body .strip .fader-head{background:#07131a!important}
+.console-body .strip .bottom-section{
+ background:#0c1a23!important;padding:0 2px 2px!important;
+ height:var(--footer-h)!important;flex:0 0 var(--footer-h)!important;
+}
+.console-body .strip .db-value{height:15px!important;min-height:15px!important;flex:0 0 15px!important;font-size:10px!important}
+.console-body .strip .footer-label{
+ position:relative!important;display:grid!important;
+ grid-template-columns:minmax(0,1fr) 23px!important;
+ grid-template-rows:1fr!important;align-items:center!important;
+ height:33px!important;min-height:33px!important;flex:0 0 33px!important;
+ border:0!important;border-top:1px solid #ffffff3d!important;
+ border-bottom:3px solid var(--ch)!important;
+ border-radius:1px!important;overflow:hidden!important;
+ background:
+  linear-gradient(180deg,color-mix(in srgb,var(--ch) 74%,#1c3540),
+                         color-mix(in srgb,var(--ch) 51%,#091820))!important;
+ box-shadow:inset 0 1px #ffffff22,inset 0 -1px #0006!important;
+}
+.console-body .strip .footer-label .name{
+ display:block!important;min-width:0!important;
+ overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;
+ color:#f6fbff!important;font:600 11px/1.2 "Segoe UI",Arial,sans-serif!important;
+ padding:0 2px 0 6px!important;text-shadow:0 1px 1px #000a!important;
+ text-align:center!important;cursor:pointer!important;
+}
+.console-body .strip .footer-label .footer-icon{
+ display:flex;align-items:center;justify-content:center;
+ width:21px;height:100%!important;font-size:15px!important;line-height:1!important;
+ color:#fff!important;text-shadow:0 1px #0007;
+ cursor:pointer;
+}
+.console-body .strip .footer-label .color-strip{display:none!important}
+.console-body .strip.master .footer-label,
+.console-body .strip.bus .footer-label,
+.console-body .strip.fx .footer-label{background:linear-gradient(180deg,color-mix(in srgb,var(--ch) 74%,#1c3540),color-mix(in srgb,var(--ch) 51%,#091820))!important}
+.console-body .switch.btn-180{
+ --b180-color:var(--am-crystal);
+ --b180-border:#899aa0;
+ --b180-ink:#12212a;
+ background:var(--b180-color)!important;border-color:var(--b180-border)!important;
+ color:var(--b180-ink)!important;
+ box-shadow:var(--b180-shadow-surface)!important;
+ text-shadow:0 1px #fff7!important;
+}
+.console-body .switch.btn-180:not(.on):hover{--b180-color:#f4f9fa;--b180-border:#a5b6bb}
+.console-body .switch.btn-180.on.mute{--b180-color:var(--b180-on-mute);--b180-border:#b14a5f;--b180-ink:#32151e}
+.console-body .switch.btn-180.on.solo{--b180-color:var(--b180-on-solo);--b180-border:#a48337;--b180-ink:#2b210b}
+.console-body .switch.btn-180.on.cue{--b180-color:var(--b180-on-cyan);--b180-border:#38909e;--b180-ink:#12323c}
+/* Channel identity editor: same glass/metal background as plugin manager, not generic modal. */
+.channel-identity{
+ position:absolute;z-index:115;left:28px;top:100px;width:302px;max-width:calc(100% - 24px);
+ padding:10px;display:flex;flex-direction:column;gap:7px;
+ background:linear-gradient(#213642,#132630)!important;
+ border:1px solid #688595;border-radius:5px;
+ box-shadow:0 14px 28px #000b,0 0 0 1px #08131b;
+ color:#dbe8ee;
+}
+.channel-identity[hidden]{display:none!important}
+.identity-head{display:flex;align-items:center;justify-content:space-between;min-height:23px;color:#e5f2f7;font:600 11px/1 "Segoe UI",Arial,sans-serif}
+.identity-head #identityClose{background:transparent;border:0;color:#d9e9f1;font-size:19px;padding:0 5px}
+.identity-label{font:600 9px/1 Arial,sans-serif;letter-spacing:.07em;color:#a8c9d5}
+#identityName{width:100%;height:30px;background:#07151e;border:1px solid #557380;border-radius:3px;color:#e9f4f7;padding:0 8px;font-size:11px}
+.identity-icons{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px}
+.identity-icon{height:30px;display:flex;align-items:center;justify-content:center;font-size:16px;background:#283a45;color:#eff9fc;border:1px solid #4c6571;border-radius:3px}
+.identity-icon.selected{background:#466270;border-color:#b7e1ef;box-shadow:inset 0 0 0 1px #bedde8}
+.identity-colors{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:7px}
+.identity-swatch{height:24px;background:var(--choice);border:2px solid #0d1d27;border-radius:3px;box-shadow:inset 0 1px #ffffff59,0 1px #0009}
+.identity-swatch.selected{outline:2px solid #effbff;outline-offset:1px}
+.identity-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:3px}
+.identity-actions .btn-180{height:29px!important;min-height:29px!important;min-width:75px!important;font-size:10px!important;--b180-color:var(--am-crystal);--b180-border:#86969e}
+#identitySave{--b180-color:#a7e4eb;--b180-border:#5b9fae}
+@media(max-width:1100px){
+ .command-bar{gap:4px!important;padding:0 5px!important}
+ .command-bar .tool.btn-180{padding:0 7px!important}
+ .command-bar .toolbar-label{font-size:8px!important}
+ .command-bar .sep{display:none}
+}
+
 </style>
 </head>
 <body>
 <div class="app">
   <header class="window-title"><span class="logo">ArSonMix</span><span class="file-name">Mixer · Reference Session</span><span class="study">OPERATOR-FIRST · SINGLE LIVE CONSOLE REFERENCE</span></header>
   <div class="command-bar" role="toolbar" aria-label="Live mixer controls">
-    <button class="tool primary" id="pluginsButton" title="Search and assign FX plugins (F8)" aria-controls="pluginBrowser" aria-expanded="false">Plugins · F8</button>
+    <button class="tool btn-180 primary" id="pluginsButton" title="Search and assign FX plugins (F8)" aria-controls="pluginBrowser" aria-expanded="false">Plugins · F8</button>
     <span class="sep"></span>
-    <span class="toolbar-label">BANK</span><button class="tool bank-arrow" id="bankPrev" title="Previous bank">‹</button>
+    <span class="toolbar-label">BANK</span><button class="tool btn-180 bank-arrow" id="bankPrev" title="Previous bank" aria-label="Previous channel bank"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M14,17L9,12l5-5V17Z"/></svg></button>
     <select class="toolbar-select" id="bankSelect" aria-label="Mixer bank"><option value="0">CH 01–10</option></select>
-    <button class="tool bank-arrow" id="bankNext" title="Next bank">›</button>
+    <button class="tool btn-180 bank-arrow" id="bankNext" title="Next bank" aria-label="Next channel bank"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M10,17V7l5,5l-5,5Z"/></svg></button>
     <label class="toolbar-label" for="densitySelect">VIEW</label><select id="densitySelect" class="density-select" aria-label="Channel strip size"><option value="comfort" selected>Comfort</option><option value="standard">Standard</option><option value="compact">Compact</option></select>
     <span class="sep"></span>
-    <button class="tool" id="sofToggle" title="Mix Aux and FX sends using the channel faders" aria-pressed="false">Sends on Faders</button>
+    <button class="tool btn-180" id="sofToggle" title="Mix Aux and FX sends using the channel faders" aria-pressed="false">Sends on Faders</button>
     <select class="toolbar-select" id="sofTarget" aria-label="Send target"><option value="Bus A">Bus A</option></select>
-    <button class="tool" id="clearCue" title="Clear all Cue / PFL monitoring selections">Clear PFL</button>
+    <button class="tool btn-180" id="clearCue" title="Clear all Cue / PFL monitoring selections">Clear PFL</button>
     <span class="sep"></span>
     <label class="toolbar-label" for="sceneSelect">SNAPSHOT</label>
     <select id="sceneSelect" class="toolbar-select" aria-label="Saved live mixer snapshots"><option value="">Current</option></select>
-    <button class="tool" id="saveScene" title="Store a live mixer snapshot locally">Save</button>
-    <button class="tool" id="recallScene" title="Recall snapshot · Snapshot Safe channels protected">Recall</button>
+    <button class="tool btn-180" id="saveScene" title="Store a live mixer snapshot locally">Save</button>
+    <button class="tool btn-180" id="recallScene" title="Recall snapshot · Snapshot Safe channels protected">Recall</button>
     <details class="more-tools" id="moreTools">
-      <summary class="tool" title="Less-frequent mixer operations">More ···</summary>
+      <summary class="tool btn-180" title="Less-frequent mixer operations">More ···</summary>
       <div class="more-tools-panel">
         <span class="more-tools-caption">CHANNEL SETUP</span>
-        <button class="tool" id="addTrack" title="Create mono or stereo input channel">+ Audio</button>
-        <button class="tool" id="addBus" title="Create group bus">+ Bus</button>
-        <button class="tool" id="addFx" title="Create a send FX return">+ FX Return</button>
+        <button class="tool btn-180" id="addTrack" title="Create mono or stereo input channel">+ Audio</button>
+        <button class="tool btn-180" id="addBus" title="Create group bus">+ Bus</button>
+        <button class="tool btn-180" id="addFx" title="Create a send FX return">+ FX Return</button>
         <span class="more-tools-caption">VIEW & SELECTION</span>
-        <button class="tool" id="mode" aria-pressed="false" title="Compact narrow channel strips">Narrow</button>
+        <button class="tool btn-180" id="mode" aria-pressed="false" title="Compact narrow channel strips">Narrow</button>
         <select id="viewFilter" class="toolbar-select" aria-label="Filter channel types"><option value="all">All</option><option value="audio">Audio</option><option value="bus">Buses</option><option value="fx">FX Returns</option><option value="solo">Solo</option></select>
-        <button class="tool" id="copy" title="Copy selected channel settings (Ctrl+C)">Copy</button>
-        <button class="tool" id="paste" title="Paste selected settings (Ctrl+V)">Paste</button>
-        <button class="tool" id="group" title="Link selected channel faders">Group</button>
-        <button class="tool" id="ungroup" title="Remove selected channel link">Ungroup</button>
-        <button class="tool" id="sceneSafe" title="Protect selected channel from Snapshot recall">Snapshot Safe</button>
+        <button class="tool btn-180" id="copy" title="Copy selected channel settings (Ctrl+C)">Copy</button>
+        <button class="tool btn-180" id="paste" title="Paste selected settings (Ctrl+V)">Paste</button>
+        <button class="tool btn-180" id="group" title="Link selected channel faders">Group</button>
+        <button class="tool btn-180" id="ungroup" title="Remove selected channel link">Ungroup</button>
+        <button class="tool btn-180" id="sceneSafe" title="Protect selected channel from Snapshot recall">Snapshot Safe</button>
         <span class="more-tools-caption">REFERENCE TOOLS</span>
-        <button class="tool" id="preview" aria-pressed="false" title="Show fake metering movement; no hardware audio">▶ Demo Meters</button>
-        <button class="tool" id="reset" title="Reset UI reference mixer controls">Reset Demo</button>
+        <button class="tool btn-180" id="preview" aria-pressed="false" title="Show fake metering movement; no hardware audio">▶ Demo Meters</button>
+        <button class="tool btn-180" id="reset" title="Reset UI reference mixer controls">Reset Demo</button>
       </div>
     </details>
   </div>
@@ -1101,6 +1349,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
     <div class="mixer-title"><span class="accent"></span><span class="panel-name">Live Mixer</span><span class="panel-sub">▤</span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
     <section class="console-body collapsed-send" data-density="comfort" aria-label="Live mixing console">
       <aside class="section-rail" aria-label="Mixer section icons">
+        <div class="rail-cell identity" title="Channel identity">CH</div>
         <button class="rail-cell route" data-section="route" aria-expanded="true" title="Collapse / expand Inputs and Outputs">⇥</button>
         <button class="rail-cell fx" data-section="fx" aria-expanded="true" title="Collapse / expand Effects">fx</button>
         <button class="rail-cell send collapsed" data-section="send" aria-expanded="false" title="Collapse / expand Sends">↪</button>
@@ -1113,6 +1362,14 @@ button:disabled{opacity:.45;cursor:not-allowed}
       <div class="tracks-viewport" id="viewport" tabindex="0" aria-label="Visible channel bank; use upper arrow buttons for more channels"><div class="tracks" id="tracks"></div></div>
       <div id="master"></div>
     </section>
+    <div id="channelIdentity" class="channel-identity" role="dialog" aria-label="Edit channel name icon and color" hidden>
+      <div class="identity-head"><span id="identityTitle">CHANNEL IDENTITY</span><button id="identityClose" aria-label="Close channel editor">×</button></div>
+      <label class="identity-label" for="identityName">NAME</label>
+      <input id="identityName" type="text" maxlength="30" spellcheck="false" autocomplete="off" aria-label="Channel name">
+      <div class="identity-label">CHANNEL ICON</div><div id="identityIcons" class="identity-icons" role="group" aria-label="Choose channel icon"></div>
+      <div class="identity-label">CHANNEL COLOR</div><div id="identityColors" class="identity-colors" role="group" aria-label="Choose channel color"></div>
+      <div class="identity-actions"><button id="identityCancel" class="btn-180" type="button">Cancel</button><button id="identitySave" class="btn-180" type="button">Apply</button></div>
+    </div>
     <aside id="pluginBrowser" class="plugin-browser" aria-label="Effects plugin manager" hidden>
       <div class="plugin-head"><div class="plugin-head-title"><span>PLUGIN MANAGER</span><span id="pluginTarget" class="plugin-target">Select a channel FX slot</span></div><button class="plugin-close" id="pluginClose" title="Close plugin manager" aria-label="Close plugin manager">×</button></div>
       <div class="plugin-search-row"><input type="search" id="pluginSearch" autocomplete="off" spellcheck="false" placeholder="Search effects or vendor…   F8" aria-label="Find effects"></div>
@@ -1140,11 +1397,16 @@ button:disabled{opacity:.45;cursor:not-allowed}
 <script>
 (function(){
 'use strict';
-const COLORS=['#3b98a1','#598e72','#af9258','#a6676f','#6b88b4','#9180b5','#9e9571','#63958d','#a8799e','#6083a0'];
+const COLORS=['#1699cd','#b92e41','#cf6b1e','#b28c27','#34a544','#168762','#0e95c9','#066fa9','#7140b5','#b52893'];
+const CHANNEL_PALETTE=[...COLORS,'#c32974','#586889'];
+const CHANNEL_ICONS=['♩','♫','♬','🎙','🎸','🎹','🥁','🎧','▥','◉','◎','⊞'];
+const DEFAULT_ICONS=['🎙','🎙','♬','♫','🎙','🎙','🎸','🎹','🎧','♬'];
+function iconFor(t){return CHANNEL_ICONS.includes(t.icon)?t.icon:t.kind==='master'?'◎':t.kind==='bus'?'⊞':t.kind==='fx'?'◉':'♩';}
 const INIT=['Host','Interview','Sound FX','Music Bed','Vocal 1','Vocal 2','Guitar','Keyboard','Playback','Ambience'];
 const FX=['None','Parametric Equalizer','Dynamics Processing','Studio Reverb','DeEsser','Hard Limiter','Tube-modeled Compressor','Delay','Chorus','Multiband Compressor','Graphic Equalizer','Echo'];
 const CATEGORIES={'Parametric Equalizer':'EQ','Graphic Equalizer':'EQ','Dynamics Processing':'Dynamics','Hard Limiter':'Dynamics','Tube-modeled Compressor':'Dynamics','Multiband Compressor':'Dynamics',DeEsser:'Dynamics','Studio Reverb':'Reverb',Delay:'Delay',Echo:'Delay',Chorus:'Modulation'};
 let pluginCatalog=FX.filter(x=>x!=='None').map((name,i)=>({id:'demo-'+i,name,vendor:'Reference Effect',category:CATEGORIES[name]||'Utility',format:'DEMO',status:'demo',latencySamples:null,favorite:i<3,hidden:false}));
+let identityTrackId=null,identityColor='',identityIcon='';
 let pluginRecent=[],activeFxTarget=null,pluginOpen=false,quickOpen=false,scanPaths=['C:\\Program Files\\Common Files\\VST3'];
 const PLUGIN_PREFS_KEY='arsonmix.ref.plugin-prefs.v1';
 function restorePluginPreferences(){
@@ -1168,9 +1430,9 @@ const clone=x=>JSON.parse(JSON.stringify(x));
 const selection=()=>tracks.concat(master).filter(t=>t.selected);
 const make=(name,kind,color)=>{
  const id=nextId++;
- return {id,name,kind,color,group:null,safe:false,format:'stereo',input:'None',output:kind==='master'?'Default Output':'Master',fx:Array(8).fill('None'),slotBypass:Array(8).fill(false),fxOn:true,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,activeSend:0,sendSlots:Array.from({length:16},()=>({send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0})),eq:true,pan:0,trim:0,mute:false,solo:false,cue:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
+ return {id,name,kind,color,icon:kind==='master'?'◎':kind==='bus'?'⊞':kind==='fx'?'◉':'♩',group:null,safe:false,format:'stereo',input:'None',output:kind==='master'?'Default Output':'Master',fx:Array(8).fill('None'),slotBypass:Array(8).fill(false),fxOn:true,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,activeSend:0,sendSlots:Array.from({length:16},()=>({send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0})),eq:true,pan:0,trim:0,mute:false,solo:false,cue:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
 };
-function init(){nextId=1;nextGroup=1;tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#826b9a'));master=make('Master','master','#5a8ca8');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
+function init(){nextId=1;nextGroup=1;tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const option=(values,selected)=>values.map(x=>'<option value="'+escapeHtml(x)+'"'+(x===selected?' selected':'')+'>'+escapeHtml(x)+'</option>').join('');
 const channelOptions=(t,type)=>{
@@ -1215,7 +1477,8 @@ function sectionFader(t){
  +'<div class="fader-scale"><div class="gain-scale-travel">'+gainScale+'</div></div></div></div>';
 }
 function strip(t){
- let code='<article class="strip '+t.kind+(t.selected?' selected':'')+'" data-id="'+t.id+'" style="--track-color:'+t.color+'" aria-label="'+escapeHtml(t.name)+' channel">';
+ let code='<article class="strip '+t.kind+(t.selected?' selected':'')+'" data-id="'+t.id+'" style="--track-color:'+t.color+';--ch:'+t.color+'" aria-label="'+escapeHtml(t.name)+' channel">';
+ code+='<button type="button" class="strip-identity-top" data-action="editIdentity" title="Edit channel name, icon and color" aria-label="Edit '+escapeHtml(t.name)+' channel identity"><span class="identity-number">'+(t.kind==='master'?'MASTER':'CH '+String(t.id).padStart(2,'0'))+'</span><span class="identity-name">'+escapeHtml(t.name)+'</span><span class="identity-symbol" aria-hidden="true">'+escapeHtml(iconFor(t))+'</span></button>';
  code+='<div class="section route-section"><div class="route-top"><span class="route-indicator">'+(t.kind==='audio'?'▥':t.kind==='bus'?'↪':t.kind==='fx'?'∿':'➜')+'</span>'+(t.safe?'<span class="safe-marker" title="Snapshot safe · recall protected">SAFE</span>':'')+(t.group?'<span class="group-indicator" title="Linked group '+escapeHtml(t.group)+'">'+escapeHtml(t.group)+'</span>':'')+(t.kind==='audio'?'<button class="mini format-badge" data-action="format" title="Processing width M/ST (preserves physical input source)">'+(t.format==='mono'?'M':'ST')+'</button>':'')+'<button class="mini phase '+(t.phase?'on':'')+'" data-action="phase" title="Reverse polarity">'+(t.phase?'Ø':'⊘')+'</button></div>';
  if(t.kind==='audio')code+='<div class="route-field"><span class="route-caption">IN</span><select class="route-select" data-field="input" title="Input source (demo choices)" aria-label="'+escapeHtml(t.name)+' input">'+option(channelOptions(t,'input'),t.input)+'</select></div>';
  else if(t.kind==='bus'||t.kind==='fx')code+='<div class="route-field"><span class="route-caption">IN</span><span class="route-identity">'+(t.kind==='bus'?'GROUP':'FX RETURN')+'</span></div>';
@@ -1229,7 +1492,7 @@ function strip(t){
    +'<button class="switch btn-180 solo '+(t.solo?'on':'')+'" data-action="solo" title="Solo channel" aria-pressed="'+t.solo+'">SOLO</button>'
    +'<button class="switch btn-180 cue '+(t.cue?'on':'')+'" data-action="cue" title="Cue / PFL monitor bus (reference only)" aria-pressed="'+t.cue+'">PFL</button></div>';
  code+=sectionFader(t);
- code+='<div class="bottom-section"><div class="db-value">'+(sofEnabled&&t.kind==='audio'?'S ': '')+formatDb(sofEnabled&&t.kind==='audio'?getSofLevel(t):t.level)+'</div><div class="footer-label '+(t.kind==='master'?'master-label':t.kind==='bus'?'bus-label':'')+'"><span class="name" data-action="rename" title="Double-click to rename">'+escapeHtml(t.name)+'</span><div class="color-strip"></div></div></div></article>';
+ code+='<div class="bottom-section"><div class="db-value">'+(sofEnabled&&t.kind==='audio'?'S ': '')+formatDb(sofEnabled&&t.kind==='audio'?getSofLevel(t):t.level)+'</div><div class="footer-label '+(t.kind==='master'?'master-label':t.kind==='bus'?'bus-label':'')+'"><span class="name" data-action="rename" title="Edit channel name, icon and color">'+escapeHtml(t.name)+'</span><span class="footer-icon" aria-hidden="true">'+escapeHtml(iconFor(t))+'</span><div class="color-strip"></div></div></div></article>';
  return code;
 }
 function bankCapacity(){
@@ -1509,7 +1772,7 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  const btn=e.target.closest('[data-action]');if(!btn)return;
  const t=findTrack(btn);if(!t)return;
  const a=btn.dataset.action;
- if(a==='rename')return;
+ if(a==='rename'||a==='editIdentity'){openChannelIdentity(t,btn);return;}
  if(a==='format'&&t.kind==='audio'){t.format=t.format==='mono'?'stereo':'mono';refreshStrip(t);say(t.name+' processing → '+t.format.toUpperCase()+' · physical source '+t.input+' unchanged (reference only)');return;}
  if(a==='openPlugin'){openFastPicker(t,Number(btn.dataset.slot),btn);return;}
  if(a==='removeFx'){const i=Number(btn.dataset.slot);t.fx[i]='None';t.slotBypass[i]=false;refreshStrip(t);say(t.name+' · cleared FX insert '+(i+1));return;}
@@ -1530,20 +1793,7 @@ document.querySelector('.console-body').addEventListener('dblclick',e=>{
  const t=findTrack(e.target);if(!t)return;
  if(e.target.classList.contains('fader')){t.level=0;refreshStrip(t);say(t.name+' fader reset to 0.0 dB');}
  if(e.target.classList.contains('center-pan')){t.pan=0;refreshStrip(t);say(t.name+' pan centered');}
- if(e.target.matches('.footer-label .name')){
- const span=e.target,original=t.name;
- span.contentEditable='true';span.spellcheck=false;span.focus();
- const range=document.createRange();range.selectNodeContents(span);const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);
- const finish=save=>{
-  if(span.contentEditable!=='true')return;
-  span.contentEditable='false';const name=span.textContent.trim().slice(0,30);
-  if(save&&name){t.name=name;tracks.forEach(x=>{if(x.output===original)x.output=name;if(x.send===original)x.send=name;x.sendSlots.forEach(slot=>{if(slot.send===original)slot.send=name;});});say('Renamed '+original+' → '+name+' · routing updated');}
-  else t.name=original;
-  render();
- };
- span.addEventListener('blur',()=>finish(true),{once:true});
- span.addEventListener('keydown',ev=>{if(ev.key==='Enter'){ev.preventDefault();span.blur();}else if(ev.key==='Escape'){ev.preventDefault();finish(false);}ev.stopPropagation();});
-}
+ if(e.target.matches('.footer-label .name,.footer-icon,.strip-identity-top'))openChannelIdentity(t,e.target);
 });
 document.querySelector('.console-body').addEventListener('dragstart',e=>{
  const row=e.target.closest('.fxslot-row');if(!row)return;
@@ -1635,6 +1885,65 @@ function pluginTargetLabel(){
  const t=activeFxTarget&&tracks.concat(master).find(x=>x.id===activeFxTarget.channelId);
  return t? t.name+' · Insert '+(activeFxTarget.slot+1):'Select a channel + insert slot';
 }
+function renderChannelIdentityChoices(){
+ document.getElementById('identityIcons').innerHTML=CHANNEL_ICONS.map(icon=>
+ '<button type="button" class="identity-icon'+(icon===identityIcon?' selected':'')+'" data-identity-icon="'+escapeHtml(icon)+'" aria-pressed="'+(icon===identityIcon)+'" aria-label="Use icon '+escapeHtml(icon)+'">'+escapeHtml(icon)+'</button>'
+ ).join('');
+ document.getElementById('identityColors').innerHTML=CHANNEL_PALETTE.map(color=>
+ '<button type="button" class="identity-swatch'+(color===identityColor?' selected':'')+'" data-identity-color="'+color+'" aria-pressed="'+(color===identityColor)+'" aria-label="Use channel color '+color+'" style="--choice:'+color+'"></button>'
+ ).join('');
+}
+function closeChannelIdentity(){identityTrackId=null;document.getElementById('channelIdentity').hidden=true;}
+function openChannelIdentity(t,anchor){
+ if(!t)return;
+ setFastPicker(false);setBrowser(false);
+ identityTrackId=t.id;identityColor=t.color;identityIcon=iconFor(t);
+ const dialog=document.getElementById('channelIdentity');
+ document.getElementById('identityTitle').textContent='CHANNEL IDENTITY · '+t.name;
+ document.getElementById('identityName').value=t.name;
+ renderChannelIdentityChoices();dialog.hidden=false;
+ const parent=document.querySelector('.console-pane'),a=anchor?.getBoundingClientRect?.(),p=parent?.getBoundingClientRect?.();
+ if(a&&p&&dialog.style?.setProperty){
+  dialog.style.setProperty('left',Math.max(8,Math.min(p.width-302,a.left-p.left+a.width/2-148))+'px');
+  dialog.style.setProperty('top',Math.max(8,Math.min(p.height-295,a.top-p.top+18))+'px');
+ }
+ document.getElementById('identityName').focus?.();
+}
+function applyChannelIdentity(){
+ const t=tracks.concat(master).find(x=>x.id===identityTrackId);
+ if(!t){closeChannelIdentity();return;}
+ const name=String(document.getElementById('identityName').value||'').trim().replace(/\s+/g,' ').slice(0,30);
+ if(!name){say('Channel name cannot be empty');return;}
+ if(tracks.concat(master).some(other=>other.id!==t.id&&other.name.toLowerCase()===name.toLowerCase())){
+  say('Channel name already exists: '+name);return;
+ }
+ const old=t.name;
+ t.name=name;t.icon=CHANNEL_ICONS.includes(identityIcon)?identityIcon:iconFor(t);
+ t.color=CHANNEL_PALETTE.includes(identityColor)?identityColor:t.color;
+ tracks.forEach(x=>{
+  if(x.output===old)x.output=name;
+  if(x.send===old)x.send=name;
+  x.sendSlots.forEach(slot=>{if(slot.send===old)slot.send=name;});
+ });
+ if(sofTarget===old)sofTarget=name;
+ closeChannelIdentity();render();say('Channel identity updated · '+name+' · routing references preserved');
+}
+document.getElementById('identityClose').addEventListener('click',closeChannelIdentity);
+document.getElementById('identityCancel').addEventListener('click',closeChannelIdentity);
+document.getElementById('identitySave').addEventListener('click',applyChannelIdentity);
+document.getElementById('identityName').addEventListener('keydown',e=>{
+ if(e.key==='Enter'){e.preventDefault();applyChannelIdentity();}
+ else if(e.key==='Escape'){e.preventDefault();closeChannelIdentity();}
+});
+document.getElementById('identityIcons').addEventListener('click',e=>{
+ const button=e.target.closest('[data-identity-icon]');if(!button)return;
+ identityIcon=button.dataset.identityIcon;renderChannelIdentityChoices();
+});
+document.getElementById('identityColors').addEventListener('click',e=>{
+ const button=e.target.closest('[data-identity-color]');if(!button)return;
+ identityColor=button.dataset.identityColor;renderChannelIdentityChoices();
+});
+
 function setBrowser(open){
  pluginOpen=!!open;
  plugEl('pluginBrowser').hidden=!pluginOpen;
@@ -1848,6 +2157,7 @@ window.addEventListener('keydown',e=>{
  }
  if(e.key==='Escape'&&sofEnabled){toggleSof(false);return;}
  if(e.key==='F8'&&!textEntry){e.preventDefault();pluginOpen?setBrowser(false):openPluginBrowser();return;}
+ if(e.key==='Escape'&&identityTrackId!==null){closeChannelIdentity();return;}
  if(e.key==='Escape'&&quickOpen){setFastPicker(false);return;}
  if(e.key==='Escape'&&pluginOpen){setBrowser(false);return;}
  if(e.key==='Escape'&&preview)togglePreview();
