@@ -139,5 +139,35 @@ filter('fx');node('bankNext').dispatch('click');
 check(node('bankSelect').value==='0','Filtered bank arrows follow visible channel group, not global track count');
 filter('all');
 
+
+// Layout regression: collapsed rows must hide their content without hiding header labels.
+check(!html.includes('8 Inserts · drag to reorder'),'FX strip no longer displays a long wrapping header');
+check(html.includes('white-space:nowrap;overflow:hidden;text-overflow:ellipsis'),
+  'FX labels use single-line truncation');
+check(html.includes('.console-body.collapsed-fx .fxslot-list{display:none}'),
+  'Collapsing FX hides the scroll container, not only its children');
+check(html.includes('grid-template-columns:10px minmax(0,1fr) 28px'),
+  'Send controls have constrained slider/dB columns');
+check(html.includes('.console-body.collapsed-fx{--fx-h:23px}') &&
+  html.includes('.console-body.collapsed-send{--send-h:23px}') &&
+  html.includes('.console-body.collapsed-eq{--eq-h:23px}'),
+  'All collapsed rows share the same compact height variable');
+check(html.includes('flex:0 0 var(--fx-h)') &&
+  html.includes('flex:0 0 var(--send-h)') &&
+  html.includes('flex:0 0 var(--eq-h)'),
+  'Section heights cannot shrink independently of section rail');
+const rail=node('rail'),body=node('body');
+for(const name of ['fx','send','eq','route']){
+ const flags=new Set(),attrs={};
+ const button={dataset:{section:name},classList:{toggle(k,on){on?flags.add(k):flags.delete(k);return on;}},setAttribute(k,v){attrs[k]=v;}};
+ const target={closest:k=>k==='[data-section]'?button:null};
+ rail.handlers.click({target});
+ check(body.classList.contains('collapsed-'+name) && attrs['aria-expanded']==='false',
+  name+' rail toggle collapses section and updates aria-expanded');
+ rail.handlers.click({target});
+ check(!body.classList.contains('collapsed-'+name) && attrs['aria-expanded']==='true',
+  name+' rail toggle expands section again');
+}
+
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
