@@ -241,3 +241,38 @@ test('portable C++ generator that ignores invalid argv is BLOCKED from native S0
  assert.throws(()=>assertExplicitS0Exporter('/fake/crash',()=>{throw crash}),
    /timed out/);
 });
+
+
+// Source-only phase gate must NEVER call portable golden/live M4 a universal
+// callback or a product. Not an alternative schema implementation.
+import {inspectPuzzleSources} from '../scripts/check_console_puzzle.mjs';
+test('shared #279 release preflight blocks even a source with working M4 controls if universal callback remains UNREADY',()=>{
+ const src={
+  native:'PuzzleV8Wire::snapshot(w) PuzzleV8Wire::ack(ack) w.inputs.push_back(...) w.outputs.push_back(...) w.productionCallbackLive=false; engine.switchDryRoutingLabSource( engine.setDryRoutingLabParameter(',
+  dispatcher:'arMixConsoleSnapshot arMixConsoleIntent arMixConsoleAck processProductionIntent',
+  cxxFixture:'PuzzleV8Wire::fixture(snapshot,ack)',
+  gui:'arMixConsoleAck arMixConsoleSnapshot arMixConsoleIntent baseGraphRevision baseRosterRevision enabledInputs enabledOutputs productionCallbackLive===true supportedOps',
+  guiTest:'console-v8-native-unready.json '+ 'a'.repeat(64),
+  portableGolden:'fixture-only',
+  nativeRunner:'assertExplicitS0Exporter puzzle-seam.mjs',
+  nativeProof:'runActualNativeS0 actual.equals(expected)',
+  nativeSource:'bool process(',
+  fat:'enabledInputs enabledOutputs',
+  fatTest:'integration/console-v6/fixtures.json',
+  machine:'"schemaVersion" "required" "ConsoleSnapshot"'
+ };
+ const got=inspectPuzzleSources(src,'a'.repeat(64));
+ assert.equal(got.portableFixtureMatch,true);
+ assert.equal(got.stage,'S0_NATIVE_PRODUCER_BLOCKED');
+ assert.equal(got.productCertified,false);
+ assert.equal(got.actualCallbackPCMVerified,false);
+ assert.ok(got.releaseSourceBlockers.includes('S0_EXPLICIT_JUCE_EXPORTER'));
+ assert.ok(got.releaseSourceBlockers.includes('G2_FULL_UNIVERSAL_CALLBACK'));
+ const real=structuredClone(src);
+ real.dispatcher+=' --emit-console-s0-json';
+ const after=inspectPuzzleSources(real,'a'.repeat(64));
+ assert.equal(after.stage,'S1_OR_G0_ONLY_UNIVERSAL_BLOCKED');
+ assert.ok(after.releaseSourceBlockers.includes('G2_FULL_UNIVERSAL_CALLBACK'));
+ const bad=structuredClone(src);bad.guiTest='fake.json';
+ assert.equal(inspectPuzzleSources(bad,'a'.repeat(64)).portableFixtureMatch,false);
+});
