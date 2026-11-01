@@ -5,10 +5,9 @@
   "live_audio": false,
   "source_pr": 278,
   "source_branch": "design/audition-mixer-reference-isolated-20261101",
-  "source_sha": "76dec72db06369e36d9d5e430454583cbffd9d8c",
+  "source_sha": "d573a1d10a730f624c13d8476f46c7b11aa08a81",
   "source_path": "design-references/audition-mixer-study/index.html",
-  "reference_art": "Original FADER-ARI-SILVER, FADER-ARI-ROSEGOLD, PAN-SLIDER 36x77 / 18x40",
-  "visual_contract": "BTN-180 exact historical recipe, calibrated VU dBFS and RAIL3 fader, equal 10+Master bank width, fixed last page, FX Rack priority, no EQ row/SendPan/Input I",
-  "checks": "106/106 zero-dependency JS DOM and width contract smoke passed; Chromium visual-layout audit authored but not executed on this V4 reference",
-  "note": "UI demo with simulated meters, no native ASIO/VST3 audio confirmation."
+  "visual_contract": "Unmodified historical BTN-180 7-shadow recipe; classic 36×77 silver/rose faders; VU/meter dBFS ruler + RAIL3; PAN-thumb trim/send; exact 10+Master slot width; no stretched last bank; no EQ row/Send Pan/I",
+  "checks": "106/106 JS DOM+geometry invariant checks passed; real rendered Chromium audit not executed",
+  "note": "Static UI reference with simulated meters, not real native ASIO or VST3."
 }
