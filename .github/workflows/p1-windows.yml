@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - 'CMakeLists.txt'
+      - 'integration/console-v6/**'
       - 'src/**'
       - 'engine/**'
       - 'web/**'
@@ -27,6 +28,7 @@ on:
   pull_request:
     paths:
       - 'CMakeLists.txt'
+      - 'integration/console-v6/**'
       - 'src/**'
       - 'engine/**'
       - 'tests/*.cpp'
@@ -55,6 +57,11 @@ jobs:
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
+      - name: Cheap canonical Console v6 puzzle socket gate (no JUCE)
+        run: node scripts/check_console_puzzle.mjs
+      - name: Stop incomplete integrated product promotion before JUCE checkout
+        if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-') }}
+        run: node scripts/check_console_puzzle.mjs --release
       - name: Fast offline FactoryFX release and integrity contract tests
         shell: pwsh
         run: |

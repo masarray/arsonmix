@@ -690,6 +690,7 @@ static void verifyNativePuzzleV8FixtureAndWire() {
     fixtureSource.epoch="0";
     PuzzleV8Ack rejected;
     rejected.requestId="native-fixture-session:1";
+    rejected.deviceEpoch=fixtureSource.epoch;
     const auto expected=PuzzleV8Wire::fixture(fixtureSource,rejected);
     const auto fixtureFile=std::filesystem::path(__FILE__).parent_path()/
         "fixtures"/"console-v8-native-unready.json";
@@ -760,6 +761,7 @@ int main(int argc,char** argv) {
         armix::console::PuzzleV8Snapshot s;
         armix::console::PuzzleV8Ack ack;
         ack.requestId="native-fixture-session:1";
+        ack.deviceEpoch=s.epoch;
         std::cout<<armix::console::PuzzleV8Wire::fixture(s,ack);
         return std::cout.good()?0:1;
     }

@@ -1,3 +1,5 @@
+> **SEQUENCING SUPERSEDED:** [PRD v5.1](PRD_ARSONMIX_OPERATOR_FIRST_LIVE_MIXER_V5_20261101.md), [ARD v5.1](ARD_ARSONMIX_UNIVERSAL_REALTIME_CONSOLE_V5_20261101.md), and [Puzzle Contract v8](PUZZLE_INTEGRATION_CONTRACT_V8_20261101.md) now govern parallel work and final acceptance. Keep this v7 document as release-train history; do not follow v7 dependency waterfall over v8's producer→consumer socket.
+
 # ArSonMix — ONE PRODUCT RELEASE TRAIN v7 (2026-11-01)
 
 **Binding delivery orchestration, not a shipped-feature claim.** PRD v5 + ARD v5 define functionality and native architecture. Existing execution lock v6 retains safety rules. This v7 document supersedes earlier workstream sequencing and partial user-testing invitations.

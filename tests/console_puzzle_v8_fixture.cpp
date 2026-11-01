@@ -15,6 +15,7 @@ int main(int argc,char** argv) {
     snapshot.epoch="1";
     PuzzleV8Ack ack;
     ack.requestId="native-fixture-session:1";
+    ack.deviceEpoch=snapshot.epoch;
     const auto json=PuzzleV8Wire::fixture(snapshot,ack);
     assert(json.find("\"enabledInputs\":[]")!=std::string::npos);
     assert(json.find("\"productionCallbackLive\":false")!=std::string::npos);
