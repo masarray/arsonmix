@@ -138,9 +138,9 @@ jobs:
       # This single M4 FAT branch is explicitly allowed to upload an
       # UNQUALIFIED experimental ZIP for real physical hardware testing.
       - uses: actions/upload-artifact@v4
-        if: ${{ github.event_name != 'pull_request' || github.head_ref == 'milestone/m4-unified-native-multichannel-fx-20261101' }}
+        if: ${{ github.event_name != 'pull_request' || github.head_ref == 'milestone/m4-unified-native-multichannel-fx-20261101' || github.head_ref == 'work/integration-fat-console-v6' }}
         with:
-          name: ${{ github.event_name == 'pull_request' && 'ArSonMix-M4-EXPERIMENTAL-Hardware-FAT-Windows-x64' || 'ArSonMix-GUI10CH-P012-Verified-Hardware-FAT-Windows-x64' }}
+          name: ${{ github.event_name != 'pull_request' && 'ArSonMix-GUI10CH-P012-Verified-Hardware-FAT-Windows-x64' || (github.head_ref == 'work/integration-fat-console-v6' && 'ArSonMix-0FX-UNQUALIFIED-Hardware-FAT-Windows-x64' || 'ArSonMix-M4-EXPERIMENTAL-Hardware-FAT-Windows-x64') }}
           path: dist/
           if-no-files-found: error
           retention-days: 14
