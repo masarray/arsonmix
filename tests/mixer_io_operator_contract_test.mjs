@@ -586,6 +586,8 @@ test('Audio Setup first-sound workflow keeps hardware and routing distinct',()=>
   assert.match(gui,/pair\[0\]==='STEREO'&&verified.length<2/);
   assert.match(gui,/r.left===r.right/);
   assert.match(gui,/INVALID STEREO · SELECT DISTINCT L\/R/);
+  assert.match(gui,/stage.textContent='FIX AS MONO'/);
+  assert.match(gui,/button.dataset.ioQuickFix==='1'\?'MONO'/);
   assert.match(gui,/function stageQuickInput\(button\)/);
   assert.match(gui,/commitSourceInOneGesture\(/);
   assert.match(gui,/arIOSimpleMain/);
