@@ -6,7 +6,7 @@
   const mixer=document.getElementById('mixer');
   const host=document.querySelector('.workbench');
   if(!mixer||!host)return;
-  let mode='FX', lastStatus={}, deviceInventory=null, ioTab='device', lastSignature='', focusedInput=0;
+  let mode='CONSOLE', lastStatus={}, deviceInventory=null, ioTab='device', lastSignature='', focusedInput=0;
   let monitorSendsExpanded=false;
   // DEVICE1: staged selections are UI-only; only positive native ACK changes active hardware.
   let deviceDraft=null,deviceBusy=false,deviceNote='',deviceRequest='',deviceRequestSeq=0,lastDeviceRefresh=0,lastDeviceRescan=0,applyMutePending=false,applyAfterDevice=null,applyBaseEpoch=0;
@@ -254,7 +254,7 @@
       'MAIN → HW '+(out[0]+1)+'/'+(out[1]+1):'MAIN → NO HW OUTPUT';
   };
   const toolbar=node('div','arMixerBankBar');
-  toolbar.innerHTML='<div class="arMixerBankModes" role="group" aria-label="Mixer channel bank"><button type="button" class="btn-180 active" data-mix-mode="FX" aria-pressed="true">FX</button><button type="button" class="btn-180" data-mix-mode="ROUTE" aria-pressed="false">ROUTE</button><button type="button" class="btn-180" data-mix-mode="SENDS" aria-pressed="false">SENDS</button></div><div class="arMixerBankInfo" id="arMixerBankInfo" role="status">NO HARDWARE · PREVIEW</div><button type="button" class="btn-180 arMixApply" data-mix-apply title="MUTE OUTPUT first; native ACK required">APPLY</button><button type="button" class="btn-180 arMixIoOpen" data-io-open>AUDIO I/O</button>';
+  toolbar.innerHTML='<div class="arMixerBankModes" role="group" aria-label="Mixer channel bank"><button type="button" class="btn-180 active" data-mix-mode="CONSOLE" aria-pressed="true">CONSOLE</button><button type="button" class="btn-180" data-mix-mode="FX" aria-pressed="false">FX</button><button type="button" class="btn-180" data-mix-mode="ROUTE" aria-pressed="false">ROUTE</button><button type="button" class="btn-180" data-mix-mode="SENDS" aria-pressed="false">SENDS</button></div><div class="arMixerBankInfo" id="arMixerBankInfo" role="status">NO HARDWARE · PREVIEW</div><button type="button" class="btn-180 arMixApply" data-mix-apply title="MUTE OUTPUT first; native ACK required">APPLY</button><button type="button" class="btn-180 arMixIoOpen" data-io-open>AUDIO I/O</button>';
   host.insertBefore(toolbar,mixer);
   // One genuinely selected-channel journey, NOT another DSP or source registry.
   // Four compact steps show ACKNOWLEDGED state, never stage a hidden graph.
@@ -769,7 +769,7 @@
   window.__arMixOpenAudioIO=openIO;
   function closeIO(){overlay.hidden=true;matrixDraft.clear();matrixSide.clear();matrixMessage='';}
   function setMode(next){
-    if(!['FX','ROUTE','SENDS'].includes(next))return;
+    if(!['CONSOLE','FX','ROUTE','SENDS'].includes(next))return;
     if(next!=='SENDS'&&sofBus>=0)leaveSof();
     mode=next;mixer.dataset.ioMode=mode;
     toolbar.querySelectorAll('[data-mix-mode]').forEach(b=>{const selected=b.dataset.mixMode===mode;b.classList.toggle('active',selected);b.setAttribute('aria-pressed',String(selected));});
@@ -788,7 +788,7 @@
       }
       if(strip.querySelector('.arChannelBank'))continue;
       const bank=node('div','arChannelBank');
-      bank.innerHTML='<div class="arRouteBank"><span class="arBankTitle">INPUT SOURCE · NATIVE</span><select class="arBankSource" aria-label="Physical channel input source"></select><span class="arBankTitle">OUTPUT DESTINATION</span><span class="arBankOutput">MAIN · UNKNOWN</span><div class="arBankFormatRow"><select class="arBankChannelFormat" aria-label="Independent channel processing format" title="Processing MONO / STEREO independent from hardware input"><option value="MONO">CH M</option><option value="STEREO">CH L/R</option></select><span class="arBankStage">NATIVE PATCH REQUIRED</span></div><button class="btn-180 arBankPatch" data-mix-patch="input">OPEN INPUT PATCH</button></div><div class="arSendBank"><span class="arBankTitle">AUX SENDS · PRE / POST</span><div class="arSendSummary"></div><button class="btn-180 arBankPatch" data-mix-patch="internal">EDIT AUX SENDS</button></div>';
+      bank.innerHTML='<div class="arRouteBank"><span class="arBankTitle">INPUT SOURCE · NATIVE</span><select class="arBankSource" aria-label="Physical channel input source"></select><span class="arBankTitle">OUTPUT DESTINATION</span><button type="button" class="arBankOutput" data-mix-patch="output" title="Configure physical MAIN outputs with native ACK">MAIN · UNKNOWN</button><div class="arBankFormatRow"><select class="arBankChannelFormat" aria-label="Independent channel processing format" title="Processing MONO / STEREO independent from hardware input"><option value="MONO">CH M</option><option value="STEREO">CH L/R</option></select><span class="arBankStage">NATIVE PATCH REQUIRED</span></div><button class="btn-180 arBankPatch" data-mix-patch="input">OPEN INPUT PATCH</button></div><div class="arSendBank"><span class="arBankTitle">AUX SENDS · PRE / POST</span><div class="arSendSummary"></div><button class="btn-180 arBankPatch" data-mix-patch="internal">EDIT AUX SENDS</button></div>';
       strip.querySelector('.rack')?.insertAdjacentElement('afterend',bank);
     }
   }
@@ -828,7 +828,7 @@
     const dirty=current!==valueFor(accepted)||channelFormat(r)!==channelFormat(accepted);
     const stage=strip.querySelector('.arBankStage');
     const sourcePending=quickSourcePending?.channel===i&&quickSourcePending.epoch===s.epoch;
-    stage.textContent=!s.ready?'NO LIVE DEVICE':sourcePending?'PENDING · NATIVE ACK':dirty?'DRAFT · NOT APPLIED':r.mode==='NONE'?'UNPATCHED · SILENT':'LIVE · NATIVE ACK';
+    stage.textContent=!s.ready?'NO VERIFIED DEVICE':sourcePending?'PENDING · NATIVE ACK':dirty?'DRAFT · NOT APPLIED':r.mode==='NONE'?'UNPATCHED · NO INPUT':'ROUTE ACK · PCM UNVERIFIED';
     stage.dataset.state=!s.ready?'offline':sourcePending?'draft':dirty?'draft':r.mode==='NONE'?'offline':'live';
     // Four native AUX destinations are always visible, even when empty.
     // Render only after a topology change, never on meter telemetry.
@@ -1766,7 +1766,9 @@
       if(!route().ready)openIO('device');
       else openSourceChooser(index);
     } else if(step==='fx'){
-      setMode('FX');
+      // CONSOLE is the single visible operator workflow; classic layers are
+  // retained only as an advanced compatibility/diagnostics view.
+  setMode('CONSOLE');
       if(typeof chooseChannel==='function')chooseChannel(index);
       strip?.querySelector('.rack')?.scrollIntoView?.({block:'nearest',inline:'nearest'});
     } else if(step==='sends'){
@@ -1939,6 +1941,7 @@
       e.preventDefault();e.stopImmediatePropagation();
       const strip=b.closest('[data-strip]'),channel=Number(strip?.dataset.strip)||0;
       if(b.dataset.mixPatch==='input')openIO('inputs',channel);
+      else if(b.dataset.mixPatch==='output')openIO('outputs',channel);
       else window.__arMixOpenChannelPatch?.(channel,b.dataset.mixPatch);
       return;
     }
