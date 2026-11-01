@@ -745,12 +745,22 @@ static void verifyFirstSoundOnePinNativeSourceDraft() {
     assert(near(mainL[0],mainR[0]));
     assert(levels.channelPeak[6] > 0.f);
     assert(levels.channelPeak[1] == 0.f); // CH02 unpatched, no fake PCM.
+    // The real strip deliberately de-clicks MUTE over up to 64 frames:
+    // a transition is NOT an immediate memset. Verify sample-by-sample
+    // monotonic fade and that steady muted blocks are truly silent.
     assert(production.setStripControl(6,.25f,0.f,true,true,false));
     mainL.fill(1.f);mainR.fill(1.f);
     const auto beforeMute=heapCalls.load(std::memory_order_relaxed);
     assert(production.process(nativePins,1,mainL.data(),mainR.data(),4,&levels));
     assert(heapCalls.load(std::memory_order_relaxed)==beforeMute);
+    assert(mainL[0]>0.f && mainR[0]>0.f);
+    assert(mainL[0]>mainL[1] && mainL[1]>mainL[2]);
+    assert(mainR[0]>mainR[1] && mainR[1]>mainR[2]);
+    assert(near(mainL[3],0.f) && near(mainR[3],0.f));
+    mainL.fill(1.f);mainR.fill(1.f);
+    assert(production.process(nativePins,1,mainL.data(),mainR.data(),4,&levels));
     for(int n=0;n<4;++n)assert(mainL[n]==0.f && mainR[n]==0.f);
+    assert(levels.channelPeak[6]==0.f);
     assert(production.setStripControl(6,.25f,0.f,true,false,false));
     assert(production.process(nativePins,1,mainL.data(),mainR.data(),4,&levels));
     assert(mainL[0]>0.f&&mainR[0]>0.f);
