@@ -184,6 +184,12 @@
     return n;
   };
   const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
+  function paintPan(slider,value){
+    const n=clamp(Number(value)||0,-100,100),pos=(n+100)/2;
+    slider.style.setProperty('--v6-pan-start',Math.min(50,pos)+'%');
+    slider.style.setProperty('--v6-pan-end',Math.max(50,pos)+'%');
+    slider.setAttribute('aria-valuetext',n===0?'Center':n<0?'L '+Math.abs(n):'R '+n);
+  }
   const clean=s=>String(s==null?'—':s);
   const byId=new Map();
   const pending=new Map();
@@ -242,9 +248,10 @@
   }
   const add=button('+ CHANNEL',{'data-op':'CREATE_CHANNEL'});
   const patch=button('PATCH',{'aria-label':'Open advanced patch'});
+  const narrow=button('NARROW',{'aria-pressed':'false','aria-label':'Toggle narrow channel bank'});
   const back=button('V6 CONSOLE',{'aria-label':'Return to operator console'});
   back.id='arV6Return';back.hidden=true;
-  tools.append(bankPrev,bankLabel,bankNext,sendMode,roleSelect,add,patch);
+  tools.append(bankPrev,bankLabel,bankNext,sendMode,roleSelect,add,narrow,patch);
   top.append(identification,tools);
   const message=h('div','arV6Message');message.setAttribute('role','status');
   const body=h('div','arV6Body');
@@ -253,6 +260,13 @@
   body.append(lanes,main);
   root.append(top,message,body);
   mount.append(root);
+  narrow.addEventListener('click',()=>{
+    const compact=root.dataset.narrow!=='true';
+    root.dataset.narrow=String(compact);
+    narrow.setAttribute('aria-pressed',String(compact));
+    narrow.textContent=compact?'WIDE':'NARROW';
+    refreshBanks(); // Resize only; never create a native channel or remount faders.
+  });
   document.querySelector('.toolbar-actions')?.append(back);
   const setVisible=v=>{
     document.documentElement.classList.toggle('ar-v6-active',!!v);
@@ -565,6 +579,7 @@
     const panRange=h('input','arV6PanRange');panRange.type='range';
     panRange.min='-100';panRange.max='100';panRange.step='1';
     panRange.value=String(Number(ch.controls?.pan)||0);
+    paintPan(panRange,panRange.value);
     panRange.dataset.op='SET_PAN';panRange.dataset.id=ch.id;
     pan.append(panRange);controls.append(pan);
     controls.append(button('M',{'data-op':'SET_MUTE','data-id':ch.id,
@@ -574,8 +589,14 @@
     elStrip.append(controls);
     const lower=h('div','arV6Lower');
     const meter=h('div','arV6Meter');meter.dataset.meterId=ch.id;
-    meter.setAttribute('aria-label','Native channel meter: '+(ch.name||ch.id));
-    for(let n=0;n<22;n++)meter.append(h('i','arV6Led'));
+    meter.dataset.format=ch.processingFormat||'MONO';
+    meter.setAttribute('aria-label','Native L/R PCM meter: '+(ch.name||ch.id));
+    for(const side of ['L','R']){
+      const lane=h('div','arV6MeterLane');
+      lane.dataset.side=side;
+      for(let n=0;n<22;n++)lane.append(h('i','arV6Led'));
+      meter.append(lane);
+    }
     const range=h('input','arV6Fader');
     range.type='range';range.min='-60';range.max='12';range.step='.1';
     const faderVal=Number(ch.controls?.faderDb);
@@ -669,7 +690,12 @@
       choose('SET_PRIMARY_OUT',ch.primaryOutId||ch.primaryOut?.id||(typeof ch.primaryOut==='string'?ch.primaryOut:''));
       choose('ADD_SEND','');
       const pan=strip.querySelector('[data-op="SET_PAN"]');
-      if(pan)pan.value=String(Number(ch.controls?.pan)||0);
+      if(pan){
+        pan.value=String(Number(ch.controls?.pan)||0);
+        paintPan(pan,pan.value);
+      }
+      const meter=strip.querySelector('[data-meter-id]');
+      if(meter)meter.dataset.format=ch.processingFormat||'MONO';
       for(const op of ['SET_MUTE','SET_SOLO']){
         const n=strip.querySelector('button[data-op="'+op+'"]');
         if(n)n.setAttribute('aria-pressed',String(!!ch.controls?.[op==='SET_MUTE'?'mute':'solo']));
@@ -703,16 +729,32 @@
   }
   function refreshMeters(){
     if(!accepted)return;
-    const meters=acceptedNative?accepted.telemetry?.channelMeterRmsPeak||{}:{};
+    const incoming=acceptedNative?accepted.telemetry?.channelMeterRmsPeak:null;
+    const meters=Array.isArray(incoming)?
+      Object.fromEntries(incoming.filter(x=>x&&typeof x.channelId==='string')
+        .map(x=>[x.channelId,x])):
+      incoming&&typeof incoming==='object'?incoming:{};
+    const ledsForPeak=peak=>{
+      const p=Number(peak)||0;
+      if(p<=0)return 0;
+      // Native peaks are linear PCM amplitudes, quantized on a -60..0 dBFS
+      // ladder. Static green/yellow/red segments do not move or recolor.
+      return clamp(Math.ceil(22*(60+Math.max(-60,20*Math.log10(p)))/60),0,22);
+    };
     for(const meter of root.querySelectorAll('[data-meter-id]')){
-      const id=meter.dataset.meterId;
-      const m=meters[id]||{};
-      const peak=Math.max(0,Number(m.peakLeft)||0,Number(m.peakRight)||0,Number(m.peak)||0);
-      const lit=clamp(Math.ceil(22*clamp(peak,0,1)),0,22);
-      if(meter.dataset.lit===String(lit))continue;
-      meter.dataset.lit=String(lit);
-      const leds=meter.children;
-      for(let i=0;i<leds.length;i++)leds[i].classList.toggle('lit',i<lit);
+      const ch=byId.get(meter.dataset.meterId),m=meters[meter.dataset.meterId]||{};
+      const mono=ch?.processingFormat==='MONO';
+      meter.dataset.format=mono?'MONO':'STEREO';
+      for(const lane of meter.children){
+        const side=lane.dataset.side;
+        // Never clone one aggregate maximum into both L/R: a missing
+        // stereo side is unknown/silent, NOT a simulated dual-mono reading.
+        const value=side==='L'?(m.peakLeft??(mono?m.peak:0)):m.peakRight;
+        const lit=mono&&side==='R'?0:ledsForPeak(value);
+        if(lane.dataset.lit===String(lit))continue;
+        lane.dataset.lit=String(lit);
+        for(let i=0;i<lane.children.length;i++)lane.children[i].classList.toggle('lit',i<lit);
+      }
     }
     for(const node of root.querySelectorAll('[data-status-id]')){
       const ch=byId.get(node.dataset.statusId);
@@ -802,6 +844,10 @@
       else showFeedback('UNAVAILABLE · Select a verified native VST3 first');
     }
   });
+  root.addEventListener('dblclick',event=>{
+    const n=event.target.closest('.arV6PanRange');
+    if(n&&!n.disabled)sendIntent('SET_PAN',n.dataset.id,{value:0});
+  });
   root.addEventListener('change',event=>{
     const n=event.target.closest('[data-op]');
     if(!n||n.disabled)return;
@@ -813,7 +859,10 @@
     }else if(op==='SET_PRIMARY_OUT'&&n.value)sendIntent(op,id,{destinationId:n.value});
     else if(op==='SET_PROCESSING_FORMAT')sendIntent(op,id,{format:n.value});
     else if(op==='ADD_SEND'&&n.value)sendIntent(op,id,{targetId:n.value,tap:'POST',levelDb:0});
-    else if(op==='SET_PAN')sendIntent(op,id,{value:Number(n.value)});
+    else if(op==='SET_PAN'){
+      const value=Number(n.value),snapped=Math.abs(value)<=4?0:value;
+      sendIntent(op,id,{value:snapped}); // ACK/snapshot, no optimistic PAN.
+    }
     else if(op==='SET_FADER'){
       if(modeSend){
         const send=(ch.sends||[]).find(s=>s.targetId===modeSend);

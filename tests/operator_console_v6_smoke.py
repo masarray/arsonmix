@@ -129,6 +129,29 @@ async def main():
         await page.locator("#arV6Console").wait_for(state="visible")
         assert await page.locator("#arV6Lanes .arV6Strip").count() == 12
         assert await page.locator("#arV6Main .arV6Master").count() == 1
+        assert await page.locator('[data-meter-id="1000"] .arV6MeterLane').count() == 2
+        assert await page.locator('[data-meter-id="7"][data-format="MONO"] .arV6MeterLane').count() == 2
+        # L/R ladder must never mirror a single maximum to both sides.
+        stereo = snapshot()
+        stereo["telemetry"]["channelMeterRmsPeak"] = {
+            "1000":{"peakLeft":0.5,"peakRight":0.05}}
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",stereo)
+        lit = await page.locator('[data-meter-id="1000"]').evaluate("""el=>
+          [...el.querySelectorAll('.arV6MeterLane')].map(x=>Number(x.dataset.lit))""")
+        assert lit[0]>lit[1]>0,lit
+        # Narrow bank is purely presentational; pinned MAIN and native IDs stay.
+        before_width=await page.locator('[data-channel-id="7"]').evaluate(
+            "(el)=>el.getBoundingClientRect().width")
+        fader_node=await page.locator('[data-channel-id="7"] .arV6Fader').evaluate(
+            "el=>{window.__faderBeforeNarrow=el;return true}")
+        await page.get_by_role("button", name="Toggle narrow channel bank").click()
+        after_width=await page.locator('[data-channel-id="7"]').evaluate(
+            "(el)=>el.getBoundingClientRect().width")
+        assert after_width<before_width
+        assert await page.evaluate("""()=>window.__faderBeforeNarrow===
+           document.querySelector('[data-channel-id="7"] .arV6Fader')""")
+        assert await page.locator("#arV6Main .arV6Master").count()==1
+        await page.get_by_role("button", name="Toggle narrow channel bank").click()
         assert "ARMED" in await page.locator(".arV6State").inner_text()
         assert "SILENT / NO SOURCE" in await page.locator(
             '[data-status-id="7"]').inner_text()
@@ -178,6 +201,20 @@ async def main():
         assert await page.locator('[data-op="SET_SOURCE"][data-id="7"]').is_enabled()
         assert "NO RAW CAPTURE PCM" in await page.locator(
             '[data-status-id="7"]').inner_text()
+
+        # Center PAN snap emits only one native SET_PAN; accepted PAN
+        # stays unchanged until ACK + matching snapshot.
+        await page.locator('[data-op="SET_PAN"][data-id="7"]').evaluate(
+            "(el)=>{el.value='3';el.dispatchEvent(new Event('change',{bubbles:true}))}")
+        pan_intent=await page.evaluate("""()=>window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').at(-1).payload""")
+        assert pan_intent["operation"]=="SET_PAN" and pan_intent["payload"]=={"value":0}
+        assert await page.locator('[data-op="SET_PAN"][data-id="7"]').input_value()=="0"
+        assert await page.locator('[data-op="SET_PAN"][data-id="7"]').evaluate(
+            "el=>el.style.getPropertyValue('--v6-pan-start')")=="50%"
+        await page.evaluate("""id=>window.__v6Test.publish('arMixConsoleAck',
+          {requestId:id,status:'REJECTED',deviceEpoch:'7',graphRevision:'4',
+           rosterRevision:'4',errorCode:'CONTROL_BUSY'})""",pan_intent["requestId"])
 
         # Direct OUT, native FX open/bypass, SEND tap and Sends on Faders.
         await page.locator('[data-op="SET_PRIMARY_OUT"][data-id="7"]').select_option("1002")

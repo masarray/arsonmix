@@ -1817,14 +1817,36 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 #app .arV6Controls .arV6Button{width:28px;min-height:28px;padding:0;font-size:11px}
 #app .arV6Controls .arV6Button[aria-pressed="true"]{border-color:#bba35d;background:#61532b;color:#fff0ac}
 #app .arV6Pan{display:flex;flex-direction:column;gap:2px;min-width:0;color:#86abb9;font-size:9px}
-#app .arV6PanRange{width:100%;min-width:0;accent-color:#54bbcf;height:14px;margin:0}
+#app .arV6PanRange{
+  width:100%;min-width:0;height:14px;margin:0;cursor:ew-resize;
+  appearance:none;-webkit-appearance:none;background:transparent;
+}
+#app .arV6PanRange::-webkit-slider-runnable-track,
+#app .arV6PanRange::-moz-range-track{
+  height:5px;border:1px solid #47616e;border-radius:1px;
+  background:linear-gradient(to right,#1c303a 0%,#1c303a var(--v6-pan-start,50%),
+    #55c0d5 var(--v6-pan-start,50%),#55c0d5 var(--v6-pan-end,50%),
+    #1c303a var(--v6-pan-end,50%),#1c303a 100%);
+}
+#app .arV6PanRange::-webkit-slider-thumb{
+  -webkit-appearance:none;appearance:none;width:10px;height:13px;margin-top:-5px;
+  border:1px solid #101c26;border-radius:2px;background:#abc5d0;
+}
+#app .arV6PanRange::-moz-range-thumb{
+  width:10px;height:13px;border:1px solid #101c26;border-radius:2px;background:#abc5d0;
+}
 #app .arV6Lower{display:flex;gap:16px;align-items:center;justify-content:center;
   padding:7px 5px 2px;min-height:0;position:relative}
 #app .arV6Meter{
-  display:flex;flex-direction:column-reverse;justify-content:space-between;gap:1px;
-  width:12px;height:100%;max-height:100%;min-height:70px;padding:2px;
+  display:flex;flex-direction:row;justify-content:center;gap:2px;
+  width:24px;height:100%;max-height:100%;min-height:70px;padding:2px;
   border:1px solid #15242c;background:#02080d;box-shadow:inset 1px 0 #516673;
 }
+#app .arV6MeterLane{
+  display:flex;flex:1 1 0;flex-direction:column-reverse;
+  justify-content:space-between;gap:1px;min-width:0;min-height:0;
+}
+#app .arV6Meter[data-format="MONO"] .arV6MeterLane[data-side="R"]{display:none}
 #app .arV6Led{display:block;flex:1 1 0;min-height:2px;background:#172b30}
 #app .arV6Led.lit{background:#29b277}
 #app .arV6Led:nth-child(n+15).lit{background:#d8ac44}
@@ -2223,6 +2245,23 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 /* Engineering bank parity: the extra accepted MAIN output line belongs to
    unified CONSOLE only, so legacy FX/ROUTE/SENDS fader rows remain aligned. */
 #app #mixer:not([data-io-mode="CONSOLE"]) #masterLeft .arMainOutSummary{display:none!important}
+
+/* v5.2 operator-approved narrow console: UI-only banking, never a DSP switch. */
+#app .arV6Console[data-narrow="true"] .arV6Strip{
+  flex:0 0 127px;width:127px;padding-left:4px;padding-right:4px;
+}
+#app .arV6Console[data-narrow="true"] .arV6Main{
+  flex:0 0 143px;max-width:143px;
+}
+#app .arV6Console[data-narrow="true"] .arV6Strip.arV6Master{width:100%;flex:1 0 0}
+#app .arV6Console[data-narrow="true"] .arV6Controls{
+  grid-template-columns:minmax(0,1fr) 25px 25px;gap:2px;
+}
+#app .arV6Console[data-narrow="true"] .arV6Controls .arV6Button{width:25px}
+@media(max-width:1100px){
+ #app .arV6Tools{gap:2px}
+ #app .arV6Console .arV6Button,#app .arV6Console .arV6Select{padding-left:3px;padding-right:3px}
+}
 </style>
 <style id="arsonmix-mixer-io-css">/* G1/G2: stable channel-bank geometry; FX rack remains mounted in every mode. */
 #app .workbench{display:flex;flex-direction:column}
@@ -6517,6 +6556,12 @@ scheduleDemoMeter();
     return n;
   };
   const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
+  function paintPan(slider,value){
+    const n=clamp(Number(value)||0,-100,100),pos=(n+100)/2;
+    slider.style.setProperty('--v6-pan-start',Math.min(50,pos)+'%');
+    slider.style.setProperty('--v6-pan-end',Math.max(50,pos)+'%');
+    slider.setAttribute('aria-valuetext',n===0?'Center':n<0?'L '+Math.abs(n):'R '+n);
+  }
   const clean=s=>String(s==null?'—':s);
   const byId=new Map();
   const pending=new Map();
@@ -6575,9 +6620,10 @@ scheduleDemoMeter();
   }
   const add=button('+ CHANNEL',{'data-op':'CREATE_CHANNEL'});
   const patch=button('PATCH',{'aria-label':'Open advanced patch'});
+  const narrow=button('NARROW',{'aria-pressed':'false','aria-label':'Toggle narrow channel bank'});
   const back=button('V6 CONSOLE',{'aria-label':'Return to operator console'});
   back.id='arV6Return';back.hidden=true;
-  tools.append(bankPrev,bankLabel,bankNext,sendMode,roleSelect,add,patch);
+  tools.append(bankPrev,bankLabel,bankNext,sendMode,roleSelect,add,narrow,patch);
   top.append(identification,tools);
   const message=h('div','arV6Message');message.setAttribute('role','status');
   const body=h('div','arV6Body');
@@ -6586,6 +6632,13 @@ scheduleDemoMeter();
   body.append(lanes,main);
   root.append(top,message,body);
   mount.append(root);
+  narrow.addEventListener('click',()=>{
+    const compact=root.dataset.narrow!=='true';
+    root.dataset.narrow=String(compact);
+    narrow.setAttribute('aria-pressed',String(compact));
+    narrow.textContent=compact?'WIDE':'NARROW';
+    refreshBanks(); // Resize only; never create a native channel or remount faders.
+  });
   document.querySelector('.toolbar-actions')?.append(back);
   const setVisible=v=>{
     document.documentElement.classList.toggle('ar-v6-active',!!v);
@@ -6898,6 +6951,7 @@ scheduleDemoMeter();
     const panRange=h('input','arV6PanRange');panRange.type='range';
     panRange.min='-100';panRange.max='100';panRange.step='1';
     panRange.value=String(Number(ch.controls?.pan)||0);
+    paintPan(panRange,panRange.value);
     panRange.dataset.op='SET_PAN';panRange.dataset.id=ch.id;
     pan.append(panRange);controls.append(pan);
     controls.append(button('M',{'data-op':'SET_MUTE','data-id':ch.id,
@@ -6907,8 +6961,14 @@ scheduleDemoMeter();
     elStrip.append(controls);
     const lower=h('div','arV6Lower');
     const meter=h('div','arV6Meter');meter.dataset.meterId=ch.id;
-    meter.setAttribute('aria-label','Native channel meter: '+(ch.name||ch.id));
-    for(let n=0;n<22;n++)meter.append(h('i','arV6Led'));
+    meter.dataset.format=ch.processingFormat||'MONO';
+    meter.setAttribute('aria-label','Native L/R PCM meter: '+(ch.name||ch.id));
+    for(const side of ['L','R']){
+      const lane=h('div','arV6MeterLane');
+      lane.dataset.side=side;
+      for(let n=0;n<22;n++)lane.append(h('i','arV6Led'));
+      meter.append(lane);
+    }
     const range=h('input','arV6Fader');
     range.type='range';range.min='-60';range.max='12';range.step='.1';
     const faderVal=Number(ch.controls?.faderDb);
@@ -7002,7 +7062,12 @@ scheduleDemoMeter();
       choose('SET_PRIMARY_OUT',ch.primaryOutId||ch.primaryOut?.id||(typeof ch.primaryOut==='string'?ch.primaryOut:''));
       choose('ADD_SEND','');
       const pan=strip.querySelector('[data-op="SET_PAN"]');
-      if(pan)pan.value=String(Number(ch.controls?.pan)||0);
+      if(pan){
+        pan.value=String(Number(ch.controls?.pan)||0);
+        paintPan(pan,pan.value);
+      }
+      const meter=strip.querySelector('[data-meter-id]');
+      if(meter)meter.dataset.format=ch.processingFormat||'MONO';
       for(const op of ['SET_MUTE','SET_SOLO']){
         const n=strip.querySelector('button[data-op="'+op+'"]');
         if(n)n.setAttribute('aria-pressed',String(!!ch.controls?.[op==='SET_MUTE'?'mute':'solo']));
@@ -7036,16 +7101,32 @@ scheduleDemoMeter();
   }
   function refreshMeters(){
     if(!accepted)return;
-    const meters=acceptedNative?accepted.telemetry?.channelMeterRmsPeak||{}:{};
+    const incoming=acceptedNative?accepted.telemetry?.channelMeterRmsPeak:null;
+    const meters=Array.isArray(incoming)?
+      Object.fromEntries(incoming.filter(x=>x&&typeof x.channelId==='string')
+        .map(x=>[x.channelId,x])):
+      incoming&&typeof incoming==='object'?incoming:{};
+    const ledsForPeak=peak=>{
+      const p=Number(peak)||0;
+      if(p<=0)return 0;
+      // Native peaks are linear PCM amplitudes, quantized on a -60..0 dBFS
+      // ladder. Static green/yellow/red segments do not move or recolor.
+      return clamp(Math.ceil(22*(60+Math.max(-60,20*Math.log10(p)))/60),0,22);
+    };
     for(const meter of root.querySelectorAll('[data-meter-id]')){
-      const id=meter.dataset.meterId;
-      const m=meters[id]||{};
-      const peak=Math.max(0,Number(m.peakLeft)||0,Number(m.peakRight)||0,Number(m.peak)||0);
-      const lit=clamp(Math.ceil(22*clamp(peak,0,1)),0,22);
-      if(meter.dataset.lit===String(lit))continue;
-      meter.dataset.lit=String(lit);
-      const leds=meter.children;
-      for(let i=0;i<leds.length;i++)leds[i].classList.toggle('lit',i<lit);
+      const ch=byId.get(meter.dataset.meterId),m=meters[meter.dataset.meterId]||{};
+      const mono=ch?.processingFormat==='MONO';
+      meter.dataset.format=mono?'MONO':'STEREO';
+      for(const lane of meter.children){
+        const side=lane.dataset.side;
+        // Never clone one aggregate maximum into both L/R: a missing
+        // stereo side is unknown/silent, NOT a simulated dual-mono reading.
+        const value=side==='L'?(m.peakLeft??(mono?m.peak:0)):m.peakRight;
+        const lit=mono&&side==='R'?0:ledsForPeak(value);
+        if(lane.dataset.lit===String(lit))continue;
+        lane.dataset.lit=String(lit);
+        for(let i=0;i<lane.children.length;i++)lane.children[i].classList.toggle('lit',i<lit);
+      }
     }
     for(const node of root.querySelectorAll('[data-status-id]')){
       const ch=byId.get(node.dataset.statusId);
@@ -7135,6 +7216,10 @@ scheduleDemoMeter();
       else showFeedback('UNAVAILABLE · Select a verified native VST3 first');
     }
   });
+  root.addEventListener('dblclick',event=>{
+    const n=event.target.closest('.arV6PanRange');
+    if(n&&!n.disabled)sendIntent('SET_PAN',n.dataset.id,{value:0});
+  });
   root.addEventListener('change',event=>{
     const n=event.target.closest('[data-op]');
     if(!n||n.disabled)return;
@@ -7146,7 +7231,10 @@ scheduleDemoMeter();
     }else if(op==='SET_PRIMARY_OUT'&&n.value)sendIntent(op,id,{destinationId:n.value});
     else if(op==='SET_PROCESSING_FORMAT')sendIntent(op,id,{format:n.value});
     else if(op==='ADD_SEND'&&n.value)sendIntent(op,id,{targetId:n.value,tap:'POST',levelDb:0});
-    else if(op==='SET_PAN')sendIntent(op,id,{value:Number(n.value)});
+    else if(op==='SET_PAN'){
+      const value=Number(n.value),snapped=Math.abs(value)<=4?0:value;
+      sendIntent(op,id,{value:snapped}); // ACK/snapshot, no optimistic PAN.
+    }
     else if(op==='SET_FADER'){
       if(modeSend){
         const send=(ch.sends||[]).find(s=>s.targetId===modeSend);

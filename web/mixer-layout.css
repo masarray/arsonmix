@@ -366,14 +366,36 @@
 #app .arV6Controls .arV6Button{width:28px;min-height:28px;padding:0;font-size:11px}
 #app .arV6Controls .arV6Button[aria-pressed="true"]{border-color:#bba35d;background:#61532b;color:#fff0ac}
 #app .arV6Pan{display:flex;flex-direction:column;gap:2px;min-width:0;color:#86abb9;font-size:9px}
-#app .arV6PanRange{width:100%;min-width:0;accent-color:#54bbcf;height:14px;margin:0}
+#app .arV6PanRange{
+  width:100%;min-width:0;height:14px;margin:0;cursor:ew-resize;
+  appearance:none;-webkit-appearance:none;background:transparent;
+}
+#app .arV6PanRange::-webkit-slider-runnable-track,
+#app .arV6PanRange::-moz-range-track{
+  height:5px;border:1px solid #47616e;border-radius:1px;
+  background:linear-gradient(to right,#1c303a 0%,#1c303a var(--v6-pan-start,50%),
+    #55c0d5 var(--v6-pan-start,50%),#55c0d5 var(--v6-pan-end,50%),
+    #1c303a var(--v6-pan-end,50%),#1c303a 100%);
+}
+#app .arV6PanRange::-webkit-slider-thumb{
+  -webkit-appearance:none;appearance:none;width:10px;height:13px;margin-top:-5px;
+  border:1px solid #101c26;border-radius:2px;background:#abc5d0;
+}
+#app .arV6PanRange::-moz-range-thumb{
+  width:10px;height:13px;border:1px solid #101c26;border-radius:2px;background:#abc5d0;
+}
 #app .arV6Lower{display:flex;gap:16px;align-items:center;justify-content:center;
   padding:7px 5px 2px;min-height:0;position:relative}
 #app .arV6Meter{
-  display:flex;flex-direction:column-reverse;justify-content:space-between;gap:1px;
-  width:12px;height:100%;max-height:100%;min-height:70px;padding:2px;
+  display:flex;flex-direction:row;justify-content:center;gap:2px;
+  width:24px;height:100%;max-height:100%;min-height:70px;padding:2px;
   border:1px solid #15242c;background:#02080d;box-shadow:inset 1px 0 #516673;
 }
+#app .arV6MeterLane{
+  display:flex;flex:1 1 0;flex-direction:column-reverse;
+  justify-content:space-between;gap:1px;min-width:0;min-height:0;
+}
+#app .arV6Meter[data-format="MONO"] .arV6MeterLane[data-side="R"]{display:none}
 #app .arV6Led{display:block;flex:1 1 0;min-height:2px;background:#172b30}
 #app .arV6Led.lit{background:#29b277}
 #app .arV6Led:nth-child(n+15).lit{background:#d8ac44}
@@ -772,3 +794,20 @@
 /* Engineering bank parity: the extra accepted MAIN output line belongs to
    unified CONSOLE only, so legacy FX/ROUTE/SENDS fader rows remain aligned. */
 #app #mixer:not([data-io-mode="CONSOLE"]) #masterLeft .arMainOutSummary{display:none!important}
+
+/* v5.2 operator-approved narrow console: UI-only banking, never a DSP switch. */
+#app .arV6Console[data-narrow="true"] .arV6Strip{
+  flex:0 0 127px;width:127px;padding-left:4px;padding-right:4px;
+}
+#app .arV6Console[data-narrow="true"] .arV6Main{
+  flex:0 0 143px;max-width:143px;
+}
+#app .arV6Console[data-narrow="true"] .arV6Strip.arV6Master{width:100%;flex:1 0 0}
+#app .arV6Console[data-narrow="true"] .arV6Controls{
+  grid-template-columns:minmax(0,1fr) 25px 25px;gap:2px;
+}
+#app .arV6Console[data-narrow="true"] .arV6Controls .arV6Button{width:25px}
+@media(max-width:1100px){
+ #app .arV6Tools{gap:2px}
+ #app .arV6Console .arV6Button,#app .arV6Console .arV6Select{padding-left:3px;padding-right:3px}
+}
