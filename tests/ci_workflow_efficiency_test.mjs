@@ -17,6 +17,8 @@ test('only main and explicitly selected branch can produce a Windows FAT artifac
  assert.match(windows,/cancel-in-progress: true/);
  assert.match(windows,/github\.head_ref == 'milestone\/m4-unified-native-multichannel-fx-20261101'/);
  assert.match(windows,/github\.head_ref == 'work\/integration-fat-console-v6'/);
+ assert.match(windows,/github\.head_ref == 'integration\/first-sound-windows-fat-v6'/);
+ assert.match(windows,/ArSonMix-FIRST-SOUND-UNQUALIFIED-Windows-x64/);
  assert.match(windows,/ArSonMix-0FX-UNQUALIFIED-Hardware-FAT-Windows-x64/);
  assert.match(windows,/ArSonMix-M4-EXPERIMENTAL-Hardware-FAT-Windows-x64/);
  assert.ok(windows.indexOf('scripts/verify_native_windows_artifact.ps1') <
@@ -49,6 +51,8 @@ test('retain current native audio and dearVR CTests during CI optimization',()=>
  assert.match(windows,/'scripts\/build_ui_css\.py'/);
  assert.match(windows,/github\.head_ref == 'milestone\/m4-unified-native-multichannel-fx-20261101'/);
  assert.match(windows,/github\.head_ref == 'work\/integration-fat-console-v6'/);
+ assert.match(windows,/github\.head_ref == 'integration\/first-sound-windows-fat-v6'/);
+ assert.match(windows,/ArSonMix-FIRST-SOUND-UNQUALIFIED-Windows-x64/);
  assert.match(windows,/ArSonMix-0FX-UNQUALIFIED-Hardware-FAT-Windows-x64/);
  assert.match(windows,/ArSonMix-M4-EXPERIMENTAL-Hardware-FAT-Windows-x64/);
 });

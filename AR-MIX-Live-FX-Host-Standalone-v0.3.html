@@ -1702,6 +1702,194 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 @media(max-width:1366px){
   #app .toolbar .project{max-width:130px;flex-basis:130px}
 }
+
+
+/* ARSONMIX V6 PREMIUM LIVE CONSOLE — low-compositor-cost fixed strip grid.
+   Browser demo and native capability-gated shell share exactly the same DOM. */
+#app #arV6Console{display:none}
+.ar-v6-active #app .left-rail{display:none!important}
+.ar-v6-active #app .workbench{display:flex!important;flex:1 1 0;min-width:0;min-height:0;overflow:hidden}
+.ar-v6-active #app #mixer,
+.ar-v6-active #app #rackWorkspace{display:none!important}
+.ar-v6-active #app .toolbar-actions.arSegmentedToolbar .nav,
+.ar-v6-active #app .arMixerChannelPager{display:none!important}
+#app .arV6Console, #app .arV6Console *{box-sizing:border-box}
+.ar-v6-active #app #arV6Console{
+  display:grid;grid-template-rows:51px auto minmax(0,1fr);
+  width:100%;height:100%;min-width:0;min-height:0;overflow:hidden;
+  background:linear-gradient(180deg,#23313a,#111b23 90px,#0c151c 100%);
+  color:#d3e0e6;font:11px/1.35 "ArSonMix Inter","Segoe UI",sans-serif;
+}
+#app .arV6Top{
+  display:flex;justify-content:space-between;align-items:center;
+  gap:12px;padding:6px 13px;border-bottom:1px solid #435967;
+  background:linear-gradient(180deg,#33444e,#192833);
+  min-width:0;
+}
+#app .arV6Identification{display:flex;align-items:center;gap:11px;min-width:0;overflow:hidden}
+#app .arV6Kicker{font:600 10px/1.2 "Segoe UI",sans-serif;letter-spacing:1.1px;white-space:nowrap;color:#d3e4ec}
+#app .arV6Device{color:#92b3c1;font:10px/1.25 "Segoe UI",sans-serif;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#app .arV6State{padding:4px 7px;border:1px solid #607782;border-radius:3px;white-space:nowrap;color:#e0dbad;font:600 9px/1 "Segoe UI",sans-serif}
+#app .arV6Console[data-armed="true"] .arV6State{color:#a8e6cd;border-color:#396c62}
+#app .arV6Tools{display:flex;align-items:center;gap:6px;flex:none}
+#app .arV6Button,#app .arV6Select{
+  font:500 10px/1.2 "Segoe UI",sans-serif;
+  color:#d5e5eb;background:linear-gradient(180deg,#354956,#1c303b);
+  border:1px solid #526e7a;border-radius:3px;min-height:25px;
+  padding:4px 7px;min-width:0;
+}
+#app .arV6Button{cursor:pointer}
+#app .arV6Button:focus-visible,#app .arV6Select:focus-visible,
+#app .arV6Fader:focus-visible,#app .arV6PanRange:focus-visible{
+  outline:2px solid #62cce8;outline-offset:1px;
+}
+#app .arV6Button:disabled,#app .arV6Select:disabled,
+#app .arV6Fader:disabled,#app .arV6PanRange:disabled{opacity:.48;cursor:not-allowed}
+#app .arV6BankLabel{min-width:72px;text-align:center;color:#abc3cf;font:10px Consolas,monospace;white-space:nowrap}
+#app .arV6SendMode{max-width:126px}
+#app .arV6Message{
+  font:10px/1.3 "Segoe UI",sans-serif;
+  padding:5px 12px;color:#e2caaa;background:#28333a;
+  border-bottom:1px solid #46535a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+#app .arV6Message[hidden]{display:none}
+#app .arV6Body{display:flex;min-width:0;min-height:0;overflow:hidden}
+#app .arV6Lanes{
+  display:flex;flex:1 1 0;min-width:0;min-height:0;
+  overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;
+  scrollbar-color:#486171 #0e1b25;scroll-snap-type:x proximity;
+}
+#app .arV6Main{
+  display:flex;flex:0 0 178px;max-width:178px;min-height:0;
+  border-left:2px solid #6b8993;
+  background:#22313c;z-index:1;
+}
+#app .arV6NoMaster{padding:15px;color:#e2ae97;font-size:11px}
+#app .arV6Strip{
+  --v6-strip-color:#5f9ab1;
+  display:grid;grid-template-rows:37px 235px 52px minmax(105px,1fr) 26px;
+  flex:0 0 167px;width:167px;min-height:0;height:100%;
+  padding:0 7px 5px;border-right:1px solid #354955;
+  background:linear-gradient(90deg,#1b2b35 0%,#263741 14%,#263741 87%,#15252e);
+  scroll-snap-align:start;overflow:hidden;
+}
+#app .arV6Strip.arV6Master{
+  flex:1 0 0;width:100%;
+  background:linear-gradient(90deg,#2a414b,#283b47 88%,#172934);
+}
+#app .arV6StripHead{
+  display:flex;flex-direction:column;justify-content:center;gap:3px;
+  min-width:0;border-bottom:1px solid #496473;
+}
+#app .arV6Role{font:600 9px/1 "Segoe UI",sans-serif;letter-spacing:.9px;color:#88adbc}
+#app .arV6Name{font:600 12px/1.2 "Segoe UI",sans-serif;color:#ecf1f3;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#app .arV6Upper{
+  display:grid;grid-template-rows:31px 31px minmax(83px,1fr) minmax(54px,auto) 31px;
+  min-height:0;overflow:hidden;padding:6px 0 4px;
+  border-bottom:1px solid #3b4d57;
+}
+#app .arV6Field{display:flex;align-items:center;gap:5px;min-width:0}
+#app .arV6FixedField{color:#91afbb;white-space:nowrap;font:9px Consolas,monospace}
+#app .arV6FieldName{flex:0 0 27px;font:600 9px/1 "Segoe UI",sans-serif;color:#8faebc}
+#app .arV6Field .arV6Select{flex:1 1 0;width:100%;max-width:116px;min-height:23px;padding:2px 3px}
+#app .arV6Fx,#app .arV6Sends{
+  min-height:0;overflow-x:hidden;overflow-y:auto;scrollbar-width:thin;
+  display:flex;flex-direction:column;gap:3px;
+  border-top:1px solid #354b57;padding-top:5px;
+}
+#app .arV6SectionTitle{font:600 9px/1.2 "Segoe UI",sans-serif;letter-spacing:.6px;color:#83aaba}
+#app .arV6FxSlot,#app .arV6Send{display:flex;gap:3px;align-items:center;min-width:0}
+#app .arV6FxSlot .arV6Button:first-child{
+  flex:1 1 0;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  background:#172b35;border-color:#476270;color:#c9dfe7;
+}
+#app .arV6FxSlot .arV6Button:last-child{flex:0 0 29px;width:29px;padding:3px 0;color:#9ee0bb}
+#app .arV6FxSlot .arV6Button.isOff{color:#95a1a9}
+#app .arV6AddFx{width:100%;min-height:23px!important;padding:3px!important;text-align:left;color:#90c9d8!important}
+#app .arV6SendName{
+  flex:1 1 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#bfd2dc;
+  font:10px/1.1 "Segoe UI",sans-serif;
+}
+#app .arV6Send .arV6Button{min-height:20px;padding:2px 5px}
+#app .arV6Controls{display:grid;grid-template-columns:minmax(0,1fr) 28px 28px;align-items:center;
+  gap:5px;border-bottom:1px solid #445863}
+#app .arV6Controls .arV6Button{width:28px;min-height:28px;padding:0;font-size:11px}
+#app .arV6Controls .arV6Button[aria-pressed="true"]{border-color:#bba35d;background:#61532b;color:#fff0ac}
+#app .arV6Pan{display:flex;flex-direction:column;gap:2px;min-width:0;color:#86abb9;font-size:9px}
+#app .arV6PanRange{width:100%;min-width:0;accent-color:#54bbcf;height:14px;margin:0}
+#app .arV6Lower{display:flex;gap:16px;align-items:center;justify-content:center;
+  padding:7px 5px 2px;min-height:0;position:relative}
+#app .arV6Meter{
+  display:flex;flex-direction:column-reverse;justify-content:space-between;gap:1px;
+  width:12px;height:100%;max-height:100%;min-height:70px;padding:2px;
+  border:1px solid #15242c;background:#02080d;box-shadow:inset 1px 0 #516673;
+}
+#app .arV6Led{display:block;flex:1 1 0;min-height:2px;background:#172b30}
+#app .arV6Led.lit{background:#29b277}
+#app .arV6Led:nth-child(n+15).lit{background:#d8ac44}
+#app .arV6Led:nth-child(n+20).lit{background:#dc6148}
+#app .arV6Fader{
+  writing-mode:vertical-lr;direction:rtl;
+  height:100%;min-height:75px;width:46px;min-width:46px;margin:0;
+  cursor:pointer;appearance:none;-webkit-appearance:none;background:transparent;
+}
+#app .arV6Fader::-webkit-slider-runnable-track{
+  width:11px;min-height:100%;border:1px solid #02080d;border-radius:3px;
+  background:linear-gradient(90deg,#050a0f 0%,#182c36 45%,#061018 100%);
+  box-shadow:inset 1px 0 #58737d,inset -1px 0 #050b10;
+}
+#app .arV6Fader::-webkit-slider-thumb{
+  -webkit-appearance:none;appearance:none;
+  width:44px;height:24px;border:0;border-radius:2px;
+  background:transparent url("assets/fader-silver2.png") center/contain no-repeat;
+}
+#app .arV6Fader::-moz-range-thumb{
+  width:43px;height:23px;border:0;border-radius:2px;
+  background:transparent url("assets/fader-silver2.png") center/contain no-repeat;
+}
+#app .arV6Readout{
+  position:absolute;bottom:3px;right:3px;
+  font:10px Consolas,monospace;color:#b7cbd5;
+}
+#app .arV6StripStatus{
+  display:flex;align-items:center;min-width:0;overflow:hidden;
+  font:600 9px/1.2 "Segoe UI",sans-serif;letter-spacing:.15px;
+  color:#91b6c3;white-space:nowrap;text-overflow:ellipsis;
+}
+#app .arV6Console[data-demo="true"] .arV6StripStatus{color:#d9b98a}
+#app .arV6Console[data-demo="true"] .arV6State{color:#e6bf8e;border-color:#986d46}
+#app #arV6Return{min-height:29px;flex:0 0 auto}
+#app #arV6Return[hidden]{display:none!important}
+@media(max-width:1366px){
+ #app .arV6Kicker{max-width:176px;overflow:hidden;text-overflow:ellipsis}
+ #app .arV6Strip{flex-basis:155px;width:155px;padding-left:6px;padding-right:6px}
+ #app .arV6Main{flex-basis:166px;max-width:166px}
+ #app .arV6Tools{gap:3px}
+}
+@media(max-width:1100px){
+ #app .arV6Top{padding:5px 7px}
+ #app .arV6Kicker{display:none}
+ #app .arV6SendMode{max-width:105px}
+}
+@media(max-height:790px){
+ #app .arV6Strip{grid-template-rows:32px 197px 45px minmax(85px,1fr) 22px}
+ #app .arV6Upper{grid-template-rows:27px 27px minmax(74px,1fr) minmax(43px,auto) 27px;padding-top:3px}
+ #app .arV6Top{min-height:44px}
+ #app .arV6Console .arV6Button{min-height:22px}
+}
+@media(max-height:690px){
+ #app .arV6Strip{grid-template-rows:28px 160px 40px minmax(75px,1fr) 18px}
+ #app .arV6Upper{grid-template-rows:24px 24px minmax(54px,1fr) minmax(34px,auto) 24px}
+ #app .arV6SectionTitle{font-size:8px}
+ #app .arV6FxSlot .arV6Button{min-height:18px}
+ #app .arV6Device{font-size:9px}
+}
+
+#app .arV6RoleSelect{width:78px;max-width:78px}
+#app .arV6FxSlot[draggable="true"]{cursor:grab}
+#app .arV6FxSlot[draggable="true"]:active{cursor:grabbing}
+#app .arV6PluginChoice{width:100%;max-width:100%;min-height:23px}
 </style>
 <style id="arsonmix-mixer-io-css">/* G1/G2: stable channel-bank geometry; FX rack remains mounted in every mode. */
 #app .workbench{display:flex;flex-direction:column}
@@ -2340,6 +2528,113 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 #app #mixer .arChannelQuickInput:disabled{color:#78949f;cursor:default}
 #app #mixer .arChannelQuickInput:focus-visible{outline:1px solid #7ad2e9;outline-offset:0}
 #app #mixer .arFormatBadge{top:0;height:15px;line-height:13px}
+
+
+/* DEVICE/ROUTING 2026-11-01: one primary decision at a time.
+   Advanced crosspoints are never necessary for ordinary mono input routing.
+   No blur, glow filters, animated layout, large cards or second GUI router. */
+#arIOOverlay .arIOWindow{
+  width:min(920px,calc(100vw - 28px));
+  max-height:min(700px,calc(100dvh - 28px));
+  border-radius:5px;
+  background:#15232d;
+}
+#arIOOverlay .arIOWindow>header{padding:8px 13px;min-height:42px}
+#arIOOverlay .arIOWindow>header small{font-size:9px;letter-spacing:.6px}
+#arIOOverlay .arIOWindow>header h2{font-size:15px;font-weight:500}
+#arIOOverlay .arIOTop{padding:5px 13px;font-size:10px}
+#arIOOverlay .arIOWindow nav{
+  padding:6px 10px;gap:0;border-bottom:1px solid #3c5663;background:#172933;
+}
+#arIOOverlay .arIOWindow nav .btn-180{
+  flex:1 1 0;min-width:0;height:30px;min-height:30px;border-radius:0;
+  font-size:10px;letter-spacing:.1px;
+}
+#arIOOverlay .arIOBody{padding:9px 12px;scrollbar-width:thin}
+#arIOOverlay .arIOAudioPath{padding:5px 11px;gap:4px}
+#arIOOverlay .arIOAudioPath>span{font-size:9px;padding:4px 6px}
+#arIOOverlay .arIOAudioPath>small{font-size:10px}
+#arIOOverlay .arIOWindow>footer{gap:6px;padding:7px 10px}
+#arIOOverlay .arIOWindow>footer .btn-180{height:28px;min-height:28px;padding:0 9px}
+#arIOOverlay .arIOWindow>footer [data-io-internal]{margin-left:0}
+#arIOOverlay .arIODevicePatchMatrix{
+  display:block;margin:9px 0 0;background:#162731;border:1px solid #355566;
+}
+#arIOOverlay .arIODevicePatchMatrix>.arIODeviceMatrixHeading{
+  display:flex;list-style:none;cursor:pointer;min-height:32px;align-items:center;
+  padding:6px 10px;color:#adc7d3;font-weight:500;
+}
+#arIOOverlay .arIODevicePatchMatrix>.arIODeviceMatrixHeading::-webkit-details-marker{display:none}
+#arIOOverlay .arIODevicePatchMatrix>.arIODeviceMatrixHeading:before{
+  content:'▸';margin-right:8px;color:#80b5c9;
+}
+#arIOOverlay .arIODevicePatchMatrix[open]>.arIODeviceMatrixHeading:before{content:'▾'}
+#arIOOverlay .arIODevicePatchMatrix:not([open])>:not(summary){display:none!important}
+#arIOOverlay .arIOQuickPatch{max-width:100%;overflow:visible}
+#arIOOverlay .arIOQuickColumns{display:none}
+#arIOOverlay .arIOQuickHeader{min-height:47px;padding:7px 10px}
+#arIOOverlay .arIOQuickGuide{
+  padding:9px 10px;font-size:11px;color:#a7d3df;background:#1c303b;
+}
+#arIOOverlay .arIOQuickRow{
+  grid-template-columns:minmax(100px,1fr) minmax(105px,1fr) minmax(135px,1.6fr)
+    minmax(135px,1.6fr) minmax(113px,1.2fr);
+  min-height:64px;padding:8px 11px;background:#172b36;
+  gap:8px;border-bottom:1px solid #3c5764;
+}
+#arIOOverlay .arIOQuickRow[hidden]{display:none!important}
+#arIOOverlay .arIOQuickRow[data-state="invalid"]{
+  box-shadow:inset 3px 0 #da9965;background:#302b27;
+}
+#arIOOverlay .arIOQuickRow[data-state="invalid"] .arIOQuickState{color:#ffcb9a}
+#arIOOverlay .arIOQuickRow .arIOQuickState{font-size:10px;line-height:1.25}
+#arIOOverlay .arIOQuickRow .arIOQuickStage{min-height:28px}
+#arIOOverlay .arIOQuickFooter{
+  background:#13242d;padding:9px 11px;margin:0;line-height:1.4;
+  font-size:10px;color:#9ec4d0;
+}
+#arIOOverlay .arIOJump{max-width:235px;width:235px}
+#arIOOverlay .arIOSimpleMain{
+  background:#162a35;border:1px solid #496675;padding:12px 13px;margin:0 0 9px;
+  color:#cfe3ec;
+}
+#arIOOverlay .arIOSimpleMain>strong{
+  color:#d7edf5;font:600 12px/1.3 "Segoe UI",sans-serif;
+}
+#arIOOverlay .arIOSimpleMain p{
+  margin:5px 0 11px;color:#9dbac9;line-height:1.35;font-size:10px;
+}
+#arIOOverlay .arIOSimpleMainRow{
+  display:grid;grid-template-columns:1fr 1fr;gap:12px;
+}
+#arIOOverlay .arIOSimpleMainField{display:flex;flex-direction:column;gap:6px}
+#arIOOverlay .arIOSimpleMainField>span{color:#84c8d8;font:600 10px/1.1 "Segoe UI",sans-serif}
+#arIOOverlay .arIOSimpleMainField>select{
+  width:100%;height:33px;min-width:0;padding:5px 8px;
+  background:#091c26;color:#deedf3;border:1px solid #548091;border-radius:3px;
+  font:11px/1.3 "Segoe UI",sans-serif;
+}
+#arIOOverlay .arIOSimpleMainField>select:disabled{opacity:.45}
+#arIOOverlay .arIOAdvancedMatrix{margin:7px 0}
+#arIOOverlay .arIOAdvancedMatrix>summary{
+  cursor:pointer;color:#95b5c3;background:#172a35;border:1px solid #415a66;
+  padding:8px 10px;font-size:10px;
+}
+#arIOOverlay .arIOAdvancedMatrix:not([open])>*:not(summary){display:none!important}
+@media(max-width:780px){
+ #arIOOverlay .arIOWindow nav .btn-180{font-size:9px}
+ #arIOOverlay .arIOQuickRow{
+  grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;
+ }
+ #arIOOverlay .arIOQuickRow .arIOQuickAction{grid-column:span 2}
+ #arIOOverlay .arIOJump{width:180px;max-width:48%}
+}
+@media(max-height:700px){
+ #arIOOverlay .arIOWindow{max-height:calc(100dvh - 12px)}
+ #arIOOverlay .arIOBody{padding:6px 10px}
+ #arIOOverlay .arIOAudioPath{grid-template-columns:repeat(4,minmax(0,1fr))}
+ #arIOOverlay .arIOAudioPath>button{grid-column:span 2}
+}
 </style></head>
 <body>
 <div id="app" class="app">
@@ -3469,7 +3764,7 @@ scheduleDemoMeter();
   let monitorSendsExpanded=false;
   // DEVICE1: staged selections are UI-only; only positive native ACK changes active hardware.
   let deviceDraft=null,deviceBusy=false,deviceNote='',deviceRequest='',deviceRequestSeq=0,lastDeviceRefresh=0,lastDeviceRescan=0,applyMutePending=false,applyAfterDevice=null,applyBaseEpoch=0;
-  let deviceMatrixView='inputs',deviceMatrixWaitEpoch=null; // Never display old hardware pins after an APPLY ACK.
+  let deviceMatrixView='inputs',deviceMatrixWaitEpoch=null,deviceMatrixOpen=false; // Never display old hardware pins after an APPLY ACK.
   // Pending SOURCE ACK is a UI projection only; monitor.js owns the native route.
   let quickSourcePending=null;
   const el=id=>document.getElementById(id);
@@ -3912,7 +4207,7 @@ scheduleDemoMeter();
   sofControls.hidden=true;toolbar.appendChild(sofControls);
   const overlay=node('div','arIOOverlay');
   overlay.id='arIOOverlay';overlay.hidden=true;
-  overlay.innerHTML='<section class="arIOWindow" role="dialog" aria-modal="true" aria-label="ArSonMix hardware audio I/O"><header><div><small>ArSonMiX · AUDIO HARDWARE</small><h2>Audio Setup · Windows Devices & Routing</h2></div><button type="button" class="btn-180" data-io-close aria-label="Close Audio I/O">CLOSE</button></header><div class="arIOTop" id="arIOIdentity"></div><nav role="tablist" aria-label="Audio I/O views"><button class="btn-180 active" role="tab" data-io-tab="device">DEVICE / DRIVER</button><button class="btn-180" role="tab" data-io-tab="inputs">INPUT ROUTING</button><button class="btn-180" role="tab" data-io-tab="outputs">OUTPUT ROUTING</button></nav><div id="arIOBody" class="arIOBody"></div><footer><span id="arIOFeedback" role="status">Hardware changes require native ACK. Output stays MUTED on APPLY.</span><button type="button" class="btn-180" data-io-revert>REVERT DRAFT</button><button type="button" class="btn-180" data-mix-apply>APPLY PATCH</button><button type="button" class="btn-180" data-io-internal>ADVANCED BUS / FX</button><button type="button" class="btn-180" data-io-device-revert hidden>REVERT DEVICE</button><button type="button" class="btn-180 arIODeviceApply" data-io-device-apply hidden>APPLY DEVICE</button></footer></section>';
+  overlay.innerHTML='<section class="arIOWindow" role="dialog" aria-modal="true" aria-label="ArSonMix hardware audio I/O"><header><div><small>ArSonMiX · AUDIO HARDWARE</small><h2>Audio Setup</h2></div><button type="button" class="btn-180" data-io-close aria-label="Close Audio I/O">CLOSE</button></header><div class="arIOTop" id="arIOIdentity"></div><nav role="tablist" aria-label="Audio I/O views"><button class="btn-180 active" role="tab" data-io-tab="device">1 · DEVICE</button><button class="btn-180" role="tab" data-io-tab="inputs">2 · INPUT → CHANNEL</button><button class="btn-180" role="tab" data-io-tab="outputs">3 · MAIN OUT</button></nav><div id="arIOBody" class="arIOBody"></div><footer><span id="arIOFeedback" role="status">Hardware changes require native ACK. Output stays MUTED on APPLY.</span><button type="button" class="btn-180" data-io-revert>REVERT DRAFT</button><button type="button" class="btn-180" data-mix-apply>APPLY PATCH</button><button type="button" class="btn-180" data-io-internal>ADVANCED BUS / FX</button><button type="button" class="btn-180" data-io-device-revert hidden>REVERT DEVICE</button><button type="button" class="btn-180 arIODeviceApply" data-io-device-apply hidden>APPLY DEVICE</button></footer></section>';
   document.body.appendChild(overlay);
   const audioPath=node('div','arIOAudioPath');audioPath.id='arIOAudioPath';
   audioPath.innerHTML='<span data-audio-path-input>CAPTURE · WAIT</span><span data-audio-path-route>ROUTE · WAIT</span><span data-audio-path-mixer>MIXER · WAIT</span><span data-audio-path-output>OUTPUT · WAIT</span><button type="button" class="btn-180" data-io-signal-check>OPEN SIGNAL CHECK</button><small data-audio-path-reason role="status"></small>';
@@ -4375,7 +4670,7 @@ scheduleDemoMeter();
     const title=node('header','arIOQuickHeader');
     const words=node('div','');
     words.append(node('strong','','1 · INTERFACE INPUT → MIXER CHANNEL'),
-      node('small','','Choose a channel, mono/stereo source and actual driver input(s). STAGE → MUTE → APPLY.'));
+      node('small','','Choose one channel and one or two distinct verified capture pins. USE INPUT commits through native ACK.'));
     const jump=node('select','arIOJump');
     jump.dataset.ioJump='1';jump.setAttribute('aria-label','Find mixer channel');
     for(let i=0;i<10;i++){
@@ -4403,15 +4698,20 @@ scheduleDemoMeter();
     for(let i=0;i<10;i++){
       const r=channelState(s,i),accepted=s.acceptedRoute?.channels?.[i];
       const row=node('div','arIOQuickRow');row.dataset.ioQuickRow=String(i);
+      row.hidden=i!==focusedInput;
       row.dataset.state=!s.ready?'offline':valueFor(r)!==valueFor(accepted)?'draft':
         r.mode==='NONE'?'empty':'live';
       const identity=node('div','arIOQuickIdentity');
       identity.append(node('strong','','CH '+String(i+1).padStart(2,'0')),node('small','',matrixLogicalName(i)));
       const mode=node('select','arIOQuickMode');mode.dataset.ioQuickMode='1';
       mode.setAttribute('aria-label','CH '+(i+1)+' physical input type');
-      for(const pair of [['NONE','NO INPUT'],['MONO','MONO'],['STEREO','STEREO'],
+      for(const pair of [['NONE','NO INPUT'],['MONO','MONO'],['STEREO','STEREO · 2 PINS'],
         ...(r.mode==='BUS'?[['BUS','INTERNAL BUS']]:[])]){
-        const option=node('option','',pair[1]);option.value=pair[0];option.selected=r.mode===pair[0];mode.appendChild(option);
+        const option=node('option','',pair[1]);option.value=pair[0];option.selected=r.mode===pair[0];
+        // An accepted legacy invalid stereo route must remain inspectable,
+        // but new STEREO selection requires two distinct enabled driver pins.
+        if(pair[0]==='STEREO'&&verified.length<2&&r.mode!=='STEREO')option.disabled=true;
+        mode.appendChild(option);
       }
       const left=sourceSelect(i,'left',r.left),right=sourceSelect(i,'right',r.right);
       left.disabled=!hardwareReady(s)||r.mode==='NONE'||r.mode==='BUS';
@@ -4421,12 +4721,16 @@ scheduleDemoMeter();
       const stage=node('button','btn-180 arIOQuickStage','USE INPUT');
       stage.dataset.ioQuickStage='1';stage.type='button';
       stage.disabled=!hardwareReady(s)||r.mode==='BUS';
-      action.append(stage,node('small','arIOQuickState',r.mode==='BUS'?'INTERNAL BUS':
+      const stereoInvalid=r.mode==='STEREO'&&(!verified.some(p=>p.port===r.left)||
+        !verified.some(p=>p.port===r.right)||r.left===r.right);
+      if(stereoInvalid)row.dataset.state='invalid';
+      action.append(stage,node('small','arIOQuickState',stereoInvalid?
+        'INVALID STEREO · SELECT DISTINCT L/R':r.mode==='BUS'?'INTERNAL BUS':
         !s.ready?'NO DEVICE':row.dataset.state==='draft'?'DRAFT · NOT LIVE':
-        row.dataset.state==='live'?'LIVE · ACK':'UNPATCHED'));
+        row.dataset.state==='live'?'ROUTE ACK · CHECK PCM':'UNPATCHED'));
       row.append(identity,mode,left,right,action);section.appendChild(row);
     }
-    section.appendChild(node('p','arIOQuickFooter','Select verified inputs, click USE INPUT. Native routing handles any required safe mute, ACK and re-arm automatically.'));
+    section.appendChild(node('p','arIOQuickFooter','ONE ACTION: USE INPUT → native safe route/ACK. No input PCM? Send playback into the selected recording endpoint, then check SIGNAL CHECK.'));
     return section;
   }
   function stageQuickInput(button){
@@ -4856,7 +5160,7 @@ scheduleDemoMeter();
         hidden.value=d.backend;panel.appendChild(hidden);
       }
       const same=deviceSameEndpoint(d),advanced=node('details','arIODeviceAdvanced');
-      advanced.appendChild(node('summary','','BUFFER / SAMPLE RATE / HARDWARE PIN ENABLE'));
+      advanced.appendChild(node('summary','','ADVANCED · BUFFER / SAMPLE RATE'));
       const fields=node('div','arIODeviceFields');
       const rateOpts=[[0,'AUTO · driver default']],bufferOpts=[[0,'AUTO · driver default']];
       if(same){
@@ -4871,6 +5175,12 @@ scheduleDemoMeter();
         deviceSelect('arIODeviceBuffer',d.bufferSize,bufferOpts,deviceBusy||!isNative())));
       advanced.appendChild(fields);
       const pins=node('div','arIODevicePins');
+      const pinHeading=node('div','arIOPinHeading');
+      const enabledCount=Array.isArray(d.enabledInputs)?d.enabledInputs.length:0;
+      pinHeading.append(node('strong','','HARDWARE PORTS · ENABLE INPUTS / OUTPUTS'),
+        node('span','',enabledCount+' capture pin(s) selected · '+(enabledCount<2?
+          'MONO ONLY until a second distinct input is enabled':'MONO / STEREO PAIRS POSSIBLE')));
+      panel.appendChild(pinHeading);
       for(const [direction,names,selectedPins] of [
         ['INPUT',same?a.inputNames:[],d.enabledInputs],
         ['OUTPUT',same?a.outputNames:[],d.enabledOutputs]]){
@@ -4890,7 +5200,9 @@ scheduleDemoMeter();
         });
         pins.appendChild(side);
       }
-      advanced.appendChild(pins);panel.appendChild(advanced);
+      // Input/output pin enabling is a BASIC step, not an advanced matrix.
+      // The original native device draft/ACK path remains unchanged.
+      panel.appendChild(pins);panel.appendChild(advanced);
     }
     const actions=node('div','arIODeviceActions');
     const refresh=node('button','btn-180 arIODeviceRefresh','REFRESH DEVICES');
@@ -4910,9 +5222,11 @@ scheduleDemoMeter();
         devicePinNextStep()));
     panel.appendChild(actions);body.appendChild(panel);
 
-    const matrixSection=node('section','arIODevicePatchMatrix');
-    const heading=node('div','arIODeviceMatrixHeading');
-    heading.appendChild(node('strong','','AUDIO I/O · REAL PORT MATRIX'));
+    const matrixSection=node('details','arIODevicePatchMatrix');
+    matrixSection.open=deviceMatrixOpen;
+    matrixSection.addEventListener('toggle',()=>{deviceMatrixOpen=matrixSection.open;});
+    const heading=node('summary','arIODeviceMatrixHeading');
+    heading.appendChild(node('strong','','ADVANCED · HARDWARE PORT MATRIX (OPTIONAL)'));
     const tabs=node('div','arIODeviceMatrixSwitch');
     for(const [value,label] of [['inputs','INPUTS'],['outputs','OUTPUTS']]){
       const b=node('button','arIODeviceMatrixTab',label);b.type='button';
@@ -4987,6 +5301,8 @@ scheduleDemoMeter();
     if(previous)advancedMatrixOpen=previous.open;
     const previousDirect=body.querySelector('.arIODeviceDirectMatrix');
     if(previousDirect)directMatrixOpen=previousDirect.open;
+    const previousHardware=body.querySelector('.arIODevicePatchMatrix');
+    if(previousHardware)deviceMatrixOpen=previousHardware.open;
     body.replaceChildren();
     if(ioTab!=='device'){
       const identity=node('div','arIOHardwareHeader');
@@ -5005,7 +5321,36 @@ scheduleDemoMeter();
         advanced.appendChild(node('summary','','ADVANCED M / L / R CROSSPOINT · SAME NATIVE ROUTING'));
         advanced.appendChild(makeMatrix(s,ioTab));
         body.appendChild(advanced);
-      }else body.appendChild(makeMatrix(s,ioTab));
+      }else{
+        // MAIN Left/Right must be visible before the engineering matrix.
+        // The same __arMixStageMainOutputs owns both paths.
+        const simple=node('section','arIOSimpleMain');
+        simple.append(node('strong','','MAIN OUTPUT · STEREO PAIR'),
+          node('p','','Select two different enabled hardware outputs. APPLY OUTPUT publishes native routing; no browser sound is generated.'));
+        const outputPorts=matrixPorts(s,'outputs');
+        const accepted=s.mainOutputs?.length===2?s.mainOutputs:[];
+        const picked=s.draftMainOutputs?.length===2?s.draftMainOutputs:accepted;
+        const pickers=node('div','arIOSimpleMainRow');
+        for(let side=0;side<2;side++){
+          const label=node('label','arIOSimpleMainField');
+          label.append(node('span','',side===0?'MAIN LEFT':'MAIN RIGHT'));
+          const select=node('select','arIOMainOutput');select.dataset.side=String(side);
+          const empty=node('option','','Choose verified output…');empty.value='-1';select.append(empty);
+          for(const port of outputPorts){
+            const opt=node('option','','HW OUT '+(port+1));opt.value=String(port);
+            opt.selected=port===picked[side];select.appendChild(opt);
+          }
+          select.disabled=!hardwareReady(s)||s.pending||outputPorts.length<2;
+          label.append(select);pickers.append(label);
+        }
+        simple.append(pickers);
+        body.append(simple);
+        const advanced=node('details','arIOAdvancedMatrix');
+        advanced.open=advancedMatrixOpen;
+        advanced.append(node('summary','','ADVANCED · OUTPUT CROSSPOINTS / MONITOR'));
+        advanced.append(makeMatrix(s,ioTab));
+        body.append(advanced);
+      }
     }
     if(ioTab==='inputs'){
       body.appendChild(node('p','arIOHint','MAONO PS22 virtual inputs appear here ONLY if its selected driver enumerates them as capture ports. Configure MAONO Routing Center and select the appropriate PS22 ASIO/recording endpoint in DEVICE / DRIVER. Separate Windows capture endpoints cannot be silently combined into one device. Processing MONO/STEREO is independent of physical source mode.'));
@@ -5043,26 +5388,9 @@ scheduleDemoMeter();
       body.appendChild(node('p','arIOHint','LIVE MONITOR: '+
         (monitorLive.length===2?'HW '+(monitorLive[0]+1)+'/'+(monitorLive[1]+1):'DISABLED')+
         ' · Independent POST-fader mix; all changes require MUTE → APPLY → ACK.'));
-      const details=node('details','arIOQuickMap');
-      details.appendChild(node('summary','','QUICK OUTPUT SELECTION · ACCESSIBLE ALTERNATIVE'));
-      const accepted=s.mainOutputs?.length===2?s.mainOutputs:[];
-      const draft=s.draftMainOutputs?.length===2?s.draftMainOutputs:accepted;
-      const ports=matrixPorts(s,'outputs');
-      for(const [i,label] of ['MAIN LEFT','MAIN RIGHT'].entries()){
-        const row=node('label','arIOOutputRow');
-        const selector=node('select','arIOMainOutput');
-        selector.dataset.side=String(i);
-        selector.setAttribute('aria-label',label+' destination');
-        for(const p of ports){
-          const option=node('option','','HW OUT '+(p+1));
-          option.value=String(p);option.selected=p===draft[i];selector.appendChild(option);
-        }
-        selector.disabled=!hardwareReady(s)||ports.length<2;
-        row.append(node('strong','',label),selector);details.appendChild(row);
-      }
-      body.appendChild(details);
-      body.appendChild(node('p','arIOHint','LIVE MAIN: '+(accepted.length===2?'HW '+(accepted[0]+1)+'/'+(accepted[1]+1):'UNAVAILABLE')+
-        ' · Only native-ACKed MAIN/MONITOR pairs can carry sound. AUX1–4 are internal stereo FX returns, not physical output sockets.'));
+      const acknowledged=s.mainOutputs?.length===2?s.mainOutputs:[];
+      body.appendChild(node('p','arIOHint','NATIVE MAIN: '+(acknowledged.length===2?'HW '+(acknowledged[0]+1)+' / '+(acknowledged[1]+1):'UNAVAILABLE')+
+        ' · Selection is DRAFT until native APPLY/ACK. AUX1–4 are internal FX returns, not hardware ports.'));
     }else{
       renderCustomDevice(body);
     }
@@ -5111,6 +5439,7 @@ scheduleDemoMeter();
     }
     if(e.target.matches('[data-io-jump]')){
       focusedInput=Number(e.target.value);
+      lastSignature='';refreshIO();
       overlay.querySelector('[data-io-quick-row="'+focusedInput+'"]')?.scrollIntoView({block:'nearest'});
       return;
     }
@@ -5682,6 +6011,638 @@ scheduleDemoMeter();
     button.title=(button.title?button.title+' · ':'')+'Alt+'+button.dataset.mixMode[0];
   }
   document.documentElement.dataset.arMixerShell='rail-modes';
+})();
+
+
+/* ARSONMIX V6 OPERATOR CONSOLE — native accepted projection only.
+   The legacy M4 console remains available until the native v6 publisher exists.
+   No WebAudio, DSP, routing solver, or fabricated ACK lives in this module. */
+(() => {
+  'use strict';
+  const mount=document.querySelector('#app .workbench');
+  const backend=window.__JUCE__?.backend;
+  if(!mount||!document.getElementById('mixer')||document.getElementById('arV6Console'))return;
+  const native=!!(backend&&typeof backend.emitEvent==='function'&&typeof backend.addEventListener==='function');
+  const h=(tag,cls,text)=>{
+    const n=document.createElement(tag);
+    if(cls)n.className=cls;
+    if(text!==undefined)n.textContent=String(text);
+    return n;
+  };
+  const button=(label,attrs={})=>{
+    const n=h('button','arV6Button',label);n.type='button';
+    for(const [key,value] of Object.entries(attrs))n.setAttribute(key,String(value));
+    return n;
+  };
+  const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
+  const clean=s=>String(s==null?'—':s);
+  const byId=new Map();
+  const pending=new Map();
+  const pendingTargets=new Set();
+  const awaitingSnapshot=new Map();
+  let snapshotSerial=0;
+  const operationCaps={
+    SET_SOURCE:'SET_SOURCE',SET_PROCESSING_FORMAT:'SET_PROCESSING_FORMAT',
+    SET_PRIMARY_OUT:'SET_PRIMARY_OUT',ADD_INSERT:'ADD_INSERT',
+    PICK_INSERT_FILE:'PICK_INSERT_FILE',SET_INSERT_BYPASS:'SET_INSERT_BYPASS',
+    OPEN_INSERT_EDITOR:'OPEN_INSERT_EDITOR',MOVE_INSERT:'MOVE_INSERT',
+    ADD_SEND:'ADD_SEND',SET_SEND_TAP:'SET_SEND_TAP',SET_SEND_LEVEL:'SET_SEND_LEVEL',
+    SET_FADER:'SET_FADER',SET_PAN:'SET_PAN',SET_MUTE:'SET_MUTE',
+    SET_SOLO:'SET_SOLO',CREATE_CHANNEL:'CREATE_CHANNEL'
+  };
+  let accepted=null,acceptedNative=false,modeSend='',lastStructure='',requestSeq=0;
+  let draggingFx=null;
+  // Numeric decimal wire identifiers are required by integration/ConsoleNativeContractV6.h.
+  // Never downcast native 64-bit ChannelId, device epoch, or graph revision.
+  const decimal=v=>typeof v==='string'&&/^(0|[1-9][0-9]*)$/.test(v)?
+    v:(Number.isSafeInteger(v)&&v>=0?String(v):null);
+  const ge=(a,b)=>a!==null&&b!==null&&BigInt(a)>=BigInt(b);
+  const instance='v6';
+  let feedback='';
+  const root=h('section','arV6Console');root.id='arV6Console';
+  root.setAttribute('aria-label','ArSonMix universal operator console');
+  const top=h('div','arV6Top');
+  const identification=h('div','arV6Identification');
+  const kicker=h('span','arV6Kicker','ARSONMIX / UNIVERSAL LIVE CONSOLE');
+  const deviceText=h('span','arV6Device','NO NATIVE CONSOLE SNAPSHOT');
+  const modeBadge=h('span','arV6State','WAITING FOR NATIVE');
+  identification.append(kicker,deviceText,modeBadge);
+  const tools=h('div','arV6Tools');
+  const bankPrev=button('‹',{'aria-label':'Previous channel bank'});
+  const bankLabel=h('span','arV6BankLabel','—');
+  const bankNext=button('›',{'aria-label':'Next channel bank'});
+  const sendMode=h('select','arV6Select arV6SendMode');sendMode.setAttribute('aria-label','Sends on faders target');
+  const roleSelect=h('select','arV6Select arV6RoleSelect');
+  roleSelect.setAttribute('aria-label','Native new channel type');
+  for(const type of ['MONO','STEREO','GROUP','FX_RETURN','MONITOR']){
+    const option=h('option','',type);option.value=type;roleSelect.append(option);
+  }
+  const add=button('+ CHANNEL',{'data-op':'CREATE_CHANNEL'});
+  const patch=button('PATCH',{'aria-label':'Open advanced patch'});
+  const back=button('V6 CONSOLE',{'aria-label':'Return to operator console'});
+  back.id='arV6Return';back.hidden=true;
+  tools.append(bankPrev,bankLabel,bankNext,sendMode,roleSelect,add,patch);
+  top.append(identification,tools);
+  const message=h('div','arV6Message');message.setAttribute('role','status');
+  const body=h('div','arV6Body');
+  const lanes=h('div','arV6Lanes');lanes.id='arV6Lanes';lanes.setAttribute('aria-label','Channel banks');
+  const main=h('div','arV6Main');main.id='arV6Main';main.setAttribute('aria-label','Pinned main output');
+  body.append(lanes,main);
+  root.append(top,message,body);
+  mount.append(root);
+  document.querySelector('.toolbar-actions')?.append(back);
+  const setVisible=v=>{
+    document.documentElement.classList.toggle('ar-v6-active',!!v);
+    back.hidden=!!v;
+  };
+  patch.addEventListener('click',()=>{
+    setVisible(false);
+    document.querySelector('[data-view="SIGNAL FLOW"]')?.click();
+  });
+  back.addEventListener('click',()=>{
+    document.querySelector('[data-view="MIX"]')?.click();setVisible(true);
+  });
+  function supported(op){
+    const caps=accepted?.graph?.capabilities||{};
+    // Absence of explicit native advertised operation support means disabled.
+    return acceptedNative && accepted?.productionCallbackLive===true &&
+      Array.isArray(caps.supportedOps) && caps.supportedOps.includes(operationCaps[op]);
+  }
+  function can(op,id){
+    if(!supported(op))return false;
+    if(op==='CREATE_CHANNEL')return !!accepted.graph.capabilities.dynamicChannels && !pendingTargets.has('@roster');
+    if(op==='ADD_INSERT'&&!accepted?.catalog?.plugins?.length)return false;
+    if(!id)return true;
+    const ch=byId.get(id);
+    return !!ch && !pendingTargets.has(id) &&
+      (!Array.isArray(ch.allowedOps)||ch.allowedOps.includes(op));
+  }
+  function showFeedback(text){
+    feedback=clean(text);message.textContent=feedback;
+    message.hidden=!feedback;
+  }
+  function requestSnapshot(){
+    if(native)backend.emitEvent('arMixConsoleSubscribe',{protocol:'v6',requester:instance});
+  }
+  function sendIntent(op,id,payload){
+    if(!can(op,id)){showFeedback('UNAVAILABLE · Native capability or channel authorization missing');return false}
+    const requestId=String(++requestSeq);
+    const command={requestId,deviceEpoch:accepted.device.epoch,
+      baseGraphRevision:accepted.graph.revision,
+      baseRosterRevision:accepted.graph.rosterRevision,
+      operation:op,targetChannelId:id||null,payload:payload||{}};
+    pending.set(requestId,{op,id,baseRevision:command.baseGraphRevision,epoch:command.deviceEpoch,
+      snapshotSerial});
+    if(id)pendingTargets.add(id);
+    else if(op==='CREATE_CHANNEL')pendingTargets.add('@roster');
+    showFeedback('PENDING · '+op+' · awaiting native ACK');
+    refreshDisabled();
+    backend.emitEvent('arMixConsoleIntent',command);
+    return true;
+  }
+  function receiveAck(data){
+    const ack=data?.ack||data;
+    if(!ack||typeof ack.requestId!=='string')return;
+    const intent=pending.get(ack.requestId);if(!intent)return;
+    pending.delete(ack.requestId);
+    const target=intent.id||'@roster';
+    if(ack.status==='ACCEPTED'||ack.status==='acceptedGraph'){
+      // A realtime ACK can keep the revision. Require a fresh readback, not
+      // only a positive ACK. All revisions stay decimal strings.
+      const requiredRevision=decimal(ack.graphRevision??ack.newRevision)??intent.baseRevision;
+      if(snapshotSerial>intent.snapshotSerial&&accepted?.device?.epoch===intent.epoch&&
+         ge(accepted?.graph?.revision,requiredRevision)){
+        pendingTargets.delete(target);
+      }else{
+        awaitingSnapshot.set(ack.requestId,{...intent,requiredRevision});
+      }
+      showFeedback('ACCEPTED · '+intent.op+' · synchronizing native snapshot');
+      requestSnapshot();
+    }else{
+      pendingTargets.delete(target);
+      showFeedback((ack.status==='REQUIRES_DEVICE_CHANGE'?'REQUIRES DEVICE · ':'REJECTED · ')+
+        clean(ack.errorCode||ack.message||'Native rejected request')+' · accepted audio preserved');
+      requestSnapshot();
+      refreshAcceptedControls();
+    }
+    refreshDisabled();
+  }
+  function validSnapshot(s){
+    if(!s||typeof s!=='object'||s.schemaVersion!==6||!s.device||!s.graph)return false;
+    if(decimal(s.device.epoch)===null||decimal(s.graph.revision)===null||
+      decimal(s.graph.rosterRevision)===null)return false;
+    if(!Array.isArray(s.graph.channels)||!s.graph.capabilities)return false;
+    const ids=new Set();
+    for(const c of s.graph.channels){
+      // JS numeric conversion corrupts 64-bit identities: reject such a wire.
+      if(!c||typeof c.id!=='string'||!c.id||ids.has(c.id))return false;
+      ids.add(c.id);
+    }
+    return true;
+  }
+  function normalizeSnapshot(payload){
+    const raw=payload?.snapshot||payload;
+    if(!raw||typeof raw!=='object'||raw.schemaVersion!==6)return null;
+    // The new main integration/ConsoleNativeContractV6.h readback has a
+    // flat, control-thread-only shape. It does NOT assert physical LIVE.
+    if(raw.schemaVersion===6&&!raw.graph&&Array.isArray(raw.channels)){
+      const caps=raw.capabilities||{};
+      return {schemaVersion:6,productionCallbackLive:raw.productionCallbackLive===true &&
+        caps.callbackOwnsChannelIds===true,
+        device:{epoch:decimal(raw.deviceEpoch),backend:'NATIVE GRAPH READBACK',
+          sampleRate:null,bufferFrames:null,outputArmed:false,
+          inputEndpoints:[],outputEndpoints:[]},
+        graph:{revision:decimal(raw.graphRevision),
+          rosterRevision:decimal(raw.rosterRevision),
+          channels:raw.channels.map(ch=>({...ch,
+            role:clean(ch.role).toUpperCase(),
+            processingFormat:clean(ch.processingFormat).toUpperCase(),
+            source:null,primaryOut:ch.primaryOutId||null,
+            inserts:[],controls:{},
+            sends:(ch.sends||[]).map(s=>({
+              targetId:s.destinationId,tap:s.preFader?'PRE':'POST',name:s.destinationId
+            }))})),
+          destinations:[],capabilities:{dynamicChannels:!!caps.addChannel,
+            groups:!!caps.group,fxReturns:!!caps.fxReturn,monitor:!!caps.monitor,
+            sendsOnFaders:false,supportedOps:[]}},
+        telemetry:{rawCapturePresent:false,channelMeterRmsPeak:{}}};
+    }
+    if(!raw.device||!raw.graph)return null;
+    const caps=raw.graph.capabilities||{};
+    return {...raw,schemaVersion:6,
+      productionCallbackLive:raw.productionCallbackLive===true&&caps.callbackOwnsChannelIds===true,
+      device:{...raw.device,epoch:decimal(raw.device.epoch)},
+      graph:{...raw.graph,revision:decimal(raw.graph.revision),
+        rosterRevision:decimal(raw.graph.rosterRevision??raw.graph.revision)}};
+  }
+  function receiveSnapshot(data,fromNative){
+    const s=normalizeSnapshot(data);
+    if(!validSnapshot(s)){
+      if(fromNative)showFeedback('REJECTED SNAPSHOT · Invalid native epoch, revision or ChannelId');
+      return false;
+    }
+    if(acceptedNative&&!fromNative)return false;
+    if(fromNative&&acceptedNative&&accepted&&
+      BigInt(s.device.epoch)<BigInt(accepted.device.epoch))return false;
+    if(fromNative&&acceptedNative&&accepted&&s.device.epoch===accepted.device.epoch&&
+      BigInt(s.graph.revision)<BigInt(accepted.graph.revision))return false;
+    const priorEpoch=acceptedNative?accepted?.device?.epoch:null;
+    const structure=s.device.epoch+':'+s.graph.revision+':'+s.graph.channels.map(c=>c.id).join('|');
+    accepted=s;acceptedNative=!!fromNative;
+    snapshotSerial++;
+    byId.clear();
+    for(const c of s.graph.channels)byId.set(c.id,c);
+    if(fromNative&&priorEpoch!==null&&priorEpoch!==s.device.epoch){
+      // Device replacement invalidates all old intents and controls; never
+      // replay them into an unrelated callback/port inventory.
+      pending.clear();pendingTargets.clear();awaitingSnapshot.clear();
+      showFeedback('DEVICE CHANGED · native source and destination inventory refreshed');
+    }
+    for(const [requestId,task] of awaitingSnapshot){
+      if(task.epoch===s.device.epoch&&snapshotSerial>task.snapshotSerial&&
+        ge(s.graph.revision,task.requiredRevision)){
+        awaitingSnapshot.delete(requestId);
+        pendingTargets.delete(task.id||'@roster');
+      }
+    }
+    if(structure!==lastStructure||root.dataset.demo!==String(!fromNative)){
+      lastStructure=structure;render();
+    }else{
+      refreshAcceptedControls();refreshDisabled();updateHeader();
+    }
+    root.dataset.demo=String(!fromNative);
+    // Integration readback is intentionally not a production callback.
+    // It must never replace the working M4 console until callback cutover.
+    if(!fromNative||s.productionCallbackLive===true)setVisible(true);
+    return true;
+  }
+  const makeDemo=()=>{
+    const names=['Lead Vocal','Guest Mic','Music L','Music R','Speech','Stream','Backing','Guitar','Keys','Talkback'];
+    const channels=names.map((name,i)=>({
+      id:'DEMO:'+String(i+1),role:'INPUT',name,color:'#4e8ba4',processingFormat:i===2||i===3?'STEREO':'MONO',
+      source:null,primaryOut:null,inserts:[],sends:[],controls:{faderDb:0,pan:0,mute:false,solo:false}
+    }));
+    channels.push({id:'DEMO:MAIN',role:'MAIN',name:'MAIN',processingFormat:'STEREO',
+      inserts:[],sends:[],controls:{faderDb:0,pan:0,mute:false,solo:false}});
+    return {schemaVersion:6,productionCallbackLive:false,
+      device:{epoch:'0',backend:'BROWSER DEMO',sampleRate:null,bufferFrames:null,outputArmed:false,
+      inputEndpoints:[],outputEndpoints:[]},graph:{revision:'0',rosterRevision:'0',channels,destinations:[],
+      capabilities:{dynamicChannels:false,groups:false,fxReturns:false,sendsOnFaders:false,supportedOps:[]}},
+      telemetry:{rawCapturePresent:false,channelMeterRmsPeak:{}}};
+  };
+  function options(select,items,current,emptyLabel){
+    select.replaceChildren();
+    const zero=h('option','',emptyLabel);zero.value='';select.append(zero);
+    let found=!current;
+    for(const item of items){
+      if(!item||typeof item.id!=='string'||!item.id)continue;
+      const opt=h('option','',item.name||item.label||item.id);
+      opt.value=item.id;opt.disabled=item.available===false||item.active===false;
+      if(current===item.id){opt.selected=true;found=true}
+      select.append(opt);
+    }
+    if(!found){
+      const missing=h('option','','MISSING · '+current);missing.value=current;
+      missing.selected=true;missing.disabled=true;select.append(missing);
+    }
+    if(!current)select.value='';
+    return select;
+  }
+  function selectField(label,op,id,items,current,placeholder,extra){
+    const row=h('label','arV6Field');
+    row.append(h('span','arV6FieldName',label));
+    const sel=options(h('select','arV6Select'),items,current,placeholder);
+    sel.dataset.op=op;sel.dataset.id=id;
+    if(extra)for(const [key,val] of Object.entries(extra))sel.dataset[key]=val;
+    sel.disabled=!can(op,id);
+    row.append(sel);return row;
+  }
+  function fxSection(ch){
+    const section=h('div','arV6Fx');
+    section.append(h('span','arV6SectionTitle','VST3 INSERTS'));
+    const list=Array.isArray(ch.inserts)?ch.inserts:[];
+    for(const fx of list){
+      const row=h('div','arV6FxSlot');
+      row.dataset.fxId=clean(fx.id);row.dataset.id=ch.id;
+      row.draggable=can('MOVE_INSERT',ch.id);
+      row.append(button(fx.name||fx.pluginName||'VST3',{'data-op':'OPEN_INSERT_EDITOR',
+        'data-id':ch.id,'data-native-insert-id':clean(fx.id)}));
+      const bypass=button(fx.bypassed?'OFF':'ON',{'data-op':'SET_INSERT_BYPASS',
+        'data-id':ch.id,'data-native-insert-id':clean(fx.id),'aria-pressed':String(!fx.bypassed)});
+      bypass.classList.toggle('isOff',!!fx.bypassed);row.append(bypass);
+      section.append(row);
+    }
+    const filePicker=supported('PICK_INSERT_FILE');
+    if(!filePicker&&supported('ADD_INSERT')&&accepted?.catalog?.plugins?.length){
+      const catalog=accepted.catalog.plugins.filter(p=>typeof p.id==='string'&&p.id);
+      const chooser=options(h('select','arV6Select arV6PluginChoice'),catalog,'','SELECT NATIVE VST3');
+      chooser.dataset.pluginChoice=ch.id;section.append(chooser);
+    }
+    const addFx=button(filePicker?'+ OPEN VST3 FILE':'+ VST3',
+      {'data-op':filePicker?'PICK_INSERT_FILE':'ADD_INSERT','data-id':ch.id});
+    addFx.classList.add('arV6AddFx');section.append(addFx);
+    return section;
+  }
+  function sendSection(ch){
+    const section=h('div','arV6Sends');
+    section.append(h('span','arV6SectionTitle','SEND'));
+    const sends=Array.isArray(ch.sends)?ch.sends:[];
+    const targets=(accepted.graph.destinations||[]).filter(x=>x.acceptsSend===true);
+    for(const send of sends){
+      const line=h('div','arV6Send');line.dataset.sendId=clean(send.id);
+      line.append(h('span','arV6SendName',clean(send.name||send.targetId)));
+      const toggle=button(send.tap==='PRE'?'PRE':'POST',{'data-op':'SET_SEND_TAP',
+        'data-id':ch.id,'data-send':clean(send.id)});
+      line.append(toggle);
+      section.append(line);
+    }
+    const select=selectField('+ TO','ADD_SEND',ch.id,targets,'','NO NATIVE SEND BUS');
+    section.append(select);return section;
+  }
+  function strip(ch,pinned=false){
+    const role=clean(ch.role).toUpperCase();
+    const elStrip=h('article','arV6Strip'+(pinned?' arV6Master':''));
+    elStrip.dataset.channelId=ch.id;
+    const head=h('div','arV6StripHead');
+    const roleName=h('span','arV6Role',role);
+    const name=h('strong','arV6Name',ch.name||ch.id);name.title=ch.id;
+    head.append(roleName,name);elStrip.append(head);
+    const sourceSection=h('div','arV6Upper');
+    const sources=(accepted.device.inputEndpoints||[]).filter(p=>p.active!==false && p.available!==false);
+    if(role==='INPUT')sourceSection.append(selectField('IN','SET_SOURCE',ch.id,sources,
+      ch.source?.portId||ch.source?.id||'','NO VERIFIED INPUT'));
+    else sourceSection.append(h('div','arV6Field arV6FixedField','IN   ·   '+role));
+    const formats=['MONO','STEREO'].map(s=>({id:s,name:s}));
+    sourceSection.append(selectField('M/ST','SET_PROCESSING_FORMAT',ch.id,formats,
+      ch.processingFormat||'','NATIVE FORMAT'));
+    sourceSection.append(fxSection(ch),sendSection(ch));
+    const outs=(accepted.graph.destinations||[]).concat(accepted.device.outputEndpoints||[]);
+    sourceSection.append(selectField('OUT','SET_PRIMARY_OUT',ch.id,outs,
+      ch.primaryOut?.id||ch.primaryOut||'','NO VERIFIED OUT'));
+    elStrip.append(sourceSection);
+    const controls=h('div','arV6Controls');
+    const pan=h('label','arV6Pan');pan.append(h('span','','PAN'));
+    const panRange=h('input','arV6PanRange');panRange.type='range';
+    panRange.min='-100';panRange.max='100';panRange.step='1';
+    panRange.value=String(Number(ch.controls?.pan)||0);
+    panRange.dataset.op='SET_PAN';panRange.dataset.id=ch.id;
+    pan.append(panRange);controls.append(pan);
+    controls.append(button('M',{'data-op':'SET_MUTE','data-id':ch.id,
+      'aria-pressed':String(!!ch.controls?.mute)}));
+    controls.append(button('S',{'data-op':'SET_SOLO','data-id':ch.id,
+      'aria-pressed':String(!!ch.controls?.solo)}));
+    elStrip.append(controls);
+    const lower=h('div','arV6Lower');
+    const meter=h('div','arV6Meter');meter.dataset.meterId=ch.id;
+    meter.setAttribute('aria-label','Native channel meter: '+(ch.name||ch.id));
+    for(let n=0;n<22;n++)meter.append(h('i','arV6Led'));
+    const range=h('input','arV6Fader');
+    range.type='range';range.min='-60';range.max='12';range.step='.1';
+    const faderVal=Number(ch.controls?.faderDb);
+    range.value=String(Number.isFinite(faderVal)?clamp(faderVal,-60,12):0);
+    range.dataset.op='SET_FADER';range.dataset.id=ch.id;
+    range.setAttribute('aria-label',(ch.name||ch.id)+' fader dB');
+    const lowerLabel=h('span','arV6Readout',(Number.isFinite(faderVal)?faderVal.toFixed(1):'—')+' dB');
+    lower.append(meter,range,lowerLabel);elStrip.append(lower);
+    const status=h('div','arV6StripStatus');
+    status.dataset.statusId=ch.id;status.textContent=channelState(ch);
+    elStrip.append(status);
+    return elStrip;
+  }
+  function channelState(ch){
+    if(!acceptedNative)return 'DEMO / NO AUDIO';
+    if(accepted?.productionCallbackLive!==true)return 'NATIVE READBACK / NOT LIVE';
+    if(ch.controls?.mute)return 'MUTED';
+    if(!ch.source && clean(ch.role).toUpperCase()==='INPUT')return 'SILENT / NO SOURCE';
+    if(!accepted.device.outputArmed)return 'OUTPUT DISARMED';
+    const t=accepted.telemetry||{};
+    // Do not infer LIVE from a port label, snapshot or demo LED alone.
+    if(t.rawCapturePresent!==true)return 'NO VERIFIED PCM';
+    return 'ACCEPTED / AUDIO ARMED';
+  }
+  function updateHeader(){
+    const d=accepted?.device||{},g=accepted?.graph||{};
+    deviceText.textContent=(d.backend||'NO DEVICE')+'  ·  '+
+      (d.sampleRate?Math.round(d.sampleRate)+' Hz':'— Hz')+' / '+
+      (d.bufferFrames||'—')+' frames  ·  GRAPH '+(g.revision??'—');
+    modeBadge.textContent=!acceptedNative?'DEMO · NOT CONNECTED':
+      accepted?.productionCallbackLive!==true?'NATIVE READBACK · NOT LIVE':
+      d.outputArmed?'NATIVE ACCEPTED · ARMED':'NATIVE ACCEPTED · OUTPUT DISARMED';
+    root.dataset.demo=String(!acceptedNative);
+    root.dataset.armed=String(acceptedNative&&accepted?.productionCallbackLive===true&&!!d.outputArmed);
+  }
+  function render(){
+    if(!accepted)return;
+    updateHeader();
+    lanes.replaceChildren();main.replaceChildren();
+    const channels=accepted.graph.channels;
+    for(const ch of channels){
+      if(clean(ch.role).toUpperCase()==='MAIN')main.append(strip(ch,true));
+      else lanes.append(strip(ch));
+    }
+    if(!main.children.length){
+      main.append(h('div','arV6NoMaster','MAIN NOT PUBLISHED BY NATIVE'));
+    }
+    const destinations=(accepted.graph.destinations||[]).filter(x=>x.acceptsSend===true);
+    options(sendMode,destinations,modeSend,'MAIN FADERS');
+    const cap=accepted.graph.capabilities||{};
+    sendMode.disabled=!acceptedNative||!cap.sendsOnFaders;
+    add.disabled=!can('CREATE_CHANNEL');
+    refreshDisabled();syncFaderMode();refreshMeters();refreshBanks();
+  }
+  function refreshDisabled(){
+    if(!accepted)return;
+    for(const node of root.querySelectorAll('[data-op]')){
+      const op=node.dataset.op,id=node.dataset.id||null;
+      node.disabled=!can(op,id);
+    }
+    add.disabled=!can('CREATE_CHANNEL');
+    const caps=accepted.graph.capabilities||{};
+    roleSelect.disabled=!can('CREATE_CHANNEL');
+    for(const option of roleSelect.options){
+      option.disabled=(option.value==='GROUP'&&!caps.groups)||
+        (option.value==='FX_RETURN'&&!caps.fxReturns)||
+        (option.value==='MONITOR'&&!caps.monitor);
+    }
+    sendMode.disabled=!acceptedNative||!caps.sendsOnFaders;
+    for(const n of root.querySelectorAll('.arV6Fader')){
+      if(modeSend){
+        const ch=byId.get(n.dataset.id);
+        const hasSend=(ch?.sends||[]).some(s=>s.targetId===modeSend);
+        n.disabled=!hasSend||!can('SET_SEND_LEVEL',n.dataset.id);
+      }
+    }
+  }
+  function refreshAcceptedControls(){
+    for(const strip of root.querySelectorAll('[data-channel-id]')){
+      const ch=byId.get(strip.dataset.channelId);
+      if(!ch)continue;
+      const choose=(op,value)=>{
+        const field=strip.querySelector('select[data-op="'+op+'"]');
+        if(!field)return;
+        const actual=typeof value==='string'?value:'';
+        if([...field.options].some(o=>o.value===actual))field.value=actual;
+      };
+      choose('SET_SOURCE',ch.source?.portId||ch.source?.id||'');
+      choose('SET_PROCESSING_FORMAT',ch.processingFormat||'');
+      choose('SET_PRIMARY_OUT',ch.primaryOut?.id||(typeof ch.primaryOut==='string'?ch.primaryOut:''));
+      choose('ADD_SEND','');
+      const pan=strip.querySelector('[data-op="SET_PAN"]');
+      if(pan)pan.value=String(Number(ch.controls?.pan)||0);
+      for(const op of ['SET_MUTE','SET_SOLO']){
+        const n=strip.querySelector('button[data-op="'+op+'"]');
+        if(n)n.setAttribute('aria-pressed',String(!!ch.controls?.[op==='SET_MUTE'?'mute':'solo']));
+      }
+      for(const node of strip.querySelectorAll('.arV6FxSlot')){
+        const fx=(ch.inserts||[]).find(x=>String(x.id)===node.dataset.fxId);
+        const power=node.querySelector('[data-op="SET_INSERT_BYPASS"]');
+        if(fx&&power){
+          power.textContent=fx.bypassed?'OFF':'ON';
+          power.classList.toggle('isOff',!!fx.bypassed);
+          power.setAttribute('aria-pressed',String(!fx.bypassed));
+        }
+      }
+      for(const node of strip.querySelectorAll('.arV6Send')){
+        const send=(ch.sends||[]).find(x=>String(x.id)===node.dataset.sendId);
+        const tap=node.querySelector('[data-op="SET_SEND_TAP"]');
+        if(send&&tap)tap.textContent=send.tap==='PRE'?'PRE':'POST';
+      }
+    }
+    syncFaderMode();refreshMeters();
+  }
+  function syncFaderMode(){
+    for(const range of root.querySelectorAll('.arV6Fader')){
+      const ch=byId.get(range.dataset.id);
+      const send=modeSend?(ch?.sends||[]).find(s=>s.targetId===modeSend):null;
+      const db=Number(modeSend?send?.levelDb:ch?.controls?.faderDb);
+      range.value=String(Number.isFinite(db)?clamp(db,-60,12):0);
+      const text=range.parentElement?.querySelector('.arV6Readout');
+      if(text)text.textContent=(Number.isFinite(db)?db.toFixed(1):'—')+' dB';
+    }
+  }
+  function refreshMeters(){
+    if(!accepted)return;
+    const meters=acceptedNative?accepted.telemetry?.channelMeterRmsPeak||{}:{};
+    for(const meter of root.querySelectorAll('[data-meter-id]')){
+      const id=meter.dataset.meterId;
+      const m=meters[id]||{};
+      const peak=Math.max(0,Number(m.peakLeft)||0,Number(m.peakRight)||0,Number(m.peak)||0);
+      const lit=clamp(Math.ceil(22*clamp(peak,0,1)),0,22);
+      if(meter.dataset.lit===String(lit))continue;
+      meter.dataset.lit=String(lit);
+      const leds=meter.children;
+      for(let i=0;i<leds.length;i++)leds[i].classList.toggle('lit',i<lit);
+    }
+    for(const node of root.querySelectorAll('[data-status-id]')){
+      const ch=byId.get(node.dataset.statusId);
+      if(ch)node.textContent=channelState(ch);
+    }
+  }
+  function refreshBanks(){
+    const total=lanes.children.length;
+    const child=lanes.querySelector('.arV6Strip');
+    const width=child?.getBoundingClientRect().width||172;
+    const perPage=Math.max(1,Math.floor(lanes.clientWidth/width));
+    const at=Math.max(0,Math.round(lanes.scrollLeft/width));
+    bankLabel.textContent=total?(at+1)+'–'+Math.min(total,at+perPage)+' / '+total:'NO CHANNELS';
+    bankPrev.disabled=at===0;bankNext.disabled=at+perPage>=total;
+  }
+  function jump(dir){
+    const first=lanes.querySelector('.arV6Strip');
+    if(!first)return;
+    const perPage=Math.max(1,Math.floor(lanes.clientWidth/first.getBoundingClientRect().width));
+    lanes.scrollBy({left:dir*perPage*first.getBoundingClientRect().width,behavior:'auto'});
+    refreshBanks();
+  }
+  bankPrev.addEventListener('click',()=>jump(-1));
+  bankNext.addEventListener('click',()=>jump(1));
+  lanes.addEventListener('scroll',refreshBanks,{passive:true});
+  if(typeof ResizeObserver==='function')new ResizeObserver(refreshBanks).observe(lanes);
+  sendMode.addEventListener('change',()=>{modeSend=sendMode.value;
+    syncFaderMode();refreshDisabled();
+    showFeedback(modeSend?
+      'SENDS ON FADERS · native sends only · select MAIN FADERS to return':'MAIN FADERS · source gains unchanged');
+  });
+  // Reorder is one native structural intent; DOM/PCM order never changes on drop.
+  root.addEventListener('dragstart',event=>{
+    const node=event.target.closest?.('.arV6FxSlot');
+    if(!node||!node.draggable||!can('MOVE_INSERT',node.dataset.id)){
+      event.preventDefault();return;
+    }
+    draggingFx={id:node.dataset.id,insertId:node.dataset.fxId};
+    event.dataTransfer?.setData('text/plain',draggingFx.insertId);
+    if(event.dataTransfer)event.dataTransfer.effectAllowed='move';
+  });
+  root.addEventListener('dragover',event=>{
+    const node=event.target.closest?.('.arV6FxSlot');
+    if(draggingFx&&node&&draggingFx.id===node.dataset.id&&
+      draggingFx.insertId!==node.dataset.fxId)event.preventDefault();
+  });
+  root.addEventListener('drop',event=>{
+    const node=event.target.closest?.('.arV6FxSlot'),source=draggingFx;
+    draggingFx=null;
+    if(!source||!node||source.id!==node.dataset.id||
+      source.insertId===node.dataset.fxId)return;
+    event.preventDefault();
+    sendIntent('MOVE_INSERT',source.id,
+      {insertId:source.insertId,beforeInsertId:node.dataset.fxId});
+  });
+  root.addEventListener('dragend',()=>{draggingFx=null});
+  root.addEventListener('click',event=>{
+    const n=event.target.closest('button[data-op]');
+    if(!n||n.disabled)return;
+    const op=n.dataset.op,id=n.dataset.id||null,ch=byId.get(id);
+    if(op==='CREATE_CHANNEL'){
+      // Native must allocate ChannelId; never append a fake strip on ACK.
+      const role=roleSelect.value;
+      const caps=accepted.graph.capabilities||{};
+      if(!['MONO','STEREO','GROUP','FX_RETURN','MONITOR'].includes(role))return;
+      if(role==='GROUP'&&!caps.groups||role==='FX_RETURN'&&!caps.fxReturns||
+        role==='MONITOR'&&!caps.monitor){showFeedback('UNAVAILABLE · Native role not accepted');return}
+      sendIntent(op,null,{role});return;
+    }
+    if(!ch)return;
+    if(op==='SET_MUTE')sendIntent(op,id,{value:!ch.controls?.mute});
+    else if(op==='SET_SOLO')sendIntent(op,id,{value:!ch.controls?.solo});
+    else if(op==='SET_INSERT_BYPASS'){
+      const fx=(ch.inserts||[]).find(x=>String(x.id)===n.dataset.nativeInsertId);
+      if(fx)sendIntent(op,id,{insertId:fx.id,bypassed:!fx.bypassed});
+    }
+    else if(op==='OPEN_INSERT_EDITOR')sendIntent(op,id,{insertId:n.dataset.nativeInsertId});
+    else if(op==='SET_SEND_TAP'){
+      const send=(ch.sends||[]).find(x=>String(x.id)===n.dataset.send);
+      if(send)sendIntent(op,id,{sendId:send.id,tap:send.tap==='PRE'?'POST':'PRE'});
+    }
+    else if(op==='PICK_INSERT_FILE')sendIntent(op,id,{});
+    else if(op==='ADD_INSERT'){
+      const catalog=accepted?.catalog?.plugins||[];
+      const pluginId=n.closest('.arV6Fx')?.querySelector('[data-plugin-choice]')?.value;
+      if(catalog.some(p=>p.id===pluginId))sendIntent(op,id,{pluginId});
+      else showFeedback('UNAVAILABLE · Select a verified native VST3 first');
+    }
+  });
+  root.addEventListener('change',event=>{
+    const n=event.target.closest('[data-op]');
+    if(!n||n.disabled)return;
+    const id=n.dataset.id,op=n.dataset.op,ch=byId.get(id);
+    if(!ch)return;
+    if(op==='SET_SOURCE'&&n.value){
+      const endpoint=(accepted.device.inputEndpoints||[]).find(e=>e.id===n.value&&e.available!==false&&e.active!==false);
+      if(endpoint)sendIntent(op,id,{portId:endpoint.id});
+    }else if(op==='SET_PRIMARY_OUT'&&n.value)sendIntent(op,id,{destinationId:n.value});
+    else if(op==='SET_PROCESSING_FORMAT')sendIntent(op,id,{format:n.value});
+    else if(op==='ADD_SEND'&&n.value)sendIntent(op,id,{targetId:n.value,tap:'POST',levelDb:0});
+    else if(op==='SET_PAN')sendIntent(op,id,{value:Number(n.value)});
+    else if(op==='SET_FADER'){
+      if(modeSend){
+        const send=(ch.sends||[]).find(s=>s.targetId===modeSend);
+        if(send)sendIntent('SET_SEND_LEVEL',id,{sendId:send.id,levelDb:Number(n.value)});
+        else showFeedback('UNAVAILABLE · No native send on this channel');
+      }else sendIntent(op,id,{valueDb:Number(n.value)});
+    }
+    // Restore only accepted controls without remounting meters or fader nodes.
+    if(accepted){refreshAcceptedControls();refreshDisabled();}
+  });
+  if(native){
+    backend.addEventListener('arMixConsoleSnapshot',s=>receiveSnapshot(s,true));
+    backend.addEventListener('arMixConsoleAck',receiveAck);
+    requestSnapshot();
+  }else if(new URLSearchParams(location.search).get('console')==='v6'){
+    // The opt-in browser preview is visibly DEMO with every mutation disabled.
+    // Existing baseline preview without ?console=v6 remains backward compatible.
+    receiveSnapshot(makeDemo(),false);
+    showFeedback('BROWSER DEMO · UI layout only · no PCM, hardware, installed VST3 or LIVE routes');
+  }
+  // Host/browser acceptance harness: dispatch a native envelope explicitly;
+  // no public function may forge a native acceptance in a real JUCE session.
+  if(!native){
+    window.addEventListener('arMixV6Fixture',e=>receiveSnapshot(e.detail?.snapshot||e.detail,false));
+  }
+  window.__arMixV6ReadOnly=()=>({
+    nativePublisher:acceptedNative,revision:accepted?.graph?.revision??null,
+    epoch:accepted?.device?.epoch??null,visibleChannelIds:[...byId.keys()],
+    pendingCount:pending.size,feedback
+  });
 })();
 </script>
 </body></html>
