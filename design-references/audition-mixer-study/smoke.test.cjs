@@ -17,7 +17,8 @@ function node(name){
  elements.set(name,x);return x;
 }
 const document={getElementById:node,querySelector:k=>k==='.console-body'?node('body'):k==='.section-rail'?node('rail'):null,querySelectorAll:()=>[]};
-vm.runInNewContext(script,{document,window:{addEventListener(){}},requestAnimationFrame(){}},{timeout:3000});
+const fakeWindow={handlers:{},addEventListener(k,fn){this.handlers[k]=fn;}};
+vm.runInNewContext(script,{document,window:fakeWindow,requestAnimationFrame(){}},{timeout:3000});
 function check(ok,title){assert.ok(ok,title);cases.push(title);}
 const count=()=> (node('tracks').innerHTML.match(/<article class="strip/g)||[]).length;
 function filter(value){node('viewFilter').value=value;node('viewFilter').dispatch('change');}
@@ -48,5 +49,77 @@ filter('all');check(/class="fader"[^>]*value="5"/.test(strip(2)),'relative group
 node('ungroup').dispatch('click');check(!strip(1).includes('group-indicator'),'ungroup');
 check(html.includes('clip-path:inset(calc(100% - var(--lit,0%))'),'stationary-color meters');
 check(!html.includes('window.prompt')&&!html.includes('fxPost'),'no dead modal or pseudo-FX mode');
+
+// Live UX regression suite: plugin browser, center-detent pan, banks, SoF and Safe.
+const plug=node('pluginBrowser');
+node('pluginsButton').dispatch('click');
+check(plug.hidden===false,'Plugin Manager opens in mixer without page navigation');
+check(node('pluginResults').innerHTML.includes('Parametric Equalizer'),'Reference effects catalog populated');
+node('pluginSearch').value='deesser';node('pluginSearch').dispatch('input');
+check(node('pluginResults').innerHTML.includes('DeEsser')&&!node('pluginResults').innerHTML.includes('Studio Reverb'),'Plugin live search filters names');
+node('pluginSearch').value='';node('pluginSearch').dispatch('input');
+function pluginAction(type,id){
+ node('pluginResults').handlers.click({target:{closest:k=>k==='[data-plugin-action]'?{dataset:{pluginAction:type,pluginId:id}}:null}});
+}
+pluginAction('fav','demo-8');
+node('pluginView').value='favorites';node('pluginView').dispatch('change');
+check(node('pluginResults').innerHTML.includes('Chorus'),'Favorite effect filtering');
+node('pluginView').value='all';node('pluginView').dispatch('change');
+pluginAction('hide','demo-8');
+check(!node('pluginResults').innerHTML.includes('Chorus'),'Hidden effect removed from normal list');
+node('pluginView').value='hidden';node('pluginView').dispatch('change');
+check(node('pluginResults').innerHTML.includes('Chorus'),'Hidden effect discoverable in Hidden view');
+pluginAction('hide','demo-8');
+node('pluginView').value='all';node('pluginView').dispatch('change');
+pluginAction('choose','demo-2');
+check(plug.hidden===true,'Plugin inserts and browser closes');
+filter('all');
+check(strip(1).includes('Studio Reverb'),'FX insert changes in channel strip');
+node('pluginsButton').dispatch('click');
+node('pluginView').value='recent';node('pluginView').dispatch('change');
+check(node('pluginResults').innerHTML.includes('Studio Reverb'),'Recent plugin filter');
+node('pluginClose').dispatch('click');
+check(plug.hidden===true,'Plugin manager closes from explicit button');
+const panWrapper={value:'',nextElementSibling:{textContent:''},setAttribute(k,v){this.value=v;}};
+function panInput(v){
+ const target={dataset:{field:'pan'},value:String(v),closest:k=>k==='.strip'?{dataset:{id:1}}:k==='.pan-control'?panWrapper:null};
+ node('body').handlers.change({target,type:'change',altKey:false});return target;
+}
+let pan=panInput(4);
+check(pan.value==='0'&&panWrapper.value.includes('--pan-start:50%;--pan-end:50%'),'Center pan snaps to 0 with center-zero fill');
+pan=panInput(-60);
+check(panWrapper.value.includes('--pan-start:20%;--pan-end:50%'),'Left pan fills outwards from center');
+pan=panInput(40);
+check(panWrapper.value.includes('--pan-start:50%;--pan-end:70%'),'Right pan fills outwards from center');
+filter('all');node('bankSelect').value='0';node('bankSelect').dispatch('change');
+check(count()===8,'Bank 1 displays eight channel strips');
+node('bankSelect').value='1';node('bankSelect').dispatch('change');
+check(count()===3,'Bank 2 displays remaining strips');
+node('bankSelect').value='all';node('bankSelect').dispatch('change');
+node('reset').dispatch('click');
+node('sofToggle').dispatch('click');
+check(node('body').classList.contains('sends-mode')&&strip(1).includes('S -6.0'),'Sends on Faders shows channel send, not main fader');
+const readout={textContent:''},faderStrip={dataset:{id:1},querySelector:()=>readout};
+node('body').handlers.change({target:{dataset:{field:'level'},value:'-12',closest:k=>k==='.strip'?faderStrip:null},type:'change',altKey:false});
+filter('all');check(strip(1).includes('S -12.0'),'Sends on Faders changes targeted send');
+node('sofToggle').dispatch('click');filter('all');
+check(/class="fader"[^>]*value="0"/.test(strip(1)),'Sends on Faders preserves main fader gain');
+node('saveScene').dispatch('click');
+node('sceneSafe').dispatch('click');filter('all');
+check(strip(1).includes('safe-marker'),'Snapshot Safe indicated on channel strip');
+node('body').handlers.change({target:{dataset:{field:'level'},value:'8',closest:k=>k==='.strip'?faderStrip:null},type:'change',altKey:false});
+node('recallScene').dispatch('click');filter('all');
+check(/class="fader"[^>]*value="8"/.test(strip(1)),'Snapshot recall preserves Safe channel live fader');
+node('clearCue').dispatch('click');
+check(node('info').textContent.includes('Cue / PFL'),'Separate cue clear command');
+check(!html.includes("['Off','Read','Write','Latch','Touch']")&&!html.includes('data-field="automation"'),'DAW automation modes removed');
+const registry=fakeWindow.ArSonMixReference;
+check(registry&&typeof registry.setPluginCatalog==='function','Native-facing metadata-only registry adapter exists');
+check(registry.setPluginCatalog([{name:'Compressor X',kind:'effect',format:'VST3',status:'ready',category:'Dynamics',latencySamples:64}])===true,'Effect manifest import accepted');
+node('pluginsButton').dispatch('click');
+check(node('pluginResults').innerHTML.includes('Compressor X')&&node('pluginResults').innerHTML.includes('64 smp'),'Reported latency surfaced without claiming measured latency');
+check(registry.setPluginCatalog([{name:'Instrument X',kind:'instrument',format:'VST3',status:'ready'}])===false,'Instrument manifest rejected from effect browser');
+node('pluginClose').dispatch('click');
+
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
