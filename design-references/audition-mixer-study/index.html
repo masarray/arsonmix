@@ -523,6 +523,11 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .console-body.collapsed-fx{--fx-h:23px}
 .console-body.collapsed-send{--send-h:23px}
 .console-body.collapsed-eq{--eq-h:23px}
+
+/* Fader readout is in the upper LCD: don't duplicate numbers at the footer. */
+.console-body .bottom-section .db-value{display:none}
+.console-body .footer-label{height:calc(100% - 3px);min-height:0}
+.console-body .footer-label .name{display:flex;flex:1;min-height:0;align-items:center;justify-content:center}
 </style>
 </head>
 <body>
@@ -685,15 +690,22 @@ function strip(t){
  code+='<div class="bottom-section"><div class="db-value">'+(sofEnabled&&t.kind==='audio'?'S ': '')+formatDb(sofEnabled&&t.kind==='audio'?getSofLevel(t):t.level)+'</div><div class="footer-label '+(t.kind==='master'?'master-label':t.kind==='bus'?'bus-label':'')+'"><span class="name" data-action="rename" title="Double-click to rename">'+escapeHtml(t.name)+'</span><div class="color-strip"></div></div></div></article>';
  return code;
 }
+function bankCapacity(){
+ const width=document.getElementById('viewport').clientWidth||0;
+ if(!width)return 8; // deterministic fallback for offscreen DOM tests
+ const size={comfort:150,standard:125,compact:105};
+ const mode=document.querySelector('.console-body').dataset.density||'comfort';
+ return Math.max(1,Math.min(16,Math.floor(width/(size[mode]||150))));
+}
 function render(){
  const oldScroll=document.getElementById('viewport').scrollLeft;
  const filter=document.getElementById('viewFilter').value;
  const visible=tracks.filter(t=>filter==='all'||(filter==='solo'?t.solo:t.kind===filter));
  const selector=document.getElementById('bankSelect'),oldBank=selector.value||'all';
- const count=Math.ceil(visible.length/8);
- selector.innerHTML='<option value="all">All banks</option>'+Array.from({length:count},(_,i)=>'<option value="'+i+'">'+(i*8+1)+'–'+Math.min(visible.length,(i+1)*8)+'</option>').join('');
+ const capacity=bankCapacity(),count=Math.ceil(visible.length/capacity);
+ selector.innerHTML='<option value="all">All banks</option>'+Array.from({length:count},(_,i)=>'<option value="'+i+'">'+(i*capacity+1)+'–'+Math.min(visible.length,(i+1)*capacity)+'</option>').join('');
  selector.value=oldBank!=='all'&&Number(oldBank)>=count?'all':oldBank;
- const bank=selector.value||'all',bankTracks=bank==='all'?visible:visible.slice(Number(bank)*8,(Number(bank)+1)*8);
+ const bank=selector.value||'all',bankTracks=bank==='all'?visible:visible.slice(Number(bank)*capacity,(Number(bank)+1)*capacity);
  tracksEl.innerHTML=bankTracks.map(strip).join('');
  updateSofTargets();
  masterEl.innerHTML=strip(master);
@@ -756,7 +768,7 @@ function toggleSof(force){
 function visibleBankCount(){
  const filter=document.getElementById('viewFilter').value;
  const total=tracks.filter(t=>filter==='all'||(filter==='solo'?t.solo:t.kind===filter)).length;
- return Math.ceil(total/8);
+ return Math.ceil(total/bankCapacity());
 }
 function setSnapshotSafe(){
  const list=selection();if(!list.length){say('Select channels to set Snapshot Safe');return;}
@@ -1158,8 +1170,15 @@ window.addEventListener('keydown',e=>{
  if(e.key==='F8'&&!textEntry){e.preventDefault();pluginOpen?setBrowser(false):openPluginBrowser();return;}
  if(e.key==='Escape'&&pluginOpen){setBrowser(false);return;}
  if(e.key==='Escape'&&preview)togglePreview();
- if(e.target===document.body&&e.key==='ArrowRight')document.getElementById('viewport').scrollLeft+=102;
- if(e.target===document.body&&e.key==='ArrowLeft')document.getElementById('viewport').scrollLeft-=102;
+ if(e.target===document.body&&(e.key==='ArrowRight'||e.key==='ArrowLeft')){
+  const width={comfort:150,standard:125,compact:105}[document.querySelector('.console-body').dataset.density]||150;
+  document.getElementById('viewport').scrollLeft+=e.key==='ArrowRight'?width:-width;
+ }
+});
+let resizeQueued=false;
+window.addEventListener('resize',()=>{
+ if(resizeQueued)return;resizeQueued=true;
+ requestAnimationFrame(()=>{resizeQueued=false;render();});
 });
 restorePluginPreferences();init();
 })();
