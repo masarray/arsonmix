@@ -34,6 +34,28 @@ export function verifySourceBindings({read=readFileSync}={}){
    'GUI smoke must load the exact same native C++ golden fixture');
  return true;
 }
+// Real G0 S0 admission: the ENGINE-owned JUCE binary must explicitly
+// implement --emit-console-s0-json (and reject unsupported flags). The
+// same *actual* emitted bytes are passed to both shared FAT wire and GUI.
+export function runActualNativeS0({generator,output,playwright=true}={}){
+ assert(generator,'ENGINE JUCE exporter executable required for native S0');
+ verifySourceBindings();
+ const current=execFileSync('git',['rev-parse','HEAD'],{
+   cwd:root,encoding:'utf8'}).trim();
+ assert(/^[a-f0-9]{40}$/.test(current),'exact checkout SHA required');
+ const dir=mkdtempSync(join(tmpdir(),'arsonmix-s0-juce-'));
+ const nativePath=output?resolve(output):join(dir,'juce-native-s0.json');
+ try{
+   const proof=generateS0({generator,output:nativePath,sourceSha:current});
+   if(playwright)execFileSync(process.env.PYTHON||'python',[
+     join(root,'tests/console_native_s0_playwright.py'),'--fixture',nativePath
+   ],{cwd:root,stdio:'inherit',timeout:120000});
+   return {status:playwright?'S0_NATIVE_CONTROL_PLANE_GUI_MATCH':
+     'S0_NATIVE_CONTROL_PLANE_ONLY',
+     ...proof,playwright:playwright?'PASS':'NOT_RUN',
+     nativeCallbackAudio:'NOT_PROVEN',fullMixerReady:false,hardwareFAT:'PENDING'};
+ }finally{rmSync(dir,{recursive:true,force:true})}
+}
 export function run({output,playwright=false}={}){
  verifySourceBindings();
  const current=execFileSync('git',['rev-parse','HEAD'],{
@@ -60,22 +82,26 @@ export function run({output,playwright=false}={}){
      '-std=c++20','-O2','-Wall','-Wextra','-Werror','-pedantic',
      cpp,'-o',exe
    ],{cwd:root,stdio:'pipe',timeout:120000});
-   const result=generateS0({generator:exe,output:generated,sourceSha:current});
-   const actual=readFileSync(generated);
+   // Portable fixture: execute the compiled C++ main with NO argv. It is
+   // explicitly not the live JUCE exporter and cannot qualify S0 runtime.
+   const actual=execFileSync(exe,[],{cwd:root,encoding:null,timeout:15000,
+     maxBuffer:8*1024*1024});
+   writeFileSync(generated,actual);
    assert(actual.equals(expected),
      'ENGINE compiled stdout byte mismatch with checked-in GUI native JSON fixture');
-   assert(result.nativeFixtureSha256===expectedSha,
-     'FAT C++ producer digest differs from one shared GUI fixture SHA256');
+   assert(hash(actual)===expectedSha,
+     'portable C++ producer digest differs from one shared GUI golden SHA256');
    if(playwright){
      execFileSync(process.env.PYTHON||'python',[
        join(root,'tests/console_native_s0_playwright.py'),
        '--fixture',generated
      ],{cwd:root,stdio:'inherit',timeout:120000});
    }
-   return {status:'S0_CPP_SERIALIZER_TO_SHARED_GUI_FIXTURE_MATCH',
+   return {status:'PORTABLE_CPP_SERIALIZER_PARITY_ONLY_NOT_S0',
      sourceSha:current,sharedFixtureSha256:expectedSha,
      events:4,sourceBindings:'STATIC_MATCH',nativeCallbackAudio:'NOT_PROVEN',
-     Playwright:playwright?'PASS':'NOT_RUN',
+     nativeEventExporter:'NOT_EXECUTED',nativeControlPlaneS0:'BLOCKED',
+     PlaywrightPortableGolden:playwright?'PASS':'NOT_RUN',
      fullMixerReady:false,hardwareFAT:'PENDING'};
  }finally{rmSync(dir,{recursive:true,force:true})}
 }
@@ -84,6 +110,12 @@ if(process.argv[1]&&fileURLToPath(import.meta.url)===resolve(process.argv[1])){
    const args=process.argv.slice(2),i=args.indexOf('--output');
    const output=i>=0?args[i+1]:undefined;
    assert(i<0||output,'--output requires path');
-   console.log(JSON.stringify(run({output,playwright:args.includes('--playwright')}),null,2));
+   const nativeIndex=args.indexOf('--native-generator');
+   const native=nativeIndex>=0?args[nativeIndex+1]:undefined;
+   assert(nativeIndex<0||native,'--native-generator requires built JUCE executable');
+   const actual=native?runActualNativeS0({generator:native,output,
+       playwright:!args.includes('--skip-playwright')}):
+     run({output,playwright:args.includes('--playwright')});
+   console.log(JSON.stringify(actual,null,2));
  }catch(e){console.error(e.stack||e.message);process.exitCode=1}
 }

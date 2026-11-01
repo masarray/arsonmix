@@ -3,9 +3,9 @@
   "releaseReady": false,
   "normativeMain": "fe3f8add2c7103122895c10bc8c7461e6c55509a",
   "sourceSHAs": {
-    "ENGINE": "c58f06f8e6d9cbf4ed170d5cc16173812b44deed",
+    "ENGINE": "d4035eb66361db48311d927a91986a12d95621b9",
     "GUI": "70adb79a0511dbeb2bc1cbfaa48bf9a14f24d51f",
-    "FAT": "e93505869041b019f1c010a0e39f9fc9608210a7"
+    "FAT": "246f3f8685aa7f99ec9cdaff4e4f68417d2cf6a1"
   },
   "machineContract": "contracts/console-puzzle-v8.json",
   "fixture": "tests/fixtures/console-v8-native-unready.json",
@@ -64,5 +64,12 @@
   "crossLayerSchemaCheck": "PASS_UNREADY_GOLDEN_JS_INSPECTION",
   "nativeEngineHeadWindowsCTest": "PENDING_NEW_RUN__OLDER_P1H_EXIT_0xC0000409",
   "guiHeadChromium": "PASS_ON_SEPARATE_BRANCH_NOT_COMBINED",
-  "designLock": "PRD v5.2 §9 + ARD v5.2 §K, PR #278 chosen study; demo audio is not native"
+  "designLock": "PRD v5.2 §9 + ARD v5.2 §K, PR #278 chosen study; demo audio is not native",
+  "nativeEventExporter": "BLOCKED: portable C++ fixture ignores unrecognized CLI; native JUCE binary exporter required",
+  "s0PortableSerializer": "REFERENCE_ONLY_NOT_RUNTIME",
+  "s0ActualNativeProducer": "NOT_RUN",
+  "WindowsCIIntegratedSHA": "NOT_RUN",
+  "ChromiumCIIntegratedSHA": "NOT_RUN",
+  "knownNativeOwnerTest": "P1H MUTE de-click assertion corrected in source, exact Windows CTest pending",
+  "s0ProofRequirement": "run --native-generator actual JUCE app/test binary with strict flag parsing; same exact JSON to GUI/FAT"
 }
