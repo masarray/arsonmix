@@ -529,13 +529,13 @@ check(strip(1).includes('wire-socket is-source') &&
  strip(3).includes('class="wire-socket"') &&
  strip(3).includes('>△</span>'),
  'Source CH1 is lit and every destination has FL-like up arrow');
-function wireTo(id){
+function wireTo(id,shift=false){
  const el={dataset:{action:'wireRoute'},closest:k=>k==='.strip'?{dataset:{id}}:null};
  const target={closest:k=>k==='[data-action]'?el:k==='[data-action="wireRoute"]'?el:k==='.strip'?{dataset:{id}}:null};
  node('body').handlers.mousedown({target,ctrlKey:false,metaKey:false,shiftKey:false});
- node('body').handlers.click({target});
+ node('body').handlers.click({target,shiftKey:shift});
 }
-[3,4,5,6].forEach(wireTo);
+[3,4,5,6].forEach(id=>wireTo(id));
 check(strip(1).includes('⇢4') && strip(3).includes('wire-socket is-linked') &&
  node('wireLegend').textContent.includes('4 targets'),
  'CH1 click-source then CH3–CH6 socket clicks create four independent visible links');
@@ -587,6 +587,29 @@ wireTo(1);
 check(node('info').textContent.includes('feedback loop') &&
  strip(1).includes('wire-socket'),
  'Graph cycle guard refuses reverse link CH3→CH1');
+node('reset').dispatch('click');
+
+node('body').clientWidth=1680;node('reset').dispatch('click');
+wireTo(3);wireTo(6,true);
+check(strip(1).includes('⇢4') &&
+ [3,4,5,6].every(id=>strip(id).includes('wire-socket is-linked')),
+ 'Two-click CH3 then SHIFT+CH6 creates an atomic four-target FL-style route');
+check(node('info').textContent.includes('destinations linked with SHIFT'),
+ 'Operator receives clear one-message bulk routing acceptance');
+node('wireMode').value='send';node('wireMode').dispatch('change');
+const edge3=strip(3).match(/data-wire-id="(\d+)"/);
+check(!!edge3,'Shift-created links each have per-edge IDs and a gain dial');
+const gain3={dataset:{field:'wireGain',wireId:edge3[1]},value:'-18',
+ style:{setProperty(){}},parentElement:{style:{setProperty(){}}},closest:q=>q==='.strip'?{dataset:{id:3}}:null};
+node('body').handlers.change({target:gain3,type:'change'});
+filter('all');
+check(strip(3).includes('value="-18" data-field="wireGain"') &&
+ strip(4).includes('value="0" data-field="wireGain"'),
+ 'Four-way send gain is independent per target without changing neighbors');
+check(html.includes('function wireConnectRange(') &&
+ html.includes('if(batch.some(t=>wireIsCycle(source.id,t.id)))') &&
+ html.includes('SourceBinding')===false || html.includes('function wireConnectRange('),
+ 'Wire route bulk changes have explicit cycle preflight');
 node('reset').dispatch('click');
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
