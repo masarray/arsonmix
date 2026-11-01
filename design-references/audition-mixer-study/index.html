@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>ArSonMix — Multitrack Mixer Reference</title>
+<style>
+:root{
+  color-scheme:dark;--bg:#242424;--panel:#222325;--panel2:#292a2c;
+  --rule:#131415;--line:#424446;--ink:#c7c8c8;--dim:#8d9092;--blue:#49a5c8;
+  font:11px/1.32 "Segoe UI",Arial,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{width:100%;height:100%;min-width:760px;min-height:540px;margin:0;overflow:hidden;background:#202123;color:var(--ink)}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:1px solid #8cc5da;outline-offset:-1px}
+button:disabled{opacity:.45;cursor:not-allowed}
+.app{height:100%;display:flex;flex-direction:column}
+.window-title{height:29px;flex:none;background:#303133;display:flex;align-items:center;padding:0 11px;border-bottom:1px solid #171819;gap:14px;white-space:nowrap}
+.logo{color:#72bbce;font-size:12px;font-weight:600;letter-spacing:.03em}
+.window-title .file-name{color:#bcc0c2;font-size:11px}
+.window-title .study{margin-left:auto;font-size:10px;color:#a4a6a6;letter-spacing:.06em}
+.menu-bar{height:25px;flex:none;display:flex;align-items:stretch;gap:15px;padding-left:11px;background:#28292b;border-bottom:1px solid #171819;color:#b1b3b6}
+.menu-bar .menu-label{padding-top:5px}
+.tabs-bar{height:30px;flex:none;display:flex;align-items:stretch;background:#202123;border-bottom:1px solid #151617;gap:2px;padding-left:9px}
+.editor-tab{padding:6px 12px 5px;background:#28292a;border:1px solid #111213;border-bottom:0;color:#84888a}
+.editor-tab.active{background:#303133;color:#e0e0e0;box-shadow:inset 0 2px #48a2bd;font-weight:600}
+.tabs-bar .reference{margin:auto 10px auto auto;color:#8e969b;font-size:10px}
+.command-bar{height:38px;flex:none;display:flex;align-items:center;gap:7px;padding:0 11px;border-bottom:1px solid #111;background:linear-gradient(#303133,#2a2b2c)}
+.tool{padding:4px 9px;background:linear-gradient(#414244,#343537);border:1px solid #1b1d1e;border-radius:2px;box-shadow:inset 0 1px #545658;font-size:11px;white-space:nowrap}
+.tool:hover{background:#4a4b4d}
+.tool.active{color:#cbecf7;border-color:#4d8295;background:#2f4751}
+.tool.primary{color:#c1e2ea}
+.tool.danger{color:#edc4bd}
+.sep{height:18px;width:1px;background:#171819;margin:0 3px}
+.short-help{margin-left:auto;color:#848a8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px}
+.console-pane{flex:1;min-height:0;display:flex;flex-direction:column;background:#202122}
+.mixer-title{height:24px;display:flex;align-items:center;padding:0 9px;flex:none;border-bottom:1px solid #0f1010;background:#292a2b;gap:9px}
+.mixer-title .accent{height:12px;width:3px;background:#55afcb}
+.mixer-title .panel-name{font-weight:600}
+.mixer-title .panel-sub{color:#8f9295}
+.mixer-title .right{margin-left:auto;color:#808488;font-size:10px}
+.console-body{flex:1;min-height:0;display:flex;overflow:hidden;--route-h:59px;--fx-h:119px;--send-h:66px;--eq-h:49px;--pan-h:35px;--auto-h:23px;--switch-h:31px;--footer-h:53px}
+.section-rail{flex:0 0 33px;width:33px;display:flex;flex-direction:column;border-right:1px solid #060707;background:#262729;box-shadow:inset -1px 0 #343537;text-align:center}
+.rail-cell{display:flex;align-items:center;justify-content:center;border-bottom:1px solid #111;color:#a0a3a5;flex:none;font-size:15px}
+.rail-cell small{font-size:9px;color:#8d9294}
+.rail-cell.route{height:var(--route-h)}
+.rail-cell.fx{height:var(--fx-h);font-family:Georgia,serif;font-style:italic}
+.rail-cell.send{height:var(--send-h)}
+.rail-cell.eq{height:var(--eq-h)}
+.rail-cell.pan{height:var(--pan-h)}
+.rail-cell.auto{height:var(--auto-h)}
+.rail-cell.switch{height:var(--switch-h)}
+.rail-cell.fader{flex:1;min-height:80px;flex-direction:column;gap:7px;font-size:10px}
+.rail-cell.footer{height:var(--footer-h)}
+.tracks-viewport{flex:1;min-width:0;overflow:auto hidden;background:#1d1e1f;scrollbar-color:#585a5a #292a2b;scrollbar-width:thin}
+.tracks{display:flex;align-items:stretch;width:max-content;min-width:100%;height:100%}
+.strip{width:102px;flex:0 0 102px;min-width:102px;min-height:0;height:100%;display:flex;flex-direction:column;background:#232425;border-right:2px solid #111213;box-shadow:inset 1px 0 #37383a}
+.strip:nth-child(even){background:#252627}
+.strip.selected{background:#2d3032;box-shadow:inset 1px 0 #4e7e8c}
+.strip.master{width:111px;flex:0 0 111px;background:#26282a;border-left:2px solid #111213;border-right:0;box-shadow:inset 1px 0 #44484b}
+.strip.bus{background:#2a292b}
+.section{border-bottom:1px solid #111;box-shadow:0 1px #343637;flex:none;overflow:hidden;padding:2px 3px}
+.route-section{height:var(--route-h);padding-top:4px}
+.route-top{height:13px;display:flex;align-items:center;justify-content:space-between;color:#85898c;font-size:10px;padding:0 2px}
+.route-indicator{color:#8c9193;font-size:11px}
+.route-select{width:100%;height:17px;padding:0 12px 0 3px;color:#d1d3d4;background:#2a2b2c;border:0;border-bottom:1px solid #363739;outline:none;font-size:10px;appearance:none;white-space:nowrap;text-overflow:ellipsis;background-image:linear-gradient(45deg,transparent 50%,#b6babd 50%),linear-gradient(135deg,#b6babd 50%,transparent 50%);background-position:calc(100% - 7px) 7px,calc(100% - 4px) 7px;background-size:3px 3px;background-repeat:no-repeat}
+.route-select:hover{background-color:#3a3b3e}
+.subhead{height:21px;display:flex;align-items:center;gap:3px;padding:0 2px;border-bottom:1px solid #141516}
+.subhead .sym{font-size:14px;font-style:italic;font-family:Georgia,serif;color:#b4b8b9}
+.subhead .hint{font-size:9px;color:#94999c}
+.subhead .push{margin-left:auto}
+.mini{width:17px;height:17px;border:0;border-radius:1px;color:#979b9e;background:transparent;padding:0;line-height:17px;text-align:center}
+.mini:hover{background:#434749}
+.mini.power.on{color:#55bb86}
+.mini.phase.on,.mini.arm.on{background:#994c4b;color:#fff}
+.mini.pre.on{color:#aed7e8}
+.fx-section{height:var(--fx-h)}
+.fxslot-row{display:flex;align-items:center;height:20px;border-bottom:1px solid #303234;gap:2px}
+.fxslot-row:last-child{border-bottom:0}
+.fxslot-row.dragged{opacity:.38}
+.fxslot-row.drop-target{outline:1px solid #8ec6d9;outline-offset:-1px}
+.fx-select{flex:1;min-width:0;width:100%;height:17px;border:0;appearance:none;background:transparent;color:#b8babc;padding:0 1px;text-overflow:ellipsis;font-size:10px}
+.fx-select:not(.empty){color:#bacbd5;background:#303a3e}
+.fx-select option{background:#303132;color:#e0e0e0}
+.fxslot-row .grip{font-size:11px;color:#737779;cursor:grab;user-select:none}
+.send-section{height:var(--send-h)}
+.send-header{height:20px;display:flex;align-items:center;gap:3px;border-bottom:1px solid #151617}
+.send-header .sym{color:#a8adaf;font-size:13px}
+.send-header .sendtag{font-size:9px;color:#999b9e}
+.send-header .push{margin-left:auto}
+.send-select{width:100%;height:21px;border:0;background:#303234;color:#c5c7c8;appearance:none;overflow:hidden;text-overflow:ellipsis;padding-left:4px;font-size:10px}
+.send-select:hover{background:#3b3c3e}
+.sendlevel{display:flex;align-items:center;height:18px;gap:3px}
+.sendlevel label{font-size:9px;color:#8f9498}
+.sendlevel input{width:60px;height:9px;accent-color:#8eaab3}
+.sendlevel output{font-size:9px;color:#a7aaad;margin-left:auto}
+.eq-section{height:var(--eq-h)}
+.eq-header{height:18px;display:flex;align-items:center;gap:4px}
+.eq-header .sym{font-size:13px;color:#a1a3a4}
+.eq-header .push{margin-left:auto}
+.eq-line{height:24px;width:100%;border:1px solid #36383a;background:linear-gradient(0deg,transparent 49%,#44494b 50%,transparent 51%),#25282a;display:flex;align-items:center;justify-content:center}
+.eq-line svg{width:87%;height:20px;stroke:#758d96;fill:none;stroke-width:1.1}
+.eq-section.off .eq-line svg{stroke:#575b5e}
+.pan-section{height:var(--pan-h);display:flex;align-items:center;gap:4px;padding:0 6px}
+.pan-section input{width:65px;height:8px;accent-color:#9ba7aa}
+.pan-section .pan-icon{font-size:15px;color:#9a9fa1}
+.pan-section output{font-size:9px;min-width:18px;color:#6bafc2}
+.auto-section{height:var(--auto-h);padding:1px 3px}
+.auto-section select{height:19px;width:100%;border:0;background:#303234;color:#babdbf;font-size:10px;appearance:auto}
+.switch-section{height:var(--switch-h);display:flex;justify-content:center;align-items:flex-start;padding:3px 3px 0;gap:2px}
+.switch{min-width:21px;height:20px;background:#2a2c2e;border:1px solid #1a1c1d;color:#8e9294;font-size:10px;padding:0 2px}
+.switch:hover{background:#454849}
+.switch.on.mute{background:#af9347;color:#111}
+.switch.on.solo{background:#d8bb51;color:#151515}
+.switch.on.arm{background:#ab4d4b;color:#fff}
+.switch.on.mon{background:#4483a0;color:#fff}
+.fader-section{flex:1;min-height:82px;display:flex;justify-content:center;padding:9px 4px 4px;gap:5px;overflow:hidden}
+.fader-scale{width:18px;min-width:18px;display:flex;flex-direction:column;justify-content:space-between;text-align:right;color:#979da0;font-size:9px;line-height:1;padding:0 0 8px}
+.fader-box{width:30px;height:100%;position:relative;display:flex;justify-content:center}
+.fader-box:before{content:"";position:absolute;top:5px;bottom:12px;width:5px;background:#101112;border:1px solid #4d5052;left:12px}
+.fader{height:calc(100% - 17px);width:27px;margin-top:5px;writing-mode:vertical-lr;direction:rtl;appearance:none;-webkit-appearance:none;background:transparent;position:relative;z-index:1;cursor:ns-resize;touch-action:none}
+.fader::-webkit-slider-runnable-track{background:transparent;border:0}
+.fader::-moz-range-track{background:transparent;border:0}
+.fader::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:15px;border-radius:2px;border:1px solid #0c1619;background:linear-gradient(#d4d8d6 0%,#989fa1 30%,#6f8288 47%,#d8ddde 55%,#78898f 60%,#a1a8aa 100%);box-shadow:0 1px 2px #090909;cursor:ns-resize}
+.fader::-moz-range-thumb{width:22px;height:15px;border-radius:2px;border:1px solid #0c1619;background:#acb6ba;box-shadow:0 1px 2px #090909}
+.master .fader::-webkit-slider-thumb{background:linear-gradient(#b9c7ce,#5986a5 48%,#bad0d7 53%,#5a819b)}
+.meter-box{height:calc(100% - 17px);display:flex;gap:2px;width:19px;min-width:19px;margin-top:5px;position:relative}
+.meter-lane{position:relative;flex:1;border:1px solid #0c0e0f;background:#0b0d0e;box-shadow:inset 0 0 0 1px #303334;overflow:hidden}
+.meter-fill{position:absolute;bottom:0;left:1px;right:1px;height:0%;background:linear-gradient(to top,#d5bb57 0%,#6ab37c 32%,#67b995 72%,#dda255 87%,#d85e54 100%);transition:height 95ms linear}
+.meter-lane:before{content:"";position:absolute;inset:0;z-index:2;background:repeating-linear-gradient(to top,transparent 0,transparent 4px,rgba(0,0,0,.65) 4px,rgba(0,0,0,.65) 6px);pointer-events:none}
+.peak{position:absolute;top:0;right:0;width:3px;height:3px;background:#7d3530;opacity:.3}
+.peak.clipping{background:#ef6158;opacity:1}
+.fader-meter-legend{position:absolute;bottom:0;right:0;left:0;text-align:center}
+.bottom-section{height:var(--footer-h);padding:0 3px 4px;flex:none;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-end}
+.db-value{height:17px;color:#54b0d0;text-align:center;font-size:11px;padding-top:1px}
+.footer-label{height:29px;display:flex;flex-direction:column;justify-content:space-between;background:#2d2f31;border-top:1px solid #505153}
+.footer-label .name{font-size:10px;color:#c2c3c5;padding:3px 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:text;text-align:center}
+.footer-label .color-strip{height:5px;background:var(--track-color,#497e8b)}
+.footer-label.bus-label{background:#313037}
+.footer-label.master-label{background:#30353a}
+.status-bar{height:25px;flex:none;display:flex;align-items:center;gap:13px;padding:0 11px;background:#292b2c;border-top:1px solid #111;font-size:10px;color:#9aa0a2}
+.status-bar .state{color:#9ec8d0}
+.status-bar .last-action{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.status-bar .warning{margin-left:auto;color:#d8b981;font-weight:600}
+::-webkit-scrollbar{height:11px;width:9px}
+::-webkit-scrollbar-track{background:#262728}
+::-webkit-scrollbar-thumb{background:#55585b;border:2px solid #292a2b;border-radius:6px}
+@media(max-height:750px){.console-body{--route-h:54px;--fx-h:105px;--send-h:62px;--eq-h:43px;--pan-h:32px;--auto-h:22px;--switch-h:29px;--footer-h:45px}.fxslot-row{height:17px}.fx-section .subhead{height:18px}.footer-label{height:26px}.db-value{height:14px}.eq-line{height:20px}}
+@media(max-width:1000px){.menu-bar{gap:10px}.short-help{display:none}.strip{width:98px;flex-basis:98px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="window-title"><span class="logo">ArSonMix</span><span class="file-name">Session: Mixer Reference · Untitled</span><span class="study">AUDITION MIXER UI STUDY · ISOLATED</span></header>
+  <nav class="menu-bar" aria-label="Reference application menu"><span class="menu-label">File</span><span class="menu-label">Edit</span><span class="menu-label">Multitrack</span><span class="menu-label">Effects</span><span class="menu-label">Favorites</span><span class="menu-label">View</span><span class="menu-label">Window</span><span class="menu-label">Help</span></nav>
+  <div class="tabs-bar"><span class="editor-tab">Editor: Untitled</span><span class="editor-tab active">Mixer</span><span class="reference">Reference layout only · no editor/timeline</span></div>
+  <div class="command-bar" role="toolbar" aria-label="Mixer demonstration controls">
+    <button class="tool primary" id="addTrack" title="Add a mixer track">+ Audio Track</button>
+    <button class="tool" id="addBus" title="Add a bus to the mixer">+ Bus</button>
+    <span class="sep"></span>
+    <button class="tool" id="preview" aria-pressed="false">▶ Preview Meters</button>
+    <button class="tool" id="reset" title="Reset demo mixer controls">Reset Mixer</button>
+    <span class="short-help">Click FX slots · change IN/OUT · set SEND · drag fader · M/S/R · scroll channels</span>
+  </div>
+  <main class="console-pane">
+    <div class="mixer-title"><span class="accent"></span><span class="panel-name">Mixer</span><span class="panel-sub">▤</span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
+    <section class="console-body" aria-label="Multitrack mixing console">
+      <aside class="section-rail" aria-label="Mixer section icons">
+        <div class="rail-cell route" title="Inputs / Outputs">⇥</div>
+        <div class="rail-cell fx" title="Effects">fx</div>
+        <div class="rail-cell send" title="Sends">↪</div>
+        <div class="rail-cell eq" title="Equalizer">▥</div>
+        <div class="rail-cell pan" title="Pan">◉</div>
+        <div class="rail-cell auto" title="Automation"><small>A</small></div>
+        <div class="rail-cell switch" title="Mute / Solo / Record"><small>M S R</small></div>
+        <div class="rail-cell fader" title="Level and meter">dB<br>│<br>│<br>│</div>
+        <div class="rail-cell footer" title="Track labels"><small>▦</small></div>
+      </aside>
+      <div class="tracks-viewport" id="viewport" tabindex="0" aria-label="Horizontal mixer track list"><div class="tracks" id="tracks"></div></div>
+      <div id="master"></div>
+    </section>
+  </main>
+  <footer class="status-bar"><span class="state" id="transport">Stopped</span><span id="info" class="last-action" role="status" aria-live="polite">Interactive visual reference. Changes are local to this mockup.</span><span class="warning">SIMULATED METERS · NO REAL AUDIO</span></footer>
+</div>
+<script>
+(function(){
+'use strict';
+const COLORS=['#3b98a1','#598e72','#af9258','#a6676f','#6b88b4','#9180b5','#9e9571','#63958d','#a8799e','#6083a0'];
+const INIT=['Host','Interview','Sound FX','Music Bed','Vocal 1','Vocal 2','Guitar','Keyboard','Playback','Ambience'];
+const FX=['None','Parametric Equalizer','Dynamics Processing','Studio Reverb','DeEsser','Hard Limiter','Tube-modeled Compressor','Delay','Chorus','Multiband Compressor','Graphic Equalizer','Echo'];
+const tracksEl=document.getElementById('tracks'),masterEl=document.getElementById('master'),info=document.getElementById('info');
+let nextId=1,tracks=[],master,preview=false,meterFrame=0,lastTick=0;
+const make=(name,kind,color)=>{
+ const id=nextId++;
+ return {id,name,kind,color,input:kind==='master'?'None':kind==='bus'?'None':'Default Stereo',output:kind==='master'?'Default Output':'Master',fx:['None','None','None','None'],fxOn:true,send:'None',sendOn:false,pre:false,sendLevel:-6,eq:true,pan:0,automation:'Read',mute:false,solo:false,arm:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
+};
+function init(){nextId=1;tracks=INIT.map((name,i)=>make(name,'audio',COLORS[i]));tracks.push(make('Bus A','bus','#826b9a'));master=make('Master','master','#5a8ca8');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
+const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const option=(values,selected)=>values.map(x=>'<option value="'+escapeHtml(x)+'"'+(x===selected?' selected':'')+'>'+escapeHtml(x)+'</option>').join('');
+const channelOptions=(t,type)=>{
+ if(type==='input')return t.kind==='audio'?['None','Default Stereo','Input 1 (Mono)','Input 2 (Mono)','Input 1 + 2 (Stereo)','CABLE Output L','CABLE Output R']:['None'];
+ if(type==='output')return t.kind==='master'?['Default Output','Output 1 + 2','Speakers (Realtek)','Virtual Cable']:['Master',...tracks.filter(x=>x.kind==='bus'&&x.id!==t.id).map(x=>x.name),'Output 1 + 2'];
+ return ['None',...tracks.filter(x=>x.kind==='bus'&&x.id!==t.id).map(x=>x.name)];
+};
+function sectionFx(t){
+ let s='<div class="section fx-section"><div class="subhead"><span class="sym">fx</span><span class="hint">Effects</span><span class="push"></span><button class="mini power '+(t.fxOn?'on':'')+'" data-action="fxOn" title="Bypass entire FX rack" aria-label="Toggle effects">⏻</button><button class="mini" data-action="fxPost" title="FX pre/post fader">↕</button></div>';
+ t.fx.forEach((v,i)=>{
+ s+='<div class="fxslot-row" draggable="true" data-slot="'+i+'" title="Select an effect or drag to reorder"><button class="mini power '+(v!=='None'?'on':'')+'" data-action="slotPower" data-slot="'+i+'" title="Toggle individual effect">⏻</button><select class="fx-select '+(v==='None'?'empty':'')+'" data-field="fx" data-slot="'+i+'" aria-label="FX slot '+(i+1)+'">'+option(FX,v)+'</select><span class="grip" title="Drag reorder">⠿</span></div>';
+ });
+ return s+'</div>';
+}
+const eqSvg='<svg viewBox="0 0 90 20" preserveAspectRatio="none" aria-hidden="true"><path d="M0 15 L14 15 Q22 15 29 9 T43 9 Q52 11 58 7 T75 8 Q82 9 90 5"/></svg>';
+function sectionSend(t){
+ if(t.kind==='master')return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><span class="sendtag">No Sends on Master</span></div></div>';
+ return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><span class="sendtag">S1</span><span class="push"></span><button class="mini power '+(t.sendOn?'on':'')+'" data-action="sendOn" title="Enable Send">⏻</button><button class="mini pre '+(t.pre?'on':'')+'" data-action="pre" title="Toggle Pre/Post send">'+(t.pre?'Pre':'Post')+'</button></div><select class="send-select" data-field="send" aria-label="Send destination">'+option(channelOptions(t,'send'),t.send)+'</select><div class="sendlevel"><label>↳</label><input type="range" min="-60" max="6" step="1" value="'+t.sendLevel+'" data-field="sendLevel" title="Send level"><output>'+formatDb(t.sendLevel)+'</output></div></div>';
+}
+function formatDb(n){return n<=-60?'-∞':(n>0?'+':'')+Number(n).toFixed(1);}
+function sectionFader(t){
+ const ticks=['+15','0','-6','-12','-24','-36','-48','-∞'];
+ return '<div class="fader-section"><div class="fader-scale">'+ticks.map(s=>'<span>'+s+'</span>').join('')+'</div><div class="fader-box"><input class="fader" type="range" min="-60" max="15" value="'+t.level+'" step=".1" data-field="level" title="Volume — double click to reset to 0 dB" aria-label="'+escapeHtml(t.name)+' volume"></div><div class="meter-box" aria-label="Simulated stereo peak meter"><div class="meter-lane"><div class="meter-fill left"></div></div><div class="meter-lane"><div class="meter-fill right"></div></div><div class="peak '+(t.clip?'clipping':'')+'"></div></div></div>';
+}
+function strip(t){
+ let code='<article class="strip '+t.kind+(t.selected?' selected':'')+'" data-id="'+t.id+'" style="--track-color:'+t.color+'" aria-label="'+escapeHtml(t.name)+' channel">';
+ code+='<div class="section route-section"><div class="route-top"><span class="route-indicator">'+(t.kind==='audio'?'▥':t.kind==='bus'?'↪':'➜')+'</span><button class="mini phase '+(t.phase?'on':'')+'" data-action="phase" title="Reverse polarity">'+(t.phase?'Ø':'⊘')+'</button></div>';
+ if(t.kind!=='master')code+='<select class="route-select" data-field="input" title="Track input" aria-label="'+escapeHtml(t.name)+' input">'+option(channelOptions(t,'input'),t.input)+'</select>';
+ else code+='<div class="route-select" style="line-height:17px;color:#777">Mix Track</div>';
+ code+='<select class="route-select" data-field="output" title="Track output" aria-label="'+escapeHtml(t.name)+' output">'+option(channelOptions(t,'output'),t.output)+'</select></div>';
+ code+=sectionFx(t)+sectionSend(t);
+ code+='<div class="section eq-section '+(t.eq?'':'off')+'"><div class="eq-header"><span class="sym">▥</span><small style="font-size:9px;color:#959b9d">EQ</small><span class="push"></span><button class="mini power '+(t.eq?'on':'')+'" data-action="eq" title="Enable/disable EQ">⏻</button></div><button class="eq-line" data-action="eq" title="Toggle track EQ" aria-label="Toggle track EQ">'+eqSvg+'</button></div>';
+ code+='<div class="section pan-section"><span class="pan-icon">◉</span><input type="range" min="-100" max="100" step="1" value="'+t.pan+'" data-field="pan" title="Pan / Balance" aria-label="Pan"><output>'+ (t.pan===0?'C':t.pan<0?'L'+Math.abs(t.pan):'R'+t.pan)+'</output></div>';
+ code+='<div class="section auto-section"><select data-field="automation" aria-label="Automation mode">'+option(['Off','Read','Write','Latch','Touch'],t.automation)+'</select></div>';
+ code+='<div class="section switch-section"><button class="switch mute '+(t.mute?'on':'')+'" data-action="mute" title="Mute channel" aria-pressed="'+t.mute+'">M</button><button class="switch solo '+(t.solo?'on':'')+'" data-action="solo" title="Solo channel" aria-pressed="'+t.solo+'">S</button>'+(t.kind==='audio'?'<button class="switch arm '+(t.arm?'on':'')+'" data-action="arm" title="Record arm (visual only)" aria-pressed="'+t.arm+'">R</button>':'')+(t.kind!=='master'?'<button class="switch mon '+(t.mon?'on':'')+'" data-action="mon" title="Input monitor (visual only)" aria-pressed="'+t.mon+'">I</button>':'')+'</div>';
+ code+=sectionFader(t);
+ code+='<div class="bottom-section"><div class="db-value">'+formatDb(t.level)+'</div><div class="footer-label '+(t.kind==='master'?'master-label':t.kind==='bus'?'bus-label':'')+'"><span class="name" data-action="rename" title="Double-click to rename">'+escapeHtml(t.name)+'</span><div class="color-strip"></div></div></div></article>';
+ return code;
+}
+function render(){
+ const oldScroll=document.getElementById('viewport').scrollLeft;
+ tracksEl.innerHTML=tracks.map(strip).join('');
+ masterEl.innerHTML=strip(master);
+ document.getElementById('viewport').scrollLeft=oldScroll;
+ document.getElementById('trackCount').textContent=tracks.filter(t=>t.kind==='audio').length+' audio tracks · '+tracks.filter(t=>t.kind==='bus').length+' bus · master';
+}
+function say(s){info.textContent=s;}
+function findTrack(el){const strip=el.closest('.strip');if(!strip)return null;const id=Number(strip.dataset.id);return id===master.id?master:tracks.find(t=>t.id===id);}
+function refreshStrip(t){
+ const old=document.querySelector('.strip[data-id="'+t.id+'"]');if(!old)return;
+ const temp=document.createElement('div');temp.innerHTML=strip(t);
+ old.replaceWith(temp.firstElementChild);
+}
+function selectTrack(t){tracks.forEach(x=>x.selected=false);master.selected=false;t.selected=true;document.querySelectorAll('.strip').forEach(el=>el.classList.toggle('selected',Number(el.dataset.id)===t.id));}
+function handleField(event){
+ const el=event.target,field=el.dataset.field;if(!field)return;
+ const t=findTrack(el);if(!t)return;
+ if(field==='fx'){t.fx[Number(el.dataset.slot)]=el.value;say(t.name+' · FX '+(Number(el.dataset.slot)+1)+': '+el.value);refreshStrip(t);}
+ else if(field==='level'){t.level=Number(el.value);const root=el.closest('.strip');root.querySelector('.db-value').textContent=formatDb(t.level);if(event.type==='change')say(t.name+' fader '+formatDb(t.level)+' dB');}
+ else if(field==='pan'){t.pan=Number(el.value);el.nextElementSibling.textContent=t.pan===0?'C':t.pan<0?'L'+Math.abs(t.pan):'R'+t.pan;if(event.type==='change')say(t.name+' pan '+el.nextElementSibling.textContent);}
+ else if(field==='sendLevel'){t.sendLevel=Number(el.value);el.nextElementSibling.textContent=formatDb(t.sendLevel);}
+ else if(field==='output'){
+  if(t.kind==='bus'&&el.value===t.name){say('A bus cannot route to itself.');refreshStrip(t);return;}
+  t.output=el.value;say(t.name+' output → '+el.value);
+ }
+ else{t[field]=el.value;say(t.name+' '+field+' → '+el.value);}
+ selectTrack(t);
+}
+document.querySelector('.console-body').addEventListener('input',handleField);
+document.querySelector('.console-body').addEventListener('change',handleField);
+document.querySelector('.console-body').addEventListener('click',e=>{
+ const btn=e.target.closest('[data-action]');if(!btn)return;
+ const t=findTrack(btn);if(!t)return;
+ const a=btn.dataset.action;
+ if(a==='rename'||a==='slotPower'||a==='fxPost')return;
+ if(a==='eq')t.eq=!t.eq;
+ else if(a==='fxOn')t.fxOn=!t.fxOn;
+ else if(a==='pre')t.pre=!t.pre;
+ else if(a==='sendOn')t.sendOn=!t.sendOn;
+ else if(['mute','solo','arm','mon','phase'].includes(a))t[a]=!t[a];
+ refreshStrip(t);selectTrack(t);say(t.name+': '+a+' '+(t[a]?'on':'off'));
+});
+document.querySelector('.console-body').addEventListener('dblclick',e=>{
+ const t=findTrack(e.target);if(!t)return;
+ if(e.target.classList.contains('fader')){t.level=0;refreshStrip(t);say(t.name+' fader reset to 0.0 dB');}
+ if(e.target.matches('.footer-label .name')){const name=window.prompt('Track name',t.name);if(name&&name.trim()){t.name=name.trim().slice(0,30);render();say('Renamed track to '+t.name);}}
+});
+document.querySelector('.console-body').addEventListener('dragstart',e=>{
+ const row=e.target.closest('.fxslot-row');if(!row)return;
+ const t=findTrack(row);if(!t)return;
+ e.dataTransfer.setData('text/plain',t.id+':'+row.dataset.slot);e.dataTransfer.effectAllowed='move';row.classList.add('dragged');
+});
+document.querySelector('.console-body').addEventListener('dragend',()=>document.querySelectorAll('.fxslot-row').forEach(e=>e.classList.remove('dragged','drop-target')));
+document.querySelector('.console-body').addEventListener('dragover',e=>{
+ const row=e.target.closest('.fxslot-row');if(!row)return;
+ e.preventDefault();row.classList.add('drop-target');
+});
+document.querySelector('.console-body').addEventListener('dragleave',e=>{const row=e.target.closest('.fxslot-row');if(row)row.classList.remove('drop-target');});
+document.querySelector('.console-body').addEventListener('drop',e=>{
+ const row=e.target.closest('.fxslot-row');if(!row)return;e.preventDefault();
+ const parts=(e.dataTransfer.getData('text/plain')||'').split(':');const t=findTrack(row);if(!t||Number(parts[0])!==t.id)return;
+ const from=Number(parts[1]),to=Number(row.dataset.slot);
+ if(from<0||from>=t.fx.length||to<0||to>=t.fx.length)return;
+ const moved=t.fx.splice(from,1)[0];t.fx.splice(to,0,moved);refreshStrip(t);say(t.name+' · FX moved from '+(from+1)+' to '+(to+1));
+});
+document.querySelector('.console-body').addEventListener('mousedown',e=>{const t=findTrack(e.target);if(t)selectTrack(t);});
+document.getElementById('addTrack').addEventListener('click',()=>{
+ const n=tracks.filter(t=>t.kind==='audio').length+1,t=make('Track '+n,'audio',COLORS[(n-1)%COLORS.length]);const firstBus=tracks.findIndex(x=>x.kind==='bus');tracks.splice(firstBus<0?tracks.length:firstBus,0,t);render();selectTrack(t);document.getElementById('viewport').scrollLeft=99999;say('Added '+t.name+' · visual only');
+});
+document.getElementById('addBus').addEventListener('click',()=>{
+ const n=tracks.filter(t=>t.kind==='bus').length+1,t=make('Bus '+String.fromCharCode(65+((n-1)%26)),'bus','#846e9e');tracks.push(t);render();selectTrack(t);document.getElementById('viewport').scrollLeft=99999;say('Added '+t.name+' · visual only');
+});
+document.getElementById('reset').addEventListener('click',()=>{if(preview)togglePreview();init();say('Mixer controls reset.');});
+function togglePreview(){
+ preview=!preview;
+ const b=document.getElementById('preview');
+ b.textContent=preview?'■ Stop Meter Preview':'▶ Preview Meters';b.classList.toggle('active',preview);b.setAttribute('aria-pressed',String(preview));
+ document.getElementById('transport').textContent=preview?'Meter preview running':'Stopped';
+ if(preview){say('Meters use generated UI-only values. No capture, DSP or audio output.');requestAnimationFrame(animateMeters);}
+ else{tracks.concat(master).forEach(t=>{t.meterL=t.meterR=0;});document.querySelectorAll('.meter-fill').forEach(x=>x.style.height='0%');}
+}
+document.getElementById('preview').addEventListener('click',togglePreview);
+function animateMeters(ts){
+ if(!preview)return;
+ if(ts-lastTick>80){lastTick=ts;meterFrame++;
+ const anySolo=tracks.some(t=>t.solo);
+ tracks.concat(master).forEach((t,i)=>{
+ const suppressed=t.mute||(anySolo&&!t.solo&&t.kind==='audio');
+ const modulation=.46+.23*Math.sin(meterFrame*.13+i*1.21)+.17*Math.sin(meterFrame*.31+i*2.2);
+ const db=Number(t.level);
+ const level=suppressed?0:Math.max(0,Math.min(95,modulation*80+(db*.78)));
+ const root=document.querySelector('.strip[data-id="'+t.id+'"]');if(!root)return;
+ const l=root.querySelector('.meter-fill.left'),r=root.querySelector('.meter-fill.right');
+ if(l)l.style.height=Math.max(0,level)+'%';
+ if(r)r.style.height=Math.max(0,level*(.91+.08*Math.sin(meterFrame*.15+i)))+'%';
+ });
+ }
+ requestAnimationFrame(animateMeters);
+}
+window.addEventListener('keydown',e=>{
+ if(e.key==='Escape'&&preview)togglePreview();
+ if(e.target===document.body&&e.key==='ArrowRight')document.getElementById('viewport').scrollLeft+=102;
+ if(e.target===document.body&&e.key==='ArrowLeft')document.getElementById('viewport').scrollLeft-=102;
+});
+init();
+})();
+</script>
+</body>
+</html>
