@@ -470,9 +470,12 @@ public:
             }
             graph.sends.dispatch(strip,SendTap::preFader,l,r,
                                  left_.data(),right_.data(),frames);
-            if(live)dispatchLiveAux(strip,SendTap::preFader,l,r,frames);
-            else graph.aux.dispatch(strip,SendTap::preFader,l,r,
-                                    auxLeft_.data(),auxRight_.data(),frames);
+            // One accepted AUX send parameter plane for both hosted
+            // LiveChannelFxGraph and direct PreparedMixerBlock callers.
+            // The old no-live branch bypassed atomic send targets, so an
+            // ACKed SET_SEND_LEVEL left PCM unchanged. This is an actual
+            // runtime audio correctness defect, not a test-only behavior.
+            dispatchLiveAux(strip,SendTap::preFader,l,r,frames);
             float peak=0.f, peakL=0.f, peakR=0.f;
             if(monitorBusL) {
                 const float next=liveMonitorGains
@@ -531,9 +534,12 @@ public:
             }
             graph.sends.dispatch(strip,SendTap::postFader,l,r,
                                  left_.data(),right_.data(),frames);
-            if(live)dispatchLiveAux(strip,SendTap::postFader,l,r,frames);
-            else graph.aux.dispatch(strip,SendTap::postFader,l,r,
-                                    auxLeft_.data(),auxRight_.data(),frames);
+            // One accepted AUX send parameter plane for both hosted
+            // LiveChannelFxGraph and direct PreparedMixerBlock callers.
+            // The old no-live branch bypassed atomic send targets, so an
+            // ACKed SET_SEND_LEVEL left PCM unchanged. This is an actual
+            // runtime audio correctness defect, not a test-only behavior.
+            dispatchLiveAux(strip,SendTap::postFader,l,r,frames);
         }
         // Dedicated AUX returns execute AFTER all ten source strips.
         // Input channel count NEVER decreases when an AUX is enabled.
