@@ -86,6 +86,10 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .route-top{height:13px;display:flex;align-items:center;justify-content:space-between;color:#85898c;font-size:10px;padding:0 2px}
 .route-indicator{color:#8c9193;font-size:11px}
 .group-indicator{font-size:9px;color:#a4d0dc;background:#334e59;padding:0 3px;border:1px solid #406f7d;border-radius:2px}
+.safe-marker{color:#e1bd87;font-size:7px;font-weight:600;letter-spacing:0;border:1px solid #8b744a;padding:0 1px}
+.console-body.sends-mode .strip.audio .footer-label{background:#2b4048}
+.console-body.sends-mode .strip.audio .db-value{color:#8ddae6}
+.bank-arrow{min-width:20px;padding:4px!important;font-size:15px;line-height:14px}
 .route-select{width:100%;height:17px;padding:0 12px 0 3px;color:#d1d3d4;background:#2a2b2c;border:0;border-bottom:1px solid #363739;outline:none;font-size:10px;appearance:none;white-space:nowrap;text-overflow:ellipsis;background-image:linear-gradient(45deg,transparent 50%,#b6babd 50%),linear-gradient(135deg,#b6babd 50%,transparent 50%);background-position:calc(100% - 7px) 7px,calc(100% - 4px) 7px;background-size:3px 3px;background-repeat:no-repeat}
 .route-select:hover{background-color:#3a3b3e}
 .subhead{height:21px;display:flex;align-items:center;gap:3px;padding:0 2px;border-bottom:1px solid #141516}
@@ -239,9 +243,10 @@ button:disabled{opacity:.45;cursor:not-allowed}
     <button class="tool" id="addFx" title="Add a send-only FX Return">+ FX Return</button><button class="tool primary" id="pluginsButton" title="Plugin browser / manager (F8)" aria-controls="pluginBrowser" aria-expanded="false">Plugins · F8</button>
     <span class="sep"></span>
     <button class="tool" id="mode" aria-pressed="false" title="Studio One-inspired narrow-channel console mode">Narrow</button>
-    <label class="toolbar-label" for="viewFilter">Channels</label><select id="viewFilter" class="toolbar-select" aria-label="Show channel types"><option value="all">All</option><option value="audio">Audio</option><option value="bus">Buses</option><option value="fx">FX Returns</option><option value="solo">Solo</option></select>
-    <button class="tool" id="copy" title="Copy selected channel settings · Ctrl+C">Copy</button><button class="tool" id="paste" title="Paste to selected channel(s) · Ctrl+V">Paste</button><button class="tool" id="group" title="Group selected channel faders and mute/solo">Group</button><button class="tool" id="ungroup" title="Remove grouping from selected channels">Ungroup</button>
-    <label class="toolbar-label" for="sceneSelect">Scene</label><select id="sceneSelect" class="toolbar-select" aria-label="Saved mixer scenes"><option value="">Current</option></select><button class="tool" id="saveScene" title="Save mixer scene">Save</button><button class="tool" id="recallScene" title="Recall selected mixer scene">Recall</button>
+    <label class="toolbar-label" for="viewFilter">Channels</label><select id="viewFilter" class="toolbar-select" aria-label="Show channel types"><option value="all">All</option><option value="audio">Audio</option><option value="bus">Buses</option><option value="fx">FX Returns</option><option value="solo">Solo</option></select><button class="tool bank-arrow" id="bankPrev" title="Previous bank of eight channels">‹</button><select class="toolbar-select" id="bankSelect" aria-label="Mixer bank"><option value="all">All banks</option></select><button class="tool bank-arrow" id="bankNext" title="Next bank of eight channels">›</button>
+    <button class="tool" id="copy" title="Copy selected channel settings · Ctrl+C">Copy</button><button class="tool" id="paste" title="Paste to selected channel(s) · Ctrl+V">Paste</button><button class="tool" id="group" title="Group selected channel faders and mute/solo">Group</button><button class="tool" id="ungroup" title="Remove grouping from selected channels">Ungroup</button><button class="tool" id="sceneSafe" title="Protect selected channels against live Snapshot recall" aria-pressed="false">SAFE</button>
+    <label class="toolbar-label" for="sceneSelect">Snapshot</label><select id="sceneSelect" class="toolbar-select" aria-label="Saved mixer scenes"><option value="">Current</option></select><button class="tool" id="saveScene" title="Save mixer scene">Save</button><button class="tool" id="recallScene" title="Recall selected mixer scene">Recall</button>
+    <span class="sep"></span><button class="tool" id="sofToggle" title="Control selected aux/FX send levels with input channel faders" aria-pressed="false">Sends on Faders</button><select class="toolbar-select" id="sofTarget" aria-label="Sends on Faders destination"><option value="Bus A">Bus A</option></select>
     <span class="sep"></span>
     <button class="tool" id="preview" aria-pressed="false">▶ Preview Meters</button>
     <button class="tool" id="clearCue" title="Clear all PFL/Cue monitors">Clear Cue</button><button class="tool" id="reset" title="Reset demo mixer controls">Reset Mixer</button>
@@ -286,12 +291,12 @@ const CATEGORIES={'Parametric Equalizer':'EQ','Graphic Equalizer':'EQ','Dynamics
 let pluginCatalog=FX.filter(x=>x!=='None').map((name,i)=>({id:'demo-'+i,name,vendor:'Reference Effect',category:CATEGORIES[name]||'Utility',format:'DEMO',status:'demo',latencySamples:null,favorite:i<3,hidden:false}));
 let pluginRecent=[],activeFxTarget=null,pluginOpen=false;
 const tracksEl=document.getElementById('tracks'),masterEl=document.getElementById('master'),info=document.getElementById('info');
-let nextId=1,nextGroup=1,tracks=[],master,preview=false,meterFrame=0,lastTick=0,clipboard=null,scenes=[];
+let nextId=1,nextGroup=1,tracks=[],master,preview=false,meterFrame=0,lastTick=0,clipboard=null,scenes=[],sofEnabled=false,sofTarget="Bus A";
 const clone=x=>JSON.parse(JSON.stringify(x));
 const selection=()=>tracks.concat(master).filter(t=>t.selected);
 const make=(name,kind,color)=>{
  const id=nextId++;
- return {id,name,kind,color,group:null,input:kind==='master'?'None':kind==='bus'?'None':'Default Stereo',output:kind==='master'?'Default Output':'Master',fx:Array(8).fill('None'),slotBypass:Array(8).fill(false),fxOn:true,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,activeSend:0,sendSlots:Array.from({length:16},()=>({send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0})),eq:true,pan:0,trim:0,mute:false,solo:false,cue:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
+ return {id,name,kind,color,group:null,safe:false,input:kind==='master'?'None':kind==='bus'?'None':'Default Stereo',output:kind==='master'?'Default Output':'Master',fx:Array(8).fill('None'),slotBypass:Array(8).fill(false),fxOn:true,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,activeSend:0,sendSlots:Array.from({length:16},()=>({send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0})),eq:true,pan:0,trim:0,mute:false,solo:false,cue:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
 };
 function init(){nextId=1;nextGroup=1;tracks=INIT.map((name,i)=>make(name,'audio',COLORS[i]));tracks.push(make('Bus A','bus','#826b9a'));master=make('Master','master','#5a8ca8');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -318,11 +323,12 @@ function panLabel(n){return Number(n)===0?'C':n<0?'L'+Math.abs(n):'R'+n;}
 function panStyle(n){const left=Math.min(50,50+n/2),right=Math.max(50,50+n/2);return '--pan-start:'+left+'%;--pan-end:'+right+'%';}
 function sectionFader(t){
  const ticks=['+15','0','-6','-12','-24','-36','-48','-∞'];
- return '<div class="fader-section"><div class="fader-scale">'+ticks.map(s=>'<span>'+s+'</span>').join('')+'</div><div class="fader-box"><input class="fader" type="range" min="-60" max="15" value="'+t.level+'" step=".1" data-field="level" title="Volume — double click to reset to 0 dB" aria-label="'+escapeHtml(t.name)+' volume"></div><div class="meter-box" aria-label="Simulated stereo peak meter"><div class="meter-lane"><div class="meter-fill left"></div></div><div class="meter-lane"><div class="meter-fill right"></div></div><div class="peak '+(t.clip?'clipping':'')+'"></div></div></div>';
+ const isSend=sofEnabled&&t.kind==='audio',value=isSend?getSofLevel(t):t.level;
+ return '<div class="fader-section"><div class="fader-scale">'+ticks.map(s=>'<span>'+s+'</span>').join('')+'</div><div class="fader-box"><input class="fader" type="range" min="-60" max="'+(isSend?6:15)+'" value="'+value+'" step=".1" data-field="level" title="'+(isSend?'SEND to '+escapeHtml(sofTarget)+' · main channel fader not changed':'Main level — double click to reset to 0 dB')+'" aria-label="'+escapeHtml(t.name)+' volume"></div><div class="meter-box" aria-label="Simulated stereo peak meter"><div class="meter-lane"><div class="meter-fill left"></div></div><div class="meter-lane"><div class="meter-fill right"></div></div><div class="peak '+(t.clip?'clipping':'')+'"></div></div></div>';
 }
 function strip(t){
  let code='<article class="strip '+t.kind+(t.selected?' selected':'')+'" data-id="'+t.id+'" style="--track-color:'+t.color+'" aria-label="'+escapeHtml(t.name)+' channel">';
- code+='<div class="section route-section"><div class="route-top"><span class="route-indicator">'+(t.kind==='audio'?'▥':t.kind==='bus'?'↪':t.kind==='fx'?'∿':'➜')+'</span>'+(t.group?'<span class="group-indicator" title="Linked group '+escapeHtml(t.group)+'">'+escapeHtml(t.group)+'</span>':'')+'<button class="mini phase '+(t.phase?'on':'')+'" data-action="phase" title="Reverse polarity">'+(t.phase?'Ø':'⊘')+'</button></div>';
+ code+='<div class="section route-section"><div class="route-top"><span class="route-indicator">'+(t.kind==='audio'?'▥':t.kind==='bus'?'↪':t.kind==='fx'?'∿':'➜')+'</span>'+(t.safe?'<span class="safe-marker" title="Snapshot safe · recall protected">SAFE</span>':'')+(t.group?'<span class="group-indicator" title="Linked group '+escapeHtml(t.group)+'">'+escapeHtml(t.group)+'</span>':'')+'<button class="mini phase '+(t.phase?'on':'')+'" data-action="phase" title="Reverse polarity">'+(t.phase?'Ø':'⊘')+'</button></div>';
  if(t.kind==='audio')code+='<select class="route-select" data-field="input" title="Track input" aria-label="'+escapeHtml(t.name)+' input">'+option(channelOptions(t,'input'),t.input)+'</select>';
  else if(t.kind==='bus'||t.kind==='fx')code+='<div class="route-select" style="line-height:17px;color:#a0a9ad">'+(t.kind==='bus'?'Bus Summing':'FX Summing')+'</div>';
  else code+='<div class="route-select" style="line-height:17px;color:#777">Mix Track</div>';
@@ -333,18 +339,57 @@ function strip(t){
  code+='<div class="section auto-section"><span class="trim-label" title="Digital input trim">TRIM</span><input class="trim-control" type="range" min="-24" max="24" step="0.5" value="'+t.trim+'" data-field="trim" aria-label="Digital trim dB" title="Digital trim (-24..+24dB)"><output class="trim-value">'+formatDb(t.trim)+'</output></div>';
  code+='<div class="section switch-section"><button class="switch mute '+(t.mute?'on':'')+'" data-action="mute" title="Mute channel" aria-pressed="'+t.mute+'">M</button><button class="switch solo '+(t.solo?'on':'')+'" data-action="solo" title="Solo channel" aria-pressed="'+t.solo+'">S</button>'+(t.kind!=='master'?'<button class="switch cue '+(t.cue?'on':'')+'" data-action="cue" title="Cue / PFL to separate monitor bus (visual only)" aria-pressed="'+t.cue+'">C</button>':'')+(t.kind==='audio'?'<button class="switch mon '+(t.mon?'on':'')+'" data-action="mon" title="Input monitor (visual only)" aria-pressed="'+t.mon+'">I</button>':'')+'</div>';
  code+=sectionFader(t);
- code+='<div class="bottom-section"><div class="db-value">'+formatDb(t.level)+'</div><div class="footer-label '+(t.kind==='master'?'master-label':t.kind==='bus'?'bus-label':'')+'"><span class="name" data-action="rename" title="Double-click to rename">'+escapeHtml(t.name)+'</span><div class="color-strip"></div></div></div></article>';
+ code+='<div class="bottom-section"><div class="db-value">'+(sofEnabled&&t.kind==='audio'?'S ': '')+formatDb(sofEnabled&&t.kind==='audio'?getSofLevel(t):t.level)+'</div><div class="footer-label '+(t.kind==='master'?'master-label':t.kind==='bus'?'bus-label':'')+'"><span class="name" data-action="rename" title="Double-click to rename">'+escapeHtml(t.name)+'</span><div class="color-strip"></div></div></div></article>';
  return code;
 }
 function render(){
  const oldScroll=document.getElementById('viewport').scrollLeft;
  const filter=document.getElementById('viewFilter').value;
- tracksEl.innerHTML=tracks.filter(t=>filter==='all'||(filter==='solo'?t.solo:t.kind===filter)).map(strip).join('');
+ const visible=tracks.filter(t=>filter==='all'||(filter==='solo'?t.solo:t.kind===filter));
+ const selector=document.getElementById('bankSelect'),oldBank=selector.value||'all';
+ const count=Math.max(1,Math.ceil(visible.length/8));
+ selector.innerHTML='<option value="all">All banks</option>'+Array.from({length:count},(_,i)=>'<option value="'+i+'">'+(i*8+1)+'–'+Math.min(visible.length,(i+1)*8)+'</option>').join('');
+ selector.value=oldBank!=='all'&&Number(oldBank)>=count?'all':oldBank;
+ const bank=selector.value||'all',bankTracks=bank==='all'?visible:visible.slice(Number(bank)*8,(Number(bank)+1)*8);
+ tracksEl.innerHTML=bankTracks.map(strip).join('');
+ updateSofTargets();
  masterEl.innerHTML=strip(master);
  document.getElementById('viewport').scrollLeft=oldScroll;
  document.getElementById('trackCount').textContent=tracks.filter(t=>t.kind==='audio').length+' audio · '+tracks.filter(t=>t.kind==='bus').length+' bus · '+tracks.filter(t=>t.kind==='fx').length+' FX return · master';
 }
 function say(s){info.textContent=s;}
+function updateSofTargets(){
+ const el=document.getElementById('sofTarget'),choices=tracks.filter(t=>t.kind==='bus'||t.kind==='fx').map(t=>t.name);
+ const target=choices.includes(sofTarget)?sofTarget:choices[0]||'';
+ sofTarget=target;
+ const html=choices.map(name=>'<option value="'+escapeHtml(name)+'">'+escapeHtml(name)+'</option>').join('');
+ if(el.innerHTML!==html)el.innerHTML=html;el.value=sofTarget;
+}
+function getSofIndex(t){return t.sendSlots.findIndex((slot,i)=>(i===t.activeSend?t.send:slot.send)===sofTarget);}
+function getSofLevel(t){const i=getSofIndex(t);return i<0?-60:i===t.activeSend?t.sendLevel:t.sendSlots[i].sendLevel;}
+function setSofLevel(t,newLevel){
+ if(t.kind!=='audio'||!sofTarget)return false;
+ if(wouldFeedback(t,sofTarget)){say('Send on Faders rejected: feedback loop');return false;}
+ let slot=getSofIndex(t);
+ if(slot<0)slot=t.sendSlots.findIndex((entry,i)=>(i===t.activeSend?t.send:entry.send)==='None');
+ if(slot<0){say('All 16 sends already assigned on '+t.name);return false;}
+ const level=Math.max(-60,Math.min(6,newLevel));
+ if(slot===t.activeSend){t.send=sofTarget;t.sendLevel=level;t.sendOn=level>-60;syncActiveSend(t);}
+ else{const entry=t.sendSlots[slot];entry.send=sofTarget;entry.sendLevel=level;entry.sendOn=level>-60;}
+ return true;
+}
+function toggleSof(force){
+ sofEnabled=typeof force==='boolean'?force:!sofEnabled;
+ if(sofEnabled&&!sofTarget){sofEnabled=false;say('Create a Bus or FX Return to use Sends on Faders');return;}
+ const btn=document.getElementById('sofToggle');btn.classList.toggle('active',sofEnabled);
+ btn.setAttribute('aria-pressed',String(sofEnabled));document.querySelector('.console-body').classList.toggle('sends-mode',sofEnabled);
+ render();say(sofEnabled?'SENDS ON FADERS: adjusting '+sofTarget+' send levels · main faders protected':'MAIN MIX: faders control primary channel level');
+}
+function setSnapshotSafe(){
+ const list=selection();if(!list.length){say('Select channels to set Snapshot Safe');return;}
+ const protect=list.some(t=>!t.safe);list.forEach(t=>t.safe=protect);
+ render();say(list.length+' channels '+(protect?'protected from':'released for')+' snapshot recall');
+}
 function findTrack(el){const strip=el.closest('.strip');if(!strip)return null;const id=Number(strip.dataset.id);return id===master.id?master:tracks.find(t=>t.id===id);}
 function refreshStrip(t){
  const old=document.querySelector('.strip[data-id="'+t.id+'"]');if(!old)return;
@@ -411,10 +456,16 @@ function saveScene(){
  say('Scene saved: '+scenes[scenes.length-1].name+' · local reference session only');
 }
 function recallScene(){
+ if(sofEnabled)toggleSof(false);
  const value=document.getElementById('sceneSelect').value;
  if(value===''){say('Choose a saved Scene first');return;}
  const scene=scenes[Number(value)];if(!scene)return;
+ const protectedChannels=new Map(tracks.concat(master).filter(t=>t.safe).map(t=>[t.id,clone(t)]));
  nextId=scene.nextId;nextGroup=scene.nextGroup;tracks=clone(scene.tracks);master=clone(scene.master);
+ tracks=tracks.map(t=>protectedChannels.get(t.id)||t);
+ for(const [id,t] of protectedChannels){if(t.kind!=='master'&&!tracks.some(ch=>ch.id===id))tracks.push(t);}
+ if(protectedChannels.has(master.id))master=protectedChannels.get(master.id);
+ nextId=Math.max(nextId,1,...tracks.map(t=>t.id+1),master.id+1);
  document.getElementById('viewFilter').value=scene.filter;
  const body=document.querySelector('.console-body');body.classList.toggle('narrow',scene.narrow);
  document.getElementById('mode').classList.toggle('active',scene.narrow);
@@ -437,6 +488,11 @@ function handleField(event){
  const t=findTrack(el);if(!t)return;
  if(field==='fx'){t.fx[Number(el.dataset.slot)]=el.value;t.slotBypass[Number(el.dataset.slot)]=false;say(t.name+' · FX '+(Number(el.dataset.slot)+1)+': '+el.value);refreshStrip(t);}
  else if(field==='level'){
+ if(sofEnabled&&t.kind==='audio'){
+  if(setSofLevel(t,Number(el.value))){const readout=el.closest('.strip')?.querySelector('.db-value');if(readout)readout.textContent='S '+formatDb(getSofLevel(t));if(event.type==='change')say(t.name+' → '+sofTarget+' send '+formatDb(getSofLevel(t))+' dB');}
+  else el.value=getSofLevel(t);
+  return;
+ }
  const old=t.level;t.level=Number(el.value);
  const root=el.closest('.strip');const readout=root.querySelector('.db-value');if(readout)readout.textContent=formatDb(t.level);
  if(t.group&&!event.altKey){
@@ -545,6 +601,18 @@ document.getElementById('group').addEventListener('click',groupSelected);
 document.getElementById('ungroup').addEventListener('click',ungroupSelected);
 document.getElementById('saveScene').addEventListener('click',saveScene);
 document.getElementById('recallScene').addEventListener('click',recallScene);
+document.getElementById('sceneSafe').addEventListener('click',setSnapshotSafe);
+document.getElementById('bankSelect').addEventListener('change',()=>{render();say('Switched mixer fader bank');});
+document.getElementById('bankPrev').addEventListener('click',()=>{
+ const sel=document.getElementById('bankSelect'),n=Math.max(1,Math.ceil(tracks.length/8));
+ const old=sel.value==='all'?0:Number(sel.value);sel.value=String((old-1+n)%n);render();say('Previous fader bank');
+});
+document.getElementById('bankNext').addEventListener('click',()=>{
+ const sel=document.getElementById('bankSelect'),n=Math.max(1,Math.ceil(tracks.length/8));
+ const old=sel.value==='all'?-1:Number(sel.value);sel.value=String((old+1)%n);render();say('Next fader bank');
+});
+document.getElementById('sofToggle').addEventListener('click',()=>toggleSof());
+document.getElementById('sofTarget').addEventListener('change',()=>{sofTarget=document.getElementById('sofTarget').value;render();say('Sends target: '+sofTarget);});
 document.getElementById('addTrack').addEventListener('click',()=>{
  const n=tracks.filter(t=>t.kind==='audio').length+1,t=make('Track '+n,'audio',COLORS[(n-1)%COLORS.length]);const firstBus=tracks.findIndex(x=>x.kind==='bus');tracks.splice(firstBus<0?tracks.length:firstBus,0,t);render();selectTrack(t);document.getElementById('viewport').scrollLeft=99999;say('Added '+t.name+' · visual only');
 });
@@ -557,7 +625,7 @@ document.getElementById('addBus').addEventListener('click',()=>{
  const n=tracks.filter(t=>t.kind==='bus').length+1,t=make('Bus '+String.fromCharCode(65+((n-1)%26)),'bus','#846e9e');tracks.push(t);render();selectTrack(t);document.getElementById('viewport').scrollLeft=99999;say('Added '+t.name+' · visual only');
 });
 document.getElementById('clearCue').addEventListener('click',()=>{tracks.forEach(t=>t.cue=false);master.cue=false;render();say('All Cue / PFL requests cleared · no hardware monitor connected');});
-document.getElementById('reset').addEventListener('click',()=>{if(preview)togglePreview();document.getElementById('viewFilter').value='all';document.querySelector('.console-body').classList.remove('narrow');document.getElementById('mode').classList.remove('active');document.getElementById('mode').setAttribute('aria-pressed','false');init();say('Reference mixer reset; saved scenes remain available.');});
+document.getElementById('reset').addEventListener('click',()=>{if(preview)togglePreview();document.getElementById('viewFilter').value='all';document.getElementById('bankSelect').value='all';sofEnabled=false;document.getElementById('sofToggle').classList.remove('active');document.getElementById('sofToggle').setAttribute('aria-pressed','false');document.querySelector('.console-body').classList.remove('sends-mode');document.querySelector('.console-body').classList.remove('narrow');document.getElementById('mode').classList.remove('active');document.getElementById('mode').setAttribute('aria-pressed','false');init();say('Reference mixer reset; saved scenes remain available.');});
 
 // Browser-only catalog contract. Only the native host can actually scan or instantiate VST3.
 const plugEl=id=>document.getElementById(id);
@@ -691,6 +759,7 @@ window.addEventListener('keydown',e=>{
   if(e.key.toLowerCase()==='v'){e.preventDefault();pasteChannels();return;}
   if(e.key.toLowerCase()==='g'){e.preventDefault();e.shiftKey?ungroupSelected():groupSelected();return;}
  }
+ if(e.key==='Escape'&&sofEnabled){toggleSof(false);return;}
  if(e.key==='F8'&&!textEntry){e.preventDefault();pluginOpen?setBrowser(false):openPluginBrowser();return;}
  if(e.key==='Escape'&&pluginOpen){setBrowser(false);return;}
  if(e.key==='Escape'&&preview)togglePreview();
