@@ -2763,10 +2763,10 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 }
 /* PR278: exactly ONE Add FX affordance in each existing 6-slot rack.
    All six native slot nodes remain mounted for bridge/ACK and VST state. */
-#app #mixer[data-io-mode="CONSOLE"] .rack .insert-slot:has(.insert.empty) ~ .insert-slot:has(.insert.empty){
+html:not(.native-engine) #app #mixer[data-io-mode="CONSOLE"] .rack .insert-slot:has(.insert.empty) ~ .insert-slot:has(.insert.empty){
  display:none!important;
 }
-#app #mixer[data-io-mode="CONSOLE"] #masterLeft .master-fx-slot:has(.master-insert.empty) ~ .master-fx-slot:has(.master-insert.empty){
+html:not(.native-engine) #app #mixer[data-io-mode="CONSOLE"] #masterLeft .master-fx-slot:has(.master-insert.empty) ~ .master-fx-slot:has(.master-insert.empty){
  display:none!important;
 }
 @media(max-width:1339px){

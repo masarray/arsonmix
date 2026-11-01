@@ -135,7 +135,8 @@ async def main():
                 assert verdict['lastVisible'],('CH10 clipped by MAIN',verdict)
                 assert verdict['visibleSources']==10,('not ten visible strips',verdict)
             if width in (1366,1440,1680):
-                await page.screenshot(path=f'mixer-console-visual-{width}.png')
+                await page.screenshot(path=('mixer-shell-compact-1366.png' if width==1366 else
+                    'mixer-design-review-1440.png' if width==1440 else 'mixer-g1-g2-1680.png'))
         await page.set_viewport_size({"width":1024,"height":720})
         await page.locator('.left-rail [data-mix-mode="FX"]').click()
 
