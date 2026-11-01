@@ -620,6 +620,354 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .console-body .strip.master .footer-label{background:#453b36!important}
 .console-body .fader,.console-body .center-pan{filter:none!important;transition:none!important}
 
+
+/* Unaltered operator-approved BTN-180 recipe, copied from web/styles-src/20-button-180.css */
+/* Button 180 is the ONE shared material for channel, MASTER, toolbar and left-rail pads. */
+/* BUTTON 180 — one identical RESTING surface for OFF and ON.
+   Semantic colors alone define the latched state; only the transient :active
+   pointer press moves the cap inward by 1px without changing its layout slot. */
+:root{
+ --b180-off:#cbd1d1;--b180-edge:#747f7f;--b180-off-ink:#172229;
+ --b180-color:var(--b180-off);--b180-border:var(--b180-edge);
+ --b180-ink:var(--b180-off-ink);
+ --b180-on-cyan:#94e8ed;--b180-on-green:#91edac;
+ --b180-on-magenta:#edb8df;--b180-on-purple:#d6b9f0;
+ --b180-on-mute:#f99aa4;--b180-on-solo:#f4d479;
+ --b180-on-stereo:#9dd2f0;
+}
+:is(.btn-180,.toolbar .nav button.btn-180,.toolbar .spec-device,.left-rail .tabs button.btn-180,
+.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
+.left-rail .rail-presets button.btn-180,.left-rail .rail-bottom button.btn-180,
+#masterLeft .master-tools button,.native-btn){
+ /* Exact same inset + outside-edge model as the previously approved ON face.
+    All layers are shared; only --b180-border is allowed to tint the edge. */
+ --b180-shadow-surface:
+  inset 5px 5px 2px -1px rgba(0,0,0,.18),
+  inset 0 0 1px 1px rgba(255,255,255,.14),
+  inset 0 1px 20px rgba(0,0,0,.12),
+  inset 0 -1px 2px rgba(0,0,0,.32),
+  0 0 0 1px var(--b180-border),
+  0 1px 1px rgba(0,0,0,.28),
+  0 2px 3px rgba(0,0,0,.13);
+ border:1px solid var(--b180-border)!important;
+ letter-spacing:1px;
+ padding:8px 20px;
+ font-size:14px;
+ text-transform:uppercase;
+ border-radius:3px!important;
+ outline:none;
+ transform:translateY(0px)!important;
+ position:relative;
+ /* Shared geometry and shading; OFF/ON are merely different colorways. */
+ box-shadow:var(--b180-shadow-surface)!important;
+ background:var(--b180-color)!important;
+ filter:none!important;
+ color:var(--b180-ink)!important;
+ text-shadow:0 1px 0 rgba(255,255,255,.16)!important;
+ transition:background-color 45ms linear, border-color 45ms linear, color 0ms, transform 0ms!important;
+ font-family:Arial,Helvetica,sans-serif;
+ cursor:pointer;text-decoration:none;user-select:none;
+ display:inline-flex;justify-content:center;align-items:center;
+ font-weight:700;
+}
+:is(.btn-180,.toolbar .nav button.btn-180,.toolbar .spec-device,.left-rail .tabs button.btn-180,
+.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
+.left-rail .rail-presets button.btn-180,.left-rail .rail-bottom button.btn-180,
+#masterLeft .master-tools button,.native-btn):disabled{
+ pointer-events:none;opacity:.65;color:#7e7e7e!important;
+ background:#dcdcdc!important;box-shadow:none!important;
+ text-shadow:none!important;border:none!important;
+}
+/* Glass glint is drawn by inset shadows only; no pseudo-elements. */
+:is(.btn-180,.toolbar .nav button.btn-180,.toolbar .spec-device,.left-rail .tabs button.btn-180,
+.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
+.left-rail .rail-presets button.btn-180,.left-rail .rail-bottom button.btn-180,
+#masterLeft .master-tools button,.native-btn)::before,:is(.btn-180,.toolbar .nav button.btn-180,.toolbar .spec-device,.left-rail .tabs button.btn-180,
+.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
+.left-rail .rail-presets button.btn-180,.left-rail .rail-bottom button.btn-180,
+#masterLeft .master-tools button,.native-btn)::after{content:none!important}
+:is(.btn-180,.toolbar .nav button.btn-180,.toolbar .spec-device,.left-rail .tabs button.btn-180,
+.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
+.left-rail .rail-presets button.btn-180,.left-rail .rail-bottom button.btn-180,
+#masterLeft .master-tools button,.native-btn):focus-visible{outline:2px solid #9ceaff;outline-offset:1px}
+/* Geometry-only accommodation for 27–34px mixer slots. */
+:is(.btn-180,.toolbar .nav button.btn-180,.toolbar .spec-device,.left-rail .tabs button.btn-180,
+.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
+.left-rail .rail-presets button.btn-180,.left-rail .rail-bottom button.btn-180,
+#masterLeft .master-tools button,.native-btn){padding:0 3px!important;letter-spacing:.12px!important;font-size:11px!important;min-width:0}
+.toolbar .nav button.btn-180{letter-spacing:.35px!important}
+.left-rail .rail-presets button.btn-180{text-align:left;justify-content:flex-start;padding:0 9px!important}
+.toolbar .spec-device{text-transform:none;letter-spacing:0!important}
+/* Semantic ON palette is defined exactly once after the recessed state. */
+#masterLeft .master-actions .master-stereo-badge{
+ border:1px solid #4b6779;background:linear-gradient(#233a49,#102635 60%,#203442);
+ box-shadow:inset 0 1px 2px #020c18c0,0 1px 0 #68859940;color:#a9d6e6;cursor:default
+}
+
+/* Latching OFF/ON must NOT alter material, depth or layout. The physical
+   press response below exists only while :active, never on .active/.selected. */
+/* Latch LED colors only; dark captions are legible on bright faces. */
+/* Native dialog buttons keep native cyan; toolbar and rail states below
+   each have ONE scope owner, with no competing earlier palette selectors. */
+:is(.native-btn.primary,.native-btn.on){--b180-color:#22bbcc;--b180-border:#087b8e;--b180-ink:#041c27}
+/* Utility ON is exclusively cyan, owned by the more specific scoped rule below. */
+:is(.strip .channel-actions .mute.active,#masterLeft #masterMute.active,
+ .native-btn.warn){--b180-color:var(--b180-on-mute);--b180-border:#b14a5f;--b180-ink:#32151e}
+.strip .channel-actions .solo.active{--b180-color:var(--b180-on-solo);--b180-border:#a48337;--b180-ink:#2b210b}
+#masterLeft .master-tools button.active{--b180-color:var(--b180-on-purple);--b180-border:#8668b8;--b180-ink:#26163c}
+:is(.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
+ #masterLeft .master-tools button,.toolbar .nav button.btn-180,.left-rail .tabs button.btn-180,
+ .left-rail .rail-presets button.btn-180,.left-rail .rail-bottom button.btn-180,.native-btn){
+ color:var(--b180-ink,#f2f8fb)!important;
+}
+/* Keep pre-refactor fixed-sized buttons and their existing rails.
+   The strip name is painted above the A/B shadow, not moved away. */
+.strip .fader-tools,#masterLeft .master-tools{position:relative;z-index:1;isolation:isolate}
+.strip .strip-name,#masterLeft .master-strip-name{position:relative;z-index:2;isolation:isolate}
+/* No odd vertical displacement of the active nav relative to its neighbors. */
+
+/* Issue #56: passive hover has no filter or animated shadow.
+   Preserve all seven resting / seven pressed shadows and 1px tactile response.
+   Historical brightness is isolated to opt-in baseline A/B only. */
+
+/* Hardware tactility: brief pointer/keyboard activation presses the SAME cap
+   1px into the control panel. The layout and hit target stay the same; only
+   the rendered face shifts, while the lower cast shadow collapses inward.
+   Identical response for gray OFF and colored ON; no persistent pressed skin. */
+:is(.btn-180,.toolbar .nav button.btn-180,.toolbar .spec-device,
+ .strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
+ #masterLeft .master-actions button,#masterLeft .master-tools button,
+ .left-rail .tabs button.btn-180,.left-rail .rail-presets button.btn-180,
+ .left-rail .rail-bottom button.btn-180,.native-btn):active:not(:disabled){
+ transform:translateY(1px)!important;
+ box-shadow:
+  inset 3px 2px 2px -1px rgba(0,0,0,.50),
+  inset 0 0 1px 0 rgba(255,255,255,.14),
+  inset 0 1px 15px rgba(0,0,0,.29),
+  inset 0 -1px 2px rgba(0,0,0,.32),
+  0 0 0 1px var(--b180-border),
+  0 1px 1px rgba(0,0,0,.28),
+  0 2px 3px rgba(0,0,0,.13)!important;
+}
+
+/* OFF uses the same shared material with a brighter light-steel face.
+   Bright ON color recipes above remain untouched. */
+:is(.toolbar .spec-device,
+ .strip .channel-actions .candy,.strip .utility-row button,
+ #masterLeft .master-actions button,#masterLeft .master-tools button,
+ .left-rail .tabs button.btn-180,.left-rail .rail-presets button.btn-180,
+ .left-rail .rail-bottom button.btn-180):not(.active):not(.selected):not(.on):not([aria-pressed="true"]){
+ --b180-color:var(--b180-off);--b180-border:var(--b180-edge);
+ --b180-ink:var(--b180-off-ink);
+ color:var(--b180-ink)!important;
+}
+@media(prefers-reduced-motion:reduce){
+ :is(.toolbar .nav button.btn-180,.toolbar .spec-device,.strip .channel-actions .candy,
+ .strip .utility-row button,.left-rail button.btn-180){transition:none!important}
+}
+
+/* Scope-specific ON palette: only variables change; all keys share
+   the same seven-layer pad and exact press recipe above. */
+#app .toolbar-actions .nav button.btn-180.selected{
+ --b180-color:#e5f4a2;--b180-border:#8baf48;--b180-ink:#1c2b14;
+}
+#app .left-rail button.btn-180:is(.selected,.active){
+ --b180-color:var(--b180-on-magenta);--b180-border:#ad6d9f;--b180-ink:#32172f;
+}
+/* Polarity/HPF share the gentle cyan pad; MUTE/SOLO keep their alert palettes. */
+#app #mixer .strip .utility-row button.btn-180.active{
+ --b180-color:var(--b180-on-cyan);--b180-border:#38909e;--b180-ink:#12323c;
+}
+#app .left-rail .rail-presets button.btn-180{text-transform:none}
+#app .toolbar-actions .nav button.btn-180{height:34px;min-height:34px;min-width:77px;padding:0 10px!important;letter-spacing:.35px!important}
+#app .left-rail button.btn-180 > span,
+#app .toolbar-actions .nav button.btn-180 > span{transform:none!important;transition:none!important}
+
+/* Device is a standard toolbar-size BTN-180 pad, not the old cyan-caption spec.
+   Green indicates verified connected native audio status only. Preview is OFF. */
+#app .toolbar .spec-device{
+ height:34px;min-height:34px;
+ padding:0 10px!important;letter-spacing:.35px!important;
+}
+#app .toolbar .spec-device #headerDriver{
+ color:var(--b180-ink)!important;
+}
+#app .toolbar .spec-device.on{
+ --b180-color:var(--b180-on-green);
+ --b180-border:#3a9b68;
+ --b180-ink:#113322;
+}
+/* Toolbar actions are NEUTRAL when idle, green only for selected/active.
+   One solid repaint on state change, never a hover filter or glow. */
+#app .toolbar-actions .nav button.btn-180:not(.selected):not(.active):not([aria-pressed="true"]){
+ --b180-color:var(--b180-off);--b180-border:var(--b180-edge);
+ --b180-ink:var(--b180-off-ink);
+}
+#app .toolbar-actions .nav button.btn-180:is(.selected,.active,[aria-pressed="true"]){
+ --b180-color:#b2e8a0;--b180-border:#649c62;--b180-ink:#1a361d;
+}
+/* P0 low-end GPU: hover does not repaint BTN-180. Focus-visible,
+   1px hardware press, shared static shadows and semantic ON stay unchanged. */
+
+
+/* V4 production artwork recipes port. All section dimensions are shared by Master. */
+.console-body{--fx-h:173px;--eq-h:0px;--trim-h:43px;--switch-h:42px;--send-h:23px;--footer-h:46px;--channel-w:148px}
+.console-body:not(.collapsed-fx){--fx-h:173px}
+.console-body:not(.collapsed-send){--send-h:103px}
+.console-body .section-rail .rail-cell.fader{min-height:145px}
+.console-body #master{flex:0 0 var(--channel-w)!important;width:var(--channel-w)!important;min-width:var(--channel-w)!important;max-width:var(--channel-w)!important}
+.console-body #master>.strip.master{width:100%!important;min-width:0!important;max-width:100%!important}
+.console-body .tracks{grid-template-columns:repeat(var(--bank-columns,10),minmax(0,1fr))!important}
+.console-body .switch-section{height:var(--switch-h)!important;flex:0 0 var(--switch-h)!important;display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:5px!important;padding:5px 5px 6px!important}
+.console-body .switch.btn-180{
+ width:100%!important;height:29px!important;min-height:29px!important;min-width:0!important;max-width:none!important;flex:none!important;
+ border:1px solid var(--b180-border)!important;border-radius:3px!important;
+ color:var(--b180-ink)!important;background:var(--b180-color)!important;
+ box-shadow:var(--b180-shadow-surface)!important;
+ font:700 10px/1 Arial,Helvetica,sans-serif!important;letter-spacing:.12px!important;padding:0 2px!important;
+ text-transform:uppercase!important;text-shadow:0 1px 0 rgba(255,255,255,.16)!important;
+}
+.console-body .switch.btn-180.on.mute{--b180-color:var(--b180-on-mute);--b180-border:#b14a5f;--b180-ink:#32151e}
+.console-body .switch.btn-180.on.solo{--b180-color:var(--b180-on-solo);--b180-border:#a48337;--b180-ink:#2b210b}
+.console-body .switch.btn-180.on.cue{--b180-color:var(--b180-on-cyan);--b180-border:#38909e;--b180-ink:#12323c}
+.console-body .switch.btn-180:active:not(:disabled){
+ transform:translateY(1px)!important;
+ box-shadow:
+  inset 3px 2px 2px -1px rgba(0,0,0,.50),
+  inset 0 0 1px 0 rgba(255,255,255,.14),
+  inset 0 1px 15px rgba(0,0,0,.29),
+  inset 0 -1px 2px rgba(0,0,0,.32),
+  0 0 0 1px var(--b180-border),
+  0 1px 1px rgba(0,0,0,.28),
+  0 2px 3px rgba(0,0,0,.13)!important;
+}
+.console-body .fader-workspace{display:grid!important;grid-template-columns:51px minmax(36px,1fr) 26px!important;gap:3px!important;min-width:0!important;overflow:hidden!important}
+.console-body .meter-box{
+ grid-column:1!important;width:51px!important;max-width:51px!important;min-width:51px!important;
+ display:flex!important;align-items:stretch!important;gap:0!important;padding:0!important;
+ border:0!important;border-radius:4px!important;
+ background:#080f14!important;box-shadow:inset 0 3px 3px #0008!important;
+}
+.console-body .meter-box .vu-bars{
+ box-sizing:border-box;flex:0 0 30px;width:30px;min-width:30px;max-width:30px;
+ display:flex;align-items:stretch;justify-content:flex-end;gap:2px;position:relative;
+ padding:12px 1px 13px;overflow:hidden;
+ background:linear-gradient(90deg,#0b1a20 0%,#020609 13%,#010408 61%,#07131a 100%);
+ border-radius:5px;box-shadow:inset 0 4px 4px -3px #070e13,inset 0 -4px 4px -3px #070e13,
+ inset 4px 0 5px -4px #081116,inset -4px 0 5px -4px #081116;
+}
+.console-body .meter-box.mono .vu-bars{justify-content:center}
+.console-body .meter-box .meter-lane{
+ position:relative;width:10px;flex:0 0 10px;max-width:10px;min-width:10px;height:100%;
+ border:0;border-radius:2px;
+ background:#080f14;box-shadow:inset 0 1px 2px #0009,inset 1px 0 2px #000c,inset -1px 0 2px #000b;
+}
+.console-body .meter-box .meter-fill{
+ left:0!important;right:0!important;top:0;bottom:0;height:100%;
+ background:linear-gradient(to top,#15cf69 0%,#39ed79 48%,#c4e934 70%,#ffce26 82%,#ff8b20 90%,#f74635 100%)!important;
+ clip-path:inset(calc(100% - var(--lit,0%)) 0 0)!important;
+ transition:none!important;box-shadow:none!important;
+}
+.console-body .meter-box .meter-lane::before{
+ content:"";position:absolute;inset:0;z-index:2;
+ background:repeating-linear-gradient(to top,transparent 0 5px,#061018 5px 7px);
+ pointer-events:none;
+}
+.console-body .meter-box .vu-scale{position:relative;flex:0 0 19px;width:19px;min-width:19px;color:#a0bbc5;font:8px/1 Consolas,monospace;pointer-events:none}
+.console-body .meter-box .vu-scale-travel{position:absolute;top:12px;bottom:13px;left:0;right:0}
+.console-body .meter-box .vu-tick{position:absolute;left:0;right:0;top:var(--tick);height:0;white-space:nowrap}
+.console-body .meter-box .vu-tick::before{content:"";position:absolute;top:0;left:0;width:3px;height:1px;background:#516b78}
+.console-body .meter-box .vu-tick span{position:absolute;left:4px;top:-5px;font:8px/10px Consolas,monospace}
+.console-body .meter-box .peak{top:3px!important;left:2px!important;right:auto!important;width:26px!important;height:6px!important}
+.console-body .fader-box{
+ grid-column:2!important;position:relative!important;isolation:isolate;
+ min-width:36px!important;width:100%!important;overflow:visible!important;
+ border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;
+}
+.console-body .fader-box::before{
+ content:"";position:absolute;top:0!important;bottom:0!important;left:50%!important;
+ width:min(46px,100%)!important;transform:translateX(-50%)!important;
+ z-index:0;pointer-events:none;box-sizing:border-box;
+ background:linear-gradient(90deg,#15232c 0%,#283741 13%,#2a3942 48%,#283741 87%,#15232c 100%)!important;
+ border:0!important;border-radius:6px!important;
+ box-shadow:inset 0 4px 4px -3px #070e13,inset 0 -4px 4px -3px #070e13,
+   inset 4px 0 5px -4px #081116,inset -4px 0 5px -4px #081116!important;
+}
+.console-body .fader-box::after{
+ content:"";position:absolute;left:50%!important;top:38px!important;bottom:39px!important;width:5px!important;
+ transform:translateX(-50%)!important;z-index:1;pointer-events:none;
+ border:0!important;opacity:1!important;max-height:none!important;height:auto!important;
+}
+.console-body .fader-travel{
+ position:absolute;top:38px;bottom:39px;left:0;right:0;pointer-events:none;z-index:3;
+}
+.console-body .fader-travel .cap{
+ position:absolute;top:var(--fader-y,50%);left:50%;transform:translate(-50%,-50%);
+ width:36px;height:77px;border:0;border-radius:0;
+ background:var(--ari-silver) center/36px 77px no-repeat;
+ pointer-events:none;filter:none;box-shadow:none;
+}
+.console-body .strip.master .fader-travel .cap{background:var(--ari-rose) center/36px 77px no-repeat}
+.console-body .fader-box .fader{
+ position:absolute;z-index:4;top:38px;bottom:39px;left:50%;transform:translateX(-50%);
+ width:36px!important;height:calc(100% - 77px)!important;min-height:10px!important;
+ writing-mode:vertical-lr!important;direction:rtl!important;cursor:ns-resize;
+ opacity:0!important;-webkit-appearance:none!important;appearance:none!important;
+ pointer-events:auto;
+}
+.console-body .fader-scale{grid-column:3!important;position:relative;flex:none!important;width:26px!important;min-width:26px!important;padding:0!important;background:none!important}
+.console-body .gain-scale-travel{position:absolute;top:38px;bottom:39px;left:0;right:0}
+.console-body .gain-tick{position:absolute;top:0;height:0;left:0;right:0}
+.console-body .gain-tick::before{content:"";position:absolute;left:1px;top:0;height:1px;width:3px;background:#687d89}
+.console-body .gain-tick.major::before{width:6px;background:#a4b9c4}
+.console-body .gain-tick span{position:absolute;top:-6px;left:8px;right:0;text-align:right;font:9px/12px Consolas,monospace;white-space:nowrap;color:#a8b9c3}
+.console-body .trim-section{height:var(--trim-h)!important;flex:0 0 var(--trim-h)!important;display:grid!important;grid-template-columns:26px minmax(0,1fr) 31px!important;gap:3px!important;align-items:center!important}
+.console-body .trim-label,.console-body .sendlevel label{color:#9cb0b8;font:9px/1 'Segoe UI',Arial,sans-serif}
+.console-body .ari-horizontal{
+ -webkit-appearance:none!important;appearance:none!important;min-width:0!important;width:100%!important;
+ height:40px!important;min-height:40px!important;margin:0!important;padding:0!important;
+ background:transparent!important;cursor:ew-resize;
+}
+.console-body .ari-horizontal::-webkit-slider-runnable-track{
+ height:5px!important;border-radius:2px!important;border:1px solid #06090b!important;
+ background:linear-gradient(to right,#35b1cb 0%,#35b1cb var(--range-pct,50%),#0b151a var(--range-pct,50%),#0b151a 100%)!important;
+ box-shadow:inset 0 1px 2px #000,inset 0 -1px #50616a50!important;
+}
+.console-body .ari-horizontal::-webkit-slider-thumb{
+ -webkit-appearance:none!important;appearance:none!important;width:18px!important;height:40px!important;
+ margin-top:-18px!important;border:0!important;border-radius:0!important;
+ background:var(--ari-pan) center/18px 40px no-repeat!important;box-shadow:none!important;
+}
+.console-body .ari-horizontal::-moz-range-track{height:5px;border-radius:2px;border:1px solid #06090b;background:linear-gradient(to right,#35b1cb 0%,#35b1cb var(--range-pct,50%),#0b151a var(--range-pct,50%),#0b151a 100%)}
+.console-body .ari-horizontal::-moz-range-thumb{width:18px!important;height:40px!important;border:0!important;border-radius:0!important;background:var(--ari-pan) center/18px 40px no-repeat!important}
+.console-body .send-section .sendlevel{height:42px!important;min-height:42px!important;flex:0 0 42px!important;display:grid!important;grid-template-columns:29px minmax(0,1fr) 27px!important;gap:2px!important}
+.console-body .send-section .sendlevel output{font:9px Consolas,monospace}
+
+/* Exact RAIL3 source copied from web/styles-src/42-mixer-premium.css — operator-approved hardware fader: upper slot unlit black;
+   below the thumb cyan blooms smoothly, then rolls off into black at the foot.
+   The groove is physically ONE 5px machined slot; black sidewalls are static.
+   Three bounded CSS gradients over a tiny area; no blur, shadows animation,
+   filters, extra DOM, observer, RAF, DSP or additional gain handlers. */
+.console-body .fader-box::after{
+ background-color:#10171c;
+ background-image:
+   /* fixed black edge occlusion throughout the physical slot */
+   linear-gradient(90deg,#010508 0%,#03090f 18%,transparent 38%,
+     transparent 62%,#03090f 82%,#010508 100%),
+   /* fade light back into the machined black well at the lower end */
+   linear-gradient(to bottom,transparent 0%,transparent 62%,
+     rgba(1,6,10,.10) 72%,rgba(1,6,10,.52) 86%,
+     rgba(1,6,10,.85) 94%,#01060a 100%),
+   /* above cap black, under cap dark -> gentle cyan; follows existing detent */
+   linear-gradient(to bottom,
+     #12191e 0%,#12191e calc(var(--fader-cut,50%) + 26px),
+     #0e2e39 calc(var(--fader-cut,50%) + 39px),
+     #176d85 calc(var(--fader-cut,50%) + 52px),
+     #27bfd8 calc(var(--fader-cut,50%) + 68px),
+     #27bfd8 100%);
+ box-shadow:inset 1px 0 #010406,inset -1px 0 #010406;
+}
+
 </style>
 </head>
 <body>
