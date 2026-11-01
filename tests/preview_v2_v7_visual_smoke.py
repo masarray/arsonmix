@@ -11,6 +11,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 PAGE = (ROOT / "site/preview-v2/index.html").resolve()
+PUBLIC = (ROOT / "site/preview/mixer.html").resolve()
 SIZES = [(1366, 768), (1666, 888), (1920, 1080)]
 
 
@@ -75,7 +76,8 @@ def audit_geometry(page, title):
 
 
 def main():
-    assert PAGE.exists(), PAGE
+    assert PAGE.exists() and PUBLIC.exists(), (PAGE, PUBLIC)
+    assert PUBLIC.read_bytes()==PAGE.read_bytes(), "Public /preview/mixer.html must be the PR278 reference, not old M4"
     count = 0
     with sync_playwright() as playwright:
         browser=playwright.chromium.launch(headless=True)
@@ -115,6 +117,31 @@ def main():
                 audit_geometry(page,f"{width}x{height} next bank");count+=1
                 page.locator('#bankPrev').click()
                 assert not errors, f"{width}x{height}: JavaScript runtime errors {errors}"
+                page.close()
+            # The URL explicitly requested by the owner is an independent
+            # acceptance surface. Verify its behavior, not just /preview-v2/.
+            for width,height in SIZES:
+                page=browser.new_page(viewport={"width":width,"height":height},device_scale_factor=1)
+                errors=[]
+                page.on("pageerror",lambda error: errors.append(str(error)))
+                page.goto(PUBLIC.as_uri())
+                audit_geometry(page,f"PUBLIC /preview/mixer.html {width}x{height}");count+=1
+                page.screenshot(path=str(ROOT / f"preview-operator-{width}.png"))
+                assert page.locator('#tracks .strip').count()>0
+                assert page.get_by_text('SIMULATED METERS · NO REAL AUDIO').is_visible()
+                page.locator('#tracks .strip-identity-top').first.dblclick()
+                assert page.locator('#channelIdentity').is_visible()
+                page.locator('#identityCancel').click()
+                page.locator('#pluginsButton').click()
+                assert page.locator('#pluginBrowser').is_visible()
+                page.locator('#tracks .fx-pick.empty').first.click()
+                assert page.locator('#fastPicker').is_visible()
+                assert page.locator('#pluginBrowser').is_visible()
+                page.locator('#fastClose').click()
+                page.locator('#pluginClose').click()
+                page.locator('#bankNext').click()
+                audit_geometry(page,f"PUBLIC bank paging {width}x{height}");count+=1
+                assert not errors, f"PUBLIC {width}x{height}: {errors}"
                 page.close()
         finally:
             browser.close()

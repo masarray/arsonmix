@@ -19,17 +19,28 @@ candidate_manifest=ROOT/'site/preview/candidate.json'
 metadata={'sha':args.sha,'branch':args.branch,'source':source.name,'kind':'MAIN_SOURCE'}
 if candidate_manifest.is_file():
     candidate=json.loads(candidate_manifest.read_text(encoding='utf-8'))
-    assert candidate['kind']=='DRAFT_GUI_QA_ONLY'
-    assert candidate['source_pr']==271
-    assert candidate['source_branch']=='work/operator-console-v6'
+    assert candidate['kind'] in ('DRAFT_GUI_QA_ONLY','REFERENCE_WORKFLOW_QA_ONLY')
     assert len(candidate['source_sha'])==40 and candidate['ci_conclusion']=='success'
+    if candidate['kind']=='DRAFT_GUI_QA_ONLY':
+        assert candidate['source_pr']==271
+        assert candidate['source_branch']=='work/operator-console-v6'
+    else:
+        # User-approved PR278 workflow is the PUBLIC design authority.
+        # No ASIO/VST3/native capability can be inferred from this HTML.
+        assert candidate['source_pr']==278
+        assert candidate['source_branch']=='main/site/preview-v2'
     source=ROOT/'site/preview/mixer.html'
     assert source.is_file()
+    if candidate['kind']=='REFERENCE_WORKFLOW_QA_ONLY':
+        assert source.read_bytes()==(ROOT/'site/preview-v2/index.html').read_bytes(), (
+            'Public mixer preview must match reviewed PR278 workflow source byte-for-byte')
     metadata={'sha':candidate['source_sha'],'branch':candidate['source_branch'],
-              'source':'PR #271 approved-screen QA snapshot','kind':'DRAFT_GUI_QA_ONLY',
+              'source':('PR #278 interactive reference · NO REAL AUDIO' if candidate['source_pr']==278
+                        else 'PR #271 draft GUI snapshot'),
+              'kind':candidate['kind'],'live_audio':False,
               'publisher_main_sha':args.sha,'ci_run':candidate['ci_run']}
 html=source.read_text(encoding='utf-8')
-assert '<style>' in html and '<script>' in html and 'data-fader' in html
+assert '<style>' in html and '<script>' in html and ('data-fader' in html or 'data-field="level"' in html)
 (dst/'preview').mkdir(exist_ok=True)
 (dst/'preview'/'mixer.html').write_text(html,encoding='utf-8')
 (dst/'preview'/'build.json').write_text(json.dumps(metadata,indent=2),encoding='utf-8')
