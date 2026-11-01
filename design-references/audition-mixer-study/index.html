@@ -305,12 +305,18 @@ function openSendSlot(t,index){
  Object.assign(t,clone(t.sendSlots[index]));
 }
 function wouldFeedback(source,destination){
- let target=tracks.find(x=>x.kind==='bus'&&x.name===destination);
- const seen=new Set();
- while(target){
-  if(target.id===source.id||seen.has(target.id))return true;
-  seen.add(target.id);
-  target=tracks.find(x=>x.kind==='bus'&&x.name===target.output);
+ const first=tracks.find(x=>(x.kind==='bus'||x.kind==='fx')&&x.name===destination);
+ if(!first)return false;
+ const seen=new Set(),pending=[first];
+ while(pending.length){
+  const current=pending.pop();
+  if(current.id===source.id)return true;
+  if(seen.has(current.id))continue;seen.add(current.id);
+  const outgoing=[current.output];
+  if(current.kind==='bus'){
+   current.sendSlots.forEach((slot,i)=>{const live=i===current.activeSend?{send:current.send,sendOn:current.sendOn}:slot;if(live.sendOn)outgoing.push(live.send);});
+  }
+  outgoing.forEach(name=>{const next=tracks.find(x=>(x.kind==='bus'||x.kind==='fx')&&x.name===name);if(next&&!seen.has(next.id))pending.push(next);});
  }
  return false;
 }
@@ -384,7 +390,7 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  if(a==='eq')t.eq=!t.eq;
  else if(a==='fxOn')t.fxOn=!t.fxOn;
  else if(a==='pre'){t.pre=!t.pre;syncActiveSend(t);}
- else if(a==='sendOn'){if(t.send==='None'){say('Select a send destination first.');return;}t.sendOn=!t.sendOn;syncActiveSend(t);}
+ else if(a==='sendOn'){if(t.send==='None'){say('Select a send destination first.');return;}if(!t.sendOn&&wouldFeedback(t,t.send)){say('Send rejected: feedback path detected.');return;}t.sendOn=!t.sendOn;syncActiveSend(t);}
  else if(['mute','solo','arm','mon','phase'].includes(a))t[a]=!t[a];
  refreshStrip(t);selectTrack(t);if(a==='solo'&&document.getElementById('viewFilter').value==='solo')render();say(t.name+': '+a+' '+(t[a]?'on':'off'));
 });
