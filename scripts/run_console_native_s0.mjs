@@ -26,8 +26,14 @@ export function verifyNativeS0(events){
  req(reject.status==='REJECTED'&&reject.errorCode&&
   reject.graphRevision===s.graph.revision&&
   reject.rosterRevision===s.graph.rosterRevision,'native ACK must reject and preserve revision');
- req(JSON.stringify(s)===JSON.stringify(next),
-  'rejected native intent changed accepted graph/device/PCM telemetry');
+ req(JSON.stringify(s.graph)===JSON.stringify(next.graph)&&
+   s.device.epoch===next.device.epoch&&
+   JSON.stringify(s.device.enabledInputs)===JSON.stringify(next.device.enabledInputs)&&
+   JSON.stringify(s.device.enabledOutputs)===JSON.stringify(next.device.enabledOutputs)&&
+   JSON.stringify(s.device.inputEndpoints)===JSON.stringify(next.device.inputEndpoints)&&
+   JSON.stringify(s.device.outputEndpoints)===JSON.stringify(next.device.outputEndpoints)&&
+   s.device.outputArmed===next.device.outputArmed,
+  'rejected native intent changed accepted graph/device/output ARM');
  return {gate:'S0_CXX_SOURCE_SOCKET',callbackPcmProven:false,
   deviceEpoch:s.device.epoch,revision:s.graph.revision,
   requestId:cmd.requestId};

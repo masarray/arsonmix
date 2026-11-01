@@ -221,6 +221,6 @@ test('S0 shared v8 contract rejects absent native pins, fake ACK and mutated gra
  assert.throws(()=>verifyNativeS0(bad),/array required|enabledInputs/);
  const fake=copy(ev);fake[2].payload.status='ACCEPTED';
  assert.throws(()=>verifyNativeS0(fake),/native ACK must reject/);
- const rollback=copy(ev);rollback[3].payload.device.enabledOutputs=[4];
+ const rollback=copy(ev);rollback[3].payload.device.outputArmed=true;
  assert.throws(()=>verifyNativeS0(rollback),/changed accepted graph/);
 });
