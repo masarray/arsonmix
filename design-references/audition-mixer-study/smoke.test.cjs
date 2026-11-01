@@ -476,7 +476,8 @@ check(html.includes('.console-body .section-rail .rail-cell.route{height:var(--r
  html.includes('.console-body .section-rail .rail-cell.send{height:var(--send-h)!important'),
  'Route/FX/Send section rail and strips use identical physical height tokens');
 
-\n// V9: elastic rack vs invariant fader and glass LCD-meter material.
+
+// V9: elastic rack vs invariant fader and glass LCD-meter material.
 check(html.includes('V9: CONSOLE MECHANICAL LAYOUT') &&
  html.includes('--fader-fixed-h:clamp(198px,31vh,300px)') &&
  html.includes('.console-body:not(.collapsed-fx) .strip .fx-section{') &&
