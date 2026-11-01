@@ -1453,15 +1453,14 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
    Source of truth is the outer seven-row grid, not per-strip flex intrinsic sizing.
    No visual filters, blur, timers, geometry observers or DSP changes. */
 #app #mixer{
-  --ar-upper-height:196px;
+  --ar-upper-height:224px;
   --ar-control-height:97px;
   --ar-identity-height:61px;
   --ar-strip-head-height:35px;
   --ar-fader-read-height:35px;
   --ar-mute-height:41px;
 }
-#app #mixer[data-io-mode="ROUTE"]{--ar-upper-height:224px}
-#app #mixer[data-io-mode="SENDS"]{--ar-upper-height:208px}
+/* Mode selection changes only upper controls; never shift meters or faders. */
 #app #mixer > .strip,
 #app #mixer > #masterLeft.strip.master-strip{
   display:grid!important;
@@ -1623,12 +1622,10 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
    All modes, channel list, utility commands and snapshots remain operable. */
 @media(max-height:790px){
   #app #mixer{
-    --ar-upper-height:172px;
+    --ar-upper-height:195px;
     --ar-control-height:87px;
     --ar-identity-height:49px;
   }
-  #app #mixer[data-io-mode="ROUTE"]{--ar-upper-height:195px}
-  #app #mixer[data-io-mode="SENDS"]{--ar-upper-height:185px}
   #app .left-rail .arRailHeading{height:19px;padding-top:3px}
   #app .left-rail .arMixerBankBar{gap:3px;padding:3px 6px 5px}
   #app .left-rail .arMixerBankInfo{height:19px;min-height:19px}
@@ -1648,11 +1645,9 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
   #app .left-rail{flex-basis:158px;min-width:158px}
 }
 
-/* L2 ROUTE ergonomic height gate: preserve a >=95px active fader on a 600px
-   viewport by letting only the shared upper bank shrink. Never move individual
-   channel faders or detach FX racks when changing bank mode. */
+/* At 600px all modes shrink together; fader row stays in one location. */
 @media(max-height:690px){
- #app #mixer[data-io-mode="ROUTE"]{--ar-upper-height:165px}
+ #app #mixer{--ar-upper-height:165px}
 }
 
 /* Small user-switchable channel processing format + adaptive bank navigation. */

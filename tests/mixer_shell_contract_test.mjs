@@ -10,8 +10,10 @@ test('mixer shell is a presentation module, not a second audio engine',()=>{
   assert.match(script,/nav\.querySelector\('\[data-view="MIX"\]'\)\?\.click/);
   assert.match(css,/grid-template-rows:/);
   assert.match(css,/minmax\(110px,1fr\)/);
-  assert.match(css,/--ar-upper-height:208px/);
-  assert.match(css,/#app #mixer\[data-io-mode="ROUTE"\]\{--ar-upper-height:224px\}/);
+  assert.match(css,/--ar-upper-height:224px/);
+  assert.match(css,/--ar-upper-height:195px/);
+  assert.match(css,/#app #mixer\{--ar-upper-height:165px\}/);
+  assert.doesNotMatch(css,/\[data-io-mode="(?:ROUTE|SENDS)"\]\{--ar-upper-height:/);
   assert.doesNotMatch(script,/routingDryApply|createPluginInstance|AudioContext|processBlock|setInterval|requestAnimationFrame/);
 });
 test('new shell resources are in the exact native WebView2 asset list',()=>{

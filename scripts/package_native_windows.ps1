@@ -63,7 +63,7 @@ $exeName = "ArSonMix-GUI10CH-P012-Windows-x64.exe"
 $destination = Join-Path $OutputDir $exeName
 Copy-Item -LiteralPath $app -Destination $destination -Force
 $readme = "README.md"
-$fatGuide = "docs/HARDWARE_FAT_GUI10_ENGINE_P012_20261027.md"
+$fatGuide = "docs/FIRST_SOUND_FAT_QUICKSTART_20261101.md"
 if (-not (Test-Path -LiteralPath $fatGuide -PathType Leaf)) {
     throw "Missing hardware FAT guide"
 }
