@@ -1537,10 +1537,22 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
 /* PR278 P0: physical mixer fader travel is fixed across ROUTE and SEND folding.
    The verified FX rack/section rail share a single flexible budget. */
 .console-body{
- --p0-fader-h:clamp(148px,25.8vh,296px);
+ --p0-fader-standard:clamp(215px,calc(100dvh - 508px),600px);
+ --p0-fader-h:var(--p0-fader-standard);
  --p0-ink:#e2eef4;--p0-muted:#afc7d2;
 }
-@media(max-height:680px){.console-body{--p0-fader-h:clamp(138px,25vh,172px)}}
+/* When SEND is expanded on a compact screen, it borrows space from
+   fader travel only as needed to preserve the four visible insert rows.
+   Collapsing ROUTE never changes this fader budget. */
+.console-body:not(.collapsed-send){
+ --p0-fader-h:max(150px,calc(var(--p0-fader-standard) - 80px));
+}
+@media(max-height:680px){
+ .console-body{--p0-fader-standard:clamp(155px,calc(100dvh - 505px),300px)}
+ .console-body:not(.collapsed-send){
+  --p0-fader-h:max(118px,calc(var(--p0-fader-standard) - 80px));
+ }
+}
 .console-body .strip .fader-section,
 .console-body .section-rail > .rail-cell.fader{
  flex:0 0 var(--p0-fader-h)!important;
@@ -1551,7 +1563,7 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
 .console-body:not(.collapsed-fx) .strip .fx-section,
 .console-body:not(.collapsed-fx) .section-rail > .rail-cell.fx{
  flex:1 1 0px!important;height:auto!important;
- min-height:60px!important;max-height:none!important;
+ min-height:122px!important;max-height:none!important;
 }
 .console-body .strip .fx-section{overflow:hidden!important}
 .console-body .strip .fxslot-list{
@@ -1608,6 +1620,71 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
 .console-body .strip :is(.route-select,.fx-pick,.send-select,.switch):focus-visible{
  outline:2px solid #83d7e9!important;outline-offset:-2px!important;
 }
+
+/* P0 optical finish: smoked glass metering, machined recessed metal and
+   crisp text. All meter fills, original thumb bitmaps and PCM semantics are
+   unchanged; glass layers never intercept pointer events. */
+.console-body .strip .meter-box{
+ position:relative!important;isolation:isolate;
+ border:1px solid #07121a!important;border-radius:4px!important;
+ background:linear-gradient(90deg,#040c12 0%,#142630 12%,#030b11 24%,#071923 85%,#132731 100%)!important;
+ box-shadow:inset 0 0 0 1px #54717a5c,inset 0 2px 9px #000a,
+   0 1px 0 #89a6b328!important;
+}
+.console-body .strip .meter-box::after{
+ content:"";position:absolute;inset:2px;z-index:3;pointer-events:none;
+ border-radius:2px;border-top:1px solid #a7c9d73c;
+ background:linear-gradient(115deg,#cde7ef1c 0%,#cde7ef08 16%,transparent 32%,
+   transparent 67%,#a3d0e20b 88%,#c5e5ee14 100%);
+}
+.console-body .strip .vu-bars{
+ border-radius:2px!important;
+ box-shadow:inset 0 0 8px #000b!important;
+}
+.console-body .strip .fader-head{
+ border:1px solid #070f16!important;border-radius:3px!important;
+ background:linear-gradient(180deg,#050c11,#10242f 38%,#030a10 100%)!important;
+ box-shadow:inset 0 1px 1px #76b8c331,inset 0 -1px 4px #000b,
+   0 1px 0 #9abac32c!important;
+}
+.console-body .strip .fader-readout{
+ font-variant-numeric:tabular-nums!important;
+ letter-spacing:.12px!important;
+ color:#8ce6f7!important;text-shadow:0 0 3px #47a9c646!important;
+}
+.console-body .strip .fader-box{
+ border-radius:5px!important;
+ box-shadow:inset 2px 0 5px #050c12ba,inset -2px 0 5px #050c12ba,
+  0 1px 0 #829daa36!important;
+}
+.console-body .strip .fader-box::after{
+ background:linear-gradient(90deg,#020609,#050c13 46%,#010408 54%,#070f15)!important;
+ box-shadow:inset 1px 0 1px #7794a437,inset -1px 0 1px #0009!important;
+}
+.console-body .strip .fx-section{
+ border-top:1px solid #5a738040!important;
+ background:linear-gradient(90deg,#172833,#233742 8%,#1f333d 92%,#182a34)!important;
+}
+.console-body .strip .fxslot-row{
+ border-bottom:1px solid #6380902c!important;
+ background:linear-gradient(180deg,#3447531c,#101e262e)!important;
+}
+.console-body .strip .fxslot-row:hover{
+ background:linear-gradient(180deg,#415a6652,#19334150)!important;
+}
+.console-body .strip .strip-identity-top,
+.console-body .strip .footer-label{
+ font-variant-numeric:tabular-nums!important;
+}
+.console-body .strip .pan-control{
+ position:relative;
+}
+.console-body .strip .pan-control::after{
+ content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,9px);
+ height:5px;width:1px;background:#c0d9e7b3;
+ box-shadow:0 0 2px #a6c7d5aa;pointer-events:none;
+}
+.console-body .strip .pan-control.is-centered::after{background:#a2e3cf!important}
 </style>
 </head>
 <body>
@@ -2037,7 +2114,26 @@ function handleField(event){
  }
  if(event.type==='change')say(t.name+' fader '+formatDb(t.level)+' dB'+(t.group?' (linked '+t.group+')':''));
 }
- else if(field==='pan'){let value=Number(el.value);if(event.type==='change'&&Math.abs(value)<=8&&!event.altKey){value=0;el.value='0';}t.pan=value;const wrapper=el.closest('.pan-control');if(wrapper)wrapper.setAttribute('style',panStyle(value));const label=wrapper?wrapper.nextElementSibling:el.nextElementSibling;if(label)label.textContent=panLabel(value);if(event.type==='change')say(t.name+' pan '+panLabel(value));}
+ else if(field==='pan'){
+  let value=Number(el.value);if(!Number.isFinite(value))return;
+  value=Math.max(-100,Math.min(100,value));
+  // Hardware-like center detent: capture inside ±7, hold through ±12,
+  // release outside ±12. A finished drag inside ±12 snaps to dead center.
+  // Keyboard arrows remain fine-resolution (bypass sticky detent).
+  const keyboard=el.dataset.panKeyboard==='true';
+  const latched=el.dataset.panDetent==='true';
+  const range=event.type==='change'?12:latched?12:7;
+  if(!keyboard&&!event.altKey&&Math.abs(value)<=range){value=0;el.value='0';}
+  el.dataset.panDetent=String(!keyboard&&value===0&&!event.altKey);
+  if(event.type==='change')delete el.dataset.panKeyboard;
+  t.pan=value;
+  el.setAttribute('aria-valuetext',value===0?'Center':value<0?'Left '+Math.abs(value):'Right '+value);
+  const wrapper=el.closest('.pan-control');
+  if(wrapper){wrapper.setAttribute('style',panStyle(value));wrapper.classList.toggle('is-centered',value===0);}
+  const label=wrapper?wrapper.nextElementSibling:el.nextElementSibling;
+  if(label)label.textContent=panLabel(value);
+  if(event.type==='change')say(t.name+' pan '+panLabel(value));
+}
  else if(field==='trim'){t.trim=Number(el.value);if(el.style?.setProperty)el.style.setProperty('--range-pct',rangePct(t.trim,-24,24)+'%');const readout=el.closest('.trim-section')?.querySelector('.trim-value');if(readout)readout.textContent=formatDb(t.trim);if(event.type==='change')say(t.name+' digital trim '+formatDb(t.trim)+' dB');}
  else if(field==='sendLevel'){t.sendLevel=Number(el.value);if(el.style?.setProperty)el.style.setProperty('--range-pct',rangePct(t.sendLevel,-60,6)+'%');el.nextElementSibling.textContent=formatDb(t.sendLevel);}
  else if(field==='sendPan'){t.sendPan=Number(el.value);el.nextElementSibling.textContent=t.sendPan===0?'C':t.sendPan<0?'L'+Math.abs(t.sendPan):'R'+t.sendPan;}
@@ -2092,6 +2188,18 @@ function finishFaderPointer(ev){
 window.addEventListener('pointerup',finishFaderPointer);
 window.addEventListener('pointercancel',ev=>{if(faderGesture&&ev.pointerId===faderGesture.pointerId)faderGesture=null;});
 
+
+/* Keyboard accessibility: pointer center-detent is tactile, but arrow keys
+   must not trap a keyboard operator at 0. Alt+drag deliberately bypasses it. */
+consoleBody.addEventListener('keydown',event=>{
+ const el=event.target.closest?.('.center-pan');
+ if(el&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',
+   'PageUp','PageDown','Home','End'].includes(event.key))el.dataset.panKeyboard='true';
+});
+consoleBody.addEventListener('pointerdown',event=>{
+ const el=event.target.closest?.('.center-pan');
+ if(el)delete el.dataset.panKeyboard;
+},true);
 document.querySelector('.console-body').addEventListener('input',handleField);
 document.querySelector('.console-body').addEventListener('change',handleField);
 document.querySelector('.console-body').addEventListener('click',e=>{
