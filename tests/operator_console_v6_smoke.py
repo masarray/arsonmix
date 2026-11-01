@@ -66,7 +66,7 @@ async def main():
         page = await browser.new_page(viewport={"width": 1440, "height": 768})
         errors = []
         page.on("pageerror", lambda e: errors.append(str(e)))
-        await page.add_init_script("""() => {
+        await page.add_init_script("""(() => {
           const listeners = {};
           const sent = [];
           window.__v6Test = {
@@ -77,7 +77,7 @@ async def main():
             emitEvent: (event, payload) => sent.push({event, payload}),
             addEventListener: (event, cb) => (listeners[event] ||= []).push(cb),
           }};
-        }""")
+        })()""")
         await page.goto((ROOT / "web/index.html").as_uri())
         assert await page.locator("#arV6Console").is_hidden()
         assert await page.locator("#mixer > .strip").count() == 11
@@ -145,7 +145,8 @@ async def main():
         await page.evaluate("""id=>window.__v6Test.publish(
           'arMixConsoleAck',{requestId:id,status:'REJECTED',errorCode:'UNSUPPORTED'})""", tap["requestId"])
         await page.locator(".arV6SendMode").select_option("BUS-FX")
-        await page.locator('[data-op="SET_FADER"][data-id="ch-07"]').fill("-12")
+        await page.locator('[data-op="SET_FADER"][data-id="ch-07"]').evaluate(
+            "(el)=>{el.value='-12';el.dispatchEvent(new Event('change',{bubbles:true}))}")
         send = await page.evaluate("""() => window.__v6Test.sent.filter(
           x=>x.event==='arMixConsoleIntent').at(-1).payload""")
         assert send["op"] == "SET_SEND_LEVEL" and send["payload"]["sendId"] == "send-07"
