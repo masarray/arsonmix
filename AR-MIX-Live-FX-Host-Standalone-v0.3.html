@@ -2692,6 +2692,89 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 #app #mixer[data-io-mode="CONSOLE"] #masterLeft .arMainOutAction{
  background:var(--am-metal-inset);color:var(--am-text-primary);border-color:var(--am-metal-edge)}
 /* Real fader PNG, RAIL3 well, meter geometry and seven-shadow BTN-180 preserved. */
+
+
+/* PR#278 visual correction G-V7: 10 source strips + MAIN at desktop widths.
+   Geometry is measured from the actual mixer viewport, not a separate mock
+   component. Narrow windows use adaptive banks; the fader travel remains owned
+   by existing native controls. */
+#app #mixer[data-io-mode="CONSOLE"]{
+ --ar-visible-channels:10;
+ --ar-master-dock-width:128px;
+ padding-right:var(--ar-master-dock-width);
+ scroll-padding-right:var(--ar-master-dock-width);
+}
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip]{
+ flex:0 0 calc((100% - var(--ar-master-dock-width))/var(--ar-visible-channels));
+ width:calc((100% - var(--ar-master-dock-width))/var(--ar-visible-channels));
+ min-width:102px;max-width:none;
+}
+#app #mixer[data-io-mode="CONSOLE"] > #masterLeft{
+ flex:0 0 128px;width:128px;min-width:128px;max-width:128px;
+ box-shadow:-2px 0 7px #02080c66;
+}
+/* No accidental 2-line CH number/name or wrap over FX on the real WebView.
+   30px high, all three parts in a SINGLE bounded grid row. */
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip] > .ch-id{
+ display:grid!important;
+ grid-template-columns:30px minmax(0,1fr) 22px!important;
+ grid-template-rows:minmax(0,1fr)!important;
+ gap:2px!important;
+ align-items:center!important;justify-content:normal!important;
+ padding:0 3px!important;
+ overflow:hidden!important;
+ white-space:nowrap!important;
+ line-height:1!important;
+}
+#app #mixer[data-io-mode="CONSOLE"] .ch-id .arChannelNumber{
+ display:block!important;width:30px;min-width:0;max-width:30px;
+ white-space:nowrap!important;
+ overflow:hidden;text-overflow:clip;
+ font:600 9px/1 Consolas,monospace!important;
+}
+#app #mixer[data-io-mode="CONSOLE"] .ch-id .arChannelTopIdentity{
+ display:flex!important;grid-column:2;grid-row:1;
+ align-items:center!important;justify-content:flex-start!important;
+ min-width:0!important;width:100%!important;height:28px!important;
+ max-width:100%;padding:0 1px!important;margin:0!important;
+ overflow:hidden!important;white-space:nowrap!important;flex-wrap:nowrap!important;
+ font:500 10px/1 "Segoe UI",sans-serif!important;text-align:left!important;
+}
+#app #mixer[data-io-mode="CONSOLE"] .ch-id .arChannelTopIcon{
+ flex:none!important;white-space:nowrap!important;line-height:1!important;
+ font-size:12px!important;
+}
+#app #mixer[data-io-mode="CONSOLE"] .ch-id .arChannelTopName{
+ display:block!important;flex:1 1 auto!important;min-width:0!important;
+ max-width:100%!important;overflow:hidden!important;
+ text-overflow:ellipsis!important;white-space:nowrap!important;
+ line-height:1.25!important;
+}
+#app #mixer[data-io-mode="CONSOLE"] .ch-id .arFormatBadge{
+ position:static!important;grid-column:3;grid-row:1;
+ width:21px!important;min-width:21px!important;height:20px!important;
+ margin:0!important;padding:0!important;
+ font:500 9px/18px "Segoe UI",sans-serif!important;
+ text-align:center!important;white-space:nowrap!important;
+}
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip] > .strip-name{
+ min-width:0!important;white-space:nowrap!important;
+ border-top-color:var(--ch);
+}
+/* PR278: exactly ONE Add FX affordance in each existing 6-slot rack.
+   All six native slot nodes remain mounted for bridge/ACK and VST state. */
+#app #mixer[data-io-mode="CONSOLE"] .rack .insert-slot:has(.insert.empty) ~ .insert-slot:has(.insert.empty){
+ display:none!important;
+}
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft .master-fx-slot:has(.master-insert.empty) ~ .master-fx-slot:has(.master-insert.empty){
+ display:none!important;
+}
+@media(max-width:1339px){
+ #app #mixer[data-io-mode="CONSOLE"]{--ar-visible-channels:8}
+}
+@media(max-width:1099px){
+ #app #mixer[data-io-mode="CONSOLE"]{--ar-visible-channels:6}
+}
 </style>
 <style id="arsonmix-mixer-io-css">/* G1/G2: stable channel-bank geometry; FX rack remains mounted in every mode. */
 #app .workbench{display:flex;flex-direction:column}
