@@ -777,6 +777,15 @@
   }
   function decorate(){
     for(const strip of mixer.querySelectorAll('.strip[data-strip]')){
+      // Every physical channel gets its own source selector. The native
+      // routing controller is unchanged and owns every hardware APPLY.
+      const head=strip.querySelector('.ch-id');
+      if(isNative()&&head&&!head.querySelector('.arChannelQuickInput')){
+        const picker=node('select','arChannelQuickInput');
+        picker.setAttribute('aria-label','CH '+(Number(strip.dataset.strip)+1)+' physical input');
+        picker.title='Verified hardware source · native ACK required';
+        head.appendChild(picker);
+      }
       if(strip.querySelector('.arChannelBank'))continue;
       const bank=node('div','arChannelBank');
       bank.innerHTML='<div class="arRouteBank"><span class="arBankTitle">INPUT SOURCE · NATIVE</span><select class="arBankSource" aria-label="Physical channel input source"></select><span class="arBankTitle">OUTPUT DESTINATION</span><span class="arBankOutput">MAIN · UNKNOWN</span><div class="arBankFormatRow"><select class="arBankChannelFormat" aria-label="Independent channel processing format" title="Processing MONO / STEREO independent from hardware input"><option value="MONO">CH M</option><option value="STEREO">CH L/R</option></select><span class="arBankStage">NATIVE PATCH REQUIRED</span></div><button class="btn-180 arBankPatch" data-mix-patch="input">OPEN INPUT PATCH</button></div><div class="arSendBank"><span class="arBankTitle">AUX SENDS · PRE / POST</span><div class="arSendSummary"></div><button class="btn-180 arBankPatch" data-mix-patch="internal">EDIT AUX SENDS</button></div>';
@@ -798,8 +807,16 @@
     const i=Number(strip.dataset.strip),r=channelState(s,i);
     const source=strip.querySelector('.arBankSource'),output=strip.querySelector('.arBankOutput');
     if(!source||!output)return;
-    const current=valueFor(r);
-    populate(source,portsFor(s,r),current);
+    const current=valueFor(r),choices=portsFor(s,r);
+    const inline=strip.querySelector('.arChannelQuickInput');
+    if(inline){
+      populate(inline,choices,current);
+      inline.dataset.channel=String(i);
+      inline.disabled=!isNative()||!s.ready||!!s.pending||!!quickSourcePending;
+      inline.title='CH '+(i+1)+' · '+(choices.find(p=>p[0]===current)?.[1]||'Select physical input')+
+        ' · hardware source; native ACK required';
+    }
+    populate(source,choices,current);
     source.dataset.channel=String(i);source.disabled=!isNative()||!s.ready||!!s.pending||!!quickSourcePending;
     const format=strip.querySelector('.arBankChannelFormat');
     if(format){format.value=channelFormat(r);format.dataset.channel=String(i);
@@ -909,7 +926,7 @@
     title.append(words,jump);section.appendChild(title);
     const verified=portList(s);
     section.appendChild(node('p','arIOQuickGuide',verified.length?
-      verified.length+' driver-reported capture pins · physical and virtual inputs appear only if enabled by this driver.' :
+      verified.length+' ENABLED capture pin(s). Missing IN 2? Enable that physical pin in DEVICE / DRIVER first.' :
       'NO INPUT PINS · select an audio interface in DEVICE / DRIVER to enable routing.'));
     const headings=node('div','arIOQuickColumns');
     for(const label of ['MIX CHANNEL','SOURCE','INPUT / LEFT','RIGHT','NATIVE STATE'])headings.appendChild(node('span','',label));
@@ -1611,7 +1628,7 @@
     const channel=Number(select.dataset.channel);
     const value=select.value,parts=value.split(':');
     const mode=parts[0],left=mode==='NONE'?-1:Number(parts[1]),right=mode==='STEREO'?Number(parts[2]):-1;
-    const direct=select.classList.contains('arBankSource');
+    const direct=select.matches('.arBankSource,.arChannelQuickInput');
     const response=direct?commitSourceInOneGesture(channel,mode,left,right):
       window.__arMixStageChannelInput?.(channel,mode,left,right);
     if(response?.pending)quickSourcePending={channel,epoch:response.epoch,
@@ -1653,7 +1670,7 @@
       else el('arIOFeedback').textContent=result.message;
       lastSignature='';refresh();return;
     }
-    if(e.target.matches('.arBankSource,.arIOSource'))changeSource(e.target);
+    if(e.target.matches('.arChannelQuickInput,.arBankSource,.arIOSource'))changeSource(e.target);
     if(e.target.matches('.arBankChannelFormat')){
       const response=window.__arMixStageChannelFormat?.(
         Number(e.target.dataset.channel),e.target.value);

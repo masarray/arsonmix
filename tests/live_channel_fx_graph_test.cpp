@@ -415,6 +415,38 @@ int main() {
         assert(graph->monitorOutputLeft()==4&&graph->monitorOutputRight()==5);
         assert(near(graph->monitorGains()[1],.5f));
     }
+    // FAT-X: an unpatched strip can own a real, reusable FX lease without
+    // any fabricated input PCM, RT allocation or second render callback.
+    {
+        constexpr std::array active{2,5};
+        ChannelRoutingConfig input;
+        input.stripsAndMaster.strips[0]={
+            SourceMode::mono,2,-1,1.f,0.f,false,false};
+        SendRequest sends;
+        PreparedRenderGraph original; RenderError error;
+        assert(PreparedRenderGraph::compile(input,active,sends,original,error));
+        auto dryGraph=std::make_unique<LiveChannelFxGraph>(original,32,32);
+        auto fx=std::make_unique<GainFx>(2.f);fx->prepareToPlay(48000,32);
+        assert(dryGraph->install(6,std::move(fx),"CH07 silent FX","fat-x-7"));
+        const auto* identity=dryGraph->instanceProcessor(6);
+        const std::array<float,4> samples{.25f,.25f,.25f,.25f};
+        const float* pins[]{samples.data(),samples.data()};
+        std::array<float,4> left{},right{};
+        const auto before=heapCalls.load(std::memory_order_relaxed);
+        assert(dryGraph->process(pins,2,left.data(),right.data(),4));
+        assert(heapCalls.load(std::memory_order_relaxed)==before);
+        assert(near(left[0],.25f*.7071067811865475f));
+        input.stripsAndMaster.strips[6]={
+            SourceMode::mono,5,-1,1.f,0.f,false,false};
+        PreparedRenderGraph patched;
+        assert(PreparedRenderGraph::compile(input,active,sends,patched,error));
+        auto next=std::make_unique<LiveChannelFxGraph>(patched,32,32);
+        assert(next->reuse(6,*dryGraph,"fat-x-7"));
+        assert(next->instanceProcessor(6)==identity);
+        assert(next->process(pins,2,left.data(),right.data(),4));
+        assert(heapCalls.load(std::memory_order_relaxed)==before);
+        assert(left[0]>.3f);
+    }
     // Tests above use a real JUCE AudioProcessor processing seam. Vendor
     // VST3 formats and sound quality require separate Windows hardware FAT.
 }

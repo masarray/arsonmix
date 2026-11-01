@@ -564,3 +564,14 @@ test('R7 negative hardware ACK releases blocked source controls',()=>{
  assert.match(io,/quickSourcePending=null/);
  assert.match(io,/matrixMessage=deviceNote/);
 });
+
+test('hardware input CH1/CH2/CH10 selectable on the mixer itself without an IO modal',()=>{
+ const io=read('web/mixer-io.js'),css=read('web/mixer-io.css');
+ assert.match(io,/head\.appendChild\(picker\)/);
+ assert.match(io,/populate\(inline,choices,current\)/);
+ assert.match(io,/\.arChannelQuickInput,\.arBankSource,\.arIOSource/);
+ assert.match(io,/commitSourceInOneGesture\(channel,mode,left,right\)/);
+ assert.match(io,/ENABLED capture pin\(s\)/);
+ assert.match(css,/\.arChannelQuickInput\{/);
+ assert.doesNotMatch(css,/backdrop-filter|filter:blur/);
+});

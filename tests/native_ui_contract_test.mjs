@@ -94,3 +94,12 @@ test('M4 FX console keeps channel routing and plugin identity per native lane',(
   assert.match(bridge,/lab\.channelPeaksR/);
   assert.doesNotMatch(bridge,/Native VST3 is currently available on Channel 1 only/);
 });
+
+test('real per-channel FX are admitted while disconnected and guarded by native ACK',()=>{
+ const lab=read('src/LiveDryRoutingLab.h'),bridge=read('web/bridge.js'),ui=read('web/monitor.js');
+ assert.match(lab,/can retain the real prepared VST3 instance/);
+ assert.doesNotMatch(lab,/if\(!scheduled\)/);
+ assert.match(bridge,/lane\.silent\?"VST3 PREPARED/);
+ assert.match(ui,/unpatched channels remain SILENT/);
+ assert.match(ui,/const committed=window\.__arMixApplyAndActivate\?\.\(\)/);
+});
