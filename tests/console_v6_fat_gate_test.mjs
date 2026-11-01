@@ -269,10 +269,18 @@ test('shared #279 release preflight blocks even a source with working M4 control
  assert.ok(got.releaseSourceBlockers.includes('S0_EXPLICIT_JUCE_EXPORTER'));
  assert.ok(got.releaseSourceBlockers.includes('G2_FULL_UNIVERSAL_CALLBACK'));
  const real=structuredClone(src);
- real.dispatcher+=' --emit-console-s0-json';
+ real.nativeTest='if(argc==2 && std::string(argv[1])=="--emit-console-s0-json"){'+
+   'std::cout<<armix::console::LiveConsoleBridgeV6::snapshot(engine.status());}';
  const after=inspectPuzzleSources(real,'a'.repeat(64));
  assert.equal(after.stage,'S1_OR_G0_ONLY_UNIVERSAL_BLOCKED');
  assert.ok(after.releaseSourceBlockers.includes('G2_FULL_UNIVERSAL_CALLBACK'));
+ const fake=structuredClone(src);
+ fake.nativeTest='if(argc==2 && std::string(argv[1])=="--emit-console-s0-json"){'+
+   'std::cout<<armix::console::PuzzleV8Wire::fixture(s,ack);}';
+ const pretend=inspectPuzzleSources(fake,'a'.repeat(64));
+ assert.equal(pretend.stage,'S0_NATIVE_PRODUCER_BLOCKED');
+ assert.ok(pretend.releaseSourceBlockers.includes('S0_EXPLICIT_JUCE_EXPORTER'));
+
  const bad=structuredClone(src);bad.guiTest='fake.json';
  assert.equal(inspectPuzzleSources(bad,'a'.repeat(64)).portableFixtureMatch,false);
 });
