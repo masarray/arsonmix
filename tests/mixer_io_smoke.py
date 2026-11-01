@@ -820,8 +820,12 @@ async def main():
         }""",status)
         await page.locator('[data-io-open]').click()
         await page.locator('[data-io-tab="outputs"]').click()
-        # Exercise actual sparse-pin OUTPUT crosspoints, not hidden fallback dropdowns.
+        assert await page.locator('.arIOSimpleMain').is_visible()
         assert await page.locator('.arIOMainOutput').count()==2
+        # Crosspoint remains available, but is no longer the normal workflow.
+        if not await page.locator('.arIOAdvancedMatrix').evaluate('(e)=>e.open'):
+            await page.locator('.arIOAdvancedMatrix > summary').click()
+        # Exercise actual sparse-pin OUTPUT crosspoints, not hidden fallback dropdowns.
         await page.locator('[data-io-matrix-kind="outputs"][data-io-matrix-row="0"][data-io-matrix-pin="4"]').click()
         await page.locator('[data-io-matrix-kind="outputs"][data-io-matrix-row="1"][data-io-matrix-pin="5"]').click()
         assert await page.evaluate("""()=>window.__arMixRouteView().draftMainOutputs.join(',')""")=='4,5'
@@ -874,6 +878,8 @@ async def main():
         await page.locator('[data-io-tab="inputs"]').click()
         assert await page.locator('.arIOQuickPatch').is_visible()
         assert await page.locator('[data-io-quick-row]').count()==10
+        await page.locator('[data-io-jump]').select_option('2')
+        assert await page.locator('[data-io-quick-row]:visible').count()==1
         assert await page.locator('[data-io-quick-row="2"] [data-io-quick-pin="left"] option').count()==5
         # R7: each USE INPUT commits the existing guarded native route
         # automatically, without a second STAGE/MUTE/APPLY button ritual.
@@ -956,6 +962,8 @@ async def main():
         # DEVICE4: name one logical stereo INPUT over sparse verified hardware,
         # then rename and remove it. Metadata must not emit routingDryApply.
         await page.locator('[data-io-tab="device"]').click()
+        if not await page.locator('.arIODevicePatchMatrix').evaluate('(e)=>e.open'):
+            await page.locator('.arIODevicePatchMatrix > summary').click()
         assert await page.locator('.arIOSoftwareGrid').is_visible()
         count_before=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='routingDryApply').length""")
