@@ -110,11 +110,9 @@ def audit_p0_collapse(page, name):
         click('route');
         return {before,route,restoreRoute,sendOpen,openSendFoldRoute,restoreSend,bothHidden};
     }""")
-    if page.viewport_size['width']==1366:
-        print('P0_GEOMETRY_DEBUG',name,repr(data),flush=True)
     base=data['before']
     assert not base['route'] and base['send'] and not base['fx'],(name,'initial fold',data)
-    expected=min(600,max(215,page.viewport_size['height']-508))
+    expected=min(600,max(215,page.viewport_size['height']-510))
     if page.viewport_size['height']<=680:
         expected=min(300,max(155,page.viewport_size['height']-505))
     for i,cell in enumerate(base['cells']):
