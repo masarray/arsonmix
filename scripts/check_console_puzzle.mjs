@@ -33,6 +33,28 @@ export function inspectPuzzleSources(s,fixtureSha256=''){
  const machine=s.machine||'';
  const unready=/\bw\.productionCallbackLive\s*=\s*false\s*;/.test(native);
  const strictLive=!unready&&/\bw\.productionCallbackLive\s*=/.test(native);
+ // A C++ entrypoint recognizing --emit-console-s0-json is NOT necessarily
+ // the actual JUCE producer. Historically the ENGINE test printed an offline
+ // PuzzleV8Wire::fixture(s,ack), which contains no engine.status PCM/pins.
+ // Restrict the check to the flag's actual branch, not a helper elsewhere.
+ const testCpp=s.nativeTest||'';
+ const flagAt=testCpp.indexOf('--emit-console-s0-json');
+ let exportBranch='';
+ if(flagAt>=0){
+   const open=testCpp.indexOf('{',flagAt);
+   if(open>=0){
+     let depth=1;
+     for(let i=open+1;i<testCpp.length;i++){
+       if(testCpp[i]==='{')depth++;
+       if(testCpp[i]==='}'&&--depth===0){exportBranch=testCpp.slice(open+1,i);break}
+       if(testCpp[i]==='}'&&depth<0)break;
+     }
+   }
+ }
+ const nativeEmitterSource=exportBranch.length>0 &&
+   !/PuzzleV8Wire::fixture\s*\(/.test(exportBranch) &&
+   /(?:LiveConsoleBridgeV6|Bridge)::snapshot\s*\(/.test(exportBranch) &&
+   /\bengine\.status\s*\(/.test(exportBranch);
  const acceptedRoster=/\bw\.channels\s*=|\.channels\.push_back|accepted.*ChannelId/.test(native) &&
     !/^\s*\/\/.*\bw\.channels\s*=/m.test(native);
  const scopes=[
@@ -53,11 +75,10 @@ export function inspectPuzzleSources(s,fixtureSha256=''){
      dispatch.includes('arMixConsoleAck')&&dispatch.includes('processProductionIntent'),
      'ENGINE #266','Dispatch real subscribe/intent/ACK/snapshot through active JUCE adapter'),
    c('S0_EXPLICIT_JUCE_EXPORTER',
-     (dispatch.includes('--emit-console-s0-json')||
-      (s.nativeTest||'').includes('--emit-console-s0-json')) &&
+     nativeEmitterSource &&
      runner.includes('assertExplicitS0Exporter') &&
      proof.includes('runActualNativeS0'),
-     'ENGINE #266','Existing JUCE binary must explicitly implement exporter CLI and reject unknown flags; portable golden alone is insufficient'),
+     'ENGINE #266','Export exact JUCE LiveConsoleBridgeV6::snapshot(engine.status()) from native binary; PuzzleV8Wire::fixture(...) cannot qualify S0'),
    c('S0_ONE_CPP_GUI_FIXTURE',
      /^[a-f0-9]{64}$/.test(fixtureSha256)&&
      guiTest.includes('console-v8-native-unready.json')&&

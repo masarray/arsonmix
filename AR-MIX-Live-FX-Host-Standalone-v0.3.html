@@ -7889,13 +7889,17 @@ scheduleDemoMeter();
     const input=h('input','arV6Rename');
     input.type='text';input.maxLength=40;input.value=ch.name;
     input.setAttribute('aria-label','Rename '+ch.name+' using native ChannelId');
+    let finished=false;
     const finish=commit=>{
-      if(!input.isConnected)return;
+      if(finished)return;
+      finished=true; // DOM replacement emits blur synchronously in WebView.
       const newName=input.value.trim();
+      const valid=commit&&newName&&newName.length<=40&&newName!==ch.name&&
+        !Array.from(newName).some(c=>c.charCodeAt(0)<32||c.charCodeAt(0)===127);
+      // Dispatch once while the editor is stable. Only native accepted
+      // snapshot may change the actual channel name.
+      if(valid)sendIntent('RENAME_CHANNEL',id,{name:newName});
       input.replaceWith(nameNode);
-      if(commit&&newName&&newName.length<=40&&newName!==ch.name&&
-         !Array.from(newName).some(c=>c.charCodeAt(0)<32||c.charCodeAt(0)===127))
-        sendIntent('RENAME_CHANNEL',id,{name:newName});
     };
     input.addEventListener('keydown',event=>{
       if(event.key==='Enter'){event.preventDefault();finish(true)}

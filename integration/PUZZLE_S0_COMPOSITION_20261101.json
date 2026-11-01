@@ -3,9 +3,9 @@
   "releaseReady": false,
   "normativeMain": "44ff625976132402a5b770b5fd8f82cf6435c213",
   "sourceSHAs": {
-    "ENGINE": "636489ac928093800953b1834fae57d35ed9262c",
-    "GUI": "665efb24c068028d3d1935ccf679e4ddabf75658",
-    "FAT": "f61fd9e515f1c3ba5cbe65653e23b7c9592239a3"
+    "ENGINE": "06957b4f9672d398341ce439b65347dd926f472b",
+    "GUI": "87d6e85fe4deaf48e9aa6ec384643150ba5edabd",
+    "FAT": "140840fad3342bca28e81ad3ece2641021a51407"
   },
   "machineContract": "contracts/console-puzzle-v8.json",
   "fixture": "tests/fixtures/console-v8-native-unready.json",
@@ -86,5 +86,17 @@
     "S1 installed native callback PCM source to MAIN and mute/ACK pending",
     "S2 universal CH11+ genuine FX/Group/Return/Monitor/Show pending",
     "S3 integrated same-SHA Windows/Chromium/physical QA pending"
-  ]
+  ],
+  "currentBlocker": "ENGINE test --emit-console-s0-json prints PuzzleV8Wire::fixture(s,ack) rather than installed LiveConsoleBridgeV6::snapshot(engine.status()); source gate rejects offline fixture as real native export",
+  "guiOwnerChromium": {
+    "head": "87d6e85fe4deaf48e9aa6ec384643150ba5edabd",
+    "run": 41290263695,
+    "result": "SUCCESS"
+  },
+  "engineOwnerWindows": {
+    "head": "06957b4f9672d398341ce439b65347dd926f472b",
+    "run": 41290067368,
+    "result": "IN_PROGRESS_AT_COMPOSITION"
+  },
+  "fatHead": "140840fad3342bca28e81ad3ece2641021a51407"
 }
