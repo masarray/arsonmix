@@ -142,3 +142,455 @@
   }
   document.documentElement.dataset.arMixerShell='rail-modes';
 })();
+
+
+/* ARSONMIX V6 OPERATOR CONSOLE — native accepted projection only.
+   The legacy M4 console remains available until the native v6 publisher exists.
+   No WebAudio, DSP, routing solver, or fabricated ACK lives in this module. */
+(() => {
+  'use strict';
+  const mount=document.querySelector('#app .workbench');
+  const backend=window.__JUCE__?.backend;
+  if(!mount||!document.getElementById('mixer')||document.getElementById('arV6Console'))return;
+  const native=!!(backend&&typeof backend.emitEvent==='function'&&typeof backend.addEventListener==='function');
+  const h=(tag,cls,text)=>{
+    const n=document.createElement(tag);
+    if(cls)n.className=cls;
+    if(text!==undefined)n.textContent=String(text);
+    return n;
+  };
+  const button=(label,attrs={})=>{
+    const n=h('button','arV6Button',label);n.type='button';
+    for(const [key,value] of Object.entries(attrs))n.setAttribute(key,String(value));
+    return n;
+  };
+  const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
+  const clean=s=>String(s==null?'—':s);
+  const byId=new Map();
+  const pending=new Map();
+  const pendingTargets=new Set();
+  const operationCaps={
+    SET_SOURCE:'SET_SOURCE',SET_PROCESSING_FORMAT:'SET_PROCESSING_FORMAT',
+    SET_PRIMARY_OUT:'SET_PRIMARY_OUT',ADD_INSERT:'ADD_INSERT',
+    PICK_INSERT_FILE:'PICK_INSERT_FILE',SET_INSERT_BYPASS:'SET_INSERT_BYPASS',
+    OPEN_INSERT_EDITOR:'OPEN_INSERT_EDITOR',MOVE_INSERT:'MOVE_INSERT',
+    ADD_SEND:'ADD_SEND',SET_SEND_TAP:'SET_SEND_TAP',SET_SEND_LEVEL:'SET_SEND_LEVEL',
+    SET_FADER:'SET_FADER',SET_PAN:'SET_PAN',SET_MUTE:'SET_MUTE',
+    SET_SOLO:'SET_SOLO',CREATE_CHANNEL:'CREATE_CHANNEL'
+  };
+  let accepted=null,acceptedNative=false,modeSend='',lastStructure='',requestSeq=0;
+  const instance='gui'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+  let feedback='';
+  const root=h('section','arV6Console');root.id='arV6Console';
+  root.setAttribute('aria-label','ArSonMix universal operator console');
+  const top=h('div','arV6Top');
+  const identification=h('div','arV6Identification');
+  const kicker=h('span','arV6Kicker','ARSONMIX / UNIVERSAL LIVE CONSOLE');
+  const deviceText=h('span','arV6Device','NO NATIVE CONSOLE SNAPSHOT');
+  const modeBadge=h('span','arV6State','WAITING FOR NATIVE');
+  identification.append(kicker,deviceText,modeBadge);
+  const tools=h('div','arV6Tools');
+  const bankPrev=button('‹',{'aria-label':'Previous channel bank'});
+  const bankLabel=h('span','arV6BankLabel','—');
+  const bankNext=button('›',{'aria-label':'Next channel bank'});
+  const sendMode=h('select','arV6Select arV6SendMode');sendMode.setAttribute('aria-label','Sends on faders target');
+  const add=button('+ CHANNEL',{'data-op':'CREATE_CHANNEL'});
+  const patch=button('PATCH',{'aria-label':'Open advanced patch'});
+  const back=button('V6 CONSOLE',{'aria-label':'Return to operator console'});
+  back.id='arV6Return';back.hidden=true;
+  tools.append(bankPrev,bankLabel,bankNext,sendMode,add,patch);
+  top.append(identification,tools);
+  const message=h('div','arV6Message');message.setAttribute('role','status');
+  const body=h('div','arV6Body');
+  const lanes=h('div','arV6Lanes');lanes.setAttribute('aria-label','Channel banks');
+  const main=h('div','arV6Main');main.setAttribute('aria-label','Pinned main output');
+  body.append(lanes,main);
+  root.append(top,message,body);
+  mount.append(root);
+  document.querySelector('.toolbar-actions')?.append(back);
+  const setVisible=v=>{
+    document.documentElement.classList.toggle('ar-v6-active',!!v);
+    back.hidden=!!v;
+  };
+  patch.addEventListener('click',()=>{
+    setVisible(false);
+    document.querySelector('[data-view="SIGNAL FLOW"]')?.click();
+  });
+  back.addEventListener('click',()=>{
+    document.querySelector('[data-view="MIX"]')?.click();setVisible(true);
+  });
+  function supported(op){
+    const caps=accepted?.graph?.capabilities||{};
+    // Absence of explicit native advertised operation support means disabled.
+    return acceptedNative && Array.isArray(caps.supportedOps) && caps.supportedOps.includes(operationCaps[op]);
+  }
+  function can(op,id){
+    if(!supported(op))return false;
+    if(op==='CREATE_CHANNEL')return !!accepted.graph.capabilities.dynamicChannels;
+    if(!id)return true;
+    const ch=byId.get(id);
+    return !!ch && !pendingTargets.has(id) &&
+      (!Array.isArray(ch.allowedOps)||ch.allowedOps.includes(op));
+  }
+  function showFeedback(text){
+    feedback=clean(text);message.textContent=feedback;
+    message.hidden=!feedback;
+  }
+  function requestSnapshot(){
+    if(native)backend.emitEvent('arMixConsoleSubscribe',{protocol:'v6',requester:instance});
+  }
+  function sendIntent(op,id,payload){
+    if(!can(op,id)){showFeedback('UNAVAILABLE · Native capability or channel authorization missing');return false}
+    const requestId=instance+':'+(++requestSeq);
+    const command={requestId,baseRevision:accepted.graph.revision,
+      deviceEpoch:accepted.device.epoch,op,targetChannelId:id||null,payload:payload||{}};
+    pending.set(requestId,{op,id,baseRevision:command.baseRevision,epoch:command.deviceEpoch});
+    if(id)pendingTargets.add(id);
+    showFeedback('PENDING · '+op+' · awaiting native ACK');
+    refreshDisabled();
+    backend.emitEvent('arMixConsoleIntent',command);
+    return true;
+  }
+  function receiveAck(data){
+    const ack=data?.ack||data;
+    if(!ack||typeof ack.requestId!=='string')return;
+    const intent=pending.get(ack.requestId);if(!intent)return;
+    pending.delete(ack.requestId);
+    if(intent.id)pendingTargets.delete(intent.id);
+    if(ack.status==='ACCEPTED'){
+      // ACK is NOT a replacement graph. No channel/route/FX mutation before
+      // a full accepted snapshot arrives; telemetry is never guessed.
+      showFeedback('ACCEPTED · '+intent.op+' · synchronizing native snapshot');
+      requestSnapshot();
+    }else{
+      showFeedback((ack.status==='REQUIRES_DEVICE_CHANGE'?'REQUIRES DEVICE · ':'REJECTED · ')+
+        clean(ack.errorCode||ack.message||'Native rejected request')+' · accepted audio preserved');
+      // Also request authoritative recovery after stale revision/device.
+      requestSnapshot();
+      render();
+    }
+    refreshDisabled();
+  }
+  function validSnapshot(s){
+    if(!s||typeof s!=='object'||!s.device||!s.graph)return false;
+    if(!Number.isSafeInteger(s.device.epoch)||!Number.isSafeInteger(s.graph.revision))return false;
+    if(!Array.isArray(s.graph.channels)||!s.graph.capabilities)return false;
+    const ids=new Set();
+    for(const c of s.graph.channels){
+      // JS numeric conversion corrupts 64-bit identities: reject such a wire.
+      if(!c||typeof c.id!=='string'||!c.id||ids.has(c.id))return false;
+      ids.add(c.id);
+    }
+    return true;
+  }
+  function receiveSnapshot(data,fromNative){
+    const s=data?.snapshot||data;
+    if(!validSnapshot(s)){
+      if(fromNative)showFeedback('REJECTED SNAPSHOT · Invalid native epoch, revision or ChannelId');
+      return false;
+    }
+    if(acceptedNative&&!fromNative)return false;
+    if(fromNative&&acceptedNative&&accepted&&s.device.epoch===accepted.device.epoch&&
+      s.graph.revision<accepted.graph.revision)return false;
+    const structure=s.device.epoch+':'+s.graph.revision+':'+s.graph.channels.map(c=>c.id).join('|');
+    accepted=s;acceptedNative=!!fromNative;
+    byId.clear();
+    for(const c of s.graph.channels)byId.set(c.id,c);
+    if(structure!==lastStructure||root.dataset.demo!==String(!fromNative)){
+      lastStructure=structure;render();
+    }else{
+      refreshMeters();refreshDisabled();updateHeader();
+    }
+    root.dataset.demo=String(!fromNative);
+    setVisible(true);
+    return true;
+  }
+  const makeDemo=()=>{
+    const names=['Lead Vocal','Guest Mic','Music L','Music R','Speech','Stream','Backing','Guitar','Keys','Talkback'];
+    const channels=names.map((name,i)=>({
+      id:'DEMO:'+String(i+1),role:'INPUT',name,color:'#4e8ba4',processingFormat:i===2||i===3?'STEREO':'MONO',
+      source:null,primaryOut:null,inserts:[],sends:[],controls:{faderDb:0,pan:0,mute:false,solo:false}
+    }));
+    channels.push({id:'DEMO:MAIN',role:'MAIN',name:'MAIN',processingFormat:'STEREO',
+      inserts:[],sends:[],controls:{faderDb:0,pan:0,mute:false,solo:false}});
+    return {device:{epoch:0,backend:'BROWSER DEMO',sampleRate:null,bufferFrames:null,outputArmed:false,
+      inputEndpoints:[],outputEndpoints:[]},graph:{revision:0,channels,destinations:[],
+      capabilities:{dynamicChannels:false,groups:false,fxReturns:false,sendsOnFaders:false,supportedOps:[]}},
+      telemetry:{rawCapturePresent:false,channelMeterRmsPeak:{}}};
+  };
+  function options(select,items,current,emptyLabel){
+    select.replaceChildren();
+    const zero=h('option','',emptyLabel);zero.value='';select.append(zero);
+    let found=!current;
+    for(const item of items){
+      if(!item||typeof item.id!=='string'||!item.id)continue;
+      const opt=h('option','',item.name||item.label||item.id);
+      opt.value=item.id;opt.disabled=item.available===false||item.active===false;
+      if(current===item.id){opt.selected=true;found=true}
+      select.append(opt);
+    }
+    if(!found){
+      const missing=h('option','','MISSING · '+current);missing.value=current;
+      missing.selected=true;missing.disabled=true;select.append(missing);
+    }
+    if(!current)select.value='';
+    return select;
+  }
+  function selectField(label,op,id,items,current,placeholder,extra){
+    const row=h('label','arV6Field');
+    row.append(h('span','arV6FieldName',label));
+    const sel=options(h('select','arV6Select'),items,current,placeholder);
+    sel.dataset.op=op;sel.dataset.id=id;
+    if(extra)for(const [key,val] of Object.entries(extra))sel.dataset[key]=val;
+    sel.disabled=!can(op,id);
+    row.append(sel);return row;
+  }
+  function fxSection(ch){
+    const section=h('div','arV6Fx');
+    section.append(h('span','arV6SectionTitle','VST3 INSERTS'));
+    const list=Array.isArray(ch.inserts)?ch.inserts:[];
+    for(const fx of list){
+      const row=h('div','arV6FxSlot');
+      row.append(button(fx.name||fx.pluginName||'VST3',{'data-op':'OPEN_INSERT_EDITOR',
+        'data-id':ch.id,'data-insert':clean(fx.id)}));
+      const bypass=button(fx.bypassed?'OFF':'ON',{'data-op':'SET_INSERT_BYPASS',
+        'data-id':ch.id,'data-insert':clean(fx.id),'aria-pressed':String(!fx.bypassed)});
+      bypass.classList.toggle('isOff',!!fx.bypassed);row.append(bypass);
+      section.append(row);
+    }
+    const addFx=button('+ VST3',{'data-op':supported('PICK_INSERT_FILE')?'PICK_INSERT_FILE':'ADD_INSERT','data-id':ch.id});
+    addFx.classList.add('arV6AddFx');section.append(addFx);
+    return section;
+  }
+  function sendSection(ch){
+    const section=h('div','arV6Sends');
+    section.append(h('span','arV6SectionTitle','SEND'));
+    const sends=Array.isArray(ch.sends)?ch.sends:[];
+    const targets=(accepted.graph.destinations||[]).filter(x=>x.acceptsSend===true);
+    for(const send of sends){
+      const line=h('div','arV6Send');
+      line.append(h('span','arV6SendName',clean(send.name||send.targetId)));
+      const toggle=button(send.tap==='PRE'?'PRE':'POST',{'data-op':'SET_SEND_TAP',
+        'data-id':ch.id,'data-send':clean(send.id)});
+      line.append(toggle);
+      section.append(line);
+    }
+    const select=selectField('+ TO','ADD_SEND',ch.id,targets,'','NO NATIVE SEND BUS');
+    section.append(select);return section;
+  }
+  function strip(ch,pinned=false){
+    const role=clean(ch.role).toUpperCase();
+    const elStrip=h('article','arV6Strip'+(pinned?' arV6Master':''));
+    elStrip.dataset.channelId=ch.id;
+    const head=h('div','arV6StripHead');
+    const roleName=h('span','arV6Role',role);
+    const name=h('strong','arV6Name',ch.name||ch.id);name.title=ch.id;
+    head.append(roleName,name);elStrip.append(head);
+    const sourceSection=h('div','arV6Upper');
+    const sources=(accepted.device.inputEndpoints||[]).filter(p=>p.active!==false && p.available!==false);
+    if(role==='INPUT')sourceSection.append(selectField('IN','SET_SOURCE',ch.id,sources,
+      ch.source?.portId||ch.source?.id||'','NO VERIFIED INPUT'));
+    else sourceSection.append(h('div','arV6Field arV6FixedField','IN   ·   '+role));
+    const formats=['MONO','STEREO'].map(s=>({id:s,name:s}));
+    sourceSection.append(selectField('M/ST','SET_PROCESSING_FORMAT',ch.id,formats,
+      ch.processingFormat||'','NATIVE FORMAT'));
+    sourceSection.append(fxSection(ch),sendSection(ch));
+    const outs=(accepted.graph.destinations||[]).concat(accepted.device.outputEndpoints||[]);
+    sourceSection.append(selectField('OUT','SET_PRIMARY_OUT',ch.id,outs,
+      ch.primaryOut?.id||ch.primaryOut||'','NO VERIFIED OUT'));
+    elStrip.append(sourceSection);
+    const controls=h('div','arV6Controls');
+    const pan=h('label','arV6Pan');pan.append(h('span','','PAN'));
+    const panRange=h('input','arV6PanRange');panRange.type='range';
+    panRange.min='-100';panRange.max='100';panRange.step='1';
+    panRange.value=String(Number(ch.controls?.pan)||0);
+    panRange.dataset.op='SET_PAN';panRange.dataset.id=ch.id;
+    pan.append(panRange);controls.append(pan);
+    controls.append(button('M',{'data-op':'SET_MUTE','data-id':ch.id,
+      'aria-pressed':String(!!ch.controls?.mute)}));
+    controls.append(button('S',{'data-op':'SET_SOLO','data-id':ch.id,
+      'aria-pressed':String(!!ch.controls?.solo)}));
+    elStrip.append(controls);
+    const lower=h('div','arV6Lower');
+    const meter=h('div','arV6Meter');meter.dataset.meterId=ch.id;
+    meter.setAttribute('aria-label','Native channel meter: '+(ch.name||ch.id));
+    for(let n=0;n<22;n++)meter.append(h('i','arV6Led'));
+    const range=h('input','arV6Fader');
+    range.type='range';range.min='-60';range.max='12';range.step='.1';
+    const faderVal=Number(ch.controls?.faderDb);
+    range.value=String(Number.isFinite(faderVal)?clamp(faderVal,-60,12):0);
+    range.dataset.op='SET_FADER';range.dataset.id=ch.id;
+    range.setAttribute('aria-label',(ch.name||ch.id)+' fader dB');
+    const lowerLabel=h('span','arV6Readout',(Number.isFinite(faderVal)?faderVal.toFixed(1):'—')+' dB');
+    lower.append(meter,range,lowerLabel);elStrip.append(lower);
+    const status=h('div','arV6StripStatus');
+    status.dataset.statusId=ch.id;status.textContent=channelState(ch);
+    elStrip.append(status);
+    return elStrip;
+  }
+  function channelState(ch){
+    if(!acceptedNative)return 'DEMO / NO AUDIO';
+    if(ch.controls?.mute)return 'MUTED';
+    if(!ch.source && clean(ch.role).toUpperCase()==='INPUT')return 'SILENT / NO SOURCE';
+    if(!accepted.device.outputArmed)return 'OUTPUT DISARMED';
+    const t=accepted.telemetry||{};
+    // Do not infer LIVE from a port label, snapshot or demo LED alone.
+    if(t.rawCapturePresent!==true)return 'NO VERIFIED PCM';
+    return 'ACCEPTED / AUDIO ARMED';
+  }
+  function updateHeader(){
+    const d=accepted?.device||{},g=accepted?.graph||{};
+    deviceText.textContent=(d.backend||'NO DEVICE')+'  ·  '+
+      (d.sampleRate?Math.round(d.sampleRate)+' Hz':'— Hz')+' / '+
+      (d.bufferFrames||'—')+' frames  ·  GRAPH '+(g.revision??'—');
+    modeBadge.textContent=!acceptedNative?'DEMO · NOT CONNECTED':
+      d.outputArmed?'NATIVE ACCEPTED · ARMED':'NATIVE ACCEPTED · OUTPUT DISARMED';
+    root.dataset.demo=String(!acceptedNative);
+    root.dataset.armed=String(acceptedNative&&!!d.outputArmed);
+  }
+  function render(){
+    if(!accepted)return;
+    updateHeader();
+    lanes.replaceChildren();main.replaceChildren();
+    const channels=accepted.graph.channels;
+    for(const ch of channels){
+      if(clean(ch.role).toUpperCase()==='MAIN')main.append(strip(ch,true));
+      else lanes.append(strip(ch));
+    }
+    if(!main.children.length){
+      main.append(h('div','arV6NoMaster','MAIN NOT PUBLISHED BY NATIVE'));
+    }
+    const destinations=(accepted.graph.destinations||[]).filter(x=>x.acceptsSend===true);
+    options(sendMode,destinations,modeSend,'MAIN FADERS');
+    const cap=accepted.graph.capabilities||{};
+    sendMode.disabled=!acceptedNative||!cap.sendsOnFaders;
+    add.disabled=!can('CREATE_CHANNEL');
+    refreshDisabled();refreshMeters();refreshBanks();
+  }
+  function refreshDisabled(){
+    if(!accepted)return;
+    for(const node of root.querySelectorAll('[data-op]')){
+      const op=node.dataset.op,id=node.dataset.id||null;
+      node.disabled=!can(op,id);
+    }
+    add.disabled=!can('CREATE_CHANNEL');
+    const caps=accepted.graph.capabilities||{};
+    sendMode.disabled=!acceptedNative||!caps.sendsOnFaders;
+  }
+  function refreshMeters(){
+    if(!accepted)return;
+    const meters=acceptedNative?accepted.telemetry?.channelMeterRmsPeak||{}:{};
+    for(const meter of root.querySelectorAll('[data-meter-id]')){
+      const id=meter.dataset.meterId;
+      const m=meters[id]||{};
+      const peak=Math.max(0,Number(m.peakLeft)||0,Number(m.peakRight)||0,Number(m.peak)||0);
+      const lit=clamp(Math.ceil(22*clamp(peak,0,1)),0,22);
+      if(meter.dataset.lit===String(lit))continue;
+      meter.dataset.lit=String(lit);
+      const leds=meter.children;
+      for(let i=0;i<leds.length;i++)leds[i].classList.toggle('lit',i<lit);
+    }
+    for(const node of root.querySelectorAll('[data-status-id]')){
+      const ch=byId.get(node.dataset.statusId);
+      if(ch)node.textContent=channelState(ch);
+    }
+  }
+  function refreshBanks(){
+    const total=lanes.children.length;
+    const child=lanes.querySelector('.arV6Strip');
+    const width=child?.getBoundingClientRect().width||172;
+    const perPage=Math.max(1,Math.floor(lanes.clientWidth/width));
+    const at=Math.max(0,Math.round(lanes.scrollLeft/width));
+    bankLabel.textContent=total?(at+1)+'–'+Math.min(total,at+perPage)+' / '+total:'NO CHANNELS';
+    bankPrev.disabled=at===0;bankNext.disabled=at+perPage>=total;
+  }
+  function jump(dir){
+    const first=lanes.querySelector('.arV6Strip');
+    if(!first)return;
+    const perPage=Math.max(1,Math.floor(lanes.clientWidth/first.getBoundingClientRect().width));
+    lanes.scrollBy({left:dir*perPage*first.getBoundingClientRect().width,behavior:'auto'});
+    refreshBanks();
+  }
+  bankPrev.addEventListener('click',()=>jump(-1));
+  bankNext.addEventListener('click',()=>jump(1));
+  lanes.addEventListener('scroll',refreshBanks,{passive:true});
+  if(typeof ResizeObserver==='function')new ResizeObserver(refreshBanks).observe(lanes);
+  sendMode.addEventListener('change',()=>{modeSend=sendMode.value;showFeedback(modeSend?
+    'SENDS ON FADERS · native sends only · select MAIN FADERS to return':'MAIN FADERS · source gains unchanged')});
+  root.addEventListener('click',event=>{
+    const n=event.target.closest('button[data-op]');
+    if(!n||n.disabled)return;
+    const op=n.dataset.op,id=n.dataset.id||null,ch=byId.get(id);
+    if(op==='CREATE_CHANNEL'){
+      // Native must allocate ChannelId; never append a fake strip on ACK.
+      const type=window.prompt('Native channel type (MONO, STEREO, GROUP, FX_RETURN, MONITOR):','MONO');
+      if(!type)return;
+      const role=type.toUpperCase();
+      const caps=accepted.graph.capabilities||{};
+      if(!['MONO','STEREO','GROUP','FX_RETURN','MONITOR'].includes(role))return;
+      if(role==='GROUP'&&!caps.groups||role==='FX_RETURN'&&!caps.fxReturns||
+        role==='MONITOR'&&!caps.monitor){showFeedback('UNAVAILABLE · Native role not accepted');return}
+      sendIntent(op,null,{role});return;
+    }
+    if(!ch)return;
+    if(op==='SET_MUTE')sendIntent(op,id,{value:!ch.controls?.mute});
+    else if(op==='SET_SOLO')sendIntent(op,id,{value:!ch.controls?.solo});
+    else if(op==='SET_INSERT_BYPASS'){
+      const fx=(ch.inserts||[]).find(x=>String(x.id)===n.dataset.insert);
+      if(fx)sendIntent(op,id,{insertId:fx.id,bypassed:!fx.bypassed});
+    }
+    else if(op==='OPEN_INSERT_EDITOR')sendIntent(op,id,{insertId:n.dataset.insert});
+    else if(op==='SET_SEND_TAP'){
+      const send=(ch.sends||[]).find(x=>String(x.id)===n.dataset.send);
+      if(send)sendIntent(op,id,{sendId:send.id,tap:send.tap==='PRE'?'POST':'PRE'});
+    }
+    else if(op==='PICK_INSERT_FILE')sendIntent(op,id,{});
+    else if(op==='ADD_INSERT'){
+      const catalog=accepted?.catalog?.plugins||[];
+      if(!catalog.length){showFeedback('UNAVAILABLE · No native VST3 catalog published');return}
+      const pluginId=window.prompt('Native plugin ID: '+catalog.map(p=>p.id).join(', '),'');
+      if(catalog.some(p=>p.id===pluginId))sendIntent(op,id,{pluginId});
+    }
+  });
+  root.addEventListener('change',event=>{
+    const n=event.target.closest('[data-op]');
+    if(!n||n.disabled)return;
+    const id=n.dataset.id,op=n.dataset.op,ch=byId.get(id);
+    if(!ch)return;
+    if(op==='SET_SOURCE'&&n.value){
+      const endpoint=(accepted.device.inputEndpoints||[]).find(e=>e.id===n.value&&e.available!==false&&e.active!==false);
+      if(endpoint)sendIntent(op,id,{portId:endpoint.id});
+    }else if(op==='SET_PRIMARY_OUT'&&n.value)sendIntent(op,id,{destinationId:n.value});
+    else if(op==='SET_PROCESSING_FORMAT')sendIntent(op,id,{format:n.value});
+    else if(op==='ADD_SEND'&&n.value)sendIntent(op,id,{targetId:n.value,tap:'POST',levelDb:0});
+    else if(op==='SET_PAN')sendIntent(op,id,{value:Number(n.value)});
+    else if(op==='SET_FADER'){
+      if(modeSend){
+        const send=(ch.sends||[]).find(s=>s.targetId===modeSend);
+        if(send)sendIntent('SET_SEND_LEVEL',id,{sendId:send.id,levelDb:Number(n.value)});
+        else showFeedback('UNAVAILABLE · No native send on this channel');
+      }else sendIntent(op,id,{valueDb:Number(n.value)});
+    }
+    // Native snapshot (not the locally manipulated HTML select/range) owns truth.
+    if(accepted)render();
+  });
+  if(native){
+    backend.addEventListener('arMixConsoleSnapshot',s=>receiveSnapshot(s,true));
+    backend.addEventListener('arMixConsoleAck',receiveAck);
+    requestSnapshot();
+  }else{
+    // Browser preview is visibly DEMO with every mutation disabled.
+    receiveSnapshot(makeDemo(),false);
+    showFeedback('BROWSER DEMO · UI layout only · no PCM, hardware, installed VST3 or LIVE routes');
+  }
+  // Host/browser acceptance harness: dispatch a native envelope explicitly;
+  // no public function may forge a native acceptance in a real JUCE session.
+  if(!native){
+    window.addEventListener('arMixV6Fixture',e=>receiveSnapshot(e.detail?.snapshot||e.detail,false));
+  }
+  window.__arMixV6ReadOnly=()=>({
+    nativePublisher:acceptedNative,revision:accepted?.graph?.revision??null,
+    epoch:accepted?.device?.epoch??null,visibleChannelIds:[...byId.keys()],
+    pendingCount:pending.size,feedback
+  });
+})();
