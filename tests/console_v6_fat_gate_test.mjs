@@ -40,7 +40,7 @@ const pcm=()=>({schema:'arsonmix.console-v6.pcm-evidence.v1',cases:[
 ]});
 test('canonical native WebView trace has exact ACK/full snapshot and no fake live',()=>{
  assert.equal(checkTrace(trace()).provenance,'SYNTHETIC');
- const a=trace();a.events.splice(3,1);
+ const a=trace();a.events[3]=a.events[4];
  assert.throws(()=>checkTrace(a),/fresh snapshot required/);
  const b=trace();b.events[6].payload.graph.channels[0].id='50';
  assert.throws(()=>checkTrace(b),/rejected intent mutated/);
