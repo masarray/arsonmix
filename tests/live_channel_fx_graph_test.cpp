@@ -595,6 +595,9 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
     assert(static_cast<int>(outs.getArray()->getReference(1).getProperty("port",0))==4);
     const auto diagnostic=snap.getProperty("legacyM4",{});
     assert(diagnostic.getProperty("routingRevision","").toString()=="77");
+    // Universal revisions cannot be borrowed from M4; this unready source
+    // must not permit GUI ChannelId operations even while M4 PCM is active.
+    assert(graph.getProperty("revision","").toString()=="0");
     Bridge bridge;
     const auto intent=[&](const juce::String& req,const juce::String& ep,
                           const juce::String& rev="0") {
@@ -761,6 +764,18 @@ static void verifyFirstSoundOnePinNativeSourceDraft() {
            mainL[1]/mic[1]>mainL[2]/mic[2]);
     assert(mainR[0]/mic[0]>mainR[1]/mic[1] &&
            mainR[1]/mic[1]>mainR[2]/mic[2]);
+    assert(mainL[3]>0.f && mainR[3]>0.f); // 4/64 frames, not a hard mute
+    // Sixteen small callback blocks complete EXACTLY the same 64-sample
+    // ramp as one 64-frame callback, without RT heap allocations.
+    float previousTail=mainL[3]/mic[3];
+    for(int blockIndex=1;blockIndex<16;++blockIndex) {
+        const auto heapBefore=heapCalls.load(std::memory_order_relaxed);
+        assert(production.process(nativePins,1,mainL.data(),mainR.data(),4,&levels));
+        assert(heapCalls.load(std::memory_order_relaxed)==heapBefore);
+        const float normalizedTail=mainL[3]/mic[3];
+        assert(normalizedTail<=previousTail+1.e-5f);
+        previousTail=normalizedTail;
+    }
     assert(near(mainL[3],0.f) && near(mainR[3],0.f));
     mainL.fill(1.f);mainR.fill(1.f);
     assert(production.process(nativePins,1,mainL.data(),mainR.data(),4,&levels));
@@ -769,6 +784,15 @@ static void verifyFirstSoundOnePinNativeSourceDraft() {
     assert(production.setStripControl(6,.25f,0.f,true,false,false));
     assert(production.process(nativePins,1,mainL.data(),mainR.data(),4,&levels));
     assert(mainL[0]>0.f&&mainR[0]>0.f);
+    assert(mainL[3]>mainL[0]); // unmute ramps, never spikes to unity
+    for(int k=1;k<16;++k)
+        assert(production.process(nativePins,1,mainL.data(),mainR.data(),4,&levels));
+    assert(mainL[3]>0.f);
+    // A rapid re-MUTE in the middle of an unmute envelope does not
+    // interpolate from stale unity or introduce a discontinuity.
+    assert(production.setStripControl(6,.25f,0.f,true,true,false));
+    assert(production.process(nativePins,1,mainL.data(),mainR.data(),4,&levels));
+    assert(mainL[0]>0.f);
     juce::var denied;
     assert(NativeVerifiedSourcePatch::prepare(typed,6,"STEREO",5,5,
         physical,17,9,denied).isNotEmpty());
@@ -867,7 +891,14 @@ static void verifyNativePuzzleV8FixtureAndWire() {
     assert(source.is_open());
     const std::string checked((std::istreambuf_iterator<char>(source)),
                               std::istreambuf_iterator<char>());
-    assert(expected==checked);
+    // Git on Windows can checkout a one-line JSON fixture with CRLF.
+    // The native stdout generator deliberately emits canonical LF; accept
+    // only the OS newline conversion, never changed JSON data.
+    std::string canonical=checked;
+    if(canonical.size()==expected.size()+1 &&
+       canonical.size()>=2 && canonical.substr(canonical.size()-2)=="\r\n")
+        canonical.erase(canonical.size()-2,1);
+    assert(expected==canonical);
     const auto parsed=juce::JSON::parse(juce::String::fromUTF8(expected.c_str()));
     assert(parsed.isObject());
     const auto events=parsed.getProperty("events",{});

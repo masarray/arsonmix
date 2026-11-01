@@ -1082,6 +1082,31 @@ public:
             return "SOURCE: native prepare failed; prior audio kept";
         }
     }
+    // Direct compact OUT / MONO-STEREO operator edits. One existing M4
+    // prepared graph is republished; original VST3 instances/Orbit remain
+    // owned by the same native callback. Never touched on RT.
+    juce::String repatchDryRoutingLabChannel(int strip,std::uint64_t epoch,
+            std::uint64_t revision,const juce::String& operation,
+            const juce::String& value) {
+        if(independent_.active()||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           handoff_.busy()||!directFence_.permitted()||
+           diagnosticRoute_.load(std::memory_order_acquire)
+               !=armix::diagnostics::Route::normal||
+           savedDirectSetup_||savedLiveSetup_)
+            return "CHANNEL PATCH: DIRECT device or VST3 handoff unavailable";
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device)return "CHANNEL PATCH: no active native audio interface";
+        try {
+            return dryRoutingLab_.repatchChannelStructure(
+                strip,epoch,revision,operation,value,
+                directFence_.permitted(),independent_.active(),
+                graphOwned_->count,formats_,device->getCurrentSampleRate(),
+                juce::jmax(32,device->getCurrentBufferSizeSamples()));
+        } catch(...) {
+            return "CHANNEL PATCH: native preparation failed; previous mix preserved";
+        }
+    }
     bool setDryRoutingLabParameter(int strip,std::uint64_t epoch,
             std::uint64_t revision,const juce::String& parameter,
             float value) noexcept {

@@ -14,7 +14,7 @@ OPS = [
     "SET_SOURCE", "SET_PROCESSING_FORMAT", "SET_PRIMARY_OUT",
     "PICK_INSERT_FILE", "SET_INSERT_BYPASS", "OPEN_INSERT_EDITOR", "MOVE_INSERT",
     "ADD_SEND", "SET_SEND_TAP", "SET_SEND_LEVEL", "SET_FADER",
-    "SET_PAN", "SET_MUTE", "SET_SOLO", "CREATE_CHANNEL",
+    "SET_PAN", "SET_MUTE", "SET_SOLO", "SET_TRIM", "SET_CUE", "CREATE_CHANNEL",
 ]
 
 
@@ -24,7 +24,8 @@ def channel(identity, name, role="INPUT", source=None):
       "source":{"portId":source,"physicalPins":[int(source.split(":")[1])]} if source else None,
       "primaryOutId":"1000" if role!="MAIN" else None,
       "inserts":[],"sends":[],
-      "controls":{"faderDb":-3,"pan":0,"mute":False,"solo":False}}
+      "controls":{"faderDb":-3,"pan":0,"mute":False,"solo":False,
+                   "trimDb":-2.5,"cue":False}}
 
 
 def snapshot(revision=3, epoch=7, new_channel=False):
@@ -125,10 +126,52 @@ async def main():
         # A leading-zero alias must not be accepted even from the JUCE bridge.
         await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)", malformed)
         assert await page.locator("#arV6Console").is_hidden()
+        # A physical source must name an active endpoint that belongs to
+        # the SAME verified pin set, never a different active IN label.
+        wrong_pin=snapshot(revision=98)
+        wrong_pin["graph"]["channels"][1]["source"]={"portId":"in:0","physicalPins":[1]}
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",wrong_pin)
+        assert await page.locator("#arV6Console").is_hidden()
+        inactive_pin=snapshot(revision=98)
+        inactive_pin["device"]["inputEndpoints"][1]["active"]=False
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",inactive_pin)
+        assert await page.locator("#arV6Console").is_hidden()
+        # Native feedback-loop defects must fail closed before UI admission.
+        cyclic=snapshot(revision=98)
+        cyclic["graph"]["channels"][-3]["primaryOutId"]="1002"
+        cyclic["graph"]["channels"][-2]["primaryOutId"]="1001"
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",cyclic)
+        assert await page.locator("#arV6Console").is_hidden()
         await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)", first)
         await page.locator("#arV6Console").wait_for(state="visible")
         assert await page.locator("#arV6Lanes .arV6Strip").count() == 12
         assert await page.locator("#arV6Main .arV6Master").count() == 1
+        # The device drawer contains ONLY native-verified physical endpoints,
+        # and never emits a command or invents a physical signal.
+        await page.get_by_role("button", name="Verified native audio device inventory").click()
+        device=page.locator("#arV6DevicePanel")
+        assert await device.is_visible()
+        assert "TEST IN" in await device.inner_text()
+        assert "IN1" in await device.inner_text() and "IN2" in await device.inner_text()
+        assert "OUT1" in await device.inner_text() and "OUT2" in await device.inner_text()
+        assert "Read-only" in await device.inner_text()
+        await page.get_by_role("button",name="Close native device inventory").click()
+        assert await page.locator('[data-op="SET_PRIMARY_OUT"][data-id="7"] option[value="out:0"]').count()==0
+        assert await page.locator('[data-op="SET_PRIMARY_OUT"][data-id="1000"] option[value="out:0"]').count()==1
+        assert await page.locator('[data-op="SET_PRIMARY_OUT"][data-id="1000"] option[value="out:1"]').count()==1
+        # MAIN can request the verified render pin via the same native socket;
+        # a browser selecting it does not arm hardware or change PCM.
+        await page.locator('[data-op="SET_PRIMARY_OUT"][data-id="1000"]').select_option("out:0")
+        main_intent=await page.evaluate("""()=>window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').at(-1).payload""")
+        assert main_intent["operation"]=="SET_PRIMARY_OUT"
+        assert main_intent["targetChannelId"]=="1000"
+        assert main_intent["payload"]=={"destinationId":"out:0"}
+        assert await page.locator('[data-op="SET_PRIMARY_OUT"][data-id="1000"]').input_value()==""
+        await page.evaluate("""id=>window.__v6Test.publish('arMixConsoleAck',
+          {requestId:id,status:'REJECTED',deviceEpoch:'7',graphRevision:'3',
+          rosterRevision:'3',errorCode:'OUTPUT_NOT_ARMED'})""",main_intent["requestId"])
+        assert await page.locator('[data-op="SET_PRIMARY_OUT"][data-id="1000"]').input_value()==""
         assert await page.locator('[data-meter-id="1000"] .arV6MeterLane').count() == 2
         assert await page.locator('[data-meter-id="7"][data-format="MONO"] .arV6MeterLane').count() == 2
         # L/R ladder must never mirror a single maximum to both sides.
@@ -197,6 +240,41 @@ async def main():
             await page.locator(f'.arV6RailToggle[data-section="{key}"]').click()
         assert all(x["topDelta"]<2 for x in await aligned_sections())
 
+        # Native stable ID CTRL/SHIFT selection is UI-only; pinned MAIN excluded.
+        count_start=await page.evaluate("""()=>window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').length""")
+        await page.locator('[data-channel-id="2"] .arV6StripHead').click()
+        await page.locator('[data-channel-id="7"] .arV6StripHead').click(modifiers=["Control"])
+        assert await page.evaluate("()=>window.__arMixV6ReadOnly().selectedChannelIds")==["2","7"]
+        await page.locator('[data-channel-id="9"] .arV6StripHead').click(modifiers=["Shift"])
+        assert await page.evaluate("()=>window.__arMixV6ReadOnly().selectedChannelIds")==["7","8","9"]
+        assert await page.locator('#arV6Main .arV6Master').get_attribute("aria-selected")=="false"
+        assert await page.locator('.arV6SelectionCount').inner_text()=="3 SEL"
+        assert await page.evaluate("""()=>window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').length""")==count_start
+
+        trim=page.locator('[data-op="SET_TRIM"][data-id="7"]')
+        assert await trim.is_enabled() and await trim.input_value()=="-2.5"
+        await trim.evaluate("(el)=>{el.value='5';el.dispatchEvent(new Event('change',{bubbles:true}))}")
+        trim_cmd=await page.evaluate("""()=>window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').at(-1).payload""")
+        assert trim_cmd["operation"]=="SET_TRIM" and trim_cmd["payload"]=={"valueDb":5}
+        assert await trim.input_value()=="-2.5"
+        await page.evaluate("""id=>window.__v6Test.publish('arMixConsoleAck',
+          {requestId:id,status:'REJECTED',deviceEpoch:'7',graphRevision:'3',
+           rosterRevision:'3',errorCode:'TRIM_NOT_READY'})""",trim_cmd["requestId"])
+        cue=page.locator('[data-op="SET_CUE"][data-id="7"]')
+        assert await cue.is_enabled()
+        await cue.click()
+        cue_cmd=await page.evaluate("""()=>window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').at(-1).payload""")
+        assert cue_cmd["operation"]=="SET_CUE" and cue_cmd["payload"]=={"value":True}
+        assert await cue.get_attribute("aria-pressed")=="false"
+        await page.evaluate("""id=>window.__v6Test.publish('arMixConsoleAck',
+          {requestId:id,status:'REJECTED',deviceEpoch:'7',graphRevision:'3',
+           rosterRevision:'3',errorCode:'NO_MONITOR'})""",cue_cmd["requestId"])
+        assert await cue.get_attribute("aria-pressed")=="false"
+
         # Role and SOLO filters are UI-only; MAIN remains pinned, original
         # numeric ChannelIds survive and no console intent is emitted.
         count_before=await page.evaluate("""()=>window.__v6Test.sent.filter(
@@ -218,7 +296,12 @@ async def main():
             x => x.event === 'arMixConsoleIntent').at(-1).payload""")
         assert sent["operation"] == "SET_SOURCE" and sent["targetChannelId"] == "7"
         assert sent["baseGraphRevision"] == "3" and sent["deviceEpoch"] == "7"
-        assert sent["baseRosterRevision"] == "3" and sent["requestId"].startswith("gui-") and sent["requestId"].endswith(":1")
+        assert sent["baseRosterRevision"] == "3"
+        ids=await page.evaluate("""()=>window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').map(x=>x.payload.requestId)""")
+        assert len(ids)==len(set(ids)) and all(
+          x.startswith("gui-") and x.rsplit(":",1)[-1].isdigit() for x in ids)
+        assert ids[-1]==sent["requestId"]
         assert sent["payload"] == {"portId":"in:0"}
         assert await page.locator('[data-op="SET_SOURCE"][data-id="7"]').input_value() == ""
         assert "PENDING" in await page.locator(".arV6Message").inner_text()
@@ -361,6 +444,166 @@ async def main():
         await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)", snapshot(revision=4))
         await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)", snapshot(revision=99,epoch=6))
         assert await page.locator("#arV6Lanes .arV6Strip").count() == 13
+
+        # Same device epoch cannot silently remap active pin masks or clock.
+        # A new native epoch can legitimately publish a ONE-PIN interface.
+        bad_clock=snapshot(revision=6,new_channel=True)
+        bad_clock["device"]["sampleRate"]=96000
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)", bad_clock)
+        assert "REJECTED DEVICE READBACK" in await page.locator(".arV6Message").inner_text()
+        assert "48000 Hz" in await page.locator(".arV6Device").inner_text()
+        one_pin=snapshot(revision=6,epoch=8,new_channel=True)
+        one_pin["device"]["enabledInputs"]=[0]
+        one_pin["device"]["inputEndpoints"]=one_pin["device"]["inputEndpoints"][:1]
+        one_pin["device"]["enabledOutputs"]=[0]
+        one_pin["device"]["outputEndpoints"]=one_pin["device"]["outputEndpoints"][:1]
+        one_pin["graph"]["channels"][1]["source"]=None
+        one_pin["graph"]["channels"][-1]["primaryOutId"]="out:0"
+        # The positive browser-host catalog is TEST ONLY. ENGINE must supply
+        # this exact native-scanned field for any production VST3 availability.
+        one_pin["graph"]["capabilities"]["supportedOps"]=OPS+[
+          "ADD_INSERT","SET_LINK_GROUP","ROUTE_SELECTED_TO_GROUP","RENAME_CHANNEL"]
+        one_pin["catalog"]={"plugins":[
+          {"id":"native:hall-reverb","name":"Hall Reverb","vendor":"Verified Vendor",
+           "category":"Reverb"},
+          {"id":"native:parametric-eq","name":"Parametric EQ","vendor":"Verified Vendor",
+           "category":"EQ"}]}
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",one_pin)
+        assert await page.locator('[data-op="SET_SOURCE"][data-id="7"] option[value="in:1"]').count()==0
+        assert await page.locator('[data-op="SET_SOURCE"][data-id="7"] option[value="in:0"]').count()==1
+        assert await page.locator('[data-op="SET_PRIMARY_OUT"][data-id="1000"] option[value="out:1"]').count()==0
+        assert await page.locator('[data-op="SET_PRIMARY_OUT"][data-id="1000"]').input_value()=="out:0"
+        await page.get_by_role("button",name="Verified native audio device inventory").click()
+        assert "NO VERIFIED ACTIVE PIN" not in await device.inner_text()
+        assert "IN2" not in await device.inner_text()
+        assert "OUT2" not in await device.inner_text()
+        await page.get_by_role("button",name="Close native device inventory").click()
+
+        # F8 searches ONLY the native catalog and adds through one typed intent.
+        # An epoch change clears prior selection; one native ChannelId is required.
+        assert await page.locator(".arV6SelectionCount").inner_text()=="0 SEL"
+        await page.keyboard.press("F8")
+        manager=page.locator("#arV6PluginPanel")
+        assert await manager.is_visible()
+        assert "Select exactly ONE" in await manager.inner_text()
+        await page.locator("#arV6PluginPanel .arV6PluginSearch").fill("hall")
+        assert await manager.locator("button[data-plugin-id]").count()==1
+        assert await manager.locator("button[data-plugin-id]").first.is_disabled()
+        await page.locator('[data-channel-id="7"] .arV6StripHead').click()
+        assert await manager.locator("button[data-plugin-id]").first.is_enabled()
+        count_fx=await page.locator('[data-channel-id="7"] .arV6FxSlot').count()
+        await manager.locator('button[data-plugin-id="native:hall-reverb"]').click()
+        load=await page.evaluate("""()=>window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').at(-1).payload""")
+        assert load["operation"]=="ADD_INSERT"
+        assert load["targetChannelId"]=="7" and load["deviceEpoch"]=="8"
+        assert load["payload"]=={"pluginId":"native:hall-reverb"}
+        assert await page.locator('[data-channel-id="7"] .arV6FxSlot').count()==count_fx
+        assert await manager.is_hidden()
+        await page.evaluate("""id=>window.__v6Test.publish('arMixConsoleAck',
+          {requestId:id,status:'REJECTED',deviceEpoch:'8',graphRevision:'6',
+          rosterRevision:'6',errorCode:'PLUGIN_LOAD_FAILED'})""",load["requestId"])
+        assert await page.locator('[data-channel-id="7"] .arV6FxSlot').count()==count_fx
+        assert "PLUGIN_LOAD_FAILED" in await page.locator(".arV6Message").inner_text()
+
+        # PRD §9 native operator multiselect: LINK FADERS is a control
+        # grouping transaction, NOT a serial audio GROUP BUS.
+        await page.locator('[data-channel-id="2"] .arV6StripHead').click()
+        await page.locator('[data-channel-id="7"] .arV6StripHead').click(modifiers=["Control"])
+        await page.get_by_role("button",name="Selected channels and native group actions").click()
+        operator=page.locator("#arV6SelectionPanel")
+        assert await operator.is_visible()
+        link=page.get_by_role("button",
+          name="Link selected faders using native relative control group",exact=True)
+        unlink=page.get_by_role("button",
+          name="Unlink selected faders using native relative control group",exact=True)
+        assert await link.is_enabled() and await unlink.is_disabled()
+        await link.click()
+        cmd=await page.evaluate("""()=>window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').at(-1).payload""")
+        assert cmd["operation"]=="SET_LINK_GROUP"
+        assert cmd["targetChannelId"] is None
+        assert cmd["payload"]=={"channelIds":["2","7"],"linked":True}
+        assert await link.is_disabled()
+        assert "LINK" not in await page.locator('[data-channel-id="7"] .arV6Role').inner_text()
+        await page.evaluate("""id=>window.__v6Test.publish('arMixConsoleAck',
+          {requestId:id,status:'ACCEPTED',deviceEpoch:'8',
+           graphRevision:'7',rosterRevision:'6',errorCode:''})""",cmd["requestId"])
+        assert await link.is_disabled()
+        accepted_link=json.loads(json.dumps(one_pin))
+        accepted_link["graph"]["revision"]="7"
+        accepted_link["graph"]["channels"][1]["linkGroupId"]="A"
+        accepted_link["graph"]["channels"][6]["linkGroupId"]="A"
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",accepted_link)
+        assert "LINK A" in await page.locator('[data-channel-id="7"] .arV6Role').inner_text()
+        assert await unlink.is_enabled()
+
+        # Native unlink waits for native ACK + exact snapshot, no browser
+        # fader-copy simulation and no optimistic sound/control group.
+        await unlink.click()
+        unlink_cmd=await page.evaluate("""()=>window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').at(-1).payload""")
+        assert unlink_cmd["payload"]=={"channelIds":["2","7"],"linked":False}
+        await page.evaluate("""id=>window.__v6Test.publish('arMixConsoleAck',
+          {requestId:id,status:'REJECTED',deviceEpoch:'8',
+           graphRevision:'7',rosterRevision:'6',errorCode:'LINK_BUSY'})""",unlink_cmd["requestId"])
+        assert "LINK A" in await page.locator('[data-channel-id="7"] .arV6Role').inner_text()
+        assert await unlink.is_enabled()
+
+        # Route selected to native serial summing bus, not relative fader
+        # link. Failed request must leave both primary output paths intact.
+        await page.get_by_role("combobox",name="Select actual native summing Group Bus").select_option("1002")
+        route=page.get_by_role("button",name="Route selected channels to native summing Group Bus")
+        assert await route.is_enabled()
+        await route.click()
+        group_cmd=await page.evaluate("""()=>window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').at(-1).payload""")
+        assert group_cmd["operation"]=="ROUTE_SELECTED_TO_GROUP"
+        assert group_cmd["payload"]=={"channelIds":["2","7"],"destinationId":"1002"}
+        assert await route.is_disabled()
+        await page.evaluate("""id=>window.__v6Test.publish('arMixConsoleAck',
+          {requestId:id,status:'REJECTED',deviceEpoch:'8',
+           graphRevision:'7',rosterRevision:'6',errorCode:'BUS_BUSY'})""",group_cmd["requestId"])
+        assert await page.locator('[data-op="SET_PRIMARY_OUT"][data-id="7"]').input_value()=="1000"
+        assert await route.is_enabled()
+        await page.get_by_role("button",name="Close selected channel actions").click()
+
+        # Direct inline rename is a canonical RENAME_CHANNEL intent.
+        # No optimistic name change; accepted snapshot updates text while
+        # preserving native fader DOM identity and physical I/O.
+        await page.evaluate("""()=>window.__renameFader=
+          document.querySelector('[data-channel-id="7"] .arV6Fader')""")
+        await page.locator('[data-channel-id="7"] .arV6Name').dblclick()
+        rename=page.locator('[data-channel-id="7"] .arV6Rename')
+        assert await rename.is_visible()
+        await rename.fill("Lead Vox")
+        await rename.press("Enter")
+        rename_cmd=await page.evaluate("""()=>window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').at(-1).payload""")
+        assert rename_cmd["operation"]=="RENAME_CHANNEL"
+        assert rename_cmd["targetChannelId"]=="7"
+        assert rename_cmd["payload"]=={"name":"Lead Vox"}
+        assert await page.locator('[data-channel-id="7"] .arV6Name').inner_text()=="CH 07"
+        await page.evaluate("""id=>window.__v6Test.publish('arMixConsoleAck',
+          {requestId:id,status:'ACCEPTED',deviceEpoch:'8',
+           graphRevision:'8',rosterRevision:'6',errorCode:''})""",rename_cmd["requestId"])
+        assert await page.locator('[data-channel-id="7"] .arV6Name').inner_text()=="CH 07"
+        accepted_name=json.loads(json.dumps(accepted_link))
+        accepted_name["graph"]["revision"]="8"
+        accepted_name["graph"]["channels"][6]["name"]="Lead Vox"
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",accepted_name)
+        assert await page.locator('[data-channel-id="7"] .arV6Name').inner_text()=="Lead Vox"
+        assert await page.evaluate("""()=>window.__renameFader===
+          document.querySelector('[data-channel-id="7"] .arV6Fader')""")
+        assert await page.locator('[data-op="SET_PRIMARY_OUT"][data-id="7"]').input_value()=="1000"
+        # Missing native action MUST disable grouping, while UI selection
+        # remains possible; no fake native operations on old fixtures.
+        no_group=json.loads(json.dumps(accepted_name))
+        no_group["graph"]["revision"]="9"
+        no_group["graph"]["capabilities"]["supportedOps"]=OPS
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",no_group)
+        await page.get_by_role("button",name="Selected channels and native group actions").click()
+        assert await link.is_disabled() and await route.is_disabled()
 
         # 4 desktop widths and 3 heights: meter/fader zones aligned, MAIN pinned.
         for width in (1024, 1366, 1440, 1680):

@@ -228,15 +228,41 @@ public:
                   if (browser_.loaded) emitNativeConsoleSnapshot(engine_.status());
               })
               .withEventListener ("arMixConsoleIntent", [this] (juce::var args) {
-                  // No native v6 mutation can be accepted while the installed
-                  // audio callback still owns fixed M4 lanes. Rejection
-                  // retains the existing VST3/Orbit/Show/MAIN output.
-                  auto status=engine_.status();
-                  const auto snap=armix::console::LiveConsoleBridgeV6::snapshot(status);
-                  const auto ack=consoleBridge_.rejectUnsupportedIntent(args,snap);
+                  // S1: actual installed JUCE production path, never a
+                  // dry-only C++ model or WebAudio replica. Only admitted
+                  // fixed-M4 SOURCE and RT controls can mutate sound; CH11,
+                  // GROUP/FX_RETURN remain rejected until one ChannelId
+                  // callback really owns them.
+                  const auto snapshot=armix::console::LiveConsoleBridgeV6::snapshot(engine_.status());
+                  const auto ack=consoleBridge_.processProductionIntent(
+                      args,snapshot,engine_,
+                      [this](int lane,int slot,std::uint64_t epoch,
+                             std::uint64_t revision,const juce::String& token)
+                            ->juce::String {
+                          if(nativeShowBusy_||studioBackupBusy_||
+                             engine_.isGraphSwitchPending())
+                              return "NATIVE_EDITOR_BUSY";
+                          const auto owner=engine_.leaseRoutedFxForEditor(
+                              lane,slot,epoch,revision,token);
+                          if(!owner || !owner->processor)
+                              return "NATIVE_EDITOR_STALE_INSTANCE";
+                          try {
+                              auto* editor=owner->processor->createEditorIfNeeded();
+                              if(!editor)return "NATIVE_PLUGIN_HAS_NO_EDITOR";
+                              closePluginEditor();
+                              routedEditorOwner_=owner; // original JUCE instance
+                              routedEditorEpoch_=static_cast<juce::int64>(epoch);
+                              editorWindow_=std::make_unique<PluginEditorWindow>(
+                                  owner->processor->getName(),editor);
+                              return {};
+                          } catch(...) {
+                              closePluginEditor();
+                              return "NATIVE_VENDOR_EDITOR_FAILED";
+                          }
+                      });
                   if (browser_.loaded) {
                       browser_.emitEventIfBrowserIsVisible("arMixConsoleAck",ack);
-                      emitNativeConsoleSnapshot(status);
+                      emitNativeConsoleSnapshot(engine_.status());
                   }
               })
               .withResourceProvider (assetFor))
@@ -1379,6 +1405,38 @@ private:
             ack->setProperty("state",engine_.status().getProperty("dryRoutingLab",{}));
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
                 "arMixSourceSwitchAck",juce::var(ack.release()));
+            if(error.isNotEmpty())emitNotice(error,true);
+            return;
+        }
+        // Operator-first native CHAN OUT / DSP FORMAT. This is the same
+        // installed M4 callback/FX publisher as routingSourceSwitch, not a
+        // synthetic universal ChannelId operation. GUI owner may wire a
+        // compact selector without navigating the large APPLY wizard.
+        if(action=="routingChannelStructure") {
+            const int requestId=static_cast<int>(args.getProperty("requestId",0));
+            const int channel=static_cast<int>(args.getProperty("channel",-1));
+            const auto operation=args.getProperty("operation","").toString();
+            const auto selected=args.getProperty("selected","").toString();
+            const auto ep=args.getProperty("deviceEpoch",juce::var());
+            const auto rv=args.getProperty("revision",juce::var());
+            const bool safe=requestId>0&&channel>=0&&channel<LiveDryRoutingLab::count&&
+                ep.isInt64()&&rv.isInt64()&&!nativeShowBusy_&&
+                !studioBackupBusy_&&!engine_.isGraphSwitchPending();
+            const juce::String error=safe?
+                engine_.repatchDryRoutingLabChannel(channel,
+                    static_cast<std::uint64_t>(static_cast<juce::int64>(ep)),
+                    static_cast<std::uint64_t>(static_cast<juce::int64>(rv)),
+                    operation,selected):
+                juce::String("CHANNEL PATCH: stale device or Show/FX edit busy");
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",requestId);
+            ack->setProperty("channel",channel);
+            ack->setProperty("operation",operation);
+            ack->setProperty("ok",error.isEmpty());
+            ack->setProperty("error",error);
+            ack->setProperty("state",engine_.status().getProperty("dryRoutingLab",{}));
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                "arMixChannelStructureAck",juce::var(ack.release()));
             if(error.isNotEmpty())emitNotice(error,true);
             return;
         }

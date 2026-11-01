@@ -1,0 +1,20 @@
+{
+  "version": "preview-v3",
+  "route": "/preview-v2/",
+  "kind": "GUI_REFERENCE_ONLY",
+  "live_audio": false,
+  "source_pr": 278,
+  "source_branch": "design/audition-mixer-reference-isolated-20261101",
+  "source_sha": "0dcd1907d07980e96794ca74833b33b0391ea66f",
+  "source_path": "design-references/audition-mixer-study/index.html",
+  "features": [
+    "Original ArSonMix faders and PAN asset",
+    "10 fitted channel strips + pinned Master",
+    "Top arrows for extra banks",
+    "No bottom horizontal scrollbar",
+    "Docked plugin manager",
+    "Quiet FX/Send/EQ Mix default"
+  ],
+  "tests": "98/98 zero-dependency DOM checks; real Chromium geometry not yet certified",
+  "note": "Reference only. Production ASIO, native VST3 and meter not connected."
+}

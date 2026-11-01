@@ -1,11 +1,11 @@
 {
   "schema": "arsonmix.v8.integration-composition.v1",
   "releaseReady": false,
-  "normativeMain": "fe3f8add2c7103122895c10bc8c7461e6c55509a",
+  "normativeMain": "44ff625976132402a5b770b5fd8f82cf6435c213",
   "sourceSHAs": {
-    "ENGINE": "d4035eb66361db48311d927a91986a12d95621b9",
-    "GUI": "70adb79a0511dbeb2bc1cbfaa48bf9a14f24d51f",
-    "FAT": "246f3f8685aa7f99ec9cdaff4e4f68417d2cf6a1"
+    "ENGINE": "636489ac928093800953b1834fae57d35ed9262c",
+    "GUI": "665efb24c068028d3d1935ccf679e4ddabf75658",
+    "FAT": "f61fd9e515f1c3ba5cbe65653e23b7c9592239a3"
   },
   "machineContract": "contracts/console-puzzle-v8.json",
   "fixture": "tests/fixtures/console-v8-native-unready.json",
@@ -56,7 +56,9 @@
     "tests/ci_workflow_efficiency_test.mjs": "FAT",
     "tests/console_native_s0_playwright.py": "FAT",
     "tests/console_v6_fat_gate_test.mjs": "FAT",
-    "tests/native_artifact_packaging_contract_test.mjs": "FAT"
+    "tests/native_artifact_packaging_contract_test.mjs": "FAT",
+    "engine/core/PreparedMixerBlock.h": "ENGINE",
+    "scripts/check_console_puzzle.mjs": "FAT"
   },
   "nativeGoldenFixtureSha256": "4cbded2c7ada3be511c0e9a09b1949979638eb274c432f89b673a98ce55c7718",
   "nativeGoldenRole": "C++ portable serializer UNREADY fixture shared in GUI test; NOT real JUCE production callback/PCM",
@@ -71,5 +73,18 @@
   "WindowsCIIntegratedSHA": "NOT_RUN",
   "ChromiumCIIntegratedSHA": "NOT_RUN",
   "knownNativeOwnerTest": "P1H MUTE de-click assertion corrected in source, exact Windows CTest pending",
-  "s0ProofRequirement": "run --native-generator actual JUCE app/test binary with strict flag parsing; same exact JSON to GUI/FAT"
+  "s0ProofRequirement": "run --native-generator actual JUCE app/test binary with strict flag parsing; same exact JSON to GUI/FAT",
+  "productState": "INTEGRATED_SOURCE_ONLY_REQUIRE_EXACT_SHA_NATIVE_CTEST_AND_GUI_PCM",
+  "nativeS0Verified": false,
+  "actualCallbackPCMVerified": false,
+  "oneExactShaWindows": "NOT_RUN",
+  "oneExactShaChromium": "NOT_RUN",
+  "qualifiedNativeFixtureSha256": "NOT_GENERATED_FROM_INSTALLED_JUCE",
+  "portableNativeFixtureSha256": "4cbded2c7ada3be511c0e9a09b1949979638eb274c432f89b673a98ce55c7718",
+  "releaseBlockers": [
+    "S0 native JUCE executable fixture + GUI replay same actual bytes pending",
+    "S1 installed native callback PCM source to MAIN and mute/ACK pending",
+    "S2 universal CH11+ genuine FX/Group/Return/Monitor/Show pending",
+    "S3 integrated same-SHA Windows/Chromium/physical QA pending"
+  ]
 }

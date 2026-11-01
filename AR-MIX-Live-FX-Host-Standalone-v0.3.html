@@ -2387,6 +2387,141 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 @media(max-height:690px){
  #app .arV6Console{--v6-fx-h:56px;--v6-send-h:55px}
 }
+
+
+/* User-approved PRD v5.2: native-only digital TRIM/CUE and lightweight
+   ChannelId-based multiselect. No RT animation or DSP graph duplication. */
+#app .arV6Console .arV6SelectionCount{
+  flex:0 0 auto;white-space:nowrap;color:#9ebbc7;font:10px/1 Consolas,monospace;
+}
+#app .arV6Console .arV6StripHead{cursor:pointer}
+#app .arV6Console .arV6Strip.isSelected{
+  background:linear-gradient(90deg,#254454,#304958 14%,#304958 87%,#1a3441);
+  box-shadow:inset 0 0 0 1px #70b6d1;
+}
+#app .arV6Console .arV6Strip.isSelected .arV6StripHead{border-bottom-color:#79b9cb}
+#app .arV6Console .arV6Controls{
+  display:grid;grid-template-columns:minmax(0,1fr) repeat(3,26px);
+  grid-template-rows:minmax(0,1fr) 20px;gap:1px 3px;
+  padding:1px 0 2px;align-items:center;
+}
+#app .arV6Console .arV6Controls .arV6Pan{grid-row:1;grid-column:1}
+#app .arV6Console .arV6Controls .arV6Button{
+  min-height:24px;width:26px;padding:0;font-size:11px;
+}
+#app .arV6Console .arV6Trim{
+  display:flex;grid-column:1/-1;grid-row:2;align-items:center;
+  gap:4px;min-width:0;height:19px;border-top:1px solid #324854;
+  color:#8cafc0;font:600 9px/1 "Segoe UI",sans-serif;
+}
+#app .arV6Console .arV6TrimLevel{
+  min-width:0;flex:1 1 0;width:100%;margin:0;height:14px;
+  cursor:ew-resize;accent-color:#60b4ca;
+}
+#app .arV6Console .arV6TrimDb{
+  min-width:28px;text-align:right;white-space:nowrap;
+  font:9px/1 Consolas,monospace;color:#bdd0d9;
+}
+#app .arV6Console .arV6TrimLevel:disabled{opacity:.45;cursor:not-allowed}
+#app .arV6Console[data-narrow="true"] .arV6Controls{
+  grid-template-columns:minmax(0,1fr) repeat(3,23px);gap:1px;
+}
+#app .arV6Console[data-narrow="true"] .arV6Controls .arV6Button{width:23px}
+@media(max-height:690px){
+ #app .arV6Console .arV6Controls{grid-template-rows:minmax(0,1fr) 17px;padding:0}
+ #app .arV6Console .arV6Controls .arV6Button{min-height:19px}
+ #app .arV6Console .arV6Trim{height:16px;font-size:8px;gap:2px}
+ #app .arV6Console .arV6TrimLevel{height:12px}
+}
+
+
+/* v5.2 one-Console DEVICE drawer: native hardware inventory only, no
+   fake setup wizard, no full-window modal and no fader DOM reflow. */
+#app .arV6Console{position:relative}
+#app .arV6Console .arV6DevicePanel{
+  position:absolute;z-index:20;top:52px;right:8px;
+  display:flex;flex-direction:column;
+  width:min(420px,calc(100% - 16px));max-height:min(72vh,530px);
+  overflow:hidden;background:#1a2a34;color:#d4e5eb;
+  border:1px solid #668693;border-radius:4px;
+  box-shadow:0 8px 25px #071019aa;
+}
+#app .arV6Console .arV6DevicePanel[hidden]{display:none!important}
+#app .arV6Console .arV6DevicePanelHead{
+  display:flex;justify-content:space-between;align-items:center;
+  gap:6px;min-height:35px;padding:5px 10px;background:#304651;
+  border-bottom:1px solid #456370;
+  font:600 10px/1.2 "Segoe UI",sans-serif;
+}
+#app .arV6Console .arV6DevicePanelHead .arV6Button{min-height:23px;min-width:26px;padding:2px}
+#app .arV6Console .arV6DeviceRows{padding:5px 10px 10px;overflow-y:auto}
+#app .arV6Console .arV6DeviceRow{
+  display:grid;grid-template-columns:95px minmax(0,1fr);gap:8px;
+  padding:5px 0;border-bottom:1px solid #324954;font:10px/1.45 "Segoe UI",sans-serif;
+}
+#app .arV6Console .arV6DeviceRow span{color:#8fb5c4}
+#app .arV6Console .arV6DeviceRow strong{font-weight:500;overflow-wrap:anywhere}
+#app .arV6Console .arV6DeviceNote{margin:9px 0 2px;color:#c5ad86;font:10px/1.5 "Segoe UI",sans-serif}
+@media(max-width:1100px){#app .arV6Console .arV6DevicePanel{top:45px}}
+
+
+/* F8 native VST3 catalog: search-only until native ADD_INSERT capability
+   and a verified catalog are present. Floating inspector, zero fader reflow. */
+#app .arV6Console .arV6PluginPanel{
+  position:absolute;z-index:21;top:52px;right:8px;
+  display:flex;flex-direction:column;
+  width:min(410px,calc(100% - 16px));max-height:min(72vh,540px);
+  overflow:hidden;background:#1a2a34;color:#d4e5eb;
+  border:1px solid #668693;border-radius:4px;
+  box-shadow:0 8px 25px #071019aa;
+}
+#app .arV6Console .arV6PluginPanel[hidden]{display:none!important}
+#app .arV6Console .arV6PluginTarget{
+  padding:7px 10px;color:#b4d2dc;font:10px/1.35 "Segoe UI",sans-serif;
+}
+#app .arV6Console .arV6PluginSearch{
+  margin:0 10px 8px;min-height:30px;padding:6px 9px;
+  color:#e5eff4;background:#102633;border:1px solid #527a88;
+  border-radius:3px;font:11px "Segoe UI",sans-serif;
+}
+#app .arV6Console .arV6PluginResults{
+  overflow:auto;display:flex;flex-direction:column;
+  min-height:65px;padding:0 9px 9px;gap:3px;scrollbar-width:thin;
+}
+#app .arV6Console .arV6PluginResult{
+  text-align:left;min-height:28px;width:100%;padding:5px 8px;
+  background:#243d4a;color:#d6ebf0;border-color:#426879;
+}
+#app .arV6Console .arV6PluginResult:disabled{opacity:.46;cursor:not-allowed}
+@media(max-width:1100px){#app .arV6Console .arV6PluginPanel{top:45px}}
+
+
+/* PRD v5.2 operator milestone: one compact native multi-channel drawer,
+   separate relative LINK from serial GROUP BUS. No browser DSP or fake link. */
+#app .arV6Console .arV6SelectionCount{flex:0 0 auto;padding:3px 6px}
+#app .arV6Console .arV6SelectionPanel{
+  position:absolute;z-index:22;top:52px;right:8px;
+  width:min(350px,calc(100% - 16px));max-height:min(72vh,420px);
+  display:flex;flex-direction:column;gap:0;min-width:0;
+  background:#1a2a34;color:#d4e5eb;border:1px solid #668693;
+  border-radius:4px;box-shadow:0 8px 25px #071019aa;
+}
+#app .arV6Console .arV6SelectionPanel[hidden]{display:none!important}
+#app .arV6Console .arV6SelectionSummary{
+  padding:8px 10px;min-height:32px;max-height:78px;overflow-y:auto;
+  font:10px/1.5 "Segoe UI",sans-serif;color:#b9d1da;
+}
+#app .arV6Console .arV6SelectionActions{display:grid;gap:8px;padding:2px 10px 4px}
+#app .arV6Console .arV6LinkActions{display:grid;grid-template-columns:1fr auto;gap:6px}
+#app .arV6Console .arV6BusActions{display:grid;grid-template-columns:1fr auto;gap:6px}
+#app .arV6Console .arV6GroupTarget{min-width:0;width:100%}
+#app .arV6Console .arV6SelectionPanel .arV6DeviceNote{padding:0 10px 8px}
+#app .arV6Console .arV6Rename{
+  width:100%;min-height:23px;min-width:0;padding:2px 4px;
+  color:#eaf7f8;background:#16303d;border:1px solid #77b8c6;
+  font:500 12px/1.2 "Segoe UI",sans-serif;
+}
+@media(max-width:1100px){#app .arV6Console .arV6SelectionPanel{top:46px}}
 </style>
 <style id="arsonmix-mixer-io-css">/* G1/G2: stable channel-bank geometry; FX rack remains mounted in every mode. */
 #app .workbench{display:flex;flex-direction:column}
@@ -6689,6 +6824,8 @@ scheduleDemoMeter();
   }
   const clean=s=>String(s==null?'—':s);
   const byId=new Map();
+  // Selection is display state only, with immutable native ChannelId keys.
+  const selectedIds=new Set();let selectionAnchor=null;
   const pending=new Map();
   const pendingTargets=new Set();
   const awaitingSnapshot=new Map();
@@ -6700,7 +6837,9 @@ scheduleDemoMeter();
     OPEN_INSERT_EDITOR:'OPEN_INSERT_EDITOR',MOVE_INSERT:'MOVE_INSERT',
     ADD_SEND:'ADD_SEND',SET_SEND_TAP:'SET_SEND_TAP',SET_SEND_LEVEL:'SET_SEND_LEVEL',
     SET_FADER:'SET_FADER',SET_PAN:'SET_PAN',SET_MUTE:'SET_MUTE',
-    SET_SOLO:'SET_SOLO',CREATE_CHANNEL:'CREATE_CHANNEL'
+    SET_SOLO:'SET_SOLO',SET_TRIM:'SET_TRIM',SET_CUE:'SET_CUE',
+    SET_LINK_GROUP:'SET_LINK_GROUP',ROUTE_SELECTED_TO_GROUP:'ROUTE_SELECTED_TO_GROUP',
+    RENAME_CHANNEL:'RENAME_CHANNEL',CREATE_CHANNEL:'CREATE_CHANNEL'
   };
   let accepted=null,acceptedNative=false,modeSend='',lastStructure='',requestSeq=0;
   let draggingFx=null;
@@ -6744,19 +6883,71 @@ scheduleDemoMeter();
     const option=h('option','',type);option.value=type;roleSelect.append(option);
   }
   const add=button('+ CHANNEL',{'data-op':'CREATE_CHANNEL'});
+  const deviceButton=button('DEVICE',{'aria-expanded':'false','aria-controls':'arV6DevicePanel',
+    'aria-label':'Verified native audio device inventory'});
+  const pluginsButton=button('VST3 F8',{'aria-expanded':'false',
+    'aria-controls':'arV6PluginPanel','aria-label':'Native Plugin Manager F8'});
   const patch=button('PATCH',{'aria-label':'Open advanced patch'});
   const narrow=button('NARROW',{'aria-pressed':'false','aria-label':'Toggle narrow channel bank'});
   const roleFilter=h('select','arV6Select arV6Filter');
   roleFilter.setAttribute('aria-label','Filter visible mixer channels');
+  const selectionCount=button('0 SEL',{'aria-label':'Selected channels and native group actions',
+    'aria-controls':'arV6SelectionPanel','aria-expanded':'false'});
+  selectionCount.classList.add('arV6SelectionCount');
   for(const [value,label] of [['ALL','ALL'],['INPUT','INPUT'],['GROUP','BUS'],
     ['FX_RETURN','FX RTN'],['AUX','AUX'],['MONITOR','MON'],['SOLO','SOLO']]){
     const option=h('option','',label);option.value=value;roleFilter.append(option);
   }
   const back=button('V6 CONSOLE',{'aria-label':'Return to operator console'});
   back.id='arV6Return';back.hidden=true;
-  tools.append(bankPrev,bankLabel,bankNext,roleFilter,sendMode,roleSelect,add,narrow,patch);
+  tools.append(bankPrev,bankLabel,bankNext,roleFilter,selectionCount,
+    sendMode,roleSelect,add,deviceButton,pluginsButton,narrow,patch);
   top.append(identification,tools);
   const message=h('div','arV6Message');message.setAttribute('role','status');
+  const devicePanel=h('section','arV6DevicePanel');
+  devicePanel.id='arV6DevicePanel';devicePanel.hidden=true;
+  devicePanel.setAttribute('aria-label','Read-only native audio device inventory');
+  const deviceHead=h('div','arV6DevicePanelHead');
+  const deviceClose=button('×',{'aria-label':'Close native device inventory'});
+  deviceHead.append(h('span','','VERIFIED DEVICE · NATIVE READBACK'),deviceClose);
+  const deviceRows=h('div','arV6DeviceRows');
+  devicePanel.append(deviceHead,deviceRows);
+  const pluginPanel=h('section','arV6PluginPanel');
+  pluginPanel.id='arV6PluginPanel';pluginPanel.hidden=true;
+  pluginPanel.setAttribute('aria-label','Native scanned VST3 catalog');
+  const pluginHead=h('div','arV6DevicePanelHead');
+  const pluginClose=button('×',{'aria-label':'Close native Plugin Manager'});
+  pluginHead.append(h('span','','NATIVE VST3 · PLUGIN MANAGER'),pluginClose);
+  const pluginTarget=h('div','arV6PluginTarget');
+  const pluginSearch=h('input','arV6PluginSearch');pluginSearch.type='search';
+  pluginSearch.placeholder='Search native scanned plugins...';
+  pluginSearch.setAttribute('aria-label','Search native scanned VST3 catalog');
+  const pluginResults=h('div','arV6PluginResults');
+  pluginPanel.append(pluginHead,pluginTarget,pluginSearch,pluginResults);
+  // A small operator drawer differentiates relative fader links from actual
+  // serial Group-Bus summing. Both are SINGLE native graph transactions.
+  const selectionPanel=h('section','arV6SelectionPanel');
+  selectionPanel.id='arV6SelectionPanel';selectionPanel.hidden=true;
+  selectionPanel.setAttribute('aria-label','Native multi-channel operator actions');
+  const selectionHead=h('div','arV6DevicePanelHead');
+  const selectionClose=button('×',{'aria-label':'Close selected channel actions'});
+  selectionHead.append(h('span','','SELECTED · LIVE MIXING'),selectionClose);
+  const selectionSummary=h('div','arV6SelectionSummary');
+  const selectionActions=h('div','arV6SelectionActions');
+  const linkFaders=button('LINK FADERS',{'data-op':'SET_LINK_GROUP',
+    'aria-label':'Link selected faders using native relative control group'});
+  const unlinkFaders=button('UNLINK',{'data-op':'SET_LINK_GROUP',
+    'aria-label':'Unlink selected faders using native relative control group'});
+  const routeBus=h('select','arV6Select arV6GroupTarget');
+  routeBus.setAttribute('aria-label','Select actual native summing Group Bus');
+  const routeSelected=button('ROUTE TO GROUP BUS',{'data-op':'ROUTE_SELECTED_TO_GROUP',
+    'aria-label':'Route selected channels to native summing Group Bus'});
+  const linkRow=h('div','arV6LinkActions');linkRow.append(linkFaders,unlinkFaders);
+  const busRow=h('div','arV6BusActions');busRow.append(routeBus,routeSelected);
+  selectionActions.append(linkRow,busRow);
+  const selectionNote=h('p','arV6DeviceNote',
+    'LINK FADERS moves controls relatively. GROUP BUS sums audio serially. These are different native operations; UI never mixes or reroutes PCM.');
+  selectionPanel.append(selectionHead,selectionSummary,selectionActions,selectionNote);
   const body=h('div','arV6Body');
   const sectionRail=h('aside','arV6SectionRail');
   sectionRail.setAttribute('aria-label','Synchronized mixer section collapse');
@@ -6775,7 +6966,7 @@ scheduleDemoMeter();
   const lanes=h('div','arV6Lanes');lanes.id='arV6Lanes';lanes.setAttribute('aria-label','Channel banks');
   const main=h('div','arV6Main');main.id='arV6Main';main.setAttribute('aria-label','Pinned main output');
   body.append(sectionRail,lanes,main);
-  root.append(top,message,body);
+  root.append(top,message,devicePanel,pluginPanel,selectionPanel,body);
   mount.append(root);
   sectionRail.addEventListener('click',event=>{
     const control=event.target.closest('[data-section]');
@@ -6790,6 +6981,114 @@ scheduleDemoMeter();
     refreshBanks();
   });
   roleFilter.addEventListener('change',()=>applyPresentation());
+  selectionCount.addEventListener('click',()=>{
+    selectionPanel.hidden=!selectionPanel.hidden;
+    selectionCount.setAttribute('aria-expanded',String(!selectionPanel.hidden));
+    if(!selectionPanel.hidden)refreshSelectionActions();
+  });
+  selectionClose.addEventListener('click',()=>{
+    selectionPanel.hidden=true;selectionCount.setAttribute('aria-expanded','false');
+  });
+  function selectedNativeIds(){
+    return [...selectedIds].filter(id=>byId.has(id)&&byId.get(id).role!=='MAIN');
+  }
+  function refreshSelectionActions(){
+    selectionCount.textContent=selectedIds.size+' SEL';
+    if(selectionPanel.hidden)return;
+    const ids=selectedNativeIds(),channels=ids.map(id=>byId.get(id));
+    const names=channels.map(c=>c.name).join(' · ');
+    selectionSummary.textContent=names||'Select channel headers using Ctrl / Shift';
+    const ready=ids.length>=2&&ids.length<=64&&!pendingTargets.has('@selection')&&
+      ids.every(id=>can('SET_LINK_GROUP',id));
+    linkFaders.disabled=!ready||!can('SET_LINK_GROUP',null);
+    const current=channels[0]?.linkGroupId;
+    unlinkFaders.disabled=!ready||typeof current!=='string'||!current||
+      !channels.every(c=>c.linkGroupId===current);
+    const buses=(accepted?.graph?.channels||[]).filter(ch=>
+      ch.role==='GROUP'&&!selectedIds.has(ch.id)&&
+      (accepted.graph.destinations||[]).some(dst=>dst.id===ch.id&&
+        dst.acceptsPrimary!==false));
+    const signature=buses.map(ch=>ch.id+'|'+ch.name).join(',');
+    if(routeBus.dataset.signature!==signature){
+      const value=routeBus.value;
+      routeBus.replaceChildren();
+      const prompt=h('option','','SELECT NATIVE BUS');prompt.value='';routeBus.append(prompt);
+      for(const bus of buses){
+        const option=h('option','',bus.name);option.value=bus.id;routeBus.append(option);
+      }
+      routeBus.value=buses.some(ch=>ch.id===value)?value:'';
+      routeBus.dataset.signature=signature;
+    }
+    const canRoute=ids.length>0&&ids.length<=64&&
+      (accepted?.graph?.capabilities?.groups===true)&&
+      channels.every(c=>['INPUT','AUX','FX_RETURN'].includes(c.role)&&
+        can('ROUTE_SELECTED_TO_GROUP',c.id))&&
+      can('ROUTE_SELECTED_TO_GROUP',null);
+    routeBus.disabled=!canRoute||!buses.length;
+    routeSelected.disabled=!canRoute||!buses.some(ch=>ch.id===routeBus.value);
+  }
+  routeBus.addEventListener('change',refreshSelectionActions);
+  const sendSelectionAction=linked=>{
+    const ids=selectedNativeIds();
+    if(ids.length<2||ids.length>64||linkFaders.disabled&&linked||
+       unlinkFaders.disabled&&!linked)return;
+    sendIntent('SET_LINK_GROUP',null,{channelIds:ids,linked},ids);
+  };
+  linkFaders.addEventListener('click',()=>sendSelectionAction(true));
+  unlinkFaders.addEventListener('click',()=>sendSelectionAction(false));
+  routeSelected.addEventListener('click',()=>{
+    const ids=selectedNativeIds(),destinationId=routeBus.value;
+    if(routeSelected.disabled||!ids.length||ids.length>64||
+       !byId.has(destinationId)||byId.get(destinationId).role!=='GROUP')return;
+    sendIntent('ROUTE_SELECTED_TO_GROUP',null,
+      {channelIds:ids,destinationId},ids);
+  });
+  deviceButton.addEventListener('click',()=>{
+    devicePanel.hidden=!devicePanel.hidden;
+    deviceButton.setAttribute('aria-expanded',String(!devicePanel.hidden));
+    if(!devicePanel.hidden)refreshDevicePanel();
+  });
+  deviceClose.addEventListener('click',()=>{
+    devicePanel.hidden=true;deviceButton.setAttribute('aria-expanded','false');
+  });
+  function closePluginManager(){
+    pluginPanel.hidden=true;pluginsButton.setAttribute('aria-expanded','false');
+  }
+  function openPluginManager(id){
+    if(id&&byId.has(id)&&byId.get(id).role!=='MAIN'){
+      selectedIds.clear();selectedIds.add(id);selectionAnchor=id;
+      updateSelection();
+    }
+    devicePanel.hidden=true;deviceButton.setAttribute('aria-expanded','false');
+    pluginPanel.hidden=false;pluginsButton.setAttribute('aria-expanded','true');
+    refreshPluginCatalog();pluginSearch.focus();
+  }
+  pluginsButton.addEventListener('click',()=>{
+    if(pluginPanel.hidden)openPluginManager();
+    else closePluginManager();
+  });
+  pluginClose.addEventListener('click',closePluginManager);
+  pluginSearch.addEventListener('input',refreshPluginCatalog);
+  pluginResults.addEventListener('click',event=>{
+    const node=event.target.closest('button[data-plugin-id]');
+    if(!node||node.disabled||selectedIds.size!==1)return;
+    const channelId=[...selectedIds][0];
+    const catalog=accepted?.catalog?.plugins||[];
+    const entry=catalog.find(p=>p?.id===node.dataset.pluginId);
+    if(entry&&can('ADD_INSERT',channelId)&&
+       sendIntent('ADD_INSERT',channelId,{pluginId:entry.id}))closePluginManager();
+  });
+  document.addEventListener('keydown',event=>{
+    if(!document.documentElement.classList.contains('ar-v6-active'))return;
+    if(event.key==='Escape'&&!selectionPanel.hidden){
+      event.preventDefault();selectionPanel.hidden=true;
+      selectionCount.setAttribute('aria-expanded','false');
+    }else if(event.key==='Escape'&&!pluginPanel.hidden){
+      event.preventDefault();closePluginManager();
+    }else if(event.key==='F8'&&!event.repeat){
+      event.preventDefault();openPluginManager();
+    }
+  });
   narrow.addEventListener('click',()=>{
     const compact=root.dataset.narrow!=='true';
     root.dataset.narrow=String(compact);
@@ -6809,6 +7108,57 @@ scheduleDemoMeter();
   back.addEventListener('click',()=>{
     document.querySelector('[data-view="MIX"]')?.click();setVisible(true);
   });
+  function refreshDevicePanel(){
+    if(devicePanel.hidden)return;
+    deviceRows.replaceChildren();
+    const d=acceptedNative?accepted?.device:null;
+    if(!d){deviceRows.append(h('p','','No verified native device published.'));return;}
+    const addRow=(label,value)=>{
+      const row=h('div','arV6DeviceRow');
+      row.append(h('span','',label),h('strong','',value));deviceRows.append(row);
+    };
+    addRow('BACKEND',d.backend||'—');
+    addRow('INPUT DEVICE',d.captureDevice||'NONE');
+    addRow('OUTPUT DEVICE',d.playbackDevice||'NONE');
+    addRow('CLOCK',Number.isFinite(d.sampleRate)?d.sampleRate+' Hz / '+
+      d.bufferFrames+' frames':'UNVERIFIED');
+    addRow('OUTPUT ARM',d.outputArmed?'ARMED · acoustics unverified':'DISARMED');
+    for(const [label,ports,mask] of [
+      ['INPUT PINS',d.inputEndpoints,d.enabledInputs],
+      ['OUTPUT PINS',d.outputEndpoints,d.enabledOutputs]]){
+      const verified=ports.filter(p=>p.active===true&&mask.includes(p.port));
+      addRow(label,verified.length?verified.map(p=>p.label+' (port '+p.port+
+        ', callback '+p.callback+')').join(', '):'NO VERIFIED ACTIVE PIN');
+    }
+    deviceRows.append(h('p','arV6DeviceNote',
+      'Read-only: device changes require a genuine native SET_DEVICE transaction; no guessed hardware pin or automatic audio reroute.'));
+  }
+  function refreshPluginCatalog(){
+    if(pluginPanel.hidden)return;
+    pluginResults.replaceChildren();
+    const ids=[...selectedIds].filter(id=>byId.has(id));
+    const id=ids.length===1?ids[0]:null;
+    pluginTarget.textContent=id?
+      'TARGET · '+byId.get(id).name+' · '+(can('ADD_INSERT',id)?
+        'NATIVE LOAD AVAILABLE':'NATIVE LOAD NOT AVAILABLE'):
+      'Select exactly ONE channel header to load a VST3';
+    const catalog=acceptedNative&&Array.isArray(accepted?.catalog?.plugins)?
+      accepted.catalog.plugins.filter(p=>p&&typeof p.id==='string'&&p.id&&
+        typeof p.name==='string'&&p.name):[];
+    const search=pluginSearch.value.trim().toLocaleLowerCase();
+    const results=catalog.filter(p=>(p.name+' '+(p.vendor||'')+' '+(p.category||''))
+      .toLocaleLowerCase().includes(search));
+    if(!results.length)pluginResults.append(h('p','arV6DeviceNote',
+      catalog.length?'No scanned plugins match the search':
+        'Native plugin catalog not published. No simulated plugins available.'));
+    for(const p of results.slice(0,100)){
+      const node=button(p.name+' · '+(typeof p.vendor==='string'?p.vendor:'VST3'),
+        {'data-plugin-id':p.id});
+      node.disabled=!id||!can('ADD_INSERT',id);
+      node.classList.add('arV6PluginResult');
+      pluginResults.append(node);
+    }
+  }
   function supported(op){
     const caps=accepted?.graph?.capabilities||{};
     // Absence of explicit native advertised operation support means disabled.
@@ -6819,7 +7169,7 @@ scheduleDemoMeter();
     if(!supported(op))return false;
     if(op==='CREATE_CHANNEL')return !!accepted.graph.capabilities.dynamicChannels && !pendingTargets.has('@roster');
     if(op==='ADD_INSERT'&&!accepted?.catalog?.plugins?.length)return false;
-    if(!id)return true;
+    if(!id)return !pendingTargets.has('@selection');
     const ch=byId.get(id);
     return !!ch && !pendingTargets.has(id) &&
       (!Array.isArray(ch.allowedOps)||ch.allowedOps.includes(op));
@@ -6831,17 +7181,22 @@ scheduleDemoMeter();
   function requestSnapshot(){
     if(native)backend.emitEvent('arMixConsoleSubscribe',{protocol:'v6',requester:instance});
   }
-  function sendIntent(op,id,payload){
-    if(!can(op,id)){showFeedback('UNAVAILABLE · Native capability or channel authorization missing');return false}
+  function sendIntent(op,id,payload,affectedIds=[]){
+    if(!can(op,id)||affectedIds.length>64||
+       affectedIds.some(channelId=>!can(op,channelId))){
+      showFeedback('UNAVAILABLE · Native capability, selection lock or channel authorization missing');
+      return false;
+    }
     const requestId=instance+':'+String(++requestSeq);
     const command={requestId,deviceEpoch:accepted.device.epoch,
       baseGraphRevision:accepted.graph.revision,
       baseRosterRevision:accepted.graph.rosterRevision,
       operation:op,targetChannelId:id||null,payload:payload||{}};
-    pending.set(requestId,{op,id,baseRevision:command.baseGraphRevision,
+    const targets=id?[id]:affectedIds.length?['@selection',...affectedIds]:
+      op==='CREATE_CHANNEL'?['@roster']:[];
+    pending.set(requestId,{op,id,targets,baseRevision:command.baseGraphRevision,
       baseRosterRevision:command.baseRosterRevision,epoch:command.deviceEpoch,snapshotSerial});
-    if(id)pendingTargets.add(id);
-    else if(op==='CREATE_CHANNEL')pendingTargets.add('@roster');
+    for(const target of targets)pendingTargets.add(target);
     showFeedback('PENDING · '+op+' · awaiting native ACK');
     refreshDisabled();
     backend.emitEvent('arMixConsoleIntent',command);
@@ -6858,21 +7213,21 @@ scheduleDemoMeter();
       showFeedback('INVALID NATIVE ACK · accepted route unchanged');return;
     }
     pending.delete(a.requestId);
-    const target=task.id||'@roster';
+    const unlock=()=>{for(const target of task.targets||[])pendingTargets.delete(target)};
     if(a.status==='ACCEPTED'){
       if(BigInt(rev)<BigInt(task.baseRevision)||
          BigInt(roster)<BigInt(task.baseRosterRevision)){
-        pendingTargets.delete(target);
+        unlock();
         showFeedback('INVALID ACK REVISION · accepted route unchanged');
       }else{
         const wait={...task,requiredRevision:rev,requiredRoster:roster};
-        if(ackMatches(wait))pendingTargets.delete(target);
+        if(ackMatches(wait))unlock();
         else awaitingSnapshot.set(a.requestId,wait);
         showFeedback('ACCEPTED · '+task.op+' · awaiting exact native graph + roster');
       }
       requestSnapshot();
     }else{
-      pendingTargets.delete(target);
+      unlock();
       showFeedback((a.status==='REQUIRES_DEVICE_CHANGE'?'REQUIRES DEVICE · ':'REJECTED · ')+
         clean(a.errorCode||'INVALID REJECTION')+' · previous accepted route preserved');
       requestSnapshot();refreshAcceptedControls();
@@ -6930,21 +7285,39 @@ scheduleDemoMeter();
       ids.add(ch.id);
     }
     for(const ch of g.channels){
-      if(ch.primaryOutId!==undefined&&ch.primaryOutId!==null&&
-         !ids.has(ch.primaryOutId))return false;
+      if(ch.primaryOutId!==undefined&&ch.primaryOutId!==null){
+        const to=ch.primaryOutId;
+        const physical=d.outputEndpoints.some(p=>p.id===to&&p.active===true&&
+          d.enabledOutputs.includes(p.port));
+        if(to===ch.id||!ids.has(to)&&!(physical&&['MAIN','MONITOR'].includes(ch.role)))
+          return false;
+      }
       if(ch.source){
         const x=ch.source;
         if(ch.role!=='INPUT'||typeof x.portId!=='string'||
            !Array.isArray(x.physicalPins)||!pins(x.physicalPins)||
            ![1,2].includes(x.physicalPins.length)||
-           !x.physicalPins.every(p=>d.enabledInputs.includes(p))||
-           !d.inputEndpoints.some(p=>p.id===x.portId&&p.active))return false;
+           !x.physicalPins.every(p=>d.enabledInputs.includes(p)&&
+             d.inputEndpoints.some(e=>e.port===p&&e.active))||
+           !d.inputEndpoints.some(p=>p.id===x.portId&&p.active&&
+             x.physicalPins.includes(p.port)))return false;
       }
       for(const send of ch.sends)
         if(!ids.has(send.targetId)||send.targetId===ch.id||
            !['PRE','POST'].includes(send.tap))return false;
       if(ch.role==='GROUP'&&!c.groups||ch.role==='FX_RETURN'&&!c.fxReturns||
          ch.role==='MONITOR'&&!c.monitor)return false;
+    }
+    if(s.productionCallbackLive&&g.channels.filter(ch=>ch.role==='MAIN').length!==1)return false;
+    // Reject source/primary bus cycles before allowing the operator to act.
+    const graphIds=new Map(g.channels.map(ch=>[ch.id,ch]));
+    for(const ch of g.channels){
+      let current=ch,visited=new Set();
+      while(current?.primaryOutId){
+        if(visited.has(current.id))return false;
+        visited.add(current.id);
+        current=graphIds.get(current.primaryOutId);
+      }
     }
     if(g.destinations.some(dst=>!dst||!ids.has(dst.id)))return false;
     if(typeof t.rawCapturePresent!=='boolean'||typeof t.mainPcmPresent!=='boolean'||
@@ -6966,8 +7339,20 @@ scheduleDemoMeter();
     if(acceptedNative&&!fromNative)return false;
     if(fromNative&&acceptedNative&&accepted&&
       BigInt(s.device.epoch)<BigInt(accepted.device.epoch))return false;
-    if(fromNative&&acceptedNative&&accepted&&s.device.epoch===accepted.device.epoch&&
-      BigInt(s.graph.revision)<BigInt(accepted.graph.revision))return false;
+    if(fromNative&&acceptedNative&&accepted&&s.device.epoch===accepted.device.epoch){
+      if(BigInt(s.graph.revision)<BigInt(accepted.graph.revision)||
+         BigInt(s.graph.rosterRevision)<BigInt(accepted.graph.rosterRevision))
+        return false;
+      // Device backend/clock/pins may not change silently under the same epoch.
+      // A hardware rebind needs an admitted new native device epoch.
+      const hardware=d=>JSON.stringify([d.backend,d.captureDevice,d.playbackDevice,
+        d.sampleRate,d.bufferFrames,d.inputEndpoints,d.outputEndpoints,
+        d.enabledInputs,d.enabledOutputs]);
+      if(hardware(s.device)!==hardware(accepted.device)){
+        showFeedback('REJECTED DEVICE READBACK · epoch unchanged; retained verified pins');
+        return false;
+      }
+    }
     const priorEpoch=acceptedNative?accepted?.device?.epoch:null;
     const structure=s.device.epoch+':'+s.graph.rosterRevision+':'+
       s.graph.channels.map(c=>[c.id,c.role,c.processingFormat,c.primaryOutId,
@@ -6981,12 +7366,13 @@ scheduleDemoMeter();
       // Device replacement invalidates all old intents and controls; never
       // replay them into an unrelated callback/port inventory.
       pending.clear();pendingTargets.clear();awaitingSnapshot.clear();
+      selectedIds.clear();selectionAnchor=null;
       showFeedback('DEVICE CHANGED · native source and destination inventory refreshed');
     }
     for(const [requestId,task] of awaitingSnapshot){
       if(ackMatches(task)){
         awaitingSnapshot.delete(requestId);
-        pendingTargets.delete(task.id||'@roster');
+        for(const target of task.targets||[])pendingTargets.delete(target);
       }
     }
     if(structure!==lastStructure||root.dataset.demo!==String(!fromNative)){
@@ -6995,6 +7381,7 @@ scheduleDemoMeter();
       refreshAcceptedControls();refreshDisabled();updateHeader();
     }
     root.dataset.demo=String(!fromNative);
+    refreshDevicePanel();refreshPluginCatalog();
     // Integration readback is intentionally not a production callback.
     // It must never replace the working M4 console until callback cutover.
     if(!fromNative||s.productionCallbackLive===true)setVisible(true);
@@ -7032,6 +7419,19 @@ scheduleDemoMeter();
     if(!current)select.value='';
     return select;
   }
+  function legalOutputs(ch){
+    const destinations=(accepted.graph.destinations||[]).filter(dst=>{
+      const target=byId.get(dst.id);
+      return target&&target.id!==ch.id&&['MAIN','GROUP'].includes(target.role)&&
+        dst.acceptsPrimary!==false;
+    });
+    // SOURCE channels may only route through native buses, not skip to a
+    // physical output. The MAIN/MONITOR roles can select verified render pins.
+    if(ch.role==='MAIN'||ch.role==='MONITOR')
+      return (accepted.device.outputEndpoints||[]).filter(p=>
+        p.active===true&&accepted.device.enabledOutputs.includes(p.port));
+    return destinations;
+  }
   function selectField(label,op,id,items,current,placeholder,extra){
     const row=h('label','arV6Field');
     row.append(h('span','arV6FieldName',label));
@@ -7057,13 +7457,9 @@ scheduleDemoMeter();
       section.append(row);
     }
     const filePicker=supported('PICK_INSERT_FILE');
-    if(!filePicker&&supported('ADD_INSERT')&&accepted?.catalog?.plugins?.length){
-      const catalog=accepted.catalog.plugins.filter(p=>typeof p.id==='string'&&p.id);
-      const chooser=options(h('select','arV6Select arV6PluginChoice'),catalog,'','SELECT NATIVE VST3');
-      chooser.dataset.pluginChoice=ch.id;section.append(chooser);
-    }
     const addFx=button(filePicker?'+ OPEN VST3 FILE':'+ VST3',
-      {'data-op':filePicker?'PICK_INSERT_FILE':'ADD_INSERT','data-id':ch.id});
+      filePicker?{'data-op':'PICK_INSERT_FILE','data-id':ch.id}:
+        {'data-ui':'OPEN_PLUGIN_MANAGER','data-id':ch.id});
     addFx.classList.add('arV6AddFx');section.append(addFx);
     return section;
   }
@@ -7094,21 +7490,25 @@ scheduleDemoMeter();
     const select=selectField('+ TO','ADD_SEND',ch.id,targets,'','NO NATIVE SEND BUS');
     section.append(select);return section;
   }
+  const roleLabel=ch=>clean(ch.role).toUpperCase()+
+    (typeof ch.linkGroupId==='string'&&ch.linkGroupId?
+      ' · LINK '+ch.linkGroupId.slice(0,6):'');
   function strip(ch,pinned=false){
     const role=clean(ch.role).toUpperCase();
     const elStrip=h('article','arV6Strip'+(pinned?' arV6Master':''));
     elStrip.dataset.channelId=ch.id;
     const head=h('div','arV6StripHead');
-    const roleName=h('span','arV6Role',role);
+    const roleName=h('span','arV6Role',roleLabel(ch));
     const name=h('strong','arV6Name',ch.name||ch.id);name.title=ch.id;
     head.append(roleName,name);elStrip.append(head);
+    elStrip.setAttribute('aria-selected',String(selectedIds.has(ch.id)));
     const sourceSection=h('div','arV6Upper');
     const routeSection=h('div','arV6Route');
     const sources=(accepted.device.inputEndpoints||[]).filter(p=>p.active===true && accepted.device.enabledInputs.includes(p.port));
     if(role==='INPUT')routeSection.append(selectField('IN','SET_SOURCE',ch.id,sources,
       ch.source?.portId||ch.source?.id||'','NO VERIFIED INPUT'));
     else routeSection.append(h('div','arV6Field arV6FixedField','IN   ·   '+role));
-    const outs=(accepted.graph.destinations||[]).concat(accepted.device.outputEndpoints||[]);
+    const outs=legalOutputs(ch);
     routeSection.append(selectField('OUT','SET_PRIMARY_OUT',ch.id,outs,
       ch.primaryOutId||ch.primaryOut?.id||ch.primaryOut||'','NO VERIFIED OUT'));
     const formats=['MONO','STEREO'].map(s=>({id:s,name:s}));
@@ -7128,7 +7528,24 @@ scheduleDemoMeter();
       'aria-pressed':String(!!ch.controls?.mute)}));
     controls.append(button('S',{'data-op':'SET_SOLO','data-id':ch.id,
       'aria-pressed':String(!!ch.controls?.solo)}));
-    elStrip.append(controls);
+    const cueKnown=typeof ch.controls?.cue==='boolean'&&role!=='MAIN';
+    const cue=button('C',{'data-op':'SET_CUE','data-id':ch.id,
+      'aria-pressed':String(ch.controls?.cue===true),
+      'aria-label':(ch.name||ch.id)+' native monitor Cue/PFL'});
+    cue.dataset.acceptedKnown=String(cueKnown);cue.disabled=!cueKnown||!can('SET_CUE',ch.id);
+    controls.append(cue);
+    const trimKnown=typeof ch.controls?.trimDb==='number'&&Number.isFinite(ch.controls.trimDb);
+    const trimRow=h('label','arV6Trim');trimRow.append(h('span','','TRIM'));
+    const trim=h('input','arV6TrimLevel');trim.type='range';
+    trim.min='-24';trim.max='24';trim.step='.5';
+    trim.value=String(trimKnown?clamp(ch.controls.trimDb,-24,24):0);
+    trim.dataset.op='SET_TRIM';trim.dataset.id=ch.id;
+    trim.dataset.acceptedKnown=String(trimKnown);
+    trim.setAttribute('aria-label',(ch.name||ch.id)+' digital input trim dB');
+    trim.disabled=!trimKnown||!can('SET_TRIM',ch.id);
+    trimRow.append(trim,h('output','arV6TrimDb',
+      trimKnown?ch.controls.trimDb.toFixed(1):'—'));
+    controls.append(trimRow);elStrip.append(controls);
     const lower=h('div','arV6Lower');
     const meter=h('div','arV6Meter');meter.dataset.meterId=ch.id;
     meter.dataset.format=ch.processingFormat||'MONO';
@@ -7175,6 +7592,33 @@ scheduleDemoMeter();
     root.dataset.demo=String(!acceptedNative);
     root.dataset.armed=String(acceptedNative&&accepted?.productionCallbackLive===true&&!!d.outputArmed);
   }
+  function updateSelection(){
+    for(const strip of root.querySelectorAll('[data-channel-id]')){
+      const selected=selectedIds.has(strip.dataset.channelId);
+      strip.classList.toggle('isSelected',selected);
+      strip.setAttribute('aria-selected',String(selected));
+    }
+    refreshSelectionActions();
+    refreshPluginCatalog();
+  }
+  function selectChannel(id,event){
+    const channel=byId.get(id);
+    if(!channel||channel.role==='MAIN')return;
+    const visible=[...lanes.querySelectorAll('.arV6Strip:not([hidden])')]
+      .map(strip=>strip.dataset.channelId);
+    if(!visible.includes(id))return;
+    if(event.shiftKey&&selectionAnchor&&visible.includes(selectionAnchor)){
+      if(!event.ctrlKey&&!event.metaKey)selectedIds.clear();
+      const a=visible.indexOf(selectionAnchor),b=visible.indexOf(id);
+      for(const x of visible.slice(Math.min(a,b),Math.max(a,b)+1))selectedIds.add(x);
+    }else if(event.ctrlKey||event.metaKey){
+      if(selectedIds.has(id))selectedIds.delete(id);else selectedIds.add(id);
+      selectionAnchor=id;
+    }else{
+      selectedIds.clear();selectedIds.add(id);selectionAnchor=id;
+    }
+    updateSelection(); // No DSP or ConsoleIntent involved.
+  }
   function applyPresentation(){
     const value=roleFilter.value;
     for(const strip of lanes.querySelectorAll('.arV6Strip')){
@@ -7185,13 +7629,15 @@ scheduleDemoMeter();
     }
     // Presentational filters cannot alter native roster nor hide pinned MAIN.
     if(lanes.querySelector('.arV6Strip:not([hidden])')===null)lanes.scrollLeft=0;
-    refreshBanks();
+    updateSelection();refreshBanks();
   }
   function render(){
     if(!accepted)return;
     updateHeader();
     lanes.replaceChildren();main.replaceChildren();
     const channels=accepted.graph.channels;
+    for(const id of selectedIds)if(!byId.has(id))selectedIds.delete(id);
+    if(selectionAnchor&&!byId.has(selectionAnchor))selectionAnchor=null;
     for(const ch of channels){
       if(clean(ch.role).toUpperCase()==='MAIN')main.append(strip(ch,true));
       else lanes.append(strip(ch));
@@ -7211,9 +7657,11 @@ scheduleDemoMeter();
     for(const node of root.querySelectorAll('[data-op]')){
       const op=node.dataset.op,id=node.dataset.id||null;
       node.disabled=!can(op,id)||
-        op==='SET_SEND_LEVEL'&&node.dataset.hasAcceptedLevel!=='true';
+        (op==='SET_SEND_LEVEL'&&node.dataset.hasAcceptedLevel!=='true')||
+        ((op==='SET_TRIM'||op==='SET_CUE')&&node.dataset.acceptedKnown!=='true');
     }
     add.disabled=!can('CREATE_CHANNEL');
+    refreshSelectionActions();
     const caps=accepted.graph.capabilities||{};
     roleSelect.disabled=!can('CREATE_CHANNEL');
     for(const option of roleSelect.options){
@@ -7234,6 +7682,11 @@ scheduleDemoMeter();
     for(const strip of root.querySelectorAll('[data-channel-id]')){
       const ch=byId.get(strip.dataset.channelId);
       if(!ch)continue;
+      const nameNode=strip.querySelector('.arV6Name');
+      if(nameNode&&nameNode.textContent!==ch.name)nameNode.textContent=ch.name;
+      const roleNode=strip.querySelector('.arV6Role');
+      if(roleNode&&roleNode.textContent!==roleLabel(ch))
+        roleNode.textContent=roleLabel(ch);
       const choose=(op,value)=>{
         const field=strip.querySelector('select[data-op="'+op+'"]');
         if(!field)return;
@@ -7251,9 +7704,20 @@ scheduleDemoMeter();
       }
       const meter=strip.querySelector('[data-meter-id]');
       if(meter)meter.dataset.format=ch.processingFormat||'MONO';
-      for(const op of ['SET_MUTE','SET_SOLO']){
+      for(const op of ['SET_MUTE','SET_SOLO','SET_CUE']){
         const n=strip.querySelector('button[data-op="'+op+'"]');
-        if(n)n.setAttribute('aria-pressed',String(!!ch.controls?.[op==='SET_MUTE'?'mute':'solo']));
+        if(n)n.setAttribute('aria-pressed',String(!!ch.controls?.[
+          op==='SET_MUTE'?'mute':op==='SET_SOLO'?'solo':'cue']));
+        if(n&&op==='SET_CUE')n.dataset.acceptedKnown=String(
+          typeof ch.controls?.cue==='boolean'&&ch.role!=='MAIN');
+      }
+      const trim=strip.querySelector('[data-op="SET_TRIM"]');
+      if(trim){
+        const known=typeof ch.controls?.trimDb==='number'&&Number.isFinite(ch.controls.trimDb);
+        trim.dataset.acceptedKnown=String(known);
+        trim.value=String(known?clamp(ch.controls.trimDb,-24,24):0);
+        const readout=strip.querySelector('.arV6TrimDb');
+        if(readout)readout.textContent=known?ch.controls.trimDb.toFixed(1):'—';
       }
       for(const node of strip.querySelectorAll('.arV6FxSlot')){
         const fx=(ch.inserts||[]).find(x=>String(x.id)===node.dataset.fxId);
@@ -7391,6 +7855,8 @@ scheduleDemoMeter();
     if(!ch)return;
     if(op==='SET_MUTE')sendIntent(op,id,{value:!ch.controls?.mute});
     else if(op==='SET_SOLO')sendIntent(op,id,{value:!ch.controls?.solo});
+    else if(op==='SET_CUE'&&typeof ch.controls?.cue==='boolean')
+      sendIntent(op,id,{value:!ch.controls.cue});
     else if(op==='SET_INSERT_BYPASS'){
       const fx=(ch.inserts||[]).find(x=>String(x.id)===n.dataset.nativeInsertId);
       if(fx)sendIntent(op,id,{insertId:fx.id,bypassed:!fx.bypassed});
@@ -7401,16 +7867,48 @@ scheduleDemoMeter();
       if(send)sendIntent(op,id,{sendId:send.id,tap:send.tap==='PRE'?'POST':'PRE'});
     }
     else if(op==='PICK_INSERT_FILE')sendIntent(op,id,{});
-    else if(op==='ADD_INSERT'){
-      const catalog=accepted?.catalog?.plugins||[];
-      const pluginId=n.closest('.arV6Fx')?.querySelector('[data-plugin-choice]')?.value;
-      if(catalog.some(p=>p.id===pluginId))sendIntent(op,id,{pluginId});
-      else showFeedback('UNAVAILABLE · Select a verified native VST3 first');
-    }
+    else if(op==='ADD_INSERT')
+      showFeedback('Native plugin selection requires the verified Plugin Manager');
   });
+  root.addEventListener('click',event=>{
+    const launcher=event.target.closest('button[data-ui="OPEN_PLUGIN_MANAGER"]');
+    if(launcher){openPluginManager(launcher.dataset.id);return;}
+    const strip=event.target.closest('.arV6Strip');
+    if(!strip||event.target.closest('button,input,select,[draggable]'))return;
+    selectChannel(strip.dataset.channelId,event);
+  });
+  // Inline rename never mutates accepted name. Only native ACK + matching
+  // snapshot changes the channel header; Escape/blur only cancels local input.
+  function beginRename(nameNode){
+    const strip=nameNode?.closest('.arV6Strip'),id=strip?.dataset.channelId;
+    const ch=byId.get(id);
+    if(!ch||!can('RENAME_CHANNEL',id)){
+      showFeedback('RENAME UNAVAILABLE · native RENAME_CHANNEL not installed');return;
+    }
+    if(strip.querySelector('.arV6Rename'))return;
+    const input=h('input','arV6Rename');
+    input.type='text';input.maxLength=40;input.value=ch.name;
+    input.setAttribute('aria-label','Rename '+ch.name+' using native ChannelId');
+    const finish=commit=>{
+      if(!input.isConnected)return;
+      const newName=input.value.trim();
+      input.replaceWith(nameNode);
+      if(commit&&newName&&newName.length<=40&&newName!==ch.name&&
+         !Array.from(newName).some(c=>c.charCodeAt(0)<32||c.charCodeAt(0)===127))
+        sendIntent('RENAME_CHANNEL',id,{name:newName});
+    };
+    input.addEventListener('keydown',event=>{
+      if(event.key==='Enter'){event.preventDefault();finish(true)}
+      if(event.key==='Escape'){event.preventDefault();finish(false)}
+    });
+    input.addEventListener('blur',()=>finish(false),{once:true});
+    nameNode.replaceWith(input);input.focus();input.select();
+  }
   root.addEventListener('dblclick',event=>{
     const n=event.target.closest('.arV6PanRange');
-    if(n&&!n.disabled)sendIntent('SET_PAN',n.dataset.id,{value:0});
+    if(n&&!n.disabled){sendIntent('SET_PAN',n.dataset.id,{value:0});return;}
+    const name=event.target.closest('.arV6Name');
+    if(name)beginRename(name);
   });
   root.addEventListener('change',event=>{
     const n=event.target.closest('[data-op]');
@@ -7420,12 +7918,20 @@ scheduleDemoMeter();
     if(op==='SET_SOURCE'&&n.value){
       const endpoint=(accepted.device.inputEndpoints||[]).find(e=>e.id===n.value&&e.available!==false&&e.active!==false);
       if(endpoint)sendIntent(op,id,{portId:endpoint.id});
-    }else if(op==='SET_PRIMARY_OUT'&&n.value)sendIntent(op,id,{destinationId:n.value});
+    }else if(op==='SET_PRIMARY_OUT'&&n.value){
+      if(legalOutputs(ch).some(p=>p.id===n.value))
+        sendIntent(op,id,{destinationId:n.value});
+    }
     else if(op==='SET_PROCESSING_FORMAT')sendIntent(op,id,{format:n.value});
     else if(op==='ADD_SEND'&&n.value)sendIntent(op,id,{targetId:n.value,tap:'POST',levelDb:0});
     else if(op==='SET_PAN'){
       const value=Number(n.value),snapped=Math.abs(value)<=4?0:value;
       sendIntent(op,id,{value:snapped}); // ACK/snapshot, no optimistic PAN.
+    }
+    else if(op==='SET_TRIM'){
+      const db=Number(n.value);
+      if(typeof ch.controls?.trimDb==='number'&&Number.isFinite(db))
+        sendIntent(op,id,{valueDb:clamp(db,-24,24)});
     }
     else if(op==='SET_SEND_LEVEL'){
       const send=(ch.sends||[]).find(s=>String(s.id)===n.dataset.send);
@@ -7461,7 +7967,7 @@ scheduleDemoMeter();
   window.__arMixV6ReadOnly=()=>({
     nativePublisher:acceptedNative,revision:accepted?.graph?.revision??null,
     epoch:accepted?.device?.epoch??null,visibleChannelIds:[...byId.keys()],
-    pendingCount:pending.size,feedback
+    pendingCount:pending.size,selectedChannelIds:[...selectedIds],feedback
   });
 })();
 </script>

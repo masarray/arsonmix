@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <deque>
 #include <cmath>
+#include <string_view>
+#include <cmath>
 #include <limits>
 #include <string>
 #include <unordered_set>
@@ -35,6 +37,8 @@ public:
         w.epoch=actualEpoch.toStdString();
         w.legacyRoutingRevision=decimalFromNative(
             route.getProperty("revision",juce::var())).toStdString();
+        // The accepted fixed-M4 revision stays under legacyM4 only.
+        // A ChannelId revision is never copied from an ordinal M4 graph.
         w.legacyActive=static_cast<bool>(route.getProperty("active",false));
         w.legacyRouteAccepted=static_cast<bool>(route.getProperty("ready",false)) &&
             static_cast<bool>(route.getProperty("hasAcceptedRoute",false));
@@ -98,7 +102,28 @@ public:
         // universal CREATE/GROUP/INSERT until one ChannelId callback owns it.
         w.productionCallbackLive=false;
         const auto bytes=PuzzleV8Wire::snapshot(w);
-        return juce::JSON::parse(juce::String::fromUTF8(bytes.c_str()));
+        auto actual=juce::JSON::parse(juce::String::fromUTF8(bytes.c_str()));
+        // Optional diagnosed M4 accepted controls are sourced from the
+        // installed JUCE control thread, not stale immutable routing faders.
+        // UNREADY fixture stays byte-identical; these are NOT ChannelIds.
+        const auto legacy=actual.getProperty("legacyM4",{});
+        if(auto* object=legacy.getDynamicObject()) {
+            // Current native M4 (not a fake ChannelId roster): exactly the
+            // signal that is audible in this physical device callback.
+            const auto controls=route.getProperty("channelControls",juce::var());
+            const auto peaksL=route.getProperty("channelPeaksL",juce::var());
+            const auto peaksR=route.getProperty("channelPeaksR",juce::var());
+            const auto inserts=route.getProperty("fxInstances",juce::var());
+            if(controls.isArray())object->setProperty("channelControls",controls);
+            if(peaksL.isArray())object->setProperty("channelPeaksL",peaksL);
+            if(peaksR.isArray())object->setProperty("channelPeaksR",peaksR);
+            if(inserts.isArray())object->setProperty("fxInstances",inserts);
+            const auto main=route.getProperty("mainOutputs",juce::var());
+            if(main.isArray())object->setProperty("mainOutputs",main);
+            const auto monitor=route.getProperty("monitorOutputs",juce::var());
+            if(monitor.isArray())object->setProperty("monitorOutputs",monitor);
+        }
+        return actual;
     }
 
     // Exact native wire: opaque, unique-per-editor requestId and uint64
@@ -159,6 +184,181 @@ public:
         ack.errorCode=fault.toStdString();
         const auto bytes=PuzzleV8Wire::ack(ack);
         return juce::JSON::parse(juce::String::fromUTF8(bytes.c_str()));
+    }
+
+
+    // S1 production bridge: operate the ACTUALLY INSTALLED M4 graph through
+    // LiveAudioEngine. A Legacy M4 lane is addressed by decimal "1".."10"
+    // only for this explicit internal migration transport. This does NOT
+    // claim that callbackOwnsChannelIds, CH11, GROUP or FX_RETURN exist.
+    // The same native audio owner, plugin editor and Show remain installed.
+    template<class Engine,class OpenEditor>
+    juce::var processProductionIntent(const juce::var& intent,
+                                      const juce::var& acceptedSnapshot,
+                                      Engine& engine,OpenEditor&& openEditor) {
+        const auto request=intent.getProperty("requestId",{});
+        const auto requestId=request.isString()?request.toString():juce::String{};
+        const auto bytes=requestId.toStdString();
+        const auto device=acceptedSnapshot.getProperty("device",{});
+        const auto graph=acceptedSnapshot.getProperty("graph",{});
+        const auto epoch=device.getProperty("epoch","0").toString();
+        const auto oldRev=graph.getProperty("revision","0").toString();
+        const auto oldRoster=graph.getProperty("rosterRevision","0").toString();
+        const auto legacyRev=acceptedSnapshot.getProperty("legacyM4",{})
+                                .getProperty("routingRevision","0").toString();
+        juce::String error;
+        bool accepted=false;
+        if(!armix::integration::validConsoleRequestId(bytes))error="INVALID_REQUEST_ID";
+        else if(completed_.find(bytes)!=completed_.end())error="DUPLICATE_REQUEST_ID";
+        else {
+            if(recentIds_.size()==maxRecentIds) {
+                completed_.erase(recentIds_.front());
+                recentIds_.pop_front();
+            }
+            recentIds_.push_back(bytes);
+            completed_.insert(bytes);
+            std::uint64_t ep=0,rev=0,roster=0,channelId=0,m4Revision=0;
+            const auto target=intent.getProperty("targetChannelId",{});
+            const auto payload=intent.getProperty("payload",{});
+            const auto operation=intent.getProperty("operation",{}).toString();
+            if(!decodeDecimal(intent.getProperty("deviceEpoch",{}),ep) ||
+               !decodeDecimal(intent.getProperty("baseGraphRevision",{}),rev) ||
+               !decodeDecimal(intent.getProperty("baseRosterRevision",{}),roster))
+                error="INVALID_DECIMAL_WIRE";
+            else if(intent.getProperty("deviceEpoch",{}).toString()!=epoch)
+                error="STALE_DEVICE_EPOCH";
+            else if(intent.getProperty("baseGraphRevision",{}).toString()!=oldRev ||
+                    intent.getProperty("baseRosterRevision",{}).toString()!=oldRoster)
+                error="STALE_GRAPH_REVISION";
+            // M4's presentation ordinals are NOT universal ChannelIds.
+            // A legacy-console intent requires an explicit independent
+            // revision fence. Without it, reject rather than silently
+            // alias the ChannelId graph's revision 0 to an M4 revision.
+            else if(!decodeDecimal(intent.getProperty("legacyRoutingRevision",{}),
+                                    m4Revision) ||
+                    intent.getProperty("legacyRoutingRevision","").toString()!=legacyRev)
+                error="STALE_LEGACY_ROUTING_REVISION";
+            else if(!target.isString() || !decodeDecimal(target,channelId) ||
+                    channelId<1 || channelId>10)
+                error="INVALID_LEGACY_CHANNEL_ID";
+            else if(!engine.dryRoutingLabActive() ||
+                    engine.dryRoutingLabEpoch()!=ep ||
+                    engine.dryRoutingLabRevision()!=m4Revision)
+                error="PRODUCTION_GRAPH_NOT_ADMITTED";
+            else if(!payload.isObject())error="INVALID_PAYLOAD";
+            else {
+                const int lane=static_cast<int>(channelId-1);
+                if(operation=="SET_SOURCE") {
+                    const auto id=payload.getProperty("portId",{}).toString();
+                    int left=-1;
+                    if(parsePortId(id,"in:",left)) {
+                        const auto rightId=payload.getProperty("rightPortId",{}).toString();
+                        int right=-1;
+                        const auto format=payload.getProperty("sourceFormat","MONO").toString();
+                        if(format=="STEREO" && !parsePortId(rightId,"in:",right))
+                            error="INVALID_STEREO_RIGHT_PIN";
+                        else if(format!="MONO"&&format!="STEREO")
+                            error="INVALID_SOURCE_FORMAT";
+                        else error=engine.switchDryRoutingLabSource(
+                            lane,ep,m4Revision,format,left,right);
+                    } else error="INVALID_PHYSICAL_INPUT_PORT";
+                    accepted=error.isEmpty();
+                } else if(operation=="SET_FADER"||operation=="SET_PAN"||
+                          operation=="SET_MUTE"||operation=="SET_SOLO") {
+                    const bool binary=operation=="SET_MUTE"||operation=="SET_SOLO";
+                    const auto value=payload.getProperty(binary?"value":"valueDb",{});
+                    juce::String key;
+                    float control=0.f;
+                    if(binary) {
+                        const auto b=payload.getProperty("value",{});
+                        const auto on=payload.getProperty("enabled",b);
+                        if(!on.isBool())error="INVALID_BOOLEAN_CONTROL";
+                        else control=static_cast<bool>(on)?1.f:0.f;
+                    } else {
+                        const auto number=payload.getProperty(
+                            operation=="SET_FADER"?"valueDb":"value",{});
+                        if(!number.isInt()&&!number.isDouble())
+                            error="INVALID_NUMERIC_CONTROL";
+                        else {
+                            const double v=static_cast<double>(number);
+                            if(!std::isfinite(v))error="NON_FINITE_CONTROL";
+                            else control=static_cast<float>(v);
+                        }
+                    }
+                    if(error.isEmpty()) {
+                        if(operation=="SET_FADER")key="faderDb";
+                        else if(operation=="SET_PAN")key="pan";
+                        else if(operation=="SET_MUTE")key="mute";
+                        else key="solo";
+                        accepted=engine.setDryRoutingLabParameter(
+                            lane,ep,m4Revision,key,control);
+                        if(!accepted)error="NATIVE_CONTROL_REJECTED";
+                    }
+                } else if(operation=="SET_PROCESSING_FORMAT"||
+                          operation=="SET_PRIMARY_OUT") {
+                    const auto nativeValue=payload.getProperty(
+                        operation=="SET_PRIMARY_OUT"?"destinationId":"format",{})
+                        .toString();
+                    error=engine.repatchDryRoutingLabChannel(
+                        lane,ep,m4Revision,operation,nativeValue);
+                    accepted=error.isEmpty();
+                } else if(operation=="SET_INSERT_BYPASS"||
+                          operation=="OPEN_INSERT_EDITOR") {
+                    // The token must match an actually prepared vendor
+                    // AudioPluginInstance in the current accepted M4 graph.
+                    // Never invent a GUI insert, instantiate, clone or scan
+                    // VST3 while changing BYPASS / opening an editor.
+                    const auto token=payload.getProperty("insertId","").toString();
+                    const auto statuses=engine.status().getProperty("dryRoutingLab",{});
+                    const auto fx=statuses.getProperty("fxInstances",{});
+                    const auto* lanes=fx.getArray();
+                    int foundSlot=-1;
+                    if(token.isNotEmpty() && lanes && lane<lanes->size()) {
+                        const auto bank=lanes->getReference(lane);
+                        if(const auto* slots=bank.getArray())
+                            for(int k=0;k<slots->size();++k)
+                                if(slots->getReference(k).getProperty("instanceId","")
+                                        .toString()==token) {
+                                    if(foundSlot>=0){foundSlot=-1;break;}
+                                    foundSlot=k;
+                                }
+                    }
+                    if(foundSlot<0)error="UNKNOWN_NATIVE_INSERT_INSTANCE";
+                    else if(operation=="SET_INSERT_BYPASS") {
+                        const auto value=payload.getProperty("bypassed",{});
+                        if(!value.isBool())error="INVALID_BYPASS_VALUE";
+                        else {
+                            accepted=engine.setDryRoutingLabFxBypass(
+                                lane,foundSlot,ep,m4Revision,token,static_cast<bool>(value));
+                            if(!accepted)error="NATIVE_INSERT_BYPASS_REJECTED";
+                        }
+                    } else {
+                        error=openEditor(lane,foundSlot,ep,m4Revision,token);
+                        accepted=error.isEmpty();
+                    }
+                } else error="UNSUPPORTED_UNIVERSAL_OPERATION";
+            }
+        }
+        const auto after=armix::console::LiveConsoleBridgeV6::snapshot(engine.status());
+        const auto afterGraph=after.getProperty("graph",{});
+        PuzzleV8Ack ack;
+        ack.requestId=bytes;
+        ack.status=accepted?"ACCEPTED":"REJECTED";
+        ack.deviceEpoch=after.getProperty("device",{}).getProperty("epoch",epoch).toString().toStdString();
+        ack.graphRevision=afterGraph.getProperty("revision",oldRev).toString().toStdString();
+        ack.rosterRevision=afterGraph.getProperty("rosterRevision",oldRoster).toString().toStdString();
+        ack.errorCode=error.toStdString();
+        const auto json=PuzzleV8Wire::ack(ack);
+        return juce::JSON::parse(juce::String::fromUTF8(json.c_str()));
+    }
+
+    static bool parsePortId(const juce::String& wire,const char* prefix,int& physical) {
+        if(!wire.startsWith(prefix))return false;
+        const auto text=wire.substring(static_cast<int>(std::char_traits<char>::length(prefix)));
+        std::uint64_t value=0;
+        if(!decodeDecimal(juce::var(text),value)||value>255)return false;
+        physical=static_cast<int>(value);
+        return true;
     }
 
     static bool decodeDecimal(const juce::var& raw,std::uint64_t& result) noexcept {
