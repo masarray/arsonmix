@@ -17,7 +17,7 @@ struct PuzzleV8Pin final {
     double rawPeak=0.0;
 };
 struct PuzzleV8Snapshot final {
-    std::string epoch="0",backend,captureDevice,playbackDevice;
+    std::string epoch="1",backend,captureDevice,playbackDevice;
     std::string graphRevision="0",rosterRevision="0",legacyRoutingRevision="0";
     int sampleRate=0,bufferFrames=0;
     bool outputArmed=false,rawCapturePresent=false;
@@ -58,13 +58,16 @@ class PuzzleV8Wire final {
         std::snprintf(buffer,sizeof(buffer),"%.9g",n);
         return buffer;
     }
-    static std::string pins(const std::vector<PuzzleV8Pin>& list) {
+    static std::string pins(const std::vector<PuzzleV8Pin>& list,const char* kind) {
         std::string s="[";
         for(const auto& p:list) {
-            if(p.port<0||p.callback<0)continue;
+            if(p.port<0||p.port>255||p.callback<0)continue;
             if(s.size()>1)s+=',';
-            s+="{\"port\":"+std::to_string(p.port)+",\"callback\":"+
-               std::to_string(p.callback)+",\"label\":"+quote(p.label);
+            s+="{\"id\":"+quote(std::string(kind)+":"+std::to_string(p.port))+
+               ",\"port\":"+std::to_string(p.port)+",\"callback\":"+
+               std::to_string(p.callback)+",\"label\":"+
+               quote(p.label.empty()?std::string(kind)+" "+std::to_string(p.port+1):p.label)+
+               ",\"active\":true";
             if(p.hasRawPeak && std::isfinite(p.rawPeak) && p.rawPeak>=0.) {
                 s+=",\"rawPeak\":"+number(p.rawPeak)+
                    ",\"rawPresent\":"+bit(p.rawPeak>0.0005);
@@ -76,7 +79,7 @@ class PuzzleV8Wire final {
     static std::string enabled(const std::vector<PuzzleV8Pin>& list) {
         std::string s="[";
         for(const auto& p:list){
-            if(p.port<0||p.callback<0)continue;
+            if(p.port<0||p.port>255||p.callback<0)continue;
             if(s.size()>1)s+=',';
             s+=std::to_string(p.port);
         }
@@ -92,8 +95,8 @@ public:
             ",\"backend\":"+quote(s.backend)+
             ",\"captureDevice\":"+quote(s.captureDevice)+
             ",\"playbackDevice\":"+quote(s.playbackDevice)+
-            ",\"inputEndpoints\":"+pins(s.inputs)+
-            ",\"outputEndpoints\":"+pins(s.outputs)+
+            ",\"inputEndpoints\":"+pins(s.inputs,"in")+
+            ",\"outputEndpoints\":"+pins(s.outputs,"out")+
             ",\"enabledInputs\":"+enabled(s.inputs)+
             ",\"enabledOutputs\":"+enabled(s.outputs)+
             ",\"sampleRate\":"+(s.sampleRate>0?std::to_string(s.sampleRate):"null")+
@@ -123,8 +126,16 @@ public:
             ",\"errorCode\":"+quote(a.errorCode)+"}";
     }
     static std::string fixture(const PuzzleV8Snapshot& s,const PuzzleV8Ack& a) {
-        return "{\"producer\":\"native-cpp-v8-s0-unready\",\"snapshot\":"+
-               snapshot(s)+",\"ack\":"+ack(a)+"}\n";
+        const auto state=snapshot(s);
+        const auto command="{\"requestId\":"+quote(a.requestId)+
+            ",\"deviceEpoch\":"+quote(s.epoch)+
+            ",\"baseGraphRevision\":"+quote(s.graphRevision)+
+            ",\"baseRosterRevision\":"+quote(s.rosterRevision)+
+            ",\"operation\":\"SET_SOURCE\",\"targetChannelId\":null,\"payload\":{}}";
+        return "{\"events\":[{\"event\":\"arMixConsoleSnapshot\",\"payload\":"+
+          state+"},{\"event\":\"arMixConsoleIntent\",\"payload\":"+command+
+          "},{\"event\":\"arMixConsoleAck\",\"payload\":"+ack(a)+
+          "},{\"event\":\"arMixConsoleSnapshot\",\"payload\":"+state+"}]}\n";
     }
 };
 } // namespace armix::console

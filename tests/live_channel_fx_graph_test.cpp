@@ -18,6 +18,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <new>
+#include <iostream>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -699,14 +700,29 @@ static void verifyNativePuzzleV8FixtureAndWire() {
     assert(expected==checked);
     const auto parsed=juce::JSON::parse(juce::String::fromUTF8(expected.c_str()));
     assert(parsed.isObject());
-    const auto snap=parsed.getProperty("snapshot",{});
+    const auto events=parsed.getProperty("events",{});
+    assert(events.getArray()&&events.getArray()->size()==4);
+    const auto snap=events.getArray()->getReference(0).getProperty("payload",{});
     const auto device=snap.getProperty("device",{});
     const auto graph=snap.getProperty("graph",{});
     const auto telem=snap.getProperty("telemetry",{});
-    const auto ack=parsed.getProperty("ack",{});
+    const auto cmd=events.getArray()->getReference(1).getProperty("payload",{});
+    const auto ack=events.getArray()->getReference(2).getProperty("payload",{});
+    const auto repeated=events.getArray()->getReference(3).getProperty("payload",{});
+    assert(cmd.getProperty("requestId","").toString()==
+           ack.getProperty("requestId","").toString());
+    assert(cmd.getProperty("deviceEpoch","").toString()=="1");
+    assert(juce::JSON::toString(snap)==juce::JSON::toString(repeated));
+    // The same installed JUCE bridge must produce this UNREADY event state.
+    const auto native=armix::console::LiveConsoleBridgeV6::snapshot(juce::var());
+    assert(juce::JSON::toString(snap)==juce::JSON::toString(native));
+    armix::console::LiveConsoleBridgeV6 runtime;
+    const auto realAck=runtime.rejectUnsupportedIntent(cmd,native);
+    assert(juce::JSON::toString(ack)==juce::JSON::toString(realAck));
     assert(static_cast<int>(snap.getProperty("schemaVersion",0))==6);
     assert(!static_cast<bool>(snap.getProperty("productionCallbackLive",true)));
     assert(device.getProperty("enabledInputs",{}).getArray()->isEmpty());
+    assert(device.getProperty("epoch","").toString()=="1");
     assert(device.getProperty("enabledOutputs",{}).getArray()->isEmpty());
     assert(device.getProperty("inputEndpoints",{}).getArray()->isEmpty());
     assert(device.getProperty("outputEndpoints",{}).getArray()->isEmpty());
@@ -732,11 +748,21 @@ static void verifyNativePuzzleV8FixtureAndWire() {
     const auto in=physicalDev.getProperty("inputEndpoints",{});
     assert(in.getArray()->getReference(0).getProperty("label","").toString()==
            "Mic \"1\"\n");
+    assert(in.getArray()->getReference(0).getProperty("id","").toString()=="in:5");
+    assert(static_cast<bool>(in.getArray()->getReference(0).getProperty("active",false)));
     assert(static_cast<double>(in.getArray()->getReference(0)
         .getProperty("rawPeak",0.))==.25);
 }
 
-int main() {
+int main(int argc,char** argv) {
+    if(argc==2 && std::string(argv[1])=="--emit-console-s0-json") {
+        verifyNativePuzzleV8FixtureAndWire();
+        armix::console::PuzzleV8Snapshot s;
+        armix::console::PuzzleV8Ack ack;
+        ack.requestId="native-fixture-session:1";
+        std::cout<<armix::console::PuzzleV8Wire::fixture(s,ack);
+        return std::cout.good()?0:1;
+    }
     // R0: existing CH1 FX chain may be rendered inside the SAME prepared
     // ten-channel routing pass, without creating a second plugin or copying
     // a processor. Verify exactly one call and zero callback heap allocation.

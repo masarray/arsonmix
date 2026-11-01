@@ -27,7 +27,12 @@ public:
         // fixture. No JSON shape authored by the JS/GUI.
         PuzzleV8Snapshot w;
         const auto route=live.getProperty("dryRoutingLab",juce::var());
-        w.epoch=decimalFromNative(route.getProperty("epoch",juce::var())).toStdString();
+        // The control session has an epoch even before a driver is opened.
+        // 1 is the UNREADY session generation, NOT a fabricated physical
+        // source; any later verified device epoch supersedes this token.
+        auto actualEpoch=decimalFromNative(route.getProperty("epoch",juce::var()));
+        if(actualEpoch=="0")actualEpoch="1";
+        w.epoch=actualEpoch.toStdString();
         w.legacyRoutingRevision=decimalFromNative(
             route.getProperty("revision",juce::var())).toStdString();
         w.legacyActive=static_cast<bool>(route.getProperty("active",false));

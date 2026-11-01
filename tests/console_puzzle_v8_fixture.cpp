@@ -12,7 +12,7 @@ int main(int argc,char** argv) {
     // No audio driver exists in deterministic CI. UNREADY is the only
     // truthful native state: zero invented physical pins or PCM and no fake
     // ChannelIds from M4 presentation indices.
-    snapshot.epoch="0";
+    snapshot.epoch="1";
     PuzzleV8Ack ack;
     ack.requestId="native-fixture-session:1";
     const auto json=PuzzleV8Wire::fixture(snapshot,ack);
