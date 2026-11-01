@@ -249,6 +249,9 @@ public:
         for(int e=plan_.aux.offset[source];e<plan_.aux.offset[source+1];++e)
             if(plan_.aux.edges[e].bus==bus && plan_.aux.edges[e].tap==tap){
                 auxTarget_[e].store(gain,std::memory_order_release);
+                // Publish target before making the native PCM renderer
+                // switch from its original static-zero-cost path.
+                auxAutomationActive_.store(true,std::memory_order_release);
                 return true;
             }
         return false;
@@ -470,12 +473,15 @@ public:
             }
             graph.sends.dispatch(strip,SendTap::preFader,l,r,
                                  left_.data(),right_.data(),frames);
-            // One accepted AUX send parameter plane for both hosted
-            // LiveChannelFxGraph and direct PreparedMixerBlock callers.
-            // The old no-live branch bypassed atomic send targets, so an
-            // ACKed SET_SEND_LEVEL left PCM unchanged. This is an actual
-            // runtime audio correctness defect, not a test-only behavior.
-            dispatchLiveAux(strip,SendTap::preFader,l,r,frames);
+            // Before operator automation, preserve the original
+            // precompiled immutable AUX dispatch (fast path, no atomics).
+            // Once the message thread publishes a changed send target,
+            // the SAME callback switches to one live PRE/POST processor
+            // which follows 64-sample gains across varying block sizes.
+            if(auxAutomationActive_.load(std::memory_order_acquire))
+                dispatchLiveAux(strip,SendTap::preFader,l,r,frames);
+            else graph.aux.dispatch(strip,SendTap::preFader,l,r,
+                                    auxLeft_.data(),auxRight_.data(),frames);
             float peak=0.f, peakL=0.f, peakR=0.f;
             if(monitorBusL) {
                 const float next=liveMonitorGains
@@ -534,12 +540,15 @@ public:
             }
             graph.sends.dispatch(strip,SendTap::postFader,l,r,
                                  left_.data(),right_.data(),frames);
-            // One accepted AUX send parameter plane for both hosted
-            // LiveChannelFxGraph and direct PreparedMixerBlock callers.
-            // The old no-live branch bypassed atomic send targets, so an
-            // ACKed SET_SEND_LEVEL left PCM unchanged. This is an actual
-            // runtime audio correctness defect, not a test-only behavior.
-            dispatchLiveAux(strip,SendTap::postFader,l,r,frames);
+            // Before operator automation, preserve the original
+            // precompiled immutable AUX dispatch (fast path, no atomics).
+            // Once the message thread publishes a changed send target,
+            // the SAME callback switches to one live PRE/POST processor
+            // which follows 64-sample gains across varying block sizes.
+            if(auxAutomationActive_.load(std::memory_order_acquire))
+                dispatchLiveAux(strip,SendTap::postFader,l,r,frames);
+            else graph.aux.dispatch(strip,SendTap::postFader,l,r,
+                                    auxLeft_.data(),auxRight_.data(),frames);
         }
         // Dedicated AUX returns execute AFTER all ten source strips.
         // Input channel count NEVER decreases when an AUX is enabled.
@@ -675,6 +684,9 @@ private:
     std::array<int,stripCount> preRampRemaining_{};
     std::array<std::atomic<std::uint32_t>,stripCount> physicalTarget_{};
     std::array<PhysicalSourceFade,stripCount> physicalBlend_{};
+    // OFF until any native SET_SEND_LEVEL. Audio callback reads only;
+    // control-thread publication is monotonic for this prepared graph.
+    std::atomic<bool> auxAutomationActive_{false};
     std::array<std::atomic<float>,maxAuxSends> auxTarget_{};
     std::array<float,maxAuxSends> auxApplied_{},auxGoal_{}; // callback exclusive
     std::array<int,maxAuxSends> auxRampRemaining_{};
