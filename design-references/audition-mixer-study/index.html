@@ -31,6 +31,9 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .command-bar{height:38px;flex:none;display:flex;align-items:center;gap:7px;padding:0 11px;border-bottom:1px solid #111;background:linear-gradient(#303133,#2a2b2c)}
 .tool{padding:4px 9px;background:linear-gradient(#414244,#343537);border:1px solid #1b1d1e;border-radius:2px;box-shadow:inset 0 1px #545658;font-size:11px;white-space:nowrap}
 .tool:hover{background:#4a4b4d}
+.toolbar-label{color:#a0a5a6;font-size:10px}
+.toolbar-select{height:23px;min-width:62px;max-width:108px;border:1px solid #161819;border-radius:2px;background:#343638;color:#c7cdcf;font-size:10px}
+@media(max-width:1350px){.command-bar{gap:4px;padding:0 5px}.toolbar-label,.short-help{display:none}.tool{padding:4px 6px}.toolbar-select{min-width:57px;max-width:89px}}
 .tool.active{color:#cbecf7;border-color:#4d8295;background:#2f4751}
 .tool.primary{color:#c1e2ea}
 .tool.danger{color:#edc4bd}
@@ -70,7 +73,17 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .tracks{display:flex;align-items:stretch;width:max-content;min-width:100%;height:100%}
 .strip{width:102px;flex:0 0 102px;min-width:102px;min-height:0;height:100%;display:flex;flex-direction:column;background:#232425;border-right:2px solid #111213;box-shadow:inset 1px 0 #37383a}
 .strip:nth-child(even){background:#252627}
-.strip.selected{background:#2d3032;box-shadow:inset 1px 0 #4e7e8c}
+.strip.selected{background:#2d3032;box-shadow:inset 2px 0 #63acc1}
+.console-body.narrow{--fx-h:20px;--send-h:20px;--eq-h:20px}
+.console-body.narrow .strip:not(.master){width:78px;flex-basis:78px;min-width:78px}
+.console-body.narrow .route-select{font-size:9px}
+.console-body.narrow .fxslot-row,.console-body.narrow .send-section .send-select,.console-body.narrow .sendlevel,.console-body.narrow .eq-line{display:none}
+.console-body.narrow .fader-scale{font-size:8px;width:14px;min-width:14px}
+.console-body.narrow .pan-section{padding:0 2px;gap:1px}
+.console-body.narrow .pan-section input{width:43px}
+.console-body.narrow .switch{min-width:15px;padding:0}
+.console-body.narrow .switch-section{gap:0}
+.console-body.narrow .strip .footer-label .name{font-size:9px}
 #master{flex:0 0 111px;width:111px;min-width:111px;overflow:hidden}
 .strip.master{width:111px;flex:0 0 111px;background:#26282a;border-left:2px solid #111213;border-right:0;box-shadow:inset 1px 0 #44484b}
 .strip.bus{background:#2a292b}
@@ -141,7 +154,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .master .fader::-webkit-slider-thumb{background:linear-gradient(#b9c7ce,#5986a5 48%,#bad0d7 53%,#5a819b)}
 .meter-box{height:calc(100% - 17px);display:flex;gap:2px;width:19px;min-width:19px;margin-top:5px;position:relative}
 .meter-lane{position:relative;flex:1;border:1px solid #0c0e0f;background:#0b0d0e;box-shadow:inset 0 0 0 1px #303334;overflow:hidden}
-.meter-fill{position:absolute;bottom:0;left:1px;right:1px;height:0%;background:linear-gradient(to top,#d5bb57 0%,#6ab37c 32%,#67b995 72%,#dda255 87%,#d85e54 100%);transition:height 95ms linear}
+.meter-fill{position:absolute;inset:0 1px;height:100%;background:linear-gradient(to top,#42966d 0%,#6bb98b 60%,#d5b95e 81%,#d9554b 100%);clip-path:inset(calc(100% - var(--lit,0%)) 0 0);transition:clip-path 95ms linear}
 .meter-lane:before{content:"";position:absolute;inset:0;z-index:2;background:repeating-linear-gradient(to top,transparent 0,transparent 4px,rgba(0,0,0,.65) 4px,rgba(0,0,0,.65) 6px);pointer-events:none}
 .peak{position:absolute;top:0;right:0;width:3px;height:3px;background:#7d3530;opacity:.3}
 .peak.clipping{background:#ef6158;opacity:1}
@@ -167,16 +180,19 @@ button:disabled{opacity:.45;cursor:not-allowed}
 </head>
 <body>
 <div class="app">
-  <header class="window-title"><span class="logo">ArSonMix</span><span class="file-name">Session: Mixer Reference · Untitled</span><span class="study">AUDITION MIXER UI STUDY · ISOLATED</span></header>
-  <nav class="menu-bar" aria-label="Reference application menu"><span class="menu-label">File</span><span class="menu-label">Edit</span><span class="menu-label">Multitrack</span><span class="menu-label">Effects</span><span class="menu-label">Favorites</span><span class="menu-label">View</span><span class="menu-label">Window</span><span class="menu-label">Help</span></nav>
-  <div class="tabs-bar"><span class="editor-tab">Editor: Untitled</span><span class="editor-tab active">Mixer</span><span class="reference">Reference layout only · no editor/timeline</span></div>
+  <header class="window-title"><span class="logo">ArSonMix</span><span class="file-name">Mixer · Reference Session</span><span class="study">AUDITION CHANNEL STRIPS · STUDIO ONE WORKFLOW REFERENCE</span></header>
   <div class="command-bar" role="toolbar" aria-label="Mixer demonstration controls">
-    <button class="tool primary" id="addTrack" title="Add a mixer track">+ Audio Track</button>
+    <button class="tool primary" id="addTrack" title="Add an audio channel">+ Audio</button>
     <button class="tool" id="addBus" title="Add a bus to the mixer">+ Bus</button>
+    <span class="sep"></span>
+    <button class="tool" id="mode" aria-pressed="false" title="Studio One-inspired narrow-channel console mode">Narrow</button>
+    <label class="toolbar-label" for="viewFilter">Channels</label><select id="viewFilter" class="toolbar-select" aria-label="Show channel types"><option value="all">All</option><option value="audio">Audio</option><option value="bus">Buses</option><option value="solo">Solo</option></select>
+    <button class="tool" id="copy" title="Copy selected channel settings · Ctrl+C">Copy</button><button class="tool" id="paste" title="Paste to selected channel(s) · Ctrl+V">Paste</button>
+    <label class="toolbar-label" for="sceneSelect">Scene</label><select id="sceneSelect" class="toolbar-select" aria-label="Saved mixer scenes"><option value="">Current</option></select><button class="tool" id="saveScene" title="Save mixer scene">Save</button><button class="tool" id="recallScene" title="Recall selected mixer scene">Recall</button>
     <span class="sep"></span>
     <button class="tool" id="preview" aria-pressed="false">▶ Preview Meters</button>
     <button class="tool" id="reset" title="Reset demo mixer controls">Reset Mixer</button>
-    <span class="short-help">Click FX slots · change IN/OUT · set SEND · drag fader · M/S/R · scroll channels</span>
+    <span class="short-help">Ctrl+click: multi-select · Ctrl+C/V: copy/paste · Drag FX: reorder</span>
   </div>
   <main class="console-pane">
     <div class="mixer-title"><span class="accent"></span><span class="panel-name">Mixer</span><span class="panel-sub">▤</span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
@@ -238,7 +254,8 @@ function sectionFader(t){
 function strip(t){
  let code='<article class="strip '+t.kind+(t.selected?' selected':'')+'" data-id="'+t.id+'" style="--track-color:'+t.color+'" aria-label="'+escapeHtml(t.name)+' channel">';
  code+='<div class="section route-section"><div class="route-top"><span class="route-indicator">'+(t.kind==='audio'?'▥':t.kind==='bus'?'↪':'➜')+'</span><button class="mini phase '+(t.phase?'on':'')+'" data-action="phase" title="Reverse polarity">'+(t.phase?'Ø':'⊘')+'</button></div>';
- if(t.kind!=='master')code+='<select class="route-select" data-field="input" title="Track input" aria-label="'+escapeHtml(t.name)+' input">'+option(channelOptions(t,'input'),t.input)+'</select>';
+ if(t.kind==='audio')code+='<select class="route-select" data-field="input" title="Track input" aria-label="'+escapeHtml(t.name)+' input">'+option(channelOptions(t,'input'),t.input)+'</select>';
+ else if(t.kind==='bus')code+='<div class="route-select" style="line-height:17px;color:#a0a9ad">Bus Summing</div>';
  else code+='<div class="route-select" style="line-height:17px;color:#777">Mix Track</div>';
  code+='<select class="route-select" data-field="output" title="Track output" aria-label="'+escapeHtml(t.name)+' output">'+option(channelOptions(t,'output'),t.output)+'</select></div>';
  code+=sectionFx(t)+sectionSend(t);
@@ -252,7 +269,8 @@ function strip(t){
 }
 function render(){
  const oldScroll=document.getElementById('viewport').scrollLeft;
- tracksEl.innerHTML=tracks.map(strip).join('');
+ const filter=document.getElementById('viewFilter').value;
+ tracksEl.innerHTML=tracks.filter(t=>filter==='all'||(filter==='solo'?t.solo:t.kind===filter)).map(strip).join('');
  masterEl.innerHTML=strip(master);
  document.getElementById('viewport').scrollLeft=oldScroll;
  document.getElementById('trackCount').textContent=tracks.filter(t=>t.kind==='audio').length+' audio tracks · '+tracks.filter(t=>t.kind==='bus').length+' bus · master';
@@ -333,7 +351,7 @@ function togglePreview(){
  b.textContent=preview?'■ Stop Meter Preview':'▶ Preview Meters';b.classList.toggle('active',preview);b.setAttribute('aria-pressed',String(preview));
  document.getElementById('transport').textContent=preview?'Meter preview running':'Stopped';
  if(preview){say('Meters use generated UI-only values. No capture, DSP or audio output.');requestAnimationFrame(animateMeters);}
- else{tracks.concat(master).forEach(t=>{t.meterL=t.meterR=0;});document.querySelectorAll('.meter-fill').forEach(x=>x.style.height='0%');}
+ else{tracks.concat(master).forEach(t=>{t.meterL=t.meterR=0;});document.querySelectorAll('.meter-fill').forEach(x=>x.style.setProperty('--lit','0%'));}
 }
 document.getElementById('preview').addEventListener('click',togglePreview);
 function animateMeters(ts){
@@ -347,8 +365,8 @@ function animateMeters(ts){
  const level=suppressed?0:Math.max(0,Math.min(95,modulation*80+(db*.78)));
  const root=document.querySelector('.strip[data-id="'+t.id+'"]');if(!root)return;
  const l=root.querySelector('.meter-fill.left'),r=root.querySelector('.meter-fill.right');
- if(l)l.style.height=Math.max(0,level)+'%';
- if(r)r.style.height=Math.max(0,level*(.91+.08*Math.sin(meterFrame*.15+i)))+'%';
+ if(l)l.style.setProperty('--lit',Math.max(0,level)+'%');
+ if(r)r.style.setProperty('--lit',Math.max(0,level*(.91+.08*Math.sin(meterFrame*.15+i)))+'%');
  });
  }
  requestAnimationFrame(animateMeters);
