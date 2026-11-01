@@ -71,7 +71,7 @@ def verify(page, description: str, plugin_expected: bool = False):
         else if(keys.some(x=>!near(rect(x).width,rect(keys[0]).width,.5)))
           out.push('unequal BTN-180 widths on '+strip.dataset.id);
         if(!strip.querySelector('.fader-box .fader-travel .cap'))out.push('missing old fader CAP');
-        if(!strip.querySelector('.meter-box .vu-bars .vu-scale'))out.push('missing old VU/scale');
+        if(!strip.querySelector('.meter-box .vu-scale'))out.push('missing old VU/scale');
         if(!strip.querySelector('.fader-scale .gain-scale-travel'))out.push('missing gain ruler');
         const cap=strip.querySelector('.fader-travel .cap');
         if(cap && !getComputedStyle(cap).backgroundImage.includes('data:image/png;base64'))
