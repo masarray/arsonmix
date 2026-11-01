@@ -87,6 +87,8 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .route-indicator{color:#8c9193;font-size:11px}
 .group-indicator{font-size:9px;color:#a4d0dc;background:#334e59;padding:0 3px;border:1px solid #406f7d;border-radius:2px}
 .safe-marker{color:#e1bd87;font-size:7px;font-weight:600;letter-spacing:0;border:1px solid #8b744a;padding:0 1px}
+.format-badge{font-size:9px;color:#8fc2cf;min-width:15px;width:auto;padding:0 1px}
+.meter-box.mono .meter-lane{max-width:13px;margin:0 auto}
 .console-body.sends-mode .strip.audio .footer-label{background:#2b4048}
 .console-body.sends-mode .strip.audio .db-value{color:#8ddae6}
 .bank-arrow{min-width:20px;padding:4px!important;font-size:15px;line-height:14px}
@@ -296,13 +298,15 @@ const clone=x=>JSON.parse(JSON.stringify(x));
 const selection=()=>tracks.concat(master).filter(t=>t.selected);
 const make=(name,kind,color)=>{
  const id=nextId++;
- return {id,name,kind,color,group:null,safe:false,input:kind==='master'?'None':kind==='bus'?'None':'Default Stereo',output:kind==='master'?'Default Output':'Master',fx:Array(8).fill('None'),slotBypass:Array(8).fill(false),fxOn:true,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,activeSend:0,sendSlots:Array.from({length:16},()=>({send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0})),eq:true,pan:0,trim:0,mute:false,solo:false,cue:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
+ return {id,name,kind,color,group:null,safe:false,format:'stereo',input:kind==='master'?'None':kind==='bus'?'None':'Default Stereo',output:kind==='master'?'Default Output':'Master',fx:Array(8).fill('None'),slotBypass:Array(8).fill(false),fxOn:true,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,activeSend:0,sendSlots:Array.from({length:16},()=>({send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0})),eq:true,pan:0,trim:0,mute:false,solo:false,cue:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
 };
-function init(){nextId=1;nextGroup=1;tracks=INIT.map((name,i)=>make(name,'audio',COLORS[i]));tracks.push(make('Bus A','bus','#826b9a'));master=make('Master','master','#5a8ca8');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
+function init(){nextId=1;nextGroup=1;tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';channel.input='Input 1 (Mono)';}return channel;});tracks.push(make('Bus A','bus','#826b9a'));master=make('Master','master','#5a8ca8');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const option=(values,selected)=>values.map(x=>'<option value="'+escapeHtml(x)+'"'+(x===selected?' selected':'')+'>'+escapeHtml(x)+'</option>').join('');
 const channelOptions=(t,type)=>{
- if(type==='input')return t.kind==='audio'?['None','Default Stereo','Input 1 (Mono)','Input 2 (Mono)','Input 1 + 2 (Stereo)','CABLE Output L','CABLE Output R']:['None'];
+ if(type==='input')return t.kind==='audio'?t.format==='mono'
+ ?['None','Input 1 (Mono)','Input 2 (Mono)','CABLE Output L','CABLE Output R']
+ :['None','Default Stereo','Input 1 + 2 (Stereo)','CABLE Output L/R (Stereo)']:['None'];
  if(type==='output')return t.kind==='master'?['Default Output','Output 1 + 2','Speakers (Realtek)','Virtual Cable']:['Master',...tracks.filter(x=>x.kind==='bus'&&x.id!==t.id).map(x=>x.name),'Output 1 + 2'];
  return ['None',...tracks.filter(x=>(x.kind==='bus'||x.kind==='fx')&&x.id!==t.id).map(x=>x.name)];
 };
@@ -324,11 +328,11 @@ function panStyle(n){const left=Math.min(50,50+n/2),right=Math.max(50,50+n/2);re
 function sectionFader(t){
  const ticks=['+15','0','-6','-12','-24','-36','-48','-∞'];
  const isSend=sofEnabled&&t.kind==='audio',value=isSend?getSofLevel(t):t.level;
- return '<div class="fader-section"><div class="fader-scale">'+ticks.map(s=>'<span>'+s+'</span>').join('')+'</div><div class="fader-box"><input class="fader" type="range" min="-60" max="'+(isSend?6:15)+'" value="'+value+'" step=".1" data-field="level" title="'+(isSend?'SEND to '+escapeHtml(sofTarget)+' · main channel fader not changed':'Main level — double click to reset to 0 dB')+'" aria-label="'+escapeHtml(t.name)+' volume"></div><div class="meter-box" aria-label="Simulated stereo peak meter"><div class="meter-lane"><div class="meter-fill left"></div></div><div class="meter-lane"><div class="meter-fill right"></div></div><div class="peak '+(t.clip?'clipping':'')+'"></div></div></div>';
+ return '<div class="fader-section"><div class="fader-scale">'+ticks.map(s=>'<span>'+s+'</span>').join('')+'</div><div class="fader-box"><input class="fader" type="range" min="-60" max="'+(isSend?6:15)+'" value="'+value+'" step=".1" data-field="level" title="'+(isSend?'SEND to '+escapeHtml(sofTarget)+' · main channel fader not changed':'Main level — double click to reset to 0 dB')+'" aria-label="'+escapeHtml(t.name)+' volume"></div><div class="meter-box '+(t.format==='mono'?'mono':'stereo')+'" aria-label="Simulated '+(t.format==='mono'?'mono':'stereo')+' peak meter"><div class="meter-lane"><div class="meter-fill left"></div></div>'+(t.format==='mono'?'':'<div class="meter-lane"><div class="meter-fill right"></div></div>')+'<div class="peak '+(t.clip?'clipping':'')+'"></div></div></div>';
 }
 function strip(t){
  let code='<article class="strip '+t.kind+(t.selected?' selected':'')+'" data-id="'+t.id+'" style="--track-color:'+t.color+'" aria-label="'+escapeHtml(t.name)+' channel">';
- code+='<div class="section route-section"><div class="route-top"><span class="route-indicator">'+(t.kind==='audio'?'▥':t.kind==='bus'?'↪':t.kind==='fx'?'∿':'➜')+'</span>'+(t.safe?'<span class="safe-marker" title="Snapshot safe · recall protected">SAFE</span>':'')+(t.group?'<span class="group-indicator" title="Linked group '+escapeHtml(t.group)+'">'+escapeHtml(t.group)+'</span>':'')+'<button class="mini phase '+(t.phase?'on':'')+'" data-action="phase" title="Reverse polarity">'+(t.phase?'Ø':'⊘')+'</button></div>';
+ code+='<div class="section route-section"><div class="route-top"><span class="route-indicator">'+(t.kind==='audio'?'▥':t.kind==='bus'?'↪':t.kind==='fx'?'∿':'➜')+'</span>'+(t.safe?'<span class="safe-marker" title="Snapshot safe · recall protected">SAFE</span>':'')+(t.group?'<span class="group-indicator" title="Linked group '+escapeHtml(t.group)+'">'+escapeHtml(t.group)+'</span>':'')+(t.kind==='audio'?'<button class="mini format-badge" data-action="format" title="Flip mono/stereo">'+(t.format==='mono'?'M':'ST')+'</button>':'')+'<button class="mini phase '+(t.phase?'on':'')+'" data-action="phase" title="Reverse polarity">'+(t.phase?'Ø':'⊘')+'</button></div>';
  if(t.kind==='audio')code+='<select class="route-select" data-field="input" title="Track input" aria-label="'+escapeHtml(t.name)+' input">'+option(channelOptions(t,'input'),t.input)+'</select>';
  else if(t.kind==='bus'||t.kind==='fx')code+='<div class="route-select" style="line-height:17px;color:#a0a9ad">'+(t.kind==='bus'?'Bus Summing':'FX Summing')+'</div>';
  else code+='<div class="route-select" style="line-height:17px;color:#777">Mix Track</div>';
@@ -526,6 +530,7 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  const t=findTrack(btn);if(!t)return;
  const a=btn.dataset.action;
  if(a==='rename')return;
+ if(a==='format'&&t.kind==='audio'){t.format=t.format==='mono'?'stereo':'mono';t.input=t.format==='mono'?'Input 1 (Mono)':'Default Stereo';refreshStrip(t);say(t.name+' switched to '+t.format.toUpperCase()+' · input patch should be reviewed');return;}
  if(a==='openPlugin'){openPluginBrowser(t,Number(btn.dataset.slot));return;}
  if(a==='removeFx'){const i=Number(btn.dataset.slot);t.fx[i]='None';t.slotBypass[i]=false;refreshStrip(t);say(t.name+' · cleared FX insert '+(i+1));return;}
  if(a==='slotPower'){const slot=Number(btn.dataset.slot);if(t.fx[slot]==='None'){say(t.name+': choose an effect before toggling bypass');return;}t.slotBypass[slot]=!t.slotBypass[slot];refreshStrip(t);say(t.name+': FX '+(slot+1)+(t.slotBypass[slot]?' bypassed':' enabled'));return;}
