@@ -2000,6 +2000,7 @@ function render(pageOverride){
  document.getElementById('bankPrev').disabled=count<=1;
  document.getElementById('bankNext').disabled=count<=1;
  document.getElementById('trackCount').textContent=tracks.filter(t=>t.kind==='audio').length+' audio · '+tracks.filter(t=>t.kind==='bus').length+' bus · '+tracks.filter(t=>t.kind==='fx').length+' FX return · master';
+ renderWireRouting();
 }
 function say(s){info.textContent=s;}
 function syncFaderVisual(t,element){
@@ -2087,10 +2088,46 @@ function refreshStrip(t){
  const newRack=updated.querySelector('.fxslot-list');if(newRack)newRack.scrollTop=scroll;
 }
 function selectTrack(t,add=false){
+ const changedSource=!add&&t.kind==='audio'&&wireSourceId!==t.id;
+ if(changedSource)wireSourceId=t.id;
  if(!add){tracks.forEach(x=>x.selected=false);master.selected=false;t.selected=true;}
  else t.selected=!t.selected;
  document.querySelectorAll('.strip').forEach(el=>{const item=tracks.concat(master).find(x=>x.id===Number(el.dataset.id));el.classList.toggle('selected',!!item&&item.selected);});
  const count=selection().length;if(count>1)say(count+' channels selected · Copy/Paste will apply to selection');
+ if(changedSource)refreshWireRoutingNodes();
+}
+function refreshWireRoutingNodes(){
+ document.querySelectorAll('.strip').forEach(el=>{
+  const t=tracks.concat(master).find(x=>x.id===Number(el.dataset.id));
+  const tray=el.querySelector('.wire-tray');
+  if(t&&tray)tray.outerHTML=wireTray(t);
+ });
+ renderWireRouting();
+}
+function renderWireRouting(){
+ const svg=document.getElementById('wireLayer'),viewport=document.getElementById('viewport');
+ const source=tracks.find(t=>t.id===wireSourceId&&t.kind==='audio');
+ const legend=document.getElementById('wireLegend');
+ if(legend)legend.textContent=source?'WIRE · '+source.name+' ⇢ '+splitFanout(source)+' targets · click destination △':'WIRE · select audio channel';
+ if(!svg||!viewport||!source)return;
+ const vp=viewport.getBoundingClientRect?.(),sourceEl=viewport.querySelector?.('.strip[data-id="'+source.id+'"] .wire-socket');
+ const from=sourceEl?.getBoundingClientRect?.();
+ if(!vp||!from||!vp.width||!vp.height){svg.innerHTML='';return;}
+ svg.setAttribute('viewBox','0 0 '+vp.width+' '+vp.height);
+ const startX=from.left-vp.left+from.width/2,startY=from.top-vp.top+from.height*.65;
+ const paths=[];
+ for(const dest of tracks){
+  if(dest.kind!=='audio'||dest.id===source.id||parseSplitSource(dest.input)?.sourceId!==source.id)continue;
+  const el=viewport.querySelector?.('.strip[data-id="'+dest.id+'"] .wire-socket');
+  const rect=el?.getBoundingClientRect?.();
+  if(!rect)continue;
+  const endX=rect.left-vp.left+rect.width/2,endY=rect.top-vp.top+rect.height*.65;
+  const bend=Math.max(11,Math.min(19,Math.abs(endX-startX)*.10));
+  const d='M '+startX.toFixed(2)+' '+startY.toFixed(2)+' C '+startX.toFixed(2)+' '+(startY+bend).toFixed(2)+', '+endX.toFixed(2)+' '+(endY+bend).toFixed(2)+', '+endX.toFixed(2)+' '+endY.toFixed(2);
+  paths.push('<path d="'+d+'" stroke="#163b2b" stroke-width="5.5" opacity=".72" fill="none" stroke-linecap="round"/>'+
+   '<path d="'+d+'" stroke="#8de97c" stroke-width="2" opacity=".96" fill="none" stroke-linecap="round"/>');
+ }
+ svg.innerHTML=paths.join('');
 }
 function syncActiveSend(t){
  if(t.kind==='master'||t.kind==='fx')return;
@@ -2267,6 +2304,27 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  const btn=e.target.closest('[data-action]');if(!btn)return;
  const t=findTrack(btn);if(!t)return;
  const a=btn.dataset.action;
+ if(a==='wireRoute'){
+  const source=tracks.find(x=>x.id===wireSourceId&&x.kind==='audio');
+  if(!source||t.kind!=='audio'||t.id===source.id){say('Choose an audio source and a different destination');return;}
+  const link=parseSplitSource(t.input);
+  if(link?.sourceId===source.id){
+   t.input='None';
+   render();say('WIRE disconnected: '+source.name+' → '+t.name+' · GUI DEMO ONLY');
+   return;
+  }
+  if(t.input!=='None'){
+   say('WIRE not changed: '+t.name+' already has '+t.input+' · use advanced IN selector to replace it');
+   return;
+  }
+  if(splitWouldCycle(t,source.id)){
+   say('WIRE rejected: circular graph or missing channel');return;
+  }
+  t.input=splitSourceLabel(source.id,'PRE');
+  render();
+  say('WIRE linked '+source.name+' → '+t.name+' (PRE INSERT) · GUI DEMO ONLY · native audio not connected');
+  return;
+ }
  if(a==='rename'||a==='editIdentity')return; // double-click edits; single-click selects
  if(a==='format'&&t.kind==='audio'){t.format=t.format==='mono'?'stereo':'mono';refreshStrip(t);say(t.name+' processing → '+t.format.toUpperCase()+' · physical source '+t.input+' unchanged (reference only)');return;}
  if(a==='openPlugin'){openFastPicker(t,Number(btn.dataset.slot),btn);return;}
@@ -2316,7 +2374,10 @@ document.querySelector('.console-body').addEventListener('drop',e=>{
   refreshStrip(t);say('Copied '+source.fx[from]+' from '+source.name+' to '+t.name+' slot '+(to+1));
  }
 });
-document.querySelector('.console-body').addEventListener('mousedown',e=>{const t=findTrack(e.target);if(t)selectTrack(t,e.ctrlKey||e.metaKey||e.shiftKey);});
+document.querySelector('.console-body').addEventListener('mousedown',e=>{
+ if(e.target.closest?.('[data-action="wireRoute"]'))return; // do not change selected SOURCE when clicking a destination socket
+ const t=findTrack(e.target);if(t)selectTrack(t,e.ctrlKey||e.metaKey||e.shiftKey);
+});
 document.querySelector('.section-rail').addEventListener('click',e=>{
  const button=e.target.closest('[data-section]');if(!button)return;
  const name=button.dataset.section,body=document.querySelector('.console-body');
@@ -2329,6 +2390,7 @@ document.querySelector('.section-rail').addEventListener('click',e=>{
  button.setAttribute('aria-pressed',String(!collapsed));
  button.title=(collapsed?'Expand ':'Collapse ')+name.toUpperCase()+' section';
  say(name.toUpperCase()+(collapsed?' section collapsed':' section expanded')+' · channel grid stays aligned');
+ requestAnimationFrame(renderWireRouting); // FX rack changed height; redraw only after layout, never on an audio tick
 });
 document.getElementById('viewFilter').addEventListener('change',()=>{render();say('Channel display filtered: '+document.getElementById('viewFilter').value);});
 document.getElementById('mode').addEventListener('click',()=>{
