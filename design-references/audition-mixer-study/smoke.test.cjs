@@ -328,5 +328,30 @@ check(html.includes('VST3 SEARCH LOCATIONS') &&
  html.includes('window.ArSonMixNativePlugins?.scan'),
  'Floating Plugin Manager exposes VST3 paths and native-only scan capability gate');
 
+
+// Actual pointer trajectory: top=max +10, mid≈−25, bottom=min −60, no fake visual-only cap.
+node('reset').dispatch('click');
+const faderBoxPaint={style:{setProperty(){}}};
+const volumeReadout={textContent:''};
+const stripEl={dataset:{id:1},querySelector:s=>s==='.fader-readout'?volumeReadout:s==='.fader-box'?faderBoxPaint:s==='.db-value'?{textContent:''}:null};
+const rangeInput={dataset:{field:'level'},value:'0',min:'-60',max:'10',closest:s=>s==='.strip'?stripEl:null};
+const travel={getBoundingClientRect(){return {top:100,height:300}}};
+const pointerWell={querySelector:s=>s==='.fader'?rangeInput:s==='.fader-travel'?travel:null,
+ setPointerCapture(){},releasePointerCapture(){}};
+node('body').handlers.pointerdown({button:0,pointerId:11,clientY:100,altKey:false,
+ target:{closest:s=>s==='.fader-box'?pointerWell:null},preventDefault(){}});
+check(rangeInput.value==='10' && volumeReadout.textContent==='+10.0 dB',
+ 'Physical top of old fader well maps to +10 dB and updates numeric LCD');
+fakeWindow.handlers.pointermove({pointerId:11,clientY:250,altKey:false});
+check(rangeInput.value==='-25' && volumeReadout.textContent==='-25.0 dB',
+ '50% drag maps to -25 dB without rebuilding the full strip');
+fakeWindow.handlers.pointerup({pointerId:11,clientY:400,altKey:false});
+check(rangeInput.value==='-60' && volumeReadout.textContent==='-∞ dB',
+ 'Physical bottom maps to -60 dB and releases pointer gesture');
+filter('all');
+check(strip(1).includes('value="-60"') && strip(1).includes('--fader-y:100%'),
+ 'Rendered cap follows the same bottom-of-well gain value after pointer drag');
+node('reset').dispatch('click');
+
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
