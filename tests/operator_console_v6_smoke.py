@@ -580,7 +580,12 @@ async def main():
         await rename.press("Enter")
         rename_cmd=await page.evaluate("""()=>window.__v6Test.sent.filter(
           x=>x.event==='arMixConsoleIntent').at(-1).payload""")
-        assert rename_cmd["operation"]=="RENAME_CHANNEL"
+        assert rename_cmd["operation"]=="RENAME_CHANNEL", {
+          "last_intent":rename_cmd,
+          "ui":await page.evaluate("()=>window.__arMixV6ReadOnly()"),
+          "rename_visible":await page.locator('[data-channel-id="7"] .arV6Rename').count(),
+          "last_five":await page.evaluate("""()=>window.__v6Test.sent.filter(
+            x=>x.event==='arMixConsoleIntent').slice(-5).map(x=>x.payload.operation)""")}
         assert rename_cmd["targetChannelId"]=="7"
         assert rename_cmd["payload"]=={"name":"Lead Vox"}
         assert await page.locator('[data-channel-id="7"] .arV6Name').inner_text()=="CH 07"
