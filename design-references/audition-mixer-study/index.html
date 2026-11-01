@@ -1781,6 +1781,55 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
 .routing-wire-overlay{filter:drop-shadow(0 0 1.2px #5cc67f40)}
 @media(max-width:1250px){.wire-legend{max-width:145px}.wire-mode-select{max-width:112px;font-size:9px}.wire-master{min-width:55px;padding:0 4px}}
 @media(max-width:970px){.wire-legend{display:none}.wire-mode-label{display:none}}
+
+/* V12-P0 CONVERGENCE: native owner's latest passing physical geometry baseline.
+   The center wire strip costs 30px more than the pre-wire SEND row; recover
+   its space from compact top chrome and fixed mechanical label wells, not
+   from FX visibility or any accidental ROUTE-driven fader movement. */
+.window-title{height:23px!important;min-height:23px!important;flex:0 0 23px!important}
+.command-bar{height:35px!important;min-height:35px!important;flex:0 0 35px!important}
+.status-bar{height:20px!important;min-height:20px!important;flex:0 0 20px!important}
+.console-body{
+ --identity-h:25px!important;--footer-h:48px!important;
+ --pan-h:37px;--switch-h:40px;
+ --p0-fader-standard:clamp(215px,calc(100dvh - 510px),600px);
+ --p0-fader-h:var(--p0-fader-standard);
+}
+.console-body:not(.collapsed-send){
+ --p0-fader-h:max(150px,calc(var(--p0-fader-standard) - 80px));
+}
+@media(max-height:680px){
+ .console-body{--p0-fader-standard:clamp(155px,calc(100dvh - 505px),300px)}
+ .console-body:not(.collapsed-send){--p0-fader-h:max(118px,calc(var(--p0-fader-standard) - 80px))}
+}
+.console-body .strip .fader-section,
+.console-body .section-rail > .rail-cell.fader{
+ flex:0 0 var(--p0-fader-h)!important;height:var(--p0-fader-h)!important;
+ min-height:var(--p0-fader-h)!important;max-height:var(--p0-fader-h)!important;
+}
+.console-body:not(.collapsed-fx) .strip .fx-section,
+.console-body:not(.collapsed-fx) .section-rail > .rail-cell.fx{
+ flex:1 1 0px!important;height:auto!important;
+ min-height:122px!important;max-height:none!important;
+}
+.console-body .strip .fxslot-list{
+ flex:1 1 auto!important;min-height:0!important;overflow-y:auto!important;
+ scrollbar-width:thin;
+}
+.console-body.collapsed-fx .strip .fx-section,
+.console-body.collapsed-fx .section-rail > .rail-cell.fx{
+ flex:0 0 23px!important;height:23px!important;min-height:23px!important;max-height:23px!important;
+}
+/* When intentionally collapsing the entire FX section, unused room may return
+   to the physical fader, but never when only ROUTE is collapsed. */
+.console-body.collapsed-fx.collapsed-send .strip .fader-section,
+.console-body.collapsed-fx.collapsed-send .section-rail > .rail-cell.fader{
+ flex:1 1 0px!important;height:auto!important;max-height:none!important;
+}
+/* Keep the four visible FX rows ≥88px even while expanded SEND consumes space. */
+.console-body:not(.collapsed-send) .strip .fx-section .subhead{
+ flex:0 0 24px!important;height:24px!important;min-height:24px!important;
+}
 </style>
 </head>
 <body>
