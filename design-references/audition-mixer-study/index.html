@@ -116,6 +116,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .send-header{height:20px;display:flex;align-items:center;gap:3px;border-bottom:1px solid #151617}
 .send-header .sym{color:#a8adaf;font-size:13px}
 .send-header .sendtag{font-size:9px;color:#999b9e}
+.send-slot{width:38px;height:17px;padding:0;border:0;color:#b1bac0;background:#303234;font-size:9px}
 .send-header .push{margin-left:auto}
 .send-select{width:100%;height:21px;border:0;background:#303234;color:#c5c7c8;appearance:none;overflow:hidden;text-overflow:ellipsis;padding-left:4px;font-size:10px}
 .send-select:hover{background:#3b3c3e}
@@ -231,7 +232,7 @@ const clone=x=>JSON.parse(JSON.stringify(x));
 const selection=()=>tracks.concat(master).filter(t=>t.selected);
 const make=(name,kind,color)=>{
  const id=nextId++;
- return {id,name,kind,color,input:kind==='master'?'None':kind==='bus'?'None':'Default Stereo',output:kind==='master'?'Default Output':'Master',fx:['None','None','None','None'],slotBypass:[false,false,false,false],fxOn:true,fxPost:false,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,eq:true,pan:0,automation:'Read',mute:false,solo:false,arm:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
+ return {id,name,kind,color,input:kind==='master'?'None':kind==='bus'?'None':'Default Stereo',output:kind==='master'?'Default Output':'Master',fx:['None','None','None','None'],slotBypass:[false,false,false,false],fxOn:true,fxPost:false,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,activeSend:0,sendSlots:Array.from({length:16},()=>({send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0})),eq:true,pan:0,automation:'Read',mute:false,solo:false,arm:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
 };
 function init(){nextId=1;tracks=INIT.map((name,i)=>make(name,'audio',COLORS[i]));tracks.push(make('Bus A','bus','#826b9a'));master=make('Master','master','#5a8ca8');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -251,7 +252,7 @@ function sectionFx(t){
 const eqSvg='<svg viewBox="0 0 90 20" preserveAspectRatio="none" aria-hidden="true"><path d="M0 15 L14 15 Q22 15 29 9 T43 9 Q52 11 58 7 T75 8 Q82 9 90 5"/></svg>';
 function sectionSend(t){
  if(t.kind==='master'||t.kind==='fx')return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><span class="sendtag">No Sends</span></div></div>';
- return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><span class="sendtag">S1</span><span class="push"></span><button class="mini power '+(t.sendOn?'on':'')+'" data-action="sendOn" title="Enable Send">⏻</button><button class="mini pre '+(t.pre?'on':'')+'" data-action="pre" title="Toggle Pre/Post send">'+(t.pre?'Pre':'Post')+'</button></div><select class="send-select" data-field="send" aria-label="Send destination">'+option(channelOptions(t,'send'),t.send)+'</select><div class="sendlevel"><label>↳</label><input type="range" min="-60" max="6" step="1" value="'+t.sendLevel+'" data-field="sendLevel" title="Send level"><output>'+formatDb(t.sendLevel)+'</output></div><div class="sendlevel send-pan"><label>◉</label><input type="range" min="-100" max="100" step="1" value="'+t.sendPan+'" data-field="sendPan" title="Send stereo pan" aria-label="Send pan"><output>'+(t.sendPan===0?'C':t.sendPan<0?'L'+Math.abs(t.sendPan):'R'+t.sendPan)+'</output></div></div>';
+ return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><select class="send-slot" data-field="activeSend" title="Select send slot 1–16" aria-label="Send slot">'+option(Array.from({length:16},(_,i)=>'S'+(i+1)),'S'+(t.activeSend+1))+'</select><span class="push"></span><button class="mini power '+(t.sendOn?'on':'')+'" data-action="sendOn" title="Enable Send">⏻</button><button class="mini pre '+(t.pre?'on':'')+'" data-action="pre" title="Toggle Pre/Post send">'+(t.pre?'Pre':'Post')+'</button></div><select class="send-select" data-field="send" aria-label="Send destination">'+option(channelOptions(t,'send'),t.send)+'</select><div class="sendlevel"><label>↳</label><input type="range" min="-60" max="6" step="1" value="'+t.sendLevel+'" data-field="sendLevel" title="Send level"><output>'+formatDb(t.sendLevel)+'</output></div><div class="sendlevel send-pan"><label>◉</label><input type="range" min="-100" max="100" step="1" value="'+t.sendPan+'" data-field="sendPan" title="Send stereo pan" aria-label="Send pan"><output>'+(t.sendPan===0?'C':t.sendPan<0?'L'+Math.abs(t.sendPan):'R'+t.sendPan)+'</output></div></div>';
 }
 function formatDb(n){return n<=-60?'-∞':(n>0?'+':'')+Number(n).toFixed(1);}
 function sectionFader(t){
@@ -295,6 +296,14 @@ function selectTrack(t,add=false){
  document.querySelectorAll('.strip').forEach(el=>{const item=tracks.concat(master).find(x=>x.id===Number(el.dataset.id));el.classList.toggle('selected',!!item&&item.selected);});
  const count=selection().length;if(count>1)say(count+' channels selected · Copy/Paste will apply to selection');
 }
+function syncActiveSend(t){
+ if(t.kind==='master'||t.kind==='fx')return;
+ t.sendSlots[t.activeSend]={send:t.send,sendOn:t.sendOn,pre:t.pre,sendLevel:t.sendLevel,sendPan:t.sendPan};
+}
+function openSendSlot(t,index){
+ syncActiveSend(t);t.activeSend=index;
+ Object.assign(t,clone(t.sendSlots[index]));
+}
 function wouldFeedback(source,destination){
  let target=tracks.find(x=>x.kind==='bus'&&x.name===destination);
  const seen=new Set();
@@ -305,7 +314,7 @@ function wouldFeedback(source,destination){
  }
  return false;
 }
-const COPY_KEYS=['fx','slotBypass','fxOn','fxPost','send','sendOn','pre','sendLevel','sendPan','eq','pan','automation','mute','solo','level'];
+const COPY_KEYS=['fx','slotBypass','fxOn','fxPost','send','sendOn','pre','sendLevel','sendPan','activeSend','sendSlots','eq','pan','automation','mute','solo','level'];
 function copyChannels(){
  const src=selection()[0];if(!src){say('Select a channel to copy settings');return;}
  clipboard=Object.fromEntries(COPY_KEYS.map(k=>[k,clone(src[k])]));
@@ -316,7 +325,7 @@ function pasteChannels(){
  const list=selection();if(!list.length){say('Select destination channels before pasting');return;}
  for(const t of list){
   for(const k of COPY_KEYS){
-   if((t.kind==='master'||t.kind==='fx')&&['send','sendOn','pre','sendLevel','sendPan'].includes(k))continue;
+   if((t.kind==='master'||t.kind==='fx')&&['send','sendOn','pre','sendLevel','sendPan','activeSend','sendSlots'].includes(k))continue;
    if((k==='send')&&wouldFeedback(t,clipboard[k]))continue;
    t[k]=clone(clipboard[k]);
   }
@@ -353,12 +362,14 @@ function handleField(event){
  else if(field==='pan'){t.pan=Number(el.value);el.nextElementSibling.textContent=t.pan===0?'C':t.pan<0?'L'+Math.abs(t.pan):'R'+t.pan;if(event.type==='change')say(t.name+' pan '+el.nextElementSibling.textContent);}
  else if(field==='sendLevel'){t.sendLevel=Number(el.value);el.nextElementSibling.textContent=formatDb(t.sendLevel);}
  else if(field==='sendPan'){t.sendPan=Number(el.value);el.nextElementSibling.textContent=t.sendPan===0?'C':t.sendPan<0?'L'+Math.abs(t.sendPan):'R'+t.sendPan;}
+ else if(field==='activeSend'){const slot=Number(el.value.slice(1))-1;if(slot<0||slot>=16)return;openSendSlot(t,slot);refreshStrip(t);say(t.name+' · selected Send '+(slot+1));return;}
  else if(field==='output'){
   if(wouldFeedback(t,el.value)){say('Routing rejected: this output would create a bus feedback loop.');refreshStrip(t);return;}
   t.output=el.value;say(t.name+' output → '+el.value);
  }
  else if(field==='send'){if(wouldFeedback(t,el.value)){say('Send rejected: this bus would feed back into itself.');refreshStrip(t);return;}t.send=el.value;say(t.name+' send → '+el.value);}
  else{t[field]=el.value;say(t.name+' '+field+' → '+el.value);}
+ if(['send','sendLevel','sendPan'].includes(field))syncActiveSend(t);
  selectTrack(t);
 }
 document.querySelector('.console-body').addEventListener('input',handleField);
@@ -372,8 +383,8 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  if(a==='fxPost'){t.fxPost=!t.fxPost;refreshStrip(t);say(t.name+': effects position '+(t.fxPost?'post':'pre')+' fader · visual only');return;}
  if(a==='eq')t.eq=!t.eq;
  else if(a==='fxOn')t.fxOn=!t.fxOn;
- else if(a==='pre')t.pre=!t.pre;
- else if(a==='sendOn')t.sendOn=!t.sendOn;
+ else if(a==='pre'){t.pre=!t.pre;syncActiveSend(t);}
+ else if(a==='sendOn'){if(t.send==='None'){say('Select a send destination first.');return;}t.sendOn=!t.sendOn;syncActiveSend(t);}
  else if(['mute','solo','arm','mon','phase'].includes(a))t[a]=!t[a];
  refreshStrip(t);selectTrack(t);if(a==='solo'&&document.getElementById('viewFilter').value==='solo')render();say(t.name+': '+a+' '+(t[a]?'on':'off'));
 });
@@ -387,7 +398,7 @@ document.querySelector('.console-body').addEventListener('dblclick',e=>{
  const finish=save=>{
   if(span.contentEditable!=='true')return;
   span.contentEditable='false';const name=span.textContent.trim().slice(0,30);
-  if(save&&name){t.name=name;tracks.forEach(x=>{if(x.output===original)x.output=name;if(x.send===original)x.send=name;});say('Renamed '+original+' → '+name+' · routing updated');}
+  if(save&&name){t.name=name;tracks.forEach(x=>{if(x.output===original)x.output=name;if(x.send===original)x.send=name;x.sendSlots.forEach(slot=>{if(slot.send===original)slot.send=name;});});say('Renamed '+original+' → '+name+' · routing updated');}
   else t.name=original;
   render();
  };
