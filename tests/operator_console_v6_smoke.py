@@ -14,7 +14,7 @@ OPS = [
     "SET_SOURCE", "SET_PROCESSING_FORMAT", "SET_PRIMARY_OUT",
     "PICK_INSERT_FILE", "SET_INSERT_BYPASS", "OPEN_INSERT_EDITOR", "MOVE_INSERT",
     "ADD_SEND", "SET_SEND_TAP", "SET_SEND_LEVEL", "SET_FADER",
-    "SET_PAN", "SET_MUTE", "SET_SOLO", "CREATE_CHANNEL",
+    "SET_PAN", "SET_MUTE", "SET_SOLO", "SET_TRIM", "SET_CUE", "CREATE_CHANNEL",
 ]
 
 
@@ -24,7 +24,8 @@ def channel(identity, name, role="INPUT", source=None):
       "source":{"portId":source,"physicalPins":[int(source.split(":")[1])]} if source else None,
       "primaryOutId":"1000" if role!="MAIN" else None,
       "inserts":[],"sends":[],
-      "controls":{"faderDb":-3,"pan":0,"mute":False,"solo":False}}
+      "controls":{"faderDb":-3,"pan":0,"mute":False,"solo":False,
+                   "trimDb":-2.5,"cue":False}}
 
 
 def snapshot(revision=3, epoch=7, new_channel=False):
@@ -196,6 +197,41 @@ async def main():
         for key in ("io","send","fx"):
             await page.locator(f'.arV6RailToggle[data-section="{key}"]').click()
         assert all(x["topDelta"]<2 for x in await aligned_sections())
+
+        # Native stable ID CTRL/SHIFT selection is UI-only; pinned MAIN excluded.
+        count_start=await page.evaluate("""()=>window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').length""")
+        await page.locator('[data-channel-id="2"] .arV6StripHead').click()
+        await page.locator('[data-channel-id="7"] .arV6StripHead').click(modifiers=["Control"])
+        assert await page.evaluate("()=>window.__arMixV6ReadOnly().selectedChannelIds")==["2","7"]
+        await page.locator('[data-channel-id="9"] .arV6StripHead').click(modifiers=["Shift"])
+        assert await page.evaluate("()=>window.__arMixV6ReadOnly().selectedChannelIds")==["7","8","9"]
+        assert await page.locator('#arV6Main .arV6Master').get_attribute("aria-selected")=="false"
+        assert await page.locator('.arV6SelectionCount').inner_text()=="3 SEL"
+        assert await page.evaluate("""()=>window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').length""")==count_start
+
+        trim=page.locator('[data-op="SET_TRIM"][data-id="7"]')
+        assert await trim.is_enabled() and await trim.input_value()=="-2.5"
+        await trim.evaluate("(el)=>{el.value='5';el.dispatchEvent(new Event('change',{bubbles:true}))}")
+        trim_cmd=await page.evaluate("""()=>window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').at(-1).payload""")
+        assert trim_cmd["operation"]=="SET_TRIM" and trim_cmd["payload"]=={"valueDb":5}
+        assert await trim.input_value()=="-2.5"
+        await page.evaluate("""id=>window.__v6Test.publish('arMixConsoleAck',
+          {requestId:id,status:'REJECTED',deviceEpoch:'7',graphRevision:'3',
+           rosterRevision:'3',errorCode:'TRIM_NOT_READY'})""",trim_cmd["requestId"])
+        cue=page.locator('[data-op="SET_CUE"][data-id="7"]')
+        assert await cue.is_enabled()
+        await cue.click()
+        cue_cmd=await page.evaluate("""()=>window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').at(-1).payload""")
+        assert cue_cmd["operation"]=="SET_CUE" and cue_cmd["payload"]=={"value":True}
+        assert await cue.get_attribute("aria-pressed")=="false"
+        await page.evaluate("""id=>window.__v6Test.publish('arMixConsoleAck',
+          {requestId:id,status:'REJECTED',deviceEpoch:'7',graphRevision:'3',
+           rosterRevision:'3',errorCode:'NO_MONITOR'})""",cue_cmd["requestId"])
+        assert await cue.get_attribute("aria-pressed")=="false"
 
         # Role and SOLO filters are UI-only; MAIN remains pinned, original
         # numeric ChannelIds survive and no console intent is emitted.

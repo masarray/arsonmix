@@ -192,6 +192,8 @@
   }
   const clean=s=>String(s==null?'—':s);
   const byId=new Map();
+  // Selection is display state only, with immutable native ChannelId keys.
+  const selectedIds=new Set();let selectionAnchor=null;
   const pending=new Map();
   const pendingTargets=new Set();
   const awaitingSnapshot=new Map();
@@ -203,7 +205,8 @@
     OPEN_INSERT_EDITOR:'OPEN_INSERT_EDITOR',MOVE_INSERT:'MOVE_INSERT',
     ADD_SEND:'ADD_SEND',SET_SEND_TAP:'SET_SEND_TAP',SET_SEND_LEVEL:'SET_SEND_LEVEL',
     SET_FADER:'SET_FADER',SET_PAN:'SET_PAN',SET_MUTE:'SET_MUTE',
-    SET_SOLO:'SET_SOLO',CREATE_CHANNEL:'CREATE_CHANNEL'
+    SET_SOLO:'SET_SOLO',SET_TRIM:'SET_TRIM',SET_CUE:'SET_CUE',
+    CREATE_CHANNEL:'CREATE_CHANNEL'
   };
   let accepted=null,acceptedNative=false,modeSend='',lastStructure='',requestSeq=0;
   let draggingFx=null;
@@ -251,13 +254,15 @@
   const narrow=button('NARROW',{'aria-pressed':'false','aria-label':'Toggle narrow channel bank'});
   const roleFilter=h('select','arV6Select arV6Filter');
   roleFilter.setAttribute('aria-label','Filter visible mixer channels');
+  const selectionCount=h('span','arV6SelectionCount','0 SEL');
   for(const [value,label] of [['ALL','ALL'],['INPUT','INPUT'],['GROUP','BUS'],
     ['FX_RETURN','FX RTN'],['AUX','AUX'],['MONITOR','MON'],['SOLO','SOLO']]){
     const option=h('option','',label);option.value=value;roleFilter.append(option);
   }
   const back=button('V6 CONSOLE',{'aria-label':'Return to operator console'});
   back.id='arV6Return';back.hidden=true;
-  tools.append(bankPrev,bankLabel,bankNext,roleFilter,sendMode,roleSelect,add,narrow,patch);
+  tools.append(bankPrev,bankLabel,bankNext,roleFilter,selectionCount,
+    sendMode,roleSelect,add,narrow,patch);
   top.append(identification,tools);
   const message=h('div','arV6Message');message.setAttribute('role','status');
   const body=h('div','arV6Body');
@@ -434,20 +439,33 @@
     }
     for(const ch of g.channels){
       if(ch.primaryOutId!==undefined&&ch.primaryOutId!==null&&
-         !ids.has(ch.primaryOutId))return false;
+         (!ids.has(ch.primaryOutId)||ch.primaryOutId===ch.id))return false;
       if(ch.source){
         const x=ch.source;
         if(ch.role!=='INPUT'||typeof x.portId!=='string'||
            !Array.isArray(x.physicalPins)||!pins(x.physicalPins)||
            ![1,2].includes(x.physicalPins.length)||
-           !x.physicalPins.every(p=>d.enabledInputs.includes(p))||
-           !d.inputEndpoints.some(p=>p.id===x.portId&&p.active))return false;
+           !x.physicalPins.every(p=>d.enabledInputs.includes(p)&&
+             d.inputEndpoints.some(e=>e.port===p&&e.active))||
+           !d.inputEndpoints.some(p=>p.id===x.portId&&p.active&&
+             x.physicalPins.includes(p.port)))return false;
       }
       for(const send of ch.sends)
         if(!ids.has(send.targetId)||send.targetId===ch.id||
            !['PRE','POST'].includes(send.tap))return false;
       if(ch.role==='GROUP'&&!c.groups||ch.role==='FX_RETURN'&&!c.fxReturns||
          ch.role==='MONITOR'&&!c.monitor)return false;
+    }
+    if(s.productionCallbackLive&&g.channels.filter(ch=>ch.role==='MAIN').length!==1)return false;
+    // Reject source/primary bus cycles before allowing the operator to act.
+    const graphIds=new Map(g.channels.map(ch=>[ch.id,ch]));
+    for(const ch of g.channels){
+      let current=ch,visited=new Set();
+      while(current?.primaryOutId){
+        if(visited.has(current.id))return false;
+        visited.add(current.id);
+        current=graphIds.get(current.primaryOutId);
+      }
     }
     if(g.destinations.some(dst=>!dst||!ids.has(dst.id)))return false;
     if(typeof t.rawCapturePresent!=='boolean'||typeof t.mainPcmPresent!=='boolean'||
@@ -484,6 +502,7 @@
       // Device replacement invalidates all old intents and controls; never
       // replay them into an unrelated callback/port inventory.
       pending.clear();pendingTargets.clear();awaitingSnapshot.clear();
+      selectedIds.clear();selectionAnchor=null;
       showFeedback('DEVICE CHANGED · native source and destination inventory refreshed');
     }
     for(const [requestId,task] of awaitingSnapshot){
@@ -605,6 +624,7 @@
     const roleName=h('span','arV6Role',role);
     const name=h('strong','arV6Name',ch.name||ch.id);name.title=ch.id;
     head.append(roleName,name);elStrip.append(head);
+    elStrip.setAttribute('aria-selected',String(selectedIds.has(ch.id)));
     const sourceSection=h('div','arV6Upper');
     const routeSection=h('div','arV6Route');
     const sources=(accepted.device.inputEndpoints||[]).filter(p=>p.active===true && accepted.device.enabledInputs.includes(p.port));
@@ -631,7 +651,24 @@
       'aria-pressed':String(!!ch.controls?.mute)}));
     controls.append(button('S',{'data-op':'SET_SOLO','data-id':ch.id,
       'aria-pressed':String(!!ch.controls?.solo)}));
-    elStrip.append(controls);
+    const cueKnown=typeof ch.controls?.cue==='boolean'&&role!=='MAIN';
+    const cue=button('C',{'data-op':'SET_CUE','data-id':ch.id,
+      'aria-pressed':String(ch.controls?.cue===true),
+      'aria-label':(ch.name||ch.id)+' native monitor Cue/PFL'});
+    cue.dataset.acceptedKnown=String(cueKnown);cue.disabled=!cueKnown||!can('SET_CUE',ch.id);
+    controls.append(cue);
+    const trimKnown=typeof ch.controls?.trimDb==='number'&&Number.isFinite(ch.controls.trimDb);
+    const trimRow=h('label','arV6Trim');trimRow.append(h('span','','TRIM'));
+    const trim=h('input','arV6TrimLevel');trim.type='range';
+    trim.min='-24';trim.max='24';trim.step='.5';
+    trim.value=String(trimKnown?clamp(ch.controls.trimDb,-24,24):0);
+    trim.dataset.op='SET_TRIM';trim.dataset.id=ch.id;
+    trim.dataset.acceptedKnown=String(trimKnown);
+    trim.setAttribute('aria-label',(ch.name||ch.id)+' digital input trim dB');
+    trim.disabled=!trimKnown||!can('SET_TRIM',ch.id);
+    trimRow.append(trim,h('output','arV6TrimDb',
+      trimKnown?ch.controls.trimDb.toFixed(1):'—'));
+    controls.append(trimRow);elStrip.append(controls);
     const lower=h('div','arV6Lower');
     const meter=h('div','arV6Meter');meter.dataset.meterId=ch.id;
     meter.dataset.format=ch.processingFormat||'MONO';
@@ -678,6 +715,32 @@
     root.dataset.demo=String(!acceptedNative);
     root.dataset.armed=String(acceptedNative&&accepted?.productionCallbackLive===true&&!!d.outputArmed);
   }
+  function updateSelection(){
+    for(const strip of root.querySelectorAll('[data-channel-id]')){
+      const selected=selectedIds.has(strip.dataset.channelId);
+      strip.classList.toggle('isSelected',selected);
+      strip.setAttribute('aria-selected',String(selected));
+    }
+    selectionCount.textContent=selectedIds.size+' SEL';
+  }
+  function selectChannel(id,event){
+    const channel=byId.get(id);
+    if(!channel||channel.role==='MAIN')return;
+    const visible=[...lanes.querySelectorAll('.arV6Strip:not([hidden])')]
+      .map(strip=>strip.dataset.channelId);
+    if(!visible.includes(id))return;
+    if(event.shiftKey&&selectionAnchor&&visible.includes(selectionAnchor)){
+      if(!event.ctrlKey&&!event.metaKey)selectedIds.clear();
+      const a=visible.indexOf(selectionAnchor),b=visible.indexOf(id);
+      for(const x of visible.slice(Math.min(a,b),Math.max(a,b)+1))selectedIds.add(x);
+    }else if(event.ctrlKey||event.metaKey){
+      if(selectedIds.has(id))selectedIds.delete(id);else selectedIds.add(id);
+      selectionAnchor=id;
+    }else{
+      selectedIds.clear();selectedIds.add(id);selectionAnchor=id;
+    }
+    updateSelection(); // No DSP or ConsoleIntent involved.
+  }
   function applyPresentation(){
     const value=roleFilter.value;
     for(const strip of lanes.querySelectorAll('.arV6Strip')){
@@ -688,13 +751,15 @@
     }
     // Presentational filters cannot alter native roster nor hide pinned MAIN.
     if(lanes.querySelector('.arV6Strip:not([hidden])')===null)lanes.scrollLeft=0;
-    refreshBanks();
+    updateSelection();refreshBanks();
   }
   function render(){
     if(!accepted)return;
     updateHeader();
     lanes.replaceChildren();main.replaceChildren();
     const channels=accepted.graph.channels;
+    for(const id of selectedIds)if(!byId.has(id))selectedIds.delete(id);
+    if(selectionAnchor&&!byId.has(selectionAnchor))selectionAnchor=null;
     for(const ch of channels){
       if(clean(ch.role).toUpperCase()==='MAIN')main.append(strip(ch,true));
       else lanes.append(strip(ch));
@@ -714,7 +779,8 @@
     for(const node of root.querySelectorAll('[data-op]')){
       const op=node.dataset.op,id=node.dataset.id||null;
       node.disabled=!can(op,id)||
-        op==='SET_SEND_LEVEL'&&node.dataset.hasAcceptedLevel!=='true';
+        (op==='SET_SEND_LEVEL'&&node.dataset.hasAcceptedLevel!=='true')||
+        ((op==='SET_TRIM'||op==='SET_CUE')&&node.dataset.acceptedKnown!=='true');
     }
     add.disabled=!can('CREATE_CHANNEL');
     const caps=accepted.graph.capabilities||{};
@@ -754,9 +820,20 @@
       }
       const meter=strip.querySelector('[data-meter-id]');
       if(meter)meter.dataset.format=ch.processingFormat||'MONO';
-      for(const op of ['SET_MUTE','SET_SOLO']){
+      for(const op of ['SET_MUTE','SET_SOLO','SET_CUE']){
         const n=strip.querySelector('button[data-op="'+op+'"]');
-        if(n)n.setAttribute('aria-pressed',String(!!ch.controls?.[op==='SET_MUTE'?'mute':'solo']));
+        if(n)n.setAttribute('aria-pressed',String(!!ch.controls?.[
+          op==='SET_MUTE'?'mute':op==='SET_SOLO'?'solo':'cue']));
+        if(n&&op==='SET_CUE')n.dataset.acceptedKnown=String(
+          typeof ch.controls?.cue==='boolean'&&ch.role!=='MAIN');
+      }
+      const trim=strip.querySelector('[data-op="SET_TRIM"]');
+      if(trim){
+        const known=typeof ch.controls?.trimDb==='number'&&Number.isFinite(ch.controls.trimDb);
+        trim.dataset.acceptedKnown=String(known);
+        trim.value=String(known?clamp(ch.controls.trimDb,-24,24):0);
+        const readout=strip.querySelector('.arV6TrimDb');
+        if(readout)readout.textContent=known?ch.controls.trimDb.toFixed(1):'—';
       }
       for(const node of strip.querySelectorAll('.arV6FxSlot')){
         const fx=(ch.inserts||[]).find(x=>String(x.id)===node.dataset.fxId);
@@ -894,6 +971,8 @@
     if(!ch)return;
     if(op==='SET_MUTE')sendIntent(op,id,{value:!ch.controls?.mute});
     else if(op==='SET_SOLO')sendIntent(op,id,{value:!ch.controls?.solo});
+    else if(op==='SET_CUE'&&typeof ch.controls?.cue==='boolean')
+      sendIntent(op,id,{value:!ch.controls.cue});
     else if(op==='SET_INSERT_BYPASS'){
       const fx=(ch.inserts||[]).find(x=>String(x.id)===n.dataset.nativeInsertId);
       if(fx)sendIntent(op,id,{insertId:fx.id,bypassed:!fx.bypassed});
@@ -910,6 +989,11 @@
       if(catalog.some(p=>p.id===pluginId))sendIntent(op,id,{pluginId});
       else showFeedback('UNAVAILABLE · Select a verified native VST3 first');
     }
+  });
+  root.addEventListener('click',event=>{
+    const strip=event.target.closest('.arV6Strip');
+    if(!strip||event.target.closest('button,input,select,[draggable]'))return;
+    selectChannel(strip.dataset.channelId,event);
   });
   root.addEventListener('dblclick',event=>{
     const n=event.target.closest('.arV6PanRange');
@@ -929,6 +1013,11 @@
     else if(op==='SET_PAN'){
       const value=Number(n.value),snapped=Math.abs(value)<=4?0:value;
       sendIntent(op,id,{value:snapped}); // ACK/snapshot, no optimistic PAN.
+    }
+    else if(op==='SET_TRIM'){
+      const db=Number(n.value);
+      if(typeof ch.controls?.trimDb==='number'&&Number.isFinite(db))
+        sendIntent(op,id,{valueDb:clamp(db,-24,24)});
     }
     else if(op==='SET_SEND_LEVEL'){
       const send=(ch.sends||[]).find(s=>String(s.id)===n.dataset.send);
@@ -964,6 +1053,6 @@
   window.__arMixV6ReadOnly=()=>({
     nativePublisher:acceptedNative,revision:accepted?.graph?.revision??null,
     epoch:accepted?.device?.epoch??null,visibleChannelIds:[...byId.keys()],
-    pendingCount:pending.size,feedback
+    pendingCount:pending.size,selectedChannelIds:[...selectedIds],feedback
   });
 })();
