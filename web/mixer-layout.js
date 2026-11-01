@@ -294,8 +294,8 @@
       baseGraphRevision:accepted.graph.revision,
       baseRosterRevision:accepted.graph.rosterRevision,
       operation:op,targetChannelId:id||null,payload:payload||{}};
-    pending.set(requestId,{op,id,baseRevision:command.baseGraphRevision,epoch:command.deviceEpoch,
-      snapshotSerial});
+    pending.set(requestId,{op,id,baseRevision:command.baseGraphRevision,
+      baseRosterRevision:command.baseRosterRevision,epoch:command.deviceEpoch,snapshotSerial});
     if(id)pendingTargets.add(id);
     else if(op==='CREATE_CHANNEL')pendingTargets.add('@roster');
     showFeedback('PENDING · '+op+' · awaiting native ACK');

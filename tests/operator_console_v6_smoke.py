@@ -80,12 +80,24 @@ async def main():
             "()=>window.__v6Test.sent.some(x=>x.event==='arMixConsoleSubscribe')")
         # Exact C++ ENGINE v8 fixture: S0 must remain readback-only.
         raw=(ROOT/"tests/fixtures/console-v8-native-unready.json").read_bytes()
-        assert hashlib.sha256(raw).hexdigest()=="3eadfec4ee331f908ef2d98a2930273646e9893dfa5c00755f620d6faa917142"
+        assert hashlib.sha256(raw).hexdigest()=="4cbded2c7ada3be511c0e9a09b1949979638eb274c432f89b673a98ce55c7718"
         native=json.loads(raw)
-        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",native["snapshot"])
+        trace=native["events"]
+        assert [x["event"] for x in trace]==[
+          "arMixConsoleSnapshot","arMixConsoleIntent",
+          "arMixConsoleAck","arMixConsoleSnapshot"]
+        assert trace[0]["payload"]==trace[3]["payload"]
+        assert trace[1]["payload"]["operation"]=="SET_SOURCE"
+        assert trace[2]["payload"]["errorCode"]=="UNIVERSAL_CALLBACK_NOT_READY"
+        # The native C++ producer's real four-event control-plane trace is
+        # replayed unchanged. The outbound INTENT is inspected, not forged
+        # as an inbound GUI event. An unrelated ACK cannot grant native LIVE.
+        for event in (trace[0],trace[2],trace[3]):
+            await page.evaluate("(x)=>window.__v6Test.publish(x.event,x.payload)",event)
         assert await page.locator("#arV6Console").is_hidden()
         assert await page.evaluate("()=>window.__arMixV6ReadOnly().visibleChannelIds")==[]
-        bad=json.loads(raw)["snapshot"];del bad["device"]["enabledInputs"]
+        bad=json.loads(raw)["events"][0]["payload"]
+        del bad["device"]["enabledInputs"]
         await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",bad)
         assert await page.locator("#arV6Console").is_hidden()
         # Integration's implemented flat graph readback is NOT a live JUCE
