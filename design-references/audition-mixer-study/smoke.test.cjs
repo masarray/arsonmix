@@ -61,15 +61,15 @@ node('pluginSearch').value='';node('pluginSearch').dispatch('input');
 function pluginAction(type,id){
  node('pluginResults').handlers.click({target:{closest:k=>k==='[data-plugin-action]'?{dataset:{pluginAction:type,pluginId:id}}:null}});
 }
-pluginAction('fav','demo-8');
+pluginAction('fav','demo-7');
 node('pluginView').value='favorites';node('pluginView').dispatch('change');
 check(node('pluginResults').innerHTML.includes('Chorus'),'Favorite effect filtering');
 node('pluginView').value='all';node('pluginView').dispatch('change');
-pluginAction('hide','demo-8');
+pluginAction('hide','demo-7');
 check(!node('pluginResults').innerHTML.includes('Chorus'),'Hidden effect removed from normal list');
 node('pluginView').value='hidden';node('pluginView').dispatch('change');
 check(node('pluginResults').innerHTML.includes('Chorus'),'Hidden effect discoverable in Hidden view');
-pluginAction('hide','demo-8');
+pluginAction('hide','demo-7');
 node('pluginView').value='all';node('pluginView').dispatch('change');
 pluginAction('choose','demo-2');
 check(plug.hidden===true,'Plugin inserts and browser closes');
