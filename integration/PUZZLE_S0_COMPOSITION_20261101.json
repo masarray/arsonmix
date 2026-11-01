@@ -1,7 +1,7 @@
 {
   "schema": "arsonmix.v8.integration-composition.v1",
   "releaseReady": false,
-  "normativeMain": "11273a6cb5d4bc40c024ddcb48331e1ad7fe0479",
+  "normativeMain": "902b51e4c70aca6254d3c8a7821506868c33ca43",
   "sourceSHAs": {
     "ENGINE": "40a059785993cc6a4bb593020bf9749de92746f9",
     "GUI": "8c4205dd166c9f8933d8b303f630f567db9ca157",
@@ -123,7 +123,9 @@
     "referenceSha": "eda57f931ae3cc2872579df29cdf4e1486592b64",
     "referenceBlob": "1bbd9f50eefbb3c54d05d8e36e5afd3bd5e6d709",
     "type": "isolated visual QA only",
-    "version": "V8 density-aware banking"
+    "version": "V8 density-aware banking",
+    "refIsPrimary": true,
+    "visualDesignNotLiveDSP": true
   },
-  "visualGate": "BLOCKED_278_NOT_IMPLEMENTED_IN_NATIVE_CONSOLE"
+  "visualGate": "PR278_V8_NATIVE_GUI_5_BLOCKERS_SOURCE_AUDIT__NO_PIXEL_PCM_CERTIFICATION"
 }
