@@ -22,7 +22,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .logo{color:#72bbce;font-size:12px;font-weight:600;letter-spacing:.03em}
 .window-title .file-name{color:#bcc0c2;font-size:11px}
 .window-title .study{margin-left:auto;font-size:10px;color:#a4a6a6;letter-spacing:.06em}
-.command-bar{height:38px;flex:none;display:flex;align-items:center;gap:7px;padding:0 11px;border-bottom:1px solid #111;background:linear-gradient(#303133,#2a2b2c);overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
+.command-bar{height:38px;flex:none;display:flex;align-items:center;gap:7px;padding:0 11px;border-bottom:1px solid #111;background:linear-gradient(#303133,#2a2b2c);overflow:visible;position:relative;z-index:12;white-space:nowrap}
 .tool{padding:4px 9px;background:linear-gradient(#414244,#343537);border:1px solid #1b1d1e;border-radius:2px;box-shadow:inset 0 1px #545658;font-size:11px;white-space:nowrap}
 .tool:hover{background:#4a4b4d}
 .toolbar-label{color:#a0a5a6;font-size:10px}
@@ -234,25 +234,55 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .fx-remove:hover{background:#553a38;color:#f4c1b9}
 @media(max-width:940px){.plugin-browser{right:111px;width:min(310px,calc(100% - 148px))}}
 
+
+.more-tools{margin-left:auto;position:relative;flex:none}
+.more-tools summary{list-style:none;cursor:pointer;white-space:nowrap;user-select:none}
+.more-tools summary::-webkit-details-marker{display:none}
+.more-tools[open] summary{color:#d7e8eb;background:#405159}
+.more-tools-panel{position:absolute;z-index:35;right:0;top:calc(100% + 6px);width:278px;max-height:min(460px,calc(100vh - 138px));overflow:auto;background:#303436;border:1px solid #596167;box-shadow:0 4px 12px #111b;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;padding:9px}
+.more-tools-panel .tool,.more-tools-panel .toolbar-select{width:100%;max-width:none;min-width:0;margin:0}
+.more-tools-caption{grid-column:1 / -1;font-size:9px;color:#8fa1a8;letter-spacing:.08em;padding:5px 0 0;border-bottom:1px solid #434c50}
+@media(max-width:900px){.command-bar{padding:0 5px;gap:4px}.command-bar .toolbar-label{display:none}.command-bar .tool{padding:4px 6px}.command-bar .toolbar-select{max-width:86px}.command-bar .sep{margin:0 1px}}
 </style>
 </head>
 <body>
 <div class="app">
   <header class="window-title"><span class="logo">ArSonMix</span><span class="file-name">Mixer · Reference Session</span><span class="study">AUDITION CHANNEL STRIPS · STUDIO ONE WORKFLOW REFERENCE</span></header>
-  <div class="command-bar" role="toolbar" aria-label="Mixer demonstration controls">
-    <button class="tool primary" id="addTrack" title="Add an audio channel">+ Audio</button>
-    <button class="tool" id="addBus" title="Add a bus to the mixer">+ Bus</button>
-    <button class="tool" id="addFx" title="Add a send-only FX Return">+ FX Return</button><button class="tool primary" id="pluginsButton" title="Plugin browser / manager (F8)" aria-controls="pluginBrowser" aria-expanded="false">Plugins · F8</button>
+  <div class="command-bar" role="toolbar" aria-label="Live mixer controls">
+    <button class="tool primary" id="pluginsButton" title="Search and assign FX plugins (F8)" aria-controls="pluginBrowser" aria-expanded="false">Plugins · F8</button>
     <span class="sep"></span>
-    <button class="tool" id="mode" aria-pressed="false" title="Studio One-inspired narrow-channel console mode">Narrow</button>
-    <label class="toolbar-label" for="viewFilter">Channels</label><select id="viewFilter" class="toolbar-select" aria-label="Show channel types"><option value="all">All</option><option value="audio">Audio</option><option value="bus">Buses</option><option value="fx">FX Returns</option><option value="solo">Solo</option></select><button class="tool bank-arrow" id="bankPrev" title="Previous bank of eight channels">‹</button><select class="toolbar-select" id="bankSelect" aria-label="Mixer bank"><option value="all">All banks</option></select><button class="tool bank-arrow" id="bankNext" title="Next bank of eight channels">›</button>
-    <button class="tool" id="copy" title="Copy selected channel settings · Ctrl+C">Copy</button><button class="tool" id="paste" title="Paste to selected channel(s) · Ctrl+V">Paste</button><button class="tool" id="group" title="Group selected channel faders and mute/solo">Group</button><button class="tool" id="ungroup" title="Remove grouping from selected channels">Ungroup</button><button class="tool" id="sceneSafe" title="Protect selected channels against live Snapshot recall" aria-pressed="false">SAFE</button>
-    <label class="toolbar-label" for="sceneSelect">Snapshot</label><select id="sceneSelect" class="toolbar-select" aria-label="Saved mixer scenes"><option value="">Current</option></select><button class="tool" id="saveScene" title="Save mixer scene">Save</button><button class="tool" id="recallScene" title="Recall selected mixer scene">Recall</button>
-    <span class="sep"></span><button class="tool" id="sofToggle" title="Control selected aux/FX send levels with input channel faders" aria-pressed="false">Sends on Faders</button><select class="toolbar-select" id="sofTarget" aria-label="Sends on Faders destination"><option value="Bus A">Bus A</option></select>
+    <span class="toolbar-label">BANK</span><button class="tool bank-arrow" id="bankPrev" title="Previous bank">‹</button>
+    <select class="toolbar-select" id="bankSelect" aria-label="Mixer bank"><option value="all">All banks</option></select>
+    <button class="tool bank-arrow" id="bankNext" title="Next bank">›</button>
     <span class="sep"></span>
-    <button class="tool" id="preview" aria-pressed="false">▶ Preview Meters</button>
-    <button class="tool" id="clearCue" title="Clear all PFL/Cue monitors">Clear Cue</button><button class="tool" id="reset" title="Reset demo mixer controls">Reset Mixer</button>
-    <span class="short-help">Ctrl+click: multi-select · Ctrl+C/V: copy/paste · Drag FX: reorder</span>
+    <button class="tool" id="sofToggle" title="Mix Aux and FX sends using the channel faders" aria-pressed="false">Sends on Faders</button>
+    <select class="toolbar-select" id="sofTarget" aria-label="Send target"><option value="Bus A">Bus A</option></select>
+    <button class="tool" id="clearCue" title="Clear all Cue / PFL monitoring selections">Clear Cue</button>
+    <span class="sep"></span>
+    <label class="toolbar-label" for="sceneSelect">SNAPSHOT</label>
+    <select id="sceneSelect" class="toolbar-select" aria-label="Saved live mixer snapshots"><option value="">Current</option></select>
+    <button class="tool" id="saveScene" title="Store a live mixer snapshot locally">Save</button>
+    <button class="tool" id="recallScene" title="Recall snapshot · Snapshot Safe channels protected">Recall</button>
+    <details class="more-tools" id="moreTools">
+      <summary class="tool" title="Less-frequent mixer operations">More ···</summary>
+      <div class="more-tools-panel">
+        <span class="more-tools-caption">CHANNEL SETUP</span>
+        <button class="tool" id="addTrack" title="Create mono or stereo input channel">+ Audio</button>
+        <button class="tool" id="addBus" title="Create group bus">+ Bus</button>
+        <button class="tool" id="addFx" title="Create a send FX return">+ FX Return</button>
+        <span class="more-tools-caption">VIEW & SELECTION</span>
+        <button class="tool" id="mode" aria-pressed="false" title="Compact narrow channel strips">Narrow</button>
+        <select id="viewFilter" class="toolbar-select" aria-label="Filter channel types"><option value="all">All</option><option value="audio">Audio</option><option value="bus">Buses</option><option value="fx">FX Returns</option><option value="solo">Solo</option></select>
+        <button class="tool" id="copy" title="Copy selected channel settings (Ctrl+C)">Copy</button>
+        <button class="tool" id="paste" title="Paste selected settings (Ctrl+V)">Paste</button>
+        <button class="tool" id="group" title="Link selected channel faders">Group</button>
+        <button class="tool" id="ungroup" title="Remove selected channel link">Ungroup</button>
+        <button class="tool" id="sceneSafe" title="Protect selected channel from Snapshot recall">Snapshot Safe</button>
+        <span class="more-tools-caption">REFERENCE TOOLS</span>
+        <button class="tool" id="preview" aria-pressed="false" title="Show fake metering movement; no hardware audio">▶ Demo Meters</button>
+        <button class="tool" id="reset" title="Reset UI reference mixer controls">Reset Demo</button>
+      </div>
+    </details>
   </div>
   <main class="console-pane">
     <div class="mixer-title"><span class="accent"></span><span class="panel-name">Mixer</span><span class="panel-sub">▤</span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
