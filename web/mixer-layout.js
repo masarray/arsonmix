@@ -182,7 +182,12 @@
   };
   let accepted=null,acceptedNative=false,modeSend='',lastStructure='',requestSeq=0;
   let draggingFx=null;
-  const instance='gui'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+  // Numeric decimal wire identifiers are required by integration/ConsoleNativeContractV6.h.
+  // Never downcast native 64-bit ChannelId, device epoch, or graph revision.
+  const decimal=v=>typeof v==='string'&&/^(0|[1-9][0-9]*)$/.test(v)?
+    v:(Number.isSafeInteger(v)&&v>=0?String(v):null);
+  const ge=(a,b)=>a!==null&&b!==null&&BigInt(a)>=BigInt(b);
+  const instance='v6';
   let feedback='';
   const root=h('section','arV6Console');root.id='arV6Console';
   root.setAttribute('aria-label','ArSonMix universal operator console');
@@ -230,7 +235,8 @@
   function supported(op){
     const caps=accepted?.graph?.capabilities||{};
     // Absence of explicit native advertised operation support means disabled.
-    return acceptedNative && Array.isArray(caps.supportedOps) && caps.supportedOps.includes(operationCaps[op]);
+    return acceptedNative && accepted?.productionCallbackLive===true &&
+      Array.isArray(caps.supportedOps) && caps.supportedOps.includes(operationCaps[op]);
   }
   function can(op,id){
     if(!supported(op))return false;
@@ -250,10 +256,12 @@
   }
   function sendIntent(op,id,payload){
     if(!can(op,id)){showFeedback('UNAVAILABLE · Native capability or channel authorization missing');return false}
-    const requestId=instance+':'+(++requestSeq);
-    const command={requestId,baseRevision:accepted.graph.revision,
-      deviceEpoch:accepted.device.epoch,op,targetChannelId:id||null,payload:payload||{}};
-    pending.set(requestId,{op,id,baseRevision:command.baseRevision,epoch:command.deviceEpoch,
+    const requestId=String(++requestSeq);
+    const command={requestId,deviceEpoch:accepted.device.epoch,
+      baseGraphRevision:accepted.graph.revision,
+      baseRosterRevision:accepted.graph.rosterRevision,
+      operation:op,targetChannelId:id||null,payload:payload||{}};
+    pending.set(requestId,{op,id,baseRevision:command.baseGraphRevision,epoch:command.deviceEpoch,
       snapshotSerial});
     if(id)pendingTargets.add(id);
     else if(op==='CREATE_CHANNEL')pendingTargets.add('@roster');
@@ -268,13 +276,12 @@
     const intent=pending.get(ack.requestId);if(!intent)return;
     pending.delete(ack.requestId);
     const target=intent.id||'@roster';
-    if(ack.status==='ACCEPTED'){
-      // A realtime ACK may use the same graph revision: require an actual
-      // snapshot received after this gesture before releasing the control.
-      const requiredRevision=Number.isSafeInteger(ack.newRevision)?
-        ack.newRevision:intent.baseRevision;
+    if(ack.status==='ACCEPTED'||ack.status==='acceptedGraph'){
+      // A realtime ACK can keep the revision. Require a fresh readback, not
+      // only a positive ACK. All revisions stay decimal strings.
+      const requiredRevision=decimal(ack.graphRevision??ack.newRevision)??intent.baseRevision;
       if(snapshotSerial>intent.snapshotSerial&&accepted?.device?.epoch===intent.epoch&&
-         accepted?.graph?.revision>=requiredRevision){
+         ge(accepted?.graph?.revision,requiredRevision)){
         pendingTargets.delete(target);
       }else{
         awaitingSnapshot.set(ack.requestId,{...intent,requiredRevision});
@@ -291,8 +298,9 @@
     refreshDisabled();
   }
   function validSnapshot(s){
-    if(!s||typeof s!=='object'||!s.device||!s.graph)return false;
-    if(!Number.isSafeInteger(s.device.epoch)||!Number.isSafeInteger(s.graph.revision))return false;
+    if(!s||typeof s!=='object'||s.schemaVersion!==6||!s.device||!s.graph)return false;
+    if(decimal(s.device.epoch)===null||decimal(s.graph.revision)===null||
+      decimal(s.graph.rosterRevision)===null)return false;
     if(!Array.isArray(s.graph.channels)||!s.graph.capabilities)return false;
     const ids=new Set();
     for(const c of s.graph.channels){
@@ -302,16 +310,52 @@
     }
     return true;
   }
+  function normalizeSnapshot(payload){
+    const raw=payload?.snapshot||payload;
+    if(!raw||typeof raw!=='object')return null;
+    // The new main integration/ConsoleNativeContractV6.h readback has a
+    // flat, control-thread-only shape. It does NOT assert physical LIVE.
+    if(raw.schemaVersion===6&&!raw.graph&&Array.isArray(raw.channels)){
+      const caps=raw.capabilities||{};
+      return {schemaVersion:6,productionCallbackLive:raw.productionCallbackLive===true &&
+        caps.callbackOwnsChannelIds===true,
+        device:{epoch:decimal(raw.deviceEpoch),backend:'NATIVE GRAPH READBACK',
+          sampleRate:null,bufferFrames:null,outputArmed:false,
+          inputEndpoints:[],outputEndpoints:[]},
+        graph:{revision:decimal(raw.graphRevision),
+          rosterRevision:decimal(raw.rosterRevision),
+          channels:raw.channels.map(ch=>({...ch,
+            role:clean(ch.role).toUpperCase(),
+            processingFormat:clean(ch.processingFormat).toUpperCase(),
+            source:null,primaryOut:ch.primaryOutId||null,
+            inserts:[],controls:{},
+            sends:(ch.sends||[]).map(s=>({
+              targetId:s.destinationId,tap:s.preFader?'PRE':'POST',name:s.destinationId
+            }))})),
+          destinations:[],capabilities:{dynamicChannels:!!caps.addChannel,
+            groups:!!caps.group,fxReturns:!!caps.fxReturn,monitor:!!caps.monitor,
+            sendsOnFaders:false,supportedOps:[]}},
+        telemetry:{rawCapturePresent:false,channelMeterRmsPeak:{}}};
+    }
+    if(!raw.device||!raw.graph)return null;
+    const caps=raw.graph.capabilities||{};
+    return {...raw,schemaVersion:6,
+      productionCallbackLive:raw.productionCallbackLive===true&&caps.callbackOwnsChannelIds===true,
+      device:{...raw.device,epoch:decimal(raw.device.epoch)},
+      graph:{...raw.graph,revision:decimal(raw.graph.revision),
+        rosterRevision:decimal(raw.graph.rosterRevision??raw.graph.revision)}};
+  }
   function receiveSnapshot(data,fromNative){
-    const s=data?.snapshot||data;
+    const s=normalizeSnapshot(data);
     if(!validSnapshot(s)){
       if(fromNative)showFeedback('REJECTED SNAPSHOT · Invalid native epoch, revision or ChannelId');
       return false;
     }
     if(acceptedNative&&!fromNative)return false;
-    if(fromNative&&acceptedNative&&accepted&&s.device.epoch<accepted.device.epoch)return false;
+    if(fromNative&&acceptedNative&&accepted&&
+      BigInt(s.device.epoch)<BigInt(accepted.device.epoch))return false;
     if(fromNative&&acceptedNative&&accepted&&s.device.epoch===accepted.device.epoch&&
-      s.graph.revision<accepted.graph.revision)return false;
+      BigInt(s.graph.revision)<BigInt(accepted.graph.revision))return false;
     const priorEpoch=acceptedNative?accepted?.device?.epoch:null;
     const structure=s.device.epoch+':'+s.graph.revision+':'+s.graph.channels.map(c=>c.id).join('|');
     accepted=s;acceptedNative=!!fromNative;
@@ -326,7 +370,7 @@
     }
     for(const [requestId,task] of awaitingSnapshot){
       if(task.epoch===s.device.epoch&&snapshotSerial>task.snapshotSerial&&
-        s.graph.revision>=task.requiredRevision){
+        ge(s.graph.revision,task.requiredRevision)){
         awaitingSnapshot.delete(requestId);
         pendingTargets.delete(task.id||'@roster');
       }
@@ -337,7 +381,9 @@
       refreshAcceptedControls();refreshDisabled();updateHeader();
     }
     root.dataset.demo=String(!fromNative);
-    setVisible(true);
+    // Integration readback is intentionally not a production callback.
+    // It must never replace the working M4 console until callback cutover.
+    if(!fromNative||s.productionCallbackLive===true)setVisible(true);
     return true;
   }
   const makeDemo=()=>{
@@ -348,8 +394,9 @@
     }));
     channels.push({id:'DEMO:MAIN',role:'MAIN',name:'MAIN',processingFormat:'STEREO',
       inserts:[],sends:[],controls:{faderDb:0,pan:0,mute:false,solo:false}});
-    return {device:{epoch:0,backend:'BROWSER DEMO',sampleRate:null,bufferFrames:null,outputArmed:false,
-      inputEndpoints:[],outputEndpoints:[]},graph:{revision:0,channels,destinations:[],
+    return {schemaVersion:6,productionCallbackLive:false,
+      device:{epoch:'0',backend:'BROWSER DEMO',sampleRate:null,bufferFrames:null,outputArmed:false,
+      inputEndpoints:[],outputEndpoints:[]},graph:{revision:'0',rosterRevision:'0',channels,destinations:[],
       capabilities:{dynamicChannels:false,groups:false,fxReturns:false,sendsOnFaders:false,supportedOps:[]}},
       telemetry:{rawCapturePresent:false,channelMeterRmsPeak:{}}};
   };
@@ -474,6 +521,7 @@
   }
   function channelState(ch){
     if(!acceptedNative)return 'DEMO / NO AUDIO';
+    if(accepted?.productionCallbackLive!==true)return 'NATIVE READBACK / NOT LIVE';
     if(ch.controls?.mute)return 'MUTED';
     if(!ch.source && clean(ch.role).toUpperCase()==='INPUT')return 'SILENT / NO SOURCE';
     if(!accepted.device.outputArmed)return 'OUTPUT DISARMED';
@@ -488,9 +536,10 @@
       (d.sampleRate?Math.round(d.sampleRate)+' Hz':'— Hz')+' / '+
       (d.bufferFrames||'—')+' frames  ·  GRAPH '+(g.revision??'—');
     modeBadge.textContent=!acceptedNative?'DEMO · NOT CONNECTED':
+      accepted?.productionCallbackLive!==true?'NATIVE READBACK · NOT LIVE':
       d.outputArmed?'NATIVE ACCEPTED · ARMED':'NATIVE ACCEPTED · OUTPUT DISARMED';
     root.dataset.demo=String(!acceptedNative);
-    root.dataset.armed=String(acceptedNative&&!!d.outputArmed);
+    root.dataset.armed=String(acceptedNative&&accepted?.productionCallbackLive===true&&!!d.outputArmed);
   }
   function render(){
     if(!accepted)return;
