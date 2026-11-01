@@ -344,9 +344,9 @@ const clone=x=>JSON.parse(JSON.stringify(x));
 const selection=()=>tracks.concat(master).filter(t=>t.selected);
 const make=(name,kind,color)=>{
  const id=nextId++;
- return {id,name,kind,color,group:null,safe:false,format:'stereo',input:kind==='master'?'None':kind==='bus'?'None':'Default Stereo',output:kind==='master'?'Default Output':'Master',fx:Array(8).fill('None'),slotBypass:Array(8).fill(false),fxOn:true,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,activeSend:0,sendSlots:Array.from({length:16},()=>({send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0})),eq:true,pan:0,trim:0,mute:false,solo:false,cue:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
+ return {id,name,kind,color,group:null,safe:false,format:'stereo',input:'None',output:kind==='master'?'Default Output':'Master',fx:Array(8).fill('None'),slotBypass:Array(8).fill(false),fxOn:true,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,activeSend:0,sendSlots:Array.from({length:16},()=>({send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0})),eq:true,pan:0,trim:0,mute:false,solo:false,cue:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
 };
-function init(){nextId=1;nextGroup=1;tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';channel.input='Input 1 (Mono)';}return channel;});tracks.push(make('Bus A','bus','#826b9a'));master=make('Master','master','#5a8ca8');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
+function init(){nextId=1;nextGroup=1;tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#826b9a'));master=make('Master','master','#5a8ca8');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const option=(values,selected)=>values.map(x=>'<option value="'+escapeHtml(x)+'"'+(x===selected?' selected':'')+'>'+escapeHtml(x)+'</option>').join('');
 const channelOptions=(t,type)=>{
@@ -372,8 +372,8 @@ function formatDb(n){return n<=-60?'-∞':(n>0?'+':'')+Number(n).toFixed(1);}
 function panLabel(n){return Number(n)===0?'C':n<0?'L'+Math.abs(n):'R'+n;}
 function panStyle(n){const left=Math.min(50,50+n/2),right=Math.max(50,50+n/2);return '--pan-start:'+left+'%;--pan-end:'+right+'%';}
 function sectionFader(t){
- const ticks=['+15','0','-6','-12','-24','-36','-48','-∞'];
  const isSend=sofEnabled&&t.kind==='audio',value=isSend?getSofLevel(t):t.level;
+ const ticks=[isSend?'+6':'+15','0','-6','-12','-24','-36','-48','-∞'];
  return '<div class="fader-section"><div class="fader-scale">'+ticks.map(s=>'<span>'+s+'</span>').join('')+'</div><div class="fader-box"><input class="fader" type="range" min="-60" max="'+(isSend?6:15)+'" value="'+value+'" step=".1" data-field="level" title="'+(isSend?'SEND to '+escapeHtml(sofTarget)+' · main channel fader not changed':'Main level — double click to reset to 0 dB')+'" aria-label="'+escapeHtml(t.name)+' volume"></div><div class="meter-box '+(t.format==='mono'?'mono':'stereo')+'" aria-label="Simulated '+(t.format==='mono'?'mono':'stereo')+' peak meter"><div class="meter-lane"><div class="meter-fill left"></div></div>'+(t.format==='mono'?'':'<div class="meter-lane"><div class="meter-fill right"></div></div>')+'<div class="peak '+(t.clip?'clipping':'')+'"></div></div></div>';
 }
 function strip(t){
@@ -434,6 +434,11 @@ function toggleSof(force){
  const btn=document.getElementById('sofToggle');btn.classList.toggle('active',sofEnabled);
  btn.setAttribute('aria-pressed',String(sofEnabled));document.querySelector('.console-body').classList.toggle('sends-mode',sofEnabled);
  render();say(sofEnabled?'SENDS ON FADERS: adjusting '+sofTarget+' send levels · main faders protected':'MAIN MIX: faders control primary channel level');
+}
+function visibleBankCount(){
+ const filter=document.getElementById('viewFilter').value;
+ const total=tracks.filter(t=>filter==='all'||(filter==='solo'?t.solo:t.kind===filter)).length;
+ return Math.max(1,Math.ceil(total/8));
 }
 function setSnapshotSafe(){
  const list=selection();if(!list.length){say('Select channels to set Snapshot Safe');return;}
@@ -576,7 +581,7 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  const t=findTrack(btn);if(!t)return;
  const a=btn.dataset.action;
  if(a==='rename')return;
- if(a==='format'&&t.kind==='audio'){t.format=t.format==='mono'?'stereo':'mono';t.input=t.format==='mono'?'Input 1 (Mono)':'Default Stereo';refreshStrip(t);say(t.name+' switched to '+t.format.toUpperCase()+' · input patch should be reviewed');return;}
+ if(a==='format'&&t.kind==='audio'){t.format=t.format==='mono'?'stereo':'mono';t.input='None';refreshStrip(t);say(t.name+' switched to '+t.format.toUpperCase()+' · select a valid input patch');return;}
  if(a==='openPlugin'){openPluginBrowser(t,Number(btn.dataset.slot));return;}
  if(a==='removeFx'){const i=Number(btn.dataset.slot);t.fx[i]='None';t.slotBypass[i]=false;refreshStrip(t);say(t.name+' · cleared FX insert '+(i+1));return;}
  if(a==='slotPower'){const slot=Number(btn.dataset.slot);if(t.fx[slot]==='None'){say(t.name+': choose an effect before toggling bypass');return;}t.slotBypass[slot]=!t.slotBypass[slot];refreshStrip(t);say(t.name+': FX '+(slot+1)+(t.slotBypass[slot]?' bypassed':' enabled'));return;}
@@ -655,11 +660,11 @@ document.getElementById('recallScene').addEventListener('click',recallScene);
 document.getElementById('sceneSafe').addEventListener('click',setSnapshotSafe);
 document.getElementById('bankSelect').addEventListener('change',()=>{render();say('Switched mixer fader bank');});
 document.getElementById('bankPrev').addEventListener('click',()=>{
- const sel=document.getElementById('bankSelect'),n=Math.max(1,Math.ceil(tracks.length/8));
+ const sel=document.getElementById('bankSelect'),n=visibleBankCount();
  const old=sel.value==='all'?0:Number(sel.value);sel.value=String((old-1+n)%n);render();say('Previous fader bank');
 });
 document.getElementById('bankNext').addEventListener('click',()=>{
- const sel=document.getElementById('bankSelect'),n=Math.max(1,Math.ceil(tracks.length/8));
+ const sel=document.getElementById('bankSelect'),n=visibleBankCount();
  const old=sel.value==='all'?-1:Number(sel.value);sel.value=String((old+1)%n);render();say('Next fader bank');
 });
 document.getElementById('sofToggle').addEventListener('click',()=>toggleSof());
