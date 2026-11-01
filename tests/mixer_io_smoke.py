@@ -1259,6 +1259,11 @@ async def main():
               outputs:['Realtek HD Audio 2nd output']}]});
         }""")
         await one.locator('#audioSetupBtn').click()
+        # Actual native Windows UI uses a compact right-side hardware drawer,
+        # not the old centered 920px blocking routing wizard.
+        drawer=await one.locator('#arIOOverlay .arIOWindow').bounding_box()
+        assert drawer and drawer['width']<=600,drawer
+        assert abs(drawer['x']+drawer['width']-1366)<2,drawer
         assert await one.locator('.arIODevicePin').count()==3
         assert 'MONO ONLY' in await one.locator('.arIOPinHeading').inner_text()
         assert not await one.locator('.arIODevicePatchMatrix').evaluate('(e)=>e.open')
