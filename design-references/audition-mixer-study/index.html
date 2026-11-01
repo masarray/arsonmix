@@ -1728,6 +1728,59 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
 }
 @media(max-width:1000px){.wire-legend{max-width:220px}}
 @media(max-height:680px){.console-body.collapsed-send{--send-h:49px!important}}
+
+/* V12 physical console wire strip: FL send-switch affordances, but original ArSonMix tooling.
+   53px collapsed row stays visible; FX elastic and hardware fader are untouched. */
+.wire-mode-label{font:600 9px/1 Arial,Helvetica,sans-serif;color:#a4c7d2;white-space:nowrap;margin-left:5px}
+.wire-mode-select{height:24px;max-width:146px;min-width:112px;padding:1px 17px 1px 6px;
+  border:1px solid #4b6370;border-radius:3px;background:linear-gradient(#2c414b,#192e39);
+  color:#d6e9ec;font:500 10px/1 'Segoe UI',Arial,sans-serif}
+.wire-mode-select:hover{border-color:#8bb8c4}
+.wire-master{height:24px;min-width:66px;padding:0 7px;
+  color:#bce9cb;border:1px solid #557a65;border-radius:3px;
+  background:linear-gradient(#29483b,#182f29);box-shadow:inset 0 1px #c7ffe522,0 1px #030b0d;
+  font:600 10px/1 Arial,Helvetica,sans-serif!important;white-space:nowrap}
+.wire-master[aria-pressed="false"]{color:#a1a6ad;background:linear-gradient(#273037,#1b252b);border-color:#4c5960}
+.wire-master:focus-visible,.wire-mode-select:focus-visible{outline:1px solid #b0ecfa;outline-offset:2px}
+.console-body .strip .wire-tray{gap:3px!important;padding:2px 3px 3px!important}
+.console-body .strip .wire-tray.linked .wire-socket{min-width:29px;flex:1 1 32px;padding:0 2px!important}
+.console-body .strip .wire-socket.is-source .wire-arrow{color:#234b25}
+.console-body .strip .wire-tray .wire-pot{
+ position:relative;flex:0 0 26px;width:26px;height:24px;min-width:26px;
+ border:0;cursor:ew-resize;display:flex;justify-content:center;align-items:center;
+}
+.console-body .strip .wire-tray .wire-pot::before{
+ content:"";width:22px;height:22px;position:absolute;inset:1px 2px;
+ border-radius:50%;box-sizing:border-box;
+ background:conic-gradient(from 225deg,#a8f5b1 0 var(--wire-pct,90.9%),#344d52 var(--wire-pct,90.9%) 75%,transparent 75% 100%);
+ box-shadow:0 1px 2px #000c,inset 0 0 0 1px #83c79a66;pointer-events:none;
+}
+.console-body .strip .wire-tray .wire-pot::after{
+ content:"";position:absolute;left:11px;top:3px;width:3px;height:8px;
+ border-radius:1px;background:#c7fdeb;border:1px solid #335b50;
+ box-shadow:0 0 2px #84efaf;transform-origin:2px 10px;
+ transform:rotate(var(--wire-deg,110deg));pointer-events:none;
+}
+.console-body .strip .wire-tray .wire-gain{
+ position:absolute;inset:0;width:26px!important;height:24px!important;margin:0;
+ cursor:ew-resize;opacity:0;z-index:2;appearance:none;-webkit-appearance:none;touch-action:none;
+}
+.console-body .strip .wire-tray .wire-pot:focus-within{outline:1px solid #b4f4cb;border-radius:50%}
+.console-body .strip .wire-tray .wire-disconnect{
+ flex:0 0 17px;width:17px;height:21px;min-width:17px;padding:0;
+ font:600 14px/18px Arial,sans-serif!important;color:#a8c4cb;
+ border:1px solid #47616a;border-radius:3px;background:linear-gradient(#34444c,#172932);
+ box-shadow:inset 0 1px #a3bed31c;cursor:pointer;
+}
+.console-body .strip .wire-tray .wire-disconnect:hover{color:#fff1e5;background:linear-gradient(#80423c,#512521);border-color:#c47365}
+.console-body .strip .wire-tray .wire-disconnect:focus-visible{outline:1px solid #ffcaba;outline-offset:1px}
+.console-body .strip .wire-tray.linked .wire-label{font-size:8px!important}
+.console-body .strip .wire-tray.linked .wire-socket{background:linear-gradient(#316748,#163b2c)!important}
+.console-body .strip .wire-tray.linked .wire-arrow{filter:drop-shadow(0 0 2px #7dec9c)}
+.console-body .strip .wire-tray .wire-gain:focus-visible{outline:none}
+.routing-wire-overlay{filter:drop-shadow(0 0 1.2px #5cc67f40)}
+@media(max-width:1250px){.wire-legend{max-width:145px}.wire-mode-select{max-width:112px;font-size:9px}.wire-master{min-width:55px;padding:0 4px}}
+@media(max-width:970px){.wire-legend{display:none}.wire-mode-label{display:none}}
 </style>
 </head>
 <body>
@@ -1952,7 +2005,7 @@ function wireTray(t){
  const icon=isSource?'▼':linked?'◆':'△';
  let controls='<button type="button" class="wire-socket'+(isSource?' is-source':'')+(linked?' is-linked':'')+'" data-action="wireRoute" aria-pressed="'+linked+'" aria-label="'+escapeHtml(t.name)+' · '+label+'" title="'+escapeHtml(label+' · '+(linked?(edge.mode==='send'?'Post-fader Send':'Pre FX Mult'):'Click to wire')+' · demo only')+'" '+(canWire?'':'disabled')+'><span class="wire-arrow" aria-hidden="true">'+icon+'</span><span class="wire-label">'+(isSource?'SOURCE':linked?'LINKED':t.kind==='master'?'MAIN':t.kind==='audio'?'WIRE':'BUS')+'</span></button>';
  if(linked){
-  controls+='<label class="wire-pot" title="'+escapeHtml(source.name+' → '+t.name+' · '+wireDbText(edge.levelDb))+'"><input class="wire-gain" type="range" min="-60" max="6" step="1" value="'+edge.levelDb+'" data-field="wireGain" data-wire-id="'+edge.id+'" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%" aria-label="Wire send level '+escapeHtml(source.name)+' to '+escapeHtml(t.name)+'"></label><button type="button" class="wire-disconnect" data-action="wireRemove" title="Disconnect '+escapeHtml(source.name)+' → '+escapeHtml(t.name)+'" aria-label="Disconnect '+escapeHtml(t.name)+' from '+escapeHtml(source.name)+'">×</button>';
+  controls+='<label class="wire-pot" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%;--wire-deg:'+(-135+wireGainPercent(edge.levelDb)*2.7).toFixed(1)+'deg" title="'+escapeHtml(source.name+' → '+t.name+' · '+wireDbText(edge.levelDb))+'"><input class="wire-gain" type="range" min="-60" max="6" step="1" value="'+edge.levelDb+'" data-field="wireGain" data-wire-id="'+edge.id+'" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%" aria-label="Wire send level '+escapeHtml(source.name)+' to '+escapeHtml(t.name)+'"></label><button type="button" class="wire-disconnect" data-action="wireRemove" title="Disconnect '+escapeHtml(source.name)+' → '+escapeHtml(t.name)+'" aria-label="Disconnect '+escapeHtml(t.name)+' from '+escapeHtml(source.name)+'">×</button>';
  }
  return '<div class="wire-tray'+(linked?' linked':'')+'">'+controls+'</div>';
 }
@@ -2266,6 +2319,8 @@ function handleField(event){
   if(!edge){say('WIRE gain rejected: stale connection');return;}
   edge.levelDb=Math.max(-60,Math.min(6,Math.round(Number(el.value)||0)));
   if(el.style?.setProperty)el.style.setProperty('--wire-pct',wireGainPercent(edge.levelDb)+'%');
+  if(el.parentElement?.style?.setProperty){el.parentElement.style.setProperty('--wire-pct',wireGainPercent(edge.levelDb)+'%');el.parentElement.style.setProperty('--wire-deg',(-135+wireGainPercent(edge.levelDb)*2.7).toFixed(1)+'deg');}
+  if(el.parentElement)el.parentElement.title=wireDbText(edge.levelDb);
   if(event.type==='change')say('WIRE '+tracks.find(x=>x.id===edge.sourceId)?.name+' → '+t.name+' · '+wireDbText(edge.levelDb)+' · GUI DEMO ONLY');
   return;
  }
