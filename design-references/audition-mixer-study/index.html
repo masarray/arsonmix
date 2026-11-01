@@ -149,10 +149,10 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .center-pan::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:9px;height:14px;margin-top:-5px;border-radius:2px;background:linear-gradient(#d4dadd,#879fa9);border:1px solid #151b1d}
 .center-pan::-moz-range-thumb{width:9px;height:14px;border-radius:2px;background:#acc2cb;border:1px solid #151b1d}
 .switch.on.cue{background:#5198b5;color:#101819}
-.switch.cue{min-width:28px;font-size:9px}
+.switch.cue{min-width:25px;font-size:9px}
 .console-body.narrow .switch.cue{min-width:20px;font-size:7px}
 .switch-section{height:var(--switch-h);display:flex;justify-content:center;align-items:flex-start;padding:3px 3px 0;gap:2px}
-.switch{min-width:21px;height:20px;background:#2a2c2e;border:1px solid #1a1c1d;color:#8e9294;font-size:10px;padding:0 2px}
+.switch{min-width:19px;height:20px;background:#2a2c2e;border:1px solid #1a1c1d;color:#8e9294;font-size:10px;padding:0 2px}
 .switch:hover{background:#454849}
 .switch.on.mute{background:#af9347;color:#111}
 .switch.on.solo{background:#d8bb51;color:#151515}
@@ -270,6 +270,16 @@ button:disabled{opacity:.45;cursor:not-allowed}
  .eq-header{height:20px;min-height:20px;flex-basis:20px}
  .fxslot-row{height:16px;min-height:16px;flex-basis:16px}
 }
+
+.send-compact{display:none;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px;color:#b4c0c5}
+.console-body.collapsed-send .send-compact{display:block;flex:1 1 0}
+.console-body.collapsed-send .send-header .push{display:none}
+.fxslot-list::-webkit-scrollbar{width:4px}
+.fxslot-list::-webkit-scrollbar-thumb{background:#47545a;border-radius:2px}
+.fxslot-list::-webkit-scrollbar-track{background:#27292b}
+.console-body.narrow .rail-cell[data-section="fx"]::after,
+.console-body.narrow .rail-cell[data-section="send"]::after,
+.console-body.narrow .rail-cell[data-section="eq"]::after{content:"▸"}
 </style>
 </head>
 <body>
@@ -321,7 +331,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
         <button class="rail-cell eq" data-section="eq" title="Collapse / expand Equalizer">▥</button>
         <div class="rail-cell pan" title="Pan">◉</div>
         <div class="rail-cell trim" title="Digital input trim"><small>TRIM</small></div>
-        <div class="rail-cell switch" title="Mute / Solo / Record"><small>M S R</small></div>
+        <div class="rail-cell switch" title="Mute / Solo / Cue / Monitor"><small>M S C</small></div>
         <div class="rail-cell fader" title="Level and meter">dB<br>│<br>│<br>│</div>
         <div class="rail-cell footer" title="Track labels"><small>▦</small></div>
       </aside>
@@ -384,7 +394,7 @@ const channelOptions=(t,type)=>{
  return ['None',...tracks.filter(x=>(x.kind==='bus'||x.kind==='fx')&&x.id!==t.id).map(x=>x.name)];
 };
 function sectionFx(t){
- let s='<div class="section fx-section"><div class="subhead"><span class="sym">fx</span><span class="hint" title="8 insert slots; scroll to reach all slots and drag rows to reorder">INSERTS</span><span class="push"></span><button class="mini power '+(t.fxOn?'on':'')+'" data-action="fxOn" title="Bypass entire FX rack" aria-label="Toggle effects">⏻</button></div><div class="fxslot-list">';
+ let s='<div class="section fx-section"><div class="subhead"><span class="sym">fx</span><span class="hint" title="Eight FX slots; scroll inside rack to access all effects">FX '+t.fx.filter(v=>v!=='None').length+'/8</span><span class="push"></span><button class="mini power '+(t.fxOn?'on':'')+'" data-action="fxOn" title="Bypass entire FX rack" aria-label="Toggle effects">⏻</button></div><div class="fxslot-list">';
  t.fx.forEach((v,i)=>{
  s+='<div class="fxslot-row" draggable="true" data-slot="'+i+'" title="Insert '+(i+1)+' · drag to reorder"><button class="mini power '+(v!=='None'&&!t.slotBypass[i]?'on':'')+'" data-action="slotPower" data-slot="'+i+'" title="Toggle individual effect">⏻</button><button class="fx-pick '+(v==='None'?'empty':'')+'" data-action="openPlugin" data-slot="'+i+'" aria-label="Choose plugin for '+escapeHtml(t.name)+' insert '+(i+1)+'">'+(v==='None'?'+'+(i+1)+' · Add effect':escapeHtml(v))+'</button><button class="fx-remove" data-action="removeFx" data-slot="'+i+'" title="Remove insert '+(i+1)+'">×</button><span class="grip" title="Drag reorder">⠿</span></div>';
  });
@@ -393,7 +403,7 @@ function sectionFx(t){
 const eqSvg='<svg viewBox="0 0 90 20" preserveAspectRatio="none" aria-hidden="true"><path d="M0 15 L14 15 Q22 15 29 9 T43 9 Q52 11 58 7 T75 8 Q82 9 90 5"/></svg>';
 function sectionSend(t){
  if(t.kind==='master'||t.kind==='fx')return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><span class="sendtag">No Sends</span></div></div>';
- return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><select class="send-slot" data-field="activeSend" title="Select send slot 1–16" aria-label="Send slot">'+option(Array.from({length:16},(_,i)=>'S'+(i+1)),'S'+(t.activeSend+1))+'</select><span class="push"></span><button class="mini power '+(t.sendOn?'on':'')+'" data-action="sendOn" title="Enable Send">⏻</button><button class="mini pre '+(t.pre?'on':'')+'" data-action="pre" title="Toggle Pre/Post send">'+(t.pre?'Pre':'Pst')+'</button></div><select class="send-select" data-field="send" aria-label="Send destination">'+option(channelOptions(t,'send'),t.send)+'</select><div class="sendlevel"><label>↳</label><input type="range" min="-60" max="6" step="1" value="'+t.sendLevel+'" data-field="sendLevel" title="Send level"><output>'+formatDb(t.sendLevel)+'</output></div><div class="sendlevel send-pan"><label>◉</label><input type="range" min="-100" max="100" step="1" value="'+t.sendPan+'" data-field="sendPan" title="Send stereo pan" aria-label="Send pan"><output>'+(t.sendPan===0?'C':t.sendPan<0?'L'+Math.abs(t.sendPan):'R'+t.sendPan)+'</output></div></div>';
+ return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><select class="send-slot" data-field="activeSend" title="Select send slot 1–16" aria-label="Send slot">'+option(Array.from({length:16},(_,i)=>'S'+(i+1)),'S'+(t.activeSend+1))+'</select><span class="send-compact" title="Active send destination">'+escapeHtml(t.send==='None'?'No send':t.send)+'</span><span class="push"></span><button class="mini power '+(t.sendOn?'on':'')+'" data-action="sendOn" title="Enable Send">⏻</button><button class="mini pre '+(t.pre?'on':'')+'" data-action="pre" title="Toggle Pre/Post send">'+(t.pre?'Pre':'Pst')+'</button></div><select class="send-select" data-field="send" aria-label="Send destination">'+option(channelOptions(t,'send'),t.send)+'</select><div class="sendlevel"><label>↳</label><input type="range" min="-60" max="6" step="1" value="'+t.sendLevel+'" data-field="sendLevel" title="Send level"><output>'+formatDb(t.sendLevel)+'</output></div><div class="sendlevel send-pan"><label>◉</label><input type="range" min="-100" max="100" step="1" value="'+t.sendPan+'" data-field="sendPan" title="Send stereo pan" aria-label="Send pan"><output>'+(t.sendPan===0?'C':t.sendPan<0?'L'+Math.abs(t.sendPan):'R'+t.sendPan)+'</output></div></div>';
 }
 function formatDb(n){return n<=-60?'-∞':(n>0?'+':'')+Number(n).toFixed(1);}
 function panLabel(n){return Number(n)===0?'C':n<0?'L'+Math.abs(n):'R'+n;}
@@ -475,8 +485,11 @@ function setSnapshotSafe(){
 function findTrack(el){const strip=el.closest('.strip');if(!strip)return null;const id=Number(strip.dataset.id);return id===master.id?master:tracks.find(t=>t.id===id);}
 function refreshStrip(t){
  const old=document.querySelector('.strip[data-id="'+t.id+'"]');if(!old)return;
+ const oldRack=old.querySelector('.fxslot-list'),scroll=oldRack?oldRack.scrollTop:0;
  const temp=document.createElement('div');temp.innerHTML=strip(t);
- old.replaceWith(temp.firstElementChild);
+ const updated=temp.firstElementChild;
+ old.replaceWith(updated);
+ const newRack=updated.querySelector('.fxslot-list');if(newRack)newRack.scrollTop=scroll;
 }
 function selectTrack(t,add=false){
  if(!add){tracks.forEach(x=>x.selected=false);master.selected=false;t.selected=true;}
@@ -670,7 +683,19 @@ document.querySelector('.console-body').addEventListener('drop',e=>{
  }
 });
 document.querySelector('.console-body').addEventListener('mousedown',e=>{const t=findTrack(e.target);if(t)selectTrack(t,e.ctrlKey||e.metaKey||e.shiftKey);});
-document.querySelector('.section-rail').addEventListener('click',e=>{const button=e.target.closest('[data-section]');if(!button)return;const name=button.dataset.section;const collapsed=document.querySelector('.console-body').classList.toggle('collapsed-'+name);button.classList.toggle('collapsed',collapsed);button.setAttribute('aria-pressed',String(!collapsed));say((collapsed?'Collapsed ':'Expanded ')+name.toUpperCase()+' mixer section');});
+document.querySelector('.section-rail').addEventListener('click',e=>{
+ const button=e.target.closest('[data-section]');if(!button)return;
+ const name=button.dataset.section,body=document.querySelector('.console-body');
+ if(body.classList.contains('narrow')&&['fx','send','eq'].includes(name)){
+  say('Exit Narrow view before expanding '+name.toUpperCase());return;
+ }
+ const collapsed=body.classList.toggle('collapsed-'+name);
+ button.classList.toggle('collapsed',collapsed);
+ button.setAttribute('aria-expanded',String(!collapsed));
+ button.setAttribute('aria-pressed',String(!collapsed));
+ button.title=(collapsed?'Expand ':'Collapse ')+name.toUpperCase()+' section';
+ say(name.toUpperCase()+(collapsed?' section collapsed':' section expanded')+' · channel grid stays aligned');
+});
 document.getElementById('viewFilter').addEventListener('change',()=>{render();say('Channel display filtered: '+document.getElementById('viewFilter').value);});
 document.getElementById('mode').addEventListener('click',()=>{
  const narrow=document.querySelector('.console-body').classList.toggle('narrow');
