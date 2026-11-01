@@ -1491,6 +1491,21 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
 .plugin-browser[style*="left:"]{right:auto!important}
 /* Plugin drag coordinate is an inline important top; do not override it. */
 
+
+/* V7 rendered-Chromium finding: .console-body .switch{flex:1 1 auto}
+   also matched the LEFT RAIL .rail-cell.switch and stretched M/S/C by 127px.
+   Pin the label to the same immutable physical row as the strip controls. */
+.console-body .section-rail .rail-cell.switch{
+ flex:0 0 var(--switch-h)!important;
+ height:var(--switch-h)!important;
+ min-height:var(--switch-h)!important;
+ max-height:var(--switch-h)!important;
+ padding:0!important;
+ align-items:center!important;justify-content:center!important;
+ background:#273b46!important;color:#a7bfca!important;
+ border-bottom:1px solid #172730!important;
+ box-shadow:inset 0 1px #ffffff12!important;
+}
 </style>
 </head>
 <body>
