@@ -492,11 +492,11 @@ async def main():
                   utility:grab('[data-hpf="0"]')};
         }""")
         for key in ('rail','mute','utility'):
-            assert style[key]['face']=='rgb(203, 209, 209)',(key,style)
+            assert style[key]['face']=='rgb(231, 239, 240)',(key,style)
             assert style[key]['image']=='none',(key,style)
             assert style[key]['shadow'].count('rgb')==7,(key,style)
             assert style[key]['radius']=='3px',(key,style)
-        assert style['nav']['face']=='rgb(203, 209, 209)' and style['selected']['face']=='rgb(178, 232, 160)',style
+        assert style['nav']['face']=='rgb(231, 239, 240)' and style['selected']['face']=='rgb(178, 232, 160)',style
         assert style['railOn']['face']=='rgb(237, 184, 223)',style
         # Audio Device shares the physical BTN-180 toolbar face and dark ink.
         # The OFF state is truthful in UI-only preview. Explicitly force ON
@@ -505,7 +505,7 @@ async def main():
         devOff=await device.evaluate("""e=>{const s=getComputedStyle(e),t=getComputedStyle(e.querySelector('#headerDriver')),
           r=e.getBoundingClientRect();return {face:s.backgroundColor,ink:t.color,shadow:s.boxShadow,rect:r.toJSON(),
           pressed:e.classList.contains('on'),backgroundImage:s.backgroundImage}}""")
-        assert devOff['face']==style['rail']['face']=='rgb(203, 209, 209)',devOff
+        assert devOff['face']==style['rail']['face']=='rgb(231, 239, 240)',devOff
         assert devOff['ink']=='rgb(23, 34, 41)' and devOff['backgroundImage']=='none',devOff
         assert not devOff['pressed'],devOff
         await device.evaluate("(e)=>e.classList.add('on')")
@@ -517,7 +517,7 @@ async def main():
         assert all(abs(devOff['rect'][k]-devOn['rect'][k])<.2 for k in ('x','y','width','height')),(devOff,devOn)
         await page.screenshot(path=str(project/'device-green-on-palette-review.png'),full_page=True)
         await device.evaluate("(e)=>e.classList.remove('on')")
-        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('.spec-device')).backgroundColor==='rgb(203, 209, 209)'""")
+        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('.spec-device')).backgroundColor==='rgb(231, 239, 240)'""")
         assert all(style[key]['spanTransform']=='none' for key in ('nav','rail','selected')),style
         assert await page.locator('[data-hpf="0"]').evaluate(
             "(e)=>getComputedStyle(e).boxShadow.includes('5px 5px 2px -1px')"),style
@@ -555,7 +555,7 @@ async def main():
           const off=document.querySelector('[data-view="MIX"]');
           return on.classList.contains('selected') && !off.classList.contains('selected')
             && getComputedStyle(on).backgroundColor==='rgb(178, 232, 160)'
-            && getComputedStyle(off).backgroundColor==='rgb(203, 209, 209)';
+            && getComputedStyle(off).backgroundColor==='rgb(231, 239, 240)';
         }""")
         nav=page.locator('[data-view="FX RACK"]')
         navBefore=await nav.evaluate("(e)=>e.getBoundingClientRect().toJSON()")
@@ -720,7 +720,7 @@ async def main():
         assert on['selected'] and shared_shadow_shape(on['shadow'])==shared_shadow_shape(off['shadow']),(off,on)
         assert on['color']!=off['color'],(off,on)
         assert on['t']==off['t'] and same_rect(off,on),(off,on)
-        assert off['color']=='rgb(203, 209, 209)' and off['ink']=='rgb(23, 34, 41)',(off,on)
+        assert off['color']=='rgb(231, 239, 240)' and off['ink']=='rgb(23, 34, 41)',(off,on)
         assert on['ink']!=off['ink'],(off,on)
         assert on['shadow'].startswith('rgba(0, 0, 0, 0.18)'),on
         await page.locator('[data-mute="0"]').click()
