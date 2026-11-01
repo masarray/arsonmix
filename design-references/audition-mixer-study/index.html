@@ -1800,8 +1800,36 @@ const make=(name,kind,color)=>{
 function init(){nextId=1;nextGroup=1;tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const option=(values,selected)=>values.map(x=>'<option value="'+escapeHtml(x)+'"'+(x===selected?' selected':'')+'>'+escapeHtml(x)+'</option>').join('');
+// DEMO mult is a source binding, not a Group sum or copied JS audio engine.
+// Production must supply stable native ChannelId/TapPoint admission + ACK.
+const splitSourceLabel=(id,tap)=>'CH'+String(id).padStart(2,'0')+' '+tap+'-FX SPLIT';
+function parseSplitSource(value){
+ const match=/^CH(\\d+) (PRE|POST)-FX SPLIT$/.exec(String(value||''));
+ return match?{sourceId:Number(match[1]),tap:match[2]}:null;
+}
+function splitWouldCycle(target,sourceId){
+ const seen=new Set([target.id]);
+ let id=sourceId;
+ while(Number.isInteger(id)){
+  if(seen.has(id))return true;
+  seen.add(id);
+  const upstream=tracks.find(x=>x.id===id&&x.kind==='audio');
+  if(!upstream)return true;
+  const link=parseSplitSource(upstream.input);
+  if(!link)return false;
+  id=link.sourceId;
+ }
+ return true;
+}
+function splitFanout(t){
+ return tracks.filter(x=>x.id!==t.id&&parseSplitSource(x.input)?.sourceId===t.id).length;
+}
 const channelOptions=(t,type)=>{
- if(type==='input')return t.kind==='audio'?['None','Input 1 (Mono)','Input 2 (Mono)','Input 1 + 2 (Stereo)','CABLE Output L','CABLE Output R','CABLE Output L/R (Stereo)']:['None'];
+ if(type==='input')return t.kind==='audio'
+  ?['None','Input 1 (Mono)','Input 2 (Mono)','Input 1 + 2 (Stereo)','CABLE Output L','CABLE Output R','CABLE Output L/R (Stereo)',
+     ...tracks.filter(x=>x.kind==='audio'&&x.id!==t.id).flatMap(x=>
+      [splitSourceLabel(x.id,'PRE'),splitSourceLabel(x.id,'POST')])]
+  :['None'];
  if(type==='output')return t.kind==='master'?['Default Output','Output 1 + 2','Speakers (Realtek)','Virtual Cable']:[master.name,...tracks.filter(x=>x.kind==='bus'&&x.id!==t.id).map(x=>x.name),'Output 1 + 2'];
  return ['None',...tracks.filter(x=>(x.kind==='bus'||x.kind==='fx')&&x.id!==t.id).map(x=>x.name)];
 };
@@ -1844,7 +1872,7 @@ function sectionFader(t){
 function strip(t){
  let code='<article class="strip '+t.kind+(t.selected?' selected':'')+'" data-id="'+t.id+'" style="--track-color:'+t.color+';--ch:'+t.color+'" aria-label="'+escapeHtml(t.name)+' channel">';
  code+='<button type="button" class="strip-identity-top" data-action="editIdentity" title="Double-click to edit channel identity · F2" aria-label="Double-click to edit '+escapeHtml(t.name)+' channel identity"><span class="identity-number">'+(t.kind==='master'?'MASTER':'CH '+String(t.id).padStart(2,'0'))+'</span><span class="identity-name">'+escapeHtml(t.name)+'</span><span class="identity-symbol" aria-hidden="true">'+escapeHtml(iconFor(t))+'</span></button>';
- code+='<div class="section route-section"><div class="route-top"><span class="route-indicator">'+(t.kind==='audio'?'▥':t.kind==='bus'?'↪':t.kind==='fx'?'∿':'➜')+'</span>'+(t.safe?'<span class="safe-marker" title="Snapshot safe · recall protected">SAFE</span>':'')+(t.group?'<span class="group-indicator" title="Linked group '+escapeHtml(t.group)+'">'+escapeHtml(t.group)+'</span>':'')+(t.kind==='audio'?'<button class="mini format-badge" data-action="format" title="Processing width M/ST (preserves physical input source)">'+(t.format==='mono'?'M':'ST')+'</button>':'')+'<button class="mini phase '+(t.phase?'on':'')+'" data-action="phase" title="Reverse polarity">'+(t.phase?'Ø':'⊘')+'</button></div>';
+ code+='<div class="section route-section"><div class="route-top"><span class="route-indicator">'+(t.kind==='audio'?'▥':t.kind==='bus'?'↪':t.kind==='fx'?'∿':'➜')+'</span>'+(t.safe?'<span class="safe-marker" title="Snapshot safe · recall protected">SAFE</span>':'')+(t.group?'<span class="group-indicator" title="Linked group '+escapeHtml(t.group)+'">'+escapeHtml(t.group)+'</span>':'')+(t.kind==='audio'?'<button class="mini format-badge" data-action="format" title="Processing width M/ST (preserves physical input source)">'+(t.format==='mono'?'M':'ST')+'</button>':'')+(t.kind==='audio'&&splitFanout(t)?'<span class="split-count" title="GUI-only split destinations · no native PCM">⇢'+splitFanout(t)+'</span>':'')+'<button class="mini phase '+(t.phase?'on':'')+'" data-action="phase" title="Reverse polarity">'+(t.phase?'Ø':'⊘')+'</button></div>';
  if(t.kind==='audio')code+='<div class="route-field"><span class="route-caption">IN</span><select class="route-select" data-field="input" title="Input source (demo choices)" aria-label="'+escapeHtml(t.name)+' input">'+option(channelOptions(t,'input'),t.input)+'</select></div>';
  else if(t.kind==='bus'||t.kind==='fx')code+='<div class="route-field"><span class="route-caption">IN</span><span class="route-identity">'+(t.kind==='bus'?'GROUP':'FX RETURN')+'</span></div>';
  else code+='<div class="route-field"><span class="route-caption">IN</span><span class="route-identity">SUM BUS</span></div>';
@@ -2105,6 +2133,19 @@ function handleField(event){
  else if(field==='output'){
   if(wouldFeedback(t,el.value)){say('Routing rejected: this output would create a bus feedback loop.');refreshStrip(t);return;}
   t.output=el.value;say(t.name+' output → '+el.value);
+ }
+ else if(field==='input'){
+  const split=parseSplitSource(el.value);
+  if(split&&splitWouldCycle(t,split.sourceId)){
+   say('SPLIT REJECTED: circular source dependency or missing channel · previous IN preserved');
+   refreshStrip(t);return;
+  }
+  t.input=el.value;
+  if(split){
+   const source=tracks.find(x=>x.id===split.sourceId);
+   say(t.name+' ← '+source.name+' '+split.tap+'-FX split · GUI REFERENCE ONLY · native PCM not connected');
+  }else say(t.name+' input → '+el.value+' · demo binding only');
+  render();return;
  }
  else if(field==='send'){if(wouldFeedback(t,el.value)){say('Send rejected: this bus would feed back into itself.');refreshStrip(t);return;}t.send=el.value;say(t.name+' send → '+el.value);}
  else{t[field]=el.value;say(t.name+' '+field+' → '+el.value);}
