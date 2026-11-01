@@ -746,23 +746,26 @@ function sectionFx(t){
 }
 function sectionSend(t){
  if(t.kind==='master'||t.kind==='fx')return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><span class="sendtag">No Sends</span></div></div>';
- return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><select class="send-slot" data-field="activeSend" title="Select send slot 1–16" aria-label="Send slot">'+option(Array.from({length:16},(_,i)=>'S'+(i+1)),'S'+(t.activeSend+1))+'</select><span class="send-compact" title="Active send destination">'+escapeHtml(t.send==='None'?'No send':t.send)+'</span><span class="push"></span><button class="mini power '+(t.sendOn?'on':'')+'" data-action="sendOn" title="Enable Send">⏻</button><button class="mini pre '+(t.pre?'on':'')+'" data-action="pre" title="Toggle Pre/Post send">'+(t.pre?'Pre':'Pst')+'</button></div><select class="send-select" data-field="send" aria-label="Send destination">'+option(channelOptions(t,'send'),t.send)+'</select><div class="sendlevel"><label>↳</label><input type="range" min="-60" max="6" step="1" value="'+t.sendLevel+'" data-field="sendLevel" title="Send level"><output>'+formatDb(t.sendLevel)+'</output></div></div>';
+ return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><select class="send-slot" data-field="activeSend" title="Select send slot 1–16" aria-label="Send slot">'+option(Array.from({length:16},(_,i)=>'S'+(i+1)),'S'+(t.activeSend+1))+'</select><span class="send-compact" title="Active send destination">'+escapeHtml(t.send==='None'?'No send':t.send)+'</span><span class="push"></span><button class="mini power '+(t.sendOn?'on':'')+'" data-action="sendOn" title="Enable Send">⏻</button><button class="mini pre '+(t.pre?'on':'')+'" data-action="pre" title="Toggle Pre/Post send">'+(t.pre?'Pre':'Pst')+'</button></div><select class="send-select" data-field="send" aria-label="Send destination">'+option(channelOptions(t,'send'),t.send)+'</select><div class="sendlevel"><label>LEVEL</label><input class="ari-horizontal" type="range" min="-60" max="6" step="1" value="'+t.sendLevel+'" style="--range-pct:'+rangePct(t.sendLevel,-60,6)+'%" data-field="sendLevel" title="Send level"><output>'+formatDb(t.sendLevel)+'</output></div></div>';
 }
 function formatDb(n){return n<=-60?'-∞':(n>0?'+':'')+Number(n).toFixed(1);}
 function panLabel(n){return Number(n)===0?'C':n<0?'L'+Math.abs(n):'R'+n;}
 function panStyle(n){const left=Math.min(50,50+n/2),right=Math.max(50,50+n/2);return '--pan-start:'+left+'%;--pan-end:'+right+'%';}
+function rangePct(v,min,max){return Math.max(0,Math.min(100,100*(Number(v)-min)/(max-min)));}
 function faderPercent(value,isSend){
  const min=-60,max=isSend?6:15;
  return Math.max(0,Math.min(100,((Number(value)-min)/(max-min))*100));
 }
 function sectionFader(t){
- const isSend=sofEnabled&&t.kind==='audio',value=isSend?getSofLevel(t):t.level;
- const ticks=[isSend?'+6':'+15','0','-6','-12','-24','-36','-48','-∞'];
+ const isSend=sofEnabled&&t.kind==='audio',value=isSend?getSofLevel(t):t.level,percent=faderPercent(value,isSend),gainMax=isSend?6:15;
+ const vuTicks=[0,-6,-12,-18,-24,-36,-48,-60],gainTicks=[gainMax,0,-6,-12,-24,-36,-48,-60];
+ const vuScale=vuTicks.map(v=>'<span class="vu-tick" style="top:'+(-v/60*100)+'%"><span>'+v+'</span></span>').join('');
+ const gainScale=gainTicks.map(v=>'<span class="gain-tick '+(v===0?'major':'')+'" style="top:'+((gainMax-v)/(gainMax+60)*100)+'%"><span>'+(v<=-60?'−∞':v>0?'+'+v:v)+'</span></span>').join('');
  return '<div class="fader-section"><div class="fader-head"><output class="fader-readout" aria-label="'+escapeHtml(t.name)+' level">'+(isSend?'SEND ':'')+formatDb(value)+' dB</output><span class="clip-indicator '+(t.clip?'clipping':'')+'" title="Demo clip latch">CLIP</span></div>'
  +'<div class="fader-workspace">'
- +'<div class="meter-box '+(t.format==='mono'?'mono':'stereo')+'" aria-label="Simulated '+(t.format==='mono'?'mono':'stereo')+' peak meter"><div class="meter-lane"><div class="meter-fill left"></div></div>'+(t.format==='mono'?'':'<div class="meter-lane"><div class="meter-fill right"></div></div>')+'<div class="peak '+(t.clip?'clipping':'')+'"></div></div>'
- +'<div class="fader-box" style="--fader-fill:'+faderPercent(value,isSend)+'%;--fader-lit:'+(faderPercent(value,isSend)/100)+'"><input class="fader" type="range" min="-60" max="'+(isSend?6:15)+'" value="'+value+'" step=".1" data-field="level" title="'+(isSend?'SEND to '+escapeHtml(sofTarget):'Main level')+'" aria-label="'+escapeHtml(t.name)+' volume"></div>'
- +'<div class="fader-scale">'+ticks.map(x=>'<span>'+x+'</span>').join('')+'</div></div></div>';
+ +'<div class="meter-box '+(t.format==='mono'?'mono':'stereo')+'" aria-label="Simulated '+(t.format==='mono'?'mono':'stereo')+' dBFS meter"><div class="vu-bars"><div class="meter-lane"><div class="meter-fill left"></div></div>'+(t.format==='mono'?'':'<div class="meter-lane"><div class="meter-fill right"></div></div>')+'</div><div class="vu-scale"><div class="vu-scale-travel">'+vuScale+'</div></div><div class="peak '+(t.clip?'clipping':'')+'"></div></div>'
+ +'<div class="fader-box" style="--fader-fill:'+percent+'%;--fader-lit:'+(percent/100)+';--fader-frac:'+(percent/100)+'"><div class="fader-travel"><div class="cap" aria-hidden="true"></div></div><input class="fader" type="range" min="-60" max="'+gainMax+'" value="'+value+'" step=".1" data-field="level" title="'+(isSend?'SEND to '+escapeHtml(sofTarget):'Main level')+'" aria-label="'+escapeHtml(t.name)+' volume"></div>'
+ +'<div class="fader-scale"><div class="gain-scale-travel">'+gainScale+'</div></div></div></div>';
 }
 function strip(t){
  let code='<article class="strip '+t.kind+(t.selected?' selected':'')+'" data-id="'+t.id+'" style="--track-color:'+t.color+'" aria-label="'+escapeHtml(t.name)+' channel">';
@@ -773,7 +776,7 @@ function strip(t){
  code+='<div class="route-field"><span class="route-caption">OUT</span><select class="route-select" data-field="output" title="Primary output" aria-label="'+escapeHtml(t.name)+' output">'+option(channelOptions(t,'output'),t.output)+'</select></div></div>';
  code+=sectionFx(t)+sectionSend(t);
  code+='<div class="section pan-section"><span class="pan-icon" title="Pan / Balance">PAN</span><span class="pan-control" style="'+panStyle(t.pan)+'"><input class="center-pan" type="range" min="-100" max="100" step="1" value="'+t.pan+'" data-field="pan" title="Pan from center; release near center to snap; double-click to center" aria-label="Channel pan; double-click center"></span><output>'+panLabel(t.pan)+'</output></div>';
- code+='<div class="section trim-section"><span class="trim-label" title="Digital input trim">TRIM</span><input class="trim-control" type="range" min="-24" max="24" step="0.5" value="'+t.trim+'" data-field="trim" aria-label="Digital trim dB" title="Digital trim (-24..+24dB)"><output class="trim-value">'+formatDb(t.trim)+'</output></div>';
+ code+='<div class="section trim-section"><span class="trim-label" title="Digital input trim">TRIM</span><input class="trim-control ari-horizontal" type="range" min="-24" max="24" step="0.5" value="'+t.trim+'" style="--range-pct:'+rangePct(t.trim,-24,24)+'%" data-field="trim" aria-label="Digital trim dB" title="Digital trim (-24..+24dB)"><output class="trim-value">'+formatDb(t.trim)+'</output></div>';
  code+='<div class="section switch-section">'
    +'<button class="switch btn-180 mute '+(t.mute?'on':'')+'" data-action="mute" title="Mute channel" aria-pressed="'+t.mute+'">MUTE</button>'
    +'<button class="switch btn-180 solo '+(t.solo?'on':'')+'" data-action="solo" title="Solo channel" aria-pressed="'+t.solo+'">SOLO</button>'
@@ -789,7 +792,7 @@ function bankCapacity(){
  // Never grow the last partial bank; empty slots keep exactly the same grid track width.
  const dock=pluginOpen?Math.min(330,Math.floor(panel*.36)):0;
  const usable=panel?Math.max(0,panel-28-dock):0;
- return usable ? Math.max(1,Math.min(10,Math.floor(usable/116)-1)) : 10;
+ return usable ? Math.max(1,Math.min(10,Math.floor(usable/130)-1)) : 10;
 }
 function render(){
  const filter=document.getElementById('viewFilter').value;
@@ -801,7 +804,11 @@ function render(){
  selector.value=String(page);
  const bankTracks=visible.slice(page*capacity,(page+1)*capacity);
  const root=document.querySelector('.console-body');
- if(root.style?.setProperty)root.style.setProperty('--bank-capacity',String(capacity));
+ if(root.style?.setProperty){
+  root.style.setProperty('--bank-capacity',String(capacity));
+  const panel=root.clientWidth||0,dock=pluginOpen?Math.min(330,Math.floor(panel*.36)):0;
+  if(panel)root.style.setProperty('--channel-w',((panel-28-dock)/(capacity+1)).toFixed(3)+'px');
+ }
  if(tracksEl.style?.setProperty)tracksEl.style.setProperty('--bank-columns',String(capacity));
  tracksEl.innerHTML=bankTracks.map(strip).join('');
  updateSofTargets();
@@ -820,7 +827,7 @@ function syncFaderVisual(t,element){
  const readout=root.querySelector('.fader-readout');
  if(readout)readout.textContent=(isSend?'SEND ':'')+value+' dB';
  const box=root.querySelector('.fader-box');
- if(box?.style?.setProperty){box.style.setProperty('--fader-fill',faderPercent(v,isSend)+'%');box.style.setProperty('--fader-lit',String(faderPercent(v,isSend)/100));}
+ if(box?.style?.setProperty){box.style.setProperty('--fader-fill',faderPercent(v,isSend)+'%');box.style.setProperty('--fader-lit',String(faderPercent(v,isSend)/100));box.style.setProperty('--fader-frac',String(faderPercent(v,isSend)/100));}
  const db=root.querySelector('.db-value');
  if(db)db.textContent=(isSend?'S ':'')+value;
 }
@@ -828,9 +835,7 @@ function setDensity(mode){
  const density=['comfort','standard','compact'].includes(mode)?mode:'comfort';
  const root=document.querySelector('.console-body'),compact=density==='compact';
  root.dataset.density=density;
- const widths={comfort:'0px',standard:'0px',compact:'0px'};
- const parent=document.querySelector('.console-pane');
- // Equal widths now come from the console grid, not a separate Master preset.
+ // Equal widths now come from the shared bank width budget.
  root.classList.toggle('narrow',compact);
  document.getElementById('densitySelect').value=density;
  render();
@@ -992,8 +997,8 @@ function handleField(event){
  if(event.type==='change')say(t.name+' fader '+formatDb(t.level)+' dB'+(t.group?' (linked '+t.group+')':''));
 }
  else if(field==='pan'){let value=Number(el.value);if(event.type==='change'&&Math.abs(value)<=5&&!event.altKey){value=0;el.value='0';}t.pan=value;const wrapper=el.closest('.pan-control');if(wrapper)wrapper.setAttribute('style',panStyle(value));const label=wrapper?wrapper.nextElementSibling:el.nextElementSibling;if(label)label.textContent=panLabel(value);if(event.type==='change')say(t.name+' pan '+panLabel(value));}
- else if(field==='trim'){t.trim=Number(el.value);const readout=el.closest('.trim-section')?.querySelector('.trim-value');if(readout)readout.textContent=formatDb(t.trim);if(event.type==='change')say(t.name+' digital trim '+formatDb(t.trim)+' dB');}
- else if(field==='sendLevel'){t.sendLevel=Number(el.value);el.nextElementSibling.textContent=formatDb(t.sendLevel);}
+ else if(field==='trim'){t.trim=Number(el.value);if(el.style?.setProperty)el.style.setProperty('--range-pct',rangePct(t.trim,-24,24)+'%');const readout=el.closest('.trim-section')?.querySelector('.trim-value');if(readout)readout.textContent=formatDb(t.trim);if(event.type==='change')say(t.name+' digital trim '+formatDb(t.trim)+' dB');}
+ else if(field==='sendLevel'){t.sendLevel=Number(el.value);if(el.style?.setProperty)el.style.setProperty('--range-pct',rangePct(t.sendLevel,-60,6)+'%');el.nextElementSibling.textContent=formatDb(t.sendLevel);}
  else if(field==='sendPan'){t.sendPan=Number(el.value);el.nextElementSibling.textContent=t.sendPan===0?'C':t.sendPan<0?'L'+Math.abs(t.sendPan):'R'+t.sendPan;}
  else if(field==='activeSend'){const slot=Number(el.value.slice(1))-1;if(slot<0||slot>=16)return;openSendSlot(t,slot);refreshStrip(t);say(t.name+' · selected Send '+(slot+1));return;}
  else if(field==='output'){
