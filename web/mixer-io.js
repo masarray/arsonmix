@@ -1476,13 +1476,15 @@
     next.type='button';next.dataset.ioNextInput='1';
     next.disabled=!hardwareReady(route())||deviceDirty()||deviceBusy;
     panel.appendChild(next);body.appendChild(panel);
-    const matrixFold=node('details','arIODeviceMatrixDetails');
-    matrixFold.open=advancedDeviceOpen;
-    matrixFold.appendChild(node('summary','','ADVANCED · SOFTWARE INPUT ALIASES / HARDWARE MATRIX'));
-    matrixFold.addEventListener('toggle',()=>{
-      if(advancedDeviceOpen===matrixFold.open)return;
-      advancedDeviceOpen=matrixFold.open;lastSignature='';refreshIO();
-    });
+    // Use synchronous operator input instead of a deferred <details> toggle:
+    // status refresh can replace the dialog DOM before the browser's
+    // asynchronous toggle event arrives and silently close the matrix.
+    const matrixFold=node('section','arIODeviceMatrixDetails');
+    const matrixToggle=node('button','arIODeviceMatrixToggle',
+      (advancedDeviceOpen?'HIDE':'ADVANCED')+' · SOFTWARE INPUT ALIASES / HARDWARE MATRIX');
+    matrixToggle.type='button';matrixToggle.dataset.ioDeviceMatrixToggle='1';
+    matrixToggle.setAttribute('aria-expanded',String(advancedDeviceOpen));
+    matrixFold.appendChild(matrixToggle);
     body.appendChild(matrixFold);
     // Do not build 10xN crosspoint DOM when the operator is selecting a
     // sound card. This drastically reduces unnecessary WebView work.
@@ -1649,6 +1651,8 @@
         (monitorLive.length===2?'HW '+(monitorLive[0]+1)+'/'+(monitorLive[1]+1):'DISABLED')+
         ' · Independent POST-fader mix; all changes require MUTE → APPLY → ACK.'));
 
+      // Accepted physical MAIN pins, NEVER an inferred/draft destination.
+      const accepted=s.mainOutputs?.length===2?s.mainOutputs:[];
       body.appendChild(node('p','arIOHint','LIVE MAIN: '+(accepted.length===2?'HW '+(accepted[0]+1)+'/'+(accepted[1]+1):'UNAVAILABLE')+
         ' · Only native-ACKed MAIN/MONITOR pairs can carry sound. AUX1–4 are internal stereo FX returns, not physical output sockets.'));
     }else{
@@ -1716,7 +1720,10 @@
     }
     if(e.target.matches('[data-io-jump]')){
       focusedInput=Number(e.target.value);
-      overlay.querySelector('[data-io-quick-row="'+focusedInput+'"]')?.scrollIntoView({block:'nearest'});
+      // The focused operator row is the ONLY mounted row. Recreate it
+      // synchronously from authoritative draft/native readback, not by
+      // scrolling to an absent one of ten stale rows.
+      lastSignature='';refreshIO();
       return;
     }
     if(e.target.matches('.arIOMatrixMode')){matrixModeChange(e.target);return;}
@@ -1835,6 +1842,11 @@
       e.preventDefault();const result=window.__arMixApplyAndActivate?.();
       sendFeedback=result?.ok?'SUBMITTED · WAIT FOR NATIVE ACK':result?.error||'APPLY failed';
       drawSendEditor();return;
+    }
+    if(b.dataset.ioDeviceMatrixToggle!==undefined){
+      e.preventDefault();e.stopImmediatePropagation();
+      advancedDeviceOpen=!advancedDeviceOpen;
+      lastSignature='';refreshIO();return;
     }
     if(b.dataset.ioNextInput!==undefined){
       e.preventDefault();e.stopImmediatePropagation();

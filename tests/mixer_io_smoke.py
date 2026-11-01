@@ -282,10 +282,8 @@ async def main():
         assert await page.locator('.arIODeviceDriverButton[aria-pressed="true"]').inner_text()=='ASIO'
         assert await page.locator('.arIODeviceMatrixDetails').is_visible()
         assert await page.locator('.arIODevicePatchMatrix').count()==0
-        await page.locator('.arIODeviceMatrixDetails summary').click()
-        # Native DEVICE Advanced builds crosspoints only after the asynchronous
-        # details toggle event; do not race the real UI event lifecycle.
-        await page.locator('.arIODevicePatchMatrix').wait_for(state='visible')
+        await page.locator('.arIODeviceMatrixToggle').click()
+        assert await page.locator('.arIODevicePatchMatrix').is_visible()
         assert await page.locator('.arIODevicePatchMatrix .arIOMatrixCell').count()>0
         # FAST3 source one-gesture has already completed an ARM ACK above.
         # This separate DEVICE APPLY must produce ONE new guarded arm, not
@@ -400,7 +398,7 @@ async def main():
         assert duplicate['ok'] is False and 'different' in duplicate['error'],duplicate
         assert (await page.evaluate('()=>window.__arMixRouteView().draftMainOutputs'))==[1,0]
         await page.evaluate('()=>window.__arMixRevertMixerDraft()')
-        assert "MAIN" in outputs and "two distinct pins" in outputs,outputs
+        assert "AUX1" in outputs and "not physical" in outputs,outputs
         await page.locator('[data-io-tab="device"]').click()
         await page.evaluate("""() => window.__armixTestEmit('arMixAudioDeviceInventory',{
           types:[{name:'ASIO',active:true,inputs:['Mic 1','Mic 2'],outputs:['Out 1','Out 2']}]
@@ -954,8 +952,8 @@ async def main():
         # DEVICE4: name one logical stereo INPUT over sparse verified hardware,
         # then rename and remove it. Metadata must not emit routingDryApply.
         await page.locator('[data-io-tab="device"]').click()
-        if not await page.locator('.arIODeviceMatrixDetails').evaluate('(e)=>e.open'):
-            await page.locator('.arIODeviceMatrixDetails summary').click()
+        if await page.locator('.arIODeviceMatrixToggle').get_attribute('aria-expanded')=='false':
+            await page.locator('.arIODeviceMatrixToggle').click()
         assert await page.locator('.arIOSoftwareGrid').is_visible()
         count_before=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='routingDryApply').length""")

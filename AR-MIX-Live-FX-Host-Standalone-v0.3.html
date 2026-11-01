@@ -2343,8 +2343,10 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 
 /* FIRST SOUND — narrow normal route, advanced pin matrix on explicit request */
 .arIODeviceMatrixDetails{margin:9px 0 0;background:#182630;border:1px solid #425c6b}
-.arIODeviceMatrixDetails>summary{cursor:pointer;padding:10px 13px;color:#b1cbd8;
+.arIODeviceMatrixToggle{display:block;width:100%;text-align:left;cursor:pointer;
+ padding:10px 13px;color:#b1cbd8;background:#20313b;border:0;
  font:500 11px/1.4 "ArSonMix Inter","Segoe UI",sans-serif}
+.arIODeviceMatrixToggle:focus-visible{outline:2px solid #a5e7ec;outline-offset:-2px}
 .arIODeviceMatrixDetails .arIODevicePatchMatrix{margin:0;border:0;border-top:1px solid #415767}
 .arIODeviceRouteNext{display:block;width:100%;margin:9px 0 0;
  --b180-color:#a4e6dd;--b180-border:#389b89;--b180-ink:#123c37}
@@ -4957,13 +4959,15 @@ scheduleDemoMeter();
     next.type='button';next.dataset.ioNextInput='1';
     next.disabled=!hardwareReady(route())||deviceDirty()||deviceBusy;
     panel.appendChild(next);body.appendChild(panel);
-    const matrixFold=node('details','arIODeviceMatrixDetails');
-    matrixFold.open=advancedDeviceOpen;
-    matrixFold.appendChild(node('summary','','ADVANCED · SOFTWARE INPUT ALIASES / HARDWARE MATRIX'));
-    matrixFold.addEventListener('toggle',()=>{
-      if(advancedDeviceOpen===matrixFold.open)return;
-      advancedDeviceOpen=matrixFold.open;lastSignature='';refreshIO();
-    });
+    // Use synchronous operator input instead of a deferred <details> toggle:
+    // status refresh can replace the dialog DOM before the browser's
+    // asynchronous toggle event arrives and silently close the matrix.
+    const matrixFold=node('section','arIODeviceMatrixDetails');
+    const matrixToggle=node('button','arIODeviceMatrixToggle',
+      (advancedDeviceOpen?'HIDE':'ADVANCED')+' · SOFTWARE INPUT ALIASES / HARDWARE MATRIX');
+    matrixToggle.type='button';matrixToggle.dataset.ioDeviceMatrixToggle='1';
+    matrixToggle.setAttribute('aria-expanded',String(advancedDeviceOpen));
+    matrixFold.appendChild(matrixToggle);
     body.appendChild(matrixFold);
     // Do not build 10xN crosspoint DOM when the operator is selecting a
     // sound card. This drastically reduces unnecessary WebView work.
@@ -5130,6 +5134,8 @@ scheduleDemoMeter();
         (monitorLive.length===2?'HW '+(monitorLive[0]+1)+'/'+(monitorLive[1]+1):'DISABLED')+
         ' · Independent POST-fader mix; all changes require MUTE → APPLY → ACK.'));
 
+      // Accepted physical MAIN pins, NEVER an inferred/draft destination.
+      const accepted=s.mainOutputs?.length===2?s.mainOutputs:[];
       body.appendChild(node('p','arIOHint','LIVE MAIN: '+(accepted.length===2?'HW '+(accepted[0]+1)+'/'+(accepted[1]+1):'UNAVAILABLE')+
         ' · Only native-ACKed MAIN/MONITOR pairs can carry sound. AUX1–4 are internal stereo FX returns, not physical output sockets.'));
     }else{
@@ -5197,7 +5203,10 @@ scheduleDemoMeter();
     }
     if(e.target.matches('[data-io-jump]')){
       focusedInput=Number(e.target.value);
-      overlay.querySelector('[data-io-quick-row="'+focusedInput+'"]')?.scrollIntoView({block:'nearest'});
+      // The focused operator row is the ONLY mounted row. Recreate it
+      // synchronously from authoritative draft/native readback, not by
+      // scrolling to an absent one of ten stale rows.
+      lastSignature='';refreshIO();
       return;
     }
     if(e.target.matches('.arIOMatrixMode')){matrixModeChange(e.target);return;}
@@ -5316,6 +5325,11 @@ scheduleDemoMeter();
       e.preventDefault();const result=window.__arMixApplyAndActivate?.();
       sendFeedback=result?.ok?'SUBMITTED · WAIT FOR NATIVE ACK':result?.error||'APPLY failed';
       drawSendEditor();return;
+    }
+    if(b.dataset.ioDeviceMatrixToggle!==undefined){
+      e.preventDefault();e.stopImmediatePropagation();
+      advancedDeviceOpen=!advancedDeviceOpen;
+      lastSignature='';refreshIO();return;
     }
     if(b.dataset.ioNextInput!==undefined){
       e.preventDefault();e.stopImmediatePropagation();
