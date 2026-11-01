@@ -642,7 +642,8 @@ static void verifyFirstSoundOnePinNativeSourceDraft() {
     assert(NativeVerifiedSourcePatch::prepare(accepted,6,"MONO",5,-1,
         physical,17,9,candidate).isEmpty());
     const auto draftChannels=candidate.getProperty("channels",juce::var());
-    const auto* acceptedChannels=accepted.getProperty("channels",juce::var()).getArray();
+    const auto sourceBefore=accepted.getProperty("channels",juce::var());
+    const auto* acceptedChannels=sourceBefore.getArray();
     const auto* changed=draftChannels.getArray();
     assert(changed && changed->size()==10 && acceptedChannels &&
            acceptedChannels->size()==10);
