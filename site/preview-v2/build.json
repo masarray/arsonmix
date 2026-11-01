@@ -1,13 +1,15 @@
 {
-  "version": "preview-v8",
+  "version": "preview-v12",
   "route": "/preview-v2/",
-  "kind": "GUI_REFERENCE_ONLY",
+  "alternate_route": "/preview/mixer.html",
+  "kind": "ISOLATED_GUI_REFERENCE",
   "live_audio": false,
   "source_pr": 278,
   "source_branch": "design/audition-mixer-reference-isolated-20261101",
-  "source_sha": "537dcb97d1b086817ddbfac4938d310573feef11",
-  "milestone": "Adaptive 150/125/105 density-aware bank; consistent 32px rail and equal-width Master; reveal new channel; deterministic FX/Route/Send collapse",
-  "tests": "150/150 DOM/source/geometry-harness smoke checks passed; Chromium screenshot QA not certified",
-  "review_required": "Chromium visual signoff at 1366x768,1680x900,1920x1080 including all FX/SEND/ROUTE expansion states",
-  "note": "Simulated meters only. Does not scan or instantiate real VST3 plugins, process ASIO PCM, or modify production mixer."
+  "source_sha": "aff335902d60e96ce4e7aea668fcf34fb819a8d3",
+  "source_content_sha": "616ed10b465867b3e9cddbb0d43b733ec8723ca5",
+  "workflow": "FL-style source-first post-fader sends, pre-FX independent reference mult, 1→N and N→1 visual wires, per-edge gains, master toggle, Shift-range atomic links, cycle guard, screenshots pending",
+  "testing": "191/191 independent DOM/workflow smoke checks passed; real Chromium V12 screenshot acceptance NOT YET RUN",
+  "constraints": "GUI DEMO ONLY; not native graph ACK, ASIO PCM routing, VST3 instantiation or live signal meter",
+  "warning": "Modeless visual reference. Do not copy directly into native web/** or src/** without native ACK and acoustic FAT."
 }

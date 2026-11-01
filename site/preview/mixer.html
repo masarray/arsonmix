@@ -1533,6 +1533,254 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
 .console-body .section-rail .rail-cell.route{height:var(--route-h)!important;flex:0 0 var(--route-h)!important}
 .console-body .section-rail .rail-cell.fx{height:var(--fx-h)!important;flex:0 0 var(--fx-h)!important}
 .console-body .section-rail .rail-cell.send{height:var(--send-h)!important;flex:0 0 var(--send-h)!important}
+
+/* V9: CONSOLE MECHANICAL LAYOUT — Rack owns freed height, never the live fader.
+   Fader height is invariant when ROUTE / SEND are expanded/collapsed. Master and
+   rail are siblings in the same flex-height contract, not independent rulers.
+   The rack becomes the variable-height processing workspace. */
+.console-body{--fader-fixed-h:clamp(198px,31vh,300px)}
+.console-body:not(.collapsed-fx) .strip .fader-section{
+  flex:0 0 var(--fader-fixed-h)!important;
+  height:var(--fader-fixed-h)!important;
+  min-height:var(--fader-fixed-h)!important;
+  max-height:var(--fader-fixed-h)!important;
+}
+.console-body:not(.collapsed-fx) .section-rail .rail-cell.fader{
+  flex:0 0 var(--fader-fixed-h)!important;
+  height:var(--fader-fixed-h)!important;
+  min-height:var(--fader-fixed-h)!important;
+  max-height:var(--fader-fixed-h)!important;
+}
+.console-body:not(.collapsed-fx) .strip .fx-section{
+  flex:1 1 var(--fx-h)!important;
+  height:auto!important;min-height:23px!important;max-height:none!important;
+  overflow:hidden!important;
+}
+.console-body:not(.collapsed-fx) .section-rail .rail-cell.fx{
+  flex:1 1 var(--fx-h)!important;
+  height:auto!important;min-height:23px!important;max-height:none!important;
+}
+.console-body:not(.collapsed-fx) .strip .fxslot-list{
+  display:block!important;flex:1 1 0!important;
+  min-height:0!important;max-height:none!important;
+  overflow-y:auto!important;overflow-x:hidden!important;
+  overscroll-behavior:contain;
+}
+.console-body:not(.collapsed-fx) .strip .fxslot-row{
+  height:25px!important;min-height:25px!important;flex:0 0 25px!important;
+}
+.console-body:not(.collapsed-fx) .strip .fx-pick{font-size:11px!important}
+.console-body:not(.collapsed-fx) .strip .fx-section .subhead{
+  flex:0 0 25px!important;height:25px!important;min-height:25px!important;
+  color:#e3f0f5!important;
+}
+.console-body.collapsed-fx .strip .fx-section,
+.console-body.collapsed-fx .section-rail .rail-cell.fx{
+  flex:0 0 23px!important;height:23px!important;min-height:23px!important;
+  max-height:23px!important;
+}
+/* Only if the operator intentionally COLLAPSES FX does the fader absorb slack. */
+.console-body.collapsed-fx .strip .fader-section,
+.console-body.collapsed-fx .section-rail .rail-cell.fader{
+  flex:1 1 var(--fader-fixed-h)!important;
+  height:auto!important;min-height:130px!important;max-height:none!important;
+}
+@media(max-height:680px){
+  .console-body{--fader-fixed-h:clamp(135px,28vh,190px);--route-h:56px;--pan-h:36px;--switch-h:40px;--footer-h:45px}
+  .console-body:not(.collapsed-fx) .strip .fxslot-row{height:22px!important;min-height:22px!important}
+}
+/* V9: glass LCD meter module — fixed calibration zones, distinct dBFS ruler,
+   independent mono/stereo lanes and native-only eventual signal source.
+   No backdrop filters, canvas, gradients animated per frame or JS layout pass. */
+.console-body .strip .meter-box{
+  border:1px solid #60778460!important;
+  border-radius:5px!important;
+  background:linear-gradient(90deg,#091720 0%,#01070c 25%,#06151c 76%,#1b3039)!important;
+  box-shadow:inset 2px 2px 5px #000c,inset -1px 0 #afc4cf27,0 1px #ffffff19!important;
+}
+.console-body .strip .meter-box .vu-bars{
+  position:relative;isolation:isolate;
+  background:linear-gradient(90deg,#071620,#020b10 28%,#01090e 71%,#152b35)!important;
+  border-left:1px solid #37505b99!important;border-right:1px solid #253b45!important;
+  box-shadow:inset 1px 0 3px #000,inset -1px 0 2px #000!important;
+}
+.console-body .strip .meter-box .vu-bars::after{
+  content:"";position:absolute;inset:9px 0 10px;z-index:5;pointer-events:none;
+  border-radius:3px;
+  background:
+    linear-gradient(103deg,#e4faff17 0%,#bce7fa08 22%,transparent 44%,#d3f2ff0e 62%,transparent 86%),
+    linear-gradient(to bottom,#ffffff12 0%,transparent 14%,transparent 86%,#05101799 100%);
+  box-shadow:inset 1px 0 #d1f3fa29,inset -1px 0 #000c,inset 0 1px #bdd7e422;
+}
+.console-body .strip .meter-box .meter-lane{
+  background:linear-gradient(90deg,#040e12,#071c19 55%,#071117)!important;
+  border-radius:2px!important;box-shadow:inset 1px 1px 3px #000,inset -1px 0 2px #000!important;
+}
+.console-body .strip .meter-box .meter-fill{
+  background:linear-gradient(to top,
+    #08a862 0%,#1de483 43%,#6cf178 64%,#dbdf39 76%,#ffbc38 87%,#ff7b30 94%,#fa4545 100%)!important;
+  filter:none!important;box-shadow:inset 1px 0 #cfffff30,inset -1px 0 #020b0766!important;
+}
+.console-body .strip .meter-box .meter-lane::before{
+  background:repeating-linear-gradient(to top,transparent 0px,transparent 5px,#010d13df 5px,#010d13df 7px)!important;
+}
+.console-body .strip .meter-box .meter-lane::after{
+  content:"";position:absolute;inset:0;z-index:3;pointer-events:none;
+  background:linear-gradient(90deg,#eaffff28 0%,transparent 30%,transparent 73%,#0009 100%);
+}
+.console-body .strip .meter-box .vu-scale{color:#bfd4df!important;text-shadow:0 1px #000}
+.console-body .strip .meter-box .vu-tick span{font:9px/11px Consolas,monospace!important}
+.console-body .strip .meter-box .peak{
+  background:linear-gradient(#381417,#12090b)!important;border:1px solid #754040!important;
+  box-shadow:inset 0 1px #bd515044!important;border-radius:2px!important;
+}
+.console-body .strip .meter-box .peak.clipping{
+  background:linear-gradient(#ff958b,#f0342c 47%,#9d1319)!important;
+  border-color:#ff9a95!important;box-shadow:0 0 3px #f33b30,inset 0 1px #ffd1c2!important;
+}
+/* Hardware continuity: satin upper plates, subtle milled lines, consistent hierarchy. */
+.console-body .strip .route-section{
+  background:linear-gradient(90deg,#1b303b,#304650 12%,#293c46 80%,#1a2b36)!important;
+}
+.console-body .strip .fx-section{
+  background:linear-gradient(90deg,#172a35,#253943 9%,#243741 82%,#162a35)!important;
+}
+.console-body .strip .send-section{
+  background:linear-gradient(90deg,#1e303b,#293e49 12%,#253841 83%,#172c37)!important;
+}
+.console-body .strip .pan-section{
+  background:linear-gradient(90deg,#1d303b,#324753 13%,#2c404a 83%,#20333e)!important;
+}
+.console-body .strip .subhead,.console-body .strip .send-header{
+  border-bottom:1px solid #101e29!important;box-shadow:inset 0 -1px #7f9ba920!important;
+}
+.console-body .strip .fxslot-row{
+  background:linear-gradient(180deg,#253b46,#1b2d38)!important;
+  border-bottom:1px solid #3c586642!important;
+}
+.console-body .strip .fxslot-row:hover{background:linear-gradient(#34505f,#263f4d)!important}
+.console-body .strip .fxslot-list{scrollbar-color:#668594 #142530!important}
+.console-body .strip .fader-head{
+  background:linear-gradient(113deg,#030b11,#0e2733 42%,#091b25 72%,#06131b)!important;
+  border:1px solid #4c6876!important;
+  box-shadow:inset 0 2px 5px #0009,inset 0 -1px #9cb6c51e,0 1px #ffffff25!important;
+}
+.console-body .strip .fader-readout{font-variant-numeric:tabular-nums!important;color:#a7f1ff!important}
+.console-body .strip .split-count{font:600 9px/1.2 Consolas,monospace;color:#b5e8f1;
+ border:1px solid #5d8291;border-radius:2px;padding:1px 2px;white-space:nowrap}
+
+/* V11 — FL-style selectable source/target wiring in the MIDDLE (SEND/BUS) strip.
+   Only visual reference. Default SEND rack collapsed, its wire tray stays visible.
+   Do not move hardware faders, clip VU or shrink expandable FX slot rack. */
+.console-body.collapsed-send{--send-h:53px!important}
+.console-body:not(.collapsed-send){--send-h:129px!important}
+.console-body .section-rail .rail-cell.send{
+  height:var(--send-h)!important;min-height:var(--send-h)!important;
+  flex:0 0 var(--send-h)!important;
+  background:linear-gradient(#263b45,#1d303a)!important;
+  color:#a4d6e2!important;
+}
+.console-body .strip .send-section{
+  display:flex!important;flex-direction:column!important;
+  height:var(--send-h)!important;min-height:var(--send-h)!important;
+  flex:0 0 var(--send-h)!important;overflow:hidden!important;
+}
+.console-body .strip .wire-tray{
+  display:flex!important;align-items:center!important;justify-content:center!important;
+  width:100%;min-width:0;min-height:29px;flex:0 0 29px;
+  margin-top:auto;padding:2px 4px 3px;box-sizing:border-box;
+  background:linear-gradient(#1b323b,#10242d 40%,#07171e)!important;
+  border-top:1px solid #63808b66;box-shadow:inset 0 2px #d4f5ff0e;
+}
+.console-body .strip .wire-socket{
+  display:flex;align-items:center;justify-content:center;gap:5px;
+  flex:1;max-width:100%;min-width:0;height:24px;
+  border:1px solid #45616f;border-radius:3px;
+  color:#a7c4cf;background:linear-gradient(#314653,#182e39 48%,#162a34);
+  box-shadow:inset 0 1px #a9deef2a,0 1px #0009;
+  font:600 9px/1 Arial,sans-serif!important;
+  cursor:pointer;user-select:none;
+}
+.console-body .strip .wire-socket:hover:not(:disabled){
+  color:#edfff5;border-color:#9ee6b5;background:linear-gradient(#37534e,#193c38);
+}
+.console-body .strip .wire-socket .wire-arrow{font-size:14px;font-weight:700;line-height:13px}
+.console-body .strip .wire-socket.is-source{
+  color:#132d18;border-color:#7dcb6c;background:linear-gradient(#bded9c,#65b96c)!important;
+  box-shadow:inset 0 1px #efffcb,0 1px #06190c!important;
+}
+.console-body .strip .wire-socket.is-linked{
+  color:#ccffe0;border-color:#64c383;background:linear-gradient(#286b4f,#13432e)!important;
+  box-shadow:inset 0 1px #b9ffcb24,0 1px #010d05!important;
+}
+.console-body .strip .wire-socket:disabled{cursor:default;opacity:1}
+.console-body .strip .wire-socket:focus-visible{outline:1px solid #c7fbe0;outline-offset:1px}
+.wire-legend{
+  margin-left:auto;color:#a4e3bd;font:600 10px/1 'Segoe UI',Arial,sans-serif;
+  border:1px solid #46675c;padding:3px 7px;border-radius:2px;
+  background:linear-gradient(#1e3730,#142823);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.mixer-title .wire-legend + .right{margin-left:0}
+.tracks-viewport{position:relative!important;isolation:isolate}
+.routing-wire-overlay{
+  position:absolute;inset:0;width:100%;height:100%;overflow:hidden;
+  z-index:6;pointer-events:none;contain:paint;
+}
+@media(max-width:1000px){.wire-legend{max-width:220px}}
+@media(max-height:680px){.console-body.collapsed-send{--send-h:49px!important}}
+
+/* V12 physical console wire strip: FL send-switch affordances, but original ArSonMix tooling.
+   53px collapsed row stays visible; FX elastic and hardware fader are untouched. */
+.wire-mode-label{font:600 9px/1 Arial,Helvetica,sans-serif;color:#a4c7d2;white-space:nowrap;margin-left:5px}
+.wire-mode-select{height:24px;max-width:146px;min-width:112px;padding:1px 17px 1px 6px;
+  border:1px solid #4b6370;border-radius:3px;background:linear-gradient(#2c414b,#192e39);
+  color:#d6e9ec;font:500 10px/1 'Segoe UI',Arial,sans-serif}
+.wire-mode-select:hover{border-color:#8bb8c4}
+.wire-master{height:24px;min-width:66px;padding:0 7px;
+  color:#bce9cb;border:1px solid #557a65;border-radius:3px;
+  background:linear-gradient(#29483b,#182f29);box-shadow:inset 0 1px #c7ffe522,0 1px #030b0d;
+  font:600 10px/1 Arial,Helvetica,sans-serif!important;white-space:nowrap}
+.wire-master[aria-pressed="false"]{color:#a1a6ad;background:linear-gradient(#273037,#1b252b);border-color:#4c5960}
+.wire-master:focus-visible,.wire-mode-select:focus-visible{outline:1px solid #b0ecfa;outline-offset:2px}
+.console-body .strip .wire-tray{gap:3px!important;padding:2px 3px 3px!important}
+.console-body .strip .wire-tray.linked .wire-socket{min-width:29px;flex:1 1 32px;padding:0 2px!important}
+.console-body .strip .wire-socket.is-source .wire-arrow{color:#234b25}
+.console-body .strip .wire-tray .wire-pot{
+ position:relative;flex:0 0 26px;width:26px;height:24px;min-width:26px;
+ border:0;cursor:ew-resize;display:flex;justify-content:center;align-items:center;
+}
+.console-body .strip .wire-tray .wire-pot::before{
+ content:"";width:22px;height:22px;position:absolute;inset:1px 2px;
+ border-radius:50%;box-sizing:border-box;
+ background:conic-gradient(from 225deg,#a8f5b1 0 var(--wire-pct,90.9%),#344d52 var(--wire-pct,90.9%) 75%,transparent 75% 100%);
+ box-shadow:0 1px 2px #000c,inset 0 0 0 1px #83c79a66;pointer-events:none;
+}
+.console-body .strip .wire-tray .wire-pot::after{
+ content:"";position:absolute;left:11px;top:3px;width:3px;height:8px;
+ border-radius:1px;background:#c7fdeb;border:1px solid #335b50;
+ box-shadow:0 0 2px #84efaf;transform-origin:2px 10px;
+ transform:rotate(var(--wire-deg,110deg));pointer-events:none;
+}
+.console-body .strip .wire-tray .wire-gain{
+ position:absolute;inset:0;width:26px!important;height:24px!important;margin:0;
+ cursor:ew-resize;opacity:0;z-index:2;appearance:none;-webkit-appearance:none;touch-action:none;
+}
+.console-body .strip .wire-tray .wire-pot:focus-within{outline:1px solid #b4f4cb;border-radius:50%}
+.console-body .strip .wire-tray .wire-disconnect{
+ flex:0 0 17px;width:17px;height:21px;min-width:17px;padding:0;
+ font:600 14px/18px Arial,sans-serif!important;color:#a8c4cb;
+ border:1px solid #47616a;border-radius:3px;background:linear-gradient(#34444c,#172932);
+ box-shadow:inset 0 1px #a3bed31c;cursor:pointer;
+}
+.console-body .strip .wire-tray .wire-disconnect:hover{color:#fff1e5;background:linear-gradient(#80423c,#512521);border-color:#c47365}
+.console-body .strip .wire-tray .wire-disconnect:focus-visible{outline:1px solid #ffcaba;outline-offset:1px}
+.console-body .strip .wire-tray.linked .wire-label{font-size:8px!important}
+.console-body .strip .wire-tray.linked .wire-socket{background:linear-gradient(#316748,#163b2c)!important}
+.console-body .strip .wire-tray.linked .wire-arrow{filter:drop-shadow(0 0 2px #7dec9c)}
+.console-body .strip .wire-tray .wire-gain:focus-visible{outline:none}
+.routing-wire-overlay{filter:drop-shadow(0 0 1.2px #5cc67f40)}
+@media(max-width:1250px){.wire-legend{max-width:145px}.wire-mode-select{max-width:112px;font-size:9px}.wire-master{min-width:55px;padding:0 4px}}
+@media(max-width:970px){.wire-legend{display:none}.wire-mode-label{display:none}}
 </style>
 </head>
 <body>
@@ -1576,7 +1824,7 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
     </details>
   </div>
   <main class="console-pane">
-    <div class="mixer-title"><span class="accent"></span><span class="panel-name">Live Mixer</span><span class="panel-sub">▤</span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
+    <div class="mixer-title"><span class="accent"></span><span class="panel-name">Live Mixer</span><span class="panel-sub">▤</span><label class="wire-mode-label" for="wireMode">WIRE</label><select class="wire-mode-select" id="wireMode" title="Signal routing: FL-style post-fader or independent pre-FX source" aria-label="Wire routing mode"><option value="send">Follow Fader</option><option value="split">Independent (Pre FX)</option></select><button class="wire-master" id="wireMaster" type="button" title="Toggle direct source feed to Master" aria-pressed="true">MAIN ON</button><span class="wire-legend" id="wireLegend" aria-live="polite">CH01 · click destination arrows</span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
     <section class="console-body collapsed-send" data-density="comfort" aria-label="Live mixing console">
       <aside class="section-rail" aria-label="Mixer section icons">
         <div class="rail-cell identity" title="Channel identity">CH</div>
@@ -1589,7 +1837,7 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
         <div class="rail-cell fader" title="Level and meter">dB</div>
         <div class="rail-cell footer" title="Track labels"><small>▦</small></div>
       </aside>
-      <div class="tracks-viewport" id="viewport" tabindex="0" aria-label="Visible channel bank; use upper arrow buttons for more channels"><div class="tracks" id="tracks"></div></div>
+      <div class="tracks-viewport" id="viewport" tabindex="0" aria-label="Visible channel bank; use upper arrow buttons for more channels"><div class="tracks" id="tracks"></div><svg id="wireLayer" class="routing-wire-overlay" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"></svg></div>
       <div id="master"></div>
     </section>
     <div id="channelIdentity" class="channel-identity" role="dialog" aria-label="Edit channel name icon and color" hidden>
@@ -1655,19 +1903,47 @@ function savePluginPreferences(){
  }));}catch(error){/* Manager still works without browser storage. */}
 }
 const tracksEl=document.getElementById('tracks'),masterEl=document.getElementById('master'),info=document.getElementById('info');
-let nextId=1,nextGroup=1,tracks=[],master,preview=false,meterFrame=0,lastTick=0,clipboard=null,scenes=[],sofEnabled=false,sofTarget="Bus A";
+let nextId=1,nextGroup=1,tracks=[],master,preview=false,meterFrame=0,lastTick=0,clipboard=null,scenes=[],sofEnabled=false,sofTarget="Bus A",wireSourceId=1,wireEdges=[],nextWireId=1,wireMode='send',wireAnchorId=null,wireHoverId=null;
 const clone=x=>JSON.parse(JSON.stringify(x));
 const selection=()=>tracks.concat(master).filter(t=>t.selected);
 const make=(name,kind,color)=>{
  const id=nextId++;
  return {id,name,kind,color,icon:kind==='master'?'◎':kind==='bus'?'⊞':kind==='fx'?'◉':'♩',group:null,safe:false,format:'stereo',input:'None',output:kind==='master'?'Default Output':'Master',fx:Array(8).fill('None'),slotBypass:Array(8).fill(false),fxOn:true,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,activeSend:0,sendSlots:Array.from({length:16},()=>({send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0})),eq:true,pan:0,trim:0,mute:false,solo:false,cue:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
 };
-function init(){nextId=1;nextGroup=1;tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
+function init(){nextId=1;nextGroup=1;wireSourceId=1;wireEdges=[];nextWireId=1;wireMode='send';wireAnchorId=null;wireHoverId=null;document.getElementById('wireMode').value='send';tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const option=(values,selected)=>values.map(x=>'<option value="'+escapeHtml(x)+'"'+(x===selected?' selected':'')+'>'+escapeHtml(x)+'</option>').join('');
+// DEMO mult is a source binding, not a Group sum or copied JS audio engine.
+// Production must supply stable native ChannelId/TapPoint admission + ACK.
+const splitSourceLabel=(id,tap)=>'CH'+String(id).padStart(2,'0')+' '+tap+'-FX SPLIT';
+function parseSplitSource(value){
+ const match=/^CH(\d+) (PRE|POST)-FX SPLIT$/.exec(String(value||''));
+ return match?{sourceId:Number(match[1]),tap:match[2]}:null;
+}
+function splitWouldCycle(target,sourceId){
+ const seen=new Set([target.id]);
+ let id=sourceId;
+ while(Number.isInteger(id)){
+  if(seen.has(id))return true;
+  seen.add(id);
+  const upstream=tracks.find(x=>x.id===id&&x.kind==='audio');
+  if(!upstream)return true;
+  const link=parseSplitSource(upstream.input);
+  if(!link)return false;
+  id=link.sourceId;
+ }
+ return true;
+}
+function splitFanout(t){
+ return tracks.filter(x=>x.id!==t.id&&parseSplitSource(x.input)?.sourceId===t.id).length;
+}
 const channelOptions=(t,type)=>{
- if(type==='input')return t.kind==='audio'?['None','Input 1 (Mono)','Input 2 (Mono)','Input 1 + 2 (Stereo)','CABLE Output L','CABLE Output R','CABLE Output L/R (Stereo)']:['None'];
- if(type==='output')return t.kind==='master'?['Default Output','Output 1 + 2','Speakers (Realtek)','Virtual Cable']:[master.name,...tracks.filter(x=>x.kind==='bus'&&x.id!==t.id).map(x=>x.name),'Output 1 + 2'];
+ if(type==='input')return t.kind==='audio'
+  ?['None','Input 1 (Mono)','Input 2 (Mono)','Input 1 + 2 (Stereo)','CABLE Output L','CABLE Output R','CABLE Output L/R (Stereo)',
+     ...tracks.filter(x=>x.kind==='audio'&&x.id!==t.id).flatMap(x=>
+      [splitSourceLabel(x.id,'PRE'),splitSourceLabel(x.id,'POST')])]
+  :['None'];
+ if(type==='output')return t.kind==='master'?['Default Output','Output 1 + 2','Speakers (Realtek)','Virtual Cable']:[...(t.kind==='audio'?['SOURCE ONLY (No Main)']:[]),master.name,...tracks.filter(x=>x.kind==='bus'&&x.id!==t.id).map(x=>x.name),'Output 1 + 2'];
  return ['None',...tracks.filter(x=>(x.kind==='bus'||x.kind==='fx')&&x.id!==t.id).map(x=>x.name)];
 };
 function sectionFx(t){
@@ -1683,9 +1959,82 @@ function sectionFx(t){
  }
  return out+'</div></div>';
 }
+
+/* V12 wire graph is independent of receiver IN; multiple send sources may sum.
+   This is a GUI reference edge model, NOT native PCM/GraphRevision admission. */
+function wireFor(src,dst){return wireEdges.find(e=>e.sourceId===src&&e.destId===dst&&e.enabled);}
+function outgoingWires(id){return wireEdges.filter(e=>e.enabled&&e.sourceId===id);}
+function wireOutgoingCount(id){return outgoingWires(id).length+tracks.filter(t=>parseSplitSource(t.input)?.sourceId===id&&!wireFor(id,t.id)).length;}
+function wireIsCycle(sourceId,destId){
+ if(sourceId===destId)return true;
+ const visited=new Set(),stack=[destId];
+ while(stack.length){
+  const id=stack.pop();if(id===sourceId)return true;
+  if(visited.has(id))continue;visited.add(id);
+  for(const edge of wireEdges)if(edge.enabled&&edge.sourceId===id)stack.push(edge.destId);
+  for(const track of tracks)if(parseSplitSource(track.input)?.sourceId===id)stack.push(track.id);
+  const track=tracks.find(t=>t.id===id);
+  if(track&&track.kind!=='master'){
+   const output=tracks.find(t=>t.name===track.output&&(t.kind==='bus'||t.kind==='fx'));
+   if(output)stack.push(output.id);
+   if(track.kind==='bus')for(const slot of track.sendSlots)if(slot.sendOn){
+    const downstream=tracks.find(t=>t.name===slot.send);
+    if(downstream)stack.push(downstream.id);
+   }
+  }
+ }
+ return false;
+}
+function wireConnect(source,dest){
+ if(!source||source.kind!=='audio'||!dest||dest.kind==='master'||source.id===dest.id)return false;
+ const old=wireFor(source.id,dest.id);
+ if(old){wireEdges=wireEdges.filter(e=>e.id!==old.id);render();say('WIRE removed '+source.name+' → '+dest.name+' · GUI DEMO');return true;}
+ if(wireIsCycle(source.id,dest.id)){say('WIRE REJECTED: feedback loop · existing signal graph preserved');return false;}
+ wireEdges.push({id:nextWireId++,sourceId:source.id,destId:dest.id,mode:wireMode,levelDb:0,enabled:true});
+ render();say('WIRE '+source.name+' → '+dest.name+' · '+(wireMode==='send'?'FOLLOW FADER SEND':'INDEPENDENT PRE FX')+' · DEMO ONLY · no native PCM');
+ return true;
+}
+
+function wireConnectRange(source,anchorId,finalId){
+ const bankCapacityNow=bankCapacity(),page=Number(document.getElementById('bankSelect').value)||0;
+ const filter=document.getElementById('viewFilter').value;
+ const shown=tracks.filter(t=>filter==='all'||(filter==='solo'?t.solo:t.kind===filter))
+  .slice(page*bankCapacityNow,(page+1)*bankCapacityNow);
+ const a=shown.findIndex(x=>x.id===anchorId),b=shown.findIndex(x=>x.id===finalId);
+ if(a<0||b<0){say('WIRE RANGE: select two destination arrows in the SAME visible bank');return false;}
+ const batch=shown.slice(Math.min(a,b),Math.max(a,b)+1)
+  .filter(t=>t.kind!=='master'&&t.id!==source.id&&!wireFor(source.id,t.id));
+ if(!batch.length){say('WIRE RANGE: destinations already linked');return false;}
+ // Batch is fail-closed: do not apply some edges then discover a loop later.
+ if(batch.some(t=>wireIsCycle(source.id,t.id))){
+  say('WIRE RANGE REJECTED: a destination would create a feedback loop; no links changed');return false;
+ }
+ for(const t of batch)wireEdges.push({id:nextWireId++,sourceId:source.id,destId:t.id,
+  mode:wireMode,levelDb:0,enabled:true});
+ render();say(source.name+' → '+batch.length+' destinations linked with SHIFT · GUI DEMO ONLY');
+ return true;
+}
+function wireDbText(db){return db<=-60?'−∞':(db>0?'+':'')+Number(db).toFixed(0)+' dB';}
+function wireGainPercent(db){return Math.max(0,Math.min(100,(Number(db)+60)/66*100));}
+function wireTray(t){
+ const source=tracks.find(x=>x.id===wireSourceId&&x.kind==='audio');
+ const isSource=!!source&&source.id===t.id;
+ const isMain=t.kind==='master';
+ const edge=!isMain&&source?wireFor(source.id,t.id):null;
+ const linked=isMain?!!source&&source.output==='Master':!!edge;
+ const canWire=!!(source&&!isSource);
+ const label=!source?'NO SOURCE':isSource?'SOURCE':isMain?(linked?'MAIN ON':'MAIN OFF'):linked?'CONNECTED':'CONNECT';
+ const icon=isSource?'▼':linked?'◆':'△';
+ const modeLabel=linked&&!isMain?(edge.mode==='send'?'Post-fader Send':'Pre FX Mult'):'Click to wire';
+ let controls='<button type="button" class="wire-socket'+(isSource?' is-source':'')+(linked?' is-linked':'')+'" data-action="wireRoute" aria-pressed="'+linked+'" aria-label="'+escapeHtml(t.name)+' · '+label+'" title="'+escapeHtml(label+' · '+modeLabel+' · GUI DEMO')+'" '+(canWire?'':'disabled')+'><span class="wire-arrow" aria-hidden="true">'+icon+'</span><span class="wire-label">'+(isSource?'SOURCE':isMain?(linked?'MAIN ON':'MAIN OFF'):linked?'LINKED':t.kind==='audio'?'WIRE':'BUS')+'</span></button>';
+ if(linked&&!isMain){
+  controls+='<label class="wire-pot" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%;--wire-deg:'+(-135+wireGainPercent(edge.levelDb)*2.7).toFixed(1)+'deg" title="'+escapeHtml(source.name+' → '+t.name+' · '+wireDbText(edge.levelDb))+'"><input class="wire-gain" type="range" min="-60" max="6" step="1" value="'+edge.levelDb+'" data-field="wireGain" data-wire-id="'+edge.id+'" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%" aria-label="Wire send level '+escapeHtml(source.name)+' to '+escapeHtml(t.name)+'"></label><button type="button" class="wire-disconnect" data-action="wireRemove" title="Disconnect '+escapeHtml(source.name)+' → '+escapeHtml(t.name)+'" aria-label="Disconnect '+escapeHtml(t.name)+' from '+escapeHtml(source.name)+'">×</button>';
+ }
+ return '<div class="wire-tray'+(linked?' linked':'')+'">'+controls+'</div>';
+}
 function sectionSend(t){
- if(t.kind==='master'||t.kind==='fx')return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><span class="sendtag">No Sends</span></div></div>';
- return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><select class="send-slot" data-field="activeSend" title="Select send slot 1–16" aria-label="Send slot">'+option(Array.from({length:16},(_,i)=>'S'+(i+1)),'S'+(t.activeSend+1))+'</select><span class="send-compact" title="Active send destination">'+escapeHtml(t.send==='None'?'No send':t.send)+'</span><span class="push"></span><button class="mini power '+(t.sendOn?'on':'')+'" data-action="sendOn" title="Enable Send">⏻</button><button class="mini pre '+(t.pre?'on':'')+'" data-action="pre" title="Toggle Pre/Post send">'+(t.pre?'Pre':'Pst')+'</button></div><select class="send-select" data-field="send" aria-label="Send destination">'+option(channelOptions(t,'send'),t.send)+'</select><div class="sendlevel"><label>LEVEL</label><input class="ari-horizontal" type="range" min="-60" max="6" step="1" value="'+t.sendLevel+'" style="--range-pct:'+rangePct(t.sendLevel,-60,6)+'%" data-field="sendLevel" title="Send level"><output>'+formatDb(t.sendLevel)+'</output></div></div>';
+ if(t.kind==='master'||t.kind==='fx')return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><span class="sendtag">'+(t.kind==='master'?'MAIN OUTPUT':'FX RETURN')+'</span></div>'+wireTray(t)+'</div>';
+ return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><select class="send-slot" data-field="activeSend" title="Select send slot 1–16" aria-label="Send slot">'+option(Array.from({length:16},(_,i)=>'S'+(i+1)),'S'+(t.activeSend+1))+'</select><span class="send-compact" title="Active send destination">'+escapeHtml(t.send==='None'?'No send':t.send)+'</span><span class="push"></span><button class="mini power '+(t.sendOn?'on':'')+'" data-action="sendOn" title="Enable Send">⏻</button><button class="mini pre '+(t.pre?'on':'')+'" data-action="pre" title="Toggle Pre/Post send">'+(t.pre?'Pre':'Pst')+'</button></div><select class="send-select" data-field="send" aria-label="Send destination">'+option(channelOptions(t,'send'),t.send)+'</select><div class="sendlevel"><label>LEVEL</label><input class="ari-horizontal" type="range" min="-60" max="6" step="1" value="'+t.sendLevel+'" style="--range-pct:'+rangePct(t.sendLevel,-60,6)+'%" data-field="sendLevel" title="Send level"><output>'+formatDb(t.sendLevel)+'</output></div>'+wireTray(t)+'</div>';
 }
 function formatDb(n){return n<=-60?'-∞':(n>0?'+':'')+Number(n).toFixed(1);}
 function panLabel(n){return Number(n)===0?'C':n<0?'L'+Math.abs(n):'R'+n;}
@@ -1709,7 +2058,7 @@ function sectionFader(t){
 function strip(t){
  let code='<article class="strip '+t.kind+(t.selected?' selected':'')+'" data-id="'+t.id+'" style="--track-color:'+t.color+';--ch:'+t.color+'" aria-label="'+escapeHtml(t.name)+' channel">';
  code+='<button type="button" class="strip-identity-top" data-action="editIdentity" title="Double-click to edit channel identity · F2" aria-label="Double-click to edit '+escapeHtml(t.name)+' channel identity"><span class="identity-number">'+(t.kind==='master'?'MASTER':'CH '+String(t.id).padStart(2,'0'))+'</span><span class="identity-name">'+escapeHtml(t.name)+'</span><span class="identity-symbol" aria-hidden="true">'+escapeHtml(iconFor(t))+'</span></button>';
- code+='<div class="section route-section"><div class="route-top"><span class="route-indicator">'+(t.kind==='audio'?'▥':t.kind==='bus'?'↪':t.kind==='fx'?'∿':'➜')+'</span>'+(t.safe?'<span class="safe-marker" title="Snapshot safe · recall protected">SAFE</span>':'')+(t.group?'<span class="group-indicator" title="Linked group '+escapeHtml(t.group)+'">'+escapeHtml(t.group)+'</span>':'')+(t.kind==='audio'?'<button class="mini format-badge" data-action="format" title="Processing width M/ST (preserves physical input source)">'+(t.format==='mono'?'M':'ST')+'</button>':'')+'<button class="mini phase '+(t.phase?'on':'')+'" data-action="phase" title="Reverse polarity">'+(t.phase?'Ø':'⊘')+'</button></div>';
+ code+='<div class="section route-section"><div class="route-top"><span class="route-indicator">'+(t.kind==='audio'?'▥':t.kind==='bus'?'↪':t.kind==='fx'?'∿':'➜')+'</span>'+(t.safe?'<span class="safe-marker" title="Snapshot safe · recall protected">SAFE</span>':'')+(t.group?'<span class="group-indicator" title="Linked group '+escapeHtml(t.group)+'">'+escapeHtml(t.group)+'</span>':'')+(t.kind==='audio'?'<button class="mini format-badge" data-action="format" title="Processing width M/ST (preserves physical input source)">'+(t.format==='mono'?'M':'ST')+'</button>':'')+(t.kind==='audio'&&wireOutgoingCount(t.id)?'<span class="split-count" title="GUI-only routing destinations · no native PCM">⇢'+wireOutgoingCount(t.id)+'</span>':'')+'<button class="mini phase '+(t.phase?'on':'')+'" data-action="phase" title="Reverse polarity">'+(t.phase?'Ø':'⊘')+'</button></div>';
  if(t.kind==='audio')code+='<div class="route-field"><span class="route-caption">IN</span><select class="route-select" data-field="input" title="Input source (demo choices)" aria-label="'+escapeHtml(t.name)+' input">'+option(channelOptions(t,'input'),t.input)+'</select></div>';
  else if(t.kind==='bus'||t.kind==='fx')code+='<div class="route-field"><span class="route-caption">IN</span><span class="route-identity">'+(t.kind==='bus'?'GROUP':'FX RETURN')+'</span></div>';
  else code+='<div class="route-field"><span class="route-caption">IN</span><span class="route-identity">SUM BUS</span></div>';
@@ -1769,6 +2118,7 @@ function render(pageOverride){
  document.getElementById('bankPrev').disabled=count<=1;
  document.getElementById('bankNext').disabled=count<=1;
  document.getElementById('trackCount').textContent=tracks.filter(t=>t.kind==='audio').length+' audio · '+tracks.filter(t=>t.kind==='bus').length+' bus · '+tracks.filter(t=>t.kind==='fx').length+' FX return · master';
+ renderWireRouting();
 }
 function say(s){info.textContent=s;}
 function syncFaderVisual(t,element){
@@ -1856,10 +2206,55 @@ function refreshStrip(t){
  const newRack=updated.querySelector('.fxslot-list');if(newRack)newRack.scrollTop=scroll;
 }
 function selectTrack(t,add=false){
+ const changedSource=!add&&t.kind==='audio'&&wireSourceId!==t.id;
+ if(changedSource){wireSourceId=t.id;wireAnchorId=null;wireHoverId=null;}
  if(!add){tracks.forEach(x=>x.selected=false);master.selected=false;t.selected=true;}
  else t.selected=!t.selected;
  document.querySelectorAll('.strip').forEach(el=>{const item=tracks.concat(master).find(x=>x.id===Number(el.dataset.id));el.classList.toggle('selected',!!item&&item.selected);});
  const count=selection().length;if(count>1)say(count+' channels selected · Copy/Paste will apply to selection');
+ if(changedSource)refreshWireRoutingNodes();
+}
+function refreshWireRoutingNodes(){
+ document.querySelectorAll('.strip').forEach(el=>{
+  const t=tracks.concat(master).find(x=>x.id===Number(el.dataset.id));
+  const tray=el.querySelector('.wire-tray');
+  if(t&&tray)tray.outerHTML=wireTray(t);
+ });
+ renderWireRouting();
+}
+function renderWireRouting(){
+ const svg=document.getElementById('wireLayer'),viewport=document.getElementById('viewport');
+ const source=tracks.find(t=>t.id===wireSourceId&&t.kind==='audio');
+ const legend=document.getElementById('wireLegend'),main=document.getElementById('wireMaster');
+ if(legend)legend.textContent=source?'CH'+String(source.id).padStart(2,'0')+' ⇢ '+wireOutgoingCount(source.id)+' · click arrows / Shift-range · DEMO':'Select source · click destination arrows';
+ if(main&&source){
+  const direct=source.output==='Master';
+  main.textContent=direct?'MAIN ON':'MAIN OFF';main.setAttribute('aria-pressed',String(direct));
+  main.title='Direct source output: '+source.output+' · click to toggle Main only when currently mapped to Main or Source Only';
+ }
+ if(!svg||!viewport||!source)return;
+ const vp=viewport.getBoundingClientRect?.(),fromEl=viewport.querySelector?.('.strip[data-id="'+source.id+'"] .wire-socket');
+ const from=fromEl?.getBoundingClientRect?.();
+ if(!vp||!from||!vp.width||!vp.height){svg.innerHTML='';return;}
+ svg.setAttribute('viewBox','0 0 '+vp.width+' '+vp.height);
+ const x0=from.left-vp.left+from.width/2,y0=from.top-vp.top+from.height*.5;
+ const paths=[];
+ const visibleEdges=outgoingWires(source.id).map(e=>({...e,preview:false}));
+ if(wireHoverId!==null&&wireHoverId!==source.id&&!wireFor(source.id,wireHoverId))visibleEdges.push({destId:wireHoverId,mode:wireMode,preview:true});
+ for(const edge of visibleEdges){
+  const dest=tracks.find(t=>t.id===edge.destId);
+  if(!dest)continue;
+  const el=viewport.querySelector?.('.strip[data-id="'+dest.id+'"] .wire-socket');
+  const rect=el?.getBoundingClientRect?.();
+  if(!rect)continue; // off-bank links preserved; never draw cable to invisible slot
+  const x1=rect.left-vp.left+rect.width/2,y1=rect.top-vp.top+rect.height*.5;
+  const bend=Math.min(17,Math.max(9,Math.abs(x1-x0)*.04));
+  const d='M '+x0.toFixed(1)+' '+y0.toFixed(1)+' C '+x0.toFixed(1)+' '+(y0-bend).toFixed(1)+', '+x1.toFixed(1)+' '+(y1-bend).toFixed(1)+', '+x1.toFixed(1)+' '+y1.toFixed(1);
+  const color=edge.preview?'#f7d78c':edge.mode==='split'?'#9bd7fa':'#a6f095';
+  paths.push('<path d="'+d+'" stroke="#071d1b" stroke-width="'+(edge.preview?3:6)+'" opacity="'+(edge.preview?'.42':'.85')+'" fill="none" stroke-linecap="round"/>'+
+   '<path d="'+d+'" stroke="'+color+'" stroke-width="'+(edge.preview?1.4:1.8)+'" opacity="'+(edge.preview?'.84':'.94')+'" fill="none" stroke-linecap="round"'+(edge.preview?' stroke-dasharray="5 5"':'')+'/>');
+ }
+ svg.innerHTML=paths.join('');
 }
 function syncActiveSend(t){
  if(t.kind==='master'||t.kind==='fx')return;
@@ -1910,7 +2305,7 @@ function refreshScenes(){
 }
 function saveScene(){
  const name='Scene '+(scenes.length+1);
- scenes.push({name,nextId,nextGroup,tracks:clone(tracks),master:clone(master),filter:document.getElementById('viewFilter').value,narrow:document.querySelector('.console-body').classList.contains('narrow'),density:document.querySelector('.console-body').dataset.density||'comfort'});
+ scenes.push({name,nextId,nextGroup,wireEdges:clone(wireEdges),nextWireId,wireMode,wireSourceId,wireAnchorId,tracks:clone(tracks),master:clone(master),filter:document.getElementById('viewFilter').value,narrow:document.querySelector('.console-body').classList.contains('narrow'),density:document.querySelector('.console-body').dataset.density||'comfort'});
  refreshScenes();document.getElementById('sceneSelect').value=String(scenes.length-1);
  say('Scene saved: '+scenes[scenes.length-1].name+' · local reference session only');
 }
@@ -1921,6 +2316,7 @@ function recallScene(){
  const scene=scenes[Number(value)];if(!scene)return;
  const protectedChannels=new Map(tracks.concat(master).filter(t=>t.safe).map(t=>[t.id,clone(t)]));
  nextId=scene.nextId;nextGroup=scene.nextGroup;tracks=clone(scene.tracks);master=clone(scene.master);
+ wireEdges=clone(scene.wireEdges||[]);nextWireId=scene.nextWireId||1;wireMode=scene.wireMode||'send';wireSourceId=scene.wireSourceId||1;wireAnchorId=scene.wireAnchorId??null;document.getElementById('wireMode').value=wireMode;
  tracks=tracks.map(t=>protectedChannels.get(t.id)||t);
  for(const [id,t] of protectedChannels){if(t.kind!=='master'&&!tracks.some(ch=>ch.id===id))tracks.push(t);}
  if(protectedChannels.has(master.id))master=protectedChannels.get(master.id);
@@ -1943,6 +2339,16 @@ function ungroupSelected(){
 function handleField(event){
  const el=event.target,field=el.dataset.field;if(!field)return;
  const t=findTrack(el);if(!t)return;
+ if(field==='wireGain'){
+  const edge=wireEdges.find(x=>x.id===Number(el.dataset.wireId)&&x.destId===t.id);
+  if(!edge){say('WIRE gain rejected: stale connection');return;}
+  edge.levelDb=Math.max(-60,Math.min(6,Math.round(Number(el.value)||0)));
+  if(el.style?.setProperty)el.style.setProperty('--wire-pct',wireGainPercent(edge.levelDb)+'%');
+  if(el.parentElement?.style?.setProperty){el.parentElement.style.setProperty('--wire-pct',wireGainPercent(edge.levelDb)+'%');el.parentElement.style.setProperty('--wire-deg',(-135+wireGainPercent(edge.levelDb)*2.7).toFixed(1)+'deg');}
+  if(el.parentElement)el.parentElement.title=wireDbText(edge.levelDb);
+  if(event.type==='change')say('WIRE '+tracks.find(x=>x.id===edge.sourceId)?.name+' → '+t.name+' · '+wireDbText(edge.levelDb)+' · GUI DEMO ONLY');
+  return;
+ }
  if(field==='fx'){t.fx[Number(el.dataset.slot)]=el.value;t.slotBypass[Number(el.dataset.slot)]=false;say(t.name+' · FX '+(Number(el.dataset.slot)+1)+': '+el.value);refreshStrip(t);}
  else if(field==='level'){
  if(sofEnabled&&t.kind==='audio'){
@@ -1969,7 +2375,20 @@ function handleField(event){
  else if(field==='activeSend'){const slot=Number(el.value.slice(1))-1;if(slot<0||slot>=16)return;openSendSlot(t,slot);refreshStrip(t);say(t.name+' · selected Send '+(slot+1));return;}
  else if(field==='output'){
   if(wouldFeedback(t,el.value)){say('Routing rejected: this output would create a bus feedback loop.');refreshStrip(t);return;}
-  t.output=el.value;say(t.name+' output → '+el.value);
+  t.output=el.value;say(el.value==='SOURCE ONLY (No Main)'?t.name+' is SOURCE ONLY (no direct Main) · demo, no PCM':t.name+' output → '+el.value);
+ }
+ else if(field==='input'){
+  const split=parseSplitSource(el.value);
+  if(split&&splitWouldCycle(t,split.sourceId)){
+   say('SPLIT REJECTED: circular source dependency or missing channel · previous IN preserved');
+   refreshStrip(t);return;
+  }
+  t.input=el.value;
+  if(split){
+   const source=tracks.find(x=>x.id===split.sourceId);
+   say(t.name+' ← '+source.name+' '+split.tap+'-FX split · GUI REFERENCE ONLY · native PCM not connected');
+  }else say(t.name+' input → '+el.value+' · demo binding only');
+  render();return;
  }
  else if(field==='send'){if(wouldFeedback(t,el.value)){say('Send rejected: this bus would feed back into itself.');refreshStrip(t);return;}t.send=el.value;say(t.name+' send → '+el.value);}
  else{t[field]=el.value;say(t.name+' '+field+' → '+el.value);}
@@ -2023,6 +2442,14 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  const btn=e.target.closest('[data-action]');if(!btn)return;
  const t=findTrack(btn);if(!t)return;
  const a=btn.dataset.action;
+ if(a==='wireRoute'||a==='wireRemove'){
+  const source=tracks.find(x=>x.id===wireSourceId&&x.kind==='audio');
+  if(!source||t.id===source.id){say('Select a source and another destination');return;}
+  if(t.kind==='master'){toggleDirectMain();return;}
+  if(a==='wireRemove'){const edge=wireFor(source.id,t.id);if(!edge)return;wireEdges=wireEdges.filter(x=>x.id!==edge.id);wireAnchorId=t.id;render();say('WIRE disconnected '+source.name+' → '+t.name+' · GUI DEMO ONLY');return;}
+  if(e.shiftKey&&wireAnchorId!==null){wireConnectRange(source,wireAnchorId,t.id);wireAnchorId=t.id;return;}
+  wireConnect(source,t);wireAnchorId=t.id;return;
+ }
  if(a==='rename'||a==='editIdentity')return; // double-click edits; single-click selects
  if(a==='format'&&t.kind==='audio'){t.format=t.format==='mono'?'stereo':'mono';refreshStrip(t);say(t.name+' processing → '+t.format.toUpperCase()+' · physical source '+t.input+' unchanged (reference only)');return;}
  if(a==='openPlugin'){openFastPicker(t,Number(btn.dataset.slot),btn);return;}
@@ -2042,6 +2469,9 @@ document.querySelector('.console-body').addEventListener('click',e=>{
 });
 document.querySelector('.console-body').addEventListener('dblclick',e=>{
  const t=findTrack(e.target);if(!t)return;
+ if(e.target.closest?.('.wire-gain')){
+  const el=e.target.closest('.wire-gain');el.value='0';handleField({target:el,type:'change'});return;
+ }
  if(e.target.classList.contains('fader')){t.level=0;refreshStrip(t);say(t.name+' fader reset to 0.0 dB');}
  if(e.target.classList.contains('center-pan')){t.pan=0;refreshStrip(t);say(t.name+' pan centered');}
  if(e.target.closest('.footer-label,.strip-identity-top'))openChannelIdentity(t,e.target);
@@ -2072,7 +2502,31 @@ document.querySelector('.console-body').addEventListener('drop',e=>{
   refreshStrip(t);say('Copied '+source.fx[from]+' from '+source.name+' to '+t.name+' slot '+(to+1));
  }
 });
-document.querySelector('.console-body').addEventListener('mousedown',e=>{const t=findTrack(e.target);if(t)selectTrack(t,e.ctrlKey||e.metaKey||e.shiftKey);});
+document.querySelector('.console-body').addEventListener('pointerover',e=>{
+ const btn=e.target.closest?.('[data-action="wireRoute"]');
+ const t=btn?findTrack(btn):null;
+ if(!t||t.kind==='master'||t.id===wireSourceId||wireHoverId===t.id)return;
+ wireHoverId=t.id;renderWireRouting();
+});
+document.querySelector('.console-body').addEventListener('pointerout',e=>{
+ if(wireHoverId===null)return;
+ const btn=e.target.closest?.('[data-action="wireRoute"]');
+ if(!btn)return;
+ if(e.relatedTarget?.closest?.('[data-action="wireRoute"]')===btn)return;
+ wireHoverId=null;renderWireRouting();
+});
+document.querySelector('.console-body').addEventListener('wheel',e=>{
+ const el=e.target.closest?.('.wire-gain');
+ if(!el||!Number.isFinite(e.deltaY)||e.deltaY===0)return;
+ e.preventDefault?.();
+ const prev=Number(el.value)||0,change=e.deltaY>0?-1:1;
+ el.value=String(Math.max(-60,Math.min(6,prev+change)));
+ handleField({target:el,type:'change'});
+},{passive:false});
+document.querySelector('.console-body').addEventListener('mousedown',e=>{
+ if(e.target.closest?.('.wire-tray')||e.target.closest?.('[data-action="wireRoute"]')||e.target.closest?.('[data-action="wireRemove"]')||e.target.closest?.('[data-field="wireGain"]'))return; // source remains unchanged on any wire control
+ const t=findTrack(e.target);if(t)selectTrack(t,e.ctrlKey||e.metaKey||e.shiftKey);
+});
 document.querySelector('.section-rail').addEventListener('click',e=>{
  const button=e.target.closest('[data-section]');if(!button)return;
  const name=button.dataset.section,body=document.querySelector('.console-body');
@@ -2085,6 +2539,7 @@ document.querySelector('.section-rail').addEventListener('click',e=>{
  button.setAttribute('aria-pressed',String(!collapsed));
  button.title=(collapsed?'Expand ':'Collapse ')+name.toUpperCase()+' section';
  say(name.toUpperCase()+(collapsed?' section collapsed':' section expanded')+' · channel grid stays aligned');
+ requestAnimationFrame(renderWireRouting); // FX rack changed height; redraw only after layout, never on an audio tick
 });
 document.getElementById('viewFilter').addEventListener('change',()=>{render();say('Channel display filtered: '+document.getElementById('viewFilter').value);});
 document.getElementById('mode').addEventListener('click',()=>{
@@ -2114,6 +2569,21 @@ document.getElementById('bankNext').addEventListener('click',()=>{
  if(!n){sel.value='all';render();say('No channels available in the active layer');return;}
  const old=Number(sel.value)||0;sel.value=String((old+1)%n);render();say('Next fader bank');
 });
+document.getElementById('wireMode').addEventListener('change',()=>{
+ const selected=document.getElementById('wireMode').value;
+ wireMode=selected==='split'?'split':'send';
+ say('WIRE MODE '+(wireMode==='send'?'FOLLOW FADER (FL-style send)':'INDEPENDENT (pre-insert mult)')+' · new edges only · GUI DEMO');
+});
+function toggleDirectMain(){
+ const t=tracks.find(x=>x.id===wireSourceId&&x.kind==='audio');
+ if(!t)return;
+ if(t.output!=='Master'&&t.output!=='SOURCE ONLY (No Main)'){
+  say('MAIN link not changed: '+t.name+' primary OUT is '+t.output+' · change OUT explicitly');return;
+ }
+ t.output=t.output==='Master'?'SOURCE ONLY (No Main)':'Master';
+ render();say(t.name+(t.output==='Master'?' direct MAIN enabled':' direct MAIN disconnected')+' · wire feeds unchanged · DEMO ONLY');
+}
+document.getElementById('wireMaster').addEventListener('click',toggleDirectMain);
 document.getElementById('sofToggle').addEventListener('click',()=>toggleSof());
 document.getElementById('sofTarget').addEventListener('change',()=>{sofTarget=document.getElementById('sofTarget').value;render();say('Sends target: '+sofTarget);});
 document.getElementById('addTrack').addEventListener('click',()=>{
