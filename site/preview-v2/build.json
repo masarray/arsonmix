@@ -1,0 +1,10 @@
+{
+  "version": "preview-v2",
+  "kind": "GUI_REFERENCE_ONLY",
+  "live_audio": false,
+  "source_pr": 278,
+  "source_branch": "design/audition-mixer-reference-isolated-20261101",
+  "source_sha": "d8344002ea0959ca909f41204d768c916126b032",
+  "source_path": "design-references/audition-mixer-study/index.html",
+  "note": "Static public snapshot. Engine/VST3/meter values are not native; /preview/ remains unchanged."
+}
