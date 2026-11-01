@@ -134,6 +134,7 @@ check(strip(1).includes('>ST</button>')&&strip(1).includes('Simulated stereo pea
 check(strip(1).includes('<option value="None" selected>None</option>'),'Flipping channel format does not invent an input patch');
 toggleFormat();filter('all');
 check(strip(1).includes('>M</button>')&&strip(1).includes('Simulated mono peak meter'),'Stereo→Mono restores mono controls');
+node('addFx').dispatch('click');
 filter('fx');node('bankNext').dispatch('click');
 check(node('bankSelect').value==='0','Filtered bank arrows follow visible channel group, not global track count');
 filter('all');
