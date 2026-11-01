@@ -7,5 +7,5 @@
   "ci_run": 41308977569,
   "ci_conclusion": "success",
   "live_audio": false,
-  "note": "Exact PR #278 interactive UX reference published at owner-requested preview URL. Design-only: no native audio, ASIO, VST3 or graph acceptance."
+  "note": "Public /preview/mixer.html source is dynamically and atomically derived from the SAME main/site/preview-v2/index.html tested commit; no simulated feature is native audio."
 }

@@ -29,16 +29,20 @@ if candidate_manifest.is_file():
         # No ASIO/VST3/native capability can be inferred from this HTML.
         assert candidate['source_pr']==278
         assert candidate['source_branch']=='main/site/preview-v2'
-    source=ROOT/'site/preview/mixer.html'
-    assert source.is_file()
     if candidate['kind']=='REFERENCE_WORKFLOW_QA_ONLY':
-        assert source.read_bytes()==(ROOT/'site/preview-v2/index.html').read_bytes(), (
-            'Public mixer preview must match reviewed PR278 workflow source byte-for-byte')
-    metadata={'sha':candidate['source_sha'],'branch':candidate['source_branch'],
-              'source':('PR #278 interactive reference · NO REAL AUDIO' if candidate['source_pr']==278
-                        else 'PR #271 draft GUI snapshot'),
+        # Copy directly from the *same* tested main commit as /preview-v2/.
+        # Prevent independent snapshot drift when other GUI threads update V8+.
+        source=ROOT/'site/preview-v2/index.html'
+    else:
+        source=ROOT/'site/preview/mixer.html'
+    assert source.is_file()
+    metadata={'sha':args.sha if candidate['source_pr']==278 else candidate['source_sha'],
+              'branch':candidate['source_branch'],
+              'source':('PR #278 active operator workflow · SIMULATED / NO REAL AUDIO'
+                        if candidate['source_pr']==278 else 'PR #271 draft GUI snapshot'),
               'kind':candidate['kind'],'live_audio':False,
-              'publisher_main_sha':args.sha,'ci_run':candidate['ci_run']}
+              'publisher_main_sha':args.sha,
+              'reference_baseline_sha':candidate['source_sha']}
 html=source.read_text(encoding='utf-8')
 assert '<style>' in html and '<script>' in html and ('data-fader' in html or 'data-field="level"' in html)
 (dst/'preview').mkdir(exist_ok=True)

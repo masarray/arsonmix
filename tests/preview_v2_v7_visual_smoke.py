@@ -7,11 +7,12 @@ No external web request; local site/preview-v2/index.html only.
 """
 from __future__ import annotations
 from pathlib import Path
+import subprocess, sys
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 PAGE = (ROOT / "site/preview-v2/index.html").resolve()
-PUBLIC = (ROOT / "site/preview/mixer.html").resolve()
+PUBLIC = (ROOT / "_preview-public-qa/preview/mixer.html").resolve()
 SIZES = [(1366, 768), (1666, 888), (1920, 1080)]
 
 
@@ -76,6 +77,11 @@ def audit_geometry(page, title):
 
 
 def main():
+    # Exercise the real production Pages builder; public URL cannot be
+    # validated against a checked-in snapshot that may lag another thread.
+    subprocess.run([sys.executable, str(ROOT / "scripts/build_pages.py"),
+                    "--out", str(ROOT / "_preview-public-qa"), "--sha", "qa"],
+                   check=True)
     assert PAGE.exists() and PUBLIC.exists(), (PAGE, PUBLIC)
     assert PUBLIC.read_bytes()==PAGE.read_bytes(), "Public /preview/mixer.html must be the PR278 reference, not old M4"
     count = 0

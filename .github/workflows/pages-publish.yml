@@ -49,7 +49,9 @@ jobs:
           node --check web/app.js
           python tests/gui_baseline_lock_test.py
           python scripts/build_pages.py --out dist-pages --sha "$SOURCE_SHA" --branch main
-          if [ -f site/preview/candidate.json ]; then
+          if grep -q '"REFERENCE_WORKFLOW_QA_ONLY"' site/preview/candidate.json 2>/dev/null; then
+            cmp site/preview-v2/index.html dist-pages/preview/mixer.html
+          elif [ -f site/preview/candidate.json ]; then
             cmp site/preview/mixer.html dist-pages/preview/mixer.html
           else
             cmp AR-MIX-Live-FX-Host-Standalone-v0.3.html dist-pages/preview/mixer.html
