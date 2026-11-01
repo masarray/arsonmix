@@ -761,6 +761,18 @@ static void verifyFirstSoundOnePinNativeSourceDraft() {
            mainL[1]/mic[1]>mainL[2]/mic[2]);
     assert(mainR[0]/mic[0]>mainR[1]/mic[1] &&
            mainR[1]/mic[1]>mainR[2]/mic[2]);
+    assert(mainL[3]>0.f && mainR[3]>0.f); // 4/64 frames, not a hard mute
+    // Sixteen small callback blocks complete EXACTLY the same 64-sample
+    // ramp as one 64-frame callback, without RT heap allocations.
+    float previousTail=mainL[3]/mic[3];
+    for(int blockIndex=1;blockIndex<16;++blockIndex) {
+        const auto heapBefore=heapCalls.load(std::memory_order_relaxed);
+        assert(production.process(nativePins,1,mainL.data(),mainR.data(),4,&levels));
+        assert(heapCalls.load(std::memory_order_relaxed)==heapBefore);
+        const float normalizedTail=mainL[3]/mic[3];
+        assert(normalizedTail<=previousTail+1.e-5f);
+        previousTail=normalizedTail;
+    }
     assert(near(mainL[3],0.f) && near(mainR[3],0.f));
     mainL.fill(1.f);mainR.fill(1.f);
     assert(production.process(nativePins,1,mainL.data(),mainR.data(),4,&levels));
@@ -769,6 +781,15 @@ static void verifyFirstSoundOnePinNativeSourceDraft() {
     assert(production.setStripControl(6,.25f,0.f,true,false,false));
     assert(production.process(nativePins,1,mainL.data(),mainR.data(),4,&levels));
     assert(mainL[0]>0.f&&mainR[0]>0.f);
+    assert(mainL[3]>mainL[0]); // unmute ramps, never spikes to unity
+    for(int k=1;k<16;++k)
+        assert(production.process(nativePins,1,mainL.data(),mainR.data(),4,&levels));
+    assert(mainL[3]>0.f);
+    // A rapid re-MUTE in the middle of an unmute envelope does not
+    // interpolate from stale unity or introduce a discontinuity.
+    assert(production.setStripControl(6,.25f,0.f,true,true,false));
+    assert(production.process(nativePins,1,mainL.data(),mainR.data(),4,&levels));
+    assert(mainL[0]>0.f);
     juce::var denied;
     assert(NativeVerifiedSourcePatch::prepare(typed,6,"STEREO",5,5,
         physical,17,9,denied).isNotEmpty());

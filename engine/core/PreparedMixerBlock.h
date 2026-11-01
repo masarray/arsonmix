@@ -411,18 +411,32 @@ public:
                 const float targetGate=routeAudible?1.f:0.f;
                 if(!rampPrimed_[strip]) {
                     preGate_[strip]=targetGate;
+                    preGateTarget_[strip]=targetGate;
+                    preRampRemaining_[strip]=0;
                     lastGainL_[strip]=gl;
                     lastGainR_[strip]=gr;
                     rampPrimed_[strip]=true;
                 }
-                const int ramp=std::min(frames,64);
-                const float dGate=(targetGate-preGate_[strip])/ramp;
+                // The MUTE/PRE-SEND de-click is 64 AUDIO SAMPLES, not one
+                // callback: variable 4/16/32-frame JUCE quanta must not turn
+                // a musical 64-frame transition into a hard-edge pop.
+                // The target can reverse mid-ramp; continue from the current
+                // coefficient and restart a full 64-sample envelope.
+                if(targetGate!=preGateTarget_[strip]) {
+                    preGateTarget_[strip]=targetGate;
+                    preRampRemaining_[strip]=64;
+                }
                 float gate=preGate_[strip];
+                int remaining=preRampRemaining_[strip];
                 for(int f=0;f<frames;++f) {
-                    if(f<ramp)gate+=dGate;
+                    if(remaining>0) {
+                        gate+=(targetGate-gate)/static_cast<float>(remaining);
+                        --remaining;
+                    } else gate=targetGate;
                     l[f]*=gate;r[f]*=gate;
                 }
-                preGate_[strip]=targetGate;
+                preGate_[strip]=gate;
+                preRampRemaining_[strip]=remaining;
             }
             graph.sends.dispatch(strip,SendTap::preFader,l,r,
                                  left_.data(),right_.data(),frames);
@@ -577,7 +591,9 @@ private:
     std::array<float*,stripCount> left_{};
     std::array<float*,stripCount> right_{};
     std::array<float*,auxBusCount> auxLeft_{},auxRight_{};
-    std::array<float,stripCount> preGate_{},lastGainL_{},lastGainR_{};
+    std::array<float,stripCount> preGate_{},preGateTarget_{},
+        lastGainL_{},lastGainR_{};
+    std::array<int,stripCount> preRampRemaining_{};
     std::array<std::atomic<std::uint32_t>,stripCount> physicalTarget_{};
     std::array<PhysicalSourceFade,stripCount> physicalBlend_{};
     std::array<std::atomic<float>,maxAuxSends> auxTarget_{};
