@@ -3,9 +3,9 @@
   "releaseReady": false,
   "normativeMain": "fe3f8add2c7103122895c10bc8c7461e6c55509a",
   "sourceSHAs": {
-    "ENGINE": "7a3c1e082c5b079056aa69af95ee54f23387470e",
-    "GUI": "e5b8da0fdf700de12e3c5d4edd4afb2e49f35181",
-    "FAT": "f42112a2c34b9e7dfc99aed08442eecce9203862"
+    "ENGINE": "c58f06f8e6d9cbf4ed170d5cc16173812b44deed",
+    "GUI": "70adb79a0511dbeb2bc1cbfaa48bf9a14f24d51f",
+    "FAT": "e93505869041b019f1c010a0e39f9fc9608210a7"
   },
   "machineContract": "contracts/console-puzzle-v8.json",
   "fixture": "tests/fixtures/console-v8-native-unready.json",
@@ -57,5 +57,12 @@
     "tests/console_native_s0_playwright.py": "FAT",
     "tests/console_v6_fat_gate_test.mjs": "FAT",
     "tests/native_artifact_packaging_contract_test.mjs": "FAT"
-  }
+  },
+  "nativeGoldenFixtureSha256": "4cbded2c7ada3be511c0e9a09b1949979638eb274c432f89b673a98ce55c7718",
+  "nativeGoldenRole": "C++ portable serializer UNREADY fixture shared in GUI test; NOT real JUCE production callback/PCM",
+  "nativeCppByteParityNewExecutable": "NOT_RUN_IN_INTEGRATION_CI",
+  "crossLayerSchemaCheck": "PASS_UNREADY_GOLDEN_JS_INSPECTION",
+  "nativeEngineHeadWindowsCTest": "PENDING_NEW_RUN__OLDER_P1H_EXIT_0xC0000409",
+  "guiHeadChromium": "PASS_ON_SEPARATE_BRANCH_NOT_COMBINED",
+  "designLock": "PRD v5.2 §9 + ARD v5.2 §K, PR #278 chosen study; demo audio is not native"
 }
