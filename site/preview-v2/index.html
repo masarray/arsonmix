@@ -1533,6 +1533,81 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
 .console-body .section-rail .rail-cell.route{height:var(--route-h)!important;flex:0 0 var(--route-h)!important}
 .console-body .section-rail .rail-cell.fx{height:var(--fx-h)!important;flex:0 0 var(--fx-h)!important}
 .console-body .section-rail .rail-cell.send{height:var(--send-h)!important;flex:0 0 var(--send-h)!important}
+
+/* PR278 P0: physical mixer fader travel is fixed across ROUTE and SEND folding.
+   The verified FX rack/section rail share a single flexible budget. */
+.console-body{
+ --p0-fader-h:clamp(148px,25.8vh,296px);
+ --p0-ink:#e2eef4;--p0-muted:#afc7d2;
+}
+@media(max-height:680px){.console-body{--p0-fader-h:clamp(138px,25vh,172px)}}
+.console-body .strip .fader-section,
+.console-body .section-rail > .rail-cell.fader{
+ flex:0 0 var(--p0-fader-h)!important;
+ height:var(--p0-fader-h)!important;
+ min-height:var(--p0-fader-h)!important;
+ max-height:var(--p0-fader-h)!important;
+}
+.console-body:not(.collapsed-fx) .strip .fx-section,
+.console-body:not(.collapsed-fx) .section-rail > .rail-cell.fx{
+ flex:1 1 0px!important;height:auto!important;
+ min-height:60px!important;max-height:none!important;
+}
+.console-body .strip .fx-section{overflow:hidden!important}
+.console-body .strip .fxslot-list{
+ flex:1 1 auto!important;min-height:0!important;
+ overflow-y:auto!important;scrollbar-width:thin;
+}
+.console-body.collapsed-fx .strip .fx-section,
+.console-body.collapsed-fx .section-rail > .rail-cell.fx{
+ flex:0 0 23px!important;height:23px!important;
+ min-height:23px!important;max-height:23px!important;
+}
+.console-body.collapsed-fx:not(.collapsed-send) .strip .send-section,
+.console-body.collapsed-fx:not(.collapsed-send) .section-rail > .rail-cell.send{
+ flex:1 1 0px!important;height:auto!important;
+ min-height:23px!important;max-height:none!important;
+}
+.console-body.collapsed-fx.collapsed-send .strip .fader-section,
+.console-body.collapsed-fx.collapsed-send .section-rail > .rail-cell.fader{
+ flex:1 1 0px!important;height:auto!important;max-height:none!important;
+}
+/* P0 readability: high-contrast, bounded operator labels and one tidy
+   panel language; preserve original mechanical fader, button and PAN art. */
+.console-body .strip .route-caption,
+.console-body .strip .pan-icon,
+.console-body .strip .subhead .hint{
+ color:var(--p0-muted)!important;font-weight:600!important;
+}
+.console-body .strip .route-select,
+.console-body .strip .send-select{
+ color:var(--p0-ink)!important;background-color:#0d222d!important;
+ border-color:#517585!important;font-size:10.5px!important;
+ font-weight:500!important;min-width:0!important;text-overflow:ellipsis;
+}
+.console-body .strip .fxslot-row{
+ min-width:0!important;border-bottom:1px solid #57708038!important;
+ background:linear-gradient(180deg,#20333e66,#13263266)!important;
+}
+.console-body .strip .fx-pick{
+ min-width:0!important;font-size:10.5px!important;
+ line-height:1.3!important;color:#e4ecf0!important;
+ text-overflow:ellipsis!important;
+}
+.console-body .strip .fx-pick.empty{color:#8bd9f1!important}
+.console-body .strip .send-compact,
+.console-body .strip .send-header .sendtag{
+ color:var(--p0-muted)!important;font-size:10px!important;
+}
+.console-body .strip .strip-identity-top .identity-name,
+.console-body .strip .footer-label .name{
+ min-width:0!important;overflow:hidden!important;
+ text-overflow:ellipsis!important;white-space:nowrap!important;
+}
+.console-body .section-rail > .rail-cell[data-section]:focus-visible,
+.console-body .strip :is(.route-select,.fx-pick,.send-select,.switch):focus-visible{
+ outline:2px solid #83d7e9!important;outline-offset:-2px!important;
+}
 </style>
 </head>
 <body>
@@ -2084,7 +2159,7 @@ document.querySelector('.section-rail').addEventListener('click',e=>{
  button.setAttribute('aria-expanded',String(!collapsed));
  button.setAttribute('aria-pressed',String(!collapsed));
  button.title=(collapsed?'Expand ':'Collapse ')+name.toUpperCase()+' section';
- say(name.toUpperCase()+(collapsed?' section collapsed':' section expanded')+' · channel grid stays aligned');
+ say(name.toUpperCase()+(collapsed?' section collapsed':' section expanded')+(name!=='fx'&&!body.classList.contains('collapsed-fx')?' · freed space belongs to FX rack; fader travel unchanged':' · channel grid stays aligned'));
 });
 document.getElementById('viewFilter').addEventListener('change',()=>{render();say('Channel display filtered: '+document.getElementById('viewFilter').value);});
 document.getElementById('mode').addEventListener('click',()=>{

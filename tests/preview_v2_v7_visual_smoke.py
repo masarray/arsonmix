@@ -57,7 +57,7 @@ def audit_geometry(page, title):
         if(viewport.scrollWidth>viewport.clientWidth+2)
             problems.push('horizontal scrollbar overflow');
         const fx=r(strips[0].querySelector('.fx-section')).height;
-        if(fx<104||fx>145)problems.push('FX rack not compact: '+fx);
+        if(fx<60||fx>620)problems.push('FX rack not compact: '+fx);
         const before=getComputedStyle(strips[0].querySelector('.fader-box'),'::before');
         if(!before.backgroundImage.includes('rgb(5, 11, 16)'))
             problems.push('deep graphite fader well material absent');
@@ -74,6 +74,60 @@ def audit_geometry(page, title):
         return [...new Set(problems)];
     }""")
     assert not problems, title + ":\n" + "\n".join(problems)
+
+
+
+def audit_p0_collapse(page, name):
+    """FX gains pixels on ROUTE/SEND collapse; physical fader stays still."""
+    data=page.evaluate("""() => {
+        const body=document.querySelector('.console-body');
+        const rail=document.querySelector('.section-rail');
+        const strips=[...document.querySelectorAll('#tracks .strip'),
+          document.querySelector('#master .strip')].filter(Boolean);
+        const read=()=>({
+          route:body.classList.contains('collapsed-route'),
+          send:body.classList.contains('collapsed-send'),
+          fx:body.classList.contains('collapsed-fx'),
+          cells:strips.map(s=>{
+            const box=selector=>s.querySelector(selector).getBoundingClientRect();
+            const fx=box('.fx-section'),fader=box('.fader-section');
+            return {fx:fx.height,fader:fader.height,top:fader.top,
+              route:box('.route-section').height,send:box('.send-section').height,
+              list:s.querySelector('.fxslot-list').clientHeight};
+          }),
+          railFx:rail.querySelector('.rail-cell.fx').getBoundingClientRect().height,
+          railFader:rail.querySelector('.rail-cell.fader').getBoundingClientRect().height});
+        const click=id=>rail.querySelector('[data-section="'+id+'"]').click();
+        const before=read();
+        click('route');const route=read();
+        click('route');const restoreRoute=read();
+        click('send');const sendOpen=read();
+        click('send');const restoreSend=read();
+        click('route');const bothHidden=read();
+        click('route');
+        return {before,route,restoreRoute,sendOpen,restoreSend,bothHidden};
+    }""")
+    base=data['before']
+    assert not base['route'] and base['send'] and not base['fx'],(name,'initial fold',data)
+    for key in ('route','restoreRoute','sendOpen','restoreSend','bothHidden'):
+        now=data[key]
+        assert len(now['cells'])==len(base['cells']),(name,key,'roster changed')
+        for i,(a,b) in enumerate(zip(base['cells'],now['cells'])):
+            assert abs(a['fader']-b['fader'])<1.5,(name,key,i,'fader resized',a,b)
+            assert abs(a['top']-b['top'])<1.5,(name,key,i,'fader jumped',a,b)
+            assert abs(now['railFx']-b['fx'])<1.5,(name,key,i,'FX rail not aligned')
+            assert abs(now['railFader']-b['fader'])<1.5,(name,key,i,'fader rail not aligned')
+    for i,(a,b) in enumerate(zip(base['cells'],data['route']['cells'])):
+        assert b['route']<a['route']-35,(name,i,'ROUTE did not collapse',a,b)
+        assert b['fx']>a['fx']+35,(name,i,'FX did not gain ROUTE pixels',a,b)
+        assert b['list']>a['list']+35,(name,i,'FX slots do not gain visibility',a,b)
+        assert data['bothHidden']['cells'][i]['fx']>a['fx']+35,(name,i,'combined collapse')
+        assert data['sendOpen']['cells'][i]['send']>a['send']+35,(name,i,'SEND not expanded')
+        assert data['sendOpen']['cells'][i]['fx']<a['fx']-35,(name,i,'FX not elastic')
+    for key in ('restoreRoute','restoreSend'):
+        assert abs(data[key]['cells'][0]['fx']-base['cells'][0]['fx'])<1.5,(
+            name,key,'FX failed to restore',data)
+    return data
 
 
 def main():
@@ -94,6 +148,11 @@ def main():
                 page.on("pageerror",lambda error: errors.append(str(error)))
                 page.goto(PAGE.as_uri())
                 audit_geometry(page,f"{width}x{height} default");count+=1
+                audit_p0_collapse(page,f"{width}x{height} P0");count+=1
+                if width==1366:
+                    page.locator('.section-rail [data-section="route"]').click()
+                    page.screenshot(path=str(ROOT / "preview-p0-fx-expanded-1366.png"))
+                    page.locator('.section-rail [data-section="route"]').click()
                 page.screenshot(path=str(ROOT / f"preview-v2-v7-{width}.png"))
                 # Single click must SELECT, not open the name/color popover.
                 page.locator('#tracks .strip-identity-top').first.click()
@@ -132,6 +191,7 @@ def main():
                 page.on("pageerror",lambda error: errors.append(str(error)))
                 page.goto(PUBLIC.as_uri())
                 audit_geometry(page,f"PUBLIC /preview/mixer.html {width}x{height}");count+=1
+                audit_p0_collapse(page,f"PUBLIC {width}x{height} P0");count+=1
                 page.screenshot(path=str(ROOT / f"preview-operator-{width}.png"))
                 assert page.locator('#tracks .strip').count()>0
                 assert page.get_by_text('SIMULATED METERS · NO REAL AUDIO').is_visible()
