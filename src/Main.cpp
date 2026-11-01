@@ -228,15 +228,17 @@ public:
                   if (browser_.loaded) emitNativeConsoleSnapshot(engine_.status());
               })
               .withEventListener ("arMixConsoleIntent", [this] (juce::var args) {
-                  // No native v6 mutation can be accepted while the installed
-                  // audio callback still owns fixed M4 lanes. Rejection
-                  // retains the existing VST3/Orbit/Show/MAIN output.
-                  auto status=engine_.status();
-                  const auto snap=armix::console::LiveConsoleBridgeV6::snapshot(status);
-                  const auto ack=consoleBridge_.rejectUnsupportedIntent(args,snap);
+                  // S1: actual installed JUCE production path, never a
+                  // dry-only C++ model or WebAudio replica. Only admitted
+                  // fixed-M4 SOURCE and RT controls can mutate sound; CH11,
+                  // GROUP/FX_RETURN remain rejected until one ChannelId
+                  // callback really owns them.
+                  const auto snapshot=armix::console::LiveConsoleBridgeV6::snapshot(engine_.status());
+                  const auto ack=consoleBridge_.processProductionIntent(
+                      args,snapshot,engine_);
                   if (browser_.loaded) {
                       browser_.emitEventIfBrowserIsVisible("arMixConsoleAck",ack);
-                      emitNativeConsoleSnapshot(status);
+                      emitNativeConsoleSnapshot(engine_.status());
                   }
               })
               .withResourceProvider (assetFor))

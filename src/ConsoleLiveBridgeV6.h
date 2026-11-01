@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <deque>
 #include <cmath>
+#include <string_view>
+#include <cmath>
 #include <limits>
 #include <string>
 #include <unordered_set>
@@ -35,6 +37,11 @@ public:
         w.epoch=actualEpoch.toStdString();
         w.legacyRoutingRevision=decimalFromNative(
             route.getProperty("revision",juce::var())).toStdString();
+        // This is the actual accepted fixed-M4 production revision, NOT
+        // fabricated universal ChannelIds or an offline graph revision.
+        // It fences the existing installed callback's SOURCE/RT controls.
+        if(static_cast<bool>(route.getProperty("ready",false)))
+            w.graphRevision=w.legacyRoutingRevision;
         w.legacyActive=static_cast<bool>(route.getProperty("active",false));
         w.legacyRouteAccepted=static_cast<bool>(route.getProperty("ready",false)) &&
             static_cast<bool>(route.getProperty("hasAcceptedRoute",false));
@@ -159,6 +166,129 @@ public:
         ack.errorCode=fault.toStdString();
         const auto bytes=PuzzleV8Wire::ack(ack);
         return juce::JSON::parse(juce::String::fromUTF8(bytes.c_str()));
+    }
+
+
+    // S1 production bridge: operate the ACTUALLY INSTALLED M4 graph through
+    // LiveAudioEngine. A Legacy M4 lane is addressed by decimal "1".."10"
+    // only for this explicit internal migration transport. This does NOT
+    // claim that callbackOwnsChannelIds, CH11, GROUP or FX_RETURN exist.
+    // The same native audio owner, plugin editor and Show remain installed.
+    template<class Engine>
+    juce::var processProductionIntent(const juce::var& intent,
+                                      const juce::var& acceptedSnapshot,
+                                      Engine& engine) {
+        const auto request=intent.getProperty("requestId",{});
+        const auto requestId=request.isString()?request.toString():juce::String{};
+        const auto bytes=requestId.toStdString();
+        const auto device=acceptedSnapshot.getProperty("device",{});
+        const auto graph=acceptedSnapshot.getProperty("graph",{});
+        const auto epoch=device.getProperty("epoch","0").toString();
+        const auto oldRev=graph.getProperty("revision","0").toString();
+        const auto oldRoster=graph.getProperty("rosterRevision","0").toString();
+        juce::String error;
+        bool accepted=false;
+        if(!armix::integration::validConsoleRequestId(bytes))error="INVALID_REQUEST_ID";
+        else if(completed_.find(bytes)!=completed_.end())error="DUPLICATE_REQUEST_ID";
+        else {
+            if(recentIds_.size()==maxRecentIds) {
+                completed_.erase(recentIds_.front());
+                recentIds_.pop_front();
+            }
+            recentIds_.push_back(bytes);
+            completed_.insert(bytes);
+            std::uint64_t ep=0,rev=0,roster=0,channelId=0;
+            const auto target=intent.getProperty("targetChannelId",{});
+            const auto payload=intent.getProperty("payload",{});
+            const auto operation=intent.getProperty("operation",{}).toString();
+            if(!decodeDecimal(intent.getProperty("deviceEpoch",{}),ep) ||
+               !decodeDecimal(intent.getProperty("baseGraphRevision",{}),rev) ||
+               !decodeDecimal(intent.getProperty("baseRosterRevision",{}),roster))
+                error="INVALID_DECIMAL_WIRE";
+            else if(intent.getProperty("deviceEpoch",{}).toString()!=epoch)
+                error="STALE_DEVICE_EPOCH";
+            else if(intent.getProperty("baseGraphRevision",{}).toString()!=oldRev ||
+                    intent.getProperty("baseRosterRevision",{}).toString()!=oldRoster)
+                error="STALE_GRAPH_REVISION";
+            else if(!target.isString() || !decodeDecimal(target,channelId) ||
+                    channelId<1 || channelId>10)
+                error="INVALID_LEGACY_CHANNEL_ID";
+            else if(!engine.dryRoutingLabActive() ||
+                    engine.dryRoutingLabEpoch()!=ep ||
+                    engine.dryRoutingLabRevision()!=rev)
+                error="PRODUCTION_GRAPH_NOT_ADMITTED";
+            else if(!payload.isObject())error="INVALID_PAYLOAD";
+            else {
+                const int lane=static_cast<int>(channelId-1);
+                if(operation=="SET_SOURCE") {
+                    const auto id=payload.getProperty("portId",{}).toString();
+                    int left=-1;
+                    if(parsePortId(id,"in:",left)) {
+                        const auto rightId=payload.getProperty("rightPortId",{}).toString();
+                        int right=-1;
+                        const auto format=payload.getProperty("sourceFormat","MONO").toString();
+                        if(format=="STEREO" && !parsePortId(rightId,"in:",right))
+                            error="INVALID_STEREO_RIGHT_PIN";
+                        else if(format!="MONO"&&format!="STEREO")
+                            error="INVALID_SOURCE_FORMAT";
+                        else error=engine.switchDryRoutingLabSource(
+                            lane,ep,rev,format,left,right);
+                    } else error="INVALID_PHYSICAL_INPUT_PORT";
+                    accepted=error.isEmpty();
+                } else if(operation=="SET_FADER"||operation=="SET_PAN"||
+                          operation=="SET_MUTE"||operation=="SET_SOLO") {
+                    const bool binary=operation=="SET_MUTE"||operation=="SET_SOLO";
+                    const auto value=payload.getProperty(binary?"value":"valueDb",{});
+                    juce::String key;
+                    float control=0.f;
+                    if(binary) {
+                        const auto b=payload.getProperty("value",{});
+                        const auto on=payload.getProperty("enabled",b);
+                        if(!on.isBool())error="INVALID_BOOLEAN_CONTROL";
+                        else control=static_cast<bool>(on)?1.f:0.f;
+                    } else {
+                        const auto number=payload.getProperty(
+                            operation=="SET_FADER"?"valueDb":"value",{});
+                        if(!number.isInt()&&!number.isDouble())
+                            error="INVALID_NUMERIC_CONTROL";
+                        else {
+                            const double v=static_cast<double>(number);
+                            if(!std::isfinite(v))error="NON_FINITE_CONTROL";
+                            else control=static_cast<float>(v);
+                        }
+                    }
+                    if(error.isEmpty()) {
+                        if(operation=="SET_FADER")key="faderDb";
+                        else if(operation=="SET_PAN")key="pan";
+                        else if(operation=="SET_MUTE")key="mute";
+                        else key="solo";
+                        accepted=engine.setDryRoutingLabParameter(
+                            lane,ep,rev,key,control);
+                        if(!accepted)error="NATIVE_CONTROL_REJECTED";
+                    }
+                } else error="UNSUPPORTED_UNIVERSAL_OPERATION";
+            }
+        }
+        const auto after=armix::console::LiveConsoleBridgeV6::snapshot(engine.status());
+        const auto afterGraph=after.getProperty("graph",{});
+        PuzzleV8Ack ack;
+        ack.requestId=bytes;
+        ack.status=accepted?"ACCEPTED":"REJECTED";
+        ack.deviceEpoch=after.getProperty("device",{}).getProperty("epoch",epoch).toString().toStdString();
+        ack.graphRevision=afterGraph.getProperty("revision",oldRev).toString().toStdString();
+        ack.rosterRevision=afterGraph.getProperty("rosterRevision",oldRoster).toString().toStdString();
+        ack.errorCode=error.toStdString();
+        const auto json=PuzzleV8Wire::ack(ack);
+        return juce::JSON::parse(juce::String::fromUTF8(json.c_str()));
+    }
+
+    static bool parsePortId(const juce::String& wire,const char* prefix,int& physical) {
+        if(!wire.startsWith(prefix))return false;
+        const auto text=wire.substring(static_cast<int>(std::char_traits<char>::length(prefix)));
+        std::uint64_t value=0;
+        if(!decodeDecimal(juce::var(text),value)||value>255)return false;
+        physical=static_cast<int>(value);
+        return true;
     }
 
     static bool decodeDecimal(const juce::var& raw,std::uint64_t& result) noexcept {
