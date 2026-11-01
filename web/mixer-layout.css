@@ -768,3 +768,7 @@
 @media(max-width:1250px){
  #app #mixer[data-io-mode="CONSOLE"]{padding-right:148px;scroll-padding-right:148px}
 }
+
+/* Engineering bank parity: the extra accepted MAIN output line belongs to
+   unified CONSOLE only, so legacy FX/ROUTE/SENDS fader rows remain aligned. */
+#app #mixer:not([data-io-mode="CONSOLE"]) #masterLeft .arMainOutSummary{display:none!important}
