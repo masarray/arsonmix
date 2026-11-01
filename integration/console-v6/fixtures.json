@@ -1,0 +1,353 @@
+{
+  "schema": "arsonmix.console-v6.puzzle.v1",
+  "provenance": "SYNTHETIC_CONTRACT_ONLY_NOT_HARDWARE",
+  "socketNames": {
+    "nativeToGui": "arMixConsoleSnapshot",
+    "guiToNative": "arMixConsoleIntent",
+    "nativeAck": "arMixConsoleAck",
+    "subscription": "arMixConsoleSubscribe"
+  },
+  "g0": {
+    "schemaVersion": 6,
+    "productionCallbackLive": false,
+    "device": {
+      "epoch": "69",
+      "backend": "WINDOWS AUDIO",
+      "captureDevice": "CABLE Output",
+      "playbackDevice": "Realtek",
+      "enabledInputs": [
+        0
+      ],
+      "enabledOutputs": [
+        0,
+        1
+      ],
+      "inputEndpoints": [
+        {
+          "id": "in:0",
+          "port": 0,
+          "callback": 0,
+          "label": "IN 1",
+          "active": true
+        }
+      ],
+      "outputEndpoints": [
+        {
+          "id": "out:0",
+          "port": 0,
+          "callback": 0,
+          "label": "OUT 1",
+          "active": true
+        },
+        {
+          "id": "out:1",
+          "port": 1,
+          "callback": 1,
+          "label": "OUT 2",
+          "active": true
+        }
+      ],
+      "sampleRate": 48000,
+      "bufferFrames": 480,
+      "outputArmed": false
+    },
+    "graph": {
+      "revision": "0",
+      "rosterRevision": "0",
+      "channels": [],
+      "destinations": [],
+      "capabilities": {
+        "callbackOwnsChannelIds": false,
+        "fullVendorFxMigration": false,
+        "showAndOutputParity": false,
+        "physicalCaptureMapped": false,
+        "dynamicChannels": false,
+        "groups": false,
+        "fxReturns": false,
+        "monitor": false,
+        "sendsOnFaders": false,
+        "supportedOps": []
+      }
+    },
+    "telemetry": {
+      "rawCapturePresent": false,
+      "mainPcmPresent": false,
+      "monitorPcmPresent": false,
+      "channelMeterRmsPeak": {}
+    }
+  },
+  "g2": {
+    "schemaVersion": 6,
+    "productionCallbackLive": true,
+    "device": {
+      "epoch": "69",
+      "backend": "ASIO",
+      "captureDevice": "Verified Interface",
+      "playbackDevice": "Verified Interface",
+      "enabledInputs": [
+        0,
+        1
+      ],
+      "enabledOutputs": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "inputEndpoints": [
+        {
+          "id": "in:0",
+          "port": 0,
+          "callback": 0,
+          "label": "Mic IN1",
+          "active": true
+        },
+        {
+          "id": "in:1",
+          "port": 1,
+          "callback": 1,
+          "label": "Mic IN2",
+          "active": true
+        }
+      ],
+      "outputEndpoints": [
+        {
+          "id": "out:0",
+          "port": 0,
+          "callback": 0,
+          "label": "OUT 1",
+          "active": true
+        },
+        {
+          "id": "out:1",
+          "port": 1,
+          "callback": 1,
+          "label": "OUT 2",
+          "active": true
+        },
+        {
+          "id": "out:2",
+          "port": 2,
+          "callback": 2,
+          "label": "OUT 3",
+          "active": true
+        },
+        {
+          "id": "out:3",
+          "port": 3,
+          "callback": 3,
+          "label": "OUT 4",
+          "active": true
+        }
+      ],
+      "sampleRate": 48000,
+      "bufferFrames": 128,
+      "outputArmed": true
+    },
+    "graph": {
+      "revision": "5",
+      "rosterRevision": "5",
+      "channels": [
+        {
+          "id": "7",
+          "name": "Vocal",
+          "role": "INPUT",
+          "processingFormat": "MONO",
+          "source": {
+            "portId": "in:0",
+            "physicalPins": [
+              0
+            ]
+          },
+          "primaryOutId": "100",
+          "inserts": [
+            {
+              "id": "500",
+              "name": "VST3 A",
+              "bypassed": false
+            }
+          ],
+          "sends": [
+            {
+              "id": "800",
+              "targetId": "101",
+              "tap": "POST",
+              "levelDb": -12
+            }
+          ],
+          "controls": {
+            "faderDb": 0,
+            "pan": 0,
+            "mute": false,
+            "solo": false
+          }
+        },
+        {
+          "id": "2",
+          "name": "Mic 2",
+          "role": "INPUT",
+          "processingFormat": "MONO",
+          "source": {
+            "portId": "in:1",
+            "physicalPins": [
+              1
+            ]
+          },
+          "primaryOutId": "100",
+          "inserts": [
+            {
+              "id": "501",
+              "name": "VST3 B",
+              "bypassed": false
+            }
+          ],
+          "sends": [],
+          "controls": {
+            "faderDb": 0,
+            "pan": 0,
+            "mute": false,
+            "solo": false
+          }
+        },
+        {
+          "id": "100",
+          "name": "Vocal Group",
+          "role": "GROUP",
+          "processingFormat": "STEREO",
+          "primaryOutId": "200",
+          "inserts": [],
+          "sends": [],
+          "controls": {
+            "faderDb": 0,
+            "pan": 0,
+            "mute": false,
+            "solo": false
+          }
+        },
+        {
+          "id": "101",
+          "name": "Wet FX Return",
+          "role": "FX_RETURN",
+          "processingFormat": "STEREO",
+          "primaryOutId": "200",
+          "inserts": [],
+          "sends": [],
+          "controls": {
+            "faderDb": 0,
+            "pan": 0,
+            "mute": false,
+            "solo": false
+          }
+        },
+        {
+          "id": "200",
+          "name": "MAIN",
+          "role": "MAIN",
+          "processingFormat": "STEREO",
+          "inserts": [],
+          "sends": [],
+          "controls": {
+            "faderDb": 0,
+            "pan": 0,
+            "mute": false,
+            "solo": false
+          }
+        },
+        {
+          "id": "201",
+          "name": "MONITOR",
+          "role": "MONITOR",
+          "processingFormat": "STEREO",
+          "inserts": [],
+          "sends": [],
+          "controls": {
+            "faderDb": 0,
+            "pan": 0,
+            "mute": false,
+            "solo": false
+          }
+        }
+      ],
+      "destinations": [
+        {
+          "id": "100",
+          "name": "Vocal Group",
+          "role": "GROUP"
+        },
+        {
+          "id": "101",
+          "name": "Wet FX Return",
+          "role": "FX_RETURN"
+        },
+        {
+          "id": "200",
+          "name": "MAIN",
+          "role": "MAIN"
+        },
+        {
+          "id": "201",
+          "name": "MONITOR",
+          "role": "MONITOR"
+        }
+      ],
+      "capabilities": {
+        "callbackOwnsChannelIds": true,
+        "fullVendorFxMigration": true,
+        "showAndOutputParity": true,
+        "physicalCaptureMapped": true,
+        "dynamicChannels": true,
+        "groups": true,
+        "fxReturns": true,
+        "monitor": true,
+        "sendsOnFaders": true,
+        "supportedOps": [
+          "SET_SOURCE",
+          "SET_PROCESSING_FORMAT",
+          "SET_PRIMARY_OUT",
+          "PICK_INSERT_FILE",
+          "SET_INSERT_BYPASS",
+          "OPEN_INSERT_EDITOR",
+          "MOVE_INSERT",
+          "ADD_SEND",
+          "SET_SEND_TAP",
+          "SET_SEND_LEVEL",
+          "SET_FADER",
+          "SET_PAN",
+          "SET_MUTE",
+          "SET_SOLO",
+          "CREATE_CHANNEL",
+          "CREATE_GROUP",
+          "CREATE_FX_RETURN"
+        ]
+      }
+    },
+    "telemetry": {
+      "rawCapturePresent": true,
+      "mainPcmPresent": true,
+      "monitorPcmPresent": true,
+      "channelMeterRmsPeak": {
+        "2": 0.23,
+        "7": 0.16
+      }
+    }
+  },
+  "intent": {
+    "requestId": "editor-session-91:1",
+    "deviceEpoch": "69",
+    "baseGraphRevision": "5",
+    "baseRosterRevision": "5",
+    "operation": "SET_SOURCE",
+    "targetChannelId": "7",
+    "payload": {
+      "portId": "in:1"
+    }
+  },
+  "ack": {
+    "requestId": "editor-session-91:1",
+    "deviceEpoch": "69",
+    "graphRevision": "6",
+    "rosterRevision": "5",
+    "status": "ACCEPTED",
+    "errorCode": ""
+  }
+}
