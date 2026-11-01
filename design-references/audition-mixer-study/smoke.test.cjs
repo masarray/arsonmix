@@ -353,5 +353,60 @@ check(strip(1).includes('value="-60"') && strip(1).includes('--fader-y:100%'),
  'Rendered cap follows the same bottom-of-well gain value after pointer drag');
 node('reset').dispatch('click');
 
+
+// V6 end-to-end channel identity and header physical-material contracts.
+node('reset').dispatch('click');
+check(html.includes('M14,17L9,12l5-5V17Z') && html.includes('M10,17V7l5,5l-5,5Z'),
+ 'Owner-provided solid SVG bank arrows are used unchanged');
+check(html.includes('class="tool btn-180') &&
+ html.includes('class="tool btn-180 bank-arrow"') &&
+ html.includes('class="tool btn-180" id="sofToggle"'),
+ 'Main header interactions use the shared historical BTN-180 material');
+check(html.includes('--b180-off:var(--am-crystal)') &&
+ html.includes('--am-crystal:#e7eff0') &&
+ html.includes('box-shadow:var(--b180-shadow-surface)'),
+ 'Crystal-plastic button whitened slightly while retaining original seven-layer surface');
+check(html.includes('.command-bar>*,.command-bar>label,.command-bar>.sep') &&
+ html.includes('align-self:center!important') && html.includes('min-height:29px!important'),
+ 'Header labels, arrows, selectors and button caps align vertically to common centerline');
+check(html.includes('--identity-h:29px') &&
+ html.includes('.rail-cell.identity') &&
+ html.includes('.strip-identity-top') &&
+ html.includes('.footer-label .footer-icon'),
+ 'Channel top/bottom identity banners and rail use matching height and color tokens');
+check(html.includes('const CHANNEL_ICONS=') &&
+ html.includes('const CHANNEL_PALETTE=') &&
+ html.includes("['♩','♫','♬','🎙','🎸','🎹','🥁','🎧','▥','◉','◎','⊞']"),
+ 'Original legacy GUI 12 channel icons and original color palette are reused');
+check(strip(1).includes('class="strip-identity-top"') &&
+ strip(1).includes('class="identity-symbol"') &&
+ strip(1).includes('class="footer-icon"') &&
+ strip(1).includes('--ch:#1699cd'),
+ 'Host channel top/bottom matches cyan identity and microphone icon');
+check(node('master').innerHTML.includes('class="strip-identity-top"') &&
+ node('master').innerHTML.includes('class="footer-icon"') &&
+ node('master').innerHTML.includes('--ch:#a04b65'),
+ 'Pinned Master has same top/bottom identity hierarchy in rose metal');
+node('bankSelect').value='1';node('bankSelect').dispatch('change');
+const editBus={dataset:{action:'editIdentity'},closest:k=>k==='.strip'?{dataset:{id:11}}:null};
+node('body').handlers.click({target:{closest:k=>k==='[data-action]'?editBus:null}});
+check(node('channelIdentity').hidden===false &&
+ node('identityName').value==='Bus A' &&
+ node('identityIcons').innerHTML.includes('data-identity-icon="🎹"'),
+ 'Clicking channel identity opens editable legacy name/icon/color palette');
+node('identityColors').handlers.click({target:{closest:k=>k==='[data-identity-color]'?{dataset:{identityColor:'#c32974'}}:null}});
+node('identityIcons').handlers.click({target:{closest:k=>k==='[data-identity-icon]'?{dataset:{identityIcon:'🎹'}}:null}});
+node('identityName').value='Vocal Bus';
+node('identitySave').dispatch('click');
+check(node('channelIdentity').hidden===true &&
+ node('tracks').innerHTML.includes('Vocal Bus') &&
+ node('tracks').innerHTML.includes('--ch:#c32974') &&
+ node('tracks').innerHTML.includes('🎹'),
+ 'Applying identity updates BOTH nameplates, icon and original legacy color');
+node('bankSelect').value='0';node('bankSelect').dispatch('change');
+check(strip(1).includes('<option value="Vocal Bus" selected>'),
+ 'Renaming Bus A preserves live routing in existing Host send');
+node('reset').dispatch('click');
+
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
