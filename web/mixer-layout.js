@@ -1262,7 +1262,7 @@
       const newName=input.value.trim();
       input.replaceWith(nameNode);
       if(commit&&newName&&newName.length<=40&&newName!==ch.name&&
-         !/[\\x00-\\x1f\\x7f]/.test(newName))
+         !Array.from(newName).some(c=>c.charCodeAt(0)<32||c.charCodeAt(0)===127))
         sendIntent('RENAME_CHANNEL',id,{name:newName});
     };
     input.addEventListener('keydown',event=>{
