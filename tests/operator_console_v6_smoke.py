@@ -146,6 +146,32 @@ async def main():
         await page.locator("#arV6Console").wait_for(state="visible")
         assert await page.locator("#arV6Lanes .arV6Strip").count() == 12
         assert await page.locator("#arV6Main .arV6Master").count() == 1
+        # The device drawer contains ONLY native-verified physical endpoints,
+        # and never emits a command or invents a physical signal.
+        await page.get_by_role("button", name="Verified native audio device inventory").click()
+        device=page.locator("#arV6DevicePanel")
+        assert await device.is_visible()
+        assert "TEST IN" in await device.inner_text()
+        assert "IN1" in await device.inner_text() and "IN2" in await device.inner_text()
+        assert "OUT1" in await device.inner_text() and "OUT2" in await device.inner_text()
+        assert "Read-only" in await device.inner_text()
+        await page.get_by_role("button",name="Close native device inventory").click()
+        assert await page.locator('[data-op="SET_PRIMARY_OUT"][data-id="7"] option[value="out:0"]').count()==0
+        assert await page.locator('[data-op="SET_PRIMARY_OUT"][data-id="1000"] option[value="out:0"]').count()==1
+        assert await page.locator('[data-op="SET_PRIMARY_OUT"][data-id="1000"] option[value="out:1"]').count()==1
+        # MAIN can request the verified render pin via the same native socket;
+        # a browser selecting it does not arm hardware or change PCM.
+        await page.locator('[data-op="SET_PRIMARY_OUT"][data-id="1000"]').select_option("out:0")
+        main_intent=await page.evaluate("""()=>window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').at(-1).payload""")
+        assert main_intent["operation"]=="SET_PRIMARY_OUT"
+        assert main_intent["targetChannelId"]=="1000"
+        assert main_intent["payload"]=={"destinationId":"out:0"}
+        assert await page.locator('[data-op="SET_PRIMARY_OUT"][data-id="1000"]').input_value()==""
+        await page.evaluate("""id=>window.__v6Test.publish('arMixConsoleAck',
+          {requestId:id,status:'REJECTED',deviceEpoch:'7',graphRevision:'3',
+          rosterRevision:'3',errorCode:'OUTPUT_NOT_ARMED'})""",main_intent["requestId"])
+        assert await page.locator('[data-op="SET_PRIMARY_OUT"][data-id="1000"]').input_value()==""
         assert await page.locator('[data-meter-id="1000"] .arV6MeterLane').count() == 2
         assert await page.locator('[data-meter-id="7"][data-format="MONO"] .arV6MeterLane').count() == 2
         # L/R ladder must never mirror a single maximum to both sides.
@@ -418,6 +444,66 @@ async def main():
         await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)", snapshot(revision=4))
         await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)", snapshot(revision=99,epoch=6))
         assert await page.locator("#arV6Lanes .arV6Strip").count() == 13
+
+        # Same device epoch cannot silently remap active pin masks or clock.
+        # A new native epoch can legitimately publish a ONE-PIN interface.
+        bad_clock=snapshot(revision=6,new_channel=True)
+        bad_clock["device"]["sampleRate"]=96000
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)", bad_clock)
+        assert "REJECTED DEVICE READBACK" in await page.locator(".arV6Message").inner_text()
+        assert "48000 Hz" in await page.locator(".arV6Device").inner_text()
+        one_pin=snapshot(revision=6,epoch=8,new_channel=True)
+        one_pin["device"]["enabledInputs"]=[0]
+        one_pin["device"]["inputEndpoints"]=one_pin["device"]["inputEndpoints"][:1]
+        one_pin["device"]["enabledOutputs"]=[0]
+        one_pin["device"]["outputEndpoints"]=one_pin["device"]["outputEndpoints"][:1]
+        one_pin["graph"]["channels"][1]["source"]=None
+        one_pin["graph"]["channels"][-1]["primaryOutId"]="out:0"
+        # The positive browser-host catalog is TEST ONLY. ENGINE must supply
+        # this exact native-scanned field for any production VST3 availability.
+        one_pin["graph"]["capabilities"]["supportedOps"]=OPS+["ADD_INSERT"]
+        one_pin["catalog"]={"plugins":[
+          {"id":"native:hall-reverb","name":"Hall Reverb","vendor":"Verified Vendor",
+           "category":"Reverb"},
+          {"id":"native:parametric-eq","name":"Parametric EQ","vendor":"Verified Vendor",
+           "category":"EQ"}]}
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",one_pin)
+        assert await page.locator('[data-op="SET_SOURCE"][data-id="7"] option[value="in:1"]').count()==0
+        assert await page.locator('[data-op="SET_SOURCE"][data-id="7"] option[value="in:0"]').count()==1
+        assert await page.locator('[data-op="SET_PRIMARY_OUT"][data-id="1000"] option[value="out:1"]').count()==0
+        assert await page.locator('[data-op="SET_PRIMARY_OUT"][data-id="1000"]').input_value()=="out:0"
+        await page.get_by_role("button",name="Verified native audio device inventory").click()
+        assert "NO VERIFIED ACTIVE PIN" not in await device.inner_text()
+        assert "IN2" not in await device.inner_text()
+        assert "OUT2" not in await device.inner_text()
+        await page.get_by_role("button",name="Close native device inventory").click()
+
+        # F8 searches ONLY the native catalog and adds through one typed intent.
+        # An epoch change clears prior selection; one native ChannelId is required.
+        assert await page.locator(".arV6SelectionCount").inner_text()=="0 SEL"
+        await page.keyboard.press("F8")
+        manager=page.locator("#arV6PluginPanel")
+        assert await manager.is_visible()
+        assert "Select exactly ONE" in await manager.inner_text()
+        await page.locator("#arV6PluginPanel .arV6PluginSearch").fill("hall")
+        assert await manager.locator("button[data-plugin-id]").count()==1
+        assert await manager.locator("button[data-plugin-id]").first.is_disabled()
+        await page.locator('[data-channel-id="7"] .arV6StripHead').click()
+        assert await manager.locator("button[data-plugin-id]").first.is_enabled()
+        count_fx=await page.locator('[data-channel-id="7"] .arV6FxSlot').count()
+        await manager.locator('button[data-plugin-id="native:hall-reverb"]').click()
+        load=await page.evaluate("""()=>window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').at(-1).payload""")
+        assert load["operation"]=="ADD_INSERT"
+        assert load["targetChannelId"]=="7" and load["deviceEpoch"]=="8"
+        assert load["payload"]=={"pluginId":"native:hall-reverb"}
+        assert await page.locator('[data-channel-id="7"] .arV6FxSlot').count()==count_fx
+        assert await manager.is_hidden()
+        await page.evaluate("""id=>window.__v6Test.publish('arMixConsoleAck',
+          {requestId:id,status:'REJECTED',deviceEpoch:'8',graphRevision:'6',
+          rosterRevision:'6',errorCode:'PLUGIN_LOAD_FAILED'})""",load["requestId"])
+        assert await page.locator('[data-channel-id="7"] .arV6FxSlot').count()==count_fx
+        assert "PLUGIN_LOAD_FAILED" in await page.locator(".arV6Message").inner_text()
 
         # 4 desktop widths and 3 heights: meter/fader zones aligned, MAIN pinned.
         for width in (1024, 1366, 1440, 1680):
