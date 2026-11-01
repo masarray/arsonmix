@@ -27,7 +27,7 @@ test('MS3A MAIN physical output patch stages through existing muted native route
   assert.match(gui,/__arMixStageMainOutputs/);
   assert.match(gui,/\.arIOMainOutput/);
   assert.match(gui,/Selection is DRAFT until native APPLY\/ACK/);
-  assert.match(gui,/internal stereo FX returns/);
+  assert.match(gui,/AUX1–4 are internal FX returns/);
   assert.match(monitor,/window\.__arMixStageMainOutputs/);
   assert.match(monitor,/mainOutputs:draftMainOutputs/);
   assert.match(monitor,/routingDryApply/);
@@ -188,7 +188,7 @@ test('PATCH1 operator-first mono and nonadjacent stereo stage into ONE native tr
   assert.match(gui,/window\.__arMixOpenAudioIO=openIO/);
   assert.match(gui,/if\(b\.dataset\.mixPatch==='input'\)openIO\('inputs',channel\)/);
   assert.match(gui,/matrixPorts\(s,'inputs'\)/);
-  assert.match(gui,/SAME NATIVE ROUTING/);
+  assert.match(gui,/ADVANCED · MANUAL INPUT CROSSPOINTS/);
   assert.match(gui,/A separate Windows capture endpoints cannot be silently combined|Separate Windows capture endpoints cannot be silently combined/);
   assert.match(css,/\.arIOQuickPatch\{/);
   assert.match(css,/\.arIOQuickRow\[data-state="draft"\]/);
