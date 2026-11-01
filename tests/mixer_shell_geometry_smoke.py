@@ -113,4 +113,10 @@ async def main():
         print("PASS: 11 shared fader tracks, 4 viewport sizes, 3 banks, rail navigation and repaint")
 
 if __name__=="__main__":
-    asyncio.run(main())
+    # Execute the v8 native-producer fixture replay through real Chromium
+    # within this existing GUI smoke job; no second workflow/CI matrix.
+    from operator_console_v6_smoke import main as native_console_smoke
+    async def run_gui_suite():
+        await main()
+        await native_console_smoke()
+    asyncio.run(run_gui_suite())
