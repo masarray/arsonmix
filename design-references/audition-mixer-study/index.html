@@ -2149,25 +2149,32 @@ function refreshWireRoutingNodes(){
 function renderWireRouting(){
  const svg=document.getElementById('wireLayer'),viewport=document.getElementById('viewport');
  const source=tracks.find(t=>t.id===wireSourceId&&t.kind==='audio');
- const legend=document.getElementById('wireLegend');
- if(legend)legend.textContent=source?'WIRE · '+source.name+' ⇢ '+splitFanout(source)+' targets · click destination △':'WIRE · select audio channel';
+ const legend=document.getElementById('wireLegend'),main=document.getElementById('wireMaster');
+ if(legend)legend.textContent=source?'CH'+String(source.id).padStart(2,'0')+' ⇢ '+wireOutgoingCount(source.id)+' targets · routing is a demo':'Select source · click destination arrows';
+ if(main&&source){
+  const direct=source.output!=='SOURCE ONLY (No Main)';
+  main.textContent=direct?'MAIN ON':'MAIN OFF';main.setAttribute('aria-pressed',String(direct));
+  main.title='Direct source output: '+source.output+' · click to toggle Main only when currently mapped to Main or Source Only';
+ }
  if(!svg||!viewport||!source)return;
- const vp=viewport.getBoundingClientRect?.(),sourceEl=viewport.querySelector?.('.strip[data-id="'+source.id+'"] .wire-socket');
- const from=sourceEl?.getBoundingClientRect?.();
+ const vp=viewport.getBoundingClientRect?.(),fromEl=viewport.querySelector?.('.strip[data-id="'+source.id+'"] .wire-socket');
+ const from=fromEl?.getBoundingClientRect?.();
  if(!vp||!from||!vp.width||!vp.height){svg.innerHTML='';return;}
  svg.setAttribute('viewBox','0 0 '+vp.width+' '+vp.height);
- const startX=from.left-vp.left+from.width/2,startY=from.top-vp.top+from.height*.65;
+ const x0=from.left-vp.left+from.width/2,y0=from.top-vp.top+from.height*.5;
  const paths=[];
- for(const dest of tracks){
-  if(dest.kind!=='audio'||dest.id===source.id||parseSplitSource(dest.input)?.sourceId!==source.id)continue;
+ for(const edge of outgoingWires(source.id)){
+  const dest=tracks.find(t=>t.id===edge.destId);
+  if(!dest)continue;
   const el=viewport.querySelector?.('.strip[data-id="'+dest.id+'"] .wire-socket');
   const rect=el?.getBoundingClientRect?.();
-  if(!rect)continue;
-  const endX=rect.left-vp.left+rect.width/2,endY=rect.top-vp.top+rect.height*.65;
-  const bend=Math.max(11,Math.min(19,Math.abs(endX-startX)*.10));
-  const d='M '+startX.toFixed(2)+' '+startY.toFixed(2)+' C '+startX.toFixed(2)+' '+(startY-bend).toFixed(2)+', '+endX.toFixed(2)+' '+(endY-bend).toFixed(2)+', '+endX.toFixed(2)+' '+endY.toFixed(2);
-  paths.push('<path d="'+d+'" stroke="#163b2b" stroke-width="5.5" opacity=".72" fill="none" stroke-linecap="round"/>'+
-   '<path d="'+d+'" stroke="#8de97c" stroke-width="2" opacity=".96" fill="none" stroke-linecap="round"/>');
+  if(!rect)continue; // off-bank links preserved; never draw cable to invisible slot
+  const x1=rect.left-vp.left+rect.width/2,y1=rect.top-vp.top+rect.height*.5;
+  const bend=Math.min(17,Math.max(9,Math.abs(x1-x0)*.04));
+  const d='M '+x0.toFixed(1)+' '+y0.toFixed(1)+' C '+x0.toFixed(1)+' '+(y0-bend).toFixed(1)+', '+x1.toFixed(1)+' '+(y1-bend).toFixed(1)+', '+x1.toFixed(1)+' '+y1.toFixed(1);
+  const color=edge.mode==='split'?'#9bd7fa':'#a6f095';
+  paths.push('<path d="'+d+'" stroke="#071d1b" stroke-width="6" opacity=".85" fill="none" stroke-linecap="round"/>'+
+   '<path d="'+d+'" stroke="'+color+'" stroke-width="1.8" opacity=".94" fill="none" stroke-linecap="round"/>');
  }
  svg.innerHTML=paths.join('');
 }
@@ -2220,7 +2227,7 @@ function refreshScenes(){
 }
 function saveScene(){
  const name='Scene '+(scenes.length+1);
- scenes.push({name,nextId,nextGroup,tracks:clone(tracks),master:clone(master),filter:document.getElementById('viewFilter').value,narrow:document.querySelector('.console-body').classList.contains('narrow'),density:document.querySelector('.console-body').dataset.density||'comfort'});
+ scenes.push({name,nextId,nextGroup,wireEdges:clone(wireEdges),nextWireId,wireMode,wireSourceId,tracks:clone(tracks),master:clone(master),filter:document.getElementById('viewFilter').value,narrow:document.querySelector('.console-body').classList.contains('narrow'),density:document.querySelector('.console-body').dataset.density||'comfort'});
  refreshScenes();document.getElementById('sceneSelect').value=String(scenes.length-1);
  say('Scene saved: '+scenes[scenes.length-1].name+' · local reference session only');
 }
@@ -2231,6 +2238,7 @@ function recallScene(){
  const scene=scenes[Number(value)];if(!scene)return;
  const protectedChannels=new Map(tracks.concat(master).filter(t=>t.safe).map(t=>[t.id,clone(t)]));
  nextId=scene.nextId;nextGroup=scene.nextGroup;tracks=clone(scene.tracks);master=clone(scene.master);
+ wireEdges=clone(scene.wireEdges||[]);nextWireId=scene.nextWireId||1;wireMode=scene.wireMode||'send';wireSourceId=scene.wireSourceId||1;document.getElementById('wireMode').value=wireMode;
  tracks=tracks.map(t=>protectedChannels.get(t.id)||t);
  for(const [id,t] of protectedChannels){if(t.kind!=='master'&&!tracks.some(ch=>ch.id===id))tracks.push(t);}
  if(protectedChannels.has(master.id))master=protectedChannels.get(master.id);
@@ -2253,6 +2261,14 @@ function ungroupSelected(){
 function handleField(event){
  const el=event.target,field=el.dataset.field;if(!field)return;
  const t=findTrack(el);if(!t)return;
+ if(field==='wireGain'){
+  const edge=wireEdges.find(x=>x.id===Number(el.dataset.wireId)&&x.destId===t.id);
+  if(!edge){say('WIRE gain rejected: stale connection');return;}
+  edge.levelDb=Math.max(-60,Math.min(6,Math.round(Number(el.value)||0)));
+  if(el.style?.setProperty)el.style.setProperty('--wire-pct',wireGainPercent(edge.levelDb)+'%');
+  if(event.type==='change')say('WIRE '+tracks.find(x=>x.id===edge.sourceId)?.name+' → '+t.name+' · '+wireDbText(edge.levelDb)+' · GUI DEMO ONLY');
+  return;
+ }
  if(field==='fx'){t.fx[Number(el.dataset.slot)]=el.value;t.slotBypass[Number(el.dataset.slot)]=false;say(t.name+' · FX '+(Number(el.dataset.slot)+1)+': '+el.value);refreshStrip(t);}
  else if(field==='level'){
  if(sofEnabled&&t.kind==='audio'){
@@ -2346,26 +2362,11 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  const btn=e.target.closest('[data-action]');if(!btn)return;
  const t=findTrack(btn);if(!t)return;
  const a=btn.dataset.action;
- if(a==='wireRoute'){
+ if(a==='wireRoute'||a==='wireRemove'){
   const source=tracks.find(x=>x.id===wireSourceId&&x.kind==='audio');
-  if(!source||t.kind!=='audio'||t.id===source.id){say('Choose an audio source and a different destination');return;}
-  const link=parseSplitSource(t.input);
-  if(link?.sourceId===source.id){
-   t.input='None';
-   render();say('WIRE disconnected: '+source.name+' → '+t.name+' · GUI DEMO ONLY');
-   return;
-  }
-  if(t.input!=='None'){
-   say('WIRE not changed: '+t.name+' already has '+t.input+' · use advanced IN selector to replace it');
-   return;
-  }
-  if(splitWouldCycle(t,source.id)){
-   say('WIRE rejected: circular graph or missing channel');return;
-  }
-  t.input=splitSourceLabel(source.id,'PRE');
-  render();
-  say('WIRE linked '+source.name+' → '+t.name+' (PRE INSERT) · GUI DEMO ONLY · native audio not connected');
-  return;
+  if(!source||t.kind==='master'||t.id===source.id){say('Select one source and another destination');return;}
+  if(a==='wireRemove'){const edge=wireFor(source.id,t.id);if(!edge)return;wireEdges=wireEdges.filter(x=>x.id!==edge.id);render();say('WIRE disconnected '+source.name+' → '+t.name+' · GUI DEMO ONLY');return;}
+  wireConnect(source,t);return;
  }
  if(a==='rename'||a==='editIdentity')return; // double-click edits; single-click selects
  if(a==='format'&&t.kind==='audio'){t.format=t.format==='mono'?'stereo':'mono';refreshStrip(t);say(t.name+' processing → '+t.format.toUpperCase()+' · physical source '+t.input+' unchanged (reference only)');return;}
@@ -2417,7 +2418,7 @@ document.querySelector('.console-body').addEventListener('drop',e=>{
  }
 });
 document.querySelector('.console-body').addEventListener('mousedown',e=>{
- if(e.target.closest?.('[data-action="wireRoute"]'))return; // do not change selected SOURCE when clicking a destination socket
+ if(e.target.closest?.('.wire-tray'))return; // socket, unlink and gain must NOT replace selected source
  const t=findTrack(e.target);if(t)selectTrack(t,e.ctrlKey||e.metaKey||e.shiftKey);
 });
 document.querySelector('.section-rail').addEventListener('click',e=>{
@@ -2461,6 +2462,20 @@ document.getElementById('bankNext').addEventListener('click',()=>{
  const sel=document.getElementById('bankSelect'),n=visibleBankCount();
  if(!n){sel.value='all';render();say('No channels available in the active layer');return;}
  const old=Number(sel.value)||0;sel.value=String((old+1)%n);render();say('Next fader bank');
+});
+document.getElementById('wireMode').addEventListener('change',()=>{
+ const selected=document.getElementById('wireMode').value;
+ wireMode=selected==='split'?'split':'send';
+ say('WIRE MODE '+(wireMode==='send'?'FOLLOW FADER (FL-style send)':'INDEPENDENT (pre-insert mult)')+' · new edges only · GUI DEMO');
+});
+document.getElementById('wireMaster').addEventListener('click',()=>{
+ const t=tracks.find(x=>x.id===wireSourceId&&x.kind==='audio');
+ if(!t)return;
+ if(t.output!=='Master'&&t.output!=='SOURCE ONLY (No Main)'){
+  say('MAIN link not changed: '+t.name+' primary OUT is '+t.output+' · change OUT explicitly');return;
+ }
+ t.output=t.output==='Master'?'SOURCE ONLY (No Main)':'Master';
+ render();say(t.name+(t.output==='Master'?' direct MAIN enabled':' direct MAIN disconnected')+' · wire feeds unchanged · DEMO ONLY');
 });
 document.getElementById('sofToggle').addEventListener('click',()=>toggleSof());
 document.getElementById('sofTarget').addEventListener('change',()=>{sofTarget=document.getElementById('sofTarget').value;render();say('Sends target: '+sofTarget);});
