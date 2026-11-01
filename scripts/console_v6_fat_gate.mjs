@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {resolve,join} from 'node:path';
 import {pathToFileURL} from 'node:url';
-export const TRACE_SCHEMA='arsonmix.console-v6.acceptance-trace.v1';
+export const TRACE_SCHEMA='arsonmix.console-v6.acceptance-trace.v2';
 const fail=s=>{throw Error(s)};
 const must=(ok,s)=>{if(!ok)fail(s)};
 const json=p=>JSON.parse(readFileSync(p,'utf8'));
@@ -14,68 +14,137 @@ const is64=s=>/^[0-9a-f]{64}$/.test(s||'');
 const sample=(v,label)=>{must(Array.isArray(v)&&v.length>=4&&v.length<=65536,label+': bounded PCM sample array required');must(v.every(x=>typeof x==='number'&&Number.isFinite(x)&&Math.abs(x)<=8),label+': nonfinite/invalid PCM');return v};
 const compare=(a,b,label)=>{must(a.length===b.length&&a.every((x,i)=>Math.abs(x-b[i])<=1e-5),label+': PCM mismatch')};
 const audible=(a,label)=>must(a.reduce((s,x)=>s+x*x,0)/a.length>1e-9,label+': silent PCM cannot prove routing');
-function checkSnapshot(s){
- must(s?.device&&s.graph&&typeof s.device.epoch==='string'&&s.device.epoch.length>0,'snapshot: native device epoch missing');
- must(Number.isSafeInteger(s.graph.revision)&&s.graph.revision>=0,'snapshot: accepted revision missing');
- must(typeof s.device.outputArmed==='boolean','snapshot: actual outputArmed missing');
- must(Array.isArray(s.graph.channels)&&s.graph.capabilities,'snapshot: channels/capabilities missing');
+// G0 wire gate: actual WebView event envelopes, no parallel legacy trace shape.
+// This validator checks claimed evidence structure, not producer authenticity.
+const UINT64_MAX=18446744073709551615n;
+function u64(v,where,positive=false){
+ must(typeof v==='string'&&/^(0|[1-9][0-9]*)$/.test(v),
+   where+': canonical decimal-string uint64 required');
+ const n=BigInt(v);
+ must(n<=UINT64_MAX&&(!positive||n>0n),where+': uint64 overflow/zero');
+ return n;
+}
+function snapshot(s){
+ must(s?.schemaVersion===6&&typeof s.productionCallbackLive==='boolean',
+   'snapshot: schema v6 and explicit production callback state required');
+ must(s.device&&s.graph&&s.telemetry,'snapshot: device/graph/telemetry required');
+ u64(s.device.epoch,'device epoch',true);
+ u64(s.graph.revision,'graph revision');
+ u64(s.graph.rosterRevision,'roster revision');
+ must(typeof s.device.outputArmed==='boolean','snapshot: outputArmed required');
+ for(const k of ['enabledInputs','enabledOutputs','inputEndpoints','outputEndpoints'])
+   must(Array.isArray(s.device[k]),'snapshot: native '+k+' inventory missing');
+ for(const k of ['enabledInputs','enabledOutputs']){
+   const a=s.device[k];
+   must(a.every(x=>Number.isSafeInteger(x)&&x>=0&&x<=255)&&
+     new Set(a).size===a.length,'snapshot: invalid physical '+k);
+ }
+ const g=s.graph,c=g.capabilities;
+ must(Array.isArray(g.channels)&&Array.isArray(g.destinations)&&c&&
+   typeof c.callbackOwnsChannelIds==='boolean'&&Array.isArray(c.supportedOps),
+   'snapshot: native channels/destinations/capability/supportedOps missing');
+ must(c.supportedOps.every(x=>typeof x==='string')&&
+   new Set(c.supportedOps).size===c.supportedOps.length,'snapshot: invalid supportedOps');
+ if(s.productionCallbackLive)must(c.callbackOwnsChannelIds===true,
+   'snapshot: LIVE without installed native callback');
+ if(!s.productionCallbackLive)must(!s.device.outputArmed,
+   'snapshot: offline v6 readback cannot ARM physical output');
  const ids=new Set();
- for(const c of s.graph.channels){
-   must(typeof c.id==='string'&&/^(0|[1-9][0-9]*)$/.test(c.id)&&BigInt(c.id)<=18446744073709551615n,'snapshot: ChannelId must be decimal uint64 string');
-   must(!ids.has(c.id),'snapshot: duplicate ChannelId');ids.add(c.id);
-   must(['INPUT','GROUP','FX_RETURN','MONITOR','MAIN'].includes(c.role),'snapshot: unknown role');
-   if(c.role==='GROUP')must(s.graph.capabilities.groups===true,'snapshot: GROUP without native capability');
-   if(c.role==='FX_RETURN')must(s.graph.capabilities.fxReturns===true,'snapshot: FX RETURN without native capability');
-   if(c.role==='MONITOR')must(s.graph.capabilities.monitor===true,'snapshot: MONITOR without native capability');
+ for(const x of g.channels){
+   u64(x?.id,'ChannelId',true);
+   must(!ids.has(x.id),'snapshot: duplicate ChannelId');ids.add(x.id);
+   must(['INPUT','MAIN','MONITOR','GROUP','FX_RETURN'].includes(x.role),
+     'snapshot: invalid channel role');
+   if(x.role==='GROUP')must(c.groups===true,'GROUP without native capability');
+   if(x.role==='FX_RETURN')must(c.fxReturns===true,'FX Return without native capability');
+   if(x.role==='MONITOR')must(c.monitor===true,'MONITOR without native capability');
+   const pins=x.source?.physicalPins;
+   if(pins!==undefined){
+     must(Array.isArray(pins)&&(pins.length===1||pins.length===2),
+       'snapshot: invalid mono/stereo pin count');
+     must(pins.every(p=>s.device.enabledInputs.includes(p)),
+       'snapshot: source outside enabled native pins');
+     if(pins.length===2)must(pins[0]!==pins[1],
+       'snapshot: duplicate L/R physical stereo pin');
+   }
  }
  return s;
 }
 export function checkTrace(t){
- must(t?.schema===TRACE_SCHEMA&&Array.isArray(t.events)&&t.events.length>=3,'trace schema/events missing');
- let current=null,pending=null,awaiting=null,accepts=0,rejects=0;
- const requestIds=new Set();
+ must(t?.schema===TRACE_SCHEMA&&Array.isArray(t.events)&&t.events.length>=7,
+   'trace v2 must use native WebView event envelopes');
+ must(['SYNTHETIC','NATIVE_JUCE'].includes(t.provenance?.kind),
+   'trace: synthetic/native provenance declaration required');
+ if(t.provenance.kind==='NATIVE_JUCE')must(is40(t.provenance.sourceSha)&&
+   t.provenance.producer==='JUCE_WEBVIEW','native provenance requires exact SHA and producer');
+ let state=null,pending=null,previousAck=null,accepted=0,rejected=0;
+ const ids=new Set();
  for(const [i,e] of t.events.entries()){
-  const tag='event '+i;
-  must(['snapshot','intent','ack'].includes(e?.type),tag+': invalid event');
-  if(e.type==='snapshot'){
-    const s=checkSnapshot(e);
-    if(!current){must(i===0,'first event must be full accepted snapshot');current=s;continue}
-    must(awaiting,tag+': unsolicited accepted graph');
-    if(awaiting.status==='ACCEPTED'){
-      must(s.device.epoch===current.device.epoch,tag+': device epoch unexpectedly changed');
-      must(s.graph.revision===awaiting.newRevision,tag+': ACK needs exact full accepted snapshot');
-    }else{
-      must(s.device.epoch===current.device.epoch&&JSON.stringify(s.graph)===JSON.stringify(current.graph),tag+': rejected command changed accepted graph');
-      must(s.device.outputArmed===current.device.outputArmed,tag+': rejected command changed output ARM');
-    }
-    current=s;awaiting=null;continue;
-  }
-  must(current&&!awaiting,tag+': full snapshot required after previous ACK');
-  if(e.type==='intent'){
-   must(!pending&&typeof e.requestId==='string'&&e.requestId.length>0,tag+': serialized requestId required');
-   must(Number.isSafeInteger(e.baseRevision)&&typeof e.deviceEpoch==='string',tag+': baseRevision/deviceEpoch required');
-   must(typeof e.op==='string'&&e.op.length>0,tag+': operation required');
-   if(e.targetChannelId!=null)must(typeof e.targetChannelId==='string',tag+': ChannelId cannot be JS number');
-   must(!requestIds.has(e.requestId),tag+': duplicate requestId; replay cached ACK without reapplying');
-   requestIds.add(e.requestId);pending=e;continue;
-  }
-  must(pending&&e.requestId===pending.requestId,tag+': ACK unmatched');
-  must(['ACCEPTED','REJECTED','REQUIRES_DEVICE_CHANGE'].includes(e.status),tag+': unknown ACK status');
-  const stale=pending.baseRevision!==current.graph.revision||pending.deviceEpoch!==current.device.epoch;
-  must(!stale||e.status!=='ACCEPTED',tag+': stale revision/epoch must reject');
-  if(e.status==='ACCEPTED'){
-    must(Number.isSafeInteger(e.newRevision)&&e.newRevision>=current.graph.revision,tag+': accepted revision regressed');
-    accepts++;
-  }else{
-    must(typeof e.errorCode==='string'&&e.errorCode.length>0,tag+': reject must explain errorCode');
-    must(e.newRevision==null||e.newRevision===current.graph.revision,tag+': reject advanced graph revision');
-    rejects++;
-  }
-  awaiting=e;pending=null;
+   const type=e?.event,p=e?.payload,where='event '+i;
+   must(['arMixConsoleSnapshot','arMixConsoleIntent','arMixConsoleAck'].includes(type)&&
+     p&&typeof p==='object',where+': unrecognized native WebView event');
+   if(type==='arMixConsoleSnapshot'){
+     snapshot(p);
+     if(!state){must(i===0,'first event must be accepted native snapshot');state=p;continue}
+     must(previousAck,where+': unsolicited snapshot');
+     if(previousAck.status==='ACCEPTED'){
+       must(p.device.epoch===state.device.epoch&&
+         p.graph.revision===previousAck.graphRevision&&
+         p.graph.rosterRevision===previousAck.rosterRevision,
+         where+': accepted ACK needs matching fresh snapshot');
+       must(u64(p.graph.revision,'next graph')>=u64(state.graph.revision,'prior graph'),
+         where+': graph revision regressed');
+     }else must(p.device.epoch===state.device.epoch&&
+       JSON.stringify(p.graph)===JSON.stringify(state.graph)&&
+       p.device.outputArmed===state.device.outputArmed,
+       where+': rejected intent mutated accepted graph or ARM');
+     state=p;previousAck=null;continue;
+   }
+   must(state&&!previousAck,where+': fresh snapshot required after ACK');
+   if(type==='arMixConsoleIntent'){
+     must(!pending&&typeof p.requestId==='string'&&
+       p.requestId.length>=5&&p.requestId.length<=160&&
+       /^[\x21-\x7e]+$/.test(p.requestId)&&p.requestId.includes(':')&&
+       !ids.has(p.requestId),
+       where+': unique session-scoped opaque requestId required');
+     u64(p.deviceEpoch,'intent deviceEpoch',true);
+     u64(p.baseGraphRevision,'intent baseGraphRevision');
+     u64(p.baseRosterRevision,'intent baseRosterRevision');
+     must(typeof p.operation==='string'&&p.operation.length>0,
+       where+': operation required');
+     if(p.targetChannelId!=null)u64(p.targetChannelId,'targetChannelId',true);
+     must(p.payload&&typeof p.payload==='object'&&!Array.isArray(p.payload),
+       where+': payload object required');
+     ids.add(p.requestId);pending=p;continue;
+   }
+   must(pending&&p.requestId===pending.requestId,where+': ACK requestId mismatch');
+   must(['ACCEPTED','REJECTED','REQUIRES_DEVICE_CHANGE'].includes(p.status),
+     where+': unsupported native ACK status');
+   const stale=pending.deviceEpoch!==state.device.epoch||
+     pending.baseGraphRevision!==state.graph.revision||
+     pending.baseRosterRevision!==state.graph.rosterRevision;
+   must(!stale||p.status!=='ACCEPTED',where+': stale epoch/graph/roster accepted');
+   must(state.graph.capabilities.supportedOps.includes(pending.operation)||
+     p.status!=='ACCEPTED',where+': unsupported native operation accepted');
+   if(p.status==='ACCEPTED'){
+     must(u64(p.graphRevision,'ACK graph revision')>=u64(state.graph.revision,'accepted graph')&&
+       u64(p.rosterRevision,'ACK roster revision')>=u64(state.graph.rosterRevision,'accepted roster'),
+       where+': ACK revision regressed');accepted++;
+   }else{
+     must(typeof p.errorCode==='string'&&p.errorCode.length>0,
+       where+': rejected ACK missing errorCode');
+     if(p.graphRevision!==undefined)must(p.graphRevision===state.graph.revision,
+       where+': rejected ACK changed graph revision');
+     if(p.rosterRevision!==undefined)must(p.rosterRevision===state.graph.rosterRevision,
+       where+': rejected ACK changed roster revision');rejected++;
+   }
+   previousAck=p;pending=null;
  }
- must(!pending&&!awaiting,'trace truncated: ACK/full snapshot required');
- must(accepts>0&&rejects>0,'trace must prove positive ACK plus negative ACK rollback');
- return {acceptedCommands:accepts,rejectedCommands:rejects,finalRevision:current.graph.revision};
+ must(!pending&&!previousAck,'trace truncated without ACK + full snapshot');
+ must(accepted>0&&rejected>0,'trace needs accepted and rejected rollback');
+ return {acceptedCommands:accepted,rejectedCommands:rejected,
+   finalGraphRevision:state.graph.revision,provenance:t.provenance.kind,
+   productionCallbackCertified:false,hardwareCertified:false};
 }
 export function checkPcm(p){
  must(p?.schema==='arsonmix.console-v6.pcm-evidence.v1'&&Array.isArray(p.cases),'PCM schema missing');

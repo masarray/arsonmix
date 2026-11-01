@@ -8,12 +8,29 @@ import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {checkTrace,checkPcm,checkRelease,TRACE_SCHEMA} from '../scripts/console_v6_fat_gate.mjs';
 const copy=x=>structuredClone(x);
-const snap=n=>({type:'snapshot',device:{epoch:'e1',outputArmed:false},graph:{revision:n,capabilities:{groups:false,fxReturns:false,monitor:true},channels:[{id:'7',role:'INPUT'},{id:'2',role:'INPUT'},{id:'100',role:'MAIN'}]}});
-const trace=()=>({schema:TRACE_SCHEMA,events:[snap(2),
- {type:'intent',requestId:'r1',baseRevision:2,deviceEpoch:'e1',op:'SET_FADER',targetChannelId:'7'},
- {type:'ack',requestId:'r1',status:'ACCEPTED',newRevision:3},snap(3),
- {type:'intent',requestId:'r2',baseRevision:2,deviceEpoch:'e1',op:'SET_SOURCE',targetChannelId:'7'},
- {type:'ack',requestId:'r2',status:'REJECTED',newRevision:3,errorCode:'STALE_REVISION'},snap(3)]});
+const snapshot=n=>({event:'arMixConsoleSnapshot',payload:{
+ schemaVersion:6,productionCallbackLive:false,
+ device:{epoch:'69',outputArmed:false,enabledInputs:[0,1],enabledOutputs:[0,1],
+ inputEndpoints:[],outputEndpoints:[]},
+ graph:{revision:String(n),rosterRevision:'5',
+ capabilities:{callbackOwnsChannelIds:false,groups:false,fxReturns:false,
+ monitor:true,supportedOps:['SET_FADER','SET_SOURCE']},
+ channels:[{id:'7',role:'INPUT',source:{physicalPins:[0]}},
+ {id:'2',role:'INPUT',source:{physicalPins:[1]}},{id:'100',role:'MAIN'}],
+ destinations:[]},telemetry:{rawCapturePresent:false}}});
+const evt=(event,payload)=>({event,payload});
+const trace=()=>({schema:TRACE_SCHEMA,provenance:{kind:'SYNTHETIC'},events:[
+ snapshot(2),
+ evt('arMixConsoleIntent',{requestId:'webview-session:1',deviceEpoch:'69',
+ baseGraphRevision:'2',baseRosterRevision:'5',operation:'SET_FADER',
+ targetChannelId:'7',payload:{faderDb:-6}}),
+ evt('arMixConsoleAck',{requestId:'webview-session:1',status:'ACCEPTED',
+ graphRevision:'3',rosterRevision:'5'}),snapshot(3),
+ evt('arMixConsoleIntent',{requestId:'webview-session:2',deviceEpoch:'69',
+ baseGraphRevision:'2',baseRosterRevision:'5',operation:'SET_SOURCE',
+ targetChannelId:'7',payload:{portId:'IN1'}}),
+ evt('arMixConsoleAck',{requestId:'webview-session:2',status:'REJECTED',
+ graphRevision:'3',rosterRevision:'5',errorCode:'STALE_GRAPH'}),snapshot(3)]});
 const dry=[0.2,-0.1,0.4,-0.3],wet=[0.01,0.03,0.02,-0.01],grp=dry.map(x=>x*0.5),zero=a=>a.map(()=>0);
 const pcm=()=>({schema:'arsonmix.console-v6.pcm-evidence.v1',cases:[
  {kind:'independent_inputs',samples:{input1:[0.1,-0.1,0.1,-0.1],input2:[0.05,0.15,-0.05,-0.15],ch7:[0.1,-0.1,0.1,-0.1],ch2:[0.05,0.15,-0.05,-0.15]}},
@@ -21,18 +38,37 @@ const pcm=()=>({schema:'arsonmix.console-v6.pcm-evidence.v1',cases:[
  {kind:'monitor_isolation',mainDestination:'hp0/1',monitorDestination:'hp2/3',samples:{main:dry,monitor:wet,monitorMuted:zero(wet),mainAfterMonitorMute:dry}},
  {kind:'physical_mute',samples:{mainBeforeMute:dry,mainAfterMute:zero(dry)}}
 ]});
-test('serial native ACK requires next full accepted snapshot; rejects rollback',()=>{
- assert.equal(checkTrace(trace()).acceptedCommands,1);
- const a=trace();a.events.splice(3,1);assert.throws(()=>checkTrace(a),/full snapshot/);
- const b=trace();b.events[6].graph.channels[0].id='50';assert.throws(()=>checkTrace(b),/rejected command changed/);
+test('canonical native WebView trace has exact ACK/full snapshot and no fake live',()=>{
+ assert.equal(checkTrace(trace()).provenance,'SYNTHETIC');
+ const a=trace();a.events.splice(3,1);
+ assert.throws(()=>checkTrace(a),/fresh snapshot required/);
+ const b=trace();b.events[6].payload.graph.channels[0].id='50';
+ assert.throws(()=>checkTrace(b),/rejected intent mutated/);
+ const c=trace();c.events[1].payload.requestId='1';
+ assert.throws(()=>checkTrace(c),/session-scoped opaque requestId/);
 });
-test('reject stale revision, missing native capability and numeric ChannelId',()=>{
- const a=trace();a.events[1].deviceEpoch='old';assert.throws(()=>checkTrace(a),/stale revision\/epoch/);
- const b=trace();b.events[0].graph.channels.push({id:'4',role:'GROUP'});assert.throws(()=>checkTrace(b),/GROUP without native capability/);
- const c=trace();c.events[0].graph.channels[0].id=42;assert.throws(()=>checkTrace(c),/decimal uint64 string/);
+test('uint64 overflow, JS numeric revision, fake stereo pin and absent capability reject',()=>{
+ const a=trace();a.events[0].payload.graph.channels[0].id='18446744073709551616';
+ assert.throws(()=>checkTrace(a),/uint64 overflow/);
+ const b=trace();b.events[1].payload.baseGraphRevision=2;
+ assert.throws(()=>checkTrace(b),/decimal-string uint64/);
+ const c=trace();c.events[0].payload.graph.channels[0].source.physicalPins=[0,0];
+ assert.throws(()=>checkTrace(c),/duplicate L\/R physical stereo/);
+ const d=trace();d.events[0].payload.graph.channels.push({id:'101',role:'GROUP'});
+ assert.throws(()=>checkTrace(d),/GROUP without native capability/);
 });
-test('duplicate request IDs do not reapply same mutation',()=>{
- const a=trace();a.events[4].requestId='r1';a.events[5].requestId='r1';assert.throws(()=>checkTrace(a),/duplicate requestId/);
+test('duplicate/replayed request, stale device, graph and roster, unsupported op',()=>{
+ const a=trace();a.events[4].payload.requestId='webview-session:1';
+ a.events[5].payload.requestId='webview-session:1';
+ assert.throws(()=>checkTrace(a),/session-scoped opaque requestId/);
+ const b=trace();b.events[1].payload.deviceEpoch='70';
+ assert.throws(()=>checkTrace(b),/stale epoch\/graph\/roster/);
+ const c=trace();c.events[1].payload.baseRosterRevision='4';
+ assert.throws(()=>checkTrace(c),/stale epoch\/graph\/roster/);
+ const d=trace();d.events[1].payload.operation='CREATE_CHANNEL';
+ assert.throws(()=>checkTrace(d),/unsupported native operation/);
+ const e=trace();e.events[2].payload.rosterRevision='6';
+ assert.throws(()=>checkTrace(e),/ACK needs matching fresh snapshot/);
 });
 test('independent sparse native routing IN1->CH7 / IN2->CH2 and non-silent evidence',()=>{
  assert.equal(checkPcm(pcm()).pcmCases,4);
