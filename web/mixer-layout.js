@@ -194,11 +194,16 @@
   const bankLabel=h('span','arV6BankLabel','—');
   const bankNext=button('›',{'aria-label':'Next channel bank'});
   const sendMode=h('select','arV6Select arV6SendMode');sendMode.setAttribute('aria-label','Sends on faders target');
+  const roleSelect=h('select','arV6Select arV6RoleSelect');
+  roleSelect.setAttribute('aria-label','Native new channel type');
+  for(const type of ['MONO','STEREO','GROUP','FX_RETURN','MONITOR']){
+    const option=h('option','',type);option.value=type;roleSelect.append(option);
+  }
   const add=button('+ CHANNEL',{'data-op':'CREATE_CHANNEL'});
   const patch=button('PATCH',{'aria-label':'Open advanced patch'});
   const back=button('V6 CONSOLE',{'aria-label':'Return to operator console'});
   back.id='arV6Return';back.hidden=true;
-  tools.append(bankPrev,bankLabel,bankNext,sendMode,add,patch);
+  tools.append(bankPrev,bankLabel,bankNext,sendMode,roleSelect,add,patch);
   top.append(identification,tools);
   const message=h('div','arV6Message');message.setAttribute('role','status');
   const body=h('div','arV6Body');
@@ -227,6 +232,7 @@
   function can(op,id){
     if(!supported(op))return false;
     if(op==='CREATE_CHANNEL')return !!accepted.graph.capabilities.dynamicChannels;
+    if(op==='ADD_INSERT'&&!accepted?.catalog?.plugins?.length)return false;
     if(!id)return true;
     const ch=byId.get(id);
     return !!ch && !pendingTargets.has(id) &&
@@ -358,7 +364,14 @@
       bypass.classList.toggle('isOff',!!fx.bypassed);row.append(bypass);
       section.append(row);
     }
-    const addFx=button('+ VST3',{'data-op':supported('PICK_INSERT_FILE')?'PICK_INSERT_FILE':'ADD_INSERT','data-id':ch.id});
+    const filePicker=supported('PICK_INSERT_FILE');
+    if(!filePicker&&supported('ADD_INSERT')&&accepted?.catalog?.plugins?.length){
+      const catalog=accepted.catalog.plugins.filter(p=>typeof p.id==='string'&&p.id);
+      const chooser=options(h('select','arV6Select arV6PluginChoice'),catalog,'','SELECT NATIVE VST3');
+      chooser.dataset.pluginChoice=ch.id;section.append(chooser);
+    }
+    const addFx=button(filePicker?'+ OPEN VST3 FILE':'+ VST3',
+      {'data-op':filePicker?'PICK_INSERT_FILE':'ADD_INSERT','data-id':ch.id});
     addFx.classList.add('arV6AddFx');section.append(addFx);
     return section;
   }
@@ -465,7 +478,7 @@
     const cap=accepted.graph.capabilities||{};
     sendMode.disabled=!acceptedNative||!cap.sendsOnFaders;
     add.disabled=!can('CREATE_CHANNEL');
-    refreshDisabled();refreshMeters();refreshBanks();
+    refreshDisabled();syncFaderMode();refreshMeters();refreshBanks();
   }
   function refreshDisabled(){
     if(!accepted)return;
@@ -475,7 +488,30 @@
     }
     add.disabled=!can('CREATE_CHANNEL');
     const caps=accepted.graph.capabilities||{};
+    roleSelect.disabled=!can('CREATE_CHANNEL');
+    for(const option of roleSelect.options){
+      option.disabled=(option.value==='GROUP'&&!caps.groups)||
+        (option.value==='FX_RETURN'&&!caps.fxReturns)||
+        (option.value==='MONITOR'&&!caps.monitor);
+    }
     sendMode.disabled=!acceptedNative||!caps.sendsOnFaders;
+    for(const n of root.querySelectorAll('.arV6Fader')){
+      if(modeSend){
+        const ch=byId.get(n.dataset.id);
+        const hasSend=(ch?.sends||[]).some(s=>s.targetId===modeSend);
+        n.disabled=!hasSend||!can('SET_SEND_LEVEL',n.dataset.id);
+      }
+    }
+  }
+  function syncFaderMode(){
+    for(const range of root.querySelectorAll('.arV6Fader')){
+      const ch=byId.get(range.dataset.id);
+      const send=modeSend?(ch?.sends||[]).find(s=>s.targetId===modeSend):null;
+      const db=Number(modeSend?send?.levelDb:ch?.controls?.faderDb);
+      range.value=String(Number.isFinite(db)?clamp(db,-60,12):0);
+      const text=range.parentElement?.querySelector('.arV6Readout');
+      if(text)text.textContent=(Number.isFinite(db)?db.toFixed(1):'—')+' dB';
+    }
   }
   function refreshMeters(){
     if(!accepted)return;
@@ -515,17 +551,18 @@
   bankNext.addEventListener('click',()=>jump(1));
   lanes.addEventListener('scroll',refreshBanks,{passive:true});
   if(typeof ResizeObserver==='function')new ResizeObserver(refreshBanks).observe(lanes);
-  sendMode.addEventListener('change',()=>{modeSend=sendMode.value;showFeedback(modeSend?
-    'SENDS ON FADERS · native sends only · select MAIN FADERS to return':'MAIN FADERS · source gains unchanged')});
+  sendMode.addEventListener('change',()=>{modeSend=sendMode.value;
+    syncFaderMode();refreshDisabled();
+    showFeedback(modeSend?
+      'SENDS ON FADERS · native sends only · select MAIN FADERS to return':'MAIN FADERS · source gains unchanged');
+  });
   root.addEventListener('click',event=>{
     const n=event.target.closest('button[data-op]');
     if(!n||n.disabled)return;
     const op=n.dataset.op,id=n.dataset.id||null,ch=byId.get(id);
     if(op==='CREATE_CHANNEL'){
       // Native must allocate ChannelId; never append a fake strip on ACK.
-      const type=window.prompt('Native channel type (MONO, STEREO, GROUP, FX_RETURN, MONITOR):','MONO');
-      if(!type)return;
-      const role=type.toUpperCase();
+      const role=roleSelect.value;
       const caps=accepted.graph.capabilities||{};
       if(!['MONO','STEREO','GROUP','FX_RETURN','MONITOR'].includes(role))return;
       if(role==='GROUP'&&!caps.groups||role==='FX_RETURN'&&!caps.fxReturns||
@@ -547,9 +584,9 @@
     else if(op==='PICK_INSERT_FILE')sendIntent(op,id,{});
     else if(op==='ADD_INSERT'){
       const catalog=accepted?.catalog?.plugins||[];
-      if(!catalog.length){showFeedback('UNAVAILABLE · No native VST3 catalog published');return}
-      const pluginId=window.prompt('Native plugin ID: '+catalog.map(p=>p.id).join(', '),'');
+      const pluginId=n.closest('.arV6Fx')?.querySelector('[data-plugin-choice]')?.value;
       if(catalog.some(p=>p.id===pluginId))sendIntent(op,id,{pluginId});
+      else showFeedback('UNAVAILABLE · Select a verified native VST3 first');
     }
   });
   root.addEventListener('change',event=>{
