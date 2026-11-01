@@ -281,6 +281,10 @@ async def main():
         assert await page.locator('.arIODeviceDriverButton').count()==2
         assert await page.locator('.arIODeviceDriverButton[aria-pressed="true"]').inner_text()=='ASIO'
         assert await page.locator('.arIODevicePatchMatrix').is_visible()
+        assert not await page.locator('.arIODevicePatchMatrix').evaluate('(e)=>e.open')
+        assert await page.locator('.arIODevicePins').is_visible()
+        await page.locator('.arIODevicePatchMatrix > summary').click()
+        assert await page.locator('.arIODevicePatchMatrix').evaluate('(e)=>e.open')
         assert await page.locator('.arIODevicePatchMatrix .arIOMatrixCell').count()>0
         # FAST3 source one-gesture has already completed an ARM ACK above.
         # This separate DEVICE APPLY must produce ONE new guarded arm, not
@@ -362,6 +366,7 @@ async def main():
         assert await page.locator('.arIODeviceDriverButton[aria-pressed="true"]').inner_text()=='ASIO'
         await page.locator('[data-io-tab="inputs"]').click()
         assert await page.locator('#arIOBody .arIOQuickRow').count()==10
+        assert await page.locator('[data-io-quick-row]:visible').count()==1
         # Operator-first mapper is visible; crosspoint is explicitly advanced.
         assert await page.locator('#arIOQuickPatch, .arIOQuickPatch').count()==1
         assert await page.locator('[data-io-quick-row]').count()==10
@@ -381,6 +386,11 @@ async def main():
         # Preserve the pre-test accepted route for later AUX negative tests.
         await page.evaluate('()=>window.__arMixRevertMixerDraft()')
         await page.locator('[data-io-tab="outputs"]').click()
+        assert await page.locator('.arIOSimpleMain').is_visible()
+        assert await page.locator('.arIOMainOutput').count()==2
+        assert await page.locator('.arIOAdvancedMatrix').count()==1
+        if not await page.locator('.arIOAdvancedMatrix').evaluate('(e)=>e.open'):
+            await page.locator('.arIOAdvancedMatrix > summary').click()
         outputs=await page.locator('#arIOBody').inner_text()
         assert "HW OUT 1" in outputs and "HW OUT 2" in outputs,outputs
         assert await page.locator('[data-io-matrix-kind="outputs"]').count()==4
@@ -891,7 +901,7 @@ async def main():
           window.__armixTestEmit('arMixRoutingLabAck',{ok:true,state:lab});
           window.__armixTestEmit('arMixStatus',status);return status;
         }""",status)
-        assert 'LIVE' in await ch3.locator('.arIOQuickState').inner_text()
+        assert 'ROUTE ACK' in await ch3.locator('.arIOQuickState').inner_text()
         await page.evaluate("""status=>window.__armixTestEmit('arMixAudioArmAck',{
           ok:false,armed:false,deviceEpoch:status.dryRoutingLab.epoch,
           error:'Output kept safely muted during multi-source setup'
@@ -900,6 +910,9 @@ async def main():
         # Sparse driver pins 5/8 -> CH6 stereo, independent of CH3's
         # accepted mono processing and with no fabricated adjacent R pin.
         ch6=page.locator('[data-io-quick-row="5"]')
+        await page.locator('[data-io-jump]').select_option('5')
+        assert await ch6.is_visible()
+        assert await page.locator('[data-io-quick-row]:visible').count()==1
         await ch6.locator('[data-io-quick-mode]').select_option('STEREO')
         await ch6.locator('[data-io-quick-pin="left"]').select_option('4')
         await ch6.locator('[data-io-quick-pin="right"]').select_option('7')
@@ -923,7 +936,7 @@ async def main():
           window.__armixTestEmit('arMixRoutingLabAck',{ok:true,state:lab});
           window.__armixTestEmit('arMixStatus',status);return status;
         }""",status)
-        assert 'LIVE' in await ch6.locator('.arIOQuickState').inner_text()
+        assert 'ROUTE ACK' in await ch6.locator('.arIOQuickState').inner_text()
         await page.evaluate("""status=>window.__armixTestEmit('arMixAudioArmAck',{
           ok:false,armed:false,deviceEpoch:status.dryRoutingLab.epoch,
           error:'Output intentionally stays muted in this fixture'
