@@ -343,7 +343,8 @@
 #app .arV6FieldName{flex:0 0 27px;font:600 9px/1 "Segoe UI",sans-serif;color:#8faebc}
 #app .arV6Field .arV6Select{flex:1 1 0;width:100%;max-width:116px;min-height:23px;padding:2px 3px}
 #app .arV6Fx,#app .arV6Sends{
-  min-height:0;overflow:hidden;display:flex;flex-direction:column;gap:3px;
+  min-height:0;overflow-x:hidden;overflow-y:auto;scrollbar-width:thin;
+  display:flex;flex-direction:column;gap:3px;
   border-top:1px solid #354b57;padding-top:5px;
 }
 #app .arV6SectionTitle{font:600 9px/1.2 "Segoe UI",sans-serif;letter-spacing:.6px;color:#83aaba}
@@ -433,3 +434,8 @@
  #app .arV6FxSlot .arV6Button{min-height:18px}
  #app .arV6Device{font-size:9px}
 }
+
+#app .arV6RoleSelect{width:78px;max-width:78px}
+#app .arV6FxSlot[draggable="true"]{cursor:grab}
+#app .arV6FxSlot[draggable="true"]:active{cursor:grabbing}
+#app .arV6PluginChoice{width:100%;max-width:100%;min-height:23px}
