@@ -235,7 +235,31 @@ public:
                   // callback really owns them.
                   const auto snapshot=armix::console::LiveConsoleBridgeV6::snapshot(engine_.status());
                   const auto ack=consoleBridge_.processProductionIntent(
-                      args,snapshot,engine_);
+                      args,snapshot,engine_,
+                      [this](int lane,int slot,std::uint64_t epoch,
+                             std::uint64_t revision,const juce::String& token)
+                            ->juce::String {
+                          if(nativeShowBusy_||studioBackupBusy_||
+                             engine_.isGraphSwitchPending())
+                              return "NATIVE_EDITOR_BUSY";
+                          const auto owner=engine_.leaseRoutedFxForEditor(
+                              lane,slot,epoch,revision,token);
+                          if(!owner || !owner->processor)
+                              return "NATIVE_EDITOR_STALE_INSTANCE";
+                          try {
+                              auto* editor=owner->processor->createEditorIfNeeded();
+                              if(!editor)return "NATIVE_PLUGIN_HAS_NO_EDITOR";
+                              closePluginEditor();
+                              routedEditorOwner_=owner; // original JUCE instance
+                              routedEditorEpoch_=static_cast<juce::int64>(epoch);
+                              editorWindow_=std::make_unique<PluginEditorWindow>(
+                                  owner->processor->getName(),editor);
+                              return {};
+                          } catch(...) {
+                              closePluginEditor();
+                              return "NATIVE_VENDOR_EDITOR_FAILED";
+                          }
+                      });
                   if (browser_.loaded) {
                       browser_.emitEventIfBrowserIsVisible("arMixConsoleAck",ack);
                       emitNativeConsoleSnapshot(engine_.status());

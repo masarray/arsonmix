@@ -184,10 +184,10 @@ public:
     // only for this explicit internal migration transport. This does NOT
     // claim that callbackOwnsChannelIds, CH11, GROUP or FX_RETURN exist.
     // The same native audio owner, plugin editor and Show remain installed.
-    template<class Engine>
+    template<class Engine,class OpenEditor>
     juce::var processProductionIntent(const juce::var& intent,
                                       const juce::var& acceptedSnapshot,
-                                      Engine& engine) {
+                                      Engine& engine,OpenEditor&& openEditor) {
         const auto request=intent.getProperty("requestId",{});
         const auto requestId=request.isString()?request.toString():juce::String{};
         const auto bytes=requestId.toStdString();
@@ -275,6 +275,40 @@ public:
                         accepted=engine.setDryRoutingLabParameter(
                             lane,ep,rev,key,control);
                         if(!accepted)error="NATIVE_CONTROL_REJECTED";
+                    }
+                } else if(operation=="SET_INSERT_BYPASS"||
+                          operation=="OPEN_INSERT_EDITOR") {
+                    // The token must match an actually prepared vendor
+                    // AudioPluginInstance in the current accepted M4 graph.
+                    // Never invent a GUI insert, instantiate, clone or scan
+                    // VST3 while changing BYPASS / opening an editor.
+                    const auto token=payload.getProperty("insertId","").toString();
+                    const auto statuses=engine.status().getProperty("dryRoutingLab",{});
+                    const auto fx=statuses.getProperty("fxInstances",{});
+                    const auto* lanes=fx.getArray();
+                    int foundSlot=-1;
+                    if(token.isNotEmpty() && lanes && lane<lanes->size()) {
+                        const auto bank=lanes->getReference(lane);
+                        if(const auto* slots=bank.getArray())
+                            for(int k=0;k<slots->size();++k)
+                                if(slots->getReference(k).getProperty("instanceId","")
+                                        .toString()==token) {
+                                    if(foundSlot>=0){foundSlot=-1;break;}
+                                    foundSlot=k;
+                                }
+                    }
+                    if(foundSlot<0)error="UNKNOWN_NATIVE_INSERT_INSTANCE";
+                    else if(operation=="SET_INSERT_BYPASS") {
+                        const auto value=payload.getProperty("bypassed",{});
+                        if(!value.isBool())error="INVALID_BYPASS_VALUE";
+                        else {
+                            accepted=engine.setDryRoutingLabFxBypass(
+                                lane,foundSlot,ep,rev,token,static_cast<bool>(value));
+                            if(!accepted)error="NATIVE_INSERT_BYPASS_REJECTED";
+                        }
+                    } else {
+                        error=openEditor(lane,foundSlot,ep,rev,token);
+                        accepted=error.isEmpty();
                     }
                 } else error="UNSUPPORTED_UNIVERSAL_OPERATION";
             }
