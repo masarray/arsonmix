@@ -1651,6 +1651,8 @@
         (monitorLive.length===2?'HW '+(monitorLive[0]+1)+'/'+(monitorLive[1]+1):'DISABLED')+
         ' · Independent POST-fader mix; all changes require MUTE → APPLY → ACK.'));
 
+      // Accepted physical MAIN pins, NEVER an inferred/draft destination.
+      const accepted=s.mainOutputs?.length===2?s.mainOutputs:[];
       body.appendChild(node('p','arIOHint','LIVE MAIN: '+(accepted.length===2?'HW '+(accepted[0]+1)+'/'+(accepted[1]+1):'UNAVAILABLE')+
         ' · Only native-ACKed MAIN/MONITOR pairs can carry sound. AUX1–4 are internal stereo FX returns, not physical output sockets.'));
     }else{

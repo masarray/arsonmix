@@ -596,3 +596,10 @@ test('First Sound never reports invalid stereo pins as live or invents capture P
  assert.match(io,/ROUTE ACK · CHECK RAW PCM/);
  assert.match(monitor,/Stereo L\/R requires distinct enabled hardware pins/);
 });
+
+test('First Sound output panel renders accepted MAIN pin truth, not a dangling removed quick-map local',()=>{
+ const io=read('web/mixer-io.js');
+ assert.match(io,/const accepted=s\.mainOutputs\?\.length===2\?s\.mainOutputs:\[\]/);
+ assert.match(io,/LIVE MAIN: /);
+ assert.match(io,/AUX1–4 are internal stereo FX returns, not physical output sockets/);
+});
