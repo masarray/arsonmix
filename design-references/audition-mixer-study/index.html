@@ -44,8 +44,19 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .mixer-title .right{margin-left:auto;color:#808488;font-size:10px}
 .console-body{flex:1;min-height:0;display:flex;overflow:hidden;--route-h:59px;--fx-h:119px;--send-h:66px;--eq-h:49px;--pan-h:35px;--auto-h:23px;--switch-h:31px;--footer-h:53px}
 .section-rail{flex:0 0 33px;width:33px;display:flex;flex-direction:column;border-right:1px solid #060707;background:#262729;box-shadow:inset -1px 0 #343537;text-align:center}
-.rail-cell{display:flex;align-items:center;justify-content:center;border-bottom:1px solid #111;color:#a0a3a5;flex:none;font-size:15px}
+.rail-cell{border:0;background:transparent;cursor:default;display:flex;align-items:center;justify-content:center;border-bottom:1px solid #111;color:#a0a3a5;flex:none;font-size:15px}
 .rail-cell small{font-size:9px;color:#8d9294}
+.rail-cell[data-section]{cursor:pointer}
+.rail-cell[data-section]:hover{color:#d7e9ee;background:#34383a}
+.rail-cell[data-section].collapsed{color:#75b8c9}
+.console-body.collapsed-route{--route-h:19px}
+.console-body.collapsed-fx{--fx-h:20px}
+.console-body.collapsed-send{--send-h:20px}
+.console-body.collapsed-eq{--eq-h:20px}
+.console-body.collapsed-route .route-section .route-select{display:none}
+.console-body.collapsed-fx .fxslot-row{display:none}
+.console-body.collapsed-send .send-section .send-select,.console-body.collapsed-send .send-section .sendlevel{display:none}
+.console-body.collapsed-eq .eq-section .eq-line{display:none}
 .rail-cell.route{height:var(--route-h)}
 .rail-cell.fx{height:var(--fx-h);font-family:Georgia,serif;font-style:italic}
 .rail-cell.send{height:var(--send-h)}
@@ -171,10 +182,10 @@ button:disabled{opacity:.45;cursor:not-allowed}
     <div class="mixer-title"><span class="accent"></span><span class="panel-name">Mixer</span><span class="panel-sub">▤</span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
     <section class="console-body" aria-label="Multitrack mixing console">
       <aside class="section-rail" aria-label="Mixer section icons">
-        <div class="rail-cell route" title="Inputs / Outputs">⇥</div>
-        <div class="rail-cell fx" title="Effects">fx</div>
-        <div class="rail-cell send" title="Sends">↪</div>
-        <div class="rail-cell eq" title="Equalizer">▥</div>
+        <button class="rail-cell route" data-section="route" title="Collapse / expand Inputs and Outputs">⇥</button>
+        <button class="rail-cell fx" data-section="fx" title="Collapse / expand Effects">fx</button>
+        <button class="rail-cell send" data-section="send" title="Collapse / expand Sends">↪</button>
+        <button class="rail-cell eq" data-section="eq" title="Collapse / expand Equalizer">▥</button>
         <div class="rail-cell pan" title="Pan">◉</div>
         <div class="rail-cell auto" title="Automation"><small>A</small></div>
         <div class="rail-cell switch" title="Mute / Solo / Record"><small>M S R</small></div>
@@ -308,6 +319,7 @@ document.querySelector('.console-body').addEventListener('drop',e=>{
  const moved=t.fx.splice(from,1)[0];t.fx.splice(to,0,moved);const bypass=t.slotBypass.splice(from,1)[0];t.slotBypass.splice(to,0,bypass);refreshStrip(t);say(t.name+' · FX moved from '+(from+1)+' to '+(to+1));
 });
 document.querySelector('.console-body').addEventListener('mousedown',e=>{const t=findTrack(e.target);if(t)selectTrack(t);});
+document.querySelector('.section-rail').addEventListener('click',e=>{const button=e.target.closest('[data-section]');if(!button)return;const name=button.dataset.section;const collapsed=document.querySelector('.console-body').classList.toggle('collapsed-'+name);button.classList.toggle('collapsed',collapsed);button.setAttribute('aria-pressed',String(!collapsed));say((collapsed?'Collapsed ':'Expanded ')+name.toUpperCase()+' mixer section');});
 document.getElementById('addTrack').addEventListener('click',()=>{
  const n=tracks.filter(t=>t.kind==='audio').length+1,t=make('Track '+n,'audio',COLORS[(n-1)%COLORS.length]);const firstBus=tracks.findIndex(x=>x.kind==='bus');tracks.splice(firstBus<0?tracks.length:firstBus,0,t);render();selectTrack(t);document.getElementById('viewport').scrollLeft=99999;say('Added '+t.name+' · visual only');
 });
