@@ -2,7 +2,7 @@
 // SYNTHETIC validator self-tests; these cannot qualify native callback or hardware.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,writeFileSync,rmSync} from 'node:fs';
+import {mkdtempSync,writeFileSync,rmSync,readFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
@@ -199,4 +199,28 @@ test('exact-source full native evidence rejects forged digest, mock PCM, missing
   pathTraversal.artifacts.zip='../release.zip';
   assert.throws(()=>checkRelease(pathTraversal,dir),/safe basename/);
  }finally {rmSync(dir,{recursive:true,force:true})}
+});
+
+// S0 unit fixture uses the ONE shared PR #279 synthetic file, never native evidence.
+import {verifyNativeS0} from '../scripts/run_console_native_s0.mjs';
+test('S0 shared v8 contract rejects absent native pins, fake ACK and mutated graph',()=>{
+ const f=JSON.parse(readFileSync('integration/console-v6/fixtures.json','utf8'));
+ assert.equal(f.provenance,'SYNTHETIC_CONTRACT_ONLY_NOT_HARDWARE');
+ const s=copy(f.g0),i={...copy(f.intent),targetChannelId:null,
+   deviceEpoch:s.device.epoch,baseGraphRevision:s.graph.revision,
+   baseRosterRevision:s.graph.rosterRevision};
+ const a={...copy(f.ack),requestId:i.requestId,deviceEpoch:s.device.epoch,
+   graphRevision:s.graph.revision,rosterRevision:s.graph.rosterRevision,
+   status:'REJECTED',errorCode:'UNIVERSAL_CALLBACK_NOT_READY'};
+ const ev=[{event:'arMixConsoleSnapshot',payload:s},
+   {event:'arMixConsoleIntent',payload:i},
+   {event:'arMixConsoleAck',payload:a},
+   {event:'arMixConsoleSnapshot',payload:copy(s)}];
+ assert.equal(verifyNativeS0(ev).callbackPcmProven,false);
+ const bad=copy(ev);delete bad[0].payload.device.enabledInputs;
+ assert.throws(()=>verifyNativeS0(bad),/array required|enabledInputs/);
+ const fake=copy(ev);fake[2].payload.status='ACCEPTED';
+ assert.throws(()=>verifyNativeS0(fake),/native ACK must reject/);
+ const rollback=copy(ev);rollback[3].payload.device.enabledOutputs=[4];
+ assert.throws(()=>verifyNativeS0(rollback),/changed accepted graph/);
 });
