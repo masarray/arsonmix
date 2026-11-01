@@ -534,6 +534,30 @@ async def main():
         assert "OUT2" not in await device.inner_text()
         await page.get_by_role("button",name="Close native device inventory").click()
 
+        # PR #278 V5: quick FX is contextual and F8 manager stays separate.
+        fast=page.locator('[data-channel-id="7"] button[data-ui="OPEN_FX_QUICK"]')
+        assert await fast.count()==1
+        await fast.click()
+        quick=page.locator("#arV6QuickPanel")
+        assert await quick.is_visible()
+        await quick.get_by_role("searchbox",name="Search quick native effects").fill("parametric")
+        qpick=quick.locator('button[data-quick-fx="native:parametric-eq"]')
+        assert await qpick.count()==1 and await qpick.is_enabled()
+        fx_count=await page.locator('[data-channel-id="7"] .arV6FxSlot').count()
+        await qpick.click()
+        quick_cmd=await page.evaluate("""()=>window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').at(-1).payload""")
+        assert quick_cmd["operation"]=="ADD_INSERT"
+        assert quick_cmd["targetChannelId"]=="7"
+        assert quick_cmd["payload"]=={"pluginId":"native:parametric-eq"}
+        assert await quick.is_hidden()
+        assert await page.locator('[data-channel-id="7"] .arV6FxSlot').count()==fx_count
+        await page.evaluate("""id=>window.__v6Test.publish('arMixConsoleAck',
+          {requestId:id,status:'REJECTED',deviceEpoch:'8',
+           graphRevision:'6',rosterRevision:'6',errorCode:'PLUGIN_LOAD_FAILED'})""",
+          quick_cmd["requestId"])
+        assert await page.locator('[data-channel-id="7"] .arV6FxSlot').count()==fx_count
+
         # F8 searches ONLY the native catalog and adds through one typed intent.
         # An epoch change clears prior selection; one native ChannelId is required.
         assert await page.locator(".arV6SelectionCount").inner_text()=="0 SEL"
@@ -543,6 +567,15 @@ async def main():
         assert "Select exactly ONE" in await manager.inner_text()
         await page.locator("#arV6PluginPanel .arV6PluginSearch").fill("hall")
         assert await manager.locator("button[data-plugin-id]").count()==1
+        # Favorites/recent are visual metadata only, never a DSP mutation.
+        count_before_star=await page.evaluate("""()=>window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').length""")
+        await manager.locator('[data-fx-fav="native:hall-reverb"]').click()
+        assert await page.evaluate("""()=>window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').length""")==count_before_star
+        await manager.get_by_role("combobox",name="Native plugin catalog filter").select_option("FAVORITES")
+        assert await manager.locator('button[data-plugin-id="native:hall-reverb"]').count()==1
+        await manager.get_by_role("combobox",name="Native plugin catalog filter").select_option("ALL")
         assert await manager.locator("button[data-plugin-id]").first.is_disabled()
         await page.locator('[data-channel-id="7"] .arV6StripHead').click()
         assert await manager.locator("button[data-plugin-id]").first.is_enabled()
@@ -704,8 +737,28 @@ async def main():
           x=>x.event==='arMixConsoleIntent').at(-1).payload.requestId""")
         assert reconnected.startswith("gui-") and reconnected.endswith(":1")
         assert reconnected != first_id
+        # The actual legacy mixer from web/app.js retains original fader,
+        # meters, button materials and bridge.js ownership. Test V5 UX in
+        # browser preview, NOT as evidence of loaded native VST3.
+        old=await browser.new_page(viewport={"width":1366,"height":768})
+        old_errors=[]
+        old.on("pageerror",lambda e:old_errors.append(str(e)))
+        await old.goto((ROOT/"web/index.html").as_uri())
+        await old.locator('#mixer [data-insert="0:0"]').click()
+        legacy_fast=old.locator(".arV5QuickFx")
+        assert await legacy_fast.is_visible()
+        await legacy_fast.get_by_role("searchbox",name="Search quick effects").fill("reverb")
+        assert await legacy_fast.locator('[data-fast-plugin="Studio Reverb"]').count()==1
+        await legacy_fast.get_by_role("button",name="Close quick effect picker").click()
+        assert await legacy_fast.is_hidden()
+        await old.keyboard.press("F8")
+        assert await old.locator("#pluginModal").is_visible()
+        await old.keyboard.press("Escape")
+        assert await old.locator("#pluginModal").is_hidden()
+        assert not old_errors,old_errors
+        await old.close()
         await browser.close()
-        print("PASS V6: real ACK semantics mocked only; 12 geometries, roster, pinned MAIN")
+        print("PASS V6: PR278 V5 old + native quick FX, F8, catalog preferences, 12 geometries")
 
 
 if __name__ == "__main__":

@@ -296,7 +296,33 @@
   pluginSearch.placeholder='Search native scanned plugins...';
   pluginSearch.setAttribute('aria-label','Search native scanned VST3 catalog');
   const pluginResults=h('div','arV6PluginResults');
-  pluginPanel.append(pluginHead,pluginTarget,pluginSearch,pluginResults);
+  const managerFilters=h('div','arV6CatalogFilters');
+  const managerView=h('select','arV6Select');
+  managerView.setAttribute('aria-label','Native plugin catalog filter');
+  for(const [val,text] of [['ALL','All effects'],['FAVORITES','Favorites'],['RECENT','Recent']]){
+    const opt=h('option','',text);opt.value=val;managerView.append(opt);
+  }
+  const managerCategory=h('select','arV6Select');
+  managerCategory.setAttribute('aria-label','Native plugin category');
+  managerFilters.append(managerView,managerCategory);
+  pluginPanel.append(pluginHead,pluginTarget,pluginSearch,managerFilters,pluginResults);
+  // Contextual V5 Add FX picker anchored to the exact strip, independent of F8.
+  const quickPanel=h('section','arV6QuickPanel');
+  quickPanel.id='arV6QuickPanel';quickPanel.hidden=true;
+  quickPanel.setAttribute('role','dialog');quickPanel.setAttribute('aria-label','Quick native VST3 picker');
+  const quickHead=h('div','arV6DevicePanelHead');
+  const quickTitle=h('span','','QUICK ADD FX');
+  const quickClose=button('×',{'aria-label':'Close quick native FX picker'});
+  quickHead.append(quickTitle,quickClose);
+  const quickSearch=h('input','arV6PluginSearch');quickSearch.type='search';
+  quickSearch.setAttribute('aria-label','Search quick native effects');
+  quickSearch.placeholder='Search native VST3 effects…';
+  const quickResults=h('div','arV6PluginResults');
+  const quickManager=button('PLUGIN MANAGER · F8');
+  quickManager.setAttribute('aria-label','Open full Plugin Manager from quick picker');
+  const quickFoot=h('div','arV6QuickFoot');
+  quickFoot.append(h('span','','Enter: load · Esc: close'),quickManager);
+  quickPanel.append(quickHead,quickSearch,quickResults,quickFoot);
   // A small operator drawer differentiates relative fader links from actual
   // serial Group-Bus summing. Both are SINGLE native graph transactions.
   const selectionPanel=h('section','arV6SelectionPanel');
@@ -339,7 +365,7 @@
   const lanes=h('div','arV6Lanes');lanes.id='arV6Lanes';lanes.setAttribute('aria-label','Channel banks');
   const main=h('div','arV6Main');main.id='arV6Main';main.setAttribute('aria-label','Pinned main output');
   body.append(sectionRail,lanes,main);
-  root.append(top,message,devicePanel,pluginPanel,selectionPanel,body);
+  root.append(top,message,devicePanel,pluginPanel,selectionPanel,quickPanel,body);
   mount.append(root);
   sectionRail.addEventListener('click',event=>{
     const control=event.target.closest('[data-section]');
@@ -427,12 +453,87 @@
   function closePluginManager(){
     pluginPanel.hidden=true;pluginsButton.setAttribute('aria-expanded','false');
   }
+  // UI-only preferences store stable native catalog IDs, never plugin state.
+  const pluginFavorites=new Set(),pluginRecent=[];
+  try{
+    const p=JSON.parse(localStorage.getItem('armix.v6.fx-ux.v5')||'{}');
+    if(Array.isArray(p.favorites))for(const id of p.favorites.slice(0,300))
+      if(typeof id==='string')pluginFavorites.add(id);
+    if(Array.isArray(p.recent))for(const id of p.recent.slice(0,20))
+      if(typeof id==='string')pluginRecent.push(id);
+  }catch{}
+  function saveFxPrefs(){
+    try{localStorage.setItem('armix.v6.fx-ux.v5',JSON.stringify({
+      favorites:[...pluginFavorites].slice(0,300),recent:pluginRecent.slice(0,20)}));}catch{}
+  }
+  let quickTarget=null,quickAnchor=null;
+  const nativeCatalog=()=>acceptedNative&&Array.isArray(accepted?.catalog?.plugins)?
+    accepted.catalog.plugins.filter(p=>p&&typeof p.id==='string'&&p.id&&
+      typeof p.name==='string'&&p.name):[];
+  function closeQuickFx(focus=false){
+    quickPanel.hidden=true;
+    if(focus&&quickAnchor?.isConnected)quickAnchor.focus();
+    quickAnchor=null;
+  }
+  function commitNativeFx(pluginId,id){
+    if(!nativeCatalog().some(p=>p.id===pluginId)||!can('ADD_INSERT',id))return false;
+    if(!sendIntent('ADD_INSERT',id,{pluginId}))return false;
+    const n=pluginRecent.indexOf(pluginId);if(n!==-1)pluginRecent.splice(n,1);
+    pluginRecent.unshift(pluginId);if(pluginRecent.length>20)pluginRecent.length=20;
+    saveFxPrefs();return true;
+  }
+  function refreshQuickFx(){
+    if(quickPanel.hidden)return;
+    quickResults.replaceChildren();
+    const target=byId.get(quickTarget);
+    quickTitle.textContent=(target?.name||'CHANNEL')+' · ADD FX · NATIVE';
+    const q=quickSearch.value.trim().toLocaleLowerCase();
+    const results=nativeCatalog().filter(p=>
+      (p.name+' '+(p.vendor||'')+' '+(p.category||'')).toLocaleLowerCase().includes(q))
+      .sort((a,b)=>Number(pluginFavorites.has(b.id))-Number(pluginFavorites.has(a.id))||
+        a.name.localeCompare(b.name));
+    if(!results.length)quickResults.append(h('p','arV6DeviceNote',
+      'No verified VST3 catalog. Use Plugin Manager F8 after native scan.'));
+    for(const fx of results.slice(0,64)){
+      const b=button((pluginFavorites.has(fx.id)?'★ ':'')+fx.name+' · '+(fx.category||'Effect'),
+        {'data-quick-fx':fx.id});
+      b.classList.add('arV6PluginResult');b.disabled=!can('ADD_INSERT',quickTarget);
+      quickResults.append(b);
+    }
+  }
+  function openQuickFx(id,anchor){
+    if(!byId.has(id))return;
+    quickTarget=id;quickAnchor=anchor||null;
+    closePluginManager();
+    const area=root.getBoundingClientRect(),r=anchor?.getBoundingClientRect();
+    if(r){
+      quickPanel.style.left=Math.max(7,Math.min(r.left-area.left,area.width-320))+'px';
+      quickPanel.style.top=Math.max(44,Math.min(r.bottom-area.top+3,area.height-340))+'px';
+    }
+    quickPanel.hidden=false;quickSearch.value='';refreshQuickFx();quickSearch.focus();
+  }
+  quickClose.addEventListener('click',()=>closeQuickFx(true));
+  quickSearch.addEventListener('input',refreshQuickFx);
+  quickSearch.addEventListener('keydown',event=>{
+    if(event.key==='Enter'){
+      const first=quickResults.querySelector('button[data-quick-fx]:not([disabled])');
+      if(first){event.preventDefault();first.click();}
+    }
+  });
+  quickResults.addEventListener('click',event=>{
+    const b=event.target.closest('button[data-quick-fx]');
+    if(b&&!b.disabled&&commitNativeFx(b.dataset.quickFx,quickTarget))closeQuickFx();
+  });
+  quickManager.addEventListener('click',()=>{const id=quickTarget;closeQuickFx();openPluginManager(id)});
+  managerView.addEventListener('change',refreshPluginCatalog);
+  managerCategory.addEventListener('change',refreshPluginCatalog);
   function openPluginManager(id){
     if(id&&byId.has(id)&&byId.get(id).role!=='MAIN'){
       selectedIds.clear();selectedIds.add(id);selectionAnchor=id;
       updateSelection();
     }
     devicePanel.hidden=true;deviceButton.setAttribute('aria-expanded','false');
+    closeQuickFx();
     pluginPanel.hidden=false;pluginsButton.setAttribute('aria-expanded','true');
     refreshPluginCatalog();pluginSearch.focus();
   }
@@ -443,17 +544,22 @@
   pluginClose.addEventListener('click',closePluginManager);
   pluginSearch.addEventListener('input',refreshPluginCatalog);
   pluginResults.addEventListener('click',event=>{
+    const fav=event.target.closest('button[data-fx-fav]');
+    if(fav){
+      const id=fav.dataset.fxFav;
+      if(!nativeCatalog().some(p=>p.id===id))return;
+      if(pluginFavorites.has(id))pluginFavorites.delete(id);else pluginFavorites.add(id);
+      saveFxPrefs();refreshPluginCatalog();refreshQuickFx();return;
+    }
     const node=event.target.closest('button[data-plugin-id]');
     if(!node||node.disabled||selectedIds.size!==1)return;
-    const channelId=[...selectedIds][0];
-    const catalog=accepted?.catalog?.plugins||[];
-    const entry=catalog.find(p=>p?.id===node.dataset.pluginId);
-    if(entry&&can('ADD_INSERT',channelId)&&
-       sendIntent('ADD_INSERT',channelId,{pluginId:entry.id}))closePluginManager();
+    if(commitNativeFx(node.dataset.pluginId,[...selectedIds][0]))closePluginManager();
   });
   document.addEventListener('keydown',event=>{
     if(!document.documentElement.classList.contains('ar-v6-active'))return;
-    if(event.key==='Escape'&&!selectionPanel.hidden){
+    if(event.key==='Escape'&&!quickPanel.hidden){
+      event.preventDefault();closeQuickFx(true);
+    }else if(event.key==='Escape'&&!selectionPanel.hidden){
       event.preventDefault();selectionPanel.hidden=true;
       selectionCount.setAttribute('aria-expanded','false');
     }else if(event.key==='Escape'&&!pluginPanel.hidden){
@@ -515,21 +621,34 @@
       'TARGET · '+byId.get(id).name+' · '+(can('ADD_INSERT',id)?
         'NATIVE LOAD AVAILABLE':'NATIVE LOAD NOT AVAILABLE'):
       'Select exactly ONE channel header to load a VST3';
-    const catalog=acceptedNative&&Array.isArray(accepted?.catalog?.plugins)?
-      accepted.catalog.plugins.filter(p=>p&&typeof p.id==='string'&&p.id&&
-        typeof p.name==='string'&&p.name):[];
-    const search=pluginSearch.value.trim().toLocaleLowerCase();
-    const results=catalog.filter(p=>(p.name+' '+(p.vendor||'')+' '+(p.category||''))
-      .toLocaleLowerCase().includes(search));
+    const catalog=nativeCatalog();
+    const categories=[...new Set(catalog.map(p=>p.category||'Effect'))].sort();
+    const previous=managerCategory.value;
+    managerCategory.replaceChildren();
+    const any=h('option','','All categories');any.value='ALL';managerCategory.append(any);
+    for(const category of categories){
+      const opt=h('option','',category);opt.value=category;managerCategory.append(opt);
+    }
+    managerCategory.value=categories.includes(previous)?previous:'ALL';
+    const q=pluginSearch.value.trim().toLocaleLowerCase(),mode=managerView.value;
+    const results=catalog.filter(p=>
+      (p.name+' '+(p.vendor||'')+' '+(p.category||'')).toLocaleLowerCase().includes(q)&&
+      (managerCategory.value==='ALL'||(p.category||'Effect')===managerCategory.value)&&
+      (mode!=='FAVORITES'||pluginFavorites.has(p.id))&&
+      (mode!=='RECENT'||pluginRecent.includes(p.id)))
+      .sort((a,b)=>mode==='RECENT'?
+        pluginRecent.indexOf(a.id)-pluginRecent.indexOf(b.id):a.name.localeCompare(b.name));
     if(!results.length)pluginResults.append(h('p','arV6DeviceNote',
-      catalog.length?'No scanned plugins match the search':
-        'Native plugin catalog not published. No simulated plugins available.'));
+      catalog.length?'No native plugins match the filter':
+        'Native catalog not published · no simulated plugins available.'));
     for(const p of results.slice(0,100)){
-      const node=button(p.name+' · '+(typeof p.vendor==='string'?p.vendor:'VST3'),
-        {'data-plugin-id':p.id});
-      node.disabled=!id||!can('ADD_INSERT',id);
-      node.classList.add('arV6PluginResult');
-      pluginResults.append(node);
+      const row=h('div','arV6CatalogRow');
+      const star=button(pluginFavorites.has(p.id)?'★':'☆',
+        {'data-fx-fav':p.id,'aria-label':'Toggle favorite '+p.name});
+      star.classList.add('arV6CatalogStar');
+      const add=button(p.name+' · '+(p.vendor||'VST3'),{'data-plugin-id':p.id});
+      add.classList.add('arV6PluginResult');add.disabled=!id||!can('ADD_INSERT',id);
+      row.append(star,add);pluginResults.append(row);
     }
   }
   function supported(op){
@@ -794,7 +913,7 @@
     }
     if(newHeader&&!newStructure)updateHeader();
     root.dataset.demo=String(!fromNative);
-    if(newStructure||newControls){refreshDevicePanel();refreshPluginCatalog();}
+    if(newStructure||newControls){refreshDevicePanel();refreshPluginCatalog();refreshQuickFx();}
     // Integration readback is intentionally not a production callback.
     // It must never replace the working M4 console until callback cutover.
     if(!fromNative||s.productionCallbackLive===true)setVisible(true);
@@ -869,10 +988,12 @@
       bypass.classList.toggle('isOff',!!fx.bypassed);row.append(bypass);
       section.append(row);
     }
+    const catalogReady=supported('ADD_INSERT')&&nativeCatalog().length>0;
     const filePicker=supported('PICK_INSERT_FILE');
-    const addFx=button(filePicker?'+ OPEN VST3 FILE':'+ VST3',
-      filePicker?{'data-op':'PICK_INSERT_FILE','data-id':ch.id}:
-        {'data-ui':'OPEN_PLUGIN_MANAGER','data-id':ch.id});
+    const addFx=button(catalogReady?'+ ADD FX':filePicker?'+ OPEN VST3 FILE':'+ ADD FX',
+      catalogReady?{'data-ui':'OPEN_FX_QUICK','data-id':ch.id}:
+        filePicker?{'data-op':'PICK_INSERT_FILE','data-id':ch.id}:
+        {'data-ui':'OPEN_FX_QUICK','data-id':ch.id});
     addFx.classList.add('arV6AddFx');section.append(addFx);
     return section;
   }
@@ -1302,6 +1423,8 @@
   root.addEventListener('click',event=>{
     const launcher=event.target.closest('button[data-ui="OPEN_PLUGIN_MANAGER"]');
     if(launcher){openPluginManager(launcher.dataset.id);return;}
+    const fast=event.target.closest('button[data-ui="OPEN_FX_QUICK"]');
+    if(fast){openQuickFx(fast.dataset.id,fast);return;}
     const strip=event.target.closest('.arV6Strip');
     if(!strip||event.target.closest('button,input,select,[draggable]'))return;
     selectChannel(strip.dataset.channelId,event);

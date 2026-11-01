@@ -464,11 +464,11 @@ document.addEventListener('click',e=>{const b=e.target.closest('button,[data-cho
  if(b.dataset.mute!==undefined){toggleState(+b.dataset.mute,'mute');return}if(b.dataset.solo!==undefined){toggleState(+b.dataset.solo,'solo');return}
  if(b.dataset.pre!==undefined){let i=+b.dataset.pre;channels[i].pre=!channels[i].pre;b.classList.toggle('active');send('phase',channels[i].pre,i);return}
  if(b.dataset.hpf!==undefined){let i=+b.dataset.hpf;channels[i].hpf=!channels[i].hpf;b.classList.toggle('active');send('hpf',channels[i].hpf,i);return}
- if(b.dataset.masterInsert!==undefined){pendingMasterSlot=+b.dataset.masterInsert;openPluginBrowser(currentChannel,true);return}
+ if(b.dataset.masterInsert!==undefined){pendingMasterSlot=+b.dataset.masterInsert;if(!window.__JUCE__?.backend?.emitEvent)openQuickFx(currentChannel,pendingMasterSlot,b,true);return}
  if(b.dataset.masterPower!==undefined){const slot=+b.dataset.masterPower;masterBypassed[slot]=!masterBypassed[slot];renderMaster();persistSession();send('masterFxBypass',{slot,bypass:masterBypassed[slot]},-1);return}
  if(b.dataset.clip!==undefined){resetClip(b.dataset.clip);return}
  if(b.dataset.fxpower!==undefined){const [i,j]=b.dataset.fxpower.split(':').map(Number);setFxBypass(i,j,!bypassed[fxKey(i,j)]);return}
- if(b.dataset.insert){let [i,j]=b.dataset.insert.split(':').map(Number);currentChannel=i;pendingSlot=j;openPluginBrowser(i);return}
+ if(b.dataset.insert){let [i,j]=b.dataset.insert.split(':').map(Number);if(!window.__JUCE__?.backend?.emitEvent)openQuickFx(i,j,b);return}
  if(b.dataset.deleteScene!==undefined){deleteMixerSnapshot(b.dataset.deleteScene);return}
  if(b.dataset.scene!==undefined){loadSnapshotByIndex(+b.dataset.scene);return}
  if(b.dataset.preset){applyQuickPreset(b.dataset.preset);return}
@@ -758,8 +758,74 @@ function renderSignalFlow(){
   return;
  }
  $('rackWorkspace').innerHTML=`<div class="feature-top"><div><span class="eyebrow">NO TECHNICAL PATCHBAY REQUIRED</span><h2>Signal Flow — See where your voice goes</h2><p>A beginner-first view of the real-time audio path. Select your audio device in Setup.</p></div><button class="action" id="openSetupFromFlow">CHOOSE AUDIO DEVICE</button></div><div class="workflow"><div class="flow-node"><span class="eyebrow">01 · INPUT</span><b>Microphone</b><small>Audio Interface<br>ASIO or WASAPI</small></div><span class="flow-arrow">➜</span><div class="flow-node"><span class="eyebrow">02 · FX CHAIN</span><b>VST3 Plugins</b><small>EQ · Dynamics<br>Reverb · Delay</small></div><span class="flow-arrow">➜</span><div class="flow-node"><span class="eyebrow">03 · MIXER</span><b>Mix & Monitor</b><small>Fader · Pan<br>Master · Meters</small></div><span class="flow-arrow">➜</span><div class="flow-node"><span class="eyebrow">04 · OUTPUT</span><b>Speakers / Stream</b><small>Audio Device<br>Streaming bridge later</small></div></div><div class="flow-summary"><span>⚠ In this trial the audio flow is a visual concept; no microphone is captured and no audio is sent to a livestream.</span><button class="ghost-action" id="flowFxButton">OPEN FX RACK</button></div>`}
+
+// Adopt PR #278 V5 contextual quick-insert on the ORIGINAL mixer.
+// Desktop native operations remain owned by bridge.js; this uses preview
+// catalog ONLY when JUCE is absent, never as a fabricated VST3 instance.
+const arV5Quick=document.createElement('section');
+arV5Quick.className='arV5QuickFx';arV5Quick.hidden=true;
+arV5Quick.setAttribute('role','dialog');
+arV5Quick.setAttribute('aria-label','Quick add effect');
+arV5Quick.innerHTML='<div class="arV5QuickHead"><strong>ADD FX</strong><button type="button" data-fast-close aria-label="Close quick effect picker">×</button></div>'+
+  '<input type="search" class="arV5QuickSearch" aria-label="Search quick effects" placeholder="Search an effect or category…">'+
+  '<div class="arV5QuickResults" role="listbox"></div>'+
+  '<div class="arV5QuickFoot">Enter: insert · Esc: close <button type="button" data-fast-manager>Plugin Manager · F8</button></div>';
+document.querySelector('#app .workbench')?.append(arV5Quick);
+const arV5Search=arV5Quick.querySelector('.arV5QuickSearch'),
+      arV5Results=arV5Quick.querySelector('.arV5QuickResults');
+let arV5Anchor=null;
+function closeQuickFx(focus=false){
+  if(arV5Quick.hidden)return;
+  arV5Quick.hidden=true;
+  if(focus&&arV5Anchor?.isConnected)arV5Anchor.focus();
+  arV5Anchor=null;
+}
+function renderQuickFx(){
+  if(arV5Quick.hidden)return;
+  arV5Results.replaceChildren();
+  const q=arV5Search.value.trim().toLocaleLowerCase();
+  const found=pluginCatalog.filter(p=>
+    (p.name+' '+p.type+' '+(p.hint||'')).toLocaleLowerCase().includes(q));
+  for(const fx of found.slice(0,64)){
+    const b=document.createElement('button');b.type='button';
+    b.className='arV5QuickResult';b.dataset.fastPlugin=fx.name;
+    const title=document.createElement('span');title.textContent=fx.name;
+    const kind=document.createElement('small');kind.textContent=fx.type;
+    b.append(title,kind);arV5Results.append(b);
+  }
+  if(!found.length){const p=document.createElement('p');p.textContent='No matching demo effects';arV5Results.append(p);}
+}
+function openQuickFx(channel,slot,anchor,isMaster=false){
+  if(window.__JUCE__?.backend?.emitEvent)return false;
+  if(!isMaster){currentChannel=channel;pendingMasterSlot=null;pendingSlot=slot;}
+  else pendingMasterSlot=slot;
+  arV5Anchor=anchor;
+  arV5Quick.querySelector('.arV5QuickHead strong').textContent=
+    (isMaster?'MAIN':channels[channel]?.name||'CHANNEL')+' · FX '+(slot+1)+' · UI PREVIEW';
+  const host=arV5Quick.parentElement,r=anchor?.getBoundingClientRect(),p=host?.getBoundingClientRect();
+  if(r&&p){arV5Quick.style.left=Math.max(6,Math.min(r.left-p.left,p.width-320))+'px';
+    arV5Quick.style.top=Math.max(6,Math.min(r.bottom-p.top+4,p.height-360))+'px';}
+  arV5Quick.hidden=false;arV5Search.value='';renderQuickFx();arV5Search.focus();return true;
+}
+arV5Search.addEventListener('input',renderQuickFx);
+arV5Quick.addEventListener('click',e=>{
+  if(e.target.closest('[data-fast-close]')){closeQuickFx(true);return;}
+  if(e.target.closest('[data-fast-manager]')){
+    closeQuickFx();openPluginBrowser(currentChannel,pendingMasterSlot!==null);return;}
+  const b=e.target.closest('[data-fast-plugin]');if(!b)return;
+  if(!pluginCatalog.some(p=>p.name===b.dataset.fastPlugin))return;
+  closeQuickFx();insertPlugin(b.dataset.fastPlugin);
+});
+arV5Quick.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeQuickFx(true);}
+  if(e.key==='Enter'&&e.target===arV5Search){
+    const first=arV5Results.querySelector('[data-fast-plugin]');
+    if(first){e.preventDefault();first.click();}
+  }
+});
+
 function openPluginBrowser(idx,isMaster=false){if(!isMaster){currentChannel=idx;pendingMasterSlot=null}activeCategory='All';$('pluginModal').classList.remove('hidden');$('pluginTarget').textContent=isMaster?'Adding to MASTER bus · demo FX catalog':'Adding to '+channels[idx].name+' · virtual effects catalog';$('pluginSearch').value='';renderPluginBrowser();$('pluginSearch').focus()}
-function closePluginBrowser(){$('pluginModal').classList.add('hidden')}
+function closePluginBrowser(){closeQuickFx();$('pluginModal').classList.add('hidden')}
 function renderPluginBrowser(){document.querySelectorAll('[data-category]').forEach(b=>b.classList.toggle('active',b.dataset.category===activeCategory));const q=$('pluginSearch').value.trim().toLowerCase();let pool=pluginCatalog.filter(p=>(activeCategory==='All'||p.type===activeCategory)&&`${p.name} ${p.type} ${p.hint}`.toLowerCase().includes(q));$('pluginResults').innerHTML=pool.map(p=>`<button class="plugin-card" data-pluginname="${safeText(p.name)}"><span class="plugin-glyph">${safeText(p.badge)}</span><span><b>${safeText(p.name)}</b><small>${safeText(p.type)} · ${safeText(p.hint)}</small></span></button>`).join('')||'<p>No matching demo effects.</p>'}
 function insertPlugin(name){
  if(pendingMasterSlot!==null){
@@ -979,7 +1045,7 @@ document.addEventListener('input',e=>{const el=e.target;if(!el.dataset.fxparam)r
 $('pluginModal').addEventListener('click',e=>{if(e.target===$('pluginModal'))closePluginBrowser()});
 $('channelIdentity').addEventListener('click',e=>{if(e.target===$('channelIdentity'))closeChannelIdentity()});
 $('identityName').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();commitChannelIdentity()}});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closePluginBrowser();closeChannelIdentity()}if((e.key==='Enter'||e.key===' ')&&e.target.matches('[data-editstrip]')){e.preventDefault();openChannelIdentity(+e.target.dataset.editstrip)}});
+document.addEventListener('keydown',e=>{if(e.key==='F8'&&!e.repeat&&!document.documentElement.classList.contains('ar-v6-active')){e.preventDefault();if(window.__JUCE__?.backend?.emitEvent)document.querySelector('[data-plugin-manager]')?.click();else{closeQuickFx();openPluginBrowser(currentChannel,pendingMasterSlot!==null)}return;}if(e.key==='Escape'){closeQuickFx();closePluginBrowser();closeChannelIdentity()}if((e.key==='Enter'||e.key===' ')&&e.target.matches('[data-editstrip]')){e.preventDefault();openChannelIdentity(+e.target.dataset.editstrip)}});
 document.addEventListener('change',e=>{if(e.target.id==='rackChannel')chooseChannel(+e.target.value)});
 document.addEventListener('click',e=>{const id=e.target.closest('button')?.id;if(id==='saveFxFromRack')saveFxChainPreset();else if(id==='recallFxPreset')recallFxChain();else if(id==='openSetupFromFlow')$('audioSetupBtn')?.click();else if(id==='flowFxButton')setView('FX RACK');else if(id==='backMixer')setView('MIX')});
 // The UI-only envelope remains one atomic storage transaction, never a 5s
