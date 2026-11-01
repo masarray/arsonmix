@@ -3,6 +3,7 @@
 // OBSERVATION tiers are explicit. Source text can never attest actual PCM.
 // No second schema; all JSON field validation lives in puzzle-seam.mjs.
 import {readFileSync} from 'node:fs';
+import {inspectCheckout as inspectApprovedConsole} from './check_pr278_console_authority.mjs';
 import {createHash} from 'node:crypto';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -157,6 +158,10 @@ if(process.argv[1]&&fileURLToPath(import.meta.url)===resolve(process.argv[1])){
     actualNativeS0Verified:false,actualCallbackPCMVerified:false,
     hardwareFAT:'PENDING',releaseSourceBlockers:result.releaseSourceBlockers},null,2));
   if(release){
+ const design=inspectApprovedConsole();
+ console.log('PR278 approved GUI source matches '+(design.checks.length-design.blocked.length)+'/'+design.checks.length);
+ for(const d of design.blocked)console.error('[PR278 GUI BLOCK] '+d.id+' -> GUI #271: '+d.action);
+ if(design.blocked.length)process.exitCode=1;
    if(result.releaseSourceBlockers.length){
      console.error('RELEASE SOURCE GATE BLOCKED: '+result.releaseSourceBlockers.length+
        ' source discrepancies. Windows+Chromium/real callback PCM are independent mandatory checks.');

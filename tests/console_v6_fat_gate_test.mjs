@@ -295,3 +295,27 @@ test('shared #279 release preflight blocks even a source with working M4 control
  const bad=structuredClone(src);bad.guiTest='fake.json';
  assert.equal(inspectPuzzleSources(bad,'a'.repeat(64)).portableFixtureMatch,false);
 });
+
+// PR #278 visual authority is separate from real JUCE PCM/ACK qualification.
+import {inspectPr278} from '../scripts/check_pr278_console_authority.mjs';
+test('PR278 source contract blocks divergent universal chrome/identity/MAIN',()=>{
+ const reference='<div id="tracks"></div><div id="master"></div><aside id="pluginBrowser"></aside>';
+ const js="root.id='arV6Console' main.id='arV6Main'"+
+  "selectField('IN','SET_SOURCE' selectField('OUT','SET_PRIMARY_OUT' "+
+  "fxSection(ch) sendSection(ch) arMixConsoleAck arMixConsoleSnapshot "+
+  "supportedOps productionCallbackLive===true paintPan( --v6-pan-start 'SET_CUE' "+
+  "button('LINK FADERS' button('ROUTE TO GROUP BUS' arV6PluginPanel "+
+  "arV6QuickPanel Search native scanned plugins";
+ const css='#app{--am-metal-panel:#14232C}#app .arV6Strip{background:#123}'+
+  '#app .arV6Main{width:178px}#app .arV6Top{background:#456}'+
+  '#app .arV6StripHead{color:white}#app .arV6StripStatus{color:white}';
+ const r=inspectPr278({reference,js,css,legacy:'channelIcons= channelPalette=',
+  test:'console-v8-native-unready.json arMixConsoleAck'});
+ for(const id of ['TOP_BOTTOM_COLOR_ICON','ONE_GRAPHITE_CHASSIS',
+  'BTN180_HEADER','PINNED_MAIN_EQUAL_WIDTH'])
+  assert.ok(r.blocked.some(c=>c.id===id),id+' must not pass');
+ assert.equal(r.audioCertified,false);
+ for(const id of ['REFERENCE_278','DIRECT_NATIVE_IO','LINK_VS_GROUP','NATIVE_ACK_NO_DEMO'])
+  assert.ok(r.checks.some(c=>c.id===id&&c.pass),id+' valid path lost');
+ assert.ok(inspectPr278({js,css}).blocked.some(c=>c.id==='REFERENCE_278'));
+});
