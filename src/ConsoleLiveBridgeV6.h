@@ -37,11 +37,8 @@ public:
         w.epoch=actualEpoch.toStdString();
         w.legacyRoutingRevision=decimalFromNative(
             route.getProperty("revision",juce::var())).toStdString();
-        // This is the actual accepted fixed-M4 production revision, NOT
-        // fabricated universal ChannelIds or an offline graph revision.
-        // It fences the existing installed callback's SOURCE/RT controls.
-        if(static_cast<bool>(route.getProperty("ready",false)))
-            w.graphRevision=w.legacyRoutingRevision;
+        // The accepted fixed-M4 revision stays under legacyM4 only.
+        // A ChannelId revision is never copied from an ordinal M4 graph.
         w.legacyActive=static_cast<bool>(route.getProperty("active",false));
         w.legacyRouteAccepted=static_cast<bool>(route.getProperty("ready",false)) &&
             static_cast<bool>(route.getProperty("hasAcceptedRoute",false));
@@ -109,11 +106,22 @@ public:
         // Optional diagnosed M4 accepted controls are sourced from the
         // installed JUCE control thread, not stale immutable routing faders.
         // UNREADY fixture stays byte-identical; these are NOT ChannelIds.
-        const auto controls=route.getProperty("liveChannelControls",juce::var());
-        if(controls.isArray()) {
-            const auto legacy=actual.getProperty("legacyM4",{});
-            if(auto* object=legacy.getDynamicObject())
-                object->setProperty("liveChannelControls",controls);
+        const auto legacy=actual.getProperty("legacyM4",{});
+        if(auto* object=legacy.getDynamicObject()) {
+            // Current native M4 (not a fake ChannelId roster): exactly the
+            // signal that is audible in this physical device callback.
+            const auto controls=route.getProperty("channelControls",juce::var());
+            const auto peaksL=route.getProperty("channelPeaksL",juce::var());
+            const auto peaksR=route.getProperty("channelPeaksR",juce::var());
+            const auto inserts=route.getProperty("fxInstances",juce::var());
+            if(controls.isArray())object->setProperty("channelControls",controls);
+            if(peaksL.isArray())object->setProperty("channelPeaksL",peaksL);
+            if(peaksR.isArray())object->setProperty("channelPeaksR",peaksR);
+            if(inserts.isArray())object->setProperty("fxInstances",inserts);
+            const auto main=route.getProperty("mainOutputs",juce::var());
+            if(main.isArray())object->setProperty("mainOutputs",main);
+            const auto monitor=route.getProperty("monitorOutputs",juce::var());
+            if(monitor.isArray())object->setProperty("monitorOutputs",monitor);
         }
         return actual;
     }
@@ -196,6 +204,8 @@ public:
         const auto epoch=device.getProperty("epoch","0").toString();
         const auto oldRev=graph.getProperty("revision","0").toString();
         const auto oldRoster=graph.getProperty("rosterRevision","0").toString();
+        const auto legacyRev=acceptedSnapshot.getProperty("legacyM4",{})
+                                .getProperty("routingRevision","0").toString();
         juce::String error;
         bool accepted=false;
         if(!armix::integration::validConsoleRequestId(bytes))error="INVALID_REQUEST_ID";
@@ -207,7 +217,7 @@ public:
             }
             recentIds_.push_back(bytes);
             completed_.insert(bytes);
-            std::uint64_t ep=0,rev=0,roster=0,channelId=0;
+            std::uint64_t ep=0,rev=0,roster=0,channelId=0,m4Revision=0;
             const auto target=intent.getProperty("targetChannelId",{});
             const auto payload=intent.getProperty("payload",{});
             const auto operation=intent.getProperty("operation",{}).toString();
@@ -220,12 +230,20 @@ public:
             else if(intent.getProperty("baseGraphRevision",{}).toString()!=oldRev ||
                     intent.getProperty("baseRosterRevision",{}).toString()!=oldRoster)
                 error="STALE_GRAPH_REVISION";
+            // M4's presentation ordinals are NOT universal ChannelIds.
+            // A legacy-console intent requires an explicit independent
+            // revision fence. Without it, reject rather than silently
+            // alias the ChannelId graph's revision 0 to an M4 revision.
+            else if(!decodeDecimal(intent.getProperty("legacyRoutingRevision",{}),
+                                    m4Revision) ||
+                    intent.getProperty("legacyRoutingRevision","").toString()!=legacyRev)
+                error="STALE_LEGACY_ROUTING_REVISION";
             else if(!target.isString() || !decodeDecimal(target,channelId) ||
                     channelId<1 || channelId>10)
                 error="INVALID_LEGACY_CHANNEL_ID";
             else if(!engine.dryRoutingLabActive() ||
                     engine.dryRoutingLabEpoch()!=ep ||
-                    engine.dryRoutingLabRevision()!=rev)
+                    engine.dryRoutingLabRevision()!=m4Revision)
                 error="PRODUCTION_GRAPH_NOT_ADMITTED";
             else if(!payload.isObject())error="INVALID_PAYLOAD";
             else {
@@ -242,7 +260,7 @@ public:
                         else if(format!="MONO"&&format!="STEREO")
                             error="INVALID_SOURCE_FORMAT";
                         else error=engine.switchDryRoutingLabSource(
-                            lane,ep,rev,format,left,right);
+                            lane,ep,m4Revision,format,left,right);
                     } else error="INVALID_PHYSICAL_INPUT_PORT";
                     accepted=error.isEmpty();
                 } else if(operation=="SET_FADER"||operation=="SET_PAN"||
@@ -273,9 +291,17 @@ public:
                         else if(operation=="SET_MUTE")key="mute";
                         else key="solo";
                         accepted=engine.setDryRoutingLabParameter(
-                            lane,ep,rev,key,control);
+                            lane,ep,m4Revision,key,control);
                         if(!accepted)error="NATIVE_CONTROL_REJECTED";
                     }
+                } else if(operation=="SET_PROCESSING_FORMAT"||
+                          operation=="SET_PRIMARY_OUT") {
+                    const auto nativeValue=payload.getProperty(
+                        operation=="SET_PRIMARY_OUT"?"destinationId":"format",{})
+                        .toString();
+                    error=engine.repatchDryRoutingLabChannel(
+                        lane,ep,m4Revision,operation,nativeValue);
+                    accepted=error.isEmpty();
                 } else if(operation=="SET_INSERT_BYPASS"||
                           operation=="OPEN_INSERT_EDITOR") {
                     // The token must match an actually prepared vendor
@@ -303,11 +329,11 @@ public:
                         if(!value.isBool())error="INVALID_BYPASS_VALUE";
                         else {
                             accepted=engine.setDryRoutingLabFxBypass(
-                                lane,foundSlot,ep,rev,token,static_cast<bool>(value));
+                                lane,foundSlot,ep,m4Revision,token,static_cast<bool>(value));
                             if(!accepted)error="NATIVE_INSERT_BYPASS_REJECTED";
                         }
                     } else {
-                        error=openEditor(lane,foundSlot,ep,rev,token);
+                        error=openEditor(lane,foundSlot,ep,m4Revision,token);
                         accepted=error.isEmpty();
                     }
                 } else error="UNSUPPORTED_UNIVERSAL_OPERATION";

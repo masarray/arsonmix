@@ -595,6 +595,9 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
     assert(static_cast<int>(outs.getArray()->getReference(1).getProperty("port",0))==4);
     const auto diagnostic=snap.getProperty("legacyM4",{});
     assert(diagnostic.getProperty("routingRevision","").toString()=="77");
+    // Universal revisions cannot be borrowed from M4; this unready source
+    // must not permit GUI ChannelId operations even while M4 PCM is active.
+    assert(graph.getProperty("revision","").toString()=="0");
     Bridge bridge;
     const auto intent=[&](const juce::String& req,const juce::String& ep,
                           const juce::String& rev="0") {
