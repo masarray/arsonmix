@@ -181,6 +181,7 @@
     SET_SOLO:'SET_SOLO',CREATE_CHANNEL:'CREATE_CHANNEL'
   };
   let accepted=null,acceptedNative=false,modeSend='',lastStructure='',requestSeq=0;
+  let draggingFx=null;
   const instance='gui'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
   let feedback='';
   const root=h('section','arV6Console');root.id='arV6Console';
@@ -384,7 +385,9 @@
     section.append(h('span','arV6SectionTitle','VST3 INSERTS'));
     const list=Array.isArray(ch.inserts)?ch.inserts:[];
     for(const fx of list){
-      const row=h('div','arV6FxSlot');row.dataset.fxId=clean(fx.id);
+      const row=h('div','arV6FxSlot');
+      row.dataset.fxId=clean(fx.id);row.dataset.id=ch.id;
+      row.draggable=can('MOVE_INSERT',ch.id);
       row.append(button(fx.name||fx.pluginName||'VST3',{'data-op':'OPEN_INSERT_EDITOR',
         'data-id':ch.id,'data-insert':clean(fx.id)}));
       const bypass=button(fx.bypassed?'OFF':'ON',{'data-op':'SET_INSERT_BYPASS',
@@ -621,6 +624,31 @@
     showFeedback(modeSend?
       'SENDS ON FADERS · native sends only · select MAIN FADERS to return':'MAIN FADERS · source gains unchanged');
   });
+  // Reorder is one native structural intent; DOM/PCM order never changes on drop.
+  root.addEventListener('dragstart',event=>{
+    const node=event.target.closest?.('.arV6FxSlot');
+    if(!node||!node.draggable||!can('MOVE_INSERT',node.dataset.id)){
+      event.preventDefault();return;
+    }
+    draggingFx={id:node.dataset.id,insertId:node.dataset.fxId};
+    event.dataTransfer?.setData('text/plain',draggingFx.insertId);
+    if(event.dataTransfer)event.dataTransfer.effectAllowed='move';
+  });
+  root.addEventListener('dragover',event=>{
+    const node=event.target.closest?.('.arV6FxSlot');
+    if(draggingFx&&node&&draggingFx.id===node.dataset.id&&
+      draggingFx.insertId!==node.dataset.fxId)event.preventDefault();
+  });
+  root.addEventListener('drop',event=>{
+    const node=event.target.closest?.('.arV6FxSlot'),source=draggingFx;
+    draggingFx=null;
+    if(!source||!node||source.id!==node.dataset.id||
+      source.insertId===node.dataset.fxId)return;
+    event.preventDefault();
+    sendIntent('MOVE_INSERT',source.id,
+      {insertId:source.insertId,beforeInsertId:node.dataset.fxId});
+  });
+  root.addEventListener('dragend',()=>{draggingFx=null});
   root.addEventListener('click',event=>{
     const n=event.target.closest('button[data-op]');
     if(!n||n.disabled)return;
