@@ -173,9 +173,11 @@ public:
     bool setAuxBusGain(int bus,float gain) noexcept {
         return block_&&block_->setAuxBusGain(bus,gain);
     }
+    bool setAuxSendGain(int source,int bus,SendTap tap,float gain) noexcept {
+        return block_ && block_->setAuxSendGain(source,bus,tap,gain);
+    }
     bool setAuxSendGain(int source,int bus,float gain) noexcept {
-        return block_ && block_->setAuxSendGain(
-            source,bus,SendTap::postFader,gain);
+        return setAuxSendGain(source,bus,SendTap::postFader,gain);
     }
     int activeInserts() const noexcept{return activeInserts_;}
     bool setStripControl(int channel,float gain,float pan,

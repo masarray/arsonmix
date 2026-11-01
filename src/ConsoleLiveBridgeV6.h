@@ -294,6 +294,33 @@ public:
                             lane,ep,m4Revision,key,control);
                         if(!accepted)error="NATIVE_CONTROL_REJECTED";
                     }
+                } else if(operation=="SET_SEND_LEVEL") {
+                    // A SEND level is native realtime PCM, NOT a new graph
+                    // edge. Existing AUX1..4 are independent FX return buses.
+                    const auto aux=payload.getProperty("auxIndex",{});
+                    const auto tapName=payload.getProperty("tap","POST").toString();
+                    const auto raw=payload.getProperty("value",{});
+                    if(!aux.isInt()||static_cast<int>(aux)<0||
+                       static_cast<int>(aux)>=armix::mixer::auxBusCount)
+                        error="INVALID_AUX_RETURN";
+                    else if(tapName!="PRE"&&tapName!="POST")
+                        error="INVALID_SEND_TAP";
+                    else if(!raw.isInt()&&!raw.isDouble())
+                        error="INVALID_SEND_LEVEL";
+                    else {
+                        const double value=static_cast<double>(raw);
+                        if(!std::isfinite(value)||value<0.||value>1.)
+                            error="INVALID_SEND_LEVEL";
+                        else {
+                            const auto tap=tapName=="PRE"?
+                                armix::mixer::SendTap::preFader:
+                                armix::mixer::SendTap::postFader;
+                            accepted=engine.setDryRoutingLabAuxSendGain(
+                                lane,static_cast<int>(aux),ep,m4Revision,
+                                static_cast<float>(value),tap);
+                            if(!accepted)error="NATIVE_SEND_NOT_ADMITTED";
+                        }
+                    }
                 } else if(operation=="SET_PROCESSING_FORMAT"||
                           operation=="SET_PRIMARY_OUT") {
                     const auto nativeValue=payload.getProperty(

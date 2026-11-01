@@ -1122,13 +1122,14 @@ public:
         return dryRoutingLab_.setAuxBusGain(bus,epoch,revision,gain);
     }
     bool setDryRoutingLabAuxSendGain(int source,int bus,std::uint64_t epoch,
-            std::uint64_t revision,float gain) noexcept {
+            std::uint64_t revision,float gain,
+            armix::mixer::SendTap tap=armix::mixer::SendTap::postFader) noexcept {
         if(independent_.active()||routeReconfiguring_.load(std::memory_order_acquire)||
            diagnosticRoute_.load(std::memory_order_acquire)
                !=armix::diagnostics::Route::normal||
            !directFence_.permitted()||savedDirectSetup_||savedLiveSetup_)
             return false;
-        return dryRoutingLab_.setAuxSendGain(source,bus,epoch,revision,gain);
+        return dryRoutingLab_.setAuxSendGain(source,bus,epoch,revision,gain,tap);
     }
     bool setDryRoutingLabFxBypass(int lane,int slot,std::uint64_t epoch,
             std::uint64_t revision,const juce::String& instanceId,

@@ -1546,9 +1546,15 @@ private:
                 "arMixAuxBusGainAck",juce::var(ack.release()));
             return;
         }
-        // M1 operator realtime PARAM: existing AUX POST gain changes while
-        // audio is running. Structural sends remain guarded MUTE/APPLY.
+        // Existing PRE and POST sends are realtime parameters, including a
+        // live vocal SEND → AUX FX Return. Tap selection and NEW send edges
+        // remain separate structural transactions; this changes LEVEL only.
         if(action=="routingAuxSendGain") {
+            const auto tapName=args.getProperty("tap","POST").toString();
+            const bool validTap=tapName=="PRE"||tapName=="POST";
+            const auto tap=tapName=="PRE"
+                ?armix::mixer::SendTap::preFader
+                :armix::mixer::SendTap::postFader;
             const int source=static_cast<int>(args.getProperty("from",-1));
             const int bus=static_cast<int>(args.getProperty("bus",-1));
             const int requestId=static_cast<int>(args.getProperty("requestId",0));
@@ -1557,18 +1563,19 @@ private:
             const bool number=value.isDouble()||value.isInt();
             const float gain=number?static_cast<float>(static_cast<double>(value)):-1.f;
             const bool ok=!nativeShowBusy_&&!studioBackupBusy_&&!ep.isVoid()&&!rv.isVoid() &&
-                number && requestId>0 &&
+                number && validTap && requestId>0 &&
                 engine_.setDryRoutingLabAuxSendGain(source,bus,
                     static_cast<std::uint64_t>(static_cast<juce::int64>(ep)),
-                    static_cast<std::uint64_t>(static_cast<juce::int64>(rv)),gain);
+                    static_cast<std::uint64_t>(static_cast<juce::int64>(rv)),gain,tap);
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("ok",ok);
             ack->setProperty("requestId",requestId);
             ack->setProperty("from",source);
             ack->setProperty("bus",bus);
+            ack->setProperty("tap",tapName);
             ack->setProperty("gain",static_cast<double>(gain));
             ack->setProperty("error",ok?juce::String():
-                "Live AUX gain rejected: route revision/device changed or POST send missing");
+                "Live AUX gain rejected: stale route, invalid tap or missing PRE/POST send");
             ack->setProperty("state",engine_.status().getProperty("dryRoutingLab",{}));
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
                 "arMixAuxSendGainAck",juce::var(ack.release()));

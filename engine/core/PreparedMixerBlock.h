@@ -190,6 +190,8 @@ public:
             const float v=plan_.aux.edges[e].initialGain;
             auxTarget_[e].store(v,std::memory_order_relaxed);
             auxApplied_[e]=v;
+            auxGoal_[e]=v;
+            auxRampRemaining_[e]=0;
         }
         for(int b=0;b<auxBusCount;++b){
             const float gain=plan_.aux.buses[b].gain;
@@ -236,12 +238,13 @@ public:
         return true;
     }
 
-    // Message-thread-only target update; immutable edge topology/pan/FX ownership.
-    // Only an ALREADY EXISTING POST edge may be adjusted while output is live.
-    // This index lookup is on CONTROL, never inside the audio callback.
+    // Control thread updates an EXISTING PRE or POST edge only. Creating a
+    // new edge or changing its tap remains a structural graph transaction.
+    // Every valid send has its own independently smoothed DSP target.
     bool setAuxSendGain(int source,int bus,SendTap tap,float gain) noexcept {
         if(source<0||source>=stripCount||bus<0||bus>=auxBusCount||
-           tap!=SendTap::postFader||!std::isfinite(gain)||gain<0.f||gain>1.f)
+           (tap!=SendTap::preFader&&tap!=SendTap::postFader)||
+           !std::isfinite(gain)||gain<0.f||gain>1.f)
             return false;
         for(int e=plan_.aux.offset[source];e<plan_.aux.offset[source+1];++e)
             if(plan_.aux.edges[e].bus==bus && plan_.aux.edges[e].tap==tap){
@@ -566,22 +569,31 @@ private:
             if(edge.tap!=tap)continue;
             float* dl=auxLeft_[edge.bus],* dr=auxRight_[edge.bus];
             if(!dl||!dr)continue;
+            // Preserve a 64-SAMPLE de-zipper across arbitrarily small /
+            // variable callbacks. PRE and POST use the same ramp; no
+            // frame-size-dependent jump, heap, lock, or graph recompilation.
             const float target=auxTarget_[e].load(std::memory_order_acquire);
-            const float start=auxApplied_[e];
-            const int ramp=std::min(frames,64);
-            if(std::abs(target-start)<1.e-7f){
+            if(target!=auxGoal_[e]) {
+                auxGoal_[e]=target;
+                auxRampRemaining_[e]=64;
+            }
+            float current=auxApplied_[e];
+            int remaining=auxRampRemaining_[e];
+            if(remaining==0) {
                 const float gl=target*edge.leftPan,gr=target*edge.rightPan;
                 for(int f=0;f<frames;++f){dl[f]+=l[f]*gl;dr[f]+=r[f]*gr;}
-            }else{
-                const float step=(target-start)/static_cast<float>(ramp);
-                float current=start;
-                for(int f=0;f<frames;++f){
-                    if(f<ramp)current+=step;
+            } else {
+                for(int f=0;f<frames;++f) {
+                    if(remaining>0) {
+                        current+=(target-current)/static_cast<float>(remaining);
+                        --remaining;
+                    }else current=target;
                     dl[f]+=l[f]*current*edge.leftPan;
                     dr[f]+=r[f]*current*edge.rightPan;
                 }
             }
-            auxApplied_[e]=target;
+            auxApplied_[e]=remaining==0?target:current;
+            auxRampRemaining_[e]=remaining;
         }
     }
     static bool validCapacity(int f) noexcept {return f>0 && f<=hardFrameLimit;}
@@ -597,7 +609,8 @@ private:
     std::array<std::atomic<std::uint32_t>,stripCount> physicalTarget_{};
     std::array<PhysicalSourceFade,stripCount> physicalBlend_{};
     std::array<std::atomic<float>,maxAuxSends> auxTarget_{};
-    std::array<float,maxAuxSends> auxApplied_{}; // callback thread exclusive
+    std::array<float,maxAuxSends> auxApplied_{},auxGoal_{}; // callback exclusive
+    std::array<int,maxAuxSends> auxRampRemaining_{};
     std::array<std::atomic<float>,auxBusCount> auxBusTarget_{};
     std::array<float,auxBusCount> auxBusApplied_{}; // callback thread exclusive
     std::array<bool,stripCount> rampPrimed_{};

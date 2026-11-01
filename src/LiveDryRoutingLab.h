@@ -646,12 +646,15 @@ public:
         return true;
     }
 
-    // Operator M1: one POST gain is a realtime PARAMETER, never topology.
-    // The accepted send identity must exist and match THIS device epoch.
+    // Real AUX FX RETURN: one existing PRE or POST send has an independent
+    // realtime level. The tap/destination/edge identity are immutable here.
+    // A single render of source PCM, vendor VST, and AUX return remains
+    // authoritative on the installed JUCE callback.
     // The UI may adjust it while physical output is ARMED; no new plugin,
     // graph, callback or device restart occurs.
     bool setAuxSendGain(int source,int bus,std::uint64_t expectedEpoch,
-                        std::uint64_t expectedRevision,float gain) noexcept {
+                        std::uint64_t expectedRevision,float gain,
+                        armix::mixer::SendTap tap=armix::mixer::SendTap::postFader) noexcept {
         if(source<0||source>=count||bus<0||bus>=auxCount||
            !std::isfinite(gain)||gain<0.f||gain>1.f||
            !ready()||!hasExplicitRoute()||
@@ -663,14 +666,15 @@ public:
         for(auto& item:*list) {
             if(static_cast<int>(item.getProperty("from",-1))==source &&
                static_cast<int>(item.getProperty("to",-1))==count+bus &&
-               item.getProperty("tap",{}).toString()=="POST") {
+               item.getProperty("tap",{}).toString()==
+                   (tap==armix::mixer::SendTap::preFader?"PRE":"POST")) {
                 accepted=&item;break;
             }
         }
         if(!accepted)return false; // No implicit creation of an AUX edge.
         if(!publisher_.updateActiveControl(expectedEpoch,expectedRevision,
            [&](FxGraph& fx) noexcept {
-               return fx.setAuxSendGain(source,bus,gain);
+               return fx.setAuxSendGain(source,bus,tap,gain);
            }))return false;
         accepted->getDynamicObject()->setProperty("gain",static_cast<double>(gain));
         return true;
