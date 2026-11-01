@@ -1041,10 +1041,10 @@ button:disabled{opacity:.45;cursor:not-allowed}
     <section class="console-body collapsed-send" data-density="comfort" aria-label="Live mixing console">
       <aside class="section-rail" aria-label="Mixer section icons">
         <button class="rail-cell route" data-section="route" aria-expanded="true" title="Collapse / expand Inputs and Outputs">⇥</button>
-        <button class="rail-cell fx collapsed" data-section="fx" aria-expanded="false" title="Collapse / expand Effects">fx</button>
+        <button class="rail-cell fx" data-section="fx" aria-expanded="true" title="Collapse / expand Effects">fx</button>
         <button class="rail-cell send collapsed" data-section="send" aria-expanded="false" title="Collapse / expand Sends">↪</button>
         <div class="rail-cell pan" title="Pan">◉</div>
-        <div class="rail-cell trim" title="Digital input trim"><small>TRIM</small></div>
+        
         <div class="rail-cell switch" title="Mute / Solo / Cue / Monitor"><small>M S C</small></div>
         <div class="rail-cell fader" title="Level and meter">dB</div>
         <div class="rail-cell footer" title="Track labels"><small>▦</small></div>
@@ -1058,9 +1058,21 @@ button:disabled{opacity:.45;cursor:not-allowed}
       <div class="plugin-filters"><select id="pluginCategory" aria-label="Plugin category"><option value="all">All effects</option><option value="EQ">EQ / Filter</option><option value="Dynamics">Dynamics</option><option value="Reverb">Reverb</option><option value="Delay">Delay</option><option value="Modulation">Modulation</option><option value="Utility">Utility</option></select><select id="pluginView" aria-label="Plugin list"><option value="all">Available</option><option value="favorites">★ Favorites</option><option value="recent">Recent</option><option value="hidden">Hidden</option></select></div>
       <div class="plugin-headings"><span>NAME · VENDOR</span><span>FORMAT / STATE</span></div>
       <div id="pluginResults" class="plugin-results" role="list" aria-label="Available effects"></div>
-      <div class="plugin-footer"><span id="pluginCount">Reference catalog</span><button id="pluginImport" title="Import plugin metadata from a JSON registry exported by a scanner">Import list…</button><input type="file" id="pluginFile" accept=".json,application/json" hidden><button disabled id="pluginScan" title="Requires native VST3 scanner; not present in this HTML reference">Scan VST3</button></div>
-      <div class="plugin-disclaimer">DEMO EFFECTS · no VST3 scanned or loaded. Favorites/hidden saved locally where supported; native scanner not connected.</div>
+      <div class="plugin-footer"><span id="pluginCount">Reference catalog</span><button id="pluginImport" title="Import plugin metadata from a JSON registry exported by a scanner">Import list…</button><input type="file" id="pluginFile" accept=".json,application/json" hidden><button id="pluginScan" title="Scan using connected native host; static Pages cannot access VST3">Scan VST3</button></div>
+      <div class="plugin-scan-settings">
+        <div class="scan-title">VST3 SEARCH LOCATIONS</div>
+        <div id="pluginPaths" class="scan-paths">C:\\Program Files\\Common Files\\VST3 — default</div>
+        <div class="scan-add"><input type="text" id="pluginNewPath" placeholder="Additional folder path (native host)" aria-label="Additional VST3 search path"><button id="pluginAddPath">+ Add folder</button></div>
+        <div class="scan-status" id="pluginScanStatus">Static browser preview · native VST3 scanner not connected</div>
+      </div>
+      <div class="plugin-disclaimer">UI DEMO · imported lists are metadata only. Real VST3 verification and instantiation require Windows native engine.</div>
     </aside>
+    <div id="fastPicker" class="fast-picker" role="dialog" aria-label="Quick effect selection" hidden>
+      <div class="fast-head"><span id="fastTarget">ADD FX</span><button id="fastClose" aria-label="Close quick effect picker" title="Close">×</button></div>
+      <input type="search" id="fastSearch" autocomplete="off" spellcheck="false" placeholder="Find effect… type to filter" aria-label="Find effect quickly">
+      <div class="fast-results" id="fastResults" role="listbox" aria-label="Choose an effect"></div>
+      <div class="fast-foot">Enter to insert · Esc to close · <button id="fastManage">Manage VST3…</button></div>
+    </div>
   </main>
   <footer class="status-bar"><span class="state" id="transport">Stopped</span><span id="info" class="last-action" role="status" aria-live="polite">Interactive visual reference. Changes are local to this mockup.</span><span class="warning">SIMULATED METERS · NO REAL AUDIO</span></footer>
 </div>
@@ -1072,7 +1084,7 @@ const INIT=['Host','Interview','Sound FX','Music Bed','Vocal 1','Vocal 2','Guita
 const FX=['None','Parametric Equalizer','Dynamics Processing','Studio Reverb','DeEsser','Hard Limiter','Tube-modeled Compressor','Delay','Chorus','Multiband Compressor','Graphic Equalizer','Echo'];
 const CATEGORIES={'Parametric Equalizer':'EQ','Graphic Equalizer':'EQ','Dynamics Processing':'Dynamics','Hard Limiter':'Dynamics','Tube-modeled Compressor':'Dynamics','Multiband Compressor':'Dynamics',DeEsser:'Dynamics','Studio Reverb':'Reverb',Delay:'Delay',Echo:'Delay',Chorus:'Modulation'};
 let pluginCatalog=FX.filter(x=>x!=='None').map((name,i)=>({id:'demo-'+i,name,vendor:'Reference Effect',category:CATEGORIES[name]||'Utility',format:'DEMO',status:'demo',latencySamples:null,favorite:i<3,hidden:false}));
-let pluginRecent=[],activeFxTarget=null,pluginOpen=false;
+let pluginRecent=[],activeFxTarget=null,pluginOpen=false,quickOpen=false,scanPaths=['C:\\Program Files\\Common Files\\VST3'];
 const PLUGIN_PREFS_KEY='arsonmix.ref.plugin-prefs.v1';
 function restorePluginPreferences(){
  try{
@@ -1150,7 +1162,7 @@ function strip(t){
  code+='<div class="route-field"><span class="route-caption">OUT</span><select class="route-select" data-field="output" title="Primary output" aria-label="'+escapeHtml(t.name)+' output">'+option(channelOptions(t,'output'),t.output)+'</select></div></div>';
  code+=sectionFx(t)+sectionSend(t);
  code+='<div class="section pan-section"><span class="pan-icon" title="Pan / Balance">PAN</span><span class="pan-control" style="'+panStyle(t.pan)+'"><input class="center-pan" type="range" min="-100" max="100" step="1" value="'+t.pan+'" data-field="pan" title="Pan from center; release near center to snap; double-click to center" aria-label="Channel pan; double-click center"></span><output>'+panLabel(t.pan)+'</output></div>';
- code+='<div class="section trim-section"><span class="trim-label" title="Digital input trim">TRIM</span><input class="trim-control ari-horizontal" type="range" min="-24" max="24" step="0.5" value="'+t.trim+'" style="--range-pct:'+rangePct(t.trim,-24,24)+'%" data-field="trim" aria-label="Digital trim dB" title="Digital trim (-24..+24dB)"><output class="trim-value">'+formatDb(t.trim)+'</output></div>';
+
  code+='<div class="section switch-section">'
    +'<button class="switch btn-180 mute '+(t.mute?'on':'')+'" data-action="mute" title="Mute channel" aria-pressed="'+t.mute+'">MUTE</button>'
    +'<button class="switch btn-180 solo '+(t.solo?'on':'')+'" data-action="solo" title="Solo channel" aria-pressed="'+t.solo+'">SOLO</button>'
@@ -1397,7 +1409,7 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  const a=btn.dataset.action;
  if(a==='rename')return;
  if(a==='format'&&t.kind==='audio'){t.format=t.format==='mono'?'stereo':'mono';refreshStrip(t);say(t.name+' processing → '+t.format.toUpperCase()+' · physical source '+t.input+' unchanged (reference only)');return;}
- if(a==='openPlugin'){openPluginBrowser(t,Number(btn.dataset.slot));return;}
+ if(a==='openPlugin'){openFastPicker(t,Number(btn.dataset.slot),btn);return;}
  if(a==='removeFx'){const i=Number(btn.dataset.slot);t.fx[i]='None';t.slotBypass[i]=false;refreshStrip(t);say(t.name+' · cleared FX insert '+(i+1));return;}
  if(a==='slotPower'){const slot=Number(btn.dataset.slot);if(t.fx[slot]==='None'){say(t.name+': choose an effect before toggling bypass');return;}t.slotBypass[slot]=!t.slotBypass[slot];refreshStrip(t);say(t.name+': FX '+(slot+1)+(t.slotBypass[slot]?' bypassed':' enabled'));return;}
  if(a==='eq')t.eq=!t.eq;
@@ -1522,13 +1534,48 @@ function pluginTargetLabel(){
  return t? t.name+' · Insert '+(activeFxTarget.slot+1):'Select a channel + insert slot';
 }
 function setBrowser(open){
- pluginOpen=!!open;plugEl('pluginBrowser').hidden=!pluginOpen;
- document.querySelector('.console-body').classList.toggle('plugin-open',pluginOpen);
- render();
+ pluginOpen=!!open;
+ plugEl('pluginBrowser').hidden=!pluginOpen;
+ // Plugin Manager is floating and NEVER changes bank width or rebuilds strips.
+ document.querySelector('.console-body').classList.remove('plugin-open');
  plugEl('pluginsButton').setAttribute('aria-expanded',String(pluginOpen));
- if(pluginOpen){renderPluginCatalog();const input=plugEl('pluginSearch');if(input.focus)input.focus();}
+ if(pluginOpen){
+  setFastPicker(false);
+  renderPluginCatalog();renderScanPaths();
+  const input=plugEl('pluginSearch');if(input.focus)input.focus();
+ }
 }
-function openPluginBrowser(t,slot){
+function setFastPicker(open){
+ quickOpen=!!open;
+ plugEl('fastPicker').hidden=!quickOpen;
+}
+function renderFastPicker(){
+ const q=String(plugEl('fastSearch').value||'').trim().toLowerCase();
+ const list=pluginCatalog.filter(p=>!p.hidden&&!['error','disabled'].includes(p.status)&&
+ [p.name,p.category,p.vendor].join(' ').toLowerCase().includes(q))
+ .sort((a,b)=>Number(b.favorite)-Number(a.favorite)||a.name.localeCompare(b.name));
+ plugEl('fastResults').innerHTML=list.length?list.map(p=>
+ '<button class="fast-effect" type="button" data-fast-id="'+escapeHtml(p.id)+'"><span class="fast-effect-title">'+escapeHtml(p.name)+'</span><span class="fast-effect-kind">'+escapeHtml(p.category)+'</span>'+(p.favorite?'<span class="fast-star">★</span>':'')+'</button>'
+ ).join(''):'<div class="fast-empty">No matching effects</div>';
+}
+function openFastPicker(t,slot,anchor){
+ setBrowser(false);
+ const first=t||selection()[0]||tracks[0];
+ if(!first)return;
+ const empty=first.fx.findIndex(x=>x==='None');
+ activeFxTarget={channelId:first.id,slot:Number.isInteger(slot)?slot:empty<0?0:empty};
+ plugEl('fastTarget').textContent=first.name+' · FX '+(activeFxTarget.slot+1);
+ plugEl('fastSearch').value='';
+ const pane=document.querySelector('.console-pane'),r=anchor?.getBoundingClientRect?.(),p=pane?.getBoundingClientRect?.();
+ const picker=plugEl('fastPicker');
+ if(r&&p&&picker.style?.setProperty){
+  const x=Math.min(Math.max(6,r.left-p.left),Math.max(6,p.width-310));
+  const y=Math.min(Math.max(8,r.bottom-p.top+3),Math.max(8,p.height-330));
+  picker.style.setProperty('left',x+'px');picker.style.setProperty('top',y+'px');
+ }
+ setFastPicker(true);renderFastPicker();plugEl('fastSearch').focus?.();
+}
+function openPluginBrowser(t,slot){ // manager button and F8, deliberately separate from Add FX
  const first=t||selection()[0]||tracks[0];
  if(first){
   const empty=first.fx.findIndex(x=>x==='None');
@@ -1536,6 +1583,10 @@ function openPluginBrowser(t,slot){
  }
  plugEl('pluginTarget').textContent=pluginTargetLabel();
  setBrowser(true);
+}
+function renderScanPaths(){
+ const container=plugEl('pluginPaths');
+ container.innerHTML=scanPaths.map((p,i)=>'<div class="scan-path"><span title="'+escapeHtml(p)+'">'+escapeHtml(p)+'</span>'+(i?'<button data-path-index="'+i+'" title="Remove folder">×</button>':'<small>Default</small>')+'</div>').join('');
 }
 function catalogById(id){return pluginCatalog.find(p=>p.id===id);}
 function renderPluginCatalog(){
@@ -1567,7 +1618,7 @@ function insertCatalogPlugin(id){
  if(!t||!Number.isInteger(activeFxTarget.slot)||activeFxTarget.slot<0||activeFxTarget.slot>=t.fx.length){say('Selected FX slot is no longer available.');return;}
  t.fx[activeFxTarget.slot]=plugin.name;t.slotBypass[activeFxTarget.slot]=false;
  pluginRecent=[plugin.id,...pluginRecent.filter(x=>x!==plugin.id)].slice(0,20);savePluginPreferences();
- refreshStrip(t);setBrowser(false);
+ refreshStrip(t);setFastPicker(false);setBrowser(false);
  say(t.name+' · FX '+(activeFxTarget.slot+1)+' → '+plugin.name+' · GUI reference only (no native DSP)');
 }
 function acceptPluginManifest(items){
@@ -1593,6 +1644,40 @@ function acceptPluginManifest(items){
 plugEl('pluginsButton').addEventListener('click',()=>pluginOpen?setBrowser(false):openPluginBrowser());
 plugEl('pluginClose').addEventListener('click',()=>setBrowser(false));
 plugEl('pluginSearch').addEventListener('input',renderPluginCatalog);
+plugEl('fastSearch').addEventListener('input',renderFastPicker);
+plugEl('fastClose').addEventListener('click',()=>setFastPicker(false));
+plugEl('fastManage').addEventListener('click',()=>openPluginBrowser());
+plugEl('fastResults').addEventListener('click',e=>{
+ const btn=e.target.closest('[data-fast-id]');if(btn)insertCatalogPlugin(btn.dataset.fastId);
+});
+plugEl('fastSearch').addEventListener('keydown',e=>{
+ if(e.key==='Enter'){
+  const b=plugEl('fastResults').querySelector('.fast-effect');
+  if(b){e.preventDefault();insertCatalogPlugin(b.dataset.fastId);}
+ }else if(e.key==='Escape'){e.preventDefault();setFastPicker(false);}
+});
+plugEl('pluginAddPath').addEventListener('click',()=>{
+ const input=plugEl('pluginNewPath'),raw=String(input.value||'').trim();
+ if(!raw||raw.length>260){say('Enter a valid plugin folder path (max 260 characters)');return;}
+ if(!scanPaths.includes(raw))scanPaths.push(raw);
+ input.value='';renderScanPaths();
+ say('Added search path to UI reference; native VST3 scanning not connected');
+});
+plugEl('pluginPaths').addEventListener('click',e=>{
+ const btn=e.target.closest('[data-path-index]');if(!btn)return;
+ const i=Number(btn.dataset.pathIndex);if(i>0&&i<scanPaths.length)scanPaths.splice(i,1);
+ renderScanPaths();
+});
+plugEl('pluginScan').addEventListener('click',()=>{
+ const scanner=window.ArSonMixNativePlugins?.scan;
+ if(typeof scanner==='function'){
+  plugEl('pluginScanStatus').textContent='Native scan requested · awaiting verified results';
+  scanner({paths:[...scanPaths],verify:true});
+ }else{
+  plugEl('pluginScanStatus').textContent='Windows VST3 scan requires installed native host · GitHub Pages cannot access local plugin files';
+  say('Plugin Manager setup only: scanning requires native ArSonMix executable');
+ }
+});
 plugEl('pluginCategory').addEventListener('change',renderPluginCatalog);
 plugEl('pluginView').addEventListener('change',renderPluginCatalog);
 plugEl('pluginResults').addEventListener('click',e=>{
@@ -1654,11 +1739,12 @@ window.addEventListener('keydown',e=>{
  }
  if(e.key==='Escape'&&sofEnabled){toggleSof(false);return;}
  if(e.key==='F8'&&!textEntry){e.preventDefault();pluginOpen?setBrowser(false):openPluginBrowser();return;}
+ if(e.key==='Escape'&&quickOpen){setFastPicker(false);return;}
  if(e.key==='Escape'&&pluginOpen){setBrowser(false);return;}
  if(e.key==='Escape'&&preview)togglePreview();
  if(e.target===document.body&&(e.key==='ArrowRight'||e.key==='ArrowLeft')){
   const width={comfort:150,standard:125,compact:105}[document.querySelector('.console-body').dataset.density]||150;
-  document.getElementById('viewport').scrollLeft+=e.key==='ArrowRight'?width:-width;
+  document.getElementById(e.key==='ArrowRight'?'bankNext':'bankPrev').click();
  }
 });
 let resizeQueued=false;
