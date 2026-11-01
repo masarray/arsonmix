@@ -1788,9 +1788,8 @@
       if(!route().ready)openIO('device');
       else openSourceChooser(index);
     } else if(step==='fx'){
-      // CONSOLE is the single visible operator workflow; classic layers are
-  // retained only as an advanced compatibility/diagnostics view.
-  setMode('CONSOLE');
+      // The existing FX-only engineering layer remains an optional inspector.
+      setMode('FX');
       if(typeof chooseChannel==='function')chooseChannel(index);
       strip?.querySelector('.rack')?.scrollIntoView?.({block:'nearest',inline:'nearest'});
     } else if(step==='sends'){
@@ -2151,5 +2150,6 @@
       closeSendEditor();
     }
   },true);
-  setMode('FX');
+  // The ACTUAL M4 WebView2 mixer now opens as one integrated operator console.
+  setMode('CONSOLE');
 })();
