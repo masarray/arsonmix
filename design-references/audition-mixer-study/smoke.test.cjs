@@ -631,6 +631,21 @@ check(html.includes('wireHoverId=t.id;renderWireRouting()') &&
  html.includes('edge.preview'),
  'Hover-only candidate wire uses differentiated dashed amber preview');
 node('reset').dispatch('click');
+
+// V12 pinned Master socket follows FL Send-switch semantics without extra PCM edge.
+node('body').clientWidth=1680;node('reset').dispatch('click');
+const masterId=Number(node('master').innerHTML.match(/data-id="(\d+)"/)?.[1]);
+check(Number.isInteger(masterId)&&node('master').innerHTML.includes('wire-socket is-linked'),
+ 'Pinned MAIN route is a visible green clickable socket for selected source');
+wireTo(masterId);
+check(node('master').innerHTML.includes('MAIN OFF') &&
+ node('wireMaster').textContent==='MAIN OFF',
+ 'Clicking pinned MASTER wire socket disconnects direct primary Main feed');
+wireTo(masterId);
+check(node('master').innerHTML.includes('MAIN ON') &&
+ node('wireMaster').textContent==='MAIN ON',
+ 'Second click on pinned MASTER socket restores direct Main without creating send edges');
+node('reset').dispatch('click');
 node('reset').dispatch('click');
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
