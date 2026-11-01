@@ -1476,13 +1476,15 @@
     next.type='button';next.dataset.ioNextInput='1';
     next.disabled=!hardwareReady(route())||deviceDirty()||deviceBusy;
     panel.appendChild(next);body.appendChild(panel);
-    const matrixFold=node('details','arIODeviceMatrixDetails');
-    matrixFold.open=advancedDeviceOpen;
-    matrixFold.appendChild(node('summary','','ADVANCED · SOFTWARE INPUT ALIASES / HARDWARE MATRIX'));
-    matrixFold.addEventListener('toggle',()=>{
-      if(advancedDeviceOpen===matrixFold.open)return;
-      advancedDeviceOpen=matrixFold.open;lastSignature='';refreshIO();
-    });
+    // Use synchronous operator input instead of a deferred <details> toggle:
+    // status refresh can replace the dialog DOM before the browser's
+    // asynchronous toggle event arrives and silently close the matrix.
+    const matrixFold=node('section','arIODeviceMatrixDetails');
+    const matrixToggle=node('button','arIODeviceMatrixToggle',
+      (advancedDeviceOpen?'HIDE':'ADVANCED')+' · SOFTWARE INPUT ALIASES / HARDWARE MATRIX');
+    matrixToggle.type='button';matrixToggle.dataset.ioDeviceMatrixToggle='1';
+    matrixToggle.setAttribute('aria-expanded',String(advancedDeviceOpen));
+    matrixFold.appendChild(matrixToggle);
     body.appendChild(matrixFold);
     // Do not build 10xN crosspoint DOM when the operator is selecting a
     // sound card. This drastically reduces unnecessary WebView work.
@@ -1835,6 +1837,11 @@
       e.preventDefault();const result=window.__arMixApplyAndActivate?.();
       sendFeedback=result?.ok?'SUBMITTED · WAIT FOR NATIVE ACK':result?.error||'APPLY failed';
       drawSendEditor();return;
+    }
+    if(b.dataset.ioDeviceMatrixToggle!==undefined){
+      e.preventDefault();e.stopImmediatePropagation();
+      advancedDeviceOpen=!advancedDeviceOpen;
+      lastSignature='';refreshIO();return;
     }
     if(b.dataset.ioNextInput!==undefined){
       e.preventDefault();e.stopImmediatePropagation();

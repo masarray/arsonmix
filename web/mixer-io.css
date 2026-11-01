@@ -638,8 +638,10 @@
 
 /* FIRST SOUND — narrow normal route, advanced pin matrix on explicit request */
 .arIODeviceMatrixDetails{margin:9px 0 0;background:#182630;border:1px solid #425c6b}
-.arIODeviceMatrixDetails>summary{cursor:pointer;padding:10px 13px;color:#b1cbd8;
+.arIODeviceMatrixToggle{display:block;width:100%;text-align:left;cursor:pointer;
+ padding:10px 13px;color:#b1cbd8;background:#20313b;border:0;
  font:500 11px/1.4 "ArSonMix Inter","Segoe UI",sans-serif}
+.arIODeviceMatrixToggle:focus-visible{outline:2px solid #a5e7ec;outline-offset:-2px}
 .arIODeviceMatrixDetails .arIODevicePatchMatrix{margin:0;border:0;border-top:1px solid #415767}
 .arIODeviceRouteNext{display:block;width:100%;margin:9px 0 0;
  --b180-color:#a4e6dd;--b180-border:#389b89;--b180-ink:#123c37}
