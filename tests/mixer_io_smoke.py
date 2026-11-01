@@ -22,6 +22,32 @@ async def main():
         await page.goto((root/"web/index.html").as_uri())
         assert await page.locator("#mixer .rack").count()==10
         assert await page.locator("#mixer .arChannelBank").count()==10
+        # The REAL M4 host, not the future v6 demo, opens one console:
+        # actual native selectors, six VST3 slots and four AUX controls
+        # coexist in every input strip without FX/ROUTE/SENDS switching.
+        assert await page.locator('#mixer').get_attribute('data-io-mode')=='CONSOLE'
+        assert await page.locator('[data-mix-mode="CONSOLE"]').get_attribute('aria-pressed')=='true'
+        assert await page.locator('#mixer .arBankSource:visible').count()==10
+        assert await page.locator('#mixer .arBankOutput:visible').count()==10
+        assert await page.locator('#mixer .rack .insert-slot').count()==60
+        assert await page.locator('#mixer .arSendBank:visible').count()==10
+        await page.screenshot(path='mixer-m4-unified-1366.png')
+        # Main is visually pinned during navigation across the 10 real strips.
+        # Do not accept a CSS "sticky" label if its pixels are offscreen.
+        main_geom=await page.evaluate("""() => {
+          const mixer=document.querySelector('#mixer');
+          const master=document.querySelector('#masterLeft');
+          const start=master.getBoundingClientRect();
+          const frame=mixer.getBoundingClientRect();
+          mixer.scrollLeft=99999;
+          const end=master.getBoundingClientRect();
+          mixer.scrollLeft=0;
+          return {left:start.left,right:start.right,endLeft:end.left,endRight:end.right,
+            frameRight:frame.right,frameLeft:frame.left};
+        }""")
+        assert main_geom['right']<=main_geom['frameRight']+2,main_geom
+        assert main_geom['left']>=main_geom['frameLeft']-2,main_geom
+        assert abs(main_geom['right']-main_geom['endRight'])<2,main_geom
         assert await page.locator('.arChannelSignalFlow [data-focus-step]').count()==4
         assert 'NO NATIVE ACK' in await page.locator('[data-focus-source]').inner_text()
         assert await page.locator("[data-mix-mode]").count()==3
