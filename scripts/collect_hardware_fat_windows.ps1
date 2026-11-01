@@ -53,7 +53,7 @@ function Read-Journal {
   }
 }
 function Parse-Pins([string]$raw) {
-  if ([string]::IsNullOrWhiteSpace($raw)) { return ,@() }
+  if ([string]::IsNullOrWhiteSpace($raw)) { return @() }
   $parsed=@()
   foreach ($part in $raw.Split(',')) {
     $pin=0
@@ -63,7 +63,7 @@ function Parse-Pins([string]$raw) {
     if ($parsed -contains $pin) { throw 'Duplicate physical pin in evidence' }
     $parsed+= $pin
   }
-  return ,$parsed
+  return $parsed
 }
 if ($Action -eq 'Verify') {
   Write-Host ('FAT PACKAGE OK; build='+$m.sourceCommit+'; EXE SHA256='+$exeHash)
