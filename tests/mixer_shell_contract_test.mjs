@@ -10,8 +10,10 @@ test('mixer shell is a presentation module, not a second audio engine',()=>{
   assert.match(script,/nav\.querySelector\('\[data-view="MIX"\]'\)\?\.click/);
   assert.match(css,/grid-template-rows:/);
   assert.match(css,/minmax\(110px,1fr\)/);
-  assert.match(css,/--ar-upper-height:208px/);
-  assert.match(css,/#app #mixer\[data-io-mode="ROUTE"\]\{--ar-upper-height:224px\}/);
+  assert.match(css,/--ar-upper-height:224px/);
+  assert.match(css,/--ar-upper-height:195px/);
+  assert.match(css,/#app #mixer\{--ar-upper-height:165px\}/);
+  assert.doesNotMatch(css,/\[data-io-mode="(?:ROUTE|SENDS)"\]\{--ar-upper-height:/);
   assert.doesNotMatch(script,/routingDryApply|createPluginInstance|AudioContext|processBlock|setInterval|requestAnimationFrame/);
 });
 test('new shell resources are in the exact native WebView2 asset list',()=>{
@@ -153,4 +155,28 @@ test('GUI-M1 PATCH uses real physical columns only',()=>{
  const src=read('web/monitor.js');
  assert.ok(src.includes('const visibleCount=shown.length'));
  assert.ok(!src.includes('for(let k=shown.length;k<patchPageSize;k++)'));
+});
+
+test('operator-first console keyboard and contextual workflow stay presentation-only',()=>{
+ const app=read('web/app.js'),shell=read('web/mixer-layout.js'),css=read('web/mixer-layout.css');
+ assert.match(app,/data-choose="\$\{i\}" role="button" tabindex="0"/);
+ assert.match(app,/aria-current="\$\{i===currentChannel\?'true':'false'\}"/);
+ assert.match(shell,/window\.addEventListener\('arMixChannelFocus',syncStripContext\)/);
+ assert.match(shell,/channelList\?\.addEventListener\('keydown'/);
+ assert.match(shell,/channelList\?\.addEventListener\('dblclick'/);
+ assert.match(shell,/const tabs=\{'Digit1':'MIX','Digit2':'FX RACK','Digit3':'SIGNAL FLOW'\}/);
+ assert.match(shell,/const layers=\{'KeyF':'FX','KeyR':'ROUTE','KeyS':'SENDS'\}/);
+ assert.match(css,/\.toolbar \.scene-select\{display:none!important\}/);
+ assert.match(css,/\.rail-presets\{\s*display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+ assert.doesNotMatch(shell,/AudioContext|processBlock|setInterval|addEventListener\(['"]pointermove/);
+});
+
+test('standalone preview uses the same source-owned app and mixer shell',()=>{
+ const builder=read('scripts/build_ui_css.py'),standalone=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
+ for(const file of ['web/app.js','web/mixer-layout.css','web/mixer-layout.js']){
+   const content=read(file);
+   assert.ok(standalone.includes(content),'standalone preview drift: '+file);
+ }
+ assert.match(builder,/script_start=built\.index\('<script>'\)/);
+ assert.match(builder,/\(ROOT\/'web\/app\.js'\)\.read_text/);
 });

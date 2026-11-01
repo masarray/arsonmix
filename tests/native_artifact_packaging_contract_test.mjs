@@ -127,3 +127,10 @@ test('native startup requires static WebView2 loader and JS-backed UI readiness'
   assert.match(verify,/WEBVIEW2_GUI_READY_TIMEOUT/);
   assert.match(fat,/Microsoft Edge WebView2 Runtime/);
 });
+
+test('FAT ZIP uses current single-APPLY physical first-sound guide',()=>{
+ const quick=read('docs/FIRST_SOUND_FAT_QUICKSTART_20261101.md');
+ assert.match(packaging,/FIRST_SOUND_FAT_QUICKSTART_20261101\.md/);
+ for(const entry of ['10 input channels + 4 AUX','OUTPUT_ONLY_TONE','CAPTURE_ONLY','COPY FULL REPORT','30 minutes','no separate manual START AUDIO'])
+   assert.ok(quick.includes(entry),entry);
+});

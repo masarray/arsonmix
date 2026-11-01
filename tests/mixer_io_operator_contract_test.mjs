@@ -529,3 +529,49 @@ test('FAST3 single APPLY stays enabled while output ARMED; safe route ACK and ha
  assert.match(controller,/arMixAudioArmAck/);
  assert.ok(html.includes(io),'Standalone mirrors the actual FAST3 operator controller');
 });
+
+// Real native format must select the strip meter shape, never a fixed CH range.
+test('R7 accepted mono/stereo format controls meter topology on any input lane',()=>{
+ const app=read('web/app.js'),io=read('web/mixer-io.js');
+ assert.match(app,/function syncStripFormat\(i,format\)/);
+ assert.match(app,/window\.__arMixSyncAcceptedChannelFormat=syncStripFormat/);
+ assert.match(io,/__arMixSyncAcceptedChannelFormat\?\.\(i,channelFormat\(accepted\)\)/);
+ assert.doesNotMatch(app,/c\.stereo=i>=6/);
+ assert.match(app,/typeof src\.stereo==='boolean'/);
+ assert.match(app,/data-channel-format-toggle/);
+});
+test('R7 one gesture uses existing native safety and real input names',()=>{
+ const io=read('web/mixer-io.js'),app=read('web/app.js');
+ assert.match(io,/function commitSourceInOneGesture\(/);
+ assert.match(io,/__arMixCommitSelectedSource\?\.\(channel,mode,left,right\)/);
+ assert.match(io,/__arMixApplyAndActivate\?\.\(\)/);
+ assert.match(io,/USE INPUT/);
+ assert.match(app,/__arMixApplyAndActivate\?\.\(\)/);
+ assert.match(read('web/mixer-layout.js'),/arMixChannelPager/);
+});
+
+test('R7 FX Rack on unpatched CH2–10 opens native input selector, not CH1 VST lease',()=>{
+ const bridge=read('web/bridge.js');
+ assert.match(bridge,/data-fx-source/);
+ assert.match(bridge,/__arMixOpenAudioIO\?\.\('inputs',Number\(button\.dataset\.fxSource\)\)/);
+ assert.match(bridge,/__arMixOpenAudioIO\?\.\('inputs',idx\)/);
+ assert.doesNotMatch(bridge,/CH "\+\(idx\+1\)\+" has no accepted native input\/BUS route\. Open ROUTING/);
+});
+
+test('R7 negative hardware ACK releases blocked source controls',()=>{
+ const io=read('web/mixer-io.js');
+ assert.match(io,/if\(\/REJECTED\|STOPPED\|CANCELLED\|FAILED\|ABORTED\/\.test\(deviceNote\)\)/);
+ assert.match(io,/quickSourcePending=null/);
+ assert.match(io,/matrixMessage=deviceNote/);
+});
+
+test('hardware input CH1/CH2/CH10 selectable on the mixer itself without an IO modal',()=>{
+ const io=read('web/mixer-io.js'),css=read('web/mixer-io.css');
+ assert.match(io,/head\.appendChild\(picker\)/);
+ assert.match(io,/populate\(inline,choices,current\)/);
+ assert.match(io,/\.arChannelQuickInput,\.arBankSource,\.arIOSource/);
+ assert.match(io,/commitSourceInOneGesture\(channel,mode,left,right\)/);
+ assert.match(io,/ENABLED capture pin\(s\)/);
+ assert.match(css,/\.arChannelQuickInput\{/);
+ assert.doesNotMatch(css,/backdrop-filter|filter:blur/);
+});

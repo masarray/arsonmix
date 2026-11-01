@@ -14,8 +14,8 @@
 // as ONE identity-preserving dynamic session. No extra audio callback.
 // This is CONTROL-only preparation; the physical callback cutover is a
 // separate safety transaction and must select only ONE renderer.
-// Special legacy CH1 external/Orbit FX is explicitly REFUSED until the
-// actual processor/editor lease is migrated. Never silently discard it.
+// Occupied CH1 external/Orbit may be admitted ONLY with its original
+// processor/editor owner and validated ChannelId; never silently drop VST.
 namespace armix::mixer {
 struct VerifiedNativeOutputs final {
     int activeOutputChannels=0; // EXACT current enabled callback output count
@@ -70,7 +70,8 @@ public:
         std::uint64_t deviceEpoch,std::uint64_t currentHardwareEpoch,
         bool allOutputsDisarmed,
         DynamicNativeSessionPublisher& publisher,
-        UnifiedLegacyAccepted& accepted) {
+        UnifiedLegacyAccepted& accepted,
+        DynamicChannelFxLeaseBank::ExternalLease externalCh1={}) {
         Report result;
         if(!hardware.valid() ||
            hardware.monitorEnabled!=acceptedM4Fx.monitorEnabled() ||
@@ -87,7 +88,8 @@ public:
         if(!allOutputsDisarmed) {
             result.fault=Fault::outputArmed;return result;
         }
-        if(legacyExternalCh1FxActive) {
+        if(legacyExternalCh1FxActive!=externalCh1.populated() ||
+           (legacyExternalCh1FxActive && !externalCh1.valid())) {
             result.fault=Fault::legacyCh1ExternalFx;return result;
         }
         // FxInstance owns one already-prepared stereo block. Do not let the
@@ -109,6 +111,11 @@ public:
             result.fault=Fault::legacyGraphInvalid;return result;
         }
         using Bank=DynamicChannelFxLeaseBank;
+        if(externalCh1.populated() &&
+           (externalCh1.id!=candidate.ids.inputs[0] ||
+            acceptedM4Fx.insertsOn(0)!=0)) {
+            result.fault=Fault::legacyCh1ExternalFx;return result;
+        }
         std::array<Bank::Assignment,stripCount+auxBusCount> lanes{};
         for(int i=0;i<stripCount+auxBusCount;++i) {
             const auto id=i<stripCount?candidate.ids.inputs[i]:
@@ -122,7 +129,8 @@ public:
             }
         }
         Bank bank;
-        result.fx=Bank::prepare(deviceEpoch,expectedPcmRevision+1,lanes,bank);
+        result.fx=Bank::prepare(deviceEpoch,expectedPcmRevision+1,lanes,bank,
+                                std::move(externalCh1));
         if(result.fx!=Bank::Fault::none) {
             result.fault=Fault::fxLeaseInvalid;return result;
         }

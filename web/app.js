@@ -222,10 +222,11 @@ function send(param,value,ch=currentChannel){
 function flash(message){const x=$('toast');x.textContent=message;x.classList.add('show');clearTimeout(timer);timer=setTimeout(()=>x.classList.remove('show'),1500)}
 function createSide(){
  const labels=channels.map(c=>c.name);
- $('channelList').innerHTML=labels.map((label,i)=>`<div class="list-item ${i===currentChannel?'selected':''}" data-choose="${i}"><span class="swatch" style="background:${channels[i].color||colors[i%colors.length]}"></span><span class="index">${i+1}</span><span>${safeText(label)}</span></div>`).join('');
+ $('channelList').innerHTML=labels.map((label,i)=>`<div class="list-item ${i===currentChannel?'selected':''}" data-choose="${i}" role="button" tabindex="0" aria-current="${i===currentChannel?'true':'false'}" aria-label="Select channel ${i+1}: ${safeText(label)}"><span class="swatch" style="background:${channels[i].color||colors[i%colors.length]}"></span><span class="index">${i+1}</span><span>${safeText(label)}</span></div>`).join('');
  $('groupsList').innerHTML=['Drums','Band','Vocals','FX','All Music','All Vocals'].map((x,i)=>`<div class="list-item" data-group="${i}"><span class="swatch" style="background:${colors[(i+4)%12]}"></span><span class="index">${i+1}</span><span>${x}</span></div>`).join('');
  $('scenesList').innerHTML=scenes.map((x,i)=>`<div class="list-item ${i===sceneIdx?'selected':''}" data-scene="${i}" title="Recall ${safeText(x)}"><span class="swatch" style="background:${i===sceneIdx?'#23bce9':'#283d4a'};width:8px;height:14px"></span><span class="scene-name">${safeText(x)}</span>${userSnapshots[x]?`<button class="scene-delete" type="button" data-delete-scene="${safeText(x)}" title="Delete saved snapshot" aria-label="Delete ${safeText(x)}">×</button>`:''}</div>`).join('');
  $('currentScene').innerHTML=`Snapshot: <b>${scenes[sceneIdx]}</b><span>▾</span>`;
+ window.dispatchEvent(new Event('arMixChannelFocus'));
 }
 function knobMarkup(param,ch,value,label,small=false){let angle=(param==='pan'?value/100*130:value/24*130);return `<button class="knob ${small?'small':''}" data-knob="${param}" data-ch="${ch}" data-value="${value}" style="--angle:${angle}deg" title="Drag vertically or scroll to change ${label}" aria-label="${label}"></button>`}
 function panText(v){return v===0?'C':(v<0?'L':'R')+' '+Math.abs(v)}
@@ -277,12 +278,31 @@ function commitChannelIdentity(){
 window.addEventListener('resize',positionChannelIdentity);
 $('mixer').addEventListener('scroll',positionChannelIdentity,{passive:true});
 function makeStrip(ch,i){let inserts=ch.inserts.slice(0,6);while(inserts.length<6) inserts.push('');return `<article class="strip ${i===currentChannel?'selected':''}" data-strip="${i}" style="--ch:${ch.color||colors[i]}">
- <div class="ch-id">${i+1}</div><div class="rack">${inserts.map((n,j)=>`<div class="insert-slot ${n&&bypassed[fxKey(i,j)]?'is-bypassed':''}"><button class="insert ${!n?'empty':''}" data-insert="${i}:${j}" title="${n?'Open or replace '+safeText(n):'Add VST effect'}">${n?'':'<span class="insert-add-glyph" aria-hidden="true">＋</span>'}<span class="insert-name">${n? safeText(n):'ADD FX'}</span></button>${n?`<button type="button" class="fx-power ${bypassed[fxKey(i,j)]?'is-bypassed':''}" data-fxpower="${i}:${j}" aria-pressed="${!bypassed[fxKey(i,j)]}" aria-label="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}" title="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}">⏻</button>`:''}</div>`).join('')}</div>
+ <div class="ch-id">${i+1}<button type="button" class="arFormatBadge" data-channel-format-toggle="${i}" aria-label="Switch CH ${i+1} processing format" title="MONO / STEREO">${ch.stereo?'ST':'M'}</button></div><div class="rack">${inserts.map((n,j)=>`<div class="insert-slot ${n&&bypassed[fxKey(i,j)]?'is-bypassed':''}"><button class="insert ${!n?'empty':''}" data-insert="${i}:${j}" title="${n?'Open or replace '+safeText(n):'Add VST effect'}">${n?'':'<span class="insert-add-glyph" aria-hidden="true">＋</span>'}<span class="insert-name">${n? safeText(n):'ADD FX'}</span></button>${n?`<button type="button" class="fx-power ${bypassed[fxKey(i,j)]?'is-bypassed':''}" data-fxpower="${i}:${j}" aria-pressed="${!bypassed[fxKey(i,j)]}" aria-label="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}" title="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}">⏻</button>`:''}</div>`).join('')}</div>
  <div class="strip-controls"><div class="trim-row"><span class="mini-label">TRIM<br>dB</span><div class="mini-lcd" data-trim-read="${i}">${fmt(ch.trim)}</div></div>${knobMarkup('trim',i,ch.trim,'Trim')}<div class="pan-control">${panMarkup(ch,i)}<div class="pan-readline"><span aria-hidden="true">L</span><strong data-pan-read="${i}">${panText(ch.pan)}</strong><span aria-hidden="true">R</span></div></div><div class="utility-row"><button data-pre="${i}" class="btn-180 ${ch.pre?'active':''}">Ø</button><button data-hpf="${i}" class="btn-180 ${ch.hpf?'active':''}">HPF</button></div></div>
  <div class="channel-actions"><button class="btn-180 candy mute ${ch.mute?'active':''}" data-mute="${i}" aria-pressed="${ch.mute}">MUTE</button><button class="btn-180 candy solo ${ch.solo?'active':''}" data-solo="${i}" aria-pressed="${ch.solo}">SOLO</button></div>
  <div class="db-display" data-read="${i}">${fmt(ch.fader)}</div><div class="fader-zone"><div class="vu-bank ${ch.stereo?'is-stereo':'is-mono'}" role="group" aria-label="${safeText(ch.name)} ${ch.stereo?'stereo left and right meters':'mono meter'}"><div class="vu-bars">${ch.stereo?meterUnit(String(i)+'L','L')+meterUnit(String(i)+'R','R'):meterUnit(String(i),'')}${meterScaleMarkup()}</div></div><div class="fader" data-fader="${i}" role="slider" tabindex="0" aria-orientation="vertical" aria-label="${ch.name} fader" aria-valuemin="-60" aria-valuemax="10" aria-valuenow="${ch.fader}" style="--fader-cut:${levelToTop(ch.fader)}%"><div class="fader-travel"><div class="cap" style="--pos:${levelToTop(ch.fader)}%"></div></div></div>${faderScaleMarkup()}</div></div>
  <div class="strip-name" data-editstrip="${i}" role="button" tabindex="0" aria-label="Double-click to edit ${safeText(ch.name)} name, icon and color" title="Double-click to edit channel identity"><span class="strip-caption">${safeText(ch.name)}</span><span class="track-icon">${safeText(ch.icon)}</span></div>
  </article>`}
+// Native accepted channel format owns visible meter layout; no index-based rule.
+// Replace only meter nodes, not the FX rack/fader or full mixer (low-spec GPU).
+function syncStripFormat(i,format){
+ if(!Number.isInteger(i)||i<0||i>=channels.length||!['MONO','STEREO'].includes(format))return false;
+ const ch=channels[i],stereo=format==='STEREO';
+ if(ch.stereo===stereo)return true;
+ ch.stereo=stereo;
+ const strip=document.querySelector('#mixer [data-strip="'+i+'"]'),bank=strip?.querySelector('.vu-bank'),bars=bank?.querySelector('.vu-bars');
+ if(bank&&bars){
+   bank.classList.toggle('is-stereo',stereo);bank.classList.toggle('is-mono',!stereo);
+   bank.setAttribute('aria-label',ch.name+(stereo?' stereo L/R meters':' mono meter'));
+   bars.innerHTML=(stereo?meterUnit(i+'L','L')+meterUnit(i+'R','R'):meterUnit(String(i),''))+meterScaleMarkup();
+   for(const key of [String(i),i+'L',i+'R']){meterNodes.delete(key);delete peakHold[key];delete clipLatch[key];}
+ }
+ const button=strip?.querySelector('[data-channel-format-toggle]');
+ if(button)button.textContent=stereo?'ST':'M';
+ markUiSessionDirty();return true;
+}
+window.__arMixSyncAcceptedChannelFormat=syncStripFormat;
 function renderMixer(){
  const x=$('mixer'),scroll=x.scrollLeft;
  x.innerHTML=channels.map(makeStrip).join('')+'<article id="masterLeft" class="strip master-strip '+(masterSelected?'selected':'')+'" aria-label="Master output channel"></article>';
@@ -358,7 +378,7 @@ function setMasterMono(value,emit=true){
 function setView(next){
  if(next!=='MIX'&&next!=='FX RACK'&&next!=='SIGNAL FLOW')return;
  view=next;
- document.querySelectorAll('[data-view]').forEach(btn=>btn.classList.toggle('selected',btn.dataset.view===next));
+ document.querySelectorAll('[data-view]').forEach(btn=>{const active=btn.dataset.view===next;btn.classList.toggle('selected',active);btn.setAttribute('aria-current',active?'page':'false')});
  $('mixer').classList.toggle('hidden',next!=='MIX');
  $('rackWorkspace').classList.toggle('hidden',!['FX RACK','SIGNAL FLOW'].includes(next));
  if(next==='FX RACK')renderRackWorkspace();
@@ -399,13 +419,15 @@ function focusChannel(i){
  if(i<0||i>=channels.length||(i===currentChannel&&!masterSelected))return;
  masterSelected=false;currentChannel=i;
  document.querySelectorAll('.strip').forEach(strip=>strip.classList.toggle('selected',strip.dataset.strip!==undefined&&+strip.dataset.strip===i));
- document.querySelectorAll('#channelList [data-choose]').forEach(row=>row.classList.toggle('selected',+row.dataset.choose===i));
+ document.querySelectorAll('#channelList [data-choose]').forEach(row=>{const active=+row.dataset.choose===i;row.classList.toggle('selected',active);row.setAttribute('aria-current',String(active))});
+ window.dispatchEvent(new Event('arMixChannelFocus'));
 }
 function focusMaster(){
  if(masterSelected)return;
  masterSelected=true;
  document.querySelectorAll('.strip').forEach(strip=>strip.classList.toggle('selected',strip.id==='masterLeft'));
- document.querySelectorAll('#channelList [data-choose]').forEach(row=>row.classList.remove('selected'));
+ document.querySelectorAll('#channelList [data-choose]').forEach(row=>{row.classList.remove('selected');row.setAttribute('aria-current','false')});
+ window.dispatchEvent(new Event('arMixChannelFocus'));
 }
 function chooseChannel(i){
  if(i<0||i>=channels.length){flash('Additional bank channels are not populated in this UI study');return}
@@ -427,6 +449,18 @@ document.addEventListener('click',e=>{const b=e.target.closest('button,[data-cho
  if(b.dataset.pluginManager!==undefined){flash('Plugin Manager is available in the Windows desktop app');return}
  if(b.dataset.mySounds!==undefined){flash('Native VST3 presets are available in the Windows desktop app');return}
  if(b.dataset.choose!==undefined){chooseChannel(+b.dataset.choose);return}
+ if(b.dataset.channelFormatToggle!==undefined){
+   const i=Number(b.dataset.channelFormatToggle);
+   if(!Number.isInteger(i)||i<0||i>=channels.length)return;
+   const next=channels[i].stereo?'MONO':'STEREO';
+   if(window.__JUCE__?.backend?.emitEvent){
+     const staged=window.__arMixStageChannelFormat?.(i,next);
+     if(!staged?.ok){flash(staged?.error||'Verified native format unavailable');return}
+     const result=window.__arMixApplyAndActivate?.();
+     flash(result?.ok?'CH '+(i+1)+' '+next+' · WAIT NATIVE ACK':result?.error||'Native APPLY rejected');
+   }else{syncStripFormat(i,next);persistSession();flash('CH '+(i+1)+' '+next+' · PREVIEW ONLY');}
+   return;
+ }
  if(b.dataset.mute!==undefined){toggleState(+b.dataset.mute,'mute');return}if(b.dataset.solo!==undefined){toggleState(+b.dataset.solo,'solo');return}
  if(b.dataset.pre!==undefined){let i=+b.dataset.pre;channels[i].pre=!channels[i].pre;b.classList.toggle('active');send('phase',channels[i].pre,i);return}
  if(b.dataset.hpf!==undefined){let i=+b.dataset.hpf;channels[i].hpf=!channels[i].hpf;b.classList.toggle('active');send('hpf',channels[i].hpf,i);return}
@@ -802,7 +836,7 @@ function validUiSession(session){
       !c.inserts.every(x=>typeof x==='string'&&x.length<=160)))return false;
    if(c.name!==undefined&&typeof c.name!=='string')return false;
    for(const k of ['fader','pan','trim'])if(c[k]!==undefined&&!Number.isFinite(c[k]))return false;
-   for(const k of ['mute','solo','hpf'])if(c[k]!==undefined&&typeof c[k]!=='boolean')return false;
+   for(const k of ['mute','solo','hpf','stereo'])if(c[k]!==undefined&&typeof c[k]!=='boolean')return false;
  }
  for(const k of ['masterGain','masterPan'])if(session[k]!==undefined&&!Number.isFinite(session[k]))return false;
  for(const k of ['masterMute','masterMono'])if(session[k]!==undefined&&typeof session[k]!=='boolean')return false;
@@ -876,7 +910,7 @@ function applySession(session){
  if(!validUiSession(session)){flash('Unsupported or corrupted session format');return false}
  for(let i=0;i<channels.length;i++){
    const src=session.channels[i],c=channels[i];
-   c.stereo=i>=6; // Fixed 1–6 mono, 7–10 stereo across legacy snapshot migrations.
+   if(typeof src.stereo==='boolean')c.stereo=src.stereo; // Never overwrite saved format from CH number.
    if(typeof src.name==='string'&&src.name.trim())c.name=src.name.trim().slice(0,26);
    if(channelIcons.includes(src.icon))c.icon=src.icon;
    if(channelPalette.includes(src.color))c.color=src.color;
@@ -1007,6 +1041,7 @@ try{
      if(channelPalette.includes(s.color))channels[i].color=s.color;
      for(const k of ['fader','pan','trim','mute','solo','hpf'])if(s[k]!==undefined)channels[i][k]=s[k];
      if(Array.isArray(s.inserts))channels[i].inserts=[...s.inserts];
+     if(typeof s.stereo==='boolean')channels[i].stereo=s.stereo;
    });
    sceneIdx=Number.isInteger(last.sceneIdx)?clamp(last.sceneIdx,0,scenes.length-1):0;
    masterGain=Number.isFinite(last.masterGain)?last.masterGain:-.1;

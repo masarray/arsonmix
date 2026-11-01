@@ -83,7 +83,7 @@ test('M4 FX console keeps channel routing and plugin identity per native lane',(
   assert.match(bridge,/const routed=nativePatched&&!legacy/);
   assert.match(routes,/rackFxDraft\.channels\.includes\(channel\)/);
   assert.match(routes,/channels:\[\.\.\.channels\]\.sort/);
-  assert.match(routes,/for\(const channel of rackFxDraft\.channels\)/);
+  assert.match(routes,/FX is a channel property, not a hardware-patch prerequisite/);
   assert.match(routes,/draftRoutes\[channel\]\.fxIds=current/);
   assert.match(routes,/action:"routingDryApply"/);
   assert.match(bridge,/window\.__arMixOpenChannelPatch\?\.\(id,"input"\)/);
@@ -93,4 +93,13 @@ test('M4 FX console keeps channel routing and plugin identity per native lane',(
   assert.match(bridge,/lab\.channelPeaksL/);
   assert.match(bridge,/lab\.channelPeaksR/);
   assert.doesNotMatch(bridge,/Native VST3 is currently available on Channel 1 only/);
+});
+
+test('real per-channel FX are admitted while disconnected and guarded by native ACK',()=>{
+ const lab=readFileSync('src/LiveDryRoutingLab.h','utf8'),ui=readFileSync('web/monitor.js','utf8');
+ assert.match(lab,/can retain the real prepared VST3 instance/);
+ assert.doesNotMatch(lab,/if\(!scheduled\)/);
+ assert.match(bridge,/lane\.silent\?"VST3 PREPARED/);
+ assert.match(ui,/unpatched channels remain SILENT/);
+ assert.match(ui,/const committed=window\.__arMixApplyAndActivate\?\.\(\)/);
 });

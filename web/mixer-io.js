@@ -431,7 +431,7 @@
     const [mode,a,b]=button.dataset.sourceChoice.split(':');
     if(!['NONE','MONO','STEREO'].includes(mode))return;
     const channel=sourceChooserChannel;
-    const outcome=window.__arMixCommitSelectedSource?.(
+    const outcome=commitSourceInOneGesture(
       channel,mode,mode==='NONE'?-1:Number(a),mode==='STEREO'?Number(b):-1);
     sourceNote.textContent=outcome?.ok?
       outcome.pending?'SOURCE PENDING · WAIT NATIVE ACK':
@@ -777,6 +777,15 @@
   }
   function decorate(){
     for(const strip of mixer.querySelectorAll('.strip[data-strip]')){
+      // Every physical channel gets its own source selector. The native
+      // routing controller is unchanged and owns every hardware APPLY.
+      const head=strip.querySelector('.ch-id');
+      if(isNative()&&head&&!head.querySelector('.arChannelQuickInput')){
+        const picker=node('select','arChannelQuickInput');
+        picker.setAttribute('aria-label','CH '+(Number(strip.dataset.strip)+1)+' physical input');
+        picker.title='Verified hardware source · native ACK required';
+        head.appendChild(picker);
+      }
       if(strip.querySelector('.arChannelBank'))continue;
       const bank=node('div','arChannelBank');
       bank.innerHTML='<div class="arRouteBank"><span class="arBankTitle">INPUT SOURCE · NATIVE</span><select class="arBankSource" aria-label="Physical channel input source"></select><span class="arBankTitle">OUTPUT DESTINATION</span><span class="arBankOutput">MAIN · UNKNOWN</span><div class="arBankFormatRow"><select class="arBankChannelFormat" aria-label="Independent channel processing format" title="Processing MONO / STEREO independent from hardware input"><option value="MONO">CH M</option><option value="STEREO">CH L/R</option></select><span class="arBankStage">NATIVE PATCH REQUIRED</span></div><button class="btn-180 arBankPatch" data-mix-patch="input">OPEN INPUT PATCH</button></div><div class="arSendBank"><span class="arBankTitle">AUX SENDS · PRE / POST</span><div class="arSendSummary"></div><button class="btn-180 arBankPatch" data-mix-patch="internal">EDIT AUX SENDS</button></div>';
@@ -798,15 +807,25 @@
     const i=Number(strip.dataset.strip),r=channelState(s,i);
     const source=strip.querySelector('.arBankSource'),output=strip.querySelector('.arBankOutput');
     if(!source||!output)return;
-    const current=valueFor(r);
-    populate(source,portsFor(s,r),current);
+    const current=valueFor(r),choices=portsFor(s,r);
+    const inline=strip.querySelector('.arChannelQuickInput');
+    if(inline){
+      populate(inline,choices,current);
+      inline.dataset.channel=String(i);
+      inline.disabled=!isNative()||!s.ready||!!s.pending||!!quickSourcePending;
+      inline.title='CH '+(i+1)+' · '+(choices.find(p=>p[0]===current)?.[1]||'Select physical input')+
+        ' · hardware source; native ACK required';
+    }
+    populate(source,choices,current);
     source.dataset.channel=String(i);source.disabled=!isNative()||!s.ready||!!s.pending||!!quickSourcePending;
     const format=strip.querySelector('.arBankChannelFormat');
     if(format){format.value=channelFormat(r);format.dataset.channel=String(i);
       format.disabled=!isNative()||!s.ready||!!s.pending;}
     output.textContent=r.mode==='NONE'?'UNPATCHED · NO INPUT':r.main?outputLabel(s):'MAIN OFF · SEND PATH ONLY';
-    const accepted=s.acceptedRoute?.channels?.[i],
-      dirty=current!==valueFor(accepted)||channelFormat(r)!==channelFormat(accepted);
+    const accepted=s.acceptedRoute?.channels?.[i];
+    // ACKED native format, never the pending draft, controls mono vs stereo meter count.
+    if(isNative()&&accepted)window.__arMixSyncAcceptedChannelFormat?.(i,channelFormat(accepted));
+    const dirty=current!==valueFor(accepted)||channelFormat(r)!==channelFormat(accepted);
     const stage=strip.querySelector('.arBankStage');
     const sourcePending=quickSourcePending?.channel===i&&quickSourcePending.epoch===s.epoch;
     stage.textContent=!s.ready?'NO LIVE DEVICE':sourcePending?'PENDING · NATIVE ACK':dirty?'DRAFT · NOT APPLIED':r.mode==='NONE'?'UNPATCHED · SILENT':'LIVE · NATIVE ACK';
@@ -907,7 +926,7 @@
     title.append(words,jump);section.appendChild(title);
     const verified=portList(s);
     section.appendChild(node('p','arIOQuickGuide',verified.length?
-      verified.length+' driver-reported capture pins · physical and virtual inputs appear only if enabled by this driver.' :
+      verified.length+' ENABLED capture pin(s). Missing IN 2? Enable that physical pin in DEVICE / DRIVER first.' :
       'NO INPUT PINS · select an audio interface in DEVICE / DRIVER to enable routing.'));
     const headings=node('div','arIOQuickColumns');
     for(const label of ['MIX CHANNEL','SOURCE','INPUT / LEFT','RIGHT','NATIVE STATE'])headings.appendChild(node('span','',label));
@@ -940,7 +959,7 @@
       right.disabled=!hardwareReady(s)||r.mode!=='STEREO';
       mode.disabled=!hardwareReady(s)||r.mode==='BUS';
       const action=node('div','arIOQuickAction');
-      const stage=node('button','btn-180 arIOQuickStage','STAGE');
+      const stage=node('button','btn-180 arIOQuickStage','USE INPUT');
       stage.dataset.ioQuickStage='1';stage.type='button';
       stage.disabled=!hardwareReady(s)||r.mode==='BUS';
       action.append(stage,node('small','arIOQuickState',r.mode==='BUS'?'INTERNAL BUS':
@@ -948,7 +967,7 @@
         row.dataset.state==='live'?'LIVE · ACK':'UNPATCHED'));
       row.append(identity,mode,left,right,action);section.appendChild(row);
     }
-    section.appendChild(node('p','arIOQuickFooter','STAGE is not audible. MUTE output → APPLY PATCH → wait for NATIVE ACK to make the assignment live.'));
+    section.appendChild(node('p','arIOQuickFooter','Select verified inputs, click USE INPUT. Native routing handles any required safe mute, ACK and re-arm automatically.'));
     return section;
   }
   function stageQuickInput(button){
@@ -964,10 +983,12 @@
       return matrixSay('CH '+(channel+1)+' · choose two DISTINCT driver-reported L/R inputs.');
     if(!['NONE','MONO','STEREO'].includes(mode))return matrixSay('Use ADVANCED BUS / FX for internal sources.');
     focusedInput=channel;matrixDraft.delete(channel);
-    const result=window.__arMixStageChannelInput?.(channel,mode,mode==='NONE'?-1:left,mode==='STEREO'?right:-1);
+    const result=commitSourceInOneGesture(channel,mode,mode==='NONE'?-1:left,mode==='STEREO'?right:-1);
+    if(result?.pending)quickSourcePending={channel,epoch:result.epoch,
+      value:valueFor({mode,left,right}),live:!!result.live};
     matrixSay(result?.ok?'CH '+(channel+1)+' · '+(mode==='NONE'?'INPUT REMOVED':
       mode==='MONO'?'MONO INPUT '+(left+1):'STEREO INPUT '+(left+1)+'/'+(right+1))+
-      ' → DRAFT · MUTE OUTPUT → APPLY PATCH → NATIVE ACK':result?.error||'Native input patch unavailable');
+      (result.pending?' · WAIT NATIVE ACK':' · ALREADY ACCEPTED'):result?.error||'Native input patch unavailable');
     lastSignature='';refresh();
   }
   function makeMatrix(s,kind){
@@ -1591,12 +1612,24 @@
       s.ready?'E'+s.epoch+' · Native APPLY required for input edits':'CHOOSE A VERIFIED DIRECT DEVICE';
     el('arIOFeedback').textContent=(ioTab==='device'?deviceNote:matrixMessage)||hint;
   }
+  // Operator makes one choice. Same-format moves use the native source ramp;
+  // structural moves use FAST3's safe MUTE -> graph ACK -> guarded ARM internally.
+  function commitSourceInOneGesture(channel,mode,left,right){
+    const s=route(),accepted=s.acceptedRoute?.channels?.[channel];
+    if(accepted?.mode===mode&&['MONO','STEREO'].includes(mode))
+      return window.__arMixCommitSelectedSource?.(channel,mode,left,right);
+    const staged=window.__arMixStageChannelInput?.(channel,mode,left,right);
+    if(!staged?.ok)return staged||{ok:false,error:'Native staging unavailable'};
+    const committed=window.__arMixApplyAndActivate?.();
+    return committed?.ok?{ok:true,pending:true,live:false,epoch:s.epoch}:
+      {ok:false,error:committed?.error||'Safe native APPLY rejected'};
+  }
   function changeSource(select){
     const channel=Number(select.dataset.channel);
     const value=select.value,parts=value.split(':');
     const mode=parts[0],left=mode==='NONE'?-1:Number(parts[1]),right=mode==='STEREO'?Number(parts[2]):-1;
-    const direct=select.classList.contains('arBankSource');
-    const response=direct?window.__arMixCommitSelectedSource?.(channel,mode,left,right):
+    const direct=select.matches('.arBankSource,.arChannelQuickInput');
+    const response=direct?commitSourceInOneGesture(channel,mode,left,right):
       window.__arMixStageChannelInput?.(channel,mode,left,right);
     if(response?.pending)quickSourcePending={channel,epoch:response.epoch,
       value:valueFor({mode,left,right}),live:!!response.live};
@@ -1637,10 +1670,14 @@
       else el('arIOFeedback').textContent=result.message;
       lastSignature='';refresh();return;
     }
-    if(e.target.matches('.arBankSource,.arIOSource'))changeSource(e.target);
+    if(e.target.matches('.arChannelQuickInput,.arBankSource,.arIOSource'))changeSource(e.target);
     if(e.target.matches('.arBankChannelFormat')){
       const response=window.__arMixStageChannelFormat?.(
         Number(e.target.dataset.channel),e.target.value);
+      if(response?.ok){
+        const applied=window.__arMixApplyAndActivate?.();
+        if(!applied?.ok)el('arIOFeedback').textContent=applied?.error||'Format APPLY rejected';
+      }
       if(!response?.ok){
         const message=response?.error||'Native format change unavailable';
         el('arIOFeedback').textContent=message;
@@ -1783,7 +1820,7 @@
           if(!sourceChooser.hidden)renderSourceChooser();refreshFocus(s);
         }else softwareSay('Could not update device-specific source names.');
       }else if(action==='use'){
-        const alias=items[index],result=window.__arMixCommitSelectedSource?.(
+        const alias=items[index],result=commitSourceInOneGesture(
           focusedInput,alias.mode,alias.left,alias.mode==='STEREO'?alias.right:-1);
         if(result?.pending)quickSourcePending={
           channel:focusedInput,epoch:result.epoch,value:aliasValue(alias),live:!!result.live};
@@ -2010,6 +2047,14 @@
   window.addEventListener('arMixRoutingDraftChanged',()=>{lastSignature='';refresh();});
   window.addEventListener('arMixFastAudioResult',event=>{
     deviceNote=event.detail?.message||'APPLY';
+    // Negative hardware MUTE/ARM/route ACK must never leave source choices
+    // permanently disabled. The accepted native route is unchanged; keep
+    // its visible state and let the operator retry or REVERT the draft.
+    if(/REJECTED|STOPPED|CANCELLED|FAILED|ABORTED/.test(deviceNote)){
+      quickSourcePending=null;
+      matrixMessage=deviceNote;
+      lastSignature='';refresh();
+    }
     lastSignature='';if(!overlay.hidden)refreshIO();
   });
   window.addEventListener('arMixAuxMasterGainResult',event=>{

@@ -35,9 +35,21 @@ public:
         std::vector<Lease> inserts; // CONTROL only; no creation on callback
     };
 
+    // Occupied CH1 vendor/Orbit owner remains alive with accepted PCM.
+    // A callback reads only a raw, prevalidated pointer; no refcount/heap.
+    struct ExternalLease final {
+        ChannelId id{};
+        std::shared_ptr<void> owner;
+        void* context=nullptr;
+        void (*render)(void*,float*,float*,int) noexcept=nullptr;
+        bool populated() const noexcept {return id.value||owner||context||render;}
+        bool valid() const noexcept {
+            return id.value && owner && context==owner.get() && render;
+        }
+    };
     enum class Fault : std::uint8_t {
         none,invalidEpoch,emptyId,duplicateChannel,tooManyInserts,
-        emptyLease,duplicateInstance,invalidBusLayout,missingLegacyIdentity
+        emptyLease,duplicateInstance,invalidBusLayout,missingLegacyIdentity,invalidExternalLease
     };
     DynamicChannelFxLeaseBank()=default;
     DynamicChannelFxLeaseBank(const DynamicChannelFxLeaseBank&)=delete;
@@ -69,6 +81,14 @@ public:
     static Fault prepare(std::uint64_t epoch,std::uint64_t revision,
                          std::span<const Assignment> bindings,
                          DynamicChannelFxLeaseBank& destination) {
+        return prepare(epoch,revision,bindings,destination,ExternalLease{});
+    }
+    static Fault prepare(std::uint64_t epoch,std::uint64_t revision,
+                         std::span<const Assignment> bindings,
+                         DynamicChannelFxLeaseBank& destination,
+                         ExternalLease external) {
+        if(external.populated() && !external.valid())
+            return Fault::invalidExternalLease;
         if(!epoch||!revision)return Fault::invalidEpoch;
         DynamicChannelFxLeaseBank candidate;
         candidate.epoch_=epoch;candidate.revision_=revision;
@@ -107,6 +127,12 @@ public:
         for(std::size_t i=1;i<candidate.rows_.size();++i)
             if(candidate.rows_[i-1].id==candidate.rows_[i].id)
                 return Fault::duplicateChannel;
+        if(external.populated()) {
+            const auto* row=candidate.find(external.id);
+            // Identical to M4: no native rack may double-render the CH1 FX.
+            if(!row || row->count!=0)return Fault::invalidExternalLease;
+            candidate.external_=std::move(external);
+        }
         destination=std::move(candidate); // atomic control-thread acceptance
         return Fault::none;
     }
@@ -114,6 +140,7 @@ public:
     std::uint64_t epoch() const noexcept{return epoch_;}
     std::uint64_t revision() const noexcept{return revision_;}
     std::size_t lanes() const noexcept{return rows_.size();}
+    ChannelId externalChannel() const noexcept{return external_.id;}
     std::size_t insertCount(ChannelId id) const noexcept {
         const auto* p=find(id);return p?p->count:0;
     }
@@ -128,6 +155,10 @@ public:
         const Row* row=find(id);
         if(!row)return; // a genuinely dry ChannelId or MASTER
         if(!left||!right||left==right||frames<=0)return;
+        if(external_.id==id) {
+            external_.render(external_.context,left,right,frames);
+            return; // occupied CH1 is processed exactly once
+        }
         for(std::size_t i=0;i<row->count;++i)
             row->raw[i]->render(left,right,frames);
     }
@@ -146,6 +177,7 @@ private:
         return it!=rows_.end()&&it->id==id?&*it:nullptr;
     }
     std::vector<Row> rows_{};
+    ExternalLease external_{}; // PCM snapshot retirement occurs off RT
     std::uint64_t epoch_=0,revision_=0;
 };
 } // namespace armix::mixer

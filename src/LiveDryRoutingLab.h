@@ -321,8 +321,9 @@ public:
         const auto* prior=publisher_.controlPrepared(currentEpoch,expectedRevision);
         int insertCount=0,reusedCount=0;
         for(int lane=0;lane<fxSlots;++lane) {
-            const bool scheduled=lane<count?plan.scheduled[lane]:
-                plan.aux.buses[lane-count].enabled;
+            // FX ownership is independent of assigned hardware PCM.
+            // Disconnected lanes remain silent in the already-compiled
+            // render graph, but can retain the real prepared VST3 instance.
             const juce::String label=lane<count
                 ?"CH "+juce::String(lane+1)
                 :"AUX "+juce::String(lane-count+1);
@@ -332,8 +333,6 @@ public:
                 const auto& req=selections[lane][slot];
                 if(req.id.isEmpty()){hole=true;continue;}
                 if(hole)return label+": FX chain must be contiguous; remove empty slots";
-                if(!scheduled)
-                    return label+": assign a physical source/enable return before loading VST3";
                 bool reused=false;
                 if(prior && !restores){
                     // Restoring a Show MUST create independent prepared VST

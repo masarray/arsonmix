@@ -375,6 +375,80 @@ static void verifyMU1LegacyM4FxFullMigrationAndMonitorPcm() {
     assert(dynamicL[31]==0.f&&dynamicR[31]==0.f);
 }
 
+// M-U1: occupied legacy CH1 with original JUCE FX owner; PCM and fail-closed.
+static void verifyOccupiedExternalCh1Owner() {
+    struct Owner {
+        GainFx fx{1.7f}; int calls=0;
+        Owner(){fx.prepareToPlay(48000,32);}
+        void process(float* l,float* r,int n) noexcept {
+            float* ptrs[]{l,r};juce::AudioBuffer<float> block(ptrs,2,n);
+            juce::MidiBuffer midi;fx.processBlock(block,midi);++calls;
+        }
+    };
+    ChannelRoutingConfig channels;
+    channels.stripsAndMaster.strips[0]={
+        SourceMode::mono,3,-1,.8f,-.2f,false,false};
+    SendRequest sends;AuxBusRequest aux;
+    constexpr std::array<int,2> ports{3,0};
+    PreparedRenderGraph route;RenderError err;
+    assert(PreparedRenderGraph::compile(channels,ports,sends,route,err,aux));
+    auto old=std::make_unique<LiveChannelFxGraph>(route,32,32);
+    auto vendor=std::make_shared<Owner>();auto* raw=vendor.get();
+    std::array<float,32> src{},silent{},oldL{},oldR{},newL{},newR{};
+    src.fill(.25f);
+    const float* pins[]{src.data(),silent.data()};
+    const auto legacyFx=+[](void* c,int strip,float* l,float* r,int n) noexcept {
+        assert(strip==0);static_cast<Owner*>(c)->process(l,r,n);
+    };
+    assert(old->process(pins,2,oldL.data(),oldR.data(),32,
+                        nullptr,raw,legacyFx));
+    DynamicNativeSessionPublisher publisher;UnifiedLegacyAccepted accepted;
+    std::array<float,stripCount+auxBusCount> monitor{};
+    VerifiedNativeOutputs outputs{2,0,1,-1,-1,false};
+    constexpr std::uint64_t epoch=701;
+    auto status=UnifiedLegacyProductionAdmission::compileAndCommit(
+        channels,ports,sends,aux,monitor,*old,true,outputs,
+        32,2u*1024u*1024u,0,epoch,epoch,true,publisher,accepted);
+    assert(status.fault==UnifiedLegacyProductionAdmission::Fault::legacyCh1ExternalFx);
+    assert(publisher.acceptedRevision()==0);
+    LegacyMigratedGraph migrated;LegacyMigrationError migrationError;
+    assert(LegacyGraphMigration::compile(channels,ports,sends,aux,false,
+        monitor,32,2u*1024u*1024u,migrated,migrationError));
+    DynamicChannelFxLeaseBank::ExternalLease lease;
+    lease.id=migrated.ids.inputs[0];
+    lease.owner=std::static_pointer_cast<void>(vendor);
+    lease.context=raw;
+    lease.render=+[](void* c,float* l,float* r,int n) noexcept {
+        static_cast<Owner*>(c)->process(l,r,n);
+    };
+    auto invalid=lease;invalid.context=nullptr;
+    status=UnifiedLegacyProductionAdmission::compileAndCommit(
+        channels,ports,sends,aux,monitor,*old,true,outputs,
+        32,2u*1024u*1024u,0,epoch,epoch,true,publisher,accepted,invalid);
+    assert(status.fault==UnifiedLegacyProductionAdmission::Fault::legacyCh1ExternalFx);
+    status=UnifiedLegacyProductionAdmission::compileAndCommit(
+        channels,ports,sends,aux,monitor,*old,true,outputs,
+        32,2u*1024u*1024u,0,epoch,epoch,true,publisher,accepted,lease);
+    assert(status.ok()&&publisher.acceptedRevision()==1);
+    assert(accepted.fxOwners->externalChannel()==lease.id);
+    old.reset();vendor.reset();
+    const auto fallback=+[](ChannelId,float*,float*,int) noexcept {
+        assert(false && "occupied vendor FX must never disappear");
+    };
+    const auto before=heapCalls.load(std::memory_order_relaxed);
+    assert(publisher.render(epoch,pins,2,newL.data(),newR.data(),
+                            32,false,fallback));
+    assert(heapCalls.load(std::memory_order_relaxed)==before);
+    assert(raw->calls==2);
+    for(int n=0;n<32;++n){
+        assert(near(newL[n],oldL[n]));assert(near(newR[n],oldR[n]));
+    }
+    assert(!publisher.render(epoch+1,pins,2,newL.data(),newR.data(),
+                             32,false,fallback));
+    assert(newL[31]==0.f&&newR[31]==0.f);
+    assert(publisher.acceptedRevision()==1);
+}
+
 int main() {
     // R0: existing CH1 FX chain may be rendered inside the SAME prepared
     // ten-channel routing pass, without creating a second plugin or copying
@@ -703,12 +777,48 @@ int main() {
         assert(graph->monitorOutputLeft()==4&&graph->monitorOutputRight()==5);
         assert(near(graph->monitorGains()[1],.5f));
     }
+    // FAT-X: an unpatched strip can own a real, reusable FX lease without
+    // any fabricated input PCM, RT allocation or second render callback.
+    {
+        constexpr std::array active{2,5};
+        ChannelRoutingConfig input;
+        input.stripsAndMaster.strips[0]={
+            SourceMode::mono,2,-1,1.f,0.f,false,false};
+        SendRequest sends;
+        PreparedRenderGraph original; RenderError error;
+        assert(PreparedRenderGraph::compile(input,active,sends,original,error));
+        auto dryGraph=std::make_unique<LiveChannelFxGraph>(original,32,32);
+        auto fx=std::make_unique<GainFx>(2.f);fx->prepareToPlay(48000,32);
+        assert(dryGraph->install(6,std::move(fx),"CH07 silent FX","fat-x-7"));
+        const auto* identity=dryGraph->instanceProcessor(6);
+        const std::array<float,4> samples{.25f,.25f,.25f,.25f};
+        const float* pins[]{samples.data(),samples.data()};
+        std::array<float,4> left{},right{};
+        const auto before=heapCalls.load(std::memory_order_relaxed);
+        assert(dryGraph->process(pins,2,left.data(),right.data(),4));
+        assert(heapCalls.load(std::memory_order_relaxed)==before);
+        assert(near(left[0],.25f*.7071067811865475f));
+        input.stripsAndMaster.strips[6]={
+            SourceMode::mono,5,-1,1.f,0.f,false,false};
+        PreparedRenderGraph patched;
+        assert(PreparedRenderGraph::compile(input,active,sends,patched,error));
+        auto next=std::make_unique<LiveChannelFxGraph>(patched,32,32);
+        assert(next->reuse(6,*dryGraph,"fat-x-7"));
+        assert(next->instanceProcessor(6)==identity);
+        // Graph construction and instance leasing are CONTROL-thread work
+        // and legitimately allocate. Only the PROCESS callback must not.
+        const auto beforeNextProcess=heapCalls.load(std::memory_order_relaxed);
+        assert(next->process(pins,2,left.data(),right.data(),4));
+        assert(heapCalls.load(std::memory_order_relaxed)==beforeNextProcess);
+        assert(left[0]>.3f);
+    }
     // Run M5 AFTER the legacy suite: older M4 tests use absolute global
     // GainFx::living/released counters as their own lifetime oracle. Running
     // M5 before them changes those historical baseline counts, not DSP.
     // M5 additionally asserts zero heap and valid vendor leases itself.
     verifyUniversalChannelIdFxLeaseAndLivePcm();
     verifyMU1LegacyM4FxFullMigrationAndMonitorPcm();
+    verifyOccupiedExternalCh1Owner();
     // Tests above use a real JUCE AudioProcessor processing seam. Vendor
     // VST3 formats and sound quality require separate Windows hardware FAT.
 }

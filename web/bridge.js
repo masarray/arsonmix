@@ -210,7 +210,10 @@
     // lease/Orbit only when it actually owns legacy inserts.
     const accepted=lab?.acceptedRoute?.channels?.[channel];
     const patched=accepted&&accepted.mode&&accepted.mode!=="NONE";
-    const nativePatched=!master&&!!lab?.active&&!!lab?.ready&&!!patched;
+    // An accepted native session can own VST3 FX on an unpatched, silent
+    // channel. Its real plugin owner is retained when hardware is patched.
+    // Occupied CH1 legacy/Orbit plugins keep their existing exclusive owner.
+    const nativePatched=!master&&!!lab?.active&&!!lab?.ready&&!!lab?.acceptedRoute;
     const legacy=!master&&channel===0&&(state.chain.length>0||!nativePatched);
     const routed=nativePatched&&!legacy;
     const view=routed?(window.__arMixFxLaneView?.(channel)||{}):{};
@@ -223,7 +226,7 @@
       live:!view.pending&&instances[i]?.catalogId===id&&!!instances[i]?.instanceId
     })):[];
     return {channel,mode:master?"master":legacy?"legacy":routed?"routed":"unpatched",
-      items,pending:!!view.pending};
+      items,pending:!!view.pending,silent:!patched};
   }
   function fxSlotMarkup(lane,slot,compact=false) {
     const p=lane.items[slot],filled=!!p;
@@ -243,7 +246,8 @@
       'data-routed-clear="'+lane.channel+'" data-routed-slot="'+slot+'"';
     const label=filled?p.name:"ADD FX";
     const status=lane.pending?"DRAFT · NOT LIVE":filled?(p.live?"NATIVE VST3":"NOT ACKNOWLEDGED"):
-      lane.mode==="master"?"MASTER FX UNAVAILABLE":lane.mode==="unpatched"?"SOURCE NOT PATCHED":"EMPTY FX SLOT";
+      lane.mode==="master"?"MASTER FX UNAVAILABLE":lane.mode==="unpatched"?"SOURCE NOT PATCHED":
+      lane.silent?"VST3 READY · INPUT UNPATCHED / SILENT":"EMPTY FX SLOT";
     const live=filled&&p.live&&!lane.pending;
     const marker=native&&filled?' data-native-move="'+slot+'"':"";
     const cl=(compact?"insert-slot"+(filled?" native-insert-row":""):"native-node")+
@@ -298,8 +302,10 @@
       (canBus?'<button class="native-btn" data-bus-create="group" title="Create an actual subgroup in an unused native lane">＋ BUS</button>'+
         '<button class="native-btn" data-bus-create="fx" title="Create a real FX send return in an unused native lane">＋ FX BUS</button>':"")+
       (lane.mode==="legacy"?'<button class="native-btn" data-my-sounds="1">SAVE / RECALL</button>':"")+
+      (lane.mode==="unpatched"?'<button class="native-btn" data-fx-source="'+selected+'">CHOOSE INPUT → ACTIVATE FX</button>':"")+
       '<span class="native-sub">'+(lane.mode==="master"?"MASTER FX · UNAVAILABLE":
-        lane.mode==="unpatched"?"PATCH INPUT TO ENABLE FX":lane.items.length+"/8 VST3 INSERTS")+'</span></div>'+
+        lane.mode==="unpatched"?"PATCH INPUT TO ENABLE FX":
+        lane.silent?"VST3 PREPARED · NO INPUT / SILENT":lane.items.length+"/8 VST3 INSERTS")+'</span></div>'+
       (canBus?busAttach:"")+'<div class="native-card" style="max-width:960px;min-height:0"><h3>'+
       escapeHtml(name)+' · FX CHAIN</h3><div class="native-nodes">'+nodes+'</div>'+
       (lane.pending?'<p class="native-status">FX DRAFT · waiting for native APPLY/ACK</p>':"")+
@@ -734,7 +740,7 @@
       rack.dataset.nativeSig=signature;
       rack.innerHTML=Array.from({length:6},(_,slot)=>fxSlotMarkup(lane,slot,true)).join("");
     }
-    const unpatched=lane.mode==="unpatched";
+    const unpatched=lane.silent;
     if(unpatched){
       rack.dataset.preview="1";track.dataset.preview="1";
       track.querySelectorAll(".meter-peak").forEach(el=>el.style.display="none");
@@ -742,7 +748,7 @@
       rack.removeAttribute("data-preview");track.removeAttribute("data-preview");
     }
     track.title="CH "+(i+1)+" · "+lane.items.length+" VST3 inserts"+
-      (unpatched?" · SOURCE UNPATCHED":"");
+      (unpatched?" · SOURCE UNPATCHED · FX SILENT":"");
   });
 }
   // Orbit lighting changes a class on existing rows. Never replace the row
@@ -785,6 +791,14 @@
     if(currentTab()==="FX RACK")renderRack();
     syncView();
   });
+  // Same source picker for the unpatched focused FX Rack. Native source
+  // admission remains the only audio truth; this is control UI only.
+  document.addEventListener("click",event=>{
+    const button=event.target.closest("[data-fx-source]");
+    if(!button)return;
+    event.preventDefault();event.stopImmediatePropagation();
+    window.__arMixOpenAudioIO?.('inputs',Number(button.dataset.fxSource));
+  },true);
   // Opens the existing native Routing LAB, not a second mixer/editor.
   document.addEventListener("click",event=>{
     if(!event.target.closest("[data-native-routing-lab]"))return;
@@ -1031,7 +1045,10 @@
     if(idx===0&&lane.mode==="legacy"){
       openPicker(el,0,state.chain.length,false);return;
     }
-    toStatus("CH "+(idx+1)+" has no accepted native input/BUS route. Open ROUTING, select a verified source, MUTE OUTPUT and APPLY before loading VST3.");
+    // No fake VST3 activation: open the exact channel's verified source
+    // selector instead of a dead-end or CH1-only fallback.
+    window.__arMixOpenAudioIO?.('inputs',idx);
+    toStatus("CH "+(idx+1)+" · choose a verified INPUT; guarded native APPLY/ACK will activate its FX route.");
     return;
   }
   if(el.hasAttribute("data-go-native-rack")){

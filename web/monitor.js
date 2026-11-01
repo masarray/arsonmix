@@ -1032,8 +1032,8 @@
         return {ok:false,error:"No native routing ACK. Patch a physical input first."};
       syncNativeLevelsToRouteDraft();
     }
-    if(draftRoutes[channel]?.mode==="NONE")
-      return {ok:false,error:"CH "+(channel+1)+" has no physical/BUS source. Patch it before assigning live FX."};
+    // FX is a channel property, not a hardware-patch prerequisite.
+    // Until physical input is native-ACKed this real VST3 owner stays SILENT.
     const current=laneIds(draftRoutes[channel]);
     if(operation==="set"){
       if(slot>current.length)return {ok:false,error:"Fill preceding FX slots first."};
@@ -1066,16 +1066,15 @@
   window.__arMixApplyRackFx=()=>{
     if(!rackFxDraft)return {ok:false,error:"No pending FX selection."};
     if(patchPending)return {ok:false,error:"Native routing request already pending."};
-    if(state.monitor)return {ok:false,error:"MUTE OUTPUT before applying a structural FX edit."};
     if(Number(state.dryRoutingLab?.epoch)!==rackFxDraft.epoch||draftEpoch!==rackFxDraft.epoch)
       return {ok:false,error:"Native device changed. REVERT and verify physical patch before APPLY."};
-    for(const channel of rackFxDraft.channels)
-      if(draftRoutes[channel]?.mode==="NONE")
-        return {ok:false,error:"CH "+(channel+1)+" needs a physical/BUS source before applying FX."};
     const failure=patchPreflight();
     if(failure)return {ok:false,error:failure};
-    document.getElementById("arRouteApply").click();
-    return {ok:true,message:"FX change submitted. Live only after native route ACK."};
+    // One guarded MUTE -> APPLY/ACK -> user-authorized ARM transaction.
+    const committed=window.__arMixApplyAndActivate?.();
+    return committed?.ok?{ok:true,pending:true,
+      message:"FX APPLY · native ACK required; unpatched channels remain SILENT."}:
+      {ok:false,error:committed?.error||"Native FX APPLY rejected."};
   };
   // Studio-style Bussing for CURRENT physical mixer capacity: an unused
   // native CH can become a real stereo BUS receiver, not a ghost UI strip.

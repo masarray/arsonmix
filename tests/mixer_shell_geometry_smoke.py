@@ -57,11 +57,19 @@ async def main():
         for width,height in [(1680,920),(1440,768),(1366,768),(1024,720)]:
             await page.set_viewport_size({"width":width,"height":height})
             heights={}
+            await page.evaluate("""()=>{window.__stableFader=document.querySelector('[data-fader="0"]')}""")
             for mode in ('FX','ROUTE','SENDS'):
                 await page.locator(f'.left-rail [data-mix-mode="{mode}"]').click()
                 assert await page.locator('#mixer .rack').count()==10
                 assert await page.locator('#masterLeft .fader-zone').count()==1
                 heights[mode]=await assert_linked(mode,width,height)
+                if mode=='ROUTE':
+                    bounds=await page.evaluate("""()=>[...document.querySelectorAll('#mixer .strip[data-strip]')].map(strip=>{
+                      const bank=strip.querySelector('.arChannelBank').getBoundingClientRect();
+                      const patch=strip.querySelector('.arBankPatch')?.getBoundingClientRect();
+                      return patch && patch.bottom<=bank.bottom+1 && patch.top>=bank.top-1;
+                    })""")
+                    assert all(bounds),(mode,width,height,'ROUTE patch clipped')
                 # MASTER remains visible on small laptop screens, including scroll.
                 assert await page.evaluate("""() => {
                     const m=document.querySelector('#masterLeft').getBoundingClientRect();
@@ -81,20 +89,9 @@ async def main():
                     await page.screenshot(path=f'mixer-shell-{mode.lower()}-1680.png')
                 if width==1366 and mode=='SENDS':
                     await page.screenshot(path='mixer-shell-compact-1366.png')
-            assert heights['SENDS']<heights['FX'],(width,height,heights)
-            # ROUTE now reserves MORE vertical space than SENDS, all eleven
-            # strips shrink the identical fader row. Every route widget must
-            # be entirely inside its bank, never spill over into PAN/TRIM.
-            if mode=='ROUTE':
-                bounds=await page.evaluate("""()=>[...document.querySelectorAll('#mixer .strip[data-strip]')].map(strip=>{
-                  const bank=strip.querySelector('.arChannelBank').getBoundingClientRect();
-                  const children=[...strip.querySelectorAll('.arRouteBank > *')].map(x=>x.getBoundingClientRect());
-                  return {bankTop:bank.top,bankBottom:bank.bottom,
-                    inside:children.every(x=>x.top>=bank.top-1&&x.bottom<=bank.bottom+1),
-                    patched:strip.querySelector('.arBankPatch').getBoundingClientRect().bottom<=bank.bottom+1};
-                })""")
-                assert all(x['inside'] and x['patched'] for x in bounds),(width,height,bounds)
-            assert heights['ROUTE']<heights['SENDS'],(width,height,heights)
+            # No vertical shift while navigating FX / ROUTE / SENDS.
+            assert max(heights.values())-min(heights.values())<1.1,(width,height,heights)
+            assert await page.evaluate("""()=>document.querySelector('[data-fader="0"]')===window.__stableFader"""),(width,height,'fader remounted')
             await page.locator('.left-rail [data-mix-mode="FX"]').click()
             assert abs(await assert_linked('FX RESTORE',width,height)-heights['FX'])<1.1
 
