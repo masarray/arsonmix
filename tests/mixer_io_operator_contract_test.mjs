@@ -26,8 +26,8 @@ test('MS3A MAIN physical output patch stages through existing muted native route
   assert.match(gui,/s\.outputPorts/);
   assert.match(gui,/__arMixStageMainOutputs/);
   assert.match(gui,/\.arIOMainOutput/);
-  assert.match(gui,/Only native-ACKed MAIN\/MONITOR pairs can carry sound/);
-  assert.match(gui,/internal stereo FX returns/);
+  assert.match(gui,/Selection is DRAFT until native APPLY\/ACK/);
+  assert.match(gui,/AUX1–4 are internal FX returns, not hardware ports/);
   assert.match(monitor,/window\.__arMixStageMainOutputs/);
   assert.match(monitor,/mainOutputs:draftMainOutputs/);
   assert.match(monitor,/routingDryApply/);
