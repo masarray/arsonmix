@@ -869,6 +869,28 @@
     if(info.textContent!==caption)info.textContent=caption;
     toolbar.querySelector('[data-mix-apply]').disabled=!isNative()||!s.ready||!!s.pending||(!overlay.hidden&&matrixDraft.size>0);
     for(const strip of mixer.querySelectorAll('.strip[data-strip]'))refreshStrip(strip,s);
+    // Read-only pinned MAIN route. Reattach on master DOM regeneration but
+    // do not alter its fader, meters, FX, callback or native router.
+    const master=mixer.querySelector('#masterLeft');
+    if(master){
+      let summary=master.querySelector('.arMainOutSummary');
+      if(!summary){
+        summary=node('div','arMainOutSummary');
+        summary.setAttribute('aria-label','Accepted physical MAIN routing');
+        const heading=node('span','arMainOutHeading','MAIN OUT · NATIVE');
+        const output=node('button','arMainOutAction');
+        output.type='button';output.dataset.mixPatch='output';
+        output.dataset.master='1';output.title='Configure physical MAIN L/R (native ACK)';
+        summary.append(heading,output);
+        master.querySelector('.master-ch-id')?.insertAdjacentElement('afterend',summary);
+      }
+      const output=summary.querySelector('.arMainOutAction');
+      if(output){
+        const next=outputLabel(s);
+        if(output.textContent!==next)output.textContent=next;
+        output.disabled=!isNative()||!s.ready;
+      }
+    }
     if(!overlay.hidden)refreshIO();
     if(!sendEditor.hidden)drawSendEditor();
     sofRefresh(s);
