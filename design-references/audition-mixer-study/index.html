@@ -397,7 +397,7 @@ function render(){
  const filter=document.getElementById('viewFilter').value;
  const visible=tracks.filter(t=>filter==='all'||(filter==='solo'?t.solo:t.kind===filter));
  const selector=document.getElementById('bankSelect'),oldBank=selector.value||'all';
- const count=Math.max(1,Math.ceil(visible.length/8));
+ const count=Math.ceil(visible.length/8);
  selector.innerHTML='<option value="all">All banks</option>'+Array.from({length:count},(_,i)=>'<option value="'+i+'">'+(i*8+1)+'–'+Math.min(visible.length,(i+1)*8)+'</option>').join('');
  selector.value=oldBank!=='all'&&Number(oldBank)>=count?'all':oldBank;
  const bank=selector.value||'all',bankTracks=bank==='all'?visible:visible.slice(Number(bank)*8,(Number(bank)+1)*8);
@@ -438,7 +438,7 @@ function toggleSof(force){
 function visibleBankCount(){
  const filter=document.getElementById('viewFilter').value;
  const total=tracks.filter(t=>filter==='all'||(filter==='solo'?t.solo:t.kind===filter)).length;
- return Math.max(1,Math.ceil(total/8));
+ return Math.ceil(total/8);
 }
 function setSnapshotSafe(){
  const list=selection();if(!list.length){say('Select channels to set Snapshot Safe');return;}
@@ -661,10 +661,12 @@ document.getElementById('sceneSafe').addEventListener('click',setSnapshotSafe);
 document.getElementById('bankSelect').addEventListener('change',()=>{render();say('Switched mixer fader bank');});
 document.getElementById('bankPrev').addEventListener('click',()=>{
  const sel=document.getElementById('bankSelect'),n=visibleBankCount();
+ if(!n){sel.value='all';render();say('No channels available in the active layer');return;}
  const old=sel.value==='all'?0:Number(sel.value);sel.value=String((old-1+n)%n);render();say('Previous fader bank');
 });
 document.getElementById('bankNext').addEventListener('click',()=>{
  const sel=document.getElementById('bankSelect'),n=visibleBankCount();
+ if(!n){sel.value='all';render();say('No channels available in the active layer');return;}
  const old=sel.value==='all'?-1:Number(sel.value);sel.value=String((old+1)%n);render();say('Next fader bank');
 });
 document.getElementById('sofToggle').addEventListener('click',()=>toggleSof());
