@@ -5203,7 +5203,10 @@ scheduleDemoMeter();
     }
     if(e.target.matches('[data-io-jump]')){
       focusedInput=Number(e.target.value);
-      overlay.querySelector('[data-io-quick-row="'+focusedInput+'"]')?.scrollIntoView({block:'nearest'});
+      // The focused operator row is the ONLY mounted row. Recreate it
+      // synchronously from authoritative draft/native readback, not by
+      // scrolling to an absent one of ten stale rows.
+      lastSignature='';refreshIO();
       return;
     }
     if(e.target.matches('.arIOMatrixMode')){matrixModeChange(e.target);return;}

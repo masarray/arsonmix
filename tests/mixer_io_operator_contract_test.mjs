@@ -603,3 +603,9 @@ test('First Sound output panel renders accepted MAIN pin truth, not a dangling r
  assert.match(io,/LIVE MAIN: /);
  assert.match(io,/AUX1–4 are internal stereo FX returns, not physical output sockets/);
 });
+
+test('First Sound channel chooser remounts exactly one focused native route row',()=>{
+ const io=read('web/mixer-io.js');
+ assert.match(io,/focusedInput=Number\(e\.target\.value\);\s*\/\/ The focused operator row/);
+ assert.match(io,/lastSignature='';refreshIO\(\);/);
+});
