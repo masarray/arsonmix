@@ -193,7 +193,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 @media(max-height:750px){.console-body{--route-h:54px;--fx-h:105px;--send-h:82px;--eq-h:43px;--pan-h:32px;--trim-h:22px;--switch-h:29px;--footer-h:45px}.fxslot-row{height:17px}.fx-section .subhead{height:18px}.footer-label{height:26px}.db-value{height:14px}.eq-line{height:20px}}
 @media(max-width:1000px){.short-help{display:none}.strip{width:98px;flex-basis:98px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;animation:none!important}}
-@media(max-height:610px){.console-body{--route-h:45px;--fx-h:80px;--send-h:60px;--eq-h:27px;--pan-h:28px;--trim-h:18px;--switch-h:25px;--footer-h:42px}.send-pan{display:none}.fxslot-row{height:15px}.fx-section .subhead,.send-header{height:16px}.eq-line{display:none}.eq-header{height:25px}}
+@media(max-height:610px){.console-body{--route-h:54px;--fx-h:80px;--send-h:60px;--eq-h:27px;--pan-h:28px;--trim-h:18px;--switch-h:25px;--footer-h:42px}.send-pan{display:none}.fxslot-row{height:15px}.fx-section .subhead,.send-header{height:16px}.eq-line{display:none}.eq-header{height:25px}}
 
 /* Single-window plugin browser: light solid overlay, no blur/animated shadows. */
 .plugin-browser[hidden]{display:none!important}
@@ -325,10 +325,10 @@ button:disabled{opacity:.45;cursor:not-allowed}
     <div class="mixer-title"><span class="accent"></span><span class="panel-name">Mixer</span><span class="panel-sub">▤</span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
     <section class="console-body" aria-label="Multitrack mixing console">
       <aside class="section-rail" aria-label="Mixer section icons">
-        <button class="rail-cell route" data-section="route" title="Collapse / expand Inputs and Outputs">⇥</button>
-        <button class="rail-cell fx" data-section="fx" title="Collapse / expand Effects">fx</button>
-        <button class="rail-cell send" data-section="send" title="Collapse / expand Sends">↪</button>
-        <button class="rail-cell eq" data-section="eq" title="Collapse / expand Equalizer">▥</button>
+        <button class="rail-cell route" data-section="route" aria-expanded="true" title="Collapse / expand Inputs and Outputs">⇥</button>
+        <button class="rail-cell fx" data-section="fx" aria-expanded="true" title="Collapse / expand Effects">fx</button>
+        <button class="rail-cell send" data-section="send" aria-expanded="true" title="Collapse / expand Sends">↪</button>
+        <button class="rail-cell eq" data-section="eq" aria-expanded="true" title="Collapse / expand Equalizer">▥</button>
         <div class="rail-cell pan" title="Pan">◉</div>
         <div class="rail-cell trim" title="Digital input trim"><small>TRIM</small></div>
         <div class="rail-cell switch" title="Mute / Solo / Cue / Monitor"><small>M S C</small></div>
