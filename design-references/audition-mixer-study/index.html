@@ -528,6 +528,23 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .console-body .bottom-section .db-value{display:none}
 .console-body .footer-label{height:calc(100% - 3px);min-height:0}
 .console-body .footer-label .name{display:flex;flex:1;min-height:0;align-items:center;justify-content:center}
+
+/* Comfort hit-target and channel-role fader accents (iGPU-safe static paint). */
+.console-body[data-density="comfort"] .fxslot-row{height:24px;min-height:24px;flex-basis:24px;gap:3px}
+.console-body[data-density="comfort"] .fxslot-row .mini{width:20px;height:20px;flex:0 0 20px;line-height:20px}
+.console-body[data-density="comfort"] .fxslot-row .fx-remove{width:19px;height:20px;flex:0 0 19px;font-size:14px}
+.console-body[data-density="comfort"] .fx-pick{font-size:11px;height:22px}
+.console-body[data-density="comfort"] .eq-header .mini,.console-body[data-density="comfort"] .send-header .mini{height:21px;min-width:20px;line-height:21px}
+.console-body .strip:not(.master) .fader::-webkit-slider-thumb{
+  background:
+    repeating-linear-gradient(to bottom,transparent 0,transparent 5px,rgba(25,33,43,.45) 5px,rgba(25,33,43,.45) 6px,transparent 6px,transparent 9px),
+    linear-gradient(#f3f7f8 0%,#d2dbdf 21%,color-mix(in srgb,var(--track-color) 35%,#7897aa) 44%,#405763 48%,#f0f6f7 55%,color-mix(in srgb,var(--track-color) 45%,#94a6b1) 79%,#526a78 100%);
+}
+.console-body .strip:not(.master) .fader::-moz-range-thumb{
+  background:linear-gradient(#f2f6f7,#bacad0 25%,color-mix(in srgb,var(--track-color) 40%,#718c9c) 45%,#415560 50%,#cddbe0 60%,#6c8491);
+}
+.console-body .fader:focus-visible{outline:2px solid #9ce1ee;outline-offset:-2px}
+.console-body .switch:focus-visible,.console-body .route-select:focus-visible{outline:2px solid #7ecae3;outline-offset:0}
 </style>
 </head>
 <body>
