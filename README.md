@@ -32,3 +32,12 @@ Use owner CSS `web/styles-src/**` and deterministic `scripts/build_ui_css.py` re
 
 ## Licenses and distribution
 Respect source/SDK licenses. Third-party VST3 files remain in user-controlled private Studio vault; do not bundle unlicensed commercial plugins. FactoryFX requires signed/provenance-approved host-qualified packages. Reference workflows, never copy proprietary Audition/Studio One/LV1 artwork.
+
+## Historical diagnostics and visual references (NOT active execution authority)
+
+Retained for traceable physical hardware diagnostics under [#15](https://github.com/masarray/arsonmix/issues/15):
+- [Smart Audio Engine ARD — archival render/device-clock analysis](docs/ARD_SMART_AUDIO_ENGINE_V1_2026-10-25.md).
+- [Smart Audio Engine Implementation Blueprint — archival ASIO/WASAPI FAT details](docs/SMART_AUDIO_ENGINE_IMPLEMENTATION_BLUEPRINT.md).
+- [Original approved GUI baseline — archival visual comparison](docs/GUI_BASELINE_LOCK_2026-10-25.md).
+
+These explain prior device-clock evidence and fader/LED design. For **current feature architecture, priority and execution**, the PRD/ARD v5 and execution lock v6 at the top of this document take precedence. The historical specs do not override native ChannelId admission or justify an extra render callback.

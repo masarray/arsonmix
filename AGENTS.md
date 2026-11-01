@@ -30,3 +30,12 @@ At verified `main@bb6dff6b`: native [Windows CTest/package #41263965810](https:/
 - Older 2026-10-25–31 R5/L2/G1/G2/BTN-180 or alternate 'LATEST' instructions in Git history are **historical**, not active strategy; use v5 specs and this v6 lock for priorities. Approved visual details may be reused without overriding operator-first function.
 
 **There are no unattended background coding agents merely because a GitHub issue/branch exists. Separate developer sessions must explicitly be started with the linked workstream handoffs.**
+
+## Historical diagnostics and visual references (NOT active execution authority)
+
+Retained for traceable physical hardware diagnostics under [#15](https://github.com/masarray/arsonmix/issues/15):
+- [Smart Audio Engine ARD — archival render/device-clock analysis](docs/ARD_SMART_AUDIO_ENGINE_V1_2026-10-25.md).
+- [Smart Audio Engine Implementation Blueprint — archival ASIO/WASAPI FAT details](docs/SMART_AUDIO_ENGINE_IMPLEMENTATION_BLUEPRINT.md).
+- [Original approved GUI baseline — archival visual comparison](docs/GUI_BASELINE_LOCK_2026-10-25.md).
+
+These explain prior device-clock evidence and fader/LED design. For **current feature architecture, priority and execution**, the PRD/ARD v5 and execution lock v6 at the top of this document take precedence. The historical specs do not override native ChannelId admission or justify an extra render callback.
