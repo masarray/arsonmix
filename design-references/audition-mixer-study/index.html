@@ -636,9 +636,7 @@ function init(){nextId=1;nextGroup=1;tracks=INIT.map((name,i)=>{const channel=ma
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const option=(values,selected)=>values.map(x=>'<option value="'+escapeHtml(x)+'"'+(x===selected?' selected':'')+'>'+escapeHtml(x)+'</option>').join('');
 const channelOptions=(t,type)=>{
- if(type==='input')return t.kind==='audio'?t.format==='mono'
- ?['None','Input 1 (Mono)','Input 2 (Mono)','CABLE Output L','CABLE Output R']
- :['None','Default Stereo','Input 1 + 2 (Stereo)','CABLE Output L/R (Stereo)']:['None'];
+ if(type==='input')return t.kind==='audio'?['None','Input 1 (Mono)','Input 2 (Mono)','Input 1 + 2 (Stereo)','CABLE Output L','CABLE Output R','CABLE Output L/R (Stereo)']:['None'];
  if(type==='output')return t.kind==='master'?['Default Output','Output 1 + 2','Speakers (Realtek)','Virtual Cable']:['Master',...tracks.filter(x=>x.kind==='bus'&&x.id!==t.id).map(x=>x.name),'Output 1 + 2'];
  return ['None',...tracks.filter(x=>(x.kind==='bus'||x.kind==='fx')&&x.id!==t.id).map(x=>x.name)];
 };
@@ -676,7 +674,7 @@ function sectionFader(t){
 }
 function strip(t){
  let code='<article class="strip '+t.kind+(t.selected?' selected':'')+'" data-id="'+t.id+'" style="--track-color:'+t.color+'" aria-label="'+escapeHtml(t.name)+' channel">';
- code+='<div class="section route-section"><div class="route-top"><span class="route-indicator">'+(t.kind==='audio'?'▥':t.kind==='bus'?'↪':t.kind==='fx'?'∿':'➜')+'</span>'+(t.safe?'<span class="safe-marker" title="Snapshot safe · recall protected">SAFE</span>':'')+(t.group?'<span class="group-indicator" title="Linked group '+escapeHtml(t.group)+'">'+escapeHtml(t.group)+'</span>':'')+(t.kind==='audio'?'<button class="mini format-badge" data-action="format" title="Flip mono/stereo">'+(t.format==='mono'?'M':'ST')+'</button>':'')+'<button class="mini phase '+(t.phase?'on':'')+'" data-action="phase" title="Reverse polarity">'+(t.phase?'Ø':'⊘')+'</button></div>';
+ code+='<div class="section route-section"><div class="route-top"><span class="route-indicator">'+(t.kind==='audio'?'▥':t.kind==='bus'?'↪':t.kind==='fx'?'∿':'➜')+'</span>'+(t.safe?'<span class="safe-marker" title="Snapshot safe · recall protected">SAFE</span>':'')+(t.group?'<span class="group-indicator" title="Linked group '+escapeHtml(t.group)+'">'+escapeHtml(t.group)+'</span>':'')+(t.kind==='audio'?'<button class="mini format-badge" data-action="format" title="Processing width M/ST (preserves physical input source)">'+(t.format==='mono'?'M':'ST')+'</button>':'')+'<button class="mini phase '+(t.phase?'on':'')+'" data-action="phase" title="Reverse polarity">'+(t.phase?'Ø':'⊘')+'</button></div>';
  if(t.kind==='audio')code+='<div class="route-field"><span class="route-caption">IN</span><select class="route-select" data-field="input" title="Input source (demo choices)" aria-label="'+escapeHtml(t.name)+' input">'+option(channelOptions(t,'input'),t.input)+'</select></div>';
  else if(t.kind==='bus'||t.kind==='fx')code+='<div class="route-field"><span class="route-caption">IN</span><span class="route-identity">'+(t.kind==='bus'?'GROUP':'FX RETURN')+'</span></div>';
  else code+='<div class="route-field"><span class="route-caption">IN</span><span class="route-identity">SUM BUS</span></div>';
@@ -912,7 +910,7 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  const t=findTrack(btn);if(!t)return;
  const a=btn.dataset.action;
  if(a==='rename')return;
- if(a==='format'&&t.kind==='audio'){t.format=t.format==='mono'?'stereo':'mono';t.input='None';refreshStrip(t);say(t.name+' switched to '+t.format.toUpperCase()+' · select a valid input patch');return;}
+ if(a==='format'&&t.kind==='audio'){t.format=t.format==='mono'?'stereo':'mono';refreshStrip(t);say(t.name+' processing → '+t.format.toUpperCase()+' · physical source '+t.input+' unchanged (reference only)');return;}
  if(a==='openPlugin'){openPluginBrowser(t,Number(btn.dataset.slot));return;}
  if(a==='removeFx'){const i=Number(btn.dataset.slot);t.fx[i]='None';t.slotBypass[i]=false;refreshStrip(t);say(t.name+' · cleared FX insert '+(i+1));return;}
  if(a==='slotPower'){const slot=Number(btn.dataset.slot);if(t.fx[slot]==='None'){say(t.name+': choose an effect before toggling bypass');return;}t.slotBypass[slot]=!t.slotBypass[slot];refreshStrip(t);say(t.name+': FX '+(slot+1)+(t.slotBypass[slot]?' bypassed':' enabled'));return;}
