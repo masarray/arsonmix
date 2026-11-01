@@ -1587,13 +1587,13 @@ async def main():
               channelFxNames:Array.from({length:10},(_,i)=>i===1?"Effect 001":"")}
           });
         }""")
-        # A native rack WITHOUT an accepted source must not pretend its FX
-        # will process audio: it correctly shows the unpatched state.
+        # A real VST3 rack remains selectable BEFORE hardware input is
+        # patched, but without any fabricated input PCM or LIVE plugin ACK.
         assert await native.locator('[data-strip="1"] .rack .insert-slot').count()==6
-        assert await native.locator('[data-strip="1"] .rack [data-routed-fx="1"]').count()==0
-        assert await native.locator('[data-strip="1"]').get_attribute("title") is not None
-        # Now ACK a genuinely PATCHED channel 2 stereo input. Only this
-        # transition is allowed to expose independently routed native FX.
+        assert await native.locator('[data-strip="1"] .rack [data-routed-fx="1"]').count()==6
+        assert 'SOURCE UNPATCHED' in (await native.locator('[data-strip="1"]').get_attribute("title") or '')
+        # A native hardware ACK can later attach a stereo source while
+        # retaining the original plugin instance and all six FX slots.
         await native.evaluate("""()=>{
           const base=window.__arPatchStatus;
           const previous=base.dryRoutingLab||{};
