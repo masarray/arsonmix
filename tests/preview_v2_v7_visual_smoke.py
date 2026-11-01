@@ -77,8 +77,9 @@ def audit_geometry(page, title):
 
 
 
+
 def audit_p0_collapse(page, name):
-    """FX gains pixels on ROUTE/SEND collapse; physical fader stays still."""
+    """Expanded-route rack has four visible rows, proportional fader; no ROUTE jump."""
     data=page.evaluate("""() => {
         const body=document.querySelector('.console-body');
         const rail=document.querySelector('.section-rail');
@@ -102,32 +103,89 @@ def audit_p0_collapse(page, name):
         click('route');const route=read();
         click('route');const restoreRoute=read();
         click('send');const sendOpen=read();
+        click('route');const openSendFoldRoute=read();
+        click('route');
         click('send');const restoreSend=read();
         click('route');const bothHidden=read();
         click('route');
-        return {before,route,restoreRoute,sendOpen,restoreSend,bothHidden};
+        return {before,route,restoreRoute,sendOpen,openSendFoldRoute,restoreSend,bothHidden};
     }""")
     base=data['before']
     assert not base['route'] and base['send'] and not base['fx'],(name,'initial fold',data)
-    for key in ('route','restoreRoute','sendOpen','restoreSend','bothHidden'):
+    expected=min(600,max(215,page.viewport_size['height']-508))
+    if page.viewport_size['height']<=680:
+        expected=min(300,max(155,page.viewport_size['height']-505))
+    for i,cell in enumerate(base['cells']):
+        assert abs(cell['fader']-expected)<2.0,(name,'fader not proportional',i,cell,expected)
+        assert 120<=cell['fx']<=145,(name,'FX rack not approximately four slots',i,cell)
+        assert cell['list']>=88,(name,'FX viewport cannot show four 22px rows',i,cell)
+        assert cell['fader']>cell['fx']+45,(name,'fader less usable than rack',i,cell)
+    for key in ('route','restoreRoute','sendOpen','openSendFoldRoute','restoreSend','bothHidden'):
         now=data[key]
         assert len(now['cells'])==len(base['cells']),(name,key,'roster changed')
         for i,(a,b) in enumerate(zip(base['cells'],now['cells'])):
-            assert abs(a['fader']-b['fader'])<1.5,(name,key,i,'fader resized',a,b)
-            assert abs(a['top']-b['top'])<1.5,(name,key,i,'fader jumped',a,b)
-            assert abs(now['railFx']-b['fx'])<1.5,(name,key,i,'FX rail not aligned')
-            assert abs(now['railFader']-b['fader'])<1.5,(name,key,i,'fader rail not aligned')
+            assert abs(now['railFx']-b['fx'])<1.5,(name,key,i,'FX rail misaligned')
+            assert abs(now['railFader']-b['fader'])<1.5,(name,key,i,'fader rail misaligned')
+            if key in ('route','restoreRoute','restoreSend','bothHidden'):
+                assert abs(a['fader']-b['fader'])<1.5,(name,key,i,'fader changed on ROUTE collapse')
+                assert abs(a['top']-b['top'])<1.5,(name,key,i,'fader jumped on ROUTE collapse')
+            if key in ('sendOpen','openSendFoldRoute'):
+                assert b['list']>=88,(name,key,i,'four FX slots cropped with SEND expanded',b)
+                assert b['fader']>=150,(name,key,i,'SEND open fader unsafe short',b)
     for i,(a,b) in enumerate(zip(base['cells'],data['route']['cells'])):
         assert b['route']<a['route']-35,(name,i,'ROUTE did not collapse',a,b)
         assert b['fx']>a['fx']+35,(name,i,'FX did not gain ROUTE pixels',a,b)
-        assert b['list']>a['list']+35,(name,i,'FX slots do not gain visibility',a,b)
-        assert data['bothHidden']['cells'][i]['fx']>a['fx']+35,(name,i,'combined collapse')
+        assert b['list']>a['list']+35,(name,i,'FX visibility not improved',a,b)
+        assert data['bothHidden']['cells'][i]['fx']>a['fx']+35,(name,i,'combined fold no gain')
         assert data['sendOpen']['cells'][i]['send']>a['send']+35,(name,i,'SEND not expanded')
-        assert data['sendOpen']['cells'][i]['fx']<a['fx']-35,(name,i,'FX not elastic')
+        assert abs(data['sendOpen']['cells'][i]['fx']-a['fx'])<=4,(
+            name,i,'SEND open should keep 4 FX rows; borrow fader only as needed',a,data)
+        assert data['openSendFoldRoute']['cells'][i]['fx']>data['sendOpen']['cells'][i]['fx']+35,(
+            name,i,'ROUTE collapse failed when SEND expanded',data)
     for key in ('restoreRoute','restoreSend'):
         assert abs(data[key]['cells'][0]['fx']-base['cells'][0]['fx'])<1.5,(
-            name,key,'FX failed to restore',data)
+            name,key,'FX geometry did not restore',data)
     return data
+
+
+def audit_p0_pan_center(page, name):
+    """Physical center detent with hysteresis, sign, keyboard fine adjustment."""
+    result=page.evaluate("""() => {
+        const input=document.querySelector('#tracks .strip .center-pan');
+        const read=()=>({value:Number(input.value),text:input.getAttribute('aria-valuetext'),
+          label:input.closest('.pan-control').nextElementSibling.textContent,
+          centered:input.closest('.pan-control').classList.contains('is-centered')});
+        const send=(v,type='input')=>{
+          input.value=String(v);input.dispatchEvent(new Event(type,{bubbles:true}));
+          return read();
+        };
+        const initial=read();
+        const farLeft=send(-35),capture=send(-6),held=send(10),
+          released=send(18),nearRelease=send(11,'change');
+        input.dataset.panAltPointer='true';
+        const bypass=send(5);
+        delete input.dataset.panAltPointer;
+        const recenter=send(-4,'change');
+        const nodeBefore=input;
+        return {initial,farLeft,capture,held,released,nearRelease,bypass,recenter,
+          unchanged:nodeBefore===document.querySelector('#tracks .strip .center-pan')};
+    }""")
+    assert result['farLeft']['value']==-35,(name,'PAN left sign',result)
+    for key in ('capture','held','nearRelease','recenter'):
+        p=result[key]
+        assert p['value']==0 and p['centered'] and p['label']=='C' and p['text']=='Center',(
+            name,key,'PAN center detent failed',result)
+    assert result['released']['value']==18 and not result['released']['centered'],(
+        name,'PAN release threshold failed',result)
+    assert result['bypass']['value']==5,(name,'Alt-pointer center bypass failed',result)
+    assert result['unchanged'],(name,'PAN remounted during gesture')
+    pan=page.locator('#tracks .strip .center-pan').first
+    pan.focus()
+    pan.press('ArrowRight')
+    assert pan.input_value()=='1',(name,'Keyboard cannot adjust off center')
+    pan.press('ArrowLeft')
+    assert pan.input_value()=='0',(name,'Keyboard cannot return center')
+
 
 
 def main():
@@ -149,6 +207,7 @@ def main():
                 page.goto(PAGE.as_uri())
                 audit_geometry(page,f"{width}x{height} default");count+=1
                 audit_p0_collapse(page,f"{width}x{height} P0");count+=1
+                audit_p0_pan_center(page,f"{width}x{height} PAN");count+=1
                 if width==1366:
                     page.locator('.section-rail [data-section="route"]').click()
                     page.screenshot(path=str(ROOT / "preview-p0-fx-expanded-1366.png"))
@@ -192,6 +251,7 @@ def main():
                 page.goto(PUBLIC.as_uri())
                 audit_geometry(page,f"PUBLIC /preview/mixer.html {width}x{height}");count+=1
                 audit_p0_collapse(page,f"PUBLIC {width}x{height} P0");count+=1
+                audit_p0_pan_center(page,f"PUBLIC {width}x{height} PAN");count+=1
                 page.screenshot(path=str(ROOT / f"preview-operator-{width}.png"))
                 assert page.locator('#tracks .strip').count()>0
                 assert page.get_by_text('SIMULATED METERS · NO REAL AUDIO').is_visible()

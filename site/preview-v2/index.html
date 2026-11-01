@@ -1867,7 +1867,7 @@ function strip(t){
  else code+='<div class="route-field"><span class="route-caption">IN</span><span class="route-identity">SUM BUS</span></div>';
  code+='<div class="route-field"><span class="route-caption">OUT</span><select class="route-select" data-field="output" title="Primary output" aria-label="'+escapeHtml(t.name)+' output">'+option(channelOptions(t,'output'),t.output)+'</select></div></div>';
  code+=sectionFx(t)+sectionSend(t);
- code+='<div class="section pan-section"><span class="pan-icon" title="Pan / Balance">PAN</span><span class="pan-control" style="'+panStyle(t.pan)+'"><input class="center-pan" type="range" min="-100" max="100" step="1" value="'+t.pan+'" data-field="pan" title="Pan from center; release near center to snap; double-click to center" aria-label="Channel pan; double-click center"></span><output>'+panLabel(t.pan)+'</output></div>';
+ code+='<div class="section pan-section"><span class="pan-icon" title="Pan / Balance">PAN</span><span class="pan-control '+(t.pan===0?'is-centered':'')+'" style="'+panStyle(t.pan)+'"><input class="center-pan" type="range" min="-100" max="100" step="1" value="'+t.pan+'" data-field="pan" title="PAN center detent: capture ±7, hold ±12; release snaps center; double-click resets" aria-label="Channel pan; center detent" aria-valuetext="'+(t.pan===0?'Center':t.pan<0?'Left '+Math.abs(t.pan):'Right '+t.pan)+'"></span><output>'+panLabel(t.pan)+'</output></div>';
 
  code+='<div class="section switch-section">'
    +'<button class="switch mute '+(t.mute?'on':'')+'" data-action="mute" title="Mute channel" aria-pressed="'+t.mute+'">MUTE</button>'
@@ -2121,10 +2121,11 @@ function handleField(event){
   // release outside ±12. A finished drag inside ±12 snaps to dead center.
   // Keyboard arrows remain fine-resolution (bypass sticky detent).
   const keyboard=el.dataset.panKeyboard==='true';
+  const bypass=!!event.altKey||el.dataset.panAltPointer==='true';
   const latched=el.dataset.panDetent==='true';
   const range=event.type==='change'?12:latched?12:7;
-  if(!keyboard&&!event.altKey&&Math.abs(value)<=range){value=0;el.value='0';}
-  el.dataset.panDetent=String(!keyboard&&value===0&&!event.altKey);
+  if(!keyboard&&!bypass&&Math.abs(value)<=range){value=0;el.value='0';}
+  el.dataset.panDetent=String(!keyboard&&value===0&&!bypass);
   if(event.type==='change')delete el.dataset.panKeyboard;
   t.pan=value;
   el.setAttribute('aria-valuetext',value===0?'Center':value<0?'Left '+Math.abs(value):'Right '+value);
@@ -2198,8 +2199,19 @@ consoleBody.addEventListener('keydown',event=>{
 });
 consoleBody.addEventListener('pointerdown',event=>{
  const el=event.target.closest?.('.center-pan');
- if(el)delete el.dataset.panKeyboard;
+ if(el){
+  delete el.dataset.panKeyboard;
+  el.dataset.panAltPointer=String(!!event.altKey);
+}
 },true);
+window.addEventListener('pointerup',()=>{
+ for(const pan of consoleBody.querySelectorAll('.center-pan[data-pan-alt-pointer]'))
+  delete pan.dataset.panAltPointer;
+});
+window.addEventListener('pointercancel',()=>{
+ for(const pan of consoleBody.querySelectorAll('.center-pan[data-pan-alt-pointer]'))
+  delete pan.dataset.panAltPointer;
+});
 document.querySelector('.console-body').addEventListener('input',handleField);
 document.querySelector('.console-body').addEventListener('change',handleField);
 document.querySelector('.console-body').addEventListener('click',e=>{
