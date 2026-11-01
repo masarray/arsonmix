@@ -312,7 +312,7 @@ test('PR278 source contract blocks divergent universal chrome/identity/MAIN',()=
  const r=inspectPr278({reference,js,css,legacy:'channelIcons= channelPalette=',
   test:'console-v8-native-unready.json arMixConsoleAck'});
  for(const id of ['TOP_BOTTOM_COLOR_ICON','ONE_GRAPHITE_CHASSIS',
-  'BTN180_HEADER','PINNED_MAIN_EQUAL_WIDTH'])
+  'BTN180_HEADER','PINNED_MAIN_EQUAL_WIDTH','V8_DENSITY_AWARE_BANK','V8_TRUE_SECTION_COLLAPSE'])
   assert.ok(r.blocked.some(c=>c.id===id),id+' must not pass');
  assert.equal(r.audioCertified,false);
  for(const id of ['REFERENCE_278','DIRECT_NATIVE_IO','LINK_VS_GROUP','NATIVE_ACK_NO_DEMO'])

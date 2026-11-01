@@ -3,8 +3,8 @@
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
-export const DESIGN_REFERENCE={pr:278,sha:'c849847d42c78cf9aaf8d2d41ed667805e91921d',
- gitBlob:'e9aa131fbf984cad443e4018f4d71fbd426260a9'};
+export const DESIGN_REFERENCE={pr:278,sha:'eda57f931ae3cc2872579df29cdf4e1486592b64',
+ gitBlob:'1bbd9f50eefbb3c54d05d8e36e5afd3bd5e6d709'};
 function rule(css,key){const i=css.indexOf(key);if(i<0)return '';
  const a=css.indexOf('{',i),b=css.indexOf('}',a+1);
  return a>=0&&b>=0?css.slice(a+1,b):'';}
@@ -35,6 +35,13 @@ export function inspectPr278(x={}){
  add('LINK_VS_GROUP',js.includes("button('LINK FADERS'")&&js.includes("button('ROUTE TO GROUP BUS'"),'Separate fader-link control from serial Group DSP');
  add('MODELLESS_NATIVE_FX',js.includes('arV6PluginPanel')&&js.includes('arV6QuickPanel')&&js.includes('Search native scanned plugins'),'F8 modeless plugin manager must use actual VST3 inventory');
  add('OLD_PALETTE',old.includes('channelIcons=')&&old.includes('channelPalette='),'Preserve legacy 12 channel colors/icons');
+ const nativeDensity=['comfort','standard','compact'].every(d=>js.toLowerCase().includes(d)) &&
+   (js.includes('bankGeometry(')||js.includes('DENSITY_WIDTH'));
+ add('V8_DENSITY_AWARE_BANK',nativeDensity,'Use PR278 V8 Comfort150 / Standard125 / Compact105 minimum and reserved MAIN width');
+ const realFold=css.includes('display:none')&&css.includes('.arV6Route')&&
+  css.includes('.arV6Fx')&&css.includes('.arV6Sends')&&
+  (css.includes('data-collapseroute')||css.includes('data-collapsefx')||css.includes('data-collapsesend'));
+ add('V8_TRUE_SECTION_COLLAPSE',realFold,'Hide collapsed Route/FX/Send children; no clipped 23px controls or rail mismatch');
  add('NATIVE_CONSUMER_TEST',test.includes('console-v8-native-unready.json')&&test.includes('arMixConsoleAck'),'Visual UI also requires native fixture/ACK regression');
  return {reference:DESIGN_REFERENCE,sourceOnly:true,audioCertified:false,
   checks,blocked:checks.filter(c=>!c.pass)};

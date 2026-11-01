@@ -38,4 +38,8 @@ The trace file MUST be schema v2 WebView native ACK/PCM state with \`provenance:
 
 
 ## Mandatory #278 GUI authority gate
-`scripts/check_pr278_console_authority.mjs` pins isolated approved #278 visual source `c849847d42c78cf9aaf8d2d41ed667805e91921d` (study blob `e9aa131fbf984cad443e4018f4d71fbd426260a9`) **only as a visual reference**. The controlled integration tree must include its study HTML, not run demo DSP. `node scripts/check_console_puzzle.mjs --release` blocks universal production Console drift in top/bottom channel identity, one graphite chassis, BTN-180, equal-width pinned MAIN and native IN/OUT/FX/Cue/ACK. GUI #271 owns implementation. Passing this source gate is NOT screenshot parity, PCM or acoustic certification.
+`scripts/check_pr278_console_authority.mjs` pins isolated approved #278 visual source `eda57f931ae3cc2872579df29cdf4e1486592b64` (study blob `1bbd9f50eefbb3c54d05d8e36e5afd3bd5e6d709`) **only as a visual reference**. The controlled integration tree must include its study HTML, not run demo DSP. `node scripts/check_console_puzzle.mjs --release` blocks universal production Console drift in top/bottom channel identity, one graphite chassis, BTN-180, equal-width pinned MAIN and native IN/OUT/FX/Cue/ACK. GUI #271 owns implementation. Passing this source gate is NOT screenshot parity, PCM or acoustic certification.
+
+
+### PR #278 V8 — adaptive geometry (2 Nov 2026)
+The newest isolated design study `eda57f931ae3cc2872579df29cdf4e1486592b64` adds density-aware bank capacity (Comfort 150px, Standard 125px, Compact 105px), corrected 32px rail budget and pinned MAIN at the same channel width. Folded Route, FX and Send children must be `display:none`, never clipped into 23px. Source authority gate now reports these as native GUI blockers; actual Chromium rendered geometry remains a separate test (`design-references/audition-mixer-study/visual_layout_audit_v8.py`). No simulated DSP from the reference enters the app.
