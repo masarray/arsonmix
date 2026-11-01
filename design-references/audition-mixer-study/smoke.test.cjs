@@ -516,5 +516,39 @@ filter('all');
 check(strip(1).includes('<option value="SOURCE ONLY (No Main)" selected>') && sourceOnlyNotice,
  'CH1 may be capture/source-only so four split processing paths do not force a fifth direct MAIN dry feed');
 node('reset').dispatch('click');
+
+// V11: FL-style source-first wire switching in the PERSISTENT middle BUS/SEND row.
+// These are deterministic state tests; actual screenshot geometry is gated separately.
+node('reset').dispatch('click');
+check(html.includes('id="wireLayer" class="routing-wire-overlay"') &&
+ html.includes('id="wireLegend"') &&
+ html.includes('.console-body.collapsed-send{--send-h:53px!important}'),
+ 'Wire layer and 53px middle routing row survive collapsed advanced Send');
+check(strip(1).includes('wire-socket is-source') &&
+ strip(3).includes('data-action="wireRoute"') &&
+ strip(3).includes('class="wire-socket"') &&
+ strip(3).includes('>△</span>'),
+ 'Source CH1 is lit and every destination has FL-like up arrow');
+function wireTo(id){
+ const el={dataset:{action:'wireRoute'},closest:k=>k==='.strip'?{dataset:{id}}:null};
+ const target={closest:k=>k==='[data-action]'?el:k==='[data-action="wireRoute"]'?el:k==='.strip'?{dataset:{id}}:null};
+ node('body').handlers.mousedown({target,ctrlKey:false,metaKey:false,shiftKey:false});
+ node('body').handlers.click({target});
+}
+[3,4,5,6].forEach(wireTo);
+check(strip(1).includes('⇢4') && strip(3).includes('wire-socket is-linked') &&
+ node('wireLegend').textContent.includes('4 targets'),
+ 'CH1 click-source then CH3–CH6 socket clicks create four independent visible links');
+[3,4,5,6].forEach(id=>check(strip(id).includes('<option value="CH01 PRE-FX SPLIT" selected>'),
+ 'Wire to CH'+id+' selects its PRE INSERT source without creating a BUS'));
+wireTo(5);
+check(strip(1).includes('⇢3') && strip(5).includes('class="wire-socket"'),
+ 'Click linked socket a second time disconnects precisely that destination');
+field(7,'input','Input 1 (Mono)');
+wireTo(7);
+check(node('info').textContent.includes('already has Input 1 (Mono)') &&
+ strip(7).includes('<option value="Input 1 (Mono)" selected>'),
+ 'Occupied input is fail-closed: do not erase live hardware input on wire click');
+node('reset').dispatch('click');
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
