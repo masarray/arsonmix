@@ -1,3 +1,5 @@
+> **NORMATIVE UPDATE:** Read [PRD v5.1 §8](PRD_ARSONMIX_OPERATOR_FIRST_LIVE_MIXER_V5_20261101.md), [ARD v5.1 §J](ARD_ARSONMIX_UNIVERSAL_REALTIME_CONSOLE_V5_20261101.md) and specific owner packets [ENGINE](workstreams/ENGINE_PUZZLE_V8.md), [GUI](workstreams/GUI_PUZZLE_V8.md), [FAT](workstreams/FAT_PUZZLE_V8.md). The v8 machine contract describes required fields, but no hand-authored synthetic fixture can substitute a real native C++ snapshot. PR #279 adds cheap and strict fail-closed preflight; it is not physical sound certification.
+
 # ArSonMix V8 — Puzzle Contract / Three Independent Modules, One Product
 Date 2026-11-01. Normative product PRD/ARD v5 and real-time safety v6 remain binding. This file **replaces v7 work sequencing**, not product scope. No customer testing until complete integrated mixer.
 

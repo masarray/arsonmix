@@ -1,3 +1,5 @@
+> **ACTIVE DEVELOPMENT CONTRACT:** [PRD v5.1](docs/PRD_ARSONMIX_OPERATOR_FIRST_LIVE_MIXER_V5_20261101.md) · [ARD v5.1](docs/ARD_ARSONMIX_UNIVERSAL_REALTIME_CONSOLE_V5_20261101.md) · [Puzzle integration v8](docs/PUZZLE_INTEGRATION_CONTRACT_V8_20261101.md) · [ENGINE work](docs/workstreams/ENGINE_PUZZLE_V8.md) · [GUI work](docs/workstreams/GUI_PUZZLE_V8.md) · [FAT work](docs/workstreams/FAT_PUZZLE_V8.md). Historical v7 release train remains an audit reference but **v8 controls multi-thread sequencing and acceptance**. No customer UAT until one integrated feature-complete Windows mixer passes internal qualification.
+
 > **Current coordinated delivery:** [RELEASE TRAIN v7](docs/RELEASE_TRAIN_UNIVERSAL_CONSOLE_V7_20261101.md) · [ENGINE](docs/workstreams/ENGINE_DELIVERY_V7.md) · [GUI](docs/workstreams/GUI_DELIVERY_V7.md) · [INTEGRATION](docs/workstreams/INTEGRATION_RELEASE_DELIVERY_V7.md). The owner will be asked for UAT only after one integrated feature-complete Windows mixer; do not send individual First Sound/partial staging EXEs as a finished product.
 
 # ArSonMix — Native Realtime Live Mixer and VST3 Host
