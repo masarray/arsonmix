@@ -82,6 +82,8 @@ jobs:
         run: python tests/mixer_io_smoke.py
       - name: Verify MIX and FX RACK Auto Orbit workflow
         run: python tests/native_orbit_ui_smoke.py
+      - name: Validate V6 native-intent projection and responsive operator console (mock-only)
+        run: python tests/operator_console_v6_smoke.py
       # Firefox perf is deliberate: main release verification or manual opt-in.
       # Do not download/run a second browser for every iterative GUI PR.
       - name: Install Firefox for compositor functional regression
@@ -96,6 +98,8 @@ jobs:
         with:
           name: arsonmix-gui-baseline-smoke
           path: |
+            operator-console-v6-1680-900.png
+            operator-console-v6-1366-768.png
             native-orbit-ui-review.png
             mixer-g1-g2-1366.png
             mixer-g1-g2-1440.png
