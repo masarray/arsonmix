@@ -18,9 +18,9 @@ const executionLock = read('docs/EXECUTION_LOCK_UNIVERSAL_LIVE_CONSOLE_V6_202611
 
 test('active entrypoints follow PRD/ARD v5 and execution lock v6, not retired v1', () => {
   for (const content of [agents, readme]) {
-    assert.match(content, /PRD_ARSONMIX_OPERATOR_FIRST_LIVE_MIXER_V5_20261101\\.md/);
-    assert.match(content, /ARD_ARSONMIX_UNIVERSAL_REALTIME_CONSOLE_V5_20261101\\.md/);
-    assert.match(content, /EXECUTION_LOCK_UNIVERSAL_LIVE_CONSOLE_V6_20261101\\.md/);
+    assert.match(content, /PRD_ARSONMIX_OPERATOR_FIRST_LIVE_MIXER_V5_20261101\.md/);
+    assert.match(content, /ARD_ARSONMIX_UNIVERSAL_REALTIME_CONSOLE_V5_20261101\.md/);
+    assert.match(content, /EXECUTION_LOCK_UNIVERSAL_LIVE_CONSOLE_V6_20261101\.md/);
     assert.ok(content.includes(issue), 'hardware crackle blocker must remain visible');
   }
   for (const [label, content] of [
@@ -35,8 +35,8 @@ test('active entrypoints follow PRD/ARD v5 and execution lock v6, not retired v1
   // The old documents still exist as historical technical references.
   // They are no longer the active instruction linked by repo entrypoints.
   assert.ok(read(visualLock).length > 100);
-  assert.match(old, /HISTORICAL 0\\.3 DESIGN/);
-  assert.match(old, /Current architecture \\(overrides outdated v0\\.3 proposals\\)/);
+  assert.match(old, /HISTORICAL 0\.3 DESIGN/);
+  assert.match(old, /Current architecture \(overrides outdated v0\.3 proposals\)/);
 });
 test('ARD covers device-clock, realtime and hardware acceptance without false shipping claims', () => {
   for (const concept of [
