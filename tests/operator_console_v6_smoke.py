@@ -157,6 +157,61 @@ async def main():
             '[data-status-id="7"]').inner_text()
         assert await page.locator('#arV6Console [data-op="CREATE_CHANNEL"]').is_enabled()
 
+        # One PR#278-style synchronized section rail controls ALL strips,
+        # without remounting native fader nodes or changing accepted DSP.
+        await page.evaluate("""()=>window.__v6RailFader =
+          document.querySelector('[data-channel-id="7"] .arV6Fader')""")
+        async def aligned_sections():
+            return await page.evaluate("""() => {
+              const r=sel=>document.querySelector(sel).getBoundingClientRect();
+              const selectors=[['io','.arV6Route'],['fx','.arV6Fx'],['send','.arV6Sends']];
+              return selectors.map(([name,section])=>{
+                const rail=r('.arV6RailToggle[data-section="'+name+'"]');
+                const strip=r('[data-channel-id="7"] '+section);
+                const master=r('[data-channel-id="1000"] '+section);
+                return {name,topDelta:Math.abs(rail.top-strip.top),
+                  bottomDelta:Math.abs(rail.bottom-strip.bottom),
+                  mainDelta:Math.abs(master.top-strip.top),
+                  masterBottom:Math.abs(master.bottom-strip.bottom),
+                  height:strip.height};
+              });
+            }""")
+        sections=await aligned_sections()
+        assert all(x["topDelta"]<2 and x["bottomDelta"]<2 and
+                   x["mainDelta"]<2 and x["masterBottom"]<2
+                   for x in sections),sections
+        for key in ("fx","send","io"):
+            before=next(x["height"] for x in sections if x["name"]==key)
+            rail=page.locator(f'.arV6RailToggle[data-section="{key}"]')
+            await rail.click()
+            assert await rail.get_attribute("aria-expanded")=="false"
+            sections=await aligned_sections()
+            after=next(x["height"] for x in sections if x["name"]==key)
+            assert after<before,(key,before,after)
+            assert all(x["topDelta"]<2 and x["bottomDelta"]<2 and
+                       x["mainDelta"]<2 and x["masterBottom"]<2
+                       for x in sections),sections
+            assert await page.evaluate("""()=>window.__v6RailFader===
+              document.querySelector('[data-channel-id="7"] .arV6Fader')""")
+        for key in ("io","send","fx"):
+            await page.locator(f'.arV6RailToggle[data-section="{key}"]').click()
+        assert all(x["topDelta"]<2 for x in await aligned_sections())
+
+        # Role and SOLO filters are UI-only; MAIN remains pinned, original
+        # numeric ChannelIds survive and no console intent is emitted.
+        count_before=await page.evaluate("""()=>window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').length""")
+        await page.locator('.arV6Filter').select_option("GROUP")
+        assert await page.locator('#arV6Lanes .arV6Strip:visible').count()==1
+        assert await page.locator('#arV6Main .arV6Master:visible').count()==1
+        await page.locator('.arV6Filter').select_option("SOLO")
+        assert await page.locator('#arV6Lanes .arV6Strip:visible').count()==0
+        assert await page.locator('#arV6Main .arV6Master:visible').count()==1
+        await page.locator('.arV6Filter').select_option("ALL")
+        assert await page.locator('#arV6Lanes .arV6Strip:visible').count()==12
+        assert await page.evaluate("""()=>window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').length""")==count_before
+
         # A source selection is one typed intent, not a JS route update.
         await page.locator('[data-op="SET_SOURCE"][data-id="7"]').select_option("in:0")
         sent = await page.evaluate("""() => window.__v6Test.sent.filter(
