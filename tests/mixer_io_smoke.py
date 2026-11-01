@@ -163,7 +163,7 @@ async def main():
         await page.locator('#arIOAudioPath [data-io-signal-check]').click()
         assert await page.locator('#arSignalOverlay').evaluate("(e)=>e.classList.contains('open')")
         await page.locator('#arSignalClose').click()
-        assert "LIVE" in await page.locator('[data-strip="0"] .arBankStage').inner_text()
+        assert "ROUTE ACK" in await page.locator('[data-strip="0"] .arBankStage').inner_text()
         assert 'Microphone 1' in await page.locator('[data-focus-source]').inner_text()
         assert 'MAIN' in await page.locator('[data-focus-out]').inner_text()
         # M2 Studio-style BUS: one existing empty native lane, no phantom
@@ -715,7 +715,7 @@ async def main():
           window.__armixTestEmit('arMixStatus',status);
           return status;
         }""",status)
-        assert "LIVE" in await page.locator('[data-strip="1"] .arBankStage').inner_text()
+        assert "ROUTE ACK" in await page.locator('[data-strip="1"] .arBankStage').inner_text()
         # Accepted source automatically begins the final guarded hardware
         # ARM. Reject ARM deliberately for this G5 structural/FX fixture:
         # the new source route remains accepted, output remains safely
