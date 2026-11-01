@@ -92,9 +92,9 @@ check(panWrapper.value.includes('--pan-start:20%;--pan-end:50%'),'Left pan fills
 pan=panInput(40);
 check(panWrapper.value.includes('--pan-start:50%;--pan-end:70%'),'Right pan fills outwards from center');
 filter('all');node('bankSelect').value='0';node('bankSelect').dispatch('change');
-check(count()===8,'Bank 1 displays eight channel strips');
+check(count()===10,'Bank 1 fits ten full-width channels');
 node('bankSelect').value='1';node('bankSelect').dispatch('change');
-check(count()===3,'Bank 2 displays remaining strips');
+check(count()===1,'Bank 2 displays the remaining Bus strip');
 node('bankSelect').value='0';node('bankSelect').dispatch('change');
 node('reset').dispatch('click');
 node('sofToggle').dispatch('click');
