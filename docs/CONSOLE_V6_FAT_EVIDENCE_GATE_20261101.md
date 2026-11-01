@@ -23,3 +23,7 @@ Release intake requires exact 40-character source SHA, both successful native Wi
 
 ## Release stop rules
 Do not promote until ENGINE migrates occupied CH1 vendor VST/editor/Orbit, other channels, AUX, MAIN/MONITOR, secondary output and Show to ONE actual callback; real CH11, serial Group, wet FX Return and independent monitor pass native PCM + rollback; GUI reflects ONLY accepted state; one combined exact-head Windows CTest and Chromium+Playwright build and verified Windows GUI artifact pass; physical user+engineer listen to 0FX wired output >=30min without crackle, follow with multiFX/Show/device hotplug and record reports. Do not confuse capture discontinuity or callback timing with render underrun. Never claim 0ms physical latency or sound clean from GitHub CI.
+
+
+## Field FAT milestone — packaged collector
+A verified Windows FAT artifact includes `ArSonMix-Hardware-FAT.ps1` bound to the package manifest by `fatCollectorSha256`; the release verifier also checks its ZIP entry bytes. `Verify`, `Start`, `Stop`, and `Summary` actions record actual operator-timed OUTPUT_ONLY_TONE, CAPTURE_ONLY and >=30-minute wired DRY_THROUGH_0FX into `FAT_RUNS.json`, with diagnostic report SHA-256; `FAT_SUMMARY.json` always sets `hardwareCertified=false`. This is a field record, not acoustic telemetry or an app-controlled audio test. Do not use old ZIPs without this built-in collector; their original FIRST SOUND guide still applies. All device/route/ARM control remains native and manual. The script never tries to load a VST, set a device or authorize output.

@@ -69,6 +69,22 @@ if (-not (Test-Path -LiteralPath $fatGuide -PathType Leaf)) {
 }
 Copy-Item -LiteralPath $readme -Destination (Join-Path $OutputDir "README.md")
 Copy-Item -LiteralPath $fatGuide -Destination (Join-Path $OutputDir "HARDWARE_FAT_GUIDE.md")
+# Include a safe offline field-evidence tool in the SAME verified FAT package.
+# No audio device/ARM manipulation happens in this script.
+$collectorSource="scripts/collect_hardware_fat_windows.ps1"
+$collectorName="ArSonMix-Hardware-FAT.ps1"
+if (-not (Test-Path -LiteralPath $collectorSource -PathType Leaf)) { throw "Missing FAT field collector" }
+Copy-Item -LiteralPath $collectorSource -Destination (Join-Path $OutputDir $collectorName) -Force
+Add-Content -LiteralPath (Join-Path $OutputDir "HARDWARE_FAT_GUIDE.md") -Encoding UTF8 -Value @'
+
+## Offline FAT field evidence recorder (bundled)
+PowerShell in extracted ZIP:
+- Verify: powershell -NoProfile -ExecutionPolicy Bypass -File .\ArSonMix-Hardware-FAT.ps1 -Action Verify
+- For each mode, select the mode in native SIGNAL CHECK FIRST; use -Action Start with actual native -Backend, -SampleRate, -BufferFrames, -InputPins and -OutputPins (comma-separated physical callback ordinals), plus -Wired when appropriate.
+- Use -Action Stop -Result CLEAR|CRACKLE|INCONCLUSIVE -Witness "operator ID" -ReportPath "path to COPY FULL REPORT text". This records wall-clock duration and hashes the copied diagnostic log.
+- Run -Action Summary after OUTPUT_ONLY_TONE, CAPTURE_ONLY and DRY_THROUGH_0FX. It creates FAT_RUNS.json and FAT_SUMMARY.json next to the app, never arms output and never certifies acoustic quality.
+- The ≥30-minute 0FX clean wired soak is reviewed manually against audio heard and diagnostic markers; inspect sensitive endpoint names in files before sharing.
+'@
 # Same executable, same features. Portable ZIP selects the adjacent Studio/
 # data root; installed apps without this file continue using legacy AppData.
 "ARSONMIX_PORTABLE_WORKSPACE_V1" |
@@ -93,6 +109,7 @@ $manifest = [ordered]@{
     peFormat = "PE32+"
     peSubsystem = "WINDOWS_GUI (2)"
     exeSha256 = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
+    fatCollectorSha256 = (Get-FileHash -LiteralPath (Join-Path $OutputDir $collectorName) -Algorithm SHA256).Hash.ToLowerInvariant()
     indexHtmlSha256 = (Get-FileHash -LiteralPath "web/index.html" -Algorithm SHA256).Hash.ToLowerInvariant()
     appJsSha256 = (Get-FileHash -LiteralPath "web/app.js" -Algorithm SHA256).Hash.ToLowerInvariant()
     stylesCssSha256 = (Get-FileHash -LiteralPath "web/styles.css" -Algorithm SHA256).Hash.ToLowerInvariant()
