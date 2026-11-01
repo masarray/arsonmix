@@ -1489,7 +1489,7 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
 .plugin-browser[hidden]{display:none!important}
 /* Header drag updates inline left/top: must overrule old fixed right/top CSS !important. */
 .plugin-browser[style*="left:"]{right:auto!important}
-.plugin-browser[style*="top:"]{top:var(--floating-top,40px)}
+/* Plugin drag coordinate is an inline important top; do not override it. */
 
 </style>
 </head>
@@ -2141,10 +2141,10 @@ function positionPluginWindow(ev){
  const w=panel.offsetWidth||400,h=panel.offsetHeight||390;
  const left=Math.max(4,Math.min(bounds.width-w-4,ev.clientX-bounds.left-pluginWindowMove.dx));
  const top=Math.max(4,Math.min(bounds.height-h-4,ev.clientY-bounds.top-pluginWindowMove.dy));
- panel.style.setProperty('left',left+'px');
- panel.style.setProperty('top',top+'px');
- panel.style.setProperty('right','auto');
- panel.style.setProperty('bottom','auto');
+ panel.style.setProperty('left',left+'px','important');
+ panel.style.setProperty('top',top+'px','important');
+ panel.style.setProperty('right','auto','important');
+ panel.style.setProperty('bottom','auto','important');
 }
 plugEl('pluginDragHandle').addEventListener('pointerdown',ev=>{
  if(ev.button!==undefined&&ev.button!==0)return;
