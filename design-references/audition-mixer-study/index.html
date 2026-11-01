@@ -1804,7 +1804,7 @@ const option=(values,selected)=>values.map(x=>'<option value="'+escapeHtml(x)+'"
 // Production must supply stable native ChannelId/TapPoint admission + ACK.
 const splitSourceLabel=(id,tap)=>'CH'+String(id).padStart(2,'0')+' '+tap+'-FX SPLIT';
 function parseSplitSource(value){
- const match=/^CH(\\d+) (PRE|POST)-FX SPLIT$/.exec(String(value||''));
+ const match=/^CH(\d+) (PRE|POST)-FX SPLIT$/.exec(String(value||''));
  return match?{sourceId:Number(match[1]),tap:match[2]}:null;
 }
 function splitWouldCycle(target,sourceId){
