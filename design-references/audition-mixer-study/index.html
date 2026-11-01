@@ -1150,7 +1150,7 @@ function sectionFader(t){
  return '<div class="fader-section"><div class="fader-head"><output class="fader-readout" aria-label="'+escapeHtml(t.name)+' level">'+(isSend?'SEND ':'')+formatDb(value)+' dB</output><span class="clip-indicator '+(t.clip?'clipping':'')+'" title="Demo clip latch">CLIP</span></div>'
  +'<div class="fader-workspace">'
  +'<div class="meter-box '+(t.format==='mono'?'mono':'stereo')+'" aria-label="Simulated '+(t.format==='mono'?'mono':'stereo')+' dBFS meter"><div class="vu-bars"><div class="meter-lane"><div class="meter-fill left"></div></div>'+(t.format==='mono'?'':'<div class="meter-lane"><div class="meter-fill right"></div></div>')+'</div><div class="vu-scale"><div class="vu-scale-travel">'+vuScale+'</div></div><div class="peak '+(t.clip?'clipping':'')+'"></div></div>'
- +'<div class="fader-box" style="--fader-fill:'+percent+'%;--fader-lit:'+(percent/100)+';--fader-frac:'+(percent/100)+'"><div class="fader-travel"><div class="cap" aria-hidden="true"></div></div><input class="fader" type="range" min="-60" max="'+gainMax+'" value="'+value+'" step=".1" data-field="level" title="'+(isSend?'SEND to '+escapeHtml(sofTarget):'Main level')+'" aria-label="'+escapeHtml(t.name)+' volume"></div>'
+ +'<div class="fader-box" style="--fader-fill:'+percent+'%;--fader-lit:'+(percent/100)+';--fader-y:'+(100-percent)+'%;--fader-frac:'+(percent/100)+'"><div class="fader-travel"><div class="cap" aria-hidden="true"></div></div><input class="fader" type="range" min="-60" max="'+gainMax+'" value="'+value+'" step=".1" data-field="level" title="'+(isSend?'SEND to '+escapeHtml(sofTarget):'Main level')+'" aria-label="'+escapeHtml(t.name)+' volume"></div>'
  +'<div class="fader-scale"><div class="gain-scale-travel">'+gainScale+'</div></div></div></div>';
 }
 function strip(t){
@@ -1176,7 +1176,7 @@ function bankCapacity(){
  const panel=body?.clientWidth||0;
  // Width budget is shared between n source strips + one equal-sized, pinned MAIN.
  // Never grow the last partial bank; empty slots keep exactly the same grid track width.
- const dock=pluginOpen?Math.min(330,Math.floor(panel*.36)):0;
+ const dock=0; // floating manager never consumes or changes bank width
  const usable=panel?Math.max(0,panel-28-dock):0;
  return usable ? Math.max(1,Math.min(10,Math.floor(usable/130)-1)) : 10;
 }
@@ -1192,7 +1192,7 @@ function render(){
  const root=document.querySelector('.console-body');
  if(root.style?.setProperty){
   root.style.setProperty('--bank-capacity',String(capacity));
-  const panel=root.clientWidth||0,dock=pluginOpen?Math.min(330,Math.floor(panel*.36)):0;
+  const panel=root.clientWidth||0,dock=0;
   if(panel){
    const unit=((panel-28-dock)/(capacity+1)).toFixed(3)+'px';
    root.style.setProperty('--channel-w',unit);
@@ -1218,7 +1218,7 @@ function syncFaderVisual(t,element){
  const readout=root.querySelector('.fader-readout');
  if(readout)readout.textContent=(isSend?'SEND ':'')+value+' dB';
  const box=root.querySelector('.fader-box');
- if(box?.style?.setProperty){box.style.setProperty('--fader-fill',faderPercent(v,isSend)+'%');box.style.setProperty('--fader-lit',String(faderPercent(v,isSend)/100));box.style.setProperty('--fader-frac',String(faderPercent(v,isSend)/100));}
+ if(box?.style?.setProperty){box.style.setProperty('--fader-fill',faderPercent(v,isSend)+'%');box.style.setProperty('--fader-lit',String(faderPercent(v,isSend)/100));box.style.setProperty('--fader-frac',String(faderPercent(v,isSend)/100));box.style.setProperty('--fader-y',(100-faderPercent(v,isSend))+'%');}
  const db=root.querySelector('.db-value');
  if(db)db.textContent=(isSend?'S ':'')+value;
 }
@@ -1387,7 +1387,7 @@ function handleField(event){
  }
  if(event.type==='change')say(t.name+' fader '+formatDb(t.level)+' dB'+(t.group?' (linked '+t.group+')':''));
 }
- else if(field==='pan'){let value=Number(el.value);if(event.type==='change'&&Math.abs(value)<=5&&!event.altKey){value=0;el.value='0';}t.pan=value;const wrapper=el.closest('.pan-control');if(wrapper)wrapper.setAttribute('style',panStyle(value));const label=wrapper?wrapper.nextElementSibling:el.nextElementSibling;if(label)label.textContent=panLabel(value);if(event.type==='change')say(t.name+' pan '+panLabel(value));}
+ else if(field==='pan'){let value=Number(el.value);if(event.type==='change'&&Math.abs(value)<=8&&!event.altKey){value=0;el.value='0';}t.pan=value;const wrapper=el.closest('.pan-control');if(wrapper)wrapper.setAttribute('style',panStyle(value));const label=wrapper?wrapper.nextElementSibling:el.nextElementSibling;if(label)label.textContent=panLabel(value);if(event.type==='change')say(t.name+' pan '+panLabel(value));}
  else if(field==='trim'){t.trim=Number(el.value);if(el.style?.setProperty)el.style.setProperty('--range-pct',rangePct(t.trim,-24,24)+'%');const readout=el.closest('.trim-section')?.querySelector('.trim-value');if(readout)readout.textContent=formatDb(t.trim);if(event.type==='change')say(t.name+' digital trim '+formatDb(t.trim)+' dB');}
  else if(field==='sendLevel'){t.sendLevel=Number(el.value);if(el.style?.setProperty)el.style.setProperty('--range-pct',rangePct(t.sendLevel,-60,6)+'%');el.nextElementSibling.textContent=formatDb(t.sendLevel);}
  else if(field==='sendPan'){t.sendPan=Number(el.value);el.nextElementSibling.textContent=t.sendPan===0?'C':t.sendPan<0?'L'+Math.abs(t.sendPan):'R'+t.sendPan;}
@@ -1401,6 +1401,47 @@ function handleField(event){
  if(['send','sendLevel','sendPan'].includes(field))syncActiveSend(t);
  selectTrack(t);
 }
+
+/* Real pointer fader binding for the isolated reference.
+   One gesture, no rebuilding strips during drag, and source range remains keyboard-accessible.
+   The 29x62 visual cap center is aligned to this same travel ruler. */
+let faderGesture=null;
+const consoleBody=document.querySelector('.console-body');
+function setFaderFromPointer(ev,gesture){
+ const input=gesture.input,travel=gesture.travel?.getBoundingClientRect?.();
+ if(!travel||travel.height<=0)return;
+ const max=Number(input.max)||10,min=Number(input.min)||-60;
+ const frac=Math.max(0,Math.min(1,(ev.clientY-travel.top)/travel.height));
+ const gain=Math.round((max-(max-min)*frac)*10)/10;
+ input.value=String(gain);
+ handleField({target:input,type:'input',altKey:!!ev.altKey});
+}
+consoleBody.addEventListener('pointerdown',ev=>{
+ if(ev.button!==undefined&&ev.button!==0)return;
+ const box=ev.target.closest?.('.fader-box');
+ if(!box)return;
+ const input=box.querySelector('.fader'),travel=box.querySelector('.fader-travel');
+ if(!input||!travel)return;
+ ev.preventDefault?.();
+ faderGesture={pointerId:ev.pointerId,box,input,travel};
+ box.setPointerCapture?.(ev.pointerId);
+ setFaderFromPointer(ev,faderGesture);
+});
+window.addEventListener('pointermove',ev=>{
+ if(!faderGesture||ev.pointerId!==faderGesture.pointerId)return;
+ setFaderFromPointer(ev,faderGesture);
+});
+function finishFaderPointer(ev){
+ if(!faderGesture||ev.pointerId!==faderGesture.pointerId)return;
+ setFaderFromPointer(ev,faderGesture);
+ const g=faderGesture;faderGesture=null;
+ g.box.releasePointerCapture?.(ev.pointerId);
+ const t=findTrack(g.input);
+ if(t)say(t.name+' fader '+formatDb(sofEnabled&&t.kind==='audio'?getSofLevel(t):t.level)+' dB');
+}
+window.addEventListener('pointerup',finishFaderPointer);
+window.addEventListener('pointercancel',ev=>{if(faderGesture&&ev.pointerId===faderGesture.pointerId)faderGesture=null;});
+
 document.querySelector('.console-body').addEventListener('input',handleField);
 document.querySelector('.console-body').addEventListener('change',handleField);
 document.querySelector('.console-body').addEventListener('click',e=>{
