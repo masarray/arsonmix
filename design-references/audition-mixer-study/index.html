@@ -1794,6 +1794,7 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
  --pan-h:37px;--switch-h:40px;
  --p0-fader-standard:clamp(215px,calc(100dvh - 510px),600px);
  --p0-fader-h:var(--p0-fader-standard);
+ --fader-fixed-h:var(--p0-fader-h); /* feeds earlier high-specificity fader selectors */
 }
 .console-body:not(.collapsed-send){
  --p0-fader-h:max(150px,calc(var(--p0-fader-standard) - 80px));
