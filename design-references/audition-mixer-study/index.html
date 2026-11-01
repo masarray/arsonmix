@@ -556,7 +556,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
     <button class="tool primary" id="pluginsButton" title="Search and assign FX plugins (F8)" aria-controls="pluginBrowser" aria-expanded="false">Plugins · F8</button>
     <span class="sep"></span>
     <span class="toolbar-label">BANK</span><button class="tool bank-arrow" id="bankPrev" title="Previous bank">‹</button>
-    <select class="toolbar-select" id="bankSelect" aria-label="Mixer bank"><option value="all">All banks</option></select>
+    <select class="toolbar-select" id="bankSelect" aria-label="Mixer bank"><option value="0">CH 01–10</option></select>
     <button class="tool bank-arrow" id="bankNext" title="Next bank">›</button>
     <label class="toolbar-label" for="densitySelect">VIEW</label><select id="densitySelect" class="density-select" aria-label="Channel strip size"><option value="comfort" selected>Comfort</option><option value="standard">Standard</option><option value="compact">Compact</option></select>
     <span class="sep"></span>
@@ -591,19 +591,19 @@ button:disabled{opacity:.45;cursor:not-allowed}
   </div>
   <main class="console-pane">
     <div class="mixer-title"><span class="accent"></span><span class="panel-name">Live Mixer</span><span class="panel-sub">▤</span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
-    <section class="console-body" data-density="comfort" aria-label="Live mixing console">
+    <section class="console-body collapsed-fx collapsed-send collapsed-eq" data-density="comfort" aria-label="Live mixing console">
       <aside class="section-rail" aria-label="Mixer section icons">
         <button class="rail-cell route" data-section="route" aria-expanded="true" title="Collapse / expand Inputs and Outputs">⇥</button>
-        <button class="rail-cell fx" data-section="fx" aria-expanded="true" title="Collapse / expand Effects">fx</button>
-        <button class="rail-cell send" data-section="send" aria-expanded="true" title="Collapse / expand Sends">↪</button>
-        <button class="rail-cell eq" data-section="eq" aria-expanded="true" title="Collapse / expand Equalizer">▥</button>
+        <button class="rail-cell fx collapsed" data-section="fx" aria-expanded="false" title="Collapse / expand Effects">fx</button>
+        <button class="rail-cell send collapsed" data-section="send" aria-expanded="false" title="Collapse / expand Sends">↪</button>
+        <button class="rail-cell eq collapsed" data-section="eq" aria-expanded="false" title="Collapse / expand Equalizer">▥</button>
         <div class="rail-cell pan" title="Pan">◉</div>
         <div class="rail-cell trim" title="Digital input trim"><small>TRIM</small></div>
         <div class="rail-cell switch" title="Mute / Solo / Cue / Monitor"><small>M S C</small></div>
         <div class="rail-cell fader" title="Level and meter">dB<br>│<br>│<br>│</div>
         <div class="rail-cell footer" title="Track labels"><small>▦</small></div>
       </aside>
-      <div class="tracks-viewport" id="viewport" tabindex="0" aria-label="Horizontal mixer track list"><div class="tracks" id="tracks"></div></div>
+      <div class="tracks-viewport" id="viewport" tabindex="0" aria-label="Visible channel bank; use upper arrow buttons for more channels"><div class="tracks" id="tracks"></div></div>
       <div id="master"></div>
     </section>
     <aside id="pluginBrowser" class="plugin-browser" aria-label="Effects plugin manager" hidden>
@@ -660,13 +660,19 @@ const channelOptions=(t,type)=>{
  return ['None',...tracks.filter(x=>(x.kind==='bus'||x.kind==='fx')&&x.id!==t.id).map(x=>x.name)];
 };
 function sectionFx(t){
- let s='<div class="section fx-section"><div class="subhead"><span class="sym">fx</span><span class="hint" title="Eight FX slots; scroll inside rack to access all effects">'+t.fx.filter(v=>v!=='None').length+'/8</span><span class="push"></span><button class="mini power '+(t.fxOn?'on':'')+'" data-action="fxOn" title="Bypass entire FX rack" aria-label="Toggle effects">⏻</button></div><div class="fxslot-list">';
- t.fx.forEach((v,i)=>{
- s+='<div class="fxslot-row" draggable="true" data-slot="'+i+'" title="Insert '+(i+1)+' · drag to reorder"><button class="mini power '+(v!=='None'&&!t.slotBypass[i]?'on':'')+'" data-action="slotPower" data-slot="'+i+'" title="Toggle individual effect">⏻</button><button class="fx-pick '+(v==='None'?'empty':'')+'" data-action="openPlugin" data-slot="'+i+'" aria-label="Choose plugin for '+escapeHtml(t.name)+' insert '+(i+1)+'">'+(v==='None'?'+'+(i+1)+' · Add effect':escapeHtml(v))+'</button><button class="fx-remove" data-action="removeFx" data-slot="'+i+'" title="Remove insert '+(i+1)+'">×</button><span class="grip" title="Drag reorder">⠿</span></div>';
- });
- return s+'</div></div>';
+ const used=t.fx.map((name,i)=>({name,i})).filter(x=>x.name!=='None');
+ const first=t.fx.findIndex(x=>x==='None');
+ const rows=used.concat(first<0?[]:[{name:'None',i:first}]);
+ let out='<div class="section fx-section"><div class="subhead"><span class="sym">fx</span><span class="hint">FX '+used.length+'</span><span class="push"></span><button class="mini power '+(t.fxOn?'on':'')+'" data-action="fxOn" title="Bypass all effects" aria-label="Toggle effects">⏻</button></div><div class="fxslot-list">';
+ for(const {name,i} of rows){
+  out+='<div class="fxslot-row" draggable="'+(name!=='None')+'" data-slot="'+i+'" title="Insert '+(i+1)+'"><button class="mini power '+(name!=='None'&&!t.slotBypass[i]?'on':'')+'" data-action="slotPower" data-slot="'+i+'" title="Toggle effect">⏻</button>';
+  out+='<button class="fx-pick '+(name==='None'?'empty':'')+'" data-action="openPlugin" data-slot="'+i+'" aria-label="Choose plugin for '+escapeHtml(t.name)+' insert '+(i+1)+'">'+(name==='None'?'+ Add FX':escapeHtml(name))+'</button>';
+  if(name!=='None')out+='<button class="fx-remove" data-action="removeFx" data-slot="'+i+'" title="Remove insert '+(i+1)+'">×</button><span class="grip" title="Drag reorder">⠿</span>';
+  out+='</div>';
+ }
+ return out+'</div></div>';
 }
-const eqSvg='<svg viewBox="0 0 90 20" preserveAspectRatio="none" aria-hidden="true"><path d="M0 15 L14 15 Q22 15 29 9 T43 9 Q52 11 58 7 T75 8 Q82 9 90 5"/></svg>';
+const eqSvg='<span class="eq-status-quiet" aria-hidden="true">EQ</span>';
 function sectionSend(t){
  if(t.kind==='master'||t.kind==='fx')return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><span class="sendtag">No Sends</span></div></div>';
  return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><select class="send-slot" data-field="activeSend" title="Select send slot 1–16" aria-label="Send slot">'+option(Array.from({length:16},(_,i)=>'S'+(i+1)),'S'+(t.activeSend+1))+'</select><span class="send-compact" title="Active send destination">'+escapeHtml(t.send==='None'?'No send':t.send)+'</span><span class="push"></span><button class="mini power '+(t.sendOn?'on':'')+'" data-action="sendOn" title="Enable Send">⏻</button><button class="mini pre '+(t.pre?'on':'')+'" data-action="pre" title="Toggle Pre/Post send">'+(t.pre?'Pre':'Pst')+'</button></div><select class="send-select" data-field="send" aria-label="Send destination">'+option(channelOptions(t,'send'),t.send)+'</select><div class="sendlevel"><label>↳</label><input type="range" min="-60" max="6" step="1" value="'+t.sendLevel+'" data-field="sendLevel" title="Send level"><output>'+formatDb(t.sendLevel)+'</output></div><div class="sendlevel send-pan"><label>◉</label><input type="range" min="-100" max="100" step="1" value="'+t.sendPan+'" data-field="sendPan" title="Send stereo pan" aria-label="Send pan"><output>'+(t.sendPan===0?'C':t.sendPan<0?'L'+Math.abs(t.sendPan):'R'+t.sendPan)+'</output></div></div>';
@@ -681,15 +687,11 @@ function faderPercent(value,isSend){
 function sectionFader(t){
  const isSend=sofEnabled&&t.kind==='audio',value=isSend?getSofLevel(t):t.level;
  const ticks=[isSend?'+6':'+15','0','-6','-12','-24','-36','-48','-∞'];
- const mainValue=(isSend?'SEND ':'')+formatDb(value)+' dB';
- return '<div class="fader-section">'
-  +'<div class="fader-head"><output class="fader-readout" aria-label="'+escapeHtml(t.name)+' level">'+mainValue+'</output><span class="clip-indicator '+(t.clip?'clipping':'')+'" title="Clip latch · demo only">CLIP</span></div>'
-  +'<div class="fader-workspace"><div class="fader-scale">'+ticks.map(x=>'<span>'+x+'</span>').join('')+'</div>'
-  +'<div class="fader-box" style="--fader-fill:'+faderPercent(value,isSend)+'%">'
-  +'<input class="fader" type="range" min="-60" max="'+(isSend?6:15)+'" value="'+value+'" step=".1" data-field="level" title="'+(isSend?'SEND to '+escapeHtml(sofTarget)+' · main fader unchanged':'Main level · double-click resets 0 dB')+'" aria-label="'+escapeHtml(t.name)+' volume"></div>'
-  +'<div class="meter-box '+(t.format==='mono'?'mono':'stereo')+'" aria-label="Simulated '+(t.format==='mono'?'mono':'stereo')+' peak meter"><div class="meter-lane"><div class="meter-fill left"></div></div>'
-  +(t.format==='mono'?'':'<div class="meter-lane"><div class="meter-fill right"></div></div>')
-  +'<div class="peak '+(t.clip?'clipping':'')+'"></div></div></div></div>';
+ return '<div class="fader-section"><div class="fader-head"><output class="fader-readout" aria-label="'+escapeHtml(t.name)+' level">'+(isSend?'SEND ':'')+formatDb(value)+' dB</output><span class="clip-indicator '+(t.clip?'clipping':'')+'" title="Demo clip latch">CLIP</span></div>'
+ +'<div class="fader-workspace">'
+ +'<div class="meter-box '+(t.format==='mono'?'mono':'stereo')+'" aria-label="Simulated '+(t.format==='mono'?'mono':'stereo')+' peak meter"><div class="meter-lane"><div class="meter-fill left"></div></div>'+(t.format==='mono'?'':'<div class="meter-lane"><div class="meter-fill right"></div></div>')+'<div class="peak '+(t.clip?'clipping':'')+'"></div></div>'
+ +'<div class="fader-box" style="--fader-fill:'+faderPercent(value,isSend)+'%;--fader-lit:'+(faderPercent(value,isSend)/100)+'"><input class="fader" type="range" min="-60" max="'+(isSend?6:15)+'" value="'+value+'" step=".1" data-field="level" title="'+(isSend?'SEND to '+escapeHtml(sofTarget):'Main level')+'" aria-label="'+escapeHtml(t.name)+' volume"></div>'
+ +'<div class="fader-scale">'+ticks.map(x=>'<span>'+x+'</span>').join('')+'</div></div></div>';
 }
 function strip(t){
  let code='<article class="strip '+t.kind+(t.selected?' selected':'')+'" data-id="'+t.id+'" style="--track-color:'+t.color+'" aria-label="'+escapeHtml(t.name)+' channel">';
@@ -700,7 +702,7 @@ function strip(t){
  code+='<div class="route-field"><span class="route-caption">OUT</span><select class="route-select" data-field="output" title="Primary output" aria-label="'+escapeHtml(t.name)+' output">'+option(channelOptions(t,'output'),t.output)+'</select></div></div>';
  code+=sectionFx(t)+sectionSend(t);
  code+='<div class="section eq-section '+(t.eq?'':'off')+'"><div class="eq-header"><span class="sym">▥</span><small style="font-size:9px;color:#959b9d">EQ</small><span class="push"></span><button class="mini power '+(t.eq?'on':'')+'" data-action="eq" title="Enable/disable EQ">⏻</button></div><button class="eq-line" data-action="eq" title="Toggle track EQ" aria-label="Toggle track EQ">'+eqSvg+'</button></div>';
- code+='<div class="section pan-section"><span class="pan-icon" title="Pan / Balance">◉</span><span class="pan-control" style="'+panStyle(t.pan)+'"><input class="center-pan" type="range" min="-100" max="100" step="1" value="'+t.pan+'" data-field="pan" title="Pan from center; release near center to snap; double-click to center" aria-label="Channel pan; double-click center"></span><output>'+panLabel(t.pan)+'</output></div>';
+ code+='<div class="section pan-section"><span class="pan-icon" title="Pan / Balance">PAN</span><span class="pan-control" style="'+panStyle(t.pan)+'"><input class="center-pan" type="range" min="-100" max="100" step="1" value="'+t.pan+'" data-field="pan" title="Pan from center; release near center to snap; double-click to center" aria-label="Channel pan; double-click center"></span><output>'+panLabel(t.pan)+'</output></div>';
  code+='<div class="section trim-section"><span class="trim-label" title="Digital input trim">TRIM</span><input class="trim-control" type="range" min="-24" max="24" step="0.5" value="'+t.trim+'" data-field="trim" aria-label="Digital trim dB" title="Digital trim (-24..+24dB)"><output class="trim-value">'+formatDb(t.trim)+'</output></div>';
  code+='<div class="section switch-section"><button class="switch mute '+(t.mute?'on':'')+'" data-action="mute" title="Mute channel" aria-pressed="'+t.mute+'"><span class="switch-full">MUTE</span><span class="switch-short">M</span></button><button class="switch solo '+(t.solo?'on':'')+'" data-action="solo" title="Solo channel" aria-pressed="'+t.solo+'"><span class="switch-full">SOLO</span><span class="switch-short">S</span></button>'+(t.kind!=='master'?'<button class="switch cue '+(t.cue?'on':'')+'" data-action="cue" title="Cue / PFL to separate monitor bus (visual only)" aria-pressed="'+t.cue+'">PFL</button>':'')+(t.kind==='audio'?'<button class="switch mon '+(t.mon?'on':'')+'" data-action="mon" title="Input monitor (visual only)" aria-pressed="'+t.mon+'">I</button>':'')+'</div>';
  code+=sectionFader(t);
@@ -709,24 +711,24 @@ function strip(t){
 }
 function bankCapacity(){
  const width=document.getElementById('viewport').clientWidth||0;
- if(!width)return 8; // deterministic fallback for offscreen DOM tests
- const size={comfort:150,standard:125,compact:105};
- const mode=document.querySelector('.console-body').dataset.density||'comfort';
- return Math.max(1,Math.min(16,Math.floor(width/(size[mode]||150))));
+ return width?Math.max(1,Math.min(10,Math.floor(width/112))):10;
 }
 function render(){
- const oldScroll=document.getElementById('viewport').scrollLeft;
  const filter=document.getElementById('viewFilter').value;
  const visible=tracks.filter(t=>filter==='all'||(filter==='solo'?t.solo:t.kind===filter));
- const selector=document.getElementById('bankSelect'),oldBank=selector.value||'all';
- const capacity=bankCapacity(),count=Math.ceil(visible.length/capacity);
- selector.innerHTML='<option value="all">All banks</option>'+Array.from({length:count},(_,i)=>'<option value="'+i+'">'+(i*capacity+1)+'–'+Math.min(visible.length,(i+1)*capacity)+'</option>').join('');
- selector.value=oldBank!=='all'&&Number(oldBank)>=count?'all':oldBank;
- const bank=selector.value||'all',bankTracks=bank==='all'?visible:visible.slice(Number(bank)*capacity,(Number(bank)+1)*capacity);
+ const selector=document.getElementById('bankSelect'),previous=Number(selector.value)||0;
+ const capacity=bankCapacity(),count=Math.max(1,Math.ceil(visible.length/capacity));
+ const page=Math.min(previous,count-1);
+ selector.innerHTML=Array.from({length:count},(_,i)=>'<option value="'+i+'">CH '+String(i*capacity+1).padStart(2,'0')+'–'+String(Math.min(visible.length,(i+1)*capacity)).padStart(2,'0')+'</option>').join('');
+ selector.value=String(page);
+ const bankTracks=visible.slice(page*capacity,(page+1)*capacity);
+ if(tracksEl.style?.setProperty)tracksEl.style.setProperty('--bank-columns',String(bankTracks.length||1));
  tracksEl.innerHTML=bankTracks.map(strip).join('');
  updateSofTargets();
  masterEl.innerHTML=strip(master);
- document.getElementById('viewport').scrollLeft=oldScroll;
+ document.getElementById('viewport').scrollLeft=0;
+ document.getElementById('bankPrev').disabled=count<=1;
+ document.getElementById('bankNext').disabled=count<=1;
  document.getElementById('trackCount').textContent=tracks.filter(t=>t.kind==='audio').length+' audio · '+tracks.filter(t=>t.kind==='bus').length+' bus · '+tracks.filter(t=>t.kind==='fx').length+' FX return · master';
 }
 function say(s){info.textContent=s;}
@@ -738,7 +740,7 @@ function syncFaderVisual(t,element){
  const readout=root.querySelector('.fader-readout');
  if(readout)readout.textContent=(isSend?'SEND ':'')+value+' dB';
  const box=root.querySelector('.fader-box');
- if(box?.style?.setProperty)box.style.setProperty('--fader-fill',faderPercent(v,isSend)+'%');
+ if(box?.style?.setProperty){box.style.setProperty('--fader-fill',faderPercent(v,isSend)+'%');box.style.setProperty('--fader-lit',String(faderPercent(v,isSend)/100));}
  const db=root.querySelector('.db-value');
  if(db)db.textContent=(isSend?'S ':'')+value;
 }
@@ -746,11 +748,12 @@ function setDensity(mode){
  const density=['comfort','standard','compact'].includes(mode)?mode:'comfort';
  const root=document.querySelector('.console-body'),compact=density==='compact';
  root.dataset.density=density;
- const widths={comfort:'152px',standard:'132px',compact:'116px'};
+ const widths={comfort:'142px',standard:'130px',compact:'114px'};
  const parent=document.querySelector('.console-pane');
  if(parent?.style?.setProperty)parent.style.setProperty('--master-w',widths[density]);
  root.classList.toggle('narrow',compact);
  document.getElementById('densitySelect').value=density;
+ render();
  const btn=document.getElementById('mode');
  btn.classList.toggle('active',compact);btn.setAttribute('aria-pressed',String(compact));
  return density;
@@ -1025,12 +1028,12 @@ document.getElementById('bankSelect').addEventListener('change',()=>{render();sa
 document.getElementById('bankPrev').addEventListener('click',()=>{
  const sel=document.getElementById('bankSelect'),n=visibleBankCount();
  if(!n){sel.value='all';render();say('No channels available in the active layer');return;}
- const old=sel.value==='all'?0:Number(sel.value);sel.value=String((old-1+n)%n);render();say('Previous fader bank');
+ const old=Number(sel.value)||0;sel.value=String((old-1+n)%n);render();say('Previous fader bank');
 });
 document.getElementById('bankNext').addEventListener('click',()=>{
  const sel=document.getElementById('bankSelect'),n=visibleBankCount();
  if(!n){sel.value='all';render();say('No channels available in the active layer');return;}
- const old=sel.value==='all'?-1:Number(sel.value);sel.value=String((old+1)%n);render();say('Next fader bank');
+ const old=Number(sel.value)||0;sel.value=String((old+1)%n);render();say('Next fader bank');
 });
 document.getElementById('sofToggle').addEventListener('click',()=>toggleSof());
 document.getElementById('sofTarget').addEventListener('change',()=>{sofTarget=document.getElementById('sofTarget').value;render();say('Sends target: '+sofTarget);});
@@ -1056,6 +1059,8 @@ function pluginTargetLabel(){
 }
 function setBrowser(open){
  pluginOpen=!!open;plugEl('pluginBrowser').hidden=!pluginOpen;
+ document.querySelector('.console-body').classList.toggle('plugin-open',pluginOpen);
+ render();
  plugEl('pluginsButton').setAttribute('aria-expanded',String(pluginOpen));
  if(pluginOpen){renderPluginCatalog();const input=plugEl('pluginSearch');if(input.focus)input.focus();}
 }
