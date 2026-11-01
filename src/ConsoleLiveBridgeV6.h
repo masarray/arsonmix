@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include <juce_core/juce_core.h>
+#include "../integration/ConsoleNativeContractV6.h"
 #include <cstdint>
+#include <deque>
+#include <cmath>
 #include <limits>
 #include <string>
 #include <unordered_set>
@@ -39,9 +42,35 @@ public:
             static_cast<bool>(live.getProperty("connected",false)) &&
             direct && routeAccepted;
         device->setProperty("outputArmed",armed);
+        // Exact enabled physical pin maps to JUCE callback ordinal; raw
+        // samples are measured by the installed input callback BEFORE MUTE.
+        // Omit per-pin evidence if the native observation is unavailable.
         const auto physicalInputs=route.getProperty("ports",juce::var());
-        device->setProperty("inputEndpoints",physicalInputs.isArray()
-            ?physicalInputs:juce::var(juce::Array<juce::var>{}));
+        const auto perPort=live.getProperty("captureCallbackPeaks",juce::var());
+        const auto* observed=perPort.getArray();
+        juce::Array<juce::var> inputEndpoints;
+        if(const auto* pins=physicalInputs.getArray())
+            for(const auto& pin:*pins) {
+                const auto cb=static_cast<int>(pin.getProperty("callback",-1));
+                const auto phys=pin.getProperty("port",juce::var());
+                if(!phys.isInt()||cb<0)continue;
+                auto obj=std::make_unique<juce::DynamicObject>();
+                obj->setProperty("port",phys);
+                obj->setProperty("callback",cb);
+                obj->setProperty("label",pin.getProperty("label",""));
+                if(observed && cb<observed->size()) {
+                    const auto value=observed->getReference(cb);
+                    if(value.isDouble()||value.isInt()) {
+                        const auto peak=static_cast<double>(value);
+                        if(std::isfinite(peak)&&peak>=0.) {
+                            obj->setProperty("rawPeak",peak);
+                            obj->setProperty("rawPresent",peak>0.0005);
+                        }
+                    }
+                }
+                inputEndpoints.add(juce::var(obj.release()));
+            }
+        device->setProperty("inputEndpoints",juce::var(inputEndpoints));
         juce::Array<juce::var> outputs;
         const auto enabledOutputPins=route.getProperty("outputPorts",juce::var());
         if(const auto* enabled=enabledOutputPins.getArray()) {
@@ -115,6 +144,7 @@ public:
                                        const juce::var& acceptedSnapshot) {
         const auto request=intent.getProperty("requestId",juce::var());
         const auto id=request.isString()?request.toString():juce::String{};
+        const auto requestBytes=id.toStdString();
         auto ack=std::make_unique<juce::DynamicObject>();
         ack->setProperty("requestId",id);
         ack->setProperty("status","REJECTED");
@@ -125,11 +155,17 @@ public:
         ack->setProperty("graphRevision",graph.getProperty("revision","0"));
         ack->setProperty("rosterRevision",graph.getProperty("rosterRevision","0"));
         juce::String fault="UNIVERSAL_CALLBACK_NOT_READY";
-        if(!validRequestId(id))fault="INVALID_REQUEST_ID";
-        else if(completed_.find(id.toStdString())!=completed_.end())
+        if(!armix::integration::validConsoleRequestId(requestBytes))
+            fault="INVALID_REQUEST_ID";
+        else if(completed_.find(requestBytes)!=completed_.end())
             fault="DUPLICATE_REQUEST_ID";
         else {
-            completed_.insert(id.toStdString());
+            if(recentIds_.size()==maxRecentIds) {
+                completed_.erase(recentIds_.front());
+                recentIds_.pop_front();
+            }
+            recentIds_.push_back(requestBytes);
+            completed_.insert(requestBytes);
             // G0 is fail closed by design. Distinguish malformed/stale wire
             // from a legitimate mutation that requires the M4->M5 cutover.
             std::uint64_t asked=0,baseGraph=0,baseRoster=0;
@@ -147,8 +183,11 @@ public:
                 fault="STALE_GRAPH_REVISION";
             else {
                 const auto target=intent.getProperty("targetChannelId",juce::var());
-                std::uint64_t ignored=0;
-                if(!target.isVoid() && !decodeDecimal(target,ignored))
+                armix::mixer::ChannelId channel{};
+                if(!target.isVoid() &&
+                   (!target.isString() ||
+                    !armix::integration::parseNativeChannelId(
+                        target.toString().toStdString(),channel)))
                     fault="INVALID_CHANNEL_ID";
             }
         }
@@ -179,18 +218,10 @@ private:
         const auto n=static_cast<juce::int64>(value);
         return n>=0?juce::String(n):juce::String("0");
     }
-    static bool validRequestId(const juce::String& id) noexcept {
-        if(id.isEmpty()||id.length()>128)return false;
-        for(int i=0;i<id.length();++i) {
-            const auto c=id[i];
-            const bool acceptable=(c>='a'&&c<='z')||(c>='A'&&c<='Z')||
-                (c>='0'&&c<='9')||c==':'||c=='_'||c=='-'||c=='.';
-            if(!acceptable)return false;
-        }
-        return true;
-    }
-    // No eviction-based replay window while this browser connection exists.
-    // Only control thread touches this; RT callback never sees request IDs.
+    static constexpr std::size_t maxRecentIds=256;
+    // Bounded completed IDs on the serialized message thread, never the
+    // native RT callback. Replayed old requests remain nonmutating in G0.
     std::unordered_set<std::string> completed_;
+    std::deque<std::string> recentIds_;
 };
 } // namespace armix::console

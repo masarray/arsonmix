@@ -547,6 +547,9 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
     status->setProperty("callbackCount",juce::int64(12));
     status->setProperty("callbackInputChannels",1);
     status->setProperty("inputPeak",.25);
+    juce::Array<juce::var> perPort;
+    perPort.add(.25);
+    status->setProperty("captureCallbackPeaks",juce::var(perPort));
     status->setProperty("peak",.125);
     status->setProperty("rate",48000);
     status->setProperty("buffer",128);
@@ -571,6 +574,10 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
     auto outs=device.getProperty("outputEndpoints",{});
     assert(ins.getArray()->size()==1 && outs.getArray()->size()==2);
     assert(ins.getArray()->getReference(0).getProperty("port",0)==2);
+    assert(static_cast<double>(ins.getArray()->getReference(0)
+        .getProperty("rawPeak",0.0))==.25);
+    assert(static_cast<bool>(ins.getArray()->getReference(0)
+        .getProperty("rawPresent",false)));
     assert(outs.getArray()->getReference(0).getProperty("port",0)==1);
     assert(outs.getArray()->getReference(1).getProperty("port",0)==4);
     const auto diagnostic=snap.getProperty("legacyM4",{});
