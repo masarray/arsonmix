@@ -1,3 +1,5 @@
+> **SEQUENCING UPDATE:** [RELEASE TRAIN v7](RELEASE_TRAIN_UNIVERSAL_CONSOLE_V7_20261101.md) is the active staged delivery and 3-thread synchronization contract, superseding this v6 plan where its merge/test order conflicts. PRD/ARD v5 and v6 audio safety invariants remain binding. Do not request customer test of an incomplete First Sound candidate.
+
 # ArSonMix — EXECUTION LOCK v6 / UNIVERSAL LIVE CONSOLE
 **Established:** 2026-11-01. **Role:** binding implementation plan; not an attestation of shipping features.
 **Spec authority:** [PRD v5](PRD_ARSONMIX_OPERATOR_FIRST_LIVE_MIXER_V5_20261101.md) and [ARD v5](ARD_ARSONMIX_UNIVERSAL_REALTIME_CONSOLE_V5_20261101.md). v6 governs **execution sequencing, branch ownership and stop rules**, not a new product scope. Contradictory older milestone/GUI plans are historical, not actionable.
