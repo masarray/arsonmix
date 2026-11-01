@@ -175,8 +175,15 @@ int main() {
     assert(find(snap,ch2)->primaryOutId==std::to_string(group.value));
     assert(find(snap,group)->primaryInputCount==2);
     const auto groupWire=toConsoleWireReadbackV6(snap);
-    assert(groupWire.channels.back().role=="GROUP" &&
-           groupWire.channels.back().primaryInputCount==2);
+    // The accepted roster order is NOT the operator display order. Resolve
+    // the actual accepted ChannelId, never assume a newly added bus is last.
+    const auto groupWireIt=std::find_if(groupWire.channels.begin(),
+        groupWire.channels.end(),[&](const auto& c) {
+            return c.id==std::to_string(group.value);
+        });
+    assert(groupWireIt!=groupWire.channels.end());
+    assert(groupWireIt->role=="GROUP" &&
+           groupWireIt->primaryInputCount==2);
     assert(render()&&approx(left[31],(.2f+.4f)*center*2.f));
     assert(approx(ml[31],(.2f*.2f+.4f*.3f)*center));
 
@@ -191,8 +198,13 @@ int main() {
     assert(liveCh7->sends.size()==2); // MONITOR remains, wet SEND added
     assert(find(snap,wet)->parallelSendInputCount==1);
     const auto returnWire=toConsoleWireReadbackV6(snap);
-    assert(returnWire.channels.back().role=="FX_RETURN" &&
-           returnWire.channels.back().parallelSendInputCount==1);
+    const auto returnWireIt=std::find_if(returnWire.channels.begin(),
+        returnWire.channels.end(),[&](const auto& c) {
+            return c.id==std::to_string(wet.value);
+        });
+    assert(returnWireIt!=returnWire.channels.end());
+    assert(returnWireIt->role=="FX_RETURN" &&
+           returnWireIt->parallelSendInputCount==1);
     assert(render());
     assert(approx(left[31],(.2f+.4f)*center*2.f+.2f*center*.25f*.5f));
     assert(approx(ml[31],(.2f*.2f+.4f*.3f)*center));
