@@ -72,6 +72,19 @@ int main() {
     assert(!snap.productionCallbackLive);
     assert(!snap.capabilities.universalLive());
     assert(!snap.capabilities.group&&!snap.capabilities.fxReturn);
+    const auto firstWire=toConsoleWireReadbackV6(snap);
+    assert(firstWire.schemaVersion==6 && firstWire.deviceEpoch=="69");
+    assert(firstWire.graphRevision=="2" && firstWire.rosterRevision=="2");
+    assert(firstWire.channels[6].id==std::to_string(ch7.value));
+    assert(firstWire.channels[6].role=="INPUT");
+    assert(firstWire.channels[6].processingFormat=="MONO");
+    assert(!firstWire.productionCallbackLive);
+    auto huge=snap;
+    huge.deviceEpoch=std::numeric_limits<std::uint64_t>::max();
+    huge.graphRevision=9007199254740993ULL;
+    const auto encoded=toConsoleWireReadbackV6(huge);
+    assert(encoded.deviceEpoch=="18446744073709551615");
+    assert(encoded.graphRevision=="9007199254740993");
 
     ConsoleIntentV6 intent;
     intent.requestId="gui-live:41";intent.deviceEpoch=epoch;
@@ -161,6 +174,9 @@ int main() {
     assert(find(snap,ch7)->primaryOutId==std::to_string(group.value));
     assert(find(snap,ch2)->primaryOutId==std::to_string(group.value));
     assert(find(snap,group)->primaryInputCount==2);
+    const auto groupWire=toConsoleWireReadbackV6(snap);
+    assert(groupWire.channels.back().role=="GROUP" &&
+           groupWire.channels.back().primaryInputCount==2);
     assert(render()&&approx(left[31],(.2f+.4f)*center*2.f));
     assert(approx(ml[31],(.2f*.2f+.4f*.3f)*center));
 
@@ -174,6 +190,9 @@ int main() {
     assert(liveCh7 && liveCh7->primaryOutId==std::to_string(group.value));
     assert(liveCh7->sends.size()==2); // MONITOR remains, wet SEND added
     assert(find(snap,wet)->parallelSendInputCount==1);
+    const auto returnWire=toConsoleWireReadbackV6(snap);
+    assert(returnWire.channels.back().role=="FX_RETURN" &&
+           returnWire.channels.back().parallelSendInputCount==1);
     assert(render());
     assert(approx(left[31],(.2f+.4f)*center*2.f+.2f*center*.25f*.5f));
     assert(approx(ml[31],(.2f*.2f+.4f*.3f)*center));

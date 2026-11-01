@@ -167,13 +167,8 @@ inline bool projectAcceptedConsoleV6(
     const DynamicAcceptedSession& native,std::uint64_t deviceEpoch,
     std::uint64_t exactGraphRevision,
     ConsoleAcceptedReadbackV6& destination) {
-    // device epoch and structural revisions are sent to the current GUI as
-    // JS safe integers; never allow precision loss until both native and GUI
-    // migrate them together to versioned decimal strings.
-    constexpr std::uint64_t maxJsInteger=9007199254740991ULL;
+    // GUI v6 uses canonical decimal-string uint64 revisions and BigInt.
     if(!deviceEpoch || !exactGraphRevision ||
-       deviceEpoch>maxJsInteger || exactGraphRevision>maxJsInteger ||
-       native.acceptedRosterRevision()>maxJsInteger ||
        native.acceptedGraphRevision()!=exactGraphRevision)return false;
     const auto* view=native.acceptedRouting(deviceEpoch,exactGraphRevision);
     if(!view || view->rosterRevision!=native.acceptedRosterRevision() ||
@@ -202,5 +197,52 @@ inline bool projectAcceptedConsoleV6(
     }
     destination=std::move(next);
     return true;
+}
+
+inline std::string_view consoleWireRole(ChannelRole role) noexcept {
+    switch(role) {
+        case ChannelRole::input: return "INPUT";
+        case ChannelRole::group: return "GROUP";
+        case ChannelRole::fxReturn: return "FX_RETURN";
+        case ChannelRole::monitor: return "MONITOR";
+        case ChannelRole::main: return "MAIN";
+    }
+    return "UNKNOWN";
+}
+struct ConsoleWireChannelV6 final {
+    std::string id,role,processingFormat,name,primaryOutId;
+    std::vector<ConsoleSendV6> sends;
+    std::size_t primaryInputCount=0,parallelSendInputCount=0;
+    bool sourcePinVerified=false,actualPcmPresent=false;
+};
+struct ConsoleWireReadbackV6 final {
+    std::uint32_t schemaVersion=6;
+    std::string deviceEpoch,graphRevision,rosterRevision,mainId,monitorId;
+    std::vector<ConsoleWireChannelV6> channels;
+    ProductionCapabilitiesV6 capabilities{};
+    bool productionCallbackLive=false;
+};
+// Control-only serialization model, NOT a device, JSON emitter or audio renderer.
+inline ConsoleWireReadbackV6 toConsoleWireReadbackV6(
+    const ConsoleAcceptedReadbackV6& a) {
+    ConsoleWireReadbackV6 out;
+    out.deviceEpoch=std::to_string(a.deviceEpoch);
+    out.graphRevision=std::to_string(a.graphRevision);
+    out.rosterRevision=std::to_string(a.rosterRevision);
+    out.mainId=a.mainId;out.monitorId=a.monitorId;
+    out.capabilities=a.capabilities;out.productionCallbackLive=a.productionCallbackLive;
+    out.channels.reserve(a.channels.size());
+    for(const auto& c:a.channels) {
+        ConsoleWireChannelV6 ch;
+        ch.id=c.id;ch.role=std::string(consoleWireRole(c.role));
+        ch.processingFormat=c.format==ProcessingFormat::mono?"MONO":"STEREO";
+        ch.name=c.name;ch.primaryOutId=c.primaryOutId;ch.sends=c.sends;
+        ch.primaryInputCount=c.primaryInputCount;
+        ch.parallelSendInputCount=c.parallelSendInputCount;
+        ch.sourcePinVerified=c.sourcePinVerified;
+        ch.actualPcmPresent=c.actualPcmPresent;
+        out.channels.push_back(std::move(ch));
+    }
+    return out;
 }
 } // namespace armix::integration

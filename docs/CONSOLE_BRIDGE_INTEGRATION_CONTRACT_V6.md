@@ -8,7 +8,7 @@ This document describes **implemented integration types and executable PCM/readb
 - \`tests/console_native_integration_test.cpp\` renders actual native offline PCM for IN1→CH7, IN2→CH2, sends to MONITOR, Group Selected with exclusive primary OUT, parallel wet FX Return, stale-device/invalid-pin rollback and mute. The test refuses to call this offline graph physically LIVE.
 
 ## Fields (target UI serialization)
-**Wire synchronization v6 (integration patch):** `ChannelId` and destination IDs are canonical unsigned **decimal strings**, never JS Number; `requestId` is a bounded printable **opaque string** per WebView session (e.g. `gui-live:41`) echoed unchanged by ACK, not a native integer or a global monotonically increasing counter. `device.epoch`, `graph.revision` and roster revisions are JS-safe integers on the *current* GUI branch; native must reject values beyond 2^53-1 until both ends migrate together. Only v6 represents these roles. Sample:
+**Wire synchronization v6 (integration patch):** `ChannelId` and destination IDs are canonical unsigned **decimal strings**, never JS Number; `requestId` is a bounded printable **opaque string** per WebView session (e.g. `gui-live:41`) echoed unchanged by ACK, not a native integer or a global monotonically increasing counter. `device.epoch`, `graph.revision` and roster revisions are canonical decimal **strings** on GUI #271; native must preserve all uint64 bits and GUI compares with BigInt. Only v6 represents these roles. Sample:
 \`\`\`json
 {
   "schemaVersion": 6,
@@ -48,3 +48,6 @@ Intent envelope: `{requestId,deviceEpoch,baseRevision,baseRosterRevision,op,targ
 
 ## Wire identity / duplicate ACK regression (2026-11-01)
 The integration C++ test now proves an opaque `requestId` is echoed unchanged in both accepted and rejected replies, previously completed requests are rejected even across multiple editor IDs, a new editor restarting from sequence 1 is permitted, invalid control characters/overlong tokens are rejected, and native uint64 ChannelId strings reject overflow, leading zero and UI-fixture aliases. Snapshot projection refuses a JS-unsafe epoch/revision. The actual native WebView command dispatcher in ENGINE #266 must implement this v6 mapping and ACK/replay; the existence of the C++ test is not evidence of production bridge or physical sound.
+
+## Serialization-ready accepted readback (no fake physical LIVE)
+`toConsoleWireReadbackV6` converts the accepted native revision to decimal-string tokens and role/format text values expected by GUI #271: INPUT, GROUP, FX_RETURN, MONITOR, MAIN; MONO/STEREO. Golden C++ tests now include >2^53 numeric preservation. This helper is a **control-thread DTO** only. It neither emits JUCE JSON nor supplies actual device pins, VST3 state, callback ownership or hardware sound, which remain ENGINE #266's integration responsibility.
