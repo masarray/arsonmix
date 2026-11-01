@@ -129,6 +129,18 @@ def run_test(screenshots: bool):
                 if screenshots:
                     page.screenshot(path=str(screenshot_dir / f"mixer_{width}x{height}_plugins.png"), full_page=True)
                 page.locator('#pluginClose').click()
+                for mode, expected in (('comfort', 150), ('standard', 125), ('compact', 105)):
+                    page.locator('#densitySelect').select_option(mode)
+                    actual = page.locator('#tracks .strip').first.evaluate(
+                        '(el) => Math.round(el.getBoundingClientRect().width)'
+                    )
+                    if actual != expected:
+                        raise AssertionError(
+                            f"{width}x{height}: {mode} strip width {actual}px, expected {expected}px"
+                        )
+                    assert_geometry(page, f"{width}x{height} density={mode}")
+                    checks += 1
+                page.locator('#densitySelect').select_option('comfort')
                 page.locator('#moreTools summary').click()
                 page.locator('#mode').click()
                 assert_geometry(page, f"{width}x{height} narrow-mode")
