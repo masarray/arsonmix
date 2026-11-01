@@ -2524,10 +2524,11 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 @media(max-width:1100px){#app .arV6Console .arV6SelectionPanel{top:46px}}
 
 
-/* PR #278 V5: contextual FX picker on existing old UI; original BTN-180 and
-   hardware faders/LEDs stay untouched. Only first unoccupied insert is shown. */
-#app #mixer .rack .insert-slot:has(.insert.empty) ~ .insert-slot:has(.insert.empty){display:none!important}
-#app #mixer .master-fx-rack .master-fx-slot:has(.master-insert.empty) ~ .master-fx-slot:has(.master-insert.empty){display:none!important}
+/* PR #278 V5 contextual FX picker on existing old UI. Preserve all six
+   fixed-height native slots until engine/bridge support a variable rack; avoid
+   breaking the six-slot layout contract while keeping original BTN-180 art. */
+
+
 #app .workbench{position:relative}
 #app .arV5QuickFx{
  position:absolute;z-index:46;top:80px;left:8px;
