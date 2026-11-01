@@ -703,7 +703,7 @@ function syncFaderVisual(t,element){
  const readout=root.querySelector('.fader-readout');
  if(readout)readout.textContent=(isSend?'SEND ':'')+value+' dB';
  const box=root.querySelector('.fader-box');
- if(box)box.style.setProperty('--fader-fill',faderPercent(v,isSend)+'%');
+ if(box?.style?.setProperty)box.style.setProperty('--fader-fill',faderPercent(v,isSend)+'%');
  const db=root.querySelector('.db-value');
  if(db)db.textContent=(isSend?'S ':'')+value;
 }
