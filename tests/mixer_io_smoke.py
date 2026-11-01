@@ -401,7 +401,7 @@ async def main():
         assert duplicate['ok'] is False and 'different' in duplicate['error'],duplicate
         assert (await page.evaluate('()=>window.__arMixRouteView().draftMainOutputs'))==[1,0]
         await page.evaluate('()=>window.__arMixRevertMixerDraft()')
-        assert "AUX1" in outputs and "not physical" in outputs,outputs
+        assert "AUX1–4 are internal FX returns, not hardware ports" in outputs,outputs
         await page.locator('[data-io-tab="device"]').click()
         await page.evaluate("""() => window.__armixTestEmit('arMixAudioDeviceInventory',{
           types:[{name:'ASIO',active:true,inputs:['Mic 1','Mic 2'],outputs:['Out 1','Out 2']}]
