@@ -517,9 +517,9 @@ check(strip(1).includes('<option value="SOURCE ONLY (No Main)" selected>') && so
  'CH1 may be capture/source-only so four split processing paths do not force a fifth direct MAIN dry feed');
 node('reset').dispatch('click');
 
-// V11: FL-style source-first wire switching in the PERSISTENT middle BUS/SEND row.
+// V11/V12: source-first wire switching in the persistent middle BUS/SEND row.
 // These are deterministic state tests; actual screenshot geometry is gated separately.
-node('reset').dispatch('click');
+node('body').clientWidth=1680;node('reset').dispatch('click');
 check(html.includes('id="wireLayer" class="routing-wire-overlay"') &&
  html.includes('id="wireLegend"') &&
  html.includes('.console-body.collapsed-send{--send-h:53px!important}'),
