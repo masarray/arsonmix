@@ -73,7 +73,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .console-body.narrow .fxslot-row,.console-body.narrow .send-section .send-select,.console-body.narrow .sendlevel,.console-body.narrow .eq-line{display:none}
 .console-body.narrow .fader-scale{font-size:8px;width:14px;min-width:14px}
 .console-body.narrow .pan-section{padding:0 2px;gap:1px}
-.console-body.narrow .pan-section input{width:43px}
+.console-body.narrow .pan-control{max-width:43px}
 .console-body.narrow .switch{min-width:15px;padding:0}
 .console-body.narrow .switch-section{gap:0}
 .console-body.narrow .strip .footer-label .name{font-size:9px}
@@ -128,11 +128,21 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .eq-line svg{width:87%;height:20px;stroke:#758d96;fill:none;stroke-width:1.1}
 .eq-section.off .eq-line svg{stroke:#575b5e}
 .pan-section{height:var(--pan-h);display:flex;align-items:center;gap:4px;padding:0 6px}
-.pan-section input{width:65px;height:8px;accent-color:#9ba7aa}
+.pan-section input{width:65px;accent-color:#9ba7aa}
 .pan-section .pan-icon{font-size:15px;color:#9a9fa1}
 .pan-section output{font-size:9px;min-width:18px;color:#6bafc2}
-.auto-section{height:var(--auto-h);padding:1px 3px}
-.auto-section select{height:19px;width:100%;border:0;background:#303234;color:#babdbf;font-size:10px;appearance:auto}
+.auto-section{height:var(--auto-h);padding:1px 3px;display:flex;align-items:center;gap:3px}
+.trim-label{font-size:8px;color:#9aa0a5;flex:none}
+.trim-control{min-width:0;flex:1;width:42px;height:8px;accent-color:#8aafb9}
+.trim-value{font-size:9px;color:#a2d1df;min-width:23px;text-align:right}
+.pan-control{height:17px;flex:1;min-width:0;position:relative;display:flex;align-items:center;isolation:isolate}
+.pan-control:after{content:"";pointer-events:none;position:absolute;top:1px;bottom:0;left:50%;border-left:1px solid #91c1cb;opacity:.95}
+.center-pan{width:100%!important;flex:1;min-width:0;height:18px!important;appearance:none;-webkit-appearance:none;background:transparent;cursor:ew-resize;margin:0;position:relative;z-index:2}
+.center-pan::-webkit-slider-runnable-track{height:5px;border-radius:1px;border:1px solid #485052;background:linear-gradient(to right,#292f32 0,#292f32 var(--pan-start),#60b5cf var(--pan-start),#60b5cf var(--pan-end),#292f32 var(--pan-end),#292f32 100%)}
+.center-pan::-moz-range-track{height:5px;border-radius:1px;border:1px solid #485052;background:linear-gradient(to right,#292f32 0,#292f32 var(--pan-start),#60b5cf var(--pan-start),#60b5cf var(--pan-end),#292f32 var(--pan-end),#292f32 100%)}
+.center-pan::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:9px;height:14px;margin-top:-5px;border-radius:2px;background:linear-gradient(#d4dadd,#879fa9);border:1px solid #151b1d}
+.center-pan::-moz-range-thumb{width:9px;height:14px;border-radius:2px;background:#acc2cb;border:1px solid #151b1d}
+.switch.on.cue{background:#5198b5;color:#101819}
 .switch-section{height:var(--switch-h);display:flex;justify-content:center;align-items:flex-start;padding:3px 3px 0;gap:2px}
 .switch{min-width:21px;height:20px;background:#2a2c2e;border:1px solid #1a1c1d;color:#8e9294;font-size:10px;padding:0 2px}
 .switch:hover{background:#454849}
@@ -192,7 +202,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
     <label class="toolbar-label" for="sceneSelect">Scene</label><select id="sceneSelect" class="toolbar-select" aria-label="Saved mixer scenes"><option value="">Current</option></select><button class="tool" id="saveScene" title="Save mixer scene">Save</button><button class="tool" id="recallScene" title="Recall selected mixer scene">Recall</button>
     <span class="sep"></span>
     <button class="tool" id="preview" aria-pressed="false">▶ Preview Meters</button>
-    <button class="tool" id="reset" title="Reset demo mixer controls">Reset Mixer</button>
+    <button class="tool" id="clearCue" title="Clear all PFL/Cue monitors">Clear Cue</button><button class="tool" id="reset" title="Reset demo mixer controls">Reset Mixer</button>
     <span class="short-help">Ctrl+click: multi-select · Ctrl+C/V: copy/paste · Drag FX: reorder</span>
   </div>
   <main class="console-pane">
@@ -204,7 +214,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
         <button class="rail-cell send" data-section="send" title="Collapse / expand Sends">↪</button>
         <button class="rail-cell eq" data-section="eq" title="Collapse / expand Equalizer">▥</button>
         <div class="rail-cell pan" title="Pan">◉</div>
-        <div class="rail-cell auto" title="Automation"><small>A</small></div>
+        <div class="rail-cell auto" title="Digital input trim"><small>TRIM</small></div>
         <div class="rail-cell switch" title="Mute / Solo / Record"><small>M S R</small></div>
         <div class="rail-cell fader" title="Level and meter">dB<br>│<br>│<br>│</div>
         <div class="rail-cell footer" title="Track labels"><small>▦</small></div>
@@ -227,7 +237,7 @@ const clone=x=>JSON.parse(JSON.stringify(x));
 const selection=()=>tracks.concat(master).filter(t=>t.selected);
 const make=(name,kind,color)=>{
  const id=nextId++;
- return {id,name,kind,color,group:null,input:kind==='master'?'None':kind==='bus'?'None':'Default Stereo',output:kind==='master'?'Default Output':'Master',fx:['None','None','None','None'],slotBypass:[false,false,false,false],fxOn:true,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,activeSend:0,sendSlots:Array.from({length:16},()=>({send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0})),eq:true,pan:0,automation:'Read',mute:false,solo:false,arm:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
+ return {id,name,kind,color,group:null,input:kind==='master'?'None':kind==='bus'?'None':'Default Stereo',output:kind==='master'?'Default Output':'Master',fx:['None','None','None','None'],slotBypass:[false,false,false,false],fxOn:true,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,activeSend:0,sendSlots:Array.from({length:16},()=>({send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0})),eq:true,pan:0,trim:0,mute:false,solo:false,cue:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
 };
 function init(){nextId=1;nextGroup=1;tracks=INIT.map((name,i)=>make(name,'audio',COLORS[i]));tracks.push(make('Bus A','bus','#826b9a'));master=make('Master','master','#5a8ca8');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -250,6 +260,8 @@ function sectionSend(t){
  return '<div class="section send-section"><div class="send-header"><span class="sym">↪</span><select class="send-slot" data-field="activeSend" title="Select send slot 1–16" aria-label="Send slot">'+option(Array.from({length:16},(_,i)=>'S'+(i+1)),'S'+(t.activeSend+1))+'</select><span class="push"></span><button class="mini power '+(t.sendOn?'on':'')+'" data-action="sendOn" title="Enable Send">⏻</button><button class="mini pre '+(t.pre?'on':'')+'" data-action="pre" title="Toggle Pre/Post send">'+(t.pre?'Pre':'Post')+'</button></div><select class="send-select" data-field="send" aria-label="Send destination">'+option(channelOptions(t,'send'),t.send)+'</select><div class="sendlevel"><label>↳</label><input type="range" min="-60" max="6" step="1" value="'+t.sendLevel+'" data-field="sendLevel" title="Send level"><output>'+formatDb(t.sendLevel)+'</output></div><div class="sendlevel send-pan"><label>◉</label><input type="range" min="-100" max="100" step="1" value="'+t.sendPan+'" data-field="sendPan" title="Send stereo pan" aria-label="Send pan"><output>'+(t.sendPan===0?'C':t.sendPan<0?'L'+Math.abs(t.sendPan):'R'+t.sendPan)+'</output></div></div>';
 }
 function formatDb(n){return n<=-60?'-∞':(n>0?'+':'')+Number(n).toFixed(1);}
+function panLabel(n){return Number(n)===0?'C':n<0?'L'+Math.abs(n):'R'+n;}
+function panStyle(n){const left=Math.min(50,50+n/2),right=Math.max(50,50+n/2);return '--pan-start:'+left+'%;--pan-end:'+right+'%';}
 function sectionFader(t){
  const ticks=['+15','0','-6','-12','-24','-36','-48','-∞'];
  return '<div class="fader-section"><div class="fader-scale">'+ticks.map(s=>'<span>'+s+'</span>').join('')+'</div><div class="fader-box"><input class="fader" type="range" min="-60" max="15" value="'+t.level+'" step=".1" data-field="level" title="Volume — double click to reset to 0 dB" aria-label="'+escapeHtml(t.name)+' volume"></div><div class="meter-box" aria-label="Simulated stereo peak meter"><div class="meter-lane"><div class="meter-fill left"></div></div><div class="meter-lane"><div class="meter-fill right"></div></div><div class="peak '+(t.clip?'clipping':'')+'"></div></div></div>';
@@ -263,9 +275,9 @@ function strip(t){
  code+='<select class="route-select" data-field="output" title="Track output" aria-label="'+escapeHtml(t.name)+' output">'+option(channelOptions(t,'output'),t.output)+'</select></div>';
  code+=sectionFx(t)+sectionSend(t);
  code+='<div class="section eq-section '+(t.eq?'':'off')+'"><div class="eq-header"><span class="sym">▥</span><small style="font-size:9px;color:#959b9d">EQ</small><span class="push"></span><button class="mini power '+(t.eq?'on':'')+'" data-action="eq" title="Enable/disable EQ">⏻</button></div><button class="eq-line" data-action="eq" title="Toggle track EQ" aria-label="Toggle track EQ">'+eqSvg+'</button></div>';
- code+='<div class="section pan-section"><span class="pan-icon">◉</span><input type="range" min="-100" max="100" step="1" value="'+t.pan+'" data-field="pan" title="Pan / Balance" aria-label="Pan"><output>'+ (t.pan===0?'C':t.pan<0?'L'+Math.abs(t.pan):'R'+t.pan)+'</output></div>';
- code+='<div class="section auto-section"><select data-field="automation" aria-label="Automation mode">'+option(['Off','Read','Write','Latch','Touch'],t.automation)+'</select></div>';
- code+='<div class="section switch-section"><button class="switch mute '+(t.mute?'on':'')+'" data-action="mute" title="Mute channel" aria-pressed="'+t.mute+'">M</button><button class="switch solo '+(t.solo?'on':'')+'" data-action="solo" title="Solo channel" aria-pressed="'+t.solo+'">S</button>'+(t.kind==='audio'?'<button class="switch arm '+(t.arm?'on':'')+'" data-action="arm" title="Record arm (visual only)" aria-pressed="'+t.arm+'">R</button>':'')+(t.kind==='audio'?'<button class="switch mon '+(t.mon?'on':'')+'" data-action="mon" title="Input monitor (visual only)" aria-pressed="'+t.mon+'">I</button>':'')+'</div>';
+ code+='<div class="section pan-section"><span class="pan-icon" title="Pan / Balance">◉</span><span class="pan-control" style="'+panStyle(t.pan)+'"><input class="center-pan" type="range" min="-100" max="100" step="1" value="'+t.pan+'" data-field="pan" title="Pan from center; release near center to snap; double-click to center" aria-label="Channel pan; double-click center"></span><output>'+panLabel(t.pan)+'</output></div>';
+ code+='<div class="section auto-section"><span class="trim-label" title="Digital input trim">TRIM</span><input class="trim-control" type="range" min="-24" max="24" step="0.5" value="'+t.trim+'" data-field="trim" aria-label="Digital trim dB" title="Digital trim (-24..+24dB)"><output class="trim-value">'+formatDb(t.trim)+'</output></div>';
+ code+='<div class="section switch-section"><button class="switch mute '+(t.mute?'on':'')+'" data-action="mute" title="Mute channel" aria-pressed="'+t.mute+'">M</button><button class="switch solo '+(t.solo?'on':'')+'" data-action="solo" title="Solo channel" aria-pressed="'+t.solo+'">S</button>'+(t.kind!=='master'?'<button class="switch cue '+(t.cue?'on':'')+'" data-action="cue" title="Cue / PFL to separate monitor bus (visual only)" aria-pressed="'+t.cue+'">C</button>':'')+(t.kind==='audio'?'<button class="switch mon '+(t.mon?'on':'')+'" data-action="mon" title="Input monitor (visual only)" aria-pressed="'+t.mon+'">I</button>':'')+'</div>';
  code+=sectionFader(t);
  code+='<div class="bottom-section"><div class="db-value">'+formatDb(t.level)+'</div><div class="footer-label '+(t.kind==='master'?'master-label':t.kind==='bus'?'bus-label':'')+'"><span class="name" data-action="rename" title="Double-click to rename">'+escapeHtml(t.name)+'</span><div class="color-strip"></div></div></div></article>';
  return code;
@@ -315,7 +327,7 @@ function wouldFeedback(source,destination){
  }
  return false;
 }
-const COPY_KEYS=['fx','slotBypass','fxOn','send','sendOn','pre','sendLevel','sendPan','activeSend','sendSlots','eq','pan','automation','mute','solo','level'];
+const COPY_KEYS=['fx','slotBypass','fxOn','send','sendOn','pre','sendLevel','sendPan','activeSend','sendSlots','eq','pan','trim','mute','solo','level'];
 function copyChannels(){
  const src=selection()[0];if(!src){say('Select a channel to copy settings');return;}
  clipboard=Object.fromEntries(COPY_KEYS.map(k=>[k,clone(src[k])]));
@@ -383,7 +395,8 @@ function handleField(event){
  }
  if(event.type==='change')say(t.name+' fader '+formatDb(t.level)+' dB'+(t.group?' (linked '+t.group+')':''));
 }
- else if(field==='pan'){t.pan=Number(el.value);el.nextElementSibling.textContent=t.pan===0?'C':t.pan<0?'L'+Math.abs(t.pan):'R'+t.pan;if(event.type==='change')say(t.name+' pan '+el.nextElementSibling.textContent);}
+ else if(field==='pan'){let value=Number(el.value);if(event.type==='change'&&Math.abs(value)<=5&&!event.altKey){value=0;el.value='0';}t.pan=value;const wrapper=el.closest('.pan-control');if(wrapper)wrapper.setAttribute('style',panStyle(value));const label=wrapper?wrapper.nextElementSibling:el.nextElementSibling;if(label)label.textContent=panLabel(value);if(event.type==='change')say(t.name+' pan '+panLabel(value));}
+ else if(field==='trim'){t.trim=Number(el.value);const readout=el.closest('.auto-section')?.querySelector('.trim-value');if(readout)readout.textContent=formatDb(t.trim);if(event.type==='change')say(t.name+' digital trim '+formatDb(t.trim)+' dB');}
  else if(field==='sendLevel'){t.sendLevel=Number(el.value);el.nextElementSibling.textContent=formatDb(t.sendLevel);}
  else if(field==='sendPan'){t.sendPan=Number(el.value);el.nextElementSibling.textContent=t.sendPan===0?'C':t.sendPan<0?'L'+Math.abs(t.sendPan):'R'+t.sendPan;}
  else if(field==='activeSend'){const slot=Number(el.value.slice(1))-1;if(slot<0||slot>=16)return;openSendSlot(t,slot);refreshStrip(t);say(t.name+' · selected Send '+(slot+1));return;}
@@ -408,7 +421,7 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  else if(a==='fxOn')t.fxOn=!t.fxOn;
  else if(a==='pre'){t.pre=!t.pre;syncActiveSend(t);}
  else if(a==='sendOn'){if(t.send==='None'){say('Select a send destination first.');return;}if(!t.sendOn&&wouldFeedback(t,t.send)){say('Send rejected: feedback path detected.');return;}t.sendOn=!t.sendOn;syncActiveSend(t);}
- else if(['mute','solo','arm','mon','phase'].includes(a)){
+ else if(['mute','solo','cue','mon','phase'].includes(a)){
   t[a]=!t[a];
   if(t.group&&(a==='mute'||a==='solo')){
    tracks.filter(other=>other.group===t.group&&other.id!==t.id).forEach(other=>{other[a]=t[a];refreshStrip(other);});
@@ -419,6 +432,7 @@ document.querySelector('.console-body').addEventListener('click',e=>{
 document.querySelector('.console-body').addEventListener('dblclick',e=>{
  const t=findTrack(e.target);if(!t)return;
  if(e.target.classList.contains('fader')){t.level=0;refreshStrip(t);say(t.name+' fader reset to 0.0 dB');}
+ if(e.target.classList.contains('center-pan')){t.pan=0;refreshStrip(t);say(t.name+' pan centered');}
  if(e.target.matches('.footer-label .name')){
  const span=e.target,original=t.name;
  span.contentEditable='true';span.spellcheck=false;span.focus();
@@ -486,6 +500,7 @@ document.getElementById('addFx').addEventListener('click',()=>{
 document.getElementById('addBus').addEventListener('click',()=>{
  const n=tracks.filter(t=>t.kind==='bus').length+1,t=make('Bus '+String.fromCharCode(65+((n-1)%26)),'bus','#846e9e');tracks.push(t);render();selectTrack(t);document.getElementById('viewport').scrollLeft=99999;say('Added '+t.name+' · visual only');
 });
+document.getElementById('clearCue').addEventListener('click',()=>{tracks.forEach(t=>t.cue=false);master.cue=false;render();say('All Cue / PFL requests cleared · no hardware monitor connected');});
 document.getElementById('reset').addEventListener('click',()=>{if(preview)togglePreview();document.getElementById('viewFilter').value='all';document.querySelector('.console-body').classList.remove('narrow');document.getElementById('mode').classList.remove('active');document.getElementById('mode').setAttribute('aria-pressed','false');init();say('Reference mixer reset; saved scenes remain available.');});
 function togglePreview(){
  preview=!preview;
