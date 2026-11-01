@@ -165,6 +165,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .db-value{height:17px;color:#54b0d0;text-align:center;font-size:11px;padding-top:1px}
 .footer-label{height:29px;display:flex;flex-direction:column;justify-content:space-between;background:#2d2f31;border-top:1px solid #505153}
 .footer-label .name{font-size:10px;color:#c2c3c5;padding:3px 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:text;text-align:center}
+.footer-label .name[contenteditable="true"]{outline:1px solid #69b6d0;background:#3b4549;user-select:text}
 .footer-label .color-strip{height:5px;background:var(--track-color,#497e8b)}
 .footer-label.bus-label{background:#313037}
 .footer-label.master-label{background:#30353a}
@@ -175,7 +176,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 ::-webkit-scrollbar{height:11px;width:9px}
 ::-webkit-scrollbar-track{background:#262728}
 ::-webkit-scrollbar-thumb{background:#55585b;border:2px solid #292a2b;border-radius:6px}
-@media(max-height:750px){.console-body{--route-h:54px;--fx-h:105px;--send-h:76px;--eq-h:43px;--pan-h:32px;--auto-h:22px;--switch-h:29px;--footer-h:45px}.fxslot-row{height:17px}.fx-section .subhead{height:18px}.footer-label{height:26px}.db-value{height:14px}.eq-line{height:20px}}
+@media(max-height:750px){.console-body{--route-h:54px;--fx-h:105px;--send-h:82px;--eq-h:43px;--pan-h:32px;--auto-h:22px;--switch-h:29px;--footer-h:45px}.fxslot-row{height:17px}.fx-section .subhead{height:18px}.footer-label{height:26px}.db-value{height:14px}.eq-line{height:20px}}
 @media(max-width:1000px){.menu-bar{gap:10px}.short-help{display:none}.strip{width:98px;flex-basis:98px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;animation:none!important}}
 </style>
@@ -326,9 +327,8 @@ function refreshScenes(){
  if(selected&&scenes[Number(selected)])el.value=selected;
 }
 function saveScene(){
- const name=window.prompt('Scene name (capture all mixer controls and channel visibility)', 'Scene '+(scenes.length+1));
- if(!name||!name.trim())return;
- scenes.push({name:name.trim().slice(0,40),nextId,tracks:clone(tracks),master:clone(master),filter:document.getElementById('viewFilter').value,narrow:document.querySelector('.console-body').classList.contains('narrow')});
+ const name='Scene '+(scenes.length+1);
+ scenes.push({name,nextId,tracks:clone(tracks),master:clone(master),filter:document.getElementById('viewFilter').value,narrow:document.querySelector('.console-body').classList.contains('narrow')});
  refreshScenes();document.getElementById('sceneSelect').value=String(scenes.length-1);
  say('Scene saved: '+scenes[scenes.length-1].name+' · local reference session only');
 }
@@ -378,7 +378,20 @@ document.querySelector('.console-body').addEventListener('click',e=>{
 document.querySelector('.console-body').addEventListener('dblclick',e=>{
  const t=findTrack(e.target);if(!t)return;
  if(e.target.classList.contains('fader')){t.level=0;refreshStrip(t);say(t.name+' fader reset to 0.0 dB');}
- if(e.target.matches('.footer-label .name')){const name=window.prompt('Track name',t.name);if(name&&name.trim()){const old=t.name;t.name=name.trim().slice(0,30);tracks.forEach(x=>{if(x.output===old)x.output=t.name;if(x.send===old)x.send=t.name;});render();say('Renamed track to '+t.name+' · routing labels updated');}}
+ if(e.target.matches('.footer-label .name')){
+ const span=e.target,original=t.name;
+ span.contentEditable='true';span.spellcheck=false;span.focus();
+ const range=document.createRange();range.selectNodeContents(span);const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);
+ const finish=save=>{
+  if(span.contentEditable!=='true')return;
+  span.contentEditable='false';const name=span.textContent.trim().slice(0,30);
+  if(save&&name){t.name=name;tracks.forEach(x=>{if(x.output===original)x.output=name;if(x.send===original)x.send=name;});say('Renamed '+original+' → '+name+' · routing updated');}
+  else t.name=original;
+  render();
+ };
+ span.addEventListener('blur',()=>finish(true),{once:true});
+ span.addEventListener('keydown',ev=>{if(ev.key==='Enter'){ev.preventDefault();span.blur();}else if(ev.key==='Escape'){ev.preventDefault();finish(false);}ev.stopPropagation();});
+}
 });
 document.querySelector('.console-body').addEventListener('dragstart',e=>{
  const row=e.target.closest('.fxslot-row');if(!row)return;
