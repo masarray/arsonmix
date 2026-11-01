@@ -724,6 +724,36 @@ static void verifyFirstSoundOnePinNativeSourceDraft() {
     assert(routed.base.extractSource(6,nativePins,1,
                                    routedL.data(),routedR.data(),4));
     assert(routedL==mic && routedR==mic);
+
+    // The *installed M4 native PCM renderer*, not DynamicPreparedMixerBlock:
+    // actual physical IN5 callback[0] -> independent CH07 -> stereo MAIN.
+    // Exercise the same LiveChannelFxGraph::process invoked by
+    // LiveDryRoutingLab::process from the sole JUCE hardware callback.
+    armix::mixer::PreparedRenderGraph prepared;
+    armix::mixer::RenderError renderError;
+    assert(armix::mixer::PreparedRenderGraph::compile(
+        decoded.channels,physical,decoded.sends,prepared,renderError,decoded.aux));
+    armix::mixer::LiveChannelFxGraph production(prepared,64,64);
+    assert(production.setMainOutputPair(0,1,2));
+    std::array<float,4> mainL{},mainR{};
+    armix::mixer::RenderLevels levels;
+    const auto beforeCallback=heapCalls.load(std::memory_order_relaxed);
+    assert(production.process(nativePins,1,mainL.data(),mainR.data(),4,&levels));
+    assert(heapCalls.load(std::memory_order_relaxed)==beforeCallback);
+    assert(mainL[0] > 0.f && mainR[0] > 0.f &&
+           std::isfinite(mainL[0]) && std::isfinite(mainR[0]));
+    assert(near(mainL[0],mainR[0]));
+    assert(levels.channelPeak[6] > 0.f);
+    assert(levels.channelPeak[1] == 0.f); // CH02 unpatched, no fake PCM.
+    assert(production.setStripControl(6,.25f,0.f,true,true,false));
+    mainL.fill(1.f);mainR.fill(1.f);
+    const auto beforeMute=heapCalls.load(std::memory_order_relaxed);
+    assert(production.process(nativePins,1,mainL.data(),mainR.data(),4,&levels));
+    assert(heapCalls.load(std::memory_order_relaxed)==beforeMute);
+    for(int n=0;n<4;++n)assert(mainL[n]==0.f && mainR[n]==0.f);
+    assert(production.setStripControl(6,.25f,0.f,true,false,false));
+    assert(production.process(nativePins,1,mainL.data(),mainR.data(),4,&levels));
+    assert(mainL[0]>0.f&&mainR[0]>0.f);
     juce::var denied;
     assert(NativeVerifiedSourcePatch::prepare(typed,6,"STEREO",5,5,
         physical,17,9,denied).isNotEmpty());
