@@ -207,8 +207,8 @@
   top.append(identification,tools);
   const message=h('div','arV6Message');message.setAttribute('role','status');
   const body=h('div','arV6Body');
-  const lanes=h('div','arV6Lanes');lanes.setAttribute('aria-label','Channel banks');
-  const main=h('div','arV6Main');main.setAttribute('aria-label','Pinned main output');
+  const lanes=h('div','arV6Lanes');lanes.id='arV6Lanes';lanes.setAttribute('aria-label','Channel banks');
+  const main=h('div','arV6Main');main.id='arV6Main';main.setAttribute('aria-label','Pinned main output');
   body.append(lanes,main);
   root.append(top,message,body);
   mount.append(root);
