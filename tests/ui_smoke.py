@@ -976,8 +976,14 @@ async def main():
         assert await page.evaluate('durableSession().masterBypassed["0"]') is True
         await page.locator('[data-master-power="0"]').click()
         assert await page.locator('[data-master-power="0"]').get_attribute('aria-pressed')=='true'
-        # Master insert selection can open an editor and replace the selected FX.
+        # PR #278 V5: clicking a real MASTER insert opens the compact
+        # contextual quick picker; F8 remains the separate full manager.
         await page.locator('[data-master-insert="0"]').click()
+        assert await page.locator('.arV5QuickFx').is_visible()
+        assert 'MAIN' in await page.locator('.arV5QuickHead').inner_text()
+        await page.locator('.arV5QuickFx [data-fast-close]').click()
+        assert await page.locator('.arV5QuickFx').is_hidden()
+        await page.keyboard.press('F8')
         assert await page.locator('#pluginModal').is_visible()
         await page.locator('#closeBrowser').click()
         assert await page.locator('#pluginModal').is_hidden()
