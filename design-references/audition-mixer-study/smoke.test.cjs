@@ -258,7 +258,7 @@ node('pluginClose').dispatch('click');
 check(node('pluginBrowser').hidden===true,
  'Closing floating Plugin Manager leaves fixed bank untouched');
 node('body').clientWidth=1180;filter('all');
-check(count()===7,'At smaller desktop viewport capacity decreases without stretching');
+check(count()===6,'At 1180px Comfort reserves at least 150px per strip, showing six sources plus MAIN');
 node('body').clientWidth=1680;filter('all');
 check(count()===10,'At 1680px viewport returns to ten source channels plus equal Master');
 
