@@ -539,16 +539,54 @@ function wireTo(id){
 check(strip(1).includes('⇢4') && strip(3).includes('wire-socket is-linked') &&
  node('wireLegend').textContent.includes('4 targets'),
  'CH1 click-source then CH3–CH6 socket clicks create four independent visible links');
-[3,4,5,6].forEach(id=>check(strip(id).includes('<option value="CH01 PRE-FX SPLIT" selected>'),
- 'Wire to CH'+id+' selects its PRE INSERT source without creating a BUS'));
+[3,4,5,6].forEach(id=>check(strip(id).includes('<option value="None" selected>') &&
+ strip(id).includes('class="wire-tray linked"') &&
+ strip(id).includes('data-field="wireGain"'),
+ 'Wire to CH'+id+' is an independent FL-style send preserving receiver IN and providing per-send gain'));
 wireTo(5);
 check(strip(1).includes('⇢3') && strip(5).includes('class="wire-socket"'),
  'Click linked socket a second time disconnects precisely that destination');
 field(7,'input','Input 1 (Mono)');
 wireTo(7);
-check(node('info').textContent.includes('already has Input 1 (Mono)') &&
- strip(7).includes('<option value="Input 1 (Mono)" selected>'),
- 'Occupied input is fail-closed: do not erase live hardware input on wire click');
+check(strip(7).includes('<option value="Input 1 (Mono)" selected>') &&
+ strip(7).includes('wire-socket is-linked'),
+ 'FL-style send does not replace occupied hardware input; receiver can sum existing input plus source send');
+// NEW V12 cases: independent send gains, alternate PRE FX tap, snapshots and feedback.
+node('wireMode').value='split';node('wireMode').dispatch('change');
+wireTo(8);
+check(strip(8).includes('wire-socket is-linked') &&
+ strip(8).includes('data-wire-id') &&
+ node('info').textContent.includes('INDEPENDENT PRE FX'),
+ 'Independent PRE FX tap is explicit and per-edge (not confused with fader send)');
+const pot=strip(8).match(/data-wire-id="(\\d+)"/);
+check(!!pot,'Connected PRE FX wire has a stable edge ID for gain control');
+const gainTarget={dataset:{field:'wireGain',wireId:pot[1]},value:'-12',
+ style:{setProperty(){}},parentElement:{style:{setProperty(){}}},closest:k=>k==='.strip'?{dataset:{id:8}}:null};
+node('body').handlers.change({target:gainTarget,type:'change'});
+filter('all');
+check(strip(8).includes('value="-12" data-field="wireGain"') &&
+ node('info').textContent.includes('-12 dB'),
+ 'Each wire has its own -60..+6 dB calibrated hardware-pot gain');
+node('saveScene').dispatch('click');
+wireTo(8);
+node('recallScene').dispatch('click');
+filter('all');
+check(strip(8).includes('value="-12" data-field="wireGain"'),
+ 'Snapshot round-trip restores wire graph topology, gain, mode and stable identity');
+node('wireMaster').dispatch('click');filter('all');
+check(strip(1).includes('<option value="SOURCE ONLY (No Main)" selected>') &&
+ node('wireMaster').textContent==='MAIN OFF',
+ 'Dedicated MAIN ON/OFF removes only direct source feed while retaining wire edges');
+node('wireMaster').dispatch('click');filter('all');
+check(strip(1).includes('<option value="Master" selected>') &&
+ node('wireMaster').textContent==='MAIN ON',
+ 'MAIN send can be restored without altering channel wire topology');
+// Graph guards: CH1→CH3 already connected; now CH3→CH1 must fail.
+node('body').handlers.mousedown({target:{closest:k=>k==='.strip'?{dataset:{id:3}}:null},ctrlKey:false,metaKey:false,shiftKey:false});
+wireTo(1);
+check(node('info').textContent.includes('feedback loop') &&
+ strip(1).includes('wire-socket'),
+ 'Graph cycle guard refuses reverse link CH3→CH1');
 node('reset').dispatch('click');
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
