@@ -443,8 +443,11 @@ int main() {
         auto next=std::make_unique<LiveChannelFxGraph>(patched,32,32);
         assert(next->reuse(6,*dryGraph,"fat-x-7"));
         assert(next->instanceProcessor(6)==identity);
+        // Graph construction and instance leasing are CONTROL-thread work
+        // and legitimately allocate. Only the PROCESS callback must not.
+        const auto beforeNextProcess=heapCalls.load(std::memory_order_relaxed);
         assert(next->process(pins,2,left.data(),right.data(),4));
-        assert(heapCalls.load(std::memory_order_relaxed)==before);
+        assert(heapCalls.load(std::memory_order_relaxed)==beforeNextProcess);
         assert(left[0]>.3f);
     }
     // Tests above use a real JUCE AudioProcessor processing seam. Vendor
