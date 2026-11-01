@@ -12,7 +12,7 @@ assert.doesNotMatch(renamer,/renderMixer\(/);
 assert.match(renamer,/style\.setProperty\('--ch',ch\.color\)/);
 for(const token of ['#0B161E','#14232C','#20313B','var(--ch) 43%','.arMainOutSummary','.master-fx-rack'])assert.ok(layout.includes(token),token);
 assert.match(button,/--b180-off:#E7EFF0/);assert.match(button,/--b180-shadow-surface/);
-assert.match(pager,/M14,17L9,12l5-5V17Z/);assert.match(pager,/M10,17V7l5,5l-5Z/);
+assert.match(pager,/M14,17L9,12l5-5V17Z/);assert.match(pager,/M10,17V7l5,5l-5,5Z/);
 assert.match(pager,/width="24" height="24"/);
 assert.ok(css.includes(button));
 assert.ok(html.includes('<style>'+css+'</style>'));
