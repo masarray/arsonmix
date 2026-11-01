@@ -134,6 +134,16 @@ check(strip(1).includes('>ST</button>')&&strip(1).includes('Simulated stereo pea
 check(strip(1).includes('<option value="None" selected>None</option>'),'Flipping channel format does not invent an input patch');
 toggleFormat();filter('all');
 check(strip(1).includes('>M</button>')&&strip(1).includes('Simulated mono peak meter'),'Stereo→Mono restores mono controls');
+field(1,'input','Input 1 (Mono)');
+check(strip(1).includes('<option value="Input 1 (Mono)" selected>Input 1 (Mono)</option>'),
+      'Single enabled mono pin selected explicitly');
+toggleFormat();filter('all');
+check(strip(1).includes('>ST</button>') &&
+      strip(1).includes('<option value="Input 1 (Mono)" selected>Input 1 (Mono)</option>'),
+      'Mono source remains mono when processing channel changes to Stereo');
+toggleFormat();filter('all');
+check(strip(1).includes('<option value="Input 1 (Mono)" selected>Input 1 (Mono)</option>'),
+      'Physical source binding survives round-trip processing-format changes');
 node('addFx').dispatch('click');
 filter('fx');node('bankNext').dispatch('click');
 check(node('bankSelect').value==='0','Filtered bank arrows follow visible channel group, not global track count');
@@ -206,6 +216,11 @@ check(html.includes('.console-body.collapsed-route .route-field{display:none}') 
       'No stale expanded CSS declarations in collapsed route, send, EQ');
 check(html.includes('.plugin-browser{right:var(--master-w)!important}'),
       'Plugin overlay reserves actual pinned Master width across density presets');
+check(html.includes('.console-pane{--master-w:152px}') &&
+      html.includes("parent.style.setProperty('--master-w',widths[density])"),
+      'Plugin overlay offset is inherited from pane and refreshed when density changes');
+check(html.includes('function bankCapacity()') && html.includes('Math.floor(width/(size[mode]||150))'),
+      'Live view calculates viewport-fit banks instead of fixed 8-channel overflow');
 
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
