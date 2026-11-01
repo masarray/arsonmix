@@ -393,6 +393,12 @@ async def main():
         assert 'brightness(1.32)' in await utility.evaluate("(e)=>getComputedStyle(e).filter")
         await page.evaluate("delete document.documentElement.dataset.mixperf")
         assert await utility.evaluate("(e)=>getComputedStyle(e).filter")=='none'
+        # The unified M4 CONSOLE is tested in mixer_io_smoke.py, including
+        # a physically visible pinned MAIN, native IN/FX/SEND/OUT controls,
+        # horizontal banking and deliberately scrollable full 6-slot VST racks.
+        # This historical geometry test explicitly checks the retained FX-only
+        # engineering layer, where all six slots still fit without scroll.
+        await page.locator('[data-mix-mode="FX"]').click()
         # Visual-architecture regression: four intentionally different hardware
         # families, FX slots recessed rather than taking on button-cap artwork.
         # GUI target: MASTER is the 11th strip, not a floating right rail.
