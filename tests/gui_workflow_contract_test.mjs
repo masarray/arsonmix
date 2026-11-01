@@ -88,3 +88,6 @@ test('native 12Hz status uses one capped shared visual meter scheduler',()=>{
 import './audio_capture_triage_contract_test.mjs';
 // P0 #132: deterministic transactional browser snapshot regression tests.
 import './ui_snapshot_transaction_test.mjs';
+
+// Always run PR#278 V6 production material/identity/parity gate in the existing UI suite.
+import './operator_visual_identity_v6_contract_test.mjs';
