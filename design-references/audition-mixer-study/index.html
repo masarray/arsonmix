@@ -278,7 +278,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
       <div class="plugin-headings"><span>NAME · VENDOR</span><span>FORMAT / STATE</span></div>
       <div id="pluginResults" class="plugin-results" role="list" aria-label="Available effects"></div>
       <div class="plugin-footer"><span id="pluginCount">Reference catalog</span><button id="pluginImport" title="Import plugin metadata from a JSON registry exported by a scanner">Import list…</button><input type="file" id="pluginFile" accept=".json,application/json" hidden><button disabled id="pluginScan" title="Requires native VST3 scanner; not present in this HTML reference">Scan VST3</button></div>
-      <div class="plugin-disclaimer">DEMO EFFECTS · no actual VST3 is scanned, instantiated or loaded. Native plugin registry is not connected.</div>
+      <div class="plugin-disclaimer">DEMO EFFECTS · no VST3 scanned or loaded. Favorites/hidden saved locally where supported; native scanner not connected.</div>
     </aside>
   </main>
   <footer class="status-bar"><span class="state" id="transport">Stopped</span><span id="info" class="last-action" role="status" aria-live="polite">Interactive visual reference. Changes are local to this mockup.</span><span class="warning">SIMULATED METERS · NO REAL AUDIO</span></footer>
@@ -292,6 +292,22 @@ const FX=['None','Parametric Equalizer','Dynamics Processing','Studio Reverb','D
 const CATEGORIES={'Parametric Equalizer':'EQ','Graphic Equalizer':'EQ','Dynamics Processing':'Dynamics','Hard Limiter':'Dynamics','Tube-modeled Compressor':'Dynamics','Multiband Compressor':'Dynamics',DeEsser:'Dynamics','Studio Reverb':'Reverb',Delay:'Delay',Echo:'Delay',Chorus:'Modulation'};
 let pluginCatalog=FX.filter(x=>x!=='None').map((name,i)=>({id:'demo-'+i,name,vendor:'Reference Effect',category:CATEGORIES[name]||'Utility',format:'DEMO',status:'demo',latencySamples:null,favorite:i<3,hidden:false}));
 let pluginRecent=[],activeFxTarget=null,pluginOpen=false;
+const PLUGIN_PREFS_KEY='arsonmix.ref.plugin-prefs.v1';
+function restorePluginPreferences(){
+ try{
+  const raw=window.localStorage?.getItem(PLUGIN_PREFS_KEY);if(!raw)return;
+  const prefs=JSON.parse(raw),fav=new Set(prefs.favorites||[]),hidden=new Set(prefs.hidden||[]);
+  pluginCatalog.forEach(p=>{p.favorite=fav.has(p.id);p.hidden=hidden.has(p.id);});
+  pluginRecent=Array.isArray(prefs.recent)?prefs.recent.filter(id=>typeof id==='string').slice(0,20):[];
+ }catch(error){/* Private browsing / file previews can block storage. */}
+}
+function savePluginPreferences(){
+ try{window.localStorage?.setItem(PLUGIN_PREFS_KEY,JSON.stringify({
+  favorites:pluginCatalog.filter(p=>p.favorite).map(p=>p.id),
+  hidden:pluginCatalog.filter(p=>p.hidden).map(p=>p.id),
+  recent:pluginRecent
+ }));}catch(error){/* Manager still works without browser storage. */}
+}
 const tracksEl=document.getElementById('tracks'),masterEl=document.getElementById('master'),info=document.getElementById('info');
 let nextId=1,nextGroup=1,tracks=[],master,preview=false,meterFrame=0,lastTick=0,clipboard=null,scenes=[],sofEnabled=false,sofTarget="Bus A";
 const clone=x=>JSON.parse(JSON.stringify(x));
@@ -669,7 +685,8 @@ function renderPluginCatalog(){
   const isBad=p.status==='error'||p.status==='disabled';
   const status=p.status==='demo'?'UI only':p.status==='ready'?'Listed':p.status==='error'?'Error':'Disabled';
   const latency=p.latencySamples==null?'Latency unknown':p.latencySamples+' smp (reported)';
-  return '<div class="plugin-item '+(isBad?'disabled':'')+'" role="listitem"><button class="plugin-choose" data-plugin-action="choose" data-plugin-id="'+escapeHtml(p.id)+'" '+(isBad||p.hidden?'disabled':'')+' title="Assign to selected FX insert"><span class="plugin-name">'+escapeHtml(p.name)+'</span><span class="plugin-meta">'+escapeHtml(p.vendor)+' · '+escapeHtml(p.category)+' · '+escapeHtml(latency)+'</span></button><div class="plugin-labels"><span class="plugin-pill '+(isBad?'problem':'')+'">'+escapeHtml(p.format)+'</span><span>'+status+'</span></div><button class="plugin-flag '+(p.favorite?'starred':'')+'" data-plugin-action="fav" data-plugin-id="'+escapeHtml(p.id)+'" aria-label="'+(p.favorite?'Unfavorite':'Favorite')+' '+escapeHtml(p.name)+'" title="Toggle favorite">★</button><button class="plugin-flag" data-plugin-action="hide" data-plugin-id="'+escapeHtml(p.id)+'" aria-label="'+(p.hidden?'Show':'Hide')+' '+escapeHtml(p.name)+'" title="Hide or show effect">'+(p.hidden?'◉':'⊘')+'</button></div>';
+  const usedBy=tracks.concat(master).filter(t=>t.fx.includes(p.name)).map(t=>t.name);
+  return '<div class="plugin-item '+(isBad?'disabled':'')+'" role="listitem"><button class="plugin-choose" data-plugin-action="choose" data-plugin-id="'+escapeHtml(p.id)+'" '+(isBad||p.hidden?'disabled':'')+' title="'+(usedBy.length?'Used by '+escapeHtml(usedBy.join(', ')):'Assign to selected FX insert')+'"><span class="plugin-name">'+escapeHtml(p.name)+'</span><span class="plugin-meta">'+escapeHtml(p.vendor)+' · '+escapeHtml(p.category)+' · '+escapeHtml(latency)+(usedBy.length?' · Used '+usedBy.length:'')+'</span></button><div class="plugin-labels"><span class="plugin-pill '+(isBad?'problem':'')+'">'+escapeHtml(p.format)+'</span><span>'+status+'</span></div><button class="plugin-flag '+(p.favorite?'starred':'')+'" data-plugin-action="fav" data-plugin-id="'+escapeHtml(p.id)+'" aria-label="'+(p.favorite?'Unfavorite':'Favorite')+' '+escapeHtml(p.name)+'" title="Toggle favorite">★</button><button class="plugin-flag" data-plugin-action="hide" data-plugin-id="'+escapeHtml(p.id)+'" aria-label="'+(p.hidden?'Show':'Hide')+' '+escapeHtml(p.name)+'" title="Hide or show effect">'+(p.hidden?'◉':'⊘')+'</button></div>';
  }).join(''):'<div class="plugin-empty">No effects match · try another category or clear the search.</div>';
  plugEl('pluginCount').textContent=list.length+' shown / '+pluginCatalog.length+' listed';
 }
@@ -680,7 +697,7 @@ function insertCatalogPlugin(id){
  const t=tracks.concat(master).find(x=>x.id===activeFxTarget.channelId);
  if(!t||!Number.isInteger(activeFxTarget.slot)||activeFxTarget.slot<0||activeFxTarget.slot>=t.fx.length){say('Selected FX slot is no longer available.');return;}
  t.fx[activeFxTarget.slot]=plugin.name;t.slotBypass[activeFxTarget.slot]=false;
- pluginRecent=[plugin.id,...pluginRecent.filter(x=>x!==plugin.id)].slice(0,20);
+ pluginRecent=[plugin.id,...pluginRecent.filter(x=>x!==plugin.id)].slice(0,20);savePluginPreferences();
  refreshStrip(t);setBrowser(false);
  say(t.name+' · FX '+(activeFxTarget.slot+1)+' → '+plugin.name+' · GUI reference only (no native DSP)');
 }
@@ -699,7 +716,7 @@ function acceptPluginManifest(items){
   added.push({id,name,vendor,category,format,status,latencySamples:Number.isFinite(item.latencySamples)&&item.latencySamples>=0?Math.round(item.latencySamples):null,favorite:false,hidden:false});
  }
  if(!added.length)return false;
- pluginCatalog=added;pluginRecent=[];
+ pluginCatalog=added;pluginRecent=[];restorePluginPreferences();
  plugEl('pluginView').value='all';plugEl('pluginCategory').value='all';plugEl('pluginSearch').value='';
  renderPluginCatalog();say('Imported '+added.length+' plugin metadata records · not a native scan, no plugin instantiated');
  return true;
@@ -716,6 +733,7 @@ plugEl('pluginResults').addEventListener('click',e=>{
  if(a==='fav')plugin.favorite=!plugin.favorite;
  else if(a==='hide')plugin.hidden=!plugin.hidden;
  else if(a==='choose'){insertCatalogPlugin(plugin.id);return;}
+ if(a==='fav'||a==='hide')savePluginPreferences();
  renderPluginCatalog();
 });
 plugEl('pluginImport').addEventListener('click',()=>{if(plugEl('pluginFile').click)plugEl('pluginFile').click();});
@@ -772,7 +790,7 @@ window.addEventListener('keydown',e=>{
  if(e.target===document.body&&e.key==='ArrowRight')document.getElementById('viewport').scrollLeft+=102;
  if(e.target===document.body&&e.key==='ArrowLeft')document.getElementById('viewport').scrollLeft-=102;
 });
-init();
+restorePluginPreferences();init();
 })();
 </script>
 </body>
