@@ -445,5 +445,9 @@ check(html.includes("if(a==='rename'||a==='editIdentity')return;") &&
  html.includes("if(e.key!=='F2'&&e.key!=='Enter')"),
  'Single click only selects; double-click or keyboard F2 edits channel identity');
 
+check(html.includes('.console-body .section-rail .rail-cell.switch{') &&
+ html.includes('flex:0 0 var(--switch-h)!important') &&
+ html.includes('max-height:var(--switch-h)!important'),
+ 'V7 Chromium-caught M/S/C rail row cannot stretch from generic .switch flex:1');
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
