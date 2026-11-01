@@ -106,6 +106,11 @@ async def main():
         # A native publisher must use exact decimal-string ChannelIds,
         # including values beyond JavaScript's 53-bit integer precision.
         assert all(c["id"].isdigit() for c in first["graph"]["channels"])
+        malformed = snapshot(revision=99)
+        malformed["graph"]["channels"][0]["id"] = "01"
+        # A leading-zero alias must not be accepted even from the JUCE bridge.
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)", malformed)
+        assert await page.locator("#arV6Console").is_hidden()
         await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)", first)
         await page.locator("#arV6Console").wait_for(state="visible")
         assert await page.locator("#arV6Lanes .arV6Strip").count() == 10
@@ -258,6 +263,17 @@ async def main():
         await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",no_cap)
         assert await page.locator('[data-op="CREATE_CHANNEL"]').is_disabled()
         assert not errors, errors
+        # Every new editor session needs a fresh opaque requestId prefix.
+        # A bare counter '1' may collide with a completed native ACK after a
+        # WebView reconnect, even if the graph/device revision is unchanged.
+        first_id = sent["requestId"]
+        await page.reload()
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)", snapshot())
+        await page.locator('[data-op="SET_SOURCE"][data-id="7"]').select_option("IN-1")
+        reconnected = await page.evaluate("""() => window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').at(-1).payload.requestId""")
+        assert reconnected.startswith("gui-") and reconnected.endswith(":1")
+        assert reconnected != first_id
         await browser.close()
         print("PASS V6: real ACK semantics mocked only; 12 geometries, roster, pinned MAIN")
 
