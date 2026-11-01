@@ -994,6 +994,67 @@ button:disabled{opacity:.45;cursor:not-allowed}
   0 1px 1px rgba(0,0,0,.28),
   0 2px 3px rgba(0,0,0,.13)!important;
 }
+
+/* V5 FINAL CHROME: old ArSonMix materials, slimmer physical fader and no blue lumen. */
+.console-body{--route-h:76px;--fx-h:194px;--send-h:23px;--pan-h:43px;--switch-h:44px;--footer-h:46px;--trim-h:0px}
+.console-body:not(.collapsed-fx){--fx-h:194px!important}
+.console-body.collapsed-fx{--fx-h:23px!important}
+.console-body:not(.collapsed-send){--send-h:103px}
+.console-body.collapsed-send{--send-h:23px}
+.console-body .route-section{height:var(--route-h)!important;flex:0 0 var(--route-h)!important;padding:3px 4px!important}
+.console-body .route-top{height:17px!important;min-height:17px!important;flex:0 0 17px!important}
+.console-body .route-field{height:24px!important;min-height:24px!important;flex:0 0 24px!important;display:grid!important;grid-template-columns:20px minmax(0,1fr)!important;align-items:center!important;gap:4px!important;overflow:visible!important}
+.console-body .route-caption{font-size:10px!important}
+.console-body .route-select{display:block!important;width:100%!important;min-width:0!important;height:22px!important;min-height:22px!important;padding:0 9px 0 4px!important;font-size:11px!important;line-height:20px!important;color:#e0eff5!important;background:#10212c!important;border:1px solid #435968!important;white-space:nowrap!important;text-overflow:ellipsis!important}
+.console-body .route-identity{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.console-body .fx-section{height:var(--fx-h)!important;min-height:var(--fx-h)!important;flex:0 0 var(--fx-h)!important;background:#152630!important}
+.console-body .fxslot-list{overflow:auto hidden!important}
+.console-body .fxslot-row{height:22px!important;min-height:22px!important}
+.console-body .fx-pick{font:600 10px/1.2 'Segoe UI',Arial,sans-serif!important;color:#9de5bf!important}
+.console-body .fx-pick.empty{font-weight:500!important;color:#65d1f1!important}
+.console-body .subhead{background:#112530!important}
+.console-body .trim-section,.console-body .rail-cell.trim{display:none!important}
+.console-body .fader-section{background:#0e1a23!important;min-height:0!important}
+.console-body .fader-workspace{grid-template-columns:51px minmax(35px,1fr) 26px!important;gap:2px!important}
+.console-body .meter-box{background:linear-gradient(90deg,#0d2028,#010608 22%,#07141b)!important;border-radius:5px!important}
+.console-body .meter-box .vu-bars{background:linear-gradient(90deg,#0d1d26,#02080b 19%,#010609 64%,#0c1d27)!important}
+.console-body .fader-box::before{width:min(40px,100%)!important;background:linear-gradient(90deg,#15232c,#283741 13%,#2a3942 48%,#283741 87%,#15232c)!important;border-radius:5px!important}
+.console-body .fader-box::after{top:31px!important;bottom:31px!important;background-color:#03080b!important;background-image:none!important;width:5px!important;height:auto!important;opacity:1!important;box-shadow:inset 1px 0 #010406,inset -1px 0 #010406!important}
+.console-body .fader-travel{top:31px!important;bottom:31px!important;pointer-events:none!important}
+.console-body .fader-travel .cap{top:var(--fader-y,50%)!important;width:29px!important;height:62px!important;background:var(--ari-silver) center/29px 62px no-repeat!important;transform:translate(-50%,-50%)!important;filter:none!important}
+.console-body .strip.master .fader-travel .cap{background:var(--ari-rose) center/29px 62px no-repeat!important}
+.console-body .fader-box .fader{top:31px!important;bottom:31px!important;height:calc(100% - 62px)!important;opacity:0!important;pointer-events:none!important}
+.console-body .fader-box{touch-action:none!important;cursor:ns-resize!important}
+.console-body .fader-box:focus-within{outline:1px solid #80b9c8!important;outline-offset:-1px}
+.console-body .gain-scale-travel{top:31px!important;bottom:31px!important}
+.console-body .fader-head{background:#07151b!important;box-shadow:inset 0 1px 3px #000b!important}
+.console-body.plugin-open #viewport{margin-right:0!important}
+.plugin-browser{position:absolute!important;z-index:90!important;top:36px!important;right:12px!important;left:auto!important;bottom:12px!important;width:min(440px,calc(100% - 40px))!important;max-width:440px!important;max-height:calc(100% - 48px)!important;border:1px solid #577084!important;border-radius:6px!important;background:#192933!important;box-shadow:0 12px 32px #000a!important;overflow:hidden!important}
+.plugin-browser[hidden],.fast-picker[hidden]{display:none!important}
+.plugin-scan-settings{padding:7px 10px;flex:none;display:flex;flex-direction:column;gap:5px;border-top:1px solid #35505d;background:#172630}
+.plugin-scan-settings .scan-title{font-size:10px;color:#a6c5d4}
+.scan-paths{display:flex;flex-direction:column;gap:3px;max-height:58px;overflow:auto}
+.scan-path{display:flex;gap:7px;min-width:0;font-size:10px;align-items:center}
+.scan-path>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.scan-path small{color:#89c1cf}.scan-path button{background:transparent;border:0}
+.scan-add{display:flex;gap:5px}.scan-add input{flex:1;min-width:0;height:25px;padding:0 5px;color:#e3f0f5;background:#091922;border:1px solid #40616f}.scan-add button{font-size:10px}
+.scan-status{font-size:10px;color:#a8bdc8}
+.fast-picker{position:absolute;z-index:100;left:24px;top:110px;width:302px;max-width:calc(100% - 40px);background:#172a34;border:1px solid #587e8e;border-radius:5px;box-shadow:0 10px 25px #000b;overflow:hidden}
+.fast-head{display:flex;align-items:center;justify-content:space-between;gap:7px;height:34px;padding:0 9px;background:#203944;border-bottom:1px solid #395e6b;font-weight:600}
+.fast-head span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.fast-head button{background:transparent;border:0;font-size:20px;color:#ddf1f5}
+#fastSearch{display:block;width:calc(100% - 14px);height:30px;margin:7px;padding:0 8px;background:#061820;border:1px solid #547486;border-radius:3px}
+.fast-results{min-height:58px;max-height:270px;display:flex;flex-direction:column;gap:2px;overflow:auto;padding:3px 6px 6px}
+.fast-effect{width:100%;min-height:29px;padding:5px 7px;display:flex;gap:6px;align-items:center;text-align:left;background:#213844;border:1px solid #305365}
+.fast-effect:hover,.fast-effect:focus-visible{background:#365d6b;border-color:#83c8d4}
+.fast-effect-title{flex:1;min-width:0;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;color:#a8eac5}
+.fast-effect-kind{color:#a5bfc8;font-size:9px}.fast-star{color:#e9c771}.fast-empty{padding:15px;color:#9eafb7}
+.fast-foot{height:32px;display:flex;gap:7px;align-items:center;padding:0 8px;border-top:1px solid #355363;color:#91acb8;font-size:9px}
+.fast-foot button{margin-left:auto;border:0;background:transparent;color:#85d7f1}
+
+
+/* V5 live surface: more FX rack where vertical room exists, no forced tall rack at 768px. */
+.console-body:not(.collapsed-fx){--fx-h:clamp(155px,24vh,225px)!important}
+.console-body.collapsed-fx{--fx-h:23px!important}
 </style>
 </head>
 <body>
@@ -1041,10 +1102,10 @@ button:disabled{opacity:.45;cursor:not-allowed}
     <section class="console-body collapsed-send" data-density="comfort" aria-label="Live mixing console">
       <aside class="section-rail" aria-label="Mixer section icons">
         <button class="rail-cell route" data-section="route" aria-expanded="true" title="Collapse / expand Inputs and Outputs">⇥</button>
-        <button class="rail-cell fx collapsed" data-section="fx" aria-expanded="false" title="Collapse / expand Effects">fx</button>
+        <button class="rail-cell fx" data-section="fx" aria-expanded="true" title="Collapse / expand Effects">fx</button>
         <button class="rail-cell send collapsed" data-section="send" aria-expanded="false" title="Collapse / expand Sends">↪</button>
         <div class="rail-cell pan" title="Pan">◉</div>
-        <div class="rail-cell trim" title="Digital input trim"><small>TRIM</small></div>
+        
         <div class="rail-cell switch" title="Mute / Solo / Cue / Monitor"><small>M S C</small></div>
         <div class="rail-cell fader" title="Level and meter">dB</div>
         <div class="rail-cell footer" title="Track labels"><small>▦</small></div>
@@ -1058,9 +1119,21 @@ button:disabled{opacity:.45;cursor:not-allowed}
       <div class="plugin-filters"><select id="pluginCategory" aria-label="Plugin category"><option value="all">All effects</option><option value="EQ">EQ / Filter</option><option value="Dynamics">Dynamics</option><option value="Reverb">Reverb</option><option value="Delay">Delay</option><option value="Modulation">Modulation</option><option value="Utility">Utility</option></select><select id="pluginView" aria-label="Plugin list"><option value="all">Available</option><option value="favorites">★ Favorites</option><option value="recent">Recent</option><option value="hidden">Hidden</option></select></div>
       <div class="plugin-headings"><span>NAME · VENDOR</span><span>FORMAT / STATE</span></div>
       <div id="pluginResults" class="plugin-results" role="list" aria-label="Available effects"></div>
-      <div class="plugin-footer"><span id="pluginCount">Reference catalog</span><button id="pluginImport" title="Import plugin metadata from a JSON registry exported by a scanner">Import list…</button><input type="file" id="pluginFile" accept=".json,application/json" hidden><button disabled id="pluginScan" title="Requires native VST3 scanner; not present in this HTML reference">Scan VST3</button></div>
-      <div class="plugin-disclaimer">DEMO EFFECTS · no VST3 scanned or loaded. Favorites/hidden saved locally where supported; native scanner not connected.</div>
+      <div class="plugin-footer"><span id="pluginCount">Reference catalog</span><button id="pluginImport" title="Import plugin metadata from a JSON registry exported by a scanner">Import list…</button><input type="file" id="pluginFile" accept=".json,application/json" hidden><button id="pluginScan" title="Scan using connected native host; static Pages cannot access VST3">Scan VST3</button></div>
+      <div class="plugin-scan-settings">
+        <div class="scan-title">VST3 SEARCH LOCATIONS</div>
+        <div id="pluginPaths" class="scan-paths">C:\\Program Files\\Common Files\\VST3 — default</div>
+        <div class="scan-add"><input type="text" id="pluginNewPath" placeholder="Additional folder path (native host)" aria-label="Additional VST3 search path"><button id="pluginAddPath">+ Add folder</button></div>
+        <div class="scan-status" id="pluginScanStatus">Static browser preview · native VST3 scanner not connected</div>
+      </div>
+      <div class="plugin-disclaimer">UI DEMO · imported lists are metadata only. Real VST3 verification and instantiation require Windows native engine.</div>
     </aside>
+    <div id="fastPicker" class="fast-picker" role="dialog" aria-label="Quick effect selection" hidden>
+      <div class="fast-head"><span id="fastTarget">ADD FX</span><button id="fastClose" aria-label="Close quick effect picker" title="Close">×</button></div>
+      <input type="search" id="fastSearch" autocomplete="off" spellcheck="false" placeholder="Find effect… type to filter" aria-label="Find effect quickly">
+      <div class="fast-results" id="fastResults" role="listbox" aria-label="Choose an effect"></div>
+      <div class="fast-foot">Enter to insert · Esc to close · <button id="fastManage">Manage VST3…</button></div>
+    </div>
   </main>
   <footer class="status-bar"><span class="state" id="transport">Stopped</span><span id="info" class="last-action" role="status" aria-live="polite">Interactive visual reference. Changes are local to this mockup.</span><span class="warning">SIMULATED METERS · NO REAL AUDIO</span></footer>
 </div>
@@ -1072,7 +1145,7 @@ const INIT=['Host','Interview','Sound FX','Music Bed','Vocal 1','Vocal 2','Guita
 const FX=['None','Parametric Equalizer','Dynamics Processing','Studio Reverb','DeEsser','Hard Limiter','Tube-modeled Compressor','Delay','Chorus','Multiband Compressor','Graphic Equalizer','Echo'];
 const CATEGORIES={'Parametric Equalizer':'EQ','Graphic Equalizer':'EQ','Dynamics Processing':'Dynamics','Hard Limiter':'Dynamics','Tube-modeled Compressor':'Dynamics','Multiband Compressor':'Dynamics',DeEsser:'Dynamics','Studio Reverb':'Reverb',Delay:'Delay',Echo:'Delay',Chorus:'Modulation'};
 let pluginCatalog=FX.filter(x=>x!=='None').map((name,i)=>({id:'demo-'+i,name,vendor:'Reference Effect',category:CATEGORIES[name]||'Utility',format:'DEMO',status:'demo',latencySamples:null,favorite:i<3,hidden:false}));
-let pluginRecent=[],activeFxTarget=null,pluginOpen=false;
+let pluginRecent=[],activeFxTarget=null,pluginOpen=false,quickOpen=false,scanPaths=['C:\\Program Files\\Common Files\\VST3'];
 const PLUGIN_PREFS_KEY='arsonmix.ref.plugin-prefs.v1';
 function restorePluginPreferences(){
  try{
@@ -1138,7 +1211,7 @@ function sectionFader(t){
  return '<div class="fader-section"><div class="fader-head"><output class="fader-readout" aria-label="'+escapeHtml(t.name)+' level">'+(isSend?'SEND ':'')+formatDb(value)+' dB</output><span class="clip-indicator '+(t.clip?'clipping':'')+'" title="Demo clip latch">CLIP</span></div>'
  +'<div class="fader-workspace">'
  +'<div class="meter-box '+(t.format==='mono'?'mono':'stereo')+'" aria-label="Simulated '+(t.format==='mono'?'mono':'stereo')+' dBFS meter"><div class="vu-bars"><div class="meter-lane"><div class="meter-fill left"></div></div>'+(t.format==='mono'?'':'<div class="meter-lane"><div class="meter-fill right"></div></div>')+'</div><div class="vu-scale"><div class="vu-scale-travel">'+vuScale+'</div></div><div class="peak '+(t.clip?'clipping':'')+'"></div></div>'
- +'<div class="fader-box" style="--fader-fill:'+percent+'%;--fader-lit:'+(percent/100)+';--fader-frac:'+(percent/100)+'"><div class="fader-travel"><div class="cap" aria-hidden="true"></div></div><input class="fader" type="range" min="-60" max="'+gainMax+'" value="'+value+'" step=".1" data-field="level" title="'+(isSend?'SEND to '+escapeHtml(sofTarget):'Main level')+'" aria-label="'+escapeHtml(t.name)+' volume"></div>'
+ +'<div class="fader-box" style="--fader-fill:'+percent+'%;--fader-lit:'+(percent/100)+';--fader-y:'+(100-percent)+'%;--fader-frac:'+(percent/100)+'"><div class="fader-travel"><div class="cap" aria-hidden="true"></div></div><input class="fader" type="range" min="-60" max="'+gainMax+'" value="'+value+'" step=".1" data-field="level" title="'+(isSend?'SEND to '+escapeHtml(sofTarget):'Main level')+'" aria-label="'+escapeHtml(t.name)+' volume"></div>'
  +'<div class="fader-scale"><div class="gain-scale-travel">'+gainScale+'</div></div></div></div>';
 }
 function strip(t){
@@ -1150,7 +1223,7 @@ function strip(t){
  code+='<div class="route-field"><span class="route-caption">OUT</span><select class="route-select" data-field="output" title="Primary output" aria-label="'+escapeHtml(t.name)+' output">'+option(channelOptions(t,'output'),t.output)+'</select></div></div>';
  code+=sectionFx(t)+sectionSend(t);
  code+='<div class="section pan-section"><span class="pan-icon" title="Pan / Balance">PAN</span><span class="pan-control" style="'+panStyle(t.pan)+'"><input class="center-pan" type="range" min="-100" max="100" step="1" value="'+t.pan+'" data-field="pan" title="Pan from center; release near center to snap; double-click to center" aria-label="Channel pan; double-click center"></span><output>'+panLabel(t.pan)+'</output></div>';
- code+='<div class="section trim-section"><span class="trim-label" title="Digital input trim">TRIM</span><input class="trim-control ari-horizontal" type="range" min="-24" max="24" step="0.5" value="'+t.trim+'" style="--range-pct:'+rangePct(t.trim,-24,24)+'%" data-field="trim" aria-label="Digital trim dB" title="Digital trim (-24..+24dB)"><output class="trim-value">'+formatDb(t.trim)+'</output></div>';
+
  code+='<div class="section switch-section">'
    +'<button class="switch btn-180 mute '+(t.mute?'on':'')+'" data-action="mute" title="Mute channel" aria-pressed="'+t.mute+'">MUTE</button>'
    +'<button class="switch btn-180 solo '+(t.solo?'on':'')+'" data-action="solo" title="Solo channel" aria-pressed="'+t.solo+'">SOLO</button>'
@@ -1164,7 +1237,7 @@ function bankCapacity(){
  const panel=body?.clientWidth||0;
  // Width budget is shared between n source strips + one equal-sized, pinned MAIN.
  // Never grow the last partial bank; empty slots keep exactly the same grid track width.
- const dock=pluginOpen?Math.min(330,Math.floor(panel*.36)):0;
+ const dock=0; // floating manager never consumes or changes bank width
  const usable=panel?Math.max(0,panel-28-dock):0;
  return usable ? Math.max(1,Math.min(10,Math.floor(usable/130)-1)) : 10;
 }
@@ -1180,7 +1253,7 @@ function render(){
  const root=document.querySelector('.console-body');
  if(root.style?.setProperty){
   root.style.setProperty('--bank-capacity',String(capacity));
-  const panel=root.clientWidth||0,dock=pluginOpen?Math.min(330,Math.floor(panel*.36)):0;
+  const panel=root.clientWidth||0,dock=0;
   if(panel){
    const unit=((panel-28-dock)/(capacity+1)).toFixed(3)+'px';
    root.style.setProperty('--channel-w',unit);
@@ -1206,7 +1279,7 @@ function syncFaderVisual(t,element){
  const readout=root.querySelector('.fader-readout');
  if(readout)readout.textContent=(isSend?'SEND ':'')+value+' dB';
  const box=root.querySelector('.fader-box');
- if(box?.style?.setProperty){box.style.setProperty('--fader-fill',faderPercent(v,isSend)+'%');box.style.setProperty('--fader-lit',String(faderPercent(v,isSend)/100));box.style.setProperty('--fader-frac',String(faderPercent(v,isSend)/100));}
+ if(box?.style?.setProperty){box.style.setProperty('--fader-fill',faderPercent(v,isSend)+'%');box.style.setProperty('--fader-lit',String(faderPercent(v,isSend)/100));box.style.setProperty('--fader-frac',String(faderPercent(v,isSend)/100));box.style.setProperty('--fader-y',(100-faderPercent(v,isSend))+'%');}
  const db=root.querySelector('.db-value');
  if(db)db.textContent=(isSend?'S ':'')+value;
 }
@@ -1375,7 +1448,7 @@ function handleField(event){
  }
  if(event.type==='change')say(t.name+' fader '+formatDb(t.level)+' dB'+(t.group?' (linked '+t.group+')':''));
 }
- else if(field==='pan'){let value=Number(el.value);if(event.type==='change'&&Math.abs(value)<=5&&!event.altKey){value=0;el.value='0';}t.pan=value;const wrapper=el.closest('.pan-control');if(wrapper)wrapper.setAttribute('style',panStyle(value));const label=wrapper?wrapper.nextElementSibling:el.nextElementSibling;if(label)label.textContent=panLabel(value);if(event.type==='change')say(t.name+' pan '+panLabel(value));}
+ else if(field==='pan'){let value=Number(el.value);if(event.type==='change'&&Math.abs(value)<=8&&!event.altKey){value=0;el.value='0';}t.pan=value;const wrapper=el.closest('.pan-control');if(wrapper)wrapper.setAttribute('style',panStyle(value));const label=wrapper?wrapper.nextElementSibling:el.nextElementSibling;if(label)label.textContent=panLabel(value);if(event.type==='change')say(t.name+' pan '+panLabel(value));}
  else if(field==='trim'){t.trim=Number(el.value);if(el.style?.setProperty)el.style.setProperty('--range-pct',rangePct(t.trim,-24,24)+'%');const readout=el.closest('.trim-section')?.querySelector('.trim-value');if(readout)readout.textContent=formatDb(t.trim);if(event.type==='change')say(t.name+' digital trim '+formatDb(t.trim)+' dB');}
  else if(field==='sendLevel'){t.sendLevel=Number(el.value);if(el.style?.setProperty)el.style.setProperty('--range-pct',rangePct(t.sendLevel,-60,6)+'%');el.nextElementSibling.textContent=formatDb(t.sendLevel);}
  else if(field==='sendPan'){t.sendPan=Number(el.value);el.nextElementSibling.textContent=t.sendPan===0?'C':t.sendPan<0?'L'+Math.abs(t.sendPan):'R'+t.sendPan;}
@@ -1389,6 +1462,47 @@ function handleField(event){
  if(['send','sendLevel','sendPan'].includes(field))syncActiveSend(t);
  selectTrack(t);
 }
+
+/* Real pointer fader binding for the isolated reference.
+   One gesture, no rebuilding strips during drag, and source range remains keyboard-accessible.
+   The 29x62 visual cap center is aligned to this same travel ruler. */
+let faderGesture=null;
+const consoleBody=document.querySelector('.console-body');
+function setFaderFromPointer(ev,gesture){
+ const input=gesture.input,travel=gesture.travel?.getBoundingClientRect?.();
+ if(!travel||travel.height<=0)return;
+ const max=Number(input.max)||10,min=Number(input.min)||-60;
+ const frac=Math.max(0,Math.min(1,(ev.clientY-travel.top)/travel.height));
+ const gain=Math.round((max-(max-min)*frac)*10)/10;
+ input.value=String(gain);
+ handleField({target:input,type:'input',altKey:!!ev.altKey});
+}
+consoleBody.addEventListener('pointerdown',ev=>{
+ if(ev.button!==undefined&&ev.button!==0)return;
+ const box=ev.target.closest?.('.fader-box');
+ if(!box)return;
+ const input=box.querySelector('.fader'),travel=box.querySelector('.fader-travel');
+ if(!input||!travel)return;
+ ev.preventDefault?.();
+ faderGesture={pointerId:ev.pointerId,box,input,travel};
+ box.setPointerCapture?.(ev.pointerId);
+ setFaderFromPointer(ev,faderGesture);
+});
+window.addEventListener('pointermove',ev=>{
+ if(!faderGesture||ev.pointerId!==faderGesture.pointerId)return;
+ setFaderFromPointer(ev,faderGesture);
+});
+function finishFaderPointer(ev){
+ if(!faderGesture||ev.pointerId!==faderGesture.pointerId)return;
+ setFaderFromPointer(ev,faderGesture);
+ const g=faderGesture;faderGesture=null;
+ g.box.releasePointerCapture?.(ev.pointerId);
+ const t=findTrack(g.input);
+ if(t)say(t.name+' fader '+formatDb(sofEnabled&&t.kind==='audio'?getSofLevel(t):t.level)+' dB');
+}
+window.addEventListener('pointerup',finishFaderPointer);
+window.addEventListener('pointercancel',ev=>{if(faderGesture&&ev.pointerId===faderGesture.pointerId)faderGesture=null;});
+
 document.querySelector('.console-body').addEventListener('input',handleField);
 document.querySelector('.console-body').addEventListener('change',handleField);
 document.querySelector('.console-body').addEventListener('click',e=>{
@@ -1397,7 +1511,7 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  const a=btn.dataset.action;
  if(a==='rename')return;
  if(a==='format'&&t.kind==='audio'){t.format=t.format==='mono'?'stereo':'mono';refreshStrip(t);say(t.name+' processing → '+t.format.toUpperCase()+' · physical source '+t.input+' unchanged (reference only)');return;}
- if(a==='openPlugin'){openPluginBrowser(t,Number(btn.dataset.slot));return;}
+ if(a==='openPlugin'){openFastPicker(t,Number(btn.dataset.slot),btn);return;}
  if(a==='removeFx'){const i=Number(btn.dataset.slot);t.fx[i]='None';t.slotBypass[i]=false;refreshStrip(t);say(t.name+' · cleared FX insert '+(i+1));return;}
  if(a==='slotPower'){const slot=Number(btn.dataset.slot);if(t.fx[slot]==='None'){say(t.name+': choose an effect before toggling bypass');return;}t.slotBypass[slot]=!t.slotBypass[slot];refreshStrip(t);say(t.name+': FX '+(slot+1)+(t.slotBypass[slot]?' bypassed':' enabled'));return;}
  if(a==='eq')t.eq=!t.eq;
@@ -1522,13 +1636,48 @@ function pluginTargetLabel(){
  return t? t.name+' · Insert '+(activeFxTarget.slot+1):'Select a channel + insert slot';
 }
 function setBrowser(open){
- pluginOpen=!!open;plugEl('pluginBrowser').hidden=!pluginOpen;
- document.querySelector('.console-body').classList.toggle('plugin-open',pluginOpen);
- render();
+ pluginOpen=!!open;
+ plugEl('pluginBrowser').hidden=!pluginOpen;
+ // Plugin Manager is floating and NEVER changes bank width or rebuilds strips.
+ document.querySelector('.console-body').classList.remove('plugin-open');
  plugEl('pluginsButton').setAttribute('aria-expanded',String(pluginOpen));
- if(pluginOpen){renderPluginCatalog();const input=plugEl('pluginSearch');if(input.focus)input.focus();}
+ if(pluginOpen){
+  setFastPicker(false);
+  renderPluginCatalog();renderScanPaths();
+  const input=plugEl('pluginSearch');if(input.focus)input.focus();
+ }
 }
-function openPluginBrowser(t,slot){
+function setFastPicker(open){
+ quickOpen=!!open;
+ plugEl('fastPicker').hidden=!quickOpen;
+}
+function renderFastPicker(){
+ const q=String(plugEl('fastSearch').value||'').trim().toLowerCase();
+ const list=pluginCatalog.filter(p=>!p.hidden&&!['error','disabled'].includes(p.status)&&
+ [p.name,p.category,p.vendor].join(' ').toLowerCase().includes(q))
+ .sort((a,b)=>Number(b.favorite)-Number(a.favorite)||a.name.localeCompare(b.name));
+ plugEl('fastResults').innerHTML=list.length?list.map(p=>
+ '<button class="fast-effect" type="button" data-fast-id="'+escapeHtml(p.id)+'"><span class="fast-effect-title">'+escapeHtml(p.name)+'</span><span class="fast-effect-kind">'+escapeHtml(p.category)+'</span>'+(p.favorite?'<span class="fast-star">★</span>':'')+'</button>'
+ ).join(''):'<div class="fast-empty">No matching effects</div>';
+}
+function openFastPicker(t,slot,anchor){
+ setBrowser(false);
+ const first=t||selection()[0]||tracks[0];
+ if(!first)return;
+ const empty=first.fx.findIndex(x=>x==='None');
+ activeFxTarget={channelId:first.id,slot:Number.isInteger(slot)?slot:empty<0?0:empty};
+ plugEl('fastTarget').textContent=first.name+' · FX '+(activeFxTarget.slot+1);
+ plugEl('fastSearch').value='';
+ const pane=document.querySelector('.console-pane'),r=anchor?.getBoundingClientRect?.(),p=pane?.getBoundingClientRect?.();
+ const picker=plugEl('fastPicker');
+ if(r&&p&&picker.style?.setProperty){
+  const x=Math.min(Math.max(6,r.left-p.left),Math.max(6,p.width-310));
+  const y=Math.min(Math.max(8,r.bottom-p.top+3),Math.max(8,p.height-330));
+  picker.style.setProperty('left',x+'px');picker.style.setProperty('top',y+'px');
+ }
+ setFastPicker(true);renderFastPicker();plugEl('fastSearch').focus?.();
+}
+function openPluginBrowser(t,slot){ // manager button and F8, deliberately separate from Add FX
  const first=t||selection()[0]||tracks[0];
  if(first){
   const empty=first.fx.findIndex(x=>x==='None');
@@ -1536,6 +1685,10 @@ function openPluginBrowser(t,slot){
  }
  plugEl('pluginTarget').textContent=pluginTargetLabel();
  setBrowser(true);
+}
+function renderScanPaths(){
+ const container=plugEl('pluginPaths');
+ container.innerHTML=scanPaths.map((p,i)=>'<div class="scan-path"><span title="'+escapeHtml(p)+'">'+escapeHtml(p)+'</span>'+(i?'<button data-path-index="'+i+'" title="Remove folder">×</button>':'<small>Default</small>')+'</div>').join('');
 }
 function catalogById(id){return pluginCatalog.find(p=>p.id===id);}
 function renderPluginCatalog(){
@@ -1567,7 +1720,7 @@ function insertCatalogPlugin(id){
  if(!t||!Number.isInteger(activeFxTarget.slot)||activeFxTarget.slot<0||activeFxTarget.slot>=t.fx.length){say('Selected FX slot is no longer available.');return;}
  t.fx[activeFxTarget.slot]=plugin.name;t.slotBypass[activeFxTarget.slot]=false;
  pluginRecent=[plugin.id,...pluginRecent.filter(x=>x!==plugin.id)].slice(0,20);savePluginPreferences();
- refreshStrip(t);setBrowser(false);
+ refreshStrip(t);setFastPicker(false);setBrowser(false);
  say(t.name+' · FX '+(activeFxTarget.slot+1)+' → '+plugin.name+' · GUI reference only (no native DSP)');
 }
 function acceptPluginManifest(items){
@@ -1593,6 +1746,47 @@ function acceptPluginManifest(items){
 plugEl('pluginsButton').addEventListener('click',()=>pluginOpen?setBrowser(false):openPluginBrowser());
 plugEl('pluginClose').addEventListener('click',()=>setBrowser(false));
 plugEl('pluginSearch').addEventListener('input',renderPluginCatalog);
+plugEl('fastSearch').addEventListener('input',renderFastPicker);
+plugEl('fastClose').addEventListener('click',()=>setFastPicker(false));
+plugEl('fastManage').addEventListener('click',()=>{setFastPicker(false);plugEl('pluginTarget').textContent=pluginTargetLabel();setBrowser(true);});
+plugEl('fastResults').addEventListener('click',e=>{
+ const btn=e.target.closest('[data-fast-id]');if(btn)insertCatalogPlugin(btn.dataset.fastId);
+});
+plugEl('fastSearch').addEventListener('keydown',e=>{
+ if(e.key==='Enter'){
+  const b=plugEl('fastResults').querySelector('.fast-effect');
+  if(b){e.preventDefault();insertCatalogPlugin(b.dataset.fastId);}
+ }else if(e.key==='Escape'){e.preventDefault();setFastPicker(false);}
+});
+plugEl('pluginAddPath').addEventListener('click',()=>{
+ const input=plugEl('pluginNewPath'),raw=String(input.value||'').trim();
+ if(!raw||raw.length>260){say('Enter a valid plugin folder path (max 260 characters)');return;}
+ if(!scanPaths.includes(raw))scanPaths.push(raw);
+ input.value='';renderScanPaths();
+ say('Added search path to UI reference; native VST3 scanning not connected');
+});
+plugEl('pluginPaths').addEventListener('click',e=>{
+ const btn=e.target.closest('[data-path-index]');if(!btn)return;
+ const i=Number(btn.dataset.pathIndex);if(i>0&&i<scanPaths.length)scanPaths.splice(i,1);
+ renderScanPaths();
+});
+plugEl('pluginScan').addEventListener('click',()=>{
+ const scanner=window.ArSonMixNativePlugins?.scan;
+ if(typeof scanner==='function'){
+  plugEl('pluginScanStatus').textContent='Native scan requested · awaiting verified results';
+  try{
+   Promise.resolve(scanner({paths:[...scanPaths],verify:true})).then(result=>{
+    if(Array.isArray(result)){
+     const good=acceptPluginManifest(result);
+     plugEl('pluginScanStatus').textContent=good?'Native scan metadata received · verify status before inserting':'Native scanner returned no usable audio effects';
+    }else plugEl('pluginScanStatus').textContent='Native scan requested · waiting for host catalog update';
+   }).catch(()=>{plugEl('pluginScanStatus').textContent='Native scan failed · inspect scanner logs';});
+  }catch(error){plugEl('pluginScanStatus').textContent='Native scan could not start';}
+ }else{
+  plugEl('pluginScanStatus').textContent='Windows VST3 scan requires installed native host · GitHub Pages cannot access local plugin files';
+  say('Plugin Manager setup only: scanning requires native ArSonMix executable');
+ }
+});
 plugEl('pluginCategory').addEventListener('change',renderPluginCatalog);
 plugEl('pluginView').addEventListener('change',renderPluginCatalog);
 plugEl('pluginResults').addEventListener('click',e=>{
@@ -1654,11 +1848,12 @@ window.addEventListener('keydown',e=>{
  }
  if(e.key==='Escape'&&sofEnabled){toggleSof(false);return;}
  if(e.key==='F8'&&!textEntry){e.preventDefault();pluginOpen?setBrowser(false):openPluginBrowser();return;}
+ if(e.key==='Escape'&&quickOpen){setFastPicker(false);return;}
  if(e.key==='Escape'&&pluginOpen){setBrowser(false);return;}
  if(e.key==='Escape'&&preview)togglePreview();
  if(e.target===document.body&&(e.key==='ArrowRight'||e.key==='ArrowLeft')){
   const width={comfort:150,standard:125,compact:105}[document.querySelector('.console-body').dataset.density]||150;
-  document.getElementById('viewport').scrollLeft+=e.key==='ArrowRight'?width:-width;
+  document.getElementById(e.key==='ArrowRight'?'bankNext':'bankPrev').click();
  }
 });
 let resizeQueued=false;

@@ -1,13 +1,23 @@
 {
-  "version": "preview-v4",
+  "version": "preview-v5",
   "route": "/preview-v2/",
   "kind": "GUI_REFERENCE_ONLY",
   "live_audio": false,
   "source_pr": 278,
   "source_branch": "design/audition-mixer-reference-isolated-20261101",
-  "source_sha": "d573a1d10a730f624c13d8476f46c7b11aa08a81",
+  "source_sha": "8dd122fb855658dba87e244987f03ea664be5b04",
   "source_path": "design-references/audition-mixer-study/index.html",
-  "visual_contract": "Unmodified historical BTN-180 7-shadow recipe; classic 36×77 silver/rose faders; VU/meter dBFS ruler + RAIL3; PAN-thumb trim/send; exact 10+Master slot width; no stretched last bank; no EQ row/Send Pan/I",
-  "checks": "106/106 JS DOM+geometry invariant checks passed; real rendered Chromium audit not executed",
-  "note": "Static UI reference with simulated meters, not real native ASIO or VST3."
+  "features": [
+    "Contextual Add FX fast picker with search and single-click insert",
+    "Separate floating Plugin Manager",
+    "Native-only scan path UI and manifest import",
+    "Fader pointer-drag & visual cap synchronized",
+    "Pan snaps to center",
+    "Complete IN/OUT rows",
+    "No TRIM, EQ row, Send Pan or I",
+    "Natural black slot, 29x62 proportional old silver/RoseGold cap",
+    "10 channel bank plus equal Master"
+  ],
+  "tests": "121/121 JS DOM and pointer-geometry checks PASS; pixel-browser screenshot review not independently completed",
+  "note": "Static demo; no filesystem scan or real audio in GitHub Pages."
 }
