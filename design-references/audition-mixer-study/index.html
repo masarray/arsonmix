@@ -1985,13 +1985,23 @@ function wireIsCycle(sourceId,destId){
  }
  return false;
 }
+function hasLegacySendTo(source,dest){
+ if(dest.kind!=='bus'&&dest.kind!=='fx'||!source.sendSlots)return false;
+ return source.sendSlots.some((slot,i)=>{
+  const value=i===source.activeSend?source:slot;
+  return value.sendOn&&value.send===dest.name;
+ });
+}
 function wireConnect(source,dest){
  if(!source||source.kind!=='audio'||!dest||dest.kind==='master'||source.id===dest.id)return false;
  const old=wireFor(source.id,dest.id);
  if(old){wireEdges=wireEdges.filter(e=>e.id!==old.id);render();say('WIRE removed '+source.name+' → '+dest.name+' · GUI DEMO');return true;}
+ if(hasLegacySendTo(source,dest)){
+  say('WIRE not added: '+source.name+' already sends to '+dest.name+' via SEND slot · avoids doubled audio');return false;
+ }
  if(wireIsCycle(source.id,dest.id)){say('WIRE REJECTED: feedback loop · existing signal graph preserved');return false;}
  wireEdges.push({id:nextWireId++,sourceId:source.id,destId:dest.id,mode:wireMode,levelDb:0,enabled:true});
- render();say('WIRE '+source.name+' → '+dest.name+' · '+(wireMode==='send'?'FOLLOW FADER SEND':'INDEPENDENT PRE FX')+' · DEMO ONLY · no native PCM');
+ render();say('WIRE '+source.name+' → '+dest.name+' · '+(wireMode==='send'?'FOLLOW FADER SEND':'INDEPENDENT PRE FX')+(source.output==='Master'?' · MAIN direct ON':'')+' · GUI DEMO ONLY, no native PCM');
  return true;
 }
 
@@ -2006,8 +2016,8 @@ function wireConnectRange(source,anchorId,finalId){
   .filter(t=>t.kind!=='master'&&t.id!==source.id&&!wireFor(source.id,t.id));
  if(!batch.length){say('WIRE RANGE: destinations already linked');return false;}
  // Batch is fail-closed: do not apply some edges then discover a loop later.
- if(batch.some(t=>wireIsCycle(source.id,t.id))){
-  say('WIRE RANGE REJECTED: a destination would create a feedback loop; no links changed');return false;
+ if(batch.some(t=>wireIsCycle(source.id,t.id)||hasLegacySendTo(source,t))){
+  say('WIRE RANGE REJECTED: duplicate SEND or feedback path; no links changed');return false;
  }
  for(const t of batch)wireEdges.push({id:nextWireId++,sourceId:source.id,destId:t.id,
   mode:wireMode,levelDb:0,enabled:true});
