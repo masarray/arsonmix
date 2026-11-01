@@ -2968,6 +2968,63 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
  #arIOOverlay .arIOAudioPath{grid-template-columns:repeat(4,minmax(0,1fr))}
  #arIOOverlay .arIOAudioPath>button{grid-column:span 2}
 }
+
+
+/* v7 G1 operator hardware drawer. Unlike the former 920x700 blocking
+   wizard, device management is a narrow edge drawer; channel controls and
+   MAIN remain visible behind a light scrim, without new routing ownership. */
+.arIOOverlay{
+  padding:0;justify-content:flex-end;align-items:stretch;
+  background:rgba(4,10,16,.48);
+}
+.arIOOverlay .arIOWindow{
+  width:min(760px,100vw);height:100dvh;max-height:100dvh;
+  border:0;border-left:1px solid #5b7785;border-radius:0;
+  background:#13232c;box-shadow:-9px 0 22px #0005;
+}
+.arIOOverlay[data-active-tab="device"] .arIOWindow{
+  width:min(594px,100vw);
+}
+.arIOWindow>header{
+  min-height:43px;padding:7px 11px;gap:5px;
+}
+.arIOWindow>header h2{font-size:13px;font-weight:550;margin:0}
+.arIOWindow>header small{font-size:9px}
+.arIOTop{padding:5px 11px;font-size:10px}
+.arIOWindow nav{
+  padding:5px 8px;gap:0;background:#142934;
+}
+.arIOWindow nav .btn-180{
+  flex:1 1 0;min-width:0;height:29px;min-height:29px;
+  padding:0 5px;font-size:9px;letter-spacing:0;
+}
+.arIOBody{
+  padding:8px 10px;overflow-y:auto;min-height:0;overscroll-behavior:contain;
+}
+.arIOWindow>footer{padding:7px 10px;min-height:43px;gap:5px}
+.arIOWindow>footer .btn-180{height:28px;min-height:28px}
+.arIODevicePinGroup .arIODevicePinRow{
+  min-height:27px;
+}
+.arIODevicePatchMatrix:not([open]) > :not(summary){
+  display:none!important;
+}
+#app #mixer .arBankStage[data-state="invalid"]{
+  color:#ffb38a!important;
+}
+#app #mixer .arBankStage[data-state="ack"]{
+  color:#a5d0de!important;
+}
+@media(max-width:640px){
+  .arIOOverlay .arIOWindow,.arIOOverlay[data-active-tab="device"] .arIOWindow{
+    width:100vw;
+  }
+}
+@media(max-height:640px){
+  .arIOBody{padding:6px 9px}
+  .arIOTop{padding:3px 9px}
+  .arIOWindow nav{padding:3px 8px}
+}
 </style></head>
 <body>
 <div id="app" class="app">
@@ -4335,10 +4392,16 @@ scheduleDemoMeter();
     return section;
   }
 
+  // Only an ACKed physical MAIN pair is a MAIN route. Available output pins
+  // are merely inventory, never proof that a route has been selected.
   const outputLabel=s=>{
-    const out=s.mainOutputs?.length===2?s.mainOutputs:s.outputPorts||[];
-    return s.ready&&Number.isInteger(out[0])&&Number.isInteger(out[1])?
-      'MAIN → HW '+(out[0]+1)+'/'+(out[1]+1):'MAIN → NO HW OUTPUT';
+    const out=s.mainOutputs,enabled=new Set(s.outputPorts||[]);
+    if(!s.ready)return 'MAIN → NO DEVICE';
+    if(!Array.isArray(out)||out.length!==2)return 'MAIN → UNPATCHED';
+    if(!Number.isInteger(out[0])||!Number.isInteger(out[1])||
+       out[0]===out[1]||!enabled.has(out[0])||!enabled.has(out[1]))
+      return 'MAIN → INVALID L/R';
+    return 'MAIN → HW '+(out[0]+1)+'/'+(out[1]+1);
   };
   const toolbar=node('div','arMixerBankBar');
   toolbar.innerHTML='<div class="arMixerBankModes" role="group" aria-label="Mixer channel bank"><button type="button" class="btn-180 active" data-mix-mode="CONSOLE" aria-pressed="true">CONSOLE</button><button type="button" class="btn-180" data-mix-mode="FX" aria-pressed="false">FX</button><button type="button" class="btn-180" data-mix-mode="ROUTE" aria-pressed="false">ROUTE</button><button type="button" class="btn-180" data-mix-mode="SENDS" aria-pressed="false">SENDS</button></div><div class="arMixerBankInfo" id="arMixerBankInfo" role="status">NO HARDWARE · PREVIEW</div><button type="button" class="btn-180 arMixApply" data-mix-apply title="MUTE OUTPUT first; native ACK required">APPLY</button><button type="button" class="btn-180 arMixIoOpen" data-io-open>AUDIO I/O</button>';
@@ -4915,8 +4978,22 @@ scheduleDemoMeter();
     const dirty=current!==valueFor(accepted)||channelFormat(r)!==channelFormat(accepted);
     const stage=strip.querySelector('.arBankStage');
     const sourcePending=quickSourcePending?.channel===i&&quickSourcePending.epoch===s.epoch;
-    stage.textContent=!s.ready?'NO VERIFIED DEVICE':sourcePending?'PENDING · NATIVE ACK':dirty?'DRAFT · NOT APPLIED':r.mode==='NONE'?'UNPATCHED · NO INPUT':'ROUTE ACK · PCM UNVERIFIED';
-    stage.dataset.state=!s.ready?'offline':sourcePending?'draft':dirty?'draft':r.mode==='NONE'?'offline':'live';
+    const verified=new Set(portList(s).map(p=>p.port));
+    const validInput=r.mode==='NONE'||
+      (r.mode==='MONO'&&verified.has(r.left)&&r.right===-1)||
+      (r.mode==='STEREO'&&r.left!==r.right&&verified.has(r.left)&&verified.has(r.right));
+    const acceptedValid=!accepted||accepted.mode==='NONE'||
+      (accepted.mode==='MONO'&&verified.has(accepted.left)&&accepted.right===-1)||
+      (accepted.mode==='STEREO'&&accepted.left!==accepted.right&&verified.has(accepted.left)&&verified.has(accepted.right));
+    // Source is real hardware, processing M/ST is independent. A restored
+    // invalid legacy alias is NEVER 'ACK/LIVE', even after a native route ACK.
+    stage.textContent=!s.ready?'NO VERIFIED DEVICE':
+      sourcePending?'PENDING · NATIVE ACK':
+      (!validInput||!acceptedValid)?'INVALID PHYSICAL INPUT · RE-PATCH':
+      dirty?'DRAFT · NOT APPLIED':r.mode==='NONE'?'UNPATCHED · NO INPUT':
+      'ROUTE ACK · PCM UNVERIFIED';
+    stage.dataset.state=!s.ready?'offline':sourcePending||dirty?'draft':
+      (!validInput||!acceptedValid)?'invalid':r.mode==='NONE'?'offline':'ack';
     // Four native AUX destinations are always visible, even when empty.
     // Render only after a topology change, never on meter telemetry.
     const slots=Array.from({length:4},(_,bus)=>{
@@ -5587,7 +5664,14 @@ scheduleDemoMeter();
 
     const matrixSection=node('details','arIODevicePatchMatrix');
     matrixSection.open=deviceMatrixOpen;
-    matrixSection.addEventListener('toggle',()=>{deviceMatrixOpen=matrixSection.open;});
+    matrixSection.addEventListener('toggle',()=>{
+      if(deviceMatrixOpen!==matrixSection.open){
+        deviceMatrixOpen=matrixSection.open;
+        // Expensive crosspoints are constructed on demand, never just hidden
+        // behind CSS while a 12Hz native readback refreshes the device panel.
+        lastSignature='';refreshIO();
+      }
+    });
     const heading=node('summary','arIODeviceMatrixHeading');
     heading.appendChild(node('strong','','ADVANCED · HARDWARE PORT MATRIX (OPTIONAL)'));
     const tabs=node('div','arIODeviceMatrixSwitch');
@@ -5598,6 +5682,12 @@ scheduleDemoMeter();
       tabs.appendChild(b);
     }
     heading.appendChild(tabs);matrixSection.appendChild(heading);
+    if(!deviceMatrixOpen){
+      matrixSection.appendChild(node('p','arIODeviceMatrixEmpty',
+        'Optional engineering crosspoints. Open only for advanced pin patching.'));
+      body.appendChild(matrixSection);
+      return;
+    }
     const live=!!d&&deviceSameEndpoint(d)&&a.authorized!==false;
     const s=route();
     if(deviceMatrixWaitEpoch!==null&&s.epoch!==deviceMatrixWaitEpoch&&s.ready&&s.active)
@@ -6446,10 +6536,24 @@ scheduleDemoMeter();
   let draggingFx=null;
   // Numeric decimal wire identifiers are required by integration/ConsoleNativeContractV6.h.
   // Never downcast native 64-bit ChannelId, device epoch, or graph revision.
-  const decimal=v=>typeof v==='string'&&/^(0|[1-9][0-9]*)$/.test(v)?
-    v:(Number.isSafeInteger(v)&&v>=0?String(v):null);
+  // Wire uint64 identities are canonical decimal STRINGS, not JS numbers.
+  // Reject overflow and noncanonical aliases before BigInt comparisons.
+  const decimal=v=>typeof v==='string'&&/^(0|[1-9][0-9]*)$/.test(v)&&
+    BigInt(v)<=18446744073709551615n?v:null;
   const ge=(a,b)=>a!==null&&b!==null&&BigInt(a)>=BigInt(b);
-  const instance='v6';
+  // A reconnect must not replay the prior editor's request IDs. Retain a
+  // single session prefix for this WebView lifetime; each new WebView gets
+  // a cryptographically random prefix when secure randomness is available.
+  const instance=(()=>{
+    const bytes=new Uint8Array(16);
+    try{
+      window.crypto.getRandomValues(bytes);
+      return 'gui-'+Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
+    }catch{
+      return 'gui-'+Date.now().toString(36)+'-'+
+        Math.random().toString(36).slice(2,14);
+    }
+  })();
   let feedback='';
   const root=h('section','arV6Console');root.id='arV6Console';
   root.setAttribute('aria-label','ArSonMix universal operator console');
@@ -6518,7 +6622,7 @@ scheduleDemoMeter();
   }
   function sendIntent(op,id,payload){
     if(!can(op,id)){showFeedback('UNAVAILABLE · Native capability or channel authorization missing');return false}
-    const requestId=String(++requestSeq);
+    const requestId=instance+':'+String(++requestSeq);
     const command={requestId,deviceEpoch:accepted.device.epoch,
       baseGraphRevision:accepted.graph.revision,
       baseRosterRevision:accepted.graph.rosterRevision,
@@ -6567,7 +6671,7 @@ scheduleDemoMeter();
     const ids=new Set();
     for(const c of s.graph.channels){
       // JS numeric conversion corrupts 64-bit identities: reject such a wire.
-      if(!c||typeof c.id!=='string'||!c.id||ids.has(c.id))return false;
+      if(!c||decimal(c.id)===null||ids.has(c.id))return false;
       ids.add(c.id);
     }
     return true;
