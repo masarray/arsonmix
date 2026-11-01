@@ -610,6 +610,27 @@ check(html.includes('function wireConnectRange(') &&
  html.includes('if(batch.some(t=>wireIsCycle(source.id,t.id)))') &&
  html.includes('SourceBinding')===false || html.includes('function wireConnectRange('),
  'Wire route bulk changes have explicit cycle preflight');
+// V12 usability: direct manipulation + uncluttered hover affordance.
+node('body').clientWidth=1680;node('reset').dispatch('click');
+wireTo(3);
+const edge=strip(3).match(/data-wire-id="(\d+)"/);
+check(!!edge,'Wire gain control has unique stable identity for pointer/keyboard events');
+const wheelGain={dataset:{field:'wireGain',wireId:edge[1]},value:'0',
+ closest:q=>q==='.wire-gain'?wheelGain:q==='.strip'?{dataset:{id:3}}:null,
+ style:{setProperty(){}},parentElement:{style:{setProperty(){}}}};
+node('body').handlers.wheel({target:wheelGain,deltaY:120,preventDefault(){}});
+filter('all');
+check(strip(3).includes('value="-1" data-field="wireGain"'),
+ 'One wheel step on wire knob makes precise -1 dB adjustment');
+node('body').handlers.dblclick({target:wheelGain});
+filter('all');
+check(strip(3).includes('value="0" data-field="wireGain"'),
+ 'Double-click wire knob restores unity 0 dB without changing route');
+check(html.includes('wireHoverId=t.id;renderWireRouting()') &&
+ html.includes('stroke-dasharray="5 5"') &&
+ html.includes('edge.preview'),
+ 'Hover-only candidate wire uses differentiated dashed amber preview');
+node('reset').dispatch('click');
 node('reset').dispatch('click');
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
