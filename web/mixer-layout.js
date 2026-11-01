@@ -578,8 +578,9 @@
     backend.addEventListener('arMixConsoleSnapshot',s=>receiveSnapshot(s,true));
     backend.addEventListener('arMixConsoleAck',receiveAck);
     requestSnapshot();
-  }else{
-    // Browser preview is visibly DEMO with every mutation disabled.
+  }else if(new URLSearchParams(location.search).get('console')==='v6'){
+    // The opt-in browser preview is visibly DEMO with every mutation disabled.
+    // Existing baseline preview without ?console=v6 remains backward compatible.
     receiveSnapshot(makeDemo(),false);
     showFeedback('BROWSER DEMO · UI layout only · no PCM, hardware, installed VST3 or LIVE routes');
   }
