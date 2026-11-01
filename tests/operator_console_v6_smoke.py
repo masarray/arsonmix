@@ -182,6 +182,59 @@ async def main():
         lit = await page.locator('[data-meter-id="1000"]').evaluate("""el=>
           [...el.querySelectorAll('.arV6MeterLane')].map(x=>Number(x.dataset.lit))""")
         assert lit[0]>lit[1]>0,lit
+        # S1: distinct RAW, channel and MAIN truth. MAIN measurements do not
+        # turn all unpatched/AUX/group strips into invented active PCM.
+        live_meter=snapshot()
+        live_meter["telemetry"].update({
+          "rawCapturePresent":True,"rawCapturePeak":0.4,"mainPcmPresent":True,
+          "channelMeterRmsPeak":{
+            "7":{"peak":0.3},"1000":{"peakLeft":0.4,"peakRight":0.2}}})
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",live_meter)
+        assert "CHANNEL PCM MEASURED" in await page.locator('[data-status-id="7"]').inner_text()
+        assert "MAIN PCM VERIFIED" in await page.locator('[data-status-id="1000"]').inner_text()
+        assert "CHANNEL PCM UNVERIFIED" in await page.locator('[data-status-id="1002"]').inner_text()
+        assert "SILENT / NO SOURCE" in await page.locator('[data-status-id="3"]').inner_text()
+        # Continuous telemetry must not mutate faders, reselect controls,
+        # re-run responsive layout geometry, or remount VST3 editors.
+        stats_start=await page.evaluate("()=>window.__arMixV6ReadOnly().uiStats")
+        await page.evaluate("""()=>window.__meterFader=
+          document.querySelector('[data-channel-id="7"] .arV6Fader')""")
+        meter_burst=[]
+        for n in range(80):
+            s=snapshot()
+            s["telemetry"]["rawCapturePresent"]=True
+            s["telemetry"]["rawCapturePeak"]=0.4
+            s["telemetry"]["mainPcmPresent"]=True
+            s["telemetry"]["channelMeterRmsPeak"]={
+              "7":{"peak":0.1+(n%10)/12},"1000":{"peakLeft":0.2,"peakRight":0.05}}
+            meter_burst.append(s)
+        await page.evaluate("""states=>states.forEach(s=>
+          window.__v6Test.publish('arMixConsoleSnapshot',s))""",meter_burst)
+        stats_end=await page.evaluate("()=>window.__arMixV6ReadOnly().uiStats")
+        assert stats_end["telemetryFastFrames"]-stats_start["telemetryFastFrames"]==80
+        assert stats_end["controlRefreshes"]==stats_start["controlRefreshes"]
+        assert stats_end["structureRenders"]==stats_start["structureRenders"]
+        assert await page.evaluate("""()=>window.__meterFader===
+          document.querySelector('[data-channel-id="7"] .arV6Fader')""")
+        # Repeated identical graph revision can STILL contain newly accepted
+        # fader controls, so do not mistake a true parameter edit for meters.
+        changed=snapshot()
+        changed["graph"]["channels"][6]["controls"]["faderDb"]=-17
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",changed)
+        assert await page.locator('[data-op="SET_FADER"][data-id="7"]').input_value()=="-17"
+        assert (await page.evaluate("()=>window.__arMixV6ReadOnly().uiStats"))[
+          "controlRefreshes"]>stats_end["controlRefreshes"]
+        # Invalid PCM data never lights LEDs or replaces an accepted snapshot.
+        bad_pcm=snapshot(revision=91)
+        bad_pcm["telemetry"]["channelMeterRmsPeak"]={"7":{"peak":-0.4}}
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",bad_pcm)
+        assert await page.locator('[data-op="SET_FADER"][data-id="7"]').input_value()=="-17"
+        bogus=snapshot(revision=91)
+        bogus["telemetry"]["channelMeterRmsPeak"]={"999999":{"peak":0.3}}
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",bogus)
+        assert await page.locator('[data-op="SET_FADER"][data-id="7"]').input_value()=="-17"
+        # Restore baseline before exercising editing transactions later.
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",snapshot())
         # Narrow bank is purely presentational; pinned MAIN and native IDs stay.
         before_width=await page.locator('[data-channel-id="7"]').evaluate(
             "(el)=>el.getBoundingClientRect().width")

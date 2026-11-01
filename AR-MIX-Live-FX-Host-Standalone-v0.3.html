@@ -6842,6 +6842,11 @@ scheduleDemoMeter();
     RENAME_CHANNEL:'RENAME_CHANNEL',CREATE_CHANNEL:'CREATE_CHANNEL'
   };
   let accepted=null,acceptedNative=false,modeSend='',lastStructure='',requestSeq=0;
+  let lastControlProjection='',lastHeaderProjection='';
+  // Stable indexed meters avoid re-querying every strip/LED on native PCM ticks.
+  const meterNodes=new Map(),statusNodes=new Map();
+  const uiStats={structureRenders:0,controlRefreshes:0,telemetryFastFrames:0};
+  let meterReadings=new Map();
   let draggingFx=null;
   // Numeric decimal wire identifiers are required by integration/ConsoleNativeContractV6.h.
   // Never downcast native 64-bit ChannelId, device epoch, or graph revision.
@@ -7323,6 +7328,26 @@ scheduleDemoMeter();
     if(typeof t.rawCapturePresent!=='boolean'||typeof t.mainPcmPresent!=='boolean'||
        typeof t.monitorPcmPresent!=='boolean'||typeof t.rawCapturePeak!=='number'||
        !Number.isFinite(t.rawCapturePeak)||t.rawCapturePeak<0)return false;
+    // Actual native meter fields are optional until the installed callback
+    // publishes them. When present, reject forged IDs/invalid PCM numbers.
+    // Keep peaks linear (values >1 indicate genuine clipping, not an error).
+    const raw=t.channelMeterRmsPeak;
+    if(raw!==undefined&&raw!==null){
+      if(!Array.isArray(raw)&&(typeof raw!=='object'||Object.getPrototypeOf(raw)!==Object.prototype))
+        return false;
+      const samples=Array.isArray(raw)?raw.map(x=>[x?.channelId,x]):Object.entries(raw);
+      const seen=new Set();
+      for(const [key,m] of samples){
+        if(!ids.has(key)||seen.has(key)||!m||typeof m!=='object')return false;
+        seen.add(key);
+        for(const prop of ['peak','peakLeft','peakRight','rmsLeft','rmsRight']){
+          if(m[prop]!==undefined&&(typeof m[prop]!=='number'||
+             !Number.isFinite(m[prop])||m[prop]<0))return false;
+        }
+        if(!['peak','peakLeft','peakRight','rmsLeft','rmsRight']
+          .some(prop=>typeof m[prop]==='number'))return false;
+      }
+    }
     return true;
   }
   function normalizeSnapshot(payload){
@@ -7358,6 +7383,13 @@ scheduleDemoMeter();
       s.graph.channels.map(c=>[c.id,c.role,c.processingFormat,c.primaryOutId,
         (c.inserts||[]).map(f=>f.id).join(','),(c.sends||[]).map(x=>x.id).join(',')].join(':')).join('|')+
       ':'+s.graph.capabilities.supportedOps.join('|');
+    // Full snapshots remain authoritative; a telemetry-only message must
+    // still pass the same epoch/graph/roster validation and ACK fences.
+    const controlProjection=JSON.stringify([
+      s.graph.channels,s.graph.destinations,s.graph.capabilities,s.catalog||null]);
+    const headerProjection=JSON.stringify([
+      s.device.backend,s.device.sampleRate,s.device.bufferFrames,
+      s.device.outputArmed,s.device.epoch,s.graph.revision,s.productionCallbackLive,!!fromNative]);
     accepted=s;acceptedNative=!!fromNative;
     snapshotSerial++;
     byId.clear();
@@ -7375,13 +7407,26 @@ scheduleDemoMeter();
         for(const target of task.targets||[])pendingTargets.delete(target);
       }
     }
-    if(structure!==lastStructure||root.dataset.demo!==String(!fromNative)){
-      lastStructure=structure;render();
+    const newStructure=structure!==lastStructure||
+      root.dataset.demo!==String(!fromNative);
+    const newControls=controlProjection!==lastControlProjection;
+    const newHeader=headerProjection!==lastHeaderProjection;
+    lastStructure=structure;
+    lastControlProjection=controlProjection;
+    lastHeaderProjection=headerProjection;
+    if(newStructure){
+      render();
+    }else if(newControls){
+      refreshAcceptedControls();refreshDisabled();
     }else{
-      refreshAcceptedControls();refreshDisabled();updateHeader();
+      // High-frequency native meter snapshots only: no select.value writes,
+      // role filters, getBoundingClientRect, FX catalog DOM or fader remount.
+      uiStats.telemetryFastFrames++;
+      refreshMeters();
     }
+    if(newHeader&&!newStructure)updateHeader();
     root.dataset.demo=String(!fromNative);
-    refreshDevicePanel();refreshPluginCatalog();
+    if(newStructure||newControls){refreshDevicePanel();refreshPluginCatalog();}
     // Integration readback is intentionally not a production callback.
     // It must never replace the working M4 console until callback cutover.
     if(!fromNative||s.productionCallbackLive===true)setVisible(true);
@@ -7564,22 +7609,32 @@ scheduleDemoMeter();
     range.setAttribute('aria-label',(ch.name||ch.id)+' fader dB');
     const lowerLabel=h('span','arV6Readout',(Number.isFinite(faderVal)?faderVal.toFixed(1):'—')+' dB');
     lower.append(meter,range,lowerLabel);elStrip.append(lower);
+    meterNodes.set(ch.id,{element:meter,lanes:[...meter.children]});
     const status=h('div','arV6StripStatus');
     status.dataset.statusId=ch.id;status.textContent=channelState(ch);
-    elStrip.append(status);
+    statusNodes.set(ch.id,status);elStrip.append(status);
     return elStrip;
   }
   function channelState(ch){
     if(!acceptedNative)return 'DEMO / NO AUDIO';
     if(accepted?.productionCallbackLive!==true)return 'NATIVE READBACK / NOT LIVE';
     if(ch.controls?.mute)return 'MUTED';
-    if(!ch.source && clean(ch.role).toUpperCase()==='INPUT')return 'SILENT / NO SOURCE';
+    const role=ch.role,t=accepted.telemetry||{};
+    if(role==='INPUT'&&!ch.source)return 'SILENT / NO SOURCE';
     if(!accepted.device.outputArmed)return 'OUTPUT DISARMED';
-    const t=accepted.telemetry||{};
-    // Do not infer LIVE from a port label, snapshot or demo LED alone.
-    if(t.rawCapturePresent!==true)return 'NO RAW CAPTURE PCM';
-    if(t.mainPcmPresent!==true)return 'RAW PCM · MAIN PCM UNVERIFIED';
-    return 'MAIN PCM VERIFIED · OUTPUT ARMED';
+    if(role==='MAIN')return t.mainPcmPresent===true?
+      'MAIN PCM VERIFIED · ARMED':'MAIN PCM UNVERIFIED';
+    if(role==='MONITOR')return t.monitorPcmPresent===true?
+      'MONITOR PCM VERIFIED':'MONITOR PCM UNVERIFIED';
+    if(role==='INPUT'&&t.rawCapturePresent!==true)return 'NO RAW CAPTURE PCM';
+    const m=meterReadings.get(ch.id);
+    if(!m)return 'CHANNEL PCM UNVERIFIED';
+    // An all-zero peak is silence/available measurement, not audible PCM.
+    const peaks=[m.peak,m.peakLeft,m.peakRight].filter(Number.isFinite);
+    const observed=peaks.some(p=>p>0);
+    if(!observed)return 'CHANNEL METER · SILENCE';
+    return t.mainPcmPresent===true?
+      'CHANNEL PCM MEASURED · MAIN OK':'CHANNEL PCM · MAIN UNVERIFIED';
   }
   function updateHeader(){
     const d=accepted?.device||{},g=accepted?.graph||{};
@@ -7633,7 +7688,9 @@ scheduleDemoMeter();
   }
   function render(){
     if(!accepted)return;
+    uiStats.structureRenders++;
     updateHeader();
+    meterNodes.clear();statusNodes.clear();meterReadings.clear();
     lanes.replaceChildren();main.replaceChildren();
     const channels=accepted.graph.channels;
     for(const id of selectedIds)if(!byId.has(id))selectedIds.delete(id);
@@ -7679,6 +7736,7 @@ scheduleDemoMeter();
     }
   }
   function refreshAcceptedControls(){
+    uiStats.controlRefreshes++;
     for(const strip of root.querySelectorAll('[data-channel-id]')){
       const ch=byId.get(strip.dataset.channelId);
       if(!ch)continue;
@@ -7757,35 +7815,38 @@ scheduleDemoMeter();
   function refreshMeters(){
     if(!accepted)return;
     const incoming=acceptedNative?accepted.telemetry?.channelMeterRmsPeak:null;
-    const meters=Array.isArray(incoming)?
-      Object.fromEntries(incoming.filter(x=>x&&typeof x.channelId==='string')
-        .map(x=>[x.channelId,x])):
-      incoming&&typeof incoming==='object'?incoming:{};
+    meterReadings=Array.isArray(incoming)?
+      new Map(incoming.map(m=>[m.channelId,m])):
+      incoming&&typeof incoming==='object'?new Map(Object.entries(incoming)):new Map();
     const ledsForPeak=peak=>{
-      const p=Number(peak)||0;
-      if(p<=0)return 0;
-      // Native peaks are linear PCM amplitudes, quantized on a -60..0 dBFS
-      // ladder. Static green/yellow/red segments do not move or recolor.
-      return clamp(Math.ceil(22*(60+Math.max(-60,20*Math.log10(p)))/60),0,22);
+      if(typeof peak!=='number'||!Number.isFinite(peak)||peak<=0)return 0;
+      // Native linear PCM peak: fixed -60..0 dBFS 22-LED ladder; values >1
+      // saturate red, never change the green/yellow/red reference positions.
+      return clamp(Math.ceil(22*(60+Math.max(-60,20*Math.log10(peak)))/60),0,22);
     };
-    for(const meter of root.querySelectorAll('[data-meter-id]')){
-      const ch=byId.get(meter.dataset.meterId),m=meters[meter.dataset.meterId]||{};
-      const mono=ch?.processingFormat==='MONO';
-      meter.dataset.format=mono?'MONO':'STEREO';
-      for(const lane of meter.children){
+    for(const [id,view] of meterNodes){
+      const ch=byId.get(id),m=meterReadings.get(id);
+      if(!ch)continue;
+      const mono=ch.processingFormat==='MONO';
+      const expected=mono?'MONO':'STEREO';
+      if(view.element.dataset.format!==expected)view.element.dataset.format=expected;
+      for(const lane of view.lanes){
         const side=lane.dataset.side;
-        // Never clone one aggregate maximum into both L/R: a missing
-        // stereo side is unknown/silent, NOT a simulated dual-mono reading.
-        const value=side==='L'?(m.peakLeft??(mono?m.peak:0)):m.peakRight;
+        // No invented stereo copy: an absent right peak stays dark.
+        const value=m?(side==='L'?(m.peakLeft??(mono?m.peak:0)):m.peakRight):0;
         const lit=mono&&side==='R'?0:ledsForPeak(value);
         if(lane.dataset.lit===String(lit))continue;
         lane.dataset.lit=String(lit);
-        for(let i=0;i<lane.children.length;i++)lane.children[i].classList.toggle('lit',i<lit);
+        for(let i=0;i<lane.children.length;i++)
+          lane.children[i].classList.toggle('lit',i<lit);
       }
     }
-    for(const node of root.querySelectorAll('[data-status-id]')){
-      const ch=byId.get(node.dataset.statusId);
-      if(ch)node.textContent=channelState(ch);
+    for(const [id,node] of statusNodes){
+      const ch=byId.get(id);
+      if(ch){
+        const value=channelState(ch);
+        if(node.textContent!==value)node.textContent=value;
+      }
     }
   }
   function refreshBanks(){
@@ -7971,7 +8032,8 @@ scheduleDemoMeter();
   window.__arMixV6ReadOnly=()=>({
     nativePublisher:acceptedNative,revision:accepted?.graph?.revision??null,
     epoch:accepted?.device?.epoch??null,visibleChannelIds:[...byId.keys()],
-    pendingCount:pending.size,selectedChannelIds:[...selectedIds],feedback
+    pendingCount:pending.size,selectedChannelIds:[...selectedIds],feedback,
+    uiStats:{...uiStats}
   });
 })();
 </script>
