@@ -2473,7 +2473,7 @@ document.querySelector('.console-body').addEventListener('drop',e=>{
  }
 });
 document.querySelector('.console-body').addEventListener('mousedown',e=>{
- if(e.target.closest?.('.wire-tray'))return; // socket, unlink and gain must NOT replace selected source
+ if(e.target.closest?.('.wire-tray')||e.target.closest?.('[data-action="wireRoute"]')||e.target.closest?.('[data-action="wireRemove"]')||e.target.closest?.('[data-field="wireGain"]'))return; // source remains unchanged on any wire control
  const t=findTrack(e.target);if(t)selectTrack(t,e.ctrlKey||e.metaKey||e.shiftKey);
 });
 document.querySelector('.section-rail').addEventListener('click',e=>{
