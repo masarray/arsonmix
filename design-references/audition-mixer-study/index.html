@@ -295,6 +295,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .console-body #master .strip.master{
   width:var(--master-w);min-width:var(--master-w);flex:0 0 var(--master-w);
 }
+.console-pane{--master-w:152px}
 .plugin-browser{right:var(--master-w)!important}
 .console-body .strip{
   --surface:#24282c;
@@ -517,6 +518,11 @@ button:disabled{opacity:.45;cursor:not-allowed}
  .console-body .fader::-moz-range-thumb{width:36px;height:22px}
 }
 
+/* Unified folding precedence — density presets never defeat collapsed sections. */
+.console-body.collapsed-route{--route-h:23px}
+.console-body.collapsed-fx{--fx-h:23px}
+.console-body.collapsed-send{--send-h:23px}
+.console-body.collapsed-eq{--eq-h:23px}
 </style>
 </head>
 <body>
@@ -711,6 +717,9 @@ function setDensity(mode){
  const density=['comfort','standard','compact'].includes(mode)?mode:'comfort';
  const root=document.querySelector('.console-body'),compact=density==='compact';
  root.dataset.density=density;
+ const widths={comfort:'152px',standard:'132px',compact:'116px'};
+ const parent=document.querySelector('.console-pane');
+ if(parent?.style?.setProperty)parent.style.setProperty('--master-w',widths[density]);
  root.classList.toggle('narrow',compact);
  document.getElementById('densitySelect').value=density;
  const btn=document.getElementById('mode');
