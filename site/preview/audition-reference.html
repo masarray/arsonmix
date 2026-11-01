@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#252728">
+<title>Multitrack Mixer — Reference Workspace</title>
+<link rel="stylesheet" href="./audition-mixer.css">
+<script src="./audition-mixer.js" defer></script>
+</head>
+<body>
+<div class="application" id="application">
+  <header class="chrome">
+    <div class="menu-line" aria-label="Reference menu bar">
+      <span class="appmark">Au<span class="mark-dot">·</span></span>
+      <span>File</span><span>Edit</span><span>Multitrack</span><span>Clip</span><span>Effects</span><span>Favorites</span><span>View</span><span>Window</span><span>Help</span>
+      <span class="chrome-spacer"></span><span class="demo-indicator"><span class="indicator-dot"></span>VISUAL REFERENCE · NO AUDIO</span>
+    </div>
+    <div class="tab-line">
+      <div class="worktab inactive">Editor: Untitled Session.sesx <span class="close-glyph">×</span></div>
+      <div class="worktab active">Mixer <span class="tab-menu">☰</span></div>
+      <div class="tab-flex"></div>
+      <span class="small-workspace">Default <span class="caret">⌄</span></span>
+      <span class="tab-divider"></span><span class="top-symbol">≡</span>
+    </div>
+  </header>
+  <main class="mixer-panel" aria-label="Multitrack mixer main window">
+    <div class="mixer-titlebar">
+      <span class="title-left">Mixer <span class="title-menu">☰</span></span>
+      <div class="inline-tools">
+        <button class="toolbar-button" id="addAudio" title="Add audio track in mixer">+ Audio</button>
+        <button class="toolbar-button" id="addBus" title="Create a bus in this mixer">+ Bus</button>
+        <span class="tiny-divider"></span>
+        <button class="toolbar-button" id="resetDemo" title="Reset reference mixer controls">Reset</button>
+        <span class="tiny-divider"></span>
+        <span class="view-notice">Mixer View</span>
+        <button class="panel-menu" title="Mixer panel menu" aria-label="Mixer panel menu">☰</button>
+      </div>
+    </div>
+    <div class="mixer-body">
+      <nav class="module-rail" aria-label="Mixer module visibility">
+        <button data-toggle-module="routing" title="Show or hide Inputs and Outputs" aria-pressed="true">➤</button>
+        <button data-toggle-module="effects" title="Show or hide Effects" aria-pressed="true">ƒx</button>
+        <button data-toggle-module="sends" title="Show or hide Sends" aria-pressed="true">↱</button>
+        <button data-toggle-module="eq" title="Show or hide Equalization" aria-pressed="true">◫</button>
+        <button data-toggle-module="automation" title="Show or hide Automation" aria-pressed="true">☷</button>
+        <div class="rail-spacer"></div>
+        <span class="rail-level">dB</span>
+      </nav>
+      <div class="strips-viewport" id="trackViewport" tabindex="0" aria-label="Horizontally scrollable mixer tracks">
+        <div class="strips" id="trackStrips"></div>
+      </div>
+      <div class="master-viewport" id="masterStrip" aria-label="Mix track"></div>
+    </div>
+    <div class="mixer-scroll-row">
+      <div class="scroll-rail-gap"></div>
+      <input type="range" id="bankScroll" min="0" max="100" value="0" aria-label="Horizontal mixer scroll position">
+      <div class="scroll-master-gap"></div>
+    </div>
+  </main>
+  <footer class="transport">
+    <div class="transport-buttons">
+      <button id="stopDemo" aria-label="Stop visual meter preview" title="Stop"><span class="stop-icon"></span></button>
+      <button id="playDemo" aria-label="Start visual meter preview" title="Play (spacebar)"><span class="play-icon"></span></button>
+      <button id="pauseDemo" aria-label="Pause visual meter preview" title="Pause">Ⅱ</button>
+      <span class="transport-divider"></span>
+      <span class="timecode" id="timecode">0:00.000</span>
+    </div>
+    <div class="footer-status" id="footerStatus">Reference mixer UI. Controls are interactive; meters are simulated. No DSP or hardware connection.</div>
+    <div class="footer-right"><span>48000 Hz</span><span>24-bit</span><span>Stereo</span><span class="key-hint">SPACE · Preview</span></div>
+  </footer>
+</div>
+</body>
+</html>
