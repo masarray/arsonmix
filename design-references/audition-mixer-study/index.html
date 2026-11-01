@@ -2123,7 +2123,7 @@ function renderWireRouting(){
   if(!rect)continue;
   const endX=rect.left-vp.left+rect.width/2,endY=rect.top-vp.top+rect.height*.65;
   const bend=Math.max(11,Math.min(19,Math.abs(endX-startX)*.10));
-  const d='M '+startX.toFixed(2)+' '+startY.toFixed(2)+' C '+startX.toFixed(2)+' '+(startY+bend).toFixed(2)+', '+endX.toFixed(2)+' '+(endY+bend).toFixed(2)+', '+endX.toFixed(2)+' '+endY.toFixed(2);
+  const d='M '+startX.toFixed(2)+' '+startY.toFixed(2)+' C '+startX.toFixed(2)+' '+(startY-bend).toFixed(2)+', '+endX.toFixed(2)+' '+(endY-bend).toFixed(2)+', '+endX.toFixed(2)+' '+endY.toFixed(2);
   paths.push('<path d="'+d+'" stroke="#163b2b" stroke-width="5.5" opacity=".72" fill="none" stroke-linecap="round"/>'+
    '<path d="'+d+'" stroke="#8de97c" stroke-width="2" opacity=".96" fill="none" stroke-linecap="round"/>');
  }
