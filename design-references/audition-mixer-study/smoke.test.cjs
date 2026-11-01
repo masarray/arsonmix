@@ -121,5 +121,22 @@ check(node('pluginResults').innerHTML.includes('Compressor X')&&node('pluginResu
 check(registry.setPluginCatalog([{name:'Instrument X',kind:'instrument',format:'VST3',status:'ready'}])===false,'Instrument manifest rejected from effect browser');
 node('pluginClose').dispatch('click');
 
+
+// Explicit channel format + patch safety; do not infer stereo from a single input pin.
+node('reset').dispatch('click');
+check(strip(1).includes('data-action="format"')&&strip(1).includes('>M</button>'),'Live mono input strip shows Mono format badge');
+check(strip(1).includes('Simulated mono peak meter'),'Mono strip draws a mono meter');
+const toggleFormat=()=>node('body').handlers.click({target:{closest:k=>k==='[data-action]'?{
+ dataset:{action:'format'},closest:q=>q==='.strip'?{dataset:{id:1}}:null
+}:null}});
+toggleFormat();filter('all');
+check(strip(1).includes('>ST</button>')&&strip(1).includes('Simulated stereo peak meter'),'Flipping Mono→Stereo changes format and meter');
+check(strip(1).includes('<option value="None" selected>None</option>'),'Flipping channel format does not invent an input patch');
+toggleFormat();filter('all');
+check(strip(1).includes('>M</button>')&&strip(1).includes('Simulated mono peak meter'),'Stereo→Mono restores mono controls');
+filter('fx');node('bankNext').dispatch('click');
+check(node('bankSelect').value==='0','Filtered bank arrows follow visible channel group, not global track count');
+filter('all');
+
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
