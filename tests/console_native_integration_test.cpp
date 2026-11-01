@@ -7,6 +7,8 @@
 #include <cassert>
 #include <cmath>
 #include <cstdint>
+#include <limits>
+#include <string_view>
 #include <vector>
 
 using namespace armix::mixer;
@@ -72,18 +74,47 @@ int main() {
     assert(!snap.capabilities.group&&!snap.capabilities.fxReturn);
 
     ConsoleIntentV6 intent;
-    intent.requestId=41;intent.deviceEpoch=epoch;
+    intent.requestId="gui-live:41";intent.deviceEpoch=epoch;
     intent.baseGraphRevision=2;intent.baseRosterRevision=2;
     intent.operation=ConsoleIntentV6::Operation::groupSelected;
     intent.target=ch7;
-    assert(validateConsoleIntent(intent,epoch,40,native)==IntentFaultV6::none);
-    assert(validateConsoleIntent(intent,epoch,41,native)==IntentFaultV6::duplicateOrOldRequest);
-    assert(validateConsoleIntent(intent,epoch+1,40,native)==IntentFaultV6::staleDevice);
+    // Multiple WebViews can coexist/reconnect. Dedup by opaque request ID,
+    // NOT by numeric sequence: 'gui-new:1' remains valid after 'gui-old:41'.
+    const std::array<std::string_view,2> completedIds{
+        "gui-old:41","gui-live:40"};
+    const std::array<std::string_view,3> completedIncluding{
+        "gui-live:41","gui-old:41","gui-live:40"};
+    assert(validateConsoleIntent(intent,epoch,completedIds,native)==IntentFaultV6::none);
+    assert(validateConsoleIntent(intent,epoch,completedIncluding,native)
+           ==IntentFaultV6::duplicateOrOldRequest);
+    assert(validateConsoleIntent(intent,epoch+1,completedIds,native)
+           ==IntentFaultV6::staleDevice);
     intent.baseGraphRevision=1;
-    assert(validateConsoleIntent(intent,epoch,40,native)==IntentFaultV6::staleGraph);
+    assert(validateConsoleIntent(intent,epoch,completedIds,native)
+           ==IntentFaultV6::staleGraph);
     intent.baseGraphRevision=2;intent.baseRosterRevision=1;
-    assert(validateConsoleIntent(intent,epoch,40,native)==IntentFaultV6::staleRoster);
+    assert(validateConsoleIntent(intent,epoch,completedIds,native)
+           ==IntentFaultV6::staleRoster);
     intent.baseRosterRevision=2;
+    intent.requestId="gui-new:1";
+    assert(validateConsoleIntent(intent,epoch,completedIds,native)==IntentFaultV6::none);
+    intent.requestId="gui-live:41";
+    assert(validConsoleRequestId(intent.requestId));
+    intent.requestId="gui\nbad:42";
+    assert(validateConsoleIntent(intent,epoch,completedIds,native)
+           ==IntentFaultV6::invalidRequest);
+    intent.requestId=std::string(129,'x');
+    assert(validateConsoleIntent(intent,epoch,completedIds,native)
+           ==IntentFaultV6::invalidRequest);
+    intent.requestId="gui-live:41";
+    ChannelId parsed{};
+    assert(parseNativeChannelId("18446744073709551615",parsed) &&
+           parsed.value==std::numeric_limits<std::uint64_t>::max());
+    assert(!parseNativeChannelId("18446744073709551616",parsed));
+    assert(!parseNativeChannelId("ch-07",parsed));
+    assert(!parseNativeChannelId("07",parsed));
+    assert(!parseNativeChannelId("0",parsed));
+    assert(parseNativeChannelId(std::to_string(ch7.value),parsed) && parsed==ch7);
 
     std::array<float,32> a{},b{},left{},right{},ml{},mr{};
     a.fill(.2f);b.fill(.4f);
@@ -108,6 +139,8 @@ int main() {
     assert(!stale.ok());
     auto nack=consoleAckFromNative(intent,IntentFaultV6::none,native,&stale);
     assert(nack.status==ConsoleAckV6::Status::rejected);
+    assert(nack.requestId==intent.requestId);
+    assert(consoleWireAckStatus(nack)=="REJECTED");
     assert(nack.graphRevision==2 && !nack.productionCallbackLive);
     const auto prev=snap;
     assert(!projectAcceptedConsoleV6(native,epoch+1,2,snap));
@@ -121,6 +154,8 @@ int main() {
     group=added.edit.createdIds[0];
     auto ack=consoleAckFromNative(intent,IntentFaultV6::none,native,&added);
     assert(ack.status==ConsoleAckV6::Status::acceptedGraph);
+    assert(ack.requestId=="gui-live:41");
+    assert(consoleWireAckStatus(ack)=="ACCEPTED");
     assert(ack.graphRevision==3 && !ack.productionCallbackLive);
     assert(projectAcceptedConsoleV6(native,epoch,3,snap));
     assert(find(snap,ch7)->primaryOutId==std::to_string(group.value));
