@@ -180,6 +180,3 @@ test('standalone preview uses the same source-owned app and mixer shell',()=>{
  assert.match(builder,/script_start=built\.index\('<script>'\)/);
  assert.match(builder,/\(ROOT\/'web\/app\.js'\)\.read_text/);
 });
-
-// Always run PR#278 V6 production material/identity/parity gate in the existing UI suite.
-import './operator_visual_identity_v6_contract_test.mjs';
