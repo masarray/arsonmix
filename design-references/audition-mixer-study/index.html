@@ -1061,39 +1061,39 @@ button:disabled{opacity:.45;cursor:not-allowed}
 <div class="app">
   <header class="window-title"><span class="logo">ArSonMix</span><span class="file-name">Mixer · Reference Session</span><span class="study">OPERATOR-FIRST · SINGLE LIVE CONSOLE REFERENCE</span></header>
   <div class="command-bar" role="toolbar" aria-label="Live mixer controls">
-    <button class="tool primary" id="pluginsButton" title="Search and assign FX plugins (F8)" aria-controls="pluginBrowser" aria-expanded="false">Plugins · F8</button>
+    <button class="tool btn-180 primary" id="pluginsButton" title="Search and assign FX plugins (F8)" aria-controls="pluginBrowser" aria-expanded="false">Plugins · F8</button>
     <span class="sep"></span>
-    <span class="toolbar-label">BANK</span><button class="tool bank-arrow" id="bankPrev" title="Previous bank">‹</button>
+    <span class="toolbar-label">BANK</span><button class="tool btn-180 bank-arrow" id="bankPrev" title="Previous bank" aria-label="Previous channel bank"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M14,17L9,12l5-5V17Z"/></svg></button>
     <select class="toolbar-select" id="bankSelect" aria-label="Mixer bank"><option value="0">CH 01–10</option></select>
-    <button class="tool bank-arrow" id="bankNext" title="Next bank">›</button>
+    <button class="tool btn-180 bank-arrow" id="bankNext" title="Next bank" aria-label="Next channel bank"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M10,17V7l5,5l-5,5Z"/></svg></button>
     <label class="toolbar-label" for="densitySelect">VIEW</label><select id="densitySelect" class="density-select" aria-label="Channel strip size"><option value="comfort" selected>Comfort</option><option value="standard">Standard</option><option value="compact">Compact</option></select>
     <span class="sep"></span>
-    <button class="tool" id="sofToggle" title="Mix Aux and FX sends using the channel faders" aria-pressed="false">Sends on Faders</button>
+    <button class="tool btn-180" id="sofToggle" title="Mix Aux and FX sends using the channel faders" aria-pressed="false">Sends on Faders</button>
     <select class="toolbar-select" id="sofTarget" aria-label="Send target"><option value="Bus A">Bus A</option></select>
-    <button class="tool" id="clearCue" title="Clear all Cue / PFL monitoring selections">Clear PFL</button>
+    <button class="tool btn-180" id="clearCue" title="Clear all Cue / PFL monitoring selections">Clear PFL</button>
     <span class="sep"></span>
     <label class="toolbar-label" for="sceneSelect">SNAPSHOT</label>
     <select id="sceneSelect" class="toolbar-select" aria-label="Saved live mixer snapshots"><option value="">Current</option></select>
-    <button class="tool" id="saveScene" title="Store a live mixer snapshot locally">Save</button>
-    <button class="tool" id="recallScene" title="Recall snapshot · Snapshot Safe channels protected">Recall</button>
+    <button class="tool btn-180" id="saveScene" title="Store a live mixer snapshot locally">Save</button>
+    <button class="tool btn-180" id="recallScene" title="Recall snapshot · Snapshot Safe channels protected">Recall</button>
     <details class="more-tools" id="moreTools">
-      <summary class="tool" title="Less-frequent mixer operations">More ···</summary>
+      <summary class="tool btn-180" title="Less-frequent mixer operations">More ···</summary>
       <div class="more-tools-panel">
         <span class="more-tools-caption">CHANNEL SETUP</span>
-        <button class="tool" id="addTrack" title="Create mono or stereo input channel">+ Audio</button>
-        <button class="tool" id="addBus" title="Create group bus">+ Bus</button>
-        <button class="tool" id="addFx" title="Create a send FX return">+ FX Return</button>
+        <button class="tool btn-180" id="addTrack" title="Create mono or stereo input channel">+ Audio</button>
+        <button class="tool btn-180" id="addBus" title="Create group bus">+ Bus</button>
+        <button class="tool btn-180" id="addFx" title="Create a send FX return">+ FX Return</button>
         <span class="more-tools-caption">VIEW & SELECTION</span>
-        <button class="tool" id="mode" aria-pressed="false" title="Compact narrow channel strips">Narrow</button>
+        <button class="tool btn-180" id="mode" aria-pressed="false" title="Compact narrow channel strips">Narrow</button>
         <select id="viewFilter" class="toolbar-select" aria-label="Filter channel types"><option value="all">All</option><option value="audio">Audio</option><option value="bus">Buses</option><option value="fx">FX Returns</option><option value="solo">Solo</option></select>
-        <button class="tool" id="copy" title="Copy selected channel settings (Ctrl+C)">Copy</button>
-        <button class="tool" id="paste" title="Paste selected settings (Ctrl+V)">Paste</button>
-        <button class="tool" id="group" title="Link selected channel faders">Group</button>
-        <button class="tool" id="ungroup" title="Remove selected channel link">Ungroup</button>
-        <button class="tool" id="sceneSafe" title="Protect selected channel from Snapshot recall">Snapshot Safe</button>
+        <button class="tool btn-180" id="copy" title="Copy selected channel settings (Ctrl+C)">Copy</button>
+        <button class="tool btn-180" id="paste" title="Paste selected settings (Ctrl+V)">Paste</button>
+        <button class="tool btn-180" id="group" title="Link selected channel faders">Group</button>
+        <button class="tool btn-180" id="ungroup" title="Remove selected channel link">Ungroup</button>
+        <button class="tool btn-180" id="sceneSafe" title="Protect selected channel from Snapshot recall">Snapshot Safe</button>
         <span class="more-tools-caption">REFERENCE TOOLS</span>
-        <button class="tool" id="preview" aria-pressed="false" title="Show fake metering movement; no hardware audio">▶ Demo Meters</button>
-        <button class="tool" id="reset" title="Reset UI reference mixer controls">Reset Demo</button>
+        <button class="tool btn-180" id="preview" aria-pressed="false" title="Show fake metering movement; no hardware audio">▶ Demo Meters</button>
+        <button class="tool btn-180" id="reset" title="Reset UI reference mixer controls">Reset Demo</button>
       </div>
     </details>
   </div>
@@ -1101,6 +1101,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
     <div class="mixer-title"><span class="accent"></span><span class="panel-name">Live Mixer</span><span class="panel-sub">▤</span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
     <section class="console-body collapsed-send" data-density="comfort" aria-label="Live mixing console">
       <aside class="section-rail" aria-label="Mixer section icons">
+        <div class="rail-cell identity" title="Channel identity">CH</div>
         <button class="rail-cell route" data-section="route" aria-expanded="true" title="Collapse / expand Inputs and Outputs">⇥</button>
         <button class="rail-cell fx" data-section="fx" aria-expanded="true" title="Collapse / expand Effects">fx</button>
         <button class="rail-cell send collapsed" data-section="send" aria-expanded="false" title="Collapse / expand Sends">↪</button>
@@ -1113,6 +1114,14 @@ button:disabled{opacity:.45;cursor:not-allowed}
       <div class="tracks-viewport" id="viewport" tabindex="0" aria-label="Visible channel bank; use upper arrow buttons for more channels"><div class="tracks" id="tracks"></div></div>
       <div id="master"></div>
     </section>
+    <div id="channelIdentity" class="channel-identity" role="dialog" aria-label="Edit channel name icon and color" hidden>
+      <div class="identity-head"><span id="identityTitle">CHANNEL IDENTITY</span><button id="identityClose" aria-label="Close channel editor">×</button></div>
+      <label class="identity-label" for="identityName">NAME</label>
+      <input id="identityName" type="text" maxlength="30" spellcheck="false" autocomplete="off" aria-label="Channel name">
+      <div class="identity-label">CHANNEL ICON</div><div id="identityIcons" class="identity-icons" role="group" aria-label="Choose channel icon"></div>
+      <div class="identity-label">CHANNEL COLOR</div><div id="identityColors" class="identity-colors" role="group" aria-label="Choose channel color"></div>
+      <div class="identity-actions"><button id="identityCancel" class="btn-180" type="button">Cancel</button><button id="identitySave" class="btn-180" type="button">Apply</button></div>
+    </div>
     <aside id="pluginBrowser" class="plugin-browser" aria-label="Effects plugin manager" hidden>
       <div class="plugin-head"><div class="plugin-head-title"><span>PLUGIN MANAGER</span><span id="pluginTarget" class="plugin-target">Select a channel FX slot</span></div><button class="plugin-close" id="pluginClose" title="Close plugin manager" aria-label="Close plugin manager">×</button></div>
       <div class="plugin-search-row"><input type="search" id="pluginSearch" autocomplete="off" spellcheck="false" placeholder="Search effects or vendor…   F8" aria-label="Find effects"></div>
@@ -1140,11 +1149,16 @@ button:disabled{opacity:.45;cursor:not-allowed}
 <script>
 (function(){
 'use strict';
-const COLORS=['#3b98a1','#598e72','#af9258','#a6676f','#6b88b4','#9180b5','#9e9571','#63958d','#a8799e','#6083a0'];
+const COLORS=['#1699cd','#b92e41','#cf6b1e','#b28c27','#34a544','#168762','#0e95c9','#066fa9','#7140b5','#b52893'];
+const CHANNEL_PALETTE=[...COLORS,'#c32974','#586889'];
+const CHANNEL_ICONS=['♩','♫','♬','🎙','🎸','🎹','🥁','🎧','▥','◉','◎','⊞'];
+const DEFAULT_ICONS=['🎙','🎙','♬','♫','🎙','🎙','🎸','🎹','🎧','♬'];
+function iconFor(t){return CHANNEL_ICONS.includes(t.icon)?t.icon:t.kind==='master'?'◎':t.kind==='bus'?'⊞':t.kind==='fx'?'◉':'♩';}
 const INIT=['Host','Interview','Sound FX','Music Bed','Vocal 1','Vocal 2','Guitar','Keyboard','Playback','Ambience'];
 const FX=['None','Parametric Equalizer','Dynamics Processing','Studio Reverb','DeEsser','Hard Limiter','Tube-modeled Compressor','Delay','Chorus','Multiband Compressor','Graphic Equalizer','Echo'];
 const CATEGORIES={'Parametric Equalizer':'EQ','Graphic Equalizer':'EQ','Dynamics Processing':'Dynamics','Hard Limiter':'Dynamics','Tube-modeled Compressor':'Dynamics','Multiband Compressor':'Dynamics',DeEsser:'Dynamics','Studio Reverb':'Reverb',Delay:'Delay',Echo:'Delay',Chorus:'Modulation'};
 let pluginCatalog=FX.filter(x=>x!=='None').map((name,i)=>({id:'demo-'+i,name,vendor:'Reference Effect',category:CATEGORIES[name]||'Utility',format:'DEMO',status:'demo',latencySamples:null,favorite:i<3,hidden:false}));
+let identityTrackId=null,identityColor='',identityIcon='';
 let pluginRecent=[],activeFxTarget=null,pluginOpen=false,quickOpen=false,scanPaths=['C:\\Program Files\\Common Files\\VST3'];
 const PLUGIN_PREFS_KEY='arsonmix.ref.plugin-prefs.v1';
 function restorePluginPreferences(){
@@ -1168,9 +1182,9 @@ const clone=x=>JSON.parse(JSON.stringify(x));
 const selection=()=>tracks.concat(master).filter(t=>t.selected);
 const make=(name,kind,color)=>{
  const id=nextId++;
- return {id,name,kind,color,group:null,safe:false,format:'stereo',input:'None',output:kind==='master'?'Default Output':'Master',fx:Array(8).fill('None'),slotBypass:Array(8).fill(false),fxOn:true,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,activeSend:0,sendSlots:Array.from({length:16},()=>({send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0})),eq:true,pan:0,trim:0,mute:false,solo:false,cue:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
+ return {id,name,kind,color,icon:kind==='master'?'◎':kind==='bus'?'⊞':kind==='fx'?'◉':'♩',group:null,safe:false,format:'stereo',input:'None',output:kind==='master'?'Default Output':'Master',fx:Array(8).fill('None'),slotBypass:Array(8).fill(false),fxOn:true,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,activeSend:0,sendSlots:Array.from({length:16},()=>({send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0})),eq:true,pan:0,trim:0,mute:false,solo:false,cue:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
 };
-function init(){nextId=1;nextGroup=1;tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#826b9a'));master=make('Master','master','#5a8ca8');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
+function init(){nextId=1;nextGroup=1;tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const option=(values,selected)=>values.map(x=>'<option value="'+escapeHtml(x)+'"'+(x===selected?' selected':'')+'>'+escapeHtml(x)+'</option>').join('');
 const channelOptions=(t,type)=>{
@@ -1215,7 +1229,8 @@ function sectionFader(t){
  +'<div class="fader-scale"><div class="gain-scale-travel">'+gainScale+'</div></div></div></div>';
 }
 function strip(t){
- let code='<article class="strip '+t.kind+(t.selected?' selected':'')+'" data-id="'+t.id+'" style="--track-color:'+t.color+'" aria-label="'+escapeHtml(t.name)+' channel">';
+ let code='<article class="strip '+t.kind+(t.selected?' selected':'')+'" data-id="'+t.id+'" style="--track-color:'+t.color+';--ch:'+t.color+'" aria-label="'+escapeHtml(t.name)+' channel">';
+ code+='<button type="button" class="strip-identity-top" data-action="editIdentity" title="Edit channel name, icon and color" aria-label="Edit '+escapeHtml(t.name)+' channel identity"><span class="identity-number">'+(t.kind==='master'?'MASTER':'CH '+String(t.id).padStart(2,'0'))+'</span><span class="identity-name">'+escapeHtml(t.name)+'</span><span class="identity-symbol" aria-hidden="true">'+escapeHtml(iconFor(t))+'</span></button>';
  code+='<div class="section route-section"><div class="route-top"><span class="route-indicator">'+(t.kind==='audio'?'▥':t.kind==='bus'?'↪':t.kind==='fx'?'∿':'➜')+'</span>'+(t.safe?'<span class="safe-marker" title="Snapshot safe · recall protected">SAFE</span>':'')+(t.group?'<span class="group-indicator" title="Linked group '+escapeHtml(t.group)+'">'+escapeHtml(t.group)+'</span>':'')+(t.kind==='audio'?'<button class="mini format-badge" data-action="format" title="Processing width M/ST (preserves physical input source)">'+(t.format==='mono'?'M':'ST')+'</button>':'')+'<button class="mini phase '+(t.phase?'on':'')+'" data-action="phase" title="Reverse polarity">'+(t.phase?'Ø':'⊘')+'</button></div>';
  if(t.kind==='audio')code+='<div class="route-field"><span class="route-caption">IN</span><select class="route-select" data-field="input" title="Input source (demo choices)" aria-label="'+escapeHtml(t.name)+' input">'+option(channelOptions(t,'input'),t.input)+'</select></div>';
  else if(t.kind==='bus'||t.kind==='fx')code+='<div class="route-field"><span class="route-caption">IN</span><span class="route-identity">'+(t.kind==='bus'?'GROUP':'FX RETURN')+'</span></div>';
@@ -1229,7 +1244,7 @@ function strip(t){
    +'<button class="switch btn-180 solo '+(t.solo?'on':'')+'" data-action="solo" title="Solo channel" aria-pressed="'+t.solo+'">SOLO</button>'
    +'<button class="switch btn-180 cue '+(t.cue?'on':'')+'" data-action="cue" title="Cue / PFL monitor bus (reference only)" aria-pressed="'+t.cue+'">PFL</button></div>';
  code+=sectionFader(t);
- code+='<div class="bottom-section"><div class="db-value">'+(sofEnabled&&t.kind==='audio'?'S ': '')+formatDb(sofEnabled&&t.kind==='audio'?getSofLevel(t):t.level)+'</div><div class="footer-label '+(t.kind==='master'?'master-label':t.kind==='bus'?'bus-label':'')+'"><span class="name" data-action="rename" title="Double-click to rename">'+escapeHtml(t.name)+'</span><div class="color-strip"></div></div></div></article>';
+ code+='<div class="bottom-section"><div class="db-value">'+(sofEnabled&&t.kind==='audio'?'S ': '')+formatDb(sofEnabled&&t.kind==='audio'?getSofLevel(t):t.level)+'</div><div class="footer-label '+(t.kind==='master'?'master-label':t.kind==='bus'?'bus-label':'')+'"><span class="name" data-action="rename" title="Edit channel name, icon and color">'+escapeHtml(t.name)+'</span><span class="footer-icon" aria-hidden="true">'+escapeHtml(iconFor(t))+'</span><div class="color-strip"></div></div></div></article>';
  return code;
 }
 function bankCapacity(){
@@ -1509,7 +1524,7 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  const btn=e.target.closest('[data-action]');if(!btn)return;
  const t=findTrack(btn);if(!t)return;
  const a=btn.dataset.action;
- if(a==='rename')return;
+ if(a==='rename'||a==='editIdentity'){openChannelIdentity(t,btn);return;}
  if(a==='format'&&t.kind==='audio'){t.format=t.format==='mono'?'stereo':'mono';refreshStrip(t);say(t.name+' processing → '+t.format.toUpperCase()+' · physical source '+t.input+' unchanged (reference only)');return;}
  if(a==='openPlugin'){openFastPicker(t,Number(btn.dataset.slot),btn);return;}
  if(a==='removeFx'){const i=Number(btn.dataset.slot);t.fx[i]='None';t.slotBypass[i]=false;refreshStrip(t);say(t.name+' · cleared FX insert '+(i+1));return;}
