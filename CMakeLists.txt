@@ -69,6 +69,14 @@ if(BUILD_TESTING)
   # all CTests. Make its native session regression a build dependency so the
   # new executable is actually present (without editing the CI target list).
   add_dependencies(ARMixMixerRoutingTests ARMixDynamicAcceptedSessionTests)
+  # Integration-only producer/consumer: accepted ChannelId readback + real
+  # offline PCM with CH07/CH02, GROUP, wet FX RETURN and MONITOR. No new host.
+  add_executable(ARMixConsoleBridgeV6Tests tests/console_native_integration_test.cpp
+      integration/ConsoleNativeContractV6.h)
+  target_compile_features(ARMixConsoleBridgeV6Tests PRIVATE cxx_std_20)
+  add_test(NAME ConsoleV6NativeAcceptedSnapshotAndGoldenPCM COMMAND ARMixConsoleBridgeV6Tests)
+  # Existing Windows build target pulls in this test without a second workflow.
+  add_dependencies(ARMixMixerRoutingTests ARMixConsoleBridgeV6Tests)
   add_executable(ARMixChannelRoutingContractTests tests/channel_routing_contract_test.cpp)
   target_compile_features(ARMixChannelRoutingContractTests PRIVATE cxx_std_20)
   add_test(NAME MonoStereoSparsePhysicalPortRouting COMMAND ARMixChannelRoutingContractTests)
