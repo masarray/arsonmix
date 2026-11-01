@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="dark">
-<title>ArSonMix — Multitrack Mixer Reference</title>
+<title>ArSonMix — Live Console Reference</title>
 <style>
 :root{
   color-scheme:dark;--bg:#242424;--panel:#222325;--panel2:#292a2c;
@@ -279,13 +279,14 @@ button:disabled{opacity:.45;cursor:not-allowed}
 </head>
 <body>
 <div class="app">
-  <header class="window-title"><span class="logo">ArSonMix</span><span class="file-name">Mixer · Reference Session</span><span class="study">AUDITION CHANNEL STRIPS · STUDIO ONE WORKFLOW REFERENCE</span></header>
+  <header class="window-title"><span class="logo">ArSonMix</span><span class="file-name">Mixer · Reference Session</span><span class="study">OPERATOR-FIRST · SINGLE LIVE CONSOLE REFERENCE</span></header>
   <div class="command-bar" role="toolbar" aria-label="Live mixer controls">
     <button class="tool primary" id="pluginsButton" title="Search and assign FX plugins (F8)" aria-controls="pluginBrowser" aria-expanded="false">Plugins · F8</button>
     <span class="sep"></span>
     <span class="toolbar-label">BANK</span><button class="tool bank-arrow" id="bankPrev" title="Previous bank">‹</button>
     <select class="toolbar-select" id="bankSelect" aria-label="Mixer bank"><option value="all">All banks</option></select>
     <button class="tool bank-arrow" id="bankNext" title="Next bank">›</button>
+    <label class="toolbar-label" for="densitySelect">VIEW</label><select id="densitySelect" class="density-select" aria-label="Channel strip size"><option value="comfort" selected>Comfort</option><option value="standard">Standard</option><option value="compact">Compact</option></select>
     <span class="sep"></span>
     <button class="tool" id="sofToggle" title="Mix Aux and FX sends using the channel faders" aria-pressed="false">Sends on Faders</button>
     <select class="toolbar-select" id="sofTarget" aria-label="Send target"><option value="Bus A">Bus A</option></select>
@@ -317,8 +318,8 @@ button:disabled{opacity:.45;cursor:not-allowed}
     </details>
   </div>
   <main class="console-pane">
-    <div class="mixer-title"><span class="accent"></span><span class="panel-name">Mixer</span><span class="panel-sub">▤</span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
-    <section class="console-body" aria-label="Multitrack mixing console">
+    <div class="mixer-title"><span class="accent"></span><span class="panel-name">Live Mixer</span><span class="panel-sub">▤</span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
+    <section class="console-body" data-density="comfort" aria-label="Live mixing console">
       <aside class="section-rail" aria-label="Mixer section icons">
         <button class="rail-cell route" data-section="route" aria-expanded="true" title="Collapse / expand Inputs and Outputs">⇥</button>
         <button class="rail-cell fx" data-section="fx" aria-expanded="true" title="Collapse / expand Effects">fx</button>
@@ -403,23 +404,35 @@ function sectionSend(t){
 function formatDb(n){return n<=-60?'-∞':(n>0?'+':'')+Number(n).toFixed(1);}
 function panLabel(n){return Number(n)===0?'C':n<0?'L'+Math.abs(n):'R'+n;}
 function panStyle(n){const left=Math.min(50,50+n/2),right=Math.max(50,50+n/2);return '--pan-start:'+left+'%;--pan-end:'+right+'%';}
+function faderPercent(value,isSend){
+ const min=-60,max=isSend?6:15;
+ return Math.max(0,Math.min(100,((Number(value)-min)/(max-min))*100));
+}
 function sectionFader(t){
  const isSend=sofEnabled&&t.kind==='audio',value=isSend?getSofLevel(t):t.level;
  const ticks=[isSend?'+6':'+15','0','-6','-12','-24','-36','-48','-∞'];
- return '<div class="fader-section"><div class="fader-scale">'+ticks.map(s=>'<span>'+s+'</span>').join('')+'</div><div class="fader-box"><input class="fader" type="range" min="-60" max="'+(isSend?6:15)+'" value="'+value+'" step=".1" data-field="level" title="'+(isSend?'SEND to '+escapeHtml(sofTarget)+' · main channel fader not changed':'Main level — double click to reset to 0 dB')+'" aria-label="'+escapeHtml(t.name)+' volume"></div><div class="meter-box '+(t.format==='mono'?'mono':'stereo')+'" aria-label="Simulated '+(t.format==='mono'?'mono':'stereo')+' peak meter"><div class="meter-lane"><div class="meter-fill left"></div></div>'+(t.format==='mono'?'':'<div class="meter-lane"><div class="meter-fill right"></div></div>')+'<div class="peak '+(t.clip?'clipping':'')+'"></div></div></div>';
+ const mainValue=(isSend?'SEND ':'')+formatDb(value)+' dB';
+ return '<div class="fader-section">'
+  +'<div class="fader-head"><output class="fader-readout" aria-label="'+escapeHtml(t.name)+' level">'+mainValue+'</output><span class="clip-indicator '+(t.clip?'clipping':'')+'" title="Clip latch · demo only">CLIP</span></div>'
+  +'<div class="fader-workspace"><div class="fader-scale">'+ticks.map(x=>'<span>'+x+'</span>').join('')+'</div>'
+  +'<div class="fader-box" style="--fader-fill:'+faderPercent(value,isSend)+'%">'
+  +'<input class="fader" type="range" min="-60" max="'+(isSend?6:15)+'" value="'+value+'" step=".1" data-field="level" title="'+(isSend?'SEND to '+escapeHtml(sofTarget)+' · main fader unchanged':'Main level · double-click resets 0 dB')+'" aria-label="'+escapeHtml(t.name)+' volume"></div>'
+  +'<div class="meter-box '+(t.format==='mono'?'mono':'stereo')+'" aria-label="Simulated '+(t.format==='mono'?'mono':'stereo')+' peak meter"><div class="meter-lane"><div class="meter-fill left"></div></div>'
+  +(t.format==='mono'?'':'<div class="meter-lane"><div class="meter-fill right"></div></div>')
+  +'<div class="peak '+(t.clip?'clipping':'')+'"></div></div></div></div>';
 }
 function strip(t){
  let code='<article class="strip '+t.kind+(t.selected?' selected':'')+'" data-id="'+t.id+'" style="--track-color:'+t.color+'" aria-label="'+escapeHtml(t.name)+' channel">';
  code+='<div class="section route-section"><div class="route-top"><span class="route-indicator">'+(t.kind==='audio'?'▥':t.kind==='bus'?'↪':t.kind==='fx'?'∿':'➜')+'</span>'+(t.safe?'<span class="safe-marker" title="Snapshot safe · recall protected">SAFE</span>':'')+(t.group?'<span class="group-indicator" title="Linked group '+escapeHtml(t.group)+'">'+escapeHtml(t.group)+'</span>':'')+(t.kind==='audio'?'<button class="mini format-badge" data-action="format" title="Flip mono/stereo">'+(t.format==='mono'?'M':'ST')+'</button>':'')+'<button class="mini phase '+(t.phase?'on':'')+'" data-action="phase" title="Reverse polarity">'+(t.phase?'Ø':'⊘')+'</button></div>';
- if(t.kind==='audio')code+='<select class="route-select" data-field="input" title="Track input" aria-label="'+escapeHtml(t.name)+' input">'+option(channelOptions(t,'input'),t.input)+'</select>';
- else if(t.kind==='bus'||t.kind==='fx')code+='<div class="route-select" style="line-height:17px;color:#a0a9ad">'+(t.kind==='bus'?'Bus Summing':'FX Summing')+'</div>';
- else code+='<div class="route-select" style="line-height:17px;color:#777">Mix Track</div>';
- code+='<select class="route-select" data-field="output" title="Track output" aria-label="'+escapeHtml(t.name)+' output">'+option(channelOptions(t,'output'),t.output)+'</select></div>';
+ if(t.kind==='audio')code+='<div class="route-field"><span class="route-caption">IN</span><select class="route-select" data-field="input" title="Input source (demo choices)" aria-label="'+escapeHtml(t.name)+' input">'+option(channelOptions(t,'input'),t.input)+'</select></div>';
+ else if(t.kind==='bus'||t.kind==='fx')code+='<div class="route-field"><span class="route-caption">IN</span><span class="route-identity">'+(t.kind==='bus'?'GROUP':'FX RETURN')+'</span></div>';
+ else code+='<div class="route-field"><span class="route-caption">IN</span><span class="route-identity">SUM BUS</span></div>';
+ code+='<div class="route-field"><span class="route-caption">OUT</span><select class="route-select" data-field="output" title="Primary output" aria-label="'+escapeHtml(t.name)+' output">'+option(channelOptions(t,'output'),t.output)+'</select></div></div>';
  code+=sectionFx(t)+sectionSend(t);
  code+='<div class="section eq-section '+(t.eq?'':'off')+'"><div class="eq-header"><span class="sym">▥</span><small style="font-size:9px;color:#959b9d">EQ</small><span class="push"></span><button class="mini power '+(t.eq?'on':'')+'" data-action="eq" title="Enable/disable EQ">⏻</button></div><button class="eq-line" data-action="eq" title="Toggle track EQ" aria-label="Toggle track EQ">'+eqSvg+'</button></div>';
  code+='<div class="section pan-section"><span class="pan-icon" title="Pan / Balance">◉</span><span class="pan-control" style="'+panStyle(t.pan)+'"><input class="center-pan" type="range" min="-100" max="100" step="1" value="'+t.pan+'" data-field="pan" title="Pan from center; release near center to snap; double-click to center" aria-label="Channel pan; double-click center"></span><output>'+panLabel(t.pan)+'</output></div>';
  code+='<div class="section trim-section"><span class="trim-label" title="Digital input trim">TRIM</span><input class="trim-control" type="range" min="-24" max="24" step="0.5" value="'+t.trim+'" data-field="trim" aria-label="Digital trim dB" title="Digital trim (-24..+24dB)"><output class="trim-value">'+formatDb(t.trim)+'</output></div>';
- code+='<div class="section switch-section"><button class="switch mute '+(t.mute?'on':'')+'" data-action="mute" title="Mute channel" aria-pressed="'+t.mute+'">M</button><button class="switch solo '+(t.solo?'on':'')+'" data-action="solo" title="Solo channel" aria-pressed="'+t.solo+'">S</button>'+(t.kind!=='master'?'<button class="switch cue '+(t.cue?'on':'')+'" data-action="cue" title="Cue / PFL to separate monitor bus (visual only)" aria-pressed="'+t.cue+'">PFL</button>':'')+(t.kind==='audio'?'<button class="switch mon '+(t.mon?'on':'')+'" data-action="mon" title="Input monitor (visual only)" aria-pressed="'+t.mon+'">I</button>':'')+'</div>';
+ code+='<div class="section switch-section"><button class="switch mute '+(t.mute?'on':'')+'" data-action="mute" title="Mute channel" aria-pressed="'+t.mute+'"><span class="switch-full">MUTE</span><span class="switch-short">M</span></button><button class="switch solo '+(t.solo?'on':'')+'" data-action="solo" title="Solo channel" aria-pressed="'+t.solo+'"><span class="switch-full">SOLO</span><span class="switch-short">S</span></button>'+(t.kind!=='master'?'<button class="switch cue '+(t.cue?'on':'')+'" data-action="cue" title="Cue / PFL to separate monitor bus (visual only)" aria-pressed="'+t.cue+'">PFL</button>':'')+(t.kind==='audio'?'<button class="switch mon '+(t.mon?'on':'')+'" data-action="mon" title="Input monitor (visual only)" aria-pressed="'+t.mon+'">I</button>':'')+'</div>';
  code+=sectionFader(t);
  code+='<div class="bottom-section"><div class="db-value">'+(sofEnabled&&t.kind==='audio'?'S ': '')+formatDb(sofEnabled&&t.kind==='audio'?getSofLevel(t):t.level)+'</div><div class="footer-label '+(t.kind==='master'?'master-label':t.kind==='bus'?'bus-label':'')+'"><span class="name" data-action="rename" title="Double-click to rename">'+escapeHtml(t.name)+'</span><div class="color-strip"></div></div></div></article>';
  return code;
@@ -440,6 +453,28 @@ function render(){
  document.getElementById('trackCount').textContent=tracks.filter(t=>t.kind==='audio').length+' audio · '+tracks.filter(t=>t.kind==='bus').length+' bus · '+tracks.filter(t=>t.kind==='fx').length+' FX return · master';
 }
 function say(s){info.textContent=s;}
+function syncFaderVisual(t,element){
+ const root=element||document.querySelector('.strip[data-id="'+t.id+'"]');
+ if(!root)return;
+ const isSend=sofEnabled&&t.kind==='audio',v=isSend?getSofLevel(t):t.level;
+ const value=formatDb(v);
+ const readout=root.querySelector('.fader-readout');
+ if(readout)readout.textContent=(isSend?'SEND ':'')+value+' dB';
+ const box=root.querySelector('.fader-box');
+ if(box)box.style.setProperty('--fader-fill',faderPercent(v,isSend)+'%');
+ const db=root.querySelector('.db-value');
+ if(db)db.textContent=(isSend?'S ':'')+value;
+}
+function setDensity(mode){
+ const density=['comfort','standard','compact'].includes(mode)?mode:'comfort';
+ const root=document.querySelector('.console-body'),compact=density==='compact';
+ root.dataset.density=density;
+ root.classList.toggle('narrow',compact);
+ document.getElementById('densitySelect').value=density;
+ const btn=document.getElementById('mode');
+ btn.classList.toggle('active',compact);btn.setAttribute('aria-pressed',String(compact));
+ return density;
+}
 function updateSofTargets(){
  const el=document.getElementById('sofTarget'),choices=tracks.filter(t=>t.kind==='bus'||t.kind==='fx').map(t=>t.name);
  const target=choices.includes(sofTarget)?sofTarget:choices[0]||'';
@@ -541,7 +576,7 @@ function refreshScenes(){
 }
 function saveScene(){
  const name='Scene '+(scenes.length+1);
- scenes.push({name,nextId,nextGroup,tracks:clone(tracks),master:clone(master),filter:document.getElementById('viewFilter').value,narrow:document.querySelector('.console-body').classList.contains('narrow')});
+ scenes.push({name,nextId,nextGroup,tracks:clone(tracks),master:clone(master),filter:document.getElementById('viewFilter').value,narrow:document.querySelector('.console-body').classList.contains('narrow'),density:document.querySelector('.console-body').dataset.density||'comfort'});
  refreshScenes();document.getElementById('sceneSelect').value=String(scenes.length-1);
  say('Scene saved: '+scenes[scenes.length-1].name+' · local reference session only');
 }
@@ -557,9 +592,7 @@ function recallScene(){
  if(protectedChannels.has(master.id))master=protectedChannels.get(master.id);
  nextId=Math.max(nextId,1,...tracks.map(t=>t.id+1),master.id+1);
  document.getElementById('viewFilter').value=scene.filter;
- const body=document.querySelector('.console-body');body.classList.toggle('narrow',scene.narrow);
- document.getElementById('mode').classList.toggle('active',scene.narrow);
- document.getElementById('mode').setAttribute('aria-pressed',String(scene.narrow));
+ setDensity(scene.density||(scene.narrow?'compact':'comfort'));
  render();say('Recalled Scene: '+scene.name+' · GUI state only');
 }
 function groupSelected(){
@@ -579,18 +612,18 @@ function handleField(event){
  if(field==='fx'){t.fx[Number(el.dataset.slot)]=el.value;t.slotBypass[Number(el.dataset.slot)]=false;say(t.name+' · FX '+(Number(el.dataset.slot)+1)+': '+el.value);refreshStrip(t);}
  else if(field==='level'){
  if(sofEnabled&&t.kind==='audio'){
-  if(setSofLevel(t,Number(el.value))){const readout=el.closest('.strip')?.querySelector('.db-value');if(readout)readout.textContent='S '+formatDb(getSofLevel(t));if(event.type==='change')say(t.name+' → '+sofTarget+' send '+formatDb(getSofLevel(t))+' dB');}
+  if(setSofLevel(t,Number(el.value))){const readout=el.closest('.strip')?.querySelector('.db-value');if(readout)readout.textContent='S '+formatDb(getSofLevel(t));syncFaderVisual(t,el.closest('.strip'));if(event.type==='change')say(t.name+' → '+sofTarget+' send '+formatDb(getSofLevel(t))+' dB');}
   else el.value=getSofLevel(t);
   return;
  }
  const old=t.level;t.level=Number(el.value);
- const root=el.closest('.strip');const readout=root.querySelector('.db-value');if(readout)readout.textContent=formatDb(t.level);
+ const root=el.closest('.strip');syncFaderVisual(t,root);
  if(t.group&&!event.altKey){
   const delta=t.level-old;
   tracks.filter(peer=>peer.group===t.group&&peer.id!==t.id).forEach(peer=>{
    peer.level=Math.max(-60,Math.min(15,Math.round((peer.level+delta)*10)/10));
    const other=document.querySelector('.strip[data-id="'+peer.id+'"]');
-   if(other){const fader=other.querySelector('.fader'),db=other.querySelector('.db-value');if(fader)fader.value=peer.level;if(db)db.textContent=formatDb(peer.level);}
+   if(other){const fader=other.querySelector('.fader'),db=other.querySelector('.db-value');if(fader)fader.value=peer.level;if(db)db.textContent=formatDb(peer.level);syncFaderVisual(peer,other);}
   });
  }
  if(event.type==='change')say(t.name+' fader '+formatDb(t.level)+' dB'+(t.group?' (linked '+t.group+')':''));
@@ -693,10 +726,13 @@ document.querySelector('.section-rail').addEventListener('click',e=>{
 });
 document.getElementById('viewFilter').addEventListener('change',()=>{render();say('Channel display filtered: '+document.getElementById('viewFilter').value);});
 document.getElementById('mode').addEventListener('click',()=>{
- const narrow=document.querySelector('.console-body').classList.toggle('narrow');
- const button=document.getElementById('mode');
- button.classList.toggle('active',narrow);button.setAttribute('aria-pressed',String(narrow));
- say(narrow?'Narrow mode: inserts and sends hidden for maximum fader density':'Full mode: I/O, FX, Sends, EQ displayed');
+ const compact=document.querySelector('.console-body').classList.contains('narrow');
+ const value=setDensity(compact?'comfort':'compact');
+ say('Mixer density: '+value+' · all live controls remain reachable');
+});
+document.getElementById('densitySelect').addEventListener('change',()=>{
+ const value=setDensity(document.getElementById('densitySelect').value);
+ say('Mixer density: '+value+' · Master remains pinned');
 });
 document.getElementById('copy').addEventListener('click',copyChannels);
 document.getElementById('paste').addEventListener('click',pasteChannels);
@@ -730,7 +766,7 @@ document.getElementById('addBus').addEventListener('click',()=>{
  const n=tracks.filter(t=>t.kind==='bus').length+1,t=make('Bus '+String.fromCharCode(65+((n-1)%26)),'bus','#846e9e');tracks.push(t);render();selectTrack(t);document.getElementById('viewport').scrollLeft=99999;say('Added '+t.name+' · visual only');
 });
 document.getElementById('clearCue').addEventListener('click',()=>{tracks.forEach(t=>t.cue=false);master.cue=false;render();say('All Cue / PFL requests cleared · no hardware monitor connected');});
-document.getElementById('reset').addEventListener('click',()=>{if(preview)togglePreview();document.getElementById('viewFilter').value='all';document.getElementById('bankSelect').value='all';sofEnabled=false;document.getElementById('sofToggle').classList.remove('active');document.getElementById('sofToggle').setAttribute('aria-pressed','false');document.querySelector('.console-body').classList.remove('sends-mode');document.querySelector('.console-body').classList.remove('narrow');document.getElementById('mode').classList.remove('active');document.getElementById('mode').setAttribute('aria-pressed','false');init();say('Reference mixer reset; saved scenes remain available.');});
+document.getElementById('reset').addEventListener('click',()=>{if(preview)togglePreview();document.getElementById('viewFilter').value='all';document.getElementById('bankSelect').value='all';sofEnabled=false;document.getElementById('sofToggle').classList.remove('active');document.getElementById('sofToggle').setAttribute('aria-pressed','false');document.querySelector('.console-body').classList.remove('sends-mode');setDensity('comfort');init();say('Reference mixer reset; saved scenes remain available.');});
 
 // Browser-only catalog contract. Only the native host can actually scan or instantiate VST3.
 const plugEl=id=>document.getElementById(id);
