@@ -1794,7 +1794,8 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 #app .arV6FieldName{flex:0 0 27px;font:600 9px/1 "Segoe UI",sans-serif;color:#8faebc}
 #app .arV6Field .arV6Select{flex:1 1 0;width:100%;max-width:116px;min-height:23px;padding:2px 3px}
 #app .arV6Fx,#app .arV6Sends{
-  min-height:0;overflow:hidden;display:flex;flex-direction:column;gap:3px;
+  min-height:0;overflow-x:hidden;overflow-y:auto;scrollbar-width:thin;
+  display:flex;flex-direction:column;gap:3px;
   border-top:1px solid #354b57;padding-top:5px;
 }
 #app .arV6SectionTitle{font:600 9px/1.2 "Segoe UI",sans-serif;letter-spacing:.6px;color:#83aaba}
@@ -1884,6 +1885,11 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
  #app .arV6FxSlot .arV6Button{min-height:18px}
  #app .arV6Device{font-size:9px}
 }
+
+#app .arV6RoleSelect{width:78px;max-width:78px}
+#app .arV6FxSlot[draggable="true"]{cursor:grab}
+#app .arV6FxSlot[draggable="true"]:active{cursor:grabbing}
+#app .arV6PluginChoice{width:100%;max-width:100%;min-height:23px}
 </style>
 <style id="arsonmix-mixer-io-css">/* G1/G2: stable channel-bank geometry; FX rack remains mounted in every mode. */
 #app .workbench{display:flex;flex-direction:column}
@@ -5892,6 +5898,8 @@ scheduleDemoMeter();
   const byId=new Map();
   const pending=new Map();
   const pendingTargets=new Set();
+  const awaitingSnapshot=new Map();
+  let snapshotSerial=0;
   const operationCaps={
     SET_SOURCE:'SET_SOURCE',SET_PROCESSING_FORMAT:'SET_PROCESSING_FORMAT',
     SET_PRIMARY_OUT:'SET_PRIMARY_OUT',ADD_INSERT:'ADD_INSERT',
@@ -5902,6 +5910,7 @@ scheduleDemoMeter();
     SET_SOLO:'SET_SOLO',CREATE_CHANNEL:'CREATE_CHANNEL'
   };
   let accepted=null,acceptedNative=false,modeSend='',lastStructure='',requestSeq=0;
+  let draggingFx=null;
   const instance='gui'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
   let feedback='';
   const root=h('section','arV6Console');root.id='arV6Console';
@@ -5954,7 +5963,7 @@ scheduleDemoMeter();
   }
   function can(op,id){
     if(!supported(op))return false;
-    if(op==='CREATE_CHANNEL')return !!accepted.graph.capabilities.dynamicChannels;
+    if(op==='CREATE_CHANNEL')return !!accepted.graph.capabilities.dynamicChannels && !pendingTargets.has('@roster');
     if(op==='ADD_INSERT'&&!accepted?.catalog?.plugins?.length)return false;
     if(!id)return true;
     const ch=byId.get(id);
@@ -5973,8 +5982,10 @@ scheduleDemoMeter();
     const requestId=instance+':'+(++requestSeq);
     const command={requestId,baseRevision:accepted.graph.revision,
       deviceEpoch:accepted.device.epoch,op,targetChannelId:id||null,payload:payload||{}};
-    pending.set(requestId,{op,id,baseRevision:command.baseRevision,epoch:command.deviceEpoch});
+    pending.set(requestId,{op,id,baseRevision:command.baseRevision,epoch:command.deviceEpoch,
+      snapshotSerial});
     if(id)pendingTargets.add(id);
+    else if(op==='CREATE_CHANNEL')pendingTargets.add('@roster');
     showFeedback('PENDING · '+op+' · awaiting native ACK');
     refreshDisabled();
     backend.emitEvent('arMixConsoleIntent',command);
@@ -5985,18 +5996,26 @@ scheduleDemoMeter();
     if(!ack||typeof ack.requestId!=='string')return;
     const intent=pending.get(ack.requestId);if(!intent)return;
     pending.delete(ack.requestId);
-    if(intent.id)pendingTargets.delete(intent.id);
+    const target=intent.id||'@roster';
     if(ack.status==='ACCEPTED'){
-      // ACK is NOT a replacement graph. No channel/route/FX mutation before
-      // a full accepted snapshot arrives; telemetry is never guessed.
+      // A realtime ACK may use the same graph revision: require an actual
+      // snapshot received after this gesture before releasing the control.
+      const requiredRevision=Number.isSafeInteger(ack.newRevision)?
+        ack.newRevision:intent.baseRevision;
+      if(snapshotSerial>intent.snapshotSerial&&accepted?.device?.epoch===intent.epoch&&
+         accepted?.graph?.revision>=requiredRevision){
+        pendingTargets.delete(target);
+      }else{
+        awaitingSnapshot.set(ack.requestId,{...intent,requiredRevision});
+      }
       showFeedback('ACCEPTED · '+intent.op+' · synchronizing native snapshot');
       requestSnapshot();
     }else{
+      pendingTargets.delete(target);
       showFeedback((ack.status==='REQUIRES_DEVICE_CHANGE'?'REQUIRES DEVICE · ':'REJECTED · ')+
         clean(ack.errorCode||ack.message||'Native rejected request')+' · accepted audio preserved');
-      // Also request authoritative recovery after stale revision/device.
       requestSnapshot();
-      render();
+      refreshAcceptedControls();
     }
     refreshDisabled();
   }
@@ -6019,16 +6038,32 @@ scheduleDemoMeter();
       return false;
     }
     if(acceptedNative&&!fromNative)return false;
+    if(fromNative&&acceptedNative&&accepted&&s.device.epoch<accepted.device.epoch)return false;
     if(fromNative&&acceptedNative&&accepted&&s.device.epoch===accepted.device.epoch&&
       s.graph.revision<accepted.graph.revision)return false;
+    const priorEpoch=acceptedNative?accepted?.device?.epoch:null;
     const structure=s.device.epoch+':'+s.graph.revision+':'+s.graph.channels.map(c=>c.id).join('|');
     accepted=s;acceptedNative=!!fromNative;
+    snapshotSerial++;
     byId.clear();
     for(const c of s.graph.channels)byId.set(c.id,c);
+    if(fromNative&&priorEpoch!==null&&priorEpoch!==s.device.epoch){
+      // Device replacement invalidates all old intents and controls; never
+      // replay them into an unrelated callback/port inventory.
+      pending.clear();pendingTargets.clear();awaitingSnapshot.clear();
+      showFeedback('DEVICE CHANGED · native source and destination inventory refreshed');
+    }
+    for(const [requestId,task] of awaitingSnapshot){
+      if(task.epoch===s.device.epoch&&snapshotSerial>task.snapshotSerial&&
+        s.graph.revision>=task.requiredRevision){
+        awaitingSnapshot.delete(requestId);
+        pendingTargets.delete(task.id||'@roster');
+      }
+    }
     if(structure!==lastStructure||root.dataset.demo!==String(!fromNative)){
       lastStructure=structure;render();
     }else{
-      refreshMeters();refreshDisabled();updateHeader();
+      refreshAcceptedControls();refreshDisabled();updateHeader();
     }
     root.dataset.demo=String(!fromNative);
     setVisible(true);
@@ -6080,6 +6115,8 @@ scheduleDemoMeter();
     const list=Array.isArray(ch.inserts)?ch.inserts:[];
     for(const fx of list){
       const row=h('div','arV6FxSlot');
+      row.dataset.fxId=clean(fx.id);row.dataset.id=ch.id;
+      row.draggable=can('MOVE_INSERT',ch.id);
       row.append(button(fx.name||fx.pluginName||'VST3',{'data-op':'OPEN_INSERT_EDITOR',
         'data-id':ch.id,'data-insert':clean(fx.id)}));
       const bypass=button(fx.bypassed?'OFF':'ON',{'data-op':'SET_INSERT_BYPASS',
@@ -6104,7 +6141,7 @@ scheduleDemoMeter();
     const sends=Array.isArray(ch.sends)?ch.sends:[];
     const targets=(accepted.graph.destinations||[]).filter(x=>x.acceptsSend===true);
     for(const send of sends){
-      const line=h('div','arV6Send');
+      const line=h('div','arV6Send');line.dataset.sendId=clean(send.id);
       line.append(h('span','arV6SendName',clean(send.name||send.targetId)));
       const toggle=button(send.tap==='PRE'?'PRE':'POST',{'data-op':'SET_SEND_TAP',
         'data-id':ch.id,'data-send':clean(send.id)});
@@ -6226,6 +6263,43 @@ scheduleDemoMeter();
       }
     }
   }
+  function refreshAcceptedControls(){
+    for(const strip of root.querySelectorAll('[data-channel-id]')){
+      const ch=byId.get(strip.dataset.channelId);
+      if(!ch)continue;
+      const choose=(op,value)=>{
+        const field=strip.querySelector('select[data-op="'+op+'"]');
+        if(!field)return;
+        const actual=typeof value==='string'?value:'';
+        if([...field.options].some(o=>o.value===actual))field.value=actual;
+      };
+      choose('SET_SOURCE',ch.source?.portId||ch.source?.id||'');
+      choose('SET_PROCESSING_FORMAT',ch.processingFormat||'');
+      choose('SET_PRIMARY_OUT',ch.primaryOut?.id||(typeof ch.primaryOut==='string'?ch.primaryOut:''));
+      choose('ADD_SEND','');
+      const pan=strip.querySelector('[data-op="SET_PAN"]');
+      if(pan)pan.value=String(Number(ch.controls?.pan)||0);
+      for(const op of ['SET_MUTE','SET_SOLO']){
+        const n=strip.querySelector('button[data-op="'+op+'"]');
+        if(n)n.setAttribute('aria-pressed',String(!!ch.controls?.[op==='SET_MUTE'?'mute':'solo']));
+      }
+      for(const node of strip.querySelectorAll('.arV6FxSlot')){
+        const fx=(ch.inserts||[]).find(x=>String(x.id)===node.dataset.fxId);
+        const power=node.querySelector('[data-op="SET_INSERT_BYPASS"]');
+        if(fx&&power){
+          power.textContent=fx.bypassed?'OFF':'ON';
+          power.classList.toggle('isOff',!!fx.bypassed);
+          power.setAttribute('aria-pressed',String(!fx.bypassed));
+        }
+      }
+      for(const node of strip.querySelectorAll('.arV6Send')){
+        const send=(ch.sends||[]).find(x=>String(x.id)===node.dataset.sendId);
+        const tap=node.querySelector('[data-op="SET_SEND_TAP"]');
+        if(send&&tap)tap.textContent=send.tap==='PRE'?'PRE':'POST';
+      }
+    }
+    syncFaderMode();refreshMeters();
+  }
   function syncFaderMode(){
     for(const range of root.querySelectorAll('.arV6Fader')){
       const ch=byId.get(range.dataset.id);
@@ -6279,6 +6353,31 @@ scheduleDemoMeter();
     showFeedback(modeSend?
       'SENDS ON FADERS · native sends only · select MAIN FADERS to return':'MAIN FADERS · source gains unchanged');
   });
+  // Reorder is one native structural intent; DOM/PCM order never changes on drop.
+  root.addEventListener('dragstart',event=>{
+    const node=event.target.closest?.('.arV6FxSlot');
+    if(!node||!node.draggable||!can('MOVE_INSERT',node.dataset.id)){
+      event.preventDefault();return;
+    }
+    draggingFx={id:node.dataset.id,insertId:node.dataset.fxId};
+    event.dataTransfer?.setData('text/plain',draggingFx.insertId);
+    if(event.dataTransfer)event.dataTransfer.effectAllowed='move';
+  });
+  root.addEventListener('dragover',event=>{
+    const node=event.target.closest?.('.arV6FxSlot');
+    if(draggingFx&&node&&draggingFx.id===node.dataset.id&&
+      draggingFx.insertId!==node.dataset.fxId)event.preventDefault();
+  });
+  root.addEventListener('drop',event=>{
+    const node=event.target.closest?.('.arV6FxSlot'),source=draggingFx;
+    draggingFx=null;
+    if(!source||!node||source.id!==node.dataset.id||
+      source.insertId===node.dataset.fxId)return;
+    event.preventDefault();
+    sendIntent('MOVE_INSERT',source.id,
+      {insertId:source.insertId,beforeInsertId:node.dataset.fxId});
+  });
+  root.addEventListener('dragend',()=>{draggingFx=null});
   root.addEventListener('click',event=>{
     const n=event.target.closest('button[data-op]');
     if(!n||n.disabled)return;
@@ -6331,8 +6430,8 @@ scheduleDemoMeter();
         else showFeedback('UNAVAILABLE · No native send on this channel');
       }else sendIntent(op,id,{valueDb:Number(n.value)});
     }
-    // Native snapshot (not the locally manipulated HTML select/range) owns truth.
-    if(accepted)render();
+    // Restore only accepted controls without remounting meters or fader nodes.
+    if(accepted){refreshAcceptedControls();refreshDisabled();}
   });
   if(native){
     backend.addEventListener('arMixConsoleSnapshot',s=>receiveSnapshot(s,true));
