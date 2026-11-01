@@ -196,7 +196,8 @@ public:
         for(int b=0;b<auxBusCount;++b){
             const float gain=plan_.aux.buses[b].gain;
             auxBusTarget_[b].store(gain,std::memory_order_relaxed);
-            auxBusApplied_[b]=gain;
+            auxBusApplied_[b]=auxBusGoal_[b]=gain;
+            auxBusRemaining_[b]=0;
         }
         if(!capacity_)return;
         for(int i=0;i<stripCount;++i) {
@@ -263,6 +264,7 @@ public:
            !plan_.aux.buses[bus].enabled||!std::isfinite(gain)||
            gain<0.f||gain>4.f)return false;
         auxBusTarget_[bus].store(gain,std::memory_order_release);
+        auxBusAutomationActive_.store(true,std::memory_order_release);
         return true;
     }
     float auxBusGain(int bus) const noexcept {
@@ -569,14 +571,26 @@ public:
                     monitorRemaining_[monitorLane]=64;
                 }
             }
-            const float target=live
+            // Original zero-automation fast path remains one scalar
+            // multiplication; only a real operator AUX fader edit enables
+            // the sample-continuous 64-frame de-zipper across 4/8/16-frame
+            // callbacks. The fader scales the return AFTER hosted AUX VST3
+            // for both MAIN and independent MONITOR, not source dry PCM.
+            const bool automated=auxBusAutomationActive_.load(
+                std::memory_order_acquire);
+            const float target=automated
                 ?auxBusTarget_[b].load(std::memory_order_acquire):bus.gain;
-            const float start=live?auxBusApplied_[b]:bus.gain;
-            const int ramp=std::min(frames,64);
-            const float step=(target-start)/static_cast<float>(ramp);
-            float current=start;
+            if(automated && target!=auxBusGoal_[b]) {
+                auxBusGoal_[b]=target;
+                auxBusRemaining_[b]=64;
+            }
+            float current=automated?auxBusApplied_[b]:bus.gain;
+            int remaining=automated?auxBusRemaining_[b]:0;
             for(int f=0;f<frames;++f) {
-                if(f<ramp)current+=step;
+                if(remaining>0) {
+                    current+=(target-current)/static_cast<float>(remaining);
+                    --remaining;
+                } else current=target;
                 const float vl=l[f]*current,vr=r[f]*current;
                 if(monitorBusL) {
                     const float gain=nextMonitorGain(monitorLane);
@@ -591,7 +605,10 @@ public:
                     masterR_[f]+=vr;
                 }
             }
-            if(live)auxBusApplied_[b]=target;
+            if(automated) {
+                auxBusApplied_[b]=remaining==0?target:current;
+                auxBusRemaining_[b]=remaining;
+            }
             if(observed)observed->auxPeak[b]=peak;
         }
         processFx(-1,masterL_,masterR_,frames);
@@ -694,7 +711,10 @@ private:
     std::array<int,stripCount+auxBusCount> monitorRemaining_{};
     bool monitorPrimed_=false; // sole audio producer except prepublish seeding
     std::array<std::atomic<float>,auxBusCount> auxBusTarget_{};
-    std::array<float,auxBusCount> auxBusApplied_{}; // callback thread exclusive
+    std::array<float,auxBusCount> auxBusApplied_{},auxBusGoal_{};
+    std::array<int,auxBusCount> auxBusRemaining_{};
+    std::atomic<bool> auxBusAutomationActive_{false};
+    // State exclusively advanced in the single JUCE audio callback.
     std::array<bool,stripCount> rampPrimed_{};
     float* masterL_=nullptr;
     float* masterR_=nullptr;
