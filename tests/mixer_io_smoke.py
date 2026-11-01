@@ -999,6 +999,9 @@ async def main():
         await page.locator('[data-io-tab="device"]').click()
         if not await page.locator('.arIODevicePatchMatrix').evaluate('(e)=>e.open'):
             await page.locator('.arIODevicePatchMatrix > summary').click()
+        # Demand-mounted logical-input matrix is appended on the details
+        # toggle; wait for real UI state instead of assuming synchronous DOM.
+        await page.locator('.arIOSoftwareGrid').wait_for(state='visible')
         assert await page.locator('.arIOSoftwareGrid').is_visible()
         count_before=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='routingDryApply').length""")
