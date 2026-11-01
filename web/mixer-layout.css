@@ -1012,3 +1012,34 @@
 #app .arV6Console .arV6DeviceRow strong{font-weight:500;overflow-wrap:anywhere}
 #app .arV6Console .arV6DeviceNote{margin:9px 0 2px;color:#c5ad86;font:10px/1.5 "Segoe UI",sans-serif}
 @media(max-width:1100px){#app .arV6Console .arV6DevicePanel{top:45px}}
+
+
+/* F8 native VST3 catalog: search-only until native ADD_INSERT capability
+   and a verified catalog are present. Floating inspector, zero fader reflow. */
+#app .arV6Console .arV6PluginPanel{
+  position:absolute;z-index:21;top:52px;right:8px;
+  display:flex;flex-direction:column;
+  width:min(410px,calc(100% - 16px));max-height:min(72vh,540px);
+  overflow:hidden;background:#1a2a34;color:#d4e5eb;
+  border:1px solid #668693;border-radius:4px;
+  box-shadow:0 8px 25px #071019aa;
+}
+#app .arV6Console .arV6PluginPanel[hidden]{display:none!important}
+#app .arV6Console .arV6PluginTarget{
+  padding:7px 10px;color:#b4d2dc;font:10px/1.35 "Segoe UI",sans-serif;
+}
+#app .arV6Console .arV6PluginSearch{
+  margin:0 10px 8px;min-height:30px;padding:6px 9px;
+  color:#e5eff4;background:#102633;border:1px solid #527a88;
+  border-radius:3px;font:11px "Segoe UI",sans-serif;
+}
+#app .arV6Console .arV6PluginResults{
+  overflow:auto;display:flex;flex-direction:column;
+  min-height:65px;padding:0 9px 9px;gap:3px;scrollbar-width:thin;
+}
+#app .arV6Console .arV6PluginResult{
+  text-align:left;min-height:28px;width:100%;padding:5px 8px;
+  background:#243d4a;color:#d6ebf0;border-color:#426879;
+}
+#app .arV6Console .arV6PluginResult:disabled{opacity:.46;cursor:not-allowed}
+@media(max-width:1100px){#app .arV6Console .arV6PluginPanel{top:45px}}
