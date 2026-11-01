@@ -169,5 +169,43 @@ for(const name of ['fx','send','eq','route']){
   name+' rail toggle expands section again');
 }
 
+
+// Comfort / Senior operational ergonomics regression (visual-reference only).
+check(html.includes('data-density="comfort"'),'Comfort view is default on first load');
+check(html.includes('--strip-w:150px;--master-w:152px'),'Comfort channel and pinned Master widths');
+check(html.includes('data-field="input"') && strip(1).includes('class="route-caption">IN</span>') &&
+      strip(1).includes('class="route-caption">OUT</span>'),
+      'Source and primary output have labeled separate rows');
+check(strip(1).includes('class="fader-head"') && strip(1).includes('class="fader-readout"'),
+      'Fader dB numeric display is above the tactile fader');
+check(strip(1).includes('class="clip-indicator') && strip(1).includes('class="meter-box mono"'),
+      'Mono strip includes explicit clip LED and one meter lane');
+check(strip(1).includes('class="switch-full">MUTE</span>') &&
+      strip(1).includes('class="switch-full">SOLO</span>'),
+      'Comfort mode has full MUTE and SOLO labels');
+check(html.includes('.console-body .fader-box:before') &&
+      html.includes('.console-body .fader-box:after') &&
+      html.includes('var(--fader-fill,0%)'),
+      'Tactile well, fader slot and track-colored fader progression are present');
+check(html.includes('.console-body .meter-lane:before') &&
+      html.includes('repeating-linear-gradient(to top,transparent'),
+      'Segmented LED meter overlays are present');
+const density=node('densitySelect');
+density.value='standard';density.dispatch('change');
+check(node('body').dataset.density==='standard'&&!node('body').classList.contains('narrow'),
+      'Standard view keeps full processing and wider controls');
+density.value='compact';density.dispatch('change');
+check(node('body').dataset.density==='compact'&&node('body').classList.contains('narrow'),
+      'Compact view keeps narrow-console behavior');
+density.value='comfort';density.dispatch('change');
+check(node('body').dataset.density==='comfort'&&!node('body').classList.contains('narrow'),
+      'Comfort restores full effects, send and EQ visibility');
+check(html.includes('.console-body.collapsed-route .route-field{display:none}') &&
+      html.includes('.console-body.collapsed-send .send-section .send-select,.console-body.collapsed-send .send-section .sendlevel{display:none}') &&
+      html.includes('.console-body.collapsed-eq .eq-section .eq-line{display:none}'),
+      'No stale expanded CSS declarations in collapsed route, send, EQ');
+check(html.includes('.plugin-browser{right:var(--master-w)!important}'),
+      'Plugin overlay reserves actual pinned Master width across density presets');
+
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
