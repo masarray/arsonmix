@@ -1561,7 +1561,7 @@ async def main():
         assert 'KEEP IN STUDIO' in manager_hierarchy[0]['captions'],manager_hierarchy
 
         assert 'ArSonMix Inter' in ui_polish['font'],ui_polish
-        assert 'var(--b180-off' in ui_polish['resting'] or ui_polish['resting']=='#cbd1d1',ui_polish
+        assert 'var(--b180-off' in ui_polish['resting'] or ui_polish['resting']=='#E7EFF0',ui_polish
         await native.locator('#nativePluginManager [data-close-modal]').click()
         await native.locator('[data-strip="0"] .rack [data-plugin-picker="1"]').first.click()
         picker_equal=await native.evaluate("""()=>{
