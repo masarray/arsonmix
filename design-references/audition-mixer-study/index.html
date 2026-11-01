@@ -695,6 +695,7 @@ function acceptPluginManifest(items){
  }
  if(!added.length)return false;
  pluginCatalog=added;pluginRecent=[];
+ plugEl('pluginView').value='all';plugEl('pluginCategory').value='all';plugEl('pluginSearch').value='';
  renderPluginCatalog();say('Imported '+added.length+' plugin metadata records · not a native scan, no plugin instantiated');
  return true;
 }
