@@ -9,6 +9,22 @@ import {snapshot,intent,ack,uint64,requestToken} from '../integration/console-v6
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const data=JSON.parse(readFileSync(resolve(root,'integration/console-v6/fixtures.json'),'utf8'));
 const copy=x=>structuredClone(x),bad=(fn,re)=>assert.throws(fn,re);
+const schema=JSON.parse(readFileSync(resolve(root,'contracts/console-puzzle-v8.json'),'utf8'));
+test('synthetic G0/G2 fixtures obey every machine-required inventory key',()=>{
+ for(const [stage,s] of [['G0',data.g0],['G2',data.g2]]){
+  for(const [section,keys] of Object.entries(schema.requiredSnapshotFields)){
+   const obj=section==='root'?s:section==='capabilities'?s.graph.capabilities:s[section];
+   for(const key of keys)
+    assert.ok(Object.hasOwn(obj,key),stage+' missing '+section+'.'+key);
+  }
+  assert.doesNotThrow(()=>snapshot(s));
+ }
+ const absent=copy(data.g2);delete absent.telemetry.rawCapturePeak;
+ bad(()=>snapshot(absent),/finite nonnegative peak/);
+ const invalid=copy(data.g2);invalid.telemetry.rawCapturePeak=-0.01;
+ bad(()=>snapshot(invalid),/finite nonnegative peak/);
+});
+
 test('G0 native without universal callback is honest and carries physical pin inventory',()=>{
  assert.equal(data.provenance,'SYNTHETIC_CONTRACT_ONLY_NOT_HARDWARE');
  assert.doesNotThrow(()=>snapshot(data.g0));

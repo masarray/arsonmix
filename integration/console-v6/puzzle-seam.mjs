@@ -91,6 +91,7 @@ export function snapshot(s) {
     if(ch.role==='MONITOR')yes(c.monitor,'monitor','missing native capability');
   }
   for(const k of ['rawCapturePresent','mainPcmPresent','monitorPcmPresent'])flag(s.telemetry[k],'telemetry.'+k);
+  yes(typeof s.telemetry.rawCapturePeak==='number'&&Number.isFinite(s.telemetry.rawCapturePeak)&&s.telemetry.rawCapturePeak>=0,'telemetry.rawCapturePeak','finite nonnegative peak required');
   return s;
 }
 export function intent(x,accepted) {

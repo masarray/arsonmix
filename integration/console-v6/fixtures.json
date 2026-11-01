@@ -71,6 +71,7 @@
     },
     "telemetry": {
       "rawCapturePresent": false,
+      "rawCapturePeak": 0,
       "mainPcmPresent": false,
       "monitorPcmPresent": false,
       "channelMeterRmsPeak": {}
@@ -323,6 +324,7 @@
     },
     "telemetry": {
       "rawCapturePresent": true,
+      "rawCapturePeak": 0.32,
       "mainPcmPresent": true,
       "monitorPcmPresent": true,
       "channelMeterRmsPeak": {
