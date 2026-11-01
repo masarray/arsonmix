@@ -1169,8 +1169,14 @@ async def main():
         await page.locator('#masterLeft .master-ch-id').click()
         assert await page.locator('#masterLeft').evaluate('(e)=>e.classList.contains("selected")')
         assert await page.locator('[data-strip="0"]').evaluate('(e)=>!e.classList.contains("selected")')
-        await page.locator('[data-strip="0"] .ch-id').click()
+        # CH number selects the strip; the adjacent name/icon deliberately opens editing.
+        await page.locator('[data-strip="0"] .arChannelNumber').click()
         assert await page.locator('#masterLeft').evaluate('(e)=>!e.classList.contains("selected")')
+        assert await page.locator('#channelIdentity').evaluate('(e)=>e.classList.contains("hidden")')
+        await page.locator('[data-strip="0"] .arChannelTopIdentity').click()
+        assert await page.locator('#channelIdentity').is_visible()
+        await page.locator('#identityCancel').click()
+        assert await page.locator('#channelIdentity').evaluate('(e)=>e.classList.contains("hidden")')
 
         pan=page.locator('[data-pan="0"]')
         await pan.focus()
