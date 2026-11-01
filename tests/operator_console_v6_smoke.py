@@ -89,7 +89,7 @@ async def main():
         assert await page.locator("#arV6Lanes .arV6Strip").count() == 10
         assert await page.locator("#arV6Main .arV6Master").count() == 1
         assert "ARMED" in await page.locator(".arV6State").inner_text()
-        assert "NO VERIFIED PCM" in await page.locator(
+        assert "SILENT / NO SOURCE" in await page.locator(
             '[data-status-id="ch-07"]').inner_text()
         assert await page.locator('#arV6Console [data-op="CREATE_CHANNEL"]').is_enabled()
 
@@ -122,6 +122,8 @@ async def main():
         next_state["graph"]["channels"][6]["source"] = {"portId": "IN-1"}
         await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)", next_state)
         assert await page.locator('[data-op="SET_SOURCE"][data-id="ch-07"]').input_value() == "IN-1"
+        assert "NO VERIFIED PCM" in await page.locator(
+            '[data-status-id="ch-07"]').inner_text()
 
         # Direct OUT, native FX open/bypass, SEND tap and Sends on Faders.
         await page.locator('[data-op="SET_PRIMARY_OUT"][data-id="ch-07"]').select_option("GROUP-VOX")
