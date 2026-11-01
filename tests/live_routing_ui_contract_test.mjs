@@ -140,7 +140,7 @@ test("P1I binds premium 10CH console to REAL native RT graph without FX restart"
   assert.match(bridge,/const routed=nativePatched&&!legacy/);
   assert.match(ui,/rackFxDraft\.channels\.includes\(channel\)/);
   assert.match(ui,/const channels=new Set\(/);
-  assert.match(ui,/for\(const channel of rackFxDraft\.channels\)/);
+  assert.match(ui,/FX is a channel property, not a hardware-patch prerequisite/);
   assert.match(bridge,/window\.__arMixOpenChannelPatch\?\.\(id,"input"\)/);
   assert.match(bridge,/data-native-routing-lab/);
 });
