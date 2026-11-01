@@ -471,11 +471,11 @@ async def main():
         # L2 workspace: original 17 rail controls plus one purposeful MS5 SEND FADERS toggle.
         # Its optional AUX selector is not a button; preserve the original operator commands.
         assert await page.locator('.toolbar-actions .nav button.btn-180').count()==3
-        assert await page.locator('.left-rail button.btn-180').count()==18
+        assert await page.locator('.left-rail button.btn-180').count()==19
         assert await page.locator('.left-rail [data-sof-toggle]').count()==1
         assert await page.locator('.toolbar-actions .fx-nav,.left-rail .fx-nav').count()==0
         assert await page.locator('.left-rail .pushable,.left-rail .front,.left-rail .edge,.left-rail .shadow').count()==0
-        assert await page.locator('.left-rail [data-mix-mode]').count()==3
+        assert await page.locator('.left-rail [data-mix-mode]').count()==4
         assert await page.locator('.left-rail #audioSetupBtn').count()==1
         assert await page.locator('.toolbar-actions #audioSetupBtn').count()==0
         assert await page.locator('.left-rail [data-my-sounds],.left-rail [data-plugin-manager],.left-rail #arSignalOpen').count()==3
