@@ -2433,6 +2433,36 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
  #app .arV6Console .arV6Trim{height:16px;font-size:8px;gap:2px}
  #app .arV6Console .arV6TrimLevel{height:12px}
 }
+
+
+/* v5.2 one-Console DEVICE drawer: native hardware inventory only, no
+   fake setup wizard, no full-window modal and no fader DOM reflow. */
+#app .arV6Console{position:relative}
+#app .arV6Console .arV6DevicePanel{
+  position:absolute;z-index:20;top:52px;right:8px;
+  display:flex;flex-direction:column;
+  width:min(420px,calc(100% - 16px));max-height:min(72vh,530px);
+  overflow:hidden;background:#1a2a34;color:#d4e5eb;
+  border:1px solid #668693;border-radius:4px;
+  box-shadow:0 8px 25px #071019aa;
+}
+#app .arV6Console .arV6DevicePanel[hidden]{display:none!important}
+#app .arV6Console .arV6DevicePanelHead{
+  display:flex;justify-content:space-between;align-items:center;
+  gap:6px;min-height:35px;padding:5px 10px;background:#304651;
+  border-bottom:1px solid #456370;
+  font:600 10px/1.2 "Segoe UI",sans-serif;
+}
+#app .arV6Console .arV6DevicePanelHead .arV6Button{min-height:23px;min-width:26px;padding:2px}
+#app .arV6Console .arV6DeviceRows{padding:5px 10px 10px;overflow-y:auto}
+#app .arV6Console .arV6DeviceRow{
+  display:grid;grid-template-columns:95px minmax(0,1fr);gap:8px;
+  padding:5px 0;border-bottom:1px solid #324954;font:10px/1.45 "Segoe UI",sans-serif;
+}
+#app .arV6Console .arV6DeviceRow span{color:#8fb5c4}
+#app .arV6Console .arV6DeviceRow strong{font-weight:500;overflow-wrap:anywhere}
+#app .arV6Console .arV6DeviceNote{margin:9px 0 2px;color:#c5ad86;font:10px/1.5 "Segoe UI",sans-serif}
+@media(max-width:1100px){#app .arV6Console .arV6DevicePanel{top:45px}}
 </style>
 <style id="arsonmix-mixer-io-css">/* G1/G2: stable channel-bank geometry; FX rack remains mounted in every mode. */
 #app .workbench{display:flex;flex-direction:column}
@@ -6793,6 +6823,8 @@ scheduleDemoMeter();
     const option=h('option','',type);option.value=type;roleSelect.append(option);
   }
   const add=button('+ CHANNEL',{'data-op':'CREATE_CHANNEL'});
+  const deviceButton=button('DEVICE',{'aria-expanded':'false','aria-controls':'arV6DevicePanel',
+    'aria-label':'Verified native audio device inventory'});
   const patch=button('PATCH',{'aria-label':'Open advanced patch'});
   const narrow=button('NARROW',{'aria-pressed':'false','aria-label':'Toggle narrow channel bank'});
   const roleFilter=h('select','arV6Select arV6Filter');
@@ -6805,9 +6837,17 @@ scheduleDemoMeter();
   const back=button('V6 CONSOLE',{'aria-label':'Return to operator console'});
   back.id='arV6Return';back.hidden=true;
   tools.append(bankPrev,bankLabel,bankNext,roleFilter,selectionCount,
-    sendMode,roleSelect,add,narrow,patch);
+    sendMode,roleSelect,add,deviceButton,narrow,patch);
   top.append(identification,tools);
   const message=h('div','arV6Message');message.setAttribute('role','status');
+  const devicePanel=h('section','arV6DevicePanel');
+  devicePanel.id='arV6DevicePanel';devicePanel.hidden=true;
+  devicePanel.setAttribute('aria-label','Read-only native audio device inventory');
+  const deviceHead=h('div','arV6DevicePanelHead');
+  const deviceClose=button('×',{'aria-label':'Close native device inventory'});
+  deviceHead.append(h('span','','VERIFIED DEVICE · NATIVE READBACK'),deviceClose);
+  const deviceRows=h('div','arV6DeviceRows');
+  devicePanel.append(deviceHead,deviceRows);
   const body=h('div','arV6Body');
   const sectionRail=h('aside','arV6SectionRail');
   sectionRail.setAttribute('aria-label','Synchronized mixer section collapse');
@@ -6826,7 +6866,7 @@ scheduleDemoMeter();
   const lanes=h('div','arV6Lanes');lanes.id='arV6Lanes';lanes.setAttribute('aria-label','Channel banks');
   const main=h('div','arV6Main');main.id='arV6Main';main.setAttribute('aria-label','Pinned main output');
   body.append(sectionRail,lanes,main);
-  root.append(top,message,body);
+  root.append(top,message,devicePanel,body);
   mount.append(root);
   sectionRail.addEventListener('click',event=>{
     const control=event.target.closest('[data-section]');
@@ -6841,6 +6881,14 @@ scheduleDemoMeter();
     refreshBanks();
   });
   roleFilter.addEventListener('change',()=>applyPresentation());
+  deviceButton.addEventListener('click',()=>{
+    devicePanel.hidden=!devicePanel.hidden;
+    deviceButton.setAttribute('aria-expanded',String(!devicePanel.hidden));
+    if(!devicePanel.hidden)refreshDevicePanel();
+  });
+  deviceClose.addEventListener('click',()=>{
+    devicePanel.hidden=true;deviceButton.setAttribute('aria-expanded','false');
+  });
   narrow.addEventListener('click',()=>{
     const compact=root.dataset.narrow!=='true';
     root.dataset.narrow=String(compact);
@@ -6860,6 +6908,31 @@ scheduleDemoMeter();
   back.addEventListener('click',()=>{
     document.querySelector('[data-view="MIX"]')?.click();setVisible(true);
   });
+  function refreshDevicePanel(){
+    if(devicePanel.hidden)return;
+    deviceRows.replaceChildren();
+    const d=acceptedNative?accepted?.device:null;
+    if(!d){deviceRows.append(h('p','','No verified native device published.'));return;}
+    const addRow=(label,value)=>{
+      const row=h('div','arV6DeviceRow');
+      row.append(h('span','',label),h('strong','',value));deviceRows.append(row);
+    };
+    addRow('BACKEND',d.backend||'—');
+    addRow('INPUT DEVICE',d.captureDevice||'NONE');
+    addRow('OUTPUT DEVICE',d.playbackDevice||'NONE');
+    addRow('CLOCK',Number.isFinite(d.sampleRate)?d.sampleRate+' Hz / '+
+      d.bufferFrames+' frames':'UNVERIFIED');
+    addRow('OUTPUT ARM',d.outputArmed?'ARMED · acoustics unverified':'DISARMED');
+    for(const [label,ports,mask] of [
+      ['INPUT PINS',d.inputEndpoints,d.enabledInputs],
+      ['OUTPUT PINS',d.outputEndpoints,d.enabledOutputs]]){
+      const verified=ports.filter(p=>p.active===true&&mask.includes(p.port));
+      addRow(label,verified.length?verified.map(p=>p.label+' (port '+p.port+
+        ', callback '+p.callback+')').join(', '):'NO VERIFIED ACTIVE PIN');
+    }
+    deviceRows.append(h('p','arV6DeviceNote',
+      'Read-only: device changes require a genuine native SET_DEVICE transaction; no guessed hardware pin or automatic audio reroute.'));
+  }
   function supported(op){
     const caps=accepted?.graph?.capabilities||{};
     // Absence of explicit native advertised operation support means disabled.
@@ -6981,8 +7054,13 @@ scheduleDemoMeter();
       ids.add(ch.id);
     }
     for(const ch of g.channels){
-      if(ch.primaryOutId!==undefined&&ch.primaryOutId!==null&&
-         (!ids.has(ch.primaryOutId)||ch.primaryOutId===ch.id))return false;
+      if(ch.primaryOutId!==undefined&&ch.primaryOutId!==null){
+        const to=ch.primaryOutId;
+        const physical=d.outputEndpoints.some(p=>p.id===to&&p.active===true&&
+          d.enabledOutputs.includes(p.port));
+        if(to===ch.id||!ids.has(to)&&!(physical&&['MAIN','MONITOR'].includes(ch.role)))
+          return false;
+      }
       if(ch.source){
         const x=ch.source;
         if(ch.role!=='INPUT'||typeof x.portId!=='string'||
@@ -7030,8 +7108,20 @@ scheduleDemoMeter();
     if(acceptedNative&&!fromNative)return false;
     if(fromNative&&acceptedNative&&accepted&&
       BigInt(s.device.epoch)<BigInt(accepted.device.epoch))return false;
-    if(fromNative&&acceptedNative&&accepted&&s.device.epoch===accepted.device.epoch&&
-      BigInt(s.graph.revision)<BigInt(accepted.graph.revision))return false;
+    if(fromNative&&acceptedNative&&accepted&&s.device.epoch===accepted.device.epoch){
+      if(BigInt(s.graph.revision)<BigInt(accepted.graph.revision)||
+         BigInt(s.graph.rosterRevision)<BigInt(accepted.graph.rosterRevision))
+        return false;
+      // Device backend/clock/pins may not change silently under the same epoch.
+      // A hardware rebind needs an admitted new native device epoch.
+      const hardware=d=>JSON.stringify([d.backend,d.captureDevice,d.playbackDevice,
+        d.sampleRate,d.bufferFrames,d.inputEndpoints,d.outputEndpoints,
+        d.enabledInputs,d.enabledOutputs]);
+      if(hardware(s.device)!==hardware(accepted.device)){
+        showFeedback('REJECTED DEVICE READBACK · epoch unchanged; retained verified pins');
+        return false;
+      }
+    }
     const priorEpoch=acceptedNative?accepted?.device?.epoch:null;
     const structure=s.device.epoch+':'+s.graph.rosterRevision+':'+
       s.graph.channels.map(c=>[c.id,c.role,c.processingFormat,c.primaryOutId,
@@ -7060,6 +7150,7 @@ scheduleDemoMeter();
       refreshAcceptedControls();refreshDisabled();updateHeader();
     }
     root.dataset.demo=String(!fromNative);
+    refreshDevicePanel();
     // Integration readback is intentionally not a production callback.
     // It must never replace the working M4 console until callback cutover.
     if(!fromNative||s.productionCallbackLive===true)setVisible(true);
@@ -7096,6 +7187,19 @@ scheduleDemoMeter();
     }
     if(!current)select.value='';
     return select;
+  }
+  function legalOutputs(ch){
+    const destinations=(accepted.graph.destinations||[]).filter(dst=>{
+      const target=byId.get(dst.id);
+      return target&&target.id!==ch.id&&['MAIN','GROUP'].includes(target.role)&&
+        dst.acceptsPrimary!==false;
+    });
+    // SOURCE channels may only route through native buses, not skip to a
+    // physical output. The MAIN/MONITOR roles can select verified render pins.
+    if(ch.role==='MAIN'||ch.role==='MONITOR')
+      return (accepted.device.outputEndpoints||[]).filter(p=>
+        p.active===true&&accepted.device.enabledOutputs.includes(p.port));
+    return destinations;
   }
   function selectField(label,op,id,items,current,placeholder,extra){
     const row=h('label','arV6Field');
@@ -7174,7 +7278,7 @@ scheduleDemoMeter();
     if(role==='INPUT')routeSection.append(selectField('IN','SET_SOURCE',ch.id,sources,
       ch.source?.portId||ch.source?.id||'','NO VERIFIED INPUT'));
     else routeSection.append(h('div','arV6Field arV6FixedField','IN   ·   '+role));
-    const outs=(accepted.graph.destinations||[]).concat(accepted.device.outputEndpoints||[]);
+    const outs=legalOutputs(ch);
     routeSection.append(selectField('OUT','SET_PRIMARY_OUT',ch.id,outs,
       ch.primaryOutId||ch.primaryOut?.id||ch.primaryOut||'','NO VERIFIED OUT'));
     const formats=['MONO','STEREO'].map(s=>({id:s,name:s}));
@@ -7550,7 +7654,10 @@ scheduleDemoMeter();
     if(op==='SET_SOURCE'&&n.value){
       const endpoint=(accepted.device.inputEndpoints||[]).find(e=>e.id===n.value&&e.available!==false&&e.active!==false);
       if(endpoint)sendIntent(op,id,{portId:endpoint.id});
-    }else if(op==='SET_PRIMARY_OUT'&&n.value)sendIntent(op,id,{destinationId:n.value});
+    }else if(op==='SET_PRIMARY_OUT'&&n.value){
+      if(legalOutputs(ch).some(p=>p.id===n.value))
+        sendIntent(op,id,{destinationId:n.value});
+    }
     else if(op==='SET_PROCESSING_FORMAT')sendIntent(op,id,{format:n.value});
     else if(op==='ADD_SEND'&&n.value)sendIntent(op,id,{targetId:n.value,tap:'POST',levelDb:0});
     else if(op==='SET_PAN'){

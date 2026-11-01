@@ -982,3 +982,33 @@
  #app .arV6Console .arV6Trim{height:16px;font-size:8px;gap:2px}
  #app .arV6Console .arV6TrimLevel{height:12px}
 }
+
+
+/* v5.2 one-Console DEVICE drawer: native hardware inventory only, no
+   fake setup wizard, no full-window modal and no fader DOM reflow. */
+#app .arV6Console{position:relative}
+#app .arV6Console .arV6DevicePanel{
+  position:absolute;z-index:20;top:52px;right:8px;
+  display:flex;flex-direction:column;
+  width:min(420px,calc(100% - 16px));max-height:min(72vh,530px);
+  overflow:hidden;background:#1a2a34;color:#d4e5eb;
+  border:1px solid #668693;border-radius:4px;
+  box-shadow:0 8px 25px #071019aa;
+}
+#app .arV6Console .arV6DevicePanel[hidden]{display:none!important}
+#app .arV6Console .arV6DevicePanelHead{
+  display:flex;justify-content:space-between;align-items:center;
+  gap:6px;min-height:35px;padding:5px 10px;background:#304651;
+  border-bottom:1px solid #456370;
+  font:600 10px/1.2 "Segoe UI",sans-serif;
+}
+#app .arV6Console .arV6DevicePanelHead .arV6Button{min-height:23px;min-width:26px;padding:2px}
+#app .arV6Console .arV6DeviceRows{padding:5px 10px 10px;overflow-y:auto}
+#app .arV6Console .arV6DeviceRow{
+  display:grid;grid-template-columns:95px minmax(0,1fr);gap:8px;
+  padding:5px 0;border-bottom:1px solid #324954;font:10px/1.45 "Segoe UI",sans-serif;
+}
+#app .arV6Console .arV6DeviceRow span{color:#8fb5c4}
+#app .arV6Console .arV6DeviceRow strong{font-weight:500;overflow-wrap:anywhere}
+#app .arV6Console .arV6DeviceNote{margin:9px 0 2px;color:#c5ad86;font:10px/1.5 "Segoe UI",sans-serif}
+@media(max-width:1100px){#app .arV6Console .arV6DevicePanel{top:45px}}
