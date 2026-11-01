@@ -1,3 +1,5 @@
+> **SUPERSEDED EXECUTION ENTRYPOINT (1 Nov 2026):** [Single-path repo ledger](REPO_RECONCILIATION_SINGLE_PATH_20261101.md), [PRD v5](PRD_ARSONMIX_OPERATOR_FIRST_LIVE_MIXER_V5_20261101.md), [ARD v5](ARD_ARSONMIX_UNIVERSAL_REALTIME_CONSOLE_V5_20261101.md). This v4 handoff is retained as old architecture history. Active engine branch #266 and UI #265; #263 dry Group superseded/closed, do not revive.
+
 # ENGINEERING HANDOFF v4.1 — ArSonMiX as realtime Studio One-class Console mixer
 Updated: 2026-11-01. **Execution plan, not a status claim.** Read in order:
 1. [PRD v4.1](PRD_ARSONMIX_LIVE_STUDIO_CONSOLE_PARITY_V4_20261031.md)
