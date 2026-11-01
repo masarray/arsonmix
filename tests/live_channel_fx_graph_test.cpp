@@ -5,6 +5,7 @@
 #include "../engine/core/UnifiedLegacyProductionAdmission.h"
 #include "../engine/core/NativeOutputPairTap.h"
 #include "../engine/core/RealtimeRoutePublisher.h"
+#include "../src/ConsoleLiveBridgeV6.h"
 #if defined(NDEBUG)
 #undef NDEBUG
 #endif
@@ -511,6 +512,103 @@ static void verifySourceFormatIndependentPanPcmParity() {
     }
 }
 
+// G0: This is the real JUCE device/callback STATUS -> v6 Console wire,
+// not a dry ChannelId graph or simulated universal engine. It must report
+// measured M4 PCM while all unsupported ChannelId operations stay CLOSED.
+static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
+    using Bridge=armix::console::LiveConsoleBridgeV6;
+    auto route=std::make_unique<juce::DynamicObject>();
+    constexpr juce::int64 epoch=9007199254740993LL; // beyond JS Number safety
+    route->setProperty("epoch",epoch);
+    route->setProperty("revision",juce::int64(77));
+    route->setProperty("active",true);
+    route->setProperty("ready",true);
+    route->setProperty("hasAcceptedRoute",true);
+    juce::Array<juce::var> ports;
+    auto port=std::make_unique<juce::DynamicObject>();
+    port->setProperty("port",2);port->setProperty("callback",0);
+    port->setProperty("label","ASIO Input 3");
+    ports.add(juce::var(port.release()));
+    route->setProperty("ports",juce::var(ports));
+    juce::Array<juce::var> outputs;
+    outputs.add(1);outputs.add(4);
+    route->setProperty("outputPorts",juce::var(outputs));
+    juce::Array<juce::var> levels;
+    levels.add(.125);levels.add(0.0);
+    route->setProperty("channelPeaks",juce::var(levels));
+    auto status=std::make_unique<juce::DynamicObject>();
+    status->setProperty("dryRoutingLab",juce::var(route.release()));
+    status->setProperty("driver","ASIO TEST");
+    status->setProperty("inputDevice","TEST CAPTURE");
+    status->setProperty("outputDevice","TEST RENDER");
+    status->setProperty("connected",true);
+    status->setProperty("directRouteAuthorized",true);
+    status->setProperty("monitor",true);
+    status->setProperty("callbackCount",juce::int64(12));
+    status->setProperty("callbackInputChannels",1);
+    status->setProperty("inputPeak",.25);
+    status->setProperty("peak",.125);
+    status->setProperty("rate",48000);
+    status->setProperty("buffer",128);
+    const auto live=juce::var(status.release());
+    auto snap=Bridge::snapshot(live);
+    auto device=snap.getProperty("device",{});
+    auto graph=snap.getProperty("graph",{});
+    auto measured=snap.getProperty("telemetry",{});
+    assert(snap.getProperty("schemaVersion",0)==6);
+    assert(!static_cast<bool>(snap.getProperty("productionCallbackLive",true)));
+    assert(device.getProperty("epoch","").toString()=="9007199254740993");
+    assert(static_cast<bool>(device.getProperty("outputArmed",false)));
+    assert(static_cast<bool>(measured.getProperty("rawCapturePresent",false)));
+    assert(static_cast<bool>(measured.getProperty("mainPcmPresent",false)));
+    assert(graph.getProperty("revision","").toString()=="0");
+    assert(graph.getProperty("rosterRevision","").toString()=="0");
+    assert(graph.getProperty("channels",{}).getArray()->isEmpty());
+    const auto caps=graph.getProperty("capabilities",{});
+    assert(!static_cast<bool>(caps.getProperty("callbackOwnsChannelIds",true)));
+    assert(caps.getProperty("supportedOps",{}).getArray()->isEmpty());
+    auto ins=device.getProperty("inputEndpoints",{});
+    auto outs=device.getProperty("outputEndpoints",{});
+    assert(ins.getArray()->size()==1 && outs.getArray()->size()==2);
+    assert(ins.getArray()->getReference(0).getProperty("port",0)==2);
+    assert(outs.getArray()->getReference(0).getProperty("port",0)==1);
+    assert(outs.getArray()->getReference(1).getProperty("port",0)==4);
+    const auto diagnostic=snap.getProperty("legacyM4",{});
+    assert(diagnostic.getProperty("routingRevision","").toString()=="77");
+    Bridge bridge;
+    const auto intent=[&](const juce::String& req,const juce::String& ep,
+                          const juce::String& rev="0") {
+        auto o=std::make_unique<juce::DynamicObject>();
+        o->setProperty("requestId",req);
+        o->setProperty("deviceEpoch",ep);
+        o->setProperty("baseGraphRevision",rev);
+        o->setProperty("baseRosterRevision","0");
+        o->setProperty("operation","SET_SOURCE");
+        o->setProperty("targetChannelId","18446744073709551615");
+        return juce::var(o.release());
+    };
+    const auto pending=intent("editor:nonce:1","9007199254740993");
+    auto ack=bridge.rejectUnsupportedIntent(pending,snap);
+    assert(ack.getProperty("requestId","").toString()=="editor:nonce:1");
+    assert(ack.getProperty("status","").toString()=="REJECTED");
+    assert(ack.getProperty("errorCode","").toString()=="UNIVERSAL_CALLBACK_NOT_READY");
+    assert(ack.getProperty("graphRevision","").toString()=="0");
+    assert(bridge.rejectUnsupportedIntent(pending,snap)
+                .getProperty("errorCode","").toString()=="DUPLICATE_REQUEST_ID");
+    assert(bridge.rejectUnsupportedIntent(intent("editor:nonce:2","9007199254740992"),snap)
+                .getProperty("errorCode","").toString()=="STALE_DEVICE_EPOCH");
+    assert(bridge.rejectUnsupportedIntent(intent("editor:nonce:3","9007199254740993","9"),snap)
+                .getProperty("errorCode","").toString()=="STALE_GRAPH_REVISION");
+    std::uint64_t decoded=0;
+    assert(Bridge::decodeDecimal(juce::var("18446744073709551615"),decoded));
+    assert(decoded==std::numeric_limits<std::uint64_t>::max());
+    assert(!Bridge::decodeDecimal(juce::var("18446744073709551616"),decoded));
+    assert(!Bridge::decodeDecimal(juce::var("01"),decoded));
+    assert(!Bridge::decodeDecimal(juce::var(9007199254740993.0),decoded));
+    // No request above mutates the genuinely accepted M4 hardware route.
+    assert(live.getProperty("dryRoutingLab",{}).getProperty("revision",0)==77);
+}
+
 int main() {
     // R0: existing CH1 FX chain may be rendered inside the SAME prepared
     // ten-channel routing pass, without creating a second plugin or copying
@@ -882,6 +980,7 @@ int main() {
     verifyMU1LegacyM4FxFullMigrationAndMonitorPcm();
     verifyOccupiedExternalCh1Owner();
     verifySourceFormatIndependentPanPcmParity();
+    verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch();
     // Tests above use a real JUCE AudioProcessor processing seam. Vendor
     // VST3 formats and sound quality require separate Windows hardware FAT.
 }
