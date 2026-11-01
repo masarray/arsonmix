@@ -50,7 +50,7 @@ async def main():
         assert abs(main_geom['right']-main_geom['endRight'])<2,main_geom
         assert await page.locator('.arChannelSignalFlow [data-focus-step]').count()==4
         assert 'NO NATIVE ACK' in await page.locator('[data-focus-source]').inner_text()
-        assert await page.locator("[data-mix-mode]").count()==3
+        assert await page.locator("[data-mix-mode]").count()==4
         status=await page.evaluate("""() => {
           const ch=Array.from({length:10},()=>({mode:'NONE',left:-1,right:-1,gain:.25,pan:0,main:true,mute:false,solo:false,fxId:''}));
           const auxes=Array.from({length:4},()=>({enabled:false,gain:1,main:true,mute:false,fxId:''}));
