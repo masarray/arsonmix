@@ -558,7 +558,7 @@ check(strip(8).includes('wire-socket is-linked') &&
  strip(8).includes('data-wire-id') &&
  node('info').textContent.includes('INDEPENDENT PRE FX'),
  'Independent PRE FX tap is explicit and per-edge (not confused with fader send)');
-const pot=strip(8).match(/data-wire-id="(\\d+)"/);
+const pot=strip(8).match(/data-wire-id="(\d+)"/);
 check(!!pot,'Connected PRE FX wire has a stable edge ID for gain control');
 const gainTarget={dataset:{field:'wireGain',wireId:pot[1]},value:'-12',
  style:{setProperty(){}},parentElement:{style:{setProperty(){}}},closest:k=>k==='.strip'?{dataset:{id:8}}:null};
