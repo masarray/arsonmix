@@ -185,7 +185,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 ::-webkit-scrollbar{height:11px;width:9px}
 ::-webkit-scrollbar-track{background:#262728}
 ::-webkit-scrollbar-thumb{background:#55585b;border:2px solid #292a2b;border-radius:6px}
-@media(max-height:750px){.console-body{--route-h:54px;--fx-h:105px;--send-h:82px;--eq-h:43px;--pan-h:32px;--trim-h:22px;--switch-h:29px;--footer-h:45px}.fxslot-row{height:17px}.fx-section .subhead{height:18px}.footer-label{height:26px}.db-value{height:14px}.eq-line{height:20px}}
+@media(max-height:750px){.console-body{--route-h:54px;--fx-h:105px;--send-h:82px;--eq-h:43px;--pan-h:32px;--trim-h:22px;--switch-h:29px;--footer-h:45px}.fxslot-row{height:18px;min-height:18px;flex-basis:18px}.fx-section .subhead{height:18px}.footer-label{height:26px}.db-value{height:14px}.eq-line{height:20px}}
 @media(max-width:1000px){.short-help{display:none}.strip{width:98px;flex-basis:98px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;animation:none!important}}
 @media(max-height:610px){.console-body{--route-h:54px;--fx-h:80px;--send-h:60px;--eq-h:27px;--pan-h:28px;--trim-h:18px;--switch-h:25px;--footer-h:42px}.send-pan{display:none}.fxslot-row{height:15px}.fx-section .subhead,.send-header{height:16px}.eq-line{display:none}.eq-header{height:25px}}
@@ -389,7 +389,7 @@ const channelOptions=(t,type)=>{
  return ['None',...tracks.filter(x=>(x.kind==='bus'||x.kind==='fx')&&x.id!==t.id).map(x=>x.name)];
 };
 function sectionFx(t){
- let s='<div class="section fx-section"><div class="subhead"><span class="sym">fx</span><span class="hint" title="Eight FX slots; scroll inside rack to access all effects">FX '+t.fx.filter(v=>v!=='None').length+'/8</span><span class="push"></span><button class="mini power '+(t.fxOn?'on':'')+'" data-action="fxOn" title="Bypass entire FX rack" aria-label="Toggle effects">⏻</button></div><div class="fxslot-list">';
+ let s='<div class="section fx-section"><div class="subhead"><span class="sym">fx</span><span class="hint" title="Eight FX slots; scroll inside rack to access all effects">'+t.fx.filter(v=>v!=='None').length+'/8</span><span class="push"></span><button class="mini power '+(t.fxOn?'on':'')+'" data-action="fxOn" title="Bypass entire FX rack" aria-label="Toggle effects">⏻</button></div><div class="fxslot-list">';
  t.fx.forEach((v,i)=>{
  s+='<div class="fxslot-row" draggable="true" data-slot="'+i+'" title="Insert '+(i+1)+' · drag to reorder"><button class="mini power '+(v!=='None'&&!t.slotBypass[i]?'on':'')+'" data-action="slotPower" data-slot="'+i+'" title="Toggle individual effect">⏻</button><button class="fx-pick '+(v==='None'?'empty':'')+'" data-action="openPlugin" data-slot="'+i+'" aria-label="Choose plugin for '+escapeHtml(t.name)+' insert '+(i+1)+'">'+(v==='None'?'+'+(i+1)+' · Add effect':escapeHtml(v))+'</button><button class="fx-remove" data-action="removeFx" data-slot="'+i+'" title="Remove insert '+(i+1)+'">×</button><span class="grip" title="Drag reorder">⠿</span></div>';
  });
