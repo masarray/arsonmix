@@ -8,6 +8,7 @@ A Windows-first **live performance digital mixing console** for stage, karaoke, 
 - [EXECUTION LOCK v6 — one delivery path, parallel ownership, exact acceptance](docs/EXECUTION_LOCK_UNIVERSAL_LIVE_CONSOLE_V6_20261101.md)
 - [ENGINE workstream](docs/workstreams/ENGINE_UNIVERSAL_CONSOLE_V6.md) · [GUI workstream](docs/workstreams/GUI_OPERATOR_CONSOLE_V6.md) · [INTEGRATION/FAT workstream](docs/workstreams/INTEGRATION_FAT_CONSOLE_V6.md)
 - [AGENTS.md](AGENTS.md) is mandatory for active contributors. Prior G1/G2/R5/L2 dated plans remain in Git history, not current execution authority.
+- Historical asset-regression reference only: [approved v0.8 GUI baseline](docs/GUI_BASELINE_LOCK_2026-10-25.md). It is **not** an active product execution plan; v6 takes precedence.
 
 ## Verified actual status (2026-11-01 snapshot)
 `main@bb6dff6b42158ba2db4666e0def54bb89abda4f8`: one primary JUCE callback processes **fixed 10 input channels + four AUX**, native MAIN/MONITOR and occupied legacy CH1 VST3/Orbit special path. Windows CI [41263965810](https://github.com/masarray/arsonmix/actions/runs/41263965810) PASS and Chromium [41263965813](https://github.com/masarray/arsonmix/actions/runs/41263965813) PASS; Windows FAT artifact available, **not hardware certified**. Engine [PR #266](https://github.com/masarray/arsonmix/pull/266) is an offline universal publisher/VST lease preparation, NOT yet the live callback cutover. Independent dynamic CH11, Group and FX Return **not shipped**. Zero-FX acoustic crackle [#15](https://github.com/masarray/arsonmix/issues/15) unresolved.
