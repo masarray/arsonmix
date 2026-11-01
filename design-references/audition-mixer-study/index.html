@@ -1533,6 +1533,141 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
 .console-body .section-rail .rail-cell.route{height:var(--route-h)!important;flex:0 0 var(--route-h)!important}
 .console-body .section-rail .rail-cell.fx{height:var(--fx-h)!important;flex:0 0 var(--fx-h)!important}
 .console-body .section-rail .rail-cell.send{height:var(--send-h)!important;flex:0 0 var(--send-h)!important}
+
+/* V9: CONSOLE MECHANICAL LAYOUT — Rack owns freed height, never the live fader.
+   Fader height is invariant when ROUTE / SEND are expanded/collapsed. Master and
+   rail are siblings in the same flex-height contract, not independent rulers.
+   The rack becomes the variable-height processing workspace. */
+.console-body{--fader-fixed-h:clamp(198px,31vh,300px)}
+.console-body:not(.collapsed-fx) .strip .fader-section{
+  flex:0 0 var(--fader-fixed-h)!important;
+  height:var(--fader-fixed-h)!important;
+  min-height:var(--fader-fixed-h)!important;
+  max-height:var(--fader-fixed-h)!important;
+}
+.console-body:not(.collapsed-fx) .section-rail .rail-cell.fader{
+  flex:0 0 var(--fader-fixed-h)!important;
+  height:var(--fader-fixed-h)!important;
+  min-height:var(--fader-fixed-h)!important;
+  max-height:var(--fader-fixed-h)!important;
+}
+.console-body:not(.collapsed-fx) .strip .fx-section{
+  flex:1 1 var(--fx-h)!important;
+  height:auto!important;min-height:23px!important;max-height:none!important;
+  overflow:hidden!important;
+}
+.console-body:not(.collapsed-fx) .section-rail .rail-cell.fx{
+  flex:1 1 var(--fx-h)!important;
+  height:auto!important;min-height:23px!important;max-height:none!important;
+}
+.console-body:not(.collapsed-fx) .strip .fxslot-list{
+  display:block!important;flex:1 1 0!important;
+  min-height:0!important;max-height:none!important;
+  overflow-y:auto!important;overflow-x:hidden!important;
+  overscroll-behavior:contain;
+}
+.console-body:not(.collapsed-fx) .strip .fxslot-row{
+  height:25px!important;min-height:25px!important;flex:0 0 25px!important;
+}
+.console-body:not(.collapsed-fx) .strip .fx-pick{font-size:11px!important}
+.console-body:not(.collapsed-fx) .strip .fx-section .subhead{
+  flex:0 0 25px!important;height:25px!important;min-height:25px!important;
+  color:#e3f0f5!important;
+}
+.console-body.collapsed-fx .strip .fx-section,
+.console-body.collapsed-fx .section-rail .rail-cell.fx{
+  flex:0 0 23px!important;height:23px!important;min-height:23px!important;
+  max-height:23px!important;
+}
+/* Only if the operator intentionally COLLAPSES FX does the fader absorb slack. */
+.console-body.collapsed-fx .strip .fader-section,
+.console-body.collapsed-fx .section-rail .rail-cell.fader{
+  flex:1 1 var(--fader-fixed-h)!important;
+  height:auto!important;min-height:130px!important;max-height:none!important;
+}
+@media(max-height:680px){
+  .console-body{--fader-fixed-h:clamp(135px,28vh,190px);--route-h:56px;--pan-h:36px;--switch-h:40px;--footer-h:45px}
+  .console-body:not(.collapsed-fx) .strip .fxslot-row{height:22px!important;min-height:22px!important}
+}
+/* V9: glass LCD meter module — fixed calibration zones, distinct dBFS ruler,
+   independent mono/stereo lanes and native-only eventual signal source.
+   No backdrop filters, canvas, gradients animated per frame or JS layout pass. */
+.console-body .strip .meter-box{
+  border:1px solid #60778460!important;
+  border-radius:5px!important;
+  background:linear-gradient(90deg,#091720 0%,#01070c 25%,#06151c 76%,#1b3039)!important;
+  box-shadow:inset 2px 2px 5px #000c,inset -1px 0 #afc4cf27,0 1px #ffffff19!important;
+}
+.console-body .strip .meter-box .vu-bars{
+  position:relative;isolation:isolate;
+  background:linear-gradient(90deg,#071620,#020b10 28%,#01090e 71%,#152b35)!important;
+  border-left:1px solid #37505b99!important;border-right:1px solid #253b45!important;
+  box-shadow:inset 1px 0 3px #000,inset -1px 0 2px #000!important;
+}
+.console-body .strip .meter-box .vu-bars::after{
+  content:"";position:absolute;inset:9px 0 10px;z-index:5;pointer-events:none;
+  border-radius:3px;
+  background:
+    linear-gradient(103deg,#e4faff17 0%,#bce7fa08 22%,transparent 44%,#d3f2ff0e 62%,transparent 86%),
+    linear-gradient(to bottom,#ffffff12 0%,transparent 14%,transparent 86%,#05101799 100%);
+  box-shadow:inset 1px 0 #d1f3fa29,inset -1px 0 #000c,inset 0 1px #bdd7e422;
+}
+.console-body .strip .meter-box .meter-lane{
+  background:linear-gradient(90deg,#040e12,#071c19 55%,#071117)!important;
+  border-radius:2px!important;box-shadow:inset 1px 1px 3px #000,inset -1px 0 2px #000!important;
+}
+.console-body .strip .meter-box .meter-fill{
+  background:linear-gradient(to top,
+    #08a862 0%,#1de483 43%,#6cf178 64%,#dbdf39 76%,#ffbc38 87%,#ff7b30 94%,#fa4545 100%)!important;
+  filter:none!important;box-shadow:inset 1px 0 #cfffff30,inset -1px 0 #020b0766!important;
+}
+.console-body .strip .meter-box .meter-lane::before{
+  background:repeating-linear-gradient(to top,transparent 0px,transparent 5px,#010d13df 5px,#010d13df 7px)!important;
+}
+.console-body .strip .meter-box .meter-lane::after{
+  content:"";position:absolute;inset:0;z-index:3;pointer-events:none;
+  background:linear-gradient(90deg,#eaffff28 0%,transparent 30%,transparent 73%,#0009 100%);
+}
+.console-body .strip .meter-box .vu-scale{color:#bfd4df!important;text-shadow:0 1px #000}
+.console-body .strip .meter-box .vu-tick span{font:9px/11px Consolas,monospace!important}
+.console-body .strip .meter-box .peak{
+  background:linear-gradient(#381417,#12090b)!important;border:1px solid #754040!important;
+  box-shadow:inset 0 1px #bd515044!important;border-radius:2px!important;
+}
+.console-body .strip .meter-box .peak.clipping{
+  background:linear-gradient(#ff958b,#f0342c 47%,#9d1319)!important;
+  border-color:#ff9a95!important;box-shadow:0 0 3px #f33b30,inset 0 1px #ffd1c2!important;
+}
+/* Hardware continuity: satin upper plates, subtle milled lines, consistent hierarchy. */
+.console-body .strip .route-section{
+  background:linear-gradient(90deg,#1b303b,#304650 12%,#293c46 80%,#1a2b36)!important;
+}
+.console-body .strip .fx-section{
+  background:linear-gradient(90deg,#172a35,#253943 9%,#243741 82%,#162a35)!important;
+}
+.console-body .strip .send-section{
+  background:linear-gradient(90deg,#1e303b,#293e49 12%,#253841 83%,#172c37)!important;
+}
+.console-body .strip .pan-section{
+  background:linear-gradient(90deg,#1d303b,#324753 13%,#2c404a 83%,#20333e)!important;
+}
+.console-body .strip .subhead,.console-body .strip .send-header{
+  border-bottom:1px solid #101e29!important;box-shadow:inset 0 -1px #7f9ba920!important;
+}
+.console-body .strip .fxslot-row{
+  background:linear-gradient(180deg,#253b46,#1b2d38)!important;
+  border-bottom:1px solid #3c586642!important;
+}
+.console-body .strip .fxslot-row:hover{background:linear-gradient(#34505f,#263f4d)!important}
+.console-body .strip .fxslot-list{scrollbar-color:#668594 #142530!important}
+.console-body .strip .fader-head{
+  background:linear-gradient(113deg,#030b11,#0e2733 42%,#091b25 72%,#06131b)!important;
+  border:1px solid #4c6876!important;
+  box-shadow:inset 0 2px 5px #0009,inset 0 -1px #9cb6c51e,0 1px #ffffff25!important;
+}
+.console-body .strip .fader-readout{font-variant-numeric:tabular-nums!important;color:#a7f1ff!important}
+.console-body .strip .split-count{font:600 9px/1.2 Consolas,monospace;color:#b5e8f1;
+ border:1px solid #5d8291;border-radius:2px;padding:1px 2px;white-space:nowrap}
 </style>
 </head>
 <body>
