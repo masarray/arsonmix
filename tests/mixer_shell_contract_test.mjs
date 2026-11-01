@@ -168,3 +168,13 @@ test('operator-first console keyboard and contextual workflow stay presentation-
  assert.match(css,/\.rail-presets\{\s*display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
  assert.doesNotMatch(shell,/AudioContext|processBlock|setInterval|addEventListener\(['"]pointermove/);
 });
+
+test('standalone preview uses the same source-owned app and mixer shell',()=>{
+ const builder=read('scripts/build_ui_css.py'),standalone=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
+ for(const file of ['web/app.js','web/mixer-layout.css','web/mixer-layout.js']){
+   const content=read(file);
+   assert.ok(standalone.includes(content),'standalone preview drift: '+file);
+ }
+ assert.match(builder,/script_start=built\.index\('<script>'\)/);
+ assert.match(builder,/\(ROOT\/'web\/app\.js'\)\.read_text/);
+});

@@ -28,6 +28,14 @@ def embed_managed(page, tag, slot, content):
 
 def embed_all(page,css):
     built=embed(page,css)
+    # The first classic script is the source-owned app.js; do not leave a
+    # stale, independently edited GUI controller in the downloadable preview.
+    script_start=built.index('<script>')+len('<script>')
+    script_end=built.index('</script>',script_start)
+    if not built[script_start:script_end].startswith("'use strict';"):
+        raise ValueError('unexpected standalone app.js anchor')
+    built=(built[:script_start]+(ROOT/'web/app.js').read_text(encoding='utf-8')
+           +built[script_end:])
     for tag,slot,path in (
         ('style','arsonmix-mixer-io-css','web/mixer-io.css'),
         ('style','arsonmix-mixer-layout-css','web/mixer-layout.css'),

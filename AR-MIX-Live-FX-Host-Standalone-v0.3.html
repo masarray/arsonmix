@@ -1663,6 +1663,50 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 #app .arMixerChannelPager .btn-180{width:25px;min-width:25px;height:24px;padding:0;font-size:15px}
 #app .arMixerChannelPager .btn-180:disabled{opacity:.36;cursor:default}
 #app .arMixerPagerLabel{font:500 10px/1.1 'Segoe UI',sans-serif;color:#b9cbd2;min-width:91px;text-align:center;white-space:nowrap}
+
+
+/* Operator-first hierarchy, no new panels or changes to the seven-row mixer. */
+#app .toolbar .project{
+  width:auto;max-width:185px;min-width:0;flex:0 1 185px;
+  font-weight:400;color:#a9b8c1;
+}
+#app .toolbar .scene-select{display:none!important} /* Snapshot also lives in the rail. */
+#app .left-rail .arRailContextHeading{
+  display:flex;align-items:center;gap:5px;justify-content:space-between;
+  overflow:hidden;white-space:nowrap;
+}
+#app .left-rail .arRailContextHeading > span:first-child{flex:none}
+#app .left-rail .arRailFocus{
+  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  color:#c3d3da;font-size:9px;font-weight:500;letter-spacing:0;
+}
+#app .left-rail .rail-section-title{
+  height:21px;min-height:21px;border-top:1px solid #35434b;
+  background:#17232b;color:#9fb7c3;font-weight:500;letter-spacing:.35px;
+}
+#app .left-rail .rail-presets{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:3px;padding:4px 6px 5px;min-width:0;
+}
+#app .left-rail .rail-presets .btn-180{
+  min-width:0;width:100%;height:26px;min-height:26px;
+  padding:0 3px!important;white-space:normal;
+  font:500 9px/1.15 "ArSonMix Inter","Segoe UI",sans-serif!important;
+  letter-spacing:0!important;
+}
+#app .left-rail .scenes-list .list-item:not(.selected){color:#9daeb7}
+#app .left-rail .arRailUtilities{
+  background:#121d25;border-top:1px solid #2e414b;
+}
+#app .left-rail .arRailUtilities .arRailHeading{
+  background:#17232b;color:#94adba;font-weight:500;
+}
+#app #channelList [data-choose]:focus-visible{
+  outline:1px solid #75bfd8;outline-offset:-2px;
+}
+@media(max-width:1366px){
+  #app .toolbar .project{max-width:130px;flex-basis:130px}
+}
 </style>
 <style id="arsonmix-mixer-io-css">/* G1/G2: stable channel-bank geometry; FX rack remains mounted in every mode. */
 #app .workbench{display:flex;flex-direction:column}
@@ -2558,10 +2602,11 @@ function send(param,value,ch=currentChannel){
 function flash(message){const x=$('toast');x.textContent=message;x.classList.add('show');clearTimeout(timer);timer=setTimeout(()=>x.classList.remove('show'),1500)}
 function createSide(){
  const labels=channels.map(c=>c.name);
- $('channelList').innerHTML=labels.map((label,i)=>`<div class="list-item ${i===currentChannel?'selected':''}" data-choose="${i}"><span class="swatch" style="background:${channels[i].color||colors[i%colors.length]}"></span><span class="index">${i+1}</span><span>${safeText(label)}</span></div>`).join('');
+ $('channelList').innerHTML=labels.map((label,i)=>`<div class="list-item ${i===currentChannel?'selected':''}" data-choose="${i}" role="button" tabindex="0" aria-current="${i===currentChannel?'true':'false'}" aria-label="Select channel ${i+1}: ${safeText(label)}"><span class="swatch" style="background:${channels[i].color||colors[i%colors.length]}"></span><span class="index">${i+1}</span><span>${safeText(label)}</span></div>`).join('');
  $('groupsList').innerHTML=['Drums','Band','Vocals','FX','All Music','All Vocals'].map((x,i)=>`<div class="list-item" data-group="${i}"><span class="swatch" style="background:${colors[(i+4)%12]}"></span><span class="index">${i+1}</span><span>${x}</span></div>`).join('');
  $('scenesList').innerHTML=scenes.map((x,i)=>`<div class="list-item ${i===sceneIdx?'selected':''}" data-scene="${i}" title="Recall ${safeText(x)}"><span class="swatch" style="background:${i===sceneIdx?'#23bce9':'#283d4a'};width:8px;height:14px"></span><span class="scene-name">${safeText(x)}</span>${userSnapshots[x]?`<button class="scene-delete" type="button" data-delete-scene="${safeText(x)}" title="Delete saved snapshot" aria-label="Delete ${safeText(x)}">×</button>`:''}</div>`).join('');
  $('currentScene').innerHTML=`Snapshot: <b>${scenes[sceneIdx]}</b><span>▾</span>`;
+ window.dispatchEvent(new Event('arMixChannelFocus'));
 }
 function knobMarkup(param,ch,value,label,small=false){let angle=(param==='pan'?value/100*130:value/24*130);return `<button class="knob ${small?'small':''}" data-knob="${param}" data-ch="${ch}" data-value="${value}" style="--angle:${angle}deg" title="Drag vertically or scroll to change ${label}" aria-label="${label}"></button>`}
 function panText(v){return v===0?'C':(v<0?'L':'R')+' '+Math.abs(v)}
@@ -2713,7 +2758,7 @@ function setMasterMono(value,emit=true){
 function setView(next){
  if(next!=='MIX'&&next!=='FX RACK'&&next!=='SIGNAL FLOW')return;
  view=next;
- document.querySelectorAll('[data-view]').forEach(btn=>btn.classList.toggle('selected',btn.dataset.view===next));
+ document.querySelectorAll('[data-view]').forEach(btn=>{const active=btn.dataset.view===next;btn.classList.toggle('selected',active);btn.setAttribute('aria-current',active?'page':'false')});
  $('mixer').classList.toggle('hidden',next!=='MIX');
  $('rackWorkspace').classList.toggle('hidden',!['FX RACK','SIGNAL FLOW'].includes(next));
  if(next==='FX RACK')renderRackWorkspace();
@@ -2754,13 +2799,15 @@ function focusChannel(i){
  if(i<0||i>=channels.length||(i===currentChannel&&!masterSelected))return;
  masterSelected=false;currentChannel=i;
  document.querySelectorAll('.strip').forEach(strip=>strip.classList.toggle('selected',strip.dataset.strip!==undefined&&+strip.dataset.strip===i));
- document.querySelectorAll('#channelList [data-choose]').forEach(row=>row.classList.toggle('selected',+row.dataset.choose===i));
+ document.querySelectorAll('#channelList [data-choose]').forEach(row=>{const active=+row.dataset.choose===i;row.classList.toggle('selected',active);row.setAttribute('aria-current',String(active))});
+ window.dispatchEvent(new Event('arMixChannelFocus'));
 }
 function focusMaster(){
  if(masterSelected)return;
  masterSelected=true;
  document.querySelectorAll('.strip').forEach(strip=>strip.classList.toggle('selected',strip.id==='masterLeft'));
- document.querySelectorAll('#channelList [data-choose]').forEach(row=>row.classList.remove('selected'));
+ document.querySelectorAll('#channelList [data-choose]').forEach(row=>{row.classList.remove('selected');row.setAttribute('aria-current','false')});
+ window.dispatchEvent(new Event('arMixChannelFocus'));
 }
 function chooseChannel(i){
  if(i<0||i>=channels.length){flash('Additional bank channels are not populated in this UI study');return}
@@ -5482,7 +5529,18 @@ scheduleDemoMeter();
   modeSection.className='arRailModeSection';
   modeSection.setAttribute('aria-label','Mixer layer modes');
   const heading=document.createElement('div');
-  heading.className='arRailHeading';heading.textContent='CHANNEL MODE';
+  heading.className='arRailHeading arRailContextHeading';
+  const modeTitle=document.createElement('span');modeTitle.textContent='STRIP VIEW';
+  const activeStrip=document.createElement('span');activeStrip.className='arRailFocus';
+  heading.append(modeTitle,activeStrip);
+  const syncStripContext=()=>{
+    const selected=rail.querySelector('#channelList [data-choose].selected');
+    const id=Number(selected?.dataset.choose);
+    const name=selected?.lastElementChild?.textContent?.trim()||'';
+    const label=selected&&Number.isInteger(id)?'CH '+String(id+1).padStart(2,'0')+' · '+name:'MAIN';
+    if(activeStrip.textContent!==label){activeStrip.textContent=label;activeStrip.title=label;}
+  };
+  window.addEventListener('arMixChannelFocus',syncStripContext);
   modeSection.append(heading,bank);
   rail.insertBefore(modeSection,document.getElementById('channelList'));
   bank.setAttribute('aria-label','Channel processing and routing mode');
@@ -5510,6 +5568,12 @@ scheduleDemoMeter();
     button.setAttribute('aria-label',names[button.dataset.view]||button.textContent.trim());
   }
   nav.setAttribute('aria-label','Workspace tabs');
+  for(const button of nav.querySelectorAll('[data-view]')){
+    button.setAttribute('aria-current',button.classList.contains('selected')?'page':'false');
+    button.title=(button.title?button.title+' · ':'')+
+      ({'MIX':'Alt+1','FX RACK':'Alt+2','SIGNAL FLOW':'Alt+3'}[button.dataset.view]||'');
+  }
+  syncStripContext();
   document.querySelector('.toolbar-actions')?.classList.add('arSegmentedToolbar');
 
   // Bank modes are operational even when the full FX/PATCH workspace is open.
@@ -5552,6 +5616,43 @@ scheduleDemoMeter();
     mixer.addEventListener('scroll',refresh,{passive:true});
     if(typeof ResizeObserver==='function')new ResizeObserver(refresh).observe(mixer);
     refresh();
+  }
+  // Studio-like channel selection and FX navigation are presentation-only.
+  const channelList=rail.querySelector('#channelList');
+  channelList?.addEventListener('keydown',event=>{
+    const current=event.target.closest?.('[data-choose]');
+    if(!current)return;
+    if(event.key==='Enter'||event.key===' '){
+      event.preventDefault();current.click();return;
+    }
+    if(event.key!=='ArrowDown'&&event.key!=='ArrowUp')return;
+    const rows=Array.from(channelList.querySelectorAll('[data-choose]'));
+    const currentIndex=rows.indexOf(current);
+    if(currentIndex<0)return;
+    event.preventDefault();
+    const next=rows[Math.min(rows.length-1,Math.max(0,currentIndex+(event.key==='ArrowDown'?1:-1)))];
+    next?.focus();next?.click();
+  });
+  channelList?.addEventListener('dblclick',event=>{
+    if(!event.target.closest?.('[data-choose]'))return;
+    nav.querySelector('[data-view="FX RACK"]')?.click();
+  });
+  // No audio/routing writes, idle pointer listeners, or periodic DOM work.
+  window.addEventListener('keydown',event=>{
+    if(!event.altKey||event.ctrlKey||event.metaKey||event.shiftKey||event.repeat||event.defaultPrevented)return;
+    const target=event.target;
+    if(target?.closest?.('input,textarea,select,[contenteditable],[role="dialog"]'))return;
+    if(document.querySelector('.modal:not(.hidden),[role="dialog"].open'))return;
+    const tabs={'Digit1':'MIX','Digit2':'FX RACK','Digit3':'SIGNAL FLOW'};
+    const layers={'KeyF':'FX','KeyR':'ROUTE','KeyS':'SENDS'};
+    const view=tabs[event.code],layer=layers[event.code];
+    if(!view&&!layer)return;
+    event.preventDefault();
+    if(view)nav.querySelector('[data-view="'+view+'"]')?.click();
+    else rail.querySelector('[data-mix-mode="'+layer+'"]')?.click();
+  });
+  for(const button of rail.querySelectorAll('[data-mix-mode]')){
+    button.title=(button.title?button.title+' · ':'')+'Alt+'+button.dataset.mixMode[0];
   }
   document.documentElement.dataset.arMixerShell='rail-modes';
 })();
