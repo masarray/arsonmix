@@ -1408,6 +1408,38 @@ private:
             if(error.isNotEmpty())emitNotice(error,true);
             return;
         }
+        // Operator-first native CHAN OUT / DSP FORMAT. This is the same
+        // installed M4 callback/FX publisher as routingSourceSwitch, not a
+        // synthetic universal ChannelId operation. GUI owner may wire a
+        // compact selector without navigating the large APPLY wizard.
+        if(action=="routingChannelStructure") {
+            const int requestId=static_cast<int>(args.getProperty("requestId",0));
+            const int channel=static_cast<int>(args.getProperty("channel",-1));
+            const auto operation=args.getProperty("operation","").toString();
+            const auto selected=args.getProperty("selected","").toString();
+            const auto ep=args.getProperty("deviceEpoch",juce::var());
+            const auto rv=args.getProperty("revision",juce::var());
+            const bool safe=requestId>0&&channel>=0&&channel<LiveDryRoutingLab::count&&
+                ep.isInt64()&&rv.isInt64()&&!nativeShowBusy_&&
+                !studioBackupBusy_&&!engine_.isGraphSwitchPending();
+            const juce::String error=safe?
+                engine_.repatchDryRoutingLabChannel(channel,
+                    static_cast<std::uint64_t>(static_cast<juce::int64>(ep)),
+                    static_cast<std::uint64_t>(static_cast<juce::int64>(rv)),
+                    operation,selected):
+                juce::String("CHANNEL PATCH: stale device or Show/FX edit busy");
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",requestId);
+            ack->setProperty("channel",channel);
+            ack->setProperty("operation",operation);
+            ack->setProperty("ok",error.isEmpty());
+            ack->setProperty("error",error);
+            ack->setProperty("state",engine_.status().getProperty("dryRoutingLab",{}));
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                "arMixChannelStructureAck",juce::var(ack.release()));
+            if(error.isNotEmpty())emitNotice(error,true);
+            return;
+        }
         if (action == "routingDryApply")
         {
             LiveDryRoutingLab::FxSelections selected{};
