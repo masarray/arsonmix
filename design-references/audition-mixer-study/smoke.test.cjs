@@ -322,7 +322,7 @@ check(html.includes("addEventListener('pointerdown'") &&
  'Real pointer drag movement and release are implemented for the full fader well');
 check(!strip(1).includes('trim-section') && !html.includes('<div class="rail-cell trim"'),
  'TRIM UI completely removed');
-check(html.includes("Math.abs(value)<=8") && html.includes('panStyle(value)'),
+check(html.includes('const range=event.type') && html.includes('panDetent') && html.includes('panStyle(value)'),
  'PAN uses an eight-point center-snap deadzone and center-origin fill');
 check(html.includes('background-image:none!important') &&
  html.includes('width:26px!important;height:55px!important'),
