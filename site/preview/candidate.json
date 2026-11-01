@@ -1,0 +1,11 @@
+{
+  "kind": "REFERENCE_WORKFLOW_QA_ONLY",
+  "source_pr": 278,
+  "source_branch": "main/site/preview-v2",
+  "source_sha": "070fa3234c0352cef961fad684838e4794dfffc4",
+  "source_blob_sha": "cb33086552c8805c3958cd74c43da56fd48d412b",
+  "ci_run": 41308977569,
+  "ci_conclusion": "success",
+  "live_audio": false,
+  "note": "Exact PR #278 interactive UX reference published at owner-requested preview URL. Design-only: no native audio, ASIO, VST3 or graph acceptance."
+}

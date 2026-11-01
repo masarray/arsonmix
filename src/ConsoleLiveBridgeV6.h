@@ -118,6 +118,16 @@ public:
             if(peaksL.isArray())object->setProperty("channelPeaksL",peaksL);
             if(peaksR.isArray())object->setProperty("channelPeaksR",peaksR);
             if(inserts.isArray())object->setProperty("fxInstances",inserts);
+            const auto topo=route.getProperty("acceptedRoute",juce::var());
+            if(topo.isObject()) {
+                const auto sends=topo.getProperty("sends",juce::var());
+                const auto returns=topo.getProperty("auxes",juce::var());
+                if(sends.isArray())object->setProperty("acceptedSends",sends);
+                if(returns.isArray())object->setProperty("auxReturns",returns);
+            }
+            const auto monitorSends=route.getProperty("monitorSends",juce::var());
+            if(monitorSends.isArray())
+                object->setProperty("monitorSends",monitorSends);
             const auto main=route.getProperty("mainOutputs",juce::var());
             if(main.isArray())object->setProperty("mainOutputs",main);
             const auto monitor=route.getProperty("monitorOutputs",juce::var());
@@ -239,7 +249,10 @@ public:
                     intent.getProperty("legacyRoutingRevision","").toString()!=legacyRev)
                 error="STALE_LEGACY_ROUTING_REVISION";
             else if(!target.isString() || !decodeDecimal(target,channelId) ||
-                    channelId<1 || channelId>10)
+                    channelId<1 ||
+                    (channelId>10 &&
+                     !((operation=="SET_MONITOR_LEVEL"||
+                        operation=="SET_AUX_FADER")&&channelId<=14)))
                 error="INVALID_LEGACY_CHANNEL_ID";
             else if(!engine.dryRoutingLabActive() ||
                     engine.dryRoutingLabEpoch()!=ep ||
@@ -293,6 +306,97 @@ public:
                         accepted=engine.setDryRoutingLabParameter(
                             lane,ep,m4Revision,key,control);
                         if(!accepted)error="NATIVE_CONTROL_REJECTED";
+                    }
+                } else if(operation=="CONNECT_AUX_SEND") {
+                    const auto bus=payload.getProperty("auxIndex",{});
+                    const auto tapName=payload.getProperty("tap","POST").toString();
+                    const auto gain=payload.getProperty("value",{});
+                    const auto pan=payload.getProperty("pan",juce::var(0.0));
+                    if(!bus.isInt()||static_cast<int>(bus)<0||
+                       static_cast<int>(bus)>=armix::mixer::auxBusCount)
+                        error="INVALID_AUX_RETURN";
+                    else if(tapName!="PRE"&&tapName!="POST")
+                        error="INVALID_SEND_TAP";
+                    else if((!gain.isInt()&&!gain.isDouble())||
+                            (!pan.isInt()&&!pan.isDouble()))
+                        error="INVALID_SEND_GAIN_OR_PAN";
+                    else {
+                        const double level=static_cast<double>(gain);
+                        const double balance=static_cast<double>(pan);
+                        if(!std::isfinite(level)||level<0.||level>1.||
+                           !std::isfinite(balance)||balance< -1.||balance>1.)
+                            error="INVALID_SEND_GAIN_OR_PAN";
+                        else {
+                            error=engine.connectDryRoutingLabAuxSend(
+                                lane,static_cast<int>(bus),ep,m4Revision,
+                                tapName=="PRE"?armix::mixer::SendTap::preFader:
+                                               armix::mixer::SendTap::postFader,
+                                static_cast<float>(level),static_cast<float>(balance));
+                            accepted=error.isEmpty();
+                        }
+                    }
+                } else if(operation=="SET_AUX_FADER") {
+                    // Native AUX return fader AFTER its real VST3 rack.
+                    // 11..14 are explicit legacy M4 auxiliary ordinals;
+                    // never pretend these are stable universal ChannelIds.
+                    if(channelId<11||channelId>14)
+                        error="INVALID_LEGACY_AUX_CHANNEL";
+                    else {
+                        const auto raw=payload.getProperty("value",{});
+                        if(!raw.isInt()&&!raw.isDouble())
+                            error="INVALID_AUX_FADER";
+                        else {
+                            const double gain=static_cast<double>(raw);
+                            if(!std::isfinite(gain)||gain<0.||gain>4.)
+                                error="INVALID_AUX_FADER";
+                            else {
+                                accepted=engine.setDryRoutingLabAuxBusGain(
+                                    static_cast<int>(channelId-11),ep,
+                                    m4Revision,static_cast<float>(gain));
+                                if(!accepted)error="AUX_RETURN_NOT_ADMITTED";
+                            }
+                        }
+                    }
+                } else if(operation=="SET_MONITOR_LEVEL") {
+                    const auto raw=payload.getProperty("value",{});
+                    if(!raw.isInt()&&!raw.isDouble())
+                        error="INVALID_MONITOR_LEVEL";
+                    else {
+                        const double gain=static_cast<double>(raw);
+                        if(!std::isfinite(gain)||gain<0.||gain>1.)
+                            error="INVALID_MONITOR_LEVEL";
+                        else {
+                            accepted=engine.setDryRoutingLabMonitorSendGain(
+                                lane,ep,m4Revision,static_cast<float>(gain));
+                            if(!accepted)error="MONITOR_BUS_NOT_ADMITTED";
+                        }
+                    }
+                } else if(operation=="SET_SEND_LEVEL") {
+                    // A SEND level is native realtime PCM, NOT a new graph
+                    // edge. Existing AUX1..4 are independent FX return buses.
+                    const auto aux=payload.getProperty("auxIndex",{});
+                    const auto tapName=payload.getProperty("tap","POST").toString();
+                    const auto raw=payload.getProperty("value",{});
+                    if(!aux.isInt()||static_cast<int>(aux)<0||
+                       static_cast<int>(aux)>=armix::mixer::auxBusCount)
+                        error="INVALID_AUX_RETURN";
+                    else if(tapName!="PRE"&&tapName!="POST")
+                        error="INVALID_SEND_TAP";
+                    else if(!raw.isInt()&&!raw.isDouble())
+                        error="INVALID_SEND_LEVEL";
+                    else {
+                        const double value=static_cast<double>(raw);
+                        if(!std::isfinite(value)||value<0.||value>1.)
+                            error="INVALID_SEND_LEVEL";
+                        else {
+                            const auto tap=tapName=="PRE"?
+                                armix::mixer::SendTap::preFader:
+                                armix::mixer::SendTap::postFader;
+                            accepted=engine.setDryRoutingLabAuxSendGain(
+                                lane,static_cast<int>(aux),ep,m4Revision,
+                                static_cast<float>(value),tap);
+                            if(!accepted)error="NATIVE_SEND_NOT_ADMITTED";
+                        }
                     }
                 } else if(operation=="SET_PROCESSING_FORMAT"||
                           operation=="SET_PRIMARY_OUT") {

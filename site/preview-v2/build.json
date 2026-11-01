@@ -1,20 +1,13 @@
 {
-  "version": "preview-v3",
+  "version": "preview-v8",
   "route": "/preview-v2/",
   "kind": "GUI_REFERENCE_ONLY",
   "live_audio": false,
   "source_pr": 278,
   "source_branch": "design/audition-mixer-reference-isolated-20261101",
-  "source_sha": "0dcd1907d07980e96794ca74833b33b0391ea66f",
-  "source_path": "design-references/audition-mixer-study/index.html",
-  "features": [
-    "Original ArSonMix faders and PAN asset",
-    "10 fitted channel strips + pinned Master",
-    "Top arrows for extra banks",
-    "No bottom horizontal scrollbar",
-    "Docked plugin manager",
-    "Quiet FX/Send/EQ Mix default"
-  ],
-  "tests": "98/98 zero-dependency DOM checks; real Chromium geometry not yet certified",
-  "note": "Reference only. Production ASIO, native VST3 and meter not connected."
+  "source_sha": "537dcb97d1b086817ddbfac4938d310573feef11",
+  "milestone": "Adaptive 150/125/105 density-aware bank; consistent 32px rail and equal-width Master; reveal new channel; deterministic FX/Route/Send collapse",
+  "tests": "150/150 DOM/source/geometry-harness smoke checks passed; Chromium screenshot QA not certified",
+  "review_required": "Chromium visual signoff at 1366x768,1680x900,1920x1080 including all FX/SEND/ROUTE expansion states",
+  "note": "Simulated meters only. Does not scan or instantiate real VST3 plugins, process ASIO PCM, or modify production mixer."
 }

@@ -612,7 +612,7 @@ html[data-mixperf="baseline"] .toolbar .spec-device:hover{border-color:#3586a2}
    Semantic colors alone define the latched state; only the transient :active
    pointer press moves the cap inward by 1px without changing its layout slot. */
 :root{
- --b180-off:#cbd1d1;--b180-edge:#747f7f;--b180-off-ink:#172229;
+ --b180-off:#E7EFF0;--b180-edge:#747f7f;--b180-off-ink:#172229;
  --b180-color:var(--b180-off);--b180-border:var(--b180-edge);
  --b180-ink:var(--b180-off-ink);
  --b180-on-cyan:#94e8ed;--b180-on-green:#91edac;
@@ -2522,6 +2522,259 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
   font:500 12px/1.2 "Segoe UI",sans-serif;
 }
 @media(max-width:1100px){#app .arV6Console .arV6SelectionPanel{top:46px}}
+
+
+/* PR #278 V5 contextual FX picker on existing old UI. Preserve all six
+   fixed-height native slots until engine/bridge support a variable rack; avoid
+   breaking the six-slot layout contract while keeping original BTN-180 art. */
+
+
+#app .workbench{position:relative}
+#app .arV5QuickFx{
+ position:absolute;z-index:46;top:80px;left:8px;
+ display:flex;flex-direction:column;width:min(316px,calc(100% - 16px));
+ max-height:min(63vh,410px);background:#182b35;color:#dfedf2;
+ border:1px solid #628594;border-radius:4px;box-shadow:0 8px 23px #061018aa;
+}
+#app .arV5QuickFx[hidden]{display:none!important}
+#app .arV5QuickHead{min-height:32px;display:flex;justify-content:space-between;align-items:center;
+ padding:5px 8px;border-bottom:1px solid #3e5964;font:500 11px/1.2 "Segoe UI",sans-serif}
+#app .arV5QuickHead strong{font-weight:500;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#app .arV5QuickHead button{background:transparent;border:0;color:#dceff4;font-size:18px;cursor:pointer}
+#app .arV5QuickSearch{min-height:29px;margin:7px;padding:4px 7px;
+ background:#0d1c25;border:1px solid #506b7a;border-radius:2px;color:#e8f2f5}
+#app .arV5QuickResults{display:flex;flex-direction:column;gap:2px;padding:2px 7px 8px;
+ overflow:auto;min-height:45px}
+#app .arV5QuickResult{display:flex;justify-content:space-between;align-items:center;gap:6px;
+ min-height:28px;text-align:left;padding:5px 7px;color:#ddedf2;background:#25414d;
+ border:1px solid #3c5c69;border-radius:2px;cursor:pointer}
+#app .arV5QuickResult:hover,#app .arV5QuickResult:focus-visible{background:#345967;border-color:#78afbe}
+#app .arV5QuickResult span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#app .arV5QuickResult small{color:#aac4cd;white-space:nowrap}
+#app .arV5QuickFoot{display:flex;justify-content:space-between;align-items:center;gap:5px;
+ padding:7px 8px;border-top:1px solid #3e5964;color:#9cb8c3;font-size:10px}
+#app .arV5QuickFoot button{background:transparent;border:0;color:#88d0e6;cursor:pointer}
+
+/* V5 uses only the user's original ArSonMix material bitmaps:
+   29x62 fader cap (aspect 36:77), ROSEGOLD MASTER, PAN-SLIDER 15:33.
+   Dark graphite well, never bright cyan above the fader cap. */
+#app .arV6Console .arV6Fader::-webkit-slider-thumb{
+ background:transparent url("assets/faders/FADER-ARI-SILVER.png") center/29px 62px no-repeat;
+ width:29px;height:62px;border:0;border-radius:0;box-shadow:none;
+}
+#app .arV6Console .arV6Fader::-moz-range-thumb{
+ background:transparent url("assets/faders/FADER-ARI-SILVER.png") center/29px 62px no-repeat;
+ width:29px;height:62px;border:0;border-radius:0;box-shadow:none;
+}
+#app .arV6Console #arV6Main .arV6Fader::-webkit-slider-thumb{
+ background-image:url("assets/faders/FADER-ARI-ROSEGOLD.png");
+}
+#app .arV6Console #arV6Main .arV6Fader::-moz-range-thumb{
+ background-image:url("assets/faders/FADER-ARI-ROSEGOLD.png");
+}
+#app .arV6Console .arV6PanRange::-webkit-slider-thumb{
+ background:transparent url("assets/pan/PAN-SLIDER.png") center/15px 33px no-repeat;
+ width:15px;height:33px;border:0;border-radius:0;box-shadow:none;
+}
+#app .arV6Console .arV6PanRange::-moz-range-thumb{
+ background:transparent url("assets/pan/PAN-SLIDER.png") center/15px 33px no-repeat;
+ width:15px;height:33px;border:0;border-radius:0;box-shadow:none;
+}
+#app .arV6Console .arV6Fader::-webkit-slider-runnable-track{
+ background:linear-gradient(90deg,#020507,#142029 25%,#05090d 80%,#010406);
+ border-color:#050e14;box-shadow:inset 1px 0 #3c505c,inset -1px 0 #05090c;
+}
+/* Keep compact V5 popup separate from F8 floating Plugin Manager. */
+#app .arV6Console .arV6QuickPanel{
+ display:flex;flex-direction:column;position:absolute;z-index:24;
+ width:min(310px,calc(100% - 14px));max-height:min(66vh,410px);
+ min-height:125px;overflow:hidden;background:#192b35;border:1px solid #678b96;
+ border-radius:4px;box-shadow:0 8px 23px #061018ab;
+}
+#app .arV6Console .arV6QuickPanel[hidden]{display:none!important}
+#app .arV6Console .arV6QuickPanel .arV6PluginSearch{margin-top:7px}
+#app .arV6Console .arV6QuickFoot{display:flex;align-items:center;justify-content:space-between;
+ gap:5px;border-top:1px solid #3e5964;padding:5px 8px;color:#a6bdc6;font-size:10px}
+#app .arV6Console .arV6QuickFoot .arV6Button{
+ min-height:23px;font-size:10px;color:#a9dce8}
+#app .arV6Console .arV6CatalogFilters{display:grid;grid-template-columns:1fr 1fr;
+ gap:6px;padding:0 10px 8px}
+#app .arV6Console .arV6CatalogRow{display:flex;align-items:center;gap:5px}
+#app .arV6Console .arV6CatalogRow .arV6PluginResult{flex:1;min-width:0}
+#app .arV6Console .arV6CatalogStar{flex:none;width:26px;min-width:26px;
+ min-height:26px;padding:0;font-size:16px;color:#e4ca8a}
+@media(max-width:1100px){
+ #app .arV6Console .arV6QuickPanel{max-height:62vh}
+ #app .arV6Console .arV6CatalogFilters{gap:3px}
+}
+
+
+/* PR#278 V6 theme authority ported to actual WebView M4. No native DSP changes. */
+#app{--am-metal-base:#0B161E;--am-metal-panel:#14232C;--am-metal-raised:#20313B;
+ --am-metal-edge:#334956;--am-metal-inset:#030A0F;--am-text-primary:#DAE9EF;
+ --am-text-muted:#94B1BD;--am-accent:#66CBDD;--am-crystal:#E7EFF0}
+#app .toolbar{background:linear-gradient(#253741,#17252e)!important;border-bottom:1px solid var(--am-metal-edge)}
+#app .toolbar-actions.arSegmentedToolbar .nav .btn-180,
+#app .toolbar .spec-device,#app .arMixerChannelPager .btn-180{
+ height:29px;min-height:29px;max-height:29px;display:inline-flex;
+ align-items:center;justify-content:center;line-height:1;text-align:center;box-sizing:border-box}
+#app .arMixerChannelPager .btn-180{width:29px;min-width:29px;padding:0;--b180-ink:#1f1f1f}
+#app .arMixerChannelPager svg{display:block;flex:none;width:24px;height:24px;fill:currentColor}
+#app .left-rail{background:var(--am-metal-base)}
+#app .left-rail :is(.arRailModeSection,.arRailUtilities){background:var(--am-metal-panel)}
+#app .left-rail :is(.arRailHeading,.rail-section-title){background:var(--am-metal-raised);border-color:var(--am-metal-edge)}
+#app #mixer[data-io-mode="CONSOLE"]{background:var(--am-metal-base)}
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip]{
+ background:linear-gradient(90deg,#0e1b23,var(--am-metal-panel) 8%,#172832 92%,#0e1b23);
+ border-right:1px solid var(--am-metal-edge);box-shadow:inset 1px 0 #aecbd012}
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip].selected{
+ background:linear-gradient(90deg,#172b35,var(--am-metal-raised) 9%,#1a303b 93%,#122630);
+ box-shadow:inset 2px 0 var(--am-accent)}
+/* Both identity nameplates use the SAME stable --ch source (no second palette). */
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip] > :is(.ch-id,.strip-name),
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft > :is(.master-ch-id,.master-strip-name){
+ background:color-mix(in srgb,var(--ch) 43%,#101e27)!important;
+ color:#f0f7fa;border-top:2px solid var(--ch);
+ border-bottom:1px solid color-mix(in srgb,var(--ch) 49%,#0c1820);text-shadow:0 1px #02080a}
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip] > .ch-id{
+ display:flex;align-items:center;gap:3px;padding:0 31px 0 5px;
+ font:500 10px/1.1 "Segoe UI",sans-serif}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelNumber{flex:0 0 30px;white-space:nowrap;
+ color:#e0edf1;font:600 9px/1 Consolas,monospace}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelTopIdentity{
+ display:flex;align-items:center;gap:3px;flex:1;min-width:0;max-width:100%;
+ padding:3px 1px;margin:0;border:0;border-radius:2px;background:transparent;
+ font:500 10px/1.1 "Segoe UI",sans-serif;color:#f2f8fa;cursor:pointer;text-align:left}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelTopIdentity:focus-visible{
+ outline:1px solid #d7f5f9;outline-offset:0}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelTopIcon{flex:none;font-size:13px;line-height:1}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelTopName{min-width:0;overflow:hidden;
+ white-space:nowrap;text-overflow:ellipsis}
+#app #mixer[data-io-mode="CONSOLE"] .arFormatBadge{
+ right:4px;top:6px;min-height:19px;height:19px;
+ background:var(--am-metal-inset);border-color:#638594;color:#e4f5f8}
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip] > .strip-name{
+ display:flex;flex-direction:row;align-items:center;justify-content:center;
+ gap:5px;padding:3px 6px;overflow:hidden;font:500 10px/1.1 "Segoe UI",sans-serif}
+#app #mixer[data-io-mode="CONSOLE"] .strip-name .strip-caption{
+ min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#app #mixer[data-io-mode="CONSOLE"] .strip-name .track-icon{flex:none;font-size:14px;line-height:1}
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft > .master-ch-id{
+ display:flex;justify-content:space-between;align-items:center;padding:0 8px;
+ color:#f9f0f3;font:500 11px/1 "Segoe UI",sans-serif}
+#app #mixer[data-io-mode="CONSOLE"] .arMasterTopIdentity{
+ display:inline-flex;align-items:center;gap:4px;font-size:10px}
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip] > .arChannelBank,
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip] > .rack,
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft .master-fx-rack,
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft .arMainOutSummary,
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip] > .strip-controls{
+ background:var(--am-metal-panel);border-color:var(--am-metal-edge)}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelBank :is(.arBankSource,.arBankOutput,.arBankChannelFormat){
+ background:var(--am-metal-inset);border:1px solid #425d6a;
+ color:var(--am-text-primary);box-shadow:inset 0 1px 2px #0006}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelBank .arSendBank{border-top-color:var(--am-metal-edge)}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelBank .arSendChip{
+ background:var(--am-metal-raised);border-color:var(--am-metal-edge);color:var(--am-text-primary)}
+#app #mixer[data-io-mode="CONSOLE"] .rack .insert,
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft .master-insert{
+ background:linear-gradient(#283b46,#192b35);border:1px solid #39515c;color:var(--am-text-primary)}
+#app #mixer[data-io-mode="CONSOLE"] .rack .insert.empty{
+ border:1px dashed #3c5967;color:#a3c8d2}
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft .master-controls-zone{
+ background:var(--am-metal-panel);border-color:var(--am-metal-edge)}
+#app #mixer[data-io-mode="CONSOLE"] .channel-actions{
+ background:var(--am-metal-raised);border-color:var(--am-metal-edge)}
+#app #mixer[data-io-mode="CONSOLE"] .db-display{
+ background:var(--am-metal-panel);color:var(--am-accent)}
+#app #mixer[data-io-mode="CONSOLE"] > #masterLeft{
+ background:var(--am-metal-panel);border-left-color:#997888}
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft .arMainOutAction{
+ background:var(--am-metal-inset);color:var(--am-text-primary);border-color:var(--am-metal-edge)}
+/* Real fader PNG, RAIL3 well, meter geometry and seven-shadow BTN-180 preserved. */
+
+
+/* PR#278 visual correction G-V7: 10 source strips + MAIN at desktop widths.
+   Geometry is measured from the actual mixer viewport, not a separate mock
+   component. Narrow windows use adaptive banks; the fader travel remains owned
+   by existing native controls. */
+#app #mixer[data-io-mode="CONSOLE"]{
+ --ar-visible-channels:10;
+ --ar-master-dock-width:128px;
+ padding-right:var(--ar-master-dock-width);
+ scroll-padding-right:var(--ar-master-dock-width);
+}
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip]{
+ flex:0 0 calc((100% - var(--ar-master-dock-width))/var(--ar-visible-channels));
+ width:calc((100% - var(--ar-master-dock-width))/var(--ar-visible-channels));
+ min-width:102px;max-width:none;
+}
+#app #mixer[data-io-mode="CONSOLE"] > #masterLeft{
+ flex:0 0 128px;width:128px;min-width:128px;max-width:128px;
+ box-shadow:-2px 0 7px #02080c66;
+}
+/* No accidental 2-line CH number/name or wrap over FX on the real WebView.
+   30px high, all three parts in a SINGLE bounded grid row. */
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip] > .ch-id{
+ display:grid!important;
+ grid-template-columns:30px minmax(0,1fr) 22px!important;
+ grid-template-rows:minmax(0,1fr)!important;
+ gap:2px!important;
+ align-items:center!important;justify-content:normal!important;
+ padding:0 3px!important;
+ overflow:hidden!important;
+ white-space:nowrap!important;
+ line-height:1!important;
+}
+#app #mixer[data-io-mode="CONSOLE"] .ch-id .arChannelNumber{
+ display:block!important;width:30px;min-width:0;max-width:30px;
+ white-space:nowrap!important;
+ overflow:hidden;text-overflow:clip;
+ font:600 9px/1 Consolas,monospace!important;
+}
+#app #mixer[data-io-mode="CONSOLE"] .ch-id .arChannelTopIdentity{
+ display:flex!important;grid-column:2;grid-row:1;
+ align-items:center!important;justify-content:flex-start!important;
+ min-width:0!important;width:100%!important;height:28px!important;
+ max-width:100%;padding:0 1px!important;margin:0!important;
+ overflow:hidden!important;white-space:nowrap!important;flex-wrap:nowrap!important;
+ font:500 10px/1 "Segoe UI",sans-serif!important;text-align:left!important;
+}
+#app #mixer[data-io-mode="CONSOLE"] .ch-id .arChannelTopIcon{
+ flex:none!important;white-space:nowrap!important;line-height:1!important;
+ font-size:12px!important;
+}
+#app #mixer[data-io-mode="CONSOLE"] .ch-id .arChannelTopName{
+ display:block!important;flex:1 1 auto!important;min-width:0!important;
+ max-width:100%!important;overflow:hidden!important;
+ text-overflow:ellipsis!important;white-space:nowrap!important;
+ line-height:1.25!important;
+}
+#app #mixer[data-io-mode="CONSOLE"] .ch-id .arFormatBadge{
+ position:static!important;grid-column:3;grid-row:1;
+ width:21px!important;min-width:21px!important;height:20px!important;
+ margin:0!important;padding:0!important;
+ font:500 9px/18px "Segoe UI",sans-serif!important;
+ text-align:center!important;white-space:nowrap!important;
+}
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip] > .strip-name{
+ min-width:0!important;white-space:nowrap!important;
+ border-top-color:var(--ch);
+}
+/* PR278: exactly ONE Add FX affordance in each existing 6-slot rack.
+   All six native slot nodes remain mounted for bridge/ACK and VST state. */
+html:not(.native-engine) #app #mixer[data-io-mode="CONSOLE"] .rack .insert-slot:has(.insert.empty) ~ .insert-slot:has(.insert.empty){
+ display:none!important;
+}
+html:not(.native-engine) #app #mixer[data-io-mode="CONSOLE"] #masterLeft .master-fx-slot:has(.master-insert.empty) ~ .master-fx-slot:has(.master-insert.empty){
+ display:none!important;
+}
+@media(max-width:1339px){
+ #app #mixer[data-io-mode="CONSOLE"]{--ar-visible-channels:8}
+}
+@media(max-width:1099px){
+ #app #mixer[data-io-mode="CONSOLE"]{--ar-visible-channels:6}
+}
 </style>
 <style id="arsonmix-mixer-io-css">/* G1/G2: stable channel-bank geometry; FX rack remains mounted in every mode. */
 #app .workbench{display:flex;flex-direction:column}
@@ -3640,19 +3893,38 @@ function closeChannelIdentity(){
  document.querySelectorAll('.strip.identity-editing').forEach(el=>el.classList.remove('identity-editing'));
 }
 function commitChannelIdentity(){
- if(editingChannel<0)return;const index=editingChannel;
- const name=$('identityName').value.trim().replace(/\s+/g,' ').slice(0,26);
+ if(editingChannel<0)return;
+ const index=editingChannel, name=$('identityName').value.trim().replace(/\s+/g,' ').slice(0,26);
  if(!name){flash('Enter a channel name');$('identityName').focus();return}
- channels[index].name=name;channels[index].icon=channelIcons.includes(editingIcon)?editingIcon:'♩';
- channels[index].color=channelPalette.includes(editingColor)?editingColor:colors[index];
- closeChannelIdentity();currentChannel=index;renderMixer();
+ if(channels.some((c,i)=>i!==index&&c.name.trim().toLowerCase()===name.toLowerCase())){
+   flash('Channel name already used');$('identityName').focus();return;
+ }
+ const ch=channels[index];
+ ch.name=name;ch.icon=channelIcons.includes(editingIcon)?editingIcon:'♩';
+ ch.color=channelPalette.includes(editingColor)?editingColor:colors[index];
+ closeChannelIdentity();currentChannel=index;
+ // UI identity is not a native graph change. Do not remount any live FX/fader node.
+ const strip=document.querySelector('#mixer [data-strip="'+index+'"]');
+ if(strip){
+   strip.style.setProperty('--ch',ch.color);
+   for(const [sel,val] of [['.arChannelTopName',ch.name],['.arChannelTopIcon',ch.icon],
+       ['.strip-name .strip-caption',ch.name],['.strip-name .track-icon',ch.icon]]){
+     const item=strip.querySelector(sel);if(item)item.textContent=val;
+   }
+   strip.querySelector('[data-identity-open]')?.setAttribute('aria-label','Edit '+ch.name+' name, icon and color');
+   strip.querySelector('[data-editstrip]')?.setAttribute('aria-label','Double-click to edit '+ch.name+' name, icon and color');
+   strip.querySelector('[data-fader]')?.setAttribute('aria-label',ch.name+' fader');
+   const meter=strip.querySelector('.vu-bank');
+   if(meter)meter.setAttribute('aria-label',ch.name+(ch.stereo?' stereo left and right meters':' mono meter'));
+ }
+ createSide();
  if(view==='FX RACK')renderRackWorkspace();
- persistSession();flash('Channel identity updated');
+ persistSession();flash('Channel label updated · native audio route unchanged');
 }
 window.addEventListener('resize',positionChannelIdentity);
 $('mixer').addEventListener('scroll',positionChannelIdentity,{passive:true});
 function makeStrip(ch,i){let inserts=ch.inserts.slice(0,6);while(inserts.length<6) inserts.push('');return `<article class="strip ${i===currentChannel?'selected':''}" data-strip="${i}" style="--ch:${ch.color||colors[i]}">
- <div class="ch-id">${i+1}<button type="button" class="arFormatBadge" data-channel-format-toggle="${i}" aria-label="Switch CH ${i+1} processing format" title="MONO / STEREO">${ch.stereo?'ST':'M'}</button></div><div class="rack">${inserts.map((n,j)=>`<div class="insert-slot ${n&&bypassed[fxKey(i,j)]?'is-bypassed':''}"><button class="insert ${!n?'empty':''}" data-insert="${i}:${j}" title="${n?'Open or replace '+safeText(n):'Add VST effect'}">${n?'':'<span class="insert-add-glyph" aria-hidden="true">＋</span>'}<span class="insert-name">${n? safeText(n):'ADD FX'}</span></button>${n?`<button type="button" class="fx-power ${bypassed[fxKey(i,j)]?'is-bypassed':''}" data-fxpower="${i}:${j}" aria-pressed="${!bypassed[fxKey(i,j)]}" aria-label="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}" title="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}">⏻</button>`:''}</div>`).join('')}</div>
+ <div class="ch-id"><span class="arChannelNumber">CH ${String(i+1).padStart(2,'0')}</span><button type="button" class="arChannelTopIdentity" data-identity-open="${i}" title="Edit channel name, icon and color" aria-label="Edit ${safeText(ch.name)} name, icon and color"><span class="arChannelTopIcon" aria-hidden="true">${safeText(ch.icon)}</span><span class="arChannelTopName">${safeText(ch.name)}</span></button><button type="button" class="arFormatBadge" data-channel-format-toggle="${i}" aria-label="Switch CH ${i+1} processing format" title="MONO / STEREO">${ch.stereo?'ST':'M'}</button></div><div class="rack">${inserts.map((n,j)=>`<div class="insert-slot ${n&&bypassed[fxKey(i,j)]?'is-bypassed':''}"><button class="insert ${!n?'empty':''}" data-insert="${i}:${j}" title="${n?'Open or replace '+safeText(n):'Add VST effect'}">${n?'':'<span class="insert-add-glyph" aria-hidden="true">＋</span>'}<span class="insert-name">${n? safeText(n):'ADD FX'}</span></button>${n?`<button type="button" class="fx-power ${bypassed[fxKey(i,j)]?'is-bypassed':''}" data-fxpower="${i}:${j}" aria-pressed="${!bypassed[fxKey(i,j)]}" aria-label="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}" title="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}">⏻</button>`:''}</div>`).join('')}</div>
  <div class="strip-controls"><div class="trim-row"><span class="mini-label">TRIM<br>dB</span><div class="mini-lcd" data-trim-read="${i}">${fmt(ch.trim)}</div></div>${knobMarkup('trim',i,ch.trim,'Trim')}<div class="pan-control">${panMarkup(ch,i)}<div class="pan-readline"><span aria-hidden="true">L</span><strong data-pan-read="${i}">${panText(ch.pan)}</strong><span aria-hidden="true">R</span></div></div><div class="utility-row"><button data-pre="${i}" class="btn-180 ${ch.pre?'active':''}">Ø</button><button data-hpf="${i}" class="btn-180 ${ch.hpf?'active':''}">HPF</button></div></div>
  <div class="channel-actions"><button class="btn-180 candy mute ${ch.mute?'active':''}" data-mute="${i}" aria-pressed="${ch.mute}">MUTE</button><button class="btn-180 candy solo ${ch.solo?'active':''}" data-solo="${i}" aria-pressed="${ch.solo}">SOLO</button></div>
  <div class="db-display" data-read="${i}">${fmt(ch.fader)}</div><div class="fader-zone"><div class="vu-bank ${ch.stereo?'is-stereo':'is-mono'}" role="group" aria-label="${safeText(ch.name)} ${ch.stereo?'stereo left and right meters':'mono meter'}"><div class="vu-bars">${ch.stereo?meterUnit(String(i)+'L','L')+meterUnit(String(i)+'R','R'):meterUnit(String(i),'')}${meterScaleMarkup()}</div></div><div class="fader" data-fader="${i}" role="slider" tabindex="0" aria-orientation="vertical" aria-label="${ch.name} fader" aria-valuemin="-60" aria-valuemax="10" aria-valuenow="${ch.fader}" style="--fader-cut:${levelToTop(ch.fader)}%"><div class="fader-travel"><div class="cap" style="--pos:${levelToTop(ch.fader)}%"></div></div></div>${faderScaleMarkup()}</div></div>
@@ -3679,7 +3951,7 @@ function syncStripFormat(i,format){
 window.__arMixSyncAcceptedChannelFormat=syncStripFormat;
 function renderMixer(){
  const x=$('mixer'),scroll=x.scrollLeft;
- x.innerHTML=channels.map(makeStrip).join('')+'<article id="masterLeft" class="strip master-strip '+(masterSelected?'selected':'')+'" aria-label="Master output channel"></article>';
+ x.innerHTML=channels.map(makeStrip).join('')+'<article id="masterLeft" class="strip master-strip '+(masterSelected?'selected':'')+'" style="--ch:#b98a99" aria-label="Master output channel"></article>';
  renderMaster();x.scrollLeft=scroll;createSide();
 }
 let masterGain=-.1,masterPan=0,masterMute=false,masterMono=false,phones=-12,masterInserts=['Studio EQ','Brickwall Limiter'],masterBypassed={},pendingMasterSlot=null;
@@ -3701,7 +3973,7 @@ const meterPercentToDbfs=p=>clamp(p,0,100)*.6-60;
 function meterUnit(key,label){return `<div class="meter-unit"><div class="meter" data-meter-key="${key}"><button type="button" class="clip-led" data-clip="${key}" title="Clear latched clip — ${label}" aria-label="Clear ${label} clip indication"></button><div class="meter-signal-area"><div class="meter-fill" data-meter="${key}" style="--level:6%"></div><div class="meter-peak" aria-hidden="true"></div></div></div><span class="meter-channel-label" aria-hidden="true">${label||''}</span></div>`}
 function renderMaster(){
  const host=$('masterLeft');if(!host)return;
- host.innerHTML=`<div class="ch-id master-ch-id">MASTER</div>
+ host.innerHTML=`<div class="ch-id master-ch-id"><span>MAIN</span><span class="arMasterTopIdentity" aria-hidden="true"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m11 5-5 4H3v6h3l5 4V5Z"/><path d="M15 9a5 5 0 0 1 0 6M18 6a9 9 0 0 1 0 12"/></svg><span>MASTER</span></span></div>
  <div class="master-fx-rack">${masterFxRows()}</div>
  <div class="strip-controls master-controls-zone">
   <div class="master-analysis" role="group" aria-label="LUFS integrated loudness and dBTP true peak" title="Browser demo is simulated; actual native loudness/true peak not implemented">
@@ -3823,6 +4095,11 @@ document.addEventListener('click',e=>{const b=e.target.closest('button,[data-cho
  if(b.dataset.pluginManager!==undefined){flash('Plugin Manager is available in the Windows desktop app');return}
  if(b.dataset.mySounds!==undefined){flash('Native VST3 presets are available in the Windows desktop app');return}
  if(b.dataset.choose!==undefined){chooseChannel(+b.dataset.choose);return}
+ if(b.dataset.identityOpen!==undefined){
+   const index=Number(b.dataset.identityOpen);
+   if(Number.isInteger(index)&&index>=0&&index<channels.length)openChannelIdentity(index);
+   return;
+ }
  if(b.dataset.channelFormatToggle!==undefined){
    const i=Number(b.dataset.channelFormatToggle);
    if(!Number.isInteger(i)||i<0||i>=channels.length)return;
@@ -3838,11 +4115,11 @@ document.addEventListener('click',e=>{const b=e.target.closest('button,[data-cho
  if(b.dataset.mute!==undefined){toggleState(+b.dataset.mute,'mute');return}if(b.dataset.solo!==undefined){toggleState(+b.dataset.solo,'solo');return}
  if(b.dataset.pre!==undefined){let i=+b.dataset.pre;channels[i].pre=!channels[i].pre;b.classList.toggle('active');send('phase',channels[i].pre,i);return}
  if(b.dataset.hpf!==undefined){let i=+b.dataset.hpf;channels[i].hpf=!channels[i].hpf;b.classList.toggle('active');send('hpf',channels[i].hpf,i);return}
- if(b.dataset.masterInsert!==undefined){pendingMasterSlot=+b.dataset.masterInsert;openPluginBrowser(currentChannel,true);return}
+ if(b.dataset.masterInsert!==undefined){pendingMasterSlot=+b.dataset.masterInsert;if(!window.__JUCE__?.backend?.emitEvent)openQuickFx(currentChannel,pendingMasterSlot,b,true);return}
  if(b.dataset.masterPower!==undefined){const slot=+b.dataset.masterPower;masterBypassed[slot]=!masterBypassed[slot];renderMaster();persistSession();send('masterFxBypass',{slot,bypass:masterBypassed[slot]},-1);return}
  if(b.dataset.clip!==undefined){resetClip(b.dataset.clip);return}
  if(b.dataset.fxpower!==undefined){const [i,j]=b.dataset.fxpower.split(':').map(Number);setFxBypass(i,j,!bypassed[fxKey(i,j)]);return}
- if(b.dataset.insert){let [i,j]=b.dataset.insert.split(':').map(Number);currentChannel=i;pendingSlot=j;openPluginBrowser(i);return}
+ if(b.dataset.insert){let [i,j]=b.dataset.insert.split(':').map(Number);if(!window.__JUCE__?.backend?.emitEvent)openQuickFx(i,j,b);return}
  if(b.dataset.deleteScene!==undefined){deleteMixerSnapshot(b.dataset.deleteScene);return}
  if(b.dataset.scene!==undefined){loadSnapshotByIndex(+b.dataset.scene);return}
  if(b.dataset.preset){applyQuickPreset(b.dataset.preset);return}
@@ -4132,8 +4409,74 @@ function renderSignalFlow(){
   return;
  }
  $('rackWorkspace').innerHTML=`<div class="feature-top"><div><span class="eyebrow">NO TECHNICAL PATCHBAY REQUIRED</span><h2>Signal Flow — See where your voice goes</h2><p>A beginner-first view of the real-time audio path. Select your audio device in Setup.</p></div><button class="action" id="openSetupFromFlow">CHOOSE AUDIO DEVICE</button></div><div class="workflow"><div class="flow-node"><span class="eyebrow">01 · INPUT</span><b>Microphone</b><small>Audio Interface<br>ASIO or WASAPI</small></div><span class="flow-arrow">➜</span><div class="flow-node"><span class="eyebrow">02 · FX CHAIN</span><b>VST3 Plugins</b><small>EQ · Dynamics<br>Reverb · Delay</small></div><span class="flow-arrow">➜</span><div class="flow-node"><span class="eyebrow">03 · MIXER</span><b>Mix & Monitor</b><small>Fader · Pan<br>Master · Meters</small></div><span class="flow-arrow">➜</span><div class="flow-node"><span class="eyebrow">04 · OUTPUT</span><b>Speakers / Stream</b><small>Audio Device<br>Streaming bridge later</small></div></div><div class="flow-summary"><span>⚠ In this trial the audio flow is a visual concept; no microphone is captured and no audio is sent to a livestream.</span><button class="ghost-action" id="flowFxButton">OPEN FX RACK</button></div>`}
+
+// Adopt PR #278 V5 contextual quick-insert on the ORIGINAL mixer.
+// Desktop native operations remain owned by bridge.js; this uses preview
+// catalog ONLY when JUCE is absent, never as a fabricated VST3 instance.
+const arV5Quick=document.createElement('section');
+arV5Quick.className='arV5QuickFx';arV5Quick.hidden=true;
+arV5Quick.setAttribute('role','dialog');
+arV5Quick.setAttribute('aria-label','Quick add effect');
+arV5Quick.innerHTML='<div class="arV5QuickHead"><strong>ADD FX</strong><button type="button" data-fast-close aria-label="Close quick effect picker">×</button></div>'+
+  '<input type="search" class="arV5QuickSearch" aria-label="Search quick effects" placeholder="Search an effect or category…">'+
+  '<div class="arV5QuickResults" role="listbox"></div>'+
+  '<div class="arV5QuickFoot">Enter: insert · Esc: close <button type="button" data-fast-manager>Plugin Manager · F8</button></div>';
+document.querySelector('#app .workbench')?.append(arV5Quick);
+const arV5Search=arV5Quick.querySelector('.arV5QuickSearch'),
+      arV5Results=arV5Quick.querySelector('.arV5QuickResults');
+let arV5Anchor=null;
+function closeQuickFx(focus=false){
+  if(arV5Quick.hidden)return;
+  arV5Quick.hidden=true;
+  if(focus&&arV5Anchor?.isConnected)arV5Anchor.focus();
+  arV5Anchor=null;
+}
+function renderQuickFx(){
+  if(arV5Quick.hidden)return;
+  arV5Results.replaceChildren();
+  const q=arV5Search.value.trim().toLocaleLowerCase();
+  const found=pluginCatalog.filter(p=>
+    (p.name+' '+p.type+' '+(p.hint||'')).toLocaleLowerCase().includes(q));
+  for(const fx of found.slice(0,64)){
+    const b=document.createElement('button');b.type='button';
+    b.className='arV5QuickResult';b.dataset.fastPlugin=fx.name;
+    const title=document.createElement('span');title.textContent=fx.name;
+    const kind=document.createElement('small');kind.textContent=fx.type;
+    b.append(title,kind);arV5Results.append(b);
+  }
+  if(!found.length){const p=document.createElement('p');p.textContent='No matching demo effects';arV5Results.append(p);}
+}
+function openQuickFx(channel,slot,anchor,isMaster=false){
+  if(window.__JUCE__?.backend?.emitEvent)return false;
+  if(!isMaster){currentChannel=channel;pendingMasterSlot=null;pendingSlot=slot;}
+  else pendingMasterSlot=slot;
+  arV5Anchor=anchor;
+  arV5Quick.querySelector('.arV5QuickHead strong').textContent=
+    (isMaster?'MAIN':channels[channel]?.name||'CHANNEL')+' · FX '+(slot+1)+' · UI PREVIEW';
+  const host=arV5Quick.parentElement,r=anchor?.getBoundingClientRect(),p=host?.getBoundingClientRect();
+  if(r&&p){arV5Quick.style.left=Math.max(6,Math.min(r.left-p.left,p.width-320))+'px';
+    arV5Quick.style.top=Math.max(6,Math.min(r.bottom-p.top+4,p.height-360))+'px';}
+  arV5Quick.hidden=false;arV5Search.value='';renderQuickFx();arV5Search.focus();return true;
+}
+arV5Search.addEventListener('input',renderQuickFx);
+arV5Quick.addEventListener('click',e=>{
+  if(e.target.closest('[data-fast-close]')){closeQuickFx(true);return;}
+  if(e.target.closest('[data-fast-manager]')){
+    closeQuickFx();openPluginBrowser(currentChannel,pendingMasterSlot!==null);return;}
+  const b=e.target.closest('[data-fast-plugin]');if(!b)return;
+  if(!pluginCatalog.some(p=>p.name===b.dataset.fastPlugin))return;
+  closeQuickFx();insertPlugin(b.dataset.fastPlugin);
+});
+arV5Quick.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeQuickFx(true);}
+  if(e.key==='Enter'&&e.target===arV5Search){
+    const first=arV5Results.querySelector('[data-fast-plugin]');
+    if(first){e.preventDefault();first.click();}
+  }
+});
+
 function openPluginBrowser(idx,isMaster=false){if(!isMaster){currentChannel=idx;pendingMasterSlot=null}activeCategory='All';$('pluginModal').classList.remove('hidden');$('pluginTarget').textContent=isMaster?'Adding to MASTER bus · demo FX catalog':'Adding to '+channels[idx].name+' · virtual effects catalog';$('pluginSearch').value='';renderPluginBrowser();$('pluginSearch').focus()}
-function closePluginBrowser(){$('pluginModal').classList.add('hidden')}
+function closePluginBrowser(){closeQuickFx();$('pluginModal').classList.add('hidden')}
 function renderPluginBrowser(){document.querySelectorAll('[data-category]').forEach(b=>b.classList.toggle('active',b.dataset.category===activeCategory));const q=$('pluginSearch').value.trim().toLowerCase();let pool=pluginCatalog.filter(p=>(activeCategory==='All'||p.type===activeCategory)&&`${p.name} ${p.type} ${p.hint}`.toLowerCase().includes(q));$('pluginResults').innerHTML=pool.map(p=>`<button class="plugin-card" data-pluginname="${safeText(p.name)}"><span class="plugin-glyph">${safeText(p.badge)}</span><span><b>${safeText(p.name)}</b><small>${safeText(p.type)} · ${safeText(p.hint)}</small></span></button>`).join('')||'<p>No matching demo effects.</p>'}
 function insertPlugin(name){
  if(pendingMasterSlot!==null){
@@ -4353,7 +4696,7 @@ document.addEventListener('input',e=>{const el=e.target;if(!el.dataset.fxparam)r
 $('pluginModal').addEventListener('click',e=>{if(e.target===$('pluginModal'))closePluginBrowser()});
 $('channelIdentity').addEventListener('click',e=>{if(e.target===$('channelIdentity'))closeChannelIdentity()});
 $('identityName').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();commitChannelIdentity()}});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closePluginBrowser();closeChannelIdentity()}if((e.key==='Enter'||e.key===' ')&&e.target.matches('[data-editstrip]')){e.preventDefault();openChannelIdentity(+e.target.dataset.editstrip)}});
+document.addEventListener('keydown',e=>{if(e.key==='F8'&&!e.repeat&&!document.documentElement.classList.contains('ar-v6-active')){e.preventDefault();if(window.__JUCE__?.backend?.emitEvent)document.querySelector('[data-plugin-manager]')?.click();else{closeQuickFx();openPluginBrowser(currentChannel,pendingMasterSlot!==null)}return;}if(e.key==='Escape'){closeQuickFx();closePluginBrowser();closeChannelIdentity()}if((e.key==='Enter'||e.key===' ')&&e.target.matches('[data-editstrip]')){e.preventDefault();openChannelIdentity(+e.target.dataset.editstrip)}});
 document.addEventListener('change',e=>{if(e.target.id==='rackChannel')chooseChannel(+e.target.value)});
 document.addEventListener('click',e=>{const id=e.target.closest('button')?.id;if(id==='saveFxFromRack')saveFxChainPreset();else if(id==='recallFxPreset')recallFxChain();else if(id==='openSetupFromFlow')$('audioSetupBtn')?.click();else if(id==='flowFxButton')setView('FX RACK');else if(id==='backMixer')setView('MIX')});
 // The UI-only envelope remains one atomic storage transaction, never a 5s
@@ -6705,10 +7048,10 @@ scheduleDemoMeter();
   const mixer=document.getElementById('mixer');
   if(mixer&&!document.getElementById('arMixChannelPager')){
     const pager=document.createElement('div');pager.id='arMixChannelPager';pager.className='arMixerChannelPager';
-    const prev=document.createElement('button');prev.type='button';prev.className='btn-180';prev.textContent='‹';
+    const prev=document.createElement('button');prev.type='button';prev.className='btn-180';prev.innerHTML='<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M14,17L9,12l5-5V17Z"/></svg>';
     prev.setAttribute('aria-label','Previous mixer channel bank');
     const label=document.createElement('span');label.className='arMixerPagerLabel';
-    const next=document.createElement('button');next.type='button';next.className='btn-180';next.textContent='›';
+    const next=document.createElement('button');next.type='button';next.className='btn-180';next.innerHTML='<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M10,17V7l5,5l-5,5Z"/></svg>';
     next.setAttribute('aria-label','Next mixer channel bank');
     pager.append(prev,label,next);nav.parentElement?.append(pager);
     const strips=()=>[...mixer.querySelectorAll('[data-strip]')];
@@ -6842,6 +7185,11 @@ scheduleDemoMeter();
     RENAME_CHANNEL:'RENAME_CHANNEL',CREATE_CHANNEL:'CREATE_CHANNEL'
   };
   let accepted=null,acceptedNative=false,modeSend='',lastStructure='',requestSeq=0;
+  let lastControlProjection='',lastHeaderProjection='';
+  // Stable indexed meters avoid re-querying every strip/LED on native PCM ticks.
+  const meterNodes=new Map(),statusNodes=new Map();
+  const uiStats={structureRenders:0,controlRefreshes:0,telemetryFastFrames:0};
+  let meterReadings=new Map();
   let draggingFx=null;
   // Numeric decimal wire identifiers are required by integration/ConsoleNativeContractV6.h.
   // Never downcast native 64-bit ChannelId, device epoch, or graph revision.
@@ -6923,7 +7271,33 @@ scheduleDemoMeter();
   pluginSearch.placeholder='Search native scanned plugins...';
   pluginSearch.setAttribute('aria-label','Search native scanned VST3 catalog');
   const pluginResults=h('div','arV6PluginResults');
-  pluginPanel.append(pluginHead,pluginTarget,pluginSearch,pluginResults);
+  const managerFilters=h('div','arV6CatalogFilters');
+  const managerView=h('select','arV6Select');
+  managerView.setAttribute('aria-label','Native plugin catalog filter');
+  for(const [val,text] of [['ALL','All effects'],['FAVORITES','Favorites'],['RECENT','Recent']]){
+    const opt=h('option','',text);opt.value=val;managerView.append(opt);
+  }
+  const managerCategory=h('select','arV6Select');
+  managerCategory.setAttribute('aria-label','Native plugin category');
+  managerFilters.append(managerView,managerCategory);
+  pluginPanel.append(pluginHead,pluginTarget,pluginSearch,managerFilters,pluginResults);
+  // Contextual V5 Add FX picker anchored to the exact strip, independent of F8.
+  const quickPanel=h('section','arV6QuickPanel');
+  quickPanel.id='arV6QuickPanel';quickPanel.hidden=true;
+  quickPanel.setAttribute('role','dialog');quickPanel.setAttribute('aria-label','Quick native VST3 picker');
+  const quickHead=h('div','arV6DevicePanelHead');
+  const quickTitle=h('span','','QUICK ADD FX');
+  const quickClose=button('×',{'aria-label':'Close quick native FX picker'});
+  quickHead.append(quickTitle,quickClose);
+  const quickSearch=h('input','arV6PluginSearch');quickSearch.type='search';
+  quickSearch.setAttribute('aria-label','Search quick native effects');
+  quickSearch.placeholder='Search native VST3 effects…';
+  const quickResults=h('div','arV6PluginResults');
+  const quickManager=button('PLUGIN MANAGER · F8');
+  quickManager.setAttribute('aria-label','Open full Plugin Manager from quick picker');
+  const quickFoot=h('div','arV6QuickFoot');
+  quickFoot.append(h('span','','Enter: load · Esc: close'),quickManager);
+  quickPanel.append(quickHead,quickSearch,quickResults,quickFoot);
   // A small operator drawer differentiates relative fader links from actual
   // serial Group-Bus summing. Both are SINGLE native graph transactions.
   const selectionPanel=h('section','arV6SelectionPanel');
@@ -6966,7 +7340,7 @@ scheduleDemoMeter();
   const lanes=h('div','arV6Lanes');lanes.id='arV6Lanes';lanes.setAttribute('aria-label','Channel banks');
   const main=h('div','arV6Main');main.id='arV6Main';main.setAttribute('aria-label','Pinned main output');
   body.append(sectionRail,lanes,main);
-  root.append(top,message,devicePanel,pluginPanel,selectionPanel,body);
+  root.append(top,message,devicePanel,pluginPanel,selectionPanel,quickPanel,body);
   mount.append(root);
   sectionRail.addEventListener('click',event=>{
     const control=event.target.closest('[data-section]');
@@ -7054,12 +7428,87 @@ scheduleDemoMeter();
   function closePluginManager(){
     pluginPanel.hidden=true;pluginsButton.setAttribute('aria-expanded','false');
   }
+  // UI-only preferences store stable native catalog IDs, never plugin state.
+  const pluginFavorites=new Set(),pluginRecent=[];
+  try{
+    const p=JSON.parse(localStorage.getItem('armix.v6.fx-ux.v5')||'{}');
+    if(Array.isArray(p.favorites))for(const id of p.favorites.slice(0,300))
+      if(typeof id==='string')pluginFavorites.add(id);
+    if(Array.isArray(p.recent))for(const id of p.recent.slice(0,20))
+      if(typeof id==='string')pluginRecent.push(id);
+  }catch{}
+  function saveFxPrefs(){
+    try{localStorage.setItem('armix.v6.fx-ux.v5',JSON.stringify({
+      favorites:[...pluginFavorites].slice(0,300),recent:pluginRecent.slice(0,20)}));}catch{}
+  }
+  let quickTarget=null,quickAnchor=null;
+  const nativeCatalog=()=>acceptedNative&&Array.isArray(accepted?.catalog?.plugins)?
+    accepted.catalog.plugins.filter(p=>p&&typeof p.id==='string'&&p.id&&
+      typeof p.name==='string'&&p.name):[];
+  function closeQuickFx(focus=false){
+    quickPanel.hidden=true;
+    if(focus&&quickAnchor?.isConnected)quickAnchor.focus();
+    quickAnchor=null;
+  }
+  function commitNativeFx(pluginId,id){
+    if(!nativeCatalog().some(p=>p.id===pluginId)||!can('ADD_INSERT',id))return false;
+    if(!sendIntent('ADD_INSERT',id,{pluginId}))return false;
+    const n=pluginRecent.indexOf(pluginId);if(n!==-1)pluginRecent.splice(n,1);
+    pluginRecent.unshift(pluginId);if(pluginRecent.length>20)pluginRecent.length=20;
+    saveFxPrefs();return true;
+  }
+  function refreshQuickFx(){
+    if(quickPanel.hidden)return;
+    quickResults.replaceChildren();
+    const target=byId.get(quickTarget);
+    quickTitle.textContent=(target?.name||'CHANNEL')+' · ADD FX · NATIVE';
+    const q=quickSearch.value.trim().toLocaleLowerCase();
+    const results=nativeCatalog().filter(p=>
+      (p.name+' '+(p.vendor||'')+' '+(p.category||'')).toLocaleLowerCase().includes(q))
+      .sort((a,b)=>Number(pluginFavorites.has(b.id))-Number(pluginFavorites.has(a.id))||
+        a.name.localeCompare(b.name));
+    if(!results.length)quickResults.append(h('p','arV6DeviceNote',
+      'No verified VST3 catalog. Use Plugin Manager F8 after native scan.'));
+    for(const fx of results.slice(0,64)){
+      const b=button((pluginFavorites.has(fx.id)?'★ ':'')+fx.name+' · '+(fx.category||'Effect'),
+        {'data-quick-fx':fx.id});
+      b.classList.add('arV6PluginResult');b.disabled=!can('ADD_INSERT',quickTarget);
+      quickResults.append(b);
+    }
+  }
+  function openQuickFx(id,anchor){
+    if(!byId.has(id))return;
+    quickTarget=id;quickAnchor=anchor||null;
+    closePluginManager();
+    const area=root.getBoundingClientRect(),r=anchor?.getBoundingClientRect();
+    if(r){
+      quickPanel.style.left=Math.max(7,Math.min(r.left-area.left,area.width-320))+'px';
+      quickPanel.style.top=Math.max(44,Math.min(r.bottom-area.top+3,area.height-340))+'px';
+    }
+    quickPanel.hidden=false;quickSearch.value='';refreshQuickFx();quickSearch.focus();
+  }
+  quickClose.addEventListener('click',()=>closeQuickFx(true));
+  quickSearch.addEventListener('input',refreshQuickFx);
+  quickSearch.addEventListener('keydown',event=>{
+    if(event.key==='Enter'){
+      const first=quickResults.querySelector('button[data-quick-fx]:not([disabled])');
+      if(first){event.preventDefault();first.click();}
+    }
+  });
+  quickResults.addEventListener('click',event=>{
+    const b=event.target.closest('button[data-quick-fx]');
+    if(b&&!b.disabled&&commitNativeFx(b.dataset.quickFx,quickTarget))closeQuickFx();
+  });
+  quickManager.addEventListener('click',()=>{const id=quickTarget;closeQuickFx();openPluginManager(id)});
+  managerView.addEventListener('change',refreshPluginCatalog);
+  managerCategory.addEventListener('change',refreshPluginCatalog);
   function openPluginManager(id){
     if(id&&byId.has(id)&&byId.get(id).role!=='MAIN'){
       selectedIds.clear();selectedIds.add(id);selectionAnchor=id;
       updateSelection();
     }
     devicePanel.hidden=true;deviceButton.setAttribute('aria-expanded','false');
+    closeQuickFx();
     pluginPanel.hidden=false;pluginsButton.setAttribute('aria-expanded','true');
     refreshPluginCatalog();pluginSearch.focus();
   }
@@ -7070,17 +7519,22 @@ scheduleDemoMeter();
   pluginClose.addEventListener('click',closePluginManager);
   pluginSearch.addEventListener('input',refreshPluginCatalog);
   pluginResults.addEventListener('click',event=>{
+    const fav=event.target.closest('button[data-fx-fav]');
+    if(fav){
+      const id=fav.dataset.fxFav;
+      if(!nativeCatalog().some(p=>p.id===id))return;
+      if(pluginFavorites.has(id))pluginFavorites.delete(id);else pluginFavorites.add(id);
+      saveFxPrefs();refreshPluginCatalog();refreshQuickFx();return;
+    }
     const node=event.target.closest('button[data-plugin-id]');
     if(!node||node.disabled||selectedIds.size!==1)return;
-    const channelId=[...selectedIds][0];
-    const catalog=accepted?.catalog?.plugins||[];
-    const entry=catalog.find(p=>p?.id===node.dataset.pluginId);
-    if(entry&&can('ADD_INSERT',channelId)&&
-       sendIntent('ADD_INSERT',channelId,{pluginId:entry.id}))closePluginManager();
+    if(commitNativeFx(node.dataset.pluginId,[...selectedIds][0]))closePluginManager();
   });
   document.addEventListener('keydown',event=>{
     if(!document.documentElement.classList.contains('ar-v6-active'))return;
-    if(event.key==='Escape'&&!selectionPanel.hidden){
+    if(event.key==='Escape'&&!quickPanel.hidden){
+      event.preventDefault();closeQuickFx(true);
+    }else if(event.key==='Escape'&&!selectionPanel.hidden){
       event.preventDefault();selectionPanel.hidden=true;
       selectionCount.setAttribute('aria-expanded','false');
     }else if(event.key==='Escape'&&!pluginPanel.hidden){
@@ -7142,21 +7596,34 @@ scheduleDemoMeter();
       'TARGET · '+byId.get(id).name+' · '+(can('ADD_INSERT',id)?
         'NATIVE LOAD AVAILABLE':'NATIVE LOAD NOT AVAILABLE'):
       'Select exactly ONE channel header to load a VST3';
-    const catalog=acceptedNative&&Array.isArray(accepted?.catalog?.plugins)?
-      accepted.catalog.plugins.filter(p=>p&&typeof p.id==='string'&&p.id&&
-        typeof p.name==='string'&&p.name):[];
-    const search=pluginSearch.value.trim().toLocaleLowerCase();
-    const results=catalog.filter(p=>(p.name+' '+(p.vendor||'')+' '+(p.category||''))
-      .toLocaleLowerCase().includes(search));
+    const catalog=nativeCatalog();
+    const categories=[...new Set(catalog.map(p=>p.category||'Effect'))].sort();
+    const previous=managerCategory.value;
+    managerCategory.replaceChildren();
+    const any=h('option','','All categories');any.value='ALL';managerCategory.append(any);
+    for(const category of categories){
+      const opt=h('option','',category);opt.value=category;managerCategory.append(opt);
+    }
+    managerCategory.value=categories.includes(previous)?previous:'ALL';
+    const q=pluginSearch.value.trim().toLocaleLowerCase(),mode=managerView.value;
+    const results=catalog.filter(p=>
+      (p.name+' '+(p.vendor||'')+' '+(p.category||'')).toLocaleLowerCase().includes(q)&&
+      (managerCategory.value==='ALL'||(p.category||'Effect')===managerCategory.value)&&
+      (mode!=='FAVORITES'||pluginFavorites.has(p.id))&&
+      (mode!=='RECENT'||pluginRecent.includes(p.id)))
+      .sort((a,b)=>mode==='RECENT'?
+        pluginRecent.indexOf(a.id)-pluginRecent.indexOf(b.id):a.name.localeCompare(b.name));
     if(!results.length)pluginResults.append(h('p','arV6DeviceNote',
-      catalog.length?'No scanned plugins match the search':
-        'Native plugin catalog not published. No simulated plugins available.'));
+      catalog.length?'No native plugins match the filter':
+        'Native catalog not published · no simulated plugins available.'));
     for(const p of results.slice(0,100)){
-      const node=button(p.name+' · '+(typeof p.vendor==='string'?p.vendor:'VST3'),
-        {'data-plugin-id':p.id});
-      node.disabled=!id||!can('ADD_INSERT',id);
-      node.classList.add('arV6PluginResult');
-      pluginResults.append(node);
+      const row=h('div','arV6CatalogRow');
+      const star=button(pluginFavorites.has(p.id)?'★':'☆',
+        {'data-fx-fav':p.id,'aria-label':'Toggle favorite '+p.name});
+      star.classList.add('arV6CatalogStar');
+      const add=button(p.name+' · '+(p.vendor||'VST3'),{'data-plugin-id':p.id});
+      add.classList.add('arV6PluginResult');add.disabled=!id||!can('ADD_INSERT',id);
+      row.append(star,add);pluginResults.append(row);
     }
   }
   function supported(op){
@@ -7323,6 +7790,26 @@ scheduleDemoMeter();
     if(typeof t.rawCapturePresent!=='boolean'||typeof t.mainPcmPresent!=='boolean'||
        typeof t.monitorPcmPresent!=='boolean'||typeof t.rawCapturePeak!=='number'||
        !Number.isFinite(t.rawCapturePeak)||t.rawCapturePeak<0)return false;
+    // Actual native meter fields are optional until the installed callback
+    // publishes them. When present, reject forged IDs/invalid PCM numbers.
+    // Keep peaks linear (values >1 indicate genuine clipping, not an error).
+    const raw=t.channelMeterRmsPeak;
+    if(raw!==undefined&&raw!==null){
+      if(!Array.isArray(raw)&&(typeof raw!=='object'||Object.getPrototypeOf(raw)!==Object.prototype))
+        return false;
+      const samples=Array.isArray(raw)?raw.map(x=>[x?.channelId,x]):Object.entries(raw);
+      const seen=new Set();
+      for(const [key,m] of samples){
+        if(!ids.has(key)||seen.has(key)||!m||typeof m!=='object')return false;
+        seen.add(key);
+        for(const prop of ['peak','peakLeft','peakRight','rmsLeft','rmsRight']){
+          if(m[prop]!==undefined&&(typeof m[prop]!=='number'||
+             !Number.isFinite(m[prop])||m[prop]<0))return false;
+        }
+        if(!['peak','peakLeft','peakRight','rmsLeft','rmsRight']
+          .some(prop=>typeof m[prop]==='number'))return false;
+      }
+    }
     return true;
   }
   function normalizeSnapshot(payload){
@@ -7358,6 +7845,13 @@ scheduleDemoMeter();
       s.graph.channels.map(c=>[c.id,c.role,c.processingFormat,c.primaryOutId,
         (c.inserts||[]).map(f=>f.id).join(','),(c.sends||[]).map(x=>x.id).join(',')].join(':')).join('|')+
       ':'+s.graph.capabilities.supportedOps.join('|');
+    // Full snapshots remain authoritative; a telemetry-only message must
+    // still pass the same epoch/graph/roster validation and ACK fences.
+    const controlProjection=JSON.stringify([
+      s.graph.channels,s.graph.destinations,s.graph.capabilities,s.catalog||null]);
+    const headerProjection=JSON.stringify([
+      s.device.backend,s.device.sampleRate,s.device.bufferFrames,
+      s.device.outputArmed,s.device.epoch,s.graph.revision,s.productionCallbackLive,!!fromNative]);
     accepted=s;acceptedNative=!!fromNative;
     snapshotSerial++;
     byId.clear();
@@ -7375,13 +7869,26 @@ scheduleDemoMeter();
         for(const target of task.targets||[])pendingTargets.delete(target);
       }
     }
-    if(structure!==lastStructure||root.dataset.demo!==String(!fromNative)){
-      lastStructure=structure;render();
+    const newStructure=structure!==lastStructure||
+      root.dataset.demo!==String(!fromNative);
+    const newControls=controlProjection!==lastControlProjection;
+    const newHeader=headerProjection!==lastHeaderProjection;
+    lastStructure=structure;
+    lastControlProjection=controlProjection;
+    lastHeaderProjection=headerProjection;
+    if(newStructure){
+      render();
+    }else if(newControls){
+      refreshAcceptedControls();refreshDisabled();
     }else{
-      refreshAcceptedControls();refreshDisabled();updateHeader();
+      // High-frequency native meter snapshots only: no select.value writes,
+      // role filters, getBoundingClientRect, FX catalog DOM or fader remount.
+      uiStats.telemetryFastFrames++;
+      refreshMeters();
     }
+    if(newHeader&&!newStructure)updateHeader();
     root.dataset.demo=String(!fromNative);
-    refreshDevicePanel();refreshPluginCatalog();
+    if(newStructure||newControls){refreshDevicePanel();refreshPluginCatalog();refreshQuickFx();}
     // Integration readback is intentionally not a production callback.
     // It must never replace the working M4 console until callback cutover.
     if(!fromNative||s.productionCallbackLive===true)setVisible(true);
@@ -7456,10 +7963,12 @@ scheduleDemoMeter();
       bypass.classList.toggle('isOff',!!fx.bypassed);row.append(bypass);
       section.append(row);
     }
+    const catalogReady=supported('ADD_INSERT')&&nativeCatalog().length>0;
     const filePicker=supported('PICK_INSERT_FILE');
-    const addFx=button(filePicker?'+ OPEN VST3 FILE':'+ VST3',
-      filePicker?{'data-op':'PICK_INSERT_FILE','data-id':ch.id}:
-        {'data-ui':'OPEN_PLUGIN_MANAGER','data-id':ch.id});
+    const addFx=button(catalogReady?'+ ADD FX':filePicker?'+ OPEN VST3 FILE':'+ ADD FX',
+      catalogReady?{'data-ui':'OPEN_FX_QUICK','data-id':ch.id}:
+        filePicker?{'data-op':'PICK_INSERT_FILE','data-id':ch.id}:
+        {'data-ui':'OPEN_FX_QUICK','data-id':ch.id});
     addFx.classList.add('arV6AddFx');section.append(addFx);
     return section;
   }
@@ -7564,22 +8073,32 @@ scheduleDemoMeter();
     range.setAttribute('aria-label',(ch.name||ch.id)+' fader dB');
     const lowerLabel=h('span','arV6Readout',(Number.isFinite(faderVal)?faderVal.toFixed(1):'—')+' dB');
     lower.append(meter,range,lowerLabel);elStrip.append(lower);
+    meterNodes.set(ch.id,{element:meter,lanes:[...meter.children]});
     const status=h('div','arV6StripStatus');
     status.dataset.statusId=ch.id;status.textContent=channelState(ch);
-    elStrip.append(status);
+    statusNodes.set(ch.id,status);elStrip.append(status);
     return elStrip;
   }
   function channelState(ch){
     if(!acceptedNative)return 'DEMO / NO AUDIO';
     if(accepted?.productionCallbackLive!==true)return 'NATIVE READBACK / NOT LIVE';
     if(ch.controls?.mute)return 'MUTED';
-    if(!ch.source && clean(ch.role).toUpperCase()==='INPUT')return 'SILENT / NO SOURCE';
+    const role=ch.role,t=accepted.telemetry||{};
+    if(role==='INPUT'&&!ch.source)return 'SILENT / NO SOURCE';
     if(!accepted.device.outputArmed)return 'OUTPUT DISARMED';
-    const t=accepted.telemetry||{};
-    // Do not infer LIVE from a port label, snapshot or demo LED alone.
-    if(t.rawCapturePresent!==true)return 'NO RAW CAPTURE PCM';
-    if(t.mainPcmPresent!==true)return 'RAW PCM · MAIN PCM UNVERIFIED';
-    return 'MAIN PCM VERIFIED · OUTPUT ARMED';
+    if(role==='MAIN')return t.mainPcmPresent===true?
+      'MAIN PCM VERIFIED · ARMED':'MAIN PCM UNVERIFIED';
+    if(role==='MONITOR')return t.monitorPcmPresent===true?
+      'MONITOR PCM VERIFIED':'MONITOR PCM UNVERIFIED';
+    if(role==='INPUT'&&t.rawCapturePresent!==true)return 'NO RAW CAPTURE PCM';
+    const m=meterReadings.get(ch.id);
+    if(!m)return 'CHANNEL PCM UNVERIFIED';
+    // An all-zero peak is silence/available measurement, not audible PCM.
+    const peaks=[m.peak,m.peakLeft,m.peakRight].filter(Number.isFinite);
+    const observed=peaks.some(p=>p>0);
+    if(!observed)return 'CHANNEL METER · SILENCE';
+    return t.mainPcmPresent===true?
+      'CHANNEL PCM MEASURED · MAIN OK':'CHANNEL PCM · MAIN UNVERIFIED';
   }
   function updateHeader(){
     const d=accepted?.device||{},g=accepted?.graph||{};
@@ -7633,7 +8152,9 @@ scheduleDemoMeter();
   }
   function render(){
     if(!accepted)return;
+    uiStats.structureRenders++;
     updateHeader();
+    meterNodes.clear();statusNodes.clear();meterReadings.clear();
     lanes.replaceChildren();main.replaceChildren();
     const channels=accepted.graph.channels;
     for(const id of selectedIds)if(!byId.has(id))selectedIds.delete(id);
@@ -7679,6 +8200,7 @@ scheduleDemoMeter();
     }
   }
   function refreshAcceptedControls(){
+    uiStats.controlRefreshes++;
     for(const strip of root.querySelectorAll('[data-channel-id]')){
       const ch=byId.get(strip.dataset.channelId);
       if(!ch)continue;
@@ -7757,35 +8279,38 @@ scheduleDemoMeter();
   function refreshMeters(){
     if(!accepted)return;
     const incoming=acceptedNative?accepted.telemetry?.channelMeterRmsPeak:null;
-    const meters=Array.isArray(incoming)?
-      Object.fromEntries(incoming.filter(x=>x&&typeof x.channelId==='string')
-        .map(x=>[x.channelId,x])):
-      incoming&&typeof incoming==='object'?incoming:{};
+    meterReadings=Array.isArray(incoming)?
+      new Map(incoming.map(m=>[m.channelId,m])):
+      incoming&&typeof incoming==='object'?new Map(Object.entries(incoming)):new Map();
     const ledsForPeak=peak=>{
-      const p=Number(peak)||0;
-      if(p<=0)return 0;
-      // Native peaks are linear PCM amplitudes, quantized on a -60..0 dBFS
-      // ladder. Static green/yellow/red segments do not move or recolor.
-      return clamp(Math.ceil(22*(60+Math.max(-60,20*Math.log10(p)))/60),0,22);
+      if(typeof peak!=='number'||!Number.isFinite(peak)||peak<=0)return 0;
+      // Native linear PCM peak: fixed -60..0 dBFS 22-LED ladder; values >1
+      // saturate red, never change the green/yellow/red reference positions.
+      return clamp(Math.ceil(22*(60+Math.max(-60,20*Math.log10(peak)))/60),0,22);
     };
-    for(const meter of root.querySelectorAll('[data-meter-id]')){
-      const ch=byId.get(meter.dataset.meterId),m=meters[meter.dataset.meterId]||{};
-      const mono=ch?.processingFormat==='MONO';
-      meter.dataset.format=mono?'MONO':'STEREO';
-      for(const lane of meter.children){
+    for(const [id,view] of meterNodes){
+      const ch=byId.get(id),m=meterReadings.get(id);
+      if(!ch)continue;
+      const mono=ch.processingFormat==='MONO';
+      const expected=mono?'MONO':'STEREO';
+      if(view.element.dataset.format!==expected)view.element.dataset.format=expected;
+      for(const lane of view.lanes){
         const side=lane.dataset.side;
-        // Never clone one aggregate maximum into both L/R: a missing
-        // stereo side is unknown/silent, NOT a simulated dual-mono reading.
-        const value=side==='L'?(m.peakLeft??(mono?m.peak:0)):m.peakRight;
+        // No invented stereo copy: an absent right peak stays dark.
+        const value=m?(side==='L'?(m.peakLeft??(mono?m.peak:0)):m.peakRight):0;
         const lit=mono&&side==='R'?0:ledsForPeak(value);
         if(lane.dataset.lit===String(lit))continue;
         lane.dataset.lit=String(lit);
-        for(let i=0;i<lane.children.length;i++)lane.children[i].classList.toggle('lit',i<lit);
+        for(let i=0;i<lane.children.length;i++)
+          lane.children[i].classList.toggle('lit',i<lit);
       }
     }
-    for(const node of root.querySelectorAll('[data-status-id]')){
-      const ch=byId.get(node.dataset.statusId);
-      if(ch)node.textContent=channelState(ch);
+    for(const [id,node] of statusNodes){
+      const ch=byId.get(id);
+      if(ch){
+        const value=channelState(ch);
+        if(node.textContent!==value)node.textContent=value;
+      }
     }
   }
   function refreshBanks(){
@@ -7873,6 +8398,8 @@ scheduleDemoMeter();
   root.addEventListener('click',event=>{
     const launcher=event.target.closest('button[data-ui="OPEN_PLUGIN_MANAGER"]');
     if(launcher){openPluginManager(launcher.dataset.id);return;}
+    const fast=event.target.closest('button[data-ui="OPEN_FX_QUICK"]');
+    if(fast){openQuickFx(fast.dataset.id,fast);return;}
     const strip=event.target.closest('.arV6Strip');
     if(!strip||event.target.closest('button,input,select,[draggable]'))return;
     selectChannel(strip.dataset.channelId,event);
@@ -7971,7 +8498,8 @@ scheduleDemoMeter();
   window.__arMixV6ReadOnly=()=>({
     nativePublisher:acceptedNative,revision:accepted?.graph?.revision??null,
     epoch:accepted?.device?.epoch??null,visibleChannelIds:[...byId.keys()],
-    pendingCount:pending.size,selectedChannelIds:[...selectedIds],feedback
+    pendingCount:pending.size,selectedChannelIds:[...selectedIds],feedback,
+    uiStats:{...uiStats}
   });
 })();
 </script>

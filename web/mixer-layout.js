@@ -73,10 +73,10 @@
   const mixer=document.getElementById('mixer');
   if(mixer&&!document.getElementById('arMixChannelPager')){
     const pager=document.createElement('div');pager.id='arMixChannelPager';pager.className='arMixerChannelPager';
-    const prev=document.createElement('button');prev.type='button';prev.className='btn-180';prev.textContent='‹';
+    const prev=document.createElement('button');prev.type='button';prev.className='btn-180';prev.innerHTML='<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M14,17L9,12l5-5V17Z"/></svg>';
     prev.setAttribute('aria-label','Previous mixer channel bank');
     const label=document.createElement('span');label.className='arMixerPagerLabel';
-    const next=document.createElement('button');next.type='button';next.className='btn-180';next.textContent='›';
+    const next=document.createElement('button');next.type='button';next.className='btn-180';next.innerHTML='<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M10,17V7l5,5l-5,5Z"/></svg>';
     next.setAttribute('aria-label','Next mixer channel bank');
     pager.append(prev,label,next);nav.parentElement?.append(pager);
     const strips=()=>[...mixer.querySelectorAll('[data-strip]')];
@@ -210,6 +210,11 @@
     RENAME_CHANNEL:'RENAME_CHANNEL',CREATE_CHANNEL:'CREATE_CHANNEL'
   };
   let accepted=null,acceptedNative=false,modeSend='',lastStructure='',requestSeq=0;
+  let lastControlProjection='',lastHeaderProjection='';
+  // Stable indexed meters avoid re-querying every strip/LED on native PCM ticks.
+  const meterNodes=new Map(),statusNodes=new Map();
+  const uiStats={structureRenders:0,controlRefreshes:0,telemetryFastFrames:0};
+  let meterReadings=new Map();
   let draggingFx=null;
   // Numeric decimal wire identifiers are required by integration/ConsoleNativeContractV6.h.
   // Never downcast native 64-bit ChannelId, device epoch, or graph revision.
@@ -291,7 +296,33 @@
   pluginSearch.placeholder='Search native scanned plugins...';
   pluginSearch.setAttribute('aria-label','Search native scanned VST3 catalog');
   const pluginResults=h('div','arV6PluginResults');
-  pluginPanel.append(pluginHead,pluginTarget,pluginSearch,pluginResults);
+  const managerFilters=h('div','arV6CatalogFilters');
+  const managerView=h('select','arV6Select');
+  managerView.setAttribute('aria-label','Native plugin catalog filter');
+  for(const [val,text] of [['ALL','All effects'],['FAVORITES','Favorites'],['RECENT','Recent']]){
+    const opt=h('option','',text);opt.value=val;managerView.append(opt);
+  }
+  const managerCategory=h('select','arV6Select');
+  managerCategory.setAttribute('aria-label','Native plugin category');
+  managerFilters.append(managerView,managerCategory);
+  pluginPanel.append(pluginHead,pluginTarget,pluginSearch,managerFilters,pluginResults);
+  // Contextual V5 Add FX picker anchored to the exact strip, independent of F8.
+  const quickPanel=h('section','arV6QuickPanel');
+  quickPanel.id='arV6QuickPanel';quickPanel.hidden=true;
+  quickPanel.setAttribute('role','dialog');quickPanel.setAttribute('aria-label','Quick native VST3 picker');
+  const quickHead=h('div','arV6DevicePanelHead');
+  const quickTitle=h('span','','QUICK ADD FX');
+  const quickClose=button('×',{'aria-label':'Close quick native FX picker'});
+  quickHead.append(quickTitle,quickClose);
+  const quickSearch=h('input','arV6PluginSearch');quickSearch.type='search';
+  quickSearch.setAttribute('aria-label','Search quick native effects');
+  quickSearch.placeholder='Search native VST3 effects…';
+  const quickResults=h('div','arV6PluginResults');
+  const quickManager=button('PLUGIN MANAGER · F8');
+  quickManager.setAttribute('aria-label','Open full Plugin Manager from quick picker');
+  const quickFoot=h('div','arV6QuickFoot');
+  quickFoot.append(h('span','','Enter: load · Esc: close'),quickManager);
+  quickPanel.append(quickHead,quickSearch,quickResults,quickFoot);
   // A small operator drawer differentiates relative fader links from actual
   // serial Group-Bus summing. Both are SINGLE native graph transactions.
   const selectionPanel=h('section','arV6SelectionPanel');
@@ -334,7 +365,7 @@
   const lanes=h('div','arV6Lanes');lanes.id='arV6Lanes';lanes.setAttribute('aria-label','Channel banks');
   const main=h('div','arV6Main');main.id='arV6Main';main.setAttribute('aria-label','Pinned main output');
   body.append(sectionRail,lanes,main);
-  root.append(top,message,devicePanel,pluginPanel,selectionPanel,body);
+  root.append(top,message,devicePanel,pluginPanel,selectionPanel,quickPanel,body);
   mount.append(root);
   sectionRail.addEventListener('click',event=>{
     const control=event.target.closest('[data-section]');
@@ -422,12 +453,87 @@
   function closePluginManager(){
     pluginPanel.hidden=true;pluginsButton.setAttribute('aria-expanded','false');
   }
+  // UI-only preferences store stable native catalog IDs, never plugin state.
+  const pluginFavorites=new Set(),pluginRecent=[];
+  try{
+    const p=JSON.parse(localStorage.getItem('armix.v6.fx-ux.v5')||'{}');
+    if(Array.isArray(p.favorites))for(const id of p.favorites.slice(0,300))
+      if(typeof id==='string')pluginFavorites.add(id);
+    if(Array.isArray(p.recent))for(const id of p.recent.slice(0,20))
+      if(typeof id==='string')pluginRecent.push(id);
+  }catch{}
+  function saveFxPrefs(){
+    try{localStorage.setItem('armix.v6.fx-ux.v5',JSON.stringify({
+      favorites:[...pluginFavorites].slice(0,300),recent:pluginRecent.slice(0,20)}));}catch{}
+  }
+  let quickTarget=null,quickAnchor=null;
+  const nativeCatalog=()=>acceptedNative&&Array.isArray(accepted?.catalog?.plugins)?
+    accepted.catalog.plugins.filter(p=>p&&typeof p.id==='string'&&p.id&&
+      typeof p.name==='string'&&p.name):[];
+  function closeQuickFx(focus=false){
+    quickPanel.hidden=true;
+    if(focus&&quickAnchor?.isConnected)quickAnchor.focus();
+    quickAnchor=null;
+  }
+  function commitNativeFx(pluginId,id){
+    if(!nativeCatalog().some(p=>p.id===pluginId)||!can('ADD_INSERT',id))return false;
+    if(!sendIntent('ADD_INSERT',id,{pluginId}))return false;
+    const n=pluginRecent.indexOf(pluginId);if(n!==-1)pluginRecent.splice(n,1);
+    pluginRecent.unshift(pluginId);if(pluginRecent.length>20)pluginRecent.length=20;
+    saveFxPrefs();return true;
+  }
+  function refreshQuickFx(){
+    if(quickPanel.hidden)return;
+    quickResults.replaceChildren();
+    const target=byId.get(quickTarget);
+    quickTitle.textContent=(target?.name||'CHANNEL')+' · ADD FX · NATIVE';
+    const q=quickSearch.value.trim().toLocaleLowerCase();
+    const results=nativeCatalog().filter(p=>
+      (p.name+' '+(p.vendor||'')+' '+(p.category||'')).toLocaleLowerCase().includes(q))
+      .sort((a,b)=>Number(pluginFavorites.has(b.id))-Number(pluginFavorites.has(a.id))||
+        a.name.localeCompare(b.name));
+    if(!results.length)quickResults.append(h('p','arV6DeviceNote',
+      'No verified VST3 catalog. Use Plugin Manager F8 after native scan.'));
+    for(const fx of results.slice(0,64)){
+      const b=button((pluginFavorites.has(fx.id)?'★ ':'')+fx.name+' · '+(fx.category||'Effect'),
+        {'data-quick-fx':fx.id});
+      b.classList.add('arV6PluginResult');b.disabled=!can('ADD_INSERT',quickTarget);
+      quickResults.append(b);
+    }
+  }
+  function openQuickFx(id,anchor){
+    if(!byId.has(id))return;
+    quickTarget=id;quickAnchor=anchor||null;
+    closePluginManager();
+    const area=root.getBoundingClientRect(),r=anchor?.getBoundingClientRect();
+    if(r){
+      quickPanel.style.left=Math.max(7,Math.min(r.left-area.left,area.width-320))+'px';
+      quickPanel.style.top=Math.max(44,Math.min(r.bottom-area.top+3,area.height-340))+'px';
+    }
+    quickPanel.hidden=false;quickSearch.value='';refreshQuickFx();quickSearch.focus();
+  }
+  quickClose.addEventListener('click',()=>closeQuickFx(true));
+  quickSearch.addEventListener('input',refreshQuickFx);
+  quickSearch.addEventListener('keydown',event=>{
+    if(event.key==='Enter'){
+      const first=quickResults.querySelector('button[data-quick-fx]:not([disabled])');
+      if(first){event.preventDefault();first.click();}
+    }
+  });
+  quickResults.addEventListener('click',event=>{
+    const b=event.target.closest('button[data-quick-fx]');
+    if(b&&!b.disabled&&commitNativeFx(b.dataset.quickFx,quickTarget))closeQuickFx();
+  });
+  quickManager.addEventListener('click',()=>{const id=quickTarget;closeQuickFx();openPluginManager(id)});
+  managerView.addEventListener('change',refreshPluginCatalog);
+  managerCategory.addEventListener('change',refreshPluginCatalog);
   function openPluginManager(id){
     if(id&&byId.has(id)&&byId.get(id).role!=='MAIN'){
       selectedIds.clear();selectedIds.add(id);selectionAnchor=id;
       updateSelection();
     }
     devicePanel.hidden=true;deviceButton.setAttribute('aria-expanded','false');
+    closeQuickFx();
     pluginPanel.hidden=false;pluginsButton.setAttribute('aria-expanded','true');
     refreshPluginCatalog();pluginSearch.focus();
   }
@@ -438,17 +544,22 @@
   pluginClose.addEventListener('click',closePluginManager);
   pluginSearch.addEventListener('input',refreshPluginCatalog);
   pluginResults.addEventListener('click',event=>{
+    const fav=event.target.closest('button[data-fx-fav]');
+    if(fav){
+      const id=fav.dataset.fxFav;
+      if(!nativeCatalog().some(p=>p.id===id))return;
+      if(pluginFavorites.has(id))pluginFavorites.delete(id);else pluginFavorites.add(id);
+      saveFxPrefs();refreshPluginCatalog();refreshQuickFx();return;
+    }
     const node=event.target.closest('button[data-plugin-id]');
     if(!node||node.disabled||selectedIds.size!==1)return;
-    const channelId=[...selectedIds][0];
-    const catalog=accepted?.catalog?.plugins||[];
-    const entry=catalog.find(p=>p?.id===node.dataset.pluginId);
-    if(entry&&can('ADD_INSERT',channelId)&&
-       sendIntent('ADD_INSERT',channelId,{pluginId:entry.id}))closePluginManager();
+    if(commitNativeFx(node.dataset.pluginId,[...selectedIds][0]))closePluginManager();
   });
   document.addEventListener('keydown',event=>{
     if(!document.documentElement.classList.contains('ar-v6-active'))return;
-    if(event.key==='Escape'&&!selectionPanel.hidden){
+    if(event.key==='Escape'&&!quickPanel.hidden){
+      event.preventDefault();closeQuickFx(true);
+    }else if(event.key==='Escape'&&!selectionPanel.hidden){
       event.preventDefault();selectionPanel.hidden=true;
       selectionCount.setAttribute('aria-expanded','false');
     }else if(event.key==='Escape'&&!pluginPanel.hidden){
@@ -510,21 +621,34 @@
       'TARGET · '+byId.get(id).name+' · '+(can('ADD_INSERT',id)?
         'NATIVE LOAD AVAILABLE':'NATIVE LOAD NOT AVAILABLE'):
       'Select exactly ONE channel header to load a VST3';
-    const catalog=acceptedNative&&Array.isArray(accepted?.catalog?.plugins)?
-      accepted.catalog.plugins.filter(p=>p&&typeof p.id==='string'&&p.id&&
-        typeof p.name==='string'&&p.name):[];
-    const search=pluginSearch.value.trim().toLocaleLowerCase();
-    const results=catalog.filter(p=>(p.name+' '+(p.vendor||'')+' '+(p.category||''))
-      .toLocaleLowerCase().includes(search));
+    const catalog=nativeCatalog();
+    const categories=[...new Set(catalog.map(p=>p.category||'Effect'))].sort();
+    const previous=managerCategory.value;
+    managerCategory.replaceChildren();
+    const any=h('option','','All categories');any.value='ALL';managerCategory.append(any);
+    for(const category of categories){
+      const opt=h('option','',category);opt.value=category;managerCategory.append(opt);
+    }
+    managerCategory.value=categories.includes(previous)?previous:'ALL';
+    const q=pluginSearch.value.trim().toLocaleLowerCase(),mode=managerView.value;
+    const results=catalog.filter(p=>
+      (p.name+' '+(p.vendor||'')+' '+(p.category||'')).toLocaleLowerCase().includes(q)&&
+      (managerCategory.value==='ALL'||(p.category||'Effect')===managerCategory.value)&&
+      (mode!=='FAVORITES'||pluginFavorites.has(p.id))&&
+      (mode!=='RECENT'||pluginRecent.includes(p.id)))
+      .sort((a,b)=>mode==='RECENT'?
+        pluginRecent.indexOf(a.id)-pluginRecent.indexOf(b.id):a.name.localeCompare(b.name));
     if(!results.length)pluginResults.append(h('p','arV6DeviceNote',
-      catalog.length?'No scanned plugins match the search':
-        'Native plugin catalog not published. No simulated plugins available.'));
+      catalog.length?'No native plugins match the filter':
+        'Native catalog not published · no simulated plugins available.'));
     for(const p of results.slice(0,100)){
-      const node=button(p.name+' · '+(typeof p.vendor==='string'?p.vendor:'VST3'),
-        {'data-plugin-id':p.id});
-      node.disabled=!id||!can('ADD_INSERT',id);
-      node.classList.add('arV6PluginResult');
-      pluginResults.append(node);
+      const row=h('div','arV6CatalogRow');
+      const star=button(pluginFavorites.has(p.id)?'★':'☆',
+        {'data-fx-fav':p.id,'aria-label':'Toggle favorite '+p.name});
+      star.classList.add('arV6CatalogStar');
+      const add=button(p.name+' · '+(p.vendor||'VST3'),{'data-plugin-id':p.id});
+      add.classList.add('arV6PluginResult');add.disabled=!id||!can('ADD_INSERT',id);
+      row.append(star,add);pluginResults.append(row);
     }
   }
   function supported(op){
@@ -691,6 +815,26 @@
     if(typeof t.rawCapturePresent!=='boolean'||typeof t.mainPcmPresent!=='boolean'||
        typeof t.monitorPcmPresent!=='boolean'||typeof t.rawCapturePeak!=='number'||
        !Number.isFinite(t.rawCapturePeak)||t.rawCapturePeak<0)return false;
+    // Actual native meter fields are optional until the installed callback
+    // publishes them. When present, reject forged IDs/invalid PCM numbers.
+    // Keep peaks linear (values >1 indicate genuine clipping, not an error).
+    const raw=t.channelMeterRmsPeak;
+    if(raw!==undefined&&raw!==null){
+      if(!Array.isArray(raw)&&(typeof raw!=='object'||Object.getPrototypeOf(raw)!==Object.prototype))
+        return false;
+      const samples=Array.isArray(raw)?raw.map(x=>[x?.channelId,x]):Object.entries(raw);
+      const seen=new Set();
+      for(const [key,m] of samples){
+        if(!ids.has(key)||seen.has(key)||!m||typeof m!=='object')return false;
+        seen.add(key);
+        for(const prop of ['peak','peakLeft','peakRight','rmsLeft','rmsRight']){
+          if(m[prop]!==undefined&&(typeof m[prop]!=='number'||
+             !Number.isFinite(m[prop])||m[prop]<0))return false;
+        }
+        if(!['peak','peakLeft','peakRight','rmsLeft','rmsRight']
+          .some(prop=>typeof m[prop]==='number'))return false;
+      }
+    }
     return true;
   }
   function normalizeSnapshot(payload){
@@ -726,6 +870,13 @@
       s.graph.channels.map(c=>[c.id,c.role,c.processingFormat,c.primaryOutId,
         (c.inserts||[]).map(f=>f.id).join(','),(c.sends||[]).map(x=>x.id).join(',')].join(':')).join('|')+
       ':'+s.graph.capabilities.supportedOps.join('|');
+    // Full snapshots remain authoritative; a telemetry-only message must
+    // still pass the same epoch/graph/roster validation and ACK fences.
+    const controlProjection=JSON.stringify([
+      s.graph.channels,s.graph.destinations,s.graph.capabilities,s.catalog||null]);
+    const headerProjection=JSON.stringify([
+      s.device.backend,s.device.sampleRate,s.device.bufferFrames,
+      s.device.outputArmed,s.device.epoch,s.graph.revision,s.productionCallbackLive,!!fromNative]);
     accepted=s;acceptedNative=!!fromNative;
     snapshotSerial++;
     byId.clear();
@@ -743,13 +894,26 @@
         for(const target of task.targets||[])pendingTargets.delete(target);
       }
     }
-    if(structure!==lastStructure||root.dataset.demo!==String(!fromNative)){
-      lastStructure=structure;render();
+    const newStructure=structure!==lastStructure||
+      root.dataset.demo!==String(!fromNative);
+    const newControls=controlProjection!==lastControlProjection;
+    const newHeader=headerProjection!==lastHeaderProjection;
+    lastStructure=structure;
+    lastControlProjection=controlProjection;
+    lastHeaderProjection=headerProjection;
+    if(newStructure){
+      render();
+    }else if(newControls){
+      refreshAcceptedControls();refreshDisabled();
     }else{
-      refreshAcceptedControls();refreshDisabled();updateHeader();
+      // High-frequency native meter snapshots only: no select.value writes,
+      // role filters, getBoundingClientRect, FX catalog DOM or fader remount.
+      uiStats.telemetryFastFrames++;
+      refreshMeters();
     }
+    if(newHeader&&!newStructure)updateHeader();
     root.dataset.demo=String(!fromNative);
-    refreshDevicePanel();refreshPluginCatalog();
+    if(newStructure||newControls){refreshDevicePanel();refreshPluginCatalog();refreshQuickFx();}
     // Integration readback is intentionally not a production callback.
     // It must never replace the working M4 console until callback cutover.
     if(!fromNative||s.productionCallbackLive===true)setVisible(true);
@@ -824,10 +988,12 @@
       bypass.classList.toggle('isOff',!!fx.bypassed);row.append(bypass);
       section.append(row);
     }
+    const catalogReady=supported('ADD_INSERT')&&nativeCatalog().length>0;
     const filePicker=supported('PICK_INSERT_FILE');
-    const addFx=button(filePicker?'+ OPEN VST3 FILE':'+ VST3',
-      filePicker?{'data-op':'PICK_INSERT_FILE','data-id':ch.id}:
-        {'data-ui':'OPEN_PLUGIN_MANAGER','data-id':ch.id});
+    const addFx=button(catalogReady?'+ ADD FX':filePicker?'+ OPEN VST3 FILE':'+ ADD FX',
+      catalogReady?{'data-ui':'OPEN_FX_QUICK','data-id':ch.id}:
+        filePicker?{'data-op':'PICK_INSERT_FILE','data-id':ch.id}:
+        {'data-ui':'OPEN_FX_QUICK','data-id':ch.id});
     addFx.classList.add('arV6AddFx');section.append(addFx);
     return section;
   }
@@ -932,22 +1098,32 @@
     range.setAttribute('aria-label',(ch.name||ch.id)+' fader dB');
     const lowerLabel=h('span','arV6Readout',(Number.isFinite(faderVal)?faderVal.toFixed(1):'—')+' dB');
     lower.append(meter,range,lowerLabel);elStrip.append(lower);
+    meterNodes.set(ch.id,{element:meter,lanes:[...meter.children]});
     const status=h('div','arV6StripStatus');
     status.dataset.statusId=ch.id;status.textContent=channelState(ch);
-    elStrip.append(status);
+    statusNodes.set(ch.id,status);elStrip.append(status);
     return elStrip;
   }
   function channelState(ch){
     if(!acceptedNative)return 'DEMO / NO AUDIO';
     if(accepted?.productionCallbackLive!==true)return 'NATIVE READBACK / NOT LIVE';
     if(ch.controls?.mute)return 'MUTED';
-    if(!ch.source && clean(ch.role).toUpperCase()==='INPUT')return 'SILENT / NO SOURCE';
+    const role=ch.role,t=accepted.telemetry||{};
+    if(role==='INPUT'&&!ch.source)return 'SILENT / NO SOURCE';
     if(!accepted.device.outputArmed)return 'OUTPUT DISARMED';
-    const t=accepted.telemetry||{};
-    // Do not infer LIVE from a port label, snapshot or demo LED alone.
-    if(t.rawCapturePresent!==true)return 'NO RAW CAPTURE PCM';
-    if(t.mainPcmPresent!==true)return 'RAW PCM · MAIN PCM UNVERIFIED';
-    return 'MAIN PCM VERIFIED · OUTPUT ARMED';
+    if(role==='MAIN')return t.mainPcmPresent===true?
+      'MAIN PCM VERIFIED · ARMED':'MAIN PCM UNVERIFIED';
+    if(role==='MONITOR')return t.monitorPcmPresent===true?
+      'MONITOR PCM VERIFIED':'MONITOR PCM UNVERIFIED';
+    if(role==='INPUT'&&t.rawCapturePresent!==true)return 'NO RAW CAPTURE PCM';
+    const m=meterReadings.get(ch.id);
+    if(!m)return 'CHANNEL PCM UNVERIFIED';
+    // An all-zero peak is silence/available measurement, not audible PCM.
+    const peaks=[m.peak,m.peakLeft,m.peakRight].filter(Number.isFinite);
+    const observed=peaks.some(p=>p>0);
+    if(!observed)return 'CHANNEL METER · SILENCE';
+    return t.mainPcmPresent===true?
+      'CHANNEL PCM MEASURED · MAIN OK':'CHANNEL PCM · MAIN UNVERIFIED';
   }
   function updateHeader(){
     const d=accepted?.device||{},g=accepted?.graph||{};
@@ -1001,7 +1177,9 @@
   }
   function render(){
     if(!accepted)return;
+    uiStats.structureRenders++;
     updateHeader();
+    meterNodes.clear();statusNodes.clear();meterReadings.clear();
     lanes.replaceChildren();main.replaceChildren();
     const channels=accepted.graph.channels;
     for(const id of selectedIds)if(!byId.has(id))selectedIds.delete(id);
@@ -1047,6 +1225,7 @@
     }
   }
   function refreshAcceptedControls(){
+    uiStats.controlRefreshes++;
     for(const strip of root.querySelectorAll('[data-channel-id]')){
       const ch=byId.get(strip.dataset.channelId);
       if(!ch)continue;
@@ -1125,35 +1304,38 @@
   function refreshMeters(){
     if(!accepted)return;
     const incoming=acceptedNative?accepted.telemetry?.channelMeterRmsPeak:null;
-    const meters=Array.isArray(incoming)?
-      Object.fromEntries(incoming.filter(x=>x&&typeof x.channelId==='string')
-        .map(x=>[x.channelId,x])):
-      incoming&&typeof incoming==='object'?incoming:{};
+    meterReadings=Array.isArray(incoming)?
+      new Map(incoming.map(m=>[m.channelId,m])):
+      incoming&&typeof incoming==='object'?new Map(Object.entries(incoming)):new Map();
     const ledsForPeak=peak=>{
-      const p=Number(peak)||0;
-      if(p<=0)return 0;
-      // Native peaks are linear PCM amplitudes, quantized on a -60..0 dBFS
-      // ladder. Static green/yellow/red segments do not move or recolor.
-      return clamp(Math.ceil(22*(60+Math.max(-60,20*Math.log10(p)))/60),0,22);
+      if(typeof peak!=='number'||!Number.isFinite(peak)||peak<=0)return 0;
+      // Native linear PCM peak: fixed -60..0 dBFS 22-LED ladder; values >1
+      // saturate red, never change the green/yellow/red reference positions.
+      return clamp(Math.ceil(22*(60+Math.max(-60,20*Math.log10(peak)))/60),0,22);
     };
-    for(const meter of root.querySelectorAll('[data-meter-id]')){
-      const ch=byId.get(meter.dataset.meterId),m=meters[meter.dataset.meterId]||{};
-      const mono=ch?.processingFormat==='MONO';
-      meter.dataset.format=mono?'MONO':'STEREO';
-      for(const lane of meter.children){
+    for(const [id,view] of meterNodes){
+      const ch=byId.get(id),m=meterReadings.get(id);
+      if(!ch)continue;
+      const mono=ch.processingFormat==='MONO';
+      const expected=mono?'MONO':'STEREO';
+      if(view.element.dataset.format!==expected)view.element.dataset.format=expected;
+      for(const lane of view.lanes){
         const side=lane.dataset.side;
-        // Never clone one aggregate maximum into both L/R: a missing
-        // stereo side is unknown/silent, NOT a simulated dual-mono reading.
-        const value=side==='L'?(m.peakLeft??(mono?m.peak:0)):m.peakRight;
+        // No invented stereo copy: an absent right peak stays dark.
+        const value=m?(side==='L'?(m.peakLeft??(mono?m.peak:0)):m.peakRight):0;
         const lit=mono&&side==='R'?0:ledsForPeak(value);
         if(lane.dataset.lit===String(lit))continue;
         lane.dataset.lit=String(lit);
-        for(let i=0;i<lane.children.length;i++)lane.children[i].classList.toggle('lit',i<lit);
+        for(let i=0;i<lane.children.length;i++)
+          lane.children[i].classList.toggle('lit',i<lit);
       }
     }
-    for(const node of root.querySelectorAll('[data-status-id]')){
-      const ch=byId.get(node.dataset.statusId);
-      if(ch)node.textContent=channelState(ch);
+    for(const [id,node] of statusNodes){
+      const ch=byId.get(id);
+      if(ch){
+        const value=channelState(ch);
+        if(node.textContent!==value)node.textContent=value;
+      }
     }
   }
   function refreshBanks(){
@@ -1241,6 +1423,8 @@
   root.addEventListener('click',event=>{
     const launcher=event.target.closest('button[data-ui="OPEN_PLUGIN_MANAGER"]');
     if(launcher){openPluginManager(launcher.dataset.id);return;}
+    const fast=event.target.closest('button[data-ui="OPEN_FX_QUICK"]');
+    if(fast){openQuickFx(fast.dataset.id,fast);return;}
     const strip=event.target.closest('.arV6Strip');
     if(!strip||event.target.closest('button,input,select,[draggable]'))return;
     selectChannel(strip.dataset.channelId,event);
@@ -1339,6 +1523,7 @@
   window.__arMixV6ReadOnly=()=>({
     nativePublisher:acceptedNative,revision:accepted?.graph?.revision??null,
     epoch:accepted?.device?.epoch??null,visibleChannelIds:[...byId.keys()],
-    pendingCount:pending.size,selectedChannelIds:[...selectedIds],feedback
+    pendingCount:pending.size,selectedChannelIds:[...selectedIds],feedback,
+    uiStats:{...uiStats}
   });
 })();

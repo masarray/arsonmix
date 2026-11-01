@@ -85,6 +85,8 @@ jobs:
         run: python tests/mixer_shell_geometry_smoke.py
       - name: Run mixer UI smoke tests
         run: python tests/ui_smoke.py
+      - name: Verify Preview V2 V7 physical visual geometry and modeless mixer workflow
+        run: python tests/preview_v2_v7_visual_smoke.py
       - name: Verify G1/G2 LIVE mixer bank and native I/O transaction
         run: python tests/mixer_io_smoke.py
       - name: Verify MIX and FX RACK Auto Orbit workflow
@@ -118,6 +120,12 @@ jobs:
             toolbar-global-btn180-pad.png
             device-green-on-palette-review.png
             mixer-design-review.png
+            preview-v2-v7-1366.png
+            preview-v2-v7-1666.png
+            preview-v2-v7-1920.png
+            preview-operator-1366.png
+            preview-operator-1666.png
+            preview-operator-1920.png
             mixer-design-review-1440.png
             native-input-patch-review-1680.png
             native-input-patch-review-1440.png

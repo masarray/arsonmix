@@ -96,6 +96,50 @@ async def main():
             await page.locator('.left-rail [data-mix-mode="FX"]').click()
             assert abs(await assert_linked('FX RESTORE',width,height)-heights['FX'])<1.1
 
+        # Visual acceptance of the REAL Console (not the isolated #278 source):
+        # at desktop widths CH01..CH10 and pinned MAIN share a viewport; no
+        # wrapped identity, no invisible overlapping labels or repeated Add FX.
+        await page.locator('.left-rail [data-mix-mode="CONSOLE"]').click()
+        for width,height in [(1366,768),(1440,820),(1680,900),(1024,720)]:
+            await page.set_viewport_size({"width":width,"height":height})
+            await page.evaluate("document.getElementById('mixer').scrollLeft=0")
+            verdict=await page.evaluate("""() => {
+              const m=document.querySelector('#mixer').getBoundingClientRect();
+              const main=document.querySelector('#masterLeft').getBoundingClientRect();
+              const strips=[...document.querySelectorAll('#mixer > .strip[data-strip]')];
+              const heads=strips.map(s=>{
+                const el=s.querySelector('.ch-id'),nr=el.querySelector('.arChannelNumber'),
+                  btn=el.querySelector('.arChannelTopIdentity'),
+                  mode=el.querySelector('.arFormatBadge');
+                const h=el.getBoundingClientRect(),n=nr.getBoundingClientRect(),
+                  b=btn.getBoundingClientRect(),f=mode.getBoundingClientRect();
+                return {h:h.height,inside:n.left>=h.left-1&&f.right<=h.right+1&&
+                  b.left>=n.right-2&&b.right<=f.left+2,
+                  single:n.bottom<=h.bottom+1&&b.bottom<=h.bottom+1&&f.bottom<=h.bottom+1,
+                  ellipsis:getComputedStyle(btn.querySelector('.arChannelTopName')).textOverflow};
+              });
+              return {width:window.innerWidth,mainVisible:main.left>=m.left-2&&main.right<=m.right+2,
+                lastVisible:strips[9].getBoundingClientRect().right<=main.left+2,
+                headProblems:heads.filter(x=>!x.inside||!x.single||x.h<27||x.ellipsis!=='ellipsis'),
+                visibleSources:strips.filter(s=>{const r=s.getBoundingClientRect();
+                  return r.left>=m.left-2&&r.right<=main.left+2}).length,
+                repeatedAdd:document.querySelectorAll('#mixer .strip[data-strip="0"] .rack .insert-slot:has(.insert.empty)')
+                  .length,
+                displayedAdd:[...document.querySelectorAll('#mixer .strip[data-strip="0"] .rack .insert-slot:has(.insert.empty)')]
+                  .filter(el=>getComputedStyle(el).display!=='none').length};
+            }""")
+            assert verdict['mainVisible'],('MAIN obscured',verdict)
+            assert not verdict['headProblems'],('identity clip/overlap/wrap',verdict)
+            assert verdict['displayedAdd']<=1,('repeated ADD FX',verdict)
+            if width>=1366:
+                assert verdict['lastVisible'],('CH10 clipped by MAIN',verdict)
+                assert verdict['visibleSources']==10,('not ten visible strips',verdict)
+            if width in (1366,1440,1680):
+                await page.screenshot(path=('mixer-shell-compact-1366.png' if width==1366 else
+                    'mixer-design-review-1440.png' if width==1440 else 'mixer-g1-g2-1680.png'))
+        await page.set_viewport_size({"width":1024,"height":720})
+        await page.locator('.left-rail [data-mix-mode="FX"]').click()
+
         # Parent view changes still work; click rail mode from PATCH to return MIX.
         await page.locator('[data-view="SIGNAL FLOW"]').click()
         assert await page.locator('#mixer').evaluate("(e)=>e.classList.contains('hidden')")

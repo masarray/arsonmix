@@ -1071,3 +1071,256 @@
   font:500 12px/1.2 "Segoe UI",sans-serif;
 }
 @media(max-width:1100px){#app .arV6Console .arV6SelectionPanel{top:46px}}
+
+
+/* PR #278 V5 contextual FX picker on existing old UI. Preserve all six
+   fixed-height native slots until engine/bridge support a variable rack; avoid
+   breaking the six-slot layout contract while keeping original BTN-180 art. */
+
+
+#app .workbench{position:relative}
+#app .arV5QuickFx{
+ position:absolute;z-index:46;top:80px;left:8px;
+ display:flex;flex-direction:column;width:min(316px,calc(100% - 16px));
+ max-height:min(63vh,410px);background:#182b35;color:#dfedf2;
+ border:1px solid #628594;border-radius:4px;box-shadow:0 8px 23px #061018aa;
+}
+#app .arV5QuickFx[hidden]{display:none!important}
+#app .arV5QuickHead{min-height:32px;display:flex;justify-content:space-between;align-items:center;
+ padding:5px 8px;border-bottom:1px solid #3e5964;font:500 11px/1.2 "Segoe UI",sans-serif}
+#app .arV5QuickHead strong{font-weight:500;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#app .arV5QuickHead button{background:transparent;border:0;color:#dceff4;font-size:18px;cursor:pointer}
+#app .arV5QuickSearch{min-height:29px;margin:7px;padding:4px 7px;
+ background:#0d1c25;border:1px solid #506b7a;border-radius:2px;color:#e8f2f5}
+#app .arV5QuickResults{display:flex;flex-direction:column;gap:2px;padding:2px 7px 8px;
+ overflow:auto;min-height:45px}
+#app .arV5QuickResult{display:flex;justify-content:space-between;align-items:center;gap:6px;
+ min-height:28px;text-align:left;padding:5px 7px;color:#ddedf2;background:#25414d;
+ border:1px solid #3c5c69;border-radius:2px;cursor:pointer}
+#app .arV5QuickResult:hover,#app .arV5QuickResult:focus-visible{background:#345967;border-color:#78afbe}
+#app .arV5QuickResult span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#app .arV5QuickResult small{color:#aac4cd;white-space:nowrap}
+#app .arV5QuickFoot{display:flex;justify-content:space-between;align-items:center;gap:5px;
+ padding:7px 8px;border-top:1px solid #3e5964;color:#9cb8c3;font-size:10px}
+#app .arV5QuickFoot button{background:transparent;border:0;color:#88d0e6;cursor:pointer}
+
+/* V5 uses only the user's original ArSonMix material bitmaps:
+   29x62 fader cap (aspect 36:77), ROSEGOLD MASTER, PAN-SLIDER 15:33.
+   Dark graphite well, never bright cyan above the fader cap. */
+#app .arV6Console .arV6Fader::-webkit-slider-thumb{
+ background:transparent url("assets/faders/FADER-ARI-SILVER.png") center/29px 62px no-repeat;
+ width:29px;height:62px;border:0;border-radius:0;box-shadow:none;
+}
+#app .arV6Console .arV6Fader::-moz-range-thumb{
+ background:transparent url("assets/faders/FADER-ARI-SILVER.png") center/29px 62px no-repeat;
+ width:29px;height:62px;border:0;border-radius:0;box-shadow:none;
+}
+#app .arV6Console #arV6Main .arV6Fader::-webkit-slider-thumb{
+ background-image:url("assets/faders/FADER-ARI-ROSEGOLD.png");
+}
+#app .arV6Console #arV6Main .arV6Fader::-moz-range-thumb{
+ background-image:url("assets/faders/FADER-ARI-ROSEGOLD.png");
+}
+#app .arV6Console .arV6PanRange::-webkit-slider-thumb{
+ background:transparent url("assets/pan/PAN-SLIDER.png") center/15px 33px no-repeat;
+ width:15px;height:33px;border:0;border-radius:0;box-shadow:none;
+}
+#app .arV6Console .arV6PanRange::-moz-range-thumb{
+ background:transparent url("assets/pan/PAN-SLIDER.png") center/15px 33px no-repeat;
+ width:15px;height:33px;border:0;border-radius:0;box-shadow:none;
+}
+#app .arV6Console .arV6Fader::-webkit-slider-runnable-track{
+ background:linear-gradient(90deg,#020507,#142029 25%,#05090d 80%,#010406);
+ border-color:#050e14;box-shadow:inset 1px 0 #3c505c,inset -1px 0 #05090c;
+}
+/* Keep compact V5 popup separate from F8 floating Plugin Manager. */
+#app .arV6Console .arV6QuickPanel{
+ display:flex;flex-direction:column;position:absolute;z-index:24;
+ width:min(310px,calc(100% - 14px));max-height:min(66vh,410px);
+ min-height:125px;overflow:hidden;background:#192b35;border:1px solid #678b96;
+ border-radius:4px;box-shadow:0 8px 23px #061018ab;
+}
+#app .arV6Console .arV6QuickPanel[hidden]{display:none!important}
+#app .arV6Console .arV6QuickPanel .arV6PluginSearch{margin-top:7px}
+#app .arV6Console .arV6QuickFoot{display:flex;align-items:center;justify-content:space-between;
+ gap:5px;border-top:1px solid #3e5964;padding:5px 8px;color:#a6bdc6;font-size:10px}
+#app .arV6Console .arV6QuickFoot .arV6Button{
+ min-height:23px;font-size:10px;color:#a9dce8}
+#app .arV6Console .arV6CatalogFilters{display:grid;grid-template-columns:1fr 1fr;
+ gap:6px;padding:0 10px 8px}
+#app .arV6Console .arV6CatalogRow{display:flex;align-items:center;gap:5px}
+#app .arV6Console .arV6CatalogRow .arV6PluginResult{flex:1;min-width:0}
+#app .arV6Console .arV6CatalogStar{flex:none;width:26px;min-width:26px;
+ min-height:26px;padding:0;font-size:16px;color:#e4ca8a}
+@media(max-width:1100px){
+ #app .arV6Console .arV6QuickPanel{max-height:62vh}
+ #app .arV6Console .arV6CatalogFilters{gap:3px}
+}
+
+
+/* PR#278 V6 theme authority ported to actual WebView M4. No native DSP changes. */
+#app{--am-metal-base:#0B161E;--am-metal-panel:#14232C;--am-metal-raised:#20313B;
+ --am-metal-edge:#334956;--am-metal-inset:#030A0F;--am-text-primary:#DAE9EF;
+ --am-text-muted:#94B1BD;--am-accent:#66CBDD;--am-crystal:#E7EFF0}
+#app .toolbar{background:linear-gradient(#253741,#17252e)!important;border-bottom:1px solid var(--am-metal-edge)}
+#app .toolbar-actions.arSegmentedToolbar .nav .btn-180,
+#app .toolbar .spec-device,#app .arMixerChannelPager .btn-180{
+ height:29px;min-height:29px;max-height:29px;display:inline-flex;
+ align-items:center;justify-content:center;line-height:1;text-align:center;box-sizing:border-box}
+#app .arMixerChannelPager .btn-180{width:29px;min-width:29px;padding:0;--b180-ink:#1f1f1f}
+#app .arMixerChannelPager svg{display:block;flex:none;width:24px;height:24px;fill:currentColor}
+#app .left-rail{background:var(--am-metal-base)}
+#app .left-rail :is(.arRailModeSection,.arRailUtilities){background:var(--am-metal-panel)}
+#app .left-rail :is(.arRailHeading,.rail-section-title){background:var(--am-metal-raised);border-color:var(--am-metal-edge)}
+#app #mixer[data-io-mode="CONSOLE"]{background:var(--am-metal-base)}
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip]{
+ background:linear-gradient(90deg,#0e1b23,var(--am-metal-panel) 8%,#172832 92%,#0e1b23);
+ border-right:1px solid var(--am-metal-edge);box-shadow:inset 1px 0 #aecbd012}
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip].selected{
+ background:linear-gradient(90deg,#172b35,var(--am-metal-raised) 9%,#1a303b 93%,#122630);
+ box-shadow:inset 2px 0 var(--am-accent)}
+/* Both identity nameplates use the SAME stable --ch source (no second palette). */
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip] > :is(.ch-id,.strip-name),
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft > :is(.master-ch-id,.master-strip-name){
+ background:color-mix(in srgb,var(--ch) 43%,#101e27)!important;
+ color:#f0f7fa;border-top:2px solid var(--ch);
+ border-bottom:1px solid color-mix(in srgb,var(--ch) 49%,#0c1820);text-shadow:0 1px #02080a}
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip] > .ch-id{
+ display:flex;align-items:center;gap:3px;padding:0 31px 0 5px;
+ font:500 10px/1.1 "Segoe UI",sans-serif}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelNumber{flex:0 0 30px;white-space:nowrap;
+ color:#e0edf1;font:600 9px/1 Consolas,monospace}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelTopIdentity{
+ display:flex;align-items:center;gap:3px;flex:1;min-width:0;max-width:100%;
+ padding:3px 1px;margin:0;border:0;border-radius:2px;background:transparent;
+ font:500 10px/1.1 "Segoe UI",sans-serif;color:#f2f8fa;cursor:pointer;text-align:left}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelTopIdentity:focus-visible{
+ outline:1px solid #d7f5f9;outline-offset:0}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelTopIcon{flex:none;font-size:13px;line-height:1}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelTopName{min-width:0;overflow:hidden;
+ white-space:nowrap;text-overflow:ellipsis}
+#app #mixer[data-io-mode="CONSOLE"] .arFormatBadge{
+ right:4px;top:6px;min-height:19px;height:19px;
+ background:var(--am-metal-inset);border-color:#638594;color:#e4f5f8}
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip] > .strip-name{
+ display:flex;flex-direction:row;align-items:center;justify-content:center;
+ gap:5px;padding:3px 6px;overflow:hidden;font:500 10px/1.1 "Segoe UI",sans-serif}
+#app #mixer[data-io-mode="CONSOLE"] .strip-name .strip-caption{
+ min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#app #mixer[data-io-mode="CONSOLE"] .strip-name .track-icon{flex:none;font-size:14px;line-height:1}
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft > .master-ch-id{
+ display:flex;justify-content:space-between;align-items:center;padding:0 8px;
+ color:#f9f0f3;font:500 11px/1 "Segoe UI",sans-serif}
+#app #mixer[data-io-mode="CONSOLE"] .arMasterTopIdentity{
+ display:inline-flex;align-items:center;gap:4px;font-size:10px}
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip] > .arChannelBank,
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip] > .rack,
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft .master-fx-rack,
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft .arMainOutSummary,
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip] > .strip-controls{
+ background:var(--am-metal-panel);border-color:var(--am-metal-edge)}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelBank :is(.arBankSource,.arBankOutput,.arBankChannelFormat){
+ background:var(--am-metal-inset);border:1px solid #425d6a;
+ color:var(--am-text-primary);box-shadow:inset 0 1px 2px #0006}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelBank .arSendBank{border-top-color:var(--am-metal-edge)}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelBank .arSendChip{
+ background:var(--am-metal-raised);border-color:var(--am-metal-edge);color:var(--am-text-primary)}
+#app #mixer[data-io-mode="CONSOLE"] .rack .insert,
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft .master-insert{
+ background:linear-gradient(#283b46,#192b35);border:1px solid #39515c;color:var(--am-text-primary)}
+#app #mixer[data-io-mode="CONSOLE"] .rack .insert.empty{
+ border:1px dashed #3c5967;color:#a3c8d2}
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft .master-controls-zone{
+ background:var(--am-metal-panel);border-color:var(--am-metal-edge)}
+#app #mixer[data-io-mode="CONSOLE"] .channel-actions{
+ background:var(--am-metal-raised);border-color:var(--am-metal-edge)}
+#app #mixer[data-io-mode="CONSOLE"] .db-display{
+ background:var(--am-metal-panel);color:var(--am-accent)}
+#app #mixer[data-io-mode="CONSOLE"] > #masterLeft{
+ background:var(--am-metal-panel);border-left-color:#997888}
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft .arMainOutAction{
+ background:var(--am-metal-inset);color:var(--am-text-primary);border-color:var(--am-metal-edge)}
+/* Real fader PNG, RAIL3 well, meter geometry and seven-shadow BTN-180 preserved. */
+
+
+/* PR#278 visual correction G-V7: 10 source strips + MAIN at desktop widths.
+   Geometry is measured from the actual mixer viewport, not a separate mock
+   component. Narrow windows use adaptive banks; the fader travel remains owned
+   by existing native controls. */
+#app #mixer[data-io-mode="CONSOLE"]{
+ --ar-visible-channels:10;
+ --ar-master-dock-width:128px;
+ padding-right:var(--ar-master-dock-width);
+ scroll-padding-right:var(--ar-master-dock-width);
+}
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip]{
+ flex:0 0 calc((100% - var(--ar-master-dock-width))/var(--ar-visible-channels));
+ width:calc((100% - var(--ar-master-dock-width))/var(--ar-visible-channels));
+ min-width:102px;max-width:none;
+}
+#app #mixer[data-io-mode="CONSOLE"] > #masterLeft{
+ flex:0 0 128px;width:128px;min-width:128px;max-width:128px;
+ box-shadow:-2px 0 7px #02080c66;
+}
+/* No accidental 2-line CH number/name or wrap over FX on the real WebView.
+   30px high, all three parts in a SINGLE bounded grid row. */
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip] > .ch-id{
+ display:grid!important;
+ grid-template-columns:30px minmax(0,1fr) 22px!important;
+ grid-template-rows:minmax(0,1fr)!important;
+ gap:2px!important;
+ align-items:center!important;justify-content:normal!important;
+ padding:0 3px!important;
+ overflow:hidden!important;
+ white-space:nowrap!important;
+ line-height:1!important;
+}
+#app #mixer[data-io-mode="CONSOLE"] .ch-id .arChannelNumber{
+ display:block!important;width:30px;min-width:0;max-width:30px;
+ white-space:nowrap!important;
+ overflow:hidden;text-overflow:clip;
+ font:600 9px/1 Consolas,monospace!important;
+}
+#app #mixer[data-io-mode="CONSOLE"] .ch-id .arChannelTopIdentity{
+ display:flex!important;grid-column:2;grid-row:1;
+ align-items:center!important;justify-content:flex-start!important;
+ min-width:0!important;width:100%!important;height:28px!important;
+ max-width:100%;padding:0 1px!important;margin:0!important;
+ overflow:hidden!important;white-space:nowrap!important;flex-wrap:nowrap!important;
+ font:500 10px/1 "Segoe UI",sans-serif!important;text-align:left!important;
+}
+#app #mixer[data-io-mode="CONSOLE"] .ch-id .arChannelTopIcon{
+ flex:none!important;white-space:nowrap!important;line-height:1!important;
+ font-size:12px!important;
+}
+#app #mixer[data-io-mode="CONSOLE"] .ch-id .arChannelTopName{
+ display:block!important;flex:1 1 auto!important;min-width:0!important;
+ max-width:100%!important;overflow:hidden!important;
+ text-overflow:ellipsis!important;white-space:nowrap!important;
+ line-height:1.25!important;
+}
+#app #mixer[data-io-mode="CONSOLE"] .ch-id .arFormatBadge{
+ position:static!important;grid-column:3;grid-row:1;
+ width:21px!important;min-width:21px!important;height:20px!important;
+ margin:0!important;padding:0!important;
+ font:500 9px/18px "Segoe UI",sans-serif!important;
+ text-align:center!important;white-space:nowrap!important;
+}
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip] > .strip-name{
+ min-width:0!important;white-space:nowrap!important;
+ border-top-color:var(--ch);
+}
+/* PR278: exactly ONE Add FX affordance in each existing 6-slot rack.
+   All six native slot nodes remain mounted for bridge/ACK and VST state. */
+html:not(.native-engine) #app #mixer[data-io-mode="CONSOLE"] .rack .insert-slot:has(.insert.empty) ~ .insert-slot:has(.insert.empty){
+ display:none!important;
+}
+html:not(.native-engine) #app #mixer[data-io-mode="CONSOLE"] #masterLeft .master-fx-slot:has(.master-insert.empty) ~ .master-fx-slot:has(.master-insert.empty){
+ display:none!important;
+}
+@media(max-width:1339px){
+ #app #mixer[data-io-mode="CONSOLE"]{--ar-visible-channels:8}
+}
+@media(max-width:1099px){
+ #app #mixer[data-io-mode="CONSOLE"]{--ar-visible-channels:6}
+}

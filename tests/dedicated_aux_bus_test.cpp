@@ -75,6 +75,25 @@ int main(){
     assert(near(meters.auxPeak[0],auxA)); // after bus gain 0.5
     assert(near(meters.auxPeak[1],auxB));
     assert(near(meters.channelPeak[9],.1f*std::sqrt(.5f)));
+    // This is real PRE/POST native PCM, never a JS send simulation.
+    // A 64-frame gain ramp must not collapse to an 8-frame hard step.
+    assert(block.setAuxSendGain(0,0,SendTap::preFader,0.f));
+    assert(block.setAuxSendGain(9,1,SendTap::postFader,0.f));
+    assert(!block.setAuxSendGain(9,0,SendTap::postFader,0.f)); // edge absent
+    const auto beforeSendAutomation=allocations.load(std::memory_order_relaxed);
+    for(int cycle=0;cycle<8;++cycle)
+        assert(block.process(input.data(),stripCount,outL.data(),outR.data(),
+                             frames,effects,&meters));
+    assert(allocations.load(std::memory_order_relaxed)==beforeSendAutomation);
+    assert(near(outL[7],direct)&&near(outR[7],direct));
+    assert(near(block.auxSendGain(0,0,SendTap::preFader),0.f));
+    assert(near(block.auxSendGain(9,1,SendTap::postFader),0.f));
+    assert(block.setAuxSendGain(0,0,SendTap::preFader,.5f));
+    assert(block.setAuxSendGain(9,1,SendTap::postFader,.25f));
+    for(int cycle=0;cycle<8;++cycle)
+        assert(block.process(input.data(),stripCount,outL.data(),outR.data(),
+                             frames,effects,&meters));
+    assert(near(outL[7],direct+auxA+auxB));
 
     // Shared stereo AUX receives an explicitly left-panned mono PRE send.
     // The right output must not inherit phantom mono power.
@@ -208,6 +227,27 @@ int main(){
             assert(near(monL[f],.4f*monoCenter*.75f));
             assert(near(monR[f],.4f*monoCenter*.75f));
         }
+        // Native MONITOR targets move independent of MAIN, and their ramp
+        // follows AUDIO samples across eight 8-frame callbacks.
+        std::array<std::atomic<float>,stripCount+auxBusCount> liveMonitor{};
+        for(int i=0;i<stripCount+auxBusCount;++i)
+            liveMonitor[i].store(monGains[i],std::memory_order_relaxed);
+        liveMonitor[1].store(0.f,std::memory_order_release);
+        const auto beforeLiveMonitor=allocations.load(std::memory_order_relaxed);
+        for(int cycle=0;cycle<8;++cycle)
+            assert(single.process(physical,2,mainL.data(),mainR.data(),frames,
+                                  fxOnce,nullptr,nullptr,&monGains,
+                                  monL.data(),monR.data(),&liveMonitor));
+        assert(allocations.load(std::memory_order_relaxed)==beforeLiveMonitor);
+        assert(near(mainL[7],.2f*monoCenter)); // MAIN unaffected
+        assert(near(monL[7],0.f)&&near(monR[7],0.f));
+        liveMonitor[1].store(.75f,std::memory_order_release);
+        for(int cycle=0;cycle<8;++cycle)
+            assert(single.process(physical,2,mainL.data(),mainR.data(),frames,
+                                  fxOnce,nullptr,nullptr,&monGains,
+                                  monL.data(),monR.data(),&liveMonitor));
+        assert(near(monL[7],.4f*monoCenter*.75f));
+        assert(near(mainL[7],.2f*monoCenter));
         // Output buffers overlap: no implicit mixing or dual-ownership.
         assert(!single.process(physical,2,mainL.data(),mainR.data(),frames,
                                fxOnce,nullptr,nullptr,&monGains,

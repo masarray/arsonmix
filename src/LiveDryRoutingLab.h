@@ -588,6 +588,91 @@ public:
              sampleRate,deviceFrames);
     }
 
+    // Operator one-action AUX send connection: prepare a real parallel
+    // edge in the SAME M4 graph that owns the channel VST3/AUX rack.
+    // The recipient must already own a genuine prepared effect. An empty
+    // AUX summed into MAIN doubles the dry path and is rejected.
+    juce::String connectPreparedAuxSend(int source,int bus,
+            std::uint64_t expectedEpoch,std::uint64_t expectedRevision,
+            armix::mixer::SendTap tap,float gain,float pan,
+            bool directPermitted,bool independentClock,int occupiedCh1Fx,
+            juce::AudioPluginFormatManager& formats,double sampleRate,
+            int deviceFrames) {
+        if(!hasExplicitRoute()||!ready()||!registryValid_.load(std::memory_order_acquire)||
+           epoch()!=expectedEpoch||revision()!=expectedRevision||
+           topologyFault_.load(std::memory_order_acquire)||
+           source<0||source>=count||bus<0||bus>=auxCount||
+           (tap!=armix::mixer::SendTap::preFader&&
+            tap!=armix::mixer::SendTap::postFader)||
+           !std::isfinite(gain)||gain<0.f||gain>1.f||
+           !std::isfinite(pan)||pan< -1.f||pan>1.f)
+            return "AUX CONNECT: invalid source, send or stale native graph";
+        const auto* old=publisher_.controlPrepared(expectedEpoch,expectedRevision);
+        if(!old||old->insertsOn(count+bus)<=0)
+            return "AUX CONNECT: insert a real effect on AUX first; an empty return doubles dry MAIN";
+        auto staged=juce::JSON::parse(juce::JSON::toString(sourceTemplate_,false));
+        if(!staged.isObject())return "AUX CONNECT: accepted topology unavailable";
+        const auto lanes=staged.getProperty("channels",juce::var());
+        const auto* sources=lanes.getArray();
+        if(!sources||sources->size()!=count||
+           sources->getReference(source).getProperty("mode","NONE").toString()=="NONE")
+            return "AUX CONNECT: select a verified physical source first";
+        auto aux=staged.getProperty("auxes",juce::var());
+        if(aux.isVoid()) {
+            juce::Array<juce::var> defaults;
+            for(int b=0;b<auxCount;++b) {
+                auto row=std::make_unique<juce::DynamicObject>();
+                row->setProperty("enabled",false);
+                row->setProperty("main",true);
+                row->setProperty("mute",false);
+                row->setProperty("gain",1.0);
+                defaults.add(juce::var(row.release()));
+            }
+            staged.getDynamicObject()->setProperty("auxes",juce::var(defaults));
+            aux=staged.getProperty("auxes",juce::var());
+        }
+        auto* auxes=aux.getArray();
+        if(!auxes||auxes->size()!=auxCount)return "AUX CONNECT: corrupt return roster";
+        auto* returnRow=auxes->getReference(bus).getDynamicObject();
+        if(!returnRow)return "AUX CONNECT: invalid return";
+        if(!static_cast<bool>(returnRow->getProperty("enabled"))) {
+            returnRow->setProperty("enabled",true);
+            returnRow->setProperty("main",true); // one-click parallel effect to MAIN
+        }
+        auto rawSends=staged.getProperty("sends",juce::var());
+        if(rawSends.isVoid()) {
+            staged.getDynamicObject()->setProperty("sends",
+                juce::var(juce::Array<juce::var>{}));
+            rawSends=staged.getProperty("sends",juce::var());
+        }
+        auto* sendRows=rawSends.getArray();
+        if(!sendRows)return "AUX CONNECT: invalid accepted sends";
+        juce::DynamicObject* existing=nullptr;
+        for(auto& item:*sendRows) {
+            if(static_cast<int>(item.getProperty("from",-1))==source &&
+               static_cast<int>(item.getProperty("to",-1))==count+bus) {
+                existing=item.getDynamicObject();
+                if(!existing)return "AUX CONNECT: invalid existing edge";
+                break;
+            }
+        }
+        if(!existing) {
+            if(sendRows->size()>=armix::mixer::maxChannelSends)
+                return "AUX CONNECT: send capacity exhausted";
+            auto row=std::make_unique<juce::DynamicObject>();
+            existing=row.get();
+            sendRows->add(juce::var(row.release()));
+        }
+        existing->setProperty("from",source);
+        existing->setProperty("to",count+bus);
+        existing->setProperty("tap",tap==armix::mixer::SendTap::preFader?"PRE":"POST");
+        existing->setProperty("gain",static_cast<double>(gain));
+        existing->setProperty("pan",static_cast<double>(pan));
+        return publishRevisedTopology(staged,expectedEpoch,expectedRevision,
+            directPermitted,independentClock,occupiedCh1Fx,formats,
+            sampleRate,deviceFrames);
+    }
+
     // Both SOURCE and channel structure edits share one graph compiler,
     // VST3 lease policy and rollback path. Keep fast faders/pan/mute/solo
     // on their separate atomic parameter path without any compilation.
@@ -646,12 +731,15 @@ public:
         return true;
     }
 
-    // Operator M1: one POST gain is a realtime PARAMETER, never topology.
-    // The accepted send identity must exist and match THIS device epoch.
+    // Real AUX FX RETURN: one existing PRE or POST send has an independent
+    // realtime level. The tap/destination/edge identity are immutable here.
+    // A single render of source PCM, vendor VST, and AUX return remains
+    // authoritative on the installed JUCE callback.
     // The UI may adjust it while physical output is ARMED; no new plugin,
     // graph, callback or device restart occurs.
     bool setAuxSendGain(int source,int bus,std::uint64_t expectedEpoch,
-                        std::uint64_t expectedRevision,float gain) noexcept {
+                        std::uint64_t expectedRevision,float gain,
+                        armix::mixer::SendTap tap=armix::mixer::SendTap::postFader) noexcept {
         if(source<0||source>=count||bus<0||bus>=auxCount||
            !std::isfinite(gain)||gain<0.f||gain>1.f||
            !ready()||!hasExplicitRoute()||
@@ -663,14 +751,15 @@ public:
         for(auto& item:*list) {
             if(static_cast<int>(item.getProperty("from",-1))==source &&
                static_cast<int>(item.getProperty("to",-1))==count+bus &&
-               item.getProperty("tap",{}).toString()=="POST") {
+               item.getProperty("tap",{}).toString()==
+                   (tap==armix::mixer::SendTap::preFader?"PRE":"POST")) {
                 accepted=&item;break;
             }
         }
         if(!accepted)return false; // No implicit creation of an AUX edge.
         if(!publisher_.updateActiveControl(expectedEpoch,expectedRevision,
            [&](FxGraph& fx) noexcept {
-               return fx.setAuxSendGain(source,bus,gain);
+               return fx.setAuxSendGain(source,bus,tap,gain);
            }))return false;
         accepted->getDynamicObject()->setProperty("gain",static_cast<double>(gain));
         return true;
@@ -693,6 +782,28 @@ public:
             return false;
         if(auto* obj=(*arr)[bus].getDynamicObject())
             obj->setProperty("gain",static_cast<double>(gain));
+        return true;
+    }
+
+    // Independent physical MONITOR/CUE bus: control only changes one
+    // existing send's target. PRE/POST AUX and MAIN VST PCM remain unchanged.
+    // If no verified distinct MONITOR output pair exists, reject.
+    bool setMonitorSendGain(int source,std::uint64_t expectedEpoch,
+                            std::uint64_t expectedRevision,float gain) noexcept {
+        if(source<0||source>=fxSlots||!std::isfinite(gain)||
+           gain<0.f||gain>1.f||!hasExplicitRoute()||
+           expectedEpoch!=epoch()||expectedRevision!=revision())
+            return false;
+        auto gains=acceptedRoute_.getProperty("monitorSends",juce::var());
+        auto* array=gains.getArray();
+        const auto* current=publisher_.controlPrepared(expectedEpoch,expectedRevision);
+        if(!array||array->size()!=fxSlots||!current||
+           !current->monitorEnabled())return false;
+        if(!publisher_.updateActiveControl(expectedEpoch,expectedRevision,
+            [&](FxGraph& fx) noexcept {
+                return fx.setMonitorSendGain(source,gain);
+            }))return false;
+        array->set(source,static_cast<double>(gain)); // same accepted topology
         return true;
     }
 
