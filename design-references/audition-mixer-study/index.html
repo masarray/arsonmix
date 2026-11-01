@@ -1051,6 +1051,10 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .fast-foot{height:32px;display:flex;gap:7px;align-items:center;padding:0 8px;border-top:1px solid #355363;color:#91acb8;font-size:9px}
 .fast-foot button{margin-left:auto;border:0;background:transparent;color:#85d7f1}
 
+
+/* V5 live surface: more FX rack where vertical room exists, no forced tall rack at 768px. */
+.console-body:not(.collapsed-fx){--fx-h:clamp(155px,24vh,225px)!important}
+.console-body.collapsed-fx{--fx-h:23px!important}
 </style>
 </head>
 <body>
@@ -1744,7 +1748,7 @@ plugEl('pluginClose').addEventListener('click',()=>setBrowser(false));
 plugEl('pluginSearch').addEventListener('input',renderPluginCatalog);
 plugEl('fastSearch').addEventListener('input',renderFastPicker);
 plugEl('fastClose').addEventListener('click',()=>setFastPicker(false));
-plugEl('fastManage').addEventListener('click',()=>openPluginBrowser());
+plugEl('fastManage').addEventListener('click',()=>{setFastPicker(false);plugEl('pluginTarget').textContent=pluginTargetLabel();setBrowser(true);});
 plugEl('fastResults').addEventListener('click',e=>{
  const btn=e.target.closest('[data-fast-id]');if(btn)insertCatalogPlugin(btn.dataset.fastId);
 });
@@ -1770,7 +1774,14 @@ plugEl('pluginScan').addEventListener('click',()=>{
  const scanner=window.ArSonMixNativePlugins?.scan;
  if(typeof scanner==='function'){
   plugEl('pluginScanStatus').textContent='Native scan requested · awaiting verified results';
-  scanner({paths:[...scanPaths],verify:true});
+  try{
+   Promise.resolve(scanner({paths:[...scanPaths],verify:true})).then(result=>{
+    if(Array.isArray(result)){
+     const good=acceptPluginManifest(result);
+     plugEl('pluginScanStatus').textContent=good?'Native scan metadata received · verify status before inserting':'Native scanner returned no usable audio effects';
+    }else plugEl('pluginScanStatus').textContent='Native scan requested · waiting for host catalog update';
+   }).catch(()=>{plugEl('pluginScanStatus').textContent='Native scan failed · inspect scanner logs';});
+  }catch(error){plugEl('pluginScanStatus').textContent='Native scan could not start';}
  }else{
   plugEl('pluginScanStatus').textContent='Windows VST3 scan requires installed native host · GitHub Pages cannot access local plugin files';
   say('Plugin Manager setup only: scanning requires native ArSonMix executable');
