@@ -12,16 +12,31 @@ const ard = read('docs/ARD_SMART_AUDIO_ENGINE_V1_2026-10-25.md');
 const impl = read('docs/SMART_AUDIO_ENGINE_IMPLEMENTATION_BLUEPRINT.md');
 const issue = 'https://github.com/masarray/arsonmix/issues/15';
 const visualLock = 'docs/GUI_BASELINE_LOCK_2026-10-25.md';
+const currentPrd = read('docs/PRD_ARSONMIX_OPERATOR_FIRST_LIVE_MIXER_V5_20261101.md');
+const currentArd = read('docs/ARD_ARSONMIX_UNIVERSAL_REALTIME_CONSOLE_V5_20261101.md');
+const executionLock = read('docs/EXECUTION_LOCK_UNIVERSAL_LIVE_CONSOLE_V6_20261101.md');
 
-test('all entrypoints direct engineers to canonical ARD and implementation blueprint', () => {
-  for (const s of [agents, readme]) {
-    assert.match(s, /ARD_SMART_AUDIO_ENGINE_V1_2026-10-25\.md/);
-    assert.match(s, /SMART_AUDIO_ENGINE_IMPLEMENTATION_BLUEPRINT\.md/);
-    assert.ok(s.includes(issue));
-    assert.ok(s.includes(visualLock));
+test('active entrypoints follow PRD/ARD v5 and execution lock v6, not retired v1', () => {
+  for (const content of [agents, readme]) {
+    assert.match(content, /PRD_ARSONMIX_OPERATOR_FIRST_LIVE_MIXER_V5_20261101\\.md/);
+    assert.match(content, /ARD_ARSONMIX_UNIVERSAL_REALTIME_CONSOLE_V5_20261101\\.md/);
+    assert.match(content, /EXECUTION_LOCK_UNIVERSAL_LIVE_CONSOLE_V6_20261101\\.md/);
+    assert.ok(content.includes(issue), 'hardware crackle blocker must remain visible');
   }
-  assert.match(old, /HISTORICAL 0\.3 DESIGN/);
-  assert.match(old, /Current architecture \(overrides outdated v0\.3 proposals\)/);
+  for (const [label, content] of [
+    ['PRD v5', currentPrd], ['ARD v5', currentArd], ['Execution lock v6', executionLock]
+  ]) {
+    assert.ok(content.includes('ChannelId') || content.includes('channel'),
+      label + ' must describe real mixer channels');
+  }
+  assert.match(executionLock, /one accepted PCM graph/i);
+  assert.match(executionLock, /CH11/);
+  assert.match(executionLock, /rollback/i);
+  // The old documents still exist as historical technical references.
+  // They are no longer the active instruction linked by repo entrypoints.
+  assert.ok(read(visualLock).length > 100);
+  assert.match(old, /HISTORICAL 0\\.3 DESIGN/);
+  assert.match(old, /Current architecture \\(overrides outdated v0\\.3 proposals\\)/);
 });
 test('ARD covers device-clock, realtime and hardware acceptance without false shipping claims', () => {
   for (const concept of [
