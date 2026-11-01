@@ -1491,6 +1491,14 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
 .plugin-browser[style*="left:"]{right:auto!important}
 /* Plugin drag coordinate is an inline important top; do not override it. */
 
+/* V7 physical section rail uses .switch as both a row label and a button
+   class. Explicitly lock row size to the neighboring strip's switch section;
+   never let a button or flex override swallow the fader label space. */
+.console-body .section-rail > .rail-cell.switch{
+ height:var(--switch-h)!important;min-height:var(--switch-h)!important;
+ max-height:var(--switch-h)!important;flex:0 0 var(--switch-h)!important;
+ box-sizing:border-box!important;
+}
 </style>
 </head>
 <body>
