@@ -22,7 +22,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .logo{color:#72bbce;font-size:12px;font-weight:600;letter-spacing:.03em}
 .window-title .file-name{color:#bcc0c2;font-size:11px}
 .window-title .study{margin-left:auto;font-size:10px;color:#a4a6a6;letter-spacing:.06em}
-.command-bar{height:38px;flex:none;display:flex;align-items:center;gap:7px;padding:0 11px;border-bottom:1px solid #111;background:linear-gradient(#303133,#2a2b2c)}
+.command-bar{height:38px;flex:none;display:flex;align-items:center;gap:7px;padding:0 11px;border-bottom:1px solid #111;background:linear-gradient(#303133,#2a2b2c);overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
 .tool{padding:4px 9px;background:linear-gradient(#414244,#343537);border:1px solid #1b1d1e;border-radius:2px;box-shadow:inset 0 1px #545658;font-size:11px;white-space:nowrap}
 .tool:hover{background:#4a4b4d}
 .toolbar-label{color:#a0a5a6;font-size:10px}
@@ -119,7 +119,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .sendlevel input{width:60px;height:9px;accent-color:#8eaab3}
 .sendlevel output{font-size:9px;color:#a7aaad;margin-left:auto}
 .send-pan label{color:#7eb1c0}
-@media(max-height:610px){.console-body{--route-h:45px;--fx-h:80px;--send-h:60px;--eq-h:27px;--pan-h:28px;--auto-h:18px;--switch-h:25px;--footer-h:42px}.send-pan{display:none}.fxslot-row{height:15px}.fx-section .subhead,.send-header{height:16px}.eq-line{display:none}.eq-header{height:25px}}
+
 .eq-section{height:var(--eq-h)}
 .eq-header{height:18px;display:flex;align-items:center;gap:4px}
 .eq-header .sym{font-size:13px;color:#a1a3a4}
@@ -175,6 +175,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 @media(max-height:750px){.console-body{--route-h:54px;--fx-h:105px;--send-h:82px;--eq-h:43px;--pan-h:32px;--auto-h:22px;--switch-h:29px;--footer-h:45px}.fxslot-row{height:17px}.fx-section .subhead{height:18px}.footer-label{height:26px}.db-value{height:14px}.eq-line{height:20px}}
 @media(max-width:1000px){.short-help{display:none}.strip{width:98px;flex-basis:98px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;animation:none!important}}
+@media(max-height:610px){.console-body{--route-h:45px;--fx-h:80px;--send-h:60px;--eq-h:27px;--pan-h:28px;--auto-h:18px;--switch-h:25px;--footer-h:42px}.send-pan{display:none}.fxslot-row{height:15px}.fx-section .subhead,.send-header{height:16px}.eq-line{display:none}.eq-header{height:25px}}
 </style>
 </head>
 <body>
