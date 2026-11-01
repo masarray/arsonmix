@@ -47,8 +47,9 @@ function snapshot(s){
    new Set(c.supportedOps).size===c.supportedOps.length,'snapshot: invalid supportedOps');
  if(s.productionCallbackLive)must(c.callbackOwnsChannelIds===true,
    'snapshot: LIVE without installed native callback');
- if(!s.productionCallbackLive)must(!s.device.outputArmed,
-   'snapshot: offline v6 readback cannot ARM physical output');
+ // M4 can have ARMED physical outputs while universal ChannelId v6 is
+ // NOT admitted. Do not collapse the legacy output state into a fake LIVE flag.
+ // Separately, a v6 graph with productionCallbackLive=false is never audio proof.
  const ids=new Set();
  for(const x of g.channels){
    u64(x?.id,'ChannelId',true);

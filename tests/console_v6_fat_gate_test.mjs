@@ -46,6 +46,16 @@ test('canonical native WebView trace has exact ACK/full snapshot and no fake liv
  assert.throws(()=>checkTrace(b),/rejected intent mutated/);
  const c=trace();c.events[1].payload.requestId='1';
  assert.throws(()=>checkTrace(c),/session-scoped opaque requestId/);
+ const armedM4=trace();
+ for(const item of armedM4.events){
+   if(item.event==='arMixConsoleSnapshot'){
+     item.payload.device.outputArmed=true;
+     item.payload.legacyM4={routeAccepted:true,routingRevision:'17'};
+   }
+ }
+ const legacyResult=checkTrace(armedM4);
+ assert.equal(legacyResult.hardwareCertified,false);
+ assert.equal(legacyResult.productionCallbackCertified,false);
 });
 test('uint64 overflow, JS numeric revision, fake stereo pin and absent capability reject',()=>{
  const a=trace();a.events[0].payload.graph.channels[0].id='18446744073709551616';
