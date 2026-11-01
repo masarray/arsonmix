@@ -537,7 +537,7 @@ function wireTo(id,shift=false){
 }
 [3,4,5,6].forEach(id=>wireTo(id));
 check(strip(1).includes('⇢4') && strip(3).includes('wire-socket is-linked') &&
- node('wireLegend').textContent.includes('4 targets'),
+ node('wireLegend').textContent.includes('⇢ 4'),
  'CH1 click-source then CH3–CH6 socket clicks create four independent visible links');
 [3,4,5,6].forEach(id=>check(strip(id).includes('<option value="None" selected>') &&
  strip(id).includes('class="wire-tray linked"') &&
