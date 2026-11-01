@@ -221,7 +221,9 @@ const COLORS=['#3b98a1','#598e72','#af9258','#a6676f','#6b88b4','#9180b5','#9e95
 const INIT=['Host','Interview','Sound FX','Music Bed','Vocal 1','Vocal 2','Guitar','Keyboard','Playback','Ambience'];
 const FX=['None','Parametric Equalizer','Dynamics Processing','Studio Reverb','DeEsser','Hard Limiter','Tube-modeled Compressor','Delay','Chorus','Multiband Compressor','Graphic Equalizer','Echo'];
 const tracksEl=document.getElementById('tracks'),masterEl=document.getElementById('master'),info=document.getElementById('info');
-let nextId=1,tracks=[],master,preview=false,meterFrame=0,lastTick=0;
+let nextId=1,tracks=[],master,preview=false,meterFrame=0,lastTick=0,clipboard=null,scenes=[];
+const clone=x=>JSON.parse(JSON.stringify(x));
+const selection=()=>tracks.concat(master).filter(t=>t.selected);
 const make=(name,kind,color)=>{
  const id=nextId++;
  return {id,name,kind,color,input:kind==='master'?'None':kind==='bus'?'None':'Default Stereo',output:kind==='master'?'Default Output':'Master',fx:['None','None','None','None'],slotBypass:[false,false,false,false],fxOn:true,fxPost:false,send:'None',sendOn:false,pre:false,sendLevel:-6,eq:true,pan:0,automation:'Read',mute:false,solo:false,arm:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
@@ -282,7 +284,63 @@ function refreshStrip(t){
  const temp=document.createElement('div');temp.innerHTML=strip(t);
  old.replaceWith(temp.firstElementChild);
 }
-function selectTrack(t){tracks.forEach(x=>x.selected=false);master.selected=false;t.selected=true;document.querySelectorAll('.strip').forEach(el=>el.classList.toggle('selected',Number(el.dataset.id)===t.id));}
+function selectTrack(t,add=false){
+ if(!add){tracks.forEach(x=>x.selected=false);master.selected=false;t.selected=true;}
+ else t.selected=!t.selected;
+ document.querySelectorAll('.strip').forEach(el=>{const item=tracks.concat(master).find(x=>x.id===Number(el.dataset.id));el.classList.toggle('selected',!!item&&item.selected);});
+ const count=selection().length;if(count>1)say(count+' channels selected · Copy/Paste will apply to selection');
+}
+function wouldFeedback(source,destination){
+ let target=tracks.find(x=>x.kind==='bus'&&x.name===destination);
+ const seen=new Set();
+ while(target){
+  if(target.id===source.id||seen.has(target.id))return true;
+  seen.add(target.id);
+  target=tracks.find(x=>x.kind==='bus'&&x.name===target.output);
+ }
+ return false;
+}
+const COPY_KEYS=['fx','slotBypass','fxOn','fxPost','send','sendOn','pre','sendLevel','eq','pan','automation','mute','solo','level'];
+function copyChannels(){
+ const src=selection()[0];if(!src){say('Select a channel to copy settings');return;}
+ clipboard=Object.fromEntries(COPY_KEYS.map(k=>[k,clone(src[k])]));
+ say('Copied mixer settings from '+src.name+' (does not copy hardware I/O)');
+}
+function pasteChannels(){
+ if(!clipboard){say('No channel settings in clipboard');return;}
+ const list=selection();if(!list.length){say('Select destination channels before pasting');return;}
+ for(const t of list){
+  for(const k of COPY_KEYS){
+   if(t.kind==='master'&&['send','sendOn','pre','sendLevel'].includes(k))continue;
+   if((k==='send')&&wouldFeedback(t,clipboard[k]))continue;
+   t[k]=clone(clipboard[k]);
+  }
+ }
+ render();say('Pasted compatible settings to '+list.length+' selected channel(s) · hardware I/O unchanged');
+}
+function refreshScenes(){
+ const el=document.getElementById('sceneSelect'),selected=el.value;
+ el.innerHTML='<option value="">Current</option>'+scenes.map((x,i)=>'<option value="'+i+'">'+escapeHtml(x.name)+'</option>').join('');
+ if(selected&&scenes[Number(selected)])el.value=selected;
+}
+function saveScene(){
+ const name=window.prompt('Scene name (capture all mixer controls and channel visibility)', 'Scene '+(scenes.length+1));
+ if(!name||!name.trim())return;
+ scenes.push({name:name.trim().slice(0,40),nextId,tracks:clone(tracks),master:clone(master),filter:document.getElementById('viewFilter').value,narrow:document.querySelector('.console-body').classList.contains('narrow')});
+ refreshScenes();document.getElementById('sceneSelect').value=String(scenes.length-1);
+ say('Scene saved: '+scenes[scenes.length-1].name+' · local reference session only');
+}
+function recallScene(){
+ const value=document.getElementById('sceneSelect').value;
+ if(value===''){say('Choose a saved Scene first');return;}
+ const scene=scenes[Number(value)];if(!scene)return;
+ nextId=scene.nextId;tracks=clone(scene.tracks);master=clone(scene.master);
+ document.getElementById('viewFilter').value=scene.filter;
+ const body=document.querySelector('.console-body');body.classList.toggle('narrow',scene.narrow);
+ document.getElementById('mode').classList.toggle('active',scene.narrow);
+ document.getElementById('mode').setAttribute('aria-pressed',String(scene.narrow));
+ render();say('Recalled Scene: '+scene.name+' · GUI state only');
+}
 function handleField(event){
  const el=event.target,field=el.dataset.field;if(!field)return;
  const t=findTrack(el);if(!t)return;
@@ -291,9 +349,10 @@ function handleField(event){
  else if(field==='pan'){t.pan=Number(el.value);el.nextElementSibling.textContent=t.pan===0?'C':t.pan<0?'L'+Math.abs(t.pan):'R'+t.pan;if(event.type==='change')say(t.name+' pan '+el.nextElementSibling.textContent);}
  else if(field==='sendLevel'){t.sendLevel=Number(el.value);el.nextElementSibling.textContent=formatDb(t.sendLevel);}
  else if(field==='output'){
-  if(t.kind==='bus'&&el.value===t.name){say('A bus cannot route to itself.');refreshStrip(t);return;}
+  if(wouldFeedback(t,el.value)){say('Routing rejected: this output would create a bus feedback loop.');refreshStrip(t);return;}
   t.output=el.value;say(t.name+' output → '+el.value);
  }
+ else if(field==='send'){if(wouldFeedback(t,el.value)){say('Send rejected: this bus would feed back into itself.');refreshStrip(t);return;}t.send=el.value;say(t.name+' send → '+el.value);}
  else{t[field]=el.value;say(t.name+' '+field+' → '+el.value);}
  selectTrack(t);
 }
@@ -305,18 +364,18 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  const a=btn.dataset.action;
  if(a==='rename')return;
  if(a==='slotPower'){const slot=Number(btn.dataset.slot);if(t.fx[slot]==='None'){say(t.name+': choose an effect before toggling bypass');return;}t.slotBypass[slot]=!t.slotBypass[slot];refreshStrip(t);say(t.name+': FX '+(slot+1)+(t.slotBypass[slot]?' bypassed':' enabled'));return;}
- if(a==='fxPost'){t.fxPost=!t.fxPost;refreshStrip(t);say(t.name+': effects now '+(t.fxPost?'post':'pre')+' fader');return;}
+ if(a==='fxPost'){t.fxPost=!t.fxPost;refreshStrip(t);say(t.name+': effects now '+(t.fxPost?'post':'pre')+' fader · reference only');return;}
  if(a==='eq')t.eq=!t.eq;
  else if(a==='fxOn')t.fxOn=!t.fxOn;
  else if(a==='pre')t.pre=!t.pre;
  else if(a==='sendOn')t.sendOn=!t.sendOn;
  else if(['mute','solo','arm','mon','phase'].includes(a))t[a]=!t[a];
- refreshStrip(t);selectTrack(t);say(t.name+': '+a+' '+(t[a]?'on':'off'));
+ refreshStrip(t);selectTrack(t);if(a==='solo'&&document.getElementById('viewFilter').value==='solo')render();say(t.name+': '+a+' '+(t[a]?'on':'off'));
 });
 document.querySelector('.console-body').addEventListener('dblclick',e=>{
  const t=findTrack(e.target);if(!t)return;
  if(e.target.classList.contains('fader')){t.level=0;refreshStrip(t);say(t.name+' fader reset to 0.0 dB');}
- if(e.target.matches('.footer-label .name')){const name=window.prompt('Track name',t.name);if(name&&name.trim()){t.name=name.trim().slice(0,30);render();say('Renamed track to '+t.name);}}
+ if(e.target.matches('.footer-label .name')){const name=window.prompt('Track name',t.name);if(name&&name.trim()){const old=t.name;t.name=name.trim().slice(0,30);tracks.forEach(x=>{if(x.output===old)x.output=t.name;if(x.send===old)x.send=t.name;});render();say('Renamed track to '+t.name+' · routing labels updated');}}
 });
 document.querySelector('.console-body').addEventListener('dragstart',e=>{
  const row=e.target.closest('.fxslot-row');if(!row)return;
@@ -331,20 +390,39 @@ document.querySelector('.console-body').addEventListener('dragover',e=>{
 document.querySelector('.console-body').addEventListener('dragleave',e=>{const row=e.target.closest('.fxslot-row');if(row)row.classList.remove('drop-target');});
 document.querySelector('.console-body').addEventListener('drop',e=>{
  const row=e.target.closest('.fxslot-row');if(!row)return;e.preventDefault();
- const parts=(e.dataTransfer.getData('text/plain')||'').split(':');const t=findTrack(row);if(!t||Number(parts[0])!==t.id)return;
+ const parts=(e.dataTransfer.getData('text/plain')||'').split(':');const t=findTrack(row);if(!t)return;
+ const source=tracks.concat(master).find(x=>x.id===Number(parts[0]));if(!source)return;
  const from=Number(parts[1]),to=Number(row.dataset.slot);
- if(from<0||from>=t.fx.length||to<0||to>=t.fx.length)return;
- const moved=t.fx.splice(from,1)[0];t.fx.splice(to,0,moved);const bypass=t.slotBypass.splice(from,1)[0];t.slotBypass.splice(to,0,bypass);refreshStrip(t);say(t.name+' · FX moved from '+(from+1)+' to '+(to+1));
+ if(from<0||from>=source.fx.length||to<0||to>=t.fx.length)return;
+ if(source.id===t.id){
+  const moved=t.fx.splice(from,1)[0];t.fx.splice(to,0,moved);
+  const bypass=t.slotBypass.splice(from,1)[0];t.slotBypass.splice(to,0,bypass);
+  refreshStrip(t);say(t.name+' · FX reordered '+(from+1)+' → '+(to+1));
+ }else{
+  t.fx[to]=source.fx[from];t.slotBypass[to]=source.slotBypass[from];
+  refreshStrip(t);say('Copied '+source.fx[from]+' from '+source.name+' to '+t.name+' slot '+(to+1));
+ }
 });
-document.querySelector('.console-body').addEventListener('mousedown',e=>{const t=findTrack(e.target);if(t)selectTrack(t);});
+document.querySelector('.console-body').addEventListener('mousedown',e=>{const t=findTrack(e.target);if(t)selectTrack(t,e.ctrlKey||e.metaKey||e.shiftKey);});
 document.querySelector('.section-rail').addEventListener('click',e=>{const button=e.target.closest('[data-section]');if(!button)return;const name=button.dataset.section;const collapsed=document.querySelector('.console-body').classList.toggle('collapsed-'+name);button.classList.toggle('collapsed',collapsed);button.setAttribute('aria-pressed',String(!collapsed));say((collapsed?'Collapsed ':'Expanded ')+name.toUpperCase()+' mixer section');});
+document.getElementById('viewFilter').addEventListener('change',()=>{render();say('Channel display filtered: '+document.getElementById('viewFilter').value);});
+document.getElementById('mode').addEventListener('click',()=>{
+ const narrow=document.querySelector('.console-body').classList.toggle('narrow');
+ const button=document.getElementById('mode');
+ button.classList.toggle('active',narrow);button.setAttribute('aria-pressed',String(narrow));
+ say(narrow?'Narrow mode: inserts and sends hidden for maximum fader density':'Full mode: I/O, FX, Sends, EQ displayed');
+});
+document.getElementById('copy').addEventListener('click',copyChannels);
+document.getElementById('paste').addEventListener('click',pasteChannels);
+document.getElementById('saveScene').addEventListener('click',saveScene);
+document.getElementById('recallScene').addEventListener('click',recallScene);
 document.getElementById('addTrack').addEventListener('click',()=>{
  const n=tracks.filter(t=>t.kind==='audio').length+1,t=make('Track '+n,'audio',COLORS[(n-1)%COLORS.length]);const firstBus=tracks.findIndex(x=>x.kind==='bus');tracks.splice(firstBus<0?tracks.length:firstBus,0,t);render();selectTrack(t);document.getElementById('viewport').scrollLeft=99999;say('Added '+t.name+' · visual only');
 });
 document.getElementById('addBus').addEventListener('click',()=>{
  const n=tracks.filter(t=>t.kind==='bus').length+1,t=make('Bus '+String.fromCharCode(65+((n-1)%26)),'bus','#846e9e');tracks.push(t);render();selectTrack(t);document.getElementById('viewport').scrollLeft=99999;say('Added '+t.name+' · visual only');
 });
-document.getElementById('reset').addEventListener('click',()=>{if(preview)togglePreview();init();say('Mixer controls reset.');});
+document.getElementById('reset').addEventListener('click',()=>{if(preview)togglePreview();document.getElementById('viewFilter').value='all';document.querySelector('.console-body').classList.remove('narrow');document.getElementById('mode').classList.remove('active');document.getElementById('mode').setAttribute('aria-pressed','false');init();say('Reference mixer reset; saved scenes remain available.');});
 function togglePreview(){
  preview=!preview;
  const b=document.getElementById('preview');
@@ -372,6 +450,11 @@ function animateMeters(ts){
  requestAnimationFrame(animateMeters);
 }
 window.addEventListener('keydown',e=>{
+ const textEntry=e.target.closest&&e.target.closest('input,textarea,select,[contenteditable="true"]');
+ if((e.ctrlKey||e.metaKey)&&!textEntry){
+  if(e.key.toLowerCase()==='c'){e.preventDefault();copyChannels();return;}
+  if(e.key.toLowerCase()==='v'){e.preventDefault();pasteChannels();return;}
+ }
  if(e.key==='Escape'&&preview)togglePreview();
  if(e.target===document.body&&e.key==='ArrowRight')document.getElementById('viewport').scrollLeft+=102;
  if(e.target===document.body&&e.key==='ArrowLeft')document.getElementById('viewport').scrollLeft-=102;
