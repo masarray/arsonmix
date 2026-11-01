@@ -308,9 +308,14 @@ async def main():
         assert await page.locator('.arIODeviceDriverButton[aria-pressed="true"]').inner_text()=='ASIO'
         assert await page.locator('.arIODevicePatchMatrix').is_visible()
         assert not await page.locator('.arIODevicePatchMatrix').evaluate('(e)=>e.open')
+        # No large software-input / crosspoint DOM until explicitly requested.
+        assert await page.locator('.arIODevicePatchMatrix .arIOMatrixCell').count()==0
         assert await page.locator('.arIODevicePins').is_visible()
         await page.locator('.arIODevicePatchMatrix > summary').click()
         assert await page.locator('.arIODevicePatchMatrix').evaluate('(e)=>e.open')
+        # Details toggle is asynchronous; rendering the costly matrix only
+        # AFTER toggle is intentional, not a race to be hidden by time.sleep.
+        await page.locator('.arIODevicePatchMatrix .arIOMatrixCell').first.wait_for(state='visible')
         assert await page.locator('.arIODevicePatchMatrix .arIOMatrixCell').count()>0
         # FAST3 source one-gesture has already completed an ARM ACK above.
         # This separate DEVICE APPLY must produce ONE new guarded arm, not
