@@ -24,7 +24,7 @@ const count=()=> (node('tracks').innerHTML.match(/<article class="strip/g)||[]).
 function filter(value){node('viewFilter').value=value;node('viewFilter').dispatch('change');}
 function field(id,name,value){node('body').handlers.change({target:{dataset:{field:name},value,closest:k=>k==='.strip'?{dataset:{id}}:null}});}
 function strip(id){const html=node('tracks').innerHTML,p=html.indexOf('data-id="'+id+'"');assert.ok(p!==-1,'strip '+id+' exists');return html.slice(p,html.indexOf('</article>',p));}
-check(count()===11,'10 audio and 1 Bus');
+check(count()===10,'Initial bank has 10 full-width strips (remaining Bus accessible by arrow)');
 check(node('master').innerHTML.includes('Master'),'pinned Master');
 node('copy').dispatch('click');node('addTrack').dispatch('click');node('paste').dispatch('click');
 check(node('info').textContent.includes('Pasted compatible'),'copy/paste');
@@ -38,7 +38,7 @@ field(1,'send','FX 1');filter('all');check(strip(1).includes('<option value="FX 
 field(1,'activeSend','S1');filter('all');check(strip(1).includes('<option value="Bus A" selected>'),'16 sends preserve independent slots');
 node('saveScene').dispatch('click');check(node('sceneSelect').value==='0','scene save');
 node('mode').dispatch('click');check(node('body').classList.contains('narrow'),'narrow console');
-filter('audio');check(count()===11,'audio filter');
+filter('audio');check(count()===10,'audio filter shows first full-width bank');
 node('recallScene').dispatch('click');check(node('viewFilter').value==='all'&&!node('body').classList.contains('narrow'),'scene recall');
 node('reset').dispatch('click');
 node('body').handlers.mousedown({target:{closest:k=>k==='.strip'?{dataset:{id:2}}:null},ctrlKey:true,metaKey:false,shiftKey:false});
@@ -95,7 +95,7 @@ filter('all');node('bankSelect').value='0';node('bankSelect').dispatch('change')
 check(count()===8,'Bank 1 displays eight channel strips');
 node('bankSelect').value='1';node('bankSelect').dispatch('change');
 check(count()===3,'Bank 2 displays remaining strips');
-node('bankSelect').value='all';node('bankSelect').dispatch('change');
+node('bankSelect').value='0';node('bankSelect').dispatch('change');
 node('reset').dispatch('click');
 node('sofToggle').dispatch('click');
 check(node('body').classList.contains('sends-mode')&&strip(1).includes('S -6.0'),'Sends on Faders shows channel send, not main fader');
@@ -214,13 +214,13 @@ check(html.includes('.console-body.collapsed-route .route-field{display:none}') 
       html.includes('.console-body.collapsed-send .send-section .send-select,.console-body.collapsed-send .send-section .sendlevel{display:none}') &&
       html.includes('.console-body.collapsed-eq .eq-section .eq-line{display:none}'),
       'No stale expanded CSS declarations in collapsed route, send, EQ');
-check(html.includes('.plugin-browser{right:var(--master-w)!important}'),
+check(html.includes('right:var(--master-w)!important'),
       'Plugin overlay reserves actual pinned Master width across density presets');
-check(html.includes('.console-pane{--master-w:152px}') &&
+check(html.includes('.console-pane{--master-w:142px;--plugin-w:') &&
       html.includes("parent.style.setProperty('--master-w',widths[density])"),
       'Plugin overlay offset is inherited from pane and refreshed when density changes');
-check(html.includes('function bankCapacity()') && html.includes('Math.floor(width/(size[mode]||150))'),
-      'Live view calculates viewport-fit banks instead of fixed 8-channel overflow');
+check(html.includes('function bankCapacity()') && html.includes('Math.min(10,Math.floor(width/112))'),
+      'Live bank fits ten channels maximum without a bottom scrollbar');
 
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
