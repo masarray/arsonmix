@@ -1506,6 +1506,33 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
  border-bottom:1px solid #172730!important;
  box-shadow:inset 0 1px #ffffff12!important;
 }
+
+/* V8: Collapse hides the content, not merely the container's height.
+   Earlier high-specificity route/select and send/display rules forced expanded
+   controls into 23px collapsed rails. All strip + rail heights use one token. */
+.console-body.collapsed-route .strip .route-section{padding:0 4px!important}
+.console-body.collapsed-route .strip .route-section .route-field{display:none!important}
+.console-body.collapsed-route .strip .route-section .route-top{
+ height:22px!important;min-height:22px!important;flex:0 0 22px!important}
+.console-body.collapsed-fx .strip .fxslot-list{display:none!important}
+.console-body.collapsed-fx .strip .fx-section{padding:0 3px!important}
+.console-body.collapsed-fx .strip .subhead{
+ height:22px!important;min-height:22px!important;flex:0 0 22px!important}
+.console-body.collapsed-send .strip .send-section{padding:0 3px!important}
+.console-body.collapsed-send .strip .send-section .send-select,
+.console-body.collapsed-send .strip .send-section .sendlevel{display:none!important}
+.console-body.collapsed-send .strip .send-header{
+ height:22px!important;min-height:22px!important;flex:0 0 22px!important}
+.console-body.collapsed-send .strip .send-header .send-slot,
+.console-body.collapsed-send .strip .send-header .mini.pre{display:none!important}
+.console-body.collapsed-send .strip .send-header .send-compact{
+ display:block!important;flex:1 1 0!important;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.console-body.collapsed-send .strip .send-header .push{display:none!important}
+.console-body.collapsed-send .strip .send-header .sendtag{
+ max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.console-body .section-rail .rail-cell.route{height:var(--route-h)!important;flex:0 0 var(--route-h)!important}
+.console-body .section-rail .rail-cell.fx{height:var(--fx-h)!important;flex:0 0 var(--fx-h)!important}
+.console-body .section-rail .rail-cell.send{height:var(--send-h)!important;flex:0 0 var(--send-h)!important}
 </style>
 </head>
 <body>
@@ -1698,30 +1725,36 @@ function strip(t){
  code+='<div class="bottom-section"><div class="db-value">'+(sofEnabled&&t.kind==='audio'?'S ': '')+formatDb(sofEnabled&&t.kind==='audio'?getSofLevel(t):t.level)+'</div><div class="footer-label '+(t.kind==='master'?'master-label':t.kind==='bus'?'bus-label':'')+'"><span class="name" data-action="rename" title="Double-click to edit name, icon and color · F2" tabindex="0" role="button">'+escapeHtml(t.name)+'</span><span class="footer-icon" aria-hidden="true">'+escapeHtml(iconFor(t))+'</span><div class="color-strip"></div></div></div></article>';
  return code;
 }
-function bankCapacity(){
+const DENSITY_WIDTH=Object.freeze({comfort:150,standard:125,compact:105});
+function bankGeometry(){
  const body=document.querySelector('.console-body');
- const panel=body?.clientWidth||0;
- // Width budget is shared between n source strips + one equal-sized, pinned MAIN.
- // Never grow the last partial bank; empty slots keep exactly the same grid track width.
- const dock=0; // floating manager never consumes or changes bank width
- const usable=panel?Math.max(0,panel-28-dock):0;
- return usable ? Math.max(1,Math.min(10,Math.floor(usable/130)-1)) : 10;
+ const panel=Number(body?.clientWidth)||0;
+ // One budget for the section rail, source strips and pinned MAIN.
+ // Floating Plugin Manager must never consume a mixer bank.
+ const rail=Number(document.querySelector('.section-rail')?.clientWidth)||32;
+ return {panel,usable:Math.max(0,panel-rail)};
 }
-function render(){
+function bankCapacity(){
+ const {panel,usable}=bankGeometry();
+ const mode=document.querySelector('.console-body')?.dataset.density||'comfort';
+ const minimum=DENSITY_WIDTH[mode]||DENSITY_WIDTH.comfort;
+ return panel?Math.max(1,Math.min(10,Math.floor(usable/minimum)-1)):10;
+}
+function render(pageOverride){
  const filter=document.getElementById('viewFilter').value;
  const visible=tracks.filter(t=>filter==='all'||(filter==='solo'?t.solo:t.kind===filter));
  const selector=document.getElementById('bankSelect'),previous=Number(selector.value)||0;
  const capacity=bankCapacity(),count=Math.max(1,Math.ceil(visible.length/capacity));
- const page=Math.min(previous,count-1);
+ const page=Math.max(0,Math.min(Number.isInteger(pageOverride)?pageOverride:previous,count-1));
  selector.innerHTML=Array.from({length:count},(_,i)=>'<option value="'+i+'">CH '+String(i*capacity+1).padStart(2,'0')+'–'+String(Math.min(visible.length,(i+1)*capacity)).padStart(2,'0')+'</option>').join('');
  selector.value=String(page);
  const bankTracks=visible.slice(page*capacity,(page+1)*capacity);
  const root=document.querySelector('.console-body');
  if(root.style?.setProperty){
   root.style.setProperty('--bank-capacity',String(capacity));
-  const panel=root.clientWidth||0,dock=0;
+  const {panel,usable}=bankGeometry();
   if(panel){
-   const unit=((panel-28-dock)/(capacity+1)).toFixed(3)+'px';
+   const unit=(usable/(capacity+1)).toFixed(3)+'px';
    root.style.setProperty('--channel-w',unit);
    const pane=document.querySelector('.console-pane');
    if(pane?.style?.setProperty)pane.style.setProperty('--master-w',unit);
@@ -1752,11 +1785,16 @@ function syncFaderVisual(t,element){
 function setDensity(mode){
  const density=['comfort','standard','compact'].includes(mode)?mode:'comfort';
  const root=document.querySelector('.console-body'),compact=density==='compact';
+ const filter=document.getElementById('viewFilter').value;
+ const visible=tracks.filter(t=>filter==='all'||(filter==='solo'?t.solo:t.kind===filter));
+ const oldIndex=(Number(document.getElementById('bankSelect').value)||0)*bankCapacity();
+ const anchor=visible[oldIndex];
  root.dataset.density=density;
- // Equal widths now come from the shared bank width budget.
  root.classList.toggle('narrow',compact);
  document.getElementById('densitySelect').value=density;
- render();
+ // Preserve the first visible channel when density changes page capacity.
+ const anchorIndex=anchor?visible.findIndex(t=>t.id===anchor.id):0;
+ render(Math.floor(Math.max(0,anchorIndex)/bankCapacity()));
  const btn=document.getElementById('mode');
  btn.classList.toggle('active',compact);btn.setAttribute('aria-pressed',String(compact));
  return density;
@@ -1787,6 +1825,15 @@ function toggleSof(force){
  const btn=document.getElementById('sofToggle');btn.classList.toggle('active',sofEnabled);
  btn.setAttribute('aria-pressed',String(sofEnabled));document.querySelector('.console-body').classList.toggle('sends-mode',sofEnabled);
  render();say(sofEnabled?'SENDS ON FADERS: adjusting '+sofTarget+' send levels · main faders protected':'MAIN MIX: faders control primary channel level');
+}
+function revealTrack(t){
+ // Do not select a channel hidden on a different fixed bank.
+ const filter=document.getElementById('viewFilter');
+ if(filter.value!=='all'&&filter.value!==t.kind)filter.value='all';
+ const visible=tracks.filter(x=>filter.value==='all'||x.kind===filter.value);
+ const index=visible.findIndex(x=>x.id===t.id);
+ selectTrack(t);
+ render(Math.floor(Math.max(0,index)/bankCapacity()));
 }
 function visibleBankCount(){
  const filter=document.getElementById('viewFilter').value;
@@ -2069,15 +2116,15 @@ document.getElementById('bankNext').addEventListener('click',()=>{
 document.getElementById('sofToggle').addEventListener('click',()=>toggleSof());
 document.getElementById('sofTarget').addEventListener('change',()=>{sofTarget=document.getElementById('sofTarget').value;render();say('Sends target: '+sofTarget);});
 document.getElementById('addTrack').addEventListener('click',()=>{
- const n=tracks.filter(t=>t.kind==='audio').length+1,t=make('Track '+n,'audio',COLORS[(n-1)%COLORS.length]);const firstBus=tracks.findIndex(x=>x.kind==='bus');tracks.splice(firstBus<0?tracks.length:firstBus,0,t);render();selectTrack(t);document.getElementById('viewport').scrollLeft=99999;say('Added '+t.name+' · visual only');
+ const n=tracks.filter(t=>t.kind==='audio').length+1,t=make('Track '+n,'audio',COLORS[(n-1)%COLORS.length]);const firstBus=tracks.findIndex(x=>x.kind==='bus');tracks.splice(firstBus<0?tracks.length:firstBus,0,t);revealTrack(t);say('Added '+t.name+' · visual only');
 });
 document.getElementById('addFx').addEventListener('click',()=>{
  const n=tracks.filter(t=>t.kind==='fx').length+1,t=make('FX '+n,'fx','#8b709a');
- t.fx[0]='Studio Reverb';tracks.push(t);render();selectTrack(t);
- document.getElementById('viewport').scrollLeft=99999;say('Added FX Return '+t.name+' · send destination with insert processing');
+ t.fx[0]='Studio Reverb';tracks.push(t);revealTrack(t);
+ say('Added FX Return '+t.name+' · send destination with insert processing');
 });
 document.getElementById('addBus').addEventListener('click',()=>{
- const n=tracks.filter(t=>t.kind==='bus').length+1,t=make('Bus '+String.fromCharCode(65+((n-1)%26)),'bus','#846e9e');tracks.push(t);render();selectTrack(t);document.getElementById('viewport').scrollLeft=99999;say('Added '+t.name+' · visual only');
+ const n=tracks.filter(t=>t.kind==='bus').length+1,t=make('Bus '+String.fromCharCode(65+((n-1)%26)),'bus','#846e9e');tracks.push(t);revealTrack(t);say('Added '+t.name+' · visual only');
 });
 document.getElementById('clearCue').addEventListener('click',()=>{tracks.forEach(t=>t.cue=false);master.cue=false;render();say('All Cue / PFL requests cleared · no hardware monitor connected');});
 document.getElementById('reset').addEventListener('click',()=>{if(preview)togglePreview();document.getElementById('viewFilter').value='all';document.getElementById('bankSelect').value='all';sofEnabled=false;document.getElementById('sofToggle').classList.remove('active');document.getElementById('sofToggle').setAttribute('aria-pressed','false');document.querySelector('.console-body').classList.remove('sends-mode');setDensity('comfort');init();say('Reference mixer reset; saved scenes remain available.');});
