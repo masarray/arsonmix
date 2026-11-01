@@ -1043,3 +1043,31 @@
 }
 #app .arV6Console .arV6PluginResult:disabled{opacity:.46;cursor:not-allowed}
 @media(max-width:1100px){#app .arV6Console .arV6PluginPanel{top:45px}}
+
+
+/* PRD v5.2 operator milestone: one compact native multi-channel drawer,
+   separate relative LINK from serial GROUP BUS. No browser DSP or fake link. */
+#app .arV6Console .arV6SelectionCount{flex:0 0 auto;padding:3px 6px}
+#app .arV6Console .arV6SelectionPanel{
+  position:absolute;z-index:22;top:52px;right:8px;
+  width:min(350px,calc(100% - 16px));max-height:min(72vh,420px);
+  display:flex;flex-direction:column;gap:0;min-width:0;
+  background:#1a2a34;color:#d4e5eb;border:1px solid #668693;
+  border-radius:4px;box-shadow:0 8px 25px #071019aa;
+}
+#app .arV6Console .arV6SelectionPanel[hidden]{display:none!important}
+#app .arV6Console .arV6SelectionSummary{
+  padding:8px 10px;min-height:32px;max-height:78px;overflow-y:auto;
+  font:10px/1.5 "Segoe UI",sans-serif;color:#b9d1da;
+}
+#app .arV6Console .arV6SelectionActions{display:grid;gap:8px;padding:2px 10px 4px}
+#app .arV6Console .arV6LinkActions{display:grid;grid-template-columns:1fr auto;gap:6px}
+#app .arV6Console .arV6BusActions{display:grid;grid-template-columns:1fr auto;gap:6px}
+#app .arV6Console .arV6GroupTarget{min-width:0;width:100%}
+#app .arV6Console .arV6SelectionPanel .arV6DeviceNote{padding:0 10px 8px}
+#app .arV6Console .arV6Rename{
+  width:100%;min-height:23px;min-width:0;padding:2px 4px;
+  color:#eaf7f8;background:#16303d;border:1px solid #77b8c6;
+  font:500 12px/1.2 "Segoe UI",sans-serif;
+}
+@media(max-width:1100px){#app .arV6Console .arV6SelectionPanel{top:46px}}

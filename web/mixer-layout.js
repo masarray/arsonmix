@@ -206,7 +206,8 @@
     ADD_SEND:'ADD_SEND',SET_SEND_TAP:'SET_SEND_TAP',SET_SEND_LEVEL:'SET_SEND_LEVEL',
     SET_FADER:'SET_FADER',SET_PAN:'SET_PAN',SET_MUTE:'SET_MUTE',
     SET_SOLO:'SET_SOLO',SET_TRIM:'SET_TRIM',SET_CUE:'SET_CUE',
-    CREATE_CHANNEL:'CREATE_CHANNEL'
+    SET_LINK_GROUP:'SET_LINK_GROUP',ROUTE_SELECTED_TO_GROUP:'ROUTE_SELECTED_TO_GROUP',
+    RENAME_CHANNEL:'RENAME_CHANNEL',CREATE_CHANNEL:'CREATE_CHANNEL'
   };
   let accepted=null,acceptedNative=false,modeSend='',lastStructure='',requestSeq=0;
   let draggingFx=null;
@@ -258,7 +259,9 @@
   const narrow=button('NARROW',{'aria-pressed':'false','aria-label':'Toggle narrow channel bank'});
   const roleFilter=h('select','arV6Select arV6Filter');
   roleFilter.setAttribute('aria-label','Filter visible mixer channels');
-  const selectionCount=h('span','arV6SelectionCount','0 SEL');
+  const selectionCount=button('0 SEL',{'aria-label':'Selected channels and native group actions',
+    'aria-controls':'arV6SelectionPanel','aria-expanded':'false'});
+  selectionCount.classList.add('arV6SelectionCount');
   for(const [value,label] of [['ALL','ALL'],['INPUT','INPUT'],['GROUP','BUS'],
     ['FX_RETURN','FX RTN'],['AUX','AUX'],['MONITOR','MON'],['SOLO','SOLO']]){
     const option=h('option','',label);option.value=value;roleFilter.append(option);
@@ -289,6 +292,30 @@
   pluginSearch.setAttribute('aria-label','Search native scanned VST3 catalog');
   const pluginResults=h('div','arV6PluginResults');
   pluginPanel.append(pluginHead,pluginTarget,pluginSearch,pluginResults);
+  // A small operator drawer differentiates relative fader links from actual
+  // serial Group-Bus summing. Both are SINGLE native graph transactions.
+  const selectionPanel=h('section','arV6SelectionPanel');
+  selectionPanel.id='arV6SelectionPanel';selectionPanel.hidden=true;
+  selectionPanel.setAttribute('aria-label','Native multi-channel operator actions');
+  const selectionHead=h('div','arV6DevicePanelHead');
+  const selectionClose=button('×',{'aria-label':'Close selected channel actions'});
+  selectionHead.append(h('span','','SELECTED · LIVE MIXING'),selectionClose);
+  const selectionSummary=h('div','arV6SelectionSummary');
+  const selectionActions=h('div','arV6SelectionActions');
+  const linkFaders=button('LINK FADERS',{'data-op':'SET_LINK_GROUP',
+    'aria-label':'Link selected faders using native relative control group'});
+  const unlinkFaders=button('UNLINK',{'data-op':'SET_LINK_GROUP',
+    'aria-label':'Unlink selected faders using native relative control group'});
+  const routeBus=h('select','arV6Select arV6GroupTarget');
+  routeBus.setAttribute('aria-label','Select actual native summing Group Bus');
+  const routeSelected=button('ROUTE TO GROUP BUS',{'data-op':'ROUTE_SELECTED_TO_GROUP',
+    'aria-label':'Route selected channels to native summing Group Bus'});
+  const linkRow=h('div','arV6LinkActions');linkRow.append(linkFaders,unlinkFaders);
+  const busRow=h('div','arV6BusActions');busRow.append(routeBus,routeSelected);
+  selectionActions.append(linkRow,busRow);
+  const selectionNote=h('p','arV6DeviceNote',
+    'LINK FADERS moves controls relatively. GROUP BUS sums audio serially. These are different native operations; UI never mixes or reroutes PCM.');
+  selectionPanel.append(selectionHead,selectionSummary,selectionActions,selectionNote);
   const body=h('div','arV6Body');
   const sectionRail=h('aside','arV6SectionRail');
   sectionRail.setAttribute('aria-label','Synchronized mixer section collapse');
@@ -307,7 +334,7 @@
   const lanes=h('div','arV6Lanes');lanes.id='arV6Lanes';lanes.setAttribute('aria-label','Channel banks');
   const main=h('div','arV6Main');main.id='arV6Main';main.setAttribute('aria-label','Pinned main output');
   body.append(sectionRail,lanes,main);
-  root.append(top,message,devicePanel,pluginPanel,body);
+  root.append(top,message,devicePanel,pluginPanel,selectionPanel,body);
   mount.append(root);
   sectionRail.addEventListener('click',event=>{
     const control=event.target.closest('[data-section]');
@@ -322,6 +349,68 @@
     refreshBanks();
   });
   roleFilter.addEventListener('change',()=>applyPresentation());
+  selectionCount.addEventListener('click',()=>{
+    selectionPanel.hidden=!selectionPanel.hidden;
+    selectionCount.setAttribute('aria-expanded',String(!selectionPanel.hidden));
+    if(!selectionPanel.hidden)refreshSelectionActions();
+  });
+  selectionClose.addEventListener('click',()=>{
+    selectionPanel.hidden=true;selectionCount.setAttribute('aria-expanded','false');
+  });
+  function selectedNativeIds(){
+    return [...selectedIds].filter(id=>byId.has(id)&&byId.get(id).role!=='MAIN');
+  }
+  function refreshSelectionActions(){
+    selectionCount.textContent=selectedIds.size+' SEL';
+    if(selectionPanel.hidden)return;
+    const ids=selectedNativeIds(),channels=ids.map(id=>byId.get(id));
+    const names=channels.map(c=>c.name).join(' · ');
+    selectionSummary.textContent=names||'Select channel headers using Ctrl / Shift';
+    const ready=ids.length>=2&&ids.length<=64&&!pendingTargets.has('@selection')&&
+      ids.every(id=>can('SET_LINK_GROUP',id));
+    linkFaders.disabled=!ready||!can('SET_LINK_GROUP',null);
+    const current=channels[0]?.linkGroupId;
+    unlinkFaders.disabled=!ready||typeof current!=='string'||!current||
+      !channels.every(c=>c.linkGroupId===current);
+    const buses=(accepted?.graph?.channels||[]).filter(ch=>
+      ch.role==='GROUP'&&!selectedIds.has(ch.id)&&
+      (accepted.graph.destinations||[]).some(dst=>dst.id===ch.id&&
+        dst.acceptsPrimary!==false));
+    const signature=buses.map(ch=>ch.id+'|'+ch.name).join(',');
+    if(routeBus.dataset.signature!==signature){
+      const value=routeBus.value;
+      routeBus.replaceChildren();
+      const prompt=h('option','','SELECT NATIVE BUS');prompt.value='';routeBus.append(prompt);
+      for(const bus of buses){
+        const option=h('option','',bus.name);option.value=bus.id;routeBus.append(option);
+      }
+      routeBus.value=buses.some(ch=>ch.id===value)?value:'';
+      routeBus.dataset.signature=signature;
+    }
+    const canRoute=ids.length>0&&ids.length<=64&&
+      (accepted?.graph?.capabilities?.groups===true)&&
+      channels.every(c=>['INPUT','AUX','FX_RETURN'].includes(c.role)&&
+        can('ROUTE_SELECTED_TO_GROUP',c.id))&&
+      can('ROUTE_SELECTED_TO_GROUP',null);
+    routeBus.disabled=!canRoute||!buses.length;
+    routeSelected.disabled=!canRoute||!buses.some(ch=>ch.id===routeBus.value);
+  }
+  routeBus.addEventListener('change',refreshSelectionActions);
+  const sendSelectionAction=linked=>{
+    const ids=selectedNativeIds();
+    if(ids.length<2||ids.length>64||linkFaders.disabled&&linked||
+       unlinkFaders.disabled&&!linked)return;
+    sendIntent('SET_LINK_GROUP',null,{channelIds:ids,linked},ids);
+  };
+  linkFaders.addEventListener('click',()=>sendSelectionAction(true));
+  unlinkFaders.addEventListener('click',()=>sendSelectionAction(false));
+  routeSelected.addEventListener('click',()=>{
+    const ids=selectedNativeIds(),destinationId=routeBus.value;
+    if(routeSelected.disabled||!ids.length||ids.length>64||
+       !byId.has(destinationId)||byId.get(destinationId).role!=='GROUP')return;
+    sendIntent('ROUTE_SELECTED_TO_GROUP',null,
+      {channelIds:ids,destinationId},ids);
+  });
   deviceButton.addEventListener('click',()=>{
     devicePanel.hidden=!devicePanel.hidden;
     deviceButton.setAttribute('aria-expanded',String(!devicePanel.hidden));
@@ -359,7 +448,10 @@
   });
   document.addEventListener('keydown',event=>{
     if(!document.documentElement.classList.contains('ar-v6-active'))return;
-    if(event.key==='Escape'&&!pluginPanel.hidden){
+    if(event.key==='Escape'&&!selectionPanel.hidden){
+      event.preventDefault();selectionPanel.hidden=true;
+      selectionCount.setAttribute('aria-expanded','false');
+    }else if(event.key==='Escape'&&!pluginPanel.hidden){
       event.preventDefault();closePluginManager();
     }else if(event.key==='F8'&&!event.repeat){
       event.preventDefault();openPluginManager();
@@ -445,7 +537,7 @@
     if(!supported(op))return false;
     if(op==='CREATE_CHANNEL')return !!accepted.graph.capabilities.dynamicChannels && !pendingTargets.has('@roster');
     if(op==='ADD_INSERT'&&!accepted?.catalog?.plugins?.length)return false;
-    if(!id)return true;
+    if(!id)return !pendingTargets.has('@selection');
     const ch=byId.get(id);
     return !!ch && !pendingTargets.has(id) &&
       (!Array.isArray(ch.allowedOps)||ch.allowedOps.includes(op));
@@ -457,17 +549,22 @@
   function requestSnapshot(){
     if(native)backend.emitEvent('arMixConsoleSubscribe',{protocol:'v6',requester:instance});
   }
-  function sendIntent(op,id,payload){
-    if(!can(op,id)){showFeedback('UNAVAILABLE · Native capability or channel authorization missing');return false}
+  function sendIntent(op,id,payload,affectedIds=[]){
+    if(!can(op,id)||affectedIds.length>64||
+       affectedIds.some(channelId=>!can(op,channelId))){
+      showFeedback('UNAVAILABLE · Native capability, selection lock or channel authorization missing');
+      return false;
+    }
     const requestId=instance+':'+String(++requestSeq);
     const command={requestId,deviceEpoch:accepted.device.epoch,
       baseGraphRevision:accepted.graph.revision,
       baseRosterRevision:accepted.graph.rosterRevision,
       operation:op,targetChannelId:id||null,payload:payload||{}};
-    pending.set(requestId,{op,id,baseRevision:command.baseGraphRevision,
+    const targets=id?[id]:affectedIds.length?['@selection',...affectedIds]:
+      op==='CREATE_CHANNEL'?['@roster']:[];
+    pending.set(requestId,{op,id,targets,baseRevision:command.baseGraphRevision,
       baseRosterRevision:command.baseRosterRevision,epoch:command.deviceEpoch,snapshotSerial});
-    if(id)pendingTargets.add(id);
-    else if(op==='CREATE_CHANNEL')pendingTargets.add('@roster');
+    for(const target of targets)pendingTargets.add(target);
     showFeedback('PENDING · '+op+' · awaiting native ACK');
     refreshDisabled();
     backend.emitEvent('arMixConsoleIntent',command);
@@ -484,21 +581,21 @@
       showFeedback('INVALID NATIVE ACK · accepted route unchanged');return;
     }
     pending.delete(a.requestId);
-    const target=task.id||'@roster';
+    const unlock=()=>{for(const target of task.targets||[])pendingTargets.delete(target)};
     if(a.status==='ACCEPTED'){
       if(BigInt(rev)<BigInt(task.baseRevision)||
          BigInt(roster)<BigInt(task.baseRosterRevision)){
-        pendingTargets.delete(target);
+        unlock();
         showFeedback('INVALID ACK REVISION · accepted route unchanged');
       }else{
         const wait={...task,requiredRevision:rev,requiredRoster:roster};
-        if(ackMatches(wait))pendingTargets.delete(target);
+        if(ackMatches(wait))unlock();
         else awaitingSnapshot.set(a.requestId,wait);
         showFeedback('ACCEPTED · '+task.op+' · awaiting exact native graph + roster');
       }
       requestSnapshot();
     }else{
-      pendingTargets.delete(target);
+      unlock();
       showFeedback((a.status==='REQUIRES_DEVICE_CHANGE'?'REQUIRES DEVICE · ':'REJECTED · ')+
         clean(a.errorCode||'INVALID REJECTION')+' · previous accepted route preserved');
       requestSnapshot();refreshAcceptedControls();
@@ -643,7 +740,7 @@
     for(const [requestId,task] of awaitingSnapshot){
       if(ackMatches(task)){
         awaitingSnapshot.delete(requestId);
-        pendingTargets.delete(task.id||'@roster');
+        for(const target of task.targets||[])pendingTargets.delete(target);
       }
     }
     if(structure!==lastStructure||root.dataset.demo!==String(!fromNative)){
@@ -761,12 +858,15 @@
     const select=selectField('+ TO','ADD_SEND',ch.id,targets,'','NO NATIVE SEND BUS');
     section.append(select);return section;
   }
+  const roleLabel=ch=>clean(ch.role).toUpperCase()+
+    (typeof ch.linkGroupId==='string'&&ch.linkGroupId?
+      ' · LINK '+ch.linkGroupId.slice(0,6):'');
   function strip(ch,pinned=false){
     const role=clean(ch.role).toUpperCase();
     const elStrip=h('article','arV6Strip'+(pinned?' arV6Master':''));
     elStrip.dataset.channelId=ch.id;
     const head=h('div','arV6StripHead');
-    const roleName=h('span','arV6Role',role);
+    const roleName=h('span','arV6Role',roleLabel(ch));
     const name=h('strong','arV6Name',ch.name||ch.id);name.title=ch.id;
     head.append(roleName,name);elStrip.append(head);
     elStrip.setAttribute('aria-selected',String(selectedIds.has(ch.id)));
@@ -866,7 +966,7 @@
       strip.classList.toggle('isSelected',selected);
       strip.setAttribute('aria-selected',String(selected));
     }
-    selectionCount.textContent=selectedIds.size+' SEL';
+    refreshSelectionActions();
     refreshPluginCatalog();
   }
   function selectChannel(id,event){
@@ -929,6 +1029,7 @@
         ((op==='SET_TRIM'||op==='SET_CUE')&&node.dataset.acceptedKnown!=='true');
     }
     add.disabled=!can('CREATE_CHANNEL');
+    refreshSelectionActions();
     const caps=accepted.graph.capabilities||{};
     roleSelect.disabled=!can('CREATE_CHANNEL');
     for(const option of roleSelect.options){
@@ -949,6 +1050,11 @@
     for(const strip of root.querySelectorAll('[data-channel-id]')){
       const ch=byId.get(strip.dataset.channelId);
       if(!ch)continue;
+      const nameNode=strip.querySelector('.arV6Name');
+      if(nameNode&&nameNode.textContent!==ch.name)nameNode.textContent=ch.name;
+      const roleNode=strip.querySelector('.arV6Role');
+      if(roleNode&&roleNode.textContent!==roleLabel(ch))
+        roleNode.textContent=roleLabel(ch);
       const choose=(op,value)=>{
         const field=strip.querySelector('select[data-op="'+op+'"]');
         if(!field)return;
@@ -1139,9 +1245,38 @@
     if(!strip||event.target.closest('button,input,select,[draggable]'))return;
     selectChannel(strip.dataset.channelId,event);
   });
+  // Inline rename never mutates accepted name. Only native ACK + matching
+  // snapshot changes the channel header; Escape/blur only cancels local input.
+  function beginRename(nameNode){
+    const strip=nameNode?.closest('.arV6Strip'),id=strip?.dataset.channelId;
+    const ch=byId.get(id);
+    if(!ch||!can('RENAME_CHANNEL',id)){
+      showFeedback('RENAME UNAVAILABLE · native RENAME_CHANNEL not installed');return;
+    }
+    if(strip.querySelector('.arV6Rename'))return;
+    const input=h('input','arV6Rename');
+    input.type='text';input.maxLength=40;input.value=ch.name;
+    input.setAttribute('aria-label','Rename '+ch.name+' using native ChannelId');
+    const finish=commit=>{
+      if(!input.isConnected)return;
+      const newName=input.value.trim();
+      input.replaceWith(nameNode);
+      if(commit&&newName&&newName.length<=40&&newName!==ch.name&&
+         !/[\\x00-\\x1f\\x7f]/.test(newName))
+        sendIntent('RENAME_CHANNEL',id,{name:newName});
+    };
+    input.addEventListener('keydown',event=>{
+      if(event.key==='Enter'){event.preventDefault();finish(true)}
+      if(event.key==='Escape'){event.preventDefault();finish(false)}
+    });
+    input.addEventListener('blur',()=>finish(false),{once:true});
+    nameNode.replaceWith(input);input.focus();input.select();
+  }
   root.addEventListener('dblclick',event=>{
     const n=event.target.closest('.arV6PanRange');
-    if(n&&!n.disabled)sendIntent('SET_PAN',n.dataset.id,{value:0});
+    if(n&&!n.disabled){sendIntent('SET_PAN',n.dataset.id,{value:0});return;}
+    const name=event.target.closest('.arV6Name');
+    if(name)beginRename(name);
   });
   root.addEventListener('change',event=>{
     const n=event.target.closest('[data-op]');

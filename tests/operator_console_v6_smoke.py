@@ -461,7 +461,8 @@ async def main():
         one_pin["graph"]["channels"][-1]["primaryOutId"]="out:0"
         # The positive browser-host catalog is TEST ONLY. ENGINE must supply
         # this exact native-scanned field for any production VST3 availability.
-        one_pin["graph"]["capabilities"]["supportedOps"]=OPS+["ADD_INSERT"]
+        one_pin["graph"]["capabilities"]["supportedOps"]=OPS+[
+          "ADD_INSERT","SET_LINK_GROUP","ROUTE_SELECTED_TO_GROUP","RENAME_CHANNEL"]
         one_pin["catalog"]={"plugins":[
           {"id":"native:hall-reverb","name":"Hall Reverb","vendor":"Verified Vendor",
            "category":"Reverb"},
@@ -504,6 +505,103 @@ async def main():
           rosterRevision:'6',errorCode:'PLUGIN_LOAD_FAILED'})""",load["requestId"])
         assert await page.locator('[data-channel-id="7"] .arV6FxSlot').count()==count_fx
         assert "PLUGIN_LOAD_FAILED" in await page.locator(".arV6Message").inner_text()
+
+        # PRD §9 native operator multiselect: LINK FADERS is a control
+        # grouping transaction, NOT a serial audio GROUP BUS.
+        await page.locator('[data-channel-id="2"] .arV6StripHead').click()
+        await page.locator('[data-channel-id="7"] .arV6StripHead').click(modifiers=["Control"])
+        await page.get_by_role("button",name="Selected channels and native group actions").click()
+        operator=page.locator("#arV6SelectionPanel")
+        assert await operator.is_visible()
+        link=page.get_by_role("button",name="Link selected faders using native relative control group")
+        unlink=page.get_by_role("button",name="Unlink selected faders using native relative control group")
+        assert await link.is_enabled() and await unlink.is_disabled()
+        await link.click()
+        cmd=await page.evaluate("""()=>window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').at(-1).payload""")
+        assert cmd["operation"]=="SET_LINK_GROUP"
+        assert cmd["targetChannelId"] is None
+        assert cmd["payload"]=={"channelIds":["2","7"],"linked":True}
+        assert await link.is_disabled()
+        assert "LINK" not in await page.locator('[data-channel-id="7"] .arV6Role').inner_text()
+        await page.evaluate("""id=>window.__v6Test.publish('arMixConsoleAck',
+          {requestId:id,status:'ACCEPTED',deviceEpoch:'8',
+           graphRevision:'7',rosterRevision:'6',errorCode:''})""",cmd["requestId"])
+        assert await link.is_disabled()
+        accepted_link=json.loads(json.dumps(one_pin))
+        accepted_link["graph"]["revision"]="7"
+        accepted_link["graph"]["channels"][1]["linkGroupId"]="A"
+        accepted_link["graph"]["channels"][6]["linkGroupId"]="A"
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",accepted_link)
+        assert "LINK A" in await page.locator('[data-channel-id="7"] .arV6Role').inner_text()
+        assert await unlink.is_enabled()
+
+        # Native unlink waits for native ACK + exact snapshot, no browser
+        # fader-copy simulation and no optimistic sound/control group.
+        await unlink.click()
+        unlink_cmd=await page.evaluate("""()=>window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').at(-1).payload""")
+        assert unlink_cmd["payload"]=={"channelIds":["2","7"],"linked":False}
+        await page.evaluate("""id=>window.__v6Test.publish('arMixConsoleAck',
+          {requestId:id,status:'REJECTED',deviceEpoch:'8',
+           graphRevision:'7',rosterRevision:'6',errorCode:'LINK_BUSY'})""",unlink_cmd["requestId"])
+        assert "LINK A" in await page.locator('[data-channel-id="7"] .arV6Role').inner_text()
+        assert await unlink.is_enabled()
+
+        # Route selected to native serial summing bus, not relative fader
+        # link. Failed request must leave both primary output paths intact.
+        await page.get_by_role("combobox",name="Select actual native summing Group Bus").select_option("1002")
+        route=page.get_by_role("button",name="Route selected channels to native summing Group Bus")
+        assert await route.is_enabled()
+        await route.click()
+        group_cmd=await page.evaluate("""()=>window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').at(-1).payload""")
+        assert group_cmd["operation"]=="ROUTE_SELECTED_TO_GROUP"
+        assert group_cmd["payload"]=={"channelIds":["2","7"],"destinationId":"1002"}
+        assert await route.is_disabled()
+        await page.evaluate("""id=>window.__v6Test.publish('arMixConsoleAck',
+          {requestId:id,status:'REJECTED',deviceEpoch:'8',
+           graphRevision:'7',rosterRevision:'6',errorCode:'BUS_BUSY'})""",group_cmd["requestId"])
+        assert await page.locator('[data-op="SET_PRIMARY_OUT"][data-id="7"]').input_value()=="1000"
+        assert await route.is_enabled()
+        await page.get_by_role("button",name="Close selected channel actions").click()
+
+        # Direct inline rename is a canonical RENAME_CHANNEL intent.
+        # No optimistic name change; accepted snapshot updates text while
+        # preserving native fader DOM identity and physical I/O.
+        await page.evaluate("""()=>window.__renameFader=
+          document.querySelector('[data-channel-id="7"] .arV6Fader')""")
+        await page.locator('[data-channel-id="7"] .arV6Name').dblclick()
+        rename=page.locator('[data-channel-id="7"] .arV6Rename')
+        assert await rename.is_visible()
+        await rename.fill("Lead Vox")
+        await rename.press("Enter")
+        rename_cmd=await page.evaluate("""()=>window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').at(-1).payload""")
+        assert rename_cmd["operation"]=="RENAME_CHANNEL"
+        assert rename_cmd["targetChannelId"]=="7"
+        assert rename_cmd["payload"]=={"name":"Lead Vox"}
+        assert await page.locator('[data-channel-id="7"] .arV6Name').inner_text()=="CH 07"
+        await page.evaluate("""id=>window.__v6Test.publish('arMixConsoleAck',
+          {requestId:id,status:'ACCEPTED',deviceEpoch:'8',
+           graphRevision:'8',rosterRevision:'6',errorCode:''})""",rename_cmd["requestId"])
+        assert await page.locator('[data-channel-id="7"] .arV6Name').inner_text()=="CH 07"
+        accepted_name=json.loads(json.dumps(accepted_link))
+        accepted_name["graph"]["revision"]="8"
+        accepted_name["graph"]["channels"][6]["name"]="Lead Vox"
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",accepted_name)
+        assert await page.locator('[data-channel-id="7"] .arV6Name').inner_text()=="Lead Vox"
+        assert await page.evaluate("""()=>window.__renameFader===
+          document.querySelector('[data-channel-id="7"] .arV6Fader')""")
+        assert await page.locator('[data-op="SET_PRIMARY_OUT"][data-id="7"]').input_value()=="1000"
+        # Missing native action MUST disable grouping, while UI selection
+        # remains possible; no fake native operations on old fixtures.
+        no_group=json.loads(json.dumps(accepted_name))
+        no_group["graph"]["revision"]="9"
+        no_group["graph"]["capabilities"]["supportedOps"]=OPS
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",no_group)
+        await page.get_by_role("button",name="Selected channels and native group actions").click()
+        assert await link.is_disabled() and await route.is_disabled()
 
         # 4 desktop widths and 3 heights: meter/fader zones aligned, MAIN pinned.
         for width in (1024, 1366, 1440, 1680):
