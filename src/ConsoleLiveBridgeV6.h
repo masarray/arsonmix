@@ -251,7 +251,8 @@ public:
             else if(!target.isString() || !decodeDecimal(target,channelId) ||
                     channelId<1 ||
                     (channelId>10 &&
-                     !(operation=="SET_MONITOR_LEVEL"&&channelId<=14)))
+                     !((operation=="SET_MONITOR_LEVEL"||
+                        operation=="SET_AUX_FADER")&&channelId<=14)))
                 error="INVALID_LEGACY_CHANNEL_ID";
             else if(!engine.dryRoutingLabActive() ||
                     engine.dryRoutingLabEpoch()!=ep ||
@@ -332,6 +333,28 @@ public:
                                                armix::mixer::SendTap::postFader,
                                 static_cast<float>(level),static_cast<float>(balance));
                             accepted=error.isEmpty();
+                        }
+                    }
+                } else if(operation=="SET_AUX_FADER") {
+                    // Native AUX return fader AFTER its real VST3 rack.
+                    // 11..14 are explicit legacy M4 auxiliary ordinals;
+                    // never pretend these are stable universal ChannelIds.
+                    if(channelId<11||channelId>14)
+                        error="INVALID_LEGACY_AUX_CHANNEL";
+                    else {
+                        const auto raw=payload.getProperty("value",{});
+                        if(!raw.isInt()&&!raw.isDouble())
+                            error="INVALID_AUX_FADER";
+                        else {
+                            const double gain=static_cast<double>(raw);
+                            if(!std::isfinite(gain)||gain<0.||gain>4.)
+                                error="INVALID_AUX_FADER";
+                            else {
+                                accepted=engine.setDryRoutingLabAuxBusGain(
+                                    static_cast<int>(channelId-11),ep,
+                                    m4Revision,static_cast<float>(gain));
+                                if(!accepted)error="AUX_RETURN_NOT_ADMITTED";
+                            }
                         }
                     }
                 } else if(operation=="SET_MONITOR_LEVEL") {
