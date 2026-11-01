@@ -134,3 +134,17 @@ test('FAT ZIP uses current single-APPLY physical first-sound guide',()=>{
  for(const entry of ['10 input channels + 4 AUX','OUTPUT_ONLY_TONE','CAPTURE_ONLY','COPY FULL REPORT','30 minutes','no separate manual START AUDIO'])
    assert.ok(quick.includes(entry),entry);
 });
+
+test('field FAT collector is packaged, checked against source + ZIP hash, never certifies audio',()=>{
+  const collector=read('scripts/collect_hardware_fat_windows.ps1');
+  for(const part of ['OUTPUT_ONLY_TONE','CAPTURE_ONLY','DRY_THROUGH_0FX','FAT_RUNS.json',
+      'FAT_SUMMARY.json','elapsedSeconds','reportSha256','hardwareCertified=$false',
+      'Get-FileHash','sourceCommit','PSScriptRoot']) assert.ok(collector.includes(part),part);
+  assert.match(packaging,/fatCollectorSha256 = /);
+  assert.match(packaging,/ArSonMix-Hardware-FAT\.ps1/);
+  assert.match(verify,/manifest\.fatCollectorSha256/);
+  assert.match(verify,/ZIP field collector SHA mismatch/);
+  assert.match(verify,/Missing FAT collector inside ZIP/);
+  assert.doesNotMatch(collector,/AudioDeviceManager|setAudioDeviceSetup|startAudio|armOutput|backend\.emitEvent/i);
+  assert.match(workflow,/ParseFile\('scripts\/collect_hardware_fat_windows\.ps1'/);
+});

@@ -14,7 +14,7 @@ async def main():
         await page.locator('.left-rail [data-mix-mode="FX"]').wait_for()
         assert await page.locator('.toolbar-actions .nav [data-view]').count()==3
         assert await page.locator('.toolbar-actions [data-native-action="audioSetup"]').count()==0
-        assert await page.locator('.left-rail [data-mix-mode]').count()==3
+        assert await page.locator('.left-rail [data-mix-mode]').count()==4
         assert await page.locator('.left-rail [data-my-sounds]').count()==1
         assert await page.locator('.left-rail [data-plugin-manager]').count()==1
         assert await page.locator('.left-rail #audioSetupBtn').count()==1
@@ -22,6 +22,7 @@ async def main():
         assert await page.locator('.workbench > .arMixerBankBar').count()==0
         assert await page.locator('.arRailModeSection > .arMixerBankBar').count()==1
         assert await page.locator('#mixer > .strip').count()==11
+        assert await page.locator('#mixer').get_attribute('data-io-mode')=='CONSOLE'
 
         async def geometry():
             return await page.evaluate("""() => {
@@ -104,7 +105,7 @@ async def main():
 
         # Full repaint must recreate only strip internals, not left-rail controls.
         await page.evaluate('renderMixer()')
-        assert await page.locator('.left-rail [data-mix-mode]').count()==3
+        assert await page.locator('.left-rail [data-mix-mode]').count()==4
         assert await page.locator('#mixer > .strip').count()==11
         await assert_linked('RENDER',1024,720)
         assert not errors,errors
@@ -112,4 +113,10 @@ async def main():
         print("PASS: 11 shared fader tracks, 4 viewport sizes, 3 banks, rail navigation and repaint")
 
 if __name__=="__main__":
-    asyncio.run(main())
+    # Execute the v8 native-producer fixture replay through real Chromium
+    # within this existing GUI smoke job; no second workflow/CI matrix.
+    from operator_console_v6_smoke import main as native_console_smoke
+    async def run_gui_suite():
+        await main()
+        await native_console_smoke()
+    asyncio.run(run_gui_suite())

@@ -26,8 +26,8 @@ test('MS3A MAIN physical output patch stages through existing muted native route
   assert.match(gui,/s\.outputPorts/);
   assert.match(gui,/__arMixStageMainOutputs/);
   assert.match(gui,/\.arIOMainOutput/);
-  assert.match(gui,/Only native-ACKed MAIN\/MONITOR pairs can carry sound/);
-  assert.match(gui,/internal stereo FX returns/);
+  assert.match(gui,/Selection is DRAFT until native APPLY\/ACK/);
+  assert.match(gui,/AUX1–4 are internal FX returns/);
   assert.match(monitor,/window\.__arMixStageMainOutputs/);
   assert.match(monitor,/mainOutputs:draftMainOutputs/);
   assert.match(monitor,/routingDryApply/);
@@ -188,7 +188,7 @@ test('PATCH1 operator-first mono and nonadjacent stereo stage into ONE native tr
   assert.match(gui,/window\.__arMixOpenAudioIO=openIO/);
   assert.match(gui,/if\(b\.dataset\.mixPatch==='input'\)openIO\('inputs',channel\)/);
   assert.match(gui,/matrixPorts\(s,'inputs'\)/);
-  assert.match(gui,/SAME NATIVE ROUTING/);
+  assert.match(gui,/ADVANCED · MANUAL INPUT CROSSPOINTS/);
   assert.match(gui,/A separate Windows capture endpoints cannot be silently combined|Separate Windows capture endpoints cannot be silently combined/);
   assert.match(css,/\.arIOQuickPatch\{/);
   assert.match(css,/\.arIOQuickRow\[data-state="draft"\]/);
@@ -574,4 +574,26 @@ test('hardware input CH1/CH2/CH10 selectable on the mixer itself without an IO m
  assert.match(io,/ENABLED capture pin\(s\)/);
  assert.match(css,/\.arChannelQuickInput\{/);
  assert.doesNotMatch(css,/backdrop-filter|filter:blur/);
+});
+
+test('Audio Setup first-sound workflow keeps hardware and routing distinct',()=>{
+  const css=read('web/mixer-io.css');
+  assert.match(gui,/1 · DEVICE/);
+  assert.match(gui,/2 · INPUT → CHANNEL/);
+  assert.match(gui,/3 · MAIN OUT/);
+  assert.match(gui,/focusedInput=0/);
+  assert.match(gui,/row.hidden=i!==focusedInput/);
+  assert.match(gui,/pair\[0\]==='STEREO'&&verified.length<2/);
+  assert.match(gui,/r.left===r.right/);
+  assert.match(gui,/INVALID STEREO · SELECT DISTINCT L\/R/);
+  assert.match(gui,/stage.textContent='FIX AS MONO'/);
+  assert.match(gui,/button.dataset.ioQuickFix==='1'\?'MONO'/);
+  assert.match(gui,/function stageQuickInput\(button\)/);
+  assert.match(gui,/commitSourceInOneGesture\(/);
+  assert.match(gui,/arIOSimpleMain/);
+  assert.match(gui,/__arMixStageMainOutputs/);
+  assert.match(gui,/ADVANCED · HARDWARE PORT MATRIX \(OPTIONAL\)/);
+  assert.match(css,/\.arIOQuickRow\[hidden\]\{display:none!important\}/);
+  assert.match(css,/\.arIOAdvancedMatrix:not\(\[open\]\)/);
+  assert.doesNotMatch(gui,/new AudioContext|AudioWorklet|createPluginInstance|processBlock/);
 });

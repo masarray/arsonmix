@@ -1058,14 +1058,29 @@ public:
     }
     juce::String switchDryRoutingLabSource(int strip,std::uint64_t epoch,
             std::uint64_t revision,const juce::String& mode,
-            int left,int right) noexcept {
+            int left,int right) {
         if(independent_.active()||routeReconfiguring_.load(std::memory_order_acquire)||
            handoff_.busy()||!directFence_.permitted()||
            diagnosticRoute_.load(std::memory_order_acquire)
                !=armix::diagnostics::Route::normal||
            savedDirectSetup_||savedLiveSetup_)
             return "SOURCE SWITCH: live DIRECT device or graph unavailable";
-        return dryRoutingLab_.switchPhysicalSource(strip,epoch,revision,mode,left,right);
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device)return "SOURCE: active DIRECT audio device unavailable";
+        // True first-input SOURCE selection is a control-prepared native graph
+        // transaction, not a browser-side APPLY or alternate callback. A
+        // single verified mono capture pin is a supported source.
+        try {
+            return dryRoutingLab_.repatchPhysicalSource(
+                strip,epoch,revision,mode,left,right,
+                directFence_.permitted(),independent_.active(),
+                graphOwned_->count,formats_,device->getCurrentSampleRate(),
+                juce::jmax(32,device->getCurrentBufferSizeSamples()));
+        } catch(const std::exception& ex) {
+            return "SOURCE: native prepare failed; prior audio kept: " + juce::String(ex.what());
+        } catch(...) {
+            return "SOURCE: native prepare failed; prior audio kept";
+        }
     }
     bool setDryRoutingLabParameter(int strip,std::uint64_t epoch,
             std::uint64_t revision,const juce::String& parameter,

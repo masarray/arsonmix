@@ -251,3 +251,570 @@
 @media(max-width:1366px){
   #app .toolbar .project{max-width:130px;flex-basis:130px}
 }
+
+
+/* ARSONMIX V6 PREMIUM LIVE CONSOLE — low-compositor-cost fixed strip grid.
+   Browser demo and native capability-gated shell share exactly the same DOM. */
+#app #arV6Console{display:none}
+.ar-v6-active #app .left-rail{display:none!important}
+.ar-v6-active #app .workbench{display:flex!important;flex:1 1 0;min-width:0;min-height:0;overflow:hidden}
+.ar-v6-active #app #mixer,
+.ar-v6-active #app #rackWorkspace{display:none!important}
+.ar-v6-active #app .toolbar-actions.arSegmentedToolbar .nav,
+.ar-v6-active #app .arMixerChannelPager{display:none!important}
+#app .arV6Console, #app .arV6Console *{box-sizing:border-box}
+.ar-v6-active #app #arV6Console{
+  display:grid;grid-template-rows:51px auto minmax(0,1fr);
+  width:100%;height:100%;min-width:0;min-height:0;overflow:hidden;
+  background:linear-gradient(180deg,#23313a,#111b23 90px,#0c151c 100%);
+  color:#d3e0e6;font:11px/1.35 "ArSonMix Inter","Segoe UI",sans-serif;
+}
+#app .arV6Top{
+  display:flex;justify-content:space-between;align-items:center;
+  gap:12px;padding:6px 13px;border-bottom:1px solid #435967;
+  background:linear-gradient(180deg,#33444e,#192833);
+  min-width:0;
+}
+#app .arV6Identification{display:flex;align-items:center;gap:11px;min-width:0;overflow:hidden}
+#app .arV6Kicker{font:600 10px/1.2 "Segoe UI",sans-serif;letter-spacing:1.1px;white-space:nowrap;color:#d3e4ec}
+#app .arV6Device{color:#92b3c1;font:10px/1.25 "Segoe UI",sans-serif;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#app .arV6State{padding:4px 7px;border:1px solid #607782;border-radius:3px;white-space:nowrap;color:#e0dbad;font:600 9px/1 "Segoe UI",sans-serif}
+#app .arV6Console[data-armed="true"] .arV6State{color:#a8e6cd;border-color:#396c62}
+#app .arV6Tools{display:flex;align-items:center;gap:6px;flex:none}
+#app .arV6Button,#app .arV6Select{
+  font:500 10px/1.2 "Segoe UI",sans-serif;
+  color:#d5e5eb;background:linear-gradient(180deg,#354956,#1c303b);
+  border:1px solid #526e7a;border-radius:3px;min-height:25px;
+  padding:4px 7px;min-width:0;
+}
+#app .arV6Button{cursor:pointer}
+#app .arV6Button:focus-visible,#app .arV6Select:focus-visible,
+#app .arV6Fader:focus-visible,#app .arV6PanRange:focus-visible{
+  outline:2px solid #62cce8;outline-offset:1px;
+}
+#app .arV6Button:disabled,#app .arV6Select:disabled,
+#app .arV6Fader:disabled,#app .arV6PanRange:disabled{opacity:.48;cursor:not-allowed}
+#app .arV6BankLabel{min-width:72px;text-align:center;color:#abc3cf;font:10px Consolas,monospace;white-space:nowrap}
+#app .arV6SendMode{max-width:126px}
+#app .arV6Message{
+  font:10px/1.3 "Segoe UI",sans-serif;
+  padding:5px 12px;color:#e2caaa;background:#28333a;
+  border-bottom:1px solid #46535a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+#app .arV6Message[hidden]{display:none}
+#app .arV6Body{display:flex;min-width:0;min-height:0;overflow:hidden}
+#app .arV6Lanes{
+  display:flex;flex:1 1 0;min-width:0;min-height:0;
+  overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;
+  scrollbar-color:#486171 #0e1b25;scroll-snap-type:x proximity;
+}
+#app .arV6Main{
+  display:flex;flex:0 0 178px;max-width:178px;min-height:0;
+  border-left:2px solid #6b8993;
+  background:#22313c;z-index:1;
+}
+#app .arV6NoMaster{padding:15px;color:#e2ae97;font-size:11px}
+#app .arV6Strip{
+  --v6-strip-color:#5f9ab1;
+  display:grid;grid-template-rows:37px 235px 52px minmax(105px,1fr) 26px;
+  flex:0 0 167px;width:167px;min-height:0;height:100%;
+  padding:0 7px 5px;border-right:1px solid #354955;
+  background:linear-gradient(90deg,#1b2b35 0%,#263741 14%,#263741 87%,#15252e);
+  scroll-snap-align:start;overflow:hidden;
+}
+#app .arV6Strip.arV6Master{
+  flex:1 0 0;width:100%;
+  background:linear-gradient(90deg,#2a414b,#283b47 88%,#172934);
+}
+#app .arV6StripHead{
+  display:flex;flex-direction:column;justify-content:center;gap:3px;
+  min-width:0;border-bottom:1px solid #496473;
+}
+#app .arV6Role{font:600 9px/1 "Segoe UI",sans-serif;letter-spacing:.9px;color:#88adbc}
+#app .arV6Name{font:600 12px/1.2 "Segoe UI",sans-serif;color:#ecf1f3;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#app .arV6Upper{
+  display:grid;grid-template-rows:31px 31px minmax(83px,1fr) minmax(54px,auto) 31px;
+  min-height:0;overflow:hidden;padding:6px 0 4px;
+  border-bottom:1px solid #3b4d57;
+}
+#app .arV6Field{display:flex;align-items:center;gap:5px;min-width:0}
+#app .arV6FixedField{color:#91afbb;white-space:nowrap;font:9px Consolas,monospace}
+#app .arV6FieldName{flex:0 0 27px;font:600 9px/1 "Segoe UI",sans-serif;color:#8faebc}
+#app .arV6Field .arV6Select{flex:1 1 0;width:100%;max-width:116px;min-height:23px;padding:2px 3px}
+#app .arV6Fx,#app .arV6Sends{
+  min-height:0;overflow-x:hidden;overflow-y:auto;scrollbar-width:thin;
+  display:flex;flex-direction:column;gap:3px;
+  border-top:1px solid #354b57;padding-top:5px;
+}
+#app .arV6SectionTitle{font:600 9px/1.2 "Segoe UI",sans-serif;letter-spacing:.6px;color:#83aaba}
+#app .arV6FxSlot,#app .arV6Send{display:flex;gap:3px;align-items:center;min-width:0}
+#app .arV6FxSlot .arV6Button:first-child{
+  flex:1 1 0;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  background:#172b35;border-color:#476270;color:#c9dfe7;
+}
+#app .arV6FxSlot .arV6Button:last-child{flex:0 0 29px;width:29px;padding:3px 0;color:#9ee0bb}
+#app .arV6FxSlot .arV6Button.isOff{color:#95a1a9}
+#app .arV6AddFx{width:100%;min-height:23px!important;padding:3px!important;text-align:left;color:#90c9d8!important}
+#app .arV6SendName{
+  flex:1 1 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#bfd2dc;
+  font:10px/1.1 "Segoe UI",sans-serif;
+}
+#app .arV6Send .arV6Button{min-height:20px;padding:2px 5px}
+#app .arV6Controls{display:grid;grid-template-columns:minmax(0,1fr) 28px 28px;align-items:center;
+  gap:5px;border-bottom:1px solid #445863}
+#app .arV6Controls .arV6Button{width:28px;min-height:28px;padding:0;font-size:11px}
+#app .arV6Controls .arV6Button[aria-pressed="true"]{border-color:#bba35d;background:#61532b;color:#fff0ac}
+#app .arV6Pan{display:flex;flex-direction:column;gap:2px;min-width:0;color:#86abb9;font-size:9px}
+#app .arV6PanRange{
+  width:100%;min-width:0;height:14px;margin:0;cursor:ew-resize;
+  appearance:none;-webkit-appearance:none;background:transparent;
+}
+/* Browser engines reject an entire selector list if either vendor
+   pseudo-element is unknown. Keep both tracks separate and identical. */
+#app .arV6PanRange::-webkit-slider-runnable-track{
+  height:5px;border:1px solid #47616e;border-radius:1px;
+  background:linear-gradient(to right,#1c303a 0%,#1c303a var(--v6-pan-start,50%),
+    #55c0d5 var(--v6-pan-start,50%),#55c0d5 var(--v6-pan-end,50%),
+    #1c303a var(--v6-pan-end,50%),#1c303a 100%);
+}
+#app .arV6PanRange::-moz-range-track{
+  height:5px;border:1px solid #47616e;border-radius:1px;
+  background:linear-gradient(to right,#1c303a 0%,#1c303a var(--v6-pan-start,50%),
+    #55c0d5 var(--v6-pan-start,50%),#55c0d5 var(--v6-pan-end,50%),
+    #1c303a var(--v6-pan-end,50%),#1c303a 100%);
+}
+#app .arV6PanRange::-webkit-slider-thumb{
+  -webkit-appearance:none;appearance:none;width:10px;height:13px;margin-top:-5px;
+  border:1px solid #101c26;border-radius:2px;background:#abc5d0;
+}
+#app .arV6PanRange::-moz-range-thumb{
+  width:10px;height:13px;border:1px solid #101c26;border-radius:2px;background:#abc5d0;
+}
+#app .arV6Lower{display:flex;gap:16px;align-items:center;justify-content:center;
+  padding:7px 5px 2px;min-height:0;position:relative}
+#app .arV6Meter{
+  display:flex;flex-direction:row;justify-content:center;gap:2px;
+  width:24px;height:100%;max-height:100%;min-height:70px;padding:2px;
+  border:1px solid #15242c;background:#02080d;box-shadow:inset 1px 0 #516673;
+}
+#app .arV6MeterLane{
+  display:flex;flex:1 1 0;flex-direction:column-reverse;
+  justify-content:space-between;gap:1px;min-width:0;min-height:0;
+}
+#app .arV6Meter[data-format="MONO"] .arV6MeterLane[data-side="R"]{display:none}
+#app .arV6Led{display:block;flex:1 1 0;min-height:2px;background:#172b30}
+#app .arV6Led.lit{background:#29b277}
+#app .arV6Led:nth-child(n+15).lit{background:#d8ac44}
+#app .arV6Led:nth-child(n+20).lit{background:#dc6148}
+#app .arV6Fader{
+  writing-mode:vertical-lr;direction:rtl;
+  height:100%;min-height:75px;width:46px;min-width:46px;margin:0;
+  cursor:pointer;appearance:none;-webkit-appearance:none;background:transparent;
+}
+#app .arV6Fader::-webkit-slider-runnable-track{
+  width:11px;min-height:100%;border:1px solid #02080d;border-radius:3px;
+  background:linear-gradient(90deg,#050a0f 0%,#182c36 45%,#061018 100%);
+  box-shadow:inset 1px 0 #58737d,inset -1px 0 #050b10;
+}
+#app .arV6Fader::-webkit-slider-thumb{
+  -webkit-appearance:none;appearance:none;
+  width:44px;height:24px;border:0;border-radius:2px;
+  background:transparent url("assets/fader-silver2.png") center/contain no-repeat;
+}
+#app .arV6Fader::-moz-range-thumb{
+  width:43px;height:23px;border:0;border-radius:2px;
+  background:transparent url("assets/fader-silver2.png") center/contain no-repeat;
+}
+#app .arV6Readout{
+  position:absolute;bottom:3px;right:3px;
+  font:10px Consolas,monospace;color:#b7cbd5;
+}
+#app .arV6StripStatus{
+  display:flex;align-items:center;min-width:0;overflow:hidden;
+  font:600 9px/1.2 "Segoe UI",sans-serif;letter-spacing:.15px;
+  color:#91b6c3;white-space:nowrap;text-overflow:ellipsis;
+}
+#app .arV6Console[data-demo="true"] .arV6StripStatus{color:#d9b98a}
+#app .arV6Console[data-demo="true"] .arV6State{color:#e6bf8e;border-color:#986d46}
+#app #arV6Return{min-height:29px;flex:0 0 auto}
+#app #arV6Return[hidden]{display:none!important}
+@media(max-width:1366px){
+ #app .arV6Kicker{max-width:176px;overflow:hidden;text-overflow:ellipsis}
+ #app .arV6Strip{flex-basis:155px;width:155px;padding-left:6px;padding-right:6px}
+ #app .arV6Main{flex-basis:166px;max-width:166px}
+ #app .arV6Tools{gap:3px}
+}
+@media(max-width:1100px){
+ #app .arV6Top{padding:5px 7px}
+ #app .arV6Kicker{display:none}
+ #app .arV6SendMode{max-width:105px}
+}
+@media(max-height:790px){
+ #app .arV6Strip{grid-template-rows:32px 197px 45px minmax(85px,1fr) 22px}
+ #app .arV6Upper{grid-template-rows:27px 27px minmax(74px,1fr) minmax(43px,auto) 27px;padding-top:3px}
+ #app .arV6Top{min-height:44px}
+ #app .arV6Console .arV6Button{min-height:22px}
+}
+@media(max-height:690px){
+ #app .arV6Strip{grid-template-rows:28px 160px 40px minmax(75px,1fr) 18px}
+ #app .arV6Upper{grid-template-rows:24px 24px minmax(54px,1fr) minmax(34px,auto) 24px}
+ #app .arV6SectionTitle{font-size:8px}
+ #app .arV6FxSlot .arV6Button{min-height:18px}
+ #app .arV6Device{font-size:9px}
+}
+
+#app .arV6RoleSelect{width:78px;max-width:78px}
+#app .arV6FxSlot[draggable="true"]{cursor:grab}
+#app .arV6FxSlot[draggable="true"]:active{cursor:grabbing}
+#app .arV6PluginChoice{width:100%;max-width:100%;min-height:23px}
+
+
+/* ARSONMIX M4 UNIFIED OPERATOR CONSOLE — real WebView2 / JUCE path.
+   Single native-source view: IN -> M/ST -> FX -> AUX SEND -> MAIN -> FADER.
+   The existing mixer-io.js + monitor.js keep exclusive routing authority.
+   Zero CSS filter blur, large glow, transformed hover layers or extra canvas. */
+#app #mixer[data-io-mode="CONSOLE"]{
+  align-items:stretch;
+  background:#0c1720;
+  scroll-snap-type:x proximity;
+}
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip]{
+  flex:0 0 146px;min-width:146px;max-width:146px;
+  display:flex;min-height:0;height:100%;
+  border-right:1px solid #334b58;
+  background:linear-gradient(90deg,#162631,#263741 8%,#22313c 88%,#152630);
+  box-shadow:inset 1px 0 #718a9938;
+  scroll-snap-align:start;
+}
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip].selected{
+  background:linear-gradient(90deg,#233e4b,#29424f 8%,#233845 88%,#152f3b);
+  box-shadow:inset 2px 0 #52d4ee;
+}
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip] > .ch-id{
+  order:0;height:32px;min-height:32px;flex:0 0 32px;
+  font:600 13px/1 "Segoe UI",sans-serif;
+  justify-content:space-between;padding:0 9px;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--ch) 34%,#2d404c),#172a35);
+  border-top:2px solid var(--ch);border-bottom:1px solid #3d5662;
+  text-shadow:none;
+}
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip] .arChannelQuickInput{
+  display:none!important;
+}
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip] > .arChannelBank{
+  order:1;display:flex!important;flex-direction:column;
+  flex:0 0 148px;height:148px;min-height:148px;
+  padding:5px 7px 4px;gap:4px;
+  background:linear-gradient(#142631,#152934);
+  border-bottom:1px solid #3b5460;overflow:hidden;
+}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelBank .arRouteBank{
+  display:grid!important;flex:0 0 79px;min-height:79px;
+  grid-template-columns:26px minmax(0,1fr);
+  grid-template-rows:24px 24px 24px;
+  gap:2px 4px;align-items:center;min-width:0;
+}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelBank .arRouteBank > .arBankTitle{
+  display:block;min-width:0;margin:0;line-height:1.1;
+  white-space:nowrap;overflow:hidden;
+  font:600 9px/1 "Segoe UI",sans-serif;color:#84b2c4;
+}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelBank .arRouteBank > .arBankTitle:first-child{
+  grid-column:1;grid-row:1;font-size:0;
+}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelBank .arRouteBank > .arBankTitle:first-child::before{
+  content:"IN";font:600 9px "Segoe UI",sans-serif;
+}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelBank .arRouteBank > .arBankTitle:nth-of-type(2){
+  grid-column:1;grid-row:2;font-size:0;
+}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelBank .arRouteBank > .arBankTitle:nth-of-type(2)::before{
+  content:"OUT";font:600 9px "Segoe UI",sans-serif;
+}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelBank .arBankSource{
+  grid-column:2;grid-row:1;
+  height:23px;min-height:23px;width:100%;
+  padding:2px 4px;font:10px/1.1 "Segoe UI",sans-serif;
+  border:1px solid #4e7282;border-radius:2px;
+  background:#091d28;color:#d0e6ef;
+}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelBank .arBankOutput{
+  grid-column:2;grid-row:2;
+  display:block;height:23px;min-height:23px;width:100%;
+  padding:3px 5px;text-align:left;white-space:nowrap;text-overflow:ellipsis;
+  border:1px solid #3c6271;border-radius:2px;
+  background:#142d39;color:#afd3df;
+  font:10px/1.1 "Segoe UI",sans-serif;cursor:pointer;
+}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelBank .arBankOutput:hover{
+  background:#1c3b4b;
+}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelBank .arBankFormatRow{
+  grid-column:1/-1;grid-row:3;
+  height:24px;min-height:24px;display:flex;align-items:center;gap:5px;
+  justify-content:space-between;overflow:hidden;
+}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelBank .arBankChannelFormat{
+  flex:0 0 60px;width:60px;max-width:60px;min-width:0;
+  min-height:21px;height:21px;padding:1px 3px;
+  background:#0c222e;border:1px solid #436777;color:#bcdbe5;
+  font:9px "Segoe UI",sans-serif;
+}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelBank .arBankStage{
+  display:block;min-width:0;flex:1 1 auto;
+  font:8px/1.1 "Segoe UI",sans-serif;white-space:nowrap;
+  text-align:right;overflow:hidden;text-overflow:ellipsis;
+}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelBank .arRouteBank > .arBankPatch{
+  display:none!important;
+}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelBank .arSendBank{
+  display:flex!important;flex:1 1 0;min-height:0;
+  flex-direction:column;gap:3px;overflow:hidden;
+  border-top:1px solid #355361;padding-top:4px;
+}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelBank .arSendBank > .arBankTitle{
+  flex:0 0 10px;display:block;font:600 9px/1 "Segoe UI",sans-serif;
+  color:#8ebccd;
+}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelBank .arSendSummary{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+  grid-template-rows:repeat(2,20px);gap:2px;min-width:0;min-height:42px;
+}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelBank .arSendChip{
+  display:flex;align-items:center;gap:3px;min-width:0;
+  width:100%;height:20px;min-height:20px;
+  padding:2px 3px;border:1px solid #426474;
+  background:#152c37;border-radius:2px;font:9px/1 "Segoe UI",sans-serif;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelBank .arSendChip .arSendDest{
+  font:600 8px/1 "Segoe UI",sans-serif;min-width:0;flex:none;
+}
+#app #mixer[data-io-mode="CONSOLE"] .arChannelBank .arSendBank > .arBankPatch{
+  display:none!important;
+}
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip] > .rack{
+  order:2;display:flex!important;flex:0 0 112px;height:112px;min-height:112px;
+  flex-direction:column;gap:3px;padding:6px 5px 4px;
+  overflow-x:hidden;overflow-y:auto;scrollbar-width:thin;
+  scrollbar-color:#456b7b #11242e;
+  border-bottom:1px solid #385460;background:#0f202b;
+}
+#app #mixer[data-io-mode="CONSOLE"] .rack .insert-slot{
+  height:23px;min-height:23px;flex:0 0 23px;
+}
+#app #mixer[data-io-mode="CONSOLE"] .rack .insert{
+  height:23px;min-height:23px;
+  font:10px/1 "Segoe UI",sans-serif;
+  border-color:#304b5b;box-shadow:none;
+  background:linear-gradient(#263c49,#122833);
+}
+#app #mixer[data-io-mode="CONSOLE"] .rack .insert.empty{
+  border:1px dashed #315365;color:#70bdd1;
+}
+#app #mixer[data-io-mode="CONSOLE"] .rack .fx-power{
+  width:23px;min-width:23px;height:23px;min-height:23px;
+  box-shadow:none;text-shadow:none;transition:none;
+}
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip] > .strip-controls{
+  order:3;flex:0 0 78px;height:78px;min-height:78px;
+  padding:0;border-bottom:1px solid #324e5a;
+  background:#223440;
+}
+#app #mixer[data-io-mode="CONSOLE"] .strip-controls > .trim-row,
+#app #mixer[data-io-mode="CONSOLE"] .strip-controls > .knob{
+  display:none!important;
+}
+#app #mixer[data-io-mode="CONSOLE"] .strip-controls .pan-control{
+  height:37px;min-height:37px;flex:0 0 37px;
+}
+#app #mixer[data-io-mode="CONSOLE"] .strip-controls .utility-row{
+  height:31px;min-height:31px;flex:0 0 31px;
+  margin:0!important;padding:2px 6px;
+}
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip] > .channel-actions{
+  order:4;height:35px;flex:0 0 35px;min-height:35px;
+  padding:3px 6px;gap:4px;
+}
+#app #mixer[data-io-mode="CONSOLE"] .channel-actions > button{
+  height:27px!important;min-height:27px!important;
+}
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip] > .db-display{
+  order:5;height:24px;flex:0 0 24px;
+  font:600 11px/1 Consolas,monospace;text-shadow:none;
+  color:#75cce4;background:#152934;
+}
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip] > .fader-zone{
+  order:6;flex:1 1 auto;min-height:100px;overflow:hidden;
+}
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip] > .strip-name{
+  order:7;height:44px;flex:0 0 44px;gap:3px;
+  font:600 11px/1 "Segoe UI",sans-serif;text-shadow:none;
+  background:linear-gradient(110deg,color-mix(in srgb,var(--ch) 45%,#101d26),#142936);
+}
+#app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip] > .strip-name .track-icon{
+  font-size:13px;line-height:14px;
+}
+#app #mixer[data-io-mode="CONSOLE"] > #masterLeft{
+  flex:0 0 155px;min-width:155px;max-width:155px;
+  height:100%;position:sticky;right:0;z-index:3;
+  background:#293845;border-left:2px solid #a17f8b;
+  box-shadow:-5px 0 12px #06131a;
+}
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft .master-ch-id{
+  height:32px;flex:0 0 32px;min-height:32px;
+  font:600 12px "Segoe UI",sans-serif;
+}
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft .arMainOutSummary{
+  height:80px;min-height:80px;flex:0 0 80px;
+  display:flex;flex-direction:column;gap:8px;align-items:stretch;
+  padding:10px 8px;background:#19303c;
+  border-bottom:1px solid #3e6171;
+}
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft .arMainOutHeading{
+  font:600 9px/1 "Segoe UI",sans-serif;color:#a1c5d1;
+}
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft .arMainOutAction{
+  height:31px;min-height:31px;max-width:100%;overflow:hidden;
+  white-space:nowrap;text-overflow:ellipsis;
+  padding:3px 5px;border-radius:3px;border:1px solid #567583;
+  background:#203d4b;color:#e3ecf1;
+  font:10px/1.2 "Segoe UI",sans-serif;text-align:left;
+}
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft .arMainOutAction:disabled{opacity:.48}
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft .master-fx-rack{
+  flex:0 0 180px;height:180px;min-height:180px;
+  background:#152832;
+}
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft .master-fx-slot{
+  height:23px;min-height:23px;flex:0 0 23px;
+}
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft .master-controls-zone{
+  flex:0 0 78px;height:78px;min-height:78px;
+}
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft .master-analysis{
+  height:33px;min-height:33px;flex:0 0 33px;margin:2px 0;
+  overflow:hidden;padding:2px 5px;
+}
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft .master-analysis .master-info-kicker{display:none}
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft .master-analysis .master-info-row{
+  margin:0;font-size:8px;line-height:12px;
+}
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft .master-pan-wrap{
+  height:40px;min-height:40px;flex:0 0 40px;
+}
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft .master-actions{
+  height:35px;min-height:35px;flex:0 0 35px;
+}
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft .master-db-display{
+  height:24px;min-height:24px;flex:0 0 24px;
+}
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft .master-fader-zone{
+  flex:1 1 0;min-height:100px;
+}
+#app #mixer[data-io-mode="CONSOLE"] #masterLeft .master-strip-name{
+  height:44px;min-height:44px;flex:0 0 44px;
+}
+#app .arRailModeSection .arMixerBankBar{
+  height:auto;min-height:0;padding:5px;display:flex;flex-direction:column;
+  gap:5px;background:#14242d;
+}
+#app .arRailModeSection .arMixerBankModes{
+  display:grid;grid-template-columns:1fr repeat(3,minmax(0,25px));
+  width:100%;gap:2px;
+}
+#app .arRailModeSection .arMixerBankModes [data-mix-mode="CONSOLE"]{
+  min-width:0;width:100%;background:#25495b;color:#d7eff7;
+  border-color:#547c8c;font-size:9px;padding:0 3px;letter-spacing:0;
+}
+#app .arRailModeSection .arMixerBankModes [data-mix-mode="CONSOLE"].active{
+  background:#3b8695;color:#fff;border-color:#68b1bb;
+}
+#app .arRailModeSection .arMixerBankModes [data-mix-mode]:not([data-mix-mode="CONSOLE"]){
+  width:25px;min-width:25px;padding:0;
+  font:600 8px "Segoe UI",sans-serif;letter-spacing:-.15px;
+}
+#app .arRailModeSection .arMixerBankBar .arMixApply{display:none}
+#app .arRailModeSection .arMixerBankBar .arMixIoOpen{
+  width:100%;height:30px;flex:none;
+}
+#app .arChannelSignalFlow{height:29px;min-height:29px;flex:0 0 29px}
+#app .arChannelSignalFlow [data-focus-step]{
+  font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+/* Four-layer engineering modes are retained for exact regression and
+   advanced work; the one-console mode is the M4 first-sound default. */
+@media(max-height:770px){
+ #app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip] > .arChannelBank{
+   flex-basis:132px;height:132px;min-height:132px;padding-top:3px;
+ }
+ #app #mixer[data-io-mode="CONSOLE"] .arChannelBank .arRouteBank{
+   flex-basis:70px;min-height:70px;grid-template-rows:21px 21px 22px;
+ }
+ #app #mixer[data-io-mode="CONSOLE"] .arChannelBank .arSendSummary{
+   grid-template-rows:repeat(2,18px);min-height:38px;
+ }
+ #app #mixer[data-io-mode="CONSOLE"] .arChannelBank .arSendChip{
+   height:18px;min-height:18px;
+ }
+ #app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip] > .rack{
+   flex-basis:96px;height:96px;min-height:96px;
+ }
+ #app #mixer[data-io-mode="CONSOLE"] #masterLeft .arMainOutSummary{
+   flex-basis:73px;height:73px;min-height:73px;
+ }
+ #app #mixer[data-io-mode="CONSOLE"] #masterLeft .master-fx-rack{
+   flex-basis:155px;height:155px;min-height:155px;
+ }
+}
+@media(max-width:1250px){
+ #app #mixer[data-io-mode="CONSOLE"] > .strip[data-strip]{
+   flex-basis:136px;min-width:136px;max-width:136px;
+ }
+ #app #mixer[data-io-mode="CONSOLE"] > #masterLeft{
+   flex-basis:148px;min-width:148px;max-width:148px;
+ }
+}
+
+
+/* Main dock geometry is measured by a ResizeObserver on the single mixer
+   viewport. Unlike position:sticky on the final flex child, this is always
+   visible at scrollLeft=0 and after any bank navigation. */
+#app #mixer[data-io-mode="CONSOLE"]{
+  padding-right:155px;
+  scroll-padding-right:155px;
+}
+#app #mixer[data-io-mode="CONSOLE"] > #masterLeft{
+  position:fixed!important;
+  right:auto!important;
+  left:var(--ar-main-dock-left,calc(100vw - 161px))!important;
+  top:var(--ar-main-dock-top,92px)!important;
+  height:var(--ar-main-dock-height,calc(100dvh - 122px))!important;
+  z-index:7;
+}
+@media(max-width:1250px){
+ #app #mixer[data-io-mode="CONSOLE"]{padding-right:148px;scroll-padding-right:148px}
+}
+
+/* Engineering bank parity: the extra accepted MAIN output line belongs to
+   unified CONSOLE only, so legacy FX/ROUTE/SENDS fader rows remain aligned. */
+#app #mixer:not([data-io-mode="CONSOLE"]) #masterLeft .arMainOutSummary{display:none!important}
+
+/* v5.2 operator-approved narrow console: UI-only banking, never a DSP switch. */
+#app .arV6Console[data-narrow="true"] .arV6Strip{
+  flex:0 0 127px;width:127px;padding-left:4px;padding-right:4px;
+}
+#app .arV6Console[data-narrow="true"] .arV6Main{
+  flex:0 0 143px;max-width:143px;
+}
+#app .arV6Console[data-narrow="true"] .arV6Strip.arV6Master{width:100%;flex:1 0 0}
+#app .arV6Console[data-narrow="true"] .arV6Controls{
+  grid-template-columns:minmax(0,1fr) 25px 25px;gap:2px;
+}
+#app .arV6Console[data-narrow="true"] .arV6Controls .arV6Button{width:25px}
+@media(max-width:1100px){
+ #app .arV6Tools{gap:2px}
+ #app .arV6Console .arV6Button,#app .arV6Console .arV6Select{padding-left:3px;padding-right:3px}
+}

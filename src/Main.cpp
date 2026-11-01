@@ -5,6 +5,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <BinaryData.h>
 #include "LiveAudioEngine.h"
+#include "ConsoleLiveBridgeV6.h"
 #include "ArSonMixStartupSplash.h"
 #include "VstOrbitController.h"
 #include "../engine/core/OrbitDistanceMapping.h"
@@ -219,6 +220,25 @@ public:
               })
               .withEventListener ("arMixParameter", [this] (juce::var args) { onParameter (args); })
               .withEventListener ("arMixAction", [this] (juce::var args) { onAction (args); })
+              .withEventListener ("arMixConsoleSubscribe", [this] (juce::var args) {
+                  // G0: a real M4 device/callback snapshot, never synthetic
+                  // ChannelId LIVE status before the M5 production cutover.
+                  if (args.getProperty("protocol","").toString()!="v6") return;
+                  consoleSubscribed_=true;
+                  if (browser_.loaded) emitNativeConsoleSnapshot(engine_.status());
+              })
+              .withEventListener ("arMixConsoleIntent", [this] (juce::var args) {
+                  // No native v6 mutation can be accepted while the installed
+                  // audio callback still owns fixed M4 lanes. Rejection
+                  // retains the existing VST3/Orbit/Show/MAIN output.
+                  auto status=engine_.status();
+                  const auto snap=armix::console::LiveConsoleBridgeV6::snapshot(status);
+                  const auto ack=consoleBridge_.rejectUnsupportedIntent(args,snap);
+                  if (browser_.loaded) {
+                      browser_.emitEventIfBrowserIsVisible("arMixConsoleAck",ack);
+                      emitNativeConsoleSnapshot(status);
+                  }
+              })
               .withResourceProvider (assetFor))
     {
         settingsDirectory().createDirectory();
@@ -262,6 +282,8 @@ public:
 
 private:
     LiveAudioEngine engine_;
+    armix::console::LiveConsoleBridgeV6 consoleBridge_;
+    bool consoleSubscribed_=false;
     VstOrbitController orbit_;
     juce::int64 fxGraphRevision_ = 1; // control-thread monotonic graph generation
     PluginCatalog catalog_;
@@ -498,6 +520,13 @@ private:
         o->setProperty ("error", error);
         if (browser_.loaded)
             browser_.emitEventIfBrowserIsVisible ("arMixNotice", juce::var (o.release()));
+    }
+
+    void emitNativeConsoleSnapshot(const juce::var& engineStatus)
+    {
+        if(browser_.loaded && consoleSubscribed_)
+            browser_.emitEventIfBrowserIsVisible("arMixConsoleSnapshot",
+                armix::console::LiveConsoleBridgeV6::snapshot(engineStatus));
     }
 
     void emitCatalog()
@@ -2566,6 +2595,10 @@ private:
         if (startupError_.isNotEmpty() && !bool (state.getProperty ("connected", false)))
             state.getDynamicObject()->setProperty ("error", startupError_);
         browser_.emitEventIfBrowserIsVisible ("arMixStatus", state);
+        // Four status readbacks/second on the control thread. No JUCE
+        // callback mutation, graph pointer lease or extra signal engine.
+        if(consoleSubscribed_ && timerTicks_%3==0)
+            emitNativeConsoleSnapshot(state);
     }
 };
 

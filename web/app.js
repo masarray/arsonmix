@@ -11,7 +11,7 @@ const raw=[
  ['Backing','♫',['EQ','Reverb'],-3.6,-25],
  ['Guitar','♬',['EQ','Compressor','Delay'],-7.9,30],
  ['Keyboard','▥',['EQ','Reverb'],-14.2,0],
- ['FX Return','◎',['Reverb'],-5.1,0]
+ ['Input 10','♩',['Reverb'],-5.1,0]
 ];
 const channels=raw.map((a,i)=>({id:i+1,name:a[0],icon:a[1],color:colors[i],inserts:[...a[2]],fader:a[3],pan:a[4],trim:0,mute:false,solo:false,pre:false,hpf:i%4!==0,stereo:i>=6}));
 let currentChannel=0, masterSelected=false, view='MIX', sceneIdx=0, timer=0;
