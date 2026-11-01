@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'web/**'
+      - 'integration/console-v6/**'
       - 'site/**'
       - 'AR-MIX-Live-FX-Host-Standalone-v0.3.html'
       - 'scripts/build_pages.py'
@@ -15,6 +16,7 @@ on:
   pull_request:
     paths:
       - 'web/**'
+      - 'integration/console-v6/**'
       - 'site/**'
       - 'AR-MIX-Live-FX-Host-Standalone-v0.3.html'
       - 'scripts/build_pages.py'
@@ -48,6 +50,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Cheap canonical Console v6 puzzle socket gate
+        run: node scripts/check_console_puzzle.mjs
+      - name: Stop incomplete integrated product promotion before browser setup
+        if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-') }}
+        run: node scripts/check_console_puzzle.mjs --release
       - name: Verify CSS ownership build and offline/WebView2 parity
         run: python scripts/build_ui_css.py --check
       - name: Verify immutable approved Brushed Metal CSS and non-destructive preview
