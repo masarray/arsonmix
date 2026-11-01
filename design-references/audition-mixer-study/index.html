@@ -418,7 +418,7 @@ function updateSofTargets(){
  if(el.innerHTML!==html)el.innerHTML=html;el.value=sofTarget;
 }
 function getSofIndex(t){return t.sendSlots.findIndex((slot,i)=>(i===t.activeSend?t.send:slot.send)===sofTarget);}
-function getSofLevel(t){const i=getSofIndex(t);return i<0?-60:i===t.activeSend?t.sendLevel:t.sendSlots[i].sendLevel;}
+function getSofLevel(t){const i=getSofIndex(t);if(i<0)return -60;const entry=i===t.activeSend?{sendOn:t.sendOn,sendLevel:t.sendLevel}:t.sendSlots[i];return entry.sendOn?entry.sendLevel:-60;}
 function setSofLevel(t,newLevel){
  if(t.kind!=='audio'||!sofTarget)return false;
  if(wouldFeedback(t,sofTarget)){say('Send on Faders rejected: feedback loop');return false;}
