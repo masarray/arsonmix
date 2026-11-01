@@ -37,8 +37,9 @@ def snapshot(revision=3, epoch=7, new_channel=False):
         channels.append(channel("native-64bit:18446744073709551610", "CH 11"))
     channels.append(channel("main:1", "MAIN", "MAIN"))
     return {
+        "schemaVersion": 6, "productionCallbackLive": True,
         "device": {
-            "epoch": epoch, "backend": "ASIO VERIFIED", "sampleRate": 48000,
+            "epoch": str(epoch), "backend": "ASIO VERIFIED", "sampleRate": 48000,
             "bufferFrames": 128, "outputArmed": True,
             "inputEndpoints": [
                 {"id": "IN-1", "label": "Interface IN1", "active": True},
@@ -46,12 +47,14 @@ def snapshot(revision=3, epoch=7, new_channel=False):
             "outputEndpoints": [],
         },
         "graph": {
-            "revision": revision, "channels": channels,
+            "revision": str(revision), "rosterRevision": str(revision),
+            "channels": channels,
             "destinations": [
                 {"id": "MAIN", "name": "MAIN"},
                 {"id": "BUS-FX", "name": "FX Return", "acceptsSend": True},
                 {"id": "GROUP-VOX", "name": "Vocal Group"}],
             "capabilities": {
+                "callbackOwnsChannelIds": True,
                 "dynamicChannels": True, "groups": True, "fxReturns": True,
                 "monitor": True, "sendsOnFaders": True, "supportedOps": OPS,
             },
@@ -83,6 +86,22 @@ async def main():
         assert await page.locator("#mixer > .strip").count() == 11
         assert await page.evaluate(
             "()=>window.__v6Test.sent.some(x=>x.event==='arMixConsoleSubscribe')")
+        # Integration's implemented flat graph readback is NOT a live JUCE
+        # callback. Accept identity but never replace the legacy console.
+        flat = {
+            "schemaVersion": 6, "deviceEpoch": "6", "graphRevision": "2",
+            "rosterRevision": "2", "productionCallbackLive": False,
+            "capabilities": {
+                "callbackOwnsChannelIds": False, "addChannel": False,
+                "group": False, "fxReturn": False, "monitor": False},
+            "channels": [{
+                "id": "7", "role": "input", "processingFormat": "mono",
+                "primaryOutId": "13", "sourcePinVerified": False,
+                "actualPcmPresent": False, "sends": []}]
+        }
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",flat)
+        assert await page.locator("#arV6Console").is_hidden()
+        assert await page.locator("#mixer > .strip").count() == 11
         first = snapshot()
         await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)", first)
         await page.locator("#arV6Console").wait_for(state="visible")
@@ -97,8 +116,9 @@ async def main():
         await page.locator('[data-op="SET_SOURCE"][data-id="ch-07"]').select_option("IN-1")
         sent = await page.evaluate("""() => window.__v6Test.sent.filter(
             x => x.event === 'arMixConsoleIntent').at(-1).payload""")
-        assert sent["op"] == "SET_SOURCE" and sent["targetChannelId"] == "ch-07"
-        assert sent["baseRevision"] == 3 and sent["deviceEpoch"] == 7
+        assert sent["operation"] == "SET_SOURCE" and sent["targetChannelId"] == "ch-07"
+        assert sent["baseGraphRevision"] == "3" and sent["deviceEpoch"] == "7"
+        assert sent["baseRosterRevision"] == "3" and sent["requestId"].isdigit()
         assert sent["payload"] == {"portId": "IN-1"}
         assert await page.locator('[data-op="SET_SOURCE"][data-id="ch-07"]').input_value() == ""
         assert "PENDING" in await page.locator(".arV6Message").inner_text()
@@ -133,7 +153,7 @@ async def main():
         await page.locator('[data-op="SET_PRIMARY_OUT"][data-id="ch-07"]').select_option("GROUP-VOX")
         op = await page.evaluate("""() => window.__v6Test.sent.filter(
             x=>x.event==='arMixConsoleIntent').at(-1).payload""")
-        assert op["op"] == "SET_PRIMARY_OUT" and op["payload"] == {"destinationId": "GROUP-VOX"}
+        assert op["operation"] == "SET_PRIMARY_OUT" and op["payload"] == {"destinationId": "GROUP-VOX"}
         await page.evaluate("""id=>window.__v6Test.publish(
           'arMixConsoleAck',{requestId:id,status:'REJECTED',errorCode:'LOOP'})""", op["requestId"])
         assert await page.locator('[data-op="SET_PRIMARY_OUT"][data-id="ch-07"]').input_value() == "MAIN"
@@ -145,7 +165,7 @@ async def main():
             .map(el=>({enabled:!el.disabled,html:el.outerHTML.slice(0,250)})),
           focus:document.activeElement?.outerHTML?.slice(0,250)
         })""")
-        assert editor_debug["intents"][-1]["payload"]["op"] == "OPEN_INSERT_EDITOR", editor_debug
+        assert editor_debug["intents"][-1]["payload"]["operation"] == "OPEN_INSERT_EDITOR", editor_debug
         current = await page.evaluate("""() => window.__v6Test.sent.filter(
           x=>x.event==='arMixConsoleIntent').at(-1).payload.requestId""")
         await page.evaluate("""id=>window.__v6Test.publish(
@@ -154,7 +174,7 @@ async def main():
         await fx_rows.first.drag_to(fx_rows.nth(1))
         move = await page.evaluate("""() => window.__v6Test.sent.filter(
           x=>x.event==='arMixConsoleIntent').at(-1).payload""")
-        assert move["op"] == "MOVE_INSERT"
+        assert move["operation"] == "MOVE_INSERT"
         assert move["payload"] == {"insertId": "fx-07", "beforeInsertId": "fx-07b"}
         await page.evaluate("""id=>window.__v6Test.publish(
           'arMixConsoleAck',{requestId:id,status:'REJECTED',errorCode:'ORDER_UNSAFE'})""", move["requestId"])
@@ -170,7 +190,7 @@ async def main():
             "(el)=>{el.value='-12';el.dispatchEvent(new Event('change',{bubbles:true}))}")
         send = await page.evaluate("""() => window.__v6Test.sent.filter(
           x=>x.event==='arMixConsoleIntent').at(-1).payload""")
-        assert send["op"] == "SET_SEND_LEVEL" and send["payload"]["sendId"] == "send-07"
+        assert send["operation"] == "SET_SEND_LEVEL" and send["payload"]["sendId"] == "send-07"
         await page.locator(".arV6SendMode").select_option("")
         assert await page.locator('[data-op="SET_FADER"][data-id="ch-07"]').input_value() == "-3"
         await page.evaluate("""() => window.__v6FaderReference =
@@ -190,7 +210,7 @@ async def main():
         await page.locator('[data-op="CREATE_CHANNEL"]').click()
         create = await page.evaluate("""() => window.__v6Test.sent.filter(
           x=>x.event==='arMixConsoleIntent').at(-1).payload""")
-        assert create["op"] == "CREATE_CHANNEL" and create["targetChannelId"] is None
+        assert create["operation"] == "CREATE_CHANNEL" and create["targetChannelId"] is None
         await page.evaluate("""id=>window.__v6Test.publish(
           'arMixConsoleAck',{requestId:id,status:'ACCEPTED',newRevision:5})""", create["requestId"])
         assert await page.locator("#arV6Lanes .arV6Strip").count() == 10
