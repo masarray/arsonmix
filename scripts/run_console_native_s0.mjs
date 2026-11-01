@@ -39,20 +39,27 @@ export function verifyNativeS0(events){
   requestId:cmd.requestId};
 }
 export function assertExplicitS0Exporter(generator,execute=execFileSync){
- req(typeof generator==='string'&&generator.length>0,'native exporter path required');
- let rejected=false;
+ req(typeof generator==='string'&&generator.length>0,
+   'native JUCE exporter executable path required');
+ // A crash (0xC0000409), missing binary, access error, or unrelated failing
+ // CTest is NOT proof that CLI argument parsing deliberately rejected a
+ // bogus flag. A clear stderr rejection marker is mandatory.
+ let deliberate=false;
  try{
   execute(resolve(generator),['--arsonmix-s0-deliberately-unsupported-option'],{
    encoding:null,maxBuffer:1024*1024,timeout:15000,windowsHide:true,
    stdio:['ignore','pipe','pipe']
   });
  }catch(e){
-  // A nonzero process exit is the only supported response to invalid argv.
-  if(e&&((typeof e.status==='number'&&e.status!==0)||
-      e.code==='ENOENT'||e.code==='EACCES'))rejected=true;
-  else throw e; // timeout/signal/crash is NOT evidence of proper argument parsing
+  const diagnostic=Buffer.isBuffer(e?.stderr)?
+    e.stderr.toString('utf8'):typeof e?.stderr==='string'?e.stderr:'';
+  deliberate=typeof e?.status==='number'&&e.status!==0&&
+    !e.signal&&diagnostic.includes('ARSONMIX_S0_UNSUPPORTED_ARGUMENT');
+  if(!deliberate)throw new Error(
+    'S0 BLOCKED: unknown-flag probe crashed, failed to execute, or lacked explicit rejection marker');
  }
- req(rejected,'C++ binary ignored unknown flag; portable fixture is NOT an actual JUCE exporter');
+ req(deliberate,
+   'C++ binary ignored unknown flag; portable fixture is NOT an actual JUCE exporter');
 }
 export function generateS0({generator,output,sourceSha}){
  req(/^[a-f0-9]{40}$/.test(sourceSha||''),'full source SHA required');
