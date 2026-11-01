@@ -1830,7 +1830,7 @@ const channelOptions=(t,type)=>{
      ...tracks.filter(x=>x.kind==='audio'&&x.id!==t.id).flatMap(x=>
       [splitSourceLabel(x.id,'PRE'),splitSourceLabel(x.id,'POST')])]
   :['None'];
- if(type==='output')return t.kind==='master'?['Default Output','Output 1 + 2','Speakers (Realtek)','Virtual Cable']:[master.name,...tracks.filter(x=>x.kind==='bus'&&x.id!==t.id).map(x=>x.name),'Output 1 + 2'];
+ if(type==='output')return t.kind==='master'?['Default Output','Output 1 + 2','Speakers (Realtek)','Virtual Cable']:[...(t.kind==='audio'?['SOURCE ONLY (No Main)']:[]),master.name,...tracks.filter(x=>x.kind==='bus'&&x.id!==t.id).map(x=>x.name),'Output 1 + 2'];
  return ['None',...tracks.filter(x=>(x.kind==='bus'||x.kind==='fx')&&x.id!==t.id).map(x=>x.name)];
 };
 function sectionFx(t){
@@ -2132,7 +2132,7 @@ function handleField(event){
  else if(field==='activeSend'){const slot=Number(el.value.slice(1))-1;if(slot<0||slot>=16)return;openSendSlot(t,slot);refreshStrip(t);say(t.name+' · selected Send '+(slot+1));return;}
  else if(field==='output'){
   if(wouldFeedback(t,el.value)){say('Routing rejected: this output would create a bus feedback loop.');refreshStrip(t);return;}
-  t.output=el.value;say(t.name+' output → '+el.value);
+  t.output=el.value;say(el.value==='SOURCE ONLY (No Main)'?t.name+' is SOURCE ONLY (no direct Main) · demo, no PCM':t.name+' output → '+el.value);
  }
  else if(field==='input'){
   const split=parseSplitSource(el.value);
