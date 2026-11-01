@@ -1,5 +1,5 @@
-# ArSonMix ARD v5.1 — Universal Realtime Mixer Graph + Operator-First Console
-Date: 2026-11-01 | Updated: 2026-11-01, mandatory puzzle-socket ABI amendment | Status: **BINDING ARCHITECTURE TARGET (not a claim of implemented online graph)** | Companion: [PRD v5](PRD_ARSONMIX_OPERATOR_FIRST_LIVE_MIXER_V5_20261101.md). Supersedes workflow/implementation ordering in ARD v4.1 while preserving safety, signal-processing and accepted GUI baseline.
+# ArSonMix ARD v5.2 — Universal Realtime Mixer Graph + Operator-First Console
+Date: 2026-11-01 | Updated: 2026-11-01, user-approved PR #278 one-console design lock (v5.2) | Status: **BINDING ARCHITECTURE TARGET (not a claim of implemented online graph)** | Companion: [PRD v5.2](PRD_ARSONMIX_OPERATOR_FIRST_LIVE_MIXER_V5_20261101.md). Supersedes workflow/implementation ordering in ARD v4.1 while preserving safety, signal-processing and accepted GUI baseline.
 
 ## A. Source-grounded audit and non-negotiable direction
 
@@ -150,7 +150,7 @@ Prove safe online graph handoff for add/reorder VST, Group/FX send, and format c
 - Typed graph/compiler: engine/core/DynamicChannelRoster.h, DynamicPreparedMixerBlock.h, DynamicNativeSessionPublisher.h, LiveChannelFxGraph.h, PreparedMixerBlock.h, NativeDryRouteCommand.h; migrate, not duplicate.
 - Native Show and FX leases: src/NativeShowSchema.h and current native plugin registry/editor code; replace CH1-specific ownership incrementally.
 - GUI: web/app.js, web/mixer-io.js, web/monitor.js, web/bridge.js, web/mixer-layout.js; source-owned web/styles-src, scripts/build_ui_css.py, offline standalone.
-- Engineering baseline: [ADR R5](ADR_R5_NATIVE_MONO_STEREO_CHANNEL_BUS_ROUTING_20261030.md), [PRD v5](PRD_ARSONMIX_OPERATOR_FIRST_LIVE_MIXER_V5_20261101.md), [current code ledger](RECONCILED_PROGRESS_ARSONMIX_20261101.md), [issue #192](https://github.com/masarray/arsonmix/issues/192), [hardware #15](https://github.com/masarray/arsonmix/issues/15).
+- Engineering baseline: [ADR R5](ADR_R5_NATIVE_MONO_STEREO_CHANNEL_BUS_ROUTING_20261030.md), [PRD v5.2](PRD_ARSONMIX_OPERATOR_FIRST_LIVE_MIXER_V5_20261101.md), [current code ledger](RECONCILED_PROGRESS_ARSONMIX_20261101.md), [issue #192](https://github.com/masarray/arsonmix/issues/192), [hardware #15](https://github.com/masarray/arsonmix/issues/15).
 - Functional evidence (not internal algorithms): https://fenderstudiopromanual.fender.com/en/Content/Mixing_Topics/Effects_Signal_Routing.htm ; https://fenderstudiopromanual.fender.com/en/Content/Recording_Topics/Audio_Tracks.htm ; https://assets.wavescdn.com/user-guides/emotion-lv1-classic-console-user-guide.html ; https://helpx.adobe.com/audition/desktop/mixing-multitrack-sessions/multitrack-routing-eq-controls.html .
 
 ## J. MANDATORY V5.1 ABI AND MODULE-BOUNDARY AMENDMENT — PUZZLE SOCKET V8
@@ -187,3 +187,50 @@ Events: \`arMixConsoleSubscribe\`, \`arMixConsoleSnapshot\`, \`arMixConsoleInten
 Canonical machine inventory lives in \`contracts/console-puzzle-v8.json\`. Executable seam validator from PR #279 (once merged) is \`node scripts/check_console_puzzle.mjs\` for cheap G0 tests and \`node scripts/check_console_puzzle.mjs --release\` for fail-closed integrated-source preflight. A PASS proves **only schema/source compatibility**, not audible sound; require Windows native/Playwright/physical QA separately. Never weaken tests to hide missing native operations.
 
 No independent PR may redefine a field, operation enum, status or channel ID format. Changes to socket need an issue #192 diff, updated ENGINE-produced fixture, GUI consumer and FAT checker in one integration checkpoint. File owners do not write another lane's business logic. Incompatible changes are merged into a controlled integration branch and rejected until all three puzzle pieces pass the same fixture. Avoid CI waste: targeted tests before push, full workflow only for integrated slices. User is not the debugger for incomplete builds.
+
+
+## K. NORMATIVE V5.2 DESIGN-TO-NATIVE EXECUTION CONTRACT — PR #278 REFERENCE
+
+**2026-11-01; PRECEDENCE:** [PRD v5.2 §9](PRD_ARSONMIX_OPERATOR_FIRST_LIVE_MIXER_V5_20261101.md) design lock is the authoritative operator-facing architecture decision: **user-approved PR #278 Adobe Audition Mixer-style one-Console screen** + Studio One fast workflows. The v8 schemaVersion **remains 6**, the v8 puzzle contract stays the shared transport; this §K overrides old workbench/modal workflow assumptions and does NOT relax core realtime/rollback/lease guarantees. The design study \`design-references/audition-mixer-study/index.html\` is deliberately separated from production and contains simulated meter and plugin implementations; **never copy the demo as DSP**.
+
+### K1. Rendering/ownership boundaries
+- Single **JUCE native audio callback** supplies PCM. Engine #266 alone owns immutable accepted ChannelId graph, device pin inventory, actual VST3 scan/lease/editor, physical outputs, mixer routing, Show and true PCM meters.
+- **GUI #271** maps PR #278 strip geometry and interaction layout to *read-only* native \`ConsoleSnapshot\` projection and sends \`ConsoleIntent\`. It may maintain transient focus, selection, bank, drawer state but may not create accepted channels/ports/plugin instances or update output claims optimistically. One accepted state source, no permanent parallel M4/HTML simulator audio routing path.
+- **FAT #270** owns one executable operator workflow matrix that drives real produced fixtures and actual callback PCM, verifies native ACK→snapshot→meter and packages an exact SHA Windows build. #278 standalone smoke only certifies visual reference behavior; it never certifies native host.
+
+**UI render strategy:** DOM structure stable under meter/hover/fader drag, targeted property updates with bounded meter rate, no full \`innerHTML\` list rerender at PCM meter frequency; original lightweight fader art, scalable narrow mode, pinned MAIN and compact top/section rail. Preserve existing live plugin editors. Treat device drawer as infrequent configuration UI; operator keeps mixing in the single Console. Copy settings excludes physical I/O by default.
+
+### K2. Contract mapping — every approved visible action has a native operation or a clear UI-only concern
+The canonical intent envelope remains \`{requestId,deviceEpoch,baseGraphRevision,baseRosterRevision,operation,targetChannelId,payload}\` with string uint64 IDs, same-epoch ACK and accepted snapshot. **Operation names below are target capabilities for coordinated implementation**, NOT claims that existing ENGINE handles them. Add missing operations via the native canonical versioned contract and update GUI/FAT together; never invent an undocumented browser alias. \`supportedOps\` becomes true only when the installed callback or control thread performs the operation.
+
+| PR #278 surface | Native ownership / contract (target) | UX action and readback |
+| --- | --- | --- |
+| DEVICE drawer (ASIO/WASAPI, pins/buffer) | Enumerate verified \`device.*\`; guarded separate \`SET_DEVICE\`/clock transaction | Choose once, explicit re-open warning only for real device change |
+| IN selector, M/ST processing | \`SET_SOURCE\`, \`SET_PROCESSING_FORMAT\`; real source endpoint and channel fields | One gesture→request→ACK→fresh same-revision snapshot; no invented IN2 |
+| OUT selector | \`SET_PRIMARY_OUT\`; actual allowed Group/MAIN/output endpoints | Direct strip OUT without extra matrix; no feedback cycle/double dry |
+| Fader, Pan, Trim, Mute, Solo | \`SET_FADER\`, \`SET_PAN\`, \`SET_TRIM\`, \`SET_MUTE\`, \`SET_SOLO\` | RT-bounded atomics or smoothing, no global mute/restart; pan center snap in GUI |
+| FX slots, native Plugin Manager | \`LIST_PLUGINS\` query, \`LOAD_FX\`, \`REMOVE_FX\`, \`BYPASS_FX\`, \`REORDER_FX\`, \`OPEN_FX_EDITOR\` | Real vendor VST3 instance & editor, off-callback lease, accepted rack |
+| Send slot, PRE/POST, target/level/pan | \`UPSERT_SEND\`, \`SET_SEND_TAP\`, \`SET_SEND_LEVEL\`, \`SET_SEND_PAN\`, \`REMOVE_SEND\` | Native PRE/POST wet flow and legal targets; native max sends determines slots |
+| + Audio, + Bus, + FX Return | \`CREATE_CHANNEL\`, \`CREATE_GROUP_BUS\`, \`CREATE_FX_RETURN\` | Stable ChannelId and truly audible role, never browser-only \`tracks.push\` |
+| Channel **LINK FADERS** | \`SET_LINK_GROUP\` (control grouping; separate from summing) | Relative faders and optional linked mute/solo with safe undo |
+| Route selected to **GROUP BUS** | \`ROUTE_SELECTED_TO_GROUP\` or a checked batch \`SET_PRIMARY_OUT\` | Serial summing PCM, only one primary dry route |
+| Sends on Faders | UI presentation mode targeting existing native send ops | Only send gains move, channel primary faders preserved |
+| Solo/Role filter, banks, Narrow, rename | UI selection/display; rename via \`RENAME_CHANNEL\` | No unsolicited changes to DSP or physical I/O |
+| Scene, Show, Safe | \`SAVE_SHOW\`, \`RECALL_SHOW\`, \`SET_SCENE_SAFE\` | Native stable IDs, vendor chunks and device remap/rollback |
+| Cue/PFL / Monitor | \`SET_CUE\`, \`SET_MONITOR_OUTPUT\` with verified legal endpoints | Real independent monitor PCM/output or honestly disabled |
+| Meters/clip | Native \`telemetry.*\` including actual channel/master L/R/clip | Fixed green/yellow/red reference ladder, no fake waveform/random levels |
+
+**Semantic corrections relative to #278 demo:** Its "Group" UI is a relative **fader link**, not a summing bus. Its 16 sends are a visual capacity test, not proof of 16 simultaneous native sends; show up to admitted capability, with 4 legacy AUX remaining until expanded. Its FX plugin metadata and meter are mocks; do not import static fake device port labels. Remove DAW automation row, READ/WRITE/TOUCH, record and transport controls (unless there is a *genuine live-specific* need separately approved). Show/Scene remains. A generic output-ARM ACK is not proof acoustic output exists.
+
+### K3. Graph/control safety and low latency
+- Realtime callback never allocates, locks, scans plugins, opens editors, performs JSON or invokes GUI; structural edits prepare/wire immutable graph with native actor on control thread and publish atomically at safe boundary. Old accepted sound survives validation failure, stale revisions, invalid pin, driver loss or rejected plugin.
+- Continuous fader/pan/mute/send controls must use lock-free bounded parameter plane; do not reboot driver or globally mute just to change mixer value. For structural input or FX transactions, perform native admission/ACK with a bounded transition/crossfade where technically viable and prove no audible click; never require the user to manipulate staging and APPLY.
+- Stereo capture requires two distinct active source pins; mono capture can feed stereo *processing* but cannot claim two physical input channels. Report actual driver/buffer/VST reported latency and available output pins. Asynchronous WASAPI secondary monitor cannot pull or slow the primary ASIO callback; independently rate-convert/buffer/best-effort where supported.
+
+### K4. Cross-thread acceptance gates tied to actual PR #278 workflow
+- **S0 interface**: GUI #271 maps each relevant #278 control to exact \`supportedOps\` and emitted native-produced snapshot field; ENGINE #266 publishes verified field/operation inventory; FAT #270 runs consumer tests against the same source fixture hash. Missing operator capability means an explicit ENGINE blocker, not UI-guessing.
+- **S1 first live path**: user action on PR #278-style strip IN1→CH07→MAIN, native ACK and RAW→CH→MAIN PCM without mandatory multi-step setup; correct single-pin Mono, fader/pan/mute. Actual production callback retains full occupied M4 CH1/vendor/Orbit and Show.
+- **S2 full live mixer**: independent two channels+VST3, native Plugin Manager/editor, dynamic CH11, fader LINK vs real summing Group distinction, FX Return wet PRE/POST, Monitor/Cue, Scenes/Show; one full combined operator acceptance test with true PCM and no double-dry.
+- **S3 release**: one source SHA, native Windows CTest, GUI Playwright visual/operator journey at 1024/1366/1680, generated HTML parity and low-end PC responsiveness; independent engineer physical 0FX/multichannel crackle FAT where available. **No user hardware UAT before internally coherent full Console**; acoustic FAT pending if no rig.
+
+**STOP-SHIP:** An engineer cannot declare completeness by green offline graph, green browser-only #278 demo, filled-in UI controls, synthetic plugin scanning, blank \`supportedOps\`, fixed-ten legacy path masked as universal, or separate owner branch CI. The integrated app must fulfill PRD §9 in one Windows EXE.
