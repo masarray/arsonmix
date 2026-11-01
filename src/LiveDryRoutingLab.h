@@ -649,8 +649,8 @@ public:
         if(!sendRows)return "AUX CONNECT: invalid accepted sends";
         juce::DynamicObject* existing=nullptr;
         for(auto& item:*sendRows) {
-            if(item.getProperty("from",-1)==source &&
-               item.getProperty("to",-1)==count+bus) {
+            if(static_cast<int>(item.getProperty("from",-1))==source &&
+               static_cast<int>(item.getProperty("to",-1))==count+bus) {
                 existing=item.getDynamicObject();
                 if(!existing)return "AUX CONNECT: invalid existing edge";
                 break;
