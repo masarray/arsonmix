@@ -129,7 +129,7 @@ async def main():
         assert sent["operation"] == "SET_SOURCE" and sent["targetChannelId"] == "7"
         assert sent["baseGraphRevision"] == "3" and sent["deviceEpoch"] == "7"
         assert sent["baseRosterRevision"] == "3" and sent["requestId"].startswith("gui-") and sent["requestId"].endswith(":1")
-        assert sent["payload"] == {"portId":"in:0","physicalPins":[0]}
+        assert sent["payload"] == {"portId":"in:0"}
         assert await page.locator('[data-op="SET_SOURCE"][data-id="7"]').input_value() == ""
         assert "PENDING" in await page.locator(".arV6Message").inner_text()
 
