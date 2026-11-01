@@ -248,10 +248,16 @@
     return section;
   }
 
+  // Only an ACKed physical MAIN pair is a MAIN route. Available output pins
+  // are merely inventory, never proof that a route has been selected.
   const outputLabel=s=>{
-    const out=s.mainOutputs?.length===2?s.mainOutputs:s.outputPorts||[];
-    return s.ready&&Number.isInteger(out[0])&&Number.isInteger(out[1])?
-      'MAIN → HW '+(out[0]+1)+'/'+(out[1]+1):'MAIN → NO HW OUTPUT';
+    const out=s.mainOutputs,enabled=new Set(s.outputPorts||[]);
+    if(!s.ready)return 'MAIN → NO DEVICE';
+    if(!Array.isArray(out)||out.length!==2)return 'MAIN → UNPATCHED';
+    if(!Number.isInteger(out[0])||!Number.isInteger(out[1])||
+       out[0]===out[1]||!enabled.has(out[0])||!enabled.has(out[1]))
+      return 'MAIN → INVALID L/R';
+    return 'MAIN → HW '+(out[0]+1)+'/'+(out[1]+1);
   };
   const toolbar=node('div','arMixerBankBar');
   toolbar.innerHTML='<div class="arMixerBankModes" role="group" aria-label="Mixer channel bank"><button type="button" class="btn-180 active" data-mix-mode="CONSOLE" aria-pressed="true">CONSOLE</button><button type="button" class="btn-180" data-mix-mode="FX" aria-pressed="false">FX</button><button type="button" class="btn-180" data-mix-mode="ROUTE" aria-pressed="false">ROUTE</button><button type="button" class="btn-180" data-mix-mode="SENDS" aria-pressed="false">SENDS</button></div><div class="arMixerBankInfo" id="arMixerBankInfo" role="status">NO HARDWARE · PREVIEW</div><button type="button" class="btn-180 arMixApply" data-mix-apply title="MUTE OUTPUT first; native ACK required">APPLY</button><button type="button" class="btn-180 arMixIoOpen" data-io-open>AUDIO I/O</button>';
@@ -828,8 +834,22 @@
     const dirty=current!==valueFor(accepted)||channelFormat(r)!==channelFormat(accepted);
     const stage=strip.querySelector('.arBankStage');
     const sourcePending=quickSourcePending?.channel===i&&quickSourcePending.epoch===s.epoch;
-    stage.textContent=!s.ready?'NO VERIFIED DEVICE':sourcePending?'PENDING · NATIVE ACK':dirty?'DRAFT · NOT APPLIED':r.mode==='NONE'?'UNPATCHED · NO INPUT':'ROUTE ACK · PCM UNVERIFIED';
-    stage.dataset.state=!s.ready?'offline':sourcePending?'draft':dirty?'draft':r.mode==='NONE'?'offline':'live';
+    const verified=new Set(portList(s).map(p=>p.port));
+    const validInput=r.mode==='NONE'||
+      (r.mode==='MONO'&&verified.has(r.left)&&r.right===-1)||
+      (r.mode==='STEREO'&&r.left!==r.right&&verified.has(r.left)&&verified.has(r.right));
+    const acceptedValid=!accepted||accepted.mode==='NONE'||
+      (accepted.mode==='MONO'&&verified.has(accepted.left)&&accepted.right===-1)||
+      (accepted.mode==='STEREO'&&accepted.left!==accepted.right&&verified.has(accepted.left)&&verified.has(accepted.right));
+    // Source is real hardware, processing M/ST is independent. A restored
+    // invalid legacy alias is NEVER 'ACK/LIVE', even after a native route ACK.
+    stage.textContent=!s.ready?'NO VERIFIED DEVICE':
+      sourcePending?'PENDING · NATIVE ACK':
+      (!validInput||!acceptedValid)?'INVALID PHYSICAL INPUT · RE-PATCH':
+      dirty?'DRAFT · NOT APPLIED':r.mode==='NONE'?'UNPATCHED · NO INPUT':
+      'ROUTE ACK · PCM UNVERIFIED';
+    stage.dataset.state=!s.ready?'offline':sourcePending||dirty?'draft':
+      (!validInput||!acceptedValid)?'invalid':r.mode==='NONE'?'offline':'ack';
     // Four native AUX destinations are always visible, even when empty.
     // Render only after a topology change, never on meter telemetry.
     const slots=Array.from({length:4},(_,bus)=>{
@@ -1500,7 +1520,14 @@
 
     const matrixSection=node('details','arIODevicePatchMatrix');
     matrixSection.open=deviceMatrixOpen;
-    matrixSection.addEventListener('toggle',()=>{deviceMatrixOpen=matrixSection.open;});
+    matrixSection.addEventListener('toggle',()=>{
+      if(deviceMatrixOpen!==matrixSection.open){
+        deviceMatrixOpen=matrixSection.open;
+        // Expensive crosspoints are constructed on demand, never just hidden
+        // behind CSS while a 12Hz native readback refreshes the device panel.
+        lastSignature='';refreshIO();
+      }
+    });
     const heading=node('summary','arIODeviceMatrixHeading');
     heading.appendChild(node('strong','','ADVANCED · HARDWARE PORT MATRIX (OPTIONAL)'));
     const tabs=node('div','arIODeviceMatrixSwitch');
@@ -1511,6 +1538,12 @@
       tabs.appendChild(b);
     }
     heading.appendChild(tabs);matrixSection.appendChild(heading);
+    if(!deviceMatrixOpen){
+      matrixSection.appendChild(node('p','arIODeviceMatrixEmpty',
+        'Optional engineering crosspoints. Open only for advanced pin patching.'));
+      body.appendChild(matrixSection);
+      return;
+    }
     const live=!!d&&deviceSameEndpoint(d)&&a.authorized!==false;
     const s=route();
     if(deviceMatrixWaitEpoch!==null&&s.epoch!==deviceMatrixWaitEpoch&&s.ready&&s.active)
