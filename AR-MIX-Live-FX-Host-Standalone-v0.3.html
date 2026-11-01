@@ -1821,7 +1821,14 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
   width:100%;min-width:0;height:14px;margin:0;cursor:ew-resize;
   appearance:none;-webkit-appearance:none;background:transparent;
 }
-#app .arV6PanRange::-webkit-slider-runnable-track,
+/* Browser engines reject an entire selector list if either vendor
+   pseudo-element is unknown. Keep both tracks separate and identical. */
+#app .arV6PanRange::-webkit-slider-runnable-track{
+  height:5px;border:1px solid #47616e;border-radius:1px;
+  background:linear-gradient(to right,#1c303a 0%,#1c303a var(--v6-pan-start,50%),
+    #55c0d5 var(--v6-pan-start,50%),#55c0d5 var(--v6-pan-end,50%),
+    #1c303a var(--v6-pan-end,50%),#1c303a 100%);
+}
 #app .arV6PanRange::-moz-range-track{
   height:5px;border:1px solid #47616e;border-radius:1px;
   background:linear-gradient(to right,#1c303a 0%,#1c303a var(--v6-pan-start,50%),
