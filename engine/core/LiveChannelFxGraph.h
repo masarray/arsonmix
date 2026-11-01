@@ -159,12 +159,24 @@ public:
         for(float v:gains)if(!std::isfinite(v)||v<0.f||v>1.f)return false;
         monitorLeft_=left;monitorRight_=right;
         monitorGains_=gains;monitorEnabled_=true;
+        for(int i=0;i<fxSlots;++i)
+            monitorGainTargets_[i].store(gains[i],std::memory_order_relaxed);
+        block_->prepareMonitorGains(gains); // unpublished graph/control only
         return true;
     }
     bool monitorEnabled() const noexcept{return monitorEnabled_;}
     int monitorOutputLeft() const noexcept{return monitorLeft_;}
     int monitorOutputRight() const noexcept{return monitorRight_;}
     const std::array<float,fxSlots>& monitorGains() const noexcept{return monitorGains_;}
+    // Existing verified independent MONITOR source lane. Only the scalar
+    // changes; MAIN stays untouched, no graph rebuild or vendor lifecycle.
+    bool setMonitorSendGain(int lane,float gain) noexcept {
+        if(!monitorEnabled_||lane<0||lane>=fxSlots||
+           !std::isfinite(gain)||gain<0.f||gain>1.f)return false;
+        monitorGainTargets_[lane].store(gain,std::memory_order_release);
+        monitorGains_[lane]=gain; // CONTROL-only Show/status readback
+        return true;
+    }
     bool switchPhysicalSource(int strip,SourceMode mode,int left,int right) noexcept {
         return block_&&block_->setPhysicalSource(strip,mode,left,right);
     }
@@ -294,7 +306,8 @@ public:
         if(monitorEnabled_ && (!monitorL||!monitorR))return false;
         return block_->process(physical,inputs,left,right,frames,channelFx,levels,
                                &controls_,monitorEnabled_?&monitorGains_:nullptr,
-                               monitorL,monitorR);
+                               monitorL,monitorR,
+                               monitorEnabled_?&monitorGainTargets_:nullptr);
     }
 
 private:
@@ -307,6 +320,7 @@ private:
     int mainOutputLeft_=0,mainOutputRight_=1;
     int monitorLeft_=-1,monitorRight_=-1;
     bool monitorEnabled_=false;
-    std::array<float,fxSlots> monitorGains_{};
+    std::array<float,fxSlots> monitorGains_{}; // control-only accepted readback
+    std::array<std::atomic<float>,fxSlots> monitorGainTargets_{}; // RT read
 };
 } // namespace armix::mixer

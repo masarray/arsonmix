@@ -274,6 +274,17 @@ public:
         return -1.f;
     }
 
+    // CONTROL only, before publishing a MONITOR-enabled prepared graph.
+    // Initial send levels start at their approved values, not an audible
+    // ramp from zero when a device first arms its independent MONITOR bus.
+    void prepareMonitorGains(
+        const std::array<float,stripCount+auxBusCount>& gains) noexcept {
+        for(int i=0;i<stripCount+auxBusCount;++i) {
+            monitorApplied_[i]=monitorGoal_[i]=gains[i];
+            monitorRemaining_[i]=0;
+        }
+    }
+
     // FX callback signature: void(int stripId, float* L, float* R, int frames)
     // noexcept, with stripId=-1 for the master FX chain. This interface is
     // explicitly stereo scratch, NOT a claim that mono VST bus negotiation is
@@ -284,7 +295,9 @@ public:
                  RenderLevels* observed=nullptr,
                  const RealtimeStripControls* live=nullptr,
                  const std::array<float,stripCount+auxBusCount>* monitorGains=nullptr,
-                 float* monitorL=nullptr,float* monitorR=nullptr) noexcept {
+                 float* monitorL=nullptr,float* monitorR=nullptr,
+                 const std::array<std::atomic<float>,stripCount+auxBusCount>*
+                     liveMonitorGains=nullptr) noexcept {
         static_assert(std::is_nothrow_invocable_v<Fx&,int,float*,float*,int>,
                       "DSP hook must be noexcept and realtime bounded");
         if (observed) *observed={};
@@ -447,7 +460,15 @@ public:
             else graph.aux.dispatch(strip,SendTap::preFader,l,r,
                                     auxLeft_.data(),auxRight_.data(),frames);
             float peak=0.f, peakL=0.f, peakR=0.f;
-            const float monitorGain=monitorL?(*monitorGains)[strip]:0.f;
+            if(monitorBusL) {
+                const float next=liveMonitorGains
+                    ?(*liveMonitorGains)[strip].load(std::memory_order_acquire)
+                    :(*monitorGains)[strip];
+                if(next!=monitorGoal_[strip]) {
+                    monitorGoal_[strip]=next;
+                    monitorRemaining_[strip]=64;
+                }
+            }
             if(live) {
                 // A block-linear fader/PAN ramp avoids zipper clicks at the
                 // native callback rate. UI sends at most one target per rAF.
@@ -458,9 +479,10 @@ public:
                 for(int f=0;f<frames;++f) {
                     if(f<ramp){lv+=dL;rv+=dR;}
                     l[f]*=lv;r[f]*=rv;
-                    if(monitorGain>0.f) {
-                        monitorBusL[f]+=l[f]*monitorGain;
-                        monitorBusR[f]+=r[f]*monitorGain;
+                    if(monitorBusL) {
+                        const float gain=nextMonitorGain(strip);
+                        monitorBusL[f]+=l[f]*gain;
+                        monitorBusR[f]+=r[f]*gain;
                     }
                     const float sampleL=std::abs(l[f]), sampleR=std::abs(r[f]);
                     peakL=std::max(peakL,sampleL);
@@ -474,9 +496,10 @@ public:
             }else for(int f=0;f<frames;++f) {
                 l[f]*=gl;
                 r[f]*=gr;
-                if(monitorGain>0.f) {
-                    monitorBusL[f]+=l[f]*monitorGain;
-                    monitorBusR[f]+=r[f]*monitorGain;
+                if(monitorBusL) {
+                    const float gain=nextMonitorGain(strip);
+                    monitorBusL[f]+=l[f]*gain;
+                    monitorBusR[f]+=r[f]*gain;
                 }
                 const float sampleL=std::abs(l[f]), sampleR=std::abs(r[f]);
                 peakL=std::max(peakL,sampleL);
@@ -507,7 +530,16 @@ public:
             float* const l=auxLeft_[b],* const r=auxRight_[b];
             processFx(stripCount+b,l,r,frames);
             float peak=0.f;
-            const float monitorGain=monitorL?(*monitorGains)[stripCount+b]:0.f;
+            const int monitorLane=stripCount+b;
+            if(monitorBusL) {
+                const float next=liveMonitorGains
+                    ?(*liveMonitorGains)[monitorLane].load(std::memory_order_acquire)
+                    :(*monitorGains)[monitorLane];
+                if(next!=monitorGoal_[monitorLane]) {
+                    monitorGoal_[monitorLane]=next;
+                    monitorRemaining_[monitorLane]=64;
+                }
+            }
             const float target=live
                 ?auxBusTarget_[b].load(std::memory_order_acquire):bus.gain;
             const float start=live?auxBusApplied_[b]:bus.gain;
@@ -517,9 +549,12 @@ public:
             for(int f=0;f<frames;++f) {
                 if(f<ramp)current+=step;
                 const float vl=l[f]*current,vr=r[f]*current;
-                if(!bus.mute && monitorGain>0.f) {
-                    monitorBusL[f]+=vl*monitorGain;
-                    monitorBusR[f]+=vr*monitorGain;
+                if(monitorBusL) {
+                    const float gain=nextMonitorGain(monitorLane);
+                    if(!bus.mute) {
+                        monitorBusL[f]+=vl*gain;
+                        monitorBusR[f]+=vr*gain;
+                    }
                 }
                 peak=std::max(peak,std::max(std::abs(vl),std::abs(vr)));
                 if(bus.toMaster && !bus.mute){
@@ -549,6 +584,18 @@ public:
         return true;
     }
 private:
+    // Callback exclusive: monitor gain follows 64 sample steps regardless of
+    // 4/16/32/512-frame hardware buffers; no second effect render.
+    float nextMonitorGain(int lane) noexcept {
+        auto& applied=monitorApplied_[lane];
+        auto& remaining=monitorRemaining_[lane];
+        const float target=monitorGoal_[lane];
+        if(remaining>0) {
+            applied+=(target-applied)/static_cast<float>(remaining);
+            --remaining;
+        } else applied=target;
+        return applied;
+    }
     static constexpr std::uint32_t invalidSourcePair=0xffffffffu;
     static constexpr std::uint32_t packSourcePair(int left,int right) noexcept {
         return static_cast<std::uint32_t>(left)|
@@ -611,6 +658,8 @@ private:
     std::array<std::atomic<float>,maxAuxSends> auxTarget_{};
     std::array<float,maxAuxSends> auxApplied_{},auxGoal_{}; // callback exclusive
     std::array<int,maxAuxSends> auxRampRemaining_{};
+    std::array<float,stripCount+auxBusCount> monitorApplied_{},monitorGoal_{};
+    std::array<int,stripCount+auxBusCount> monitorRemaining_{};
     std::array<std::atomic<float>,auxBusCount> auxBusTarget_{};
     std::array<float,auxBusCount> auxBusApplied_{}; // callback thread exclusive
     std::array<bool,stripCount> rampPrimed_{};

@@ -1582,6 +1582,33 @@ private:
             if(!ok)emitNotice("Live AUX send rejected; refresh accepted routing.",true);
             return;
         }
+        // Same installed M4 callback owns independent MONITOR output pins.
+        // Move input or AUX return's own MONITOR SEND at audio rate without
+        // touching MAIN/FX or changing the physical port map.
+        if(action=="routingMonitorSendGain") {
+            const int source=static_cast<int>(args.getProperty("from",-1));
+            const int requestId=static_cast<int>(args.getProperty("requestId",0));
+            const auto ep=args.getProperty("deviceEpoch",juce::var());
+            const auto rv=args.getProperty("revision",juce::var());
+            const bool numeric=value.isInt()||value.isDouble();
+            const float gain=numeric?static_cast<float>(static_cast<double>(value)):-1.f;
+            const bool ok=requestId>0&&!nativeShowBusy_&&!studioBackupBusy_&&
+                (ep.isInt()||ep.isInt64())&&(rv.isInt()||rv.isInt64())&&numeric&&
+                engine_.setDryRoutingLabMonitorSendGain(
+                    source,static_cast<std::uint64_t>(static_cast<juce::int64>(ep)),
+                    static_cast<std::uint64_t>(static_cast<juce::int64>(rv)),gain);
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("ok",ok);
+            ack->setProperty("requestId",requestId);
+            ack->setProperty("from",source);
+            ack->setProperty("gain",static_cast<double>(gain));
+            ack->setProperty("error",ok?juce::String():
+                "MONITOR send rejected: no independent MONITOR bus, stale route or invalid gain");
+            ack->setProperty("state",engine_.status().getProperty("dryRoutingLab",{}));
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                "arMixMonitorSendGainAck",juce::var(ack.release()));
+            return;
+        }
         // G5C native per-instance BYPASS never recompiles the graph and
         // does not require muting the output. All identity gates must agree.
         if (action == "routingFxBypass") {

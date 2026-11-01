@@ -1131,6 +1131,15 @@ public:
             return false;
         return dryRoutingLab_.setAuxSendGain(source,bus,epoch,revision,gain,tap);
     }
+    bool setDryRoutingLabMonitorSendGain(int source,std::uint64_t epoch,
+            std::uint64_t revision,float gain) noexcept {
+        if(independent_.active()||routeReconfiguring_.load(std::memory_order_acquire)||
+           diagnosticRoute_.load(std::memory_order_acquire)
+               !=armix::diagnostics::Route::normal||
+           !directFence_.permitted()||savedDirectSetup_||savedLiveSetup_)
+            return false;
+        return dryRoutingLab_.setMonitorSendGain(source,epoch,revision,gain);
+    }
     bool setDryRoutingLabFxBypass(int lane,int slot,std::uint64_t epoch,
             std::uint64_t revision,const juce::String& instanceId,
             bool bypass) noexcept {

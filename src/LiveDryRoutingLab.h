@@ -700,6 +700,28 @@ public:
         return true;
     }
 
+    // Independent physical MONITOR/CUE bus: control only changes one
+    // existing send's target. PRE/POST AUX and MAIN VST PCM remain unchanged.
+    // If no verified distinct MONITOR output pair exists, reject.
+    bool setMonitorSendGain(int source,std::uint64_t expectedEpoch,
+                            std::uint64_t expectedRevision,float gain) noexcept {
+        if(source<0||source>=fxSlots||!std::isfinite(gain)||
+           gain<0.f||gain>1.f||!hasExplicitRoute()||
+           expectedEpoch!=epoch()||expectedRevision!=revision())
+            return false;
+        auto gains=acceptedRoute_.getProperty("monitorSends",juce::var());
+        auto* array=gains.getArray();
+        const auto* current=publisher_.controlPrepared(expectedEpoch,expectedRevision);
+        if(!array||array->size()!=fxSlots||!current||
+           !current->monitorEnabled())return false;
+        if(!publisher_.updateActiveControl(expectedEpoch,expectedRevision,
+            [&](FxGraph& fx) noexcept {
+                return fx.setMonitorSendGain(source,gain);
+            }))return false;
+        array->set(source,static_cast<double>(gain)); // same accepted topology
+        return true;
+    }
+
     // M5 native ChannelId VST3 migration: capture actual current M4 vendor
     // processor LEASES, not catalog names or copied binary state. The writer
     // must hold these control-owned leases within its new published dynamic

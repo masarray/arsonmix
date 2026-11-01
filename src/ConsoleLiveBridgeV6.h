@@ -239,7 +239,9 @@ public:
                     intent.getProperty("legacyRoutingRevision","").toString()!=legacyRev)
                 error="STALE_LEGACY_ROUTING_REVISION";
             else if(!target.isString() || !decodeDecimal(target,channelId) ||
-                    channelId<1 || channelId>10)
+                    channelId<1 ||
+                    (channelId>10 &&
+                     !(operation=="SET_MONITOR_LEVEL"&&channelId<=14)))
                 error="INVALID_LEGACY_CHANNEL_ID";
             else if(!engine.dryRoutingLabActive() ||
                     engine.dryRoutingLabEpoch()!=ep ||
@@ -293,6 +295,20 @@ public:
                         accepted=engine.setDryRoutingLabParameter(
                             lane,ep,m4Revision,key,control);
                         if(!accepted)error="NATIVE_CONTROL_REJECTED";
+                    }
+                } else if(operation=="SET_MONITOR_LEVEL") {
+                    const auto raw=payload.getProperty("value",{});
+                    if(!raw.isInt()&&!raw.isDouble())
+                        error="INVALID_MONITOR_LEVEL";
+                    else {
+                        const double gain=static_cast<double>(raw);
+                        if(!std::isfinite(gain)||gain<0.||gain>1.)
+                            error="INVALID_MONITOR_LEVEL";
+                        else {
+                            accepted=engine.setDryRoutingLabMonitorSendGain(
+                                lane,ep,m4Revision,static_cast<float>(gain));
+                            if(!accepted)error="MONITOR_BUS_NOT_ADMITTED";
+                        }
                     }
                 } else if(operation=="SET_SEND_LEVEL") {
                     // A SEND level is native realtime PCM, NOT a new graph
