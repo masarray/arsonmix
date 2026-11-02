@@ -844,5 +844,28 @@ check(html.includes('wire-floating-plug') &&
 document.querySelectorAll=oldQs;
 node('reset').dispatch('click');
 
+
+// V19 collapsed WIRE keeps a compact routing summary rather than an empty
+// 23px rail. The default direct MAIN feed lives in I/O, not custom patch count.
+node('reset').dispatch('click');
+check(html.includes('data-section="route" aria-expanded="true" aria-label="Collapse input and output rack"') &&
+ html.includes('>I/O</button>') && html.includes('>FX</button>') &&
+ html.includes('title="Expand wire patch bay" aria-label="Expand wire routing area">W</button>') &&
+ html.includes('content:""!important;display:block!important;') &&
+ html.includes('function compactWireActivity(t){'),
+ 'V19 DAW rail has concise I/O, FX, W labels and no pseudo-caption OPEN/PATCH');
+check(strip(3).includes('wire-fold-summary') &&
+ strip(3).includes('class="fold-empty"') &&
+ strip(1).includes('fold-out') && strip(1).includes('→1'),
+ 'V19 folded row distinguishes no custom links from one active legacy Bus A send');
+wireTo(3);
+check(strip(3).includes('fold-in') && strip(3).includes('←1') &&
+ strip(1).includes('fold-out') && strip(1).includes('→2'),
+ 'V19 compact IN/OUT is computed from live graph and active legacy Sends');
+wireTo(3);
+check(strip(3).includes('class="fold-empty"'),
+ 'V19 removing a custom incoming edge immediately restores neutral collapsed marker');
+node('reset').dispatch('click');
+
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
