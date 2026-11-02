@@ -2,6 +2,7 @@
 Run with real Chromium against the canonical user-facing HTML (no mock DOM).
 """
 import asyncio
+import re
 from pathlib import Path
 from playwright.async_api import async_playwright
 
@@ -13,8 +14,7 @@ PLUGIN=ASSETS/'mixer-plugin-browser.css'
 
 def source_gate():
     html=HTML.read_text('utf-8')
-    start=html.index('<style>')+len('<style>')
-    inline=html[start:html.index('</style>',start)]
+    inline=''.join(re.findall(r'<style(?:\s[^>]*)?>(.*?)</style>',html,re.S))
     rack=RACK.read_text('utf-8')
     plugin=PLUGIN.read_text('utf-8')
     assert len(inline)<226_000, ('inline still contains rack styles',len(inline))
