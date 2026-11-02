@@ -45,8 +45,8 @@ def audit_geometry(page, title):
             else if(Math.abs(r(controls[0]).width-r(controls[1]).width)>1)
                 problems.push('inconsistent button widths '+tag);
             const cap=t.querySelector('.fader-travel .cap');
-            if(!cap||Math.abs(r(cap).width-26)>1.5||Math.abs(r(cap).height-55)>1.5)
-                problems.push('scaled 26x55 fader cap missing '+tag);
+            if(!cap||Math.abs(r(cap).width-23)>1.5||Math.abs(r(cap).height-48)>1.5)
+                problems.push('scaled 23x48 fader cap missing '+tag);
             const route=t.querySelector('.route-section');
             if(route&&route.scrollHeight>route.clientHeight+3)
                 problems.push('IN/OUT clipped '+tag);
@@ -126,7 +126,7 @@ def audit_p0_collapse(page, label):
     states=result['states']
     assert len(states)==8,(label,'missing collapse permutations',list(states))
     baseline=states['000']
-    expected=max(150,min(485,page.viewport_size['height']-630))
+    expected=max(164,min(499,page.viewport_size['height']-616))
     first=baseline['items'][0]
     assert first['fx']['list']>=88,(label,'four FX rows not visible with all upper panels open',first)
     assert abs(first['fader']['h']-expected)<=2,(label,'fader height not viewport-proportional',expected,first)
