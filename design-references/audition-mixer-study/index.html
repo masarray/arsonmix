@@ -2240,6 +2240,108 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
 .console-body.wire-routing-v13 .strip .wire-deck{background:#142a35!important}
 .console-body.wire-routing-v13 .strip .wire-tray{background:#102631!important}
 .console-body.wire-routing-v13 .section-rail .rail-cell.send{background:#192d38!important}
+
+/* V15 original physical patch connectors: filled bronze/silver OUT jack, recessed
+   hollow IN socket. Calm console design; route highlight only on actual intent.
+   Compact always keeps the wires visible; expanded has more cable canvas. */
+.console-body.wire-routing-v15.collapsed-send{--send-h:80px!important}
+.console-body.wire-routing-v15:not(.collapsed-send){--send-h:160px!important}
+@media(max-height:680px){
+ .console-body.wire-routing-v15.collapsed-send{--send-h:66px!important}
+ .console-body.wire-routing-v15:not(.collapsed-send){--send-h:146px!important}
+}
+.console-body.wire-routing-v15 .wire-tray{
+ justify-content:center!important;gap:4px!important;
+ padding:3px 5px 4px!important;min-height:35px!important;
+ flex:0 0 35px!important;max-height:35px!important;
+}
+.console-body.wire-routing-v15 .wire-node-out,
+.console-body.wire-routing-v15 .wire-node-in{
+ display:flex!important;flex-direction:column!important;align-items:center!important;
+ justify-content:center!important;
+ flex:0 0 28px!important;width:28px!important;min-width:28px!important;
+ height:28px!important;min-height:28px!important;
+ border-radius:50%!important;
+ font:600 18px/17px 'Segoe UI Symbol',Arial,sans-serif!important;
+ user-select:none;-webkit-user-select:none;touch-action:none;
+ position:relative;box-sizing:border-box;z-index:7;
+}
+.console-body.wire-routing-v15 .wire-node-out{
+ border:1px solid #a4bdc3!important;color:#b7e0ec!important;
+ background:#2d4752!important;
+ box-shadow:inset 0 1px 0 #e6ffff34,inset 0 -2px 3px #07131c,0 1px 2px #040e17aa!important;
+ cursor:grab;
+}
+.console-body.wire-routing-v15 .wire-node-out span{line-height:16px}
+.console-body.wire-routing-v15 .wire-node-out.is-source{
+ color:#bcffd5!important;border-color:#6cdbaf!important;
+ background:#225640!important;
+ box-shadow:inset 0 1px #e2fff63b,0 0 0 1px #1c422f,0 0 8px #52ca8c3c!important;
+}
+.console-body.wire-routing-v15 .wire-node-out:active{cursor:grabbing}
+.console-body.wire-routing-v15 .wire-node-out:disabled{cursor:default;color:#657783!important}
+.console-body.wire-routing-v15 .wire-node-in{
+ border:2px solid #75949e!important;color:#8faeb7!important;
+ background:#0a1923!important;
+ box-shadow:inset 1px 2px 3px #000e,inset 0 0 0 2px #29414b,0 1px #ffffff18!important;
+ cursor:crosshair;
+}
+.console-body.wire-routing-v15 .wire-node-in .wire-arrow{font-size:21px!important;line-height:17px!important}
+.console-body.wire-routing-v15 .wire-node-in.is-linked{
+ border-color:#80dfb4!important;color:#adffd6!important;
+ background:#124932!important;
+ box-shadow:inset 1px 2px 3px #0009,0 0 0 1px #305f4e,0 0 8px #52d49324!important;
+}
+.console-body.wire-routing-v15 .wire-node-in.is-source{opacity:.32!important;cursor:default}
+.console-body.wire-routing-v15 .wire-node-in:disabled{cursor:default}
+.console-body.wire-routing-v15 .wire-node-out small,
+.console-body.wire-routing-v15 .wire-node-in .wire-label{
+ font:600 7px/7px 'Segoe UI',Arial,sans-serif!important;
+ color:inherit!important;letter-spacing:.45px;
+}
+.console-body.wire-routing-v15 .wire-node-in .wire-arrow,
+.console-body.wire-routing-v15 .wire-node-out span{pointer-events:none}
+.console-body.wire-routing-v15 .wire-tray.linked .wire-node-in{
+ flex:0 0 27px!important;width:27px!important;min-width:27px!important;
+}
+.console-body.wire-routing-v15 .wire-node-out:focus-visible,
+.console-body.wire-routing-v15 .wire-node-in:focus-visible{
+ outline:2px solid #e4fffa!important;outline-offset:2px!important;
+}
+.console-body.wire-routing-v15.wire-dragging .wire-node-in:not(:disabled){
+ border-color:#abf2d0!important;box-shadow:inset 1px 2px 3px #000b,0 0 0 2px #2d765b!important;
+}
+.console-body.wire-routing-v15 .wire-pot{flex:0 0 24px!important;width:24px!important;min-width:24px!important}
+.console-body.wire-routing-v15 .wire-disconnect{flex:0 0 16px!important;width:16px!important;min-width:16px!important}
+.route-choice[hidden]{display:none!important}
+.route-choice{
+ position:absolute;z-index:30;box-sizing:border-box;width:280px;
+ border:1px solid #5c8090;border-radius:6px;background:#1b2d38;
+ color:#cde0e8;padding:10px;box-shadow:0 8px 28px #0009,inset 0 1px #bfdbe41c;
+ font:11px/1.4 'Segoe UI',Arial,sans-serif;
+}
+.route-choice-head{display:flex;justify-content:space-between;align-items:center;
+ font-weight:650;color:#e5f6f8;font-size:12px;padding-bottom:7px;
+ border-bottom:1px solid #56707a5c;}
+.route-choice-head button{background:#283f4c;border:1px solid #486778;
+ color:#d9ebed;border-radius:3px;width:25px;height:23px;cursor:pointer}
+.route-choice-description{color:#aac4cc;font-size:10px;padding:9px 0}
+.route-choice-option{display:flex;align-items:center;text-align:left;gap:9px;
+ width:100%;padding:9px 8px;margin-top:5px;border:1px solid #42616c;
+ border-radius:4px;background:#263c48;color:#e1f2ef;cursor:pointer}
+.route-choice-option:hover{background:#315261;border-color:#9bc8c8}
+.route-choice-option.primary{border-color:#4b9d7a;background:#244638}
+.route-choice-option.primary:hover{background:#31634c}
+.route-choice-option strong{font:600 11px/15px 'Segoe UI',Arial,sans-serif}
+.route-choice-option small{display:block;color:#a8c7c9;font-size:10px;line-height:14px}
+.route-choice-option .choice-symbol{font-size:20px;color:#a7eec5}
+.route-choice-foot{color:#91b1b9;font-size:9px;padding-top:9px}
+.route-choice-option:focus-visible,.route-choice-head button:focus-visible{outline:2px solid #b0ebd8;outline-offset:2px}
+@media(max-width:1100px){
+ .console-body.wire-routing-v15 .wire-tray{gap:2px!important;padding-inline:2px!important}
+ .console-body.wire-routing-v15 .wire-node-out,
+ .console-body.wire-routing-v15 .wire-node-in{width:25px!important;min-width:25px!important;flex-basis:25px!important}
+}
 </style>
 </head>
 <body>
@@ -2284,7 +2386,7 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
   </div>
   <main class="console-pane">
     <div class="mixer-title"><span class="accent"></span><span class="panel-name">Live Mixer</span><span class="panel-sub">▤</span><label class="wire-mode-label" for="wireMode">WIRE</label><select class="wire-mode-select" id="wireMode" title="Signal routing: FL-style post-fader or independent pre-FX source" aria-label="Wire routing mode"><option value="send">Follow Fader</option><option value="split">Independent (Pre FX)</option></select><button class="wire-master" id="wireMaster" type="button" title="Toggle direct source feed to Master" aria-pressed="true">MAIN ON</button><span class="wire-legend" id="wireLegend" aria-live="polite">CH01 · click destination arrows</span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
-    <section class="console-body collapsed-send wire-routing-v13" data-density="comfort" aria-label="Live mixing console">
+    <section class="console-body collapsed-send wire-routing-v13 wire-routing-v15" data-density="comfort" aria-label="Live mixing console">
       <aside class="section-rail" aria-label="Mixer section icons">
         <div class="rail-cell identity" title="Channel identity">CH</div>
         <button class="rail-cell route" data-section="route" aria-expanded="true" title="Collapse / expand Inputs and Outputs">⇥</button>
@@ -3010,6 +3112,7 @@ consoleBody.addEventListener('pointerdown',ev=>{
  if(node){
   const src=findTrack(node);
   if(src&&src.kind!=='master'&&Number.isFinite(ev.clientX)&&Number.isFinite(ev.clientY)){
+   wireSuppressClick=false;
    wireGesture={pointerId:ev.pointerId,sourceId:src.id,startX:ev.clientX,startY:ev.clientY,
     point:{x:ev.clientX,y:ev.clientY},active:false};
    ev.preventDefault?.();
