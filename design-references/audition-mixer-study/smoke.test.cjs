@@ -193,8 +193,21 @@ check(strip(1).includes('class="fader-head"') && strip(1).includes('class="fader
       'Fader dB numeric display is above the tactile fader');
 check(strip(1).includes('class="clip-indicator') && strip(1).includes('class="meter-box mono"'),
       'Mono strip includes explicit clip LED and one meter lane');
-check(strip(1).includes('class="switch mute') && strip(1).includes('class="switch solo') && strip(1).includes('class="switch cue'),
-      'Three equal-width brushed-metal buttons MUTE, SOLO, PFL, no I');
+check(strip(1).includes('class="button switch mute') &&
+      strip(1).includes('class="button switch solo') &&
+      strip(1).includes('buttons-wrapper codepen-buttons-wrapper') &&
+      strip(1).includes('class="switch cue'),
+      'CodePen MUTE/SOLO are mounted as a two-button group; PFL remains separate');
+check(html.includes('https://codepen.io/praktikdan/pen/jbqBWm') &&
+      html.includes('background-image:linear-gradient(#333,#222)!important') &&
+      html.includes('background-image:linear-gradient(#202020,#151515)!important') &&
+      html.includes('inset 0 1px 6px rgba(0,0,0,.5),0 10px 20px rgba(255,255,255,.06)') &&
+      html.includes('rgba(2,165,238,.4)') && html.includes('rgba(2,165,238,.75)'),
+      'Original Dan Andersson CodePen CSS values are retained for MUTE/SOLO');
+check(strip(1).includes('data-action="mute"') && strip(1).includes('data-action="solo"') &&
+      strip(1).includes('aria-pressed="false"') && strip(1).includes('<span class="fa">MUTE</span>') &&
+      strip(1).includes('<span class="fa">SOLO</span>'),
+      'MUTE/SOLO retain independent accessible native click actions');
 check(html.includes('.console-body .fader-box::before') && html.includes('.console-body .fader-box::after') &&
       html.includes('.fader-travel .cap') && html.includes('RAIL3'),
       'Calibrated old fader housing and cap travel restored with original RAIL3 material');
