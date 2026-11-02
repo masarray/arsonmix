@@ -690,6 +690,50 @@ static void verifyLegacyToDynamicProductionPcmParity() {
 }
 
 
+
+static void verifyRealtimeFaderRampAcrossShortCallbacks() {
+    using namespace armix::mixer;
+    const std::array<int,2> pins{0,1};
+    ChannelRoutingConfig routing;
+    routing.stripsAndMaster.strips[0]=
+        {SourceMode::mono,0,-1,1.f,0.f,false,false};
+    SendRequest sends;
+    sends.toMaster[0]=true;
+    PreparedRenderGraph graph;
+    RenderError error;
+    assert(PreparedRenderGraph::compile(routing,pins,sends,graph,error));
+    PreparedMixerBlock block(graph,64);
+    RealtimeStripControls controls;
+    assert(controls.set(0,1.f,0.f,true,false,false));
+    std::array<float,64> mic{},unused{},left{},right{};
+    mic.fill(.8f);
+    const float* sources[]={mic.data(),unused.data()};
+    const auto noFx=[](int,float*,float*,int) noexcept {};
+    const auto render=[&](int frames) {
+        left.fill(0.f);right.fill(0.f);
+        return block.process(sources,2,left.data(),right.data(),frames,
+                             noFx,nullptr,&controls);
+    };
+    assert(render(4));
+    const float baseline=left[0];
+    assert(baseline>.01f && close(right[3],baseline));
+    assert(controls.set(0,0.f,0.f,true,false,false));
+    assert(render(4));
+    assert(close(left[3],baseline*60.f/64.f,3.e-5f));
+    assert(render(16));
+    assert(close(left[15],baseline*44.f/64.f,3.e-5f));
+    assert(render(32));
+    assert(close(left[31],baseline*12.f/64.f,3.e-5f));
+    assert(render(12));
+    assert(close(left[11],0.f,3.e-5f));
+    // Mid-show fader reversal must not jump to the last requested target.
+    assert(controls.set(0,1.f,0.f,true,false,false));
+    assert(render(4));
+    assert(close(left[3],baseline*4.f/64.f,3.e-5f));
+    assert(render(60));
+    assert(close(left[59],baseline,3.e-5f));
+}
+
 static void verifyRealtimeAuxPostGainWithoutGraphRebuild() {
     using namespace armix::mixer;
     const std::array<int,2> pins{0,1};
@@ -969,6 +1013,7 @@ int main() {
     verifyDynamicChannelIdLiveControls();
     verifyDynamicNativeSessionPublication();
     verifyStudioConsoleBusBatchPcm();
+    verifyRealtimeFaderRampAcrossShortCallbacks();
     verifyRealtimeAuxMasterPcmBothOutputs();
     verifyRealtimeAuxPostGainWithoutGraphRebuild();
     verifyLegacyToDynamicProductionPcmParity();

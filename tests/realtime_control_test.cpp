@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/RealtimeControl.h"
+#include "../engine/core/RealtimeRoutePublisher.h"
+#include <memory>
 #include <atomic>
 #ifdef NDEBUG
  #undef NDEBUG
@@ -51,6 +53,41 @@ int main(){
     checkPan(0.f,0.f,1.f,0.f,1.f);
     checkPan(0.f,1.f,0.f,1.f,0.f);
     std::cout<<"PASS: native stereo pan centre, extremes, half-pan and unit-gain dual-mono\n";
+
+    // M1: retired FX/PCM snapshots remain owned until callbacks release
+    // their leases; a full bounded queue rejects instead of growing memory.
+    struct RetireProbe {
+        std::atomic<int>* counter;
+        explicit RetireProbe(std::atomic<int>& c):counter(&c){}
+        ~RetireProbe(){counter->fetch_add(1,std::memory_order_relaxed);}
+    };
+    std::atomic<int> destroyed{0};
+    RealtimeRoutePublisher<RetireProbe,2> publisher;
+    const auto publish=[&](std::uint64_t revision) {
+        auto next=std::make_unique<RealtimeRoutePublisher<RetireProbe,2>::Snapshot>();
+        next->deviceEpoch=7;next->graphRevision=revision;
+        next->prepared=std::make_unique<RetireProbe>(destroyed);
+        return publisher.publish(std::move(next),revision-1,7);
+    };
+    using Result=RealtimeRoutePublisher<RetireProbe,2>::Result;
+    assert(publish(1)==Result::applied);
+    {
+        auto lease=publisher.acquire();
+        assert(lease.get(7)&&lease.get(7)->graphRevision==1);
+        assert(publish(2)==Result::applied);
+        assert(publish(3)==Result::applied);
+        assert(publisher.pendingRetirements()==2);
+        assert(publish(4)==Result::retirementFull);
+        assert(destroyed.load(std::memory_order_relaxed)==1);
+        assert(lease.get(7)->graphRevision==1);
+    }
+    assert(publisher.pollRetirement());
+    assert(publisher.pendingRetirements()==0);
+    assert(destroyed.load(std::memory_order_relaxed)==3);
+    assert(publish(4)==Result::applied);
+    publisher.unpublish();
+    assert(publisher.pollRetirement());
+    assert(destroyed.load(std::memory_order_relaxed)==4);
     // Runtime contract for the exact RT graph publication helper.
     struct FakeGraph { int id; };
     FakeGraph old{1}, next{2}, third{3};
