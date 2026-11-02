@@ -24,17 +24,21 @@ def main():
         page.goto(PAGE.as_uri())
         # V18 hardware key socket / shallow click / portrait meter smoke.
         key=page.locator('#tracks .strip[data-id="1"] button.switch.mute')
-        # V22 static overlaid metal socket and channel front-layer rim.
+        # MUTE/SOLO use the original user-selected CodePen CSS button
+        # mounting wrapper. PFL retains its separate V22 stationary socket.
         well=key.locator('xpath=..')
-        assert_true(well.evaluate("el=>el.classList.contains('hw-switch-socket')"),
-                    'Button must have an independently mounted stationary socket')
-        bezel=well.evaluate("""el=>({
+        assert_true(well.evaluate("el=>el.classList.contains('codepen-buttons-wrapper')"),
+                    'MUTE/SOLO must use the original CodePen wrapper, not the old generic socket')
+        cue_socket=page.locator('#tracks .strip[data-id="1"] button.switch.cue').locator('xpath=..')
+        assert_true(cue_socket.evaluate("el=>el.classList.contains('hw-switch-socket')"),
+                    'PFL must retain its independently mounted stationary hardware socket')
+        bezel=cue_socket.evaluate("""el=>({
             z:getComputedStyle(el,'::after').zIndex,
             cap:getComputedStyle(el.querySelector('button')).zIndex,
             events:getComputedStyle(el,'::after').pointerEvents
         })""")
         assert_true(bezel['z']=='4' and bezel['cap']=='2' and bezel['events']=='none',
-                    'Outer hole lip must be layered above the moving cap')
+                    'PFL hole lip must be layered above its moving cap')
         well_y=well.bounding_box()['y']
         key.scroll_into_view_if_needed()
         rr=key.bounding_box()

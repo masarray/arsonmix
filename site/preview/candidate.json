@@ -2,10 +2,10 @@
   "kind": "REFERENCE_WORKFLOW_QA_ONLY",
   "source_pr": 278,
   "source_branch": "main/site/preview-v2",
-  "source_sha": "c981a85fe40189afa7142729e6dbb865c591c1a1",
-  "source_blob_sha": "26fa55f512d3fc5bf23b15dd28781eef6792a85a",
-  "ci_run": 41445635599,
+  "source_sha": "dcb3e4b95090eabb851b129703c8557bb1a6031a",
+  "source_blob_sha": "8f44f1c66a12ef84cdf527fce8c27ff354bb9566",
+  "ci_run": 41446227324,
   "ci_conclusion": "success",
   "live_audio": false,
-  "note": "V32 exact QA-pinned cross-bank source workflow plus isolated gentle single-wire settle. No native PCM."
+  "note": "V32 qualified source + per-cable gentle settle and cross-bank patch. Main's CodePen-specific browser smoke gate updated; no native PCM."
 }
