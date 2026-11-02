@@ -449,7 +449,7 @@ async def main():
         assert await page.locator('[data-master-output]').count()==0
         assert await page.locator('.master-stereo-badge,.master-route-label,.fader-tools.master-tools').count()==0
         assert await page.locator('#masterMode.mx-hw-key.is-stereo').count()==1
-        assert await page.locator('#masterMode').inner_text()=='STEREO'
+        assert await page.locator('#masterMode svg.mx-hw-face mask text').text_content()=='STEREO'
         assert await page.locator('#masterMode').get_attribute('aria-pressed')=='false'
         # Streaming output panel has only two useful readouts.
         assert await page.locator('#masterLeft .master-analysis .master-info-row').count()==2
@@ -467,7 +467,7 @@ async def main():
         # L2 workspace: original 17 rail controls plus one purposeful MS5 SEND FADERS toggle.
         # Its optional AUX selector is not a button; preserve the original operator commands.
         assert await page.locator('.toolbar-actions .nav button.btn-180').count()==3
-        assert await page.locator('.left-rail button.btn-180').count()==19
+        assert await page.locator('.left-rail button.btn-180').count()==18
         assert await page.locator('.left-rail [data-sof-toggle]').count()==1
         assert await page.locator('.toolbar-actions .fx-nav,.left-rail .fx-nav').count()==0
         assert await page.locator('.left-rail .pushable,.left-rail .front,.left-rail .edge,.left-rail .shadow').count()==0
@@ -862,7 +862,7 @@ async def main():
         assert await page.evaluate('durableSession().masterMono') is False
         await page.locator('#masterMute').click()
         assert await page.locator('#masterMute').get_attribute('aria-pressed')=='true'
-        assert await page.locator('#masterMute svg.mx-hw-face mask text').inner_text()=='MUTE'
+        assert await page.locator('#masterMute svg.mx-hw-face mask text').text_content()=='MUTE'
         await page.locator('#masterMute').click()
         assert await page.locator('#masterMute').get_attribute('aria-pressed')=='false'
         # Hover and active feedback stays visual and does not change native fader geometry.
@@ -1111,11 +1111,14 @@ async def main():
         assert all(abs(v['unit']-14)<.3 and abs(v['meter']-14)<.3 and abs(v['fill']-10)<.6 and v['clip'] for v in vu_geometry),vu_geometry
         assert len(set(v['gradient'] for v in vu_geometry))==1, 'VU palette must match across all L/R/mono bars'
         await page.locator('#masterMode').click()
-        assert await page.locator('#masterMode').inner_text()=='MONO'
-        mono_text=await page.locator('#masterMode').evaluate('(e)=>({color:getComputedStyle(e).color,shadow:getComputedStyle(e).textShadow})')
-        assert mono_text['color']=='rgb(20, 16, 20)' and mono_text['shadow']=='none',mono_text
+        assert await page.locator('#masterMode svg.mx-hw-face mask text').text_content()=='MONO'
+        mono_text=await page.locator('#masterMode').evaluate("""e=>({
+          led:getComputedStyle(e).getPropertyValue('--mx-hw-led').trim(),
+          glow:getComputedStyle(e.querySelector('.mx-hw-lamp')).opacity
+        })""")
+        assert mono_text=={'led':'210,225,234','glow':'1'},mono_text
         await page.locator('#masterMode').click()
-        assert await page.locator('#masterMode').inner_text()=='STEREO'
+        assert await page.locator('#masterMode svg.mx-hw-face mask text').text_content()=='STEREO'
         # Manual peak-hold reset must be deterministic: cancel the browser's
         # unrelated 25Hz demo producer before injecting explicit levels. Without
         # this, a live demo RAF can repopulate peakHold after RESET and make the
