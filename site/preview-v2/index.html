@@ -3789,6 +3789,8 @@ html * ,html *::before,html *::after{
 
 </style>
 <link rel="stylesheet" href="assets/mixer-control-keys.css">
+<link rel="stylesheet" href="assets/mixer-utility-controls.css">
+<link rel="stylesheet" href="assets/inter-embedded.css">
 
 </head>
 <body>
@@ -3997,11 +3999,11 @@ function sectionFx(t){
  const used=t.fx.map((name,i)=>({name,i})).filter(x=>x.name!=='None');
  const first=t.fx.findIndex(x=>x==='None');
  const rows=used.concat(first<0?[]:[{name:'None',i:first}]);
- let out='<div class="section fx-section"><div class="subhead"><span class="sym">fx</span><span class="hint">FX '+used.length+'</span><span class="push"></span><button class="mini power '+(t.fxOn?'on':'')+'" data-action="fxOn" title="Bypass all effects" aria-label="Toggle effects" aria-pressed="'+Boolean(t.fxOn)+'">'+materialIcon("power_settings_new")+'</button></div><div class="fxslot-list">';
+ let out='<div class="section fx-section"><div class="subhead"><span class="sym">fx</span><span class="hint">FX '+used.length+'</span><span class="push"></span><button class="mx-util-key" data-util-kind="fx-main" data-action="fxOn" title="Bypass all effects" aria-label="Toggle effects" aria-pressed="'+Boolean(t.fxOn)+'">'+materialIcon("power_settings_new")+'</button></div><div class="fxslot-list">';
  for(const {name,i} of rows){
-  out+='<div class="fxslot-row" draggable="'+(name!=='None')+'" data-slot="'+i+'" title="Insert '+(i+1)+'"><button class="mini power '+(name!=='None'&&!t.slotBypass[i]?'on':'')+'" data-action="slotPower" data-slot="'+i+'" title="Toggle effect" aria-label="Toggle effect slot '+(i+1)+'" aria-pressed="'+Boolean(name!=='None'&&!t.slotBypass[i])+'">'+materialIcon("power_settings_new")+'</button>';
+  out+='<div class="fxslot-row" draggable="'+(name!=='None')+'" data-slot="'+i+'" title="Insert '+(i+1)+'"><button class="mx-util-key" data-util-kind="fx-slot" data-action="slotPower" data-slot="'+i+'" title="Toggle effect" aria-label="Toggle effect slot '+(i+1)+'" aria-pressed="'+Boolean(name!=='None'&&!t.slotBypass[i])+'">'+materialIcon("power_settings_new")+'</button>';
   out+='<button class="fx-pick '+(name==='None'?'empty':'')+'" data-action="openPlugin" data-slot="'+i+'" aria-label="Choose plugin for '+escapeHtml(t.name)+' insert '+(i+1)+'">'+(name==='None'?'+ Add FX':escapeHtml(name))+'</button>';
-  if(name!=='None')out+='<button class="fx-remove" data-action="removeFx" data-slot="'+i+'" title="Remove insert '+(i+1)+'" aria-label="Remove insert '+(i+1)+'">'+materialIcon("close")+'</button><span class="grip" title="Drag reorder" aria-hidden="true">'+materialIcon("drag_indicator")+'</span>';
+  if(name!=='None')out+='<button class="mx-util-key" data-util-kind="fx-remove" data-action="removeFx" data-slot="'+i+'" title="Remove insert '+(i+1)+'" aria-label="Remove insert '+(i+1)+'">'+materialIcon("close")+'</button><span class="grip" title="Drag reorder" aria-hidden="true">'+materialIcon("drag_indicator")+'</span>';
   out+='</div>';
  }
  return out+'</div></div>';
@@ -4304,7 +4306,7 @@ function sectionFader(t){
 function strip(t){
  let code='<article class="strip '+t.kind+(t.selected?' selected':'')+'" data-id="'+t.id+'" style="--track-color:'+t.color+';--ch:'+t.color+'" aria-label="'+escapeHtml(t.name)+' channel">';
  code+='<button type="button" class="strip-identity-top" '+(t.kind==='master'?'':'draggable="true" ')+'data-action="editIdentity" title="'+(t.kind==='master'?'Double-click to edit channel identity':'Drag to arrange · Alt+arrows move · double-click/F2 edit')+'" aria-label="Double-click to edit '+escapeHtml(t.name)+' channel identity"><span class="identity-number">'+(t.kind==='master'?'MASTER':'CH '+String(t.id).padStart(2,'0'))+'</span><span class="identity-name">'+escapeHtml(t.name)+'</span><span class="identity-symbol" aria-hidden="true">'+escapeHtml(iconFor(t))+'</span></button>';
- code+='<div class="section route-section"><div class="route-top"><span class="route-indicator">'+(t.kind==='audio'?'▥':t.kind==='bus'?'↪':t.kind==='fx'?'∿':'➜')+'</span>'+(t.safe?'<span class="safe-marker" title="Snapshot safe · recall protected">SAFE</span>':'')+(t.group?'<span class="group-indicator" title="Linked group '+escapeHtml(t.group)+'">'+escapeHtml(t.group)+'</span>':'')+(t.kind==='audio'?'<button class="mini format-badge" data-action="format" title="Processing width M/ST (preserves physical input source)">'+(t.format==='mono'?'M':'ST')+'</button>':'')+(t.kind!=='master'&&wireOutgoingCount(t.id)?'<span class="split-count" title="GUI-only routing destinations · no native PCM">⇢'+wireOutgoingCount(t.id)+'</span>':'')+'<button class="mini phase '+(t.phase?'on':'')+'" data-action="phase" title="Reverse polarity">'+(t.phase?'Ø':'⊘')+'</button></div>';
+ code+='<div class="section route-section"><div class="route-top"><span class="route-indicator">'+(t.kind==='audio'?'▥':t.kind==='bus'?'↪':t.kind==='fx'?'∿':'➜')+'</span>'+(t.safe?'<span class="safe-marker" title="Snapshot safe · recall protected">SAFE</span>':'')+(t.group?'<span class="group-indicator" title="Linked group '+escapeHtml(t.group)+'">'+escapeHtml(t.group)+'</span>':'')+(t.kind==='audio'?'<button class="mx-util-key" data-util-kind="format" data-action="format" aria-label="Toggle mono stereo processing width" aria-pressed="'+(t.format==='stereo')+'" title="Processing width M/ST (preserves physical input source)">'+(t.format==='mono'?'M':'ST')+'</button>':'')+(t.kind!=='master'&&wireOutgoingCount(t.id)?'<span class="split-count" title="GUI-only routing destinations · no native PCM">⇢'+wireOutgoingCount(t.id)+'</span>':'')+'<button class="mx-util-key" data-util-kind="phase" data-action="phase" aria-label="Reverse polarity" aria-pressed="'+Boolean(t.phase)+'" title="Reverse polarity">'+(t.phase?'Ø':'⊘')+'</button></div>';
  if(t.kind==='audio')code+='<div class="route-field"><span class="route-caption">IN</span><select class="route-select" data-field="input" title="Input source (demo choices)" aria-label="'+escapeHtml(t.name)+' input">'+option(channelOptions(t,'input'),t.input)+'</select></div>';
  else if(t.kind==='bus'||t.kind==='fx')code+='<div class="route-field"><span class="route-caption">IN</span><span class="route-identity">'+(t.kind==='bus'?'GROUP':'FX RETURN')+'</span></div>';
  else code+='<div class="route-field"><span class="route-caption">IN</span><span class="route-identity">SUM BUS</span></div>';
