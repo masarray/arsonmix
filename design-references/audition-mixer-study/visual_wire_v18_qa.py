@@ -21,7 +21,7 @@ def drag(page,a,b,offset=(0,0)):
     page.mouse.move(x1+offset[0],y1+offset[1],steps=14)
     page.mouse.up()
 
-def source_selected(page,id=8):
+def source_selected(page,id=6):
     return page.locator(f'#tracks .strip[data-id="{id}"] .wire-node-out')
 
 def socket(page,id):
@@ -37,10 +37,10 @@ def main():
             page.goto(PAGE.as_uri())
             page.locator('.section-rail [data-section="send"]').click()
             # First connect a source normally, so the linked IN has a real cable end.
-            source=source_selected(page,8)
+            source=source_selected(page,6)
             ch3=socket(page,3)
             drag(page,source,ch3)
-            check(ch3.get_attribute("aria-pressed")=="true",f"{width}: fixture CH8→CH3 did not connect")
+            check(ch3.get_attribute("aria-pressed")=="true",f"{width}: fixture CH6→CH3 did not connect")
             gain3=page.locator('#tracks .strip[data-id="3"] .wire-gain')
             edge=gain3.get_attribute("data-wire-id")
             gain3.evaluate("""el=>{
@@ -70,7 +70,7 @@ def main():
             check(gain4.get_attribute("data-wire-id")==edge and gain4.input_value()=="-17",
                   f"{width}: wire ID or level changed in replug")
             # No click ghost should disconnect the freshly created destination.
-            check('⇢1' in page.locator('#tracks .strip[data-id="8"]').inner_text(),
+            check('⇢1' in page.locator('#tracks .strip[data-id="6"]').inner_text(),
                   f"{width}: a ghost click removed the source route")
 
             # Moving only a few pixels must snap right back, not drop signal.
@@ -87,12 +87,12 @@ def main():
             page.mouse.up()
             check(socket(page,4).get_attribute("aria-pressed")=="false",
                   f"{width}: off-socket release failed to disconnect")
-            check('⇢1' not in page.locator('#tracks .strip[data-id="8"]').inner_text(),
+            check('⇢1' not in page.locator('#tracks .strip[data-id="6"]').inner_text(),
                   f"{width}: detached edge still reported active")
 
             # Already-connected destination must never receive a duplicate route.
-            drag(page,source_selected(page,8),socket(page,3))
-            drag(page,source_selected(page,8),socket(page,4))
+            drag(page,source_selected(page,6),socket(page,3))
+            drag(page,source_selected(page,6),socket(page,4))
             x3,y3=center(socket(page,3));x4,y4=center(socket(page,4))
             page.mouse.move(x3,y3);page.mouse.down()
             page.mouse.move(x4,y4,steps=12);page.mouse.up()
