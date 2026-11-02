@@ -539,7 +539,17 @@ check(html.includes('id="wireLayer" class="routing-wire-overlay"') &&
  html.includes('id="wireLegend"') &&
  html.includes('.console-body.wire-routing-v13.collapsed-send{--send-h:80px!important}'),
  'Wire layer and 53px middle routing row survive collapsed advanced Send');
-// V33: selecting a mixer channel is not an implied wire patch action.
+// V34: Idle IN and mixer channel selection can NEVER change routing state.
+const idleBefore=strip(3),idleLegend=node('wireLegend').innerHTML;
+const idleReceiver={dataset:{action:'wireRoute'},closest:k=>k==='.strip'?{dataset:{id:3}}:null};
+node('body').handlers.click({target:{closest:k=>k==='[data-action]'?idleReceiver:null}});
+check(strip(3)===idleBefore && node('wireLegend').innerHTML===idleLegend &&
+ !strip(3).includes('wire-node-in is-linked') && !strip(1).includes('wire-node-out is-source'),
+ 'V34 idle IN cannot patch');
+node('body').handlers.mousedown({target:{closest:k=>k==='.strip'?{dataset:{id:2}}:null},ctrlKey:false,metaKey:false,shiftKey:false});
+check(!strip(2).includes('wire-node-out is-source') && !strip(3).includes('wire-node-in is-linked'),
+ 'V34 ordinary selected channel does not arm routing');
+// The only accepted source action is an explicit OUT click.
 const pinSource={dataset:{action:'wireSource'},closest:k=>k==='.strip'?{dataset:{id:1}}:null};
 node('body').handlers.click({target:{closest:k=>k==='[data-action]'?pinSource:null},shiftKey:false});
 check(strip(1).includes('wire-node-out is-source') &&
@@ -547,6 +557,10 @@ check(strip(1).includes('wire-node-out is-source') &&
  strip(3).includes('class="wire-socket wire-node-in"') &&
  strip(3).includes('wire-pot is-idle'),
  'Source CH1 is lit and every destination has FL-like up arrow');
+function armWire(id=1){
+ const b={dataset:{action:'wireSource'},closest:k=>k==='.strip'?{dataset:{id}}:null};
+ node('body').handlers.click({target:{closest:k=>k==='[data-action]'?b:null}});
+}
 function wireTo(id,shift=false){
  const el={dataset:{action:'wireRoute'},closest:k=>k==='.strip'?{dataset:{id}}:null};
  const target={closest:k=>k==='[data-action]'?el:k==='[data-action="wireRoute"]'?el:k==='.strip'?{dataset:{id}}:null};
@@ -581,7 +595,7 @@ check(!!pot,'Connected PRE FX wire has a stable edge ID for gain control');
 const gainTarget={dataset:{field:'wireGain',wireId:pot[1]},value:'-12',
  style:{setProperty(){}},parentElement:{style:{setProperty(){}}},closest:k=>k==='.strip'?{dataset:{id:8}}:null};
 node('body').handlers.change({target:gainTarget,type:'change'});
-const gainNotice=node('info').textContent.includes('-12 dB');
+const gainNotice=node('info').textContent.includes('-12.0 dB');
 filter('all');
 check(strip(8).includes('value="-12" data-field="wireGain"') && gainNotice,
  'Each wire has its own -60..+6 dB calibrated hardware-pot gain');
@@ -609,8 +623,8 @@ check(node('info').textContent.includes('feedback loop') &&
  'Graph cycle guard refuses reverse link CH3→CH1');
 node('reset').dispatch('click');
 
-node('body').clientWidth=1680;node('reset').dispatch('click');
-wireTo(3);wireTo(6,true);
+node('body').clientWidth=1680;node('reset').dispatch('click');armWire(1);
+armWire(1);wireTo(3);wireTo(6,true);
 check(strip(1).includes('⇢4') &&
  [3,4,5,6].every(id=>strip(id).includes('wire-node-in is-linked')),
  'Two-click CH3 then SHIFT+CH6 creates an atomic four-target FL-style route');
@@ -631,7 +645,7 @@ check(html.includes('function wireConnectRange(') &&
  html.includes('SourceBinding')===false || html.includes('function wireConnectRange('),
  'Wire route bulk changes have explicit cycle preflight');
 // V12 usability: direct manipulation + uncluttered hover affordance.
-node('body').clientWidth=1680;node('reset').dispatch('click');
+node('body').clientWidth=1680;node('reset').dispatch('click');armWire(1);
 wireTo(3);
 const edge=strip(3).match(/data-wire-id="(\d+)"/);
 check(!!edge,'Wire gain control has unique stable identity for pointer/keyboard events');
@@ -640,8 +654,8 @@ const wheelGain={dataset:{field:'wireGain',wireId:edge[1]},value:'0',
  style:{setProperty(){}},parentElement:{style:{setProperty(){}}}};
 node('body').handlers.wheel({target:wheelGain,deltaY:120,preventDefault(){}});
 filter('all');
-check(strip(3).includes('value="-1" data-field="wireGain"'),
- 'One wheel step on wire knob makes precise -1 dB adjustment');
+check(strip(3).includes('value="-0.5" data-field="wireGain"'),
+ 'One wheel step on wire knob adjusts 0.5 dB independently');
 node('body').handlers.dblclick({target:{...wheelGain,classList:{contains:()=>false}}});
 filter('all');
 check(strip(3).includes('value="0" data-field="wireGain"'),
@@ -654,7 +668,7 @@ check(html.includes('wireHoverId=t.id;renderWireRouting()') &&
 node('reset').dispatch('click');
 
 // V12 pinned Master socket follows FL Send-switch semantics without extra PCM edge.
-node('body').clientWidth=1680;node('reset').dispatch('click');
+node('body').clientWidth=1680;node('reset').dispatch('click');armWire(1);
 const masterId=Number(node('master').innerHTML.match(/data-id="(\d+)"/)?.[1]);
 check(Number.isInteger(masterId)&&node('master').innerHTML.includes('wire-node-in is-linked'),
  'Pinned MAIN route is a visible green clickable socket for selected source');
@@ -668,7 +682,7 @@ check(node('master').innerHTML.includes('MAIN ON') &&
  'Second click on pinned MASTER socket restores direct Main without creating send edges');
 node('reset').dispatch('click');
 // Existing legacy SEND S1 into Bus A must not gain a SECOND identical wire path.
-node('body').clientWidth=1680;node('reset').dispatch('click');
+node('body').clientWidth=1680;node('reset').dispatch('click');armWire(1);
 node('bankSelect').value='1';node('bankSelect').dispatch('change');
 wireTo(11);
 check(node('info').textContent.includes('ALREADY CONNECTED') &&
@@ -701,7 +715,7 @@ check(html.includes("document.querySelector('.console-body')?.classList.contains
  check(html.includes('/* V14: THREE-way collapse') &&
  html.includes('.console-body.collapsed-route.collapsed-fx.collapsed-send .strip .fader-section'),
  'Fader may grow only on exactly three upper sections folded');
-wireTo(3);wireTo(6,true);
+armWire(1);wireTo(3);wireTo(6,true);
 check(strip(1).includes('⇢4') &&
  [3,4,5,6].every(id=>strip(id).includes('wire-node-in is-linked') &&
  strip(id).includes('data-field="wireGain"') && !strip(id).includes('send-select')),
@@ -774,7 +788,7 @@ check(strip(8)===previous && node('info').textContent.includes('canceled'),
  'Canceled pointer gesture preserves all prior signal connections');
 node('reset').dispatch('click');
 // CH3 has no hidden legacy Bus A send. Source follows click selection.
-field(3,'output','Master');
+field(3,'output','Master');armWire(3);
 node('bankSelect').value='1';node('bankSelect').dispatch('change');
 wireTo(11);
 check(node('routeChoice').hidden===false &&
@@ -795,7 +809,7 @@ wireTo(11);
 node('bankSelect').value='0';node('bankSelect').dispatch('change');
 check(strip(3).includes('<option value="SOURCE ONLY (No Main)" selected>'),
  'Unplugging serial Bus wire cannot silently restore direct Main');
-field(3,'output','Master');
+field(3,'output','Master');armWire(3);
 node('bankSelect').value='1';node('bankSelect').dispatch('change');
 wireTo(11);node('routeParallel').dispatch('click');
 const parallelNotice=node('info').textContent.includes('PARALLEL SEND');
@@ -811,7 +825,7 @@ check(html.includes('function moveChannelTo(') &&
  'V16 stable ID reorder by drag and Alt+arrows, smart two-panel fader reclaim');
 
 // V18 physical receiver unplug/replug: a linked IN is a draggable cable end.
-node('body').clientWidth=1680;node('reset').dispatch('click');
+node('body').clientWidth=1680;node('reset').dispatch('click');armWire(1);
 wireTo(3);
 const oldEdgeId=Number(strip(3).match(/data-wire-id="(\d+)"/)?.[1]);
 check(Number.isInteger(oldEdgeId),'V18 connected IN fixture has stable edge id');
@@ -842,11 +856,11 @@ check(!strip(3).includes('wire-node-in is-linked') &&
  strip(4).includes('value="-17" data-field="wireGain"') &&
  strip(1).includes('⇢1'),
  'V18 dragging linked CH3 IN → CH4 IN reroutes one same-ID wire and preserves gain');
-node('reset').dispatch('click');wireTo(3);
+node('reset').dispatch('click');armWire(1);wireTo(3);
 v18GrabTo(112,3,300,480);
 check(!strip(3).includes('wire-node-in is-linked') && strip(1).includes('wire-pot is-idle'),
  'V18 drop >31px away from old IN releases one cable without other routes');
-node('reset').dispatch('click');wireTo(3);
+node('reset').dispatch('click');armWire(1);wireTo(3);
 v18GrabTo(113,3,320,430);
 check(strip(3).includes('wire-node-in is-linked'),
  'V18 short move back into original socket magnet preserves connection');
@@ -868,7 +882,7 @@ node('reset').dispatch('click');
 
 // V19 collapsed WIRE keeps a compact routing summary rather than an empty
 // 23px rail. The default direct MAIN feed lives in I/O, not custom patch count.
-node('reset').dispatch('click');
+node('reset').dispatch('click');armWire(1);
 check(html.includes('data-section="route" aria-expanded="true" aria-label="Collapse input and output rack"') &&
  html.includes('class="rail-svg-icon io-icon"') && html.includes('class="rail-svg-icon fx-icon"') &&
  html.includes('class="rail-svg-icon wire-icon"') &&
@@ -952,7 +966,7 @@ check(!html.includes("if(a==='wireRemove')") &&
 
 // V26 selected-channel Focus: all inbound links are behind outbound sends,
 // including legacy Send slots, split inputs and primary Bus outputs.
-node('reset').dispatch('click');
+node('reset').dispatch('click');armWire(1);
 wireTo(3); // CH01 -> CH03
 const v26source={dataset:{action:'wireSource'},closest:k=>k==='.strip'?{dataset:{id:2}}:null};
 node('body').handlers.click({target:{closest:k=>k==='[data-action]'?v26source:null}}); // CH02 selected
