@@ -22,6 +22,33 @@ def main():
         errors=[]
         page.on("pageerror",lambda err:errors.append(str(err)))
         page.goto(PAGE.as_uri())
+        # V18 hardware key socket / shallow click / portrait meter smoke.
+        key=page.locator('#tracks .strip[data-id="1"] button.switch.mute')
+        initial=key.evaluate("""el=>({
+          radius:getComputedStyle(el).borderRadius,
+          filter:getComputedStyle(el).filter,
+          bay:getComputedStyle(el.parentElement).backgroundColor
+        })""")
+        assert_true(initial['radius']=='2px','Hardware key must remain sharp-edged')
+        assert_true(initial['filter']=='none','No GUI blur filter allowed')
+        assert_true(initial['bay']=='rgb(17, 31, 40)','Button socket cavity missing')
+        meter=page.locator('#tracks .strip[data-id="1"] .meter-lane').first
+        led=meter.evaluate("""el=>({
+          width:getComputedStyle(el).width,
+          cells:getComputedStyle(el,'::before').backgroundImage
+        })""")
+        assert_true(led['width']=='6px' and '9px' in led['cells'] and '11px' in led['cells'],
+                    'LED must be portrait (6x9px with 2px spacing)')
+        key.scroll_into_view_if_needed()
+        rect=key.bounding_box()
+        assert_true(bool(rect),'Button missing')
+        page.mouse.move(rect['x']+rect['width']/2,rect['y']+rect['height']/2)
+        page.mouse.down()
+        pressed=key.evaluate('el=>getComputedStyle(el).transform')
+        assert_true(pressed.endswith(', 1)'),'Hardware press depth must be 1px: '+pressed)
+        page.mouse.up()
+        key.click() # undo MUTE so routing tests see same fixture
+        page.screenshot(path=str(ROOT/'preview-v18-hardware-1680.png'))
         # V16 owner P0 intentionally folds WIRE to a 23px disclosure by default.
         # Expand the WIRE workspace explicitly before patching.
         page.locator('.section-rail [data-section="send"]').click()

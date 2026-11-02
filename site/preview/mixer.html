@@ -2518,6 +2518,212 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
  }
 }
 
+
+/* Wire V17: fixed four-column hardware patch. Never reflow on route changes. */
+.console-body.wire-routing-v15 .strip .wire-tray,.console-body.wire-routing-v15 .strip .wire-tray.linked{
+ display:grid!important;grid-template-columns:24px 28px 22px 14px!important;gap:2px!important;
+ align-items:center!important;justify-content:center!important;
+ height:35px!important;min-height:35px!important;max-height:35px!important;
+ padding:3px 2px!important;box-sizing:border-box!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out{
+ width:24px!important;min-width:24px!important;flex:0 0 24px!important;height:28px!important;
+ border:0!important;background:transparent!important;box-shadow:none!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out .wire-pin{
+ display:block;width:12px;height:12px;border:1px solid #9db6c2;border-radius:50%;
+ background:linear-gradient(145deg,#d7e6eb,#718e9c);box-shadow:inset 0 1px #ffffff69,0 1px 2px #0009;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out.is-source .wire-pin{
+ background:var(--ch,#9fe8bf);border-color:#ecfff1;box-shadow:0 0 5px var(--ch,#9fe8bf);
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in,
+.console-body.wire-routing-v15 .strip .wire-tray.linked .wire-node-in{
+ width:28px!important;min-width:28px!important;flex:0 0 28px!important;height:28px!important;
+ border:2px solid #7994a0!important;border-radius:50%!important;padding:0!important;gap:0!important;
+ background:#071820!important;box-shadow:inset 0 2px 4px #000b,inset 0 0 0 2px #233b45!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in .wire-arrow{
+ display:block;width:9px;height:9px;flex:0 0 9px;border-radius:50%;
+ background:#071720;border:1px solid #2b4350;font-size:0!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in.is-linked{
+ border-color:var(--ch,#a4eac8)!important;background:#0a2028!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in.is-linked .wire-arrow{
+ width:11px;height:11px;flex:0 0 11px;background:var(--ch,#a4eac8);
+ border:1px solid #ffffff8a;box-shadow:0 0 4px var(--ch,#a4eac8);
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in.is-snap-target{
+ border-color:#e6fff3!important;box-shadow:inset 0 2px 4px #0009,0 0 0 3px #75ddae66!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out small,
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in .wire-label{
+ position:absolute;bottom:-2px;pointer-events:none;color:#a7bcc4!important;font-size:7px!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-pot{
+ width:22px!important;min-width:22px!important;flex:0 0 22px!important;grid-column:3;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-pot::before{
+ inset:2px 1px!important;width:20px!important;height:20px!important;
+ background:conic-gradient(from 225deg,var(--ch,#94dabc) 0 var(--wire-pct,91%),#344953 var(--wire-pct,91%) 75%,transparent 75% 100%)!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-pot::after{left:9px!important;top:4px!important}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-pot.is-idle{
+ opacity:.64;pointer-events:none;cursor:default!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-pot.is-idle::before{
+ background:conic-gradient(from 225deg,#4b626d 0 75%,transparent 75% 100%)!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-pot.is-idle::after{
+ transform:rotate(-135deg)!important;background:#657e8a!important;box-shadow:none!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-gain{width:22px!important;height:24px!important}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-disconnect{
+ width:14px!important;min-width:14px!important;flex:0 0 14px!important;grid-column:4;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-disconnect.is-idle{visibility:hidden!important;pointer-events:none}
+.console-body.wire-routing-v15 .strip .wire-tray{background:#0e222b!important}
+.routing-wire-overlay{filter:none!important}
+.console-body.wire-routing-v15.wire-dragging .strip .wire-node-in.is-source.is-snap-target{opacity:1!important}
+
+
+
+/* V18 HARDWARE KEY SOCKET + CRISP LED METER — owner visual audit, 2026-11-02.
+   Material token stays global. The body is a real recessed mounting well:
+   dark 1px machined cut, light 1px metal lip, cap stands 1px above its well.
+   Only semantic color differs between controls; no blurred shadows, filters,
+   backdrop filters, RAF style recalculation or extra LED DOM nodes. */
+:root {
+ --am-hw-key-radius:2px;
+ --am-hw-key-press-y:1px;
+ --am-hw-key-relief:
+   inset 1px 0 0 rgba(255,255,255,.38),
+   inset -1px 0 0 rgba(0,0,0,.27),
+   inset 0 1px 0 rgba(255,255,255,.12),
+   0 1px 0 #050a0d,
+   0 0 0 1px #070c10,
+   0 0 0 2px #3b4d57,
+   0 1px 0 2px #04090c;
+ --am-hw-key-flat:
+   inset 0 1px 0 #10171c,
+   inset 0 -1px 0 rgba(255,255,255,.07),
+   0 0 0 1px #03080c,
+   0 0 0 2px #3b4d57;
+}
+/* A recessed common switch bay is machined into the STRIP panel, not
+   painted halfway across the top face. Housing never moves with buttons. */
+.console-body .strip .switch-section {
+ position:relative!important;
+ background:#111f28!important;
+ border-top:1px solid #07141b!important;
+ border-bottom:1px solid #415561!important;
+ box-shadow:inset 0 1px 0 #060d12,inset 0 -1px 0 #263a45!important;
+ isolation:isolate;
+}
+.console-body .strip .switch-section button.switch{
+ z-index:1!important;
+ border-radius:var(--am-hw-key-radius)!important;
+ box-shadow:var(--am-hw-key-relief)!important;
+}
+/* Every hardware PUSH key shares the same outer socket, sharp relief and
+   very shallow mechanical travel. Do not flatten latched MUTE/SOLO. */
+:is(.command-bar button.tool,.command-bar summary.tool,
+ .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key){
+ border-radius:var(--am-hw-key-radius)!important;
+ box-shadow:var(--am-hw-key-relief)!important;
+ transition:none!important;
+ will-change:auto!important;
+}
+:is(.command-bar button.tool,.command-bar summary.tool,
+ .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key):active:not(:disabled){
+ transform:translateY(var(--am-hw-key-press-y))!important;
+ box-shadow:var(--am-hw-key-flat)!important;
+}
+/* Edge highlights stay on the exact face edges, horizontally translucent
+   at the corners; the lower glint is intentionally thinner. */
+:is(.command-bar button.tool,.command-bar summary.tool,
+ .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key)::before{
+ top:0!important;height:2px!important;left:1px!important;right:1px!important;
+}
+:is(.command-bar button.tool,.command-bar summary.tool,
+ .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key)::after{
+ bottom:0!important;height:1px!important;left:1px!important;right:1px!important;
+}
+/* Portrait cells: illuminated 9px tall × 6px wide, separated by a
+   fixed 2px DARK cross-bar. Vertical color across the ladder remains smooth
+   green → yellow → amber → red, not disjoint palettes per color zone.
+   Uses existing --lit variable for clipped signal fill, no JS or 40+ nodes. */
+.console-body .strip .meter-box .vu-bars{
+ justify-content:center!important;
+ gap:3px!important;
+ background:#06121a!important;
+ box-shadow:inset 1px 0 0 #142b35,inset -1px 0 0 #010508!important;
+}
+.console-body .strip .meter-box .meter-lane,
+.console-body .strip .meter-box.mono .meter-lane{
+ box-sizing:border-box!important;
+ width:6px!important;min-width:6px!important;max-width:6px!important;
+ flex:0 0 6px!important;
+ border:0!important;border-radius:0!important;
+ background:#07141a!important;
+ box-shadow:inset 1px 0 0 #20303a,inset -1px 0 0 #000!important;
+}
+.console-body .strip .meter-box .meter-fill{
+ left:0!important;right:0!important;
+ background:linear-gradient(to top,
+   #0e9f43 0%,#3bd849 24%,#7bef40 43%,
+   #c5e936 56%,#f6d42e 69%,#ffae27 80%,
+   #ff761e 91%,#ee3028 100%)!important;
+ box-shadow:none!important;filter:none!important;
+ transition:none!important;
+}
+/* Individual LED's own top-face/shadow shading has 9px portrait lit area,
+   2px non-emitting separator; no per-cell colored blocks. */
+.console-body .strip .meter-box .meter-lane::before{
+ content:""!important;
+ background:repeating-linear-gradient(to top,
+   transparent 0px,transparent 9px,#020a0f 9px,#020a0f 11px)!important;
+ box-shadow:none!important;
+}
+.console-body .strip .meter-box .meter-lane::after{
+ content:""!important;
+ background:
+   repeating-linear-gradient(to top,
+     rgba(255,255,255,.13) 0px,rgba(255,255,255,.05) 1px,
+     transparent 3px,transparent 6px,rgba(0,0,0,.28) 9px,
+     transparent 9px,transparent 11px),
+   linear-gradient(90deg,rgba(255,255,255,.13),transparent 55%,rgba(0,0,0,.28))!important;
+ box-shadow:none!important;
+}
+.console-body .strip .meter-box .peak,
+.console-body .strip .meter-box .peak.clipping{
+ box-shadow:inset 0 1px 0 rgba(255,255,255,.16)!important;
+}
+/* Remove convolution-style glow and blur work. All depth comes from
+   1px crisp borders, embossed edges, static face gradients, native textures. */
+html * ,html *::before,html *::after{
+ filter:none!important;
+ backdrop-filter:none!important;
+ -webkit-backdrop-filter:none!important;
+}
+.plugin-browser,.channel-identity,.route-choice,.more-tools-panel{
+ box-shadow:0 0 0 1px #60717b,0 1px 0 1px #07141b!important;
+}
+.console-body .strip .wire-tray .wire-node-out.is-source .wire-pin,
+.console-body .strip .wire-tray .wire-node-in .wire-dot,
+.console-body .strip .wire-tray .wire-node-in.is-linked{
+ box-shadow:inset 0 1px 0 rgba(255,255,255,.2),0 0 0 1px #07151b!important;
+}
+
 </style>
 </head>
 <body>
@@ -2841,13 +3047,15 @@ function wireTray(t){
  const label=!source?'NO SOURCE':isSource?'SOURCE':isMain?(linked?'MAIN ON':'MAIN OFF'):linked?'CONNECTED':'CONNECT';
  const modeLabel=linked&&!isMain?(edge.mode==='routeOnly'?'Route via Bus':edge.mode==='send'?'Post-fader Send':'Pre FX Mult'):'Click IN or drag an OUT jack here';
  const from='<button type="button" class="wire-node-out'+(isSource?' is-source':'')+'" data-action="wireSource"'+(isMain?' disabled':'')+
-  ' title="SEND OUT · drag this solid jack to another channel IN" aria-label="Send OUT from '+escapeHtml(t.name)+'" aria-pressed="'+isSource+'"><span aria-hidden="true">●</span><small>OUT</small></button>';
+  ' title="SEND OUT · drag this solid jack to another channel IN" aria-label="Send OUT from '+escapeHtml(t.name)+'" aria-pressed="'+isSource+'"><span class="wire-pin" aria-hidden="true"></span><small>OUT</small></button>';
  const to='<button type="button" class="wire-socket wire-node-in'+(isSource?' is-source':'')+(linked?' is-linked':'')+'" data-action="wireRoute" aria-pressed="'+linked+
   '" aria-label="Receive IN on '+escapeHtml(t.name)+' · '+label+'" title="'+escapeHtml(label+' · '+modeLabel+' · GUI DEMO')+'" '+(canWire?'':'disabled')+
-  '><span class="wire-arrow" aria-hidden="true">'+(linked?'●':'○')+'</span><span class="wire-label">IN</span></button>';
+  '><span class="wire-arrow" aria-hidden="true"></span><span class="wire-label">IN</span></button>';
  let controls=from+to;
  if(linked&&!isMain){
   controls+='<label class="wire-pot" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%;--wire-deg:'+(-135+wireGainPercent(edge.levelDb)*2.7).toFixed(1)+'deg" title="'+escapeHtml(source.name+' → '+t.name+' · '+wireDbText(edge.levelDb))+'"><input class="wire-gain" type="range" min="-60" max="6" step="1" value="'+edge.levelDb+'" data-field="wireGain" data-wire-id="'+edge.id+'" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%" aria-label="Wire send level '+escapeHtml(source.name)+' to '+escapeHtml(t.name)+'"></label><button type="button" class="wire-disconnect" data-action="wireRemove" title="Disconnect '+escapeHtml(source.name)+' → '+escapeHtml(t.name)+'" aria-label="Disconnect '+escapeHtml(t.name)+' from '+escapeHtml(source.name)+'">×</button>';
+ }else{
+  controls+='<span class="wire-pot is-idle" aria-hidden="true"></span><span class="wire-disconnect is-idle" aria-hidden="true"></span>';
  }
  return '<div class="wire-tray'+(linked?' linked':'')+'">'+controls+'</div>';
 }
@@ -3062,59 +3270,104 @@ function refreshWireRoutingNodes(){
  });
  renderWireRouting();
 }
+/* Smooth bezier routing in either horizontal direction; bounded by patch bay. */
+function wirePathData(x0,y0,x1,y1,riseLimit){
+ const dx=x1-x0,span=Math.abs(dx),dy=Math.abs(y1-y0);
+ const rise=Math.min(Math.max(18,riseLimit),Math.max(28,Math.min(104,30+span*.23+dy*.08)));
+ return 'M '+x0.toFixed(1)+' '+y0.toFixed(1)+
+  ' C '+(x0+dx*.23).toFixed(1)+' '+(y0-rise).toFixed(1)+
+  ', '+(x1-dx*.23).toFixed(1)+' '+(y1-rise).toFixed(1)+
+  ', '+x1.toFixed(1)+' '+y1.toFixed(1);
+}
+/* Magnetic snap: a 42px socket halo OR the destination wire compartment.
+   Never snap by hovering a fader. Current source is excluded by stable ID. */
+function wireSnapTarget(point,sourceId){
+ if(!wireSourceTrack(sourceId)||!point)return null;
+ let best=null,score=Infinity;
+ for(const input of document.querySelectorAll?.('.wire-node-in')||[]){
+  const track=findTrack(input);
+  if(!track||track.id===sourceId)continue;
+  const r=input.getBoundingClientRect?.();
+  if(!r||!r.width||!r.height)continue;
+  const dist=Math.hypot(r.left+r.width/2-point.x,r.top+r.height/2-point.y);
+  const bay=input.closest?.('.wire-section')?.getBoundingClientRect?.();
+  const inside=!!bay&&point.x>=bay.left&&point.x<=bay.right&&point.y>=bay.top&&point.y<=bay.bottom;
+  if(dist>42&&!inside)continue;
+  const rank=inside?dist*.6:dist;
+  if(rank<score){best={track,element:input};score=rank;}
+ }
+ return best;
+}
+let wireSnapId=null,wireFramePending=false;
+function setWireSnapTarget(id){
+ if(wireSnapId===id)return;
+ wireSnapId=id;
+ for(const input of document.querySelectorAll?.('.wire-node-in')||[]){
+  const track=findTrack(input);
+  input.classList.toggle('is-snap-target',!!track&&track.id===id);
+ }
+}
 function renderWireRouting(){
  const svg=document.getElementById('wireLayer'),viewport=document.getElementById('viewport');
- const source=wireSourceTrack(wireSourceId);
+ const dragging=!!(wireGesture?.active&&wireGesture.point);
+ const source=wireSourceTrack(dragging?wireGesture.sourceId:wireSourceId);
  const legend=document.getElementById('wireLegend'),main=document.getElementById('wireMaster');
- if(legend)legend.textContent=source?'CH'+String(source.id).padStart(2,'0')+' ⇢ '+wireOutgoingCount(source.id)+' · click arrows / Shift-range · DEMO':'Select source · click destination arrows';
+ if(legend)legend.textContent=source?'CH'+String(source.id).padStart(2,'0')+' ⇢ '+wireOutgoingCount(source.id)+' · drag OUT to IN / click IN · DEMO':'Select source · click destination IN';
  if(main&&source){
   const direct=source.output==='Master';
   main.textContent=direct?'MAIN ON':'MAIN OFF';main.setAttribute('aria-pressed',String(direct));
   main.title='Direct source output: '+source.output+' · click to toggle Main only when currently mapped to Main or Source Only';
  }
- // Collapse is a VIEW concern, not a routing edit: keep all 1:N edges.
- // Do not calculate cable geometry for a hidden WIRE bay. On expand the
- // existing requestAnimationFrame rerenders the same connections.
  if(!svg||!viewport)return;
- // Collapsing SEND hides the graphical patch, not the stored wire edges.
  if(!source||document.querySelector('.console-body')?.classList.contains('collapsed-send')){
   if(svg.childNodes?.length)svg.replaceChildren?.();
   return;
  }
- const vp=viewport.getBoundingClientRect?.(),fromEl=viewport.querySelector?.('.strip[data-id="'+source.id+'"] .wire-node-out');
+ const vp=viewport.getBoundingClientRect?.();
+ const fromEl=viewport.querySelector?.('.strip[data-id="'+source.id+'"] .wire-node-out');
  const from=fromEl?.getBoundingClientRect?.();
  if(!vp||!from||!vp.width||!vp.height){svg.innerHTML='';return;}
  svg.setAttribute('viewBox','0 0 '+vp.width+' '+vp.height);
  const x0=from.left-vp.left+from.width/2,y0=from.top-vp.top+from.height*.5;
+ const well=fromEl.closest?.('.send-section')?.getBoundingClientRect?.();
+ const riseLimit=well?Math.max(18,from.top-well.top-10):85;
  const paths=[];
- const visibleEdges=outgoingWires(source.id).map(e=>({...e,preview:false}));
- if(wireHoverId!==null&&wireHoverId!==source.id&&!wireFor(source.id,wireHoverId))visibleEdges.push({destId:wireHoverId,mode:wireMode,preview:true});
- for(const edge of visibleEdges){
+ const edges=outgoingWires(source.id).map(e=>({...e,preview:false}));
+ if(!dragging&&wireHoverId!==null&&wireHoverId!==source.id&&!wireFor(source.id,wireHoverId))
+  edges.push({destId:wireHoverId,preview:true});
+ for(const edge of edges){
   const dest=tracks.find(t=>t.id===edge.destId);
   if(!dest)continue;
-  const el=viewport.querySelector?.('.strip[data-id="'+dest.id+'"] .wire-socket');
-  const rect=el?.getBoundingClientRect?.();
-  if(!rect)continue; // off-bank links preserved; never draw cable to invisible slot
-  const x1=rect.left-vp.left+rect.width/2,y1=rect.top-vp.top+rect.height*.5;
-  const sourceWell=fromEl.closest?.('.send-section')?.getBoundingClientRect?.();
-  const availableRise=sourceWell?Math.max(14,from.top-sourceWell.top-7):45;
-  // Spread signal lines through the patch-bay glass, never over FX or PAN.
-  const bend=Math.min(availableRise,Math.max(30,Math.min(68,Math.abs(x1-x0)*.15)));
-  const d='M '+x0.toFixed(1)+' '+y0.toFixed(1)+' C '+x0.toFixed(1)+' '+(y0-bend).toFixed(1)+', '+x1.toFixed(1)+' '+(y1-bend).toFixed(1)+', '+x1.toFixed(1)+' '+y1.toFixed(1);
-  const color=edge.preview?'#f7d78c':edge.mode==='split'?'#9bd7fa':'#a6f095';
-  paths.push('<path d="'+d+'" stroke="#071d1b" stroke-width="'+(edge.preview?3:6)+'" opacity="'+(edge.preview?'.42':'.85')+'" fill="none" stroke-linecap="round"/>'+
-   '<path d="'+d+'" stroke="'+color+'" stroke-width="'+(edge.preview?1.4:1.8)+'" opacity="'+(edge.preview?'.84':'.94')+'" fill="none" stroke-linecap="round"'+(edge.preview?' stroke-dasharray="5 5"':'')+'/>');
+  const rect=viewport.querySelector?.('.strip[data-id="'+dest.id+'"] .wire-node-in')?.getBoundingClientRect?.();
+  if(!rect||!rect.width)continue;
+  const x1=rect.left-vp.left+rect.width/2,y1=rect.top-vp.top+rect.height/2;
+  const d=wirePathData(x0,y0,x1,y1,riseLimit),color=edge.preview?'#b5e8d3':dest.color||'#93e5b4';
+  paths.push('<path d="'+d+'" stroke="#06151b" stroke-width="'+(edge.preview?4:6)+'" opacity="'+(edge.preview?'.18':'.85')+'" fill="none" stroke-linecap="round"/>'+
+   '<path d="'+d+'" stroke="'+color+'" stroke-width="'+(edge.preview?1.7:2.3)+'" opacity="'+(edge.preview?'.42':'.93')+'" fill="none" stroke-linecap="round"/>');
  }
- if(wireGesture?.active&&wireGesture.sourceId===source.id&&wireGesture.point){
-  const rect=wireGesture.point;
-  const x1=Math.max(2,Math.min(vp.width-2,rect.x-vp.left));
-  const y1=Math.max(2,Math.min(vp.height-2,rect.y-vp.top));
-  const bend=Math.max(19,Math.min(63,Math.abs(x1-x0)*.15));
-  const d='M '+x0.toFixed(1)+' '+y0.toFixed(1)+' C '+x0.toFixed(1)+' '+(y0-bend).toFixed(1)+', '+x1.toFixed(1)+' '+(y1-bend).toFixed(1)+', '+x1.toFixed(1)+' '+y1.toFixed(1);
-  paths.push('<path class="wire-drag-line" d="'+d+'" stroke="#071b20" stroke-width="7" opacity=".8" fill="none" stroke-linecap="round"/>'+
-   '<path class="wire-drag-line" d="'+d+'" stroke="#b0f7d4" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-dasharray="7 3"/>');
+ if(dragging){
+  let x1=Math.max(2,Math.min(vp.width-2,wireGesture.point.x-vp.left));
+  let y1=Math.max(2,Math.min(vp.height-2,wireGesture.point.y-vp.top));
+  const snap=tracks.concat(master).find(t=>t.id===wireGesture.snapId);
+  const rect=snap?viewport.querySelector?.('.strip[data-id="'+snap.id+'"] .wire-node-in')?.getBoundingClientRect?.():null;
+  if(rect?.width){x1=rect.left-vp.left+rect.width/2;y1=rect.top-vp.top+rect.height/2;}
+  const d=wirePathData(x0,y0,x1,y1,riseLimit);
+  paths.push('<path class="wire-drag-line" d="'+d+'" stroke="#06151b" stroke-width="6" opacity=".25" fill="none" stroke-linecap="round"/>'+
+   '<path class="wire-drag-line" d="'+d+'" stroke="'+(snap?.color||'#b5eedb')+'" stroke-width="2.4" opacity=".54" fill="none" stroke-linecap="round"/>');
  }
  svg.innerHTML=paths.join('');
+}
+function queueWireGestureFrame(){
+ if(wireFramePending)return;
+ wireFramePending=true;
+ requestAnimationFrame(()=>{
+  wireFramePending=false;
+  if(!wireGesture?.active)return;
+  const snap=wireSnapTarget(wireGesture.point,wireGesture.sourceId);
+  wireGesture.snapId=snap?.track.id??null;
+  setWireSnapTarget(wireGesture.snapId);
+  renderWireRouting();
+ });
 }
 function syncActiveSend(t){
  if(t.kind==='master'||t.kind==='fx')return;
@@ -3298,7 +3551,7 @@ consoleBody.addEventListener('pointerdown',ev=>{
   if(src&&src.kind!=='master'&&Number.isFinite(ev.clientX)&&Number.isFinite(ev.clientY)){
    wireSuppressClick=false;
    wireGesture={pointerId:ev.pointerId,sourceId:src.id,startX:ev.clientX,startY:ev.clientY,
-    point:{x:ev.clientX,y:ev.clientY},active:false};
+    point:{x:ev.clientX,y:ev.clientY},snapId:null,active:false};
    ev.preventDefault?.();
    node.setPointerCapture?.(ev.pointerId);
    return;
@@ -3320,10 +3573,10 @@ window.addEventListener('pointermove',ev=>{
   const g=wireGesture;
   if(!Number.isFinite(ev.clientX)||!Number.isFinite(ev.clientY))return;
   if(!g.active&&Math.hypot(ev.clientX-g.startX,ev.clientY-g.startY)>=5){
-   g.active=true;wireSourceId=g.sourceId;wireHoverId=null;
+   g.active=true;wireHoverId=null; // source selection changes only on an accepted drop
    consoleBody.classList.add('wire-dragging');
   }
-  if(g.active){g.point={x:ev.clientX,y:ev.clientY};renderWireRouting();}
+  if(g.active){g.point={x:ev.clientX,y:ev.clientY};queueWireGestureFrame();}
   return;
  }
  if(!faderGesture||ev.pointerId!==faderGesture.pointerId)return;
@@ -3331,16 +3584,18 @@ window.addEventListener('pointermove',ev=>{
 });
 function finishFaderPointer(ev){
  if(wireGesture&&ev.pointerId===wireGesture.pointerId){
-  const g=wireGesture;wireGesture=null;
+  const g=wireGesture;
+  const snap=g.active?wireSnapTarget({x:ev.clientX,y:ev.clientY},g.sourceId):null;
+  wireGesture=null;setWireSnapTarget(null);
   consoleBody.classList.remove('wire-dragging');
   if(g.active){
    const hit=document.elementFromPoint?.(ev.clientX,ev.clientY)||ev.target;
-   const input=hit?.closest?.('.wire-node-in');
-   const target=input?findTrack(input):null,source=wireSourceTrack(g.sourceId);
+   const input=snap?.element||hit?.closest?.('.wire-node-in');
+   const target=snap?.track||(input?findTrack(input):null),source=wireSourceTrack(g.sourceId);
    if(target&&source&&target.id!==source.id){
     wireSourceId=source.id;wireAnchorId=target.id;
     requestWireConnection(source,target,input);
-   }else say('WIRE drop canceled · release over a hollow IN jack (no graph change)');
+   }else say('WIRE drop canceled · release in destination WIRE bay (graph unchanged)');
    renderWireRouting();wireSuppressClick=true;
   }else if(g.sourceId){wireSuppressClick=false;}
   return;
@@ -3356,7 +3611,7 @@ function finishFaderPointer(ev){
 }
 window.addEventListener('pointerup',finishFaderPointer);
 window.addEventListener('pointercancel',ev=>{
- if(wireGesture&&ev.pointerId===wireGesture.pointerId){wireGesture=null;consoleBody.classList.remove('wire-dragging');renderWireRouting();say('WIRE drag canceled · graph unchanged');}
+ if(wireGesture&&ev.pointerId===wireGesture.pointerId){wireGesture=null;setWireSnapTarget(null);consoleBody.classList.remove('wire-dragging');renderWireRouting();say('WIRE drag canceled · graph unchanged');}
  if(faderGesture&&ev.pointerId===faderGesture.pointerId)faderGesture=null;
  for(const pan of consoleBody.querySelectorAll?.('.center-pan[data-pan-alt-pointer]')||[])
   delete pan.dataset.panAltPointer;
@@ -3499,7 +3754,7 @@ document.querySelector('.console-body').addEventListener('drop',e=>{
 document.querySelector('.console-body').addEventListener('pointerover',e=>{
  const btn=e.target.closest?.('[data-action="wireRoute"]');
  const t=btn?findTrack(btn):null;
- if(!t||t.kind==='master'||t.id===wireSourceId||wireHoverId===t.id)return;
+ if(wireGesture?.active||!t||t.kind==='master'||t.id===wireSourceId||wireHoverId===t.id)return;
  wireHoverId=t.id;renderWireRouting();
 });
 document.querySelector('.console-body').addEventListener('pointerout',e=>{

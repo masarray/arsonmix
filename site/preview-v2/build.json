@@ -1,11 +1,11 @@
 {
-  "version": "preview-v17-magnetic-wire-qa",
+  "version": "preview-v18-hardware-key-socket-portrait-led",
   "kind": "GUI_REFERENCE_ONLY",
   "live_audio": false,
   "source_pr": 278,
   "source_branch": "design/audition-mixer-reference-isolated-20261101",
-  "source_sha": "223f2a7cc5362f4723d19ff69d1b861c8ab9f29a",
-  "source_content_sha": "fa6415e1286e4eacdc701be840eb997299198a55",
+  "source_sha": "1eae3fbf18773f48b26508202d769ed0388e3629",
+  "source_content_sha": "2446bc65dec621dc74b8968ac98bf98c63a0a288",
   "routes": [
     "/preview/mixer.html",
     "/preview-v2/"
@@ -15,6 +15,8 @@
   "milestone": "Fixed OUT/IN/GAIN/REMOVE geometry, smaller filled OUT and larger hollow IN, solid translucent flexible Bezier cable, magnetic snap both directions and channel-hue gain",
   "operator_acceptance": "214/214 DOM/workflow and Chromium pointer/no-shift/Bus-only/invalid-drop PASS at 1366x768, 1680x900, 1920x1080",
   "owner_geometry": "WIRE collapses to 23px, expands to 160px; FX/PAN/FADER hierarchy preserved",
-  "hardware_key": "Approved global MUTE/SOLO hardware button style preserved",
-  "limitations": "GUI-only signal wire demo: no native PCM, ASIO graph acknowledgment or real VST3 execution."
+  "hardware_key": "V18 socket cutout, 2px sharp-cap radius, 1px press travel, rim highlight, no GPU filter or blur",
+  "limitations": "GUI-only signal wire demo: no native PCM, ASIO graph acknowledgment or real VST3 execution.",
+  "led_meter": "6px x 9px portrait LED; 2px dark divider, continuous green/yellow/amber/red",
+  "verification": "Chromium smoke: key socket, 1px press and portrait LED; V15 routing and benchmark tests still required"
 }
