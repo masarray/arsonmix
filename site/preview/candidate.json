@@ -2,10 +2,10 @@
   "kind": "REFERENCE_WORKFLOW_QA_ONLY",
   "source_pr": 278,
   "source_branch": "main/site/preview-v2",
-  "source_sha": "647603365f896aa776cc98175b7b8a165c6a53aa",
-  "source_blob_sha": "eab61464dc385ebc9285b3e5f12dcfa3ead92ac4",
-  "ci_run": 41393926429,
+  "source_sha": "d714434ed8cf7ea32873ddcf7b0d1eea486cf881",
+  "source_blob_sha": "2800bec0b1bd9a8519f66b36a9c63538a982de30",
+  "ci_run": 41397350090,
   "ci_conclusion": "success",
   "live_audio": false,
-  "note": "V18: published /preview/mixer.html and /preview-v2/ come from the same qualified source blob. Replug is GUI demo state; native audio unchanged."
+  "note": "Verified V19 compact routing rail + existing V20 hardware controls. Public /preview/mixer.html and /preview-v2/ atomically share one source blob. GUI only."
 }

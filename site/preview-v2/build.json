@@ -1,24 +1,24 @@
 {
-  "version": "preview-v20-cube-illuminated-hardware-keys",
+  "version": "preview-v21-compact-wire-rail",
   "kind": "GUI_REFERENCE_ONLY",
   "live_audio": false,
   "source_pr": 278,
   "source_branch": "design/audition-mixer-reference-isolated-20261101",
-  "source_sha": "6ba3babe6056dbbbcb592b3596c1267cf8a52739",
-  "source_content_sha": "598be234864a352b855f2881af410e15235e9bb1",
+  "source_sha": "d714434ed8cf7ea32873ddcf7b0d1eea486cf881",
+  "source_content_sha": "2800bec0b1bd9a8519f66b36a9c63538a982de30",
   "routes": [
     "/preview/mixer.html",
     "/preview-v2/"
   ],
-  "ci_run": 41393926429,
+  "ci_run": 41397350090,
   "ci_conclusion": "success",
-  "milestone": "Grab existing receiving IN jack or nearby well; flexible cable endpoint follows mouse; auto-snap to any legal IN; reroute same edge preserving gain/mode/id; release outside original 31px magnet to unplug",
-  "operator_acceptance": "221/221 deterministic DOM/workflow PASS; Chromium V15 and V18 pointer reroute, snap-back, loose unplug and duplicate route rejection PASS at 1366x768, 1680x900, 1920x1080",
+  "milestone": "V20 hardware key retained; DAW-inspired 28px I/O FX W rail, V19 collapsed WIRE displays compact ←incoming →outgoing custom routing counts including legacy Sends and Bus destinations, click row to expand",
+  "operator_acceptance": "225/225 DOM/workflow checks and Chromium 1366×768/1680×900/1920×1080 PASS for rail labels, summary live updates, mouse-open, no PAN/fader height drift; V18 snap/unplug regression PASS",
   "owner_geometry": "WIRE collapses to 23px, expands to 160px; FX/PAN/FADER hierarchy preserved",
   "hardware_key": "V20 true 3px hard sidewall / 2px while pressed, cap travels 1px; internal light gradient in translucent physical lens, sharp 2px radius, hard socket; no glow/blur/filters",
-  "limitations": "GUI-ONLY routing preview. No realtime PCM, native ASIO GraphAccepted ACK, or genuine VST3 routing.",
+  "limitations": "GUI reference only; compact WIRE counts custom internal sends/routes, direct MAIN output remains in I/O. No native PCM/ASIO/VST3 execution.",
   "led_meter": "6px x 9px portrait LED; 2px dark divider, continuous green/yellow/amber/red",
-  "verification": "Existing Chromium + enhanced V20 3px extrusion, 1px press, internal lens, status colors and V15 physical drag wire",
+  "verification": "GitHub Actions run 41397350090 success (V15 + V18 + V19 focused browser QA)",
   "design_reference_pr": 278,
   "design_reference_sha": "2a889af659def8b5cbf5511ed24ffb6fe9c583d7"
 }

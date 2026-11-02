@@ -2980,6 +2980,79 @@ html * ,html *::before,html *::after{
  filter:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;
 }
 
+
+/* V19 collapsed-section contract: DAW-like discreet labels and state indicators.
+   No rotated words, pseudo-caption OPEN/PATCH, blur, glow or extra layout rows. */
+.console-body .section-rail>.rail-cell[data-section]{
+ font:500 9px/1.1 Arial,Helvetica,sans-serif!important;
+ font-style:normal!important;letter-spacing:0!important;
+ color:#9aafb9!important;background:#182b35!important;
+ text-shadow:none!important;transition:none!important;
+ border-top:0!important;
+}
+.console-body.wire-routing-v13 .section-rail>.rail-cell.send{
+ background:#182b35!important;color:#9aafb9!important;
+}
+.console-body .section-rail>.rail-cell[data-section].collapsed{
+ background:#12232d!important;color:#768d98!important;
+ box-shadow:inset 2px 0 #627e8e65!important;
+}
+.console-body .section-rail>.rail-cell[data-section]:not(.collapsed){
+ box-shadow:inset 2px 0 #91c9d080!important;
+}
+.console-body .section-rail>.rail-cell[data-section]:hover{
+ background:#29404b!important;color:#e3eff2!important;
+}
+.console-body .section-rail>.rail-cell[data-section]::after,
+.console-body.wire-routing-v13 .section-rail>.rail-cell.send::after,
+.console-body.wire-routing-v13.collapsed-send .section-rail>.rail-cell.send::after{
+ content:""!important;display:block!important;
+ position:absolute!important;right:2px!important;top:4px!important;
+ width:3px!important;height:3px!important;
+ border:solid currentColor!important;border-width:0 1px 1px 0!important;
+ transform:rotate(45deg)!important;opacity:.75!important;
+ background:transparent!important;font-size:0!important;
+}
+.console-body .section-rail>.rail-cell[data-section].collapsed::after,
+.console-body.wire-routing-v13.collapsed-send .section-rail>.rail-cell.send::after{
+ transform:rotate(-45deg)!important;
+}
+.console-body .section-rail .rail-cell.route,
+.console-body .section-rail .rail-cell.fx,
+.console-body .section-rail .rail-cell.send{
+ padding:0 2px 0 0!important;justify-content:center!important;
+}
+.console-body.wire-routing-v15 .strip .wire-fold-summary{
+ display:none!important;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary{
+ display:flex!important;gap:6px;align-items:center;justify-content:center;
+ width:100%;height:21px;min-height:21px;padding:0 2px;
+ border:0;border-radius:0;background:transparent!important;
+ color:#9bb0ba;font:500 9px/1 Arial,Helvetica,sans-serif;
+ letter-spacing:0;cursor:pointer;overflow:hidden;white-space:nowrap;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary:hover{
+ background:#273c48!important;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary:focus-visible{
+ outline:1px solid #91cbd6;outline-offset:-2px;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-in{
+ color:#9baeb9;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-out{
+ color:var(--ch,#a4bac7);
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-empty{
+ color:#617883;font-size:10px;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-marker{
+ display:inline-block;width:3px;height:3px;margin-right:2px;
+ border-radius:50%;background:currentColor;vertical-align:middle;
+}
+/* The collapsed WIRE rack stays exactly 23px. FX/fader geometry is unchanged. */
+
 </style>
 </head>
 <body>
@@ -3027,9 +3100,9 @@ html * ,html *::before,html *::after{
     <section class="console-body collapsed-send wire-routing-v13 wire-routing-v15" data-density="comfort" aria-label="Live mixing console">
       <aside class="section-rail" aria-label="Mixer section icons">
         <div class="rail-cell identity" title="Channel identity">CH</div>
-        <button class="rail-cell route" data-section="route" aria-expanded="true" title="Collapse / expand Inputs and Outputs">⇥</button>
-        <button class="rail-cell fx" data-section="fx" aria-expanded="true" title="Collapse / expand Effects">fx</button>
-        <button class="rail-cell send collapsed" data-section="send" aria-expanded="false" title="Compact / expanded wire patch bay" aria-label="Expand wire routing area">↗</button>
+        <button class="rail-cell route" data-section="route" aria-expanded="true" aria-label="Collapse input and output rack" title="Collapse / expand input and output rack">I/O</button>
+        <button class="rail-cell fx" data-section="fx" aria-expanded="true" aria-label="Collapse effects rack" title="Collapse / expand effects rack">FX</button>
+        <button class="rail-cell send collapsed" data-section="send" aria-expanded="false" title="Expand wire patch bay" aria-label="Expand wire routing area">W</button>
         <div class="rail-cell pan" title="Pan">◉</div>
         
         <div class="rail-cell switch" title="Mute / Solo / Cue / Monitor"><small>M S C</small></div>
@@ -3361,6 +3434,47 @@ function wireTray(t){
    Operator routes with socket and adjusts gain using the inline metal knob. */
 /* V13: uncluttered middle wire canvas. Only source and active destinations
    carry tiny engraved text, leaving empty receiver channels optically quiet. */
+/* Compact WIRE receives/sends: recomputed on DOM render, never in the audio
+   callback. Count only custom intra-mixer paths; direct MAIN stays in I/O. */
+function compactWireActivity(t){
+ let incoming=0,outgoing=0;
+ for(const edge of wireEdges)if(edge.enabled){
+  if(edge.destId===t.id)incoming++;
+  if(edge.sourceId===t.id)outgoing++;
+ }
+ for(const source of tracks){
+  const split=parseSplitSource(source.input);
+  if(split&&!wireFor(split.sourceId,source.id)){
+   if(split.sourceId===t.id)outgoing++;
+   if(source.id===t.id)incoming++;
+  }
+  const target=tracks.find(x=>(x.kind==='bus'||x.kind==='fx')&&x.name===source.output);
+  if(target&&!wireFor(source.id,target.id)){
+   if(source.id===t.id)outgoing++;
+   if(target.id===t.id)incoming++;
+  }
+  for(let i=0;i<source.sendSlots.length;i++){
+   const slot=i===source.activeSend?source:source.sendSlots[i];
+   if(!slot?.sendOn||!slot.send||slot.send==='None')continue;
+   const dest=tracks.find(x=>x.name===slot.send);
+   if(!dest)continue;
+   if(source.id===t.id)outgoing++;
+   if(dest.id===t.id)incoming++;
+  }
+ }
+ return {incoming,outgoing};
+}
+function compactWireSummary(t){
+ const {incoming,outgoing}=compactWireActivity(t);
+ const title='Expand WIRE · '+t.name+' · '+incoming+' incoming, '+outgoing+
+  ' outgoing custom paths · direct MAIN routing shown in I/O';
+ const content=incoming||outgoing
+  ?(incoming?'<span class="fold-in"><span class="fold-marker"></span>←'+incoming+'</span>':'')+
+   (outgoing?'<span class="fold-out"><span class="fold-marker"></span>→'+outgoing+'</span>':'')
+  :'<span class="fold-empty">—</span>';
+ return '<button type="button" class="wire-fold-summary" data-action="wireExpand" aria-label="'+
+  escapeHtml(title)+'" title="'+escapeHtml(title)+'">'+content+'</button>';
+}
 function sectionSend(t){
  const source=tracks.find(x=>x.id===wireSourceId&&x.kind!=='master');
  const isSource=!!source&&source.id===t.id;
@@ -3378,7 +3492,7 @@ function sectionSend(t){
    '<div class="wire-deck-label">'+label+'</div>'+
    '<div class="wire-deck-status">'+status+'</div>'+
    '<div class="wire-deck-rail"></div>'+
-  '</div>'+wireTray(t)+'</div>';
+  '</div>'+wireTray(t)+compactWireSummary(t)+'</div>';
 }
 function formatDb(n){return n<=-60?'-∞':(n>0?'+':'')+Number(n).toFixed(1);}
 function panLabel(n){return Number(n)===0?'C':n<0?'L'+Math.abs(n):'R'+n;}
@@ -3952,6 +4066,7 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  const btn=e.target.closest('[data-action]');if(!btn)return;
  const t=findTrack(btn);if(!t)return;
  const a=btn.dataset.action;
+ if(a==='wireExpand'){document.querySelector('.section-rail [data-section="send"]')?.click();return;}
  if(wireSuppressClick&&['wireSource','wireRoute','wireRemove'].includes(a)){wireSuppressClick=false;return;}
  if(a==='wireSource'){
   selectWireSource(t);return;
