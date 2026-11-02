@@ -103,8 +103,8 @@ def main():
              f'{width}: Bus A did not become focused channel')
       ensure(incoming.count()==0,
              f'{width}: renderer invented offscreen CH01/02 cable coordinates')
-      # V28: independently flexible Bézier cables; no V27 common stem.
-      # Longer runs must arch far above their source socket/legend.
+      # V31: independently hanging Bézier cables; no V27 common stem.
+      # Gravity bends every wire below its anchored top-mounted OUT/IN jacks.
       bank.select_option('0')
       connect(1,2) # CH01 already sends to CH03.
       select(1)
@@ -119,11 +119,13 @@ def main():
              f'{width}: natural cables should be single cubic Bézier paths: {curves}')
       ensure(len({(c[0],c[1]) for c in curves})==1,
              f'{width}: cable starting point must remain centered on OUT jack')
-      ensure(all(c[3]<c[1]-50 for c in curves) and
-             any(c[3]<c[1]-74 for c in curves),
-             f'{width}: flexible wire arch is too flat above legend: {curves}')
-      ensure(curves[0][2]!=curves[1][2],
-             f'{width}: independent cables must not share V27 vertical tangent')
+      ensure(all(c[3]>c[1]+20 and c[5]>c[7]+20 for c in curves),
+             f'{width}: cables must hang BELOW both endpoint anchors: {curves}')
+      ensure(all(abs(c[2]-c[0])<.1 for c in curves) and
+             all(abs(c[4]-c[6])<.1 for c in curves),
+             f'{width}: physical connectors need downward and upward vertical tangents: {curves}')
+      ensure(len({round(c[3],1) for c in curves})>1,
+             f'{width}: independent cables must respond to their own horizontal span')
       if width==1366:
         # 1244px owner screenshot: do not overlap labels and toolbar buttons.
         page.set_viewport_size({'width':1244,'height':900})
