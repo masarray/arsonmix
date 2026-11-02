@@ -43,8 +43,12 @@ def main():
    # The dragging cursor must carry a colored DOT at the end of the wire,
    # including NEW wires (not only replugging existing ones).
    p.mouse.move(x0,y0);p.mouse.down()
-   px=(x0+x1)/2;py=(y0+y1)/2
+   # Travel through empty WIRE deck space, away from intervening IN jacks.
+   # A midpoint on the socket row may legitimately magnet-snap to CH04.
+   px=(x0+x1)/2;py=y0+54
    p.mouse.move(px,py,steps=6)
+   check(p.locator('.wire-node-in.is-snap-target').count()==0,
+         'empty-deck pointer unexpectedly close to magnetic IN')
    plug=p.locator("#wireLayer circle.wire-floating-plug")
    check(plug.count()==1,"fresh drag missing floating dot")
    check(p.locator("#wireLayer path.wire-drag-line").count()==2,"drag cable missing")
