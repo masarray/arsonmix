@@ -11,6 +11,10 @@
     ['#mixer [data-channel-format-toggle]','neutral',null],
     ['#masterMode','neutral',null],
     ['#mixer [data-fxpower],#masterLeft [data-master-power]','processing','FX'],
+    // Native top commands share the approved V5 key material; navigation
+    // chevrons retain their plain icon affordance. Decoration alone never
+    // dispatches or activates a native operation.
+    ['#app .arV6Console .arV6Top .arV6Button','neutral',null],
     ['#app .arV6Console [data-op="SET_MUTE"]','mute','M'],
     ['#app .arV6Console [data-op="SET_SOLO"]','solo','S'],
     ['#app .arV6Console [data-op="SET_CUE"]','cue','C'],

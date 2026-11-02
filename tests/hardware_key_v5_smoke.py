@@ -92,22 +92,24 @@ async def audit(page):
     await page.evaluate("""()=>{
       const node=document.createElement('section');node.className='arV6Console';
       node.id='v5-native-fixture';
-      node.innerHTML='<button data-op="SET_MUTE" aria-pressed="true">M</button>'+
+      node.innerHTML='<div class="arV6Top"><button class="arV6Button">DEVICE</button></div>'+ 
+        '<button data-op="SET_MUTE" aria-pressed="true">M</button>'+
         '<button data-op="SET_SOLO" aria-pressed="true">S</button>'+
         '<button data-op="SET_CUE" aria-pressed="true">C</button>'+
         '<button data-op="SET_INSERT_BYPASS" aria-pressed="true">ON</button>'+
         '<button data-op="SET_SEND_TAP">PRE</button>';
       document.querySelector('#app').appendChild(node);
     }""")
-    await page.wait_for_function("""()=>document.querySelectorAll('#v5-native-fixture .mx-hw-face').length===5""")
+    await page.wait_for_function("""()=>document.querySelectorAll('#v5-native-fixture .mx-hw-face').length===6""")
     native=await page.evaluate("""()=>[...document.querySelectorAll('#v5-native-fixture button')].map(b=>({
       led:getComputedStyle(b).getPropertyValue('--mx-hw-led').trim(),
       lamp:getComputedStyle(b.querySelector('.mx-hw-lamp')).opacity,
       gap:getComputedStyle(b,'::before').opacity
     }))""")
     assert [x['led'] for x in native]==[
-      '255,64,85','255,208,44','90,200,231','87,211,189','90,200,231'],native
-    assert all(x['lamp']=='1' and x['gap']=='1' for x in native),native
+      '210,225,234','255,64,85','255,208,44','90,200,231','87,211,189','90,200,231'],native
+    assert native[0]['lamp']=='0' and native[0]['gap']=='0',native
+    assert all(x['lamp']=='1' and x['gap']=='1' for x in native[1:]),native
     await page.locator('#v5-native-fixture').evaluate('(el)=>el.remove()')
 
 async def main():
