@@ -769,7 +769,7 @@ async def main():
           face:getComputedStyle(e.querySelector('svg.mx-hw-face')).transform,
           rect:e.getBoundingClientRect().toJSON()
         })""")
-        assert during['outer']=='matrix(1, 0, 0, 1, 0, 0)',during
+        assert during['outer'] in ('none','matrix(1, 0, 0, 1, 0, 0)'),during
         assert during['face']=='matrix(1, 0, 0, 1, 0, 1)',during
         assert abs(during['rect']['y']-press_before['y'])<=.2,during
         await page.mouse.up()
