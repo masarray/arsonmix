@@ -97,7 +97,13 @@ def audit_p0_collapse(page, label):
           .map(k=>[k,box(rail.querySelector('.rail-cell.'+k))])),
         style:getComputedStyle(tracks[0]).backgroundImage,
         faces:['route','fx','send','pan','switch','fader'].map(k=>
-          getComputedStyle(tracks[0].querySelector('.'+k+'-section')).backgroundImage)
+          getComputedStyle(tracks[0].querySelector('.'+k+'-section')).backgroundImage),
+        routing:{
+          deck:getComputedStyle(tracks[0].querySelector('.wire-deck')).display,
+          tray:getComputedStyle(tracks[0].querySelector('.wire-tray')).display,
+          svg:getComputedStyle(document.querySelector('#wireLayer')).display,
+          sendToggle:rail.querySelector('[data-section="send"]').getAttribute('aria-expanded')
+        }
       });
       const original=[...['route','fx','send'].map(k=>body.classList.contains('collapsed-'+k))];
       const click=k=>rail.querySelector('[data-section="'+k+'"]').click();
@@ -127,10 +133,20 @@ def audit_p0_collapse(page, label):
         for i,item in enumerate(frame['items']):
             for k in anchor:
                 ref=first[k]
-                assert abs(item[k]['top']-ref['top'])<=1.2,(
-                    label,state,i,k,'lower section Y jumped',ref,item[k])
-                assert abs(item[k]['h']-ref['h'])<=1.2,(
-                    label,state,i,k,'lower height changed',ref,item[k])
+                if state=='111' and k in ('pan','switch','fader'):
+                    if k in ('pan','switch'):
+                        assert abs(item[k]['h']-ref['h'])<=1.2,(
+                            label,state,i,k,'PAN/SWITCH height must stay calibrated')
+                    else:
+                        assert item[k]['h']>ref['h']+75,(
+                            label,state,i,k,'ALL CLOSED must grow physical fader')
+                    assert item[k]['top']<ref['top']-35,(
+                        label,state,i,k,'ALL CLOSED must raise lower controls')
+                else:
+                    assert abs(item[k]['top']-ref['top'])<=1.2,(
+                        label,state,i,k,'lower section Y jumped',ref,item[k])
+                    assert abs(item[k]['h']-ref['h'])<=1.2,(
+                        label,state,i,k,'lower height changed',ref,item[k])
                 assert abs(item[k]['top']-frame['rail'][k]['top'])<=1.2,(
                     label,state,i,k,'rail lower not aligned')
             for k in ('route','fx','send'):
@@ -141,6 +157,24 @@ def audit_p0_collapse(page, label):
         assert frame['style']=='none',(label,state,'strip must have FLAT surface',frame['style'])
         assert all(bg=='none' for bg in frame['faces']),(
             label,state,'broad gradient still paints panel face',frame['faces'])
+        if state.endswith('1'):
+            assert frame['items'][0]['send']['h']<=24,(
+                label,state,'collapsed WIRE must be a header only')
+            assert frame['routing']['deck']=='none' and frame['routing']['tray']=='none',(
+                label,state,'collapsed SEND still renders graphical patch bay')
+            assert frame['routing']['svg']=='none',(
+                label,state,'collapsed SEND leaves SVG wires visible')
+            assert frame['routing']['sendToggle']=='false',(
+                label,state,'folded route disclosure reports expanded')
+        else:
+            assert frame['items'][0]['send']['h']>=110,(
+                label,state,'expanded WIRE bay is missing')
+            assert frame['routing']['deck']!='none' and frame['routing']['tray']!='none',(
+                label,state,'expanded patch graphic missing')
+            assert frame['routing']['svg']!='none',(
+                label,state,'SVG overlay not restored')
+            assert frame['routing']['sendToggle']=='true',(
+                label,state,'expanded route disclosure reports collapsed')
     assert states['100']['items'][0]['fx']['h']>first['fx']['h']+40,(
         label,'ROUTE collapse did not expand FX')
     assert states['001']['items'][0]['fx']['h']>first['fx']['h']+55,(
@@ -225,6 +259,11 @@ def main():
                     audit_geometry(page,"1711x1005 all upper sections expanded");count+=1
                     page.screenshot(path=str(ROOT / "preview-v13-all-expanded-1711.png"))
                     page.locator('.section-rail [data-section="send"]').click()
+                    page.locator('.section-rail [data-section="route"]').click()
+                    page.locator('.section-rail [data-section="fx"]').click()
+                    page.screenshot(path=str(ROOT / "preview-v14-all-folded-1711.png"))
+                    page.locator('.section-rail [data-section="fx"]').click()
+                    page.locator('.section-rail [data-section="route"]').click()
                 page.screenshot(path=str(ROOT / f"preview-v2-v7-{width}.png"))
                 # Single click must SELECT, not open the name/color popover.
                 page.locator('#tracks .strip-identity-top').first.click()

@@ -1,8 +1,8 @@
 {
-  "version": "preview-v13.2-flat-fixed-deck",
+  "version": "preview-v14.1-dark-smart-fold",
   "source_pr": 278,
-  "source_sha": "c98489a777f49041d843564c3bf4e10150e8f0ab",
-  "source_content_sha": "74250d2d56055222e624310b0f5abbb2ff511d65",
+  "source_sha": "ae0d05c7dc5f3e6e3c6dbe1dfc41a632006364e7",
+  "source_content_sha": "e0443639e3ba8dd6fb5de94f149601ebccc6c60e",
   "routes": [
     "/preview/mixer.html",
     "/preview-v2/"
@@ -13,5 +13,5 @@
   "geometry": "80/160px wire panel, P0 stationary lower PAN/SWITCH/FADER/FOOTER and FX absorbing all ROUTE/WIRE fold differences, flat anodized finish",
   "test": "196/196 reference DOM/workflow checks PASS; exact main Chromium CI required",
   "native": "Not actual ASIO/VST3 PCM routing, not native accepted graph ACK; browser preview only",
-  "milestone": "V13.2 flat anodized metal + stationary PAN/SWITCH/FADER across all ROUTE/FX/SEND folds; WIRE retained"
+  "milestone": "Only 3-way ROUTE+FX+SEND collapse grows fader upward; SEND collapse removes wire bay and SVG view without deleting 1:N links; darker premium satin plates"
 }

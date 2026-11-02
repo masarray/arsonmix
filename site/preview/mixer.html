@@ -1934,12 +1934,12 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
    deliberately live at the end, after legacy V9-V12 chrome precedence. */
 .console-body{
  --v13-fader-h:clamp(150px,calc(100dvh - 630px),485px);
- --v13-plate:#253843;
- --v13-route:#293c46;
- --v13-insert:#22353f;
- --v13-send:#293b45;
- --v13-lower:#293b45;
- --v13-edge:#455e6a;
+ --v13-plate:#1b2c36;
+ --v13-route:#1b2d37;
+ --v13-insert:#182a34;
+ --v13-send:#1d2e38;
+ --v13-lower:#1c2e38;
+ --v13-edge:#39515c;
  --p0-fader-h:var(--v13-fader-h)!important;
  --fader-fixed-h:var(--v13-fader-h)!important;
 }
@@ -2008,22 +2008,39 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
 .console-body.collapsed-fx.collapsed-send .section-rail>.rail-cell.pan{
  margin-top:auto!important;
 }
+/* V14: THREE-way collapse is the sole exception to the anchored lower
+   deck. CSS flex consumes freed upper space with a taller fader rising toward
+   the collapsed controls; PAN/SOLO follow upward as a coherent unit. For any
+   other combination, original deck geometry remains unchanged. No resize JS. */
+.console-body.collapsed-route.collapsed-fx.collapsed-send .strip .pan-section,
+.console-body.collapsed-route.collapsed-fx.collapsed-send .section-rail>.rail-cell.pan{
+ margin-top:0!important;
+}
+.console-body.collapsed-route.collapsed-fx.collapsed-send .strip .fader-section,
+.console-body.collapsed-route.collapsed-fx.collapsed-send .section-rail>.rail-cell.fader{
+ flex:1 1 var(--v13-fader-h)!important;
+ height:auto!important;
+ min-height:var(--v13-fader-h)!important;
+ max-height:none!important;
+}
+/* Colored channel nameplates and LEDs remain meaningful on a dark, satin,
+   untextured metal desk. Shadows only define seams and mechanical recesses. */
 /* FLAT plate language: no large face gradients, glow, brushed stripes or
    uneven fading. Light/dark gradients remain only inside actual meter LEDs
    and the original PNG thumbs, never across a panel's surface. */
-.window-title{background:#111f28!important;box-shadow:inset 0 -1px #526a743b!important}
-.command-bar{background:#223540!important;box-shadow:inset 0 1px #ffffff0b,inset 0 -1px #07131b!important}
-.mixer-title{background:#1c303b!important;box-shadow:inset 0 -1px #5c758039!important}
-.console-body .section-rail{background:#1d303a!important;box-shadow:inset -1px #07131b!important}
-.console-body .section-rail>.rail-cell{background:#253844!important;border-bottom:1px solid #172a33!important;box-shadow:inset 0 1px #ffffff08!important}
-.console-body .section-rail>.rail-cell[data-section]:hover{background:#344c59!important}
-.console-body .section-rail>.rail-cell[data-section].collapsed{background:#2c4350!important}
+.window-title{background:#101f28!important;box-shadow:inset 0 -1px #526a743b!important}
+.command-bar{background:#1b2d38!important;box-shadow:inset 0 1px #ffffff0b,inset 0 -1px #07131b!important}
+.mixer-title{background:#162934!important;box-shadow:inset 0 -1px #5c758039!important}
+.console-body .section-rail{background:#162a35!important;box-shadow:inset -1px #07131b!important}
+.console-body .section-rail>.rail-cell{background:#1b2e39!important;border-bottom:1px solid #172a33!important;box-shadow:inset 0 1px #ffffff08!important}
+.console-body .section-rail>.rail-cell[data-section]:hover{background:#2c4350!important}
+.console-body .section-rail>.rail-cell[data-section].collapsed{background:#223947!important}
 .console-body .strip{
- background:#273b46!important;border-right:1px solid #10222c!important;
+ background:#1c2f3a!important;border-right:1px solid #10222c!important;
  box-shadow:inset 1px 0 #9bb3bd1a,inset -1px 0 #05141b55!important;
 }
 .console-body .strip.selected{
- background:#293f4c!important;
+ background:#233b48!important;
  box-shadow:inset 0 0 0 1px var(--ch),inset 0 0 0 2px #10222d!important;
 }
 .console-body .strip .route-section{background:var(--v13-route)!important}
@@ -2032,33 +2049,33 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
 .console-body .strip .pan-section,
 .console-body .strip .switch-section{background:var(--v13-lower)!important}
 .console-body .strip .fader-section{
- background:#273a45!important;
+ background:#1b2e3a!important;
  border-top:1px solid #516b7847!important;
  box-shadow:inset 0 1px #ffffff09!important;
 }
-.console-body .strip .bottom-section{background:#243742!important}
+.console-body .strip .bottom-section{background:#192b36!important}
 .console-body .strip .section{
  border-bottom:1px solid #102630!important;
  box-shadow:inset 0 -1px #7a98a11b!important;
 }
 .console-body .strip .subhead,
 .console-body .strip .send-header{
- background:#1c303b!important;
+ background:#142732!important;
  border-bottom:1px solid #10232c!important;
  box-shadow:inset 0 1px #77939b17!important;
 }
 .console-body .strip .fxslot-row,
 .console-body .strip .fxslot-row:hover{
- background:#213540!important;border-bottom:1px solid #47637138!important;
+ background:#182c37!important;border-bottom:1px solid #47637138!important;
  box-shadow:none!important;
 }
-.console-body .strip .fxslot-row:hover{background:#304a57!important}
+.console-body .strip .fxslot-row:hover{background:#294453!important}
 .console-body .strip .fader-head{
  background:#081923!important;border:1px solid #405b69!important;
  box-shadow:inset 0 1px 1px #0009,inset 0 -1px #8da9b21d!important;
 }
 .console-body .strip .fader-readout{text-shadow:none!important;color:#98e6f5!important}
-.console-body .strip .fader-box{background:#273944!important;box-shadow:none!important}
+.console-body .strip .fader-box{background:#1b2e39!important;box-shadow:none!important}
 .console-body .strip .fader-box::before{
  background:#142530!important;
  box-shadow:inset 1px 0 #7997a33d,inset -1px 0 #050d14a6!important;
@@ -2084,7 +2101,7 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
  box-shadow:inset 0 1px #ffffff0b!important;
 }
 .console-body .strip .wire-socket{
- background:#263f4b!important;border-color:#4c6975!important;
+ background:#203743!important;border-color:#4c6975!important;
  box-shadow:inset 0 1px #91abba22!important;
 }
 .console-body .strip .wire-socket.is-source{
@@ -2099,18 +2116,18 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
 .console-body .strip .wire-socket:hover:not(:disabled){background:#35535e!important}
 .console-body .strip .wire-socket.is-source:hover:not(:disabled){background:#97d791!important}
 .console-body .strip .wire-socket.is-linked:hover:not(:disabled){background:#267d57!important}
-.console-body .strip .wire-tray .wire-disconnect{background:#263b46!important;box-shadow:none!important}
+.console-body .strip .wire-tray .wire-disconnect{background:#1d333f!important;box-shadow:none!important}
 .console-body .strip .wire-tray .wire-pot::before{box-shadow:inset 0 0 0 1px #83c79a66!important}
 .console-body .strip .wire-tray .wire-pot::after{box-shadow:none!important}
 .console-body .strip .wire-tray.linked .wire-arrow{filter:none!important}
 .console-body .rail-cell.fader{background:#243641!important}
-.wire-mode-select,.wire-master{background:#283f4b!important;box-shadow:inset 0 1px #ffffff1a!important}
+.wire-mode-select,.wire-master{background:#203843!important;box-shadow:inset 0 1px #ffffff1a!important}
 .wire-master[aria-pressed="true"]{background:#26493a!important}
 .wire-legend{background:#203e34!important}
 .console-body .strip .route-caption,
 .console-body .strip .subhead .hint{color:#b8cbd5!important}
 .console-body .strip .route-select,
-.console-body .strip .send-select{background:#132631!important}
+.console-body .strip .send-select{background:#0e222d!important}
 
 /* Integration with contemporary V13 WIRE bay. The wire bay may use 160px
    on tall desks; stage laptop uses 148px to protect 4 inserts + fixed fader.
@@ -2119,11 +2136,11 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
  .console-body.wire-routing-v13:not(.collapsed-send){--send-h:148px!important}
 }
 .console-body.wire-routing-v13 .strip .wire-section{
- background:#293b45!important;border-top:1px solid #4c677447!important;
+ background:#1d2e38!important;border-top:1px solid #4c677447!important;
  box-shadow:inset 0 1px #ffffff0b!important;
 }
 .console-body.wire-routing-v13 .strip .wire-deck{
- background:#1d3340!important;
+ background:#182b36!important;
  border-bottom:1px solid #415b683c!important;
  box-shadow:inset 0 1px #ffffff0b!important;
 }
@@ -2131,11 +2148,11 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
  background:#455f6c50!important;
 }
 .console-body.wire-routing-v13 .strip .wire-tray{
- background:#172d38!important;
+ background:#112833!important;
  box-shadow:inset 0 1px #ffffff0b!important;
 }
 .console-body.wire-routing-v13 .section-rail .rail-cell.send{
- background:#243a46!important;border-top:1px solid #617d8a43!important;
+ background:#1b303b!important;border-top:1px solid #617d8a43!important;
 }
 .console-body.wire-routing-v13 .strip .wire-socket{
  box-shadow:inset 0 1px #ffffff16!important;
@@ -2145,6 +2162,84 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
 }
 /* A carefully restrained physical edge is fine; broad face gradients and
    worn-metal zebra strokes are not. */
+
+/* V14.1 physical hierarchy: three upper modules can close independently.
+   SEND close is a TRUE 23px folded header, not a tiny still-active patch bay.
+   The source/destination graph belongs to state, not to the SVG or DOM nodes. */
+.console-body.wire-routing-v13.collapsed-send{
+ --send-h:23px!important;
+}
+@media(max-height:680px){
+ .console-body.wire-routing-v13.collapsed-send{--send-h:23px!important}
+}
+.console-body.wire-routing-v13.collapsed-send .strip .wire-deck,
+.console-body.wire-routing-v13.collapsed-send .strip .wire-tray{
+ display:none!important;
+ pointer-events:none!important;
+}
+.console-body.wire-routing-v13.collapsed-send .routing-wire-overlay{
+ display:none!important;
+}
+/* No odd visual leftover: the collapsed compartment is just a tidy header,
+   with its disclosure affordance on the rail. */
+.console-body.wire-routing-v13.collapsed-send .strip .wire-section{
+ background:#172732!important;
+ border-top:1px solid #3e55603d!important;
+ box-shadow:inset 0 1px #ffffff08!important;
+}
+.console-body.wire-routing-v13.collapsed-send .section-rail .rail-cell.send::after{
+ content:"OPEN"!important;
+ color:#91bac5!important;
+}
+/* Dark premium satin graphite: uniform plate colors, no giant highlights.
+   Only section borders, actual recessed fader grooves and meter LEDs have
+   relief. The physical thumb asset is intentionally untouched. */
+.console-body{
+ --v13-plate:#182832;
+ --v13-route:#172731;
+ --v13-insert:#142630;
+ --v13-send:#182a34;
+ --v13-lower:#192b35;
+ --v13-edge:#3e5661;
+}
+.console-body .strip{
+ background:#1b2c36!important;
+ border-right:1px solid #0b1a22!important;
+ box-shadow:inset 1px 0 #94b4c11b,inset -1px 0 #06121955!important;
+}
+.console-body .strip.selected{
+ background:#20333e!important;
+ box-shadow:inset 0 0 0 1px var(--ch),inset 0 0 0 2px #0c1a24!important;
+}
+.console-body .strip .route-section{background:var(--v13-route)!important}
+.console-body .strip .fx-section{background:var(--v13-insert)!important}
+.console-body .strip .send-section{background:var(--v13-send)!important}
+.console-body .strip .pan-section,
+.console-body .strip .switch-section{background:var(--v13-lower)!important}
+.console-body .strip .fader-section{
+ background:#1b2b36!important;
+ box-shadow:inset 0 1px #a5becc0b!important;
+}
+.console-body .strip .bottom-section{background:#182832!important}
+.console-body .strip .fader-box{background:#14232e!important}
+.console-body .strip .fader-box::before{
+ background:#0e1b24!important;
+ box-shadow:inset 1px 0 #91b4c337,inset -1px 0 #0008!important;
+}
+.console-body .strip .fader-head{
+ background:#08151e!important;box-shadow:inset 0 1px #b1d0dc12!important;
+}
+.console-body .strip .meter-box{background:#061219!important}
+.console-body .strip .wire-section{background:#182a34!important}
+.console-body .section-rail{background:#152630!important}
+.console-body .section-rail>.rail-cell{
+ background:#1a2c37!important;
+ box-shadow:inset 0 1px #ffffff08!important;
+}
+.console-body .section-rail>.rail-cell[data-section]:hover{background:#29424f!important}
+.console-body.wire-routing-v13 .strip .wire-deck{background:#142a35!important}
+.console-body.wire-routing-v13 .strip .wire-tray{background:#102631!important}
+.console-body.wire-routing-v13 .section-rail .rail-cell.send{background:#192d38!important}
 </style>
 </head>
 <body>
@@ -2627,7 +2722,14 @@ function renderWireRouting(){
   main.textContent=direct?'MAIN ON':'MAIN OFF';main.setAttribute('aria-pressed',String(direct));
   main.title='Direct source output: '+source.output+' · click to toggle Main only when currently mapped to Main or Source Only';
  }
- if(!svg||!viewport||!source)return;
+ // Collapse is a VIEW concern, not a routing edit: keep all 1:N edges.
+ // Do not calculate cable geometry for a hidden WIRE bay. On expand the
+ // existing requestAnimationFrame rerenders the same connections.
+ if(!svg||!viewport)return;
+ if(!source||document.querySelector('.console-body')?.classList.contains('collapsed-send')){
+  if(svg.childNodes.length)svg.replaceChildren();
+  return;
+ }
  const vp=viewport.getBoundingClientRect?.(),fromEl=viewport.querySelector?.('.strip[data-id="'+source.id+'"] .wire-socket');
  const from=fromEl?.getBoundingClientRect?.();
  if(!vp||!from||!vp.width||!vp.height){svg.innerHTML='';return;}
