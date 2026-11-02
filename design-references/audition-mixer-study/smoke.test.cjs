@@ -668,10 +668,19 @@ check(strip(1).includes('class="section send-section wire-section"') &&
  'V13 shows continuous hardware wire-deck above destination sockets');
 check(!/class="send-slot"|class="send-select"|class="sendlevel"|data-field="sendLevel"|data-action="pre"|data-action="sendOn"/.test(strip(1)),
  'No legacy destination picker, slot selector, Pre/Post button or redundant slider in operator strip');
-check(html.includes('.console-body.wire-routing-v13.collapsed-send{--send-h:80px!important}') &&
- html.includes('.console-body.wire-routing-v13:not(.collapsed-send){--send-h:160px!important}') &&
+check(html.includes('.console-body.wire-routing-v13.collapsed-send{--send-h:23px!important}') ||
+ html.includes('.console-body.wire-routing-v13.collapsed-send{\n --send-h:23px!important'),
+ 'V14.1 source folds WIRE bay into a real 23px header');
+check(html.includes('.console-body.wire-routing-v13:not(.collapsed-send){--send-h:160px!important}') &&
  html.includes('const availableRise=sourceWell?Math.max(14,from.top-sourceWell.top-7):45'),
- 'V13 patch bay allocates 80/160px and arcs wires upward into reclaimed area');
+ 'Expanded V13 wire patch retains its 160px cable routing geometry');
+check(html.includes('const svg=document.getElementById(\'wireLayer\')') &&
+ html.includes("document.querySelector('.console-body')?.classList.contains('collapsed-send')") &&
+ html.includes('svg.replaceChildren()'),
+ 'Folded WIRE view must stop cable render without deleting state');
+check(html.includes('/* V14: THREE-way collapse') &&
+ html.includes('.console-body.collapsed-route.collapsed-fx.collapsed-send .strip .fader-section'),
+ 'Fader may grow only on exactly three upper sections folded');
 wireTo(3);wireTo(6,true);
 check(strip(1).includes('⇢4') &&
  [3,4,5,6].every(id=>strip(id).includes('wire-socket is-linked') &&
