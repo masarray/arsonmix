@@ -2,10 +2,10 @@
   "kind": "REFERENCE_WORKFLOW_QA_ONLY",
   "source_pr": 278,
   "source_branch": "main/site/preview-v2",
-  "source_sha": "f20bde153dbf3efa98a8557ec7e9313ac2480992",
-  "source_blob_sha": "27a3cb2927a778cd4e961b3c71f96d2ab4b83aa2",
-  "ci_run": 41439966350,
+  "source_sha": "c981a85fe40189afa7142729e6dbb865c591c1a1",
+  "source_blob_sha": "26fa55f512d3fc5bf23b15dd28781eef6792a85a",
+  "ci_run": 41445635599,
   "ci_conclusion": "success",
   "live_audio": false,
-  "note": "V31 exact QA-pinned gravity WIRE snapshot with V30 physical 3D keys; later parallel PR edits intentionally excluded."
+  "note": "V32 exact QA-pinned cross-bank source workflow plus isolated gentle single-wire settle. No native PCM."
 }
