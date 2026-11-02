@@ -358,6 +358,7 @@ const pointerWell={querySelector:s=>s==='.fader'?rangeInput:s==='.fader-travel'?
  setPointerCapture(){},releasePointerCapture(){}};
 node('body').handlers.pointerdown({button:0,pointerId:11,clientY:100,altKey:false,
  target:{closest:s=>s==='.fader-box'?pointerWell:null},preventDefault(){}});
+if(!(rangeInput.value==='10' && volumeReadout.textContent==='+10.0 dB')) console.log('FADER DIAG',JSON.stringify({value:rangeInput.value,readout:volumeReadout.textContent,bodyHandler:!!node('body').handlers.pointerdown}));
 check(rangeInput.value==='10' && volumeReadout.textContent==='+10.0 dB',
  'Physical top of old fader well maps to +10 dB and updates numeric LCD');
 fakeWindow.handlers.pointermove({pointerId:11,clientY:250,altKey:false});
