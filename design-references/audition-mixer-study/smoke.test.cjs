@@ -599,8 +599,10 @@ node('wireMaster').dispatch('click');filter('all');
 check(strip(1).includes('<option value="Master" selected>') &&
  node('wireMaster').textContent==='MAIN ON',
  'MAIN send can be restored without altering channel wire topology');
-// Graph guards: CH1→CH3 already connected; now CH3→CH1 must fail.
-node('body').handlers.mousedown({target:{closest:k=>k==='.strip'?{dataset:{id:3}}:null},ctrlKey:false,metaKey:false,shiftKey:false});
+// Graph guards: explicitly re-pin OUT CH03; mixer selection must NEVER
+// silently repoint a WIRE source while patching cross-bank.
+const reverseSource={dataset:{action:'wireSource'},closest:k=>k==='.strip'?{dataset:{id:3}}:null};
+node('body').handlers.click({target:{closest:k=>k==='[data-action]'?reverseSource:null},shiftKey:false});
 wireTo(1);
 check(node('info').textContent.includes('feedback loop') &&
  strip(1).includes('wire-socket'),
