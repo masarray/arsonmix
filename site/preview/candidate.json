@@ -2,10 +2,10 @@
   "kind": "REFERENCE_WORKFLOW_QA_ONLY",
   "source_pr": 278,
   "source_branch": "main/site/preview-v2",
-  "source_sha": "dcb3e4b95090eabb851b129703c8557bb1a6031a",
-  "source_blob_sha": "8f44f1c66a12ef84cdf527fce8c27ff354bb9566",
-  "ci_run": 41446227324,
+  "source_sha": "8f903b74078520902221950c23162056da59ca95",
+  "source_blob_sha": "0f259af00566bef9c57a1bdf687cb6e669ff07f5",
+  "ci_run": 41449889699,
   "ci_conclusion": "success",
   "live_audio": false,
-  "note": "V32 qualified source + per-cable gentle settle and cross-bank patch. Main's CodePen-specific browser smoke gate updated; no native PCM."
+  "note": "V33 certified source: lightweight single-cable settle, cross-bank PATCH TO with explicit Bus choice, stable 3D knob geometry; GUI only."
 }
