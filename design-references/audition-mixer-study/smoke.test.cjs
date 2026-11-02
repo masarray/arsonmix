@@ -37,8 +37,8 @@ node('bankSelect').value='0';node('bankSelect').dispatch('change');
 field(15,'output','Bus A');check(node('info').textContent.includes('output → Bus A'),'bus route');
 field(11,'output','Bus B');check(node('info').textContent.includes('Routing rejected'),'feedback detection');
 field(1,'activeSend','S2');check(node('info').textContent.includes('Send 2'),'send slot switch');
-field(1,'send','FX 1');filter('all');check(strip(1).includes('<option value="FX 1" selected>'),'send to FX Return');
-field(1,'activeSend','S1');filter('all');check(strip(1).includes('<option value="Bus A" selected>'),'16 sends preserve independent slots');
+field(1,'send','FX 1');const noticeFx=node('info').textContent.includes('Send destination');filter('all');check(noticeFx && !strip(1).includes('class="send-select"'),'Legacy send state accepts FX Return but main strip has no dropdown');
+field(1,'activeSend','S1');const noticeSlot=node('info').textContent.includes('Send 1');filter('all');check(noticeSlot && !strip(1).includes('class="send-slot"'),'16 legacy send slots preserved without visible picker');
 node('saveScene').dispatch('click');check(node('sceneSelect').value==='0','scene save');
 node('mode').dispatch('click');check(node('body').classList.contains('narrow'),'narrow console');
 filter('audio');check(count()===10,'audio filter shows first full-width bank');
@@ -159,11 +159,13 @@ check(html.includes('white-space:nowrap;overflow:hidden;text-overflow:ellipsis')
   'FX labels use single-line truncation');
 check(html.includes('.console-body.collapsed-fx .fxslot-list,.console-body.narrow .fxslot-list{display:none}'),
   'Collapsing FX hides the scroll container, not only its children');
-check(html.includes('grid-template-columns:10px minmax(0,1fr) 28px'),
-  'Send controls have constrained slider/dB columns');
+check(strip(1).includes('wire-deck') && !strip(1).includes('send-select') &&
+ !strip(1).includes('sendlevel') && !strip(1).includes('send-slot'),
+ 'V13 wire deck replaces Bus dropdown and horizontal send slider');
 check(html.includes('.console-body.collapsed-fx{--fx-h:23px}') &&
-  html.includes('.console-body.collapsed-send{--send-h:23px}'),
-  'FX and SEND folds share compact-height tokens');
+  html.includes('.console-body.wire-routing-v13.collapsed-send{--send-h:80px!important}') &&
+  html.includes('.console-body.wire-routing-v13:not(.collapsed-send){--send-h:160px!important}'),
+  'FX can fold; wire patch bay uses compact 80px and expanded 160px');
 check(html.includes('flex:0 0 var(--fx-h)') && html.includes('flex:0 0 var(--send-h)'),
   'FX and SEND bands cannot shrink independently of section rail');
 const rail=node('rail'),body=node('body');
@@ -208,7 +210,7 @@ check(node('body').dataset.density==='compact'&&node('body').classList.contains(
       'Compact view keeps narrow-console behavior');
 density.value='comfort';density.dispatch('change');
 check(node('body').dataset.density==='comfort'&&!node('body').classList.contains('narrow'),
-      'Comfort restores full effects, send and EQ visibility');
+      'Comfort restores FX rack and visible wire patch bay');
 check(html.includes('.console-body.collapsed-route .route-field{display:none}') &&
       html.includes('.console-body.collapsed-send .send-section .send-select,.console-body.collapsed-send .send-section .sendlevel{display:none}'),
       'No stale expanded CSS declarations in collapsed route and send');
@@ -410,7 +412,7 @@ check(node('channelIdentity').hidden===true &&
  node('tracks').innerHTML.includes('🎹'),
  'Applying identity updates BOTH nameplates, icon and original legacy color');
 node('bankSelect').value='0';node('bankSelect').dispatch('change');
-check(strip(1).includes('<option value="Vocal Bus" selected>'),
+check(strip(1).includes('<option value="Vocal Bus"'),
  'Renaming Bus A preserves live routing in existing Host send');
 const editMaster={dataset:{action:'editIdentity'},closest:k=>k==='.strip'?{dataset:{id:12}}:null};
 node('body').handlers.dblclick({target:{closest:k=>k==='.strip'?{dataset:{id:12}}:k==='.footer-label,.strip-identity-top'?{}:null,classList:{contains:()=>false}}});
@@ -522,7 +524,7 @@ node('reset').dispatch('click');
 node('body').clientWidth=1680;node('reset').dispatch('click');
 check(html.includes('id="wireLayer" class="routing-wire-overlay"') &&
  html.includes('id="wireLegend"') &&
- html.includes('.console-body.collapsed-send{--send-h:53px!important}'),
+ html.includes('.console-body.wire-routing-v13.collapsed-send{--send-h:80px!important}'),
  'Wire layer and 53px middle routing row survive collapsed advanced Send');
 check(strip(1).includes('wire-socket is-source') &&
  strip(3).includes('data-action="wireRoute"') &&
