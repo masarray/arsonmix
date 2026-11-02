@@ -552,6 +552,10 @@ check(!strip(2).includes('wire-node-out is-source') && !strip(3).includes('wire-
 // The only accepted source action is an explicit OUT click.
 const pinSource={dataset:{action:'wireSource'},closest:k=>k==='.strip'?{dataset:{id:1}}:null};
 node('body').handlers.click({target:{closest:k=>k==='[data-action]'?pinSource:null},shiftKey:false});
+check(strip(3).includes('wire-pot is-idle') &&
+ html.includes('mask-image:url("assets/knob-ICON.svg")') &&
+ !strip(3).includes('wire-pot is-active'),
+ 'V35 original SVG knob remains dark gray without a plugged WIRE');
 check(strip(1).includes('wire-node-out is-source') &&
  strip(3).includes('data-action="wireRoute"') &&
  strip(3).includes('class="wire-socket wire-node-in"') &&
@@ -571,6 +575,11 @@ function wireTo(id,shift=false){
 check(strip(1).includes('⇢4') && strip(3).includes('wire-node-in is-linked') &&
  node('wireLegend').innerHTML.includes('wire-map-group is-out') && node('wireLegend').innerHTML.includes('CH03') && node('wireLegend').innerHTML.includes('CH04'),
  'CH1 click-source then CH3–CH6 socket clicks create four independent visible links');
+check(strip(3).includes('wire-pot is-active') &&
+ strip(4).includes('wire-pot is-active') &&
+ !strip(9).includes('wire-pot is-active') &&
+ strip(3).includes('--wire-pot-fill:'),
+ 'V35 SVG knob is channel colored only for accepted plugged WIRE edges');
 [3,4,5,6].forEach(id=>check(strip(id).includes('<option value="None" selected>') &&
  strip(id).includes('class="wire-tray linked"') &&
  strip(id).includes('data-field="wireGain"'),
@@ -578,6 +587,8 @@ check(strip(1).includes('⇢4') && strip(3).includes('wire-node-in is-linked') &
 wireTo(5);
 check(strip(1).includes('⇢3') && strip(5).includes('class="wire-socket wire-node-in"'),
  'Click linked socket a second time disconnects precisely that destination');
+check(strip(5).includes('wire-pot is-idle') && !strip(5).includes('wire-pot is-active'),
+ 'V35 unplugging a WIRE immediately returns SVG knob to dark gray');
 field(7,'input','Input 1 (Mono)');
 wireTo(7);
 check(strip(7).includes('<option value="Input 1 (Mono)" selected>') &&

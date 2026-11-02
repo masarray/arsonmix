@@ -30,8 +30,23 @@ def main():
                 return channel(3).locator('.wire-gain')
             def knob():
                 return channel(3).locator('.wire-pot:not(.is-idle)')
+            def pot_style(i):
+                return channel(i).locator('.wire-pot').evaluate("""el => {
+                  const style=getComputedStyle(el,'::before');
+                  const hex=el.closest('.strip').style.getPropertyValue('--track-color').trim().replace('#','');
+                  return {
+                    name:el.className, painted:style.backgroundColor,
+                    expected:'rgb('+[0,2,4].map(o=>parseInt(hex.slice(o,o+2),16)).join(', ')+')',
+                    mask:style.maskImage||style.webkitMaskImage,
+                    tick:getComputedStyle(el,'::after').display
+                  };
+                }""")
 
             # Mixer inspection is not patch mode.
+            idle=pot_style(3)
+            require('is-idle' in idle['name'] and idle['painted']=='rgb(75, 83, 91)' and
+                    'knob-ICON.svg' in idle['mask'] and idle['tick']=='none',
+                    f"{width}: SVG pot idle must be dark-gray, without old circle/tick: {idle}")
             require(routes().count()==0, f"{width}: cables shown while idle")
             require(channel(3).locator('.wire-node-in').is_disabled(),
                     f"{width}: IN accepts a source that was never armed")
@@ -52,6 +67,12 @@ def main():
             require(channel(3).locator('.wire-node-in').get_attribute('aria-pressed')=='true',
                     f"{width}: accepted CH01 -> CH03 route missing")
             require(routes().count()==1, f"{width}: wrong number of focused cables")
+            engaged=pot_style(3)
+            require('is-active' in engaged['name'] and engaged['painted']==engaged['expected'],
+                    f"{width}: plugged SVG must fill with destination channel color: {engaged}")
+            untouched=pot_style(4)
+            require('is-idle' in untouched['name'] and untouched['painted']=='rgb(75, 83, 91)',
+                    f"{width}: unconnected SVG knob lit up: {untouched}")
 
             # Same 22x24px tactile knob, but long pointer-relative travel.
             knob().dblclick()  # physical unity reset
@@ -109,8 +130,19 @@ def main():
                     f"{width}: Escape did not return to nonrouting mixer mode")
             require(page.locator('#wireLegend [data-wire-destination]').count()==0,
                     f"{width}: hidden armed source picker remains after Escape")
+            page.locator('#bankPrev').click()
+            passive=pot_style(3)
+            require('is-active' in passive['name'] and 'is-readonly' in passive['name'] and
+                    passive['painted']==passive['expected'],
+                    f"{width}: existing plugged wire should remain channel-colored during mixing: {passive}")
+            channel(1).locator('.wire-node-out').click()
+            channel(3).locator('.wire-node-in').click()
+            unplugged=pot_style(3)
+            require('is-idle' in unplugged['name'] and unplugged['painted']=='rgb(75, 83, 91)',
+                    f"{width}: unplugged SVG knob did not become dark-gray: {unplugged}")
+            page.keyboard.press('Escape')
             page.locator('#wireView').select_option('all')
-            require(routes().count()==0 and channel(11).locator('.wire-node-in').is_disabled(),
+            require(routes().count()==0 and channel(3).locator('.wire-node-in').is_disabled(),
                     f"{width}: View changed patch state without explicit OUT")
             require(not errors, f"{width}: JS errors: {errors}")
             page.close()

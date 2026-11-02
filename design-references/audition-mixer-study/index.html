@@ -3780,6 +3780,42 @@ html * ,html *::before,html *::after{
 .console-body:not(.wire-intent) .strip .wire-node-out,
 .console-body:not(.wire-intent) .strip .wire-node-in{filter:none!important}
 .console-body .strip .wire-tray .wire-pot:not(.is-idle):focus-within{outline:1px solid #8ad5e3;outline-offset:2px}
+
+/* V35 exact SVG wire-pot, supplied knob-ICON.svg. One silhouette, no circular
+   overlay or second indicator: its original notch acts as the pointer.
+   UI selection cannot illuminate the knob; only an enabled WIRE edge can. */
+.console-body.wire-routing-v15 .strip .wire-tray .wire-pot{
+ background:transparent!important;border:0!important;box-shadow:none!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-pot.is-idle,
+.console-body.wire-routing-v15 .strip .wire-tray .wire-pot.is-readonly{
+ opacity:1!important;pointer-events:none!important;cursor:default!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-pot.is-idle::before,
+.console-body.wire-routing-v15 .strip .wire-tray .wire-pot.is-active::before{
+ content:""!important;display:block!important;position:absolute!important;
+ inset:2px 1px!important;width:20px!important;height:20px!important;
+ border:0!important;border-radius:0!important;
+ background:var(--wire-pot-fill,#4b535b)!important;
+ -webkit-mask-image:url("assets/knob-ICON.svg")!important;
+ mask-image:url("assets/knob-ICON.svg")!important;
+ -webkit-mask-position:center!important;mask-position:center!important;
+ -webkit-mask-size:contain!important;mask-size:contain!important;
+ -webkit-mask-repeat:no-repeat!important;mask-repeat:no-repeat!important;
+ transform-origin:center!important;
+ transform:rotate(calc(var(--wire-deg,45deg) - 45deg))!important;
+ box-shadow:none!important;filter:none!important;opacity:1!important;
+ pointer-events:none!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-pot::after{
+ content:none!important;display:none!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-pot:not(.is-idle):not(.is-readonly){
+ cursor:ns-resize!important;touch-action:none!important;
+}
+@media(prefers-reduced-motion:reduce){
+ .console-body.wire-routing-v15 .strip .wire-tray .wire-pot::before{transition:none!important}
+}
 </style>
 </head>
 <body>
@@ -4158,6 +4194,9 @@ function wireTray(t){
  const isSource=!!source&&source.id===t.id;
  const isMain=t.kind==='master';
  const edge=!isMain&&source?wireFor(source.id,t.id):null;
+ // Only committed, enabled WIRE edges illuminate the supplied SVG knob.
+ // A connected knob stays colored even outside patch mode; gain editing still needs source OUT.
+ const hasPluggedWire=!isMain&&wireEdges.some(e=>e.enabled&&e.destId===t.id);
  const legacy=!isMain&&source&&hasLegacySendTo(source,t);
  const linked=isMain?!!source&&source.output==='Master':!!edge||!!legacy;
  const canWire=!!(source&&!isSource);
@@ -4171,9 +4210,9 @@ function wireTray(t){
   '><span class="wire-arrow" aria-hidden="true"></span><span class="wire-label">IN</span></button>';
  let controls=from+to;
  if(edge&&!isMain){
-  controls+='<label class="wire-pot" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%;--wire-deg:'+(-135+wireGainPercent(edge.levelDb)*2.7).toFixed(1)+'deg" title="'+escapeHtml(source.name+' → '+t.name+' · '+wireDbText(edge.levelDb))+'"><input class="wire-gain" type="range" min="-60" max="6" step="0.1" value="'+edge.levelDb+'" data-field="wireGain" data-wire-id="'+edge.id+'" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%" aria-label="Wire send level '+escapeHtml(source.name)+' to '+escapeHtml(t.name)+'"></label>';
+  controls+='<label class="wire-pot is-active" style="--wire-pot-fill:'+escapeHtml(t.color)+';--wire-pct:'+wireGainPercent(edge.levelDb)+'%;--wire-deg:'+(-135+wireGainPercent(edge.levelDb)*2.7).toFixed(1)+'deg" title="'+escapeHtml(source.name+' → '+t.name+' · '+wireDbText(edge.levelDb))+'"><input class="wire-gain" type="range" min="-60" max="6" step="0.1" value="'+edge.levelDb+'" data-field="wireGain" data-wire-id="'+edge.id+'" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%" aria-label="Wire send level '+escapeHtml(source.name)+' to '+escapeHtml(t.name)+'"></label>';
  }else{
-  controls+='<span class="wire-pot is-idle" aria-hidden="true"></span>';
+  controls+='<span class="wire-pot '+(hasPluggedWire?'is-active is-readonly':'is-idle')+'" style="--wire-pot-fill:'+(hasPluggedWire?escapeHtml(t.color):'#4b535b')+'" aria-hidden="true"></span>';
  }
  return '<div class="wire-tray'+(linked?' linked':'')+'">'+controls+'</div>';
 }
