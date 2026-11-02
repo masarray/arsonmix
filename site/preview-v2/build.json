@@ -1,17 +1,16 @@
 {
-  "version": "preview-v13.1",
-  "kind": "GUI_REFERENCE_ONLY",
-  "live_audio": false,
+  "version": "preview-v13.2",
   "source_pr": 278,
-  "source_branch": "design/audition-mixer-reference-isolated-20261101",
-  "source_sha": "e3bf56ff78f6b02639de46affac30d9a12301ad1",
-  "source_content_sha": "2290d699483fc5590566338b36161486fbfe367c",
+  "source_sha": "c98489a777f49041d843564c3bf4e10150e8f0ab",
+  "source_content_sha": "74250d2d56055222e624310b0f5abbb2ff511d65",
   "routes": [
     "/preview/mixer.html",
     "/preview-v2/"
   ],
-  "milestone": "80/160px physical wire patch bay removes legacy Send dropdown, slot picker, pre/post and horizontal slider; preserves per-wire gain and session data",
-  "fix": "Match P0 approved flat #142530 recessed fader well",
-  "tests": "196/196 JavaScript DOM checks passed; Chromium exact published CI required for visual acceptance",
-  "limit": "Native ASIO PCM/VST3 fanout and host ACK NOT IMPLEMENTED."
+  "kind": "GUI_REFERENCE_ONLY",
+  "live_audio": false,
+  "design": "Pure FL-style middle WIRE patch bay; no BUS dropdown, S1–S16 slot selector, horizontal SEND slider, PRE/POST button or SEND power in primary strips",
+  "geometry": "80/160px wire panel, P0 stationary lower PAN/SWITCH/FADER/FOOTER and FX absorbing all ROUTE/WIRE fold differences, flat anodized finish",
+  "test": "196/196 reference DOM/workflow checks PASS; exact main Chromium CI required",
+  "native": "Not actual ASIO/VST3 PCM routing, not native accepted graph ACK; browser preview only"
 }
