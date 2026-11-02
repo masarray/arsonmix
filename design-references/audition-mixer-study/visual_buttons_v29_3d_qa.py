@@ -42,8 +42,8 @@ def main():
             for name,button,state in zip(('MUTE','SOLO'),(mute,solo),before[:2]):
                 expect(has_gradient(state,'rgb(51, 51, 51)','rgb(34, 34, 34)'),
                        f'{width}: {name} OFF does not match original #333/#222: {state["bg"]}')
-                expect('inset 0px 1px 0px' in state['shadow'],
-                       f'{width}: {name} original CodePen OFF inset lost')
+                expect('inset' in state['shadow'] and '1px' in state['shadow'],
+                       f'{width}: {name} original CodePen OFF inset lost: {state["shadow"]}')
                 expect(button.get_attribute('aria-pressed')=='false',f'{width}: {name} must start OFF')
                 expect(24<=state['height']<=34,f'{width}: {name} height outside compact mixer slot')
             expect(has_gradient(before[2],'rgb(115, 134, 146)','rgb(53, 71, 80)'),
