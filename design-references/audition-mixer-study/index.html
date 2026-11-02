@@ -2184,17 +2184,24 @@ function wireTray(t){
    Source input patch, 16 legacy SEND slots and snapshots remain in data model.
    No duplicate destination dropdown / S1–S16 / horizontal gain slider.
    Operator routes with socket and adjusts gain using the inline metal knob. */
+/* V13: uncluttered middle wire canvas. Only source and active destinations
+   carry tiny engraved text, leaving empty receiver channels optically quiet. */
 function sectionSend(t){
  const source=tracks.find(x=>x.id===wireSourceId&&x.kind==='audio');
- const connected=source&&t.kind!=='master'?wireFor(source.id,t.id):null;
- const legacy=t.kind!=='master'&&source&&hasLegacySendTo(source,t);
- const isSource=source&&source.id===t.id;
- const subtitle=isSource?'SOURCE':t.kind==='master'?'MAIN':connected?(connected.mode==='split'?'PRE FX':'POST FADER'):legacy?'LEGACY SEND':t.kind==='bus'?'BUS':t.kind==='fx'?'RETURN':'READY';
- const label=t.kind==='master'?'MASTER PATCH':isSource?'SOURCE PATCH':t.kind==='bus'?'BUS PATCH':t.kind==='fx'?'FX RETURN':'CHANNEL PATCH';
+ const isSource=!!source&&source.id===t.id;
+ const edge=source&&t.kind!=='master'?wireFor(source.id,t.id):null;
+ const legacy=source&&t.kind!=='master'&&hasLegacySendTo(source,t);
+ let label='',status='';
+ if(isSource){label='SOURCE';status='⇢ '+wireOutgoingCount(t.id)+' OUT';}
+ else if(t.kind==='master'){label='MAIN';status=source&&source.output==='Master'?'DIRECT ON':'DIRECT OFF';}
+ else if(edge){label='IN ← CH'+String(source.id).padStart(2,'0');status=edge.mode==='split'?'PRE FX':'POST FADER';}
+ else if(legacy){label='LEGACY';status='SEND ACTIVE';}
+ else if(t.kind==='bus')label='BUS';
+ else if(t.kind==='fx')label='FX RETURN';
  return '<div class="section send-section wire-section">'+
   '<div class="wire-deck" aria-hidden="true">'+
    '<div class="wire-deck-label">'+label+'</div>'+
-   '<div class="wire-deck-status">'+subtitle+'</div>'+
+   '<div class="wire-deck-status">'+status+'</div>'+
    '<div class="wire-deck-rail"></div>'+
   '</div>'+wireTray(t)+'</div>';
 }
