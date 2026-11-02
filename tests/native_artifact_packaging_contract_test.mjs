@@ -151,3 +151,11 @@ test('sole ENGINE #266 may upload an unqualified, exact-SHA physical FAT ZIP',()
   assert.match(guide,/sourceCommit/);
   assert.match(guide,/exeSha256/);
 });
+
+test('native sourceCommit attest matches GitHub PR head and exact compiled source',()=>{
+ const shaRef="ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}";
+ assert.ok(workflow.includes(shaRef));
+ assert.match(workflow,/ENGINE SOURCE SHA MISMATCH/);
+ assert.match(packaging,/\$gitSha = \(\& git rev-parse HEAD\)\.Trim\(\)/);
+ assert.match(verify,/manifest\.sourceCommit/);
+});

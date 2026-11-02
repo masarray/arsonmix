@@ -48,3 +48,6 @@ One real device, one verified I/O clock, wired monitoring, LOW output gain and i
 | Safe shutdown | Stop/restart and unplug/replug device, reselect/ARM deliberately | Audio on unexpected pins, leaked resource or crash |
 
 **Required evidence**: download artifact name and exact 40-character SHA from `BUILD_PROVENANCE.json`; SHA256 of installed EXE; physical device name/driver/rate/buffer and enabled port mapping; 0FX duration; crackle report if any; one short video or screenshots demonstrating CH01, AUX, MONITOR and Show. The test passes only for the exact device and configuration tested, and never proves every VST3 or absolute crash-proof operation.
+
+### SHA authority for native PR builds
+The Windows workflow explicitly checks out **`github.event.pull_request.head.sha`**, verifies it against `git rev-parse HEAD` **before** building, and packages the same `sourceCommit`. This avoids GitHub Actions' default transient PR merge commit being mislabelled as the ENGINE HEAD. If provenance SHA differs from the run's exact source SHA, **STOP**; do not start hardware FAT. The GUI and ENGINE on the *new integration branch* still require their own joined exact-SHA test before final UAT.

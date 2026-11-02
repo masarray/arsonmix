@@ -49,3 +49,12 @@ test('retain current native audio and dearVR CTests during CI optimization',()=>
  assert.match(windows,/if: \$\{\{ github\.event_name != 'pull_request' \|\| github\.head_ref == 'milestone\/m5-universal-channelid-vst3-lease-migration-20261101' \}\}/);
  assert.match(windows,/ArSonMix-ENGINE-10CH4AUX-EXPERIMENTAL-Hardware-FAT-Windows-x64/);
 });
+
+test('native FAT compiles the exact ENGINE PR HEAD and rejects transient merge refs',()=>{
+ const shaRef="ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}";
+ assert.ok(windows.includes(shaRef));
+ assert.match(windows,/ENGINE_EXACT_SOURCE_SHA_VERIFIED/);
+ assert.match(windows,/git rev-parse HEAD/);
+ assert.ok(windows.indexOf('ENGINE_EXACT_SOURCE_SHA_VERIFIED')<
+           windows.indexOf('name: Build executable and native RT tests'));
+});

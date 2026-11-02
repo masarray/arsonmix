@@ -57,6 +57,19 @@ jobs:
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
+        with:
+          # PR default is a transient refs/pull/*/merge. Test and package
+          # the precise approved ENGINE SHA, never a synthetic merge.
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      - name: Attest exact source SHA before native compile or packaging
+        shell: pwsh
+        run: |
+          $expected = "${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}"
+          $actual = (& git rev-parse HEAD).Trim()
+          if ($expected -notmatch '^[0-9a-f]{40}$' -or $actual -ne $expected) {
+            throw "ENGINE SOURCE SHA MISMATCH: expected=$expected checkout=$actual"
+          }
+          Write-Host "ENGINE_EXACT_SOURCE_SHA_VERIFIED: $actual"
       - name: Cheap canonical Console v6 puzzle socket gate (no JUCE)
         run: |
           node --test tests/engine_runtime_reconciliation_test.mjs
