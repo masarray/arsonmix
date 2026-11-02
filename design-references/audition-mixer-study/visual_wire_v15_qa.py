@@ -93,6 +93,55 @@ def main():
         assert_true(page.locator('#wireMaster').get_attribute('aria-pressed')=='false',
                     "Master button wrongly claims direct Main still live")
         page.screenshot(path=str(ROOT/"preview-v15-wire-bus-only-1680.png"))
+        # Adaptive responsive audit: 1366 and 1920 should retain clean fixed
+        # slots; the master is pinned and active WIRE is geometrically bounded.
+        for w,h in ((1366,768),(1920,1080)):
+            page.set_viewport_size({"width":w,"height":h})
+            page.reload()
+            page.locator('.section-rail [data-section="send"]').click()
+            assert_true(page.locator('.console-body').evaluate(
+                "(el)=>!el.classList.contains('collapsed-send')"),
+                f"{w} WIRE compartment unexpectedly collapsed")
+            source=page.locator('#tracks .strip[data-id="1"] .wire-node-out')
+            receiver=page.locator('#tracks .strip[data-id="3"] .wire-node-in')
+            knob=page.locator('#tracks .strip[data-id="3"] .wire-pot')
+            assert_true(source.is_visible() and receiver.is_visible() and knob.is_visible(),
+                        f"{w}: jack or fixed knob hidden")
+            strip=page.locator('#tracks .strip[data-id="3"]')
+            sr=strip.bounding_box()
+            inn=receiver.bounding_box()
+            kr=knob.bounding_box()
+            assert_true(sr is not None and inn is not None and kr is not None,
+                        f"{w}: patch geometry missing")
+            assert_true(inn["x"]>=sr["x"]-1 and inn["x"]+inn["width"]<=sr["x"]+sr["width"]+1,
+                        f"{w}: IN spills outside channel")
+            assert_true(kr["x"]>=sr["x"]-1 and kr["x"]+kr["width"]<=sr["x"]+sr["width"]+1,
+                        f"{w}: gain spills outside channel")
+            base=(inn["x"],inn["y"],kr["x"],kr["y"])
+            x0,y0=center(source);x1,y1=center(receiver)
+            page.mouse.move(x0,y0);page.mouse.down()
+            page.mouse.move((x0+x1)/2,(y0+y1)/2,steps=6)
+            page.mouse.move(x1+16,y1-12,steps=8);page.mouse.up()
+            assert_true(receiver.get_attribute("aria-pressed")=="true",
+                        f"{w}: off-center magnetic snap failed")
+            linked=receiver.bounding_box()
+            linked_knob=knob.bounding_box()
+            assert_true(all(abs(a-b)<1 for a,b in zip(base,(linked["x"],linked["y"],linked_knob["x"],linked_knob["y"]))),
+                        f"{w}: routing reflow displaced OUT/IN/knob")
+            assert_true(page.locator('#wireLayer path').count()>=2,
+                        f"{w}: committed signal line not visible")
+            if w==1366: page.screenshot(path=str(ROOT/"preview-v17-wire-1366.png"))
+            if w==1920: page.screenshot(path=str(ROOT/"preview-v17-wire-1920.png"))
+        # Reset temporary tests without changing stored routing state.
+        page.locator('#reset').click()
+        # Drop over a fader intentionally fails closed and never creates a wire.
+        source=page.locator('#tracks .strip[data-id="8"] .wire-node-out')
+        fader=page.locator('#tracks .strip[data-id="3"] .fader-box')
+        sx,sy=center(source);fx,fy=center(fader)
+        page.mouse.move(sx,sy);page.mouse.down()
+        page.mouse.move(fx,fy,steps=12);page.mouse.up()
+        assert_true(page.locator('#tracks .strip[data-id="3"] .wire-node-in.is-linked').count()==0,
+                    "Unsafe fader-area drop created a route")
         assert_true(not errors,"JavaScript errors: "+str(errors))
         browser.close()
         print("PASS V15 Chromium: real OUT→IN leftward pointer cable, gain, Bus Only vs Main, clean screenshots")
