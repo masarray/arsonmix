@@ -3716,8 +3716,7 @@ html * ,html *::before,html *::after{
  border-color:#91d0b7;color:white;
 }
 .mixer-title .wire-offbank-instruction{color:#bad0d7;font:500 9px/15px 'Segoe UI',Arial,sans-serif;overflow:hidden;text-overflow:ellipsis}
-.routing-wire-overlay .wire-offbank-entry,.routing-wire-overlay .wire-offbank-caption{pointer-events:none}
-.routing-wire-overlay .wire-offbank-caption{fill:#9fbcc5;font:500 8px 'Segoe UI',Arial,sans-serif;letter-spacing:.15px}
+.routing-wire-overlay .wire-offbank-entry{pointer-events:none}
 </style>
 </head>
 <body>
@@ -4612,8 +4611,7 @@ function renderWireRouting(){
    '" fill="none" stroke-linecap="round"/>');
  }
  if(!visibleSource&&paths.some(p=>p.includes('wire-outgoing-line'))){
-  paths.push('<circle class="wire-offbank-entry" cx="'+x0+'" cy="'+y0+'" r="4" fill="'+source.color+'" stroke="#c9dfe6" stroke-width="1"/>'+
-   '<text class="wire-offbank-caption" x="'+(x0+9)+'" y="'+(y0+17)+'">CH'+String(source.id).padStart(2,'0')+' · OTHER BANK</text>');
+  paths.push('<circle class="wire-offbank-entry" cx="'+x0+'" cy="'+y0+'" r="4" fill="'+source.color+'" stroke="#c9dfe6" stroke-width="1"/>');
  }
  if(dragging){
   let x1=Math.max(2,Math.min(vp.width-2,wireGesture.point.x-vp.left));
