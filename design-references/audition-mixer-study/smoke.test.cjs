@@ -543,13 +543,13 @@ check(!strip(1).includes('wire-node-out is-source') &&
  strip(3).includes('data-action="wireRoute"') &&
  strip(3).includes('class="wire-socket wire-node-in"') &&
  strip(3).includes('wire-pot is-idle'),
- 'SEND jacks idle after reset, operator explicitly arms OUT');
+ 'SEND OUT remains neutral on reset; intentional source activation controls wire');
 function armSource(id){
  const el={dataset:{action:'wireSource'},closest:k=>k==='.strip'?{dataset:{id}}:null};
  node('body').handlers.click({target:{closest:k=>k==='[data-action]'?el:null}});
 }
 function wireTo(id,shift=false){
- if(!node('tracks').innerHTML.includes('wire-node-out is-source'))armSource(1);
+ if(!node('tracks').innerHTML.includes('wire-node-out is-source') && !node('wireLegend').innerHTML.includes('FROM CH'))armSource(1);
  const el={dataset:{action:'wireRoute'},closest:k=>k==='.strip'?{dataset:{id}}:null};
  const target={closest:k=>k==='[data-action]'?el:k==='[data-action="wireRoute"]'?el:k==='.strip'?{dataset:{id}}:k==='.wire-tray'?{}:null};
  node('body').handlers.mousedown({target,ctrlKey:false,metaKey:false,shiftKey:false});
@@ -602,8 +602,7 @@ check(strip(1).includes('<option value="Master" selected>') &&
  node('wireMaster').textContent==='MAIN ON',
  'MAIN send can be restored without altering channel wire topology');
 // Graph guards: CH1→CH3 already connected; now CH3→CH1 must fail.
-armSource(3);
-wireTo(1);
+armSource(3);wireTo(1);
 check(node('info').textContent.includes('feedback loop') &&
  strip(1).includes('wire-socket'),
  'Graph cycle guard refuses reverse link CH3→CH1');
@@ -671,9 +670,10 @@ node('reset').dispatch('click');
 node('body').clientWidth=1680;node('reset').dispatch('click');
 node('bankSelect').value='1';node('bankSelect').dispatch('change');
 wireTo(11);
-check(node('info').textContent.includes('legacy SEND to Bus A') &&
- !node('tracks').innerHTML.includes('wire-node-in is-linked'),
- 'FL wire refuses duplicate audible legacy SEND to Bus A rather than summing unexpectedly');
+check(node('info').textContent.includes('ALREADY CONNECTED') &&
+ node('tracks').innerHTML.includes('wire-node-in is-linked') &&
+ !node('tracks').innerHTML.includes('data-field="wireGain"'),
+ 'V32 existing legacy SEND to Bus A is visibly connected but never doubled with a new wire gain');
 node('reset').dispatch('click');
 node('reset').dispatch('click');
 
@@ -691,7 +691,7 @@ check(html.includes('.console-body.wire-routing-v13.collapsed-send{--send-h:23px
  html.includes('.console-body.wire-routing-v13.collapsed-send{\n --send-h:23px!important'),
  'V14.1 source folds WIRE bay into a real 23px header');
 check(html.includes('.console-body.wire-routing-v13:not(.collapsed-send){--send-h:160px!important}') &&
- html.includes('const sagLimit=wireSagClearance(from,well);'),
+ html.includes('const sagLimit=wireSagClearance(anchor,well);'),
  'Expanded WIRE retains the existing height rules but bounds hanging cable depth to its own patch bay');
 check(html.includes("document.querySelector('.console-body')?.classList.contains('collapsed-send')") &&
  html.includes('wireGesture?.active') &&
@@ -770,7 +770,7 @@ fakeWindow.handlers.pointercancel({pointerId:72});
 check(strip(8)===previous && node('info').textContent.includes('canceled'),
  'Canceled pointer gesture preserves all prior signal connections');
 node('reset').dispatch('click');
-// CH3 has no legacy Bus A send. Explicit SEND OUT click arms the route.
+// CH3 has no legacy Bus A send. Explicitly activate its SEND OUT socket.
 field(3,'output','Master');armSource(3);
 node('bankSelect').value='1';node('bankSelect').dispatch('change');
 wireTo(11);
@@ -1030,7 +1030,7 @@ check(html.indexOf('class="wire-context-line"')<html.indexOf('class="wire-incomi
 node('reset').dispatch('click');
 check(node('wireView').value==='focus',
  'V30 reset restores Focus with graph/editor defaults intact');
-// V31 top patch strip, gravity-hung curves and 24-frame bounded spring.
+// V31 top patch strip and gravity; V32 soft per-edge settling replaces global spring.
 check(html.includes('/* V31 — FL-style suspended routing:') &&
  html.includes('.wire-tray{\n order:-2!important') &&
  html.includes('.wire-section .wire-deck{\n order:0!important') &&
@@ -1040,14 +1040,23 @@ check(html.includes('(y0+control).toFixed(1)') &&
  html.includes('(y1+control).toFixed(1)') &&
  !html.includes('(y0-rise).toFixed(1)'),
  'V31 both cubic control points hang BELOW their anchors, including right-to-left routes');
-check(html.includes('let wireSpring=0,wireSpringVelocity=0') &&
- html.includes('wireSpringFrames<24') &&
+check(html.includes('let wireMotion={key:null,offset:0,token:0}') &&
+ html.includes('frame<18') &&
+ html.includes('wireMotionGeometry.get(key)') &&
+ html.includes('path.setAttribute(\'d\',d)') &&
  html.includes("window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches") &&
- html.includes('render();kickWireSpring()'),
- 'V31 elastic gravity settling is bounded to 24 frames and honors reduced-motion');
+ html.includes('kickWireSpring(source.id,dest.id)') &&
+ !html.includes('wireSpringVelocity'),
+ 'V32 bounded settling updates only newly plugged wire SVG path, honors reduced motion');
 check(html.includes('wirePathData(x0,y0,x1,y1,sagLimit);') &&
  html.includes('wireSagClearance(fromRect,senderBay)') &&
- html.includes('wirePathData(xa,ya,xb,yb,rise,wireSpring)'),
+ html.includes('wirePathFor(edge,xa,ya,xb,yb,rise)'),
  'V31 drag and incoming/outgoing share the new downward gravity geometry');
+check(html.includes('wireSourcePinned=true') &&
+ html.includes('data-wire-jump-source="1"') &&
+ html.includes('wire-offbank-entry') &&
+ html.includes('ALREADY CONNECTED:') &&
+ html.includes('data-cable-key'),
+ 'V32 pin source across banks, indicate existing SEND and animate only keyed SVG paths');
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
