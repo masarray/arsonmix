@@ -13,7 +13,12 @@ lock=(root/'docs/GUI_BASELINE_LOCK_2026-10-25.md').read_text(encoding='utf8')
 assert '343692fc9b702661a8455cca30f0ffd108907324' in lock
 assert 'checkpoint/gui-v0.8-approved-20261025' in lock
 # v6 is the live execution authority; the old GUI baseline remains historic.
-assert 'docs/EXECUTION_LOCK_UNIVERSAL_LIVE_CONSOLE_V6_20261101.md' in readme
+# The base/main README now carries the newer PR278-v5.2 console authority;
+# keep the old v6 pointer valid on historical branches, but do not reject
+# the superseding owner-approved design / production / release handoff.
+assert ('docs/EXECUTION_LOCK_UNIVERSAL_LIVE_CONSOLE_V6_20261101.md' in readme or
+        ('PRIMARY ARSONMIX GUI AUTHORITY' in readme and 'PR #278' in readme and
+         'GUI #271' in readme and 'PRD' in readme))
 assert 'docs/EXECUTION_LOCK_UNIVERSAL_LIVE_CONSOLE_V6_20261101.md' in agents
 assert "ref: fix/fader-thumb-symmetry-polish" not in page
 assert "branches: [main]" in page and "head_sha" in page
