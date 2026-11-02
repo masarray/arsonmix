@@ -21,7 +21,7 @@ def main():
    body=p.locator(".console-body")
    if "collapsed-send" in (body.get_attribute("class") or ""):
     p.locator('.section-rail [data-section="send"]').click()
-   src=p.locator('#tracks .strip[data-id="8"] .wire-node-out')
+   src=p.locator('#tracks .strip[data-id="5"] .wire-node-out')
    pin=src.locator(".wire-pin")
    dest=p.locator('#tracks .strip[data-id="3"] .wire-node-in')
    dest_inner=dest.locator(".wire-arrow")
