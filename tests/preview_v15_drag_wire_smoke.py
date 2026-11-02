@@ -197,6 +197,18 @@ def main():
                     "Source count did not update after leftward drag")
         assert_true(page.locator('#tracks .strip[data-id="3"] .wire-gain').count()==1,
                     "Receiver wire gain control missing")
+        # V27 cable geometry uses one source ferrule; branch and stem are
+        # different SVG layers (no overlapping color lines at the OUT jack).
+        stem=page.locator('#wireLayer path.wire-origin-stem')
+        shaft=page.locator('#wireLayer path.wire-origin-shaft')
+        junction=page.locator('#wireLayer circle.wire-origin-junction')
+        outgoing=page.locator('#wireLayer path.wire-outgoing-line')
+        assert_true(stem.count()==1 and shaft.count()==1 and junction.count()==1,
+                    'WIRE must have exactly one shared OUT stem and ferrule')
+        assert_true(outgoing.count()==1,
+                    'Active wire must render its own destination branch')
+        assert_true(outgoing.first.get_attribute('d').startswith('M '),
+                    'New wire branch has invalid path geometry')
         page.screenshot(path=str(ROOT/"preview-v15-wire-left-1680.png"))
         # New source CH3 -> Bus A, explicitly choose serial VIA BUS ONLY.
         page.locator('#tracks .strip[data-id="3"] .wire-node-out').click()

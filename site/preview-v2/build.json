@@ -1,11 +1,11 @@
 {
-  "version": "preview-v26-focus-incoming-outgoing-wire-ledger",
+  "version": "preview-v27-clean-shared-wire-origin",
   "kind": "GUI_REFERENCE_ONLY",
   "live_audio": false,
   "source_pr": 278,
   "source_branch": "design/audition-mixer-reference-isolated-20261101",
-  "source_sha": "1b272065c8dbf38d48847da0bb584766b7de37ba",
-  "source_content_sha": "4039d4577745c0ed4dc6406db96425de13b95bdb",
+  "source_sha": "8e45e6f015aecd65d5ac57e6c256dd6995bae738",
+  "source_content_sha": "09a0159f093fe55121f815b8578757f1ca2ee505",
   "routes": [
     "/preview/mixer.html",
     "/preview-v2/"
@@ -18,7 +18,9 @@
   "hardware_key": "V20 true 3px hard sidewall / 2px while pressed, cap travels 1px; internal light gradient in translucent physical lens, sharp 2px radius, hard socket; no glow/blur/filters",
   "limitations": "GUI-only preview; selected Focus graph is read-only visualization of reference model, not native PCM or ASIO accepted-graph ACK. Off-bank routing is represented by badges, not offscreen SVG paths.",
   "led_meter": "6px x 9px portrait LED; 2px dark divider, continuous green/yellow/amber/red",
-  "verification": "PR278 focused browser #41425858405 PASS at head 1b272065; published source blob 4039d457...",
+  "verification": "PR #278 Chromium wire focus and 1:N source geometry checks, main wire drag/routing smoke and 1244px toolbar QA",
   "design_reference_pr": 278,
-  "design_reference_sha": "2a889af659def8b5cbf5511ed24ffb6fe9c583d7"
+  "design_reference_sha": "2a889af659def8b5cbf5511ed24ffb6fe9c583d7",
+  "wire_visual": "single physically joined OUT trunk; shared upward entry tangent for 1:N destinations; hardware ferrule masks junction; separate, consistent branch colors",
+  "layout_visual": "compact BANK/VIEW/SOF/SNAPSHOT toolbar at 1244px; no label/button overlap; 1px selected border and previous V25 hardware controls preserved"
 }
