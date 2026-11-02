@@ -82,6 +82,12 @@ def main():
              f'{width}: badge visibility lost in fold')
       ensure(not node(3,'.wire-tray').is_visible(),f'{width}: sockets leaked into PAN')
       wire.click()
+      # A rail expansion may schedule the SVG render in the next animation
+      # frame. Wait for the actual 2-IN/1-OUT contract, not an arbitrary sleep.
+      page.wait_for_function("""()=>
+          document.querySelectorAll('#wireLayer path.wire-incoming-line').length===2 &&
+          document.querySelectorAll('#wireLayer path.wire-outgoing-line').length===1
+      """,timeout=1500)
       ensure(incoming.count()==2 and outgoing.count()==1,
              f'{width}: expanded focus did not restore two directions')
       # Legacy Sends must also appear when the bus is selected, even if their
