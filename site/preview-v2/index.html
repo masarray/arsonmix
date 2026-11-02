@@ -5510,6 +5510,17 @@ consoleBody.addEventListener('pointermove',e=>{
 consoleBody.addEventListener('pointerleave',()=>{
  nearWireOut?.classList.remove('is-near');nearWireOut=null;
 });
+// The 16px OUT proximity halo is clickable without enlarging its hardware.
+ // IN, knob and other data actions keep their own event owners.
+consoleBody.addEventListener('click',e=>{
+ if(e.target.closest?.('.wire-node-out,.wire-node-in,.wire-pot,[data-action]'))return;
+ const tray=e.target.closest?.('.wire-tray');
+ const out=tray?.querySelector('.wire-node-out.is-near:not(:disabled)');
+ const source=out?findTrack(out):null;
+ if(!source||source.kind==='master')return;
+ e.stopPropagation(); // explicit patch, not a click-away
+ selectWireSource(source);
+});
 // A click elsewhere releases the source; bank navigation, WIRE workspace
 // and route-choice remain in the active routing workflow.
 document.addEventListener('click',e=>{

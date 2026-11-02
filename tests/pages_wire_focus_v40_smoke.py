@@ -30,8 +30,9 @@ def main():
    page.mouse.move(rect["x"]-5,rect["y"]+rect["height"]/2)
    assert "is-near" in (out.get_attribute("class") or ""), "OUT fails near-pointer cue"
    assert out.get_attribute("aria-pressed")=="false"
-   out.click()
-   assert "wire-intent" in (body.get_attribute("class") or ""), "click OUT did not arm patch"
+   # The halo is interactive even when clicked OUTSIDE its visible circle.
+   page.mouse.click(rect["x"]-5,rect["y"]+rect["height"]/2)
+   assert "wire-intent" in (body.get_attribute("class") or ""), "near-OUT click did not arm patch"
    assert strip.locator(".wire-node-out").get_attribute("aria-pressed")=="true"
    receiver=page.locator('#tracks .strip[data-id="3"] .wire-node-in')
    assert receiver.is_enabled(), "IN must be ready when source is pinned"
