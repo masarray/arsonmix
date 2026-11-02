@@ -113,11 +113,15 @@ async def visual(page,width):
     assert await row.locator('[data-util-kind="fx-main"]').get_attribute('aria-pressed')==before
     if width==1680:
       await page.screenshot(path='pages-v7-embedded-inter-utility-1680.png')
-    # V6 keys survive and use the same embedded Inter without changing their switches.
+    # MUTE is an independent CSS/HTML caption; SOLO/PFL retain SVG masks.
     for k in ('mute','solo','cue'):
       key=row.locator(f'.mx-hw-row button[data-hw-kind="{k}"]')
       assert await key.count()==1
-      assert await key.locator('svg.mx-hw-face mask text').count()==1
+      if k=='mute':
+        assert await key.locator('.mx-mute-face .mx-mute-legend').inner_text()=='MUTE'
+        assert await key.locator('svg,img').count()==0
+      else:
+        assert await key.locator('svg.mx-hw-face mask text').count()==1
 
 async def main():
     source_contract()
