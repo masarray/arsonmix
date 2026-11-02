@@ -83,45 +83,47 @@ def main():
         })""")
         assert_true(led['width']=='6px' and '9px' in led['cells'] and '11px' in led['cells'],
                     'LED must be portrait (6x9px with 2px spacing)')
-        # V19 owner-approved modern console material: same socket and cap,
-        # graphite OFF, ruby MUTE, amber SOLO, cyan PFL; mechanical depth unchanged.
+        # V29 user-provided 3D graphite keycap is now the governing material.
+        # V19/V22 bright cube and rigid 2px sidewall were superseded by request.
+        # The mechanical socket, 1px physical travel, independent state and
+        # PAN/fader layout must still be preserved.
         def material(locator):
             return locator.evaluate("""el=>({
-                face:getComputedStyle(el).getPropertyValue('--am-hw-key-face').trim(),
-                radius:getComputedStyle(el).borderRadius,
-                filter:getComputedStyle(el).filter,
+                bg:getComputedStyle(el).backgroundImage,
+                shadow:getComputedStyle(el).boxShadow,
+                ink:getComputedStyle(el).color,
+                led:getComputedStyle(el).getPropertyValue('--am-3d-led').trim(),
                 press:getComputedStyle(el).getPropertyValue('--am-hw-key-press-y').trim()
             })""")
-        assert_true(material(key)['face']=='#405360','V19 graphite resting key missing')
-        assert_true(material(key)['press']=='1px','V19 must retain 1px hardware press')
-        # V20 true cube extrusion + internal lens, without GPU glow.
-        cube=key.evaluate("""el=>({
-            bright:getComputedStyle(el).getPropertyValue('--am-hw-key-bright').trim(),
-            deep:getComputedStyle(el).getPropertyValue('--am-hw-key-deep').trim(),
-            wall:getComputedStyle(el).getPropertyValue('--am-hw-key-wall').trim(),
-            shadow:getComputedStyle(el).boxShadow,
-            background:getComputedStyle(el).backgroundImage,
-            filter:getComputedStyle(el).filter
-        })""")
-        assert_true(cube['bright']=='#586c79' and cube['deep']=='#202f39',
-                    'V20 distinct light/dark lens materials missing')
-        assert_true('0px 2px 0px' in cube['shadow'],
-                    'V22 restrained HARD sidewall missing')
-        assert_true('linear-gradient' in cube['background'] and
-                    'color(srgb' not in cube['background'],
-                    'V22 smooth three-stop lens gradient missing')
-        assert_true(cube['filter']=='none','V20 must avoid GPU blurring effects')
-        key.click()
-        assert_true(material(key)['face']=='#ae3346','V19 jewel ruby MUTE missing')
-        key.click()
+        page.mouse.move(2,2)  # exit key hover before checking idle material
+        idle=material(key)
+        assert_true('rgb(51, 51, 51)' in idle['bg'] and
+                    'rgb(34, 34, 34)' in idle['bg'],
+                    'V29 graphite OFF must follow supplied raised #333/#222 face')
+        assert_true(idle['press']=='1px','Key physical travel must remain 1px')
         solo=page.locator('#tracks .strip[data-id="1"] button.switch.solo')
-        solo.click()
-        assert_true(material(solo)['face']=='#bc8f2e','V19 amber SOLO missing')
-        solo.click()
         cue=page.locator('#tracks .strip[data-id="1"] button.switch.cue')
-        cue.click()
-        assert_true(material(cue)['face']=='#2a879e','V19 cyan PFL missing')
-        cue.click()
+        key.click();solo.click();cue.click()
+        # The example's jQuery single-select is NOT the mixer behavior:
+        # MUTE, SOLO and PFL are all independent latch states.
+        for cap,color,led in ((key,'MUTE','#f17380'),
+                              (solo,'SOLO','#efcc5e'),
+                              (cue,'PFL','#6dd2ec')):
+            active=material(cap)
+            assert_true(cap.get_attribute('aria-pressed')=='true',
+                        'V29 '+color+' did not remain ON independently')
+            assert_true('rgb(32, 32, 32)' in active['bg'] and
+                        'rgb(21, 21, 21)' in active['bg'] and
+                        'inset' in active['shadow'],
+                        'V29 '+color+' must appear recessed (#202020→#151515)')
+            assert_true(active['led']==led,
+                        'V29 '+color+' colored indicator missing')
+        key.click()
+        assert_true(key.get_attribute('aria-pressed')=='false' and
+                    solo.get_attribute('aria-pressed')=='true' and
+                    cue.get_attribute('aria-pressed')=='true',
+                    'Releasing MUTE may not reset SOLO/PFL')
+        solo.click();cue.click()  # restore same untouched routing test fixture
         key.scroll_into_view_if_needed()
         rect=key.bounding_box()
         assert_true(bool(rect),'Button missing')
