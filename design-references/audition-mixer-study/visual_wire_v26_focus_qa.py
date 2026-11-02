@@ -24,7 +24,8 @@ def main():
       def node(ch,suffix):
         return page.locator(f'#tracks .strip[data-id="{ch}"] {suffix}')
       def select(ch):
-        node(ch,'.strip-identity-top').click()
+        # V33 WIRE source is explicit and pinned across bank/strip navigation.
+        node(ch,'.wire-node-out').click()
       def connect(src,dst):
         select(src)
         receiver=node(dst,'.wire-node-in')
@@ -34,7 +35,7 @@ def main():
       connect(1,3)
       connect(2,3)
       connect(3,4)
-      # Select through normal channel strip, not via an internal test shortcut.
+      # Inspect source through the real OUT socket, never auto-retarget on strip selection.
       select(3)
       legend=page.locator('#wireLegend')
       in_ids=legend.locator('.wire-map-group.is-in .wire-map-chip span').all_inner_texts()
@@ -42,7 +43,7 @@ def main():
       ensure(in_ids==['CH01','CH02'] and out_ids==['CH04'],
              f'{width}: two-way badge routing wrong: {in_ids} / {out_ids}')
       ensure(legend.locator('.wire-map-focus').inner_text()=='CH03',
-             f'{width}: focus did not follow selected channel')
+             f'{width}: focus did not follow explicitly pinned OUT source')
       layer=page.locator('#wireLayer')
       incoming=layer.locator('path.wire-incoming-line')
       outgoing=layer.locator('path.wire-outgoing-line')
