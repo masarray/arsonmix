@@ -40,10 +40,16 @@ def audit_geometry(page, title):
                 const b=getComputedStyle(bottom).borderBottomColor;
                 if(a!==b)problems.push('top/bottom channel color mismatch '+tag);
             }
-            const controls=[...t.querySelectorAll('.switch-section .switch')];
+            const controls=[...t.querySelectorAll('.switch-section.mx-hw-row > button.mx-hw-key')];
             if(controls.length!==3)problems.push('MUTE/SOLO/PFL count !=3 '+tag);
-            else if(Math.abs(r(controls[0]).width-r(controls[1]).width)>1)
-                problems.push('inconsistent button widths '+tag);
+            else {
+                if(Math.max(...controls.map(c=>r(c).width))-Math.min(...controls.map(c=>r(c).width))>1.8)
+                    problems.push('inconsistent V6 button widths '+tag);
+                if(Math.max(...controls.map(c=>r(c).top))-Math.min(...controls.map(c=>r(c).top))>1)
+                    problems.push('inconsistent V6 button baselines '+tag);
+                if(controls.some(c=>Math.abs(r(c).height-29)>1))
+                    problems.push('29px physical key height regression '+tag);
+            }
             const cap=t.querySelector('.fader-travel .cap');
             if(!cap||Math.abs(r(cap).width-23)>1.5||Math.abs(r(cap).height-48)>1.5)
                 problems.push('scaled 23x48 fader cap missing '+tag);
