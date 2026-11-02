@@ -32,9 +32,9 @@ Date: 2026-11-02. Authority: isolated GUI PR #278. Status: implemented in HTML d
 | Smoke test source syntax compilation | PASS |
 | CSS brace balance | PASS |
 | Static presence of snap/drop, stable grid, rAF gate and dash-free SVG renderer | PASS |
-| Full smoke.test.cjs execution | NOT RUN in this session |
-| Chromium / Firefox browser actual pointer geometry and screenshot | NOT RUN in this session |
-| 1366/1680/1920 px visual QA and reduced-motion review | OPEN |
+| Full smoke.test.cjs execution | **PASS: 214/214** in GitHub Actions dedicated reference workflow |
+| Chromium actual pointer geometry, magnetic off-center drop, no-reflow, Bus-only path | **PASS** at 1680×900 in dedicated GitHub Actions workflow |
+| 1366/1920 px visual QA, Firefox and operator aesthetic review | OPEN; no final visual approval claimed |
 | Native ASIO/PCM graph, VST3 and accepted graph ACK | OUT OF SCOPE / OPEN |
 | Pages preview publication | OPEN: reference branch is not automatically deployed |
 
@@ -45,3 +45,5 @@ Expand WIRE in the left section rail; select CH08 OUT, drag **left** toward CH03
 ## Production handoff
 
 The physical connectors are the operator-facing graph editor only. Native ownership must preflight source/destination/feedback, send-tap semantics, duplicate legacy SEND routes, device epoch and channel identity, and return an accepted graph revision before UI may label the wire as live PCM. Preserve one authoritative native signal graph and fail closed on rejected or pending transactions.
+
+Evidence: [Focused V17 GitHub Actions run #41377926771](https://github.com/masarray/arsonmix/actions/runs/41377926771) — successful; branch head at test: `55fb824052c323c4b37ced4cbd28b51de599e86e`. CI checks are reference-only, not production PCM certification.
