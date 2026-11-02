@@ -41,7 +41,7 @@ def confirm_docked_tip(page,socket,context):
     check(vp is not None,"Missing reference viewport")
     d=page.locator("#wireLayer .wire-drag-line").last.get_attribute("d")
     import re
-    m=re.search(r",\\s*(-?\\d+(?:\\.\\d+)?)\\s+(-?\\d+(?:\\.\\d+)?)\\s*$",d or "")
+    m=re.search(r",\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*$",d or "")
     check(m is not None,f"{context}: no docked wire Bezier endpoint")
     px,py=map(float,m.groups())
     check(abs(px-(x-vp["x"]))<2 and abs(py-(y-vp["y"]))<2,
