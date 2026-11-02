@@ -249,7 +249,7 @@ check(html.includes('grid-template-columns:51px minmax(36px,1fr) 26px!important'
  strip(1).indexOf('class="meter-box mono"')<strip(1).indexOf('class="fader-box"') &&
  strip(1).indexOf('class="fader-box"')<strip(1).indexOf('class="fader-scale"'),
  'Fader paint and DOM use left VU, central fader, right ruler');
-check(html.includes('class="console-body collapsed-send"') && !strip(1).includes('Add effect</button><button class="fx-remove"'),
+check(html.includes('class="console-body collapsed-send wire-routing-v13"') && !strip(1).includes('Add effect</button><button class="fx-remove"'),
  'Mix default prioritizes expanded FX rack and only one Add FX affordance');
 check(!strip(1).includes('eq-section') && !html.includes('<button class="rail-cell eq'),
  'EQ row and section control are removed: EQ is accessed as an FX plugin');
