@@ -55,3 +55,6 @@ The `NativeRenderAuthority` is an explicit, fixed-cost callback selector. **Ther
 - Windows exact-SHA build/CTest and physical ASIO/WASAPI 0FX + 1FX FAT pass.
 
 **Result:** no obsolete active stereo plugin engine remains available from the diagnostic fallback; current M4 compatibility is intentionally quarantined and will be retired only when the unified engine demonstrably replaces it.
+
+## Reconciliation notice (2026-11-03)
+ENGINE #266 is now the sole source branch after folding former #287. Cross-branch ownership, upstream drift, CI authority gate and the next real callback cutover are documented in [ENGINE_SINGLE_OWNER_HANDOFF_20261103.md](workstreams/ENGINE_SINGLE_OWNER_HANDOFF_20261103.md). The M1 experimental ZIP policy is historical; do not make another branch-specific Windows FAT producer without #270 integration ownership.

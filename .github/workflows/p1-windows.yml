@@ -58,7 +58,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Cheap canonical Console v6 puzzle socket gate (no JUCE)
-        run: node scripts/check_console_puzzle.mjs
+        run: |\n          node --test tests/engine_runtime_reconciliation_test.mjs\n          node scripts/check_console_puzzle.mjs
       - name: Stop incomplete integrated product promotion before JUCE checkout
         if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-') }}
         run: node scripts/check_console_puzzle.mjs --release
@@ -137,13 +137,12 @@ jobs:
           & ./scripts/verify_native_windows_artifact.ps1 -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       # PRs compile/CTest/package but never silently publish a stable build.
-      # Only explicitly named hardware-FAT candidate PRs may upload an
-      # UNQUALIFIED test artifact. It is never a public/stable release.
-      # No extra build matrix and no upload when CTest/package audit fails.
+      # This single M4 FAT branch is explicitly allowed to upload an
+      # UNQUALIFIED experimental ZIP for real physical hardware testing.
       - uses: actions/upload-artifact@v4
-        if: ${{ github.event_name != 'pull_request' || github.head_ref == 'milestone/m4-unified-native-multichannel-fx-20261101' || github.head_ref == 'work/m1-realtime-stability-20261102' }}
+        if: ${{ github.event_name != 'pull_request' || github.head_ref == 'milestone/m4-unified-native-multichannel-fx-20261101' }}
         with:
-          name: ${{ github.event_name == 'pull_request' && (github.head_ref == 'work/m1-realtime-stability-20261102' && 'ArSonMix-M1-EXPERIMENTAL-Hardware-FAT-Windows-x64' || 'ArSonMix-M4-EXPERIMENTAL-Hardware-FAT-Windows-x64') || 'ArSonMix-GUI10CH-P012-Verified-Hardware-FAT-Windows-x64' }}
+          name: ${{ github.event_name == 'pull_request' && 'ArSonMix-M4-EXPERIMENTAL-Hardware-FAT-Windows-x64' || 'ArSonMix-GUI10CH-P012-Verified-Hardware-FAT-Windows-x64' }}
           path: dist/
           if-no-files-found: error
           retention-days: 14

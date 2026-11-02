@@ -22,3 +22,6 @@ This patch also authorizes **one** exact-branch `M1-EXPERIMENTAL` GitHub Actions
 
 ## 2026-11-03 single production authority cleanup
 Real-time callback now routes through the explicit `NativeRenderAuthority` decision. The no-longer-reachable legacy stereo FX processing code has been removed from the diagnostic-only path; this does not change accepted 10CH/4AUX production routing. `PreparedNativeMixerSession.h` remains tested but is no longer listed in the shipping GUI application target. See `docs/ENGINE_RUNTIME_AUTHORITY_20261103.md` for the decommission map and strict migration gates.
+
+## Ownership reconciliation — 2026-11-03
+M1 stabilization is folded into **ENGINE #266**; PR #287 is retired to avoid parallel production engine branches. Its existing Windows M1 experimental FAT artifact remains historical, NOT a universal UAT release. Future exact joined Windows artifact and UAT promotion are owned by integration #270. See `docs/workstreams/ENGINE_SINGLE_OWNER_HANDOFF_20261103.md`.
