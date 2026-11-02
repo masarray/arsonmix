@@ -3922,14 +3922,14 @@ function wirePathData(x0,y0,x1,y1,riseLimit){
   ', '+(x1-dx*.23).toFixed(1)+' '+(y1-rise).toFixed(1)+
   ', '+x1.toFixed(1)+' '+y1.toFixed(1);
 }
-/* V22 Smart Wire: preview only when near the socket, NEVER across the
-   entire WIRE bay. While dragging, the free end always follows the pointer.
-   Candidate visual state is separate from the actual routing graph. */
-const WIRE_MAGNET=Object.freeze({preview:26,release:22,retained:28,origin:31});
+/* V23 Smart Wire: visible lit socket means preview is center-snapped and
+   mouseup accepts that exact candidate. Moving away releases attraction;
+   the underlying graph changes ONLY on mouseup. No whole-bay snap. */
+const WIRE_MAGNET=Object.freeze({preview:22,release:22,retained:24,origin:31});
 function wireSnapTarget(point,sourceId,originDestId=null,phase='preview'){
  if(!wireSourceTrack(sourceId)||!point||
     !Number.isFinite(point.x)||!Number.isFinite(point.y))return null;
- const release=phase==='release',held=!release?wireGesture?.snapId:null;
+ const held=wireGesture?.snapId??null; // same acceptance for lit preview and final pointerup
  let best=null,distance=Infinity;
  for(const input of document.querySelectorAll?.('.wire-node-in')||[]){
   const track=findTrack(input);
@@ -3939,7 +3939,7 @@ function wireSnapTarget(point,sourceId,originDestId=null,phase='preview'){
   const dist=Math.hypot(r.left+r.width*.5-point.x,r.top+r.height*.5-point.y);
   // Easy to snap back to the old socket; deliberate pull beyond 31px unplugs.
   const limit=track.id===originDestId?WIRE_MAGNET.origin:
-   (release?WIRE_MAGNET.release:track.id===held?WIRE_MAGNET.retained:WIRE_MAGNET.preview);
+   (track.id===held?WIRE_MAGNET.retained:WIRE_MAGNET.preview);
   if(dist>limit)continue;
   if(dist<distance){best={track,element:input,distance:dist};distance=dist;}
  }
@@ -3998,9 +3998,11 @@ function renderWireRouting(){
   const snap=tracks.concat(master).find(t=>t.id===wireGesture.snapId);
   const rect=snap?viewport.querySelector?.('.strip[data-id="'+snap.id+'"] .wire-node-in')?.getBoundingClientRect?.():null;
   if(rect?.width){
-   // Visual attraction guide: the loose cable tip remains ON the pointer.
-   const cx=rect.left-vp.left+rect.width*.5,cy=rect.top-vp.top+rect.height*.5;
-   paths.push('<path class="wire-magnet-guide" d="M '+x1.toFixed(1)+' '+y1.toFixed(1)+' L '+cx.toFixed(1)+' '+cy.toFixed(1)+'" stroke="'+(snap.color||'#b5eedb')+'" stroke-width="1.25" opacity=".34" fill="none" stroke-linecap="round"/>');
+   // True magnetic PREVIEW: if the receiving ring is lit, the cable endpoint
+   // visibly docks into that ring. Exiting 24px undocks immediately and
+   // continues with the mouse. This never commits route state during drag.
+   x1=rect.left-vp.left+rect.width*.5;
+   y1=rect.top-vp.top+rect.height*.5;
   }
   const d=wirePathData(x0,y0,x1,y1,riseLimit);
   paths.push('<path class="wire-drag-line" d="'+d+'" stroke="#06151b" stroke-width="6" opacity=".25" fill="none" stroke-linecap="round"/>'+
