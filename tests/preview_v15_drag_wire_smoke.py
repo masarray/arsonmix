@@ -23,6 +23,7 @@ def main():
         page.on("pageerror",lambda err:errors.append(str(err)))
         page.goto(PAGE.as_uri())
         # V18 hardware key socket / shallow click / portrait meter smoke.
+        key=page.locator('#tracks .strip[data-id="1"] button.switch.mute')
         # V22 static overlaid metal socket and channel front-layer rim.
         well=key.locator('xpath=..')
         assert_true(well.evaluate("el=>el.classList.contains('hw-switch-socket')"),
