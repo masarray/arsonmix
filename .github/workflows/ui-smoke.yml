@@ -57,6 +57,8 @@ jobs:
         run: node scripts/check_console_puzzle.mjs --release
       - name: Verify CSS ownership build and offline/WebView2 parity
         run: python scripts/build_ui_css.py --check
+      - name: Verify Pages asset cache revisions and MUTE renderer deployment
+        run: python tests/pages_asset_cache_revision_smoke.py
       - name: Verify immutable approved Brushed Metal CSS and non-destructive preview
         run: python tests/theme_reference_fixture_test.py
       - name: Validate JavaScript syntax
