@@ -1,6 +1,6 @@
 """Build public Pages landing and interactive console from canonical standalone HTML."""
 from pathlib import Path
-import argparse,os,json,shutil,subprocess,sys
+import argparse,os,json,shutil,subprocess,sys,hashlib,re
 ROOT=Path(__file__).resolve().parents[1]
 p=argparse.ArgumentParser()
 p.add_argument('--out',default='dist-pages')
@@ -47,11 +47,42 @@ if candidate_manifest.is_file():
               'reference_baseline_sha':candidate['source_sha']}
 html=source.read_text(encoding='utf-8')
 assert '<style>' in html and '<script>' in html and ('data-fader' in html or 'data-field="level"' in html)
+# Every Pages CSS/JS URL gets its content hash as a stable cache-busting URL.
+# The previous fixed ?v=inter-utility-v7 URL persisted across unrelated
+# deployments, letting browsers reuse obsolete PNG-backed MUTE styling.
+# One owner produces the SAME fingerprinted HTML for preview/ and preview-v2/.
+asset_sources={}
+asset_url_pattern=re.compile(
+    r"""(?P<lead>\\b(?:href|src)=["'])(?P<url>assets/(?P<name>[A-Za-z0-9._-]+\\.(?:css|js)))(?:\\?[^"']*)?(?P<tail>["'])"""
+)
+def version_asset(match):
+    name=match.group('name')
+    asset=source.parent/'assets'/name
+    if not asset.is_file():
+        raise SystemExit(f'Missing referenced Pages asset: {asset}')
+    asset_sources[name]=asset
+    revision=hashlib.sha256(asset.read_bytes()).hexdigest()[:16]
+    return f"{match.group('lead')}{match.group('url')}?rev={revision}{match.group('tail')}"
+published_html=asset_url_pattern.sub(version_asset,html)
+# A versioned MUTE style and its JS renderer must be published together.
+if 'assets/mixer-control-keys.css' in html:
+    assert 'M-MUTE-OFF.png' not in (source.parent/'assets'/'mixer-control-keys.css').read_text(encoding='utf-8')
+    assert 'mx-mute-face' in (source.parent/'assets'/'mixer-control-keys.js').read_text(encoding='utf-8')
+    assert 'mixer-control-keys.css' in asset_sources and 'mixer-control-keys.js' in asset_sources
 (dst/'preview').mkdir(exist_ok=True)
-(dst/'preview'/'mixer.html').write_text(html,encoding='utf-8')
-# The same WIRE knob-ICON.svg is referenced by CSS relative to mixer.html.
-# /preview-v2/ has assets/ beside index.html; the generated /preview/ must
-# receive the matching asset beside mixer.html (no rewrite or second knob).
+(dst/'preview'/'mixer.html').write_text(published_html,encoding='utf-8')
+# Direct /preview-v2/ route and /preview/mixer.html must never diverge.
+if source.resolve()==(ROOT/'site/preview-v2/index.html').resolve():
+    (dst/'preview-v2'/'index.html').write_text(published_html,encoding='utf-8')
+# All referenced CSS/JS files are shipped automatically. No hand-maintained
+# allowlist, so newly added WIRE/component styles cannot silently 404.
+for name,asset in sorted(asset_sources.items()):
+    target=dst/'preview'/'assets'/name
+    target.parent.mkdir(parents=True,exist_ok=True)
+    shutil.copy2(asset,target)
+    if target.read_bytes()!=asset.read_bytes():
+        raise SystemExit(f'Pages asset copy mismatch: {name}')
+# Original SVG knob is referenced from inside inline WIRE CSS, not HTML tags.
 if 'assets/knob-ICON.svg' in html:
     source_knob=source.parent/'assets'/'knob-ICON.svg'
     if not source_knob.is_file():
@@ -61,17 +92,6 @@ if 'assets/knob-ICON.svg' in html:
     shutil.copy2(source_knob,preview_knob)
     if preview_knob.read_bytes()!=source_knob.read_bytes():
         raise SystemExit('WIRE knob mask copy mismatch in generated Pages preview')
-# Control material has ONE owner shared by /preview-v2/ and the public
-# /preview/mixer.html alias; never leave the alias with stale or missing assets.
-for control_asset in ('mixer-control-keys.css','mixer-control-keys.js','mixer-utility-controls.css','inter-embedded.css','mixer-fx-rack.css','mixer-plugin-browser.css','mixer-pan-controls.css','mixer-fader-assembly.css','mixer-meter-display.css'):
-    if 'assets/'+control_asset in html:
-        src=source.parent/'assets'/control_asset
-        if not src.is_file(): raise SystemExit(f'Missing shared mixer key asset: {src}')
-        target=dst/'preview'/'assets'/control_asset
-        target.parent.mkdir(parents=True,exist_ok=True)
-        shutil.copy2(src,target)
-        if src.read_bytes()!=target.read_bytes():
-            raise SystemExit(f'Published asset differs from preview source: {control_asset}')
 (dst/'preview'/'build.json').write_text(json.dumps(metadata,indent=2),encoding='utf-8')
 (dst/'.nojekyll').touch()
 assert (dst/'index.html').exists() and (dst/'preview'/'index.html').exists()
