@@ -225,10 +225,24 @@ static void verifyUniversalChannelIdFxLeaseAndLivePcm() {
     assert(near(left[31],((.2f*2.f+.1f*4.f)*3.f+
                          (.1f*4.f)*.5f*2.f)*center));
     assert(near(left[31],right[31]));
+    // M-U2: the canonical ChannelId fader is smoothed over 64 SAMPLES,
+    // not 64 frames-per-callback. A 32-frame backend callback must reach
+    // only the halfway coefficient; the next 32 reaches the exact goal.
+    // Neither render may allocate, reinstantiate or call the old M4 FX.
     assert(native.setChannelMix(epoch,2,bus,.5f,0.f));
+    const auto beforeHalfHeap=heapCalls.load(std::memory_order_relaxed);
     assert(native.render(epoch,pins,2,left.data(),right.data(),32,false,
                          legacyFx));
+    assert(heapCalls.load(std::memory_order_relaxed)==beforeHalfHeap);
     assert(legacyFallbackCalls==0);
+    assert(near(left[31],((.2f*2.f+.1f*4.f)*3.f*.75f+
+                         (.1f*4.f)*.5f*2.f)*center));
+    const auto half=left[31];
+    assert(native.render(epoch,pins,2,left.data(),right.data(),32,false,
+                         legacyFx));
+    assert(heapCalls.load(std::memory_order_relaxed)==beforeHalfHeap);
+    assert(legacyFallbackCalls==0);
+    assert(left[0]<half); // continuous: no sudden first-sample jump
     assert(near(left[31],((.2f*2.f+.1f*4.f)*3.f*.5f+
                          (.1f*4.f)*.5f*2.f)*center));
     // A structural recompile carries the same M4 VST3 lease and accepted
@@ -251,8 +265,10 @@ static void verifyUniversalChannelIdFxLeaseAndLivePcm() {
     assert(native.commit(roster,req,2,epoch,epoch,true,refreshedPlan).ok());
     assert(GainFx::living==originalProcessors); // reuse, never rebuild VST
     assert(native.acceptedRevision()==3);
+    const auto heapBeforeReload=heapCalls.load(std::memory_order_relaxed);
     assert(native.render(epoch,pins,2,left.data(),right.data(),32,false,
                          legacyFx));
+    assert(heapCalls.load(std::memory_order_relaxed)==heapBeforeReload);
     assert(near(left[31],((.2f*2.f+.1f*4.f)*3.f*.5f+
                          (.1f*4.f)*.5f*2.f)*center));
     assert(legacyFallbackCalls==0);
