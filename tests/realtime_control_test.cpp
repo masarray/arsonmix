@@ -87,7 +87,9 @@ int main(){
     assert(publish(4)==Result::applied);
     publisher.unpublish();
     assert(publisher.pollRetirement());
-    assert(destroyed.load(std::memory_order_relaxed)==4);
+    // Three accepted snapshots + one rejected admission + final fourth
+    // accepted snapshot: all five owners are reclaimed (no leak/double free).
+    assert(destroyed.load(std::memory_order_relaxed)==5);
     // Runtime contract for the exact RT graph publication helper.
     struct FakeGraph { int id; };
     FakeGraph old{1}, next{2}, third{3};

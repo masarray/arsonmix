@@ -483,7 +483,7 @@ public:
             // Once the message thread publishes a changed send target,
             // the SAME callback switches to one live PRE/POST processor
             // which follows 64-sample gains across varying block sizes.
-            if(live && auxAutomationActive_.load(std::memory_order_acquire))
+            if(auxAutomationActive_.load(std::memory_order_acquire))
                 dispatchLiveAux(strip,SendTap::preFader,l,r,frames);
             else graph.aux.dispatch(strip,SendTap::preFader,l,r,
                                     auxLeft_.data(),auxRight_.data(),frames);
@@ -557,7 +557,7 @@ public:
             // Once the message thread publishes a changed send target,
             // the SAME callback switches to one live PRE/POST processor
             // which follows 64-sample gains across varying block sizes.
-            if(live && auxAutomationActive_.load(std::memory_order_acquire))
+            if(auxAutomationActive_.load(std::memory_order_acquire))
                 dispatchLiveAux(strip,SendTap::postFader,l,r,frames);
             else graph.aux.dispatch(strip,SendTap::postFader,l,r,
                                     auxLeft_.data(),auxRight_.data(),frames);
@@ -586,9 +586,10 @@ public:
             // the sample-continuous 64-frame de-zipper across 4/8/16-frame
             // callbacks. The fader scales the return AFTER hosted AUX VST3
             // for both MAIN and independent MONITOR, not source dry PCM.
-            // Offline/static rendering never inherits a previous live
-            // automation target. Native live control provides 'live'.
-            const bool automated=live && auxBusAutomationActive_.load(
+            // AUX automation is independent of channel fader/MUTE control.
+            // A caller may automate AUX sends/returns without supplying a
+            // RealtimeStripControls bank; keep one canonical DSP target plane.
+            const bool automated=auxBusAutomationActive_.load(
                 std::memory_order_acquire);
             const float target=automated
                 ?auxBusTarget_[b].load(std::memory_order_acquire):bus.gain;

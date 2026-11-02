@@ -842,8 +842,15 @@ static void verifyRealtimeAuxMasterPcmBothOutputs() {
     assert(!block.setAuxBusGain(0,std::numeric_limits<float>::quiet_NaN()));
     assert(close(block.auxBusGain(0),0.f));
     assert(close(block.plan().aux.buses[0].gain,1.f)); // topology immutable
-    // Legacy offline/no-live-control path still uses immutable compiled gain.
+    // Explicit AUX automation remains live even without a separate strip
+    // controls object. It MUST NOT silently fall back to stale compiled gain
+    // because older physical/native paths do not always pass that object.
     assert(block.process(inputs,2,left.data(),right.data(),64,noFx));
+    assert(close(left[0],0.f));
+    // A newly prepared graph starts at its own immutable initial gain:
+    // structural transaction/Show recall does not leak old AUX state.
+    PreparedMixerBlock freshlyPrepared(graph,64);
+    assert(freshlyPrepared.process(inputs,2,left.data(),right.data(),64,noFx));
     assert(close(left[0],initial));
 }
 

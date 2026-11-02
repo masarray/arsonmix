@@ -12,3 +12,10 @@ The existing `RealtimeRoutePublisher` owns bounded retirement. New tests hold a 
 
 ## Worker payload lifetime hardening
 `NativeShowSaveWorker` validates Show IDs before reserving, releases snapshot/blob/closure memory immediately on start failure, and moves the completion closure rather than retaining a second copy after IO completion. The long-lived worker is reused; no new OS thread or realtime allocation has been introduced. Windows JUCE compilation and runtime verification are release gates.
+
+## Exact CI evidence and hardware artifact scope (revision 2)
+Windows run `41479462759` compiled successfully but 52/54 CTests passed. The remaining two failures were analyzed and corrected together:
+1. Native `setAuxSendGain` / `setAuxBusGain` is **one atomic automation plane** even without separate strip controls, as exercised by `dedicated_aux_bus_test.cpp`. The old conditional gate silenced actual physical AUX level edits. In the routing CTest, a newly built `PreparedMixerBlock` establishes fresh compiled defaults, while an already automated block retains its explicit target.
+2. The graph-retirement test needed to count the rejected candidate's destructor too: 3 original accepted + 1 rejected + 1 newly accepted = **5 distinct prepared instances**. The lifetime test checks that saturation safely rejects and reader-owned graphs are not reclaimed early.
+
+This patch also authorizes **one** exact-branch `M1-EXPERIMENTAL` GitHub Actions artifact **only after** all CTests and package/provenance validation pass. This does not enable universal routing/CH11, promote stable release, or change hardware patch/ARM policy. The packaged FAT guide now includes explicit pass/fail cases for wired 0FX ASIO, AUX/monitor, state recall and hotplug. No parallel CI matrix or redundant always-on worker.
