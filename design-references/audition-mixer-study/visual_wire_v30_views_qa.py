@@ -23,7 +23,7 @@ def main():
             def strip(ch):
                 return page.locator(f'#tracks .strip[data-id="{ch}"]')
             def select(ch):
-                strip(ch).locator('.strip-identity-top').click()
+                strip(ch).locator('.wire-node-out').click()
             def route(src,dst):
                 select(src)
                 socket=strip(dst).locator('.wire-node-in')
