@@ -3053,6 +3053,168 @@ html * ,html *::before,html *::after{
 }
 /* The collapsed WIRE rack stays exactly 23px. FX/fader geometry is unchanged. */
 
+
+/* V22 CLEAN HARDWARE KEY + SELECTION + FADER CONTRACT
+   The material is intentionally smooth: one uninterrupted face gradient.
+   A separate STATIC socket wrapper owns the hole, recess and overlaid metal
+   bezel. Only the button child moves 1px. No blur or filter. This repairs
+   the V20 wavy/zebra shading and the buried channel selection highlight. */
+:root {
+ --am-hw-key-relief:inset 1px 0 0 #ecf9ff36,inset -1px 0 0 #040b106b,
+   inset 0 1px 0 #ffffff22,inset 0 -1px 0 #0008,
+   0 1px 0 var(--am-hw-key-wall),0 2px 0 #070d12;
+ --am-hw-key-flat:inset 1px 0 0 #ecf9ff25,inset -1px 0 0 #040b106b,
+   inset 0 1px 0 #0005,inset 0 -1px 0 #ffffff12,
+   0 1px 0 #070d12;
+ --am-hw-key-upper-glint:linear-gradient(90deg,transparent 0%,#ffffff3a 28%,#ffffffaa 50%,#ffffff3a 72%,transparent 100%);
+ --am-hw-key-lower-glint:linear-gradient(90deg,transparent 0%,#ffffff0d 30%,#ffffff48 50%,#ffffff0d 70%,transparent 100%);
+}
+/* Thin internal light (not glowing) — no repeated bright/dark bands. */
+:is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
+ .console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key) {
+ background:linear-gradient(180deg,
+   var(--am-hw-key-bright) 0%,
+   var(--am-hw-key-face) 42%,
+   var(--am-hw-key-deep) 100%)!important;
+ box-shadow:var(--am-hw-key-relief)!important;
+ filter:none!important;
+ backdrop-filter:none!important;
+ -webkit-backdrop-filter:none!important;
+ transition:none!important;
+}
+:is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
+ .console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key):hover {
+ filter:none!important;
+}
+:is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
+ .console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key):active:not(:disabled) {
+ transform:translateY(1px)!important;
+ box-shadow:var(--am-hw-key-flat)!important;
+}
+/* Static bezel structure deliberately resides OUTSIDE the button element.
+   ::after has z-index 4 over button (z-index 2); pointer-events:none, and
+   never inherits keycap's transform, MUTE state, or active/hover behavior. */
+.console-body .strip .switch-section .hw-switch-socket {
+ position:relative!important;
+ display:flex!important;
+ align-items:stretch!important;
+ justify-content:stretch!important;
+ flex:1 1 0!important;
+ min-width:0!important;
+ height:calc(var(--switch-h) - 7px)!important;
+ max-height:34px!important;
+ min-height:24px!important;
+ padding:2px!important;
+ box-sizing:border-box!important;
+ background:#08141b!important;
+ border:1px solid #09131a!important;
+ border-radius:3px!important;
+ box-shadow:inset 0 1px 0 #000,inset 1px 0 0 #02080c,
+            inset -1px 0 0 #2b424f,inset 0 -1px 0 #263b47!important;
+ isolation:isolate!important;
+ overflow:hidden!important;
+}
+.console-body .strip .switch-section .hw-switch-socket::before {
+ content:""!important;
+ position:absolute!important;inset:1px!important;
+ z-index:0!important;pointer-events:none!important;
+ border-radius:2px!important;
+ background:linear-gradient(180deg,#03080d 0%,#0c1921 46%,#172a33 100%)!important;
+ box-shadow:inset 0 1px 0 #000,inset 0 -1px 0 #2a404c!important;
+}
+.console-body .strip .switch-section .hw-switch-socket::after {
+ content:""!important;
+ position:absolute!important;inset:0!important;
+ z-index:4!important;pointer-events:none!important;
+ border-radius:3px!important;
+ border:1px solid #0a131a!important;
+ background:transparent!important;
+ box-shadow:inset 0 1px 0 #60808b5c,
+            inset 1px 0 0 #6b87904a,
+            inset -1px 0 0 #02090ebf,
+            inset 0 -1px 0 #03090e!important;
+}
+.console-body .strip .switch-section .hw-switch-socket>.switch {
+ position:relative!important;z-index:2!important;
+ flex:1 1 auto!important;
+ min-width:0!important;width:100%!important;
+ height:100%!important;min-height:0!important;max-height:none!important;
+ padding:0 1px!important;
+ border-radius:2px!important;
+ transform:translateY(0)!important;
+ overflow:hidden!important;
+}
+.console-body .strip .switch-section .hw-switch-socket>.switch:active:not(:disabled) {
+ transform:translateY(1px)!important;
+}
+/* No rectangular mask over switch text: upper bezel is ONLY 1px edge,
+   mounted in the parent frame, not a moving overlay on the cap. */
+.console-body .strip .switch-section {
+ align-items:flex-start!important;
+}
+/* V22 fader: keep original metal PNG, size it ~11% smaller; increase the
+   full calibration travel consistently across master, channel and rail.
+   FX, not PAN/SOLO/FOOTER, absorbs the extra +14px fader height. */
+.console-body {
+ --v13-fader-h:clamp(164px,calc(100dvh - 616px),499px);
+}
+.console-body .strip .fader-travel {
+ top:24px!important;bottom:24px!important;
+}
+.console-body .strip .fader-travel .cap {
+ width:23px!important;height:48px!important;
+ background:var(--ari-silver) center/23px 48px no-repeat!important;
+ filter:none!important;box-shadow:0 1px 0 #010508!important;
+}
+.console-body .strip.master .fader-travel .cap{
+ background:var(--ari-rose) center/23px 48px no-repeat!important;
+}
+.console-body .strip .fader-box .fader{
+ top:24px!important;bottom:24px!important;
+ height:calc(100% - 48px)!important;
+}
+.console-body .strip .gain-scale-travel {
+ top:24px!important;bottom:24px!important;
+}
+/* Selected channel border is ON TOP of every sub-panel, never buried.
+   Reuse the existing root strip::after instead of adding DOM nodes or
+   using strip's background/inset-box-shadow behind opaque children. */
+.console-body .strip.selected {
+ z-index:2!important;
+}
+.console-body .strip.selected::after {
+ content:""!important;position:absolute!important;
+ inset:0!important;width:auto!important;height:auto!important;
+ z-index:60!important;pointer-events:none!important;
+ border:2px solid var(--ch,#7ed5e4)!important;
+ border-radius:0!important;
+ background:transparent!important;
+ box-shadow:inset 0 0 0 1px #061923!important;
+ opacity:1!important;
+}
+/* Preserve drag-drop insert indicators without suppressing selected rim. */
+.console-body .strip.channel-drop-before::before,
+.console-body .strip.channel-drop-after::before{z-index:61!important}
+/* GPU budget: no blurred shading, translucent full-page overlays or
+   per-strip will-change compositor promotion. Keep interactions responsive. */
+.console-body .strip,.console-body .strip::after,
+.console-body .strip .hw-switch-socket {
+ will-change:auto!important;
+ filter:none!important;
+ backdrop-filter:none!important;
+ -webkit-backdrop-filter:none!important;
+}
+.console-body .strip .fader-travel .cap,
+.console-body .strip .fader-box .fader {
+ transition:none!important;
+}
+
 </style>
 </head>
 <body>
@@ -3525,9 +3687,9 @@ function strip(t){
  code+='<div class="section pan-section"><span class="pan-icon" title="Pan / Balance">PAN</span><span class="pan-control '+(t.pan===0?'is-centered':'')+'" style="'+panStyle(t.pan)+'"><input class="center-pan" type="range" min="-100" max="100" step="1" value="'+t.pan+'" data-field="pan" title="PAN center detent: capture ±7, hold ±12; release snaps center; double-click resets" aria-label="Channel pan; center detent" aria-valuetext="'+(t.pan===0?'Center':t.pan<0?'Left '+Math.abs(t.pan):'Right '+t.pan)+'"></span><output>'+panLabel(t.pan)+'</output></div>';
 
  code+='<div class="section switch-section">'
-   +'<button class="switch mute '+(t.mute?'on':'')+'" data-action="mute" title="Mute channel" aria-pressed="'+t.mute+'">MUTE</button>'
-   +'<button class="switch solo '+(t.solo?'on':'')+'" data-action="solo" title="Solo channel" aria-pressed="'+t.solo+'">SOLO</button>'
-   +'<button class="switch cue '+(t.cue?'on':'')+'" data-action="cue" title="Cue / PFL monitor bus (reference only)" aria-pressed="'+t.cue+'">PFL</button></div>';
+   +'<span class="hw-switch-socket"><button class="switch mute '+(t.mute?'on':'')+'" data-action="mute" title="Mute channel" aria-pressed="'+t.mute+'">MUTE</button></span>'
+   +'<span class="hw-switch-socket"><button class="switch solo '+(t.solo?'on':'')+'" data-action="solo" title="Solo channel" aria-pressed="'+t.solo+'">SOLO</button></span>'
+   +'<span class="hw-switch-socket"><button class="switch cue '+(t.cue?'on':'')+'" data-action="cue" title="Cue / PFL monitor bus (reference only)" aria-pressed="'+t.cue+'">PFL</button></span></div>';
  code+=sectionFader(t);
  code+='<div class="bottom-section"><div class="db-value">'+(sofEnabled&&t.kind==='audio'?'S ': '')+formatDb(sofEnabled&&t.kind==='audio'?getSofLevel(t):t.level)+'</div><div class="footer-label '+(t.kind==='master'?'master-label':t.kind==='bus'?'bus-label':'')+'"><span class="name" data-action="rename" title="Double-click to edit name, icon and color · F2" tabindex="0" role="button">'+escapeHtml(t.name)+'</span><span class="footer-icon" aria-hidden="true">'+escapeHtml(iconFor(t))+'</span><div class="color-strip"></div></div></div></article>';
  return code;
