@@ -1,5 +1,5 @@
 {
-  "version": "preview-v13.2",
+  "version": "preview-v13.2-flat-fixed-deck",
   "source_pr": 278,
   "source_sha": "c98489a777f49041d843564c3bf4e10150e8f0ab",
   "source_content_sha": "74250d2d56055222e624310b0f5abbb2ff511d65",
@@ -12,5 +12,6 @@
   "design": "Pure FL-style middle WIRE patch bay; no BUS dropdown, S1–S16 slot selector, horizontal SEND slider, PRE/POST button or SEND power in primary strips",
   "geometry": "80/160px wire panel, P0 stationary lower PAN/SWITCH/FADER/FOOTER and FX absorbing all ROUTE/WIRE fold differences, flat anodized finish",
   "test": "196/196 reference DOM/workflow checks PASS; exact main Chromium CI required",
-  "native": "Not actual ASIO/VST3 PCM routing, not native accepted graph ACK; browser preview only"
+  "native": "Not actual ASIO/VST3 PCM routing, not native accepted graph ACK; browser preview only",
+  "milestone": "V13.2 flat anodized metal + stationary PAN/SWITCH/FADER across all ROUTE/FX/SEND folds; WIRE retained"
 }
