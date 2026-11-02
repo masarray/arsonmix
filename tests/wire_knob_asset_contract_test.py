@@ -15,7 +15,7 @@ legacy_preview = root / "site/preview/assets/knob-ICON.svg"
 html = ref.read_text(encoding="utf-8")
 # Inline the supplied SVG exactly: CSS masks loaded from file:// or another
 # Pages subpath may otherwise render fully transparent with no JS error.
-match = re.search(r'data:image/svg\\+xml;base64,([A-Za-z0-9+/=]+)', html)
+match = re.search(r'data:image/svg\+xml;base64,([A-Za-z0-9+/=]+)', html)
 assert match, "Inline SVG silhouette missing from CSS mask"
 assert svg.is_file() and svg.stat().st_size > 100, "Preview V2 SVG knob missing"
 assert legacy_preview.is_file(), "Main Live GUI /preview/ SVG knob missing"
