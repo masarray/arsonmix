@@ -1,0 +1,47 @@
+name: PR278 Wire reference - focused smoke and Chromium
+
+on:
+  pull_request:
+    paths:
+      - 'design-references/audition-mixer-study/index.html'
+      - 'design-references/audition-mixer-study/smoke.test.cjs'
+      - 'design-references/audition-mixer-study/visual_wire_v15_qa.py'
+      - '.github/workflows/reference-wire-qa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arsonmix-ref-wire-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  wire-reference:
+    if: github.event_name != 'pull_request' || github.event.pull_request.number == 278
+    name: Reference-only state + Chromium pointer QA
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Model and workflow contract (zero install)
+        run: node design-references/audition-mixer-study/smoke.test.cjs
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Chromium only after model passes
+        run: |
+          python -m pip install --quiet playwright
+          python -m playwright install --with-deps chromium
+      - name: Physical OUT-IN drag, snap, no-reflow and Bus-only browser QA
+        run: python design-references/audition-mixer-study/visual_wire_v15_qa.py
+      - name: Upload focused screenshots only when a check fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ref-wire-chromium-failure
+          path: |
+            preview-v15-wire-*.png
+            preview-v17-wire-*.png
+          if-no-files-found: ignore
+          retention-days: 2
