@@ -216,6 +216,15 @@ def main():
                     page.locator('.section-rail [data-section="route"]').click()
                     page.screenshot(path=str(ROOT / "preview-p0-fx-expanded-1366.png"))
                     page.locator('.section-rail [data-section="route"]').click()
+                if width==1711:
+                    # Owner screenshot's exact monitor size, ALL upper sections
+                    # expanded. Compare against default SEND-collapsed screenshot.
+                    page.locator('.section-rail [data-section="send"]').click()
+                    assert not page.locator('.console-body').evaluate(
+                        "(el)=>el.classList.contains('collapsed-send')")
+                    audit_geometry(page,"1711x1005 all upper sections expanded");count+=1
+                    page.screenshot(path=str(ROOT / "preview-v13-all-expanded-1711.png"))
+                    page.locator('.section-rail [data-section="send"]').click()
                 page.screenshot(path=str(ROOT / f"preview-v2-v7-{width}.png"))
                 # Single click must SELECT, not open the name/color popover.
                 page.locator('#tracks .strip-identity-top').first.click()
