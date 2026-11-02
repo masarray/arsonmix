@@ -3863,10 +3863,15 @@ function kickWireSpring(sourceId,destId){
  const token=++wireMotion.token;
  // Existing graph geometry is stable; do not persist motion into later renders.
  wireMotion.key=key;wireMotion.offset=0;
- const paths=[...document.querySelectorAll('#wireLayer path[data-cable-key="'+key+'"]')];
+ let paths=[...document.querySelectorAll('#wireLayer path[data-cable-key="'+key+'"]')];
  if(!paths.length){wireMotion.key=null;return;}
  let frame=0;
  function paint(d){
+  // A successful drop triggers a final routing refresh which may replace
+  // path nodes once. Rebind ONLY this accepted cable, then keep its refs.
+  // Without this, the ripple animates disconnected SVG elements invisibly.
+  if(paths.every(path=>!path.isConnected))
+   paths=[...document.querySelectorAll('#wireLayer path[data-cable-key="'+key+'"]')];
   for(const path of paths)if(path.isConnected&&path.getAttribute('d')!==d)path.setAttribute('d',d);
  }
  function step(){
