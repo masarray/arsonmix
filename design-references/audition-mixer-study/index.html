@@ -5021,7 +5021,7 @@ function finishFaderPointer(ev){
     }else say('WIRE drop canceled · release in destination WIRE bay (graph unchanged)');
    }
    renderWireRouting();wireSuppressClick=true;
-  }else if(g.sourceId){selectWireSource(wireSourceTrack(g.sourceId));wireSuppressClick=true;}
+  }else if(g.sourceId){selectWireSource(wireSourceTrack(g.sourceId));wireSuppressClick=false;}
   return;
  }
  for(const pan of consoleBody.querySelectorAll?.('.center-pan[data-pan-alt-pointer]')||[])
