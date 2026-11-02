@@ -76,10 +76,13 @@ def main():
         page.screenshot(path=str(ROOT/"preview-v15-wire-left-1680.png"))
         # New source CH3 -> Bus A, explicitly choose serial VIA BUS ONLY.
         page.locator('#tracks .strip[data-id="3"] .wire-node-out').click()
+        assert_true(page.locator('#tracks .strip[data-id="3"] .wire-node-out.is-source').count()==1,
+                    "Explicit CH3 OUT click failed to arm new SEND source")
         page.locator('#bankSelect').select_option('1')
         page.locator('#tracks .strip[data-id="11"] .wire-node-in').click()
         assert_true(page.locator('#routeChoice').is_visible(),
-                    "Bus needs an explicit Route Only vs Parallel choice")
+                    "Bus needs an explicit Route Only vs Parallel choice: "+page.locator('#info').inner_text()+
+                    " | "+page.locator('#wireLegend').inner_text())
         assert_true(page.locator('#routeChoiceTitle').inner_text().startswith('ROUTE '),
                     "Pending Bus dialog must name actual source and target")
         # Before choosing, no graph mutation.
