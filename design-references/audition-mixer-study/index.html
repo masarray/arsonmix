@@ -2588,6 +2588,142 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
 .console-body.wire-routing-v15.wire-dragging .strip .wire-node-in.is-source.is-snap-target{opacity:1!important}
 
 
+
+/* V18 HARDWARE KEY SOCKET + CRISP LED METER — owner visual audit, 2026-11-02.
+   Material token stays global. The body is a real recessed mounting well:
+   dark 1px machined cut, light 1px metal lip, cap stands 1px above its well.
+   Only semantic color differs between controls; no blurred shadows, filters,
+   backdrop filters, RAF style recalculation or extra LED DOM nodes. */
+:root {
+ --am-hw-key-radius:2px;
+ --am-hw-key-press-y:1px;
+ --am-hw-key-relief:
+   inset 1px 0 0 rgba(255,255,255,.38),
+   inset -1px 0 0 rgba(0,0,0,.27),
+   inset 0 1px 0 rgba(255,255,255,.12),
+   0 1px 0 #050a0d,
+   0 0 0 1px #070c10,
+   0 0 0 2px #3b4d57,
+   0 1px 0 2px #04090c;
+ --am-hw-key-flat:
+   inset 0 1px 0 #10171c,
+   inset 0 -1px 0 rgba(255,255,255,.07),
+   0 0 0 1px #03080c,
+   0 0 0 2px #3b4d57;
+}
+/* A recessed common switch bay is machined into the STRIP panel, not
+   painted halfway across the top face. Housing never moves with buttons. */
+.console-body .strip .switch-section {
+ position:relative!important;
+ background:#111f28!important;
+ border-top:1px solid #07141b!important;
+ border-bottom:1px solid #415561!important;
+ box-shadow:inset 0 1px 0 #060d12,inset 0 -1px 0 #263a45!important;
+ isolation:isolate;
+}
+.console-body .strip .switch-section button.switch{
+ z-index:1!important;
+ border-radius:var(--am-hw-key-radius)!important;
+ box-shadow:var(--am-hw-key-relief)!important;
+}
+/* Every hardware PUSH key shares the same outer socket, sharp relief and
+   very shallow mechanical travel. Do not flatten latched MUTE/SOLO. */
+:is(.command-bar button.tool,.command-bar summary.tool,
+ .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key){
+ border-radius:var(--am-hw-key-radius)!important;
+ box-shadow:var(--am-hw-key-relief)!important;
+ transition:none!important;
+ will-change:auto!important;
+}
+:is(.command-bar button.tool,.command-bar summary.tool,
+ .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key):active:not(:disabled){
+ transform:translateY(var(--am-hw-key-press-y))!important;
+ box-shadow:var(--am-hw-key-flat)!important;
+}
+/* Edge highlights stay on the exact face edges, horizontally translucent
+   at the corners; the lower glint is intentionally thinner. */
+:is(.command-bar button.tool,.command-bar summary.tool,
+ .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key)::before{
+ top:0!important;height:2px!important;left:1px!important;right:1px!important;
+}
+:is(.command-bar button.tool,.command-bar summary.tool,
+ .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key)::after{
+ bottom:0!important;height:1px!important;left:1px!important;right:1px!important;
+}
+/* Portrait cells: illuminated 9px tall × 6px wide, separated by a
+   fixed 2px DARK cross-bar. Vertical color across the ladder remains smooth
+   green → yellow → amber → red, not disjoint palettes per color zone.
+   Uses existing --lit variable for clipped signal fill, no JS or 40+ nodes. */
+.console-body .strip .meter-box .vu-bars{
+ justify-content:center!important;
+ gap:3px!important;
+ background:#06121a!important;
+ box-shadow:inset 1px 0 0 #142b35,inset -1px 0 0 #010508!important;
+}
+.console-body .strip .meter-box .meter-lane,
+.console-body .strip .meter-box.mono .meter-lane{
+ box-sizing:border-box!important;
+ width:6px!important;min-width:6px!important;max-width:6px!important;
+ flex:0 0 6px!important;
+ border:0!important;border-radius:0!important;
+ background:#07141a!important;
+ box-shadow:inset 1px 0 0 #20303a,inset -1px 0 0 #000!important;
+}
+.console-body .strip .meter-box .meter-fill{
+ left:0!important;right:0!important;
+ background:linear-gradient(to top,
+   #0e9f43 0%,#3bd849 24%,#7bef40 43%,
+   #c5e936 56%,#f6d42e 69%,#ffae27 80%,
+   #ff761e 91%,#ee3028 100%)!important;
+ box-shadow:none!important;filter:none!important;
+ transition:none!important;
+}
+/* Individual LED's own top-face/shadow shading has 9px portrait lit area,
+   2px non-emitting separator; no per-cell colored blocks. */
+.console-body .strip .meter-box .meter-lane::before{
+ content:""!important;
+ background:repeating-linear-gradient(to top,
+   transparent 0px,transparent 9px,#020a0f 9px,#020a0f 11px)!important;
+ box-shadow:none!important;
+}
+.console-body .strip .meter-box .meter-lane::after{
+ content:""!important;
+ background:
+   repeating-linear-gradient(to top,
+     rgba(255,255,255,.13) 0px,rgba(255,255,255,.05) 1px,
+     transparent 3px,transparent 6px,rgba(0,0,0,.28) 9px,
+     transparent 9px,transparent 11px),
+   linear-gradient(90deg,rgba(255,255,255,.13),transparent 55%,rgba(0,0,0,.28))!important;
+ box-shadow:none!important;
+}
+.console-body .strip .meter-box .peak,
+.console-body .strip .meter-box .peak.clipping{
+ box-shadow:inset 0 1px 0 rgba(255,255,255,.16)!important;
+}
+/* Remove convolution-style glow and blur work. All depth comes from
+   1px crisp borders, embossed edges, static face gradients, native textures. */
+html * ,html *::before,html *::after{
+ filter:none!important;
+ backdrop-filter:none!important;
+ -webkit-backdrop-filter:none!important;
+}
+.plugin-browser,.channel-identity,.route-choice,.more-tools-panel{
+ box-shadow:0 0 0 1px #60717b,0 1px 0 1px #07141b!important;
+}
+.console-body .strip .wire-tray .wire-node-out.is-source .wire-pin,
+.console-body .strip .wire-tray .wire-node-in .wire-dot,
+.console-body .strip .wire-tray .wire-node-in.is-linked{
+ box-shadow:inset 0 1px 0 rgba(255,255,255,.2),0 0 0 1px #07151b!important;
+}
+
 </style>
 </head>
 <body>
