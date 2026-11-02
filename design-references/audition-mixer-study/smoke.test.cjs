@@ -642,7 +642,7 @@ node('body').handlers.wheel({target:wheelGain,deltaY:120,preventDefault(){}});
 filter('all');
 check(strip(3).includes('value="-1" data-field="wireGain"'),
  'One wheel step on wire knob makes precise -1 dB adjustment');
-node('body').handlers.dblclick({target:wheelGain});
+node('body').handlers.dblclick({target:{...wheelGain,classList:{contains:()=>false}}});
 filter('all');
 check(strip(3).includes('value="0" data-field="wireGain"'),
  'Double-click wire knob restores unity 0 dB without changing route');
