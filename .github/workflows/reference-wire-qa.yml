@@ -40,6 +40,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ref-wire-chromium-failure
-          path: preview-v15-wire-*.png
+          path: |
+            preview-v15-wire-*.png
+            preview-v17-wire-*.png
           if-no-files-found: ignore
           retention-days: 2
