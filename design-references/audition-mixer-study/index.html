@@ -4713,9 +4713,10 @@ function wireWsCanJoin(src,dst){
  return !!(a&&b&&a.id!==b.id&&!wireIsCycle(src,dst));
 }
 function wireWsChooseMode(mode){
+ const previous=wireWsMode;
  wireWsMode=['find','routes','bus','matrix'].includes(mode)?mode:'find';
  wireWsInspect=null;wireWsRemoveConfirm=null;
- if(wireWsMode!==mode){wireWsQuery='';const search=document.getElementById('wireWsSearch');if(search)search.value='';}
+ if(previous!==wireWsMode){wireWsQuery='';const search=document.getElementById('wireWsSearch');if(search)search.value='';}
  const panel=document.getElementById('wireWorkspace');
  if(panel)panel.classList.toggle('is-matrix',wireWsMode==='matrix');
  renderWireWorkspace();
