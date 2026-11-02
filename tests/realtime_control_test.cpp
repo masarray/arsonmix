@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/RealtimeControl.h"
+#include "../engine/core/PreparedMixerBlock.h"
 #include "../engine/core/RealtimeRoutePublisher.h"
 #include "../engine/core/NativeRenderAuthority.h"
 #include <memory>
@@ -26,6 +27,52 @@ int main(){
     assert(Authority::select(false,false)==Owner::isolatedDiagnostic);
     assert(!Authority::mayRunDiagnostic(
         Authority::select(false,true)));
+
+    // M5 LIVE (the installed M4 callback, not only prepared ChannelId):
+    // all 4 controls change in ONE atomic, while 2 threads run 200k
+    // opposing GUI gestures. RT must see either complete gesture A or B;
+    // no left from A with right/MUTE/SOLO from B.
+    using Controls=armix::mixer::RealtimeStripControls;
+    Controls atomicControls;
+    const auto u=atomicControls.read(2);
+    assert(std::fabs(u.left-1.f)<1e-6f && std::fabs(u.right-1.f)<1e-6f);
+    assert(!u.mute && !u.solo);
+    assert(atomicControls.set(2,.5f,-1.f,false,false,true));
+    const auto a=atomicControls.read(2);
+    assert(std::fabs(a.left-.5f)<1e-6f && std::fabs(a.right)<1e-6f);
+    assert(!a.mute && a.solo);
+    assert(atomicControls.set(2,.8f,1.f,false,true,false));
+    const auto b=atomicControls.read(2);
+    assert(std::fabs(b.left)<1e-6f && std::fabs(b.right-.8f)<1e-6f);
+    assert(b.mute && !b.solo);
+    std::atomic<bool> badMixed{false};
+    constexpr int gestures=200000;
+    std::thread ctl([&]{
+        for(int k=0;k<gestures;++k)
+            if(!atomicControls.set(2,(k&1)?.8f:.5f,(k&1)?1.f:-1.f,
+                                   false,(k&1)!=0,(k&1)==0))
+                badMixed.store(true,std::memory_order_relaxed);
+    });
+    std::thread audioControlRead([&] {
+        for(int k=0;k<gestures;++k) {
+            const auto view=atomicControls.read(2);
+            const bool matchesA=std::fabs(view.left-a.left)<1e-6f &&
+                std::fabs(view.right-a.right)<1e-6f &&
+                view.mute==a.mute && view.solo==a.solo;
+            const bool matchesB=std::fabs(view.left-b.left)<1e-6f &&
+                std::fabs(view.right-b.right)<1e-6f &&
+                view.mute==b.mute && view.solo==b.solo;
+            if(!matchesA&&!matchesB)
+                badMixed.store(true,std::memory_order_relaxed);
+        }
+    });
+    ctl.join();audioControlRead.join();
+    assert(!badMixed);
+    assert(!atomicControls.set(2,-1.f,0.f,false,false,false));
+    assert(!atomicControls.set(2,1.f,2.f,false,false,false));
+    assert(!atomicControls.set(99,1.f,0.f,false,false,false));
+    std::cout<<"PASS: 200000 concurrent native M4 GUI gestures read as atomic stereo/mute/solo blocks\\n";
+
     SpscQueue<int,8> q;
     int value=-1;
     assert(!q.tryPop(value));
