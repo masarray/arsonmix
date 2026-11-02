@@ -2,10 +2,10 @@
   "kind": "REFERENCE_WORKFLOW_QA_ONLY",
   "source_pr": 278,
   "source_branch": "main/site/preview-v2",
-  "source_sha": "d714434ed8cf7ea32873ddcf7b0d1eea486cf881",
-  "source_blob_sha": "2800bec0b1bd9a8519f66b36a9c63538a982de30",
-  "ci_run": 41397350090,
+  "source_sha": "7fadc58be4ea7b845f365227cc8cdab31e493283",
+  "source_blob_sha": "fc9c4bb56ad5b274519f2867340b490ba86e39bf",
+  "ci_run": 41416020664,
   "ci_conclusion": "success",
   "live_audio": false,
-  "note": "Verified V19 compact routing rail + existing V20 hardware controls. Public /preview/mixer.html and /preview-v2/ atomically share one source blob. GUI only."
+  "note": "V23 icon-only collapsed wire status and illuminated-IN automatic preview docking. Published preview and /preview/mixer.html share the same vetted main HTML snapshot. GUI demo only."
 }
