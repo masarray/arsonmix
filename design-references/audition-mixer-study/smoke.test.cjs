@@ -701,5 +701,63 @@ check(html.includes('.route-choice-option.primary') &&
  html.includes('VIA BUS ONLY') && html.includes('PARALLEL SEND'),
  'Bus-only primary route and parallel send are separate explicit operator decisions');
 node('reset').dispatch('click');
+
+// V15 LIVE GESTURE MODEL: drag from CH08 OUT leftward to CH03 IN, then Bus-only route.
+node('body').clientWidth=1680;node('reset').dispatch('click');
+function v15Drag(sourceId,targetId,pointerId=71){
+ const jack={closest:k=>k==='.strip'?{dataset:{id:sourceId}}:null,
+  setPointerCapture(){}};
+ const out={closest:k=>k==='.wire-node-out'?jack:k==='.strip'?{dataset:{id:sourceId}}:null};
+ node('body').handlers.pointerdown({target:out,button:0,pointerId,clientX:740,clientY:430,preventDefault(){}});
+ fakeWindow.handlers.pointermove({pointerId,clientX:120,clientY:430});
+ const inner={closest:k=>k==='.strip'?{dataset:{id:targetId}}:null};
+ const target={closest:k=>k==='.wire-node-in'?inner:k==='.strip'?{dataset:{id:targetId}}:null};
+ fakeWindow.handlers.pointerup({target,pointerId,clientX:120,clientY:430});
+}
+v15Drag(8,3);
+check(strip(8).includes('⇢1') && strip(3).includes('wire-node-in is-linked') &&
+ strip(8).includes('wire-node-out is-source'),
+ 'Dragging the OUT node from CH8 RIGHT to CH3 LEFT creates a real direction-agnostic 8→3 reference edge');
+check(!strip(3).includes('value="CH08 PRE-FX SPLIT" selected>'),
+ 'Leftward drag is a parallel send and does not overwrite receiver hardware input');
+const previous=strip(8);
+const jack2={closest:k=>k==='.strip'?{dataset:{id:8}}:null};
+node('body').handlers.pointerdown({target:{closest:k=>k==='.wire-node-out'?jack2:null},
+ button:0,pointerId:72,clientX:480,clientY:430,preventDefault(){}});
+fakeWindow.handlers.pointermove({pointerId:72,clientX:200,clientY:425});
+fakeWindow.handlers.pointercancel({pointerId:72});
+check(strip(8)===previous && node('info').textContent.includes('canceled'),
+ 'Canceled pointer gesture preserves all prior signal connections');
+node('reset').dispatch('click');
+// CH3 has no hidden legacy Bus A send. Source follows click selection.
+field(3,'output','Master');
+node('bankSelect').value='1';node('bankSelect').dispatch('change');
+wireTo(11);
+check(node('routeChoice').hidden===false &&
+ node('info').textContent.includes('Bus routing choice required'),
+ 'Drop/click to Bus opens a nonmodal decision before changing any signal path');
+node('routeOnly').dispatch('click');
+check(node('routeChoice').hidden===true &&
+ node('info').textContent.includes('VIA BUS ONLY') &&
+ node('master').innerHTML.includes('wire-node-in'),
+ 'Explicit Route Only takes a single primary path to BUS (no parallel new Master feed)');
+node('bankSelect').value='0';node('bankSelect').dispatch('change');
+check(strip(3).includes('<option value="Bus A" selected>') &&
+ !strip(3).includes('<option value="Master" selected>'),
+ 'VIA BUS ONLY makes CH3 primary output Bus A, not direct Master');
+// Check return to normal direct-Main mode via unlink and choose parallel again.
+node('bankSelect').value='1';node('bankSelect').dispatch('change');
+wireTo(11);
+node('bankSelect').value='0';node('bankSelect').dispatch('change');
+check(strip(3).includes('<option value="SOURCE ONLY (No Main)" selected>'),
+ 'Unplugging serial Bus wire cannot silently restore direct Main');
+field(3,'output','Master');
+node('bankSelect').value='1';node('bankSelect').dispatch('change');
+wireTo(11);node('routeParallel').dispatch('click');
+node('bankSelect').value='0';node('bankSelect').dispatch('change');
+check(strip(3).includes('<option value="Master" selected>') &&
+ node('info').textContent.includes('PARALLEL SEND'),
+ 'Explicit parallel Bus send retains direct Master and does not rewrite primary OUT');
+node('reset').dispatch('click');
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
