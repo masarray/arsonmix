@@ -1535,9 +1535,12 @@
       x:event.clientX,y:event.clientY,preview:original};
     // Capture on the actual input: remains focused and keyboard accessible.
     input.setPointerCapture?.(event.pointerId);
+    // ZERO idle pointermove listeners. Install a capture-local handler
+    // exclusively for the duration of this one edit.
+    input.onpointermove=moveWirePot;
     event.preventDefault();
   });
-  root.addEventListener('pointermove',event=>{
+  function moveWirePot(event){
     const g=wirePotGesture;
     if(!g||event.pointerId!==g.pointerId)return;
     const displacement=(event.clientX-g.x)-(event.clientY-g.y);
@@ -1549,11 +1552,12 @@
       if(label)label.textContent=db.toFixed(1)+' dB';
     }
     event.preventDefault();
-  });
+  }
   function finishWirePot(event,cancelled=false){
     const g=wirePotGesture;
     if(!g||event.pointerId!==g.pointerId)return;
     wirePotGesture=null;
+    g.input.onpointermove=null;
     g.input.releasePointerCapture?.(event.pointerId);
     const delta=g.preview!==g.original;
     // Do not stage an edit when pointercancel/blur/Escape rejects the gesture.
