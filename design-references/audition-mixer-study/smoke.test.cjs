@@ -695,7 +695,7 @@ check(strip(1).includes('data-action="wireSource"') &&
  strip(1).includes('wire-node-out is-source') &&
  strip(3).includes('data-action="wireRoute"') &&
  strip(3).includes('wire-node-in') &&
- strip(3).includes('>○</span>'),
+ strip(3).includes('wire-pot is-idle'),
  'Every input strip shows a filled OUT and hollow IN routing jack');
 check(html.includes('requestWireConnection(source,target,input)') &&
  html.includes('wire-drag-line') && html.includes('Math.hypot('),
