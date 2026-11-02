@@ -3762,6 +3762,19 @@ html * ,html *::before,html *::after{
 .command-bar .tool,.command-bar .toolbar-select{white-space:nowrap;text-overflow:ellipsis}
 .command-bar .toolbar-label{letter-spacing:.04em}
 @media(max-width:1400px){.command-bar{gap:3px!important}.command-bar .tool{padding-inline:6px!important}}
+/* Neutral dormant routing: existing connections remain in data, but no
+   bright LEDs until the operator explicitly engages the SEND patch zone. */
+.console-body:not(.wire-intent) .strip .wire-tray .wire-node-in,
+.console-body:not(.wire-intent) .strip .wire-tray .wire-node-out{
+ color:#6e7d85!important;border-color:#364854!important;
+ background:#192a34!important;filter:none!important;
+ box-shadow:inset 0 1px 2px #07131a!important;
+}
+.console-body:not(.wire-intent) .strip .wire-tray .wire-node-in *,
+.console-body:not(.wire-intent) .strip .wire-tray .wire-node-out *{
+ color:#70818b!important;filter:none!important;
+}
+.console-body:not(.wire-intent) .strip .wire-tray .wire-pot:not(:hover)::after{background:#9daeb5!important}
 </style>
 </head>
 <body>
@@ -4403,7 +4416,7 @@ function refreshStrip(t){
 }
 function selectTrack(t,add=false){
  const changedSource=!wireSourcePinned&&!add&&t.kind!=='master'&&wireSourceId!==t.id;
- if(!add&&!wireSourcePinned){wireIntent=false;wireHoverId=null;} // Selecting ≠ routing
+ if(!add){wireIntent=false;wireHoverId=null;} // Selecting ≠ routing, including when source is pinned
 
  if(changedSource){wireSourceId=t.id;wireAnchorId=null;wireHoverId=null;}
  if(!add){tracks.forEach(x=>x.selected=false);master.selected=false;t.selected=true;}
@@ -4557,6 +4570,7 @@ function wireLegendHtml(focus,routes){
     '<span class="wire-map-direction">OUT</span>'+badges(outRoutes,false)+'</span>';
 }
 function renderWireRouting(){
+ document.querySelector('.console-body')?.classList.toggle('wire-intent',!!wireIntent);
  const svg=document.getElementById('wireLayer'),viewport=document.getElementById('viewport');
  const dragging=!!(wireGesture?.active&&wireGesture.point);
  const source=wireSourceTrack(dragging?wireGesture.sourceId:wireSourceId);
