@@ -22,6 +22,11 @@ def main():
         errors=[]
         page.on("pageerror",lambda err:errors.append(str(err)))
         page.goto(PAGE.as_uri())
+        # V16 owner P0 intentionally folds WIRE to a 23px disclosure by default.
+        # Expand the WIRE workspace explicitly before patching.
+        page.locator('.section-rail [data-section="send"]').click()
+        assert_true(not page.locator('.console-body').evaluate(
+                    "(el)=>el.classList.contains('collapsed-send')"),"WIRE did not expand")
         src=page.locator('#tracks .strip[data-id="8"] .wire-node-out')
         dest=page.locator('#tracks .strip[data-id="3"] .wire-node-in')
         assert_true(src.is_visible() and dest.is_visible(),
