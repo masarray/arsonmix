@@ -249,7 +249,7 @@ check(html.includes('grid-template-columns:51px minmax(36px,1fr) 26px!important'
  strip(1).indexOf('class="meter-box mono"')<strip(1).indexOf('class="fader-box"') &&
  strip(1).indexOf('class="fader-box"')<strip(1).indexOf('class="fader-scale"'),
  'Fader paint and DOM use left VU, central fader, right ruler');
-check(html.includes('class="console-body collapsed-send wire-routing-v13"') && !strip(1).includes('Add effect</button><button class="fx-remove"'),
+check(html.includes('class="console-body collapsed-send wire-routing-v13 wire-routing-v15"') && !strip(1).includes('Add effect</button><button class="fx-remove"'),
  'Mix default prioritizes expanded FX rack and only one Add FX affordance');
 check(!strip(1).includes('eq-section') && !html.includes('<button class="rail-cell eq'),
  'EQ row and section control are removed: EQ is accessed as an FX plugin');
@@ -526,10 +526,10 @@ check(html.includes('id="wireLayer" class="routing-wire-overlay"') &&
  html.includes('id="wireLegend"') &&
  html.includes('.console-body.wire-routing-v13.collapsed-send{--send-h:80px!important}'),
  'Wire layer and 53px middle routing row survive collapsed advanced Send');
-check(strip(1).includes('wire-socket is-source') &&
+check(strip(1).includes('wire-node-out is-source') &&
  strip(3).includes('data-action="wireRoute"') &&
- strip(3).includes('class="wire-socket"') &&
- strip(3).includes('>△</span>'),
+ strip(3).includes('class="wire-socket wire-node-in"') &&
+ strip(3).includes('>○</span>'),
  'Source CH1 is lit and every destination has FL-like up arrow');
 function wireTo(id,shift=false){
  const el={dataset:{action:'wireRoute'},closest:k=>k==='.strip'?{dataset:{id}}:null};
@@ -538,7 +538,7 @@ function wireTo(id,shift=false){
  node('body').handlers.click({target,shiftKey:shift});
 }
 [3,4,5,6].forEach(id=>wireTo(id));
-check(strip(1).includes('⇢4') && strip(3).includes('wire-socket is-linked') &&
+check(strip(1).includes('⇢4') && strip(3).includes('wire-node-in is-linked') &&
  node('wireLegend').textContent.includes('⇢ 4'),
  'CH1 click-source then CH3–CH6 socket clicks create four independent visible links');
 [3,4,5,6].forEach(id=>check(strip(id).includes('<option value="None" selected>') &&
@@ -546,17 +546,17 @@ check(strip(1).includes('⇢4') && strip(3).includes('wire-socket is-linked') &&
  strip(id).includes('data-field="wireGain"'),
  'Wire to CH'+id+' is an independent FL-style send preserving receiver IN and providing per-send gain'));
 wireTo(5);
-check(strip(1).includes('⇢3') && strip(5).includes('class="wire-socket"'),
+check(strip(1).includes('⇢3') && strip(5).includes('class="wire-socket wire-node-in"'),
  'Click linked socket a second time disconnects precisely that destination');
 field(7,'input','Input 1 (Mono)');
 wireTo(7);
 check(strip(7).includes('<option value="Input 1 (Mono)" selected>') &&
- strip(7).includes('wire-socket is-linked'),
+ strip(7).includes('wire-node-in is-linked'),
  'FL-style send does not replace occupied hardware input; receiver can sum existing input plus source send');
 // NEW V12 cases: independent send gains, alternate PRE FX tap, snapshots and feedback.
 node('wireMode').value='split';node('wireMode').dispatch('change');
 wireTo(8);
-check(strip(8).includes('wire-socket is-linked') &&
+check(strip(8).includes('wire-node-in is-linked') &&
  strip(8).includes('data-wire-id') &&
  node('info').textContent.includes('INDEPENDENT PRE FX'),
  'Independent PRE FX tap is explicit and per-edge (not confused with fader send)');
@@ -594,7 +594,7 @@ node('reset').dispatch('click');
 node('body').clientWidth=1680;node('reset').dispatch('click');
 wireTo(3);wireTo(6,true);
 check(strip(1).includes('⇢4') &&
- [3,4,5,6].every(id=>strip(id).includes('wire-socket is-linked')),
+ [3,4,5,6].every(id=>strip(id).includes('wire-node-in is-linked')),
  'Two-click CH3 then SHIFT+CH6 creates an atomic four-target FL-style route');
 check(node('info').textContent.includes('destinations linked with SHIFT'),
  'Operator receives clear one-message bulk routing acceptance');
@@ -637,7 +637,7 @@ node('reset').dispatch('click');
 // V12 pinned Master socket follows FL Send-switch semantics without extra PCM edge.
 node('body').clientWidth=1680;node('reset').dispatch('click');
 const masterId=Number(node('master').innerHTML.match(/data-id="(\d+)"/)?.[1]);
-check(Number.isInteger(masterId)&&node('master').innerHTML.includes('wire-socket is-linked'),
+check(Number.isInteger(masterId)&&node('master').innerHTML.includes('wire-node-in is-linked'),
  'Pinned MAIN route is a visible green clickable socket for selected source');
 wireTo(masterId);
 check(node('master').innerHTML.includes('MAIN OFF') &&
@@ -653,7 +653,7 @@ node('body').clientWidth=1680;node('reset').dispatch('click');
 node('bankSelect').value='1';node('bankSelect').dispatch('change');
 wireTo(11);
 check(node('info').textContent.includes('already sends to Bus A via SEND slot') &&
- !node('tracks').innerHTML.includes('wire-socket is-linked'),
+ !node('tracks').innerHTML.includes('wire-node-in is-linked'),
  'FL wire refuses duplicate audible legacy SEND to Bus A rather than summing unexpectedly');
 node('reset').dispatch('click');
 node('reset').dispatch('click');
@@ -674,18 +674,32 @@ check(html.includes('.console-body.wire-routing-v13.collapsed-send{--send-h:23px
 check(html.includes('.console-body.wire-routing-v13:not(.collapsed-send){--send-h:160px!important}') &&
  html.includes('const availableRise=sourceWell?Math.max(14,from.top-sourceWell.top-7):45'),
  'Expanded V13 wire patch retains its 160px cable routing geometry');
-check(html.includes('const svg=document.getElementById(\'wireLayer\')') &&
- html.includes("document.querySelector('.console-body')?.classList.contains('collapsed-send')") &&
- html.includes('svg.replaceChildren()'),
- 'Folded WIRE view must stop cable render without deleting state');
-check(html.includes('/* V14: THREE-way collapse') &&
+check(html.includes('Compact WIRE retains visible cables') && html.includes('wireGesture?.active'),
+ 'Compact patch bay wires remain visible while pointer is dragging');
+ check(html.includes('/* V14: THREE-way collapse') &&
  html.includes('.console-body.collapsed-route.collapsed-fx.collapsed-send .strip .fader-section'),
  'Fader may grow only on exactly three upper sections folded');
 wireTo(3);wireTo(6,true);
 check(strip(1).includes('⇢4') &&
- [3,4,5,6].every(id=>strip(id).includes('wire-socket is-linked') &&
+ [3,4,5,6].every(id=>strip(id).includes('wire-node-in is-linked') &&
  strip(id).includes('data-field="wireGain"') && !strip(id).includes('send-select')),
  'V13 four-way routing requires only destination arrows; level remains inline per edge');
+node('reset').dispatch('click');
+
+// V15 solid-to-hollow wire drag affordance and explicit Bus decision.
+node('body').clientWidth=1680;node('reset').dispatch('click');
+check(strip(1).includes('data-action="wireSource"') &&
+ strip(1).includes('wire-node-out is-source') &&
+ strip(3).includes('data-action="wireRoute"') &&
+ strip(3).includes('wire-node-in') &&
+ strip(3).includes('>○</span>'),
+ 'Every input strip shows a filled OUT and hollow IN routing jack');
+check(html.includes('requestWireConnection(source,target,input)') &&
+ html.includes('wire-drag-line') && html.includes('Math.hypot('),
+ 'Live cable follows pointer with drop-only graph intent (no fake PCM)');
+check(html.includes('.route-choice-option.primary') &&
+ html.includes('VIA BUS ONLY') && html.includes('PARALLEL SEND'),
+ 'Bus-only primary route and parallel send are separate explicit operator decisions');
 node('reset').dispatch('click');
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
