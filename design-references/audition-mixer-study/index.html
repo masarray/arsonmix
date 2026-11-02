@@ -4531,7 +4531,7 @@ function kickWireSpring(sourceId,destId){
    frame++;
    wireMotion.offset=3.8*Math.exp(-frame*.15)*Math.cos(frame*.23);
    paint(wireMotion.offset);
-   if(frame<20&&Math.abs(wireMotion.offset)>.07)requestAnimationFrame(step);
+   if(frame<20)requestAnimationFrame(step);
    else{wireMotion.offset=0;wireMotion.key=null;paint(0);}
   }
   requestAnimationFrame(step);
