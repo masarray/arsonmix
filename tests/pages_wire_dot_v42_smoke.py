@@ -4,7 +4,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 PAGE=Path(__file__).resolve().parents[1]/"site/preview-v2/index.html"
 WIRE_STYLE=PAGE.with_name("assets")/"mixer-wire-dots.css"
-assert 'assets/mixer-wire-dots.css?v=v42' in PAGE.read_text(encoding="utf-8")
+assert 'assets/mixer-wire-dots.css?v=v43' in PAGE.read_text(encoding="utf-8")
 assert 'wire-node-out .wire-pin' in WIRE_STYLE.read_text(encoding="utf-8")
 def check(ok,msg): assert ok,msg
 def styles(loc):
