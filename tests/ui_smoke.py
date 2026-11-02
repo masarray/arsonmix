@@ -362,37 +362,33 @@ async def main():
             p=page.locator(f'[data-pan="{idx}"]')
             assert await p.get_attribute('aria-orientation')=='horizontal'
             assert await p.locator('.pan-thumb').count()==1
-        # Button 180: SOLID base and exact layered shadow (never PNG/gradient).
+        # V5 approved physical key: one knockout mask, no duplicate text.
         for selector in ['[data-mute="0"]','[data-solo="0"]','[data-hpf="0"]']:
             v=await page.locator(selector).first.evaluate("""e=>{
-                const s=getComputedStyle(e);return {
-                    image:s.backgroundImage,shadow:s.boxShadow,
-                    color:s.backgroundColor,transition:s.transitionDuration}
+                const s=getComputedStyle(e),face=e.querySelector('svg.mx-hw-face');
+                return {skin:e.classList.contains('mx-hw-key'),old:e.classList.contains('btn-180'),
+                   bg:s.backgroundImage,shadow:s.boxShadow,filter:s.filter,
+                   masks:face?.querySelectorAll('mask').length,
+                   texts:face?.querySelectorAll('mask text').length,
+                   overlaid:face?.querySelectorAll(':scope > text').length,
+                   gap:getComputedStyle(e,'::before').opacity};
             }""")
-            assert v['image']=='none' and v['color'].startswith('rgb('), (selector,v)
-            assert v['shadow'].count('rgb')>=6,(selector,v)
-            assert v['transition'].split(', ')[0]=='0.045s',(selector,v)
-        style=await page.locator('[data-mute="0"]').evaluate("""e=>{
-          const s=getComputedStyle(e);return {dur:s.transitionDuration,border:s.borderTopWidth,
-            radius:s.borderTopLeftRadius,shadow:s.boxShadow};
-        }""")
-        assert style['border']=='1px' and style['radius']=='3px',style
-        # Inter is part of the app payload; no network font or fallback is allowed.
+            assert v['skin'] and not v['old'] and 'gradient' in v['bg'],(selector,v)
+            assert v['masks']==1 and v['texts']==1 and v['overlaid']==0,(selector,v)
+            assert v['gap']=='0' and v['filter']=='none',(selector,v)
+        # Inter remains embedded for unrelated app typography.
         assert await page.evaluate("""async()=>{
             await document.fonts.load('600 12px "ArSonMix Inter"');
             return document.fonts.check('600 12px "ArSonMix Inter"')&&
                 getComputedStyle(document.querySelector('.strip-name')).fontFamily.includes('ArSonMix Inter');
         }"""),'Embedded Inter font was not applied'
-        assert [round(float(v.rstrip('s')),3) for v in style['dur'].split(', ')]==[.045,.045,0,0],style
-        # Hover in production does not create a filter, while diagnostic
-        # baseline restores brightness to permit same-PC performance A/B.
+        # No passive GPU filter even under the old diagnostic baseline mode.
         utility=page.locator('[data-hpf="0"]')
         await utility.hover()
         assert await utility.evaluate("(e)=>getComputedStyle(e).filter")=='none'
         await page.evaluate("document.documentElement.dataset.mixperf='baseline'")
-        assert 'brightness(1.32)' in await utility.evaluate("(e)=>getComputedStyle(e).filter")
-        await page.evaluate("delete document.documentElement.dataset.mixperf")
         assert await utility.evaluate("(e)=>getComputedStyle(e).filter")=='none'
+        await page.evaluate("delete document.documentElement.dataset.mixperf")
         # The unified M4 CONSOLE is tested in mixer_io_smoke.py, including
         # a physically visible pinned MAIN, native IN/FX/SEND/OUT controls,
         # horizontal banking and deliberately scrollable full 6-slot VST racks.
@@ -452,7 +448,7 @@ async def main():
         assert await page.locator('.right-rail,.master-tabs,.head').count()==0
         assert await page.locator('[data-master-output]').count()==0
         assert await page.locator('.master-stereo-badge,.master-route-label,.fader-tools.master-tools').count()==0
-        assert await page.locator('#masterMode.btn-180.is-stereo').count()==1
+        assert await page.locator('#masterMode.mx-hw-key.is-stereo').count()==1
         assert await page.locator('#masterMode').inner_text()=='STEREO'
         assert await page.locator('#masterMode').get_attribute('aria-pressed')=='false'
         # Streaming output panel has only two useful readouts.
@@ -491,11 +487,13 @@ async def main():
                   mute:grab('[data-mute="0"]'),
                   utility:grab('[data-hpf="0"]')};
         }""")
-        for key in ('rail','mute','utility'):
+        for key in ('rail',):
             assert style[key]['face']=='rgb(231, 239, 240)',(key,style)
             assert style[key]['image']=='none',(key,style)
             assert style[key]['shadow'].count('rgb')==7,(key,style)
             assert style[key]['radius']=='3px',(key,style)
+        for key in ('mute','utility'):
+            assert 'gradient' in style[key]['image'] and style[key]['radius']=='5px',(key,style)
         assert style['nav']['face']=='rgb(231, 239, 240)' and style['selected']['face']=='rgb(178, 232, 160)',style
         assert style['railOn']['face']=='rgb(237, 184, 223)',style
         # Audio Device shares the physical BTN-180 toolbar face and dark ink.
@@ -520,7 +518,7 @@ async def main():
         await page.wait_for_function("""()=>getComputedStyle(document.querySelector('.spec-device')).backgroundColor==='rgb(231, 239, 240)'""")
         assert all(style[key]['spanTransform']=='none' for key in ('nav','rail','selected')),style
         assert await page.locator('[data-hpf="0"]').evaluate(
-            "(e)=>getComputedStyle(e).boxShadow.includes('5px 5px 2px -1px')"),style
+            "(e)=>e.classList.contains('mx-hw-key')&&getComputedStyle(e).boxShadow.includes('inset')"),style
         # Real 1px tactile travel; no text scaling or width/height changes.
         preset=page.locator('[data-preset="Clean Vocal"]')
         pre=await preset.evaluate("(e)=>e.getBoundingClientRect().toJSON()")
@@ -542,11 +540,14 @@ async def main():
         assert active['face']=='rgb(237, 184, 223)' and active['transform']=='matrix(1, 0, 0, 1, 0, 0)',active
         assert shared_shadow_shape(active['shadow'])==shared_shadow_shape(style['rail']['shadow']),active
         assert all(abs(active['rect'][k]-pre[k])<=.2 for k in ('x','y','width','height')),active
-        # Utility ON is soft cyan, not the old green/purple polarity palettes.
+        # HPF processing: teal lamp inside V5 knockout (not face-color repaint).
         await page.locator('[data-hpf="0"]').click()
-        await page.wait_for_timeout(190)
-        cyan=await page.locator('[data-hpf="0"]').evaluate("(e)=>getComputedStyle(e).backgroundColor")
-        assert cyan=='rgb(148, 232, 237)',cyan
+        hpf=await page.locator('[data-hpf="0"]').evaluate("""e=>({
+           led:getComputedStyle(e).getPropertyValue('--mx-hw-led').trim(),
+           gap:getComputedStyle(e,'::before').opacity,
+           lamp:getComputedStyle(e.querySelector('.mx-hw-lamp')).opacity
+        })""")
+        assert hpf=={'led':'87,211,189','gap':'1','lamp':'1'},hpf
         await page.locator('[data-hpf="0"]').click()
         # Navigation remains mutually exclusive; selected is only a color latch.
         await page.locator('[data-view="FX RACK"]').click()
@@ -604,18 +605,25 @@ async def main():
         assert not railGeometry['emptyControls'],railGeometry
         assert all(btn['width']>=40 and btn['height']>=25 for btn in railGeometry['buttons']),railGeometry
         await page.screenshot(path=str(project/'mixer-master-dual-metric-left-rail.png'),full_page=True)
-        off_mute=await page.locator('[data-mute="0"]').evaluate("(e)=>getComputedStyle(e).getPropertyValue('--b180-color').trim()")
+        off_mute=await page.locator('[data-mute="0"]').evaluate("(e)=>getComputedStyle(e,'::before').opacity")
+        assert off_mute=='0'
         await page.locator('[data-mute="0"]').click()
-        mute_on=await page.locator('[data-mute="0"]').evaluate("(e)=>getComputedStyle(e).getPropertyValue('--b180-color').trim()")
-        assert mute_on!=off_mute and await page.locator('[data-mute="0"]').get_attribute('aria-pressed')=='true'
+        mute_on=await page.locator('[data-mute="0"]').evaluate("""e=>({
+          led:getComputedStyle(e).getPropertyValue('--mx-hw-led').trim(),
+          gap:getComputedStyle(e,'::before').opacity})""")
+        assert mute_on=={'led':'255,64,85','gap':'1'}
+        assert await page.locator('[data-mute="0"]').get_attribute('aria-pressed')=='true'
         await page.locator('[data-mute="0"]').click()
         await page.locator('[data-solo="0"]').click()
-        solo_on=await page.locator('[data-solo="0"]').evaluate("(e)=>getComputedStyle(e).getPropertyValue('--b180-color').trim()")
-        assert solo_on!=mute_on
+        solo_on=await page.locator('[data-solo="0"]').evaluate("""e=>({
+          led:getComputedStyle(e).getPropertyValue('--mx-hw-led').trim(),
+          gap:getComputedStyle(e,'::before').opacity})""")
+        assert solo_on=={'led':'255,208,44','gap':'1'}
         await page.locator('[data-solo="0"]').click()
         await page.locator('[data-hpf="0"]').click()
-        hpf_on=await page.locator('[data-hpf="0"]').evaluate("(e)=>getComputedStyle(e).getPropertyValue('--b180-color').trim()")
-        assert hpf_on not in (mute_on,solo_on,off_mute)
+        hpf_on=await page.locator('[data-hpf="0"]').evaluate(
+          "(e)=>getComputedStyle(e).getPropertyValue('--mx-hw-led').trim()")
+        assert hpf_on=='87,211,189'
         await page.locator('[data-hpf="0"]').click()
         await page.screenshot(path=str(project/'mixer-crystal-candy-review.png'),full_page=True)
         await page.screenshot(path=str(project/'mixer-crystal-depth-glow-review.png'),full_page=True)
@@ -663,7 +671,7 @@ async def main():
             selection:getComputedStyle(main,'::before').borderTopWidth,
             masterRows:[...master.children].map(x=>({cls:x.className,height:x.getBoundingClientRect().height}))};
         }""")
-        assert architecture['small']=='none',architecture
+        assert 'gradient' in architecture['small'],architecture
         assert abs(architecture['mainFader']['height']-architecture['masterFader']['height'])<=2,architecture
         assert architecture['nav']=='none',architecture
         assert architecture['long']=='none',architecture
@@ -697,38 +705,27 @@ async def main():
         assert smallRail['footerBottom']<=smallRail['bottom']+1,smallRail
         assert all(b['width']>35 for b in smallRail['buttons']),smallRail
         assert await page.locator('.strip').count()==11
-        # The user's requirement: the SAME size/position before, during, and after toggle.
-        # OFF/ON use the exact same shadow-layer geometry, differing only in palette.
+        # V5 state changes only internal lamp and 1–2px occluded light.
+        # Physical key outer geometry is immutable: no old depressed BTN-180 layers.
         def switch_state(selector):
             return page.locator(selector).evaluate("""e=>{
-              const s=getComputedStyle(e),r=e.getBoundingClientRect();
-              return {t:s.transform,shadow:s.boxShadow,color:s.backgroundColor,
-                ink:s.color,left:r.left,top:r.top,width:r.width,height:r.height,
-                selected:e.classList.contains('active')||e.classList.contains('selected')};
+              const s=getComputedStyle(e),r=e.getBoundingClientRect(),svg=e.querySelector('svg.mx-hw-face');
+              return {t:s.transform,shadow:s.boxShadow,gap:getComputedStyle(e,'::before').opacity,
+                lamp:getComputedStyle(svg.querySelector('.mx-hw-lamp')).opacity,
+                left:r.left,top:r.top,width:r.width,height:r.height,
+                selected:e.classList.contains('active')};
             }""")
         def same_rect(a,b):
             return all(abs(a[k]-b[k])<=.2 for k in ('left','top','width','height'))
         off=await switch_state('[data-mute="0"]')
-        assert off['t']=='matrix(1, 0, 0, 1, 0, 0)',off
         await page.locator('[data-mute="0"]').click()
-        await page.wait_for_function("""()=>{
-            const e=document.querySelector('[data-mute="0"]');
-            return e.classList.contains('active')&&getComputedStyle(e).boxShadow.includes('inset');
-        }""",timeout=2500)
-        await page.wait_for_timeout(65) # 45ms palette, immediate pressed displacement
         on=await switch_state('[data-mute="0"]')
-        assert on['selected'] and shared_shadow_shape(on['shadow'])==shared_shadow_shape(off['shadow']),(off,on)
-        assert on['color']!=off['color'],(off,on)
-        assert on['t']==off['t'] and same_rect(off,on),(off,on)
-        assert off['color']=='rgb(231, 239, 240)' and off['ink']=='rgb(23, 34, 41)',(off,on)
-        assert on['ink']!=off['ink'],(off,on)
-        assert on['shadow'].startswith('rgba(0, 0, 0, 0.18)'),on
+        assert on['selected'] and off['gap']=='0' and on['gap']=='1',(off,on)
+        assert off['lamp']=='0' and on['lamp']=='1',(off,on)
+        assert off['shadow']==on['shadow'] and off['t']==on['t'] and same_rect(off,on),(off,on)
         await page.locator('[data-mute="0"]').click()
-        await page.mouse.move(1,1)  # OFF after pointer leaves, not the intentional glossy hover state
-        await page.wait_for_timeout(190)
         back=await switch_state('[data-mute="0"]')
-        assert back['t']==off['t'] and same_rect(off,back),(off,back)
-        assert back['shadow']==off['shadow'],(off,back)
+        assert back['gap']=='0' and same_rect(off,back),(off,back)
         # Source A/B controls are gone; fader travel expands into their old space.
         assert await page.locator('[data-send]').count()==0
         assert await page.locator('#mixer > .strip:not(.master-strip) .fader-tools').count()==0
@@ -762,51 +759,28 @@ async def main():
             and 'linear-gradient' in x['slitPaint'] and x['capWidth']==36
             for x in fader_recess),fader_recess
 
-        # Both resting states share depth; while pointer is down only, cap sinks 1px
-        # with a stronger inner shadow and unchanged width/height/layout slot.
+        # Press travel applies only to the SVG keycap; housing stays stationary.
         btn=page.locator('[data-mute="0"]')
-        before=await btn.evaluate("""e=>({
-            shadow:getComputedStyle(e).boxShadow,
-            before:getComputedStyle(e,'::before').content,
-            after:getComputedStyle(e,'::after').content})""")
-        assert before['before']=='none' and before['after']=='none',before
         press_before=await btn.evaluate("(e)=>e.getBoundingClientRect().toJSON()")
         await btn.hover()
         await page.mouse.down()
-        await page.wait_for_timeout(190)
         during=await btn.evaluate("""e=>({
-            t:getComputedStyle(e).transform,rect:e.getBoundingClientRect().toJSON(),
-            shadow:getComputedStyle(e).boxShadow})""")
-        assert during['t']=='matrix(1, 0, 0, 1, 0, 1)',during
-        assert abs(during['rect']['y']-press_before['y']-1)<=.2,during
-        assert all(abs(during['rect'][k]-press_before[k])<=.2 for k in ('x','width','height')),during
-        assert during['shadow']!=before['shadow'] and '0.5' in during['shadow'],(before,during)
-        await page.mouse.up()
-        await page.wait_for_timeout(190)
-        assert await btn.get_attribute('aria-pressed')=='true'
-        released_on=await btn.evaluate("""e=>({
-            t:getComputedStyle(e).transform, shadow:getComputedStyle(e).boxShadow,
-            rect:e.getBoundingClientRect().toJSON()
+          outer:getComputedStyle(e).transform,
+          face:getComputedStyle(e.querySelector('svg.mx-hw-face')).transform,
+          rect:e.getBoundingClientRect().toJSON()
         })""")
-        assert released_on['t']=='matrix(1, 0, 0, 1, 0, 0)',released_on
-        assert abs(released_on['rect']['y']-press_before['y'])<=.2,released_on
-        assert shared_shadow_shape(released_on['shadow'])==shared_shadow_shape(before['shadow']),(before,released_on)
-        # Re-press while already ON; it must have the same 1px tactile travel.
+        assert during['outer']=='matrix(1, 0, 0, 1, 0, 0)',during
+        assert during['face']=='matrix(1, 0, 0, 1, 0, 1)',during
+        assert abs(during['rect']['y']-press_before['y'])<=.2,during
+        await page.mouse.up()
+        assert await btn.get_attribute('aria-pressed')=='true'
         await btn.hover()
         await page.mouse.down()
-        await page.wait_for_timeout(120)
-        pressed_on=await btn.evaluate("""e=>({
-            t:getComputedStyle(e).transform,shadow:getComputedStyle(e).boxShadow,
-            rect:e.getBoundingClientRect().toJSON()
-        })""")
-        assert pressed_on['t']=='matrix(1, 0, 0, 1, 0, 1)',pressed_on
-        assert abs(pressed_on['rect']['y']-press_before['y']-1)<=.2,pressed_on
-        assert all(abs(pressed_on['rect'][k]-press_before[k])<=.2 for k in ('x','width','height')),pressed_on
-        assert '0.5' in pressed_on['shadow'],pressed_on
+        pressed_on=await btn.evaluate(
+            "(e)=>getComputedStyle(e.querySelector('svg.mx-hw-face')).transform")
+        assert pressed_on=='matrix(1, 0, 0, 1, 0, 1)',pressed_on
         await page.mouse.up()
-        await page.wait_for_timeout(190)
         assert await btn.get_attribute('aria-pressed')=='false'
-        assert await btn.evaluate("(e)=>getComputedStyle(e).transform")=='matrix(1, 0, 0, 1, 0, 0)'
         released_off=await btn.evaluate("(e)=>e.getBoundingClientRect().toJSON()")
         assert abs(released_off['y']-press_before['y'])<=.2,released_off
         widths=await page.evaluate("""()=>{
@@ -873,23 +847,24 @@ async def main():
         await page.locator('[data-view="MIX"]').click()
         assert await page.locator('[data-fxpower="0:0"]').get_attribute('aria-pressed')=='true'
         assert await page.evaluate('durableSession().bypassed["0:0"]') is False
-        # A real two-state BTN-180 control: blue STEREO, red MONO, durable state.
+        # Master mode is also V5; MONO/STEREO replace only its SINGLE mask legend.
         mode=page.locator('#masterMode')
-        blue=await mode.evaluate("(e)=>getComputedStyle(e).getPropertyValue('--b180-color').trim()")
-        assert blue=='#9dd2f0',blue
+        assert await mode.evaluate("(e)=>e.classList.contains('mx-hw-key')")
         await mode.click()
-        red=await mode.evaluate("(e)=>getComputedStyle(e).getPropertyValue('--b180-color').trim()")
-        assert await mode.inner_text()=='MONO' and await mode.get_attribute('aria-pressed')=='true'
-        assert red=='#f99aa4' and red!=blue,red
+        await page.wait_for_function("""()=>document.querySelector('#masterMode')
+            .querySelector('svg.mx-hw-face mask text')?.textContent==='MONO'""")
+        assert await mode.get_attribute('aria-pressed')=='true'
         assert await page.evaluate('durableSession().masterMono') is True
         await mode.click()
-        assert await mode.inner_text()=='STEREO' and await mode.get_attribute('aria-pressed')=='false'
+        await page.wait_for_function("""()=>document.querySelector('#masterMode')
+            .querySelector('svg.mx-hw-face mask text')?.textContent==='STEREO'""")
+        assert await mode.get_attribute('aria-pressed')=='false'
         assert await page.evaluate('durableSession().masterMono') is False
         await page.locator('#masterMute').click()
-        assert await page.locator('#masterMute').inner_text()=='MUTE'
         assert await page.locator('#masterMute').get_attribute('aria-pressed')=='true'
+        assert await page.locator('#masterMute svg.mx-hw-face mask text').inner_text()=='MUTE'
         await page.locator('#masterMute').click()
-        assert await page.locator('#masterMute').inner_text()=='MUTE'
+        assert await page.locator('#masterMute').get_attribute('aria-pressed')=='false'
         # Hover and active feedback stays visual and does not change native fader geometry.
         cap0=page.locator('[data-fader="0"] .cap')
         await cap0.hover()
@@ -1206,28 +1181,24 @@ async def main():
         assert await pan.get_attribute('aria-valuenow')=='0'
         assert not await page.locator('#editor').is_visible(),'PAN double click opened editor'
 
-        # Same Button 180 construction, distinct solid color for each ON state.
-        async def image_for(selector):
-            return await page.locator(selector).first.evaluate(
-                '(b) => getComputedStyle(b).backgroundColor')
-        off_mute=await image_for('[data-mute="0"]')
-        assert off_mute.startswith('rgb(')
-        assert off_mute == await image_for('[data-solo="0"]')
+        # Same V5 material on all buttons, independent semantic LED and lamp.
+        async def led_state(selector):
+            return await page.locator(selector).first.evaluate("""b=>({
+              led:getComputedStyle(b).getPropertyValue('--mx-hw-led').trim(),
+              gap:getComputedStyle(b,'::before').opacity,
+              lamp:getComputedStyle(b.querySelector('.mx-hw-lamp')).opacity
+            })""")
+        off_mute=await led_state('[data-mute="0"]')
+        off_solo=await led_state('[data-solo="0"]')
+        assert off_mute['gap']==off_solo['gap']=='0'
         await page.locator('[data-mute="0"]').click()
-        assert await page.locator('[data-mute="0"]').get_attribute('aria-pressed') == 'true'
-        # BTN-180 color transition is 45ms, while tactile press is immediate.
-        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-mute="0"]')).backgroundColor==='rgb(249, 154, 164)'""",timeout=2500)
-        assert await image_for('[data-mute="0"]') != await image_for('[data-solo="0"]'), await page.evaluate("""()=>{
-          return [...document.querySelectorAll('[data-mute="0"],[data-solo="0"]')].map(e=>({
-            cls:e.className,background:getComputedStyle(e).backgroundColor,
-            token:getComputedStyle(e).getPropertyValue('--b180-color'),
-            bgImage:getComputedStyle(e).backgroundImage
-          }))
-        }""")
+        assert await page.locator('[data-mute="0"]').get_attribute('aria-pressed')=='true'
+        mute_on=await led_state('[data-mute="0"]')
+        assert mute_on=={'led':'255,64,85','gap':'1','lamp':'1'},mute_on
         await page.locator('[data-solo="0"]').click()
-        assert await page.locator('[data-solo="0"]').get_attribute('aria-pressed') == 'true'
-        await page.wait_for_function("""()=>getComputedStyle(document.querySelector('[data-solo="0"]')).backgroundColor==='rgb(244, 212, 121)'""",timeout=2500)
-        assert await image_for('[data-solo="0"]') != await image_for('[data-mute="0"]')
+        assert await page.locator('[data-solo="0"]').get_attribute('aria-pressed')=='true'
+        solo_on=await led_state('[data-solo="0"]')
+        assert solo_on=={'led':'255,208,44','gap':'1','lamp':'1'},solo_on
         await page.locator('[data-mute="0"]').click()
         await page.locator('[data-solo="0"]').click()
         await page.locator('#masterMute').click()
