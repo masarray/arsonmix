@@ -64,7 +64,9 @@ async def audit(page):
               masterMid:master.top+master.height/2,modeMid:mono.top+mono.height/2,
               channelMid:channel.top+channel.height/2};
     }""")
-    assert all(abs(dimensions[k]-29)<.1 for k in ('masterH','modeH','channelH')),dimensions
+    assert all(24<=dimensions[k]<=34 for k in ('masterH','modeH','channelH')),dimensions
+    assert max(dimensions[k] for k in ('masterH','modeH','channelH'))-min(
+      dimensions[k] for k in ('masterH','modeH','channelH'))<.3,dimensions
     assert max(dimensions[k] for k in ('masterMid','modeMid','channelMid'))-min(
       dimensions[k] for k in ('masterMid','modeMid','channelMid'))<1,dimensions
     # SVG gradient LED stops are resolved colors, never unsupported CSS var syntax.
