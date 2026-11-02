@@ -3589,6 +3589,29 @@ html * ,html *::before,html *::after{
 ):focus-visible{outline:2px solid #80d5ed!important;outline-offset:2px!important}
 
 
+/* V31 — FL-style suspended routing: actual OUT/IN/GAIN patch hardware TOP,
+   the flexible signal cables hang below under their own simulated weight.
+   The panel is strictly a GUI reference; don't move PAN, FX, M/S/PFL, faders.
+   Reorder only expanded compartments. Folded WIRE remains 23px icon-only. */
+.console-body.wire-routing-v15:not(.collapsed-send) .strip .wire-section{
+ display:flex!important;flex-direction:column!important;
+ justify-content:flex-start!important;
+}
+.console-body.wire-routing-v15:not(.collapsed-send) .strip .wire-section .wire-tray{
+ order:-2!important;flex-shrink:0!important;
+ border-top:0!important;border-bottom:1px solid #405965!important;
+}
+.console-body.wire-routing-v15:not(.collapsed-send) .strip .wire-section .wire-deck{
+ order:0!important;flex:1 1 0!important;min-height:0!important;
+ background:#101f29!important;border-bottom:0!important;
+ box-shadow:inset 0 2px 4px #07131b6e!important;
+ padding:0!important;
+}
+.console-body.wire-routing-v15:not(.collapsed-send) .strip .wire-section .wire-deck-label,
+.console-body.wire-routing-v15:not(.collapsed-send) .strip .wire-section .wire-deck-status,
+.console-body.wire-routing-v15:not(.collapsed-send) .strip .wire-section .wire-deck-rail{
+ display:none!important;
+}
 </style>
 </head>
 <body>
@@ -3632,7 +3655,7 @@ html * ,html *::before,html *::after{
     </details>
   </div>
   <main class="console-pane">
-    <div class="mixer-title"><span class="accent"></span><span class="panel-name">Live Mixer</span><span class="panel-sub" aria-hidden="true"><svg class="mi-svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M3 5v14h18V5H3zm8 12H5V7h6v10zm8 0h-6v-4h6v4zm0-6h-6V7h6v4z"/></svg></span><label class="wire-mode-label" for="wireMode">WIRE</label><select class="wire-mode-select" id="wireMode" title="Signal routing: FL-style post-fader or independent pre-FX source" aria-label="Wire routing mode"><option value="send">Follow Fader</option><option value="split">Independent (Pre FX)</option></select><button class="wire-master" id="wireMaster" type="button" title="Toggle direct source feed to Master" aria-pressed="true">MAIN ON</button><span class="wire-legend" id="wireLegend" aria-live="polite">CH01 · click destination arrows</span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
+    <div class="mixer-title"><span class="accent"></span><span class="panel-name">Live Mixer</span><span class="panel-sub" aria-hidden="true"><svg class="mi-svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M3 5v14h18V5H3zm8 12H5V7h6v10zm8 0h-6v-4h6v4zm0-6h-6V7h6v4z"/></svg></span><label class="wire-mode-label" for="wireMode">WIRE</label><select class="wire-mode-select" id="wireMode" title="Signal routing: FL-style post-fader or independent pre-FX source" aria-label="Wire routing mode"><option value="send">Follow Fader</option><option value="split">Independent (Pre FX)</option></select><button class="wire-master" id="wireMaster" type="button" title="Toggle direct source feed to Master" aria-pressed="true">MAIN ON</button><label class="wire-view-caption" for="wireView">VIEW</label><select class="wire-view-select" id="wireView" title="Cable display only · Focus (IN + OUT), OUT only, or all visible routes" aria-label="Wire cable display"><option value="focus">Focus</option><option value="out">OUT only</option><option value="all">All wires</option></select><span class="wire-legend" id="wireLegend" aria-live="polite">CH01 · click destination arrows</span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
     <section class="console-body collapsed-send wire-routing-v13 wire-routing-v15" data-density="comfort" aria-label="Live mixing console">
       <aside class="section-rail" aria-label="Mixer section icons">
         <div class="rail-cell identity" title="Channel identity">CH</div>
@@ -3718,14 +3741,14 @@ function savePluginPreferences(){
  }));}catch(error){/* Manager still works without browser storage. */}
 }
 const tracksEl=document.getElementById('tracks'),masterEl=document.getElementById('master'),info=document.getElementById('info');
-let nextId=1,nextGroup=1,tracks=[],master,preview=false,meterFrame=0,lastTick=0,clipboard=null,scenes=[],sofEnabled=false,sofTarget="Bus A",wireSourceId=1,wireEdges=[],nextWireId=1,wireMode='send',wireAnchorId=null,wireHoverId=null,wireGesture=null,wireSuppressClick=false,pendingBusRoute=null;
+let nextId=1,nextGroup=1,tracks=[],master,preview=false,meterFrame=0,lastTick=0,clipboard=null,scenes=[],sofEnabled=false,sofTarget="Bus A",wireSourceId=1,wireEdges=[],nextWireId=1,wireMode='send',wireAnchorId=null,wireHoverId=null,wireGesture=null,wireSuppressClick=false,pendingBusRoute=null,wireView='focus';
 const clone=x=>JSON.parse(JSON.stringify(x));
 const selection=()=>tracks.concat(master).filter(t=>t.selected);
 const make=(name,kind,color)=>{
  const id=nextId++;
  return {id,name,kind,color,icon:kind==='master'?'◎':kind==='bus'?'⊞':kind==='fx'?'◉':'♩',group:null,safe:false,format:'stereo',input:'None',output:kind==='master'?'Default Output':'Master',fx:Array(8).fill('None'),slotBypass:Array(8).fill(false),fxOn:true,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,activeSend:0,sendSlots:Array.from({length:16},()=>({send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0})),eq:true,pan:0,trim:0,mute:false,solo:false,cue:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
 };
-function init(){nextId=1;nextGroup=1;wireSourceId=1;wireEdges=[];nextWireId=1;wireMode='send';wireAnchorId=null;wireHoverId=null;wireGesture=null;wireSuppressClick=false;pendingBusRoute=null;const choice=document.getElementById('routeChoice');if(choice)choice.hidden=true;document.getElementById('wireMode').value='send';tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
+function init(){nextId=1;nextGroup=1;wireSourceId=1;wireEdges=[];nextWireId=1;wireMode='send';wireView='focus';document.getElementById('wireView').value='focus';wireAnchorId=null;wireHoverId=null;wireGesture=null;wireSuppressClick=false;pendingBusRoute=null;const choice=document.getElementById('routeChoice');if(choice)choice.hidden=true;document.getElementById('wireMode').value='send';tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 /* Google Material Icons SVG paths, Apache-2.0. Inline/zero font or network requests. */
 const MATERIAL_PATH=Object.freeze({
@@ -3864,7 +3887,7 @@ function commitRouteChoice(kind){
   if(old?.kind==='primary'&&source.output===dest.name)source.output='Master';
   wireEdges.push({id:nextWireId++,sourceId:source.id,destId:dest.id,kind:'send',mode:'send',levelDb:0,enabled:true});
  }else return false;
- closeRouteChoice();render();
+ closeRouteChoice();render();kickWireSpring();
  say(source.name+' → '+dest.name+' · '+(kind==='only'?'VIA BUS ONLY · no direct MAIN':'PARALLEL SEND · original primary output preserved')+' · GUI DEMO ONLY');
  return true;
 }
@@ -3889,7 +3912,7 @@ function wireConnect(source,dest){
  }
  if(wireIsCycle(source.id,dest.id)){say('WIRE REJECTED: feedback loop · existing signal graph preserved');return false;}
  wireEdges.push({id:nextWireId++,sourceId:source.id,destId:dest.id,mode:wireMode,levelDb:0,enabled:true});
- render();say('WIRE '+source.name+' → '+dest.name+' · '+(wireMode==='send'?'FOLLOW FADER SEND':'INDEPENDENT PRE FX')+(source.output==='Master'?' · MAIN direct ON':'')+' · GUI DEMO ONLY, no native PCM');
+ render();kickWireSpring();say('WIRE '+source.name+' → '+dest.name+' · '+(wireMode==='send'?'FOLLOW FADER SEND':'INDEPENDENT PRE FX')+(source.output==='Master'?' · MAIN direct ON':'')+' · GUI DEMO ONLY, no native PCM');
  return true;
 }
 
@@ -3929,7 +3952,7 @@ function replugWireEdge(sourceId,oldDestId,nextDestId){
  }
  edge.destId=dest.id;
  if(edge.kind==='primary'&&source.output===previous.name)source.output=dest.name;
- wireAnchorId=dest.id;render();
+ wireAnchorId=dest.id;render();kickWireSpring();
  say('WIRE rerouted '+source.name+' · '+previous.name+' → '+dest.name+
   ' · '+wireDbText(edge.levelDb)+' preserved · GUI DEMO');return true;
 }
@@ -4238,21 +4261,41 @@ function refreshWireRoutingNodes(){
  });
  renderWireRouting();
 }
-/* Smooth bezier routing in either horizontal direction; bounded by patch bay. */
-/* V28 NATURAL FLEX CABLE — undo V27 shared ferrule/stem.
-   Each route is a separate flexible cable from the exact OUT jack.
-   Height grows with horizontal span, and intentionally arches above
-   the WIRE legend (within the existing SVG viewport).
-   Geometry only: preserve graph, magnet, replug and hit testing. */
-function wirePathData(x0,y0,x1,y1,riseLimit){
- const dx=x1-x0,span=Math.abs(dx),dy=Math.abs(y1-y0);
- const rise=Math.min(164,Math.max(58,52+span*.086+dy*.13));
- const xLead=Math.max(7,Math.min(60,span*.20));
- const signedLead=(dx<0?-1:1)*xLead;
+/* V31 suspended signal cables: catenary-inspired cubic, not the old sky arch.
+   A vertical DOWN tangent at OUT and an UP tangent at IN create the natural U
+   in either direction, independent of color or route model.
+   Limit depth to available cable stage so the curve never falls into PAN. */
+function wireSagClearance(rect,section){
+ return section?Math.max(18,section.bottom-(rect.top+rect.height*.5)-9):72;
+}
+function wirePathData(x0,y0,x1,y1,sagLimit,spring=0){
+ const span=Math.abs(x1-x0);
+ const ceiling=Math.max(12,Math.min(100,Number(sagLimit)||72));
+ const sag=Math.max(10,Math.min(ceiling,Math.min(ceiling-7,20+Math.sqrt(span)*1.55)+spring));
+ const control=(sag*4/3);
  return 'M '+x0.toFixed(1)+' '+y0.toFixed(1)+
-  ' C '+(x0+signedLead).toFixed(1)+' '+(y0-rise).toFixed(1)+
-  ', '+(x1-signedLead).toFixed(1)+' '+(y1-rise).toFixed(1)+
+  ' C '+x0.toFixed(1)+' '+(y0+control).toFixed(1)+
+  ', '+x1.toFixed(1)+' '+(y1+control).toFixed(1)+
   ', '+x1.toFixed(1)+' '+y1.toFixed(1);
+}
+/* Lightweight, damped spring on ACCEPTED route changes only: maximum 24 RAF
+   frames, zero permanent timers and NO signal/audio tick work. Reduced motion
+   means no animation. Render never mutates the underlying route graph. */
+let wireSpring=0,wireSpringVelocity=0,wireSpringActive=false,wireSpringFrames=0;
+function kickWireSpring(){
+ if(window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches)return;
+ wireSpringVelocity=5;wireSpringFrames=0;
+ if(wireSpringActive)return;
+ wireSpringActive=true;
+ const step=()=>{
+  wireSpringVelocity=(wireSpringVelocity-wireSpring*.23)*.73;
+  wireSpring+=wireSpringVelocity;
+  if(!wireGesture?.active)renderWireRouting();
+  if(++wireSpringFrames<24&&(Math.abs(wireSpring)>.18||Math.abs(wireSpringVelocity)>.18)){
+   requestAnimationFrame(step);
+  }else{wireSpring=0;wireSpringVelocity=0;wireSpringActive=false;renderWireRouting();}
+ };
+ requestAnimationFrame(step);
 }
 /* V23 Smart Wire: visible lit socket means preview is center-snapped and
    mouseup accepts that exact candidate. Moving away releases attraction;
@@ -4365,9 +4408,30 @@ function renderWireRouting(){
  svg.setAttribute('viewBox','0 0 '+vp.width+' '+vp.height);
  const x0=from.left-vp.left+from.width/2,y0=from.top-vp.top+from.height*.5;
  const well=fromEl.closest?.('.send-section')?.getBoundingClientRect?.();
- const riseLimit=well?Math.max(18,from.top-well.top-10):85;
+ const sagLimit=wireSagClearance(from,well);
  const paths=[];
- const incoming=routes.filter(e=>e.destId===source.id&&e.sourceId!==source.id);
+ // V30 optional ALL: draw non-focused, currently visible paths in the back.
+ // Never simulate a cable across hidden banks; the compact legend retains
+ // the selected channel's complete routing status across those banks.
+ if(wireView==='all'&&!dragging){
+  for(const edge of routes){
+   if(edge.sourceId===source.id||edge.destId===source.id)continue;
+   const sender=wireSourceTrack(edge.sourceId);
+   const fromNode=viewport.querySelector?.('.strip[data-id="'+edge.sourceId+'"] .wire-node-out');
+   const toNode=viewport.querySelector?.('.strip[data-id="'+edge.destId+'"] .wire-node-in');
+   const a=fromNode?.getBoundingClientRect?.(),b=toNode?.getBoundingClientRect?.();
+   if(!sender||!a?.width||!b?.width)continue;
+   const bay=fromNode.closest?.('.send-section')?.getBoundingClientRect?.();
+   const lift=wireSagClearance(a,bay);
+   const d=wirePathData(a.left-vp.left+a.width*.5,a.top-vp.top+a.height*.5,
+    b.left-vp.left+b.width*.5,b.top-vp.top+b.height*.5,lift,wireSpring);
+   paths.push('<path class="wire-context-line" data-from="'+edge.sourceId+
+    '" data-to="'+edge.destId+'" data-route-kind="'+edge.kind+
+    '" d="'+d+'" stroke="'+sender.color+
+    '" stroke-width="1.25" opacity=".20" fill="none" stroke-linecap="round"/>');
+  }
+ }
+ const incoming=wireView==='out'?[]:routes.filter(e=>e.destId===source.id&&e.sourceId!==source.id);
  // Back layer: each active incoming source OUT → focused channel IN.
  for(const edge of incoming){
   const sender=wireSourceTrack(edge.sourceId);
@@ -4379,8 +4443,8 @@ function renderWireRouting(){
   const xa=fromRect.left-vp.left+fromRect.width*.5,ya=fromRect.top-vp.top+fromRect.height*.5;
   const xb=toRect.left-vp.left+toRect.width*.5,yb=toRect.top-vp.top+toRect.height*.5;
   const senderBay=fromNode.closest?.('.send-section')?.getBoundingClientRect?.();
-  const rise=senderBay?Math.max(18,fromRect.top-senderBay.top-10):riseLimit;
-  const d=wirePathData(xa,ya,xb,yb,rise);
+  const rise=wireSagClearance(fromRect,senderBay);
+  const d=wirePathData(xa,ya,xb,yb,rise,wireSpring);
   paths.push('<path class="wire-incoming-line" data-from="'+edge.sourceId+
    '" data-to="'+edge.destId+'" data-route-kind="'+edge.kind+
    '" d="'+d+'" stroke="'+sender.color+'" stroke-width="1.65" opacity=".32" fill="none" stroke-linecap="round"/>');
@@ -4398,7 +4462,7 @@ function renderWireRouting(){
   const rect=viewport.querySelector?.('.strip[data-id="'+dest.id+'"] .wire-node-in')?.getBoundingClientRect?.();
   if(!rect||!rect.width)continue;
   const x1=rect.left-vp.left+rect.width/2,y1=rect.top-vp.top+rect.height/2;
-  const d=wirePathData(x0,y0,x1,y1,riseLimit),color=edge.preview?'#b5e8d3':dest.color||'#93e5b4';
+  const d=wirePathData(x0,y0,x1,y1,sagLimit,wireSpring),color=edge.preview?'#b5e8d3':dest.color||'#93e5b4';
   paths.push('<path class="wire-outgoing-shadow" d="'+d+'" stroke="#06151b" stroke-width="'+(edge.preview?4:6)+'" opacity="'+(edge.preview?'.18':'.6')+'" fill="none" stroke-linecap="round"/>'+
    '<path class="wire-outgoing-line" data-from="'+source.id+'" data-to="'+edge.destId+
    '" data-route-kind="'+edge.kind+'" d="'+d+'" stroke="'+color+
@@ -4417,7 +4481,7 @@ function renderWireRouting(){
    x1=rect.left-vp.left+rect.width*.5;
    y1=rect.top-vp.top+rect.height*.5;
   }
-  const d=wirePathData(x0,y0,x1,y1,riseLimit);
+  const d=wirePathData(x0,y0,x1,y1,sagLimit);
   paths.push('<path class="wire-drag-line" d="'+d+'" stroke="#06151b" stroke-width="6" opacity=".25" fill="none" stroke-linecap="round"/>'+
    '<path class="wire-drag-line" d="'+d+'" stroke="'+(snap?.color||'#b5eedb')+'" stroke-width="2.4" opacity=".54" fill="none" stroke-linecap="round"/>'+
    (wireGesture.movingEdgeId!==null?'<circle class="wire-floating-plug" cx="'+x1.toFixed(1)+'" cy="'+y1.toFixed(1)+'" r="5.5" fill="'+(snap?.color||'#b5eedb')+'" fill-opacity=".75" stroke="#d8f7ed" stroke-opacity=".65" stroke-width="1"/>':''));
@@ -4915,6 +4979,12 @@ document.getElementById('wireMode').addEventListener('change',()=>{
  const selected=document.getElementById('wireMode').value;
  wireMode=selected==='split'?'split':'send';
  say('WIRE MODE '+(wireMode==='send'?'FOLLOW FADER (FL-style send)':'INDEPENDENT (pre-insert mult)')+' · new edges only · GUI DEMO');
+});
+document.getElementById('wireView').addEventListener('change',()=>{
+ const next=document.getElementById('wireView').value;
+ wireView=['focus','out','all'].includes(next)?next:'focus';
+ renderWireRouting(); // Visualization only: never touch wireEdges or DSP state
+ say('WIRE VIEW '+(wireView==='focus'?'FOCUS · incoming behind outgoing':wireView==='out'?'OUT ONLY · selected sends':'ALL VISIBLE ROUTES · selected channel highlighted')+' · display only');
 });
 function toggleDirectMain(){
  const t=wireSourceTrack(wireSourceId);

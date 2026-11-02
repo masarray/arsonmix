@@ -2,10 +2,10 @@
   "kind": "REFERENCE_WORKFLOW_QA_ONLY",
   "source_pr": 278,
   "source_branch": "main/site/preview-v2",
-  "source_sha": "434bd0867eb7eca2af7bd1a4d7d92fdae52d56f7",
-  "source_blob_sha": "02fbdc93a956b2ad2e826ebdc8051140c100d6ec",
-  "ci_run": 41435417991,
+  "source_sha": "f20bde153dbf3efa98a8557ec7e9313ac2480992",
+  "source_blob_sha": "27a3cb2927a778cd4e961b3c71f96d2ab4b83aa2",
+  "ci_run": 41439966350,
   "ci_conclusion": "success",
   "live_audio": false,
-  "note": "V29 user-uploaded raised/recessed graphite 3D hardware buttons with independent MUTE SOLO PFL + all previous qualified Focus routing. Atomic HTML snapshot, GUI only."
+  "note": "V31 exact QA-pinned gravity WIRE snapshot with V30 physical 3D keys; later parallel PR edits intentionally excluded."
 }
