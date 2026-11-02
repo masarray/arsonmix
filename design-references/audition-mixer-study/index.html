@@ -3798,6 +3798,18 @@ html * ,html *::before,html *::after{
 @media(max-width:1360px){.command-bar>.sep{display:none!important}.command-bar{gap:4px!important;padding-inline:5px!important}}
 @media(prefers-reduced-motion:reduce){.console-body .strip .wire-pot{transition:none!important}}
 
+
+/* Source-independent active route truth remains in DOM; visual signal stays graphite
+   until the operator explicitly opens SEND/OUT. */
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary:not(.is-armed) .fold-link-out{
+ fill:#394a53!important;stroke:#5c6d76!important;opacity:.8!important;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary:not(.is-armed) .fold-link-in{
+ fill:#0d1f28!important;stroke:#596d78!important;opacity:.88!important;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary:not(.is-armed) .fold-link-in-dot{
+ fill:#44555e!important;opacity:.82!important;
+}
 </style>
 </head>
 <body>
@@ -4238,7 +4250,7 @@ function compactWireSummary(t){
     '<circle class="fold-link-in" cx="26" cy="8" r="5.4"/>'+
     '<circle class="fold-link-in-dot" cx="26" cy="8" r="1.85"/>'+
    '</svg>';
- return '<button type="button" class="wire-fold-summary'+(connected?' has-wire':' is-empty')+
+ return '<button type="button" class="wire-fold-summary'+(wirePreviewArmed?' is-armed':'')+(connected?' has-wire':' is-empty')+
   '" data-action="wireExpand" aria-label="'+escapeHtml(title)+
   '" title="'+escapeHtml(title)+'">'+shape+'</button>';
 }
