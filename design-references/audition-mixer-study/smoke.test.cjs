@@ -960,5 +960,25 @@ check(html.includes('wire-map-chip') && html.includes('--wire-hue:') &&
  'V26 header displays compact channel-colored badges, capped with +N overflow');
 node('reset').dispatch('click');
 
+
+// V29: User's attached 3D graphite buttons are the literal material source.
+// Raised and recessed visual states must not alter independent mixer toggles.
+check(html.includes('--am-3d-top:#333') && html.includes('--am-3d-bottom:#222') &&
+ html.includes('--am-3d-selected-top:#202020') &&
+ html.includes('--am-3d-selected-bottom:#151515') &&
+ html.includes('--am-3d-hover-top:#373737') &&
+ html.includes('--am-3d-hover-bottom:#262626'),
+ 'V29 raised, hovered and selected graphite faces match user-uploaded CSS');
+check(html.includes('.hw-switch-socket>.switch.on') &&
+ html.includes('box-shadow:inset 0 1px 6px rgba(0,0,0,.62)') &&
+ html.includes('--am-3d-led:#f17380') &&
+ html.includes('--am-3d-led:#efcc5e') &&
+ html.includes('--am-3d-led:#6dd2ec'),
+ 'V29 MUTE/SOLO/PFL pressed 3D relief and color-coded thin indicator edges');
+check(html.includes('data-action="mute"') &&
+ html.includes('data-action="solo"') &&
+ html.includes('data-action="cue"') &&
+ !html.includes('cdnjs.cloudflare.com/ajax/libs/jquery'),
+ 'V29 preserves 3 independent original button toggles, with no reference jQuery radio dependency');
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
