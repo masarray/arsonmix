@@ -239,8 +239,8 @@ def audit_channel_rearrange(page,label):
     target=page.locator('#tracks .strip[data-id="4"] .strip-identity-top')
     before=page.evaluate("""() => ({
         ids:[...document.querySelectorAll('#tracks .strip')].map(e=>Number(e.dataset.id)),
-        source:tracks.find(t=>t.id===1).fx[0],
-        wires:JSON.stringify(wireEdges),
+        source:document.querySelector('#tracks .strip[data-id="1"] .fxslot-list')?.textContent,
+        wires:document.querySelector('#tracks .strip[data-id="1"] .split-count')?.textContent,
         master:document.querySelector('#master .strip')?.dataset.id
     })""")
     assert before['ids'][:4]==[1,2,3,4],(label,'unexpected starting bank order',before)
@@ -248,8 +248,8 @@ def audit_channel_rearrange(page,label):
     first.drag_to(target,target_position={"x":bb["width"]-5,"y":bb["height"]/2})
     after=page.evaluate("""() => ({
         ids:[...document.querySelectorAll('#tracks .strip')].map(e=>Number(e.dataset.id)),
-        source:tracks.find(t=>t.id===1).fx[0],
-        wires:JSON.stringify(wireEdges),
+        source:document.querySelector('#tracks .strip[data-id="1"] .fxslot-list')?.textContent,
+        wires:document.querySelector('#tracks .strip[data-id="1"] .split-count')?.textContent,
         master:document.querySelector('#master .strip')?.dataset.id
     })""")
     assert after['ids'][:4]==[2,3,4,1],(label,'drag right did not rearrange channels',after)
