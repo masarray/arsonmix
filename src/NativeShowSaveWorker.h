@@ -43,17 +43,19 @@ public:
     }
     bool launch(juce::File studio,SnapshotV2 snapshot,
                 std::vector<BinaryState> binaryStates,Completion completion) {
-        if(!reserve(Operation::save,std::move(studio),std::move(completion)) ||
-           !detail::uuid(snapshot.id))return false;
+        // Reject invalid requests BEFORE reserving or retaining a potentially
+        // large vendor-state payload on this long-lived worker.
+        if(!detail::uuid(snapshot.id) ||
+           !reserve(Operation::save,std::move(studio),std::move(completion)))
+            return false;
         snapshot_=std::move(snapshot);
         blobs_=std::move(binaryStates);
-        if(startThread())return true;
-        return false;
+        return startOrRelease();
     }
     bool list(juce::File studio,Completion completion) {
         if(!reserve(Operation::list,std::move(studio),std::move(completion)))
             return false;
-        return startThread();
+        return startOrRelease();
     }
     bool read(juce::File studio,juce::String showId,
               juce::int64 epoch,juce::int64 revision,Completion completion) {
@@ -62,9 +64,27 @@ public:
             return false;
         requestedId_=std::move(showId);
         requestEpoch_=epoch;requestRevision_=revision;
-        return startThread();
+        return startOrRelease();
     }
 private:
+    // Start failure must release captured Show snapshots, binary-state blobs
+    // and completion closures. The worker never transfers these to RT.
+    bool startOrRelease() {
+        if(startThread())return true;
+        releaseJob();
+        return false;
+    }
+    // Exclusively invoked after the worker's IO is finished or before it
+    // started. No concurrent use with the caller/message thread.
+    void releaseJob() {
+        snapshot_=SnapshotV2{};
+        blobs_.clear();
+        blobs_.shrink_to_fit();
+        requestedId_={};
+        requestEpoch_=0;requestRevision_=0;
+        studio_={};
+        finished_={};
+    }
     bool reserve(Operation mode,juce::File studio,Completion completion) {
         if(isThreadRunning()||!completion)return false;
         operation_=mode;studio_=std::move(studio);
@@ -86,10 +106,11 @@ private:
         } catch(...) {
             result.error="Unknown native Show IO exception; session unchanged";
         }
-        blobs_.clear(); // release captured bytes on IO thread after commit
-        blobs_.shrink_to_fit();
+        // Move the completion closure out: the worker must not retain a
+        // second copy of UI captures or a large Show snapshot between jobs.
+        auto done=std::move(finished_);
+        releaseJob(); // IO worker thread, never audio callback
         auto alive=alive_;
-        auto done=finished_;
         // A 128 MB vendor-blob result must not be copied by std::function
         // when JUCE queues an async callback on the message thread.
         auto delivered=std::make_shared<Result>(std::move(result));
