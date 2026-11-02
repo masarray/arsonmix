@@ -3816,6 +3816,26 @@ html * ,html *::before,html *::after{
 @media(prefers-reduced-motion:reduce){
  .console-body.wire-routing-v15 .strip .wire-tray .wire-pot::before{transition:none!important}
 }
+/* WIRE focus/selection V38 — lightweight static paint, no hover blur or animation.
+   Rules at the end of this sheet own the effective V33/V37 cascade. */
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out:is(.is-near,:hover,:focus-visible):not(:disabled):not(.is-source){
+ color:#d6ffed!important;border-color:#78d8ae!important;
+ background:#275344!important;
+ box-shadow:inset 0 1px 0 #e1fff348,0 0 0 1px #3a8a6a!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out:is(.is-near,:hover,:focus-visible):not(:disabled):not(.is-source) .wire-pin{
+ background:#84dcb2!important;border-color:#c1f8d9!important;
+ box-shadow:inset 0 1px #f0fff080!important;
+}
+.console-body.wire-routing-v15.wire-intent .strip .wire-tray .wire-node-in:not(:disabled):not(.is-source):not(.is-linked){
+ color:#bdebd7!important;border-color:#6ebd9d!important;
+ background:#17382e!important;
+ box-shadow:inset 0 1px 2px #07141c,0 0 0 1px #37644f!important;
+}
+.console-body .strip.selected::after{
+ opacity:.66!important;
+ box-shadow:none!important;
+}
 </style>
 </head>
 <body>
@@ -4049,6 +4069,14 @@ function hasLegacySendTo(source,dest){
  });
 }
 function wireSourceTrack(id){return tracks.find(t=>t.id===id&&t.kind!=='master');}
+// WIRE source is a transient tool focus, independent of channel selection.
+// Keep real committed edges. Repaint ports only; never remount all faders.
+function clearWireIntent(){
+ if(!wireIntent&&!wireSourcePinned)return;
+ wireIntent=false;wireSourcePinned=false;wireSourceId=null;
+ wireAnchorId=null;wireHoverId=null;
+ refreshWireRoutingNodes();
+}
 function selectWireSource(t){
  if(!t||t.kind==='master')return false;
  wireSourceId=t.id;wireSourcePinned=true;wireIntent=true;wireAnchorId=null;wireHoverId=null;
@@ -5184,6 +5212,38 @@ document.querySelector('.console-body').addEventListener('drop',e=>{
   refreshStrip(t);say('Copied '+source.fx[from]+' from '+source.name+' to '+t.name+' slot '+(to+1));
  }
 });
+// One delegated proximity signal (no per-node listeners, no RAF): illuminate
+// OUT just before pointer reaches its 28px hit target. Static CSS handles paint.
+let nearWireOut=null;
+consoleBody.addEventListener('pointermove',e=>{
+ if(e.pointerType==='touch')return;
+ const tray=e.target.closest?.('.wire-tray');
+ let out=tray?.querySelector('.wire-node-out:not(:disabled)')||null;
+ if(out){
+  const r=out.getBoundingClientRect();
+  const distance=Math.hypot(e.clientX-(r.left+r.width/2),e.clientY-(r.top+r.height/2));
+  if(distance>Math.max(r.width,r.height)/2+16)out=null;
+ }
+ if(nearWireOut!==out){
+  nearWireOut?.classList.remove('is-near');
+  nearWireOut=out;
+  nearWireOut?.classList.add('is-near');
+ }
+});
+consoleBody.addEventListener('pointerleave',()=>{
+ nearWireOut?.classList.remove('is-near');nearWireOut=null;
+});
+// Clicking away from the active patch controls releases OUT and the ready IN
+// sockets; WIRE workspace/nav/route-choice are part of the ongoing patch.
+// Inspecting a different channel must NOT silently create a route.
+document.addEventListener('pointerdown',e=>{
+ if(e.button!==0||!armedWireSource()||wireGesture||pendingBusRoute)return;
+ if(e.target.closest?.('.wire-node-out,.wire-node-in,.wire-pot,.wire-disconnect,#wireWorkspace,#routeChoice,[data-wire-destination],[data-wire-jump-source],.wire-offbank-source'))return;
+ clearWireIntent();
+},true);
+window.addEventListener('blur',()=>{
+ if(armedWireSource()&&!wireGesture&&!pendingBusRoute)clearWireIntent();
+});
 document.querySelector('.console-body').addEventListener('pointerover',e=>{
  const btn=e.target.closest?.('[data-action="wireRoute"]');
  const t=btn?findTrack(btn):null;
@@ -5235,10 +5295,14 @@ document.querySelector('.console-body').addEventListener('wheel',e=>{
  el.value=String(wireGainValue(prev+change));
  handleField({target:el,type:'change'});
 },{passive:false});
-document.querySelector('.console-body').addEventListener('mousedown',e=>{
- if(e.target.closest?.('.wire-tray')||e.target.closest?.('.wire-node-out')||e.target.closest?.('[data-action="wireRoute"]')||e.target.closest?.('[data-action="wireRemove"]')||e.target.closest?.('[data-field="wireGain"]'))return; // source remains unchanged on any wire control
- const t=findTrack(e.target);if(t)selectTrack(t,e.ctrlKey||e.metaKey||e.shiftKey);
-});
+// Every point in a strip, including WIRE tray/OUT/IN/knob, selects its
+// channel BEFORE routing handlers. Pointer capture/preventDefault on a socket
+// must never suppress this selection. This is inspection, not a graph edit.
+consoleBody.addEventListener('pointerdown',e=>{
+ if(e.button!==0)return;
+ const t=findTrack(e.target);
+ if(t)selectTrack(t,e.ctrlKey||e.metaKey||e.shiftKey);
+},true);
 document.querySelector('.section-rail').addEventListener('click',e=>{
  const button=e.target.closest('[data-section]');if(!button)return;
  const name=button.dataset.section,body=document.querySelector('.console-body');
@@ -5689,8 +5753,7 @@ window.addEventListener('keydown',e=>{
  if(e.key==='Escape'&&quickOpen){setFastPicker(false);return;}
  if(e.key==='Escape'&&pluginOpen){setBrowser(false);return;}
  if(e.key==='Escape'&&(wireIntent||wireSourcePinned)){
-  wireIntent=false;wireSourcePinned=false;wireSourceId=null;wireAnchorId=null;wireHoverId=null;
-  refreshWireRoutingNodes();say('WIRE idle · click OUT to patch');return;
+  clearWireIntent();say('WIRE idle · click OUT to patch');return;
  }
  if(e.key==='Escape'&&preview)togglePreview();
  if(e.target===document.body&&(e.key==='ArrowRight'||e.key==='ArrowLeft')){
