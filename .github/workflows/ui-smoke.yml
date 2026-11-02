@@ -79,6 +79,8 @@ jobs:
         run: python tests/fader_asset_test.py
       - name: Validate recessed Button 180 + embedded Inter font contract
         run: python tests/button_asset_test.py
+      - name: Verify SVG WIRE knob mask available on all preview routes
+        run: python tests/wire_knob_asset_contract_test.py
       - name: Verify original PAN slider and CSS buttons
         run: python tests/pan_button_asset_test.py
       - name: Validate linked 11-strip geometry and LV1-style rail workspace

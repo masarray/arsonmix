@@ -56,6 +56,12 @@ jobs:
           else
             cmp AR-MIX-Live-FX-Host-Standalone-v0.3.html dist-pages/preview/mixer.html
           fi
+          # Fail publication if the reference's CSS mask file does not resolve
+          # from the generated /preview/mixer.html URL.
+          if grep -Fq 'assets/knob-ICON.svg' dist-pages/preview/mixer.html; then
+            test -s dist-pages/preview/assets/knob-ICON.svg
+            cmp site/preview-v2/assets/knob-ICON.svg dist-pages/preview/assets/knob-ICON.svg
+          fi
           python tests/button_asset_test.py
           python tests/fader_asset_test.py
           python tests/pan_button_asset_test.py

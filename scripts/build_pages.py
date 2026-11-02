@@ -49,6 +49,18 @@ html=source.read_text(encoding='utf-8')
 assert '<style>' in html and '<script>' in html and ('data-fader' in html or 'data-field="level"' in html)
 (dst/'preview').mkdir(exist_ok=True)
 (dst/'preview'/'mixer.html').write_text(html,encoding='utf-8')
+# The same WIRE knob-ICON.svg is referenced by CSS relative to mixer.html.
+# /preview-v2/ has assets/ beside index.html; the generated /preview/ must
+# receive the matching asset beside mixer.html (no rewrite or second knob).
+if 'assets/knob-ICON.svg' in html:
+    source_knob=source.parent/'assets'/'knob-ICON.svg'
+    if not source_knob.is_file():
+        raise SystemExit(f'WIRE knob mask missing beside source HTML: {source_knob}')
+    preview_knob=dst/'preview'/'assets'/'knob-ICON.svg'
+    preview_knob.parent.mkdir(parents=True,exist_ok=True)
+    shutil.copy2(source_knob,preview_knob)
+    if preview_knob.read_bytes()!=source_knob.read_bytes():
+        raise SystemExit('WIRE knob mask copy mismatch in generated Pages preview')
 (dst/'preview'/'build.json').write_text(json.dumps(metadata,indent=2),encoding='utf-8')
 (dst/'.nojekyll').touch()
 assert (dst/'index.html').exists() and (dst/'preview'/'index.html').exists()
