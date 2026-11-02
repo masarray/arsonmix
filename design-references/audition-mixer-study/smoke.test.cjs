@@ -590,7 +590,8 @@ check(strip(8).includes('value="-12" data-field="wireGain"') && gainNotice,
 node('saveScene').dispatch('click');
 wireTo(8);
 node('recallScene').dispatch('click');
-filter('all');
+// Recall restores topology but deliberately leaves SEND wire inspection inactive.
+armSource(1);filter('all');
 check(strip(8).includes('value="-12" data-field="wireGain"'),
  'Snapshot round-trip restores wire graph topology, gain, mode and stable identity');
 node('wireMaster').dispatch('click');filter('all');
