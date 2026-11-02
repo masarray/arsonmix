@@ -43,6 +43,7 @@ def main():
         assert_true(abs(well.bounding_box()['y']-well_y)<.25,
                     'Static hole must not move while button depresses')
         page.mouse.up()
+        key.click() # reset MUTE after test press; state contract starts from OFF
         selected=page.locator('#tracks .strip.selected').first
         assert_true(selected.count()==1,'No selected channel to verify')
         rim=selected.evaluate("""el=>({
