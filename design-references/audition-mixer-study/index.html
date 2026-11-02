@@ -3703,6 +3703,101 @@ html * ,html *::before,html *::after{
 @media(prefers-reduced-motion:reduce){
   .console-body .strip .switch-section .codepen-buttons-wrapper>.button{transition:none!important}
 }
+
+/* V32 / operator-first premium pass. Do not change approved CodePen MUTE/SOLO.
+   Connected dots are deliberately neutral until an explicit SEND action;
+   physical hardware remains compact while gain gestures use full pointer travel. */
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out:not(.is-source),
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in:not(.is-linked):not(.is-snap-target){
+  color:#7c8b94!important;background:#1c2b34!important;border-color:#3e535e!important;
+  box-shadow:inset 0 2px 3px #05111a,0 1px 0 #82939b20!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out:not(.is-source) .wire-pin,
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in:not(.is-linked) .wire-arrow{
+  background:#53616a!important;border-color:#647681!important;box-shadow:none!important;
+}
+.console-body.wire-routing-v15 .strip .wire-node-out:hover:not(:disabled),
+.console-body.wire-routing-v15 .strip .wire-node-in:hover:not(:disabled){
+  border-color:#a1b5bd!important;cursor:pointer;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-pot{
+  flex:0 0 24px!important;width:24px!important;min-width:24px!important;
+  height:25px!important;border-radius:50%!important;position:relative!important;
+  cursor:ns-resize!important;touch-action:none!important;user-select:none!important;
+  background:radial-gradient(circle,#091720 0 60%,#38515e 71%,#0b161d 83%)!important;
+  box-shadow:inset 0 2px 3px #000b,0 1px 0 #aec5d02b!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-pot::before{
+  content:""!important;position:absolute!important;inset:3px!important;
+  width:auto!important;height:auto!important;border-radius:50%!important;
+  background:linear-gradient(145deg,#788e98 0%,#485e69 48%,#273b46 100%)!important;
+  border:1px solid #95aab3!important;
+  box-shadow:inset 0 1px 0 #e1f2f454,inset 0 -2px 1px #0b1921,0 1px 2px #020c11!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-pot::after{
+  content:""!important;position:absolute!important;left:10px!important;top:5px!important;
+  width:3px!important;height:7px!important;border:0!important;border-radius:2px!important;
+  background:#d7edf1!important;box-shadow:0 1px 0 #031019!important;
+  transform-origin:1.5px 7.5px!important;
+  transform:rotate(var(--wire-deg,110deg))!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-pot.is-idle{
+  opacity:.55!important;cursor:default!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-pot.is-idle::before{
+  background:linear-gradient(145deg,#4b5e66,#253841)!important;border-color:#60727c!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-pot.is-idle::after{
+  background:#6c818b!important;box-shadow:none!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-gain{
+  inset:0!important;width:100%!important;height:100%!important;
+  cursor:ns-resize!important;touch-action:none!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-pot-value{
+  display:none;position:absolute;top:calc(100% + 5px);left:50%;
+  transform:translateX(-50%);white-space:nowrap;z-index:24;
+  font:600 10px/1.25 'Segoe UI',Arial,sans-serif;color:#e8f5f7;
+  padding:3px 6px;border-radius:3px;border:1px solid #7594a1;
+  background:#172e3b;box-shadow:0 2px 4px #0009;
+  pointer-events:none;
+}
+.console-body.wire-routing-v15 .strip .wire-pot:is(.is-adjusting,:hover,:focus-within) .wire-pot-value{display:block}
+/* Re-size visual metallic head only; fader target and real value range survive. */
+.console-body .strip .fader-travel{top:21px!important;bottom:21px!important}
+.console-body .strip .fader-travel .cap{
+  width:21px!important;height:43px!important;
+  background:var(--ari-silver) center/21px 43px no-repeat!important;
+  box-shadow:0 1px 0 #010508!important;filter:none!important;
+}
+.console-body .strip.master .fader-travel .cap{
+  background:var(--ari-rose) center/21px 43px no-repeat!important;
+}
+.console-body .strip .fader-box .fader{
+  top:21px!important;bottom:21px!important;height:calc(100% - 42px)!important;
+}
+.console-body .strip .gain-scale-travel{top:21px!important;bottom:21px!important}
+/* Disciplined toolbar/typography; retain original tactile button materials. */
+.command-bar{gap:6px!important;padding-inline:9px!important;border-bottom-color:#0a1921!important}
+.command-bar>.sep{
+  display:block!important;flex:0 0 1px!important;width:1px!important;
+  height:19px!important;background:#6a82903d!important;margin-inline:3px!important;
+}
+.command-bar>.toolbar-label{
+  font-size:9px!important;font-weight:600!important;letter-spacing:.07em!important;
+  color:#a5c2cd!important;
+}
+.command-bar .toolbar-select,.command-bar .density-select{
+  color:#e4eff2!important;background-color:#142832!important;
+  border-color:#557481!important;border-radius:3px!important;text-overflow:ellipsis!important;
+}
+.command-bar button.tool,.command-bar summary.tool{min-height:27px!important}
+.console-body .route-caption{color:#b1c9d2!important}
+.console-body .route-select{color:#e5f0f3!important}
+.console-body .strip .strip-identity-top,.console-body .strip .footer-label{font-variant-numeric:tabular-nums}
+@media(max-width:1360px){.command-bar>.sep{display:none!important}.command-bar{gap:4px!important;padding-inline:5px!important}}
+@media(prefers-reduced-motion:reduce){.console-body .strip .wire-pot{transition:none!important}}
+
 </style>
 </head>
 <body>
