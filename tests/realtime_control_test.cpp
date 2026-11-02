@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/RealtimeControl.h"
 #include "../engine/core/RealtimeRoutePublisher.h"
+#include "../engine/core/NativeRenderAuthority.h"
 #include <memory>
 #include <atomic>
 #ifdef NDEBUG
@@ -14,6 +15,17 @@
 #include <thread>
 using namespace armix::rt;
 int main(){
+    // Production cannot fall through to a second stereo/VST mixer. The
+    // only old stereo path is explicitly test/diagnostic and disconnected
+    // from an accepted native M4 route.
+    using Owner=armix::mixer::NativeRenderOwner;
+    using Authority=armix::mixer::NativeRenderAuthority;
+    assert(Authority::select(true,false)==Owner::failSilentUnpatched);
+    assert(Authority::select(true,true)==Owner::acceptedM4Session);
+    assert(Authority::select(false,true)==Owner::acceptedM4Session);
+    assert(Authority::select(false,false)==Owner::isolatedDiagnostic);
+    assert(!Authority::mayRunDiagnostic(
+        Authority::select(false,true)));
     SpscQueue<int,8> q;
     int value=-1;
     assert(!q.tryPop(value));

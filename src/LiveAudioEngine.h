@@ -12,6 +12,7 @@
 #include "../engine/device/JuceIndependentClockDevice.h"
 #include "../engine/device/LiveSecondaryOutputDevice.h"
 #include "../engine/core/LiveOutputRouteGate.h"
+#include "../engine/core/NativeRenderAuthority.h"
 #include "../engine/device/AsioPriorityDeviceManager.h"
 #include "../engine/device/AsioRegistryIdentityProbe.h"
 #include "../engine/device/DirectRouteFence.h"
@@ -1751,6 +1752,13 @@ private:
                                                std::memory_order_relaxed);
             return;
         }
+        // ONE explicit owner for the whole device callback. The GUI cannot
+        // select an experimental ChannelId renderer or revive stereo CH1.
+        // Cutover to universal will replace this authority transaction only
+        // after the full VST3/Show/epoch proof, never add a parallel callback.
+        const auto renderOwner=armix::mixer::NativeRenderAuthority::select(
+            activeDiagnosticRoute==armix::diagnostics::Route::normal,
+            dryRoutingLab_.active());
         const auto cycle = handoff_.beginCycle();
         // R0B B3: production NORMAL audio has a single native routing owner.
         // Until a device-epoch-validated 10CH/4AUX route is published, output
@@ -1761,8 +1769,8 @@ private:
         // Keep the existing FX graph handoff progressing even when unpatched:
         // a staged ADD/REMOVE must ACK and retire on the callback thread.
         // Only atomic reads and deterministic output writes; no RT heap or I/O.
-        if (activeDiagnosticRoute == armix::diagnostics::Route::normal
-            && !dryRoutingLab_.active())
+        if (renderOwner ==
+            armix::mixer::NativeRenderOwner::failSilentUnpatched)
         {
             // P0: SILENT output must not mean blind capture diagnostics.
             // A verified ASIO/WASAPI callback can carry PCM before any
@@ -1817,7 +1825,8 @@ private:
         // action, with an immutable preallocated P1D graph. Its own zero-VST
         // callback path NEVER falls through to CH1 on stale/hotplug routes.
         // DirectFence was already checked above; no output to unknown device.
-        if (dryRoutingLab_.active())
+        if (renderOwner ==
+            armix::mixer::NativeRenderOwner::acceptedM4Session)
         {
             const auto outputGate=armix::mixer::LiveOutputRouteGate::evaluate(
                 dryRoutingLab_.active(),
@@ -1938,13 +1947,16 @@ private:
                         juce::FloatVectorOperations::clear(outputs[channel],samples);
             return;
         }
+        // The only remaining stereo renderer is DIAGNOSTIC. It may emit
+        // a bounded test tone or test capture but never host channel VST3
+        // or become a fallback production mixer.
+        jassert(armix::mixer::NativeRenderAuthority::mayRunDiagnostic(
+            renderOwner));
         const bool enabled = monitor_.load (std::memory_order_relaxed)
                           && !routeReconfiguring_.load (std::memory_order_acquire);
         const auto route = diagnosticRoute_.load (std::memory_order_relaxed);
         const bool toneTest = route == armix::diagnostics::Route::outputOnlyTone;
         const bool captureTest = route == armix::diagnostics::Route::captureOnly;
-        const bool dry = dryTest_.load (std::memory_order_relaxed)
-                      || route != armix::diagnostics::Route::normal;
         if (toneTest && outputChannels > 0)
             testOutputFrames_.fetch_add (static_cast<std::uint64_t> (samples), std::memory_order_relaxed);
         if (captureTest && inputChannels > 0)
@@ -1974,10 +1986,8 @@ private:
         {
             const int frames = juce::jmin (maxFrames, samples - offset);
             // Preallocated backing store: no resizing/capacity bookkeeping in RT.
-            // Two-channel AudioBuffer view refers to scratch_ without ownership.
-            // JUCE uses its inline channel pointer storage for two channels.
-            juce::AudioBuffer<float> scratchView (
-                scratch_.getArrayOfWritePointers(), 2, frames);
+            // Test-only stereo buffers are preallocated. There is no VST
+            // buffer view or plugin dispatch in the diagnostic-only path.
             if (toneTest)
             {
                 auto* left = scratch_.getWritePointer (0);
@@ -2001,55 +2011,9 @@ private:
                 for (int i = 0; i < frames; ++i)
                     if (!toneTest) inPeak = juce::jmax (inPeak, std::abs (dst[i]));
             }
-            // MIDI capacity is empty unless the plugin itself changes it.
-            juce::MidiBuffer midi;
-            if (!dry)
-            {
-                // One atomic order snapshot per block: stable physical FX and bypass identity.
-                const auto order = cycle.graph->orderPacked.load (std::memory_order_acquire);
-                for (int fx = 0; fx < cycle.graph->count; ++fx)
-                {
-                    const int physical = Graph::physicalAt (order, fx);
-                    auto& slot = cycle.graph->slots[physical];
-                    if (!slot.processor) {midi.clear();continue;}
-                    auto& bypass=cycle.graph->bypassEnvelope[physical];
-                    bypass.request(cycle.graph->bypassFlags[physical].load(std::memory_order_acquire));
-                    // Steady wet/dry requires no copy or extra arithmetic.
-                    // A transition temporarily snapshots the exact input to
-                    // this insert; a second full FX graph is never created.
-                    const bool blend=bypass.transitioning();
-                    if (blend)
-                        for(int ch=0;ch<2;++ch)
-                            juce::FloatVectorOperations::copy(
-                                dryScratch_.getWritePointer(ch),
-                                scratch_.getReadPointer(ch),frames);
-                    if (bypass.shouldProcessWet())
-                    {
-                        const auto pluginBeginUs = clockMicros();
-                        slot.processor->processBlock (scratchView, midi);
-                        const auto pluginUs = clockMicros() - pluginBeginUs;
-                        lastPluginUsBySlot_[physical].store (pluginUs, std::memory_order_relaxed);
-                        publishMax (worstPluginUsBySlot_[physical], pluginUs);
-                        publishMax (worstPluginUs_, pluginUs);
-                        if (static_cast<double> (pluginUs) > periodUs * 0.75)
-                            slowPlugins_.fetch_add (1, std::memory_order_relaxed);
-                    }
-                    if (blend)
-                    {
-                        float* wetL=scratch_.getWritePointer(0);
-                        float* wetR=scratch_.getWritePointer(1);
-                        const float* dryL=dryScratch_.getReadPointer(0);
-                        const float* dryR=dryScratch_.getReadPointer(1);
-                        for(int i=0;i<frames;++i)
-                        {
-                            const auto g=bypass.next();
-                            wetL[i]=g.wet*wetL[i]+g.dry*dryL[i];
-                            wetR[i]=g.wet*wetR[i]+g.dry*dryR[i];
-                        }
-                    }
-                    midi.clear();
-                }
-            }
+            // This is a 0-FX diagnostic route. The old stereo VST dispatch
+            // was unreachable after explicit M4 routing became mandatory;
+            // do not resurrect it as a second engine.
             for (int ch = 0; ch < 2; ++ch)
             {
                 const float* processed = scratch_.getReadPointer (ch);

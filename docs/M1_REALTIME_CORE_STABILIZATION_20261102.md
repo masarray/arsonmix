@@ -19,3 +19,6 @@ Windows run `41479462759` compiled successfully but 52/54 CTests passed. The rem
 2. The graph-retirement test needed to count the rejected candidate's destructor too: 3 original accepted + 1 rejected + 1 newly accepted = **5 distinct prepared instances**. The lifetime test checks that saturation safely rejects and reader-owned graphs are not reclaimed early.
 
 This patch also authorizes **one** exact-branch `M1-EXPERIMENTAL` GitHub Actions artifact **only after** all CTests and package/provenance validation pass. This does not enable universal routing/CH11, promote stable release, or change hardware patch/ARM policy. The packaged FAT guide now includes explicit pass/fail cases for wired 0FX ASIO, AUX/monitor, state recall and hotplug. No parallel CI matrix or redundant always-on worker.
+
+## 2026-11-03 single production authority cleanup
+Real-time callback now routes through the explicit `NativeRenderAuthority` decision. The no-longer-reachable legacy stereo FX processing code has been removed from the diagnostic-only path; this does not change accepted 10CH/4AUX production routing. `PreparedNativeMixerSession.h` remains tested but is no longer listed in the shipping GUI application target. See `docs/ENGINE_RUNTIME_AUTHORITY_20261103.md` for the decommission map and strict migration gates.
