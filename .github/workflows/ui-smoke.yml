@@ -89,6 +89,8 @@ jobs:
         run: python tests/pages_inter_utility_v7_smoke.py
       - name: Verify owned V6 mixer hardware keys and WIRE regression
         run: python tests/pages_controls_v6_smoke.py
+      - name: Verify byte-exact MUTE reference artwork and active/inactive interaction
+        run: python tests/pages_mute_pixel_reference_smoke.py
       - name: Run mixer UI smoke tests
         run: python tests/ui_smoke.py
       - name: Verify Preview V2 V7 physical visual geometry and modeless mixer workflow

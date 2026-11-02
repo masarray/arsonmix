@@ -135,3 +135,34 @@
   .app .console-body .strip .mx-hw-row>button.mx-hw-key,
   .app .console-body .strip .mx-hw-row>button.mx-hw-key>.mx-hw-face{transition:none}
 }
+
+
+/* Pixel-faithful MUTE material — source: owner-supplied 56×37 PNG pair.
+   The art itself contains the two bevels, top glint, side shadow, legend,
+   OFF red underbar and ON white underbar. Never approximate with gradients.
+   Source aspect ratio 56:37 maps to a ~28×18.5 CSS px face inside the
+   existing 29px hit area: no stretched legend, no strip geometry changes.
+   SOLO/PFL retain the V6 SVG owner. The original data-action and
+   aria-pressed are still the ONLY functional/state contracts. */
+.app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="mute"]{
+  background-color:transparent;
+  background-image:url("M-MUTE-OFF.png");
+  background-position:center center;
+  background-repeat:no-repeat;
+  background-size:100% auto;
+  border:0;
+  border-radius:0;
+  padding:0;
+  box-shadow:none;
+}
+.app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="mute"][aria-pressed="true"]{
+  background-image:url("M-MUTE-ON.png");
+}
+/* Do not overlay the pixel-perfect reference with the previous SVG cap/lamp
+   or synthetic red glow: all shine and shadow pixels are in the PNG. */
+.app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="mute"]>.mx-hw-face{
+  visibility:hidden;
+}
+.app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="mute"]::before{
+  display:none;
+}
