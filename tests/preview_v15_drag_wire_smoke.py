@@ -132,6 +132,43 @@ def main():
         page.mouse.up()
         key.click() # undo MUTE so routing tests see same fixture
         page.screenshot(path=str(ROOT/'preview-v18-hardware-1680.png'))
+        # V25 quick VST picker must dismiss on external click, focus or window blur.
+        quick_open=page.locator('#fastPicker')
+        fx_pick=page.locator('#tracks .strip[data-id="1"] .fx-pick').first
+        fx_pick.click()
+        assert_true(quick_open.is_visible(),'Fast VST picker should open from FX rack')
+        page.locator('#tracks .strip[data-id="2"] .strip-identity-top').click()
+        assert_true(quick_open.is_hidden(),'Click outside VST picker must close it')
+        fx_pick.click()
+        assert_true(quick_open.is_visible(),'Quick picker failed to reopen')
+        page.locator('#bankSelect').focus()
+        assert_true(quick_open.is_hidden(),'Changing keyboard focus must close VST picker')
+        fx_pick.click()
+        assert_true(quick_open.is_visible(),'Picker failed third opening')
+        page.evaluate("window.dispatchEvent(new Event('blur'))")
+        assert_true(quick_open.is_hidden(),'Window blur must dismiss quick VST picker')
+        # Manager remains nonmodal inside, and dismisses when click leaves it.
+        page.locator('#pluginsButton').click()
+        assert_true(page.locator('#pluginBrowser').is_visible(),
+                    'Plugin manager button did not open')
+        page.locator('#pluginSearch').fill('reverb')
+        assert_true(page.locator('#pluginBrowser').is_visible(),
+                    'Focus inside manager must not dismiss it')
+        page.locator('.mixer-title .panel-name').click()
+        assert_true(page.locator('#pluginBrowser').is_hidden(),
+                    'External click should close plugin manager')
+        # Material icon uses SVG path, no text-glyph substitution.
+        svg=page.locator('#tracks .strip[data-id="1"] .fx-section .mini.power .mi-svg').first
+        assert_true(svg.count()==1 and svg.locator('path').count()==1,
+                    'FX power must be offline Material SVG, not ⏻ font glyph')
+        assert_true(page.locator('.mixer-title .panel-sub svg.mi-svg').count()==1,
+                    'Mixer panel icon must be SVG not fallback text symbol')
+        selected=page.locator('#tracks .strip.selected').first
+        thin=selected.evaluate("el=>getComputedStyle(el,'::after').borderTopWidth")
+        assert_true(thin=='1px','V25 selected channel border must be exactly 1px')
+        body=page.locator('.console-body')
+        assert_true(body.evaluate("el=>getComputedStyle(el).getPropertyValue('--v13-fader-h').includes('clamp')"),
+                    'Adaptive fader sizing contract must exist')
         # V16 owner P0 intentionally folds WIRE to a 23px disclosure by default.
         # Expand the WIRE workspace explicitly before patching.
         page.locator('.section-rail [data-section="send"]').click()
