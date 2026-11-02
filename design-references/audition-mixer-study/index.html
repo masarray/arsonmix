@@ -4645,6 +4645,209 @@ function setWireSnapTarget(id){
 /* V26 Focus Signal Flow — one read-only display graph for both directions.
    Keep legacy Send, Split and Bus primary paths visible without changing the
    underlying audio topology or introducing duplicate wire edges. */
+
+/* V34 Smart WIRE Navigator / Matrix.
+   View-only channel/bank discovery and existing route admission are separate.
+   No new route graph or global SVG animation loop is created. */
+let wireWsOpen=false,wireWsMode='find',wireWsQuery='',wireWsBusId=null,
+ wireWsInspect=null,wireWsRemoveConfirm=null;
+function wireWsId(id){return 'CH'+String(id).padStart(2,'0');}
+function wireWsLabel(id){
+ const t=tracks.find(x=>x.id===id);return t?wireWsId(id)+' · '+t.name:wireWsId(id);
+}
+function wireWsBank(id){
+ const filter=document.getElementById('viewFilter')?.value||'all';
+ const shown=tracks.filter(t=>filter==='all'||(filter==='solo'?t.solo:t.kind===filter));
+ const index=shown.findIndex(t=>t.id===id);
+ return index<0?'Hidden by filter':'Bank '+(Math.floor(index/Math.max(1,bankCapacity()))+1);
+}
+function wireWsRoutes(){return wireDisplayRoutes();}
+function wireWsFindEdge(src,dst){return wireEdges.find(e=>e.enabled&&e.sourceId===src&&e.destId===dst);}
+function wireWsRouteKind(src,dst,routes){
+ const edge=wireWsFindEdge(src,dst);
+ if(edge)return {kind:'wire',edge};
+ const linked=routes.find(e=>e.sourceId===src&&e.destId===dst);
+ return linked?{kind:linked.kind,edge:null}:null;
+}
+function wireWsMatches(t){
+ const q=wireWsQuery.trim().toLowerCase();
+ return !q||('ch'+String(t.id).padStart(2,'0')+' '+t.id+' '+t.name+' '+t.kind).toLowerCase().includes(q);
+}
+function wireWsCanJoin(src,dst){
+ const a=wireSourceTrack(src),b=wireSourceTrack(dst);
+ return !!(a&&b&&a.id!==b.id&&!wireIsCycle(src,dst));
+}
+function wireWsChooseMode(mode){
+ wireWsMode=['find','routes','bus','matrix'].includes(mode)?mode:'find';
+ wireWsInspect=null;wireWsRemoveConfirm=null;
+ const panel=document.getElementById('wireWorkspace');
+ if(panel)panel.classList.toggle('is-matrix',wireWsMode==='matrix');
+ renderWireWorkspace();
+}
+function wireWsToggle(mode){
+ const panel=document.getElementById('wireWorkspace');
+ if(!panel)return;
+ if(wireWsOpen&&wireWsMode===mode){wireWsOpen=false;panel.hidden=true;}
+ else {wireWsOpen=true;panel.hidden=false;wireWsChooseMode(mode);}
+ for(const id of ['wireNavigatorToggle','wireMatrixToggle']){
+  const el=document.getElementById(id);if(el)
+   el.setAttribute('aria-expanded',String(wireWsOpen&&
+     (id==='wireMatrixToggle'?wireWsMode==='matrix':wireWsMode!=='matrix')));
+ }
+ if(wireWsOpen&&wireWsMode==='find')document.getElementById('wireWsSearch')?.focus?.();
+}
+function wireWsJump(id){
+ const target=wireSourceTrack(id);if(!target)return;
+ const filter=document.getElementById('viewFilter');
+ let list=tracks.filter(t=>filter.value==='all'||(filter.value==='solo'?t.solo:t.kind===filter.value));
+ if(!list.some(t=>t.id===id)){filter.value='all';list=tracks;}
+ const idx=list.findIndex(t=>t.id===id);
+ render(Math.floor(Math.max(0,idx)/Math.max(1,bankCapacity())));
+ say('WIRE NAVIGATOR · showing '+wireWsLabel(id)+' · patch source unchanged');
+}
+function wireWsListRow(t,source,routes,mode){
+ const connected=source?wireWsRouteKind(source.id,t.id,routes):null;
+ const href=source?source.id+':'+t.id:null;
+ const possible=source&&t.id!==source.id&&wireWsCanJoin(source.id,t.id);
+ const linked=!!connected;
+ const action=linked?
+  '<button type="button" data-ws-inspect="'+href+'" aria-label="Inspect '+escapeHtml(t.name)+' route">Inspect</button>':
+  possible?'<button type="button" data-ws-join="'+href+'" aria-label="Connect to '+escapeHtml(t.name)+'">Connect</button>':
+  '<button type="button" disabled title="Select a source OUT; self-routes and feedback cycles are prohibited">Unavailable</button>';
+ return '<div class="wire-ws-row" data-ws-channel="'+t.id+'">'+
+  '<span class="wire-ws-ident"><i class="wire-ws-dot" style="--ws-hue:'+escapeHtml(t.color)+'"></i>'+
+   '<span>'+wireWsId(t.id)+' · '+escapeHtml(t.name)+'</span></span>'+
+  '<small>'+escapeHtml(wireWsBank(t.id))+'</small>'+
+  (linked?'<small class="wire-ws-status">'+(connected.kind==='wire'?'● WIRE':'● '+escapeHtml(connected.kind.toUpperCase()))+'</small>':'')+
+  action+'<button type="button" data-ws-jump="'+t.id+'" title="Show destination in its mixer bank" aria-label="Jump to '+escapeHtml(t.name)+'">↗</button></div>';
+}
+function wireWsRouteRow(route,direction){
+ const src=tracks.find(t=>t.id===route.sourceId),dst=tracks.find(t=>t.id===route.destId);
+ if(!src||!dst)return '';
+ const other=direction==='out'?dst:src;
+ const info=wireWsRouteKind(src.id,dst.id,wireWsRoutes());
+ return '<div class="wire-ws-row" data-ws-route="'+src.id+':'+dst.id+'">'+
+  '<span class="wire-ws-ident"><i class="wire-ws-dot" style="--ws-hue:'+escapeHtml(src.color)+'"></i><span>'+
+  (direction==='out'?'→ ':'← ')+escapeHtml(wireWsLabel(other.id))+'</span></span>'+
+  '<small>'+escapeHtml(wireWsBank(other.id))+'</small><small>'+
+  escapeHtml(info?.kind||route.kind)+'</small>'+
+  '<button type="button" data-ws-inspect="'+src.id+':'+dst.id+'">Inspect</button>'+
+  '<button type="button" data-ws-jump="'+other.id+'">↗</button></div>';
+}
+function wireWsMatrixMarkup(source,routes){
+ const all=tracks.filter(t=>t.kind!=='master');
+ const targets=all.filter(wireWsMatches);
+ // Matrix is deliberately capped; the search exposes all stable IDs without
+ // creating a huge DOM for 100+ strips or slowing audio UI interactions.
+ const rows=(source?[source,...all.filter(t=>t.id!==source.id)]:all).slice(0,16);
+ const columns=targets.slice(0,22);
+ if(!columns.length)return '<div class="wire-ws-empty">No matching channel. Search CH number or track name.</div>';
+ const cols=columns.map(t=>'<th scope="col" title="'+escapeHtml(wireWsLabel(t.id))+'">'+wireWsId(t.id)+'</th>').join('');
+ const matrix=rows.map(src=>{
+  const cells=columns.map(dst=>{
+   const key=src.id+':'+dst.id,info=wireWsRouteKind(src.id,dst.id,routes),self=src.id===dst.id,
+    permitted=!self&&wireWsCanJoin(src.id,dst.id),cls=info?(info.edge?'is-linked':'is-legacy'):'',
+    action=info?'data-ws-inspect':'data-ws-join',
+    symbol=info?(info.edge?'●':'◆'):(permitted?'+':'–');
+   return '<td><button type="button" class="'+cls+'" '+(self||(!info&&!permitted)?'disabled':'')+
+    ' '+action+'="'+key+'" title="'+escapeHtml(wireWsLabel(src.id)+' → '+wireWsLabel(dst.id)+
+      (info?' · '+info.kind:' · connect'))+'" aria-label="'+escapeHtml(
+     (info?'Inspect ':'Connect ')+wireWsLabel(src.id)+' to '+wireWsLabel(dst.id))+'">'+symbol+'</button></td>';
+  }).join('');
+  return '<tr><td title="'+escapeHtml(src.name)+'">'+wireWsId(src.id)+' · '+escapeHtml(src.name)+'</td>'+cells+'</tr>';
+ }).join('');
+ return '<div class="wire-ws-matrix-scroll"><table class="wire-ws-matrix"><thead><tr><th scope="col">FROM ↓ / TO →</th>'+cols+
+  '</tr></thead><tbody>'+matrix+'</tbody></table></div>'+
+  (all.length>16||targets.length>22?'<div class="wire-ws-foot">Showing up to 16 source rows × 22 destinations. Search for other targets, or set FROM to pin a source.</div>':'');
+}
+function renderWireWsInspector(){
+ if(!wireWsOpen)return;
+ const panel=document.getElementById('wireWsInspector');
+ if(!panel)return;
+ const p=wireWsInspect,info=p&&wireWsRouteKind(p.src,p.dst,wireWsRoutes());
+ if(!info){panel.hidden=true;return;}
+ panel.hidden=false;
+ const src=tracks.find(t=>t.id===p.src),dst=tracks.find(t=>t.id===p.dst);
+ if(!src||!dst){panel.hidden=true;return;}
+ const edge=info.edge,key=p.src+':'+p.dst;
+ const controls=edge?
+  '<div class="wire-ws-controls"><label for="wireWsGain">GAIN</label>'+
+  '<input type="range" id="wireWsGain" data-ws-gain="'+edge.id+'" min="-60" max="6" step="1" value="'+edge.levelDb+'">'+
+  '<span id="wireWsGainText">'+edge.levelDb+' dB</span>'+
+  '<label for="wireWsTap">TAP</label>'+
+  '<select id="wireWsTap" data-ws-tap="'+edge.id+'" '+(edge.kind==='primary'?'disabled':'')+'>'+
+  '<option value="send" '+(edge.mode==='send'?'selected':'')+'>Follow Fader</option>'+
+  '<option value="split" '+(edge.mode==='split'?'selected':'')+'>Pre FX</option></select>'+
+  '<button type="button" data-ws-remove="'+key+'">'+(wireWsRemoveConfirm===key?'Confirm remove':'Disconnect')+'</button></div>':
+  '<div class="wire-ws-controls"><span>Managed by existing '+escapeHtml(info.kind.toUpperCase())+' routing. No duplicate WIRE edge.</span></div>';
+ panel.innerHTML='<strong>'+escapeHtml(wireWsLabel(p.src))+' → '+escapeHtml(wireWsLabel(p.dst))+'</strong>'+
+  '<span>'+escapeHtml(info.kind.toUpperCase())+'</span>'+controls+
+  '<div class="wire-ws-controls"><button type="button" data-ws-jump="'+p.src+'">Show source ↗</button>'+
+  '<button type="button" data-ws-jump="'+p.dst+'">Show destination ↗</button></div>';
+}
+function renderWireWorkspace(){
+ if(!wireWsOpen)return;
+ const panel=document.getElementById('wireWorkspace');
+ if(!panel||panel.hidden)return;
+ panel.classList.toggle('is-matrix',wireWsMode==='matrix');
+ const source=armedWireSource(),routes=wireWsRoutes();
+ document.getElementById('wireWsSource').textContent=source?wireWsLabel(source.id)+' OUT':'Choose source OUT';
+ for(const tab of panel.querySelectorAll('[data-ws-mode]'))
+  tab.setAttribute('aria-selected',String(tab.dataset.wsMode===wireWsMode));
+ const sel=document.getElementById('wireWsSourceSelect'),selected=source?.id||0;
+ const options='<option value="">Select OUT…</option>'+tracks.map(t=>
+  '<option value="'+t.id+'">'+escapeHtml(wireWsLabel(t.id))+'</option>').join('');
+ if(sel.innerHTML!==options)sel.innerHTML=options;
+ sel.value=String(selected||'');
+ const busSel=document.getElementById('wireWsBus'),buses=tracks.filter(t=>t.kind==='bus');
+ busSel.hidden=wireWsMode!=='bus';
+ const busOpt=buses.map(t=>'<option value="'+t.id+'">'+escapeHtml(wireWsLabel(t.id))+'</option>').join('');
+ if(busSel.innerHTML!==busOpt)busSel.innerHTML=busOpt;
+ if(!buses.some(t=>t.id===wireWsBusId))wireWsBusId=buses[0]?.id||null;
+ busSel.value=String(wireWsBusId||'');
+ const list=document.getElementById('wireWsList');
+ const foot=document.getElementById('wireWsFoot');
+ if(wireWsMode==='find'){
+  const matches=tracks.filter(t=>t.kind!=='master'&&t.id!==source?.id&&wireWsMatches(t));
+  list.innerHTML=matches.slice(0,75).map(t=>wireWsListRow(t,source,routes,'find')).join('')||
+   '<div class="wire-ws-empty">No destination matches your search.</div>';
+  foot.textContent=(source?'SOURCE '+wireWsId(source.id)+' retained · ':'Select an OUT source · ')+
+    matches.length+' matching destinations, across all banks';
+ }else if(wireWsMode==='routes'){
+  const inbound=source?routes.filter(e=>e.destId===source.id):[];
+  const outbound=source?routes.filter(e=>e.sourceId===source.id):[];
+  list.innerHTML=source?
+   '<div class="wire-ws-subtitle">OUTGOING · '+outbound.length+'</div>'+
+   (outbound.map(e=>wireWsRouteRow(e,'out')).join('')||'<div class="wire-ws-row">No outgoing routes</div>')+
+   '<div class="wire-ws-subtitle">INCOMING · '+inbound.length+'</div>'+
+   (inbound.map(e=>wireWsRouteRow(e,'in')).join('')||'<div class="wire-ws-row">No incoming routes</div>'):
+   '<div class="wire-ws-empty">Select source OUT above to see all incoming and outgoing routes.</div>';
+  foot.textContent='Jump ↗ preserves source selection · only real WIRE edges are editable';
+ }else if(wireWsMode==='bus'){
+  const bus=tracks.find(t=>t.id===wireWsBusId&&t.kind==='bus');
+  const sources=tracks.filter(t=>t.id!==bus?.id&&t.kind!=='master'&&wireWsMatches(t));
+  list.innerHTML=bus?sources.slice(0,75).map(t=>wireWsListRow(bus,t,routes,'bus')).join(''):
+   '<div class="wire-ws-empty">Add a Bus first, then choose its send sources.</div>';
+  // Destination-first rows need a dedicated model-aware control, not a reversed wire.
+  if(bus)list.innerHTML=sources.slice(0,75).map(t=>{
+    const info=wireWsRouteKind(t.id,bus.id,routes),can=wireWsCanJoin(t.id,bus.id);
+    return '<div class="wire-ws-row"><span class="wire-ws-ident"><i class="wire-ws-dot" style="--ws-hue:'+
+     escapeHtml(t.color)+'"></i><span>'+escapeHtml(wireWsLabel(t.id))+'</span></span>'+
+     '<small>'+escapeHtml(wireWsBank(t.id))+'</small>'+
+     (info?'<small class="wire-ws-status">● '+escapeHtml(info.kind.toUpperCase())+'</small>':'')+
+     (info?'<button type="button" data-ws-inspect="'+t.id+':'+bus.id+'">Inspect</button>':
+      '<button type="button" '+(can?'data-ws-join="'+t.id+':'+bus.id+'"':'disabled')+'>Send →</button>')+
+     '<button type="button" data-ws-jump="'+t.id+'">↗</button></div>';
+   }).join('')||'<div class="wire-ws-empty">No source matches.</div>';
+  foot.textContent='MIX TO '+(bus?wireWsLabel(bus.id):'Bus')+
+   ' · choose sources across banks · Bus decision remains explicit';
+ }else{
+  list.innerHTML=wireWsMatrixMarkup(source,routes);
+  foot.textContent='Crosspoint ● WIRE / ◆ existing legacy · routes are never bank-specific';
+ }
+ renderWireWsInspector();
+}
+
 function wireDisplayRoutes(){
  const routes=[],seen=new Set(),byName=new Map(tracks.map(t=>[t.name,t]));
  const add=(sourceId,destId,kind)=>{
