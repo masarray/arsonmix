@@ -287,7 +287,13 @@ def main():
                     "--out", str(ROOT / "_preview-public-qa"), "--sha", "qa"],
                    check=True)
     assert PAGE.exists() and PUBLIC.exists(), (PAGE, PUBLIC)
-    assert PUBLIC.read_bytes()==PAGE.read_bytes(), "Public /preview/mixer.html must be the PR278 reference, not old M4"
+    # Both routes keep the PR278 design source; only CSS/JS asset revision
+    # queries differ between checked-in source and fingerprinted deployment.
+    import re
+    asset_revision=re.compile(r'(assets/[A-Za-z0-9._-]+\\.(?:css|js))\\?(?:v|rev)=[A-Za-z0-9_-]+')
+    canonical=lambda text:asset_revision.sub(r'\\1',text)
+    assert canonical(PUBLIC.read_text(encoding="utf-8"))==canonical(PAGE.read_text(encoding="utf-8")), (
+        "Public /preview/mixer.html must be the PR278 reference apart from asset fingerprints")
     count = 0
     with sync_playwright() as playwright:
         browser=playwright.chromium.launch(headless=True)
