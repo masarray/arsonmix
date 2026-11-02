@@ -3874,6 +3874,8 @@ html * ,html *::before,html *::after{
 .wire-ws-matrix button:disabled{opacity:.2;cursor:default}
 .wire-ws-matrix button:hover:not(:disabled){border-color:#b0dce9;background:#355463}
 .wire-ws-empty{padding:20px 12px;text-align:center;color:#9fb8c2}
+.wire-ws-foot button{border:1px solid #496979;background:#243d4b;color:#d4e8ee;border-radius:3px;padding:2px 7px;white-space:nowrap;cursor:pointer}
+.wire-ws-foot button:disabled{opacity:.35;cursor:default}
 @media(max-width:1000px){.mixer-title .wire-v34-tool{min-width:30px;padding:0 3px!important}.wire-workspace{right:3px}}
 
 </style>
@@ -3980,7 +3982,7 @@ html * ,html *::before,html *::after{
       </div>
       <div id="wireWsList" class="wire-ws-list" role="region" aria-label="WIRE channels and routes"></div>
       <div id="wireWsInspector" class="wire-ws-inspector" aria-label="Route Inspector" hidden></div>
-      <div class="wire-ws-foot"><span id="wireWsFoot">Local wires · remote channel portals · no simulated off-screen cable</span><span>GUI reference · no PCM</span></div>
+      <div class="wire-ws-foot"><span id="wireWsFoot">Local wires · remote channel portals · no simulated off-screen cable</span><button id="wireWsUndo" type="button" disabled title="Undo the most recent WIRE routing change, without resetting mixer settings">↶ Undo route</button><span>GUI reference · no PCM</span></div>
     </section>
     <div id="routeChoice" class="route-choice" role="dialog" aria-label="Choose how to route audio to Bus" hidden>
       <div class="route-choice-head"><span id="routeChoiceTitle">ROUTE TO BUS</span><button id="routeChoiceClose" type="button" aria-label="Cancel route decision">×</button></div>
@@ -4030,7 +4032,7 @@ const make=(name,kind,color)=>{
  const id=nextId++;
  return {id,name,kind,color,icon:kind==='master'?'◎':kind==='bus'?'⊞':kind==='fx'?'◉':'♩',group:null,safe:false,format:'stereo',input:'None',output:kind==='master'?'Default Output':'Master',fx:Array(8).fill('None'),slotBypass:Array(8).fill(false),fxOn:true,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,activeSend:0,sendSlots:Array.from({length:16},()=>({send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0})),eq:true,pan:0,trim:0,mute:false,solo:false,cue:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
 };
-function init(){wireWsOpen=false;wireWsInspect=null;wireWsRemoveConfirm=null;const ws=document.getElementById('wireWorkspace');if(ws)ws.hidden=true;nextId=1;nextGroup=1;wireSourceId=1;wireEdges=[];nextWireId=1;wireMode='send';wireView='focus';wireSourcePinned=false;wireIntent=false;document.getElementById('wireView').value='focus';wireAnchorId=null;wireHoverId=null;wireGesture=null;wireSuppressClick=false;pendingBusRoute=null;const choice=document.getElementById('routeChoice');if(choice)choice.hidden=true;document.getElementById('wireMode').value='send';tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
+function init(){wireWsOpen=false;wireWsInspect=null;wireWsRemoveConfirm=null;wireWsHistory=[];wireWsPendingBefore=null;wireWsEditBefore=null;const ws=document.getElementById('wireWorkspace');if(ws)ws.hidden=true;nextId=1;nextGroup=1;wireSourceId=1;wireEdges=[];nextWireId=1;wireMode='send';wireView='focus';wireSourcePinned=false;wireIntent=false;document.getElementById('wireView').value='focus';wireAnchorId=null;wireHoverId=null;wireGesture=null;wireSuppressClick=false;pendingBusRoute=null;const choice=document.getElementById('routeChoice');if(choice)choice.hidden=true;document.getElementById('wireMode').value='send';tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 /* Google Material Icons SVG paths, Apache-2.0. Inline/zero font or network requests. */
 const MATERIAL_PATH=Object.freeze({
@@ -4134,7 +4136,7 @@ function selectWireSource(t){
  render();say('SOURCE '+t.name+' · drag solid OUT → hollow IN, or click an IN jack · GUI DEMO');
  return true;
 }
-function closeRouteChoice(){pendingBusRoute=null;const p=document.getElementById('routeChoice');if(p)p.hidden=true;}
+function closeRouteChoice(){pendingBusRoute=null;wireWsPendingBefore=null;const p=document.getElementById('routeChoice');if(p)p.hidden=true;}
 function showRouteChoice(source,dest,anchor){
  if(!source||!dest||dest.kind!=='bus')return false;
  if(hasLegacySendTo(source,dest)){say('BUS ROUTE BLOCKED: hidden legacy SEND to '+dest.name+' · migrate legacy path first');return false;}
@@ -4153,6 +4155,7 @@ function showRouteChoice(source,dest,anchor){
  return true;
 }
 function commitRouteChoice(kind){
+ const wireWsBefore=wireWsPendingBefore;wireWsPendingBefore=null;
  const p=pendingBusRoute;if(!p)return false;
  const source=wireSourceTrack(p.sourceId),dest=tracks.find(t=>t.id===p.destId&&t.kind==='bus');
  if(!source||!dest||wireIsCycle(source.id,dest.id)||hasLegacySendTo(source,dest)){
@@ -4169,7 +4172,7 @@ function commitRouteChoice(kind){
   if(old?.kind==='primary'&&source.output===dest.name)source.output='Master';
   wireEdges.push({id:nextWireId++,sourceId:source.id,destId:dest.id,kind:'send',mode:'send',levelDb:0,enabled:true});
  }else return false;
- closeRouteChoice();render();kickWireSpring(source.id,dest.id);
+ closeRouteChoice();render();kickWireSpring(source.id,dest.id);wireWsRecord(wireWsBefore);
  say(source.name+' → '+dest.name+' · '+(kind==='only'?'VIA BUS ONLY · no direct MAIN':'PARALLEL SEND · original primary output preserved')+' · GUI DEMO ONLY');
  return true;
 }
@@ -4650,7 +4653,39 @@ function setWireSnapTarget(id){
    View-only channel/bank discovery and existing route admission are separate.
    No new route graph or global SVG animation loop is created. */
 let wireWsOpen=false,wireWsMode='find',wireWsQuery='',wireWsBusId=null,
- wireWsInspect=null,wireWsRemoveConfirm=null;
+ wireWsInspect=null,wireWsRemoveConfirm=null,wireWsHistory=[],wireWsPendingBefore=null,wireWsEditBefore=null;
+
+/* Scoped WIRE-only undo. Never rewinds fader, FX, mute, mixer bank or meters.
+   Refuse stale replay after another graph/scene mutation. */
+function wireWsSnapshot(){
+ return {edges:clone(wireEdges),nextId:nextWireId,
+  outputs:tracks.map(t=>[t.id,t.output]),trackIds:tracks.map(t=>t.id)};
+}
+function wireWsSignature(state){return JSON.stringify(state);}
+function wireWsRecord(before){
+ if(!before)return;
+ const after=wireWsSnapshot();
+ if(wireWsSignature(before)===wireWsSignature(after))return;
+ wireWsHistory.push({before,afterSig:wireWsSignature(after)});
+ if(wireWsHistory.length>10)wireWsHistory.shift();
+ const btn=document.getElementById('wireWsUndo');if(btn)btn.disabled=false;
+}
+function wireWsUndo(){
+ const entry=wireWsHistory[wireWsHistory.length-1];
+ if(!entry){say('WIRE: no routing change to undo');return false;}
+ if(wireWsSignature(wireWsSnapshot())!==entry.afterSig){
+  wireWsHistory=[];wireWsPendingBefore=null;
+  say('WIRE UNDO canceled: graph changed outside Navigator · current routes preserved');
+  renderWireWorkspace();return false;
+ }
+ wireWsHistory.pop();wireEdges=clone(entry.before.edges);nextWireId=entry.before.nextId;
+ const outputs=new Map(entry.before.outputs);
+ tracks.forEach(t=>{if(outputs.has(t.id))t.output=outputs.get(t.id);});
+ wireWsInspect=null;wireWsRemoveConfirm=null;
+ render();renderWireWorkspace();
+ say('WIRE UNDO · previous routing restored · unrelated mixer settings kept');
+ return true;
+}
 function wireWsId(id){return 'CH'+String(id).padStart(2,'0');}
 function wireWsLabel(id){
  const t=tracks.find(x=>x.id===id);return t?wireWsId(id)+' · '+t.name:wireWsId(id);
@@ -4680,6 +4715,7 @@ function wireWsCanJoin(src,dst){
 function wireWsChooseMode(mode){
  wireWsMode=['find','routes','bus','matrix'].includes(mode)?mode:'find';
  wireWsInspect=null;wireWsRemoveConfirm=null;
+ if(wireWsMode!==mode){wireWsQuery='';const search=document.getElementById('wireWsSearch');if(search)search.value='';}
  const panel=document.getElementById('wireWorkspace');
  if(panel)panel.classList.toggle('is-matrix',wireWsMode==='matrix');
  renderWireWorkspace();
@@ -4845,6 +4881,7 @@ function renderWireWorkspace(){
   foot.textContent='Crosspoint ● WIRE / ◆ existing legacy · routes are never bank-specific';
  }
  renderWireWsInspector();
+ const undo=document.getElementById('wireWsUndo');if(undo)undo.disabled=wireWsHistory.length===0;
 }
 
 function wireDisplayRoutes(){
@@ -5558,6 +5595,7 @@ function sayWireBankContext(base){
 /* V34 operator events: delegated inside one modeless WIRE workspace. */
 document.getElementById('wireNavigatorToggle').addEventListener('click',()=>wireWsToggle('find'));
 document.getElementById('wireMatrixToggle').addEventListener('click',()=>wireWsToggle('matrix'));
+document.getElementById('wireWsUndo').addEventListener('click',wireWsUndo);
 document.getElementById('wireWsClose').addEventListener('click',()=>{
  wireWsOpen=false;document.getElementById('wireWorkspace').hidden=true;
  document.getElementById('wireNavigatorToggle').setAttribute('aria-expanded','false');
@@ -5584,7 +5622,7 @@ document.getElementById('wireWorkspace').addEventListener('click',e=>{
   if(wireWsRemoveConfirm!==key){wireWsRemoveConfirm=key;renderWireWsInspector();return;}
   const parts=key.split(':').map(Number),edge=wireWsFindEdge(parts[0],parts[1]);
   wireWsRemoveConfirm=null;wireWsInspect=null;
-  if(edge)replugWireEdge(parts[0],parts[1],null);
+  if(edge){const before=wireWsSnapshot();replugWireEdge(parts[0],parts[1],null);wireWsRecord(before);}
   renderWireWorkspace();return;
  }
  const join=e.target.closest?.('[data-ws-join]');
@@ -5602,7 +5640,10 @@ document.getElementById('wireWorkspace').addEventListener('click',e=>{
  // never moves the displayed mixer bank or a third-party routing endpoint.
  if(wireWsMode!=='bus'&&(!armedWireSource()||armedWireSource().id!==src.id))
   selectWireSource(src);
+ const before=wireWsSnapshot();
  requestWireConnection(src,dst,join);
+ if(document.getElementById('routeChoice')?.hidden===false)wireWsPendingBefore=before;
+ else wireWsRecord(before);
  renderWireWorkspace();
 });
 document.getElementById('wireWsSearch').addEventListener('input',e=>{
@@ -5618,6 +5659,9 @@ document.getElementById('wireWsBus').addEventListener('change',e=>{
  if(b)wireWsBusId=b.id;
  renderWireWorkspace();
 });
+document.getElementById('wireWsInspector').addEventListener('focusin',e=>{
+ if(e.target.closest?.('[data-ws-gain],[data-ws-tap]'))wireWsEditBefore=wireWsSnapshot();
+});
 document.getElementById('wireWsInspector').addEventListener('input',e=>{
  const gain=e.target.closest?.('[data-ws-gain]');
  if(!gain)return;
@@ -5632,7 +5676,7 @@ document.getElementById('wireWsInspector').addEventListener('change',e=>{
   const edge=wireEdges.find(x=>x.id===Number(tap.dataset.wsTap)&&x.enabled);
   if(edge&&edge.kind!=='primary')edge.mode=tap.value==='split'?'split':'send';
  }
- if(gain||tap){render();renderWireWorkspace();say('WIRE inspector updated '+wireWsLabel(wireWsInspect?.src)+' → '+wireWsLabel(wireWsInspect?.dst)+' · GUI reference');}
+ if(gain||tap){wireWsRecord(wireWsEditBefore);wireWsEditBefore=null;render();renderWireWorkspace();say('WIRE inspector updated '+wireWsLabel(wireWsInspect?.src)+' → '+wireWsLabel(wireWsInspect?.dst)+' · GUI reference');}
 });
 
 document.getElementById('wireLegend').addEventListener('change',e=>{
