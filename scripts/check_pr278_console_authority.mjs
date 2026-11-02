@@ -10,9 +10,15 @@ function rule(css,key){const i=css.indexOf(key);if(i<0)return '';
  return a>=0&&b>=0?css.slice(a+1,b):'';}
 export function inspectPr278(x={}){
  const js=x.js||'',css=x.css||'',ref=x.reference||'',old=x.legacy||'',test=x.test||'';
- const strip=rule(css,'#app .arV6Strip{'),main=rule(css,'#app .arV6Main{');
- const top=rule(css,'#app .arV6Top{'),head=rule(css,'#app .arV6StripHead{');
- const foot=rule(css,'#app .arV6StripStatus{');
+ const hardware=x.hardware||'',hardwareCss=x.hardwareCss||'';
+ // Read the effective final native Console rules after the old fixed-width
+ // fallback. An early #app .arV6Strip{} declaration is NOT the winning rule
+ // after GUI-final shared-width/density and V5 skin were installed.
+ const strip=rule(css,'#app .arV6Console .arV6Strip,')||rule(css,'#app .arV6Strip{');
+ const main=rule(css,'#app .arV6Console .arV6Main,')||rule(css,'#app .arV6Main{');
+ const top=rule(css,'#app .arV6Console .arV6Top{')||rule(css,'#app .arV6Top{');
+ const head=rule(css,'#app .arV6Console .arV6StripHead{')||rule(css,'#app .arV6StripHead{');
+ const foot=rule(css,'#app .arV6Console .arV6StripStatus{')||rule(css,'#app .arV6StripStatus{');
  const checks=[];
  const add=(id,ok,action)=>checks.push({id,pass:!!ok,action});
  add('REFERENCE_278',ref.includes('id="tracks"')&&ref.includes('id="master"')&&ref.includes('id="pluginBrowser"'),'Include pinned #278 design study in integration source only');
@@ -27,7 +33,13 @@ export function inspectPr278(x={}){
  const stripMetal=strip.includes('var(--am-metal-panel)')||strip.includes('var(--am-metal-base)');
  const topMetal=top.includes('var(--am-metal-panel)')||top.includes('var(--am-metal-raised)');
  add('ONE_GRAPHITE_CHASSIS',material&&stripMetal&&topMetal,'Use same #278 graphite metal material above and below fader');
- add('BTN180_HEADER',js.includes('btn-180')&&css.includes('#app .arV6Top .arV6Button.btn-180'),'Use original brighter-off seven-shadow BTN-180 in universal header');
+ add('V5_HEADER_KEYS',
+    hardware.includes("['#app .arV6Console .arV6Top .arV6Button'")&&
+    hardware.includes("classList.add('mx-hw-key'")&&
+    hardwareCss.includes('#app button.mx-hw-key')&&
+    hardwareCss.includes('svg.mx-hw-face')&&
+    js.includes("const tools=h('div','arV6Tools')"),
+    'Use owner-approved lightweight V5 cutout keys for native header actions; obsolete BTN-180 must not be restored');
  const stripWidth=strip.includes('var(--channel-w)')||strip.includes('var(--v6-channel-w)');
  const mainWidth=main.includes('var(--channel-w)')||main.includes('var(--v6-channel-w)');
  add('PINNED_MAIN_EQUAL_WIDTH',stripWidth&&mainWidth,'One shared computed width for source and MAIN strip at all viewports');
@@ -51,7 +63,8 @@ const read=p=>{try{return readFileSync(resolve(base,p),'utf8')}catch{return ''}}
 export function inspectCheckout(){return inspectPr278({
  reference:read('design-references/audition-mixer-study/index.html'),
  js:read('web/mixer-layout.js'),css:read('web/mixer-layout.css'),
- legacy:read('web/app.js'),test:read('tests/operator_console_v6_smoke.py')});}
+ legacy:read('web/app.js'),test:read('tests/operator_console_v6_smoke.py'),
+ hardware:read('web/hardware-keys.js'),hardwareCss:read('web/styles-src/43-hardware-backlit.css')});}
 if(process.argv[1]&&fileURLToPath(import.meta.url)===resolve(process.argv[1])){
  const v=inspectCheckout();
  for(const c of v.checks)console.log((c.pass?'MATCH ':'BLOCK ')+c.id+(c.pass?'':' -> '+c.action));

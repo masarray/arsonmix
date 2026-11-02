@@ -7,6 +7,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {checkTrace,checkPcm,checkRelease,TRACE_SCHEMA} from '../scripts/console_v6_fat_gate.mjs';
+import {inspectPr278} from '../scripts/check_pr278_console_authority.mjs';
 const copy=x=>structuredClone(x);
 const snapshot=n=>({event:'arMixConsoleSnapshot',payload:{
  schemaVersion:6,productionCallbackLive:false,
@@ -318,4 +319,26 @@ test('PR278 source contract blocks divergent universal chrome/identity/MAIN',()=
  for(const id of ['REFERENCE_278','DIRECT_NATIVE_IO','LINK_VS_GROUP','NATIVE_ACK_NO_DEMO'])
   assert.ok(r.checks.some(c=>c.id===id&&c.pass),id+' valid path lost');
  assert.ok(inspectPr278({js,css}).blocked.some(c=>c.id==='REFERENCE_278'));
+});
+
+test('GUI-final source authority rejects obsolete BTN-180 and qualifies V5 native header only with full skin',()=>{
+ const mock={js:"const tools=h('div','arV6Tools');",hardware:
+   "['#app .arV6Console .arV6Top .arV6Button'\nclassList.add('mx-hw-key'",
+   hardwareCss:'#app button.mx-hw-key { } svg.mx-hw-face { }'};
+ const pick=x=>inspectPr278(x).checks.find(c=>c.id==='V5_HEADER_KEYS').pass;
+ assert.equal(pick(mock),true,'native header uses approved V5 renderer');
+ assert.equal(pick({...mock,hardwareCss:''}),false,'missing skin must block release');
+ assert.equal(pick({...mock,hardware:''}),false,'legacy header cannot pass without upgrade');
+ const css=[
+  '--am-metal-panel:#14232C',
+  '#app .arV6Console .arV6Strip,{background:var(--am-metal-panel);width:var(--v6-channel-w)}',
+  '#app .arV6Console .arV6Main,{width:var(--v6-channel-w)}',
+  '#app .arV6Console .arV6Top{background:var(--am-metal-panel)}',
+  '#app .arV6Console .arV6StripHead{border-color:var(--ch)}',
+  '#app .arV6Console .arV6StripStatus{border-color:var(--ch)}'
+ ].join('\n');
+ const body=inspectPr278({...mock,css,js:mock.js+
+   "elStrip.style.setProperty('--ch'; ch.icon; DENSITY_WIDTH comfort standard compact"});
+ for(const name of ['ONE_GRAPHITE_CHASSIS','PINNED_MAIN_EQUAL_WIDTH','TOP_BOTTOM_COLOR_ICON'])
+   assert.equal(body.checks.find(x=>x.id===name).pass,true,name);
 });
