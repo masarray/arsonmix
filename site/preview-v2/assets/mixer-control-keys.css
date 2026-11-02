@@ -119,7 +119,7 @@
   align-items:center;
   justify-content:center;
   color:#d7e3e8;
-  font:600 10px/1 Arial,sans-serif;
+  font:600 10px/1 'ArSonMix Inter',sans-serif;
 }
 .app .console-body .strip .mx-hw-row>button.mx-hw-key .mx-hw-screen-reader{
   position:absolute;
