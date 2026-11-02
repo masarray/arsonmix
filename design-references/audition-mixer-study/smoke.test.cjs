@@ -754,9 +754,9 @@ check(strip(3).includes('<option value="SOURCE ONLY (No Main)" selected>'),
 field(3,'output','Master');
 node('bankSelect').value='1';node('bankSelect').dispatch('change');
 wireTo(11);node('routeParallel').dispatch('click');
+const parallelNotice=node('info').textContent.includes('PARALLEL SEND');
 node('bankSelect').value='0';node('bankSelect').dispatch('change');
-check(strip(3).includes('<option value="Master" selected>') &&
- node('info').textContent.includes('PARALLEL SEND'),
+check(strip(3).includes('<option value="Master" selected>') && parallelNotice,
  'Explicit parallel Bus send retains direct Master and does not rewrite primary OUT');
 node('reset').dispatch('click');
 console.log('PASS '+cases.length+' reference mixer DOM checks');
