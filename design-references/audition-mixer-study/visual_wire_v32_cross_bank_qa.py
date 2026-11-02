@@ -97,6 +97,22 @@ def main():
                 page.screenshot(path=str(PAGE.with_name("preview-v32-cross-bank-1680.png")))
             page.locator('#wireLegend .wire-offbank-source').click()
             verify(ch(3).count()==1,f"{width}: return-to-source failed after routing")
+            # V33 universal native picker: target on a HIDDEN bank, no bank
+            # navigation required; graph mutation still requires Bus choice.
+            ch(5).locator('.wire-node-out').click()
+            picker=page.locator('#wireLegend [data-wire-destination]')
+            verify(picker.count()==1 and
+                   'CH11' in picker.locator('option[value="11"]').inner_text(),
+                   f"{width}: any-bank PATCH TO destination is missing")
+            picker.select_option('11')
+            verify(page.locator('#routeChoice').is_visible(),
+                   f"{width}: cross-bank picker bypassed explicit Bus choice")
+            page.locator('#routeParallel').click()
+            page.locator('#bankNext').click()
+            verify(cable(5,11).count()==1,
+                   f"{width}: selected hidden-bank destination did not create route")
+            verify('FROM CH05' in page.locator('#wireLegend').inner_text(),
+                   f"{width}: picker lost pinned source on bank navigation")
             verify(not errors,f"{width}: page JS errors: {errors}")
             page.close()
         browser.close()
