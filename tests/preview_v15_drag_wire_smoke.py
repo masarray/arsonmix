@@ -201,18 +201,24 @@ def main():
                     "Source count did not update after leftward drag")
         assert_true(page.locator('#tracks .strip[data-id="3"] .wire-gain').count()==1,
                     "Receiver wire gain control missing")
-        # V27 cable geometry uses one source ferrule; branch and stem are
-        # different SVG layers (no overlapping color lines at the OUT jack).
-        # V28 original flexible 1:1 cable: no artificial ferrule or
-        # shared vertical stem. The long wire must arc well above the jack.
+        # V31: the OUT/IN jacks are on TOP of the patch bay; each independent
+        # gravity cable must droop DOWN below BOTH endpoints, not arch upward.
+        # No V27 common stem/ferrule; do not change any live routing semantics.
         assert_true(page.locator('#wireLayer .wire-origin-stem,#wireLayer .wire-origin-junction').count()==0,
                     'V27 rigid source ferrule must be undone')
         outgoing=page.locator('#wireLayer path.wire-outgoing-line')
         assert_true(outgoing.count()==1,'Active source wire is missing')
         import re
         nums=[float(a) for a in re.findall(r'-?\d+(?:\.\d+)?',outgoing.first.get_attribute('d'))]
-        assert_true(len(nums)==8 and nums[3]<nums[1]-85,
-                    'Long WIRE cable should rise into smooth high arch')
+        assert_true(len(nums)==8 and nums[3]>nums[1]+20 and nums[5]>nums[7]+20,
+                    'V31 WIRE must hang below both top-mounted OUT/IN anchors')
+        assert_true(abs(nums[2]-nums[0])<.1 and abs(nums[4]-nums[6])<.1,
+                    'V31 suspended cable must leave OUT downward and arrive at IN upward')
+        wire_panel=page.locator('#tracks .strip[data-id="8"] .wire-section').bounding_box()
+        wire_tray=page.locator('#tracks .strip[data-id="8"] .wire-tray').bounding_box()
+        wire_deck=page.locator('#tracks .strip[data-id="8"] .wire-deck').bounding_box()
+        assert_true(wire_panel and wire_tray and wire_deck and wire_tray["y"]<wire_deck["y"],
+                    'V31 physical OUT/IN connectors must be above suspended wire canvas')
         page.screenshot(path=str(ROOT/"preview-v15-wire-left-1680.png"))
         # New source CH3 -> Bus A, explicitly choose serial VIA BUS ONLY.
         page.locator('#tracks .strip[data-id="3"] .wire-node-out').click()
