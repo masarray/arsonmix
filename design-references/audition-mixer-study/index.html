@@ -3160,9 +3160,9 @@ html * ,html *::before,html *::after{
 }
 /* V22 fader: keep original metal PNG, size it ~11% smaller; increase the
    full calibration travel consistently across master, channel and rail.
-   FX, not PAN/SOLO/FOOTER, absorbs the extra +14px fader height. */
+   FX absorbs up to 6px extra fader height only when viewport allows; short screens keep original dock. */
 .console-body {
- --v13-fader-h:clamp(164px,calc(100dvh - 616px),499px);
+ --v13-fader-h:clamp(150px,calc(100dvh - 624px),490px);
 }
 .console-body .strip .fader-travel {
  top:24px!important;bottom:24px!important;
