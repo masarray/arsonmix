@@ -5236,7 +5236,7 @@ consoleBody.addEventListener('pointerleave',()=>{
 // Clicking away from the active patch controls releases OUT and the ready IN
 // sockets; WIRE workspace/nav/route-choice are part of the ongoing patch.
 // Inspecting a different channel must NOT silently create a route.
-document.addEventListener('pointerdown',e=>{
+window.addEventListener('pointerdown',e=>{
  if(e.button!==0||!armedWireSource()||wireGesture||pendingBusRoute)return;
  if(e.target.closest?.('.wire-node-out,.wire-node-in,.wire-pot,.wire-disconnect,#wireWorkspace,#routeChoice,[data-wire-destination],[data-wire-jump-source],.wire-offbank-source'))return;
  clearWireIntent();
