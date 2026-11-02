@@ -746,7 +746,7 @@ check(html.includes('grid-template-columns:24px 28px 22px!important') &&
   strip(1).includes('wire-pot is-idle') && !strip(1).includes('wire-disconnect') &&
   strip(3).includes('wire-pot is-idle') && strip(3).includes('wire-pin'),
   'V24 keeps OUT, larger IN and gain fixed across states without any X slot');
-wireTo(3);
+armWire(1);wireTo(3);
 check(strip(3).includes('class="wire-tray linked"') &&
   strip(3).includes('data-field="wireGain"') && !strip(3).includes('wire-pot is-idle') &&
   strip(4).includes('wire-pot is-idle'),
