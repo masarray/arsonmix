@@ -85,11 +85,11 @@ test('GUI projection cannot falsely claim the prepared ChannelId engine is live'
     ['arMixConsoleSubscribe','arMixConsoleSnapshot','arMixConsoleIntent','arMixConsoleAck']);
   for(const item of ['deviceEpoch','baseGraphRevision','baseRosterRevision','requestId','targetChannelId'])
     assert.ok(schema.intentRequired.includes(item));
-  assert.match(bridge,/w\.productionCallbackLive=false/);
+  assert.ok(bridge.includes('w.productionCallbackLive=false'));
   assert.match(bridge,/legacyM4/);
   assert.match(wire,/callbackOwnsChannelIds\\":false/);
   assert.match(wire,/fullVendorFxMigration\\":false/);
-  assert.match(wire,/supportedOps\\":\[\]/);
+  assert.ok(wire.includes('supportedOps'));
   assert.match(bridge,/parseNativeChannelId/);
   assert.match(bridge,/validConsoleRequestId/);
 });
@@ -109,4 +109,19 @@ test('installed M4 and future ChannelId share one nonblocking render permit',()=
   assert.ok(!realtimePermit.includes('std::mutex') && !realtimePermit.includes('condition_variable'));
   assert.ok(physical.includes('if(!exclusive)'));
   assert.ok(dynamic.includes('if(!exclusive)'));
+});
+
+test('legacy M4 operations are advertised separately, not as fake universal ChannelIds',()=>{
+  assert.ok(bridge.includes('LEGACY_M4_ORDINAL'));
+  assert.ok(bridge.includes('acceptedChannels'));
+  assert.ok(bridge.includes('route.getProperty("topologyFault",false)'));
+  assert.ok(bridge.includes('object->setProperty("supportedOps",juce::var(allowed))'));
+  assert.ok(bridge.includes('w.productionCallbackLive=false'));
+  assert.ok(wire.includes('supportedOps'));
+});
+
+test('legacy M4 GUI commands require accepted physical authority, not just guessed ordinal',()=>{
+  assert.ok(bridge.includes('.getProperty("controlPlane","").toString()!="LEGACY_M4_ORDINAL"'));
+  assert.ok(bridge.includes('PRODUCTION_GRAPH_NOT_ADMITTED'));
+  assert.ok(bridge.includes('legacyRoutingRevision'));
 });

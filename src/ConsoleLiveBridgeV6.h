@@ -3,6 +3,7 @@
 #include <juce_core/juce_core.h>
 #include "../integration/ConsoleNativeContractV6.h"
 #include "../engine/core/ConsolePuzzleV8Wire.h"
+#include "../engine/core/ChannelRoutingPlan.h"
 #include <cstdint>
 #include <deque>
 #include <cmath>
@@ -124,6 +125,39 @@ public:
                 const auto returns=topo.getProperty("auxes",juce::var());
                 if(sends.isArray())object->setProperty("acceptedSends",sends);
                 if(returns.isArray())object->setProperty("auxReturns",returns);
+                // Legacy M4 physical inputs/output membership are CONTROL
+                // readbacks from the actually admitted 10-strip route. Never
+                // infer them from presentation order or a UI draft.
+                const auto channels=topo.getProperty("channels",juce::var());
+                if(connected && w.legacyActive && w.legacyRouteAccepted &&
+                   !static_cast<bool>(route.getProperty("topologyFault",false)) &&
+                   channels.isArray() &&
+                   channels.getArray()->size()==armix::mixer::stripCount) {
+                    object->setProperty("acceptedChannels",channels);
+                    object->setProperty("controlPlane","LEGACY_M4_ORDINAL");
+                    // Separate namespace: these operations mutate the one
+                    // INSTALLED M4 JUCE PCM graph. They are NEVER universal
+                    // graph.capabilities.supportedOps or ChannelIds.
+                    juce::Array<juce::var> allowed;
+                    for(const char* op: {"SET_SOURCE","SET_PROCESSING_FORMAT",
+                         "SET_PRIMARY_OUT","SET_FADER","SET_PAN","SET_MUTE","SET_SOLO"})
+                        allowed.add(juce::var(juce::String(op)));
+                    if(returns.isArray())allowed.add(juce::var("SET_AUX_FADER"));
+                    if(sends.isArray()&&!sends.getArray()->isEmpty())
+                        allowed.add(juce::var("SET_SEND_LEVEL"));
+                    if(inserts.isArray()) {
+                        bool hasNativeFx=false;
+                        for(const auto& rack:*inserts.getArray())
+                            if(rack.isArray()&&!rack.getArray()->isEmpty()) {
+                                hasNativeFx=true;break;
+                            }
+                        if(hasNativeFx) {
+                            allowed.add(juce::var("SET_INSERT_BYPASS"));
+                            allowed.add(juce::var("OPEN_INSERT_EDITOR"));
+                        }
+                    }
+                    object->setProperty("supportedOps",juce::var(allowed));
+                }
             }
             const auto monitorSends=route.getProperty("monitorSends",juce::var());
             if(monitorSends.isArray())
@@ -131,7 +165,17 @@ public:
             const auto main=route.getProperty("mainOutputs",juce::var());
             if(main.isArray())object->setProperty("mainOutputs",main);
             const auto monitor=route.getProperty("monitorOutputs",juce::var());
-            if(monitor.isArray())object->setProperty("monitorOutputs",monitor);
+            if(monitor.isArray()) {
+                object->setProperty("monitorOutputs",monitor);
+                if(object->hasProperty("supportedOps") &&
+                   monitor.getArray()->size()==2) {
+                    auto operations=object->getProperty("supportedOps");
+                    if(auto* list=operations.getArray()) {
+                        list->add(juce::var("SET_MONITOR_LEVEL"));
+                        object->setProperty("supportedOps",operations);
+                    }
+                }
+            }
         }
         return actual;
     }
@@ -254,7 +298,13 @@ public:
                      !((operation=="SET_MONITOR_LEVEL"||
                         operation=="SET_AUX_FADER")&&channelId<=14)))
                 error="INVALID_LEGACY_CHANNEL_ID";
-            else if(!engine.dryRoutingLabActive() ||
+            // Never trust a guessed M4 ordinal or synthetic editor status.
+            // Native accepted hardware, actual route rows and the current
+            // topology-fault bit must have produced an explicit M4 authority
+            // envelope in this very same status snapshot.
+            else if(acceptedSnapshot.getProperty("legacyM4",{})
+                    .getProperty("controlPlane","").toString()!="LEGACY_M4_ORDINAL" ||
+                    !engine.dryRoutingLabActive() ||
                     engine.dryRoutingLabEpoch()!=ep ||
                     engine.dryRoutingLabRevision()!=m4Revision)
                 error="PRODUCTION_GRAPH_NOT_ADMITTED";

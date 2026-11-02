@@ -546,6 +546,18 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
     route->setProperty("active",true);
     route->setProperty("ready",true);
     route->setProperty("hasAcceptedRoute",true);
+    // Genuine admitted M4 rows, not fabricated universal ChannelIds.
+    juce::Array<juce::var> admittedRows;
+    for(int i=0;i<armix::mixer::stripCount;++i) {
+        auto row=std::make_unique<juce::DynamicObject>();
+        row->setProperty("mode",i==0?"MONO":"NONE");
+        row->setProperty("left",i==0?2:-1);
+        row->setProperty("right",-1);
+        admittedRows.add(juce::var(row.release()));
+    }
+    auto admittedRoute=std::make_unique<juce::DynamicObject>();
+    admittedRoute->setProperty("channels",juce::var(admittedRows));
+    route->setProperty("acceptedRoute",juce::var(admittedRoute.release()));
     juce::Array<juce::var> ports;
     auto port=std::make_unique<juce::DynamicObject>();
     port->setProperty("port",2);port->setProperty("callback",0);
@@ -611,6 +623,20 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
     assert(static_cast<int>(outs.getArray()->getReference(1).getProperty("port",0))==4);
     const auto diagnostic=snap.getProperty("legacyM4",{});
     assert(diagnostic.getProperty("routingRevision","").toString()=="77");
+    assert(diagnostic.getProperty("controlPlane","").toString()=="LEGACY_M4_ORDINAL");
+    const auto legacyRows=diagnostic.getProperty("acceptedChannels",{});
+    assert(legacyRows.getArray()&&
+           legacyRows.getArray()->size()==armix::mixer::stripCount);
+    assert(legacyRows.getArray()->getReference(0).getProperty("mode","").toString()=="MONO");
+    const auto nativeM4Ops=diagnostic.getProperty("supportedOps",{});
+    assert(nativeM4Ops.getArray() &&
+           nativeM4Ops.getArray()->contains(juce::var(juce::String("SET_FADER"))) &&
+           nativeM4Ops.getArray()->contains(juce::var(juce::String("SET_MUTE"))) &&
+           !nativeM4Ops.getArray()->contains(juce::var(juce::String("CREATE_CHANNEL"))));
+    // No false universal promotion even when the installed M4 branch can
+    // really mutate physical PCM through its own separately fenced transport.
+    assert(!static_cast<bool>(snap.getProperty("productionCallbackLive",true)));
+    assert(caps.getProperty("supportedOps",{}).getArray()->isEmpty());
     // Universal revisions cannot be borrowed from M4; this unready source
     // must not permit GUI ChannelId operations even while M4 PCM is active.
     assert(graph.getProperty("revision","").toString()=="0");
@@ -644,6 +670,13 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
     assert(!Bridge::decodeDecimal(juce::var("18446744073709551616"),decoded));
     assert(!Bridge::decodeDecimal(juce::var("01"),decoded));
     assert(!Bridge::decodeDecimal(juce::var(9007199254740993.0),decoded));
+    // Fail-closed device fault: do not advertise a compatibility actuator
+    // against a poisoned physical port topology or stale hardware session.
+    auto liveRoute=live.getProperty("dryRoutingLab",{});
+    liveRoute.getDynamicObject()->setProperty("topologyFault",true);
+    const auto stale=Bridge::snapshot(live).getProperty("legacyM4",{});
+    assert(stale.getProperty("supportedOps",{}).isVoid());
+    assert(stale.getProperty("acceptedChannels",{}).isVoid());
     // No request above mutates the genuinely accepted M4 hardware route.
     assert(static_cast<int>(live.getProperty("dryRoutingLab",{}).getProperty("revision",0))==77);
 }
