@@ -354,10 +354,10 @@ const volumeReadout={textContent:''};
 const stripEl={dataset:{id:1},querySelector:s=>s==='.fader-readout'?volumeReadout:s==='.fader-box'?faderBoxPaint:s==='.db-value'?{textContent:''}:null};
 const rangeInput={dataset:{field:'level'},value:'0',min:'-60',max:'10',closest:s=>s==='.strip'?stripEl:null};
 const travel={getBoundingClientRect(){return {top:100,height:300}}};
-const pointerWell={querySelector:s=>s==='.fader'?rangeInput:s==='.fader-travel'?travel:null,
+const pointerWell={querySelector:s=>{console.log('FADER query',s);return s==='.fader'?rangeInput:s==='.fader-travel'?travel:null;},
  setPointerCapture(){},releasePointerCapture(){}};
 node('body').handlers.pointerdown({button:0,pointerId:11,clientY:100,altKey:false,
- target:{closest:s=>s==='.fader-box'?pointerWell:null},preventDefault(){}});
+ target:{closest:s=>{console.log('FADER closest',s);return s==='.fader-box'?pointerWell:null;}},preventDefault(){console.log('FADER preventDefault')}});
 if(!(rangeInput.value==='10' && volumeReadout.textContent==='+10.0 dB')) console.log('FADER DIAG',JSON.stringify({value:rangeInput.value,readout:volumeReadout.textContent,bodyHandler:!!node('body').handlers.pointerdown}));
 check(rangeInput.value==='10' && volumeReadout.textContent==='+10.0 dB',
  'Physical top of old fader well maps to +10 dB and updates numeric LCD');
