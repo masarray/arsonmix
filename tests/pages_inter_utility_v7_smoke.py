@@ -22,7 +22,7 @@ def source_contract():
         assert 'assets/'+asset in html
     import re
     assert 'https://fonts.googleapis.com' not in html
-    assert not re.search(r'(?m)^\\s*@import\\b',inter), 'Font must not import external CSS'
+    assert not re.search(r'(?m)^\s*@import\b',inter), 'Font must not import external CSS'
     for kind in ('fx-main','fx-slot','format','phase','fx-remove'):
         assert f'data-util-kind="{kind}"' in html
     assert 'class="mini power ' not in html and 'class="mini phase ' not in html
