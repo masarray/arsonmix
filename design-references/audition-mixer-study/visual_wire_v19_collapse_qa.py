@@ -44,8 +44,19 @@ def main():
             fold1=page.locator('#tracks .strip[data-id="1"] .wire-fold-summary')
             fold3=page.locator('#tracks .strip[data-id="3"] .wire-fold-summary')
             ensure(fold1.is_visible() and fold3.is_visible(),f"{width}: folded state blank")
-            ensure("→1" in fold1.inner_text(),f"{width}: legacy SEND no longer represented")
-            ensure("—" in fold3.inner_text(),f"{width}: empty custom link marker missing")
+            ensure(fold1.locator('svg.fold-link-icon.has-out').count()==1,
+                   f"{width}: existing legacy send has no graphical link indicator")
+            ensure(fold3.locator('svg.fold-link-icon').count()==0,
+                   f"{width}: unlinked channel should have no visible patch symbol")
+            ensure(fold1.inner_text().strip()=="" and fold3.inner_text().strip()=="",
+                   f"{width}: numeric send badges or captions clutter the collapsed bar")
+            for id in (1,3):
+                section=page.locator(f'#tracks .strip[data-id="{id}"] .wire-section')
+                ensure(not section.locator('.wire-tray').is_visible() and
+                       not section.locator('.wire-deck').is_visible(),
+                       f"{width}: live sockets and deck leaked outside collapsed WIRE compartment")
+            ensure(fold1.locator('svg.fold-link-icon').bounding_box()["height"]<=12,
+                   f"{width}: status graphic is oversized")
             foldHeight=fold3.bounding_box()["height"]
             ensure(18<=foldHeight<=23,f"{width}: folded summary changes row height")
             sectionHeight=page.locator('#tracks .strip[data-id="3"] .send-section').bounding_box()["height"]
@@ -68,8 +79,13 @@ def main():
             fader=page.locator('#tracks .strip[data-id="3"] .fader-section').bounding_box()
             wire.click()
             ensure(fold1.is_visible() and fold3.is_visible(),f"{width}: WIRE not collapsed")
-            ensure("→2" in fold1.inner_text() and "←1" in fold3.inner_text(),
-                   f"{width}: live IN/OUT summary failed to reflect graph edit")
+            ensure(fold1.locator('svg.fold-link-icon.has-out').count()==1 and
+                   fold3.locator('svg.fold-link-icon.has-in').count()==1,
+                   f"{width}: live IN/OUT graphics failed to reflect graph edit")
+            ensure(not page.locator('#tracks .strip[data-id="3"] .wire-tray').is_visible(),
+                   f"{width}: linked socket/knob still visible when WIRE is folded")
+            ensure(fold1.inner_text().strip()=="" and fold3.inner_text().strip()=="",
+                   f"{width}: folded WIRE exposed tiny counts or text")
             ensure(not page.locator('#wireLayer').is_visible(),
                    f"{width}: cable layer should hide in collapsed WIRE")
             ensure(abs(page.locator('#tracks .strip[data-id="3"] .pan-section').bounding_box()["height"]-pan["height"])<1,
