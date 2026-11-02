@@ -2342,6 +2342,145 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
  .console-body.wire-routing-v15 .wire-node-out,
  .console-body.wire-routing-v15 .wire-node-in{width:25px!important;min-width:25px!important;flex-basis:25px!important}
 }
+
+/* ARSONMIX GLOBAL HARDWARE KEY V1 — owner approved MUTE/SOLO material.
+   This is one reusable material token, NOT a new button geometry/layout.
+   Never apply to circular WIRE connectors, fader thumb, meter LEDs, sliders,
+   section-rail disclosures, or drag targets. All colors are semantic variants.
+   No animations, filters, textures, permanent pressed state, or extra JS. */
+:root{
+  --am-hw-key-radius:2px;
+  --am-hw-key-neutral:#bfc3c5;
+  --am-hw-key-dark:#46515b;
+  --am-hw-key-rim:#5f696f;
+  --am-hw-key-upper-glint:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.75) 48%,transparent 100%);
+  --am-hw-key-lower-glint:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.34) 50%,transparent 100%);
+  --am-hw-key-relief:inset 1px 0 0 rgba(255,255,255,.45),inset -1px 0 0 rgba(0,0,0,.25),0 2px 0 #070a0c,0 3px 3px rgba(0,0,0,.6);
+  --am-hw-key-flat:inset 0 1px 2px rgba(0,0,0,.65),0 0 0 transparent;
+  --am-hw-key-face:var(--am-hw-key-neutral);
+  --am-hw-key-ink:#171c20;
+  --am-hw-key-border:var(--am-hw-key-rim);
+}
+/* A single mechanical face for every ordinary PUSH button; retain existing
+   29px header / strip widths and accessibility semantics. New buttons opt
+   in with .hw-key instead of inheriting unexpected styling on rotary/jacks. */
+:is(
+ .command-bar button.tool,
+ .command-bar summary.tool,
+ .more-tools-panel button.tool,
+ .console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,
+ .plugin-footer button,
+ .route-choice-head button,
+ .route-choice-option,
+ button.hw-key
+){
+ position:relative!important;
+ border:1px solid var(--am-hw-key-border)!important;
+ border-radius:var(--am-hw-key-radius)!important;
+ color:var(--am-hw-key-ink)!important;
+ background:linear-gradient(180deg,
+   color-mix(in srgb,var(--am-hw-key-face) 84%,white) 0%,
+   color-mix(in srgb,var(--am-hw-key-face) 96%,white) 8%,
+   var(--am-hw-key-face) 38%,
+   color-mix(in srgb,var(--am-hw-key-face) 86%,black) 78%,
+   color-mix(in srgb,var(--am-hw-key-face) 64%,black) 100%)!important;
+ box-shadow:var(--am-hw-key-relief)!important;
+ text-shadow:0 1px rgba(255,255,255,.19)!important;
+ filter:none!important;
+ transform:translateY(0)!important;
+ transition:transform 80ms ease,box-shadow 80ms ease!important;
+}
+/* EXACT top/bottom edge glints: no inset offset on the key face. The whitened
+   core fades horizontally to transparent at both ends. */
+:is(
+ .command-bar button.tool,.command-bar summary.tool,
+ .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key
+)::before{
+ content:""!important;position:absolute!important;pointer-events:none!important;
+ top:0!important;left:2px!important;right:2px!important;height:2px!important;
+ background:var(--am-hw-key-upper-glint)!important;
+ border:0!important;box-shadow:none!important;opacity:1!important;
+}
+:is(
+ .command-bar button.tool,.command-bar summary.tool,
+ .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key
+)::after{
+ content:""!important;position:absolute!important;pointer-events:none!important;
+ bottom:0!important;left:2px!important;right:2px!important;height:1px!important;
+ background:var(--am-hw-key-lower-glint)!important;
+ border:0!important;box-shadow:none!important;opacity:1!important;
+}
+/* The key actually sinks into the surrounding socket only during touch/click.
+   A latched MUTE/SOLO remains raised, changing ONLY semantic color. */
+:is(
+ .command-bar button.tool,.command-bar summary.tool,
+ .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key
+):active:not(:disabled){
+ transform:translateY(2px)!important;
+ box-shadow:var(--am-hw-key-flat)!important;
+ filter:none!important;
+}
+:is(
+ .command-bar button.tool,.command-bar summary.tool,
+ .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key
+):focus-visible{
+ outline:2px solid #9ceaff!important;outline-offset:2px!important;
+}
+:is(
+ .command-bar button.tool,.command-bar summary.tool,
+ .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key
+):disabled{
+ opacity:.5!important;cursor:not-allowed!important;
+}
+/* Family colorways only. Physical edges and shadows are shared unchanged. */
+.command-bar button.tool,
+.command-bar summary.tool,
+.more-tools-panel button.tool,
+.route-choice-head button{
+ --am-hw-key-face:var(--am-hw-key-dark);
+ --am-hw-key-ink:#ecf4f6;
+ --am-hw-key-border:#66737b;
+}
+.command-bar button.tool:is(.active,[aria-pressed="true"]),
+.command-bar summary.tool[aria-expanded="true"],
+.more-tools[open] summary.tool{
+ --am-hw-key-face:#6498a9;
+ --am-hw-key-ink:#081b23;
+ --am-hw-key-border:#6ca5b5;
+}
+.console-body .strip .switch-section button.switch.on.mute{
+ --am-hw-key-face:#c43b37;--am-hw-key-ink:#fff;--am-hw-key-border:#752626;
+ text-shadow:0 -1px #641313!important;
+}
+.console-body .strip .switch-section button.switch.on.solo{
+ --am-hw-key-face:#e0c23a;--am-hw-key-ink:#1d1a0c;--am-hw-key-border:#92761b;
+}
+.console-body .strip .switch-section button.switch.on.cue{
+ --am-hw-key-face:#65b7cb;--am-hw-key-ink:#0d2530;--am-hw-key-border:#417b8e;
+}
+.route-choice-option.primary{
+ --am-hw-key-face:#39745a;--am-hw-key-ink:#f0fff6;--am-hw-key-border:#5b9c77;
+}
+#identitySave{
+ --am-hw-key-face:#84cbd9;--am-hw-key-ink:#0b2832;--am-hw-key-border:#5a9aab;
+}
+@media(prefers-reduced-motion:reduce){
+ :is(.command-bar .tool,.console-body .switch-section .switch,.route-choice-option,button.hw-key){
+  transition:none!important;
+ }
+}
+
 </style>
 </head>
 <body>
