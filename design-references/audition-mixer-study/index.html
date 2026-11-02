@@ -2743,7 +2743,7 @@ document.querySelector('.section-rail').addEventListener('click',e=>{
  button.setAttribute('aria-expanded',String(!collapsed));
  button.setAttribute('aria-pressed',String(!collapsed));
  button.title=(collapsed?'Expand ':'Collapse ')+name.toUpperCase()+' section';
- say(name.toUpperCase()+(collapsed?' section collapsed':' section expanded')+' · channel grid stays aligned');
+ say((name==='send'?'WIRE PATCH BAY':name.toUpperCase())+(collapsed?' compact':' expanded')+' · FX rack and fader remain aligned');
  requestAnimationFrame(renderWireRouting); // FX rack changed height; redraw only after layout, never on an audio tick
 });
 document.getElementById('viewFilter').addEventListener('change',()=>{render();say('Channel display filtered: '+document.getElementById('viewFilter').value);});
