@@ -11,7 +11,7 @@ function node(name){
  const x={value:name==='viewFilter'?'all':'',innerHTML:'',textContent:'',scrollLeft:0,dataset:{},handlers,
   classList:{contains:k=>classes.has(k),add:k=>classes.add(k),remove:k=>classes.delete(k),
    toggle(k,force){const on=force===undefined?!classes.has(k):!!force;on?classes.add(k):classes.delete(k);return on;}},
-  style:{_vars:{},setProperty(k,v){this._vars[k]=String(v)},getPropertyValue(k){return this._vars[k]||''}},setAttribute(){},addEventListener(k,cb){handlers[k]=cb;},
+  style:{_vars:{},setProperty(k,v){this._vars[k]=String(v)},getPropertyValue(k){return this._vars[k]||''}},setAttribute(){},addEventListener(k,cb){const previous=handlers[k];handlers[k]=previous?(event=>{previous(event);cb(event);}):cb;},
   querySelector(){return null;},
   dispatch(k){assert.ok(handlers[k],name+' '+k+' handler missing');handlers[k]({target:x});}};
  elements.set(name,x);return x;
@@ -354,11 +354,10 @@ const volumeReadout={textContent:''};
 const stripEl={dataset:{id:1},querySelector:s=>s==='.fader-readout'?volumeReadout:s==='.fader-box'?faderBoxPaint:s==='.db-value'?{textContent:''}:null};
 const rangeInput={dataset:{field:'level'},value:'0',min:'-60',max:'10',closest:s=>s==='.strip'?stripEl:null};
 const travel={getBoundingClientRect(){return {top:100,height:300}}};
-const pointerWell={querySelector:s=>{console.log('FADER query',s);return s==='.fader'?rangeInput:s==='.fader-travel'?travel:null;},
+const pointerWell={querySelector:s=>s==='.fader'?rangeInput:s==='.fader-travel'?travel:null,
  setPointerCapture(){},releasePointerCapture(){}};
 node('body').handlers.pointerdown({button:0,pointerId:11,clientY:100,altKey:false,
- target:{closest:s=>{console.log('FADER closest',s);return s==='.fader-box'?pointerWell:null;}},preventDefault(){console.log('FADER preventDefault')}});
-if(!(rangeInput.value==='10' && volumeReadout.textContent==='+10.0 dB')) console.log('FADER DIAG',JSON.stringify({value:rangeInput.value,readout:volumeReadout.textContent,bodyHandler:!!node('body').handlers.pointerdown}));
+ target:{closest:s=>s==='.fader-box'?pointerWell:null},preventDefault(){}});
 check(rangeInput.value==='10' && volumeReadout.textContent==='+10.0 dB',
  'Physical top of old fader well maps to +10 dB and updates numeric LCD');
 fakeWindow.handlers.pointermove({pointerId:11,clientY:250,altKey:false});
