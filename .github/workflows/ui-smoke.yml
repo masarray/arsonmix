@@ -95,6 +95,8 @@ jobs:
         run: python tests/preview_v2_v7_visual_smoke.py
       - name: Verify V15 real pointer OUT-to-IN wire and exclusive Bus routing
         run: python tests/preview_v15_drag_wire_smoke.py
+      - name: Verify V40 WIRE proximity, focus release and full-tray channel selection
+        run: python tests/pages_wire_focus_v40_smoke.py
       - name: Verify G1/G2 LIVE mixer bank and native I/O transaction
         run: python tests/mixer_io_smoke.py
       - name: Verify MIX and FX RACK Auto Orbit workflow
