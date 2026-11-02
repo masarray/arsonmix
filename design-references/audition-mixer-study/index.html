@@ -3599,13 +3599,33 @@ function setFaderFromPointer(ev,gesture){
 }
 consoleBody.addEventListener('pointerdown',ev=>{
  if(ev.button!==undefined&&ev.button!==0)return;
+ // The live receiving socket and its near-side well are a physical cable plug.
+ // Respect adjacent OUT, gain and remove targets, never steal their pointer.
+ const directIn=ev.target.closest?.('.wire-node-in');
+ const tray=!directIn?ev.target.closest?.('.wire-tray'):null;
+ const other=ev.target.closest?.('.wire-node-out,.wire-pot,.wire-disconnect');
+ const socket=directIn||(!other?tray?.querySelector?.('.wire-node-in'):null);
+ const receiver=socket?findTrack(socket):null;
+ const activeSource=wireSourceTrack(wireSourceId);
+ const existing=activeSource&&receiver&&receiver.kind!=='master'?wireFor(activeSource.id,receiver.id):null;
+ const socketRect=existing?socket.getBoundingClientRect?.():null;
+ const near=!!socketRect&&Math.hypot(ev.clientX-(socketRect.left+socketRect.width/2),ev.clientY-(socketRect.top+socketRect.height/2))<=22;
+ if(existing&&near){
+  wireSuppressClick=false;
+  wireGesture={pointerId:ev.pointerId,sourceId:activeSource.id,originDestId:receiver.id,
+   movingEdgeId:existing.id,startX:ev.clientX,startY:ev.clientY,
+   point:{x:ev.clientX,y:ev.clientY},snapId:receiver.id,active:false};
+  ev.preventDefault?.();
+  socket.setPointerCapture?.(ev.pointerId);
+  return;
+ }
  const node=ev.target.closest?.('.wire-node-out');
  if(node){
   const src=findTrack(node);
   if(src&&src.kind!=='master'&&Number.isFinite(ev.clientX)&&Number.isFinite(ev.clientY)){
    wireSuppressClick=false;
    wireGesture={pointerId:ev.pointerId,sourceId:src.id,startX:ev.clientX,startY:ev.clientY,
-    point:{x:ev.clientX,y:ev.clientY},snapId:null,active:false};
+    point:{x:ev.clientX,y:ev.clientY},originDestId:null,movingEdgeId:null,snapId:null,active:false};
    ev.preventDefault?.();
    node.setPointerCapture?.(ev.pointerId);
    return;
@@ -3628,6 +3648,7 @@ window.addEventListener('pointermove',ev=>{
   if(!Number.isFinite(ev.clientX)||!Number.isFinite(ev.clientY))return;
   if(!g.active&&Math.hypot(ev.clientX-g.startX,ev.clientY-g.startY)>=5){
    g.active=true;wireHoverId=null; // source selection changes only on an accepted drop
+    if(g.movingEdgeId!==null)consoleBody.querySelector?.('.strip[data-id="'+g.originDestId+'"] .wire-node-in')?.classList.add('is-replug-origin');
    consoleBody.classList.add('wire-dragging');
   }
   if(g.active){g.point={x:ev.clientX,y:ev.clientY};queueWireGestureFrame();}
@@ -3639,17 +3660,22 @@ window.addEventListener('pointermove',ev=>{
 function finishFaderPointer(ev){
  if(wireGesture&&ev.pointerId===wireGesture.pointerId){
   const g=wireGesture;
-  const snap=g.active?wireSnapTarget({x:ev.clientX,y:ev.clientY},g.sourceId):null;
+  const snap=g.active?wireSnapTarget({x:ev.clientX,y:ev.clientY},g.sourceId,g.originDestId):null;
   wireGesture=null;setWireSnapTarget(null);
+  consoleBody.querySelector?.('.strip[data-id="'+g.originDestId+'"] .wire-node-in')?.classList.remove('is-replug-origin');
   consoleBody.classList.remove('wire-dragging');
   if(g.active){
-   const hit=document.elementFromPoint?.(ev.clientX,ev.clientY)||ev.target;
-   const input=snap?.element||hit?.closest?.('.wire-node-in');
-   const target=snap?.track||(input?findTrack(input):null),source=wireSourceTrack(g.sourceId);
-   if(target&&source&&target.id!==source.id){
-    wireSourceId=source.id;wireAnchorId=target.id;
-    requestWireConnection(source,target,input);
-   }else say('WIRE drop canceled · release in destination WIRE bay (graph unchanged)');
+   if(g.movingEdgeId!==null){
+    replugWireEdge(g.sourceId,g.originDestId,snap?.track.id??null);
+   }else{
+    const hit=document.elementFromPoint?.(ev.clientX,ev.clientY)||ev.target;
+    const input=snap?.element||hit?.closest?.('.wire-node-in');
+    const target=snap?.track||(input?findTrack(input):null),source=wireSourceTrack(g.sourceId);
+    if(target&&source&&target.id!==source.id){
+     wireSourceId=source.id;wireAnchorId=target.id;
+     requestWireConnection(source,target,input);
+    }else say('WIRE drop canceled · release in destination WIRE bay (graph unchanged)');
+   }
    renderWireRouting();wireSuppressClick=true;
   }else if(g.sourceId){wireSuppressClick=false;}
   return;
@@ -3665,7 +3691,7 @@ function finishFaderPointer(ev){
 }
 window.addEventListener('pointerup',finishFaderPointer);
 window.addEventListener('pointercancel',ev=>{
- if(wireGesture&&ev.pointerId===wireGesture.pointerId){wireGesture=null;setWireSnapTarget(null);consoleBody.classList.remove('wire-dragging');renderWireRouting();say('WIRE drag canceled · graph unchanged');}
+ if(wireGesture&&ev.pointerId===wireGesture.pointerId){const g=wireGesture;wireGesture=null;setWireSnapTarget(null);consoleBody.querySelector?.('.strip[data-id="'+g.originDestId+'"] .wire-node-in')?.classList.remove('is-replug-origin');consoleBody.classList.remove('wire-dragging');renderWireRouting();say('WIRE drag canceled · graph unchanged');}
  if(faderGesture&&ev.pointerId===faderGesture.pointerId)faderGesture=null;
  for(const pan of consoleBody.querySelectorAll?.('.center-pan[data-pan-alt-pointer]')||[])
   delete pan.dataset.panAltPointer;
@@ -3682,8 +3708,8 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  const btn=e.target.closest('[data-action]');if(!btn)return;
  const t=findTrack(btn);if(!t)return;
  const a=btn.dataset.action;
+ if(wireSuppressClick&&['wireSource','wireRoute','wireRemove'].includes(a)){wireSuppressClick=false;return;}
  if(a==='wireSource'){
-  if(wireSuppressClick){wireSuppressClick=false;return;}
   selectWireSource(t);return;
  }
  if(a==='wireRoute'||a==='wireRemove'){
