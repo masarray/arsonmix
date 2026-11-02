@@ -183,6 +183,29 @@ def main():
         page.locator('.section-rail [data-section="send"]').click()
         assert_true(not page.locator('.console-body').evaluate(
                     "(el)=>el.classList.contains('collapsed-send')"),"WIRE did not expand")
+        # V36/P0: CSS-mask knob must actually PAINT, not just exist in DOM.
+        # In headless Chromium a missing external SVG can leave a fully
+        # transparent pseudo-element while the gain input still exists.
+        idle=page.locator('#tracks .strip[data-id="1"] .wire-pot.is-idle')
+        assert_true(idle.count()==1 and idle.is_visible(),"Idle knob missing from WIRE tray")
+        idle_style=idle.evaluate("""el=>({
+            mask:getComputedStyle(el,'::before').maskImage,
+            mode:getComputedStyle(el,'::before').maskMode
+        })""")
+        assert_true('data:image/svg+xml;base64,' in idle_style['mask'] and
+                    idle_style['mode']=='alpha',
+                    'WIRE SVG knob must use an offline-safe, alpha-based inline mask')
+        paint_idle=idle.screenshot()
+        hide=page.add_style_tag(content="""
+          .console-body.wire-routing-v15 .strip .wire-tray .wire-pot.is-idle::before,
+          .console-body.wire-routing-v15 .strip .wire-tray .wire-pot.is-active::before{
+            display:none!important
+          }
+        """)
+        without_idle=idle.screenshot()
+        hide.evaluate("(el)=>el.remove()")
+        assert_true(paint_idle!=without_idle,
+                    'Idle knob is transparent: CSS pseudo exists but SVG silhouette does not paint')
         src=page.locator('#tracks .strip[data-id="8"] .wire-node-out')
         dest=page.locator('#tracks .strip[data-id="3"] .wire-node-in')
         assert_true(src.is_visible() and dest.is_visible(),
@@ -205,6 +228,22 @@ def main():
                     "Source count did not update after leftward drag")
         assert_true(page.locator('#tracks .strip[data-id="3"] .wire-gain').count()==1,
                     "Receiver wire gain control missing")
+        active=page.locator('#tracks .strip[data-id="3"] .wire-pot.is-active')
+        assert_true(active.count()==1 and active.is_visible(),
+                    'Connected wire gain knob is not a visible interactive control')
+        # Let the cable finish its lightweight single-edge settle before
+        # comparing two screenshots of the hardware knob alone.
+        page.wait_for_timeout(350)
+        paint_active=active.screenshot()
+        hide=page.add_style_tag(content="""
+          .console-body.wire-routing-v15 .strip .wire-tray .wire-pot.is-active::before{
+            display:none!important
+          }
+        """)
+        without_active=active.screenshot()
+        hide.evaluate("(el)=>el.remove()")
+        assert_true(paint_active!=without_active,
+                    'Connected gain knob did not render any visible SVG silhouette')
         # V31: the OUT/IN jacks are on TOP of the patch bay; each independent
         # gravity cable must droop DOWN below BOTH endpoints, not arch upward.
         # No V27 common stem/ferrule; do not change any live routing semantics.

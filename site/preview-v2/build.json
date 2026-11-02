@@ -5,7 +5,7 @@
   "source_pr": 285,
   "baseline_pr": 278,
   "source_sha": "ca538ab0c8cd7a99fb9eb068a1139a98e0229fc6",
-  "source_content_sha": "63383275b473f97993f07344f34d9fc657639f24",
+  "source_content_sha": "eb2c7ce417bff987dd746c6dd906ff56af2847b0",
   "qa_run": 41472102273,
   "qa_conclusion": "success",
   "route": "/preview-v2/",
@@ -35,5 +35,6 @@
   "quality_gate": "full PR285 multi-viewport Chromium V15–V34 PASS; main UI-smoke gating before Pages",
   "published_from": "Identical V34 HTML content pinned to tested PR #285 source; V33 archived verbatim.",
   "svg_asset_sha": "ef56513c68273ef2de351acb413257af7ec45e12",
-  "wire_motion": "3.8px initial sag, 20-frame gentle settle, only changed cable, no idle RAF"
+  "wire_motion": "3.8px initial sag, 20-frame gentle settle, only changed cable, no idle RAF",
+  "wire_knob_fix": "The exact supplied SVG is embedded as data:image/svg+xml;base64 CSS alpha mask so the WIRE knob paints in /preview/, /preview-v2/, offline and CI file:// contexts; physical sizing and audio model unchanged."
 }
