@@ -884,7 +884,7 @@ check(strip(3).includes('fold-link-icon has-in') &&
  !strip(3).includes('fold-link-trace'),
  'V24 collapsed incoming and outgoing contact indicators match expanded OUT-left IN-right');
 wireTo(3);
-check(strip(3).includes('wire-fold-summary is-empty') && strip(3).includes('fold-link-icon') &&
+check(/wire-fold-summary[^\"]*is-empty/.test(strip(3)) && strip(3).includes('fold-link-icon') &&
  !strip(3).includes('has-in') && !strip(3).includes('has-out'),
  'V24 removing a custom incoming edge restores muted dot AND socket');
 node('reset').dispatch('click');
