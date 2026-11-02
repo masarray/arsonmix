@@ -14,6 +14,11 @@ def main():
    page.on("pageerror",lambda e:errors.append(str(e)))
    page.goto(PAGE.as_uri())
    body=page.locator(".console-body")
+   # The public console ships with the WIRE section collapsed by default.
+   # Exercise actual exposed jack hardware, not hidden miniature placeholders.
+   if "collapsed-send" in (body.get_attribute("class") or ""):
+    page.locator('.section-rail [data-section="send"]').click()
+   assert "collapsed-send" not in (body.get_attribute("class") or "")
    assert "wire-intent" not in (body.get_attribute("class") or "")
    # Entire tray, including unused metal, selects its own channel.
    strip=page.locator('#tracks .strip[data-id="2"]')
