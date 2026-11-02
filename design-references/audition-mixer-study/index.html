@@ -4536,19 +4536,6 @@ function kickWireSpring(sourceId,destId){
   }
   requestAnimationFrame(step);
  }
- function step(){
-  if(token!==wireMotion.token)return;
-  frame++;
-  // 2.8px maximum, one gentle settling motion instead of rigid bounces.
-  // Small, non-bouncing fabric-like damped sag: 1.7px opening movement,
-  // then monotonic relaxation. Only this cable's SVG paths are repainted.
-  wireMotion.offset=1.7*Math.exp(-frame*.28);
-  paint(wireMotion.offset);
-  if(frame<14&&Math.abs(wireMotion.offset)>.06)requestAnimationFrame(step);
-  else{wireMotion.offset=0;wireMotion.key=null;paint(0);}
- }
- requestAnimationFrame(step);
-}
 /* V23 Smart Wire: visible lit socket means preview is center-snapped and
    mouseup accepts that exact candidate. Moving away releases attraction;
    the underlying graph changes ONLY on mouseup. No whole-bay snap. */
