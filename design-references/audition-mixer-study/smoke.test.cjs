@@ -839,7 +839,7 @@ check(strip(3).includes('wire-node-in is-linked')&&strip(4).includes('wire-node-
  'V18 replug into already-linked destination fails closed (no duplicate)');
 check(html.includes('wire-floating-plug') &&
  html.includes('replugWireEdge(g.sourceId,g.originDestId') &&
- html.includes("if(wireSuppressClick&&['wireSource','wireRoute','wireRemove'].includes(a))"),
+ html.includes("if(wireSuppressClick&&['wireSource','wireRoute'].includes(a))"),
  'V18 floating plug preview and click-after-drag suppression are present');
 document.querySelectorAll=oldQs;
 node('reset').dispatch('click');
@@ -905,7 +905,7 @@ node('reset').dispatch('click');
 
 // V23 collapse never renders numbers or visible jacks; no phantom click targets.
 check(html.includes('function compactWireSummary(t)') &&
- html.includes("const shape=connected?") &&
+ html.includes("const shape='<svg class=") &&
  !html.includes('class="fold-marker"') &&
  html.includes('.send-section.wire-section .wire-tray.linked') &&
  html.includes('display:none!important;visibility:hidden!important;pointer-events:none!important;'),
