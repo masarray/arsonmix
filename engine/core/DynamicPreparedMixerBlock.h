@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "DynamicChannelRoster.h"
+#include "RealtimeSlew64.h"
 #include <algorithm>
 #include <atomic>
 #include <bit>
@@ -94,11 +95,11 @@ class DynamicPreparedMixerBlock final {
         static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
             "Realtime stereo mixer requires lock-free 64-bit atomic targets");
         std::atomic<std::uint64_t> both{packGainPair(1.f,1.f)};
-        float appliedL=1.f,appliedR=1.f; // audio thread only
+        armix::dsp::RealtimeSlew64 appliedL{},appliedR{}; // audio thread only
     };
     struct SendTarget final {
         std::atomic<float> gain{1.f};
-        float applied=1.f;
+        armix::dsp::RealtimeSlew64 applied{};
     };
     static constexpr std::size_t notScheduled=std::numeric_limits<std::size_t>::max();
 public:
@@ -368,14 +369,14 @@ public:
             auto& target=next.channelTargets_[i];
             target.both.store(packGainPair(next.lanes_[i].gainL,
                 next.lanes_[i].gainR),std::memory_order_relaxed);
-            target.appliedL=next.lanes_[i].gainL;
-            target.appliedR=next.lanes_[i].gainR;
+            target.appliedL.reset(next.lanes_[i].gainL);
+            target.appliedR.reset(next.lanes_[i].gainR);
         }
         next.sendTargets_=std::make_unique<SendTarget[]>(next.edges_.size());
         for(std::size_t e=0;e<next.edges_.size();++e){
             const float initial=next.edges_[e].initialGain;
             next.sendTargets_[e].gain.store(initial,std::memory_order_relaxed);
-            next.sendTargets_[e].applied=initial;
+            next.sendTargets_[e].applied.reset(initial);
         }
         destination=std::move(next);
         return true;
@@ -445,29 +446,27 @@ public:
                 float* const dr=dl+block;
                 auto& target=sendTargets_[e];
                 const float goal=target.gain.load(std::memory_order_acquire);
-                const int ramp=std::min(frames,64);
-                const float step=(goal-target.applied)/static_cast<float>(ramp);
-                float applied=target.applied;
+                // Coalesced, callback-continuous 64 SAMPLE slew. A 4-frame
+                // ASIO callback advances only 4/64 of the requested change.
+                target.applied.retarget(goal);
                 for(int f=0;f<frames;++f){
-                    if(f<ramp)applied+=step;
+                    const float applied=target.applied.next();
                     dl[f]+=l[f]*applied*edge.panL;
                     dr[f]+=r[f]*applied*edge.panR;
                 }
-                target.applied=goal;
             }
             auto& controls=channelTargets_[i];
             const auto goal=unpackGainPair(
                 controls.both.load(std::memory_order_acquire));
             const float goalL=goal.left,goalR=goal.right;
-            const int ramp=std::min(frames,64);
-            const float stepL=(goalL-controls.appliedL)/static_cast<float>(ramp);
-            const float stepR=(goalR-controls.appliedR)/static_cast<float>(ramp);
-            float currentL=controls.appliedL,currentR=controls.appliedR;
+            // Left and right use ONE atomically read stereo goal. Ramp state
+            // survives variable hardware callback sizes and gesture reversals.
+            controls.appliedL.retarget(goalL);
+            controls.appliedR.retarget(goalR);
             for(int f=0;f<frames;++f){
-                if(f<ramp){currentL+=stepL;currentR+=stepR;}
-                l[f]*=currentL;r[f]*=currentR;
+                l[f]*=controls.appliedL.next();
+                r[f]*=controls.appliedR.next();
             }
-            controls.appliedL=goalL;controls.appliedR=goalR;
             for(std::size_t e=lane.first;e<lane.last;++e) {
                 const auto& edge=edges_[e];
                 if(edge.pre)continue;
@@ -476,15 +475,14 @@ public:
                 float* const dr=dl+block;
                 auto& target=sendTargets_[e];
                 const float goal=target.gain.load(std::memory_order_acquire);
-                const int ramp=std::min(frames,64);
-                const float step=(goal-target.applied)/static_cast<float>(ramp);
-                float applied=target.applied;
+                // Coalesced, callback-continuous 64 SAMPLE slew. A 4-frame
+                // ASIO callback advances only 4/64 of the requested change.
+                target.applied.retarget(goal);
                 for(int f=0;f<frames;++f){
-                    if(f<ramp)applied+=step;
+                    const float applied=target.applied.next();
                     dl[f]+=l[f]*applied*edge.panL;
                     dr[f]+=r[f]*applied*edge.panR;
                 }
-                target.applied=goal;
             }
         }
         // Physical input PCM has been fully staged and processed into

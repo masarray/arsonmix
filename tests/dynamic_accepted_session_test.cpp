@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/DynamicAcceptedSession.h"
+#include "../engine/core/RealtimeSlew64.h"
 #include <array>
 #if defined(NDEBUG)
 #undef NDEBUG // Native Release CTest must actually run assertions.
@@ -26,7 +27,112 @@ static ChannelEdit send(ChannelId from,ChannelId to,float gain,bool pre=false) {
     ChannelEdit e;e.kind=ChannelEdit::Kind::addSendReference;
     e.id=from;e.target=to;e.value=gain;e.preFader=pre;return e;
 }
+
+static void verifyRealtimeSlewAndNativeChannelIdContinuousControls() {
+    using armix::dsp::RealtimeSlew64;
+    // Sub-64 variable callbacks must not finish a 64-sample gesture in 4
+    // frames. Coalescing multiple UI writes before a read keeps latest goal.
+    RealtimeSlew64 s;
+    s.reset(1.f);
+    s.retarget(.2f);
+    s.retarget(.5f); // replaces the old unrendered target; no queue buildup
+    for(int i=0;i<4;++i)s.next();
+    assert(near(s.current,1.f-(.5f*4.f/64.f)));
+    for(int i=0;i<16;++i)s.next();
+    assert(near(s.current,1.f-(.5f*20.f/64.f)));
+    for(int i=0;i<32;++i)s.next();
+    assert(near(s.current,1.f-(.5f*52.f/64.f)));
+    for(int i=0;i<12;++i)s.next();
+    assert(s.remaining==0 && s.current==.5f);
+    s.retarget(0.f);
+    for(int i=0;i<20;++i)s.next();
+    const float applied=s.current;
+    s.retarget(.75f); // reverse while in flight; no jump on target update
+    assert(s.current==applied);
+    assert(s.next()>applied);
+    for(int i=1;i<64;++i)s.next();
+    assert(s.current==.75f && s.remaining==0);
+
+    // The approved GUI sends ChannelId-keyed realtime moves. Verify actual
+    // PCM through GROUP-compatible Main, PRE wet Return and POST Monitor,
+    // not a disconnected smoothing helper or browser-only fixture.
+    DynamicAcceptedSession session;
+    constexpr std::uint64_t epoch=9401;
+    DynamicGraphRequest route;
+    route.physicalInputs=1;
+    route.maxFrames=64;
+    std::array<ChannelEdit,4> creates{
+        add(0,ChannelRole::input,"VOICE"),
+        add(1,ChannelRole::fxReturn,"WET",ProcessingFormat::stereo),
+        add(2,ChannelRole::main,"MAIN",ProcessingFormat::stereo),
+        add(3,ChannelRole::monitor,"CUE",ProcessingFormat::stereo)
+    };
+    auto a=session.edit(0,0,creates,route,epoch,epoch,true);
+    assert(a.ok());
+    const auto voice=a.edit.createdIds[0];
+    const auto wet=a.edit.createdIds[1];
+    const auto main=a.edit.createdIds[2];
+    const auto cue=a.edit.createdIds[3];
+    std::array<ChannelEdit,4> links{
+        output(voice,main),
+        output(wet,main),
+        send(voice,wet,.5f,true),
+        send(voice,cue,.5f,false)
+    };
+    route.sources={{voice,0,-1,false}};
+    a=session.edit(1,1,links,route,epoch,epoch,true);
+    assert(a.ok()&&session.acceptedGraphRevision()==2);
+    std::array<float,64> input{},outL{},outR{},cueL{},cueR{};
+    input.fill(.5f);
+    const float* pins[]{input.data()};
+    const auto fx=+[](ChannelId,float*,float*,int) noexcept {};
+    const auto render=[&](int n) {
+        return session.render(epoch,pins,1,outL.data(),outR.data(),n,
+                              false,fx,cueL.data(),cueR.data());
+    };
+    assert(render(64));
+    const float initialMain=outL[63];
+    const float initialCue=cueL[63];
+    assert(initialMain>.1f && initialCue>.01f);
+    assert(session.setLiveMix(epoch,2,voice,0.f,0.f));
+    assert(session.setLiveParallelSend(epoch,2,voice,wet,true,0.f));
+    assert(session.setLiveParallelSend(epoch,2,voice,cue,false,0.f));
+    // PRE send, POST send and channel fader must all advance across
+    // 4+16+32+12 (one complete ramp), not finish on the FIRST 4 samples.
+    assert(render(4));
+    const float after4=outL[3],cue4=cueL[3];
+    assert(after4>0.f && after4<initialMain);
+    assert(cue4>0.f && cue4<initialCue);
+    assert(render(16));
+    const float after20=outL[15],cue20=cueL[15];
+    assert(after20>0.f && after20<after4);
+    assert(cue20>0.f && cue20<cue4);
+    assert(render(32));
+    assert(outL[31]<after20 && cueL[31]<cue20);
+    assert(render(12));
+    assert(near(outL[11],0.f,0.0001f));
+    assert(near(outR[11],0.f,0.0001f));
+    assert(near(cueL[11],0.f,0.0001f));
+    assert(near(cueR[11],0.f,0.0001f));
+    assert(session.acceptedGraphRevision()==2);
+    // Rapid fader drags are naturally last-target-wins: no event queue,
+    // structural graph recompile, callback heap or retained stale controls.
+    assert(session.setLiveMix(epoch,2,voice,.2f,0.f));
+    assert(session.setLiveMix(epoch,2,voice,.8f,0.f));
+    assert(render(4));
+    assert(outL[3]>0.f);
+    assert(render(60));
+    constexpr float center=.7071067811865475f;
+    assert(near(outL[59],.5f*.8f*center,0.0001f));
+    assert(!session.setLiveMix(epoch,1,voice,1.f,0.f));
+    assert(!session.setLiveParallelSend(epoch-1,2,voice,wet,true,1.f));
+    assert(session.acceptedGraphRevision()==2);
+    session.unpublish();
+    session.pollRetirement();
+}
+
 int main() {
+    verifyRealtimeSlewAndNativeChannelIdContinuousControls();
     constexpr std::uint64_t epoch=77;
     constexpr float center=.7071067811865475f;
     DynamicAcceptedSession session;
