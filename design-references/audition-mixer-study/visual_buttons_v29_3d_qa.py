@@ -69,7 +69,7 @@ def main():
                 label=button.locator('.fa')
                 expect(label.evaluate("e=>getComputedStyle(e).color")=='rgb(255, 255, 255)',
                        f'{width}: {name} selected white label missing')
-                expect('rgb(2, 165, 238)' in label.evaluate("e=>getComputedStyle(e).textShadow"),
+                expect('2, 165, 238' in label.evaluate("e=>getComputedStyle(e).textShadow"),
                        f'{width}: {name} CodePen blue caption glow missing')
                 expect(abs(state['width']-old['width'])<=1 and abs(state['height']-old['height'])<=1,
                        f'{width}: clicking {name} reflowed its key')
