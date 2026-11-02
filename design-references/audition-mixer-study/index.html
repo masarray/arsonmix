@@ -2518,6 +2518,74 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
  }
 }
 
+
+/* Wire V17: fixed four-column hardware patch. Never reflow on route changes. */
+.console-body.wire-routing-v15 .strip .wire-tray,.console-body.wire-routing-v15 .strip .wire-tray.linked{
+ display:grid!important;grid-template-columns:24px 28px 22px 14px!important;gap:2px!important;
+ align-items:center!important;justify-content:center!important;
+ height:35px!important;min-height:35px!important;max-height:35px!important;
+ padding:3px 2px!important;box-sizing:border-box!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out{
+ width:24px!important;min-width:24px!important;flex:0 0 24px!important;height:28px!important;
+ border:0!important;background:transparent!important;box-shadow:none!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out .wire-pin{
+ display:block;width:12px;height:12px;border:1px solid #9db6c2;border-radius:50%;
+ background:linear-gradient(145deg,#d7e6eb,#718e9c);box-shadow:inset 0 1px #ffffff69,0 1px 2px #0009;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out.is-source .wire-pin{
+ background:var(--ch,#9fe8bf);border-color:#ecfff1;box-shadow:0 0 5px var(--ch,#9fe8bf);
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in,
+.console-body.wire-routing-v15 .strip .wire-tray.linked .wire-node-in{
+ width:28px!important;min-width:28px!important;flex:0 0 28px!important;height:28px!important;
+ border:2px solid #7994a0!important;border-radius:50%!important;padding:0!important;gap:0!important;
+ background:#071820!important;box-shadow:inset 0 2px 4px #000b,inset 0 0 0 2px #233b45!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in .wire-arrow{
+ display:block;width:9px;height:9px;flex:0 0 9px;border-radius:50%;
+ background:#071720;border:1px solid #2b4350;font-size:0!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in.is-linked{
+ border-color:var(--ch,#a4eac8)!important;background:#0a2028!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in.is-linked .wire-arrow{
+ width:11px;height:11px;flex:0 0 11px;background:var(--ch,#a4eac8);
+ border:1px solid #ffffff8a;box-shadow:0 0 4px var(--ch,#a4eac8);
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in.is-snap-target{
+ border-color:#e6fff3!important;box-shadow:inset 0 2px 4px #0009,0 0 0 3px #75ddae66!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out small,
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in .wire-label{
+ position:absolute;bottom:-2px;pointer-events:none;color:#a7bcc4!important;font-size:7px!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-pot{
+ width:22px!important;min-width:22px!important;flex:0 0 22px!important;grid-column:3;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-pot::before{
+ inset:2px 1px!important;width:20px!important;height:20px!important;
+ background:conic-gradient(from 225deg,var(--ch,#94dabc) 0 var(--wire-pct,91%),#344953 var(--wire-pct,91%) 75%,transparent 75% 100%)!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-pot::after{left:9px!important;top:4px!important}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-pot.is-idle{
+ opacity:.64;pointer-events:none;cursor:default!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-pot.is-idle::before{
+ background:conic-gradient(from 225deg,#4b626d 0 75%,transparent 75% 100%)!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-pot.is-idle::after{
+ transform:rotate(-135deg)!important;background:#657e8a!important;box-shadow:none!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-gain{width:22px!important;height:24px!important}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-disconnect{
+ width:14px!important;min-width:14px!important;flex:0 0 14px!important;grid-column:4;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-disconnect.is-idle{visibility:hidden!important;pointer-events:none}
+.console-body.wire-routing-v15 .strip .wire-tray{background:#0e222b!important}
+.routing-wire-overlay{filter:none!important}
+
 </style>
 </head>
 <body>
@@ -2841,13 +2909,15 @@ function wireTray(t){
  const label=!source?'NO SOURCE':isSource?'SOURCE':isMain?(linked?'MAIN ON':'MAIN OFF'):linked?'CONNECTED':'CONNECT';
  const modeLabel=linked&&!isMain?(edge.mode==='routeOnly'?'Route via Bus':edge.mode==='send'?'Post-fader Send':'Pre FX Mult'):'Click IN or drag an OUT jack here';
  const from='<button type="button" class="wire-node-out'+(isSource?' is-source':'')+'" data-action="wireSource"'+(isMain?' disabled':'')+
-  ' title="SEND OUT · drag this solid jack to another channel IN" aria-label="Send OUT from '+escapeHtml(t.name)+'" aria-pressed="'+isSource+'"><span aria-hidden="true">●</span><small>OUT</small></button>';
+  ' title="SEND OUT · drag this solid jack to another channel IN" aria-label="Send OUT from '+escapeHtml(t.name)+'" aria-pressed="'+isSource+'"><span class="wire-pin" aria-hidden="true"></span><small>OUT</small></button>';
  const to='<button type="button" class="wire-socket wire-node-in'+(isSource?' is-source':'')+(linked?' is-linked':'')+'" data-action="wireRoute" aria-pressed="'+linked+
   '" aria-label="Receive IN on '+escapeHtml(t.name)+' · '+label+'" title="'+escapeHtml(label+' · '+modeLabel+' · GUI DEMO')+'" '+(canWire?'':'disabled')+
-  '><span class="wire-arrow" aria-hidden="true">'+(linked?'●':'○')+'</span><span class="wire-label">IN</span></button>';
+  '><span class="wire-arrow" aria-hidden="true"></span><span class="wire-label">IN</span></button>';
  let controls=from+to;
  if(linked&&!isMain){
   controls+='<label class="wire-pot" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%;--wire-deg:'+(-135+wireGainPercent(edge.levelDb)*2.7).toFixed(1)+'deg" title="'+escapeHtml(source.name+' → '+t.name+' · '+wireDbText(edge.levelDb))+'"><input class="wire-gain" type="range" min="-60" max="6" step="1" value="'+edge.levelDb+'" data-field="wireGain" data-wire-id="'+edge.id+'" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%" aria-label="Wire send level '+escapeHtml(source.name)+' to '+escapeHtml(t.name)+'"></label><button type="button" class="wire-disconnect" data-action="wireRemove" title="Disconnect '+escapeHtml(source.name)+' → '+escapeHtml(t.name)+'" aria-label="Disconnect '+escapeHtml(t.name)+' from '+escapeHtml(source.name)+'">×</button>';
+ }else{
+  controls+='<span class="wire-pot is-idle" aria-hidden="true"></span><span class="wire-disconnect is-idle" aria-hidden="true"></span>';
  }
  return '<div class="wire-tray'+(linked?' linked':'')+'">'+controls+'</div>';
 }
