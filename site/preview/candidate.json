@@ -2,10 +2,10 @@
   "kind": "REFERENCE_WORKFLOW_QA_ONLY",
   "source_pr": 278,
   "source_branch": "main/site/preview-v2",
-  "source_sha": "070fa3234c0352cef961fad684838e4794dfffc4",
-  "source_blob_sha": "cb33086552c8805c3958cd74c43da56fd48d412b",
-  "ci_run": 41308977569,
+  "source_sha": "223f2a7cc5362f4723d19ff69d1b861c8ab9f29a",
+  "source_blob_sha": "fa6415e1286e4eacdc701be840eb997299198a55",
+  "ci_run": 41384650297,
   "ci_conclusion": "success",
   "live_audio": false,
-  "note": "Public /preview/mixer.html source is dynamically and atomically derived from the SAME main/site/preview-v2/index.html tested commit; no simulated feature is native audio."
+  "note": "The published /preview/mixer.html and /preview-v2/ derive from the same main/site/preview-v2/index.html snapshot. GUI only, never claim native audio."
 }

@@ -1,18 +1,20 @@
 {
-  "version": "preview-v15-hardware-key-v1",
+  "version": "preview-v17-magnetic-wire-qa",
   "kind": "GUI_REFERENCE_ONLY",
   "live_audio": false,
   "source_pr": 278,
   "source_branch": "design/audition-mixer-reference-isolated-20261101",
-  "source_sha": "20d07a972a87d5bd27d934f2816ee8667dbc3195",
-  "source_content_sha": "f1880c7d78b1ec61d8b55b0d4544b33c70d123e8",
+  "source_sha": "223f2a7cc5362f4723d19ff69d1b861c8ab9f29a",
+  "source_content_sha": "fa6415e1286e4eacdc701be840eb997299198a55",
   "routes": [
     "/preview/mixer.html",
     "/preview-v2/"
   ],
-  "milestone": "Physical filled SEND OUT and hollow SEND IN nodes, cursor-following curved wire on pointer drag, both left and right destinations, Bus-only serial or parallel send decision",
-  "owner_geometry": "WIRE can fold to 23px, FX absorbs fold and fader/PAN stay stationary; expand WIRE to patch",
-  "verification": "Hardware key source/JS preservation checks PASS; published Chromium UI smoke + rendered QA must confirm this snapshot",
-  "limitations": "No native PCM, ASIO GraphIntent/ACK or genuine VST3 routing in this GUI reference. Green wire is DEMO state.",
-  "hardware_key": "Global raised MUTE/SOLO physical key material, 2px corner radius, edge-aligned center-fade upper/lower glints, transient pressed flatten, semantic key colors"
+  "ci_run": 41384650297,
+  "ci_conclusion": "success",
+  "milestone": "Fixed OUT/IN/GAIN/REMOVE geometry, smaller filled OUT and larger hollow IN, solid translucent flexible Bezier cable, magnetic snap both directions and channel-hue gain",
+  "operator_acceptance": "214/214 DOM/workflow and Chromium pointer/no-shift/Bus-only/invalid-drop PASS at 1366x768, 1680x900, 1920x1080",
+  "owner_geometry": "WIRE collapses to 23px, expands to 160px; FX/PAN/FADER hierarchy preserved",
+  "hardware_key": "Approved global MUTE/SOLO hardware button style preserved",
+  "limitations": "GUI-only signal wire demo: no native PCM, ASIO graph acknowledgment or real VST3 execution."
 }
