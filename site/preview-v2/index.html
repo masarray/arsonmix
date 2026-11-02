@@ -5382,7 +5382,10 @@ consoleBody.addEventListener('pointerdown',e=>{
 // per-frame wire redraw, audio operation or DOM remount.
 let nearWireOut=null;
 consoleBody.addEventListener('pointermove',e=>{
- if(e.pointerType==='touch'||e.buttons||wireGesture?.active)return;
+ if(e.pointerType==='touch'||e.buttons||wireGesture?.active){
+  // A stale approach highlight must never survive dragging or canceled drops.
+  nearWireOut?.classList.remove('is-near');nearWireOut=null;return;
+ }
  const tray=e.target.closest?.('.wire-tray');
  let out=tray?.querySelector('.wire-node-out:not(:disabled)')||null;
  if(out){
