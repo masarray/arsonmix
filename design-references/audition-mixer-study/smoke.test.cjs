@@ -539,14 +539,19 @@ check(html.includes('id="wireLayer" class="routing-wire-overlay"') &&
  html.includes('id="wireLegend"') &&
  html.includes('.console-body.wire-routing-v13.collapsed-send{--send-h:80px!important}'),
  'Wire layer and 53px middle routing row survive collapsed advanced Send');
-check(strip(1).includes('wire-node-out is-source') &&
+check(!strip(1).includes('wire-node-out is-source') &&
  strip(3).includes('data-action="wireRoute"') &&
  strip(3).includes('class="wire-socket wire-node-in"') &&
  strip(3).includes('wire-pot is-idle'),
- 'Source CH1 is lit and every destination has FL-like up arrow');
+ 'SEND jacks idle after reset, operator explicitly arms OUT');
+function armSource(id){
+ const el={dataset:{action:'wireSource'},closest:k=>k==='.strip'?{dataset:{id}}:null};
+ node('body').handlers.click({target:{closest:k=>k==='[data-action]'?el:null}});
+}
 function wireTo(id,shift=false){
+ if(!node('tracks').innerHTML.includes('wire-node-out is-source'))armSource(1);
  const el={dataset:{action:'wireRoute'},closest:k=>k==='.strip'?{dataset:{id}}:null};
- const target={closest:k=>k==='[data-action]'?el:k==='[data-action="wireRoute"]'?el:k==='.strip'?{dataset:{id}}:null};
+ const target={closest:k=>k==='[data-action]'?el:k==='[data-action="wireRoute"]'?el:k==='.strip'?{dataset:{id}}:k==='.wire-tray'?{}:null};
  node('body').handlers.mousedown({target,ctrlKey:false,metaKey:false,shiftKey:false});
  node('body').handlers.click({target,shiftKey:shift});
 }
@@ -578,7 +583,7 @@ check(!!pot,'Connected PRE FX wire has a stable edge ID for gain control');
 const gainTarget={dataset:{field:'wireGain',wireId:pot[1]},value:'-12',
  style:{setProperty(){}},parentElement:{style:{setProperty(){}}},closest:k=>k==='.strip'?{dataset:{id:8}}:null};
 node('body').handlers.change({target:gainTarget,type:'change'});
-const gainNotice=node('info').textContent.includes('-12 dB');
+const gainNotice=node('info').textContent.includes('-12.0 dB');
 filter('all');
 check(strip(8).includes('value="-12" data-field="wireGain"') && gainNotice,
  'Each wire has its own -60..+6 dB calibrated hardware-pot gain');
@@ -597,7 +602,7 @@ check(strip(1).includes('<option value="Master" selected>') &&
  node('wireMaster').textContent==='MAIN ON',
  'MAIN send can be restored without altering channel wire topology');
 // Graph guards: CH1→CH3 already connected; now CH3→CH1 must fail.
-node('body').handlers.mousedown({target:{closest:k=>k==='.strip'?{dataset:{id:3}}:null},ctrlKey:false,metaKey:false,shiftKey:false});
+armSource(3);
 wireTo(1);
 check(node('info').textContent.includes('feedback loop') &&
  strip(1).includes('wire-socket'),
@@ -651,7 +656,7 @@ node('reset').dispatch('click');
 // V12 pinned Master socket follows FL Send-switch semantics without extra PCM edge.
 node('body').clientWidth=1680;node('reset').dispatch('click');
 const masterId=Number(node('master').innerHTML.match(/data-id="(\d+)"/)?.[1]);
-check(Number.isInteger(masterId)&&node('master').innerHTML.includes('wire-node-in is-linked'),
+check(Number.isInteger(masterId)&&!node('master').innerHTML.includes('wire-node-in is-linked'),
  'Pinned MAIN route is a visible green clickable socket for selected source');
 wireTo(masterId);
 check(node('master').innerHTML.includes('MAIN OFF') &&
@@ -705,7 +710,7 @@ node('reset').dispatch('click');
 // V15 solid-to-hollow wire drag affordance and explicit Bus decision.
 node('body').clientWidth=1680;node('reset').dispatch('click');
 check(strip(1).includes('data-action="wireSource"') &&
- strip(1).includes('wire-node-out is-source') &&
+ !strip(1).includes('wire-node-out is-source') &&
  strip(3).includes('data-action="wireRoute"') &&
  strip(3).includes('wire-node-in') &&
  strip(3).includes('wire-pot is-idle'),
@@ -734,7 +739,7 @@ check(html.includes('function wirePathData(') && html.includes('function wireSna
   html.includes('queueWireGestureFrame();') &&
   html.includes('const input=snap?.element||hit?.closest?.') &&
   !html.slice(html.indexOf('function renderWireRouting(){'),html.indexOf('function syncActiveSend(t){')).includes('stroke-dasharray') &&
-  html.includes('source selection changes only on an accepted drop'),
+  html.includes('explicit OUT drag arms preview'),
   'V17 draws symmetric solid translucent curved wire, magnetic drop and no source-change flicker');
 node('reset').dispatch('click');
 
@@ -765,8 +770,8 @@ fakeWindow.handlers.pointercancel({pointerId:72});
 check(strip(8)===previous && node('info').textContent.includes('canceled'),
  'Canceled pointer gesture preserves all prior signal connections');
 node('reset').dispatch('click');
-// CH3 has no hidden legacy Bus A send. Source follows click selection.
-field(3,'output','Master');
+// CH3 has no legacy Bus A send. Explicit SEND OUT click arms the route.
+field(3,'output','Master');armSource(3);
 node('bankSelect').value='1';node('bankSelect').dispatch('change');
 wireTo(11);
 check(node('routeChoice').hidden===false &&
