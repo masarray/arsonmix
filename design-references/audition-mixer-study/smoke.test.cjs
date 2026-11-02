@@ -1012,5 +1012,24 @@ check(html.indexOf('class="wire-context-line"')<html.indexOf('class="wire-incomi
 node('reset').dispatch('click');
 check(node('wireView').value==='focus',
  'V30 reset restores Focus with graph/editor defaults intact');
+// V31 top patch strip, gravity-hung curves and 24-frame bounded spring.
+check(html.includes('/* V31 — FL-style suspended routing:') &&
+ html.includes('.wire-tray{\n order:-2!important') &&
+ html.includes('.wire-section .wire-deck{\n order:0!important') &&
+ html.includes('function wireSagClearance(rect,section)'),
+ 'V31 OUT/IN patch hardware precedes a clean lower wire stage without moving strip geometry');
+check(html.includes('(y0+control).toFixed(1)') &&
+ html.includes('(y1+control).toFixed(1)') &&
+ !html.includes('(y0-rise).toFixed(1)'),
+ 'V31 both cubic control points hang BELOW their anchors, including right-to-left routes');
+check(html.includes('let wireSpring=0,wireSpringVelocity=0') &&
+ html.includes('wireSpringFrames<24') &&
+ html.includes("window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches") &&
+ html.includes('render();kickWireSpring()'),
+ 'V31 elastic gravity settling is bounded to 24 frames and honors reduced-motion');
+check(html.includes('wirePathData(x0,y0,x1,y1,sagLimit);') &&
+ html.includes('wireSagClearance(fromRect,senderBay)') &&
+ html.includes('wirePathData(xa,ya,xb,yb,rise,wireSpring)'),
+ 'V31 drag and incoming/outgoing share the new downward gravity geometry');
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));

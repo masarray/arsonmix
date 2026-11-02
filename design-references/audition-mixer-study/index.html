@@ -3588,6 +3588,30 @@ html * ,html *::before,html *::after{
  .route-choice-head button,.route-choice-option,button.hw-key
 ):focus-visible{outline:2px solid #80d5ed!important;outline-offset:2px!important}
 
+
+/* V31 — FL-style suspended routing: actual OUT/IN/GAIN patch hardware TOP,
+   the flexible signal cables hang below under their own simulated weight.
+   The panel is strictly a GUI reference; don't move PAN, FX, M/S/PFL, faders.
+   Reorder only expanded compartments. Folded WIRE remains 23px icon-only. */
+.console-body.wire-routing-v15:not(.collapsed-send) .strip .wire-section{
+ display:flex!important;flex-direction:column!important;
+ justify-content:flex-start!important;
+}
+.console-body.wire-routing-v15:not(.collapsed-send) .strip .wire-section .wire-tray{
+ order:-2!important;flex-shrink:0!important;
+ border-top:0!important;border-bottom:1px solid #405965!important;
+}
+.console-body.wire-routing-v15:not(.collapsed-send) .strip .wire-section .wire-deck{
+ order:0!important;flex:1 1 0!important;min-height:0!important;
+ background:#101f29!important;border-bottom:0!important;
+ box-shadow:inset 0 2px 4px #07131b6e!important;
+ padding:0!important;
+}
+.console-body.wire-routing-v15:not(.collapsed-send) .strip .wire-section .wire-deck-label,
+.console-body.wire-routing-v15:not(.collapsed-send) .strip .wire-section .wire-deck-status,
+.console-body.wire-routing-v15:not(.collapsed-send) .strip .wire-section .wire-deck-rail{
+ display:none!important;
+}
 </style>
 </head>
 <body>
@@ -3863,7 +3887,7 @@ function commitRouteChoice(kind){
   if(old?.kind==='primary'&&source.output===dest.name)source.output='Master';
   wireEdges.push({id:nextWireId++,sourceId:source.id,destId:dest.id,kind:'send',mode:'send',levelDb:0,enabled:true});
  }else return false;
- closeRouteChoice();render();
+ closeRouteChoice();render();kickWireSpring();
  say(source.name+' → '+dest.name+' · '+(kind==='only'?'VIA BUS ONLY · no direct MAIN':'PARALLEL SEND · original primary output preserved')+' · GUI DEMO ONLY');
  return true;
 }
@@ -3888,7 +3912,7 @@ function wireConnect(source,dest){
  }
  if(wireIsCycle(source.id,dest.id)){say('WIRE REJECTED: feedback loop · existing signal graph preserved');return false;}
  wireEdges.push({id:nextWireId++,sourceId:source.id,destId:dest.id,mode:wireMode,levelDb:0,enabled:true});
- render();say('WIRE '+source.name+' → '+dest.name+' · '+(wireMode==='send'?'FOLLOW FADER SEND':'INDEPENDENT PRE FX')+(source.output==='Master'?' · MAIN direct ON':'')+' · GUI DEMO ONLY, no native PCM');
+ render();kickWireSpring();say('WIRE '+source.name+' → '+dest.name+' · '+(wireMode==='send'?'FOLLOW FADER SEND':'INDEPENDENT PRE FX')+(source.output==='Master'?' · MAIN direct ON':'')+' · GUI DEMO ONLY, no native PCM');
  return true;
 }
 
@@ -3928,7 +3952,7 @@ function replugWireEdge(sourceId,oldDestId,nextDestId){
  }
  edge.destId=dest.id;
  if(edge.kind==='primary'&&source.output===previous.name)source.output=dest.name;
- wireAnchorId=dest.id;render();
+ wireAnchorId=dest.id;render();kickWireSpring();
  say('WIRE rerouted '+source.name+' · '+previous.name+' → '+dest.name+
   ' · '+wireDbText(edge.levelDb)+' preserved · GUI DEMO');return true;
 }
@@ -4237,21 +4261,41 @@ function refreshWireRoutingNodes(){
  });
  renderWireRouting();
 }
-/* Smooth bezier routing in either horizontal direction; bounded by patch bay. */
-/* V28 NATURAL FLEX CABLE — undo V27 shared ferrule/stem.
-   Each route is a separate flexible cable from the exact OUT jack.
-   Height grows with horizontal span, and intentionally arches above
-   the WIRE legend (within the existing SVG viewport).
-   Geometry only: preserve graph, magnet, replug and hit testing. */
-function wirePathData(x0,y0,x1,y1,riseLimit){
- const dx=x1-x0,span=Math.abs(dx),dy=Math.abs(y1-y0);
- const rise=Math.min(164,Math.max(58,52+span*.086+dy*.13));
- const xLead=Math.max(7,Math.min(60,span*.20));
- const signedLead=(dx<0?-1:1)*xLead;
+/* V31 suspended signal cables: catenary-inspired cubic, not the old sky arch.
+   A vertical DOWN tangent at OUT and an UP tangent at IN create the natural U
+   in either direction, independent of color or route model.
+   Limit depth to available cable stage so the curve never falls into PAN. */
+function wireSagClearance(rect,section){
+ return section?Math.max(18,section.bottom-(rect.top+rect.height*.5)-9):72;
+}
+function wirePathData(x0,y0,x1,y1,sagLimit,spring=0){
+ const span=Math.abs(x1-x0);
+ const ceiling=Math.max(12,Math.min(100,Number(sagLimit)||72));
+ const sag=Math.max(10,Math.min(ceiling,Math.min(ceiling-7,20+Math.sqrt(span)*1.55)+spring));
+ const control=(sag*4/3);
  return 'M '+x0.toFixed(1)+' '+y0.toFixed(1)+
-  ' C '+(x0+signedLead).toFixed(1)+' '+(y0-rise).toFixed(1)+
-  ', '+(x1-signedLead).toFixed(1)+' '+(y1-rise).toFixed(1)+
+  ' C '+x0.toFixed(1)+' '+(y0+control).toFixed(1)+
+  ', '+x1.toFixed(1)+' '+(y1+control).toFixed(1)+
   ', '+x1.toFixed(1)+' '+y1.toFixed(1);
+}
+/* Lightweight, damped spring on ACCEPTED route changes only: maximum 24 RAF
+   frames, zero permanent timers and NO signal/audio tick work. Reduced motion
+   means no animation. Render never mutates the underlying route graph. */
+let wireSpring=0,wireSpringVelocity=0,wireSpringActive=false,wireSpringFrames=0;
+function kickWireSpring(){
+ if(window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches)return;
+ wireSpringVelocity=5;wireSpringFrames=0;
+ if(wireSpringActive)return;
+ wireSpringActive=true;
+ const step=()=>{
+  wireSpringVelocity=(wireSpringVelocity-wireSpring*.23)*.73;
+  wireSpring+=wireSpringVelocity;
+  if(!wireGesture?.active)renderWireRouting();
+  if(++wireSpringFrames<24&&(Math.abs(wireSpring)>.18||Math.abs(wireSpringVelocity)>.18)){
+   requestAnimationFrame(step);
+  }else{wireSpring=0;wireSpringVelocity=0;wireSpringActive=false;renderWireRouting();}
+ };
+ requestAnimationFrame(step);
 }
 /* V23 Smart Wire: visible lit socket means preview is center-snapped and
    mouseup accepts that exact candidate. Moving away releases attraction;
@@ -4364,7 +4408,7 @@ function renderWireRouting(){
  svg.setAttribute('viewBox','0 0 '+vp.width+' '+vp.height);
  const x0=from.left-vp.left+from.width/2,y0=from.top-vp.top+from.height*.5;
  const well=fromEl.closest?.('.send-section')?.getBoundingClientRect?.();
- const riseLimit=well?Math.max(18,from.top-well.top-10):85;
+ const sagLimit=wireSagClearance(from,well);
  const paths=[];
  // V30 optional ALL: draw non-focused, currently visible paths in the back.
  // Never simulate a cable across hidden banks; the compact legend retains
@@ -4378,9 +4422,9 @@ function renderWireRouting(){
    const a=fromNode?.getBoundingClientRect?.(),b=toNode?.getBoundingClientRect?.();
    if(!sender||!a?.width||!b?.width)continue;
    const bay=fromNode.closest?.('.send-section')?.getBoundingClientRect?.();
-   const lift=bay?Math.max(18,a.top-bay.top-10):riseLimit;
+   const lift=wireSagClearance(a,bay);
    const d=wirePathData(a.left-vp.left+a.width*.5,a.top-vp.top+a.height*.5,
-    b.left-vp.left+b.width*.5,b.top-vp.top+b.height*.5,lift);
+    b.left-vp.left+b.width*.5,b.top-vp.top+b.height*.5,lift,wireSpring);
    paths.push('<path class="wire-context-line" data-from="'+edge.sourceId+
     '" data-to="'+edge.destId+'" data-route-kind="'+edge.kind+
     '" d="'+d+'" stroke="'+sender.color+
@@ -4399,8 +4443,8 @@ function renderWireRouting(){
   const xa=fromRect.left-vp.left+fromRect.width*.5,ya=fromRect.top-vp.top+fromRect.height*.5;
   const xb=toRect.left-vp.left+toRect.width*.5,yb=toRect.top-vp.top+toRect.height*.5;
   const senderBay=fromNode.closest?.('.send-section')?.getBoundingClientRect?.();
-  const rise=senderBay?Math.max(18,fromRect.top-senderBay.top-10):riseLimit;
-  const d=wirePathData(xa,ya,xb,yb,rise);
+  const rise=wireSagClearance(fromRect,senderBay);
+  const d=wirePathData(xa,ya,xb,yb,rise,wireSpring);
   paths.push('<path class="wire-incoming-line" data-from="'+edge.sourceId+
    '" data-to="'+edge.destId+'" data-route-kind="'+edge.kind+
    '" d="'+d+'" stroke="'+sender.color+'" stroke-width="1.65" opacity=".32" fill="none" stroke-linecap="round"/>');
@@ -4418,7 +4462,7 @@ function renderWireRouting(){
   const rect=viewport.querySelector?.('.strip[data-id="'+dest.id+'"] .wire-node-in')?.getBoundingClientRect?.();
   if(!rect||!rect.width)continue;
   const x1=rect.left-vp.left+rect.width/2,y1=rect.top-vp.top+rect.height/2;
-  const d=wirePathData(x0,y0,x1,y1,riseLimit),color=edge.preview?'#b5e8d3':dest.color||'#93e5b4';
+  const d=wirePathData(x0,y0,x1,y1,sagLimit,wireSpring),color=edge.preview?'#b5e8d3':dest.color||'#93e5b4';
   paths.push('<path class="wire-outgoing-shadow" d="'+d+'" stroke="#06151b" stroke-width="'+(edge.preview?4:6)+'" opacity="'+(edge.preview?'.18':'.6')+'" fill="none" stroke-linecap="round"/>'+
    '<path class="wire-outgoing-line" data-from="'+source.id+'" data-to="'+edge.destId+
    '" data-route-kind="'+edge.kind+'" d="'+d+'" stroke="'+color+
@@ -4437,7 +4481,7 @@ function renderWireRouting(){
    x1=rect.left-vp.left+rect.width*.5;
    y1=rect.top-vp.top+rect.height*.5;
   }
-  const d=wirePathData(x0,y0,x1,y1,riseLimit);
+  const d=wirePathData(x0,y0,x1,y1,sagLimit);
   paths.push('<path class="wire-drag-line" d="'+d+'" stroke="#06151b" stroke-width="6" opacity=".25" fill="none" stroke-linecap="round"/>'+
    '<path class="wire-drag-line" d="'+d+'" stroke="'+(snap?.color||'#b5eedb')+'" stroke-width="2.4" opacity=".54" fill="none" stroke-linecap="round"/>'+
    (wireGesture.movingEdgeId!==null?'<circle class="wire-floating-plug" cx="'+x1.toFixed(1)+'" cy="'+y1.toFixed(1)+'" r="5.5" fill="'+(snap?.color||'#b5eedb')+'" fill-opacity=".75" stroke="#d8f7ed" stroke-opacity=".65" stroke-width="1"/>':''));
