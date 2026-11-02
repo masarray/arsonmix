@@ -3703,6 +3703,21 @@ html * ,html *::before,html *::after{
 @media(prefers-reduced-motion:reduce){
   .console-body .strip .switch-section .codepen-buttons-wrapper>.button{transition:none!important}
 }
+
+
+/* V32 off-bank patch context: visible state, not extra operator chrome. */
+.mixer-title .wire-offbank-source{
+ flex:none;max-width:215px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+ font:600 9px/14px 'Segoe UI',Arial,sans-serif;color:#d2f0e1;
+ background:#1e3b36;border:1px solid #507f71;border-radius:3px;padding:0 5px;
+ cursor:pointer;
+}
+.mixer-title .wire-offbank-source:hover,.mixer-title .wire-offbank-source:focus-visible{
+ border-color:#91d0b7;color:white;
+}
+.mixer-title .wire-offbank-instruction{color:#bad0d7;font:500 9px/15px 'Segoe UI',Arial,sans-serif;overflow:hidden;text-overflow:ellipsis}
+.routing-wire-overlay .wire-offbank-entry,.routing-wire-overlay .wire-offbank-caption{pointer-events:none}
+.routing-wire-overlay .wire-offbank-caption{fill:#9fbcc5;font:500 8px 'Segoe UI',Arial,sans-serif;letter-spacing:.15px}
 </style>
 </head>
 <body>
@@ -3832,14 +3847,14 @@ function savePluginPreferences(){
  }));}catch(error){/* Manager still works without browser storage. */}
 }
 const tracksEl=document.getElementById('tracks'),masterEl=document.getElementById('master'),info=document.getElementById('info');
-let nextId=1,nextGroup=1,tracks=[],master,preview=false,meterFrame=0,lastTick=0,clipboard=null,scenes=[],sofEnabled=false,sofTarget="Bus A",wireSourceId=1,wireEdges=[],nextWireId=1,wireMode='send',wireAnchorId=null,wireHoverId=null,wireGesture=null,wireSuppressClick=false,pendingBusRoute=null,wireView='focus';
+let nextId=1,nextGroup=1,tracks=[],master,preview=false,meterFrame=0,lastTick=0,clipboard=null,scenes=[],sofEnabled=false,sofTarget="Bus A",wireSourceId=1,wireEdges=[],nextWireId=1,wireMode='send',wireAnchorId=null,wireHoverId=null,wireGesture=null,wireSuppressClick=false,pendingBusRoute=null,wireView='focus',wireSourcePinned=false;
 const clone=x=>JSON.parse(JSON.stringify(x));
 const selection=()=>tracks.concat(master).filter(t=>t.selected);
 const make=(name,kind,color)=>{
  const id=nextId++;
  return {id,name,kind,color,icon:kind==='master'?'◎':kind==='bus'?'⊞':kind==='fx'?'◉':'♩',group:null,safe:false,format:'stereo',input:'None',output:kind==='master'?'Default Output':'Master',fx:Array(8).fill('None'),slotBypass:Array(8).fill(false),fxOn:true,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,activeSend:0,sendSlots:Array.from({length:16},()=>({send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0})),eq:true,pan:0,trim:0,mute:false,solo:false,cue:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
 };
-function init(){nextId=1;nextGroup=1;wireSourceId=1;wireEdges=[];nextWireId=1;wireMode='send';wireView='focus';document.getElementById('wireView').value='focus';wireAnchorId=null;wireHoverId=null;wireGesture=null;wireSuppressClick=false;pendingBusRoute=null;const choice=document.getElementById('routeChoice');if(choice)choice.hidden=true;document.getElementById('wireMode').value='send';tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
+function init(){nextId=1;nextGroup=1;wireSourceId=1;wireEdges=[];nextWireId=1;wireMode='send';wireView='focus';wireSourcePinned=false;document.getElementById('wireView').value='focus';wireAnchorId=null;wireHoverId=null;wireGesture=null;wireSuppressClick=false;pendingBusRoute=null;const choice=document.getElementById('routeChoice');if(choice)choice.hidden=true;document.getElementById('wireMode').value='send';tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 /* Google Material Icons SVG paths, Apache-2.0. Inline/zero font or network requests. */
 const MATERIAL_PATH=Object.freeze({
@@ -3938,7 +3953,7 @@ function hasLegacySendTo(source,dest){
 function wireSourceTrack(id){return tracks.find(t=>t.id===id&&t.kind!=='master');}
 function selectWireSource(t){
  if(!t||t.kind==='master')return false;
- wireSourceId=t.id;wireAnchorId=null;wireHoverId=null;
+ wireSourceId=t.id;wireSourcePinned=true;wireAnchorId=null;wireHoverId=null;
  tracks.forEach(x=>x.selected=x.id===t.id);master.selected=false;
  render();say('SOURCE '+t.name+' · drag solid OUT → hollow IN, or click an IN jack · GUI DEMO');
  return true;
@@ -3978,7 +3993,7 @@ function commitRouteChoice(kind){
   if(old?.kind==='primary'&&source.output===dest.name)source.output='Master';
   wireEdges.push({id:nextWireId++,sourceId:source.id,destId:dest.id,kind:'send',mode:'send',levelDb:0,enabled:true});
  }else return false;
- closeRouteChoice();render();kickWireSpring();
+ closeRouteChoice();render();kickWireSpring(source.id,dest.id);
  say(source.name+' → '+dest.name+' · '+(kind==='only'?'VIA BUS ONLY · no direct MAIN':'PARALLEL SEND · original primary output preserved')+' · GUI DEMO ONLY');
  return true;
 }
@@ -4003,7 +4018,7 @@ function wireConnect(source,dest){
  }
  if(wireIsCycle(source.id,dest.id)){say('WIRE REJECTED: feedback loop · existing signal graph preserved');return false;}
  wireEdges.push({id:nextWireId++,sourceId:source.id,destId:dest.id,mode:wireMode,levelDb:0,enabled:true});
- render();kickWireSpring();say('WIRE '+source.name+' → '+dest.name+' · '+(wireMode==='send'?'FOLLOW FADER SEND':'INDEPENDENT PRE FX')+(source.output==='Master'?' · MAIN direct ON':'')+' · GUI DEMO ONLY, no native PCM');
+ render();kickWireSpring(source.id,dest.id);say('WIRE '+source.name+' → '+dest.name+' · '+(wireMode==='send'?'FOLLOW FADER SEND':'INDEPENDENT PRE FX')+(source.output==='Master'?' · MAIN direct ON':'')+' · GUI DEMO ONLY, no native PCM');
  return true;
 }
 
@@ -4043,7 +4058,7 @@ function replugWireEdge(sourceId,oldDestId,nextDestId){
  }
  edge.destId=dest.id;
  if(edge.kind==='primary'&&source.output===previous.name)source.output=dest.name;
- wireAnchorId=dest.id;render();kickWireSpring();
+ wireAnchorId=dest.id;render();kickWireSpring(source.id,dest.id);
  say('WIRE rerouted '+source.name+' · '+previous.name+' → '+dest.name+
   ' · '+wireDbText(edge.levelDb)+' preserved · GUI DEMO');return true;
 }
@@ -4337,7 +4352,7 @@ function refreshStrip(t){
  const newRack=updated.querySelector('.fxslot-list');if(newRack)newRack.scrollTop=scroll;
 }
 function selectTrack(t,add=false){
- const changedSource=!add&&t.kind!=='master'&&wireSourceId!==t.id;
+ const changedSource=!wireSourcePinned&&!add&&t.kind!=='master'&&wireSourceId!==t.id;
  if(changedSource){wireSourceId=t.id;wireAnchorId=null;wireHoverId=null;}
  if(!add){tracks.forEach(x=>x.selected=false);master.selected=false;t.selected=true;}
  else t.selected=!t.selected;
@@ -4370,23 +4385,37 @@ function wirePathData(x0,y0,x1,y1,sagLimit,spring=0){
   ', '+x1.toFixed(1)+' '+(y1+control).toFixed(1)+
   ', '+x1.toFixed(1)+' '+y1.toFixed(1);
 }
-/* Lightweight, damped spring on ACCEPTED route changes only: maximum 24 RAF
-   frames, zero permanent timers and NO signal/audio tick work. Reduced motion
-   means no animation. Render never mutates the underlying route graph. */
-let wireSpring=0,wireSpringVelocity=0,wireSpringActive=false,wireSpringFrames=0;
-function kickWireSpring(){
- if(window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches)return;
- wireSpringVelocity=5;wireSpringFrames=0;
- if(wireSpringActive)return;
- wireSpringActive=true;
- const step=()=>{
-  wireSpringVelocity=(wireSpringVelocity-wireSpring*.23)*.73;
-  wireSpring+=wireSpringVelocity;
-  if(!wireGesture?.active)renderWireRouting();
-  if(++wireSpringFrames<24&&(Math.abs(wireSpring)>.18||Math.abs(wireSpringVelocity)>.18)){
-   requestAnimationFrame(step);
-  }else{wireSpring=0;wireSpringVelocity=0;wireSpringActive=false;renderWireRouting();}
- };
+/* V32: short soft settling on ONLY the newly accepted source/destination
+   cable. A per-edge geometry cache and SVG path attribute update mean other
+   cables and the full mixer DOM are not rebuilt on animation frames.
+   A new connection invalidates the prior motion token. */
+let wireMotion={key:null,offset:0,token:0},wireMotionGeometry=new Map();
+function wireCableKey(edge){return edge.sourceId+'-'+edge.destId;}
+function wirePathFor(edge,x0,y0,x1,y1,limit){
+ const key=wireCableKey(edge);
+ wireMotionGeometry.set(key,[x0,y0,x1,y1,limit]);
+ return wirePathData(x0,y0,x1,y1,limit,wireMotion.key===key?wireMotion.offset:0);
+}
+function kickWireSpring(sourceId,destId){
+ if(!sourceId||!destId||window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches)return;
+ const key=sourceId+'-'+destId,token=++wireMotion.token;
+ wireMotion.key=key;wireMotion.offset=0;
+ let frame=0;
+ function paint(offset){
+  const geometry=wireMotionGeometry.get(key);if(!geometry)return;
+  const d=wirePathData(...geometry,offset);
+  for(const path of document.querySelectorAll('#wireLayer path[data-cable-key="'+key+'"]'))
+   if(path.getAttribute('d')!==d)path.setAttribute('d',d);
+ }
+ function step(){
+  if(token!==wireMotion.token)return;
+  frame++;
+  // 2.8px maximum, one gentle settling motion instead of rigid bounces.
+  wireMotion.offset=2.8*Math.exp(-frame*.22)*Math.cos(frame*.32);
+  paint(wireMotion.offset);
+  if(frame<18&&Math.abs(wireMotion.offset)>.08)requestAnimationFrame(step);
+  else{wireMotion.offset=0;wireMotion.key=null;paint(0);}
+ }
  requestAnimationFrame(step);
 }
 /* V23 Smart Wire: visible lit socket means preview is center-snapped and
@@ -4480,7 +4509,11 @@ function renderWireRouting(){
  const focus=wireSourceTrack(wireSourceId),routes=wireDisplayRoutes();
  const legend=document.getElementById('wireLegend'),main=document.getElementById('wireMaster');
  if(legend){
-  const markup=focus?wireLegendHtml(focus,routes):'Select a channel for IN / OUT';
+  const sourceInBank=!!viewport?.querySelector?.('.strip[data-id="'+focus?.id+'"] .wire-node-out');
+  const markup=focus&&!sourceInBank?
+   '<button type="button" class="wire-offbank-source" data-wire-jump-source="1" title="Return to '+escapeHtml(focus.name)+' without changing the patch source">FROM CH'+String(focus.id).padStart(2,'0')+' · '+escapeHtml(focus.name)+' ↶</button>'+
+   '<span class="wire-offbank-instruction">Click any IN on this bank</span>':
+   focus?wireLegendHtml(focus,routes):'Select a channel for IN / OUT';
   if(legend.innerHTML!==markup)legend.innerHTML=markup;
  }
  if(main&&source){
@@ -4496,12 +4529,20 @@ function renderWireRouting(){
  const vp=viewport.getBoundingClientRect?.();
  const fromEl=viewport.querySelector?.('.strip[data-id="'+source.id+'"] .wire-node-out');
  const from=fromEl?.getBoundingClientRect?.();
- if(!vp||!from||!vp.width||!vp.height){svg.innerHTML='';return;}
+ const visibleSource=!!from?.width;
+ const bankIn=viewport.querySelector?.('#tracks .strip .wire-node-in');
+ const bankRect=bankIn?.getBoundingClientRect?.();
+ if(!vp||!vp.width||!vp.height||(!visibleSource&&!bankRect?.width)){svg.innerHTML='';return;}
  svg.setAttribute('viewBox','0 0 '+vp.width+' '+vp.height);
- const x0=from.left-vp.left+from.width/2,y0=from.top-vp.top+from.height*.5;
- const well=fromEl.closest?.('.send-section')?.getBoundingClientRect?.();
- const sagLimit=wireSagClearance(from,well);
+ // An off-bank SOURCE enters via the left patch-bay boundary. This is a
+ // labelled portal, never a fabricated channel position across unseen banks.
+ const anchor=visibleSource?from:bankRect;
+ const x0=visibleSource?from.left-vp.left+from.width/2:12;
+ const y0=anchor.top-vp.top+anchor.height*.5;
+ const well=(visibleSource?fromEl:bankIn).closest?.('.send-section')?.getBoundingClientRect?.();
+ const sagLimit=wireSagClearance(anchor,well);
  const paths=[];
+ wireMotionGeometry=new Map();
  // V30 optional ALL: draw non-focused, currently visible paths in the back.
  // Never simulate a cable across hidden banks; the compact legend retains
  // the selected channel's complete routing status across those banks.
@@ -4515,9 +4556,9 @@ function renderWireRouting(){
    if(!sender||!a?.width||!b?.width)continue;
    const bay=fromNode.closest?.('.send-section')?.getBoundingClientRect?.();
    const lift=wireSagClearance(a,bay);
-   const d=wirePathData(a.left-vp.left+a.width*.5,a.top-vp.top+a.height*.5,
-    b.left-vp.left+b.width*.5,b.top-vp.top+b.height*.5,lift,wireSpring);
-   paths.push('<path class="wire-context-line" data-from="'+edge.sourceId+
+   const d=wirePathFor(edge,a.left-vp.left+a.width*.5,a.top-vp.top+a.height*.5,
+    b.left-vp.left+b.width*.5,b.top-vp.top+b.height*.5,lift);
+   paths.push('<path class="wire-context-line" data-cable-key="'+wireCableKey(edge)+'" data-from="'+edge.sourceId+
     '" data-to="'+edge.destId+'" data-route-kind="'+edge.kind+
     '" d="'+d+'" stroke="'+sender.color+
     '" stroke-width="1.25" opacity=".20" fill="none" stroke-linecap="round"/>');
@@ -4536,8 +4577,8 @@ function renderWireRouting(){
   const xb=toRect.left-vp.left+toRect.width*.5,yb=toRect.top-vp.top+toRect.height*.5;
   const senderBay=fromNode.closest?.('.send-section')?.getBoundingClientRect?.();
   const rise=wireSagClearance(fromRect,senderBay);
-  const d=wirePathData(xa,ya,xb,yb,rise,wireSpring);
-  paths.push('<path class="wire-incoming-line" data-from="'+edge.sourceId+
+  const d=wirePathFor(edge,xa,ya,xb,yb,rise);
+  paths.push('<path class="wire-incoming-line" data-cable-key="'+wireCableKey(edge)+'" data-from="'+edge.sourceId+
    '" data-to="'+edge.destId+'" data-route-kind="'+edge.kind+
    '" d="'+d+'" stroke="'+sender.color+'" stroke-width="1.65" opacity=".32" fill="none" stroke-linecap="round"/>');
  }
@@ -4554,12 +4595,16 @@ function renderWireRouting(){
   const rect=viewport.querySelector?.('.strip[data-id="'+dest.id+'"] .wire-node-in')?.getBoundingClientRect?.();
   if(!rect||!rect.width)continue;
   const x1=rect.left-vp.left+rect.width/2,y1=rect.top-vp.top+rect.height/2;
-  const d=wirePathData(x0,y0,x1,y1,sagLimit,wireSpring),color=edge.preview?'#b5e8d3':dest.color||'#93e5b4';
-  paths.push('<path class="wire-outgoing-shadow" d="'+d+'" stroke="#06151b" stroke-width="'+(edge.preview?4:6)+'" opacity="'+(edge.preview?'.18':'.6')+'" fill="none" stroke-linecap="round"/>'+
-   '<path class="wire-outgoing-line" data-from="'+source.id+'" data-to="'+edge.destId+
+  const d=wirePathFor(edge,x0,visibleSource?y0:y1,x1,y1,sagLimit),color=edge.preview?'#b5e8d3':dest.color||'#93e5b4';
+  paths.push('<path class="wire-outgoing-shadow" data-cable-key="'+wireCableKey(edge)+'" d="'+d+'" stroke="#06151b" stroke-width="'+(edge.preview?4:6)+'" opacity="'+(edge.preview?'.18':'.6')+'" fill="none" stroke-linecap="round"/>'+
+   '<path class="wire-outgoing-line" data-cable-key="'+wireCableKey(edge)+'" data-from="'+source.id+'" data-to="'+edge.destId+
    '" data-route-kind="'+edge.kind+'" d="'+d+'" stroke="'+color+
    '" stroke-width="'+(edge.preview?1.7:2.3)+'" opacity="'+(edge.preview?'.42':'.93')+
    '" fill="none" stroke-linecap="round"/>');
+ }
+ if(!visibleSource&&paths.some(p=>p.includes('wire-outgoing-line'))){
+  paths.push('<circle class="wire-offbank-entry" cx="'+x0+'" cy="'+y0+'" r="4" fill="'+source.color+'" stroke="#c9dfe6" stroke-width="1"/>'+
+   '<text class="wire-offbank-caption" x="'+(x0+9)+'" y="'+(y0+17)+'">CH'+String(source.id).padStart(2,'0')+' · OTHER BANK</text>');
  }
  if(dragging){
   let x1=Math.max(2,Math.min(vp.width-2,wireGesture.point.x-vp.left));
@@ -5056,16 +5101,31 @@ document.getElementById('ungroup').addEventListener('click',ungroupSelected);
 document.getElementById('saveScene').addEventListener('click',saveScene);
 document.getElementById('recallScene').addEventListener('click',recallScene);
 document.getElementById('sceneSafe').addEventListener('click',setSnapshotSafe);
-document.getElementById('bankSelect').addEventListener('change',()=>{render();say('Switched mixer fader bank');});
+function sayWireBankContext(base){
+ const source=wireSourceTrack(wireSourceId);
+ const inBank=!!document.querySelector('#tracks .strip[data-id="'+source?.id+'"]');
+ say(source&&!inBank?'FROM CH'+String(source.id).padStart(2,'0')+' ('+source.name+') kept · click an IN on this bank · '+base:base);
+}
+document.getElementById('wireLegend').addEventListener('click',e=>{
+ if(!e.target.closest('[data-wire-jump-source]'))return;
+ const source=wireSourceTrack(wireSourceId);if(!source)return;
+ const filter=document.getElementById('viewFilter');
+ let shown=tracks.filter(t=>filter.value==='all'||(filter.value==='solo'?t.solo:t.kind===filter.value));
+ if(!shown.some(t=>t.id===source.id)){filter.value='all';shown=tracks;}
+ const index=shown.findIndex(t=>t.id===source.id);
+ render(Math.floor(Math.max(0,index)/bankCapacity()));
+ say('Returned to CH'+String(source.id).padStart(2,'0')+' · SOURCE kept · choose another bank to patch remotely');
+});
+document.getElementById('bankSelect').addEventListener('change',()=>{render();sayWireBankContext('Switched mixer fader bank');});
 document.getElementById('bankPrev').addEventListener('click',()=>{
  const sel=document.getElementById('bankSelect'),n=visibleBankCount();
  if(!n){sel.value='all';render();say('No channels available in the active layer');return;}
- const old=Number(sel.value)||0;sel.value=String((old-1+n)%n);render();say('Previous fader bank');
+ const old=Number(sel.value)||0;sel.value=String((old-1+n)%n);render();sayWireBankContext('Previous fader bank');
 });
 document.getElementById('bankNext').addEventListener('click',()=>{
  const sel=document.getElementById('bankSelect'),n=visibleBankCount();
  if(!n){sel.value='all';render();say('No channels available in the active layer');return;}
- const old=Number(sel.value)||0;sel.value=String((old+1)%n);render();say('Next fader bank');
+ const old=Number(sel.value)||0;sel.value=String((old+1)%n);render();sayWireBankContext('Next fader bank');
 });
 document.getElementById('wireMode').addEventListener('change',()=>{
  const selected=document.getElementById('wireMode').value;
@@ -5446,6 +5506,7 @@ window.addEventListener('keydown',e=>{
  if(e.key==='Escape'&&identityTrackId!==null){closeChannelIdentity();return;}
  if(e.key==='Escape'&&quickOpen){setFastPicker(false);return;}
  if(e.key==='Escape'&&pluginOpen){setBrowser(false);return;}
+ if(e.key==='Escape'&&wireSourcePinned){wireSourcePinned=false;renderWireRouting();say('WIRE SOURCE unlocked · click an OUT to pin a different source');return;}
  if(e.key==='Escape'&&preview)togglePreview();
  if(e.target===document.body&&(e.key==='ArrowRight'||e.key==='ArrowLeft')){
   const width={comfort:150,standard:125,compact:105}[document.querySelector('.console-body').dataset.density]||150;
