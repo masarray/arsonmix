@@ -50,7 +50,12 @@ def main():
    check(p.locator("#wireLayer path.wire-drag-line").count()==2,"drag cable missing")
    geom=plug.evaluate("""el=>({x:Number(el.getAttribute('cx')),y:Number(el.getAttribute('cy')),fill:el.getAttribute('fill')})""")
    viewport=p.locator("#viewport").bounding_box()
-   check(abs(geom["x"]-(px-viewport["x"]))<1.5 and abs(geom["y"]-(py-viewport["y"]))<1.5,("dot is not following pointer",geom,px,py))
+   # The existing renderer bounds the cable tip to the mixer viewport.
+   # Compare against the same bounded pointer, not raw screen coordinates.
+   ex=max(2,min(viewport["width"]-2,px-viewport["x"]))
+   ey=max(2,min(viewport["height"]-2,py-viewport["y"]))
+   check(abs(geom["x"]-ex)<1.5 and abs(geom["y"]-ey)<1.5,
+         ("dot is not following bounded pointer",geom,(ex,ey),viewport))
    # Magnetic snap docks BOTH cable and follower dot in the old IN socket.
    p.mouse.move(x1-7,y1,steps=5)
    check("is-snap-target" in (dest.get_attribute("class") or ""),"magnet did not snap to IN")
