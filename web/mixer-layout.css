@@ -1324,3 +1324,44 @@ html:not(.native-engine) #app #mixer[data-io-mode="CONSOLE"] #masterLeft .master
 @media(max-width:1099px){
  #app #mixer[data-io-mode="CONSOLE"]{--ar-visible-channels:6}
 }
+
+
+/* Native WIRE-pot — byte-for-byte uploaded SVG silhouette, inline-masked so
+   portable standalone and installed WebView render identically offline.
+   Realtime meters never trigger CSS painting; mask is static and compositor-light. */
+#app .arV6Console .arV6WirePot{
+  position:relative;display:inline-flex;align-items:center;justify-content:center;
+  flex:0 0 22px;width:22px;height:22px;min-width:22px;min-height:22px;
+  vertical-align:middle;background:none;border:0;box-shadow:none;
+  --v6-wire-fill:#4b535b;--v6-wire-deg:0deg;
+}
+#app .arV6Console .arV6WirePot::before{
+  content:"";position:absolute;inset:1px;width:20px;height:20px;
+  background:var(--v6-wire-fill,#4b535b);
+  -webkit-mask-image:url("data:image/svg+xml,%3Csvg%20version%3D%221.2%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20800%20800%22%20width%3D%22800%22%20height%3D%22800%22%3E%0A%09%3Cstyle%3E%0A%09%09.s0%20%7B%20fill%3A%20%23000000%20%7D%20%0A%09%3C%2Fstyle%3E%0A%09%3Cg%3E%0A%09%09%3Cg%3E%0A%09%09%09%3Cg%3E%0A%09%09%09%09%3Cpath%20class%3D%22s0%22%20d%3D%22m436.84%20436.84c-10.09%2010.09-23.34%2015.16-36.59%2015.16-13.25%200-26.49-5.07-36.59-15.16-20.23-20.24-20.23-52.94%200-73.18l253.11-253.11c-60.49-45.33-135.27-72.55-216.52-72.55-199.7%200-362.25%20162.5-362.25%20362.25%200%20199.75%20162.55%20362.25%20362.25%20362.25%20199.71%200%20362.25-162.5%20362.25-362.25%200-81.25-27.22-156.03-72.55-216.53z%22%2F%3E%0A%09%09%09%3C%2Fg%3E%0A%09%09%3C%2Fg%3E%0A%09%3C%2Fg%3E%0A%3C%2Fsvg%3E%0A");
+  mask-image:url("data:image/svg+xml,%3Csvg%20version%3D%221.2%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20800%20800%22%20width%3D%22800%22%20height%3D%22800%22%3E%0A%09%3Cstyle%3E%0A%09%09.s0%20%7B%20fill%3A%20%23000000%20%7D%20%0A%09%3C%2Fstyle%3E%0A%09%3Cg%3E%0A%09%09%3Cg%3E%0A%09%09%09%3Cg%3E%0A%09%09%09%09%3Cpath%20class%3D%22s0%22%20d%3D%22m436.84%20436.84c-10.09%2010.09-23.34%2015.16-36.59%2015.16-13.25%200-26.49-5.07-36.59-15.16-20.23-20.24-20.23-52.94%200-73.18l253.11-253.11c-60.49-45.33-135.27-72.55-216.52-72.55-199.7%200-362.25%20162.5-362.25%20362.25%200%20199.75%20162.55%20362.25%20362.25%20362.25%20199.71%200%20362.25-162.5%20362.25-362.25%200-81.25-27.22-156.03-72.55-216.53z%22%2F%3E%0A%09%09%09%3C%2Fg%3E%0A%09%09%3C%2Fg%3E%0A%09%3C%2Fg%3E%0A%3C%2Fsvg%3E%0A");
+  -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;
+  -webkit-mask-position:center;mask-position:center;
+  -webkit-mask-size:contain;mask-size:contain;
+  transform:rotate(var(--v6-wire-deg,0deg));
+  pointer-events:none;
+}
+#app .arV6Console .arV6WirePot.is-idle{opacity:1;pointer-events:none}
+#app .arV6Console .arV6WirePot.is-connected:focus-within{outline:1px solid #70bed2;outline-offset:1px}
+#app .arV6Console .arV6SendEmpty{
+  grid-template-columns:minmax(0,1fr) 24px;
+  grid-template-rows:20px;min-height:21px;
+}
+#app .arV6Console .arV6SendEmpty .arV6SendName{color:#849ba6;font-size:9px}
+#app .arV6Console .arV6SendEmpty .arV6WirePot{grid-column:2;grid-row:1}
+#app .arV6Console .arV6SendGain{gap:8px;min-height:22px}
+#app .arV6Console .arV6WirePot .arV6SendLevel{
+  position:absolute;inset:0;width:100%;height:100%;margin:0;
+  opacity:0;cursor:ns-resize;touch-action:none;appearance:none;
+  -webkit-appearance:none;
+}
+#app .arV6Console .arV6WirePot .arV6SendLevel:disabled{cursor:not-allowed}
+#app .arV6Console .arV6SendDb{flex:1 1 auto;min-width:43px;text-align:left}
+@media(prefers-reduced-motion:reduce){
+ #app .arV6Console .arV6WirePot::before{transition:none!important}
+}

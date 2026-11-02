@@ -216,6 +216,22 @@
   const uiStats={structureRenders:0,controlRefreshes:0,telemetryFastFrames:0};
   let meterReadings=new Map();
   let draggingFx=null;
+  // Local pointer preview only. The accepted send stays native-owned until ACK.
+  let wirePotGesture=null;
+  const wirePotFill=id=>{
+    const c=byId.get(id)?.color;
+    return typeof c==='string'&&/^#[0-9a-fA-F]{6}$/.test(c)?c:'#4b535b';
+  };
+  const wirePotAngle=db=>(-135+((clamp(db,-60,12)+60)/72)*270).toFixed(1)+'deg';
+  function paintWirePot(pot,db){
+    if(pot)pot.style.setProperty('--v6-wire-deg',wirePotAngle(db));
+  }
+  function acceptedWireLevel(id,sendId){
+    const channel=byId.get(id);
+    const send=channel?.sends?.find(s=>String(s.id)===sendId);
+    const db=send&&typeof send.levelDb==='number'?send.levelDb:NaN;
+    return Number.isFinite(db)?clamp(db,-60,12):null;
+  }
   // Numeric decimal wire identifiers are required by integration/ConsoleNativeContractV6.h.
   // Never downcast native 64-bit ChannelId, device epoch, or graph revision.
   // Wire uint64 identities are canonical decimal STRINGS, not JS numbers.
@@ -999,9 +1015,16 @@
   }
   function sendSection(ch){
     const section=h('div','arV6Sends');
-    section.append(h('span','arV6SectionTitle','SEND'));
+    section.append(h('span','arV6SectionTitle','SEND · NATIVE'));
     const sends=Array.isArray(ch.sends)?ch.sends:[];
     const targets=(accepted.graph.destinations||[]).filter(x=>x.acceptsSend===true);
+    // A silent dark knob has no keyboard/pointer action, cannot invent a route.
+    if(!sends.length){
+      const zero=h('div','arV6Send arV6SendEmpty');
+      zero.append(h('span','arV6SendName','NO PATCHED WIRE'),
+        h('span','arV6WirePot is-idle'));
+      section.append(zero);
+    }
     for(const send of sends){
       const line=h('div','arV6Send');line.dataset.sendId=clean(send.id);
       line.append(h('span','arV6SendName',clean(send.name||send.targetId)));
@@ -1009,16 +1032,26 @@
         'data-id':ch.id,'data-send':clean(send.id)});
       line.append(toggle);
       const gain=h('label','arV6SendGain');
-      const db=Number(send.levelDb),verified=Number.isFinite(db);
+      const db=typeof send.levelDb==='number'?send.levelDb:NaN;
+      const verified=Number.isFinite(db);
+      const connected=acceptedNative&&accepted?.productionCallbackLive===true&&
+        !!byId.get(send.targetId)&&!!clean(send.id);
+      const knob=h('span','arV6WirePot '+(connected?'is-connected':'is-idle'));
+      knob.dataset.channelId=ch.id;knob.dataset.sendId=clean(send.id);
+      // A missing native channel color stays neutral; never invent an identity.
+      knob.style.setProperty('--v6-wire-fill',connected?wirePotFill(send.targetId):'#4b535b');
+      paintWirePot(knob,verified?db:0);
       const slider=h('input','arV6SendLevel');
-      slider.type='range';slider.min='-60';slider.max='12';slider.step='.5';
+      slider.type='range';slider.min='-60';slider.max='12';slider.step='.1';
       slider.value=String(verified?clamp(db,-60,12):0);
       slider.dataset.op='SET_SEND_LEVEL';slider.dataset.id=ch.id;
       slider.dataset.send=clean(send.id);
       slider.dataset.hasAcceptedLevel=String(verified);
-      slider.setAttribute('aria-label',(ch.name||ch.id)+' '+(send.name||send.targetId)+' send gain dB');
+      slider.setAttribute('aria-label',(ch.name||ch.id)+' '+(send.name||send.targetId)+' native SEND gain dB');
       slider.disabled=!can('SET_SEND_LEVEL',ch.id)||!verified;
-      gain.append(slider,h('output','arV6SendDb',verified?db.toFixed(1)+' dB':'—'));
+      knob.append(slider);
+      const out=h('output','arV6SendDb',verified?db.toFixed(1)+' dB':'—');
+      gain.append(knob,out);
       line.append(gain);section.append(line);
     }
     const select=selectField('+ TO','ADD_SEND',ch.id,targets,'','NO NATIVE SEND BUS');
@@ -1286,6 +1319,15 @@
           gain.value=String(verified?clamp(db,-60,12):0);
           const out=node.querySelector('.arV6SendDb');
           if(out)out.textContent=verified?db.toFixed(1)+' dB':'—';
+          const knob=node.querySelector('.arV6WirePot');
+          if(knob){
+            const connected=acceptedNative&&accepted?.productionCallbackLive===true&&
+              !!byId.get(send?.targetId)&&!!clean(send?.id);
+            knob.classList.toggle('is-connected',connected);
+            knob.classList.toggle('is-idle',!connected);
+            knob.style.setProperty('--v6-wire-fill',connected?wirePotFill(send.targetId):'#4b535b');
+            paintWirePot(knob,verified?db:0);
+          }
         }
       }
     }
@@ -1461,10 +1503,75 @@
     nameNode.replaceWith(input);input.focus();input.select();
   }
   root.addEventListener('dblclick',event=>{
+    const pot=event.target.closest('.arV6WirePot.is-connected');
+    if(pot){
+      const slider=pot.querySelector('.arV6SendLevel');
+      if(slider&&!slider.disabled){
+        const id=slider.dataset.id,sendId=slider.dataset.send;
+        const current=acceptedWireLevel(id,sendId);
+        if(current!==null&&current!==0)
+          sendIntent('SET_SEND_LEVEL',id,{sendId,levelDb:0});
+        refreshAcceptedControls();refreshDisabled();
+      }
+      event.preventDefault();return;
+    }
     const n=event.target.closest('.arV6PanRange');
     if(n&&!n.disabled){sendIntent('SET_PAN',n.dataset.id,{value:0});return;}
     const name=event.target.closest('.arV6Name');
     if(name)beginRename(name);
+  });
+  // Wire-pot is a compact SVG silhouette with full mouse-relative travel.
+  // During a drag only its local readout changes; exactly ONE native intent
+  // is submitted on pointerup. ACK + matching snapshot remain authoritative.
+  root.addEventListener('pointerdown',event=>{
+    if(event.button!==0||wirePotGesture)return;
+    const knob=event.target.closest?.('.arV6WirePot.is-connected');
+    const input=knob?.querySelector('.arV6SendLevel');
+    if(!knob||!input||input.disabled||!can('SET_SEND_LEVEL',input.dataset.id))return;
+    const original=acceptedWireLevel(input.dataset.id,input.dataset.send);
+    if(original===null)return;
+    wirePotGesture={pointerId:event.pointerId,knob,input,original,
+      id:input.dataset.id,sendId:input.dataset.send,
+      x:event.clientX,y:event.clientY,preview:original};
+    // Capture on the actual input: remains focused and keyboard accessible.
+    input.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+  });
+  root.addEventListener('pointermove',event=>{
+    const g=wirePotGesture;
+    if(!g||event.pointerId!==g.pointerId)return;
+    const displacement=(event.clientX-g.x)-(event.clientY-g.y);
+    const db=Math.round(clamp(g.original+displacement/(event.shiftKey?14:3),-60,12)*10)/10;
+    if(db!==g.preview){
+      g.preview=db;g.input.value=String(db);
+      paintWirePot(g.knob,db);
+      const label=g.knob.parentElement?.querySelector('.arV6SendDb');
+      if(label)label.textContent=db.toFixed(1)+' dB';
+    }
+    event.preventDefault();
+  });
+  function finishWirePot(event,cancelled=false){
+    const g=wirePotGesture;
+    if(!g||event.pointerId!==g.pointerId)return;
+    wirePotGesture=null;
+    g.input.releasePointerCapture?.(event.pointerId);
+    const delta=g.preview!==g.original;
+    // Do not stage an edit when pointercancel/blur/Escape rejects the gesture.
+    if(!cancelled&&delta){
+      sendIntent('SET_SEND_LEVEL',g.id,{sendId:g.sendId,levelDb:g.preview});
+    }
+    if(cancelled)showFeedback('SEND CANCELLED · native accepted gain unchanged');
+    refreshAcceptedControls();refreshDisabled();
+    event.preventDefault();
+  }
+  root.addEventListener('pointerup',event=>finishWirePot(event));
+  root.addEventListener('pointercancel',event=>finishWirePot(event,true));
+  root.addEventListener('keydown',event=>{
+    if(event.key==='Escape'&&wirePotGesture){
+      finishWirePot({pointerId:wirePotGesture.pointerId,
+        preventDefault:()=>{}},true);
+      event.preventDefault();
+    }
   });
   root.addEventListener('change',event=>{
     const n=event.target.closest('[data-op]');
@@ -1492,8 +1599,9 @@
     else if(op==='SET_SEND_LEVEL'){
       const send=(ch.sends||[]).find(s=>String(s.id)===n.dataset.send);
       const value=Number(n.value);
-      if(send&&Number.isFinite(Number(send.levelDb))&&Number.isFinite(value))
-        sendIntent('SET_SEND_LEVEL',id,{sendId:send.id,levelDb:clamp(value,-60,12)});
+      if(send&&typeof send.levelDb==='number'&&Number.isFinite(send.levelDb)&&Number.isFinite(value))
+        sendIntent('SET_SEND_LEVEL',id,{sendId:send.id,
+          levelDb:Math.round(clamp(value,-60,12)*10)/10});
     }
     else if(op==='SET_FADER'){
       if(modeSend){

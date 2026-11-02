@@ -36,6 +36,8 @@ def snapshot(revision=3, epoch=7, new_channel=False):
     if new_channel: channels.append(channel("18446744073709551610","CH 11"))
     channels.extend([channel("1001","FX Return","FX_RETURN"),
        channel("1002","Vocal Group","GROUP"),channel("1000","MAIN","MAIN")])
+    channels[-3]["color"]="#627c96"  # Native destination metadata, not browser-assigned color
+
     return {"schemaVersion":6,"productionCallbackLive":True,
       "device":{"epoch":str(epoch),"backend":"ASIO VERIFIED","captureDevice":"TEST IN",
         "playbackDevice":"TEST OUT","sampleRate":48000,"bufferFrames":128,"outputArmed":True,
@@ -445,7 +447,24 @@ async def main():
         assert tap["payload"] == {"sendId": "send-07", "tap": "PRE"}
         await page.evaluate("""id=>window.__v6Test.publish(
           'arMixConsoleAck',{requestId:id,status:'REJECTED',deviceEpoch:'7',graphRevision:'4',rosterRevision:'4',errorCode:'UNSUPPORTED'})""", tap["requestId"])
-        # Direct SEND slider uses native SET_SEND_LEVEL; no optimistic DSP.
+        # V35 real WebView SVG: no-send idle stays dark, native accepted
+        # SEND turns the *actual uploaded silhouette* into the destination
+        # channel color without leaking FX or meter updates into the control.
+        empty = page.locator('[data-channel-id="6"] .arV6WirePot.is-idle')
+        assert await empty.count()==1
+        idle = await empty.evaluate("""el=>({
+          fill:getComputedStyle(el,'::before').backgroundColor,
+          mask:getComputedStyle(el,'::before').webkitMaskImage,
+          tick:getComputedStyle(el,'::after').content})""")
+        assert idle["fill"]=="rgb(75, 83, 91)" and "data:image/svg+xml" in idle["mask"], idle
+        colored = page.locator('[data-send-id="send-07"] .arV6WirePot.is-connected')
+        assert await colored.count()==1
+        active = await colored.evaluate("""el=>({
+          fill:getComputedStyle(el,'::before').backgroundColor,
+          target:el.style.getPropertyValue('--v6-wire-fill'),
+          mask:getComputedStyle(el,'::before').webkitMaskImage})""")
+        assert active["target"]=="#627c96" and active["fill"]=="rgb(98, 124, 150)",active
+        # Direct SVG WIRE knob uses the native SET_SEND_LEVEL; no optimistic DSP.
         gain=page.locator('[data-op="SET_SEND_LEVEL"][data-id="7"][data-send="send-07"]')
         assert await gain.is_enabled()
         assert await gain.input_value()=="-6"
@@ -460,6 +479,27 @@ async def main():
           graphRevision:'4',rosterRevision:'4',errorCode:'GAIN_BUSY'})""",gain_cmd["requestId"])
         assert await gain.input_value()=="-6"
         assert await page.locator('[data-send-id="send-07"] .arV6SendDb').inner_text()=="-6.0 dB"
+        # User dragging 30px down = -10dB from the accepted -6dB, with ONE
+        # intent only on pointerup, not 30 high-frequency graph revisions.
+        begin=await page.evaluate("""()=>window.__v6Test.sent.filter(
+          e=>e.event==='arMixConsoleIntent').length""")
+        box=await colored.bounding_box()
+        x,y=box["x"]+box["width"]/2,box["y"]+box["height"]/2
+        await page.mouse.move(x,y)
+        await page.mouse.down()
+        await page.mouse.move(x,y+30,steps=4)
+        assert await page.evaluate("""()=>window.__v6Test.sent.filter(
+          e=>e.event==='arMixConsoleIntent').length""")==begin
+        await page.mouse.up()
+        pot_intent=await page.evaluate("""()=>window.__v6Test.sent.filter(
+          e=>e.event==='arMixConsoleIntent').at(-1).payload""")
+        assert pot_intent["operation"]=="SET_SEND_LEVEL",pot_intent
+        assert pot_intent["payload"]=={"sendId":"send-07","levelDb":-16},pot_intent
+        assert await gain.input_value()=="-6"  # no optimistic DSP
+        await page.evaluate("""id=>window.__v6Test.publish('arMixConsoleAck',
+          {requestId:id,status:'REJECTED',deviceEpoch:'7',graphRevision:'4',
+           rosterRevision:'4',errorCode:'GAIN_LOCKED'})""",pot_intent["requestId"])
+        assert await gain.input_value()=="-6"
         await page.locator(".arV6SendMode").select_option("1001")
         await page.locator('[data-op="SET_FADER"][data-id="7"]').evaluate(
             "(el)=>{el.value='-12';el.dispatchEvent(new Event('change',{bubbles:true}))}")
