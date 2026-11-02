@@ -27,7 +27,15 @@ def main():
             ensure("collapsed-send" in body.get_attribute("class"),f"{width}: WIRE not collapsed by default")
             rail=page.locator('.section-rail')
             sections=rail.locator('button.rail-cell[data-section]')
-            ensure(sections.all_inner_texts()==["I/O","FX","W"],f"{width}: left rail has awkward old labels")
+            ensure(sections.count()==3,f"{width}: I/O/FX/W sections changed")
+            for klass in ("route","fx","send"):
+                btn=rail.locator(f'button.rail-cell.{klass}')
+                icon=btn.locator('svg.rail-svg-icon')
+                ensure(icon.count()==1 and icon.is_visible(),
+                       f"{width}: reference vector {klass} icon not visible")
+                size=icon.bounding_box()
+                ensure(size is not None and size["width"]>=18 and size["height"]>=18,
+                       f"{width}: SVG {klass} icon too small")
             r=rail.bounding_box()
             ensure(r is not None and r["width"]<=34,f"{width}: left rail became too wide")
             wire=rail.locator('button[data-section="send"]')
