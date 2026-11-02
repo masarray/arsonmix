@@ -1,24 +1,24 @@
 {
-  "version": "preview-v25-auto-dismiss-vst-compact-wire-svg-icons",
+  "version": "preview-v26-focus-incoming-outgoing-wire-ledger",
   "kind": "GUI_REFERENCE_ONLY",
   "live_audio": false,
   "source_pr": 278,
   "source_branch": "design/audition-mixer-reference-isolated-20261101",
-  "source_sha": "768a2b08f5d8403b555687b6770029f68e22f4e5",
-  "source_content_sha": "d347d41c7088ddc505b07b37c350c80efc00c10c",
+  "source_sha": "1b272065c8dbf38d48847da0bb584766b7de37ba",
+  "source_content_sha": "4039d4577745c0ed4dc6406db96425de13b95bdb",
   "routes": [
     "/preview/mixer.html",
     "/preview-v2/"
   ],
-  "ci_run": 41421712393,
+  "ci_run": 41425858405,
   "ci_conclusion": "success",
-  "milestone": "Auto-dismiss transient Quick VST Picker on outside-click/focus/window-blur; persistent Plugin Manager remains nonmodal; expanded WIRE 112px; adaptive +12px fader; selected channel 1px; offline Material SVG",
-  "operator_acceptance": "233/233 DOM checks and Chromium focused V15/V18/V19/V22 QA all PASS at 1366x768, 1680x900, 1920x1080, including idle/OUT/IN/both state, geometry and no rendered wire X",
+  "milestone": "Selected-channel Focus Signal Flow: source-colored inbound wires behind outgoing brighter destination-colored wires, compact hue-aware IN/OUT per-channel badges and +N; legacy sends/splits/Bus model paths included. No cables on collapsed WIRE.",
+  "operator_acceptance": "237/237 deterministic DOM contract checks, Chromium V15/V18/V19/V22/V26 1366x768, 1680x900, 1920x1080 PASS; CH01/CH02 incoming to selected CH03 behind CH03 OUT CH04, legacy Bus badges across banks, no fake off-bank edges",
   "owner_geometry": "WIRE collapses to 23px, expands to 160px; FX/PAN/FADER hierarchy preserved",
   "hardware_key": "V20 true 3px hard sidewall / 2px while pressed, cap travels 1px; internal light gradient in translucent physical lens, sharp 2px radius, hard socket; no glow/blur/filters",
-  "limitations": "GUI reference only, does not route real PCM, no ASIO accepted-graph ACK. Direct MAIN handled separately via I/O.",
+  "limitations": "GUI-only preview; selected Focus graph is read-only visualization of reference model, not native PCM or ASIO accepted-graph ACK. Off-bank routing is represented by badges, not offscreen SVG paths.",
   "led_meter": "6px x 9px portrait LED; 2px dark divider, continuous green/yellow/amber/red",
-  "verification": "Chromium V15 controls + V25 picker focus/click, SVG icons, selected rim, wire routing, native I/O; visual geometry all viewports; Firefox diagnostics",
+  "verification": "PR278 focused browser #41425858405 PASS at head 1b272065; published source blob 4039d457...",
   "design_reference_pr": 278,
   "design_reference_sha": "2a889af659def8b5cbf5511ed24ffb6fe9c583d7"
 }

@@ -3347,6 +3347,39 @@ html * ,html *::before,html *::after{
 .route-choice-option .choice-symbol{display:inline-flex;align-items:center;justify-content:center}
 #preview .mi-svg{margin-right:3px}
 
+
+/* V26 Focus Signal Flow — compact inspectable two-way routing ledger.
+   Incoming is behind the selected channel's outgoing paths in the SAME SVG.
+   No glow, no additional layer, no moving fader or rack geometry. */
+.mixer-title .wire-legend{
+ display:inline-flex;flex:0 1 auto;align-items:center;gap:6px;
+ min-width:0;max-width:min(52vw,465px);
+ margin-left:auto;padding:2px 5px;
+ background:#142932;border:1px solid #38525d;border-radius:3px;
+ color:#a6c4cd;font:500 9px/1.2 'Segoe UI',Arial,sans-serif;
+ text-overflow:clip;overflow:hidden;white-space:nowrap;
+}
+.mixer-title .wire-map-focus{
+ flex:none;color:#d5e6eb;font-weight:600;letter-spacing:.03em;
+}
+.mixer-title .wire-map-group{
+ display:inline-flex;align-items:center;gap:3px;min-width:0;
+ padding-left:6px;border-left:1px solid #304b56;
+}
+.mixer-title .wire-map-direction{color:#7895a1;flex:none;font-size:8px;letter-spacing:.04em}
+.mixer-title .wire-map-chip{
+ display:inline-flex;align-items:center;gap:1px;flex:none;
+ color:var(--wire-hue,#a2c4cf);background:#1a333d;
+ border:1px solid #38515c;border-radius:3px;
+ padding:1px 3px;line-height:13px;font-size:9px;
+}
+.mixer-title .wire-map-chip svg{width:10px;height:10px;flex:0 0 10px}
+.mixer-title .wire-map-more{color:#99b4c0;font-size:9px}
+.mixer-title .wire-map-none{color:#55707e;font-size:9px}
+.routing-wire-overlay .wire-incoming-line,
+.routing-wire-overlay .wire-outgoing-line,
+.routing-wire-overlay .wire-outgoing-shadow{filter:none;pointer-events:none}
+
 </style>
 </head>
 <body>
@@ -4037,12 +4070,68 @@ function setWireSnapTarget(id){
   input.classList.toggle('is-snap-target',!!track&&track.id===id);
  }
 }
+/* V26 Focus Signal Flow — one read-only display graph for both directions.
+   Keep legacy Send, Split and Bus primary paths visible without changing the
+   underlying audio topology or introducing duplicate wire edges. */
+function wireDisplayRoutes(){
+ const routes=[],seen=new Set(),byName=new Map(tracks.map(t=>[t.name,t]));
+ const add=(sourceId,destId,kind)=>{
+  if(!sourceId||!destId||sourceId===destId||
+     !wireSourceTrack(sourceId)||!tracks.some(t=>t.id===destId))return;
+  const key=sourceId+':'+destId;
+  if(seen.has(key))return; // one visual cable per physical channel pair
+  seen.add(key);routes.push({sourceId,destId,kind});
+ };
+ for(const edge of wireEdges)if(edge.enabled)add(edge.sourceId,edge.destId,'wire');
+ for(const t of tracks){
+  const split=parseSplitSource(t.input);
+  if(split)add(split.sourceId,t.id,'split');
+  const primary=byName.get(t.output);
+  if(primary&&(primary.kind==='bus'||primary.kind==='fx'))add(t.id,primary.id,'primary');
+  for(let i=0;i<t.sendSlots.length;i++){
+   const slot=i===t.activeSend?t:t.sendSlots[i];
+   if(!slot?.sendOn||!slot.send||slot.send==='None')continue;
+   const dest=byName.get(slot.send);
+   if(dest)add(t.id,dest.id,'legacy');
+  }
+ }
+ return routes;
+}
+function wireLegendHtml(focus,routes){
+ const inRoutes=routes.filter(e=>e.destId===focus.id);
+ const outRoutes=routes.filter(e=>e.sourceId===focus.id);
+ const fmtId=t=>'CH'+String(t.id).padStart(2,'0');
+ const badges=(list,incoming)=>{
+  const nodes=list.map(e=>tracks.find(t=>t.id===(incoming?e.sourceId:e.destId))).filter(Boolean);
+  const visible=nodes.slice(0,2).map(t=>{
+   const icon=incoming?
+    '<svg viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="7" cy="7" r="2" fill="currentColor"/></svg>':
+    '<svg viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="3.4" fill="currentColor"/></svg>';
+   return '<span class="wire-map-chip" style="--wire-hue:'+escapeHtml(t.color)+
+    '" title="'+escapeHtml(t.name)+' · '+(incoming?'sends to ':'receives from ')+
+    escapeHtml(focus.name)+'">'+icon+'<span>'+fmtId(t)+'</span></span>';
+  }).join('');
+  const rest=nodes.length>2?'<span class="wire-map-more" title="'+
+   escapeHtml(nodes.slice(2).map(t=>fmtId(t)+' '+t.name).join(' · '))+
+   '">+'+(nodes.length-2)+'</span>':'';
+  return visible+rest||'<span class="wire-map-none">—</span>';
+ };
+ return '<span class="wire-map-focus">'+fmtId(focus)+'</span>'+
+  '<span class="wire-map-group is-in" aria-label="'+inRoutes.length+' incoming routes">'+
+    '<span class="wire-map-direction">IN</span>'+badges(inRoutes,true)+'</span>'+
+  '<span class="wire-map-group is-out" aria-label="'+outRoutes.length+' outgoing routes">'+
+    '<span class="wire-map-direction">OUT</span>'+badges(outRoutes,false)+'</span>';
+}
 function renderWireRouting(){
  const svg=document.getElementById('wireLayer'),viewport=document.getElementById('viewport');
  const dragging=!!(wireGesture?.active&&wireGesture.point);
  const source=wireSourceTrack(dragging?wireGesture.sourceId:wireSourceId);
+ const focus=wireSourceTrack(wireSourceId),routes=wireDisplayRoutes();
  const legend=document.getElementById('wireLegend'),main=document.getElementById('wireMaster');
- if(legend)legend.textContent=source?'CH'+String(source.id).padStart(2,'0')+' ⇢ '+wireOutgoingCount(source.id)+' · drag OUT to IN / click IN · DEMO':'Select source · click destination IN';
+ if(legend){
+  const markup=focus?wireLegendHtml(focus,routes):'Select a channel for IN / OUT';
+  if(legend.innerHTML!==markup)legend.innerHTML=markup;
+ }
  if(main&&source){
   const direct=source.output==='Master';
   main.textContent=direct?'MAIN ON':'MAIN OFF';main.setAttribute('aria-pressed',String(direct));
@@ -4062,18 +4151,43 @@ function renderWireRouting(){
  const well=fromEl.closest?.('.send-section')?.getBoundingClientRect?.();
  const riseLimit=well?Math.max(18,from.top-well.top-10):85;
  const paths=[];
- const edges=outgoingWires(source.id).filter(e=>!dragging||e.id!==wireGesture.movingEdgeId).map(e=>({...e,preview:false}));
- if(!dragging&&wireHoverId!==null&&wireHoverId!==source.id&&!wireFor(source.id,wireHoverId))
-  edges.push({destId:wireHoverId,preview:true});
- for(const edge of edges){
+ const incoming=routes.filter(e=>e.destId===source.id&&e.sourceId!==source.id);
+ // Back layer: each active incoming source OUT → focused channel IN.
+ for(const edge of incoming){
+  const sender=wireSourceTrack(edge.sourceId);
+  const fromNode=viewport.querySelector?.('.strip[data-id="'+edge.sourceId+'"] .wire-node-out');
+  const fromRect=fromNode?.getBoundingClientRect?.();
+  const toNode=viewport.querySelector?.('.strip[data-id="'+source.id+'"] .wire-node-in');
+  const toRect=toNode?.getBoundingClientRect?.();
+  if(!sender||!fromRect?.width||!toRect?.width)continue; // off-bank: badge remains
+  const xa=fromRect.left-vp.left+fromRect.width*.5,ya=fromRect.top-vp.top+fromRect.height*.5;
+  const xb=toRect.left-vp.left+toRect.width*.5,yb=toRect.top-vp.top+toRect.height*.5;
+  const senderBay=fromNode.closest?.('.send-section')?.getBoundingClientRect?.();
+  const rise=senderBay?Math.max(18,fromRect.top-senderBay.top-10):riseLimit;
+  const d=wirePathData(xa,ya,xb,yb,rise);
+  paths.push('<path class="wire-incoming-line" data-from="'+edge.sourceId+
+   '" data-to="'+edge.destId+'" data-route-kind="'+edge.kind+
+   '" d="'+d+'" stroke="'+sender.color+'" stroke-width="1.65" opacity=".32" fill="none" stroke-linecap="round"/>');
+ }
+ // Front layer: all outgoing routes from selected channel (including existing
+ // legacy Sends, primary Bus and split links), plus the original hover hint.
+ const outgoing=routes.filter(e=>e.sourceId===source.id&&
+  (!dragging||!wireGesture.movingEdgeId||
+   !wireEdges.some(w=>w.id===wireGesture.movingEdgeId&&w.destId===e.destId&&w.sourceId===source.id)));
+ if(!dragging&&wireHoverId!==null&&wireHoverId!==source.id&&!outgoing.some(e=>e.destId===wireHoverId))
+  outgoing.push({sourceId:source.id,destId:wireHoverId,kind:'preview',preview:true});
+ for(const edge of outgoing){
   const dest=tracks.find(t=>t.id===edge.destId);
   if(!dest)continue;
   const rect=viewport.querySelector?.('.strip[data-id="'+dest.id+'"] .wire-node-in')?.getBoundingClientRect?.();
   if(!rect||!rect.width)continue;
   const x1=rect.left-vp.left+rect.width/2,y1=rect.top-vp.top+rect.height/2;
   const d=wirePathData(x0,y0,x1,y1,riseLimit),color=edge.preview?'#b5e8d3':dest.color||'#93e5b4';
-  paths.push('<path d="'+d+'" stroke="#06151b" stroke-width="'+(edge.preview?4:6)+'" opacity="'+(edge.preview?'.18':'.85')+'" fill="none" stroke-linecap="round"/>'+
-   '<path d="'+d+'" stroke="'+color+'" stroke-width="'+(edge.preview?1.7:2.3)+'" opacity="'+(edge.preview?'.42':'.93')+'" fill="none" stroke-linecap="round"/>');
+  paths.push('<path class="wire-outgoing-shadow" d="'+d+'" stroke="#06151b" stroke-width="'+(edge.preview?4:6)+'" opacity="'+(edge.preview?'.18':'.6')+'" fill="none" stroke-linecap="round"/>'+
+   '<path class="wire-outgoing-line" data-from="'+source.id+'" data-to="'+edge.destId+
+   '" data-route-kind="'+edge.kind+'" d="'+d+'" stroke="'+color+
+   '" stroke-width="'+(edge.preview?1.7:2.3)+'" opacity="'+(edge.preview?'.42':'.93')+
+   '" fill="none" stroke-linecap="round"/>');
  }
  if(dragging){
   let x1=Math.max(2,Math.min(vp.width-2,wireGesture.point.x-vp.left));
