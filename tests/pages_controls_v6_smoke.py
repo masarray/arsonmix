@@ -23,7 +23,7 @@ def assert_ownership():
     assert css.count(".mx-hw-row>button.mx-hw-key")>=5
     assert "Owner-approved V5" not in css and ".codepen-buttons-wrapper" not in css
     assert "filter:blur" not in css.replace(" ","").lower()
-    assert js.count("mask id=")==0  # generated at runtime, one per control
+    # SVG mask element is created dynamically once for each hardware key.
     assert "<mask id=" in js and js.count("<text ")==1
     assert "fill=\\"#edf6fa\\"" in js  # bright OFF ambient through one cutout
     assert css.count("!important")<=14, "Owner CSS acquiring another override cascade"
