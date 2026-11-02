@@ -31,7 +31,7 @@ def main():
         })""")
         assert_true(initial['radius']=='2px','Hardware key must remain sharp-edged')
         assert_true(initial['filter']=='none','No GUI blur filter allowed')
-        assert_true(initial['bay']=='rgb(17, 31, 40)','Button socket cavity missing')
+        assert_true(initial['bay']=='rgb(18, 35, 45)','Button socket cavity missing')
         meter=page.locator('#tracks .strip[data-id="1"] .meter-lane').first
         led=meter.evaluate("""el=>({
           width:getComputedStyle(el).width,
