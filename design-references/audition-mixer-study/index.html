@@ -4970,7 +4970,7 @@ function finishFaderPointer(ev){
     const input=snap?.element||hit?.closest?.('.wire-node-in');
     const target=snap?.track||(input?findTrack(input):null),source=wireSourceTrack(g.sourceId);
     if(target&&source&&target.id!==source.id){
-     wireSourceId=source.id;wireAnchorId=target.id;
+     wireSourceId=source.id;wireSourcePinned=true;wireIntent=true;wireAnchorId=target.id;
      requestWireConnection(source,target,input);
     }else say('WIRE drop canceled · release in destination WIRE bay (graph unchanged)');
    }
