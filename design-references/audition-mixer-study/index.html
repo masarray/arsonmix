@@ -2893,10 +2893,11 @@ function renderWireRouting(){
  // Do not calculate cable geometry for a hidden WIRE bay. On expand the
  // existing requestAnimationFrame rerenders the same connections.
  if(!svg||!viewport)return;
- if(!source||document.querySelector('.console-body')?.classList.contains('collapsed-send')){
-  if(svg.childNodes.length)svg.replaceChildren();
+ if(!source){
+  if(svg.childNodes?.length)svg.replaceChildren?.();
   return;
  }
+ // Compact WIRE retains visible cables; collapsing is never a hidden route.
  const vp=viewport.getBoundingClientRect?.(),fromEl=viewport.querySelector?.('.strip[data-id="'+source.id+'"] .wire-node-out');
  const from=fromEl?.getBoundingClientRect?.();
  if(!vp||!from||!vp.width||!vp.height){svg.innerHTML='';return;}
