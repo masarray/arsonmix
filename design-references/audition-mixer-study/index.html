@@ -2872,6 +2872,114 @@ html * ,html *::before,html *::after{
  -webkit-backdrop-filter:none!important;
 }
 
+
+/* V20 CUBE/ILLUMINATED HARDWARE KEY — single material extension, zero blur.
+   Face appears internally backlit; three crisp unblurred sidewall lines
+   plus a dark socket convey cube depth. Press is precisely 1px. */
+:root{
+ --am-hw-key-bright:#586c79;
+ --am-hw-key-deep:#202f39;
+ --am-hw-key-wall:#1d2c35;
+ --am-hw-key-relief:inset 1px 0 0 #e5f7ff37,inset -1px 0 0 #070e1377,
+   inset 0 1px 0 #e5f7ff2e,inset 0 -1px 0 #0009,
+   0 1px 0 var(--am-hw-key-wall),0 2px 0 #080e13,0 3px 0 #05090d,
+   0 0 0 1px #071017,0 0 0 2px #405762;
+ --am-hw-key-flat:inset 1px 0 0 #e5f7ff23,inset -1px 0 0 #070e1377,
+   inset 0 1px 0 #0006,inset 0 -1px 0 #e1f4ff13,
+   0 1px 0 #080e13,0 2px 0 #05090d,
+   0 0 0 1px #071017,0 0 0 2px #405762;
+ --am-hw-key-upper-glint:linear-gradient(90deg,transparent,#ffffff2b 18%,#ffffffb8 50%,#ffffff2b 82%,transparent);
+ --am-hw-key-lower-glint:linear-gradient(90deg,transparent,#ffffff18 26%,#ffffff5c 50%,#ffffff18 74%,transparent);
+}
+/* The same cap surface for ALL push-buttons: near-vertical satin
+   highlight, colored lens middle, dark lower skirt, sharp edge. */
+:is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
+ .console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key){
+ --am-hw-key-press-y:1px;
+ user-select:none!important;-webkit-user-select:none!important;
+ border-radius:2px!important;
+ background:linear-gradient(180deg,
+   color-mix(in srgb,var(--am-hw-key-bright) 77%,#d5edf4) 0%,
+   var(--am-hw-key-bright) 8%,
+   color-mix(in srgb,var(--am-hw-key-bright) 35%,var(--am-hw-key-face)) 19%,
+   var(--am-hw-key-face) 38%,
+   color-mix(in srgb,var(--am-hw-key-face) 72%,var(--am-hw-key-bright)) 53%,
+   var(--am-hw-key-face) 68%,var(--am-hw-key-deep) 100%)!important;
+ box-shadow:var(--am-hw-key-relief)!important;
+ transform:translateY(0)!important;transition:none!important;
+ filter:none!important;
+}
+:is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
+ .console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key):active:not(:disabled){
+ transform:translateY(1px)!important;box-shadow:var(--am-hw-key-flat)!important;
+}
+:is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
+ .console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key)::before{
+ top:0!important;left:1px!important;right:1px!important;height:2px!important;
+ background:var(--am-hw-key-upper-glint)!important;
+}
+:is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
+ .console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key)::after{
+ bottom:0!important;left:2px!important;right:2px!important;height:1px!important;
+ background:var(--am-hw-key-lower-glint)!important;
+}
+/* Machined socket behind keycaps, not light bleeding onto the chassis. */
+.console-body .strip .switch-section{
+ background:#12232d!important;
+ box-shadow:inset 0 1px 0 #050b10,inset 1px 0 0 #08131a,
+            inset -1px 0 0 #263b47!important;
+}
+/* Off and on use same geometry. Only optical material tokens change. */
+.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
+.route-choice-head button{
+ --am-hw-key-face:#374c58;--am-hw-key-bright:#5c7582;
+ --am-hw-key-deep:#1a2b35;--am-hw-key-wall:#1c303b;
+}
+.command-bar button.tool:is(.active,.primary,[aria-pressed="true"]),
+.command-bar summary.tool[aria-expanded="true"],.more-tools[open] summary.tool{
+ --am-hw-key-face:#2d7386;--am-hw-key-bright:#71c3d8;
+ --am-hw-key-deep:#153e4a;--am-hw-key-wall:#1b5060;
+}
+.console-body .strip .switch-section button.switch:not(.on){
+ --am-hw-key-face:#405360;--am-hw-key-bright:#586c79;
+ --am-hw-key-deep:#202f39;--am-hw-key-wall:#1d2c35;
+}
+.console-body .strip .switch-section button.switch.on.mute{
+ --am-hw-key-face:#ae3346;--am-hw-key-bright:#f26e7c;
+ --am-hw-key-deep:#581e2b;--am-hw-key-wall:#611e2c;
+ --am-hw-key-ink:#fff7f8;--am-hw-key-border:#eb7380;
+}
+.console-body .strip .switch-section button.switch.on.solo{
+ --am-hw-key-face:#bc8f2e;--am-hw-key-bright:#ffe08a;
+ --am-hw-key-deep:#654811;--am-hw-key-wall:#715520;
+ --am-hw-key-ink:#261d09;--am-hw-key-border:#f4d370;
+}
+.console-body .strip .switch-section button.switch.on.cue{
+ --am-hw-key-face:#2a879e;--am-hw-key-bright:#79d8ed;
+ --am-hw-key-deep:#134458;--am-hw-key-wall:#185468;
+ --am-hw-key-ink:#f4fdff;--am-hw-key-border:#7fd7e8;
+}
+.route-choice-option.primary{
+ --am-hw-key-face:#327b64;--am-hw-key-bright:#7fdec0;
+ --am-hw-key-deep:#164b3c;--am-hw-key-wall:#185341;
+}
+#identitySave{
+ --am-hw-key-face:#2d8597;--am-hw-key-bright:#80d5e7;
+ --am-hw-key-deep:#174757;--am-hw-key-wall:#185468;
+}
+/* Explicitly no optical postprocessing / blur / expensive animation. */
+:is(.command-bar,.console-body,.plugin-browser,.route-choice) button{
+ filter:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;
+}
+
 </style>
 </head>
 <body>
