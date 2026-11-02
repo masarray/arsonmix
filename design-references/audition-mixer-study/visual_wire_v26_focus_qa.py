@@ -103,22 +103,27 @@ def main():
              f'{width}: Bus A did not become focused channel')
       ensure(incoming.count()==0,
              f'{width}: renderer invented offscreen CH01/02 cable coordinates')
-      # V27 real one-to-many physical OUT ferrule: 1 stem, 1 junction,
-      # 2 independent destinations leave exactly the same branch coordinate.
+      # V28: independently flexible Bézier cables; no V27 common stem.
+      # Longer runs must arch far above their source socket/legend.
       bank.select_option('0')
-      connect(1,2) # CH01 already sends to CH03 (fixture above).
+      connect(1,2) # CH01 already sends to CH03.
       select(1)
       branch=layer.locator('path.wire-outgoing-line')
-      stems=layer.locator('path.wire-origin-stem')
-      joins=layer.locator('circle.wire-origin-junction')
-      ensure(branch.count()==2 and stems.count()==1 and joins.count()==1,
-             f'{width}: overlapping duplicate cable stems or missing branches')
-      starts=[d.split(' C ')[0] for d in branch.evaluate_all(
-          '(els)=>els.map(e=>e.getAttribute("d"))')]
-      ensure(len(set(starts))==1,
-             f'{width}: 1-to-many cable starts diverge at OUT: {starts}')
-      ensure(stems.first.get_attribute('d').startswith('M '),
-             f'{width}: shared physical stem path missing')
+      ensure(branch.count()==2,f'{width}: expected two independent fanout cables')
+      ensure(layer.locator('.wire-origin-stem,.wire-origin-junction,.wire-origin-shaft').count()==0,
+             f'{width}: V27 stiff common ferrule must be fully undone')
+      import re
+      curves=[[float(v) for v in re.findall(r'-?\d+(?:\.\d+)?',d)]
+              for d in branch.evaluate_all('(els)=>els.map(e=>e.getAttribute("d"))')]
+      ensure(all(len(c)==8 for c in curves),
+             f'{width}: natural cables should be single cubic Bézier paths: {curves}')
+      ensure(len({(c[0],c[1]) for c in curves})==1,
+             f'{width}: cable starting point must remain centered on OUT jack')
+      ensure(all(c[3]<c[1]-50 for c in curves) and
+             any(c[3]<c[1]-74 for c in curves),
+             f'{width}: flexible wire arch is too flat above legend: {curves}')
+      ensure(curves[0][2]!=curves[1][2],
+             f'{width}: independent cables must not share V27 vertical tangent')
       if width==1366:
         # 1244px owner screenshot: do not overlap labels and toolbar buttons.
         page.set_viewport_size({'width':1244,'height':900})
