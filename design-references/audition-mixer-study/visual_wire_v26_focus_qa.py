@@ -24,7 +24,7 @@ def main():
       def node(ch,suffix):
         return page.locator(f'#tracks .strip[data-id="{ch}"] {suffix}')
       def select(ch):
-        node(ch,'.strip-identity-top').click()
+        node(ch,'.wire-node-out').click()
       def connect(src,dst):
         select(src)
         receiver=node(dst,'.wire-node-in')
@@ -34,7 +34,7 @@ def main():
       connect(1,3)
       connect(2,3)
       connect(3,4)
-      # Select through normal channel strip, not via an internal test shortcut.
+      # Deliberately activate the SEND OUT socket; ordinary selection must NOT arm routes.
       select(3)
       legend=page.locator('#wireLegend')
       in_ids=legend.locator('.wire-map-group.is-in .wire-map-chip span').all_inner_texts()
@@ -94,7 +94,7 @@ def main():
       # origin strips are off-bank (never invent off-screen cable coordinates).
       bank=page.locator('#bankSelect')
       bank.select_option(str(bank.locator('option').count()-1))
-      bus=node(11,'.strip-identity-top')
+      bus=node(11,'.wire-node-out')
       ensure(bus.count()==1,f'{width}: Bus A missing from last bank')
       bus.click()
       bus_in=legend.locator('.wire-map-group.is-in .wire-map-chip span').all_inner_texts()
