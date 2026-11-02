@@ -539,7 +539,7 @@ function wireTo(id,shift=false){
 }
 [3,4,5,6].forEach(id=>wireTo(id));
 check(strip(1).includes('⇢4') && strip(3).includes('wire-node-in is-linked') &&
- node('wireLegend').textContent.includes('⇢ 4'),
+ node('wireLegend').innerHTML.includes('wire-map-group is-out') && node('wireLegend').innerHTML.includes('CH03') && node('wireLegend').innerHTML.includes('CH04'),
  'CH1 click-source then CH3–CH6 socket clicks create four independent visible links');
 [3,4,5,6].forEach(id=>check(strip(id).includes('<option value="None" selected>') &&
  strip(id).includes('class="wire-tray linked"') &&
@@ -928,5 +928,37 @@ check(!html.includes("if(a==='wireRemove')") &&
  html.includes('replugWireEdge(g.sourceId,g.originDestId,snap?.track.id??null)') &&
  html.includes('wire-tray .wire-pot'),
  'V24 removes close-button handler and retains drag-to-unplug / gain knob');
+
+// V26 selected-channel Focus: all inbound links are behind outbound sends,
+// including legacy Send slots, split inputs and primary Bus outputs.
+node('reset').dispatch('click');
+wireTo(3); // CH01 -> CH03
+const v26source={dataset:{action:'wireSource'},closest:k=>k==='.strip'?{dataset:{id:2}}:null};
+node('body').handlers.click({target:{closest:k=>k==='[data-action]'?v26source:null}}); // CH02 selected
+wireTo(3); // CH02 -> CH03
+const v26ch3={dataset:{action:'wireSource'},closest:k=>k==='.strip'?{dataset:{id:3}}:null};
+node('body').handlers.click({target:{closest:k=>k==='[data-action]'?v26ch3:null}});
+wireTo(4); // CH03 -> CH04
+const legend26=node('wireLegend').innerHTML;
+check(legend26.includes('wire-map-focus') && legend26.includes('CH03') &&
+ legend26.includes('wire-map-group is-in') && legend26.includes('wire-map-group is-out') &&
+ legend26.includes('CH01') && legend26.includes('CH02') && legend26.includes('CH04'),
+ 'V26 channel focus legend lists both incoming CH01/CH02 and outgoing CH04');
+check(html.includes('function wireDisplayRoutes(){') &&
+ html.includes("routes.filter(e=>e.destId===source.id") &&
+ html.includes("routes.filter(e=>e.sourceId===source.id") &&
+ html.includes('wire-incoming-line') && html.includes('wire-outgoing-line') &&
+ html.indexOf('const incoming=routes.filter') < html.indexOf('const outgoing=routes.filter'),
+ 'V26 graph display paints IN behind OUT from one read-only route model');
+check(html.includes("const split=parseSplitSource(t.input)") &&
+ html.includes("if(dest)add(t.id,dest.id,'legacy')") &&
+ html.includes("add(t.id,primary.id,'primary')") &&
+ html.includes("if(split)add(split.sourceId,t.id,'split')"),
+ 'V26 Focus includes existing legacy sends, split and primary Bus instead of wire-edge only');
+check(html.includes('wire-map-chip') && html.includes('--wire-hue:') &&
+ html.includes("nodes.slice(0,2)") && html.includes("wire-map-more"),
+ 'V26 header displays compact channel-colored badges, capped with +N overflow');
+node('reset').dispatch('click');
+
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
