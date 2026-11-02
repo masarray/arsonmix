@@ -50,16 +50,33 @@ def main():
             })""")
         assert_true(material(key)['face']=='#405360','V19 graphite resting key missing')
         assert_true(material(key)['press']=='1px','V19 must retain 1px hardware press')
+        # V20 true cube extrusion + internal lens, without GPU glow.
+        cube=key.evaluate("""el=>({
+            bright:getComputedStyle(el).getPropertyValue('--am-hw-key-bright').trim(),
+            deep:getComputedStyle(el).getPropertyValue('--am-hw-key-deep').trim(),
+            wall:getComputedStyle(el).getPropertyValue('--am-hw-key-wall').trim(),
+            shadow:getComputedStyle(el).boxShadow,
+            background:getComputedStyle(el).backgroundImage,
+            filter:getComputedStyle(el).filter
+        })""")
+        assert_true(cube['bright']=='#586c79' and cube['deep']=='#202f39',
+                    'V20 distinct light/dark lens materials missing')
+        assert_true('0px 3px 0px' in cube['shadow'],
+                    'V20 3px HARD cube sidewall missing')
+        assert_true('linear-gradient' in cube['background'] and
+                    'color(srgb' in cube['background'],
+                    'V20 internally lit gradient face missing')
+        assert_true(cube['filter']=='none','V20 must avoid GPU blurring effects')
         key.click()
-        assert_true(material(key)['face']=='#bd344b','V19 jewel ruby MUTE missing')
+        assert_true(material(key)['face']=='#ae3346','V19 jewel ruby MUTE missing')
         key.click()
         solo=page.locator('#tracks .strip[data-id="1"] button.switch.solo')
         solo.click()
-        assert_true(material(solo)['face']=='#dbad39','V19 amber SOLO missing')
+        assert_true(material(solo)['face']=='#bc8f2e','V19 amber SOLO missing')
         solo.click()
         cue=page.locator('#tracks .strip[data-id="1"] button.switch.cue')
         cue.click()
-        assert_true(material(cue)['face']=='#399db4','V19 cyan PFL missing')
+        assert_true(material(cue)['face']=='#2a879e','V19 cyan PFL missing')
         cue.click()
         key.scroll_into_view_if_needed()
         rect=key.bounding_box()
