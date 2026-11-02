@@ -133,7 +133,7 @@ def main():
             if w==1366: page.screenshot(path=str(ROOT/"preview-v17-wire-1366.png"))
             if w==1920: page.screenshot(path=str(ROOT/"preview-v17-wire-1920.png"))
         # Reset temporary tests without changing stored routing state.
-        page.locator('#reset').click()
+        page.locator('#reset').evaluate("(el) => el.click()")  # Hidden Reset Demo command; test-only control
         # Drop over a fader intentionally fails closed and never creates a wire.
         source=page.locator('#tracks .strip[data-id="8"] .wire-node-out')
         fader=page.locator('#tracks .strip[data-id="3"] .fader-box')
