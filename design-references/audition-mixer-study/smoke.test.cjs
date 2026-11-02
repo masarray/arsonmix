@@ -1059,5 +1059,12 @@ check(html.includes('wireSourcePinned=true') &&
  html.includes('ALREADY CONNECTED:') &&
  html.includes('data-cable-key'),
  'V32 pin source across banks, indicate existing SEND and animate only keyed SVG paths');
+check(html.includes("wirePreviewArmed=false") &&
+ html.includes("if(wirePreviewArmed){wirePreviewArmed=false") &&
+ html.includes("clipPath='inset('") &&
+ html.includes("setWireGainFromPointer(ev,g)") &&
+ html.includes("const perDb=ev.shiftKey?10:3") &&
+ html.includes("width:21px!important;height:43px!important"),
+ 'V32 explicit SEND intent, wire-only clip, long-travel precision knob and smaller original fader');
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
