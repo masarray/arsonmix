@@ -717,7 +717,7 @@ check(strip(3).includes('class="wire-tray linked"') &&
   strip(4).includes('wire-pot is-idle'),
   'V17 turns only destination knob active without shifting any other channel layout');
 check(html.includes('function wirePathData(') && html.includes('function wireSnapTarget(') &&
-  html.includes('if(dist>42&&!inside)continue') &&
+  html.includes('if(track.id===originDestId ? dist>31 : (dist>42&&!inside))continue') &&
   html.includes('queueWireGestureFrame();') &&
   html.includes('const input=snap?.element||hit?.closest?.') &&
   !html.slice(html.indexOf('function renderWireRouting(){'),html.indexOf('function syncActiveSend(t){')).includes('stroke-dasharray') &&
@@ -788,5 +788,61 @@ check(html.includes('function moveChannelTo(') &&
  html.includes("arrangeSurface.addEventListener('keydown'") &&
  html.includes('/* V16: When BOTH expandable FX and SEND are closed'),
  'V16 stable ID reorder by drag and Alt+arrows, smart two-panel fader reclaim');
+
+// V18 physical receiver unplug/replug: a linked IN is a draggable cable end.
+node('body').clientWidth=1680;node('reset').dispatch('click');
+wireTo(3);
+const oldEdgeId=Number(strip(3).match(/data-wire-id="(\d+)"/)?.[1]);
+check(Number.isInteger(oldEdgeId),'V18 connected IN fixture has stable edge id');
+const replugGain={dataset:{field:'wireGain',wireId:String(oldEdgeId)},value:'-17',
+ style:{setProperty(){}},parentElement:{style:{setProperty(){}}},closest:k=>k==='.strip'?{dataset:{id:3}}:null};
+node('body').handlers.change({target:replugGain,type:'change'});
+const oldQs=document.querySelectorAll;
+const makeSocket=(id,cx)=>({
+ getBoundingClientRect(){return {left:cx-14,top:416,width:28,height:28}},
+ closest:k=>k==='.strip'?{dataset:{id}}:
+  k==='.wire-section'?{getBoundingClientRect(){return {left:cx-60,right:cx+60,top:360,bottom:450}}}:null,
+ classList:{toggle(){}},setPointerCapture(){}
+});
+const sockets=[makeSocket(3,300),makeSocket(4,480),makeSocket(5,660)];
+document.querySelectorAll=k=>k==='.wire-node-in'?sockets:oldQs(k);
+function v18GrabTo(pointerId,fromId,toX,toY,finish='up'){
+ const socket=sockets.find(s=>s.closest('.strip').dataset.id===fromId);
+ const target={closest:k=>k==='.wire-node-in'?socket:null};
+ node('body').handlers.pointerdown({target,button:0,pointerId,clientX:300,clientY:430,preventDefault(){}});
+ fakeWindow.handlers.pointermove({pointerId,clientX:toX,clientY:toY});
+ if(finish==='cancel')fakeWindow.handlers.pointercancel({pointerId});
+ else fakeWindow.handlers.pointerup({target,pointerId,clientX:toX,clientY:toY});
+}
+v18GrabTo(111,3,480,430);
+check(!strip(3).includes('wire-node-in is-linked') &&
+ strip(4).includes('wire-node-in is-linked') &&
+ strip(4).includes('data-wire-id="'+oldEdgeId+'"') &&
+ strip(4).includes('value="-17" data-field="wireGain"') &&
+ strip(1).includes('⇢1'),
+ 'V18 dragging linked CH3 IN → CH4 IN reroutes one same-ID wire and preserves gain');
+node('reset').dispatch('click');wireTo(3);
+v18GrabTo(112,3,300,480);
+check(!strip(3).includes('wire-node-in is-linked') && strip(1).includes('wire-pot is-idle'),
+ 'V18 drop >31px away from old IN releases one cable without other routes');
+node('reset').dispatch('click');wireTo(3);
+v18GrabTo(113,3,320,430);
+check(strip(3).includes('wire-node-in is-linked'),
+ 'V18 short move back into original socket magnet preserves connection');
+v18GrabTo(114,3,480,430,'cancel');
+check(strip(3).includes('wire-node-in is-linked') && !strip(4).includes('wire-node-in is-linked'),
+ 'V18 pointercancel restores existing wire; never changes graph');
+wireTo(4);
+v18GrabTo(115,3,480,430);
+check(strip(3).includes('wire-node-in is-linked')&&strip(4).includes('wire-node-in is-linked') &&
+ node('info').textContent.includes('REPLUG REJECTED'),
+ 'V18 replug into already-linked destination fails closed (no duplicate)');
+check(html.includes('wire-floating-plug') &&
+ html.includes('replugWireEdge(g.sourceId,g.originDestId') &&
+ html.includes("if(wireSuppressClick&&['wireSource','wireRoute','wireRemove'].includes(a))"),
+ 'V18 floating plug preview and click-after-drag suppression are present');
+document.querySelectorAll=oldQs;
+node('reset').dispatch('click');
+
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
