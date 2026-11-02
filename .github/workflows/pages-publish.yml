@@ -63,7 +63,7 @@ jobs:
             cmp site/preview-v2/assets/knob-ICON.svg dist-pages/preview/assets/knob-ICON.svg
           fi
           # CSS/JS must resolve in BOTH URLs: /preview-v2/ and /preview/.
-          for asset in mixer-control-keys.css mixer-control-keys.js mixer-utility-controls.css inter-embedded.css mixer-fx-rack.css mixer-plugin-browser.css mixer-pan-controls.css mixer-fader-assembly.css mixer-meter-display.css mixer-wire-dots.css mixer-console-foundation.css mixer-channel-grid.css mixer-hardware-artwork.css; do
+          for asset in mixer-control-keys.css mixer-control-keys.js mixer-utility-controls.css inter-embedded.css mixer-fx-rack.css mixer-plugin-browser.css mixer-pan-controls.css mixer-fader-assembly.css mixer-meter-display.css mixer-wire-dots.css mixer-console-foundation.css mixer-channel-grid.css mixer-hardware-artwork.css mixer-section-controls.css mixer-section-layout.css mixer-v3-layout-contract.css mixer-chrome-material.css; do
             test -s "dist-pages/preview/assets/$asset"
             cmp "site/preview-v2/assets/$asset" "dist-pages/preview/assets/$asset"
           done
