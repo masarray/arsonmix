@@ -31,7 +31,7 @@ Historical full test matrix remains `docs/HARDWARE_FAT_GUI10_ENGINE_P012_2026102
 
 ## 5. M1 candidate — structured physical acceptance (not an M5 universal graph)
 
-The **ArSonMix-M1-EXPERIMENTAL-Hardware-FAT-Windows-x64** workflow artifact is uploaded only if the exact PR SHA completes Windows compile, all CTests, packaging and ZIP/embedded-GUI SHA256 verification. A PR artifact is not a public stable release. The EXE preserves the existing **native M4 10CH + 4AUX** callback, not a live CH11/group universal engine. DO NOT apply an unqualified artifact on a live public-performance show.
+The **ArSonMix-ENGINE-10CH4AUX-EXPERIMENTAL-Hardware-FAT-Windows-x64** artifact comes from the **single canonical ENGINE #266 branch** (not the retired M4 branch) and is uploaded only if the exact PR SHA completes Windows compile, all CTests, packaging and ZIP/embedded-GUI SHA256 verification. Get the ZIP from the successful ENGINE #266 GitHub Actions run's **Artifacts** section. Extract, then compare `BUILD_PROVENANCE.json` `sourceCommit` against the exact successful run's SHA and the EXE file hash against `exeSha256`. A mismatch means STOP. A PR artifact is not a public stable release. The EXE preserves the existing **native M4 10CH + 4AUX** callback, not a live CH11/group universal engine. DO NOT apply an unqualified artifact on a live public-performance show.
 
 One real device, one verified I/O clock, wired monitoring, LOW output gain and initially **0 VST3**. Start at a supported buffer of 256 samples, then 128 and 64 only after the earlier stage has passed; document actual negotiated values, don't assume the driver honored the request. For each supported buffer:
 

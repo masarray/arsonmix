@@ -134,3 +134,20 @@ test('FAT ZIP uses current single-APPLY physical first-sound guide',()=>{
  for(const entry of ['10 input channels + 4 AUX','OUTPUT_ONLY_TONE','CAPTURE_ONLY','COPY FULL REPORT','30 minutes','no separate manual START AUDIO'])
    assert.ok(quick.includes(entry),entry);
 });
+
+test('sole ENGINE #266 may upload an unqualified, exact-SHA physical FAT ZIP',()=>{
+  const upload=workflow.split('uses: actions/upload-artifact@v4')[1]||'';
+  assert.ok(upload.includes('milestone/m5-universal-channelid-vst3-lease-migration-20261101'));
+  assert.ok(!upload.includes('milestone/m4-unified-native-multichannel-fx-20261101'));
+  assert.ok(upload.includes('ArSonMix-ENGINE-10CH4AUX-EXPERIMENTAL-Hardware-FAT-Windows-x64'));
+  assert.match(upload,/if-no-files-found: error/);
+  assert.ok(workflow.indexOf('ctest --test-dir build -C Release --output-on-failure')<
+            workflow.indexOf('uses: actions/upload-artifact@v4'));
+  assert.ok(workflow.indexOf('scripts/verify_native_windows_artifact.ps1')<
+            workflow.indexOf('uses: actions/upload-artifact@v4'));
+  const guide=read('docs/FIRST_SOUND_FAT_QUICKSTART_20261101.md');
+  assert.match(guide,/single canonical ENGINE #266 branch/);
+  assert.match(guide,/10CH \+ 4AUX/);
+  assert.match(guide,/sourceCommit/);
+  assert.match(guide,/exeSha256/);
+});

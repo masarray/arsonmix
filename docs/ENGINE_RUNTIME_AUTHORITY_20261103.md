@@ -58,3 +58,6 @@ The `NativeRenderAuthority` is an explicit, fixed-cost callback selector. **Ther
 
 ## Reconciliation notice (2026-11-03)
 ENGINE #266 is now the sole source branch after folding former #287. Cross-branch ownership, upstream drift, CI authority gate and the next real callback cutover are documented in [ENGINE_SINGLE_OWNER_HANDOFF_20261103.md](workstreams/ENGINE_SINGLE_OWNER_HANDOFF_20261103.md). The M1 experimental ZIP policy is historical; do not make another branch-specific Windows FAT producer without #270 integration ownership.
+
+## Single-owner Windows hardware FAT (2026-11-03)
+ENGINE PR #266 alone can upload a 10CH/4AUX **experimental, unqualified** Windows GUI ZIP after exact SHA native compile, all CTests, PE32+ Windows GUI subsystem and embedded GUI/SHA verification. Former M4 branches no longer have a second artifact publication exception. This is physical first-sound evidence only; NOT a live universal ChannelId engine or joined new-GUI release. See the packaged `HARDWARE_FAT_GUIDE.md`.
