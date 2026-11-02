@@ -155,8 +155,9 @@ def main():
         assert_true(page.locator('#pluginBrowser').is_visible(),
                     'Focus inside manager must not dismiss it')
         page.locator('.mixer-title .panel-name').click()
-        assert_true(page.locator('#pluginBrowser').is_hidden(),
-                    'External click should close plugin manager')
+        assert_true(page.locator('#pluginBrowser').is_visible(),
+                    'Plugin Manager must stay modeless while mixing')
+        page.locator('#pluginClose').click()
         # Material icon uses SVG path, no text-glyph substitution.
         svg=page.locator('#tracks .strip[data-id="1"] .fx-section .mini.power .mi-svg').first
         assert_true(svg.count()==1 and svg.locator('path').count()==1,
