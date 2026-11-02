@@ -76,8 +76,11 @@ def main():
                    solo.get_attribute('aria-pressed')=='true' and
                    pfl.get_attribute('aria-pressed')=='true',
                    f'{width}: independent latched controls were replaced by sample radio toggle')
+            expect(colors_match(css(mute),'rgb(55, 55, 55)','rgb(38, 38, 38)'),
+                   f'{width}: MUTE hover should match supplied #373737→#262626 face')
+            page.mouse.move(2,2)
             expect(colors_match(css(mute),'rgb(51, 51, 51)','rgb(34, 34, 34)'),
-                   f'{width}: MUTE OFF did not return to raised reference face')
+                   f'{width}: MUTE OFF did not return to raised reference face after hover exits')
             # Toolbar push keys reuse the same material but don't interfere with mixer.
             tool=page.locator('.command-bar button.tool').first
             expect(colors_match(css(tool),'rgb(51, 51, 51)','rgb(34, 34, 34)'),
