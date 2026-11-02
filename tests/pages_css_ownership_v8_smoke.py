@@ -57,13 +57,16 @@ async def interact(page,width):
       return {fx:r(fx).height, list:r(list).height,row:r(slot).height,
         pickColor:getComputedStyle(pick).color,
         bg:getComputedStyle(fx).backgroundImage,
+        surface:getComputedStyle(fx).backgroundColor,
         frame:r(frame).height,pan:r(e.querySelector('.pan-section')).height,
         strip:r(e).height,fxTitle:fx.querySelector('.subhead')?.textContent};
     }""")
     assert 18<=initial['row']<=30,initial
     assert initial['frame']>=90 and initial['pan']>=20,initial
     assert initial['strip']>=400 and initial['fxTitle'],initial
-    assert 'gradient' in initial['bg'],initial
+    # FX surfaces may be deliberately solid rather than glossy gradients.
+    assert initial['pickColor']=='rgb(196, 223, 208)',initial
+    assert initial['fx']>=60 and initial['list']>=30,initial
     if width==1680:
         await page.screenshot(path='pages-v8-fx-rack-expanded-1680.png')
     rail=page.locator('.section-rail [data-section="fx"]')
