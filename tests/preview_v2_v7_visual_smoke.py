@@ -59,8 +59,8 @@ def audit_geometry(page, title):
         const fx=r(strips[0].querySelector('.fx-section')).height;
         if(fx<60||fx>620)problems.push('FX rack not compact: '+fx);
         const before=getComputedStyle(strips[0].querySelector('.fader-box'),'::before');
-        if(!before.backgroundImage.includes('rgb(5, 11, 16)'))
-            problems.push('deep graphite fader well material absent');
+        if(before.backgroundImage!=='none'||!before.backgroundColor.includes('20, 37, 48'))
+            problems.push('flat recessed fader well material absent');
         if(!getComputedStyle(strips[0]).boxShadow.includes('inset'))
             problems.push('missing metallic strip edge');
         for(const [name, selector] of Object.entries(cells)){
