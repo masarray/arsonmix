@@ -3229,6 +3229,55 @@ html * ,html *::before,html *::after{
 .console-body .section-rail .rail-cell[data-section]:hover .rail-svg-icon{opacity:1}
 .console-body .section-rail .rail-cell[data-section].collapsed .rail-svg-icon{opacity:.76}
 
+
+/* V23 DAW folded-bay correction: a 23px electronic link LED, NEVER the
+   truncated live patch jack/knob or numeric send badges. Physical rack geometry
+   and approved FX/WIRE/I/O rail icons are unchanged. */
+.console-body.wire-routing-v15.collapsed-send .strip .send-section.wire-section{
+ display:flex!important;flex-direction:column!important;align-items:stretch!important;
+ justify-content:center!important;
+ height:23px!important;min-height:23px!important;max-height:23px!important;
+ padding:0!important;overflow:hidden!important;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .send-section.wire-section .wire-deck,
+.console-body.wire-routing-v15.collapsed-send .strip .send-section.wire-section .wire-tray,
+.console-body.wire-routing-v15.collapsed-send .strip .send-section.wire-section .wire-tray.linked{
+ display:none!important;visibility:hidden!important;pointer-events:none!important;
+ width:0!important;height:0!important;min-height:0!important;max-height:0!important;
+ flex:0 0 0!important;padding:0!important;margin:0!important;overflow:hidden!important;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary{
+ display:flex!important;align-items:center!important;justify-content:center!important;
+ position:relative;z-index:1;
+ flex:0 0 22px!important;height:22px!important;min-height:22px!important;max-height:22px!important;
+ width:100%;padding:0!important;margin:0!important;
+ color:var(--ch,#8babb5);background:transparent!important;border:0!important;
+ font-size:0!important;line-height:0!important;overflow:hidden!important;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-link-icon{
+ display:block;width:28px;height:12px;flex:0 0 28px;
+ overflow:visible;opacity:.77;pointer-events:none;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-link-trace{
+ stroke:currentColor;stroke-width:1.1;fill:none;opacity:.45;stroke-linecap:round;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-link-in,
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-link-out{
+ fill:#172c37;stroke:#67808a;stroke-width:1.15;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .has-in .fold-link-in{
+ fill:currentColor;stroke:currentColor;opacity:.65;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .has-out .fold-link-out{
+ fill:currentColor;stroke:currentColor;opacity:1;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary.is-empty{
+ background:transparent!important;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary.has-wire:hover .fold-link-icon{
+ opacity:1;
+}
+
 </style>
 </head>
 <body>
@@ -3642,14 +3691,22 @@ function compactWireActivity(t){
 }
 function compactWireSummary(t){
  const {incoming,outgoing}=compactWireActivity(t);
+ const connected=!!(incoming||outgoing);
  const title='Expand WIRE · '+t.name+' · '+incoming+' incoming, '+outgoing+
-  ' outgoing custom paths · direct MAIN routing shown in I/O';
- const content=incoming||outgoing
-  ?(incoming?'<span class="fold-in"><span class="fold-marker"></span>←'+incoming+'</span>':'')+
-   (outgoing?'<span class="fold-out"><span class="fold-marker"></span>→'+outgoing+'</span>':'')
-  :'<span class="fold-empty">—</span>';
- return '<button type="button" class="wire-fold-summary" data-action="wireExpand" aria-label="'+
-  escapeHtml(title)+'" title="'+escapeHtml(title)+'">'+content+'</button>';
+  ' outgoing custom paths · direct MAIN shown in I/O';
+ // Compact hardware patch status: NO tiny numbers, letters or arrows.
+ // The left pin marks receives, right pin marks sends, one quiet trace
+ // means there is an internal audio path. Empty tracks have no symbol.
+ const shape=connected?
+  '<svg class="fold-link-icon'+(incoming?' has-in':'')+(outgoing?' has-out':'')+
+  '" viewBox="0 0 28 12" aria-hidden="true" focusable="false">'+
+   '<path class="fold-link-trace" d="M 7 6 C 12 2.7 16 9.3 21 6" />'+
+   '<circle class="fold-link-in" cx="5" cy="6" r="2.5"/>'+
+   '<circle class="fold-link-out" cx="23" cy="6" r="2.5"/>'+
+  '</svg>':'';
+ return '<button type="button" class="wire-fold-summary'+(connected?' has-wire':' is-empty')+
+  '" data-action="wireExpand" aria-label="'+escapeHtml(title)+
+  '" title="'+escapeHtml(title)+'">'+shape+'</button>';
 }
 function sectionSend(t){
  const source=tracks.find(x=>x.id===wireSourceId&&x.kind!=='master');
