@@ -1,5 +1,5 @@
 {
-  "version": "preview-v41-css-ownership-v8-wire-v40",
+  "version": "preview-v42-wire-original-dot-fill-and-snap-follower",
   "kind": "GUI_REFERENCE_ONLY",
   "live_audio": false,
   "source_pr": 285,
@@ -22,7 +22,9 @@
     "V5 backlit MUTE/SOLO/PFL — semantic LED via single SVG mask",
     "V5 cue, phase, FX and SEND toggles (UI reference, no audio)",
     "V40 OUT approach light, transient WIRE arm, dark-grey idle IN",
-    "V40 all-channel click selection including wire-tray, subtle transparent rim"
+    "V40 all-channel click selection including wire-tray, subtle transparent rim",
+    "V42 one graphite OUT dot turns colored on approach; NO outer glowing circle",
+    "V42 colored pointer-follower dot on new wires and replug; active magnetic IN socket restored"
   ],
   "preserved": "V39 utility controls and Inter, WIRE V36/V37, existing routes/FX/faders/meters; no native audio changes",
   "limitations": "Static WIRE GUI reference only; not native PCM/ASIO/VST3 routing",
@@ -43,7 +45,7 @@
   "wire_knob_fix": "The exact supplied SVG is embedded as data:image/svg+xml;base64 CSS alpha mask so the WIRE knob paints in /preview/, /preview-v2/, offline and CI file:// contexts; physical sizing and audio model unchanged.",
   "button_material": "V6 refactored 29px hardware keys: readable ice-white OFF cutouts, context red/yellow/cyan ON",
   "button_source": "GUI PR #271 / merged button PR #286",
-  "preview_qa": "V8 CSS ownership Chromium CI and WIRE V40 must PASS",
+  "preview_qa": "V42 visual + pointer Chromium smoke and original V40/V15 regressions; native PCM unaffected",
   "css_ownership": "FX rack: mixer-fx-rack.css; Plugin Manager: mixer-plugin-browser.css; controls: V6/V7 owners; Inter: embedded",
   "button_control_validation": "Chromium M/S/PFL cross-bank geometry and no fallback CSS interference",
   "font": "Embedded Inter variable WOFF2 for all GUI text, including SVG legends and offline Pages",
