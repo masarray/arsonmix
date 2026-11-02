@@ -2973,6 +2973,62 @@ html:not(.native-engine) #app #mixer[data-io-mode="CONSOLE"] #masterLeft .master
 @media(prefers-reduced-motion:reduce){
  #app .arV6Console .arV6WirePot::before{transition:none!important}
 }
+
+
+/* GUI FINAL -> ENGINE V8: 1 accepted identity, 1 channel width, 1 graphite
+   chassis. No new DSP, paint animation or browser-inferred LIVE controls. */
+#app #arV6Console{
+  --v6-channel-w:150px;
+  --v6-status-h:34px;
+}
+#app .arV6Console .arV6Main,
+#app .arV6Console[data-narrow="true"] .arV6Main{
+  flex:0 0 var(--v6-channel-w);width:var(--v6-channel-w);
+  max-width:var(--v6-channel-w);min-width:var(--v6-channel-w);
+  border-left:0;box-shadow:-2px 0 0 #63808b;
+  background:var(--am-metal-panel);
+}
+#app .arV6Console .arV6Strip,
+#app .arV6Console[data-narrow="true"] .arV6Strip{
+  flex:0 0 var(--v6-channel-w);width:var(--v6-channel-w);
+  min-width:var(--v6-channel-w);max-width:var(--v6-channel-w);
+  background:var(--am-metal-panel);
+}
+#app .arV6Console .arV6Strip.arV6Master,
+#app .arV6Console[data-narrow="true"] .arV6Strip.arV6Master{
+  flex:0 0 var(--v6-channel-w);width:var(--v6-channel-w);
+  min-width:var(--v6-channel-w);max-width:var(--v6-channel-w);
+  background:var(--am-metal-panel);
+}
+#app .arV6Console .arV6Top{
+  background:linear-gradient(180deg,var(--am-metal-raised),var(--am-metal-panel));
+}
+#app .arV6Console .arV6StripHead{
+  display:flex;flex-direction:row;align-items:center;gap:3px;
+  min-width:0;border-bottom:2px solid var(--ch,#5f9ab1);
+  background:color-mix(in srgb,var(--ch,#5f9ab1) 15%,var(--am-metal-panel));
+}
+#app .arV6Console .arV6Role{flex:none;max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:500 8px/1 "Segoe UI",sans-serif;letter-spacing:.15px}
+#app .arV6Console .arV6IdentityIcon{flex:none;font-size:13px;line-height:1}
+#app .arV6Console .arV6Name{flex:1;min-width:0;font-size:10px;font-weight:550}
+#app .arV6Console .arV6StripStatus{
+  display:flex;flex-direction:column;align-items:stretch;justify-content:center;
+  gap:1px;padding:2px 3px;
+  border-top:2px solid var(--ch,#5f9ab1);
+  background:color-mix(in srgb,var(--ch,#5f9ab1) 28%,var(--am-metal-panel));
+  min-width:0;
+}
+#app .arV6Console .arV6FootIdentity{
+  display:flex;gap:4px;align-items:center;min-width:0;
+  color:#ebf2f5;font:500 9px/1 "Segoe UI",sans-serif;
+}
+#app .arV6Console .arV6FootIcon{flex:none;font-size:11px;line-height:1}
+#app .arV6Console .arV6FootName{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#app .arV6Console .arV6PcmState{
+  color:#b7c8ce;font:500 8px/1.05 "Segoe UI",sans-serif;
+  letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+#app .arV6Console[data-demo="true"] .arV6PcmState{color:#e3bb82}
 </style>
 <style id="arsonmix-mixer-io-css">/* G1/G2: stable channel-bank geometry; FX rack remains mounted in every mode. */
 #app .workbench{display:flex;flex-direction:column}
@@ -8230,6 +8286,15 @@ scheduleDemoMeter();
     const select=selectField('+ TO','ADD_SEND',ch.id,targets,'','NO NATIVE SEND BUS');
     section.append(select);return section;
   }
+  // Metadata comes ONLY from the native accepted ChannelId roster. An
+  // unpublished/malformed identity gets a neutral non-role color, never
+  // a browser-assigned palette position or synthetic state.
+  const nativeIdentity=ch=>{
+    const published=typeof ch.color==='string'&&/^#[0-9a-fA-F]{6}$/.test(ch.color);
+    const icon=typeof ch.icon==='string'&&Array.from(ch.icon).length<=4&&
+      !/[\\u0000-\\u001f\\u007f]/.test(ch.icon)?ch.icon:'';
+    return {color:published?ch.color:'#5f9ab1',icon,published};
+  };
   const roleLabel=ch=>clean(ch.role).toUpperCase()+
     (typeof ch.linkGroupId==='string'&&ch.linkGroupId?
       ' · LINK '+ch.linkGroupId.slice(0,6):'');
@@ -8237,9 +8302,14 @@ scheduleDemoMeter();
     const role=clean(ch.role).toUpperCase();
     const elStrip=h('article','arV6Strip'+(pinned?' arV6Master':''));
     elStrip.dataset.channelId=ch.id;
+    const identity=nativeIdentity(ch);
+    elStrip.style.setProperty('--ch',identity.color);
+    elStrip.style.setProperty('--v6-strip-color',identity.color);
+    elStrip.dataset.identityPublished=String(identity.published);
     const head=h('div','arV6StripHead');
     const roleName=h('span','arV6Role',roleLabel(ch));
     const name=h('strong','arV6Name',ch.name||ch.id);name.title=ch.id;
+    if(identity.icon)head.append(h('span','arV6IdentityIcon',identity.icon));
     head.append(roleName,name);elStrip.append(head);
     elStrip.setAttribute('aria-selected',String(selectedIds.has(ch.id)));
     const sourceSection=h('div','arV6Upper');
@@ -8306,8 +8376,13 @@ scheduleDemoMeter();
     lower.append(meter,range,lowerLabel);elStrip.append(lower);
     meterNodes.set(ch.id,{element:meter,lanes:[...meter.children]});
     const status=h('div','arV6StripStatus');
-    status.dataset.statusId=ch.id;status.textContent=channelState(ch);
-    statusNodes.set(ch.id,status);elStrip.append(status);
+    status.dataset.statusId=ch.id;
+    const foot=h('div','arV6FootIdentity');
+    if(identity.icon)foot.append(h('span','arV6FootIcon',identity.icon));
+    foot.append(h('span','arV6FootName',ch.name||ch.id));
+    const pcm=h('span','arV6PcmState',channelState(ch));
+    status.append(foot,pcm);
+    statusNodes.set(ch.id,pcm);elStrip.append(status);
     return elStrip;
   }
   function channelState(ch){
@@ -8435,8 +8510,26 @@ scheduleDemoMeter();
     for(const strip of root.querySelectorAll('[data-channel-id]')){
       const ch=byId.get(strip.dataset.channelId);
       if(!ch)continue;
+      const identity=nativeIdentity(ch);
+      if(strip.style.getPropertyValue('--ch')!==identity.color){
+        strip.style.setProperty('--ch',identity.color);
+        strip.style.setProperty('--v6-strip-color',identity.color);
+      }
+      strip.dataset.identityPublished=String(identity.published);
       const nameNode=strip.querySelector('.arV6Name');
       if(nameNode&&nameNode.textContent!==ch.name)nameNode.textContent=ch.name;
+      const footName=strip.querySelector('.arV6FootName');
+      if(footName&&footName.textContent!==ch.name)footName.textContent=ch.name;
+      for(const [container,selector] of [
+        [strip.querySelector('.arV6StripHead'),'.arV6IdentityIcon'],
+        [strip.querySelector('.arV6FootIdentity'),'.arV6FootIcon']]){
+        if(!container)continue;
+        let icon=container.querySelector(selector);
+        if(identity.icon){
+          if(!icon){icon=h('span',selector.slice(1));container.prepend(icon);}
+          if(icon.textContent!==identity.icon)icon.textContent=identity.icon;
+        }else icon?.remove();
+      }
       const roleNode=strip.querySelector('.arV6Role');
       if(roleNode&&roleNode.textContent!==roleLabel(ch))
         roleNode.textContent=roleLabel(ch);
@@ -8553,11 +8646,27 @@ scheduleDemoMeter();
       }
     }
   }
+  // V8 single-width bank: MAIN and sources share the SAME fixed column
+  // width. A viewport resize changes CSS variables only, never channel DOM,
+  // ChannelId, plugin editor, fader node or native graph.
+  const DENSITY_WIDTH={comfort:150,standard:125,compact:105};
+  function bankGeometry(){
+    const viewport=root.clientWidth;
+    const density=root.dataset.narrow==='true'||viewport<1150?'compact':
+      viewport<1550?'standard':'comfort';
+    const width=DENSITY_WIDTH[density];
+    if(root.dataset.density!==density){
+      root.dataset.density=density;
+      root.style.setProperty('--v6-channel-w',width+'px');
+    }
+    return width;
+  }
   function refreshBanks(){
+    const fallback=bankGeometry();
     const visible=[...lanes.querySelectorAll('.arV6Strip:not([hidden])')];
     const total=visible.length;
     const child=visible[0];
-    const width=child?.getBoundingClientRect().width||172;
+    const width=child?.getBoundingClientRect().width||fallback;
     const perPage=Math.max(1,Math.floor(lanes.clientWidth/width));
     const at=Math.max(0,Math.round(lanes.scrollLeft/width));
     bankLabel.textContent=total?(at+1)+'–'+Math.min(total,at+perPage)+' / '+total:'NO CHANNELS';

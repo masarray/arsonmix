@@ -33,6 +33,8 @@ def snapshot(revision=3, epoch=7, new_channel=False):
     channels[1]["source"]={"portId":"in:1","physicalPins":[1]}
     channels[6]["inserts"]=[{"id":"fx-07","name":"Vendor VST3","bypassed":False}]
     channels[6]["sends"]=[{"id":"send-07","name":"Reverb","targetId":"1001","tap":"POST","levelDb":-6}]
+    channels[6]["color"]="#cf6b1e"
+    channels[6]["icon"]="🎙"
     if new_channel: channels.append(channel("18446744073709551610","CH 11"))
     channels.extend([channel("1001","FX Return","FX_RETURN"),
        channel("1002","Vocal Group","GROUP"),channel("1000","MAIN","MAIN")])
@@ -146,6 +148,18 @@ async def main():
         assert await page.locator("#arV6Console").is_hidden()
         await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)", first)
         await page.locator("#arV6Console").wait_for(state="visible")
+        # Both positions bind to native-provided color/icon, not a display-index
+        # palette, and the PCM status stays separately visible.
+        native_identity=page.locator('[data-channel-id="7"]')
+        assert await native_identity.get_attribute("data-identity-published")=="true"
+        assert await native_identity.locator(".arV6IdentityIcon").inner_text()=="🎙"
+        assert await native_identity.locator(".arV6FootIcon").inner_text()=="🎙"
+        assert await native_identity.locator(".arV6FootName").inner_text()=="CH 07"
+        assert await native_identity.evaluate("(n)=>n.style.getPropertyValue('--ch')")=="#cf6b1e"
+        assert await native_identity.locator(".arV6PcmState").count()==1
+        neutral=page.locator('[data-channel-id="8"]')
+        assert await neutral.get_attribute("data-identity-published")=="false"
+        assert await neutral.evaluate("(n)=>n.style.getPropertyValue('--ch')")=="#5f9ab1"
         assert await page.locator("#arV6Lanes .arV6Strip").count() == 12
         assert await page.locator("#arV6Main .arV6Master").count() == 1
         # The device drawer contains ONLY native-verified physical endpoints,
@@ -773,12 +787,17 @@ async def main():
                   });
                   const m=document.querySelector('#arV6Main').getBoundingClientRect();
                   const v=document.querySelector('#arV6Console').getBoundingClientRect();
-                  return {boxes,mainLeft:m.left,mainRight:m.right,right:v.right};
+                  const a=strip=document.querySelector('#arV6Lanes .arV6Strip');
+                  return {boxes,mainLeft:m.left,mainRight:m.right,right:v.right,
+                    masterWidth:m.width,channelWidth:a.getBoundingClientRect().width,
+                    density:document.querySelector('#arV6Console').dataset.density};
                 }""")
                 assert len(geometry["boxes"]) == 14
                 assert max(b["top"] for b in geometry["boxes"]) - min(
                     b["top"] for b in geometry["boxes"]) < 1.5, (width,height,geometry)
                 assert geometry["mainRight"] <= geometry["right"] + 2, geometry
+                assert abs(geometry["masterWidth"]-geometry["channelWidth"])<1.5,(width,height,geometry)
+                assert geometry["density"] in ("comfort","standard","compact"),geometry
                 assert geometry["boxes"][0]["height"] > 65, (width,height,geometry)
                 if (width,height) in ((1680,900),(1366,768)):
                     await page.screenshot(path=f"operator-console-v6-{width}-{height}.png")

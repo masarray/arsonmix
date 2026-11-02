@@ -1365,3 +1365,59 @@ html:not(.native-engine) #app #mixer[data-io-mode="CONSOLE"] #masterLeft .master
 @media(prefers-reduced-motion:reduce){
  #app .arV6Console .arV6WirePot::before{transition:none!important}
 }
+
+
+/* GUI FINAL -> ENGINE V8: 1 accepted identity, 1 channel width, 1 graphite
+   chassis. No new DSP, paint animation or browser-inferred LIVE controls. */
+#app #arV6Console{
+  --v6-channel-w:150px;
+  --v6-status-h:34px;
+}
+#app .arV6Console .arV6Main,
+#app .arV6Console[data-narrow="true"] .arV6Main{
+  flex:0 0 var(--v6-channel-w);width:var(--v6-channel-w);
+  max-width:var(--v6-channel-w);min-width:var(--v6-channel-w);
+  border-left:0;box-shadow:-2px 0 0 #63808b;
+  background:var(--am-metal-panel);
+}
+#app .arV6Console .arV6Strip,
+#app .arV6Console[data-narrow="true"] .arV6Strip{
+  flex:0 0 var(--v6-channel-w);width:var(--v6-channel-w);
+  min-width:var(--v6-channel-w);max-width:var(--v6-channel-w);
+  background:var(--am-metal-panel);
+}
+#app .arV6Console .arV6Strip.arV6Master,
+#app .arV6Console[data-narrow="true"] .arV6Strip.arV6Master{
+  flex:0 0 var(--v6-channel-w);width:var(--v6-channel-w);
+  min-width:var(--v6-channel-w);max-width:var(--v6-channel-w);
+  background:var(--am-metal-panel);
+}
+#app .arV6Console .arV6Top{
+  background:linear-gradient(180deg,var(--am-metal-raised),var(--am-metal-panel));
+}
+#app .arV6Console .arV6StripHead{
+  display:flex;flex-direction:row;align-items:center;gap:3px;
+  min-width:0;border-bottom:2px solid var(--ch,#5f9ab1);
+  background:color-mix(in srgb,var(--ch,#5f9ab1) 15%,var(--am-metal-panel));
+}
+#app .arV6Console .arV6Role{flex:none;max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:500 8px/1 "Segoe UI",sans-serif;letter-spacing:.15px}
+#app .arV6Console .arV6IdentityIcon{flex:none;font-size:13px;line-height:1}
+#app .arV6Console .arV6Name{flex:1;min-width:0;font-size:10px;font-weight:550}
+#app .arV6Console .arV6StripStatus{
+  display:flex;flex-direction:column;align-items:stretch;justify-content:center;
+  gap:1px;padding:2px 3px;
+  border-top:2px solid var(--ch,#5f9ab1);
+  background:color-mix(in srgb,var(--ch,#5f9ab1) 28%,var(--am-metal-panel));
+  min-width:0;
+}
+#app .arV6Console .arV6FootIdentity{
+  display:flex;gap:4px;align-items:center;min-width:0;
+  color:#ebf2f5;font:500 9px/1 "Segoe UI",sans-serif;
+}
+#app .arV6Console .arV6FootIcon{flex:none;font-size:11px;line-height:1}
+#app .arV6Console .arV6FootName{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#app .arV6Console .arV6PcmState{
+  color:#b7c8ce;font:500 8px/1.05 "Segoe UI",sans-serif;
+  letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+#app .arV6Console[data-demo="true"] .arV6PcmState{color:#e3bb82}

@@ -1057,6 +1057,15 @@
     const select=selectField('+ TO','ADD_SEND',ch.id,targets,'','NO NATIVE SEND BUS');
     section.append(select);return section;
   }
+  // Metadata comes ONLY from the native accepted ChannelId roster. An
+  // unpublished/malformed identity gets a neutral non-role color, never
+  // a browser-assigned palette position or synthetic state.
+  const nativeIdentity=ch=>{
+    const published=typeof ch.color==='string'&&/^#[0-9a-fA-F]{6}$/.test(ch.color);
+    const icon=typeof ch.icon==='string'&&Array.from(ch.icon).length<=4&&
+      !/[\\u0000-\\u001f\\u007f]/.test(ch.icon)?ch.icon:'';
+    return {color:published?ch.color:'#5f9ab1',icon,published};
+  };
   const roleLabel=ch=>clean(ch.role).toUpperCase()+
     (typeof ch.linkGroupId==='string'&&ch.linkGroupId?
       ' · LINK '+ch.linkGroupId.slice(0,6):'');
@@ -1064,9 +1073,14 @@
     const role=clean(ch.role).toUpperCase();
     const elStrip=h('article','arV6Strip'+(pinned?' arV6Master':''));
     elStrip.dataset.channelId=ch.id;
+    const identity=nativeIdentity(ch);
+    elStrip.style.setProperty('--ch',identity.color);
+    elStrip.style.setProperty('--v6-strip-color',identity.color);
+    elStrip.dataset.identityPublished=String(identity.published);
     const head=h('div','arV6StripHead');
     const roleName=h('span','arV6Role',roleLabel(ch));
     const name=h('strong','arV6Name',ch.name||ch.id);name.title=ch.id;
+    if(identity.icon)head.append(h('span','arV6IdentityIcon',identity.icon));
     head.append(roleName,name);elStrip.append(head);
     elStrip.setAttribute('aria-selected',String(selectedIds.has(ch.id)));
     const sourceSection=h('div','arV6Upper');
@@ -1133,8 +1147,13 @@
     lower.append(meter,range,lowerLabel);elStrip.append(lower);
     meterNodes.set(ch.id,{element:meter,lanes:[...meter.children]});
     const status=h('div','arV6StripStatus');
-    status.dataset.statusId=ch.id;status.textContent=channelState(ch);
-    statusNodes.set(ch.id,status);elStrip.append(status);
+    status.dataset.statusId=ch.id;
+    const foot=h('div','arV6FootIdentity');
+    if(identity.icon)foot.append(h('span','arV6FootIcon',identity.icon));
+    foot.append(h('span','arV6FootName',ch.name||ch.id));
+    const pcm=h('span','arV6PcmState',channelState(ch));
+    status.append(foot,pcm);
+    statusNodes.set(ch.id,pcm);elStrip.append(status);
     return elStrip;
   }
   function channelState(ch){
@@ -1262,8 +1281,26 @@
     for(const strip of root.querySelectorAll('[data-channel-id]')){
       const ch=byId.get(strip.dataset.channelId);
       if(!ch)continue;
+      const identity=nativeIdentity(ch);
+      if(strip.style.getPropertyValue('--ch')!==identity.color){
+        strip.style.setProperty('--ch',identity.color);
+        strip.style.setProperty('--v6-strip-color',identity.color);
+      }
+      strip.dataset.identityPublished=String(identity.published);
       const nameNode=strip.querySelector('.arV6Name');
       if(nameNode&&nameNode.textContent!==ch.name)nameNode.textContent=ch.name;
+      const footName=strip.querySelector('.arV6FootName');
+      if(footName&&footName.textContent!==ch.name)footName.textContent=ch.name;
+      for(const [container,selector] of [
+        [strip.querySelector('.arV6StripHead'),'.arV6IdentityIcon'],
+        [strip.querySelector('.arV6FootIdentity'),'.arV6FootIcon']]){
+        if(!container)continue;
+        let icon=container.querySelector(selector);
+        if(identity.icon){
+          if(!icon){icon=h('span',selector.slice(1));container.prepend(icon);}
+          if(icon.textContent!==identity.icon)icon.textContent=identity.icon;
+        }else icon?.remove();
+      }
       const roleNode=strip.querySelector('.arV6Role');
       if(roleNode&&roleNode.textContent!==roleLabel(ch))
         roleNode.textContent=roleLabel(ch);
@@ -1380,11 +1417,27 @@
       }
     }
   }
+  // V8 single-width bank: MAIN and sources share the SAME fixed column
+  // width. A viewport resize changes CSS variables only, never channel DOM,
+  // ChannelId, plugin editor, fader node or native graph.
+  const DENSITY_WIDTH={comfort:150,standard:125,compact:105};
+  function bankGeometry(){
+    const viewport=root.clientWidth;
+    const density=root.dataset.narrow==='true'||viewport<1150?'compact':
+      viewport<1550?'standard':'comfort';
+    const width=DENSITY_WIDTH[density];
+    if(root.dataset.density!==density){
+      root.dataset.density=density;
+      root.style.setProperty('--v6-channel-w',width+'px');
+    }
+    return width;
+  }
   function refreshBanks(){
+    const fallback=bankGeometry();
     const visible=[...lanes.querySelectorAll('.arV6Strip:not([hidden])')];
     const total=visible.length;
     const child=visible[0];
-    const width=child?.getBoundingClientRect().width||172;
+    const width=child?.getBoundingClientRect().width||fallback;
     const perPage=Math.max(1,Math.floor(lanes.clientWidth/width));
     const at=Math.max(0,Math.round(lanes.scrollLeft/width));
     bankLabel.textContent=total?(at+1)+'–'+Math.min(total,at+perPage)+' / '+total:'NO CHANNELS';
