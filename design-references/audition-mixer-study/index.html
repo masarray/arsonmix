@@ -2371,6 +2371,15 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
 .console-body .strip.channel-drop-after::before{right:0}
 .console-body .strip-identity-top[draggable="true"]{cursor:grab}
 .console-body .strip-identity-top[draggable="true"]:active{cursor:grabbing}
+
+/* V16: the WIRE graph is an upper compartment. When SEND is folded
+   the sockets and cable illustration are invisible, leaving only a
+   clean 23px disclosure row; model fan-out remains untouched. */
+.console-body.wire-routing-v15.collapsed-send{--send-h:23px!important}
+@media(max-height:680px){.console-body.wire-routing-v15.collapsed-send{--send-h:23px!important}}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-deck,
+.console-body.wire-routing-v15.collapsed-send .strip .wire-tray{display:none!important}
+.console-body.wire-routing-v15.collapsed-send .routing-wire-overlay{display:none!important}
 </style>
 </head>
 <body>
@@ -2929,11 +2938,11 @@ function renderWireRouting(){
  // Do not calculate cable geometry for a hidden WIRE bay. On expand the
  // existing requestAnimationFrame rerenders the same connections.
  if(!svg||!viewport)return;
- if(!source){
+ // Collapsing SEND hides the graphical patch, not the stored wire edges.
+ if(!source||document.querySelector('.console-body')?.classList.contains('collapsed-send')){
   if(svg.childNodes?.length)svg.replaceChildren?.();
   return;
  }
- // Compact WIRE retains visible cables; collapsing is never a hidden route.
  const vp=viewport.getBoundingClientRect?.(),fromEl=viewport.querySelector?.('.strip[data-id="'+source.id+'"] .wire-node-out');
  const from=fromEl?.getBoundingClientRect?.();
  if(!vp||!from||!vp.width||!vp.height){svg.innerHTML='';return;}
