@@ -257,6 +257,14 @@ def main():
                     'V27 rigid source ferrule must be undone')
         outgoing=page.locator('#wireLayer path.wire-outgoing-line')
         assert_true(outgoing.count()==1,'Active source wire is missing')
+        # V43: plug-in launches a finite 36-frame socket-originated wavy impact.
+        # The old V31 gravity-curve contract concerns the SETTLED cable. Wait
+        # until the impact returns to its canonical cubic (no sleeps, no
+        # disabled animation, no weakening of either regression assertion).
+        page.wait_for_function("""()=>{
+          const path=document.querySelector('#wireLayer path.wire-outgoing-line');
+          return !!path && (path.getAttribute('d')||'').includes(' C ');
+        }""",timeout=4000)
         import re
         nums=[float(a) for a in re.findall(r'-?\d+(?:\.\d+)?',outgoing.first.get_attribute('d'))]
         assert_true(len(nums)==8 and nums[3]>nums[1]+20 and nums[5]>nums[7]+20,
