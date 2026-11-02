@@ -2342,6 +2342,35 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
  .console-body.wire-routing-v15 .wire-node-out,
  .console-body.wire-routing-v15 .wire-node-in{width:25px!important;min-width:25px!important;flex-basis:25px!important}
 }
+
+/* V16: When BOTH expandable FX and SEND are closed, reclaim the blank
+   upper volume for the calibrated fader even if ROUTE is still expanded.
+   Any other upper combination retains the anchored lower deck. */
+.console-body.collapsed-fx.collapsed-send .strip .pan-section,
+.console-body.collapsed-fx.collapsed-send .section-rail>.rail-cell.pan{margin-top:0!important}
+.console-body.collapsed-fx.collapsed-send .strip .fader-section,
+.console-body.collapsed-fx.collapsed-send .section-rail>.rail-cell.fader{
+ flex:1 1 var(--v13-fader-h)!important;height:auto!important;
+ min-height:var(--v13-fader-h)!important;max-height:none!important;
+}
+/* Front edge: this slender, non-interactive seam sits OVER the metal
+   compartments instead of disappearing beneath panel backgrounds. */
+.console-body .strip{position:relative!important;isolation:isolate}
+.console-body .strip::after{
+ content:"";position:absolute;right:0;top:0;bottom:0;width:1px;
+ background:#061722;box-shadow:-1px 0 #8babb538;
+ z-index:15;pointer-events:none;
+}
+.console-body .strip.channel-dragging{opacity:.55!important}
+.console-body .strip.channel-drop-before::before,
+.console-body .strip.channel-drop-after::before{
+ content:"";position:absolute;top:0;bottom:0;width:3px;
+ background:#8ce3f1;z-index:18;pointer-events:none;
+}
+.console-body .strip.channel-drop-before::before{left:0}
+.console-body .strip.channel-drop-after::before{right:0}
+.console-body .strip-identity-top[draggable="true"]{cursor:grab}
+.console-body .strip-identity-top[draggable="true"]:active{cursor:grabbing}
 </style>
 </head>
 <body>
@@ -2721,7 +2750,7 @@ function sectionFader(t){
 }
 function strip(t){
  let code='<article class="strip '+t.kind+(t.selected?' selected':'')+'" data-id="'+t.id+'" style="--track-color:'+t.color+';--ch:'+t.color+'" aria-label="'+escapeHtml(t.name)+' channel">';
- code+='<button type="button" class="strip-identity-top" data-action="editIdentity" title="Double-click to edit channel identity · F2" aria-label="Double-click to edit '+escapeHtml(t.name)+' channel identity"><span class="identity-number">'+(t.kind==='master'?'MASTER':'CH '+String(t.id).padStart(2,'0'))+'</span><span class="identity-name">'+escapeHtml(t.name)+'</span><span class="identity-symbol" aria-hidden="true">'+escapeHtml(iconFor(t))+'</span></button>';
+ code+='<button type="button" class="strip-identity-top" '+(t.kind==='master'?'':'draggable="true" ')+'data-action="editIdentity" title="'+(t.kind==='master'?'Double-click to edit channel identity':'Drag to arrange · Alt+arrows move · double-click/F2 edit')+'" aria-label="Double-click to edit '+escapeHtml(t.name)+' channel identity"><span class="identity-number">'+(t.kind==='master'?'MASTER':'CH '+String(t.id).padStart(2,'0'))+'</span><span class="identity-name">'+escapeHtml(t.name)+'</span><span class="identity-symbol" aria-hidden="true">'+escapeHtml(iconFor(t))+'</span></button>';
  code+='<div class="section route-section"><div class="route-top"><span class="route-indicator">'+(t.kind==='audio'?'▥':t.kind==='bus'?'↪':t.kind==='fx'?'∿':'➜')+'</span>'+(t.safe?'<span class="safe-marker" title="Snapshot safe · recall protected">SAFE</span>':'')+(t.group?'<span class="group-indicator" title="Linked group '+escapeHtml(t.group)+'">'+escapeHtml(t.group)+'</span>':'')+(t.kind==='audio'?'<button class="mini format-badge" data-action="format" title="Processing width M/ST (preserves physical input source)">'+(t.format==='mono'?'M':'ST')+'</button>':'')+(t.kind!=='master'&&wireOutgoingCount(t.id)?'<span class="split-count" title="GUI-only routing destinations · no native PCM">⇢'+wireOutgoingCount(t.id)+'</span>':'')+'<button class="mini phase '+(t.phase?'on':'')+'" data-action="phase" title="Reverse polarity">'+(t.phase?'Ø':'⊘')+'</button></div>';
  if(t.kind==='audio')code+='<div class="route-field"><span class="route-caption">IN</span><select class="route-select" data-field="input" title="Input source (demo choices)" aria-label="'+escapeHtml(t.name)+' input">'+option(channelOptions(t,'input'),t.input)+'</select></div>';
  else if(t.kind==='bus'||t.kind==='fx')code+='<div class="route-field"><span class="route-caption">IN</span><span class="route-identity">'+(t.kind==='bus'?'GROUP':'FX RETURN')+'</span></div>';
@@ -3235,6 +3264,65 @@ document.querySelector('.console-body').addEventListener('dblclick',e=>{
  if(e.target.classList.contains('center-pan')){t.pan=0;refreshStrip(t);say(t.name+' pan centered');}
  if(e.target.closest('.footer-label,.strip-identity-top'))openChannelIdentity(t,e.target);
 });
+/* V16: rearrange channel model order by stable IDs, never swap signal
+   processors, channel IDs, existing patch edges, or pinned MAIN. */
+let channelDragId=null;
+function moveChannelTo(id,destId,after=false){
+ if(id===destId)return false;
+ const i=tracks.findIndex(t=>t.id===id),dest=tracks.find(t=>t.id===destId);
+ if(i<0||!dest)return false;
+ const item=tracks.splice(i,1)[0],j=tracks.indexOf(dest);
+ tracks.splice(j+(after?1:0),0,item);
+ return true;
+}
+function clearChannelDrag(){
+ channelDragId=null;
+ document.querySelectorAll('#tracks .strip').forEach(el=>
+  el.classList.remove('channel-dragging','channel-drop-before','channel-drop-after'));
+}
+const arrangeSurface=document.querySelector('.console-body');
+arrangeSurface.addEventListener('dragstart',e=>{
+ const header=e.target.closest?.('.strip-identity-top[draggable="true"]');
+ if(!header)return;
+ const t=findTrack(header);if(!t||t.kind==='master')return;
+ channelDragId=t.id;
+ e.dataTransfer?.setData('application/x-arsonmix-channel',String(t.id));
+ if(e.dataTransfer)e.dataTransfer.effectAllowed='move';
+ header.closest('.strip').classList.add('channel-dragging');
+},true);
+arrangeSurface.addEventListener('dragover',e=>{
+ if(channelDragId===null)return;
+ const target=e.target.closest?.('#tracks .strip');if(!target)return;
+ e.preventDefault();
+ if(e.dataTransfer)e.dataTransfer.dropEffect='move';
+ document.querySelectorAll('#tracks .strip').forEach(el=>
+  el.classList.remove('channel-drop-before','channel-drop-after'));
+ const after=e.clientX>=target.getBoundingClientRect().left+target.getBoundingClientRect().width/2;
+ target.classList.add(after?'channel-drop-after':'channel-drop-before');
+},true);
+arrangeSurface.addEventListener('drop',e=>{
+ if(channelDragId===null)return;
+ e.preventDefault();e.stopPropagation();
+ const target=e.target.closest?.('#tracks .strip'),id=channelDragId;
+ const destId=Number(target?.dataset.id);
+ const after=!!target&&e.clientX>=target.getBoundingClientRect().left+target.getBoundingClientRect().width/2;
+ clearChannelDrag();
+ if(!target||!moveChannelTo(id,destId,after))return;
+ const t=tracks.find(x=>x.id===id);
+ render();say(t.name+' moved to strip '+(tracks.indexOf(t)+1)+' · signal routing unchanged');
+},true);
+arrangeSurface.addEventListener('dragend',clearChannelDrag,true);
+arrangeSurface.addEventListener('keydown',e=>{
+ if(!e.altKey||!['ArrowLeft','ArrowRight'].includes(e.key))return;
+ const top=e.target.closest?.('.strip-identity-top');if(!top)return;
+ const t=findTrack(top),i=t?tracks.indexOf(t):-1,step=e.key==='ArrowRight'?1:-1;
+ if(i<0||i+step<0||i+step>=tracks.length)return;
+ e.preventDefault();e.stopPropagation();
+ if(!moveChannelTo(t.id,tracks[i+step].id,step>0))return;
+ render(Math.floor((i+step)/bankCapacity()));
+ document.querySelector('#tracks .strip[data-id="'+t.id+'"] .strip-identity-top')?.focus();
+ say(t.name+' moved '+(step>0?'right':'left')+' · channel ID unchanged');
+},true);
 document.querySelector('.console-body').addEventListener('dragstart',e=>{
  const row=e.target.closest('.fxslot-row');if(!row)return;
  const t=findTrack(row);if(!t)return;
