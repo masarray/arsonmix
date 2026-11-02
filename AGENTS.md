@@ -1,3 +1,9 @@
+> **USER APPROVED CONSOLE DESIGN LOCK (2026-11-01):** Normative [PRD v5.2 §9](docs/PRD_ARSONMIX_OPERATOR_FIRST_LIVE_MIXER_V5_20261101.md#9-normative-v52-product-design-lock--user-approved-pr-278-mixer-workflow) + [ARD v5.2 §K](docs/ARD_ARSONMIX_UNIVERSAL_REALTIME_CONSOLE_V5_20261101.md#k-normative-v52-design-to-native-execution-contract--pr-278-reference). [PR #278](https://github.com/masarray/arsonmix/pull/278) at `design-references/audition-mixer-study/index.html` is the **owner-selected one-Console geometry/workflow NORTH STAR**. GUI #271 must reproduce its dense direct IN/OUT→FX→SEND→EQ/TRIM/PAN→MUTE/SOLO→FADER/METER workflow using native snapshot/ACK; ENGINE #266 supplies real operations; FAT #270 tests it on one actual Windows build. Strip out DAW automation/record, mock meters/FX, fake pins. Distinguish LINK FADERS from DSP GROUP BUS. This UX decision overrides older workbench, multi-tab setup and modal-first interpretations; v8 ABI and realtime safety remain inviolable. No alternate design study or customer partial UAT.
+
+> **MANDATORY CURRENT AUTHORITIES — 2026-11-01:** [Product PRD v5.1](docs/PRD_ARSONMIX_OPERATOR_FIRST_LIVE_MIXER_V5_20261101.md#8-mandatory-v51-product-delivery-amendment--puzzle-socket-v8), [Architecture ARD v5.1](docs/ARD_ARSONMIX_UNIVERSAL_REALTIME_CONSOLE_V5_20261101.md#j-mandatory-v51-abi-and-module-boundary-amendment--puzzle-socket-v8), [shared puzzle socket v8](docs/PUZZLE_INTEGRATION_CONTRACT_V8_20261101.md), [machine-required fields](contracts/console-puzzle-v8.json), and binding owner packets [ENGINE #266](docs/workstreams/ENGINE_PUZZLE_V8.md), [GUI #271](docs/workstreams/GUI_PUZZLE_V8.md), [INTEGRATION #270](docs/workstreams/FAT_PUZZLE_V8.md). **This v8 override supersedes historical v6/v7 priority/sequence**, preserves realtime safety, and bans three separately green PRs from being called one mixer. A real native-producer fixture, same-schema consumer, exact combined SHA and internal QA are required. Review/CI fail-closed; no user UAT until feature-complete S3.
+
+> **ACTIVE RELEASE ORCHESTRATION v7 (2026-11-01):** [ONE PRODUCT RELEASE TRAIN](docs/RELEASE_TRAIN_UNIVERSAL_CONSOLE_V7_20261101.md) and owner packets [ENGINE](docs/workstreams/ENGINE_DELIVERY_V7.md), [GUI](docs/workstreams/GUI_DELIVERY_V7.md), [INTEGRATION/RELEASE](docs/workstreams/INTEGRATION_RELEASE_DELIVERY_V7.md). Complete one real feature-parity Windows mixer BEFORE requesting owner/customer UAT. PRD/ARD v5 remain normative product/architecture; v7 supersedes older v6 delivery sequencing, not v6 realtime safety. #274/#275 are GUI patch sources and #276 is partial staging, not a final user build.
+
 # ArSonMix — SINGLE EXECUTION AUTHORITY (v6 / 2026-11-01)
 
 **READ FIRST:** [PRD v5](docs/PRD_ARSONMIX_OPERATOR_FIRST_LIVE_MIXER_V5_20261101.md) + [ARD v5](docs/ARD_ARSONMIX_UNIVERSAL_REALTIME_CONSOLE_V5_20261101.md) + [EXECUTION LOCK v6](docs/EXECUTION_LOCK_UNIVERSAL_LIVE_CONSOLE_V6_20261101.md). Workstream handoffs: [ENGINE](docs/workstreams/ENGINE_UNIVERSAL_CONSOLE_V6.md), [GUI](docs/workstreams/GUI_OPERATOR_CONSOLE_V6.md), [INTEGRATION/FAT](docs/workstreams/INTEGRATION_FAT_CONSOLE_V6.md).
@@ -30,3 +36,12 @@ At verified `main@bb6dff6b`: native [Windows CTest/package #41263965810](https:/
 - Older 2026-10-25–31 R5/L2/G1/G2/BTN-180 or alternate 'LATEST' instructions in Git history are **historical**, not active strategy; use v5 specs and this v6 lock for priorities. Approved visual details may be reused without overriding operator-first function.
 
 **There are no unattended background coding agents merely because a GitHub issue/branch exists. Separate developer sessions must explicitly be started with the linked workstream handoffs.**
+
+## Historical diagnostics and visual references (NOT active execution authority)
+
+Retained for traceable physical hardware diagnostics under [#15](https://github.com/masarray/arsonmix/issues/15):
+- [Smart Audio Engine ARD — archival render/device-clock analysis](docs/ARD_SMART_AUDIO_ENGINE_V1_2026-10-25.md).
+- [Smart Audio Engine Implementation Blueprint — archival ASIO/WASAPI FAT details](docs/SMART_AUDIO_ENGINE_IMPLEMENTATION_BLUEPRINT.md).
+- [Original approved GUI baseline — archival visual comparison](docs/GUI_BASELINE_LOCK_2026-10-25.md).
+
+These explain prior device-clock evidence and fader/LED design. For **current feature architecture, priority and execution**, the PRD/ARD v5 and execution lock v6 at the top of this document take precedence. The historical specs do not override native ChannelId admission or justify an extra render callback.
