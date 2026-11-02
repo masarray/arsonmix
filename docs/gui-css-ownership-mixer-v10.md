@@ -1,6 +1,6 @@
 # ArSonMix V10 — CSS Architecture: Console Foundation and Cascade Integrity
 
-Base: `main` 7ca51fade852dabf3ec4254fa94b7007e99768de. No native audio, ENGINE, event-handler, DOM or routing-model changes.
+Base: V10 CSS source baseline `7ca51fade852dabf3ec4254fa94b7007e99768de`, **rebased on WIRE V43** `2be7c0fe15af5b3fae28e73a49e3c29ae46feb74`. No native audio, ENGINE, event-handler, DOM or routing-model changes.
 
 ## Root cause and structural repair
 
@@ -22,7 +22,7 @@ Inline CSS characters: **187,951 → 168,504** (19,447 fewer). Total CSS after d
 
 - New `tests/pages_css_architecture_v10_smoke.py`: reconstructs original CSS order from the three owners and two inline blocks, checks the exact fingerprint/length, WIRE V42 ownership, Pages asset manifest, and 1366/1680/1920 Chromium geometry/Inter/fader hardware.
 - Repairs V8 and V9 ownership tests to inspect **both** inline blocks. Previously, testing only the first block could falsely pass after extraction.
-- Pages builder and deploy workflow now guarantee byte-identical copying for all V10 assets and **WIRE V42 dot/socket CSS** to the `/preview/` alias. This fixes an alias dependency that was omitted despite its reference in the canonical HTML.
+- Pages builder and deploy workflow now guarantee byte-identical copying for all V10 CSS assets. Existing **WIRE V43 dot/socket CSS** and its /preview/ alias copy are preserved from V43; V10 does not duplicate V43's earlier fix.
 - Existing eight-state collapse, FX/Plugin Manager, WIRE V15/V40/V42 and native GUI workflow tests remain mandatory. PR cannot merge on a failed visual or interaction gate.
 
 ## Next milestone

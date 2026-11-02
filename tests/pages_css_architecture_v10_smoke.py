@@ -46,7 +46,7 @@ def source_gate():
     assert all("--ari-" + n + ":url(data:image/png" in sheets[2]
                for n in ("silver", "rose", "pan"))
     assert "wireWsCanJoin" in html
-    assert "assets/mixer-wire-dots.css?v=v42" in html
+    assert "assets/mixer-wire-dots.css?v=v43" in html
     assert "assets/inter-embedded.css" in html
     assert assembled.count("!important") == 1449
     for path in (ROOT / "scripts/build_pages.py", ROOT / ".github/workflows/pages-publish.yml"):
