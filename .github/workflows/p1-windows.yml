@@ -58,7 +58,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Cheap canonical Console v6 puzzle socket gate (no JUCE)
-        run: |\n          node --test tests/engine_runtime_reconciliation_test.mjs\n          node scripts/check_console_puzzle.mjs
+        run: |
+          node --test tests/engine_runtime_reconciliation_test.mjs
+          node scripts/check_console_puzzle.mjs
       - name: Stop incomplete integrated product promotion before JUCE checkout
         if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-') }}
         run: node scripts/check_console_puzzle.mjs --release
