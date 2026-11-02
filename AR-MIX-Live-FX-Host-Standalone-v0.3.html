@@ -1587,6 +1587,15 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
 #app #mixer .utility-row button.mx-hw-key {
   flex:1 1 0;
 }
+/* The legacy MASTER MUTE was sized only by .candy. Own its 29px geometry
+   explicitly after replacing that obsolete class, matching every strip. */
+#app #masterLeft .master-actions button.mx-hw-key,
+#app #masterMute.mx-hw-key{
+  height:29px!important;
+  min-height:29px!important;
+  max-height:29px!important;
+  align-self:center!important;
+}
 #app #mixer [data-channel-format-toggle].mx-hw-key{
   min-width:20px!important;
 }
@@ -8831,7 +8840,7 @@ scheduleDemoMeter();
     link:'163,141,235',neutral:'210,225,234'
   };
   const TARGET=RULES.map(rule=>rule[0]).join(',');
-  const instances=new Map();
+  const instances=new WeakMap();
   let serial=0;
   let observer=null;
   const escapeXml=(value)=>String(value).replace(/&/g,'&amp;').replace(/</g,'&lt;')
@@ -8853,7 +8862,7 @@ scheduleDemoMeter();
     return button.classList.contains('active')||button.classList.contains('selected')||
       button.classList.contains('power-on')||button.classList.contains('on');
   }
-  function svgMarkup(legend,w,h,id){
+  function svgMarkup(legend,w,h,id,led){
     // V5: a SINGLE SVG mask text cut-out; never overlay duplicate text paints.
     // ViewBox follows actual key size, preventing distorted glyphs in 28px strips.
     const safe=escapeXml(legend);
@@ -8868,9 +8877,9 @@ scheduleDemoMeter();
       '<stop offset="0" stop-color="#667680"/><stop offset=".20" stop-color="#46555f"/>'+
       '<stop offset=".66" stop-color="#35444d"/><stop offset="1" stop-color="#26323b"/></linearGradient>'+
       '<linearGradient id="mx-hw-led-'+id+'" x1="0" y1="0" x2="0" y2="1">'+
-      '<stop offset="0" stop-color="rgb(var(--mx-hw-led))" stop-opacity=".88"/>'+
-      '<stop offset=".46" stop-color="rgb(var(--mx-hw-led))" stop-opacity="1"/>'+
-      '<stop offset="1" stop-color="rgb(var(--mx-hw-led))" stop-opacity=".74"/></linearGradient>'+
+      '<stop offset="0" stop-color="rgb('+led+')" stop-opacity=".88"/>'+
+      '<stop offset=".46" stop-color="rgb('+led+')" stop-opacity="1"/>'+
+      '<stop offset="1" stop-color="rgb('+led+')" stop-opacity=".74"/></linearGradient>'+
       '<linearGradient id="mx-hw-shine-'+id+'" gradientUnits="userSpaceOnUse" x1="'+r(left)+'" y1="0" x2="'+r(right)+'" y2="0">'+
       '<stop offset="0" stop-color="white" stop-opacity="0"/>'+
       '<stop offset=".2" stop-color="white" stop-opacity=".26"/>'+
@@ -8899,14 +8908,14 @@ scheduleDemoMeter();
     const size=w.toFixed(1)+'x'+h.toFixed(1)+'/'+legend;
     if(!force&&record.size===size&&button.querySelector(':scope > svg.mx-hw-face'))return;
     record.size=size;
-    button.innerHTML='<span class="mx-hw-screen-reader">'+escapeXml(legend)+'</span>'+svgMarkup(legend,w,h,record.id);
+    button.innerHTML='<span class="mx-hw-screen-reader">'+escapeXml(legend)+'</span>'+svgMarkup(legend,w,h,record.id,PALETTE[record.semantic]);
   }
   function upgrade(button){
     if(!(button instanceof HTMLButtonElement))return;
     const rule=source(button);
     if(!rule)return;
     const existing=instances.get(button);
-    if(existing&&button.querySelector(':scope > svg.mx-hw-face'))return;
+    if(existing&&button.querySelector(':scope > svg.mx-hw-face')){resizer?.observe(button);return;}
     const original=rawLabel(button);
     let legend=rule.label||original||'ON';
     // A source text replacement (e.g. native PRE/POST) is authoritative.
@@ -8918,7 +8927,7 @@ scheduleDemoMeter();
       button.classList.add('mx-hw-key','mx-hw-'+rule.semantic);
       if(!button.hasAttribute('aria-label'))button.setAttribute('aria-label',original||legend);
       button.style.setProperty('--mx-hw-led',PALETTE[rule.semantic]);
-      instances.set(button,{id:++serial,legend,size:''});
+      instances.set(button,{id:++serial,legend,size:'',semantic:rule.semantic});
       if(resizer)resizer.observe(button);
     }else{
       existing.legend=legend;
@@ -8962,6 +8971,11 @@ scheduleDemoMeter();
       for(const record of records){
         if(record.target instanceof HTMLButtonElement&&record.target.classList.contains('mx-hw-key') &&
            !record.target.querySelector('svg.mx-hw-face'))schedule(record.target);
+        for(const node of record.removedNodes)if(node.nodeType===1){
+          if(node.matches?.('button.mx-hw-key')&&!node.isConnected)resizer?.unobserve(node);
+          for(const button of node.querySelectorAll?.('button.mx-hw-key')||[])
+            if(!button.isConnected)resizer?.unobserve(button);
+        }
         for(const node of record.addedNodes)if(node.nodeType===1&&
            (node.matches?.(TARGET)||node.querySelector?.(TARGET)))schedule(node);
       }
