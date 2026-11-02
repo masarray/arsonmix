@@ -97,6 +97,35 @@ def main():
              f'{width}: Bus A did not become focused channel')
       ensure(incoming.count()==0,
              f'{width}: renderer invented offscreen CH01/02 cable coordinates')
+      # V27 real one-to-many physical OUT ferrule: 1 stem, 1 junction,
+      # 2 independent destinations leave exactly the same branch coordinate.
+      bank.select_option('0')
+      connect(1,2) # CH01 already sends to CH03 (fixture above).
+      select(1)
+      branch=layer.locator('path.wire-outgoing-line')
+      stems=layer.locator('path.wire-origin-stem')
+      joins=layer.locator('circle.wire-origin-junction')
+      ensure(branch.count()==2 and stems.count()==1 and joins.count()==1,
+             f'{width}: overlapping duplicate cable stems or missing branches')
+      starts=[d.split(' C ')[0] for d in branch.evaluate_all(
+          '(els)=>els.map(e=>e.getAttribute("d"))')]
+      ensure(len(set(starts))==1,
+             f'{width}: 1-to-many cable starts diverge at OUT: {starts}')
+      ensure(stems.first.get_attribute('d').startswith('M '),
+             f'{width}: shared physical stem path missing')
+      if width==1366:
+        # 1244px owner screenshot: do not overlap labels and toolbar buttons.
+        page.set_viewport_size({'width':1244,'height':900})
+        hidden=page.locator('.command-bar>.toolbar-label').evaluate_all(
+            '(els)=>els.every(e=>getComputedStyle(e).display==="none")')
+        ensure(hidden,'1244: toolbar labels still clash with actual controls')
+        controls=page.locator('.command-bar > :is(button,select,details)')
+        boxes=controls.evaluate_all("""els=>els.map(el=>{
+            const r=el.getBoundingClientRect();
+            return [r.left,r.right,getComputedStyle(el).display];
+        }).filter(e=>e[2]!=='none')""")
+        ensure(all(boxes[i][1]<=boxes[i+1][0]+1 for i in range(len(boxes)-1)),
+               f'1244: toolbar controls overlap {boxes}')
       ensure(not errors,f'{width}: JavaScript exceptions {errors}')
       page.screenshot(path=str(ROOT/f"preview-v26-focus-{width}.png"))
       page.close()
