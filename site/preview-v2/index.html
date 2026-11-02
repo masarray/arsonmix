@@ -3407,140 +3407,187 @@ html * ,html *::before,html *::after{
 .routing-wire-overlay path{filter:none!important;pointer-events:none}
 
 
-/* V29 — Dan Andersson / Mikael Eidenberg 3D graphite-button material.
-   Directly adapted from user-supplied style.css: idle #333→#222,
-   hover #373737→#262626, selected recessed #202020→#151515,
-   white top bevel and thin colored indicator edges. Fit the existing 29px
-   ArSonMix hardware keys; NEVER copy the radio-exclusive jQuery demo.
-   MUTE, SOLO, PFL remain three INDEPENDENT latched toggles.
-   Non-button instruments (wire, pan, fader, meter, rail) are untouched. */
-:root {
- --am-3d-top:#333;
- --am-3d-bottom:#222;
- --am-3d-hover-top:#373737;
- --am-3d-hover-bottom:#262626;
- --am-3d-selected-top:#202020;
- --am-3d-selected-bottom:#151515;
+/* V30 PHYSICAL BUTTON CORRECTION — owner screenshot 2026-11-02.
+   UI research: Dan Andersson's 3D Buttons CodePen (praktikdan/jbqBWm),
+   based on Mikael Eidenberg's synth-button concept. Adapted material and
+   raised-vs-recessed behavior for small mixer strips, not the demo's
+   mutually exclusive jQuery toggle. Original on/off model is unchanged.
+
+   Core correction from V29: a #333 key ON dark #142832 chassis was too close
+   in luminance to its bezel; remove tiny black-on-black keycap and glowing
+   text illusion. Brighter GRAPHITE SATIN cap rests physically ABOVE a static
+   dark switchplate; latched buttons sit INSIDE the same opening. Narrow
+   LED seams are IN the depressed face — no diffuse shadow or filter. */
+:root{
+ --am-key30-top:#738692;
+ --am-key30-bottom:#354750;
+ --am-key30-hover-top:#8296a0;
+ --am-key30-hover-bottom:#40535d;
+ --am-key30-down-top:#27353d;
+ --am-key30-down-bottom:#151e25;
+ --am-key30-hairline:linear-gradient(90deg,transparent 0%,#ecfaffb0 50%,transparent 100%);
+ --am-key30-lowline:linear-gradient(90deg,transparent 0%,#a8c6d858 50%,transparent 100%);
 }
-/* Retain existing button dimensions and static chassis sockets. */
+/* One stationary shared key well for all three MUTE/SOLO/PFL caps. This
+   plate and each .hw-switch-socket's overlaid lip NEVER move on click. */
+.console-body .strip .switch-section{
+ background:#0b1a22!important;
+ border-top:1px solid #040e14!important;
+ border-bottom:1px solid #415764!important;
+ box-shadow:inset 0 1px #02090d,inset 0 -1px #2c424e!important;
+}
+.console-body .strip .switch-section .hw-switch-socket{
+ background:#061118!important;
+ border:1px solid #050b0f!important;
+ border-radius:3px!important;
+ box-shadow:inset 0 1px 0 #000,inset 1px 0 0 #000,
+            inset -1px 0 0 #425965,inset 0 -1px 0 #435a64!important;
+ transform:none!important;
+}
+.console-body .strip .switch-section .hw-switch-socket::before{
+ background:linear-gradient(180deg,#030a10,#142630)!important;
+ z-index:0!important;
+}
+.console-body .strip .switch-section .hw-switch-socket::after{
+ z-index:4!important;
+ pointer-events:none!important;
+ border-radius:3px!important;
+ box-shadow:inset 0 1px 0 #b1cdd43b,inset 1px 0 0 #9cb9c32f,
+            inset -1px 0 0 #000e,inset 0 -1px 0 #050b10!important;
+}
+/* This one shared satin-material token also styles toolbar and ordinary
+   rectangular push controls, but never faders, sockets for patch cables,
+   VU meter or pan thumb. No layered waves or bright-dark-bright cycles. */
 :is(
- .command-bar button.tool,.command-bar summary.tool,
- .more-tools-panel button.tool,
+ .command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
  .console-body .strip .switch-section .hw-switch-socket>.switch,
  .identity-actions button.console-control,.plugin-footer button,
  .route-choice-head button,.route-choice-option,button.hw-key
-) {
- --am-3d-led:#55b9dd;
+){
+ --am-key30-led:#6acadd;
  position:relative!important;
- background:linear-gradient(180deg,var(--am-3d-top),var(--am-3d-bottom))!important;
- color:#dbe8ec!important;
- border:1px solid rgba(255,255,255,.055)!important;
- border-top-color:rgba(255,255,255,.25)!important;
+ z-index:2!important;
+ box-sizing:border-box!important;
+ border:1px solid #7b929d!important;
+ border-top-color:#b4c7cf!important;
+ border-right-color:#263842!important;
+ border-bottom-color:#1a282f!important;
  border-radius:2px!important;
- box-shadow:inset 0 1px 0 rgba(0,0,0,.1),0 2px 1px rgba(0,0,0,.55)!important;
- text-shadow:0 -1px 0 rgba(0,0,0,.7)!important;
- filter:none!important;
+ background:linear-gradient(180deg,var(--am-key30-top) 0%,var(--am-key30-bottom) 100%)!important;
+ color:#f3f8fa!important;
+ text-shadow:0 -1px 0 #0e1c24!important;
+ box-shadow:inset 1px 0 0 #d6eff92f,inset 0 1px 0 #ffffff31,
+            0 1px 0 #17252d,0 2px 0 #060c10!important;
  transform:translateY(0)!important;
- transition:background 175ms ease,box-shadow 175ms ease,border-color 175ms ease!important;
+ filter:none!important;backdrop-filter:none!important;
+ -webkit-backdrop-filter:none!important;
+ transition:none!important;
 }
 :is(
- .command-bar button.tool,.command-bar summary.tool,
- .more-tools-panel button.tool,
+ .command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
+ .console-body .strip .switch-section .hw-switch-socket>.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key
+)::before{
+ content:""!important;display:block!important;position:absolute!important;
+ left:2px!important;right:2px!important;top:0!important;bottom:auto!important;
+ width:auto!important;height:2px!important;
+ background:var(--am-key30-hairline)!important;
+ border:0!important;box-shadow:none!important;pointer-events:none!important;
+}
+:is(
+ .command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
+ .console-body .strip .switch-section .hw-switch-socket>.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key
+)::after{
+ content:""!important;display:block!important;position:absolute!important;
+ left:2px!important;right:2px!important;bottom:0!important;top:auto!important;
+ width:auto!important;height:1px!important;
+ background:var(--am-key30-lowline)!important;
+ border:0!important;box-shadow:none!important;pointer-events:none!important;
+}
+:is(
+ .command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
  .console-body .strip .switch-section .hw-switch-socket>.switch,
  .identity-actions button.console-control,.plugin-footer button,
  .route-choice-head button,.route-choice-option,button.hw-key
 ):hover:not(:disabled):not(.on):not(.active):not([aria-pressed="true"]):not([aria-expanded="true"]){
- background:linear-gradient(180deg,var(--am-3d-hover-top),var(--am-3d-hover-bottom))!important;
- box-shadow:inset 0 1px 0 rgba(0,0,0,.1),0 3px 8px rgba(0,0,0,.42)!important;
+ background:linear-gradient(180deg,var(--am-key30-hover-top),var(--am-key30-hover-bottom))!important;
+ box-shadow:inset 1px 0 0 #e6f5fa36,inset 0 1px 0 #ffffff39,
+            0 1px 0 #17252d,0 2px 0 #060c10!important;
 }
-/* Pressed while held: shallow real travel; latched keys remain visually
-   recessed even after release, without moving the fader or any rack row. */
+/* One color-variable controls the pair of LED seams; keep label readable
+   even when no accent LED is illuminated. Never use text-shadow glow. */
 :is(
- .command-bar button.tool,.command-bar summary.tool,
- .more-tools-panel button.tool,
+ .console-body .strip .switch-section .hw-switch-socket>.switch.on,
+ .command-bar button.tool.active,.command-bar button.tool[aria-pressed="true"],
+ .command-bar summary.tool[aria-expanded="true"],
+ .more-tools[open] summary.tool,.more-tools-panel button.tool.active,
+ button.hw-key[aria-pressed="true"]
+){
+ --am-key30-led:#6acadd;
+ background:linear-gradient(180deg,var(--am-key30-down-top),var(--am-key30-down-bottom))!important;
+ border:1px solid #09151b!important;
+ border-top-color:#0a1319!important;
+ border-left-color:#08121a!important;
+ border-right-color:#081219!important;
+ border-bottom-color:#263944!important;
+ color:#edf8fb!important;
+ box-shadow:inset 0 2px 1px #000b,inset 1px 0 0 #eaf6ff0d,
+            inset 0 -1px 0 #b8d8e328!important;
+ text-shadow:0 1px 0 #000!important;
+ transform:translateY(1px)!important;
+}
+:is(
+ .console-body .strip .switch-section .hw-switch-socket>.switch.on,
+ .command-bar button.tool.active,.command-bar button.tool[aria-pressed="true"],
+ .command-bar summary.tool[aria-expanded="true"],
+ .more-tools[open] summary.tool,.more-tools-panel button.tool.active,
+ button.hw-key[aria-pressed="true"]
+)::before{
+ left:0!important;right:auto!important;top:3px!important;bottom:3px!important;
+ width:2px!important;height:auto!important;
+ background:linear-gradient(180deg,transparent,var(--am-key30-led) 38%,
+      var(--am-key30-led) 62%,transparent)!important;
+}
+:is(
+ .console-body .strip .switch-section .hw-switch-socket>.switch.on,
+ .command-bar button.tool.active,.command-bar button.tool[aria-pressed="true"],
+ .command-bar summary.tool[aria-expanded="true"],
+ .more-tools[open] summary.tool,.more-tools-panel button.tool.active,
+ button.hw-key[aria-pressed="true"]
+)::after{
+ left:auto!important;right:0!important;top:3px!important;bottom:3px!important;
+ width:2px!important;height:auto!important;
+ background:linear-gradient(180deg,transparent,var(--am-key30-led) 38%,
+      var(--am-key30-led) 62%,transparent)!important;
+}
+.console-body .strip .switch-section .hw-switch-socket>.switch.on.mute{
+ --am-key30-led:#ef6376;color:#ffe9ed!important;
+}
+.console-body .strip .switch-section .hw-switch-socket>.switch.on.solo{
+ --am-key30-led:#f6d16b;color:#fff0c0!important;
+}
+.console-body .strip .switch-section .hw-switch-socket>.switch.on.cue{
+ --am-key30-led:#78d3e9;color:#dffaff!important;
+}
+:is(
+ .command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
  .console-body .strip .switch-section .hw-switch-socket>.switch,
  .identity-actions button.console-control,.plugin-footer button,
  .route-choice-head button,.route-choice-option,button.hw-key
 ):active:not(:disabled){
  transform:translateY(1px)!important;
- background:linear-gradient(180deg,var(--am-3d-selected-top),var(--am-3d-selected-bottom))!important;
- box-shadow:inset 0 1px 6px rgba(0,0,0,.65),0 1px 0 #080d10!important;
-}
-/* Shared latched states of the actual mixer, not the jQuery demo's exclusive
-   .selected sibling toggle. The status is already owned by mixer data model. */
-:is(
- .console-body .strip .switch-section .hw-switch-socket>.switch.on,
- .command-bar button.tool.active,.command-bar button.tool[aria-pressed="true"],
- .command-bar summary.tool[aria-expanded="true"],
- .more-tools[open]>.tool,.more-tools[open] summary.tool,
- .more-tools-panel button.tool.active,
- button.hw-key[aria-pressed="true"]
-){
- z-index:2!important;
- background:linear-gradient(180deg,var(--am-3d-selected-top),var(--am-3d-selected-bottom))!important;
- border-top-color:transparent!important;
- border-left-color:rgba(0,0,0,.55)!important;
- border-right-color:rgba(0,0,0,.55)!important;
- border-bottom-color:#090f13!important;
- color:#f8fbfc!important;
- box-shadow:inset 0 1px 6px rgba(0,0,0,.62),inset 0 -1px 0 rgba(255,255,255,.035)!important;
- text-shadow:0 0 5px color-mix(in srgb,var(--am-3d-led),transparent 45%)!important;
-}
-/* Reference selected state has vertical indicator lines on either side.
-   Active key face alone owns the highlights; chassis frame never moves. */
-:is(
- .console-body .strip .switch-section .hw-switch-socket>.switch.on,
- .command-bar button.tool.active,.command-bar button.tool[aria-pressed="true"],
- .command-bar summary.tool[aria-expanded="true"],
- .more-tools[open] summary.tool,
- .more-tools-panel button.tool.active,
- button.hw-key[aria-pressed="true"]
-)::before{
- content:""!important;display:block!important;position:absolute!important;
- left:0!important;top:2px!important;bottom:2px!important;right:auto!important;
- width:1px!important;height:auto!important;
- background:linear-gradient(180deg,transparent,color-mix(in srgb,var(--am-3d-led),transparent 25%),transparent)!important;
- border:0!important;box-shadow:none!important;pointer-events:none!important;
+ box-shadow:inset 0 2px 1px #000a,inset 0 -1px 0 #cce5f116!important;
 }
 :is(
- .console-body .strip .switch-section .hw-switch-socket>.switch.on,
- .command-bar button.tool.active,.command-bar button.tool[aria-pressed="true"],
- .command-bar summary.tool[aria-expanded="true"],
- .more-tools[open] summary.tool,
- .more-tools-panel button.tool.active,
- button.hw-key[aria-pressed="true"]
-)::after{
- content:""!important;display:block!important;position:absolute!important;
- right:0!important;top:2px!important;bottom:2px!important;left:auto!important;
- width:1px!important;height:auto!important;
- background:linear-gradient(180deg,transparent,color-mix(in srgb,var(--am-3d-led),transparent 25%),transparent)!important;
- border:0!important;box-shadow:none!important;pointer-events:none!important;
-}
-.console-body .strip .switch-section .hw-switch-socket>.switch.on.mute{
- --am-3d-led:#f17380;color:#ffe3e7!important;
-}
-.console-body .strip .switch-section .hw-switch-socket>.switch.on.solo{
- --am-3d-led:#efcc5e;color:#fff0bf!important;
-}
-.console-body .strip .switch-section .hw-switch-socket>.switch.on.cue{
- --am-3d-led:#6dd2ec;color:#dbf8ff!important;
-}
-.console-body .strip .switch-section .hw-switch-socket>.switch:not(.on){
- color:#bfcdd2!important;
-}
-/* An opened More disclosure must retain the recessed face while hovering. */
-.more-tools[open] summary.tool:hover{
- background:linear-gradient(180deg,var(--am-3d-selected-top),var(--am-3d-selected-bottom))!important;
- box-shadow:inset 0 1px 6px rgba(0,0,0,.62),inset 0 -1px 0 rgba(255,255,255,.035)!important;
-}
-@media(prefers-reduced-motion:reduce){
- :is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
+ .command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
  .console-body .strip .switch-section .hw-switch-socket>.switch,
  .identity-actions button.console-control,.plugin-footer button,
- .route-choice-head button,.route-choice-option,button.hw-key){
- transition:none!important;
- }
-}
+ .route-choice-head button,.route-choice-option,button.hw-key
+):focus-visible{outline:2px solid #80d5ed!important;outline-offset:2px!important}
+
 
 </style>
 </head>

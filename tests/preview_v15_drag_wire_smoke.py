@@ -92,30 +92,32 @@ def main():
                 bg:getComputedStyle(el).backgroundImage,
                 shadow:getComputedStyle(el).boxShadow,
                 ink:getComputedStyle(el).color,
-                led:getComputedStyle(el).getPropertyValue('--am-3d-led').trim(),
+                led:getComputedStyle(el).getPropertyValue('--am-key30-led').trim(),
                 press:getComputedStyle(el).getPropertyValue('--am-hw-key-press-y').trim()
             })""")
         page.mouse.move(2,2)  # exit key hover before checking idle material
         idle=material(key)
-        assert_true('rgb(51, 51, 51)' in idle['bg'] and
-                    'rgb(34, 34, 34)' in idle['bg'],
-                    'V29 graphite OFF must follow supplied raised #333/#222 face')
+        assert_true('rgb(115, 134, 146)' in idle['bg'] and
+                    'rgb(53, 71, 80)' in idle['bg'],
+                    'V30 raised graphite must stand apart visibly from dark chassis')
+        assert_true('0px 2px 0px' in idle['shadow'],
+                    'V30 key should have a sharp solid 2px underside')
         assert_true(idle['press']=='1px','Key physical travel must remain 1px')
         solo=page.locator('#tracks .strip[data-id="1"] button.switch.solo')
         cue=page.locator('#tracks .strip[data-id="1"] button.switch.cue')
         key.click();solo.click();cue.click()
         # The example's jQuery single-select is NOT the mixer behavior:
         # MUTE, SOLO and PFL are all independent latch states.
-        for cap,color,led in ((key,'MUTE','#f17380'),
-                              (solo,'SOLO','#efcc5e'),
-                              (cue,'PFL','#6dd2ec')):
+        for cap,color,led in ((key,'MUTE','#ef6376'),
+                              (solo,'SOLO','#f6d16b'),
+                              (cue,'PFL','#78d3e9')):
             active=material(cap)
             assert_true(cap.get_attribute('aria-pressed')=='true',
                         'V29 '+color+' did not remain ON independently')
-            assert_true('rgb(32, 32, 32)' in active['bg'] and
-                        'rgb(21, 21, 21)' in active['bg'] and
+            assert_true('rgb(39, 53, 61)' in active['bg'] and
+                        'rgb(21, 30, 37)' in active['bg'] and
                         'inset' in active['shadow'],
-                        'V29 '+color+' must appear recessed (#202020→#151515)')
+                        'V30 '+color+' must visually sit inside the dark socket')
             assert_true(active['led']==led,
                         'V29 '+color+' colored indicator missing')
         key.click()
