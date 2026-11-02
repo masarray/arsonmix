@@ -22,32 +22,28 @@ def main():
         errors=[]
         page.on("pageerror",lambda err:errors.append(str(err)))
         page.goto(PAGE.as_uri())
-        # V18 hardware key socket / shallow click / portrait meter smoke.
-        key=page.locator('#tracks .strip[data-id="1"] button.switch.mute')
-        # MUTE/SOLO use the original user-selected CodePen CSS button
-        # mounting wrapper. PFL retains its separate V22 stationary socket.
-        well=key.locator('xpath=..')
-        assert_true(well.evaluate("el=>el.classList.contains('codepen-buttons-wrapper')"),
-                    'MUTE/SOLO must use the original CodePen wrapper, not the old generic socket')
-        cue_socket=page.locator('#tracks .strip[data-id="1"] button.switch.cue').locator('xpath=..')
-        assert_true(cue_socket.evaluate("el=>el.classList.contains('hw-switch-socket')"),
-                    'PFL must retain its independently mounted stationary hardware socket')
-        bezel=cue_socket.evaluate("""el=>({
-            z:getComputedStyle(el,'::after').zIndex,
-            cap:getComputedStyle(el.querySelector('button')).zIndex,
-            events:getComputedStyle(el,'::after').pointerEvents
-        })""")
-        assert_true(bezel['z']=='4' and bezel['cap']=='2' and bezel['events']=='none',
-                    'PFL hole lip must be layered above its moving cap')
+        # V6: three identical buttons, no legacy CodePen or PFL-only housing.
+        keys=page.locator('#tracks .strip[data-id="1"] .mx-hw-row > button.mx-hw-key')
+        assert_true(keys.count()==3,'V6 must render exactly 3 sibling hardware keys')
+        rows=keys.evaluate_all("""items=>items.map(e=>({
+          kind:e.dataset.hwKind,h:e.getBoundingClientRect().height,
+          top:e.getBoundingClientRect().top,
+          width:e.getBoundingClientRect().width
+        }))""")
+        assert_true([x['kind'] for x in rows]==['mute','solo','cue'],rows)
+        assert_true(all(abs(x['h']-29)<.5 and x['width']>24 for x in rows),rows)
+        assert_true(max(x['top'] for x in rows)-min(x['top'] for x in rows)<.5,rows)
+        well=page.locator('#tracks .strip[data-id="1"] .mx-hw-row')
+        key=keys.nth(0)
         well_y=well.bounding_box()['y']
         key.scroll_into_view_if_needed()
         rr=key.bounding_box()
         page.mouse.move(rr['x']+rr['width']/2,rr['y']+rr['height']/2)
         page.mouse.down()
         assert_true(abs(well.bounding_box()['y']-well_y)<.25,
-                    'Static hole must not move while button depresses')
+                    'Static row must not move while button depresses')
         page.mouse.up()
-        key.click() # reset MUTE after test press; state contract starts from OFF
+        key.click() # reset MUTE after test press; WIRE fixture starts from OFF
         selected=page.locator('#tracks .strip.selected').first
         assert_true(selected.count()==1,'No selected channel to verify')
         rim=selected.evaluate("""el=>({
@@ -71,31 +67,22 @@ def main():
         assert_true(travel['top']=='24px' and travel['bottom']=='24px',
                     'Fader slot not expanded consistently')
         assert_true(not errors,'V22 browser errors: '+str(errors))
-        # Owner selected V5 hardware key supersedes the old CodePen gradient.
-        # Retain ALL existing wire route tests that follow these material gates.
-        key=page.locator('#tracks .strip[data-id="1"] button.switch.mute')
-        solo=page.locator('#tracks .strip[data-id="1"] button.switch.solo')
-        cue=page.locator('#tracks .strip[data-id="1"] button.switch.cue')
-        for button,legend,color in (
-            (key,'MUTE','255,64,85'),(solo,'SOLO','255,208,44'),(cue,'PFL','90,200,231')):
-            data=button.evaluate("""el=>{
-              const s=getComputedStyle(el),face=el.querySelector('svg.mx-hw-face');
-              return {radius:s.borderRadius,filter:s.filter,background:s.backgroundImage,
-                led:s.getPropertyValue('--mx-hw-led').trim(),
-                maskTexts:face?.querySelectorAll('mask text').length,
-                maskLabel:face?.querySelector('mask text')?.textContent,
-                overlays:face?.querySelectorAll(':scope > text').length,
-                glow:getComputedStyle(el,'::before').opacity,
-                lamp:face?getComputedStyle(face.querySelector('.mx-hw-lamp')).opacity:null,
-                height:el.getBoundingClientRect().height
-              };
-            }""")
-            assert_true(data['maskTexts']==1 and data['overlays']==0 and
-                        data['maskLabel']==legend,'V5 key must have exactly one cutout text')
-            assert_true(data['led']==color and data['glow']=='0' and data['lamp']=='0',
-                        'V5 OFF must use dark graphite cap with unlit semantic LED')
-            assert_true('gradient' in data['background'] and data['filter']=='none' and
-                        abs(data['height']-29)<1,'V5 hardware material/size regression')
+        # V6 owned key material is checked in the dedicated Pages regression.
+        key=page.locator('#tracks .strip[data-id="1"] button[data-hw-kind="mute"]')
+        solo=page.locator('#tracks .strip[data-id="1"] button[data-hw-kind="solo"]')
+        cue=page.locator('#tracks .strip[data-id="1"] button[data-hw-kind="cue"]')
+        for button,legend,color in ((key,'MUTE','255,78,90'),
+                                    (solo,'SOLO','255,207,68'),
+                                    (cue,'PFL','101,210,236')):
+            data=button.evaluate("""el=>({
+              led:getComputedStyle(el).getPropertyValue('--mx-hw-led').trim(),
+              text:el.querySelector('svg.mx-hw-face mask text')?.textContent,
+              maskTexts:el.querySelectorAll('svg.mx-hw-face mask text').length,
+              overlayTexts:el.querySelectorAll('svg.mx-hw-face > text').length,
+              lamp:getComputedStyle(el.querySelector('.mx-hw-lamp')).opacity
+            })""")
+            assert_true(data=={'led':color,'text':legend,'maskTexts':1,
+                               'overlayTexts':0,'lamp':'0'},data)
         meter=page.locator('#tracks .strip[data-id="1"] .meter-lane').first
         led=meter.evaluate("""el=>({
           width:getComputedStyle(el).width,
@@ -105,7 +92,7 @@ def main():
                     'LED must be portrait (6x9px with 2px spacing)')
         # Three independent latches: red MUTE, amber SOLO and ice-blue PFL.
         key.click();solo.click();cue.click()
-        for button,color in ((key,'255,64,85'),(solo,'255,208,44'),(cue,'90,200,231')):
+        for button,color in ((key,'255,78,90'),(solo,'255,207,68'),(cue,'101,210,236')):
             state=button.evaluate("""el=>({
               pressed:el.getAttribute('aria-pressed'),
               led:getComputedStyle(el).getPropertyValue('--mx-hw-led').trim(),
@@ -163,11 +150,10 @@ def main():
         assert_true(page.locator('#pluginBrowser').is_visible(),
                     'Plugin Manager must stay modeless while mixing')
         page.locator('#pluginClose').click()
-        # FX power adopts V5 processing key, not the obsolete Material icon.
-        svg=page.locator('#tracks .strip[data-id="1"] .fx-section .mini.power .mx-hw-face').first
-        assert_true(svg.count()==1 and svg.locator('mask text').count()==1 and
-                    svg.locator('mask text').text_content()=='FX',
-                    'FX power must use a single backlit FX legend, not old icon layers')
+        # 17px utility power retains the compact Material icon, not a cramped keycap.
+        svg=page.locator('#tracks .strip[data-id="1"] .fx-section .mini.power .mi-svg').first
+        assert_true(svg.count()==1 and svg.locator('path').count()==1,
+                    'Compact FX power must keep readable SVG icon')
         assert_true(page.locator('.mixer-title .panel-sub svg.mi-svg').count()==1,
                     'Mixer panel icon must be SVG not fallback text symbol')
         selected=page.locator('#tracks .strip.selected').first

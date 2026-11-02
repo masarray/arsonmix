@@ -1,0 +1,137 @@
+/* ArSonMix mixer hardware keys v6 — SINGLE STYLE OWNER for MUTE / SOLO / PFL.
+   Standalone device V5 material adapted for 40–48px strip controls.
+   Only .mx-hw-* elements belong here; NO legacy .switch, .button or
+   .hw-switch-socket dependencies. No hover paints or CSS filters.
+   Do not introduce another later inline override. */
+.app .console-body .strip .switch-section.mx-hw-row{
+  display:grid!important;
+  grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  align-items:center!important;
+  justify-content:stretch!important;
+  gap:4px!important;
+  height:var(--switch-h)!important;
+  min-height:var(--switch-h)!important;
+  padding:4px 5px!important;
+  background:#1a2d38!important;
+  border-top:1px solid #0a1b24!important;
+  border-bottom:1px solid #415463!important;
+  box-shadow:inset 0 1px 0 #ffffff0a!important;
+}
+.app .console-body .strip .mx-hw-row>button.mx-hw-key{
+  --mx-hw-led:209,224,231;
+  position:relative;
+  display:block;
+  width:100%;
+  min-width:0;
+  max-width:100%;
+  height:29px;
+  min-height:29px;
+  max-height:29px;
+  box-sizing:border-box;
+  float:none;
+  flex:none;
+  padding:2px;
+  margin:0;
+  border:1px solid #0b1a22;
+  border-radius:6px;
+  color:transparent;
+  background:linear-gradient(#09151b,#1f303a);
+  box-shadow:inset 0 2px 3px rgba(0,0,0,.46),0 1px 0 #61788630;
+  overflow:hidden;
+  text-align:center;
+  text-shadow:none;
+  letter-spacing:0;
+  font:inherit;
+  line-height:normal;
+  isolation:isolate;
+  cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+  transition:none;
+  filter:none;
+  transform:none;
+}
+.app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="mute"]{--mx-hw-led:255,78,90}
+.app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="solo"]{--mx-hw-led:255,207,68}
+.app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="cue"]{--mx-hw-led:101,210,236}
+/* Occluded light escape: partial bottom + weak short sides, no neon perimeter. */
+.app .console-body .strip .mx-hw-row>button.mx-hw-key::before{
+  content:"";
+  display:block;
+  position:absolute;
+  inset:1px;
+  border:0;
+  border-radius:5px;
+  box-shadow:none;
+  width:auto;height:auto;
+  pointer-events:none;
+  z-index:2;
+  opacity:0;
+  background:
+    linear-gradient(90deg,transparent 0%,
+      rgba(var(--mx-hw-led),.02) 20%,
+      rgba(var(--mx-hw-led),.42) 53%,
+      rgba(var(--mx-hw-led),.15) 77%,transparent 100%)
+      center bottom / calc(100% - 12px) 2px no-repeat,
+    linear-gradient(180deg,transparent 30%,rgba(var(--mx-hw-led),.04) 53%,
+      rgba(var(--mx-hw-led),.19) 80%,transparent 100%)
+      left bottom / 1px 100% no-repeat,
+    linear-gradient(180deg,transparent 46%,rgba(var(--mx-hw-led),.12) 83%,
+      transparent 100%)
+      right bottom / 1px 100% no-repeat;
+}
+.app .console-body .strip .mx-hw-row>button.mx-hw-key::after{content:none;display:none}
+.app .console-body .strip .mx-hw-row>button.mx-hw-key[aria-pressed="true"]::before{opacity:1}
+.app .console-body .strip .mx-hw-row>button.mx-hw-key>.mx-hw-face{
+  position:absolute;
+  inset:2px;
+  display:block;
+  width:calc(100% - 4px);
+  height:calc(100% - 4px);
+  min-width:0;
+  max-width:none;
+  max-height:none;
+  z-index:1;
+  pointer-events:none;
+  overflow:hidden;
+  transform:none;
+  transition:none;
+  filter:none;
+}
+.app .console-body .strip .mx-hw-row>button.mx-hw-key svg .mx-hw-lamp{opacity:0}
+.app .console-body .strip .mx-hw-row>button.mx-hw-key[aria-pressed="true"] svg .mx-hw-lamp{opacity:1}
+.app .console-body .strip .mx-hw-row>button.mx-hw-key:active:not(:disabled)>.mx-hw-face{
+  transform:translateY(1px);
+}
+.app .console-body .strip .mx-hw-row>button.mx-hw-key:focus-visible{
+  outline:2px solid #9eddec;
+  outline-offset:2px;
+}
+.app .console-body .strip .mx-hw-row>button.mx-hw-key:disabled{
+  opacity:.45;
+  cursor:not-allowed;
+}
+.app .console-body .strip .mx-hw-row>button.mx-hw-key:disabled::before,
+.app .console-body .strip .mx-hw-row>button.mx-hw-key:disabled svg .mx-hw-lamp{opacity:0}
+.app .console-body .strip .mx-hw-row>button.mx-hw-key .mx-hw-fallback{
+  position:absolute;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:#d7e3e8;
+  font:600 10px/1 Arial,sans-serif;
+}
+.app .console-body .strip .mx-hw-row>button.mx-hw-key .mx-hw-screen-reader{
+  position:absolute;
+  height:1px;
+  width:1px;
+  margin:-1px;
+  padding:0;
+  overflow:hidden;
+  clip-path:inset(50%);
+  white-space:nowrap;
+}
+@media (prefers-reduced-motion:reduce){
+  .app .console-body .strip .mx-hw-row>button.mx-hw-key,
+  .app .console-body .strip .mx-hw-row>button.mx-hw-key>.mx-hw-face{transition:none}
+}

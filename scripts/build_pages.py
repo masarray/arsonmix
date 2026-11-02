@@ -61,6 +61,17 @@ if 'assets/knob-ICON.svg' in html:
     shutil.copy2(source_knob,preview_knob)
     if preview_knob.read_bytes()!=source_knob.read_bytes():
         raise SystemExit('WIRE knob mask copy mismatch in generated Pages preview')
+# Control material has ONE owner shared by /preview-v2/ and the public
+# /preview/mixer.html alias; never leave the alias with stale or missing assets.
+for control_asset in ('mixer-control-keys.css','mixer-control-keys.js'):
+    if 'assets/'+control_asset in html:
+        src=source.parent/'assets'/control_asset
+        if not src.is_file(): raise SystemExit(f'Missing shared mixer key asset: {src}')
+        target=dst/'preview'/'assets'/control_asset
+        target.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copy2(src,target)
+        if src.read_bytes()!=target.read_bytes():
+            raise SystemExit(f'Published asset differs from preview source: {control_asset}')
 (dst/'preview'/'build.json').write_text(json.dumps(metadata,indent=2),encoding='utf-8')
 (dst/'.nojekyll').touch()
 assert (dst/'index.html').exists() and (dst/'preview'/'index.html').exists()

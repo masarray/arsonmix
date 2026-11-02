@@ -62,6 +62,11 @@ jobs:
             test -s dist-pages/preview/assets/knob-ICON.svg
             cmp site/preview-v2/assets/knob-ICON.svg dist-pages/preview/assets/knob-ICON.svg
           fi
+          # CSS/JS must resolve in BOTH URLs: /preview-v2/ and /preview/.
+          for asset in mixer-control-keys.css mixer-control-keys.js; do
+            test -s "dist-pages/preview/assets/$asset"
+            cmp "site/preview-v2/assets/$asset" "dist-pages/preview/assets/$asset"
+          done
           python tests/button_asset_test.py
           python tests/fader_asset_test.py
           python tests/pan_button_asset_test.py
