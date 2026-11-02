@@ -706,11 +706,11 @@ check(html.includes('.route-choice-option.primary') &&
 node('reset').dispatch('click');
 
 // V17 invariants: CONNECTED is a value change, not a layout reflow.
-// Four grid columns exist for EVERY channel; inactive pots are dark placeholders.
-check(html.includes('grid-template-columns:24px 28px 22px 14px') &&
-  strip(1).includes('wire-pot is-idle') && strip(1).includes('wire-disconnect is-idle') &&
+// Three stable columns (OUT / IN / gain), no ugly close X beside knob.
+check(html.includes('grid-template-columns:24px 28px 22px!important') &&
+  strip(1).includes('wire-pot is-idle') && !strip(1).includes('wire-disconnect') &&
   strip(3).includes('wire-pot is-idle') && strip(3).includes('wire-pin'),
-  'V17 has fixed OUT, larger IN, gain and disconnect slots even with no connection');
+  'V24 keeps OUT, larger IN and gain fixed across states without any X slot');
 wireTo(3);
 check(strip(3).includes('class="wire-tray linked"') &&
   strip(3).includes('data-field="wireGain"') && !strip(3).includes('wire-pot is-idle') &&
@@ -854,19 +854,20 @@ check(html.includes('data-section="route" aria-expanded="true" aria-label="Colla
  html.includes('content:""!important;display:block!important;') &&
  html.includes('function compactWireActivity(t){'),
  'V19 DAW rail has concise I/O, FX, W labels and no pseudo-caption OPEN/PATCH');
-check(strip(3).includes('wire-fold-summary') &&
- strip(3).includes('wire-fold-summary is-empty') &&
- !strip(3).includes('fold-link-icon') &&
- strip(1).includes('wire-fold-summary has-wire') && strip(1).includes('has-out'),
- 'V19 folded row distinguishes no custom links from one active legacy Bus A send');
+check(strip(3).includes('wire-fold-summary is-empty') &&
+ strip(3).includes('fold-link-icon') && !strip(3).includes('has-in') && !strip(3).includes('has-out') &&
+ strip(1).includes('wire-fold-summary has-wire') && strip(1).includes('fold-link-icon has-out'),
+ 'V24 no-route has both muted contacts and active legacy outgoing route only lights OUT dot');
 wireTo(3);
 check(strip(3).includes('fold-link-icon has-in') &&
  strip(1).includes('fold-link-icon has-out') &&
- !strip(3).includes('fold-marker') && !strip(1).includes('fold-marker'),
- 'V19 compact IN/OUT is computed from live graph and active legacy Sends');
+ strip(3).includes('fold-link-in-dot') && strip(1).includes('fold-link-out') &&
+ !strip(3).includes('fold-link-trace'),
+ 'V24 collapsed incoming and outgoing contact indicators match expanded OUT-left IN-right');
 wireTo(3);
-check(strip(3).includes('wire-fold-summary is-empty') && !strip(3).includes('fold-link-icon'),
- 'V19 removing a custom incoming edge immediately restores neutral collapsed marker');
+check(strip(3).includes('wire-fold-summary is-empty') && strip(3).includes('fold-link-icon') &&
+ !strip(3).includes('has-in') && !strip(3).includes('has-out'),
+ 'V24 removing a custom incoming edge restores muted dot AND socket');
 node('reset').dispatch('click');
 
 
@@ -914,5 +915,18 @@ check(html.includes('preview:22,release:22,retained:24,origin:31') &&
  html.includes('x1=rect.left-vp.left+rect.width*.5') &&
  html.includes('y1=rect.top-vp.top+rect.height*.5'),
  'V23 lit candidate means endpoint center-snaps and remains valid on pointerup');
+
+// V24 physical compact status remains present and ordered for EVERY channel.
+node('reset').dispatch('click');
+const idleStrip=strip(3);
+check(/fold-link-out" cx="8" cy="8" r="3\.45"/.test(idleStrip) &&
+ /fold-link-in" cx="26" cy="8" r="5\.4"/.test(idleStrip) &&
+ /fold-link-in-dot" cx="26" cy="8" r="1\.85"/.test(idleStrip) &&
+ !idleStrip.includes('wire-disconnect') && !idleStrip.includes('data-action="wireRemove"'),
+ 'V24 fixed physical DOT left, larger receiving ring right and smaller inner dot; no X');
+check(!html.includes("if(a==='wireRemove')") &&
+ html.includes('replugWireEdge(g.sourceId,g.originDestId,snap?.track.id??null)') &&
+ html.includes('wire-tray .wire-pot'),
+ 'V24 removes close-button handler and retains drag-to-unplug / gain knob');
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
