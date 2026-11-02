@@ -1037,7 +1037,7 @@
       const connected=acceptedNative&&accepted?.productionCallbackLive===true&&
         !!byId.get(send.targetId)&&!!clean(send.id);
       const knob=h('span','arV6WirePot '+(connected?'is-connected':'is-idle'));
-      knob.dataset.channelId=ch.id;knob.dataset.sendId=clean(send.id);
+      knob.dataset.wireSourceId=ch.id;knob.dataset.sendId=clean(send.id);
       // A missing native channel color stays neutral; never invent an identity.
       knob.style.setProperty('--v6-wire-fill',connected?wirePotFill(send.targetId):'#4b535b');
       paintWirePot(knob,verified?db:0);
