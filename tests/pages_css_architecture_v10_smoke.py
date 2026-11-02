@@ -10,10 +10,14 @@ OWNERS = (
     "mixer-console-foundation.css",
     "mixer-channel-grid.css",
     "mixer-hardware-artwork.css",
+    "mixer-section-controls.css",
+    "mixer-section-layout.css",
+    "mixer-v3-layout-contract.css",
+    "mixer-chrome-material.css",
 )
 EXPECTED_FNV = "39885f8a"
 EXPECTED_CSS_LENGTH = 186176
-EXPECTED_INLINE_LENGTH = 168504
+EXPECTED_INLINE_LENGTH = 136506
 
 def fingerprint(css):
     h = 2166136261
@@ -24,35 +28,45 @@ def fingerprint(css):
 def source_gate():
     html = HTML.read_text(encoding="utf-8")
     head = html.split("</head>", 1)[0]
-    styles = re.findall(r"<style(?:\s[^>]*)?>(.*?)</style>", head, re.S)
-    assert len(styles) == 2, "source-order split was modified"
-    links = re.findall(r'<link[^>]+href="assets/([^"]+)"[^>]*>', head)
-    selected = [x.split("?")[0] for x in links if "css-owner-v10" in x]
-    assert selected == list(OWNERS), selected
-    for name in OWNERS:
-        assert links.count(name + "?v=css-owner-v10") == 1, name
-    first, second = [head.index("assets/" + n + "?v=css-owner-v10") for n in OWNERS[:2]]
-    art = head.index("assets/" + OWNERS[2] + "?v=css-owner-v10")
-    style_starts = [m.start() for m in re.finditer("<style>", head)]
-    style_ends = [m.end() for m in re.finditer("</style>", head)]
-    assert first < second < style_starts[0] < style_ends[0] < art < style_starts[1]
-    sheets = [(HTML.parent / "assets" / n).read_text(encoding="utf-8") for n in OWNERS]
-    assembled = sheets[0] + sheets[1] + styles[0] + sheets[2] + styles[1]
-    assert len(assembled) == EXPECTED_CSS_LENGTH, "source CSS missing after split"
-    assert fingerprint(assembled) == EXPECTED_FNV, "CSS cascade or declarations changed"
+    css_order = re.findall(
+        r'<link[^>]+href="assets/([^"]+\.css)\?v=css-owner-v(10|11)"[^>]*>|(<style>(.*?)</style>)',
+        head, re.S)
+    names = [n for n, version, tag, body in css_order if n]
+    expected = [
+        "mixer-console-foundation.css",
+        "mixer-channel-grid.css",
+        "mixer-section-controls.css",
+        "mixer-section-layout.css",
+        "mixer-hardware-artwork.css",
+        "mixer-v3-layout-contract.css",
+        "mixer-chrome-material.css",
+    ]
+    assert names == expected, names
+    styles = [body for n, version, tag, body in css_order if tag]
+    assert len(styles) == 3, "V11 stylesheet order or inline structure drift"
+    all_css = "".join(
+        (HTML.parent / "assets" / n).read_text(encoding="utf-8") if n else body
+        for n, version, tag, body in css_order
+    )
+    assert len(all_css) == EXPECTED_CSS_LENGTH, "CSS ownership source bytes missing"
+    assert fingerprint(all_css) == EXPECTED_FNV, "CSS cascade/content drift"
     assert sum(map(len, styles)) == EXPECTED_INLINE_LENGTH
-    assert ":root{" in sheets[0] and ".command-bar{" in sheets[0]
-    assert ".console-body{" in sheets[1] and ".section-rail{" in sheets[1]
-    assert all("--ari-" + n + ":url(data:image/png" in sheets[2]
+    assert all_css.count("!important") == 1449
+    assert sum(body.count("!important") for body in styles) == 1194
+    original = (HTML.parent / "assets" / OWNERS[0]).read_text(encoding="utf-8")
+    grid = (HTML.parent / "assets" / OWNERS[1]).read_text(encoding="utf-8")
+    artwork = (HTML.parent / "assets" / OWNERS[2]).read_text(encoding="utf-8")
+    assert ":root{" in original and ".command-bar{" in original
+    assert ".console-body{" in grid and ".section-rail{" in grid
+    assert all("--ari-" + n + ":url(data:image/png" in artwork
                for n in ("silver", "rose", "pan"))
     assert "wireWsCanJoin" in html
     assert "assets/mixer-wire-dots.css?v=v43" in html
     assert "assets/inter-embedded.css" in html
-    assert assembled.count("!important") == 1449
-    for path in (ROOT / "scripts/build_pages.py", ROOT / ".github/workflows/pages-publish.yml"):
-        source = path.read_text(encoding="utf-8")
+    for p in (ROOT / "scripts/build_pages.py", ROOT / ".github/workflows/pages-publish.yml"):
+        source = p.read_text(encoding="utf-8")
         for name in (*OWNERS, "mixer-wire-dots.css"):
-            assert name in source, (path.name, name, "missing Pages parity manifest")
+            assert name in source, (p.name, name, "missing Pages parity manifest")
 
 async def visual(page, width, height):
     errors = []

@@ -1,0 +1,150 @@
+/* Shared mixer geometry: one row height per section across rail, tracks and Master. */
+.rail-cell[data-section]::after{content:"▾";position:absolute;right:2px;top:50%;transform:translateY(-50%);color:#778b94;font:8px/1 Arial,sans-serif}
+.rail-cell[data-section].collapsed::after{content:"▸";color:#7eb5c5}
+.rail-cell[data-section].collapsed{background:#303637}
+.console-body.collapsed-fx .fx-section,.console-body.collapsed-eq .eq-section{padding-bottom:0}
+.console-body.collapsed-send .send-header .send-slot,.console-body.collapsed-send .send-header .pre{display:none}
+.console-body.collapsed-route .route-top{height:17px;min-height:17px;flex-basis:17px}
+.console-body.collapsed-fx .subhead,.console-body.collapsed-send .send-header,.console-body.collapsed-eq .eq-header{border-bottom:0}
+.send-header .pre{width:23px;min-width:23px;flex:0 0 23px;font-size:9px}
+.send-header .power{flex:0 0 17px}
+@media(max-height:750px){
+ .eq-header{height:19px;min-height:19px;flex-basis:19px}
+}
+@media(max-height:610px){
+ .fx-section .subhead,.send-header{height:19px;min-height:19px;flex-basis:19px}
+ .eq-header{height:20px;min-height:20px;flex-basis:20px}
+}
+
+.send-compact{display:none;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px;color:#b4c0c5}
+.console-body.collapsed-send .send-compact{display:block;flex:1 1 0}
+.console-body.collapsed-send .send-header .push{display:none}
+.console-body.narrow .rail-cell[data-section="fx"]::after,
+.console-body.narrow .rail-cell[data-section="send"]::after,
+.console-body.narrow .rail-cell[data-section="eq"]::after{content:"▸"}
+
+/* ArSonMix operator-first tactile Console v2.
+   Three density presets, lightweight composited CSS: no blur, canvas, external assets.
+   Keep shared height tokens identical across rail / tracks / pinned Master. */
+.console-body{
+  --strip-w:150px;--master-w:152px;
+  --route-h:74px;--fx-h:112px;--send-h:80px;--eq-h:44px;
+  --pan-h:41px;--trim-h:30px;--switch-h:43px;--footer-h:54px;
+  --rail-w:32px;
+}
+.console-body[data-density="standard"]{--strip-w:125px;--master-w:132px;--switch-h:39px;--pan-h:36px;--trim-h:27px;--route-h:70px}
+.console-body[data-density="compact"]{--strip-w:105px;--master-w:116px;--switch-h:32px;--route-h:58px;--pan-h:30px;--trim-h:23px}
+
+.console-body .strip,.console-body.narrow .strip:not(.master){
+  width:var(--strip-w);min-width:var(--strip-w);flex:0 0 var(--strip-w);
+}
+
+.console-body #master .strip.master{
+  width:var(--master-w);min-width:var(--master-w);flex:0 0 var(--master-w);
+}
+.console-pane{--master-w:152px}
+.console-body .strip{
+  --surface:#24282c;
+  background:linear-gradient(90deg,#1a2024 0%,var(--surface) 7%,#2e3032 52%,#202428 100%);
+  border-right:2px solid #151a1d;box-shadow:inset 1px 0 rgba(231,245,255,.12);
+}
+.console-body .strip.audio{--surface:#22292d}
+.console-body .strip.bus{--surface:#2d2633}
+.console-body .strip.fx{--surface:#292633}
+.console-body .strip.master{--surface:#2b3034}
+.console-body .strip.selected{box-shadow:inset 3px 0 #91c8d8,inset 1px 0 #a2c1ca;background-color:#283a40}
+.console-body .section{border-bottom:1px solid #14191b;box-shadow:inset 0 -1px rgba(184,198,203,.08)}
+.density-select{background:#343e43;border:1px solid #59676b;color:#d6e3e7;border-radius:3px;font:11px "Segoe UI",Arial,sans-serif;height:28px;padding:0 5px;min-width:100px}
+.density-select:focus-visible{outline:2px solid #8fc8dd;outline-offset:1px}
+.command-bar{height:43px;gap:9px}
+.tool{min-height:27px}
+.mixer-title{background:linear-gradient(#30363a,#22272a);border-bottom:1px solid #0f1518}
+.console-body .rail-cell{color:#b2bcc1;background:#23282b}
+.console-body .rail-cell[data-section]{cursor:pointer;font-size:15px}
+.console-body .rail-cell[data-section]:hover{background:#394448}
+.console-body .rail-cell[data-section].collapsed{background:#314149;color:#aee0f0}
+.console-body .rail-cell.fader{letter-spacing:1px;color:#7b939e}
+.console-body .route-section{height:var(--route-h);flex:0 0 var(--route-h);padding:3px 6px 4px;gap:2px}
+.console-body .route-top{height:18px;min-height:18px;flex-basis:18px;border-bottom:1px solid #3d484d}
+.console-body .route-field{display:grid;grid-template-columns:25px minmax(0,1fr);gap:4px;align-items:center;min-height:21px;min-width:0}
+.console-body .route-caption{font-size:10px;letter-spacing:.04em;color:#8eabb6;text-align:left}
+.console-body .route-identity{display:block;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#bccad0;font-size:10px;background:#1c2529;border:1px solid #3e494e;border-radius:2px;padding:3px 5px}
+.console-body .route-select{display:block;width:100%;min-width:0;max-width:100%;height:23px;flex:none;border:1px solid #455159;border-radius:2px;background-color:#1a2226;color:#e4ebed;padding:0 15px 0 5px;font-size:11px;text-overflow:ellipsis;white-space:nowrap}
+.console-body .route-select:hover{background-color:#293943}
+.console-body.collapsed-route .route-field{display:none}
+.console-body.collapsed-route .route-section{padding:2px 6px}
+.console-body.collapsed-route .route-top{height:18px;min-height:18px;flex-basis:18px;border:0}
+.console-body.collapsed-route .route-select{display:none}
+.console-body .subhead,.console-body .send-header,.console-body .eq-header{color:#b8c9d0;white-space:nowrap}
+.console-body .send-select{font-size:11px;background:#222e34;color:#d6e0e5}
+.console-body .sendlevel input{accent-color:#8bbed0}
+.console-body .send-compact{font-size:10px}
+.console-body .eq-line{background:#202c31;border-radius:2px;border:1px solid #42555e}
+.console-body .eq-header{height:21px;min-height:21px;flex-basis:21px}
+.console-body .trim-section{height:var(--trim-h);flex:0 0 var(--trim-h);padding:1px 7px;gap:5px;background:#22282b}
+.console-body .trim-label{font-size:10px;color:#9cb0b7}
+.console-body .trim-control{height:16px;min-width:0;accent-color:#9abac5}
+.console-body .trim-value{font-size:10px;color:#d3e3e8;min-width:32px}
+.console-body .switch-section{height:var(--switch-h);flex:0 0 var(--switch-h);display:flex;align-items:center;justify-content:space-around;gap:3px;padding:4px 5px;background:linear-gradient(#36393b,#22282b)}
+.console-body .switch{height:30px;min-height:30px;min-width:0;flex:1 1 auto;border:1px solid #13191d;border-radius:3px;font-size:11px;color:#e3e7e7;background:linear-gradient(#62676a 0%,#393f43 45%,#242b30 48%,#3c4347);box-shadow:inset 0 1px rgba(235,244,255,.25),0 2px #101517;padding:0 2px}
+.console-body .switch-full{display:inline}
+.console-body .switch-short{display:none}
+.console-body .switch.on.mute{color:#fff;background:linear-gradient(#e85d5a,#aa252b 53%,#7b1d24);border-color:#b63d3f}
+.console-body .switch.on.solo{color:#171919;background:linear-gradient(#f9e9a0,#c0a944 50%,#88751d);border-color:#ac9641}
+.console-body .switch.on.cue{color:#092028;background:linear-gradient(#b5eaf1,#499ab3 58%,#22728d)}
+.console-body .switch.on.mon{color:#fff;background:linear-gradient(#87b8cd,#387a95)}
+.console-body .clip-indicator{
+  flex:0 0 auto;font-size:8px;letter-spacing:.02em;border:1px solid #66332f;
+  color:#874841;background:#281a1a;border-radius:2px;padding:4px 2px;
+}
+.console-body .clip-indicator.clipping{background:#e8473a;border-color:#ff8c7b;color:#fff}
+.console-body .peak{position:absolute;left:3px;right:3px;top:3px;width:auto;height:7px;background:#481c19;opacity:1;border:1px solid #6e3029;border-radius:1px}
+.console-body .peak.clipping{background:#ff493c;box-shadow:0 0 4px #ff493c;border-color:#ef968f}
+.console-body .bottom-section{
+  height:var(--footer-h);flex:0 0 var(--footer-h);
+  padding:0 4px 4px;background:linear-gradient(#22282b,#30373c);
+}
+.console-body .db-value{height:17px;min-height:17px;font-size:11px;color:#9dd8e7;font-variant-numeric:tabular-nums}
+.console-body .footer-label{height:31px;background:#313a3f;border:1px solid #172127;border-radius:3px;overflow:hidden}
+.console-body .footer-label .name{font-size:12px;line-height:18px;color:#f1f4f4;padding:3px 3px 1px;font-weight:500}
+.console-body .footer-label .color-strip{height:5px;flex:0 0 5px;background:var(--track-color)}
+.console-body .strip.bus .footer-label{background:#3c3141}
+.console-body .strip.fx .footer-label{background:#383143}
+.console-body .strip.master .footer-label{background:#4a3e2c}
+.console-body .strip.master .clip-indicator{border-color:#96664c}
+.console-body.collapsed-fx .fx-section,.console-body.collapsed-send .send-section,.console-body.collapsed-eq .eq-section{padding-bottom:0}
+.console-body.collapsed-send .send-section .send-select,.console-body.collapsed-send .send-section .sendlevel{display:none}
+.console-body.collapsed-eq .eq-section .eq-line{display:none}
+.console-body.narrow .send-section .send-select,.console-body.narrow .sendlevel,.console-body.narrow .eq-line{display:none}
+.console-body.collapsed-fx .subhead,.console-body.collapsed-send .send-header,.console-body.collapsed-eq .eq-header{height:22px;min-height:22px;flex:0 0 22px;overflow:hidden}
+.console-body[data-density="standard"] .switch{font-size:10px}
+.console-body[data-density="standard"] .switch-full{display:none}
+.console-body[data-density="standard"] .switch-short{display:inline}
+.console-body[data-density="compact"] .switch{height:23px;min-height:23px;font-size:9px}
+.console-body[data-density="compact"] .switch-full{display:none}
+.console-body[data-density="compact"] .switch-short{display:inline}
+.console-body[data-density="compact"] .trim-section{padding:0 3px;gap:1px}
+.console-body[data-density="compact"] .route-section{padding:2px 3px}
+.console-body[data-density="compact"] .route-field{grid-template-columns:19px minmax(0,1fr);gap:1px}
+.console-body[data-density="compact"] .route-select{font-size:9px}
+@media(max-height:750px){
+ .console-body{--route-h:68px;--fx-h:90px;--send-h:72px;--eq-h:38px;--pan-h:36px;--trim-h:27px;--switch-h:38px;--footer-h:48px}
+ .console-body .switch{height:26px;min-height:26px}
+}
+@media(max-height:610px){
+ .console-body{--route-h:65px;--fx-h:65px;--send-h:54px;--eq-h:23px;--pan-h:30px;--trim-h:23px;--switch-h:33px;--footer-h:44px}
+}
+
+/* Unified folding precedence — density presets never defeat collapsed sections. */
+
+
+
+
+
+/* Fader readout is in the upper LCD: don't duplicate numbers at the footer. */
+.console-body .bottom-section .db-value{display:none}
+.console-body .footer-label{height:calc(100% - 3px);min-height:0}
+.console-body .footer-label .name{display:flex;flex:1;min-height:0;align-items:center;justify-content:center}
+.console-body .switch:focus-visible,.console-body .route-select:focus-visible{outline:2px solid #7ecae3;outline-offset:0}
+.console-body .rail-cell.fader{min-height:118px}
+@media(max-height:610px){.console-body .rail-cell.fader{min-height:86px}}
