@@ -529,7 +529,7 @@ check(html.includes('id="wireLayer" class="routing-wire-overlay"') &&
 check(strip(1).includes('wire-node-out is-source') &&
  strip(3).includes('data-action="wireRoute"') &&
  strip(3).includes('class="wire-socket wire-node-in"') &&
- strip(3).includes('>○</span>'),
+ strip(3).includes('wire-pot is-idle'),
  'Source CH1 is lit and every destination has FL-like up arrow');
 function wireTo(id,shift=false){
  const el={dataset:{action:'wireRoute'},closest:k=>k==='.strip'?{dataset:{id}}:null};
@@ -702,6 +702,26 @@ check(html.includes('requestWireConnection(source,target,input)') &&
 check(html.includes('.route-choice-option.primary') &&
  html.includes('VIA BUS ONLY') && html.includes('PARALLEL SEND'),
  'Bus-only primary route and parallel send are separate explicit operator decisions');
+node('reset').dispatch('click');
+
+// V17 invariants: CONNECTED is a value change, not a layout reflow.
+// Four grid columns exist for EVERY channel; inactive pots are dark placeholders.
+check(html.includes('grid-template-columns:24px 28px 22px 14px') &&
+  strip(1).includes('wire-pot is-idle') && strip(1).includes('wire-disconnect is-idle') &&
+  strip(3).includes('wire-pot is-idle') && strip(3).includes('wire-pin'),
+  'V17 has fixed OUT, larger IN, gain and disconnect slots even with no connection');
+wireTo(3);
+check(strip(3).includes('class="wire-tray linked"') &&
+  strip(3).includes('data-field="wireGain"') && !strip(3).includes('wire-pot is-idle') &&
+  strip(4).includes('wire-pot is-idle'),
+  'V17 turns only destination knob active without shifting any other channel layout');
+check(html.includes('function wirePathData(') && html.includes('function wireSnapTarget(') &&
+  html.includes('if(dist>42&&!inside)continue') &&
+  html.includes('queueWireGestureFrame();') &&
+  html.includes('const input=snap?.element||hit?.closest?.') &&
+  !html.slice(html.indexOf('function renderWireRouting(){'),html.indexOf('function syncActiveSend(t){')).includes('stroke-dasharray') &&
+  html.includes('source selection changes only on an accepted drop'),
+  'V17 draws symmetric solid translucent curved wire, magnetic drop and no source-change flicker');
 node('reset').dispatch('click');
 
 // V15 LIVE GESTURE MODEL: drag from CH08 OUT leftward to CH03 IN, then Bus-only route.
