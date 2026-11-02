@@ -3103,7 +3103,7 @@ html * ,html *::before,html *::after{
 <link rel="stylesheet" href="assets/mixer-meter-display.css?v=css-owner-v9">
 <link rel="stylesheet" href="assets/mixer-utility-controls.css?v=inter-utility-v7">
 <link rel="stylesheet" href="assets/inter-embedded.css?v=inter-utility-v7">
-<link rel="stylesheet" href="assets/mixer-wire-dots.css?v=v42">
+<link rel="stylesheet" href="assets/mixer-wire-dots.css?v=v43">
 
 </head>
 <body>
@@ -3822,34 +3822,59 @@ function wirePathFor(edge,x0,y0,x1,y1,limit){
  wireMotionGeometry.set(key,[x0,y0,x1,y1,limit]);
  return wirePathData(x0,y0,x1,y1,limit,wireMotion.key===key?wireMotion.offset:0);
 }
-function kickWireSpring(sourceId,destId){
-  if(!sourceId||!destId||window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches)return;
-  const key=sourceId+'-'+destId;
-  // A cable may be hidden by a bank change; never animate imaginary geometry.
-  if(!wireMotionGeometry.has(key))return;
-  const token=++wireMotion.token;
-  wireMotion.key=key;wireMotion.offset=3.8;
-  let frame=0;
-  function paint(offset){
-   const geometry=wireMotionGeometry.get(key);if(!geometry)return;
-   const d=wirePathData(...geometry,offset);
-   for(const path of document.querySelectorAll('#wireLayer path[data-cable-key="'+key+'"]'))
-    if(path.getAttribute('d')!==d)path.setAttribute('d',d);
-  }
-  // The cable hangs 3.8px into the patch bay, then gently relaxes
-  // with one subpixel return. There is no whole-mixer repaint or bouncing keycap.
-  // Immediately paint the committed wire so the change is visually perceptible.
-  paint(3.8);
-  function step(){
-   if(token!==wireMotion.token)return;
-   frame++;
-   wireMotion.offset=3.8*Math.exp(-frame*.15)*Math.cos(frame*.23);
-   paint(wireMotion.offset);
-   if(frame<20)requestAnimationFrame(step);
-   else{wireMotion.offset=0;wireMotion.key=null;paint(0);}
-  }
-  requestAnimationFrame(step);
+/* Socket impact travels backwards along the SAME accepted cable.
+   The two endpoints remain physically pinned; only the accepted SVG path
+   changes for 36 frames. No CSS keyframes, idle RAF or all-cables remount. */
+function wireImpactPathData(x0,y0,x1,y1,limit,frame){
+ const span=Math.abs(x1-x0);
+ const ceiling=Math.max(12,Math.min(100,Number(limit)||72));
+ const sag=Math.max(10,Math.min(ceiling,Math.min(ceiling-7,20+Math.sqrt(span)*1.55)));
+ const c=sag*4/3,progress=Math.max(0,Math.min(1,frame/36));
+ const center=1.03-progress*1.12;
+ const amp=6.2*Math.exp(-progress*1.45);
+ let d='M '+x0.toFixed(1)+' '+y0.toFixed(1);
+ // Bezier sampler with perpendicular, localized wave launched at IN.
+ // 56 segments are smooth at full 10-strip bank width, only during impact.
+ for(let i=1;i<=56;i++){
+  const t=i/56,u=1-t;
+  const x=u*u*u*x0+3*u*u*t*x0+3*u*t*t*x1+t*t*t*x1;
+  const y=u*u*u*y0+3*u*u*t*(y0+c)+3*u*t*t*(y1+c)+t*t*t*y1;
+  const dx=6*u*t*(x1-x0);
+  const dy=3*u*u*c+6*u*t*(y1-y0)+3*t*t*(-c);
+  const norm=Math.hypot(dx,dy)||1;
+  const delta=t-center;
+  const pulse=amp*Math.exp(-(delta*delta)/(.14*.14))*
+   Math.sin(delta*24-progress*5)*Math.sin(Math.PI*t);
+  const px=x-dy/norm*pulse,py=y+dx/norm*pulse;
+  d+=' L '+px.toFixed(1)+' '+py.toFixed(1);
  }
+ return d;
+}
+function kickWireSpring(sourceId,destId){
+ if(!sourceId||!destId)return;
+ const key=sourceId+'-'+destId;
+ const geometry=wireMotionGeometry.get(key);
+ if(!geometry||window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches)return;
+ const token=++wireMotion.token;
+ // Existing graph geometry is stable; do not persist motion into later renders.
+ wireMotion.key=key;wireMotion.offset=0;
+ const paths=[...document.querySelectorAll('#wireLayer path[data-cable-key="'+key+'"]')];
+ if(!paths.length){wireMotion.key=null;return;}
+ let frame=0;
+ function paint(d){
+  for(const path of paths)if(path.isConnected&&path.getAttribute('d')!==d)path.setAttribute('d',d);
+ }
+ function step(){
+  if(token!==wireMotion.token)return;
+  frame++;
+  paint(frame<36?wireImpactPathData(...geometry,frame):wirePathData(...geometry,0));
+  if(frame<36)requestAnimationFrame(step);
+  else{wireMotion.offset=0;wireMotion.key=null;}
+ }
+ // First displacement begins at socket, then ripples toward source.
+ paint(wireImpactPathData(...geometry,0));
+ requestAnimationFrame(step);
+}
 /* V23 Smart Wire: visible lit socket means preview is center-snapped and
    mouseup accepts that exact candidate. Moving away releases attraction;
    the underlying graph changes ONLY on mouseup. No whole-bay snap. */
@@ -4176,8 +4201,12 @@ function renderWireRouting(){
  document.querySelector('.console-body')?.classList.toggle('wire-intent',!!wireIntent);
  const svg=document.getElementById('wireLayer'),viewport=document.getElementById('viewport');
  const dragging=!!(wireGesture?.active&&wireGesture.point);
- const source=dragging?wireSourceTrack(wireGesture.sourceId):armedWireSource();
  const focus=armedWireSource(),routes=wireDisplayRoutes();
+ // Display focus must NOT depend on an armed OUT. A mixer channel being
+ // inspected always reveals its existing INCOMING and OUTGOING cables.
+ // The separate 'focus' remains the only authority for making new routes.
+ const source=dragging?wireSourceTrack(wireGesture.sourceId):
+  (focus||selection().find(t=>t.kind!=='master')||null);
  const legend=document.getElementById('wireLegend'),main=document.getElementById('wireMaster');
  if(legend){
   const filter=document.getElementById('viewFilter').value;
@@ -4212,7 +4241,7 @@ function renderWireRouting(){
   main.title='Direct source output: '+source.output+' · click to toggle Main only when currently mapped to Main or Source Only';
  }
  if(!svg||!viewport)return;
- if((!wireIntent&&!dragging)||!source||document.querySelector('.console-body')?.classList.contains('collapsed-send')){
+ if(!source||document.querySelector('.console-body')?.classList.contains('collapsed-send')){
   if(svg.childNodes?.length)svg.replaceChildren?.();
   return;
  }
@@ -4256,7 +4285,7 @@ function renderWireRouting(){
     '" stroke-width="1.25" opacity=".20" fill="none" stroke-linecap="round"/>');
   }
  }
- const incoming=wireView==='out'?[]:routes.filter(e=>e.destId===source.id&&e.sourceId!==source.id);
+ const incoming=routes.filter(e=>e.destId===source.id&&e.sourceId!==source.id);
  // Back layer: each active incoming source OUT → focused channel IN.
  for(const edge of incoming){
   const sender=wireSourceTrack(edge.sourceId);
@@ -4279,7 +4308,7 @@ function renderWireRouting(){
  const outgoing=routes.filter(e=>e.sourceId===source.id&&
   (!dragging||!wireGesture.movingEdgeId||
    !wireEdges.some(w=>w.id===wireGesture.movingEdgeId&&w.destId===e.destId&&w.sourceId===source.id)));
- if(!dragging&&wireHoverId!==null&&wireHoverId!==source.id&&!outgoing.some(e=>e.destId===wireHoverId))
+ if(!dragging&&!!focus&&wireHoverId!==null&&wireHoverId!==source.id&&!outgoing.some(e=>e.destId===wireHoverId))
   outgoing.push({sourceId:source.id,destId:wireHoverId,kind:'preview',preview:true});
  for(const edge of outgoing){
   const dest=tracks.find(t=>t.id===edge.destId);
@@ -4312,7 +4341,7 @@ function renderWireRouting(){
   const d=wirePathData(x0,y0,x1,y1,sagLimit);
   paths.push('<path class="wire-drag-line" d="'+d+'" stroke="#06151b" stroke-width="6" opacity=".25" fill="none" stroke-linecap="round"/>'+
    '<path class="wire-drag-line" d="'+d+'" stroke="'+(snap?.color||'#b5eedb')+'" stroke-width="2.4" opacity=".54" fill="none" stroke-linecap="round"/>'+
-   '<circle class="wire-floating-plug" cx="'+x1.toFixed(1)+'" cy="'+y1.toFixed(1)+'" r="6" fill="'+(snap?.color||source?.color||'#87dfb8')+'" stroke="#d8f7ed" stroke-opacity=".85" stroke-width=".85" pointer-events="none"/>');
+   '<circle class="wire-floating-plug" cx="'+x1.toFixed(1)+'" cy="'+y1.toFixed(1)+'" r="7.5" fill="'+(snap?.color||source?.color||'#87dfb8')+'" stroke="#d8f7ed" stroke-opacity=".85" stroke-width=".85" pointer-events="none"/>');
  }
  svg.innerHTML=paths.join('');
 }
@@ -4555,6 +4584,7 @@ window.addEventListener('pointermove',ev=>{
    g.active=true;wireHoverId=null; // source selection changes only on an accepted drop
     if(g.movingEdgeId!==null)consoleBody.querySelector?.('.strip[data-id="'+g.originDestId+'"] .wire-node-in')?.classList.add('is-replug-origin');
    consoleBody.classList.add('wire-dragging');
+   consoleBody.querySelector?.('.strip[data-id="'+g.sourceId+'"] .wire-node-out')?.classList.add('is-drag-origin');
   }
   if(g.active){g.point={x:ev.clientX,y:ev.clientY};queueWireGestureFrame();}
   return;
@@ -4569,6 +4599,7 @@ function finishFaderPointer(ev){
   wireGesture=null;setWireSnapTarget(null);
   consoleBody.querySelector?.('.strip[data-id="'+g.originDestId+'"] .wire-node-in')?.classList.remove('is-replug-origin');
   consoleBody.classList.remove('wire-dragging');
+  consoleBody.querySelectorAll?.('.wire-node-out.is-drag-origin').forEach(n=>n.classList.remove('is-drag-origin'));
   if(g.active){
    if(g.movingEdgeId!==null){
     replugWireEdge(g.sourceId,g.originDestId,snap?.track.id??null);
@@ -4596,7 +4627,7 @@ function finishFaderPointer(ev){
 }
 window.addEventListener('pointerup',finishFaderPointer);
 window.addEventListener('pointercancel',ev=>{
- if(wireGesture&&ev.pointerId===wireGesture.pointerId){const g=wireGesture;wireGesture=null;setWireSnapTarget(null);consoleBody.querySelector?.('.strip[data-id="'+g.originDestId+'"] .wire-node-in')?.classList.remove('is-replug-origin');consoleBody.classList.remove('wire-dragging');renderWireRouting();say('WIRE drag canceled · graph unchanged');}
+ if(wireGesture&&ev.pointerId===wireGesture.pointerId){const g=wireGesture;wireGesture=null;setWireSnapTarget(null);consoleBody.querySelector?.('.strip[data-id="'+g.originDestId+'"] .wire-node-in')?.classList.remove('is-replug-origin');consoleBody.classList.remove('wire-dragging');consoleBody.querySelectorAll?.('.wire-node-out.is-drag-origin').forEach(n=>n.classList.remove('is-drag-origin'));renderWireRouting();say('WIRE drag canceled · graph unchanged');}
  if(faderGesture&&ev.pointerId===faderGesture.pointerId)faderGesture=null;
  for(const pan of consoleBody.querySelectorAll?.('.center-pan[data-pan-alt-pointer]')||[])
   delete pan.dataset.panAltPointer;
