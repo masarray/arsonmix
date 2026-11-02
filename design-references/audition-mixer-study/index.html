@@ -3132,59 +3132,104 @@ function refreshWireRoutingNodes(){
  });
  renderWireRouting();
 }
+/* Smooth bezier routing in either horizontal direction; bounded by patch bay. */
+function wirePathData(x0,y0,x1,y1,riseLimit){
+ const dx=x1-x0,span=Math.abs(dx),dy=Math.abs(y1-y0);
+ const rise=Math.min(Math.max(18,riseLimit),Math.max(28,Math.min(104,30+span*.23+dy*.08)));
+ return 'M '+x0.toFixed(1)+' '+y0.toFixed(1)+
+  ' C '+(x0+dx*.23).toFixed(1)+' '+(y0-rise).toFixed(1)+
+  ', '+(x1-dx*.23).toFixed(1)+' '+(y1-rise).toFixed(1)+
+  ', '+x1.toFixed(1)+' '+y1.toFixed(1);
+}
+/* Magnetic snap: a 42px socket halo OR the destination wire compartment.
+   Never snap by hovering a fader. Current source is excluded by stable ID. */
+function wireSnapTarget(point,sourceId){
+ if(!wireSourceTrack(sourceId)||!point)return null;
+ let best=null,score=Infinity;
+ for(const input of document.querySelectorAll?.('.wire-node-in')||[]){
+  const track=findTrack(input);
+  if(!track||track.id===sourceId)continue;
+  const r=input.getBoundingClientRect?.();
+  if(!r||!r.width||!r.height)continue;
+  const dist=Math.hypot(r.left+r.width/2-point.x,r.top+r.height/2-point.y);
+  const bay=input.closest?.('.wire-section')?.getBoundingClientRect?.();
+  const inside=!!bay&&point.x>=bay.left&&point.x<=bay.right&&point.y>=bay.top&&point.y<=bay.bottom;
+  if(dist>42&&!inside)continue;
+  const rank=inside?dist*.6:dist;
+  if(rank<score){best={track,element:input};score=rank;}
+ }
+ return best;
+}
+let wireSnapId=null,wireFramePending=false;
+function setWireSnapTarget(id){
+ if(wireSnapId===id)return;
+ wireSnapId=id;
+ for(const input of document.querySelectorAll?.('.wire-node-in')||[]){
+  const track=findTrack(input);
+  input.classList.toggle('is-snap-target',!!track&&track.id===id);
+ }
+}
 function renderWireRouting(){
  const svg=document.getElementById('wireLayer'),viewport=document.getElementById('viewport');
- const source=wireSourceTrack(wireSourceId);
+ const dragging=!!(wireGesture?.active&&wireGesture.point);
+ const source=wireSourceTrack(dragging?wireGesture.sourceId:wireSourceId);
  const legend=document.getElementById('wireLegend'),main=document.getElementById('wireMaster');
- if(legend)legend.textContent=source?'CH'+String(source.id).padStart(2,'0')+' ⇢ '+wireOutgoingCount(source.id)+' · click arrows / Shift-range · DEMO':'Select source · click destination arrows';
+ if(legend)legend.textContent=source?'CH'+String(source.id).padStart(2,'0')+' ⇢ '+wireOutgoingCount(source.id)+' · drag OUT to IN / click IN · DEMO':'Select source · click destination IN';
  if(main&&source){
   const direct=source.output==='Master';
   main.textContent=direct?'MAIN ON':'MAIN OFF';main.setAttribute('aria-pressed',String(direct));
   main.title='Direct source output: '+source.output+' · click to toggle Main only when currently mapped to Main or Source Only';
  }
- // Collapse is a VIEW concern, not a routing edit: keep all 1:N edges.
- // Do not calculate cable geometry for a hidden WIRE bay. On expand the
- // existing requestAnimationFrame rerenders the same connections.
  if(!svg||!viewport)return;
- // Collapsing SEND hides the graphical patch, not the stored wire edges.
  if(!source||document.querySelector('.console-body')?.classList.contains('collapsed-send')){
   if(svg.childNodes?.length)svg.replaceChildren?.();
   return;
  }
- const vp=viewport.getBoundingClientRect?.(),fromEl=viewport.querySelector?.('.strip[data-id="'+source.id+'"] .wire-node-out');
+ const vp=viewport.getBoundingClientRect?.();
+ const fromEl=viewport.querySelector?.('.strip[data-id="'+source.id+'"] .wire-node-out');
  const from=fromEl?.getBoundingClientRect?.();
  if(!vp||!from||!vp.width||!vp.height){svg.innerHTML='';return;}
  svg.setAttribute('viewBox','0 0 '+vp.width+' '+vp.height);
  const x0=from.left-vp.left+from.width/2,y0=from.top-vp.top+from.height*.5;
+ const well=fromEl.closest?.('.send-section')?.getBoundingClientRect?.();
+ const riseLimit=well?Math.max(18,from.top-well.top-10):85;
  const paths=[];
- const visibleEdges=outgoingWires(source.id).map(e=>({...e,preview:false}));
- if(wireHoverId!==null&&wireHoverId!==source.id&&!wireFor(source.id,wireHoverId))visibleEdges.push({destId:wireHoverId,mode:wireMode,preview:true});
- for(const edge of visibleEdges){
+ const edges=outgoingWires(source.id).map(e=>({...e,preview:false}));
+ if(!dragging&&wireHoverId!==null&&wireHoverId!==source.id&&!wireFor(source.id,wireHoverId))
+  edges.push({destId:wireHoverId,preview:true});
+ for(const edge of edges){
   const dest=tracks.find(t=>t.id===edge.destId);
   if(!dest)continue;
-  const el=viewport.querySelector?.('.strip[data-id="'+dest.id+'"] .wire-socket');
-  const rect=el?.getBoundingClientRect?.();
-  if(!rect)continue; // off-bank links preserved; never draw cable to invisible slot
-  const x1=rect.left-vp.left+rect.width/2,y1=rect.top-vp.top+rect.height*.5;
-  const sourceWell=fromEl.closest?.('.send-section')?.getBoundingClientRect?.();
-  const availableRise=sourceWell?Math.max(14,from.top-sourceWell.top-7):45;
-  // Spread signal lines through the patch-bay glass, never over FX or PAN.
-  const bend=Math.min(availableRise,Math.max(30,Math.min(68,Math.abs(x1-x0)*.15)));
-  const d='M '+x0.toFixed(1)+' '+y0.toFixed(1)+' C '+x0.toFixed(1)+' '+(y0-bend).toFixed(1)+', '+x1.toFixed(1)+' '+(y1-bend).toFixed(1)+', '+x1.toFixed(1)+' '+y1.toFixed(1);
-  const color=edge.preview?'#f7d78c':edge.mode==='split'?'#9bd7fa':'#a6f095';
-  paths.push('<path d="'+d+'" stroke="#071d1b" stroke-width="'+(edge.preview?3:6)+'" opacity="'+(edge.preview?'.42':'.85')+'" fill="none" stroke-linecap="round"/>'+
-   '<path d="'+d+'" stroke="'+color+'" stroke-width="'+(edge.preview?1.4:1.8)+'" opacity="'+(edge.preview?'.84':'.94')+'" fill="none" stroke-linecap="round"'+(edge.preview?' stroke-dasharray="5 5"':'')+'/>');
+  const rect=viewport.querySelector?.('.strip[data-id="'+dest.id+'"] .wire-node-in')?.getBoundingClientRect?.();
+  if(!rect||!rect.width)continue;
+  const x1=rect.left-vp.left+rect.width/2,y1=rect.top-vp.top+rect.height/2;
+  const d=wirePathData(x0,y0,x1,y1,riseLimit),color=edge.preview?'#b5e8d3':dest.color||'#93e5b4';
+  paths.push('<path d="'+d+'" stroke="#06151b" stroke-width="'+(edge.preview?4:6)+'" opacity="'+(edge.preview?'.18':'.85')+'" fill="none" stroke-linecap="round"/>'+
+   '<path d="'+d+'" stroke="'+color+'" stroke-width="'+(edge.preview?1.7:2.3)+'" opacity="'+(edge.preview?'.42':'.93')+'" fill="none" stroke-linecap="round"/>');
  }
- if(wireGesture?.active&&wireGesture.sourceId===source.id&&wireGesture.point){
-  const rect=wireGesture.point;
-  const x1=Math.max(2,Math.min(vp.width-2,rect.x-vp.left));
-  const y1=Math.max(2,Math.min(vp.height-2,rect.y-vp.top));
-  const bend=Math.max(19,Math.min(63,Math.abs(x1-x0)*.15));
-  const d='M '+x0.toFixed(1)+' '+y0.toFixed(1)+' C '+x0.toFixed(1)+' '+(y0-bend).toFixed(1)+', '+x1.toFixed(1)+' '+(y1-bend).toFixed(1)+', '+x1.toFixed(1)+' '+y1.toFixed(1);
-  paths.push('<path class="wire-drag-line" d="'+d+'" stroke="#071b20" stroke-width="7" opacity=".8" fill="none" stroke-linecap="round"/>'+
-   '<path class="wire-drag-line" d="'+d+'" stroke="#b0f7d4" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-dasharray="7 3"/>');
+ if(dragging){
+  let x1=Math.max(2,Math.min(vp.width-2,wireGesture.point.x-vp.left));
+  let y1=Math.max(2,Math.min(vp.height-2,wireGesture.point.y-vp.top));
+  const snap=tracks.concat(master).find(t=>t.id===wireGesture.snapId);
+  const rect=snap?viewport.querySelector?.('.strip[data-id="'+snap.id+'"] .wire-node-in')?.getBoundingClientRect?.():null;
+  if(rect?.width){x1=rect.left-vp.left+rect.width/2;y1=rect.top-vp.top+rect.height/2;}
+  const d=wirePathData(x0,y0,x1,y1,riseLimit);
+  paths.push('<path class="wire-drag-line" d="'+d+'" stroke="#06151b" stroke-width="6" opacity=".25" fill="none" stroke-linecap="round"/>'+
+   '<path class="wire-drag-line" d="'+d+'" stroke="'+(snap?.color||'#b5eedb')+'" stroke-width="2.4" opacity=".54" fill="none" stroke-linecap="round"/>');
  }
  svg.innerHTML=paths.join('');
+}
+function queueWireGestureFrame(){
+ if(wireFramePending)return;
+ wireFramePending=true;
+ requestAnimationFrame(()=>{
+  wireFramePending=false;
+  if(!wireGesture?.active)return;
+  const snap=wireSnapTarget(wireGesture.point,wireGesture.sourceId);
+  wireGesture.snapId=snap?.track.id??null;
+  setWireSnapTarget(wireGesture.snapId);
+  renderWireRouting();
+ });
 }
 function syncActiveSend(t){
  if(t.kind==='master'||t.kind==='fx')return;
