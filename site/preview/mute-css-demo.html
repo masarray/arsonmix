@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ArSonMix · Native CSS MUTE demo</title>
+  <!-- Same live CSS and JS renderer as the mixer, not reference PNG assets. -->
+  <link rel="stylesheet" href="../preview-v2/assets/mixer-control-keys.css?v=mute-css-live-demo-20261103">
+  <style>
+    *{box-sizing:border-box}
+    html,body{margin:0;min-height:100%;background:#181e23;color:#c9d7de;font:12px/1.5 Arial,sans-serif}
+    body{padding:24px 20px}
+    main{max-width:620px;margin:auto}
+    h1{margin:0 0 3px;font-size:17px;font-weight:550;letter-spacing:.1px}
+    p{margin:0 0 18px;color:#9eafba}
+    .samples{display:flex;gap:22px;flex-wrap:wrap}
+    .sample{display:flex;flex-direction:column;gap:6px}
+    .name{color:#b3c0c9;font-size:11px}
+    .app .console-body{--switch-h:40px;display:block}
+    .app .console-body .strip{width:196px;background:#26323a;border:1px solid #3d515c;border-radius:3px}
+    .app .console-body .strip .switch-section.mx-hw-row{padding:5px 8px!important}
+    .app .console-body .strip .mx-hw-row>button.mx-hw-key{height:29px}
+    .note{margin-top:20px;font-size:11px;color:#a0b1ba}
+    .note strong{font-weight:550;color:#cfdae0}
+  </style>
+</head>
+<body>
+<main class="app">
+  <h1>ArSonMix · MUTE — code-rendered</h1>
+  <p>Actual mixer hardware control material. Click any key to change state. No reference PNG, no image background.</p>
+  <div class="console-body">
+    <div class="samples">
+      <div class="sample">
+        <span class="name">MUTE OFF</span>
+        <div class="strip">
+          <div class="section switch-section mx-hw-row" role="group" aria-label="OFF example">
+            <button type="button" class="mx-hw-key" data-hw-kind="mute" data-action="mute" aria-label="Mute" aria-pressed="false">MUTE</button>
+            <button type="button" class="mx-hw-key" data-hw-kind="solo" data-action="solo" aria-label="Solo" aria-pressed="false">SOLO</button>
+            <button type="button" class="mx-hw-key" data-hw-kind="cue" data-action="cue" aria-label="PFL" aria-pressed="false">PFL</button>
+          </div>
+        </div>
+      </div>
+      <div class="sample">
+        <span class="name">MUTE ON</span>
+        <div class="strip">
+          <div class="section switch-section mx-hw-row" role="group" aria-label="ON example">
+            <button type="button" class="mx-hw-key" data-hw-kind="mute" data-action="mute" aria-label="Mute" aria-pressed="true">MUTE</button>
+            <button type="button" class="mx-hw-key" data-hw-kind="solo" data-action="solo" aria-label="Solo" aria-pressed="false">SOLO</button>
+            <button type="button" class="mx-hw-key" data-hw-kind="cue" data-action="cue" aria-label="PFL" aria-pressed="false">PFL</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="note"><strong>Code ownership:</strong> mixer-control-keys.css + mixer-control-keys.js. The action in this stand-alone demo is a local state toggle only; no audio is processed.</div>
+</main>
+<script>
+  document.addEventListener('click',event=>{
+    const button=event.target.closest('button[data-action]');
+    if(button)button.setAttribute('aria-pressed',button.getAttribute('aria-pressed')==='true'?'false':'true');
+  });
+</script>
+<script defer src="../preview-v2/assets/mixer-control-keys.js?v=mute-css-live-demo-20261103"></script>
+</body>
+</html>
