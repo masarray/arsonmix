@@ -45,8 +45,7 @@ def main():
             check(wire_box["height"] >= 60, f"{width}: expanded WIRE bay too short")
             # Knob stays compact, while a 90 px gesture must adjust roughly 30 dB.
             gain = strip(3).locator('.wire-gain')
-            gain.fill('0')
-            gain.dispatch_event('input')
+            gain.evaluate("el=>{el.value='0';el.dispatchEvent(new Event('input',{bubbles:true}));}")
             knob = strip(3).locator('.wire-pot')
             box = knob.bounding_box()
             check(20 <= box["width"] <= 27 and 20 <= box["height"] <= 28,
