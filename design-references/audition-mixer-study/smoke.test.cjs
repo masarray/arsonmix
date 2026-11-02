@@ -878,7 +878,7 @@ check(html.includes('viewBox="0 0 64 64"') &&
 check(html.includes('preview:26,release:22,retained:28,origin:31') &&
  !html.includes('dist>42&&!inside') &&
  html.includes("'release'):null;") && html.includes('wire-magnet-guide') &&
- !html.includes('x1=rect.left-vp.left+rect.width/2'),
+ !html.includes('if(rect?.width){x1=rect.left-vp.left+rect.width/2;'),
  'V22 hover cannot finalize, preview follows pointer and release uses 22px threshold');
 node('body').clientWidth=1680;node('reset').dispatch('click');
 document.querySelectorAll=k=>k==='.wire-node-in'?sockets:oldQs(k);
