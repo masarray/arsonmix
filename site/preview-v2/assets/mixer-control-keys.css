@@ -145,7 +145,7 @@
    SOLO/PFL retain the V6 SVG owner. The original data-action and
    aria-pressed are still the ONLY functional/state contracts. */
 .app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="mute"]{
-  background-color:#090909;
+  background-color:transparent;
   background-image:url("M-MUTE-OFF.png");
   background-position:center center;
   background-repeat:no-repeat;

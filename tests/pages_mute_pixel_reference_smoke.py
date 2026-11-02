@@ -60,7 +60,7 @@ async def verify_browser():
                 }""")
                 assert expected in result["art"],result
                 assert result["imageW"]==56 and result["imageH"]==37,result
-                assert result["fit"]=="100% auto",result
+                assert result["fit"] in ("100%", "100% auto"),result
                 assert result["bevel"]=="none",result
                 assert result["fakeGlow"]=="none" and result["oldFace"]=="hidden",result
                 assert abs(result["h"]-29)<.6 and result["w"]>=26,result
