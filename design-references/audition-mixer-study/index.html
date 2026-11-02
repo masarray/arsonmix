@@ -3705,6 +3705,12 @@ html * ,html *::before,html *::after{
 }
 
 
+/* V33 compact all-bank patch picker: native keyboard accessible, no overlay. */
+.mixer-title .wire-dest-picker{height:19px;min-width:118px;max-width:170px;
+ background:#172b34;color:#dcf0f5;border:1px solid #54717e;border-radius:3px;
+ font:500 10px/17px 'Segoe UI',Arial,sans-serif;padding:0 3px;cursor:pointer}
+.mixer-title .wire-dest-picker:focus-visible{outline:1px solid #9ad2df;outline-offset:1px}
+.mixer-title .wire-patch-source{color:#c0dfe8;font:600 10px/17px 'Segoe UI',Arial,sans-serif;white-space:nowrap}
 /* V32 off-bank patch context: visible state, not extra operator chrome. */
 .mixer-title .wire-offbank-source{
  flex:none;max-width:215px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
@@ -4416,9 +4422,11 @@ function kickWireSpring(sourceId,destId){
   if(token!==wireMotion.token)return;
   frame++;
   // 2.8px maximum, one gentle settling motion instead of rigid bounces.
-  wireMotion.offset=2.8*Math.exp(-frame*.22)*Math.cos(frame*.32);
+  // Small, non-bouncing fabric-like damped sag: 1.7px opening movement,
+  // then monotonic relaxation. Only this cable's SVG paths are repainted.
+  wireMotion.offset=1.7*Math.exp(-frame*.28);
   paint(wireMotion.offset);
-  if(frame<18&&Math.abs(wireMotion.offset)>.08)requestAnimationFrame(step);
+  if(frame<14&&Math.abs(wireMotion.offset)>.06)requestAnimationFrame(step);
   else{wireMotion.offset=0;wireMotion.key=null;paint(0);}
  }
  requestAnimationFrame(step);
@@ -4522,7 +4530,19 @@ function renderWireRouting(){
    '<button type="button" class="wire-offbank-source" data-wire-jump-source="1" title="Return to '+escapeHtml(focus.name)+' without changing the patch source">FROM CH'+String(focus.id).padStart(2,'0')+' · '+escapeHtml(focus.name)+' ↶</button>'+
    '<span class="wire-offbank-instruction">Click any IN on this bank</span>':
    focus?wireLegendHtml(focus,routes):'Select a channel for IN / OUT';
-  if(legend.innerHTML!==markup)legend.innerHTML=markup;
+  const picker=focus?'<span class="wire-patch-source" title="Pinned wire source">CH'+
+    String(focus.id).padStart(2,'0')+' OUT →</span>'+
+   '<select class="wire-dest-picker" data-wire-destination aria-label="Patch '+escapeHtml(focus.name)+' to any channel across all mixer banks" title="Patch to any bank: selecting a destination does not change mixer bank">'+
+    '<option value="">PATCH TO · any bank</option>'+
+    tracks.filter(t=>t.id!==focus.id&&t.kind!=='master').map(t=>{
+     const connected=routes.some(e=>e.sourceId===focus.id&&e.destId===t.id);
+     const active=connected?' ● linked':'';
+     const bankIndex=Math.floor(tracks.indexOf(t)/Math.max(1,bankCapacity()))+1;
+     return '<option value="'+t.id+'">CH'+String(t.id).padStart(2,'0')+
+      ' · '+escapeHtml(t.name)+' · bank '+bankIndex+active+'</option>';
+    }).join('')+'</select>':'';
+  const fullMarkup=markup+picker;
+  if(legend.innerHTML!==fullMarkup)legend.innerHTML=fullMarkup;
  }
  if(main&&source){
   const direct=source.output==='Master';
@@ -5113,6 +5133,19 @@ function sayWireBankContext(base){
  const inBank=!!document.querySelector('#tracks .strip[data-id="'+source?.id+'"]');
  say(source&&!inBank?'FROM CH'+String(source.id).padStart(2,'0')+' ('+source.name+') kept · click an IN on this bank · '+base:base);
 }
+/* V33 persistent source + universal cross-bank destination. Semantic routing graph
+   uses stable channel IDs: never infer patch identity from bank position. */
+document.getElementById('wireLegend').addEventListener('change',e=>{
+ const picker=e.target.closest('[data-wire-destination]');
+ if(!picker||!picker.value)return;
+ const source=wireSourceTrack(wireSourceId),dest=wireSourceTrack(Number(picker.value));
+ picker.value='';
+ if(!source||!dest||source.id===dest.id)return;
+ requestWireConnection(source,dest,picker);
+ // An off-screen destination remains represented by a named, accessible route
+ // badge/legend; never draw a fictional cable spanning unseen mixer pages.
+ renderWireRouting();
+});
 document.getElementById('wireLegend').addEventListener('click',e=>{
  if(!e.target.closest('[data-wire-jump-source]'))return;
  const source=wireSourceTrack(wireSourceId);if(!source)return;
