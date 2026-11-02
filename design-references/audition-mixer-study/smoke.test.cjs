@@ -674,8 +674,10 @@ check(html.includes('.console-body.wire-routing-v13.collapsed-send{--send-h:23px
 check(html.includes('.console-body.wire-routing-v13:not(.collapsed-send){--send-h:160px!important}') &&
  html.includes('const availableRise=sourceWell?Math.max(14,from.top-sourceWell.top-7):45'),
  'Expanded V13 wire patch retains its 160px cable routing geometry');
-check(html.includes('Compact WIRE retains visible cables') && html.includes('wireGesture?.active'),
- 'Compact patch bay wires remain visible while pointer is dragging');
+check(html.includes("document.querySelector('.console-body')?.classList.contains('collapsed-send')") &&
+ html.includes('wireGesture?.active') &&
+ html.includes('.console-body.wire-routing-v15.collapsed-send{--send-h:23px!important}'),
+ 'V16 hides collapsed cables and tray but keeps the pointer routing model');
  check(html.includes('/* V14: THREE-way collapse') &&
  html.includes('.console-body.collapsed-route.collapsed-fx.collapsed-send .strip .fader-section'),
  'Fader may grow only on exactly three upper sections folded');
@@ -759,5 +761,11 @@ node('bankSelect').value='0';node('bankSelect').dispatch('change');
 check(strip(3).includes('<option value="Master" selected>') && parallelNotice,
  'Explicit parallel Bus send retains direct Master and does not rewrite primary OUT');
 node('reset').dispatch('click');
+check(html.includes('function moveChannelTo(') &&
+ html.includes('application/x-arsonmix-channel') &&
+ html.includes("arrangeSurface.addEventListener('dragstart'") &&
+ html.includes("arrangeSurface.addEventListener('keydown'") &&
+ html.includes('/* V16: When BOTH expandable FX and SEND are closed'),
+ 'V16 stable ID reorder by drag and Alt+arrows, smart two-panel fader reclaim');
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
