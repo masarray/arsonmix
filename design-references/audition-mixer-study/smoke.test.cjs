@@ -37,7 +37,7 @@ node('bankSelect').value='0';node('bankSelect').dispatch('change');
 field(15,'output','Bus A');check(node('info').textContent.includes('output → Bus A'),'bus route');
 field(11,'output','Bus B');check(node('info').textContent.includes('Routing rejected'),'feedback detection');
 field(1,'activeSend','S2');check(node('info').textContent.includes('Send 2'),'send slot switch');
-field(1,'send','FX 1');const noticeFx=node('info').textContent.includes('Send destination');filter('all');check(noticeFx && !strip(1).includes('class="send-select"'),'Legacy send state accepts FX Return but main strip has no dropdown');
+field(1,'send','FX 1');const noticeFx=node('info').textContent.includes('send → FX 1');filter('all');check(noticeFx && !strip(1).includes('class="send-select"'),'Legacy send state accepts FX Return but main strip has no dropdown');
 field(1,'activeSend','S1');const noticeSlot=node('info').textContent.includes('Send 1');filter('all');check(noticeSlot && !strip(1).includes('class="send-slot"'),'16 legacy send slots preserved without visible picker');
 node('saveScene').dispatch('click');check(node('sceneSelect').value==='0','scene save');
 node('mode').dispatch('click');check(node('body').classList.contains('narrow'),'narrow console');
