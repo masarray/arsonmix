@@ -1,11 +1,11 @@
 {
-  "version": "preview-v18-replug-20261102",
+  "version": "preview-v19-future-console-graphite-keys",
   "kind": "GUI_REFERENCE_ONLY",
   "live_audio": false,
   "source_pr": 278,
-  "source_branch": "design/audition-mixer-reference-isolated-20261101",
-  "source_sha": "647603365f896aa776cc98175b7b8a165c6a53aa",
-  "source_content_sha": "eab61464dc385ebc9285b3e5f12dcfa3ead92ac4",
+  "source_branch": "main/site/preview-v2",
+  "source_sha": "ba8c43e68020b7bc1bd8c18e2f0edc9eb350f99c",
+  "source_content_sha": "809dadcef966922dac80ce68e01af98f56c345d9",
   "routes": [
     "/preview/mixer.html",
     "/preview-v2/"
@@ -15,8 +15,10 @@
   "milestone": "Grab existing receiving IN jack or nearby well; flexible cable endpoint follows mouse; auto-snap to any legal IN; reroute same edge preserving gain/mode/id; release outside original 31px magnet to unplug",
   "operator_acceptance": "221/221 deterministic DOM/workflow PASS; Chromium V15 and V18 pointer reroute, snap-back, loose unplug and duplicate route rejection PASS at 1366x768, 1680x900, 1920x1080",
   "owner_geometry": "WIRE collapses to 23px, expands to 160px; FX/PAN/FADER hierarchy preserved",
-  "hardware_key": "V18 socket cutout, 2px sharp-cap radius, 1px press travel, rim highlight, no GPU filter or blur",
+  "hardware_key": "DiGiCo-inspired dark graphite hardware cap, ruby mute, amber solo, cyan PFL, precise top-edge white highlight, machined socket and 1px press; no blur",
   "limitations": "GUI-ONLY routing preview. No realtime PCM, native ASIO GraphAccepted ACK, or genuine VST3 routing.",
   "led_meter": "6px x 9px portrait LED; 2px dark divider, continuous green/yellow/amber/red",
-  "verification": "PR278 focused CI PASS #41393926429; verified real connected-IN replug/unplug on 3 viewports"
+  "verification": "Chromium smoke: V18 socket/portrait LEDs and V19 active/rest color token assertions, plus existing wire routing",
+  "design_reference_pr": 278,
+  "design_reference_sha": "2a889af659def8b5cbf5511ed24ffb6fe9c583d7"
 }

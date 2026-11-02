@@ -39,6 +39,28 @@ def main():
         })""")
         assert_true(led['width']=='6px' and '9px' in led['cells'] and '11px' in led['cells'],
                     'LED must be portrait (6x9px with 2px spacing)')
+        # V19 owner-approved modern console material: same socket and cap,
+        # graphite OFF, ruby MUTE, amber SOLO, cyan PFL; mechanical depth unchanged.
+        def material(locator):
+            return locator.evaluate("""el=>({
+                face:getComputedStyle(el).getPropertyValue('--am-hw-key-face').trim(),
+                radius:getComputedStyle(el).borderRadius,
+                filter:getComputedStyle(el).filter,
+                press:getComputedStyle(el).getPropertyValue('--am-hw-key-press-y').trim()
+            })""")
+        assert_true(material(key)['face']=='#405360','V19 graphite resting key missing')
+        assert_true(material(key)['press']=='1px','V19 must retain 1px hardware press')
+        key.click()
+        assert_true(material(key)['face']=='#bd344b','V19 jewel ruby MUTE missing')
+        key.click()
+        solo=page.locator('#tracks .strip[data-id="1"] button.switch.solo')
+        solo.click()
+        assert_true(material(solo)['face']=='#dbad39','V19 amber SOLO missing')
+        solo.click()
+        cue=page.locator('#tracks .strip[data-id="1"] button.switch.cue')
+        cue.click()
+        assert_true(material(cue)['face']=='#399db4','V19 cyan PFL missing')
+        cue.click()
         key.scroll_into_view_if_needed()
         rect=key.bounding_box()
         assert_true(bool(rect),'Button missing')

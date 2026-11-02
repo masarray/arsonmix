@@ -2736,6 +2736,142 @@ html * ,html *::before,html *::after{
  background:#071720!important;border-color:#2b4350!important;box-shadow:none!important;
 }
 
+/* V19 FUTURE-CONSOLE KEY MATERIAL — graphite + restrained status illumination.
+   Visual inspiration: dark hardware surfaces, jewel status keys and tightly
+   machined sockets on modern large-format digital mixing consoles.
+   Shared material: same 2px square-rounded cap, 1px press, one chrome
+   edge-light recipe, NO diffuse shadows, blur, filter, animations, or DOM. */
+:root {
+ --am-hw-key-neutral:#3b4e59;
+ --am-hw-key-dark:#344650;
+ --am-hw-key-rim:#637783;
+ --am-hw-key-radius:2px;
+ --am-hw-key-press-y:1px;
+ --am-hw-key-upper-glint:linear-gradient(90deg,
+   rgba(233,249,255,0) 0%,rgba(233,249,255,.24) 19%,
+   rgba(246,253,255,.74) 50%,rgba(233,249,255,.24) 81%,
+   rgba(233,249,255,0) 100%);
+ --am-hw-key-lower-glint:linear-gradient(90deg,
+   rgba(208,231,240,0) 0%,rgba(208,231,240,.2) 50%,
+   rgba(208,231,240,0) 100%);
+ --am-hw-key-face:var(--am-hw-key-neutral);
+ --am-hw-key-ink:#e3edf1;
+ --am-hw-key-border:var(--am-hw-key-rim);
+ --am-hw-key-relief:
+   inset 1px 0 0 rgba(238,249,255,.22),
+   inset -1px 0 0 rgba(0,0,0,.43),
+   inset 0 1px 0 rgba(255,255,255,.11),
+   0 1px 0 #030b10,
+   0 0 0 1px #071219,
+   0 0 0 2px #485d68,
+   0 1px 0 2px #050f15;
+ --am-hw-key-flat:
+   inset 0 1px 0 #09151b,
+   inset 0 -1px 0 rgba(220,245,255,.08),
+   0 0 0 1px #071219,
+   0 0 0 2px #485d68;
+}
+/* Important: one real physical material for push-buttons. Layout stays put. */
+:is(.command-bar button.tool,.command-bar summary.tool,
+ .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key){
+ background:linear-gradient(180deg,
+   color-mix(in srgb,var(--am-hw-key-face) 89%,#d6e9f1) 0%,
+   color-mix(in srgb,var(--am-hw-key-face) 96%,#d6e9f1) 10%,
+   var(--am-hw-key-face) 36%,
+   color-mix(in srgb,var(--am-hw-key-face) 89%,#061018) 76%,
+   color-mix(in srgb,var(--am-hw-key-face) 70%,#061018) 100%)!important;
+ color:var(--am-hw-key-ink)!important;
+ border-color:var(--am-hw-key-border)!important;
+ border-radius:var(--am-hw-key-radius)!important;
+ text-shadow:0 1px 0 rgba(0,0,0,.23)!important;
+ box-shadow:var(--am-hw-key-relief)!important;
+ filter:none!important;
+ transition:none!important;
+}
+:is(.command-bar button.tool,.command-bar summary.tool,
+ .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key):active:not(:disabled){
+ transform:translateY(1px)!important;
+ box-shadow:var(--am-hw-key-flat)!important;
+}
+/* A deliberate narrow white reflection ON THE EDGE, never in the middle. */
+:is(.command-bar button.tool,.command-bar summary.tool,
+ .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key)::before{
+ top:0!important;height:2px!important;left:1px!important;right:1px!important;
+ background:var(--am-hw-key-upper-glint)!important;
+}
+:is(.command-bar button.tool,.command-bar summary.tool,
+ .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key)::after{
+ bottom:0!important;height:1px!important;left:1px!important;right:1px!important;
+ background:var(--am-hw-key-lower-glint)!important;
+}
+/* Graphite OFF, colored ON — same geometry. No always-on glow. */
+.command-bar button.tool,
+.command-bar summary.tool,
+.more-tools-panel button.tool,
+.route-choice-head button {
+ --am-hw-key-face:#354650;
+ --am-hw-key-ink:#e2ecf0;
+ --am-hw-key-border:#647783;
+}
+.command-bar button.tool:is(.active,.primary,[aria-pressed="true"]),
+.command-bar summary.tool[aria-expanded="true"],
+.more-tools[open] summary.tool {
+ --am-hw-key-face:#367789;
+ --am-hw-key-ink:#f3fcff;
+ --am-hw-key-border:#6fb3c2;
+}
+.console-body .strip .switch-section button.switch:not(.on) {
+ --am-hw-key-face:#405360;
+ --am-hw-key-ink:#e4edf0;
+ --am-hw-key-border:#72838c;
+}
+.console-body .strip .switch-section button.switch.on.mute {
+ --am-hw-key-face:#bd344b;
+ --am-hw-key-ink:#fff4f5;
+ --am-hw-key-border:#ed6575;
+ text-shadow:0 -1px 0 rgba(56,0,9,.5)!important;
+}
+.console-body .strip .switch-section button.switch.on.solo {
+ --am-hw-key-face:#dbad39;
+ --am-hw-key-ink:#231b07;
+ --am-hw-key-border:#ffdc74;
+ text-shadow:0 1px 0 rgba(255,255,255,.2)!important;
+}
+.console-body .strip .switch-section button.switch.on.cue {
+ --am-hw-key-face:#399db4;
+ --am-hw-key-ink:#f5fdff;
+ --am-hw-key-border:#79d5e5;
+}
+.route-choice-option.primary{
+ --am-hw-key-face:#357a65;
+ --am-hw-key-ink:#f0fff9;
+ --am-hw-key-border:#6ac6a3;
+}
+#identitySave {
+ --am-hw-key-face:#358c9f;
+ --am-hw-key-ink:#f2fcff;
+ --am-hw-key-border:#7ed4e1;
+}
+/* Socket bezel belongs to the console, not floating in the button face. */
+.console-body .strip .switch-section{
+ background:#111f28!important;
+ box-shadow:inset 0 1px 0 #071017,inset 0 -1px 0 #273c48!important;
+}
+/* Keep every control crisp on modest GPU hardware. */
+:is(.command-bar,.console-body,.plugin-browser,.route-choice) button{
+ backdrop-filter:none!important;
+ -webkit-backdrop-filter:none!important;
+}
+
+
 </style>
 </head>
 <body>
