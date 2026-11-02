@@ -3775,7 +3775,9 @@ function refreshStrip(t){
  const newRack=updated.querySelector('.fxslot-list');if(newRack)newRack.scrollTop=scroll;
 }
 function selectTrack(t,add=false){
- // V34: channel inspection cannot arm, disarm or retarget a patch.
+ const previousSelection=selection().map(x=>x.id).join(',');
+ // V43: channel inspection reveals committed incoming/outgoing routes, but
+ // MUST NOT arm or retarget an OUT patch.
  // Explicitly pinned OUT survives mixer selection and bank navigation.
  if(!add){tracks.forEach(x=>x.selected=false);master.selected=false;t.selected=true;}
  else t.selected=!t.selected;
@@ -3785,6 +3787,9 @@ function selectTrack(t,add=false){
  });
  const count=selection().length;
  if(count>1)say(count+' channels selected · Copy/Paste will apply to selection');
+ // No cable work on fader ticks or repeated selection, only genuine focus
+ // changes. Routing still commits exclusively through accepted WIRE actions.
+ if(selection().map(x=>x.id).join(',')!==previousSelection)renderWireRouting();
 }
 function refreshWireRoutingNodes(){
  document.querySelectorAll('.strip').forEach(el=>{
@@ -4216,7 +4221,7 @@ function renderWireRouting(){
   const markup=focus&&!sourceInBank?
    '<button type="button" class="wire-offbank-source" data-wire-jump-source="1" title="Return to '+escapeHtml(focus.name)+' without changing the patch source">FROM CH'+String(focus.id).padStart(2,'0')+' · '+escapeHtml(focus.name)+' ↶</button>'+
    '<span class="wire-offbank-instruction">Click any IN on this bank</span>':
-   focus?wireLegendHtml(focus,routes):'Select a channel for IN / OUT';
+   source?wireLegendHtml(source,routes):'Select a channel for IN / OUT';
   const picker=focus?'<span class="wire-patch-source" title="Pinned wire source">CH'+
     String(focus.id).padStart(2,'0')+' OUT →</span>'+
    '<select class="wire-dest-picker" data-wire-destination aria-label="Patch '+escapeHtml(focus.name)+' to any channel across all mixer banks" title="Patch to any bank: selecting a destination does not change mixer bank">'+
@@ -4285,23 +4290,38 @@ function renderWireRouting(){
     '" stroke-width="1.25" opacity=".20" fill="none" stroke-linecap="round"/>');
   }
  }
- const incoming=routes.filter(e=>e.destId===source.id&&e.sourceId!==source.id);
- // Back layer: each active incoming source OUT → focused channel IN.
+ // Physical incoming cables remain visible even when OUT is unarmed.
+ // If patch source is pinned, also show inputs of the inspected channel.
+ const inspected=selection().find(t=>t.kind!=='master');
+ const receiverIds=new Set([source.id,inspected?.id].filter(Number.isFinite));
+ const incoming=routes.filter(e=>receiverIds.has(e.destId)&&e.sourceId!==e.destId);
+ let offBankIncoming=0;
  for(const edge of incoming){
   const sender=wireSourceTrack(edge.sourceId);
   const fromNode=viewport.querySelector?.('.strip[data-id="'+edge.sourceId+'"] .wire-node-out');
   const fromRect=fromNode?.getBoundingClientRect?.();
-  const toNode=viewport.querySelector?.('.strip[data-id="'+source.id+'"] .wire-node-in');
+  const toNode=viewport.querySelector?.('.strip[data-id="'+edge.destId+'"] .wire-node-in');
   const toRect=toNode?.getBoundingClientRect?.();
-  if(!sender||!fromRect?.width||!toRect?.width)continue; // off-bank: badge remains
-  const xa=fromRect.left-vp.left+fromRect.width*.5,ya=fromRect.top-vp.top+fromRect.height*.5;
+  if(!sender||!toRect?.width)continue;
+  // An off-bank source starts at the left patch-bay portal. Never fake a
+  // hidden strip position or suppress a real incoming signal cable.
+  const offBank=!fromRect?.width;
   const xb=toRect.left-vp.left+toRect.width*.5,yb=toRect.top-vp.top+toRect.height*.5;
-  const senderBay=fromNode.closest?.('.send-section')?.getBoundingClientRect?.();
-  const rise=wireSagClearance(fromRect,senderBay);
-  const d=wirePathFor(edge,xa,ya,xb,yb,rise);
-  paths.push('<path class="wire-incoming-line" data-cable-key="'+wireCableKey(edge)+'" data-from="'+edge.sourceId+
+  const xa=offBank?11:fromRect.left-vp.left+fromRect.width*.5;
+  const ya=offBank?yb+Math.min(9,offBankIncoming++*3):fromRect.top-vp.top+fromRect.height*.5;
+  const senderBay=fromNode?.closest?.('.send-section')?.getBoundingClientRect?.();
+  const rise=offBank?wireSagClearance(toRect,toNode.closest?.('.send-section')?.getBoundingClientRect?.()):
+    wireSagClearance(fromRect,senderBay);
+  const d=wirePathFor(edge,xa,ya,xb,yb,rise),key=wireCableKey(edge);
+  paths.push('<path class="wire-incoming-shadow" data-cable-key="'+key+
+   '" d="'+d+'" stroke="#041017" stroke-width="4.3" opacity=".52" fill="none" stroke-linecap="round"/>'+
+   '<path class="wire-incoming-line" data-cable-key="'+key+'" data-from="'+edge.sourceId+
    '" data-to="'+edge.destId+'" data-route-kind="'+edge.kind+
-   '" d="'+d+'" stroke="'+sender.color+'" stroke-width="1.65" opacity=".32" fill="none" stroke-linecap="round"/>');
+   '" d="'+d+'" stroke="'+sender.color+'" stroke-width="2.2" opacity=".83" fill="none" stroke-linecap="round"/>');
+  if(offBank)paths.push('<circle class="wire-offbank-entry" cx="'+xa+'" cy="'+ya+
+   '" r="3" fill="'+sender.color+'" stroke="#0b252a" stroke-width="1"/>'+
+   '<text class="wire-offbank-label" x="'+(xa+5)+'" y="'+(ya-5)+'" fill="'+sender.color+
+   '" font-size="7">CH'+String(edge.sourceId).padStart(2,'0')+'</text>');
  }
  // Front layer: all outgoing routes from selected channel (including existing
  // legacy Sends, primary Bus and split links), plus the original hover hint.
