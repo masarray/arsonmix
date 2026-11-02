@@ -66,7 +66,7 @@ def version_asset(match):
 published_html=asset_url_pattern.sub(version_asset,html)
 # A versioned MUTE style and its JS renderer must be published together.
 if 'assets/mixer-control-keys.css' in html:
-    assert 'M-MUTE-OFF.png' not in (source.parent/'assets'/'mixer-control-keys.css').read_text(encoding='utf-8')
+    assert 'MUTE is rendered entirely from CSS/HTML' in (source.parent/'assets'/'mixer-control-keys.css').read_text(encoding='utf-8')
     assert 'mx-mute-face' in (source.parent/'assets'/'mixer-control-keys.js').read_text(encoding='utf-8')
     assert 'mixer-control-keys.css' in asset_sources and 'mixer-control-keys.js' in asset_sources
 (dst/'preview').mkdir(exist_ok=True)
