@@ -95,9 +95,9 @@ def main():
       # origin strips are off-bank (never invent off-screen cable coordinates).
       bank=page.locator('#bankSelect')
       bank.select_option(str(bank.locator('option').count()-1))
-      bus=node(11,'.strip-identity-top')
+      bus=node(11,'.wire-node-out')
       ensure(bus.count()==1,f'{width}: Bus A missing from last bank')
-      bus.click()
+      bus.click()  # Explicit OUT selection keeps focus deliberate across banks
       bus_in=legend.locator('.wire-map-group.is-in .wire-map-chip span').all_inner_texts()
       ensure(bus_in==['CH01','CH02'],f'{width}: legacy Bus receive badges missing {bus_in}')
       ensure(legend.locator('.wire-map-focus').inner_text()=='CH11',
