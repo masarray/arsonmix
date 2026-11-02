@@ -3399,9 +3399,12 @@ html * ,html *::before,html *::after{
  .command-bar>#sofToggle{max-width:100px!important}
  .command-bar>#clearCue{max-width:77px!important;overflow:hidden!important;text-overflow:ellipsis!important}
 }
-.routing-wire-overlay :is(.wire-origin-shaft,.wire-origin-stem,.wire-origin-junction){
- pointer-events:none;filter:none!important;
-}
+
+/* V28 FADER HEIGHT — regain visual travel from unused FX whitespace.
+   All strips and rail share --v13-fader-h, no change to knob asset or lower anchors. */
+.console-body{--v13-fader-h:clamp(160px,calc(100dvh - 584px),530px)}
+/* WIRE stays sharply painted: no blur, shared ferrule or SVG filters. */
+.routing-wire-overlay path{filter:none!important;pointer-events:none}
 
 </style>
 </head>
@@ -4053,26 +4056,19 @@ function refreshWireRoutingNodes(){
  renderWireRouting();
 }
 /* Smooth bezier routing in either horizontal direction; bounded by patch bay. */
-/* V27 SHARED SOURCE FERRULE: paint the OUT stem ONCE; every destination
-   uses the same upward tangent at its split. Single path for incoming sources,
-   branch-only for outgoing, no duplicated colored lines at the source hole.
-   Stateless SVG geometry only; never alters graph, hit-test or snapping. */
-function wireStemHeight(riseLimit){
- return Math.max(12,Math.min(17,Number(riseLimit||60)*.26));
-}
-function wireStemPath(x,y,riseLimit){
- return 'M '+x.toFixed(1)+' '+y.toFixed(1)+
-  ' L '+x.toFixed(1)+' '+(y-wireStemHeight(riseLimit)).toFixed(1);
-}
-function wirePathData(x0,y0,x1,y1,riseLimit,includeStem=true){
+/* V28 NATURAL FLEX CABLE — undo V27 shared ferrule/stem.
+   Each route is a separate flexible cable from the exact OUT jack.
+   Height grows with horizontal span, and intentionally arches above
+   the WIRE legend (within the existing SVG viewport).
+   Geometry only: preserve graph, magnet, replug and hit testing. */
+function wirePathData(x0,y0,x1,y1,riseLimit){
  const dx=x1-x0,span=Math.abs(dx),dy=Math.abs(y1-y0);
- const rise=Math.min(Math.max(18,riseLimit),Math.max(28,Math.min(104,30+span*.23+dy*.08)));
- const joinY=y0-wireStemHeight(riseLimit);
- const entry=includeStem?wireStemPath(x0,y0,riseLimit):
-  'M '+x0.toFixed(1)+' '+joinY.toFixed(1);
- return entry+
-  ' C '+x0.toFixed(1)+' '+(joinY-Math.max(13,rise*.52)).toFixed(1)+
-  ', '+(x1-dx*.23).toFixed(1)+' '+(y1-rise).toFixed(1)+
+ const rise=Math.min(164,Math.max(58,52+span*.086+dy*.13));
+ const xLead=Math.max(7,Math.min(60,span*.20));
+ const signedLead=(dx<0?-1:1)*xLead;
+ return 'M '+x0.toFixed(1)+' '+y0.toFixed(1)+
+  ' C '+(x0+signedLead).toFixed(1)+' '+(y0-rise).toFixed(1)+
+  ', '+(x1-signedLead).toFixed(1)+' '+(y1-rise).toFixed(1)+
   ', '+x1.toFixed(1)+' '+y1.toFixed(1);
 }
 /* V23 Smart Wire: visible lit socket means preview is center-snapped and
@@ -4188,7 +4184,6 @@ function renderWireRouting(){
  const well=fromEl.closest?.('.send-section')?.getBoundingClientRect?.();
  const riseLimit=well?Math.max(18,from.top-well.top-10):85;
  const paths=[];
- let outgoingVisible=false;
  const incoming=routes.filter(e=>e.destId===source.id&&e.sourceId!==source.id);
  // Back layer: each active incoming source OUT → focused channel IN.
  for(const edge of incoming){
@@ -4220,8 +4215,7 @@ function renderWireRouting(){
   const rect=viewport.querySelector?.('.strip[data-id="'+dest.id+'"] .wire-node-in')?.getBoundingClientRect?.();
   if(!rect||!rect.width)continue;
   const x1=rect.left-vp.left+rect.width/2,y1=rect.top-vp.top+rect.height/2;
-  outgoingVisible=true;
-  const d=wirePathData(x0,y0,x1,y1,riseLimit,false),color=edge.preview?'#b5e8d3':dest.color||'#93e5b4';
+  const d=wirePathData(x0,y0,x1,y1,riseLimit),color=edge.preview?'#b5e8d3':dest.color||'#93e5b4';
   paths.push('<path class="wire-outgoing-shadow" d="'+d+'" stroke="#06151b" stroke-width="'+(edge.preview?4:6)+'" opacity="'+(edge.preview?'.18':'.6')+'" fill="none" stroke-linecap="round"/>'+
    '<path class="wire-outgoing-line" data-from="'+source.id+'" data-to="'+edge.destId+
    '" data-route-kind="'+edge.kind+'" d="'+d+'" stroke="'+color+
@@ -4240,31 +4234,10 @@ function renderWireRouting(){
    x1=rect.left-vp.left+rect.width*.5;
    y1=rect.top-vp.top+rect.height*.5;
   }
-  outgoingVisible=true;
-  const d=wirePathData(x0,y0,x1,y1,riseLimit,false);
+  const d=wirePathData(x0,y0,x1,y1,riseLimit);
   paths.push('<path class="wire-drag-line" d="'+d+'" stroke="#06151b" stroke-width="6" opacity=".25" fill="none" stroke-linecap="round"/>'+
    '<path class="wire-drag-line" d="'+d+'" stroke="'+(snap?.color||'#b5eedb')+'" stroke-width="2.4" opacity=".54" fill="none" stroke-linecap="round"/>'+
    (wireGesture.movingEdgeId!==null?'<circle class="wire-floating-plug" cx="'+x1.toFixed(1)+'" cy="'+y1.toFixed(1)+'" r="5.5" fill="'+(snap?.color||'#b5eedb')+'" fill-opacity=".75" stroke="#d8f7ed" stroke-opacity=".65" stroke-width="1"/>':''));
- }
- /* Draw ONE stationary, source-colored OUT shaft over the outgoing
-    branches. The 2px joined ferrule hides overlapping anti-alias seams and
-    makes a clean 1→N split, including while a wire is being dragged. */
- if(outgoingVisible){
-  const d=wireStemPath(x0,y0,riseLimit),joinY=y0-wireStemHeight(riseLimit);
-  const hue=source.color||'#8bcadd';
-  const shaft='<path class="wire-origin-shaft" d="'+d+
-   '" stroke="#07141b" stroke-width="5" opacity=".94" fill="none" stroke-linecap="round"/>'+
-   '<path class="wire-origin-stem" d="'+d+'" stroke="'+hue+
-   '" stroke-width="2.6" opacity=".98" fill="none" stroke-linecap="round"/>';
-  // Place common shaft AFTER dim incoming, BEFORE bright outgoing paths:
-  // existing V26 layer-order contract stays intact (IN behind OUT).
-  const firstFront=paths.findIndex(markup=>markup.includes('wire-outgoing-shadow')||
-   markup.includes('wire-drag-line'));
-  paths.splice(firstFront<0?paths.length:firstFront,0,shaft);
-  // Only the tiny hardware ferrule paints last; no extra SVG path on top.
-  paths.push('<circle class="wire-origin-junction" cx="'+x0.toFixed(1)+
-   '" cy="'+joinY.toFixed(1)+'" r="2.4" fill="'+hue+
-   '" stroke="#07141b" stroke-width=".9"/>');
  }
  svg.innerHTML=paths.join('');
 }

@@ -199,16 +199,16 @@ def main():
                     "Receiver wire gain control missing")
         # V27 cable geometry uses one source ferrule; branch and stem are
         # different SVG layers (no overlapping color lines at the OUT jack).
-        stem=page.locator('#wireLayer path.wire-origin-stem')
-        shaft=page.locator('#wireLayer path.wire-origin-shaft')
-        junction=page.locator('#wireLayer circle.wire-origin-junction')
+        # V28 original flexible 1:1 cable: no artificial ferrule or
+        # shared vertical stem. The long wire must arc well above the jack.
+        assert_true(page.locator('#wireLayer .wire-origin-stem,#wireLayer .wire-origin-junction').count()==0,
+                    'V27 rigid source ferrule must be undone')
         outgoing=page.locator('#wireLayer path.wire-outgoing-line')
-        assert_true(stem.count()==1 and shaft.count()==1 and junction.count()==1,
-                    'WIRE must have exactly one shared OUT stem and ferrule')
-        assert_true(outgoing.count()==1,
-                    'Active wire must render its own destination branch')
-        assert_true(outgoing.first.get_attribute('d').startswith('M '),
-                    'New wire branch has invalid path geometry')
+        assert_true(outgoing.count()==1,'Active source wire is missing')
+        import re
+        nums=[float(a) for a in re.findall(r'-?\d+(?:\.\d+)?',outgoing.first.get_attribute('d'))]
+        assert_true(len(nums)==8 and nums[3]<nums[1]-85,
+                    'Long WIRE cable should rise into smooth high arch')
         page.screenshot(path=str(ROOT/"preview-v15-wire-left-1680.png"))
         # New source CH3 -> Bus A, explicitly choose serial VIA BUS ONLY.
         page.locator('#tracks .strip[data-id="3"] .wire-node-out').click()
