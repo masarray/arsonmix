@@ -109,6 +109,17 @@ def main():
             page.locator('#wireWsSourceSelect').select_option('6')
             must(page.locator('#wireWsList [data-ws-inspect="6:11"]').count()==1,
                  f'{width}: disconnect damaged independent CH06→Bus A route')
+            page.locator('#wireWsUndo').click()
+            page.locator('#wireWsSourceSelect').select_option('5')
+            must(page.locator('#wireWsList [data-ws-inspect="5:11"]').count()==1,
+                 f'{width}: Undo did not restore the disconnected CH05→Bus route')
+            page.locator('#wireWsList [data-ws-inspect="5:11"]').click()
+            must(page.locator('#wireWsGain').input_value()=='-12' and
+                 page.locator('#wireWsTap').input_value()=='split',
+                 f'{width}: Undo restored link but lost gain/tap metadata')
+            page.locator('#wireWsSourceSelect').select_option('6')
+            must(page.locator('#wireWsList [data-ws-inspect="6:11"]').count()==1,
+                 f'{width}: Undo rewound unrelated Bus mix')
             page.locator('#wireWsClose').click()
             must(panel.is_hidden(),f'{width}: close leaked persistent panel')
             after=ch(3).locator('.wire-node-in').bounding_box()
