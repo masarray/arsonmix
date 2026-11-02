@@ -636,7 +636,7 @@ wireTo(3);
 const edge=strip(3).match(/data-wire-id="(\d+)"/);
 check(!!edge,'Wire gain control has unique stable identity for pointer/keyboard events');
 const wheelGain={dataset:{field:'wireGain',wireId:edge[1]},value:'0',
- closest:q=>q==='.wire-gain'?wheelGain:q==='.strip'?{dataset:{id:3}}:null,
+ closest:q=>(q==='.wire-gain'||q==='.wire-gain,.wire-pot')?wheelGain:q==='.strip'?{dataset:{id:3}}:null,
  style:{setProperty(){}},parentElement:{style:{setProperty(){}}}};
 node('body').handlers.wheel({target:wheelGain,deltaY:120,preventDefault(){}});
 filter('all');
