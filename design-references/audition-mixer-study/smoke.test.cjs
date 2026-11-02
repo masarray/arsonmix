@@ -793,7 +793,7 @@ wireTo(11);
 node('bankSelect').value='0';node('bankSelect').dispatch('change');
 check(strip(3).includes('<option value="SOURCE ONLY (No Main)" selected>'),
  'Unplugging serial Bus wire cannot silently restore direct Main');
-field(3,'output','Master');
+field(3,'output','Master');armSource(3);
 node('bankSelect').value='1';node('bankSelect').dispatch('change');
 wireTo(11);node('routeParallel').dispatch('click');
 const parallelNotice=node('info').textContent.includes('PARALLEL SEND');
