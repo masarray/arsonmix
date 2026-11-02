@@ -51,7 +51,7 @@
       '<rect x=".5" y=".5" width="'+round(w-1)+'" height="'+round(h-1)+'" rx="'+round(rx+1)+'" fill="#0b1920"/>'+
       // White/ice ambience SHINES through the single letter knockout while OFF.
       // ON lamp paints only behind that same physical cut-out, not the full cap.
-      '<rect x="1.5" y="1.5" width="'+round(w-3)+'" height="'+round(h-3)+'" rx="'+radius+'" fill="#ccdbe2"/>'+
+      '<rect x="1.5" y="1.5" width="'+round(w-3)+'" height="'+round(h-3)+'" rx="'+radius+'" fill="#edf6fa"/>'+
       '<rect class="mx-hw-lamp" x="1.5" y="1.5" width="'+round(w-3)+'" height="'+round(h-3)+'" rx="'+radius+'" fill="url(#mx-lamp-'+id+')"/>'+
       '<rect x="1" y="1" width="'+round(w-2)+'" height="'+round(h-2)+'" rx="'+radius+'" '+
       'fill="url(#mx-cap-'+id+')" mask="url(#mx-knockout-'+id+')"/>'+
