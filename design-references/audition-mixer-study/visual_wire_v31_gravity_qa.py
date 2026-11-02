@@ -20,7 +20,7 @@ def main():
             def ch(id):
                 return page.locator(f'#tracks .strip[data-id="{id}"]')
             def select(id):
-                ch(id).locator('.strip-identity-top').click()
+                ch(id).locator('.wire-node-out').click()
             def connect(src,dst):
                 select(src)
                 ch(dst).locator('.wire-node-in').click()
