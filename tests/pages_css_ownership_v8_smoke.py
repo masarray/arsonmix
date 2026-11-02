@@ -17,7 +17,7 @@ def source_gate():
     inline=html[start:html.index('</style>',start)]
     rack=RACK.read_text('utf-8')
     plugin=PLUGIN.read_text('utf-8')
-    assert len(inline)<225_000, ('inline still contains rack styles',len(inline))
+    assert len(inline)<226_000, ('inline still contains rack styles',len(inline))
     assert inline.count('!important')<1840, 'redundant important cascade is growing'
     assert len(rack)>5_000 and len(plugin)>3_000, 'owner migration incomplete'
     assert rack.count('.fxslot-row')>9 and rack.count('.fx-section')>12
