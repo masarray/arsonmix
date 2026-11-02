@@ -539,6 +539,9 @@ check(html.includes('id="wireLayer" class="routing-wire-overlay"') &&
  html.includes('id="wireLegend"') &&
  html.includes('.console-body.wire-routing-v13.collapsed-send{--send-h:80px!important}'),
  'Wire layer and 53px middle routing row survive collapsed advanced Send');
+// V33: selecting a mixer channel is not an implied wire patch action.
+const pinSource={dataset:{action:'wireSource'},closest:k=>k==='.strip'?{dataset:{id:1}}:null};
+node('body').handlers.click({target:{closest:k=>k==='[data-action]'?pinSource:null},shiftKey:false});
 check(strip(1).includes('wire-node-out is-source') &&
  strip(3).includes('data-action="wireRoute"') &&
  strip(3).includes('class="wire-socket wire-node-in"') &&
