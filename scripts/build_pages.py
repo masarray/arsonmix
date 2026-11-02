@@ -72,6 +72,17 @@ for control_asset in ('mixer-control-keys.css','mixer-control-keys.js','mixer-ut
         shutil.copy2(src,target)
         if src.read_bytes()!=target.read_bytes():
             raise SystemExit(f'Published asset differs from preview source: {control_asset}')
+# The MUTE face is literal owner-approved artwork, not a CSS reconstruction.
+# Both /preview-v2/ and public /preview/ must resolve the same exact PNG bytes.
+if 'assets/mixer-control-keys.css' in html:
+    for image_asset in ('M-MUTE-OFF.png', 'M-MUTE-ON.png'):
+        src=source.parent/'assets'/image_asset
+        if not src.is_file(): raise SystemExit(f'Missing reference MUTE asset: {src}')
+        target=dst/'preview'/'assets'/image_asset
+        target.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copy2(src,target)
+        if src.read_bytes()!=target.read_bytes():
+            raise SystemExit(f'Published reference MUTE asset mismatch: {image_asset}')
 (dst/'preview'/'build.json').write_text(json.dumps(metadata,indent=2),encoding='utf-8')
 (dst/'.nojekyll').touch()
 assert (dst/'index.html').exists() and (dst/'preview'/'index.html').exists()
