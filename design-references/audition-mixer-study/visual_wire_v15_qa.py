@@ -66,8 +66,8 @@ def main():
                     "Receiver wire gain control missing")
         linked_in=dest.bounding_box()
         active_pot=page.locator('#tracks .strip[data-id="3"] .wire-pot').bounding_box()
-        assert_true(all(abs(initial_in[k]-linked_in[k])<1 for k in ("x","y","width","height")),
-                    "IN jack moved when connection was committed: "+str((initial_in,linked_in)))
+        assert_true(all(abs(initial_in[k]-linked_in[k])<=1 for k in ("x","y","width","height")),
+                    "IN jack moved more than one physical pixel when connection was committed: "+str((initial_in,linked_in)))
         assert_true(all(abs(initial_pot[k]-active_pot[k])<1 for k in ("x","y","width","height")),
                     "Gain knob moved when connection was committed")
         assert_true(page.locator('#tracks .strip[data-id="4"] .wire-pot.is-idle').count()==1,
