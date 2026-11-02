@@ -4086,7 +4086,7 @@ function wireTray(t){
   '><span class="wire-arrow" aria-hidden="true"></span><span class="wire-label">IN</span></button>';
  let controls=from+to;
  if(linked&&!isMain){
-  controls+='<label class="wire-pot" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%;--wire-deg:'+(-135+wireGainPercent(edge.levelDb)*2.7).toFixed(1)+'deg" title="'+escapeHtml(source.name+' → '+t.name+' · '+wireDbText(edge.levelDb))+'"><input class="wire-gain" type="range" min="-60" max="6" step="1" value="'+edge.levelDb+'" data-field="wireGain" data-wire-id="'+edge.id+'" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%" aria-label="Wire send level '+escapeHtml(source.name)+' to '+escapeHtml(t.name)+'" aria-valuetext="'+wireDbText(edge.levelDb)+'" step="0.1"><output class="wire-pot-value" aria-hidden="true">'+wireDbText(edge.levelDb)+'</output></label>';
+  controls+='<label class="wire-pot" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%;--wire-deg:'+(-135+wireGainPercent(edge.levelDb)*2.7).toFixed(1)+'deg" title="'+escapeHtml(source.name+' → '+t.name+' · '+wireDbText(edge.levelDb))+'"><input class="wire-gain" type="range" min="-60" max="6" step="0.1" value="'+edge.levelDb+'" data-field="wireGain" data-wire-id="'+edge.id+'" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%" aria-label="Wire send level '+escapeHtml(source.name)+' to '+escapeHtml(t.name)+'" aria-valuetext="'+wireDbText(edge.levelDb)+'"><output class="wire-pot-value" aria-hidden="true">'+wireDbText(edge.levelDb)+'</output></label>';
  }else{
   controls+='<span class="wire-pot is-idle" aria-hidden="true"></span>';
  }
@@ -4757,8 +4757,14 @@ function handleField(event){
 /* Real pointer fader binding for the isolated reference.
    One gesture, no rebuilding strips during drag, and source range remains keyboard-accessible.
    The 29x62 visual cap center is aligned to this same travel ruler. */
-let faderGesture=null;
+let faderGesture=null,wireGainGesture=null;
 const consoleBody=document.querySelector('.console-body');
+// Relative pointer travel: 3px/dB normal, 10px/dB with Shift; no 22px limit.
+function setWireGainFromPointer(ev,g){
+ const perDb=ev.shiftKey?10:3;
+ const db=Math.max(-60,Math.min(6,Math.round((g.startDb+(g.startY-ev.clientY)/perDb)*10)/10));
+ g.input.value=String(db);handleField({target:g.input,type:'input'});
+}
 function setFaderFromPointer(ev,gesture){
  const input=gesture.input,travel=gesture.travel?.getBoundingClientRect?.();
  if(!travel||travel.height<=0)return;
@@ -4802,6 +4808,11 @@ consoleBody.addEventListener('pointerdown',ev=>{
    return;
   }
  }
+ const gain=ev.target.closest?.('.wire-gain');
+ if(gain){ev.preventDefault?.();const pot=gain.closest('.wire-pot');pot?.classList.add('is-adjusting');
+  wireGainGesture={pointerId:ev.pointerId,input:gain,pot,startY:ev.clientY,startDb:Number(gain.value)||0};
+  gain.setPointerCapture?.(ev.pointerId);return;
+ }
  const pan=ev.target.closest?.('.center-pan');
  if(pan){delete pan.dataset.panKeyboard;pan.dataset.panAltPointer=String(!!ev.altKey);return;}
  const box=ev.target.closest?.('.fader-box');
@@ -4825,10 +4836,16 @@ window.addEventListener('pointermove',ev=>{
   if(g.active){g.point={x:ev.clientX,y:ev.clientY};queueWireGestureFrame();}
   return;
  }
+ if(wireGainGesture&&ev.pointerId===wireGainGesture.pointerId){setWireGainFromPointer(ev,wireGainGesture);return;}
  if(!faderGesture||ev.pointerId!==faderGesture.pointerId)return;
  setFaderFromPointer(ev,faderGesture);
 });
 function finishFaderPointer(ev){
+ if(wireGainGesture&&ev.pointerId===wireGainGesture.pointerId){
+  const g=wireGainGesture;wireGainGesture=null;setWireGainFromPointer(ev,g);
+  g.pot?.classList.remove('is-adjusting');g.input.releasePointerCapture?.(ev.pointerId);
+  handleField({target:g.input,type:'change'});return;
+ }
  if(wireGesture&&ev.pointerId===wireGesture.pointerId){
   const g=wireGesture;
   const snap=g.active?wireSnapTarget({x:ev.clientX,y:ev.clientY},g.sourceId,g.originDestId,'release'):null;
@@ -4862,6 +4879,7 @@ function finishFaderPointer(ev){
 }
 window.addEventListener('pointerup',finishFaderPointer);
 window.addEventListener('pointercancel',ev=>{
+ if(wireGainGesture&&ev.pointerId===wireGainGesture.pointerId){wireGainGesture.pot?.classList.remove('is-adjusting');wireGainGesture=null;return;}
  if(wireGesture&&ev.pointerId===wireGesture.pointerId){const g=wireGesture;wireGesture=null;setWireSnapTarget(null);consoleBody.querySelector?.('.strip[data-id="'+g.originDestId+'"] .wire-node-in')?.classList.remove('is-replug-origin');consoleBody.classList.remove('wire-dragging');renderWireRouting();say('WIRE drag canceled · graph unchanged');}
  if(faderGesture&&ev.pointerId===faderGesture.pointerId)faderGesture=null;
  for(const pan of consoleBody.querySelectorAll?.('.center-pan[data-pan-alt-pointer]')||[])
@@ -5019,8 +5037,8 @@ document.querySelector('.console-body').addEventListener('wheel',e=>{
  const el=e.target.closest?.('.wire-gain');
  if(!el||!Number.isFinite(e.deltaY)||e.deltaY===0)return;
  e.preventDefault?.();
- const prev=Number(el.value)||0,change=e.deltaY>0?-1:1;
- el.value=String(Math.max(-60,Math.min(6,prev+change)));
+ const prev=Number(el.value)||0,change=(e.deltaY>0?-1:1)*(e.shiftKey?0.1:1);
+ el.value=String(Math.max(-60,Math.min(6,Math.round((prev+change)*10)/10)));
  handleField({target:el,type:'change'});
 },{passive:false});
 document.querySelector('.console-body').addEventListener('mousedown',e=>{
