@@ -687,7 +687,7 @@ check(html.includes('.console-body.wire-routing-v13.collapsed-send{--send-h:23px
  html.includes('.console-body.wire-routing-v13.collapsed-send{\n --send-h:23px!important'),
  'V14.1 source folds WIRE bay into a real 23px header');
 check(html.includes('.console-body.wire-routing-v13:not(.collapsed-send){--send-h:160px!important}') &&
- html.includes('const sagLimit=wireSagClearance(from,well);'),
+ html.includes('const sagLimit=wireSagClearance(anchor,well);'),
  'Expanded WIRE retains the existing height rules but bounds hanging cable depth to its own patch bay');
 check(html.includes("document.querySelector('.console-body')?.classList.contains('collapsed-send')") &&
  html.includes('wireGesture?.active') &&
@@ -1026,7 +1026,7 @@ check(html.indexOf('class="wire-context-line"')<html.indexOf('class="wire-incomi
 node('reset').dispatch('click');
 check(node('wireView').value==='focus',
  'V30 reset restores Focus with graph/editor defaults intact');
-// V31 top patch strip, gravity-hung curves and 24-frame bounded spring.
+// V31 top patch strip and gravity; V32 soft per-edge settling replaces global spring.
 check(html.includes('/* V31 — FL-style suspended routing:') &&
  html.includes('.wire-tray{\n order:-2!important') &&
  html.includes('.wire-section .wire-deck{\n order:0!important') &&
@@ -1036,14 +1036,23 @@ check(html.includes('(y0+control).toFixed(1)') &&
  html.includes('(y1+control).toFixed(1)') &&
  !html.includes('(y0-rise).toFixed(1)'),
  'V31 both cubic control points hang BELOW their anchors, including right-to-left routes');
-check(html.includes('let wireSpring=0,wireSpringVelocity=0') &&
- html.includes('wireSpringFrames<24') &&
+check(html.includes('let wireMotion={key:null,offset:0,token:0}') &&
+ html.includes('frame<18') &&
+ html.includes('wireMotionGeometry.get(key)') &&
+ html.includes('path.setAttribute(\'d\',d)') &&
  html.includes("window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches") &&
- html.includes('render();kickWireSpring()'),
- 'V31 elastic gravity settling is bounded to 24 frames and honors reduced-motion');
+ html.includes('kickWireSpring(source.id,dest.id)') &&
+ !html.includes('wireSpringVelocity'),
+ 'V32 bounded settling updates only newly plugged wire SVG path, honors reduced motion');
 check(html.includes('wirePathData(x0,y0,x1,y1,sagLimit);') &&
  html.includes('wireSagClearance(fromRect,senderBay)') &&
- html.includes('wirePathData(xa,ya,xb,yb,rise,wireSpring)'),
+ html.includes('wirePathFor(edge,xa,ya,xb,yb,rise)'),
  'V31 drag and incoming/outgoing share the new downward gravity geometry');
+check(html.includes('wireSourcePinned=true') &&
+ html.includes('data-wire-jump-source="1"') &&
+ html.includes('wire-offbank-entry') &&
+ html.includes('ALREADY CONNECTED:') &&
+ html.includes('data-cable-key'),
+ 'V32 pin source across banks, indicate existing SEND and animate only keyed SVG paths');
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
