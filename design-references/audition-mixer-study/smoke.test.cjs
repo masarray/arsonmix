@@ -717,7 +717,7 @@ check(strip(3).includes('class="wire-tray linked"') &&
   strip(4).includes('wire-pot is-idle'),
   'V17 turns only destination knob active without shifting any other channel layout');
 check(html.includes('function wirePathData(') && html.includes('function wireSnapTarget(') &&
-  html.includes('WIRE_MAGNET.release') && html.includes('wire-magnet-guide') &&
+  html.includes('WIRE_MAGNET.release') && html.includes('True magnetic PREVIEW') &&
   html.includes('queueWireGestureFrame();') &&
   html.includes('const input=snap?.element||hit?.closest?.') &&
   !html.slice(html.indexOf('function renderWireRouting(){'),html.indexOf('function syncActiveSend(t){')).includes('stroke-dasharray') &&
@@ -855,15 +855,17 @@ check(html.includes('data-section="route" aria-expanded="true" aria-label="Colla
  html.includes('function compactWireActivity(t){'),
  'V19 DAW rail has concise I/O, FX, W labels and no pseudo-caption OPEN/PATCH');
 check(strip(3).includes('wire-fold-summary') &&
- strip(3).includes('class="fold-empty"') &&
- strip(1).includes('fold-out') && strip(1).includes('→1'),
+ strip(3).includes('wire-fold-summary is-empty') &&
+ !strip(3).includes('fold-link-icon') &&
+ strip(1).includes('wire-fold-summary has-wire') && strip(1).includes('has-out'),
  'V19 folded row distinguishes no custom links from one active legacy Bus A send');
 wireTo(3);
-check(strip(3).includes('fold-in') && strip(3).includes('←1') &&
- strip(1).includes('fold-out') && strip(1).includes('→2'),
+check(strip(3).includes('fold-link-icon has-in') &&
+ strip(1).includes('fold-link-icon has-out') &&
+ !strip(3).includes('→') && !strip(1).includes('←'),
  'V19 compact IN/OUT is computed from live graph and active legacy Sends');
 wireTo(3);
-check(strip(3).includes('class="fold-empty"'),
+check(strip(3).includes('wire-fold-summary is-empty') && !strip(3).includes('fold-link-icon'),
  'V19 removing a custom incoming edge immediately restores neutral collapsed marker');
 node('reset').dispatch('click');
 
@@ -875,10 +877,11 @@ check(html.includes('viewBox="0 0 64 64"') &&
  html.includes('class="rail-svg-icon fx-icon"') &&
  html.includes('class="rail-svg-icon wire-icon"'),
  'V22 has real reference-derived SVG FX/WIRE and physical I/O glyphs');
-check(html.includes('preview:26,release:22,retained:28,origin:31') &&
+check(html.includes('preview:22,release:22,retained:24,origin:31') &&
  !html.includes('dist>42&&!inside') &&
- html.includes("'release'):null;") && html.includes('wire-magnet-guide') &&
- !html.includes('if(rect?.width){x1=rect.left-vp.left+rect.width/2;'),
+ html.includes("'release'):null;") && html.includes('True magnetic PREVIEW') &&
+ html.includes('x1=rect.left-vp.left+rect.width*.5;') &&
+ !html.includes('wire-magnet-guide'),
  'V22 hover cannot finalize, preview follows pointer and release uses 22px threshold');
 node('body').clientWidth=1680;node('reset').dispatch('click');
 document.querySelectorAll=k=>k==='.wire-node-in'?sockets:oldQs(k);
@@ -898,5 +901,18 @@ check(strip(3).includes('wire-node-in is-linked'),
 document.querySelectorAll=oldQs;
 node('reset').dispatch('click');
 
+
+// V23 collapse never renders numbers or visible jacks; no phantom click targets.
+check(html.includes('function compactWireSummary(t)') &&
+ html.includes("const shape=connected?") &&
+ !html.includes('class="fold-marker"') &&
+ html.includes('.send-section.wire-section .wire-tray.linked') &&
+ html.includes('display:none!important;visibility:hidden!important;pointer-events:none!important;'),
+ 'V23 folded WIRE is a 23px icon-only row with clipped live controls completely hidden');
+check(html.includes('preview:22,release:22,retained:24,origin:31') &&
+ html.includes('track.id===held?WIRE_MAGNET.retained:WIRE_MAGNET.preview') &&
+ html.includes('x1=rect.left-vp.left+rect.width*.5') &&
+ html.includes('y1=rect.top-vp.top+rect.height*.5'),
+ 'V23 lit candidate means endpoint center-snaps and remains valid on pointerup');
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
