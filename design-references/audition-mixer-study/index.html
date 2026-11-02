@@ -1919,6 +1919,15 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
  .console-body.wire-routing-v13 .strip .wire-deck{padding-top:3px}
  .console-body.wire-routing-v13 .strip .wire-deck-status{display:none}
 }
+
+/* V13 P0 visual-authority synchronization from approved latest main:
+   graphite inset well is a flat recessed #142530 metal instrument surface,
+   NOT the earlier gradient. Keep original 26x55 cap and meter calibration. */
+.console-body .strip .fader-box::before{
+ background:#142530!important;
+ background-image:none!important;
+ box-shadow:inset 1px 0 #7997a33d,inset -1px 0 #050d14a6!important;
+}
 </style>
 </head>
 <body>
