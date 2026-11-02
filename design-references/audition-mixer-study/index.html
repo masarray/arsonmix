@@ -3999,6 +3999,10 @@ function commitRouteChoice(kind){
 }
 function requestWireConnection(source,dest,anchor){
  if(!source||!dest||source.id===dest.id){say('WIRE: choose a different destination');return false;}
+ if(dest.kind!=='master'&&hasLegacySendTo(source,dest)){
+  say('ALREADY CONNECTED: '+source.name+' → '+dest.name+' via existing SEND slot · duplicate cable prevented');
+  return false;
+ }
  if(dest.kind==='master'){
   if(source.output!=='Master'&&source.output!=='SOURCE ONLY (No Main)'){
    say('MAIN DROP BLOCKED: '+source.name+' primary OUT is '+source.output+' · use route inspector to change the Bus path');
@@ -4090,17 +4094,19 @@ function wireTray(t){
  const isSource=!!source&&source.id===t.id;
  const isMain=t.kind==='master';
  const edge=!isMain&&source?wireFor(source.id,t.id):null;
- const linked=isMain?!!source&&source.output==='Master':!!edge;
+ const legacy=!isMain&&source&&hasLegacySendTo(source,t);
+ const linked=isMain?!!source&&source.output==='Master':!!edge||!!legacy;
  const canWire=!!(source&&!isSource);
  const label=!source?'NO SOURCE':isSource?'SOURCE':isMain?(linked?'MAIN ON':'MAIN OFF'):linked?'CONNECTED':'CONNECT';
- const modeLabel=linked&&!isMain?(edge.mode==='routeOnly'?'Route via Bus':edge.mode==='send'?'Post-fader Send':'Pre FX Mult')+' · click IN to disconnect or drag cable away':'Click IN or drag an OUT jack here';
+ const modeLabel=linked&&!isMain?(legacy&&!edge?'Existing SEND slot · managed in legacy routing; no duplicate wire allowed':
+  (edge.mode==='routeOnly'?'Route via Bus':edge.mode==='send'?'Post-fader Send':'Pre FX Mult')+' · click IN to disconnect or drag cable away'):'Click IN or drag an OUT jack here';
  const from='<button type="button" class="wire-node-out'+(isSource?' is-source':'')+'" data-action="wireSource"'+(isMain?' disabled':'')+
   ' title="SEND OUT · drag this solid jack to another channel IN" aria-label="Send OUT from '+escapeHtml(t.name)+'" aria-pressed="'+isSource+'"><span class="wire-pin" aria-hidden="true"></span><small>OUT</small></button>';
  const to='<button type="button" class="wire-socket wire-node-in'+(isSource?' is-source':'')+(linked?' is-linked':'')+'" data-action="wireRoute" aria-pressed="'+linked+
   '" aria-label="Receive IN on '+escapeHtml(t.name)+' · '+label+'" title="'+escapeHtml(label+' · '+modeLabel+' · GUI DEMO')+'" '+(canWire?'':'disabled')+
   '><span class="wire-arrow" aria-hidden="true"></span><span class="wire-label">IN</span></button>';
  let controls=from+to;
- if(linked&&!isMain){
+ if(edge&&!isMain){
   controls+='<label class="wire-pot" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%;--wire-deg:'+(-135+wireGainPercent(edge.levelDb)*2.7).toFixed(1)+'deg" title="'+escapeHtml(source.name+' → '+t.name+' · '+wireDbText(edge.levelDb))+'"><input class="wire-gain" type="range" min="-60" max="6" step="1" value="'+edge.levelDb+'" data-field="wireGain" data-wire-id="'+edge.id+'" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%" aria-label="Wire send level '+escapeHtml(source.name)+' to '+escapeHtml(t.name)+'"></label>';
  }else{
   controls+='<span class="wire-pot is-idle" aria-hidden="true"></span>';
@@ -4509,7 +4515,10 @@ function renderWireRouting(){
  const focus=wireSourceTrack(wireSourceId),routes=wireDisplayRoutes();
  const legend=document.getElementById('wireLegend'),main=document.getElementById('wireMaster');
  if(legend){
-  const sourceInBank=!!viewport?.querySelector?.('.strip[data-id="'+focus?.id+'"] .wire-node-out');
+  const filter=document.getElementById('viewFilter').value;
+  const bankVisible=tracks.filter(t=>filter==='all'||(filter==='solo'?t.solo:t.kind===filter));
+  const sourceIndex=bankVisible.findIndex(t=>t.id===focus?.id);
+  const sourceInBank=sourceIndex>=0&&Math.floor(sourceIndex/bankCapacity())===(Number(document.getElementById('bankSelect').value)||0);
   const markup=focus&&!sourceInBank?
    '<button type="button" class="wire-offbank-source" data-wire-jump-source="1" title="Return to '+escapeHtml(focus.name)+' without changing the patch source">FROM CH'+String(focus.id).padStart(2,'0')+' · '+escapeHtml(focus.name)+' ↶</button>'+
    '<span class="wire-offbank-instruction">Click any IN on this bank</span>':
