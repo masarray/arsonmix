@@ -1,24 +1,24 @@
 {
-  "version": "preview-v21-compact-wire-rail",
+  "version": "preview-v22-fixed-button-socket-selected-fader",
   "kind": "GUI_REFERENCE_ONLY",
   "live_audio": false,
   "source_pr": 278,
   "source_branch": "design/audition-mixer-reference-isolated-20261101",
-  "source_sha": "d714434ed8cf7ea32873ddcf7b0d1eea486cf881",
-  "source_content_sha": "2800bec0b1bd9a8519f66b36a9c63538a982de30",
+  "source_sha": "1b347b86ccb59413040a1872dd7e22cd99a29c54",
+  "source_content_sha": "a20faa91a38266abe931f904ee7032b8a53ed2ed",
   "routes": [
     "/preview/mixer.html",
     "/preview-v2/"
   ],
   "ci_run": 41397350090,
   "ci_conclusion": "success",
-  "milestone": "V20 hardware key retained; DAW-inspired 28px I/O FX W rail, V19 collapsed WIRE displays compact ←incoming →outgoing custom routing counts including legacy Sends and Bus destinations, click row to expand",
+  "milestone": "True fixed hole over moving cap, smooth hardware shading, 23×48 chrome thumb, +14px fader section and +6px slot, selected channel border top layer, no blur",
   "operator_acceptance": "225/225 DOM/workflow checks and Chromium 1366×768/1680×900/1920×1080 PASS for rail labels, summary live updates, mouse-open, no PAN/fader height drift; V18 snap/unplug regression PASS",
   "owner_geometry": "WIRE collapses to 23px, expands to 160px; FX/PAN/FADER hierarchy preserved",
   "hardware_key": "V20 true 3px hard sidewall / 2px while pressed, cap travels 1px; internal light gradient in translucent physical lens, sharp 2px radius, hard socket; no glow/blur/filters",
   "limitations": "GUI reference only; compact WIRE counts custom internal sends/routes, direct MAIN output remains in I/O. No native PCM/ASIO/VST3 execution.",
   "led_meter": "6px x 9px portrait LED; 2px dark divider, continuous green/yellow/amber/red",
-  "verification": "GitHub Actions run 41397350090 success (V15 + V18 + V19 focused browser QA)",
+  "verification": "Chromium smoke verifies fixed hole overlay/press, selection, thumb/travel, live routing and previous UI",
   "design_reference_pr": 278,
   "design_reference_sha": "2a889af659def8b5cbf5511ed24ffb6fe9c583d7"
 }

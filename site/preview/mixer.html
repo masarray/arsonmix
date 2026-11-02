@@ -2980,6 +2980,241 @@ html * ,html *::before,html *::after{
  filter:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;
 }
 
+
+/* V19 collapsed-section contract: DAW-like discreet labels and state indicators.
+   No rotated words, pseudo-caption OPEN/PATCH, blur, glow or extra layout rows. */
+.console-body .section-rail>.rail-cell[data-section]{
+ font:500 9px/1.1 Arial,Helvetica,sans-serif!important;
+ font-style:normal!important;letter-spacing:0!important;
+ color:#9aafb9!important;background:#182b35!important;
+ text-shadow:none!important;transition:none!important;
+ border-top:0!important;
+}
+.console-body.wire-routing-v13 .section-rail>.rail-cell.send{
+ background:#182b35!important;color:#9aafb9!important;
+}
+.console-body .section-rail>.rail-cell[data-section].collapsed{
+ background:#12232d!important;color:#768d98!important;
+ box-shadow:inset 2px 0 #627e8e65!important;
+}
+.console-body .section-rail>.rail-cell[data-section]:not(.collapsed){
+ box-shadow:inset 2px 0 #91c9d080!important;
+}
+.console-body .section-rail>.rail-cell[data-section]:hover{
+ background:#29404b!important;color:#e3eff2!important;
+}
+.console-body .section-rail>.rail-cell[data-section]::after,
+.console-body.wire-routing-v13 .section-rail>.rail-cell.send::after,
+.console-body.wire-routing-v13.collapsed-send .section-rail>.rail-cell.send::after{
+ content:""!important;display:block!important;
+ position:absolute!important;right:2px!important;top:4px!important;
+ width:3px!important;height:3px!important;
+ border:solid currentColor!important;border-width:0 1px 1px 0!important;
+ transform:rotate(45deg)!important;opacity:.75!important;
+ background:transparent!important;font-size:0!important;
+}
+.console-body .section-rail>.rail-cell[data-section].collapsed::after,
+.console-body.wire-routing-v13.collapsed-send .section-rail>.rail-cell.send::after{
+ transform:rotate(-45deg)!important;
+}
+.console-body .section-rail .rail-cell.route,
+.console-body .section-rail .rail-cell.fx,
+.console-body .section-rail .rail-cell.send{
+ padding:0 2px 0 0!important;justify-content:center!important;
+}
+.console-body.wire-routing-v15 .strip .wire-fold-summary{
+ display:none!important;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary{
+ display:flex!important;gap:6px;align-items:center;justify-content:center;
+ width:100%;height:21px;min-height:21px;padding:0 2px;
+ border:0;border-radius:0;background:transparent!important;
+ color:#9bb0ba;font:500 9px/1 Arial,Helvetica,sans-serif;
+ letter-spacing:0;cursor:pointer;overflow:hidden;white-space:nowrap;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary:hover{
+ background:#273c48!important;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary:focus-visible{
+ outline:1px solid #91cbd6;outline-offset:-2px;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-in{
+ color:#9baeb9;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-out{
+ color:var(--ch,#a4bac7);
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-empty{
+ color:#617883;font-size:10px;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-marker{
+ display:inline-block;width:3px;height:3px;margin-right:2px;
+ border-radius:50%;background:currentColor;vertical-align:middle;
+}
+/* The collapsed WIRE rack stays exactly 23px. FX/fader geometry is unchanged. */
+
+
+/* V22 CLEAN HARDWARE KEY + SELECTION + FADER CONTRACT
+   The material is intentionally smooth: one uninterrupted face gradient.
+   A separate STATIC socket wrapper owns the hole, recess and overlaid metal
+   bezel. Only the button child moves 1px. No blur or filter. This repairs
+   the V20 wavy/zebra shading and the buried channel selection highlight. */
+:root {
+ --am-hw-key-relief:inset 1px 0 0 #ecf9ff36,inset -1px 0 0 #040b106b,
+   inset 0 1px 0 #ffffff22,inset 0 -1px 0 #0008,
+   0 1px 0 var(--am-hw-key-wall),0 2px 0 #070d12;
+ --am-hw-key-flat:inset 1px 0 0 #ecf9ff25,inset -1px 0 0 #040b106b,
+   inset 0 1px 0 #0005,inset 0 -1px 0 #ffffff12,
+   0 1px 0 #070d12;
+ --am-hw-key-upper-glint:linear-gradient(90deg,transparent 0%,#ffffff3a 28%,#ffffffaa 50%,#ffffff3a 72%,transparent 100%);
+ --am-hw-key-lower-glint:linear-gradient(90deg,transparent 0%,#ffffff0d 30%,#ffffff48 50%,#ffffff0d 70%,transparent 100%);
+}
+/* Thin internal light (not glowing) — no repeated bright/dark bands. */
+:is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
+ .console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key) {
+ background:linear-gradient(180deg,
+   var(--am-hw-key-bright) 0%,
+   var(--am-hw-key-face) 42%,
+   var(--am-hw-key-deep) 100%)!important;
+ box-shadow:var(--am-hw-key-relief)!important;
+ filter:none!important;
+ backdrop-filter:none!important;
+ -webkit-backdrop-filter:none!important;
+ transition:none!important;
+}
+:is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
+ .console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key):hover {
+ filter:none!important;
+}
+:is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
+ .console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key):active:not(:disabled) {
+ transform:translateY(1px)!important;
+ box-shadow:var(--am-hw-key-flat)!important;
+}
+/* Static bezel structure deliberately resides OUTSIDE the button element.
+   ::after has z-index 4 over button (z-index 2); pointer-events:none, and
+   never inherits keycap's transform, MUTE state, or active/hover behavior. */
+.console-body .strip .switch-section .hw-switch-socket {
+ position:relative!important;
+ display:flex!important;
+ align-items:stretch!important;
+ justify-content:stretch!important;
+ flex:1 1 0!important;
+ min-width:0!important;
+ height:calc(var(--switch-h) - 7px)!important;
+ max-height:34px!important;
+ min-height:24px!important;
+ padding:2px!important;
+ box-sizing:border-box!important;
+ background:#08141b!important;
+ border:1px solid #09131a!important;
+ border-radius:3px!important;
+ box-shadow:inset 0 1px 0 #000,inset 1px 0 0 #02080c,
+            inset -1px 0 0 #2b424f,inset 0 -1px 0 #263b47!important;
+ isolation:isolate!important;
+ overflow:hidden!important;
+}
+.console-body .strip .switch-section .hw-switch-socket::before {
+ content:""!important;
+ position:absolute!important;inset:1px!important;
+ z-index:0!important;pointer-events:none!important;
+ border-radius:2px!important;
+ background:linear-gradient(180deg,#03080d 0%,#0c1921 46%,#172a33 100%)!important;
+ box-shadow:inset 0 1px 0 #000,inset 0 -1px 0 #2a404c!important;
+}
+.console-body .strip .switch-section .hw-switch-socket::after {
+ content:""!important;
+ position:absolute!important;inset:0!important;
+ z-index:4!important;pointer-events:none!important;
+ border-radius:3px!important;
+ border:1px solid #0a131a!important;
+ background:transparent!important;
+ box-shadow:inset 0 1px 0 #60808b5c,
+            inset 1px 0 0 #6b87904a,
+            inset -1px 0 0 #02090ebf,
+            inset 0 -1px 0 #03090e!important;
+}
+.console-body .strip .switch-section .hw-switch-socket>.switch {
+ position:relative!important;z-index:2!important;
+ flex:1 1 auto!important;
+ min-width:0!important;width:100%!important;
+ height:100%!important;min-height:0!important;max-height:none!important;
+ padding:0 1px!important;
+ border-radius:2px!important;
+ transform:translateY(0)!important;
+ overflow:hidden!important;
+}
+.console-body .strip .switch-section .hw-switch-socket>.switch:active:not(:disabled) {
+ transform:translateY(1px)!important;
+}
+/* No rectangular mask over switch text: upper bezel is ONLY 1px edge,
+   mounted in the parent frame, not a moving overlay on the cap. */
+.console-body .strip .switch-section {
+ align-items:flex-start!important;
+}
+/* V22 fader: keep original metal PNG, size it ~11% smaller; increase the
+   full calibration travel consistently across master, channel and rail.
+   FX, not PAN/SOLO/FOOTER, absorbs the extra +14px fader height. */
+.console-body {
+ --v13-fader-h:clamp(164px,calc(100dvh - 616px),499px);
+}
+.console-body .strip .fader-travel {
+ top:24px!important;bottom:24px!important;
+}
+.console-body .strip .fader-travel .cap {
+ width:23px!important;height:48px!important;
+ background:var(--ari-silver) center/23px 48px no-repeat!important;
+ filter:none!important;box-shadow:0 1px 0 #010508!important;
+}
+.console-body .strip.master .fader-travel .cap{
+ background:var(--ari-rose) center/23px 48px no-repeat!important;
+}
+.console-body .strip .fader-box .fader{
+ top:24px!important;bottom:24px!important;
+ height:calc(100% - 48px)!important;
+}
+.console-body .strip .gain-scale-travel {
+ top:24px!important;bottom:24px!important;
+}
+/* Selected channel border is ON TOP of every sub-panel, never buried.
+   Reuse the existing root strip::after instead of adding DOM nodes or
+   using strip's background/inset-box-shadow behind opaque children. */
+.console-body .strip.selected {
+ z-index:2!important;
+}
+.console-body .strip.selected::after {
+ content:""!important;position:absolute!important;
+ inset:0!important;width:auto!important;height:auto!important;
+ z-index:60!important;pointer-events:none!important;
+ border:2px solid var(--ch,#7ed5e4)!important;
+ border-radius:0!important;
+ background:transparent!important;
+ box-shadow:inset 0 0 0 1px #061923!important;
+ opacity:1!important;
+}
+/* Preserve drag-drop insert indicators without suppressing selected rim. */
+.console-body .strip.channel-drop-before::before,
+.console-body .strip.channel-drop-after::before{z-index:61!important}
+/* GPU budget: no blurred shading, translucent full-page overlays or
+   per-strip will-change compositor promotion. Keep interactions responsive. */
+.console-body .strip,.console-body .strip::after,
+.console-body .strip .hw-switch-socket {
+ will-change:auto!important;
+ filter:none!important;
+ backdrop-filter:none!important;
+ -webkit-backdrop-filter:none!important;
+}
+.console-body .strip .fader-travel .cap,
+.console-body .strip .fader-box .fader {
+ transition:none!important;
+}
+
 </style>
 </head>
 <body>
@@ -3027,9 +3262,9 @@ html * ,html *::before,html *::after{
     <section class="console-body collapsed-send wire-routing-v13 wire-routing-v15" data-density="comfort" aria-label="Live mixing console">
       <aside class="section-rail" aria-label="Mixer section icons">
         <div class="rail-cell identity" title="Channel identity">CH</div>
-        <button class="rail-cell route" data-section="route" aria-expanded="true" title="Collapse / expand Inputs and Outputs">⇥</button>
-        <button class="rail-cell fx" data-section="fx" aria-expanded="true" title="Collapse / expand Effects">fx</button>
-        <button class="rail-cell send collapsed" data-section="send" aria-expanded="false" title="Compact / expanded wire patch bay" aria-label="Expand wire routing area">↗</button>
+        <button class="rail-cell route" data-section="route" aria-expanded="true" aria-label="Collapse input and output rack" title="Collapse / expand input and output rack">I/O</button>
+        <button class="rail-cell fx" data-section="fx" aria-expanded="true" aria-label="Collapse effects rack" title="Collapse / expand effects rack">FX</button>
+        <button class="rail-cell send collapsed" data-section="send" aria-expanded="false" title="Expand wire patch bay" aria-label="Expand wire routing area">W</button>
         <div class="rail-cell pan" title="Pan">◉</div>
         
         <div class="rail-cell switch" title="Mute / Solo / Cue / Monitor"><small>M S C</small></div>
@@ -3361,6 +3596,47 @@ function wireTray(t){
    Operator routes with socket and adjusts gain using the inline metal knob. */
 /* V13: uncluttered middle wire canvas. Only source and active destinations
    carry tiny engraved text, leaving empty receiver channels optically quiet. */
+/* Compact WIRE receives/sends: recomputed on DOM render, never in the audio
+   callback. Count only custom intra-mixer paths; direct MAIN stays in I/O. */
+function compactWireActivity(t){
+ let incoming=0,outgoing=0;
+ for(const edge of wireEdges)if(edge.enabled){
+  if(edge.destId===t.id)incoming++;
+  if(edge.sourceId===t.id)outgoing++;
+ }
+ for(const source of tracks){
+  const split=parseSplitSource(source.input);
+  if(split&&!wireFor(split.sourceId,source.id)){
+   if(split.sourceId===t.id)outgoing++;
+   if(source.id===t.id)incoming++;
+  }
+  const target=tracks.find(x=>(x.kind==='bus'||x.kind==='fx')&&x.name===source.output);
+  if(target&&!wireFor(source.id,target.id)){
+   if(source.id===t.id)outgoing++;
+   if(target.id===t.id)incoming++;
+  }
+  for(let i=0;i<source.sendSlots.length;i++){
+   const slot=i===source.activeSend?source:source.sendSlots[i];
+   if(!slot?.sendOn||!slot.send||slot.send==='None')continue;
+   const dest=tracks.find(x=>x.name===slot.send);
+   if(!dest)continue;
+   if(source.id===t.id)outgoing++;
+   if(dest.id===t.id)incoming++;
+  }
+ }
+ return {incoming,outgoing};
+}
+function compactWireSummary(t){
+ const {incoming,outgoing}=compactWireActivity(t);
+ const title='Expand WIRE · '+t.name+' · '+incoming+' incoming, '+outgoing+
+  ' outgoing custom paths · direct MAIN routing shown in I/O';
+ const content=incoming||outgoing
+  ?(incoming?'<span class="fold-in"><span class="fold-marker"></span>←'+incoming+'</span>':'')+
+   (outgoing?'<span class="fold-out"><span class="fold-marker"></span>→'+outgoing+'</span>':'')
+  :'<span class="fold-empty">—</span>';
+ return '<button type="button" class="wire-fold-summary" data-action="wireExpand" aria-label="'+
+  escapeHtml(title)+'" title="'+escapeHtml(title)+'">'+content+'</button>';
+}
 function sectionSend(t){
  const source=tracks.find(x=>x.id===wireSourceId&&x.kind!=='master');
  const isSource=!!source&&source.id===t.id;
@@ -3378,7 +3654,7 @@ function sectionSend(t){
    '<div class="wire-deck-label">'+label+'</div>'+
    '<div class="wire-deck-status">'+status+'</div>'+
    '<div class="wire-deck-rail"></div>'+
-  '</div>'+wireTray(t)+'</div>';
+  '</div>'+wireTray(t)+compactWireSummary(t)+'</div>';
 }
 function formatDb(n){return n<=-60?'-∞':(n>0?'+':'')+Number(n).toFixed(1);}
 function panLabel(n){return Number(n)===0?'C':n<0?'L'+Math.abs(n):'R'+n;}
@@ -3411,9 +3687,9 @@ function strip(t){
  code+='<div class="section pan-section"><span class="pan-icon" title="Pan / Balance">PAN</span><span class="pan-control '+(t.pan===0?'is-centered':'')+'" style="'+panStyle(t.pan)+'"><input class="center-pan" type="range" min="-100" max="100" step="1" value="'+t.pan+'" data-field="pan" title="PAN center detent: capture ±7, hold ±12; release snaps center; double-click resets" aria-label="Channel pan; center detent" aria-valuetext="'+(t.pan===0?'Center':t.pan<0?'Left '+Math.abs(t.pan):'Right '+t.pan)+'"></span><output>'+panLabel(t.pan)+'</output></div>';
 
  code+='<div class="section switch-section">'
-   +'<button class="switch mute '+(t.mute?'on':'')+'" data-action="mute" title="Mute channel" aria-pressed="'+t.mute+'">MUTE</button>'
-   +'<button class="switch solo '+(t.solo?'on':'')+'" data-action="solo" title="Solo channel" aria-pressed="'+t.solo+'">SOLO</button>'
-   +'<button class="switch cue '+(t.cue?'on':'')+'" data-action="cue" title="Cue / PFL monitor bus (reference only)" aria-pressed="'+t.cue+'">PFL</button></div>';
+   +'<span class="hw-switch-socket"><button class="switch mute '+(t.mute?'on':'')+'" data-action="mute" title="Mute channel" aria-pressed="'+t.mute+'">MUTE</button></span>'
+   +'<span class="hw-switch-socket"><button class="switch solo '+(t.solo?'on':'')+'" data-action="solo" title="Solo channel" aria-pressed="'+t.solo+'">SOLO</button></span>'
+   +'<span class="hw-switch-socket"><button class="switch cue '+(t.cue?'on':'')+'" data-action="cue" title="Cue / PFL monitor bus (reference only)" aria-pressed="'+t.cue+'">PFL</button></span></div>';
  code+=sectionFader(t);
  code+='<div class="bottom-section"><div class="db-value">'+(sofEnabled&&t.kind==='audio'?'S ': '')+formatDb(sofEnabled&&t.kind==='audio'?getSofLevel(t):t.level)+'</div><div class="footer-label '+(t.kind==='master'?'master-label':t.kind==='bus'?'bus-label':'')+'"><span class="name" data-action="rename" title="Double-click to edit name, icon and color · F2" tabindex="0" role="button">'+escapeHtml(t.name)+'</span><span class="footer-icon" aria-hidden="true">'+escapeHtml(iconFor(t))+'</span><div class="color-strip"></div></div></div></article>';
  return code;
@@ -3952,6 +4228,7 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  const btn=e.target.closest('[data-action]');if(!btn)return;
  const t=findTrack(btn);if(!t)return;
  const a=btn.dataset.action;
+ if(a==='wireExpand'){document.querySelector('.section-rail [data-section="send"]')?.click();return;}
  if(wireSuppressClick&&['wireSource','wireRoute','wireRemove'].includes(a)){wireSuppressClick=false;return;}
  if(a==='wireSource'){
   selectWireSource(t);return;

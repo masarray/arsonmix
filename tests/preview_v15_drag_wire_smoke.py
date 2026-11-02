@@ -23,6 +23,48 @@ def main():
         page.on("pageerror",lambda err:errors.append(str(err)))
         page.goto(PAGE.as_uri())
         # V18 hardware key socket / shallow click / portrait meter smoke.
+        # V22 static overlaid metal socket and channel front-layer rim.
+        well=key.locator('xpath=..')
+        assert_true(well.evaluate("el=>el.classList.contains('hw-switch-socket')"),
+                    'Button must have an independently mounted stationary socket')
+        bezel=well.evaluate("""el=>({
+            z:getComputedStyle(el,'::after').zIndex,
+            cap:getComputedStyle(el.querySelector('button')).zIndex,
+            events:getComputedStyle(el,'::after').pointerEvents
+        })""")
+        assert_true(bezel['z']=='4' and bezel['cap']=='2' and bezel['events']=='none',
+                    'Outer hole lip must be layered above the moving cap')
+        well_y=well.bounding_box()['y']
+        key.scroll_into_view_if_needed()
+        rr=key.bounding_box()
+        page.mouse.move(rr['x']+rr['width']/2,rr['y']+rr['height']/2)
+        page.mouse.down()
+        assert_true(abs(well.bounding_box()['y']-well_y)<.25,
+                    'Static hole must not move while button depresses')
+        page.mouse.up()
+        selected=page.locator('#tracks .strip.selected').first
+        assert_true(selected.count()==1,'No selected channel to verify')
+        rim=selected.evaluate("""el=>({
+            z:getComputedStyle(el,'::after').zIndex,
+            border:getComputedStyle(el,'::after').borderTopWidth,
+            events:getComputedStyle(el,'::after').pointerEvents
+        })""")
+        assert_true(rim['z']=='60' and rim['border']=='2px' and rim['events']=='none',
+                    'Selected channel rim is buried behind mixer sections')
+        cap=page.locator('#tracks .strip[data-id="1"] .fader-travel .cap')
+        capStyle=cap.evaluate("""el=>({
+            w:getComputedStyle(el).width,h:getComputedStyle(el).height,
+            filter:getComputedStyle(el).filter
+        })""")
+        assert_true(capStyle['w']=='23px' and capStyle['h']=='48px' and
+                    capStyle['filter']=='none','Fader thumb is not compact/crisp')
+        track=page.locator('#tracks .strip[data-id="1"] .fader-travel')
+        travel=track.evaluate("""el=>({
+            top:getComputedStyle(el).top,bottom:getComputedStyle(el).bottom
+        })""")
+        assert_true(travel['top']=='24px' and travel['bottom']=='24px',
+                    'Fader slot not expanded consistently')
+        assert_true(not errors,'V22 browser errors: '+str(errors))
         key=page.locator('#tracks .strip[data-id="1"] button.switch.mute')
         initial=key.evaluate("""el=>({
           radius:getComputedStyle(el).borderRadius,
@@ -31,7 +73,7 @@ def main():
         })""")
         assert_true(initial['radius']=='2px','Hardware key must remain sharp-edged')
         assert_true(initial['filter']=='none','No GUI blur filter allowed')
-        assert_true(initial['bay']=='rgb(18, 35, 45)','Button socket cavity missing')
+        assert_true(initial['bay']=='rgb(8, 20, 27)','Button socket cavity missing')
         meter=page.locator('#tracks .strip[data-id="1"] .meter-lane').first
         led=meter.evaluate("""el=>({
           width:getComputedStyle(el).width,
@@ -61,11 +103,11 @@ def main():
         })""")
         assert_true(cube['bright']=='#586c79' and cube['deep']=='#202f39',
                     'V20 distinct light/dark lens materials missing')
-        assert_true('0px 3px 0px' in cube['shadow'],
-                    'V20 3px HARD cube sidewall missing')
+        assert_true('0px 2px 0px' in cube['shadow'],
+                    'V22 restrained HARD sidewall missing')
         assert_true('linear-gradient' in cube['background'] and
-                    'color(srgb' in cube['background'],
-                    'V20 internally lit gradient face missing')
+                    'color(srgb' not in cube['background'],
+                    'V22 smooth three-stop lens gradient missing')
         assert_true(cube['filter']=='none','V20 must avoid GPU blurring effects')
         key.click()
         assert_true(material(key)['face']=='#ae3346','V19 jewel ruby MUTE missing')
