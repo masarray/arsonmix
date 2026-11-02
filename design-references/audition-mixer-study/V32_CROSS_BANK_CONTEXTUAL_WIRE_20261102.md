@@ -5,7 +5,7 @@ Scope: **PR #278 browser GUI reference only**, not native ASIO / DSP / PCM. Exis
 ## User scenario
 1. Select CH01 **OUT**. This explicitly pins the source until a new OUT is selected or Escape unpins it. Selecting another strip's ordinary fader or name cannot silently retarget an active patch.
 2. Navigate BANK Next to CH11. The compact WIRE ledger says **FROM CH01 · Track 1 ↶** and **Click any IN on this bank**. The source chip returns to its bank without changing routing state.
-3. Existing edges (including active legacy SEND slots) appear as cables entering from a clearly labelled **CH01 · OTHER BANK** entry at the visible patch-bay boundary. Never draw a fictitious line to a hidden channel's arbitrary onscreen x-coordinate.
+3. Existing edges (including active legacy SEND slots) enter from a small colored boundary socket. The **FROM CH01** source identity stays in the fixed header; no micro-label may overlap the hanging cable. Never draw a fictitious line to a hidden channel's arbitrary onscreen x-coordinate.
 4. Click an IN on a remote bank: the same validated graph is used; duplicate SEND and feedback cycles remain blocked. Bus destination still requires VIA BUS ONLY / PARALLEL decision. CH01→CH11 is already enabled in the demo's legacy SEND slot; the IN is explicitly linked and duplicate insertion explains **ALREADY CONNECTED**. CH03→CH11 demonstrates a new parallel route.
 5. Returning to source bank preserves links and selection. The full routing remains independent of bank display.
 
