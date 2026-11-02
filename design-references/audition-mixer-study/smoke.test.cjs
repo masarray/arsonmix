@@ -717,7 +717,7 @@ check(strip(3).includes('class="wire-tray linked"') &&
   strip(4).includes('wire-pot is-idle'),
   'V17 turns only destination knob active without shifting any other channel layout');
 check(html.includes('function wirePathData(') && html.includes('function wireSnapTarget(') &&
-  html.includes('if(track.id===originDestId ? dist>31 : (dist>42&&!inside))continue') &&
+  html.includes('WIRE_MAGNET.release') && html.includes('wire-magnet-guide') &&
   html.includes('queueWireGestureFrame();') &&
   html.includes('const input=snap?.element||hit?.closest?.') &&
   !html.slice(html.indexOf('function renderWireRouting(){'),html.indexOf('function syncActiveSend(t){')).includes('stroke-dasharray') &&
@@ -849,8 +849,8 @@ node('reset').dispatch('click');
 // 23px rail. The default direct MAIN feed lives in I/O, not custom patch count.
 node('reset').dispatch('click');
 check(html.includes('data-section="route" aria-expanded="true" aria-label="Collapse input and output rack"') &&
- html.includes('>I/O</button>') && html.includes('>FX</button>') &&
- html.includes('title="Expand wire patch bay" aria-label="Expand wire routing area">W</button>') &&
+ html.includes('class="rail-svg-icon io-icon"') && html.includes('class="rail-svg-icon fx-icon"') &&
+ html.includes('class="rail-svg-icon wire-icon"') &&
  html.includes('content:""!important;display:block!important;') &&
  html.includes('function compactWireActivity(t){'),
  'V19 DAW rail has concise I/O, FX, W labels and no pseudo-caption OPEN/PATCH');
@@ -865,6 +865,37 @@ check(strip(3).includes('fold-in') && strip(3).includes('←1') &&
 wireTo(3);
 check(strip(3).includes('class="fold-empty"'),
  'V19 removing a custom incoming edge immediately restores neutral collapsed marker');
+node('reset').dispatch('click');
+
+
+// V22 image-derived rail SVGs and zero-latch Smart Wire magnet.
+check(html.includes('viewBox="0 0 64 64"') &&
+ html.includes('fill-rule="evenodd"') &&
+ html.includes('class="rail-svg-icon io-icon"') &&
+ html.includes('class="rail-svg-icon fx-icon"') &&
+ html.includes('class="rail-svg-icon wire-icon"'),
+ 'V22 has real reference-derived SVG FX/WIRE and physical I/O glyphs');
+check(html.includes('preview:26,release:22,retained:28,origin:31') &&
+ !html.includes('dist>42&&!inside') &&
+ html.includes("'release'):null;") && html.includes('wire-magnet-guide') &&
+ !html.includes('x1=rect.left-vp.left+rect.width/2'),
+ 'V22 hover cannot finalize, preview follows pointer and release uses 22px threshold');
+node('body').clientWidth=1680;node('reset').dispatch('click');
+document.querySelectorAll=k=>k==='.wire-node-in'?sockets:oldQs(k);
+function v22NewDrop(x,y,pid){
+ const jack={closest:k=>k==='.strip'?{dataset:{id:6}}:null,setPointerCapture(){}};
+ const nodeOut={closest:k=>k==='.wire-node-out'?jack:k==='.strip'?{dataset:{id:6}}:null};
+ node('body').handlers.pointerdown({target:nodeOut,button:0,pointerId:pid,clientX:720,clientY:430,preventDefault(){}});
+ fakeWindow.handlers.pointermove({pointerId:pid,clientX:x,clientY:y});
+ fakeWindow.handlers.pointerup({target:nodeOut,pointerId:pid,clientX:x,clientY:y});
+}
+v22NewDrop(336,430,201);
+check(!strip(3).includes('wire-node-in is-linked'),
+ 'V22 release 36px from socket must be rejected even in the WIRE bay');
+v22NewDrop(320,430,202);
+check(strip(3).includes('wire-node-in is-linked'),
+ 'V22 release 20px from receiving socket must snap and connect');
+document.querySelectorAll=oldQs;
 node('reset').dispatch('click');
 
 console.log('PASS '+cases.length+' reference mixer DOM checks');
