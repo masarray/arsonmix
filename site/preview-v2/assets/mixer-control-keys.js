@@ -46,7 +46,7 @@
       '<rect width="'+width+'" height="'+height+'" fill="black"/>'+
       '<rect x="1" y="1" width="'+round(w-2)+'" height="'+round(h-2)+'" rx="'+radius+'" fill="white"/>'+
       '<text x="'+x+'" y="'+y+'" text-anchor="middle" '+
-      'font-family="Arial,Helvetica,sans-serif" font-size="'+round(size)+'" '+
+      'font-family="ArSonMix Inter,Arial,Helvetica,sans-serif" font-size="'+round(size)+'" '+
       'font-weight="700" letter-spacing=".2" fill="black">'+safe+'</text></mask></defs>'+
       '<rect x=".5" y=".5" width="'+round(w-1)+'" height="'+round(h-1)+'" rx="'+round(rx+1)+'" fill="#0b1920"/>'+
       // White/ice ambience SHINES through the single letter knockout while OFF.

@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="dark">
 <title>ArSonMix — Live Console Reference</title>
-<style>
+<style>/* V7 retired orphan mini/phase/FX CSS removed. Utility controls now owned by assets/mixer-utility-controls.css; WIRE and fader declarations left intact. */
+
 :root{
   color-scheme:dark;--bg:#242424;--panel:#222325;--panel2:#292a2c;
   --rule:#131415;--line:#424446;--ink:#c7c8c8;--dim:#8d9092;--blue:#49a5c8;
@@ -86,7 +87,6 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .route-indicator{color:#8c9193;font-size:11px}
 .group-indicator{font-size:9px;color:#a4d0dc;background:#334e59;padding:0 3px;border:1px solid #406f7d;border-radius:2px}
 .safe-marker{color:#e1bd87;font-size:7px;font-weight:600;letter-spacing:0;border:1px solid #8b744a;padding:0 1px}
-.format-badge{font-size:9px;color:#8fc2cf;min-width:15px;width:auto;padding:0 1px}
 .meter-box.mono .meter-lane{max-width:13px;margin:0 auto}
 .console-body.sends-mode .strip.audio .footer-label{background:#2b4048}
 .console-body.sends-mode .strip.audio .db-value{color:#8ddae6}
@@ -97,11 +97,6 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .subhead .sym{font-size:13px;font-style:italic;font-family:Georgia,serif;color:#b4b8b9;flex:0 0 auto}
 .subhead .hint{font-size:9px;color:#94999c;flex:1 1 0;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .subhead .push{margin-left:auto;min-width:0}
-.mini{width:17px;height:17px;flex:0 0 17px;min-width:0;border:0;border-radius:1px;color:#979b9e;background:transparent;padding:0;line-height:17px;text-align:center}
-.mini:hover{background:#434749}
-.mini.power.on{color:#55bb86}
-.mini.phase.on{background:#994c4b;color:#fff}
-.mini.pre.on{color:#aed7e8}
 .fx-section{height:var(--fx-h);flex:0 0 var(--fx-h);min-height:0;display:flex;flex-direction:column;padding:0 3px 1px}
 .fxslot-row{display:flex;align-items:center;height:20px;border-bottom:1px solid #303234;gap:2px}
 .fxslot-row:last-child{border-bottom:0}
@@ -227,8 +222,6 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .fx-pick{flex:1 1 0;min-width:0;max-width:100%;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;appearance:none;background:transparent;border:0;height:18px;padding:0 2px;color:#bdcad0;font-size:10px;cursor:pointer}
 .fx-pick.empty{color:#7c8589}
 .fx-pick:hover,.fx-pick:focus-visible{background:#3d4c52}
-.fx-remove{height:17px;width:14px;flex:0 0 14px;padding:0;border:0;background:transparent;color:#657379;cursor:pointer}
-.fx-remove:hover{background:#553a38;color:#f4c1b9}
 @media(max-width:940px){.plugin-browser{right:111px;width:min(310px,calc(100% - 148px))}}
 
 
@@ -254,8 +247,6 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .send-header .pre{width:23px;min-width:23px;flex:0 0 23px;font-size:9px}
 .send-header .power{flex:0 0 17px}
 .fx-section .subhead .power{flex:0 0 17px}
-.fxslot-row .mini{flex:0 0 16px;width:16px}
-.fxslot-row .fx-remove{flex:0 0 13px;width:13px}
 @media(max-height:750px){
  .fx-section .subhead{height:20px;min-height:20px;flex-basis:20px}
  .eq-header{height:19px;min-height:19px;flex-basis:19px}
@@ -329,12 +320,10 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .console-body.collapsed-route .route-section{padding:2px 6px}
 .console-body.collapsed-route .route-top{height:18px;min-height:18px;flex-basis:18px;border:0}
 .console-body.collapsed-route .route-select{display:none}
-.console-body .format-badge{width:auto;min-width:26px;flex:0 0 auto;border-radius:2px;color:#d0ebf3;background:#263b44;font-size:10px;padding:0 3px}
 .console-body .subhead,.console-body .send-header,.console-body .eq-header{color:#b8c9d0;white-space:nowrap}
 .console-body .fxslot-row{padding:0 1px}
 .console-body .fx-pick{font-size:10.5px;color:#ced9dd}
 .console-body .fxslot-row:hover{background:#333d42}
-.console-body .fxslot-row .power{color:#c4dce1}
 .console-body .send-select{font-size:11px;background:#222e34;color:#d6e0e5}
 .console-body .sendlevel input{accent-color:#8bbed0}
 .console-body .send-compact{font-size:10px}
@@ -531,10 +520,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 
 /* Comfort hit-target and channel-role fader accents (iGPU-safe static paint). */
 .console-body[data-density="comfort"] .fxslot-row{height:24px;min-height:24px;flex-basis:24px;gap:3px}
-.console-body[data-density="comfort"] .fxslot-row .mini{width:20px;height:20px;flex:0 0 20px;line-height:20px}
-.console-body[data-density="comfort"] .fxslot-row .fx-remove{width:19px;height:20px;flex:0 0 19px;font-size:14px}
 .console-body[data-density="comfort"] .fx-pick{font-size:11px;height:22px}
-.console-body[data-density="comfort"] .eq-header .mini,.console-body[data-density="comfort"] .send-header .mini{height:21px;min-width:20px;line-height:21px}
 .console-body .strip:not(.master) .fader::-webkit-slider-thumb{
   background:
     repeating-linear-gradient(to bottom,transparent 0,transparent 5px,rgba(25,33,43,.45) 5px,rgba(25,33,43,.45) 6px,transparent 6px,transparent 9px),
@@ -1524,7 +1510,6 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
 .console-body.collapsed-send .strip .send-header{
  height:22px!important;min-height:22px!important;flex:0 0 22px!important}
 .console-body.collapsed-send .strip .send-header .send-slot,
-.console-body.collapsed-send .strip .send-header .mini.pre{display:none!important}
 .console-body.collapsed-send .strip .send-header .send-compact{
  display:block!important;flex:1 1 0!important;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .console-body.collapsed-send .strip .send-header .push{display:none!important}
@@ -3331,16 +3316,6 @@ html * ,html *::before,html *::after{
 /* Icons are inline Material vectors: independent of OS font fallback,
    external CDN, SVG filters and extra fonts; keep buttons tactile. */
 .mi-svg{display:inline-block;vertical-align:middle;flex:0 0 auto;pointer-events:none}
-.console-body .fx-section .mini.power{
- display:inline-flex!important;align-items:center!important;justify-content:center!important;
- line-height:1!important;
-}
-.console-body .fx-section .mini.power .mi-svg{width:15px;height:15px}
-.console-body .fx-section .mini.power.on .mi-svg{fill:currentColor}
-.console-body .fx-section .fx-remove{
- display:inline-flex;align-items:center;justify-content:center;
-}
-.console-body .fx-section .fx-remove .mi-svg{width:14px;height:14px}
 .console-body .fx-section .grip{display:inline-flex;align-items:center;justify-content:center}
 .console-body .fx-section .grip .mi-svg{width:13px;height:15px}
 .mixer-title .panel-sub{display:inline-flex;align-items:center;justify-content:center}
@@ -3789,6 +3764,8 @@ html * ,html *::before,html *::after{
 
 </style>
 <link rel="stylesheet" href="assets/mixer-control-keys.css">
+<link rel="stylesheet" href="assets/mixer-utility-controls.css">
+<link rel="stylesheet" href="assets/inter-embedded.css">
 
 </head>
 <body>
@@ -3997,11 +3974,11 @@ function sectionFx(t){
  const used=t.fx.map((name,i)=>({name,i})).filter(x=>x.name!=='None');
  const first=t.fx.findIndex(x=>x==='None');
  const rows=used.concat(first<0?[]:[{name:'None',i:first}]);
- let out='<div class="section fx-section"><div class="subhead"><span class="sym">fx</span><span class="hint">FX '+used.length+'</span><span class="push"></span><button class="mini power '+(t.fxOn?'on':'')+'" data-action="fxOn" title="Bypass all effects" aria-label="Toggle effects" aria-pressed="'+Boolean(t.fxOn)+'">'+materialIcon("power_settings_new")+'</button></div><div class="fxslot-list">';
+ let out='<div class="section fx-section"><div class="subhead"><span class="sym">fx</span><span class="hint">FX '+used.length+'</span><span class="push"></span><button class="mx-util-key" data-util-kind="fx-main" data-action="fxOn" title="Bypass all effects" aria-label="Toggle effects" aria-pressed="'+Boolean(t.fxOn)+'">'+materialIcon("power_settings_new")+'</button></div><div class="fxslot-list">';
  for(const {name,i} of rows){
-  out+='<div class="fxslot-row" draggable="'+(name!=='None')+'" data-slot="'+i+'" title="Insert '+(i+1)+'"><button class="mini power '+(name!=='None'&&!t.slotBypass[i]?'on':'')+'" data-action="slotPower" data-slot="'+i+'" title="Toggle effect" aria-label="Toggle effect slot '+(i+1)+'" aria-pressed="'+Boolean(name!=='None'&&!t.slotBypass[i])+'">'+materialIcon("power_settings_new")+'</button>';
+  out+='<div class="fxslot-row" draggable="'+(name!=='None')+'" data-slot="'+i+'" title="Insert '+(i+1)+'"><button class="mx-util-key" data-util-kind="fx-slot" data-action="slotPower" data-slot="'+i+'" title="Toggle effect" aria-label="Toggle effect slot '+(i+1)+'" aria-pressed="'+Boolean(name!=='None'&&!t.slotBypass[i])+'">'+materialIcon("power_settings_new")+'</button>';
   out+='<button class="fx-pick '+(name==='None'?'empty':'')+'" data-action="openPlugin" data-slot="'+i+'" aria-label="Choose plugin for '+escapeHtml(t.name)+' insert '+(i+1)+'">'+(name==='None'?'+ Add FX':escapeHtml(name))+'</button>';
-  if(name!=='None')out+='<button class="fx-remove" data-action="removeFx" data-slot="'+i+'" title="Remove insert '+(i+1)+'" aria-label="Remove insert '+(i+1)+'">'+materialIcon("close")+'</button><span class="grip" title="Drag reorder" aria-hidden="true">'+materialIcon("drag_indicator")+'</span>';
+  if(name!=='None')out+='<button class="mx-util-key" data-util-kind="fx-remove" data-action="removeFx" data-slot="'+i+'" title="Remove insert '+(i+1)+'" aria-label="Remove insert '+(i+1)+'">'+materialIcon("close")+'</button><span class="grip" title="Drag reorder" aria-hidden="true">'+materialIcon("drag_indicator")+'</span>';
   out+='</div>';
  }
  return out+'</div></div>';
@@ -4304,7 +4281,7 @@ function sectionFader(t){
 function strip(t){
  let code='<article class="strip '+t.kind+(t.selected?' selected':'')+'" data-id="'+t.id+'" style="--track-color:'+t.color+';--ch:'+t.color+'" aria-label="'+escapeHtml(t.name)+' channel">';
  code+='<button type="button" class="strip-identity-top" '+(t.kind==='master'?'':'draggable="true" ')+'data-action="editIdentity" title="'+(t.kind==='master'?'Double-click to edit channel identity':'Drag to arrange · Alt+arrows move · double-click/F2 edit')+'" aria-label="Double-click to edit '+escapeHtml(t.name)+' channel identity"><span class="identity-number">'+(t.kind==='master'?'MASTER':'CH '+String(t.id).padStart(2,'0'))+'</span><span class="identity-name">'+escapeHtml(t.name)+'</span><span class="identity-symbol" aria-hidden="true">'+escapeHtml(iconFor(t))+'</span></button>';
- code+='<div class="section route-section"><div class="route-top"><span class="route-indicator">'+(t.kind==='audio'?'▥':t.kind==='bus'?'↪':t.kind==='fx'?'∿':'➜')+'</span>'+(t.safe?'<span class="safe-marker" title="Snapshot safe · recall protected">SAFE</span>':'')+(t.group?'<span class="group-indicator" title="Linked group '+escapeHtml(t.group)+'">'+escapeHtml(t.group)+'</span>':'')+(t.kind==='audio'?'<button class="mini format-badge" data-action="format" title="Processing width M/ST (preserves physical input source)">'+(t.format==='mono'?'M':'ST')+'</button>':'')+(t.kind!=='master'&&wireOutgoingCount(t.id)?'<span class="split-count" title="GUI-only routing destinations · no native PCM">⇢'+wireOutgoingCount(t.id)+'</span>':'')+'<button class="mini phase '+(t.phase?'on':'')+'" data-action="phase" title="Reverse polarity">'+(t.phase?'Ø':'⊘')+'</button></div>';
+ code+='<div class="section route-section"><div class="route-top"><span class="route-indicator">'+(t.kind==='audio'?'▥':t.kind==='bus'?'↪':t.kind==='fx'?'∿':'➜')+'</span>'+(t.safe?'<span class="safe-marker" title="Snapshot safe · recall protected">SAFE</span>':'')+(t.group?'<span class="group-indicator" title="Linked group '+escapeHtml(t.group)+'">'+escapeHtml(t.group)+'</span>':'')+(t.kind==='audio'?'<button class="mx-util-key" data-util-kind="format" data-action="format" aria-label="Toggle mono stereo processing width" aria-pressed="'+(t.format==='stereo')+'" title="Processing width M/ST (preserves physical input source)">'+(t.format==='mono'?'M':'ST')+'</button>':'')+(t.kind!=='master'&&wireOutgoingCount(t.id)?'<span class="split-count" title="GUI-only routing destinations · no native PCM">⇢'+wireOutgoingCount(t.id)+'</span>':'')+'<button class="mx-util-key" data-util-kind="phase" data-action="phase" aria-label="Reverse polarity" aria-pressed="'+Boolean(t.phase)+'" title="Reverse polarity">'+(t.phase?'Ø':'⊘')+'</button></div>';
  if(t.kind==='audio')code+='<div class="route-field"><span class="route-caption">IN</span><select class="route-select" data-field="input" title="Input source (demo choices)" aria-label="'+escapeHtml(t.name)+' input">'+option(channelOptions(t,'input'),t.input)+'</select></div>';
  else if(t.kind==='bus'||t.kind==='fx')code+='<div class="route-field"><span class="route-caption">IN</span><span class="route-identity">'+(t.kind==='bus'?'GROUP':'FX RETURN')+'</span></div>';
  else code+='<div class="route-field"><span class="route-caption">IN</span><span class="route-identity">SUM BUS</span></div>';

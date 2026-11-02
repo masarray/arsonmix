@@ -85,6 +85,8 @@ jobs:
         run: python tests/pan_button_asset_test.py
       - name: Validate linked 11-strip geometry and LV1-style rail workspace
         run: python tests/mixer_shell_geometry_smoke.py
+      - name: Verify embedded Inter font and contextual V7 micro-controls
+        run: python tests/pages_inter_utility_v7_smoke.py
       - name: Verify owned V6 mixer hardware keys and WIRE regression
         run: python tests/pages_controls_v6_smoke.py
       - name: Run mixer UI smoke tests
@@ -125,6 +127,7 @@ jobs:
             fader-ui-smoke.png
             toolbar-global-btn180-pad.png
             device-green-on-palette-review.png
+            pages-v7-embedded-inter-utility-1680.png
             pages-mixer-v6-OFF-1680.png
             pages-mixer-v6-ON-1680.png
             mixer-design-review.png

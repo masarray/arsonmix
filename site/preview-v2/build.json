@@ -1,5 +1,5 @@
 {
-  "version": "preview-v38-mixer-backlit-v6-css-owner",
+  "version": "preview-v39-inter-font-utility-controls-v7",
   "kind": "GUI_REFERENCE_ONLY",
   "live_audio": false,
   "source_pr": 285,
@@ -22,7 +22,7 @@
     "V5 backlit MUTE/SOLO/PFL — semantic LED via single SVG mask",
     "V5 cue, phase, FX and SEND toggles (UI reference, no audio)"
   ],
-  "preserved": "Latest WIRE V36 controls, routing, FX functionality, meter & faders unchanged",
+  "preserved": "WIRE V36, bus routing, FX graph/faders/meter, native engine unchanged",
   "limitations": "Static WIRE GUI reference only; not native PCM/ASIO/VST3 routing",
   "routes": [
     "/preview/",
@@ -42,6 +42,8 @@
   "button_material": "V6 refactored 29px hardware keys: readable ice-white OFF cutouts, context red/yellow/cyan ON",
   "button_source": "GUI PR #271 / merged button PR #286",
   "preview_qa": "Pending Chromium Pages V5 acceptance",
-  "css_ownership": "Single assets/mixer-control-keys.css, legacy CodePen and stacked V5 rules removed from preview",
-  "button_control_validation": "Chromium M/S/PFL cross-bank geometry and no fallback CSS interference"
+  "css_ownership": "MUTE/SOLO/PFL: mixer-control-keys.css; FX/phase/format/remove: mixer-utility-controls.css; typography: inter-embedded.css",
+  "button_control_validation": "Chromium M/S/PFL cross-bank geometry and no fallback CSS interference",
+  "font": "Embedded Inter variable WOFF2 for all GUI text, including SVG legends and offline Pages",
+  "utility_controls": "17px FX power/insert, 15px phase and M/ST, 13px FX remove; semantic color by function; no hover animations"
 }

@@ -151,9 +151,11 @@ def main():
                     'Plugin Manager must stay modeless while mixing')
         page.locator('#pluginClose').click()
         # 17px utility power retains the compact Material icon, not a cramped keycap.
-        svg=page.locator('#tracks .strip[data-id="1"] .fx-section .mini.power .mi-svg').first
+        svg=page.locator('#tracks .strip[data-id="1"] .fx-section .mx-util-key[data-util-kind="fx-main"] .mi-svg').first
         assert_true(svg.count()==1 and svg.locator('path').count()==1,
-                    'Compact FX power must keep readable SVG icon')
+                    'Compact FX power must keep readable SVG icon under the V7 utility owner')
+        assert_true(page.locator('#tracks .strip[data-id="1"] .fx-section .mini.power').count()==0,
+                    'Old FX power style ownership must be retired')
         assert_true(page.locator('.mixer-title .panel-sub svg.mi-svg').count()==1,
                     'Mixer panel icon must be SVG not fallback text symbol')
         selected=page.locator('#tracks .strip.selected').first
