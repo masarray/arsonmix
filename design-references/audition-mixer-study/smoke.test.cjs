@@ -961,25 +961,28 @@ check(html.includes('wire-map-chip') && html.includes('--wire-hue:') &&
 node('reset').dispatch('click');
 
 
-// V29: User's attached 3D graphite buttons are the literal material source.
-// Raised and recessed visual states must not alter independent mixer toggles.
-check(html.includes('--am-3d-top:#333') && html.includes('--am-3d-bottom:#222') &&
- html.includes('--am-3d-selected-top:#202020') &&
- html.includes('--am-3d-selected-bottom:#151515') &&
- html.includes('--am-3d-hover-top:#373737') &&
- html.includes('--am-3d-hover-bottom:#262626'),
- 'V29 raised, hovered and selected graphite faces match user-uploaded CSS');
-check(html.includes('.hw-switch-socket>.switch.on') &&
- html.includes('box-shadow:inset 0 1px 6px rgba(0,0,0,.62)') &&
- html.includes('--am-3d-led:#f17380') &&
- html.includes('--am-3d-led:#efcc5e') &&
- html.includes('--am-3d-led:#6dd2ec'),
- 'V29 MUTE/SOLO/PFL pressed 3D relief and color-coded thin indicator edges');
-check(html.includes('data-action="mute"') &&
- html.includes('data-action="solo"') &&
- html.includes('data-action="cue"') &&
- !html.includes('cdnjs.cloudflare.com/ajax/libs/jquery'),
- 'V29 preserves 3 independent original button toggles, with no reference jQuery radio dependency');
+// V30: Raised bright graphite must be distinct from dark chassis,
+ // while the active key is independently recessed in static housing.
+check(html.includes('--am-key30-top:#738692') &&
+ html.includes('--am-key30-bottom:#354750') &&
+ html.includes('--am-key30-down-top:#27353d') &&
+ html.includes('--am-key30-down-bottom:#151e25') &&
+ html.includes('--am-key30-hover-top:#8296a0'),
+ 'V30 physical idle, hover and depressed material tokens are present');
+check(html.includes('hw-switch-socket::after') &&
+ html.includes('z-index:4!important') &&
+ html.includes('pointer-events:none!important') &&
+ html.includes('0 2px 0 #060c10') &&
+ html.includes('inset 0 2px 1px #000b'),
+ 'V30 static upper socket bezel, 2px hard extrusion and recessed cap');
+check(html.includes('--am-key30-led:#ef6376') &&
+ html.includes('--am-key30-led:#f6d16b') &&
+ html.includes('--am-key30-led:#78d3e9') &&
+ !html.includes('/* V29 — Dan Andersson'),
+ 'V30 state light is a crisp colored edge, not blurred neon text');
+check(html.includes('data-action="mute"') && html.includes('data-action="solo"') &&
+ html.includes('data-action="cue"') && !html.includes('cdnjs.cloudflare.com/ajax/libs/jquery'),
+ 'V30 retains three independent mixer buttons and no external jQuery dependency');
 
 // V30 display modes: never mutate graph; view is an explicit operator choice.
 node('reset').dispatch('click');
