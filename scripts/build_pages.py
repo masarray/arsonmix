@@ -53,7 +53,7 @@ assert '<style>' in html and '<script>' in html and ('data-fader' in html or 'da
 # One owner produces the SAME fingerprinted HTML for preview/ and preview-v2/.
 asset_sources={}
 asset_url_pattern=re.compile(
-    r"""(?P<lead>\\b(?:href|src)=["'])(?P<url>assets/(?P<name>[A-Za-z0-9._-]+\\.(?:css|js)))(?:\\?[^"']*)?(?P<tail>["'])"""
+    r"""(?P<lead>\b(?:href|src)=["'])(?P<url>assets/(?P<name>[A-Za-z0-9._-]+\.(?:css|js)))(?:\?[^"']*)?(?P<tail>["'])"""
 )
 def version_asset(match):
     name=match.group('name')
