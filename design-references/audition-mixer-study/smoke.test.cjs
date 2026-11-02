@@ -980,5 +980,34 @@ check(html.includes('data-action="mute"') &&
  html.includes('data-action="cue"') &&
  !html.includes('cdnjs.cloudflare.com/ajax/libs/jquery'),
  'V29 preserves 3 independent original button toggles, with no reference jQuery radio dependency');
+
+// V30 display modes: never mutate graph; view is an explicit operator choice.
+node('reset').dispatch('click');
+check(html.includes('id="wireView"') &&
+ html.includes('<option value="focus">Focus</option>') &&
+ html.includes('<option value="out">OUT only</option>') &&
+ html.includes('<option value="all">All wires</option>'),
+ 'V30 compact user-selectable Focus, OUT only and All wire display modes');
+check(node('wireView').value==='focus',
+ 'V30 Focus is default after reset; no global cable clutter');
+const snapshot30=node('tracks').innerHTML;
+node('wireView').value='out';node('wireView').dispatch('change');
+check(node('wireView').value==='out' && node('tracks').innerHTML===snapshot30 &&
+ node('info').textContent.includes('display only'),
+ 'V30 OUT view changes paint only and does not rebuild or rewrite mixer graph');
+node('wireView').value='all';node('wireView').dispatch('change');
+check(node('wireView').value==='all' && node('tracks').innerHTML===snapshot30,
+ 'V30 All view remains display-only and preserves channel geometry');
+check(html.includes("if(wireView==='all'&&!dragging)") &&
+ html.includes('class="wire-context-line"') &&
+ html.includes("const incoming=wireView==='out'?[]:") &&
+ html.includes("if(edge.sourceId===source.id||edge.destId===source.id)continue;"),
+ 'V30 ALL only draws separate other-channel routes behind focused paths');
+check(html.indexOf('class="wire-context-line"')<html.indexOf('class="wire-incoming-line"') &&
+ html.indexOf('class="wire-incoming-line"')<html.indexOf('class="wire-outgoing-line"'),
+ 'V30 paint order is background context, incoming, bright outgoing');
+node('reset').dispatch('click');
+check(node('wireView').value==='focus',
+ 'V30 reset restores Focus with graph/editor defaults intact');
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
