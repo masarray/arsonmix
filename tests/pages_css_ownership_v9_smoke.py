@@ -12,7 +12,7 @@ OWNERS = [('mixer-pan-controls.css', 30, '.center-pan'),
 
 def source_gate():
     html = HTML.read_text('utf-8')
-    inline = html.split('<style>', 1)[1].split('</style>', 1)[0]
+    inline = ''.join(re.findall(r'<style(?:\s[^>]*)?>(.*?)</style>', html, re.S))
     assert len(inline) < 191_000, ('owner styles still inline', len(inline))
     assert inline.count('!important') < 1500, 'inline specificity growing'
     for name, rules, selector in OWNERS:
