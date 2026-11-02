@@ -1,8 +1,8 @@
 {
-  "version": "preview-v14.1-dark-smart-fold",
+  "version": "preview-v16-smart-fader-dnd",
   "source_pr": 278,
-  "source_sha": "ae0d05c7dc5f3e6e3c6dbe1dfc41a632006364e7",
-  "source_content_sha": "e0443639e3ba8dd6fb5de94f149601ebccc6c60e",
+  "source_sha": "10ac1f9fb93995e05ec160bab91725308a2ce0ef",
+  "source_content_sha": "b2e0b67874f6aebe773f2bb7f3935ee0afe09618",
   "routes": [
     "/preview/mixer.html",
     "/preview-v2/"
@@ -13,5 +13,5 @@
   "geometry": "80/160px wire panel, P0 stationary lower PAN/SWITCH/FADER/FOOTER and FX absorbing all ROUTE/WIRE fold differences, flat anodized finish",
   "test": "196/196 reference DOM/workflow checks PASS; exact main Chromium CI required",
   "native": "Not actual ASIO/VST3 PCM routing, not native accepted graph ACK; browser preview only",
-  "milestone": "Only 3-way ROUTE+FX+SEND collapse grows fader upward; SEND collapse removes wire bay and SVG view without deleting 1:N links; darker premium satin plates"
+  "milestone": "FX+SEND collapsed reallocates empty upper space into fader; front channel seams; drag arrangement preserving stable ChannelIds and routing"
 }

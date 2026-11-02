@@ -135,15 +135,15 @@ def audit_p0_collapse(page, label):
         for i,item in enumerate(frame['items']):
             for k in anchor:
                 ref=first[k]
-                if state=='111' and k in ('pan','switch','fader'):
+                if state in ('011','111') and k in ('pan','switch','fader'):
                     if k in ('pan','switch'):
                         assert abs(item[k]['h']-ref['h'])<=1.2,(
                             label,state,i,k,'PAN/SWITCH height must stay calibrated')
                     else:
                         assert item[k]['h']>ref['h']+75,(
-                            label,state,i,k,'ALL CLOSED must grow physical fader')
+                            label,state,i,k,'FX+SEND CLOSED must grow physical fader')
                     assert item[k]['top']<ref['top']-35,(
-                        label,state,i,k,'ALL CLOSED must raise lower controls')
+                        label,state,i,k,'FX+SEND CLOSED must raise lower controls')
                 else:
                     assert abs(item[k]['top']-ref['top'])<=1.2,(
                         label,state,i,k,'lower section Y jumped',ref,item[k])
@@ -179,6 +179,11 @@ def audit_p0_collapse(page, label):
                 label,state,'expanded route disclosure reports collapsed')
     assert states['100']['items'][0]['fx']['h']>first['fx']['h']+40,(
         label,'ROUTE collapse did not expand FX')
+    # Either ROUTE state must give reclaimed FX+SEND room to fader.
+    assert states['011']['items'][0]['fader']['h']>first['fader']['h']+75,(
+        label,'ROUTE open, FX+SEND closed: fader must consume blank area')
+    assert states['111']['items'][0]['fader']['h']>=states['011']['items'][0]['fader']['h']+35,(
+        label,'collapsing ROUTE too must free additional fader height')
     assert states['001']['items'][0]['fx']['h']>first['fx']['h']+55,(
         label,'SEND collapse did not expand FX')
     assert states['001']['items'][0]['fx']['list']>first['fx']['list']+50,(
@@ -226,6 +231,47 @@ def audit_p0_pan_center(page, name):
     pan.press('ArrowLeft')
     assert pan.input_value()=='0',(name,'Keyboard cannot return center')
 
+
+
+def audit_channel_rearrange(page,label):
+    """Actually drag a header right/left; channel IDs and wire state stay put."""
+    first=page.locator('#tracks .strip[data-id="1"] .strip-identity-top')
+    target=page.locator('#tracks .strip[data-id="4"] .strip-identity-top')
+    before=page.evaluate("""() => ({
+        ids:[...document.querySelectorAll('#tracks .strip')].map(e=>Number(e.dataset.id)),
+        source:tracks.find(t=>t.id===1).fx[0],
+        wires:JSON.stringify(wireEdges),
+        master:document.querySelector('#master .strip')?.dataset.id
+    })""")
+    assert before['ids'][:4]==[1,2,3,4],(label,'unexpected starting bank order',before)
+    bb=target.bounding_box()
+    first.drag_to(target,target_position={"x":bb["width"]-5,"y":bb["height"]/2})
+    after=page.evaluate("""() => ({
+        ids:[...document.querySelectorAll('#tracks .strip')].map(e=>Number(e.dataset.id)),
+        source:tracks.find(t=>t.id===1).fx[0],
+        wires:JSON.stringify(wireEdges),
+        master:document.querySelector('#master .strip')?.dataset.id
+    })""")
+    assert after['ids'][:4]==[2,3,4,1],(label,'drag right did not rearrange channels',after)
+    assert after['source']==before['source'] and after['wires']==before['wires'],(
+        label,'reorder mutated FX / signal routing')
+    assert after['master']==before['master'],(label,'pinned MAIN moved')
+    if page.viewport_size['width']==1711:
+        page.screenshot(path=str(ROOT / "preview-v16-reordered-1711.png"))
+    # Accessible keyboard rearrangement uses same model operation.
+    header=page.locator('#tracks .strip[data-id="1"] .strip-identity-top')
+    header.focus()
+    header.press('Alt+ArrowLeft')
+    ids=page.locator('#tracks .strip').evaluate_all(
+        "(xs)=>xs.map(x=>Number(x.dataset.id))")
+    assert ids[:4]==[2,3,1,4],(label,'Alt+left did not move channel',ids)
+    header=page.locator('#tracks .strip[data-id="1"] .strip-identity-top')
+    header.drag_to(page.locator('#tracks .strip[data-id="2"] .strip-identity-top'),
+        target_position={"x":5,"y":10})
+    ids=page.locator('#tracks .strip').evaluate_all(
+        "(xs)=>xs.map(x=>Number(x.dataset.id))")
+    assert ids[:4]==[1,2,3,4],(label,'drag left failed to restore arrangement',ids)
+    return True
 
 
 def main():
@@ -294,6 +340,7 @@ def main():
                 page.locator('#bankNext').click()
                 audit_geometry(page,f"{width}x{height} next bank");count+=1
                 page.locator('#bankPrev').click()
+                audit_channel_rearrange(page,f"{width}x{height} arrangement");count+=1
                 assert not errors, f"{width}x{height}: JavaScript runtime errors {errors}"
                 page.close()
             # The URL explicitly requested by the owner is an independent
