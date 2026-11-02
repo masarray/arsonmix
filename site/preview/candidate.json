@@ -2,10 +2,10 @@
   "kind": "REFERENCE_WORKFLOW_QA_ONLY",
   "source_pr": 278,
   "source_branch": "main/site/preview-v2",
-  "source_sha": "1b272065c8dbf38d48847da0bb584766b7de37ba",
-  "source_blob_sha": "4039d4577745c0ed4dc6406db96425de13b95bdb",
-  "ci_run": 41425858405,
+  "source_sha": "434bd0867eb7eca2af7bd1a4d7d92fdae52d56f7",
+  "source_blob_sha": "02fbdc93a956b2ad2e826ebdc8051140c100d6ec",
+  "ci_run": 41435417991,
   "ci_conclusion": "success",
   "live_audio": false,
-  "note": "V26: per selected channel IN (thin translucent source hue) behind OUT (bright destination hue), two-direction compact legend incl legacy Sends and Bus; preview HTML and metadata atomic. GUI only."
+  "note": "V29 user-uploaded raised/recessed graphite 3D hardware buttons with independent MUTE SOLO PFL + all previous qualified Focus routing. Atomic HTML snapshot, GUI only."
 }
