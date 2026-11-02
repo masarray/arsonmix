@@ -1069,7 +1069,7 @@ check(html.includes('(y0+control).toFixed(1)') &&
  !html.includes('(y0-rise).toFixed(1)'),
  'V31 both cubic control points hang BELOW their anchors, including right-to-left routes');
 check(html.includes('let wireMotion={key:null,offset:0,token:0}') &&
- html.includes('frame<14') &&
+ html.includes('frame<20') &&
  html.includes('wireMotion.offset=3.8*Math.exp(-frame*.15)*Math.cos(frame*.23)') &&
  html.includes('paint(3.8)') &&
  html.includes('data-wire-destination') &&
