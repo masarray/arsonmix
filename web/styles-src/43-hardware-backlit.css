@@ -137,6 +137,15 @@
 #app #mixer .utility-row button.mx-hw-key {
   flex:1 1 0;
 }
+/* The legacy MASTER MUTE was sized only by .candy. Own its 29px geometry
+   explicitly after replacing that obsolete class, matching every strip. */
+#app #masterLeft .master-actions button.mx-hw-key,
+#app #masterMute.mx-hw-key{
+  height:29px!important;
+  min-height:29px!important;
+  max-height:29px!important;
+  align-self:center!important;
+}
 #app #mixer [data-channel-format-toggle].mx-hw-key{
   min-width:20px!important;
 }
