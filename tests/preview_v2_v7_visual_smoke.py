@@ -13,7 +13,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 PAGE = (ROOT / "site/preview-v2/index.html").resolve()
 PUBLIC = (ROOT / "_preview-public-qa/preview/mixer.html").resolve()
-SIZES = [(1366, 768), (1666, 888), (1920, 1080)]
+SIZES = [(1366, 768), (1666, 888), (1711, 1005), (1920, 1080)]
 
 
 def audit_geometry(page, title):
@@ -78,74 +78,78 @@ def audit_geometry(page, title):
 
 
 
-def audit_p0_collapse(page, name):
-    """Expanded-route rack has four visible rows, proportional fader; no ROUTE jump."""
-    data=page.evaluate("""() => {
-        const body=document.querySelector('.console-body');
-        const rail=document.querySelector('.section-rail');
-        const strips=[...document.querySelectorAll('#tracks .strip'),
-          document.querySelector('#master .strip')].filter(Boolean);
-        const read=()=>({
-          route:body.classList.contains('collapsed-route'),
-          send:body.classList.contains('collapsed-send'),
-          fx:body.classList.contains('collapsed-fx'),
-          cells:strips.map(s=>{
-            const box=selector=>s.querySelector(selector).getBoundingClientRect();
-            const fx=box('.fx-section'),fader=box('.fader-section');
-            return {fx:fx.height,fader:fader.height,top:fader.top,
-              route:box('.route-section').height,send:box('.send-section').height,
-              list:s.querySelector('.fxslot-list').clientHeight};
-          }),
-          railFx:rail.querySelector('.rail-cell.fx').getBoundingClientRect().height,
-          railFader:rail.querySelector('.rail-cell.fader').getBoundingClientRect().height});
-        const click=id=>rail.querySelector('[data-section="'+id+'"]').click();
-        const before=read();
-        click('route');const route=read();
-        click('route');const restoreRoute=read();
-        click('send');const sendOpen=read();
-        click('route');const openSendFoldRoute=read();
-        click('route');
-        click('send');const restoreSend=read();
-        click('route');const bothHidden=read();
-        click('route');
-        return {before,route,restoreRoute,sendOpen,openSendFoldRoute,restoreSend,bothHidden};
+
+def audit_p0_collapse(page, label):
+    """Every ROUTE/FX/SEND combination preserves PAN/SWITCH/FADER/FOOTER."""
+    result=page.evaluate("""() => {
+      const body=document.querySelector('.console-body');
+      const rail=document.querySelector('.section-rail');
+      const tracks=[...document.querySelectorAll('#tracks .strip'),
+                    document.querySelector('#master .strip')].filter(Boolean);
+      const box=e=>{const r=e.getBoundingClientRect();return {top:r.top,bottom:r.bottom,h:r.height};};
+      const read=()=>({
+        state:[...['route','fx','send'].map(k=>Number(body.classList.contains('collapsed-'+k)))].join(''),
+        items:tracks.map(t=>Object.fromEntries(
+          ['route','fx','send','pan','switch','fader','footer'].map(k=>[
+            k,{...box(t.querySelector(k==='footer'?'.bottom-section':'.'+k+'-section')),
+               list:k==='fx'?t.querySelector('.fxslot-list').clientHeight:undefined}]))),
+        rail:Object.fromEntries(['route','fx','send','pan','switch','fader','footer']
+          .map(k=>[k,box(rail.querySelector('.rail-cell.'+k))])),
+        style:getComputedStyle(tracks[0]).backgroundImage,
+        faces:['route','fx','send','pan','switch','fader'].map(k=>
+          getComputedStyle(tracks[0].querySelector('.'+k+'-section')).backgroundImage)
+      });
+      const original=[...['route','fx','send'].map(k=>body.classList.contains('collapsed-'+k))];
+      const click=k=>rail.querySelector('[data-section="'+k+'"]').click();
+      const states={};
+      for(let n=0;n<8;n++){
+        for(let j=0;j<3;j++){
+          const k=['route','fx','send'][j],want=Boolean(n&(1<<j));
+          if(body.classList.contains('collapsed-'+k)!==want)click(k);
+        }
+        states[read().state]=read();
+      }
+      for(let j=0;j<3;j++){
+        const k=['route','fx','send'][j];
+        if(body.classList.contains('collapsed-'+k)!==original[j])click(k);
+      }
+      return {states,restored:read()};
     }""")
-    base=data['before']
-    assert not base['route'] and base['send'] and not base['fx'],(name,'initial fold',data)
-    expected=min(600,max(215,page.viewport_size['height']-510))
-    if page.viewport_size['height']<=680:
-        expected=min(300,max(155,page.viewport_size['height']-505))
-    for i,cell in enumerate(base['cells']):
-        assert abs(cell['fader']-expected)<2.0,(name,'fader not proportional',i,cell,expected)
-        assert 120<=cell['fx']<=145,(name,'FX rack not approximately four slots',i,cell)
-        assert cell['list']>=88,(name,'FX viewport cannot show four 22px rows',i,cell)
-        assert cell['fader']>cell['fx']+45,(name,'fader less usable than rack',i,cell)
-    for key in ('route','restoreRoute','sendOpen','openSendFoldRoute','restoreSend','bothHidden'):
-        now=data[key]
-        assert len(now['cells'])==len(base['cells']),(name,key,'roster changed')
-        for i,(a,b) in enumerate(zip(base['cells'],now['cells'])):
-            assert abs(now['railFx']-b['fx'])<1.5,(name,key,i,'FX rail misaligned')
-            assert abs(now['railFader']-b['fader'])<1.5,(name,key,i,'fader rail misaligned')
-            if key in ('route','restoreRoute','restoreSend','bothHidden'):
-                assert abs(a['fader']-b['fader'])<1.5,(name,key,i,'fader changed on ROUTE collapse')
-                assert abs(a['top']-b['top'])<1.5,(name,key,i,'fader jumped on ROUTE collapse')
-            if key in ('sendOpen','openSendFoldRoute'):
-                assert b['list']>=88,(name,key,i,'four FX slots cropped with SEND expanded',b)
-                assert b['fader']>=150,(name,key,i,'SEND open fader unsafe short',b)
-    for i,(a,b) in enumerate(zip(base['cells'],data['route']['cells'])):
-        assert b['route']<a['route']-35,(name,i,'ROUTE did not collapse',a,b)
-        assert b['fx']>a['fx']+35,(name,i,'FX did not gain ROUTE pixels',a,b)
-        assert b['list']>a['list']+35,(name,i,'FX visibility not improved',a,b)
-        assert data['bothHidden']['cells'][i]['fx']>a['fx']+35,(name,i,'combined fold no gain')
-        assert data['sendOpen']['cells'][i]['send']>a['send']+35,(name,i,'SEND not expanded')
-        assert abs(data['sendOpen']['cells'][i]['fx']-a['fx'])<=4,(
-            name,i,'SEND open should keep 4 FX rows; borrow fader only as needed',a,data)
-        assert data['openSendFoldRoute']['cells'][i]['fx']>data['sendOpen']['cells'][i]['fx']+35,(
-            name,i,'ROUTE collapse failed when SEND expanded',data)
-    for key in ('restoreRoute','restoreSend'):
-        assert abs(data[key]['cells'][0]['fx']-base['cells'][0]['fx'])<1.5,(
-            name,key,'FX geometry did not restore',data)
-    return data
+    states=result['states']
+    assert len(states)==8,(label,'missing collapse permutations',list(states))
+    baseline=states['000']
+    expected=max(152,min(485,page.viewport_size['height']-610))
+    first=baseline['items'][0]
+    assert first['fx']['list']>=88,(label,'four FX rows not visible with all upper panels open',first)
+    assert abs(first['fader']['h']-expected)<=2,(label,'fader height not viewport-proportional',expected,first)
+    anchor=['pan','switch','fader','footer']
+    for state,frame in states.items():
+        for i,item in enumerate(frame['items']):
+            for k in anchor:
+                ref=first[k]
+                assert abs(item[k]['top']-ref['top'])<=1.2,(
+                    label,state,i,k,'lower section Y jumped',ref,item[k])
+                assert abs(item[k]['h']-ref['h'])<=1.2,(
+                    label,state,i,k,'lower height changed',ref,item[k])
+                assert abs(item[k]['top']-frame['rail'][k]['top'])<=1.2,(
+                    label,state,i,k,'rail lower not aligned')
+            for k in ('route','fx','send'):
+                assert abs(item[k]['top']-frame['rail'][k]['top'])<=1.2,(
+                    label,state,i,k,'upper rail mismatch')
+                assert abs(item[k]['h']-frame['rail'][k]['h'])<=1.2,(
+                    label,state,i,k,'upper rail height mismatch')
+        assert frame['style']=='none',(label,state,'strip must have FLAT surface',frame['style'])
+        assert all(bg=='none' for bg in frame['faces']),(
+            label,state,'broad gradient still paints panel face',frame['faces'])
+    assert states['100']['items'][0]['fx']['h']>first['fx']['h']+40,(
+        label,'ROUTE collapse did not expand FX')
+    assert states['001']['items'][0]['fx']['h']>first['fx']['h']+55,(
+        label,'SEND collapse did not expand FX')
+    assert states['001']['items'][0]['fx']['list']>first['fx']['list']+50,(
+        label,'extra FX height is not usable visibility')
+    assert result['restored']['state']=='001',(
+        label,'initial SEND-collapsed preference not restored',result['restored'])
+    return result
 
 
 def audit_p0_pan_center(page, name):
