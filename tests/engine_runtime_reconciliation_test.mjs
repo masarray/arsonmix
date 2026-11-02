@@ -16,6 +16,9 @@ const bridge=read('src/ConsoleLiveBridgeV6.h');
 const wire=read('engine/core/ConsolePuzzleV8Wire.h');
 const schema=JSON.parse(read('contracts/console-puzzle-v8.json'));
 const worker=read('src/NativeShowSaveWorker.h');
+const physical=read('src/LiveDryRoutingLab.h');
+const dynamic=read('engine/core/DynamicNativeSessionPublisher.h');
+const realtimePermit=read('engine/core/RealtimeRenderPermit.h');
 const start=engine.indexOf('void audioDeviceIOCallbackWithContext (');
 assert.ok(start>0,'missing ONE JUCE production callback');
 const callback=engine.slice(start);
@@ -96,4 +99,14 @@ test('workers handle Show IO outside the audio callback, not as a second DSP eng
   assert.match(worker,/store\.commit\(show,\{snapshot_\},blobs_\)/);
   assert.match(worker,/void releaseJob\(\)/);
   assert.doesNotMatch(callback,/NativeShowStore|\.loadWithStates\(|\.commit\(show/);
+});
+
+test('installed M4 and future ChannelId share one nonblocking render permit',()=>{
+  assert.ok(physical.includes('RealtimeRenderPermit exclusive{rendering_}'));
+  assert.ok(dynamic.includes('RealtimeRenderPermit exclusive{rendering_}'));
+  assert.ok(realtimePermit.includes('test_and_set(std::memory_order_acquire)'));
+  assert.ok(realtimePermit.includes('clear(std::memory_order_release)'));
+  assert.ok(!realtimePermit.includes('std::mutex') && !realtimePermit.includes('condition_variable'));
+  assert.ok(physical.includes('if(!exclusive)'));
+  assert.ok(dynamic.includes('if(!exclusive)'));
 });

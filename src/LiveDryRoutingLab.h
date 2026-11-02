@@ -9,6 +9,7 @@
 #include "NativeVerifiedSourcePatch.h"
 #include "../engine/device/JuceActivePortSnapshot.h"
 #include "../engine/core/RealtimeRoutePublisher.h"
+#include "../engine/core/RealtimeRenderPermit.h"
 #include "../engine/device/LiveInputPortRegistry.h"
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <algorithm>
@@ -973,6 +974,17 @@ public:
         if(actualOutputPair)*actualOutputPair={{-1,-1}};
         if(actualMonitorPair)*actualMonitorPair={{-1,-1}};
         if(!active())return false;
+        // The real JUCE M4 callback owns one mutable DSP scratch/fade state.
+        // A broken backend overlapping two process() calls must never run
+        // two VST chains against the same prepared buffers. Fail SILENT,
+        // do not spin or take a lock on the host-owned realtime callback.
+        armix::rt::RealtimeRenderPermit exclusive{rendering_};
+        if(!exclusive) {
+            if(outputs && frames>0 && frames<=Block::hardFrameLimit)
+                for(int c=0;c<outputCount;++c)
+                    if(outputs[c])juce::FloatVectorOperations::clear(outputs[c],frames);
+            return false;
+        }
         for(auto& p:channelPeaks_)p.store(0.f,std::memory_order_relaxed);
         for(auto& p:channelPeaksL_)p.store(0.f,std::memory_order_relaxed);
         for(auto& p:channelPeaksR_)p.store(0.f,std::memory_order_relaxed);
@@ -1287,6 +1299,7 @@ public:
         return juce::var(out.release());
     }
 private:
+    std::atomic_flag rendering_=ATOMIC_FLAG_INIT; // one AUDIO producer
     Publisher publisher_;
     std::atomic<float> monitorPeakL_{0.f},monitorPeakR_{0.f};
     armix::dsp::MasterOutputMonoPolicy masterMonoPolicy_; // audio thread only

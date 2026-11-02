@@ -3,6 +3,7 @@
 #include "DynamicPreparedMixerBlock.h"
 #include "DynamicConsoleRoutingView.h"
 #include "RealtimeRoutePublisher.h"
+#include "RealtimeRenderPermit.h"
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
@@ -163,7 +164,8 @@ public:
         }
         // A single callback producer owns the prepared scratch. In case a
         // broken backend calls simultaneously, fail closed rather than race.
-        if(rendering_.test_and_set(std::memory_order_acquire)) {
+        armix::rt::RealtimeRenderPermit exclusive{rendering_};
+        if(!exclusive) {
             clearOutputs();return false;
         }
         // Prepared FX takes precedence over the legacy external callback.
@@ -179,7 +181,6 @@ public:
         const bool ok=snap->prepared->graph.process(
              physical,physicalCount,mainL,mainR,frames,
              dispatch,monitorL,monitorR);
-        rendering_.clear(std::memory_order_release);
         if(!ok)clearOutputs();
         return ok;
     }

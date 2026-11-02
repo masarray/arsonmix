@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/RealtimeControl.h"
 #include "../engine/core/PreparedMixerBlock.h"
+#include "../engine/core/RealtimeRenderPermit.h"
 #include "../engine/core/RealtimeRoutePublisher.h"
 #include "../engine/core/NativeRenderAuthority.h"
 #include <memory>
@@ -72,6 +73,33 @@ int main(){
     assert(!atomicControls.set(2,1.f,2.f,false,false,false));
     assert(!atomicControls.set(99,1.f,0.f,false,false,false));
     std::cout<<"PASS: 200000 concurrent native M4 GUI gestures read as atomic stereo/mute/solo blocks\\n";
+
+
+    // One canonical fail-closed render permit for BOTH native M4 hardware
+    // and future ChannelId DSP: a duplicate backend callback cannot render
+    // into the same scratch/VST. All acquire/release are lock-free O(1).
+    std::atomic_flag renderGate=ATOMIC_FLAG_INIT;
+    std::atomic<bool> gateHeld{false},releaseGate{false};
+    std::thread activeRender([&] {
+        armix::rt::RealtimeRenderPermit permit(renderGate);
+        assert(static_cast<bool>(permit));
+        gateHeld.store(true,std::memory_order_release);
+        while(!releaseGate.load(std::memory_order_acquire))
+            std::this_thread::yield(); // TEST thread only; never real AUDIO
+    });
+    while(!gateHeld.load(std::memory_order_acquire))
+        std::this_thread::yield();
+    for(int i=0;i<20000;++i) {
+        armix::rt::RealtimeRenderPermit rejected(renderGate);
+        assert(!static_cast<bool>(rejected)); // never wait, render twice, lock
+    }
+    releaseGate.store(true,std::memory_order_release);
+    activeRender.join();
+    {
+        armix::rt::RealtimeRenderPermit reentered(renderGate);
+        assert(static_cast<bool>(reentered));
+    }
+    std::cout<<"PASS: single M4/ChannelId RT renderer, 20000 duplicate callbacks fail closed\\n";
 
     SpscQueue<int,8> q;
     int value=-1;
