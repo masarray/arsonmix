@@ -36,12 +36,27 @@ def main():
             assert_true(bool(box),"Missing patch jack geometry")
             return box["x"]+box["width"]/2,box["y"]+box["height"]/2
         x0,y0=center(src);x1,y1=center(dest)
+        # V17: socket is larger than the solid OUT pin. Knob exists before routing.
+        pin=page.locator('#tracks .strip[data-id="8"] .wire-pin').bounding_box()
+        assert_true(pin is not None and dest.bounding_box()["width"]>pin["width"]+10,
+                    "IN socket must be visibly larger than solid OUT pin")
+        idle=page.locator('#tracks .strip[data-id="3"] .wire-pot.is-idle')
+        assert_true(idle.count()==1,"Dark unconnected gain knob must always occupy its position")
+        initial_in=dest.bounding_box()
+        initial_pot=idle.bounding_box()
+
         assert_true(x1<x0,"Fixture must prove RIGHT-to-LEFT sends, not reverse")
         page.mouse.move(x0,y0);page.mouse.down()
         page.mouse.move((x0+x1)/2,(y0+y1)/2,steps=9)
         assert_true(page.locator('#wireLayer .wire-drag-line').count()>=2,
                     "Drag wire is not visible while following live pointer")
-        page.mouse.move(x1,y1,steps=11)
+        # Stop within the magnetic halo, NOT on the exact IN node center.
+        page.mouse.move(x1+19,y1-15,steps=11)
+        page.wait_for_function("""() => !!document.querySelector(
+            '#tracks .strip[data-id="3"] .wire-node-in.is-snap-target')""")
+        assert_true('stroke-dasharray' not in page.locator('#wireLayer').inner_html(),
+                    "Drag wire must be smooth, solid, and semi-transparent")
+
         page.mouse.up()
         assert_true(page.locator('#tracks .strip[data-id="3"] .wire-node-in.is-linked').count()==1,
                     "CH8 → CH3 leftward drop failed to create link")
@@ -49,6 +64,15 @@ def main():
                     "Source count did not update after leftward drag")
         assert_true(page.locator('#tracks .strip[data-id="3"] .wire-gain').count()==1,
                     "Receiver wire gain control missing")
+        linked_in=dest.bounding_box()
+        active_pot=page.locator('#tracks .strip[data-id="3"] .wire-pot').bounding_box()
+        assert_true(all(abs(initial_in[k]-linked_in[k])<1 for k in ("x","y","width","height")),
+                    "IN jack moved when connection was committed")
+        assert_true(all(abs(initial_pot[k]-active_pot[k])<1 for k in ("x","y","width","height")),
+                    "Gain knob moved when connection was committed")
+        assert_true(page.locator('#tracks .strip[data-id="4"] .wire-pot.is-idle').count()==1,
+                    "Unconnected destination knob should remain dark and stationary")
+
         page.screenshot(path=str(ROOT/"preview-v15-wire-left-1680.png"))
         # New source CH3 -> Bus A, explicitly choose serial VIA BUS ONLY.
         page.locator('#tracks .strip[data-id="3"] .wire-node-out').click()
