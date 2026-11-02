@@ -3636,39 +3636,6 @@ html * ,html *::before,html *::after{
 @media(max-width:1000px){.mixer-title .wire-v34-tool{min-width:30px;padding:0 3px!important}.wire-workspace{right:3px}}
 
 
-/* V40 WIRE proximity and channel focus. This is the effective final
-   routing skin; no blurred glow, animation, extra DOM or CPU idle loop. */
-.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out:is(.is-near,:hover,:focus-visible):not(:disabled):not(.is-source){
- color:#d6ffed!important;border-color:#78d8ae!important;
- background:#275344!important;
- box-shadow:inset 0 1px 0 #e1fff348,0 0 0 1px #3a8a6a!important;
-}
-.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out:is(.is-near,:hover,:focus-visible):not(:disabled):not(.is-source) .wire-pin{
- background:#84dcb2!important;border-color:#c1f8d9!important;
- box-shadow:inset 0 1px #f0fff080!important;
-}
-.console-body.wire-routing-v15.wire-intent .strip .wire-tray .wire-node-in:not(:disabled):not(.is-source):not(.is-linked){
- color:#bdebd7!important;border-color:#6ebd9d!important;
- background:#17382e!important;box-shadow:inset 0 1px 2px #07141c!important;
-}
-/* Dormant IN is graphite even if an already committed connection exists.
-   Source selection is the only visual arming signal. */
-.console-body.wire-routing-v15:not(.wire-intent) .strip .wire-tray .wire-node-in{
- color:#687881!important;border-color:#394a55!important;
- background:#1b2b35!important;box-shadow:inset 0 1px 2px #07141c!important;
- filter:none!important;opacity:1!important;
-}
-.console-body.wire-routing-v15:not(.wire-intent) .strip .wire-tray .wire-node-in .wire-arrow{
- background:#4b535b!important;border-color:#40505a!important;
- box-shadow:none!important;filter:none!important;
-}
-.console-body.wire-routing-v15:not(.wire-intent) .strip .wire-tray .wire-node-in .wire-label{
- color:#687881!important;
-}
-/* Thin translucent selected rim stays painted above every WIRE panel. */
-.console-body .strip.selected::after{
- border-width:1px!important;opacity:.58!important;box-shadow:none!important;
-}
 
 </style>
 <link rel="stylesheet" href="assets/mixer-control-keys.css?v=inter-utility-v7">
@@ -3676,6 +3643,7 @@ html * ,html *::before,html *::after{
 <link rel="stylesheet" href="assets/mixer-plugin-browser.css?v=fx-owner-v8">
 <link rel="stylesheet" href="assets/mixer-utility-controls.css?v=inter-utility-v7">
 <link rel="stylesheet" href="assets/inter-embedded.css?v=inter-utility-v7">
+<link rel="stylesheet" href="assets/mixer-wire-dots.css?v=v42">
 
 </head>
 <body>
@@ -4884,7 +4852,7 @@ function renderWireRouting(){
   const d=wirePathData(x0,y0,x1,y1,sagLimit);
   paths.push('<path class="wire-drag-line" d="'+d+'" stroke="#06151b" stroke-width="6" opacity=".25" fill="none" stroke-linecap="round"/>'+
    '<path class="wire-drag-line" d="'+d+'" stroke="'+(snap?.color||'#b5eedb')+'" stroke-width="2.4" opacity=".54" fill="none" stroke-linecap="round"/>'+
-   (wireGesture.movingEdgeId!==null?'<circle class="wire-floating-plug" cx="'+x1.toFixed(1)+'" cy="'+y1.toFixed(1)+'" r="5.5" fill="'+(snap?.color||'#b5eedb')+'" fill-opacity=".75" stroke="#d8f7ed" stroke-opacity=".65" stroke-width="1"/>':''));
+   '<circle class="wire-floating-plug" cx="'+x1.toFixed(1)+'" cy="'+y1.toFixed(1)+'" r="6" fill="'+(snap?.color||source?.color||'#87dfb8')+'" stroke="#d8f7ed" stroke-opacity=".85" stroke-width=".85" pointer-events="none"/>');
  }
  svg.innerHTML=paths.join('');
 }
@@ -5370,7 +5338,10 @@ consoleBody.addEventListener('pointerdown',e=>{
 // per-frame wire redraw, audio operation or DOM remount.
 let nearWireOut=null;
 consoleBody.addEventListener('pointermove',e=>{
- if(e.pointerType==='touch'||e.buttons||wireGesture?.active)return;
+ if(e.pointerType==='touch'||e.buttons||wireGesture?.active){
+  // A stale approach highlight must never survive dragging or canceled drops.
+  nearWireOut?.classList.remove('is-near');nearWireOut=null;return;
+ }
  const tray=e.target.closest?.('.wire-tray');
  let out=tray?.querySelector('.wire-node-out:not(:disabled)')||null;
  if(out){
