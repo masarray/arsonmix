@@ -11,7 +11,7 @@ function node(name){
  const x={value:name==='viewFilter'?'all':'',innerHTML:'',textContent:'',scrollLeft:0,dataset:{},handlers,
   classList:{contains:k=>classes.has(k),add:k=>classes.add(k),remove:k=>classes.delete(k),
    toggle(k,force){const on=force===undefined?!classes.has(k):!!force;on?classes.add(k):classes.delete(k);return on;}},
-  style:{_vars:{},setProperty(k,v){this._vars[k]=String(v)},getPropertyValue(k){return this._vars[k]||''}},setAttribute(){},addEventListener(k,cb){const previous=handlers[k];handlers[k]=previous?(event=>{previous(event);cb(event);}):cb;},
+  style:{_vars:{},setProperty(k,v){this._vars[k]=String(v)},getPropertyValue(k){return this._vars[k]||''}},setAttribute(){},addEventListener(k,cb){const previous=handlers[k];handlers[k]=previous&&k.startsWith('pointer')?(event=>{previous(event);cb(event);}):cb;},
   querySelector(){return null;},
   dispatch(k){assert.ok(handlers[k],name+' '+k+' handler missing');handlers[k]({target:x});}};
  elements.set(name,x);return x;
