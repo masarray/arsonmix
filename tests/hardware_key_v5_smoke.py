@@ -56,6 +56,22 @@ async def audit(page):
     assert await mute.get_attribute('aria-pressed')=='false'
     assert await solo.get_attribute('aria-pressed')=='true'
     await solo.click()
+    # Every MASTER control occupies the same 29px row as regular MUTE/SOLO.
+    dimensions=await page.evaluate("""()=>{
+      const rect=q=>document.querySelector(q).getBoundingClientRect();
+      const master=rect('#masterMute'),mono=rect('#masterMode'),channel=rect('[data-mute="0"]');
+      return {masterH:master.height,modeH:mono.height,channelH:channel.height,
+              masterMid:master.top+master.height/2,modeMid:mono.top+mono.height/2,
+              channelMid:channel.top+channel.height/2};
+    }""")
+    assert all(abs(dimensions[k]-29)<.1 for k in ('masterH','modeH','channelH')),dimensions
+    assert max(dimensions[k] for k in ('masterMid','modeMid','channelMid'))-min(
+      dimensions[k] for k in ('masterMid','modeMid','channelMid'))<1,dimensions
+    # SVG gradient LED stops are resolved colors, never unsupported CSS var syntax.
+    stops=await page.evaluate("""()=>[...document.querySelectorAll('[data-mute="0"],[data-solo="0"]')]
+      .map(b=>getComputedStyle(b.querySelector('.mx-hw-lamp').ownerSVGElement
+          .querySelector('linearGradient[id^="mx-hw-led"] stop')).stopColor)""")
+    assert stops==['rgb(255, 64, 85)','rgb(255, 208, 44)'],stops
     # Master mode changes textContent; observer reinstalls ONE SVG legend.
     mode=page.locator('#masterMode')
     await mode.click()
@@ -104,6 +120,11 @@ async def main():
             assert not errors,(width,errors)
             if width==1680:
                 await page.screenshot(path='mixer-backlit-v5-native-1680.png')
+                await page.locator('[data-mute="0"]').click()
+                await page.locator('[data-solo="0"]').click()
+                await page.screenshot(path='mixer-backlit-v5-native-ON-1680.png')
+                assert await page.locator('[data-mute="0"]').get_attribute('aria-pressed')=='true'
+                assert await page.locator('[data-solo="0"]').get_attribute('aria-pressed')=='true'
             await page.close()
         page=await browser.new_page(viewport={'width':1366,'height':768})
         await page.set_content((ROOT/'AR-MIX-Live-FX-Host-Standalone-v0.3.html').read_text())
