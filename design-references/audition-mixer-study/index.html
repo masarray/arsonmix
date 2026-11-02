@@ -3612,6 +3612,97 @@ html * ,html *::before,html *::after{
 .console-body.wire-routing-v15:not(.collapsed-send) .strip .wire-section .wire-deck-rail{
  display:none!important;
 }
+
+/* Source port: https://codepen.io/praktikdan/pen/jbqBWm
+   "3D Buttons" by Dan Andersson, from Mikael Eidenberg's synth-button
+   artwork. Original gradient, rim, depth, hover, selected inset and
+   glowing blue separator are preserved. Geometry only is reduced to
+   the existing ArSonMix strip. MUTE/SOLO latch independently, unlike
+   CodePen's mutually-exclusive demo JS. PFL and other controls unchanged. */
+.console-body .strip .switch-section .codepen-buttons-wrapper{
+  display:flex!important;align-items:stretch!important;position:relative!important;
+  flex:2 1 0!important;min-width:0!important;
+  height:calc(var(--switch-h) - 7px)!important;max-height:34px!important;min-height:24px!important;
+  border-radius:7px!important;background-color:black!important;
+  border:2px solid black!important;box-shadow:0 4px 8px rgba(0,0,0,.55)!important;
+  isolation:isolate!important;overflow:visible!important;
+}
+.console-body .strip .switch-section .codepen-buttons-wrapper>.button{
+  position:relative!important;z-index:1!important;float:left!important;
+  display:flex!important;align-items:center!important;justify-content:center!important;
+  flex:1 1 0!important;width:50%!important;min-width:0!important;height:100%!important;
+  min-height:0!important;max-height:none!important;padding:0!important;margin:0 1px!important;
+  background:#222!important;background-image:linear-gradient(#333,#222)!important;
+  text-align:center!important;border-radius:2px!important;
+  border:0!important;border-top:1px solid rgba(255,255,255,.25)!important;
+  border-left:1px solid rgba(255,255,255,.05)!important;
+  border-right:1px solid rgba(255,255,255,.05)!important;
+  box-shadow:inset 0 1px 0 rgba(0,0,0,.1)!important;
+  cursor:pointer!important;transform:none!important;filter:none!important;
+  transition:all .175s ease!important;
+}
+.console-body .strip .switch-section .codepen-buttons-wrapper>.button:first-child{
+  border-top-left-radius:5px!important;border-bottom-left-radius:5px!important;margin-left:0!important;
+}
+.console-body .strip .switch-section .codepen-buttons-wrapper>.button:last-child{
+  border-top-right-radius:5px!important;border-bottom-right-radius:5px!important;margin-right:0!important;
+}
+.console-body .strip .switch-section .codepen-buttons-wrapper>.button:hover:not(.selected):not(:disabled){
+  z-index:2!important;background-image:linear-gradient(#373737,#262626)!important;
+  box-shadow:inset 0 1px 0 rgba(0,0,0,.1),0 4px 16px rgba(0,0,0,.5)!important;
+}
+.console-body .strip .switch-section .codepen-buttons-wrapper>.button .fa{
+  position:relative!important;display:block!important;width:auto!important;pointer-events:none!important;
+  color:#424242!important;text-shadow:0 -1px 0 rgba(0,0,0,.75)!important;
+  font:400 10px/1 Roboto,"Segoe UI",Arial,sans-serif!important;
+}
+.console-body .strip .switch-section .codepen-buttons-wrapper>.button.selected{
+  z-index:3!important;cursor:pointer!important;
+  background-image:linear-gradient(#202020,#151515)!important;
+  border-top-color:rgba(0,0,0,0)!important;
+  border-left-color:rgba(0,0,0,.55)!important;border-right-color:rgba(0,0,0,.55)!important;
+  box-shadow:inset 0 1px 6px rgba(0,0,0,.5),0 10px 20px rgba(255,255,255,.06)!important;
+  transform:none!important;
+}
+.console-body .strip .switch-section .codepen-buttons-wrapper>.button::before,
+.console-body .strip .switch-section .codepen-buttons-wrapper>.button::after{
+  content:none!important;display:none!important;border:0!important;box-shadow:none!important;
+}
+.console-body .strip .switch-section .codepen-buttons-wrapper>.button.selected::before,
+.console-body .strip .switch-section .codepen-buttons-wrapper>.button.selected::after{
+  content:""!important;display:block!important;position:absolute!important;
+  top:0!important;bottom:auto!important;height:100%!important;width:1px!important;
+  background-image:linear-gradient(rgba(0,0,0,.25),rgba(2,165,238,.4),rgba(0,0,0,.25))!important;
+  border:0!important;box-shadow:none!important;pointer-events:none!important;
+}
+.console-body .strip .switch-section .codepen-buttons-wrapper>.button.selected::before{
+  left:-4px!important;right:auto!important;
+}
+.console-body .strip .switch-section .codepen-buttons-wrapper>.button.selected::after{
+  right:-4px!important;left:auto!important;
+}
+.console-body .strip .switch-section .codepen-buttons-wrapper>.button:first-child.selected::before,
+.console-body .strip .switch-section .codepen-buttons-wrapper>.button:last-child.selected::after{
+  display:none!important;
+}
+.console-body .strip .switch-section .codepen-buttons-wrapper>.button.selected .fa{
+  color:white!important;text-shadow:0 0 10px rgba(2,165,238,.75)!important;
+}
+.console-body .strip .switch-section .codepen-buttons-wrapper>.button.selected .fa::after{
+  content:""!important;display:block!important;position:absolute!important;
+  bottom:-3px!important;left:0!important;width:100%!important;height:1px!important;
+  background-image:linear-gradient(to right,rgba(255,255,255,0),rgba(255,255,255,.045),rgba(255,255,255,0))!important;
+  pointer-events:none!important;
+}
+.console-body .strip .switch-section .codepen-buttons-wrapper>.button:active:not(:disabled){
+  transform:none!important;
+}
+.console-body .strip .switch-section .codepen-buttons-wrapper>.button:focus-visible{
+  outline:2px solid #8cc5da!important;outline-offset:1px!important;
+}
+@media(prefers-reduced-motion:reduce){
+  .console-body .strip .switch-section .codepen-buttons-wrapper>.button{transition:none!important}
+}
 </style>
 </head>
 <body>
@@ -4106,10 +4197,11 @@ function strip(t){
  code+='<div class="section pan-section"><span class="pan-icon" title="Pan / Balance">PAN</span><span class="pan-control '+(t.pan===0?'is-centered':'')+'" style="'+panStyle(t.pan)+'"><input class="center-pan" type="range" min="-100" max="100" step="1" value="'+t.pan+'" data-field="pan" title="PAN center detent: capture ±7, hold ±12; release snaps center; double-click resets" aria-label="Channel pan; center detent" aria-valuetext="'+(t.pan===0?'Center':t.pan<0?'Left '+Math.abs(t.pan):'Right '+t.pan)+'"></span><output>'+panLabel(t.pan)+'</output></div>';
 
  code+='<div class="section switch-section">'
-   +'<span class="hw-switch-socket"><button class="switch mute '+(t.mute?'on':'')+'" data-action="mute" title="Mute channel" aria-pressed="'+t.mute+'">MUTE</button></span>'
-   +'<span class="hw-switch-socket"><button class="switch solo '+(t.solo?'on':'')+'" data-action="solo" title="Solo channel" aria-pressed="'+t.solo+'">SOLO</button></span>'
-   +'<span class="hw-switch-socket"><button class="switch cue '+(t.cue?'on':'')+'" data-action="cue" title="Cue / PFL monitor bus (reference only)" aria-pressed="'+t.cue+'">PFL</button></span></div>';
- code+=sectionFader(t);
+   +'<span class="buttons-wrapper codepen-buttons-wrapper" role="group" aria-label="Mute and Solo">'
+   +'<button class="button switch mute '+(t.mute?'on selected':'')+'" data-action="mute" title="Mute channel" aria-pressed="'+t.mute+'"><span class="fa">MUTE</span></button>'
+   +'<button class="button switch solo '+(t.solo?'on selected':'')+'" data-action="solo" title="Solo channel" aria-pressed="'+t.solo+'"><span class="fa">SOLO</span></button>'
+   +'</span><span class="hw-switch-socket"><button class="switch cue '+(t.cue?'on':'')+'" data-action="cue" title="Cue / PFL monitor bus (reference only)" aria-pressed="'+t.cue+'">PFL</button></span></div>';
+  code+=sectionFader(t);
  code+='<div class="bottom-section"><div class="db-value">'+(sofEnabled&&t.kind==='audio'?'S ': '')+formatDb(sofEnabled&&t.kind==='audio'?getSofLevel(t):t.level)+'</div><div class="footer-label '+(t.kind==='master'?'master-label':t.kind==='bus'?'bus-label':'')+'"><span class="name" data-action="rename" title="Double-click to edit name, icon and color · F2" tabindex="0" role="button">'+escapeHtml(t.name)+'</span><span class="footer-icon" aria-hidden="true">'+escapeHtml(iconFor(t))+'</span><div class="color-strip"></div></div></div></article>';
  return code;
 }
