@@ -717,7 +717,7 @@ check(strip(3).includes('class="wire-tray linked"') &&
   strip(4).includes('wire-pot is-idle'),
   'V17 turns only destination knob active without shifting any other channel layout');
 check(html.includes('function wirePathData(') && html.includes('function wireSnapTarget(') &&
-  html.includes('WIRE_MAGNET.release') && html.includes('True magnetic PREVIEW') &&
+  html.includes('WIRE_MAGNET.preview') && html.includes('True magnetic PREVIEW') &&
   html.includes('queueWireGestureFrame();') &&
   html.includes('const input=snap?.element||hit?.closest?.') &&
   !html.slice(html.indexOf('function renderWireRouting(){'),html.indexOf('function syncActiveSend(t){')).includes('stroke-dasharray') &&
@@ -862,7 +862,7 @@ check(strip(3).includes('wire-fold-summary') &&
 wireTo(3);
 check(strip(3).includes('fold-link-icon has-in') &&
  strip(1).includes('fold-link-icon has-out') &&
- !strip(3).includes('→') && !strip(1).includes('←'),
+ !strip(3).includes('fold-marker') && !strip(1).includes('fold-marker'),
  'V19 compact IN/OUT is computed from live graph and active legacy Sends');
 wireTo(3);
 check(strip(3).includes('wire-fold-summary is-empty') && !strip(3).includes('fold-link-icon'),
