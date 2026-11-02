@@ -500,6 +500,29 @@ async def main():
           {requestId:id,status:'REJECTED',deviceEpoch:'7',graphRevision:'4',
            rosterRevision:'4',errorCode:'GAIN_LOCKED'})""",pot_intent["requestId"])
         assert await gain.input_value()=="-6"
+        # Native gesture cancellation must not send a new graph intent,
+        # must not alter the accepted gain, and must clear pointer capture.
+        cancel_before=await page.evaluate("""()=>window.__v6Test.sent.filter(
+          e=>e.event==='arMixConsoleIntent').length""")
+        box=await colored.bounding_box()
+        x,y=box["x"]+box["width"]/2,box["y"]+box["height"]/2
+        await page.mouse.move(x,y)
+        await page.mouse.down()
+        pointer=await gain.evaluate("el=>({id:el.hasPointerCapture(1),value:el.value})")
+        await page.mouse.move(x,y-21,steps=4)
+        await gain.evaluate("""el=>{
+          const id=el.onpointermove && el.hasPointerCapture(1)?1:null;
+          // The actual Chromium pointerId is normally 1 for page.mouse;
+          // derive it from the browser event if a different ID was assigned.
+          el.dispatchEvent(new PointerEvent('pointercancel',
+            {bubbles:true,pointerId:id??1}));
+        }""")
+        await page.mouse.up()
+        assert await page.evaluate("""()=>window.__v6Test.sent.filter(
+          e=>e.event==='arMixConsoleIntent').length""")==cancel_before
+        assert await gain.input_value()=="-6"
+        # Keyboard-native 0.1dB step remains exposed to assistive controls.
+        assert await gain.get_attribute("step")==".1"
         await page.locator(".arV6SendMode").select_option("1001")
         await page.locator('[data-op="SET_FADER"][data-id="7"]').evaluate(
             "(el)=>{el.value='-12';el.dispatchEvent(new Event('change',{bubbles:true}))}")
