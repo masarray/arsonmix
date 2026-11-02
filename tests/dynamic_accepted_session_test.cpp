@@ -117,8 +117,12 @@ static void verifyRealtimeSlewAndNativeChannelIdContinuousControls() {
     assert(session.acceptedGraphRevision()==2);
     // Rapid fader drags are naturally last-target-wins: no event queue,
     // structural graph recompile, callback heap or retained stale controls.
-    assert(session.setLiveMix(epoch,2,voice,.2f,0.f));
-    assert(session.setLiveMix(epoch,2,voice,.8f,0.f));
+    // 4096 high-rate gestures all collapse into ONE latest atomic target.
+    // This is a CPU/heap-bounded CONTROL lookup, not a 4096-event RT FIFO.
+    for(int i=0;i<4096;++i)
+        assert(session.setLiveMix(epoch,2,voice,(i&1)?.8f:.2f,0.f));
+    assert(!session.setLiveMix(epoch,2,ChannelId{999999},1.f,0.f));
+    assert(!session.setLiveParallelSend(epoch,2,ChannelId{999999},wet,true,.5f));
     assert(render(4));
     assert(outL[3]>0.f);
     assert(render(60));

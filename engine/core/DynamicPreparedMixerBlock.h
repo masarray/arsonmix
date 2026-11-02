@@ -98,6 +98,8 @@ class DynamicPreparedMixerBlock final {
         armix::dsp::RealtimeSlew64 appliedL{},appliedR{}; // audio thread only
     };
     struct SendTarget final {
+        static_assert(std::atomic<float>::is_always_lock_free,
+            "Realtime SEND must never enter a hidden blocking atomic path");
         std::atomic<float> gain{1.f};
         armix::dsp::RealtimeSlew64 applied{};
     };
@@ -118,13 +120,15 @@ public:
     bool setChannelMix(ChannelId id,float gain,float pan) noexcept {
         if(!id.value || !std::isfinite(gain) || gain<0.f || gain>4.f ||
            !std::isfinite(pan) || pan< -1.f || pan>1.f)return false;
-        for(std::size_t i=0;i<lanes_.size();++i)if(lanes_[i].id==id) {
-            const auto gains=coefficients(lanes_[i].monoPan,gain,pan);
-            channelTargets_[i].both.store(
-                packGainPair(gains.left,gains.right),std::memory_order_release);
-            return true;
-        }
-        return false;
+        // Reuse the already-built ChannelId lookup; no O(N) scan on every
+        // rapid GUI fader tick, no callback hash lookup and no new allocation.
+        const auto found=controlIndex_.find(id.value);
+        if(found==controlIndex_.end())return false;
+        const auto i=found->second;
+        const auto gains=coefficients(lanes_[i].monoPan,gain,pan);
+        channelTargets_[i].both.store(
+            packGainPair(gains.left,gains.right),std::memory_order_release);
+        return true;
     }
     // Change gain ONLY on an existing parallel send (PRE or POST).
     // Exclusive primary OUT and source/destination edits stay structural.
@@ -132,22 +136,24 @@ public:
                              bool preFader,float gain) noexcept {
         if(!source.value || !destination.value || !std::isfinite(gain) ||
            gain<0.f || gain>4.f)return false;
-        for(const auto& lane:lanes_)if(lane.id==source) {
-            for(std::size_t e=lane.first;e<lane.last;++e){
-                const auto& edge=edges_[e];
-                if(lanes_[edge.destination].id==destination &&
-                   edge.pre==preFader && !edge.primary) {
-                    sendTargets_[e].gain.store(gain,std::memory_order_release);
-                    return true;
-                }
+        const auto found=controlIndex_.find(source.value);
+        if(found==controlIndex_.end())return false;
+        const auto& lane=lanes_[found->second];
+        // Only that source's prepared CSR outgoing edges are examined.
+        // The public GUI can address arbitrary stable ChannelIds regardless
+        // of visual bank, strip position or hidden channels.
+        for(std::size_t e=lane.first;e<lane.last;++e){
+            const auto& edge=edges_[e];
+            if(lanes_[edge.destination].id==destination &&
+               edge.pre==preFader && !edge.primary) {
+                sendTargets_[e].gain.store(gain,std::memory_order_release);
+                return true;
             }
-            return false;
         }
         return false;
     }
     bool contains(ChannelId id) const noexcept {
-        return std::any_of(lanes_.begin(),lanes_.end(),
-            [id](const Lane& x){return x.id==id;});
+        return controlIndex_.find(id.value)!=controlIndex_.end();
     }
 
     // Control thread only. Rejection leaves the previous prepared object
@@ -378,6 +384,10 @@ public:
             next.sendTargets_[e].gain.store(initial,std::memory_order_relaxed);
             next.sendTargets_[e].applied.reset(initial);
         }
+        // Recycle the CONTROL compiler's verified stable-ID index instead
+        // of allocating a second runtime lookup or scanning all channels.
+        // This table is NEVER touched from the audio callback.
+        next.controlIndex_=std::move(byId);
         destination=std::move(next);
         return true;
     }
@@ -520,6 +530,7 @@ public:
     }
 private:
     std::vector<Lane> lanes_;
+    std::unordered_map<std::uint64_t,std::size_t> controlIndex_; // CONTROL only
     std::vector<Edge> edges_;
     std::vector<std::size_t> renderOrder_;
     std::vector<float> scratch_;

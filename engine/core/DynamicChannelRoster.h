@@ -85,9 +85,8 @@ public:
     std::size_t size() const noexcept {return channels_.size();}
     const std::vector<ChannelStripDefinition>& channels() const noexcept {return channels_;}
     const ChannelStripDefinition* find(ChannelId id) const noexcept {
-        const auto it=std::find_if(channels_.begin(),channels_.end(),
-            [id](const auto& c){return c.id==id;});
-        return it==channels_.end()?nullptr:&*it;
+        const auto it=index_.find(id.value);
+        return it==index_.end()?nullptr:&channels_[it->second];
     }
 
     // CONTROL THREAD ONLY. A realtime parameter target must survive the
@@ -97,23 +96,23 @@ public:
     bool rememberLiveMix(ChannelId id,float gain,float pan) noexcept {
         if(!id.value || !std::isfinite(gain) || gain<0.f || gain>4.f ||
            !std::isfinite(pan) || pan< -1.f || pan>1.f)return false;
-        for(auto& row:channels_)if(row.id==id) {
-            row.faderLinear=gain;row.pan=pan;return true;
-        }
-        return false;
+        const auto it=index_.find(id.value);
+        if(it==index_.end())return false;
+        auto& row=channels_[it->second];
+        row.faderLinear=gain;row.pan=pan;
+        return true;
     }
     bool rememberLiveParallelSend(ChannelId id,ChannelId destination,
                                   bool preFader,float gain) noexcept {
         if(!id.value || !destination.value || !std::isfinite(gain) ||
            gain<0.f || gain>4.f)return false;
-        for(auto& row:channels_)if(row.id==id){
-            for(auto& link:row.sends)
-                if(link.destination==destination &&
-                   link.preFader==preFader && !link.primaryOutput) {
-                    link.gain=gain;return true;
-                }
-            return false;
-        }
+        const auto it=index_.find(id.value);
+        if(it==index_.end())return false;
+        for(auto& link:channels_[it->second].sends)
+            if(link.destination==destination &&
+               link.preFader==preFader && !link.primaryOutput) {
+                link.gain=gain;return true;
+            }
         return false;
     }
 
@@ -260,7 +259,12 @@ public:
         }
         if(result.ok() && !withinBudget(candidate))result.fault=ChannelEditFault::budgetExceeded;
         if(!result.ok()) {result.createdIds.clear();return result;}
+        // Structural edits are infrequent and prepared entirely on CONTROL.
+        // Rebuild before acceptance: rejected/failed edits cannot leave the
+        // active stable-ID map pointing into an old reordered vector.
+        auto stagedIndex=buildIndex(candidate);
         channels_.swap(candidate);
+        index_.swap(stagedIndex);
         nextId_=next;
         result.revision=++revision_;
         return result;
@@ -301,7 +305,12 @@ public:
         if(!withinBudget(candidate)) {
             result.fault=ChannelEditFault::budgetExceeded;return result;
         }
-        channels_.swap(candidate);result.createdIds.push_back({nextId_++});
+        // Structural edits are infrequent and prepared entirely on CONTROL.
+        // Rebuild before acceptance: rejected/failed edits cannot leave the
+        // active stable-ID map pointing into an old reordered vector.
+        auto stagedIndex=buildIndex(candidate);
+        channels_.swap(candidate);
+        index_.swap(stagedIndex);result.createdIds.push_back({nextId_++});
         result.revision=++revision_;return result;
     }
 
@@ -351,7 +360,12 @@ public:
         if(!withinBudget(candidate)) {
             result.fault=ChannelEditFault::budgetExceeded;return result;
         }
+        // Structural edits are infrequent and prepared entirely on CONTROL.
+        // Rebuild before acceptance: rejected/failed edits cannot leave the
+        // active stable-ID map pointing into an old reordered vector.
+        auto stagedIndex=buildIndex(candidate);
         channels_.swap(candidate);
+        index_.swap(stagedIndex);
         result.revision=++revision_;return result;
     }
 
@@ -426,13 +440,26 @@ public:
         if(!withinBudget(candidate)) {
             result.fault=ChannelEditFault::budgetExceeded;return result;
         }
+        // Structural edits are infrequent and prepared entirely on CONTROL.
+        // Rebuild before acceptance: rejected/failed edits cannot leave the
+        // active stable-ID map pointing into an old reordered vector.
+        auto stagedIndex=buildIndex(candidate);
         channels_.swap(candidate);
+        index_.swap(stagedIndex);
         ++nextId_;result.revision=++revision_;
         result.createdIds.push_back(busId);
         return result;
     }
 
 private:
+    static std::unordered_map<std::uint64_t,std::size_t> buildIndex(
+            const std::vector<ChannelStripDefinition>& rows) {
+        std::unordered_map<std::uint64_t,std::size_t> index;
+        index.reserve(rows.size());
+        for(std::size_t i=0;i<rows.size();++i)
+            index.emplace(rows[i].id.value,i);
+        return index;
+    }
     static bool validFormat(ProcessingFormat f) noexcept {
         return f==ProcessingFormat::mono || f==ProcessingFormat::stereo;
     }
@@ -464,6 +491,7 @@ private:
     }
     ChannelRosterBudget budget_;
     std::vector<ChannelStripDefinition> channels_;
+    std::unordered_map<std::uint64_t,std::size_t> index_; // CONTROL ONLY
     std::uint64_t revision_=0, nextId_=1;
 };
 } // namespace armix::mixer
