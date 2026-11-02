@@ -1,0 +1,24 @@
+{
+  "version": "preview-v34-smart-wire-multipage-isolated",
+  "kind": "GUI_REFERENCE_ONLY",
+  "live_audio": false,
+  "source_pr": 285,
+  "baseline_pr": 278,
+  "source_sha": "bea579a5c5cdc13b8891a7eeff17a27515bde8c8",
+  "source_content_sha": "b61273756c2091406125c315ad5b7f27520e969b",
+  "qa_run": 41459741941,
+  "qa_conclusion": "success",
+  "route": "/preview-v34/",
+  "includes": [
+    "FIND across mixer banks",
+    "ROUTES both directions",
+    "editable wire-only inspector gain and tap",
+    "two-way jump portal",
+    "destination-first TO BUS with explicit serial/parallel decision",
+    "bounded global crosspoint MATRIX",
+    "guarded WIRE-only Undo",
+    "V33 1.7px one-cable motion and original top mounted patch nodes"
+  ],
+  "preserved": "Entire current /preview-v2/, native engine and existing routing models unchanged. V34 hosted as an additional optional reference preview.",
+  "limitations": "Browser GUI reference only: no physical PCM, ASIO, VST3 signal routing or native DSP verification."
+}
