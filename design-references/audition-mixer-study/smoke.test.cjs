@@ -673,7 +673,7 @@ check(html.includes('.console-body.wire-routing-v13.collapsed-send{--send-h:23px
  html.includes('.console-body.wire-routing-v13.collapsed-send{\n --send-h:23px!important'),
  'V14.1 source folds WIRE bay into a real 23px header');
 check(html.includes('.console-body.wire-routing-v13:not(.collapsed-send){--send-h:160px!important}') &&
- html.includes('const availableRise=sourceWell?Math.max(14,from.top-sourceWell.top-7):45'),
+ html.includes('const riseLimit=well?Math.max(18,from.top-well.top-10):85'),
  'Expanded V13 wire patch retains its 160px cable routing geometry');
 check(html.includes("document.querySelector('.console-body')?.classList.contains('collapsed-send')") &&
  html.includes('wireGesture?.active') &&
