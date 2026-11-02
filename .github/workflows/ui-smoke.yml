@@ -87,6 +87,8 @@ jobs:
         run: python tests/ui_smoke.py
       - name: Verify Preview V2 V7 physical visual geometry and modeless mixer workflow
         run: python tests/preview_v2_v7_visual_smoke.py
+      - name: Verify V15 real pointer OUT-to-IN wire and exclusive Bus routing
+        run: python tests/preview_v15_drag_wire_smoke.py
       - name: Verify G1/G2 LIVE mixer bank and native I/O transaction
         run: python tests/mixer_io_smoke.py
       - name: Verify MIX and FX RACK Auto Orbit workflow
@@ -131,6 +133,8 @@ jobs:
             preview-v14-all-folded-1711.png
             preview-v16-reordered-1711.png
             preview-v2-v7-1711.png
+            preview-v15-wire-left-1680.png
+            preview-v15-wire-bus-only-1680.png
             preview-p0-fx-expanded-1366.png
             site/preview-v2/index.html
             site/preview-v2/assets/

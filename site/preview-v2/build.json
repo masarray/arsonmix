@@ -1,17 +1,17 @@
 {
-  "version": "preview-v16-smart-fader-dnd",
+  "version": "preview-v15",
+  "kind": "GUI_REFERENCE_ONLY",
+  "live_audio": false,
   "source_pr": 278,
-  "source_sha": "10ac1f9fb93995e05ec160bab91725308a2ce0ef",
+  "source_branch": "design/audition-mixer-reference-isolated-20261101",
+  "source_sha": "ae20b080f3697efc59b36b4978891312fbf323b4",
   "source_content_sha": "b2e0b67874f6aebe773f2bb7f3935ee0afe09618",
   "routes": [
     "/preview/mixer.html",
     "/preview-v2/"
   ],
-  "kind": "GUI_REFERENCE_ONLY",
-  "live_audio": false,
-  "design": "Pure FL-style middle WIRE patch bay; no BUS dropdown, S1–S16 slot selector, horizontal SEND slider, PRE/POST button or SEND power in primary strips",
-  "geometry": "80/160px wire panel, P0 stationary lower PAN/SWITCH/FADER/FOOTER and FX absorbing all ROUTE/WIRE fold differences, flat anodized finish",
-  "test": "196/196 reference DOM/workflow checks PASS; exact main Chromium CI required",
-  "native": "Not actual ASIO/VST3 PCM routing, not native accepted graph ACK; browser preview only",
-  "milestone": "FX+SEND collapsed reallocates empty upper space into fader; front channel seams; drag arrangement preserving stable ChannelIds and routing"
+  "milestone": "Physical filled SEND OUT and hollow SEND IN nodes, cursor-following curved wire on pointer drag, both left and right destinations, Bus-only serial or parallel send decision",
+  "owner_geometry": "WIRE can fold to 23px, FX absorbs fold and fader/PAN stay stationary; expand WIRE to patch",
+  "verification": "211/211 JS DOM state checks on isolated branch; exact real Chromium pointer test is required by Actions on publish",
+  "limitations": "No native PCM, ASIO GraphIntent/ACK or genuine VST3 routing in this GUI reference. Green wire is DEMO state."
 }
