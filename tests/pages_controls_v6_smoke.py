@@ -17,7 +17,10 @@ def assert_ownership():
     assert "wireWsCanJoin" in html and "data:image/svg+xml;base64" in html
     assert "switch-section mx-hw-row" in html
     assert "assets/mixer-control-keys.css" in html and "assets/mixer-control-keys.js" in html
-    assert "codepen-buttons-wrapper" not in html and "hw-switch-socket" not in html
+    # Legacy stylesheet comments/selectors still exist for unrelated sections;
+    # the live DOM must never instantiate either retired hardware wrapper.
+    assert '<span class="buttons-wrapper codepen-buttons-wrapper"' not in html
+    assert '<span class="hw-switch-socket">' not in html
     assert "ArSonMix V5 backlit hardware material" not in html
     assert "Source port: https://codepen.io/praktikdan/pen/jbqBWm" not in html
     assert css.count(".mx-hw-row>button.mx-hw-key")>=5
