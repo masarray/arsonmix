@@ -5178,7 +5178,9 @@ function finishSendKnob(e,cancel=false){
  sendKnobDrag=null;g.pot.releasePointerCapture?.(e.pointerId);
  if(cancel){g.input.value=String(g.start);handleField({target:g.input,type:'input'});say('SEND gain canceled · original gain restored');}
  else handleField({target:g.input,type:'change'});
- refreshWireRoutingNodes();e.preventDefault();
+ // Keep the SAME knob DOM through click/double-click. Replacing its node on pointerup
+ // swallows the second click and breaks unity reset. Only repaint the SVG/status.
+ renderWireRouting();e.preventDefault();
 }
 sendControlSurface.addEventListener('pointerup',e=>finishSendKnob(e));
 sendControlSurface.addEventListener('pointercancel',e=>finishSendKnob(e,true));
