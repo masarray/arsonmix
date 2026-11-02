@@ -4842,7 +4842,7 @@ function handleField(event){
   edge.levelDb=Math.max(-60,Math.min(6,Math.round((Number(el.value)||0)*10)/10));
   if(el.style?.setProperty)el.style.setProperty('--wire-pct',wireGainPercent(edge.levelDb)+'%');
   if(el.parentElement?.style?.setProperty){el.parentElement.style.setProperty('--wire-pct',wireGainPercent(edge.levelDb)+'%');el.parentElement.style.setProperty('--wire-deg',(-135+wireGainPercent(edge.levelDb)*2.7).toFixed(1)+'deg');}
-  if(el.parentElement){el.parentElement.title=wireDbText(edge.levelDb);const value=el.parentElement.querySelector('.wire-pot-value');if(value)value.textContent=wireDbText(edge.levelDb);}
+  if(el.parentElement){el.parentElement.title=wireDbText(edge.levelDb);const value=el.parentElement.querySelector?.('.wire-pot-value');if(value)value.textContent=wireDbText(edge.levelDb);}
   if(event.type==='change')say('WIRE '+tracks.find(x=>x.id===edge.sourceId)?.name+' → '+t.name+' · '+wireDbText(edge.levelDb)+' · GUI DEMO ONLY');
   return;
  }
