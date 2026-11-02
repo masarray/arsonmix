@@ -17,7 +17,7 @@ test('only main and explicitly selected branch can produce a Windows FAT artifac
  assert.match(windows,/cancel-in-progress: true/);
  assert.match(windows,/if: \$\{\{ github\.event_name != 'pull_request' \|\| github\.head_ref == 'milestone\/m5-universal-channelid-vst3-lease-migration-20261101' \}\}/);
  assert.match(windows,/ArSonMix-ENGINE-10CH4AUX-EXPERIMENTAL-Hardware-FAT-Windows-x64/);
- assert.doesNotMatch(windows,/github\\.head_ref == 'milestone\\/m4-unified-native-multichannel-fx-20261101'/);
+ assert.ok(!windows.includes("github.head_ref == 'milestone/m4-unified-native-multichannel-fx-20261101'"));
  assert.ok(windows.indexOf('scripts/verify_native_windows_artifact.ps1') <
            windows.indexOf('uses: actions/upload-artifact@v4'));
 });
