@@ -63,7 +63,7 @@ async def check_mute(page,width):
     assert "inset" in off["faceShadow"] and off["lamp"]!="none",off
     assert off["lowerReflection"]=="0",off
     assert abs(off["height"]-29)<.8 and off["width"]>=26,off
-    assert 6<=off["captionSize"]<=10,off
+    assert abs(off["captionSize"]-off["width"]*.25)<1.0,off # container-scaled 25cqw
     await mute.hover()
     assert (await state())["faceBg"]==off["faceBg"],"Passive hover changes material"
     await mute.click()
