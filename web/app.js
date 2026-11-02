@@ -11,7 +11,7 @@ const raw=[
  ['Backing','♫',['EQ','Reverb'],-3.6,-25],
  ['Guitar','♬',['EQ','Compressor','Delay'],-7.9,30],
  ['Keyboard','▥',['EQ','Reverb'],-14.2,0],
- ['FX Return','◎',['Reverb'],-5.1,0]
+ ['Input 10','♩',['Reverb'],-5.1,0]
 ];
 const channels=raw.map((a,i)=>({id:i+1,name:a[0],icon:a[1],color:colors[i],inserts:[...a[2]],fader:a[3],pan:a[4],trim:0,mute:false,solo:false,pre:false,hpf:i%4!==0,stereo:i>=6}));
 let currentChannel=0, masterSelected=false, view='MIX', sceneIdx=0, timer=0;
@@ -266,19 +266,38 @@ function closeChannelIdentity(){
  document.querySelectorAll('.strip.identity-editing').forEach(el=>el.classList.remove('identity-editing'));
 }
 function commitChannelIdentity(){
- if(editingChannel<0)return;const index=editingChannel;
- const name=$('identityName').value.trim().replace(/\s+/g,' ').slice(0,26);
+ if(editingChannel<0)return;
+ const index=editingChannel, name=$('identityName').value.trim().replace(/\s+/g,' ').slice(0,26);
  if(!name){flash('Enter a channel name');$('identityName').focus();return}
- channels[index].name=name;channels[index].icon=channelIcons.includes(editingIcon)?editingIcon:'♩';
- channels[index].color=channelPalette.includes(editingColor)?editingColor:colors[index];
- closeChannelIdentity();currentChannel=index;renderMixer();
+ if(channels.some((c,i)=>i!==index&&c.name.trim().toLowerCase()===name.toLowerCase())){
+   flash('Channel name already used');$('identityName').focus();return;
+ }
+ const ch=channels[index];
+ ch.name=name;ch.icon=channelIcons.includes(editingIcon)?editingIcon:'♩';
+ ch.color=channelPalette.includes(editingColor)?editingColor:colors[index];
+ closeChannelIdentity();currentChannel=index;
+ // UI identity is not a native graph change. Do not remount any live FX/fader node.
+ const strip=document.querySelector('#mixer [data-strip="'+index+'"]');
+ if(strip){
+   strip.style.setProperty('--ch',ch.color);
+   for(const [sel,val] of [['.arChannelTopName',ch.name],['.arChannelTopIcon',ch.icon],
+       ['.strip-name .strip-caption',ch.name],['.strip-name .track-icon',ch.icon]]){
+     const item=strip.querySelector(sel);if(item)item.textContent=val;
+   }
+   strip.querySelector('[data-identity-open]')?.setAttribute('aria-label','Edit '+ch.name+' name, icon and color');
+   strip.querySelector('[data-editstrip]')?.setAttribute('aria-label','Double-click to edit '+ch.name+' name, icon and color');
+   strip.querySelector('[data-fader]')?.setAttribute('aria-label',ch.name+' fader');
+   const meter=strip.querySelector('.vu-bank');
+   if(meter)meter.setAttribute('aria-label',ch.name+(ch.stereo?' stereo left and right meters':' mono meter'));
+ }
+ createSide();
  if(view==='FX RACK')renderRackWorkspace();
- persistSession();flash('Channel identity updated');
+ persistSession();flash('Channel label updated · native audio route unchanged');
 }
 window.addEventListener('resize',positionChannelIdentity);
 $('mixer').addEventListener('scroll',positionChannelIdentity,{passive:true});
 function makeStrip(ch,i){let inserts=ch.inserts.slice(0,6);while(inserts.length<6) inserts.push('');return `<article class="strip ${i===currentChannel?'selected':''}" data-strip="${i}" style="--ch:${ch.color||colors[i]}">
- <div class="ch-id">${i+1}<button type="button" class="arFormatBadge" data-channel-format-toggle="${i}" aria-label="Switch CH ${i+1} processing format" title="MONO / STEREO">${ch.stereo?'ST':'M'}</button></div><div class="rack">${inserts.map((n,j)=>`<div class="insert-slot ${n&&bypassed[fxKey(i,j)]?'is-bypassed':''}"><button class="insert ${!n?'empty':''}" data-insert="${i}:${j}" title="${n?'Open or replace '+safeText(n):'Add VST effect'}">${n?'':'<span class="insert-add-glyph" aria-hidden="true">＋</span>'}<span class="insert-name">${n? safeText(n):'ADD FX'}</span></button>${n?`<button type="button" class="fx-power ${bypassed[fxKey(i,j)]?'is-bypassed':''}" data-fxpower="${i}:${j}" aria-pressed="${!bypassed[fxKey(i,j)]}" aria-label="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}" title="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}">⏻</button>`:''}</div>`).join('')}</div>
+ <div class="ch-id"><span class="arChannelNumber">CH ${String(i+1).padStart(2,'0')}</span><button type="button" class="arChannelTopIdentity" data-identity-open="${i}" title="Edit channel name, icon and color" aria-label="Edit ${safeText(ch.name)} name, icon and color"><span class="arChannelTopIcon" aria-hidden="true">${safeText(ch.icon)}</span><span class="arChannelTopName">${safeText(ch.name)}</span></button><button type="button" class="arFormatBadge" data-channel-format-toggle="${i}" aria-label="Switch CH ${i+1} processing format" title="MONO / STEREO">${ch.stereo?'ST':'M'}</button></div><div class="rack">${inserts.map((n,j)=>`<div class="insert-slot ${n&&bypassed[fxKey(i,j)]?'is-bypassed':''}"><button class="insert ${!n?'empty':''}" data-insert="${i}:${j}" title="${n?'Open or replace '+safeText(n):'Add VST effect'}">${n?'':'<span class="insert-add-glyph" aria-hidden="true">＋</span>'}<span class="insert-name">${n? safeText(n):'ADD FX'}</span></button>${n?`<button type="button" class="fx-power ${bypassed[fxKey(i,j)]?'is-bypassed':''}" data-fxpower="${i}:${j}" aria-pressed="${!bypassed[fxKey(i,j)]}" aria-label="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}" title="${bypassed[fxKey(i,j)]?'Enable':'Bypass'} ${safeText(n)}">⏻</button>`:''}</div>`).join('')}</div>
  <div class="strip-controls"><div class="trim-row"><span class="mini-label">TRIM<br>dB</span><div class="mini-lcd" data-trim-read="${i}">${fmt(ch.trim)}</div></div>${knobMarkup('trim',i,ch.trim,'Trim')}<div class="pan-control">${panMarkup(ch,i)}<div class="pan-readline"><span aria-hidden="true">L</span><strong data-pan-read="${i}">${panText(ch.pan)}</strong><span aria-hidden="true">R</span></div></div><div class="utility-row"><button data-pre="${i}" class="btn-180 ${ch.pre?'active':''}">Ø</button><button data-hpf="${i}" class="btn-180 ${ch.hpf?'active':''}">HPF</button></div></div>
  <div class="channel-actions"><button class="btn-180 candy mute ${ch.mute?'active':''}" data-mute="${i}" aria-pressed="${ch.mute}">MUTE</button><button class="btn-180 candy solo ${ch.solo?'active':''}" data-solo="${i}" aria-pressed="${ch.solo}">SOLO</button></div>
  <div class="db-display" data-read="${i}">${fmt(ch.fader)}</div><div class="fader-zone"><div class="vu-bank ${ch.stereo?'is-stereo':'is-mono'}" role="group" aria-label="${safeText(ch.name)} ${ch.stereo?'stereo left and right meters':'mono meter'}"><div class="vu-bars">${ch.stereo?meterUnit(String(i)+'L','L')+meterUnit(String(i)+'R','R'):meterUnit(String(i),'')}${meterScaleMarkup()}</div></div><div class="fader" data-fader="${i}" role="slider" tabindex="0" aria-orientation="vertical" aria-label="${ch.name} fader" aria-valuemin="-60" aria-valuemax="10" aria-valuenow="${ch.fader}" style="--fader-cut:${levelToTop(ch.fader)}%"><div class="fader-travel"><div class="cap" style="--pos:${levelToTop(ch.fader)}%"></div></div></div>${faderScaleMarkup()}</div></div>
@@ -305,7 +324,7 @@ function syncStripFormat(i,format){
 window.__arMixSyncAcceptedChannelFormat=syncStripFormat;
 function renderMixer(){
  const x=$('mixer'),scroll=x.scrollLeft;
- x.innerHTML=channels.map(makeStrip).join('')+'<article id="masterLeft" class="strip master-strip '+(masterSelected?'selected':'')+'" aria-label="Master output channel"></article>';
+ x.innerHTML=channels.map(makeStrip).join('')+'<article id="masterLeft" class="strip master-strip '+(masterSelected?'selected':'')+'" style="--ch:#b98a99" aria-label="Master output channel"></article>';
  renderMaster();x.scrollLeft=scroll;createSide();
 }
 let masterGain=-.1,masterPan=0,masterMute=false,masterMono=false,phones=-12,masterInserts=['Studio EQ','Brickwall Limiter'],masterBypassed={},pendingMasterSlot=null;
@@ -327,7 +346,7 @@ const meterPercentToDbfs=p=>clamp(p,0,100)*.6-60;
 function meterUnit(key,label){return `<div class="meter-unit"><div class="meter" data-meter-key="${key}"><button type="button" class="clip-led" data-clip="${key}" title="Clear latched clip — ${label}" aria-label="Clear ${label} clip indication"></button><div class="meter-signal-area"><div class="meter-fill" data-meter="${key}" style="--level:6%"></div><div class="meter-peak" aria-hidden="true"></div></div></div><span class="meter-channel-label" aria-hidden="true">${label||''}</span></div>`}
 function renderMaster(){
  const host=$('masterLeft');if(!host)return;
- host.innerHTML=`<div class="ch-id master-ch-id">MASTER</div>
+ host.innerHTML=`<div class="ch-id master-ch-id"><span>MAIN</span><span class="arMasterTopIdentity" aria-hidden="true"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m11 5-5 4H3v6h3l5 4V5Z"/><path d="M15 9a5 5 0 0 1 0 6M18 6a9 9 0 0 1 0 12"/></svg><span>MASTER</span></span></div>
  <div class="master-fx-rack">${masterFxRows()}</div>
  <div class="strip-controls master-controls-zone">
   <div class="master-analysis" role="group" aria-label="LUFS integrated loudness and dBTP true peak" title="Browser demo is simulated; actual native loudness/true peak not implemented">
@@ -449,6 +468,11 @@ document.addEventListener('click',e=>{const b=e.target.closest('button,[data-cho
  if(b.dataset.pluginManager!==undefined){flash('Plugin Manager is available in the Windows desktop app');return}
  if(b.dataset.mySounds!==undefined){flash('Native VST3 presets are available in the Windows desktop app');return}
  if(b.dataset.choose!==undefined){chooseChannel(+b.dataset.choose);return}
+ if(b.dataset.identityOpen!==undefined){
+   const index=Number(b.dataset.identityOpen);
+   if(Number.isInteger(index)&&index>=0&&index<channels.length)openChannelIdentity(index);
+   return;
+ }
  if(b.dataset.channelFormatToggle!==undefined){
    const i=Number(b.dataset.channelFormatToggle);
    if(!Number.isInteger(i)||i<0||i>=channels.length)return;
@@ -464,11 +488,11 @@ document.addEventListener('click',e=>{const b=e.target.closest('button,[data-cho
  if(b.dataset.mute!==undefined){toggleState(+b.dataset.mute,'mute');return}if(b.dataset.solo!==undefined){toggleState(+b.dataset.solo,'solo');return}
  if(b.dataset.pre!==undefined){let i=+b.dataset.pre;channels[i].pre=!channels[i].pre;b.classList.toggle('active');send('phase',channels[i].pre,i);return}
  if(b.dataset.hpf!==undefined){let i=+b.dataset.hpf;channels[i].hpf=!channels[i].hpf;b.classList.toggle('active');send('hpf',channels[i].hpf,i);return}
- if(b.dataset.masterInsert!==undefined){pendingMasterSlot=+b.dataset.masterInsert;openPluginBrowser(currentChannel,true);return}
+ if(b.dataset.masterInsert!==undefined){pendingMasterSlot=+b.dataset.masterInsert;if(!window.__JUCE__?.backend?.emitEvent)openQuickFx(currentChannel,pendingMasterSlot,b,true);return}
  if(b.dataset.masterPower!==undefined){const slot=+b.dataset.masterPower;masterBypassed[slot]=!masterBypassed[slot];renderMaster();persistSession();send('masterFxBypass',{slot,bypass:masterBypassed[slot]},-1);return}
  if(b.dataset.clip!==undefined){resetClip(b.dataset.clip);return}
  if(b.dataset.fxpower!==undefined){const [i,j]=b.dataset.fxpower.split(':').map(Number);setFxBypass(i,j,!bypassed[fxKey(i,j)]);return}
- if(b.dataset.insert){let [i,j]=b.dataset.insert.split(':').map(Number);currentChannel=i;pendingSlot=j;openPluginBrowser(i);return}
+ if(b.dataset.insert){let [i,j]=b.dataset.insert.split(':').map(Number);if(!window.__JUCE__?.backend?.emitEvent)openQuickFx(i,j,b);return}
  if(b.dataset.deleteScene!==undefined){deleteMixerSnapshot(b.dataset.deleteScene);return}
  if(b.dataset.scene!==undefined){loadSnapshotByIndex(+b.dataset.scene);return}
  if(b.dataset.preset){applyQuickPreset(b.dataset.preset);return}
@@ -758,8 +782,74 @@ function renderSignalFlow(){
   return;
  }
  $('rackWorkspace').innerHTML=`<div class="feature-top"><div><span class="eyebrow">NO TECHNICAL PATCHBAY REQUIRED</span><h2>Signal Flow — See where your voice goes</h2><p>A beginner-first view of the real-time audio path. Select your audio device in Setup.</p></div><button class="action" id="openSetupFromFlow">CHOOSE AUDIO DEVICE</button></div><div class="workflow"><div class="flow-node"><span class="eyebrow">01 · INPUT</span><b>Microphone</b><small>Audio Interface<br>ASIO or WASAPI</small></div><span class="flow-arrow">➜</span><div class="flow-node"><span class="eyebrow">02 · FX CHAIN</span><b>VST3 Plugins</b><small>EQ · Dynamics<br>Reverb · Delay</small></div><span class="flow-arrow">➜</span><div class="flow-node"><span class="eyebrow">03 · MIXER</span><b>Mix & Monitor</b><small>Fader · Pan<br>Master · Meters</small></div><span class="flow-arrow">➜</span><div class="flow-node"><span class="eyebrow">04 · OUTPUT</span><b>Speakers / Stream</b><small>Audio Device<br>Streaming bridge later</small></div></div><div class="flow-summary"><span>⚠ In this trial the audio flow is a visual concept; no microphone is captured and no audio is sent to a livestream.</span><button class="ghost-action" id="flowFxButton">OPEN FX RACK</button></div>`}
+
+// Adopt PR #278 V5 contextual quick-insert on the ORIGINAL mixer.
+// Desktop native operations remain owned by bridge.js; this uses preview
+// catalog ONLY when JUCE is absent, never as a fabricated VST3 instance.
+const arV5Quick=document.createElement('section');
+arV5Quick.className='arV5QuickFx';arV5Quick.hidden=true;
+arV5Quick.setAttribute('role','dialog');
+arV5Quick.setAttribute('aria-label','Quick add effect');
+arV5Quick.innerHTML='<div class="arV5QuickHead"><strong>ADD FX</strong><button type="button" data-fast-close aria-label="Close quick effect picker">×</button></div>'+
+  '<input type="search" class="arV5QuickSearch" aria-label="Search quick effects" placeholder="Search an effect or category…">'+
+  '<div class="arV5QuickResults" role="listbox"></div>'+
+  '<div class="arV5QuickFoot">Enter: insert · Esc: close <button type="button" data-fast-manager>Plugin Manager · F8</button></div>';
+document.querySelector('#app .workbench')?.append(arV5Quick);
+const arV5Search=arV5Quick.querySelector('.arV5QuickSearch'),
+      arV5Results=arV5Quick.querySelector('.arV5QuickResults');
+let arV5Anchor=null;
+function closeQuickFx(focus=false){
+  if(arV5Quick.hidden)return;
+  arV5Quick.hidden=true;
+  if(focus&&arV5Anchor?.isConnected)arV5Anchor.focus();
+  arV5Anchor=null;
+}
+function renderQuickFx(){
+  if(arV5Quick.hidden)return;
+  arV5Results.replaceChildren();
+  const q=arV5Search.value.trim().toLocaleLowerCase();
+  const found=pluginCatalog.filter(p=>
+    (p.name+' '+p.type+' '+(p.hint||'')).toLocaleLowerCase().includes(q));
+  for(const fx of found.slice(0,64)){
+    const b=document.createElement('button');b.type='button';
+    b.className='arV5QuickResult';b.dataset.fastPlugin=fx.name;
+    const title=document.createElement('span');title.textContent=fx.name;
+    const kind=document.createElement('small');kind.textContent=fx.type;
+    b.append(title,kind);arV5Results.append(b);
+  }
+  if(!found.length){const p=document.createElement('p');p.textContent='No matching demo effects';arV5Results.append(p);}
+}
+function openQuickFx(channel,slot,anchor,isMaster=false){
+  if(window.__JUCE__?.backend?.emitEvent)return false;
+  if(!isMaster){currentChannel=channel;pendingMasterSlot=null;pendingSlot=slot;}
+  else pendingMasterSlot=slot;
+  arV5Anchor=anchor;
+  arV5Quick.querySelector('.arV5QuickHead strong').textContent=
+    (isMaster?'MAIN':channels[channel]?.name||'CHANNEL')+' · FX '+(slot+1)+' · UI PREVIEW';
+  const host=arV5Quick.parentElement,r=anchor?.getBoundingClientRect(),p=host?.getBoundingClientRect();
+  if(r&&p){arV5Quick.style.left=Math.max(6,Math.min(r.left-p.left,p.width-320))+'px';
+    arV5Quick.style.top=Math.max(6,Math.min(r.bottom-p.top+4,p.height-360))+'px';}
+  arV5Quick.hidden=false;arV5Search.value='';renderQuickFx();arV5Search.focus();return true;
+}
+arV5Search.addEventListener('input',renderQuickFx);
+arV5Quick.addEventListener('click',e=>{
+  if(e.target.closest('[data-fast-close]')){closeQuickFx(true);return;}
+  if(e.target.closest('[data-fast-manager]')){
+    closeQuickFx();openPluginBrowser(currentChannel,pendingMasterSlot!==null);return;}
+  const b=e.target.closest('[data-fast-plugin]');if(!b)return;
+  if(!pluginCatalog.some(p=>p.name===b.dataset.fastPlugin))return;
+  closeQuickFx();insertPlugin(b.dataset.fastPlugin);
+});
+arV5Quick.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeQuickFx(true);}
+  if(e.key==='Enter'&&e.target===arV5Search){
+    const first=arV5Results.querySelector('[data-fast-plugin]');
+    if(first){e.preventDefault();first.click();}
+  }
+});
+
 function openPluginBrowser(idx,isMaster=false){if(!isMaster){currentChannel=idx;pendingMasterSlot=null}activeCategory='All';$('pluginModal').classList.remove('hidden');$('pluginTarget').textContent=isMaster?'Adding to MASTER bus · demo FX catalog':'Adding to '+channels[idx].name+' · virtual effects catalog';$('pluginSearch').value='';renderPluginBrowser();$('pluginSearch').focus()}
-function closePluginBrowser(){$('pluginModal').classList.add('hidden')}
+function closePluginBrowser(){closeQuickFx();$('pluginModal').classList.add('hidden')}
 function renderPluginBrowser(){document.querySelectorAll('[data-category]').forEach(b=>b.classList.toggle('active',b.dataset.category===activeCategory));const q=$('pluginSearch').value.trim().toLowerCase();let pool=pluginCatalog.filter(p=>(activeCategory==='All'||p.type===activeCategory)&&`${p.name} ${p.type} ${p.hint}`.toLowerCase().includes(q));$('pluginResults').innerHTML=pool.map(p=>`<button class="plugin-card" data-pluginname="${safeText(p.name)}"><span class="plugin-glyph">${safeText(p.badge)}</span><span><b>${safeText(p.name)}</b><small>${safeText(p.type)} · ${safeText(p.hint)}</small></span></button>`).join('')||'<p>No matching demo effects.</p>'}
 function insertPlugin(name){
  if(pendingMasterSlot!==null){
@@ -979,7 +1069,7 @@ document.addEventListener('input',e=>{const el=e.target;if(!el.dataset.fxparam)r
 $('pluginModal').addEventListener('click',e=>{if(e.target===$('pluginModal'))closePluginBrowser()});
 $('channelIdentity').addEventListener('click',e=>{if(e.target===$('channelIdentity'))closeChannelIdentity()});
 $('identityName').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();commitChannelIdentity()}});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closePluginBrowser();closeChannelIdentity()}if((e.key==='Enter'||e.key===' ')&&e.target.matches('[data-editstrip]')){e.preventDefault();openChannelIdentity(+e.target.dataset.editstrip)}});
+document.addEventListener('keydown',e=>{if(e.key==='F8'&&!e.repeat&&!document.documentElement.classList.contains('ar-v6-active')){e.preventDefault();if(window.__JUCE__?.backend?.emitEvent)document.querySelector('[data-plugin-manager]')?.click();else{closeQuickFx();openPluginBrowser(currentChannel,pendingMasterSlot!==null)}return;}if(e.key==='Escape'){closeQuickFx();closePluginBrowser();closeChannelIdentity()}if((e.key==='Enter'||e.key===' ')&&e.target.matches('[data-editstrip]')){e.preventDefault();openChannelIdentity(+e.target.dataset.editstrip)}});
 document.addEventListener('change',e=>{if(e.target.id==='rackChannel')chooseChannel(+e.target.value)});
 document.addEventListener('click',e=>{const id=e.target.closest('button')?.id;if(id==='saveFxFromRack')saveFxChainPreset();else if(id==='recallFxPreset')recallFxChain();else if(id==='openSetupFromFlow')$('audioSetupBtn')?.click();else if(id==='flowFxButton')setView('FX RACK');else if(id==='backMixer')setView('MIX')});
 // The UI-only envelope remains one atomic storage transaction, never a 5s

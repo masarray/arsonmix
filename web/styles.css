@@ -611,7 +611,7 @@ html[data-mixperf="baseline"] .toolbar .spec-device:hover{border-color:#3586a2}
    Semantic colors alone define the latched state; only the transient :active
    pointer press moves the cap inward by 1px without changing its layout slot. */
 :root{
- --b180-off:#cbd1d1;--b180-edge:#747f7f;--b180-off-ink:#172229;
+ --b180-off:#E7EFF0;--b180-edge:#747f7f;--b180-off-ink:#172229;
  --b180-color:var(--b180-off);--b180-border:var(--b180-edge);
  --b180-ink:var(--b180-off-ink);
  --b180-on-cyan:#94e8ed;--b180-on-green:#91edac;
