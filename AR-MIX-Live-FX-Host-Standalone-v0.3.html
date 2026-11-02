@@ -1448,6 +1448,154 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
  background-clip:content-box;border:0;box-shadow:none;
 }
 #app #mixer .meter .clip-led.latched{box-shadow:none!important}
+/* Owner-approved V5 graphite hardware keys, production native/legacy console.
+   ONE SVG cutout legend, ONE white edge shine, asymmetric occluded leakage.
+   No hover repaint, SVG filters, blur, infinite animation, or fake audio state.
+   This module is LAST in the deterministic CSS build, replacing BTN-180 only
+   on opt-in tactile mixer buttons. Navigation, routing pins, meters, faders,
+   editor launchers, dropdowns and ordinary dialog actions are NOT backlit. */
+#app button.mx-hw-key {
+  --mx-hw-led:210,225,234;
+  position:relative!important;
+  display:inline-block!important;
+  box-sizing:border-box!important;
+  min-width:0!important;
+  padding:2px!important;
+  overflow:hidden!important;
+  isolation:isolate!important;
+  border:1px solid #0c151b!important;
+  border-radius:5px!important;
+  background:linear-gradient(180deg,#0b141b,#25343d)!important;
+  box-shadow:inset 0 2px 4px #03080db5!important;
+  color:transparent!important;
+  text-shadow:none!important;
+  letter-spacing:0!important;
+  line-height:normal!important;
+  filter:none!important;
+  backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
+  transform:none!important;
+  transition:none!important;
+  text-align:center!important;
+  cursor:pointer;
+  touch-action:manipulation;
+}
+#app button.mx-hw-key.mx-hw-mute {--mx-hw-led:255,64,85}
+#app button.mx-hw-key.mx-hw-solo {--mx-hw-led:255,208,44}
+#app button.mx-hw-key.mx-hw-cue {--mx-hw-led:90,200,231}
+#app button.mx-hw-key.mx-hw-processing {--mx-hw-led:87,211,189}
+#app button.mx-hw-key.mx-hw-phase {--mx-hw-led:243,164,81}
+#app button.mx-hw-key.mx-hw-link {--mx-hw-led:163,141,235}
+#app button.mx-hw-key.mx-hw-neutral {--mx-hw-led:210,225,234}
+/* V5 leakage strategy: four tiny STATIC gradients only in the closest
+   1–2px gap, unequal sides, lower-center stronger; top almost occluded. */
+#app button.mx-hw-key::before {
+  content:""!important;
+  display:block!important;
+  position:absolute!important;
+  inset:1px!important;
+  border:0!important;
+  border-radius:4px!important;
+  width:auto!important;height:auto!important;
+  transform:none!important;
+  pointer-events:none!important;
+  z-index:2!important;
+  opacity:0!important;
+  box-shadow:none!important;
+  background:
+    linear-gradient(90deg,transparent 0%,rgba(var(--mx-hw-led),.035) 18%,
+      rgba(var(--mx-hw-led),.16) 33%,rgba(var(--mx-hw-led),.46) 49%,
+      rgba(var(--mx-hw-led),.27) 63%,rgba(var(--mx-hw-led),.07) 80%,transparent 100%)
+      center bottom / calc(100% - 12px) 2px no-repeat,
+    linear-gradient(180deg,transparent 0%,transparent 30%,
+      rgba(var(--mx-hw-led),.045) 50%,rgba(var(--mx-hw-led),.21) 75%,
+      rgba(var(--mx-hw-led),.1) 88%,transparent 100%)
+      left bottom / 2px 100% no-repeat,
+    linear-gradient(180deg,transparent 0%,transparent 44%,
+      rgba(var(--mx-hw-led),.075) 65%,rgba(var(--mx-hw-led),.17) 85%,
+      transparent 100%)
+      right bottom / 2px 100% no-repeat,
+    linear-gradient(90deg,transparent 0%,transparent 34%,
+      rgba(var(--mx-hw-led),.055) 50%,transparent 67%,transparent 100%)
+      center top / calc(100% - 18px) 1px no-repeat!important;
+}
+#app button.mx-hw-key::after{content:none!important;display:none!important}
+#app button.mx-hw-key[aria-pressed="true"]::before,
+#app button.mx-hw-key.active::before,
+#app button.mx-hw-key.selected::before,
+#app button.mx-hw-key.power-on::before,
+#app button.mx-hw-key[data-mx-hw-on="true"]::before {opacity:1!important}
+#app button.mx-hw-key > svg.mx-hw-face {
+  position:absolute!important;
+  z-index:1!important;
+  top:2px!important;right:2px!important;bottom:2px!important;left:2px!important;
+  width:calc(100% - 4px)!important;
+  height:calc(100% - 4px)!important;
+  display:block!important;
+  min-height:0!important;
+  overflow:hidden!important;
+  pointer-events:none!important;
+  transform:translateY(0)!important;
+  transition:none!important;
+  filter:none!important;
+}
+#app button.mx-hw-key svg .mx-hw-lamp {opacity:0!important}
+#app button.mx-hw-key[aria-pressed="true"] svg .mx-hw-lamp,
+#app button.mx-hw-key.active svg .mx-hw-lamp,
+#app button.mx-hw-key.selected svg .mx-hw-lamp,
+#app button.mx-hw-key.power-on svg .mx-hw-lamp,
+#app button.mx-hw-key[data-mx-hw-on="true"] svg .mx-hw-lamp {opacity:1!important}
+#app button.mx-hw-key[aria-pressed="true"] > svg.mx-hw-face,
+#app button.mx-hw-key.active > svg.mx-hw-face,
+#app button.mx-hw-key[data-mx-hw-on="true"] > svg.mx-hw-face {
+  transform:translateY(1px)!important;
+}
+#app button.mx-hw-key > .mx-hw-screen-reader{
+  position:absolute!important;
+  width:1px!important;height:1px!important;
+  margin:-1px!important;padding:0!important;
+  border:0!important;overflow:hidden!important;
+  clip-path:inset(50%)!important;
+  white-space:nowrap!important;
+}
+#app button.mx-hw-key:hover:not(:disabled){
+  filter:none!important;
+  background:linear-gradient(180deg,#0b141b,#25343d)!important;
+  box-shadow:inset 0 2px 4px #03080db5!important;
+}
+#app button.mx-hw-key:active:not(:disabled){
+  transform:none!important;
+  background:linear-gradient(180deg,#0b141b,#25343d)!important;
+  box-shadow:inset 0 2px 4px #03080db5!important;
+}
+#app button.mx-hw-key:active:not(:disabled) > svg.mx-hw-face{
+  transform:translateY(1px)!important;
+}
+#app button.mx-hw-key:focus-visible{
+  outline:2px solid #9bbecd!important;
+  outline-offset:2px!important;
+}
+#app button.mx-hw-key:disabled {
+  cursor:not-allowed!important;
+  opacity:.47!important;
+  filter:none!important;
+}
+#app button.mx-hw-key:disabled::before{opacity:0!important}
+#app button.mx-hw-key:disabled svg .mx-hw-lamp{opacity:0!important}
+/* Keep target strip geometry intact, bypassing the legacy BTN-180 face. */
+#app #mixer .channel-actions button.mx-hw-key,
+#app #mixer .utility-row button.mx-hw-key {
+  flex:1 1 0;
+}
+#app #mixer [data-channel-format-toggle].mx-hw-key{
+  min-width:20px!important;
+}
+#app .arV6Controls button.mx-hw-key{width:28px!important;height:28px!important;padding:2px!important}
+#app .arV6FxSlot button.mx-hw-key{min-width:27px!important;min-height:22px!important;padding:2px!important}
+#app .arV6Send button.mx-hw-key{min-width:34px!important;min-height:20px!important;padding:2px!important}
+@media(prefers-reduced-motion:reduce){
+  #app button.mx-hw-key,#app button.mx-hw-key > svg.mx-hw-face{transition:none!important}
+}
 </style>
 <style id="arsonmix-mixer-layout-css">/* ArSonMix L2 mixer geometry — one vertically locked console, including MASTER.
    Source of truth is the outer seven-row grid, not per-strip flex intrinsic sizing.
@@ -8656,5 +8804,174 @@ scheduleDemoMeter();
   });
 })();
 </script>
+<script id="arsonmix-hardware-keys-js">/* ArSonMix hardware backlit keys — approved owner V5 geometry/occluded light.
+   UI-only decoration: existing data-*, click handlers and native ACK remain
+   the sole authority. No audio state is inferred or dispatched here. */
+(function(){
+  'use strict';
+  const RULES=[
+    ['#mixer .channel-actions [data-mute],#masterMute','mute','MUTE'],
+    ['#mixer .channel-actions [data-solo]','solo','SOLO'],
+    ['#mixer .utility-row [data-pre]','phase','Ø'],
+    ['#mixer .utility-row [data-hpf]','processing','HPF'],
+    ['#mixer [data-channel-format-toggle]','neutral',null],
+    ['#masterMode','neutral',null],
+    ['#mixer [data-fxpower],#masterLeft [data-master-power]','processing','FX'],
+    ['#app .arV6Console [data-op="SET_MUTE"]','mute','M'],
+    ['#app .arV6Console [data-op="SET_SOLO"]','solo','S'],
+    ['#app .arV6Console [data-op="SET_CUE"]','cue','C'],
+    ['#app .arV6Console [data-op="SET_INSERT_BYPASS"]','processing','FX'],
+    ['#app .arV6Console [data-op="SET_SEND_TAP"]','cue',null],
+    ['#app [data-sof-toggle]','cue','SEND'],
+    ['#app [data-chainbypass]','processing','FX']
+  ];
+  const PALETTE={
+    mute:'255,64,85',solo:'255,208,44',cue:'90,200,231',
+    processing:'87,211,189',phase:'243,164,81',
+    link:'163,141,235',neutral:'210,225,234'
+  };
+  const TARGET=RULES.map(rule=>rule[0]).join(',');
+  const instances=new Map();
+  let serial=0;
+  let observer=null;
+  const escapeXml=(value)=>String(value).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
+  function source(button){
+    for(const [selector,semantic,label] of RULES) {
+      if(button.matches(selector))return {semantic,label};
+    }
+    return null;
+  }
+  function rawLabel(button){
+    // Native accepted values can change PRE ↔ POST, MONO ↔ STEREO, etc.
+    return (button.textContent||'').trim().replace(/\s+/g,' ');
+  }
+  function classifyOn(button,legend){
+    const pressed=button.getAttribute('aria-pressed');
+    if(pressed!==null)return pressed==='true';
+    if(button.dataset.op==='SET_SEND_TAP')return legend==='PRE';
+    return button.classList.contains('active')||button.classList.contains('selected')||
+      button.classList.contains('power-on')||button.classList.contains('on');
+  }
+  function svgMarkup(legend,w,h,id){
+    // V5: a SINGLE SVG mask text cut-out; never overlay duplicate text paints.
+    // ViewBox follows actual key size, preventing distorted glyphs in 28px strips.
+    const safe=escapeXml(legend);
+    const rx=Math.min(6,Math.max(2.5,h*.135));
+    const fontSize=Math.max(8,Math.min(15,h*.46,(w-7)/(Math.max(1,legend.length)*.70)));
+    const x=w/2,y=h*.615,capW=Math.max(1,w-3),capH=Math.max(1,h-3);
+    const left=Math.max(3,w*.07),right=w-left,shineY=2.65;
+    const r=n=>Number(n.toFixed(2));
+    return '<svg class="mx-hw-face" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+r(w)+' '+r(h)+'" preserveAspectRatio="none" aria-hidden="true" focusable="false">'+
+      '<defs>'+
+      '<linearGradient id="mx-hw-cap-'+id+'" x1="0" y1="0" x2="0" y2="1">'+
+      '<stop offset="0" stop-color="#667680"/><stop offset=".20" stop-color="#46555f"/>'+
+      '<stop offset=".66" stop-color="#35444d"/><stop offset="1" stop-color="#26323b"/></linearGradient>'+
+      '<linearGradient id="mx-hw-led-'+id+'" x1="0" y1="0" x2="0" y2="1">'+
+      '<stop offset="0" stop-color="rgb(var(--mx-hw-led))" stop-opacity=".88"/>'+
+      '<stop offset=".46" stop-color="rgb(var(--mx-hw-led))" stop-opacity="1"/>'+
+      '<stop offset="1" stop-color="rgb(var(--mx-hw-led))" stop-opacity=".74"/></linearGradient>'+
+      '<linearGradient id="mx-hw-shine-'+id+'" gradientUnits="userSpaceOnUse" x1="'+r(left)+'" y1="0" x2="'+r(right)+'" y2="0">'+
+      '<stop offset="0" stop-color="white" stop-opacity="0"/>'+
+      '<stop offset=".2" stop-color="white" stop-opacity=".26"/>'+
+      '<stop offset=".5" stop-color="white" stop-opacity=".96"/>'+
+      '<stop offset=".8" stop-color="white" stop-opacity=".26"/>'+
+      '<stop offset="1" stop-color="white" stop-opacity="0"/></linearGradient>'+
+      '<mask id="mx-hw-cut-'+id+'" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="0" width="'+r(w)+'" height="'+r(h)+'">'+
+      '<rect width="'+r(w)+'" height="'+r(h)+'" fill="black"/>'+
+      '<rect x="1.5" y="1.5" width="'+r(capW)+'" height="'+r(capH)+'" rx="'+r(rx)+'" fill="white"/>'+
+      '<text x="'+r(x)+'" y="'+r(y)+'" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="'+r(fontSize)+'" font-weight="700" letter-spacing=".35" fill="black">'+safe+'</text>'+
+      '</mask></defs>'+
+      '<rect x=".5" y=".5" width="'+r(w-1)+'" height="'+r(h-1)+'" rx="'+r(rx+1)+'" fill="#0c1820"/>'+
+      '<rect x="1.5" y="1.5" width="'+r(capW)+'" height="'+r(capH)+'" rx="'+r(rx)+'" fill="#0e151c"/>'+
+      '<rect class="mx-hw-lamp" x="2.5" y="2.5" width="'+r(Math.max(1,w-5))+'" height="'+r(Math.max(1,h-5))+'" rx="'+r(Math.max(1,rx-1))+'" fill="url(#mx-hw-led-'+id+')"/>'+
+      '<rect x="1.5" y="1.5" width="'+r(capW)+'" height="'+r(capH)+'" rx="'+r(rx)+'" fill="url(#mx-hw-cap-'+id+')" mask="url(#mx-hw-cut-'+id+')"/>'+
+      '<path d="M '+r(left)+' '+shineY+' H '+r(right)+'" fill="none" stroke="url(#mx-hw-shine-'+id+')" stroke-width="1.25"/>'+
+      '</svg>';
+  }
+  function render(button,force){
+    if(!button.isConnected)return;
+    const record=instances.get(button);
+    if(!record)return;
+    const rect=button.getBoundingClientRect();
+    const w=Math.max(16,rect.width-4),h=Math.max(16,rect.height-4);
+    const legend=button.dataset.mxHwLegend||record.legend;
+    const size=w.toFixed(1)+'x'+h.toFixed(1)+'/'+legend;
+    if(!force&&record.size===size&&button.querySelector(':scope > svg.mx-hw-face'))return;
+    record.size=size;
+    button.innerHTML='<span class="mx-hw-screen-reader">'+escapeXml(legend)+'</span>'+svgMarkup(legend,w,h,record.id);
+  }
+  function upgrade(button){
+    if(!(button instanceof HTMLButtonElement))return;
+    const rule=source(button);
+    if(!rule)return;
+    const existing=instances.get(button);
+    if(existing&&button.querySelector(':scope > svg.mx-hw-face'))return;
+    const original=rawLabel(button);
+    let legend=rule.label||original||'ON';
+    // A source text replacement (e.g. native PRE/POST) is authoritative.
+    if(existing&&original&&original!==existing.legend&&original!=='')legend=original;
+    if(!/^[\wØ/+\- ]{1,10}$/.test(legend))return;
+    if(!existing){
+      // Drop the broken BTN-180 visual skin, retaining functionality/data hooks.
+      button.classList.remove('btn-180','candy');
+      button.classList.add('mx-hw-key','mx-hw-'+rule.semantic);
+      if(!button.hasAttribute('aria-label'))button.setAttribute('aria-label',original||legend);
+      button.style.setProperty('--mx-hw-led',PALETTE[rule.semantic]);
+      instances.set(button,{id:++serial,legend,size:''});
+      if(resizer)resizer.observe(button);
+    }else{
+      existing.legend=legend;
+    }
+    if(button.dataset.op==='SET_SEND_TAP')button.dataset.mxHwOn=String(classifyOn(button,legend));
+    button.dataset.mxHwLegend=legend;
+    render(button,true);
+  }
+  function scan(root){
+    if(!root||root.nodeType!==1)return;
+    if(root.matches('button.mx-hw-key')&&!root.querySelector('svg.mx-hw-face')){
+      // An existing app handler replaced the button's textContent.
+      const prev=instances.get(root),changed=rawLabel(root);
+      if(prev&&changed&&changed!==prev.legend){
+        root.dataset.mxHwLegend=changed;
+        prev.legend=changed;
+      }
+      upgrade(root);
+    }else if(root.matches(TARGET))upgrade(root);
+    for(const button of root.querySelectorAll(TARGET))upgrade(button);
+  }
+  const resizer=typeof ResizeObserver==='function'?new ResizeObserver(entries=>{
+    for(const entry of entries)render(entry.target,false);
+  }):null;
+  const pending=new Set();
+  let scheduled=false;
+  function flush(){
+    scheduled=false;
+    for(const node of pending)scan(node);
+    pending.clear();
+  }
+  function schedule(node){
+    if(!node||node.nodeType!==1)return;
+    pending.add(node);
+    if(!scheduled){scheduled=true;queueMicrotask(flush)}
+  }
+  function install(){
+    if(observer)return;
+    scan(document.body);
+    observer=new MutationObserver(records=>{
+      for(const record of records){
+        if(record.target instanceof HTMLButtonElement&&record.target.classList.contains('mx-hw-key') &&
+           !record.target.querySelector('svg.mx-hw-face'))schedule(record.target);
+        for(const node of record.addedNodes)if(node.nodeType===1&&
+           (node.matches?.(TARGET)||node.querySelector?.(TARGET)))schedule(node);
+      }
+    });
+    // Watch DOM replacement only, not high-frequency meter/style attributes.
+    observer.observe(document.body,{childList:true,subtree:true});
+  }
+  window.ArSonMixHardwareKeys=Object.freeze({install,upgrade,scan,PALETTE});
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});
+  else install();
+})();</script>
 </body></html>
 </body></html>
