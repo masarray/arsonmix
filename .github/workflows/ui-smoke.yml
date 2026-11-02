@@ -85,6 +85,8 @@ jobs:
         run: python tests/pan_button_asset_test.py
       - name: Validate linked 11-strip geometry and LV1-style rail workspace
         run: python tests/mixer_shell_geometry_smoke.py
+      - name: Verify V8 FX rack and Plugin Manager CSS ownership
+        run: python tests/pages_css_ownership_v8_smoke.py
       - name: Verify embedded Inter font and contextual V7 micro-controls
         run: python tests/pages_inter_utility_v7_smoke.py
       - name: Verify owned V6 mixer hardware keys and WIRE regression
@@ -127,6 +129,8 @@ jobs:
             fader-ui-smoke.png
             toolbar-global-btn180-pad.png
             device-green-on-palette-review.png
+            pages-v8-fx-rack-expanded-1680.png
+            pages-v8-fx-browser-closed-1680.png
             pages-v7-embedded-inter-utility-1680.png
             pages-mixer-v6-OFF-1680.png
             pages-mixer-v6-ON-1680.png
