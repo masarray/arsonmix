@@ -1,27 +1,36 @@
 {
-  "version": "preview-v33-quiet-wire-any-bank-picker",
+  "version": "preview-v34-smart-wire-multipage-current",
   "kind": "GUI_REFERENCE_ONLY",
   "live_audio": false,
   "source_pr": 278,
-  "source_branch": "design/audition-mixer-reference-isolated-20261101",
-  "source_sha": "8f903b74078520902221950c23162056da59ca95",
-  "source_content_sha": "0f259af00566bef9c57a1bdf687cb6e669ff07f5",
-  "routes": [
-    "/preview/mixer.html",
-    "/preview-v2/"
+  "baseline_pr": 278,
+  "source_sha": "bea579a5c5cdc13b8891a7eeff17a27515bde8c8",
+  "source_content_sha": "b61273756c2091406125c315ad5b7f27520e969b",
+  "qa_run": 41459741941,
+  "qa_conclusion": "success",
+  "route": "/preview-v34/",
+  "includes": [
+    "FIND across mixer banks",
+    "ROUTES both directions",
+    "editable wire-only inspector gain and tap",
+    "two-way jump portal",
+    "destination-first TO BUS with explicit serial/parallel decision",
+    "bounded global crosspoint MATRIX",
+    "guarded WIRE-only Undo",
+    "V33 1.7px one-cable motion and original top mounted patch nodes"
   ],
-  "ci_run": 41449889699,
+  "preserved": "Entire current /preview-v2/, native engine and existing routing models unchanged. V34 hosted as an additional optional reference preview.",
+  "limitations": "Browser GUI reference only: no physical PCM, ASIO, VST3 signal routing or native DSP verification.",
+  "routes": [
+    "/preview/",
+    "/preview-v2/",
+    "/preview-v34/"
+  ],
+  "feature_pr": 285,
+  "source_branch": "design/v34-smart-wire-multipage-20261102",
+  "ci_run": 41459741941,
   "ci_conclusion": "success",
-  "milestone": "V33: single new cable 1.7px monotonic soft settle, universal keyboard-accessible PATCH TO any bank, explicit persistent source OUT, no hidden-bank fabricated wires, 22x24px steady-size 3D send gain knob.",
-  "operator_acceptance": "PR278 Chromium run 41449889699 SUCCESS: V15/V18/V19/V22/V26/V29/V30/V31/V32+V33 checks, per-edge animation isolation, CH05→Bus A universal remote picker, 1366/1680/1920 px.",
-  "owner_geometry": "WIRE collapses to 23px, expands to 160px; FX/PAN/FADER hierarchy preserved",
-  "hardware_key": "V30 raised satin-steel graphite keycap #738692→#354750 with readable face and crisp 2px sidewall, recessed ON face #27353d→#151e25 with color-specific sharp LED side lines, stationary socket overlaid lip, 1px cap travel; no blur/glow",
-  "limitations": "GUI-only preview: no native ASIO, PCM or VST3 routing.",
-  "led_meter": "6px x 9px portrait LED; 2px dark divider, continuous green/yellow/amber/red",
-  "verification": "Pinned source 8f903b740785, exact HTML blob 0f259af00566, reference CI #41449889699 SUCCESS; standalone HTML GUI only",
-  "design_reference_pr": 278,
-  "design_reference_sha": "2a889af659def8b5cbf5511ed24ffb6fe9c583d7",
-  "wire_visual": "Only newly created per-key SVG path settles with monotonic 1.7px damped sag; settled cables do not move. Source OUT remains pinned, hidden-bank destinations available by PATCH TO, remote endpoints represented by named portal without imaginary cable coordinates.",
-  "layout_visual": "compact BANK/VIEW/SOF/SNAPSHOT toolbar at 1244px; no label/button overlap; 1px selected border and previous V25 hardware controls preserved",
-  "fader": "Unified adaptive fader clamp(160px, 100dvh - 584px, 530px): +28px travel area versus V25/V27 across normal viewport range, original chrome thumb retained"
+  "archive_v33": "/preview-v33/",
+  "quality_gate": "full PR285 multi-viewport Chromium V15–V34 PASS; main UI-smoke gating before Pages",
+  "published_from": "Identical V34 HTML content pinned to tested PR #285 source; V33 archived verbatim."
 }

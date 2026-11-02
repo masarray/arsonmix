@@ -38,7 +38,9 @@ if candidate_manifest.is_file():
     assert source.is_file()
     metadata={'sha':args.sha if candidate['source_pr']==278 else candidate['source_sha'],
               'branch':candidate['source_branch'],
-              'source':('PR #278 active operator workflow · SIMULATED / NO REAL AUDIO'
+              'source':('PR #285 Smart WIRE (PR #278 baseline) · SIMULATED / NO REAL AUDIO'
+                        if candidate.get('feature_pr')==285 else
+                        'PR #278 active operator workflow · SIMULATED / NO REAL AUDIO'
                         if candidate['source_pr']==278 else 'PR #271 draft GUI snapshot'),
               'kind':candidate['kind'],'live_audio':False,
               'publisher_main_sha':args.sha,

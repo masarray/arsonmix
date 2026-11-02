@@ -2,10 +2,11 @@
   "kind": "REFERENCE_WORKFLOW_QA_ONLY",
   "source_pr": 278,
   "source_branch": "main/site/preview-v2",
-  "source_sha": "8f903b74078520902221950c23162056da59ca95",
-  "source_blob_sha": "0f259af00566bef9c57a1bdf687cb6e669ff07f5",
-  "ci_run": 41449889699,
+  "source_sha": "bea579a5c5cdc13b8891a7eeff17a27515bde8c8",
+  "source_blob_sha": "b61273756c2091406125c315ad5b7f27520e969b",
+  "ci_run": 41459741941,
   "ci_conclusion": "success",
   "live_audio": false,
-  "note": "V33 certified source: lightweight single-cable settle, cross-bank PATCH TO with explicit Bus choice, stable 3D knob geometry; GUI only."
+  "note": "PR285 V34 Smart WIRE is active Pages candidate based on PR278. V33 immutable archive at /preview-v33/. GUI reference ONLY, no native PCM.",
+  "feature_pr": 285
 }
