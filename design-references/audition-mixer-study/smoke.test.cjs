@@ -657,5 +657,26 @@ check(node('info').textContent.includes('already sends to Bus A via SEND slot') 
  'FL wire refuses duplicate audible legacy SEND to Bus A rather than summing unexpectedly');
 node('reset').dispatch('click');
 node('reset').dispatch('click');
+
+// V13: Clean FL Studio-inspired WIRE PATCH BAY replaces obsolete Send form.
+// Full operator row offers direct arrow, multi-destination cable and per-wire knob.
+node('body').clientWidth=1680;node('reset').dispatch('click');
+check(strip(1).includes('class="section send-section wire-section"') &&
+ strip(1).includes('class="wire-deck"') &&
+ strip(1).includes('class="wire-deck-label"') &&
+ strip(1).includes('class="wire-tray"'),
+ 'V13 shows continuous hardware wire-deck above destination sockets');
+check(!/class="send-slot"|class="send-select"|class="sendlevel"|data-field="sendLevel"|data-action="pre"|data-action="sendOn"/.test(strip(1)),
+ 'No legacy destination picker, slot selector, Pre/Post button or redundant slider in operator strip');
+check(html.includes('.console-body.wire-routing-v13.collapsed-send{--send-h:80px!important}') &&
+ html.includes('.console-body.wire-routing-v13:not(.collapsed-send){--send-h:160px!important}') &&
+ html.includes('const availableRise=sourceWell?Math.max(14,from.top-sourceWell.top-7):45'),
+ 'V13 patch bay allocates 80/160px and arcs wires upward into reclaimed area');
+wireTo(3);wireTo(6,true);
+check(strip(1).includes('⇢4') &&
+ [3,4,5,6].every(id=>strip(id).includes('wire-socket is-linked') &&
+ strip(id).includes('data-field="wireGain"') && !strip(id).includes('send-select')),
+ 'V13 four-way routing requires only destination arrows; level remains inline per edge');
+node('reset').dispatch('click');
 console.log('PASS '+cases.length+' reference mixer DOM checks');
 cases.forEach(x=>console.log('  ✓ '+x));
