@@ -51,7 +51,7 @@ def main():
         assert_true(page.locator('#wireLayer .wire-drag-line').count()>=2,
                     "Drag wire is not visible while following live pointer")
         # Stop within the magnetic halo, NOT on the exact IN node center.
-        page.mouse.move(x1+19,y1-15,steps=11)
+        page.mouse.move(x1+16,y1-12,steps=11)  # V22: 20px legal release, not old 24px halo
         page.wait_for_function("""() => !!document.querySelector(
             '#tracks .strip[data-id="3"] .wire-node-in.is-snap-target')""")
         assert_true('stroke-dasharray' not in page.locator('#wireLayer').inner_html(),
