@@ -33,11 +33,16 @@ def main():
             page.evaluate("""() => {
               const seen={};
               window.__v32Seen=seen;
+              window.__v32MotionCurves=[];
               window.__v32Observer=new MutationObserver(muts=>{
                 for(const m of muts){
                   if(m.type!=='attributes'||m.attributeName!=='d')continue;
                   const key=m.target.getAttribute('data-cable-key');
                   if(key)seen[key]=(seen[key]||0)+1;
+                  if(key==='1-4'){
+                    const nums=(m.target.getAttribute('d').match(/-?[0-9]+(?:[.][0-9]+)?/g)||[]).map(Number);
+                    if(nums.length===8)window.__v32MotionCurves.push(nums[3]);
+                  }
                 }
               });
               window.__v32Observer.observe(document.getElementById('wireLayer'),
@@ -45,10 +50,14 @@ def main():
             }""")
             route_to(4)
             page.wait_for_timeout(360)
-            seen=page.evaluate("""() => {
+            motion=page.evaluate("""() => {
               window.__v32Observer.disconnect();
-              return window.__v32Seen;
+              return {seen:window.__v32Seen,curves:window.__v32MotionCurves};
             }""")
+            seen=motion['seen']
+            curves=motion['curves']
+            verify(len(curves)>=5 and max(curves)-min(curves)>=3.1,
+                   f"{width}: plug-in motion too small or missing: {curves}")
             verify(cable(1,3).get_attribute('d')==before,
                    f"{width}: old cable changed shape when another cable was plugged")
             verify(seen.get("1-3",0)==0,
