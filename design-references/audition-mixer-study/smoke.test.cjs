@@ -666,9 +666,10 @@ node('reset').dispatch('click');
 node('body').clientWidth=1680;node('reset').dispatch('click');
 node('bankSelect').value='1';node('bankSelect').dispatch('change');
 wireTo(11);
-check(node('info').textContent.includes('legacy SEND to Bus A') &&
- !node('tracks').innerHTML.includes('wire-node-in is-linked'),
- 'FL wire refuses duplicate audible legacy SEND to Bus A rather than summing unexpectedly');
+check(node('info').textContent.includes('ALREADY CONNECTED') &&
+ node('tracks').innerHTML.includes('wire-node-in is-linked') &&
+ !node('tracks').innerHTML.includes('data-field="wireGain"'),
+ 'V32 existing legacy SEND to Bus A is visibly connected but never doubled with a new wire gain');
 node('reset').dispatch('click');
 node('reset').dispatch('click');
 
