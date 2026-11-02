@@ -35,6 +35,18 @@ def confirm_free_tip(page,x,y,context):
     check(abs(px-(x-vp["x"]))<2 and abs(py-(y-vp["y"]))<2,
           f"{context}: free cable tip hard-snapped away from mouse")
 
+def confirm_docked_tip(page,socket,context):
+    x,y=center(socket)
+    vp=page.locator("#viewport").bounding_box()
+    check(vp is not None,"Missing reference viewport")
+    d=page.locator("#wireLayer .wire-drag-line").last.get_attribute("d")
+    import re
+    m=re.search(r",\\s*(-?\\d+(?:\\.\\d+)?)\\s+(-?\\d+(?:\\.\\d+)?)\\s*$",d or "")
+    check(m is not None,f"{context}: no docked wire Bezier endpoint")
+    px,py=map(float,m.groups())
+    check(abs(px-(x-vp["x"]))<2 and abs(py-(y-vp["y"]))<2,
+          f"{context}: lit socket ring but cable endpoint is not physically docked")
+
 def main():
  with sync_playwright() as pw:
     browser=pw.chromium.launch(headless=True)
@@ -57,11 +69,11 @@ def main():
         dst=page.locator('#tracks .strip[data-id="3"] .wire-node-in')
         x0,y0=drag_begin(page,src)
         x1,y1=center(dst)
-        # 20px near socket: should highlight, but NOT center-lock or change graph.
+        # 20px near socket: ring lights AND cable tip docks as a provisional snap.
         move(page,x1+18,y1-8)
         check(page.locator('#tracks .strip[data-id="3"] .wire-node-in.is-snap-target').count()==1,
               f"{width}: close-in socket has no candidate guide")
-        confirm_free_tip(page,x1+18,y1-8,f"{width} near socket")
+        confirm_docked_tip(page,dst,f"{width} near socket")
         check(dst.get_attribute("aria-pressed")=="false",f"{width}: hover prematurely committed connection")
         # Continue past socket and out of its short magnetic radius.
         move(page,x1+38,y1)
@@ -89,6 +101,7 @@ def main():
               f"{width}: replug candidate modified graph before release")
         check(page.locator('#wireLayer .wire-floating-plug').count()==1,
               f"{width}: replug cable lacks independent free plug")
+        confirm_docked_tip(page,dst4,f"{width} replug candidate")
         move(page,x4+40,y4)
         confirm_free_tip(page,x4+40,y4,f"{width} crossing another socket")
         page.mouse.up()
@@ -98,6 +111,6 @@ def main():
         page.screenshot(path=str(ROOT/f"preview-v22-smart-snap-{width}.png"))
         page.close()
     browser.close()
-    print("PASS V22 SVG and smart snap: tight radius, free pointer, preview-only, pass-through, release-only and reconnect/unplug at 1366/1680/1920")
+    print("PASS V23 SVG and smart snap: illuminated socket docks endpoint, free after exit, graph commits only on release; 1366/1680/1920")
 
 if __name__=="__main__":main()
