@@ -11,7 +11,7 @@ Image-Line's official Mixer routing docs show **select source → destination up
 - Main control is a **full-width WIRE PATCH BAY**, in the *existing middle SEND/BUS row*, below FX rack, above PAN and M/S/PFL/fader. Compact 80 px, Expanded 160 px via the existing rail button; compact short-display fallback 58 px at <=680 px viewport height.
 - A wire has a visible source ▼, available destination △, connected ◆, and one self-contained knob. Hover cable is dashed amber; committed GUI demo cable green (send) or cyan (pre-FX reference), arcing upwards through the recessed empty patch canvas.
 - **Silence unconnected channel wells** visually: do not repeat “CHANNEL PATCH” on ten empty strips. Only source and active receiver display tiny relevant metadata. Pinned Master displays direct connection state.
-- Keep geometric P0 contract: FX rack owns the remaining space, fader stays on its approved proportional fixed budget. Opening the larger 160px wire bay borrows the 80px folding allowance from fader as specified in the approved P0 contract; collapsing ROUTE must never move fader.
+- Keep the newest geometric P0 contract: FX rack owns **all reclaimed space** from ROUTE and WIRE; PAN, MUTE/SOLO/PFL, fader, and footer retain the same Y positions and heights for all eight ROUTE/FX/WIRE permutations. The approved viewport-proportional fader height is `clamp(150px,100dvh - 630px,485px)` and does **not** shrink or jump when opening the 160px wire bay. The console body faces remain flat anodized metal and FX is the elastic upper section.
 
 ## Compatibility / native engineering boundary
 
