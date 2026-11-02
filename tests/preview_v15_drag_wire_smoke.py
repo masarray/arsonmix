@@ -77,9 +77,9 @@ def main():
           filter:getComputedStyle(el).filter,
           bay:getComputedStyle(el.parentElement).backgroundColor
         })""")
-        assert_true(initial['radius']=='2px','Hardware key must remain sharp-edged')
+        assert_true('5px' in initial['radius'],'Original CodePen left-corner sculpting missing')
         assert_true(initial['filter']=='none','No GUI blur filter allowed')
-        assert_true(initial['bay']=='rgb(6, 17, 24)','Button socket cavity missing')
+        assert_true(initial['bay']=='rgb(0, 0, 0)','Original CodePen black mounting well missing')
         meter=page.locator('#tracks .strip[data-id="1"] .meter-lane').first
         led=meter.evaluate("""el=>({
           width:getComputedStyle(el).width,
@@ -87,10 +87,8 @@ def main():
         })""")
         assert_true(led['width']=='6px' and '9px' in led['cells'] and '11px' in led['cells'],
                     'LED must be portrait (6x9px with 2px spacing)')
-        # V29 user-provided 3D graphite keycap is now the governing material.
-        # V19/V22 bright cube and rigid 2px sidewall were superseded by request.
-        # The mechanical socket, 1px physical travel, independent state and
-        # PAN/fader layout must still be preserved.
+        # The user's original CodePen MUTE/SOLO material supersedes V30
+        # graphite for these two buttons ONLY. PFL keeps V30 socket material.
         def material(locator):
             return locator.evaluate("""el=>({
                 bg:getComputedStyle(el).backgroundImage,
@@ -99,31 +97,33 @@ def main():
                 led:getComputedStyle(el).getPropertyValue('--am-key30-led').trim(),
                 press:getComputedStyle(el).getPropertyValue('--am-hw-key-press-y').trim()
             })""")
-        page.mouse.move(2,2)  # exit key hover before checking idle material
+        page.mouse.move(2,2)
         idle=material(key)
-        assert_true('rgb(115, 134, 146)' in idle['bg'] and
-                    'rgb(53, 71, 80)' in idle['bg'],
-                    'V30 raised graphite must stand apart visibly from dark chassis')
-        assert_true('0px 2px 0px' in idle['shadow'],
-                    'V30 key should have a sharp solid 2px underside')
-        assert_true(idle['press']=='1px','Key physical travel must remain 1px')
+        assert_true('rgb(51, 51, 51)' in idle['bg'] and
+                    'rgb(34, 34, 34)' in idle['bg'],
+                    'CodePen OFF must retain original #333 to #222 graphite gradient')
         solo=page.locator('#tracks .strip[data-id="1"] button.switch.solo')
         cue=page.locator('#tracks .strip[data-id="1"] button.switch.cue')
+        assert_true(material(cue)['press']=='1px','PFL hardware press must remain 1px')
         key.click();solo.click();cue.click()
-        # The example's jQuery single-select is NOT the mixer behavior:
-        # MUTE, SOLO and PFL are all independent latch states.
-        for cap,color,led in ((key,'MUTE','#ef6376'),
-                              (solo,'SOLO','#f6d16b'),
-                              (cue,'PFL','#78d3e9')):
+        # Preserve mixer-independent latch semantics, not CodePen demo's
+        # mutually-exclusive jQuery click handler.
+        for cap,color in ((key,'MUTE'),(solo,'SOLO')):
             active=material(cap)
-            assert_true(cap.get_attribute('aria-pressed')=='true',
-                        'V29 '+color+' did not remain ON independently')
-            assert_true('rgb(39, 53, 61)' in active['bg'] and
-                        'rgb(21, 30, 37)' in active['bg'] and
+            assert_true(cap.get_attribute('aria-pressed')=='true' and
+                        'selected' in (cap.get_attribute('class') or ''),
+                        'CodePen '+color+' must latch independently')
+            assert_true('rgb(32, 32, 32)' in active['bg'] and
+                        'rgb(21, 21, 21)' in active['bg'] and
                         'inset' in active['shadow'],
-                        'V30 '+color+' must visually sit inside the dark socket')
-            assert_true(active['led']==led,
-                        'V29 '+color+' colored indicator missing')
+                        'CodePen '+color+' must retain the sunken ON face')
+            assert_true(cap.locator('.fa').evaluate("el=>getComputedStyle(el).color")=='rgb(255, 255, 255)',
+                        'CodePen '+color+' ON label must remain readable')
+        active=material(cue)
+        assert_true(cue.get_attribute('aria-pressed')=='true' and
+                    'rgb(39, 53, 61)' in active['bg'] and
+                    active['led']=='#78d3e9',
+                    'PFL must retain its original V30 ON state and color')
         key.click()
         assert_true(key.get_attribute('aria-pressed')=='false' and
                     solo.get_attribute('aria-pressed')=='true' and
@@ -136,7 +136,7 @@ def main():
         page.mouse.move(rect['x']+rect['width']/2,rect['y']+rect['height']/2)
         page.mouse.down()
         pressed=key.evaluate('el=>getComputedStyle(el).transform')
-        assert_true(pressed.endswith(', 1)'),'Hardware press depth must be 1px: '+pressed)
+        assert_true(pressed=='none','Original CodePen MUTE must not inherit old 1px key travel: '+pressed)
         page.mouse.up()
         key.click() # undo MUTE so routing tests see same fixture
         page.screenshot(path=str(ROOT/'preview-v18-hardware-1680.png'))
