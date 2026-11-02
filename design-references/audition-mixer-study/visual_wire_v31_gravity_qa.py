@@ -55,8 +55,8 @@ def main():
             yes(a["maxY"]<=panel["y"]-page.locator('#viewport').bounding_box()["y"]+panel["height"]+2,
                 f"{w}: hanging wire overflows into PAN")
             # Right-to-left needs the exact same gravity and stable socket positions.
-            connect(8,5)
-            right=shape(cable(8,5))
+            connect(5,2)
+            right=shape(cable(5,2))
             yes(right["midY"]>max(right["parts"][1],right["parts"][7])+10,
                 f"{w}: reverse wire must also droop below its endpoints")
             page.locator('#wireView').select_option('all')
