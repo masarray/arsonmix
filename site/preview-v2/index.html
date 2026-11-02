@@ -4590,29 +4590,33 @@ function wirePathFor(edge,x0,y0,x1,y1,limit){
  return wirePathData(x0,y0,x1,y1,limit,wireMotion.key===key?wireMotion.offset:0);
 }
 function kickWireSpring(sourceId,destId){
- if(!sourceId||!destId||window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches)return;
- const key=sourceId+'-'+destId,token=++wireMotion.token;
- wireMotion.key=key;wireMotion.offset=0;
- let frame=0;
- function paint(offset){
-  const geometry=wireMotionGeometry.get(key);if(!geometry)return;
-  const d=wirePathData(...geometry,offset);
-  for(const path of document.querySelectorAll('#wireLayer path[data-cable-key="'+key+'"]'))
-   if(path.getAttribute('d')!==d)path.setAttribute('d',d);
+  if(!sourceId||!destId||window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches)return;
+  const key=sourceId+'-'+destId;
+  // A cable may be hidden by a bank change; never animate imaginary geometry.
+  if(!wireMotionGeometry.has(key))return;
+  const token=++wireMotion.token;
+  wireMotion.key=key;wireMotion.offset=3.8;
+  let frame=0;
+  function paint(offset){
+   const geometry=wireMotionGeometry.get(key);if(!geometry)return;
+   const d=wirePathData(...geometry,offset);
+   for(const path of document.querySelectorAll('#wireLayer path[data-cable-key="'+key+'"]'))
+    if(path.getAttribute('d')!==d)path.setAttribute('d',d);
+  }
+  // The cable hangs 3.8px into the patch bay, then gently relaxes
+  // with one subpixel return. There is no whole-mixer repaint or bouncing keycap.
+  // Immediately paint the committed wire so the change is visually perceptible.
+  paint(3.8);
+  function step(){
+   if(token!==wireMotion.token)return;
+   frame++;
+   wireMotion.offset=3.8*Math.exp(-frame*.15)*Math.cos(frame*.23);
+   paint(wireMotion.offset);
+   if(frame<20)requestAnimationFrame(step);
+   else{wireMotion.offset=0;wireMotion.key=null;paint(0);}
+  }
+  requestAnimationFrame(step);
  }
- function step(){
-  if(token!==wireMotion.token)return;
-  frame++;
-  // 2.8px maximum, one gentle settling motion instead of rigid bounces.
-  // Small, non-bouncing fabric-like damped sag: 1.7px opening movement,
-  // then monotonic relaxation. Only this cable's SVG paths are repainted.
-  wireMotion.offset=1.7*Math.exp(-frame*.28);
-  paint(wireMotion.offset);
-  if(frame<14&&Math.abs(wireMotion.offset)>.06)requestAnimationFrame(step);
-  else{wireMotion.offset=0;wireMotion.key=null;paint(0);}
- }
- requestAnimationFrame(step);
-}
 /* V23 Smart Wire: visible lit socket means preview is center-snapped and
    mouseup accepts that exact candidate. Moving away releases attraction;
    the underlying graph changes ONLY on mouseup. No whole-bay snap. */
