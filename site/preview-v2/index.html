@@ -4853,8 +4853,8 @@ const dismissPluginOverlays=(target)=>{
  if(pluginOpen&&!plugEl('pluginBrowser').contains(target)&&
     !target.closest('#pluginsButton,#fastManage'))setBrowser(false);
 };
-document.addEventListener('pointerdown',e=>dismissPluginOverlays(e.target),true);
-document.addEventListener('focusin',e=>dismissPluginOverlays(e.target),true);
+document.addEventListener?.('pointerdown',e=>dismissPluginOverlays(e.target),true);
+document.addEventListener?.('focusin',e=>dismissPluginOverlays(e.target),true);
 window.addEventListener('blur',()=>{if(quickOpen)setFastPicker(false);});
 plugEl('fastSearch').addEventListener('keydown',e=>{
  if(e.key==='Enter'){

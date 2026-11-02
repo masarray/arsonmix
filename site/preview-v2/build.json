@@ -4,8 +4,8 @@
   "live_audio": false,
   "source_pr": 278,
   "source_branch": "design/audition-mixer-reference-isolated-20261101",
-  "source_sha": "45b83e3a602821fb8134d26b4f8def9fb677f08c",
-  "source_content_sha": "f7fbf4fd10a6476bdc3decc986d027c05a14462d",
+  "source_sha": "768a2b08f5d8403b555687b6770029f68e22f4e5",
+  "source_content_sha": "a291e36e9d78a38090e12ad6c8accc7d500e1f6e",
   "routes": [
     "/preview/mixer.html",
     "/preview-v2/"
