@@ -3832,14 +3832,14 @@ function savePluginPreferences(){
  }));}catch(error){/* Manager still works without browser storage. */}
 }
 const tracksEl=document.getElementById('tracks'),masterEl=document.getElementById('master'),info=document.getElementById('info');
-let nextId=1,nextGroup=1,tracks=[],master,preview=false,meterFrame=0,lastTick=0,clipboard=null,scenes=[],sofEnabled=false,sofTarget="Bus A",wireSourceId=1,wireEdges=[],nextWireId=1,wireMode='send',wireAnchorId=null,wireHoverId=null,wireGesture=null,wireSuppressClick=false,pendingBusRoute=null,wireView='focus';
+let nextId=1,nextGroup=1,tracks=[],master,preview=false,meterFrame=0,lastTick=0,clipboard=null,scenes=[],sofEnabled=false,sofTarget="Bus A",wireSourceId=1,wireEdges=[],nextWireId=1,wireMode='send',wireAnchorId=null,wireHoverId=null,wireGesture=null,wireSuppressClick=false,wirePreviewArmed=false,pendingBusRoute=null,wireView='focus';
 const clone=x=>JSON.parse(JSON.stringify(x));
 const selection=()=>tracks.concat(master).filter(t=>t.selected);
 const make=(name,kind,color)=>{
  const id=nextId++;
  return {id,name,kind,color,icon:kind==='master'?'◎':kind==='bus'?'⊞':kind==='fx'?'◉':'♩',group:null,safe:false,format:'stereo',input:'None',output:kind==='master'?'Default Output':'Master',fx:Array(8).fill('None'),slotBypass:Array(8).fill(false),fxOn:true,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,activeSend:0,sendSlots:Array.from({length:16},()=>({send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0})),eq:true,pan:0,trim:0,mute:false,solo:false,cue:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
 };
-function init(){nextId=1;nextGroup=1;wireSourceId=1;wireEdges=[];nextWireId=1;wireMode='send';wireView='focus';document.getElementById('wireView').value='focus';wireAnchorId=null;wireHoverId=null;wireGesture=null;wireSuppressClick=false;pendingBusRoute=null;const choice=document.getElementById('routeChoice');if(choice)choice.hidden=true;document.getElementById('wireMode').value='send';tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
+function init(){nextId=1;nextGroup=1;wireSourceId=1;wireEdges=[];nextWireId=1;wireMode='send';wireView='focus';document.getElementById('wireView').value='focus';wireAnchorId=null;wireHoverId=null;wireGesture=null;wireSuppressClick=false;wirePreviewArmed=false;pendingBusRoute=null;const choice=document.getElementById('routeChoice');if(choice)choice.hidden=true;document.getElementById('wireMode').value='send';tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 /* Google Material Icons SVG paths, Apache-2.0. Inline/zero font or network requests. */
 const MATERIAL_PATH=Object.freeze({
@@ -3938,7 +3938,7 @@ function hasLegacySendTo(source,dest){
 function wireSourceTrack(id){return tracks.find(t=>t.id===id&&t.kind!=='master');}
 function selectWireSource(t){
  if(!t||t.kind==='master')return false;
- wireSourceId=t.id;wireAnchorId=null;wireHoverId=null;
+ wireSourceId=t.id;wirePreviewArmed=true;wireAnchorId=null;wireHoverId=null;
  tracks.forEach(x=>x.selected=x.id===t.id);master.selected=false;
  render();say('SOURCE '+t.name+' · drag solid OUT → hollow IN, or click an IN jack · GUI DEMO');
  return true;
@@ -4066,12 +4066,12 @@ function wireConnectRange(source,anchorId,finalId){
  render();say(source.name+' → '+batch.length+' destinations linked with SHIFT · GUI DEMO ONLY');
  return true;
 }
-function wireDbText(db){return db<=-60?'−∞':(db>0?'+':'')+Number(db).toFixed(0)+' dB';}
+function wireDbText(db){return db<=-60?'−∞':(db>0?'+':'')+Number(db).toFixed(1)+' dB';}
 function wireGainPercent(db){return Math.max(0,Math.min(100,(Number(db)+60)/66*100));}
 /* OUT is a solid physical jack, IN is an empty receiving jack.
    Every non-MAIN strip can originate a wire. Coordinates never assume x1>x0. */
 function wireTray(t){
- const source=tracks.find(x=>x.id===wireSourceId&&x.kind!=='master');
+ const source=wirePreviewArmed?wireSourceTrack(wireSourceId):null;
  const isSource=!!source&&source.id===t.id;
  const isMain=t.kind==='master';
  const edge=!isMain&&source?wireFor(source.id,t.id):null;
@@ -4086,7 +4086,7 @@ function wireTray(t){
   '><span class="wire-arrow" aria-hidden="true"></span><span class="wire-label">IN</span></button>';
  let controls=from+to;
  if(linked&&!isMain){
-  controls+='<label class="wire-pot" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%;--wire-deg:'+(-135+wireGainPercent(edge.levelDb)*2.7).toFixed(1)+'deg" title="'+escapeHtml(source.name+' → '+t.name+' · '+wireDbText(edge.levelDb))+'"><input class="wire-gain" type="range" min="-60" max="6" step="1" value="'+edge.levelDb+'" data-field="wireGain" data-wire-id="'+edge.id+'" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%" aria-label="Wire send level '+escapeHtml(source.name)+' to '+escapeHtml(t.name)+'"></label>';
+  controls+='<label class="wire-pot" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%;--wire-deg:'+(-135+wireGainPercent(edge.levelDb)*2.7).toFixed(1)+'deg" title="'+escapeHtml(source.name+' → '+t.name+' · '+wireDbText(edge.levelDb))+'"><input class="wire-gain" type="range" min="-60" max="6" step="1" value="'+edge.levelDb+'" data-field="wireGain" data-wire-id="'+edge.id+'" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%" aria-label="Wire send level '+escapeHtml(source.name)+' to '+escapeHtml(t.name)+'" aria-valuetext="'+wireDbText(edge.levelDb)+'" step="0.1"><output class="wire-pot-value" aria-hidden="true">'+wireDbText(edge.levelDb)+'</output></label>';
  }else{
   controls+='<span class="wire-pot is-idle" aria-hidden="true"></span>';
  }
@@ -4337,13 +4337,12 @@ function refreshStrip(t){
  const newRack=updated.querySelector('.fxslot-list');if(newRack)newRack.scrollTop=scroll;
 }
 function selectTrack(t,add=false){
- const changedSource=!add&&t.kind!=='master'&&wireSourceId!==t.id;
- if(changedSource){wireSourceId=t.id;wireAnchorId=null;wireHoverId=null;}
+ // Ordinary channel focus never selects a routing source.
  if(!add){tracks.forEach(x=>x.selected=false);master.selected=false;t.selected=true;}
  else t.selected=!t.selected;
  document.querySelectorAll('.strip').forEach(el=>{const item=tracks.concat(master).find(x=>x.id===Number(el.dataset.id));el.classList.toggle('selected',!!item&&item.selected);});
  const count=selection().length;if(count>1)say(count+' channels selected · Copy/Paste will apply to selection');
- if(changedSource)refreshWireRoutingNodes();
+ if(wirePreviewArmed){wirePreviewArmed=false;wireHoverId=null;refreshWireRoutingNodes();}
 }
 function refreshWireRoutingNodes(){
  document.querySelectorAll('.strip').forEach(el=>{
@@ -4476,11 +4475,11 @@ function wireLegendHtml(focus,routes){
 function renderWireRouting(){
  const svg=document.getElementById('wireLayer'),viewport=document.getElementById('viewport');
  const dragging=!!(wireGesture?.active&&wireGesture.point);
- const source=wireSourceTrack(dragging?wireGesture.sourceId:wireSourceId);
- const focus=wireSourceTrack(wireSourceId),routes=wireDisplayRoutes();
+ const source=dragging?wireSourceTrack(wireGesture.sourceId):(wirePreviewArmed?wireSourceTrack(wireSourceId):null);
+ const focus=wirePreviewArmed?wireSourceTrack(wireSourceId):null,routes=wireDisplayRoutes();
  const legend=document.getElementById('wireLegend'),main=document.getElementById('wireMaster');
  if(legend){
-  const markup=focus?wireLegendHtml(focus,routes):'Select a channel for IN / OUT';
+  const markup=focus?wireLegendHtml(focus,routes):'SEND idle · click an OUT dot to inspect routing';
   if(legend.innerHTML!==markup)legend.innerHTML=markup;
  }
  if(main&&source){
@@ -4490,6 +4489,7 @@ function renderWireRouting(){
  }
  if(!svg||!viewport)return;
  if(!source||document.querySelector('.console-body')?.classList.contains('collapsed-send')){
+  svg.style.clipPath='';
   if(svg.childNodes?.length)svg.replaceChildren?.();
   return;
  }
@@ -4500,6 +4500,8 @@ function renderWireRouting(){
  svg.setAttribute('viewBox','0 0 '+vp.width+' '+vp.height);
  const x0=from.left-vp.left+from.width/2,y0=from.top-vp.top+from.height*.5;
  const well=fromEl.closest?.('.send-section')?.getBoundingClientRect?.();
+ // Prevent Bezier, drag or spring paint beyond the WIRE panel's physical bounds.
+ if(well){const top=Math.max(0,well.top-vp.top),bottom=Math.max(0,vp.bottom-well.bottom);svg.style.clipPath='inset('+top.toFixed(1)+'px 0px '+bottom.toFixed(1)+'px 0px)';}
  const sagLimit=wireSagClearance(from,well);
  const paths=[];
  // V30 optional ALL: draw non-focused, currently visible paths in the back.
@@ -4652,7 +4654,7 @@ function recallScene(){
  const scene=scenes[Number(value)];if(!scene)return;
  const protectedChannels=new Map(tracks.concat(master).filter(t=>t.safe).map(t=>[t.id,clone(t)]));
  nextId=scene.nextId;nextGroup=scene.nextGroup;tracks=clone(scene.tracks);master=clone(scene.master);
- wireEdges=clone(scene.wireEdges||[]);nextWireId=scene.nextWireId||1;wireMode=scene.wireMode||'send';wireSourceId=scene.wireSourceId||1;wireAnchorId=scene.wireAnchorId??null;document.getElementById('wireMode').value=wireMode;
+ wireEdges=clone(scene.wireEdges||[]);nextWireId=scene.nextWireId||1;wireMode=scene.wireMode||'send';wirePreviewArmed=false;wireSourceId=scene.wireSourceId||1;wireAnchorId=scene.wireAnchorId??null;document.getElementById('wireMode').value=wireMode;
  tracks=tracks.map(t=>protectedChannels.get(t.id)||t);
  for(const [id,t] of protectedChannels){if(t.kind!=='master'&&!tracks.some(ch=>ch.id===id))tracks.push(t);}
  if(protectedChannels.has(master.id))master=protectedChannels.get(master.id);
@@ -4678,10 +4680,10 @@ function handleField(event){
  if(field==='wireGain'){
   const edge=wireEdges.find(x=>x.id===Number(el.dataset.wireId)&&x.destId===t.id);
   if(!edge){say('WIRE gain rejected: stale connection');return;}
-  edge.levelDb=Math.max(-60,Math.min(6,Math.round(Number(el.value)||0)));
+  edge.levelDb=Math.max(-60,Math.min(6,Math.round((Number(el.value)||0)*10)/10));
   if(el.style?.setProperty)el.style.setProperty('--wire-pct',wireGainPercent(edge.levelDb)+'%');
   if(el.parentElement?.style?.setProperty){el.parentElement.style.setProperty('--wire-pct',wireGainPercent(edge.levelDb)+'%');el.parentElement.style.setProperty('--wire-deg',(-135+wireGainPercent(edge.levelDb)*2.7).toFixed(1)+'deg');}
-  if(el.parentElement)el.parentElement.title=wireDbText(edge.levelDb);
+  if(el.parentElement){el.parentElement.title=wireDbText(edge.levelDb);const value=el.parentElement.querySelector('.wire-pot-value');if(value)value.textContent=wireDbText(edge.levelDb);}
   if(event.type==='change')say('WIRE '+tracks.find(x=>x.id===edge.sourceId)?.name+' → '+t.name+' · '+wireDbText(edge.levelDb)+' · GUI DEMO ONLY');
   return;
  }
@@ -4816,7 +4818,7 @@ window.addEventListener('pointermove',ev=>{
   const g=wireGesture;
   if(!Number.isFinite(ev.clientX)||!Number.isFinite(ev.clientY))return;
   if(!g.active&&Math.hypot(ev.clientX-g.startX,ev.clientY-g.startY)>=5){
-   g.active=true;wireHoverId=null; // source selection changes only on an accepted drop
+   g.active=true;wireSourceId=g.sourceId;wirePreviewArmed=true;wireHoverId=null; // explicit OUT drag arms preview
     if(g.movingEdgeId!==null)consoleBody.querySelector?.('.strip[data-id="'+g.originDestId+'"] .wire-node-in')?.classList.add('is-replug-origin');
    consoleBody.classList.add('wire-dragging');
   }
@@ -4841,12 +4843,12 @@ function finishFaderPointer(ev){
     const input=snap?.element||hit?.closest?.('.wire-node-in');
     const target=snap?.track||(input?findTrack(input):null),source=wireSourceTrack(g.sourceId);
     if(target&&source&&target.id!==source.id){
-     wireSourceId=source.id;wireAnchorId=target.id;
+     wireSourceId=source.id;wirePreviewArmed=true;wireAnchorId=target.id;
      requestWireConnection(source,target,input);
     }else say('WIRE drop canceled · release in destination WIRE bay (graph unchanged)');
    }
    renderWireRouting();wireSuppressClick=true;
-  }else if(g.sourceId){wireSuppressClick=false;}
+  }else if(g.sourceId){selectWireSource(wireSourceTrack(g.sourceId));wireSuppressClick=true;}
   return;
  }
  for(const pan of consoleBody.querySelectorAll?.('.center-pan[data-pan-alt-pointer]')||[])
@@ -4877,7 +4879,7 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  const btn=e.target.closest('[data-action]');if(!btn)return;
  const t=findTrack(btn);if(!t)return;
  const a=btn.dataset.action;
- if(a==='wireExpand'){document.querySelector('.section-rail [data-section="send"]')?.click();return;}
+ if(a==='wireExpand'){if(t.kind!=='master')selectWireSource(t);document.querySelector('.section-rail [data-section="send"]')?.click();return;}
  if(wireSuppressClick&&['wireSource','wireRoute'].includes(a)){wireSuppressClick=false;return;}
  if(a==='wireSource'){
   selectWireSource(t);return;
@@ -5003,7 +5005,7 @@ document.querySelector('.console-body').addEventListener('drop',e=>{
 document.querySelector('.console-body').addEventListener('pointerover',e=>{
  const btn=e.target.closest?.('[data-action="wireRoute"]');
  const t=btn?findTrack(btn):null;
- if(wireGesture?.active||!t||t.kind==='master'||t.id===wireSourceId||wireHoverId===t.id)return;
+ if(!wirePreviewArmed||wireGesture?.active||!t||t.kind==='master'||t.id===wireSourceId||wireHoverId===t.id)return;
  wireHoverId=t.id;renderWireRouting();
 });
 document.querySelector('.console-body').addEventListener('pointerout',e=>{
