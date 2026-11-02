@@ -4,7 +4,7 @@ Date: 2026-11-03. Previous milestones: V6 hardware M/S/PFL; V7 embedded Inter + 
 
 ## Source audit
 
-The actual user-facing GitHub Pages preview (`site/preview-v2/index.html`, mirrored to `/preview/mixer.html`) accumulated **232,684 inline CSS characters** and **1,926 `!important` declarations** before this milestone. FX rack and Plugin Manager selectors had been progressively overridden by older V7–V35 layers.
+The actual user-facing GitHub Pages preview (`site/preview-v2/index.html`, mirrored to `/preview/mixer.html`) accumulated **234,538 inline CSS characters** and **1,951 `!important` declarations** before this milestone. FX rack and Plugin Manager selectors had been progressively overridden by older V7–V35 layers.
 
 Rather than add a terminal stylesheet of stronger selectors, V8 **physically extracts** each exclusively owned rule from the inline CSS, keeping the rule's declarations and its relative order inside the new owner. Shared layout selectors (route/send/FX, strip/rail height, WIRE geometry) remain where they already live because they have multiple owners.
 
@@ -16,7 +16,7 @@ Rather than add a terminal stylesheet of stronger selectors, V8 **physically ext
 | `site/preview-v2/assets/mixer-control-keys.css` (V6) | MUTE/SOLO/PFL 29px hardware backlights | unchanged |
 | `site/preview-v2/assets/inter-embedded.css` (V7) | Embedded variable Inter across GUI and SVG text | unchanged |
 
-This removal reduces inline CSS to **223,627 characters**, and its `!important` declarations to **1,808**. The original declarations are in the corresponding CSS owner files, not globally eliminated. These figures refer to the current reference Pages HTML only, not the independent native WebView source.
+Rebased on WIRE V40 (preserved untouched). This removal reduces inline CSS to **225,481 characters**, and its `!important` declarations to **1,833**. The original declarations are in the corresponding CSS owner files, not globally eliminated. These figures refer to the current reference Pages HTML only, not the independent native WebView source.
 
 ## Ownership boundary
 
