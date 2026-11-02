@@ -71,15 +71,31 @@ def main():
         assert_true(travel['top']=='24px' and travel['bottom']=='24px',
                     'Fader slot not expanded consistently')
         assert_true(not errors,'V22 browser errors: '+str(errors))
+        # Owner selected V5 hardware key supersedes the old CodePen gradient.
+        # Retain ALL existing wire route tests that follow these material gates.
         key=page.locator('#tracks .strip[data-id="1"] button.switch.mute')
-        initial=key.evaluate("""el=>({
-          radius:getComputedStyle(el).borderRadius,
-          filter:getComputedStyle(el).filter,
-          bay:getComputedStyle(el.parentElement).backgroundColor
-        })""")
-        assert_true('5px' in initial['radius'],'Original CodePen left-corner sculpting missing')
-        assert_true(initial['filter']=='none','No GUI blur filter allowed')
-        assert_true(initial['bay']=='rgb(0, 0, 0)','Original CodePen black mounting well missing')
+        solo=page.locator('#tracks .strip[data-id="1"] button.switch.solo')
+        cue=page.locator('#tracks .strip[data-id="1"] button.switch.cue')
+        for button,legend,color in (
+            (key,'MUTE','255,64,85'),(solo,'SOLO','255,208,44'),(cue,'PFL','90,200,231')):
+            data=button.evaluate("""el=>{
+              const s=getComputedStyle(el),face=el.querySelector('svg.mx-hw-face');
+              return {radius:s.borderRadius,filter:s.filter,background:s.backgroundImage,
+                led:s.getPropertyValue('--mx-hw-led').trim(),
+                maskTexts:face?.querySelectorAll('mask text').length,
+                maskLabel:face?.querySelector('mask text')?.textContent,
+                overlays:face?.querySelectorAll(':scope > text').length,
+                glow:getComputedStyle(el,'::before').opacity,
+                lamp:face?getComputedStyle(face.querySelector('.mx-hw-lamp')).opacity:null,
+                height:el.getBoundingClientRect().height
+              };
+            }""")
+            assert_true(data['maskTexts']==1 and data['overlays']==0 and
+                        data['maskLabel']==legend,'V5 key must have exactly one cutout text')
+            assert_true(data['led']==color and data['glow']=='0' and data['lamp']=='0',
+                        'V5 OFF must use dark graphite cap with unlit semantic LED')
+            assert_true('gradient' in data['background'] and data['filter']=='none' and
+                        abs(data['height']-29)<1,'V5 hardware material/size regression')
         meter=page.locator('#tracks .strip[data-id="1"] .meter-lane').first
         led=meter.evaluate("""el=>({
           width:getComputedStyle(el).width,
@@ -87,43 +103,19 @@ def main():
         })""")
         assert_true(led['width']=='6px' and '9px' in led['cells'] and '11px' in led['cells'],
                     'LED must be portrait (6x9px with 2px spacing)')
-        # The user's original CodePen MUTE/SOLO material supersedes V30
-        # graphite for these two buttons ONLY. PFL keeps V30 socket material.
-        def material(locator):
-            return locator.evaluate("""el=>({
-                bg:getComputedStyle(el).backgroundImage,
-                shadow:getComputedStyle(el).boxShadow,
-                ink:getComputedStyle(el).color,
-                led:getComputedStyle(el).getPropertyValue('--am-key30-led').trim(),
-                press:getComputedStyle(el).getPropertyValue('--am-hw-key-press-y').trim()
-            })""")
-        page.mouse.move(2,2)
-        idle=material(key)
-        assert_true('rgb(51, 51, 51)' in idle['bg'] and
-                    'rgb(34, 34, 34)' in idle['bg'],
-                    'CodePen OFF must retain original #333 to #222 graphite gradient')
-        solo=page.locator('#tracks .strip[data-id="1"] button.switch.solo')
-        cue=page.locator('#tracks .strip[data-id="1"] button.switch.cue')
-        assert_true(material(cue)['press']=='1px','PFL hardware press must remain 1px')
+        # Three independent latches: red MUTE, amber SOLO and ice-blue PFL.
         key.click();solo.click();cue.click()
-        # Preserve mixer-independent latch semantics, not CodePen demo's
-        # mutually-exclusive jQuery click handler.
-        for cap,color in ((key,'MUTE'),(solo,'SOLO')):
-            active=material(cap)
-            assert_true(cap.get_attribute('aria-pressed')=='true' and
-                        'selected' in (cap.get_attribute('class') or ''),
-                        'CodePen '+color+' must latch independently')
-            assert_true('rgb(32, 32, 32)' in active['bg'] and
-                        'rgb(21, 21, 21)' in active['bg'] and
-                        'inset' in active['shadow'],
-                        'CodePen '+color+' must retain the sunken ON face')
-            assert_true(cap.locator('.fa').evaluate("el=>getComputedStyle(el).color")=='rgb(255, 255, 255)',
-                        'CodePen '+color+' ON label must remain readable')
-        active=material(cue)
-        assert_true(cue.get_attribute('aria-pressed')=='true' and
-                    'rgb(39, 53, 61)' in active['bg'] and
-                    active['led']=='#78d3e9',
-                    'PFL must retain its original V30 ON state and color')
+        for button,color in ((key,'255,64,85'),(solo,'255,208,44'),(cue,'90,200,231')):
+            state=button.evaluate("""el=>({
+              pressed:el.getAttribute('aria-pressed'),
+              led:getComputedStyle(el).getPropertyValue('--mx-hw-led').trim(),
+              glow:getComputedStyle(el,'::before').opacity,
+              lamp:getComputedStyle(el.querySelector('.mx-hw-lamp')).opacity,
+              maskTexts:el.querySelectorAll('svg.mx-hw-face mask text').length
+            })""")
+            assert_true(state=={'pressed':'true','led':color,'glow':'1',
+                               'lamp':'1','maskTexts':1},
+                        'V5 semantic illuminated single-mask key failed '+str(state))
         key.click()
         assert_true(key.get_attribute('aria-pressed')=='false' and
                     solo.get_attribute('aria-pressed')=='true' and
@@ -135,10 +127,15 @@ def main():
         assert_true(bool(rect),'Button missing')
         page.mouse.move(rect['x']+rect['width']/2,rect['y']+rect['height']/2)
         page.mouse.down()
-        pressed=key.evaluate('el=>getComputedStyle(el).transform')
-        assert_true(pressed=='none','Original CodePen MUTE must not inherit old 1px key travel: '+pressed)
+        pressed=key.evaluate("""el=>({
+          housing:getComputedStyle(el).transform,
+          cap:getComputedStyle(el.querySelector('svg.mx-hw-face')).transform
+        })""")
+        assert_true(pressed['housing']=='none' and
+                    pressed['cap']=='matrix(1, 0, 0, 1, 0, 1)',
+                    'V5 key cap must depress 1px without moving stationary well: '+str(pressed))
         page.mouse.up()
-        key.click() # undo MUTE so routing tests see same fixture
+        key.click()  # restore button OFF so existing WIRE tests keep original fixture
         page.screenshot(path=str(ROOT/'preview-v18-hardware-1680.png'))
         # V25 quick VST picker must dismiss on external click, focus or window blur.
         quick_open=page.locator('#fastPicker')
@@ -166,10 +163,11 @@ def main():
         assert_true(page.locator('#pluginBrowser').is_visible(),
                     'Plugin Manager must stay modeless while mixing')
         page.locator('#pluginClose').click()
-        # Material icon uses SVG path, no text-glyph substitution.
-        svg=page.locator('#tracks .strip[data-id="1"] .fx-section .mini.power .mi-svg').first
-        assert_true(svg.count()==1 and svg.locator('path').count()==1,
-                    'FX power must be offline Material SVG, not ⏻ font glyph')
+        # FX power adopts V5 processing key, not the obsolete Material icon.
+        svg=page.locator('#tracks .strip[data-id="1"] .fx-section .mini.power .mx-hw-face').first
+        assert_true(svg.count()==1 and svg.locator('mask text').count()==1 and
+                    svg.locator('mask text').text_content()=='FX',
+                    'FX power must use a single backlit FX legend, not old icon layers')
         assert_true(page.locator('.mixer-title .panel-sub svg.mi-svg').count()==1,
                     'Mixer panel icon must be SVG not fallback text symbol')
         selected=page.locator('#tracks .strip.selected').first
