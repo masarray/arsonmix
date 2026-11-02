@@ -290,8 +290,8 @@ def main():
     # Both routes keep the PR278 design source; only CSS/JS asset revision
     # queries differ between checked-in source and fingerprinted deployment.
     import re
-    asset_revision=re.compile(r'(assets/[A-Za-z0-9._-]+\\.(?:css|js))\\?(?:v|rev)=[A-Za-z0-9_-]+')
-    canonical=lambda text:asset_revision.sub(r'\\1',text)
+    asset_revision=re.compile(r'(assets/[A-Za-z0-9._-]+\.(?:css|js))\?(?:v|rev)=[A-Za-z0-9_-]+')
+    canonical=lambda text:asset_revision.sub(r'\1',text)
     assert canonical(PUBLIC.read_text(encoding="utf-8"))==canonical(PAGE.read_text(encoding="utf-8")), (
         "Public /preview/mixer.html must be the PR278 reference apart from asset fingerprints")
     count = 0
