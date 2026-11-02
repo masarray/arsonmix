@@ -46,8 +46,9 @@ def main():
             ensure(fold1.is_visible() and fold3.is_visible(),f"{width}: folded state blank")
             ensure(fold1.locator('svg.fold-link-icon.has-out').count()==1,
                    f"{width}: existing legacy send has no graphical link indicator")
-            ensure(fold3.locator('svg.fold-link-icon').count()==0,
-                   f"{width}: unlinked channel should have no visible patch symbol")
+            ensure(fold3.locator('svg.fold-link-icon').count()==1 and
+                   fold3.locator('svg.fold-link-icon.has-in,svg.fold-link-icon.has-out').count()==0,
+                   f"{width}: idle channel needs BOTH muted OUT dot and IN ring")
             ensure(fold1.inner_text().strip()=="" and fold3.inner_text().strip()=="",
                    f"{width}: numeric send badges or captions clutter the collapsed bar")
             for id in (1,3):
@@ -55,8 +56,19 @@ def main():
                 ensure(not section.locator('.wire-tray').is_visible() and
                        not section.locator('.wire-deck').is_visible(),
                        f"{width}: live sockets and deck leaked outside collapsed WIRE compartment")
-            ensure(fold1.locator('svg.fold-link-icon').bounding_box()["height"]<=12,
+            ensure(fold1.locator('svg.fold-link-icon').bounding_box()["height"]<=16,
                    f"{width}: status graphic is oversized")
+            ensure(fold3.locator('svg.fold-link-icon .fold-link-out').count()==1 and
+                   fold3.locator('svg.fold-link-icon .fold-link-in').count()==1 and
+                   fold3.locator('svg.fold-link-icon .fold-link-in-dot').count()==1,
+                   f"{width}: physical OUT-left / IN-right / center pin not complete")
+            coords=fold3.locator('svg.fold-link-icon').evaluate("""svg=>{
+              const els=['.fold-link-out','.fold-link-in','.fold-link-in-dot'].map(k=>svg.querySelector(k));
+              return els.map(e=>({x:Number(e.getAttribute('cx')),r:Number(e.getAttribute('r'))}));
+            }""")
+            ensure(coords[0]["x"] < coords[1]["x"]==coords[2]["x"] and
+                   coords[2]["r"]<coords[0]["r"]<coords[1]["r"],
+                   f"{width}: DOT must be left of IN ring; OUT dot larger than center, smaller than ring")
             foldHeight=fold3.bounding_box()["height"]
             ensure(18<=foldHeight<=23,f"{width}: folded summary changes row height")
             sectionHeight=page.locator('#tracks .strip[data-id="3"] .send-section').bounding_box()["height"]
@@ -92,6 +104,29 @@ def main():
                    f"{width}: PAN height shifted")
             ensure(abs(page.locator('#tracks .strip[data-id="3"] .fader-section').bounding_box()["height"]-fader["height"])<1,
                    f"{width}: physical fader height changed")
+            # Expand, create a secondary CH3 → CH4 send to prove *both*
+            # direction contacts can be on for the SAME channel.
+            wire.click()
+            page.locator('#tracks .strip[data-id="3"] .wire-node-out').click()
+            src3=page.locator('#tracks .strip[data-id="3"] .wire-node-out')
+            in4=page.locator('#tracks .strip[data-id="4"] .wire-node-in')
+            sx,sy=center(src3);tx,ty=center(in4)
+            page.mouse.move(sx,sy);page.mouse.down()
+            page.mouse.move(tx,ty,steps=14);page.mouse.up()
+            ensure(in4.get_attribute("aria-pressed")=="true",
+                   f"{width}: secondary channel send for combined IN/OUT fixture missing")
+            ensure(page.locator('#tracks .strip[data-id="3"] .wire-disconnect').count()==0 and
+                   page.locator('#tracks .strip[data-id="4"] .wire-disconnect').count()==0,
+                   f"{width}: ugly wire X control is still rendered beside the gain")
+            wire.click()
+            both=page.locator('#tracks .strip[data-id="3"] .wire-fold-summary svg.fold-link-icon')
+            ensure(both.count()==1 and "has-in" in both.get_attribute("class") and
+                   "has-out" in both.get_attribute("class"),
+                   f"{width}: same channel does not light both independently routed contacts")
+            # Colors come from --ch and are applied to active physical shapes.
+            ensure(page.locator('#tracks .strip[data-id="3"] .wire-fold-summary').evaluate(
+                   "(e)=>!!e.closest('.strip').style.getPropertyValue('--ch')"),
+                   f"{width}: collapsed indicator lost channel-specific color")
             page.screenshot(path=str(ROOT/f"preview-v19-collapsed-{width}.png"))
             ensure(not errors,f"{width}: JS exceptions {errors}")
             page.close()
