@@ -102,7 +102,9 @@ async def assert_mixer(page, width):
     assert state==['false','true','true'],state
     # The existing mixer render path replaces strip HTML: no duplicate labels
     # and no old class may reappear after re-render.
-    await page.evaluate("render()")
+    # Render is private inside the reference app IIFE. A real user click on
+    # SOLO is the supported state transition that re-renders its strip.
+    await page.locator('#tracks .strip[data-id="1"] button[data-action="solo"]').click()
     await page.wait_for_function("""()=>document.querySelectorAll(
       '#tracks .strip[data-id="1"] .mx-hw-row>button .mx-hw-face').length===3""")
     assert await page.locator('#tracks .strip[data-id="1"] .mx-hw-row>button').count()==3
