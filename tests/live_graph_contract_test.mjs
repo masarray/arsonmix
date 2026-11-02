@@ -54,11 +54,16 @@ test('ADD/REMOVE remain guarded while MOVE publishes physical-slot order',()=>{
 
 test('bypass is sample-smoothed on audio callback without control-thread CPU work',()=>{
  assert.match(e,/bypassEnvelope/);
- assert.match(e,/bypass\.request\(cycle\.graph->bypassFlags/);
- assert.match(e,/bypass\.transitioning\(\)/);
+ const start=e.indexOf('static void processLegacyChannelOne(');
+ const end=e.indexOf('void audioDeviceIOCallbackWithContext',start);
+ assert.ok(start>=0&&end>start,'the accepted M4 CH1 owner must still exist');
+ const leaseFx=e.slice(start,end);
+ assert.match(leaseFx,/bypass\.request\(graph->bypassFlags/);
+ assert.match(leaseFx,/slot\.processor->processBlock\(buffer,midi\)/);
+ assert.match(leaseFx,/bypass\.transitioning\(\)/);
  assert.match(e,/dryScratch_\.setSize \(2, maxFrames/);
- assert.match(e,/bypass\.next\(\)/);
- assert.match(e,/bypass\.shouldProcessWet\(\)/);
+ assert.match(leaseFx,/bypass\.next\(\)/);
+ assert.match(leaseFx,/bypass\.shouldProcessWet\(\)/);
  assert.doesNotMatch(e.slice(e.indexOf('bool setBypass'),e.indexOf('bool removeAt')),/detach\(|prepareToPlay|releaseResources/);
 });
 
