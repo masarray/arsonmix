@@ -12,7 +12,7 @@
   height:var(--switch-h)!important;
   min-height:var(--switch-h)!important;
   padding:4px 5px!important;
-  background:linear-gradient(180deg,#1c303b,#162834)!important;
+  background:#1a2d38!important;
   border-top:1px solid #0a1b24!important;
   border-bottom:1px solid #415463!important;
   box-shadow:inset 0 1px 0 #ffffff0a!important;
