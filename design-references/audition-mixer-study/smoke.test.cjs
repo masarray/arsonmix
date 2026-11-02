@@ -629,9 +629,10 @@ filter('all');
 check(strip(3).includes('value="0" data-field="wireGain"'),
  'Double-click wire knob restores unity 0 dB without changing route');
 check(html.includes('wireHoverId=t.id;renderWireRouting()') &&
- html.includes('stroke-dasharray="5 5"') &&
+ html.includes("edge.preview?'#b5e8d3'") &&
+ !html.includes('stroke-dasharray="5 5"') &&
  html.includes('edge.preview'),
- 'Hover-only candidate wire uses differentiated dashed amber preview');
+ 'Hover-only candidate wire is solid and translucent; never dashed');
 node('reset').dispatch('click');
 
 // V12 pinned Master socket follows FL Send-switch semantics without extra PCM edge.
