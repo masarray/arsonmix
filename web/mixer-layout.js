@@ -1063,7 +1063,7 @@
   const nativeIdentity=ch=>{
     const published=typeof ch.color==='string'&&/^#[0-9a-fA-F]{6}$/.test(ch.color);
     const icon=typeof ch.icon==='string'&&Array.from(ch.icon).length<=4&&
-      !/[\\u0000-\\u001f\\u007f]/.test(ch.icon)?ch.icon:'';
+      Array.from(ch.icon).every(c=>c.codePointAt(0)>=32&&c.codePointAt(0)!==127)?ch.icon:'';
     return {color:published?ch.color:'#5f9ab1',icon,published};
   };
   const roleLabel=ch=>clean(ch.role).toUpperCase()+

@@ -787,7 +787,7 @@ async def main():
                   });
                   const m=document.querySelector('#arV6Main').getBoundingClientRect();
                   const v=document.querySelector('#arV6Console').getBoundingClientRect();
-                  const a=strip=document.querySelector('#arV6Lanes .arV6Strip');
+                  const a=document.querySelector('#arV6Lanes .arV6Strip');
                   return {boxes,mainLeft:m.left,mainRight:m.right,right:v.right,
                     masterWidth:m.width,channelWidth:a.getBoundingClientRect().width,
                     density:document.querySelector('#arV6Console').dataset.density};
