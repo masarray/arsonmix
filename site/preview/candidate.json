@@ -2,10 +2,10 @@
   "kind": "REFERENCE_WORKFLOW_QA_ONLY",
   "source_pr": 278,
   "source_branch": "main/site/preview-v2",
-  "source_sha": "7fadc58be4ea7b845f365227cc8cdab31e493283",
-  "source_blob_sha": "fc9c4bb56ad5b274519f2867340b490ba86e39bf",
-  "ci_run": 41416020664,
+  "source_sha": "4c54fbad403dfce92e9cac45f6105dc0bd317d6e",
+  "source_blob_sha": "03b401080c3e9292e28d01b955b8781d8f2ea79a",
+  "ci_run": 41421712393,
   "ci_conclusion": "success",
   "live_audio": false,
-  "note": "V23 icon-only collapsed wire status and illuminated-IN automatic preview docking. Published preview and /preview/mixer.html share the same vetted main HTML snapshot. GUI demo only."
+  "note": "V24: collapsed OUT-left dot, IN-right ring with center dot, independent per-channel colored routing indicators, wire X removed; same qualified main HTML deployed to both preview URLs."
 }

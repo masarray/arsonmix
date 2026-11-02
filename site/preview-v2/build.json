@@ -1,24 +1,24 @@
 {
-  "version": "preview-v23-clean-collapse-magnetic-in",
+  "version": "preview-v24-physical-dot-in-ring-clean-gain",
   "kind": "GUI_REFERENCE_ONLY",
   "live_audio": false,
   "source_pr": 278,
   "source_branch": "design/audition-mixer-reference-isolated-20261101",
-  "source_sha": "7fadc58be4ea7b845f365227cc8cdab31e493283",
-  "source_content_sha": "fc9c4bb56ad5b274519f2867340b490ba86e39bf",
+  "source_sha": "4c54fbad403dfce92e9cac45f6105dc0bd317d6e",
+  "source_content_sha": "03b401080c3e9292e28d01b955b8781d8f2ea79a",
   "routes": [
     "/preview/mixer.html",
     "/preview-v2/"
   ],
-  "ci_run": 41416020664,
+  "ci_run": 41421712393,
   "ci_conclusion": "success",
-  "milestone": "23px WIRE fold with single tiny graphical link indicator (no numeric arrows); collapsed socket/deck fully hidden; illuminated IN jack centers provisional magnetic endpoint and accepts on release; mouse leaving the ring undocks",
-  "operator_acceptance": "231/231 deterministic DOM checks PASS, Chromium V15/V18/V19/V22 at 1366x768, 1680x900 and 1920x1080 PASS; collapsed jacks invisible, PAN/fader height fixed, point-to-socket auto-snap-preview matches release candidate",
+  "milestone": "Collapsed WIRE always shows OUT solid dot LEFT and IN larger ring with small inner dot RIGHT; independent channel-hue activation by outgoing/incoming path, muted when idle. Expanded patch has OUT/IN/gain only; ugly X removed. Drag-to-unplug retained.",
+  "operator_acceptance": "233/233 DOM checks and Chromium focused V15/V18/V19/V22 QA all PASS at 1366x768, 1680x900, 1920x1080, including idle/OUT/IN/both state, geometry and no rendered wire X",
   "owner_geometry": "WIRE collapses to 23px, expands to 160px; FX/PAN/FADER hierarchy preserved",
   "hardware_key": "V20 true 3px hard sidewall / 2px while pressed, cap travels 1px; internal light gradient in translucent physical lens, sharp 2px radius, hard socket; no glow/blur/filters",
-  "limitations": "GUI reference only, no real ASIO PCM route/graph ACK or VST3 processing. Direct MAIN handled in I/O.",
+  "limitations": "GUI reference only, does not route real PCM, no ASIO accepted-graph ACK. Direct MAIN handled separately via I/O.",
   "led_meter": "6px x 9px portrait LED; 2px dark divider, continuous green/yellow/amber/red",
-  "verification": "GitHub Actions #41416020664 PASS; source PR278 head 7fadc58; snapshot atomic",
+  "verification": "Focused PR #41421712393 PASS, source SHA 03b401080c3e9292e28d01b955b8781d8f2ea79a",
   "design_reference_pr": 278,
   "design_reference_sha": "2a889af659def8b5cbf5511ed24ffb6fe9c583d7"
 }

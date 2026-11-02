@@ -2521,7 +2521,7 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
 
 /* Wire V17: fixed four-column hardware patch. Never reflow on route changes. */
 .console-body.wire-routing-v15 .strip .wire-tray,.console-body.wire-routing-v15 .strip .wire-tray.linked{
- display:grid!important;grid-template-columns:24px 28px 22px 14px!important;gap:2px!important;
+ display:grid!important;grid-template-columns:24px 28px 22px!important;gap:4px!important;
  align-items:center!important;justify-content:center!important;
  height:35px!important;min-height:35px!important;max-height:35px!important;
  padding:3px 2px!important;box-sizing:border-box!important;
@@ -3278,6 +3278,40 @@ html * ,html *::before,html *::after{
  opacity:1;
 }
 
+
+/* V24: precisely mirror physical patch in 23px folded rail:
+   LEFT = OUT filled 6.9px contact, RIGHT = IN 10.8px ring + 3.7px center.
+   Muted idle contacts stay visible. Each direction activates independently
+   with this channel's assigned color. Fixed 34x16px, no labels or effects. */
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-link-icon{
+ width:34px!important;height:16px!important;flex:0 0 34px!important;
+ display:block!important;overflow:visible;opacity:1!important;
+ color:var(--ch,#8aaeb9);pointer-events:none;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-link-out{
+ fill:#324956;stroke:#5c7480;stroke-width:.9;opacity:.75;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-link-in{
+ fill:#0c202b;stroke:#536b77;stroke-width:1.5;opacity:.9;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-link-in-dot{
+ fill:#344e59;stroke:none;opacity:.85;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .has-out .fold-link-out{
+ fill:currentColor;stroke:currentColor;opacity:1;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .has-in .fold-link-in{
+ fill:#0b222c;stroke:currentColor;opacity:1;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .has-in .fold-link-in-dot{
+ fill:currentColor;opacity:1;
+}
+/* Three actual physical controls, no useless fourth slot for removed X. */
+.console-body.wire-routing-v15 .strip .wire-tray,
+.console-body.wire-routing-v15 .strip .wire-tray.linked{
+ grid-template-columns:24px 28px 22px!important;gap:4px!important;
+}
+
 </style>
 </head>
 <body>
@@ -3639,7 +3673,7 @@ function wireTray(t){
  const linked=isMain?!!source&&source.output==='Master':!!edge;
  const canWire=!!(source&&!isSource);
  const label=!source?'NO SOURCE':isSource?'SOURCE':isMain?(linked?'MAIN ON':'MAIN OFF'):linked?'CONNECTED':'CONNECT';
- const modeLabel=linked&&!isMain?(edge.mode==='routeOnly'?'Route via Bus':edge.mode==='send'?'Post-fader Send':'Pre FX Mult'):'Click IN or drag an OUT jack here';
+ const modeLabel=linked&&!isMain?(edge.mode==='routeOnly'?'Route via Bus':edge.mode==='send'?'Post-fader Send':'Pre FX Mult')+' · click IN to disconnect or drag cable away':'Click IN or drag an OUT jack here';
  const from='<button type="button" class="wire-node-out'+(isSource?' is-source':'')+'" data-action="wireSource"'+(isMain?' disabled':'')+
   ' title="SEND OUT · drag this solid jack to another channel IN" aria-label="Send OUT from '+escapeHtml(t.name)+'" aria-pressed="'+isSource+'"><span class="wire-pin" aria-hidden="true"></span><small>OUT</small></button>';
  const to='<button type="button" class="wire-socket wire-node-in'+(isSource?' is-source':'')+(linked?' is-linked':'')+'" data-action="wireRoute" aria-pressed="'+linked+
@@ -3647,9 +3681,9 @@ function wireTray(t){
   '><span class="wire-arrow" aria-hidden="true"></span><span class="wire-label">IN</span></button>';
  let controls=from+to;
  if(linked&&!isMain){
-  controls+='<label class="wire-pot" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%;--wire-deg:'+(-135+wireGainPercent(edge.levelDb)*2.7).toFixed(1)+'deg" title="'+escapeHtml(source.name+' → '+t.name+' · '+wireDbText(edge.levelDb))+'"><input class="wire-gain" type="range" min="-60" max="6" step="1" value="'+edge.levelDb+'" data-field="wireGain" data-wire-id="'+edge.id+'" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%" aria-label="Wire send level '+escapeHtml(source.name)+' to '+escapeHtml(t.name)+'"></label><button type="button" class="wire-disconnect" data-action="wireRemove" title="Disconnect '+escapeHtml(source.name)+' → '+escapeHtml(t.name)+'" aria-label="Disconnect '+escapeHtml(t.name)+' from '+escapeHtml(source.name)+'">×</button>';
+  controls+='<label class="wire-pot" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%;--wire-deg:'+(-135+wireGainPercent(edge.levelDb)*2.7).toFixed(1)+'deg" title="'+escapeHtml(source.name+' → '+t.name+' · '+wireDbText(edge.levelDb))+'"><input class="wire-gain" type="range" min="-60" max="6" step="1" value="'+edge.levelDb+'" data-field="wireGain" data-wire-id="'+edge.id+'" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%" aria-label="Wire send level '+escapeHtml(source.name)+' to '+escapeHtml(t.name)+'"></label>';
  }else{
-  controls+='<span class="wire-pot is-idle" aria-hidden="true"></span><span class="wire-disconnect is-idle" aria-hidden="true"></span>';
+  controls+='<span class="wire-pot is-idle" aria-hidden="true"></span>';
  }
  return '<div class="wire-tray'+(linked?' linked':'')+'">'+controls+'</div>';
 }
@@ -3691,19 +3725,19 @@ function compactWireActivity(t){
 }
 function compactWireSummary(t){
  const {incoming,outgoing}=compactWireActivity(t);
- const connected=!!(incoming||outgoing);
+ const activeIn=incoming>0,activeOut=outgoing>0,connected=activeIn||activeOut;
  const title='Expand WIRE · '+t.name+' · '+incoming+' incoming, '+outgoing+
   ' outgoing custom paths · direct MAIN shown in I/O';
- // Compact hardware patch status: NO tiny numbers, letters or arrows.
- // The left pin marks receives, right pin marks sends, one quiet trace
- // means there is an internal audio path. Empty tracks have no symbol.
- const shape=connected?
-  '<svg class="fold-link-icon'+(incoming?' has-in':'')+(outgoing?' has-out':'')+
-  '" viewBox="0 0 28 12" aria-hidden="true" focusable="false">'+
-   '<path class="fold-link-trace" d="M 7 6 C 12 2.7 16 9.3 21 6" />'+
-   '<circle class="fold-link-in" cx="5" cy="6" r="2.5"/>'+
-   '<circle class="fold-link-out" cx="23" cy="6" r="2.5"/>'+
-  '</svg>':'';
+ // 1:1 physical order with the expanded patch:
+ // solid OUT dot LEFT, larger recessed IN circle RIGHT (with small center dot).
+ // Both muted while unused. A channel-hue indicator lights independently
+ // for its outgoing and incoming routes, with zero text or animated graphics.
+ const shape='<svg class="fold-link-icon'+(activeIn?' has-in':'')+(activeOut?' has-out':'')+
+  '" viewBox="0 0 34 16" aria-hidden="true" focusable="false">'+
+    '<circle class="fold-link-out" cx="8" cy="8" r="3.45"/>'+
+    '<circle class="fold-link-in" cx="26" cy="8" r="5.4"/>'+
+    '<circle class="fold-link-in-dot" cx="26" cy="8" r="1.85"/>'+
+   '</svg>';
  return '<button type="button" class="wire-fold-summary'+(connected?' has-wire':' is-empty')+
   '" data-action="wireExpand" aria-label="'+escapeHtml(title)+
   '" title="'+escapeHtml(title)+'">'+shape+'</button>';
@@ -4203,7 +4237,7 @@ consoleBody.addEventListener('pointerdown',ev=>{
  // Respect adjacent OUT, gain and remove targets, never steal their pointer.
  const directIn=ev.target.closest?.('.wire-node-in');
  const tray=!directIn?ev.target.closest?.('.wire-tray'):null;
- const other=ev.target.closest?.('.wire-node-out,.wire-pot,.wire-disconnect');
+ const other=ev.target.closest?.('.wire-node-out,.wire-pot');
  const socket=directIn||(!other?tray?.querySelector?.('.wire-node-in'):null);
  const receiver=socket?findTrack(socket):null;
  const activeSource=wireSourceTrack(wireSourceId);
@@ -4309,15 +4343,14 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  const t=findTrack(btn);if(!t)return;
  const a=btn.dataset.action;
  if(a==='wireExpand'){document.querySelector('.section-rail [data-section="send"]')?.click();return;}
- if(wireSuppressClick&&['wireSource','wireRoute','wireRemove'].includes(a)){wireSuppressClick=false;return;}
+ if(wireSuppressClick&&['wireSource','wireRoute'].includes(a)){wireSuppressClick=false;return;}
  if(a==='wireSource'){
   selectWireSource(t);return;
  }
- if(a==='wireRoute'||a==='wireRemove'){
+ if(a==='wireRoute'){
   const source=wireSourceTrack(wireSourceId);
   if(!source||t.id===source.id){say('Select a source and another destination');return;}
   if(t.kind==='master'){toggleDirectMain();return;}
-  if(a==='wireRemove'){const edge=wireFor(source.id,t.id);if(!edge)return;wireEdges=wireEdges.filter(x=>x.id!==edge.id);wireAnchorId=t.id;render();say('WIRE disconnected '+source.name+' → '+t.name+' · GUI DEMO ONLY');return;}
   if(e.shiftKey&&wireAnchorId!==null){wireConnectRange(source,wireAnchorId,t.id);wireAnchorId=t.id;return;}
   requestWireConnection(source,t,btn);wireAnchorId=t.id;return;
  }
