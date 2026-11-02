@@ -5250,6 +5250,16 @@ consoleBody.addEventListener('pointermove',e=>{
 consoleBody.addEventListener('pointerleave',()=>{
  nearWireOut?.classList.remove('is-near');nearWireOut=null;
 });
+// Allow a halo click near the physical OUT socket (not only its 28px face).
+// IN, knob and other WIRE buttons retain their own event handlers.
+consoleBody.addEventListener('click',e=>{
+ if(e.target.closest?.('.wire-node-out,.wire-node-in,.wire-pot,[data-action]'))return;
+ const tray=e.target.closest?.('.wire-tray');
+ const out=tray?.querySelector('.wire-node-out.is-near:not(:disabled)');
+ const source=out?findTrack(out):null;
+ if(!source||source.kind==='master')return;
+ e.stopPropagation();selectWireSource(source);
+});
 // Clicking away from the active patch controls releases OUT and the ready IN
 // sockets; WIRE workspace/nav/route-choice are part of the ongoing patch.
 // Inspecting a different channel must NOT silently create a route.
