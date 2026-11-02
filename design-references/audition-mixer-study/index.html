@@ -3816,6 +3816,66 @@ html * ,html *::before,html *::after{
 @media(prefers-reduced-motion:reduce){
  .console-body.wire-routing-v15 .strip .wire-tray .wire-pot::before{transition:none!important}
 }
+
+/* V34 Smart WIRE: overlay-only navigation. The mixer strips, cable physics,
+   bank layout, meters and routing model retain their V33 geometry. */
+.mixer-title .wire-v34-tool{height:19px!important;min-width:37px;padding:0 5px!important;
+ border:1px solid #4b6875!important;border-radius:3px!important;
+ color:#c1d7e1!important;background:#1b3541!important;
+ font:600 9px/16px 'Segoe UI',Arial,sans-serif!important;flex:none}
+.mixer-title .wire-v34-tool[aria-expanded="true"]{background:#285266!important;border-color:#79b3c6!important;color:#fff!important}
+.wire-workspace[hidden]{display:none!important}
+.wire-workspace{position:absolute;z-index:28;top:27px;right:8px;width:min(470px,calc(100% - 42px));
+ max-height:min(67vh,570px);display:flex;flex-direction:column;overflow:hidden;
+ border:1px solid #597887;border-radius:5px;background:#1b2d38;
+ color:#d2e4e9;font:11px/1.4 'Segoe UI',Arial,sans-serif;
+ box-shadow:0 12px 32px #000b,inset 0 1px #ffffff18}
+.wire-workspace.is-matrix{width:min(840px,calc(100% - 42px))}
+.wire-workspace button,.wire-workspace input,.wire-workspace select{font:inherit}
+.wire-workspace button:focus-visible,.wire-workspace input:focus-visible,.wire-workspace select:focus-visible{outline:1px solid #a5dfe5;outline-offset:1px}
+.wire-ws-head{display:flex;align-items:center;gap:7px;padding:7px 9px;background:#223a47;border-bottom:1px solid #425c68}
+.wire-ws-head strong{font-size:11px;font-weight:650;color:#e1edf1}
+.wire-ws-source{margin-left:auto;color:#a8cad8;font-size:10px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wire-ws-head button{background:#243c49;border:1px solid #4e6d7d;border-radius:3px;padding:1px 7px;color:#d6e7ec;cursor:pointer}
+.wire-ws-tabs{display:flex;gap:3px;padding:6px 8px 0;background:#1b2d38}
+.wire-ws-tabs button{border:1px solid transparent;border-bottom:0;background:transparent;color:#99b4bf;cursor:pointer;padding:5px 9px;border-radius:4px 4px 0 0;font-size:10px}
+.wire-ws-tabs button[aria-selected="true"]{background:#2c4653;border-color:#526e7b;color:#e6f4f8}
+.wire-ws-filters{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:7px 9px;border-bottom:1px solid #374f5a}
+.wire-ws-filters label{color:#9fbcc7;font-size:10px}
+.wire-ws-filters input[type="search"]{flex:1;min-width:100px;background:#10242e;border:1px solid #446271;border-radius:3px;padding:6px 8px;color:#dfeef2;outline-offset:1px}
+.wire-ws-filters select{min-width:95px;max-width:155px;background:#10242e;border:1px solid #446271;border-radius:3px;padding:5px;color:#dfeef2}
+.wire-ws-list{overflow:auto;min-height:48px;max-height:clamp(160px,45vh,395px);overscroll-behavior:contain}
+.wire-ws-row{display:flex;align-items:center;gap:7px;padding:7px 9px;border-bottom:1px solid #304752;color:#cfe0e6}
+.wire-ws-row:hover{background:#263e4a}
+.wire-ws-row .wire-ws-ident{display:flex;align-items:center;gap:7px;flex:1;min-width:0}
+.wire-ws-dot{width:7px;height:7px;border-radius:50%;background:var(--ws-hue,#7c9aaa);flex:none}
+.wire-ws-row .wire-ws-ident span{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.wire-ws-row small{color:#92aebc;font-size:9px;white-space:nowrap}
+.wire-ws-row button,.wire-ws-inspector button{border:1px solid #4a7181;background:#243f4d;color:#d5e8ef;border-radius:3px;padding:4px 7px;cursor:pointer}
+.wire-ws-row button[disabled]{opacity:.38;cursor:default}
+.wire-ws-row button:hover:not([disabled]),.wire-ws-inspector button:hover{background:#345667}
+.wire-ws-row .wire-ws-status{color:#91d8ac}
+.wire-ws-subtitle{font:600 9px/15px 'Segoe UI',Arial,sans-serif;letter-spacing:.08em;color:#adc6d1;padding:7px 9px 3px}
+.wire-ws-inspector{padding:8px 9px;border-top:1px solid #536f7b;background:#182f3b;display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center}
+.wire-ws-inspector[hidden]{display:none!important}
+.wire-ws-inspector .wire-ws-controls{grid-column:1/-1;display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.wire-ws-inspector input[type=range]{width:130px;accent-color:#84bfc7}
+.wire-ws-inspector select{background:#142b36;border:1px solid #446471;color:#cce1e9;border-radius:3px;padding:3px}
+.wire-ws-foot{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:6px 9px;font-size:9px;color:#87a9b7;border-top:1px solid #324b57}
+.wire-ws-matrix-scroll{overflow:auto;max-height:clamp(160px,43vh,380px)}
+.wire-ws-matrix{border-collapse:separate;border-spacing:1px;font-size:9px;width:max-content;min-width:100%}
+.wire-ws-matrix th{position:sticky;background:#253e4b;color:#b7ced5;z-index:1;top:0;padding:6px 5px;max-width:105px;white-space:nowrap}
+.wire-ws-matrix th:first-child{left:0;z-index:3}
+.wire-ws-matrix td:first-child{position:sticky;left:0;background:#1c3340;z-index:2;color:#c2d8e0;padding:4px 7px;white-space:nowrap}
+.wire-ws-matrix td{padding:2px;text-align:center}
+.wire-ws-matrix button{width:25px;height:24px;border:1px solid #426070;border-radius:3px;background:#152b36;color:#6e91a0;cursor:pointer;font-size:12px}
+.wire-ws-matrix button.is-linked{color:#91e3b5;border-color:#498b74;background:#204239}
+.wire-ws-matrix button.is-legacy{color:#a8b8ed;background:#28364e}
+.wire-ws-matrix button:disabled{opacity:.2;cursor:default}
+.wire-ws-matrix button:hover:not(:disabled){border-color:#b0dce9;background:#355463}
+.wire-ws-empty{padding:20px 12px;text-align:center;color:#9fb8c2}
+@media(max-width:1000px){.mixer-title .wire-v34-tool{min-width:30px;padding:0 3px!important}.wire-workspace{right:3px}}
+
 </style>
 </head>
 <body>
@@ -3859,7 +3919,7 @@ html * ,html *::before,html *::after{
     </details>
   </div>
   <main class="console-pane">
-    <div class="mixer-title"><span class="accent"></span><span class="panel-name">Live Mixer</span><span class="panel-sub" aria-hidden="true"><svg class="mi-svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M3 5v14h18V5H3zm8 12H5V7h6v10zm8 0h-6v-4h6v4zm0-6h-6V7h6v4z"/></svg></span><label class="wire-mode-label" for="wireMode">WIRE</label><select class="wire-mode-select" id="wireMode" title="Signal routing: FL-style post-fader or independent pre-FX source" aria-label="Wire routing mode"><option value="send">Follow Fader</option><option value="split">Independent (Pre FX)</option></select><button class="wire-master" id="wireMaster" type="button" title="Toggle direct source feed to Master" aria-pressed="true">MAIN ON</button><label class="wire-view-caption" for="wireView">VIEW</label><select class="wire-view-select" id="wireView" title="Cable display only · Focus (IN + OUT), OUT only, or all visible routes" aria-label="Wire cable display"><option value="focus">Focus</option><option value="out">OUT only</option><option value="all">All wires</option></select><span class="wire-legend" id="wireLegend" aria-live="polite">CH01 · click destination arrows</span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
+    <div class="mixer-title"><span class="accent"></span><span class="panel-name">Live Mixer</span><span class="panel-sub" aria-hidden="true"><svg class="mi-svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M3 5v14h18V5H3zm8 12H5V7h6v10zm8 0h-6v-4h6v4zm0-6h-6V7h6v4z"/></svg></span><label class="wire-mode-label" for="wireMode">WIRE</label><select class="wire-mode-select" id="wireMode" title="Signal routing: FL-style post-fader or independent pre-FX source" aria-label="Wire routing mode"><option value="send">Follow Fader</option><option value="split">Independent (Pre FX)</option></select><button class="wire-master" id="wireMaster" type="button" title="Toggle direct source feed to Master" aria-pressed="true">MAIN ON</button><label class="wire-view-caption" for="wireView">VIEW</label><select class="wire-view-select" id="wireView" title="Cable display only · Focus (IN + OUT), OUT only, or all visible routes" aria-label="Wire cable display"><option value="focus">Focus</option><option value="out">OUT only</option><option value="all">All wires</option></select><button type="button" id="wireNavigatorToggle" class="wire-v34-tool" aria-expanded="false" aria-controls="wireWorkspace" title="Search any channel and inspect wiring">ROUTES</button><button type="button" id="wireMatrixToggle" class="wire-v34-tool" aria-expanded="false" aria-controls="wireWorkspace" title="Open global WIRE matrix">MATRIX</button><span class="wire-legend" id="wireLegend" aria-live="polite">CH01 · click destination arrows</span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
     <section class="console-body collapsed-send wire-routing-v13 wire-routing-v15" data-density="comfort" aria-label="Live mixing console">
       <aside class="section-rail" aria-label="Mixer section icons">
         <div class="rail-cell identity" title="Channel identity">CH</div>
@@ -3904,6 +3964,24 @@ html * ,html *::before,html *::after{
       <div class="fast-results" id="fastResults" role="listbox" aria-label="Choose an effect"></div>
       <div class="fast-foot">Enter to insert · Esc to close · <button id="fastManage">Manage VST3…</button></div>
     </div>
+
+    <section id="wireWorkspace" class="wire-workspace" role="dialog" aria-label="WIRE Navigator and Routing Matrix" aria-modal="false" hidden>
+      <div class="wire-ws-head"><strong>WIRE NAVIGATOR</strong><span id="wireWsSource" class="wire-ws-source">Select an OUT source</span><button type="button" id="wireWsClose" aria-label="Close WIRE workspace">×</button></div>
+      <div class="wire-ws-tabs" role="tablist" aria-label="WIRE workspace views">
+        <button type="button" data-ws-mode="find" role="tab" aria-selected="true">FIND</button>
+        <button type="button" data-ws-mode="routes" role="tab" aria-selected="false">ROUTES</button>
+        <button type="button" data-ws-mode="bus" role="tab" aria-selected="false">TO BUS</button>
+        <button type="button" data-ws-mode="matrix" role="tab" aria-selected="false">MATRIX</button>
+      </div>
+      <div class="wire-ws-filters">
+        <label for="wireWsSourceSelect">FROM</label><select id="wireWsSourceSelect" aria-label="Choose WIRE source across all banks"></select>
+        <input type="search" id="wireWsSearch" spellcheck="false" autocomplete="off" placeholder="Search CH, name, Bus, FX..." aria-label="Search channels across all mixer banks">
+        <select id="wireWsBus" aria-label="Choose destination Bus" hidden></select>
+      </div>
+      <div id="wireWsList" class="wire-ws-list" role="region" aria-label="WIRE channels and routes"></div>
+      <div id="wireWsInspector" class="wire-ws-inspector" aria-label="Route Inspector" hidden></div>
+      <div class="wire-ws-foot"><span id="wireWsFoot">Local wires · remote channel portals · no simulated off-screen cable</span><span>GUI reference · no PCM</span></div>
+    </section>
     <div id="routeChoice" class="route-choice" role="dialog" aria-label="Choose how to route audio to Bus" hidden>
       <div class="route-choice-head"><span id="routeChoiceTitle">ROUTE TO BUS</span><button id="routeChoiceClose" type="button" aria-label="Cancel route decision">×</button></div>
       <div id="routeChoiceDescription" class="route-choice-description">Choose whether the original Main feed should remain.</div>
