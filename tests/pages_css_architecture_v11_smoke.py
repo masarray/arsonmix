@@ -38,7 +38,7 @@ PROPS = [
     "padding-bottom", "flex", "opacity", "outline-color", "filter",
     "pointer-events", "height", "width", "min-height", "max-height",
 ]
-CAPTURE = """(selectors, props) => selectors.map(sel => {
+CAPTURE = """([selectors, props]) => selectors.map(sel => {
  const e = document.querySelector(sel);
  if (!e) return [sel, null];
  const st = getComputedStyle(e), r=e.getBoundingClientRect();
@@ -76,7 +76,7 @@ async def take(page, width, height, toggles, click_mute=False):
     }""", toggles)
     if click_mute:
         await page.locator('#tracks .strip[data-id="1"] button[data-hw-kind="mute"]').click()
-    return await page.evaluate(CAPTURE, SELECTORS, PROPS)
+    return await page.evaluate(CAPTURE, [SELECTORS, PROPS])
 
 async def check(browser, baseline, width, height):
     old=await browser.new_page(viewport={"width":width,"height":height})
