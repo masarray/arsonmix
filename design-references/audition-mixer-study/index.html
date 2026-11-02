@@ -4252,12 +4252,19 @@ function renderWireRouting(){
  if(outgoingVisible){
   const d=wireStemPath(x0,y0,riseLimit),joinY=y0-wireStemHeight(riseLimit);
   const hue=source.color||'#8bcadd';
-  paths.push('<path class="wire-origin-shaft" d="'+d+
+  const shaft='<path class="wire-origin-shaft" d="'+d+
    '" stroke="#07141b" stroke-width="5" opacity=".94" fill="none" stroke-linecap="round"/>'+
    '<path class="wire-origin-stem" d="'+d+'" stroke="'+hue+
-   '" stroke-width="2.6" opacity=".98" fill="none" stroke-linecap="round"/>'+
-   '<circle class="wire-origin-junction" cx="'+x0.toFixed(1)+'" cy="'+joinY.toFixed(1)+
-   '" r="2.4" fill="'+hue+'" stroke="#07141b" stroke-width=".9"/>');
+   '" stroke-width="2.6" opacity=".98" fill="none" stroke-linecap="round"/>';
+  // Place common shaft AFTER dim incoming, BEFORE bright outgoing paths:
+  // existing V26 layer-order contract stays intact (IN behind OUT).
+  const firstFront=paths.findIndex(markup=>markup.includes('wire-outgoing-shadow')||
+   markup.includes('wire-drag-line'));
+  paths.splice(firstFront<0?paths.length:firstFront,0,shaft);
+  // Only the tiny hardware ferrule paints last; no extra SVG path on top.
+  paths.push('<circle class="wire-origin-junction" cx="'+x0.toFixed(1)+
+   '" cy="'+joinY.toFixed(1)+'" r="2.4" fill="'+hue+
+   '" stroke="#07141b" stroke-width=".9"/>');
  }
  svg.innerHTML=paths.join('');
 }
