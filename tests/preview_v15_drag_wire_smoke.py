@@ -51,7 +51,7 @@ def main():
             border:getComputedStyle(el,'::after').borderTopWidth,
             events:getComputedStyle(el,'::after').pointerEvents
         })""")
-        assert_true(rim['z']=='60' and rim['border']=='2px' and rim['events']=='none',
+        assert_true(rim['z']=='60' and rim['border']=='1px' and rim['events']=='none',
                     'Selected channel rim is buried behind mixer sections')
         cap=page.locator('#tracks .strip[data-id="1"] .fader-travel .cap')
         capStyle=cap.evaluate("""el=>({
