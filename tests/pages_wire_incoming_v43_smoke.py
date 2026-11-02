@@ -36,9 +36,15 @@ def main():
                  cwd=ROOT,capture_output=True,text=True)
   public=dst/"preview/mixer.html"
   shared=dst/"preview/assets/mixer-wire-dots.css"
-  assert public.read_bytes()==CANONICAL.read_bytes(),"Public iframe still uses stale GUI"
+  # The public copy has fingerprinted CSS/JS URLs, but identical UI markup.
+  asset_refs=re.compile(r'(assets/[A-Za-z0-9._-]+\.(?:css|js))\?(?:v|rev)=[A-Za-z0-9_-]+')
+  canonical=lambda html:asset_refs.sub(r'\1',html)
+  assert canonical(public.read_text("utf-8"))==canonical(CANONICAL.read_text("utf-8")), \
+         "Public iframe markup diverged beyond cache revision URLs"
   assert shared.read_bytes()==WIRE_CSS.read_bytes(),"Public iframe did not publish the effective WIRE CSS"
-  assert 'assets/mixer-wire-dots.css?v=v43' in public.read_text("utf-8")
+  import hashlib
+  wire_rev=hashlib.sha256(WIRE_CSS.read_bytes()).hexdigest()[:16]
+  assert f'assets/mixer-wire-dots.css?rev={wire_rev}' in public.read_text("utf-8")
   with sync_playwright() as pw:
    browser=pw.chromium.launch(headless=True)
    for width in (1366,1680):
