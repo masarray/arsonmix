@@ -2585,6 +2585,8 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
 .console-body.wire-routing-v15 .strip .wire-tray .wire-disconnect.is-idle{visibility:hidden!important;pointer-events:none}
 .console-body.wire-routing-v15 .strip .wire-tray{background:#0e222b!important}
 .routing-wire-overlay{filter:none!important}
+.console-body.wire-routing-v15.wire-dragging .strip .wire-node-in.is-source.is-snap-target{opacity:1!important}
+
 
 </style>
 </head>
@@ -3435,7 +3437,7 @@ window.addEventListener('pointermove',ev=>{
   const g=wireGesture;
   if(!Number.isFinite(ev.clientX)||!Number.isFinite(ev.clientY))return;
   if(!g.active&&Math.hypot(ev.clientX-g.startX,ev.clientY-g.startY)>=5){
-   g.active=true;wireSourceId=g.sourceId;wireHoverId=null;
+   g.active=true;wireHoverId=null; // source selection changes only on an accepted drop
    consoleBody.classList.add('wire-dragging');
   }
   if(g.active){g.point={x:ev.clientX,y:ev.clientY};queueWireGestureFrame();}
