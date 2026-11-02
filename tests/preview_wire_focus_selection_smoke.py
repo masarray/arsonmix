@@ -15,6 +15,9 @@ def main():
         errors=[]
         page.on("pageerror",lambda error:errors.append(str(error)))
         page.goto(PAGE.as_uri())
+        # Match the existing V15 physical-wire fixture: the tray is hidden in
+        # the compact/folded default until its synchronized WIRE rail opens.
+        page.locator('.section-rail [data-section="send"]').click()
         out=page.locator('#tracks .strip[data-id="3"] .wire-node-out')
         out.scroll_into_view_if_needed()
         bb=out.bounding_box()
