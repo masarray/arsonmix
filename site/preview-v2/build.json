@@ -5,14 +5,14 @@
   "source_pr": 278,
   "source_branch": "design/audition-mixer-reference-isolated-20261101",
   "source_sha": "768a2b08f5d8403b555687b6770029f68e22f4e5",
-  "source_content_sha": "a291e36e9d78a38090e12ad6c8accc7d500e1f6e",
+  "source_content_sha": "d347d41c7088ddc505b07b37c350c80efc00c10c",
   "routes": [
     "/preview/mixer.html",
     "/preview-v2/"
   ],
   "ci_run": 41421712393,
   "ci_conclusion": "success",
-  "milestone": "VST quick picker auto-close on click-outside/focus/window blur; floating manager click-outside; WIRE expanded 160→112px (102 short); fader +12px adaptive; selected border 1px; offline inline Google Material SVG icons for FX power/removal/drag and mixer/route",
+  "milestone": "Auto-dismiss transient Quick VST Picker on outside-click/focus/window-blur; persistent Plugin Manager remains nonmodal; expanded WIRE 112px; adaptive +12px fader; selected channel 1px; offline Material SVG",
   "operator_acceptance": "233/233 DOM checks and Chromium focused V15/V18/V19/V22 QA all PASS at 1366x768, 1680x900, 1920x1080, including idle/OUT/IN/both state, geometry and no rendered wire X",
   "owner_geometry": "WIRE collapses to 23px, expands to 160px; FX/PAN/FADER hierarchy preserved",
   "hardware_key": "V20 true 3px hard sidewall / 2px while pressed, cap travels 1px; internal light gradient in translucent physical lens, sharp 2px radius, hard socket; no glow/blur/filters",

@@ -4843,15 +4843,14 @@ plugEl('fastManage').addEventListener('click',()=>{setFastPicker(false);plugEl('
 plugEl('fastResults').addEventListener('click',e=>{
  const btn=e.target.closest('[data-fast-id]');if(btn)insertCatalogPlugin(btn.dataset.fastId);
 });
-/* V25 VST overlays: dismiss on outside pointer or focus transfer.
+/* V25 Quick VST picker: dismiss on outside pointer or focus transfer.
    Capture phase closes old picker BEFORE target activation; clicks inside
    either popup stay interactive, no document-level per-frame poll. */
 const dismissPluginOverlays=(target)=>{
  if(!target||typeof target.closest!=='function')return;
+ // Quick Picker is transient; Plugin Manager is an independent modeless tool.
+ // Do not close the manager when the engineer interacts with a mixer strip.
  if(quickOpen&&!plugEl('fastPicker').contains(target))setFastPicker(false);
- // Plugins · F8 is a toggle: its own click handler must decide open/close.
- if(pluginOpen&&!plugEl('pluginBrowser').contains(target)&&
-    !target.closest('#pluginsButton,#fastManage'))setBrowser(false);
 };
 document.addEventListener?.('pointerdown',e=>dismissPluginOverlays(e.target),true);
 document.addEventListener?.('focusin',e=>dismissPluginOverlays(e.target),true);
