@@ -35,7 +35,7 @@ def source_contract():
 async def visual(page,width):
     await page.wait_for_function("""()=>{
       const b=document.querySelector('#tracks .strip[data-id="1"] button[data-util-kind="fx-main"]');
-      return b && !!document.querySelector('button[data-hw-kind="mute"] svg.mx-hw-face');
+      return b && !!document.querySelector('button[data-hw-kind="mute"] .mx-mute-face');
     }""")
     loaded=await page.evaluate("""async()=>{
       await document.fonts.load('500 11px "ArSonMix Inter"');

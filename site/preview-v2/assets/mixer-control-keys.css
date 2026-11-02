@@ -136,33 +136,63 @@
   .app .console-body .strip .mx-hw-row>button.mx-hw-key>.mx-hw-face{transition:none}
 }
 
-
-/* Pixel-faithful MUTE material — source: owner-supplied 56×37 PNG pair.
-   The art itself contains the two bevels, top glint, side shadow, legend,
-   OFF red underbar and ON white underbar. Never approximate with gradients.
-   Source aspect ratio 56:37 maps to a ~28×18.5 CSS px face inside the
-   existing 29px hit area: no stretched legend, no strip geometry changes.
-   SOLO/PFL retain the V6 SVG owner. The original data-action and
-   aria-pressed are still the ONLY functional/state contracts. */
+/* MUTE is rendered entirely from CSS/HTML, NOT owner PNG assets.
+   The reference 56:37 proportions fit the unchanged 29px click target;
+   state comes exclusively from aria-pressed, not a JS paint loop. */
 .app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="mute"]{
-  background-color:transparent;
-  background-image:url("M-MUTE-OFF.png");
-  background-position:center center;
-  background-repeat:no-repeat;
-  background-size:100% auto;
-  border:0;
-  border-radius:0;
-  padding:0;
-  box-shadow:none;
+  position:relative;display:block;container-type:inline-size;
+  background:none;border:0;border-radius:0;box-shadow:none;
+  padding:0;overflow:visible;
 }
-.app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="mute"][aria-pressed="true"]{
-  background-image:url("M-MUTE-ON.png");
+.app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="mute"]::before{content:none;display:none}
+.app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="mute"]>.mx-mute-face{
+  position:absolute;top:50%;left:0;width:100%;aspect-ratio:56 / 37;
+  transform:translateY(-50%);display:block;isolation:isolate;pointer-events:none;
 }
-/* Do not overlay the pixel-perfect reference with the previous SVG cap/lamp
-   or synthetic red glow: all shine and shadow pixels are in the PNG. */
-.app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="mute"]>.mx-hw-face{
-  visibility:hidden;
+/* OFF silver cap, fine metallic edge and dark recessed lower cavity. */
+.app .console-body .strip .mx-hw-row .mx-mute-face::before{
+  content:"";position:absolute;z-index:1;
+  left:5.35%;right:5.35%;top:5.4%;height:77.5%;
+  border-radius:13% 13% 8% 8% / 22% 22% 15% 15%;
+  border:1px solid #777c7e;
+  background:linear-gradient(180deg,#c4c5c5 0%,#b4b6b7 9%,#aaaeb0 22%,#a3a6a8 74%,#a5a7a9 91%,#888d90 100%);
+  box-shadow:inset 0 1px 0 #f4f5f58a,inset 1px 0 1px #ffffff42,
+    inset -1px 0 1px #00000022,inset 0 -2px 2px #12141632,
+    0 2px 0 #202123,0 4px 3px #050506b3;
 }
-.app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="mute"]::before{
-  display:none;
+.app .console-body .strip .mx-hw-row .mx-mute-legend{
+  position:absolute;z-index:3;top:26%;left:0;right:0;
+  text-align:center;font-size:25cqw;font-weight:600;line-height:1;
+  letter-spacing:-.04em;color:#29292a;white-space:nowrap;
+  text-shadow:0 1px 0 #e1e2e282,0 -1px 0 #13151615;
+}
+/* OFF inset red stripe beneath the dark MUTE legend. */
+.app .console-body .strip .mx-hw-row .mx-mute-lamp{
+  position:absolute;z-index:3;left:18%;right:18%;top:67%;height:11%;
+  border-radius:1px;
+  background:linear-gradient(180deg,#8d282a 0%,#a63235 22%,#b3393c 52%,#a13132 100%);
+  box-shadow:0 -1px 0 #5b2427,0 1px 1px #eeeeee9c,
+    inset 0 1px 1px #4f17196e;
+}
+/* ON under-face white glint is separate from the red cap's bottom bevel. */
+.app .console-body .strip .mx-hw-row .mx-mute-face::after{
+  content:"";position:absolute;left:3%;right:3%;bottom:1px;height:2px;
+  border-radius:1px;opacity:0;
+  background:linear-gradient(90deg,#ffffff99 0%,#fff 12%,#fff 88%,#ffffff99 100%);
+  box-shadow:0 1px 0 #ffffff77;
+}
+.app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="mute"][aria-pressed="true"] .mx-mute-face::before{
+  background:linear-gradient(180deg,#c94b4b 0%,#be393b 13%,#b73435 35%,#b53434 70%,#b83737 84%,#d04e50 96%,#b33a3a 100%);
+  border-color:#842727;
+  box-shadow:inset 0 1px 0 #f38e8d78,inset 1px 0 1px #fa797962,
+    inset -1px 0 1px #671c1b50,inset 0 -2px 2px #ec78784a,
+    0 2px 0 #230607,0 4px 3px #000000bd;
+}
+.app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="mute"][aria-pressed="true"] .mx-mute-legend{
+  color:#f2e7e7;text-shadow:0 1px 0 #842525,0 -1px 0 #ffffff44;
+}
+.app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="mute"][aria-pressed="true"] .mx-mute-lamp{display:none}
+.app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="mute"][aria-pressed="true"] .mx-mute-face::after{opacity:1}
+.app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="mute"]:active:not(:disabled)>.mx-mute-face{
+  transform:translateY(calc(-50% + 1px));
 }
