@@ -710,6 +710,8 @@ node('reset').dispatch('click');
 
 // V15 solid-to-hollow wire drag affordance and explicit Bus decision.
 node('body').clientWidth=1680;node('reset').dispatch('click');
+// Source-first is explicit after reset; the filled OUT exists before selection.
+node('body').handlers.click({target:{closest:k=>k==='[data-action]'?pinSource:null},shiftKey:false});
 check(strip(1).includes('data-action="wireSource"') &&
  strip(1).includes('wire-node-out is-source') &&
  strip(3).includes('data-action="wireRoute"') &&
