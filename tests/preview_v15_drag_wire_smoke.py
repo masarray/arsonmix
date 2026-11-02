@@ -67,13 +67,21 @@ def main():
         assert_true(travel['top']=='24px' and travel['bottom']=='24px',
                     'Fader slot not expanded consistently')
         assert_true(not errors,'V22 browser errors: '+str(errors))
-        # V6 owned key material is checked in the dedicated Pages regression.
+        # CSS MUTE follows the owner reference. SOLO/PFL keep SVG cutout keys.
         key=page.locator('#tracks .strip[data-id="1"] button[data-hw-kind="mute"]')
         solo=page.locator('#tracks .strip[data-id="1"] button[data-hw-kind="solo"]')
         cue=page.locator('#tracks .strip[data-id="1"] button[data-hw-kind="cue"]')
-        for button,legend,color in ((key,'MUTE','255,78,90'),
-                                    (solo,'SOLO','255,207,68'),
-                                    (cue,'PFL','101,210,236')):
+        mute_off=key.evaluate("""el=>({
+          led:getComputedStyle(el).getPropertyValue('--mx-hw-led').trim(),
+          text:el.querySelector('.mx-mute-legend')?.textContent,
+          svg:el.querySelectorAll('svg,img').length,
+          silver:getComputedStyle(el.querySelector('.mx-mute-face'),'::before').backgroundImage,
+          stripe:getComputedStyle(el.querySelector('.mx-mute-lamp')).display
+        })""")
+        assert_true(mute_off['led']=='255,78,90' and mute_off['text']=='MUTE'
+          and mute_off['svg']==0 and 'linear-gradient' in mute_off['silver']
+          and mute_off['stripe']!='none','CSS MUTE initial material '+str(mute_off))
+        for button,legend,color in ((solo,'SOLO','255,207,68'),(cue,'PFL','101,210,236')):
             data=button.evaluate("""el=>({
               led:getComputedStyle(el).getPropertyValue('--mx-hw-led').trim(),
               text:el.querySelector('svg.mx-hw-face mask text')?.textContent,
@@ -90,9 +98,20 @@ def main():
         })""")
         assert_true(led['width']=='6px' and '9px' in led['cells'] and '11px' in led['cells'],
                     'LED must be portrait (6x9px with 2px spacing)')
-        # Three independent latches: red MUTE, amber SOLO and ice-blue PFL.
+        # Independent state: reference MUTE cap + original SOLO/PFL lamps.
         key.click();solo.click();cue.click()
-        for button,color in ((key,'255,78,90'),(solo,'255,207,68'),(cue,'101,210,236')):
+        mute_on=key.evaluate("""el=>({
+          pressed:el.getAttribute('aria-pressed'),
+          led:getComputedStyle(el).getPropertyValue('--mx-hw-led').trim(),
+          caption:getComputedStyle(el.querySelector('.mx-mute-legend')).color,
+          stripe:getComputedStyle(el.querySelector('.mx-mute-lamp')).display,
+          whiteEdge:getComputedStyle(el.querySelector('.mx-mute-face'),'::after').opacity
+        })""")
+        assert_true(mute_on=={'pressed':'true','led':'255,78,90',
+                             'caption':'rgb(242, 231, 231)',
+                             'stripe':'none','whiteEdge':'1'},
+                    'MUTE code-rendered ON material failed: '+str(mute_on))
+        for button,color in ((solo,'255,207,68'),(cue,'101,210,236')):
             state=button.evaluate("""el=>({
               pressed:el.getAttribute('aria-pressed'),
               led:getComputedStyle(el).getPropertyValue('--mx-hw-led').trim(),
@@ -102,27 +121,28 @@ def main():
             })""")
             assert_true(state=={'pressed':'true','led':color,'glow':'1',
                                'lamp':'1','maskTexts':1},
-                        'V5 semantic illuminated single-mask key failed '+str(state))
+                        'SOLO/PFL V6 material regressed '+str(state))
         key.click()
         assert_true(key.get_attribute('aria-pressed')=='false' and
                     solo.get_attribute('aria-pressed')=='true' and
                     cue.get_attribute('aria-pressed')=='true',
                     'Releasing MUTE may not reset SOLO/PFL')
-        solo.click();cue.click()  # restore same untouched routing test fixture
+        solo.click();cue.click()
         key.scroll_into_view_if_needed()
         rect=key.bounding_box()
         assert_true(bool(rect),'Button missing')
+        rest=key.evaluate("""el=>new DOMMatrix(
+          getComputedStyle(el.querySelector('.mx-mute-face')).transform).m42""")
         page.mouse.move(rect['x']+rect['width']/2,rect['y']+rect['height']/2)
         page.mouse.down()
         pressed=key.evaluate("""el=>({
           housing:getComputedStyle(el).transform,
-          cap:getComputedStyle(el.querySelector('svg.mx-hw-face')).transform
+          capY:new DOMMatrix(getComputedStyle(el.querySelector('.mx-mute-face')).transform).m42
         })""")
-        assert_true(pressed['housing']=='none' and
-                    pressed['cap']=='matrix(1, 0, 0, 1, 0, 1)',
-                    'V5 key cap must depress 1px without moving stationary well: '+str(pressed))
+        assert_true(pressed['housing']=='none' and abs((pressed['capY']-rest)-1)<.6,
+                    'MUTE cap must depress 1px in fixed housing: '+str(pressed))
         page.mouse.up()
-        key.click()  # restore button OFF so existing WIRE tests keep original fixture
+        key.click()
         page.screenshot(path=str(ROOT/'preview-v18-hardware-1680.png'))
         # V25 quick VST picker must dismiss on external click, focus or window blur.
         quick_open=page.locator('#fastPicker')

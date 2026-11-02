@@ -75,11 +75,20 @@
   function upgrade(button){
     if(!(button instanceof HTMLButtonElement))return;
     if(!button.matches(SELECTOR))return;
-    if(records.has(button)){render(button);return;}
+    if(records.has(button)){if(button.dataset.hwKind!=='mute')render(button);return;}
     const semantic=button.dataset.hwKind;
     if(!Object.hasOwn(COLORS,semantic))return;
     const legend=({mute:'MUTE',solo:'SOLO',cue:'PFL'})[semantic];
     if(!button.hasAttribute('aria-label'))button.setAttribute('aria-label',legend);
+    // MUTE uses lightweight DOM + CSS; no SVG, image asset, or resize redraw.
+    if(semantic==='mute'){
+      records.set(button,{semantic,legend});
+      button.innerHTML='<span class="mx-hw-screen-reader">'+legend+'</span>'+
+        '<span class="mx-mute-face" aria-hidden="true">'+
+          '<span class="mx-mute-legend">'+legend+'</span>'+
+          '<span class="mx-mute-lamp"></span></span>';
+      return;
+    }
     records.set(button,{id:++count,semantic,legend,signature:null});
     resize?.observe(button);
     render(button);

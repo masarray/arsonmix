@@ -1,12 +1,12 @@
 # CSS ownership milestone V7 — Inter and small-context mixer controls
 
-Updated: 2026-11-03. Builds on V6 [mixer-control-keys.css](/masarray/arsonmix/blob/main/site/preview-v2/assets/mixer-control-keys.css) without altering V6 MUTE/SOLO/PFL.
+Updated: 2026-11-03. Builds on V6 [mixer-control-keys.css](/masarray/arsonmix/blob/main/site/preview-v2/assets/mixer-control-keys.css) without altering V6 SOLO/PFL; MUTE uses dedicated CSS renderer.
 
 ## Actual control-size audit
 
 | GUI control | Existing surface | V7 decision | Active indication |
 |---|---|---|---|
-| Channel MUTE/SOLO/PFL | 29px, 3 equal columns | Keep V6 single SVG cutout and static edge shine | Red / amber / cyan |
+| Channel MUTE/SOLO/PFL | 29px, 3 equal columns | CSS-built silver/red reference face; SVG only for SOLO/PFL | Red / amber / cyan |
 | FX rack enable | 17px × 17px | **Icon-only micro-key** with offline Material vector | Teal/green |
 | Per-slot FX bypass/enable | 16px × 17px | **Icon-only micro-key**, maintain slot action & index | Teal/green |
 | Reverse polarity | 17px × 15px | **Compact Ø/⊘ legend**, not a 29px keycap squashed | Warm amber |
