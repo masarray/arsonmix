@@ -1,5 +1,5 @@
 {
-  "version": "preview-v36-smart-wire-svg-physical-motion",
+  "version": "preview-v37-wire-v36-backlit-hardware-v5",
   "kind": "GUI_REFERENCE_ONLY",
   "live_audio": false,
   "source_pr": 285,
@@ -18,9 +18,11 @@
     "MATRIX",
     "WIRE-only Undo",
     "Original user SVG knob: dark-gray idle, destination color when plugged",
-    "V36 visible 3.8px single-cable motion"
+    "V36 visible 3.8px single-cable motion",
+    "V5 backlit MUTE/SOLO/PFL — semantic LED via single SVG mask",
+    "V5 cue, phase, FX and SEND toggle materials (UI reference, no audio)"
   ],
-  "preserved": "Entire current /preview-v2/, native engine and existing routing models unchanged. V34 hosted as an additional optional reference preview.",
+  "preserved": "WIRE V36 motion, routing, cross-bank navigator, matrix, independent MAIN, FX, sends and faders preserved; key styling only",
   "limitations": "Static WIRE GUI reference only; not native PCM/ASIO/VST3 routing",
   "routes": [
     "/preview/",
@@ -35,5 +37,8 @@
   "quality_gate": "full PR285 multi-viewport Chromium V15–V34 PASS; main UI-smoke gating before Pages",
   "published_from": "Identical V34 HTML content pinned to tested PR #285 source; V33 archived verbatim.",
   "svg_asset_sha": "ef56513c68273ef2de351acb413257af7ec45e12",
-  "wire_motion": "3.8px initial sag, 20-frame gentle settle, only changed cable, no idle RAF"
+  "wire_motion": "3.8px initial sag, 20-frame gentle settle, only changed cable, no idle RAF",
+  "button_material": "V5 graphite illuminated legend, local asymmetric light leakage, static top shine, no hover",
+  "button_source": "GUI PR #271 / merged button PR #286",
+  "preview_qa": "Pending Chromium Pages V5 acceptance"
 }
