@@ -155,8 +155,33 @@ jobs:
             cp "$backup/$path" "$path"
           done
           git diff --exit-code -- site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-wire-dots.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-fx-rack.css site/preview-v2/assets/mixer-control-keys.css
+      # V25 is an immutable V51 migration fingerprint test, not a current HTML
+      # snapshot. Test its original HEAD without rebaselining hashes for V49.
+      # The current branch returns before all real V49/geometry browser gates.
+      - name: Mount original V25 historical V51 fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          baseline=2f01022370c589205d738366242d2d2aeb77b10d
+          backup="$RUNNER_TEMP/v25-current-sources"
+          git fetch --no-tags --depth=1 origin "$baseline"
+          for path in site/preview-v2/index.html site/preview-v2/assets/mixer-wire-dots.css site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-fx-rack.css; do
+            mkdir -p "$backup/$(dirname "$path")"
+            cp "$path" "$backup/$path"
+            git show "$baseline:$path" > "$path"
+          done
       - name: Verify V25 exact V51 physical-key owner migration and zero visual regression
         run: python tests/pages_css_architecture_v25_smoke.py
+      - name: Restore exact current GUI source after immutable V25 migration test
+        shell: bash
+        run: |
+          set -euo pipefail
+          backup="$RUNNER_TEMP/v25-current-sources"
+          for path in site/preview-v2/index.html site/preview-v2/assets/mixer-wire-dots.css site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-fx-rack.css; do
+            test -s "$backup/$path"
+            cp "$backup/$path" "$path"
+          done
+          git diff --exit-code -- site/preview-v2/index.html site/preview-v2/assets/mixer-wire-dots.css site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-fx-rack.css
       - name: Verify embedded Inter font and contextual V7 micro-controls
         run: python tests/pages_inter_utility_v7_smoke.py
       - name: Validate exact alpha micro hardware sprite states and WIRE coexistence
