@@ -3812,3 +3812,7 @@ html * ,html *::before,html *::after{
 
 /* Native production frontend: original approved console material; no simulated DSP. */
 body .status-bar .warning{color:#e2bd7d}body .strip [disabled]{cursor:not-allowed;opacity:.50}body .console-body .strip .meter-box .vu-tick span{left:7px;right:9px}
+
+/* Native hardware stereo input: linear-size independent L/R selectors. */
+.native-stereo-pair{display:flex;gap:3px;flex:1;min-width:0;max-width:100%}
+.native-stereo-pair>.route-select{flex:1 1 0;min-width:0;width:50%;max-width:50%;font-size:9px}

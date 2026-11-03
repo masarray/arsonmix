@@ -64,24 +64,32 @@ function listedRows(){const filter=el('viewFilter')?.value||'all';
    filter==='fx'&&r.role==='FX_RETURN');
 }
 function gain(v){const n=Number(v);return Number.isFinite(n)?Math.max(-60,Math.min(10,n)):-60}
-function sourceOptions(row){
- const endpoints=(snapshot?.device?.inputEndpoints||[]).filter(e=>
+function verifiedInputs(){
+ return (snapshot?.device?.inputEndpoints||[]).filter(e=>
    e.active && Number.isInteger(e.port) && e.port>=0 && typeof e.id==='string');
- const list=['<option value=""'+(row.source?' disabled':'')+'>UNPATCHED</option>'];
- // A stereo physical patch is NEVER synthesized from a neighbouring
- // ordinal. Both named pins MUST be in the current accepted device mask.
- if(row.nativeScoped && row.format==='STEREO'){
-   for(let i=0;i<endpoints.length;i++)for(let j=0;j<endpoints.length;j++){
-     const l=endpoints[i],r=endpoints[j];
-     if(i===j||l.port===r.port)continue;
-     const value='pair:'+l.port+':'+r.port;
-     list.push('<option value="'+esc(value)+'"'+(row.source===value?' selected':'')+'>'+
-       'L '+esc(l.label||l.id)+' / R '+esc(r.label||r.id)+'</option>');
-   }
- }else for(const e of endpoints)
-   list.push('<option value="'+esc(e.id)+'"'+(row.source===e.id?' selected':'')+'>'+
+}
+function sourceOptions(row){
+ const opts=['<option value="">UNPATCHED</option>'];
+ for(const e of verifiedInputs())
+   opts.push('<option value="'+esc(e.id)+'"'+(row.source===e.id?' selected':'')+'>'+
      esc(e.label||e.id)+'</option>');
- return list.join('');
+ return opts.join('');
+}
+// O(active pins), NOT O(pins^2): two independent compact native selectors
+// avoid generating tens of thousands of options for large ASIO interfaces.
+// Only a verified distinct L+R pair may dispatch one atomic native patch.
+function stereoSourceMarkup(row,attr){
+ const pins=verifiedInputs(),pair=/^pair:([0-9]+):([0-9]+)$/.exec(row.source||'');
+ const selected=side=>pair?(side==='L'?Number(pair[1]):Number(pair[2])):-1;
+ const portOptions=side=>{
+   const current=selected(side),list=['<option value="">'+side+' INPUT</option>'];
+   for(const p of pins)list.push('<option value="in:'+p.port+'"'+
+     (current===p.port?' selected':'')+'>'+esc(p.label||p.id)+'</option>');
+   return list.join('');
+ };
+ return '<div class="native-stereo-pair">'+
+   '<select class="route-select" aria-label="Stereo left input"'+attr('L')+'>'+portOptions('L')+'</select>'+
+   '<select class="route-select" aria-label="Stereo right input"'+attr('R')+'>'+portOptions('R')+'</select></div>';
 }
 function outputOptions(row){
  let opts=['<option value="MAIN">MAIN</option>'];
@@ -115,7 +123,9 @@ function nativeStrip(r){
    '<button class="strip-identity-top" type="button" data-select-channel="'+esc(r.id)+'" aria-pressed="'+selectedIds.has(r.id)+'"><span class="identity-number">'+(main?'MASTER':esc(r.id))+'</span><span class="identity-name">'+esc(r.name)+'</span></button>'+
    '<div class="section route-section"><div class="route-top"><span class="route-indicator">IN / OUT</span><button class="mini format-badge"'+act('SET_PROCESSING_FORMAT')+'>'+ (format==='MONO'?'M':'ST')+'</button></div>'+
    '<div class="route-field"><span class="route-caption">IN</span>'+
-     (r.role==='INPUT'?'<select class="route-select"'+act(r.nativeScoped?'NATIVE_PATCH_CHANNEL':'SET_SOURCE')+'>'+sourceOptions(r)+'</select>':
+     (r.role==='INPUT'?(r.nativeScoped&&format==='STEREO'?
+       stereoSourceMarkup(r,side=>act('NATIVE_PATCH_CHANNEL',' data-stereo-side="'+side+'"')):
+       '<select class="route-select"'+act(r.nativeScoped?'NATIVE_PATCH_CHANNEL':'SET_SOURCE')+'>'+sourceOptions(r)+'</select>'):
      '<span class="route-identity">'+(main?'SUM':'BUS RECEIVE')+'</span>')+'</div>'+
    '<div class="route-field"><span class="route-caption">OUT</span>'+
      (r.nativeScoped?'<span class="route-identity">'+esc(
@@ -213,18 +223,19 @@ function submitNode(n){
  const row=rowFor(n.dataset.id),op=n.dataset.op;
  if(!row||!op)return;
  if(op==='NATIVE_PATCH_CHANNEL'){
-    const allowed=(snapshot?.device?.inputEndpoints||[]).filter(x=>
-      x.active && Number.isInteger(x.port) && x.port>=0);
-    if(!n.value)return;
-    if(row.format==='STEREO'){
-      const match=/^pair:([0-9]+):([0-9]+)$/.exec(n.value);
-      if(!match){announce('Choose two verified stereo input pins',true);return;}
-      const l=Number(match[1]),r=Number(match[2]);
+    const allowed=verifiedInputs();
+    if(n.dataset.stereoSide && row.format==='STEREO'){
+      const strip=n.closest('.strip'),lText=strip?.querySelector('[data-stereo-side="L"]')?.value;
+      const rText=strip?.querySelector('[data-stereo-side="R"]')?.value;
+      if(!lText||!rText){announce('Select both verified L and R pins',false);return;}
+      const lMatch=/^in:([0-9]+)$/.exec(lText),rMatch=/^in:([0-9]+)$/.exec(rText);
+      if(!lMatch||!rMatch){announce('Invalid stereo device pin',true);return;}
+      const l=Number(lMatch[1]),r=Number(rMatch[1]);
       if(l===r||!allowed.some(x=>x.port===l)||!allowed.some(x=>x.port===r)){
         announce('STEREO PATCH REJECTED · both distinct pins must be active',true);return;
       }
       send(op,row,{physicalLeft:l,physicalRight:r,sourceFormat:'STEREO'});
-    }else{
+    }else if(row.format==='MONO'){
       const pin=allowed.find(x=>x.id===n.value);
       if(pin)send(op,row,{physicalLeft:pin.port,physicalRight:-1,sourceFormat:'MONO'});
       else announce('MONO PATCH REJECTED · input no longer active',true);

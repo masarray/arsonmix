@@ -18,20 +18,24 @@ test('Create Channel selects real mono/stereo processing format before native AC
  assert.match(bridge,/operation=="NATIVE_CREATE_CHANNEL"/);
  assert.match(bridge,/format=="STEREO"\?armix::mixer::ProcessingFormat::stereo/);
 });
-test('stereo patch requires two distinct active native physical pins',()=>{
- assert.match(js,/row\.nativeScoped && row\.format==='STEREO'/);
- assert.match(js,/i===j\|\|l\.port===r\.port/);
- assert.match(js,/pair:.*l\.port/);
+test('two independently verified stereo pin selectors scale linearly',()=>{
+ assert.match(js,/function stereoSourceMarkup\(row,attr\)/);
+ assert.match(js,/for\(const p of pins\)list\.push/);
+ assert.match(js,/data-stereo-side/);
+ assert.doesNotMatch(js,/for\(let i=0;i<endpoints\.length;i\+\+\)for\(let j=0/);
  assert.match(js,/sourceFormat:'STEREO'/);
  assert.match(js,/l===r\|\|!allowed\.some/);
  assert.match(bridge,/operation=="NATIVE_PATCH_CHANNEL"/);
  assert.match(native,/source\.inputR>=0/);
  assert.match(native,/setProperty\("portIdRight"/);
  assert.match(native,/enabledPorts_\[source\.inputR\]/);
+ const css=readFileSync('web/console-native.css','utf8');
+ assert.match(css,/\.native-stereo-pair\{display:flex/);
+ assert.match(css,/min-width:0/);
 });
 test('accepted snapshot carries correct mono/stereo patch and no invented signal',()=>{
  assert.match(js,/patch\?\.portIdRight/);
- assert.match(js,/row\.source===value/);
+ assert.match(js,/current===p\.port/);
  assert.match(js,/NATIVE JUCE BACKEND REQUIRED/);
  assert.doesNotMatch(js,/new AudioContext|AudioWorklet|Math\.sin\(/);
 });
