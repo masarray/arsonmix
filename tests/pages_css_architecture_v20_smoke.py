@@ -65,8 +65,14 @@ async def pseudo_state_compare(browser,original,width,height):
             await page.locator(".command-bar button.tool").first.focus()
         await assert_same("focus")
         for page in (previous,current):
+            # Disable only after clearing focus on both independently rendered
+            # pages; Chromium may otherwise retain :focus-visible for one event
+            # turn on an element disabled while focused (test-order artifact).
             await page.locator(".command-bar button.tool").first.evaluate(
-                "e=>{e.disabled=true}")
+                "e=>{e.blur();e.disabled=true}")
+            await page.wait_for_function(
+                "() => !document.querySelector('.command-bar button.tool').matches(':focus-visible')"
+            )
         await assert_same("disabled")
         for page in (previous,current):
             await page.locator(".command-bar button.tool").first.evaluate(
