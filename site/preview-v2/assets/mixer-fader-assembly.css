@@ -301,20 +301,20 @@
 }
 
 
-/* V18 gain ruler: center-line of the calibrated 24px fader travel is the
-   authority (the old 27px ruler inset was three pixels off each end).
-   Keep gain math and every detent untouched; tidy marks and number rhythm. */
+/* M1 calibrated GAIN scale: position and centerline come from the SAME
+   24px-inset fader cap travel. Quiet minor lines, prominent unity detent.
+   The 26px legend remains within the approved strip geometry. */
 .console-body .strip .gain-scale-travel{top:24px!important;bottom:24px!important}
 .console-body .strip .gain-tick::before{
-  left:0;top:0;width:3px;height:1px;background:#6a8795;opacity:.78;
+  left:0;top:0;width:3px;height:1px;background:#7494a3;opacity:.76;
 }
-.console-body .strip .gain-tick.major::before{width:5px;background:#92adb9;opacity:.98}
-.console-body .strip .gain-tick.unity::before{width:7px;background:#b9dfe9;opacity:1}
+.console-body .strip .gain-tick.major::before{width:5px;background:#a6c0cc;opacity:.95}
+.console-body .strip .gain-tick.unity::before{width:7px;background:#c8eaf2;opacity:1}
 .console-body .strip .gain-tick span{
-  left:7px;right:0;top:-5px;text-align:left;
-  font:500 8.5px/10px Inter,"Segoe UI",sans-serif;
-  font-variant-numeric:tabular-nums;letter-spacing:-.015em;
-  white-space:nowrap;color:#a9bdc7;text-shadow:none;
+  left:7px;right:0;top:-5.5px;text-align:left;
+  font:500 9px/11px Inter,"Segoe UI",sans-serif!important;
+  font-variant-numeric:tabular-nums;letter-spacing:-.03em;
+  white-space:nowrap;color:#b9cbd4;text-shadow:none;
 }
-.console-body .strip .gain-tick.unity span{color:#deeff4;font-weight:650}
+.console-body .strip .gain-tick.unity span{color:#f0fbff;font-weight:600}
 .console-body .strip .gain-tick.minor span{display:none}
