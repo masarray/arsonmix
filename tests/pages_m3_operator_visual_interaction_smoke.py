@@ -81,12 +81,15 @@ def interactions(page):
     fader.evaluate("""e => {e.value='10';e.dispatchEvent(new Event('input',{bubbles:true}));
                          e.dispatchEvent(new Event('change',{bubbles:true}));}""")
     if not page.evaluate("window.ArSonMixMeterCalibration.readDemo().running"):
+        page.locator("#moreTools summary").click()
         page.locator("#preview").click()
     peak=page.locator('#tracks .strip[data-id="1"] .peak')
     page.wait_for_function("""() => document.querySelector(
       '#tracks .strip[data-id="1"] .peak')?.classList.contains('clipping')""",
       timeout=10000)
     assert 'clipping' in peak.get_attribute("class")
+    if not page.locator("#moreTools").evaluate("e=>e.open"):
+        page.locator("#moreTools summary").click()
     page.locator("#preview").click()  # stop re-latching before reset
     page.locator('#tracks .strip[data-id="1"] button[data-action="resetClip"]').click()
     assert 'clipping' not in page.locator('#tracks .strip[data-id="1"] .peak').get_attribute("class")
