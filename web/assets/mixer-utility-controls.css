@@ -1,0 +1,177 @@
+/* V7 single ownership: sub-29px FX/phase/format/remove controls.
+   Compact hardware micro-switches are NOT V6 letter-cutout keycaps.
+   No hover animations, SVG filters, blur, transform hover or shadow stack. */
+.app .console-body .strip button.mx-util-key {
+  --mx-util-accent: 194,215,224;
+  position:relative;
+  box-sizing:border-box;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  flex:0 0 auto;
+  width:17px;
+  height:17px;
+  min-width:17px;
+  min-height:17px;
+  max-width:100%;
+  margin:0;
+  padding:0;
+  border:1px solid #172b35;
+  border-radius:3px;
+  background:linear-gradient(180deg,#455b68,#2b3d49);
+  box-shadow:inset 0 1px 0 #d2eaf021,0 1px 0 #091820aa;
+  color:#d0dfe5;
+  font-size:11px;
+  font-weight:550;
+  line-height:1;
+  letter-spacing:0;
+  white-space:nowrap;
+  text-shadow:none;
+  cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+  transition:none;
+  filter:none;
+  transform:none;
+}
+/* Semantic active LEDs are in icon/legend (not an all-over neon button). */
+.app .console-body .strip button.mx-util-key[aria-pressed="true"]{
+  color:rgb(var(--mx-util-accent));
+  background:linear-gradient(180deg,#273b47,#1d303b);
+  border-color:#324958;
+  box-shadow:inset 0 1px 2px #06131c,0 1px 0 #67869529;
+}
+.app .console-body .strip button.mx-util-key[data-util-kind="fx-main"],
+.app .console-body .strip button.mx-util-key[data-util-kind="fx-slot"]{
+  --mx-util-accent:114,226,181;
+}
+.app .console-body .strip button.mx-util-key[data-util-kind="phase"]{
+  --mx-util-accent:255,190,98;
+  /* Icon-only micro keys use the same physical 1:1 square as FX power. */
+  width:17px;
+  min-width:17px;
+  height:17px;
+  min-height:17px;
+}
+.app .console-body .strip button.mx-util-key[data-util-kind="format"]{
+  --mx-util-accent:131,222,241;
+  width:auto;
+  min-width:25px;
+  height:15px;
+  min-height:15px;
+  padding:0 3px;
+  font-size:9px;
+  font-weight:650;
+}
+.app .console-body .strip button.mx-util-key[data-util-kind="fx-remove"]{
+  --mx-util-accent:225,147,147;
+  /* Remove uses a dedicated trash icon and the same square 17px cap. */
+  width:17px;
+  min-width:17px;
+  height:17px;
+  min-height:17px;
+  color:#b7c3c9;
+}
+/* Remove is a momentary action, NEVER a latched LED. */
+.app .console-body .strip button.mx-util-key[data-util-kind="fx-remove"]:active:not(:disabled){
+  color:#ffb0a9;
+  border-color:#6d4140;
+}
+.app .console-body .strip button.mx-util-key svg.mi-svg{
+  display:block;
+  flex:0 0 auto;
+  width:13px;
+  height:13px;
+  pointer-events:none;
+  fill:currentColor;
+}
+.app .console-body .strip button.mx-util-key[data-util-kind="fx-remove"] svg.mi-svg{
+  width:13px;
+  height:13px;
+}
+.app .console-body .strip button.mx-util-key[data-util-kind="phase"] svg.mi-svg{
+  width:15px;
+  height:15px;
+}
+.app .console-body .strip button.mx-util-key:focus-visible{
+  outline:2px solid #93d5e4;
+  outline-offset:1px;
+}
+/* No extra active/hover layers or repaint. */
+.app .console-body .strip button.mx-util-key::before,
+.app .console-body .strip button.mx-util-key::after{
+  content:none;
+  display:none;
+}
+.app .console-body .strip button.mx-util-key:disabled{
+  opacity:.48;
+  cursor:not-allowed;
+}
+@media (prefers-reduced-motion:reduce){
+  .app .console-body .strip button.mx-util-key{transition:none}
+}
+
+/* V20 true-square metal faces. Entire 17px sprite tile is the cap, not a
+   short face plus external lower LED/underbar. No extra pseudo ornament. */
+.app .console-body .strip button.mx-util-key{
+  --mx-micro-x:0%;
+  --mx-micro-y:0%;
+  border:0;
+  border-radius:0;
+  background-color:transparent;
+  background-image:url("micro-hardware-17x17-2x4.png?v=fx-green-v21");
+  background-repeat:no-repeat;
+  background-size:200% 400%;
+  background-position:var(--mx-micro-x) var(--mx-micro-y);
+  box-shadow:none;
+  color:#23323a;
+  text-shadow:none;
+  transform:none;
+  filter:none;
+  transition:none;
+}
+.app .console-body .strip button.mx-util-key[data-util-kind="phase"]{--mx-micro-y:33.333333%}
+.app .console-body .strip button.mx-util-key[data-util-kind="fx-remove"]{--mx-micro-y:66.666667%}
+.app .console-body .strip button.mx-util-key[data-util-kind="format"]{
+  width:25px;max-width:25px;min-width:25px;height:15px;min-height:15px;
+  --mx-micro-y:0%;
+  background-image:url("format-hardware-25x15-2x1.png?v=fx-green-v21");
+  background-size:200% 100%;
+  background-position:var(--mx-micro-x) 0%;
+  padding:0;
+}
+.app .console-body .strip button.mx-util-key[aria-pressed="true"]{
+  --mx-micro-x:100%;
+  background-color:transparent;
+  background-image:url("micro-hardware-17x17-2x4.png?v=fx-green-v21");
+  background-repeat:no-repeat;
+  background-size:200% 400%;
+  background-position:var(--mx-micro-x) var(--mx-micro-y);
+  border:0;
+  box-shadow:none;
+  color:#f9fdff;
+}
+/* FX Rack power: bright, softly illuminated green cap while ON.
+   The power glyph remains dark for contrast, never forced white.
+   Keep exact square sprite geometry and zero extra glow/shadow. */
+.app .console-body .strip button.mx-util-key[data-util-kind="fx-main"][aria-pressed="true"],
+.app .console-body .strip button.mx-util-key[data-util-kind="fx-slot"][aria-pressed="true"]{
+  color:#163e2b;
+}
+.app .console-body .strip button.mx-util-key[data-util-kind="format"][aria-pressed="true"]{
+  background-image:url("format-hardware-25x15-2x1.png?v=fx-green-v21");
+  background-size:200% 100%;
+  background-position:100% 0%;
+}
+/* OFF delete glyph is muted red, not black. Do not latch momentary remove. */
+.app .console-body .strip button.mx-util-key[data-util-kind="fx-remove"]{
+  color:#a4494e;
+}
+.app .console-body .strip button.mx-util-key[data-util-kind="fx-remove"]:active:not(:disabled){
+  --mx-micro-x:100%;
+  background-position:100% 66.666667%;
+  color:#fff;
+}
+.app .console-body .strip button.mx-util-key:focus-visible{
+  outline:2px solid #9bd9e8;outline-offset:1px;
+}
+/* No new button element, JS state, opacity animation or tool-tip overlay. */

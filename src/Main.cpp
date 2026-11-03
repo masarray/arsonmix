@@ -72,6 +72,54 @@ std::optional<juce::WebBrowserComponent::Resource> assetFor (const juce::String&
         { data = BinaryData::mixerio_css; size = BinaryData::mixerio_cssSize; mime = "text/css"; }
     else if (path == "/assets/audio-interface.svg")
         { data = BinaryData::audiointerface_svg; size = BinaryData::audiointerface_svgSize; mime = "image/svg+xml"; }
+    else if (path == "/assets/delete-forever.svg")
+        { data = BinaryData::deleteforever_svg; size = BinaryData::deleteforever_svgSize; mime = "image/svg+xml"; }
+    else if (path == "/assets/format-hardware-25x15-2x1.png")
+        { data = BinaryData::formathardware25x152x1_png; size = BinaryData::formathardware25x152x1_pngSize; mime = "image/png"; }
+    else if (path == "/assets/inter-embedded.css")
+        { data = BinaryData::interembedded_css; size = BinaryData::interembedded_cssSize; mime = "text/css"; }
+    else if (path == "/assets/knob-ICON.svg")
+        { data = BinaryData::knobICON_svg; size = BinaryData::knobICON_svgSize; mime = "image/svg+xml"; }
+    else if (path == "/assets/micro-hardware-17x17-2x4.png")
+        { data = BinaryData::microhardware17x172x4_png; size = BinaryData::microhardware17x172x4_pngSize; mime = "image/png"; }
+    else if (path == "/assets/mixer-channel-grid.css")
+        { data = BinaryData::mixerchannelgrid_css; size = BinaryData::mixerchannelgrid_cssSize; mime = "text/css"; }
+    else if (path == "/assets/mixer-chrome-material.css")
+        { data = BinaryData::mixerchromematerial_css; size = BinaryData::mixerchromematerial_cssSize; mime = "text/css"; }
+    else if (path == "/assets/mixer-console-foundation.css")
+        { data = BinaryData::mixerconsolefoundation_css; size = BinaryData::mixerconsolefoundation_cssSize; mime = "text/css"; }
+    else if (path == "/assets/mixer-contextual-buttons.css")
+        { data = BinaryData::mixercontextualbuttons_css; size = BinaryData::mixercontextualbuttons_cssSize; mime = "text/css"; }
+    else if (path == "/assets/mixer-contextual-buttons.js")
+        { data = BinaryData::mixercontextualbuttons_js; size = BinaryData::mixercontextualbuttons_jsSize; mime = "text/javascript"; }
+    else if (path == "/assets/mixer-control-keys.css")
+        { data = BinaryData::mixercontrolkeys_css; size = BinaryData::mixercontrolkeys_cssSize; mime = "text/css"; }
+    else if (path == "/assets/mixer-control-keys.js")
+        { data = BinaryData::mixercontrolkeys_js; size = BinaryData::mixercontrolkeys_jsSize; mime = "text/javascript"; }
+    else if (path == "/assets/mixer-fader-assembly.css")
+        { data = BinaryData::mixerfaderassembly_css; size = BinaryData::mixerfaderassembly_cssSize; mime = "text/css"; }
+    else if (path == "/assets/mixer-fx-rack.css")
+        { data = BinaryData::mixerfxrack_css; size = BinaryData::mixerfxrack_cssSize; mime = "text/css"; }
+    else if (path == "/assets/mixer-hardware-artwork.css")
+        { data = BinaryData::mixerhardwareartwork_css; size = BinaryData::mixerhardwareartwork_cssSize; mime = "text/css"; }
+    else if (path == "/assets/mixer-meter-display.css")
+        { data = BinaryData::mixermeterdisplay_css; size = BinaryData::mixermeterdisplay_cssSize; mime = "text/css"; }
+    else if (path == "/assets/mixer-pan-controls.css")
+        { data = BinaryData::mixerpancontrols_css; size = BinaryData::mixerpancontrols_cssSize; mime = "text/css"; }
+    else if (path == "/assets/mixer-plugin-browser.css")
+        { data = BinaryData::mixerpluginbrowser_css; size = BinaryData::mixerpluginbrowser_cssSize; mime = "text/css"; }
+    else if (path == "/assets/mixer-section-controls.css")
+        { data = BinaryData::mixersectioncontrols_css; size = BinaryData::mixersectioncontrols_cssSize; mime = "text/css"; }
+    else if (path == "/assets/mixer-section-layout.css")
+        { data = BinaryData::mixersectionlayout_css; size = BinaryData::mixersectionlayout_cssSize; mime = "text/css"; }
+    else if (path == "/assets/mixer-utility-controls.css")
+        { data = BinaryData::mixerutilitycontrols_css; size = BinaryData::mixerutilitycontrols_cssSize; mime = "text/css"; }
+    else if (path == "/assets/mixer-v3-layout-contract.css")
+        { data = BinaryData::mixerv3layoutcontract_css; size = BinaryData::mixerv3layoutcontract_cssSize; mime = "text/css"; }
+    else if (path == "/assets/mixer-wire-dots.css")
+        { data = BinaryData::mixerwiredots_css; size = BinaryData::mixerwiredots_cssSize; mime = "text/css"; }
+    else if (path == "/assets/mixer-wire-out-align-v48.css")
+        { data = BinaryData::mixerwireoutalignv48_css; size = BinaryData::mixerwireoutalignv48_cssSize; mime = "text/css"; }
     else if (path == "/mixer-layout.js")
         { data = BinaryData::mixerlayout_js; size = BinaryData::mixerlayout_jsSize; mime = "text/javascript"; }
     else if (path == "/mixer-layout.css")
