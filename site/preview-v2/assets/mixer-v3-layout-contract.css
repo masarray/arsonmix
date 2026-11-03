@@ -2,9 +2,7 @@
 
 /* V3 operator approved layout: the physical artwork is ORIGINAL and never scaled. */
 .console-pane{--master-w:142px;--plugin-w:min(330px,36vw)}
-.console-body{--rail-w:28px;--route-h:62px;--fx-h:23px;--send-h:23px;--eq-h:23px;--pan-h:43px;--trim-h:25px;--switch-h:40px;--footer-h:46px}
-.console-body:not(.collapsed-fx){--fx-h:112px}
-.console-body:not(.collapsed-send){--send-h:80px}
+.console-body{--rail-w:28px;}
 .console-body:not(.collapsed-eq){--eq-h:44px}
 .console-body.collapsed-route{--route-h:23px}
 .console-body.collapsed-fx{--fx-h:23px}
@@ -14,7 +12,7 @@
 .console-body #viewport{flex:1 1 0;min-width:0;width:0;overflow:hidden!important;scrollbar-width:none!important;overscroll-behavior:none}
 .console-body #viewport::-webkit-scrollbar{display:none!important;height:0!important;width:0!important}
 .console-body .tracks{display:grid;grid-template-columns:repeat(var(--bank-columns,10),minmax(0,1fr));width:100%!important;min-width:0!important;max-width:100%;height:100%;overflow:hidden}
-.console-body .tracks>.strip{flex:none!important;width:auto!important;min-width:0!important;max-width:none!important;overflow:hidden}
+.console-body .tracks>.strip{flex:none!important;width:auto!important;overflow:hidden}
 .console-body #master{width:var(--master-w);min-width:var(--master-w);flex:0 0 var(--master-w);overflow:hidden}
 .console-body #master>.strip{width:100%!important;min-width:0!important;max-width:none!important}
 .console-body.plugin-open #viewport{margin-right:var(--plugin-w)}
@@ -22,7 +20,6 @@
 .bank-arrow:disabled{opacity:.4;cursor:default}
 #bankSelect{min-width:107px!important;max-width:114px!important;font-size:11px!important}
 .console-body .strip,.console-body .strip.audio,.console-body .strip.fx,.console-body .strip.bus,.console-body .strip.master{background:#232a2e!important;box-shadow:inset 1px 0 #51616b22!important;border-right:1px solid #101920!important}
-.console-body .strip.selected{background:#2b353a!important;box-shadow:inset 2px 0 #82b8c8!important}
 .console-body .section{border-bottom:1px solid #35434a66!important;box-shadow:none!important}
 .console-body .fx-section,.console-body .send-section,.console-body .eq-section{background:#252c30!important}
 .console-body .subhead,.console-body .send-header,.console-body .eq-header{border:0!important}
@@ -30,11 +27,9 @@
 .console-body .subhead .sym{opacity:.5}
 .console-body .eq-line{background:#212a30!important;border:0!important}
 .console-body .eq-status-quiet{color:#8faab2;font-size:10px}
-.console-body .route-section{padding:3px 4px!important}
-.console-body .route-field{grid-template-columns:22px minmax(0,1fr)!important;gap:3px!important}
 .console-body .route-top{border:0!important}
-.console-body .route-select{font-size:11px!important;min-width:0;padding-left:3px!important}
-.console-body .switch-section{background:#242b30!important;gap:3px!important;padding:3px 4px!important}
+.console-body .route-select{min-width:0;padding-left:3px!important}
+.console-body .switch-section{background:#242b30!important;}
 .console-body .switch{box-shadow:none!important;background:linear-gradient(#4d565b,#242d33)!important;border:1px solid #131e24!important}
 .console-body .switch.on.mute{background:#a03835!important;color:#fff!important}
 .console-body .switch.on.solo{background:#cebb57!important;color:#17191b!important}
