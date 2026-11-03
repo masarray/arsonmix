@@ -7,12 +7,14 @@ PAGE=Path(__file__).resolve().parents[1]/"site/preview-v2/index.html"
 BREAKPOINTS=((1366,768),(1378,911),(1680,900),(1920,1080))
 DENSITIES=("comfort","standard","compact")
 
-def model(page):
- return page.evaluate("""()=>{
-  const t=tracks[0];ensureFxInsertIds(t);
-  return {fx:t.fx.slice(),bypass:t.slotBypass.slice(),
-   ids:t.fxInsertIds.map(x=>x?.id||null)};
- }""")
+def model(page,channel="1"):
+ """Read only the public rendered rack; never reach private JS closure state."""
+ return page.locator(f'#tracks .strip[data-id="{channel}"] .fxslot-row').evaluate_all(
+  """rows=>rows.map(row=>({
+     slot:Number(row.dataset.slot),id:row.dataset.insertId||"",
+     name:row.querySelector('.fx-pick')?.textContent?.trim()||"",
+     bypassed:row.classList.contains('is-bypassed')
+   })).filter(row=>row.id)""")
 
 def check_geometry(page,width,density):
  root=page.locator('#tracks .strip[data-id="1"]')
@@ -64,46 +66,58 @@ def check_geometry(page,width,density):
   assert rail.get_attribute("aria-expanded")=="true",(width,density,"FX expand aria broken")
 
 def check_transactions(page):
- page.evaluate("""()=>{
-  const t=tracks[0];
-  t.fx[0]='Parametric Equalizer';t.fx[1]='Dynamics Processing';
-  t.slotBypass[0]=true;t.slotBypass[1]=false;
-  refreshStrip(t);
- }""")
  root=page.locator('#tracks .strip[data-id="1"]')
+ # Insert an actual second effect via the existing public quick FX Picker.
+ # Do not mutate inaccessible IIFE-local tracks or fake an accepted graph.
+ assert root.locator('.fx-pick[data-slot="1"]').count()==1,"Missing empty insert"
+ root.locator('.fx-pick[data-slot="1"]').click()
+ effect=page.locator('#fastResults .fast-effect').filter(has_text="Dynamics Processing").first
+ assert effect.is_visible(),"Quick FX Picker did not expose Dynamics Processing"
+ effect.click()
+ assert root.locator('.fx-grip[data-slot="1"]').count()==1,"Second FX not accepted by GUI"
+ # Independently bypass first plugin; the move must carry bypass with identity.
+ root.locator('[data-action="slotPower"][data-slot="0"]').click()
  initial=model(page)
- assert initial["fx"][:2]==["Parametric Equalizer","Dynamics Processing"]
+ assert [x["name"] for x in initial[:2]]==[
+   "Parametric Equalizer","Dynamics Processing"],initial
+ assert initial[0]["bypassed"] and not initial[1]["bypassed"],initial
+ assert len({x["id"] for x in initial})==2,"Insert IDs must be unique"
  for selector in ('.fx-pick[data-slot="0"]','[data-action="slotPower"][data-slot="0"]',
                   '[data-action="removeFx"][data-slot="0"]'):
   assert root.locator(selector).get_attribute("draggable") is None
- # Keyboard must reorder the selected INSERT identity, not copy its name only.
+ # Focusable grip is the only drag actuator. Keyboard moves one real insert.
  first=root.locator('.fx-grip[data-slot="0"]')
  first.focus();first.press('Alt+ArrowDown')
  after=model(page)
- assert after["fx"][:2]==initial["fx"][:2][::-1],("keyboard reorder not committed",after)
- assert after["bypass"][:2]==initial["bypass"][:2][::-1],"bypass moved separately"
- assert after["ids"][:2]==initial["ids"][:2][::-1],"insert identity lost"
+ assert [x["name"] for x in after[:2]]==[
+   x["name"] for x in initial[:2][::-1]],("keyboard reorder not committed",after)
+ assert [x["id"] for x in after[:2]]==[
+   x["id"] for x in initial[:2][::-1]],"insert identity lost"
+ assert [x["bypassed"] for x in after[:2]]==[
+   x["bypassed"] for x in initial[:2][::-1]],"bypass moved separately"
  root.locator('.fx-grip').first.focus()
  root.locator('.fx-grip').first.press('Control+z')
  assert model(page)==initial,"grip Ctrl+Z must restore order, bypass and identity"
- # DnD moves ONLY from its handle; dropping a valid occupied slot commits once.
+ # Real pointer Drag&Drop on dedicated grip; non-draggable rows cannot reorder.
  root.locator('.fx-grip[data-slot="0"]').drag_to(root.locator('.fxslot-row[data-slot="1"]'))
  dragged=model(page)
- assert dragged["fx"][:2]==initial["fx"][:2][::-1],("grip DnD failed",dragged)
- assert dragged["ids"][:2]==initial["ids"][:2][::-1],"DnD changed instance IDs"
- # The existing other channel's processing never becomes a name-only VST3 copy.
- other=page.locator('#tracks .strip[data-id="2"]')
+ assert dragged[:2]==initial[:2][::-1],("grip DnD changed order/state incorrectly",dragged)
+ # Cross-channel FX lease cannot become a blind name-only clone.
  before=model(page)
- second=page.evaluate("()=>tracks[1].fx.slice()")
+ second=model(page,"2")
+ other=page.locator('#tracks .strip[data-id="2"]')
  root.locator('.fx-grip[data-slot="0"]').drag_to(other.locator('.fxslot-row[data-slot="0"]'))
- assert model(page)==before,"cross-channel drop corrupted source"
- assert page.evaluate("()=>tracks[1].fx.slice()")==second,"unsafe cross-channel FX copied"
+ assert model(page)==before,"cross-channel drop corrupted source FX"
+ assert model(page,"2")==second,"unsafe cross-channel FX copied"
  root.locator('.fx-grip').first.focus()
  root.locator('.fx-grip').first.press('Control+z')
- assert model(page)==initial,"invalid drag lost preceding single-step Undo"
- # The physical OFF control is independently operable, never a drag handle.
+ assert model(page)==initial,"invalid drag erased preceding Undo transaction"
+ # The separate OFF button is never a drag handle; it flips only bypass.
  root.locator('[data-action="slotPower"][data-slot="0"]').click()
- assert model(page)["fx"]==initial["fx"],"FX power click reordered rack"
+ after_power=model(page)
+ assert [x["name"] for x in after_power]==[x["name"] for x in initial],after_power
+ assert [x["id"] for x in after_power]==[x["id"] for x in initial],after_power
+ assert after_power[0]["bypassed"]!=initial[0]["bypassed"],"FX OFF did not toggle"
 
 def main():
  with sync_playwright() as pw:
