@@ -50,30 +50,21 @@ std::optional<juce::WebBrowserComponent::Resource> assetFor (const juce::String&
     juce::String mime;
     if (path == "/" || path == "/index.html")
         { data = BinaryData::index_html; size = BinaryData::index_htmlSize; mime = "text/html"; }
-    else if (path == "/styles.css")
-        { data = BinaryData::styles_css; size = BinaryData::styles_cssSize; mime = "text/css"; }
+
     else if (path == "/console-native.js")
         { data = BinaryData::consolenative_js; size = BinaryData::consolenative_jsSize; mime = "text/javascript"; }
-    else if (path == "/app.js")
-        { data = BinaryData::app_js; size = BinaryData::app_jsSize; mime = "text/javascript"; }
+
     // JUCE 8.0.15 BinaryData strips hyphens from generated identifiers:
     // "plugin-ui.js" -> pluginui_js, "plugin-ui.css" -> pluginui_css.
     // Asset HTTP paths retain their hyphenated original names.
     // JUCE BinaryData strips dashes from the source filename: plugin-ui.js -> pluginui_js.
-    else if (path == "/plugin-ui.js")
-        { data = BinaryData::pluginui_js; size = BinaryData::pluginui_jsSize; mime = "text/javascript"; }
-    else if (path == "/plugin-ui.css")
-        { data = BinaryData::pluginui_css; size = BinaryData::pluginui_cssSize; mime = "text/css"; }
-    else if (path == "/bridge.js")
-        { data = BinaryData::bridge_js; size = BinaryData::bridge_jsSize; mime = "text/javascript"; }
-    else if (path == "/monitor.js")
-        { data = BinaryData::monitor_js; size = BinaryData::monitor_jsSize; mime = "text/javascript"; }
-    else if (path == "/mixer-io.js")
-        { data = BinaryData::mixerio_js; size = BinaryData::mixerio_jsSize; mime = "text/javascript"; }
-    else if (path == "/mixer-io.css")
-        { data = BinaryData::mixerio_css; size = BinaryData::mixerio_cssSize; mime = "text/css"; }
-    else if (path == "/assets/audio-interface.svg")
-        { data = BinaryData::audiointerface_svg; size = BinaryData::audiointerface_svgSize; mime = "image/svg+xml"; }
+
+
+
+
+
+
+
     else if (path == "/assets/delete-forever.svg")
         { data = BinaryData::deleteforever_svg; size = BinaryData::deleteforever_svgSize; mime = "image/svg+xml"; }
     else if (path == "/assets/format-hardware-25x15-2x1.png")
@@ -122,10 +113,8 @@ std::optional<juce::WebBrowserComponent::Resource> assetFor (const juce::String&
         { data = BinaryData::mixerwiredots_css; size = BinaryData::mixerwiredots_cssSize; mime = "text/css"; }
     else if (path == "/assets/mixer-wire-out-align-v48.css")
         { data = BinaryData::mixerwireoutalignv48_css; size = BinaryData::mixerwireoutalignv48_cssSize; mime = "text/css"; }
-    else if (path == "/mixer-layout.js")
-        { data = BinaryData::mixerlayout_js; size = BinaryData::mixerlayout_jsSize; mime = "text/javascript"; }
-    else if (path == "/mixer-layout.css")
-        { data = BinaryData::mixerlayout_css; size = BinaryData::mixerlayout_cssSize; mime = "text/css"; }
+
+
     else return std::nullopt;
 
     juce::WebBrowserComponent::Resource resource;
