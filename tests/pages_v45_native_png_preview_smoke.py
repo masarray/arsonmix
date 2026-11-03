@@ -16,7 +16,7 @@ def main():
     assert LIVE.read_bytes()==BASE.read_bytes(), "V45 mixer source drift"
     assert PNG.read_bytes()==(ROOT/'site/preview-v34/assets/mute-solo-pfl-56x37.png').read_bytes()
     data=PNG.read_bytes()
-    assert data[:8]==b'\\x89PNG\\r\\n\\x1a\\n'
+    assert data[:8]==bytes.fromhex('89504e470d0a1a0a')
     assert struct.unpack('>II',data[16:24])==(112,111)
     assert data[25]==6
     css=CSS.read_text()
