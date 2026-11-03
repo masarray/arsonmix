@@ -98,7 +98,7 @@
   background:linear-gradient(90deg,#eaffff28 0%,transparent 30%,transparent 73%,#0009 100%);
 }
 .console-body .strip .meter-box .vu-scale{color:#bfd4df!important;text-shadow:0 1px #000}
-.console-body .strip .meter-box .vu-tick span{font:9px/11px Consolas,monospace!important}
+
 .console-body .strip .meter-box .peak{
   background:linear-gradient(#381417,#12090b)!important;border:1px solid #754040!important;
   box-shadow:inset 0 1px #bd515044!important;border-radius:2px!important;
@@ -124,15 +124,14 @@
    Uses existing --lit variable for clipped signal fill, no JS or 40+ nodes. */
 .console-body .strip .meter-box .vu-bars{
  justify-content:center!important;
- gap:3px!important;
+ 
  background:#06121a!important;
  box-shadow:inset 1px 0 0 #142b35,inset -1px 0 0 #010508!important;
 }
 .console-body .strip .meter-box .meter-lane,
 .console-body .strip .meter-box.mono .meter-lane{
  box-sizing:border-box!important;
- width:6px!important;min-width:6px!important;max-width:6px!important;
- flex:0 0 6px!important;
+
  border:0!important;border-radius:0!important;
  background:#07141a!important;
  box-shadow:inset 1px 0 0 #20303a,inset -1px 0 0 #000!important;
@@ -164,10 +163,7 @@
    linear-gradient(90deg,rgba(255,255,255,.13),transparent 55%,rgba(0,0,0,.28))!important;
  box-shadow:none!important;
 }
-.console-body .strip .meter-box .peak,
-.console-body .strip .meter-box .peak.clipping{
- box-shadow:inset 0 1px 0 rgba(255,255,255,.16)!important;
-}
+
 
 
 /* M1 calibrated dBFS scale: the 12px/13px ruler inset is IDENTICAL to
@@ -209,11 +205,7 @@
    active owner suffix. Wider portrait LEDs read as real hardware from a
    normal operating distance, without altering 51px housing or dBFS travel. */
 .console-body .strip .meter-box .vu-bars{gap:2px!important}
-.console-body .strip .meter-box .meter-lane,
-.console-body .strip .meter-box.mono .meter-lane{
- width:8px!important;min-width:8px!important;max-width:8px!important;
- flex:0 0 8px!important;
-}
+
 
 /* M3: 70px physical LED/ruler housing, shared by Comfort, Standard,
    Compact and Master. The 38px optical well and 30px numeral rail prevent
