@@ -1558,6 +1558,10 @@ public:
         out->setProperty("hasAcceptedRoute",hasExplicitRoute());
         const bool nativePcm=channelIdPhysicalPcmActive();
         out->setProperty("nativeChannelIdPcmActive",nativePcm);
+        // ShowV2 and the legacy M4 route cannot serialize extra ChannelId
+        // GROUP/FX RETURN buses. This stays visible even after DSP faults
+        // silent so SAVE/RECALL cannot silently discard audible topology.
+        out->setProperty("nativeBusStructural",nativeStructureLive_);
         if(nativePcm)out->setProperty("nativeBus",nativeBusStatus());
         // This exact original vendor Graph owner is retained by the native
         // accepted snapshot, NOT merely a catalog name or M4 CH1 label.

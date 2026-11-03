@@ -104,6 +104,21 @@ int main() {
 
     // Never let untrusted or stale UI state replace an accepted capture.
     const auto prior=Codec::encode(captured);
+    // Dynamic native GROUP/FX RETURN exists in actual PCM but ShowV2 has
+    // no such role. Refuse both SAVE and RECALL before mutating either
+    // accepted routing, file generation or vendor plugin state.
+    auto withNativeBus=setup();
+    auto nativeLab=withNativeBus.getProperty("dryRoutingLab",{});
+    set(nativeLab,"nativeBusStructural",true);
+    const auto busSave=NativeLiveShowCapture::captureDry(
+        withNativeBus,"Native Bus Show",captured,true);
+    assert(busSave.contains("GROUP/FX RETURN"));
+    assert(Codec::encode(captured)==prior);
+    juce::var rejectedBusRecall;
+    const auto busRecall=NativeDryShowRecall::prepare(
+        decoded,withNativeBus,rejectedBusRecall,true);
+    assert(busRecall.contains("GROUP/FX RETURN"));
+    assert(rejectedBusRecall.isVoid());
     auto armed=setup();set(armed,"monitor",true);
     assert(NativeLiveShowCapture::captureDry(armed,"Dry Routing Test",captured).isNotEmpty());
     assert(Codec::encode(captured)==prior);

@@ -16,6 +16,8 @@ const bridge=read('src/ConsoleLiveBridgeV6.h');
 const wire=read('engine/core/ConsolePuzzleV8Wire.h');
 const schema=JSON.parse(read('contracts/console-puzzle-v8.json'));
 const worker=read('src/NativeShowSaveWorker.h');
+const showCapture=read('src/NativeLiveShowCapture.h');
+const showRecall=read('src/NativeDryShowRecall.h');
 const physical=read('src/LiveDryRoutingLab.h');
 const dynamic=read('engine/core/DynamicNativeSessionPublisher.h');
 const realtimePermit=read('engine/core/RealtimeRenderPermit.h');
@@ -96,7 +98,8 @@ test('E3 stable ChannelId GROUP/FX RETURN is a real guarded physical PCM transac
   assert.match(physical,/nativePublisher_\.commit\(/);
   assert.match(physical,/nativeAccepted_\.graph\.roster=std::move\(next\)/);
   assert.match(physical,/if\(!published\.ok\(\)\)/);
-  assert.match(physical,/nativeStructureLive_=true/);
+  assert.match(physical,/nativeStructureLive_=nativeAccepted_\.graph\.roster\.size\(\)/);
+  assert.match(physical,/nativeAccepted_\.hardware\.monitorEnabled/);
   assert.match(physical,/topologyFault_\.store\(true,std::memory_order_release\)/);
   assert.match(engine,/LiveDryRoutingLab::NativeBusResult editNativeBus\(/);
   assert.match(engine,/if\(dryRoutingLab_\.nativeBusTopologyLive\(\)\)return false/);
@@ -108,6 +111,9 @@ test('E3 stable ChannelId GROUP/FX RETURN is a real guarded physical PCM transac
   assert.match(host,/consoleBridge_\.processNativeBusIntent\(/);
   assert.match(bridge,/w\.productionCallbackLive=false/);
   assert.match(wire,/callbackOwnsChannelIds/);
+  assert.match(physical,/nativeBusStructural/);
+  assert.match(showCapture,/nativeBusStructural/);
+  assert.match(showRecall,/nativeBusStructural/);
   assert.equal(count(callback,/dryRoutingLab_\.process\(/g),1);
 });
 

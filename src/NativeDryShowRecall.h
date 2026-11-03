@@ -41,6 +41,11 @@ public:
         if(!borrowed.isInt() || static_cast<int>(borrowed)!=0)
             return "Remove CH1 vendor FX before restoring a DRY-only Show";
         const auto lab=status.getProperty("dryRoutingLab",{});
+        // ShowV2 cannot represent a live extra ChannelId GROUP/FX RETURN.
+        // This check protects the saved state and currently accepted PCM
+        // before any hardware port or VST3 restore side effect.
+        if(static_cast<bool>(lab.getProperty("nativeBusStructural",false)))
+            return "Remove extra native GROUP/FX RETURN buses before Show RECALL";
         if(!lab.isObject() ||
            !lab.getProperty("ready",{}).isBool() ||
            !static_cast<bool>(lab.getProperty("ready",{})) ||
