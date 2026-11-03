@@ -38,7 +38,7 @@ def main():
   shared=dst/"preview/assets/mixer-wire-dots.css"
   assert public.read_bytes()==CANONICAL.read_bytes(),"Public iframe still uses stale GUI"
   assert shared.read_bytes()==WIRE_CSS.read_bytes(),"Public iframe did not publish the effective WIRE CSS"
-  assert 'assets/mixer-wire-dots.css?v=v47-css-v16' in public.read_text("utf-8")
+  assert 'assets/mixer-wire-dots.css?v=v23-wire-cascade' in public.read_text("utf-8")
   with sync_playwright() as pw:
    browser=pw.chromium.launch(headless=True)
    for width in (1366,1680):
@@ -114,7 +114,7 @@ def main():
     bus=page.locator('#tracks .strip[data-id="11"] .wire-node-out')
     assert bus.is_visible(),"Bus A source must be on next bank"
     bus.click()
-    # The exact same cross-bank patch selector is now in WIRE Configuration.
+    # V50: same real cross-bank selector, now inside Config.
     page.locator('#wireConfigToggle').click()
     picker=page.locator('#wireConfigWindow #wireLegend [data-wire-destination]')
     picker.select_option("3")
