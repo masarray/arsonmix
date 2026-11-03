@@ -10,6 +10,52 @@ const palette=['#1699cd','#b92e41','#cf6b1e','#b28c27','#34a544','#168762','#0e9
 const pending=new Map(),lastValues=new Map();
 let snapshot=null,rows=[],bank=0,selectedIds=new Set(),serial=0,lastSignature='',native=!!(api?.emitEvent&&api?.addEventListener);
 let controlsEnabled=false,focusNewChannel=false;
+let realCatalog={items:[],scanning:false,message:''},nativeFxTarget='';
+function fxTarget(id){const row=rows.find(x=>x.id===String(id));
+ return row&&row.nativeScoped&&['INPUT','GROUP'].includes(row.role)?row:null;
+}
+function renderNativeCatalog(){
+ const items=Array.isArray(realCatalog?.items)?realCatalog.items:[];
+ const term=(el('pluginSearch')?.value||'').trim().toLowerCase();
+ const selectedCategory=el('pluginCategory')?.value||'all';
+ const view=el('pluginView')?.value||'all';
+ const matching=items.filter(x=>{
+   if(!x||typeof x.id!=='string'||typeof x.name!=='string')return false;
+   if(selectedCategory!=='all'&&
+      !String(x.category||'').toLowerCase().includes(selectedCategory.toLowerCase()))
+     return false;
+   if(view==='favorites'&&!x.favorite)return false;
+   if(view==='recent'||view==='hidden')return false; // no fabricated history
+   return (x.name+' '+(x.vendor||'')).toLowerCase().includes(term);
+ });
+ const results=el('pluginResults');
+ if(results)results.innerHTML=matching.slice(0,64).map(x=>
+   '<button type="button" class="plugin-result" data-real-plugin-id="'+esc(x.id)+'">'+
+   '<span>'+esc(x.name)+'</span><small>'+esc(x.vendor||'VST3')+'</small></button>').join('')||
+   '<div class="plugin-empty">No matching native VST3. Scan the installed plugin folders.</div>';
+ if(el('pluginCount'))el('pluginCount').textContent=
+   (realCatalog.scanning?'SCANNING · ':'')+matching.length+' VERIFIED VST3'+
+   (matching.length>64?' · SHOWING 64':'');
+ if(el('pluginScanStatus'))el('pluginScanStatus').textContent=
+   String(realCatalog.message||'Native catalog not scanned');
+}
+function openNativeCatalog(id){
+ const row=fxTarget(id);
+ if(!row||!opAvailable('NATIVE_LOAD_INSERT')){
+   announce('Select a dynamic input or Group with native VST3 support',true);return;
+ }
+ nativeFxTarget=row.id;
+ if(el('pluginTarget'))el('pluginTarget').textContent='INSERT FX · '+row.name;
+ if(el('pluginBrowser'))el('pluginBrowser').hidden=false;
+ if(el('pluginsButton'))el('pluginsButton').setAttribute('aria-expanded','true');
+ renderNativeCatalog();
+ el('pluginSearch')?.focus();
+}
+function closeNativeCatalog(){
+ if(el('pluginBrowser'))el('pluginBrowser').hidden=true;
+ if(el('pluginsButton'))el('pluginsButton').setAttribute('aria-expanded','false');
+ nativeFxTarget='';
+}
 const announce=(message,problem=false)=>{const n=el('info');if(n){n.textContent=message;n.style.color=problem?'#e2a5a5':'';}};
 const opAvailable=op=>!!(snapshot?.productionCallbackLive?
     snapshot.graph?.capabilities?.supportedOps?.includes(op):
@@ -52,7 +98,7 @@ function normalize(s){
          patch?.portId||'',out:String(ch.primaryOutput||''),
        controls:{faderDb:20*Math.log10(Math.max(Number(ch.fader)||0,1e-6)),
                  pan:(Number(ch.pan)||0)*100,mute:!!ch.mute,solo:!!ch.solo},
-       fx:[],sends:ch.parallelSends||[],legacy:false,nativeScoped:true,
+       fx:ch.inserts||[],sends:ch.parallelSends||[],legacy:false,nativeScoped:true,
        measuredL:ch.peakL,measuredR:ch.peakR});
    }
  }
@@ -114,10 +160,13 @@ function nativeStrip(r){
  const meterTick=[0,-6,-12,-18,-24,-36,-48,-60].map(v=>'<span class="vu-tick" style="top:'+(-v/60*100)+'%"><span>'+v+'</span></span>').join('');
  const gainTick=[10,0,-6,-12,-24,-36,-48,-60].map(v=>'<span class="gain-tick" style="top:'+((10-v)/70*100)+'%"><span>'+v+'</span></span>').join('');
  const format=String(r.format).toUpperCase()==='STEREO'?'STEREO':'MONO';
- const fx=(r.fx||[]).slice(0,8).map(slot=>{
+ const fx=(r.fx||[]).slice(0,8).map((slot,index)=>{
    const token=esc(slot.instanceId||slot.id||'');
-   return '<div class="fxslot"><button class="fxslot-name"'+act('OPEN_INSERT_EDITOR',' data-insert="'+token+'"')+'>'+esc(slot.name||'VST3')+'</button>'+
-   '<button class="fxslot-bypass"'+act('SET_INSERT_BYPASS',' data-insert="'+token+'" data-bypassed="'+!!slot.bypassed+'"')+'>'+(slot.bypassed?'OFF':'ON')+'</button></div>';
+   const ownerAttrs=' data-insert="'+token+'" data-slot="'+index+'"';
+   const editorOp=r.nativeScoped?'NATIVE_OPEN_INSERT_EDITOR':'OPEN_INSERT_EDITOR';
+   const bypassOp=r.nativeScoped?'NATIVE_SET_INSERT_BYPASS':'SET_INSERT_BYPASS';
+   return '<div class="fxslot"><button class="fxslot-name"'+act(editorOp,ownerAttrs)+'>'+esc(slot.name||'VST3')+'</button>'+
+   '<button class="fxslot-bypass"'+act(bypassOp,ownerAttrs+' data-bypassed="'+!!slot.bypassed+'"')+'>'+(slot.bypassed?'OFF':'ON')+'</button></div>';
  }).join('');
  return '<article class="strip '+role+(selectedIds.has(r.id)?' selected':'')+'" data-id="'+esc(r.id)+'" style="--track-color:'+color+';--ch:'+color+'" aria-label="'+esc(r.name)+'">'+
    '<button class="strip-identity-top" type="button" data-select-channel="'+esc(r.id)+'" aria-pressed="'+selectedIds.has(r.id)+'"><span class="identity-number">'+(main?'MASTER':esc(r.id))+'</span><span class="identity-name">'+esc(r.name)+'</span></button>'+
@@ -133,7 +182,10 @@ function nativeStrip(r){
      '<select class="route-select"'+act('SET_PRIMARY_OUT')+'>'+outputOptions(r)+'</select>')+
      '</div></div>'+
    '<div class="section fx-section"><div class="fxslot-list">'+fx+
-   '<button class="fxslot-add" disabled title="LOAD_FX not admitted by native engine">+ ADD VST3</button></div></div>'+
+   '<button type="button" class="fxslot-add" data-open-native-fx="'+esc(r.id)+'"'+
+   (r.nativeScoped&&['INPUT','GROUP'].includes(r.role)&&opAvailable('NATIVE_LOAD_INSERT')&&
+    !snapshot?.device?.outputArmed&&(r.fx||[]).length<8?'':' disabled')+
+   ' title="Add a real catalog VST3 to this native ChannelId">+ ADD VST3</button></div></div>'+
    '<div class="section send-section"><span class="route-caption">SEND</span><span class="route-identity">'+esc((r.sends||[]).length)+' native sends</span></div>'+
    '<div class="section pan-section"><span class="pan-icon">PAN</span><span class="pan-control" style="--pan-start:'+Math.min(50,50+pan/2)+'%;--pan-end:'+Math.max(50,50+pan/2)+'%"><input class="center-pan" type="range" min="-100" max="100" step="1" value="'+pan+'"'+act(r.nativeScoped&&r.role==='INPUT'?'NATIVE_SET_CHANNEL_MIX':'SET_PAN',' data-mix-field="pan"')+'></span><output>'+Math.round(pan)+'</output></div>'+
    '<div class="section switch-section"><span class="buttons-wrapper codepen-buttons-wrapper">'+
@@ -170,9 +222,12 @@ function render(){
  if(el('nativeReturn'))el('nativeReturn').disabled=true;
  for(const [id,op] of [['addTrack','CREATE_CHANNEL'],['addBus','CREATE_GROUP'],['addFx','CREATE_FX_RETURN'],['clearCue','SET_CUE']])
   if(el(id))el(id).disabled=!snapshot?.productionCallbackLive||!opAvailable(op);
- for(const id of ['saveScene','recallScene','sceneSafe','sofToggle','pluginsButton','group','ungroup','copy','paste','pluginScan','pluginImport','pluginAddPath','routeParallel','routeOnly','wireMaster','wireMode'])
+ for(const id of ['saveScene','recallScene','sceneSafe','sofToggle','group','ungroup','copy','paste','pluginImport','pluginAddPath','routeParallel','routeOnly','wireMaster','wireMode'])
   if(el(id))el(id).disabled=true;
- if(el('pluginBrowser'))el('pluginBrowser').hidden=true;
+ if(el('pluginsButton'))el('pluginsButton').disabled=
+   !native||!opAvailable('NATIVE_LOAD_INSERT')||
+   !rows.some(r=>!!fxTarget(r.id));
+ if(el('pluginScan'))el('pluginScan').disabled=!native;
  paintMeters();
 }
 function paintMeters(){
@@ -265,6 +320,13 @@ function submitNode(n){
  else if(op==='SET_MUTE'||op==='SET_SOLO')send(op,row,{enabled:!row.controls[op==='SET_MUTE'?'mute':'solo']});
  else if(op==='OPEN_INSERT_EDITOR')send(op,row,{insertId:n.dataset.insert});
  else if(op==='SET_INSERT_BYPASS')send(op,row,{insertId:n.dataset.insert,bypassed:n.dataset.bypassed!=='true'});
+ else if(op==='NATIVE_OPEN_INSERT_EDITOR'||op==='NATIVE_SET_INSERT_BYPASS'){
+   const slot=Number(n.dataset.slot),instanceId=n.dataset.insert;
+   if(!Number.isInteger(slot)||slot<0||slot>=8||!instanceId){
+     announce('Native VST3 instance/slot is stale',true);return;
+   }
+   send(op,row,{slot,instanceId,bypassed:n.dataset.bypassed!=='true'});
+ }
 }
 function accept(s){
  if(!s||s.schemaVersion!==6)return;
@@ -286,6 +348,7 @@ function ack(a){
  const key=a?.requestId,op=pending.get(key);
  if(!op)return;
  pending.delete(key);
+ if(a.status==='ACCEPTED'&&op.op==='NATIVE_LOAD_INSERT')closeNativeCatalog();
  if(a.status==='ACCEPTED' && (op.op==='NATIVE_CREATE_CHANNEL'||op.op==='CREATE_CHANNEL'))
    focusNewChannel=true; // navigate only after the next accepted native snapshot
  announce(a.status==='ACCEPTED'?op.op+' ACCEPTED · verifying native snapshot':
@@ -300,6 +363,15 @@ document.addEventListener('change',e=>{
  if(e.target.id==='densitySelect')document.querySelector('.console-body').dataset.density=e.target.value;
 });
 document.addEventListener('click',e=>{
+ const chosenPlugin=e.target.closest('[data-real-plugin-id]');
+ if(chosenPlugin){
+   const row=fxTarget(nativeFxTarget);
+   if(!row||!opAvailable('NATIVE_LOAD_INSERT')||
+      snapshot?.device?.outputArmed){announce('MUTE OUTPUT and select native ChannelId FX rack',true);return;}
+   send('NATIVE_LOAD_INSERT',row,{catalogId:chosenPlugin.dataset.realPluginId});return;
+ }
+ const addFx=e.target.closest('[data-open-native-fx]');
+ if(addFx){openNativeCatalog(addFx.dataset.openNativeFx);return;}
  const chosen=e.target.closest('[data-select-channel]');
  if(chosen){
    const id=chosen.dataset.selectChannel,row=rowFor(id);
@@ -320,6 +392,24 @@ document.addEventListener('click',e=>{
  const section=e.target.closest('[data-section]');
  if(section){const n=section.dataset.section,body=document.querySelector('.console-body');
    body.classList.toggle('collapsed-'+n);section.setAttribute('aria-expanded',String(!body.classList.contains('collapsed-'+n)));}
+});
+document.getElementById('pluginsButton')?.addEventListener('click',()=>{
+ const target=fxTarget(nativeFxTarget)||[...selectedIds].map(fxTarget).find(Boolean)||
+   rows.find(r=>!!fxTarget(r.id));
+ if(target){if(el('pluginBrowser')?.hidden)openNativeCatalog(target.id);
+             else closeNativeCatalog();}
+ else announce('Create or select a dynamic ChannelId before loading VST3',true);
+});
+document.getElementById('pluginClose')?.addEventListener('click',closeNativeCatalog);
+document.getElementById('pluginSearch')?.addEventListener('input',renderNativeCatalog);
+document.getElementById('pluginCategory')?.addEventListener('change',renderNativeCatalog);
+document.getElementById('pluginView')?.addEventListener('change',renderNativeCatalog);
+document.getElementById('pluginScan')?.addEventListener('click',()=>{
+ if(native)api.emitEvent('arMixAction',{action:'scanVst3'});
+});
+document.addEventListener('keydown',e=>{
+ if(e.key==='F8'){e.preventDefault();el('pluginsButton')?.click();}
+ if(e.key==='Escape'&&!el('pluginBrowser')?.hidden)closeNativeCatalog();
 });
 document.getElementById('nativeDevice')?.addEventListener('click',()=>{
  if(!native)return;
@@ -353,6 +443,10 @@ document.getElementById('nativeAddAudio')?.addEventListener('click',()=>{
 });
 for(const id of ['wireView','wireMode','sofTarget'])if(el(id))el(id).disabled=true;
 if(!native){announce('NATIVE JUCE BACKEND REQUIRED · NO SIMULATED AUDIO',true);return;}
+api.addEventListener('arMixCatalog',catalog=>{
+ realCatalog= catalog&&typeof catalog==='object'?catalog:{items:[],scanning:false};
+ renderNativeCatalog();
+});
 api.addEventListener('arMixConsoleSnapshot',accept);
 api.addEventListener('arMixConsoleAck',ack);
 api.addEventListener('arMixAudioArmAck',a=>{
