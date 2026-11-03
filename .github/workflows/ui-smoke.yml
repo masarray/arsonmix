@@ -157,8 +157,33 @@ jobs:
             cp "$backup/$path" "$path"
           done
           git diff --exit-code -- site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-wire-dots.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-fx-rack.css site/preview-v2/assets/mixer-control-keys.css
+      # V25's original migration test intentionally fingerprints the exact
+      # 2026-11-04 V25 HTML. V52 changes its fader cache key and pocket paint:
+      # run the immutable migration on its approved V25 tree, NOT on V52.
+      - name: Mount pinned V25 CSS-owner migration fixture (reversible)
+        shell: bash
+        run: |
+          set -euo pipefail
+          baseline=2f01022370c589205d738366242d2d2aeb77b10d
+          backup="$RUNNER_TEMP/v52-current-before-v25"
+          git fetch --no-tags --depth=1 origin "$baseline"
+          for path in site/preview-v2/index.html site/preview-v2/assets/mixer-fader-assembly.css; do
+            mkdir -p "$backup/$(dirname "$path")"
+            cp "$path" "$backup/$path"
+            git show "$baseline:$path" > "$path"
+          done
       - name: Verify V25 exact V51 physical-key owner migration and zero visual regression
         run: python tests/pages_css_architecture_v25_smoke.py
+      - name: Restore exact V52 fader and UI after historical V25 comparison
+        shell: bash
+        run: |
+          set -euo pipefail
+          backup="$RUNNER_TEMP/v52-current-before-v25"
+          for path in site/preview-v2/index.html site/preview-v2/assets/mixer-fader-assembly.css; do
+            test -s "$backup/$path"
+            cp "$backup/$path" "$path"
+          done
+          git diff --exit-code -- site/preview-v2/index.html site/preview-v2/assets/mixer-fader-assembly.css
       - name: Verify embedded Inter font and contextual V7 micro-controls
         run: python tests/pages_inter_utility_v7_smoke.py
       - name: Validate exact alpha micro hardware sprite states and WIRE coexistence
