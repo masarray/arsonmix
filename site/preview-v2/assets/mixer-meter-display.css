@@ -170,25 +170,25 @@
 }
 
 
-/* V18 dBFS scale: VU ruler remains aligned to the actual LED travel
-   (12px top / 13px bottom); show only major numerals and keep all tick
-   positions. Compact labels are ink, not large white UI cards. */
+/* M1 calibrated dBFS scale: the 12px/13px ruler inset is IDENTICAL to
+   the real LED bar's physical travel. Ticks stay on their dBFS positions,
+   and the zero reference is distinct without bright decorative chrome. */
 .console-body .strip .meter-box .vu-tick::before{
-  left:0;top:0;height:1px;width:2px;background:#597988;opacity:.75;
+  left:0;top:0;height:1px;width:2px;background:#72929f;opacity:.76;
 }
 .console-body .strip .meter-box .vu-tick.major::before{
-  width:4px;background:#98b7c3;opacity:.95;
+  width:4px;background:#a5c0cc;opacity:.95;
 }
 .console-body .strip .meter-box .vu-tick.zero::before{
-  width:5px;background:#c1e3ed;opacity:1;
+  width:5px;background:#cdebf3;opacity:1;
 }
 .console-body .strip .meter-box .vu-tick span{
-  left:5px;top:-5px;
-  font:500 8px/10px Inter,"Segoe UI",sans-serif!important;
-  font-variant-numeric:tabular-nums;letter-spacing:-.02em;
-  color:#b4cad5!important;text-shadow:none!important;
+  left:4px;top:-5.5px;
+  font:500 8.5px/11px Inter,"Segoe UI",sans-serif!important;
+  font-variant-numeric:tabular-nums;letter-spacing:-.035em;
+  white-space:nowrap;color:#bdd0d9!important;text-shadow:none!important;
 }
 .console-body .strip .meter-box .vu-tick.zero span{
-  color:#e0f1f6!important;font-weight:650!important;
+  color:#f0fbff!important;font-weight:600!important;
 }
 .console-body .strip .meter-box .vu-tick.minor span{display:none!important}
