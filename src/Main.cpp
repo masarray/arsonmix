@@ -49,7 +49,11 @@ std::optional<juce::WebBrowserComponent::Resource> assetFor (const juce::String&
     int size = 0;
     juce::String mime;
     if (path == "/" || path == "/index.html")
-        { data = BinaryData::index_html; size = BinaryData::index_htmlSize; mime = "text/html"; }
+        { data = BinaryData::consolenative_html; size = BinaryData::consolenative_htmlSize; mime = "text/html"; }
+    else if (path == "/console-native.css")
+        { data = BinaryData::consolenative_css; size = BinaryData::consolenative_cssSize; mime = "text/css"; }
+    else if (path == "/console-native.js")
+        { data = BinaryData::consolenative_js; size = BinaryData::consolenative_jsSize; mime = "text/javascript"; }
     else if (path == "/styles.css")
         { data = BinaryData::styles_css; size = BinaryData::styles_cssSize; mime = "text/css"; }
     else if (path == "/app.js")
