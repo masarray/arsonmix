@@ -46,12 +46,11 @@ def source_gate():
     assert names == expected, names
     styles = [body for n, version, tag, body in css_order if tag]
     assert len(styles) == 3, "V11 stylesheet order or inline structure drift"
-    # V18 physically moved the middle inline material into the Chrome owner.
-    # Reconstruct the exact V16 Chrome bytes for this immutable historical V10 gate.
-    from css_v18_restore import reconstruct as restore_pre_v18
-    old_chrome=restore_pre_v18()[1]
+    # Immutable historical CSS source: V18 moved the former inline middle block.
+    from css_v18_restore import reconstruct as restore_previous_chrome
+    previous_chrome=restore_previous_chrome()[1]
     all_css = "".join(
-        (old_chrome if n=="mixer-chrome-material.css" else
+        (previous_chrome if n=="mixer-chrome-material.css" else
          (HTML.parent / "assets" / n).read_text(encoding="utf-8")) if n else body
         for n, version, tag, body in css_order
     )
@@ -109,7 +108,7 @@ async def visual(page, width, height):
     assert abs(data["strip"]["width"] - data["master"]["width"]) < 1.5, (width, "master geometry", data)
     assert abs(data["pan"]["top"] - data["railPan"]["top"]) < 1.6, (width, "PAN rail", data)
     assert abs(data["fader"]["top"] - data["railFader"]["top"]) < 1.6, (width, "fader rail", data)
-    assert 21 <= data["cap"]["width"] <= 25 and 45 <= data["cap"]["height"] <= 50, (width, "fader face", data)
+    assert 26 <= data["cap"]["width"] <= 28 and 53 <= data["cap"]["height"] <= 55, (width, "M2 fader face", data)
     assert abs(data["key"]["height"] - 29) < 1.2, (width, "MUTE key", data)
     assert "Inter" in data["font"], (width, "font", data)
     assert not errors, (width, errors)

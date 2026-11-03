@@ -204,3 +204,23 @@
 .console-body .strip .meter-box .vu-scale{
   flex-basis:21px;width:21px;min-width:21px;max-width:21px;
 }
+
+/* M2: keep the historic meter CSS prefix byte-identical; adjust only the
+   active owner suffix. Wider portrait LEDs read as real hardware from a
+   normal operating distance, without altering 51px housing or dBFS travel. */
+.console-body .strip .meter-box .vu-bars{gap:2px!important}
+.console-body .strip .meter-box .meter-lane,
+.console-body .strip .meter-box.mono .meter-lane{
+ width:8px!important;min-width:8px!important;max-width:8px!important;
+ flex:0 0 8px!important;
+}
+
+/* In 105px compact strips, keep the 21px dBFS numeral rail and the
+   full-size 8px LED pixels. Only the unused bar-gutter is narrowed. */
+.console-body[data-density="compact"] .strip .meter-box{
+ width:44px!important;min-width:44px!important;max-width:44px!important;
+}
+.console-body[data-density="compact"] .strip .meter-box .vu-bars{
+ width:21px!important;min-width:21px!important;max-width:21px!important;
+ flex-basis:21px!important;
+}

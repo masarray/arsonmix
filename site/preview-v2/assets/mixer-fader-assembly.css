@@ -320,12 +320,78 @@
 .console-body .strip .gain-tick.unity span{color:#f0fbff;font-weight:600}
 .console-body .strip .gain-tick.minor span{display:none}
 
-/* M1.2 physical fader/ruler adjacency: the M1 numeric column already aligns.
-   Match the actual 23px rendered cap with a 30px-wide hardware well, parked next to
-   the ruler. Extra flexible strip width belongs BETWEEN meter and fader, never
-   between the operator's fader and its ticks. No changes to fader travel, dB
-   math, meter housing, pointer input or vertical alignment. */
+/* M2 — One compact, optically centered hardware instrument.
+   The historical V13 prefix is intentionally unmodified. Meter (51px) +
+   3px + fader pocket (32px) + 3px + gain ruler (26px), no elastic dead zone.
+   Vertical M2 geometry is tied to the cap center and physical dB ticks.
+   No timer, layout JS, animated shadows, blur, or audio DSP changes. */
+.console-body .strip .fader-workspace{
+ grid-template-columns:51px 32px 26px!important;
+ gap:3px!important;justify-content:center!important;
+ background:linear-gradient(90deg,#12232d 0%,#14242e 45%,#10212b 100%);
+ border-radius:3px;
+ box-shadow:inset 0 1px #a7c4d015,inset 0 -1px #050e16;
+}
 .console-body .strip .fader-workspace > .fader-box{
-  width:30px!important;min-width:30px!important;max-width:30px!important;
-  justify-self:end!important;
+ width:32px!important;min-width:32px!important;max-width:32px!important;
+ justify-self:center!important;
+}
+.console-body .strip .fader-box::before{width:32px!important}
+.console-body .strip .fader-travel,
+.console-body .strip .gain-scale-travel{top:27px!important;bottom:27px!important}
+.console-body .strip .fader-travel .cap{
+ width:27px!important;height:54px!important;
+ background:var(--ari-silver) center/27px 54px no-repeat!important;
+ background-size:27px 54px!important;
+}
+.console-body .strip.master .fader-travel .cap{
+ background:var(--ari-rose) center/27px 54px no-repeat!important;
+ background-size:27px 54px!important;
+}
+.console-body .strip .fader-box .fader{
+ top:27px!important;bottom:27px!important;height:calc(100% - 54px)!important;
+}
+.console-body .strip .fader-box::after{
+ /* --fader-y comes from the existing interaction model; bright below
+    handle, unlit above. Static paint only, no per-meter-frame work. */
+ top:27px!important;bottom:27px!important;
+ background:linear-gradient(to bottom,
+   #030a10 0%,#030a10 var(--fader-y,50%),
+   color-mix(in srgb,var(--track-color,#6fb4c6) 56%,#164959) calc(var(--fader-y,50%) + 1px),
+   #174354 85%,#0a222e 100%)!important;
+}
+.console-body .strip .gain-tick.unity::before{width:9px}
+
+/* M2 density contracts. Standard gets breathing room without changing
+   its calibrated cap. Compact is a real narrower instrument, not a cropped
+   comfort layout: retain the dBFS numeric column and full drag/keyboard travel. */
+.console-body[data-density="standard"] .strip .fader-section{
+ padding-left:4px!important;padding-right:4px!important;
+}
+.console-body[data-density="compact"] .strip .fader-section{
+ padding-left:1px!important;padding-right:1px!important;
+}
+.console-body[data-density="compact"] .strip .fader-workspace{
+ grid-template-columns:44px 27px 28px!important;gap:2px!important;
+}
+.console-body[data-density="compact"] .strip .fader-workspace > .fader-box{
+ width:27px!important;min-width:27px!important;max-width:27px!important;
+}
+.console-body[data-density="compact"] .strip .fader-box::before{width:27px!important}
+.console-body[data-density="compact"] .strip .fader-scale{
+ width:28px!important;min-width:28px!important;
+}
+.console-body[data-density="compact"] .strip .fader-travel,
+.console-body[data-density="compact"] .strip .gain-scale-travel{
+ top:25px!important;bottom:25px!important;
+}
+.console-body[data-density="compact"] .strip .fader-travel .cap{
+ width:25px!important;height:50px!important;
+ background-size:25px 50px!important;
+}
+.console-body[data-density="compact"] .strip .fader-box .fader{
+ top:25px!important;bottom:25px!important;height:calc(100% - 50px)!important;
+}
+.console-body[data-density="compact"] .strip .fader-box::after{
+ top:25px!important;bottom:25px!important;
 }

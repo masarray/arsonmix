@@ -15,15 +15,14 @@ from pages_css_architecture_v11_smoke import HTML, check, PROPS
 
 ROOT=Path(__file__).resolve().parents[1]
 MANIFEST=ROOT/"tests/fixtures/css-v13-owner-removals.json"
-# Independently fingerprint approved owner tails (GUI M1 + CSS V17).
-# V18 Chrome prefix is restored via the exact physical ownership ledger.
+# Independently fingerprint the approved current owner tails (GUI M1 + CSS V17).
 # The historic V13 prefix, declaration-removal ledger and baseline parity
 # remain exact; changing the fader/meter ruler deliberately re-approves ONLY
 # the owned suffix fingerprints, not the historical owner source.
 V18_OWNER_TAILS={
     "mixer-pan-controls.css":(294,"01ccf01a"),
-    "mixer-fader-assembly.css":(1613,"68f99722"),
-    "mixer-meter-display.css":(1617,"13ddc2f3"),
+    "mixer-fader-assembly.css":(4548,"25a7de44"),
+    "mixer-meter-display.css":(2538,"2d191341"),
     "mixer-plugin-browser.css":(4285,"1ce2ede9"), # V17 exact appended owner suffix
 }
 def tail_fingerprint(text):
@@ -76,8 +75,8 @@ def restore_baseline():
         for name,record in manifest["files"].items():
             assert "/" not in name and name.endswith(".css")
             path=HTML.parent/"assets"/name
-            from css_v18_restore import reconstruct as previous_chrome,manifest as v18_manifest
-            current=(previous_chrome()[1] if name=="mixer-chrome-material.css"
+            from css_v18_restore import reconstruct as restore_previous_chrome,manifest as v18_manifest
+            current=(restore_previous_chrome()[1] if name=="mixer-chrome-material.css"
                      else path.read_text(encoding="utf-8"))
             original=current[:record["afterSize"]]
             tail=current[record["afterSize"]:]
@@ -99,8 +98,7 @@ def restore_baseline():
             with tf:
                 # The current owner suffix must exist on BOTH compared pages. Only the
                 # original V13 removal history differs in these reconstructions.
-                # Keep the relocated operator material ahead of the historical
-                # V13 Chrome source, identical on baseline and current pages.
+                # Keep V18 moved material before historical V13 Chrome source.
                 prefix=(v18_manifest()["prefix"] if name=="mixer-chrome-material.css" else "")
                 tf.write(prefix+restored+tail)
             temporary.append(Path(tf.name))

@@ -1,6 +1,6 @@
 # V18 — Shared Operator Chrome and Legacy Section CSS Ownership
 
-Baseline: 359f1dcc07093950e9338b4fcd5983ee8b205e27 (V17, exact successful main).
+Baseline: e00ca5f66be8b40c0df75591b0aeb66d3a6c61e0 (V17 + merged GUI M2).
 Only CSS, historical restoration tests and CI workflow are touched.
 
 ## Root cause and change
@@ -44,3 +44,9 @@ Audit the late-inline command-bar, contextual key and cross-component
 hardware overrides. Move ownership only where cascade order can be proven,
 and remove provably shadowed same-selector/same-property important
 declarations. Do not change the operator-approved material.
+
+## Parallel GUI M2 reconciliation
+This V18 source was rebased onto the merged M2 GUI. M2 fader/meter owner
+styles, 27x54 cap, calibrated dBFS legend, latest tests, and the three M2
+HTML deltas are retained byte-for-byte. V17 restoration still normalizes
+only those separately approved M2 deltas when reconstructing V16 history.
