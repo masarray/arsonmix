@@ -64,7 +64,7 @@ def main():
   public=dist/"preview/mixer.html"
   assert public.read_bytes()==HTML.read_bytes(),"Pages did not publish canonical V45 console"
   assert (dist/"preview/assets/mixer-wire-dots.css").read_bytes()==STYLE.read_bytes(),"Pages lost WIRE CSS"
-  assert "assets/mixer-wire-dots.css?v=v23-wire-cascade" in public.read_text("utf-8")
+  assert "assets/mixer-wire-dots.css?v=v23-wire-v50-config" in public.read_text("utf-8")
   with sync_playwright() as pw:
    browser=pw.chromium.launch(headless=True)
    for width in (1366,1680,1920):
