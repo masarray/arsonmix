@@ -101,7 +101,7 @@ async def visual(page, width, height):
     assert abs(data["strip"]["width"] - data["master"]["width"]) < 1.5, (width, "master geometry", data)
     assert abs(data["pan"]["top"] - data["railPan"]["top"]) < 1.6, (width, "PAN rail", data)
     assert abs(data["fader"]["top"] - data["railFader"]["top"]) < 1.6, (width, "fader rail", data)
-    assert 21 <= data["cap"]["width"] <= 25 and 45 <= data["cap"]["height"] <= 50, (width, "fader face", data)
+    assert 26 <= data["cap"]["width"] <= 28 and 53 <= data["cap"]["height"] <= 55, (width, "M2 fader face", data)
     assert abs(data["key"]["height"] - 29) < 1.2, (width, "MUTE key", data)
     assert "Inter" in data["font"], (width, "font", data)
     assert not errors, (width, errors)
