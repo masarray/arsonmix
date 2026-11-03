@@ -23,7 +23,7 @@ def main():
   public=dst/"preview/mixer.html"
   assert public.read_bytes()==SRC.read_bytes(),"published /preview/ differs from canonical GUI"
   assert (dst/"preview/assets/mixer-wire-dots.css").read_bytes()==CSS.read_bytes(),"published WIRE style missing"
-  assert 'assets/mixer-wire-dots.css?v=v47-css-v16' in public.read_text("utf-8")
+  assert 'assets/mixer-wire-dots.css?v=v49-direct-physics' in public.read_text("utf-8")
   with sync_playwright() as pw:
    browser=pw.chromium.launch(headless=True)
    for width in (1366,1680):
