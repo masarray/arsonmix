@@ -20,7 +20,8 @@ def manifest():
 
 def reconstruct():
     data=manifest()
-    current=HTML.read_text(encoding="utf-8")
+    from css_v17_restore import reconstruct as restore_v16_source
+    current,_=restore_v16_source()
     now_wire=WIRE.read_text(encoding="utf-8")
     assert len(now_wire)==data["afterWireSize"],"WIRE owner changed"
     prefix=data["movedPrefix"]
@@ -52,6 +53,9 @@ def mount_original(html,wire=None):
     assert html.count(original)==1
     temporary=[]
     try:
+        from css_v17_restore import mount_owner
+        html,old_plugin=mount_owner(html)
+        temporary.extend(old_plugin)
         f=tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",suffix=".css",
             prefix=".v16-previous-wire-",dir=WIRE.parent,delete=False)
         with f:f.write(wire)
