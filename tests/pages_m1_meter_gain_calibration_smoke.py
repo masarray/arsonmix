@@ -39,7 +39,21 @@ def geometry(page, density, label):
         font:parseFloat(getComputedStyle(el.querySelector('span')).fontSize),
         rect:rect(el.querySelector('span'))
       }));
-      return {g:rect(g),v:rect(v),travel:rect(travel),cap:rect(cap),
+      // Measure actual rendered TEXT ink, not just the equal-sized span boxes.
+      // Every major numeric label must terminate on one optical right edge.
+      const column=(parent,selector)=>[...parent.querySelectorAll(selector)]
+        .filter(el=>el.textContent?.trim()&&getComputedStyle(el).display!=='none')
+        .map(el=>{
+          const range=document.createRange();range.selectNodeContents(el);
+          const ink=range.getBoundingClientRect(),box=el.getBoundingClientRect();
+          const cs=getComputedStyle(el);
+          return {text:el.textContent.trim(),inkLeft:ink.left,inkRight:ink.right,
+                  boxLeft:box.left,boxRight:box.right,align:cs.textAlign,
+                  numeric:cs.fontVariantNumeric};
+        });
+      return {columns:{gain:column(g,'.gain-tick.major span'),
+                       vu:column(v,'.vu-tick.major span')},
+       g:rect(g),v:rect(v),travel:rect(travel),cap:rect(cap),
        bar:rect(bars),lane:rect(meterLane),gain:ticks(g,'.gain-tick'),
        vu:ticks(v,'.vu-tick'),
        gainFont:parseFloat(getComputedStyle(g.querySelector('.gain-tick.major span')).fontSize),
@@ -64,6 +78,17 @@ def geometry(page, density, label):
         close(item["y"],out["lane"]["y"]+out["lane"]["h"]*expected/100,1.1)
     close(out["gain"][1]["y"],out["cap"]["y"]+out["cap"]["h"]/2,1.05)
     assert out["gain"][1]["text"]=="0" and out["vu"][0]["text"]=="0"
+    if label != "png":  # frozen independent V45 PNG reference is not live M1.1
+        for key in ("gain","vu"):
+            column=out["columns"][key]
+            assert len(column)>=6,(label,density,key,"missing major labels",column)
+            assert all(v["align"]=="right" and "tabular-nums" in v["numeric"]
+                       for v in column),(label,density,key,"inconsistent numeral style",column)
+            rights=[v["inkRight"] for v in column]
+            assert max(rights)-min(rights)<.85,(
+                label,density,key,"actual numeral glyphs are not vertically aligned",column)
+            assert all(v["inkLeft"]>=v["boxLeft"]-1.5 for v in column),(
+                label,density,key,"overflowing digit rail",column)
     for key in ("gain","vu"):
         rects=[t["rect"] for t in out[key] if t["major"]]
         for earlier,later in zip(rects,rects[1:]):
