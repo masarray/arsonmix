@@ -49,7 +49,8 @@ public:
     };
     enum class Fault : std::uint8_t {
         none,invalidEpoch,emptyId,duplicateChannel,tooManyInserts,
-        emptyLease,duplicateInstance,invalidBusLayout,missingLegacyIdentity,invalidExternalLease
+        emptyLease,duplicateInstance,invalidBusLayout,uncompensatedLatency,
+        missingLegacyIdentity,invalidExternalLease
     };
     DynamicChannelFxLeaseBank()=default;
     DynamicChannelFxLeaseBank(const DynamicChannelFxLeaseBank&)=delete;
@@ -110,6 +111,14 @@ public:
                 if(owner->processor->getTotalNumInputChannels()!=2 ||
                    owner->processor->getTotalNumOutputChannels()!=2)
                     return Fault::invalidBusLayout;
+                // Global live-mixer architecture (Waves LV1/Ableton):
+                // parallel PRE/POST paths with unequal VST latency require
+                // true graph-aware PDC. Until that engine exists, never
+                // admit a plugin that would produce misaligned MAIN/MONITOR,
+                // AUX/Group or parallel FX Return PCM. This is a CONTROL-only
+                // processor inspection, NEVER called from realtime.
+                if(owner->processor->getLatencySamples()!=0)
+                    return Fault::uncompensatedLatency;
                 for(const auto& existing:candidate.rows_)
                     for(std::size_t k=0;k<existing.count;++k)
                         if(existing.owners[k].get()==owner.get())
