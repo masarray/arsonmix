@@ -17,7 +17,7 @@
   .command-bar summary.tool,
   .more-tools-panel button.tool,
   .identity-actions button.console-control,
-  .mixer-title button.wire-master,
+  #wireMaster,
   .mixer-title button.wire-v34-tool,
   .console-body .section-rail button.rail-cell[data-section],
   .console-body .strip button.mx-util-key,
@@ -55,7 +55,7 @@
 .app :is(
   .command-bar button.tool,.command-bar summary.tool,
   .more-tools-panel button.tool,.identity-actions button.console-control,
-  .mixer-title button.wire-master,.mixer-title button.wire-v34-tool,
+  #wireMaster,.mixer-title button.wire-v34-tool,
   .console-body .strip button.mx-util-key,
   .plugin-footer button,.plugin-browser .plugin-head button,
   .plugin-browser .plugin-actions button,.plugin-browser .plugin-paths button,
@@ -91,7 +91,7 @@
 .app :is(
   .command-bar button.tool,.command-bar summary.tool,
   .more-tools-panel button.tool,.identity-actions button.console-control,
-  .mixer-title button.wire-master,.mixer-title button.wire-v34-tool,
+  #wireMaster,.mixer-title button.wire-v34-tool,
   .console-body .section-rail button.rail-cell[data-section],
   .console-body .strip button.mx-util-key,
   .plugin-footer button,.plugin-browser .plugin-head button,
@@ -117,7 +117,7 @@
 .app :is(
   .command-bar button.tool,.command-bar summary.tool,
   .more-tools-panel button.tool,.identity-actions button.console-control,
-  .mixer-title button.wire-master,.mixer-title button.wire-v34-tool,
+  #wireMaster,.mixer-title button.wire-v34-tool,
   .console-body .strip button.mx-util-key,
   .plugin-footer button,.plugin-browser .plugin-head button,
   .plugin-browser .plugin-actions button,.plugin-browser .plugin-paths button,
@@ -151,14 +151,17 @@
 .app .command-bar #mode,.app .more-tools-panel #mode{
   width:78px!important;min-width:78px!important;max-width:78px!important
 }
-/* Override legacy 1px whole-button press transforms. Depth changes INSIDE
-   the painted material above; outer layout and neighboring buttons stay put. */
-.app .command-bar button.tool:active:not(:disabled),
-.app .more-tools-panel button.tool:active:not(:disabled),
-.app .identity-actions button.console-control:active:not(:disabled),
-.app .mixer-title button.wire-master:active:not(:disabled),
-.app .mixer-title button.wire-v34-tool:active:not(:disabled),
-.app .console-body .strip button.mx-util-key:active:not(:disabled),
-.app .wire-workspace button:active:not(:disabled){
-  transform:none!important;top:auto;
+/* Legacy BTN-180 CSS includes an ID-level :active rule. The actual
+   #wireMaster identity in this family ensures the NEW owner wins cleanly,
+   without a fabricated selector or changes to other components. */
+.app :is(
+  #wireMaster,
+  .command-bar button.tool,
+  .more-tools-panel button.tool,
+  .identity-actions button.console-control,
+  .mixer-title button.wire-v34-tool,
+  .console-body .strip button.mx-util-key,
+  .wire-workspace button
+):active:not(:disabled){
+  transform:none!important;
 }
