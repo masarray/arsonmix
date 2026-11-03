@@ -131,12 +131,11 @@
   background:linear-gradient(#f2f6f7,#bacad0 25%,color-mix(in srgb,var(--track-color) 40%,#718c9c) 45%,#415560 50%,#cddbe0 60%,#6c8491);
 }
 .console-body .fader:focus-visible{outline:2px solid #9ce1ee;outline-offset:-2px}
-.console-body .fader-section{background:#20282f!important;padding:5px 4px!important;gap:5px!important;min-height:145px!important;box-shadow:none!important}
-.console-body .fader-head{height:31px!important;min-height:31px!important;background:#0c171e!important;box-shadow:inset 0 1px 2px #050b0e!important}
+.console-body .fader-section{padding:5px 4px!important;gap:5px!important;box-shadow:none!important}
+.console-body .fader-head{height:31px!important;min-height:31px!important;}
 .console-body .fader-readout{font-size:15px!important;color:#79d3e3!important;text-shadow:none!important}
 .console-body .strip.master .fader-readout{color:#ddc1a1!important}
-.console-body .fader-workspace{display:grid!important;grid-template-columns:25px minmax(0,1fr) 24px!important;gap:3px!important}
-.console-body .fader-box{grid-column:2;border:0!important;border-radius:4px!important;background:linear-gradient(90deg,#172026,#303a42 12%,#202a31 50%,#303a42 88%,#141c21)!important;box-shadow:inset 2px 0 4px #090e13,inset -2px 0 4px #0b1216!important}
+.console-body .fader-box{grid-column:2;}
 .console-body .fader-box:before{top:38px!important;bottom:38px!important;width:7px!important;background:linear-gradient(90deg,#030709,#11181d 50%,#030709)!important}
 .console-body .fader-box:after{bottom:38px!important;width:4px!important;height:calc((100% - 77px) * var(--fader-lit,0))!important;max-height:calc(100% - 77px)!important;background:linear-gradient(to top,transparent,#1b6575 28%,#27bfd8 70%,#183e4c)!important;box-shadow:none!important}
 .console-body .fader{width:36px!important;max-width:100%!important;height:calc(100% - 77px)!important;min-height:10px!important;margin:0!important;writing-mode:vertical-lr!important;direction:rtl!important;appearance:none!important;-webkit-appearance:none!important;background:transparent!important}
@@ -144,26 +143,22 @@
 .console-body .fader::-moz-range-thumb{width:36px!important;height:77px!important;border:0!important;border-radius:0!important;background:var(--ari-silver) center/36px 77px no-repeat!important;box-shadow:none!important}
 .console-body .strip.master .fader::-webkit-slider-thumb{background:var(--ari-rose) center/36px 77px no-repeat!important}
 .console-body .strip.master .fader::-moz-range-thumb{background:var(--ari-rose) center/36px 77px no-repeat!important}
-.console-body .fader-scale{grid-column:3;width:auto!important;min-width:0!important;padding:38px 0!important;align-items:flex-start!important;text-align:left!important;font-size:9px!important;color:#98a7ad!important}
-.console-body .fader-workspace{display:grid!important;grid-template-columns:51px minmax(36px,1fr) 26px!important;gap:3px!important;min-width:0!important;overflow:hidden!important}
+.console-body .fader-scale{grid-column:3;align-items:flex-start!important;text-align:left!important;font-size:9px!important;color:#98a7ad!important}
+.console-body .fader-workspace{display:grid!important;min-width:0!important;overflow:hidden!important}
 .console-body .fader-box{
  grid-column:2!important;position:relative!important;isolation:isolate;
  min-width:36px!important;width:100%!important;overflow:visible!important;
- border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;
+ border:0!important;border-radius:0!important;box-shadow:none!important;
 }
 .console-body .fader-box::before{
- content:"";position:absolute;top:0!important;bottom:0!important;left:50%!important;
- width:min(46px,100%)!important;transform:translateX(-50%)!important;
+ content:"";position:absolute;top:0!important;bottom:0!important;left:50%!important;transform:translateX(-50%)!important;
  z-index:0;pointer-events:none;box-sizing:border-box;
- background:linear-gradient(90deg,#15232c 0%,#283741 13%,#2a3942 48%,#283741 87%,#15232c 100%)!important;
- border:0!important;border-radius:6px!important;
- box-shadow:inset 0 4px 4px -3px #070e13,inset 0 -4px 4px -3px #070e13,
-   inset 4px 0 5px -4px #081116,inset -4px 0 5px -4px #081116!important;
+ border:0!important;
 }
 .console-body .fader-box::after{
- content:"";position:absolute;left:50%!important;top:38px!important;bottom:39px!important;width:5px!important;
+ content:"";position:absolute;left:50%!important;
  transform:translateX(-50%)!important;z-index:1;pointer-events:none;
- border:0!important;opacity:1!important;max-height:none!important;height:auto!important;
+ border:0!important;max-height:none!important;
 }
 .console-body .fader-travel{
  position:absolute;top:38px;bottom:39px;left:0;right:0;pointer-events:none;z-index:3;
@@ -177,9 +172,8 @@
 .console-body .strip.master .fader-travel .cap{background:var(--ari-rose) center/36px 77px no-repeat}
 .console-body .fader-box .fader{
  position:absolute;z-index:4;top:38px;bottom:39px;left:50%;transform:translateX(-50%);
- width:36px!important;height:calc(100% - 77px)!important;min-height:10px!important;
- writing-mode:vertical-lr!important;direction:rtl!important;cursor:ns-resize;
- opacity:0!important;-webkit-appearance:none!important;appearance:none!important;
+ width:36px!important;min-height:10px!important;
+ writing-mode:vertical-lr!important;direction:rtl!important;cursor:ns-resize;-webkit-appearance:none!important;appearance:none!important;
  pointer-events:auto;
 }
 .console-body .fader-scale{grid-column:3!important;position:relative;flex:none!important;width:26px!important;min-width:26px!important;padding:0!important;background:none!important}
@@ -210,21 +204,15 @@
 /* Match the source GUI gain ruler: +10/0/−60, while VU remains 0…−60 dBFS. */
 .console-body .fader-box:focus-within::before{box-shadow:inset 0 0 0 1px #82cddd,inset 0 4px 4px -3px #070e13,inset 0 -4px 4px -3px #070e13!important}
 .console-body .fader-section{background:#0e1a23!important;min-height:0!important}
-.console-body .fader-workspace{grid-template-columns:51px minmax(35px,1fr) 26px!important;gap:2px!important}
-.console-body .fader-box::before{width:min(40px,100%)!important;background:linear-gradient(90deg,#15232c,#283741 13%,#2a3942 48%,#283741 87%,#15232c)!important;border-radius:5px!important}
-.console-body .fader-box::after{top:31px!important;bottom:31px!important;background-color:#03080b!important;background-image:none!important;width:5px!important;height:auto!important;opacity:1!important;box-shadow:inset 1px 0 #010406,inset -1px 0 #010406!important}
-.console-body .fader-travel{top:31px!important;bottom:31px!important;pointer-events:none!important}
-.console-body .fader-travel .cap{top:var(--fader-y,50%)!important;width:29px!important;height:62px!important;background:var(--ari-silver) center/29px 62px no-repeat!important;transform:translate(-50%,-50%)!important;filter:none!important}
+.console-body .fader-box::after{height:auto!important;opacity:1!important;}
+.console-body .fader-travel{pointer-events:none!important}
+.console-body .fader-travel .cap{top:var(--fader-y,50%)!important;background:var(--ari-silver) center/29px 62px no-repeat!important;transform:translate(-50%,-50%)!important;}
 .console-body .strip.master .fader-travel .cap{background:var(--ari-rose) center/29px 62px no-repeat!important}
-.console-body .fader-box .fader{top:31px!important;bottom:31px!important;height:calc(100% - 62px)!important;opacity:0!important;pointer-events:none!important}
+.console-body .fader-box .fader{opacity:0!important;pointer-events:none!important}
 .console-body .fader-box{touch-action:none!important;cursor:ns-resize!important}
 .console-body .fader-box:focus-within{outline:1px solid #80b9c8!important;outline-offset:-1px}
-.console-body .fader-head{background:#07151b!important;box-shadow:inset 0 1px 3px #000b!important}
-.console-body .strip .fader-section{background:#0c1922!important}
-.console-body .strip .fader-head{background:#07131a!important}
 /* User screenshot: lighten chassis, keep recess visibly DARKER and deeply machined. */
 .console-body .strip .fader-section{
- background:linear-gradient(90deg,#253640,#30434e 15%,#2c3f49 78%,#22343e)!important;
  padding:6px 6px 6px!important;
 }
 .console-body .fader-workspace{grid-template-columns:49px minmax(35px,1fr) 25px!important;gap:2px!important}
@@ -243,7 +231,6 @@
 }
 .console-body .fader-travel{top:27px!important;bottom:27px!important}
 .console-body .fader-travel .cap{
- width:26px!important;height:55px!important;
  background:var(--ari-silver) center/26px 55px no-repeat!important;
  image-rendering:auto!important;
  filter:drop-shadow(1px 2px 1px #0008)!important;
@@ -260,35 +247,20 @@
   min-height:var(--fader-fixed-h)!important;
   max-height:var(--fader-fixed-h)!important;
 }
-.console-body .strip .fader-head{
-  background:linear-gradient(113deg,#030b11,#0e2733 42%,#091b25 72%,#06131b)!important;
-  border:1px solid #4c6876!important;
-  box-shadow:inset 0 2px 5px #0009,inset 0 -1px #9cb6c51e,0 1px #ffffff25!important;
-}
-.console-body .strip .fader-readout{font-variant-numeric:tabular-nums!important;color:#a7f1ff!important}
+.console-body .strip .fader-readout{font-variant-numeric:tabular-nums!important;}
 /* V13 P0 visual-authority synchronization from approved latest main:
    graphite inset well is a flat recessed #142530 metal instrument surface,
    NOT the earlier gradient. Keep original 26x55 cap and meter calibration. */
 .console-body .strip .fader-box::before{
- background:#142530!important;
  background-image:none!important;
- box-shadow:inset 1px 0 #7997a33d,inset -1px 0 #050d14a6!important;
 }
 .console-body .strip .fader-section{
- background:#1b2e3a!important;
  border-top:1px solid #516b7847!important;
- box-shadow:inset 0 1px #ffffff09!important;
 }
-.console-body .strip .fader-head{
- background:#081923!important;border:1px solid #405b69!important;
- box-shadow:inset 0 1px 1px #0009,inset 0 -1px #8da9b21d!important;
+.console-body .strip .fader-head{border:1px solid #405b69!important;
 }
 .console-body .strip .fader-readout{text-shadow:none!important;color:#98e6f5!important}
-.console-body .strip .fader-box{background:#1b2e39!important;box-shadow:none!important}
-.console-body .strip .fader-box::before{
- background:#142530!important;
- box-shadow:inset 1px 0 #7997a33d,inset -1px 0 #050d14a6!important;
-}
+.console-body .strip .fader-box{box-shadow:none!important}
 .console-body .strip .fader-box::after{
  background:#050e15!important;
  box-shadow:inset 1px 0 #80939d3a,inset -1px 0 #000!important;

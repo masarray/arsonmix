@@ -11,11 +11,9 @@
 .fxslot-row .grip{font-size:10px;color:#737779;cursor:grab;user-select:none;flex:0 0 9px;line-height:16px;overflow:hidden}
 @media(max-height:750px){
 .fxslot-row{height:18px;min-height:18px;flex-basis:18px}
-.fx-section .subhead{height:18px}
 
 }
 @media(max-height:610px){
-.fxslot-row{height:15px}
 
 }
 .fxslot-list{height:auto;flex:1 1 0;min-height:0;min-width:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#485052 #282b2d}
@@ -23,7 +21,6 @@
 .fx-pick{flex:1 1 0;min-width:0;max-width:100%;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;appearance:none;background:transparent;border:0;height:18px;padding:0 2px;color:#bdcad0;font-size:10px;cursor:pointer}
 .fx-pick.empty{color:#7c8589}
 .fx-pick:hover,.fx-pick:focus-visible{background:#3d4c52}
-.console-body.collapsed-fx .fxslot-list,.console-body.narrow .fxslot-list{display:none}
 .fx-section .subhead .power{flex:0 0 17px}
 @media(max-height:750px){
 .fx-section .subhead{height:20px;min-height:20px;flex-basis:20px}
@@ -54,9 +51,7 @@
  background:linear-gradient(#1f303a,#22333c)!important;
  height:var(--fx-h)!important;min-height:var(--fx-h)!important;flex:0 0 var(--fx-h)!important;
 }
-.console-body .strip .fxslot-list{background:transparent!important;overflow-y:auto!important;overflow-x:hidden!important;scrollbar-width:thin}
-.console-body .strip .fxslot-row{background:#1b2c35!important;border-bottom:1px solid #475b6440!important}
-.console-body .strip .fxslot-row:hover{background:#304956!important}
+.console-body .strip .fxslot-list{background:transparent!important;overflow-x:hidden!important;}
 .console-body .strip .fx-pick{font-weight:550!important;font-size:10px!important;color:#c4dfd0!important}
 .console-body .strip .fx-pick.empty{color:#80ccdf!important}
 .console-body.collapsed-fx .strip .fxslot-list{display:none!important}
@@ -91,7 +86,6 @@
   background:linear-gradient(180deg,#253b46,#1b2d38)!important;
   border-bottom:1px solid #3c586642!important;
 }
-.console-body .strip .fxslot-row:hover{background:linear-gradient(#34505f,#263f4d)!important}
 .console-body .strip .fxslot-list{scrollbar-color:#668594 #142530!important}
 .console-body .strip .fxslot-list{
  flex:1 1 auto!important;min-height:0!important;overflow-y:auto!important;
@@ -100,7 +94,6 @@
 .console-body:not(.collapsed-send) .strip .fx-section .subhead{
  flex:0 0 24px!important;height:24px!important;min-height:24px!important;
 }
-.console-body .strip .fx-section{background:var(--v13-insert)!important}
 .console-body .strip .fxslot-row,
 .console-body .strip .fxslot-row:hover{
  background:#182c37!important;border-bottom:1px solid #47637138!important;
