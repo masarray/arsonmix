@@ -10,7 +10,6 @@
     '.app .mixer-title button.wire-master','.app .mixer-title button.wire-v34-tool',
     '.app .console-body .section-rail button.rail-cell[data-section]',
     '.app .console-body .strip button.mx-util-key',
-    '.app .console-body .strip button.fx-pick',
     '.app .plugin-footer button','.app .plugin-browser .plugin-head button',
     '.app .plugin-browser .plugin-actions button','.app .plugin-browser .plugin-paths button',
     '.app .route-choice-head button','.app .route-choice-option',
