@@ -1,0 +1,39 @@
+/* Integration-only physical M4 adapter. Universal graph remains unchanged. */
+.ar-v6-active #app #arV6Console.m4-physical-active {
+  display:flex;flex-direction:column;
+}
+#app #arV6Console.m4-physical-active > :not(.arM4Host) {display:none!important}
+#app .arM4Host{display:flex;flex-direction:column;flex:1 1 0;min-height:0;min-width:0}
+#app .arM4Host[hidden]{display:none!important}
+#app .arM4Header{height:49px;min-height:49px;display:flex;align-items:center;gap:8px;
+ padding:6px 12px;border-bottom:1px solid #455a65;background:linear-gradient(#344752,#1b2c36)}
+#app .arM4Identity{display:flex;gap:11px;align-items:center;flex:1;min-width:0;overflow:hidden}
+#app .arM4Eyebrow{font-size:10px;font-weight:600;letter-spacing:.55px;color:#d7e4eb;white-space:nowrap}
+#app .arM4Device{font:10px Consolas,monospace;color:#9fc0cd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#app .arM4State{font:10px/1.2 Consolas,monospace;color:#eed19b;border:1px solid #715f4e;border-radius:3px;padding:4px 6px;white-space:nowrap}
+#app .arM4State[data-armed="true"]{color:#a3e8c5;border-color:#387762}
+#app .arM4Notice{height:24px;min-height:24px;border-bottom:1px solid #415560;
+ padding:4px 12px;color:#b3cbd3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px}
+#app .arM4Scroll{display:flex;flex:1;min-height:0;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
+#app .arM4Strip{display:flex;flex-direction:column;flex:0 0 156px;width:156px;min-width:156px;padding:0 8px 7px}
+#app .arM4Strip .arV6StripHead{height:42px;min-height:42px}
+#app .arM4Upper{display:flex;flex-direction:column;gap:9px;padding:9px 0;min-height:0;
+ height:37%;border-bottom:1px solid #3f5260}
+#app .arM4Field{display:flex;flex-direction:column;gap:4px;min-width:0;color:#9eb9c6;font-size:9px}
+#app .arM4FieldLabel{letter-spacing:.5px}
+#app .arM4Field select{width:100%;min-width:0}
+#app .arM4Fx{display:flex;flex-direction:column;gap:4px;min-height:0;overflow:auto}
+#app .arM4FxRow{display:flex;align-items:center;gap:3px;min-width:0}
+#app .arM4FxName{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;color:#d8e6ec}
+#app .arM4FxRow button{min-width:27px;min-height:22px;padding:2px 4px}
+#app .arM4Empty{font-size:10px;color:#718e9e}
+#app .arM4Controls{display:flex;align-items:center;gap:5px;padding:9px 0;border-bottom:1px solid #3f5260}
+#app .arM4Controls .arM4Field{flex:1;min-width:0}
+#app .arM4Controls input{width:100%;min-width:0}
+#app .arM4Controls button{padding:3px 5px;min-height:23px}
+#app .arM4Lower{display:flex;flex:1;min-height:0;flex-direction:column;align-items:center;gap:9px;padding:12px 0}
+#app .arM4Lower input{writing-mode:vertical-lr;direction:rtl;flex:1;height:100%;min-height:70px;max-height:270px}
+#app .arM4Db{font:11px Consolas,monospace;color:#d2e5ed;font-variant-numeric:tabular-nums}
+#app .arM4Meter{display:flex;gap:5px;align-items:end;height:55px;min-height:55px;width:24px}
+#app .arM4Meter span{display:block;background:linear-gradient(#f1b85d,#49cba0 45%,#287e91);width:9px;max-height:100%;min-height:0}
+#app .arM4Footer{padding:5px 0;text-align:center;font-size:9px;color:#92aebb;border-top:1px solid #41545f;white-space:nowrap}

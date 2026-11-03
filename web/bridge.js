@@ -832,8 +832,16 @@
       '<div class="native-context-divider" role="separator"></div>'+
       '<button role="menuitem" class="fx-context-delete" data-context-fx="delete">'+iconSvg("bin")+' Delete FX</button>';
     fxContext.hidden=false;
-    fxContext.style.left=Math.max(4,Math.min(x,window.innerWidth-fxContext.offsetWidth-4))+'px';
-    fxContext.style.top=Math.max(4,Math.min(y,window.innerHeight-fxContext.offsetHeight-4))+'px';
+    // The menu may never cover its own FX trigger: the user must be able
+    // to right-click a newly loaded vendor FX without closing another menu
+    // via a blind click. Use the adjacent side of the actual strip/slot.
+    const rect=anchor?.getBoundingClientRect?.();
+    const width=fxContext.offsetWidth,height=fxContext.offsetHeight;
+    const after=rect?rect.right+7:x+7;
+    const before=rect?rect.left-width-7:x-width-7;
+    const left=after+width<=window.innerWidth-4?after:Math.max(4,before);
+    fxContext.style.left=Math.max(4,Math.min(left,window.innerWidth-width-4))+'px';
+    fxContext.style.top=Math.max(4,Math.min(rect?rect.top:y,window.innerHeight-height-4))+'px';
     fxContext.querySelector("button")?.focus({preventScroll:true});
   }
   document.addEventListener("contextmenu",e=>{
