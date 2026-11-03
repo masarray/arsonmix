@@ -19,8 +19,9 @@ def manifest():
 
 def reconstruct():
     data=manifest()
-    live=HTML.read_text(encoding="utf-8")
-    css=CHROME.read_text(encoding="utf-8")
+    from gui_m3_compat import transform,suffix
+    live=transform(HTML.read_text(encoding="utf-8"),reverse=True)
+    css,extra=suffix("chrome")
     assert (len(live),fingerprint(live))==(data["newHtmlLength"],data["newHtmlFNV"])
     assert (len(css),fingerprint(css))==(data["newOwnerLength"],data["newOwnerFNV"])
     assert css.startswith(data["prefix"])
@@ -33,7 +34,7 @@ def reconstruct():
     assert previous.count(data["newLink"])==1
     previous=previous.replace(data["newLink"],data["oldLink"],1)
     assert (len(previous),fingerprint(previous))==(data["oldHtmlLength"],data["oldHtmlFNV"])
-    return previous,old_css
+    return transform(previous,skip={"chrome version"}),old_css
 
 def mount_owner(html,old_css=None):
     data=manifest()
@@ -42,7 +43,8 @@ def mount_owner(html,old_css=None):
     f=tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",suffix=".css",
         prefix=".v18-previous-chrome-",dir=CHROME.parent,delete=False)
     try:
-        with f:f.write(old_css)
+        from gui_m3_compat import suffix
+        with f:f.write(old_css+suffix("chrome")[1])
         html=html.replace(data["oldLink"],"assets/"+Path(f.name).name+"?v=css-owner-v15",1)
     except Exception:
         Path(f.name).unlink(missing_ok=True)

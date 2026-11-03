@@ -40,7 +40,8 @@ def reconstruct():
     data=manifest()
     from css_v18_restore import reconstruct as restore_v17_source
     current,_=restore_v17_source()
-    live=m2_transform(current,reverse=True)
+    from gui_m3_compat import transform
+    live=m2_transform(transform(current,reverse=True,skip={"chrome version"}),reverse=True)
     css=OWNER.read_text(encoding="utf-8")
     assert (len(live),fingerprint(live))==(data["newHtmlLength"],data["newHtmlFNV"])
     assert (len(css),fingerprint(css))==(data["newOwnerLength"],data["newOwnerFNV"])
@@ -60,7 +61,7 @@ def reconstruct():
         original=original[:m.start(1)]+parts[i]+original[m.end(1):]
     original=original.replace(data["newLink"],data["oldLink"],1)
     assert (len(original),fingerprint(original))==(data["oldHtmlLength"],data["oldHtmlFNV"])
-    return m2_transform(original),original_css
+    return transform(m2_transform(original),skip={"chrome version"}),original_css
 
 def mount_owner(original_html, original_css=None):
     """Mount exact V16 plugin owner beside assets for real browser regression."""

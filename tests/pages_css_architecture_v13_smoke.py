@@ -21,9 +21,10 @@ MANIFEST=ROOT/"tests/fixtures/css-v13-owner-removals.json"
 # the owned suffix fingerprints, not the historical owner source.
 V18_OWNER_TAILS={
     "mixer-pan-controls.css":(294,"01ccf01a"),
-    "mixer-fader-assembly.css":(4548,"25a7de44"),
-    "mixer-meter-display.css":(2538,"2d191341"),
+    "mixer-fader-assembly.css":(5239,"bc5d21f1"),
+    "mixer-meter-display.css":(4159,"94c0c481"),
     "mixer-plugin-browser.css":(4285,"1ce2ede9"), # V17 exact appended owner suffix
+    "mixer-fx-rack.css":(310,"bc79a5b1"), # M3 empty FX placeholder
 }
 def tail_fingerprint(text):
     h=2166136261
@@ -100,7 +101,8 @@ def restore_baseline():
                 # original V13 removal history differs in these reconstructions.
                 # Keep V18 moved material before historical V13 Chrome source.
                 prefix=(v18_manifest()["prefix"] if name=="mixer-chrome-material.css" else "")
-                tf.write(prefix+restored+tail)
+                from gui_m3_compat import suffix
+                tf.write(prefix+restored+tail+(suffix("chrome")[1] if name=="mixer-chrome-material.css" else ""))
             temporary.append(Path(tf.name))
             search=f"assets/{name}?v="
             assert html.count(search)==1,name

@@ -326,8 +326,8 @@
    Vertical M2 geometry is tied to the cap center and physical dB ticks.
    No timer, layout JS, animated shadows, blur, or audio DSP changes. */
 .console-body .strip .fader-workspace{
- grid-template-columns:51px 32px 26px!important;
- gap:3px!important;justify-content:center!important;
+ grid-template-columns:70px 32px 26px!important;
+ gap:3px!important;justify-content:start!important;
  background:linear-gradient(90deg,#12232d 0%,#14242e 45%,#10212b 100%);
  border-radius:3px;
  box-shadow:inset 0 1px #a7c4d015,inset 0 -1px #050e16;
@@ -372,14 +372,14 @@
  padding-left:1px!important;padding-right:1px!important;
 }
 .console-body[data-density="compact"] .strip .fader-workspace{
- grid-template-columns:44px 27px 28px!important;gap:2px!important;
+ grid-template-columns:70px 27px 23px!important;gap:2px!important;justify-content:start!important;
 }
 .console-body[data-density="compact"] .strip .fader-workspace > .fader-box{
  width:27px!important;min-width:27px!important;max-width:27px!important;
 }
 .console-body[data-density="compact"] .strip .fader-box::before{width:27px!important}
 .console-body[data-density="compact"] .strip .fader-scale{
- width:28px!important;min-width:28px!important;
+ width:23px!important;min-width:23px!important;
 }
 .console-body[data-density="compact"] .strip .fader-travel,
 .console-body[data-density="compact"] .strip .gain-scale-travel{
@@ -395,3 +395,14 @@
 .console-body[data-density="compact"] .strip .fader-box::after{
  top:25px!important;bottom:25px!important;
 }
+
+/* M3: Standard retains the full 70px dBFS housing with a tighter but readable
+   hardware group. The bank width model reserves the required 124px. */
+.console-body[data-density="standard"] .strip .fader-workspace{
+ grid-template-columns:70px 27px 23px!important;gap:2px!important;justify-content:start!important;
+}
+.console-body[data-density="standard"] .strip .fader-workspace>.fader-box{
+ width:27px!important;min-width:27px!important;max-width:27px!important;
+}
+.console-body[data-density="standard"] .strip .fader-box::before{width:27px!important}
+.console-body[data-density="standard"] .strip .fader-scale{width:23px!important;min-width:23px!important}

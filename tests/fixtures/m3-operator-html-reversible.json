@@ -1,0 +1,140 @@
+{
+  "milestone": "M3",
+  "base": "4ed608890c662240a112f89b3d6d0d9e31bcc7d2",
+  "patches": [
+    {
+      "name": "fader version",
+      "before": "assets/mixer-fader-assembly.css?v=css-owner-v9-ruler-m2-instrument",
+      "after": "assets/mixer-fader-assembly.css?v=css-owner-v9-ruler-m3-left-70"
+    },
+    {
+      "name": "meter version",
+      "before": "assets/mixer-meter-display.css?v=css-owner-v9-ruler-m2-instrument",
+      "after": "assets/mixer-meter-display.css?v=css-owner-v9-ruler-m3-left-70"
+    },
+    {
+      "name": "chrome version",
+      "before": "assets/mixer-chrome-material.css?v=css-owner-v18",
+      "after": "assets/mixer-chrome-material.css?v=css-owner-v18-m3-header"
+    },
+    {
+      "name": "fx version",
+      "before": "assets/mixer-fx-rack.css?v=fx-owner-v8",
+      "after": "assets/mixer-fx-rack.css?v=fx-owner-v8-m3-inserts"
+    },
+    {
+      "name": "header start",
+      "before": "<div class=\"mixer-title\"><span class=\"accent\"></span>",
+      "after": "<div class=\"mixer-title\"><div class=\"mixer-title-top\"><span class=\"accent\"></span>"
+    },
+    {
+      "name": "header row",
+      "before": "</svg></span><label class=\"wire-mode-label\" for=\"wireMode\">WIRE</label>",
+      "after": "</svg></span><button type=\"button\" class=\"mixer-title-toggle\" id=\"mixerTitleToggle\" aria-expanded=\"true\" aria-controls=\"mixerTitleControls\" title=\"Collapse WIRE controls\">▾ <span>WIRE CONTROLS</span></button></div><div class=\"mixer-title-controls\" id=\"mixerTitleControls\"><label class=\"wire-mode-label\" for=\"wireMode\">WIRE</label>"
+    },
+    {
+      "name": "header end",
+      "before": "<span class=\"right\" id=\"trackCount\">10 audio tracks · 1 bus · master</span></div>",
+      "after": "<span class=\"right\" id=\"trackCount\">10 audio tracks · 1 bus · master</span></div></div>"
+    },
+    {
+      "name": "empty FX power",
+      "before": "  out+='<div class=\"fxslot-row\" draggable=\"'+(name!=='None')+'\" data-slot=\"'+i+'\" title=\"Insert '+(i+1)+'\"><button class=\"mx-util-key\" data-util-kind=\"fx-slot\" data-action=\"slotPower\" data-slot=\"'+i+'\" title=\"Toggle effect\" aria-label=\"Toggle effect slot '+(i+1)+'\" aria-pressed=\"'+Boolean(name!=='None'&&!t.slotBypass[i])+'\">'+materialIcon(\"power_settings_new\")+'</button>';",
+      "after": "  out+='<div class=\"fxslot-row\" draggable=\"'+(name!=='None')+'\" data-slot=\"'+i+'\" title=\"Insert '+(i+1)+'\">'+\n   (name==='None'?'<span class=\"fx-slot-placeholder\" aria-hidden=\"true\"></span>':\n   '<button class=\"mx-util-key\" data-util-kind=\"fx-slot\" data-action=\"slotPower\" data-slot=\"'+i+'\" title=\"Toggle effect\" aria-label=\"Toggle effect slot '+(i+1)+'\" aria-pressed=\"'+Boolean(!t.slotBypass[i])+'\">'+materialIcon(\"power_settings_new\")+'</button>');"
+    },
+    {
+      "name": "peak lamp markup",
+      "before": "<div class=\"peak '+(t.clip?'clipping':'')+'\"></div></div>",
+      "after": "<div class=\"peak '+(t.clip?'clipping':'')+'\" aria-hidden=\"true\"><span class=\"peak-led\"></span>'+(t.format==='mono'?'':'<span class=\"peak-led\"></span>')+'</div></div>"
+    },
+    {
+      "name": "clip reset button",
+      "before": "<span class=\"clip-indicator '+(t.clip?'clipping':'')+'\" title=\"Demo clip latch\">CLIP</span></div>",
+      "after": "<button type=\"button\" class=\"clip-indicator '+(t.clip?'clipping':'')+'\" data-action=\"resetClip\" aria-label=\"Reset '+escapeHtml(t.name)+' clip latch\" title=\"Reset latched peak indication (demo)\">CLIP</button></div>"
+    },
+    {
+      "name": "density minimum",
+      "before": "const DENSITY_WIDTH=Object.freeze({comfort:150,standard:125,compact:105});",
+      "after": "const DENSITY_WIDTH=Object.freeze({comfort:150,standard:134,compact:130});"
+    },
+    {
+      "name": "clip reset handler",
+      "before": " if(a==='wireExpand'){document.querySelector('.section-rail [data-section=\"send\"]')?.click();return;}",
+      "after": " if(a==='wireExpand'){document.querySelector('.section-rail [data-section=\"send\"]')?.click();return;}\n if(a==='resetClip'){\n  t.clip=false;btn.classList.remove('clipping');\n  btn.closest('.fader-section')?.querySelector('.peak')?.classList.remove('clipping');\n  say(t.name+' · clip latch cleared');return;\n }"
+    },
+    {
+      "name": "demo clip latch",
+      "before": " if(r)r.style.setProperty('--lit',meterDbfsPercent(rightDbfs)+'%');\n });",
+      "after": " if(r)r.style.setProperty('--lit',meterDbfsPercent(rightDbfs)+'%');\n if((leftDbfs>=-0.1||rightDbfs>=-0.1)&&!t.clip){\n  t.clip=true;\n  root.querySelector('.peak')?.classList.add('clipping');\n  root.querySelector('.clip-indicator')?.classList.add('clipping');\n }\n });"
+    },
+    {
+      "name": "header and menu listeners",
+      "before": "document.getElementById('copy').addEventListener('click',copyChannels);",
+      "after": "const moreTools=document.getElementById('moreTools');\ndocument.addEventListener('pointerdown',e=>{\n if(moreTools.open&&!moreTools.contains(e.target))moreTools.open=false;\n},true);\ndocument.addEventListener('focusin',e=>{\n if(moreTools.open&&!moreTools.contains(e.target))moreTools.open=false;\n},true);\ndocument.addEventListener('keydown',e=>{\n if(e.key==='Escape'&&moreTools.open){moreTools.open=false;e.preventDefault();}\n});\ndocument.getElementById('mixerTitleToggle').addEventListener('click',()=>{\n const title=document.querySelector('.mixer-title'),button=document.getElementById('mixerTitleToggle');\n const collapsed=title.classList.toggle('is-collapsed');\n button.setAttribute('aria-expanded',String(!collapsed));\n button.title=collapsed?'Expand WIRE controls':'Collapse WIRE controls';\n button.firstChild.textContent=collapsed?'▸ ':'▾ ';\n});\ndocument.getElementById('copy').addEventListener('click',copyChannels);"
+    },
+    {
+      "name": "wire destination count",
+      "before": " const hasPluggedWire=!isMain&&wireEdges.some(e=>e.enabled&&e.destId===t.id);\n const legacy=!isMain&&source&&hasLegacySendTo(source,t);\n const linked=isMain?!!source&&source.output==='Master':!!edge||!!legacy;\n const canWire=!!(source&&!isSource);\n const label=!source?'NO SOURCE':isSource?'SOURCE':isMain?(linked?'MAIN ON':'MAIN OFF'):linked?'CONNECTED':'CONNECT';",
+      "after": " const incomingCount=isMain?0:wireWsRoutes().filter(route=>route.destId===t.id).length;\n const hasPluggedWire=incomingCount>0;\n const legacy=!isMain&&source&&hasLegacySendTo(source,t);\n const sourceLinked=!!edge||!!legacy;\n const linked=isMain?!!source&&source.output==='Master':sourceLinked||hasPluggedWire;\n // Source arming controls new connections; existing receiving sockets remain inspectable.\n const canWire=!!(source&&!isSource)||hasPluggedWire;\n const label=isMain?(linked?'MAIN ON':'MAIN OFF'):\n  incomingCount>1?incomingCount+' incoming wires · inspect routes':\n  hasPluggedWire&&!source?'IN connected · inspect route':\n  !source?'NO SOURCE':isSource?'SOURCE':sourceLinked?'CONNECTED':'CONNECT';"
+    },
+    {
+      "name": "wire already linked tooltip",
+      "before": " const modeLabel=linked&&!isMain?(legacy&&!edge?'Existing SEND slot · managed in legacy routing; no duplicate wire allowed':\n  (edge.mode==='routeOnly'?'Route via Bus':edge.mode==='send'?'Post-fader Send':'Pre FX Mult')+' · click IN to disconnect or drag cable away'):'Click IN or drag an OUT jack here';",
+      "after": " const modeLabel=sourceLinked&&!isMain?(legacy&&!edge?'Existing SEND slot · managed in legacy routing; no duplicate wire allowed':\n  (edge.mode==='routeOnly'?'Route via Bus':edge.mode==='send'?'Post-fader Send':'Pre FX Mult')+' · click IN to disconnect or drag cable away'):\n  hasPluggedWire?incomingCount+' incoming route(s) · click to inspect':'Click IN or drag an OUT jack here';"
+    },
+    {
+      "name": "wire receiving enabled",
+      "before": " const to='<button type=\"button\" class=\"wire-socket wire-node-in'+(isSource?' is-source':'')+(linked?' is-linked':'')+'\" data-action=\"wireRoute\" aria-pressed=\"'+linked+\n  '\" aria-label=\"Receive IN on '+escapeHtml(t.name)+' · '+label+'\" title=\"'+escapeHtml(label+' · '+modeLabel+' · GUI DEMO')+'\" '+(canWire?'':'disabled')+",
+      "after": " const to='<button type=\"button\" class=\"wire-socket wire-node-in'+(isSource&&!hasPluggedWire?' is-source':'')+(linked?' is-linked':'')+'\" data-action=\"wireRoute\" aria-pressed=\"'+sourceLinked+\n  '\" aria-label=\"Receive IN on '+escapeHtml(t.name)+' · '+label+'\" title=\"'+escapeHtml(label+' · '+modeLabel+' · GUI DEMO')+'\" '+(canWire?'':'disabled')+"
+    },
+    {
+      "name": "wire inspector destination state",
+      "before": "let wireWsOpen=false,wireWsMode='find',wireWsQuery='',wireWsBusId=null,",
+      "after": "let wireWsOpen=false,wireWsMode='find',wireWsQuery='',wireWsBusId=null,wireWsDestinationId=null,"
+    },
+    {
+      "name": "wire state init",
+      "before": "function init(){wireWsOpen=false;wireWsInspect=null;",
+      "after": "function init(){wireWsOpen=false;wireWsDestinationId=null;wireWsInspect=null;"
+    },
+    {
+      "name": "wire workspace explicit mode resets receiver inspection",
+      "before": "function wireWsChooseMode(mode){\n const previous=wireWsMode;",
+      "after": "function wireWsChooseMode(mode){\n wireWsDestinationId=null; // Deliberate mode selection leaves the receiving socket inspector.\n const previous=wireWsMode;"
+    },
+    {
+      "name": "wire inspector destination open",
+      "before": "function wireWsJump(id){",
+      "after": "/* Multiple incoming cables must be selected explicitly before an edit.\n   Opening this inspector never arms a new source or modifies the graph. */\nfunction inspectIncomingWireRoutes(destination){\n const arrivals=wireWsRoutes().filter(route=>route.destId===destination.id);\n if(!arrivals.length)return;\n wireWsDestinationId=destination.id;wireWsMode='routes';wireWsOpen=true;\n wireWsInspect=arrivals.length===1?{src:arrivals[0].sourceId,dst:destination.id}:null;\n wireWsRemoveConfirm=null;\n const panel=document.getElementById('wireWorkspace');\n if(panel)panel.hidden=false;\n document.getElementById('wireNavigatorToggle').setAttribute('aria-expanded','true');\n document.getElementById('wireMatrixToggle').setAttribute('aria-expanded','false');\n renderWireWorkspace();\n say('IN '+wireWsLabel(destination.id)+' · '+arrivals.length+' incoming route'+(arrivals.length===1?'':'s')+' · select a cable to inspect');\n}\nfunction wireWsJump(id){"
+    },
+    {
+      "name": "wire inspector header",
+      "before": "document.getElementById('wireWsSource').textContent=source?wireWsLabel(source.id)+' OUT':'Choose source OUT';",
+      "after": "document.getElementById('wireWsSource').textContent=wireWsDestinationId?\n  'IN '+wireWsLabel(wireWsDestinationId)+' · routes':source?wireWsLabel(source.id)+' OUT':'Choose source OUT';"
+    },
+    {
+      "name": "wire inspector source focus",
+      "before": " }else if(wireWsMode==='routes'){\n  const inbound=source?routes.filter(e=>e.destId===source.id):[];\n  const outbound=source?routes.filter(e=>e.sourceId===source.id):[];\n  list.innerHTML=source?",
+      "after": " }else if(wireWsMode==='routes'){\n  const focused=wireWsDestinationId?tracks.find(t=>t.id===wireWsDestinationId):source;\n  const inbound=focused?routes.filter(e=>e.destId===focused.id):[];\n  const outbound=focused?routes.filter(e=>e.sourceId===focused.id):[];\n  list.innerHTML=focused?"
+    },
+    {
+      "name": "wire receiver click decision",
+      "before": " if(a==='wireRoute'){\n   const source=armedWireSource();\n  if(!source||t.id===source.id){say('Select a source and another destination');return;}",
+      "after": " if(a==='wireRoute'){\n  const source=armedWireSource();\n  const inbound=t.kind==='master'?[]:wireWsRoutes().filter(route=>route.destId===t.id);\n  if(t.kind!=='master'&&(inbound.length>1||(!source&&inbound.length)||(t.id===source?.id&&inbound.length))){\n   inspectIncomingWireRoutes(t);return;\n  }\n  if(!source||t.id===source.id){say('Select a source and another destination');return;}"
+    }
+  ],
+  "baselineHtmlLength": 230286,
+  "baselineHtmlFNV": "8ad1f954",
+  "currentHtmlLength": 234049,
+  "currentHtmlFNV": "97cf85c2",
+  "chrome": {
+    "baseSize": 28143,
+    "suffixSize": 1557,
+    "suffixFNV": "15970d94"
+  },
+  "fxRack": {
+    "baseSize": 5567,
+    "suffixSize": 310,
+    "suffixFNV": "bc79a5b1"
+  }
+}

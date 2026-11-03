@@ -63,7 +63,8 @@ async def main():
     data=manifest()
     assert data["inlineBefore"]-data["inlineNow"]==17244
     assert "url(" not in data["originalStyle"],"URL base must not change"
-    assert CHROME.read_text(encoding="utf-8")==data["prefix"]+owner
+    from gui_m3_compat import suffix
+    assert CHROME.read_text(encoding="utf-8")==data["prefix"]+owner+suffix("chrome")[1]
     original_rule=data["originalStyle"].split(".console-body .switch.btn-180{",1)[1].split("}",1)[0]
     new_rule=data["prefix"].split(".console-body .switch.btn-180{",1)[1].split("}",1)[0]
     for declaration in data["removedDeclarations"]:

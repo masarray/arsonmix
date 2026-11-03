@@ -103,3 +103,10 @@
 .console-body .strip .fx-section{background:var(--v13-insert)!important}
 .console-body .fx-section .grip{display:inline-flex;align-items:center;justify-content:center}
 .console-body .fx-section .grip .mi-svg{width:13px;height:15px}
+
+/* M3: a vacant insert is not a powered device. Preserve its 17px hardware
+   lane so + Add FX aligns exactly with instantiated insert names. */
+.console-body .fxslot-row .fx-slot-placeholder{
+ display:inline-flex;flex:0 0 17px;width:17px;height:17px;min-width:17px;
+ visibility:hidden;pointer-events:none;
+}

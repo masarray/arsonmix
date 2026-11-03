@@ -70,7 +70,8 @@ def original_assets_as_baseline(html,owners=None):
             assert html.count(key)==1,name
             f=tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",suffix=".css",
                 prefix=".v15-old-owner-",dir=ASSETS,delete=False)
-            with f:f.write(css)
+            from gui_m3_compat import suffix
+            with f:f.write(css+(suffix("chrome")[1] if name=="mixer-chrome-material.css" else ""))
             temp.append(Path(f.name))
             html=html.replace(key,f'assets/{Path(f.name).name}?v=',1)
         f=tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",suffix=".html",
