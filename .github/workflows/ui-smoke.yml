@@ -65,6 +65,7 @@ jobs:
           node --check web/plugin-ui.js
           node --check web/mixer-io.js
           node --check web/mixer-layout.js
+          node --check web/hardware-keys.js
           node --test tests/gui_workflow_contract_test.mjs tests/plugin_ui_contract_test.mjs tests/ci_workflow_efficiency_test.mjs tests/fx_drag_reorder_contract_test.mjs tests/mixer_io_operator_contract_test.mjs tests/mixer_shell_contract_test.mjs
       - name: Validate approved GUI checkpoint and single publisher
         run: python tests/gui_baseline_lock_test.py
@@ -75,6 +76,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install playwright
           python -m playwright install --with-deps chromium
+      - name: Verify M4 physical GUI to native intent and ACK regression
+        run: python tests/m4_gui_bridge_smoke.py
       - name: Verify original metallic asset and standalone synchronization
         run: python tests/fader_asset_test.py
       - name: Validate recessed Button 180 + embedded Inter font contract
@@ -85,6 +88,10 @@ jobs:
         run: python tests/pan_button_asset_test.py
       - name: Validate linked 11-strip geometry and LV1-style rail workspace
         run: python tests/mixer_shell_geometry_smoke.py
+      - name: Verify accepted ChannelId GUI operator and ACK regression
+        run: python tests/operator_console_v6_smoke.py
+      - name: Verify V5 hardware control backlighting in embedded WebView and standalone
+        run: python tests/hardware_key_v5_smoke.py
       - name: Verify V8 FX rack and Plugin Manager CSS ownership
         run: python tests/pages_css_ownership_v8_smoke.py
       - name: Verify V9 PAN/fader/meter CSS ownership and geometry

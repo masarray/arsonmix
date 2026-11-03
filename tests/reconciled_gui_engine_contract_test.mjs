@@ -48,24 +48,35 @@ test('full engine capabilities preserved',()=>{
 test('JUCE native resources track the approved calibrated GUI without maintaining a second mixer implementation', () => {
   const cmake=read('CMakeLists.txt');
   const cpp=read('src/Main.cpp');
-  const sourceCss=read('web/styles-src/42-mixer-premium.css');
+  // The approved GUI has N source-owned CSS modules, not a single appended
+  // "calibration module". Compare the ENTIRE generated output byte-for-byte
+  // against the same deterministic input order as build_ui_css.py.
+  const order=['00-font-and-assets.css','10-console-legacy.css',
+    '20-button-180.css','21-navigation-fx-power.css',
+    '30-selection-effects.css','40-rail-pan.css',
+    '41-mixer-performance.css','42-mixer-premium.css',
+    '43-hardware-backlit.css'];
+  const builtCss=order.map(name=>read('web/styles-src/'+name)).join('');
   const standalone=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
   // Verify legacy assets in original order, while allowing additive UI modules.
   const assetList=cmake.match(/juce_add_binary_data\(ARMixAssets SOURCES\s+([^)]+)\)/)?.[1];
   assert.ok(assetList,'native WebView2 source list missing');
   const expected=['web/index.html','web/styles.css','web/plugin-ui.css','web/app.js',
-    'web/plugin-ui.js','web/bridge.js','web/monitor.js','web/mixer-io.js','web/mixer-io.css'];
+    'web/plugin-ui.js','web/bridge.js','web/monitor.js','web/mixer-io.js','web/mixer-io.css',
+    'web/mixer-layout.js','web/mixer-layout.css','web/hardware-keys.js',
+    'web/assets/fader-silver2.png','web/assets/faders/FADER-ARI-SILVER.png',
+    'web/assets/faders/FADER-ARI-ROSEGOLD.png','web/assets/pan/PAN-SLIDER.png'];
   const listed=assetList.trim().split(/\s+/);
   for(const asset of expected) assert.ok(listed.includes(asset),'missing WebView2 asset '+asset);
   assert.equal(new Set(listed).size,listed.length,'duplicate native WebView2 resource');
   for (const resource of ['index_html','styles_css','pluginui_css','app_js','pluginui_js','bridge_js','monitor_js']) {
     assert.ok(cpp.includes('BinaryData::'+resource),resource+' missing from WebView provider');
   }
-  assert.ok(css.endsWith(sourceCss), 'native CSS must end with its authoritative calibration module');
+  assert.equal(css,builtCss,'native CSS must equal ALL approved source-owned modules, in order');
   assert.ok(standalone.includes('<style>'+css+'</style>'), 'Pages/standalone CSS drift');
   assert.ok(standalone.includes('<script>'+app+'</script>'), 'Pages/standalone JS drift');
   for (const cls of ['gain-scale-travel','vu-scale-travel','meter-signal-area','fader-travel']) {
-    assert.ok(app.includes(cls)||sourceCss.includes(cls), 'calibration module missing '+cls);
+    assert.ok(app.includes(cls)||css.includes(cls), 'approved CSS/JS calibration missing '+cls);
   }
   assert.match(app,/const levelToTop=db=>/);
   assert.match(app,/distance:Math\.max\(24,r\.height-77\)/);

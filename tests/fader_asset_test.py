@@ -58,7 +58,8 @@ assert len(rose)==3961
 assert hashlib.sha256(rose).hexdigest()=="a1d0962a25336d88a062263761d22b65ceca85d4b356e7643f1234afd6573913"
 assert (int.from_bytes(rose[16:20],"big"),int.from_bytes(rose[20:24],"big"))==(36,77)
 finish=(root/"web/styles-src/42-mixer-premium.css").read_text(encoding="utf-8")
-assert css.endswith(finish), "Premium CSS module not compiled last"
+hardware=(root/"web/styles-src/43-hardware-backlit.css").read_text(encoding="utf-8")
+assert css.endswith(finish+hardware), "Premium fader CSS must precede isolated V5 hardware-key override"
 marker='--ari-master-cap:url("data:image/png;base64,'
 assert css.count(marker)==2, "Rose MASTER must override old gold master once"
 embedded=css.rsplit(marker,1)[1].split('")',1)[0]

@@ -69,6 +69,26 @@ if (-not (Test-Path -LiteralPath $fatGuide -PathType Leaf)) {
 }
 Copy-Item -LiteralPath $readme -Destination (Join-Path $OutputDir "README.md")
 Copy-Item -LiteralPath $fatGuide -Destination (Join-Path $OutputDir "HARDWARE_FAT_GUIDE.md")
+# This field journal records human-observed 0FX crackle and actual native
+# device evidence. It has NO audio/device control side effects.
+$collectorSource="scripts/collect_hardware_fat_windows.ps1"
+$collectorName="ArSonMix-Hardware-FAT.ps1"
+if (-not (Test-Path -LiteralPath $collectorSource -PathType Leaf)) {
+    throw "Missing native hardware FAT collector source"
+}
+Copy-Item -LiteralPath $collectorSource -Destination (Join-Path $OutputDir $collectorName) -Force
+Add-Content -LiteralPath (Join-Path $OutputDir "HARDWARE_FAT_GUIDE.md") -Encoding UTF8 -Value @'
+
+## Offline native audio FAT field journal
+Run from the extracted Windows ZIP, in PowerShell. Verify source and EXE
+SHA-256 with: .\ArSonMix-Hardware-FAT.ps1 -Action Verify
+Select each actual mode in ArSonMix first. Record native backend, negotiated
+rate and buffer, true input/output pin ordinals, endpoint names and operator
+observations using -Action Start / -Action Stop. Use -Action Summary after
+OUTPUT_ONLY_TONE, CAPTURE_ONLY and 30-minute wired DRY_THROUGH_0FX.
+The script does not ARM audio, query Windows devices or certify sound.
+Summary always has hardwareCertified=false; physical #15 remains OPEN.
+'@
 # Same executable, same features. Portable ZIP selects the adjacent Studio/
 # data root; installed apps without this file continue using legacy AppData.
 "ARSONMIX_PORTABLE_WORKSPACE_V1" |
@@ -93,6 +113,7 @@ $manifest = [ordered]@{
     peFormat = "PE32+"
     peSubsystem = "WINDOWS_GUI (2)"
     exeSha256 = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
+    fatCollectorSha256 = (Get-FileHash -LiteralPath (Join-Path $OutputDir $collectorName) -Algorithm SHA256).Hash.ToLowerInvariant()
     indexHtmlSha256 = (Get-FileHash -LiteralPath "web/index.html" -Algorithm SHA256).Hash.ToLowerInvariant()
     appJsSha256 = (Get-FileHash -LiteralPath "web/app.js" -Algorithm SHA256).Hash.ToLowerInvariant()
     stylesCssSha256 = (Get-FileHash -LiteralPath "web/styles.css" -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -100,7 +121,12 @@ $manifest = [ordered]@{
     pluginUiJsSha256 = (Get-FileHash -LiteralPath "web/plugin-ui.js" -Algorithm SHA256).Hash.ToLowerInvariant()
     bridgeJsSha256 = (Get-FileHash -LiteralPath "web/bridge.js" -Algorithm SHA256).Hash.ToLowerInvariant()
     monitorJsSha256 = (Get-FileHash -LiteralPath "web/monitor.js" -Algorithm SHA256).Hash.ToLowerInvariant()
-    guiSource = "web/index.html + web/styles.css + web/plugin-ui.css + web/app.js + web/plugin-ui.js + web/bridge.js + web/monitor.js (JUCE BinaryData)"
+    mixerIoJsSha256 = (Get-FileHash -LiteralPath "web/mixer-io.js" -Algorithm SHA256).Hash.ToLowerInvariant()
+    mixerIoCssSha256 = (Get-FileHash -LiteralPath "web/mixer-io.css" -Algorithm SHA256).Hash.ToLowerInvariant()
+    mixerLayoutJsSha256 = (Get-FileHash -LiteralPath "web/mixer-layout.js" -Algorithm SHA256).Hash.ToLowerInvariant()
+    mixerLayoutCssSha256 = (Get-FileHash -LiteralPath "web/mixer-layout.css" -Algorithm SHA256).Hash.ToLowerInvariant()
+    hardwareKeysJsSha256 = (Get-FileHash -LiteralPath "web/hardware-keys.js" -Algorithm SHA256).Hash.ToLowerInvariant()
+    guiSource = "web/index.html + seven accepted native JS modules + four CSS resources + four physical PNG controls (JUCE BinaryData)"
     guiCalibration = "GAIN_10_TO_MINUS60_BLACK_DETENT_AT_38PX__VU_DBFS_INDEPENDENT_TICKS"
     fatStatus = "EXPERIMENTAL_NOT_HARDWARE_QUALIFIED"
     note = "No assertion of clean 0-FX sound, measured round-trip latency or native render-hardware XRUN."

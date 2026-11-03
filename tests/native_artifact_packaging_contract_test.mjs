@@ -134,3 +134,48 @@ test('FAT ZIP uses current single-APPLY physical first-sound guide',()=>{
  for(const entry of ['10 input channels + 4 AUX','OUTPUT_ONLY_TONE','CAPTURE_ONLY','COPY FULL REPORT','30 minutes','no separate manual START AUDIO'])
    assert.ok(quick.includes(entry),entry);
 });
+
+test('sole ENGINE #266 may upload an unqualified, exact-SHA physical FAT ZIP',()=>{
+  const upload=workflow.split('uses: actions/upload-artifact@v4')[1]||'';
+  assert.ok(upload.includes('milestone/m5-universal-channelid-vst3-lease-migration-20261101'));
+  assert.ok(!upload.includes('milestone/m4-unified-native-multichannel-fx-20261101'));
+  assert.ok(upload.includes('ArSonMix-ENGINE-10CH4AUX-EXPERIMENTAL-Hardware-FAT-Windows-x64'));
+  assert.match(upload,/if-no-files-found: error/);
+  assert.ok(workflow.indexOf('ctest --test-dir build -C Release --output-on-failure')<
+            workflow.indexOf('uses: actions/upload-artifact@v4'));
+  assert.ok(workflow.indexOf('scripts/verify_native_windows_artifact.ps1')<
+            workflow.indexOf('uses: actions/upload-artifact@v4'));
+  const guide=read('docs/FIRST_SOUND_FAT_QUICKSTART_20261101.md');
+  assert.match(guide,/single canonical ENGINE #266 branch/);
+  assert.match(guide,/10CH \+ 4AUX/);
+  assert.match(guide,/sourceCommit/);
+  assert.match(guide,/exeSha256/);
+});
+
+test('native sourceCommit attest matches GitHub PR head and exact compiled source',()=>{
+ const shaRef="ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}";
+ assert.ok(workflow.includes(shaRef));
+ assert.match(workflow,/ENGINE SOURCE SHA MISMATCH/);
+ assert.match(packaging,/\$gitSha = \(\& git rev-parse HEAD\)\.Trim\(\)/);
+ assert.match(verify,/manifest\.sourceCommit/);
+});
+
+
+// No hardware measurement is inferred from a static packaged script.
+// This verifies the collector's provenance and human-only evidence gates.
+test('joined Windows FAT package carries one SHA-attested, offline 0FX field journal',()=>{
+ const collector=read('scripts/collect_hardware_fat_windows.ps1');
+ assert.match(packaging,/collect_hardware_fat_windows\.ps1/);
+ assert.match(packaging,/fatCollectorSha256/);
+ assert.match(verify,/manifest\.fatCollectorSha256/);
+ assert.match(verify,/Missing FAT collector inside ZIP/);
+ assert.match(verify,/ZIP field collector SHA mismatch/);
+ assert.match(collector,/ValidateSet\('Verify','Start','Stop','Summary'\)/);
+ for(const mode of ['OUTPUT_ONLY_TONE','CAPTURE_ONLY','DRY_THROUGH_0FX'])
+   assert.ok(collector.includes(mode));
+ for(const guard of ['BUILD_PROVENANCE.json','exeSha256','fatCollectorSha256',
+                     'elapsedSeconds -lt 1800','hardwareCertified=$false',
+                     'unresolvedIssue=15','COPY FULL REPORT'])
+   assert.ok(collector.includes(guard),'offline FAT missing '+guard);
+ assert.ok(workflow.includes('collect_hardware_fat_windows.ps1'));
+});
