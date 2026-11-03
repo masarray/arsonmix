@@ -189,11 +189,17 @@
 /* WIRE matrix carries REAL semantic route status (is-linked, is-legacy).
    Their persistent colored faces are derived from existing classes; no JS
    state, no timers, no changes to routing geometry or WIRE/PNG assets. */
+/* Important here applies to TOKENS only (never layout): V6's shared
+   :is() material selector deliberately contains the #wireMaster ID to win
+   over historical BTN-180. Preserve per-route semantic ink despite that
+   ID-level base specificity. No independent paint/state owner is added. */
 .app .wire-workspace .wire-ws-matrix button.is-linked{
-  --ari-on-top:#286849;--ari-on-hi:#347e5b;--ari-on-mid:#2d6e51;
-  --ari-on-bottom:#255c42;--ari-on-edge:#204f38;--ari-on-ink:#f5fff8;
+  --ari-on-top:#286849!important;--ari-on-hi:#347e5b!important;
+  --ari-on-mid:#2d6e51!important;--ari-on-bottom:#255c42!important;
+  --ari-on-edge:#204f38!important;--ari-on-ink:#f5fff8!important;
 }
 .app .wire-workspace .wire-ws-matrix button.is-legacy{
-  --ari-on-top:#3e577e;--ari-on-hi:#526d94;--ari-on-mid:#405b7f;
-  --ari-on-bottom:#334d71;--ari-on-edge:#2b4161;--ari-on-ink:#f5f8ff;
+  --ari-on-top:#3e577e!important;--ari-on-hi:#526d94!important;
+  --ari-on-mid:#405b7f!important;--ari-on-bottom:#334d71!important;
+  --ari-on-edge:#2b4161!important;--ari-on-ink:#f5f8ff!important;
 }
