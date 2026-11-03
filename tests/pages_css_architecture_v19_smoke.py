@@ -13,7 +13,9 @@ async def main():
     source,sections,chrome=reconstruct()
     data=manifest()
     assembled_new=SECTIONS.read_text(encoding="utf-8")+CHROME.read_text(encoding="utf-8")
-    assembled_old=sections+chrome+data["sourceFirst"]+data["movedChromeSuffix"]
+    from gui_m3_compat import suffix
+    m3_chrome_tail=suffix("chrome")[1]
+    assembled_old=sections+chrome+data["sourceFirst"]+data["movedChromeSuffix"]+m3_chrome_tail
     assert assembled_new.count("!important")==assembled_old.count("!important"),"CSS relocation must preserve priority"
     assert data["oldLengths"]["inline"]-data["newLengths"]["inline"]==(
         len(data["sourceFirst"])+len(data["movedChromeSuffix"])+
