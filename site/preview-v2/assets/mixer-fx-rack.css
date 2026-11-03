@@ -117,3 +117,11 @@
 .console-body:not(.collapsed-fx) .section-rail>.rail-cell.fx{
   flex:1 1 var(--fx-h)!important;min-height:23px!important;
 }
+
+/* Taller screens: the M3 two-row WIRE header adds 14px versus the old single
+   row. Reserve four readable FX slots by returning exactly that budget from
+   the long physical fader travel (not from meter/gain calibration). The rail
+   and channel fader both use this same canonical variable. */
+@media(min-height:801px){
+ .console-body{--v13-fader-h:clamp(160px,calc(100dvh - 598px),530px)!important}
+}

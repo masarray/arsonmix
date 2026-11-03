@@ -134,7 +134,7 @@ def audit_p0_collapse(page, label):
     states=result['states']
     assert len(states)==8,(label,'missing collapse permutations',list(states))
     baseline=states['000']
-    expected=max(160,min(530,page.viewport_size['height']-584))
+    expected=max(160,min(530,page.viewport_size['height']-(598 if page.viewport_size['height']>=801 else 584)))
     first=baseline['items'][0]
     assert first['fx']['list']>=88,(label,'four FX rows not visible with all upper panels open',first)
     assert abs(first['fader']['h']-expected)<=2,(label,'fader height not viewport-proportional',expected,first)

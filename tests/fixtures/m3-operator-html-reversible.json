@@ -134,7 +134,7 @@
   },
   "fxRack": {
     "baseSize": 5567,
-    "suffixSize": 663,
-    "suffixFNV": "18203286"
+    "suffixSize": 1068,
+    "suffixFNV": "a5d72d84"
   }
 }
