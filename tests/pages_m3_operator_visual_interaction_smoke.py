@@ -94,6 +94,13 @@ def interactions(page):
     page.locator('#tracks .strip[data-id="1"] button[data-action="resetClip"]').click()
     assert 'clipping' not in page.locator('#tracks .strip[data-id="1"] .peak').get_attribute("class")
 
+    # The reference console can boot with SEND collapsed. Expose the real
+    # patch-bay through its rail before interacting with physical jacks.
+    out_jack=page.locator('#tracks .strip[data-id="1"] [data-action="wireSource"]')
+    if not out_jack.is_visible():
+        page.locator('.section-rail [data-section="send"]').click()
+    assert out_jack.is_visible(),"WIRE OUT still hidden after expanding SEND rail"
+
     # Two real operator connections, independently created by OUT -> IN.
     # A receiving socket must stay usable after both edges already exist.
     for src in (1,2):
