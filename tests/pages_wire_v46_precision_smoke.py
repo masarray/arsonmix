@@ -73,7 +73,9 @@ def main():
     # Outer ring, INNER dot and magnet center must be the same regardless of
     # V45 3-column layout, caption widths or source/target interaction state.
     exact(center(dest_pin),center(dest),width,"IN dot not at socket circle center",.32)
-    origin=center(page.locator('#viewport'))
+    vp=page.locator('#viewport').bounding_box()
+    assert vp and vp['width']>0 and vp['height']>0,(width,'missing viewport')
+    origin=(vp['x'],vp['y'])
     source_center=local_point(src_pin,origin)
     target_center=local_point(dest_pin,origin)
     # A parent button includes OUT label. Its center is NOT the cable anchor.
