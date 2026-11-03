@@ -15,9 +15,9 @@ OWNERS = (
     "mixer-v3-layout-contract.css",
     "mixer-chrome-material.css",
 )
-EXPECTED_FNV = "8cb19a32"
-EXPECTED_CSS_LENGTH = 176024
-EXPECTED_INLINE_LENGTH = 126354
+EXPECTED_FNV = "188064b0"
+EXPECTED_CSS_LENGTH = 175850
+EXPECTED_INLINE_LENGTH = 124497
 
 def fingerprint(css):
     h = 2166136261
@@ -29,7 +29,7 @@ def source_gate():
     html = HTML.read_text(encoding="utf-8")
     head = html.split("</head>", 1)[0]
     css_order = re.findall(
-        r'<link[^>]+href="assets/([^"]+\.css)\?v=css-owner-v(10|11)"[^>]*>|(<style>(.*?)</style>)',
+        r'<link[^>]+href="assets/([^"]+\.css)\?v=css-owner-v(10|11|14)"[^>]*>|(<style>(.*?)</style>)',
         head, re.S)
     names = [n for n, version, tag, body in css_order if n]
     expected = [

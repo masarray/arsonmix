@@ -50,15 +50,7 @@
 /* BUTTON 180 — one identical RESTING surface for OFF and ON.
    Semantic colors alone define the latched state; only the transient :active
    pointer press moves the cap inward by 1px without changing its layout slot. */
-:root{
- --b180-off:#cbd1d1;--b180-edge:#747f7f;--b180-off-ink:#172229;
- --b180-color:var(--b180-off);--b180-border:var(--b180-edge);
- --b180-ink:var(--b180-off-ink);
- --b180-on-cyan:#94e8ed;--b180-on-green:#91edac;
- --b180-on-magenta:#edb8df;--b180-on-purple:#d6b9f0;
- --b180-on-mute:#f99aa4;--b180-on-solo:#f4d479;
- --b180-on-stereo:#9dd2f0;
-}
+
 :is(.btn-180,.toolbar .nav button.btn-180,.toolbar .spec-device,.left-rail .tabs button.btn-180,
 .strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
 .left-rail .rail-presets button.btn-180,.left-rail .rail-bottom button.btn-180,
@@ -358,7 +350,7 @@
 
 
 </style>
-<link rel="stylesheet" href="assets/mixer-chrome-material.css?v=css-owner-v11">
+<link rel="stylesheet" href="assets/mixer-chrome-material.css?v=css-owner-v14">
 <style>/* Channel identity editor: same glass/metal background as plugin manager, not generic modal. */
 .channel-identity{
  position:absolute;z-index:115;left:28px;top:100px;width:302px;max-width:calc(100% - 24px);
@@ -393,16 +385,7 @@
 /* V7 CRITICAL VISUAL REBALANCE — measured against the 1666x888 owner screenshot.
    Hierarchy: chrome header > route > compact FX insert rack > sends/PAN > direct
    mute/solo/PFL > tactile fader + peak meters. NO web-style blue black voids. */
-:root {
- --am-metal-base:#15232c;
- --am-metal-panel:#22333d;
- --am-metal-raised:#2b3f4b;
- --am-metal-edge:#41515b;
- --am-metal-inset:#060d12;
- --am-text-primary:#e1ebee;
- --am-text-muted:#afc0c6;
- --am-accent:#6cb9ca;
-}
+
 /* CSS variable on parent rail and strips drives identical FX geometry. */
 .console-body:not(.collapsed-fx){--fx-h:clamp(111px,13.5vh,137px)!important}
 .console-body.collapsed-fx{--fx-h:23px!important}
@@ -1160,8 +1143,7 @@
    Never apply to circular WIRE connectors, fader thumb, meter LEDs, sliders,
    section-rail disclosures, or drag targets. All colors are semantic variants.
    No animations, filters, textures, permanent pressed state, or extra JS. */
-:root{
-}
+
 /* A single mechanical face for every ordinary PUSH button; retain existing
    29px header / strip widths and accessibility semantics. New buttons opt
    in with .hw-key instead of inheriting unexpected styling on rotary/jacks. */
@@ -1339,8 +1321,7 @@
    dark 1px machined cut, light 1px metal lip, cap stands 1px above its well.
    Only semantic color differs between controls; no blurred shadows, filters,
    backdrop filters, RAF style recalculation or extra LED DOM nodes. */
-:root {
-}
+
 /* A recessed common switch bay is machined into the STRIP panel, not
    painted halfway across the top face. Housing never moves with buttons. */
 .console-body .strip .switch-section {
@@ -1401,16 +1382,7 @@ html * ,html *::before,html *::after{
    machined sockets on modern large-format digital mixing consoles.
    Shared material: same 2px square-rounded cap, 1px press, one chrome
    edge-light recipe, NO diffuse shadows, blur, filter, animations, or DOM. */
-:root {
- --am-hw-key-neutral:#3b4e59;
- --am-hw-key-dark:#344650;
- --am-hw-key-rim:#637783;
- --am-hw-key-radius:2px;
- --am-hw-key-press-y:1px;
- --am-hw-key-face:var(--am-hw-key-neutral);
- --am-hw-key-ink:#e3edf1;
- --am-hw-key-border:var(--am-hw-key-rim);
-}
+
 /* Important: one real physical material for push-buttons. Layout stays put. */
 :is(.command-bar button.tool,.command-bar summary.tool,
  .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
@@ -1497,11 +1469,7 @@ html * ,html *::before,html *::after{
 /* V20 CUBE/ILLUMINATED HARDWARE KEY — single material extension, zero blur.
    Face appears internally backlit; three crisp unblurred sidewall lines
    plus a dark socket convey cube depth. Press is precisely 1px. */
-:root{
- --am-hw-key-bright:#586c79;
- --am-hw-key-deep:#202f39;
- --am-hw-key-wall:#1d2c35;
-}
+
 /* The same cap surface for ALL push-buttons: near-vertical satin
    highlight, colored lens middle, dark lower skirt, sharp edge. */
 :is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
@@ -1656,16 +1624,7 @@ html * ,html *::before,html *::after{
    A separate STATIC socket wrapper owns the hole, recess and overlaid metal
    bezel. Only the button child moves 1px. No blur or filter. This repairs
    the V20 wavy/zebra shading and the buried channel selection highlight. */
-:root {
- --am-hw-key-relief:inset 1px 0 0 #ecf9ff36,inset -1px 0 0 #040b106b,
-   inset 0 1px 0 #ffffff22,inset 0 -1px 0 #0008,
-   0 1px 0 var(--am-hw-key-wall),0 2px 0 #070d12;
- --am-hw-key-flat:inset 1px 0 0 #ecf9ff25,inset -1px 0 0 #040b106b,
-   inset 0 1px 0 #0005,inset 0 -1px 0 #ffffff12,
-   0 1px 0 #070d12;
- --am-hw-key-upper-glint:linear-gradient(90deg,transparent 0%,#ffffff3a 28%,#ffffffaa 50%,#ffffff3a 72%,transparent 100%);
- --am-hw-key-lower-glint:linear-gradient(90deg,transparent 0%,#ffffff0d 30%,#ffffff48 50%,#ffffff0d 70%,transparent 100%);
-}
+
 /* Thin internal light (not glowing) — no repeated bright/dark bands. */
 :is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
  .console-body .strip .switch-section button.switch,
@@ -1960,16 +1919,7 @@ html * ,html *::before,html *::after{
    text illusion. Brighter GRAPHITE SATIN cap rests physically ABOVE a static
    dark switchplate; latched buttons sit INSIDE the same opening. Narrow
    LED seams are IN the depressed face — no diffuse shadow or filter. */
-:root{
- --am-key30-top:#738692;
- --am-key30-bottom:#354750;
- --am-key30-hover-top:#8296a0;
- --am-key30-hover-bottom:#40535d;
- --am-key30-down-top:#27353d;
- --am-key30-down-bottom:#151e25;
- --am-key30-hairline:linear-gradient(90deg,transparent 0%,#ecfaffb0 50%,transparent 100%);
- --am-key30-lowline:linear-gradient(90deg,transparent 0%,#a8c6d858 50%,transparent 100%);
-}
+
 /* One stationary shared key well for all three MUTE/SOLO/PFL caps. This
    plate and each .hw-switch-socket's overlaid lip NEVER move on click. */
 .console-body .strip .switch-section{
