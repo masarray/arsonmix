@@ -272,6 +272,40 @@ int main() {
     // CH7 -> wet FX Return in parallel: no double-dry contribution.
     assert(approx(left[31],(.2f*2.f+.2f+.2f*.25f*.5f)*center));
     assert(approx(ml[31],(.2f*.2f+.2f*.3f)*center));
+    // Real PCM scale-out: add CH11, wire IN2 -> CH11 -> MAIN using
+    // the SAME immutable native graph/ChannelId publisher. No browser
+    // mock strip, no fixed-ten render array and no second audio callback.
+    const float priorMain=left[31];
+    ChannelEdit addEleven;
+    addEleven.kind=ChannelEdit::Kind::add;addEleven.role=ChannelRole::input;
+    addEleven.format=ProcessingFormat::mono;
+    addEleven.position=10;addEleven.text="CH11 · Native";
+    const std::array<ChannelEdit,1> addChannel{addEleven};
+    auto grown=native.edit(5,5,addChannel,route,epoch,epoch,true);
+    assert(grown.ok()&&grown.edit.createdIds.size()==1);
+    const auto ch11=grown.edit.createdIds[0];
+    assert(render()&&approx(left[31],priorMain)); // silence until patched
+    route.sources.push_back({ch11,1,-1,false});
+    const std::array<ChannelEdit,1> connectCh11{linkOut(ch11,main)};
+    auto connectedCh11=native.edit(6,6,connectCh11,route,epoch,epoch,true);
+    assert(connectedCh11.ok());
+    assert(projectAcceptedConsoleV6(native,epoch,7,snap));
+    assert(snap.channels.size()==15&&find(snap,ch11));
+    assert(find(snap,ch11)->primaryOutId==std::to_string(main.value));
+    assert(render());
+    assert(approx(left[31],priorMain+.4f*center));
+    const auto acceptedEleven=left[31];
+    // Invalid physical source is rejected without changing live PCM or
+    // losing any of the original ChannelIds or vendor FX leases.
+    auto badEleven=route;
+    badEleven.sources.back().inputL=99;
+    ChannelEdit panEleven;panEleven.kind=ChannelEdit::Kind::setPan;
+    panEleven.id=ch11;panEleven.value=.1f;
+    const std::array<ChannelEdit,1> illegalSource{panEleven};
+    auto rejectedEleven=native.edit(7,7,illegalSource,badEleven,epoch,epoch,true);
+    assert(!rejectedEleven.ok()&&native.acceptedGraphRevision()==7);
+    assert(render()&&approx(left[31],acceptedEleven));
+
     // OUTPUT MUTE must silence BOTH main and monitor and never invoke FX.
     assert(!native.render(epoch,pins,2,left.data(),right.data(),
                           32,true,fx,ml.data(),mr.data()));
