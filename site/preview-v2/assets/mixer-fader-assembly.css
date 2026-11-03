@@ -321,11 +321,11 @@
 .console-body .strip .gain-tick.minor span{display:none}
 
 /* M1.2 physical fader/ruler adjacency: the M1 numeric column already aligns.
-   Keep the cap/hardware well at its real 36px width and park it flush against
+   Match the actual 23px rendered cap with a 30px-wide hardware well, parked next to
    the ruler. Extra flexible strip width belongs BETWEEN meter and fader, never
    between the operator's fader and its ticks. No changes to fader travel, dB
    math, meter housing, pointer input or vertical alignment. */
 .console-body .strip .fader-workspace > .fader-box{
-  width:36px!important;min-width:36px!important;max-width:36px!important;
+  width:30px!important;min-width:30px!important;max-width:30px!important;
   justify-self:end!important;
 }

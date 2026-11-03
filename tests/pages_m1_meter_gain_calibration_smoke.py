@@ -92,7 +92,7 @@ def geometry(page, density, label):
         # the flexible fader track column. Cover master and input strips.
         assert len(out["rigs"])==2,(label,density,"missing fader rigs",out["rigs"])
         for rig in out["rigs"]:
-            close(rig["wellWidth"],36,.6)
+            close(rig["wellWidth"],30,.6)
             assert 3<=rig["gap"]<=8,(label,density,"ruler too far from fader cap",rig)
             close(rig["wellRight"],rig["rulerLeft"]-2,.75)
         assert out["ruler"]["x"]>=out["well"]["x"]+out["well"]["w"]-.2,(
