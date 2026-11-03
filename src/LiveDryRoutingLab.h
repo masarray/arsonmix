@@ -1349,7 +1349,15 @@ public:
         out->setProperty("topologyFault",topologyFault_.load(std::memory_order_acquire));
         out->setProperty("ready",ready());
         out->setProperty("hasAcceptedRoute",hasExplicitRoute());
-        out->setProperty("nativeChannelIdPcmActive",channelIdPhysicalPcmActive());
+        const bool nativePcm=channelIdPhysicalPcmActive();
+        out->setProperty("nativeChannelIdPcmActive",nativePcm);
+        // This exact original vendor Graph owner is retained by the native
+        // accepted snapshot, NOT merely a catalog name or M4 CH1 label.
+        // Message-thread diagnostic only; no false universal capabilities.
+        out->setProperty("originalCh1GraphLeased",
+            nativePcm && nativeAccepted_.fxOwners &&
+            nativeAccepted_.fxOwners->externalChannel()==
+                nativeAccepted_.graph.ids.inputs[0]);
         out->setProperty("epoch",static_cast<juce::int64>(epoch()));
         out->setProperty("revision",static_cast<juce::int64>(revision()));
         out->setProperty("peakL",peakL_.load(std::memory_order_relaxed));

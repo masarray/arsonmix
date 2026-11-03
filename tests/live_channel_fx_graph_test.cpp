@@ -687,6 +687,10 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
     route->setProperty("active",true);
     route->setProperty("ready",true);
     route->setProperty("hasAcceptedRoute",true);
+    // These booleans are device-loop truth, NOT permission to promote
+    // universal CH11, GROUP or WIRE operations in the GUI.
+    route->setProperty("nativeChannelIdPcmActive",true);
+    route->setProperty("originalCh1GraphLeased",true);
     // Genuine admitted M4 rows, not fabricated universal ChannelIds.
     juce::Array<juce::var> admittedRows;
     for(int i=0;i<armix::mixer::stripCount;++i) {
@@ -765,6 +769,18 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
     const auto diagnostic=snap.getProperty("legacyM4",{});
     assert(diagnostic.getProperty("routingRevision","").toString()=="77");
     assert(diagnostic.getProperty("controlPlane","").toString()=="LEGACY_M4_ORDINAL");
+    assert(diagnostic.getProperty("pcmRenderer","").toString()=="CHANNEL_ID_10CH4AUX");
+    assert(static_cast<bool>(diagnostic.getProperty("originalCh1GraphLeased",false)));
+    // A revoked native PCM mode must immediately report M4 fallback without
+    // inventing any universal ChannelId capabilities or stale FX identity.
+    auto liveRoute=live.getProperty("dryRoutingLab",{});
+    liveRoute.getDynamicObject()->setProperty("nativeChannelIdPcmActive",false);
+    auto fallbackSnap=Bridge::snapshot(live);
+    const auto fallbackM4=fallbackSnap.getProperty("legacyM4",{});
+    assert(fallbackM4.getProperty("pcmRenderer","").toString()=="M4_COMPAT");
+    assert(!static_cast<bool>(fallbackM4.getProperty("originalCh1GraphLeased",true)));
+    assert(!static_cast<bool>(fallbackSnap.getProperty("productionCallbackLive",true)));
+    liveRoute.getDynamicObject()->setProperty("nativeChannelIdPcmActive",true);
     const auto legacyRows=diagnostic.getProperty("acceptedChannels",{});
     assert(legacyRows.getArray()&&
            legacyRows.getArray()->size()==armix::mixer::stripCount);

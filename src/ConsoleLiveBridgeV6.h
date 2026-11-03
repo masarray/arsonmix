@@ -97,9 +97,10 @@ public:
                 if(physical<0)continue;
                 w.outputs.push_back({physical,ordinal,{},{},0.});
             }
-        // Authoritative installed renderer is still the old M4 PCM graph.
-        // Never promote CH10's label to a real wet FX_RETURN or advertise
-        // universal CREATE/GROUP/INSERT until one ChannelId callback owns it.
+        // The installed ABI is still M4 ordinals, but the single JUCE
+        // callback may now select the real native ChannelId PCM renderer
+        // with original CH1/Orbit lease after accepted admission. Neither
+        // physical mode implies universal CH11/GROUP/WIRE ownership.
         w.productionCallbackLive=false;
         const auto bytes=PuzzleV8Wire::snapshot(w);
         auto actual=juce::JSON::parse(juce::String::fromUTF8(bytes.c_str()));
@@ -134,6 +135,17 @@ public:
                    channels.getArray()->size()==armix::mixer::stripCount) {
                     object->setProperty("acceptedChannels",channels);
                     object->setProperty("controlPlane","LEGACY_M4_ORDINAL");
+                    // Real accepted PCM provenance for FAT/GUI diagnostics.
+                    // Read from LiveAudioEngine's installed callback, not
+                    // guessed browser roles. This does NOT enable universal
+                    // supportedOps, ChannelIds, or graph revision.
+                    const bool native=static_cast<bool>(route.getProperty(
+                        "nativeChannelIdPcmActive",false));
+                    object->setProperty("pcmRenderer",native
+                        ?"CHANNEL_ID_10CH4AUX":"M4_COMPAT");
+                    object->setProperty("originalCh1GraphLeased",
+                        native && static_cast<bool>(route.getProperty(
+                            "originalCh1GraphLeased",false)));
                     // Separate namespace: these operations mutate the one
                     // INSTALLED M4 JUCE PCM graph. They are NEVER universal
                     // graph.capabilities.supportedOps or ChannelIds.

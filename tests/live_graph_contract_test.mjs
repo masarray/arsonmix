@@ -52,18 +52,26 @@ test('ADD/REMOVE remain guarded while MOVE publishes physical-slot order',()=>{
   assert.doesNotMatch(move,/detach\(|attach\(/);
 });
 
-test('bypass is sample-smoothed on audio callback without control-thread CPU work',()=>{
+test('bypass is sample-smoothed by one original CH1 DSP owner for M4 and native ChannelId',()=>{
  assert.match(e,/bypassEnvelope/);
- const start=e.indexOf('static void processLegacyChannelOne(');
- const end=e.indexOf('void audioDeviceIOCallbackWithContext',start);
- assert.ok(start>=0&&end>start,'the accepted M4 CH1 owner must still exist');
- const leaseFx=e.slice(start,end);
- assert.match(leaseFx,/bypass\.request\(graph->bypassFlags/);
- assert.match(leaseFx,/slot\.processor->processBlock\(buffer,midi\)/);
- assert.match(leaseFx,/bypass\.transitioning\(\)/);
- assert.match(e,/dryScratch_\.setSize \(2, maxFrames/);
- assert.match(leaseFx,/bypass\.next\(\)/);
- assert.match(leaseFx,/bypass\.shouldProcessWet\(\)/);
+ const start=e.indexOf('static void renderOriginalChannelOneGraph(');
+ const legacy=e.indexOf('static void processLegacyChannelOne(',start);
+ const native=e.indexOf('static void processOwnedChannelOne(',legacy);
+ const end=e.indexOf('void audioDeviceIOCallbackWithContext',native);
+ assert.ok(start>=0&&legacy>start&&native>legacy&&end>native,
+   'native and M4 must share the original CH1 sample-accurate DSP owner');
+ const originalDSP=e.slice(start,legacy);
+ const adapters=e.slice(legacy,end);
+ assert.match(originalDSP,/bypass\.request\(graph\.bypassFlags/);
+ assert.match(originalDSP,/slot\.processor->processBlock\(buffer,midi\)/);
+ assert.match(originalDSP,/bypass\.transitioning\(\)/);
+ assert.match(originalDSP,/graph\.dryScratch\.getWritePointer\(0\)/);
+ assert.match(originalDSP,/bypass\.next\(\)/);
+ assert.match(originalDSP,/bypass\.shouldProcessWet\(\)/);
+ assert.match(e,/Graph\(\) \{ dryScratch\.setSize\(2,maxFrames,false,true,false\); \}/);
+ assert.match(adapters,/renderOriginalChannelOneGraph\(\*graph,left,right,frames\)/);
+ assert.match(adapters,/renderOriginalChannelOneGraph\(\s*\*static_cast<Graph\*>\(token\)/);
+ assert.match(adapters,/fx\.owner=std::static_pointer_cast<void>\(graphOwned_\)/);
  assert.doesNotMatch(e.slice(e.indexOf('bool setBypass'),e.indexOf('bool removeAt')),/detach\(|prepareToPlay|releaseResources/);
 });
 
