@@ -86,6 +86,7 @@ def check(page,path,label):
         assert not tick["gainOverlap"] and not tick["vuOverlap"],(
             label,density,"printed scale numbers collide",tick)
         assert tick["value"]=="0",(label,density,"fader numeric value changed",tick)
+        assert tick["panMargin"]=="-12px",(label,density,"PAN thumb alignment drift",tick["panMargin"])
         if density=="comfort" and label=="png":
             page.locator(channel+" .fader-section").screenshot(path="pages-v18-fader-scale-1680.png")
             page.locator(channel+" .fx-section").screenshot(path="pages-v18-fx-micro-1680.png")
@@ -99,7 +100,8 @@ def main():
     assert "(t.phase?'Ø':'⊘')" not in html
     assert "v%12===0" in html and "v!==-6" in html
     css=(ASSETS/"mixer-pan-controls.css").read_text("utf-8")
-    assert "margin-top:-10px!important" in css
+    assert ".center-pan::-webkit-slider-thumb{margin-top:-12px!important}" in css
+    assert ".ari-horizontal::-webkit-slider-thumb{margin-top:-10px!important}" in css
     with tempfile.TemporaryDirectory(prefix="arsonmix-visual-v18-") as temp:
         dist=Path(temp)/"dist"
         subprocess.run([sys.executable,str(ROOT/"scripts/build_pages.py"),

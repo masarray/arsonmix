@@ -41,8 +41,7 @@
 .console-body .strip .pan-control.is-centered::after{background:#a2e3cf!important}
 
 
-/* V18 optical alignment: existing 32px physical PAN/SEND thumb artwork
-   sits ~2px high relative to the 5px track. Move ONLY the painted thumb;
-   input boxes, slider rails and layout geometry remain unchanged. */
-.console-body .center-pan::-webkit-slider-thumb,
+/* V19 operator alignment: lift only the PAN artwork by 2px.
+   Keep SEND at the V18 position; rail, input hitbox and drag math unchanged. */
+.console-body .center-pan::-webkit-slider-thumb{margin-top:-12px!important}
 .console-body .ari-horizontal::-webkit-slider-thumb{margin-top:-10px!important}

@@ -63,6 +63,8 @@ def test_page(browser,url,label):
             assert s['w']==(25 if kind=='format' else 17),(label,kind,s)
             assert s['pos'].startswith(('100%' if s['pressed']=='true' else '0%')+' '),(label,kind,s)
             before[kind]=s
+            if kind=='fx-remove':
+                assert s['color']=='rgb(164, 73, 78)',(label,width,'delete OFF must be muted red, not black',s['color'])
         for kind in ('fx-main','phase','format'):
             loc=row.locator('[data-util-kind="'+kind+'"]').first
             old=loc.get_attribute('aria-pressed')
@@ -82,6 +84,7 @@ def test_page(browser,url,label):
         page.mouse.down()
         held=state(remove)
         assert held['pos'].startswith('100% '),(label,'remove momentary',held)
+        assert held['color']=='rgb(255, 255, 255)',(label,'remove pressed icon',held['color'])
         assert stable(before['fx-remove'],held)
         page.mouse.up()
         assert page.locator('#tracks .strip[data-id="1"] .wire-node-out').count()==1
