@@ -15,7 +15,14 @@ PLUGIN=ASSETS/'mixer-plugin-browser.css'
 def source_gate():
     html=HTML.read_text('utf-8')
     inline=''.join(re.findall(r'<style(?:\s[^>]*)?>(.*?)</style>',html,re.S))
-    rack=RACK.read_text('utf-8')
+    current_rack=RACK.read_text('utf-8')
+    # V8 extraction-size assertions are historical. V24 deletes exactly two
+    # obsolete FX rules without weakening the original extraction contract.
+    from css_v24_restore import reconstruct as restore_v23
+    _,owners=restore_v23()
+    rack=owners['mixer-fx-rack.css']
+    assert rack.count('.fx-section')-current_rack.count('.fx-section')==2
+    assert 'background:var(--v13-insert)!important' in current_rack
     plugin=PLUGIN.read_text('utf-8')
     assert len(inline)<226_000, ('inline still contains rack styles',len(inline))
     assert inline.count('!important')<1840, 'redundant important cascade is growing'
