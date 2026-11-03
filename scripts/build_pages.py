@@ -73,6 +73,52 @@ for control_asset in ('mixer-control-keys.css','mixer-control-keys.js','mixer-ut
         if src.read_bytes()!=target.read_bytes():
             raise SystemExit(f'Published asset differs from preview source: {control_asset}')
 (dst/'preview'/'build.json').write_text(json.dumps(metadata,indent=2),encoding='utf-8')
+
+# Approved PNG review follows the SAME current operator/WIRE source as /preview-v2/.
+# Generate it at publish time. Only button CSS/JS diverges; no copied HTML,
+# independent routing model, frozen WIRE styles or stale preview snapshot.
+buttons_source=ROOT/'site/preview-buttons/assets'
+canonical=ROOT/'site/preview-v2'
+buttons_dest=dst/'preview-buttons'
+if buttons_dest.exists(): shutil.rmtree(buttons_dest)
+(buttons_dest/'assets').mkdir(parents=True)
+canonical_html=(canonical/'index.html').read_text(encoding='utf-8')
+special=('mixer-control-keys.css','mixer-control-keys.js')
+sprite='mute-solo-pfl-56x37.png'
+for src in sorted((canonical/'assets').iterdir()):
+    if not src.is_file(): raise SystemExit('Unexpected nested preview-v2 asset: '+str(src))
+    if src.name not in special:
+        shutil.copy2(src,buttons_dest/'assets'/src.name)
+for name in (*special,sprite):
+    src=buttons_source/name
+    if not src.is_file(): raise SystemExit('Approved PNG asset missing: '+str(src))
+    shutil.copy2(src,buttons_dest/'assets'/name)
+# Content-addressed URLs prevent browser caching of a superseded button skin.
+import hashlib,re
+revisions={}
+for name in special:
+    token='assets/'+name
+    pattern=re.compile(re.escape(token)+r'(?:\?[^"\s>]+)?')
+    matches=list(pattern.finditer(canonical_html))
+    if len(matches)!=1:
+        raise SystemExit(f'Expected one source link for {token}; found {len(matches)}')
+    digest=hashlib.sha256((buttons_dest/'assets'/name).read_bytes()).hexdigest()[:16]
+    revisions[name]=digest
+    match=matches[0]
+    canonical_html=canonical_html[:match.start()]+token+'?rev='+digest+canonical_html[match.end():]
+(buttons_dest/'index.html').write_text(canonical_html,encoding='utf-8')
+(buttons_dest/'build.json').write_text(json.dumps({
+    'sha':args.sha,'branch':args.branch,
+    'kind':'APPROVED_PNG_VISUAL_REVIEW_ONLY','live_audio':False,
+    'wire_source':'site/preview-v2/index.html',
+    'wire_source_sha256':hashlib.sha256((canonical/'index.html').read_bytes()).hexdigest(),
+    'button_asset_source':'site/preview-buttons/assets/',
+    'button_css_js_revisions':revisions
+},indent=2),encoding='utf-8')
+# Fail closed if routing has no identical source files in the variant.
+for name in ('mixer-wire-dots.css','knob-ICON.svg'):
+    if (buttons_dest/'assets'/name).read_bytes()!=(canonical/'assets'/name).read_bytes():
+        raise SystemExit('PNG preview WIRE dependency drift: '+name)
 (dst/'.nojekyll').touch()
 assert (dst/'index.html').exists() and (dst/'preview'/'index.html').exists()
 print('Built GitHub Pages:',dst,'preview source:',source,'revision:',args.sha)
