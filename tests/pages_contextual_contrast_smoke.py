@@ -26,6 +26,8 @@ def contrast(a,b):
 def verify(page,label,path):
     page.goto(path.as_uri())
     page.wait_for_selector("#bankNext svg path")
+    # Check the approved PNG key before bank navigation hides CH 01.
+    assert page.locator("#tracks .strip[data-id='1'] button[data-hw-kind='mute']").count()==1
     for key in ("bankPrev","bankNext"):
         button=page.locator("#"+key)
         result=button.evaluate("""el=>{
@@ -94,8 +96,8 @@ def verify(page,label,path):
     assert classes[0]["mid"]=="#2d6e51" and classes[1]["mid"]=="#405b7f",classes
     assert contrast("#f5fff8","#2d6e51")>=5.5
     assert contrast("#f5f8ff","#405b7f")>=5.5
-    # V6 owner must never style physical MUTE/SOLO/PFL PNG buttons.
-    assert page.locator("#tracks .strip[data-id='1'] button[data-hw-kind='mute']").count()==1
+    # The bank-changing arrow has already been exercised; CH 01 need not
+    # remain rendered after moving to the next bank.
     if label=="approved-png":
         page.locator(".command-bar").screenshot(path="pages-v6-arrow-contrast-1680.png")
 
