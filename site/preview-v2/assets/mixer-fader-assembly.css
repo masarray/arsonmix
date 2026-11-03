@@ -176,7 +176,7 @@
  writing-mode:vertical-lr!important;direction:rtl!important;cursor:ns-resize;-webkit-appearance:none!important;appearance:none!important;
  pointer-events:auto;
 }
-.console-body .fader-scale{grid-column:3!important;position:relative;flex:none!important;width:26px!important;min-width:26px!important;padding:0!important;background:none!important}
+.console-body .fader-scale{grid-column:3!important;position:relative;flex:none!important;width:26px!important;min-width:26px!important;padding:0!important;background:#263944!important}
 /* Exact RAIL3 source copied from web/styles-src/42-mixer-premium.css — operator-approved hardware fader: upper slot unlit black;
    below the thumb cyan blooms smoothly, then rolls off into black at the foot.
    The groove is physically ONE 5px machined slot; black sidewalls are static.
@@ -260,7 +260,11 @@
 .console-body .strip .fader-head{border:1px solid #405b69!important;
 }
 .console-body .strip .fader-readout{text-shadow:none!important;color:#98e6f5!important}
-.console-body .strip .fader-box{box-shadow:none!important}
+.console-body .strip .fader-box{
+ /* Thin machined lip; real recessed optics are drawn INSIDE ::before. */
+ box-shadow:inset 1px 0 #78909b3b,inset -1px 0 #050b0f,inset 0 1px #b8d7e119!important;
+ border-radius:3px!important;
+}
 .console-body .strip .fader-box::after{
  
  box-shadow:inset 1px 0 #80939d3a,inset -1px 0 #000!important;
@@ -269,10 +273,17 @@
  background:#1b2b36!important;
  box-shadow:inset 0 1px #a5becc0b!important;
 }
-.console-body .strip .fader-box{background:#14232e!important}
+.console-body .strip .fader-box{background:#30434d!important}
 .console-body .strip .fader-box::before{
- background:#0e1b24!important;
- box-shadow:inset 1px 0 #91b4c337,inset -1px 0 #0008!important;
+ /* Recessed border, flat graphite center. Narrow fixed gradients only:
+    NO full-face shine / shadow over the hand-operated fader surface. */
+ background:linear-gradient(90deg,
+   #081219 0%,#101d25 16%,#15232b 29%,#15232b 71%,
+   #0d1921 87%,#071117 100%)!important;
+ border:1px solid #09131b!important;
+ box-shadow:
+   inset 2px 0 3px #000a,inset -2px 0 3px #000b,
+   inset 0 3px 3px #0008,inset 0 -1px #b3ccd01a!important;
 }
 .console-body .strip .fader-head{
  background:#08151e!important;box-shadow:inset 0 1px #b1d0dc12!important;
@@ -320,17 +331,19 @@
    Vertical M2 geometry is tied to the cap center and physical dB ticks.
    No timer, layout JS, animated shadows, blur, or audio DSP changes. */
 .console-body .strip .fader-workspace{
- grid-template-columns:70px 32px 26px!important;
+ /* One coherent illuminated chassis behind both fader pocket and dB ruler.
+    Flat surface, not three competing gradients. Width = thumb + 2px. */
+ grid-template-columns:70px 29px 26px!important;
  gap:3px!important;justify-content:start!important;
- background:linear-gradient(90deg,#12232d 0%,#14242e 45%,#10212b 100%);
+ background:#263944!important;
  border-radius:3px;
- box-shadow:inset 0 1px #a7c4d015,inset 0 -1px #050e16;
+ box-shadow:inset 0 1px #a7c4d01b,inset 0 -1px #050e16!important;
 }
 .console-body .strip .fader-workspace > .fader-box{
- width:32px!important;min-width:32px!important;max-width:32px!important;
+ width:29px!important;min-width:29px!important;max-width:29px!important;
  justify-self:center!important;
 }
-.console-body .strip .fader-box::before{width:32px!important}
+.console-body .strip .fader-box::before{width:calc(100% - 2px)!important}
 .console-body .strip .fader-travel,
 .console-body .strip .gain-scale-travel{top:27px!important;bottom:27px!important}
 .console-body .strip .fader-travel .cap{
@@ -346,13 +359,12 @@
  top:27px!important;bottom:27px!important;height:calc(100% - 54px)!important;
 }
 .console-body .strip .fader-box::after{
- /* --fader-y comes from the existing interaction model; bright below
-    handle, unlit above. Static paint only, no per-meter-frame work. */
+ /* Machined 5px black travel slot with a quiet deep-teal gain hint
+    BELOW the thumb; the upper dark aperture stays near absolute black. */
  top:27px!important;bottom:27px!important;
  background:linear-gradient(to bottom,
-   #030a10 0%,#030a10 var(--fader-y,50%),
-   color-mix(in srgb,var(--track-color,#6fb4c6) 56%,#164959) calc(var(--fader-y,50%) + 1px),
-   #174354 85%,#0a222e 100%)!important;
+   #010407 0%,#010407 var(--fader-y,50%),
+   #041019 calc(var(--fader-y,50%) + 2px),#09212b 100%)!important;
 }
 .console-body .strip .gain-tick.unity::before{width:9px}
 
@@ -371,7 +383,7 @@
 .console-body[data-density="compact"] .strip .fader-workspace > .fader-box{
  width:25px!important;min-width:25px!important;max-width:25px!important;
 }
-.console-body[data-density="compact"] .strip .fader-box::before{width:25px!important}
+.console-body[data-density="compact"] .strip .fader-box::before{width:calc(100% - 2px)!important}
 .console-body[data-density="compact"] .strip .fader-scale{
  width:28px!important;min-width:28px!important;
 }
@@ -398,13 +410,13 @@
 .console-body[data-density="standard"] .strip .fader-workspace>.fader-box{
  width:27px!important;min-width:27px!important;max-width:27px!important;
 }
-.console-body[data-density="standard"] .strip .fader-box::before{width:27px!important}
+.console-body[data-density="standard"] .strip .fader-box::before{width:calc(100% - 2px)!important}
 .console-body[data-density="standard"] .strip .fader-scale{width:28px!important;min-width:28px!important}
 
-/* V51: a single tight, static mechanical drop edge under the approved
-   transparent original PNG. No CSS filter/drop-shadow GPU surface, glow,
-   animation or altered thumb dimensions/collision geometry. */
+/* V52: visible, optically light grounding UNDER the exact approved 27/25px
+   transparent PNG. Two small fixed shadows (no filter, glow, compositing
+   layer, CSS transitions or repainting full-console surfaces). */
 .console-body .strip .fader-travel .cap{
- box-shadow:0 2px 3px -2px #000c,0 4px 3px -4px #000a!important;
+ box-shadow:0 3px 3px -1px #000d,0 7px 5px -3px #000a!important;
  filter:none!important;
 }
