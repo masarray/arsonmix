@@ -16,7 +16,7 @@
 .console-body .pan-section output{font-size:11px;text-align:right;color:#a0dff0}
 .console-body .pan-icon{color:#c0d0d5}
 .console-body .pan-control{height:23px;max-width:none}
-.console-body .center-pan{height:23px!important;width:100%!important;min-width:0}
+.console-body .center-pan{min-width:0}
 .console-body .center-pan::-webkit-slider-runnable-track{height:7px;border:1px solid #0c1317;border-radius:4px;box-shadow:inset 0 1px 2px #060a0d;background:linear-gradient(to right,#0d1519 0,#0d1519 var(--pan-start),#4fb2d1 var(--pan-start),#4fb2d1 var(--pan-end),#0d1519 var(--pan-end),#0d1519 100%)}
 .console-body .center-pan::-webkit-slider-thumb{width:15px;height:19px;margin-top:-7px;border:1px solid #344b55;border-radius:3px;background:linear-gradient(#f0f5f7,#9bafba 47%,#556e7e 49%,#dce6e9 65%,#728f9f);box-shadow:0 1px 2px #111}
 .console-body .center-pan::-moz-range-thumb{width:15px;height:19px;border-radius:3px;border:1px solid #344b55;background:linear-gradient(#f0f5f7,#9bafba 47%,#556e7e)}

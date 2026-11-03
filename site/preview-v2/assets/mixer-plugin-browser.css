@@ -1,7 +1,7 @@
 /* ArSonMix V8 modeless plugin browser CSS owner.
    Original rules extracted from V7 inline preview without new paint layers.
    Keep shared window/overlay conventions in the existing shell owner. */
-.plugin-browser[hidden]{display:none!important}
+.plugin-browser[hidden]{}
 .plugin-browser{position:absolute;z-index:20;top:24px;bottom:0;right:111px;width:min(350px,calc(100% - 148px));display:flex;flex-direction:column;background:#282b2d;border-left:1px solid #55646a;border-top:1px solid #55646a;box-shadow:-4px 1px 8px #151617b8;color:#c9ccce;min-height:0}
 .plugin-head{height:47px;flex:none;border-bottom:1px solid #16191a;display:flex;align-items:center;padding:7px 10px;background:#313638}
 .plugin-head-title{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;font-size:11px;letter-spacing:.035em}
@@ -19,8 +19,8 @@
 
 }
 .plugin-browser{right:var(--master-w)!important}
-.plugin-browser{top:67px!important;right:var(--master-w)!important;bottom:0!important;width:var(--plugin-w)!important;max-width:var(--plugin-w)!important;box-shadow:none!important}
-.plugin-browser{position:absolute!important;z-index:90!important;top:36px!important;right:12px!important;left:auto!important;bottom:12px!important;width:min(440px,calc(100% - 40px))!important;max-width:440px!important;max-height:calc(100% - 48px)!important;border:1px solid #577084!important;border-radius:6px!important;background:#192933!important;box-shadow:0 12px 32px #000a!important;overflow:hidden!important}
+.plugin-browser{right:var(--master-w)!important;width:var(--plugin-w)!important;max-width:var(--plugin-w)!important;}
+.plugin-browser{z-index:90!important;left:auto!important;max-width:440px!important;}
 .plugin-browser{
  position:absolute!important;right:14px!important;left:auto;top:40px!important;bottom:auto!important;
  width:min(408px,calc(100% - 32px))!important;
