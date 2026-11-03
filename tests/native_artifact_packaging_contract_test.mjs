@@ -54,6 +54,12 @@ test('native Console embeds both PAN knob masks without unserved artwork',()=>{
  assert.doesNotMatch(css,/url\(\s*['"]?\.\.\//);
 });
 
+test('native PowerShell release verifier has no trailing expression after last resource',()=>{
+ const resources=verify.slice(verify.indexOf('$resources = @('),verify.indexOf('$embeddedText =',verify.indexOf('$resources = @(')));
+ assert.match(resources,/Hash=\$manifest\\.consoleNativeJsSha256\}\s*\\)/);
+ assert.doesNotMatch(resources,/Hash=\$manifest\\.consoleNativeJsSha256\}\s*,\s*\\)/);
+});
+
 test('release verifier hashes ALL active GUI bytes inside actual EXE and ZIP',()=>{
  for(const f of ['consoleNativeHtmlSha256','consoleNativeCssSha256','consoleNativeJsSha256','activeGuiEntrypoint']) {
   assert.ok(packageScript.includes(f+' = '));

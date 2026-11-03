@@ -85,8 +85,7 @@ if ($LASTEXITCODE -ne 0 -or $sha -ne $manifest.sourceCommit) {
 $resources = @(
     @{Path="web/console-native.html"; Hash=$manifest.consoleNativeHtmlSha256},
     @{Path="web/console-native.css"; Hash=$manifest.consoleNativeCssSha256},
-    @{Path="web/console-native.js"; Hash=$manifest.consoleNativeJsSha256},
-
+    @{Path="web/console-native.js"; Hash=$manifest.consoleNativeJsSha256}
 )
 $embeddedText = [Text.Encoding]::UTF8.GetString($bytes)
 foreach ($item in $resources) {
