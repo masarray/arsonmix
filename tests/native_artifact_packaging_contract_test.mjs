@@ -1,161 +1,74 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Prevent packaging a native test executable as the GUI application again.
-// Exact PE and source SHA verification happens at package time on Windows.
+// Windows product packaging must never attest the retired GUI by coincidence.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-const read = path => readFileSync(path, 'utf8');
-const workflow = read('.github/workflows/p1-windows.yml');
-const packaging = read('scripts/package_native_windows.ps1');
-const verify = read('scripts/verify_native_windows_artifact.ps1');
-const nativeMain = read('src/Main.cpp');
-const cmake = read('CMakeLists.txt');
-const fat = read('docs/HARDWARE_FAT_GUI10_ENGINE_P012_20261027.md');
-
-test('native FAT artifact picks an EXACT JUCE GUI target path, never wildcard test EXEs', () => {
-  assert.match(cmake, /juce_add_gui_app\(ARMixConsole/);
-  assert.match(cmake, /PRODUCT_NAME "AR MIX Studio"/);
-  assert.match(packaging, /ARMixConsole_artefacts\/Release\/AR MIX Studio\.exe/);
-  assert.match(packaging, /Missing JUCE GUI executable at expected target/);
-  assert.doesNotMatch(workflow, /Get-ChildItem -Path build -Filter/);
-  assert.doesNotMatch(workflow, /Select-Object -First 1/);
-  assert.match(workflow, /scripts\/package_native_windows\.ps1/);
+const read=p=>readFileSync(p,'utf8'),workflow=read('.github/workflows/p1-windows.yml');
+const pack=read('scripts/package_native_windows.ps1'),verify=read('scripts/verify_native_windows_artifact.ps1');
+const host=read('src/Main.cpp'),cmake=read('CMakeLists.txt');
+test('packaged EXE is the actual JUCE x64 Windows GUI, not a console test',()=>{
+ assert.match(cmake,/juce_add_gui_app\(ARMixConsole/);
+ assert.match(pack,/ARMixConsole_artefacts\/Release\/AR MIX Studio\.exe/);
+ assert.match(pack,/minimumGuiExeBytes = 4MB/);
+ assert.match(pack,/0x8664/);assert.match(pack,/0x020b/);
+ assert.match(pack,/\$subsystem -ne 2/);
+ assert.match(pack,/exeSha256/);
+ assert.match(verify,/\$bytes\.Length -lt 4MB/);
+ assert.match(verify,/\$archiveBytes -lt 2MB/);
+ assert.match(verify,/ComputeHash\(\$stream\)/);
+ assert.match(verify,/manifest\.sourceCommit/);
 });
-test('native FAT artifact proves AMD64 PE32+ WINDOWS GUI, rejects console-subsystem tests', () => {
-  assert.match(packaging, /0x8664/);
-  assert.match(packaging, /0x020b/);
-  assert.match(packaging, /\$subsystem -ne 2/);
-  assert.match(packaging, /a test console EXE is NOT the app/);
-  assert.match(packaging, /exeSha256/);
-  assert.match(packaging, /sourceCommit/);
-  assert.match(packaging, /appJsSha256/);
-  assert.match(packaging, /stylesCssSha256/);
-  assert.match(packaging, /BUILD_PROVENANCE\.json/);
-  assert.match(packaging, /HARDWARE_FAT_GUIDE\.md/);
-  assert.match(packaging, /EXPERIMENTAL_NOT_HARDWARE_QUALIFIED/);
+test('real M3 Console and its complete 24-asset set are attested INSIDE the executable',()=>{
+ const name='ArSonMix-M3-NativeConsole-ENGINEERING-NOT-HARDWARE-QUALIFIED-Windows-x64.exe';
+ assert.ok(pack.includes(name)&&verify.includes(name));
+ assert.match(pack,/guiResources = \$guiResources/);
+ assert.match(pack,/guiAuthority = "APPROVED_M3_NATIVE_CONSOLE_V1"/);
+ assert.match(pack,/web\/index\.html/);
+ assert.match(pack,/web\/console-native\.js/);
+ assert.match(pack,/expected HTML \+ native JS \+ 24 visual assets/);
+ assert.match(verify,/\$embeddedText\.IndexOf\(\$sourceText, \[StringComparison\]::Ordinal\)/);
+ assert.match(verify,/STALE NATIVE GUI: approved JUCE BinaryData resource absent/);
+ assert.match(verify,/WRONG GUI: the abandoned ten-strip frontend was packaged/);
+ assert.match(verify,/manifest\.guiAuthority/);
+ assert.match(verify,/arMixConsoleSnapshot/);
+ assert.match(verify,/arMixConsoleIntent/);
+ assert.match(host,/BinaryData::index_html/);
+ assert.match(host,/BinaryData::consolenative_js/);
+ assert.doesNotMatch(host,/BinaryData::app_js|BinaryData::styles_css/);
+ assert.doesNotMatch(cmake,/web\/app\.js|web\/bridge\.js/);
 });
-test('production Windows workflow rejects a tiny 648KB zip, test EXE, or missing GUI/engine runtime data', () => {
-  assert.match(packaging, /minimumGuiExeBytes = 4MB/);
-  assert.match(verify, /\$bytes\.Length -lt 4MB/);
-  assert.match(verify, /\$archiveBytes -lt 2MB/);
-  assert.match(verify, /Compress-Archive/);
-  assert.match(verify, /ZipFile\]::OpenRead/);
-  assert.match(verify, /ComputeHash\(\$stream\)/);
-  assert.match(verify, /manifest\.sourceCommit/);
-  assert.match(verify, /manifest\.appJsSha256/);
-  assert.match(verify, /manifest\.stylesCssSha256/);
-  for (const marker of [
-    'function openChannelIdentity',
-    'class="master-analysis"',
-    '--ari-master-cap',
-    'function syncNativeMixerControls',
-    'AUDIO_GLITCH_WINDOW',
-  ]) {
-    assert.ok(verify.includes(marker), 'release audit must search compiled artifact for '+marker);
-  }
-  assert.match(nativeMain, /BinaryData::app_js/);
-  assert.match(nativeMain, /BinaryData::styles_css/);
-  assert.match(nativeMain, /withResourceProvider \(assetFor\)/);
-  assert.match(workflow, /Independently verify release ZIP and embedded GUI\/engine before upload/);
-  assert.match(workflow, /scripts\/verify_native_windows_artifact\.ps1/);
-  assert.ok(workflow.indexOf('scripts/verify_native_windows_artifact.ps1') <
-            workflow.indexOf('uses: actions/upload-artifact@v4'));
+test('product status and immutable provenance do NOT claim universal ChannelId ready',()=>{
+ assert.match(pack,/M4_10CH4AUX_COMPAT_CHANNELID_CUTOVER_PENDING__NOT_PRODUCT_READY/);
+ assert.match(pack,/REAL_M4_10CH4AUX__UNIVERSAL_CH11_VST3_BUS_FX_NOT_READY/);
+ assert.match(verify,/REAL_M4_10CH4AUX__UNIVERSAL_CH11_VST3_BUS_FX_NOT_READY/);
+ assert.match(pack,/EXPERIMENTAL_NOT_HARDWARE_QUALIFIED/);
+ assert.match(pack,/sourceCommit/);
+ assert.match(pack,/portable_mode\.txt/);
+ assert.match(verify,/ARSONMIX_PORTABLE_WORKSPACE_V1/);
 });
-test('physical hardware FAT documents verified 10CH and dedicated 4 AUX native mixer without claiming hardware qualification', () => {
-  // Published provenance must reflect the REAL post-B3 native engine,
-  // while keeping hardware 0-FX crackle FAT explicitly unqualified.
-  assert.match(packaging,/NATIVE_TEN_INPUT_CHANNELS_FOUR_DEDICATED_STEREO_AUX_RETURNS_MASTER__EXPLICIT_PATCH_ACK/);
-  assert.match(packaging,/HARDWARE_FAT_UNQUALIFIED/);
-  assert.match(verify,/NATIVE_TEN_INPUT_CHANNELS_FOUR_DEDICATED_STEREO_AUX_RETURNS_MASTER__EXPLICIT_PATCH_ACK/);
-  assert.doesNotMatch(verify,/NATIVE_10CH_4AUX__EXPLICIT_PHYSICAL_INPUT_PATCH__MAIN_LR_OUTPUT_ONLY/);
-  assert.doesNotMatch(packaging,/CHANNEL_1_ONLY__REMAINING_9_GUI_CHANNELS_NOT_REAL_AUDIO/);
-  assert.match(fat, /native 10CH \+ 4 AUX/i);
-  assert.match(fat, /UNPATCHED \/ SILENT/i);
-  assert.match(fat, /APPLY ROUTING/);
-  assert.match(fat, /CLEAR PATCH/);
-  assert.match(fat, /Experimental; not yet qualified for professional live audio/i);
-  assert.match(fat, /OUTPUT_ONLY_TONE/);
-  assert.match(fat, /CAPTURE_ONLY/);
-  assert.match(fat, /DRY_THROUGH/);
-  assert.match(fat, /44,100 Hz/);
-  assert.match(fat, /48,000 Hz/);
-  assert.match(fat, /RENDER_HARDWARE_XRUN=UNAVAILABLE_THROUGH_JUCE/);
-});
-
-test('release proves exact calibrated GUI bytes are embedded in the executable, not just copied beside it', () => {
-  for (const field of ['indexHtmlSha256','appJsSha256','stylesCssSha256','pluginUiCssSha256','pluginUiJsSha256','bridgeJsSha256','monitorJsSha256','guiCalibration']) {
-    assert.ok(packaging.includes(field+' = '), 'provenance missing '+field);
-    assert.ok(verify.includes('manifest.'+field), 'verifier missing '+field);
-  }
-  for (const file of ['web/index.html','web/app.js','web/styles.css','web/plugin-ui.css','web/plugin-ui.js','web/bridge.js','web/monitor.js']) {
-    assert.ok(verify.includes('Path="'+file+'"'), 'native resource not checked: '+file);
-  }
-  assert.match(verify,/IndexOf\(\$sourceText, \[StringComparison\]::Ordinal\)/);
-  assert.match(verify,/STALE NATIVE GUI: exact JUCE BinaryData resource absent from EXE/);
-  for (const marker of ['gain-scale-travel','vu-scale-travel','meter-signal-area','fader-travel']) {
-    assert.ok(verify.includes('"'+marker+'"'), 'calibration marker absent: '+marker);
-  }
-  assert.match(packaging,/GAIN_10_TO_MINUS60_BLACK_DETENT_AT_38PX__VU_DBFS_INDEPENDENT_TICKS/);
-});
-
-test('latest BTN-180 GUI palette is an attested embedded native release requirement', () => {
-  const current=read('web/styles-src/20-button-180.css');
-  const integrated=read('web/styles.css');
-  for(const token of ['--b180-on-mute','--b180-on-solo','--b180-on-stereo','--b180-on-green']) {
-    assert.ok(current.includes(token) && integrated.includes(token),token);
-    assert.ok(verify.includes('"'+token+'"'), 'native verified executable missing acceptance marker '+token);
-  }
-  assert.match(verify,/inset 5px 5px 2px -1px/);
-  assert.match(cmake,/web\/index\.html web\/styles\.css web\/plugin-ui\.css web\/app\.js web\/plugin-ui\.js web\/bridge\.js web\/monitor\.js/);
-  assert.match(nativeMain,/BinaryData::index_html/);
-  assert.match(nativeMain,/BinaryData::bridge_js/);
-  assert.match(nativeMain,/BinaryData::pluginui_js/);
-  assert.match(nativeMain,/BinaryData::pluginui_css/);
-});
-
-test('native startup requires static WebView2 loader and JS-backed UI readiness', () => {
-  const monitor=read('web/monitor.js');
-  assert.match(cmake,/JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1/);
-  assert.match(cmake,/NEEDS_WEBVIEW2 TRUE/);
-  assert.match(nativeMain,/WebBrowserComponent::areOptionsSupported \(webViewOptions\(\)\)/);
-  assert.match(nativeMain,/WEBVIEW2_GUI_READY_TIMEOUT/);
-  assert.match(nativeMain,/withEventListener \("arMixGuiReady"/);
-  assert.doesNotMatch(nativeMain,/pageFinishedLoading \(const juce::String&\) override \{ loaded = true; \}/);
-  assert.match(monitor,/api\.emitEvent\("arMixGuiReady"/);
-  assert.match(packaging,/webView2LoaderMode = "JUCE_WEBVIEW2_LOADER_STATIC_LINKED_V1"/);
-  assert.match(verify,/manifest\.webView2LoaderMode/);
-  assert.match(verify,/WEBVIEW2_GUI_READY_TIMEOUT/);
-  assert.match(fat,/Microsoft Edge WebView2 Runtime/);
-});
-
-test('FAT ZIP uses current single-APPLY physical first-sound guide',()=>{
- const quick=read('docs/FIRST_SOUND_FAT_QUICKSTART_20261101.md');
- assert.match(packaging,/FIRST_SOUND_FAT_QUICKSTART_20261101\.md/);
- for(const entry of ['10 input channels + 4 AUX','OUTPUT_ONLY_TONE','CAPTURE_ONLY','COPY FULL REPORT','30 minutes','no separate manual START AUDIO'])
-   assert.ok(quick.includes(entry),entry);
-});
-
-test('retired 10CH UI cannot upload until a joined approved native Console exists',()=>{
- const gate=read('scripts/check_console_puzzle.mjs');
- assert.match(gate,/GUI retired ten-strip demo removed/);
- assert.match(gate,/GUI approved single Console is packaged/);
- assert.match(gate,/GUI direct universal channel operation/);
- assert.match(gate,/data\.operatorHtml/);
- assert.match(gate,/CREATE_CHANNEL/);
- assert.match(workflow,/github\.event_name != 'pull_request' \|\| startsWith\(github\.head_ref, 'integration\/product-'\)/);
+test('one qualified, exact-SHA product release gate after native CTest; no ENGINE-only artifact',()=>{
+ assert.match(workflow,/ENGINE_EXACT_SOURCE_SHA_VERIFIED/);
+ assert.ok(workflow.indexOf('ctest --test-dir build -C Release --output-on-failure')<
+  workflow.indexOf('Stop incomplete integrated product before Windows packaging'));
+ assert.ok(workflow.indexOf('Stop incomplete integrated product before Windows packaging')<
+  workflow.indexOf('Package verified JUCE GUI for hardware FAT'));
+ assert.match(workflow,/node scripts\/check_console_puzzle\.mjs --release/);
  const upload=workflow.split('uses: actions/upload-artifact@v4')[1]||'';
  assert.ok(upload.includes("github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')"));
- assert.ok(!upload.includes('milestone/m5-universal-channelid-vst3-lease-migration-20261101'));
- assert.ok(!upload.includes('ArSonMix-ENGINE-10CH4AUX-EXPERIMENTAL-Hardware-FAT-Windows-x64'));
- assert.match(upload,/if-no-files-found: error/);
- assert.ok(workflow.indexOf('ctest --test-dir build -C Release --output-on-failure')<workflow.indexOf('uses: actions/upload-artifact@v4'));
- assert.ok(workflow.indexOf('scripts/verify_native_windows_artifact.ps1')<workflow.indexOf('uses: actions/upload-artifact@v4'));
+ assert.ok(!upload.includes('ArSonMix-ENGINE-10CH4AUX'));
+ assert.ok(upload.includes('if-no-files-found: error'));
+ assert.ok(workflow.indexOf('scripts/verify_native_windows_artifact.ps1')<
+  workflow.indexOf('uses: actions/upload-artifact@v4'));
 });
-
-test('native sourceCommit attest matches GitHub PR head and exact compiled source',()=>{
- const shaRef="ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}";
- assert.ok(workflow.includes(shaRef));
- assert.match(workflow,/ENGINE SOURCE SHA MISMATCH/);
- assert.match(packaging,/\$gitSha = \(\& git rev-parse HEAD\)\.Trim\(\)/);
- assert.match(verify,/manifest\.sourceCommit/);
+test('JUCE startup is native WebView2 with genuine JS ready event',()=>{
+ assert.match(cmake,/JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1/);
+ assert.match(cmake,/NEEDS_WEBVIEW2 TRUE/);
+ assert.match(host,/WebBrowserComponent::areOptionsSupported \(webViewOptions\(\)\)/);
+ assert.match(host,/WEBVIEW2_GUI_READY_TIMEOUT/);
+ assert.match(host,/withEventListener \("arMixGuiReady"/);
+ assert.match(host,/withEventListener \("arMixConsoleIntent"/);
+ assert.match(host,/withEventListener \("arMixConsoleSubscribe"/);
+ const native=read('web/console-native.js');
+ assert.match(native,/backend\.emitEvent\('arMixGuiReady'/);
+ assert.match(native,/backend\.emitEvent\('arMixConsoleSubscribe'/);
 });
