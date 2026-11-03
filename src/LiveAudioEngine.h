@@ -70,6 +70,12 @@ public:
 
     struct Graph
     {
+        // This same Graph owns the original CH1 vendor rack, its bypass
+        // envelopes and transition scratch, for BOTH M4 and the admitted
+        // ChannelId external lease. All memory is allocated on CONTROL;
+        // the audio callback only dereferences the leased Graph*.
+        Graph() { dryScratch.setSize(2,maxFrames,false,true,false); }
+        juce::AudioBuffer<float> dryScratch;
         // Eight 4-bit physical slot indices in one x64 lock-free word.
         // Moving an insert publishes one complete order for the NEXT audio
         // block; the processor objects and their binary states never move.
@@ -100,8 +106,8 @@ public:
     {
         formats_.addFormat (std::make_unique<juce::VST3PluginFormat>());
         scratch_.setSize (2, maxFrames, false, true, false);
-        // One reusable preallocated stereo dry snapshot for transient FX bypass.
-        dryScratch_.setSize (2, maxFrames, false, true, false);
+        // CH1 bypass scratch now belongs to its shared Graph lifetime so
+        // a ChannelId PCM snapshot can retain the SAME original FX state.
         handoff_.initialize (graphOwned_.get());
     }
 
@@ -245,7 +251,6 @@ public:
         secondaryOutput_.stop(); // stop independent OBS consumer before audio graph teardown
         independent_.close();
         detach();
-        dryRoutingLab_.disable(); // retire M4 + ChannelId VST owners on CONTROL
         handoff_.resetAfterStop (graphOwned_.get());
         // Last owner releases vendor resources exactly once after detach.
         // Reused instances remain valid until their final control-owned slot.
@@ -635,6 +640,18 @@ public:
         totalLatency_.store(graphOwned_->latency,std::memory_order_release);
         handoff_.completeRetirement();
         completedSwaps_.fetch_add (1, std::memory_order_relaxed);
+        // Only after the original host graph is the new accepted owner,
+        // safely migrate its exact original CH1 VSTs/Orbit and all M4 lanes.
+        // No plugin is recreated; retain M4 if the hardware is armed,
+        // stale or PDC disallows this graph. CONTROL/timer thread only.
+        if(allOutputsDisarmed() && dryRoutingLab_.hasExplicitRoute() &&
+           directFence_.permitted() && !independent_.active()) {
+            if(auto* device=deviceManager_.getCurrentAudioDevice())
+                (void)dryRoutingLab_.admitChannelIdFromAcceptedM4(
+                    graphOwned_->count,
+                    juce::jmax(32,device->getCurrentBufferSizeSamples()),
+                    true,currentOriginalCh1Lease());
+        }
         return true;
     }
 
@@ -717,9 +734,10 @@ public:
             return false;
         prepareFxEditEnvelope(*next,device->getCurrentSampleRate());
         stagedOwner_=std::move(next);
-        // A new original CH1/Orbit vendor rack is not yet transferable
-        // into the native ChannelId lease. Select M4 BEFORE staging its
-        // realtime FX handoff; no new VST may disappear from audible PCM.
+        // CHANGE of original CH1 ownership must finish on the existing
+        // M4 buffer-boundary handoff first. Revoke the old native lease;
+        // once the staged Graph is accepted, re-admit its identical plugin
+        // state/editor/order into ChannelId without double processing.
         dryRoutingLab_.revokeChannelIdPcm();
         if(!handoff_.stage(stagedOwner_.get()))
         {
@@ -926,6 +944,10 @@ public:
                                                 staged->slots[i].latency);
             if (!staged->slots[i].bypass) staged->latency += staged->slots[i].latency;
         }
+        // Show recall can replace original CH1 owner and all its binary
+        // plugin state. Revoke ChannelId PCM BEFORE staging the pointer:
+        // the original handoff then owns the next audible vendor graph.
+        dryRoutingLab_.revokeChannelIdPcm();
         stagedOwner_ = std::move (staged);
         if (!handoff_.stage (stagedOwner_.get()))
         {
@@ -1061,7 +1083,8 @@ public:
         // admission retains the last accepted M4 with original Orbit/Show.
         if(result.isEmpty())
             (void)dryRoutingLab_.admitChannelIdFromAcceptedM4(
-                graphOwned_->count,frames,allOutputsDisarmed());
+                graphOwned_->count,frames,allOutputsDisarmed(),
+                currentOriginalCh1Lease());
         return result;
     }
     void disableDryRoutingLab() noexcept {
@@ -1094,7 +1117,8 @@ public:
             if(changed.isEmpty() && allOutputsDisarmed() &&
                oldRevision!=dryRoutingLab_.revision())
                 (void)dryRoutingLab_.admitChannelIdFromAcceptedM4(
-                    graphOwned_->count,frames,true);
+                    graphOwned_->count,frames,true,
+                    currentOriginalCh1Lease());
             return changed;
         } catch(const std::exception& ex) {
             return "SOURCE: native prepare failed; prior audio kept: " + juce::String(ex.what());
@@ -1125,7 +1149,8 @@ public:
                 graphOwned_->count,formats_,device->getCurrentSampleRate(),frames);
             if(changed.isEmpty() && allOutputsDisarmed())
                 (void)dryRoutingLab_.admitChannelIdFromAcceptedM4(
-                    graphOwned_->count,frames,true);
+                    graphOwned_->count,frames,true,
+                    currentOriginalCh1Lease());
             return changed;
         } catch(...) {
             return "CHANNEL PATCH: native preparation failed; previous mix preserved";
@@ -1174,7 +1199,8 @@ public:
                 formats_,device->getCurrentSampleRate(),frames);
             if(changed.isEmpty() && allOutputsDisarmed())
                 (void)dryRoutingLab_.admitChannelIdFromAcceptedM4(
-                    graphOwned_->count,frames,true);
+                    graphOwned_->count,frames,true,
+                    currentOriginalCh1Lease());
             return changed;
         } catch(...) {
             return "AUX CONNECT: failed native preparation; previous route retained";
@@ -1535,8 +1561,12 @@ private:
     armix::device::LiveSecondaryOutputDevice secondaryOutput_;
     std::optional<juce::AudioDeviceManager::AudioDeviceSetup> savedDirectSetup_;
     juce::AudioPluginFormatManager formats_;
-    std::unique_ptr<Graph> graphOwned_ {std::make_unique<Graph>()};
-    std::unique_ptr<Graph> stagedOwner_;
+    // Strong ownership stays on CONTROL. The admitted native ChannelId
+    // snapshot may retain exactly this Graph while the vendor plugin, Show
+    // state and editor remain alive through an in-flight callback.
+    // Handoff still publishes Graph* atomically; no shared_ptr on AUDIO.
+    std::shared_ptr<Graph> graphOwned_ {std::make_shared<Graph>()};
+    std::shared_ptr<Graph> stagedOwner_;
     armix::rt::LiveGraphHandoff<Graph> handoff_;
     // 0 idle, 1 fade-out, 2 fade-in. One controller producer, one RT reader.
     // No allocation, plugin re-instantiation or extra processing pass.
@@ -1544,7 +1574,6 @@ private:
     std::atomic<std::uint64_t> fxMovePendingOrder_ {Graph::canonicalOrder};
     bool attached_ = false;
     juce::AudioBuffer<float> scratch_;
-    juce::AudioBuffer<float> dryScratch_;
     armix::dsp::NativeMasterLoudness masterLoudness_;
     armix::diagnostics::DiagnosticTone diagnosticTone_;
     LiveDryRoutingLab dryRoutingLab_;
@@ -1698,36 +1727,30 @@ private:
         outputPeak_.store (0.f);
     }
 
-    // R0 bridge: existing CH1 multi-insert vendor state/Orbit stays owned by
-    // the live FX handoff. The audio callback holds its Cycle lease throughout
-    // this render pass, so an old plugin graph cannot retire in mid-block.
-    // This is a temporary ownership adapter until all inserts are represented
-    // by the same native multi-lane graph; not a second rendering engine.
-    struct LegacyChannelOneLease final { LiveAudioEngine* host; Graph* graph; };
-    static void processLegacyChannelOne(void* token,int lane,float* left,
-                                        float* right,int frames) noexcept
+    // ONE original CH1 rack processor for M4 compatibility and the native
+    // ChannelId external lease. Graph lifetime is owned by CONTROL and the
+    // accepted publisher, never acquired or released inside audio callback.
+    static void renderOriginalChannelOneGraph(Graph& graph,float* left,
+                                              float* right,int frames) noexcept
     {
-        if(lane!=0 || !token || !left || !right || frames<=0 || frames>maxFrames)return;
-        const auto& lease=*static_cast<LegacyChannelOneLease*>(token);
-        auto* const host=lease.host;
-        auto* const graph=lease.graph;
-        if(!host || !graph || graph->count<=0)return;
+        if(!left||!right||left==right||frames<=0||frames>maxFrames||
+           graph.count<=0)return;
         float* channels[]{left,right};
         juce::AudioBuffer<float> buffer(channels,2,frames);
         juce::MidiBuffer midi;
-        const auto order=graph->orderPacked.load(std::memory_order_acquire);
-        for(int logical=0;logical<graph->count;++logical)
+        const auto order=graph.orderPacked.load(std::memory_order_acquire);
+        for(int logical=0;logical<graph.count;++logical)
         {
             const int physical=Graph::physicalAt(order,logical);
-            auto& slot=graph->slots[physical];
+            auto& slot=graph.slots[physical];
             if(!slot.processor)continue;
-            auto& bypass=graph->bypassEnvelope[physical];
-            bypass.request(graph->bypassFlags[physical].load(std::memory_order_acquire));
+            auto& bypass=graph.bypassEnvelope[physical];
+            bypass.request(graph.bypassFlags[physical].load(std::memory_order_acquire));
             const bool blend=bypass.transitioning();
             if(blend)
             {
-                juce::FloatVectorOperations::copy(host->dryScratch_.getWritePointer(0),left,frames);
-                juce::FloatVectorOperations::copy(host->dryScratch_.getWritePointer(1),right,frames);
+                juce::FloatVectorOperations::copy(graph.dryScratch.getWritePointer(0),left,frames);
+                juce::FloatVectorOperations::copy(graph.dryScratch.getWritePointer(1),right,frames);
             }
             if(bypass.shouldProcessWet())
             {
@@ -1741,8 +1764,8 @@ private:
             }
             if(blend)
             {
-                const float* dryL=host->dryScratch_.getReadPointer(0);
-                const float* dryR=host->dryScratch_.getReadPointer(1);
+                const float* dryL=graph.dryScratch.getReadPointer(0);
+                const float* dryR=graph.dryScratch.getReadPointer(1);
                 for(int i=0;i<frames;++i)
                 {
                     const auto gains=bypass.next();
@@ -1752,6 +1775,43 @@ private:
             }
             midi.clear();
         }
+    }
+
+    // The M4 callback borrows the already-active graph from the same native
+    // handoff cycle. No vendor object is copied or re-instantiated.
+    struct LegacyChannelOneLease final {Graph* graph;};
+    static void processLegacyChannelOne(void* token,int lane,float* left,
+                                        float* right,int frames) noexcept
+    {
+        if(lane!=0||!token)return;
+        auto* graph=static_cast<LegacyChannelOneLease*>(token)->graph;
+        if(graph)renderOriginalChannelOneGraph(*graph,left,right,frames);
+    }
+
+    // Native external FX is a raw callback on the EXACT shared Graph owner
+    // bound by UnifiedLegacyProductionAdmission. The snapshot owns the
+    // strong reference and validates context==owner.get() off realtime.
+    static void processOwnedChannelOne(void* token,float* left,
+                                       float* right,int frames) noexcept
+    {
+        if(token)renderOriginalChannelOneGraph(
+            *static_cast<Graph*>(token),left,right,frames);
+    }
+    armix::mixer::DynamicChannelFxLeaseBank::ExternalLease
+    currentOriginalCh1Lease() const noexcept {
+        armix::mixer::DynamicChannelFxLeaseBank::ExternalLease fx;
+        if(!graphOwned_||graphOwned_->count<=0)return fx;
+        // Native PRE/POST/AUX cannot accept the original external rack
+        // with latent inserts until graph-wide PDC exists. A missing lease
+        // keeps the original M4 callback audible without false admission.
+        for(int i=0;i<graphOwned_->count;++i)
+            if(graphOwned_->slots[i].latency!=0)return fx;
+        fx.owner=std::static_pointer_cast<void>(graphOwned_); // CONTROL
+        fx.context=graphOwned_.get();
+        fx.render=&processOwnedChannelOne;
+        // id is bound from the compiled native ChannelId roster, NEVER a
+        // guessed display index/port; no native owner can be misdirected.
+        return fx;
     }
 
     void audioDeviceIOCallbackWithContext (
@@ -1874,7 +1934,7 @@ private:
             // Both native 10CH routing and the existing CH1 vendor FX chain
             // execute in ONE stereo output render pass. Never mix a parallel
             // CH1 output on top or copy vendor processors into another graph.
-            LegacyChannelOneLease ch1Lease{this,cycle.graph};
+            LegacyChannelOneLease ch1Lease{cycle.graph};
             std::array<int,2> nativeMainPair{{-1,-1}};
             std::array<int,2> nativeMonitorPair{{-1,-1}};
             const bool routed=dryRoutingLab_.process(inputs,inputChannels,outputs,

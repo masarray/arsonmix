@@ -973,13 +973,16 @@ public:
     // topology, retaining original per-lane JUCE VST3 leases and Show state.
     // This CONTROL-only transaction uses real sparse driver port masks and
     // the same physical destinations already validated by the M4 owner.
-    // The original CH1/Orbit external chain remains on M4 until its host
-    // lifetime/editor+reorder lease can be transferred without two renders.
+    // Occupied original CH1/Orbit is leased as its existing shared Graph,
+    // including the exact atomic bypass, FX order, state, tail and editor.
+    // The published ChannelId snapshot retains this owner until RT retires.
     bool admitChannelIdFromAcceptedM4(int occupiedExternalCh1Fx,
-                                     int deviceFrames,bool outputsDisarmed) {
+                                     int deviceFrames,bool outputsDisarmed,
+             armix::mixer::DynamicChannelFxLeaseBank::ExternalLease externalCh1={}) {
         channelIdPcmEpoch_.store(0,std::memory_order_release);
         try {
-        if(!outputsDisarmed||occupiedExternalCh1Fx!=0 ||
+        if(!outputsDisarmed || occupiedExternalCh1Fx<0 ||
+           (occupiedExternalCh1Fx>0)!=externalCh1.populated() ||
            !hasExplicitRoute()||!ready() ||
            topologyFault_.load(std::memory_order_acquire))
             return false;
@@ -1032,10 +1035,11 @@ public:
             deviceFrames,old->maxFramesPerPlugin()));
         auto applied=armix::mixer::UnifiedLegacyProductionAdmission::compileAndCommit(
             decoded.channels,{ports.data(),static_cast<std::size_t>(inputs)},
-            decoded.sends,decoded.aux,monitor,*old,false,hw,
+            decoded.sends,decoded.aux,monitor,*old,
+            occupiedExternalCh1Fx>0,hw,
             frames,32u*1024u*1024u,
             nativePublisher_.acceptedRevision(),generation,epoch(),
-            true,nativePublisher_,nativeAccepted_);
+            true,nativePublisher_,nativeAccepted_,std::move(externalCh1));
         if(!applied.ok() || generation!=epoch() || m4Revision!=revision())
             return false; // unchanged M4 PCM is the safe rollback
         channelIdPcmEpoch_.store(generation,std::memory_order_release);

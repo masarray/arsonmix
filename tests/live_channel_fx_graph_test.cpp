@@ -538,6 +538,7 @@ static void verifyOccupiedExternalCh1Owner() {
     assert(PreparedRenderGraph::compile(channels,ports,sends,route,err,aux));
     auto old=std::make_unique<LiveChannelFxGraph>(route,32,32);
     auto vendor=std::make_shared<Owner>();auto* raw=vendor.get();
+    std::weak_ptr<Owner> retiringOwner=vendor;
     std::array<float,32> src{},silent{},oldL{},oldR{},newL{},newR{};
     src.fill(.25f);
     const float* pins[]{src.data(),silent.data()};
@@ -559,7 +560,9 @@ static void verifyOccupiedExternalCh1Owner() {
     assert(LegacyGraphMigration::compile(channels,ports,sends,aux,false,
         monitor,32,2u*1024u*1024u,migrated,migrationError));
     DynamicChannelFxLeaseBank::ExternalLease lease;
-    lease.id=migrated.ids.inputs[0];
+    // The original JUCE Graph has no ChannelId. The native ADMISSION,
+    // not GUI strip ordinals, must bind the verified imported CH1 identity.
+    lease.id=ChannelId{};
     lease.owner=std::static_pointer_cast<void>(vendor);
     lease.context=raw;
     lease.render=+[](void* c,float* l,float* r,int n) noexcept {
@@ -570,12 +573,23 @@ static void verifyOccupiedExternalCh1Owner() {
         channels,ports,sends,aux,monitor,*old,true,outputs,
         32,2u*1024u*1024u,0,epoch,epoch,true,publisher,accepted,invalid);
     assert(status.fault==UnifiedLegacyProductionAdmission::Fault::legacyCh1ExternalFx);
+    // A supplied but WRONG nonzero ChannelId cannot hijack another lane.
+    invalid=lease;invalid.id=ChannelId{987654};
+    status=UnifiedLegacyProductionAdmission::compileAndCommit(
+        channels,ports,sends,aux,monitor,*old,true,outputs,
+        32,2u*1024u*1024u,0,epoch,epoch,true,publisher,accepted,invalid);
+    assert(status.fault==UnifiedLegacyProductionAdmission::Fault::legacyCh1ExternalFx);
+    assert(publisher.acceptedRevision()==0);
     status=UnifiedLegacyProductionAdmission::compileAndCommit(
         channels,ports,sends,aux,monitor,*old,true,outputs,
         32,2u*1024u*1024u,0,epoch,epoch,true,publisher,accepted,lease);
     assert(status.ok()&&publisher.acceptedRevision()==1);
-    assert(accepted.fxOwners->externalChannel()==lease.id);
+    assert(accepted.fxOwners->externalChannel()==migrated.ids.inputs[0]);
+    // The publisher owns the exact vendor processBlock and GUI state,
+    // regardless of the former M4 route/control owner's retirement.
     old.reset();vendor.reset();
+    lease={};invalid={};
+    assert(!retiringOwner.expired());
     const auto fallback=+[](ChannelId,float*,float*,int) noexcept {
         assert(false && "occupied vendor FX must never disappear");
     };
@@ -591,6 +605,12 @@ static void verifyOccupiedExternalCh1Owner() {
                              32,false,fallback));
     assert(newL[31]==0.f&&newR[31]==0.f);
     assert(publisher.acceptedRevision()==1);
+    // Once no callback may hold the accepted PCM snapshot, there is no
+    // hidden second FX owner. All vendor/plugin cleanup is off realtime.
+    publisher.unpublish();
+    accepted=UnifiedLegacyAccepted{};
+    assert(publisher.pollRetirement());
+    assert(retiringOwner.expired());
 }
 
 // M-U1 source/processing format independence: a mono microphone through a

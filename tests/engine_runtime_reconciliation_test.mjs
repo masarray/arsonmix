@@ -56,17 +56,36 @@ test('unpatched is silent and diagnostic path cannot host a legacy second VST en
 });
 
 test('original CH1 vendor FX/Orbit is leased exactly once in accepted M4 renderer',()=>{
-  const old=engine.indexOf('static void processLegacyChannelOne(');
+  const old=engine.indexOf('static void renderOriginalChannelOneGraph(');
   const end=engine.indexOf('void audioDeviceIOCallbackWithContext',old);
   assert.ok(old>=0&&end>old);
   const fx=engine.slice(old,end);
   assert.match(fx,/slot\.processor->processBlock\(buffer,midi\)/);
-  assert.match(fx,/bypass\.request\(graph->bypassFlags/);
+  assert.match(fx,/bypass\.request\(graph\.bypassFlags/);
   assert.match(fx,/catch\(\.\.\.\)/);
-  assert.match(callback,/LegacyChannelOneLease ch1Lease\{this,cycle\.graph\}/);
+  assert.match(callback,/LegacyChannelOneLease ch1Lease\{cycle\.graph\}/);
   assert.match(callback,/&processLegacyChannelOne/);
   assert.doesNotMatch(callback,/std::make_unique<|std::make_shared<|createPluginInstance\(/,
     'no FX instantiation or graph allocation in device callback');
+});
+
+test('occupied CH1 Orbit uses one strong Graph lease through native renderer and Show handoff',()=>{
+  assert.match(engine,/std::shared_ptr<Graph> graphOwned_\s*\{std::make_shared<Graph>\(\)\}/);
+  assert.match(engine,/std::shared_ptr<Graph> stagedOwner_/);
+  assert.match(engine,/fx\.owner=std::static_pointer_cast<void>\(graphOwned_\)/);
+  assert.match(engine,/fx\.context=graphOwned_\.get\(\)/);
+  assert.match(engine,/fx\.render=&processOwnedChannelOne/);
+  assert.match(engine,/renderOriginalChannelOneGraph\(\*static_cast<Graph\*>\(token\)/);
+  assert.match(engine,/Graph\(\) \{ dryScratch\.setSize\(2,maxFrames,false,true,false\); \}/);
+  assert.match(engine,/graph\.dryScratch\.getWritePointer\(0\)/);
+  assert.match(engine,/graph\.orderPacked\.load\(std::memory_order_acquire\)/);
+  assert.match(engine,/dryRoutingLab_\.revokeChannelIdPcm\(\)/);
+  assert.equal(count(engine,/dryRoutingLab_\.revokeChannelIdPcm\(\)/g),2,
+    'both Show recall and original CH1 ADD/REMOVE must revoke native renderer');
+  assert.match(physical,/occupiedExternalCh1Fx>0,hw/);
+  assert.match(physical,/nativePublisher_,nativeAccepted_,std::move\(externalCh1\)/);
+  assert.match(physical,/channelIdPcmEpoch_\.store\(0,std::memory_order_release\)/);
+  assert.equal(count(engine,/void audioDeviceIOCallbackWithContext\s*\(/g),1);
 });
 
 test('shipping application does not compile a second test-only native mixer',()=>{

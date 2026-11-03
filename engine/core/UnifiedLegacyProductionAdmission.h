@@ -116,8 +116,14 @@ public:
         if(!allOutputsDisarmed) {
             result.fault=Fault::outputArmed;return result;
         }
+        // A real legacy CH1 Graph owner may have no ChannelId until the
+        // accepted sparse-port topology has been compiled. Validate its
+        // lifetime/function now; bind its exact id from the compiled graph,
+        // not from a guessed strip index or WebView ordinal.
         if(legacyExternalCh1FxActive!=externalCh1.populated() ||
-           (legacyExternalCh1FxActive && !externalCh1.valid())) {
+           (legacyExternalCh1FxActive &&
+            (!externalCh1.owner || externalCh1.context!=externalCh1.owner.get() ||
+             !externalCh1.render))) {
             result.fault=Fault::legacyCh1ExternalFx;return result;
         }
         // FxInstance owns one already-prepared stereo block. Do not let the
@@ -139,10 +145,15 @@ public:
             result.fault=Fault::legacyGraphInvalid;return result;
         }
         using Bank=DynamicChannelFxLeaseBank;
-        if(externalCh1.populated() &&
-           (externalCh1.id!=candidate.ids.inputs[0] ||
-            acceptedM4Fx.insertsOn(0)!=0)) {
-            result.fault=Fault::legacyCh1ExternalFx;return result;
+        if(externalCh1.populated()) {
+            if((externalCh1.id.value &&
+                externalCh1.id!=candidate.ids.inputs[0]) ||
+               acceptedM4Fx.insertsOn(0)!=0) {
+                result.fault=Fault::legacyCh1ExternalFx;return result;
+            }
+            // The native compiler is the ONLY authority for stable ids.
+            // The original CH1 owner can never become an arbitrary bus.
+            externalCh1.id=candidate.ids.inputs[0];
         }
         std::array<Bank::Assignment,stripCount+auxBusCount> lanes{};
         for(int i=0;i<stripCount+auxBusCount;++i) {
