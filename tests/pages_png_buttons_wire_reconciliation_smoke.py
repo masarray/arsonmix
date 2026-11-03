@@ -24,6 +24,9 @@ SPRITE="mute-solo-pfl-56x37.png"
 
 def verify_bundle(dist):
     generated=dist/"preview-buttons"
+    entry=(dist/"preview/index.html").read_text(encoding="utf-8")
+    assert "frame.src='../preview-buttons/index.html?b='" in entry, "Public /preview/ still opens obsolete mixer renderer"
+    assert (dist/"preview-buttons/index.html").is_file(), "iframe target missing from Pages build"
     original=(REFERENCE/"index.html").read_text(encoding="utf-8")
     html=(generated/"index.html").read_text(encoding="utf-8")
     meta=json.loads((generated/"build.json").read_text(encoding="utf-8"))
@@ -69,6 +72,18 @@ def verify_browser(dist):
     html=dist/"preview-buttons/index.html"
     with sync_playwright() as p:
         browser=p.chromium.launch(headless=True)
+        # Public /preview/ is the user-facing route, not a separate PNG demo.
+        entry=browser.new_page(viewport={"width":1680,"height":900})
+        entry.goto((dist/"preview/index.html").as_uri())
+        iframe=entry.frame_locator("#console")
+        iframe.locator('#tracks .strip[data-id="1"] .mx-hw-row').wait_for(timeout=15000)
+        key=iframe.locator('#tracks .strip[data-id="1"] button[data-hw-kind="mute"]')
+        assert SPRITE in key.evaluate("el=>getComputedStyle(el,'::before').backgroundImage"), "Public /preview/ did not load approved PNG"
+        assert iframe.locator("#wireLayer").count()==1, "Public /preview/ lost canonical WIRE"
+        state=key.get_attribute("aria-pressed")
+        key.click()
+        assert key.get_attribute("aria-pressed")!=state, "Public /preview/ MUTE latch failed"
+        entry.close()
         for width in (1366,1680,1920):
             page=browser.new_page(viewport={"width":width,"height":900})
             errors=[]
