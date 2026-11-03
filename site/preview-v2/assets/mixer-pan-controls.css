@@ -41,7 +41,7 @@
 .console-body .strip .pan-control.is-centered::after{background:#a2e3cf!important}
 
 
-/* V19 operator optical alignment: lift PAN thumb 2px above V18,
-   without moving the rail, input hitbox, detent or adjacent SEND thumb. */
-.console-body .center-pan::-webkit-slider-thumb{margin-top:-12px!important}
+/* V22 PAN-only optical nudge: thumb 2px higher than V19.
+   Rail, detent, input hitbox, SEND slider and drag mapping are unchanged. */
+.console-body .center-pan::-webkit-slider-thumb{margin-top:-14px!important}
 .console-body .ari-horizontal::-webkit-slider-thumb{margin-top:-10px!important}
