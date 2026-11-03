@@ -50,7 +50,7 @@ test('JUCE native resources track the approved calibrated GUI without maintainin
   const cpp=read('src/Main.cpp');
   const sourceCss=read('web/styles-src/42-mixer-premium.css');
   const standalone=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
-  // Verify legacy assets in original order, while allowing additive UI modules.
+  // Legacy migration assets remain embedded for history; live root MUST use approved Console.
   const assetList=cmake.match(/juce_add_binary_data\(ARMixAssets SOURCES\s+([^)]+)\)/)?.[1];
   assert.ok(assetList,'native WebView2 source list missing');
   const expected=['web/index.html','web/styles.css','web/plugin-ui.css','web/app.js',
@@ -58,7 +58,12 @@ test('JUCE native resources track the approved calibrated GUI without maintainin
   const listed=assetList.trim().split(/\s+/);
   for(const asset of expected) assert.ok(listed.includes(asset),'missing WebView2 asset '+asset);
   assert.equal(new Set(listed).size,listed.length,'duplicate native WebView2 resource');
-  for (const resource of ['index_html','styles_css','pluginui_css','app_js','pluginui_js','bridge_js','monitor_js']) {
+  for(const path of ['web/console-native.html','web/console-native.css','web/console-native.js'])
+    assert.ok(listed.includes(path),'approved native Console not embedded: '+path);
+  assert.match(cpp,/path == "\/" \|\| path == "\/index.html"/);
+  assert.match(cpp,/data = BinaryData::consolenative_html/);
+  assert.doesNotMatch(cpp,/data = BinaryData::index_html/);
+  for (const resource of ['consolenative_html','consolenative_css','consolenative_js','styles_css','pluginui_css','app_js','pluginui_js','bridge_js','monitor_js']) {
     assert.ok(cpp.includes('BinaryData::'+resource),resource+' missing from WebView provider');
   }
   assert.ok(css.endsWith(sourceCss), 'native CSS must end with its authoritative calibration module');
