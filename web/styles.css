@@ -611,7 +611,7 @@ html[data-mixperf="baseline"] .toolbar .spec-device:hover{border-color:#3586a2}
    Semantic colors alone define the latched state; only the transient :active
    pointer press moves the cap inward by 1px without changing its layout slot. */
 :root{
- --b180-off:#cbd1d1;--b180-edge:#747f7f;--b180-off-ink:#172229;
+ --b180-off:#E7EFF0;--b180-edge:#747f7f;--b180-off-ink:#172229;
  --b180-color:var(--b180-off);--b180-border:var(--b180-edge);
  --b180-ink:var(--b180-off-ink);
  --b180-on-cyan:#94e8ed;--b180-on-green:#91edac;
@@ -1447,3 +1447,160 @@ html:not([data-mixperf="baseline"]):not([data-mixperf="layers-off"]):not([data-m
  background-clip:content-box;border:0;box-shadow:none;
 }
 #app #mixer .meter .clip-led.latched{box-shadow:none!important}
+/* Owner-approved V5 graphite hardware keys, production native/legacy console.
+   ONE SVG cutout legend, ONE white edge shine, asymmetric occluded leakage.
+   No hover repaint, SVG filters, blur, infinite animation, or fake audio state.
+   This module is LAST in the deterministic CSS build, replacing BTN-180 only
+   on opt-in tactile mixer buttons. Navigation, routing pins, meters, faders,
+   editor launchers, dropdowns and ordinary dialog actions are NOT backlit. */
+#app button.mx-hw-key {
+  --mx-hw-led:210,225,234;
+  position:relative!important;
+  display:inline-block!important;
+  box-sizing:border-box!important;
+  min-width:0!important;
+  padding:2px!important;
+  overflow:hidden!important;
+  isolation:isolate!important;
+  border:1px solid #0c151b!important;
+  border-radius:5px!important;
+  background:linear-gradient(180deg,#0b141b,#25343d)!important;
+  box-shadow:inset 0 2px 4px #03080db5!important;
+  color:transparent!important;
+  text-shadow:none!important;
+  letter-spacing:0!important;
+  line-height:normal!important;
+  filter:none!important;
+  backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
+  transform:none!important;
+  transition:none!important;
+  text-align:center!important;
+  cursor:pointer;
+  touch-action:manipulation;
+}
+#app button.mx-hw-key.mx-hw-mute {--mx-hw-led:255,64,85}
+#app button.mx-hw-key.mx-hw-solo {--mx-hw-led:255,208,44}
+#app button.mx-hw-key.mx-hw-cue {--mx-hw-led:90,200,231}
+#app button.mx-hw-key.mx-hw-processing {--mx-hw-led:87,211,189}
+#app button.mx-hw-key.mx-hw-phase {--mx-hw-led:243,164,81}
+#app button.mx-hw-key.mx-hw-link {--mx-hw-led:163,141,235}
+#app button.mx-hw-key.mx-hw-neutral {--mx-hw-led:210,225,234}
+/* V5 leakage strategy: four tiny STATIC gradients only in the closest
+   1–2px gap, unequal sides, lower-center stronger; top almost occluded. */
+#app button.mx-hw-key::before {
+  content:""!important;
+  display:block!important;
+  position:absolute!important;
+  inset:1px!important;
+  border:0!important;
+  border-radius:4px!important;
+  width:auto!important;height:auto!important;
+  transform:none!important;
+  pointer-events:none!important;
+  z-index:2!important;
+  opacity:0!important;
+  box-shadow:none!important;
+  background:
+    linear-gradient(90deg,transparent 0%,rgba(var(--mx-hw-led),.035) 18%,
+      rgba(var(--mx-hw-led),.16) 33%,rgba(var(--mx-hw-led),.46) 49%,
+      rgba(var(--mx-hw-led),.27) 63%,rgba(var(--mx-hw-led),.07) 80%,transparent 100%)
+      center bottom / calc(100% - 12px) 2px no-repeat,
+    linear-gradient(180deg,transparent 0%,transparent 30%,
+      rgba(var(--mx-hw-led),.045) 50%,rgba(var(--mx-hw-led),.21) 75%,
+      rgba(var(--mx-hw-led),.1) 88%,transparent 100%)
+      left bottom / 2px 100% no-repeat,
+    linear-gradient(180deg,transparent 0%,transparent 44%,
+      rgba(var(--mx-hw-led),.075) 65%,rgba(var(--mx-hw-led),.17) 85%,
+      transparent 100%)
+      right bottom / 2px 100% no-repeat,
+    linear-gradient(90deg,transparent 0%,transparent 34%,
+      rgba(var(--mx-hw-led),.055) 50%,transparent 67%,transparent 100%)
+      center top / calc(100% - 18px) 1px no-repeat!important;
+}
+#app button.mx-hw-key::after{content:none!important;display:none!important}
+#app button.mx-hw-key[aria-pressed="true"]::before,
+#app button.mx-hw-key.active::before,
+#app button.mx-hw-key.selected::before,
+#app button.mx-hw-key.power-on::before,
+#app button.mx-hw-key[data-mx-hw-on="true"]::before {opacity:1!important}
+#app button.mx-hw-key > svg.mx-hw-face {
+  position:absolute!important;
+  z-index:1!important;
+  top:2px!important;right:2px!important;bottom:2px!important;left:2px!important;
+  width:calc(100% - 4px)!important;
+  height:calc(100% - 4px)!important;
+  display:block!important;
+  min-height:0!important;
+  overflow:hidden!important;
+  pointer-events:none!important;
+  transform:translateY(0)!important;
+  transition:none!important;
+  filter:none!important;
+}
+#app button.mx-hw-key svg .mx-hw-lamp {opacity:0!important}
+#app button.mx-hw-key[aria-pressed="true"] svg .mx-hw-lamp,
+#app button.mx-hw-key.active svg .mx-hw-lamp,
+#app button.mx-hw-key.selected svg .mx-hw-lamp,
+#app button.mx-hw-key.power-on svg .mx-hw-lamp,
+#app button.mx-hw-key[data-mx-hw-on="true"] svg .mx-hw-lamp {opacity:1!important}
+#app button.mx-hw-key[aria-pressed="true"] > svg.mx-hw-face,
+#app button.mx-hw-key.active > svg.mx-hw-face,
+#app button.mx-hw-key[data-mx-hw-on="true"] > svg.mx-hw-face {
+  transform:translateY(1px)!important;
+}
+#app button.mx-hw-key > .mx-hw-screen-reader{
+  position:absolute!important;
+  width:1px!important;height:1px!important;
+  margin:-1px!important;padding:0!important;
+  border:0!important;overflow:hidden!important;
+  clip-path:inset(50%)!important;
+  white-space:nowrap!important;
+}
+#app button.mx-hw-key:hover:not(:disabled){
+  filter:none!important;
+  background:linear-gradient(180deg,#0b141b,#25343d)!important;
+  box-shadow:inset 0 2px 4px #03080db5!important;
+}
+#app button.mx-hw-key:active:not(:disabled){
+  transform:none!important;
+  background:linear-gradient(180deg,#0b141b,#25343d)!important;
+  box-shadow:inset 0 2px 4px #03080db5!important;
+}
+#app button.mx-hw-key:active:not(:disabled) > svg.mx-hw-face{
+  transform:translateY(1px)!important;
+}
+#app button.mx-hw-key:focus-visible{
+  outline:2px solid #9bbecd!important;
+  outline-offset:2px!important;
+}
+#app button.mx-hw-key:disabled {
+  cursor:not-allowed!important;
+  opacity:.47!important;
+  filter:none!important;
+}
+#app button.mx-hw-key:disabled::before{opacity:0!important}
+#app button.mx-hw-key:disabled svg .mx-hw-lamp{opacity:0!important}
+/* Keep target strip geometry intact, bypassing the legacy BTN-180 face. */
+#app #mixer .channel-actions button.mx-hw-key,
+#app #mixer .utility-row button.mx-hw-key {
+  flex:1 1 0;
+}
+/* The legacy MASTER MUTE was sized only by .candy. Own its 29px geometry
+   explicitly after replacing that obsolete class, matching every strip. */
+#app #masterLeft .master-actions button.mx-hw-key,
+#app #masterMute.mx-hw-key{
+  height:29px!important;
+  min-height:29px!important;
+  max-height:29px!important;
+  align-self:center!important;
+}
+#app #mixer [data-channel-format-toggle].mx-hw-key{
+  min-width:20px!important;
+}
+#app .arV6Controls button.mx-hw-key{width:28px!important;height:28px!important;padding:2px!important}
+#app .arV6FxSlot button.mx-hw-key{min-width:27px!important;min-height:22px!important;padding:2px!important}
+#app .arV6Send button.mx-hw-key{min-width:34px!important;min-height:20px!important;padding:2px!important}
+@media(prefers-reduced-motion:reduce){
+  #app button.mx-hw-key,#app button.mx-hw-key > svg.mx-hw-face{transition:none!important}
+}

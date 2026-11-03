@@ -135,6 +135,31 @@ test('FAT ZIP uses current single-APPLY physical first-sound guide',()=>{
    assert.ok(quick.includes(entry),entry);
 });
 
+test('sole ENGINE #266 may upload an unqualified, exact-SHA physical FAT ZIP',()=>{
+  const upload=workflow.split('uses: actions/upload-artifact@v4')[1]||'';
+  assert.ok(upload.includes('milestone/m5-universal-channelid-vst3-lease-migration-20261101'));
+  assert.ok(!upload.includes('milestone/m4-unified-native-multichannel-fx-20261101'));
+  assert.ok(upload.includes('ArSonMix-ENGINE-10CH4AUX-EXPERIMENTAL-Hardware-FAT-Windows-x64'));
+  assert.match(upload,/if-no-files-found: error/);
+  assert.ok(workflow.indexOf('ctest --test-dir build -C Release --output-on-failure')<
+            workflow.indexOf('uses: actions/upload-artifact@v4'));
+  assert.ok(workflow.indexOf('scripts/verify_native_windows_artifact.ps1')<
+            workflow.indexOf('uses: actions/upload-artifact@v4'));
+  const guide=read('docs/FIRST_SOUND_FAT_QUICKSTART_20261101.md');
+  assert.match(guide,/single canonical ENGINE #266 branch/);
+  assert.match(guide,/10CH \+ 4AUX/);
+  assert.match(guide,/sourceCommit/);
+  assert.match(guide,/exeSha256/);
+});
+
+test('native sourceCommit attest matches GitHub PR head and exact compiled source',()=>{
+ const shaRef="ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}";
+ assert.ok(workflow.includes(shaRef));
+ assert.match(workflow,/ENGINE SOURCE SHA MISMATCH/);
+ assert.match(packaging,/\$gitSha = \(\& git rev-parse HEAD\)\.Trim\(\)/);
+ assert.match(verify,/manifest\.sourceCommit/);
+});
+
 test('field FAT collector is packaged, checked against source + ZIP hash, never certifies audio',()=>{
   const collector=read('scripts/collect_hardware_fat_windows.ps1');
   for(const part of ['OUTPUT_ONLY_TONE','CAPTURE_ONLY','DRY_THROUGH_0FX','FAT_RUNS.json',

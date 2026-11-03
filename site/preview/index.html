@@ -13,7 +13,7 @@ const frame=document.getElementById('console'), label=null,banner=document.getEl
 let currentSha='',busySince=0;
 document.addEventListener('pointerdown',()=>busySince=Date.now(),{passive:true});
 frame.addEventListener('load',()=>{try{frame.contentDocument.addEventListener('pointerdown',()=>busySince=Date.now(),{passive:true})}catch{}});
-function reload(){frame.src='./mixer.html?b='+encodeURIComponent(currentSha||Date.now());banner.classList.remove('show')}
+function reload(){frame.src='../preview-buttons/index.html?b='+encodeURIComponent(currentSha||Date.now());banner.classList.remove('show')}
 document.getElementById('reload').addEventListener('click',reload);
 async function checkBuild(){
  try{

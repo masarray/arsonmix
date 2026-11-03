@@ -1,3 +1,5 @@
+> **SUPERSEDED FOR DELIVERY ORDER:** use [INTEGRATION/RELEASE v7](INTEGRATION_RELEASE_DELIVERY_V7.md) and [RELEASE TRAIN v7](../RELEASE_TRAIN_UNIVERSAL_CONSOLE_V7_20261101.md). #276 is staging only; final UAT after G4 integrated product.
+
 # INTEGRATION / RELEASE / HARDWARE FAT WORKSTREAM — ArSonMix v6
 **Coordination epic:** [issue #192](https://github.com/masarray/arsonmix/issues/192). **Hardware root issue:** [#15](https://github.com/masarray/arsonmix/issues/15). **Native PR:** [#266](https://github.com/masarray/arsonmix/pull/266). **UI branch:** `work/operator-console-v6`. Read [execution lock](../EXECUTION_LOCK_UNIVERSAL_LIVE_CONSOLE_V6_20261101.md), PRD/ARD v5. This lane coordinates, tests and releases; it does not invent a separate graph or own engine/GUI implementation files.
 
@@ -26,3 +28,15 @@ Reconcile current `main`, engine #266 and GUI branch WITHOUT blind merges. Estab
 
 ## Coordination and CI discipline
 No owner edits under `engine/core/**` or `web/**` without first coordinating in #192. Create isolated integration tests rather than patching engine to satisfy a UI string assertion. CI stage only after meaningful combined checkpoints, no repetitive release upload before passing tests. Record one status row per exact SHA: Native | UI | Artifact | Physical FAT. Failing column prevents production label. Unattended thread/agent work is NOT implied by issues; separate agents must explicitly be started with these handoff docs.
+
+## Joined executable E3 — physical E2 native ChannelId + operator WebView2 + FAT (2026-11-03)
+
+Integration owner #270 has assembled one **exact-source-SHA candidate** from:
+- main: latest approved Pages/visual preview and CSS tests, no visual regression or historical GUI reset
+- ENGINE #266 @ `8d138b3959931bbc387c852ae3234e3a532cb1c2`: sole JUCE callback, hardware-verified fixed 10CH/4AUX ChannelId render, original CH1/Orbit/Show in-memory strong owner, true M4/ChannelId renderer readback, native stereo meters, structural and realtime source/FX controls
+- GUI #271 @ `67ef6e7b0afab173840e611b7fdf6627a96e714a`: latest `web/` operator workflow with accepted legacyM4 controls, hardware key navigation and fader/pan UI, *not* false universal CH11/Group operations
+- FAT #270 @ `6959a34f5acf76a0d60ab473301816f3899dc237`: native S0/Console v6 contract, exact-blob ZIP/PE/source checks and immutable read-only offline field FAT collector
+
+Collision policy: engine is authority for `src/`, `engine/`, `CMakeLists.txt` and PCM tests. GUI #271 is authority for the `web/` application JS and native UI assets; main is authority for `site/preview-v2/` and `AGENTS.md` visual lock. FAT #270 is authority for hardware collector/verification scripts. The two workflow files and two shared CI tests were reconciled explicitly, with one exact-head Windows executable+CTest+artifact producer. Native packaging now includes `web/hardware-keys.js` and the real fader and PAN PNG assets via JUCE BinaryData, with allowlisted offline asset URLs. All WebView2 operator JS including hardware keys, mixer-io and mixer-layout is SHA-verified INSIDE the packaged EXE rather than on disk only.
+
+**Acceptance boundary:** This is a single-source *joined integration candidate*, not full v8 universal product sign-off. GUI still uses fenced `legacyM4` for operator actions, even when the one callback PCM is native ChannelId. `productionCallbackLive=false` is correct for unsupported CH11/Group/FX Return universal CREATE/WIRE. Original CH1 vendor rack remains blocked from disk-native Show save/recall (no serialization yet). For release, first require exact-joined Windows CI PASS and artifact SHA, then physical 0FX/1FX ASIO/WASAPI long soak and crackle #15 root-cause, then full native ChannelId supportedOps/ACK and persistent Show. Do not set a false capability or promote a browser fixture as acoustic FAT.

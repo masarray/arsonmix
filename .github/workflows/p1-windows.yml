@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - 'CMakeLists.txt'
+      - 'integration/console-v6/**'
       - 'src/**'
       - 'engine/**'
       - 'web/**'
@@ -15,6 +16,9 @@ on:
       # Native Windows gate executes this JS integration contract; source-only
       # contract corrections must not leave a stale failed release gate.
       - 'tests/live_routing_ui_contract_test.mjs'
+      - 'tests/console_v6_fat_gate_test.mjs'
+      - 'tests/native_embedded_gui_assets_contract_test.mjs'
+      - 'scripts/collect_hardware_fat_windows.ps1'
       - 'scripts/package_native_windows.ps1'
       - 'scripts/verify_native_windows_artifact.ps1'
       - 'scripts/factoryfx_release_bundle.py'
@@ -27,13 +31,16 @@ on:
   pull_request:
     paths:
       - 'CMakeLists.txt'
+      - 'integration/console-v6/**'
       - 'src/**'
       - 'engine/**'
       - 'tests/*.cpp'
-      - 'tests/console_v6_fat_gate_test.mjs'
       - 'tests/*native*contract*.mjs'
       - 'tests/live_graph_contract_test.mjs'
       - 'tests/ci_workflow_efficiency_test.mjs'
+      - 'tests/console_v6_fat_gate_test.mjs'
+      - 'tests/native_embedded_gui_assets_contract_test.mjs'
+      - 'scripts/collect_hardware_fat_windows.ps1'
       - 'scripts/package_native_windows.ps1'
       - 'scripts/verify_native_windows_artifact.ps1'
       - 'scripts/factoryfx_release_bundle.py'
@@ -56,6 +63,26 @@ jobs:
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
+        with:
+          # PR default is a transient refs/pull/*/merge. Test and package
+          # the precise approved ENGINE SHA, never a synthetic merge.
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      - name: Attest exact source SHA before native compile or packaging
+        shell: pwsh
+        run: |
+          $expected = "${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}"
+          $actual = (& git rev-parse HEAD).Trim()
+          if ($expected -notmatch '^[0-9a-f]{40}$' -or $actual -ne $expected) {
+            throw "ENGINE SOURCE SHA MISMATCH: expected=$expected checkout=$actual"
+          }
+          Write-Host "ENGINE_EXACT_SOURCE_SHA_VERIFIED: $actual"
+      - name: Cheap canonical Console v6 puzzle socket gate (no JUCE)
+        run: |
+          node --test tests/engine_runtime_reconciliation_test.mjs
+          node scripts/check_console_puzzle.mjs
+      - name: Stop incomplete integrated product promotion before JUCE checkout
+        if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-') }}
+        run: node scripts/check_console_puzzle.mjs --release
       - name: Fast offline FactoryFX release and integrity contract tests
         shell: pwsh
         run: |
@@ -78,7 +105,7 @@ jobs:
         run: |
           # Do not hide earlier Node failures with the exit code of the LAST
           # command. One Node invocation also avoids repeated startup costs.
-          foreach ($file in @('web/bridge.js', 'web/plugin-ui.js', 'web/monitor.js', 'web/app.js', 'web/mixer-io.js', 'web/mixer-layout.js')) {
+          foreach ($file in @('web/bridge.js', 'web/plugin-ui.js', 'web/monitor.js', 'web/app.js', 'web/mixer-io.js', 'web/mixer-layout.js', 'web/hardware-keys.js')) {
             node --check $file
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
@@ -98,6 +125,7 @@ jobs:
             'tests/direct_restore_recovery_contract_test.mjs'
             'tests/native_artifact_packaging_contract_test.mjs'
             'tests/console_v6_fat_gate_test.mjs'
+            'tests/native_embedded_gui_assets_contract_test.mjs'
             'tests/portable_workspace_contract_test.mjs'
             'tests/plugin_vault_contract_test.mjs'
             'tests/plugin_ui_contract_test.mjs'
@@ -135,12 +163,12 @@ jobs:
           & ./scripts/verify_native_windows_artifact.ps1 -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       # PRs compile/CTest/package but never silently publish a stable build.
-      # This single M4 FAT branch is explicitly allowed to upload an
-      # UNQUALIFIED experimental ZIP for real physical hardware testing.
+      # Exactly one joined ENGINE+GUI+FAT PR can upload an UNQUALIFIED
+      # experimental executable. This does not enable universal claims.
       - uses: actions/upload-artifact@v4
-        if: ${{ github.event_name != 'pull_request' || github.head_ref == 'milestone/m4-unified-native-multichannel-fx-20261101' || github.head_ref == 'work/integration-fat-console-v6' }}
+        if: ${{ github.event_name != 'pull_request' || github.head_ref == 'milestone/m5-universal-channelid-vst3-lease-migration-20261101' || github.head_ref == 'work/integration-fat-console-v6' }}
         with:
-          name: ${{ github.event_name != 'pull_request' && 'ArSonMix-GUI10CH-P012-Verified-Hardware-FAT-Windows-x64' || (github.head_ref == 'work/integration-fat-console-v6' && 'ArSonMix-0FX-UNQUALIFIED-Hardware-FAT-Windows-x64' || 'ArSonMix-M4-EXPERIMENTAL-Hardware-FAT-Windows-x64') }}
+          name: ${{ github.event_name == 'pull_request' && (github.head_ref == 'work/integration-fat-console-v6' && 'ArSonMix-JOINED-10CH4AUX-EXPERIMENTAL-Hardware-FAT-Windows-x64' || 'ArSonMix-ENGINE-10CH4AUX-EXPERIMENTAL-Hardware-FAT-Windows-x64') || 'ArSonMix-GUI10CH-P012-Verified-Hardware-FAT-Windows-x64' }}
           path: dist/
           if-no-files-found: error
           retention-days: 14

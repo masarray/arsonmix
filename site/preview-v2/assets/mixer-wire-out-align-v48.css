@@ -1,0 +1,22 @@
+/* V48 final micro-alignment, separate from immutable V16 migration baseline.
+   OUT button/hitbox and V47 4px outer margin remain untouched. */
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out{
+ padding-left:4px!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out small{
+ display:flex!important;
+ align-items:center!important;
+ justify-content:center!important;
+ height:12px!important;
+ line-height:12px!important;
+ align-self:center!important;
+}
+/* Dense layouts have no captions and must retain their original node center. */
+@container (max-width:133px){
+ .console-body.wire-routing-v15 .strip .wire-tray .wire-node-out{
+  padding:0!important;
+ }
+}
+.console-body.wire-routing-v15[data-density="compact"] .strip .wire-tray .wire-node-out{
+ padding:0!important;
+}

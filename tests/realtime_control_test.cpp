@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/RealtimeControl.h"
+#include "../engine/core/PreparedMixerBlock.h"
+#include "../engine/core/RealtimeRenderPermit.h"
+#include "../engine/core/RealtimeRoutePublisher.h"
+#include "../engine/core/NativeRenderAuthority.h"
+#include <memory>
 #include <atomic>
 #ifdef NDEBUG
  #undef NDEBUG
@@ -12,6 +17,90 @@
 #include <thread>
 using namespace armix::rt;
 int main(){
+    // Production cannot fall through to a second stereo/VST mixer. The
+    // only old stereo path is explicitly test/diagnostic and disconnected
+    // from an accepted native M4 route.
+    using Owner=armix::mixer::NativeRenderOwner;
+    using Authority=armix::mixer::NativeRenderAuthority;
+    assert(Authority::select(true,false)==Owner::failSilentUnpatched);
+    assert(Authority::select(true,true)==Owner::acceptedM4Session);
+    assert(Authority::select(false,true)==Owner::acceptedM4Session);
+    assert(Authority::select(false,false)==Owner::isolatedDiagnostic);
+    assert(!Authority::mayRunDiagnostic(
+        Authority::select(false,true)));
+
+    // M5 LIVE (the installed M4 callback, not only prepared ChannelId):
+    // all 4 controls change in ONE atomic, while 2 threads run 200k
+    // opposing GUI gestures. RT must see either complete gesture A or B;
+    // no left from A with right/MUTE/SOLO from B.
+    using Controls=armix::mixer::RealtimeStripControls;
+    Controls atomicControls;
+    const auto u=atomicControls.read(2);
+    assert(std::fabs(u.left-1.f)<1e-6f && std::fabs(u.right-1.f)<1e-6f);
+    assert(!u.mute && !u.solo);
+    assert(atomicControls.set(2,.5f,-1.f,false,false,true));
+    const auto a=atomicControls.read(2);
+    assert(std::fabs(a.left-.5f)<1e-6f && std::fabs(a.right)<1e-6f);
+    assert(!a.mute && a.solo);
+    assert(atomicControls.set(2,.8f,1.f,false,true,false));
+    const auto b=atomicControls.read(2);
+    assert(std::fabs(b.left)<1e-6f && std::fabs(b.right-.8f)<1e-6f);
+    assert(b.mute && !b.solo);
+    std::atomic<bool> badMixed{false};
+    constexpr int gestures=200000;
+    std::thread ctl([&]{
+        for(int k=0;k<gestures;++k)
+            if(!atomicControls.set(2,(k&1)?.8f:.5f,(k&1)?1.f:-1.f,
+                                   false,(k&1)!=0,(k&1)==0))
+                badMixed.store(true,std::memory_order_relaxed);
+    });
+    std::thread audioControlRead([&] {
+        for(int k=0;k<gestures;++k) {
+            const auto view=atomicControls.read(2);
+            const bool matchesA=std::fabs(view.left-a.left)<1e-6f &&
+                std::fabs(view.right-a.right)<1e-6f &&
+                view.mute==a.mute && view.solo==a.solo;
+            const bool matchesB=std::fabs(view.left-b.left)<1e-6f &&
+                std::fabs(view.right-b.right)<1e-6f &&
+                view.mute==b.mute && view.solo==b.solo;
+            if(!matchesA&&!matchesB)
+                badMixed.store(true,std::memory_order_relaxed);
+        }
+    });
+    ctl.join();audioControlRead.join();
+    assert(!badMixed);
+    assert(!atomicControls.set(2,-1.f,0.f,false,false,false));
+    assert(!atomicControls.set(2,1.f,2.f,false,false,false));
+    assert(!atomicControls.set(99,1.f,0.f,false,false,false));
+    std::cout<<"PASS: 200000 concurrent native M4 GUI gestures read as atomic stereo/mute/solo blocks\\n";
+
+
+    // One canonical fail-closed render permit for BOTH native M4 hardware
+    // and future ChannelId DSP: a duplicate backend callback cannot render
+    // into the same scratch/VST. All acquire/release are lock-free O(1).
+    std::atomic_flag renderGate=ATOMIC_FLAG_INIT;
+    std::atomic<bool> gateHeld{false},releaseGate{false};
+    std::thread activeRender([&] {
+        armix::rt::RealtimeRenderPermit permit(renderGate);
+        assert(static_cast<bool>(permit));
+        gateHeld.store(true,std::memory_order_release);
+        while(!releaseGate.load(std::memory_order_acquire))
+            std::this_thread::yield(); // TEST thread only; never real AUDIO
+    });
+    while(!gateHeld.load(std::memory_order_acquire))
+        std::this_thread::yield();
+    for(int i=0;i<20000;++i) {
+        armix::rt::RealtimeRenderPermit rejected(renderGate);
+        assert(!static_cast<bool>(rejected)); // never wait, render twice, lock
+    }
+    releaseGate.store(true,std::memory_order_release);
+    activeRender.join();
+    {
+        armix::rt::RealtimeRenderPermit reentered(renderGate);
+        assert(static_cast<bool>(reentered));
+    }
+    std::cout<<"PASS: single M4/ChannelId RT renderer, 20000 duplicate callbacks fail closed\\n";
+
     SpscQueue<int,8> q;
     int value=-1;
     assert(!q.tryPop(value));
@@ -51,6 +140,43 @@ int main(){
     checkPan(0.f,0.f,1.f,0.f,1.f);
     checkPan(0.f,1.f,0.f,1.f,0.f);
     std::cout<<"PASS: native stereo pan centre, extremes, half-pan and unit-gain dual-mono\n";
+
+    // M1: retired FX/PCM snapshots remain owned until callbacks release
+    // their leases; a full bounded queue rejects instead of growing memory.
+    struct RetireProbe {
+        std::atomic<int>* counter;
+        explicit RetireProbe(std::atomic<int>& c):counter(&c){}
+        ~RetireProbe(){counter->fetch_add(1,std::memory_order_relaxed);}
+    };
+    std::atomic<int> destroyed{0};
+    RealtimeRoutePublisher<RetireProbe,2> publisher;
+    const auto publish=[&](std::uint64_t revision) {
+        auto next=std::make_unique<RealtimeRoutePublisher<RetireProbe,2>::Snapshot>();
+        next->deviceEpoch=7;next->graphRevision=revision;
+        next->prepared=std::make_unique<RetireProbe>(destroyed);
+        return publisher.publish(std::move(next),revision-1,7);
+    };
+    using Result=RealtimeRoutePublisher<RetireProbe,2>::Result;
+    assert(publish(1)==Result::applied);
+    {
+        auto lease=publisher.acquire();
+        assert(lease.get(7)&&lease.get(7)->graphRevision==1);
+        assert(publish(2)==Result::applied);
+        assert(publish(3)==Result::applied);
+        assert(publisher.pendingRetirements()==2);
+        assert(publish(4)==Result::retirementFull);
+        assert(destroyed.load(std::memory_order_relaxed)==1);
+        assert(lease.get(7)->graphRevision==1);
+    }
+    assert(publisher.pollRetirement());
+    assert(publisher.pendingRetirements()==0);
+    assert(destroyed.load(std::memory_order_relaxed)==3);
+    assert(publish(4)==Result::applied);
+    publisher.unpublish();
+    assert(publisher.pollRetirement());
+    // Three accepted snapshots + one rejected admission + final fourth
+    // accepted snapshot: all five owners are reclaimed (no leak/double free).
+    assert(destroyed.load(std::memory_order_relaxed)==5);
     // Runtime contract for the exact RT graph publication helper.
     struct FakeGraph { int id; };
     FakeGraph old{1}, next{2}, third{3};

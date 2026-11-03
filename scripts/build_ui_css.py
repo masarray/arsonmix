@@ -3,7 +3,7 @@ from pathlib import Path
 import argparse
 ROOT=Path(__file__).resolve().parents[1]
 SOURCE=ROOT/'web/styles-src'
-MODULES=('00-font-and-assets.css','10-console-legacy.css','20-button-180.css','21-navigation-fx-power.css','30-selection-effects.css','40-rail-pan.css','41-mixer-performance.css','42-mixer-premium.css')
+MODULES=('00-font-and-assets.css','10-console-legacy.css','20-button-180.css','21-navigation-fx-power.css','30-selection-effects.css','40-rail-pan.css','41-mixer-performance.css','42-mixer-premium.css','43-hardware-backlit.css')
 CSS=ROOT/'web/styles.css'
 HTML=ROOT/'AR-MIX-Live-FX-Host-Standalone-v0.3.html'
 def compile_css():
@@ -41,6 +41,7 @@ def embed_all(page,css):
         ('style','arsonmix-mixer-layout-css','web/mixer-layout.css'),
         ('script','arsonmix-mixer-io-js','web/mixer-io.js'),
         ('script','arsonmix-mixer-layout-js','web/mixer-layout.js'),
+        ('script','arsonmix-hardware-keys-js','web/hardware-keys.js'),
     ):
         built=embed_managed(built,tag,slot,(ROOT/path).read_text(encoding='utf-8'))
     return built

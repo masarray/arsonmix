@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/DynamicAcceptedSession.h"
+#include "../engine/core/RealtimeSlew64.h"
 #include <array>
 #if defined(NDEBUG)
 #undef NDEBUG // Native Release CTest must actually run assertions.
@@ -26,7 +27,116 @@ static ChannelEdit send(ChannelId from,ChannelId to,float gain,bool pre=false) {
     ChannelEdit e;e.kind=ChannelEdit::Kind::addSendReference;
     e.id=from;e.target=to;e.value=gain;e.preFader=pre;return e;
 }
+
+static void verifyRealtimeSlewAndNativeChannelIdContinuousControls() {
+    using armix::dsp::RealtimeSlew64;
+    // Sub-64 variable callbacks must not finish a 64-sample gesture in 4
+    // frames. Coalescing multiple UI writes before a read keeps latest goal.
+    RealtimeSlew64 s;
+    s.reset(1.f);
+    s.retarget(.2f);
+    s.retarget(.5f); // replaces the old unrendered target; no queue buildup
+    for(int i=0;i<4;++i)s.next();
+    assert(near(s.current,1.f-(.5f*4.f/64.f)));
+    for(int i=0;i<16;++i)s.next();
+    assert(near(s.current,1.f-(.5f*20.f/64.f)));
+    for(int i=0;i<32;++i)s.next();
+    assert(near(s.current,1.f-(.5f*52.f/64.f)));
+    for(int i=0;i<12;++i)s.next();
+    assert(s.remaining==0 && s.current==.5f);
+    s.retarget(0.f);
+    for(int i=0;i<20;++i)s.next();
+    const float applied=s.current;
+    s.retarget(.75f); // reverse while in flight; no jump on target update
+    assert(s.current==applied);
+    assert(s.next()>applied);
+    for(int i=1;i<64;++i)s.next();
+    assert(s.current==.75f && s.remaining==0);
+
+    // The approved GUI sends ChannelId-keyed realtime moves. Verify actual
+    // PCM through GROUP-compatible Main, PRE wet Return and POST Monitor,
+    // not a disconnected smoothing helper or browser-only fixture.
+    DynamicAcceptedSession session;
+    constexpr std::uint64_t epoch=9401;
+    DynamicGraphRequest route;
+    route.physicalInputs=1;
+    route.maxFrames=64;
+    std::array<ChannelEdit,4> creates{
+        add(0,ChannelRole::input,"VOICE"),
+        add(1,ChannelRole::fxReturn,"WET",ProcessingFormat::stereo),
+        add(2,ChannelRole::main,"MAIN",ProcessingFormat::stereo),
+        add(3,ChannelRole::monitor,"CUE",ProcessingFormat::stereo)
+    };
+    auto a=session.edit(0,0,creates,route,epoch,epoch,true);
+    assert(a.ok());
+    const auto voice=a.edit.createdIds[0];
+    const auto wet=a.edit.createdIds[1];
+    const auto main=a.edit.createdIds[2];
+    const auto cue=a.edit.createdIds[3];
+    std::array<ChannelEdit,4> links{
+        output(voice,main),
+        output(wet,main),
+        send(voice,wet,.5f,true),
+        send(voice,cue,.5f,false)
+    };
+    route.sources={{voice,0,-1,false}};
+    a=session.edit(1,1,links,route,epoch,epoch,true);
+    assert(a.ok()&&session.acceptedGraphRevision()==2);
+    std::array<float,64> input{},outL{},outR{},cueL{},cueR{};
+    input.fill(.5f);
+    const float* pins[]{input.data()};
+    const auto fx=+[](ChannelId,float*,float*,int) noexcept {};
+    const auto render=[&](int n) {
+        return session.render(epoch,pins,1,outL.data(),outR.data(),n,
+                              false,fx,cueL.data(),cueR.data());
+    };
+    assert(render(64));
+    const float initialMain=outL[63];
+    const float initialCue=cueL[63];
+    assert(initialMain>.1f && initialCue>.01f);
+    assert(session.setLiveMix(epoch,2,voice,0.f,0.f));
+    assert(session.setLiveParallelSend(epoch,2,voice,wet,true,0.f));
+    assert(session.setLiveParallelSend(epoch,2,voice,cue,false,0.f));
+    // PRE send, POST send and channel fader must all advance across
+    // 4+16+32+12 (one complete ramp), not finish on the FIRST 4 samples.
+    assert(render(4));
+    const float after4=outL[3],cue4=cueL[3];
+    assert(after4>0.f && after4<initialMain);
+    assert(cue4>0.f && cue4<initialCue);
+    assert(render(16));
+    const float after20=outL[15],cue20=cueL[15];
+    assert(after20>0.f && after20<after4);
+    assert(cue20>0.f && cue20<cue4);
+    assert(render(32));
+    assert(outL[31]<after20 && cueL[31]<cue20);
+    assert(render(12));
+    assert(near(outL[11],0.f,0.0001f));
+    assert(near(outR[11],0.f,0.0001f));
+    assert(near(cueL[11],0.f,0.0001f));
+    assert(near(cueR[11],0.f,0.0001f));
+    assert(session.acceptedGraphRevision()==2);
+    // Rapid fader drags are naturally last-target-wins: no event queue,
+    // structural graph recompile, callback heap or retained stale controls.
+    // 4096 high-rate gestures all collapse into ONE latest atomic target.
+    // This is a CPU/heap-bounded CONTROL lookup, not a 4096-event RT FIFO.
+    for(int i=0;i<4096;++i)
+        assert(session.setLiveMix(epoch,2,voice,(i&1)?.8f:.2f,0.f));
+    assert(!session.setLiveMix(epoch,2,ChannelId{999999},1.f,0.f));
+    assert(!session.setLiveParallelSend(epoch,2,ChannelId{999999},wet,true,.5f));
+    assert(render(4));
+    assert(outL[3]>0.f);
+    assert(render(60));
+    constexpr float center=.7071067811865475f;
+    assert(near(outL[59],.5f*.8f*center,0.0001f));
+    assert(!session.setLiveMix(epoch,1,voice,1.f,0.f));
+    assert(!session.setLiveParallelSend(epoch-1,2,voice,wet,true,1.f));
+    assert(session.acceptedGraphRevision()==2);
+    session.unpublish();
+    session.pollRetirement();
+}
+
 int main() {
+    verifyRealtimeSlewAndNativeChannelIdContinuousControls();
     constexpr std::uint64_t epoch=77;
     constexpr float center=.7071067811865475f;
     DynamicAcceptedSession session;
@@ -56,13 +166,104 @@ int main() {
         const float gain=id==group?2.f:id==fx?.5f:1.f;
         for(int i=0;i<frames;++i){left[i]*=gain;right[i]*=gain;}
     };
-    const auto render=[&]() {
-        return session.render(epoch,inputs,2,l.data(),r.data(),64,
+    const auto render=[&](int n=64) {
+        return session.render(epoch,inputs,2,l.data(),r.data(),n,
                               false,processFx,ml.data(),mr.data());
     };
     assert(render());
     assert(near(l[63],(.2f+.4f)*center));
     assert(near(ml[63],(.2f*.2f+.4f*.25f)*center));
+    // M5.3 native SOURCE changes physical pins but not VST3, ChannelId,
+    // send graph, or output ownership. Stage no callback memory and ramp
+    // over 4+16+32+12 real samples with independent MONITOR taps.
+    assert(!session.setLivePhysicalSource(epoch-1,2,micA,1,-1,false));
+    assert(!session.setLivePhysicalSource(epoch,1,micA,1,-1,false));
+    assert(!session.setLivePhysicalSource(epoch,2,micA,2,-1,false));
+    assert(!session.setLivePhysicalSource(epoch,2,micA,1,0,true));
+    assert(session.setLivePhysicalSource(epoch,2,micA,1,-1,false));
+    assert(session.acceptedPhysicalRequest().sources[0].inputL==1);
+    assert(render(4));
+    assert(l[3]>(.2f+.4f)*center && l[3]<(.4f+.4f)*center);
+    assert(render(16)&&render(32)&&render(12));
+    assert(near(l[11],(.4f+.4f)*center));
+    assert(near(ml[11],(.4f*.2f+.4f*.25f)*center));
+    // A last-target-wins reverse retains the same PCM and plugin graph.
+    assert(session.setLivePhysicalSource(epoch,2,micA,0,-1,false));
+    assert(render());
+    assert(near(l[63],(.2f+.4f)*center));
+    assert(near(ml[63],(.2f*.2f+.4f*.25f)*center));
+    assert(session.acceptedGraphRevision()==2);
+    // E1: structural draft pins are preflighted BEFORE accepted SOURCE
+    // reconciliation. Out-of-range or same-pin stereo must not be hidden by
+    // an earlier valid MONO source, falsely ACKed, or silence existing PCM.
+    ChannelEdit renameAttempt;
+    renameAttempt.kind=ChannelEdit::Kind::rename;
+    renameAttempt.id=micA;
+    renameAttempt.text="MUST_NOT_APPEAR_AFTER_REJECTION";
+    const std::array<ChannelEdit,1> structuralAttempt{renameAttempt};
+    auto invalidSource=route;
+    invalidSource.sources[0].inputL=2; // exactly physicalInputs
+    auto deniedSource=session.edit(2,2,structuralAttempt,invalidSource,epoch,epoch,true);
+    assert(!deniedSource.ok());
+    assert(deniedSource.fault==DynamicAcceptedSession::Fault::graphRejected);
+    assert(deniedSource.native.fault==DynamicNativeSessionPublisher::Fault::invalidGraph);
+    assert(deniedSource.native.graphError.fault==DynamicGraphFault::invalidSource);
+    assert(deniedSource.edit.createdIds.empty());
+    assert(session.acceptedGraphRevision()==2);
+    assert(session.acceptedRosterRevision()==2);
+    assert(session.acceptedRoster().find(micA)->name=="LEAD");
+    assert(session.acceptedPhysicalRequest().sources[0].inputL==0);
+    invalidSource=route;
+    invalidSource.sources[0].stereo=true;
+    invalidSource.sources[0].inputR=0;
+    deniedSource=session.edit(2,2,structuralAttempt,invalidSource,epoch,epoch,true);
+    assert(!deniedSource.ok() &&
+           deniedSource.native.graphError.fault==DynamicGraphFault::invalidSource);
+    assert(render()&&near(l[63],(.2f+.4f)*center));
+    // A physically valid but different pin is NOT an implicit IN request
+    // during RENAME/GROUP/OUT. Previously the old SOURCE was overlaid and
+    // an unfulfilled new pin was ACKed as successful (GUI/PCM disagreement).
+    auto validButUnacceptedSource=route;
+    validButUnacceptedSource.sources[0].inputL=1;
+    auto deniedValidSource=session.edit(2,2,structuralAttempt,
+        validButUnacceptedSource,epoch,epoch,true);
+    assert(!deniedValidSource.ok() &&
+           deniedValidSource.fault==DynamicAcceptedSession::Fault::graphRejected);
+    assert(deniedValidSource.native.graphError.fault==
+           DynamicGraphFault::invalidSource);
+    assert(deniedValidSource.native.graphError.id==micA);
+    assert(session.acceptedGraphRevision()==2 &&
+           session.acceptedPhysicalRequest().sources[0].inputL==0);
+    assert(session.acceptedRoster().find(micA)->name=="LEAD");
+    assert(render()&&near(l[63],(.2f+.4f)*center));
+    // One accepted ChannelId graph: realtime MUTE/SOLO and PRE/POST follow
+    // the same callback, not a recompilation or an extra FX instance.
+    assert(session.setLiveMuteSolo(epoch,2,micA,true,false));
+    assert(session.acceptedRoster().find(micA)->mute);
+    assert(render(4));
+    assert(l[3]>.4f*center && l[3]<.6f*center);
+    assert(render(16)&&render(32)&&render(12));
+    assert(near(l[11],.4f*center));
+    assert(near(ml[11],(.4f*.25f)*center));
+    assert(session.setLiveMuteSolo(epoch,2,micA,false,true));
+    assert(render());
+    assert(near(l[63],.2f*center));
+    assert(near(ml[63],(.2f*.2f)*center));
+    assert(session.setLiveMuteSolo(epoch,2,main,true,false));
+    assert(render());
+    assert(near(l[63],0.f)&&near(r[63],0.f));
+    assert(near(ml[63],(.2f*.2f)*center)); // independent MONITOR
+    assert(session.setLiveMuteSolo(epoch,2,main,false,false));
+    assert(session.setLiveMuteSolo(epoch,2,micA,false,false));
+    assert(render());
+    assert(near(l[63],(.2f+.4f)*center));
+    assert(near(ml[63],(.2f*.2f+.4f*.25f)*center));
+    assert(!session.setLiveMuteSolo(epoch-1,2,micA,true,false));
+    assert(!session.setLiveMuteSolo(epoch,1,micA,true,false));
+    assert(!session.setLiveMuteSolo(epoch,2,ChannelId{987654},true,false));
+    assert(!session.acceptedRoster().find(micA)->mute&&
+           !session.acceptedRoster().find(micA)->solo&&
+           session.acceptedGraphRevision()==2);
     // Control update is a real RT atomic, but is ALSO preserved by roster so
     // subsequent BUS compilation cannot silently reset fader/send gain.
     assert(session.setLiveMix(epoch,2,micA,.5f,0.f));
