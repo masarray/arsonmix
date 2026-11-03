@@ -60,10 +60,6 @@ def original_assets_as_baseline(html,owners=None):
         from css_v17_restore import mount_owner
         html,old_plugin=mount_owner(html)
         temp.extend(old_plugin)
-        from css_v19_restore import mount_owners as mount_pre_v19
-        # The V15 visual baseline also predates V19 shared key relocation.
-        html,old_v19=mount_pre_v19(html,include_sections=False)
-        temp.extend(old_v19)
         if manifest_v16()["sourceWireUrl"] in html:
             previous_wire=reconstruct()[1]
             f=tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",suffix=".css",

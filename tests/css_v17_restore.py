@@ -85,7 +85,7 @@ def mount_original():
     html,old_chrome=mount_chrome(html)
     temporary.extend(old_chrome)
     from css_v19_restore import mount_owners as mount_pre_v19
-    html,old_controls=mount_pre_v19(html)
+    html,old_controls=mount_pre_v19(html,include_chrome=False)
     temporary.extend(old_controls)
     try:
         f=tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",suffix=".html",
