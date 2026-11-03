@@ -392,7 +392,11 @@
       nativeBusSources.append(label);
     }
     nativeBusRows.replaceChildren();
-    for(const ch of ready?bus.channels.filter(x=>x.role==='GROUP'||x.role==='FX_RETURN'):[]){
+    // Native E3 owns only dynamically created BUS identities. Original
+    // AUX1–4 share FX_RETURN role but are controlled by the M4 strip/AUX
+    // panel. They must never expose REMOVE or a second fader writer here.
+    for(const ch of ready?bus.channels.filter(x=>
+      (x.role==='GROUP'||x.role==='FX_RETURN')&&x.nativeManaged===true):[]){
       const line=document.createElement('div');
       line.className='arBusActions';
       const name=document.createElement('span');

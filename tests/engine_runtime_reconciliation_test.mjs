@@ -192,12 +192,18 @@ test('E4 operator native Group+FX Return controls run through real ACK then newe
           'NATIVE_REMOVE_BUS'],
         channels:[{id:'1',role:'INPUT',name:'Microphone'},
           {id:'2',role:'INPUT',name:'Music'},
-          {id:'3',role:'MAIN',name:'MAIN'}]}}
+          {id:'3',role:'MAIN',name:'MAIN'},
+          // Accepted original M4 AUX1 has FX_RETURN role but its owner is
+          // NOT the dynamic E3 BUS edit transport: must stay read-only here.
+          {id:'4',role:'FX_RETURN',name:'AUX 1',nativeManaged:false,
+            fader:1,pan:0}]}}
   });
   events.arMixConsoleSnapshot(snap());
   const probe=code=>vm.runInContext(code,ctx,{timeout:1000});
   assert.equal(probe('groupCreate.disabled'),false);
   assert.equal(probe('nativeBusSources.children.length'),2);
+  assert.equal(probe('nativeBusRows.children.length'),0,
+    'original M4 AUX receiver must never expose native REMOVE/mix controls');
   assert.match(nativeCap.textContent,/NATIVE PCM ACTIVE/);
   probe("nativeBusSources.children[0].children[0].checked=true");
   probe("nativeBusSources.children[0].children[0].listeners.change()");
@@ -226,7 +232,7 @@ test('E4 operator native Group+FX Return controls run through real ACK then newe
   assert.equal(probe('groupCreate.disabled'),true);
   const updated=snap('11','4');
   updated.legacyM4.nativeBus.channels.splice(2,0,{
-    id:'20',role:'GROUP',name:'Vocal Group',fader:1,pan:0});
+    id:'20',role:'GROUP',name:'Vocal Group',nativeManaged:true,fader:1,pan:0});
   events.arMixConsoleSnapshot(updated);
   assert.equal(probe('groupCreate.disabled'),false);
   assert.equal(probe('nativeBusRows.children.length'),1);
@@ -257,6 +263,21 @@ test('E4 operator native Group+FX Return controls run through real ACK then newe
   assert.equal(probe('groupCreate.disabled'),true,'output armed structural edits fail closed');
   probe("groupCreate.listeners.click()");
   assert.equal(commands().length,2);
+});
+
+test('E4 original 4 M4 AUX return IDs are immutable under dynamic native BUS edits',()=>{
+  const physical=read('src/LiveDryRoutingLab.h');
+  const ui=read('web/monitor.js');
+  assert.match(physical,/bool originalM4Aux\(armix::mixer::ChannelId id\) const noexcept/);
+  assert.match(physical,/for\(const auto aux:nativeAccepted_\.graph\.ids\.aux\)/);
+  assert.match(physical,/if\(remove\.value && originalM4Aux\(remove\)\)/);
+  assert.match(physical,/FIXED_M4_AUX_NOT_REMOVABLE/);
+  assert.match(physical,/originalM4Aux\(id\)/);
+  assert.match(physical,/row->setProperty\("nativeManaged",/);
+  assert.match(ui,/x\.nativeManaged===true/);
+  assert.doesNotMatch(ui.slice(ui.indexOf('// E4: The EXISTING routing workspace controls'),
+      ui.indexOf('// Processing channel width is independent')),/M4_AUX_REMOVE|legacyAUXIdByIndex/,
+    'Do not invent legacy AUX identities in the browser');
 });
 
 test('shipping application does not compile a second test-only native mixer',()=>{

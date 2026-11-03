@@ -1077,6 +1077,14 @@ public:
             return false;
         }
     }
+    // The accepted original four AUX/FX RETURNS are fixed M4-owned lanes.
+    // Generic roster.removeBus() accepts any FX_RETURN; this physical host
+    // must protect their actual stable IDs, not rely on role/display order.
+    bool originalM4Aux(armix::mixer::ChannelId id) const noexcept {
+        for(const auto aux:nativeAccepted_.graph.ids.aux)
+            if(aux.value && aux==id)return true;
+        return false;
+    }
     // E3: structural native GROUP/FX RETURN transaction on the SAME
     // accepted physical ChannelId publisher. This is the CONTROL writer,
     // not a second graph/audio callback or a simulated Console mutation.
@@ -1107,6 +1115,9 @@ public:
             return reply;
         if(!outputsDisarmed) {
             reply.error="OUTPUT_MUST_BE_DISARMED";return reply;
+        }
+        if(remove.value && originalM4Aux(remove)) {
+            reply.error="FIXED_M4_AUX_NOT_REMOVABLE";return reply;
         }
         try {
             auto next=nativeAccepted_.graph.roster; // CONTROL only
@@ -1182,8 +1193,9 @@ public:
            expectedPcmRevision!=nativeAccepted_.pcmRevision)return false;
         const auto* channel=nativeAccepted_.graph.roster.find(id);
         if(!channel || (channel->role!=armix::mixer::ChannelRole::group &&
-                        channel->role!=armix::mixer::ChannelRole::fxReturn))
-            return false;
+                        channel->role!=armix::mixer::ChannelRole::fxReturn) ||
+           originalM4Aux(id))
+            return false; // original AUX 1–4 belong to M4 control state
         if(!nativePublisher_.setChannelMix(
              epochAtEdit,expectedPcmRevision,id,gain,pan))return false;
         return nativeAccepted_.graph.roster.rememberLiveMix(id,gain,pan);
@@ -1217,6 +1229,12 @@ public:
                              ch.role==armix::mixer::ChannelRole::fxReturn?"FX_RETURN":
                              ch.role==armix::mixer::ChannelRole::main?"MAIN":"MONITOR";
             row->setProperty("role",role);
+            // Only E3-created BUSes can be edited here. The original AUX
+            // 1–4 have FX_RETURN roles too, but are still M4-owned lanes.
+            row->setProperty("nativeManaged",
+                (ch.role==armix::mixer::ChannelRole::group ||
+                 ch.role==armix::mixer::ChannelRole::fxReturn) &&
+                !originalM4Aux(ch.id));
             row->setProperty("name",juce::String(ch.name));
             row->setProperty("format",ch.format==armix::mixer::ProcessingFormat::stereo
                 ?"STEREO":"MONO");
