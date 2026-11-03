@@ -22,3 +22,13 @@ Runtime atlas: `micro-hardware-17x17-2x4.png` and `format-hardware-25x15-2x1.png
 
 Validation: `python tests/pages_micro_button_assets_v1_smoke.py`
 and the full Chromium/Firefox Pages regressions.
+
+## Operator optical adjustment (2026-11-03)
+
+- Lift only the PAN thumb artwork 2 CSS px from V18; leave its rail,
+  input hitbox, center detent and pointer behavior untouched. The SEND thumb
+  retains its original V18 alignment.
+- FX remove uses muted-red `#a4494e` glyph at OFF, on the original silver
+  keycap; momentary red pressed frame and white glyph are unchanged.
+- Scope: PAN/utility CSS owner, revisioned preview links and browser tests.
+  No change to the WIRE geometry, DSP, FX route, fader or approved M/S/P PNG.

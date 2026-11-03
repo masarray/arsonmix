@@ -156,6 +156,10 @@
   background-size:200% 100%;
   background-position:100% 0%;
 }
+/* OFF delete glyph is muted red, not black. Do not latch momentary remove. */
+.app .console-body .strip button.mx-util-key[data-util-kind="fx-remove"]{
+  color:#a4494e;
+}
 .app .console-body .strip button.mx-util-key[data-util-kind="fx-remove"]:active:not(:disabled){
   --mx-micro-x:100%;
   background-position:100% 66.666667%;
