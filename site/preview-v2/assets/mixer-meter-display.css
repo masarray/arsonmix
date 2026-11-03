@@ -267,25 +267,27 @@
    #139b3d 0%,#37d443 24%,#68ed35 43%,#cce732 62%,
    #f1d82d 74%,#ffab22 85%,#f87824 94%,#e83e2e 100%);
  --meter-pitch:14px;
- background:repeating-linear-gradient(to top,
-   #1d2931 0 12px,#030a10 12px 14px)!important;
+ background:#030b11!important;
  border-radius:0!important;
 }
 .console-body .strip .meter-box .meter-fill{
- left:2px!important;right:2px!important;
+ left:2px!important;right:2px!important;z-index:1;
  background:var(--meter-led-ramp)!important;
  /* --lit is a JS-quantized fraction of whole 14px steps; never a half LED. */
  clip-path:inset(calc(100% - var(--lit,0%)) 0 0)!important;
 }
 .console-body .strip .meter-box .meter-lane::before{
- content:""!important;z-index:2;
+ content:""!important;inset:0 2px!important;z-index:0;
  background:repeating-linear-gradient(to top,
-   transparent 0 12px,#02070b 12px 14px)!important;
+   #26343b 0 12px,#02080d 12px 14px)!important;
  pointer-events:none;
 }
 .console-body .strip .meter-box .meter-lane::after{
- content:""!important;z-index:3;
- background:linear-gradient(90deg,#ffffff13,transparent 44%,#0007)!important;
+ content:""!important;inset:0 2px!important;z-index:3;
+ background:
+   repeating-linear-gradient(to top,
+     transparent 0 12px,#02070b 12px 14px),
+   linear-gradient(90deg,#ffffff16,transparent 44%,#0008)!important;
  pointer-events:none;
 }
 .console-body .strip .meter-box .meter-peak-hold{
