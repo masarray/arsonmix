@@ -46,9 +46,9 @@
 .console-body .fxslot-row{height:22px!important;min-height:22px!important}
 .console-body .fx-pick{font:600 10px/1.2 'Segoe UI',Arial,sans-serif!important;color:#9de5bf!important}
 .console-body .fx-pick.empty{font-weight:500!important;color:#65d1f1!important}
-.console-body .strip .fx-section{background:#11222c!important}
+
 .console-body .strip .fx-section{
- background:linear-gradient(#1f303a,#22333c)!important;
+ 
  height:var(--fx-h)!important;min-height:var(--fx-h)!important;flex:0 0 var(--fx-h)!important;
 }
 .console-body .strip .fxslot-list{background:transparent!important;overflow-x:hidden!important;}
@@ -79,9 +79,7 @@
 .console-body:not(.collapsed-fx) .strip .fxslot-row{height:22px!important;min-height:22px!important}
 
 }
-.console-body .strip .fx-section{
-  background:linear-gradient(90deg,#172a35,#253943 9%,#243741 82%,#162a35)!important;
-}
+
 .console-body .strip .fxslot-row{
   background:linear-gradient(180deg,#253b46,#1b2d38)!important;
   border-bottom:1px solid #3c586642!important;

@@ -49,7 +49,9 @@ def original_owner(name):
 def reconstruct():
     """Return exact pre-V23 HTML plus pre-V23 Chrome and WIRE CSS."""
     data=manifest()
-    live=HTML.read_text(encoding="utf-8")
+    # Invert V24 first: historical V23 ledger is NEVER rebaselined.
+    from css_v24_restore import reconstruct as restore_pre_v24
+    live,_=restore_pre_v24()
     assert (len(live),fingerprint(live))==(
         data["htmlCurrent"]["length"],data["htmlCurrent"]["fnv"]
     ),"V23 HTML drift"
