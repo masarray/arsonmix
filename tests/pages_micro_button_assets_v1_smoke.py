@@ -1,6 +1,7 @@
 """Physical micro-button PNG V1 — real DOM states and unchanged WIRE geometry."""
 from pathlib import Path
 import struct
+import zlib
 import subprocess
 import sys
 import tempfile
@@ -22,11 +23,46 @@ def source_gate():
     context=(ASSET/'mixer-contextual-buttons.css').read_text()
     assert css.count('!important')==0
     assert ':hover' not in css and 'filter:blur' not in css.replace(' ','')
-    assert 'micro-hardware-17x17-2x4.png' in css
-    assert 'format-hardware-25x15-2x1.png' in css
+    assert 'micro-hardware-17x17-2x4.png?v=square-face-v20' in css
+    assert 'format-hardware-25x15-2x1.png?v=square-face-v20' in css
     # Cross-owner ID-level V6 selectors used to override the micro cap.
     assert '.console-body .strip button.mx-util-key' not in context
     assert '.mx-util-key[data-util-kind=' not in context
+
+def pixel_geometry_gate():
+    """The actual 17x17 artwork must be square—not square including an underbar."""
+    def pixels(path):
+        png=(ASSET/path).read_bytes()
+        w,h=struct.unpack('>II',png[16:24])
+        p=8
+        blocks=[]
+        while p<len(png):
+            n=struct.unpack('>I',png[p:p+4])[0]
+            if png[p+4:p+8]==b'IDAT': blocks.append(png[p+8:p+8+n])
+            p+=n+12
+        raw=zlib.decompress(b''.join(blocks))
+        stride=1+w*4
+        assert len(raw)==h*stride
+        assert all(raw[y*stride]==0 for y in range(h))
+        def at(x,y):
+            i=y*stride+1+x*4
+            return tuple(raw[i:i+4])
+        return at
+    px=pixels(SQUARE)
+    neutral=[px(x,y) for y in range(17) for x in range(17)]
+    for row in range(4):
+        for col in (0,1):
+            x0=col*17;y0=row*17
+            assert all(px(x0+x,y0+y)[3]==255 for y in range(1,16)
+                       for x in range(1,16)),(row,col,'cap face not 15x15')
+            assert all(px(x0+8,y0+y)[3]==255 for y in (0,1,8,15,16)),(
+                row,col,'detached lower ornament or shadow')
+        assert neutral==[px(x,y+17*row) for y in range(17) for x in range(17)],(
+            row,'colored inactive underbar')
+    fmt=pixels(FORMAT)
+    for col in (0,1):
+        assert all(fmt(col*25+x,y)[3]==255 for y in range(1,14)
+                   for x in range(1,24)),(col,'format surface not full height')
 
 def state(el):
     return el.evaluate("""el=>{
@@ -101,6 +137,7 @@ def test_page(browser,url,label):
 
 def main():
     source_gate()
+    pixel_geometry_gate()
     with tempfile.TemporaryDirectory(prefix='arsonmix-micro-') as temp:
         dist=Path(temp)/'pages'
         subprocess.run([sys.executable,str(ROOT/'scripts/build_pages.py'),

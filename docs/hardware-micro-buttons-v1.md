@@ -7,9 +7,9 @@ Runtime atlas: `micro-hardware-17x17-2x4.png` and `format-hardware-25x15-2x1.png
   momentary remove. No outer-box resize on click.
 - **25×15** is the physical footprint for M/ST; text remains real HTML, so
   changing mono/stereo does not need a new raster legend.
-- **OFF column 0**: raised silver surface with the semantic indicator strip.
-  **ON column 1**: recessed colored face. Square atlas rows are FX, phase,
-  remove, format. Remove uses ON on pointer-down only; do not latch.
+- **OFF column 0**: full-height silver surface with no secondary lower indicator.
+  **ON column 1**: recessed semantic-color surface filling the entire frame.
+  Square atlas rows are FX, phase, remove and format. Remove is momentary, never latched.
 - Button labels, accessible names, original SVG icons and click handlers remain
   untouched. No image object, repaint loop, JS icon-generation or duplicate UI
   state. RGBA backgrounds always transparent and never scaled per state.
@@ -32,3 +32,14 @@ and the full Chromium/Firefox Pages regressions.
   keycap; momentary red pressed frame and white glyph are unchanged.
 - Scope: PAN/utility CSS owner, revisioned preview links and browser tests.
   No change to the WIRE geometry, DSP, FX route, fader or approved M/S/P PNG.
+
+## V20 optical-square correction
+
+The old 17×17 atlas included a short button face plus a separate indicator below,
+so its *visible face* looked compressed. V20 replaces both keycap atlases.
+Each 17×17 icon key now has a genuinely square **15×15 metal face inside a
+1px integral border**, without a bottom stripe, lamp, badge, drop shadow or
+floating ornament. Pressing changes only the face color, not size/position.
+M/ST remains 25×15 to retain its real text, also with no lower ornament.
+The off Delete glyph remains muted red; the momentary red press frame remains.
+Validation checks actual PNG pixels and unchanged control/WIRE behavior.
