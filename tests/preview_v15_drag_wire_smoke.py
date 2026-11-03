@@ -94,10 +94,13 @@ def main():
         meter=page.locator('#tracks .strip[data-id="1"] .meter-lane').first
         led=meter.evaluate("""el=>({
           width:getComputedStyle(el).width,
-          cells:getComputedStyle(el,'::before').backgroundImage
+          litWidth:getComputedStyle(el.querySelector('.meter-fill')).width,
+          cells:getComputedStyle(el,'::before').backgroundImage,
+          peak:!!el.querySelector('.meter-peak-hold')
         })""")
-        assert_true(led['width']=='10px' and '9px' in led['cells'] and '11px' in led['cells'],
-                    'M3 LED must be portrait (10x9px with 2px spacing)')
+        assert_true(led['width']=='10px' and led['litWidth']=='6px'
+                    and '12px' in led['cells'] and '14px' in led['cells'] and led['peak'],
+                    'V51 LED must be 6x12px portrait optics with 2px gap and independent peak hold')
         # Independent state: reference MUTE cap + original SOLO/PFL lamps.
         key.click();solo.click();cue.click()
         mute_on=key.evaluate("""el=>({
