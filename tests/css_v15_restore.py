@@ -1,6 +1,7 @@
 """Reversible CSS owner V15 source ledger. Strict original byte-position restoration."""
 import json,re,tempfile
 from pathlib import Path
+from css_v16_restore import reconstruct,manifest as manifest_v16
 ROOT=Path(__file__).resolve().parents[1]
 HTML=ROOT/"site/preview-v2/index.html"
 ASSETS=HTML.parent/"assets"
@@ -38,7 +39,7 @@ def restore_previous_owners():
     return previous
 
 def before_v15_html():
-    html=HTML.read_text(encoding="utf-8")
+    html,_=reconstruct()
     for name,old_version in manifest()["originalLinkVersions"].items():
         key=f'assets/{name}?v=css-owner-v15'
         assert html.count(key)==1,name
@@ -49,6 +50,14 @@ def original_assets_as_baseline(html,owners=None):
     owners=restore_previous_owners() if owners is None else owners
     temp=[]
     try:
+        if manifest_v16()["sourceWireUrl"] in html:
+            previous_wire=reconstruct()[1]
+            f=tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",suffix=".css",
+                prefix=".v15-original-wire-",dir=ASSETS,delete=False)
+            with f:f.write(previous_wire)
+            temp.append(Path(f.name))
+            html=html.replace(manifest_v16()["sourceWireUrl"],
+                              "assets/"+Path(f.name).name+"?v=v47",1)
         for name,css in owners.items():
             key=f'assets/{name}?v='
             assert html.count(key)==1,name
