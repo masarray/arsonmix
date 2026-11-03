@@ -106,7 +106,7 @@ jobs:
           baseline=283ce45dc84b86d42f5ce72841239d8a13c0ba4c
           backup="$RUNNER_TEMP/v50-current-sources"
           git fetch --no-tags --depth=1 origin "$baseline"
-          for path in site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-wire-dots.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-fx-rack.css; do
+          for path in site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-wire-dots.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-fx-rack.css site/preview-v2/assets/mixer-control-keys.css; do
             mkdir -p "$backup/$(dirname "$path")"
             cp "$path" "$backup/$path"
             git show "$baseline:$path" > "$path"
@@ -150,11 +150,13 @@ jobs:
         run: |
           set -euo pipefail
           backup="$RUNNER_TEMP/v50-current-sources"
-          for path in site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-wire-dots.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-fx-rack.css; do
+          for path in site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-wire-dots.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-fx-rack.css site/preview-v2/assets/mixer-control-keys.css; do
             test -s "$backup/$path"
             cp "$backup/$path" "$path"
           done
-          git diff --exit-code -- site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-wire-dots.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-fx-rack.css
+          git diff --exit-code -- site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-wire-dots.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-fx-rack.css site/preview-v2/assets/mixer-control-keys.css
+      - name: Verify V25 exact V51 physical-key owner migration and zero visual regression
+        run: python tests/pages_css_architecture_v25_smoke.py
       - name: Verify embedded Inter font and contextual V7 micro-controls
         run: python tests/pages_inter_utility_v7_smoke.py
       - name: Validate exact alpha micro hardware sprite states and WIRE coexistence
@@ -237,6 +239,7 @@ jobs:
             pages-v22-legacy-keys-1680.png
             pages-v23-owners-pruned-1680.png
             pages-v24-fader-meter-fx-1680.png
+            pages-v25-control-keys-v51-1680.png
             pages-v7-embedded-inter-utility-1680.png
             pages-mixer-v6-OFF-1680.png
             pages-mixer-v6-ON-1680.png
