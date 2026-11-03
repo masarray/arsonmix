@@ -1151,7 +1151,10 @@ function wireImpactPathData(x0,y0,x1,y1,limit,elapsedMs){
  const span=Math.abs(x1-x0),ceiling=Math.max(12,Math.min(100,Number(limit)||72));
  const sag=Math.max(10,Math.min(ceiling,Math.min(ceiling-5,28+Math.sqrt(span)*1.55)));
  const c=sag*4/3,progress=Math.max(0,Math.min(1,elapsedMs/1600));
- const center=.99-progress*.98,amp=10.5*Math.exp(-progress*3.5);
+ // V44 geometric witness: 10.5px produced only 4.17px broad visible jolt
+ // against the approved >5px gate. 13.4 restores a gentle >5px packet,
+ // still below the retired 13.8px short/fast impulse; 1600ms remains.
+ const center=.99-progress*.98,amp=13.4*Math.exp(-progress*3.5);
  let d='M '+x0.toFixed(1)+' '+y0.toFixed(1);
  // Smooth curve samples; zero displacement at both anchored ends.
  for(let i=1;i<=56;i++){
