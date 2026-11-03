@@ -58,9 +58,9 @@ async def visual(page,width):
     selectors=[
       ('fx-main', '[data-util-kind="fx-main"]',17),
       ('fx-slot', '[data-util-kind="fx-slot"]',17),
-      ('phase','[data-util-kind="phase"]',15),
+      ('phase','[data-util-kind="phase"]',17),
       ('format','[data-util-kind="format"]',15),
-      ('fx-remove','[data-util-kind="fx-remove"]',16)
+      ('fx-remove','[data-util-kind="fx-remove"]',17)
     ]
     evidence={}
     for kind,selector,h in selectors:
@@ -79,6 +79,8 @@ async def visual(page,width):
       }""")
       assert abs(state['h']-h)<1,(kind,state)
       assert state['w']>=12 and state['filter']=='none',(kind,state)
+      if kind in ('fx-main','fx-slot','phase','fx-remove'):
+        assert abs(state['w']-state['h'])<.6,(kind,'icon-only key must be square',state)
       assert state['transition']=='0s' and state['hasOwner'] and not state['hasOldMini'],(kind,state)
       assert state['font'].startswith('"ArSonMix Inter"'),(kind,state)
       assert state['name'],(kind,state)

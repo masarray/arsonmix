@@ -1622,10 +1622,10 @@ html * ,html *::before,html *::after{
 <link rel="stylesheet" href="assets/mixer-control-keys.css?v=inter-utility-v7">
 <link rel="stylesheet" href="assets/mixer-fx-rack.css?v=fx-owner-v8">
 <link rel="stylesheet" href="assets/mixer-plugin-browser.css?v=fx-owner-v8">
-<link rel="stylesheet" href="assets/mixer-pan-controls.css?v=css-owner-v9">
-<link rel="stylesheet" href="assets/mixer-fader-assembly.css?v=css-owner-v9">
-<link rel="stylesheet" href="assets/mixer-meter-display.css?v=css-owner-v9">
-<link rel="stylesheet" href="assets/mixer-utility-controls.css?v=inter-utility-v7">
+<link rel="stylesheet" href="assets/mixer-pan-controls.css?v=css-owner-v9-slider-v18">
+<link rel="stylesheet" href="assets/mixer-fader-assembly.css?v=css-owner-v9-ruler-v18">
+<link rel="stylesheet" href="assets/mixer-meter-display.css?v=css-owner-v9-ruler-v18">
+<link rel="stylesheet" href="assets/mixer-utility-controls.css?v=inter-utility-v8-square-icons">
 <link rel="stylesheet" href="assets/inter-embedded.css?v=inter-utility-v7">
 <link rel="stylesheet" href="assets/mixer-wire-dots.css?v=v47-css-v16">
 
@@ -1787,6 +1787,9 @@ function init(){wireWsOpen=false;wireWsInspect=null;wireWsRemoveConfirm=null;wir
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 /* Google Material Icons SVG paths, Apache-2.0. Inline/zero font or network requests. */
 const MATERIAL_PATH=Object.freeze({
+ // Self-contained Google Material Icons paths (no font/network dependency).
+ delete:'M16 9v10H8V9h8m-1.5-6h-5l-1 1H5v2h14V4h-3.5l-1-1zM18 7H6v12c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7z',
+ swap_horiz:'M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z',
  power_settings_new:'M13 3h-2v10h2V3zm4.83 2.17-1.42 1.42C17.99 7.88 19 9.82 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.18 1.01-4.12 2.59-5.41L6.17 5.17C4.23 6.82 3 9.27 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.73-1.23-5.18-3.17-6.83z',
  close:'M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
  drag_indicator:'M11 5h2v2h-2zm0 6h2v2h-2zm0 6h2v2h-2zM5 5h2v2H5zm0 6h2v2H5zm0 6h2v2H5z',
@@ -1841,7 +1844,7 @@ function sectionFx(t){
  for(const {name,i} of rows){
   out+='<div class="fxslot-row" draggable="'+(name!=='None')+'" data-slot="'+i+'" title="Insert '+(i+1)+'"><button class="mx-util-key" data-util-kind="fx-slot" data-action="slotPower" data-slot="'+i+'" title="Toggle effect" aria-label="Toggle effect slot '+(i+1)+'" aria-pressed="'+Boolean(name!=='None'&&!t.slotBypass[i])+'">'+materialIcon("power_settings_new")+'</button>';
   out+='<button class="fx-pick '+(name==='None'?'empty':'')+'" data-action="openPlugin" data-slot="'+i+'" aria-label="Choose plugin for '+escapeHtml(t.name)+' insert '+(i+1)+'">'+(name==='None'?'+ Add FX':escapeHtml(name))+'</button>';
-  if(name!=='None')out+='<button class="mx-util-key" data-util-kind="fx-remove" data-action="removeFx" data-slot="'+i+'" title="Remove insert '+(i+1)+'" aria-label="Remove insert '+(i+1)+'">'+materialIcon("close")+'</button><span class="grip" title="Drag reorder" aria-hidden="true">'+materialIcon("drag_indicator")+'</span>';
+  if(name!=='None')out+='<button class="mx-util-key" data-util-kind="fx-remove" data-action="removeFx" data-slot="'+i+'" title="Remove insert '+(i+1)+'" aria-label="Remove insert '+(i+1)+'">'+materialIcon("delete")+'</button><span class="grip" title="Drag reorder" aria-hidden="true">'+materialIcon("drag_indicator")+'</span>';
   out+='</div>';
  }
  return out+'</div></div>';
@@ -2141,8 +2144,16 @@ function faderPercent(value,isSend){
 function sectionFader(t){
  const isSend=sofEnabled&&t.kind==='audio',value=isSend?getSofLevel(t):t.level,percent=faderPercent(value,isSend),gainMax=isSend?6:10;
  const vuTicks=[0,-6,-12,-18,-24,-36,-48,-60],gainTicks=[gainMax,0,-6,-12,-24,-36,-48,-60];
- const vuScale=vuTicks.map(v=>'<span class="vu-tick" style="top:'+(-v/60*100)+'%"><span>'+v+'</span></span>').join('');
- const gainScale=gainTicks.map(v=>'<span class="gain-tick '+(v===0?'major':'')+'" style="top:'+((gainMax-v)/(gainMax+60)*100)+'%"><span>'+(v<=-60?'−∞':v>0?'+'+v:v)+'</span></span>').join('');
+ // Keep mathematically exact scale positions; suppress only intermediate
+ // numerals that crowd the compact rails. Minor tick marks remain visible.
+ const vuScale=vuTicks.map(v=>{
+  const major=v%12===0;
+  return '<span class="vu-tick '+(major?'major':'minor')+(v===0?' zero':'')+'" style="top:'+(-v/60*100)+'%"><span>'+(major?v:'')+'</span></span>';
+ }).join('');
+ const gainScale=gainTicks.map(v=>{
+  const major=v!==-6;
+  return '<span class="gain-tick '+(major?'major':'minor')+(v===0?' unity':'')+'" style="top:'+((gainMax-v)/(gainMax+60)*100)+'%"><span>'+(major?(v<=-60?'−∞':v>0?'+'+v:v):'')+'</span></span>';
+ }).join('');
  return '<div class="fader-section"><div class="fader-head"><output class="fader-readout" aria-label="'+escapeHtml(t.name)+' level">'+(isSend?'SEND ':'')+formatDb(value)+' dB</output><span class="clip-indicator '+(t.clip?'clipping':'')+'" title="Demo clip latch">CLIP</span></div>'
  +'<div class="fader-workspace">'
  +'<div class="meter-box '+(t.format==='mono'?'mono':'stereo')+'" aria-label="Simulated '+(t.format==='mono'?'mono':'stereo')+' dBFS meter"><div class="vu-bars"><div class="meter-lane"><div class="meter-fill left"></div></div>'+(t.format==='mono'?'':'<div class="meter-lane"><div class="meter-fill right"></div></div>')+'</div><div class="vu-scale"><div class="vu-scale-travel">'+vuScale+'</div></div><div class="peak '+(t.clip?'clipping':'')+'"></div></div>'
@@ -2152,7 +2163,7 @@ function sectionFader(t){
 function strip(t){
  let code='<article class="strip '+t.kind+(t.selected?' selected':'')+'" data-id="'+t.id+'" style="--track-color:'+t.color+';--ch:'+t.color+'" aria-label="'+escapeHtml(t.name)+' channel">';
  code+='<button type="button" class="strip-identity-top" '+(t.kind==='master'?'':'draggable="true" ')+'data-action="editIdentity" title="'+(t.kind==='master'?'Double-click to edit channel identity':'Drag to arrange · Alt+arrows move · double-click/F2 edit')+'" aria-label="Double-click to edit '+escapeHtml(t.name)+' channel identity"><span class="identity-number">'+(t.kind==='master'?'MASTER':'CH '+String(t.id).padStart(2,'0'))+'</span><span class="identity-name">'+escapeHtml(t.name)+'</span><span class="identity-symbol" aria-hidden="true">'+escapeHtml(iconFor(t))+'</span></button>';
- code+='<div class="section route-section"><div class="route-top"><span class="route-indicator">'+(t.kind==='audio'?'▥':t.kind==='bus'?'↪':t.kind==='fx'?'∿':'➜')+'</span>'+(t.safe?'<span class="safe-marker" title="Snapshot safe · recall protected">SAFE</span>':'')+(t.group?'<span class="group-indicator" title="Linked group '+escapeHtml(t.group)+'">'+escapeHtml(t.group)+'</span>':'')+(t.kind==='audio'?'<button class="mx-util-key" data-util-kind="format" data-action="format" aria-label="Toggle mono stereo processing width" aria-pressed="'+(t.format==='stereo')+'" title="Processing width M/ST (preserves physical input source)">'+(t.format==='mono'?'M':'ST')+'</button>':'')+(t.kind!=='master'&&wireOutgoingCount(t.id)?'<span class="split-count" title="GUI-only routing destinations · no native PCM">⇢'+wireOutgoingCount(t.id)+'</span>':'')+'<button class="mx-util-key" data-util-kind="phase" data-action="phase" aria-label="Reverse polarity" aria-pressed="'+Boolean(t.phase)+'" title="Reverse polarity">'+(t.phase?'Ø':'⊘')+'</button></div>';
+ code+='<div class="section route-section"><div class="route-top"><span class="route-indicator">'+(t.kind==='audio'?'▥':t.kind==='bus'?'↪':t.kind==='fx'?'∿':'➜')+'</span>'+(t.safe?'<span class="safe-marker" title="Snapshot safe · recall protected">SAFE</span>':'')+(t.group?'<span class="group-indicator" title="Linked group '+escapeHtml(t.group)+'">'+escapeHtml(t.group)+'</span>':'')+(t.kind==='audio'?'<button class="mx-util-key" data-util-kind="format" data-action="format" aria-label="Toggle mono stereo processing width" aria-pressed="'+(t.format==='stereo')+'" title="Processing width M/ST (preserves physical input source)">'+(t.format==='mono'?'M':'ST')+'</button>':'')+(t.kind!=='master'&&wireOutgoingCount(t.id)?'<span class="split-count" title="GUI-only routing destinations · no native PCM">⇢'+wireOutgoingCount(t.id)+'</span>':'')+'<button class="mx-util-key" data-util-kind="phase" data-action="phase" aria-label="Reverse polarity" aria-pressed="'+Boolean(t.phase)+'" title="Reverse polarity">'+materialIcon("swap_horiz")+'</button></div>';
  if(t.kind==='audio')code+='<div class="route-field"><span class="route-caption">IN</span><select class="route-select" data-field="input" title="Input source (demo choices)" aria-label="'+escapeHtml(t.name)+' input">'+option(channelOptions(t,'input'),t.input)+'</select></div>';
  else if(t.kind==='bus'||t.kind==='fx')code+='<div class="route-field"><span class="route-caption">IN</span><span class="route-identity">'+(t.kind==='bus'?'GROUP':'FX RETURN')+'</span></div>';
  else code+='<div class="route-field"><span class="route-caption">IN</span><span class="route-identity">SUM BUS</span></div>';
