@@ -46,8 +46,9 @@ def check(page,path,label):
     phase.click()
     assert page.locator(channel+" button.mx-util-key[data-util-kind='phase']").get_attribute("aria-pressed")==old
     trash=page.locator(channel+" button.mx-util-key[data-util-kind='fx-remove']").first
-    assert trash.locator("svg path").get_attribute("d").startswith("M16 9v10H8V9"),(
-        label,"FX remove is not Google Material delete icon")
+    expected="M9.4,16.5L12,13.9l2.6,2.6L16,15.1l-2.6-2.6L16,9.9L14.6,8.5L12,11.1L9.4,8.5L8,9.9l2.6,2.6L8,15.1l1.4,1.4ZM7,21q-0.82,0-1.41-0.59T5,19V6H4V4H9V3h6V4h5V6H19V19q0,0.82-0.59,1.41T17,21H7ZM17,6H7V19H17V6ZM7,6V19V6Z"
+    assert trash.locator("svg path").get_attribute("d")==expected,(
+        label,"FX remove must use the exact provided delete_forever SVG path")
     assert trash.get_attribute("aria-pressed") is None,(label,"remove must be momentary")
 
     # No dB scale positions or real input values change: only typography and
@@ -95,7 +96,7 @@ def check(page,path,label):
 
 def main():
     html=SOURCE.read_text("utf-8")
-    assert 'materialIcon("delete")' in html
+    assert 'materialIcon("delete_forever")' in html
     assert 'materialIcon("swap_horiz")' in html
     assert "(t.phase?'Ø':'⊘')" not in html
     assert "v%12===0" in html and "v!==-6" in html

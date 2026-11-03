@@ -43,3 +43,18 @@ floating ornament. Pressing changes only the face color, not size/position.
 M/ST remains 25×15 to retain its real text, also with no lower ornament.
 The off Delete glyph remains muted red; the momentary red press frame remains.
 Validation checks actual PNG pixels and unchanged control/WIRE behavior.
+
+## V21 — exact supplied Delete Forever and illuminated FX power
+
+- Replace only the FX Rack remove glyph with the **unmodified SVG path** from
+  the user's supplied `delete_forever_24dp_1F1F1F_FILL0_wght400_GRAD0_opsz24.svg`.
+  The source copy is `assets/delete-forever.svg`. Inline runtime SVG uses
+  its identical `d` path and existing `currentColor` so OFF stays muted red
+  and momentary press stays white. No substituted trash pictogram.
+- Recolor **only the FX power ON** atlas frame (row 0, column 1) to a bright
+  restrained green, no glow, no extra ornament. Its SVG icon stays **dark green
+  `#163e2b`** rather than white, maintaining readability on the active face.
+- The FX Rack power main and per-slot buttons share one existing sprite/state.
+  No changes to layout, keyboard, WIRE, DSP, faders, PAN or other buttons.
+- Chromium/Python regressions check exact icon path, RGBA green pixel,
+  pressed contrast and stable 17×17 control geometry.

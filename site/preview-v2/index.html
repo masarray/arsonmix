@@ -1625,7 +1625,7 @@ html * ,html *::before,html *::after{
 <link rel="stylesheet" href="assets/mixer-pan-controls.css?v=css-owner-v9-pan-up2-v19">
 <link rel="stylesheet" href="assets/mixer-fader-assembly.css?v=css-owner-v9-ruler-v18">
 <link rel="stylesheet" href="assets/mixer-meter-display.css?v=css-owner-v9-ruler-v18">
-<link rel="stylesheet" href="assets/mixer-utility-controls.css?v=micro-square-face-v20-20261103">
+<link rel="stylesheet" href="assets/mixer-utility-controls.css?v=fx-rack-user-icon-green-v21">
 <link rel="stylesheet" href="assets/inter-embedded.css?v=inter-utility-v7">
 <link rel="stylesheet" href="assets/mixer-wire-dots.css?v=v47-css-v16">
 <link rel="stylesheet" href="assets/mixer-wire-out-align-v48.css?v=out-center-v48">
@@ -1790,6 +1790,8 @@ const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>'
 const MATERIAL_PATH=Object.freeze({
  // Self-contained Google Material Icons paths (no font/network dependency).
  delete:'M16 9v10H8V9h8m-1.5-6h-5l-1 1H5v2h14V4h-3.5l-1-1zM18 7H6v12c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7z',
+ // Exact Google Material "delete_forever" path supplied by the user; no redrawing.
+ delete_forever:'M9.4,16.5L12,13.9l2.6,2.6L16,15.1l-2.6-2.6L16,9.9L14.6,8.5L12,11.1L9.4,8.5L8,9.9l2.6,2.6L8,15.1l1.4,1.4ZM7,21q-0.82,0-1.41-0.59T5,19V6H4V4H9V3h6V4h5V6H19V19q0,0.82-0.59,1.41T17,21H7ZM17,6H7V19H17V6ZM7,6V19V6Z',
  swap_horiz:'M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z',
  power_settings_new:'M13 3h-2v10h2V3zm4.83 2.17-1.42 1.42C17.99 7.88 19 9.82 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.18 1.01-4.12 2.59-5.41L6.17 5.17C4.23 6.82 3 9.27 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.73-1.23-5.18-3.17-6.83z',
  close:'M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
@@ -1845,7 +1847,7 @@ function sectionFx(t){
  for(const {name,i} of rows){
   out+='<div class="fxslot-row" draggable="'+(name!=='None')+'" data-slot="'+i+'" title="Insert '+(i+1)+'"><button class="mx-util-key" data-util-kind="fx-slot" data-action="slotPower" data-slot="'+i+'" title="Toggle effect" aria-label="Toggle effect slot '+(i+1)+'" aria-pressed="'+Boolean(name!=='None'&&!t.slotBypass[i])+'">'+materialIcon("power_settings_new")+'</button>';
   out+='<button class="fx-pick '+(name==='None'?'empty':'')+'" data-action="openPlugin" data-slot="'+i+'" aria-label="Choose plugin for '+escapeHtml(t.name)+' insert '+(i+1)+'">'+(name==='None'?'+ Add FX':escapeHtml(name))+'</button>';
-  if(name!=='None')out+='<button class="mx-util-key" data-util-kind="fx-remove" data-action="removeFx" data-slot="'+i+'" title="Remove insert '+(i+1)+'" aria-label="Remove insert '+(i+1)+'">'+materialIcon("delete")+'</button><span class="grip" title="Drag reorder" aria-hidden="true">'+materialIcon("drag_indicator")+'</span>';
+  if(name!=='None')out+='<button class="mx-util-key" data-util-kind="fx-remove" data-action="removeFx" data-slot="'+i+'" title="Remove insert '+(i+1)+'" aria-label="Remove insert '+(i+1)+'">'+materialIcon("delete_forever")+'</button><span class="grip" title="Drag reorder" aria-hidden="true">'+materialIcon("drag_indicator")+'</span>';
   out+='</div>';
  }
  return out+'</div></div>';
