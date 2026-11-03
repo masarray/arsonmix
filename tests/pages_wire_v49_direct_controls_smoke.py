@@ -45,7 +45,7 @@ def run():
             gain=page.locator('#tracks .strip[data-id="3"] .wire-gain')
             assert gain.count()==1,(width,"gain requires source OUT arming")
             old=float(gain.input_value())
-            gain.hover()
+            page.locator('#tracks .strip[data-id="3"] .wire-pot').hover()
             page.mouse.wheel(0,-120)
             new=float(gain.input_value())
             assert new>old,(width,"wire gain not editable via hover wheel",old,new)
