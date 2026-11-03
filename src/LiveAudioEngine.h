@@ -1060,6 +1060,8 @@ public:
         const juce::var& command,
         const LiveDryRoutingLab::FxSelections& fx,
         const LiveDryRoutingLab::FxRestores* restored=nullptr) {
+        if (dryRoutingLab_.nativeBusTopologyLive())
+            return "REMOVE native GROUP/FX RETURN buses before applying an M4 route";
         if (!allOutputsDisarmed()) return "MUTE hardware output and DISARM STREAM before APPLY routing";
         if (handoff_.busy()) return "A VST3 graph handoff is in progress";
         if (routeReconfiguring_.load(std::memory_order_acquire))

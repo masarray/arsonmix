@@ -119,6 +119,25 @@ test('E3 stable ChannelId GROUP/FX RETURN is a real guarded physical PCM transac
 });
 
 
+
+test('E5 rejected M4 structural edit and failed re-admission preserve native BUS PCM',()=>{
+  const apply=physical.slice(physical.indexOf('juce::String apply ('),physical.indexOf('juce::String repatchPhysicalSource('));
+  assert.match(apply,/nativeStructureLive_ && nativeAccepted_\.deviceEpoch==epoch\(\)/,
+    'same-epoch native BUS blocks legacy M4 compilation before graph publication');
+  assert.match(apply,/REMOVE native GROUP\/FX RETURN buses before replacing the M4 route/);
+  const admission=physical.slice(physical.indexOf('bool admitChannelIdFromAcceptedM4('),
+                                physical.indexOf('bool originalM4Aux('));
+  const commit=admission.indexOf('UnifiedLegacyProductionAdmission::compileAndCommit(');
+  assert.ok(commit>0,'native re-admission must commit genuine PCM');
+  assert.doesNotMatch(admission.slice(0,commit),/channelIdPcmEpoch_\.store\(0|nativeStructureLive_=false/,
+    'failed re-admission cannot demote renderer or discard BUS');
+  assert.match(admission,/\(nativeStructureLive_ && nativeAccepted_\.deviceEpoch==epoch\(\)\)/);
+  assert.ok(admission.indexOf('nativeStructureLive_=false;',commit)>commit);
+  assert.ok(admission.indexOf('channelIdPcmEpoch_.store(generation',commit)>commit);
+  assert.match(engine,/if \(dryRoutingLab_\.nativeBusTopologyLive\(\)\)\s*return "REMOVE native GROUP\/FX RETURN buses/);
+  assert.equal(count(callback,/dryRoutingLab_\.process\(/g),1);
+});
+
 test('E4 installed PATCH operator uses native ChannelId BUS ACK and real PCM snapshot, never ten-strip draft',()=>{
   const ui=read('web/monitor.js');
   const binding=ui.slice(ui.indexOf('// E4: The EXISTING routing workspace controls'),

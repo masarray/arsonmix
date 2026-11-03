@@ -175,6 +175,12 @@ public:
                         juce::AudioPluginFormatManager& formats,
                         double sampleRate,int deviceFrames,bool explicitSelection=true,
                         const FxRestores* restores=nullptr) {
+        // E5: the M4 compiler cannot encode an admitted native GROUP/FX RETURN.
+        // An M4 APPLY, Show recall or structural SOURCE/AUX edit must not
+        // erase native BUS PCM while its ChannelId graph owns the callback.
+        // After real device reopen a new epoch can start with a clean roster.
+        if(nativeStructureLive_ && nativeAccepted_.deviceEpoch==epoch())
+            return "REMOVE native GROUP/FX RETURN buses before replacing the M4 route";
         // Called by the native message thread only. Not callable from RT.
         if(!directPermitted || independentClock)
             return "Dry Routing LAB requires one verified DIRECT audio device";
@@ -1005,10 +1011,12 @@ public:
     bool admitChannelIdFromAcceptedM4(int occupiedExternalCh1Fx,
                                      int deviceFrames,bool outputsDisarmed,
              armix::mixer::DynamicChannelFxLeaseBank::ExternalLease externalCh1={}) {
-        channelIdPcmEpoch_.store(0,std::memory_order_release);
-        nativeStructureLive_=false; // M4 re-admission replaces all extra buses
+        // A rejected admission must preserve native BUS PCM and its original
+        // CH1/Orbit lease. Demote neither selected renderer nor BUS owner
+        // before the replacement snapshot is actually committed.
         try {
-        if(!outputsDisarmed || occupiedExternalCh1Fx<0 ||
+        if((nativeStructureLive_ && nativeAccepted_.deviceEpoch==epoch()) ||
+           !outputsDisarmed || occupiedExternalCh1Fx<0 ||
            (occupiedExternalCh1Fx>0)!=externalCh1.populated() ||
            !hasExplicitRoute()||!ready() ||
            topologyFault_.load(std::memory_order_acquire))
@@ -1068,7 +1076,8 @@ public:
             nativePublisher_.acceptedRevision(),generation,epoch(),
             true,nativePublisher_,nativeAccepted_,std::move(externalCh1));
         if(!applied.ok() || generation!=epoch() || m4Revision!=revision())
-            return false; // unchanged M4 PCM is the safe rollback
+            return false; // keep last selected native renderer on rejection
+        nativeStructureLive_=false; // committed fixed M4 roster has no extra BUS
         channelIdPcmEpoch_.store(generation,std::memory_order_release);
         return true;
         } catch(...) {
