@@ -72,6 +72,8 @@ def geometry(page, density, label):
 
 def math_and_preview(page,label):
     data=page.evaluate("""() => {
+      const {scaleTopPct, faderPercent, meterDbfsPercent, demoMeterDbfs}=
+        window.ArSonMixMeterCalibration;
       const nums=[-60,-48,-36,-24,-12,-6,0,6,10];
       const perDb=nums.map(x=>({db:x,gain:scaleTopPct(x,-60,10),meter:meterDbfsPercent(x)}));
       const probe=[-60,-30,0].map(db=>({db,p:meterDbfsPercent(db),tick:scaleTopPct(db,-60,0)}));
@@ -97,18 +99,19 @@ def math_and_preview(page,label):
      document.querySelector('#tracks .strip[data-id="1"] .meter-fill.left')
       ?.style.getPropertyValue('--lit')||'0')>5""",timeout=8000)
     result=page.evaluate("""() => {
-      const t=tracks[0], frame=meterFrame;
+      const {meterDbfsPercent,demoMeterDbfs,readDemo}=window.ArSonMixMeterCalibration;
+      const {gain,frame,running}=readDemo();
       const modulation=.46+.23*Math.sin(frame*.13)+.17*Math.sin(frame*.31);
-      const expected=meterDbfsPercent(demoMeterDbfs(t.level,modulation));
+      const expected=meterDbfsPercent(demoMeterDbfs(gain,modulation));
       const fill=document.querySelector('#tracks .strip[data-id="1"] .meter-fill.left');
       return {expected,actual:parseFloat(fill.style.getPropertyValue('--lit')),
               text:document.getElementById('transport').textContent,
-              preview,frame};
+              preview:running,frame};
     }""")
     assert result["preview"] and "preview" in result["text"].lower(),(label,result)
     close(result["actual"],result["expected"],.0001)
     btn.click()
-    assert not page.evaluate("preview")
+    assert not page.evaluate("window.ArSonMixMeterCalibration.readDemo().running")
     assert page.locator("#tracks .strip[data-id='1'] .meter-fill.left").evaluate(
         "el=>el.style.getPropertyValue('--lit')")=="0%",label
 
