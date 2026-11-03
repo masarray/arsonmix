@@ -36,7 +36,8 @@ def manifest():
 def reconstruct():
     """Recover both exact V21 files, verifying immutable live V22 hashes."""
     data=manifest()
-    html=HTML.read_text(encoding="utf-8")
+    from gui_meter_tick_79_compat import historical_html
+    html=historical_html()
     chrome=CHROME.read_text(encoding="utf-8")
     styles=list(re.finditer(r"<style>(.*?)</style>",html,re.S))
     assert len(styles)==3 and styles[0].group(1)==styles[1].group(1)==""
