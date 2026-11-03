@@ -103,6 +103,8 @@ jobs:
         run: python tests/pages_css_architecture_v15_smoke.py
       - name: Verify V16 WIRE single CSS owner, 241-rule exact source and visual parity
         run: python tests/pages_css_architecture_v16_smoke.py
+      - name: Verify V17 Plugin Manager and Fast FX Picker single CSS owner
+        run: python tests/pages_css_architecture_v17_smoke.py
       - name: Verify embedded Inter font and contextual V7 micro-controls
         run: python tests/pages_inter_utility_v7_smoke.py
       - name: Validate exact alpha micro hardware sprite states and WIRE coexistence

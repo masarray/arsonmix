@@ -23,7 +23,7 @@ def source_gate():
     assert rack.count('.fxslot-row')>9 and rack.count('.fx-section')>12
     assert '.plugin-browser[hidden]' in plugin and '.plugin-head' in plugin
     assert 'assets/mixer-fx-rack.css?v=fx-owner-v8' in html
-    assert 'assets/mixer-plugin-browser.css?v=fx-owner-v8' in html
+    assert 'assets/mixer-plugin-browser.css?v=css-plugin-owner-v17' in html
     wire_owner=(ASSETS/'mixer-wire-dots.css').read_text('utf-8')
     assert 'data:image/svg+xml;base64,' in (html+wire_owner) and 'wireWsCanJoin' in html
     assert 'assets/inter-embedded.css' in html

@@ -18,7 +18,8 @@ async def main():
     source_gate()
     doc=manifest()
     prior,old_wire=reconstruct()
-    current=HTML.read_text(encoding="utf-8")
+    from css_v17_restore import reconstruct as restore_v16_source
+    current,_=restore_v16_source()
     old_css=combined_css(prior)
     new_css=combined_css(current)
     assert len(old_css)==doc["sourceCSS"]==173298
