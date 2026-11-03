@@ -255,3 +255,45 @@
  border-color:#ff8575;box-shadow:inset 0 1px #ffd1c4!important;
 }
 
+
+/* V51 portrait segmented meter — approved external mixer photo:
+   hardware 10px lane remains exactly M3 geometry, while each optical cell
+   is 6px wide x 12px high with a 2px black separator (14px pitch).
+   All lit and held markers share one full-height dBFS gradient; no per-cell
+   DOM, no filters, no continuous CSS animation, no fake PCM. */
+.console-body .strip .meter-box .meter-lane,
+.console-body .strip .meter-box.mono .meter-lane{
+ --meter-led-ramp:linear-gradient(to top,
+   #139b3d 0%,#37d443 24%,#68ed35 43%,#cce732 62%,
+   #f1d82d 74%,#ffab22 85%,#f87824 94%,#e83e2e 100%);
+ --meter-pitch:14px;
+ background:repeating-linear-gradient(to top,
+   #1d2931 0 12px,#030a10 12px 14px)!important;
+ border-radius:0!important;
+}
+.console-body .strip .meter-box .meter-fill{
+ left:2px!important;right:2px!important;
+ background:var(--meter-led-ramp)!important;
+ /* --lit is a JS-quantized fraction of whole 14px steps; never a half LED. */
+ clip-path:inset(calc(100% - var(--lit,0%)) 0 0)!important;
+}
+.console-body .strip .meter-box .meter-lane::before{
+ content:""!important;z-index:2;
+ background:repeating-linear-gradient(to top,
+   transparent 0 12px,#02070b 12px 14px)!important;
+ pointer-events:none;
+}
+.console-body .strip .meter-box .meter-lane::after{
+ content:""!important;z-index:3;
+ background:linear-gradient(90deg,#ffffff13,transparent 44%,#0007)!important;
+ pointer-events:none;
+}
+.console-body .strip .meter-box .meter-peak-hold{
+ position:absolute;inset:0 2px;z-index:4;pointer-events:none;
+ background:var(--meter-led-ramp);opacity:0;
+ clip-path:inset(calc(100% - var(--peak-extent,0px)) 0
+   calc(var(--peak-extent,0px) - 3px) 0);
+ transition:none;
+}
+/* M3 independent hardware CLIP lamps remain distinct from a moving
+   three-pixel, frequency-color-matched PEAK HOLD line inside each lane. */
