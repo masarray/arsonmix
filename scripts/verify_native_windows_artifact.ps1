@@ -110,7 +110,7 @@ foreach ($item in $resources) {
 # not a perfect legacy-source hash match promoted as the wrong product.
 foreach ($marker in @(
     "ArSonMix — Native Live Console",
-    "class=\"console-body",
+    'class="console-body',
     "arMixConsoleSubscribe",
     "arMixConsoleIntent",
     "arMixConsoleAck",
