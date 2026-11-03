@@ -101,6 +101,27 @@ test('workers handle Show IO outside the audio callback, not as a second DSP eng
   assert.doesNotMatch(callback,/NativeShowStore|\.loadWithStates\(|\.commit\(show/);
 });
 
+test('E2 uses exactly one installed JUCE callback with admitted native ChannelId PCM and M4 fallback',()=>{
+  assert.match(engine,/dryRoutingLab_\.admitChannelIdFromAcceptedM4\(/);
+  assert.match(physical,/UnifiedLegacyProductionAdmission::compileAndCommit\(/);
+  assert.match(physical,/channelIdPcmEpoch_\.store\(generation,std::memory_order_release\)/);
+  assert.match(physical,/const bool channelIdRender=/);
+  assert.match(physical,/if\(channelIdRender\)\s*\{/);
+  assert.match(physical,/nativePublisher_\.render\(/);
+  assert.match(physical,/else \{\s*processed=snapshot->prepared->process\(/);
+  assert.equal(count(callback,/dryRoutingLab_\.process\(/g),1);
+  assert.equal(count(callback,/DynamicNativeSessionPublisher::render\(/g),0,
+    'a second JUCE native renderer may not be installed');
+  assert.match(physical,/channelIdPcmEpoch_\.store\(0,std::memory_order_release\)/,
+    'stale epoch and structural edits must turn off the native selector');
+  assert.match(physical,/channelIdPhysicalPcmActive\(/,
+    'live GUI scalar control must follow the admitted native renderer');
+  assert.match(engine,/dryRoutingLab_\.revokeChannelIdPcm\(\)/,
+    'original CH1 FX publication must first retire native PCM authority');
+  assert.match(physical,/nativePublisher_\.pollRetirement\(\)/,
+    'native VST owner generations must retire off audio callback');
+});
+
 test('installed M4 and future ChannelId share one nonblocking render permit',()=>{
   assert.ok(physical.includes('RealtimeRenderPermit exclusive{rendering_}'));
   assert.ok(dynamic.includes('RealtimeRenderPermit exclusive{rendering_}'));

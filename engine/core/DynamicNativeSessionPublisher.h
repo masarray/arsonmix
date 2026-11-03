@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <span>
 #include <type_traits>
 #include <utility>
 
@@ -130,7 +131,9 @@ public:
     bool render(std::uint64_t deviceEpoch,const float* const* physical,
                 int physicalCount,float* mainL,float* mainR,int frames,
                 bool outputMuted,Fx&& effect,
-                float* monitorL=nullptr,float* monitorR=nullptr) noexcept {
+                float* monitorL=nullptr,float* monitorR=nullptr,
+                std::span<float> channelPeaksL={},
+                std::span<float> channelPeaksR={}) noexcept {
         static_assert(std::is_nothrow_invocable_v<Fx,ChannelId,float*,float*,int>,
                       "Realtime VST dispatch must be noexcept");
         const auto clearOutputs=[&]() noexcept {
@@ -180,7 +183,7 @@ public:
         };
         const bool ok=snap->prepared->graph.process(
              physical,physicalCount,mainL,mainR,frames,
-             dispatch,monitorL,monitorR);
+             dispatch,monitorL,monitorR,channelPeaksL,channelPeaksR);
         if(!ok)clearOutputs();
         return ok;
     }

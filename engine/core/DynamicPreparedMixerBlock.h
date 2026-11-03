@@ -459,8 +459,17 @@ public:
     template<class Fx>
     bool process(const float* const* physical,int physicalCount,
                  float* outputL,float* outputR,int frames,Fx&& processFx,
-                 float* monitorL=nullptr,float* monitorR=nullptr) noexcept {
+                 float* monitorL=nullptr,float* monitorR=nullptr,
+                 std::span<float> channelPeaksL={},
+                 std::span<float> channelPeaksR={}) noexcept {
         if(frames<=0 || !outputL || !outputR)return false;
+        if(channelPeaksL.size()!=channelPeaksR.size() ||
+           (!channelPeaksL.empty() && channelPeaksL.size()<lanes_.size()))
+            return false;
+        if(!channelPeaksL.empty()) {
+            std::fill_n(channelPeaksL.data(),lanes_.size(),0.f);
+            std::fill_n(channelPeaksR.data(),lanes_.size(),0.f);
+        }
         if(outputL==outputR ||
            (monitorL==nullptr)!=(monitorR==nullptr) ||
            (monitor_!=notScheduled && !monitorL) ||
@@ -608,9 +617,16 @@ public:
             // survives variable hardware callback sizes and gesture reversals.
             controls.appliedL.retarget(goalL);
             controls.appliedR.retarget(goalR);
+            float observedL=0.f,observedR=0.f;
             for(int f=0;f<frames;++f){
                 l[f]*=controls.appliedL.next();
                 r[f]*=controls.appliedR.next();
+                observedL=std::max(observedL,std::abs(l[f]));
+                observedR=std::max(observedR,std::abs(r[f]));
+            }
+            if(!channelPeaksL.empty()) {
+                channelPeaksL[i]=observedL;
+                channelPeaksR[i]=observedR;
             }
             for(std::size_t e=lane.first;e<lane.last;++e) {
                 const auto& edge=edges_[e];

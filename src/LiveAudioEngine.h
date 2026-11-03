@@ -245,6 +245,7 @@ public:
         secondaryOutput_.stop(); // stop independent OBS consumer before audio graph teardown
         independent_.close();
         detach();
+        dryRoutingLab_.disable(); // retire M4 + ChannelId VST owners on CONTROL
         handoff_.resetAfterStop (graphOwned_.get());
         // Last owner releases vendor resources exactly once after detach.
         // Reused instances remain valid until their final control-owned slot.
@@ -716,6 +717,10 @@ public:
             return false;
         prepareFxEditEnvelope(*next,device->getCurrentSampleRate());
         stagedOwner_=std::move(next);
+        // A new original CH1/Orbit vendor rack is not yet transferable
+        // into the native ChannelId lease. Select M4 BEFORE staging its
+        // realtime FX handoff; no new VST may disappear from audible PCM.
+        dryRoutingLab_.revokeChannelIdPcm();
         if(!handoff_.stage(stagedOwner_.get()))
         {
             stagedOwner_.reset();
@@ -1047,11 +1052,17 @@ public:
         for(int i=0;i<graphOwned_->count;++i)
             if(graphOwned_->slots[i].latency!=0)
                 return "CH1 rack contains a latent VST3: zero-latency settings are required for native multi-channel sends";
-        return dryRoutingLab_.apply(command,directFence_.permitted(),
-                   independent_.active(),graphOwned_->count,fx,formats_,
-                   device->getCurrentSampleRate(),
-                   juce::jmax(32,device->getCurrentBufferSizeSamples()),
-                   true,restored);
+        const auto frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
+        const auto result=dryRoutingLab_.apply(
+            command,directFence_.permitted(),independent_.active(),
+            graphOwned_->count,fx,formats_,device->getCurrentSampleRate(),
+            frames,true,restored);
+        // Same original PCM callback/hardware gate; a failed ChannelId
+        // admission retains the last accepted M4 with original Orbit/Show.
+        if(result.isEmpty())
+            (void)dryRoutingLab_.admitChannelIdFromAcceptedM4(
+                graphOwned_->count,frames,allOutputsDisarmed());
+        return result;
     }
     void disableDryRoutingLab() noexcept {
         setOutputMuted(true); // never expose CH1 unexpectedly on STOP
@@ -1072,11 +1083,19 @@ public:
         // transaction, not a browser-side APPLY or alternate callback. A
         // single verified mono capture pin is a supported source.
         try {
-            return dryRoutingLab_.repatchPhysicalSource(
+            const auto frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
+            const auto oldRevision=dryRoutingLab_.revision();
+            const auto changed=dryRoutingLab_.repatchPhysicalSource(
                 strip,epoch,revision,mode,left,right,
                 directFence_.permitted(),independent_.active(),
-                graphOwned_->count,formats_,device->getCurrentSampleRate(),
-                juce::jmax(32,device->getCurrentBufferSizeSamples()));
+                graphOwned_->count,formats_,device->getCurrentSampleRate(),frames);
+            // Same-format SOURCE is an atomic live parameter on BOTH kernels:
+            // do not rebuild VST3/PCM or interrupt the 64-sample crossfade.
+            if(changed.isEmpty() && allOutputsDisarmed() &&
+               oldRevision!=dryRoutingLab_.revision())
+                (void)dryRoutingLab_.admitChannelIdFromAcceptedM4(
+                    graphOwned_->count,frames,true);
+            return changed;
         } catch(const std::exception& ex) {
             return "SOURCE: native prepare failed; prior audio kept: " + juce::String(ex.what());
         } catch(...) {
@@ -1099,11 +1118,15 @@ public:
         auto* device=deviceManager_.getCurrentAudioDevice();
         if(!device)return "CHANNEL PATCH: no active native audio interface";
         try {
-            return dryRoutingLab_.repatchChannelStructure(
+            const auto frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
+            const auto changed=dryRoutingLab_.repatchChannelStructure(
                 strip,epoch,revision,operation,value,
                 directFence_.permitted(),independent_.active(),
-                graphOwned_->count,formats_,device->getCurrentSampleRate(),
-                juce::jmax(32,device->getCurrentBufferSizeSamples()));
+                graphOwned_->count,formats_,device->getCurrentSampleRate(),frames);
+            if(changed.isEmpty() && allOutputsDisarmed())
+                (void)dryRoutingLab_.admitChannelIdFromAcceptedM4(
+                    graphOwned_->count,frames,true);
+            return changed;
         } catch(...) {
             return "CHANNEL PATCH: native preparation failed; previous mix preserved";
         }
@@ -1144,11 +1167,15 @@ public:
         auto* device=deviceManager_.getCurrentAudioDevice();
         if(!device)return "AUX CONNECT: no verified audio interface";
         try {
-            return dryRoutingLab_.connectPreparedAuxSend(
+            const auto frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
+            const auto changed=dryRoutingLab_.connectPreparedAuxSend(
                 source,bus,epoch,revision,tap,gain,pan,
                 directFence_.permitted(),independent_.active(),graphOwned_->count,
-                formats_,device->getCurrentSampleRate(),
-                juce::jmax(32,device->getCurrentBufferSizeSamples()));
+                formats_,device->getCurrentSampleRate(),frames);
+            if(changed.isEmpty() && allOutputsDisarmed())
+                (void)dryRoutingLab_.admitChannelIdFromAcceptedM4(
+                    graphOwned_->count,frames,true);
+            return changed;
         } catch(...) {
             return "AUX CONNECT: failed native preparation; previous route retained";
         }

@@ -432,6 +432,20 @@ static void verifyMU1LegacyM4FxFullMigrationAndMonitorPcm() {
                             32,false,mustNeverCall,
                             dynamicML.data(),dynamicMR.data()));
     assert(heapCalls.load(std::memory_order_relaxed)==before);
+    // E2 native physical path reads true per-ChannelId POST-fader left
+    // and right peaks from the SAME render (no stale M4 GUI meter).
+    std::array<float,stripCount+auxBusCount+2> nativeMeterL{},nativeMeterR{};
+    assert(publisher.render(epoch,physical,4,dynamicL.data(),dynamicR.data(),
+                            32,false,mustNeverCall,
+                            dynamicML.data(),dynamicMR.data(),
+                            nativeMeterL,nativeMeterR));
+    assert(heapCalls.load(std::memory_order_relaxed)==before);
+    assert(nativeMeterL[0]>0.f&&nativeMeterR[0]>0.f);
+    assert(!near(nativeMeterL[0],nativeMeterR[0]));
+    assert(nativeMeterL[stripCount]>0.f&&nativeMeterR[stripCount]>0.f);
+    assert(nativeMeterL[stripCount+auxBusCount]>0.f);
+    assert(nativeMeterL[stripCount+auxBusCount+1]>0.f);
+
     for(int i=0;i<32;++i) {
         assert(near(legacyL[i],dynamicL[i]));
         assert(near(legacyR[i],dynamicR[i]));
