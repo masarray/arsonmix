@@ -319,3 +319,13 @@
 }
 .console-body .strip .gain-tick.unity span{color:#f0fbff;font-weight:600}
 .console-body .strip .gain-tick.minor span{display:none}
+
+/* M1.2 physical fader/ruler adjacency: the M1 numeric column already aligns.
+   Keep the cap/hardware well at its real 36px width and park it flush against
+   the ruler. Extra flexible strip width belongs BETWEEN meter and fader, never
+   between the operator's fader and its ticks. No changes to fader travel, dB
+   math, meter housing, pointer input or vertical alignment. */
+.console-body .strip .fader-workspace > .fader-box{
+  width:36px!important;min-width:36px!important;max-width:36px!important;
+  justify-self:end!important;
+}

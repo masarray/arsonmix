@@ -28,6 +28,14 @@ def geometry(page, density, label):
       const v=strip.querySelector('.vu-scale-travel');
       const travel=strip.querySelector('.fader-travel');
       const cap=strip.querySelector('.fader-travel .cap');
+      const box=strip.querySelector('.fader-box');
+      const gainRuler=strip.querySelector('.fader-scale');
+      const faderRigs=[...document.querySelectorAll('#tracks .strip[data-id="1"], #master .strip')].map(root=>{
+        const c=root.querySelector('.fader-travel .cap').getBoundingClientRect();
+        const b=root.querySelector('.fader-box').getBoundingClientRect();
+        const g=root.querySelector('.gain-scale-travel').getBoundingClientRect();
+        return {gap:g.left-c.right,wellWidth:b.width,wellRight:b.right,rulerLeft:g.left};
+      });
       const bars=strip.querySelector('.vu-bars');
       const meterLane=strip.querySelector('.meter-lane');
       const rect=e=>{const b=e.getBoundingClientRect();return {y:b.top,h:b.height,x:b.left,w:b.width};};
@@ -53,6 +61,7 @@ def geometry(page, density, label):
         });
       return {columns:{gain:column(g,'.gain-tick.major span'),
                        vu:column(v,'.vu-tick.major span')},
+       rigs:faderRigs,well:rect(box),ruler:rect(gainRuler),
        g:rect(g),v:rect(v),travel:rect(travel),cap:rect(cap),
        bar:rect(bars),lane:rect(meterLane),gain:ticks(g,'.gain-tick'),
        vu:ticks(v,'.vu-tick'),
@@ -78,7 +87,17 @@ def geometry(page, density, label):
         close(item["y"],out["lane"]["y"]+out["lane"]["h"]*expected/100,1.1)
     close(out["gain"][1]["y"],out["cap"]["y"]+out["cap"]["h"]/2,1.05)
     assert out["gain"][1]["text"]=="0" and out["vu"][0]["text"]=="0"
-    if label != "png":  # frozen independent V45 PNG reference is not live M1.1
+    if label != "png":  # frozen independent V45 PNG reference is not live M1.2
+        # Tick marks are physically alongside the thumb, not detached by
+        # the flexible fader track column. Cover master and input strips.
+        assert len(out["rigs"])==2,(label,density,"missing fader rigs",out["rigs"])
+        for rig in out["rigs"]:
+            close(rig["wellWidth"],36,.6)
+            assert 3<=rig["gap"]<=8,(label,density,"ruler too far from fader cap",rig)
+            close(rig["wellRight"],rig["rulerLeft"]-2,.75)
+        assert out["ruler"]["x"]>=out["well"]["x"]+out["well"]["w"]-.2,(
+            label,density,"ruler overlapping machined fader well",out)
+
         for key in ("gain","vu"):
             column=out["columns"][key]
             assert len(column)>=6,(label,density,key,"missing major labels",column)
@@ -152,7 +171,8 @@ def main():
         published=dist/"preview/mixer.html"
         assert published.read_bytes()==CANON.read_bytes(),"Published mixer source drift"
         for name in ("mixer-fader-assembly.css","mixer-meter-display.css"):
-            key=f"assets/{name}?v=css-owner-v9-ruler-m1-column"
+            version="m1-adjacent" if name=="mixer-fader-assembly.css" else "m1-column"
+            key=f"assets/{name}?v=css-owner-v9-ruler-{version}"
             assert key in published.read_text("utf-8"),("stale ruler cache URL",name)
         for name in ("mixer-fader-assembly.css","mixer-meter-display.css"):
             assert (dist/"preview/assets"/name).read_bytes()==(ASSETS/name).read_bytes(),name
