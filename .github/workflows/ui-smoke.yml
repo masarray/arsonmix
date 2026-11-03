@@ -58,11 +58,10 @@ jobs:
         run: python tests/theme_reference_fixture_test.py
       - name: Validate JavaScript syntax
         run: |
-          node --check web/app.js
-          node --check web/plugin-ui.js
-          node --check web/mixer-io.js
-          node --check web/mixer-layout.js
-          node --test tests/gui_workflow_contract_test.mjs tests/plugin_ui_contract_test.mjs tests/ci_workflow_efficiency_test.mjs tests/fx_drag_reorder_contract_test.mjs tests/mixer_io_operator_contract_test.mjs tests/mixer_shell_contract_test.mjs
+          # The retired web/app.js source still has archival tests, but the
+          # actual Windows Console must be certified against APPROVED M3 HTML.
+          node --check web/console-native.js
+          node --test tests/approved_native_console_contract_test.mjs tests/ci_workflow_efficiency_test.mjs tests/fx_drag_reorder_contract_test.mjs tests/live_graph_contract_test.mjs
       - name: Validate approved GUI checkpoint and single publisher
         run: python tests/gui_baseline_lock_test.py
       - name: Validate smart audio architecture handoff contract
