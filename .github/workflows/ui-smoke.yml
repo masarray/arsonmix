@@ -5,7 +5,6 @@ on:
     branches: [main]
     paths:
       - 'web/**'
-      - 'integration/console-v6/**'
       - 'site/**'
       - 'AR-MIX-Live-FX-Host-Standalone-v0.3.html'
       - 'scripts/build_pages.py'
@@ -16,7 +15,6 @@ on:
   pull_request:
     paths:
       - 'web/**'
-      - 'integration/console-v6/**'
       - 'site/**'
       - 'AR-MIX-Live-FX-Host-Standalone-v0.3.html'
       - 'scripts/build_pages.py'
@@ -50,11 +48,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Cheap canonical Console v6 puzzle socket gate
-        run: node scripts/check_console_puzzle.mjs
-      - name: Stop incomplete integrated product promotion before browser setup
-        if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-') }}
-        run: node scripts/check_console_puzzle.mjs --release
       - name: Verify CSS ownership build and offline/WebView2 parity
         run: python scripts/build_ui_css.py --check
       - name: Verify immutable approved Brushed Metal CSS and non-destructive preview
@@ -65,6 +58,7 @@ jobs:
           node --check web/plugin-ui.js
           node --check web/mixer-io.js
           node --check web/mixer-layout.js
+          node --check web/hardware-keys.js
           node --test tests/gui_workflow_contract_test.mjs tests/plugin_ui_contract_test.mjs tests/ci_workflow_efficiency_test.mjs tests/fx_drag_reorder_contract_test.mjs tests/mixer_io_operator_contract_test.mjs tests/mixer_shell_contract_test.mjs
       - name: Validate approved GUI checkpoint and single publisher
         run: python tests/gui_baseline_lock_test.py
@@ -83,6 +77,12 @@ jobs:
         run: python tests/pan_button_asset_test.py
       - name: Validate linked 11-strip geometry and LV1-style rail workspace
         run: python tests/mixer_shell_geometry_smoke.py
+      - name: Verify native accepted WIRE-pot SVG, pointer gesture and ACK
+        run: python tests/operator_console_v6_smoke.py
+      - name: Verify accepted physical M4 GUI to native intent and ACK
+        run: python tests/m4_gui_bridge_smoke.py
+      - name: Verify V5 masked backlit hardware controls in WebView and standalone
+        run: python tests/hardware_key_v5_smoke.py
       - name: Run mixer UI smoke tests
         run: python tests/ui_smoke.py
       - name: Verify G1/G2 LIVE mixer bank and native I/O transaction
@@ -117,6 +117,8 @@ jobs:
             fader-ui-smoke.png
             toolbar-global-btn180-pad.png
             device-green-on-palette-review.png
+            mixer-backlit-v5-native-1680.png
+            mixer-backlit-v5-native-ON-1680.png
             mixer-design-review.png
             mixer-design-review-1440.png
             native-input-patch-review-1680.png

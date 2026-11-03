@@ -26,7 +26,9 @@ for rule in (
  'display:inline-flex',
  'inset 5px 5px 2px -1px rgba(0,0,0,.18)'
 ): assert ''.join(rule.split()) in compact,rule
-assert '--b180-off:#cbd1d1' in css
+# PR#278 V6 owner-approved brighter OFF plastic; keep all original seven shadows.
+assert '--b180-off:#E7EFF0' in css
+assert '--b180-off:#E7EFF0' in (root/'web/styles-src/20-button-180.css').read_text(encoding='utf8')
 assert '--b180-edge:#747f7f' in css
 assert '--b180-off-ink:#172229' in css
 assert '--b180-ink:var(--b180-off-ink)' in css

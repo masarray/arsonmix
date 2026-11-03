@@ -125,3 +125,27 @@ test('legacy M4 GUI commands require accepted physical authority, not just guess
   assert.ok(bridge.includes('PRODUCTION_GRAPH_NOT_ADMITTED'));
   assert.ok(bridge.includes('legacyRoutingRevision'));
 });
+
+test('all WebView2 local script and PNG references are bound to the same JUCE BinaryData executable',()=>{
+  const html=read('web/index.html'),cmake=read('CMakeLists.txt');
+  const native=read('src/Main.cpp'),css=read('web/mixer-layout.css');
+  const packageScript=read('scripts/package_native_windows.ps1');
+  const verifier=read('scripts/verify_native_windows_artifact.ps1');
+  const scripts=[...html.matchAll(/<script\s+src="([^"]+)"/g)].map(m=>m[1]);
+  for(const file of scripts) {
+    assert.ok(cmake.includes('web/'+file),'Missing JUCE BinaryData '+file);
+    assert.ok(native.includes('"/'+file+'"'),'Missing WebView2 resource '+file);
+  }
+  assert.equal(scripts.length,7,'Seven shipped JS resources including hardware keys');
+  const pngs=[...new Set([...css.matchAll(/url\(['"]?(assets\/[^)'"]+\.png)/g)].map(m=>m[1]))];
+  assert.equal(pngs.length,4,'Four approved PNG fader and PAN references');
+  for(const path of pngs) {
+    assert.ok(cmake.includes('web/'+path),'Missing PNG binary resource '+path);
+    assert.ok(native.includes('"/'+path+'"'),'Missing PNG resource handler '+path);
+  }
+  for(const name of ['mixerIoJsSha256','mixerIoCssSha256',
+    'mixerLayoutJsSha256','mixerLayoutCssSha256','hardwareKeysJsSha256']) {
+    assert.ok(packageScript.includes(name),'Missing manifest hash '+name);
+    assert.ok(verifier.includes(name),'Missing embedded binary exact-match verifier '+name);
+  }
+});

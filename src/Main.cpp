@@ -76,6 +76,20 @@ std::optional<juce::WebBrowserComponent::Resource> assetFor (const juce::String&
         { data = BinaryData::mixerlayout_js; size = BinaryData::mixerlayout_jsSize; mime = "text/javascript"; }
     else if (path == "/mixer-layout.css")
         { data = BinaryData::mixerlayout_css; size = BinaryData::mixerlayout_cssSize; mime = "text/css"; }
+    // The M5.1 joined GUI source references these exact assets. Missing
+    // resource-provider cases silently work in browser previews but NOT in
+    // the shipping WebView2 executable. Resource names are JUCE-generated
+    // from case-preserving basenames after removing hyphens.
+    else if (path == "/hardware-keys.js")
+        { data = BinaryData::hardwarekeys_js; size = BinaryData::hardwarekeys_jsSize; mime = "text/javascript"; }
+    else if (path == "/assets/fader-silver2.png")
+        { data = BinaryData::fadersilver2_png; size = BinaryData::fadersilver2_pngSize; mime = "image/png"; }
+    else if (path == "/assets/faders/FADER-ARI-SILVER.png")
+        { data = BinaryData::FADERARISILVER_png; size = BinaryData::FADERARISILVER_pngSize; mime = "image/png"; }
+    else if (path == "/assets/faders/FADER-ARI-ROSEGOLD.png")
+        { data = BinaryData::FADERARIROSEGOLD_png; size = BinaryData::FADERARIROSEGOLD_pngSize; mime = "image/png"; }
+    else if (path == "/assets/pan/PAN-SLIDER.png")
+        { data = BinaryData::PANSLIDER_png; size = BinaryData::PANSLIDER_pngSize; mime = "image/png"; }
     else return std::nullopt;
 
     juce::WebBrowserComponent::Resource resource;

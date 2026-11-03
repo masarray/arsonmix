@@ -76,7 +76,12 @@ $resources = @(
     @{Path="web/plugin-ui.css"; Hash=$manifest.pluginUiCssSha256},
     @{Path="web/plugin-ui.js"; Hash=$manifest.pluginUiJsSha256},
     @{Path="web/bridge.js"; Hash=$manifest.bridgeJsSha256},
-    @{Path="web/monitor.js"; Hash=$manifest.monitorJsSha256}
+    @{Path="web/monitor.js"; Hash=$manifest.monitorJsSha256},
+    @{Path="web/mixer-io.js"; Hash=$manifest.mixerIoJsSha256},
+    @{Path="web/mixer-io.css"; Hash=$manifest.mixerIoCssSha256},
+    @{Path="web/mixer-layout.js"; Hash=$manifest.mixerLayoutJsSha256},
+    @{Path="web/mixer-layout.css"; Hash=$manifest.mixerLayoutCssSha256},
+    @{Path="web/hardware-keys.js"; Hash=$manifest.hardwareKeysJsSha256}
 )
 $embeddedText = [Text.Encoding]::UTF8.GetString($bytes)
 foreach ($item in $resources) {
