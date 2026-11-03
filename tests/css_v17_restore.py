@@ -11,6 +11,26 @@ def fingerprint(value):
     for c in value:h=((h^ord(c))*16777619)&0xffffffff
     return f"{h:08x}"
 
+# A later visual milestone may change unrelated fader semantics/asset keys.
+# Normalize ONLY these three declared M2 deltas to the immutable V17 snapshot
+# before verifying both historical fingerprints. Reapply the same deltas to
+# the reconstructed pre-V17 page for a fair CSS-only browser comparison.
+M2_DELTAS=(
+    ("assets/mixer-fader-assembly.css?v=css-owner-v9-ruler-m1-adjacent",
+     "assets/mixer-fader-assembly.css?v=css-owner-v9-ruler-m2-instrument"),
+    ("assets/mixer-meter-display.css?v=css-owner-v9-ruler-m1-column",
+     "assets/mixer-meter-display.css?v=css-owner-v9-ruler-m2-instrument"),
+    ("(major?(v<=-60?'−∞':v>0?'+'+v:v):'')",
+     "(major?(v>0?'+'+v:v):'')"),
+)
+
+def m2_transform(page,reverse=False):
+    for historical,current in M2_DELTAS:
+        source,target=(current,historical) if reverse else (historical,current)
+        assert page.count(source)==1 and page.count(target)==0,(source,"M2 delta drift")
+        page=page.replace(source,target,1)
+    return page
+
 def manifest():
     data=json.loads(LEDGER.read_text(encoding="utf-8"))
     assert data["milestone"]=="V17" and data["movedCharacters"]>3500
@@ -18,7 +38,8 @@ def manifest():
 
 def reconstruct():
     data=manifest()
-    live=HTML.read_text(encoding="utf-8")
+    current=HTML.read_text(encoding="utf-8")
+    live=m2_transform(current,reverse=True)
     css=OWNER.read_text(encoding="utf-8")
     assert (len(live),fingerprint(live))==(data["newHtmlLength"],data["newHtmlFNV"])
     assert (len(css),fingerprint(css))==(data["newOwnerLength"],data["newOwnerFNV"])
@@ -38,7 +59,7 @@ def reconstruct():
         original=original[:m.start(1)]+parts[i]+original[m.end(1):]
     original=original.replace(data["newLink"],data["oldLink"],1)
     assert (len(original),fingerprint(original))==(data["oldHtmlLength"],data["oldHtmlFNV"])
-    return original,original_css
+    return m2_transform(original),original_css
 
 def mount_owner(original_html, original_css=None):
     """Mount exact V16 plugin owner beside assets for real browser regression."""
