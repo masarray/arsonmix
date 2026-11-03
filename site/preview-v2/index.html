@@ -2427,7 +2427,12 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  if(a==='wireRoute'){
   const source=armedWireSource();
   const inbound=t.kind==='master'?[]:wireWsRoutes().filter(route=>route.destId===t.id);
-  if(t.kind!=='master'&&(inbound.length>1||(!source&&inbound.length)||(t.id===source?.id&&inbound.length))){
+  // An armed OUT has priority for a NEW route, including BUS receivers
+  // already fed by other channels. Inspect only without a valid armed source,
+  // on the source's own IN, or when that exact source -> IN already exists.
+  // This preserves Route Only / Parallel and avoids implicit disconnects.
+  const sourceAlreadyInbound=!!source&&inbound.some(route=>route.sourceId===source.id);
+  if(t.kind!=='master'&&inbound.length&&(!source||t.id===source.id||sourceAlreadyInbound)){
    inspectIncomingWireRoutes(t);return;
   }
   if(!source||t.id===source.id){say('Select a source and another destination');return;}
