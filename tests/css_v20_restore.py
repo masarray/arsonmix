@@ -31,12 +31,11 @@ def reconstruct():
     # Reverse only the explicitly recorded M3 operator delta before checking
     # the immutable V20 CSS-only fingerprint. Reapply it to baseline HTML.
     from gui_m3_compat import transform
-    current=transform(HTML.read_text(encoding="utf-8"),reverse=True,
-                      skip={"chrome version"})
-    m3_chrome="assets/mixer-chrome-material.css?v=css-chrome-owner-v19-m3-header"
+    from css_v21_restore import reconstruct as restore_pre_v21
+    source,_=restore_pre_v21()
+    current=transform(source,reverse=True,skip={"chrome version"})
     v19_chrome="assets/mixer-chrome-material.css?v=css-chrome-owner-v19"
-    assert current.count(m3_chrome)==1
-    current=current.replace(m3_chrome,v19_chrome,1)
+    assert current.count(v19_chrome)==1
     assert (len(current),fingerprint(current))==(
         data["result"]["htmlLength"],data["result"]["htmlFNV"]
     ),"V20 live HTML changed outside approved source ledger"
@@ -68,15 +67,18 @@ def reconstruct():
     ),"V19 approved HTML fingerprint cannot be re-baselined"
     restored=transform(previous,skip={"chrome version"})
     assert restored.count(v19_chrome)==1
-    return restored.replace(v19_chrome,m3_chrome,1)
+    return restored
 
 def mount_original():
     html=reconstruct()
+    from css_v21_restore import mount_owner as mount_pre_v21_chrome
+    html,old_owner_files=mount_pre_v21_chrome(html)
     f=tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",suffix=".html",
         prefix=".v20-before-shadow-cleanup-",dir=HTML.parent,delete=False)
     try:
         with f:f.write(html)
-        return Path(f.name),[Path(f.name)]
+        return Path(f.name),old_owner_files+[Path(f.name)]
     except Exception:
         Path(f.name).unlink(missing_ok=True)
+        for p in old_owner_files:p.unlink(missing_ok=True)
         raise

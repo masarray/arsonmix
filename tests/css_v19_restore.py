@@ -34,12 +34,15 @@ def reconstruct():
     # Undo V20 shadow pruning before checking the immutable V19 ledger.
     from css_v20_restore import reconstruct as restore_v19_source
     current=restore_v19_source()
-    m3_url="assets/mixer-chrome-material.css?v=css-chrome-owner-v19-m3-header"
     v19_url=data["newLinks"][1]
-    assert current.count(m3_url)==1
-    current=transform(current.replace(m3_url,v19_url,1),reverse=True,skip={"chrome version"})
+    assert current.count(v19_url)==1
+    current=transform(current,reverse=True,skip={"chrome version"})
     sections=SECTIONS.read_text(encoding="utf-8")
-    chrome,m3_tail=suffix("chrome")
+    from css_v21_restore import reconstruct as restore_pre_v21
+    _,pre_v21_chrome=restore_pre_v21()
+    m3_tail=suffix("chrome")[1]
+    assert pre_v21_chrome.endswith(m3_tail)
+    chrome=pre_v21_chrome[:-len(m3_tail)]
     for name,source in (("html",current),("sections",sections),("chrome",chrome)):
         assert (len(source),fingerprint(source))==(data["newLengths"][name],data["newFNV"][name]),(name,"unapproved V19 live owner drift")
     assert sections.endswith(data["sourceFirst"])

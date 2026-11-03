@@ -104,8 +104,11 @@ def restore_baseline():
                 prefix=(v18_manifest()["prefix"] if name=="mixer-chrome-material.css" else "")
                 from css_v19_restore import manifest as v19_manifest
                 v19_suffix=(v19_manifest()["movedChromeSuffix"] if name=="mixer-chrome-material.css" else "")
+                from css_v21_restore import manifest as v21_manifest
+                v21_suffix=(v21_manifest()["sourceInlinePrefix"] if name=="mixer-chrome-material.css" else "")
                 from gui_m3_compat import suffix
-                tf.write(prefix+restored+tail+v19_suffix+(suffix("chrome")[1] if name=="mixer-chrome-material.css" else ""))
+                m3_tail=(suffix("chrome")[1] if name=="mixer-chrome-material.css" else "")
+                tf.write(prefix+restored+tail+v19_suffix+v21_suffix+m3_tail)
             temporary.append(Path(tf.name))
             search=f"assets/{name}?v="
             assert html.count(search)==1,name
