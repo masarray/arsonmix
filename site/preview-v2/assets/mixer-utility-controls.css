@@ -109,3 +109,54 @@
 @media (prefers-reduced-motion:reduce){
   .app .console-body .strip button.mx-util-key{transition:none}
 }
+
+/* V9 approved physical 17px micro assets — ONE material owner. Icons and
+   hitboxes remain live DOM; only the transparent keycap is a PNG. No scaling
+   or transforms on ON/OFF; row=semantic, column=state. */
+.app .console-body .strip button.mx-util-key{
+  --mx-micro-x:0%;
+  --mx-micro-y:0%;
+  border:0;
+  border-radius:0;
+  background-color:transparent;
+  background-image:url("micro-hardware-17x17-2x4.png");
+  background-repeat:no-repeat;
+  background-size:200% 400%;
+  background-position:var(--mx-micro-x) var(--mx-micro-y);
+  box-shadow:none;
+  color:#23323a;
+  text-shadow:none;
+  transform:none;
+  filter:none;
+  transition:none;
+}
+.app .console-body .strip button.mx-util-key[data-util-kind="phase"]{--mx-micro-y:33.333333%}
+.app .console-body .strip button.mx-util-key[data-util-kind="fx-remove"]{--mx-micro-y:66.666667%}
+.app .console-body .strip button.mx-util-key[data-util-kind="format"]{
+  width:25px;max-width:25px;min-width:25px;height:15px;min-height:15px;
+  --mx-micro-y:0%;
+  background-image:url("format-hardware-25x15-2x1.png");
+  background-size:200% 100%;
+  background-position:var(--mx-micro-x) 0%;
+  padding:0;
+}
+.app .console-body .strip button.mx-util-key[aria-pressed="true"]{
+  --mx-micro-x:100%;
+  background-color:transparent;
+  background-position:var(--mx-micro-x) var(--mx-micro-y);
+  border:0;
+  box-shadow:none;
+  color:#f9fdff;
+}
+.app .console-body .strip button.mx-util-key[data-util-kind="format"][aria-pressed="true"]{
+  background-position:100% 0%;
+}
+.app .console-body .strip button.mx-util-key[data-util-kind="fx-remove"]:active:not(:disabled){
+  --mx-micro-x:100%;
+  background-position:100% 66.666667%;
+  color:#fff;
+}
+.app .console-body .strip button.mx-util-key:focus-visible{
+  outline:2px solid #9bd9e8;outline-offset:1px;
+}
+/* No new button element, JS state, opacity animation or tool-tip overlay. */

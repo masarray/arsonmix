@@ -72,6 +72,17 @@ for control_asset in ('mixer-control-keys.css','mixer-control-keys.js','mixer-ut
         shutil.copy2(src,target)
         if src.read_bytes()!=target.read_bytes():
             raise SystemExit(f'Published asset differs from preview source: {control_asset}')
+
+# Exact native 17×17 and 25×15 RGBA cap assets are dependencies of the
+# utility owner stylesheet, not direct HTML <img> tags. Always publish them
+# beside the public /preview/mixer.html stylesheet, without using stale WIRE.
+for keycap_asset in ('micro-hardware-17x17-2x4.png','format-hardware-25x15-2x1.png'):
+    src=ROOT/'site/preview-v2/assets'/keycap_asset
+    if not src.is_file(): raise SystemExit('Missing physical keycap: '+str(src))
+    dest=dst/'preview/assets'/keycap_asset
+    dest.parent.mkdir(parents=True,exist_ok=True)
+    shutil.copy2(src,dest)
+    if dest.read_bytes()!=src.read_bytes(): raise SystemExit('Micro keycap copy drift: '+keycap_asset)
 (dst/'preview'/'build.json').write_text(json.dumps(metadata,indent=2),encoding='utf-8')
 
 # Approved PNG review follows the SAME current operator/WIRE source as /preview-v2/.
