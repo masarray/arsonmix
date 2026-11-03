@@ -165,46 +165,11 @@
 /* Static bezel structure deliberately resides OUTSIDE the button element.
    ::after has z-index 4 over button (z-index 2); pointer-events:none, and
    never inherits keycap's transform, MUTE state, or active/hover behavior. */
-.console-body .strip .switch-section .hw-switch-socket {
- position:relative!important;
- display:flex!important;
- align-items:stretch!important;
- justify-content:stretch!important;
- flex:1 1 0!important;
- min-width:0!important;
- height:calc(var(--switch-h) - 7px)!important;
- max-height:34px!important;
- min-height:24px!important;
- padding:2px!important;
- box-sizing:border-box!important;
- isolation:isolate!important;
- overflow:hidden!important;
-}
-.console-body .strip .switch-section .hw-switch-socket::before {
- content:""!important;
- position:absolute!important;inset:1px!important;pointer-events:none!important;
- border-radius:2px!important;
- box-shadow:inset 0 1px 0 #000,inset 0 -1px 0 #2a404c!important;
-}
-.console-body .strip .switch-section .hw-switch-socket::after {
- content:""!important;
- position:absolute!important;inset:0!important;
- border:1px solid #0a131a!important;
- background:transparent!important;
-}
-.console-body .strip .switch-section .hw-switch-socket>.switch {
- position:relative!important;z-index:2!important;
- flex:1 1 auto!important;
- min-width:0!important;width:100%!important;
- height:100%!important;min-height:0!important;max-height:none!important;
- padding:0 1px!important;
- border-radius:2px!important;
- transform:translateY(0)!important;
- overflow:hidden!important;
-}
-.console-body .strip .switch-section .hw-switch-socket>.switch:active:not(:disabled) {
- transform:translateY(1px)!important;
-}
+
+
+
+
+
 /* No rectangular mask over switch text: upper bezel is ONLY 1px edge,
    mounted in the parent frame, not a moving overlay on the cap. */
 .console-body .strip .switch-section {
@@ -212,9 +177,7 @@
 }
 /* V22 fader: keep original metal PNG, size it ~11% smaller; increase the
    full calibration travel consistently across master, channel and rail.
-   FX absorbs up to 6px extra fader height only when viewport allows; short screens keep original dock. */.console-body .strip .gain-scale-travel {
-
-}
+   FX absorbs up to 6px extra fader height only when viewport allows; short screens keep original dock. */
 /* Selected channel border is ON TOP of every sub-panel, never buried.
    Reuse the existing root strip::after instead of adding DOM nodes or
    using strip's background/inset-box-shadow behind opaque children. */
@@ -300,7 +263,7 @@
 
 
 </style>
-<link rel="stylesheet" href="assets/mixer-control-keys.css?v=css-v25-physical-key-owner">
+<link rel="stylesheet" href="assets/mixer-control-keys.css?v=css-v26-retired-socket-pruned">
 <link rel="stylesheet" href="assets/mixer-fx-rack.css?v=fx-owner-v8-m3-inserts-v24-pruned">
 <link rel="stylesheet" href="assets/mixer-plugin-browser.css?v=css-plugin-owner-v17">
 <link rel="stylesheet" href="assets/mixer-pan-controls.css?v=css-owner-v9-pan-up5-v23">
@@ -308,7 +271,7 @@
 <link rel="stylesheet" href="assets/mixer-meter-display.css?v=css-owner-v9-ruler-m3-left-70-v51-portrait-peakcell">
 <link rel="stylesheet" href="assets/mixer-utility-controls.css?v=fx-rack-user-icon-green-v21">
 <link rel="stylesheet" href="assets/inter-embedded.css?v=inter-utility-v7">
-<link rel="stylesheet" href="assets/mixer-wire-dots.css?v=v23-wire-v50-config">
+<link rel="stylesheet" href="assets/mixer-wire-dots.css?v=v49-direct-physics">
 <link rel="stylesheet" href="assets/mixer-wire-out-align-v48.css?v=out-center-v48">
 
 <link rel="stylesheet" href="assets/mixer-contextual-buttons.css?v=contextual-micro-handoff-v1">
@@ -485,14 +448,14 @@ function savePluginPreferences(){
  }));}catch(error){/* Manager still works without browser storage. */}
 }
 const tracksEl=document.getElementById('tracks'),masterEl=document.getElementById('master'),info=document.getElementById('info');
-let nextId=1,nextGroup=1,tracks=[],master,preview=false,meterFrame=0,lastTick=0,clipboard=null,scenes=[],sofEnabled=false,sofTarget="Bus A",wireSourceId=1,wireEdges=[],nextWireId=1,wireMode='send',wireAnchorId=null,wireHoverId=null,wireGesture=null,wireSuppressClick=false,pendingBusRoute=null,wireView='focus',wireSourcePinned=false,wireIntent=false;
+let nextId=1,nextGroup=1,tracks=[],master,preview=false,meterFrame=0,lastTick=0,clipboard=null,scenes=[],sofEnabled=false,sofTarget="Bus A",wireSourceId=1,wireEdges=[],nextWireId=1,selectedWireEdgeId=null,wireMode='send',wireAnchorId=null,wireHoverId=null,wireGesture=null,wireSuppressClick=false,pendingBusRoute=null,wireView='focus',wireSourcePinned=false,wireIntent=false;
 const clone=x=>JSON.parse(JSON.stringify(x));
 const selection=()=>tracks.concat(master).filter(t=>t.selected);
 const make=(name,kind,color)=>{
  const id=nextId++;
  return {id,name,kind,color,icon:kind==='master'?'◎':kind==='bus'?'⊞':kind==='fx'?'◉':'♩',group:null,safe:false,format:'stereo',input:'None',output:kind==='master'?'Default Output':'Master',fx:Array(8).fill('None'),slotBypass:Array(8).fill(false),fxOn:true,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,activeSend:0,sendSlots:Array.from({length:16},()=>({send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0})),eq:true,pan:0,trim:0,mute:false,solo:false,cue:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
 };
-function init(){meterPeakHolds.clear();wireWsOpen=false;wireWsDestinationId=null;wireWsInspect=null;wireWsRemoveConfirm=null;wireWsHistory=[];wireWsPendingBefore=null;wireWsEditBefore=null;const ws=document.getElementById('wireWorkspace');if(ws)ws.hidden=true;const cfg=document.getElementById('wireConfigWindow');if(cfg)cfg.hidden=true;document.getElementById('wireConfigToggle').setAttribute('aria-expanded','false');document.getElementById('wireMode').value='send';nextId=1;nextGroup=1;nextDemoFxId=1;fxDrag=null;fxReorderUndo=null;wireSourceId=1;wireEdges=[];nextWireId=1;wireMode='send';wireView='focus';wireSourcePinned=false;wireIntent=false;document.getElementById('wireView').value='focus';wireAnchorId=null;wireHoverId=null;wireGesture=null;wireSuppressClick=false;pendingBusRoute=null;const choice=document.getElementById('routeChoice');if(choice)choice.hidden=true;document.getElementById('wireMode').value='send';tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
+function init(){meterPeakHolds.clear();wireWsOpen=false;wireWsDestinationId=null;wireWsInspect=null;wireWsRemoveConfirm=null;wireWsHistory=[];wireWsPendingBefore=null;wireWsEditBefore=null;const ws=document.getElementById('wireWorkspace');if(ws)ws.hidden=true;const cfg=document.getElementById('wireConfigWindow');if(cfg)cfg.hidden=true;document.getElementById('wireConfigToggle').setAttribute('aria-expanded','false');document.getElementById('wireMode').value='send';nextId=1;nextGroup=1;nextDemoFxId=1;fxDrag=null;fxReorderUndo=null;wireSourceId=1;wireEdges=[];selectedWireEdgeId=null;nextWireId=1;wireMode='send';wireView='focus';wireSourcePinned=false;wireIntent=false;document.getElementById('wireView').value='focus';wireAnchorId=null;wireHoverId=null;wireGesture=null;wireSuppressClick=false;pendingBusRoute=null;const choice=document.getElementById('routeChoice');if(choice)choice.hidden=true;document.getElementById('wireMode').value='send';tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 /* Google Material Icons SVG paths, Apache-2.0. Inline/zero font or network requests. */
 const MATERIAL_PATH=Object.freeze({
@@ -796,37 +759,73 @@ function armedWireSource(){return wireIntent&&wireSourcePinned?wireSourceTrack(w
 function wireGainPercent(db){return Math.max(0,Math.min(100,(Number(db)+60)/66*100));}
 /* OUT is a solid physical jack, IN is an empty receiving jack.
    Every non-MAIN strip can originate a wire. Coordinates never assume x1>x0. */
+/* V49: one committed edge identity owns selection, drag and gain.
+   A visual cable is a control; an SVG path is never the routing graph. */
+function incomingWireEdges(id){return wireEdges.filter(e=>e.enabled&&e.destId===id);}
+function selectedWireEdge(){return wireEdges.find(e=>e.enabled&&e.id===selectedWireEdgeId)||null;}
+function selectWireEdge(edge,inspect=false){
+ if(!edge||!edge.enabled||!wireEdges.some(e=>e.id===edge.id))return;
+ selectedWireEdgeId=edge.id;
+ if(inspect){
+  const ws=document.getElementById('wireWorkspace');
+  wireWsOpen=true;wireWsMode='routes';if(ws)ws.hidden=false;
+  wireWsInspect={src:edge.sourceId,dst:edge.destId};wireWsRemoveConfirm=null;
+  renderWireWorkspace();renderWireWsInspector();
+ }
+ render();
+ say('WIRE '+wireWsLabel(edge.sourceId)+' → '+wireWsLabel(edge.destId)+
+  ' selected · '+wireDbText(edge.levelDb)+' · GUI DEMO');
+}
 function wireTray(t){
  const source=armedWireSource();
- const isSource=!!source&&source.id===t.id;
- const isMain=t.kind==='master';
- const edge=!isMain&&source?wireFor(source.id,t.id):null;
- // Only committed, enabled WIRE edges illuminate the supplied SVG knob.
- // A connected knob stays colored even outside patch mode; gain editing still needs source OUT.
- const incomingCount=isMain?0:wireWsRoutes().filter(route=>route.destId===t.id).length;
- const hasPluggedWire=incomingCount>0;
+ const isSource=!!source&&source.id===t.id,isMain=t.kind==='master';
+ const incoming=isMain?[]:incomingWireEdges(t.id);
+ const armedEdge=!isMain&&source?wireFor(source.id,t.id):null;
+ const selected=incoming.find(e=>e.id===selectedWireEdgeId);
+ const incomingCount=isMain?0:wireWsRoutes().filter(r=>r.destId===t.id).length;
+ const edge=selected||(incomingCount===1&&incoming.length===1?incoming[0]:armedEdge)||null;
+ const connected=incoming.length>0,hasAnyArrival=incomingCount>0;
  const legacy=!isMain&&source&&hasLegacySendTo(source,t);
- const sourceLinked=!!edge||!!legacy;
- const linked=isMain?!!source&&source.output==='Master':sourceLinked||hasPluggedWire;
- // Source arming controls new connections; existing receiving sockets remain inspectable.
- const canWire=!!(source&&!isSource)||hasPluggedWire;
+ const linked=isMain?!!source&&source.output==='Master':hasAnyArrival||!!legacy;
+ const sourceLinked=!!armedEdge||!!legacy;
+ const canWire=!!(source&&!isSource)||hasAnyArrival;
  const label=isMain?(linked?'MAIN ON':'MAIN OFF'):
   incomingCount>1?incomingCount+' incoming wires · inspect routes':
-  hasPluggedWire&&!source?'IN connected · inspect route':
-  !source?'NO SOURCE':isSource?'SOURCE':sourceLinked?'CONNECTED':'CONNECT';
- const modeLabel=sourceLinked&&!isMain?(legacy&&!edge?'Existing SEND slot · managed in legacy routing; no duplicate wire allowed':
-  (edge.mode==='routeOnly'?'Route via Bus':edge.mode==='send'?'Post-fader Send':'Pre FX Mult')+' · click IN to disconnect or drag cable away'):
-  hasPluggedWire?incomingCount+' incoming route(s) · click to inspect':'Click IN or drag an OUT jack here';
- const from='<button type="button" class="wire-node-out'+(isSource?' is-source':'')+'" data-action="wireSource"'+(isMain?' disabled':'')+
-  ' title="SEND OUT · drag this solid jack to another channel IN" aria-label="Send OUT from '+escapeHtml(t.name)+'" aria-pressed="'+isSource+'"><span class="wire-pin" aria-hidden="true"></span><small>OUT</small></button>';
- const to='<button type="button" class="wire-socket wire-node-in'+(isSource&&!hasPluggedWire?' is-source':'')+(linked?' is-linked':'')+'" data-action="wireRoute" aria-pressed="'+sourceLinked+
-  '" aria-label="Receive IN on '+escapeHtml(t.name)+' · '+label+'" title="'+escapeHtml(label+' · '+modeLabel+' · GUI DEMO')+'" '+(canWire?'':'disabled')+
+  hasAnyArrival&&!source?'IN connected · inspect route':
+  !source?'NO SOURCE':isSource?'SOURCE':
+  linked?'CONNECTED':'CONNECT';
+ const sender=edge?wireSourceTrack(edge.sourceId):null;
+ const modeLabel=edge?(edge.mode==='routeOnly'?'Route via Bus':
+  edge.mode==='send'?'Post-fader Send':'Pre FX Mult')+' · drag IN to replug / unplug':
+  hasAnyArrival?'Select one incoming route to inspect':
+  legacy?'Existing SEND slot · managed in legacy routing':
+  'Choose OUT then click IN, or drag an OUT jack here';
+ const from='<button type="button" class="wire-node-out'+(isSource?' is-source':'')+
+  '" data-action="wireSource"'+(isMain?' disabled':'')+
+  ' title="SEND OUT · drag this solid jack to another channel IN" aria-label="Send OUT from '+
+  escapeHtml(t.name)+'" aria-pressed="'+isSource+
+  '"><span class="wire-pin" aria-hidden="true"></span><small>OUT</small></button>';
+ const to='<button type="button" class="wire-socket wire-node-in'+(isSource&&!hasAnyArrival?' is-source':'')+
+  (linked?' is-linked':'')+'" data-action="wireRoute" aria-pressed="'+sourceLinked+
+  '" aria-label="Receive IN on '+escapeHtml(t.name)+' · '+label+
+  '" title="'+escapeHtml(label+' · '+modeLabel+' · GUI DEMO')+'" '+
+  (canWire?'':'disabled')+
   '><span class="wire-arrow" aria-hidden="true"></span><span class="wire-label">IN</span></button>';
  let controls=from+to;
  if(edge&&!isMain){
-  controls+='<label class="wire-pot is-active" style="--wire-pot-fill:'+escapeHtml(t.color)+';--wire-pct:'+wireGainPercent(edge.levelDb)+'%;--wire-deg:'+(-135+wireGainPercent(edge.levelDb)*2.7).toFixed(1)+'deg" title="'+escapeHtml(source.name+' → '+t.name+' · '+wireDbText(edge.levelDb))+'"><input class="wire-gain" type="range" min="-60" max="6" step="0.1" value="'+edge.levelDb+'" data-field="wireGain" data-wire-id="'+edge.id+'" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%" aria-label="Wire send level '+escapeHtml(source.name)+' to '+escapeHtml(t.name)+'"><span class="wire-gain-caption" aria-hidden="true">LVL</span></label>';
+  const pct=wireGainPercent(edge.levelDb);
+  controls+='<label class="wire-pot is-active" style="--wire-pot-fill:'+
+   escapeHtml(t.color)+';--wire-pct:'+pct+'%;--wire-deg:'+(-135+pct*2.7).toFixed(1)+
+   'deg" title="'+escapeHtml((sender?.name||'Source')+' → '+t.name+' · '+
+   wireDbText(edge.levelDb))+'"><input class="wire-gain" type="range" min="-60" max="6" step="0.1" value="'+
+   edge.levelDb+'" data-field="wireGain" data-wire-id="'+edge.id+
+   '" style="--wire-pct:'+pct+'%" aria-label="Wire send level '+
+   escapeHtml((sender?.name||'Source')+' to '+t.name)+
+   '"><span class="wire-gain-caption" aria-hidden="true">LVL</span></label>';
  }else{
-  controls+='<span class="wire-pot '+(hasPluggedWire?'is-active is-readonly':'is-idle')+'" style="--wire-pot-fill:'+(hasPluggedWire?escapeHtml(t.color):'#4b535b')+'" aria-hidden="true"><span class="wire-gain-caption">LVL</span></span>';
+  controls+='<span class="wire-pot '+(connected?'is-active is-readonly':'is-idle')+
+   '" style="--wire-pot-fill:'+(connected?escapeHtml(t.color):'#4b535b')+
+   '" aria-hidden="true"><span class="wire-gain-caption">LVL</span></span>';
  }
  return '<div class="wire-tray'+(linked?' linked':'')+'">'+controls+'</div>';
 }
@@ -1174,12 +1173,12 @@ function refreshWireRoutingNodes(){
    in either direction, independent of color or route model.
    Limit depth to available cable stage so the curve never falls into PAN. */
 function wireSagClearance(rect,section){
- return section?Math.max(18,section.bottom-(rect.top+rect.height*.5)-9):72;
+ return section?Math.max(18,section.bottom-(rect.top+rect.height*.5)-7):72;
 }
 function wirePathData(x0,y0,x1,y1,sagLimit,spring=0){
  const span=Math.abs(x1-x0);
  const ceiling=Math.max(12,Math.min(100,Number(sagLimit)||72));
- const sag=Math.max(10,Math.min(ceiling,Math.min(ceiling-7,20+Math.sqrt(span)*1.55)+spring));
+ const sag=Math.max(10,Math.min(ceiling,Math.min(ceiling-5,28+Math.sqrt(span)*1.55)+spring));
  const control=(sag*4/3);
  return 'M '+x0.toFixed(1)+' '+y0.toFixed(1)+
   ' C '+x0.toFixed(1)+' '+(y0+control).toFixed(1)+
@@ -1200,58 +1199,52 @@ function wirePathFor(edge,x0,y0,x1,y1,limit){
 /* Socket impact travels backwards along the SAME accepted cable.
    The two endpoints remain physically pinned; only the accepted SVG path
    changes for 36 frames. No CSS keyframes, idle RAF or all-cables remount. */
-function wireImpactPathData(x0,y0,x1,y1,limit,frame){
- const span=Math.abs(x1-x0);
- const ceiling=Math.max(12,Math.min(100,Number(limit)||72));
- const sag=Math.max(10,Math.min(ceiling,Math.min(ceiling-7,20+Math.sqrt(span)*1.55)));
- const c=sag*4/3,progress=Math.max(0,Math.min(1,frame/36));
- const center=1.02-progress*1.12;
- const amp=13.8*Math.exp(-progress*1.45);
+/* One low-frequency impact travels from receiver toward source, then
+   loses energy. Elapsed time makes 60/120 Hz render the same physical motion. */
+function wireImpactPathData(x0,y0,x1,y1,limit,elapsedMs){
+ const span=Math.abs(x1-x0),ceiling=Math.max(12,Math.min(100,Number(limit)||72));
+ const sag=Math.max(10,Math.min(ceiling,Math.min(ceiling-5,28+Math.sqrt(span)*1.55)));
+ const c=sag*4/3,progress=Math.max(0,Math.min(1,elapsedMs/1600));
+ const center=.99-progress*.98,amp=10.5*Math.exp(-progress*3.5);
  let d='M '+x0.toFixed(1)+' '+y0.toFixed(1);
- // Broad socket-origin jolt: ~14px peak, .22 envelope and no idle animation.
- // 56 segments are smooth at full 10-strip bank width, only during impact.
+ // Smooth curve samples; zero displacement at both anchored ends.
  for(let i=1;i<=56;i++){
   const t=i/56,u=1-t;
   const x=u*u*u*x0+3*u*u*t*x0+3*u*t*t*x1+t*t*t*x1;
   const y=u*u*u*y0+3*u*u*t*(y0+c)+3*u*t*t*(y1+c)+t*t*t*y1;
-  const dx=6*u*t*(x1-x0);
-  const dy=3*u*u*c+6*u*t*(y1-y0)+3*t*t*(-c);
-  const norm=Math.hypot(dx,dy)||1;
-  const delta=t-center;
-  const pulse=amp*Math.exp(-(delta*delta)/(.22*.22))*
-   Math.sin(delta*18-progress*5)*Math.sin(Math.PI*t);
-  const px=x-dy/norm*pulse,py=y+dx/norm*pulse;
-  d+=' L '+px.toFixed(1)+' '+py.toFixed(1);
+  const dx=6*u*t*(x1-x0),dy=3*u*u*c+6*u*t*(y1-y0)+3*t*t*(-c);
+  const norm=Math.hypot(dx,dy)||1,delta=t-center;
+  const pulse=amp*Math.exp(-(delta*delta)/(.30*.30))*
+   Math.sin(delta*10-progress*6)*Math.sin(Math.PI*t);
+  d+=' L '+(x-dy/norm*pulse).toFixed(1)+' '+(y+dx/norm*pulse).toFixed(1);
  }
  return d;
 }
 function kickWireSpring(sourceId,destId){
  if(!sourceId||!destId)return;
- const key=sourceId+'-'+destId;
- const geometry=wireMotionGeometry.get(key);
- if(!geometry||window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches)return;
+ const key=sourceId+'-'+destId,geometry=wireMotionGeometry.get(key);
+ if(!geometry||document.hidden||window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches)return;
  const token=++wireMotion.token;
- // Existing graph geometry is stable; do not persist motion into later renders.
  wireMotion.key=key;wireMotion.offset=0;
  let paths=[...document.querySelectorAll('#wireLayer path[data-cable-key="'+key+'"]')];
  if(!paths.length){wireMotion.key=null;return;}
- let frame=0;
  function paint(d){
-  // A successful drop triggers a final routing refresh which may replace
-  // path nodes once. Rebind ONLY this accepted cable, then keep its refs.
-  // Without this, the ripple animates disconnected SVG elements invisibly.
   if(paths.every(path=>!path.isConnected))
    paths=[...document.querySelectorAll('#wireLayer path[data-cable-key="'+key+'"]')];
   for(const path of paths)if(path.isConnected&&path.getAttribute('d')!==d)path.setAttribute('d',d);
  }
- function step(){
+ let began=null;
+ function step(now){
   if(token!==wireMotion.token)return;
-  frame++;
-  paint(frame<36?wireImpactPathData(...geometry,frame):wirePathData(...geometry,0));
-  if(frame<36)requestAnimationFrame(step);
+  if(document.hidden||window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches){
+   paint(wirePathData(...geometry,0));wireMotion.key=null;return;
+  }
+  if(began===null)began=now;
+  const elapsed=Math.max(0,now-began);
+  paint(elapsed<1600?wireImpactPathData(...geometry,elapsed):wirePathData(...geometry,0));
+  if(elapsed<1600)requestAnimationFrame(step);
   else{wireMotion.offset=0;wireMotion.key=null;}
  }
- // First displacement begins at socket, then ripples toward source.
  paint(wireImpactPathData(...geometry,0));
  requestAnimationFrame(step);
 }
@@ -1769,20 +1762,42 @@ function renderWireRouting(){
    (snap?'':'<circle class="wire-floating-plug" cx="'+x1.toFixed(1)+'" cy="'+y1.toFixed(1)+'" r="7.5" fill="'+(source?.color||'#87dfb8')+'" opacity=".82" stroke="none" pointer-events="none"/>'));
  }
  svg.innerHTML=paths.join('');
+ // Exactly one transparent hit geometry per real edge. Avoid endpoint sockets
+ // by reserving 6% of path length at both ends; previews/legacy stay passive.
+ if(!dragging){
+  const represented=new Set();
+  const lines=[...svg.querySelectorAll('path.wire-outgoing-line,path.wire-incoming-line,path.wire-context-line')];
+  for(const line of lines){
+   const edge=wireFor(Number(line.dataset.from),Number(line.dataset.to));
+   if(!edge||represented.has(edge.id))continue;
+   represented.add(edge.id);
+   if(edge.id===selectedWireEdgeId)line.classList.add('is-wire-selected');
+   const hit=document.createElementNS('http://www.w3.org/2000/svg','path');
+   hit.setAttribute('class','wire-interaction-hit'+(edge.id===selectedWireEdgeId?' is-wire-selected':''));
+   hit.setAttribute('data-edge-id',String(edge.id));
+   hit.setAttribute('data-cable-key',wireCableKey(edge));
+   hit.setAttribute('d',line.getAttribute('d'));
+   hit.setAttribute('pathLength','100');
+   hit.setAttribute('stroke-dasharray','0 6 88 6');
+   svg.appendChild(hit);
+  }
+ }
  if(!dragging)syncVisibleWireDots(svg);
 }
 
 /* Only visible SVG cables paint matching physical dot hue/opacity.
    No RAF repaint and no forced active light on hidden/off-bank channels. */
 function syncVisibleWireDots(svg){
- const visible=new Map(),arrivals=new Set();
+ const visible=new Map();
+ const committed=wireDisplayRoutes();
+ const arrivals=new Set(committed.map(e=>String(e.destId)));
+ const sends=new Set(committed.map(e=>String(e.sourceId)));
  for(const path of svg.querySelectorAll('path.wire-incoming-line,path.wire-outgoing-line,path.wire-context-line')){
   // A hover hint is not a plugged-in cable. Keep snap/hover illumination
   // independent of physical connection state and endpoint paint.
   if(path.dataset.routeKind==='preview')continue;
   const color=path.getAttribute('stroke'),opacity=Number(path.getAttribute('opacity'));
   if(!color||!Number.isFinite(opacity))continue;
-  if(path.dataset.to)arrivals.add(path.dataset.to);
   for(const [id,direction] of [[path.dataset.from,'out'],[path.dataset.to,'in']]){
    const key=id+':'+direction;
    if(!id||(visible.has(key)&&visible.get(key).opacity>=opacity))continue;
@@ -1793,7 +1808,10 @@ function syncVisibleWireDots(svg){
   const isInput=node.classList.contains('wire-node-in');
   const trackId=node.closest('.strip')?.dataset.id;
   const key=trackId+':'+(isInput?'in':'out');
-  // Track a real visible arrival separately from an armed or stored route.
+  const connected=isInput?arrivals.has(trackId):sends.has(trackId);
+  if(connected)node.setAttribute('data-wire-connected','true');
+  else node.removeAttribute('data-wire-connected');
+  // Connected paint follows committed model; cable display focus never changes it.
   // The receiving ring uses --ch (its own channel); the inner dot still
   // uses the incoming wire's SVG hue and opacity.
   if(isInput){
@@ -1808,6 +1826,21 @@ function syncVisibleWireDots(svg){
   if(node.style.getPropertyValue('--wire-edge-opacity')!==alpha)node.style.setProperty('--wire-edge-opacity',alpha);
  }
 }
+/* A wire can be selected without changing the armed source. The existing
+   route inspector remains the non-drag remove/accessibility alternative. */
+document.getElementById('wireLayer').addEventListener('click',ev=>{
+ const hit=ev.target.closest?.('path.wire-interaction-hit');
+ if(!hit)return;
+ const edge=wireEdges.find(e=>e.enabled&&e.id===Number(hit.dataset.edgeId));
+ if(!edge)return;
+ ev.stopPropagation();selectWireEdge(edge);
+});
+document.getElementById('wireLayer').addEventListener('dblclick',ev=>{
+ const hit=ev.target.closest?.('path.wire-interaction-hit');
+ const edge=hit&&wireEdges.find(e=>e.enabled&&e.id===Number(hit.dataset.edgeId));
+ if(!edge)return;
+ ev.stopPropagation();selectWireEdge(edge,true);
+});
 function queueWireGestureFrame(){
  if(wireFramePending)return;
  wireFramePending=true;
@@ -2004,12 +2037,15 @@ consoleBody.addEventListener('pointerdown',ev=>{
  const socket=directIn||(!other?tray?.querySelector?.('.wire-node-in'):null);
  const receiver=socket?findTrack(socket):null;
  const activeSource=armedWireSource();
- const existing=activeSource&&receiver&&receiver.kind!=='master'?wireFor(activeSource.id,receiver.id):null;
+ const incoming=receiver&&receiver.kind!=='master'?incomingWireEdges(receiver.id):[];
+ const existing=incoming.find(e=>e.id===selectedWireEdgeId)||
+  (incoming.length===1?incoming[0]:
+   (activeSource&&receiver?wireFor(activeSource.id,receiver.id):null));
  const socketRect=existing?socket.getBoundingClientRect?.():null;
  const near=!!socketRect&&Math.hypot(ev.clientX-(socketRect.left+socketRect.width/2),ev.clientY-(socketRect.top+socketRect.height/2))<=22;
  if(existing&&near){
   wireSuppressClick=false;
-  wireGesture={pointerId:ev.pointerId,sourceId:activeSource.id,originDestId:receiver.id,
+  wireGesture={pointerId:ev.pointerId,sourceId:existing.sourceId,originDestId:receiver.id,
    movingEdgeId:existing.id,startX:ev.clientX,startY:ev.clientY,
    point:{x:ev.clientX,y:ev.clientY},snapId:receiver.id,active:false};
   ev.preventDefault?.();
@@ -2043,7 +2079,7 @@ window.addEventListener('pointermove',ev=>{
  if(wireGesture&&ev.pointerId===wireGesture.pointerId){
   const g=wireGesture;
   if(!Number.isFinite(ev.clientX)||!Number.isFinite(ev.clientY))return;
-  if(!g.active&&Math.hypot(ev.clientX-g.startX,ev.clientY-g.startY)>=5){
+  if(!g.active&&Math.hypot(ev.clientX-g.startX,ev.clientY-g.startY)>=(g.movingEdgeId!==null?10:5)){
    g.active=true;wireHoverId=null; // source selection changes only on an accepted drop
     if(g.movingEdgeId!==null)consoleBody.querySelector?.('.strip[data-id="'+g.originDestId+'"] .wire-node-in')?.classList.add('is-replug-origin');
    consoleBody.classList.add('wire-dragging');
@@ -2065,7 +2101,22 @@ function finishFaderPointer(ev){
   consoleBody.querySelectorAll?.('.wire-node-out.is-drag-origin').forEach(n=>n.classList.remove('is-drag-origin'));
   if(g.active){
    if(g.movingEdgeId!==null){
-    replugWireEdge(g.sourceId,g.originDestId,snap?.track.id??null);
+    const bay=consoleBody.querySelector('.strip .send-section')?.getBoundingClientRect();
+    const vp=document.getElementById('viewport')?.getBoundingClientRect();
+    const blankInBay=!snap&&bay&&vp&&ev.clientX>=vp.left&&ev.clientX<=vp.right&&
+     ev.clientY>=bay.top&&ev.clientY<=bay.bottom;
+    const edge=wireEdges.find(e=>e.id===g.movingEdgeId&&e.destId===g.originDestId);
+    if(!edge||(!snap&&!blankInBay)){
+     say('WIRE drop canceled · invalid area; routing unchanged');
+    }else if(!snap&&edge.kind==='primary'){
+     say('WIRE primary output protected · use Routes inspector to disconnect');
+    }else{
+     const before=wireWsSnapshot();
+     if(replugWireEdge(g.sourceId,g.originDestId,snap?.track.id??null)){
+      wireWsRecord(before);
+      selectedWireEdgeId=snap?g.movingEdgeId:null;
+     }
+    }
    }else{
     const hit=document.elementFromPoint?.(ev.clientX,ev.clientY)||ev.target;
     const input=snap?.element||hit?.closest?.('.wire-node-in');
@@ -2326,13 +2377,33 @@ function finishSendKnob(e,cancel=false){
 }
 sendControlSurface.addEventListener('pointerup',e=>finishSendKnob(e));
 sendControlSurface.addEventListener('pointercancel',e=>finishSendKnob(e,true));
+/* V49: shared bounded range control for hardware mouse + precision trackpad.
+   Handle the physical fader face, not its intentionally pointer-inert input. */
+const wheelResidue=new WeakMap();
 document.querySelector('.console-body').addEventListener('wheel',e=>{
- const el=e.target.closest?.('.wire-pot')?.querySelector?.('.wire-gain')||e.target.closest?.('.wire-gain');
- if(!el||!Number.isFinite(e.deltaY)||e.deltaY===0)return;
- e.preventDefault?.();
- const prev=Number(el.value)||0,change=e.deltaY>0?-.5:.5;
- el.value=String(wireGainValue(prev+change));
- handleField({target:el,type:'change'});
+ if(e.ctrlKey||wireGesture||faderGesture||!Number.isFinite(e.deltaY)||e.deltaY===0)return;
+ const target=e.target.closest?.('.wire-pot,.fader-box,input[type="range"]');
+ if(!target)return;
+ const input=target.matches?.('input[type="range"]')?target:
+  target.querySelector?.('input[type="range"]');
+ const allowed=new Set(['level','pan','wireGain','trim','sendLevel','sendPan']);
+ if(!input||input.disabled||!allowed.has(input.dataset.field))return;
+ const min=Number(input.min),max=Number(input.max),prev=Number(input.value);
+ if(![min,max,prev].every(Number.isFinite))return;
+ e.preventDefault();
+ const pixels=e.deltaY*(e.deltaMode===1?16:e.deltaMode===2?240:1);
+ const accumulated=(wheelResidue.get(input)||0)+pixels;
+ const detents=Math.trunc(accumulated/100);
+ wheelResidue.set(input,accumulated-detents*100);
+ if(!detents)return;
+ const step=e.shiftKey?(input.dataset.field==='pan'||input.dataset.field==='sendPan'?1:.1):
+  (input.dataset.field==='pan'||input.dataset.field==='sendPan'?2:.5);
+ const resolution=Number(input.step)||.1;
+ const next=Math.round(Math.max(min,Math.min(max,prev-detents*step))/resolution)*resolution;
+ if(next===prev)return;
+ input.value=String(next);
+ if(input.dataset.field==='pan')input.dataset.panKeyboard='true';
+ handleField({target:input,type:'input',altKey:e.altKey});
 },{passive:false});
 // One capture-phase selection path for every part of a channel, including
 // empty WIRE tray, OUT, IN and knob. Does not steal pointer capture from jacks.
