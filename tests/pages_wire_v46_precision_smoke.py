@@ -53,6 +53,8 @@ def main():
   assert public.read_bytes()==HTML.read_bytes(),"published /preview/ HTML is stale"
   assert (dist/"preview/assets/mixer-wire-dots.css").read_bytes()==CSS.read_bytes(),"public WIRE CSS differs"
   assert "assets/mixer-wire-dots.css?v=v47-css-v16" in public.read_text("utf-8")
+  assert (dist/"preview/assets/mixer-wire-out-align-v48.css").read_bytes()==(ROOT/"site/preview-v2/assets/mixer-wire-out-align-v48.css").read_bytes(), "V48 alignment stylesheet missing from /preview/"
+  assert "assets/mixer-wire-out-align-v48.css?v=out-center-v48" in public.read_text("utf-8")
 
   with sync_playwright() as pw:
    browser=pw.chromium.launch(headless=True)
@@ -66,13 +68,21 @@ def main():
     src_pin=src.locator('.wire-pin')
     # V47 shifts the OUT connector and its caption as one unit, not the
     # wire independently. Keep the complete button in its reserved column.
-    inset=src.evaluate("el=>parseFloat(getComputedStyle(el).marginInlineStart)")
-    assert abs(inset-4)<.1,(width,"OUT inset should be 4px",inset)
+    spacing=src.evaluate("""el=>{
+      const css=getComputedStyle(el);return {margin:parseFloat(css.marginInlineStart),
+        inner:parseFloat(css.paddingLeft)};}""")
+    assert abs(spacing["margin"]-4)<.1,(width,"OUT box margin changed",spacing)
+    # V48 shifts the actual dot and caption +3px within the unchanged button
+    # hit rectangle, keeping magnetic pointer region and IN spacing stable.
+    assert abs(spacing["inner"]-4)<.1,(width,"OUT dot inset should be 4px",spacing)
     caption=src.locator('small')
     if caption.is_visible():
-     p=src_pin.bounding_box();t=caption.bounding_box()
-     assert t["x"] >= p["x"]+p["width"]+1,(width,"OUT caption overlaps its physical dot",p,t)
-     assert t["x"]+t["width"] < page.locator('#tracks .strip[data-id="5"] .wire-node-in').bounding_box()["x"],(width,"OUT label collides with next control")
+     p=src_pin.bounding_box();t=caption.bounding_box();button=src.bounding_box()
+     assert abs(p["x"]-button["x"]-4)<.7,(width,"physical OUT pin not inset 4px",p,button)
+     assert abs((t["y"]+t["height"]/2)-(p["y"]+p["height"]/2))<.6,(
+         width,"OUT caption not vertically centered with 12px dot",p,t)
+     assert t["x"] >= p["x"]+p["width"]+1,(width,"OUT caption overlaps dot",p,t)
+     assert t["x"]+t["width"] < page.locator('#tracks .strip[data-id="5"] .wire-node-in').bounding_box()["x"],(width,"OUT caption collides with IN")
     dest=page.locator('#tracks .strip[data-id="3"] .wire-node-in')
     dest_pin=dest.locator('.wire-arrow')
     for channel in (3,5,6):
