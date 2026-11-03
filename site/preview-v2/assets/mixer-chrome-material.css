@@ -707,3 +707,14 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
  .mixer-title .mixer-title-controls .right{display:none}
  .mixer-title .mixer-title-controls .wire-legend{min-width:65px}
 }
+
+/* M3 short-screen budget: preserve both WIRE control rows without
+   stealing the fourth FX insert row at 1366x768. Manual collapse remains. */
+@media(max-height:800px){
+ .mixer-title:not(.is-collapsed){
+  height:52px!important;flex:0 0 52px!important;
+  padding:2px 8px!important;gap:1px!important;
+ }
+ .mixer-title .mixer-title-top{flex:0 0 21px}
+ .mixer-title .mixer-title-controls{gap:5px}
+}

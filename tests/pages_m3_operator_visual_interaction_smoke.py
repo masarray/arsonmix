@@ -47,7 +47,8 @@ def physical(page,density,width):
 def interactions(page):
     title=page.locator(".mixer-title")
     toggle=page.locator("#mixerTitleToggle")
-    assert title.bounding_box()["height"]>=64
+    expected=52 if page.viewport_size["height"]<=800 else 66
+    assert abs(title.bounding_box()["height"]-expected)<=2,("M3 header height",page.viewport_size)
     assert toggle.get_attribute("aria-expanded")=="true"
     toggle.click()
     assert toggle.get_attribute("aria-expanded")=="false"
