@@ -369,17 +369,17 @@
  padding-left:4px!important;padding-right:4px!important;
 }
 .console-body[data-density="compact"] .strip .fader-section{
- padding-left:2px!important;padding-right:2px!important;
+ padding-left:1px!important;padding-right:1px!important;
 }
 .console-body[data-density="compact"] .strip .fader-workspace{
- grid-template-columns:46px 29px 22px!important;gap:2px!important;
+ grid-template-columns:44px 27px 28px!important;gap:2px!important;
 }
 .console-body[data-density="compact"] .strip .fader-workspace > .fader-box{
- width:29px!important;min-width:29px!important;max-width:29px!important;
+ width:27px!important;min-width:27px!important;max-width:27px!important;
 }
-.console-body[data-density="compact"] .strip .fader-box::before{width:29px!important}
+.console-body[data-density="compact"] .strip .fader-box::before{width:27px!important}
 .console-body[data-density="compact"] .strip .fader-scale{
- width:22px!important;min-width:22px!important;
+ width:28px!important;min-width:28px!important;
 }
 .console-body[data-density="compact"] .strip .fader-travel,
 .console-body[data-density="compact"] .strip .gain-scale-travel{

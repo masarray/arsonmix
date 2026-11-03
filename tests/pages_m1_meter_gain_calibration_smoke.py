@@ -104,7 +104,7 @@ def geometry(page, density, label):
         assert len(out["rigs"])==2,(label,density,"missing fader rigs",out["rigs"])
         for rig in out["rigs"]:
             compact=density=="compact"
-            close(rig["wellWidth"],29 if compact else 32,.6)
+            close(rig["wellWidth"],27 if compact else 32,.6)
             close(rig["capWidth"],25 if compact else 27,.6)
             close(rig["capHeight"],50 if compact else 54,.6)
             close(rig["laneWidth"],8,.6)
