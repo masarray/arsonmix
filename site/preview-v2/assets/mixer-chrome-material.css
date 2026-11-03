@@ -516,3 +516,165 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
 .console-body .switch.btn-180.on.mute{--b180-color:var(--b180-on-mute);--b180-border:#b14a5f;--b180-ink:#32151e}
 .console-body .switch.btn-180.on.solo{--b180-color:var(--b180-on-solo);--b180-border:#a48337;--b180-ink:#2b210b}
 .console-body .switch.btn-180.on.cue{--b180-color:var(--b180-on-cyan);--b180-border:#38909e;--b180-ink:#12323c}
+/* Channel identity editor: same glass/metal background as plugin manager, not generic modal. */
+.channel-identity{
+ position:absolute;z-index:115;left:28px;top:100px;width:302px;max-width:calc(100% - 24px);
+ padding:10px;display:flex;flex-direction:column;gap:7px;
+ background:linear-gradient(#213642,#132630)!important;
+ border:1px solid #688595;border-radius:5px;
+ box-shadow:0 14px 28px #000b,0 0 0 1px #08131b;
+ color:#dbe8ee;
+}
+.channel-identity[hidden]{display:none!important}
+.identity-head{display:flex;align-items:center;justify-content:space-between;min-height:23px;color:#e5f2f7;font:600 11px/1 "Segoe UI",Arial,sans-serif}
+.identity-head #identityClose{background:transparent;border:0;color:#d9e9f1;font-size:19px;padding:0 5px}
+.identity-label{font:600 9px/1 Arial,sans-serif;letter-spacing:.07em;color:#a8c9d5}
+#identityName{width:100%;height:30px;background:#07151e;border:1px solid #557380;border-radius:3px;color:#e9f4f7;padding:0 8px;font-size:11px}
+.identity-icons{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px}
+.identity-icon{height:30px;display:flex;align-items:center;justify-content:center;font-size:16px;background:#283a45;color:#eff9fc;border:1px solid #4c6571;border-radius:3px}
+.identity-icon.selected{background:#466270;border-color:#b7e1ef;box-shadow:inset 0 0 0 1px #bedde8}
+.identity-colors{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:7px}
+.identity-swatch{height:24px;background:var(--choice);border:2px solid #0d1d27;border-radius:3px;box-shadow:inset 0 1px #ffffff59,0 1px #0009}
+.identity-swatch.selected{outline:2px solid #effbff;outline-offset:1px}
+.identity-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:3px}
+.identity-actions .btn-180{height:29px!important;min-height:29px!important;min-width:75px!important;font-size:10px!important;--b180-color:var(--am-crystal);--b180-border:#86969e}
+#identitySave{--b180-color:#a7e4eb;--b180-border:#5b9fae}
+@media(max-width:1100px){
+ .command-bar{gap:4px!important;padding:0 5px!important}
+ .command-bar .tool.btn-180{padding:0 7px!important}
+ .command-bar .toolbar-label{font-size:8px!important}
+ .command-bar .sep{display:none}
+}
+
+
+/* V7 CRITICAL VISUAL REBALANCE — measured against the 1666x888 owner screenshot.
+   Hierarchy: chrome header > route > compact FX insert rack > sends/PAN > direct
+   mute/solo/PFL > tactile fader + peak meters. NO web-style blue black voids. */
+
+/* CSS variable on parent rail and strips drives identical FX geometry. */
+.console-body:not(.collapsed-fx){--fx-h:clamp(111px,13.5vh,137px)!important}
+.console-body.collapsed-fx{--fx-h:23px!important}
+.console-body .strip.selected{
+ position:relative!important;
+}
+.console-body .strip .subhead{background:linear-gradient(#233946,#1c2e39)!important}
+.console-body .strip .route-select{background-color:#132630!important;border-color:#526672!important}
+.console-body .strip .route-caption{color:#b1c5cf!important}
+/* Old glossy plastic buttons looked bolted on from a different application.
+   All header and live controls share fine-edged satin/brushed steel. */
+.command-bar{
+ border-top:1px solid #65808c3b!important;
+ border-bottom:1px solid #0c171f!important;
+}
+.command-bar .tool,
+.command-bar .more-tools summary.tool,
+.more-tools-panel .tool,
+.identity-actions .console-control{
+ display:inline-flex!important;align-items:center!important;justify-content:center!important;
+ min-width:0!important;height:29px!important;min-height:29px!important;max-height:29px!important;
+ border:1px solid #536773!important;border-radius:3px!important;
+ background:linear-gradient(#405460,#2c3f4c 47%,#263845 48%,#314550)!important;
+ color:#e6eef2!important;text-shadow:0 1px #000b!important;
+ box-shadow:inset 0 1px #ffffff23,inset 0 -1px #101c25,0 1px 1px #0005!important;
+ font:600 10px/1.1 "Segoe UI",Arial,sans-serif!important;
+ letter-spacing:0!important;padding:0 10px!important;text-transform:none!important;
+ filter:none!important;transform:none!important;
+}
+.command-bar .tool:hover:not(:disabled),
+.more-tools-panel .tool:hover:not(:disabled),
+.identity-actions .console-control:hover{
+ background:linear-gradient(#4b6571,#354c59 48%,#304651 49%,#3a5360)!important;
+ color:#fff!important;
+}
+.command-bar .tool:active:not(:disabled),.identity-actions .console-control:active{
+ background:linear-gradient(#1a2b35,#304350)!important;
+ box-shadow:inset 1px 2px 3px #0009,0 1px #67808c22!important;
+}
+.command-bar .tool[aria-pressed="true"],.command-bar .more-tools[open] summary.tool{
+ background:linear-gradient(#406575,#244956)!important;
+ border-color:#5595a8!important;color:#c7eff9!important;
+}
+.command-bar .bank-arrow{padding:0!important;width:31px!important}
+.command-bar .bank-arrow svg{display:block!important;width:24px!important;height:24px!important}
+.command-bar .bank-arrow svg path{fill:#e0eef3!important}
+/* Preserve user's exact SVG path and element fill; display on dark face via CSS path override. */
+.command-bar .toolbar-select,.command-bar .density-select{background-color:#132733!important;border-color:#5a7280!important}
+.console-body .switch-section .switch{
+ display:flex!important;align-items:center!important;justify-content:center!important;
+ width:100%!important;min-width:0!important;height:29px!important;min-height:29px!important;
+ flex:none!important;padding:0 2px!important;
+ background:linear-gradient(#52616a,#334751 47%,#2b3d47 48%,#3e515d)!important;
+ border:1px solid #617681!important;border-radius:3px!important;
+ color:#e8f3f7!important;text-shadow:0 1px #000a!important;
+ box-shadow:inset 0 1px #ffffff31,inset 0 -1px #0f1c25,0 1px 2px #0006!important;
+ font:700 10px/1 "Segoe UI",Arial,sans-serif!important;letter-spacing:0!important;
+ filter:none!important;
+}
+.console-body .switch-section .switch:hover{border-color:#91a9b3!important;filter:brightness(1.05)!important}
+.console-body .switch-section .switch.on.mute{
+ background:linear-gradient(#ad5660,#7f303c)!important;border-color:#c16e78!important;color:#fff4f4!important;
+}
+.console-body .switch-section .switch.on.solo{
+ background:linear-gradient(#d3b365,#a58439)!important;border-color:#e9cb80!important;color:#1d251b!important;text-shadow:0 1px #ffffff66!important;
+}
+.console-body .switch-section .switch.on.cue{
+ background:linear-gradient(#64b9c3,#307783)!important;border-color:#85d4da!important;color:#081b22!important;text-shadow:0 1px #ffffff44!important;
+}
+.console-body .gain-scale-travel{top:27px!important;bottom:27px!important}
+/* Slider: original assets, smaller thumb, deliberately 3px lower than the rail center. */
+.console-body .center-pan::-webkit-slider-thumb,
+.console-body .ari-horizontal::-webkit-slider-thumb{
+ width:15px!important;height:32px!important;margin-top:-12px!important;
+ background:var(--ari-pan) center/15px 32px no-repeat!important;
+ border:0!important;box-shadow:none!important;
+}
+.console-body .center-pan::-moz-range-thumb,
+.console-body .ari-horizontal::-moz-range-thumb{
+ width:15px!important;height:32px!important;
+ background:var(--ari-pan) center/15px 32px no-repeat!important;
+}
+.console-body .sendlevel .ari-horizontal{margin-top:3px!important}/* Modeless Plugin Manager — draggable and resizable, no scrim, no forced strip reflow. */
+
+.plugin-minimize{height:28px;min-width:28px;background:#324956;border:1px solid #58717c;color:#dbeaf0;font-size:17px;border-radius:3px}/* Header drag updates inline left/top: must overrule old fixed right/top CSS !important. */
+
+/* Plugin drag coordinate is an inline important top; do not override it. */
+
+
+/* V7 rendered-Chromium finding: .console-body .switch{flex:1 1 auto}
+   also matched the LEFT RAIL .rail-cell.switch and stretched M/S/C by 127px.
+   Pin the label to the same immutable physical row as the strip controls. */
+.console-body .section-rail .rail-cell.switch{
+ flex:0 0 var(--switch-h)!important;
+ height:var(--switch-h)!important;
+ min-height:var(--switch-h)!important;
+ max-height:var(--switch-h)!important;
+ padding:0!important;
+ align-items:center!important;justify-content:center!important;
+ background:#273b46!important;color:#a7bfca!important;
+ border-bottom:1px solid #172730!important;
+ box-shadow:inset 0 1px #ffffff12!important;
+}
+
+/* V8: Collapse hides the content, not merely the container's height.
+   Earlier high-specificity route/select and send/display rules forced expanded
+   controls into 23px collapsed rails. All strip + rail heights use one token. */
+.console-body.collapsed-route .strip .route-section{padding:0 4px!important}
+.console-body.collapsed-route .strip .route-section .route-field{display:none!important}
+.console-body.collapsed-route .strip .route-section .route-top{
+ height:22px!important;min-height:22px!important;flex:0 0 22px!important}
+.console-body.collapsed-fx .strip .subhead{
+ height:22px!important;min-height:22px!important;flex:0 0 22px!important}
+.console-body.collapsed-send .strip .send-section{padding:0 3px!important}
+.console-body.collapsed-send .strip .send-section .send-select,
+.console-body.collapsed-send .strip .send-section .sendlevel{display:none!important}
+.console-body.collapsed-send .strip .send-header{
+ height:22px!important;min-height:22px!important;flex:0 0 22px!important}
+.console-body.collapsed-send .strip .send-header .send-slot,
+.console-body.collapsed-send .strip .send-header .send-compact{
+ display:block!important;flex:1 1 0!important;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.console-body.collapsed-send .strip .send-header .push{display:none!important}
+.console-body.collapsed-send .strip .send-header .sendtag{
+ max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.console-body .section-rail .rail-cell.route{height:var(--route-h)!important;flex:0 0 var(--route-h)!important}
+.console-body .section-rail .rail-cell.fx{height:var(--fx-h)!important;flex:0 0 var(--fx-h)!important}
+

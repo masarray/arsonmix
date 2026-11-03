@@ -68,4 +68,13 @@
 @media(max-height:750px){.footer-label{height:26px}.db-value{height:14px}.eq-line{height:20px}}
 @media(max-width:1000px){.short-help{display:none}.strip{width:98px;flex-basis:98px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;animation:none!important}}
-@media(max-height:610px){.send-pan{display:none}.eq-line{display:none}}
+@media(max-height:610px){.send-pan{display:none}.eq-line{display:none}}.more-tools{margin-left:auto;position:relative;flex:none}
+.more-tools summary{list-style:none;cursor:pointer;white-space:nowrap;user-select:none}
+.more-tools summary::-webkit-details-marker{display:none}
+.more-tools[open] summary{color:#d7e8eb;background:#405159}
+.more-tools-panel{position:absolute;z-index:35;right:0;top:calc(100% + 6px);width:278px;max-height:min(460px,calc(100vh - 138px));overflow:auto;background:#303436;border:1px solid #596167;box-shadow:0 4px 12px #111b;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;padding:9px}
+.more-tools-panel .tool,.more-tools-panel .toolbar-select{width:100%;max-width:none;min-width:0;margin:0}
+.more-tools-caption{grid-column:1 / -1;font-size:9px;color:#8fa1a8;letter-spacing:.08em;padding:5px 0 0;border-bottom:1px solid #434c50}
+@media(max-width:900px){.command-bar{padding:0 5px;gap:4px}.command-bar .toolbar-label{display:none}.command-bar .tool{padding:4px 6px}.command-bar .toolbar-select{max-width:86px}.command-bar .sep{margin:0 1px}}
+
+

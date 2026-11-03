@@ -21,6 +21,9 @@ def restore_previous_owners():
         if name=="mixer-chrome-material.css":
             from css_v18_restore import reconstruct as v18_previous
             current=v18_previous()[1]
+        elif name=="mixer-section-controls.css":
+            from css_v19_restore import reconstruct as pre_v19
+            current=pre_v19()[1]
         else:
             current=(ASSETS/name).read_text(encoding="utf-8")
         assert len(current)==entry["currentSize"],name

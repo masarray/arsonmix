@@ -20,6 +20,7 @@ MANIFEST=ROOT/"tests/fixtures/css-v13-owner-removals.json"
 # remain exact; changing the fader/meter ruler deliberately re-approves ONLY
 # the owned suffix fingerprints, not the historical owner source.
 V18_OWNER_TAILS={
+    "mixer-section-controls.css":(1017,"f950adfc"), # V19 exact toolbar tail
     "mixer-pan-controls.css":(294,"01ccf01a"),
     "mixer-fader-assembly.css":(4548,"25a7de44"),
     "mixer-meter-display.css":(2538,"2d191341"),
@@ -100,7 +101,9 @@ def restore_baseline():
                 # original V13 removal history differs in these reconstructions.
                 # Keep V18 moved material before historical V13 Chrome source.
                 prefix=(v18_manifest()["prefix"] if name=="mixer-chrome-material.css" else "")
-                tf.write(prefix+restored+tail)
+                from css_v19_restore import manifest as v19_manifest
+                v19_suffix=(v19_manifest()["movedChromeSuffix"] if name=="mixer-chrome-material.css" else "")
+                tf.write(prefix+restored+tail+v19_suffix)
             temporary.append(Path(tf.name))
             search=f"assets/{name}?v="
             assert html.count(search)==1,name
