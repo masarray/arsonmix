@@ -70,6 +70,10 @@ def inspect_motion(page):
     assert abs(measured['lit']/14-round(measured['lit']/14))<.06,(
         'meter uses half/fractional LED',measured)
     assert measured['peak']>=measured['lit'],('peak not above level',measured)
+    assert abs((measured['peak']+2)/14-round((measured['peak']+2)/14))<.05,(
+        'peak marker is not aligned to a full portrait LED cell',measured)
+    assert '12px' in hold.evaluate("e=>getComputedStyle(e).clipPath"),(
+        'peak hold must illuminate full 12px cell, not a thin line')
     page.screenshot(path='pages-v51-portrait-meter-1680.png')
     # Holding the physical MUTE must turn off live level without painting a
     # fake zero-dB CLIP, while peak LED remains for a short genuine hold.
