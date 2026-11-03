@@ -110,16 +110,15 @@
   .app .console-body .strip button.mx-util-key{transition:none}
 }
 
-/* V9 approved physical 17px micro assets — ONE material owner. Icons and
-   hitboxes remain live DOM; only the transparent keycap is a PNG. No scaling
-   or transforms on ON/OFF; row=semantic, column=state. */
+/* V20 true-square metal faces. Entire 17px sprite tile is the cap, not a
+   short face plus external lower LED/underbar. No extra pseudo ornament. */
 .app .console-body .strip button.mx-util-key{
   --mx-micro-x:0%;
   --mx-micro-y:0%;
   border:0;
   border-radius:0;
   background-color:transparent;
-  background-image:url("micro-hardware-17x17-2x4.png");
+  background-image:url("micro-hardware-17x17-2x4.png?v=square-face-v20");
   background-repeat:no-repeat;
   background-size:200% 400%;
   background-position:var(--mx-micro-x) var(--mx-micro-y);
@@ -135,7 +134,7 @@
 .app .console-body .strip button.mx-util-key[data-util-kind="format"]{
   width:25px;max-width:25px;min-width:25px;height:15px;min-height:15px;
   --mx-micro-y:0%;
-  background-image:url("format-hardware-25x15-2x1.png");
+  background-image:url("format-hardware-25x15-2x1.png?v=square-face-v20");
   background-size:200% 100%;
   background-position:var(--mx-micro-x) 0%;
   padding:0;
@@ -143,7 +142,7 @@
 .app .console-body .strip button.mx-util-key[aria-pressed="true"]{
   --mx-micro-x:100%;
   background-color:transparent;
-  background-image:url("micro-hardware-17x17-2x4.png");
+  background-image:url("micro-hardware-17x17-2x4.png?v=square-face-v20");
   background-repeat:no-repeat;
   background-size:200% 400%;
   background-position:var(--mx-micro-x) var(--mx-micro-y);
@@ -152,7 +151,7 @@
   color:#f9fdff;
 }
 .app .console-body .strip button.mx-util-key[data-util-kind="format"][aria-pressed="true"]{
-  background-image:url("format-hardware-25x15-2x1.png");
+  background-image:url("format-hardware-25x15-2x1.png?v=square-face-v20");
   background-size:200% 100%;
   background-position:100% 0%;
 }
