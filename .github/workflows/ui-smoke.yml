@@ -75,6 +75,10 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install playwright
           python -m playwright install --with-deps chromium
+      - name: Verify V49 direct WIRE, gain wheel, connected status, replug and scoped undo
+        run: python tests/pages_wire_v49_direct_controls_smoke.py
+      - name: Verify V53 safe FX grip keyboard and DnD, unified rack and rail
+        run: python tests/pages_fx_rail_v53_smoke.py
       - name: Verify original metallic asset and standalone synchronization
         run: python tests/fader_asset_test.py
       - name: Validate recessed Button 180 + embedded Inter font contract
@@ -224,8 +228,6 @@ jobs:
         run: python tests/pages_m1_meter_gain_calibration_smoke.py
       - name: Verify M3 meter/clip/menu/FX/receiving multi-wire operator contract
         run: python tests/pages_m3_operator_visual_interaction_smoke.py
-      - name: Verify V53 safe FX grip keyboard and DnD, unified rack and rail
-        run: python tests/pages_fx_rail_v53_smoke.py
       - name: Run mixer UI smoke tests
         run: python tests/ui_smoke.py
       - name: Verify Preview V2 V7 physical visual geometry and modeless mixer workflow
@@ -240,8 +242,6 @@ jobs:
         run: python tests/pages_wire_v45_socket_layout_smoke.py
       - name: Verify V46 exact dot endpoint anchors, LVL geometry and socket inner color
         run: python tests/pages_wire_v46_precision_smoke.py
-      - name: Verify V49 direct WIRE, gain wheel, connected status, replug and scoped undo
-        run: python tests/pages_wire_v49_direct_controls_smoke.py
       - name: Verify G1/G2 LIVE mixer bank and native I/O transaction
         run: python tests/mixer_io_smoke.py
       - name: Verify MIX and FX RACK Auto Orbit workflow

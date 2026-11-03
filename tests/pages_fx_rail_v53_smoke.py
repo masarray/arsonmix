@@ -48,10 +48,20 @@ def check_geometry(page,width,density):
    assert row.locator('.fx-pick').get_attribute("draggable") is None
  rail=page.locator('.section-rail [data-section="fx"]')
  assert rail.get_attribute("aria-expanded")=="true"
- rail.click()
- assert rail.get_attribute("aria-expanded")=="false",(width,density,"FX collapse aria broken")
- rail.click()
- assert rail.get_attribute("aria-expanded")=="true",(width,density,"FX expand aria broken")
+ if density=="compact":
+  # Approved Narrow mode explicitly refuses FX/SEND disclosure changes to
+  # protect the calibrated vertical chassis. Verify zero accidental mutation.
+  before=page.locator(".console-body").get_attribute("class")
+  rail.click()
+  assert rail.get_attribute("aria-expanded")=="true",(
+    width,density,"Narrow mode changed FX disclosure unexpectedly")
+  assert page.locator(".console-body").get_attribute("class")==before,(
+    width,density,"Narrow mode shifted rack/fader geometry")
+ else:
+  rail.click()
+  assert rail.get_attribute("aria-expanded")=="false",(width,density,"FX collapse aria broken")
+  rail.click()
+  assert rail.get_attribute("aria-expanded")=="true",(width,density,"FX expand aria broken")
 
 def check_transactions(page):
  page.evaluate("""()=>{
