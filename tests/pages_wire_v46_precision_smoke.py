@@ -52,7 +52,7 @@ def main():
   public=dist/"preview/mixer.html"
   assert public.read_bytes()==HTML.read_bytes(),"published /preview/ HTML is stale"
   assert (dist/"preview/assets/mixer-wire-dots.css").read_bytes()==CSS.read_bytes(),"public WIRE CSS differs"
-  assert "assets/mixer-wire-dots.css?v=v46" in public.read_text("utf-8")
+  assert "assets/mixer-wire-dots.css?v=v47" in public.read_text("utf-8")
 
   with sync_playwright() as pw:
    browser=pw.chromium.launch(headless=True)
@@ -64,6 +64,15 @@ def main():
      page.locator('.section-rail [data-section="send"]').click()
     src=page.locator('#tracks .strip[data-id="5"] .wire-node-out')
     src_pin=src.locator('.wire-pin')
+    # V47 shifts the OUT connector and its caption as one unit, not the
+    # wire independently. Keep the complete button in its reserved column.
+    inset=src.evaluate("el=>parseFloat(getComputedStyle(el).marginInlineStart)")
+    assert abs(inset-4)<.1,(width,"OUT inset should be 4px",inset)
+    caption=src.locator('small')
+    if caption.is_visible():
+     p=src_pin.bounding_box();t=caption.bounding_box()
+     assert t["x"] >= p["x"]+p["width"]+1,(width,"OUT caption overlaps its physical dot",p,t)
+     assert t["x"]+t["width"] < page.locator('#tracks .strip[data-id="3"] .wire-node-in').bounding_box()["x"],(width,"OUT label collides with next control")
     dest=page.locator('#tracks .strip[data-id="3"] .wire-node-in')
     dest_pin=dest.locator('.wire-arrow')
     for channel in (3,5,6):
