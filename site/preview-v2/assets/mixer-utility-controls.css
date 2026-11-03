@@ -143,12 +143,17 @@
 .app .console-body .strip button.mx-util-key[aria-pressed="true"]{
   --mx-micro-x:100%;
   background-color:transparent;
+  background-image:url("micro-hardware-17x17-2x4.png");
+  background-repeat:no-repeat;
+  background-size:200% 400%;
   background-position:var(--mx-micro-x) var(--mx-micro-y);
   border:0;
   box-shadow:none;
   color:#f9fdff;
 }
 .app .console-body .strip button.mx-util-key[data-util-kind="format"][aria-pressed="true"]{
+  background-image:url("format-hardware-25x15-2x1.png");
+  background-size:200% 100%;
   background-position:100% 0%;
 }
 .app .console-body .strip button.mx-util-key[data-util-kind="fx-remove"]:active:not(:disabled){
