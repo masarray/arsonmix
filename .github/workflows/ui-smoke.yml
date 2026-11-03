@@ -109,6 +109,8 @@ jobs:
         run: python tests/pages_mute_css_reference_smoke.py
       - name: Reconcile PNG button preview with exact latest WIRE source and geometry
         run: python tests/pages_png_buttons_wire_reconciliation_smoke.py
+      - name: Verify V6 contextual buttons, momentary press and zero pointer scroll
+        run: python tests/pages_contextual_buttons_smoke.py
       - name: Run mixer UI smoke tests
         run: python tests/ui_smoke.py
       - name: Verify Preview V2 V7 physical visual geometry and modeless mixer workflow

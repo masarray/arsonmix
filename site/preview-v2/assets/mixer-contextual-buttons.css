@@ -1,0 +1,165 @@
+/* ArSonMix V6 contextual hardware face — sole owner of OTHER mixer buttons.
+   MUTE / SOLO / PFL (.mx-hw-key) and physical WIRE IN/OUT jacks are deliberately
+   excluded. Existing components own geometry, hit areas, labels and behavior.
+   This owner changes MATERIAL only: no padding/height/width/layout/transform. */
+:root{
+  --ari-other-metal:linear-gradient(180deg,#ffffff0a,transparent 14%,transparent 86%,#00000012),
+    radial-gradient(ellipse 42% 45% at 50% 47%,#ffffff24,transparent 85%),
+    repeating-linear-gradient(180deg,#ffffff02 0 1px,#00000001 1px 2px),
+    linear-gradient(90deg,#929697 0%,#a3a6a7 8%,#bcbebe 34%,#cccdcd 50%,#bcbebe 66%,#a3a6a7 92%,#929697 100%);
+  --ari-other-glint:linear-gradient(90deg,transparent 0%,#ffffff12 16%,#ffffff90 44%,#ffffffd9 50%,#ffffff90 56%,#ffffff12 84%,transparent 100%);
+  --ari-other-lip:linear-gradient(90deg,transparent 0%,#ffffff22 17%,#ffffff91 45%,#ffffffac 50%,#ffffff91 55%,#ffffff22 83%,transparent 100%);
+}
+/* Explicit inventory: chrome + channel micro + FX + WIRE workspace + dialogs.
+   Keep ALL button sizes, flex basis and spacing from their original owners. */
+.app :is(
+  .command-bar button.tool,
+  .command-bar summary.tool,
+  .more-tools-panel button.tool,
+  .identity-actions button.console-control,
+  .mixer-title button.wire-master,
+  .mixer-title button.wire-v34-tool,
+  .console-body .section-rail button.rail-cell[data-section],
+  .console-body .strip button.mx-util-key,
+  .console-body .strip button.fx-pick,
+  .plugin-footer button,
+  .plugin-browser .plugin-head button,
+  .plugin-browser .plugin-actions button,
+  .plugin-browser .plugin-paths button,
+  .fast-picker button:not(.fast-effect),
+  .route-choice-head button,
+  .route-choice-option,
+  .wire-workspace .wire-ws-head button,
+  .wire-workspace .wire-ws-tabs button,
+  .wire-workspace .wire-ws-foot button,
+  .wire-workspace .wire-ws-matrix button
+){
+  --ari-on-top:#597482;--ari-on-hi:#688796;--ari-on-mid:#587581;
+  --ari-on-bottom:#4d6873;--ari-on-edge:#354b55;--ari-on-ink:#f1f8fa;
+  position:relative!important;
+  isolation:isolate;
+  box-sizing:border-box;
+  transform:none!important;
+  transition:none!important;
+  border:1px solid #565d60!important;
+  border-radius:2.5px!important;
+  background:var(--ari-other-metal)!important;
+  box-shadow:inset 0 1px 0 #ffffff48,inset 0 -1px 0 #373a3b50,
+    0 1px 0 #303338,0 2px 1px #0009!important;
+  color:#293238!important;
+  text-shadow:0 1px 0 #ffffff21!important;
+  background-clip:padding-box!important;
+  -webkit-tap-highlight-color:transparent;
+}
+/* Single-pixel upper shine: transparent tips, brighter center, both states.
+   Rail chevrons and any pre-existing structural pseudo-elements are preserved. */
+.app :is(
+  .command-bar button.tool,.command-bar summary.tool,
+  .more-tools-panel button.tool,.identity-actions button.console-control,
+  .mixer-title button.wire-master,.mixer-title button.wire-v34-tool,
+  .console-body .strip button.mx-util-key,.console-body .strip button.fx-pick,
+  .plugin-footer button,.plugin-browser .plugin-head button,
+  .plugin-browser .plugin-actions button,.plugin-browser .plugin-paths button,
+  .fast-picker button:not(.fast-effect),.route-choice-head button,
+  .route-choice-option,.wire-workspace .wire-ws-head button,
+  .wire-workspace .wire-ws-tabs button,.wire-workspace .wire-ws-foot button,
+  .wire-workspace .wire-ws-matrix button
+)::before{
+  content:""!important;
+  display:block!important;position:absolute!important;
+  top:1px!important;left:10%!important;right:10%!important;
+  height:1px!important;border:0!important;border-radius:0!important;
+  background:var(--ari-other-glint)!important;
+  box-shadow:none!important;opacity:.65!important;
+  pointer-events:none!important;transform:none!important;
+}
+/* Keep hardware action color local to its semantic role, not a generic glow. */
+.app :is(
+  #wireMaster,#routeOnly,#routeParallel,.mx-util-key[data-util-kind="fx-main"],
+  .mx-util-key[data-util-kind="fx-slot"],#identitySave
+){--ari-on-top:#3b8c6e;--ari-on-hi:#50a783;--ari-on-mid:#3d956f;--ari-on-bottom:#308665;--ari-on-edge:#266347;--ari-on-ink:#f0fff7}
+.app :is(#mode,#wireNavigatorToggle,#wireMatrixToggle,.mx-util-key[data-util-kind="format"],#pluginsButton)
+{--ari-on-top:#388ea9;--ari-on-hi:#54aec6;--ari-on-mid:#3e94ae;--ari-on-bottom:#2d839c;--ari-on-edge:#246577;--ari-on-ink:#152b36}
+.app :is(#sofToggle,#saveScene,#recallScene,#pluginScan,#pluginImport)
+{--ari-on-top:#3c76a7;--ari-on-hi:#548ebd;--ari-on-mid:#417aaa;--ari-on-bottom:#366b99;--ari-on-edge:#28486f;--ari-on-ink:#f4faff}
+.app :is(#sceneSafe,#preview,.mx-util-key[data-util-kind="phase"],#wireWsUndo)
+{--ari-on-top:#ba8034;--ari-on-hi:#cc9849;--ari-on-mid:#b98033;--ari-on-bottom:#aa722a;--ari-on-edge:#7d5021;--ari-on-ink:#21180c}
+.app :is(#group,#ungroup){--ari-on-top:#70649a;--ari-on-hi:#8576b2;--ari-on-mid:#7768a3;--ari-on-bottom:#695e90;--ari-on-edge:#493c68;--ari-on-ink:#f8f4ff}
+.app :is(#reset,#clearCue,.mx-util-key[data-util-kind="fx-remove"],#pluginClose,#fastClose)
+{--ari-on-top:#bc3838;--ari-on-hi:#c43c3c;--ari-on-mid:#b93434;--ari-on-bottom:#b03535;--ari-on-edge:#a42e2e;--ari-on-ink:#fff2f2}
+/* Only existing application state can latch. Momentary actions have no
+   aria-pressed and NEVER retain the ON material after releasing the mouse. */
+.app :is(
+  .command-bar button.tool,.command-bar summary.tool,
+  .more-tools-panel button.tool,.identity-actions button.console-control,
+  .mixer-title button.wire-master,.mixer-title button.wire-v34-tool,
+  .console-body .section-rail button.rail-cell[data-section],
+  .console-body .strip button.mx-util-key,.console-body .strip button.fx-pick,
+  .plugin-footer button,.plugin-browser .plugin-head button,
+  .plugin-browser .plugin-actions button,.plugin-browser .plugin-paths button,
+  .fast-picker button:not(.fast-effect),.route-choice-head button,
+  .route-choice-option,.wire-workspace .wire-ws-head button,
+  .wire-workspace .wire-ws-tabs button,.wire-workspace .wire-ws-foot button,
+  .wire-workspace .wire-ws-matrix button
+):is([aria-pressed="true"],[aria-expanded="true"],[aria-selected="true"],.active,.selected,:active:not(:disabled)){
+  background:
+    radial-gradient(ellipse 44% 18% at 50% 100%,#ffffff35,transparent 95%),
+    linear-gradient(180deg,var(--ari-on-top) 0%,var(--ari-on-hi) 8%,
+      var(--ari-on-mid) 38%,var(--ari-on-mid) 75%,var(--ari-on-bottom) 92%,
+      var(--ari-on-edge) 100%)!important;
+  border-color:var(--ari-on-edge)!important;
+  box-shadow:inset 0 1px 2px #0007,inset 0 -1px 0 #ffffff27,
+    0 1px 0 #1d2226,0 1px 1px #0007!important;
+  color:var(--ari-on-ink)!important;
+  text-shadow:0 1px 0 #0004!important;
+}
+/* ON thin lower shine with translucent center + fully transparent ends.
+   Never use a solid WHITE slab under the button. Rails retain chevrons. */
+.app :is(
+  .command-bar button.tool,.command-bar summary.tool,
+  .more-tools-panel button.tool,.identity-actions button.console-control,
+  .mixer-title button.wire-master,.mixer-title button.wire-v34-tool,
+  .console-body .strip button.mx-util-key,.console-body .strip button.fx-pick,
+  .plugin-footer button,.plugin-browser .plugin-head button,
+  .plugin-browser .plugin-actions button,.plugin-browser .plugin-paths button,
+  .fast-picker button:not(.fast-effect),.route-choice-head button,
+  .route-choice-option,.wire-workspace .wire-ws-head button,
+  .wire-workspace .wire-ws-tabs button,.wire-workspace .wire-ws-foot button,
+  .wire-workspace .wire-ws-matrix button
+):is([aria-pressed="true"],[aria-expanded="true"],[aria-selected="true"],.active,.selected,:active:not(:disabled))::after{
+  content:""!important;display:block!important;
+  position:absolute!important;pointer-events:none!important;
+  left:9%!important;right:9%!important;bottom:1px!important;
+  width:auto!important;height:1px!important;opacity:.5!important;
+  border:0!important;border-radius:0!important;
+  background:var(--ari-other-lip)!important;
+  box-shadow:none!important;transform:none!important;
+}
+/* Micro keys are physically smaller and must stay exactly their old size. */
+.app .console-body .strip button.mx-util-key{border-radius:2px!important}
+.app .console-body .strip button.mx-util-key::before{top:0!important;opacity:.45!important}
+/* No button should move its OWN bounding box or its neighboring controls.
+   Focus visibility is non-geometric and remains available for keyboard users. */
+.app :is(.command-bar,.console-body,.mixer-title,.plugin-browser,.wire-workspace,.identity-actions)
+ button:focus-visible{outline:2px solid #94d9ea;outline-offset:-2px}
+.app :is(.command-bar,.console-body,.mixer-title,.plugin-browser,.wire-workspace,.identity-actions)
+ button:disabled{opacity:.44!important;cursor:not-allowed!important}
+/* The plug/jack and PNG key owners are deliberately absent from all rules. */
+
+/* Two dynamic labels must reserve their longest text once, not resize the
+   command bar on MAIN ON↔OFF or Narrow↔Wide. These are stable hitboxes. */
+.app .mixer-title #wireMaster{width:74px!important;min-width:74px!important;max-width:74px!important;flex:0 0 74px!important}
+.app .command-bar #mode,.app .more-tools-panel #mode{
+  width:78px!important;min-width:78px!important;max-width:78px!important
+}
+/* Override legacy 1px whole-button press transforms. Depth changes INSIDE
+   the painted material above; outer layout and neighboring buttons stay put. */
+.app .command-bar button.tool:active:not(:disabled),
+.app .more-tools-panel button.tool:active:not(:disabled),
+.app .identity-actions button.console-control:active:not(:disabled),
+.app .mixer-title button.wire-master:active:not(:disabled),
+.app .mixer-title button.wire-v34-tool:active:not(:disabled),
+.app .console-body .strip button.mx-util-key:active:not(:disabled),
+.app .wire-workspace button:active:not(:disabled){
+  transform:none!important;top:auto;
+}
