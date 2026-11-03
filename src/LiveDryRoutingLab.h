@@ -1146,9 +1146,12 @@ public:
         }
         try {
             auto next=nativeAccepted_.graph.roster;
-            ChannelEdit add;add.kind=ChannelEdit::Kind::addInsertReference;
+            // LiveDryRoutingLab also defines a legacy ChannelEdit; explicitly
+            // select the ChannelId roster action, not the M4 routing type.
+            armix::mixer::ChannelEdit add;
+            add.kind=armix::mixer::ChannelEdit::Kind::addInsertReference;
             add.id=target;add.text=catalogId.toStdString();
-            const std::array<ChannelEdit,1> edits{add};
+            const std::array<armix::mixer::ChannelEdit,1> edits{add};
             if(!next.edit(expectedRosterRevision,edits).ok()) {
                 out.error="NATIVE_INSERT_CAPACITY_REJECTED";return out;
             }

@@ -38,3 +38,11 @@ test('real bypass and vendor editor retain immutable native instance identity',(
  assert.match(lab,/nativeAccepted_\.setFxBypass/);
  assert.match(lab,/nativeAccepted_\.leaseFxEditor/);
 });
+
+test('dynamic VST3 roster insert uses qualified ChannelId edit, never legacy M4 ChannelEdit',()=>{
+ const physical=get('src/LiveDryRoutingLab.h');
+ assert.match(physical,/armix::mixer::ChannelEdit add;/);
+ assert.match(physical,/armix::mixer::ChannelEdit::Kind::addInsertReference/);
+ assert.match(physical,/std::array<armix::mixer::ChannelEdit,1> edits/);
+ assert.doesNotMatch(physical,/\bChannelEdit add;add\.kind=ChannelEdit::Kind::addInsertReference/);
+});
