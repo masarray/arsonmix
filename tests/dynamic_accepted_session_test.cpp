@@ -196,21 +196,27 @@ int main() {
     // E1: structural draft pins are preflighted BEFORE accepted SOURCE
     // reconciliation. Out-of-range or same-pin stereo must not be hidden by
     // an earlier valid MONO source, falsely ACKed, or silence existing PCM.
-    const std::array<ChannelEdit,0> noStructure{};
+    ChannelEdit renameAttempt;
+    renameAttempt.kind=ChannelEdit::Kind::rename;
+    renameAttempt.id=micA;
+    renameAttempt.text="MUST_NOT_APPEAR_AFTER_REJECTION";
+    const std::array<ChannelEdit,1> structuralAttempt{renameAttempt};
     auto invalidSource=route;
     invalidSource.sources[0].inputL=2; // exactly physicalInputs
-    auto deniedSource=session.edit(2,2,noStructure,invalidSource,epoch,epoch,true);
+    auto deniedSource=session.edit(2,2,structuralAttempt,invalidSource,epoch,epoch,true);
     assert(!deniedSource.ok());
     assert(deniedSource.fault==DynamicAcceptedSession::Fault::graphRejected);
     assert(deniedSource.native.fault==DynamicNativeSessionPublisher::Fault::invalidGraph);
     assert(deniedSource.native.graphError.fault==DynamicGraphFault::invalidSource);
     assert(deniedSource.edit.createdIds.empty());
     assert(session.acceptedGraphRevision()==2);
+    assert(session.acceptedRosterRevision()==2);
+    assert(session.acceptedRoster().find(micA)->name=="LEAD");
     assert(session.acceptedPhysicalRequest().sources[0].inputL==0);
     invalidSource=route;
     invalidSource.sources[0].stereo=true;
     invalidSource.sources[0].inputR=0;
-    deniedSource=session.edit(2,2,noStructure,invalidSource,epoch,epoch,true);
+    deniedSource=session.edit(2,2,structuralAttempt,invalidSource,epoch,epoch,true);
     assert(!deniedSource.ok() &&
            deniedSource.native.graphError.fault==DynamicGraphFault::invalidSource);
     assert(render()&&near(l[63],(.2f+.4f)*center));
