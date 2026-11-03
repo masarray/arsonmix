@@ -294,7 +294,7 @@
  position:absolute;inset:0 2px;z-index:4;pointer-events:none;
  background:var(--meter-led-ramp);opacity:0;
  clip-path:inset(calc(100% - var(--peak-extent,0px)) 0
-   calc(var(--peak-extent,0px) - 3px) 0);
+   calc(var(--peak-extent,0px) - 12px) 0);
  transition:none;
 }
 /* M3 independent hardware CLIP lamps remain distinct from a moving
