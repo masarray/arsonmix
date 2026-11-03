@@ -53,6 +53,22 @@ int main() {
     assert(first.ok() && first.edit.createdIds.size()==12);
     const auto ch7=first.edit.createdIds[6],ch2=first.edit.createdIds[1];
     const auto main=first.edit.createdIds[10],monitor=first.edit.createdIds[11];
+    // A serial OUT must always be POST fader, unity and neutral pan.
+    // PRE / independent send-level / send-pan belong only to parallel SEND.
+    ChannelEdit invalidOut;invalidOut.kind=ChannelEdit::Kind::addSendReference;
+    invalidOut.id=ch7;invalidOut.target=main;
+    invalidOut.value=1.f;invalidOut.preFader=true;
+    invalidOut.primaryOutput=true;
+    const auto tryOut=[&](const ChannelEdit& op) {
+        const std::array<ChannelEdit,1> changes{op};
+        return native.edit(1,1,changes,route,epoch,epoch,true);
+    };
+    assert(!tryOut(invalidOut).ok());
+    invalidOut.preFader=false;invalidOut.value=.5f;
+    assert(!tryOut(invalidOut).ok());
+    invalidOut.value=1.f;invalidOut.sendPan=.2f;
+    assert(!tryOut(invalidOut).ok());
+    assert(native.acceptedGraphRevision()==1);
     // Two IN pins are callback ordinals, not guessed adjacent physical DB labels.
     route.sources={{ch7,0,-1,false},{ch2,1,-1,false}};
     std::array<ChannelEdit,4> edges{linkOut(ch7,main),linkOut(ch2,main),
@@ -223,6 +239,39 @@ int main() {
     assert(snap.channels.size()==14 && !snap.productionCallbackLive);
     route.sources[1].inputL=1;
     assert(render()&&left[31]>0.f);
+    // A different but valid IN2 pin in an OUT structural edit MUST NACK.
+    // No old-source overlay and no false GUI acceptance.
+    route.sources[1].inputL=0;
+    auto wrongAck=native.edit(4,4,editOne,route,epoch,epoch,true);
+    assert(!wrongAck.ok() &&
+           wrongAck.native.graphError.fault==DynamicGraphFault::invalidSource);
+    assert(wrongAck.native.graphError.id==ch2);
+    assert(native.acceptedGraphRevision()==4);
+    route.sources[1].inputL=1;
+    assert(render());
+    assert(approx(left[31],(.2f+.4f)*center*2.f+
+                             .2f*center*.25f*.5f));
+    // The real native same-format IN operation changes PCM and canonical
+    // readback without changing ChannelId, VST lane or graph revision.
+    assert(native.setLivePhysicalSource(epoch,4,ch2,0,-1,false));
+    assert(native.acceptedPhysicalRequest().sources[1].inputL==0);
+    assert(render()&&render()); // 64-sample dezipper across two 32f blocks
+    assert(approx(left[31],(.2f+.2f)*center*2.f+
+                             .2f*center*.25f*.5f));
+    assert(approx(ml[31],(.2f*.2f+.2f*.3f)*center));
+    // A previous GUI draft is now stale. It must rebase from accepted
+    // native SOURCE before changing OUT; never receive a phantom ACK.
+    wrongAck=native.edit(4,4,editOne,route,epoch,epoch,true);
+    assert(!wrongAck.ok() && native.acceptedGraphRevision()==4);
+    route=native.acceptedPhysicalRequest();
+    auto changedOut=native.edit(4,4,editOne,route,epoch,epoch,true);
+    assert(changedOut.ok() && native.acceptedGraphRevision()==5);
+    assert(native.acceptedPhysicalRequest().sources[1].inputL==0);
+    assert(render());
+    // CH7 -> GROUP (serial + FX) while CH2 -> MAIN (direct), and
+    // CH7 -> wet FX Return in parallel: no double-dry contribution.
+    assert(approx(left[31],(.2f*2.f+.2f+.2f*.25f*.5f)*center));
+    assert(approx(ml[31],(.2f*.2f+.2f*.3f)*center));
     // OUTPUT MUTE must silence BOTH main and monitor and never invoke FX.
     assert(!native.render(epoch,pins,2,left.data(),right.data(),
                           32,true,fx,ml.data(),mr.data()));

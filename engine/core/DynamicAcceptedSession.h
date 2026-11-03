@@ -238,33 +238,32 @@ private:
             result.edit.createdIds.clear();
             return result;
         }
-        // Validate ALL incoming physical requests before retaining any
-        // accepted live patch. The old M5.3 overlay quietly replaced even an
-        // out-of-range draft, then ACKed an unrelated structural edit.
-        // Invalid/hotplug-stale pins must fail closed with unchanged PCM,
-        // canonical accepted source and graph revision. A valid but stale
-        // draft may still inherit the last ACKed realtime source below.
+        // A structural OUT/GROUP/Return edit does NOT implicitly change IN.
+        // The operator's same-format IN gesture is accepted first through
+        // setLivePhysicalSource(epoch,revision,...), which also updates the
+        // canonical acceptedRequest_. A stale GUI draft must rebase from that
+        // accepted SOURCE before asking for a structural ACK. Never silently
+        // restore old pins and claim the requested new route was accepted.
+        // Genuine format changes remain structural, with normal graph checks.
         for(const auto& source:route.sources) {
-            if(!DynamicPreparedMixerBlock::validPhysicalPatch(
-                 route.physicalInputs,source.inputL,source.inputR,
-                 source.stereo)) {
+            const bool valid=DynamicPreparedMixerBlock::validPhysicalPatch(
+                route.physicalInputs,source.inputL,source.inputR,source.stereo);
+            const auto prior=std::find_if(acceptedRequest_.sources.begin(),
+                acceptedRequest_.sources.end(),
+                [&](const DynamicSourcePatch& p){return p.id==source.id;});
+            const bool conflicting=prior!=acceptedRequest_.sources.end() &&
+                source.stereo==prior->stereo &&
+                (source.inputL!=prior->inputL || source.inputR!=prior->inputR);
+            if(!valid || conflicting) {
                 result.fault=Fault::graphRejected;
                 result.native.fault=DynamicNativeSessionPublisher::Fault::invalidGraph;
                 result.native.graphError={DynamicGraphFault::invalidSource,source.id};
                 result.native.revision=publisher_.acceptedRevision();
                 result.edit.createdIds.clear();
-                return result;
+                return result; // old audible SOURCE and VST3 leases unchanged
             }
         }
-        auto effective=route; // CONTROL-only, never on audio callback
-        for(auto& source:effective.sources){
-            const auto prior=std::find_if(acceptedRequest_.sources.begin(),
-                acceptedRequest_.sources.end(),
-                [&](const DynamicSourcePatch& p){return p.id==source.id;});
-            if(prior!=acceptedRequest_.sources.end() &&
-               source.stereo==prior->stereo)
-                source=*prior;
-        }
+        auto effective=route; // CONTROL-only; preallocated before commit
         const bool nextHasFx=static_cast<bool>(fx.owner);
         result.native=publisher_.commit(candidate,effective,previousGraphRevision,
                                        requestedEpoch,currentEpoch,outputsDisarmed,

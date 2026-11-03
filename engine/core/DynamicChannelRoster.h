@@ -226,7 +226,14 @@ public:
                     else it->insertCatalogIds.push_back(op.text);
                     break;
                 case ChannelEdit::Kind::addSendReference:
-                    if(op.primaryOutput && std::any_of(it->sends.begin(),it->sends.end(),
+                    // OUT is a single unity, POST-fader serial route. Its
+                    // pan/fader live on the source strip; only SEND may own
+                    // an independent PRE/POST tap, level or pan. Reject a
+                    // malformed primary edge before it can reach PCM/GUI ACK.
+                    if(op.primaryOutput &&
+                       (op.preFader || op.value!=1.f || op.sendPan!=0.f))
+                        result.fault=ChannelEditFault::invalidValue;
+                    else if(op.primaryOutput && std::any_of(it->sends.begin(),it->sends.end(),
                         [](const auto& s){return s.primaryOutput;}))
                         result.fault=ChannelEditFault::invalidValue;
                     else if(op.target.value==0 || op.target==op.id || seek(op.target)==candidate.end())

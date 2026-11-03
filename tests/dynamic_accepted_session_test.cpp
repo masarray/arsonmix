@@ -220,6 +220,22 @@ int main() {
     assert(!deniedSource.ok() &&
            deniedSource.native.graphError.fault==DynamicGraphFault::invalidSource);
     assert(render()&&near(l[63],(.2f+.4f)*center));
+    // A physically valid but different pin is NOT an implicit IN request
+    // during RENAME/GROUP/OUT. Previously the old SOURCE was overlaid and
+    // an unfulfilled new pin was ACKed as successful (GUI/PCM disagreement).
+    auto validButUnacceptedSource=route;
+    validButUnacceptedSource.sources[0].inputL=1;
+    auto deniedValidSource=session.edit(2,2,structuralAttempt,
+        validButUnacceptedSource,epoch,epoch,true);
+    assert(!deniedValidSource.ok() &&
+           deniedValidSource.fault==DynamicAcceptedSession::Fault::graphRejected);
+    assert(deniedValidSource.native.graphError.fault==
+           DynamicGraphFault::invalidSource);
+    assert(deniedValidSource.native.graphError.id==micA);
+    assert(session.acceptedGraphRevision()==2 &&
+           session.acceptedPhysicalRequest().sources[0].inputL==0);
+    assert(session.acceptedRoster().find(micA)->name=="LEAD");
+    assert(render()&&near(l[63],(.2f+.4f)*center));
     // One accepted ChannelId graph: realtime MUTE/SOLO and PRE/POST follow
     // the same callback, not a recompilation or an extra FX instance.
     assert(session.setLiveMuteSolo(epoch,2,micA,true,false));
