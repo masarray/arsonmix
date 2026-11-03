@@ -93,6 +93,8 @@ jobs:
         run: python tests/pages_contextual_buttons_smoke.py
       - name: Verify V43 public Pages WIRE CSS, incoming cables and propagating socket impact
         run: python tests/pages_wire_incoming_v43_smoke.py
+      - name: Verify V15 real pointer OUT-to-IN wire and exclusive Bus routing
+        run: python tests/preview_v15_drag_wire_smoke.py
       # V10–V24 are exact historical migration/restoration tests. They compare
       # original versioned bytes, so run them on immutable V24 rather than
       # pretending the intentional V50 layout/stylesheet changes are V22.
@@ -175,8 +177,6 @@ jobs:
         run: python tests/ui_smoke.py
       - name: Verify Preview V2 V7 physical visual geometry and modeless mixer workflow
         run: python tests/preview_v2_v7_visual_smoke.py
-      - name: Verify V15 real pointer OUT-to-IN wire and exclusive Bus routing
-        run: python tests/preview_v15_drag_wire_smoke.py
       - name: Verify V40 WIRE proximity, focus release and full-tray channel selection
         run: python tests/pages_wire_focus_v40_smoke.py
       - name: Verify V42 original OUT fill and magnetic dot-follow drag
