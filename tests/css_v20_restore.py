@@ -28,7 +28,10 @@ def manifest():
 
 def reconstruct():
     data=manifest()
-    current=HTML.read_text(encoding="utf-8")
+    # V21 moved a contiguous V9–V14 prefix: restore V20 *first*, then
+    # enforce this immutable V20 ledger with the original V20 fingerprints.
+    from css_v21_restore import reconstruct as restore_v20_source
+    current,_=restore_v20_source()
     assert (len(current),fingerprint(current))==(
         data["result"]["htmlLength"],data["result"]["htmlFNV"]
     ),"V20 live HTML changed outside approved source ledger"
@@ -62,11 +65,16 @@ def reconstruct():
 
 def mount_original():
     html=reconstruct()
-    f=tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",suffix=".html",
-        prefix=".v20-before-shadow-cleanup-",dir=HTML.parent,delete=False)
+    # The original V20 HTML must also load the original pre-V21 Chrome
+    # stylesheet. Otherwise its already-present inline chassis CSS doubles.
+    from css_v21_restore import mount_owner as mount_pre_v21_chrome
+    html,temporary=mount_pre_v21_chrome(html)
     try:
+        f=tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",suffix=".html",
+            prefix=".v20-before-shadow-cleanup-",dir=HTML.parent,delete=False)
         with f:f.write(html)
-        return Path(f.name),[Path(f.name)]
+        temporary.append(Path(f.name))
+        return Path(f.name),temporary
     except Exception:
-        Path(f.name).unlink(missing_ok=True)
+        for path in temporary:path.unlink(missing_ok=True)
         raise

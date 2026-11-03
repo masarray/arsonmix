@@ -12,7 +12,10 @@ async def main():
     source_gate()
     source,sections,chrome=reconstruct()
     data=manifest()
-    assembled_new=SECTIONS.read_text(encoding="utf-8")+CHROME.read_text(encoding="utf-8")
+    from css_v21_restore import reconstruct as restore_v20_chrome
+    # Rebuild the exact pre-V21 Chrome owner before verifying V19 accounting;
+    # V21 adds only a relocated chassis suffix, not V19 source declarations.
+    assembled_new=SECTIONS.read_text(encoding="utf-8")+restore_v20_chrome()[1]
     assembled_old=sections+chrome+data["sourceFirst"]+data["movedChromeSuffix"]
     assert assembled_new.count("!important")==assembled_old.count("!important"),"CSS relocation must preserve priority"
     assert data["oldLengths"]["inline"]-data["newLengths"]["inline"]==(

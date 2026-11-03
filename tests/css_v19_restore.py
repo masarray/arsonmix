@@ -33,7 +33,10 @@ def reconstruct():
     from css_v20_restore import reconstruct as restore_v19_source
     current=restore_v19_source()
     sections=SECTIONS.read_text(encoding="utf-8")
-    chrome=CHROME.read_text(encoding="utf-8")
+    # Chrome gained the V21 chassis suffix; compare only the exact V19
+    # Chrome owner against its original immutable V19 source ledger.
+    from css_v21_restore import reconstruct as restore_pre_v21_chrome
+    _,chrome=restore_pre_v21_chrome()
     for name,source in (("html",current),("sections",sections),("chrome",chrome)):
         assert (len(source),fingerprint(source))==(data["newLengths"][name],data["newFNV"][name]),(name,"unapproved V19 live owner drift")
     assert sections.endswith(data["sourceFirst"])
