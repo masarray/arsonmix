@@ -23,7 +23,7 @@ def main():
   public=dst/"preview/mixer.html"
   assert public.read_bytes()==SRC.read_bytes(),"published /preview/ differs from canonical GUI"
   assert (dst/"preview/assets/mixer-wire-dots.css").read_bytes()==CSS.read_bytes(),"published WIRE style missing"
-  assert 'assets/mixer-wire-dots.css?v=v45' in public.read_text("utf-8")
+  assert 'assets/mixer-wire-dots.css?v=v46' in public.read_text("utf-8")
   with sync_playwright() as pw:
    browser=pw.chromium.launch(headless=True)
    for width in (1366,1680):
@@ -104,11 +104,19 @@ def main():
     color=incoming.get_attribute('stroke');alpha=float(incoming.get_attribute('opacity'))
     assert src.get_attribute("data-wire-visible")=="true"
     assert dest.get_attribute("data-wire-visible")=="true"
-    for dot in (pin,socket):
-     props=dot.evaluate("""e=>({c:getComputedStyle(e).backgroundColor,alpha:parseFloat(getComputedStyle(e).opacity),
-       wire:getComputedStyle(e.parentElement).getPropertyValue('--wire-edge-color').trim()})""")
-     assert props["wire"]==color,(width,"dot hue differs from its actual wire",props,color)
-     assert abs(props["alpha"]-alpha)<.001,(width,"dot opacity differs from wire",props,alpha)
+    # OUT source keeps SVG wire hue/alpha; V46 receiving IN dot uses the
+    # DESTINATION channel hue to agree with its colored receiving ring.
+    props=pin.evaluate("""e=>({alpha:parseFloat(getComputedStyle(e).opacity),
+      wire:getComputedStyle(e.parentElement).getPropertyValue('--wire-edge-color').trim()})""")
+    assert props["wire"]==color,(width,"OUT dot wire hue differs",props,color)
+    assert abs(props["alpha"]-alpha)<.001,(width,"OUT dot opacity differs",props,alpha)
+    inner=socket.evaluate("""e=>{
+      const probe=document.createElement('span');probe.style.color='var(--ch)';
+      e.parentElement.appendChild(probe);
+      const expected=getComputedStyle(probe).color;probe.remove();
+      return {dot:getComputedStyle(e).backgroundColor,alpha:Number(getComputedStyle(e).opacity),expected};
+    }""")
+    assert inner["dot"]==inner["expected"] and inner["alpha"]==1,(width,"IN dot must match receiving ring",inner)
     assert not errors,(width,errors)
     page.close()
    browser.close()
