@@ -183,8 +183,8 @@
   width:5px;background:#cdebf3;opacity:1;
 }
 .console-body .strip .meter-box .vu-tick span{
-  /* Keep all dBFS values on one right-hand numeral baseline. */
-  left:4px;right:0;top:-5.5px;text-align:right;
+  /* Owner-approved M3 precision: 7px left and 9px right insets for every dBFS numeral. */
+  left:7px;right:9px;top:-5.5px;text-align:right;
   font:500 8.5px/11px Inter,"Segoe UI",sans-serif!important;
   font-variant-numeric:lining-nums tabular-nums!important;letter-spacing:-.035em;
   white-space:nowrap;color:#bdd0d9!important;text-shadow:none!important;
