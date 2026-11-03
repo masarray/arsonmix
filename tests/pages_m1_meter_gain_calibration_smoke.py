@@ -194,7 +194,7 @@ def main():
         published=dist/"preview/mixer.html"
         assert published.read_bytes()==CANON.read_bytes(),"Published mixer source drift"
         for name in ("mixer-fader-assembly.css","mixer-meter-display.css"):
-            key=f"assets/{name}?v=css-owner-v9-ruler-m3-left-70"
+            key=f"assets/{name}?v=css-owner-v9-ruler-m3-left-70-v24-pruned"
             assert key in published.read_text("utf-8"),("stale ruler cache URL",name)
         for name in ("mixer-fader-assembly.css","mixer-meter-display.css"):
             assert (dist/"preview/assets"/name).read_bytes()==(ASSETS/name).read_bytes(),name
