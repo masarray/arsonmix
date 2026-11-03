@@ -1234,20 +1234,20 @@ public:
                 reply.error="NATIVE_MAIN_NOT_FOUND";return reply;
             }
             const ChannelId mainId=main->id;
-            ChannelEdit add;
-            add.kind=ChannelEdit::Kind::add;add.role=ChannelRole::input;
+            armix::mixer::ChannelEdit add;
+            add.kind=armix::mixer::ChannelEdit::Kind::add;add.role=ChannelRole::input;
             add.format=format;add.text=name;
             add.position=static_cast<std::size_t>(main-existing.begin());
             auto created=roster.edit(expectedRosterRevision,
-                                     std::span<const ChannelEdit>(&add,1));
+                                     std::span<const armix::mixer::ChannelEdit>(&add,1));
             if(!created.ok()||created.createdIds.size()!=1) {
                 reply.error="CHANNEL_ROSTER_ADMISSION_REJECTED";return reply;
             }
-            ChannelEdit primary;
-            primary.kind=ChannelEdit::Kind::setPrimaryOutput;
+            armix::mixer::ChannelEdit primary;
+            primary.kind=armix::mixer::ChannelEdit::Kind::setPrimaryOutput;
             primary.id=created.createdIds.front();primary.target=mainId;
             const auto connected=roster.edit(roster.revision(),
-                                    std::span<const ChannelEdit>(&primary,1));
+                                    std::span<const armix::mixer::ChannelEdit>(&primary,1));
             if(!connected.ok()) {
                 reply.error="CHANNEL_MAIN_ROUTING_REJECTED";return reply;
             }
