@@ -155,8 +155,32 @@ jobs:
             cp "$backup/$path" "$path"
           done
           git diff --exit-code -- site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-wire-dots.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-fx-rack.css site/preview-v2/assets/mixer-control-keys.css
+      # Historic V25 source hashes belong to immutable main@2f01022.
+      # Restore current PR assets before checking new V53 operational behavior.
+      - name: Mount original V25 historical V51 fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          baseline=2f01022370c589205d738366242d2d2aeb77b10d
+          backup="$RUNNER_TEMP/v25-current-sources"
+          git fetch --no-tags --depth=1 origin "$baseline"
+          for path in site/preview-v2/index.html site/preview-v2/assets/mixer-wire-dots.css site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-fx-rack.css; do
+            mkdir -p "$backup/$(dirname "$path")"
+            cp "$path" "$backup/$path"
+            git show "$baseline:$path" > "$path"
+          done
       - name: Verify V25 exact V51 physical-key owner migration and zero visual regression
         run: python tests/pages_css_architecture_v25_smoke.py
+      - name: Restore exact current GUI source after immutable V25 migration test
+        shell: bash
+        run: |
+          set -euo pipefail
+          backup="$RUNNER_TEMP/v25-current-sources"
+          for path in site/preview-v2/index.html site/preview-v2/assets/mixer-wire-dots.css site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-fx-rack.css; do
+            test -s "$backup/$path"
+            cp "$backup/$path" "$path"
+          done
+          git diff --exit-code -- site/preview-v2/index.html site/preview-v2/assets/mixer-wire-dots.css site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-fx-rack.css
       - name: Verify embedded Inter font and contextual V7 micro-controls
         run: python tests/pages_inter_utility_v7_smoke.py
       - name: Validate exact alpha micro hardware sprite states and WIRE coexistence
@@ -175,6 +199,8 @@ jobs:
         run: python tests/pages_m1_meter_gain_calibration_smoke.py
       - name: Verify M3 meter/clip/menu/FX/receiving multi-wire operator contract
         run: python tests/pages_m3_operator_visual_interaction_smoke.py
+      - name: Verify V53 safe FX grip keyboard and DnD, unified rack and rail
+        run: python tests/pages_fx_rail_v53_smoke.py
       - name: Run mixer UI smoke tests
         run: python tests/ui_smoke.py
       - name: Verify Preview V2 V7 physical visual geometry and modeless mixer workflow
@@ -208,6 +234,10 @@ jobs:
           name: arsonmix-gui-baseline-smoke
           path: |
             pages-v51-portrait-meter-1680.png
+            pages-v53-fx-rail-1366.png
+            pages-v53-fx-rail-1378.png
+            pages-v53-fx-rail-1680.png
+            pages-v53-fx-rail-1920.png
             pages-v51-peak-hold-release-1680.png
             native-orbit-ui-review.png
             mixer-g1-g2-1366.png

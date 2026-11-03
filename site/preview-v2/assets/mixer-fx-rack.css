@@ -7,8 +7,23 @@
 .fxslot-row{display:flex;align-items:center;height:20px;border-bottom:1px solid #303234;gap:2px}
 .fxslot-row:last-child{border-bottom:0}
 .fxslot-row.dragged{opacity:.38}
-.fxslot-row.drop-target{outline:1px solid #8ec6d9;outline-offset:-1px}
-.fxslot-row .grip{font-size:10px;color:#737779;cursor:grab;user-select:none;flex:0 0 9px;line-height:16px;overflow:hidden}
+.fxslot-row{position:relative}
+.fxslot-row.drop-before::before,.fxslot-row.drop-after::before{
+ content:"";position:absolute;left:1px;right:1px;height:2px;
+ background:#95d9df;z-index:2;pointer-events:none;
+}
+.fxslot-row.drop-before::before{top:-1px}
+.fxslot-row.drop-after::before{bottom:-1px}
+.fxslot-row .grip{
+ box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;
+ flex:0 0 18px;width:18px;height:18px;min-width:18px;
+ padding:0;border:1px solid #415d69;border-radius:2px;
+ color:#adc6cf;background:#203540;cursor:grab;user-select:none;
+ line-height:1;touch-action:none;
+}
+.fxslot-row .grip:hover{color:#e0f1f4;background:#304955;border-color:#739aa7}
+.fxslot-row .grip:focus-visible{outline:2px solid #97dae1;outline-offset:1px}
+.fxslot-row .grip:active{cursor:grabbing}
 @media(max-height:750px){
 .fxslot-row{height:18px;min-height:18px;flex-basis:18px}
 
@@ -94,11 +109,32 @@
 }
 .console-body .strip .fxslot-row,
 .console-body .strip .fxslot-row:hover{
- background:#182c37!important;border-bottom:1px solid #47637138!important;
+ background:#112630!important;border-bottom:1px solid #3f596642!important;
  box-shadow:none!important;
 }
 .console-body .strip .fxslot-row:hover{background:#294453!important}
 .console-body .strip .fx-section{background:var(--v13-insert)!important}
+/* V53 FX processing module: the raised plate and inset well share one
+   physical x-axis. This owner controls surfaces, not row/fader dimensions. */
+.console-body .strip .fx-section>.subhead{
+ box-sizing:border-box!important;
+ background:linear-gradient(180deg,#30434c 0%,#273b46 48%,#1c303b 100%)!important;
+ border:1px solid #405b69!important;border-bottom:1px solid #0b1a22!important;
+ border-radius:2px 2px 0 0;
+ box-shadow:inset 0 1px #7895a535,inset 0 -1px #07141a!important;
+}
+.console-body .strip .fx-section>.fxslot-list{
+ box-sizing:border-box!important;
+ background:#091b25!important;
+ border:1px solid #2c4855!important;border-top:0!important;
+ border-radius:0 0 2px 2px;
+ box-shadow:inset 0 2px #030f16a8,inset 1px 0 #0c2632!important;
+}
+.console-body .strip .fxslot-row.is-bypassed .fx-pick{color:#8b9fa8!important}
+.console-body .strip .fxslot-row.is-bypassed{background:#142632!important}
+.console-body .strip .fxslot-row.is-empty{background:#10222d!important}
+.console-body .strip .fxslot-row .grip .mi-svg{width:13px;height:14px;pointer-events:none}
+
 .console-body .fx-section .grip{display:inline-flex;align-items:center;justify-content:center}
 .console-body .fx-section .grip .mi-svg{width:13px;height:15px}
 
