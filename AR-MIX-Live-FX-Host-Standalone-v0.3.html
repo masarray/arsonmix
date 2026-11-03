@@ -7438,7 +7438,7 @@ scheduleDemoMeter();
     SET_LINK_GROUP:'SET_LINK_GROUP',ROUTE_SELECTED_TO_GROUP:'ROUTE_SELECTED_TO_GROUP',
     RENAME_CHANNEL:'RENAME_CHANNEL',CREATE_CHANNEL:'CREATE_CHANNEL'
   };
-  let accepted=null,acceptedNative=false,modeSend='',lastStructure='',requestSeq=0;
+  let accepted=null,acceptedWire=null,acceptedNative=false,modeSend='',lastStructure='',requestSeq=0;
   let lastControlProjection='',lastHeaderProjection='';
   // Stable indexed meters avoid re-querying every strip/LED on native PCM ticks.
   const meterNodes=new Map(),statusNodes=new Map();
@@ -7896,9 +7896,117 @@ scheduleDemoMeter();
       row.append(star,add);pluginResults.append(row);
     }
   }
+
+  // ONLY a presentation projection of the truly admitted M4 device graph.
+  // `M4:1` is a visual namespace, deliberately NOT a native ChannelId.
+  // Never rewrite native graph.channels or its universal capability flags.
+  const m4Id=i=>'M4:'+String(i);
+  const m4Mode=()=>acceptedNative&&accepted?.m4NativeProjection===true;
+  function m4Projection(w){
+    const a=w?.legacyM4,d=w?.device;
+    if(!w||w.productionCallbackLive!==false||a?.controlPlane!=='LEGACY_M4_ORDINAL'||
+       !Array.isArray(a.acceptedChannels)||a.acceptedChannels.length!==10||
+       !Array.isArray(a.supportedOps)||!Array.isArray(a.channelControls)||
+       a.channelControls.length!==10||!d||decimal(a.routingRevision)===null)
+      return null;
+    const ops=a.supportedOps;
+    const physical=p=>d.inputEndpoints.find(e=>e.port===p&&
+      e.active===true&&d.enabledInputs.includes(p));
+    const inserts=lane=>(Array.isArray(a.fxInstances?.[lane])?
+      a.fxInstances[lane]:[]).filter(x=>x&&typeof x.instanceId==='string'&&x.instanceId)
+        .map(x=>({id:x.instanceId,name:String(x.catalogId||'NATIVE VST3'),
+                  bypassed:x.bypassed===true}));
+    const channels=[];
+    const peaks={};
+    for(let i=0;i<10;i++){
+      const row=a.acceptedChannels[i],v=a.channelControls[i];
+      if(!row||!v||!['NONE','BUS','MONO','STEREO'].includes(row.mode)||
+         !Number.isFinite(v.db)||!Number.isFinite(v.pan)||
+         typeof v.mute!=='boolean'||typeof v.solo!=='boolean')return null;
+      const pins=row.mode==='STEREO'?[row.left,row.right]:
+        row.mode==='MONO'?[row.left]:[];
+      if(pins.some(p=>!Number.isInteger(p)||!physical(p))||
+         new Set(pins).size!==pins.length)return null;
+      const source=pins.length?{portId:'in:'+pins[0],physicalPins:pins}:null;
+      const id=m4Id(i+1),channel={
+        id,role:'INPUT',name:'CH '+String(i+1).padStart(2,'0'),
+        color:'#5f9ab1',processingFormat:row.channelFormat==='MONO'?'MONO':'STEREO',
+        source,primaryOutId:row.main===false?null:m4Id('MAIN'),
+        controls:{faderDb:v.db,pan:v.pan,mute:v.mute,solo:v.solo},
+        inserts:inserts(i),sends:[],
+        allowedOps:ops.filter(op=>['SET_SOURCE','SET_PROCESSING_FORMAT',
+          'SET_PRIMARY_OUT','SET_FADER','SET_PAN','SET_MUTE','SET_SOLO',
+          'SET_SEND_LEVEL','SET_INSERT_BYPASS','OPEN_INSERT_EDITOR'].includes(op))
+      };
+      channels.push(channel);
+      const left=a.channelPeaksL?.[i],right=a.channelPeaksR?.[i];
+      if(Number.isFinite(left)&&left>=0&&Number.isFinite(right)&&right>=0)
+        peaks[id]={peakLeft:left,peakRight:right,peak:Math.max(left,right)};
+    }
+    for(let b=0;b<4;b++){
+      const row=a.auxReturns?.[b];
+      if(!row||row.enabled!==true)continue;
+      const id=m4Id(b+11),channel={id,role:'AUX',name:'AUX '+(b+1),
+        processingFormat:'STEREO',primaryOutId:row.main===false?null:m4Id('MAIN'),
+        controls:{faderDb:Number.isFinite(row.gain)&&row.gain>0?
+          20*Math.log10(row.gain):-60,pan:0,mute:row.mute===true,solo:false},
+        inserts:inserts(10+b),sends:[],allowedOps:[]};
+      channels.push(channel);
+    }
+    if(Array.isArray(a.acceptedSends))
+      a.acceptedSends.forEach((send,i)=>{
+        if(!send||!Number.isInteger(send.from)||send.from<0||send.from>=10||
+           !Number.isInteger(send.to)||send.to<10||send.to>=14||
+           !['PRE','POST'].includes(send.tap)||!Number.isFinite(send.gain)||
+           send.gain<0||send.gain>1)return;
+        const target=m4Id(send.to+1);
+        if(!channels.some(c=>c.id===target))return;
+        channels[send.from].sends.push({id:'M4SEND:'+i,targetId:target,
+          tap:send.tap,auxIndex:send.to-10,
+          levelDb:send.gain>0?20*Math.log10(send.gain):-60});
+      });
+    channels.push({id:m4Id('MAIN'),role:'MAIN',name:'MAIN',
+      processingFormat:'STEREO',controls:{faderDb:0,pan:0,mute:false,solo:false},
+      source:null,primaryOutId:null,inserts:[],sends:[],allowedOps:[]});
+    return {...w,m4NativeProjection:true,
+      graph:{...w.graph,channels,
+        destinations:[{id:m4Id('MAIN'),name:'MAIN',acceptsPrimary:true}],
+        capabilities:{...w.graph.capabilities,supportedOps:[]}},
+      telemetry:{...w.telemetry,channelMeterRmsPeak:peaks}};
+  }
+  function m4Intent(op,id,payload){
+    const a=acceptedWire?.legacyM4;
+    if(!m4Mode()||!a||!a.supportedOps?.includes(op))return null;
+    const match=/^M4:(1[0-4]|[1-9])$/.exec(id||'');
+    if(!match)return null;
+    const lane=Number(match[1]),ch=byId.get(id);
+    if(!ch)return null;
+    let value={...payload};
+    if(op==='SET_PRIMARY_OUT'){
+      if(payload.destinationId!==m4Id('MAIN'))return null;
+      value={destinationId:'MAIN'};
+    }else if(op==='SET_SOURCE'){
+      if(!/^in:(0|[1-9][0-9]*)$/.test(payload.portId||''))return null;
+      value={portId:payload.portId,sourceFormat:'MONO'};
+    }else if(op==='SET_FADER'){
+      if(!Number.isFinite(payload.valueDb)||payload.valueDb< -60||payload.valueDb>10)return null;
+    }else if(op==='SET_SEND_LEVEL'){
+      const send=ch.sends.find(x=>x.id===payload.sendId);
+      if(!send||!Number.isFinite(payload.levelDb)||payload.levelDb>0||
+         payload.levelDb< -60)return null;
+      value={auxIndex:send.auxIndex,tap:send.tap,
+        value:payload.levelDb<=-60?0:Math.pow(10,payload.levelDb/20)};
+    }else if(!['SET_PAN','SET_MUTE','SET_SOLO',
+                'SET_PROCESSING_FORMAT','SET_INSERT_BYPASS',
+                'OPEN_INSERT_EDITOR'].includes(op))return null;
+    return {targetChannelId:String(lane),legacyRoutingRevision:a.routingRevision,
+      operation:op,payload:value};
+  }
   function supported(op){
     const caps=accepted?.graph?.capabilities||{};
-    // Absence of explicit native advertised operation support means disabled.
+    // An installed M4 operation is *not* a universal ChannelId capability.
+    if(m4Mode())return Array.isArray(acceptedWire?.legacyM4?.supportedOps)&&
+      acceptedWire.legacyM4.supportedOps.includes(operationCaps[op]);
     return acceptedNative && accepted?.productionCallbackLive===true &&
       Array.isArray(caps.supportedOps) && caps.supportedOps.includes(operationCaps[op]);
   }
@@ -7925,10 +8033,16 @@ scheduleDemoMeter();
       return false;
     }
     const requestId=instance+':'+String(++requestSeq);
+    const compatibility=m4Mode()?m4Intent(op,id,payload||{}):null;
+    if(m4Mode()&&!compatibility){
+      showFeedback('REJECTED · M4 legacy native operation or payload invalid');
+      return false;
+    }
     const command={requestId,deviceEpoch:accepted.device.epoch,
       baseGraphRevision:accepted.graph.revision,
       baseRosterRevision:accepted.graph.rosterRevision,
-      operation:op,targetChannelId:id||null,payload:payload||{}};
+      operation:op,targetChannelId:id||null,payload:payload||{},
+      ...(compatibility||{})};
     const targets=id?[id]:affectedIds.length?['@selection',...affectedIds]:
       op==='CREATE_CHANNEL'?['@roster']:[];
     pending.set(requestId,{op,id,targets,baseRevision:command.baseGraphRevision,
@@ -8088,11 +8202,12 @@ scheduleDemoMeter();
     return raw&&typeof raw==='object'&&raw.schemaVersion===6?raw:null;
   }
   function receiveSnapshot(data,fromNative){
-    const s=normalizeSnapshot(data);
-    if(!validSnapshot(s)){
+    const wire=normalizeSnapshot(data);
+    if(!validSnapshot(wire)){
       if(fromNative)showFeedback('REJECTED SNAPSHOT · Invalid native epoch, revision or ChannelId');
       return false;
     }
+    const s=fromNative?(m4Projection(wire)||wire):wire;
     if(acceptedNative&&!fromNative)return false;
     if(fromNative&&acceptedNative&&accepted&&
       BigInt(s.device.epoch)<BigInt(accepted.device.epoch))return false;
@@ -8111,6 +8226,17 @@ scheduleDemoMeter();
       }
     }
     const priorEpoch=acceptedNative?accepted?.device?.epoch:null;
+    const previousM4=acceptedNative&&accepted?.m4NativeProjection===true;
+    const changedM4Authority=previousM4&&(
+      s.m4NativeProjection!==true||
+      acceptedWire?.legacyM4?.routingRevision!==wire.legacyM4?.routingRevision);
+    if(changedM4Authority){
+      // Native route changed independently of universal graphRevision=0.
+      // Do not keep stale M4 requests locked or replay ACK after a hotplug
+      // fault, hardware RE-APPLY, or a VST/routing topology replacement.
+      pending.clear();pendingTargets.clear();awaitingSnapshot.clear();
+      showFeedback('M4 HARDWARE ROUTE CHANGED · controls rebound from native readback');
+    }
     const structure=s.device.epoch+':'+s.graph.rosterRevision+':'+
       s.graph.channels.map(c=>[c.id,c.role,c.processingFormat,c.primaryOutId,
         (c.inserts||[]).map(f=>f.id).join(','),(c.sends||[]).map(x=>x.id).join(',')].join(':')).join('|')+
@@ -8122,7 +8248,7 @@ scheduleDemoMeter();
     const headerProjection=JSON.stringify([
       s.device.backend,s.device.sampleRate,s.device.bufferFrames,
       s.device.outputArmed,s.device.epoch,s.graph.revision,s.productionCallbackLive,!!fromNative]);
-    accepted=s;acceptedNative=!!fromNative;
+    accepted=s;acceptedWire=wire;acceptedNative=!!fromNative;
     snapshotSerial++;
     byId.clear();
     for(const c of s.graph.channels)byId.set(c.id,c);
@@ -8159,9 +8285,11 @@ scheduleDemoMeter();
     if(newHeader&&!newStructure)updateHeader();
     root.dataset.demo=String(!fromNative);
     if(newStructure||newControls){refreshDevicePanel();refreshPluginCatalog();refreshQuickFx();}
-    // Integration readback is intentionally not a production callback.
-    // It must never replace the working M4 console until callback cutover.
-    if(!fromNative||s.productionCallbackLive===true)setVisible(true);
+    // M4 is visible only when its separate real hardware authority is valid.
+    // All other native-unready snapshots restore the original M4 console.
+    if(!fromNative||s.productionCallbackLive===true||s.m4NativeProjection===true)
+      setVisible(true);
+    else setVisible(false);
     return true;
   }
   const makeDemo=()=>{
@@ -8367,7 +8495,7 @@ scheduleDemoMeter();
       meter.append(lane);
     }
     const range=h('input','arV6Fader');
-    range.type='range';range.min='-60';range.max='12';range.step='.1';
+    range.type='range';range.min='-60';range.max=m4Mode()?'10':'12';range.step='.1';
     const faderVal=Number(ch.controls?.faderDb);
     range.value=String(Number.isFinite(faderVal)?clamp(faderVal,-60,12):0);
     range.dataset.op='SET_FADER';range.dataset.id=ch.id;
@@ -8387,6 +8515,12 @@ scheduleDemoMeter();
   }
   function channelState(ch){
     if(!acceptedNative)return 'DEMO / NO AUDIO';
+    if(m4Mode()){
+      if(ch.controls?.mute)return 'MUTED · NATIVE M4';
+      if(ch.role==='INPUT'&&!ch.source)return 'NO ACCEPTED SOURCE · M4';
+      if(!accepted.device.outputArmed)return 'M4 NATIVE · OUTPUT DISARMED';
+      return 'M4 NATIVE · PHYSICAL ROUTE';
+    }
     if(accepted?.productionCallbackLive!==true)return 'NATIVE READBACK / NOT LIVE';
     if(ch.controls?.mute)return 'MUTED';
     const role=ch.role,t=accepted.telemetry||{};
@@ -8412,10 +8546,12 @@ scheduleDemoMeter();
       (d.sampleRate?Math.round(d.sampleRate)+' Hz':'— Hz')+' / '+
       (d.bufferFrames||'—')+' frames  ·  GRAPH '+(g.revision??'—');
     modeBadge.textContent=!acceptedNative?'DEMO · NOT CONNECTED':
+      m4Mode()?(d.outputArmed?'M4 NATIVE · ARMED':'M4 NATIVE · OUTPUT DISARMED'):
       accepted?.productionCallbackLive!==true?'NATIVE READBACK · NOT LIVE':
       d.outputArmed?'NATIVE ACCEPTED · ARMED':'NATIVE ACCEPTED · OUTPUT DISARMED';
     root.dataset.demo=String(!acceptedNative);
-    root.dataset.armed=String(acceptedNative&&accepted?.productionCallbackLive===true&&!!d.outputArmed);
+    root.dataset.armed=String(acceptedNative&&
+      (accepted?.productionCallbackLive===true||m4Mode())&&!!d.outputArmed);
   }
   function updateSelection(){
     for(const strip of root.querySelectorAll('[data-channel-id]')){
@@ -8915,7 +9051,9 @@ scheduleDemoMeter();
     window.addEventListener('arMixV6Fixture',e=>receiveSnapshot(e.detail?.snapshot||e.detail,false));
   }
   window.__arMixV6ReadOnly=()=>({
-    nativePublisher:acceptedNative,revision:accepted?.graph?.revision??null,
+    nativePublisher:acceptedNative,controlPlane:m4Mode()?'LEGACY_M4_ORDINAL':
+      accepted?.productionCallbackLive===true?'CHANNEL_ID':'UNREADY',
+    revision:accepted?.graph?.revision??null,
     epoch:accepted?.device?.epoch??null,visibleChannelIds:[...byId.keys()],
     pendingCount:pending.size,selectedChannelIds:[...selectedIds],feedback,
     uiStats:{...uiStats}
