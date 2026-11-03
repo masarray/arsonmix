@@ -8,7 +8,7 @@
   },
   "current": {
     "length": 210077,
-    "fnv": "b15c793c"
+    "fnv": "6c71df72"
   },
   "hunks": [
     {
@@ -29,7 +29,7 @@
     },
     {
       "old": " const source=armedWireSource();\n const isSource=!!source&&source.id===t.id;\n const isMain=t.kind==='master';\n const edge=!isMain&&source?wireFor(source.id,t.id):null;\n // Only committed, enabled WIRE edges illuminate the supplied SVG knob.\n // A connected knob stays colored even outside patch mode; gain editing still needs source OUT.\n const incomingCount=isMain?0:wireWsRoutes().filter(route=>route.destId===t.id).length;\n const hasPluggedWire=incomingCount>0;\n const legacy=!isMain&&source&&hasLegacySendTo(source,t);\n",
-      "new": " const source=armedWireSource();\n const isSource=!!source&&source.id===t.id,isMain=t.kind==='master';\n const incoming=isMain?[]:incomingWireEdges(t.id);\n const armedEdge=!isMain&&source?wireFor(source.id,t.id):null;\n const selected=incoming.find(e=>e.id===selectedWireEdgeId);\n const incomingCount=isMain?0:wireWsRoutes().filter(r=>r.destId===t.id).length;\n const edge=armedEdge||(incomingCount===1&&incoming.length===1?incoming[0]:selected)||null;\n const connected=incoming.length>0,hasAnyArrival=incomingCount>0;\n const legacy=!isMain&&source&&hasLegacySendTo(source,t);\n"
+      "new": " const source=armedWireSource();\n const isSource=!!source&&source.id===t.id,isMain=t.kind==='master';\n const incoming=isMain?[]:incomingWireEdges(t.id);\n const armedEdge=!isMain&&source?wireFor(source.id,t.id):null;\n const selected=incoming.find(e=>e.id===selectedWireEdgeId);\n const incomingCount=isMain?0:wireWsRoutes().filter(r=>r.destId===t.id).length;\n const edge=selected||(incomingCount===1&&incoming.length===1?incoming[0]:armedEdge)||null;\n const connected=incoming.length>0,hasAnyArrival=incomingCount>0;\n const legacy=!isMain&&source&&hasLegacySendTo(source,t);\n"
     },
     {
       "old": " const legacy=!isMain&&source&&hasLegacySendTo(source,t);\n const sourceLinked=!!edge||!!legacy;\n const linked=isMain?!!source&&source.output==='Master':sourceLinked||hasPluggedWire;\n // Source arming controls new connections; existing receiving sockets remain inspectable.\n const canWire=!!(source&&!isSource)||hasPluggedWire;\n const label=isMain?(linked?'MAIN ON':'MAIN OFF'):\n",
