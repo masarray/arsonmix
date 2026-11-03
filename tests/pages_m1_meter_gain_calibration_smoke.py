@@ -39,7 +39,10 @@ def geometry(page, density, label):
         const gainRuler=root.querySelector('.fader-scale').getBoundingClientRect();
         const work=root.querySelector('.fader-workspace').getBoundingClientRect();
         const head=root.querySelector('.fader-head').getBoundingClientRect();
-        return {gap:g.left-c.right,wellWidth:b.width,wellRight:b.right,rulerLeft:g.left,
+        const tick=root.querySelector(".vu-tick.major span");
+        const tickCss=getComputedStyle(tick);
+        return {tickLeft:tickCss.left,tickRight:tickCss.right,
+          gap:g.left-c.right,wellWidth:b.width,wellRight:b.right,rulerLeft:g.left,
           capWidth:c.width,capHeight:c.height,laneWidth:lane.width,
           meterWidth:meter.width,meterLeft:meter.left,headLeft:head.left,
           meterGap:b.left-meter.right,
@@ -112,6 +115,7 @@ def geometry(page, density, label):
             close(rig["capHeight"],50 if compact else 54,.6)
             close(rig["laneWidth"],10,.6)
             close(rig["meterWidth"],70,.7)
+            assert (rig["tickLeft"],rig["tickRight"])==("7px","9px"),(label,density,"meter numeral insets",rig)
             close(rig["meterLeft"],rig["headLeft"],1.3)
             assert 1<=rig["meterGap"]<=4,(label,density,"meter detached from fader",rig)
             assert 1<=rig["gap"]<=8,(label,density,"gain ruler detached from cap",rig)

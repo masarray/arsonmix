@@ -64,7 +64,7 @@ def main():
   public=dist/"preview/mixer.html"
   assert public.read_bytes()==HTML.read_bytes(),"Pages did not publish canonical V45 console"
   assert (dist/"preview/assets/mixer-wire-dots.css").read_bytes()==STYLE.read_bytes(),"Pages lost WIRE CSS"
-  assert "assets/mixer-wire-dots.css?v=v23-wire-v50-config" in public.read_text("utf-8")
+  assert "assets/mixer-wire-dots.css?v=v49-direct-physics" in public.read_text("utf-8")
   with sync_playwright() as pw:
    browser=pw.chromium.launch(headless=True)
    for width in (1366,1680,1920):
@@ -96,13 +96,13 @@ def main():
     assert connected["background"]!=idle["background"],(width,"connected receiver still looks idle",connected)
     path=p.locator('#wireLayer path.wire-outgoing-line[data-from="5"][data-to="3"]')
     assert path.count()==1,(width,"route cable lost on snap")
-    # The same connected graph can stay stored while the displayed focus
-    # moves to an unrelated strip. No drawn input means a graphite ring again.
+    # V49 graph-truth sockets do not lie about accepted connections when
+    # the visual wire is hidden by focus. Only an actually unplugged route is idle.
     p.locator('#tracks .strip[data-id="2"] .strip-identity-top').click()
     assert p.locator('#wireLayer path.wire-outgoing-line[data-from="5"][data-to="3"]').count()==0
     hidden=channel_ring(dest)
-    assert hidden["arrival"] is None,(width,"hidden route still illuminates socket",hidden)
-    assert hidden["border"]==idle["border"] and hidden["background"]==idle["background"],(width,"socket not restored to graphite",hidden)
+    assert hidden["arrival"]=="true",(width,"committed route lost arrival when filtered",hidden)
+    assert hidden["border"]==connected["border"] and hidden["background"]==connected["background"],(width,"committed route incorrectly looks unplugged",hidden)
     # Compact is a spatial fallback, not a different hit-test or route state.
     if width==1366:
      p.locator('#densitySelect').select_option(label="Compact")
@@ -110,6 +110,6 @@ def main():
     assert not errors,(width,errors)
     p.close()
    browser.close()
- print("PASS V45: destination-colored real arrival, dark hidden/empty IN, zero collisions, compact fallback on published Pages")
+ print("PASS V45: destination-colored real arrival, graph-truth connected/empty IN, zero collisions, compact fallback on published Pages")
 
 if __name__=="__main__":main()
