@@ -311,9 +311,10 @@
 .console-body .strip .gain-tick.major::before{width:5px;background:#a6c0cc;opacity:.95}
 .console-body .strip .gain-tick.unity::before{width:7px;background:#c8eaf2;opacity:1}
 .console-body .strip .gain-tick span{
-  left:7px;right:0;top:-5.5px;text-align:left;
+  /* Shared right edge: +10 / 0 / -12 / -48 read as ONE numeric column. */
+  left:7px;right:0;top:-5.5px;text-align:right;
   font:500 9px/11px Inter,"Segoe UI",sans-serif!important;
-  font-variant-numeric:tabular-nums;letter-spacing:-.03em;
+  font-variant-numeric:tabular-nums lining-nums;letter-spacing:-.03em;
   white-space:nowrap;color:#b9cbd4;text-shadow:none;
 }
 .console-body .strip .gain-tick.unity span{color:#f0fbff;font-weight:600}
