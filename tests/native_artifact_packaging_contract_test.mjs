@@ -54,10 +54,13 @@ test('native Console embeds both PAN knob masks without unserved artwork',()=>{
  assert.doesNotMatch(css,/url\(\s*['"]?\.\.\//);
 });
 
-test('native PowerShell release verifier has no trailing expression after last resource',()=>{
- const resources=verify.slice(verify.indexOf('$resources = @('),verify.indexOf('$embeddedText =',verify.indexOf('$resources = @(')));
- assert.match(resources,/Hash=\$manifest\\.consoleNativeJsSha256\}\s*\\)/);
- assert.doesNotMatch(resources,/Hash=\$manifest\\.consoleNativeJsSha256\}\s*,\s*\\)/);
+test('native PowerShell resource list ends without a trailing comma',()=>{
+ const start=verify.indexOf('$resources = @(');
+ const end=verify.indexOf('$embeddedText =',start);
+ assert.ok(start>=0&&end>start,'native resource list missing');
+ const resources=verify.slice(start,end);
+ assert.ok(resources.includes('Hash=$manifest.consoleNativeJsSha256}'),'native JS hash missing');
+ assert.ok(!resources.includes('Hash=$manifest.consoleNativeJsSha256},'),'trailing comma causes PowerShell ParserError');
 });
 
 test('release verifier hashes ALL active GUI bytes inside actual EXE and ZIP',()=>{
