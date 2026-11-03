@@ -101,7 +101,7 @@ def main():
     assert "(t.phase?'Ø':'⊘')" not in html
     assert "v%12===0" in html and "v!==-6" in html
     css=(ASSETS/"mixer-pan-controls.css").read_text("utf-8")
-    assert ".center-pan::-webkit-slider-thumb{margin-top:-14px!important}" in css
+    assert ".center-pan::-webkit-slider-thumb{margin-top:-15px!important}" in css
     assert ".ari-horizontal::-webkit-slider-thumb{margin-top:-10px!important}" in css
     with tempfile.TemporaryDirectory(prefix="arsonmix-visual-v18-") as temp:
         dist=Path(temp)/"dist"
