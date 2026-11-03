@@ -96,8 +96,8 @@ def main():
           width:getComputedStyle(el).width,
           cells:getComputedStyle(el,'::before').backgroundImage
         })""")
-        assert_true(led['width']=='6px' and '9px' in led['cells'] and '11px' in led['cells'],
-                    'LED must be portrait (6x9px with 2px spacing)')
+        assert_true(led['width']=='8px' and '9px' in led['cells'] and '11px' in led['cells'],
+                    'M2 LED must be portrait (8x9px with 2px spacing)')
         # Independent state: reference MUTE cap + original SOLO/PFL lamps.
         key.click();solo.click();cue.click()
         mute_on=key.evaluate("""el=>({
