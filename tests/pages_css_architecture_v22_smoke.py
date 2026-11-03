@@ -24,7 +24,8 @@ async def source_audit():
     assert data["current"]["inlineLength"]==23140
     assert data["old"]["inlineImportant"]-data["current"]["inlineImportant"]==52
     assert len(chrome)-len(old_chrome)==11389-416
-    assert old_chrome+data["sourceInlineSlice"].replace(data["deadEmptyRule"],"",1)==chrome
+    n=data["m3ChromeTailSize"]
+    assert old_chrome[:-n]+data["sourceInlineSlice"].replace(data["deadEmptyRule"],"",1)+old_chrome[-n:]==chrome
     assert data["metrics"]["removedDeclarations"]==0
     assert data["metrics"]["removedImportant"]==0
     assert "/* ARSONMIX GLOBAL HARDWARE KEY V1" in old_html

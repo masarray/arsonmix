@@ -107,7 +107,7 @@ async def visual(page, width, height):
         assert any("/" + name + "?" in uri for uri in data["links"]), (width, name)
     assert 20 <= data["title"]["height"] <= 30, (width, "chrome title", data)
     assert 30 <= data["toolbar"]["height"] <= 45, (width, "toolbar", data)
-    assert 20 <= data["header"]["height"] <= 30, (width, "mixer header", data)
+    assert (50 <= data["header"]["height"] <= 54 if height <= 800 else 64 <= data["header"]["height"] <= 68), (width, "M3 responsive mixer header", data)
     assert abs(data["strip"]["width"] - data["master"]["width"]) < 1.5, (width, "master geometry", data)
     assert abs(data["pan"]["top"] - data["railPan"]["top"]) < 1.6, (width, "PAN rail", data)
     assert abs(data["fader"]["top"] - data["railFader"]["top"]) < 1.6, (width, "fader rail", data)

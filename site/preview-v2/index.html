@@ -13,7 +13,7 @@
 <link rel="stylesheet" href="assets/mixer-hardware-artwork.css?v=css-owner-v10">
 <link rel="stylesheet" href="assets/mixer-v3-layout-contract.css?v=css-owner-v15">
 <style></style>
-<link rel="stylesheet" href="assets/mixer-chrome-material.css?v=css-chrome-owner-v22">
+<link rel="stylesheet" href="assets/mixer-chrome-material.css?v=css-chrome-owner-v22-m3-header">
 <style>/* V15 original physical patch connectors: filled bronze/silver OUT jack, recessed
    hollow IN socket. Calm console design; route highlight only on actual intent.
    Compact always keeps the wires visible; expanded has more cable canvas. */@media(max-height:680px){
@@ -480,11 +480,11 @@
 
 </style>
 <link rel="stylesheet" href="assets/mixer-control-keys.css?v=inter-utility-v7">
-<link rel="stylesheet" href="assets/mixer-fx-rack.css?v=fx-owner-v8">
+<link rel="stylesheet" href="assets/mixer-fx-rack.css?v=fx-owner-v8-m3-inserts">
 <link rel="stylesheet" href="assets/mixer-plugin-browser.css?v=css-plugin-owner-v17">
 <link rel="stylesheet" href="assets/mixer-pan-controls.css?v=css-owner-v9-pan-up5-v23">
-<link rel="stylesheet" href="assets/mixer-fader-assembly.css?v=css-owner-v9-ruler-m2-instrument">
-<link rel="stylesheet" href="assets/mixer-meter-display.css?v=css-owner-v9-ruler-m2-instrument">
+<link rel="stylesheet" href="assets/mixer-fader-assembly.css?v=css-owner-v9-ruler-m3-left-70">
+<link rel="stylesheet" href="assets/mixer-meter-display.css?v=css-owner-v9-ruler-m3-left-70">
 <link rel="stylesheet" href="assets/mixer-utility-controls.css?v=fx-rack-user-icon-green-v21">
 <link rel="stylesheet" href="assets/inter-embedded.css?v=inter-utility-v7">
 <link rel="stylesheet" href="assets/mixer-wire-dots.css?v=v47-css-v16">
@@ -533,7 +533,7 @@
     </details>
   </div>
   <main class="console-pane">
-    <div class="mixer-title"><span class="accent"></span><span class="panel-name">Live Mixer</span><span class="panel-sub" aria-hidden="true"><svg class="mi-svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M3 5v14h18V5H3zm8 12H5V7h6v10zm8 0h-6v-4h6v4zm0-6h-6V7h6v4z"/></svg></span><label class="wire-mode-label" for="wireMode">WIRE</label><select class="wire-mode-select" id="wireMode" title="Signal routing: FL-style post-fader or independent pre-FX source" aria-label="Wire routing mode"><option value="send">Follow Fader</option><option value="split">Independent (Pre FX)</option></select><button class="wire-master" id="wireMaster" type="button" title="Toggle direct source feed to Master" aria-pressed="true">MAIN ON</button><label class="wire-view-caption" for="wireView">VIEW</label><select class="wire-view-select" id="wireView" title="Cable display only · Focus (IN + OUT), OUT only, or all visible routes" aria-label="Wire cable display"><option value="focus">Focus</option><option value="out">OUT only</option><option value="all">All wires</option></select><button type="button" id="wireNavigatorToggle" class="wire-v34-tool" aria-expanded="false" aria-controls="wireWorkspace" title="Search any channel and inspect wiring">ROUTES</button><button type="button" id="wireMatrixToggle" class="wire-v34-tool" aria-expanded="false" aria-controls="wireWorkspace" title="Open global WIRE matrix">MATRIX</button><span class="wire-legend" id="wireLegend" aria-live="polite">CH01 · click destination arrows</span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
+    <div class="mixer-title"><div class="mixer-title-top"><span class="accent"></span><span class="panel-name">Live Mixer</span><span class="panel-sub" aria-hidden="true"><svg class="mi-svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M3 5v14h18V5H3zm8 12H5V7h6v10zm8 0h-6v-4h6v4zm0-6h-6V7h6v4z"/></svg></span><button type="button" class="mixer-title-toggle" id="mixerTitleToggle" aria-expanded="true" aria-controls="mixerTitleControls" title="Collapse WIRE controls">▾ <span>WIRE CONTROLS</span></button></div><div class="mixer-title-controls" id="mixerTitleControls"><label class="wire-mode-label" for="wireMode">WIRE</label><select class="wire-mode-select" id="wireMode" title="Signal routing: FL-style post-fader or independent pre-FX source" aria-label="Wire routing mode"><option value="send">Follow Fader</option><option value="split">Independent (Pre FX)</option></select><button class="wire-master" id="wireMaster" type="button" title="Toggle direct source feed to Master" aria-pressed="true">MAIN ON</button><label class="wire-view-caption" for="wireView">VIEW</label><select class="wire-view-select" id="wireView" title="Cable display only · Focus (IN + OUT), OUT only, or all visible routes" aria-label="Wire cable display"><option value="focus">Focus</option><option value="out">OUT only</option><option value="all">All wires</option></select><button type="button" id="wireNavigatorToggle" class="wire-v34-tool" aria-expanded="false" aria-controls="wireWorkspace" title="Search any channel and inspect wiring">ROUTES</button><button type="button" id="wireMatrixToggle" class="wire-v34-tool" aria-expanded="false" aria-controls="wireWorkspace" title="Open global WIRE matrix">MATRIX</button><span class="wire-legend" id="wireLegend" aria-live="polite">CH01 · click destination arrows</span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div></div>
     <section class="console-body collapsed-send wire-routing-v13 wire-routing-v15" data-density="comfort" aria-label="Live mixing console">
       <aside class="section-rail" aria-label="Mixer section icons">
         <div class="rail-cell identity" title="Channel identity">CH</div>
@@ -644,7 +644,7 @@ const make=(name,kind,color)=>{
  const id=nextId++;
  return {id,name,kind,color,icon:kind==='master'?'◎':kind==='bus'?'⊞':kind==='fx'?'◉':'♩',group:null,safe:false,format:'stereo',input:'None',output:kind==='master'?'Default Output':'Master',fx:Array(8).fill('None'),slotBypass:Array(8).fill(false),fxOn:true,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,activeSend:0,sendSlots:Array.from({length:16},()=>({send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0})),eq:true,pan:0,trim:0,mute:false,solo:false,cue:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
 };
-function init(){wireWsOpen=false;wireWsInspect=null;wireWsRemoveConfirm=null;wireWsHistory=[];wireWsPendingBefore=null;wireWsEditBefore=null;const ws=document.getElementById('wireWorkspace');if(ws)ws.hidden=true;nextId=1;nextGroup=1;wireSourceId=1;wireEdges=[];nextWireId=1;wireMode='send';wireView='focus';wireSourcePinned=false;wireIntent=false;document.getElementById('wireView').value='focus';wireAnchorId=null;wireHoverId=null;wireGesture=null;wireSuppressClick=false;pendingBusRoute=null;const choice=document.getElementById('routeChoice');if(choice)choice.hidden=true;document.getElementById('wireMode').value='send';tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
+function init(){wireWsOpen=false;wireWsDestinationId=null;wireWsInspect=null;wireWsRemoveConfirm=null;wireWsHistory=[];wireWsPendingBefore=null;wireWsEditBefore=null;const ws=document.getElementById('wireWorkspace');if(ws)ws.hidden=true;nextId=1;nextGroup=1;wireSourceId=1;wireEdges=[];nextWireId=1;wireMode='send';wireView='focus';wireSourcePinned=false;wireIntent=false;document.getElementById('wireView').value='focus';wireAnchorId=null;wireHoverId=null;wireGesture=null;wireSuppressClick=false;pendingBusRoute=null;const choice=document.getElementById('routeChoice');if(choice)choice.hidden=true;document.getElementById('wireMode').value='send';tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 /* Google Material Icons SVG paths, Apache-2.0. Inline/zero font or network requests. */
 const MATERIAL_PATH=Object.freeze({
@@ -705,7 +705,9 @@ function sectionFx(t){
  const rows=used.concat(first<0?[]:[{name:'None',i:first}]);
  let out='<div class="section fx-section"><div class="subhead"><span class="sym">fx</span><span class="hint">FX '+used.length+'</span><span class="push"></span><button class="mx-util-key" data-util-kind="fx-main" data-action="fxOn" title="Bypass all effects" aria-label="Toggle effects" aria-pressed="'+Boolean(t.fxOn)+'">'+materialIcon("power_settings_new")+'</button></div><div class="fxslot-list">';
  for(const {name,i} of rows){
-  out+='<div class="fxslot-row" draggable="'+(name!=='None')+'" data-slot="'+i+'" title="Insert '+(i+1)+'"><button class="mx-util-key" data-util-kind="fx-slot" data-action="slotPower" data-slot="'+i+'" title="Toggle effect" aria-label="Toggle effect slot '+(i+1)+'" aria-pressed="'+Boolean(name!=='None'&&!t.slotBypass[i])+'">'+materialIcon("power_settings_new")+'</button>';
+  out+='<div class="fxslot-row" draggable="'+(name!=='None')+'" data-slot="'+i+'" title="Insert '+(i+1)+'">'+
+   (name==='None'?'<span class="fx-slot-placeholder" aria-hidden="true"></span>':
+   '<button class="mx-util-key" data-util-kind="fx-slot" data-action="slotPower" data-slot="'+i+'" title="Toggle effect" aria-label="Toggle effect slot '+(i+1)+'" aria-pressed="'+Boolean(!t.slotBypass[i])+'">'+materialIcon("power_settings_new")+'</button>');
   out+='<button class="fx-pick '+(name==='None'?'empty':'')+'" data-action="openPlugin" data-slot="'+i+'" aria-label="Choose plugin for '+escapeHtml(t.name)+' insert '+(i+1)+'">'+(name==='None'?'+ Add FX':escapeHtml(name))+'</button>';
   if(name!=='None')out+='<button class="mx-util-key" data-util-kind="fx-remove" data-action="removeFx" data-slot="'+i+'" title="Remove insert '+(i+1)+'" aria-label="Remove insert '+(i+1)+'">'+materialIcon("delete_forever")+'</button><span class="grip" title="Drag reorder" aria-hidden="true">'+materialIcon("drag_indicator")+'</span>';
   out+='</div>';
@@ -902,16 +904,23 @@ function wireTray(t){
  const edge=!isMain&&source?wireFor(source.id,t.id):null;
  // Only committed, enabled WIRE edges illuminate the supplied SVG knob.
  // A connected knob stays colored even outside patch mode; gain editing still needs source OUT.
- const hasPluggedWire=!isMain&&wireEdges.some(e=>e.enabled&&e.destId===t.id);
+ const incomingCount=isMain?0:wireWsRoutes().filter(route=>route.destId===t.id).length;
+ const hasPluggedWire=incomingCount>0;
  const legacy=!isMain&&source&&hasLegacySendTo(source,t);
- const linked=isMain?!!source&&source.output==='Master':!!edge||!!legacy;
- const canWire=!!(source&&!isSource);
- const label=!source?'NO SOURCE':isSource?'SOURCE':isMain?(linked?'MAIN ON':'MAIN OFF'):linked?'CONNECTED':'CONNECT';
- const modeLabel=linked&&!isMain?(legacy&&!edge?'Existing SEND slot · managed in legacy routing; no duplicate wire allowed':
-  (edge.mode==='routeOnly'?'Route via Bus':edge.mode==='send'?'Post-fader Send':'Pre FX Mult')+' · click IN to disconnect or drag cable away'):'Click IN or drag an OUT jack here';
+ const sourceLinked=!!edge||!!legacy;
+ const linked=isMain?!!source&&source.output==='Master':sourceLinked||hasPluggedWire;
+ // Source arming controls new connections; existing receiving sockets remain inspectable.
+ const canWire=!!(source&&!isSource)||hasPluggedWire;
+ const label=isMain?(linked?'MAIN ON':'MAIN OFF'):
+  incomingCount>1?incomingCount+' incoming wires · inspect routes':
+  hasPluggedWire&&!source?'IN connected · inspect route':
+  !source?'NO SOURCE':isSource?'SOURCE':sourceLinked?'CONNECTED':'CONNECT';
+ const modeLabel=sourceLinked&&!isMain?(legacy&&!edge?'Existing SEND slot · managed in legacy routing; no duplicate wire allowed':
+  (edge.mode==='routeOnly'?'Route via Bus':edge.mode==='send'?'Post-fader Send':'Pre FX Mult')+' · click IN to disconnect or drag cable away'):
+  hasPluggedWire?incomingCount+' incoming route(s) · click to inspect':'Click IN or drag an OUT jack here';
  const from='<button type="button" class="wire-node-out'+(isSource?' is-source':'')+'" data-action="wireSource"'+(isMain?' disabled':'')+
   ' title="SEND OUT · drag this solid jack to another channel IN" aria-label="Send OUT from '+escapeHtml(t.name)+'" aria-pressed="'+isSource+'"><span class="wire-pin" aria-hidden="true"></span><small>OUT</small></button>';
- const to='<button type="button" class="wire-socket wire-node-in'+(isSource?' is-source':'')+(linked?' is-linked':'')+'" data-action="wireRoute" aria-pressed="'+linked+
+ const to='<button type="button" class="wire-socket wire-node-in'+(isSource&&!hasPluggedWire?' is-source':'')+(linked?' is-linked':'')+'" data-action="wireRoute" aria-pressed="'+sourceLinked+
   '" aria-label="Receive IN on '+escapeHtml(t.name)+' · '+label+'" title="'+escapeHtml(label+' · '+modeLabel+' · GUI DEMO')+'" '+(canWire?'':'disabled')+
   '><span class="wire-arrow" aria-hidden="true"></span><span class="wire-label">IN</span></button>';
  let controls=from+to;
@@ -1030,9 +1039,9 @@ function sectionFader(t){
   const major=v!==-6;
   return '<span class="gain-tick '+(major?'major':'minor')+(v===0?' unity':'')+'" style="top:'+scaleTopPct(v,-60,gainMax)+'%"><span>'+(major?(v>0?'+'+v:v):'')+'</span></span>';
  }).join('');
- return '<div class="fader-section"><div class="fader-head"><output class="fader-readout" aria-label="'+escapeHtml(t.name)+' level">'+(isSend?'SEND ':'')+formatDb(value)+' dB</output><span class="clip-indicator '+(t.clip?'clipping':'')+'" title="Demo clip latch">CLIP</span></div>'
+ return '<div class="fader-section"><div class="fader-head"><output class="fader-readout" aria-label="'+escapeHtml(t.name)+' level">'+(isSend?'SEND ':'')+formatDb(value)+' dB</output><button type="button" class="clip-indicator '+(t.clip?'clipping':'')+'" data-action="resetClip" aria-label="Reset '+escapeHtml(t.name)+' clip latch" title="Reset latched peak indication (demo)">CLIP</button></div>'
  +'<div class="fader-workspace">'
- +'<div class="meter-box '+(t.format==='mono'?'mono':'stereo')+'" aria-label="Simulated '+(t.format==='mono'?'mono':'stereo')+' dBFS meter"><div class="vu-bars"><div class="meter-lane"><div class="meter-fill left"></div></div>'+(t.format==='mono'?'':'<div class="meter-lane"><div class="meter-fill right"></div></div>')+'</div><div class="vu-scale"><div class="vu-scale-travel">'+vuScale+'</div></div><div class="peak '+(t.clip?'clipping':'')+'"></div></div>'
+ +'<div class="meter-box '+(t.format==='mono'?'mono':'stereo')+'" aria-label="Simulated '+(t.format==='mono'?'mono':'stereo')+' dBFS meter"><div class="vu-bars"><div class="meter-lane"><div class="meter-fill left"></div></div>'+(t.format==='mono'?'':'<div class="meter-lane"><div class="meter-fill right"></div></div>')+'</div><div class="vu-scale"><div class="vu-scale-travel">'+vuScale+'</div></div><div class="peak '+(t.clip?'clipping':'')+'" aria-hidden="true"><span class="peak-led"></span>'+(t.format==='mono'?'':'<span class="peak-led"></span>')+'</div></div>'
  +'<div class="fader-box" style="--fader-fill:'+percent+'%;--fader-lit:'+(percent/100)+';--fader-y:'+(100-percent)+'%;--fader-frac:'+(percent/100)+'"><div class="fader-travel"><div class="cap" aria-hidden="true"></div></div><input class="fader" type="range" min="-60" max="'+gainMax+'" value="'+value+'" step=".1" data-field="level" title="'+(isSend?'SEND to '+escapeHtml(sofTarget):'Main level')+'" aria-label="'+escapeHtml(t.name)+' volume"></div>'
  +'<div class="fader-scale"><div class="gain-scale-travel">'+gainScale+'</div></div></div></div>';
 }
@@ -1055,7 +1064,7 @@ function strip(t){
  code+='<div class="bottom-section"><div class="db-value">'+(sofEnabled&&t.kind==='audio'?'S ': '')+formatDb(sofEnabled&&t.kind==='audio'?getSofLevel(t):t.level)+'</div><div class="footer-label '+(t.kind==='master'?'master-label':t.kind==='bus'?'bus-label':'')+'"><span class="name" data-action="rename" title="Double-click to edit name, icon and color · F2" tabindex="0" role="button">'+escapeHtml(t.name)+'</span><span class="footer-icon" aria-hidden="true">'+escapeHtml(iconFor(t))+'</span><div class="color-strip"></div></div></div></article>';
  return code;
 }
-const DENSITY_WIDTH=Object.freeze({comfort:150,standard:125,compact:105});
+const DENSITY_WIDTH=Object.freeze({comfort:150,standard:134,compact:130});
 function bankGeometry(){
  const body=document.querySelector('.console-body');
  const panel=Number(body?.clientWidth)||0;
@@ -1338,7 +1347,7 @@ function setWireSnapTarget(id){
 /* V34 Smart WIRE Navigator / Matrix.
    View-only channel/bank discovery and existing route admission are separate.
    No new route graph or global SVG animation loop is created. */
-let wireWsOpen=false,wireWsMode='find',wireWsQuery='',wireWsBusId=null,
+let wireWsOpen=false,wireWsMode='find',wireWsQuery='',wireWsBusId=null,wireWsDestinationId=null,
  wireWsInspect=null,wireWsRemoveConfirm=null,wireWsHistory=[],wireWsPendingBefore=null,wireWsEditBefore=null;
 
 /* Scoped WIRE-only undo. Never rewinds fader, FX, mute, mixer bank or meters.
@@ -1399,6 +1408,7 @@ function wireWsCanJoin(src,dst){
  return !!(a&&b&&a.id!==b.id&&!wireIsCycle(src,dst));
 }
 function wireWsChooseMode(mode){
+ wireWsDestinationId=null; // Deliberate mode selection leaves the receiving socket inspector.
  const previous=wireWsMode;
  wireWsMode=['find','routes','bus','matrix'].includes(mode)?mode:'find';
  wireWsInspect=null;wireWsRemoveConfirm=null;
@@ -1418,6 +1428,21 @@ function wireWsToggle(mode){
      (id==='wireMatrixToggle'?wireWsMode==='matrix':wireWsMode!=='matrix')));
  }
  if(wireWsOpen&&wireWsMode==='find')document.getElementById('wireWsSearch')?.focus?.();
+}
+/* Multiple incoming cables must be selected explicitly before an edit.
+   Opening this inspector never arms a new source or modifies the graph. */
+function inspectIncomingWireRoutes(destination){
+ const arrivals=wireWsRoutes().filter(route=>route.destId===destination.id);
+ if(!arrivals.length)return;
+ wireWsDestinationId=destination.id;wireWsMode='routes';wireWsOpen=true;
+ wireWsInspect=arrivals.length===1?{src:arrivals[0].sourceId,dst:destination.id}:null;
+ wireWsRemoveConfirm=null;
+ const panel=document.getElementById('wireWorkspace');
+ if(panel)panel.hidden=false;
+ document.getElementById('wireNavigatorToggle').setAttribute('aria-expanded','true');
+ document.getElementById('wireMatrixToggle').setAttribute('aria-expanded','false');
+ renderWireWorkspace();
+ say('IN '+wireWsLabel(destination.id)+' · '+arrivals.length+' incoming route'+(arrivals.length===1?'':'s')+' · select a cable to inspect');
 }
 function wireWsJump(id){
  const target=wireSourceTrack(id);if(!target)return;
@@ -1514,7 +1539,8 @@ function renderWireWorkspace(){
  if(!panel||panel.hidden)return;
  panel.classList.toggle('is-matrix',wireWsMode==='matrix');
  const source=armedWireSource(),routes=wireWsRoutes();
- document.getElementById('wireWsSource').textContent=source?wireWsLabel(source.id)+' OUT':'Choose source OUT';
+ document.getElementById('wireWsSource').textContent=wireWsDestinationId?
+  'IN '+wireWsLabel(wireWsDestinationId)+' · routes':source?wireWsLabel(source.id)+' OUT':'Choose source OUT';
  for(const tab of panel.querySelectorAll('[data-ws-mode]'))
   tab.setAttribute('aria-selected',String(tab.dataset.wsMode===wireWsMode));
  const sel=document.getElementById('wireWsSourceSelect'),selected=source?.id||0;
@@ -1537,9 +1563,10 @@ function renderWireWorkspace(){
   foot.textContent=(source?'SOURCE '+wireWsId(source.id)+' retained · ':'Select an OUT source · ')+
     matches.length+' matching destinations, across all banks';
  }else if(wireWsMode==='routes'){
-  const inbound=source?routes.filter(e=>e.destId===source.id):[];
-  const outbound=source?routes.filter(e=>e.sourceId===source.id):[];
-  list.innerHTML=source?
+  const focused=wireWsDestinationId?tracks.find(t=>t.id===wireWsDestinationId):source;
+  const inbound=focused?routes.filter(e=>e.destId===focused.id):[];
+  const outbound=focused?routes.filter(e=>e.sourceId===focused.id):[];
+  list.innerHTML=focused?
    '<div class="wire-ws-subtitle">OUTGOING · '+outbound.length+'</div>'+
    (outbound.map(e=>wireWsRouteRow(e,'out')).join('')||'<div class="wire-ws-row">No outgoing routes</div>')+
    '<div class="wire-ws-subtitle">INCOMING · '+inbound.length+'</div>'+
@@ -2130,12 +2157,26 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  const t=findTrack(btn);if(!t)return;
  const a=btn.dataset.action;
  if(a==='wireExpand'){document.querySelector('.section-rail [data-section="send"]')?.click();return;}
+ if(a==='resetClip'){
+  t.clip=false;btn.classList.remove('clipping');
+  btn.closest('.fader-section')?.querySelector('.peak')?.classList.remove('clipping');
+  say(t.name+' · clip latch cleared');return;
+ }
  if(wireSuppressClick&&['wireSource','wireRoute'].includes(a)){wireSuppressClick=false;return;}
  if(a==='wireSource'){
   selectWireSource(t);return;
  }
  if(a==='wireRoute'){
-   const source=armedWireSource();
+  const source=armedWireSource();
+  const inbound=t.kind==='master'?[]:wireWsRoutes().filter(route=>route.destId===t.id);
+  // An armed OUT has priority for a NEW route, including BUS receivers
+  // already fed by other channels. Inspect only without a valid armed source,
+  // on the source's own IN, or when that exact source -> IN already exists.
+  // This preserves Route Only / Parallel and avoids implicit disconnects.
+  const sourceAlreadyInbound=!!source&&inbound.some(route=>route.sourceId===source.id);
+  if(t.kind!=='master'&&inbound.length&&(!source||t.id===source.id||sourceAlreadyInbound)){
+   inspectIncomingWireRoutes(t);return;
+  }
   if(!source||t.id===source.id){say('Select a source and another destination');return;}
   if(t.kind==='master'){toggleDirectMain();return;}
   if(e.shiftKey&&wireAnchorId!==null){wireConnectRange(source,wireAnchorId,t.id);wireAnchorId=t.id;return;}
@@ -2376,6 +2417,23 @@ document.getElementById('mode').addEventListener('click',()=>{
 document.getElementById('densitySelect').addEventListener('change',()=>{
  const value=setDensity(document.getElementById('densitySelect').value);
  say('Mixer density: '+value+' · Master remains pinned');
+});
+const moreTools=document.getElementById('moreTools');
+document.addEventListener('pointerdown',e=>{
+ if(moreTools.open&&!moreTools.contains(e.target))moreTools.open=false;
+},true);
+document.addEventListener('focusin',e=>{
+ if(moreTools.open&&!moreTools.contains(e.target))moreTools.open=false;
+},true);
+document.addEventListener('keydown',e=>{
+ if(e.key==='Escape'&&moreTools.open){moreTools.open=false;e.preventDefault();}
+});
+document.getElementById('mixerTitleToggle').addEventListener('click',()=>{
+ const title=document.querySelector('.mixer-title'),button=document.getElementById('mixerTitleToggle');
+ const collapsed=title.classList.toggle('is-collapsed');
+ button.setAttribute('aria-expanded',String(!collapsed));
+ button.title=collapsed?'Expand WIRE controls':'Collapse WIRE controls';
+ button.firstChild.textContent=collapsed?'▸ ':'▾ ';
 });
 document.getElementById('copy').addEventListener('click',copyChannels);
 document.getElementById('paste').addEventListener('click',pasteChannels);
@@ -2876,6 +2934,11 @@ function animateMeters(ts){
  const l=root.querySelector('.meter-fill.left'),r=root.querySelector('.meter-fill.right');
  if(l)l.style.setProperty('--lit',meterDbfsPercent(leftDbfs)+'%');
  if(r)r.style.setProperty('--lit',meterDbfsPercent(rightDbfs)+'%');
+ if((leftDbfs>=-0.1||rightDbfs>=-0.1)&&!t.clip){
+  t.clip=true;
+  root.querySelector('.peak')?.classList.add('clipping');
+  root.querySelector('.clip-indicator')?.classList.add('clipping');
+ }
  });
  }
  requestAnimationFrame(animateMeters);

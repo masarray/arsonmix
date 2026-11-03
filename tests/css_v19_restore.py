@@ -28,15 +28,21 @@ def manifest():
 
 def reconstruct():
     data=manifest()
-    # V20 only prunes shadowed declarations: restore the exact approved V19
-    # HTML before enforcing this immutable V19 owner-migration ledger.
+    # M3 is a later GUI milestone: remove only its approved HTML deltas
+    # and Chrome-owner tail before verifying the immutable V19 fingerprints.
+    from gui_m3_compat import transform,suffix
+    # Undo V20 shadow pruning before checking the immutable V19 ledger.
     from css_v20_restore import reconstruct as restore_v19_source
     current=restore_v19_source()
+    v19_url=data["newLinks"][1]
+    assert current.count(v19_url)==1
+    current=transform(current,reverse=True,skip={"chrome version"})
     sections=SECTIONS.read_text(encoding="utf-8")
-    # Chrome gained the V21 chassis suffix; compare only the exact V19
-    # Chrome owner against its original immutable V19 source ledger.
-    from css_v21_restore import reconstruct as restore_pre_v21_chrome
-    _,chrome=restore_pre_v21_chrome()
+    from css_v21_restore import reconstruct as restore_pre_v21
+    _,pre_v21_chrome=restore_pre_v21()
+    m3_tail=suffix("chrome")[1]
+    assert pre_v21_chrome.endswith(m3_tail)
+    chrome=pre_v21_chrome[:-len(m3_tail)]
     for name,source in (("html",current),("sections",sections),("chrome",chrome)):
         assert (len(source),fingerprint(source))==(data["newLengths"][name],data["newFNV"][name]),(name,"unapproved V19 live owner drift")
     assert sections.endswith(data["sourceFirst"])
@@ -64,6 +70,13 @@ def reconstruct():
         assert prior.count(new_link)==1 and old_link not in prior
         prior=prior.replace(new_link,old_link,1)
     assert (len(prior),fingerprint(prior))==(data["oldLengths"]["html"],data["oldFNV"]["html"])
+    # Restore M3 on both comparison pages. V19 changes CSS ownership only;
+    # M3's operator interactions, geometry and header must remain identical.
+    prior=transform(prior,skip={"chrome version"})
+    previous_url=data["oldLinks"][1]
+    m3_previous="assets/mixer-chrome-material.css?v=css-owner-v18-m3-header"
+    assert prior.count(previous_url)==1
+    prior=prior.replace(previous_url,m3_previous,1)
     return prior,old_sections,old_chrome
 
 def mount_owners(html,sections=None,chrome=None,include_sections=True,include_chrome=True):
@@ -77,6 +90,10 @@ def mount_owners(html,sections=None,chrome=None,include_sections=True,include_ch
                (CHROME,chrome,data["oldLinks"][1],include_chrome))
         for path,source,link,enabled in pairs:
             if not enabled:continue
+            if path==CHROME:
+                from gui_m3_compat import suffix
+                link=link.replace("css-owner-v18","css-owner-v18-m3-header")
+                source+=suffix("chrome")[1]
             assert html.count(link)==1,(path.name,"original version link missing")
             f=tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",suffix=".css",
                 prefix=".v19-original-owner-",dir=path.parent,delete=False)

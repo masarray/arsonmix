@@ -21,7 +21,7 @@ def fingerprint(value):
 def manifest():
     data=json.loads(LEDGER.read_text(encoding="utf-8"))
     assert data["milestone"]=="V22"
-    assert data["baseCommit"]=="5efa4f08ca609acf134c23c2ccc9aa5d6e01796e"
+    assert data["baseCommit"]=="aba0e2879fbc6cbfe42be42197aa249accb08abf"
     assert data["metrics"]=={
         "movedChars":11389,"importantRelocated":52,
         "removedEmptyRules":1,"removedCssChars":416,
@@ -51,8 +51,11 @@ def reconstruct():
     empty=data["deadEmptyRule"]
     assert original.count(empty)==1
     moved=original.replace(empty,"",1)
-    assert chrome.endswith(moved),"V22 shared material suffix missing"
-    old_chrome=chrome[:-len(moved)]
+    size=data["m3ChromeTailSize"]
+    tail=chrome[-size:]
+    assert (len(tail),fingerprint(tail))==(size,data["m3ChromeTailFNV"])
+    assert chrome[-size-len(moved):-size]==moved,"V22 material position changed"
+    old_chrome=chrome[:-size-len(moved)]+tail
     assert (len(old_chrome),fingerprint(old_chrome))==(
         data["old"]["chromeLength"],data["old"]["chromeFNV"]
     ),"V21 original Chrome owner changed"
