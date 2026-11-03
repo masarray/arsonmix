@@ -4,6 +4,7 @@
 // When ChannelId cutover is actually approved, this gate MUST change in
 // the same exact-SHA integration commit as the JUCE callback and native ACK.
 import test from 'node:test';
+import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 
@@ -148,6 +149,109 @@ test('E4 installed PATCH operator uses native ChannelId BUS ACK and real PCM sna
   assert.match(ui,/busRequest\(\);renderNativeBus\(true\)/);
   assert.match(bridge,/processNativeBusIntent/);
   assert.match(physical,/nativeBusStatus\(\)/);
+});
+
+
+test('E4 operator native Group+FX Return controls run through real ACK then newer accepted PCM snapshot',()=>{
+  const ui=read('web/monitor.js');
+  const start=ui.indexOf('// E4: The EXISTING routing workspace controls');
+  const end=ui.indexOf('// Processing channel width is independent',start);
+  assert.ok(start>0&&end>start,'E4 actual route controller must exist');
+  class Node {
+    constructor(tag){this.tag=tag;this.children=[];this.listeners={};
+      this.value='';this.disabled=false;this.checked=false;this.textContent='';
+      this.className='';this.id='';this.attrs={};}
+    setAttribute(name,value){this.attrs[name]=value;}
+    append(...children){this.children.push(...children);}
+    replaceChildren(...children){this.children=[...children];}
+    addEventListener(name,fn){this.listeners[name]=fn;}
+    insertAdjacentElement(_,child){this.children.push(child);}
+  }
+  const root=new Node('section'),sent=[],events={};
+  const doc={createElement:tag=>new Node(tag),
+    createTextNode:text=>({textContent:text}),
+    getElementById:id=>id==='arBusCapability'?root:null};
+  const api={emitEvent:(name,payload)=>sent.push({name,payload}),
+    addEventListener:(name,fn)=>events[name]=fn};
+  const ctx=vm.createContext({
+    document:doc,api,window:{crypto:{getRandomValues:n=>n.fill(7)}},
+    routeOverlay:{classList:{contains:()=>true}},
+    state:{monitor:false,secondaryOutputArmed:false},
+    patchPending:false,mixerDraftActive:false
+  });
+  vm.runInContext(ui.slice(start,end),ctx,{timeout:1000});
+  const snap=(revision='10',roster='3',epoch='12',armed=false)=>({
+    schemaVersion:6,productionCallbackLive:false,
+    device:{epoch,outputArmed:armed},
+    legacyM4:{controlPlane:'LEGACY_M4_ORDINAL',
+      pcmRenderer:'CHANNEL_ID_10CH4AUX',routingRevision:'7',
+      nativeBus:{graphRevision:revision,rosterRevision:roster,
+        supportedOps:['NATIVE_CREATE_GROUP_SELECTED',
+          'NATIVE_CREATE_FX_RETURN_SELECTED','NATIVE_SET_BUS_MIX',
+          'NATIVE_REMOVE_BUS'],
+        channels:[{id:'1',role:'INPUT',name:'Microphone'},
+          {id:'2',role:'INPUT',name:'Music'},
+          {id:'3',role:'MAIN',name:'MAIN'}]}}
+  });
+  events.arMixConsoleSnapshot(snap());
+  const probe=code=>vm.runInContext(code,ctx,{timeout:1000});
+  assert.equal(probe('groupCreate.disabled'),false);
+  assert.equal(probe('nativeBusSources.children.length'),2);
+  probe("nativeBusSources.children[0].children[0].checked=true");
+  probe("nativeBusSources.children[0].children[0].listeners.change()");
+  probe("nativeBusName.value='Vocal Group';nativeBusGain.value='.6';groupCreate.listeners.click()");
+  const commands=()=>sent.filter(x=>x.name==='arMixConsoleIntent');
+  assert.equal(commands().length,1);
+  const one=commands()[0].payload;
+  assert.equal(one.operation,'NATIVE_CREATE_GROUP_SELECTED');
+  assert.deepEqual(Array.from(one.payload.selectedChannelIds),['1']);
+  assert.equal(one.deviceEpoch,'12');
+  assert.equal(one.legacyRoutingRevision,'7');
+  assert.equal(one.nativeGraphRevision,'10');
+  assert.equal(one.nativeRosterRevision,'3');
+  assert.equal(one.payload.sendGain,.6);
+  assert.equal(probe('groupCreate.disabled'),true);
+  probe('groupCreate.listeners.click()');
+  assert.equal(commands().length,1,'pending request must block duplicate AUDIO graph commit');
+  // Engine ACK only proves acceptance. The UI stays locked until a
+  // strictly newer accepted PCM publisher snapshot supplies real revisions.
+  events.arMixConsoleAck({
+    requestId:one.requestId,status:'ACCEPTED',deviceEpoch:'12',
+    nativeGraphRevision:'11',nativeRosterRevision:'4',errorCode:''
+  });
+  assert.equal(probe('groupCreate.disabled'),true);
+  events.arMixConsoleSnapshot(snap('10','3'));
+  assert.equal(probe('groupCreate.disabled'),true);
+  const updated=snap('11','4');
+  updated.legacyM4.nativeBus.channels.splice(2,0,{
+    id:'20',role:'GROUP',name:'Vocal Group',fader:1,pan:0});
+  events.arMixConsoleSnapshot(updated);
+  assert.equal(probe('groupCreate.disabled'),false);
+  assert.equal(probe('nativeBusRows.children.length'),1);
+  // Browser cannot forge a BUS by sending the universal graph capability:
+  // authoritative namespace must be ChannelId PCM actually installed.
+  const bogus=snap('12','5');bogus.legacyM4.pcmRenderer='M4_COMPAT';
+  events.arMixConsoleSnapshot(bogus);
+  assert.equal(probe('groupCreate.disabled'),true);
+  probe("fxReturnCreate.listeners.click()");
+  assert.equal(commands().length,1,'no synthetic native BUS without production PCM');
+  events.arMixConsoleSnapshot(updated);
+  probe("nativeBusSources.children[0].children[0].checked=true");
+  probe("nativeBusSources.children[0].children[0].listeners.change()");
+  probe("nativeBusName.value='Vocal Wet';fxReturnCreate.listeners.click()");
+  assert.equal(commands().length,2);
+  assert.equal(commands()[1].payload.operation,'NATIVE_CREATE_FX_RETURN_SELECTED');
+  events.arMixConsoleAck({
+    requestId:commands()[1].payload.requestId,status:'REJECTED',
+    deviceEpoch:'12',errorCode:'NATIVE_REJECTED'
+  });
+  assert.equal(probe('groupCreate.disabled'),false,
+    'rejected native intent should unlock controls while keeping old PCM unchanged');
+  const armed=snap('11','4','12',true);
+  events.arMixConsoleSnapshot(armed);
+  assert.equal(probe('groupCreate.disabled'),true,'output armed structural edits fail closed');
+  probe("groupCreate.listeners.click()");
+  assert.equal(commands().length,2);
 });
 
 test('shipping application does not compile a second test-only native mixer',()=>{
