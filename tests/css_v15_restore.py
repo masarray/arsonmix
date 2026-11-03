@@ -21,6 +21,9 @@ def restore_previous_owners():
         if name=="mixer-chrome-material.css":
             from css_v18_restore import reconstruct as v18_previous
             current=v18_previous()[1]
+        elif name=="mixer-section-controls.css":
+            from css_v19_restore import reconstruct as pre_v19
+            current=pre_v19()[1]
         else:
             current=(ASSETS/name).read_text(encoding="utf-8")
         assert len(current)==entry["currentSize"],name
@@ -57,6 +60,10 @@ def original_assets_as_baseline(html,owners=None):
         from css_v17_restore import mount_owner
         html,old_plugin=mount_owner(html)
         temp.extend(old_plugin)
+        from css_v19_restore import mount_owners as mount_pre_v19
+        # The V15 visual baseline also predates V19 shared key relocation.
+        html,old_v19=mount_pre_v19(html,include_sections=False)
+        temp.extend(old_v19)
         if manifest_v16()["sourceWireUrl"] in html:
             previous_wire=reconstruct()[1]
             f=tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",suffix=".css",

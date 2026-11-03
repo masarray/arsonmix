@@ -49,8 +49,11 @@ def source_gate():
     # Immutable historical CSS source: V18 moved the former inline middle block.
     from css_v18_restore import reconstruct as restore_previous_chrome
     previous_chrome=restore_previous_chrome()[1]
+    from css_v19_restore import reconstruct as restore_pre_v19
+    _,previous_sections,_=restore_pre_v19()
     all_css = "".join(
         (previous_chrome if n=="mixer-chrome-material.css" else
+         previous_sections if n=="mixer-section-controls.css" else
          (HTML.parent / "assets" / n).read_text(encoding="utf-8")) if n else body
         for n, version, tag, body in css_order
     )

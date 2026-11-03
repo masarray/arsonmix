@@ -20,6 +20,7 @@ MANIFEST=ROOT/"tests/fixtures/css-v13-owner-removals.json"
 # remain exact; changing the fader/meter ruler deliberately re-approves ONLY
 # the owned suffix fingerprints, not the historical owner source.
 V18_OWNER_TAILS={
+    "mixer-section-controls.css":(1017,"f950adfc"), # V19 exact toolbar tail
     "mixer-pan-controls.css":(294,"01ccf01a"),
     "mixer-fader-assembly.css":(4548,"25a7de44"),
     "mixer-meter-display.css":(2538,"2d191341"),

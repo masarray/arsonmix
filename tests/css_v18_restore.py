@@ -19,7 +19,8 @@ def manifest():
 
 def reconstruct():
     data=manifest()
-    live=HTML.read_text(encoding="utf-8")
+    from css_v19_restore import reconstruct as restore_v18_source
+    live,_,_=restore_v18_source()
     css=CHROME.read_text(encoding="utf-8")
     assert (len(live),fingerprint(live))==(data["newHtmlLength"],data["newHtmlFNV"])
     assert (len(css),fingerprint(css))==(data["newOwnerLength"],data["newOwnerFNV"])
@@ -52,6 +53,9 @@ def mount_owner(html,old_css=None):
 def mount_original():
     old_html,old_css=reconstruct()
     html,files=mount_owner(old_html,old_css)
+    from css_v19_restore import mount_owners as mount_pre_v19
+    html,old_controls=mount_pre_v19(html)
+    files.extend(old_controls)
     try:
         f=tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",suffix=".html",
             prefix=".v18-original-console-",dir=HTML.parent,delete=False)
