@@ -320,7 +320,11 @@ async def main():
         await page.locator('[data-channel-id="9"] .arV6StripHead').click(modifiers=["Shift"])
         assert await page.evaluate("()=>window.__arMixV6ReadOnly().selectedChannelIds")==["7","8","9"]
         assert await page.locator('#arV6Main .arV6Master').get_attribute("aria-selected")=="false"
-        assert await page.locator('.arV6SelectionCount').inner_text()=="3 SEL"
+        # Check the canonical DOM label and visible button, not a headless
+        # innerText layout cache. The selected ChannelIds were just asserted.
+        label=page.locator('.arV6SelectionCount')
+        assert await label.is_visible()
+        assert await label.evaluate("(el)=>el.textContent.trim()")=="3 SEL"
         assert await page.evaluate("""()=>window.__v6Test.sent.filter(
           x=>x.event==='arMixConsoleIntent').length""")==count_start
 

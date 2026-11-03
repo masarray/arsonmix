@@ -61,7 +61,15 @@ test('JUCE native resources track the approved calibrated GUI without maintainin
   for (const resource of ['index_html','styles_css','pluginui_css','app_js','pluginui_js','bridge_js','monitor_js']) {
     assert.ok(cpp.includes('BinaryData::'+resource),resource+' missing from WebView provider');
   }
-  assert.ok(css.endsWith(sourceCss), 'native CSS must end with its authoritative calibration module');
+  // The original mixer calibration is canonical, but newer GUI hardware
+  // modules may follow it. Reject duplicates/reordering, not legitimate
+  // modules authored after the fixed physical fader calibration.
+  const hardwareCss=read('web/styles-src/43-hardware-backlit.css');
+  const mixerOffset=css.indexOf(sourceCss);
+  const hardwareOffset=css.indexOf(hardwareCss);
+  assert.ok(mixerOffset>=0 && css.lastIndexOf(sourceCss)===mixerOffset &&
+    hardwareOffset>mixerOffset && css.endsWith(hardwareCss),
+    'native CSS must contain one mixer calibration before the latest hardware module');
   assert.ok(standalone.includes('<style>'+css+'</style>'), 'Pages/standalone CSS drift');
   assert.ok(standalone.includes('<script>'+app+'</script>'), 'Pages/standalone JS drift');
   for (const cls of ['gain-scale-travel','vu-scale-travel','meter-signal-area','fader-travel']) {
