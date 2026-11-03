@@ -15,7 +15,8 @@ from pages_css_architecture_v11_smoke import HTML, check, PROPS
 
 ROOT=Path(__file__).resolve().parents[1]
 MANIFEST=ROOT/"tests/fixtures/css-v13-owner-removals.json"
-# Independently fingerprint the approved current owner tails (GUI M1 + CSS V17).
+# Independently fingerprint approved owner tails (GUI M1 + CSS V17).
+# V18 Chrome prefix is restored via the exact physical ownership ledger.
 # The historic V13 prefix, declaration-removal ledger and baseline parity
 # remain exact; changing the fader/meter ruler deliberately re-approves ONLY
 # the owned suffix fingerprints, not the historical owner source.
@@ -75,7 +76,9 @@ def restore_baseline():
         for name,record in manifest["files"].items():
             assert "/" not in name and name.endswith(".css")
             path=HTML.parent/"assets"/name
-            current=path.read_text(encoding="utf-8")
+            from css_v18_restore import reconstruct as previous_chrome,manifest as v18_manifest
+            current=(previous_chrome()[1] if name=="mixer-chrome-material.css"
+                     else path.read_text(encoding="utf-8"))
             original=current[:record["afterSize"]]
             tail=current[record["afterSize"]:]
             expected_tail=V18_OWNER_TAILS.get(name,(0,"811c9dc5"))
@@ -96,7 +99,10 @@ def restore_baseline():
             with tf:
                 # The current owner suffix must exist on BOTH compared pages. Only the
                 # original V13 removal history differs in these reconstructions.
-                tf.write(restored+tail)
+                # Keep the relocated operator material ahead of the historical
+                # V13 Chrome source, identical on baseline and current pages.
+                prefix=(v18_manifest()["prefix"] if name=="mixer-chrome-material.css" else "")
+                tf.write(prefix+restored+tail)
             temporary.append(Path(tf.name))
             search=f"assets/{name}?v="
             assert html.count(search)==1,name

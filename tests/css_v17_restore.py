@@ -18,7 +18,8 @@ def manifest():
 
 def reconstruct():
     data=manifest()
-    live=HTML.read_text(encoding="utf-8")
+    from css_v18_restore import reconstruct as restore_v17_source
+    live,_=restore_v17_source()
     css=OWNER.read_text(encoding="utf-8")
     assert (len(live),fingerprint(live))==(data["newHtmlLength"],data["newHtmlFNV"])
     assert (len(css),fingerprint(css))==(data["newOwnerLength"],data["newOwnerFNV"])
@@ -59,6 +60,9 @@ def mount_owner(original_html, original_css=None):
 def mount_original():
     html,css=reconstruct()
     html,temporary=mount_owner(html,css)
+    from css_v18_restore import mount_owner as mount_chrome
+    html,old_chrome=mount_chrome(html)
+    temporary.extend(old_chrome)
     try:
         f=tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",suffix=".html",
             prefix=".v17-old-console-",dir=HTML.parent,delete=False)

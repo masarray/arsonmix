@@ -18,7 +18,11 @@ def restore_previous_owners():
     count=rules=saved=imp=0
     for name,entry in data["owners"].items():
         assert "/" not in name and name.endswith(".css")
-        current=(ASSETS/name).read_text(encoding="utf-8")
+        if name=="mixer-chrome-material.css":
+            from css_v18_restore import reconstruct as v18_previous
+            current=v18_previous()[1]
+        else:
+            current=(ASSETS/name).read_text(encoding="utf-8")
         assert len(current)==entry["currentSize"],name
         old=current
         for edit in sorted(entry["insertions"],key=lambda e:e["offset"]):

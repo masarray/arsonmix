@@ -56,6 +56,9 @@ def mount_original(html,wire=None):
         from css_v17_restore import mount_owner
         html,old_plugin=mount_owner(html)
         temporary.extend(old_plugin)
+        from css_v18_restore import mount_owner as mount_chrome
+        html,old_chrome=mount_chrome(html)
+        temporary.extend(old_chrome)
         f=tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",suffix=".css",
             prefix=".v16-previous-wire-",dir=WIRE.parent,delete=False)
         with f:f.write(wire)
