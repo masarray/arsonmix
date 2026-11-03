@@ -51,3 +51,17 @@ One real device, one verified I/O clock, wired monitoring, LOW output gain and i
 
 ### SHA authority for native PR builds
 The Windows workflow explicitly checks out **`github.event.pull_request.head.sha`**, verifies it against `git rev-parse HEAD` **before** building, and packages the same `sourceCommit`. This avoids GitHub Actions' default transient PR merge commit being mislabelled as the ENGINE HEAD. If provenance SHA differs from the run's exact source SHA, **STOP**; do not start hardware FAT. The GUI and ENGINE on the *new integration branch* still require their own joined exact-SHA test before final UAT.
+
+
+## Offline physical FAT evidence recorder (exact joined SHA)
+The Windows distribution includes `ArSonMix-Hardware-FAT.ps1` bound to
+`BUILD_PROVENANCE.json` and the EXE SHA-256. In the extracted ZIP use
+`-Action Verify` before starting. Configure the **real** SIGNAL CHECK mode
+inside ArSonMix, then use the **read-only** recorder's `-Action Start` with
+actual native backend, sample rate, buffer and callback pins. Use `-Action Stop`
+with a witness, actual audible CLEAR/CRACKLE and COPY FULL REPORT path. Repeat
+OUTPUT_ONLY_TONE, CAPTURE_ONLY and a wired **DRY_THROUGH_0FX ≥1800 seconds**
+before `-Action Summary`. The summary always sets
+`hardwareCertified=false`: a human engineer must independently review logs,
+acoustic observations, true capture and render clocks. **Issue #15 stays open**
+until the physical test proves a clean 0FX wired signal, regardless of green CI.

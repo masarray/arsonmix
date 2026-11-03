@@ -159,3 +159,23 @@ test('native sourceCommit attest matches GitHub PR head and exact compiled sourc
  assert.match(packaging,/\$gitSha = \(\& git rev-parse HEAD\)\.Trim\(\)/);
  assert.match(verify,/manifest\.sourceCommit/);
 });
+
+
+// No hardware measurement is inferred from a static packaged script.
+// This verifies the collector's provenance and human-only evidence gates.
+test('joined Windows FAT package carries one SHA-attested, offline 0FX field journal',()=>{
+ const collector=read('scripts/collect_hardware_fat_windows.ps1');
+ assert.match(packaging,/collect_hardware_fat_windows\.ps1/);
+ assert.match(packaging,/fatCollectorSha256/);
+ assert.match(verify,/manifest\.fatCollectorSha256/);
+ assert.match(verify,/Missing FAT collector inside ZIP/);
+ assert.match(verify,/ZIP field collector SHA mismatch/);
+ assert.match(collector,/ValidateSet\('Verify','Start','Stop','Summary'\)/);
+ for(const mode of ['OUTPUT_ONLY_TONE','CAPTURE_ONLY','DRY_THROUGH_0FX'])
+   assert.ok(collector.includes(mode));
+ for(const guard of ['BUILD_PROVENANCE.json','exeSha256','fatCollectorSha256',
+                     'elapsedSeconds -lt 1800','hardwareCertified=$false',
+                     'unresolvedIssue=15','COPY FULL REPORT'])
+   assert.ok(collector.includes(guard),'offline FAT missing '+guard);
+ assert.ok(workflow.includes('collect_hardware_fat_windows.ps1'));
+});
