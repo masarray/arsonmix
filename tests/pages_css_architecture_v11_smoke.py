@@ -55,7 +55,7 @@ def make_baseline():
     for name in OWNED:
         css = (HTML.parent / "assets" / name).read_text(encoding="utf-8")
         assert "url(" not in css, ("relative assets would change CSS base URL", name)
-        version = ("css-owner-v18" if name=="mixer-chrome-material.css"
+        version = ("css-owner-v18-m3-header" if name=="mixer-chrome-material.css"
                    else "css-owner-v15" if name in {"mixer-section-controls.css", "mixer-section-layout.css", "mixer-v3-layout-contract.css"}
                    else "css-owner-v11")
         tag = f'<link rel="stylesheet" href="assets/{name}?v={version}">'
