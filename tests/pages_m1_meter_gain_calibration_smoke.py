@@ -101,7 +101,7 @@ def geometry(page, density, label):
         assert out["gain"][-1]["text"]=="-60",(
             label,density,"finite -60dB minimum mislabeled as mute/infinity")
     if label != "png":  # frozen independent V45 PNG reference is not live M1.2
-        # M2: one compact, centered physical instrument on Master + Channel.
+        # M3: 70px meter aligned with LCD and adjacent physical fader/ruler.
         # Both gain ruler and dBFS ruler retain independent vertical references.
         assert len(out["rigs"])==2,(label,density,"missing fader rigs",out["rigs"])
         for rig in out["rigs"]:
@@ -116,7 +116,7 @@ def geometry(page, density, label):
             assert 1<=rig["meterGap"]<=4,(label,density,"meter detached from fader",rig)
             assert 1<=rig["gap"]<=8,(label,density,"gain ruler detached from cap",rig)
             close(rig["wellRight"],rig["rulerLeft"]-(3 if not slim else 2),.75)
-            assert rig["meterInside"] and rig["scaleInside"],
+            assert rig["meterInside"] and rig["scaleInside"],(
                 label,density,"instrument clipped by channel",rig)
         assert out["ruler"]["x"]>=out["well"]["x"]+out["well"]["w"]-.2,(
             label,density,"ruler overlapping machined fader well",out)
