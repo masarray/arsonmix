@@ -110,13 +110,12 @@ def main():
       wire:getComputedStyle(e.parentElement).getPropertyValue('--wire-edge-color').trim()})""")
     assert props["wire"]==color,(width,"OUT dot wire hue differs",props,color)
     assert abs(props["alpha"]-alpha)<.001,(width,"OUT dot opacity differs",props,alpha)
-    inner=socket.evaluate("""e=>{
-      const probe=document.createElement('span');probe.style.color='var(--ch)';
-      e.parentElement.appendChild(probe);
-      const expected=getComputedStyle(probe).color;probe.remove();
-      return {dot:getComputedStyle(e).backgroundColor,alpha:Number(getComputedStyle(e).opacity),expected};
-    }""")
-    assert inner["dot"]==inner["expected"] and inner["alpha"]==1,(width,"IN dot must match receiving ring",inner)
+    inner=socket.evaluate("""e=>({
+      dot:getComputedStyle(e).backgroundColor,
+      alpha:Number(getComputedStyle(e).opacity),
+      ring:getComputedStyle(e.parentElement).borderTopColor
+    })""")
+    assert inner["dot"]==inner["ring"] and inner["alpha"]==1,(width,"IN dot must match receiving ring",inner)
     assert not errors,(width,errors)
     page.close()
    browser.close()
