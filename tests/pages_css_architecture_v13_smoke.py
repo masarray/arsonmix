@@ -121,7 +121,7 @@ async def interactive_compare(browser,baseline,width,height):
             ("click",'#tracks .strip[data-id="1"] button[data-hw-kind="mute"]'),
             ("click",'#tracks .strip[data-id="1"] button[data-hw-kind="solo"]'),
             ("click",'#tracks .strip[data-id="1"] button[data-hw-kind="cue"]'),
-            ("hover",'#tracks .strip[data-id="1"] .fader-travel .cap'),
+            ("hover",'#tracks .strip[data-id="1"] .fader-box'),
             ("click","#pluginsButton"),
             ("click","#pluginMinimize"),
             ("click","#pluginMinimize"),
