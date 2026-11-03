@@ -4,7 +4,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 PAGE=Path(__file__).resolve().parents[1]/"site/preview-v2/index.html"
 WIRE_STYLE=PAGE.with_name("assets")/"mixer-wire-dots.css"
-assert 'assets/mixer-wire-dots.css?v=v43' in PAGE.read_text(encoding="utf-8")
+assert 'assets/mixer-wire-dots.css?v=v44' in PAGE.read_text(encoding="utf-8")
 assert 'wire-node-out .wire-pin' in WIRE_STYLE.read_text(encoding="utf-8")
 def check(ok,msg): assert ok,msg
 def styles(loc):
@@ -60,17 +60,17 @@ def main():
    ey=max(2,min(viewport["height"]-2,py-viewport["y"]))
    check(abs(geom["x"]-ex)<1.5 and abs(geom["y"]-ey)<1.5,
          ("dot is not following bounded pointer",geom,(ex,ey),viewport))
-   # Magnetic snap docks BOTH cable and follower dot in the old IN socket.
+   # Magnetic snap docks the cable; the extra follower disappears INTO the real socket.
    p.mouse.move(x1-7,y1,steps=5)
    check("is-snap-target" in (dest.get_attribute("class") or ""),"magnet did not snap to IN")
    snap_inner=styles(dest_inner)
    check(snap_inner["bg"]!=socket_idle,("snap target remains dark",snap_inner))
-   dock=plug.evaluate("""el=>({x:Number(el.getAttribute('cx')),y:Number(el.getAttribute('cy'))})""")
-   check(abs(dock["x"]-(x1-viewport["x"]))<1.5 and abs(dock["y"]-(y1-viewport["y"]))<1.5,("drag dot not docked to socket",dock))
+   check(plug.count()==0,"extra floating dot must vanish while snapped into socket")
    # Departing snap radius removes highlight; snapping back and releasing
    # connects normally without an extra click or lost old snap handling.
    p.mouse.move(x1-48,y1,steps=3)
    check("is-snap-target" not in (dest.get_attribute("class") or ""),"snap latched outside magnet")
+   check(plug.count()==1,"floating dot must reappear after unsnapping")
    p.mouse.move(x1,y1,steps=4);p.mouse.up()
    check(p.locator("#wireLayer circle.wire-floating-plug").count()==0,"floating dot left behind after release")
    # OUT still has a live routing context until click-away.

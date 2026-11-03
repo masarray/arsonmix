@@ -2337,7 +2337,7 @@ html * ,html *::before,html *::after{
 <link rel="stylesheet" href="assets/mixer-meter-display.css?v=css-owner-v9">
 <link rel="stylesheet" href="assets/mixer-utility-controls.css?v=inter-utility-v7">
 <link rel="stylesheet" href="assets/inter-embedded.css?v=inter-utility-v7">
-<link rel="stylesheet" href="assets/mixer-wire-dots.css?v=v43">
+<link rel="stylesheet" href="assets/mixer-wire-dots.css?v=v44">
 
 </head>
 <body>
@@ -2759,9 +2759,9 @@ function wireTray(t){
   '><span class="wire-arrow" aria-hidden="true"></span><span class="wire-label">IN</span></button>';
  let controls=from+to;
  if(edge&&!isMain){
-  controls+='<label class="wire-pot is-active" style="--wire-pot-fill:'+escapeHtml(t.color)+';--wire-pct:'+wireGainPercent(edge.levelDb)+'%;--wire-deg:'+(-135+wireGainPercent(edge.levelDb)*2.7).toFixed(1)+'deg" title="'+escapeHtml(source.name+' → '+t.name+' · '+wireDbText(edge.levelDb))+'"><input class="wire-gain" type="range" min="-60" max="6" step="0.1" value="'+edge.levelDb+'" data-field="wireGain" data-wire-id="'+edge.id+'" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%" aria-label="Wire send level '+escapeHtml(source.name)+' to '+escapeHtml(t.name)+'"></label>';
+  controls+='<label class="wire-pot is-active" style="--wire-pot-fill:'+escapeHtml(t.color)+';--wire-pct:'+wireGainPercent(edge.levelDb)+'%;--wire-deg:'+(-135+wireGainPercent(edge.levelDb)*2.7).toFixed(1)+'deg" title="'+escapeHtml(source.name+' → '+t.name+' · '+wireDbText(edge.levelDb))+'"><input class="wire-gain" type="range" min="-60" max="6" step="0.1" value="'+edge.levelDb+'" data-field="wireGain" data-wire-id="'+edge.id+'" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%" aria-label="Wire send level '+escapeHtml(source.name)+' to '+escapeHtml(t.name)+'"><span class="wire-gain-caption" aria-hidden="true">LEVEL</span></label>';
  }else{
-  controls+='<span class="wire-pot '+(hasPluggedWire?'is-active is-readonly':'is-idle')+'" style="--wire-pot-fill:'+(hasPluggedWire?escapeHtml(t.color):'#4b535b')+'" aria-hidden="true"></span>';
+  controls+='<span class="wire-pot '+(hasPluggedWire?'is-active is-readonly':'is-idle')+'" style="--wire-pot-fill:'+(hasPluggedWire?escapeHtml(t.color):'#4b535b')+'" aria-hidden="true"><span class="wire-gain-caption">LEVEL</span></span>';
  }
  return '<div class="wire-tray'+(linked?' linked':'')+'">'+controls+'</div>';
 }
@@ -3069,10 +3069,10 @@ function wireImpactPathData(x0,y0,x1,y1,limit,frame){
  const ceiling=Math.max(12,Math.min(100,Number(limit)||72));
  const sag=Math.max(10,Math.min(ceiling,Math.min(ceiling-7,20+Math.sqrt(span)*1.55)));
  const c=sag*4/3,progress=Math.max(0,Math.min(1,frame/36));
- const center=1.03-progress*1.12;
- const amp=6.2*Math.exp(-progress*1.45);
+ const center=1.02-progress*1.12;
+ const amp=13.8*Math.exp(-progress*1.45);
  let d='M '+x0.toFixed(1)+' '+y0.toFixed(1);
- // Bezier sampler with perpendicular, localized wave launched at IN.
+ // Broad socket-origin jolt: ~14px peak, .22 envelope and no idle animation.
  // 56 segments are smooth at full 10-strip bank width, only during impact.
  for(let i=1;i<=56;i++){
   const t=i/56,u=1-t;
@@ -3082,8 +3082,8 @@ function wireImpactPathData(x0,y0,x1,y1,limit,frame){
   const dy=3*u*u*c+6*u*t*(y1-y0)+3*t*t*(-c);
   const norm=Math.hypot(dx,dy)||1;
   const delta=t-center;
-  const pulse=amp*Math.exp(-(delta*delta)/(.14*.14))*
-   Math.sin(delta*24-progress*5)*Math.sin(Math.PI*t);
+  const pulse=amp*Math.exp(-(delta*delta)/(.22*.22))*
+   Math.sin(delta*18-progress*5)*Math.sin(Math.PI*t);
   const px=x-dy/norm*pulse,py=y+dx/norm*pulse;
   d+=' L '+px.toFixed(1)+' '+py.toFixed(1);
  }
@@ -3150,6 +3150,8 @@ function setWireSnapTarget(id){
   const track=findTrack(input);
   input.classList.toggle('is-snap-target',!!track&&track.id===id);
  }
+ document.querySelectorAll('.wire-node-out.is-drag-origin').forEach(out=>
+  out.classList.toggle('is-snap-locked',id!==null));
 }
 /* V26 Focus Signal Flow — one read-only display graph for both directions.
    Keep legacy Send, Split and Bus primary paths visible without changing the
@@ -3575,7 +3577,7 @@ function renderWireRouting(){
   const rect=viewport.querySelector?.('.strip[data-id="'+dest.id+'"] .wire-node-in')?.getBoundingClientRect?.();
   if(!rect||!rect.width)continue;
   const x1=rect.left-vp.left+rect.width/2,y1=rect.top-vp.top+rect.height/2;
-  const d=wirePathFor(edge,x0,visibleSource?y0:y1,x1,y1,sagLimit),color=edge.preview?'#b5e8d3':dest.color||'#93e5b4';
+  const d=wirePathFor(edge,x0,visibleSource?y0:y1,x1,y1,sagLimit),color=source.color||'#93e5b4';
   paths.push('<path class="wire-outgoing-shadow" data-cable-key="'+wireCableKey(edge)+'" d="'+d+'" stroke="#06151b" stroke-width="'+(edge.preview?4:6)+'" opacity="'+(edge.preview?'.18':'.6')+'" fill="none" stroke-linecap="round"/>'+
    '<path class="wire-outgoing-line" data-cable-key="'+wireCableKey(edge)+'" data-from="'+source.id+'" data-to="'+edge.destId+
    '" data-route-kind="'+edge.kind+'" d="'+d+'" stroke="'+color+
@@ -3599,10 +3601,35 @@ function renderWireRouting(){
   }
   const d=wirePathData(x0,y0,x1,y1,sagLimit);
   paths.push('<path class="wire-drag-line" d="'+d+'" stroke="#06151b" stroke-width="6" opacity=".25" fill="none" stroke-linecap="round"/>'+
-   '<path class="wire-drag-line" d="'+d+'" stroke="'+(snap?.color||'#b5eedb')+'" stroke-width="2.4" opacity=".54" fill="none" stroke-linecap="round"/>'+
-   '<circle class="wire-floating-plug" cx="'+x1.toFixed(1)+'" cy="'+y1.toFixed(1)+'" r="7.5" fill="'+(snap?.color||source?.color||'#87dfb8')+'" stroke="#d8f7ed" stroke-opacity=".85" stroke-width=".85" pointer-events="none"/>');
+   '<path class="wire-drag-line" d="'+d+'" stroke="'+(source?.color||'#b5eedb')+'" stroke-width="2.4" opacity=".82" fill="none" stroke-linecap="round"/>'+
+   (snap?'':'<circle class="wire-floating-plug" cx="'+x1.toFixed(1)+'" cy="'+y1.toFixed(1)+'" r="7.5" fill="'+(source?.color||'#87dfb8')+'" opacity=".82" stroke="none" pointer-events="none"/>'));
  }
  svg.innerHTML=paths.join('');
+ if(!dragging)syncVisibleWireDots(svg);
+}
+
+/* Only visible SVG cables paint matching physical dot hue/opacity.
+   No RAF repaint and no forced active light on hidden/off-bank channels. */
+function syncVisibleWireDots(svg){
+ const visible=new Map();
+ for(const path of svg.querySelectorAll('path.wire-incoming-line,path.wire-outgoing-line,path.wire-context-line')){
+  const color=path.getAttribute('stroke'),opacity=Number(path.getAttribute('opacity'));
+  if(!color||!Number.isFinite(opacity))continue;
+  for(const [id,direction] of [[path.dataset.from,'out'],[path.dataset.to,'in']]){
+   const key=id+':'+direction;
+   if(!id||(visible.has(key)&&visible.get(key).opacity>=opacity))continue;
+   visible.set(key,{color,opacity});
+  }
+ }
+ for(const node of document.querySelectorAll('.strip .wire-node-out,.strip .wire-node-in')){
+  const key=node.closest('.strip')?.dataset.id+':'+(node.classList.contains('wire-node-out')?'out':'in');
+  const edge=visible.get(key);
+  if(!edge){node.removeAttribute('data-wire-visible');continue;}
+  node.setAttribute('data-wire-visible','true');
+  if(node.style.getPropertyValue('--wire-edge-color')!==edge.color)node.style.setProperty('--wire-edge-color',edge.color);
+  const alpha=String(edge.opacity);
+  if(node.style.getPropertyValue('--wire-edge-opacity')!==alpha)node.style.setProperty('--wire-edge-opacity',alpha);
+ }
 }
 function queueWireGestureFrame(){
  if(wireFramePending)return;

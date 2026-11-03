@@ -1,5 +1,5 @@
 {
-  "version": "preview-v43-incoming-wire-dot-and-socket-impact",
+  "version": "preview-v44-wire-docking-color-caption-impact-compact",
   "kind": "GUI_REFERENCE_ONLY",
   "live_audio": false,
   "source_pr": 285,
@@ -28,7 +28,8 @@
     "V43 selected channel always shows accepted incoming cables without WIRE arming",
     "V43 original dot visibly enlarges only during drag",
     "V43 36-frame socket-originated wave travels along accepted wire, one edge only",
-    "V43 /preview/ publication copies tested WIRE CSS owner, no missing asset"
+    "V43 /preview/ publication copies tested WIRE CSS owner, no missing asset",
+    "V44 docked plug vanishes, dots share rendered wire hue and alpha, captions right, stronger impact and 27px folded row"
   ],
   "preserved": "V39 utility controls and Inter, WIRE V36/V37, existing routes/FX/faders/meters; no native audio changes",
   "limitations": "Static WIRE GUI reference only; not native PCM/ASIO/VST3 routing",

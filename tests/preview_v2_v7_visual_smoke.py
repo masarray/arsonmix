@@ -166,7 +166,7 @@ def audit_p0_collapse(page, label):
         assert all(bg=='none' for bg in frame['faces']),(
             label,state,'broad gradient still paints panel face',frame['faces'])
         if state.endswith('1'):
-            assert frame['items'][0]['send']['h']<=24,(
+            assert abs(frame['items'][0]['send']['h']-27)<=1.2,(
                 label,state,'collapsed WIRE must be a header only')
             assert frame['routing']['deck']=='none' and frame['routing']['tray']=='none',(
                 label,state,'collapsed SEND still renders graphical patch bay')

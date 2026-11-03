@@ -25,7 +25,9 @@ def main():
    tray=strip.locator(".wire-tray")
    tray.scroll_into_view_if_needed()
    r=tray.bounding_box()
-   page.mouse.click(r["x"]+5,r["y"]+r["height"]/2)
+   # V44 captions use more horizontal bay width; click a truly blank right-edge
+   # area rather than the OUT proximity hit target on standard-width strips.
+   page.mouse.click(r["x"]+r["width"]-2,r["y"]+r["height"]/2)
    assert "selected" in (strip.get_attribute("class") or ""), "blank WIRE tray did not select its strip"
    rim=strip.evaluate("""s=>{const a=getComputedStyle(s,'::after');return {width:a.borderTopWidth,opacity:Number(a.opacity)}}""")
    assert rim["width"]=="1px" and .4<=rim["opacity"]<.8,rim
