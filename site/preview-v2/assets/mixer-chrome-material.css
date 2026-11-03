@@ -718,3 +718,11 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
  .mixer-title .mixer-title-top{flex:0 0 21px}
  .mixer-title .mixer-title-controls{gap:5px}
 }
+
+/* Match the FX section's actual flex contract on the left icon rail.
+   The historical 125px minimum applied only to the rail at short heights,
+   displacing PAN/SWITCH/FADER by 9px when all upper sections were expanded.
+   Keep both columns at the same --fx-h basis and shrink floor. */
+.console-body:not(.collapsed-fx) .section-rail>.rail-cell.fx{
+ flex:1 1 var(--fx-h)!important;min-height:23px!important;
+}
