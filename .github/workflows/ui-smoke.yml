@@ -109,6 +109,8 @@ jobs:
         run: python tests/pages_css_architecture_v18_smoke.py
       - name: Verify V19 shared operator key ownership and six shadowed declarations
         run: python tests/pages_css_architecture_v19_smoke.py
+      - name: Verify V20 elimination of 53 shadowed declarations and Chromium state parity
+        run: python tests/pages_css_architecture_v20_smoke.py
       - name: Verify embedded Inter font and contextual V7 micro-controls
         run: python tests/pages_inter_utility_v7_smoke.py
       - name: Validate exact alpha micro hardware sprite states and WIRE coexistence

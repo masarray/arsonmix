@@ -41,9 +41,7 @@
 @media(max-height:680px){
   .console-body{--fader-fixed-h:clamp(135px,28vh,190px);--route-h:56px;--pan-h:36px;--switch-h:40px;--footer-h:45px}
 }
-/* Hardware continuity: satin upper plates, subtle milled lines, consistent hierarchy. */.console-body .strip .subhead,.console-body .strip .send-header{
-  border-bottom:1px solid #101e29!important;box-shadow:inset 0 -1px #7f9ba920!important;
-}
+/* Hardware continuity: satin upper plates, subtle milled lines, consistent hierarchy. */
 .console-body .strip .split-count{font:600 9px/1.2 Consolas,monospace;color:#b5e8f1;
  border:1px solid #5d8291;border-radius:2px;padding:1px 2px;white-space:nowrap}
 
@@ -99,21 +97,11 @@
  flex:0 0 var(--p0-fader-h)!important;height:var(--p0-fader-h)!important;
  min-height:var(--p0-fader-h)!important;max-height:var(--p0-fader-h)!important;
 }
-.console-body:not(.collapsed-fx) .strip .fx-section,
-.console-body:not(.collapsed-fx) .section-rail > .rail-cell.fx{
- flex:1 1 0px!important;height:auto!important;
- min-height:122px!important;max-height:none!important;
-}
-.console-body.collapsed-fx .strip .fx-section,
-.console-body.collapsed-fx .section-rail > .rail-cell.fx{
- flex:0 0 23px!important;height:23px!important;min-height:23px!important;max-height:23px!important;
-}
+
+
 /* When intentionally collapsing the entire FX section, unused room may return
    to the physical fader, but never when only ROUTE is collapsed. */
-.console-body.collapsed-fx.collapsed-send .strip .fader-section,
-.console-body.collapsed-fx.collapsed-send .section-rail > .rail-cell.fader{
- flex:1 1 0px!important;height:auto!important;max-height:none!important;
-}
+
 
 /* V13 physical routing bay — no old DAW send form in mixer strips.
    Compact: 80px, Expanded: 160px; +80px fold is balanced by P0 fader
@@ -396,19 +384,6 @@
 ){
  position:relative!important;
  border:1px solid var(--am-hw-key-border)!important;
- border-radius:var(--am-hw-key-radius)!important;
- color:var(--am-hw-key-ink)!important;
- background:linear-gradient(180deg,
-   color-mix(in srgb,var(--am-hw-key-face) 84%,white) 0%,
-   color-mix(in srgb,var(--am-hw-key-face) 96%,white) 8%,
-   var(--am-hw-key-face) 38%,
-   color-mix(in srgb,var(--am-hw-key-face) 86%,black) 78%,
-   color-mix(in srgb,var(--am-hw-key-face) 64%,black) 100%)!important;
- box-shadow:var(--am-hw-key-relief)!important;
- text-shadow:0 1px rgba(255,255,255,.19)!important;
- filter:none!important;
- transform:translateY(0)!important;
- transition:transform 80ms ease,box-shadow 80ms ease!important;
 }
 /* EXACT top/bottom edge glints: no inset offset on the key face. The whitened
    core fades horizontally to transparent at both ends. */
@@ -419,8 +394,6 @@
  .route-choice-head button,.route-choice-option,button.hw-key
 )::before{
  content:""!important;position:absolute!important;pointer-events:none!important;
- top:0!important;left:2px!important;right:2px!important;height:2px!important;
- background:var(--am-hw-key-upper-glint)!important;
  border:0!important;box-shadow:none!important;opacity:1!important;
 }
 :is(
@@ -430,8 +403,6 @@
  .route-choice-head button,.route-choice-option,button.hw-key
 )::after{
  content:""!important;position:absolute!important;pointer-events:none!important;
- bottom:0!important;left:2px!important;right:2px!important;height:1px!important;
- background:var(--am-hw-key-lower-glint)!important;
  border:0!important;box-shadow:none!important;opacity:1!important;
 }
 /* The key actually sinks into the surrounding socket only during touch/click.
@@ -442,8 +413,6 @@
  .identity-actions button.console-control,.plugin-footer button,
  .route-choice-head button,.route-choice-option,button.hw-key
 ):active:not(:disabled){
- transform:translateY(2px)!important;
- box-shadow:var(--am-hw-key-flat)!important;
  filter:none!important;
 }
 :is(
@@ -536,55 +505,25 @@ html * ,html *::before,html *::after{
  .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
  .identity-actions button.console-control,.plugin-footer button,
  .route-choice-head button,.route-choice-option,button.hw-key){
- background:linear-gradient(180deg,
-   color-mix(in srgb,var(--am-hw-key-face) 89%,#d6e9f1) 0%,
-   color-mix(in srgb,var(--am-hw-key-face) 96%,#d6e9f1) 10%,
-   var(--am-hw-key-face) 36%,
-   color-mix(in srgb,var(--am-hw-key-face) 89%,#061018) 76%,
-   color-mix(in srgb,var(--am-hw-key-face) 70%,#061018) 100%)!important;
  color:var(--am-hw-key-ink)!important;
  border-color:var(--am-hw-key-border)!important;
- border-radius:var(--am-hw-key-radius)!important;
  text-shadow:0 1px 0 rgba(0,0,0,.23)!important;
- box-shadow:var(--am-hw-key-relief)!important;
- filter:none!important;
- transition:none!important;
 }
-:is(.command-bar button.tool,.command-bar summary.tool,
- .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
- .identity-actions button.console-control,.plugin-footer button,
- .route-choice-head button,.route-choice-option,button.hw-key):active:not(:disabled){
- transform:translateY(1px)!important;
- box-shadow:var(--am-hw-key-flat)!important;
-}
+
 /* A deliberate narrow white reflection ON THE EDGE, never in the middle. */
-:is(.command-bar button.tool,.command-bar summary.tool,
- .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
- .identity-actions button.console-control,.plugin-footer button,
- .route-choice-head button,.route-choice-option,button.hw-key)::before{
- top:0!important;height:2px!important;left:1px!important;right:1px!important;
- background:var(--am-hw-key-upper-glint)!important;
-}
-:is(.command-bar button.tool,.command-bar summary.tool,
- .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
- .identity-actions button.console-control,.plugin-footer button,
- .route-choice-head button,.route-choice-option,button.hw-key)::after{
- bottom:0!important;height:1px!important;left:1px!important;right:1px!important;
- background:var(--am-hw-key-lower-glint)!important;
-}
+
+
 /* Graphite OFF, colored ON — same geometry. No always-on glow. */
 .command-bar button.tool,
 .command-bar summary.tool,
 .more-tools-panel button.tool,
 .route-choice-head button {
- --am-hw-key-face:#354650;
  --am-hw-key-ink:#e2ecf0;
  --am-hw-key-border:#647783;
 }
 .command-bar button.tool:is(.active,.primary,[aria-pressed="true"]),
 .command-bar summary.tool[aria-expanded="true"],
 .more-tools[open] summary.tool {
- --am-hw-key-face:#367789;
  --am-hw-key-ink:#f3fcff;
  --am-hw-key-border:#6fb3c2;
 }
@@ -621,13 +560,6 @@ html * ,html *::before,html *::after{
  --am-hw-key-press-y:1px;
  user-select:none!important;-webkit-user-select:none!important;
  border-radius:2px!important;
- background:linear-gradient(180deg,
-   color-mix(in srgb,var(--am-hw-key-bright) 77%,#d5edf4) 0%,
-   var(--am-hw-key-bright) 8%,
-   color-mix(in srgb,var(--am-hw-key-bright) 35%,var(--am-hw-key-face)) 19%,
-   var(--am-hw-key-face) 38%,
-   color-mix(in srgb,var(--am-hw-key-face) 72%,var(--am-hw-key-bright)) 53%,
-   var(--am-hw-key-face) 68%,var(--am-hw-key-deep) 100%)!important;
  transform:translateY(0)!important;
 }
 :is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,

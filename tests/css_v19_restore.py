@@ -31,7 +31,9 @@ def reconstruct():
     # M3 is a later GUI milestone: remove only its approved HTML deltas
     # and Chrome-owner tail before verifying the immutable V19 fingerprints.
     from gui_m3_compat import transform,suffix
-    current=HTML.read_text(encoding="utf-8")
+    # Undo V20 shadow pruning before checking the immutable V19 ledger.
+    from css_v20_restore import reconstruct as restore_v19_source
+    current=restore_v19_source()
     m3_url="assets/mixer-chrome-material.css?v=css-chrome-owner-v19-m3-header"
     v19_url=data["newLinks"][1]
     assert current.count(m3_url)==1
