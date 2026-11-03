@@ -61,7 +61,7 @@ def source_gate():
     assert all("--ari-" + n + ":url(data:image/png" in artwork
                for n in ("silver", "rose", "pan"))
     assert "wireWsCanJoin" in html
-    assert "assets/mixer-wire-dots.css?v=v46" in html
+    assert "assets/mixer-wire-dots.css?v=v47" in html
     assert "assets/inter-embedded.css" in html
     for p in (ROOT / "scripts/build_pages.py", ROOT / ".github/workflows/pages-publish.yml"):
         source = p.read_text(encoding="utf-8")
