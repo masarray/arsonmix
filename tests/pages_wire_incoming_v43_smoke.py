@@ -114,8 +114,11 @@ def main():
     bus=page.locator('#tracks .strip[data-id="11"] .wire-node-out')
     assert bus.is_visible(),"Bus A source must be on next bank"
     bus.click()
-    picker=page.locator('#wireLegend [data-wire-destination]')
+    # The exact same cross-bank patch selector is now in WIRE Configuration.
+    page.locator('#wireConfigToggle').click()
+    picker=page.locator('#wireConfigWindow #wireLegend [data-wire-destination]')
     picker.select_option("3")
+    page.locator('#wireConfigClose').click()
     page.locator("#bankPrev").click()
     page.locator('#tracks .strip[data-id="3"] .strip-identity-top').click()
     off=page.locator('#wireLayer path.wire-incoming-line[data-from="11"][data-to="3"]')
