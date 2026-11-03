@@ -15,7 +15,7 @@ APPROVED_V51_METER_BLOB="cea7a411afea90b26557f317ba93c563dd35379c"
 
 def git_blob(path):
     raw=path.read_bytes()
-    return hashlib.sha1(b"blob "+str(len(raw)).encode()+b"\\0"+raw).hexdigest()
+    return hashlib.sha1(b"blob "+str(len(raw)).encode()+b"\0"+raw).hexdigest()
 
 def audit_checkpoint():
     assert git_blob(METER)==APPROVED_V51_METER_BLOB, (
