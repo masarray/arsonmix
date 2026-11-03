@@ -11,6 +11,7 @@ from pathlib import Path
 from playwright.async_api import async_playwright
 from pages_css_architecture_v10_smoke import source_gate, fingerprint
 from pages_css_architecture_v11_smoke import check, HTML, SELECTORS, PROPS, CAPTURE
+from pages_css_architecture_v14_smoke import reconstruct_previous, combined_css
 
 ROOT=Path(__file__).resolve().parents[1]
 MANIFEST=ROOT/"tests/fixtures/css-v12-removed-declarations.json"
@@ -18,7 +19,8 @@ def source_baseline():
     manifest=json.loads(MANIFEST.read_text(encoding="utf-8"))
     assert manifest["version"]=="v12"
     current=HTML.read_text(encoding="utf-8")
-    matches=list(re.finditer(r"<style>(.*?)</style>",current,re.S))
+    previous, original_chrome=reconstruct_previous()
+    matches=list(re.finditer(r"<style>(.*?)</style>",previous,re.S))
     assert len(matches)==3
     parts=[m.group(1) for m in matches]
     assert sum(len(x) for x in parts)==manifest["nextInline"]
@@ -31,27 +33,27 @@ def source_baseline():
             assert 0<=offset<=len(parts[i]),(i,offset,len(parts[i]))
             parts[i]=parts[i][:offset]+entry["source"]+parts[i][offset:]
     assert sum(len(x) for x in parts)==manifest["previousInline"]
-    old=current
+    old=previous
     for i in reversed(range(len(parts))):
         m=matches[i]
         old=old[:m.start(1)]+parts[i]+old[m.end(1):]
-    def all_css(html):
-        head=html.split("</head>",1)[0]
-        parts=re.findall(
-            r'<link[^>]+href="assets/([^"]+\.css)\?v=css-owner-v(?:10|11)"[^>]*>|<style>(.*?)</style>',
-            head,re.S)
-        return "".join(
-            (HTML.parent/"assets"/name).read_text(encoding="utf-8") if name else inline
-            for name,inline in parts
-        )
-    assert len(all_css(old))==manifest["previousCSS"]==186176
-    assert fingerprint(all_css(old))==manifest["previousFNV"]=="39885f8a"
-    assert len(all_css(current))==manifest["nextCSS"]==176024
-    assert fingerprint(all_css(current))==manifest["nextFNV"]=="8cb19a32"
-    assert all_css(old).count("!important")==manifest["previousImportant"]==1449
-    assert all_css(current).count("!important")==manifest["nextImportant"]==1354
+    def old_css(document):
+        return combined_css(document, chrome_override=original_chrome)
+    assert len(old_css(old))==manifest["previousCSS"]==186176
+    assert fingerprint(old_css(old))==manifest["previousFNV"]=="39885f8a"
+    assert len(old_css(previous))==manifest["nextCSS"]==176024
+    assert fingerprint(old_css(previous))==manifest["nextFNV"]=="8cb19a32"
+    assert old_css(old).count("!important")==manifest["previousImportant"]==1449
+    assert old_css(previous).count("!important")==manifest["nextImportant"]==1354
+    assert len(combined_css(current))==175840
+    assert fingerprint(combined_css(current))=="6e2cc352"
     assert manifest["previousImportant"]-manifest["nextImportant"]==95
     assert manifest["previousCSS"]-manifest["nextCSS"]==10152
+    # Historical V11's CSS owner must also be original; inline it in the
+    # temporary baseline so Chromium cannot accidentally load the newer V14 asset.
+    chrome_link='<link rel="stylesheet" href="assets/mixer-chrome-material.css?v=css-owner-v11">'
+    assert old.count(chrome_link)==1
+    old=old.replace(chrome_link,"<style>"+original_chrome+"</style>")
     f=tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",suffix=".html",
                                    prefix=".v12-reconstructed-original-",dir=HTML.parent,delete=False)
     with f:
