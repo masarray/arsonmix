@@ -1,0 +1,41 @@
+/* V9 pan CSS ownership. Extracted from canonical Pages source, not copied as an override. Shared rail/WIRE rules stay inline. */
+.console-body.narrow .pan-section{height:var(--pan-h);flex:0 0 var(--pan-h);display:grid;grid-template-columns:15px minmax(0,1fr) 17px;align-items:center;gap:3px;padding:0 3px;overflow:hidden}
+.console-body.narrow .pan-control{max-width:43px}
+.pan-section{height:var(--pan-h);display:flex;align-items:center;gap:4px;padding:0 6px}
+.pan-section input{min-width:0;max-width:100%;accent-color:#9ba7aa}
+.pan-section .pan-icon{font-size:15px;color:#9a9fa1}
+.pan-section output{font-size:9px;min-width:0;text-align:right;color:#6bafc2;white-space:nowrap;overflow:hidden}
+.pan-control{height:17px;flex:1;min-width:0;position:relative;display:flex;align-items:center;isolation:isolate}
+.pan-control:after{content:"";pointer-events:none;position:absolute;top:1px;bottom:0;left:50%;border-left:1px solid #91c1cb;opacity:.95}
+.center-pan{width:100%!important;flex:1;min-width:0;height:18px!important;appearance:none;-webkit-appearance:none;background:transparent;cursor:ew-resize;margin:0;position:relative;z-index:2}
+.center-pan::-webkit-slider-runnable-track{height:5px;border-radius:1px;border:1px solid #485052;background:linear-gradient(to right,#292f32 0,#292f32 var(--pan-start),#60b5cf var(--pan-start),#60b5cf var(--pan-end),#292f32 var(--pan-end),#292f32 100%)}
+.center-pan::-moz-range-track{height:5px;border-radius:1px;border:1px solid #485052;background:linear-gradient(to right,#292f32 0,#292f32 var(--pan-start),#60b5cf var(--pan-start),#60b5cf var(--pan-end),#292f32 var(--pan-end),#292f32 100%)}
+.center-pan::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:9px;height:14px;margin-top:-5px;border-radius:2px;background:linear-gradient(#d4dadd,#879fa9);border:1px solid #151b1d}
+.center-pan::-moz-range-thumb{width:9px;height:14px;border-radius:2px;background:#acc2cb;border:1px solid #151b1d}
+.console-body .pan-section{height:var(--pan-h);flex:0 0 var(--pan-h);display:grid;grid-template-columns:17px minmax(0,1fr) 29px;gap:5px;padding:0 7px;}
+.console-body .pan-section output{font-size:11px;text-align:right;color:#a0dff0}
+.console-body .pan-icon{color:#c0d0d5}
+.console-body .pan-control{height:23px;max-width:none}
+.console-body .center-pan{min-width:0}
+.console-body .center-pan::-webkit-slider-runnable-track{height:7px;border:1px solid #0c1317;border-radius:4px;box-shadow:inset 0 1px 2px #060a0d;background:linear-gradient(to right,#0d1519 0,#0d1519 var(--pan-start),#4fb2d1 var(--pan-start),#4fb2d1 var(--pan-end),#0d1519 var(--pan-end),#0d1519 100%)}
+.console-body .center-pan::-webkit-slider-thumb{width:15px;height:19px;margin-top:-7px;border:1px solid #344b55;border-radius:3px;background:linear-gradient(#f0f5f7,#9bafba 47%,#556e7e 49%,#dce6e9 65%,#728f9f);box-shadow:0 1px 2px #111}
+.console-body .center-pan::-moz-range-thumb{width:15px;height:19px;border-radius:3px;border:1px solid #344b55;background:linear-gradient(#f0f5f7,#9bafba 47%,#556e7e)}
+.console-body[data-density="compact"] .pan-section{grid-template-columns:12px minmax(0,1fr) 18px;gap:1px;padding:0 3px}
+.console-body .pan-section{grid-template-columns:23px minmax(0,1fr) 23px!important;gap:3px!important;padding:0 4px!important;}
+.console-body .pan-icon{font-size:9px!important}
+.console-body .center-pan{height:40px!important;min-height:40px!important;max-height:40px!important;width:100%!important;appearance:none!important;-webkit-appearance:none!important;background:transparent!important;padding:0!important}
+.console-body .center-pan::-webkit-slider-runnable-track{height:5px!important;border:1px solid #0a1218!important;background:linear-gradient(to right,#0b151a 0%,#0b151a var(--pan-start),#42b5ca var(--pan-start),#42b5ca var(--pan-end),#0b151a var(--pan-end),#0b151a 100%)!important}
+.console-body .center-pan::-webkit-slider-thumb{-webkit-appearance:none!important;appearance:none!important;width:18px!important;height:40px!important;margin-top:-18px!important;border:0!important;border-radius:0!important;background:var(--ari-pan) center/18px 40px no-repeat!important;box-shadow:none!important}
+.console-body .center-pan::-moz-range-thumb{width:18px!important;height:40px!important;border:0!important;border-radius:0!important;background:var(--ari-pan) center/18px 40px no-repeat!important;box-shadow:none!important}
+.console-body .pan-control .center-pan{margin-top:3px!important}
+/* Keep the four visible FX rows ≥88px even while expanded SEND consumes space. */
+
+
+/* P0 physical center PAN tick: clear C detent without heavy decorative chrome. */
+.console-body .strip .pan-control{position:relative}
+.console-body .strip .pan-control::after{
+ content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,9px);
+ height:5px;width:1px;background:#c0d9e7b3;box-shadow:0 0 2px #a6c7d5aa;
+ pointer-events:none;
+}
+.console-body .strip .pan-control.is-centered::after{background:#a2e3cf!important}
