@@ -159,3 +159,18 @@ test('native sourceCommit attest matches GitHub PR head and exact compiled sourc
  assert.match(packaging,/\$gitSha = \(\& git rev-parse HEAD\)\.Trim\(\)/);
  assert.match(verify,/manifest\.sourceCommit/);
 });
+
+test('joined M5 GUI+ENGINE FAT bundles a source-hashed offline field collector and independent ZIP attestation',()=>{
+  const collector=read('scripts/collect_hardware_fat_windows.ps1');
+  for(const marker of ['OUTPUT_ONLY_TONE','CAPTURE_ONLY','DRY_THROUGH_0FX',
+    'FAT_RUNS.json','FAT_SUMMARY.json','elapsedSeconds','reportSha256',
+    'hardwareCertified=$false','Get-FileHash','sourceCommit','PSScriptRoot'])
+    assert.ok(collector.includes(marker),'Missing field-evidence bound: '+marker);
+  assert.ok(packaging.includes('fatCollectorSha256'));
+  assert.ok(verify.includes('manifest.fatCollectorSha256'));
+  assert.ok(verify.includes('ZIP field collector SHA mismatch'));
+  assert.ok(verify.includes('Missing FAT collector inside ZIP'));
+  assert.doesNotMatch(collector,/AudioDeviceManager|setAudioDeviceSetup|startAudio|armOutput|backend\.emitEvent/i);
+  assert.ok(workflow.includes('integration/m5-native-engine-current-gui-physical-fat-20261103'));
+  assert.ok(workflow.includes('ArSonMix-INTEGRATED-M5-UNQUALIFIED-Hardware-FAT-Windows-x64'));
+});

@@ -10,6 +10,7 @@ $expected = @(
     "ArSonMix-GUI10CH-P012-Windows-x64.exe",
     "BUILD_PROVENANCE.json",
     "HARDWARE_FAT_GUIDE.md",
+    "ArSonMix-Hardware-FAT.ps1",
     "README.md",
     "portable_mode.txt"
 )
@@ -33,6 +34,13 @@ if (@(Compare-Object -ReferenceObject $expected -DifferenceObject $actual).Count
 }
 
 $manifest = Get-Content -LiteralPath (Join-Path $OutputDir "BUILD_PROVENANCE.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+# The exact executable and field recorder are both hash-bound to this source SHA.
+$collectorPath=Join-Path $OutputDir "ArSonMix-Hardware-FAT.ps1"
+$collectorHash=(Get-FileHash -LiteralPath $collectorPath -Algorithm SHA256).Hash.ToLowerInvariant()
+$sourceCollectorHash=(Get-FileHash -LiteralPath "scripts/collect_hardware_fat_windows.ps1" -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($collectorHash -ne $sourceCollectorHash -or $collectorHash -ne $manifest.fatCollectorSha256) {
+    throw "FAT collector SHA mismatch in packaged distribution"
+}
 # App-only ZIP does not ship an untracked dynamic WebView2Loader.dll.
 if ($manifest.webView2LoaderMode -ne "JUCE_WEBVIEW2_LOADER_STATIC_LINKED_V1" -or
     $manifest.guiStartupVerification -ne "WEBVIEW2_PREFLIGHT_AND_AR_MIX_GUI_READY_HANDSHAKE") {
@@ -166,6 +174,17 @@ try {
             $stream.Dispose()
         }
         if ($inZipHash -ne $appHash) { throw "ZIP entry hash mismatch" }
+        $collectorEntry=$zip.GetEntry("ArSonMix-Hardware-FAT.ps1")
+        if ($null -eq $collectorEntry) { throw "Missing FAT collector inside ZIP" }
+        $collectorStream=$collectorEntry.Open()
+        $collectorHasher=[Security.Cryptography.SHA256]::Create()
+        try {
+            $inZipCollector=[BitConverter]::ToString($collectorHasher.ComputeHash($collectorStream)).Replace("-","").ToLowerInvariant()
+        } finally {
+            $collectorHasher.Dispose()
+            $collectorStream.Dispose()
+        }
+        if ($inZipCollector -ne $collectorHash) { throw "ZIP field collector SHA mismatch" }
         foreach ($rel in $factoryZipFiles) {
             $item = $zip.GetEntry($rel)
             if ($null -eq $item) { throw "FactoryFX file missing in ZIP: $rel" }

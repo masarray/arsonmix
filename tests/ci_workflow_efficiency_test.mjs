@@ -58,3 +58,14 @@ test('native FAT compiles the exact ENGINE PR HEAD and rejects transient merge r
  assert.ok(windows.indexOf('ENGINE_EXACT_SOURCE_SHA_VERIFIED')<
            windows.indexOf('name: Build executable and native RT tests'));
 });
+
+test('exact two-parent M5 integration FAT has its own guarded artifact, not a broad PR upload',()=>{
+ const branch='integration/m5-native-engine-current-gui-physical-fat-20261103';
+ const block=windows.split('name: Upload exact-joined M5 GUI + ENGINE physical FAT candidate')[1];
+ assert.ok(block && block.includes("github.event_name == 'pull_request'"));
+ assert.ok(block.includes("github.head_ref == '"+branch+"'"));
+ assert.ok(block.includes("ArSonMix-INTEGRATED-M5-UNQUALIFIED-Hardware-FAT-Windows-x64"));
+ assert.ok(block.includes('if-no-files-found: error'));
+ assert.ok(windows.indexOf('Independently verify release ZIP and embedded GUI/engine before upload') <
+           windows.indexOf('name: Upload exact-joined M5 GUI + ENGINE physical FAT candidate'));
+});

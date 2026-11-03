@@ -162,3 +162,14 @@ jobs:
           path: dist/
           if-no-files-found: error
           retention-days: 14
+      # This exact source-joined integration (main GUI + ENGINE) may expose
+      # its separately named, SHA-attested UNQUALIFIED physical FAT ZIP.
+      # Never broaden to all PRs or imply stable publication.
+      - name: Upload exact-joined M5 GUI + ENGINE physical FAT candidate
+        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'integration/m5-native-engine-current-gui-physical-fat-20261103' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArSonMix-INTEGRATED-M5-UNQUALIFIED-Hardware-FAT-Windows-x64
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
