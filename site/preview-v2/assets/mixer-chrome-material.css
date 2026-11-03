@@ -1228,6 +1228,9 @@ html * ,html *::before,html *::after{
  text-overflow:ellipsis;white-space:nowrap;
 }
 .command-bar>.wire-command{min-width:0!important;padding:0 7px!important}
+/* More must paint ABOVE modeless routes/matrix; operator can switch tools
+   without dismissing the current dialog or relying on force clicks. */
+.command-bar{z-index:34!important}
 .more-tools-panel .wire-overflow{display:none!important}
 @media(max-width:1250px){
  .command-bar>.wire-command{display:none!important}
