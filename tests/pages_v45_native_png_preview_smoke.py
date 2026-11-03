@@ -12,7 +12,11 @@ CSS=ASSETS/'mixer-control-keys.css'
 JS=ASSETS/'mixer-control-keys.js'
 
 def main():
-    # This review intentionally pins a verified V45 screenshot baseline; current\n    # /preview-v2/ advances independently with other GUI workstreams.\n    html=LIVE.read_bytes()\n    git_sha=hashlib.sha1(b"blob "+str(len(html)).encode()+b"\\x00"+html).hexdigest()\n    assert git_sha=="8fd9c307b918391f2f41da4fa9a182805071659f", "V45 review baseline drift"
+    # Review snapshot intentionally pins the verified V45 HTML blob. The canonical
+    # preview-v2 evolves independently under parallel GUI workstreams.
+    html=LIVE.read_bytes()
+    git_sha=hashlib.sha1(b"blob "+str(len(html)).encode()+b"\x00"+html).hexdigest()
+    assert git_sha=="8fd9c307b918391f2f41da4fa9a182805071659f", "V45 review baseline drift"
     assert PNG.read_bytes()==(ROOT/'site/preview-v34/assets/mute-solo-pfl-56x37.png').read_bytes()
     data=PNG.read_bytes()
     assert data[:8]==bytes.fromhex('89504e470d0a1a0a')
