@@ -118,21 +118,21 @@
 }
 .console-body .strip .meter-box .meter-lane{background:#071c19!important;box-shadow:inset 1px 0 #000a!important}
 .console-body .strip .meter-box{background:#061219!important}
-/* Portrait cells: illuminated 9px tall × 6px wide, separated by a
+/* Portrait cells: illuminated 9px tall × 8px wide, separated by a
    fixed 2px DARK cross-bar. Vertical color across the ladder remains smooth
    green → yellow → amber → red, not disjoint palettes per color zone.
    Uses existing --lit variable for clipped signal fill, no JS or 40+ nodes. */
 .console-body .strip .meter-box .vu-bars{
  justify-content:center!important;
- gap:3px!important;
+ gap:2px!important;
  background:#06121a!important;
  box-shadow:inset 1px 0 0 #142b35,inset -1px 0 0 #010508!important;
 }
 .console-body .strip .meter-box .meter-lane,
 .console-body .strip .meter-box.mono .meter-lane{
  box-sizing:border-box!important;
- width:6px!important;min-width:6px!important;max-width:6px!important;
- flex:0 0 6px!important;
+ width:8px!important;min-width:8px!important;max-width:8px!important;
+ flex:0 0 8px!important;
  border:0!important;border-radius:0!important;
  background:#07141a!important;
  box-shadow:inset 1px 0 0 #20303a,inset -1px 0 0 #000!important;

@@ -1623,8 +1623,8 @@ html * ,html *::before,html *::after{
 <link rel="stylesheet" href="assets/mixer-fx-rack.css?v=fx-owner-v8">
 <link rel="stylesheet" href="assets/mixer-plugin-browser.css?v=fx-owner-v8">
 <link rel="stylesheet" href="assets/mixer-pan-controls.css?v=css-owner-v9-pan-up5-v23">
-<link rel="stylesheet" href="assets/mixer-fader-assembly.css?v=css-owner-v9-ruler-m1-adjacent">
-<link rel="stylesheet" href="assets/mixer-meter-display.css?v=css-owner-v9-ruler-m1-column">
+<link rel="stylesheet" href="assets/mixer-fader-assembly.css?v=css-owner-v9-ruler-m2-instrument">
+<link rel="stylesheet" href="assets/mixer-meter-display.css?v=css-owner-v9-ruler-m2-instrument">
 <link rel="stylesheet" href="assets/mixer-utility-controls.css?v=fx-rack-user-icon-green-v21">
 <link rel="stylesheet" href="assets/inter-embedded.css?v=inter-utility-v7">
 <link rel="stylesheet" href="assets/mixer-wire-dots.css?v=v47-css-v16">
@@ -2168,7 +2168,7 @@ function sectionFader(t){
  }).join('');
  const gainScale=gainTicks.map(v=>{
   const major=v!==-6;
-  return '<span class="gain-tick '+(major?'major':'minor')+(v===0?' unity':'')+'" style="top:'+scaleTopPct(v,-60,gainMax)+'%"><span>'+(major?(v<=-60?'−∞':v>0?'+'+v:v):'')+'</span></span>';
+  return '<span class="gain-tick '+(major?'major':'minor')+(v===0?' unity':'')+'" style="top:'+scaleTopPct(v,-60,gainMax)+'%"><span>'+(major?(v>0?'+'+v:v):'')+'</span></span>';
  }).join('');
  return '<div class="fader-section"><div class="fader-head"><output class="fader-readout" aria-label="'+escapeHtml(t.name)+' level">'+(isSend?'SEND ':'')+formatDb(value)+' dB</output><span class="clip-indicator '+(t.clip?'clipping':'')+'" title="Demo clip latch">CLIP</span></div>'
  +'<div class="fader-workspace">'
