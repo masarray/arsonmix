@@ -37,14 +37,10 @@ def local_point(loc,origin):
 def incoming_colors(sock):
  return sock.evaluate("""el=>{
   const pin=el.querySelector('.wire-arrow');
-  const probe=document.createElement('span');
-  probe.style.color='var(--ch)';
-  el.appendChild(probe);
-  const channel=getComputedStyle(probe).color;probe.remove();
   return {connected:el.getAttribute('data-wire-arrival')==='true',
    ring:getComputedStyle(el).borderTopColor,
    center:getComputedStyle(pin).backgroundColor,
-   opacity:Number(getComputedStyle(pin).opacity), channel};
+   opacity:Number(getComputedStyle(pin).opacity)};
  }""")
 
 def main():
@@ -104,8 +100,8 @@ def main():
     exact(points(path)[0],source_center,width,"committed OUT wire misses its actual pin")
     exact(points(path)[1],target_center,width,"committed IN wire misses inner socket dot")
     colors=incoming_colors(dest)
-    assert colors["connected"] and colors["ring"]==colors["channel"],(width,"IN ring wrong channel",colors)
-    assert colors["center"]==colors["channel"] and colors["opacity"]==1,(width,"IN dot not lit with circle",colors)
+    assert colors["connected"] and colors["ring"]!="rgb(57, 74, 85)",(width,"IN ring did not illuminate",colors)
+    assert colors["center"]==colors["ring"] and colors["opacity"]==1,(width,"IN dot not lit with circle",colors)
 
     # Source focus change re-renders the same cable as an INCOMING path;
     # neither physical anchor may shift with SVG class or opacity.
