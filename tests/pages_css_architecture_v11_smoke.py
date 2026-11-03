@@ -55,11 +55,11 @@ def make_baseline():
     for name in OWNED:
         css = (HTML.parent / "assets" / name).read_text(encoding="utf-8")
         assert "url(" not in css, ("relative assets would change CSS base URL", name)
-        version = "css-owner-v14" if name == "mixer-chrome-material.css" else "css-owner-v11"
+        version = "css-owner-v15" if name in {"mixer-section-controls.css", "mixer-section-layout.css", "mixer-v3-layout-contract.css", "mixer-chrome-material.css"} else "css-owner-v11"
         tag = f'<link rel="stylesheet" href="assets/{name}?v={version}">'
         assert html.count(tag) == 1, name
         html = html.replace(tag, "<style>" + css + "</style>")
-    assert "css-owner-v11" not in html and "css-owner-v14" not in html
+    assert not any(f"css-owner-v{v}" in html for v in (11,14,15))
     file = tempfile.NamedTemporaryFile(
         mode="w", encoding="utf-8", suffix=".html",
         prefix=".v11-visual-baseline-", dir=HTML.parent, delete=False,
