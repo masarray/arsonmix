@@ -83,7 +83,7 @@ test('CI validates exact HEAD before upload and cannot ship ENGINE-only old GUI'
 });
 test('physical crackle remains unqualified until independent 0FX/1FX FAT',()=>{
  const guide=read('docs/FIRST_SOUND_FAT_QUICKSTART_20261101.md');
- for(const marker of ['OUTPUT_ONLY_TONE','CAPTURE_ONLY','DRY_THROUGH_0FX','30 minutes','44,100','48,000'])
+ for(const marker of ['OUTPUT_ONLY_TONE','CAPTURE_ONLY','0FX normal','30 minutes','44,100','48,000'])
   assert.ok(guide.includes(marker),'hardware FAT guide missing '+marker);
  assert.match(packageScript,/HARDWARE_FAT_UNQUALIFIED/);
  assert.match(packageScript,/EXPERIMENTAL_NOT_HARDWARE_QUALIFIED/);

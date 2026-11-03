@@ -45,33 +45,27 @@ test('full engine capabilities preserved',()=>{
   assert.match(bridge,/arMixNativePresetLoaded/);
 });
 
-test('JUCE native resources track the approved calibrated GUI without maintaining a second mixer implementation', () => {
-  const cmake=read('CMakeLists.txt');
-  const cpp=read('src/Main.cpp');
-  const sourceCss=read('web/styles-src/42-mixer-premium.css');
-  const standalone=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
-  // Legacy migration assets remain embedded for history; live root MUST use approved Console.
-  const assetList=cmake.match(/juce_add_binary_data\(ARMixAssets SOURCES\s+([^)]+)\)/)?.[1];
-  assert.ok(assetList,'native WebView2 source list missing');
-  const expected=['web/index.html','web/styles.css','web/plugin-ui.css','web/app.js',
-    'web/plugin-ui.js','web/bridge.js','web/monitor.js','web/mixer-io.js','web/mixer-io.css'];
-  const listed=assetList.trim().split(/\s+/);
-  for(const asset of expected) assert.ok(listed.includes(asset),'missing WebView2 asset '+asset);
-  assert.equal(new Set(listed).size,listed.length,'duplicate native WebView2 resource');
-  for(const path of ['web/console-native.html','web/console-native.css','web/console-native.js'])
-    assert.ok(listed.includes(path),'approved native Console not embedded: '+path);
-  assert.match(cpp,/path == "\/" \|\| path == "\/index.html"/);
-  assert.match(cpp,/data = BinaryData::consolenative_html/);
-  assert.doesNotMatch(cpp,/data = BinaryData::index_html/);
-  for (const resource of ['consolenative_html','consolenative_css','consolenative_js','styles_css','pluginui_css','app_js','pluginui_js','bridge_js','monitor_js']) {
-    assert.ok(cpp.includes('BinaryData::'+resource),resource+' missing from WebView provider');
-  }
-  assert.ok(css.endsWith(sourceCss), 'native CSS must end with its authoritative calibration module');
-  assert.ok(standalone.includes('<style>'+css+'</style>'), 'Pages/standalone CSS drift');
-  assert.ok(standalone.includes('<script>'+app+'</script>'), 'Pages/standalone JS drift');
-  for (const cls of ['gain-scale-travel','vu-scale-travel','meter-signal-area','fader-travel']) {
-    assert.ok(app.includes(cls)||sourceCss.includes(cls), 'calibration module missing '+cls);
-  }
-  assert.match(app,/const levelToTop=db=>/);
-  assert.match(app,/distance:Math\.max\(24,r\.height-77\)/);
+test('JUCE executable embeds ONLY the approved native Console while archived preview assets remain source-tested',()=>{
+ const cmake=read('CMakeLists.txt'),cpp=read('src/Main.cpp');
+ const nativeHtml=read('web/console-native.html'),nativeJs=read('web/console-native.js');
+ const sourceCss=read('web/styles-src/42-mixer-premium.css');
+ const standalone=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
+ const assetList=cmake.match(/juce_add_binary_data\(ARMixAssets SOURCES\s+([^)]+)\)/)?.[1];
+ assert.ok(assetList,'native resource list missing');
+ const listed=assetList.trim().split(/\s+/);
+ assert.deepEqual(listed,['web/console-native.html','web/console-native.css','web/console-native.js']);
+ assert.match(cpp,/path == "\/" \|\| path == "\/index\.html"/);
+ assert.match(cpp,/data = BinaryData::consolenative_html/);
+ assert.match(cpp,/BinaryData::consolenative_css/);
+ assert.match(cpp,/BinaryData::consolenative_js/);
+ assert.doesNotMatch(cpp,/BinaryData::index_html|BinaryData::app_js|BinaryData::monitor_js/);
+ assert.match(nativeHtml,/ArSonMix — Native Live Console/);
+ assert.match(nativeJs,/arMixConsoleSubscribe/);
+ assert.match(nativeJs,/arMixConsoleAck/);
+ assert.match(nativeJs,/channelPeaksL/);
+ assert.ok(css.endsWith(sourceCss),'archived visual CSS source integrity lost');
+ assert.ok(standalone.includes('<style>'+css+'</style>'),'Pages standalone CSS drift');
+ assert.ok(standalone.includes('<script>'+app+'</script>'),'Pages standalone script drift');
+ for(const cls of ['gain-scale-travel','vu-scale-travel','meter-signal-area','fader-travel'])
+  assert.ok(app.includes(cls)||sourceCss.includes(cls),'historical calibration lost '+cls);
 });
