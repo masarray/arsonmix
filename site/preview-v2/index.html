@@ -13,7 +13,7 @@
 <link rel="stylesheet" href="assets/mixer-hardware-artwork.css?v=css-owner-v10">
 <link rel="stylesheet" href="assets/mixer-v3-layout-contract.css?v=css-owner-v15">
 <style></style>
-<link rel="stylesheet" href="assets/mixer-chrome-material.css?v=css-chrome-owner-v23-v50-popouts">
+<link rel="stylesheet" href="assets/mixer-chrome-material.css?v=css-chrome-owner-v23-v50-popouts-z34">
 <style>/* V15 original physical patch connectors: filled bronze/silver OUT jack, recessed
    hollow IN socket. Calm console design; route highlight only on actual intent.
    Compact always keeps the wires visible; expanded has more cable canvas. */@media(max-height:680px){
@@ -483,8 +483,8 @@
 <link rel="stylesheet" href="assets/mixer-fx-rack.css?v=fx-owner-v8-m3-inserts">
 <link rel="stylesheet" href="assets/mixer-plugin-browser.css?v=css-plugin-owner-v17">
 <link rel="stylesheet" href="assets/mixer-pan-controls.css?v=css-owner-v9-pan-up5-v23">
-<link rel="stylesheet" href="assets/mixer-fader-assembly.css?v=css-owner-v9-ruler-m3-left-70">
-<link rel="stylesheet" href="assets/mixer-meter-display.css?v=css-owner-v9-ruler-m3-left-70-v50">
+<link rel="stylesheet" href="assets/mixer-fader-assembly.css?v=css-owner-v9-ruler-m3-left-70-v51-shadow">
+<link rel="stylesheet" href="assets/mixer-meter-display.css?v=css-owner-v9-ruler-m3-left-70-v51-portrait">
 <link rel="stylesheet" href="assets/mixer-utility-controls.css?v=fx-rack-user-icon-green-v21">
 <link rel="stylesheet" href="assets/inter-embedded.css?v=inter-utility-v7">
 <link rel="stylesheet" href="assets/mixer-wire-dots.css?v=v47-css-v16-v50-config">
@@ -671,7 +671,7 @@ const make=(name,kind,color)=>{
  const id=nextId++;
  return {id,name,kind,color,icon:kind==='master'?'◎':kind==='bus'?'⊞':kind==='fx'?'◉':'♩',group:null,safe:false,format:'stereo',input:'None',output:kind==='master'?'Default Output':'Master',fx:Array(8).fill('None'),slotBypass:Array(8).fill(false),fxOn:true,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,activeSend:0,sendSlots:Array.from({length:16},()=>({send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0})),eq:true,pan:0,trim:0,mute:false,solo:false,cue:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
 };
-function init(){wireWsOpen=false;wireWsDestinationId=null;wireWsInspect=null;wireWsRemoveConfirm=null;wireWsHistory=[];wireWsPendingBefore=null;wireWsEditBefore=null;const ws=document.getElementById('wireWorkspace');if(ws)ws.hidden=true;const cfg=document.getElementById('wireConfigWindow');if(cfg)cfg.hidden=true;document.getElementById('wireConfigToggle').setAttribute('aria-expanded','false');document.getElementById('wireMode').value='send';nextId=1;nextGroup=1;wireSourceId=1;wireEdges=[];nextWireId=1;wireMode='send';wireView='focus';wireSourcePinned=false;wireIntent=false;document.getElementById('wireView').value='focus';wireAnchorId=null;wireHoverId=null;wireGesture=null;wireSuppressClick=false;pendingBusRoute=null;const choice=document.getElementById('routeChoice');if(choice)choice.hidden=true;document.getElementById('wireMode').value='send';tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
+function init(){meterPeakHolds.clear();wireWsOpen=false;wireWsDestinationId=null;wireWsInspect=null;wireWsRemoveConfirm=null;wireWsHistory=[];wireWsPendingBefore=null;wireWsEditBefore=null;const ws=document.getElementById('wireWorkspace');if(ws)ws.hidden=true;const cfg=document.getElementById('wireConfigWindow');if(cfg)cfg.hidden=true;document.getElementById('wireConfigToggle').setAttribute('aria-expanded','false');document.getElementById('wireMode').value='send';nextId=1;nextGroup=1;wireSourceId=1;wireEdges=[];nextWireId=1;wireMode='send';wireView='focus';wireSourcePinned=false;wireIntent=false;document.getElementById('wireView').value='focus';wireAnchorId=null;wireHoverId=null;wireGesture=null;wireSuppressClick=false;pendingBusRoute=null;const choice=document.getElementById('routeChoice');if(choice)choice.hidden=true;document.getElementById('wireMode').value='send';tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 /* Google Material Icons SVG paths, Apache-2.0. Inline/zero font or network requests. */
 const MATERIAL_PATH=Object.freeze({
@@ -1047,6 +1047,52 @@ function demoMeterDbfs(faderDb,modulation){
  // One decibel of preview gain changes the displayed signal by one dB.
  return Math.max(METER_DBFS_MIN,Math.min(METER_DBFS_MAX,-51+54*modulation+Number(faderDb)));
 }
+/* V51 portrait stepped meter — UI visual adapter, NEVER an audio engine.
+   Keep one cached height per live meter node; browser ResizeObserver updates
+   it only when a channel rail changes height, not on every 12 Hz tick. */
+const METER_STEP_PX=14,METER_HOLD_MS=850,METER_RELEASE_STEP_MS=120;
+let meterGeometry=new WeakMap();
+const meterPeakHolds=new Map();
+const meterObserver=typeof ResizeObserver==='function'?new ResizeObserver(entries=>{
+ for(const entry of entries){
+  const height=Math.max(1,entry.contentRect.height);
+  meterGeometry.set(entry.target,{height,rows:Math.max(1,Math.floor(height/METER_STEP_PX))});
+ }
+}):null;
+function displayMeterDbfs(fill,dbfs,ts,key){
+ if(!fill)return;
+ const lane=fill.parentElement;
+ if(!lane)return;
+ let geometry=meterGeometry.get(lane);
+ if(!geometry){
+  const height=Math.max(1,lane.clientHeight);
+  geometry={height,rows:Math.max(1,Math.floor(height/METER_STEP_PX))};
+  meterGeometry.set(lane,geometry);
+  meterObserver?.observe(lane);
+ }
+ const steps=Math.max(0,Math.min(geometry.rows,
+   Math.round(meterDbfsPercent(dbfs)*geometry.rows/100)));
+ const litPx=Math.min(geometry.height,steps*METER_STEP_PX);
+ fill.style.setProperty('--lit',(100*litPx/geometry.height)+'%');
+ let peak=meterPeakHolds.get(key);
+ if(!peak||steps>peak.steps){
+  peak={steps,holdUntil:ts+METER_HOLD_MS,lastRelease:ts};
+  meterPeakHolds.set(key,peak);
+ }else if(ts>peak.holdUntil&&ts-peak.lastRelease>=METER_RELEASE_STEP_MS){
+  const elapsed=Math.floor((ts-Math.max(peak.holdUntil,peak.lastRelease))/METER_RELEASE_STEP_MS);
+  if(elapsed>0){
+   peak.steps=Math.max(steps,peak.steps-elapsed);
+   peak.lastRelease=ts;
+  }
+ }
+ const marker=lane.querySelector('.meter-peak-hold');
+ if(marker){
+  marker.style.opacity=peak.steps>0?'1':'0';
+  // A 3px top-line ahead of live grid; same gradient coordinates as fill.
+  const extent=Math.min(geometry.height-1,peak.steps*METER_STEP_PX+8);
+  marker.style.setProperty('--peak-extent',Math.max(3,extent)+'px');
+ }
+}
 /* Safe read-only calibration probe: exposes pure scale math and a tiny demo
    snapshot for browser QA, never mutable audio state or DSP controls. */
 window.ArSonMixMeterCalibration=Object.freeze({
@@ -1068,7 +1114,7 @@ function sectionFader(t){
  }).join('');
  return '<div class="fader-section"><div class="fader-head"><output class="fader-readout" aria-label="'+escapeHtml(t.name)+' level">'+(isSend?'SEND ':'')+formatDb(value)+' dB</output><button type="button" class="clip-indicator '+(t.clip?'clipping':'')+'" data-action="resetClip" aria-label="Reset '+escapeHtml(t.name)+' clip latch" title="Reset latched peak indication (demo)">CLIP</button></div>'
  +'<div class="fader-workspace">'
- +'<div class="meter-box '+(t.format==='mono'?'mono':'stereo')+'" aria-label="Simulated '+(t.format==='mono'?'mono':'stereo')+' dBFS meter"><div class="vu-bars"><div class="meter-lane"><div class="meter-fill left"></div></div>'+(t.format==='mono'?'':'<div class="meter-lane"><div class="meter-fill right"></div></div>')+'</div><div class="vu-scale"><div class="vu-scale-travel">'+vuScale+'</div></div><div class="peak '+(t.clip?'clipping':'')+'" aria-hidden="true"><span class="peak-led"></span>'+(t.format==='mono'?'':'<span class="peak-led"></span>')+'</div></div>'
+ +'<div class="meter-box '+(t.format==='mono'?'mono':'stereo')+'" aria-label="Simulated '+(t.format==='mono'?'mono':'stereo')+' dBFS meter"><div class="vu-bars"><div class="meter-lane"><div class="meter-fill left"></div><span class="meter-peak-hold" aria-hidden="true"></span></div>'+(t.format==='mono'?'':'<div class="meter-lane"><div class="meter-fill right"></div><span class="meter-peak-hold" aria-hidden="true"></span></div>')+'</div><div class="vu-scale"><div class="vu-scale-travel">'+vuScale+'</div></div><div class="peak '+(t.clip?'clipping':'')+'" aria-hidden="true"><span class="peak-led"></span>'+(t.format==='mono'?'':'<span class="peak-led"></span>')+'</div></div>'
  +'<div class="fader-box" style="--fader-fill:'+percent+'%;--fader-lit:'+(percent/100)+';--fader-y:'+(100-percent)+'%;--fader-frac:'+(percent/100)+'"><div class="fader-travel"><div class="cap" aria-hidden="true"></div></div><input class="fader" type="range" min="-60" max="'+gainMax+'" value="'+value+'" step=".1" data-field="level" title="'+(isSend?'SEND to '+escapeHtml(sofTarget):'Main level')+'" aria-label="'+escapeHtml(t.name)+' volume"></div>'
  +'<div class="fader-scale"><div class="gain-scale-travel">'+gainScale+'</div></div></div></div>';
 }
@@ -1128,6 +1174,8 @@ function render(pageOverride){
   }
  }
  if(tracksEl.style?.setProperty)tracksEl.style.setProperty('--bank-columns',String(capacity));
+ // Release observers for detached bank DOM; never accumulate orphan lanes.
+ meterObserver?.disconnect();meterGeometry=new WeakMap();
  tracksEl.innerHTML=bankTracks.map(strip).join('');
  updateSofTargets();
  masterEl.innerHTML=strip(master);
@@ -2959,7 +3007,12 @@ function togglePreview(){
  b.textContent=preview?'■ Stop Meter Preview':'▶ Preview Meters';b.classList.toggle('active',preview);b.setAttribute('aria-pressed',String(preview));
  document.getElementById('transport').textContent=preview?'Meter preview running':'Stopped';
  if(preview){say('Meters use generated UI-only values. No capture, DSP or audio output.');requestAnimationFrame(animateMeters);}
- else{tracks.concat(master).forEach(t=>{t.meterL=t.meterR=0;});document.querySelectorAll('.meter-fill').forEach(x=>x.style.setProperty('--lit','0%'));}
+ else{
+  tracks.concat(master).forEach(t=>{t.meterL=t.meterR=0;});
+  meterPeakHolds.clear();
+  document.querySelectorAll('.meter-fill').forEach(x=>x.style.setProperty('--lit','0%'));
+  document.querySelectorAll('.meter-peak-hold').forEach(x=>{x.style.opacity='0';});
+ }
 }
 document.getElementById('preview').addEventListener('click',togglePreview);
 function animateMeters(ts){
@@ -2977,8 +3030,8 @@ function animateMeters(ts){
      Math.min(METER_DBFS_MAX,leftDbfs-1+0.8*Math.sin(meterFrame*.15+i)));
  const root=document.querySelector('.strip[data-id="'+t.id+'"]');if(!root)return;
  const l=root.querySelector('.meter-fill.left'),r=root.querySelector('.meter-fill.right');
- if(l)l.style.setProperty('--lit',meterDbfsPercent(leftDbfs)+'%');
- if(r)r.style.setProperty('--lit',meterDbfsPercent(rightDbfs)+'%');
+ displayMeterDbfs(l,leftDbfs,ts,t.id+':L');
+ displayMeterDbfs(r,rightDbfs,ts,t.id+':R');
  if((leftDbfs>=-0.1||rightDbfs>=-0.1)&&!t.clip){
   t.clip=true;
   root.querySelector('.peak')?.classList.add('clipping');
