@@ -31,8 +31,8 @@ def impact_peak(path,baseline):
 def impact_motion(path,baseline):
  # Distributed squared-deformation centroid: unlike the single highest
  # oscillation crest, this follows the entire slow traveling wave packet.
- values=[float(v) for v in re.findall(r"-?\\d+(?:\\.\\d+)?",path)]
- base=[float(v) for v in re.findall(r"-?\\d+(?:\\.\\d+)?",baseline)]
+ values=[float(v) for v in re.findall(r"-?\d+(?:\.\d+)?",path)]
+ base=[float(v) for v in re.findall(r"-?\d+(?:\.\d+)?",baseline)]
  assert " L " in path and len(values)==114,(len(values),path[:90])
  assert " C " in baseline and len(base)==8,(len(base),baseline)
  x0,y0,c0x,c0y,c1x,c1y,x1,y1=base
