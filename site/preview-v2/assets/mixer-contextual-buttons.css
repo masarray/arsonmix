@@ -100,7 +100,7 @@
   .route-choice-option,.wire-workspace .wire-ws-head button,
   .wire-workspace .wire-ws-tabs button,.wire-workspace .wire-ws-foot button,
   .wire-workspace .wire-ws-matrix button
-):is([aria-pressed="true"],[aria-expanded="true"],[aria-selected="true"],.active,.selected,:active:not(:disabled)){
+):is([aria-pressed="true"],[aria-expanded="true"],[aria-selected="true"],.active,.selected,.is-linked,.is-legacy,:active:not(:disabled)){
   background:
     radial-gradient(ellipse 44% 18% at 50% 100%,#ffffff35,transparent 95%),
     linear-gradient(180deg,var(--ari-on-top) 0%,var(--ari-on-hi) 8%,
@@ -125,7 +125,7 @@
   .route-choice-option,.wire-workspace .wire-ws-head button,
   .wire-workspace .wire-ws-tabs button,.wire-workspace .wire-ws-foot button,
   .wire-workspace .wire-ws-matrix button
-):is([aria-pressed="true"],[aria-expanded="true"],[aria-selected="true"],.active,.selected,:active:not(:disabled))::after{
+):is([aria-pressed="true"],[aria-expanded="true"],[aria-selected="true"],.active,.selected,.is-linked,.is-legacy,:active:not(:disabled))::after{
   content:""!important;display:block!important;
   position:absolute!important;pointer-events:none!important;
   left:9%!important;right:9%!important;bottom:1px!important;
@@ -164,4 +164,42 @@
   .wire-workspace button
 ):active:not(:disabled){
   transform:none!important;
+}
+
+/* V6 readability audit. The approved metallic surface is LIGHT: never paint
+   legacy light glyphs on top of it. Retain original SVG path, 24px size, cap
+   geometry, texture, shine and focus/press behavior. Only visual ink changes. */
+.app .command-bar button.bank-arrow svg path{
+  fill:#23343b!important;
+}
+.app .command-bar button.bank-arrow:active:not(:disabled) svg path{
+  fill:#f4fafb!important;
+}
+/* A disabled bank arrow is still visually discoverable, without looking ON. */
+.app .command-bar button.bank-arrow:disabled{opacity:.74!important}
+
+/* Route-choice strong captions already inherit charcoal, but the original
+   small captions and icons kept pastel ink intended for a dark popup.
+   Preserve hierarchy using two deliberate tones on the silver V6 surface. */
+.app .route-choice-option small{color:#263b43!important}
+.app .route-choice-option .choice-symbol{color:#194b3d!important}
+.app .route-choice-option:active:not(:disabled) small{color:#f7fffa!important}
+.app .route-choice-option:active:not(:disabled) .choice-symbol{color:#e0ffee!important}
+
+/* WIRE matrix carries REAL semantic route status (is-linked, is-legacy).
+   Their persistent colored faces are derived from existing classes; no JS
+   state, no timers, no changes to routing geometry or WIRE/PNG assets. */
+/* Important here applies to TOKENS only (never layout): V6's shared
+   :is() material selector deliberately contains the #wireMaster ID to win
+   over historical BTN-180. Preserve per-route semantic ink despite that
+   ID-level base specificity. No independent paint/state owner is added. */
+.app .wire-workspace .wire-ws-matrix button.is-linked{
+  --ari-on-top:#286849!important;--ari-on-hi:#347e5b!important;
+  --ari-on-mid:#2d6e51!important;--ari-on-bottom:#255c42!important;
+  --ari-on-edge:#204f38!important;--ari-on-ink:#f5fff8!important;
+}
+.app .wire-workspace .wire-ws-matrix button.is-legacy{
+  --ari-on-top:#3e577e!important;--ari-on-hi:#526d94!important;
+  --ari-on-mid:#405b7f!important;--ari-on-bottom:#334d71!important;
+  --ari-on-edge:#2b4161!important;--ari-on-ink:#f5f8ff!important;
 }

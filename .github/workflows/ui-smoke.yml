@@ -111,6 +111,8 @@ jobs:
         run: python tests/pages_png_buttons_wire_reconciliation_smoke.py
       - name: Verify V6 contextual buttons, momentary press and zero pointer scroll
         run: python tests/pages_contextual_buttons_smoke.py
+      - name: Verify V6 contextual OFF and ON readability, SVG ink and WIRE matrix statuses
+        run: python tests/pages_contextual_contrast_smoke.py
       - name: Run mixer UI smoke tests
         run: python tests/ui_smoke.py
       - name: Verify Preview V2 V7 physical visual geometry and modeless mixer workflow
@@ -191,6 +193,7 @@ jobs:
             preview-v15-wire-left-1680.png
             preview-v15-wire-bus-only-1680.png
             preview-p0-fx-expanded-1366.png
+            pages-v6-arrow-contrast-1680.png
             site/preview-v2/index.html
             site/preview-v2/assets/
             mixer-design-review-1440.png
