@@ -48,9 +48,9 @@ def label_geometry(page,width):
    assert a["x"]>=right(rect(pin))-1,(width,idx,"OUT caption covers dot",a)
    assert right(a)+1<=rect(socket)["x"],(width,idx,"OUT caption touches IN ring",a,rect(socket))
    assert b["x"]>=right(rect(socket))-1,(width,idx,"IN caption covers socket",b)
-   assert right(b)+1<=rect(knob)["x"],(width,idx,"IN caption touches LEVEL knob",b,rect(knob))
-   assert c["x"]>=rect(knob)["x"]+20,(width,idx,"LEVEL caption covers knob",c)
-   assert right(c)<=right(rect(tray))+1,(width,idx,"LEVEL caption clipped",c,rect(tray))
+   assert right(b)+1<=rect(knob)["x"],(width,idx,"IN caption touches LVL knob",b,rect(knob))
+   assert c["x"]>=rect(knob)["x"]+20,(width,idx,"LVL caption covers knob",c)
+   assert right(c)<=right(rect(tray))+1,(width,idx,"LVL caption clipped",c,rect(tray))
   else:
    # Labels are optional on a dense strip; never shrink the live jack itself.
    assert rect(out)["width"]>=23 and rect(socket)["width"]>=27
@@ -64,7 +64,7 @@ def main():
   public=dist/"preview/mixer.html"
   assert public.read_bytes()==HTML.read_bytes(),"Pages did not publish canonical V45 console"
   assert (dist/"preview/assets/mixer-wire-dots.css").read_bytes()==STYLE.read_bytes(),"Pages lost WIRE CSS"
-  assert "assets/mixer-wire-dots.css?v=v45" in public.read_text("utf-8")
+  assert "assets/mixer-wire-dots.css?v=v46" in public.read_text("utf-8")
   with sync_playwright() as pw:
    browser=pw.chromium.launch(headless=True)
    for width in (1366,1680,1920):

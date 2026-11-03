@@ -2287,7 +2287,7 @@ html * ,html *::before,html *::after{
 <link rel="stylesheet" href="assets/mixer-meter-display.css?v=css-owner-v9">
 <link rel="stylesheet" href="assets/mixer-utility-controls.css?v=inter-utility-v7">
 <link rel="stylesheet" href="assets/inter-embedded.css?v=inter-utility-v7">
-<link rel="stylesheet" href="assets/mixer-wire-dots.css?v=v45">
+<link rel="stylesheet" href="assets/mixer-wire-dots.css?v=v46">
 
 </head>
 <body>
@@ -2709,9 +2709,9 @@ function wireTray(t){
   '><span class="wire-arrow" aria-hidden="true"></span><span class="wire-label">IN</span></button>';
  let controls=from+to;
  if(edge&&!isMain){
-  controls+='<label class="wire-pot is-active" style="--wire-pot-fill:'+escapeHtml(t.color)+';--wire-pct:'+wireGainPercent(edge.levelDb)+'%;--wire-deg:'+(-135+wireGainPercent(edge.levelDb)*2.7).toFixed(1)+'deg" title="'+escapeHtml(source.name+' → '+t.name+' · '+wireDbText(edge.levelDb))+'"><input class="wire-gain" type="range" min="-60" max="6" step="0.1" value="'+edge.levelDb+'" data-field="wireGain" data-wire-id="'+edge.id+'" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%" aria-label="Wire send level '+escapeHtml(source.name)+' to '+escapeHtml(t.name)+'"><span class="wire-gain-caption" aria-hidden="true">LEVEL</span></label>';
+  controls+='<label class="wire-pot is-active" style="--wire-pot-fill:'+escapeHtml(t.color)+';--wire-pct:'+wireGainPercent(edge.levelDb)+'%;--wire-deg:'+(-135+wireGainPercent(edge.levelDb)*2.7).toFixed(1)+'deg" title="'+escapeHtml(source.name+' → '+t.name+' · '+wireDbText(edge.levelDb))+'"><input class="wire-gain" type="range" min="-60" max="6" step="0.1" value="'+edge.levelDb+'" data-field="wireGain" data-wire-id="'+edge.id+'" style="--wire-pct:'+wireGainPercent(edge.levelDb)+'%" aria-label="Wire send level '+escapeHtml(source.name)+' to '+escapeHtml(t.name)+'"><span class="wire-gain-caption" aria-hidden="true">LVL</span></label>';
  }else{
-  controls+='<span class="wire-pot '+(hasPluggedWire?'is-active is-readonly':'is-idle')+'" style="--wire-pot-fill:'+(hasPluggedWire?escapeHtml(t.color):'#4b535b')+'" aria-hidden="true"><span class="wire-gain-caption">LEVEL</span></span>';
+  controls+='<span class="wire-pot '+(hasPluggedWire?'is-active is-readonly':'is-idle')+'" style="--wire-pot-fill:'+(hasPluggedWire?escapeHtml(t.color):'#4b535b')+'" aria-hidden="true"><span class="wire-gain-caption">LVL</span></span>';
  }
  return '<div class="wire-tray'+(linked?' linked':'')+'">'+controls+'</div>';
 }
@@ -3392,6 +3392,13 @@ function wireLegendHtml(focus,routes){
   '<span class="wire-map-group is-out" aria-label="'+outRoutes.length+' outgoing routes">'+
     '<span class="wire-map-direction">OUT</span>'+badges(outRoutes,false)+'</span>';
 }
+/* V46: geometry from existing physical pins, never label-bearing buttons.
+   Applies to incoming/outgoing/context, drag, snap and impact alike. */
+function wireJackRect(button){
+ if(!button)return null;
+ const dot=button.querySelector?.(button.classList.contains('wire-node-out')?'.wire-pin':'.wire-arrow');
+ return (dot||button).getBoundingClientRect?.()||null;
+}
 function renderWireRouting(){
  if(wireWsOpen&&!wireGesture?.active)renderWireWorkspace();
  document.querySelector('.console-body')?.classList.toggle('wire-intent',!!wireIntent);
@@ -3446,10 +3453,10 @@ function renderWireRouting(){
  const wireBay=viewport.querySelector('.strip .send-section')?.getBoundingClientRect?.();
  if(vp&&wireBay)svg.style.clipPath='inset('+Math.max(0,wireBay.top-vp.top)+'px 0px '+Math.max(0,vp.bottom-wireBay.bottom)+'px 0px)';
  const fromEl=viewport.querySelector?.('.strip[data-id="'+source.id+'"] .wire-node-out');
- const from=fromEl?.getBoundingClientRect?.();
+ const from=wireJackRect(fromEl);
  const visibleSource=!!from?.width;
  const bankIn=viewport.querySelector?.('#tracks .strip .wire-node-in');
- const bankRect=bankIn?.getBoundingClientRect?.();
+ const bankRect=wireJackRect(bankIn);
  if(!vp||!vp.width||!vp.height||(!visibleSource&&!bankRect?.width)){svg.innerHTML='';syncVisibleWireDots(svg);return;}
  svg.setAttribute('viewBox','0 0 '+vp.width+' '+vp.height);
  // An off-bank SOURCE enters via the left patch-bay boundary. This is a
@@ -3470,7 +3477,7 @@ function renderWireRouting(){
    const sender=wireSourceTrack(edge.sourceId);
    const fromNode=viewport.querySelector?.('.strip[data-id="'+edge.sourceId+'"] .wire-node-out');
    const toNode=viewport.querySelector?.('.strip[data-id="'+edge.destId+'"] .wire-node-in');
-   const a=fromNode?.getBoundingClientRect?.(),b=toNode?.getBoundingClientRect?.();
+   const a=wireJackRect(fromNode),b=wireJackRect(toNode);
    if(!sender||!a?.width||!b?.width)continue;
    const bay=fromNode.closest?.('.send-section')?.getBoundingClientRect?.();
    const lift=wireSagClearance(a,bay);
@@ -3491,9 +3498,9 @@ function renderWireRouting(){
  for(const edge of incoming){
   const sender=wireSourceTrack(edge.sourceId);
   const fromNode=viewport.querySelector?.('.strip[data-id="'+edge.sourceId+'"] .wire-node-out');
-  const fromRect=fromNode?.getBoundingClientRect?.();
+  const fromRect=wireJackRect(fromNode);
   const toNode=viewport.querySelector?.('.strip[data-id="'+edge.destId+'"] .wire-node-in');
-  const toRect=toNode?.getBoundingClientRect?.();
+  const toRect=wireJackRect(toNode);
   if(!sender||!toRect?.width)continue;
   // An off-bank source starts at the left patch-bay portal. Never fake a
   // hidden strip position or suppress a real incoming signal cable.
@@ -3525,7 +3532,7 @@ function renderWireRouting(){
  for(const edge of outgoing){
   const dest=tracks.find(t=>t.id===edge.destId);
   if(!dest)continue;
-  const rect=viewport.querySelector?.('.strip[data-id="'+dest.id+'"] .wire-node-in')?.getBoundingClientRect?.();
+  const rect=wireJackRect(viewport.querySelector?.('.strip[data-id="'+dest.id+'"] .wire-node-in'));
   if(!rect||!rect.width)continue;
   const x1=rect.left-vp.left+rect.width/2,y1=rect.top-vp.top+rect.height/2;
   const d=wirePathFor(edge,x0,visibleSource?y0:y1,x1,y1,sagLimit),color=source.color||'#93e5b4';
@@ -3542,7 +3549,7 @@ function renderWireRouting(){
   let x1=Math.max(2,Math.min(vp.width-2,wireGesture.point.x-vp.left));
   let y1=Math.max(2,Math.min(vp.height-2,wireGesture.point.y-vp.top));
   const snap=tracks.concat(master).find(t=>t.id===wireGesture.snapId);
-  const rect=snap?viewport.querySelector?.('.strip[data-id="'+snap.id+'"] .wire-node-in')?.getBoundingClientRect?.():null;
+  const rect=snap?wireJackRect(viewport.querySelector?.('.strip[data-id="'+snap.id+'"] .wire-node-in')):null;
   if(rect?.width){
    // True magnetic PREVIEW: if the receiving ring is lit, the cable endpoint
    // visibly docks into that ring. Exiting 24px undocks immediately and

@@ -1,5 +1,5 @@
 {
-  "version": "preview-v45-channel-socket-context-responsive-captions",
+  "version": "preview-v46-pin-true-anchor-centered-in-lvl",
   "kind": "GUI_REFERENCE_ONLY",
   "live_audio": false,
   "source_pr": 285,
@@ -30,7 +30,8 @@
     "V43 36-frame socket-originated wave travels along accepted wire, one edge only",
     "V43 /preview/ publication copies tested WIRE CSS owner, no missing asset",
     "V44 docked plug vanishes, dots share rendered wire hue and alpha, captions right, stronger impact and 27px folded row",
-    "V45 only rendered incoming routes color receiving socket ring by destination channel; idle socket graphite; collision-free caption lanes on dense mixer"
+    "V45 only rendered incoming routes color receiving socket ring by destination channel; idle socket graphite; collision-free caption lanes on dense mixer",
+    "V46 exact cable anchor on source pin and centered IN dot, LVL caption and destination-color lit center"
   ],
   "preserved": "V39 utility controls and Inter, WIRE V36/V37, existing routes/FX/faders/meters; no native audio changes",
   "limitations": "Static WIRE GUI reference only; not native PCM/ASIO/VST3 routing",
