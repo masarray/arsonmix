@@ -52,6 +52,8 @@ std::optional<juce::WebBrowserComponent::Resource> assetFor (const juce::String&
         { data = BinaryData::index_html; size = BinaryData::index_htmlSize; mime = "text/html"; }
     else if (path == "/styles.css")
         { data = BinaryData::styles_css; size = BinaryData::styles_cssSize; mime = "text/css"; }
+    else if (path == "/console-native.js")
+        { data = BinaryData::consolenative_js; size = BinaryData::consolenative_jsSize; mime = "text/javascript"; }
     else if (path == "/app.js")
         { data = BinaryData::app_js; size = BinaryData::app_jsSize; mime = "text/javascript"; }
     // JUCE 8.0.15 BinaryData strips hyphens from generated identifiers:

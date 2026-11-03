@@ -17,7 +17,7 @@ juce_add_gui_app(ARMixConsole
     NEEDS_CURL FALSE)
 
 juce_add_binary_data(ARMixAssets SOURCES
-    web/index.html web/styles.css web/plugin-ui.css web/app.js web/plugin-ui.js web/bridge.js web/monitor.js web/mixer-io.js web/mixer-io.css web/mixer-layout.js web/mixer-layout.css web/assets/audio-interface.svg
+    web/index.html web/console-native.js web/styles.css web/plugin-ui.css web/app.js web/plugin-ui.js web/bridge.js web/monitor.js web/mixer-io.js web/mixer-io.css web/mixer-layout.js web/mixer-layout.css web/assets/audio-interface.svg
     # Owner-approved GUI M3/V21/V48 is the actual JUCE WebView2 production page.
     web/assets/delete-forever.svg web/assets/format-hardware-25x15-2x1.png web/assets/inter-embedded.css web/assets/knob-ICON.svg web/assets/micro-hardware-17x17-2x4.png web/assets/mixer-channel-grid.css web/assets/mixer-chrome-material.css web/assets/mixer-console-foundation.css web/assets/mixer-contextual-buttons.css web/assets/mixer-contextual-buttons.js web/assets/mixer-control-keys.css web/assets/mixer-control-keys.js web/assets/mixer-fader-assembly.css web/assets/mixer-fx-rack.css web/assets/mixer-hardware-artwork.css web/assets/mixer-meter-display.css web/assets/mixer-pan-controls.css web/assets/mixer-plugin-browser.css web/assets/mixer-section-controls.css web/assets/mixer-section-layout.css web/assets/mixer-utility-controls.css web/assets/mixer-v3-layout-contract.css web/assets/mixer-wire-dots.css web/assets/mixer-wire-out-align-v48.css
 )
