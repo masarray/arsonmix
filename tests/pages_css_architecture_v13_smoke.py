@@ -70,6 +70,10 @@ def restore_baseline():
     manifest=json.loads(MANIFEST.read_text(encoding="utf-8"))
     assert manifest["milestone"]=="V13"
     html=HTML.read_text(encoding="utf-8")
+    # V13 suffix witnesses are immutable; recover the exact V23 CSS owners
+    # before V24 removed their provably shadowed declarations.
+    from css_v24_restore import reconstruct as restore_pre_v24
+    _,v23_owners=restore_pre_v24()
     temporary=[]
     saved=0
     removed_imp=0
@@ -79,6 +83,7 @@ def restore_baseline():
             path=HTML.parent/"assets"/name
             from css_v18_restore import reconstruct as restore_previous_chrome,manifest as v18_manifest
             current=(restore_previous_chrome()[1] if name=="mixer-chrome-material.css"
+                     else v23_owners[name] if name in v23_owners
                      else path.read_text(encoding="utf-8"))
             original=current[:record["afterSize"]]
             tail=current[record["afterSize"]:]
