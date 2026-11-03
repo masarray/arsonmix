@@ -75,7 +75,7 @@ test('occupied CH1 Orbit uses one strong Graph lease through native renderer and
   assert.match(engine,/fx\.owner=std::static_pointer_cast<void>\(graphOwned_\)/);
   assert.match(engine,/fx\.context=graphOwned_\.get\(\)/);
   assert.match(engine,/fx\.render=&processOwnedChannelOne/);
-  assert.match(engine,/renderOriginalChannelOneGraph\(\*static_cast<Graph\*>\(token\)/);
+  assert.match(engine,/renderOriginalChannelOneGraph\(\s*\*static_cast<Graph\*>\(token\)/);
   assert.match(engine,/Graph\(\) \{ dryScratch\.setSize\(2,maxFrames,false,true,false\); \}/);
   assert.match(engine,/graph\.dryScratch\.getWritePointer\(0\)/);
   assert.match(engine,/graph\.orderPacked\.load\(std::memory_order_acquire\)/);

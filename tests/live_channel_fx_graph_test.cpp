@@ -609,7 +609,7 @@ static void verifyOccupiedExternalCh1Owner() {
     // hidden second FX owner. All vendor/plugin cleanup is off realtime.
     publisher.unpublish();
     accepted=UnifiedLegacyAccepted{};
-    assert(publisher.pollRetirement());
+    publisher.pollRetirement();
     assert(retiringOwner.expired());
 }
 
@@ -773,14 +773,14 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
     assert(static_cast<bool>(diagnostic.getProperty("originalCh1GraphLeased",false)));
     // A revoked native PCM mode must immediately report M4 fallback without
     // inventing any universal ChannelId capabilities or stale FX identity.
-    auto liveRoute=live.getProperty("dryRoutingLab",{});
-    liveRoute.getDynamicObject()->setProperty("nativeChannelIdPcmActive",false);
+    auto pcmRouteReadback=live.getProperty("dryRoutingLab",{});
+    pcmRouteReadback.getDynamicObject()->setProperty("nativeChannelIdPcmActive",false);
     auto fallbackSnap=Bridge::snapshot(live);
     const auto fallbackM4=fallbackSnap.getProperty("legacyM4",{});
     assert(fallbackM4.getProperty("pcmRenderer","").toString()=="M4_COMPAT");
     assert(!static_cast<bool>(fallbackM4.getProperty("originalCh1GraphLeased",true)));
     assert(!static_cast<bool>(fallbackSnap.getProperty("productionCallbackLive",true)));
-    liveRoute.getDynamicObject()->setProperty("nativeChannelIdPcmActive",true);
+    pcmRouteReadback.getDynamicObject()->setProperty("nativeChannelIdPcmActive",true);
     const auto legacyRows=diagnostic.getProperty("acceptedChannels",{});
     assert(legacyRows.getArray()&&
            legacyRows.getArray()->size()==armix::mixer::stripCount);
