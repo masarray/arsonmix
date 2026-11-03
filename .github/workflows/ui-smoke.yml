@@ -85,6 +85,12 @@ jobs:
         run: python tests/pan_button_asset_test.py
       - name: Validate linked 11-strip geometry and LV1-style rail workspace
         run: python tests/mixer_shell_geometry_smoke.py
+      - name: Verify V50 compact console WIRE configuration popouts and dBFS tick insets
+        run: python tests/pages_v50_wire_popout_layout_smoke.py
+      - name: Verify V6 contextual buttons, momentary press and zero pointer scroll
+        run: python tests/pages_contextual_buttons_smoke.py
+      - name: Verify V43 public Pages WIRE CSS, incoming cables and propagating socket impact
+        run: python tests/pages_wire_incoming_v43_smoke.py
       # V10–V22 are exact historical migration/restoration tests. They compare
       # original versioned bytes, so run them on immutable V22 rather than
       # pretending the intentional V50 layout/stylesheet changes are V22.
@@ -151,8 +157,6 @@ jobs:
         run: python tests/pages_mute_css_reference_smoke.py
       - name: Reconcile PNG button preview with exact latest WIRE source and geometry
         run: python tests/pages_png_buttons_wire_reconciliation_smoke.py
-      - name: Verify V6 contextual buttons, momentary press and zero pointer scroll
-        run: python tests/pages_contextual_buttons_smoke.py
       - name: Verify V6 contextual OFF and ON readability, SVG ink and WIRE matrix statuses
         run: python tests/pages_contextual_contrast_smoke.py
       - name: Verify V18 square Material icon controls and calibrated fader + VU rulers
@@ -161,8 +165,6 @@ jobs:
         run: python tests/pages_m1_meter_gain_calibration_smoke.py
       - name: Verify M3 meter/clip/menu/FX/receiving multi-wire operator contract
         run: python tests/pages_m3_operator_visual_interaction_smoke.py
-      - name: Verify V50 compact console WIRE configuration popouts and dBFS tick insets
-        run: python tests/pages_v50_wire_popout_layout_smoke.py
       - name: Run mixer UI smoke tests
         run: python tests/ui_smoke.py
       - name: Verify Preview V2 V7 physical visual geometry and modeless mixer workflow
@@ -173,8 +175,6 @@ jobs:
         run: python tests/pages_wire_focus_v40_smoke.py
       - name: Verify V42 original OUT fill and magnetic dot-follow drag
         run: python tests/pages_wire_dot_v42_smoke.py
-      - name: Verify V43 public Pages WIRE CSS, incoming cables and propagating socket impact
-        run: python tests/pages_wire_incoming_v43_smoke.py
       - name: Verify V44 dock, cable-matched dots, right labels, folded row and broader impact
         run: python tests/pages_wire_v44_finish_smoke.py
       - name: Verify V45 destination channel-color socket and collision-free responsive captions
