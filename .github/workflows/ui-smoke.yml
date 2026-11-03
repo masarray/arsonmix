@@ -113,6 +113,8 @@ jobs:
         run: python tests/pages_css_architecture_v20_smoke.py
       - name: Verify V21 physical console chassis geometry owner and visual parity
         run: python tests/pages_css_architecture_v21_smoke.py
+      - name: Verify V22 legacy hardware-key material migration and exact V21 visual parity
+        run: python tests/pages_css_architecture_v22_smoke.py
       - name: Verify embedded Inter font and contextual V7 micro-controls
         run: python tests/pages_inter_utility_v7_smoke.py
       - name: Validate exact alpha micro hardware sprite states and WIRE coexistence
@@ -194,6 +196,7 @@ jobs:
             pages-v14-tokens-console-1680.png
             pages-v15-clean-cascade-1680.png
             pages-v16-wire-owner-1680.png
+            pages-v22-legacy-keys-1680.png
             pages-v7-embedded-inter-utility-1680.png
             pages-mixer-v6-OFF-1680.png
             pages-mixer-v6-ON-1680.png

@@ -32,8 +32,9 @@ def manifest():
 def reconstruct():
     """Return the exact pre-V21 V20 HTML and pre-V21 Chrome owner."""
     data=manifest()
-    live=HTML.read_text(encoding="utf-8")
-    chrome=CHROME.read_text(encoding="utf-8")
+    # V22 restores its strictly fingerprinted V21 predecessor first.
+    from css_v22_restore import reconstruct as restore_v21_source
+    live,chrome=restore_v21_source()
     assert (len(live),fingerprint(live))==(
         data["current"]["htmlLength"],data["current"]["htmlFNV"]
     ),"V21 HTML drift: source contract must not be silently rebaselined"
