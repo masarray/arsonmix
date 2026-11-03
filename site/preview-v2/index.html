@@ -162,46 +162,11 @@
 /* Static bezel structure deliberately resides OUTSIDE the button element.
    ::after has z-index 4 over button (z-index 2); pointer-events:none, and
    never inherits keycap's transform, MUTE state, or active/hover behavior. */
-.console-body .strip .switch-section .hw-switch-socket {
- position:relative!important;
- display:flex!important;
- align-items:stretch!important;
- justify-content:stretch!important;
- flex:1 1 0!important;
- min-width:0!important;
- height:calc(var(--switch-h) - 7px)!important;
- max-height:34px!important;
- min-height:24px!important;
- padding:2px!important;
- box-sizing:border-box!important;
- isolation:isolate!important;
- overflow:hidden!important;
-}
-.console-body .strip .switch-section .hw-switch-socket::before {
- content:""!important;
- position:absolute!important;inset:1px!important;pointer-events:none!important;
- border-radius:2px!important;
- box-shadow:inset 0 1px 0 #000,inset 0 -1px 0 #2a404c!important;
-}
-.console-body .strip .switch-section .hw-switch-socket::after {
- content:""!important;
- position:absolute!important;inset:0!important;
- border:1px solid #0a131a!important;
- background:transparent!important;
-}
-.console-body .strip .switch-section .hw-switch-socket>.switch {
- position:relative!important;z-index:2!important;
- flex:1 1 auto!important;
- min-width:0!important;width:100%!important;
- height:100%!important;min-height:0!important;max-height:none!important;
- padding:0 1px!important;
- border-radius:2px!important;
- transform:translateY(0)!important;
- overflow:hidden!important;
-}
-.console-body .strip .switch-section .hw-switch-socket>.switch:active:not(:disabled) {
- transform:translateY(1px)!important;
-}
+
+
+
+
+
 /* No rectangular mask over switch text: upper bezel is ONLY 1px edge,
    mounted in the parent frame, not a moving overlay on the cap. */
 .console-body .strip .switch-section {
@@ -209,9 +174,7 @@
 }
 /* V22 fader: keep original metal PNG, size it ~11% smaller; increase the
    full calibration travel consistently across master, channel and rail.
-   FX absorbs up to 6px extra fader height only when viewport allows; short screens keep original dock. */.console-body .strip .gain-scale-travel {
-
-}
+   FX absorbs up to 6px extra fader height only when viewport allows; short screens keep original dock. */
 /* Selected channel border is ON TOP of every sub-panel, never buried.
    Reuse the existing root strip::after instead of adding DOM nodes or
    using strip's background/inset-box-shadow behind opaque children. */
@@ -297,7 +260,7 @@
 
 
 </style>
-<link rel="stylesheet" href="assets/mixer-control-keys.css?v=css-v25-physical-key-owner">
+<link rel="stylesheet" href="assets/mixer-control-keys.css?v=css-v26-retired-socket-pruned">
 <link rel="stylesheet" href="assets/mixer-fx-rack.css?v=fx-owner-v8-m3-inserts-v24-pruned">
 <link rel="stylesheet" href="assets/mixer-plugin-browser.css?v=css-plugin-owner-v17">
 <link rel="stylesheet" href="assets/mixer-pan-controls.css?v=css-owner-v9-pan-up5-v23">
