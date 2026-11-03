@@ -3633,7 +3633,10 @@ function syncVisibleWireDots(svg){
   // Track a real visible arrival separately from an armed or stored route.
   // The receiving ring uses --ch (its own channel); the inner dot still
   // uses the incoming wire's SVG hue and opacity.
-  if(isInput)node.toggleAttribute('data-wire-arrival',arrivals.has(trackId));
+  if(isInput){
+   if(arrivals.has(trackId))node.setAttribute('data-wire-arrival','true');
+   else node.removeAttribute('data-wire-arrival');
+  }
   const edge=visible.get(key);
   if(!edge){node.removeAttribute('data-wire-visible');continue;}
   node.setAttribute('data-wire-visible','true');
