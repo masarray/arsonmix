@@ -103,3 +103,25 @@
 .console-body .strip .fx-section{background:var(--v13-insert)!important}
 .console-body .fx-section .grip{display:inline-flex;align-items:center;justify-content:center}
 .console-body .fx-section .grip .mi-svg{width:13px;height:15px}
+
+/* M3: a vacant insert is not a powered device. Preserve its 17px hardware
+   lane so + Add FX aligns exactly with instantiated insert names. */
+.console-body .fxslot-row .fx-slot-placeholder{
+ display:inline-flex;flex:0 0 17px;width:17px;height:17px;min-width:17px;
+ visibility:hidden;pointer-events:none;
+}
+
+/* Shared physical FX flex contract: the rail MUST shrink with its channel
+   racks at short viewport heights (e.g. 1366x768). Own this after the old
+   inline layout recipe, not in early Chrome CSS where it was overwritten. */
+.console-body:not(.collapsed-fx) .section-rail>.rail-cell.fx{
+  flex:1 1 var(--fx-h)!important;min-height:23px!important;
+}
+
+/* Taller screens: the M3 two-row WIRE header adds 14px versus the old single
+   row. Reserve four readable FX slots by returning exactly that budget from
+   the long physical fader travel (not from meter/gain calibration). The rail
+   and channel fader both use this same canonical variable. */
+@media(min-height:801px){
+ .console-body{--v13-fader-h:clamp(160px,calc(100dvh - 598px),530px)!important}
+}

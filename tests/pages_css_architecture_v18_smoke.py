@@ -71,7 +71,7 @@ async def main():
     from css_v21_restore import manifest as v21_manifest
     assert CHROME.read_text(encoding="utf-8")==(
         old_chrome+v19_manifest()["movedChromeSuffix"]+
-        v21_manifest()["sourceInlinePrefix"]
+        v21_manifest()["sourceInlinePrefix"]+__import__("gui_m3_compat").suffix("chrome")[1]
     )
     original_rule=data["originalStyle"].split(".console-body .switch.btn-180{",1)[1].split("}",1)[0]
     new_rule=data["prefix"].split(".console-body .switch.btn-180{",1)[1].split("}",1)[0]

@@ -32,9 +32,17 @@ def manifest():
 def reconstruct():
     """Return the exact pre-V21 V20 HTML and pre-V21 Chrome owner."""
     data=manifest()
+    # M3 is a later operator UI milestone: verify V21's historical ledger
+    # against a *reversible, explicit* normalization of M3-only changes.
+    # The approved V21 fingerprints below are never relaxed or rebaselined.
+    from gui_m3_compat import transform,suffix
     from gui_v49_restore import historical_html
-    live=historical_html()
-    chrome=CHROME.read_text(encoding="utf-8")
+    source=historical_html()
+    live=transform(source,reverse=True,skip={"chrome version"})
+    m3_link="assets/mixer-chrome-material.css?v=css-chrome-owner-v21-m3-header"
+    assert live.count(m3_link)==1
+    live=live.replace(m3_link,data["newLink"],1)
+    chrome,m3_tail=suffix("chrome")
     assert (len(live),fingerprint(live))==(
         data["current"]["htmlLength"],data["current"]["htmlFNV"]
     ),"V21 HTML drift: source contract must not be silently rebaselined"
@@ -67,7 +75,7 @@ def reconstruct():
     assert (len(previous),fingerprint(previous))==(
         data["old"]["htmlLength"],data["old"]["htmlFNV"]
     ),"V20 approved HTML fingerprint must stay immutable"
-    return previous,old_chrome
+    return transform(previous,skip={"chrome version"}),old_chrome+m3_tail
 
 def mount_owner(html,old_chrome=None):
     """Mount the original Chrome CSS next to a historical file:// baseline."""

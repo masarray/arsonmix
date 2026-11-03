@@ -33,7 +33,9 @@ async def source_audit():
     assert "/* ARSONMIX GLOBAL HARDWARE KEY V1" in HTML.read_text(encoding="utf-8")
     assert data["newLink"] in HTML.read_text(encoding="utf-8")
     assert data["oldLink"] in prior
-    assert CHROME.read_text(encoding="utf-8")==owner+prefix
+    from gui_m3_compat import suffix
+    m3_tail=suffix("chrome")[1]
+    assert CHROME.read_text(encoding="utf-8")==owner[:-len(m3_tail)]+prefix+m3_tail
 
 async def main():
     await source_audit()
