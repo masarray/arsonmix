@@ -2139,10 +2139,17 @@ function sectionSend(t){
 function formatDb(n){return n<=-60?'-∞':(n>0?'+':'')+Number(n).toFixed(1);}
 function panLabel(n){return Number(n)===0?'C':n<0?'L'+Math.abs(n):'R'+n;}
 function panStyle(n){const left=Math.min(50,50+n/2),right=Math.max(50,50+n/2);return '--pan-start:'+left+'%;--pan-end:'+right+'%';}
+/* M1: one calibrated linear-dB position model for gain, ruler ticks and
+   UI-only dBFS preview. Physical fader travel and actual DSP are untouched. */
+const METER_DBFS_MIN=-60, METER_DBFS_MAX=0;
 function rangePct(v,min,max){return Math.max(0,Math.min(100,100*(Number(v)-min)/(max-min)));}
-function faderPercent(value,isSend){
- const min=-60,max=isSend?6:10;
- return Math.max(0,Math.min(100,((Number(value)-min)/(max-min))*100));
+function scaleTopPct(db,min,max){return 100-rangePct(db,min,max);}
+function faderPercent(value,isSend){return rangePct(value,-60,isSend?6:10);}
+function meterDbfsPercent(dbfs){return rangePct(dbfs,METER_DBFS_MIN,METER_DBFS_MAX);}
+function demoMeterDbfs(faderDb,modulation){
+ // Simulated acoustic envelope in dBFS, NOT the signal-processing engine.
+ // One decibel of preview gain changes the displayed signal by one dB.
+ return Math.max(METER_DBFS_MIN,Math.min(METER_DBFS_MAX,-51+54*modulation+Number(faderDb)));
 }
 function sectionFader(t){
  const isSend=sofEnabled&&t.kind==='audio',value=isSend?getSofLevel(t):t.level,percent=faderPercent(value,isSend),gainMax=isSend?6:10;
@@ -2151,11 +2158,11 @@ function sectionFader(t){
  // numerals that crowd the compact rails. Minor tick marks remain visible.
  const vuScale=vuTicks.map(v=>{
   const major=v%12===0;
-  return '<span class="vu-tick '+(major?'major':'minor')+(v===0?' zero':'')+'" style="top:'+(-v/60*100)+'%"><span>'+(major?v:'')+'</span></span>';
+  return '<span class="vu-tick '+(major?'major':'minor')+(v===0?' zero':'')+'" style="top:'+scaleTopPct(v,METER_DBFS_MIN,METER_DBFS_MAX)+'%"><span>'+(major?v:'')+'</span></span>';
  }).join('');
  const gainScale=gainTicks.map(v=>{
   const major=v!==-6;
-  return '<span class="gain-tick '+(major?'major':'minor')+(v===0?' unity':'')+'" style="top:'+((gainMax-v)/(gainMax+60)*100)+'%"><span>'+(major?(v<=-60?'−∞':v>0?'+'+v:v):'')+'</span></span>';
+  return '<span class="gain-tick '+(major?'major':'minor')+(v===0?' unity':'')+'" style="top:'+scaleTopPct(v,-60,gainMax)+'%"><span>'+(major?(v<=-60?'−∞':v>0?'+'+v:v):'')+'</span></span>';
  }).join('');
  return '<div class="fader-section"><div class="fader-head"><output class="fader-readout" aria-label="'+escapeHtml(t.name)+' level">'+(isSend?'SEND ':'')+formatDb(value)+' dB</output><span class="clip-indicator '+(t.clip?'clipping':'')+'" title="Demo clip latch">CLIP</span></div>'
  +'<div class="fader-workspace">'
@@ -3995,12 +4002,14 @@ function animateMeters(ts){
  const fedBySoloChannel=t.kind==='bus'&&tracks.some(ch=>ch.solo&&(ch.output===t.name||ch.send===t.name));
  const suppressed=t.mute||(anySolo&&!t.solo&&!routedThroughSoloBus&&!fedBySoloChannel&&t.kind!=='master');
  const modulation=.46+.23*Math.sin(meterFrame*.13+i*1.21)+.17*Math.sin(meterFrame*.31+i*2.2);
- const db=Number(t.level);
- const level=suppressed?0:Math.max(0,Math.min(95,modulation*80+(db*.78)));
+ const leftDbfs=suppressed?METER_DBFS_MIN:demoMeterDbfs(t.level,modulation);
+ // Stereo differences are measured in dB, not arbitrary LED percentages.
+ const rightDbfs=suppressed?METER_DBFS_MIN:Math.max(METER_DBFS_MIN,
+     Math.min(METER_DBFS_MAX,leftDbfs-1+0.8*Math.sin(meterFrame*.15+i)));
  const root=document.querySelector('.strip[data-id="'+t.id+'"]');if(!root)return;
  const l=root.querySelector('.meter-fill.left'),r=root.querySelector('.meter-fill.right');
- if(l)l.style.setProperty('--lit',Math.max(0,level)+'%');
- if(r)r.style.setProperty('--lit',Math.max(0,level*(.91+.08*Math.sin(meterFrame*.15+i)))+'%');
+ if(l)l.style.setProperty('--lit',meterDbfsPercent(leftDbfs)+'%');
+ if(r)r.style.setProperty('--lit',meterDbfsPercent(rightDbfs)+'%');
  });
  }
  requestAnimationFrame(animateMeters);
