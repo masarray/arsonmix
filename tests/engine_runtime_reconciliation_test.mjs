@@ -139,6 +139,21 @@ test('E5 rejected M4 structural edit and failed re-admission preserve native BUS
   assert.equal(count(callback,/dryRoutingLab_\.process\(/g),1);
 });
 
+
+test('E5 native FX return cannot advertise a no-VST dry-doubling physical bus',()=>{
+  const structural=physical.slice(physical.indexOf('NativeBusResult editNativeBus('),
+                                  physical.indexOf('bool nativeBusTopologyLive()'));
+  assert.match(structural,/role==ChannelRole::fxReturn/);
+  assert.match(structural,/FX_RETURN_REQUIRES_NATIVE_VST3_OWNER/);
+  assert.match(structural,/DynamicChannelFxLeaseBank::reuseRevision/);
+  const advertised=physical.slice(physical.indexOf('juce::var nativeBusStatus() const'),
+                                   physical.indexOf('void disable() noexcept'));
+  assert.match(advertised,/"NATIVE_CREATE_GROUP_SELECTED"/);
+  assert.match(advertised,/"NATIVE_REMOVE_BUS"/);
+  assert.doesNotMatch(advertised,/"NATIVE_CREATE_FX_RETURN_SELECTED"/,
+    'physical operator cannot create a parallel return without a real native insert');
+});
+
 test('E4 installed PATCH operator uses native ChannelId BUS ACK and real PCM snapshot, never ten-strip draft',()=>{
   const ui=read('web/monitor.js');
   const binding=ui.slice(ui.indexOf('// E4: The EXISTING routing workspace controls'),

@@ -1129,6 +1129,15 @@ public:
         if(!outputsDisarmed) {
             reply.error="OUTPUT_MUST_BE_DISARMED";return reply;
         }
+        // A new FX_RETURN has no attached native VST3 owner yet. Reusing
+        // the old lease bank cannot create an insert for the new ChannelId:
+        // its parallel input would be routed back as extra DRY PCM. Until
+        // INSERT/REMOVE FX is transactional for dynamic BUSes, reject
+        // creation instead of offering a falsely wet, louder return.
+        // Original M4 AUX 1-4 remain true processed FX return paths.
+        if(!remove.value && role==ChannelRole::fxReturn) {
+            reply.error="FX_RETURN_REQUIRES_NATIVE_VST3_OWNER";return reply;
+        }
         if(remove.value && originalM4Aux(remove)) {
             reply.error="FIXED_M4_AUX_NOT_REMOVABLE";return reply;
         }
@@ -1228,8 +1237,10 @@ public:
             std::to_string(routing->rosterRevision)));
         state->setProperty("structural",nativeStructureLive_);
         juce::Array<juce::var> allowed;
+        // Only expose operations backed by a real DSP lease. Dynamic
+        // FX_RETURN insertion is not available until a native VST3 owner
+        // can be prepared for its new ChannelId; do not advertise it.
         for(const char* op: {"NATIVE_CREATE_GROUP_SELECTED",
-                             "NATIVE_CREATE_FX_RETURN_SELECTED",
                              "NATIVE_REMOVE_BUS","NATIVE_SET_BUS_MIX"})
             allowed.add(juce::var(juce::String(op)));
         state->setProperty("supportedOps",juce::var(allowed));
