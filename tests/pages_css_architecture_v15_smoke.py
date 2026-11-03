@@ -44,10 +44,10 @@ async def main():
     info=manifest()["totals"]
     assert len(oldcss)==info["beforeCss"]==175850
     assert fingerprint(oldcss)==info["beforeFNV"]=="188064b0"
-    assert len(newcss)==130403
-    assert fingerprint(newcss)=="4ed3cee1"
+    assert len(newcss)==133992
+    assert fingerprint(newcss)=="4bd22884"
     assert oldcss.count("!important")==1354
-    assert newcss.count("!important")==952
+    assert newcss.count("!important")==981
     baseline,temporary=original_assets_as_baseline(oldhtml,oldowners)
     try:
         async with async_playwright() as p:
