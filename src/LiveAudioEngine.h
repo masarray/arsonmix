@@ -1273,6 +1273,74 @@ public:
             epoch,pcmRevision,rosterRevision,role,selected,
             name,gain,remove,true);
     }
+    // User-owned VST3 on a true dynamic ChannelId. Instantiation/scan/layout
+    // work is CONTROL only; the callback receives an immutable fx lease.
+    LiveDryRoutingLab::NativeBusResult installNativeVst3(
+            std::uint64_t ep,std::uint64_t pcmRevision,
+            std::uint64_t rosterRevision,armix::mixer::ChannelId id,
+            const juce::String& path,int uid,const juce::String& catalogId) {
+        LiveDryRoutingLab::NativeBusResult fail{};
+        fail.error="NATIVE_VST3_HOST_UNAVAILABLE";
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(independent_.active()||!attached_||!device||
+           !directFence_.permitted()||!allOutputsDisarmed()||
+           handoff_.busy()||fxMovePhase_.load(std::memory_order_acquire)!=0||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal)return fail;
+        if(ep!=deviceStartCount_.load(std::memory_order_acquire))
+            {fail.error="NATIVE_VST3_DEVICE_CHANGED";return fail;}
+        const auto rate=device->getCurrentSampleRate();
+        const int frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
+        if(!(rate>0.)||frames>LiveDryRoutingLab::Block::hardFrameLimit)
+            {fail.error="NATIVE_VST3_UNSUPPORTED_DEVICE_QUANTUM";return fail;}
+        auto* fmt=formats_.getFormat(0);
+        if(!fmt||!fmt->fileMightContainThisPluginType(path))
+            {fail.error="NATIVE_VST3_MODULE_NOT_FOUND";return fail;}
+        try {
+            juce::OwnedArray<juce::PluginDescription> descriptions;
+            fmt->findAllTypesForFile(descriptions,path);
+            juce::PluginDescription* chosen=nullptr;
+            for(auto* item:descriptions)
+                if(item&&item->uniqueId==uid&&!item->isInstrument)
+                    {chosen=item;break;}
+            if(!chosen){fail.error="NATIVE_VST3_IDENTITY_NOT_FOUND";return fail;}
+            juce::String pluginError;
+            auto instance=formats_.createPluginInstance(*chosen,rate,
+                frames,pluginError);
+            if(!instance){fail.error="NATIVE_VST3_CREATE_FAILED";return fail;}
+            const auto layout=armix::vst::prepareStereoEffectLayout(*instance);
+            if(layout.isNotEmpty()){
+                fail.error="NATIVE_VST3_INCOMPATIBLE_STEREO_LAYOUT";return fail;
+            }
+            instance->prepareToPlay(rate,frames);
+            if(instance->getLatencySamples()!=0) {
+                fail.error="NATIVE_VST3_REQUIRES_PDC";return fail;
+            }
+            auto lease=std::make_shared<
+                armix::mixer::LiveChannelFxGraph::FxInstance>(
+                std::move(instance),catalogId,chosen->name,
+                LiveDryRoutingLab::Block::hardFrameLimit);
+            return dryRoutingLab_.attachNativeInsert(ep,pcmRevision,
+                rosterRevision,id,catalogId,std::move(lease),true);
+        } catch(...) {
+            fail.error="NATIVE_VST3_VENDOR_PREPARE_FAILED";return fail;
+        }
+    }
+    bool bypassNativeVst3(std::uint64_t epoch,std::uint64_t revision,
+            armix::mixer::ChannelId id,std::size_t slot,
+            const juce::String& token,bool bypass) noexcept {
+        return dryRoutingLab_.bypassNativeInsert(epoch,revision,id,slot,
+                                                 token,bypass);
+    }
+    armix::mixer::LiveChannelFxGraph::InstanceLease leaseNativeVst3Editor(
+            std::uint64_t epoch,std::uint64_t revision,
+            armix::mixer::ChannelId id,std::size_t slot,
+            const juce::String& token) const noexcept {
+        return dryRoutingLab_.leaseNativeInsertEditor(
+            epoch,revision,id,slot,token);
+    }
+
     LiveDryRoutingLab::NativeBusResult createNativeInputChannel(
             std::uint64_t epoch,std::uint64_t pcmRevision,
             std::uint64_t rosterRevision,const std::string& name,

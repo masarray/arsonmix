@@ -1108,6 +1108,101 @@ public:
         std::uint64_t pcmRevision=0,rosterRevision=0;
         const char* error="NATIVE_GRAPH_NOT_READY";
     };
+    // A real VST3 instance is prepared in LiveAudioEngine on CONTROL before
+    // this call. ChannelId roster, actual processor lease and the one PCM
+    // renderer commit as ONE accepted native revision. Previous sound/owner
+    // survives plugin validation, routing or publication failure.
+    NativeBusResult attachNativeInsert(
+            std::uint64_t expectedEpoch,std::uint64_t expectedPcmRevision,
+            std::uint64_t expectedRosterRevision,armix::mixer::ChannelId target,
+            const juce::String& catalogId,
+            armix::mixer::DynamicChannelFxLeaseBank::Lease processor,
+            bool outputsDisarmed=false) {
+        using namespace armix::mixer;
+        NativeBusResult out{};
+        out.pcmRevision=nativeAccepted_.pcmRevision;
+        out.rosterRevision=nativeAccepted_.graph.roster.revision();
+        if(!channelIdPhysicalPcmActive()||!ready()||
+           expectedEpoch!=epoch()||nativeAccepted_.deviceEpoch!=expectedEpoch||
+           !nativeAccepted_.fxOwners||!processor||!processor->processor||
+           expectedPcmRevision!=nativeAccepted_.pcmRevision||
+           expectedRosterRevision!=nativeAccepted_.graph.roster.revision())
+            return out;
+        if(!outputsDisarmed) {out.error="OUTPUT_MUST_BE_DISARMED";return out;}
+        const auto* current=nativeAccepted_.graph.roster.find(target);
+        if(!current || (current->role!=ChannelRole::input &&
+                        current->role!=ChannelRole::group)) {
+            out.error="NATIVE_INSERT_TARGET_UNAVAILABLE";return out;
+        }
+        // The fixed 10 CH/4 AUX rack remains owned by M4/Show while migrating.
+        // Never replace or double-render one of its vendor instances.
+        for(const auto id:nativeAccepted_.graph.ids.inputs)
+            if(id==target){out.error="M4_INSERT_USE_EXISTING_RACK";return out;}
+        if(originalM4Aux(target)){
+            out.error="M4_INSERT_USE_EXISTING_RACK";return out;
+        }
+        if(catalogId.isEmpty()||catalogId.getNumBytesAsUTF8()>256) {
+            out.error="INVALID_VST3_CATALOG_ID";return out;
+        }
+        try {
+            auto next=nativeAccepted_.graph.roster;
+            ChannelEdit add;add.kind=ChannelEdit::Kind::addInsertReference;
+            add.id=target;add.text=catalogId.toStdString();
+            const std::array<ChannelEdit,1> edits{add};
+            if(!next.edit(expectedRosterRevision,edits).ok()) {
+                out.error="NATIVE_INSERT_CAPACITY_REJECTED";return out;
+            }
+            DynamicChannelFxLeaseBank prepared;
+            const auto fault=DynamicChannelFxLeaseBank::appendOwned(
+                expectedEpoch,expectedPcmRevision+1,*nativeAccepted_.fxOwners,
+                target,current->format,std::move(processor),prepared);
+            if(fault!=DynamicChannelFxLeaseBank::Fault::none) {
+                out.error="NATIVE_VST3_LEASE_PREPARE_REJECTED";return out;
+            }
+            auto owner=std::make_shared<DynamicChannelFxLeaseBank>(
+                std::move(prepared));
+            DynamicNativeSessionPublisher::FxPlan fx;
+            fx.owner=std::static_pointer_cast<void>(owner);
+            fx.context=owner.get();
+            fx.render=+[](void* ctx,ChannelId id,float* l,float* r,int n) noexcept{
+                (*static_cast<DynamicChannelFxLeaseBank*>(ctx))(id,l,r,n);
+            };
+            fx.deviceEpoch=expectedEpoch;
+            fx.graphRevision=expectedPcmRevision+1;
+            const auto published=nativePublisher_.commit(
+                next,nativeAccepted_.graph.request,expectedPcmRevision,
+                expectedEpoch,epoch(),true,std::move(fx));
+            if(!published.ok()) {
+                out.error="NATIVE_VST3_PCM_COMMIT_REJECTED";return out;
+            }
+            nativeAccepted_.graph.roster=std::move(next);
+            nativeAccepted_.fxOwners=std::move(owner);
+            nativeAccepted_.pcmRevision=published.revision;
+            nativeStructureLive_=true; // M4 Show cannot represent new inserts.
+            nativeMeterEpoch_.store(0,std::memory_order_release);
+            out.accepted=true;out.error="";
+            out.pcmRevision=published.revision;
+            out.rosterRevision=nativeAccepted_.graph.roster.revision();
+            out.created=target;
+            return out;
+        } catch(...) {
+            out.error="NATIVE_VST3_ADMISSION_FAILED";return out;
+        }
+    }
+    bool bypassNativeInsert(std::uint64_t epochAtEdit,std::uint64_t pcmRevision,
+            armix::mixer::ChannelId target,std::size_t slot,
+            const juce::String& token,bool bypass) noexcept {
+        return nativeAccepted_.setFxBypass(nativePublisher_,epochAtEdit,
+            pcmRevision,target,slot,token,bypass);
+    }
+    armix::mixer::DynamicChannelFxLeaseBank::Lease leaseNativeInsertEditor(
+            std::uint64_t epochAtEdit,std::uint64_t pcmRevision,
+            armix::mixer::ChannelId target,std::size_t slot,
+            const juce::String& token) const noexcept {
+        return nativeAccepted_.leaseFxEditor(nativePublisher_,epochAtEdit,
+            pcmRevision,target,slot,token);
+    }
+
     NativeBusResult editNativeBus(std::uint64_t expectedEpoch,
                   std::uint64_t expectedPcmRevision,
                   std::uint64_t expectedRosterRevision,
@@ -1433,7 +1528,9 @@ public:
                              "NATIVE_REMOVE_BUS","NATIVE_SET_BUS_MIX",
                              "NATIVE_CREATE_CHANNEL","NATIVE_PATCH_CHANNEL",
                              "NATIVE_SET_CHANNEL_MIX",
-                             "NATIVE_SET_CHANNEL_MUTE_SOLO"})
+                             "NATIVE_SET_CHANNEL_MUTE_SOLO",
+                             "NATIVE_LOAD_INSERT","NATIVE_SET_INSERT_BYPASS",
+                             "NATIVE_OPEN_INSERT_EDITOR"})
             allowed.add(juce::var(juce::String(op)));
         state->setProperty("supportedOps",juce::var(allowed));
         juce::Array<juce::var> rows;
@@ -1466,6 +1563,21 @@ public:
             }
             row->setProperty("primaryOutput",
                 juce::String(std::to_string(ch.primaryOutput.value)));
+            juce::Array<juce::var> liveInserts;
+            const auto fxCount=nativeAccepted_.fxOwners->insertCount(ch.id);
+            for(std::size_t slot=0;slot<fxCount;++slot) {
+                const auto* lease=nativeAccepted_.fxOwners->ownerForControl(
+                    ch.id,slot);
+                if(!lease||!*lease)continue;
+                auto item=std::make_unique<juce::DynamicObject>();
+                item->setProperty("instanceId",(*lease)->instanceId);
+                item->setProperty("id",(*lease)->catalogId);
+                item->setProperty("name",(*lease)->name);
+                item->setProperty("bypassed",(*lease)->bypassRequested.load(
+                    std::memory_order_relaxed));
+                liveInserts.add(juce::var(item.release()));
+            }
+            row->setProperty("inserts",juce::var(liveInserts));
             if(pcmMeterValid && meterIndex<nativeMeterCapacity) {
                 row->setProperty("peakL",static_cast<double>(
                     nativeMeterPeaksL_[meterIndex].load(std::memory_order_relaxed)));

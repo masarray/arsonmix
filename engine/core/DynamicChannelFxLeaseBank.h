@@ -208,6 +208,40 @@ public:
         return prepare(epoch,revision,retained,destination,prior.external_);
     }
 
+    // CONTROL thread: publish a newly instantiated vendor insert on an
+    // independently owned ChannelId, retaining old leases/state/tails.
+    // This does NOT call a vendor or allocate from the audio callback.
+    static Fault appendOwned(std::uint64_t epoch,std::uint64_t revision,
+            const DynamicChannelFxLeaseBank& prior,ChannelId target,
+            ProcessingFormat format,Lease plugin,
+            DynamicChannelFxLeaseBank& destination) {
+        if(!epoch||epoch!=prior.epoch_||revision<=prior.revision_)
+            return Fault::invalidEpoch;
+        if(!target.value)return Fault::emptyId;
+        if(!plugin||!plugin->processor)return Fault::emptyLease;
+        if(prior.external_.id==target)return Fault::invalidExternalLease;
+        std::vector<Assignment> list;
+        list.reserve(prior.rows_.size()+1);
+        bool found=false;
+        for(const auto& row:prior.rows_) {
+            Assignment a;a.id=row.id;a.format=row.format;
+            a.inserts.reserve(row.count+(row.id==target?1:0));
+            for(std::size_t i=0;i<row.count;++i)a.inserts.push_back(row.owners[i]);
+            if(row.id==target) {
+                if(row.count>=maxInserts)return Fault::tooManyInserts;
+                if(row.format!=format)return Fault::invalidBusLayout;
+                a.inserts.push_back(plugin);found=true;
+            }
+            list.push_back(std::move(a));
+        }
+        if(!found) {
+            Assignment a;a.id=target;a.format=format;
+            a.inserts.push_back(std::move(plugin));
+            list.push_back(std::move(a));
+        }
+        return prepare(epoch,revision,list,destination,prior.external_);
+    }
+
     // Process each M4 VST exactly once at its target ChannelId. CPU work is
     // proportional to that node's FX rack, not every Channel in the session.
     // Call only on the native audio thread after epoch/revision graph admission.

@@ -172,6 +172,24 @@ static void verifyUniversalChannelIdFxLeaseAndLivePcm() {
            Bank::Fault::none);
     assert(bank.lanes()==4&&bank.insertCount(ch11)==1&&
            bank.insertCount(bus)==1&&bank.insertCount(ret)==1);
+    // Production control transaction appends a NEW real vendor instance
+    // to CH11 without touching original CH1, Group or FX Return owners.
+    Bank expanded;
+    auto second=newFx(1.25f,"ch11-second-vst3");
+    assert(Bank::appendOwned(epoch,3,bank,ch11,ProcessingFormat::mono,
+                             second,expanded)==Bank::Fault::none);
+    assert(expanded.insertCount(ch11)==2);
+    assert(expanded.insertCount(ch1)==bank.insertCount(ch1));
+    assert((*expanded.ownerForControl(ch11,0))->instanceId==
+           (*bank.ownerForControl(ch11,0))->instanceId);
+    assert((*expanded.ownerForControl(ch11,1))->instanceId==second->instanceId);
+    assert(Bank::appendOwned(epoch,2,bank,ch11,ProcessingFormat::mono,
+                             second,expanded)==Bank::Fault::invalidEpoch);
+    assert(expanded.revision()==3);
+    assert(Bank::appendOwned(epoch,4,expanded,ch11,ProcessingFormat::mono,
+                             second,bank)==Bank::Fault::duplicateInstance);
+    assert(bank.revision()==2); // rollback left original accepted rack intact
+
     assert(bank.ownerForControl(ch1,0)&&
            (*bank.ownerForControl(ch1,0))->instanceId==
               original->insertInstanceId(0,0));
