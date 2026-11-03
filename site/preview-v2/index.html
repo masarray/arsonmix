@@ -484,7 +484,7 @@
 <link rel="stylesheet" href="assets/mixer-plugin-browser.css?v=css-plugin-owner-v17">
 <link rel="stylesheet" href="assets/mixer-pan-controls.css?v=css-owner-v9-pan-up5-v23">
 <link rel="stylesheet" href="assets/mixer-fader-assembly.css?v=css-owner-v9-ruler-m3-left-70-v51-shadow">
-<link rel="stylesheet" href="assets/mixer-meter-display.css?v=css-owner-v9-ruler-m3-left-70-v51-portrait-numfit">
+<link rel="stylesheet" href="assets/mixer-meter-display.css?v=css-owner-v9-ruler-m3-left-70-v51-portrait-peakcell">
 <link rel="stylesheet" href="assets/mixer-utility-controls.css?v=fx-rack-user-icon-green-v21">
 <link rel="stylesheet" href="assets/inter-embedded.css?v=inter-utility-v7">
 <link rel="stylesheet" href="assets/mixer-wire-dots.css?v=v23-wire-v50-config">
@@ -1088,9 +1088,11 @@ function displayMeterDbfs(fill,dbfs,ts,key){
  const marker=lane.querySelector('.meter-peak-hold');
  if(marker){
   marker.style.opacity=peak.steps>0?'1':'0';
-  // A 3px top-line ahead of live grid; same gradient coordinates as fill.
-  const extent=Math.min(geometry.height-1,peak.steps*METER_STEP_PX+8);
-  marker.style.setProperty('--peak-extent',Math.max(3,extent)+'px');
+  // A full 6x12 portrait LED, one grid cell beyond the live level.
+  // Clip the SAME full-height gradient (no recomputed peak color).
+  const markerRow=Math.min(geometry.rows-1,Math.max(0,peak.steps));
+  const extent=(markerRow+1)*METER_STEP_PX-2;
+  marker.style.setProperty('--peak-extent',extent+'px');
  }
 }
 /* Safe read-only calibration probe: exposes pure scale math and a tiny demo
