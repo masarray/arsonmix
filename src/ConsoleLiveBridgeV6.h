@@ -575,6 +575,45 @@ public:
                     legacy.getProperty("controlPlane","").toString()!="LEGACY_M4_ORDINAL")
                 error="NATIVE_BUS_GRAPH_NOT_ADMITTED";
             else if(!payload.isObject())error="INVALID_NATIVE_BUS_PAYLOAD";
+            else if(operation=="NATIVE_CREATE_CHANNEL" ||
+                    operation=="NATIVE_PATCH_CHANNEL") {
+                if(operation=="NATIVE_CREATE_CHANNEL") {
+                    const auto name=payload.getProperty("name","").toString();
+                    const auto format=payload.getProperty("format","MONO").toString();
+                    if(name.isEmpty()||name.length()>64||
+                       (format!="MONO"&&format!="STEREO"))
+                        error="INVALID_NATIVE_CHANNEL_REQUEST";
+                    else {
+                        const auto out=engine.createNativeInputChannel(
+                            requestedEpoch,nativeRev,rosterRev,name.toStdString(),
+                            format=="STEREO"?armix::mixer::ProcessingFormat::stereo:
+                                             armix::mixer::ProcessingFormat::mono);
+                        applied=out.accepted;
+                        if(!applied)error=out.error;
+                        else {created=out.created;nativeRev=out.pcmRevision;
+                              rosterRev=out.rosterRevision;}
+                    }
+                }else{
+                    std::uint64_t id=0;
+                    const auto left=payload.getProperty("physicalLeft",juce::var());
+                    const auto right=payload.getProperty("physicalRight",juce::var(-1));
+                    const auto width=payload.getProperty("sourceFormat","MONO").toString();
+                    if(!decodeDecimal(intent.getProperty("targetChannelId",{}),id)||
+                       id==0||!left.isInt()||!right.isInt()||
+                       (width!="MONO"&&width!="STEREO"))
+                        error="INVALID_NATIVE_SOURCE_REQUEST";
+                    else {
+                        const auto out=engine.patchNativeInputSource(
+                            requestedEpoch,nativeRev,rosterRev,
+                            armix::mixer::ChannelId{id},static_cast<int>(left),
+                            static_cast<int>(right),width=="STEREO");
+                        applied=out.accepted;
+                        if(!applied)error=out.error;
+                        else {nativeRev=out.pcmRevision;
+                              rosterRev=out.rosterRevision;}
+                    }
+                }
+            }
             else if(operation=="NATIVE_SET_BUS_MIX") {
                 std::uint64_t target=0;
                 const auto rawGain=payload.getProperty("gain",juce::var());

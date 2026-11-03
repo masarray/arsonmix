@@ -1273,6 +1273,38 @@ public:
             epoch,pcmRevision,rosterRevision,role,selected,
             name,gain,remove,true);
     }
+    LiveDryRoutingLab::NativeBusResult createNativeInputChannel(
+            std::uint64_t epoch,std::uint64_t pcmRevision,
+            std::uint64_t rosterRevision,const std::string& name,
+            armix::mixer::ProcessingFormat format) {
+        LiveDryRoutingLab::NativeBusResult fail;
+        fail.error="HARDWARE_NOT_DISARMED";
+        if(independent_.active()||!attached_||!directFence_.permitted()||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal ||
+           !allOutputsDisarmed()||handoff_.busy()||
+           fxMovePhase_.load(std::memory_order_acquire)!=0)
+            return fail;
+        return dryRoutingLab_.createNativeInputChannel(
+            epoch,pcmRevision,rosterRevision,name,format,true);
+    }
+    LiveDryRoutingLab::NativeBusResult patchNativeInputSource(
+            std::uint64_t epoch,std::uint64_t pcmRevision,
+            std::uint64_t rosterRevision,armix::mixer::ChannelId channel,
+            int left,int right,bool stereo) {
+        LiveDryRoutingLab::NativeBusResult fail;
+        fail.error="HARDWARE_NOT_DISARMED";
+        if(independent_.active()||!attached_||!directFence_.permitted()||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal ||
+           !allOutputsDisarmed()||handoff_.busy()||
+           fxMovePhase_.load(std::memory_order_acquire)!=0)
+            return fail;
+        return dryRoutingLab_.patchNativeInputSource(
+            epoch,pcmRevision,rosterRevision,channel,left,right,stereo,true);
+    }
     bool nativeBusTopologyLive() const noexcept {
         return dryRoutingLab_.nativeBusTopologyLive();
     }
