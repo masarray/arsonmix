@@ -15,6 +15,19 @@ from pages_css_architecture_v11_smoke import HTML, check, PROPS
 
 ROOT=Path(__file__).resolve().parents[1]
 MANIFEST=ROOT/"tests/fixtures/css-v13-owner-removals.json"
+# Additive, independently fingerprinted V18 revisions in the CORRECT owner.
+# The V13 pre-revision bytes, declaration-removal ledger, and parity remain
+# exact; unapproved edits to either the historical prefix or new suffix fail.
+V18_OWNER_TAILS={
+    "mixer-pan-controls.css":(347,"728ddc05"),
+    "mixer-fader-assembly.css":(973,"32e76b31"),
+    "mixer-meter-display.css":(956,"66160bb8"),
+}
+def tail_fingerprint(text):
+    h=2166136261
+    for char in text:
+        h=((h^ord(char))*16777619)&0xffffffff
+    return f"{h:08x}"
 SAMPLES=[
     ".console-body", ".command-bar", ".mixer-title",
     ".console-body .section-rail", "#tracks .strip", "#master .strip",
@@ -61,21 +74,27 @@ def restore_baseline():
             assert "/" not in name and name.endswith(".css")
             path=HTML.parent/"assets"/name
             current=path.read_text(encoding="utf-8")
-            assert len(current)==record["afterSize"],name
-            restored=current
+            original=current[:record["afterSize"]]
+            tail=current[record["afterSize"]:]
+            expected_tail=V18_OWNER_TAILS.get(name,(0,"811c9dc5"))
+            assert (len(tail),tail_fingerprint(tail))==expected_tail,(name,"unapproved CSS owner tail")
+            assert len(original)==record["afterSize"],name
+            restored=original
             for entry in sorted(record["insertions"],key=lambda e:e["offset"]):
                 off=entry["offset"]
                 assert 0<=off<=len(restored),(name,off)
                 restored=restored[:off]+entry["text"]+restored[off:]
             assert len(restored)==record["beforeSize"],name
-            assert current.count("!important")==record["afterImportant"],name
+            assert original.count("!important")==record["afterImportant"],name
             assert restored.count("!important")==record["beforeImportant"],name
-            saved+=len(restored)-len(current)
-            removed_imp+=restored.count("!important")-current.count("!important")
+            saved+=len(restored)-len(original)
+            removed_imp+=restored.count("!important")-original.count("!important")
             tf=tempfile.NamedTemporaryFile(mode="w",suffix=".css",prefix=".v13-original-",
                        dir=path.parent,encoding="utf-8",delete=False)
             with tf:
-                tf.write(restored)
+                # The V18 suffix must exist on BOTH compared pages. Only the
+                # original V13 removal history differs in these reconstructions.
+                tf.write(restored+tail)
             temporary.append(Path(tf.name))
             search=f"assets/{name}?v="
             assert html.count(search)==1,name
