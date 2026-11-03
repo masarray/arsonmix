@@ -32,7 +32,8 @@ def manifest():
 def reconstruct():
     """Return the exact pre-V21 V20 HTML and pre-V21 Chrome owner."""
     data=manifest()
-    live=HTML.read_text(encoding="utf-8")
+    from gui_v49_restore import historical_html
+    live=historical_html()
     chrome=CHROME.read_text(encoding="utf-8")
     assert (len(live),fingerprint(live))==(
         data["current"]["htmlLength"],data["current"]["htmlFNV"]
