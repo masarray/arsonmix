@@ -22,9 +22,10 @@ MANIFEST=ROOT/"tests/fixtures/css-v13-owner-removals.json"
 V18_OWNER_TAILS={
     "mixer-section-controls.css":(1017,"f950adfc"), # V19 exact toolbar tail
     "mixer-pan-controls.css":(294,"01ccf01a"),
-    "mixer-fader-assembly.css":(4548,"25a7de44"),
-    "mixer-meter-display.css":(2538,"2d191341"),
+    "mixer-fader-assembly.css":(5239,"cb988af4"),
+    "mixer-meter-display.css":(4159,"94c0c481"),
     "mixer-plugin-browser.css":(4285,"1ce2ede9"), # V17 exact appended owner suffix
+    "mixer-fx-rack.css":(1068,"a5d72d84"), # M3 inert + Add FX row
 }
 def tail_fingerprint(text):
     h=2166136261
@@ -105,7 +106,9 @@ def restore_baseline():
                 v19_suffix=(v19_manifest()["movedChromeSuffix"] if name=="mixer-chrome-material.css" else "")
                 from css_v21_restore import manifest as v21_manifest
                 v21_suffix=(v21_manifest()["sourceInlinePrefix"] if name=="mixer-chrome-material.css" else "")
-                tf.write(prefix+restored+tail+v19_suffix+v21_suffix)
+                from gui_m3_compat import suffix
+                m3_tail=(suffix("chrome")[1] if name=="mixer-chrome-material.css" else "")
+                tf.write(prefix+restored+tail+v19_suffix+v21_suffix+m3_tail)
             temporary.append(Path(tf.name))
             search=f"assets/{name}?v="
             assert html.count(search)==1,name

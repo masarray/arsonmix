@@ -28,10 +28,14 @@ def manifest():
 
 def reconstruct():
     data=manifest()
-    # V21 moved a contiguous V9–V14 prefix: restore V20 *first*, then
-    # enforce this immutable V20 ledger with the original V20 fingerprints.
-    from css_v21_restore import reconstruct as restore_v20_source
-    current,_=restore_v20_source()
+    # Reverse only the explicitly recorded M3 operator delta before checking
+    # the immutable V20 CSS-only fingerprint. Reapply it to baseline HTML.
+    from gui_m3_compat import transform
+    from css_v21_restore import reconstruct as restore_pre_v21
+    source,_=restore_pre_v21()
+    current=transform(source,reverse=True,skip={"chrome version"})
+    v19_chrome="assets/mixer-chrome-material.css?v=css-chrome-owner-v19"
+    assert current.count(v19_chrome)==1
     assert (len(current),fingerprint(current))==(
         data["result"]["htmlLength"],data["result"]["htmlFNV"]
     ),"V20 live HTML changed outside approved source ledger"
@@ -61,20 +65,20 @@ def reconstruct():
     assert (len(previous),fingerprint(previous))==(
         data["original"]["htmlLength"],data["original"]["htmlFNV"]
     ),"V19 approved HTML fingerprint cannot be re-baselined"
-    return previous
+    restored=transform(previous,skip={"chrome version"})
+    assert restored.count(v19_chrome)==1
+    return restored
 
 def mount_original():
     html=reconstruct()
-    # The original V20 HTML must also load the original pre-V21 Chrome
-    # stylesheet. Otherwise its already-present inline chassis CSS doubles.
     from css_v21_restore import mount_owner as mount_pre_v21_chrome
-    html,temporary=mount_pre_v21_chrome(html)
+    html,old_owner_files=mount_pre_v21_chrome(html)
+    f=tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",suffix=".html",
+        prefix=".v20-before-shadow-cleanup-",dir=HTML.parent,delete=False)
     try:
-        f=tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",suffix=".html",
-            prefix=".v20-before-shadow-cleanup-",dir=HTML.parent,delete=False)
         with f:f.write(html)
-        temporary.append(Path(f.name))
-        return Path(f.name),temporary
+        return Path(f.name),old_owner_files+[Path(f.name)]
     except Exception:
-        for path in temporary:path.unlink(missing_ok=True)
+        Path(f.name).unlink(missing_ok=True)
+        for p in old_owner_files:p.unlink(missing_ok=True)
         raise

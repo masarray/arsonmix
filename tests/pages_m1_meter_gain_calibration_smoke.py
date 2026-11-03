@@ -38,8 +38,10 @@ def geometry(page, density, label):
         const lane=root.querySelector('.meter-lane').getBoundingClientRect();
         const gainRuler=root.querySelector('.fader-scale').getBoundingClientRect();
         const work=root.querySelector('.fader-workspace').getBoundingClientRect();
+        const head=root.querySelector('.fader-head').getBoundingClientRect();
         return {gap:g.left-c.right,wellWidth:b.width,wellRight:b.right,rulerLeft:g.left,
           capWidth:c.width,capHeight:c.height,laneWidth:lane.width,
+          meterWidth:meter.width,meterLeft:meter.left,headLeft:head.left,
           meterGap:b.left-meter.right,
           groupCenterDelta:(meter.left+gainRuler.right)/2-(work.left+work.width/2),
           meterInside:meter.left>=work.left-1,scaleInside:gainRuler.right<=work.right+1};
@@ -99,20 +101,21 @@ def geometry(page, density, label):
         assert out["gain"][-1]["text"]=="-60",(
             label,density,"finite -60dB minimum mislabeled as mute/infinity")
     if label != "png":  # frozen independent V45 PNG reference is not live M1.2
-        # M2: one compact, centered physical instrument on Master + Channel.
+        # M3: 70px meter aligned with LCD and adjacent physical fader/ruler.
         # Both gain ruler and dBFS ruler retain independent vertical references.
         assert len(out["rigs"])==2,(label,density,"missing fader rigs",out["rigs"])
         for rig in out["rigs"]:
             compact=density=="compact"
-            close(rig["wellWidth"],27 if compact else 32,.6)
+            slim=density!="comfort"
+            close(rig["wellWidth"],25 if compact else (27 if slim else 32),.6)
             close(rig["capWidth"],25 if compact else 27,.6)
             close(rig["capHeight"],50 if compact else 54,.6)
-            close(rig["laneWidth"],8,.6)
-            assert 1<=rig["meterGap"]<=7,(label,density,"meter detached from fader",rig)
-            assert 3<=rig["gap"]<=8,(label,density,"gain ruler detached from cap",rig)
-            close(rig["wellRight"],rig["rulerLeft"]-(2 if compact else 3),.75)
-            assert abs(rig["groupCenterDelta"])<=1.5,(
-                label,density,"instrument group off center",rig)
+            close(rig["laneWidth"],10,.6)
+            close(rig["meterWidth"],70,.7)
+            close(rig["meterLeft"],rig["headLeft"],1.3)
+            assert 1<=rig["meterGap"]<=4,(label,density,"meter detached from fader",rig)
+            assert 1<=rig["gap"]<=8,(label,density,"gain ruler detached from cap",rig)
+            close(rig["wellRight"],rig["rulerLeft"]-(1 if compact else (2 if slim else 3)),.75)
             assert rig["meterInside"] and rig["scaleInside"],(
                 label,density,"instrument clipped by channel",rig)
         assert out["ruler"]["x"]>=out["well"]["x"]+out["well"]["w"]-.2,(
@@ -191,7 +194,7 @@ def main():
         published=dist/"preview/mixer.html"
         assert published.read_bytes()==CANON.read_bytes(),"Published mixer source drift"
         for name in ("mixer-fader-assembly.css","mixer-meter-display.css"):
-            key=f"assets/{name}?v=css-owner-v9-ruler-m2-instrument"
+            key=f"assets/{name}?v=css-owner-v9-ruler-m3-left-70"
             assert key in published.read_text("utf-8"),("stale ruler cache URL",name)
         for name in ("mixer-fader-assembly.css","mixer-meter-display.css"):
             assert (dist/"preview/assets"/name).read_bytes()==(ASSETS/name).read_bytes(),name
