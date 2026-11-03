@@ -33,15 +33,17 @@ test('MS3A MAIN physical output patch stages through existing muted native route
   assert.match(monitor,/routingDryApply/);
   assert.doesNotMatch(gui,/audioSelectDevice|setCurrentAudioDeviceType/);
 });
-test('native device inventory and packaged WebView2 assets are wired',()=>{
+test('archived IO expert editor retains source fixtures, while the approved Console alone is shipped',()=>{
   assert.match(main,/action == "audioDeviceInventory"/);
   assert.match(main,/getAvailableDeviceTypes\(\)/);
   assert.match(main,/arMixAudioDeviceInventory/);
   for(const f of ['mixer-io.js','mixer-io.css']){
-    assert.ok(html.includes(f));
-    assert.ok(cmake.includes('web/'+f));
-    assert.ok(main.includes('/'+f));
+    assert.ok(html.includes(f), 'archival expert editor source still intact '+f);
+    assert.ok(!cmake.includes('web/'+f), 'abandoned UI must not be compiled into product '+f);
+    assert.ok(!main.includes('BinaryData::mixerio_'), 'abandoned UI cannot be served');
   }
+  assert.match(cmake,/web\/console-native\.html web\/console-native\.css web\/console-native\.js/);
+  assert.match(main,/BinaryData::consolenative_html/);
 });
 
 test('G3 inline AUX sends mutate only one native routing draft with bounded PRE/POST semantics',()=>{
@@ -156,8 +158,8 @@ test('IO-MATRIX uses only verified pins, dual-step stereo draft and native ACK w
   assert.match(gui,/\.dataset\.ioRowMode/);
   assert.match(css,/\.arIOMatrixCell\[data-assigned="true"\]/);
   assert.doesNotMatch(css,/backdrop-filter\s*:|filter\s*:\s*blur/);
-  assert.match(main,/assets\/audio-interface\.svg/);
-  assert.match(cmake,/web\/assets\/audio-interface\.svg/);
+  assert.ok(read('web/assets/audio-interface.svg').includes('<svg'), 'archived expert patch asset preserved');
+  assert.doesNotMatch(cmake,/web\/assets\/audio-interface\.svg/);
 });
 
 test('MS3B independent physical MONITOR publishes in existing native ACK transaction',()=>{
