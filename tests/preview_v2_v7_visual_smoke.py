@@ -158,7 +158,7 @@ def audit_p0_collapse(page, label):
                     assert abs(item[k]['h']-ref['h'])<=1.2,(
                         label,state,i,k,'lower height changed',ref,item[k])
                 assert abs(item[k]['top']-frame['rail'][k]['top'])<=1.2,(
-                    label,state,i,k,'rail lower not aligned')
+                    label,state,i,k,'rail lower not aligned',item[k],frame['rail'][k])
             for k in ('route','fx','send'):
                 assert abs(item[k]['top']-frame['rail'][k]['top'])<=1.2,(
                     label,state,i,k,'upper rail mismatch')
