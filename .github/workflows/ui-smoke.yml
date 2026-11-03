@@ -149,6 +149,8 @@ jobs:
         run: python tests/pages_wire_v45_socket_layout_smoke.py
       - name: Verify V46 exact dot endpoint anchors, LVL geometry and socket inner color
         run: python tests/pages_wire_v46_precision_smoke.py
+      - name: Verify V49 direct WIRE select, unarmed knob, universal wheel and scoped replug undo
+        run: python tests/pages_wire_v49_direct_controls_smoke.py
       - name: Verify G1/G2 LIVE mixer bank and native I/O transaction
         run: python tests/mixer_io_smoke.py
       - name: Verify MIX and FX RACK Auto Orbit workflow
