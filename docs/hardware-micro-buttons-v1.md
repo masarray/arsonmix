@@ -22,3 +22,16 @@ Runtime atlas: `micro-hardware-17x17-2x4.png` and `format-hardware-25x15-2x1.png
 
 Validation: `python tests/pages_micro_button_assets_v1_smoke.py`
 and the full Chromium/Firefox Pages regressions.
+
+## Operator polish · PAN + remove (2026-11-03)
+
+- Lift only the PAN thumb artwork **2 CSS px** above V18 without shifting the
+  slider's input box, center detent, track, travel or pointer/keyboard behavior.
+  The neighboring SEND thumb remains at the existing V18 position.
+- Render the delete/trash glyph in muted maroon (`#a4494e`) in its neutral
+  OFF frame instead of near-black; keep the stainless hardware button face.
+  Pointer-down still paints the existing momentary red frame with white glyph.
+- The owner files are `mixer-pan-controls.css` and `mixer-utility-controls.css`.
+  New browser regressions assert PAN geometry and the delete OFF/pressed colors.
+  WIRE anchors, routing logic, approved M/S/P PNG, native audio and CSS generator
+  are unchanged.
