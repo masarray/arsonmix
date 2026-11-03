@@ -69,7 +69,10 @@ def check_page(browser,path,label):
         page.locator('.section-rail [data-section="send"]').click()
     source=page.locator('#tracks .strip[data-id="1"] .wire-node-out')
     source.click()
-    master=page.locator('#wireMaster')
+    # V50: MAIN is located inside modeless WIRE Configuration.
+    page.locator('#wireConfigToggle').click()
+    assert page.locator('#wireConfigWindow').is_visible(),(label,'WIRE configuration did not open')
+    master=page.locator('#wireConfigWindow #wireMaster')
     on=css_for(master)
     assert on['pressed']=='true',(label,on)
     master.click()
