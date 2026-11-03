@@ -1211,42 +1211,25 @@ html * ,html *::before,html *::after{
 
 
 
-/* M3 operator header — one legible identity row plus a collapsible routing
-   control row. No component-specific overrides in the HTML inline cascade. */
+/* V50 operator-first title: a single 27px status seam, no setup controls
+   embedded in the audio workspace. WIRE settings live in the modeless
+   Config window; Routes / Matrix are dedicated command-bar tools. */
 .mixer-title{
- box-sizing:border-box!important;display:flex!important;flex-direction:column!important;
- align-items:stretch!important;justify-content:center!important;
- height:66px!important;flex:0 0 66px!important;
- padding:3px 8px 4px!important;gap:3px!important;
+ box-sizing:border-box!important;display:flex!important;flex-direction:row!important;
+ align-items:center!important;justify-content:flex-start!important;
+ height:27px!important;min-height:27px!important;flex:0 0 27px!important;
+ padding:2px 9px!important;gap:8px!important;
 }
-.mixer-title .mixer-title-top,.mixer-title .mixer-title-controls{
- box-sizing:border-box;display:flex;align-items:center;min-width:0;width:100%;
+.mixer-title .accent{flex:none}
+.mixer-title .panel-name{white-space:nowrap}
+.mixer-title .panel-sub{display:inline-flex;align-items:center;justify-content:center}
+.mixer-title .right{
+ flex:0 1 auto;margin-left:auto!important;min-width:0;overflow:hidden;
+ text-overflow:ellipsis;white-space:nowrap;
 }
-.mixer-title .mixer-title-top{flex:0 0 22px;gap:8px}
-.mixer-title .mixer-title-controls{flex:1 1 auto;gap:7px;min-height:0}
-.mixer-title .mixer-title-toggle{
- display:inline-flex;align-items:center;gap:5px;flex:none;
- background:#1d3947;border:1px solid #4c7180;border-radius:3px;
- padding:2px 8px;color:#b8e0ed;font:500 10px/1.3 Inter,"Segoe UI",sans-serif;
- cursor:pointer;
-}
-.mixer-title .mixer-title-toggle:focus-visible{outline:2px solid #9de6f4;outline-offset:1px}
-.mixer-title .mixer-title-controls .wire-legend{flex:1 1 0;max-width:none;min-width:0;margin-left:auto}
-.mixer-title .mixer-title-controls .right{flex:0 0 auto;white-space:nowrap;margin-left:0}
-.mixer-title.is-collapsed{height:30px!important;flex:0 0 30px!important;padding:3px 8px!important}
-.mixer-title.is-collapsed .mixer-title-controls{display:none!important}
-@media(max-width:1100px){
- .mixer-title .mixer-title-controls .right{display:none}
- .mixer-title .mixer-title-controls .wire-legend{min-width:65px}
-}
-
-/* M3 short-screen budget: preserve both WIRE control rows without
-   stealing the fourth FX insert row at 1366x768. Manual collapse remains. */
-@media(max-height:800px){
- .mixer-title:not(.is-collapsed){
-  height:52px!important;flex:0 0 52px!important;
-  padding:2px 8px!important;gap:1px!important;
- }
- .mixer-title .mixer-title-top{flex:0 0 21px}
- .mixer-title .mixer-title-controls{gap:5px}
+.command-bar>.wire-command{min-width:0!important;padding:0 7px!important}
+.more-tools-panel .wire-overflow{display:none!important}
+@media(max-width:1250px){
+ .command-bar>.wire-command{display:none!important}
+ .more-tools-panel .wire-overflow{display:block!important}
 }
