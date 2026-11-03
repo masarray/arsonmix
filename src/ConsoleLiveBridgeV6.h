@@ -121,7 +121,12 @@ public:
             if(peaksL.isArray())object->setProperty("channelPeaksL",peaksL);
             if(peaksR.isArray())object->setProperty("channelPeaksR",peaksR);
             if(inserts.isArray())object->setProperty("fxInstances",inserts);
-            const auto topo=route.getProperty("acceptedRoute",juce::var());
+            // The prepared/unpatched native M4 graph is a real silent route.
+            // It allows direct IN gesture to activate the FIRST source.
+            // This does not set productionCallbackLive or fake PCM.
+            const auto configured=route.getProperty("acceptedRoute",juce::var());
+            const auto prepared=route.getProperty("preparedM4Route",juce::var());
+            const auto topo=configured.isObject()?configured:prepared;
             if(topo.isObject()) {
                 const auto sends=topo.getProperty("sends",juce::var());
                 const auto returns=topo.getProperty("auxes",juce::var());
@@ -131,7 +136,10 @@ public:
                 // readbacks from the actually admitted 10-strip route. Never
                 // infer them from presentation order or a UI draft.
                 const auto channels=topo.getProperty("channels",juce::var());
-                if(connected && w.legacyActive && w.legacyRouteAccepted &&
+                if(connected && w.legacyActive &&
+                   (w.legacyRouteAccepted ||
+                       (static_cast<bool>(route.getProperty("ready",false)) &&
+                        prepared.isObject())) &&
                    !static_cast<bool>(route.getProperty("topologyFault",false)) &&
                    channels.isArray() &&
                    channels.getArray()->size()==armix::mixer::stripCount) {

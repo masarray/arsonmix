@@ -35,7 +35,8 @@ function normalize(s){
      const config=list[i]||{},control=legacy.channelControls?.[i]||{};
      actual.push({id:String(i+1),name:String(config.name||'CH '+String(i+1).padStart(2,'0')),
        role:'INPUT',format:String(config.format||'MONO'),
-       source:config.source||'',out:config.output||'MAIN',controls:control,
+       source:Number.isInteger(config.left)&&config.left>=0?
+         'in:'+config.left:'',out:config.output||'MAIN',controls:control,
        fx:legacy.fxInstances?.[i]||[],sends:[],legacy:true});
    }
    const extras=legacy.nativeBus?.channels||[];
@@ -187,7 +188,8 @@ function submitNode(n){
 function accept(s){
  if(!s||s.schemaVersion!==6)return;
  snapshot=s;rows=normalize(s);
- const signature=JSON.stringify([rows.map(r=>[r.id,r.name,r.role,r.format,r.source,r.out,r.controls,r.fx]),s.legacyM4?.supportedOps,s.legacyM4?.nativeBus?.supportedOps,s.graph?.capabilities?.supportedOps]);
+ const signature=JSON.stringify([rows.map(r=>[r.id,r.name,r.role,r.format,r.source,r.out,r.controls,r.fx]),
+   s.device?.epoch,s.device?.inputEndpoints,s.legacyM4?.supportedOps,s.legacyM4?.nativeBus?.supportedOps,s.graph?.capabilities?.supportedOps]);
  if(signature!==lastSignature){lastSignature=signature;render();}else paintMeters();
  el('transport').textContent=s.device?.outputArmed?'OUTPUT ARMED':'OUTPUT DISARMED';
  if(el('nativeOutput')){

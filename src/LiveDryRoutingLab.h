@@ -1430,6 +1430,19 @@ public:
             }
             row->setProperty("primaryOutput",
                 juce::String(std::to_string(ch.primaryOutput.value)));
+            // Actual committed physical patches. Expose the verified original
+            // physical pin, not the reordered callback ordinal.
+            for(const auto& source:nativeAccepted_.graph.request.sources) {
+                if(source.id!=ch.id)continue;
+                auto physical=std::make_unique<juce::DynamicObject>();
+                if(source.inputL>=0&&source.inputL<portCount_.load(std::memory_order_acquire)) {
+                    const auto pin=enabledPorts_[source.inputL].load(std::memory_order_relaxed);
+                    physical->setProperty("portId","in:"+juce::String(pin));
+                }
+                physical->setProperty("sourceFormat",source.stereo?"STEREO":"MONO");
+                row->setProperty("source",juce::var(physical.release()));
+                break;
+            }
             juce::Array<juce::var> sends;
             for(const auto& send:ch.parallelSends) {
                 auto edge=std::make_unique<juce::DynamicObject>();
@@ -1794,6 +1807,11 @@ public:
         // below is the single authoritative atomic-target readback, while
         // acceptedRoute remains the immutable topology of the same revision.
         if(active() && ready())out->setProperty("acceptedRoute",acceptedRoute_);
+        // A fresh device starts with a REAL native silent prepared topology.
+        // Expose it to the Console so IN can be selected directly, without
+        // inventing ten browser channels or an APPLY ROUTING prerequisite.
+        if(active() && ready() && !hasExplicitRoute() && sourceTemplate_.isObject())
+            out->setProperty("preparedM4Route",sourceTemplate_);
         juce::Array<juce::var> liveFxInstances;
         const auto* prepared=hasExplicitRoute()
             ?publisher_.controlPrepared(epoch(),revision()):nullptr;
