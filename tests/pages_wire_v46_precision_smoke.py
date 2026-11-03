@@ -52,7 +52,7 @@ def main():
   public=dist/"preview/mixer.html"
   assert public.read_bytes()==HTML.read_bytes(),"published /preview/ HTML is stale"
   assert (dist/"preview/assets/mixer-wire-dots.css").read_bytes()==CSS.read_bytes(),"public WIRE CSS differs"
-  assert "assets/mixer-wire-dots.css?v=v47" in public.read_text("utf-8")
+  assert "assets/mixer-wire-dots.css?v=v47-css-v16" in public.read_text("utf-8")
 
   with sync_playwright() as pw:
    browser=pw.chromium.launch(headless=True)
