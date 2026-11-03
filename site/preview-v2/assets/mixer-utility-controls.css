@@ -118,7 +118,7 @@
   border:0;
   border-radius:0;
   background-color:transparent;
-  background-image:url("micro-hardware-17x17-2x4.png?v=square-face-v20");
+  background-image:url("micro-hardware-17x17-2x4.png?v=fx-green-v21");
   background-repeat:no-repeat;
   background-size:200% 400%;
   background-position:var(--mx-micro-x) var(--mx-micro-y);
@@ -134,7 +134,7 @@
 .app .console-body .strip button.mx-util-key[data-util-kind="format"]{
   width:25px;max-width:25px;min-width:25px;height:15px;min-height:15px;
   --mx-micro-y:0%;
-  background-image:url("format-hardware-25x15-2x1.png?v=square-face-v20");
+  background-image:url("format-hardware-25x15-2x1.png?v=fx-green-v21");
   background-size:200% 100%;
   background-position:var(--mx-micro-x) 0%;
   padding:0;
@@ -142,7 +142,7 @@
 .app .console-body .strip button.mx-util-key[aria-pressed="true"]{
   --mx-micro-x:100%;
   background-color:transparent;
-  background-image:url("micro-hardware-17x17-2x4.png?v=square-face-v20");
+  background-image:url("micro-hardware-17x17-2x4.png?v=fx-green-v21");
   background-repeat:no-repeat;
   background-size:200% 400%;
   background-position:var(--mx-micro-x) var(--mx-micro-y);
@@ -150,8 +150,15 @@
   box-shadow:none;
   color:#f9fdff;
 }
+/* FX Rack power: bright, softly illuminated green cap while ON.
+   The power glyph remains dark for contrast, never forced white.
+   Keep exact square sprite geometry and zero extra glow/shadow. */
+.app .console-body .strip button.mx-util-key[data-util-kind="fx-main"][aria-pressed="true"],
+.app .console-body .strip button.mx-util-key[data-util-kind="fx-slot"][aria-pressed="true"]{
+  color:#163e2b;
+}
 .app .console-body .strip button.mx-util-key[data-util-kind="format"][aria-pressed="true"]{
-  background-image:url("format-hardware-25x15-2x1.png?v=square-face-v20");
+  background-image:url("format-hardware-25x15-2x1.png?v=fx-green-v21");
   background-size:200% 100%;
   background-position:100% 0%;
 }
