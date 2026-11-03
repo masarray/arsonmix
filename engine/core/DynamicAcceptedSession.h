@@ -144,6 +144,24 @@ public:
             return false;
         return accepted_.rememberLiveMix(id,linear,pan);
     }
+    // The accepted physical patch is canonical too: subsequent Group/FX
+    // graph recompiles must preserve the most recently ACKed live SOURCE.
+    bool setLivePhysicalSource(std::uint64_t epoch,std::uint64_t graphRevision,
+                               ChannelId id,int inputL,int inputR,
+                               bool stereo) noexcept {
+        if(!accepted_.find(id))return false;
+        const auto it=std::find_if(acceptedRequest_.sources.begin(),
+                                  acceptedRequest_.sources.end(),
+            [id](const DynamicSourcePatch& p){return p.id==id;});
+        if(it==acceptedRequest_.sources.end() || it->stereo!=stereo ||
+           !publisher_.setPhysicalSource(epoch,graphRevision,id,inputL,inputR,stereo))
+            return false;
+        it->inputL=inputL;it->inputR=inputR;
+        return true;
+    }
+    const DynamicGraphRequest& acceptedPhysicalRequest() const noexcept {
+        return acceptedRequest_; // CONTROL readback, not browser draft
+    }
     bool setLiveMuteSolo(std::uint64_t epoch,std::uint64_t graphRevision,
                          ChannelId id,bool mute,bool solo) noexcept {
         if(!accepted_.find(id)||
@@ -199,7 +217,20 @@ private:
                    std::uint64_t previousGraphRevision,
                    std::uint64_t requestedEpoch,std::uint64_t currentEpoch,
                    bool outputsDisarmed,Result&& result) {
-        result.native=publisher_.commit(candidate,route,previousGraphRevision,
+        // Existing SOURCE targets belong to the accepted native session.
+        // For already-patched ChannelIds with the same input format, ignore
+        // stale physical pin ordinals supplied by an old GUI draft during
+        // +GROUP/+FX Return. An explicit format change is structural.
+        auto effective=route; // CONTROL-only, never on audio callback
+        for(auto& source:effective.sources){
+            const auto prior=std::find_if(acceptedRequest_.sources.begin(),
+                acceptedRequest_.sources.end(),
+                [&](const DynamicSourcePatch& p){return p.id==source.id;});
+            if(prior!=acceptedRequest_.sources.end() &&
+               source.stereo==prior->stereo)
+                source=*prior;
+        }
+        result.native=publisher_.commit(candidate,effective,previousGraphRevision,
                                        requestedEpoch,currentEpoch,outputsDisarmed);
         if(!result.native.ok()) {
             result.fault=Fault::graphRejected;
@@ -208,12 +239,14 @@ private:
         }
         static_assert(std::is_nothrow_move_assignable_v<DynamicChannelRoster>);
         accepted_=std::move(candidate);
+        acceptedRequest_=std::move(effective);
         result.rosterRevision=accepted_.revision();
         result.graphRevision=result.native.revision;
         return result;
     }
 
     DynamicChannelRoster accepted_;
+    DynamicGraphRequest acceptedRequest_{}; // CONTROL-only accepted physical SSOT
     DynamicNativeSessionPublisher publisher_;
 };
 } // namespace armix::mixer

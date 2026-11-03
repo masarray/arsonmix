@@ -86,6 +86,23 @@ class DynamicPreparedMixerBlock final {
         std::atomic<std::uint64_t> state{Word::encode(1.f,1.f,false,false)};
         armix::dsp::RealtimeSlew64 appliedL{},appliedR{},gate{}; // AUDIO only
     };
+    // CONTROL only packs already verified callback-ordinal physical pin pairs.
+    // 0xFFFF means missing right input for mono, never an active physical pin.
+    static constexpr std::uint32_t packPhysical(int left,int right) noexcept {
+        return static_cast<std::uint32_t>(left) |
+               (static_cast<std::uint32_t>(right<0?0xffff:right)<<16);
+    }
+    static constexpr int physicalLeft(std::uint32_t word) noexcept {
+        return static_cast<int>(word&0xffffu);
+    }
+    static constexpr int physicalRight(std::uint32_t word) noexcept {
+        const auto right=static_cast<int>((word>>16)&0xffffu);
+        return right==0xffff?-1:right;
+    }
+    struct SourceFade final {
+        std::uint32_t current=0,next=0;
+        int remaining=0; // AUDIO only; pending CONTROL target is one atomic
+    };
     struct SendTarget final {
         static_assert(std::atomic<float>::is_always_lock_free,
             "Realtime SEND must never enter a hidden blocking atomic path");
@@ -121,6 +138,25 @@ public:
         // with this fader/PAN target, never four separately loaded controls.
         target.state.store(Word::encode(gains.left,gains.right,old.mute,old.solo),
                            std::memory_order_release);
+        return true;
+    }
+    // Same-format live physical INPUT switch. Stable ChannelId and VST
+    // instance never change; retain one latest target, no command FIFO.
+    // A new source request during the 64-sample crossfade is coalesced and
+    // starts only after the current ramp completes, avoiding a click.
+    bool setPhysicalSource(ChannelId id,int inputL,int inputR,
+                           bool stereo) noexcept {
+        if(!id.value||inputL<0||inputL>=physicalInputs_||
+           inputL>=0xffff||inputR>=0xffff ||
+           (stereo&&(inputR<0||inputR>=physicalInputs_||inputR==inputL))||
+           (!stereo&&inputR!=-1))return false;
+        const auto it=controlIndex_.find(id.value);
+        if(it==controlIndex_.end())return false;
+        const auto& lane=lanes_[it->second];
+        if(lane.role!=ChannelRole::input || lane.inputL<0 ||
+           lane.inputStereo!=stereo)return false; // format requires APPLY
+        sourceTargets_[it->second].store(packPhysical(inputL,inputR),
+                                          std::memory_order_release);
         return true;
     }
     bool setChannelMuteSolo(ChannelId id,bool mute,bool solo) noexcept {
@@ -174,6 +210,7 @@ public:
         }
         DynamicPreparedMixerBlock next;
         next.capacity_=req.maxFrames;
+        next.physicalInputs_=req.physicalInputs;
         const auto& rows=roster.channels();
         next.lanes_.reserve(rows.size());
         std::unordered_map<std::uint64_t,std::size_t> byId;
@@ -375,6 +412,15 @@ public:
         std::size_t slot=0;
         for(auto i:next.renderOrder_)next.lanes_[i].slot=slot++;
         next.scratch_.assign(active*2*frame,0.f);
+        next.sourceTargets_=std::make_unique<std::atomic<std::uint32_t>[]>(rows.size());
+        next.sourceFades_=std::make_unique<SourceFade[]>(rows.size());
+        for(std::size_t i=0;i<rows.size();++i){
+            const auto& lane=next.lanes_[i];
+            if(lane.inputL<0)continue;
+            const auto initial=packPhysical(lane.inputL,lane.inputR);
+            next.sourceTargets_[i].store(initial,std::memory_order_relaxed);
+            next.sourceFades_[i].current=next.sourceFades_[i].next=initial;
+        }
         next.channelTargets_=std::make_unique<ChannelTarget[]>(rows.size());
         next.blockTargets_.resize(rows.size());
         next.soloAncestors_.assign(rows.size(),0);
@@ -470,16 +516,53 @@ public:
             const auto& lane=lanes_[i];
             float* const l=scratch_.data()+lane.slot*2*block;
             float* const r=l+block;
-            if(lane.inputL>=0 && physical && lane.inputL<physicalCount &&
-               physical[lane.inputL]) {
-                const float* const a=physical[lane.inputL];
-                const float* const b=lane.inputStereo && lane.inputR<physicalCount &&
-                                     physical[lane.inputR]?physical[lane.inputR]:nullptr;
-                if(lane.inputStereo && !b) {
-                    // Missing right callback pin fails silent, no invented dual-mono.
-                }else for(int f=0;f<frames;++f) {
-                    l[f]+=a[f];
-                    r[f]+=b?b[f]:a[f];
+            if(lane.inputL>=0 && physical) {
+                auto& fade=sourceFades_[i];
+                const auto desired=sourceTargets_[i].load(std::memory_order_acquire);
+                if(fade.remaining==0 && desired!=fade.current) {
+                    fade.next=desired;fade.remaining=armix::dsp::RealtimeSlew64::samples;
+                }
+                // Resolve each verified physical pair ONCE per block; the
+                // inner sample loop only blends already-addressed PCM.
+                const auto resolve=[&](std::uint32_t pair,int side) noexcept
+                    ->const float* {
+                    const int a=physicalLeft(pair),b=physicalRight(pair);
+                    if(a<0||a>=physicalCount||!physical[a])return nullptr;
+                    if(lane.inputStereo){
+                        if(b<0||b>=physicalCount||!physical[b])return nullptr;
+                        return side==0?physical[a]:physical[b];
+                    }
+                    return physical[a];
+                };
+                const float* oldL=resolve(fade.current,0);
+                const float* oldR=resolve(fade.current,1);
+                const float* newL=fade.remaining?resolve(fade.next,0):oldL;
+                const float* newR=fade.remaining?resolve(fade.next,1):oldR;
+                if(fade.remaining==0) {
+                    if(oldL&&oldR)
+                        for(int f=0;f<frames;++f){l[f]+=oldL[f];r[f]+=oldR[f];}
+                } else {
+                    for(int f=0;f<frames;++f) {
+                        const float alpha=1.f-
+                            static_cast<float>(fade.remaining-1)*
+                            (1.f/static_cast<float>(armix::dsp::RealtimeSlew64::samples));
+                        const float beforeL=oldL?oldL[f]:0.f;
+                        const float beforeR=oldR?oldR[f]:0.f;
+                        const float afterL=newL?newL[f]:0.f;
+                        const float afterR=newR?newR[f]:0.f;
+                        l[f]+=beforeL+(afterL-beforeL)*alpha;
+                        r[f]+=beforeR+(afterR-beforeR)*alpha;
+                        --fade.remaining;
+                        if(fade.remaining==0){
+                            fade.current=fade.next;
+                            // New CONTROL requests are consumed next block;
+                            // never change the source mid-sample.
+                            oldL=newL;oldR=newR;
+                            for(int k=f+1;k<frames;++k)
+                                if(oldL&&oldR){l[k]+=oldL[k];r[k]+=oldR[k];}
+                            break;
+                        }
+                    }
                 }
             }
             if(lane.format==ProcessingFormat::mono)
@@ -581,9 +664,11 @@ private:
     std::vector<Word::Snapshot> blockTargets_; // all allocated before RT
     std::vector<float> scratch_;
     std::unique_ptr<ChannelTarget[]> channelTargets_;
+    std::unique_ptr<std::atomic<std::uint32_t>[]> sourceTargets_;
+    std::unique_ptr<SourceFade[]> sourceFades_;
     std::unique_ptr<SendTarget[]> sendTargets_;
     std::size_t main_=notScheduled,monitor_=notScheduled;
     bool mainMonoAfterFx_=false;
-    int capacity_=0;
+    int capacity_=0,physicalInputs_=0;
 };
 } // namespace armix::mixer

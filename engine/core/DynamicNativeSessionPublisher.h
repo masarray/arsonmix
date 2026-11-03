@@ -197,6 +197,13 @@ public:
     // M3C realtime parameters on the accepted ChannelId graph ONLY.
     // Caller must propagate the real device epoch and native ACK revision.
     // Rejected/stale edits leave the last accepted PCM unchanged.
+    bool setPhysicalSource(std::uint64_t epoch,std::uint64_t revision,
+                           ChannelId id,int inputL,int inputR,bool stereo) noexcept {
+        return publisher_.updateActiveControl(epoch,revision,
+            [&](Prepared& active) noexcept {
+                return active.graph.setPhysicalSource(id,inputL,inputR,stereo);
+            });
+    }
     bool setChannelMix(std::uint64_t epoch,std::uint64_t revision,
                        ChannelId id,float gain,float pan) noexcept {
         return publisher_.updateActiveControl(epoch,revision,

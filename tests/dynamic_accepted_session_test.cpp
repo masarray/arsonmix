@@ -173,6 +173,26 @@ int main() {
     assert(render());
     assert(near(l[63],(.2f+.4f)*center));
     assert(near(ml[63],(.2f*.2f+.4f*.25f)*center));
+    // M5.3 native SOURCE changes physical pins but not VST3, ChannelId,
+    // send graph, or output ownership. Stage no callback memory and ramp
+    // over 4+16+32+12 real samples with independent MONITOR taps.
+    assert(!session.setLivePhysicalSource(epoch-1,2,micA,1,-1,false));
+    assert(!session.setLivePhysicalSource(epoch,1,micA,1,-1,false));
+    assert(!session.setLivePhysicalSource(epoch,2,micA,2,-1,false));
+    assert(!session.setLivePhysicalSource(epoch,2,micA,1,0,true));
+    assert(session.setLivePhysicalSource(epoch,2,micA,1,-1,false));
+    assert(session.acceptedPhysicalRequest().sources[0].inputL==1);
+    assert(render(4));
+    assert(l[3]>(.2f+.4f)*center && l[3]<(.4f+.4f)*center);
+    assert(render(16)&&render(32)&&render(12));
+    assert(near(l[11],(.4f+.4f)*center));
+    assert(near(ml[11],(.4f*.2f+.4f*.25f)*center));
+    // A last-target-wins reverse retains the same PCM and plugin graph.
+    assert(session.setLivePhysicalSource(epoch,2,micA,0,-1,false));
+    assert(render());
+    assert(near(l[63],(.2f+.4f)*center));
+    assert(near(ml[63],(.2f*.2f+.4f*.25f)*center));
+    assert(session.acceptedGraphRevision()==2);
     // One accepted ChannelId graph: realtime MUTE/SOLO and PRE/POST follow
     // the same callback, not a recompilation or an extra FX instance.
     assert(session.setLiveMuteSolo(epoch,2,micA,true,false));

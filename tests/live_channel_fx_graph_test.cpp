@@ -225,6 +225,26 @@ static void verifyUniversalChannelIdFxLeaseAndLivePcm() {
     assert(near(left[31],((.2f*2.f+.1f*4.f)*3.f+
                          (.1f*4.f)*.5f*2.f)*center));
     assert(near(left[31],right[31]));
+    // M5.3 physical SOURCE hot switch reuses the exact live JUCE VST
+    // instances; no catalog lookup, plugin restart, heap or extra renderer.
+    const auto heapAtSource=heapCalls.load(std::memory_order_relaxed);
+    const auto liveAtSource=GainFx::living;
+    assert(native.setPhysicalSource(epoch,2,ch11,0,-1,false));
+    assert(!native.setPhysicalSource(epoch,2,ch11,2,-1,false));
+    assert(!native.setPhysicalSource(epoch-1,2,ch11,0,-1,false));
+    assert(native.render(epoch,pins,2,left.data(),right.data(),32,false,legacyFx));
+    assert(native.render(epoch,pins,2,left.data(),right.data(),32,false,legacyFx));
+    assert(heapCalls.load(std::memory_order_relaxed)==heapAtSource);
+    assert(GainFx::living==liveAtSource&&legacyFallbackCalls==0);
+    assert(near(left[31],((.2f*2.f+.2f*4.f)*3.f+
+                         (.2f*4.f)*.5f*2.f)*center));
+    assert(native.setPhysicalSource(epoch,2,ch11,1,-1,false));
+    assert(native.render(epoch,pins,2,left.data(),right.data(),32,false,legacyFx));
+    assert(native.render(epoch,pins,2,left.data(),right.data(),32,false,legacyFx));
+    assert(heapCalls.load(std::memory_order_relaxed)==heapAtSource);
+    assert(GainFx::living==liveAtSource&&legacyFallbackCalls==0);
+    assert(near(left[31],((.2f*2.f+.1f*4.f)*3.f+
+                         (.1f*4.f)*.5f*2.f)*center));
     // Real hosted JUCE VST instances remain leased exactly once while
     // a muted GROUP silences serial dry PCM, not the parallel FX Return.
     const auto livingBeforeMute=GainFx::living;
