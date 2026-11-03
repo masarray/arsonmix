@@ -455,5 +455,13 @@
     }
   },
   "exclusions": "Differing values with var(), color-mix(), url(), image-set(), oklch(), light-dark() retain fallback semantics.",
-  "strategy": "Only delete prior declaration if same exact selector, media/supports context, property and importance has later matching declaration."
+  "strategy": "Only delete prior declaration if same exact selector, media/supports context, property and importance has later matching declaration.",
+  "originalLinkVersions": {
+    "mixer-console-foundation.css": "css-owner-v10",
+    "mixer-channel-grid.css": "css-owner-v10",
+    "mixer-section-controls.css": "css-owner-v11",
+    "mixer-section-layout.css": "css-owner-v11",
+    "mixer-v3-layout-contract.css": "css-owner-v11",
+    "mixer-chrome-material.css": "css-owner-v14"
+  }
 }
