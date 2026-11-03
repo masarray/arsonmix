@@ -172,9 +172,13 @@ def math_and_preview(page,label):
       const {meterDbfsPercent,demoMeterDbfs,readDemo}=window.ArSonMixMeterCalibration;
       const {gain,frame,running}=readDemo();
       const modulation=.46+.23*Math.sin(frame*.13)+.17*Math.sin(frame*.31);
-      const expected=meterDbfsPercent(demoMeterDbfs(gain,modulation));
+      const expectedRaw=meterDbfsPercent(demoMeterDbfs(gain,modulation));
       const fill=document.querySelector('#tracks .strip[data-id="1"] .meter-fill.left');
-      return {expected,actual:parseFloat(fill.style.getPropertyValue('--lit')),
+      const lane=fill.parentElement, height=lane.clientHeight;
+      const rows=Math.max(1,Math.floor(height/14));
+      const steps=Math.max(0,Math.min(rows,Math.round(expectedRaw*rows/100)));
+      const expected=100*Math.min(height,steps*14)/height;
+      return {expected,expectedRaw,rows,steps,actual:parseFloat(fill.style.getPropertyValue('--lit')),
               text:document.getElementById('transport').textContent,
               preview:running,frame};
     }""")
