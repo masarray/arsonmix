@@ -19,7 +19,8 @@ MANIFEST=ROOT/"tests/fixtures/css-v12-removed-declarations.json"
 def source_baseline():
     manifest=json.loads(MANIFEST.read_text(encoding="utf-8"))
     assert manifest["version"]=="v12"
-    current=HTML.read_text(encoding="utf-8")
+    from css_v17_restore import reconstruct as restore_v16_source
+    current,_=restore_v16_source()
     previous, original_chrome=reconstruct_previous()
     matches=list(re.finditer(r"<style>(.*?)</style>",previous,re.S))
     assert len(matches)==3

@@ -50,6 +50,9 @@ def original_assets_as_baseline(html,owners=None):
     owners=restore_previous_owners() if owners is None else owners
     temp=[]
     try:
+        from css_v17_restore import mount_owner
+        html,old_plugin=mount_owner(html)
+        temp.extend(old_plugin)
         if manifest_v16()["sourceWireUrl"] in html:
             previous_wire=reconstruct()[1]
             f=tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",suffix=".css",

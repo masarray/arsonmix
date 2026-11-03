@@ -26,7 +26,9 @@ def fingerprint(css):
     return f"{h:08x}"
 
 def source_gate():
-    html = HTML.read_text(encoding="utf-8")
+    from css_v17_restore import reconstruct as restore_v16_source
+    live = HTML.read_text(encoding="utf-8")
+    html, _ = restore_v16_source()  # Historical V16 CSS source remains immutable.
     head = html.split("</head>", 1)[0]
     css_order = re.findall(
         r'<link[^>]+href="assets/([^"]+\.css)\?v=css-owner-v(10|11|14|15)"[^>]*>|(<style>(.*?)</style>)',
@@ -60,7 +62,8 @@ def source_gate():
     assert ".console-body{" in grid and ".section-rail{" in grid
     assert all("--ari-" + n + ":url(data:image/png" in artwork
                for n in ("silver", "rose", "pan"))
-    assert "wireWsCanJoin" in html
+    assert "assets/mixer-plugin-browser.css?v=css-plugin-owner-v17" in live
+    assert "wireWsCanJoin" in live
     assert "assets/mixer-wire-dots.css?v=v47-css-v16" in html
     assert "assets/inter-embedded.css" in html
     for p in (ROOT / "scripts/build_pages.py", ROOT / ".github/workflows/pages-publish.yml"):

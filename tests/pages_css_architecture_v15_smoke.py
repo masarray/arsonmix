@@ -40,7 +40,8 @@ async def main():
     oldhtml=before_v15_html()
     oldowners=restore_previous_owners()
     oldcss=combined_css(oldhtml,owner_override=oldowners)
-    newcss=combined_css(HTML.read_text(encoding="utf-8"))
+    from css_v17_restore import reconstruct as restore_v16_source
+    newcss=combined_css(restore_v16_source()[0])
     info=manifest()["totals"]
     assert len(oldcss)==info["beforeCss"]==175850
     assert fingerprint(oldcss)==info["beforeFNV"]=="188064b0"
