@@ -45,16 +45,21 @@ def physical(page,density,width):
     assert stereo.count()>=2,(width,density,"stereo lamps")
 
 def interactions(page):
+    # V50 operator workflow: formerly two-row M3 controls are in WIRE Setup.
     title=page.locator(".mixer-title")
-    toggle=page.locator("#mixerTitleToggle")
-    expected=52 if page.viewport_size["height"]<=800 else 66
-    assert abs(title.bounding_box()["height"]-expected)<=2,("M3 header height",page.viewport_size)
-    assert toggle.get_attribute("aria-expanded")=="true"
-    toggle.click()
-    assert toggle.get_attribute("aria-expanded")=="false"
-    assert title.bounding_box()["height"]<=32
-    toggle.click()
-    assert toggle.get_attribute("aria-expanded")=="true"
+    assert abs(title.bounding_box()["height"]-27)<=2,("V50 status title height",page.viewport_size)
+    assert page.locator("#mixerTitleToggle").count()==0
+    config_button=page.locator("#wireConfigToggle")
+    config_button.click()
+    config=page.locator("#wireConfigWindow")
+    assert config.is_visible() and config_button.get_attribute("aria-expanded")=="true"
+    assert config.locator("#wireMode").count()==1
+    assert config.locator("#wireMaster").count()==1
+    assert config.locator("#wireView").count()==1
+    config.locator("#wireView").select_option("all")
+    assert config.locator("#wireView").input_value()=="all"
+    page.keyboard.press("Escape")
+    assert config.is_hidden() and config_button.get_attribute("aria-expanded")=="false"
 
     menu=page.locator("#moreTools")
     menu.locator("summary").click()

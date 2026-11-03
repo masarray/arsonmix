@@ -85,6 +85,32 @@ jobs:
         run: python tests/pan_button_asset_test.py
       - name: Validate linked 11-strip geometry and LV1-style rail workspace
         run: python tests/mixer_shell_geometry_smoke.py
+      - name: Verify V51 portrait LED steps, color-matched hold and quiet fader shadow
+        run: python tests/pages_v51_portrait_led_peak_hold_smoke.py
+      - name: Verify V50 compact console WIRE configuration popouts and dBFS tick insets
+        run: python tests/pages_v50_wire_popout_layout_smoke.py
+      - name: Verify V6 contextual buttons, momentary press and zero pointer scroll
+        run: python tests/pages_contextual_buttons_smoke.py
+      - name: Verify V43 public Pages WIRE CSS, incoming cables and propagating socket impact
+        run: python tests/pages_wire_incoming_v43_smoke.py
+      - name: Verify V15 real pointer OUT-to-IN wire and exclusive Bus routing
+        run: python tests/preview_v15_drag_wire_smoke.py
+      # V10–V24 are exact historical migration/restoration tests. They compare
+      # original versioned bytes, so run them on immutable V24 rather than
+      # pretending the intentional V50 layout/stylesheet changes are V22.
+      # Restore PR files before ALL current GUI/function/geometry smoke tests.
+      - name: Mount pinned V24 historical CSS fixture (reversible, no CI rebaseline)
+        shell: bash
+        run: |
+          set -euo pipefail
+          baseline=283ce45dc84b86d42f5ce72841239d8a13c0ba4c
+          backup="$RUNNER_TEMP/v50-current-sources"
+          git fetch --no-tags --depth=1 origin "$baseline"
+          for path in site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-wire-dots.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-fx-rack.css; do
+            mkdir -p "$backup/$(dirname "$path")"
+            cp "$path" "$backup/$path"
+            git show "$baseline:$path" > "$path"
+          done
       - name: Verify V8 FX rack and Plugin Manager CSS ownership
         run: python tests/pages_css_ownership_v8_smoke.py
       - name: Verify V9 PAN/fader/meter CSS ownership and geometry
@@ -115,10 +141,20 @@ jobs:
         run: python tests/pages_css_architecture_v21_smoke.py
       - name: Verify V22 legacy key material migration and M3 visual parity
         run: python tests/pages_css_architecture_v22_smoke.py
-      - name: Verify V23 exact Chrome and WIRE cascade loser deletion and browser parity
+      - name: Verify V23 exact cascade deletions and browser parity
         run: python tests/pages_css_architecture_v23_smoke.py
-      - name: Verify V24 Fader Meter FX exact CSS-pruning and browser parity
+      - name: Verify V24 Fader/Meter/FX cascade pruning and browser parity
         run: python tests/pages_css_architecture_v24_smoke.py
+      - name: Restore and verify exact V50 PR assets before current UI smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          backup="$RUNNER_TEMP/v50-current-sources"
+          for path in site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-wire-dots.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-fx-rack.css; do
+            test -s "$backup/$path"
+            cp "$backup/$path" "$path"
+          done
+          git diff --exit-code -- site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-wire-dots.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-fx-rack.css
       - name: Verify embedded Inter font and contextual V7 micro-controls
         run: python tests/pages_inter_utility_v7_smoke.py
       - name: Validate exact alpha micro hardware sprite states and WIRE coexistence
@@ -129,8 +165,6 @@ jobs:
         run: python tests/pages_mute_css_reference_smoke.py
       - name: Reconcile PNG button preview with exact latest WIRE source and geometry
         run: python tests/pages_png_buttons_wire_reconciliation_smoke.py
-      - name: Verify V6 contextual buttons, momentary press and zero pointer scroll
-        run: python tests/pages_contextual_buttons_smoke.py
       - name: Verify V6 contextual OFF and ON readability, SVG ink and WIRE matrix statuses
         run: python tests/pages_contextual_contrast_smoke.py
       - name: Verify V18 square Material icon controls and calibrated fader + VU rulers
@@ -143,14 +177,10 @@ jobs:
         run: python tests/ui_smoke.py
       - name: Verify Preview V2 V7 physical visual geometry and modeless mixer workflow
         run: python tests/preview_v2_v7_visual_smoke.py
-      - name: Verify V15 real pointer OUT-to-IN wire and exclusive Bus routing
-        run: python tests/preview_v15_drag_wire_smoke.py
       - name: Verify V40 WIRE proximity, focus release and full-tray channel selection
         run: python tests/pages_wire_focus_v40_smoke.py
       - name: Verify V42 original OUT fill and magnetic dot-follow drag
         run: python tests/pages_wire_dot_v42_smoke.py
-      - name: Verify V43 public Pages WIRE CSS, incoming cables and propagating socket impact
-        run: python tests/pages_wire_incoming_v43_smoke.py
       - name: Verify V44 dock, cable-matched dots, right labels, folded row and broader impact
         run: python tests/pages_wire_v44_finish_smoke.py
       - name: Verify V45 destination channel-color socket and collision-free responsive captions
@@ -175,6 +205,8 @@ jobs:
         with:
           name: arsonmix-gui-baseline-smoke
           path: |
+            pages-v51-portrait-meter-1680.png
+            pages-v51-peak-hold-release-1680.png
             native-orbit-ui-review.png
             mixer-g1-g2-1366.png
             mixer-g1-g2-1440.png
