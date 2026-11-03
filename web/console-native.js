@@ -107,6 +107,7 @@ function render(){
  el('trackCount').textContent=rows.length+' NATIVE CHANNELS · '+(snapshot?.productionCallbackLive?'UNIVERSAL':'LEGACY M4 COMPAT');
  const selector=el('bankSelect');selector.innerHTML=Array.from({length:max},(_,i)=>'<option value="'+i+'">BANK '+(i+1)+'</option>').join('');selector.value=String(bank);
  el('bankPrev').disabled=bank===0;el('bankNext').disabled=bank>=max-1;
+ if(el('nativeAddAudio'))el('nativeAddAudio').disabled=!snapshot?.productionCallbackLive||!opAvailable('CREATE_CHANNEL');
  for(const [id,op] of [['addTrack','CREATE_CHANNEL'],['addBus','CREATE_GROUP'],['addFx','CREATE_FX_RETURN'],['clearCue','SET_CUE']])
   if(el(id))el(id).disabled=!snapshot?.productionCallbackLive||!opAvailable(op);
  for(const id of ['saveScene','recallScene','sceneSafe','sofToggle','pluginsButton','group','ungroup','copy','paste','pluginScan','pluginImport','pluginAddPath','routeParallel','routeOnly','wireMaster','wireMode'])
@@ -165,6 +166,11 @@ function accept(s){
  const signature=JSON.stringify([rows.map(r=>[r.id,r.name,r.role,r.format,r.source,r.out,r.controls,r.fx]),s.legacyM4?.supportedOps,s.graph?.capabilities?.supportedOps]);
  if(signature!==lastSignature){lastSignature=signature;render();}else paintMeters();
  el('transport').textContent=s.device?.outputArmed?'OUTPUT ARMED':'OUTPUT DISARMED';
+ if(el('nativeOutput')){
+   el('nativeOutput').textContent=s.device?.outputArmed?'OUTPUT ARMED · MUTE':'OUTPUT MUTED · ARM';
+   el('nativeOutput').setAttribute('aria-pressed',String(!!s.device?.outputArmed));
+ }
+ if(el('nativeDevice'))el('nativeDevice').title='Configure native audio device: '+String(s.device?.backend||'UNCONNECTED');
  announce(rows.length?('NATIVE SNAPSHOT · '+rows.length+' accepted channels · '+(s.device?.backend||'DEVICE NOT READY')):'NATIVE ENGINE · No accepted PCM channels');
 }
 function ack(a){
@@ -191,10 +197,34 @@ document.addEventListener('click',e=>{
  if(section){const n=section.dataset.section,body=document.querySelector('.console-body');
    body.classList.toggle('collapsed-'+n);section.setAttribute('aria-expanded',String(!body.classList.contains('collapsed-'+n)));}
 });
+document.getElementById('nativeDevice')?.addEventListener('click',()=>{
+ if(!native)return;
+ api.emitEvent('arMixAction',{action:'audioSetup'});
+});
+document.getElementById('nativeOutput')?.addEventListener('click',()=>{
+ if(!native)return;
+ const armed=!!snapshot?.device?.outputArmed;
+ const args={action:'monitor',value:!armed};
+ if(!armed&&snapshot?.legacyM4?.controlPlane==='LEGACY_M4_ORDINAL'){
+   args.expectedEpoch=Number(snapshot.device?.epoch);
+   args.expectedRevision=Number(snapshot.legacyM4.routingRevision);
+ }
+ api.emitEvent('arMixAction',args);
+ announce(!armed?'REQUESTING NATIVE OUTPUT ARM':'REQUESTING OUTPUT MUTE');
+});
+document.getElementById('nativeAddAudio')?.addEventListener('click',()=>{
+ if(!native||!snapshot?.productionCallbackLive||!opAvailable('CREATE_CHANNEL'))return;
+ send('CREATE_CHANNEL',{id:'0',legacy:false},{name:'Channel '+(rows.length+1),format:'MONO'});
+});
 for(const id of ['wireView','wireMode','sofTarget'])if(el(id))el(id).disabled=true;
 if(!native){announce('NATIVE JUCE BACKEND REQUIRED · NO SIMULATED AUDIO',true);return;}
 api.addEventListener('arMixConsoleSnapshot',accept);
 api.addEventListener('arMixConsoleAck',ack);
+api.addEventListener('arMixAudioArmAck',a=>{
+ announce(a?.ok?(a.armed?'OUTPUT ARMED · Native audio':'OUTPUT MUTED · Safe'):
+   'OUTPUT ARM REJECTED · '+(a?.error||'DEVICE/ROUTE NOT READY'),!a?.ok);
+});
+
 api.addEventListener('arMixStatus',s=>{if(s?.error)announce(String(s.error),true);});
 api.addEventListener('arMixNotice',s=>{if(s?.text)announce(String(s.text),!!s.error);});
 const start=()=>{api.emitEvent('arMixGuiReady',{protocol:1});

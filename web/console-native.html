@@ -2,6 +2,11 @@
 <div class="app">
   <header class="window-title"><span class="logo">ArSonMix</span><span class="file-name">Mixer · Native Console</span><span class="study">NATIVE MIXER · REAL PCM</span></header>
   <div class="command-bar" role="toolbar" aria-label="Live mixer controls">
+    <button type="button" class="tool primary" id="nativeDevice" title="Select verified ASIO/WASAPI device">AUDIO DEVICE</button>
+    <button type="button" class="tool" id="nativeOutput" title="Native hardware output mute and guarded ARM" aria-pressed="false">OUTPUT MUTED</button>
+    <span class="sep"></span>
+    <button type="button" class="tool primary" id="nativeAddAudio" title="Add native channel after ChannelId graph admission" disabled>+ CHANNEL</button>
+    <span class="sep"></span>
     <button class="tool primary" id="pluginsButton" title="Search and assign FX plugins (F8)" aria-controls="pluginBrowser" aria-expanded="false">Plugins · F8</button>
     <span class="sep"></span>
     <span class="toolbar-label">BANK</span><button class="tool bank-arrow" id="bankPrev" title="Previous bank" aria-label="Previous channel bank"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="#1f1f1f" aria-hidden="true"><path d="M14,17L9,12l5-5V17Z"/></svg></button>
