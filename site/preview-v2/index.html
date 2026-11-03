@@ -1179,7 +1179,7 @@ function wireTray(t){
  const armedEdge=!isMain&&source?wireFor(source.id,t.id):null;
  const selected=incoming.find(e=>e.id===selectedWireEdgeId);
  const incomingCount=isMain?0:wireWsRoutes().filter(r=>r.destId===t.id).length;
- const edge=armedEdge||(incomingCount===1&&incoming.length===1?incoming[0]:selected)||null;
+ const edge=selected||(incomingCount===1&&incoming.length===1?incoming[0]:armedEdge)||null;
  const connected=incoming.length>0,hasAnyArrival=incomingCount>0;
  const legacy=!isMain&&source&&hasLegacySendTo(source,t);
  const linked=isMain?!!source&&source.output==='Master':hasAnyArrival||!!legacy;
