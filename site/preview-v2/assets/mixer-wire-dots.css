@@ -838,7 +838,7 @@
 /* Source selection is temporary intent, while cable connection derives only
    from the committed route model. No phantom lit output without an edge. */
 .console-body.wire-routing-v15:not(.wire-intent):not(.wire-dragging)
- .strip .wire-tray .wire-node-out:not([data-wire-connected="true"]) .wire-pin{
+ .strip .wire-tray .wire-node-out:not([data-wire-connected="true"]):not(.is-near):not(.is-source):not(:hover) .wire-pin{
  background:#4b535b!important;border-color:#627681!important;
  box-shadow:inset 0 1px 2px #061017!important;
 }

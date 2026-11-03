@@ -1178,11 +1178,12 @@ function wireTray(t){
  const incoming=isMain?[]:incomingWireEdges(t.id);
  const armedEdge=!isMain&&source?wireFor(source.id,t.id):null;
  const selected=incoming.find(e=>e.id===selectedWireEdgeId);
- const edge=armedEdge||(incoming.length===1?incoming[0]:selected)||null;
  const incomingCount=isMain?0:wireWsRoutes().filter(r=>r.destId===t.id).length;
+ const edge=armedEdge||(incomingCount===1&&incoming.length===1?incoming[0]:selected)||null;
  const connected=incoming.length>0,hasAnyArrival=incomingCount>0;
  const legacy=!isMain&&source&&hasLegacySendTo(source,t);
  const linked=isMain?!!source&&source.output==='Master':hasAnyArrival||!!legacy;
+ const sourceLinked=!!armedEdge||!!legacy;
  const canWire=!!(source&&!isSource)||hasAnyArrival;
  const label=isMain?(linked?'MAIN ON':'MAIN OFF'):
   incomingCount>1?incomingCount+' incoming wires · inspect routes':
@@ -1200,8 +1201,8 @@ function wireTray(t){
   ' title="SEND OUT · drag this solid jack to another channel IN" aria-label="Send OUT from '+
   escapeHtml(t.name)+'" aria-pressed="'+isSource+
   '"><span class="wire-pin" aria-hidden="true"></span><small>OUT</small></button>';
- const to='<button type="button" class="wire-socket wire-node-in'+(isSource?' is-source':'')+
-  (linked?' is-linked':'')+'" data-action="wireRoute" aria-pressed="'+linked+
+ const to='<button type="button" class="wire-socket wire-node-in'+(isSource&&!hasAnyArrival?' is-source':'')+
+  (linked?' is-linked':'')+'" data-action="wireRoute" aria-pressed="'+sourceLinked+
   '" aria-label="Receive IN on '+escapeHtml(t.name)+' · '+label+
   '" title="'+escapeHtml(label+' · '+modeLabel+' · GUI DEMO')+'" '+
   (canWire?'':'disabled')+
@@ -2381,8 +2382,9 @@ consoleBody.addEventListener('pointerdown',ev=>{
  const receiver=socket?findTrack(socket):null;
  const activeSource=armedWireSource();
  const incoming=receiver&&receiver.kind!=='master'?incomingWireEdges(receiver.id):[];
- const existing=activeSource&&receiver?wireFor(activeSource.id,receiver.id):
-  (incoming.length===1?incoming[0]:incoming.find(e=>e.id===selectedWireEdgeId)||null);
+ const existing=incoming.find(e=>e.id===selectedWireEdgeId)||
+  (incoming.length===1?incoming[0]:
+   (activeSource&&receiver?wireFor(activeSource.id,receiver.id):null));
  const socketRect=existing?socket.getBoundingClientRect?.():null;
  const near=!!socketRect&&Math.hypot(ev.clientX-(socketRect.left+socketRect.width/2),ev.clientY-(socketRect.top+socketRect.height/2))<=22;
  if(existing&&near){
