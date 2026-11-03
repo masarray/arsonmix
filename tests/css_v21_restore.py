@@ -36,13 +36,15 @@ def reconstruct():
     # against a *reversible, explicit* normalization of M3-only changes.
     # The approved V21 fingerprints below are never relaxed or rebaselined.
     from gui_m3_compat import transform,suffix
-    from gui_v49_restore import historical_html
-    source=historical_html()
+    from css_v22_restore import reconstruct as restore_pre_v22
+    source,previous_m3_chrome=restore_pre_v22()
     live=transform(source,reverse=True,skip={"chrome version"})
     m3_link="assets/mixer-chrome-material.css?v=css-chrome-owner-v21-m3-header"
     assert live.count(m3_link)==1
     live=live.replace(m3_link,data["newLink"],1)
-    chrome,m3_tail=suffix("chrome")
+    _,m3_tail=suffix("chrome")
+    assert previous_m3_chrome.endswith(m3_tail)
+    chrome=previous_m3_chrome[:-len(m3_tail)]
     assert (len(live),fingerprint(live))==(
         data["current"]["htmlLength"],data["current"]["htmlFNV"]
     ),"V21 HTML drift: source contract must not be silently rebaselined"
