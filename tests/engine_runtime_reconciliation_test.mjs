@@ -167,7 +167,7 @@ test('E4 operator native Group+FX Return controls run through real ACK then newe
     addEventListener(name,fn){this.listeners[name]=fn;}
     insertAdjacentElement(_,child){this.children.push(child);}
   }
-  const root=new Node('section'),sent=[],events={};
+  const root=new Node('section'),nativeCap=new Node('span'),sent=[],events={};
   const doc={createElement:tag=>new Node(tag),
     createTextNode:text=>({textContent:text}),
     getElementById:id=>id==='arBusCapability'?root:null};
@@ -175,7 +175,8 @@ test('E4 operator native Group+FX Return controls run through real ACK then newe
     addEventListener:(name,fn)=>events[name]=fn};
   const ctx=vm.createContext({
     document:doc,api,window:{crypto:{getRandomValues:n=>n.fill(7)}},
-    routeOverlay:{classList:{contains:()=>true}},
+    routeOverlay:{classList:{contains:()=>true},
+      querySelector:selector=>selector==='[data-bus-cap="missing"]'?nativeCap:null},
     state:{monitor:false,secondaryOutputArmed:false},
     patchPending:false,mixerDraftActive:false
   });
@@ -197,6 +198,7 @@ test('E4 operator native Group+FX Return controls run through real ACK then newe
   const probe=code=>vm.runInContext(code,ctx,{timeout:1000});
   assert.equal(probe('groupCreate.disabled'),false);
   assert.equal(probe('nativeBusSources.children.length'),2);
+  assert.match(nativeCap.textContent,/NATIVE PCM ACTIVE/);
   probe("nativeBusSources.children[0].children[0].checked=true");
   probe("nativeBusSources.children[0].children[0].listeners.change()");
   probe("nativeBusName.value='Vocal Group';nativeBusGain.value='.6';groupCreate.listeners.click()");
@@ -247,6 +249,9 @@ test('E4 operator native Group+FX Return controls run through real ACK then newe
   });
   assert.equal(probe('groupCreate.disabled'),false,
     'rejected native intent should unlock controls while keeping old PCM unchanged');
+  assert.match(probe('nativeBusState.textContent'),/REJECTED.*NATIVE_REJECTED/);
+  events.arMixConsoleSnapshot(snap('11','4','11'));
+  assert.equal(probe('busSession'),'12','old device generation must not replace live native BUS');
   const armed=snap('11','4','12',true);
   events.arMixConsoleSnapshot(armed);
   assert.equal(probe('groupCreate.disabled'),true,'output armed structural edits fail closed');

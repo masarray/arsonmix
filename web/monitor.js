@@ -308,8 +308,10 @@
                       nativeBusActions,nativeBusRows);
   document.getElementById('arBusCapability')?.insertAdjacentElement('afterend',realBusPanel);
 
-  const busWireDecimal=s=>typeof s==='string'&&/^[1-9][0-9]*$/.test(s)&&
-    BigInt(s)<=18446744073709551615n?s:null;
+  // Fast bounded uint64 validation: never BigInt-parse arbitrarily long
+  // untrusted WebView values before checking canonical length and format.
+  const busWireDecimal=s=>typeof s==='string'&&s.length<=20&&
+    /^[1-9][0-9]*$/.test(s)&&BigInt(s)<=18446744073709551615n?s:null;
   const busSelection=new Set();
   let busSnapshot=null,busPending=null,busSignature='',busSession='',busSequence=0;
   let busSnapshotSerial=0;
@@ -360,6 +362,13 @@
     if(!force&&signature===busSignature)return;
     busSignature=signature;
     const ready=!!accepted,structural=busMayEdit('NATIVE_CREATE_GROUP_SELECTED',true);
+    // The old M4 caption said GROUP was not implemented. E3 can now own
+    // an actual GROUP/FX RETURN while universal v8/DCA/MATRIX remain gated.
+    // State the CURRENT PCM truth, not a permanent obsolete capability.
+    const legacyCaption=routeOverlay.querySelector('[data-bus-cap="missing"]');
+    if(legacyCaption)legacyCaption.textContent=ready
+      ?'CHANNELID GROUP / FX RETURN · NATIVE PCM ACTIVE · DCA / MATRIX / CUE NOT AVAILABLE'
+      :'GROUP / FX RETURN REQUIRES VERIFIED NATIVE PCM · DCA / MATRIX / CUE NOT AVAILABLE';
     groupCreate.disabled=!structural;
     fxReturnCreate.disabled=!busMayEdit('NATIVE_CREATE_FX_RETURN_SELECTED',true);
     nativeBusName.disabled=!ready||!!busPending;
@@ -461,6 +470,9 @@
     if(!snap||snap.schemaVersion!==6)return;
     const nextEpoch=busWireDecimal(snap.device?.epoch);
     if(nextEpoch===null)return;
+    // An old async snapshot must never roll UI authority back to an
+    // earlier device generation, even if its previous graph was accepted.
+    if(busSession&&BigInt(nextEpoch)<BigInt(busSession))return;
     if(busSession&&busSession!==nextEpoch){
       busPending=null;busSelection.clear();busSignature='';
     }
@@ -494,20 +506,22 @@
     if(ack.deviceEpoch!==busPending.epoch||
        !['ACCEPTED','REJECTED'].includes(ack.status)){
       busPending=null;busSignature='';
-      busNotice('INVALID NATIVE ACK · previous accepted route preserved');
-      renderNativeBus(true);return;
+      renderNativeBus(true);
+      busNotice('INVALID NATIVE ACK · previous accepted route preserved');return;
     }
     if(ack.status==='REJECTED'){
       busPending=null;busSignature='';
+      renderNativeBus(true);
       busNotice('REJECTED · '+String(ack.errorCode||'Native BUS unchanged'));
-      renderNativeBus(true);busRequest();return;
+      busRequest();return;
     }
     if(busWireDecimal(ack.nativeGraphRevision)===null||
        busWireDecimal(ack.nativeRosterRevision)===null||
        BigInt(ack.nativeGraphRevision)<BigInt(busPending.graphRevision)||
        BigInt(ack.nativeRosterRevision)<BigInt(busPending.rosterRevision)){
       busPending=null;busSignature='';
-      busNotice('INVALID NATIVE REVISION ACK · refresh before editing');renderNativeBus(true);return;
+      renderNativeBus(true);
+      busNotice('INVALID NATIVE REVISION ACK · refresh before editing');return;
     }
     busPending.ack=ack;
     busPending.ackSnapshotSerial=busSnapshotSerial;
