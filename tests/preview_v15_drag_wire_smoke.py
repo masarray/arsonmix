@@ -58,13 +58,13 @@ def main():
             w:getComputedStyle(el).width,h:getComputedStyle(el).height,
             filter:getComputedStyle(el).filter
         })""")
-        assert_true(capStyle['w']=='23px' and capStyle['h']=='48px' and
-                    capStyle['filter']=='none','Fader thumb is not compact/crisp')
+        assert_true(capStyle['w']=='27px' and capStyle['h']=='54px' and
+                    capStyle['filter']=='none','M2 cap must remain crisp and correctly scaled')
         track=page.locator('#tracks .strip[data-id="1"] .fader-travel')
         travel=track.evaluate("""el=>({
             top:getComputedStyle(el).top,bottom:getComputedStyle(el).bottom
         })""")
-        assert_true(travel['top']=='24px' and travel['bottom']=='24px',
+        assert_true(travel['top']=='27px' and travel['bottom']=='27px',
                     'Fader slot not expanded consistently')
         assert_true(not errors,'V22 browser errors: '+str(errors))
         # CSS MUTE follows the owner reference. SOLO/PFL keep SVG cutout keys.
