@@ -76,6 +76,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install playwright
           python -m playwright install --with-deps chromium
+      - name: Verify M4 physical GUI to native intent and ACK regression
+        run: python tests/m4_gui_bridge_smoke.py
       - name: Verify original metallic asset and standalone synchronization
         run: python tests/fader_asset_test.py
       - name: Validate recessed Button 180 + embedded Inter font contract
@@ -88,8 +90,6 @@ jobs:
         run: python tests/mixer_shell_geometry_smoke.py
       - name: Verify accepted ChannelId GUI operator and ACK regression
         run: python tests/operator_console_v6_smoke.py
-      - name: Verify M4 physical GUI to native intent and ACK regression
-        run: python tests/m4_gui_bridge_smoke.py
       - name: Verify V5 hardware control backlighting in embedded WebView and standalone
         run: python tests/hardware_key_v5_smoke.py
       - name: Verify V8 FX rack and Plugin Manager CSS ownership
