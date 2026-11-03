@@ -16,14 +16,15 @@ test('mixer shell is a presentation module, not a second audio engine',()=>{
   assert.doesNotMatch(css,/\[data-io-mode="(?:ROUTE|SENDS)"\]\{--ar-upper-height:/);
   assert.doesNotMatch(script,/routingDryApply|createPluginInstance|AudioContext|processBlock|setInterval|requestAnimationFrame/);
 });
-test('new shell resources are in the exact native WebView2 asset list',()=>{
+test('retired shell keeps its source regression but cannot be served by native Console',()=>{
   const cmake=read('CMakeLists.txt'),main=read('src/Main.cpp'),html=read('web/index.html');
   for(const name of ['mixer-layout.js','mixer-layout.css']){
-    assert.ok(cmake.includes('web/'+name),name+' not packaged');
-    assert.ok(main.includes('"/'+name+'"'),name+' not served');
-    assert.ok(html.includes(name),name+' not referenced');
+    assert.ok(html.includes(name),name+' archival layout missing');
+    assert.ok(!cmake.includes('web/'+name),name+' incorrectly bundled in product');
+    assert.ok(!main.includes('"/'+name+'"'),name+' legacy GUI still served');
   }
   assert.ok(html.indexOf('mixer-io.js')<html.indexOf('mixer-layout.js'));
+  assert.match(cmake,/web\/console-native\.html web\/console-native\.css web\/console-native\.js/);
 });
 
 test('route status adapter never consumes the device epoch before the native controller',()=>{

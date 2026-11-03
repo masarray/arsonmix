@@ -90,12 +90,13 @@ test('Windows Explorer pickers are separate, SafePointer guarded and have explic
     assert.ok(native.includes('action == "'+action+'"'));
 });
 
-test('asset registration and no blur/focus thrash in native plugin UI',()=>{
+test('archived plugin picker source stays covered but cannot silently replace Console UI',()=>{
   for(const f of ['plugin-ui.js','plugin-ui.css']){
     assert.ok(index.includes(f));
-    assert.ok(cmake.includes('web/'+f));
-    assert.ok(native.includes('"/'+f+'"'));
+    assert.ok(!cmake.includes('web/'+f));
+    assert.ok(!native.includes('"/'+f+'"'));
   }
+  assert.match(cmake,/web\/console-native\.html web\/console-native\.css web\/console-native\.js/);
   assert.ok(bridge.includes('pluginUi.updatePickerRows('));
   assert.ok(bridge.includes('renderPickerResults(); // Preserve search input, caret, focus'));
   assert.ok(bridge.includes('iconSvg("close")'));
