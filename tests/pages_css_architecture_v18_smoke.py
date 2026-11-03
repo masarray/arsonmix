@@ -68,7 +68,11 @@ async def main():
     from css_v19_restore import reconstruct as restore_pre_v19,manifest as v19_manifest
     old_chrome=restore_pre_v19()[2]
     assert old_chrome==data["prefix"]+owner
-    assert CHROME.read_text(encoding="utf-8")==old_chrome+v19_manifest()["movedChromeSuffix"]
+    from css_v21_restore import manifest as v21_manifest
+    assert CHROME.read_text(encoding="utf-8")==(
+        old_chrome+v19_manifest()["movedChromeSuffix"]+
+        v21_manifest()["sourceInlinePrefix"]
+    )
     original_rule=data["originalStyle"].split(".console-body .switch.btn-180{",1)[1].split("}",1)[0]
     new_rule=data["prefix"].split(".console-body .switch.btn-180{",1)[1].split("}",1)[0]
     for declaration in data["removedDeclarations"]:
