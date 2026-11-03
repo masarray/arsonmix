@@ -14,15 +14,83 @@ from pages_css_architecture_v18_smoke import material_compare
 from pages_css_architecture_v20_smoke import pseudo_state_compare
 
 def no_exact_owner_duplicates(source):
-    """Top-level CSS rule scan with balanced blocks, supports/media and strings."""
-    stack=[("root","")]
-    pos=0;quoted=None;comment=False;depth=0;seen=set();duplicates=[]
-    for i,ch in enumerate(source):
+    """Fail closed on repeat property/priority/full selector inside any @context.
+
+    A lexical rule scanner handles comments, strings and parentheses before
+    reading declarations. It intentionally does not merge selector lists or
+    invent specificity equivalence; those require richer cascade evidence.
+    """
+    stack=[{"kind":"root","ctx":""}]
+    begin=0
+    comment=False
+    quote=None
+    parenthesis=0
+    bracket=0
+    seen=set()
+    duplicates=[]
+    i=0
+    while i<len(source):
+        ch=source[i]
         next_ch=source[i+1] if i+1<len(source) else ""
-        # This fast static guard is deliberately conservative. Reversible
-        # authoritative evidence below covers the full exact source edits.
-    # The exact historical ledger is the enforcement surface for this milestone.
-    return duplicates
+        if comment:
+            if ch=="*" and next_ch=="/":
+                comment=False
+                i+=2
+            else:
+                i+=1
+            continue
+        if quote:
+            if ch=="\\":
+                i+=2
+            elif ch==quote:
+                quote=None
+                i+=1
+            else:
+                i+=1
+            continue
+        if ch=="/" and next_ch=="*":
+            comment=True
+            i+=2
+            continue
+        if ch in ("'",'"'):
+            quote=ch
+            i+=1
+            continue
+        if ch=="(":
+            parenthesis+=1
+        elif ch==")":
+            parenthesis-=1
+        elif ch=="[":
+            bracket+=1
+        elif ch=="]":
+            bracket-=1
+        if not parenthesis and not bracket and ch=="{":
+            head=re.sub(r"/\*[\s\S]*?\*/","",source[begin:i]).strip()
+            selector=re.sub(r"\s+"," ",head)
+            kind="at" if selector.startswith("@") else "rule"
+            ctx=stack[-1]["ctx"]+(" > "+selector if kind=="at" else "")
+            stack.append({"kind":kind,"selector":selector,"ctx":ctx,"body":i+1})
+            begin=i+1
+        elif not parenthesis and not bracket and ch=="}":
+            assert len(stack)>1,"CSS unbalanced closing brace"
+            node=stack.pop()
+            if node["kind"]=="rule":
+                body=source[node["body"]:i]
+                for match in re.finditer(
+                    r"([-\w]+)\s*:\s*([^;{}]+)\s*(?:;|$)",body
+                ):
+                    prop=match.group(1)
+                    value=match.group(2).strip()
+                    priority=value.lower().endswith("!important")
+                    key=(node["selector"],node["ctx"],prop,priority)
+                    if key in seen:
+                        duplicates.append(key)
+                    seen.add(key)
+            begin=i+1
+        i+=1
+    assert len(stack)==1 and not quote and not comment,"CSS source syntax unfinished"
+    assert not duplicates,("V24 duplicate exact owner declarations",duplicates)
+    return len(seen)
 
 def source_audit():
     source_gate()
@@ -40,6 +108,7 @@ def source_audit():
             record["old"]["length"],record["old"]["fnv"])
         assert (len(modern),fingerprint(modern))==(
             record["current"]["length"],record["current"]["fnv"])
+        assert no_exact_owner_duplicates(modern)>0,(name,"empty CSS owner")
         assert modern.count("!important")==record["current"]["important"]
         assert old.count("!important")-modern.count("!important")==record["metrics"]["important"]
         assert len(record["evidence"])==record["metrics"]["declarations"]
