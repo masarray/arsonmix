@@ -103,13 +103,14 @@ def geometry(page, density, label):
         # Both gain ruler and dBFS ruler retain independent vertical references.
         assert len(out["rigs"])==2,(label,density,"missing fader rigs",out["rigs"])
         for rig in out["rigs"]:
-            close(rig["wellWidth"],32,.6)
-            close(rig["capWidth"],27,.6)
-            close(rig["capHeight"],54,.6)
+            compact=density=="compact"
+            close(rig["wellWidth"],29 if compact else 32,.6)
+            close(rig["capWidth"],25 if compact else 27,.6)
+            close(rig["capHeight"],50 if compact else 54,.6)
             close(rig["laneWidth"],8,.6)
-            assert 2<=rig["meterGap"]<=7,(label,density,"meter detached from fader",rig)
+            assert 1<=rig["meterGap"]<=7,(label,density,"meter detached from fader",rig)
             assert 3<=rig["gap"]<=8,(label,density,"gain ruler detached from cap",rig)
-            close(rig["wellRight"],rig["rulerLeft"]-3,.75)
+            close(rig["wellRight"],rig["rulerLeft"]-(2 if compact else 3),.75)
             assert abs(rig["groupCenterDelta"])<=1.5,(
                 label,density,"instrument group off center",rig)
             assert rig["meterInside"] and rig["scaleInside"],(

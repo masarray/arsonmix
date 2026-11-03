@@ -361,3 +361,37 @@
    #174354 85%,#0a222e 100%)!important;
 }
 .console-body .strip .gain-tick.unity::before{width:9px}
+
+/* M2 density contracts. Standard gets breathing room without changing
+   its calibrated cap. Compact is a real narrower instrument, not a cropped
+   comfort layout: retain the dBFS numeric column and full drag/keyboard travel. */
+.console-body[data-density="standard"] .strip .fader-section{
+ padding-left:4px!important;padding-right:4px!important;
+}
+.console-body[data-density="compact"] .strip .fader-section{
+ padding-left:2px!important;padding-right:2px!important;
+}
+.console-body[data-density="compact"] .strip .fader-workspace{
+ grid-template-columns:46px 29px 22px!important;gap:2px!important;
+}
+.console-body[data-density="compact"] .strip .fader-workspace > .fader-box{
+ width:29px!important;min-width:29px!important;max-width:29px!important;
+}
+.console-body[data-density="compact"] .strip .fader-box::before{width:29px!important}
+.console-body[data-density="compact"] .strip .fader-scale{
+ width:22px!important;min-width:22px!important;
+}
+.console-body[data-density="compact"] .strip .fader-travel,
+.console-body[data-density="compact"] .strip .gain-scale-travel{
+ top:25px!important;bottom:25px!important;
+}
+.console-body[data-density="compact"] .strip .fader-travel .cap{
+ width:25px!important;height:50px!important;
+ background-size:25px 50px!important;
+}
+.console-body[data-density="compact"] .strip .fader-box .fader{
+ top:25px!important;bottom:25px!important;height:calc(100% - 50px)!important;
+}
+.console-body[data-density="compact"] .strip .fader-box::after{
+ top:25px!important;bottom:25px!important;
+}

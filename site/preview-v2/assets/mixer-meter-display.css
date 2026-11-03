@@ -214,3 +214,13 @@
  width:8px!important;min-width:8px!important;max-width:8px!important;
  flex:0 0 8px!important;
 }
+
+/* In 105px compact strips, keep the 21px dBFS numeral rail and the
+   full-size 8px LED pixels. Only the unused bar-gutter is narrowed. */
+.console-body[data-density="compact"] .strip .meter-box{
+ width:46px!important;min-width:46px!important;max-width:46px!important;
+}
+.console-body[data-density="compact"] .strip .meter-box .vu-bars{
+ width:23px!important;min-width:23px!important;max-width:23px!important;
+ flex-basis:23px!important;
+}
