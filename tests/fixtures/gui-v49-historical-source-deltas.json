@@ -1,14 +1,14 @@
 {
   "milestone": "V49",
-  "baseCommit": "aba0e2879fbc6cbfe42be42197aa249accb08abf",
+  "baseCommit": "9b286f486bc59cd0e7a663912787b00b73a30a18",
   "scope": "M3 + V21 GUI baseline with full reversible V49 UX deltas",
   "source": {
-    "length": 205148,
-    "fnv": "1ca21b16"
+    "length": 193759,
+    "fnv": "b8d9287e"
   },
   "current": {
-    "length": 210077,
-    "fnv": "6c71df72"
+    "length": 198688,
+    "fnv": "1a200b1a"
   },
   "hunks": [
     {
