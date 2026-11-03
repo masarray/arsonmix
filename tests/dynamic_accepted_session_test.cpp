@@ -166,13 +166,61 @@ int main() {
         const float gain=id==group?2.f:id==fx?.5f:1.f;
         for(int i=0;i<frames;++i){left[i]*=gain;right[i]*=gain;}
     };
-    const auto render=[&]() {
-        return session.render(epoch,inputs,2,l.data(),r.data(),64,
+    const auto render=[&](int n=64) {
+        return session.render(epoch,inputs,2,l.data(),r.data(),n,
                               false,processFx,ml.data(),mr.data());
     };
     assert(render());
     assert(near(l[63],(.2f+.4f)*center));
     assert(near(ml[63],(.2f*.2f+.4f*.25f)*center));
+    // M5.3 native SOURCE changes physical pins but not VST3, ChannelId,
+    // send graph, or output ownership. Stage no callback memory and ramp
+    // over 4+16+32+12 real samples with independent MONITOR taps.
+    assert(!session.setLivePhysicalSource(epoch-1,2,micA,1,-1,false));
+    assert(!session.setLivePhysicalSource(epoch,1,micA,1,-1,false));
+    assert(!session.setLivePhysicalSource(epoch,2,micA,2,-1,false));
+    assert(!session.setLivePhysicalSource(epoch,2,micA,1,0,true));
+    assert(session.setLivePhysicalSource(epoch,2,micA,1,-1,false));
+    assert(session.acceptedPhysicalRequest().sources[0].inputL==1);
+    assert(render(4));
+    assert(l[3]>(.2f+.4f)*center && l[3]<(.4f+.4f)*center);
+    assert(render(16)&&render(32)&&render(12));
+    assert(near(l[11],(.4f+.4f)*center));
+    assert(near(ml[11],(.4f*.2f+.4f*.25f)*center));
+    // A last-target-wins reverse retains the same PCM and plugin graph.
+    assert(session.setLivePhysicalSource(epoch,2,micA,0,-1,false));
+    assert(render());
+    assert(near(l[63],(.2f+.4f)*center));
+    assert(near(ml[63],(.2f*.2f+.4f*.25f)*center));
+    assert(session.acceptedGraphRevision()==2);
+    // One accepted ChannelId graph: realtime MUTE/SOLO and PRE/POST follow
+    // the same callback, not a recompilation or an extra FX instance.
+    assert(session.setLiveMuteSolo(epoch,2,micA,true,false));
+    assert(session.acceptedRoster().find(micA)->mute);
+    assert(render(4));
+    assert(l[3]>.4f*center && l[3]<.6f*center);
+    assert(render(16)&&render(32)&&render(12));
+    assert(near(l[11],.4f*center));
+    assert(near(ml[11],(.4f*.25f)*center));
+    assert(session.setLiveMuteSolo(epoch,2,micA,false,true));
+    assert(render());
+    assert(near(l[63],.2f*center));
+    assert(near(ml[63],(.2f*.2f)*center));
+    assert(session.setLiveMuteSolo(epoch,2,main,true,false));
+    assert(render());
+    assert(near(l[63],0.f)&&near(r[63],0.f));
+    assert(near(ml[63],(.2f*.2f)*center)); // independent MONITOR
+    assert(session.setLiveMuteSolo(epoch,2,main,false,false));
+    assert(session.setLiveMuteSolo(epoch,2,micA,false,false));
+    assert(render());
+    assert(near(l[63],(.2f+.4f)*center));
+    assert(near(ml[63],(.2f*.2f+.4f*.25f)*center));
+    assert(!session.setLiveMuteSolo(epoch-1,2,micA,true,false));
+    assert(!session.setLiveMuteSolo(epoch,1,micA,true,false));
+    assert(!session.setLiveMuteSolo(epoch,2,ChannelId{987654},true,false));
+    assert(!session.acceptedRoster().find(micA)->mute&&
+           !session.acceptedRoster().find(micA)->solo&&
+           session.acceptedGraphRevision()==2);
     // Control update is a real RT atomic, but is ALSO preserved by roster so
     // subsequent BUS compilation cannot silently reset fader/send gain.
     assert(session.setLiveMix(epoch,2,micA,.5f,0.f));

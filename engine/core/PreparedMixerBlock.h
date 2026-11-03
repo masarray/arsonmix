@@ -3,6 +3,7 @@
 #include "ChannelSendPlan.h"
 #include "AuxBusPlan.h"
 #include "RealtimeSlew64.h"
+#include "RealtimeStereoControlWord.h"
 #include <algorithm>
 #include <atomic>
 #include <array>
@@ -132,34 +133,18 @@ struct PreparedRenderGraph final {
 // precision and leave 2 bits for MUTE/SOLO. All quantization is CONTROL-only.
 class RealtimeStripControls final {
 public:
-    static constexpr std::uint64_t gainMask=(std::uint64_t{1}<<31)-1;
-    static constexpr std::uint64_t mutedBit=std::uint64_t{1}<<62;
-    static constexpr std::uint64_t soloBit=std::uint64_t{1}<<63;
-    static constexpr std::uint64_t unity=536870912ULL;
-    static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
-                  "Live native controls require a lock-free 64-bit atomic");
-    struct Snapshot final {
-        float left=1.f,right=1.f;
-        bool mute=false,solo=false;
-    };
-    struct Target final {
-        std::atomic<std::uint64_t> state{unity|(unity<<31)};
-    };
-    static std::uint64_t quantize(float v) noexcept {
-        return static_cast<std::uint64_t>(
-            static_cast<double>(v)*(static_cast<double>(gainMask)/4.)+.5);
+    using Word=armix::dsp::RealtimeStereoControlWord;
+    static constexpr std::uint64_t gainMask=Word::gainMask;
+    static constexpr std::uint64_t mutedBit=Word::mutedBit;
+    static constexpr std::uint64_t soloBit=Word::soloBit;
+    static constexpr std::uint64_t unity=Word::unity;
+    using Snapshot=Word::Snapshot;
+    struct Target final {std::atomic<std::uint64_t> state{unity|(unity<<31)};};
+    static std::uint64_t quantize(float v) noexcept {return Word::quantize(v);}
+    static std::uint64_t encode(float l,float r,bool mute,bool solo) noexcept {
+        return Word::encode(l,r,mute,solo);
     }
-    static std::uint64_t encode(float left,float right,
-                                bool mute,bool solo) noexcept {
-        return quantize(left)|(quantize(right)<<31)|
-               (mute?mutedBit:0ULL)|(solo?soloBit:0ULL);
-    }
-    static Snapshot decode(std::uint64_t value) noexcept {
-        constexpr double scale=4./static_cast<double>(gainMask);
-        return {static_cast<float>(static_cast<double>(value&gainMask)*scale),
-                static_cast<float>(static_cast<double>((value>>31)&gainMask)*scale),
-                (value&mutedBit)!=0,(value&soloBit)!=0};
-    }
+    static Snapshot decode(std::uint64_t v) noexcept {return Word::decode(v);}
     bool set(int strip,float gain,float pan,bool mono,bool mute,bool solo) noexcept {
         if(strip<0||strip>=stripCount||!std::isfinite(gain)||gain<0.f||gain>4.f||
            !std::isfinite(pan)||pan< -1.f||pan>1.f)return false;
