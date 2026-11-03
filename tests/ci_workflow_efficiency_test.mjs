@@ -6,7 +6,7 @@ const read=file=>readFileSync(file,'utf8');
 const windows=read('.github/workflows/p1-windows.yml');
 const ui=read('.github/workflows/ui-smoke.yml');
 const pages=read('.github/workflows/pages-publish.yml');
-test('only main and explicitly selected branch can produce a Windows FAT artifact',()=>{
+test('only main and two explicitly selected branches can produce experimental Windows FAT artifacts',()=>{
  assert.match(windows,/branches: \[main\]/);
  assert.doesNotMatch(windows,/branches: \[ main, feature\//);
  assert.match(windows,/pull_request:\s+paths:/);
@@ -15,7 +15,8 @@ test('only main and explicitly selected branch can produce a Windows FAT artifac
  assert.match(windows,/'web\/\*\*'/);
  assert.match(windows,/workflow_dispatch:/);
  assert.match(windows,/cancel-in-progress: true/);
- assert.match(windows,/if: \$\{\{ github\.event_name != 'pull_request' \|\| github\.head_ref == 'milestone\/m5-universal-channelid-vst3-lease-migration-20261101' \}\}/);
+ assert.ok(windows.includes("if: ${{ github.event_name != 'pull_request' || github.head_ref == 'milestone/m5-universal-channelid-vst3-lease-migration-20261101' || github.head_ref == 'integration/m5-1-physical-m4-gui-fat-20261103' }}"));
+ assert.ok(windows.includes('ArSonMix-M5.1-JOINED-GUI-M4-EXPERIMENTAL-Hardware-FAT-Windows-x64'));
  assert.match(windows,/ArSonMix-ENGINE-10CH4AUX-EXPERIMENTAL-Hardware-FAT-Windows-x64/);
  assert.ok(!windows.includes("github.head_ref == 'milestone/m4-unified-native-multichannel-fx-20261101'"));
  assert.ok(windows.indexOf('scripts/verify_native_windows_artifact.ps1') <
@@ -46,7 +47,8 @@ test('retain current native audio and dearVR CTests during CI optimization',()=>
  }
  assert.match(windows,/ctest --test-dir build -C Release --output-on-failure/);
  assert.match(windows,/'scripts\/build_ui_css\.py'/);
- assert.match(windows,/if: \$\{\{ github\.event_name != 'pull_request' \|\| github\.head_ref == 'milestone\/m5-universal-channelid-vst3-lease-migration-20261101' \}\}/);
+ assert.ok(windows.includes("if: ${{ github.event_name != 'pull_request' || github.head_ref == 'milestone/m5-universal-channelid-vst3-lease-migration-20261101' || github.head_ref == 'integration/m5-1-physical-m4-gui-fat-20261103' }}"));
+ assert.ok(windows.includes('ArSonMix-M5.1-JOINED-GUI-M4-EXPERIMENTAL-Hardware-FAT-Windows-x64'));
  assert.match(windows,/ArSonMix-ENGINE-10CH4AUX-EXPERIMENTAL-Hardware-FAT-Windows-x64/);
 });
 

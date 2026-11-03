@@ -152,13 +152,13 @@ jobs:
           & ./scripts/verify_native_windows_artifact.ps1 -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       # PRs compile/CTest/package but never silently publish a stable build.
-      # Sole ENGINE #266 may upload an EXACT-SHA, CI/PE-verified
-      # UNQUALIFIED 10CH+4AUX engineering FAT ZIP; NOT universal live.
-      # Retired M4-only branches cannot publish competing ENGINE builds.
+      # Only ENGINE #266 or exact joined GUI/M4 FAT integration #310 may
+      # upload an independently verified UNQUALIFIED hardware test ZIP.
+      # Stable main publisher and retired M4 branches remain unchanged.
       - uses: actions/upload-artifact@v4
-        if: ${{ github.event_name != 'pull_request' || github.head_ref == 'milestone/m5-universal-channelid-vst3-lease-migration-20261101' }}
+        if: ${{ github.event_name != 'pull_request' || github.head_ref == 'milestone/m5-universal-channelid-vst3-lease-migration-20261101' || github.head_ref == 'integration/m5-1-physical-m4-gui-fat-20261103' }}
         with:
-          name: ${{ github.event_name == 'pull_request' && 'ArSonMix-ENGINE-10CH4AUX-EXPERIMENTAL-Hardware-FAT-Windows-x64' || 'ArSonMix-GUI10CH-P012-Verified-Hardware-FAT-Windows-x64' }}
+          name: ${{ github.event_name == 'pull_request' && (github.head_ref == 'integration/m5-1-physical-m4-gui-fat-20261103' && 'ArSonMix-M5.1-JOINED-GUI-M4-EXPERIMENTAL-Hardware-FAT-Windows-x64' || 'ArSonMix-ENGINE-10CH4AUX-EXPERIMENTAL-Hardware-FAT-Windows-x64') || 'ArSonMix-GUI10CH-P012-Verified-Hardware-FAT-Windows-x64' }}
           path: dist/
           if-no-files-found: error
           retention-days: 14
