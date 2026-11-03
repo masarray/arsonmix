@@ -38,7 +38,16 @@ def run():
             hit=page.locator('#wireLayer path.wire-interaction-hit').first
             assert hit.count()>=1,(width,"no selectable cable")
             assert hit.get_attribute("data-edge-id"),(width,"missing canonical edge id")
-            hit.click()
+            # Click at the SVG *curve* midpoint, not the bounding-box center
+            # (which is often off-stroke for a hanging cable).
+            mid=hit.evaluate("""el=>{
+                const pt=el.getPointAtLength(el.getTotalLength()*.5);
+                const svg=el.ownerSVGElement, rect=svg.getBoundingClientRect();
+                const box=svg.viewBox.baseVal;
+                return {x:rect.left+(pt.x-box.x)*rect.width/box.width,
+                        y:rect.top+(pt.y-box.y)*rect.height/box.height};
+            }""")
+            page.mouse.click(mid["x"],mid["y"])
             assert page.locator('#wireLayer path.wire-interaction-hit.is-wire-selected').count()>=1,(width,"cable not selected")
             # Leave patch mode. Existing route remains a directly editable knob.
             page.locator('#tracks .strip[data-id="3"] .strip-identity-top').click()
