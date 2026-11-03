@@ -817,7 +817,15 @@
     const targets=id?[id]:affectedIds.length?['@selection',...affectedIds]:
       op==='CREATE_CHANNEL'?['@roster']:[];
     pending.set(requestId,{op,id,targets,baseRevision:command.baseGraphRevision,
-      baseRosterRevision:command.baseRosterRevision,epoch:command.deviceEpoch,snapshotSerial});
+      baseRosterRevision:command.baseRosterRevision,epoch:command.deviceEpoch,snapshotSerial,
+      // Pure control-thread proof: the native ACK alone cannot guarantee the
+      // accepted M4 target is already reflected in a later hardware readback.
+      m4Request:compatibility?{
+        lane:Number(compatibility.targetChannelId),
+        operation:compatibility.operation,
+        payload:compatibility.payload,
+        legacyRoutingRevision:compatibility.legacyRoutingRevision
+      }:null});
     for(const target of targets)pendingTargets.add(target);
     showFeedback('PENDING · '+op+' · awaiting native ACK');
     refreshDisabled();
@@ -856,11 +864,42 @@
     }
     refreshDisabled();
   }
+  function m4TargetObserved(request){
+    if(!request)return true; // Universal ChannelId has its own graph gate.
+    const native=acceptedWire?.legacyM4;
+    if(!accepted?.m4NativeProjection||
+       native?.controlPlane!=='LEGACY_M4_ORDINAL'||
+       native.routingRevision!==request.legacyRoutingRevision)return false;
+    const index=request.lane-1;
+    if(!Number.isInteger(index)||index<0||index>=10)return false;
+    const ctl=native.channelControls?.[index];
+    const route=native.acceptedChannels?.[index];
+    const data=request.payload||{};
+    const close=(actual,goal)=>Number.isFinite(actual)&&Number.isFinite(goal)&&
+      Math.abs(actual-goal)<=0.12;
+    switch(request.operation){
+      case 'SET_FADER':return close(ctl?.db,data.valueDb);
+      case 'SET_PAN':return close(ctl?.pan,data.value);
+      case 'SET_MUTE':return ctl?.mute===data.value;
+      case 'SET_SOLO':return ctl?.solo===data.value;
+      case 'SET_SOURCE':return route?.mode==='MONO'&&route?.right===-1&&
+        route?.left===Number(String(data.portId||'').slice(3));
+      case 'SET_PROCESSING_FORMAT':return route?.channelFormat===data.format;
+      case 'SET_PRIMARY_OUT':return route?.main===true;
+      case 'SET_INSERT_BYPASS':return native.fxInstances?.[index]?.some(f=>
+        f?.instanceId===data.insertId&&f.bypassed===data.bypassed)===true;
+      // Current M4 readback lacks individual realtime SEND target gains and
+      // an editor-open state. Do not invent these: still require native ACK
+      // plus a fresh epoch/revision-matched snapshot, not fabricated PCM.
+      default:return true;
+    }
+  }
   function ackMatches(wait){
     return acceptedNative&&snapshotSerial>wait.snapshotSerial&&
       accepted?.device?.epoch===wait.epoch&&
       accepted?.graph?.revision===wait.requiredRevision&&
-      accepted?.graph?.rosterRevision===wait.requiredRoster;
+      accepted?.graph?.rosterRevision===wait.requiredRoster&&
+      m4TargetObserved(wait.m4Request);
   }
   function validSnapshot(s){
     // Mirror the required v8 producer wire: never infer physical masks,
@@ -1034,6 +1073,16 @@
       if(ackMatches(task)){
         awaitingSnapshot.delete(requestId);
         for(const target of task.targets||[])pendingTargets.delete(target);
+        if(task.m4Request)
+          showFeedback('NATIVE READBACK VERIFIED · '+task.op+
+            ' · audible PCM still requires physical FAT');
+      }else if(task.m4Request&&snapshotSerial-task.snapshotSerial>32){
+        // Never lock a strip forever on repeated stale/unchanged native
+        // readbacks. This is a failed control transaction, not success.
+        awaitingSnapshot.delete(requestId);
+        for(const target of task.targets||[])pendingTargets.delete(target);
+        showFeedback('NATIVE READBACK NOT VERIFIED · '+task.op+
+          ' · retained actual hardware state');
       }
     }
     const newStructure=structure!==lastStructure||

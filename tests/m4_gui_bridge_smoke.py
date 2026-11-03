@@ -76,10 +76,17 @@ async def main():
         await page.evaluate("""(id)=>window.__m4Test.publish('arMixConsoleAck',{
           requestId:id,status:'ACCEPTED',deviceEpoch:'47',
           graphRevision:'0',rosterRevision:'0',errorCode:''})""",command["requestId"])
+        # A newer snapshot with the SAME epoch/revisions but unchanged MUTE
+        # must NOT unlock an apparently successful request. The native value,
+        # not an ACK or freshly incremented telemetry serial, owns the UI.
+        await page.evaluate("(s)=>window.__m4Test.publish('arMixConsoleSnapshot',s)",original)
+        assert await mute.is_disabled(), "ACK + unchanged M4 control is not verified"
+        assert await mute.get_attribute("aria-pressed")=="false"
         revised=copy.deepcopy(original)
         revised["legacyM4"]["channelControls"][0]["mute"]=True
         await page.evaluate("(s)=>window.__m4Test.publish('arMixConsoleSnapshot',s)",revised)
         assert await mute.get_attribute("aria-pressed")=="true"
+        assert await mute.is_enabled(), "Matching native readback releases the M4 control"
         assert await page.evaluate("()=>window.__arMixV6ReadOnly().pendingCount")==0
 
         # PAN uses native -100..100, not the 0..1 normalized DSP coefficient.
