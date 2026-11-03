@@ -1,0 +1,510 @@
+{
+  "milestone": "V23",
+  "baseCommit": "9b286f486bc59cd0e7a663912787b00b73a30a18",
+  "scope": "Provable exact-selector/at-rule/priority CSS cascade losers: Chrome + WIRE owners",
+  "ownerOrder": [
+    "mixer-chrome-material.css",
+    "mixer-wire-dots.css"
+  ],
+  "linkChanges": [
+    {
+      "old": "assets/mixer-chrome-material.css?v=css-chrome-owner-v22-m3-header",
+      "now": "assets/mixer-chrome-material.css?v=css-chrome-owner-v23-m3-header"
+    },
+    {
+      "old": "assets/mixer-wire-dots.css?v=v47-css-v16",
+      "now": "assets/mixer-wire-dots.css?v=v23-wire-cascade"
+    }
+  ],
+  "htmlOld": {
+    "length": 193771,
+    "fnv": "b8d9287e"
+  },
+  "htmlCurrent": {
+    "length": 193776,
+    "fnv": "04daa2f8"
+  },
+  "owners": {
+    "mixer-chrome-material.css": {
+      "old": {
+        "length": 64808,
+        "fnv": "7624ccda",
+        "important": 631
+      },
+      "current": {
+        "length": 64356,
+        "fnv": "925d2e35",
+        "important": 623
+      },
+      "edits": [
+        {
+          "offset": 15635,
+          "text": "--pan-h:43px;",
+          "kind": "declaration",
+          "selector": ".console-body",
+          "property": "--pan-h"
+        },
+        {
+          "offset": 15648,
+          "text": "--switch-h:44px;",
+          "kind": "declaration",
+          "selector": ".console-body",
+          "property": "--switch-h"
+        },
+        {
+          "offset": 16913,
+          "text": ".console-body .gain-scale-travel{top:31px!important;bottom:31px!important}",
+          "kind": "rule",
+          "selector": ".console-body .gain-scale-travel",
+          "properties": [
+            "top",
+            "bottom"
+          ]
+        },
+        {
+          "offset": 17082,
+          "text": ".console-body:not(.collapsed-fx){--fx-h:clamp(155px,24vh,225px)!important}",
+          "kind": "rule",
+          "selector": ".console-body:not(.collapsed-fx)",
+          "properties": [
+            "--fx-h"
+          ]
+        },
+        {
+          "offset": 22650,
+          "text": "height:25px!important;",
+          "kind": "declaration",
+          "selector": ".mixer-title",
+          "property": "height"
+        },
+        {
+          "offset": 22672,
+          "text": "flex:0 0 25px!important;",
+          "kind": "declaration",
+          "selector": ".mixer-title",
+          "property": "flex"
+        },
+        {
+          "offset": 23395,
+          "text": ".console-body .strip.selected{\n box-shadow:inset 2px 0 #8ed1e2!important;\n}",
+          "kind": "rule",
+          "selector": ".console-body .strip.selected",
+          "properties": [
+            "box-shadow"
+          ]
+        },
+        {
+          "offset": 25211,
+          "text": ".console-body .strip .route-section{background:linear-gradient(#142732,#11212b)!important}",
+          "kind": "rule",
+          "selector": ".console-body .strip .route-section",
+          "properties": [
+            "background"
+          ]
+        },
+        {
+          "offset": 25302,
+          "text": ".console-body .strip .send-section{background:#15252e!important}",
+          "kind": "rule",
+          "selector": ".console-body .strip .send-section",
+          "properties": [
+            "background"
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "selector": ".console-body:not(.collapsed-fx)",
+          "mediaContext": "",
+          "property": "--fx-h",
+          "important": true,
+          "losingValue": "clamp(155px,24vh,225px)!important",
+          "winningValue": "clamp(111px,13.5vh,137px)!important",
+          "losingSourceOffset": 17115,
+          "winningSourceOffset": 30669
+        },
+        {
+          "selector": ".console-body .gain-scale-travel",
+          "mediaContext": "",
+          "property": "top",
+          "important": true,
+          "losingValue": "31px!important",
+          "winningValue": "27px!important",
+          "losingSourceOffset": 16946,
+          "winningSourceOffset": 34563
+        },
+        {
+          "selector": ".console-body .gain-scale-travel",
+          "mediaContext": "",
+          "property": "bottom",
+          "important": true,
+          "losingValue": "31px!important",
+          "winningValue": "27px!important",
+          "losingSourceOffset": 16965,
+          "winningSourceOffset": 34582
+        },
+        {
+          "selector": ".console-body",
+          "mediaContext": "",
+          "property": "--pan-h",
+          "important": false,
+          "losingValue": "43px",
+          "winningValue": "37px",
+          "losingSourceOffset": 15635,
+          "winningSourceOffset": 41696
+        },
+        {
+          "selector": ".console-body",
+          "mediaContext": "",
+          "property": "--switch-h",
+          "important": false,
+          "losingValue": "44px",
+          "winningValue": "40px",
+          "losingSourceOffset": 15648,
+          "winningSourceOffset": 41709
+        },
+        {
+          "selector": ".console-body .strip.selected",
+          "mediaContext": "",
+          "property": "box-shadow",
+          "important": true,
+          "losingValue": "inset 2px 0 #8ed1e2!important",
+          "winningValue": "inset 0 0 0 1px var(--ch),inset 0 0 0 2px #0c1a24!important",
+          "losingSourceOffset": 23427,
+          "winningSourceOffset": 51212
+        },
+        {
+          "selector": ".console-body .strip .route-section",
+          "mediaContext": "",
+          "property": "background",
+          "important": true,
+          "losingValue": "linear-gradient(#142732,#11212b)!important",
+          "winningValue": "var(--v13-route)!important",
+          "losingSourceOffset": 25247,
+          "winningSourceOffset": 51322
+        },
+        {
+          "selector": ".console-body .strip .send-section",
+          "mediaContext": "",
+          "property": "background",
+          "important": true,
+          "losingValue": "#15252e!important",
+          "winningValue": "var(--v13-send)!important",
+          "losingSourceOffset": 25337,
+          "winningSourceOffset": 51396
+        },
+        {
+          "selector": ".mixer-title",
+          "mediaContext": "",
+          "property": "height",
+          "important": true,
+          "losingValue": "25px!important",
+          "winningValue": "66px!important",
+          "losingSourceOffset": 22650,
+          "winningSourceOffset": 63178
+        },
+        {
+          "selector": ".mixer-title",
+          "mediaContext": "",
+          "property": "flex",
+          "important": true,
+          "losingValue": "0 0 25px!important",
+          "winningValue": "0 0 66px!important",
+          "losingSourceOffset": 22672,
+          "winningSourceOffset": 63200
+        }
+      ],
+      "metrics": {
+        "declarations": 10,
+        "important": 8,
+        "wholeRules": 5,
+        "partialDeclarations": 4,
+        "removedChars": 452,
+        "patches": 9
+      }
+    },
+    "mixer-wire-dots.css": {
+      "old": {
+        "length": 49178,
+        "fnv": "eab3857f",
+        "important": 437
+      },
+      "current": {
+        "length": 48720,
+        "fnv": "d7deca46",
+        "important": 425
+      },
+      "edits": [
+        {
+          "offset": 14207,
+          "text": "width:24px!important;",
+          "kind": "declaration",
+          "selector": ".console-body.wire-routing-v15 .strip .wire-tray .wire-node-out",
+          "property": "width"
+        },
+        {
+          "offset": 14228,
+          "text": "min-width:24px!important;",
+          "kind": "declaration",
+          "selector": ".console-body.wire-routing-v15 .strip .wire-tray .wire-node-out",
+          "property": "min-width"
+        },
+        {
+          "offset": 14253,
+          "text": "flex:0 0 24px!important;",
+          "kind": "declaration",
+          "selector": ".console-body.wire-routing-v15 .strip .wire-tray .wire-node-out",
+          "property": "flex"
+        },
+        {
+          "offset": 14472,
+          "text": "width:12px;",
+          "kind": "declaration",
+          "selector": ".console-body.wire-routing-v15 .strip .wire-tray .wire-node-out .wire-pin",
+          "property": "width"
+        },
+        {
+          "offset": 14483,
+          "text": "height:12px;",
+          "kind": "declaration",
+          "selector": ".console-body.wire-routing-v15 .strip .wire-tray .wire-node-out .wire-pin",
+          "property": "height"
+        },
+        {
+          "offset": 14520,
+          "text": "border-radius:50%;",
+          "kind": "declaration",
+          "selector": ".console-body.wire-routing-v15 .strip .wire-tray .wire-node-out .wire-pin",
+          "property": "border-radius"
+        },
+        {
+          "offset": 20285,
+          "text": "height:23px!important;",
+          "kind": "declaration",
+          "selector": ".console-body.wire-routing-v15.collapsed-send .strip .send-section.wire-section",
+          "property": "height"
+        },
+        {
+          "offset": 20307,
+          "text": "min-height:23px!important;",
+          "kind": "declaration",
+          "selector": ".console-body.wire-routing-v15.collapsed-send .strip .send-section.wire-section",
+          "property": "min-height"
+        },
+        {
+          "offset": 20333,
+          "text": "max-height:23px!important;",
+          "kind": "declaration",
+          "selector": ".console-body.wire-routing-v15.collapsed-send .strip .send-section.wire-section",
+          "property": "max-height"
+        },
+        {
+          "offset": 21142,
+          "text": "flex:0 0 22px!important;",
+          "kind": "declaration",
+          "selector": ".console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary",
+          "property": "flex"
+        },
+        {
+          "offset": 21166,
+          "text": "height:22px!important;",
+          "kind": "declaration",
+          "selector": ".console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary",
+          "property": "height"
+        },
+        {
+          "offset": 21188,
+          "text": "min-height:22px!important;",
+          "kind": "declaration",
+          "selector": ".console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary",
+          "property": "min-height"
+        },
+        {
+          "offset": 21214,
+          "text": "max-height:22px!important;",
+          "kind": "declaration",
+          "selector": ".console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary",
+          "property": "max-height"
+        },
+        {
+          "offset": 23727,
+          "text": ".console-body.wire-routing-v15 .strip .wire-tray,\n.console-body.wire-routing-v15 .strip .wire-tray.linked{\n grid-template-columns:24px 28px 22px!important;gap:4px!important;\n}",
+          "kind": "rule",
+          "selector": ".console-body.wire-routing-v15 .strip .wire-tray, .console-body.wire-routing-v15 .strip .wire-tray.linked",
+          "properties": [
+            "grid-template-columns",
+            "gap"
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "selector": ".console-body.wire-routing-v15 .strip .wire-tray .wire-node-out .wire-pin",
+          "mediaContext": "",
+          "property": "width",
+          "important": false,
+          "losingValue": "12px",
+          "winningValue": "12px",
+          "losingSourceOffset": 14472,
+          "winningSourceOffset": 40148
+        },
+        {
+          "selector": ".console-body.wire-routing-v15 .strip .wire-tray .wire-node-out .wire-pin",
+          "mediaContext": "",
+          "property": "height",
+          "important": false,
+          "losingValue": "12px",
+          "winningValue": "12px",
+          "losingSourceOffset": 14483,
+          "winningSourceOffset": 40159
+        },
+        {
+          "selector": ".console-body.wire-routing-v15 .strip .wire-tray .wire-node-out .wire-pin",
+          "mediaContext": "",
+          "property": "border-radius",
+          "important": false,
+          "losingValue": "50%",
+          "winningValue": "50%",
+          "losingSourceOffset": 14520,
+          "winningSourceOffset": 40193
+        },
+        {
+          "selector": ".console-body.wire-routing-v15 .strip .wire-tray, .console-body.wire-routing-v15 .strip .wire-tray.linked",
+          "mediaContext": "",
+          "property": "grid-template-columns",
+          "important": true,
+          "losingValue": "24px 28px 22px!important",
+          "winningValue": "minmax(39px,1.08fr) minmax(40px,1.10fr) minmax(35px,1fr)!important",
+          "losingSourceOffset": 23835,
+          "winningSourceOffset": 43027
+        },
+        {
+          "selector": ".console-body.wire-routing-v15 .strip .wire-tray, .console-body.wire-routing-v15 .strip .wire-tray.linked",
+          "mediaContext": "",
+          "property": "gap",
+          "important": true,
+          "losingValue": "4px!important",
+          "winningValue": "2px!important",
+          "losingSourceOffset": 23882,
+          "winningSourceOffset": 43118
+        },
+        {
+          "selector": ".console-body.wire-routing-v15 .strip .wire-tray .wire-node-out",
+          "mediaContext": "",
+          "property": "width",
+          "important": true,
+          "losingValue": "24px!important",
+          "winningValue": "35px!important",
+          "losingSourceOffset": 14207,
+          "winningSourceOffset": 43771
+        },
+        {
+          "selector": ".console-body.wire-routing-v15 .strip .wire-tray .wire-node-out",
+          "mediaContext": "",
+          "property": "min-width",
+          "important": true,
+          "losingValue": "24px!important",
+          "winningValue": "35px!important",
+          "losingSourceOffset": 14228,
+          "winningSourceOffset": 43792
+        },
+        {
+          "selector": ".console-body.wire-routing-v15 .strip .wire-tray .wire-node-out",
+          "mediaContext": "",
+          "property": "flex",
+          "important": true,
+          "losingValue": "0 0 24px!important",
+          "winningValue": "0 0 35px!important",
+          "losingSourceOffset": 14253,
+          "winningSourceOffset": 43817
+        },
+        {
+          "selector": ".console-body.wire-routing-v15.collapsed-send .strip .send-section.wire-section",
+          "mediaContext": "",
+          "property": "height",
+          "important": true,
+          "losingValue": "23px!important",
+          "winningValue": "27px!important",
+          "losingSourceOffset": 20285,
+          "winningSourceOffset": 48926
+        },
+        {
+          "selector": ".console-body.wire-routing-v15.collapsed-send .strip .send-section.wire-section",
+          "mediaContext": "",
+          "property": "min-height",
+          "important": true,
+          "losingValue": "23px!important",
+          "winningValue": "27px!important",
+          "losingSourceOffset": 20307,
+          "winningSourceOffset": 48948
+        },
+        {
+          "selector": ".console-body.wire-routing-v15.collapsed-send .strip .send-section.wire-section",
+          "mediaContext": "",
+          "property": "max-height",
+          "important": true,
+          "losingValue": "23px!important",
+          "winningValue": "27px!important",
+          "losingSourceOffset": 20333,
+          "winningSourceOffset": 48974
+        },
+        {
+          "selector": ".console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary",
+          "mediaContext": "",
+          "property": "flex",
+          "important": true,
+          "losingValue": "0 0 22px!important",
+          "winningValue": "0 0 26px!important",
+          "losingSourceOffset": 21142,
+          "winningSourceOffset": 49077
+        },
+        {
+          "selector": ".console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary",
+          "mediaContext": "",
+          "property": "height",
+          "important": true,
+          "losingValue": "22px!important",
+          "winningValue": "26px!important",
+          "losingSourceOffset": 21166,
+          "winningSourceOffset": 49101
+        },
+        {
+          "selector": ".console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary",
+          "mediaContext": "",
+          "property": "min-height",
+          "important": true,
+          "losingValue": "22px!important",
+          "winningValue": "26px!important",
+          "losingSourceOffset": 21188,
+          "winningSourceOffset": 49123
+        },
+        {
+          "selector": ".console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary",
+          "mediaContext": "",
+          "property": "max-height",
+          "important": true,
+          "losingValue": "22px!important",
+          "winningValue": "26px!important",
+          "losingSourceOffset": 21214,
+          "winningSourceOffset": 49149
+        }
+      ],
+      "metrics": {
+        "declarations": 15,
+        "important": 12,
+        "wholeRules": 1,
+        "partialDeclarations": 13,
+        "removedChars": 458,
+        "patches": 14
+      }
+    }
+  },
+  "totals": {
+    "removedCssChars": 910,
+    "removedDeclarations": 25,
+    "removedImportant": 20,
+    "removedWholeRules": 6,
+    "createdStylesheets": 0,
+    "changedJsFiles": 0
+  }
+}
