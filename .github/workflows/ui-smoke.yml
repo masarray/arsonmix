@@ -152,7 +152,7 @@ jobs:
             test -s "$backup/$path"
             cp "$backup/$path" "$path"
           done
-          git diff --exit-code -- site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-wire-dots.css site/preview-v2/assets/mixer-meter-display.css
+          git diff --exit-code -- site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-wire-dots.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-fx-rack.css
       - name: Verify embedded Inter font and contextual V7 micro-controls
         run: python tests/pages_inter_utility_v7_smoke.py
       - name: Validate exact alpha micro hardware sprite states and WIRE coexistence
