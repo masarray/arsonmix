@@ -539,10 +539,11 @@ public:
     // changes, and readback comes from the newly accepted PCM publisher.
     // This is deliberately a SEPARATE legacyM4.nativeBus namespace rather
     // than claiming that universal CH11/WIRE/SHOW is available.
-    template<class Engine>
+    template<class Engine,class NativeFxAction>
     juce::var processNativeBusIntent(const juce::var& intent,
                                      const juce::var& snapshot,
-                                     Engine& engine,bool ioBusy=false) {
+                                     Engine& engine,bool ioBusy,
+                                     NativeFxAction&& onNativeFx) {
         const auto req=intent.getProperty("requestId",juce::var());
         const auto request=req.isString()?req.toString():juce::String();
         const auto key=request.toStdString();
@@ -620,6 +621,24 @@ public:
                         else {nativeRev=out.pcmRevision;
                               rosterRev=out.rosterRevision;}
                     }
+                }
+            }
+            else if(operation=="NATIVE_LOAD_INSERT" ||
+                    operation=="NATIVE_SET_INSERT_BYPASS" ||
+                    operation=="NATIVE_OPEN_INSERT_EDITOR") {
+                std::uint64_t target=0;
+                if(!decodeDecimal(intent.getProperty("targetChannelId",{}),target) ||
+                   !target)error="INVALID_NATIVE_VST3_TARGET_ID";
+                else {
+                    // Native catalog ownership and VST3 instance preparation
+                    // happen exclusively on the JUCE control thread.
+                    const auto response=onNativeFx(
+                        operation,armix::mixer::ChannelId{target},payload,
+                        requestedEpoch,nativeRev,rosterRev);
+                    applied=response.accepted;
+                    if(!applied)error=response.error;
+                    else {nativeRev=response.pcmRevision;
+                          rosterRev=response.rosterRevision;}
                 }
             }
             else if(operation=="NATIVE_SET_CHANNEL_MIX"||

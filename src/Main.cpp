@@ -204,7 +204,10 @@ public:
                   // ChannelId LIVE status before the M5 production cutover.
                   if (args.getProperty("protocol","").toString()!="v6") return;
                   consoleSubscribed_=true;
-                  if (browser_.loaded) emitNativeConsoleSnapshot(engine_.status());
+                  if (browser_.loaded) {
+                      emitNativeConsoleSnapshot(engine_.status());
+                      emitCatalog(); // native scanned catalog, never demo JSON
+                  }
               })
               .withEventListener ("arMixConsoleIntent", [this] (juce::var args) {
                   // S1: actual installed JUCE production path, never a
@@ -218,7 +221,81 @@ public:
                   if(op.startsWith("NATIVE_"))
                       ack=consoleBridge_.processNativeBusIntent(
                           args,snapshot,engine_,
-                          nativeShowBusy_||studioBackupBusy_);
+                          nativeShowBusy_||studioBackupBusy_,
+                          [this](const juce::String& operation,
+                                  armix::mixer::ChannelId channel,
+                                  const juce::var& payload,std::uint64_t epoch,
+                                  std::uint64_t pcmRev,std::uint64_t rosterRev)
+                                  ->LiveDryRoutingLab::NativeBusResult {
+                              LiveDryRoutingLab::NativeBusResult reply{};
+                              reply.pcmRevision=pcmRev;
+                              reply.rosterRevision=rosterRev;
+                              if(nativeShowBusy_||studioBackupBusy_||
+                                 engine_.isGraphSwitchPending()) {
+                                  reply.error="NATIVE_VST3_CONTROL_BUSY";return reply;
+                              }
+                              if(operation=="NATIVE_LOAD_INSERT"){
+                                  const auto catalogId=payload.getProperty(
+                                      "catalogId",{}).toString();
+                                  const auto* entry=catalog_.find(catalogId);
+                                  if(!entry || entry->key()!=catalogId) {
+                                      reply.error="NATIVE_VST3_NOT_SCANNED";return reply;
+                                  }
+                                  closePluginEditor();
+                                  return engine_.installNativeVst3(
+                                      epoch,pcmRev,rosterRev,channel,
+                                      entry->path,entry->uid,entry->key());
+                              }
+                              const auto slot=payload.getProperty("slot",juce::var());
+                              const auto token=payload.getProperty("instanceId",
+                                                                     juce::var());
+                              if(!slot.isInt()||static_cast<int>(slot)<0||
+                                 static_cast<int>(slot)>=LiveDryRoutingLab::maxFxPerLane||
+                                 !token.isString()||token.toString().isEmpty()) {
+                                  reply.error="NATIVE_VST3_SLOT_OR_TOKEN_INVALID";
+                                  return reply;
+                              }
+                              const auto index=static_cast<std::size_t>(
+                                  static_cast<int>(slot));
+                              if(operation=="NATIVE_SET_INSERT_BYPASS"){
+                                  const auto value=payload.getProperty(
+                                      "bypassed",juce::var());
+                                  if(!value.isBool()){
+                                      reply.error="NATIVE_VST3_BYPASS_INVALID";
+                                      return reply;
+                                  }
+                                  reply.accepted=engine_.bypassNativeVst3(
+                                      epoch,pcmRev,channel,index,
+                                      token.toString(),static_cast<bool>(value));
+                                  reply.error=reply.accepted?"":"NATIVE_VST3_STALE_BYPASS";
+                                  return reply;
+                              }
+                              if(operation=="NATIVE_OPEN_INSERT_EDITOR"){
+                                  const auto lease=engine_.leaseNativeVst3Editor(
+                                      epoch,pcmRev,channel,index,token.toString());
+                                  if(!lease||!lease->processor){
+                                      reply.error="NATIVE_VST3_STALE_EDITOR";return reply;
+                                  }
+                                  try {
+                                      auto* vendor=lease->processor->createEditorIfNeeded();
+                                      if(!vendor){
+                                          reply.error="NATIVE_VST3_NO_EDITOR";return reply;
+                                      }
+                                      closePluginEditor();
+                                      routedEditorOwner_=lease;
+                                      routedEditorEpoch_=static_cast<juce::int64>(epoch);
+                                      editorWindow_=std::make_unique<PluginEditorWindow>(
+                                          lease->processor->getName(),vendor);
+                                      reply.accepted=true;reply.error="";
+                                      return reply;
+                                  }catch(...){
+                                      closePluginEditor();
+                                      reply.error="NATIVE_VST3_EDITOR_FAILED";return reply;
+                                  }
+                              }
+                              reply.error="UNSUPPORTED_NATIVE_VST3_ACTION";
+                              return reply;
+                          });
                   else ack=consoleBridge_.processProductionIntent(
                       args,snapshot,engine_,
                       [this](int lane,int slot,std::uint64_t epoch,
