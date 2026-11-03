@@ -15,9 +15,9 @@ OWNERS = (
     "mixer-v3-layout-contract.css",
     "mixer-chrome-material.css",
 )
-EXPECTED_FNV = "39885f8a"
-EXPECTED_CSS_LENGTH = 186176
-EXPECTED_INLINE_LENGTH = 136506
+EXPECTED_FNV = "8cb19a32"
+EXPECTED_CSS_LENGTH = 176024
+EXPECTED_INLINE_LENGTH = 126354
 
 def fingerprint(css):
     h = 2166136261
@@ -51,8 +51,8 @@ def source_gate():
     assert len(all_css) == EXPECTED_CSS_LENGTH, "CSS ownership source bytes missing"
     assert fingerprint(all_css) == EXPECTED_FNV, "CSS cascade/content drift"
     assert sum(map(len, styles)) == EXPECTED_INLINE_LENGTH
-    assert all_css.count("!important") == 1449
-    assert sum(body.count("!important") for body in styles) == 1194
+    assert all_css.count("!important") == 1354
+    assert sum(body.count("!important") for body in styles) == 1099
     original = (HTML.parent / "assets" / OWNERS[0]).read_text(encoding="utf-8")
     grid = (HTML.parent / "assets" / OWNERS[1]).read_text(encoding="utf-8")
     artwork = (HTML.parent / "assets" / OWNERS[2]).read_text(encoding="utf-8")

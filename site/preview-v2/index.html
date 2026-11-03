@@ -235,7 +235,7 @@
 
 
 /* V4 production artwork recipes port. All section dimensions are shared by Master. */
-.console-body{--fx-h:173px;--eq-h:0px;--trim-h:43px;--switch-h:42px;--send-h:23px;--footer-h:46px;--channel-w:148px}
+.console-body{--eq-h:0px;--channel-w:148px}
 .console-body:not(.collapsed-fx){--fx-h:173px}
 
 .console-body .section-rail .rail-cell.fader{min-height:145px}
@@ -318,7 +318,6 @@
 
 /* V5 FINAL CHROME: old ArSonMix materials, slimmer physical fader and no blue lumen. */
 .console-body{--route-h:76px;--fx-h:194px;--send-h:23px;--pan-h:43px;--switch-h:44px;--footer-h:46px;--trim-h:0px}
-.console-body:not(.collapsed-fx){--fx-h:194px!important}
 
 .console-body:not(.collapsed-send){--send-h:103px}
 .console-body.collapsed-send{--send-h:23px}
@@ -407,30 +406,15 @@
 /* CSS variable on parent rail and strips drives identical FX geometry. */
 .console-body:not(.collapsed-fx){--fx-h:clamp(111px,13.5vh,137px)!important}
 .console-body.collapsed-fx{--fx-h:23px!important}
-.console-body .strip{
- background:linear-gradient(90deg,#1e2e39 0%,#2a3c46 10%,#293943 52%,#25343e 92%,#1d2b35 100%)!important;
- border-right:1px solid #0b151c!important;
- box-shadow:inset 1px 0 #74889439,inset -1px 0 #0b161c!important;
-}
 .console-body .strip.selected{
- position:relative!important;z-index:2!important;
- background:linear-gradient(90deg,#22343f,#30434c 12%,#2c3e48 90%,#20303a)!important;
- box-shadow:inset 0 0 0 1px var(--ch),inset 0 0 0 2px #111e26b5!important;
+ position:relative!important;
 }
-.console-body .strip .route-section{background:linear-gradient(#293b46,#23343d)!important}
-.console-body .strip .send-section{background:#263843!important}
-.console-body .strip .switch-section{background:#2c3e48!important}
 .console-body .strip .subhead{background:linear-gradient(#233946,#1c2e39)!important}
-.console-body .strip .section{
- border-bottom:1px solid #0d2029b0!important;
- box-shadow:inset 0 -1px #73899529!important;
-}
 .console-body .strip .route-select{background-color:#132630!important;border-color:#526672!important}
 .console-body .strip .route-caption{color:#b1c5cf!important}
 /* Old glossy plastic buttons looked bolted on from a different application.
    All header and live controls share fine-edged satin/brushed steel. */
 .command-bar{
- background:linear-gradient(#334752,#243743 46%,#1d303a)!important;
  border-top:1px solid #65808c3b!important;
  border-bottom:1px solid #0c171f!important;
 }
@@ -489,7 +473,6 @@
  background:linear-gradient(#64b9c3,#307783)!important;border-color:#85d4da!important;color:#081b22!important;text-shadow:0 1px #ffffff44!important;
 }
 .console-body .gain-scale-travel{top:27px!important;bottom:27px!important}
-.console-body .strip .bottom-section{background:#253944!important}
 /* Slider: original assets, smaller thumb, deliberately 3px lower than the rail center. */
 .console-body .center-pan::-webkit-slider-thumb,
 .console-body .ari-horizontal::-webkit-slider-thumb{
@@ -546,13 +529,12 @@
  max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .console-body .section-rail .rail-cell.route{height:var(--route-h)!important;flex:0 0 var(--route-h)!important}
 .console-body .section-rail .rail-cell.fx{height:var(--fx-h)!important;flex:0 0 var(--fx-h)!important}
-.console-body .section-rail .rail-cell.send{height:var(--send-h)!important;flex:0 0 var(--send-h)!important}
 
 /* V9: CONSOLE MECHANICAL LAYOUT — Rack owns freed height, never the live fader.
    Fader height is invariant when ROUTE / SEND are expanded/collapsed. Master and
    rail are siblings in the same flex-height contract, not independent rulers.
    The rack becomes the variable-height processing workspace. */
-.console-body{--fader-fixed-h:clamp(198px,31vh,300px)}
+.console-body{}
 .console-body:not(.collapsed-fx) .section-rail .rail-cell.fader{
   flex:0 0 var(--fader-fixed-h)!important;
   height:var(--fader-fixed-h)!important;
@@ -579,10 +561,6 @@
 }
 /* Hardware continuity: satin upper plates, subtle milled lines, consistent hierarchy. */
 .console-body .strip .route-section{
-  background:linear-gradient(90deg,#1b303b,#304650 12%,#293c46 80%,#1a2b36)!important;
-}
-.console-body .strip .send-section{
-  background:linear-gradient(90deg,#1e303b,#293e49 12%,#253841 83%,#172c37)!important;
 }
 .console-body .strip .subhead,.console-body .strip .send-header{
   border-bottom:1px solid #101e29!important;box-shadow:inset 0 -1px #7f9ba920!important;
@@ -610,7 +588,6 @@
   display:flex!important;align-items:center!important;justify-content:center!important;
   width:100%;min-width:0;min-height:29px;flex:0 0 29px;
   margin-top:auto;padding:2px 4px 3px;box-sizing:border-box;
-  background:linear-gradient(#1b323b,#10242d 40%,#07171e)!important;
   border-top:1px solid #63808b66;box-shadow:inset 0 2px #d4f5ff0e;
 }
 .console-body .strip .wire-socket{
@@ -627,8 +604,7 @@
 }
 .console-body .strip .wire-socket .wire-arrow{font-size:14px;font-weight:700;line-height:13px}
 .console-body .strip .wire-socket.is-source{
-  color:#132d18;border-color:#7dcb6c;background:linear-gradient(#bded9c,#65b96c)!important;
-  box-shadow:inset 0 1px #efffcb,0 1px #06190c!important;
+  color:#132d18;border-color:#7dcb6c;
 }
 .console-body .strip .wire-socket.is-linked{
   color:#ccffe0;border-color:#64c383;background:linear-gradient(#286b4f,#13432e)!important;
@@ -644,8 +620,7 @@
 .mixer-title .wire-legend + .right{margin-left:0}
 .tracks-viewport{position:relative!important;isolation:isolate}
 .routing-wire-overlay{
-  position:absolute;inset:0;width:100%;height:100%;overflow:hidden;
-  z-index:6;pointer-events:none;contain:paint;
+  position:absolute;inset:0;width:100%;height:100%;overflow:hidden;pointer-events:none;contain:paint;
 }
 @media(max-width:1000px){.wire-legend{max-width:220px}}
 @media(max-height:680px){.console-body.collapsed-send{--send-h:49px!important}}
@@ -748,13 +723,10 @@
 /* V13 physical routing bay — no old DAW send form in mixer strips.
    Compact: 80px, Expanded: 160px; +80px fold is balanced by P0 fader
    budget on expand, preserving the rack's four legible insert rows. */
-.console-body.wire-routing-v13.collapsed-send{--send-h:80px!important}
+.console-body.wire-routing-v13.collapsed-send{}
 .console-body.wire-routing-v13:not(.collapsed-send){--send-h:160px!important}
 .console-body.wire-routing-v13 .strip .wire-section{
  padding:0!important;position:relative!important;
- background:linear-gradient(90deg,#142934 0%,#29404b 8%,#1b323d 51%,#233844 92%,#142732 100%)!important;
- border-top:1px solid #7698a353!important;
- box-shadow:inset 0 1px #d4f0fa16,inset 0 -1px #020b12a8!important;
 }
 .console-body.wire-routing-v13 .strip .wire-deck{
  display:flex;position:relative;flex:1 1 0!important;min-height:0!important;
@@ -765,7 +737,6 @@
   repeating-linear-gradient(90deg,transparent 0 19px,#b6d5de09 19px 20px),
   linear-gradient(#0f202a,#0e1c25 52%,#0a1820);
  border-bottom:1px solid #354c58;
- box-shadow:inset 0 3px 6px #0005,inset 0 1px #60879448!important;
  overflow:hidden;
 }
 .console-body.wire-routing-v13 .strip .wire-deck-label{
@@ -787,22 +758,14 @@
  flex:0 0 32px!important;min-height:32px!important;max-height:32px!important;
  gap:4px!important;padding:3px 4px 4px!important;
  margin:0!important;border-top:1px solid #4a6974!important;
- background:linear-gradient(#243a45,#122732 30%,#07151e 100%)!important;
- box-shadow:inset 0 1px #b3d8e818,0 -1px #000a!important;
 }
 .console-body.wire-routing-v13 .strip .wire-socket{
  height:25px!important;
  border-radius:4px!important;
- box-shadow:inset 0 1px #ecfbff34,0 2px 2px #020a0ed0!important;
-}
-.console-body.wire-routing-v13 .strip .wire-socket.is-linked{
- box-shadow:inset 0 1px #c8ffd956,0 0 8px #32d17414,0 2px 2px #000a!important;
 }
 .console-body.wire-routing-v13 .section-rail .rail-cell.send{
  font:600 12px Arial,sans-serif!important;
  color:#b1dae4!important;
- background:linear-gradient(#263e4a,#112530)!important;
- border-top:1px solid #607d8770!important;
 }
 .console-body.wire-routing-v13 .section-rail .rail-cell.send::after{
  content:"WIRE";display:block;font:600 7px/8px Arial,sans-serif;
@@ -818,7 +781,6 @@
 .routing-wire-overlay{z-index:6;pointer-events:none!important}
 /* Keep compact routing visible on short stage laptops; no legacy form resurfaces. */
 @media(max-height:680px){
- .console-body.wire-routing-v13.collapsed-send{--send-h:58px!important}
  .console-body.wire-routing-v13:not(.collapsed-send){--send-h:138px!important}
  .console-body.wire-routing-v13 .strip .wire-deck{padding-top:3px}
  .console-body.wire-routing-v13 .strip .wire-deck-status{display:none}
@@ -828,13 +790,6 @@
    FADER + footer never resize or move when any section is toggled. Styles
    deliberately live at the end, after legacy V9-V12 chrome precedence. */
 .console-body{
- --v13-fader-h:clamp(150px,calc(100dvh - 630px),485px);
- --v13-plate:#1b2c36;
- --v13-route:#1b2d37;
- --v13-insert:#182a34;
- --v13-send:#1d2e38;
- --v13-lower:#1c2e38;
- --v13-edge:#39515c;
  --p0-fader-h:var(--v13-fader-h)!important;
  --fader-fixed-h:var(--v13-fader-h)!important;
 }
@@ -901,7 +856,6 @@
    upper compartments are intentionally collapsed. */
 .console-body.collapsed-fx.collapsed-send .strip .pan-section,
 .console-body.collapsed-fx.collapsed-send .section-rail>.rail-cell.pan{
- margin-top:auto!important;
 }
 /* V14: THREE-way collapse is the sole exception to the anchored lower
    deck. CSS flex consumes freed upper space with a taller fader rising toward
@@ -926,22 +880,8 @@
 .window-title{background:#101f28!important;box-shadow:inset 0 -1px #526a743b!important}
 .command-bar{background:#1b2d38!important;box-shadow:inset 0 1px #ffffff0b,inset 0 -1px #07131b!important}
 .mixer-title{background:#162934!important;box-shadow:inset 0 -1px #5c758039!important}
-.console-body .section-rail{background:#162a35!important;box-shadow:inset -1px #07131b!important}
-.console-body .section-rail>.rail-cell{background:#1b2e39!important;border-bottom:1px solid #172a33!important;box-shadow:inset 0 1px #ffffff08!important}
-.console-body .section-rail>.rail-cell[data-section]:hover{background:#2c4350!important}
-.console-body .section-rail>.rail-cell[data-section].collapsed{background:#223947!important}
-.console-body .strip{
- background:#1c2f3a!important;border-right:1px solid #10222c!important;
- box-shadow:inset 1px 0 #9bb3bd1a,inset -1px 0 #05141b55!important;
-}
-.console-body .strip.selected{
- background:#233b48!important;
- box-shadow:inset 0 0 0 1px var(--ch),inset 0 0 0 2px #10222d!important;
-}
-
-
-
-.console-body .strip .bottom-section{background:#192b36!important}
+.console-body .section-rail{box-shadow:inset -1px #07131b!important}
+.console-body .section-rail>.rail-cell{border-bottom:1px solid #172a33!important;}
 .console-body .strip .section{
  border-bottom:1px solid #102630!important;
  box-shadow:inset 0 -1px #7a98a11b!important;
@@ -996,7 +936,6 @@
  box-shadow:inset 0 1px #ffffff0b!important;
 }
 .console-body.wire-routing-v13 .strip .wire-deck{
- background:#182b36!important;
  border-bottom:1px solid #415b683c!important;
  box-shadow:inset 0 1px #ffffff0b!important;
 }
@@ -1004,11 +943,9 @@
  background:#455f6c50!important;
 }
 .console-body.wire-routing-v13 .strip .wire-tray{
- background:#112833!important;
  box-shadow:inset 0 1px #ffffff0b!important;
 }
-.console-body.wire-routing-v13 .section-rail .rail-cell.send{
- background:#1b303b!important;border-top:1px solid #617d8a43!important;
+.console-body.wire-routing-v13 .section-rail .rail-cell.send{border-top:1px solid #617d8a43!important;
 }
 .console-body.wire-routing-v13 .strip .wire-socket{
  box-shadow:inset 0 1px #ffffff16!important;
@@ -1078,7 +1015,6 @@
  background:#1a2c37!important;
  box-shadow:inset 0 1px #ffffff08!important;
 }
-.console-body .section-rail>.rail-cell[data-section]:hover{background:#29424f!important}
 .console-body.wire-routing-v13 .strip .wire-deck{background:#142a35!important}
 .console-body.wire-routing-v13 .strip .wire-tray{background:#102631!important}
 .console-body.wire-routing-v13 .section-rail .rail-cell.send{background:#192d38!important}
@@ -1086,11 +1022,8 @@
 /* V15 original physical patch connectors: filled bronze/silver OUT jack, recessed
    hollow IN socket. Calm console design; route highlight only on actual intent.
    Compact always keeps the wires visible; expanded has more cable canvas. */
-.console-body.wire-routing-v15.collapsed-send{--send-h:80px!important}
-.console-body.wire-routing-v15:not(.collapsed-send){--send-h:160px!important}
+.console-body.wire-routing-v15.collapsed-send{}
 @media(max-height:680px){
- .console-body.wire-routing-v15.collapsed-send{--send-h:66px!important}
- .console-body.wire-routing-v15:not(.collapsed-send){--send-h:146px!important}
 }
 .console-body.wire-routing-v15 .wire-tray{
  justify-content:center!important;gap:4px!important;
@@ -1228,17 +1161,6 @@
    section-rail disclosures, or drag targets. All colors are semantic variants.
    No animations, filters, textures, permanent pressed state, or extra JS. */
 :root{
-  --am-hw-key-radius:2px;
-  --am-hw-key-neutral:#bfc3c5;
-  --am-hw-key-dark:#46515b;
-  --am-hw-key-rim:#5f696f;
-  --am-hw-key-upper-glint:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.75) 48%,transparent 100%);
-  --am-hw-key-lower-glint:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.34) 50%,transparent 100%);
-  --am-hw-key-relief:inset 1px 0 0 rgba(255,255,255,.45),inset -1px 0 0 rgba(0,0,0,.25),0 2px 0 #070a0c,0 3px 3px rgba(0,0,0,.6);
-  --am-hw-key-flat:inset 0 1px 2px rgba(0,0,0,.65),0 0 0 transparent;
-  --am-hw-key-face:var(--am-hw-key-neutral);
-  --am-hw-key-ink:#171c20;
-  --am-hw-key-border:var(--am-hw-key-rim);
 }
 /* A single mechanical face for every ordinary PUSH button; retain existing
    29px header / strip widths and accessibility semantics. New buttons opt
@@ -1327,9 +1249,6 @@
 .command-bar summary.tool,
 .more-tools-panel button.tool,
 .route-choice-head button{
- --am-hw-key-face:var(--am-hw-key-dark);
- --am-hw-key-ink:#ecf4f6;
- --am-hw-key-border:#66737b;
 }
 .command-bar button.tool:is(.active,[aria-pressed="true"]),
 .command-bar summary.tool[aria-expanded="true"],
@@ -1337,22 +1256,6 @@
  --am-hw-key-face:#6498a9;
  --am-hw-key-ink:#081b23;
  --am-hw-key-border:#6ca5b5;
-}
-.console-body .strip .switch-section button.switch.on.mute{
- --am-hw-key-face:#c43b37;--am-hw-key-ink:#fff;--am-hw-key-border:#752626;
- text-shadow:0 -1px #641313!important;
-}
-.console-body .strip .switch-section button.switch.on.solo{
- --am-hw-key-face:#e0c23a;--am-hw-key-ink:#1d1a0c;--am-hw-key-border:#92761b;
-}
-.console-body .strip .switch-section button.switch.on.cue{
- --am-hw-key-face:#65b7cb;--am-hw-key-ink:#0d2530;--am-hw-key-border:#417b8e;
-}
-.route-choice-option.primary{
- --am-hw-key-face:#39745a;--am-hw-key-ink:#f0fff6;--am-hw-key-border:#5b9c77;
-}
-#identitySave{
- --am-hw-key-face:#84cbd9;--am-hw-key-ink:#0b2832;--am-hw-key-border:#5a9aab;
 }
 @media(prefers-reduced-motion:reduce){
  :is(.command-bar .tool,.console-body .switch-section .switch,.route-choice-option,button.hw-key){
@@ -1437,30 +1340,11 @@
    Only semantic color differs between controls; no blurred shadows, filters,
    backdrop filters, RAF style recalculation or extra LED DOM nodes. */
 :root {
- --am-hw-key-radius:2px;
- --am-hw-key-press-y:1px;
- --am-hw-key-relief:
-   inset 1px 0 0 rgba(255,255,255,.38),
-   inset -1px 0 0 rgba(0,0,0,.27),
-   inset 0 1px 0 rgba(255,255,255,.12),
-   0 1px 0 #050a0d,
-   0 0 0 1px #070c10,
-   0 0 0 2px #3b4d57,
-   0 1px 0 2px #04090c;
- --am-hw-key-flat:
-   inset 0 1px 0 #10171c,
-   inset 0 -1px 0 rgba(255,255,255,.07),
-   0 0 0 1px #03080c,
-   0 0 0 2px #3b4d57;
 }
 /* A recessed common switch bay is machined into the STRIP panel, not
    painted halfway across the top face. Housing never moves with buttons. */
 .console-body .strip .switch-section {
  position:relative!important;
- background:#111f28!important;
- border-top:1px solid #07141b!important;
- border-bottom:1px solid #415561!important;
- box-shadow:inset 0 1px 0 #060d12,inset 0 -1px 0 #263a45!important;
  isolation:isolate;
 }
 .console-body .strip .switch-section button.switch{
@@ -1474,17 +1358,7 @@
  .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
  .identity-actions button.console-control,.plugin-footer button,
  .route-choice-head button,.route-choice-option,button.hw-key){
- border-radius:var(--am-hw-key-radius)!important;
- box-shadow:var(--am-hw-key-relief)!important;
- transition:none!important;
  will-change:auto!important;
-}
-:is(.command-bar button.tool,.command-bar summary.tool,
- .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
- .identity-actions button.console-control,.plugin-footer button,
- .route-choice-head button,.route-choice-option,button.hw-key):active:not(:disabled){
- transform:translateY(var(--am-hw-key-press-y))!important;
- box-shadow:var(--am-hw-key-flat)!important;
 }
 /* Edge highlights stay on the exact face edges, horizontally translucent
    at the corners; the lower glint is intentionally thinner. */
@@ -1492,13 +1366,6 @@
  .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
  .identity-actions button.console-control,.plugin-footer button,
  .route-choice-head button,.route-choice-option,button.hw-key)::before{
- top:0!important;height:2px!important;left:1px!important;right:1px!important;
-}
-:is(.command-bar button.tool,.command-bar summary.tool,
- .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
- .identity-actions button.console-control,.plugin-footer button,
- .route-choice-head button,.route-choice-option,button.hw-key)::after{
- bottom:0!important;height:1px!important;left:1px!important;right:1px!important;
 }
 /* Remove convolution-style glow and blur work. All depth comes from
    1px crisp borders, embossed edges, static face gradients, native textures. */
@@ -1540,29 +1407,9 @@ html * ,html *::before,html *::after{
  --am-hw-key-rim:#637783;
  --am-hw-key-radius:2px;
  --am-hw-key-press-y:1px;
- --am-hw-key-upper-glint:linear-gradient(90deg,
-   rgba(233,249,255,0) 0%,rgba(233,249,255,.24) 19%,
-   rgba(246,253,255,.74) 50%,rgba(233,249,255,.24) 81%,
-   rgba(233,249,255,0) 100%);
- --am-hw-key-lower-glint:linear-gradient(90deg,
-   rgba(208,231,240,0) 0%,rgba(208,231,240,.2) 50%,
-   rgba(208,231,240,0) 100%);
  --am-hw-key-face:var(--am-hw-key-neutral);
  --am-hw-key-ink:#e3edf1;
  --am-hw-key-border:var(--am-hw-key-rim);
- --am-hw-key-relief:
-   inset 1px 0 0 rgba(238,249,255,.22),
-   inset -1px 0 0 rgba(0,0,0,.43),
-   inset 0 1px 0 rgba(255,255,255,.11),
-   0 1px 0 #030b10,
-   0 0 0 1px #071219,
-   0 0 0 2px #485d68,
-   0 1px 0 2px #050f15;
- --am-hw-key-flat:
-   inset 0 1px 0 #09151b,
-   inset 0 -1px 0 rgba(220,245,255,.08),
-   0 0 0 1px #071219,
-   0 0 0 2px #485d68;
 }
 /* Important: one real physical material for push-buttons. Layout stays put. */
 :is(.command-bar button.tool,.command-bar summary.tool,
@@ -1622,46 +1469,28 @@ html * ,html *::before,html *::after{
  --am-hw-key-border:#6fb3c2;
 }
 .console-body .strip .switch-section button.switch:not(.on) {
- --am-hw-key-face:#405360;
  --am-hw-key-ink:#e4edf0;
  --am-hw-key-border:#72838c;
 }
 .console-body .strip .switch-section button.switch.on.mute {
- --am-hw-key-face:#bd344b;
- --am-hw-key-ink:#fff4f5;
- --am-hw-key-border:#ed6575;
  text-shadow:0 -1px 0 rgba(56,0,9,.5)!important;
 }
 .console-body .strip .switch-section button.switch.on.solo {
- --am-hw-key-face:#dbad39;
- --am-hw-key-ink:#231b07;
- --am-hw-key-border:#ffdc74;
  text-shadow:0 1px 0 rgba(255,255,255,.2)!important;
 }
-.console-body .strip .switch-section button.switch.on.cue {
- --am-hw-key-face:#399db4;
- --am-hw-key-ink:#f5fdff;
- --am-hw-key-border:#79d5e5;
-}
 .route-choice-option.primary{
- --am-hw-key-face:#357a65;
  --am-hw-key-ink:#f0fff9;
  --am-hw-key-border:#6ac6a3;
 }
 #identitySave {
- --am-hw-key-face:#358c9f;
  --am-hw-key-ink:#f2fcff;
  --am-hw-key-border:#7ed4e1;
 }
 /* Socket bezel belongs to the console, not floating in the button face. */
 .console-body .strip .switch-section{
- background:#111f28!important;
- box-shadow:inset 0 1px 0 #071017,inset 0 -1px 0 #273c48!important;
 }
 /* Keep every control crisp on modest GPU hardware. */
 :is(.command-bar,.console-body,.plugin-browser,.route-choice) button{
- backdrop-filter:none!important;
- -webkit-backdrop-filter:none!important;
 }
 
 
@@ -1672,16 +1501,6 @@ html * ,html *::before,html *::after{
  --am-hw-key-bright:#586c79;
  --am-hw-key-deep:#202f39;
  --am-hw-key-wall:#1d2c35;
- --am-hw-key-relief:inset 1px 0 0 #e5f7ff37,inset -1px 0 0 #070e1377,
-   inset 0 1px 0 #e5f7ff2e,inset 0 -1px 0 #0009,
-   0 1px 0 var(--am-hw-key-wall),0 2px 0 #080e13,0 3px 0 #05090d,
-   0 0 0 1px #071017,0 0 0 2px #405762;
- --am-hw-key-flat:inset 1px 0 0 #e5f7ff23,inset -1px 0 0 #070e1377,
-   inset 0 1px 0 #0006,inset 0 -1px 0 #e1f4ff13,
-   0 1px 0 #080e13,0 2px 0 #05090d,
-   0 0 0 1px #071017,0 0 0 2px #405762;
- --am-hw-key-upper-glint:linear-gradient(90deg,transparent,#ffffff2b 18%,#ffffffb8 50%,#ffffff2b 82%,transparent);
- --am-hw-key-lower-glint:linear-gradient(90deg,transparent,#ffffff18 26%,#ffffff5c 50%,#ffffff18 74%,transparent);
 }
 /* The same cap surface for ALL push-buttons: near-vertical satin
    highlight, colored lens middle, dark lower skirt, sharp edge. */
@@ -1699,15 +1518,7 @@ html * ,html *::before,html *::after{
    var(--am-hw-key-face) 38%,
    color-mix(in srgb,var(--am-hw-key-face) 72%,var(--am-hw-key-bright)) 53%,
    var(--am-hw-key-face) 68%,var(--am-hw-key-deep) 100%)!important;
- box-shadow:var(--am-hw-key-relief)!important;
- transform:translateY(0)!important;transition:none!important;
- filter:none!important;
-}
-:is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
- .console-body .strip .switch-section button.switch,
- .identity-actions button.console-control,.plugin-footer button,
- .route-choice-head button,.route-choice-option,button.hw-key):active:not(:disabled){
- transform:translateY(1px)!important;box-shadow:var(--am-hw-key-flat)!important;
+ transform:translateY(0)!important;
 }
 :is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
  .console-body .strip .switch-section button.switch,
@@ -1725,9 +1536,6 @@ html * ,html *::before,html *::after{
 }
 /* Machined socket behind keycaps, not light bleeding onto the chassis. */
 .console-body .strip .switch-section{
- background:#12232d!important;
- box-shadow:inset 0 1px 0 #050b10,inset 1px 0 0 #08131a,
-            inset -1px 0 0 #263b47!important;
 }
 /* Off and on use same geometry. Only optical material tokens change. */
 .command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
@@ -1817,11 +1625,8 @@ html * ,html *::before,html *::after{
 .console-body.wire-routing-v15 .strip .wire-fold-summary{
  display:none!important;
 }
-.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary{
- display:flex!important;gap:6px;align-items:center;justify-content:center;
- width:100%;height:21px;min-height:21px;padding:0 2px;
- border:0;border-radius:0;background:transparent!important;
- color:#9bb0ba;font:500 9px/1 Arial,Helvetica,sans-serif;
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary{gap:6px;align-items:center;justify-content:center;height:21px;min-height:21px;padding:0 2px;
+ border:0;border-radius:0;font:500 9px/1 Arial,Helvetica,sans-serif;
  letter-spacing:0;cursor:pointer;overflow:hidden;white-space:nowrap;
 }
 .console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary:hover{
@@ -1904,33 +1709,20 @@ html * ,html *::before,html *::after{
  min-height:24px!important;
  padding:2px!important;
  box-sizing:border-box!important;
- background:#08141b!important;
- border:1px solid #09131a!important;
- border-radius:3px!important;
- box-shadow:inset 0 1px 0 #000,inset 1px 0 0 #02080c,
-            inset -1px 0 0 #2b424f,inset 0 -1px 0 #263b47!important;
  isolation:isolate!important;
  overflow:hidden!important;
 }
 .console-body .strip .switch-section .hw-switch-socket::before {
  content:""!important;
- position:absolute!important;inset:1px!important;
- z-index:0!important;pointer-events:none!important;
+ position:absolute!important;inset:1px!important;pointer-events:none!important;
  border-radius:2px!important;
- background:linear-gradient(180deg,#03080d 0%,#0c1921 46%,#172a33 100%)!important;
  box-shadow:inset 0 1px 0 #000,inset 0 -1px 0 #2a404c!important;
 }
 .console-body .strip .switch-section .hw-switch-socket::after {
  content:""!important;
  position:absolute!important;inset:0!important;
- z-index:4!important;pointer-events:none!important;
- border-radius:3px!important;
  border:1px solid #0a131a!important;
  background:transparent!important;
- box-shadow:inset 0 1px 0 #60808b5c,
-            inset 1px 0 0 #6b87904a,
-            inset -1px 0 0 #02090ebf,
-            inset 0 -1px 0 #03090e!important;
 }
 .console-body .strip .switch-section .hw-switch-socket>.switch {
  position:relative!important;z-index:2!important;
@@ -1954,7 +1746,6 @@ html * ,html *::before,html *::after{
    full calibration travel consistently across master, channel and rail.
    FX absorbs up to 6px extra fader height only when viewport allows; short screens keep original dock. */
 .console-body {
- --v13-fader-h:clamp(150px,calc(100dvh - 624px),490px);
 }
 .console-body .strip .gain-scale-travel {
  top:24px!important;bottom:24px!important;
@@ -1972,7 +1763,6 @@ html * ,html *::before,html *::after{
  border:2px solid var(--ch,#7ed5e4)!important;
  border-radius:0!important;
  background:transparent!important;
- box-shadow:inset 0 0 0 1px #061923!important;
  opacity:1!important;
 }
 /* Preserve drag-drop insert indicators without suppressing selected rim. */
@@ -2028,8 +1818,7 @@ html * ,html *::before,html *::after{
  font-size:0!important;line-height:0!important;overflow:hidden!important;
 }
 .console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-link-icon{
- display:block;width:28px;height:12px;flex:0 0 28px;
- overflow:visible;opacity:.77;pointer-events:none;
+ display:block;width:28px;height:12px;flex:0 0 28px;opacity:.77;
 }
 .console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-link-trace{
  stroke:currentColor;stroke-width:1.1;fill:none;opacity:.45;stroke-linecap:round;
@@ -2037,9 +1826,6 @@ html * ,html *::before,html *::after{
 .console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-link-in,
 .console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-link-out{
  fill:#172c37;stroke:#67808a;stroke-width:1.15;
-}
-.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .has-in .fold-link-in{
- fill:currentColor;stroke:currentColor;opacity:.65;
 }
 
 .console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary.is-empty{
@@ -2091,9 +1877,6 @@ html * ,html *::before,html *::after{
 }
 @media(max-height:680px){
  .console-body.wire-routing-v15:not(.collapsed-send){--send-h:102px!important}
-}
-.console-body{
- --v13-fader-h:clamp(150px,calc(100dvh - 612px),502px);
 }
 .console-body .strip.selected::after{
  border-width:1px!important;
