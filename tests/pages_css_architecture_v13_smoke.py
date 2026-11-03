@@ -75,7 +75,9 @@ def restore_baseline():
         for name,record in manifest["files"].items():
             assert "/" not in name and name.endswith(".css")
             path=HTML.parent/"assets"/name
-            current=path.read_text(encoding="utf-8")
+            from css_v18_restore import reconstruct as restore_previous_chrome,manifest as v18_manifest
+            current=(restore_previous_chrome()[1] if name=="mixer-chrome-material.css"
+                     else path.read_text(encoding="utf-8"))
             original=current[:record["afterSize"]]
             tail=current[record["afterSize"]:]
             expected_tail=V18_OWNER_TAILS.get(name,(0,"811c9dc5"))
@@ -96,7 +98,9 @@ def restore_baseline():
             with tf:
                 # The current owner suffix must exist on BOTH compared pages. Only the
                 # original V13 removal history differs in these reconstructions.
-                tf.write(restored+tail)
+                # Keep V18 moved material before historical V13 Chrome source.
+                prefix=(v18_manifest()["prefix"] if name=="mixer-chrome-material.css" else "")
+                tf.write(prefix+restored+tail)
             temporary.append(Path(tf.name))
             search=f"assets/{name}?v="
             assert html.count(search)==1,name
