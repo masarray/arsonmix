@@ -1,6 +1,6 @@
 """V16 exact pre-migration WIRE CSS reconstruction.
 
-The move is structural: 241 identical WIRE rules relocated from inline
+The move is structural: 223 identical WIRE rules relocated from inline
 style #2 into the front of the existing mixer-wire-dots.css. Reconstruct all
 original bytes from recorded original offsets and prefixed source, including
 original asset source order and query string; no synthetic CSS.
@@ -14,8 +14,8 @@ LEDGER=ROOT/"tests/fixtures/css-v16-wire-inline-migration.json"
 
 def manifest():
     data=json.loads(LEDGER.read_text(encoding="utf-8"))
-    assert data["milestone"]=="V16" and data["movedRules"]==241
-    assert data["movedChars"]==42895
+    assert data["milestone"]=="V16" and data["movedRules"]==223
+    assert data["movedChars"]==39306
     return data
 
 def reconstruct():

@@ -1,6 +1,6 @@
 """V16 actual browser parity against byte-perfect V15 WIRE source.
 
-No fake CSS. 241 unchanged top-level WIRE component rules moved into their
+No fake CSS. 223 unchanged top-level WIRE component rules moved into their
 existing dedicated CSS owner; compare old V15 and new V16 materials/layouts
 at 5 screen sizes and genuine interactive hardware / WIRE states.
 """
@@ -23,13 +23,13 @@ async def main():
     new_css=combined_css(current)
     assert len(old_css)==doc["sourceCSS"]==173298
     assert fingerprint(old_css)==doc["sourceFNV"]=="ad118593"
-    assert len(new_css)==doc["newCSS"]==130403
-    assert fingerprint(new_css)==doc["newFNV"]=="4ed3cee1"
+    assert len(new_css)==doc["newCSS"]==133992
+    assert fingerprint(new_css)==doc["newFNV"]=="4bd22884"
     assert len(old_wire)==doc["beforeWireSize"]==9600
     assert len(WIRE.read_text(encoding="utf-8"))==doc["afterWireSize"]
-    assert (old_css.count("!important"),new_css.count("!important"))==(1317,952)
-    assert doc["movedRules"]==241 and doc["movedChars"]==42895
-    assert len(doc["insertions"])==241
+    assert (old_css.count("!important"),new_css.count("!important"))==(1317,981)
+    assert doc["movedRules"]==223 and doc["movedChars"]==39306
+    assert len(doc["insertions"])==223
     baseline,temp=mount_original(prior,old_wire)
     try:
         async with async_playwright() as p:
@@ -47,7 +47,7 @@ async def main():
             await browser.close()
     finally:
         for path in temp:path.unlink(missing_ok=True)
-    print("PASS V16: 241 WIRE rules relocated (42,895 chars) with exact V15 source"
+    print("PASS V16: 223 WIRE rules relocated (39,306 chars) with exact V15 source"
           " recreation; 5 resolutions x 8 folds + 3 comprehensive control sweeps")
 
 if __name__=="__main__":
