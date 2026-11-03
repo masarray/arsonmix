@@ -23,6 +23,16 @@
     ['#app [data-sof-toggle]','cue','SEND'],
     ['#app [data-chainbypass]','processing','FX']
   ];
+  // Only these live mixer latches use the approved raster keycaps.
+  // Other hardware keys retain their existing accessible SVG implementation.
+  const SPRITE_CONTROLS=[
+    '#mixer .channel-actions [data-mute]',
+    '#mixer .channel-actions [data-solo]',
+    '#masterMute',
+    '#app .arV6Console .arV6Controls [data-op="SET_MUTE"]',
+    '#app .arV6Console .arV6Controls [data-op="SET_SOLO"]',
+    '#app .arV6Console .arV6Controls [data-op="SET_CUE"]'
+  ].join(',');
   const PALETTE={
     mute:'255,64,85',solo:'255,208,44',cue:'90,200,231',
     processing:'87,211,189',phase:'243,164,81',
@@ -104,6 +114,19 @@
     const rule=source(button);
     if(!rule)return;
     const existing=instances.get(button);
+    if(button.matches(SPRITE_CONTROLS)){
+      if(existing?.sprite)return;
+      const original=rawLabel(button);
+      const legend=button.dataset.op==='SET_CUE'?'PFL':(rule.label||original||'ON');
+      button.classList.remove('btn-180','candy');
+      button.classList.add('mx-hw-key','mx-hw-'+rule.semantic,'mx-hw-sprite');
+      if(!button.hasAttribute('aria-label'))button.setAttribute('aria-label',legend);
+      button.dataset.mxHwLegend=legend;
+      instances.set(button,{id:++serial,legend,size:'sprite',semantic:rule.semantic,sprite:true});
+      // State is rendered by CSS from native aria-pressed; do not create an SVG,
+      // add a resize observer, translate the button, or schedule repaint work.
+      return;
+    }
     if(existing&&button.querySelector(':scope > svg.mx-hw-face')){resizer?.observe(button);return;}
     const original=rawLabel(button);
     let legend=rule.label||original||'ON';
