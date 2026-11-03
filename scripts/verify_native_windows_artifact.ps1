@@ -7,7 +7,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $expected = @(
-    "ArSonMix-GUI10CH-P012-Windows-x64.exe",
+    "ArSonMix-M3-NativeConsole-ENGINEERING-NOT-HARDWARE-QUALIFIED-Windows-x64.exe",
     "BUILD_PROVENANCE.json",
     "HARDWARE_FAT_GUIDE.md",
     "README.md",
@@ -38,8 +38,12 @@ if ($manifest.webView2LoaderMode -ne "JUCE_WEBVIEW2_LOADER_STATIC_LINKED_V1" -or
     $manifest.guiStartupVerification -ne "WEBVIEW2_PREFLIGHT_AND_AR_MIX_GUI_READY_HANDSHAKE") {
     throw "Missing Windows WebView2 startup / static loader provenance"
 }
-if ($manifest.nativeDSP -ne "NATIVE_TEN_INPUT_CHANNELS_FOUR_DEDICATED_STEREO_AUX_RETURNS_MASTER__EXPLICIT_PATCH_ACK") {
-    throw "Native mixer routing provenance is not the current 10CH/4AUX production graph"
+if ($manifest.nativeDSP -ne "REAL_M4_10CH4AUX__UNIVERSAL_CH11_VST3_BUS_FX_NOT_READY") {
+    throw "Engine provenance is not truthful about universal ChannelId readiness"
+}
+if ($manifest.guiAuthority -ne "APPROVED_M3_NATIVE_CONSOLE_V1" -or
+    $manifest.approvedVisualSource -notmatch "aba0e2879fbc6cbfe42be42197aa249accb08abf") {
+    throw "WRONG GUI: release requires the user-approved M3 operator Console"
 }
 if ($manifest.storageMode -ne "PORTABLE_MARKER__USER_STUDIO_EMPTY_AT_RELEASE") {
     throw "Public ZIP missing portable workspace mode provenance"
@@ -49,7 +53,7 @@ if ($portableMarker -ne "ARSONMIX_PORTABLE_WORKSPACE_V1") { throw "Invalid porta
 if (Test-Path -LiteralPath (Join-Path $OutputDir "Studio")) {
     throw "Public artifact MUST NOT bundle user-specific plugins, presets or sessions"
 }
-$exePath = Join-Path $OutputDir "ArSonMix-GUI10CH-P012-Windows-x64.exe"
+$exePath = Join-Path $OutputDir "ArSonMix-M3-NativeConsole-ENGINEERING-NOT-HARDWARE-QUALIFIED-Windows-x64.exe"
 $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $exePath).Path)
 if ($bytes.Length -lt 4MB) { throw "REJECT: suspiciously small executable ($($bytes.Length) bytes)" }
 if ($bytes.Length -ne $manifest.guiExeBytes) { throw "Mismatch: actual EXE size and recorded size" }
@@ -69,58 +73,54 @@ if ($LASTEXITCODE -ne 0 -or $sha -ne $manifest.sourceCommit) {
 # Verify the exact full resource text shipped by JUCE BinaryData, not merely
 # hashes recorded next to an unrelated executable. This catches packaging an
 # older GUI with the latest source files and avoids brittle marker-only checks.
-$resources = @(
-    @{Path="web/index.html"; Hash=$manifest.indexHtmlSha256},
-    @{Path="web/app.js"; Hash=$manifest.appJsSha256},
-    @{Path="web/styles.css"; Hash=$manifest.stylesCssSha256},
-    @{Path="web/plugin-ui.css"; Hash=$manifest.pluginUiCssSha256},
-    @{Path="web/plugin-ui.js"; Hash=$manifest.pluginUiJsSha256},
-    @{Path="web/bridge.js"; Hash=$manifest.bridgeJsSha256},
-    @{Path="web/monitor.js"; Hash=$manifest.monitorJsSha256}
-)
+$resources = $manifest.guiResources
+if ($null -eq $resources -or $resources.PSObject.Properties.Count -ne 26) {
+    throw "WRONG GUI: missing complete M3 Console resource manifest"
+}
 $embeddedText = [Text.Encoding]::UTF8.GetString($bytes)
-foreach ($item in $resources) {
-    $real = (Get-FileHash -LiteralPath $item.Path -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($real -ne $item.Hash) {
-        throw "GUI provenance SHA256 mismatch: $($item.Path)"
+foreach ($resource in $resources.PSObject.Properties) {
+    $sourcePath = $resource.Name
+    $expectedHash = [string]$resource.Value
+    if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+        throw "Missing source asset in approved Console: $sourcePath"
     }
-    $sourceText = [System.IO.File]::ReadAllText(
-        (Resolve-Path -LiteralPath $item.Path).Path, [Text.Encoding]::UTF8)
-    if ($sourceText.Length -eq 0 -or
-        $embeddedText.IndexOf($sourceText, [StringComparison]::Ordinal) -lt 0) {
-        throw "STALE NATIVE GUI: exact JUCE BinaryData resource absent from EXE: $($item.Path)"
+    $actualHash = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualHash -ne $expectedHash) {
+        throw "GUI provenance SHA256 mismatch: $sourcePath"
+    }
+    # Exact embedded text for every HTML/JS/CSS/SVG resource. PNG binary
+    # bytes are separately hashed at source and included in JUCE BinaryData;
+    # do not decode binary images into a lossy UTF8 string.
+    if ($sourcePath -match '\.(html|js|css|svg)$') {
+        $sourceText = [System.IO.File]::ReadAllText(
+            (Resolve-Path -LiteralPath $sourcePath).Path, [Text.Encoding]::UTF8)
+        if ($sourceText.Length -eq 0 -or
+            $embeddedText.IndexOf($sourceText, [StringComparison]::Ordinal) -lt 0) {
+            throw "STALE NATIVE GUI: approved JUCE BinaryData resource absent from EXE: $sourcePath"
+        }
     }
 }
-# Assert current approved calibration is present inside the actual shipped binary.
-if ($manifest.guiCalibration -ne "GAIN_10_TO_MINUS60_BLACK_DETENT_AT_38PX__VU_DBFS_INDEPENDENT_TICKS") {
-    throw "GUI calibration release contract is missing"
+$html = Get-Content -LiteralPath "web/index.html" -Raw -Encoding UTF8
+$cmake = Get-Content -LiteralPath "CMakeLists.txt" -Raw -Encoding UTF8
+if ($html -match 'data-view="FX RACK"' -or
+    $html -notmatch 'id="nativeAuthority"' -or
+    $html -notmatch 'src="console-native.js"' -or
+    $cmake -match 'web/app\.js' -or
+    $cmake -match 'web/bridge\.js') {
+    throw "WRONG GUI: the abandoned ten-strip frontend was packaged"
 }
-# Marker checks below supplement, not replace, full resource byte correspondence.
-foreach ($marker in @(
-    "function openChannelIdentity",   # latest mixer channel editor
-    'class="master-analysis"',       # native-compatible master analyzer
-    "--ari-master-cap",             # rose/silver MASTER styling
-    "gain-scale-travel",            # calibrated +10..-60 dB scale
-    "vu-scale-travel",              # independent dBFS meter ruler
-    "meter-signal-area",            # VU activity region distinct from CLIP LED
-    "fader-travel",                 # PNG black detent in 38px inset travel
-    "function syncNativeMixerControls", # JUCE WebView bridge
-    "arMixGuiReady",               # Native GUI JS ready handshake
-    "WEBVIEW2_GUI_READY_TIMEOUT",  # Visible failure, never a blank IE page
-    "AUDIO_GLITCH_WINDOW",          # engine P0-12 compiled diagnostics
-    "--b180-on-mute",              # current harmonized BTN-180 palette
-    "--b180-on-solo",              # MUTE / SOLO lightness calibration
-    "--b180-on-stereo",            # STEREO blue lightness calibration
-    "--b180-on-green",             # native device-connected green
-    "inset 5px 5px 2px -1px",      # owner-approved hardware button shadow
-    "gain-scale-travel",           # calibrated fader detent
-    "function syncNativeMixerControls" # latest native GUI state bridge
-)) {
+# Product identity is verified against actual compiled source bytes above.
+if ($manifest.guiCalibration -ne "APPROVED_M3_DENSE_FADER_METER_WIRE_NATIVE_V1") {
+    throw "Latest approved M3 channel hardware calibration provenance missing"
+}
+foreach ($marker in @("ArSonMixNativeModel", "projectNative(s)", 
+    "arMixConsoleSnapshot", "arMixConsoleIntent", "arMixGuiReady",
+    "id=`"nativeAuthority`"", "console-native.js", "AUDIO_GLITCH_WINDOW",
+    "WEBVIEW2_GUI_READY_TIMEOUT")) {
     if ($embeddedText.IndexOf($marker, [StringComparison]::Ordinal) -lt 0) {
-        throw "Compiled GUI/engine marker absent from shipped EXE: $marker"
+        throw "Compiled GUI/engine marker absent from Windows EXE: $marker"
     }
 }
-
 # Probe a fresh compressed archive outside dist/ using the SAME dist folder
 # that actions/upload-artifact will upload; reject the original 648KB class
 # even when every source-level contract is green.
@@ -153,7 +153,7 @@ try {
         if (@(Compare-Object -ReferenceObject $expectedZipFiles -DifferenceObject $names).Count -ne 0) {
             throw "ZIP does not contain exactly the verified distribution files"
         }
-        $entry = $zip.GetEntry("ArSonMix-GUI10CH-P012-Windows-x64.exe")
+        $entry = $zip.GetEntry("ArSonMix-M3-NativeConsole-ENGINEERING-NOT-HARDWARE-QUALIFIED-Windows-x64.exe")
         if ($null -eq $entry -or $entry.Length -ne $bytes.Length) {
             throw "Wrong/truncated GUI executable inside ZIP"
         }
@@ -185,7 +185,7 @@ try {
     }
     Write-Host "FAT_RELEASE_ACCEPTED: source=$sha GUI_WIN64_PE32+=2"
     Write-Host "FAT_RELEASE_ACCEPTED: exeBytes=$($bytes.Length) testZipBytes=$archiveBytes sha256=$appHash"
-    Write-Host "FAT_RELEASE_ACCEPTED: full embedded GUI HTML/CSS/JS/bridge/monitor + calibrated VU/fader matched exactly"
+    Write-Host "FAT_RELEASE_ACCEPTED: actual approved M3 HTML/native adapter/24 visual assets + native runtime provenance verified"
     Write-Host "FAT_RELEASE_ACCEPTED: P0-12 and static WebView2 startup contract verified"
 } finally {
     if (Test-Path -LiteralPath $archivePath) { Remove-Item -LiteralPath $archivePath -Force }
