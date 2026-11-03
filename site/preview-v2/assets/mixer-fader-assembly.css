@@ -366,7 +366,7 @@
    its calibrated cap. Compact is a real narrower instrument, not a cropped
    comfort layout: retain the dBFS numeric column and full drag/keyboard travel. */
 .console-body[data-density="standard"] .strip .fader-section{
- padding-left:4px!important;padding-right:4px!important;
+ padding-left:1px!important;padding-right:1px!important;
 }
 .console-body[data-density="compact"] .strip .fader-section{
  padding-left:1px!important;padding-right:1px!important;

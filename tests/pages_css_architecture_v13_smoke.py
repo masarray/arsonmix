@@ -21,7 +21,7 @@ MANIFEST=ROOT/"tests/fixtures/css-v13-owner-removals.json"
 # the owned suffix fingerprints, not the historical owner source.
 V18_OWNER_TAILS={
     "mixer-pan-controls.css":(294,"01ccf01a"),
-    "mixer-fader-assembly.css":(5239,"bc5d21f1"),
+    "mixer-fader-assembly.css":(5239,"21b50649"),
     "mixer-meter-display.css":(4159,"94c0c481"),
     "mixer-plugin-browser.css":(4285,"1ce2ede9"), # V17 exact appended owner suffix
     "mixer-fx-rack.css":(310,"bc79a5b1"), # M3 empty FX placeholder
