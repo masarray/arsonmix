@@ -129,10 +129,11 @@ test('E5 rejected M4 structural edit and failed re-admission preserve native BUS
                                 physical.indexOf('bool originalM4Aux('));
   const commit=admission.indexOf('UnifiedLegacyProductionAdmission::compileAndCommit(');
   assert.ok(commit>0,'native re-admission must commit genuine PCM');
-  assert.doesNotMatch(admission.slice(0,commit),/channelIdPcmEpoch_\.store\(0|nativeStructureLive_=false/,
-    'failed re-admission cannot demote renderer or discard BUS');
-  assert.match(admission,/\(nativeStructureLive_ && nativeAccepted_\.deviceEpoch==epoch\(\)\)/);
-  assert.ok(admission.indexOf('nativeStructureLive_=false;',commit)>commit);
+  const dynamicFence=admission.indexOf('if(nativeStructureLive_ && nativeAccepted_.deviceEpoch==epoch())');
+  const fixedFallback=admission.indexOf('channelIdPcmEpoch_.store(0,std::memory_order_release)');
+  assert.ok(dynamicFence>=0 && fixedFallback>dynamicFence,
+    'dynamic BUS cannot be demoted, but rejected fixed M4 migration must select matching M4 PCM');
+  assert.match(admission,/nativeStructureLive_=false;/);
   assert.ok(admission.indexOf('channelIdPcmEpoch_.store(generation',commit)>commit);
   assert.match(engine,/if \(dryRoutingLab_\.nativeBusTopologyLive\(\)\)\s*return "REMOVE native GROUP\/FX RETURN buses/);
   assert.equal(count(callback,/dryRoutingLab_\.process\(/g),1);

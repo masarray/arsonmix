@@ -1011,12 +1011,17 @@ public:
     bool admitChannelIdFromAcceptedM4(int occupiedExternalCh1Fx,
                                      int deviceFrames,bool outputsDisarmed,
              armix::mixer::DynamicChannelFxLeaseBank::ExternalLease externalCh1={}) {
-        // A rejected admission must preserve native BUS PCM and its original
-        // CH1/Orbit lease. Demote neither selected renderer nor BUS owner
-        // before the replacement snapshot is actually committed.
+        // E5: a native BUS uses topology that M4 cannot represent. Never
+        // demote its renderer on an unsupported legacy re-admission.
+        if(nativeStructureLive_ && nativeAccepted_.deviceEpoch==epoch())
+            return false;
+        // Otherwise the last ACCEPTED M4 graph is the safe physical fallback
+        // if migration rejects. This also handles a successfully replaced M4
+        // route whose new ChannelId candidate cannot be prepared.
+        channelIdPcmEpoch_.store(0,std::memory_order_release);
+        nativeStructureLive_=false;
         try {
-        if((nativeStructureLive_ && nativeAccepted_.deviceEpoch==epoch()) ||
-           !outputsDisarmed || occupiedExternalCh1Fx<0 ||
+        if(!outputsDisarmed || occupiedExternalCh1Fx<0 ||
            (occupiedExternalCh1Fx>0)!=externalCh1.populated() ||
            !hasExplicitRoute()||!ready() ||
            topologyFault_.load(std::memory_order_acquire))
@@ -1076,8 +1081,7 @@ public:
             nativePublisher_.acceptedRevision(),generation,epoch(),
             true,nativePublisher_,nativeAccepted_,std::move(externalCh1));
         if(!applied.ok() || generation!=epoch() || m4Revision!=revision())
-            return false; // keep last selected native renderer on rejection
-        nativeStructureLive_=false; // committed fixed M4 roster has no extra BUS
+            return false; // selected M4 PCM owns the safe fallback
         channelIdPcmEpoch_.store(generation,std::memory_order_release);
         return true;
         } catch(...) {
