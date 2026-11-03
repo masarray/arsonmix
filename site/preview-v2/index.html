@@ -567,96 +567,12 @@
   height:var(--send-h)!important;min-height:var(--send-h)!important;
   flex:0 0 var(--send-h)!important;overflow:hidden!important;
 }
-.console-body .strip .wire-tray{
-  display:flex!important;align-items:center!important;justify-content:center!important;
-  width:100%;min-width:0;min-height:29px;flex:0 0 29px;
-  margin-top:auto;padding:2px 4px 3px;box-sizing:border-box;
-  border-top:1px solid #63808b66;box-shadow:inset 0 2px #d4f5ff0e;
-}
-.console-body .strip .wire-socket{
-  display:flex;align-items:center;justify-content:center;gap:5px;
-  flex:1;max-width:100%;min-width:0;height:24px;
-  border:1px solid #45616f;border-radius:3px;
-  color:#a7c4cf;background:linear-gradient(#314653,#182e39 48%,#162a34);
-  box-shadow:inset 0 1px #a9deef2a,0 1px #0009;
-  font:600 9px/1 Arial,sans-serif!important;
-  cursor:pointer;user-select:none;
-}
-.console-body .strip .wire-socket:hover:not(:disabled){
-  color:#edfff5;border-color:#9ee6b5;background:linear-gradient(#37534e,#193c38);
-}
-.console-body .strip .wire-socket .wire-arrow{font-size:14px;font-weight:700;line-height:13px}
-.console-body .strip .wire-socket.is-source{
-  color:#132d18;border-color:#7dcb6c;
-}
-.console-body .strip .wire-socket.is-linked{
-  color:#ccffe0;border-color:#64c383;background:linear-gradient(#286b4f,#13432e)!important;
-  box-shadow:inset 0 1px #b9ffcb24,0 1px #010d05!important;
-}
-.console-body .strip .wire-socket:disabled{cursor:default;opacity:1}
-.console-body .strip .wire-socket:focus-visible{outline:1px solid #c7fbe0;outline-offset:1px}
-.wire-legend{
-  margin-left:auto;color:#a4e3bd;font:600 10px/1 'Segoe UI',Arial,sans-serif;
-  border:1px solid #46675c;padding:3px 7px;border-radius:2px;
-  background:linear-gradient(#1e3730,#142823);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-}
-.mixer-title .wire-legend + .right{margin-left:0}
 .tracks-viewport{position:relative!important;isolation:isolate}
 .routing-wire-overlay{
   position:absolute;inset:0;width:100%;height:100%;overflow:hidden;pointer-events:none;contain:paint;
 }
 @media(max-width:1000px){.wire-legend{max-width:220px}}
 @media(max-height:680px){.console-body.collapsed-send{--send-h:49px!important}}
-
-/* V12 physical console wire strip: FL send-switch affordances, but original ArSonMix tooling.
-   53px collapsed row stays visible; FX elastic and hardware fader are untouched. */
-.wire-mode-label{font:600 9px/1 Arial,Helvetica,sans-serif;color:#a4c7d2;white-space:nowrap;margin-left:5px}
-.wire-mode-select{height:24px;max-width:146px;min-width:112px;padding:1px 17px 1px 6px;
-  border:1px solid #4b6370;border-radius:3px;background:linear-gradient(#2c414b,#192e39);
-  color:#d6e9ec;font:500 10px/1 'Segoe UI',Arial,sans-serif}
-.wire-mode-select:hover{border-color:#8bb8c4}
-.wire-master{height:24px;min-width:66px;padding:0 7px;
-  color:#bce9cb;border:1px solid #557a65;border-radius:3px;
-  background:linear-gradient(#29483b,#182f29);box-shadow:inset 0 1px #c7ffe522,0 1px #030b0d;
-  font:600 10px/1 Arial,Helvetica,sans-serif!important;white-space:nowrap}
-.wire-master[aria-pressed="false"]{color:#a1a6ad;background:linear-gradient(#273037,#1b252b);border-color:#4c5960}
-.wire-master:focus-visible,.wire-mode-select:focus-visible{outline:1px solid #b0ecfa;outline-offset:2px}
-.console-body .strip .wire-tray{gap:3px!important;padding:2px 3px 3px!important}
-.console-body .strip .wire-tray.linked .wire-socket{min-width:29px;flex:1 1 32px;padding:0 2px!important}
-.console-body .strip .wire-socket.is-source .wire-arrow{color:#234b25}
-.console-body .strip .wire-tray .wire-pot{
- position:relative;flex:0 0 26px;width:26px;height:24px;min-width:26px;
- border:0;cursor:ew-resize;display:flex;justify-content:center;align-items:center;
-}
-.console-body .strip .wire-tray .wire-pot::before{
- content:"";width:22px;height:22px;position:absolute;inset:1px 2px;
- border-radius:50%;box-sizing:border-box;
- background:conic-gradient(from 225deg,#a8f5b1 0 var(--wire-pct,90.9%),#344d52 var(--wire-pct,90.9%) 75%,transparent 75% 100%);
- box-shadow:0 1px 2px #000c,inset 0 0 0 1px #83c79a66;pointer-events:none;
-}
-.console-body .strip .wire-tray .wire-pot::after{
- content:"";position:absolute;left:11px;top:3px;width:3px;height:8px;
- border-radius:1px;background:#c7fdeb;border:1px solid #335b50;
- box-shadow:0 0 2px #84efaf;transform-origin:2px 10px;
- transform:rotate(var(--wire-deg,110deg));pointer-events:none;
-}
-.console-body .strip .wire-tray .wire-gain{
- position:absolute;inset:0;width:26px!important;height:24px!important;margin:0;
- cursor:ew-resize;opacity:0;z-index:2;appearance:none;-webkit-appearance:none;touch-action:none;
-}
-.console-body .strip .wire-tray .wire-pot:focus-within{outline:1px solid #b4f4cb;border-radius:50%}
-.console-body .strip .wire-tray .wire-disconnect{
- flex:0 0 17px;width:17px;height:21px;min-width:17px;padding:0;
- font:600 14px/18px Arial,sans-serif!important;color:#a8c4cb;
- border:1px solid #47616a;border-radius:3px;background:linear-gradient(#34444c,#172932);
- box-shadow:inset 0 1px #a3bed31c;cursor:pointer;
-}
-.console-body .strip .wire-tray .wire-disconnect:hover{color:#fff1e5;background:linear-gradient(#80423c,#512521);border-color:#c47365}
-.console-body .strip .wire-tray .wire-disconnect:focus-visible{outline:1px solid #ffcaba;outline-offset:1px}
-.console-body .strip .wire-tray.linked .wire-label{font-size:8px!important}
-.console-body .strip .wire-tray.linked .wire-socket{background:linear-gradient(#316748,#163b2c)!important}
-.console-body .strip .wire-tray.linked .wire-arrow{filter:drop-shadow(0 0 2px #7dec9c)}
-.console-body .strip .wire-tray .wire-gain:focus-visible{outline:none}
 .routing-wire-overlay{filter:drop-shadow(0 0 1.2px #5cc67f40)}
 @media(max-width:1250px){.wire-legend{max-width:145px}.wire-mode-select{max-width:112px;font-size:9px}.wire-master{min-width:55px;padding:0 4px}}
 @media(max-width:970px){.wire-legend{display:none}.wire-mode-label{display:none}}
@@ -702,65 +618,6 @@
 .console-body.collapsed-fx.collapsed-send .section-rail > .rail-cell.fader{
  flex:1 1 0px!important;height:auto!important;max-height:none!important;
 }
-
-/* V13 physical routing bay — no old DAW send form in mixer strips.
-   Compact: 80px, Expanded: 160px; +80px fold is balanced by P0 fader
-   budget on expand, preserving the rack's four legible insert rows. */
-.console-body.wire-routing-v13.collapsed-send{}
-.console-body.wire-routing-v13:not(.collapsed-send){--send-h:160px!important}
-.console-body.wire-routing-v13 .strip .wire-section{
- padding:0!important;position:relative!important;
-}
-.console-body.wire-routing-v13 .strip .wire-deck{
- display:flex;position:relative;flex:1 1 0!important;min-height:0!important;
- width:100%;flex-direction:column;gap:2px;align-items:flex-start;
- padding:5px 6px 2px;
- background:
-  linear-gradient(90deg,#b7e3eb0c,transparent 6%,transparent 92%,#b7e3eb08),
-  repeating-linear-gradient(90deg,transparent 0 19px,#b6d5de09 19px 20px),
-  linear-gradient(#0f202a,#0e1c25 52%,#0a1820);
- border-bottom:1px solid #354c58;
- overflow:hidden;
-}
-.console-body.wire-routing-v13 .strip .wire-deck-label{
- font:600 9px/12px 'Segoe UI',Arial,sans-serif;
- color:#adcad6;letter-spacing:.7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
- max-width:100%;opacity:.86;
-}
-.console-body.wire-routing-v13 .strip .wire-deck-status{
- font:500 9px/12px Consolas,monospace;color:#789ca9;letter-spacing:.2px;
- white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;
-}
-.console-body.wire-routing-v13 .strip .wire-deck-rail{
- width:100%;height:1px;flex:0 0 1px;position:relative;margin-top:auto;
- background:linear-gradient(90deg,transparent,#799ca34f,transparent);
-}
-.console-body.wire-routing-v13 .strip:has(.wire-socket.is-source) .wire-deck-status{color:#b8edb0}
-.console-body.wire-routing-v13 .strip:has(.wire-socket.is-linked) .wire-deck-status{color:#a5dccc}
-.console-body.wire-routing-v13 .strip .wire-tray{
- flex:0 0 32px!important;min-height:32px!important;max-height:32px!important;
- gap:4px!important;padding:3px 4px 4px!important;
- margin:0!important;border-top:1px solid #4a6974!important;
-}
-.console-body.wire-routing-v13 .strip .wire-socket{
- height:25px!important;
- border-radius:4px!important;
-}
-.console-body.wire-routing-v13 .section-rail .rail-cell.send{
- font:600 12px Arial,sans-serif!important;
- color:#b1dae4!important;
-}
-.console-body.wire-routing-v13 .section-rail .rail-cell.send::after{
- content:"WIRE";display:block;font:600 7px/8px Arial,sans-serif;
- color:#78afb5;letter-spacing:.4px;
-}
-.console-body.wire-routing-v13:not(.collapsed-send) .section-rail .rail-cell.send::after{content:"PATCH"}
-.console-body.wire-routing-v13 .strip .send-header,
-.console-body.wire-routing-v13 .strip .send-select,
-.console-body.wire-routing-v13 .strip .sendlevel,
-.console-body.wire-routing-v13 .strip .send-slot{display:none!important}
-.console-body.wire-routing-v13 .strip .wire-pot{z-index:7}
-.console-body.wire-routing-v13 .strip .wire-disconnect{z-index:7}
 .routing-wire-overlay{z-index:6;pointer-events:none!important}
 /* Keep compact routing visible on short stage laptops; no legacy form resurfaces. */
 @media(max-height:680px){
@@ -875,34 +732,7 @@
  border-bottom:1px solid #10232c!important;
  box-shadow:inset 0 1px #77939b17!important;
 }
-.console-body .strip .wire-tray{
- background:#172d38!important;border-top:1px solid #6e8c9840!important;
- box-shadow:inset 0 1px #ffffff0b!important;
-}
-.console-body .strip .wire-socket{
- background:#203743!important;border-color:#4c6975!important;
- box-shadow:inset 0 1px #91abba22!important;
-}
-.console-body .strip .wire-socket.is-source{
- background:#82c57f!important;color:#112e1d!important;
- box-shadow:inset 0 1px #d6fbd195!important;
-}
-.console-body .strip .wire-socket.is-linked,
-.console-body .strip .wire-tray.linked .wire-socket{
- background:#1f6347!important;color:#ddffeb!important;
- box-shadow:inset 0 1px #b2efc72b!important;
-}
-.console-body .strip .wire-socket:hover:not(:disabled){background:#35535e!important}
-.console-body .strip .wire-socket.is-source:hover:not(:disabled){background:#97d791!important}
-.console-body .strip .wire-socket.is-linked:hover:not(:disabled){background:#267d57!important}
-.console-body .strip .wire-tray .wire-disconnect{background:#1d333f!important;box-shadow:none!important}
-.console-body .strip .wire-tray .wire-pot::before{box-shadow:inset 0 0 0 1px #83c79a66!important}
-.console-body .strip .wire-tray .wire-pot::after{box-shadow:none!important}
-.console-body .strip .wire-tray.linked .wire-arrow{filter:none!important}
 .console-body .rail-cell.fader{background:#243641!important}
-.wire-mode-select,.wire-master{background:#203843!important;box-shadow:inset 0 1px #ffffff1a!important}
-.wire-master[aria-pressed="true"]{background:#26493a!important}
-.wire-legend{background:#203e34!important}
 .console-body .strip .route-caption,
 .console-body .strip .subhead .hint{color:#b8cbd5!important}
 .console-body .strip .route-select,
@@ -914,58 +744,8 @@
 @media(max-height:820px){
  .console-body.wire-routing-v13:not(.collapsed-send){--send-h:148px!important}
 }
-.console-body.wire-routing-v13 .strip .wire-section{
- background:#1d2e38!important;border-top:1px solid #4c677447!important;
- box-shadow:inset 0 1px #ffffff0b!important;
-}
-.console-body.wire-routing-v13 .strip .wire-deck{
- border-bottom:1px solid #415b683c!important;
- box-shadow:inset 0 1px #ffffff0b!important;
-}
-.console-body.wire-routing-v13 .strip .wire-deck-rail{
- background:#455f6c50!important;
-}
-.console-body.wire-routing-v13 .strip .wire-tray{
- box-shadow:inset 0 1px #ffffff0b!important;
-}
-.console-body.wire-routing-v13 .section-rail .rail-cell.send{border-top:1px solid #617d8a43!important;
-}
-.console-body.wire-routing-v13 .strip .wire-socket{
- box-shadow:inset 0 1px #ffffff16!important;
-}
-.console-body.wire-routing-v13 .strip .wire-socket.is-linked{
- box-shadow:inset 0 1px #b2efc72b!important;
-}
-/* A carefully restrained physical edge is fine; broad face gradients and
-   worn-metal zebra strokes are not. */
-
-/* V14.1 physical hierarchy: three upper modules can close independently.
-   SEND close is a TRUE 23px folded header, not a tiny still-active patch bay.
-   The source/destination graph belongs to state, not to the SVG or DOM nodes. */
-.console-body.wire-routing-v13.collapsed-send{
- --send-h:23px!important;
-}
 @media(max-height:680px){
  .console-body.wire-routing-v13.collapsed-send{--send-h:23px!important}
-}
-.console-body.wire-routing-v13.collapsed-send .strip .wire-deck,
-.console-body.wire-routing-v13.collapsed-send .strip .wire-tray{
- display:none!important;
- pointer-events:none!important;
-}
-.console-body.wire-routing-v13.collapsed-send .routing-wire-overlay{
- display:none!important;
-}
-/* No odd visual leftover: the collapsed compartment is just a tidy header,
-   with its disclosure affordance on the rail. */
-.console-body.wire-routing-v13.collapsed-send .strip .wire-section{
- background:#172732!important;
- border-top:1px solid #3e55603d!important;
- box-shadow:inset 0 1px #ffffff08!important;
-}
-.console-body.wire-routing-v13.collapsed-send .section-rail .rail-cell.send::after{
- content:"OPEN"!important;
- color:#91bac5!important;
 }
 /* Dark premium satin graphite: uniform plate colors, no giant highlights.
    Only section borders, actual recessed fader grooves and meter LEDs have
@@ -992,85 +772,13 @@
 .console-body .strip .pan-section,
 .console-body .strip .switch-section{background:var(--v13-lower)!important}
 .console-body .strip .bottom-section{background:#182832!important}
-.console-body .strip .wire-section{background:#182a34!important}
 .console-body .section-rail{background:#152630!important}
 .console-body .section-rail>.rail-cell{
  background:#1a2c37!important;
  box-shadow:inset 0 1px #ffffff08!important;
 }
-.console-body.wire-routing-v13 .strip .wire-deck{background:#142a35!important}
-.console-body.wire-routing-v13 .strip .wire-tray{background:#102631!important}
-.console-body.wire-routing-v13 .section-rail .rail-cell.send{background:#192d38!important}
-
-/* V15 original physical patch connectors: filled bronze/silver OUT jack, recessed
-   hollow IN socket. Calm console design; route highlight only on actual intent.
-   Compact always keeps the wires visible; expanded has more cable canvas. */
-.console-body.wire-routing-v15.collapsed-send{}
 @media(max-height:680px){
 }
-.console-body.wire-routing-v15 .wire-tray{
- justify-content:center!important;gap:4px!important;
- padding:3px 5px 4px!important;min-height:35px!important;
- flex:0 0 35px!important;max-height:35px!important;
-}
-.console-body.wire-routing-v15 .wire-node-out,
-.console-body.wire-routing-v15 .wire-node-in{
- display:flex!important;flex-direction:column!important;align-items:center!important;
- justify-content:center!important;
- flex:0 0 28px!important;width:28px!important;min-width:28px!important;
- height:28px!important;min-height:28px!important;
- border-radius:50%!important;
- font:600 18px/17px 'Segoe UI Symbol',Arial,sans-serif!important;
- user-select:none;-webkit-user-select:none;touch-action:none;
- position:relative;box-sizing:border-box;z-index:7;
-}
-.console-body.wire-routing-v15 .wire-node-out{
- border:1px solid #a4bdc3!important;color:#b7e0ec!important;
- background:#2d4752!important;
- box-shadow:inset 0 1px 0 #e6ffff34,inset 0 -2px 3px #07131c,0 1px 2px #040e17aa!important;
- cursor:grab;
-}
-.console-body.wire-routing-v15 .wire-node-out span{line-height:16px}
-.console-body.wire-routing-v15 .wire-node-out.is-source{
- color:#bcffd5!important;border-color:#6cdbaf!important;
- background:#225640!important;
- box-shadow:inset 0 1px #e2fff63b,0 0 0 1px #1c422f,0 0 8px #52ca8c3c!important;
-}
-.console-body.wire-routing-v15 .wire-node-out:active{cursor:grabbing}
-.console-body.wire-routing-v15 .wire-node-out:disabled{cursor:default;color:#657783!important}
-.console-body.wire-routing-v15 .wire-node-in{
- border:2px solid #75949e!important;color:#8faeb7!important;
- background:#0a1923!important;
- box-shadow:inset 1px 2px 3px #000e,inset 0 0 0 2px #29414b,0 1px #ffffff18!important;
- cursor:crosshair;
-}
-.console-body.wire-routing-v15 .wire-node-in .wire-arrow{font-size:21px!important;line-height:17px!important}
-.console-body.wire-routing-v15 .wire-node-in.is-linked{
- border-color:#80dfb4!important;color:#adffd6!important;
- background:#124932!important;
- box-shadow:inset 1px 2px 3px #0009,0 0 0 1px #305f4e,0 0 8px #52d49324!important;
-}
-.console-body.wire-routing-v15 .wire-node-in.is-source{opacity:.32!important;cursor:default}
-.console-body.wire-routing-v15 .wire-node-in:disabled{cursor:default}
-.console-body.wire-routing-v15 .wire-node-out small,
-.console-body.wire-routing-v15 .wire-node-in .wire-label{
- font:600 7px/7px 'Segoe UI',Arial,sans-serif!important;
- color:inherit!important;letter-spacing:.45px;
-}
-.console-body.wire-routing-v15 .wire-node-in .wire-arrow,
-.console-body.wire-routing-v15 .wire-node-out span{pointer-events:none}
-.console-body.wire-routing-v15 .wire-tray.linked .wire-node-in{
- flex:0 0 27px!important;width:27px!important;min-width:27px!important;
-}
-.console-body.wire-routing-v15 .wire-node-out:focus-visible,
-.console-body.wire-routing-v15 .wire-node-in:focus-visible{
- outline:2px solid #e4fffa!important;outline-offset:2px!important;
-}
-.console-body.wire-routing-v15.wire-dragging .wire-node-in:not(:disabled){
- border-color:#abf2d0!important;box-shadow:inset 1px 2px 3px #000b,0 0 0 2px #2d765b!important;
-}
-.console-body.wire-routing-v15 .wire-pot{flex:0 0 24px!important;width:24px!important;min-width:24px!important}
-.console-body.wire-routing-v15 .wire-disconnect{flex:0 0 16px!important;width:16px!important;min-width:16px!important}
 .route-choice[hidden]{display:none!important}
 .route-choice{
  position:absolute;z-index:30;box-sizing:border-box;width:280px;
@@ -1129,15 +837,7 @@
 .console-body .strip.channel-drop-after::before{right:0}
 .console-body .strip-identity-top[draggable="true"]{cursor:grab}
 .console-body .strip-identity-top[draggable="true"]:active{cursor:grabbing}
-
-/* V16: the WIRE graph is an upper compartment. When SEND is folded
-   the sockets and cable illustration are invisible, leaving only a
-   clean 23px disclosure row; model fan-out remains untouched. */
-.console-body.wire-routing-v15.collapsed-send{--send-h:23px!important}
 @media(max-height:680px){.console-body.wire-routing-v15.collapsed-send{--send-h:23px!important}}
-.console-body.wire-routing-v15.collapsed-send .strip .wire-deck,
-.console-body.wire-routing-v15.collapsed-send .strip .wire-tray{display:none!important}
-.console-body.wire-routing-v15.collapsed-send .routing-wire-overlay{display:none!important}
 /* ARSONMIX GLOBAL HARDWARE KEY V1 — owner approved MUTE/SOLO material.
    This is one reusable material token, NOT a new button geometry/layout.
    Never apply to circular WIRE connectors, fader thumb, meter LEDs, sliders,
@@ -1244,75 +944,7 @@
   transition:none!important;
  }
 }
-
-
-/* Wire V17: fixed four-column hardware patch. Never reflow on route changes. */
-.console-body.wire-routing-v15 .strip .wire-tray,.console-body.wire-routing-v15 .strip .wire-tray.linked{
- display:grid!important;grid-template-columns:24px 28px 22px!important;gap:4px!important;
- align-items:center!important;justify-content:center!important;
- height:35px!important;min-height:35px!important;max-height:35px!important;
- padding:3px 2px!important;box-sizing:border-box!important;
-}
-.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out{
- width:24px!important;min-width:24px!important;flex:0 0 24px!important;height:28px!important;
- border:0!important;background:transparent!important;box-shadow:none!important;
-}
-.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out .wire-pin{
- display:block;width:12px;height:12px;border:1px solid #9db6c2;border-radius:50%;
- background:linear-gradient(145deg,#d7e6eb,#718e9c);box-shadow:inset 0 1px #ffffff69,0 1px 2px #0009;
-}
-.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out.is-source .wire-pin{
- background:var(--ch,#9fe8bf);border-color:#ecfff1;box-shadow:0 0 5px var(--ch,#9fe8bf);
-}
-.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in,
-.console-body.wire-routing-v15 .strip .wire-tray.linked .wire-node-in{
- width:28px!important;min-width:28px!important;flex:0 0 28px!important;height:28px!important;
- border:2px solid #7994a0!important;border-radius:50%!important;padding:0!important;gap:0!important;
- background:#071820!important;box-shadow:inset 0 2px 4px #000b,inset 0 0 0 2px #233b45!important;
-}
-.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in .wire-arrow{
- display:block;width:9px;height:9px;flex:0 0 9px;border-radius:50%;
- background:#071720;border:1px solid #2b4350;font-size:0!important;
-}
-.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in.is-linked{
- border-color:var(--ch,#a4eac8)!important;background:#0a2028!important;
-}
-.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in.is-linked .wire-arrow{
- width:11px;height:11px;flex:0 0 11px;background:var(--ch,#a4eac8);
- border:1px solid #ffffff8a;box-shadow:0 0 4px var(--ch,#a4eac8);
-}
-.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in.is-snap-target{
- border-color:#e6fff3!important;box-shadow:inset 0 2px 4px #0009,0 0 0 3px #75ddae66!important;
-}
-.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out small,
-.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in .wire-label{
- position:absolute;bottom:-2px;pointer-events:none;color:#a7bcc4!important;font-size:7px!important;
-}
-.console-body.wire-routing-v15 .strip .wire-tray .wire-pot{
- width:22px!important;min-width:22px!important;flex:0 0 22px!important;grid-column:3;
-}
-.console-body.wire-routing-v15 .strip .wire-tray .wire-pot::before{
- inset:2px 1px!important;width:20px!important;height:20px!important;
- background:conic-gradient(from 225deg,var(--ch,#94dabc) 0 var(--wire-pct,91%),#344953 var(--wire-pct,91%) 75%,transparent 75% 100%)!important;
-}
-.console-body.wire-routing-v15 .strip .wire-tray .wire-pot::after{left:9px!important;top:4px!important}
-.console-body.wire-routing-v15 .strip .wire-tray .wire-pot.is-idle{
- opacity:.64;pointer-events:none;cursor:default!important;
-}
-.console-body.wire-routing-v15 .strip .wire-tray .wire-pot.is-idle::before{
- background:conic-gradient(from 225deg,#4b626d 0 75%,transparent 75% 100%)!important;
-}
-.console-body.wire-routing-v15 .strip .wire-tray .wire-pot.is-idle::after{
- transform:rotate(-135deg)!important;background:#657e8a!important;box-shadow:none!important;
-}
-.console-body.wire-routing-v15 .strip .wire-tray .wire-gain{width:22px!important;height:24px!important}
-.console-body.wire-routing-v15 .strip .wire-tray .wire-disconnect{
- width:14px!important;min-width:14px!important;flex:0 0 14px!important;grid-column:4;
-}
-.console-body.wire-routing-v15 .strip .wire-tray .wire-disconnect.is-idle{visibility:hidden!important;pointer-events:none}
-.console-body.wire-routing-v15 .strip .wire-tray{background:#0e222b!important}
 .routing-wire-overlay{filter:none!important}
-.console-body.wire-routing-v15.wire-dragging .strip .wire-node-in.is-source.is-snap-target{opacity:1!important}
 
 
 
@@ -1357,23 +989,6 @@ html * ,html *::before,html *::after{
 }
 .plugin-browser,.channel-identity,.route-choice,.more-tools-panel{
  box-shadow:0 0 0 1px #60717b,0 1px 0 1px #07141b!important;
-}
-.console-body .strip .wire-tray .wire-node-out.is-source .wire-pin,
-.console-body .strip .wire-tray .wire-node-in .wire-dot,
-.console-body .strip .wire-tray .wire-node-in.is-linked{
- box-shadow:inset 0 1px 0 rgba(255,255,255,.2),0 0 0 1px #07151b!important;
-}
-
-
-/* V18 connected IN is a grab handle; origin appears empty only while dragging. */
-.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in.is-linked{cursor:grab}
-.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in.is-replug-origin{
- border-color:#7994a0!important;background:#071820!important;
- box-shadow:inset 0 2px 4px #000b,inset 0 0 0 2px #233b45!important;
- cursor:grabbing!important;
-}
-.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in.is-replug-origin .wire-arrow{
- background:#071720!important;border-color:#2b4350!important;box-shadow:none!important;
 }
 
 
@@ -1558,9 +1173,6 @@ html * ,html *::before,html *::after{
  text-shadow:none!important;transition:none!important;
  border-top:0!important;
 }
-.console-body.wire-routing-v13 .section-rail>.rail-cell.send{
- background:#182b35!important;color:#9aafb9!important;
-}
 .console-body .section-rail>.rail-cell[data-section].collapsed{
  background:#12232d!important;color:#768d98!important;
  box-shadow:inset 2px 0 #627e8e65!important;
@@ -1571,50 +1183,10 @@ html * ,html *::before,html *::after{
 .console-body .section-rail>.rail-cell[data-section]:hover{
  background:#29404b!important;color:#e3eff2!important;
 }
-.console-body .section-rail>.rail-cell[data-section]::after,
-.console-body.wire-routing-v13 .section-rail>.rail-cell.send::after,
-.console-body.wire-routing-v13.collapsed-send .section-rail>.rail-cell.send::after{
- content:""!important;display:block!important;
- position:absolute!important;right:2px!important;top:4px!important;
- width:3px!important;height:3px!important;
- border:solid currentColor!important;border-width:0 1px 1px 0!important;
- transform:rotate(45deg)!important;opacity:.75!important;
- background:transparent!important;font-size:0!important;
-}
-.console-body .section-rail>.rail-cell[data-section].collapsed::after,
-.console-body.wire-routing-v13.collapsed-send .section-rail>.rail-cell.send::after{
- transform:rotate(-45deg)!important;
-}
 .console-body .section-rail .rail-cell.route,
 .console-body .section-rail .rail-cell.fx,
 .console-body .section-rail .rail-cell.send{
  padding:0 2px 0 0!important;justify-content:center!important;
-}
-.console-body.wire-routing-v15 .strip .wire-fold-summary{
- display:none!important;
-}
-.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary{gap:6px;align-items:center;justify-content:center;height:21px;min-height:21px;padding:0 2px;
- border:0;border-radius:0;font:500 9px/1 Arial,Helvetica,sans-serif;
- letter-spacing:0;cursor:pointer;overflow:hidden;white-space:nowrap;
-}
-.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary:hover{
- background:#273c48!important;
-}
-.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary:focus-visible{
- outline:1px solid #91cbd6;outline-offset:-2px;
-}
-.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-in{
- color:#9baeb9;
-}
-.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-out{
- color:var(--ch,#a4bac7);
-}
-.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-empty{
- color:#617883;font-size:10px;
-}
-.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-marker{
- display:inline-block;width:3px;height:3px;margin-right:2px;
- border-radius:50%;background:currentColor;vertical-align:middle;
 }
 /* The collapsed WIRE rack stays exactly 23px. FX/fader geometry is unchanged. */
 
@@ -1750,90 +1322,6 @@ html * ,html *::before,html *::after{
 .console-body .section-rail .rail-cell.route .rail-svg-icon{width:20px!important;height:20px!important}
 .console-body .section-rail .rail-cell[data-section]:hover .rail-svg-icon{opacity:1}
 .console-body .section-rail .rail-cell[data-section].collapsed .rail-svg-icon{opacity:.76}
-
-
-/* V23 DAW folded-bay correction: a 23px electronic link LED, NEVER the
-   truncated live patch jack/knob or numeric send badges. Physical rack geometry
-   and approved FX/WIRE/I/O rail icons are unchanged. */
-.console-body.wire-routing-v15.collapsed-send .strip .send-section.wire-section{
- display:flex!important;flex-direction:column!important;align-items:stretch!important;
- justify-content:center!important;
- height:23px!important;min-height:23px!important;max-height:23px!important;
- padding:0!important;overflow:hidden!important;
-}
-.console-body.wire-routing-v15.collapsed-send .strip .send-section.wire-section .wire-deck,
-.console-body.wire-routing-v15.collapsed-send .strip .send-section.wire-section .wire-tray,
-.console-body.wire-routing-v15.collapsed-send .strip .send-section.wire-section .wire-tray.linked{
- display:none!important;visibility:hidden!important;pointer-events:none!important;
- width:0!important;height:0!important;min-height:0!important;max-height:0!important;
- flex:0 0 0!important;padding:0!important;margin:0!important;overflow:hidden!important;
-}
-.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary{
- display:flex!important;align-items:center!important;justify-content:center!important;
- position:relative;z-index:1;
- flex:0 0 22px!important;height:22px!important;min-height:22px!important;max-height:22px!important;
- width:100%;padding:0!important;margin:0!important;
- color:var(--ch,#8babb5);background:transparent!important;border:0!important;
- font-size:0!important;line-height:0!important;overflow:hidden!important;
-}
-.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-link-icon{
- display:block;width:28px;height:12px;flex:0 0 28px;opacity:.77;
-}
-.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-link-trace{
- stroke:currentColor;stroke-width:1.1;fill:none;opacity:.45;stroke-linecap:round;
-}
-.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-link-in,
-.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-link-out{
- fill:#172c37;stroke:#67808a;stroke-width:1.15;
-}
-
-.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary.is-empty{
- background:transparent!important;
-}
-.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary.has-wire:hover .fold-link-icon{
- opacity:1;
-}
-
-
-/* V24: precisely mirror physical patch in 23px folded rail:
-   LEFT = OUT filled 6.9px contact, RIGHT = IN 10.8px ring + 3.7px center.
-   Muted idle contacts stay visible. Each direction activates independently
-   with this channel's assigned color. Fixed 34x16px, no labels or effects. */
-.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-link-icon{
- width:34px!important;height:16px!important;flex:0 0 34px!important;
- display:block!important;overflow:visible;opacity:1!important;
- color:var(--ch,#8aaeb9);pointer-events:none;
-}
-.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-link-out{
- fill:#324956;stroke:#5c7480;stroke-width:.9;opacity:.75;
-}
-.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-link-in{
- fill:#0c202b;stroke:#536b77;stroke-width:1.5;opacity:.9;
-}
-.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .fold-link-in-dot{
- fill:#344e59;stroke:none;opacity:.85;
-}
-.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .has-out .fold-link-out{
- fill:currentColor;stroke:currentColor;opacity:1;
-}
-.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .has-in .fold-link-in{
- fill:#0b222c;stroke:currentColor;opacity:1;
-}
-.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .has-in .fold-link-in-dot{
- fill:currentColor;opacity:1;
-}
-/* Three actual physical controls, no useless fourth slot for removed X. */
-.console-body.wire-routing-v15 .strip .wire-tray,
-.console-body.wire-routing-v15 .strip .wire-tray.linked{
- grid-template-columns:24px 28px 22px!important;gap:4px!important;
-}
-
-
-/* V25 UX: compact physical WIRE, taller fader, thin selected rim,
-   sharp offline Google Material SVG icons; all same strip+rail tokens. */
-.console-body.wire-routing-v15:not(.collapsed-send){
- --send-h:112px!important;
-}
 @media(max-height:680px){
  .console-body.wire-routing-v15:not(.collapsed-send){--send-h:102px!important}
 }
@@ -1847,39 +1335,6 @@ html * ,html *::before,html *::after{
 .mixer-title .panel-sub{display:inline-flex;align-items:center;justify-content:center}
 .route-choice-option .choice-symbol{display:inline-flex;align-items:center;justify-content:center}
 #preview .mi-svg{margin-right:3px}
-
-
-/* V26 Focus Signal Flow — compact inspectable two-way routing ledger.
-   Incoming is behind the selected channel's outgoing paths in the SAME SVG.
-   No glow, no additional layer, no moving fader or rack geometry. */
-.mixer-title .wire-legend{
- display:inline-flex;flex:0 1 auto;align-items:center;gap:6px;
- min-width:0;max-width:min(52vw,465px);
- margin-left:auto;padding:2px 5px;
- background:#142932;border:1px solid #38525d;border-radius:3px;
- color:#a6c4cd;font:500 9px/1.2 'Segoe UI',Arial,sans-serif;
- text-overflow:clip;overflow:hidden;white-space:nowrap;
-}
-.mixer-title .wire-map-focus{
- flex:none;color:#d5e6eb;font-weight:600;letter-spacing:.03em;
-}
-.mixer-title .wire-map-group{
- display:inline-flex;align-items:center;gap:3px;min-width:0;
- padding-left:6px;border-left:1px solid #304b56;
-}
-.mixer-title .wire-map-direction{color:#7895a1;flex:none;font-size:8px;letter-spacing:.04em}
-.mixer-title .wire-map-chip{
- display:inline-flex;align-items:center;gap:1px;flex:none;
- color:var(--wire-hue,#a2c4cf);background:#1a333d;
- border:1px solid #38515c;border-radius:3px;
- padding:1px 3px;line-height:13px;font-size:9px;
-}
-.mixer-title .wire-map-chip svg{width:10px;height:10px;flex:0 0 10px}
-.mixer-title .wire-map-more{color:#99b4c0;font-size:9px}
-.mixer-title .wire-map-none{color:#55707e;font-size:9px}
-.routing-wire-overlay .wire-incoming-line,
-.routing-wire-overlay .wire-outgoing-line,
-.routing-wire-overlay .wire-outgoing-shadow{filter:none;pointer-events:none}
 
 
 /* V27 narrow console QA: toolbar operations must never run into each
@@ -2079,201 +1534,13 @@ html * ,html *::before,html *::after{
  .identity-actions button.console-control,.plugin-footer button,
  .route-choice-head button,.route-choice-option,button.hw-key
 ):focus-visible{outline:2px solid #80d5ed!important;outline-offset:2px!important}
-
-
-/* V31 — FL-style suspended routing: actual OUT/IN/GAIN patch hardware TOP,
-   the flexible signal cables hang below under their own simulated weight.
-   The panel is strictly a GUI reference; don't move PAN, FX, M/S/PFL, faders.
-   Reorder only expanded compartments. Folded WIRE remains 23px icon-only. */
-.console-body.wire-routing-v15:not(.collapsed-send) .strip .wire-section{
- display:flex!important;flex-direction:column!important;
- justify-content:flex-start!important;
-}
-.console-body.wire-routing-v15:not(.collapsed-send) .strip .wire-section .wire-tray{
- order:-2!important;flex-shrink:0!important;
- border-top:0!important;border-bottom:1px solid #405965!important;
-}
-.console-body.wire-routing-v15:not(.collapsed-send) .strip .wire-section .wire-deck{
- order:0!important;flex:1 1 0!important;min-height:0!important;
- background:#101f29!important;border-bottom:0!important;
- box-shadow:inset 0 2px 4px #07131b6e!important;
- padding:0!important;
-}
-.console-body.wire-routing-v15:not(.collapsed-send) .strip .wire-section .wire-deck-label,
-.console-body.wire-routing-v15:not(.collapsed-send) .strip .wire-section .wire-deck-status,
-.console-body.wire-routing-v15:not(.collapsed-send) .strip .wire-section .wire-deck-rail{
- display:none!important;
-}
-
-/* V33 compact all-bank patch picker: native keyboard accessible, no overlay. */
-.mixer-title .wire-dest-picker{height:19px;min-width:118px;max-width:170px;
- background:#172b34;color:#dcf0f5;border:1px solid #54717e;border-radius:3px;
- font:500 10px/17px 'Segoe UI',Arial,sans-serif;padding:0 3px;cursor:pointer}
-.mixer-title .wire-dest-picker:focus-visible{outline:1px solid #9ad2df;outline-offset:1px}
-.mixer-title .wire-patch-source{color:#c0dfe8;font:600 10px/17px 'Segoe UI',Arial,sans-serif;white-space:nowrap}
-/* V32 off-bank patch context: visible state, not extra operator chrome. */
-.mixer-title .wire-offbank-source{
- flex:none;max-width:215px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
- font:600 9px/14px 'Segoe UI',Arial,sans-serif;color:#d2f0e1;
- background:#1e3b36;border:1px solid #507f71;border-radius:3px;padding:0 5px;
- cursor:pointer;
-}
-.mixer-title .wire-offbank-source:hover,.mixer-title .wire-offbank-source:focus-visible{
- border-color:#91d0b7;color:white;
-}
-.mixer-title .wire-offbank-instruction{color:#bad0d7;font:500 9px/15px 'Segoe UI',Arial,sans-serif;overflow:hidden;text-overflow:ellipsis}
-.routing-wire-overlay .wire-offbank-entry{pointer-events:none}
-
-/* V33 — Operator intent, tactile SEND and compact high-end console finish */
-.console-body .strip .wire-node-out:not(.is-source),
-.console-body .strip .wire-node-in:not(.is-source):not(.is-linked){
- color:#687881!important;border-color:#364954!important;background:#1a2c36!important;
- box-shadow:inset 0 1px 2px #07141c!important;
-}
-.console-body .strip .wire-node-out:not(.is-source) .wire-pin,
-.console-body .strip .wire-node-in:not(.is-linked):not(.is-source) .wire-arrow{
- color:#677985!important;filter:none!important;
-}
-.console-body .strip .wire-node-out:hover:not(:disabled),
-.console-body .strip .wire-node-in:hover:not(:disabled){border-color:#98adb7!important}
-.console-body .strip .wire-tray .wire-pot:not(.is-idle){
- width:22px!important;min-width:22px!important;flex:0 0 22px!important;
- height:24px!important;cursor:ns-resize!important;touch-action:none;user-select:none;
-}
-.console-body .strip .wire-tray .wire-pot:not(.is-idle)::before{
- content:""!important;inset:2px 1px!important;width:20px!important;height:20px!important;
- background:radial-gradient(circle at 35% 25%,#a9b8bf,#647b86 48%,#314956 77%,#182e39)!important;
- border:1px solid #8da4af!important;border-radius:50%!important;
- box-shadow:inset 0 1px #e5f5ff66,inset 0 -2px 2px #0b1922,0 1px 1px #030b0e!important;
-}
-.console-body .strip .wire-tray .wire-pot:not(.is-idle)::after{
- width:2px!important;height:8px!important;top:6px!important;left:calc(50% - 1px)!important;
- transform-origin:50% 9px!important;transform:rotate(var(--wire-deg,110deg))!important;
- background:#ebf8fc!important;box-shadow:none!important;
-}
-.console-body .strip .wire-tray .wire-pot .wire-gain{
- position:absolute!important;inset:0!important;width:100%!important;height:100%!important;
- opacity:0!important;cursor:ns-resize!important;touch-action:none!important;
-}
 .command-bar{align-items:center!important;gap:5px!important}
 .command-bar .tool,.command-bar .toolbar-select{white-space:nowrap;text-overflow:ellipsis}
 .command-bar .toolbar-label{letter-spacing:.04em}
 @media(max-width:1400px){.command-bar{gap:3px!important}.command-bar .tool{padding-inline:6px!important}}
-/* Neutral dormant routing: existing connections remain in data, but no
-   bright LEDs until the operator explicitly engages the SEND patch zone. */
-.console-body:not(.wire-intent) .strip .wire-tray .wire-node-in,
-.console-body:not(.wire-intent) .strip .wire-tray .wire-node-out{
- color:#6e7d85!important;border-color:#364854!important;
- background:#192a34!important;filter:none!important;
- box-shadow:inset 0 1px 2px #07131a!important;
-}
-.console-body:not(.wire-intent) .strip .wire-tray .wire-node-in *,
-.console-body:not(.wire-intent) .strip .wire-tray .wire-node-out *{
- color:#70818b!important;filter:none!important;
-}
-.console-body:not(.wire-intent) .strip .wire-tray .wire-pot:not(:hover)::after{background:#9daeb5!important}
-
-/* V34 — Explicit WIRE arming. Mixer selection never lights routing hardware. */
-.console-body:not(.wire-intent) .strip .wire-node-out,
-.console-body:not(.wire-intent) .strip .wire-node-in{filter:none!important}
-.console-body .strip .wire-tray .wire-pot:not(.is-idle):focus-within{outline:1px solid #8ad5e3;outline-offset:2px}
-
-/* V35 exact SVG wire-pot, supplied knob-ICON.svg. One silhouette, no circular
-   overlay or second indicator: its original notch acts as the pointer.
-   UI selection cannot illuminate the knob; only an enabled WIRE edge can. */
-.console-body.wire-routing-v15 .strip .wire-tray .wire-pot{
- background:transparent!important;border:0!important;box-shadow:none!important;
-}
-.console-body.wire-routing-v15 .strip .wire-tray .wire-pot.is-idle,
-.console-body.wire-routing-v15 .strip .wire-tray .wire-pot.is-readonly{
- opacity:1!important;pointer-events:none!important;cursor:default!important;
-}
-.console-body.wire-routing-v15 .strip .wire-tray .wire-pot.is-idle::before,
-.console-body.wire-routing-v15 .strip .wire-tray .wire-pot.is-active::before{
- content:""!important;display:block!important;position:absolute!important;
- inset:2px 1px!important;width:20px!important;height:20px!important;
- border:0!important;border-radius:0!important;
- background:var(--wire-pot-fill,#4b535b)!important;
- -webkit-mask-image:url("data:image/svg+xml;base64,PHN2ZyB2ZXJzaW9uPSIxLjIiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgdmlld0JveD0iMCAwIDgwMCA4MDAiIHdpZHRoPSI4MDAiIGhlaWdodD0iODAwIj4KCTxzdHlsZT4KCQkuczAgeyBmaWxsOiAjMDAwMDAwIH0gCgk8L3N0eWxlPgoJPGc+CgkJPGc+CgkJCTxnPgoJCQkJPHBhdGggY2xhc3M9InMwIiBkPSJtNDM2Ljg0IDQzNi44NGMtMTAuMDkgMTAuMDktMjMuMzQgMTUuMTYtMzYuNTkgMTUuMTYtMTMuMjUgMC0yNi40OS01LjA3LTM2LjU5LTE1LjE2LTIwLjIzLTIwLjI0LTIwLjIzLTUyLjk0IDAtNzMuMThsMjUzLjExLTI1My4xMWMtNjAuNDktNDUuMzMtMTM1LjI3LTcyLjU1LTIxNi41Mi03Mi41NS0xOTkuNyAwLTM2Mi4yNSAxNjIuNS0zNjIuMjUgMzYyLjI1IDAgMTk5Ljc1IDE2Mi41NSAzNjIuMjUgMzYyLjI1IDM2Mi4yNSAxOTkuNzEgMCAzNjIuMjUtMTYyLjUgMzYyLjI1LTM2Mi4yNSAwLTgxLjI1LTI3LjIyLTE1Ni4wMy03Mi41NS0yMTYuNTN6Ii8+CgkJCTwvZz4KCQk8L2c+Cgk8L2c+Cjwvc3ZnPgo=")!important;
- mask-image:url("data:image/svg+xml;base64,PHN2ZyB2ZXJzaW9uPSIxLjIiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgdmlld0JveD0iMCAwIDgwMCA4MDAiIHdpZHRoPSI4MDAiIGhlaWdodD0iODAwIj4KCTxzdHlsZT4KCQkuczAgeyBmaWxsOiAjMDAwMDAwIH0gCgk8L3N0eWxlPgoJPGc+CgkJPGc+CgkJCTxnPgoJCQkJPHBhdGggY2xhc3M9InMwIiBkPSJtNDM2Ljg0IDQzNi44NGMtMTAuMDkgMTAuMDktMjMuMzQgMTUuMTYtMzYuNTkgMTUuMTYtMTMuMjUgMC0yNi40OS01LjA3LTM2LjU5LTE1LjE2LTIwLjIzLTIwLjI0LTIwLjIzLTUyLjk0IDAtNzMuMThsMjUzLjExLTI1My4xMWMtNjAuNDktNDUuMzMtMTM1LjI3LTcyLjU1LTIxNi41Mi03Mi41NS0xOTkuNyAwLTM2Mi4yNSAxNjIuNS0zNjIuMjUgMzYyLjI1IDAgMTk5Ljc1IDE2Mi41NSAzNjIuMjUgMzYyLjI1IDM2Mi4yNSAxOTkuNzEgMCAzNjIuMjUtMTYyLjUgMzYyLjI1LTM2Mi4yNSAwLTgxLjI1LTI3LjIyLTE1Ni4wMy03Mi41NS0yMTYuNTN6Ii8+CgkJCTwvZz4KCQk8L2c+Cgk8L2c+Cjwvc3ZnPgo=")!important;
- -webkit-mask-mode:alpha!important;mask-mode:alpha!important;
- -webkit-mask-position:center!important;mask-position:center!important;
- -webkit-mask-size:contain!important;mask-size:contain!important;
- -webkit-mask-repeat:no-repeat!important;mask-repeat:no-repeat!important;
- transform-origin:center!important;
- transform:rotate(calc(var(--wire-deg,45deg) - 45deg))!important;
- box-shadow:none!important;filter:none!important;opacity:1!important;
- pointer-events:none!important;
-}
-.console-body.wire-routing-v15 .strip .wire-tray .wire-pot::after{
- content:none!important;display:none!important;
-}
-.console-body.wire-routing-v15 .strip .wire-tray .wire-pot:not(.is-idle):not(.is-readonly){
- cursor:ns-resize!important;touch-action:none!important;
-}
 @media(prefers-reduced-motion:reduce){
  .console-body.wire-routing-v15 .strip .wire-tray .wire-pot::before{transition:none!important}
 }
-
-/* V34 Smart WIRE: overlay-only navigation. The mixer strips, cable physics,
-   bank layout, meters and routing model retain their V33 geometry. */
-.mixer-title .wire-v34-tool{height:19px!important;min-width:37px;padding:0 5px!important;
- border:1px solid #4b6875!important;border-radius:3px!important;
- color:#c1d7e1!important;background:#1b3541!important;
- font:600 9px/16px 'Segoe UI',Arial,sans-serif!important;flex:none}
-.mixer-title .wire-v34-tool[aria-expanded="true"]{background:#285266!important;border-color:#79b3c6!important;color:#fff!important}
-.wire-workspace[hidden]{display:none!important}
-.wire-workspace{position:absolute;z-index:28;top:27px;right:8px;width:min(470px,calc(100% - 42px));
- max-height:min(67vh,570px);display:flex;flex-direction:column;overflow:hidden;
- border:1px solid #597887;border-radius:5px;background:#1b2d38;
- color:#d2e4e9;font:11px/1.4 'Segoe UI',Arial,sans-serif;
- box-shadow:0 12px 32px #000b,inset 0 1px #ffffff18}
-.wire-workspace.is-matrix{width:min(840px,calc(100% - 42px))}
-.wire-workspace button,.wire-workspace input,.wire-workspace select{font:inherit}
-.wire-workspace button:focus-visible,.wire-workspace input:focus-visible,.wire-workspace select:focus-visible{outline:1px solid #a5dfe5;outline-offset:1px}
-.wire-ws-head{display:flex;align-items:center;gap:7px;padding:7px 9px;background:#223a47;border-bottom:1px solid #425c68}
-.wire-ws-head strong{font-size:11px;font-weight:650;color:#e1edf1}
-.wire-ws-source{margin-left:auto;color:#a8cad8;font-size:10px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.wire-ws-head button{background:#243c49;border:1px solid #4e6d7d;border-radius:3px;padding:1px 7px;color:#d6e7ec;cursor:pointer}
-.wire-ws-tabs{display:flex;gap:3px;padding:6px 8px 0;background:#1b2d38}
-.wire-ws-tabs button{border:1px solid transparent;border-bottom:0;background:transparent;color:#99b4bf;cursor:pointer;padding:5px 9px;border-radius:4px 4px 0 0;font-size:10px}
-.wire-ws-tabs button[aria-selected="true"]{background:#2c4653;border-color:#526e7b;color:#e6f4f8}
-.wire-ws-filters{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:7px 9px;border-bottom:1px solid #374f5a}
-.wire-ws-filters label{color:#9fbcc7;font-size:10px}
-.wire-ws-filters input[type="search"]{flex:1;min-width:100px;background:#10242e;border:1px solid #446271;border-radius:3px;padding:6px 8px;color:#dfeef2;outline-offset:1px}
-.wire-ws-filters select{min-width:95px;max-width:155px;background:#10242e;border:1px solid #446271;border-radius:3px;padding:5px;color:#dfeef2}
-.wire-ws-list{overflow:auto;min-height:48px;max-height:clamp(160px,45vh,395px);overscroll-behavior:contain}
-.wire-ws-row{display:flex;align-items:center;gap:7px;padding:7px 9px;border-bottom:1px solid #304752;color:#cfe0e6}
-.wire-ws-row:hover{background:#263e4a}
-.wire-ws-row .wire-ws-ident{display:flex;align-items:center;gap:7px;flex:1;min-width:0}
-.wire-ws-dot{width:7px;height:7px;border-radius:50%;background:var(--ws-hue,#7c9aaa);flex:none}
-.wire-ws-row .wire-ws-ident span{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.wire-ws-row small{color:#92aebc;font-size:9px;white-space:nowrap}
-.wire-ws-row button,.wire-ws-inspector button{border:1px solid #4a7181;background:#243f4d;color:#d5e8ef;border-radius:3px;padding:4px 7px;cursor:pointer}
-.wire-ws-row button[disabled]{opacity:.38;cursor:default}
-.wire-ws-row button:hover:not([disabled]),.wire-ws-inspector button:hover{background:#345667}
-.wire-ws-row .wire-ws-status{color:#91d8ac}
-.wire-ws-subtitle{font:600 9px/15px 'Segoe UI',Arial,sans-serif;letter-spacing:.08em;color:#adc6d1;padding:7px 9px 3px}
-.wire-ws-inspector{padding:8px 9px;border-top:1px solid #536f7b;background:#182f3b;display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center}
-.wire-ws-inspector[hidden]{display:none!important}
-.wire-ws-inspector .wire-ws-controls{grid-column:1/-1;display:flex;gap:7px;align-items:center;flex-wrap:wrap}
-.wire-ws-inspector input[type=range]{width:130px;accent-color:#84bfc7}
-.wire-ws-inspector select{background:#142b36;border:1px solid #446471;color:#cce1e9;border-radius:3px;padding:3px}
-.wire-ws-foot{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:6px 9px;font-size:9px;color:#87a9b7;border-top:1px solid #324b57}
-.wire-ws-matrix-scroll{overflow:auto;max-height:clamp(160px,43vh,380px)}
-.wire-ws-matrix{border-collapse:separate;border-spacing:1px;font-size:9px;width:max-content;min-width:100%}
-.wire-ws-matrix th{position:sticky;background:#253e4b;color:#b7ced5;z-index:1;top:0;padding:6px 5px;max-width:105px;white-space:nowrap}
-.wire-ws-matrix th:first-child{left:0;z-index:3}
-.wire-ws-matrix td:first-child{position:sticky;left:0;background:#1c3340;z-index:2;color:#c2d8e0;padding:4px 7px;white-space:nowrap}
-.wire-ws-matrix td{padding:2px;text-align:center}
-.wire-ws-matrix button{width:25px;height:24px;border:1px solid #426070;border-radius:3px;background:#152b36;color:#6e91a0;cursor:pointer;font-size:12px}
-.wire-ws-matrix button.is-linked{color:#91e3b5;border-color:#498b74;background:#204239}
-.wire-ws-matrix button.is-legacy{color:#a8b8ed;background:#28364e}
-.wire-ws-matrix button:disabled{opacity:.2;cursor:default}
-.wire-ws-matrix button:hover:not(:disabled){border-color:#b0dce9;background:#355463}
-.wire-ws-empty{padding:20px 12px;text-align:center;color:#9fb8c2}
-.wire-ws-foot button{border:1px solid #496979;background:#243d4b;color:#d4e8ee;border-radius:3px;padding:2px 7px;white-space:nowrap;cursor:pointer}
-.wire-ws-foot button:disabled{opacity:.35;cursor:default}
 @media(max-width:1000px){.mixer-title .wire-v34-tool{min-width:30px;padding:0 3px!important}.wire-workspace{right:3px}}
 
 
@@ -2287,7 +1554,7 @@ html * ,html *::before,html *::after{
 <link rel="stylesheet" href="assets/mixer-meter-display.css?v=css-owner-v9">
 <link rel="stylesheet" href="assets/mixer-utility-controls.css?v=inter-utility-v7">
 <link rel="stylesheet" href="assets/inter-embedded.css?v=inter-utility-v7">
-<link rel="stylesheet" href="assets/mixer-wire-dots.css?v=v47">
+<link rel="stylesheet" href="assets/mixer-wire-dots.css?v=v47-css-v16">
 
 </head>
 <body>
