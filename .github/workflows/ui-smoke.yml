@@ -95,6 +95,8 @@ jobs:
         run: python tests/pages_css_architecture_v11_smoke.py
       - name: Verify V12 removed shadow declarations and old/new visual + control parity
         run: python tests/pages_css_architecture_v12_smoke.py
+      - name: Verify V13 owned CSS conflicts and physical control visual parity
+        run: python tests/pages_css_architecture_v13_smoke.py
       - name: Verify embedded Inter font and contextual V7 micro-controls
         run: python tests/pages_inter_utility_v7_smoke.py
       - name: Verify owned V6 mixer hardware keys and WIRE regression
@@ -154,6 +156,7 @@ jobs:
             pages-v11-collapse-1366.png
             pages-v11-console-1680.png
             pages-v12-console-1680.png
+            pages-v13-owner-console-1680.png
             pages-v7-embedded-inter-utility-1680.png
             pages-mixer-v6-OFF-1680.png
             pages-mixer-v6-ON-1680.png
