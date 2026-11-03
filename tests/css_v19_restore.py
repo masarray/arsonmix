@@ -28,7 +28,10 @@ def manifest():
 
 def reconstruct():
     data=manifest()
-    current=HTML.read_text(encoding="utf-8")
+    # V20 only prunes shadowed declarations: restore the exact approved V19
+    # HTML before enforcing this immutable V19 owner-migration ledger.
+    from css_v20_restore import reconstruct as restore_v19_source
+    current=restore_v19_source()
     sections=SECTIONS.read_text(encoding="utf-8")
     chrome=CHROME.read_text(encoding="utf-8")
     for name,source in (("html",current),("sections",sections),("chrome",chrome)):

@@ -1,0 +1,841 @@
+{
+  "milestone": "V20",
+  "baseCommit": "80a155c3da4a436c59cb7819892b5843358f3f73",
+  "algorithm": "same normalized selector + identical @context + exact CSS property + equal importance + later winner (same author inline stylesheet)",
+  "sourceBlock": 2,
+  "edits": [
+    {
+      "offset": 1480,
+      "text": ".console-body .strip .subhead,.console-body .strip .send-header{\n  border-bottom:1px solid #101e29!important;box-shadow:inset 0 -1px #7f9ba920!important;\n}",
+      "kind": "rule",
+      "selector": ".console-body .strip .subhead,.console-body .strip .send-header",
+      "context": "",
+      "removedProperties": 2
+    },
+    {
+      "offset": 4647,
+      "text": ".console-body:not(.collapsed-fx) .strip .fx-section,\n.console-body:not(.collapsed-fx) .section-rail > .rail-cell.fx{\n flex:1 1 0px!important;height:auto!important;\n min-height:122px!important;max-height:none!important;\n}",
+      "kind": "rule",
+      "selector": ".console-body:not(.collapsed-fx) .strip .fx-section,\n.console-body:not(.collapsed-fx) .section-rail > .rail-cell.fx",
+      "context": "",
+      "removedProperties": 4
+    },
+    {
+      "offset": 4868,
+      "text": ".console-body.collapsed-fx .strip .fx-section,\n.console-body.collapsed-fx .section-rail > .rail-cell.fx{\n flex:0 0 23px!important;height:23px!important;min-height:23px!important;max-height:23px!important;\n}",
+      "kind": "rule",
+      "selector": ".console-body.collapsed-fx .strip .fx-section,\n.console-body.collapsed-fx .section-rail > .rail-cell.fx",
+      "context": "",
+      "removedProperties": 4
+    },
+    {
+      "offset": 5223,
+      "text": ".console-body.collapsed-fx.collapsed-send .strip .fader-section,\n.console-body.collapsed-fx.collapsed-send .section-rail > .rail-cell.fader{\n flex:1 1 0px!important;height:auto!important;max-height:none!important;\n}",
+      "kind": "rule",
+      "selector": ".console-body.collapsed-fx.collapsed-send .strip .fader-section,\n.console-body.collapsed-fx.collapsed-send .section-rail > .rail-cell.fader",
+      "context": "",
+      "removedProperties": 3
+    },
+    {
+      "offset": 19714,
+      "text": "\n border-radius:var(--am-hw-key-radius)!important;",
+      "kind": "declaration",
+      "selector": ":is(\n .command-bar button.tool,\n .command-bar summary.tool,\n .more-tools-panel button.tool,\n .console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,\n .plugin-footer button,\n .route-choice-head button,\n .route-choice-option,\n button.hw-key\n)",
+      "context": "",
+      "removedProperties": 1
+    },
+    {
+      "offset": 19764,
+      "text": "\n color:var(--am-hw-key-ink)!important;",
+      "kind": "declaration",
+      "selector": ":is(\n .command-bar button.tool,\n .command-bar summary.tool,\n .more-tools-panel button.tool,\n .console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,\n .plugin-footer button,\n .route-choice-head button,\n .route-choice-option,\n button.hw-key\n)",
+      "context": "",
+      "removedProperties": 1
+    },
+    {
+      "offset": 19803,
+      "text": "\n background:linear-gradient(180deg,\n   color-mix(in srgb,var(--am-hw-key-face) 84%,white) 0%,\n   color-mix(in srgb,var(--am-hw-key-face) 96%,white) 8%,\n   var(--am-hw-key-face) 38%,\n   color-mix(in srgb,var(--am-hw-key-face) 86%,black) 78%,\n   color-mix(in srgb,var(--am-hw-key-face) 64%,black) 100%)!important;",
+      "kind": "declaration",
+      "selector": ":is(\n .command-bar button.tool,\n .command-bar summary.tool,\n .more-tools-panel button.tool,\n .console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,\n .plugin-footer button,\n .route-choice-head button,\n .route-choice-option,\n button.hw-key\n)",
+      "context": "",
+      "removedProperties": 1
+    },
+    {
+      "offset": 20115,
+      "text": "\n box-shadow:var(--am-hw-key-relief)!important;",
+      "kind": "declaration",
+      "selector": ":is(\n .command-bar button.tool,\n .command-bar summary.tool,\n .more-tools-panel button.tool,\n .console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,\n .plugin-footer button,\n .route-choice-head button,\n .route-choice-option,\n button.hw-key\n)",
+      "context": "",
+      "removedProperties": 1
+    },
+    {
+      "offset": 20162,
+      "text": "\n text-shadow:0 1px rgba(255,255,255,.19)!important;",
+      "kind": "declaration",
+      "selector": ":is(\n .command-bar button.tool,\n .command-bar summary.tool,\n .more-tools-panel button.tool,\n .console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,\n .plugin-footer button,\n .route-choice-head button,\n .route-choice-option,\n button.hw-key\n)",
+      "context": "",
+      "removedProperties": 1
+    },
+    {
+      "offset": 20214,
+      "text": "\n filter:none!important;",
+      "kind": "declaration",
+      "selector": ":is(\n .command-bar button.tool,\n .command-bar summary.tool,\n .more-tools-panel button.tool,\n .console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,\n .plugin-footer button,\n .route-choice-head button,\n .route-choice-option,\n button.hw-key\n)",
+      "context": "",
+      "removedProperties": 1
+    },
+    {
+      "offset": 20238,
+      "text": "\n transform:translateY(0)!important;",
+      "kind": "declaration",
+      "selector": ":is(\n .command-bar button.tool,\n .command-bar summary.tool,\n .more-tools-panel button.tool,\n .console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,\n .plugin-footer button,\n .route-choice-head button,\n .route-choice-option,\n button.hw-key\n)",
+      "context": "",
+      "removedProperties": 1
+    },
+    {
+      "offset": 20274,
+      "text": "\n transition:transform 80ms ease,box-shadow 80ms ease!important;",
+      "kind": "declaration",
+      "selector": ":is(\n .command-bar button.tool,\n .command-bar summary.tool,\n .more-tools-panel button.tool,\n .console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,\n .plugin-footer button,\n .route-choice-head button,\n .route-choice-option,\n button.hw-key\n)",
+      "context": "",
+      "removedProperties": 1
+    },
+    {
+      "offset": 20838,
+      "text": "\n top:0!important;",
+      "kind": "declaration",
+      "selector": ":is(\n .command-bar button.tool,.command-bar summary.tool,\n .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,.plugin-footer button,\n .route-choice-head button,.route-choice-option,button.hw-key\n)::before",
+      "context": "",
+      "removedProperties": 1
+    },
+    {
+      "offset": 20856,
+      "text": "left:2px!important;",
+      "kind": "declaration",
+      "selector": ":is(\n .command-bar button.tool,.command-bar summary.tool,\n .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,.plugin-footer button,\n .route-choice-head button,.route-choice-option,button.hw-key\n)::before",
+      "context": "",
+      "removedProperties": 1
+    },
+    {
+      "offset": 20875,
+      "text": "right:2px!important;",
+      "kind": "declaration",
+      "selector": ":is(\n .command-bar button.tool,.command-bar summary.tool,\n .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,.plugin-footer button,\n .route-choice-head button,.route-choice-option,button.hw-key\n)::before",
+      "context": "",
+      "removedProperties": 1
+    },
+    {
+      "offset": 20895,
+      "text": "height:2px!important;",
+      "kind": "declaration",
+      "selector": ":is(\n .command-bar button.tool,.command-bar summary.tool,\n .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,.plugin-footer button,\n .route-choice-head button,.route-choice-option,button.hw-key\n)::before",
+      "context": "",
+      "removedProperties": 1
+    },
+    {
+      "offset": 20916,
+      "text": "\n background:var(--am-hw-key-upper-glint)!important;",
+      "kind": "declaration",
+      "selector": ":is(\n .command-bar button.tool,.command-bar summary.tool,\n .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,.plugin-footer button,\n .route-choice-head button,.route-choice-option,button.hw-key\n)::before",
+      "context": "",
+      "removedProperties": 1
+    },
+    {
+      "offset": 21396,
+      "text": "\n bottom:0!important;",
+      "kind": "declaration",
+      "selector": ":is(\n .command-bar button.tool,.command-bar summary.tool,\n .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,.plugin-footer button,\n .route-choice-head button,.route-choice-option,button.hw-key\n)::after",
+      "context": "",
+      "removedProperties": 1
+    },
+    {
+      "offset": 21417,
+      "text": "left:2px!important;",
+      "kind": "declaration",
+      "selector": ":is(\n .command-bar button.tool,.command-bar summary.tool,\n .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,.plugin-footer button,\n .route-choice-head button,.route-choice-option,button.hw-key\n)::after",
+      "context": "",
+      "removedProperties": 1
+    },
+    {
+      "offset": 21436,
+      "text": "right:2px!important;",
+      "kind": "declaration",
+      "selector": ":is(\n .command-bar button.tool,.command-bar summary.tool,\n .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,.plugin-footer button,\n .route-choice-head button,.route-choice-option,button.hw-key\n)::after",
+      "context": "",
+      "removedProperties": 1
+    },
+    {
+      "offset": 21456,
+      "text": "height:1px!important;",
+      "kind": "declaration",
+      "selector": ":is(\n .command-bar button.tool,.command-bar summary.tool,\n .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,.plugin-footer button,\n .route-choice-head button,.route-choice-option,button.hw-key\n)::after",
+      "context": "",
+      "removedProperties": 1
+    },
+    {
+      "offset": 21477,
+      "text": "\n background:var(--am-hw-key-lower-glint)!important;",
+      "kind": "declaration",
+      "selector": ":is(\n .command-bar button.tool,.command-bar summary.tool,\n .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,.plugin-footer button,\n .route-choice-head button,.route-choice-option,button.hw-key\n)::after",
+      "context": "",
+      "removedProperties": 1
+    },
+    {
+      "offset": 22042,
+      "text": "\n transform:translateY(2px)!important;",
+      "kind": "declaration",
+      "selector": ":is(\n .command-bar button.tool,.command-bar summary.tool,\n .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,.plugin-footer button,\n .route-choice-head button,.route-choice-option,button.hw-key\n):active:not(:disabled)",
+      "context": "",
+      "removedProperties": 1
+    },
+    {
+      "offset": 22080,
+      "text": "\n box-shadow:var(--am-hw-key-flat)!important;",
+      "kind": "declaration",
+      "selector": ":is(\n .command-bar button.tool,.command-bar summary.tool,\n .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,.plugin-footer button,\n .route-choice-head button,.route-choice-option,button.hw-key\n):active:not(:disabled)",
+      "context": "",
+      "removedProperties": 1
+    },
+    {
+      "offset": 26244,
+      "text": "\n background:linear-gradient(180deg,\n   color-mix(in srgb,var(--am-hw-key-face) 89%,#d6e9f1) 0%,\n   color-mix(in srgb,var(--am-hw-key-face) 96%,#d6e9f1) 10%,\n   var(--am-hw-key-face) 36%,\n   color-mix(in srgb,var(--am-hw-key-face) 89%,#061018) 76%,\n   color-mix(in srgb,var(--am-hw-key-face) 70%,#061018) 100%)!important;",
+      "kind": "declaration",
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,\n .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,.plugin-footer button,\n .route-choice-head button,.route-choice-option,button.hw-key)",
+      "context": "",
+      "removedProperties": 1
+    },
+    {
+      "offset": 26653,
+      "text": "\n border-radius:var(--am-hw-key-radius)!important;",
+      "kind": "declaration",
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,\n .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,.plugin-footer button,\n .route-choice-head button,.route-choice-option,button.hw-key)",
+      "context": "",
+      "removedProperties": 1
+    },
+    {
+      "offset": 26751,
+      "text": "\n box-shadow:var(--am-hw-key-relief)!important;",
+      "kind": "declaration",
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,\n .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,.plugin-footer button,\n .route-choice-head button,.route-choice-option,button.hw-key)",
+      "context": "",
+      "removedProperties": 1
+    },
+    {
+      "offset": 26798,
+      "text": "\n filter:none!important;",
+      "kind": "declaration",
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,\n .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,.plugin-footer button,\n .route-choice-head button,.route-choice-option,button.hw-key)",
+      "context": "",
+      "removedProperties": 1
+    },
+    {
+      "offset": 26822,
+      "text": "\n transition:none!important;",
+      "kind": "declaration",
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,\n .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,.plugin-footer button,\n .route-choice-head button,.route-choice-option,button.hw-key)",
+      "context": "",
+      "removedProperties": 1
+    },
+    {
+      "offset": 26853,
+      "text": ":is(.command-bar button.tool,.command-bar summary.tool,\n .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,.plugin-footer button,\n .route-choice-head button,.route-choice-option,button.hw-key):active:not(:disabled){\n transform:translateY(1px)!important;\n box-shadow:var(--am-hw-key-flat)!important;\n}",
+      "kind": "rule",
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,\n .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,.plugin-footer button,\n .route-choice-head button,.route-choice-option,button.hw-key):active:not(:disabled)",
+      "context": "",
+      "removedProperties": 2
+    },
+    {
+      "offset": 27305,
+      "text": ":is(.command-bar button.tool,.command-bar summary.tool,\n .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,.plugin-footer button,\n .route-choice-head button,.route-choice-option,button.hw-key)::before{\n top:0!important;height:2px!important;left:1px!important;right:1px!important;\n background:var(--am-hw-key-upper-glint)!important;\n}",
+      "kind": "rule",
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,\n .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,.plugin-footer button,\n .route-choice-head button,.route-choice-option,button.hw-key)::before",
+      "context": "",
+      "removedProperties": 5
+    },
+    {
+      "offset": 27713,
+      "text": ":is(.command-bar button.tool,.command-bar summary.tool,\n .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,.plugin-footer button,\n .route-choice-head button,.route-choice-option,button.hw-key)::after{\n bottom:0!important;height:1px!important;left:1px!important;right:1px!important;\n background:var(--am-hw-key-lower-glint)!important;\n}",
+      "kind": "rule",
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,\n .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,.plugin-footer button,\n .route-choice-head button,.route-choice-option,button.hw-key)::after",
+      "context": "",
+      "removedProperties": 5
+    },
+    {
+      "offset": 28301,
+      "text": "\n --am-hw-key-face:#354650;",
+      "kind": "declaration",
+      "selector": ".command-bar button.tool,\n.command-bar summary.tool,\n.more-tools-panel button.tool,\n.route-choice-head button",
+      "context": "",
+      "removedProperties": 1
+    },
+    {
+      "offset": 28536,
+      "text": "\n --am-hw-key-face:#367789;",
+      "kind": "declaration",
+      "selector": ".command-bar button.tool:is(.active,.primary,[aria-pressed=\"true\"]),\n.command-bar summary.tool[aria-expanded=\"true\"],\n.more-tools[open] summary.tool",
+      "context": "",
+      "removedProperties": 1
+    },
+    {
+      "offset": 29999,
+      "text": "\n background:linear-gradient(180deg,\n   color-mix(in srgb,var(--am-hw-key-bright) 77%,#d5edf4) 0%,\n   var(--am-hw-key-bright) 8%,\n   color-mix(in srgb,var(--am-hw-key-bright) 35%,var(--am-hw-key-face)) 19%,\n   var(--am-hw-key-face) 38%,\n   color-mix(in srgb,var(--am-hw-key-face) 72%,var(--am-hw-key-bright)) 53%,\n   var(--am-hw-key-face) 68%,var(--am-hw-key-deep) 100%)!important;",
+      "kind": "declaration",
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,\n .console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,.plugin-footer button,\n .route-choice-head button,.route-choice-option,button.hw-key)",
+      "context": "",
+      "removedProperties": 1
+    }
+  ],
+  "evidence": [
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)",
+      "context": "",
+      "property": "background",
+      "important": true,
+      "losingRule": 133,
+      "winnerRule": 153,
+      "winnerRaw": "background:linear-gradient(180deg,\n   var(--am-hw-key-bright) 0%,\n   var(--am-hw-key-face) 42%,\n   var(--am-hw-key-deep) 100%)!important;",
+      "losingRaw": "background:linear-gradient(180deg,\n   color-mix(in srgb,var(--am-hw-key-bright) 77%,#d5edf4) 0%,\n   var(--am-hw-key-bright) 8%,\n   color-mix(in srgb,var(--am-hw-key-bright) 35%,var(--am-hw-key-face)) 19%,\n   var(--am-hw-key-face) 38%,\n   color-mix(in srgb,var(--am-hw-key-face) 72%,var(--am-hw-key-bright)) 53%,\n   var(--am-hw-key-face) 68%,var(--am-hw-key-deep) 100%)!important;"
+    },
+    {
+      "selector": ".command-bar button.tool:is(.active,.primary,[aria-pressed=\"true\"]),.command-bar summary.tool[aria-expanded=\"true\"],.more-tools[open] summary.tool",
+      "context": "",
+      "property": "--am-hw-key-face",
+      "important": false,
+      "losingRule": 127,
+      "winnerRule": 137,
+      "winnerRaw": "--am-hw-key-face:#2d7386;",
+      "losingRaw": "--am-hw-key-face:#367789;"
+    },
+    {
+      "selector": ".command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.route-choice-head button",
+      "context": "",
+      "property": "--am-hw-key-face",
+      "important": false,
+      "losingRule": 126,
+      "winnerRule": 136,
+      "winnerRaw": "--am-hw-key-face:#374c58;",
+      "losingRaw": "--am-hw-key-face:#354650;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)::after",
+      "context": "",
+      "property": "bottom",
+      "important": true,
+      "losingRule": 125,
+      "winnerRule": 135,
+      "winnerRaw": "bottom:0!important;",
+      "losingRaw": "bottom:0!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)::after",
+      "context": "",
+      "property": "height",
+      "important": true,
+      "losingRule": 125,
+      "winnerRule": 135,
+      "winnerRaw": "height:1px!important;",
+      "losingRaw": "height:1px!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)::after",
+      "context": "",
+      "property": "left",
+      "important": true,
+      "losingRule": 125,
+      "winnerRule": 135,
+      "winnerRaw": "left:2px!important;",
+      "losingRaw": "left:1px!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)::after",
+      "context": "",
+      "property": "right",
+      "important": true,
+      "losingRule": 125,
+      "winnerRule": 135,
+      "winnerRaw": "right:2px!important;",
+      "losingRaw": "right:1px!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)::after",
+      "context": "",
+      "property": "background",
+      "important": true,
+      "losingRule": 125,
+      "winnerRule": 135,
+      "winnerRaw": "background:var(--am-hw-key-lower-glint)!important;",
+      "losingRaw": "background:var(--am-hw-key-lower-glint)!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)::before",
+      "context": "",
+      "property": "top",
+      "important": true,
+      "losingRule": 124,
+      "winnerRule": 134,
+      "winnerRaw": "top:0!important;",
+      "losingRaw": "top:0!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)::before",
+      "context": "",
+      "property": "height",
+      "important": true,
+      "losingRule": 124,
+      "winnerRule": 134,
+      "winnerRaw": "height:2px!important;",
+      "losingRaw": "height:2px!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)::before",
+      "context": "",
+      "property": "left",
+      "important": true,
+      "losingRule": 124,
+      "winnerRule": 134,
+      "winnerRaw": "left:1px!important;",
+      "losingRaw": "left:1px!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)::before",
+      "context": "",
+      "property": "right",
+      "important": true,
+      "losingRule": 124,
+      "winnerRule": 134,
+      "winnerRaw": "right:1px!important;",
+      "losingRaw": "right:1px!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)::before",
+      "context": "",
+      "property": "background",
+      "important": true,
+      "losingRule": 124,
+      "winnerRule": 134,
+      "winnerRaw": "background:var(--am-hw-key-upper-glint)!important;",
+      "losingRaw": "background:var(--am-hw-key-upper-glint)!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key):active:not(:disabled)",
+      "context": "",
+      "property": "transform",
+      "important": true,
+      "losingRule": 123,
+      "winnerRule": 155,
+      "winnerRaw": "transform:translateY(1px)!important;",
+      "losingRaw": "transform:translateY(1px)!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key):active:not(:disabled)",
+      "context": "",
+      "property": "box-shadow",
+      "important": true,
+      "losingRule": 123,
+      "winnerRule": 155,
+      "winnerRaw": "box-shadow:var(--am-hw-key-flat)!important;",
+      "losingRaw": "box-shadow:var(--am-hw-key-flat)!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)",
+      "context": "",
+      "property": "background",
+      "important": true,
+      "losingRule": 122,
+      "winnerRule": 153,
+      "winnerRaw": "background:linear-gradient(180deg,\n   var(--am-hw-key-bright) 0%,\n   var(--am-hw-key-face) 42%,\n   var(--am-hw-key-deep) 100%)!important;",
+      "losingRaw": "background:linear-gradient(180deg,\n   color-mix(in srgb,var(--am-hw-key-face) 89%,#d6e9f1) 0%,\n   color-mix(in srgb,var(--am-hw-key-face) 96%,#d6e9f1) 10%,\n   var(--am-hw-key-face) 36%,\n   color-mix(in srgb,var(--am-hw-key-face) 89%,#061018) 76%,\n   color-mix(in srgb,var(--am-hw-key-face) 70%,#061018) 100%)!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)",
+      "context": "",
+      "property": "border-radius",
+      "important": true,
+      "losingRule": 122,
+      "winnerRule": 133,
+      "winnerRaw": "border-radius:2px!important;",
+      "losingRaw": "border-radius:var(--am-hw-key-radius)!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)",
+      "context": "",
+      "property": "box-shadow",
+      "important": true,
+      "losingRule": 122,
+      "winnerRule": 153,
+      "winnerRaw": "box-shadow:var(--am-hw-key-relief)!important;",
+      "losingRaw": "box-shadow:var(--am-hw-key-relief)!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)",
+      "context": "",
+      "property": "filter",
+      "important": true,
+      "losingRule": 122,
+      "winnerRule": 153,
+      "winnerRaw": "filter:none!important;",
+      "losingRaw": "filter:none!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)",
+      "context": "",
+      "property": "transition",
+      "important": true,
+      "losingRule": 122,
+      "winnerRule": 153,
+      "winnerRaw": "transition:none!important;",
+      "losingRaw": "transition:none!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key):active:not(:disabled)",
+      "context": "",
+      "property": "transform",
+      "important": true,
+      "losingRule": 110,
+      "winnerRule": 155,
+      "winnerRaw": "transform:translateY(1px)!important;",
+      "losingRaw": "transform:translateY(2px)!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key):active:not(:disabled)",
+      "context": "",
+      "property": "box-shadow",
+      "important": true,
+      "losingRule": 110,
+      "winnerRule": 155,
+      "winnerRaw": "box-shadow:var(--am-hw-key-flat)!important;",
+      "losingRaw": "box-shadow:var(--am-hw-key-flat)!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)::after",
+      "context": "",
+      "property": "bottom",
+      "important": true,
+      "losingRule": 109,
+      "winnerRule": 135,
+      "winnerRaw": "bottom:0!important;",
+      "losingRaw": "bottom:0!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)::after",
+      "context": "",
+      "property": "left",
+      "important": true,
+      "losingRule": 109,
+      "winnerRule": 135,
+      "winnerRaw": "left:2px!important;",
+      "losingRaw": "left:2px!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)::after",
+      "context": "",
+      "property": "right",
+      "important": true,
+      "losingRule": 109,
+      "winnerRule": 135,
+      "winnerRaw": "right:2px!important;",
+      "losingRaw": "right:2px!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)::after",
+      "context": "",
+      "property": "height",
+      "important": true,
+      "losingRule": 109,
+      "winnerRule": 135,
+      "winnerRaw": "height:1px!important;",
+      "losingRaw": "height:1px!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)::after",
+      "context": "",
+      "property": "background",
+      "important": true,
+      "losingRule": 109,
+      "winnerRule": 135,
+      "winnerRaw": "background:var(--am-hw-key-lower-glint)!important;",
+      "losingRaw": "background:var(--am-hw-key-lower-glint)!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)::before",
+      "context": "",
+      "property": "top",
+      "important": true,
+      "losingRule": 108,
+      "winnerRule": 134,
+      "winnerRaw": "top:0!important;",
+      "losingRaw": "top:0!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)::before",
+      "context": "",
+      "property": "left",
+      "important": true,
+      "losingRule": 108,
+      "winnerRule": 134,
+      "winnerRaw": "left:1px!important;",
+      "losingRaw": "left:2px!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)::before",
+      "context": "",
+      "property": "right",
+      "important": true,
+      "losingRule": 108,
+      "winnerRule": 134,
+      "winnerRaw": "right:1px!important;",
+      "losingRaw": "right:2px!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)::before",
+      "context": "",
+      "property": "height",
+      "important": true,
+      "losingRule": 108,
+      "winnerRule": 134,
+      "winnerRaw": "height:2px!important;",
+      "losingRaw": "height:2px!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)::before",
+      "context": "",
+      "property": "background",
+      "important": true,
+      "losingRule": 108,
+      "winnerRule": 134,
+      "winnerRaw": "background:var(--am-hw-key-upper-glint)!important;",
+      "losingRaw": "background:var(--am-hw-key-upper-glint)!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)",
+      "context": "",
+      "property": "border-radius",
+      "important": true,
+      "losingRule": 107,
+      "winnerRule": 133,
+      "winnerRaw": "border-radius:2px!important;",
+      "losingRaw": "border-radius:var(--am-hw-key-radius)!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)",
+      "context": "",
+      "property": "color",
+      "important": true,
+      "losingRule": 107,
+      "winnerRule": 122,
+      "winnerRaw": "color:var(--am-hw-key-ink)!important;",
+      "losingRaw": "color:var(--am-hw-key-ink)!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)",
+      "context": "",
+      "property": "background",
+      "important": true,
+      "losingRule": 107,
+      "winnerRule": 153,
+      "winnerRaw": "background:linear-gradient(180deg,\n   var(--am-hw-key-bright) 0%,\n   var(--am-hw-key-face) 42%,\n   var(--am-hw-key-deep) 100%)!important;",
+      "losingRaw": "background:linear-gradient(180deg,\n   color-mix(in srgb,var(--am-hw-key-face) 84%,white) 0%,\n   color-mix(in srgb,var(--am-hw-key-face) 96%,white) 8%,\n   var(--am-hw-key-face) 38%,\n   color-mix(in srgb,var(--am-hw-key-face) 86%,black) 78%,\n   color-mix(in srgb,var(--am-hw-key-face) 64%,black) 100%)!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)",
+      "context": "",
+      "property": "box-shadow",
+      "important": true,
+      "losingRule": 107,
+      "winnerRule": 153,
+      "winnerRaw": "box-shadow:var(--am-hw-key-relief)!important;",
+      "losingRaw": "box-shadow:var(--am-hw-key-relief)!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)",
+      "context": "",
+      "property": "text-shadow",
+      "important": true,
+      "losingRule": 107,
+      "winnerRule": 122,
+      "winnerRaw": "text-shadow:0 1px 0 rgba(0,0,0,.23)!important;",
+      "losingRaw": "text-shadow:0 1px rgba(255,255,255,.19)!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)",
+      "context": "",
+      "property": "filter",
+      "important": true,
+      "losingRule": 107,
+      "winnerRule": 153,
+      "winnerRaw": "filter:none!important;",
+      "losingRaw": "filter:none!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)",
+      "context": "",
+      "property": "transform",
+      "important": true,
+      "losingRule": 107,
+      "winnerRule": 133,
+      "winnerRaw": "transform:translateY(0)!important;",
+      "losingRaw": "transform:translateY(0)!important;"
+    },
+    {
+      "selector": ":is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,.console-body .strip .switch-section button.switch,.identity-actions button.console-control,.plugin-footer button,.route-choice-head button,.route-choice-option,button.hw-key)",
+      "context": "",
+      "property": "transition",
+      "important": true,
+      "losingRule": 107,
+      "winnerRule": 153,
+      "winnerRaw": "transition:none!important;",
+      "losingRaw": "transition:transform 80ms ease,box-shadow 80ms ease!important;"
+    },
+    {
+      "selector": ".console-body.collapsed-fx.collapsed-send .strip .fader-section,.console-body.collapsed-fx.collapsed-send .section-rail>.rail-cell.fader",
+      "context": "",
+      "property": "flex",
+      "important": true,
+      "losingRule": 31,
+      "winnerRule": 96,
+      "winnerRaw": "flex:1 1 var(--v13-fader-h)!important;",
+      "losingRaw": "flex:1 1 0px!important;"
+    },
+    {
+      "selector": ".console-body.collapsed-fx.collapsed-send .strip .fader-section,.console-body.collapsed-fx.collapsed-send .section-rail>.rail-cell.fader",
+      "context": "",
+      "property": "height",
+      "important": true,
+      "losingRule": 31,
+      "winnerRule": 96,
+      "winnerRaw": "height:auto!important;",
+      "losingRaw": "height:auto!important;"
+    },
+    {
+      "selector": ".console-body.collapsed-fx.collapsed-send .strip .fader-section,.console-body.collapsed-fx.collapsed-send .section-rail>.rail-cell.fader",
+      "context": "",
+      "property": "max-height",
+      "important": true,
+      "losingRule": 31,
+      "winnerRule": 96,
+      "winnerRaw": "max-height:none!important;",
+      "losingRaw": "max-height:none!important;"
+    },
+    {
+      "selector": ".console-body.collapsed-fx .strip .fx-section,.console-body.collapsed-fx .section-rail>.rail-cell.fx",
+      "context": "",
+      "property": "flex",
+      "important": true,
+      "losingRule": 30,
+      "winnerRule": 45,
+      "winnerRaw": "flex:0 0 23px!important;",
+      "losingRaw": "flex:0 0 23px!important;"
+    },
+    {
+      "selector": ".console-body.collapsed-fx .strip .fx-section,.console-body.collapsed-fx .section-rail>.rail-cell.fx",
+      "context": "",
+      "property": "height",
+      "important": true,
+      "losingRule": 30,
+      "winnerRule": 45,
+      "winnerRaw": "height:23px!important;",
+      "losingRaw": "height:23px!important;"
+    },
+    {
+      "selector": ".console-body.collapsed-fx .strip .fx-section,.console-body.collapsed-fx .section-rail>.rail-cell.fx",
+      "context": "",
+      "property": "min-height",
+      "important": true,
+      "losingRule": 30,
+      "winnerRule": 45,
+      "winnerRaw": "min-height:23px!important;",
+      "losingRaw": "min-height:23px!important;"
+    },
+    {
+      "selector": ".console-body.collapsed-fx .strip .fx-section,.console-body.collapsed-fx .section-rail>.rail-cell.fx",
+      "context": "",
+      "property": "max-height",
+      "important": true,
+      "losingRule": 30,
+      "winnerRule": 45,
+      "winnerRaw": "max-height:23px!important;",
+      "losingRaw": "max-height:23px!important;"
+    },
+    {
+      "selector": ".console-body:not(.collapsed-fx).strip .fx-section,.console-body:not(.collapsed-fx).section-rail>.rail-cell.fx",
+      "context": "",
+      "property": "flex",
+      "important": true,
+      "losingRule": 29,
+      "winnerRule": 44,
+      "winnerRaw": "flex:1 1 125px!important;",
+      "losingRaw": "flex:1 1 0px!important;"
+    },
+    {
+      "selector": ".console-body:not(.collapsed-fx).strip .fx-section,.console-body:not(.collapsed-fx).section-rail>.rail-cell.fx",
+      "context": "",
+      "property": "height",
+      "important": true,
+      "losingRule": 29,
+      "winnerRule": 44,
+      "winnerRaw": "height:auto!important;",
+      "losingRaw": "height:auto!important;"
+    },
+    {
+      "selector": ".console-body:not(.collapsed-fx).strip .fx-section,.console-body:not(.collapsed-fx).section-rail>.rail-cell.fx",
+      "context": "",
+      "property": "min-height",
+      "important": true,
+      "losingRule": 29,
+      "winnerRule": 44,
+      "winnerRaw": "min-height:125px!important;",
+      "losingRaw": "min-height:122px!important;"
+    },
+    {
+      "selector": ".console-body:not(.collapsed-fx).strip .fx-section,.console-body:not(.collapsed-fx).section-rail>.rail-cell.fx",
+      "context": "",
+      "property": "max-height",
+      "important": true,
+      "losingRule": 29,
+      "winnerRule": 44,
+      "winnerRaw": "max-height:none!important;",
+      "losingRaw": "max-height:none!important;"
+    },
+    {
+      "selector": ".console-body .strip .subhead,.console-body .strip .send-header",
+      "context": "",
+      "property": "border-bottom",
+      "important": true,
+      "losingRule": 5,
+      "winnerRule": 59,
+      "winnerRaw": "border-bottom:1px solid #10232c!important;",
+      "losingRaw": "border-bottom:1px solid #101e29!important;"
+    },
+    {
+      "selector": ".console-body .strip .subhead,.console-body .strip .send-header",
+      "context": "",
+      "property": "box-shadow",
+      "important": true,
+      "losingRule": 5,
+      "winnerRule": 59,
+      "winnerRaw": "box-shadow:inset 0 1px #77939b17!important;",
+      "losingRaw": "box-shadow:inset 0 -1px #7f9ba920!important;"
+    }
+  ],
+  "original": {
+    "htmlLength": 218779,
+    "htmlFNV": "29140d40",
+    "cssLength": 52297,
+    "cssFNV": "0d03503b",
+    "cssImportant": 482
+  },
+  "result": {
+    "htmlLength": 214918,
+    "htmlFNV": "deb0de6c",
+    "cssLength": 48436,
+    "cssFNV": "fcad6db3",
+    "cssImportant": 431
+  },
+  "metrics": {
+    "removedChars": 3861,
+    "shadowedDeclarations": 53,
+    "removedImportant": 51,
+    "removedWholeRules": 7,
+    "removedRuleParts": 28
+  }
+}
