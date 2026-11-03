@@ -54,7 +54,8 @@ test('JUCE native resources track the approved calibrated GUI without maintainin
   const assetList=cmake.match(/juce_add_binary_data\(ARMixAssets SOURCES\s+([^)]+)\)/)?.[1];
   assert.ok(assetList,'native WebView2 source list missing');
   const expected=['web/index.html','web/styles.css','web/plugin-ui.css','web/app.js',
-    'web/plugin-ui.js','web/bridge.js','web/monitor.js','web/mixer-io.js','web/mixer-io.css'];
+    'web/plugin-ui.js','web/bridge.js','web/monitor.js','web/mixer-io.js','web/mixer-io.css',
+    'web/hardware-keys.js','web/m4-native-console.js','web/m4-native-console.css'];
   const listed=assetList.trim().split(/\s+/);
   for(const asset of expected) assert.ok(listed.includes(asset),'missing WebView2 asset '+asset);
   assert.equal(new Set(listed).size,listed.length,'duplicate native WebView2 resource');

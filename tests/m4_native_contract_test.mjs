@@ -48,3 +48,21 @@ test('negative and success WebView2 socket flows have a real Chromium spec',()=>
      'pendingCount','productionCallbackLive'])
     assert.ok(smoke.includes(word),word);
 });
+
+test('Windows JUCE BinaryData embeds every live GUI script and image referenced by CSS',()=>{
+  const cmake=read('CMakeLists.txt'), cpp=read('src/Main.cpp');
+  const expected=[
+    ['web/hardware-keys.js','/hardware-keys.js','hardwarekeys_js'],
+    ['web/m4-native-console.js','/m4-native-console.js','m4nativeconsole_js'],
+    ['web/m4-native-console.css','/m4-native-console.css','m4nativeconsole_css'],
+    ['web/assets/fader-silver2.png','/assets/fader-silver2.png','fadersilver2_png'],
+    ['web/assets/faders/FADER-ARI-SILVER.png','/assets/faders/FADER-ARI-SILVER.png','FADERARISILVER_png'],
+    ['web/assets/faders/FADER-ARI-ROSEGOLD.png','/assets/faders/FADER-ARI-ROSEGOLD.png','FADERARIROSEGOLD_png'],
+    ['web/assets/pan/PAN-SLIDER.png','/assets/pan/PAN-SLIDER.png','PANSLIDER_png']
+  ];
+  for(const [source,route,symbol] of expected){
+    assert.ok(cmake.includes(source),'CMake BinaryData missing '+source);
+    assert.ok(cpp.includes('path == "'+route+'"'),'resource URL missing '+route);
+    assert.ok(cpp.includes('BinaryData::'+symbol),'resource name missing '+symbol);
+  }
+});

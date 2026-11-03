@@ -324,7 +324,14 @@ async def main():
         # innerText layout cache. The selected ChannelIds were just asserted.
         label=page.locator('.arV6SelectionCount')
         assert await label.is_visible()
-        assert await label.evaluate("(el)=>el.textContent.trim()")=="3 SEL"
+        actual=await label.evaluate("(el)=>el.textContent.trim()")
+        assert actual=="3 SEL", {
+            "selection_button_text":actual,
+            "selected_channel_ids":await page.evaluate(
+                "()=>window.__arMixV6ReadOnly().selectedChannelIds"),
+            "button_markup":await label.evaluate("(el)=>el.outerHTML"),
+            "page_errors":errors,
+        }
         assert await page.evaluate("""()=>window.__v6Test.sent.filter(
           x=>x.event==='arMixConsoleIntent').length""")==count_start
 

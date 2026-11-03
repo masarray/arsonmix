@@ -76,6 +76,22 @@ std::optional<juce::WebBrowserComponent::Resource> assetFor (const juce::String&
         { data = BinaryData::mixerlayout_js; size = BinaryData::mixerlayout_jsSize; mime = "text/javascript"; }
     else if (path == "/mixer-layout.css")
         { data = BinaryData::mixerlayout_css; size = BinaryData::mixerlayout_cssSize; mime = "text/css"; }
+    // The exact joined GUI must be served from the same immutable JUCE
+    // BinaryData as the host PCM callback. No filesystem/browser fallback.
+    else if (path == "/hardware-keys.js")
+        { data = BinaryData::hardwarekeys_js; size = BinaryData::hardwarekeys_jsSize; mime = "text/javascript"; }
+    else if (path == "/m4-native-console.js")
+        { data = BinaryData::m4nativeconsole_js; size = BinaryData::m4nativeconsole_jsSize; mime = "text/javascript"; }
+    else if (path == "/m4-native-console.css")
+        { data = BinaryData::m4nativeconsole_css; size = BinaryData::m4nativeconsole_cssSize; mime = "text/css"; }
+    else if (path == "/assets/fader-silver2.png")
+        { data = BinaryData::fadersilver2_png; size = BinaryData::fadersilver2_pngSize; mime = "image/png"; }
+    else if (path == "/assets/faders/FADER-ARI-SILVER.png")
+        { data = BinaryData::FADERARISILVER_png; size = BinaryData::FADERARISILVER_pngSize; mime = "image/png"; }
+    else if (path == "/assets/faders/FADER-ARI-ROSEGOLD.png")
+        { data = BinaryData::FADERARIROSEGOLD_png; size = BinaryData::FADERARIROSEGOLD_pngSize; mime = "image/png"; }
+    else if (path == "/assets/pan/PAN-SLIDER.png")
+        { data = BinaryData::PANSLIDER_png; size = BinaryData::PANSLIDER_pngSize; mime = "image/png"; }
     else return std::nullopt;
 
     juce::WebBrowserComponent::Resource resource;
