@@ -745,7 +745,7 @@ html * ,html *::before,html *::after{
 <link rel="stylesheet" href="assets/mixer-meter-display.css?v=css-owner-v9-ruler-m2-instrument">
 <link rel="stylesheet" href="assets/mixer-utility-controls.css?v=fx-rack-user-icon-green-v21">
 <link rel="stylesheet" href="assets/inter-embedded.css?v=inter-utility-v7">
-<link rel="stylesheet" href="assets/mixer-wire-dots.css?v=v47-css-v16">
+<link rel="stylesheet" href="assets/mixer-wire-dots.css?v=v49-direct-physics">
 <link rel="stylesheet" href="assets/mixer-wire-out-align-v48.css?v=out-center-v48">
 
 <link rel="stylesheet" href="assets/mixer-contextual-buttons.css?v=contextual-micro-handoff-v1">
@@ -1512,12 +1512,12 @@ function refreshWireRoutingNodes(){
    in either direction, independent of color or route model.
    Limit depth to available cable stage so the curve never falls into PAN. */
 function wireSagClearance(rect,section){
- return section?Math.max(18,section.bottom-(rect.top+rect.height*.5)-9):72;
+ return section?Math.max(18,section.bottom-(rect.top+rect.height*.5)-7):72;
 }
 function wirePathData(x0,y0,x1,y1,sagLimit,spring=0){
  const span=Math.abs(x1-x0);
  const ceiling=Math.max(12,Math.min(100,Number(sagLimit)||72));
- const sag=Math.max(10,Math.min(ceiling,Math.min(ceiling-7,20+Math.sqrt(span)*1.55)+spring));
+ const sag=Math.max(10,Math.min(ceiling,Math.min(ceiling-5,28+Math.sqrt(span)*1.55)+spring));
  const control=(sag*4/3);
  return 'M '+x0.toFixed(1)+' '+y0.toFixed(1)+
   ' C '+x0.toFixed(1)+' '+(y0+control).toFixed(1)+
@@ -1538,58 +1538,52 @@ function wirePathFor(edge,x0,y0,x1,y1,limit){
 /* Socket impact travels backwards along the SAME accepted cable.
    The two endpoints remain physically pinned; only the accepted SVG path
    changes for 36 frames. No CSS keyframes, idle RAF or all-cables remount. */
-function wireImpactPathData(x0,y0,x1,y1,limit,frame){
- const span=Math.abs(x1-x0);
- const ceiling=Math.max(12,Math.min(100,Number(limit)||72));
- const sag=Math.max(10,Math.min(ceiling,Math.min(ceiling-7,20+Math.sqrt(span)*1.55)));
- const c=sag*4/3,progress=Math.max(0,Math.min(1,frame/36));
- const center=1.02-progress*1.12;
- const amp=13.8*Math.exp(-progress*1.45);
+/* One low-frequency impact travels from receiver toward source, then
+   loses energy. Elapsed time makes 60/120 Hz render the same physical motion. */
+function wireImpactPathData(x0,y0,x1,y1,limit,elapsedMs){
+ const span=Math.abs(x1-x0),ceiling=Math.max(12,Math.min(100,Number(limit)||72));
+ const sag=Math.max(10,Math.min(ceiling,Math.min(ceiling-5,28+Math.sqrt(span)*1.55)));
+ const c=sag*4/3,progress=Math.max(0,Math.min(1,elapsedMs/1600));
+ const center=.99-progress*.98,amp=10.5*Math.exp(-progress*3.5);
  let d='M '+x0.toFixed(1)+' '+y0.toFixed(1);
- // Broad socket-origin jolt: ~14px peak, .22 envelope and no idle animation.
- // 56 segments are smooth at full 10-strip bank width, only during impact.
+ // Smooth curve samples; zero displacement at both anchored ends.
  for(let i=1;i<=56;i++){
   const t=i/56,u=1-t;
   const x=u*u*u*x0+3*u*u*t*x0+3*u*t*t*x1+t*t*t*x1;
   const y=u*u*u*y0+3*u*u*t*(y0+c)+3*u*t*t*(y1+c)+t*t*t*y1;
-  const dx=6*u*t*(x1-x0);
-  const dy=3*u*u*c+6*u*t*(y1-y0)+3*t*t*(-c);
-  const norm=Math.hypot(dx,dy)||1;
-  const delta=t-center;
-  const pulse=amp*Math.exp(-(delta*delta)/(.22*.22))*
-   Math.sin(delta*18-progress*5)*Math.sin(Math.PI*t);
-  const px=x-dy/norm*pulse,py=y+dx/norm*pulse;
-  d+=' L '+px.toFixed(1)+' '+py.toFixed(1);
+  const dx=6*u*t*(x1-x0),dy=3*u*u*c+6*u*t*(y1-y0)+3*t*t*(-c);
+  const norm=Math.hypot(dx,dy)||1,delta=t-center;
+  const pulse=amp*Math.exp(-(delta*delta)/(.30*.30))*
+   Math.sin(delta*10-progress*6)*Math.sin(Math.PI*t);
+  d+=' L '+(x-dy/norm*pulse).toFixed(1)+' '+(y+dx/norm*pulse).toFixed(1);
  }
  return d;
 }
 function kickWireSpring(sourceId,destId){
  if(!sourceId||!destId)return;
- const key=sourceId+'-'+destId;
- const geometry=wireMotionGeometry.get(key);
- if(!geometry||window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches)return;
+ const key=sourceId+'-'+destId,geometry=wireMotionGeometry.get(key);
+ if(!geometry||document.hidden||window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches)return;
  const token=++wireMotion.token;
- // Existing graph geometry is stable; do not persist motion into later renders.
  wireMotion.key=key;wireMotion.offset=0;
  let paths=[...document.querySelectorAll('#wireLayer path[data-cable-key="'+key+'"]')];
  if(!paths.length){wireMotion.key=null;return;}
- let frame=0;
  function paint(d){
-  // A successful drop triggers a final routing refresh which may replace
-  // path nodes once. Rebind ONLY this accepted cable, then keep its refs.
-  // Without this, the ripple animates disconnected SVG elements invisibly.
   if(paths.every(path=>!path.isConnected))
    paths=[...document.querySelectorAll('#wireLayer path[data-cable-key="'+key+'"]')];
   for(const path of paths)if(path.isConnected&&path.getAttribute('d')!==d)path.setAttribute('d',d);
  }
- function step(){
+ let began=null;
+ function step(now){
   if(token!==wireMotion.token)return;
-  frame++;
-  paint(frame<36?wireImpactPathData(...geometry,frame):wirePathData(...geometry,0));
-  if(frame<36)requestAnimationFrame(step);
+  if(document.hidden||window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches){
+   paint(wirePathData(...geometry,0));wireMotion.key=null;return;
+  }
+  if(began===null)began=now;
+  const elapsed=Math.max(0,now-began);
+  paint(elapsed<1600?wireImpactPathData(...geometry,elapsed):wirePathData(...geometry,0));
+  if(elapsed<1600)requestAnimationFrame(step);
   else{wireMotion.offset=0;wireMotion.key=null;}
  }
- // First displacement begins at socket, then ripples toward source.
  paint(wireImpactPathData(...geometry,0));
  requestAnimationFrame(step);
 }
@@ -2657,13 +2651,33 @@ function finishSendKnob(e,cancel=false){
 }
 sendControlSurface.addEventListener('pointerup',e=>finishSendKnob(e));
 sendControlSurface.addEventListener('pointercancel',e=>finishSendKnob(e,true));
+/* V49: shared bounded range control for hardware mouse + precision trackpad.
+   Handle the physical fader face, not its intentionally pointer-inert input. */
+const wheelResidue=new WeakMap();
 document.querySelector('.console-body').addEventListener('wheel',e=>{
- const el=e.target.closest?.('.wire-pot')?.querySelector?.('.wire-gain')||e.target.closest?.('.wire-gain');
- if(!el||!Number.isFinite(e.deltaY)||e.deltaY===0)return;
- e.preventDefault?.();
- const prev=Number(el.value)||0,change=e.deltaY>0?-.5:.5;
- el.value=String(wireGainValue(prev+change));
- handleField({target:el,type:'change'});
+ if(e.ctrlKey||wireGesture||faderGesture||!Number.isFinite(e.deltaY)||e.deltaY===0)return;
+ const target=e.target.closest?.('.wire-pot,.fader-box,input[type="range"]');
+ if(!target)return;
+ const input=target.matches?.('input[type="range"]')?target:
+  target.querySelector?.('input[type="range"]');
+ const allowed=new Set(['level','pan','wireGain','trim','sendLevel','sendPan']);
+ if(!input||input.disabled||!allowed.has(input.dataset.field))return;
+ const min=Number(input.min),max=Number(input.max),prev=Number(input.value);
+ if(![min,max,prev].every(Number.isFinite))return;
+ e.preventDefault();
+ const pixels=e.deltaY*(e.deltaMode===1?16:e.deltaMode===2?240:1);
+ const accumulated=(wheelResidue.get(input)||0)+pixels;
+ const detents=Math.trunc(accumulated/100);
+ wheelResidue.set(input,accumulated-detents*100);
+ if(!detents)return;
+ const step=e.shiftKey?(input.dataset.field==='pan'||input.dataset.field==='sendPan'?1:.1):
+  (input.dataset.field==='pan'||input.dataset.field==='sendPan'?2:.5);
+ const resolution=Number(input.step)||.1;
+ const next=Math.round(Math.max(min,Math.min(max,prev-detents*step))/resolution)*resolution;
+ if(next===prev)return;
+ input.value=String(next);
+ if(input.dataset.field==='pan')input.dataset.panKeyboard='true';
+ handleField({target:input,type:'input',altKey:e.altKey});
 },{passive:false});
 // One capture-phase selection path for every part of a channel, including
 // empty WIRE tray, OUT, IN and knob. Does not steal pointer capture from jacks.
