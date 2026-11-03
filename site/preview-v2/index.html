@@ -2151,6 +2151,12 @@ function demoMeterDbfs(faderDb,modulation){
  // One decibel of preview gain changes the displayed signal by one dB.
  return Math.max(METER_DBFS_MIN,Math.min(METER_DBFS_MAX,-51+54*modulation+Number(faderDb)));
 }
+/* Safe read-only calibration probe: exposes pure scale math and a tiny demo
+   snapshot for browser QA, never mutable audio state or DSP controls. */
+window.ArSonMixMeterCalibration=Object.freeze({
+ scaleTopPct,faderPercent,meterDbfsPercent,demoMeterDbfs,
+ readDemo:()=>({frame:meterFrame,gain:tracks[0]?.level??0,running:preview})
+});
 function sectionFader(t){
  const isSend=sofEnabled&&t.kind==='audio',value=isSend?getSofLevel(t):t.level,percent=faderPercent(value,isSend),gainMax=isSend?6:10;
  const vuTicks=[0,-6,-12,-18,-24,-36,-48,-60],gainTicks=[gainMax,0,-6,-12,-24,-36,-48,-60];
