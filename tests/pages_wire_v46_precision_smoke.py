@@ -72,7 +72,7 @@ def main():
     if caption.is_visible():
      p=src_pin.bounding_box();t=caption.bounding_box()
      assert t["x"] >= p["x"]+p["width"]+1,(width,"OUT caption overlaps its physical dot",p,t)
-     assert t["x"]+t["width"] < page.locator('#tracks .strip[data-id="3"] .wire-node-in').bounding_box()["x"],(width,"OUT label collides with next control")
+     assert t["x"]+t["width"] < page.locator('#tracks .strip[data-id="5"] .wire-node-in').bounding_box()["x"],(width,"OUT label collides with next control")
     dest=page.locator('#tracks .strip[data-id="3"] .wire-node-in')
     dest_pin=dest.locator('.wire-arrow')
     for channel in (3,5,6):
