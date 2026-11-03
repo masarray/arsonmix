@@ -820,3 +820,58 @@
 .console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary{
  flex:0 0 26px!important;height:26px!important;min-height:26px!important;max-height:26px!important;
 }
+
+/* V50 WIRE CONFIGURATION — the same modeless physical tool family as
+   Navigator/Matrix, without stealing any fader/FX/meter workspace height. */
+.wire-config-window[hidden]{display:none!important}
+.wire-config-window{
+ position:absolute;z-index:29;top:29px;right:8px;
+ box-sizing:border-box;width:min(390px,calc(100% - 20px));
+ max-height:min(70vh,540px);overflow:auto;overscroll-behavior:contain;
+ border:1px solid #597887;border-radius:5px;background:#1b2d38;
+ color:#d2e4e9;font:11px/1.4 'Segoe UI',Arial,sans-serif;
+ box-shadow:0 12px 32px #000b,inset 0 1px #ffffff18;
+}
+.wire-config-head{
+ display:flex;align-items:center;justify-content:space-between;gap:7px;
+ padding:7px 9px;background:#223a47;border-bottom:1px solid #425c68;
+}
+.wire-config-head strong{font-size:11px;font-weight:650;color:#e1edf1}
+.wire-config-head button{
+ padding:1px 7px;background:#243c49;border:1px solid #4e6d7d;
+ border-radius:3px;color:#d6e7ec;cursor:pointer;
+}
+.wire-config-source{padding:9px 10px;color:#a8cad8;border-bottom:1px solid #314955;font-size:10px}
+.wire-config-row{
+ display:grid;grid-template-columns:118px minmax(0,1fr);align-items:center;
+ column-gap:9px;min-height:38px;padding:5px 10px;border-bottom:1px solid #2b424e;
+}
+.wire-config-row>label{font:600 9px/1.2 'Segoe UI',Arial,sans-serif;letter-spacing:.035em;color:#a9c4cf}
+.wire-config-row .wire-mode-select,.wire-config-row .wire-view-select{
+ box-sizing:border-box;width:100%!important;max-width:none!important;min-width:0!important;
+ height:26px!important;border:1px solid #4f707e;border-radius:3px;
+ background:#102935;color:#e2eff3;padding:2px 7px;font-size:10px!important;
+}
+.wire-config-row .wire-master{
+ box-sizing:border-box;width:96px;max-width:100%;height:26px!important;
+ border-radius:3px;border:1px solid #557786;background:#254353;
+ color:#d7ecf0;padding:0 8px;font-size:10px;cursor:pointer;
+}
+.wire-config-row .wire-master[aria-pressed="true"]{
+ color:#baf8df;border-color:#5a9b7f;background:#225144;
+}
+.wire-config-context{padding:8px 10px 10px;min-width:0}
+.wire-config-caption{display:block;margin-bottom:6px;color:#9dbdc7;font:600 9px/1.2 'Segoe UI',Arial,sans-serif;letter-spacing:.04em}
+.wire-config-context .wire-legend{
+ box-sizing:border-box;display:flex!important;flex-wrap:wrap;align-items:center;gap:6px;
+ min-width:0!important;max-width:none!important;width:100%;
+ white-space:normal;margin:0;padding:4px 0;
+}
+.wire-config-context .wire-legend button,.wire-config-context .wire-legend select{
+ max-width:100%;min-width:0;flex:0 1 auto;
+}
+.wire-config-context .wire-dest-picker{max-width:235px!important}
+.wire-config-foot{border-top:1px solid #324b57;padding:7px 10px;color:#91afba;font-size:9px}
+.wire-config-window button:focus-visible,.wire-config-window select:focus-visible{
+ outline:2px solid #a5dfe5;outline-offset:2px;
+}
