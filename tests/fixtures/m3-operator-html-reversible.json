@@ -120,7 +120,7 @@
     {
       "name": "wire receiver click decision",
       "before": " if(a==='wireRoute'){\n   const source=armedWireSource();\n  if(!source||t.id===source.id){say('Select a source and another destination');return;}",
-      "after": " if(a==='wireRoute'){\n  const source=armedWireSource();\n  const inbound=t.kind==='master'?[]:wireWsRoutes().filter(route=>route.destId===t.id);\n  if(t.kind!=='master'&&(inbound.length>1||(!source&&inbound.length)||(t.id===source?.id&&inbound.length))){\n   inspectIncomingWireRoutes(t);return;\n  }\n  if(!source||t.id===source.id){say('Select a source and another destination');return;}"
+      "after": " if(a==='wireRoute'){\n  const source=armedWireSource();\n  const inbound=t.kind==='master'?[]:wireWsRoutes().filter(route=>route.destId===t.id);\n  // An armed OUT has priority for a NEW route, including BUS receivers\n  // already fed by other channels. Inspect only without a valid armed source,\n  // on the source's own IN, or when that exact source -> IN already exists.\n  // This preserves Route Only / Parallel and avoids implicit disconnects.\n  const sourceAlreadyInbound=!!source&&inbound.some(route=>route.sourceId===source.id);\n  if(t.kind!=='master'&&inbound.length&&(!source||t.id===source.id||sourceAlreadyInbound)){\n   inspectIncomingWireRoutes(t);return;\n  }\n  if(!source||t.id===source.id){say('Select a source and another destination');return;}"
     }
   ],
   "baselineHtmlLength": 230286,
