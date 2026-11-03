@@ -622,6 +622,45 @@ public:
                     }
                 }
             }
+            else if(operation=="NATIVE_SET_CHANNEL_MIX"||
+                    operation=="NATIVE_SET_CHANNEL_MUTE_SOLO"){
+                std::uint64_t id=0;
+                if(!decodeDecimal(intent.getProperty("targetChannelId",{}),id)||!id)
+                    error="INVALID_DYNAMIC_INPUT_ID";
+                else if(operation=="NATIVE_SET_CHANNEL_MIX"){
+                    const auto g=payload.getProperty("gain",juce::var());
+                    const auto p=payload.getProperty("pan",juce::var());
+                    if(!(g.isDouble()||g.isInt())||
+                       !(p.isDouble()||p.isInt()))
+                        error="INVALID_DYNAMIC_MIX_VALUE";
+                    else {
+                        const auto gain=static_cast<double>(g);
+                        const auto pan=static_cast<double>(p);
+                        if(!std::isfinite(gain)||gain<0.||gain>4.||
+                           !std::isfinite(pan)||pan< -1.||pan>1.)
+                            error="INVALID_DYNAMIC_MIX_VALUE";
+                        else {
+                            applied=engine.setNativeInputMix(
+                                requestedEpoch,nativeRev,
+                                armix::mixer::ChannelId{id},
+                                static_cast<float>(gain),static_cast<float>(pan));
+                            if(!applied)error="DYNAMIC_INPUT_MIX_REJECTED";
+                        }
+                    }
+                }else{
+                    const auto m=payload.getProperty("mute",juce::var());
+                    const auto s=payload.getProperty("solo",juce::var());
+                    if(!m.isBool()||!s.isBool())
+                        error="INVALID_DYNAMIC_MUTE_SOLO";
+                    else {
+                        applied=engine.setNativeInputMuteSolo(
+                            requestedEpoch,nativeRev,
+                            armix::mixer::ChannelId{id},
+                            static_cast<bool>(m),static_cast<bool>(s));
+                        if(!applied)error="DYNAMIC_INPUT_MUTE_SOLO_REJECTED";
+                    }
+                }
+            }
             else if(operation=="NATIVE_SET_BUS_MIX") {
                 std::uint64_t target=0;
                 const auto rawGain=payload.getProperty("gain",juce::var());

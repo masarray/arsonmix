@@ -110,17 +110,17 @@ function nativeStrip(r){
    '<div class="section fx-section"><div class="fxslot-list">'+fx+
    '<button class="fxslot-add" disabled title="LOAD_FX not admitted by native engine">+ ADD VST3</button></div></div>'+
    '<div class="section send-section"><span class="route-caption">SEND</span><span class="route-identity">'+esc((r.sends||[]).length)+' native sends</span></div>'+
-   '<div class="section pan-section"><span class="pan-icon">PAN</span><span class="pan-control" style="--pan-start:'+Math.min(50,50+pan/2)+'%;--pan-end:'+Math.max(50,50+pan/2)+'%"><input class="center-pan" type="range" min="-100" max="100" step="1" value="'+pan+'"'+act('SET_PAN')+'></span><output>'+Math.round(pan)+'</output></div>'+
+   '<div class="section pan-section"><span class="pan-icon">PAN</span><span class="pan-control" style="--pan-start:'+Math.min(50,50+pan/2)+'%;--pan-end:'+Math.max(50,50+pan/2)+'%"><input class="center-pan" type="range" min="-100" max="100" step="1" value="'+pan+'"'+act(r.nativeScoped&&r.role==='INPUT'?'NATIVE_SET_CHANNEL_MIX':'SET_PAN',' data-mix-field="pan"')+'></span><output>'+Math.round(pan)+'</output></div>'+
    '<div class="section switch-section"><span class="buttons-wrapper codepen-buttons-wrapper">'+
-   '<button class="button switch mute '+(r.controls.mute?'on':'')+'"'+act('SET_MUTE')+' aria-pressed="'+!!r.controls.mute+'"><span class="fa">MUTE</span></button>'+
-   '<button class="button switch solo '+(r.controls.solo?'on':'')+'"'+act('SET_SOLO')+' aria-pressed="'+!!r.controls.solo+'"><span class="fa">SOLO</span></button>'+
+   '<button class="button switch mute '+(r.controls.mute?'on':'')+'"'+act(r.nativeScoped&&r.role==='INPUT'?'NATIVE_SET_CHANNEL_MUTE_SOLO':'SET_MUTE',' data-toggle="mute"')+' aria-pressed="'+!!r.controls.mute+'"><span class="fa">MUTE</span></button>'+
+   '<button class="button switch solo '+(r.controls.solo?'on':'')+'"'+act(r.nativeScoped&&r.role==='INPUT'?'NATIVE_SET_CHANNEL_MUTE_SOLO':'SET_SOLO',' data-toggle="solo"')+' aria-pressed="'+!!r.controls.solo+'"><span class="fa">SOLO</span></button>'+
    '</span><button class="switch cue" disabled title="Native CUE not admitted">PFL</button></div>'+
    '<div class="fader-section"><div class="fader-head"><output class="fader-readout">'+fmt(db)+' dB</output><span class="clip-indicator">CLIP</span></div>'+
    '<div class="fader-workspace"><div class="meter-box '+(format==='MONO'?'mono':'stereo')+'" aria-label="Native measured dBFS"><div class="vu-bars"><div class="meter-lane"><div class="meter-fill left"></div></div>'+
    (format==='MONO'?'':'<div class="meter-lane"><div class="meter-fill right"></div></div>')+
    '</div><div class="vu-scale"><div class="vu-scale-travel">'+meterTick+'</div></div></div>'+
    '<div class="fader-box" style="--fader-fill:'+((db+60)/70*100)+'%;--fader-y:'+(100-(db+60)/70*100)+'%"><div class="fader-travel"><div class="cap"></div></div>'+
-   '<input class="fader" type="range" min="-60" max="10" step="0.1" value="'+db+'"'+act(r.role==='GROUP'?'NATIVE_SET_BUS_MIX':'SET_FADER')+'></div>'+
+   '<input class="fader" type="range" min="-60" max="10" step="0.1" value="'+db+'"'+act(r.role==='GROUP'?'NATIVE_SET_BUS_MIX':r.nativeScoped&&r.role==='INPUT'?'NATIVE_SET_CHANNEL_MIX':'SET_FADER',' data-mix-field="fader"')+'></div>'+
    '<div class="fader-scale"><div class="gain-scale-travel">'+gainTick+'</div></div></div></div>'+
    '<div class="bottom-section"><div class="db-value">'+fmt(db)+'</div><div class="footer-label"><span class="name">'+esc(r.name)+'</span><span class="footer-icon">♫</span><div class="color-strip"></div></div></div>'+
    '</article>';
@@ -197,6 +197,19 @@ function submitNode(n){
  else if(op==='NATIVE_SET_BUS_MIX')send(op,row,{
    gain:Math.pow(10,Math.max(-60,Math.min(10,Number(n.value)))/20),
    pan:(Number(row.controls.pan)||0)/100});
+ else if(op==='NATIVE_SET_CHANNEL_MIX'){
+   const v=n.dataset.mixField;
+   const fader=v==='fader'?Number(n.value):Number(row.controls.faderDb);
+   const pan=v==='pan'?Number(n.value):Number(row.controls.pan);
+   send(op,row,{gain:Math.pow(10,Math.max(-60,Math.min(10,fader||0))/20),
+                pan:Math.max(-1,Math.min(1,(pan||0)/100))});
+ }
+ else if(op==='NATIVE_SET_CHANNEL_MUTE_SOLO'){
+   const type=n.dataset.toggle;
+   if(type==='mute'||type==='solo')
+      send(op,row,{mute:type==='mute'?!row.controls.mute:!!row.controls.mute,
+                   solo:type==='solo'?!row.controls.solo:!!row.controls.solo});
+ }
  else if(op==='SET_FADER')send(op,row,{valueDb:Number(n.value)});
  else if(op==='SET_PAN')send(op,row,{value:Number(n.value)});
  else if(op==='SET_MUTE'||op==='SET_SOLO')send(op,row,{enabled:!row.controls[op==='SET_MUTE'?'mute':'solo']});

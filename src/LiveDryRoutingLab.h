@@ -1361,6 +1361,36 @@ public:
             reply.error="NATIVE_SOURCE_PREPARE_FAILED";return reply;
         }
     }
+    // Live dynamic-input controls: one canonical ChannelId PCM callback,
+    // no M4 ordinal alias, vendor reload or RT thread allocation.
+    bool setNativeInputMix(std::uint64_t epochValue,std::uint64_t revision,
+                           armix::mixer::ChannelId id,float gain,float pan) noexcept {
+        if(!nativeStructureLive_||!channelIdPhysicalPcmActive()||
+           epochValue!=epoch()||revision!=nativeAccepted_.pcmRevision||
+           !std::isfinite(gain)||gain<0.f||gain>4.f||
+           !std::isfinite(pan)||pan< -1.f||pan>1.f)return false;
+        for(const auto original:nativeAccepted_.graph.ids.inputs)
+            if(original==id)return false;
+        const auto* channel=nativeAccepted_.graph.roster.find(id);
+        if(!channel||channel->role!=armix::mixer::ChannelRole::input)return false;
+        if(!nativePublisher_.setChannelMix(epochValue,revision,id,gain,pan))
+            return false;
+        return nativeAccepted_.graph.roster.rememberLiveMix(id,gain,pan);
+    }
+    bool setNativeInputMuteSolo(std::uint64_t epochValue,std::uint64_t revision,
+                                armix::mixer::ChannelId id,
+                                bool mute,bool solo) noexcept {
+        if(!nativeStructureLive_||!channelIdPhysicalPcmActive()||
+           epochValue!=epoch()||revision!=nativeAccepted_.pcmRevision)return false;
+        for(const auto original:nativeAccepted_.graph.ids.inputs)
+            if(original==id)return false;
+        const auto* channel=nativeAccepted_.graph.roster.find(id);
+        if(!channel||channel->role!=armix::mixer::ChannelRole::input)return false;
+        if(!nativePublisher_.setChannelMuteSolo(
+                  epochValue,revision,id,mute,solo))return false;
+        return nativeAccepted_.graph.roster.rememberLiveMuteSolo(id,mute,solo);
+    }
+
     bool nativeBusTopologyLive() const noexcept {
         return nativeStructureLive_ && channelIdPhysicalPcmActive();
     }
@@ -1401,7 +1431,9 @@ public:
         // can be prepared for its new ChannelId; do not advertise it.
         for(const char* op: {"NATIVE_CREATE_GROUP_SELECTED",
                              "NATIVE_REMOVE_BUS","NATIVE_SET_BUS_MIX",
-                             "NATIVE_CREATE_CHANNEL","NATIVE_PATCH_CHANNEL"})
+                             "NATIVE_CREATE_CHANNEL","NATIVE_PATCH_CHANNEL",
+                             "NATIVE_SET_CHANNEL_MIX",
+                             "NATIVE_SET_CHANNEL_MUTE_SOLO"})
             allowed.add(juce::var(juce::String(op)));
         state->setProperty("supportedOps",juce::var(allowed));
         juce::Array<juce::var> rows;

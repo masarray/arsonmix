@@ -937,6 +937,35 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
         };
         int commits=0;
         int liveMixes=0;
+        int nativeInputCreates=0,nativeInputPatches=0;
+        int nativeInputMixes=0,nativeInputToggles=0;
+        Report createNativeInputChannel(std::uint64_t ep,std::uint64_t pcm,
+            std::uint64_t roster,const std::string& name,
+            ProcessingFormat format){
+            assert(ep==9007199254740993ULL&&pcm==3&&roster==4);
+            assert(name=="CH11"&&format==ProcessingFormat::mono);
+            ++nativeInputCreates;
+            return {true,{20},4,6,""};
+        }
+        Report patchNativeInputSource(std::uint64_t ep,std::uint64_t pcm,
+            std::uint64_t roster,ChannelId id,int left,int right,bool stereo){
+            assert(ep==9007199254740993ULL&&pcm==3&&roster==4);
+            assert(id.value==20&&left==2&&right==-1&&!stereo);
+            ++nativeInputPatches;
+            return {true,{},4,4,""};
+        }
+        bool setNativeInputMix(std::uint64_t ep,std::uint64_t rev,
+            ChannelId id,float gain,float pan){
+            assert(ep==9007199254740993ULL&&rev==3);
+            assert(id.value==20&&near(gain,.5f)&&near(pan,0.f));
+            ++nativeInputMixes;return true;
+        }
+        bool setNativeInputMuteSolo(std::uint64_t ep,std::uint64_t rev,
+            ChannelId id,bool mute,bool solo){
+            assert(ep==9007199254740993ULL&&rev==3);
+            assert(id.value==20&&mute&&!solo);
+            ++nativeInputToggles;return true;
+        }
         bool setNativeBusMix(std::uint64_t ep,std::uint64_t rev,
                              ChannelId id,float gain,float pan) {
             assert(ep==9007199254740993ULL&&rev==3);
@@ -972,6 +1001,53 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
         command->setProperty("payload",juce::var(payload.release()));
         return juce::var(command.release());
     };
+    // Real installed bridge functions must compile against mock control writer:
+    // native ChannelId input creation, physical source patch and bounded
+    // scalar controls each preserve opaque request IDs and accepted rev.
+    auto create=makeBusIntent("native:ch11:1");
+    create.getDynamicObject()->setProperty("operation","NATIVE_CREATE_CHANNEL");
+    auto inputPayload=std::make_unique<juce::DynamicObject>();
+    inputPayload->setProperty("name","CH11");
+    inputPayload->setProperty("format","MONO");
+    create.getDynamicObject()->setProperty(
+        "payload",juce::var(inputPayload.release()));
+    auto inputAck=bridge.processNativeBusIntent(create,snap,busControl);
+    assert(inputAck.getProperty("status","").toString()=="ACCEPTED");
+    assert(inputAck.getProperty("createdChannelId","").toString()=="20");
+    assert(busControl.nativeInputCreates==1);
+    auto patch=makeBusIntent("native:ch11:2");
+    patch.getDynamicObject()->setProperty("operation","NATIVE_PATCH_CHANNEL");
+    patch.getDynamicObject()->setProperty("targetChannelId","20");
+    auto patchPayload=std::make_unique<juce::DynamicObject>();
+    patchPayload->setProperty("physicalLeft",2);
+    patchPayload->setProperty("physicalRight",-1);
+    patchPayload->setProperty("sourceFormat","MONO");
+    patch.getDynamicObject()->setProperty("payload",juce::var(patchPayload.release()));
+    inputAck=bridge.processNativeBusIntent(patch,snap,busControl);
+    assert(inputAck.getProperty("status","").toString()=="ACCEPTED");
+    assert(busControl.nativeInputPatches==1);
+    auto inputMix=makeBusIntent("native:ch11:3");
+    inputMix.getDynamicObject()->setProperty("operation","NATIVE_SET_CHANNEL_MIX");
+    inputMix.getDynamicObject()->setProperty("targetChannelId","20");
+    auto controlPayload=std::make_unique<juce::DynamicObject>();
+    controlPayload->setProperty("gain",.5);
+    controlPayload->setProperty("pan",0.0);
+    inputMix.getDynamicObject()->setProperty(
+        "payload",juce::var(controlPayload.release()));
+    inputAck=bridge.processNativeBusIntent(inputMix,snap,busControl);
+    assert(inputAck.getProperty("status","").toString()=="ACCEPTED");
+    assert(busControl.nativeInputMixes==1);
+    auto inputToggle=makeBusIntent("native:ch11:4");
+    inputToggle.getDynamicObject()->setProperty(
+        "operation","NATIVE_SET_CHANNEL_MUTE_SOLO");
+    inputToggle.getDynamicObject()->setProperty("targetChannelId","20");
+    auto togglePayload=std::make_unique<juce::DynamicObject>();
+    togglePayload->setProperty("mute",true);togglePayload->setProperty("solo",false);
+    inputToggle.getDynamicObject()->setProperty(
+        "payload",juce::var(togglePayload.release()));
+    inputAck=bridge.processNativeBusIntent(inputToggle,snap,busControl);
+    assert(inputAck.getProperty("status","").toString()=="ACCEPTED");
+    assert(busControl.nativeInputToggles==1);
     auto nativeAck=bridge.processNativeBusIntent(
         makeBusIntent("native:bus:1"),snap,busControl);
     assert(nativeAck.getProperty("status","").toString()=="ACCEPTED");
