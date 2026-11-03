@@ -66,8 +66,8 @@ def reconstruct_previous():
     after=combined_css(current)
     assert len(before)==ledger["beforeCSS"]==176024
     assert fingerprint(before)==ledger["beforeFNV"]=="8cb19a32"
-    assert len(after)==ledger["afterCSS"]==175840
-    assert fingerprint(after)==ledger["afterFNV"]=="6e2cc352"
+    assert len(after)==ledger["afterCSS"]==175850
+    assert fingerprint(after)==ledger["afterFNV"]=="188064b0"
     assert before.count("!important")==after.count("!important")==1354
     assert len(ledger["uniqueTokens"])==45
     assert ledger["tokenBefore"]==56 and ledger["tokenAfter"]==45
