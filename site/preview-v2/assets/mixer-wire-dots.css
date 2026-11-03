@@ -729,16 +729,18 @@
 }
 .console-body.wire-routing-v15 .strip .wire-tray .wire-node-out{
  display:flex!important;flex-direction:row!important;justify-content:flex-start!important;
- align-items:center!important;gap:3px!important;padding:0 0 0 1px!important;
- /* V47: inset the complete physical OUT connector + caption 4px within
-    its own first grid lane. Preserve button hit area and SVG pin anchor. */
+ align-items:center!important;gap:3px!important;padding:0 0 0 4px!important;
+ /* V48: keep V47 button hit area and 4px margin, move the pin + caption
+    together an additional 3px within that reserved lane. */
  margin-inline-start:4px!important;
  width:35px!important;min-width:35px!important;flex:0 0 35px!important;
 }
 .console-body.wire-routing-v15 .strip .wire-tray .wire-node-out small{
  position:static!important;left:auto!important;top:auto!important;bottom:auto!important;
  transform:none!important;white-space:nowrap;pointer-events:none;
- font:600 7px/9px Inter,'Segoe UI',sans-serif!important;letter-spacing:0!important;
+ font:600 7px/12px Inter,'Segoe UI',sans-serif!important;letter-spacing:0!important;
+ display:flex!important;align-items:center!important;justify-content:center!important;
+ height:12px!important;line-height:12px!important;align-self:center!important;
 }
 /* Pin the electrical center to the bezel's real geometric center, independent
    of flex text and linked/inactive class state. SVG attaches to this exact dot. */
