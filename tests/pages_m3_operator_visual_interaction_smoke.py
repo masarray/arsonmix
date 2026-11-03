@@ -75,40 +75,43 @@ def interactions(page):
     assert abs(empty.locator('.fx-pick').bounding_box()['x']-
                occupied.locator('.fx-pick').bounding_box()['x'])<=1.25
 
-    page.evaluate("""() => {const t=tracks[0];t.clip=true;render();}""")
+    # Drive the real operator UI, not private IIFE variables. The display
+    # preview is simulated; no native audio device or DSP is involved.
+    fader=page.locator('#tracks .strip[data-id="1"] input.fader')
+    fader.evaluate("""e => {e.value='10';e.dispatchEvent(new Event('input',{bubbles:true}));
+                         e.dispatchEvent(new Event('change',{bubbles:true}));}""")
+    if not page.evaluate("window.ArSonMixMeterCalibration.readDemo().running"):
+        page.locator("#preview").click()
     peak=page.locator('#tracks .strip[data-id="1"] .peak')
+    page.wait_for_function("""() => document.querySelector(
+      '#tracks .strip[data-id="1"] .peak')?.classList.contains('clipping')""",
+      timeout=10000)
     assert 'clipping' in peak.get_attribute("class")
+    page.locator("#preview").click()  # stop re-latching before reset
     page.locator('#tracks .strip[data-id="1"] button[data-action="resetClip"]').click()
     assert 'clipping' not in page.locator('#tracks .strip[data-id="1"] .peak').get_attribute("class")
-    assert page.evaluate("tracks[0].clip===false")
 
-    # Inject *display-only demo graph* through the existing JavaScript model,
-    # then read the real user-visible receiving socket/inspector. No PCM.
-    before=page.evaluate("""() => {
-      wireIntent=false;wireSourcePinned=false;wireSourceId=null;
-      wireEdges=[
-        {id:9401,sourceId:1,destId:4,enabled:true,mode:'send',levelDb:-8},
-        {id:9402,sourceId:2,destId:4,enabled:true,mode:'send',levelDb:-10}
-      ];render();
-      return wireWsRoutes().filter(e=>e.destId===4).length;
-    }""")
-    assert before==2,("two incoming routes not represented",before)
+    # Two real operator connections, independently created by OUT -> IN.
+    # A receiving socket must stay usable after both edges already exist.
+    for src in (1,2):
+        page.locator(f'#tracks .strip[data-id="{src}"] [data-action="wireSource"]').click()
+        receiver=page.locator('#tracks .strip[data-id="4"] [data-action="wireRoute"]')
+        assert receiver.is_enabled(),("receiving jack disabled while adding second wire",src)
+        receiver.click()
     receiver=page.locator('#tracks .strip[data-id="4"] .wire-node-in')
-    assert receiver.count()==1
-    assert receiver.is_enabled(),("multi-wire receiving IN unexpectedly disabled")
-    assert "2 incoming" in receiver.get_attribute("title")
+    assert receiver.is_enabled(),"multi-wire receiving IN unexpectedly disabled"
+    assert "2 incoming" in receiver.get_attribute("title"),receiver.get_attribute("title")
     receiver.click()
-    assert not page.locator("#wireWorkspace").is_hidden(),("receiver inspector did not open")
-    inspect=page.locator('#wireWsList [data-ws-inspect]')
-    keys=inspect.evaluate_all("(els)=>els.map(e=>e.dataset.wsInspect)")
+    assert not page.locator("#wireWorkspace").is_hidden(),"receiver inspector did not open"
+    routes=page.locator('#wireWsList [data-ws-inspect]')
+    keys=routes.evaluate_all("(els)=>els.map(e=>e.dataset.wsInspect)")
     assert '1:4' in keys and '2:4' in keys,("incoming edges not individually inspectable",keys)
-    assert page.evaluate("wireWsRoutes().filter(e=>e.destId===4).length")==2,(
-       "opening inspector must not destroy an incoming cable")
-    # A single selected route is inspected by its own exact source/destination key.
-    inspect.filter(has=page.locator('[data-ws-inspect="1:4"]')).count()  # harmless query
     page.locator('#wireWsList [data-ws-inspect="1:4"]').click()
-    assert page.evaluate("wireWsInspect?.src===1 && wireWsInspect?.dst===4")
-    assert page.evaluate("wireWsRoutes().filter(e=>e.destId===4).length")==2
+    inspector=page.locator("#wireWsInspector")
+    assert inspector.is_visible(),"individual incoming route inspection missing"
+    assert "CH01" in inspector.inner_text() and "CH04" in inspector.inner_text()
+    assert page.locator('#wireWsList [data-ws-inspect="2:4"]').count()==1,(
+        "opening a cable inspector must not remove the other incoming wire")
 
 def main():
     with sync_playwright() as p:
