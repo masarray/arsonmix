@@ -2,7 +2,7 @@
 // Product gate for the actual approved M3 WebView UI embedded in JUCE.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync,readdirSync} from 'node:fs';
+import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 const read=p=>readFileSync(p,'utf8');
 const html=read('web/index.html'),adapter=read('web/console-native.js');
@@ -24,7 +24,7 @@ test('user-approved M3 one-Console HTML is the SINGLE embedded Windows GUI',()=>
  assert.match(main,/withResourceProvider \(assetFor\)/);
 });
 test('ALL 24 approved GUI visual assets are embedded and served at correct paths',()=>{
- const assets=readdirSync('web/assets').filter(f=>f!=='audio-interface.svg');
+ const assets=[...cmake.matchAll(/web\/assets\/([A-Za-z0-9_.-]+)/g)].map(m=>m[1]);
  assert.equal(assets.length,24,'wrong copied approved GUI asset count');
  const linked=[...html.matchAll(/(?:href|src)="(assets\/[^"]+)"/g)].map(m=>m[1]);
  assert.equal(linked.length,20,'missing approved CSS/JS links');

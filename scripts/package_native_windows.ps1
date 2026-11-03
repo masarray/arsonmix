@@ -77,10 +77,15 @@ Copy-Item -LiteralPath $fatGuide -Destination (Join-Path $OutputDir "HARDWARE_FA
 # Hash the actual compiled resources ONLY; no abandoned fixed-ten app.js.
 # BinaryData must contain every one of these bytes and the native bridge.
 $guiResources = [ordered]@{}
-$guiFiles = @("web/index.html", "web/console-native.js") +
-    @(Get-ChildItem -LiteralPath "web/assets" -File |
-      Where-Object { $_.Name -ne "audio-interface.svg" } |
-      Sort-Object Name | ForEach-Object { "web/assets/" + $_.Name })
+$cmake = Get-Content -LiteralPath "CMakeLists.txt" -Raw -Encoding UTF8
+# Only compiled JUCE BinaryData assets are authoritative. The repository
+# may retain historical images that are deliberately not part of the EXE.
+$compiledAssets = @([regex]::Matches($cmake, 'web/assets/[A-Za-z0-9_.-]+') |
+    ForEach-Object { $_.Value } | Select-Object -Unique)
+if ($compiledAssets.Count -ne 24) {
+    throw "Windows CMake BinaryData must embed exactly 24 approved M3 assets"
+}
+$guiFiles = @("web/index.html", "web/console-native.js") + $compiledAssets
 foreach ($guiFile in $guiFiles) {
     $guiResources[$guiFile] = (Get-FileHash -LiteralPath $guiFile -Algorithm SHA256).Hash.ToLowerInvariant()
 }
