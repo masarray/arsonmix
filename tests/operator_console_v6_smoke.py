@@ -321,10 +321,25 @@ async def main():
         assert await page.evaluate("()=>window.__arMixV6ReadOnly().selectedChannelIds")==["7","8","9"]
         assert await page.locator('#arV6Main .arV6Master').get_attribute("aria-selected")=="false"
         selected_count = page.locator('.arV6SelectionCount')
-        label = (await selected_count.text_content() or "").strip()
-        assert label == "3 SEL", {
-            "textContent":label,
-            "innerText":await selected_count.inner_text(),
+        assert await selected_count.is_visible()
+        # V5 backlit button material engraves its label in an SVG mask and
+        # retains one visually-hidden screen-reader copy. textContent/innerText
+        # include BOTH copies even though the user sees one painted label.
+        # Assert the actual hardware legend and accessible copy agree rather
+        # than mistaking the intentional SVG + SR text for duplicated ink.
+        legend = await selected_count.evaluate("""(el)=>({
+          hardware:el.classList.contains('mx-hw-key'),
+          canonical:el.dataset.mxHwLegend || null,
+          accessible:el.querySelector(':scope > .mx-hw-screen-reader')?.textContent.trim() || null,
+          engraved:el.querySelector(':scope > svg.mx-hw-face text')?.textContent.trim() || null,
+          plain:el.textContent.trim()
+        })""")
+        assert (
+            (legend["hardware"] and legend["canonical"]=="3 SEL" and
+             legend["accessible"]=="3 SEL" and legend["engraved"]=="3 SEL")
+            or (not legend["hardware"] and legend["plain"]=="3 SEL")
+        ), {
+            "selectionButton":legend,
             "selectedIds":await page.evaluate(
               "()=>window.__arMixV6ReadOnly().selectedChannelIds")
         }
