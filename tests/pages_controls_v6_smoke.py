@@ -35,9 +35,12 @@ def assert_ownership():
     # ORIGINAL V6 owner section, not on the separate pre-existing V30 material.
     # V26 reconstructs the ORIGINAL V25 key owner with exact rule slices;
     # modern V6 selector bytes remain untouched after obsolete socket pruning.
-    from css_v26_restore import reconstruct as restore_v25
+    # Restore only the immutable CSS owner; the live page may legitimately
+    # evolve after V26 (WIRE/FX) without changing hardware key source bytes.
+    # Still verifies every V26 owner fingerprint and V25 migrated material.
+    from css_v26_restore import restore_owner,manifest as v26_manifest
     from css_v25_restore import manifest as v25_manifest
-    _,original_v25_key=restore_v25()
+    original_v25_key=restore_owner(css,v26_manifest()["sources"]["mixer-control-keys.css"])
     v30=v25_manifest()["movedCss"]
     assert original_v25_key.startswith(v30)
     modern_v6=original_v25_key[len(v30):]
