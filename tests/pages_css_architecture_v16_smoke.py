@@ -27,7 +27,8 @@ async def main():
     assert len(new_css)==doc["newCSS"]==133992
     assert fingerprint(new_css)==doc["newFNV"]=="4bd22884"
     assert len(old_wire)==doc["beforeWireSize"]==9600
-    assert len(WIRE.read_text(encoding="utf-8"))==doc["afterWireSize"]
+    from css_v23_restore import original_owner
+    assert len(original_owner("mixer-wire-dots.css"))==doc["afterWireSize"]
     assert (old_css.count("!important"),new_css.count("!important"))==(1317,981)
     assert doc["movedRules"]==223 and doc["movedChars"]==39306
     assert len(doc["insertions"])==223
