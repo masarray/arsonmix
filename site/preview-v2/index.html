@@ -618,6 +618,25 @@
 .console-body.collapsed-fx.collapsed-send .section-rail > .rail-cell.fader{
  flex:1 1 0px!important;height:auto!important;max-height:none!important;
 }
+
+/* V13 physical routing bay — no old DAW send form in mixer strips.
+   Compact: 80px, Expanded: 160px; +80px fold is balanced by P0 fader
+   budget on expand, preserving the rack's four legible insert rows. */
+.console-body.wire-routing-v13.collapsed-send{}
+.console-body.wire-routing-v13:not(.collapsed-send){--send-h:160px!important}
+.console-body.wire-routing-v13 .section-rail .rail-cell.send{
+ font:600 12px Arial,sans-serif!important;
+ color:#b1dae4!important;
+}
+.console-body.wire-routing-v13 .section-rail .rail-cell.send::after{
+ content:"WIRE";display:block;font:600 7px/8px Arial,sans-serif;
+ color:#78afb5;letter-spacing:.4px;
+}
+.console-body.wire-routing-v13:not(.collapsed-send) .section-rail .rail-cell.send::after{content:"PATCH"}
+.console-body.wire-routing-v13 .strip .send-header,
+.console-body.wire-routing-v13 .strip .send-select,
+.console-body.wire-routing-v13 .strip .sendlevel,
+.console-body.wire-routing-v13 .strip .send-slot{display:none!important}
 .routing-wire-overlay{z-index:6;pointer-events:none!important}
 /* Keep compact routing visible on short stage laptops; no legacy form resurfaces. */
 @media(max-height:680px){
@@ -744,8 +763,26 @@
 @media(max-height:820px){
  .console-body.wire-routing-v13:not(.collapsed-send){--send-h:148px!important}
 }
+.console-body.wire-routing-v13 .section-rail .rail-cell.send{border-top:1px solid #617d8a43!important;
+}
+/* A carefully restrained physical edge is fine; broad face gradients and
+   worn-metal zebra strokes are not. */
+
+/* V14.1 physical hierarchy: three upper modules can close independently.
+   SEND close is a TRUE 23px folded header, not a tiny still-active patch bay.
+   The source/destination graph belongs to state, not to the SVG or DOM nodes. */
+.console-body.wire-routing-v13.collapsed-send{
+ --send-h:23px!important;
+}
 @media(max-height:680px){
  .console-body.wire-routing-v13.collapsed-send{--send-h:23px!important}
+}
+.console-body.wire-routing-v13.collapsed-send .routing-wire-overlay{
+ display:none!important;
+}
+.console-body.wire-routing-v13.collapsed-send .section-rail .rail-cell.send::after{
+ content:"OPEN"!important;
+ color:#91bac5!important;
 }
 /* Dark premium satin graphite: uniform plate colors, no giant highlights.
    Only section borders, actual recessed fader grooves and meter LEDs have
@@ -777,6 +814,12 @@
  background:#1a2c37!important;
  box-shadow:inset 0 1px #ffffff08!important;
 }
+.console-body.wire-routing-v13 .section-rail .rail-cell.send{background:#192d38!important}
+
+/* V15 original physical patch connectors: filled bronze/silver OUT jack, recessed
+   hollow IN socket. Calm console design; route highlight only on actual intent.
+   Compact always keeps the wires visible; expanded has more cable canvas. */
+.console-body.wire-routing-v15.collapsed-send{}
 @media(max-height:680px){
 }
 .route-choice[hidden]{display:none!important}
@@ -837,7 +880,13 @@
 .console-body .strip.channel-drop-after::before{right:0}
 .console-body .strip-identity-top[draggable="true"]{cursor:grab}
 .console-body .strip-identity-top[draggable="true"]:active{cursor:grabbing}
+
+/* V16: the WIRE graph is an upper compartment. When SEND is folded
+   the sockets and cable illustration are invisible, leaving only a
+   clean 23px disclosure row; model fan-out remains untouched. */
+.console-body.wire-routing-v15.collapsed-send{--send-h:23px!important}
 @media(max-height:680px){.console-body.wire-routing-v15.collapsed-send{--send-h:23px!important}}
+.console-body.wire-routing-v15.collapsed-send .routing-wire-overlay{display:none!important}
 /* ARSONMIX GLOBAL HARDWARE KEY V1 — owner approved MUTE/SOLO material.
    This is one reusable material token, NOT a new button geometry/layout.
    Never apply to circular WIRE connectors, fader thumb, meter LEDs, sliders,
@@ -1173,6 +1222,9 @@ html * ,html *::before,html *::after{
  text-shadow:none!important;transition:none!important;
  border-top:0!important;
 }
+.console-body.wire-routing-v13 .section-rail>.rail-cell.send{
+ background:#182b35!important;color:#9aafb9!important;
+}
 .console-body .section-rail>.rail-cell[data-section].collapsed{
  background:#12232d!important;color:#768d98!important;
  box-shadow:inset 2px 0 #627e8e65!important;
@@ -1182,6 +1234,20 @@ html * ,html *::before,html *::after{
 }
 .console-body .section-rail>.rail-cell[data-section]:hover{
  background:#29404b!important;color:#e3eff2!important;
+}
+.console-body .section-rail>.rail-cell[data-section]::after,
+.console-body.wire-routing-v13 .section-rail>.rail-cell.send::after,
+.console-body.wire-routing-v13.collapsed-send .section-rail>.rail-cell.send::after{
+ content:""!important;display:block!important;
+ position:absolute!important;right:2px!important;top:4px!important;
+ width:3px!important;height:3px!important;
+ border:solid currentColor!important;border-width:0 1px 1px 0!important;
+ transform:rotate(45deg)!important;opacity:.75!important;
+ background:transparent!important;font-size:0!important;
+}
+.console-body .section-rail>.rail-cell[data-section].collapsed::after,
+.console-body.wire-routing-v13.collapsed-send .section-rail>.rail-cell.send::after{
+ transform:rotate(-45deg)!important;
 }
 .console-body .section-rail .rail-cell.route,
 .console-body .section-rail .rail-cell.fx,
@@ -1322,6 +1388,13 @@ html * ,html *::before,html *::after{
 .console-body .section-rail .rail-cell.route .rail-svg-icon{width:20px!important;height:20px!important}
 .console-body .section-rail .rail-cell[data-section]:hover .rail-svg-icon{opacity:1}
 .console-body .section-rail .rail-cell[data-section].collapsed .rail-svg-icon{opacity:.76}
+
+
+/* V25 UX: compact physical WIRE, taller fader, thin selected rim,
+   sharp offline Google Material SVG icons; all same strip+rail tokens. */
+.console-body.wire-routing-v15:not(.collapsed-send){
+ --send-h:112px!important;
+}
 @media(max-height:680px){
  .console-body.wire-routing-v15:not(.collapsed-send){--send-h:102px!important}
 }
