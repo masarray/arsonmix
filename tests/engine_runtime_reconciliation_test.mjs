@@ -117,6 +117,39 @@ test('E3 stable ChannelId GROUP/FX RETURN is a real guarded physical PCM transac
   assert.equal(count(callback,/dryRoutingLab_\.process\(/g),1);
 });
 
+
+test('E4 installed PATCH operator uses native ChannelId BUS ACK and real PCM snapshot, never ten-strip draft',()=>{
+  const ui=read('web/monitor.js');
+  const binding=ui.slice(ui.indexOf('// E4: The EXISTING routing workspace controls'),
+                         ui.indexOf('// Processing channel width is independent'));
+  assert.ok(binding.length>3000,'real native Group/FX operator binding absent');
+  assert.match(binding,/const nativeBusAccepted=\(\)=>/);
+  assert.match(binding,/legacy\?\.controlPlane!=='LEGACY_M4_ORDINAL'/);
+  assert.match(binding,/legacy\?\.pcmRenderer!=='CHANNEL_ID_10CH4AUX'/);
+  assert.match(binding,/busWireDecimal\(c\.id\)===null/);
+  assert.match(binding,/bus\.supportedOps\.includes\(op\)/);
+  assert.match(binding,/state\.secondaryOutputArmed/);
+  assert.match(binding,/state\.monitor/);
+  assert.match(binding,/!mixerDraftActive/);
+  assert.match(binding,/targetChannelId:targetChannelId\|\|null,payload/);
+  assert.match(binding,/selectedChannelIds:ids,sendGain:gain/);
+  assert.match(binding,/api\.emitEvent\('arMixConsoleIntent',command\)/);
+  assert.match(binding,/api\.addEventListener\('arMixConsoleAck'/);
+  assert.match(binding,/api\.addEventListener\('arMixConsoleSnapshot'/);
+  assert.match(binding,/busSnapshotSerial>busPending\.ackSnapshotSerial/);
+  assert.match(binding,/BigInt\(info\.bus\.graphRevision\)>=BigInt\(ack\.nativeGraphRevision\)/);
+  assert.match(binding,/BigInt\(info\.bus\.rosterRevision\)>=BigInt\(ack\.nativeRosterRevision\)/);
+  assert.match(binding,/NATIVE_CREATE_GROUP_SELECTED/);
+  assert.match(binding,/NATIVE_CREATE_FX_RETURN_SELECTED/);
+  assert.match(binding,/NATIVE_REMOVE_BUS/);
+  assert.match(binding,/NATIVE_SET_BUS_MIX/);
+  assert.doesNotMatch(binding,/productionCallbackLive\s*=\s*true|createAudioContext|AudioContext\(/,
+    'operator MUST NOT fabricate universal capabilities or DSP');
+  assert.match(ui,/busRequest\(\);renderNativeBus\(true\)/);
+  assert.match(bridge,/processNativeBusIntent/);
+  assert.match(physical,/nativeBusStatus\(\)/);
+});
+
 test('shipping application does not compile a second test-only native mixer',()=>{
   const app=cmake.split(/\r?\n/).find(l=>l.startsWith('target_sources(ARMixConsole PRIVATE'));
   assert.ok(app,'native JUCE application source list missing');
