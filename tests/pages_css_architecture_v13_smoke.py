@@ -15,11 +15,11 @@ from pages_css_architecture_v11_smoke import HTML, check, PROPS
 
 ROOT=Path(__file__).resolve().parents[1]
 MANIFEST=ROOT/"tests/fixtures/css-v13-owner-removals.json"
-# Additive, independently fingerprinted V18 revisions in the CORRECT owner.
+# Additive, independently fingerprinted V18/V19 revisions in the CORRECT owner.
 # The V13 pre-revision bytes, declaration-removal ledger, and parity remain
 # exact; unapproved edits to either the historical prefix or new suffix fail.
 V18_OWNER_TAILS={
-    "mixer-pan-controls.css":(347,"728ddc05"),
+    "mixer-pan-controls.css":(299,"ed657bfe"),
     "mixer-fader-assembly.css":(973,"32e76b31"),
     "mixer-meter-display.css":(956,"66160bb8"),
 }
@@ -92,7 +92,7 @@ def restore_baseline():
             tf=tempfile.NamedTemporaryFile(mode="w",suffix=".css",prefix=".v13-original-",
                        dir=path.parent,encoding="utf-8",delete=False)
             with tf:
-                # The V18 suffix must exist on BOTH compared pages. Only the
+                # The current owner suffix must exist on BOTH compared pages. Only the
                 # original V13 removal history differs in these reconstructions.
                 tf.write(restored+tail)
             temporary.append(Path(tf.name))
