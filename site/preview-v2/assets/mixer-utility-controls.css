@@ -46,12 +46,11 @@
 }
 .app .console-body .strip button.mx-util-key[data-util-kind="phase"]{
   --mx-util-accent:255,190,98;
+  /* Icon-only micro keys use the same physical 1:1 square as FX power. */
   width:17px;
   min-width:17px;
-  height:15px;
-  min-height:15px;
-  font-size:12px;
-  font-weight:650;
+  height:17px;
+  min-height:17px;
 }
 .app .console-body .strip button.mx-util-key[data-util-kind="format"]{
   --mx-util-accent:131,222,241;
@@ -63,21 +62,13 @@
   font-size:9px;
   font-weight:650;
 }
-.app .console-body .strip button.mx-util-key[data-util-kind="fx-slot"]{
-  width:16px;
-  height:17px;
-  min-width:16px;
-  min-height:17px;
-}
 .app .console-body .strip button.mx-util-key[data-util-kind="fx-remove"]{
   --mx-util-accent:225,147,147;
-  width:13px;
-  min-width:13px;
-  height:16px;
-  min-height:16px;
-  border-color:transparent;
-  background:transparent;
-  box-shadow:none;
+  /* Remove uses a dedicated trash icon and the same square 17px cap. */
+  width:17px;
+  min-width:17px;
+  height:17px;
+  min-height:17px;
   color:#b7c3c9;
 }
 /* Remove is a momentary action, NEVER a latched LED. */
@@ -94,8 +85,12 @@
   fill:currentColor;
 }
 .app .console-body .strip button.mx-util-key[data-util-kind="fx-remove"] svg.mi-svg{
-  width:12px;
-  height:12px;
+  width:13px;
+  height:13px;
+}
+.app .console-body .strip button.mx-util-key[data-util-kind="phase"] svg.mi-svg{
+  width:15px;
+  height:15px;
 }
 .app .console-body .strip button.mx-util-key:focus-visible{
   outline:2px solid #93d5e4;

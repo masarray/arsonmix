@@ -168,3 +168,27 @@
 .console-body .strip .meter-box .peak.clipping{
  box-shadow:inset 0 1px 0 rgba(255,255,255,.16)!important;
 }
+
+
+/* V18 dBFS scale: VU ruler remains aligned to the actual LED travel
+   (12px top / 13px bottom); show only major numerals and keep all tick
+   positions. Compact labels are ink, not large white UI cards. */
+.console-body .strip .meter-box .vu-tick::before{
+  left:0;top:0;height:1px;width:2px;background:#597988;opacity:.75;
+}
+.console-body .strip .meter-box .vu-tick.major::before{
+  width:4px;background:#98b7c3;opacity:.95;
+}
+.console-body .strip .meter-box .vu-tick.zero::before{
+  width:5px;background:#c1e3ed;opacity:1;
+}
+.console-body .strip .meter-box .vu-tick span{
+  left:5px;top:-5px;
+  font:500 8px/10px Inter,"Segoe UI",sans-serif!important;
+  font-variant-numeric:tabular-nums;letter-spacing:-.02em;
+  color:#b4cad5!important;text-shadow:none!important;
+}
+.console-body .strip .meter-box .vu-tick.zero span{
+  color:#e0f1f6!important;font-weight:650!important;
+}
+.console-body .strip .meter-box .vu-tick.minor span{display:none!important}
