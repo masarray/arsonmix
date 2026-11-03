@@ -30,7 +30,14 @@ def assert_ownership():
     # SOLO/PFL retain SVG masks; MUTE is rendered by CSS only.
     assert "<mask id=" in js and js.count("<text ")==1
     assert "fill=\\"#edf6fa\\"" in js  # bright OFF ambient through one cutout
-    assert css.count("!important")<=14, "Owner CSS acquiring another override cascade"
+    # V25 migrated the exact V30 physical-material suffix ahead of the intact
+    # V6 modern MUTE/SOLO/PFL owner. Keep the <=14 priority budget on the
+    # ORIGINAL V6 owner section, not on the separate pre-existing V30 material.
+    from css_v25_restore import reconstruct as restore_v51,manifest as v25_manifest
+    _,modern_v6=restore_v51()
+    assert css==v25_manifest()["movedCss"]+modern_v6
+    assert css.count("!important")-modern_v6.count("!important")==97
+    assert modern_v6.count("!important")<=14, "V6 key owner priority budget regressed"
 
 async def assert_mixer(page, width):
     await page.wait_for_function("""()=>!!window.ArSonMixHardwareKeys &&
