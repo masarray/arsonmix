@@ -60,6 +60,9 @@ def inspect(page,width,height):
     out.click()
     page.locator('#tracks .strip[data-id="4"] [data-action="wireRoute"]').click()
     launch(page,"routes")
+    # A new direct jack patch can intentionally clear the transient OUT arm.
+    # Select the source in the real Navigator before reading committed routes.
+    workspace.locator('#wireWsSourceSelect').select_option('1')
     workspace.locator('[data-ws-mode="routes"]').click()
     assert workspace.locator('[data-ws-inspect="1:4"]').count()>=1,(
         width,height,"committed WIRE missing from route inspector")
