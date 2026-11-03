@@ -30,7 +30,8 @@ def source_contract():
     assert 'filter:blur' not in utility.replace(' ','').lower()
     assert ':hover' not in utility
     assert utility.count('!important')==0,'Do not add new utility CSS cascade overrides'
-    assert 'wireWsCanJoin' in html and 'data:image/svg+xml;base64,' in html
+    wire_css=(HTML.parent/'assets'/'mixer-wire-dots.css').read_text('utf-8')
+    assert 'wireWsCanJoin' in html and 'data:image/svg+xml;base64,' in (html+wire_css)
 
 async def visual(page,width):
     await page.wait_for_function("""()=>{
