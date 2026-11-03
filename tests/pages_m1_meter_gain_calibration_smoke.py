@@ -107,7 +107,7 @@ def geometry(page, density, label):
         for rig in out["rigs"]:
             compact=density=="compact"
             slim=density!="comfort"
-            close(rig["wellWidth"],27 if slim else 32,.6)
+            close(rig["wellWidth"],25 if compact else (27 if slim else 32),.6)
             close(rig["capWidth"],25 if compact else 27,.6)
             close(rig["capHeight"],50 if compact else 54,.6)
             close(rig["laneWidth"],10,.6)
@@ -115,7 +115,7 @@ def geometry(page, density, label):
             close(rig["meterLeft"],rig["headLeft"],1.3)
             assert 1<=rig["meterGap"]<=4,(label,density,"meter detached from fader",rig)
             assert 1<=rig["gap"]<=8,(label,density,"gain ruler detached from cap",rig)
-            close(rig["wellRight"],rig["rulerLeft"]-(3 if not slim else 2),.75)
+            close(rig["wellRight"],rig["rulerLeft"]-(1 if compact else (2 if slim else 3)),.75)
             assert rig["meterInside"] and rig["scaleInside"],(
                 label,density,"instrument clipped by channel",rig)
         assert out["ruler"]["x"]>=out["well"]["x"]+out["well"]["w"]-.2,(

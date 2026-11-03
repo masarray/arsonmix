@@ -372,14 +372,14 @@
  padding-left:1px!important;padding-right:1px!important;
 }
 .console-body[data-density="compact"] .strip .fader-workspace{
- grid-template-columns:70px 27px 23px!important;gap:2px!important;justify-content:start!important;
+ grid-template-columns:70px 25px 28px!important;gap:1px!important;justify-content:start!important;
 }
 .console-body[data-density="compact"] .strip .fader-workspace > .fader-box{
- width:27px!important;min-width:27px!important;max-width:27px!important;
+ width:25px!important;min-width:25px!important;max-width:25px!important;
 }
-.console-body[data-density="compact"] .strip .fader-box::before{width:27px!important}
+.console-body[data-density="compact"] .strip .fader-box::before{width:25px!important}
 .console-body[data-density="compact"] .strip .fader-scale{
- width:23px!important;min-width:23px!important;
+ width:28px!important;min-width:28px!important;
 }
 .console-body[data-density="compact"] .strip .fader-travel,
 .console-body[data-density="compact"] .strip .gain-scale-travel{
@@ -399,10 +399,10 @@
 /* M3: Standard retains the full 70px dBFS housing with a tighter but readable
    hardware group. The bank width model reserves the required 124px. */
 .console-body[data-density="standard"] .strip .fader-workspace{
- grid-template-columns:70px 27px 23px!important;gap:2px!important;justify-content:start!important;
+ grid-template-columns:70px 27px 28px!important;gap:2px!important;justify-content:start!important;
 }
 .console-body[data-density="standard"] .strip .fader-workspace>.fader-box{
  width:27px!important;min-width:27px!important;max-width:27px!important;
 }
 .console-body[data-density="standard"] .strip .fader-box::before{width:27px!important}
-.console-body[data-density="standard"] .strip .fader-scale{width:23px!important;min-width:23px!important}
+.console-body[data-density="standard"] .strip .fader-scale{width:28px!important;min-width:28px!important}
