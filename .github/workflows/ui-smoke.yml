@@ -113,6 +113,8 @@ jobs:
         run: python tests/pages_wire_dot_v42_smoke.py
       - name: Verify V43 public Pages WIRE CSS, incoming cables and propagating socket impact
         run: python tests/pages_wire_incoming_v43_smoke.py
+      - name: Verify V44 dock, cable-matched dots, right labels, folded row and broader impact
+        run: python tests/pages_wire_v44_finish_smoke.py
       - name: Verify G1/G2 LIVE mixer bank and native I/O transaction
         run: python tests/mixer_io_smoke.py
       - name: Verify MIX and FX RACK Auto Orbit workflow
