@@ -93,18 +93,18 @@ jobs:
         run: python tests/pages_contextual_buttons_smoke.py
       - name: Verify V43 public Pages WIRE CSS, incoming cables and propagating socket impact
         run: python tests/pages_wire_incoming_v43_smoke.py
-      # V10–V22 are exact historical migration/restoration tests. They compare
-      # original versioned bytes, so run them on immutable V23 rather than
+      # V10–V24 are exact historical migration/restoration tests. They compare
+      # original versioned bytes, so run them on immutable V24 rather than
       # pretending the intentional V50 layout/stylesheet changes are V22.
       # Restore PR files before ALL current GUI/function/geometry smoke tests.
-      - name: Mount pinned V22 historical CSS fixture (reversible, no CI rebaseline)
+      - name: Mount pinned V24 historical CSS fixture (reversible, no CI rebaseline)
         shell: bash
         run: |
           set -euo pipefail
-          baseline=4a2005825bc57ef586aa452f1b29523a9be0295f
+          baseline=283ce45dc84b86d42f5ce72841239d8a13c0ba4c
           backup="$RUNNER_TEMP/v50-current-sources"
           git fetch --no-tags --depth=1 origin "$baseline"
-          for path in site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-wire-dots.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-fader-assembly.css; do
+          for path in site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-wire-dots.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-fx-rack.css; do
             mkdir -p "$backup/$(dirname "$path")"
             cp "$path" "$backup/$path"
             git show "$baseline:$path" > "$path"
@@ -141,12 +141,14 @@ jobs:
         run: python tests/pages_css_architecture_v22_smoke.py
       - name: Verify V23 exact cascade deletions and browser parity
         run: python tests/pages_css_architecture_v23_smoke.py
+      - name: Verify V24 Fader/Meter/FX cascade pruning and browser parity
+        run: python tests/pages_css_architecture_v24_smoke.py
       - name: Restore and verify exact V50 PR assets before current UI smoke
         shell: bash
         run: |
           set -euo pipefail
           backup="$RUNNER_TEMP/v50-current-sources"
-          for path in site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-wire-dots.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-fader-assembly.css; do
+          for path in site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-wire-dots.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-fx-rack.css; do
             test -s "$backup/$path"
             cp "$backup/$path" "$path"
           done
@@ -234,6 +236,7 @@ jobs:
             pages-v16-wire-owner-1680.png
             pages-v22-legacy-keys-1680.png
             pages-v23-owners-pruned-1680.png
+            pages-v24-fader-meter-fx-1680.png
             pages-v7-embedded-inter-utility-1680.png
             pages-mixer-v6-OFF-1680.png
             pages-mixer-v6-ON-1680.png
