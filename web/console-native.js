@@ -52,7 +52,8 @@ function normalize(s){
          patch?.portId||'',out:String(ch.primaryOutput||''),
        controls:{faderDb:20*Math.log10(Math.max(Number(ch.fader)||0,1e-6)),
                  pan:(Number(ch.pan)||0)*100,mute:!!ch.mute,solo:!!ch.solo},
-       fx:[],sends:ch.parallelSends||[],legacy:false,nativeScoped:true});
+       fx:[],sends:ch.parallelSends||[],legacy:false,nativeScoped:true,
+       measuredL:ch.peakL,measuredR:ch.peakR});
    }
  }
  return actual;
@@ -172,8 +173,12 @@ function paintMeters(){
   if(!meter)continue;
   const index=Number(r.id)-1;
   const dynamic=snapshot.telemetry?.channelMeterRmsPeak?.[r.id];
-  let left=r.legacy?Number(legacy.channelPeaksL?.[index]):Number(dynamic);
-  let right=r.legacy?Number(legacy.channelPeaksR?.[index]):Number(dynamic);
+  // Additional CH11+/GROUP/BUS meters are native post-fader PCM taps
+  // published under accepted nativeBus ChannelIds, NOT fabricated levels.
+  let left=r.legacy?Number(legacy.channelPeaksL?.[index]):
+    r.nativeScoped?Number(r.measuredL):Number(dynamic);
+  let right=r.legacy?Number(legacy.channelPeaksR?.[index]):
+    r.nativeScoped?Number(r.measuredR):Number(dynamic);
   for(const [side,value] of [['left',left],['right',right]]){
    const node=meter.querySelector('.meter-fill.'+side);
    if(!node)continue;
@@ -256,6 +261,7 @@ function accept(s){
  const alive=new Set(rows.map(r=>r.id));for(const id of selectedIds)if(!alive.has(id))selectedIds.delete(id);
  const signature=JSON.stringify([rows.map(r=>[r.id,r.name,r.role,r.format,r.source,r.out,r.controls,r.fx]),
    s.device?.epoch,s.device?.inputEndpoints,s.legacyM4?.supportedOps,s.legacyM4?.nativeBus?.supportedOps,s.graph?.capabilities?.supportedOps]);
+ // Audio metering is a cheap targeted paint, never a full Console DOM rebuild.
  if(signature!==lastSignature){lastSignature=signature;render();}else paintMeters();
  el('transport').textContent=s.device?.outputArmed?'OUTPUT ARMED':'OUTPUT DISARMED';
  if(el('nativeOutput')){

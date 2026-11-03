@@ -35,3 +35,16 @@ test('accepted snapshot carries correct mono/stereo patch and no invented signal
  assert.match(js,/NATIVE JUCE BACKEND REQUIRED/);
  assert.doesNotMatch(js,/new AudioContext|AudioWorklet|Math\.sin\(/);
 });
+
+test('CH11 and dynamic GROUP meters consume post-fader native PCM taps',()=>{
+ const js=readFileSync('web/console-native.js','utf8');
+ const native=readFileSync('src/LiveDryRoutingLab.h','utf8');
+ assert.match(js,/nativeScoped\?Number\(r\.measuredL\)/);
+ assert.match(js,/nativeScoped\?Number\(r\.measuredR\)/);
+ assert.match(native,/nativePublisher_\.render\(/);
+ assert.match(native,/nativeMaxL\[ch\]/);
+ assert.match(native,/nativeMeterPeaksL_\[meterIndex\]/);
+ assert.match(native,/row->setProperty\("peakL"/);
+ assert.match(native,/nativeMeterEpoch_\.store\(0,std::memory_order_release\)/);
+ assert.doesNotMatch(js,/new AudioContext|AudioWorklet|Math\.sin\(/);
+});

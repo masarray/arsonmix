@@ -1437,6 +1437,10 @@ public:
             allowed.add(juce::var(juce::String(op)));
         state->setProperty("supportedOps",juce::var(allowed));
         juce::Array<juce::var> rows;
+        // Meter taps come from the SAME realtime ChannelId renderer, in
+        // accepted roster order. No JS guesses or second DSP render.
+        const bool pcmMeterValid=nativeMeterEpoch_.load(std::memory_order_acquire)==epoch();
+        std::size_t meterIndex=0;
         for(const auto& ch:routing->channels) {
             auto row=std::make_unique<juce::DynamicObject>();
             row->setProperty("id",juce::String(std::to_string(ch.id.value)));
@@ -1462,6 +1466,16 @@ public:
             }
             row->setProperty("primaryOutput",
                 juce::String(std::to_string(ch.primaryOutput.value)));
+            if(pcmMeterValid && meterIndex<nativeMeterCapacity) {
+                row->setProperty("peakL",static_cast<double>(
+                    nativeMeterPeaksL_[meterIndex].load(std::memory_order_relaxed)));
+                row->setProperty("peakR",static_cast<double>(
+                    nativeMeterPeaksR_[meterIndex].load(std::memory_order_relaxed)));
+            } else {
+                row->setProperty("peakL",0.);
+                row->setProperty("peakR",0.);
+            }
+            ++meterIndex;
             // Actual committed physical patches. Expose the verified original
             // physical pin, not the reordered callback ordinal.
             for(const auto& source:nativeAccepted_.graph.request.sources) {
@@ -1520,6 +1534,7 @@ public:
 
     void disable() noexcept {
         channelIdPcmEpoch_.store(0,std::memory_order_release);
+        nativeMeterEpoch_.store(0,std::memory_order_release);
         nativeStructureLive_=false;
         nativePublisher_.unpublish(); // CONTROL-only; audio lease retires safely
         nativeAccepted_=armix::mixer::UnifiedLegacyAccepted{};
@@ -1602,6 +1617,7 @@ public:
         // erase aliased JUCE/driver input PCM before the CH strips consume it.
         // Every failed/unpatched/MUTED route still uses this fail-silent gate.
         const auto silence=[&]() noexcept {
+            nativeMeterEpoch_.store(0,std::memory_order_release);
             if(!outputs)return;
             for(int c=0;c<outputCount;++c)
                 if(outputs[c])juce::FloatVectorOperations::clear(outputs[c],frames);
@@ -1703,6 +1719,9 @@ public:
         float peakL=0.f,peakR=0.f,monitorPeakL=0.f,monitorPeakR=0.f;
         std::array<float,count> perChannelPeaks{};
         std::array<float,count> perChannelPeaksL{},perChannelPeaksR{};
+        // Bounded realtime meter scratch for all accepted ChannelIds, not
+        // only the original ten. No allocation or graph iteration on AUDIO.
+        std::array<float,nativeMeterCapacity> nativeMaxL{},nativeMaxR{};
         std::array<float,auxCount> perAuxPeaks{};
         for(int offset=0;offset<frames;offset+=max) {
             const int n=std::min(max,frames-offset);
@@ -1714,7 +1733,7 @@ public:
                 // The current M4 import is at most 10+4+MAIN+MONITOR.
                 // Meter sources are the ACTUAL ChannelId PCM POST-fader
                 // lanes, not another mixer pass or reused M4 peak values.
-                std::array<float,fxSlots+2> tapsL{},tapsR{};
+                std::array<float,nativeMeterCapacity> tapsL{},tapsR{};
                 const auto noExtraFx=[](armix::mixer::ChannelId,float*,float*,int) noexcept {};
                 processed=nativePublisher_.render(
                     generation,shifted.data(),inputCount,
@@ -1722,6 +1741,10 @@ public:
                     monitorL?monitorL+offset:nullptr,
                     monitorR?monitorR+offset:nullptr,tapsL,tapsR);
                 if(processed) {
+                    for(std::size_t ch=0;ch<nativeMeterCapacity;++ch) {
+                        nativeMaxL[ch]=std::max(nativeMaxL[ch],tapsL[ch]);
+                        nativeMaxR[ch]=std::max(nativeMaxR[ch],tapsR[ch]);
+                    }
                     for(int ch=0;ch<count;++ch) {
                         level.channelPeakL[ch]=tapsL[ch];
                         level.channelPeakR[ch]=tapsR[ch];
@@ -1801,6 +1824,13 @@ public:
         }
         for(int b=0;b<auxCount;++b)
             auxPeaks_[b].store(perAuxPeaks[b],std::memory_order_relaxed);
+        if(channelIdRender) {
+            for(std::size_t ch=0;ch<nativeMeterCapacity;++ch) {
+                nativeMeterPeaksL_[ch].store(nativeMaxL[ch],std::memory_order_relaxed);
+                nativeMeterPeaksR_[ch].store(nativeMaxR[ch],std::memory_order_relaxed);
+            }
+            nativeMeterEpoch_.store(generation,std::memory_order_release);
+        } else nativeMeterEpoch_.store(0,std::memory_order_release);
         return true;
     }
 
@@ -1982,6 +2012,11 @@ private:
     std::atomic<int> fxReused_{0};
     std::array<std::atomic<float>,count> channelPeaks_{};
     std::array<std::atomic<float>,count> channelPeaksL_{},channelPeaksR_{};
+    // Constant-memory native post-fader meters; capacity affects only
+    // telemetry, not how many channels the audio graph can admit.
+    static constexpr std::size_t nativeMeterCapacity=128;
+    std::array<std::atomic<float>,nativeMeterCapacity> nativeMeterPeaksL_{},nativeMeterPeaksR_{};
+    std::atomic<std::uint64_t> nativeMeterEpoch_{0};
     // Exclusive render-producer state. Bounded fade starts from the exact
     // previously output sample, preventing a topology switch discontinuity.
     static constexpr int rampFrames=256;
