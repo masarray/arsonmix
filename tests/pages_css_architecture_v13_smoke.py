@@ -15,13 +15,14 @@ from pages_css_architecture_v11_smoke import HTML, check, PROPS
 
 ROOT=Path(__file__).resolve().parents[1]
 MANIFEST=ROOT/"tests/fixtures/css-v13-owner-removals.json"
-# Additive, independently fingerprinted V18/V19 revisions in the CORRECT owner.
-# The V13 pre-revision bytes, declaration-removal ledger, and parity remain
-# exact; unapproved edits to either the historical prefix or new suffix fail.
+# Independently fingerprint the approved current owner tails (V18 + M1).
+# The historic V13 prefix, declaration-removal ledger and baseline parity
+# remain exact; changing the fader/meter ruler deliberately re-approves ONLY
+# the owned suffix fingerprints, not the historical owner source.
 V18_OWNER_TAILS={
     "mixer-pan-controls.css":(294,"54fe5dbd"),
-    "mixer-fader-assembly.css":(973,"32e76b31"),
-    "mixer-meter-display.css":(956,"66160bb8"),
+    "mixer-fader-assembly.css":(971,"67b71c22"),
+    "mixer-meter-display.css":(993,"2fec79b8"),
 }
 def tail_fingerprint(text):
     h=2166136261

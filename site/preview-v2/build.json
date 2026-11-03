@@ -1,5 +1,5 @@
 {
-  "version": "preview-v48-out-internal-inset-and-optical-center",
+  "version": "preview-m1-precision-gain-and-dbfs-meter",
   "kind": "GUI_REFERENCE_ONLY",
   "live_audio": false,
   "source_pr": 285,
@@ -33,7 +33,8 @@
     "V45 only rendered incoming routes color receiving socket ring by destination channel; idle socket graphite; collision-free caption lanes on dense mixer",
     "V46 exact cable anchor on source pin and centered IN dot, LVL caption and destination-color lit center",
     "V47 OUT dot and caption inset together 4px within the OUT grid lane; dot anchor remains physical",
-    "V48 OUT dot+caption +3px inside same button (4px inset unchanged), caption line-box centered to 12px physical dot"
+    "V48 OUT dot+caption +3px inside same button (4px inset unchanged), caption line-box centered to 12px physical dot",
+    "M1 shared linear dB calibration for gain, dBFS rulers and simulated meter; 0 dB prominent, major/minor typography polished, PCM engine unchanged"
   ],
   "preserved": "V39 utility controls and Inter, WIRE V36/V37, existing routes/FX/faders/meters; no native audio changes",
   "limitations": "Static WIRE GUI reference only; not native PCM/ASIO/VST3 routing",
