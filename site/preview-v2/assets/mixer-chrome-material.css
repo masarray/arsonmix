@@ -2,18 +2,58 @@
    Design tokens: navy metal body + two-tone channel nameplates; BTN-180 plastic face.
    No heavy card shadows on the mixer; active colors are state/identity only. */
 :root{
- --am-metal-base:#0b161e;
- --am-metal-panel:#14232c;
- --am-metal-raised:#20313b;
- --am-metal-edge:#334956;
- --am-metal-inset:#030a0f;
- --am-text-primary:#dae9ef;
- --am-text-muted:#94b1bd;
- --am-accent:#66cbdd;
+ --am-metal-base:#15232c;
+ --am-metal-panel:#22333d;
+ --am-metal-raised:#2b3f4b;
+ --am-metal-edge:#41515b;
+ --am-metal-inset:#060d12;
+ --am-text-primary:#e1ebee;
+ --am-text-muted:#afc0c6;
+ --am-accent:#6cb9ca;
  --am-crystal:#e7eff0;
- --b180-off:var(--am-crystal);
- --b180-edge:#899aa0;
- --b180-off-ink:#12212a;
+ --b180-off:#cbd1d1;
+ --b180-edge:#747f7f;
+ --b180-off-ink:#172229;
+ /* Shared BTN-180 palette; final approved V13 values */
+ --b180-color:var(--b180-off);
+ --b180-border:var(--b180-edge);
+ --b180-ink:var(--b180-off-ink);
+ --b180-on-cyan:#94e8ed;
+ --b180-on-green:#91edac;
+ --b180-on-magenta:#edb8df;
+ --b180-on-purple:#d6b9f0;
+ --b180-on-mute:#f99aa4;
+ --b180-on-solo:#f4d479;
+ --b180-on-stereo:#9dd2f0;
+ /* Reusable hardware-key material, relief and microglints */
+ --am-hw-key-neutral:#3b4e59;
+ --am-hw-key-dark:#344650;
+ --am-hw-key-rim:#637783;
+ --am-hw-key-radius:2px;
+ --am-hw-key-press-y:1px;
+ --am-hw-key-face:var(--am-hw-key-neutral);
+ --am-hw-key-ink:#e3edf1;
+ --am-hw-key-border:var(--am-hw-key-rim);
+ --am-hw-key-bright:#586c79;
+ --am-hw-key-deep:#202f39;
+ --am-hw-key-wall:#1d2c35;
+ --am-hw-key-relief:inset 1px 0 0 #ecf9ff36,inset -1px 0 0 #040b106b,
+   inset 0 1px 0 #ffffff22,inset 0 -1px 0 #0008,
+   0 1px 0 var(--am-hw-key-wall),0 2px 0 #070d12;
+ --am-hw-key-flat:inset 1px 0 0 #ecf9ff25,inset -1px 0 0 #040b106b,
+   inset 0 1px 0 #0005,inset 0 -1px 0 #ffffff12,
+   0 1px 0 #070d12;
+ --am-hw-key-upper-glint:linear-gradient(90deg,transparent 0%,#ffffff3a 28%,#ffffffaa 50%,#ffffff3a 72%,transparent 100%);
+ --am-hw-key-lower-glint:linear-gradient(90deg,transparent 0%,#ffffff0d 30%,#ffffff48 50%,#ffffff0d 70%,transparent 100%);
+ /* Compact 30px utility key material */
+ --am-key30-top:#738692;
+ --am-key30-bottom:#354750;
+ --am-key30-hover-top:#8296a0;
+ --am-key30-hover-bottom:#40535d;
+ --am-key30-down-top:#27353d;
+ --am-key30-down-bottom:#151e25;
+ --am-key30-hairline:linear-gradient(90deg,transparent 0%,#ecfaffb0 50%,transparent 100%);
+ --am-key30-lowline:linear-gradient(90deg,transparent 0%,#a8c6d858 50%,transparent 100%);
 }
 html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)}
 .app{background:var(--am-metal-base)!important}

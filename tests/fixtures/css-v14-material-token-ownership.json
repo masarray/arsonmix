@@ -1,0 +1,173 @@
+{
+  "milestone": "V14",
+  "base": "e42dc3c584b3f6dab70062c746b117b2b6569c0a",
+  "chrome": {
+    "path": "mixer-chrome-material.css",
+    "before": ":root{\n --am-metal-base:#0b161e;\n --am-metal-panel:#14232c;\n --am-metal-raised:#20313b;\n --am-metal-edge:#334956;\n --am-metal-inset:#030a0f;\n --am-text-primary:#dae9ef;\n --am-text-muted:#94b1bd;\n --am-accent:#66cbdd;\n --am-crystal:#e7eff0;\n --b180-off:var(--am-crystal);\n --b180-edge:#899aa0;\n --b180-off-ink:#12212a;\n}",
+    "after": ":root{\n --am-metal-base:#15232c;\n --am-metal-panel:#22333d;\n --am-metal-raised:#2b3f4b;\n --am-metal-edge:#41515b;\n --am-metal-inset:#060d12;\n --am-text-primary:#e1ebee;\n --am-text-muted:#afc0c6;\n --am-accent:#6cb9ca;\n --am-crystal:#e7eff0;\n --b180-off:#cbd1d1;\n --b180-edge:#747f7f;\n --b180-off-ink:#172229;\n /* Shared BTN-180 palette; final approved V13 values */\n --b180-color:var(--b180-off);\n --b180-border:var(--b180-edge);\n --b180-ink:var(--b180-off-ink);\n --b180-on-cyan:#94e8ed;\n --b180-on-green:#91edac;\n --b180-on-magenta:#edb8df;\n --b180-on-purple:#d6b9f0;\n --b180-on-mute:#f99aa4;\n --b180-on-solo:#f4d479;\n --b180-on-stereo:#9dd2f0;\n /* Reusable hardware-key material, relief and microglints */\n --am-hw-key-neutral:#3b4e59;\n --am-hw-key-dark:#344650;\n --am-hw-key-rim:#637783;\n --am-hw-key-radius:2px;\n --am-hw-key-press-y:1px;\n --am-hw-key-face:var(--am-hw-key-neutral);\n --am-hw-key-ink:#e3edf1;\n --am-hw-key-border:var(--am-hw-key-rim);\n --am-hw-key-bright:#586c79;\n --am-hw-key-deep:#202f39;\n --am-hw-key-wall:#1d2c35;\n --am-hw-key-relief:inset 1px 0 0 #ecf9ff36,inset -1px 0 0 #040b106b,\n   inset 0 1px 0 #ffffff22,inset 0 -1px 0 #0008,\n   0 1px 0 var(--am-hw-key-wall),0 2px 0 #070d12;\n --am-hw-key-flat:inset 1px 0 0 #ecf9ff25,inset -1px 0 0 #040b106b,\n   inset 0 1px 0 #0005,inset 0 -1px 0 #ffffff12,\n   0 1px 0 #070d12;\n --am-hw-key-upper-glint:linear-gradient(90deg,transparent 0%,#ffffff3a 28%,#ffffffaa 50%,#ffffff3a 72%,transparent 100%);\n --am-hw-key-lower-glint:linear-gradient(90deg,transparent 0%,#ffffff0d 30%,#ffffff48 50%,#ffffff0d 70%,transparent 100%);\n /* Compact 30px utility key material */\n --am-key30-top:#738692;\n --am-key30-bottom:#354750;\n --am-key30-hover-top:#8296a0;\n --am-key30-hover-bottom:#40535d;\n --am-key30-down-top:#27353d;\n --am-key30-down-bottom:#151e25;\n --am-key30-hairline:linear-gradient(90deg,transparent 0%,#ecfaffb0 50%,transparent 100%);\n --am-key30-lowline:linear-gradient(90deg,transparent 0%,#a8c6d858 50%,transparent 100%);\n}",
+    "originalSize": 10435,
+    "newSize": 12108
+  },
+  "removedInlineRoots": [
+    {
+      "block": 1,
+      "offset": 410,
+      "source": ":root{\n --b180-off:#cbd1d1;--b180-edge:#747f7f;--b180-off-ink:#172229;\n --b180-color:var(--b180-off);--b180-border:var(--b180-edge);\n --b180-ink:var(--b180-off-ink);\n --b180-on-cyan:#94e8ed;--b180-on-green:#91edac;\n --b180-on-magenta:#edb8df;--b180-on-purple:#d6b9f0;\n --b180-on-mute:#f99aa4;--b180-on-solo:#f4d479;\n --b180-on-stereo:#9dd2f0;\n}",
+      "keys": [
+        "--b180-off",
+        "--b180-edge",
+        "--b180-off-ink",
+        "--b180-color",
+        "--b180-border",
+        "--b180-ink",
+        "--b180-on-cyan",
+        "--b180-on-green",
+        "--b180-on-magenta",
+        "--b180-on-purple",
+        "--b180-on-mute",
+        "--b180-on-solo",
+        "--b180-on-stereo"
+      ]
+    },
+    {
+      "block": 2,
+      "offset": 2417,
+      "source": ":root {\n --am-metal-base:#15232c;\n --am-metal-panel:#22333d;\n --am-metal-raised:#2b3f4b;\n --am-metal-edge:#41515b;\n --am-metal-inset:#060d12;\n --am-text-primary:#e1ebee;\n --am-text-muted:#afc0c6;\n --am-accent:#6cb9ca;\n}",
+      "keys": [
+        "--am-metal-base",
+        "--am-metal-panel",
+        "--am-metal-raised",
+        "--am-metal-edge",
+        "--am-metal-inset",
+        "--am-text-primary",
+        "--am-text-muted",
+        "--am-accent"
+      ]
+    },
+    {
+      "block": 2,
+      "offset": 42858,
+      "source": ":root{\n}",
+      "keys": []
+    },
+    {
+      "block": 2,
+      "offset": 51775,
+      "source": ":root {\n}",
+      "keys": []
+    },
+    {
+      "block": 2,
+      "offset": 54708,
+      "source": ":root {\n --am-hw-key-neutral:#3b4e59;\n --am-hw-key-dark:#344650;\n --am-hw-key-rim:#637783;\n --am-hw-key-radius:2px;\n --am-hw-key-press-y:1px;\n --am-hw-key-face:var(--am-hw-key-neutral);\n --am-hw-key-ink:#e3edf1;\n --am-hw-key-border:var(--am-hw-key-rim);\n}",
+      "keys": [
+        "--am-hw-key-neutral",
+        "--am-hw-key-dark",
+        "--am-hw-key-rim",
+        "--am-hw-key-radius",
+        "--am-hw-key-press-y",
+        "--am-hw-key-face",
+        "--am-hw-key-ink",
+        "--am-hw-key-border"
+      ]
+    },
+    {
+      "block": 2,
+      "offset": 58658,
+      "source": ":root{\n --am-hw-key-bright:#586c79;\n --am-hw-key-deep:#202f39;\n --am-hw-key-wall:#1d2c35;\n}",
+      "keys": [
+        "--am-hw-key-bright",
+        "--am-hw-key-deep",
+        "--am-hw-key-wall"
+      ]
+    },
+    {
+      "block": 2,
+      "offset": 66073,
+      "source": ":root {\n --am-hw-key-relief:inset 1px 0 0 #ecf9ff36,inset -1px 0 0 #040b106b,\n   inset 0 1px 0 #ffffff22,inset 0 -1px 0 #0008,\n   0 1px 0 var(--am-hw-key-wall),0 2px 0 #070d12;\n --am-hw-key-flat:inset 1px 0 0 #ecf9ff25,inset -1px 0 0 #040b106b,\n   inset 0 1px 0 #0005,inset 0 -1px 0 #ffffff12,\n   0 1px 0 #070d12;\n --am-hw-key-upper-glint:linear-gradient(90deg,transparent 0%,#ffffff3a 28%,#ffffffaa 50%,#ffffff3a 72%,transparent 100%);\n --am-hw-key-lower-glint:linear-gradient(90deg,transparent 0%,#ffffff0d 30%,#ffffff48 50%,#ffffff0d 70%,transparent 100%);\n}",
+      "keys": [
+        "--am-hw-key-relief",
+        "--am-hw-key-flat",
+        "--am-hw-key-upper-glint",
+        "--am-hw-key-lower-glint"
+      ]
+    },
+    {
+      "block": 2,
+      "offset": 81035,
+      "source": ":root{\n --am-key30-top:#738692;\n --am-key30-bottom:#354750;\n --am-key30-hover-top:#8296a0;\n --am-key30-hover-bottom:#40535d;\n --am-key30-down-top:#27353d;\n --am-key30-down-bottom:#151e25;\n --am-key30-hairline:linear-gradient(90deg,transparent 0%,#ecfaffb0 50%,transparent 100%);\n --am-key30-lowline:linear-gradient(90deg,transparent 0%,#a8c6d858 50%,transparent 100%);\n}",
+      "keys": [
+        "--am-key30-top",
+        "--am-key30-bottom",
+        "--am-key30-hover-top",
+        "--am-key30-hover-bottom",
+        "--am-key30-down-top",
+        "--am-key30-down-bottom",
+        "--am-key30-hairline",
+        "--am-key30-lowline"
+      ]
+    }
+  ],
+  "uniqueTokens": [
+    "--am-metal-base",
+    "--am-metal-panel",
+    "--am-metal-raised",
+    "--am-metal-edge",
+    "--am-metal-inset",
+    "--am-text-primary",
+    "--am-text-muted",
+    "--am-accent",
+    "--am-crystal",
+    "--b180-off",
+    "--b180-edge",
+    "--b180-off-ink",
+    "--b180-color",
+    "--b180-border",
+    "--b180-ink",
+    "--b180-on-cyan",
+    "--b180-on-green",
+    "--b180-on-magenta",
+    "--b180-on-purple",
+    "--b180-on-mute",
+    "--b180-on-solo",
+    "--b180-on-stereo",
+    "--am-hw-key-neutral",
+    "--am-hw-key-dark",
+    "--am-hw-key-rim",
+    "--am-hw-key-radius",
+    "--am-hw-key-press-y",
+    "--am-hw-key-face",
+    "--am-hw-key-ink",
+    "--am-hw-key-border",
+    "--am-hw-key-bright",
+    "--am-hw-key-deep",
+    "--am-hw-key-wall",
+    "--am-hw-key-relief",
+    "--am-hw-key-flat",
+    "--am-hw-key-upper-glint",
+    "--am-hw-key-lower-glint",
+    "--am-key30-top",
+    "--am-key30-bottom",
+    "--am-key30-hover-top",
+    "--am-key30-hover-bottom",
+    "--am-key30-down-top",
+    "--am-key30-down-bottom",
+    "--am-key30-hairline",
+    "--am-key30-lowline"
+  ],
+  "rootBefore": {
+    "chrome": 1,
+    "inline1": 1,
+    "inline2": 7
+  },
+  "tokenBefore": 56,
+  "tokenAfter": 45,
+  "beforeFNV": "8cb19a32",
+  "afterFNV": "6e2cc352",
+  "beforeCSS": 176024,
+  "afterCSS": 175840,
+  "beforeInline": 126354,
+  "afterInline": 124497,
+  "beforeImportant": 1354,
+  "afterImportant": 1354
+}
