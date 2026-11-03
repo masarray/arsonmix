@@ -181,6 +181,20 @@ static void verifyUniversalChannelIdFxLeaseAndLivePcm() {
     alias[1].inserts=first.inserts; // same native processor twice
     assert(Bank::prepare(epoch,2,alias,blocked)==Bank::Fault::duplicateInstance);
     assert(blocked.lanes()==0);
+    // Native PDC is not yet installed. A real JUCE AudioProcessor reporting
+    // 64 samples of plugin delay must be rejected BEFORE accepted PCM/lease
+    // publication; mixing uncompensated Return with MAIN is phase-unsafe.
+    auto latentProcessor=std::make_unique<GainFx>(1.5f);
+    latentProcessor->setLatencySamples(64);
+    latentProcessor->prepareToPlay(48000.0,64);
+    Bank::Assignment latent;
+    latent.id=ch11;latent.format=ProcessingFormat::mono;
+    latent.inserts.push_back(std::make_shared<LiveChannelFxGraph::FxInstance>(
+        std::move(latentProcessor),"latent-vst","latency-64",64));
+    const std::array<Bank::Assignment,1> latentScene{latent};
+    assert(Bank::prepare(epoch,2,latentScene,blocked)==
+           Bank::Fault::uncompensatedLatency);
+    assert(blocked.lanes()==0); // failed admission cannot mutate previous bank
     assert(Bank::prepare(epoch,2,assignments,blocked)==Bank::Fault::none);
     const auto token=original->insertInstanceId(0,0);
     auto migrated=*bank.ownerForControl(ch1,0);
