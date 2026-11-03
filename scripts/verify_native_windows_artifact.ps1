@@ -7,7 +7,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $expected = @(
-    "ArSonMix-GUI10CH-P012-Windows-x64.exe",
+    "ArSonMix-NativeConsole-CH11-EXPERIMENTAL-Windows-x64.exe",
     "BUILD_PROVENANCE.json",
     "HARDWARE_FAT_GUIDE.md",
     "README.md",
@@ -35,7 +35,8 @@ if (@(Compare-Object -ReferenceObject $expected -DifferenceObject $actual).Count
 $manifest = Get-Content -LiteralPath (Join-Path $OutputDir "BUILD_PROVENANCE.json") -Raw -Encoding UTF8 | ConvertFrom-Json
 # The first truly approved Console runtime must be proven INSIDE the shipped EXE,
 # not merely shipped alongside an old demo or hidden in unused assets.
-if ($manifest.activeGuiEntrypoint -ne "web/console-native.html__JUCE_BINARYDATA_ROOT") {
+if ($manifest.activeGuiEntrypoint -ne "web/console-native.html__JUCE_BINARYDATA_ROOT" -or
+    $manifest.nativeConsoleOnly -ne $true -or $manifest.retiredUiEmbedded -ne $false) {
     throw "STALE PRODUCT GUI: active WebView2 entrypoint not approved"
 }
 $nativeSource = [System.IO.File]::ReadAllText(
@@ -50,8 +51,8 @@ if ($manifest.webView2LoaderMode -ne "JUCE_WEBVIEW2_LOADER_STATIC_LINKED_V1" -or
     $manifest.guiStartupVerification -ne "WEBVIEW2_PREFLIGHT_AND_AR_MIX_GUI_READY_HANDSHAKE") {
     throw "Missing Windows WebView2 startup / static loader provenance"
 }
-if ($manifest.nativeDSP -ne "NATIVE_TEN_INPUT_CHANNELS_FOUR_DEDICATED_STEREO_AUX_RETURNS_MASTER__EXPLICIT_PATCH_ACK") {
-    throw "Native mixer routing provenance is not the current 10CH/4AUX production graph"
+if ($manifest.nativeDSP -ne "NATIVE_CHANNELID_CH11_DYNAMIC_INPUT__10CH4AUX_COMPAT_FALLBACK__NOT_FULL_UNIVERSAL") {
+    throw "Native mixer routing provenance is not the admitted ChannelId/compatibility graph"
 }
 if ($manifest.storageMode -ne "PORTABLE_MARKER__USER_STUDIO_EMPTY_AT_RELEASE") {
     throw "Public ZIP missing portable workspace mode provenance"
@@ -61,7 +62,7 @@ if ($portableMarker -ne "ARSONMIX_PORTABLE_WORKSPACE_V1") { throw "Invalid porta
 if (Test-Path -LiteralPath (Join-Path $OutputDir "Studio")) {
     throw "Public artifact MUST NOT bundle user-specific plugins, presets or sessions"
 }
-$exePath = Join-Path $OutputDir "ArSonMix-GUI10CH-P012-Windows-x64.exe"
+$exePath = Join-Path $OutputDir "ArSonMix-NativeConsole-CH11-EXPERIMENTAL-Windows-x64.exe"
 $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $exePath).Path)
 if ($bytes.Length -lt 4MB) { throw "REJECT: suspiciously small executable ($($bytes.Length) bytes)" }
 if ($bytes.Length -ne $manifest.guiExeBytes) { throw "Mismatch: actual EXE size and recorded size" }
@@ -85,13 +86,7 @@ $resources = @(
     @{Path="web/console-native.html"; Hash=$manifest.consoleNativeHtmlSha256},
     @{Path="web/console-native.css"; Hash=$manifest.consoleNativeCssSha256},
     @{Path="web/console-native.js"; Hash=$manifest.consoleNativeJsSha256},
-    @{Path="web/index.html"; Hash=$manifest.indexHtmlSha256},
-    @{Path="web/app.js"; Hash=$manifest.appJsSha256},
-    @{Path="web/styles.css"; Hash=$manifest.stylesCssSha256},
-    @{Path="web/plugin-ui.css"; Hash=$manifest.pluginUiCssSha256},
-    @{Path="web/plugin-ui.js"; Hash=$manifest.pluginUiJsSha256},
-    @{Path="web/bridge.js"; Hash=$manifest.bridgeJsSha256},
-    @{Path="web/monitor.js"; Hash=$manifest.monitorJsSha256}
+
 )
 $embeddedText = [Text.Encoding]::UTF8.GetString($bytes)
 foreach ($item in $resources) {
@@ -125,29 +120,23 @@ foreach ($marker in @(
 if ($manifest.guiCalibration -ne "GAIN_10_TO_MINUS60_BLACK_DETENT_AT_38PX__VU_DBFS_INDEPENDENT_TICKS") {
     throw "GUI calibration release contract is missing"
 }
-# Marker checks below supplement, not replace, full resource byte correspondence.
+# Check only the ACTIVE Console and native audio/ACK controls. Old UI
+# marker strings MUST NOT be required or reintroduced as bundled resources.
 foreach ($marker in @(
-    "function openChannelIdentity",   # latest mixer channel editor
-    'class="master-analysis"',       # native-compatible master analyzer
-    "--ari-master-cap",             # rose/silver MASTER styling
-    "gain-scale-travel",            # calibrated +10..-60 dB scale
-    "vu-scale-travel",              # independent dBFS meter ruler
-    "meter-signal-area",            # VU activity region distinct from CLIP LED
-    "fader-travel",                 # PNG black detent in 38px inset travel
-    "function syncNativeMixerControls", # JUCE WebView bridge
-    "arMixGuiReady",               # Native GUI JS ready handshake
-    "WEBVIEW2_GUI_READY_TIMEOUT",  # Visible failure, never a blank IE page
-    "AUDIO_GLITCH_WINDOW",          # engine P0-12 compiled diagnostics
-    "--b180-on-mute",              # current harmonized BTN-180 palette
-    "--b180-on-solo",              # MUTE / SOLO lightness calibration
-    "--b180-on-stereo",            # STEREO blue lightness calibration
-    "--b180-on-green",             # native device-connected green
-    "inset 5px 5px 2px -1px",      # owner-approved hardware button shadow
-    "gain-scale-travel",           # calibrated fader detent
-    "function syncNativeMixerControls" # latest native GUI state bridge
+    "arMixGuiReady",
+    "arMixConsoleSubscribe",
+    "arMixConsoleIntent",
+    "arMixConsoleSnapshot",
+    "arMixConsoleAck",
+    "nativeAddAudio",
+    "NATIVE_PATCH_CHANNEL",
+    "NATIVE_SET_CHANNEL_MIX",
+    "NATIVE_SET_CHANNEL_MUTE_SOLO",
+    "WEBVIEW2_GUI_READY_TIMEOUT",
+    "AUDIO_GLITCH_WINDOW"
 )) {
-    if ($embeddedText.IndexOf($marker, [StringComparison]::Ordinal) -lt 0) {
-        throw "Compiled GUI/engine marker absent from shipped EXE: $marker"
+    if ($embeddedText.IndexOf($marker,[StringComparison]::Ordinal) -lt 0) {
+        throw "NATIVE CONSOLE CONTRACT missing from shipped EXE: $marker"
     }
 }
 
@@ -183,7 +172,7 @@ try {
         if (@(Compare-Object -ReferenceObject $expectedZipFiles -DifferenceObject $names).Count -ne 0) {
             throw "ZIP does not contain exactly the verified distribution files"
         }
-        $entry = $zip.GetEntry("ArSonMix-GUI10CH-P012-Windows-x64.exe")
+        $entry = $zip.GetEntry("ArSonMix-NativeConsole-CH11-EXPERIMENTAL-Windows-x64.exe")
         if ($null -eq $entry -or $entry.Length -ne $bytes.Length) {
             throw "Wrong/truncated GUI executable inside ZIP"
         }
@@ -215,7 +204,7 @@ try {
     }
     Write-Host "FAT_RELEASE_ACCEPTED: source=$sha GUI_WIN64_PE32+=2"
     Write-Host "FAT_RELEASE_ACCEPTED: exeBytes=$($bytes.Length) testZipBytes=$archiveBytes sha256=$appHash"
-    Write-Host "FAT_RELEASE_ACCEPTED: full embedded GUI HTML/CSS/JS/bridge/monitor + calibrated VU/fader matched exactly"
+    Write-Host "FAT_RELEASE_ACCEPTED: only Console HTML/CSS/JS embedded; legacy GUI excluded"
     Write-Host "FAT_RELEASE_ACCEPTED: P0-12 and static WebView2 startup contract verified"
 } finally {
     if (Test-Path -LiteralPath $archivePath) { Remove-Item -LiteralPath $archivePath -Force }

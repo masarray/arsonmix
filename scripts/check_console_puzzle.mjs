@@ -59,9 +59,11 @@ const checks=[
   /channelPeaksL/.test(data.operatorApp) &&
   !/Math\.sin/.test(data.operatorApp),
   'GUI #271: actual native event bus and PCM; no browser animated meters'],
- ['JUCE BinaryData embeds release-gated operator HTML and JS',
-  /web\/console-native\.html\s+web\/console-native\.css\s+web\/console-native\.js/.test(data.cmake),
-  'FAT #270: CMake BinaryData must embed audited Console HTML/JS'],
+ ['JUCE BinaryData embeds ONLY release-gated native Console',
+  /web\/console-native\.html\s+web\/console-native\.css\s+web\/console-native\.js/.test(data.cmake) &&
+  !/web\/index\.html|web\/app\.js|web\/monitor\.js/.test(data.cmake) &&
+  !/BinaryData::index_html|BinaryData::app_js/.test(data.nativeEntry),
+  'FAT #270: bundle approved Console only; bury obsolete ten-strip GUI'],
 ];
 execFileSync(process.execPath,['--test','tests/console_v6_puzzle_seam_test.mjs'],{stdio:'inherit'});
 const blockers=checks.filter(x=>!x[1]);

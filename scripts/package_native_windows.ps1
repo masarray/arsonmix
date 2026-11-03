@@ -59,7 +59,7 @@ if ($LASTEXITCODE -ne 0 -or $gitSha -notmatch '^[0-9a-f]{40}$') {
     throw "Cannot attest packaged source Git commit"
 }
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
-$exeName = "ArSonMix-GUI10CH-P012-Windows-x64.exe"
+$exeName = "ArSonMix-NativeConsole-CH11-EXPERIMENTAL-Windows-x64.exe"
 $destination = Join-Path $OutputDir $exeName
 Copy-Item -LiteralPath $app -Destination $destination -Force
 $readme = "README.md"
@@ -78,8 +78,8 @@ $manifest = [ordered]@{
     schema = "arsonmix.native-artifact-provenance.v1"
     sourceCommit = $gitSha
     gui = "APPROVED SINGLE LIVE CONSOLE · NATIVE SNAPSHOT ONLY · UNIVERSAL FEATURES GATED"
-    engine = "R0B VERIFIED DIRECT 10CH PLUS FOUR AUX PREPARED NATIVE MIXER__HARDWARE_FAT_UNQUALIFIED"
-    nativeDSP = "NATIVE_TEN_INPUT_CHANNELS_FOUR_DEDICATED_STEREO_AUX_RETURNS_MASTER__EXPLICIT_PATCH_ACK"
+    engine = "CHANNELID_CH11_NATIVE_PCM__LEGACY_10CH4AUX_COMPAT__HARDWARE_FAT_UNQUALIFIED"
+    nativeDSP = "NATIVE_CHANNELID_CH11_DYNAMIC_INPUT__10CH4AUX_COMPAT_FALLBACK__NOT_FULL_UNIVERSAL"
     storageMode = "PORTABLE_MARKER__USER_STUDIO_EMPTY_AT_RELEASE"
     guiExeBytes = $appBytes
     guiExeMinimumBytes = $minimumGuiExeBytes
@@ -98,14 +98,9 @@ $manifest = [ordered]@{
     consoleNativeCssSha256 = (Get-FileHash -LiteralPath "web/console-native.css" -Algorithm SHA256).Hash.ToLowerInvariant()
     consoleNativeJsSha256 = (Get-FileHash -LiteralPath "web/console-native.js" -Algorithm SHA256).Hash.ToLowerInvariant()
     activeGuiEntrypoint = "web/console-native.html__JUCE_BINARYDATA_ROOT"
-    indexHtmlSha256 = (Get-FileHash -LiteralPath "web/index.html" -Algorithm SHA256).Hash.ToLowerInvariant()
-    appJsSha256 = (Get-FileHash -LiteralPath "web/app.js" -Algorithm SHA256).Hash.ToLowerInvariant()
-    stylesCssSha256 = (Get-FileHash -LiteralPath "web/styles.css" -Algorithm SHA256).Hash.ToLowerInvariant()
-    pluginUiCssSha256 = (Get-FileHash -LiteralPath "web/plugin-ui.css" -Algorithm SHA256).Hash.ToLowerInvariant()
-    pluginUiJsSha256 = (Get-FileHash -LiteralPath "web/plugin-ui.js" -Algorithm SHA256).Hash.ToLowerInvariant()
-    bridgeJsSha256 = (Get-FileHash -LiteralPath "web/bridge.js" -Algorithm SHA256).Hash.ToLowerInvariant()
-    monitorJsSha256 = (Get-FileHash -LiteralPath "web/monitor.js" -Algorithm SHA256).Hash.ToLowerInvariant()
     guiSource = "web/console-native.html + web/console-native.css + web/console-native.js (JUCE BinaryData)"
+    nativeConsoleOnly = $true
+    retiredUiEmbedded = $false
     guiCalibration = "GAIN_10_TO_MINUS60_BLACK_DETENT_AT_38PX__VU_DBFS_INDEPENDENT_TICKS"
     fatStatus = "EXPERIMENTAL_NOT_HARDWARE_QUALIFIED"
     note = "No assertion of clean 0-FX sound, measured round-trip latency or native render-hardware XRUN."
