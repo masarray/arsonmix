@@ -30,12 +30,15 @@ async def source_audit():
     assert "/* V9: CONSOLE MECHANICAL LAYOUT" in CHROME.read_text(encoding="utf-8")
     assert "/* V15 original physical patch connectors:" in HTML.read_text(encoding="utf-8")
     assert "/* V9: CONSOLE MECHANICAL LAYOUT" not in HTML.read_text(encoding="utf-8")
-    assert "/* ARSONMIX GLOBAL HARDWARE KEY V1" in HTML.read_text(encoding="utf-8")
-    assert data["newLink"] in HTML.read_text(encoding="utf-8")
+    from css_v22_restore import reconstruct as restore_m3_before_v22
+    m3_html,m3_chrome=restore_m3_before_v22()
+    assert "/* ARSONMIX GLOBAL HARDWARE KEY V1" in m3_html
+    assert "/* ARSONMIX GLOBAL HARDWARE KEY V1" in CHROME.read_text(encoding="utf-8")
+    assert data["newLink"] in m3_html
     assert data["oldLink"] in prior
     from gui_m3_compat import suffix
     m3_tail=suffix("chrome")[1]
-    assert CHROME.read_text(encoding="utf-8")==owner[:-len(m3_tail)]+prefix+m3_tail
+    assert m3_chrome==owner[:-len(m3_tail)]+prefix+m3_tail
 
 async def main():
     await source_audit()

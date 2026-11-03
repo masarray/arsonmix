@@ -108,7 +108,12 @@ def restore_baseline():
                 v21_suffix=(v21_manifest()["sourceInlinePrefix"] if name=="mixer-chrome-material.css" else "")
                 from gui_m3_compat import suffix
                 m3_tail=(suffix("chrome")[1] if name=="mixer-chrome-material.css" else "")
-                tf.write(prefix+restored+tail+v19_suffix+v21_suffix+m3_tail)
+                # Retain exact relocated V22 material in BOTH comparison pages.
+                from css_v22_restore import manifest as v22_manifest
+                v22=v22_manifest() if name=="mixer-chrome-material.css" else None
+                v22_material=(v22["sourceInlineSlice"].replace(v22["deadEmptyRule"],"",1)
+                              if v22 is not None else "")
+                tf.write(prefix+restored+tail+v19_suffix+v21_suffix+v22_material+m3_tail)
             temporary.append(Path(tf.name))
             search=f"assets/{name}?v="
             assert html.count(search)==1,name
