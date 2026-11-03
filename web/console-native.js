@@ -8,7 +8,7 @@ const el=id=>document.getElementById(id);
 const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const palette=['#1699cd','#b92e41','#cf6b1e','#b28c27','#34a544','#168762','#0e95c9','#066fa9','#7140b5','#b52893','#c32974','#586889'];
 const pending=new Map(),lastValues=new Map();
-let snapshot=null,rows=[],bank=0,selected=null,serial=0,lastSignature='',native=!!(api?.emitEvent&&api?.addEventListener);
+let snapshot=null,rows=[],bank=0,selectedIds=new Set(),serial=0,lastSignature='',native=!!(api?.emitEvent&&api?.addEventListener);
 let controlsEnabled=false;
 const announce=(message,problem=false)=>{const n=el('info');if(n){n.textContent=message;n.style.color=problem?'#e2a5a5':'';}};
 const opAvailable=op=>!!(snapshot?.productionCallbackLive?
@@ -40,11 +40,13 @@ function normalize(s){
        fx:legacy.fxInstances?.[i]||[],sends:[],legacy:true});
    }
    const extras=legacy.nativeBus?.channels||[];
-   for(const ch of extras) {
-     if(ch.role!=='INPUT'||actual.some(x=>x.id===String(ch.id)))continue;
+   for(const ch of extras){
+     const id=String(ch.id),old=actual.find(x=>x.id===id);
+     if(old){old.out=String(ch.primaryOutput||old.out);continue;}
+     if(!['INPUT','GROUP','FX_RETURN','MAIN'].includes(ch.role))continue;
      const patch=ch.source||null;
-     actual.push({id:String(ch.id),name:String(ch.name||'Channel '+ch.id),
-       role:'INPUT',format:String(ch.format||'MONO'),
+     actual.push({id,name:String(ch.name||'Channel '+id),
+       role:String(ch.role),format:String(ch.format||'STEREO'),
        source:patch?.portId||'',out:String(ch.primaryOutput||''),
        controls:{faderDb:20*Math.log10(Math.max(Number(ch.fader)||0,1e-6)),
                  pan:(Number(ch.pan)||0)*100,mute:!!ch.mute,solo:!!ch.solo},
@@ -76,7 +78,9 @@ function outputOptions(row){
 }
 function nativeStrip(r){
  const main=r.role==='MAIN',db=gain(r.controls.faderDb),pan=Number(r.controls.pan)||0;
- const can=op=>opAvailable(op)&&native;
+ const can=op=>opAvailable(op)&&native&&
+   !(snapshot?.legacyM4?.nativeBus?.structural&&
+     (op==='SET_PRIMARY_OUT'||op==='SET_PROCESSING_FORMAT'));
  const act=(op,attrs='')=>' data-op="'+op+'" data-id="'+esc(r.id)+'"'+attrs+
     (can(op)?'':' disabled title="Requires native accepted operation"');
  const role=main?'master':r.role==='GROUP'?'bus':r.role==='FX_RETURN'?'fx':'audio';
@@ -89,8 +93,8 @@ function nativeStrip(r){
    return '<div class="fxslot"><button class="fxslot-name"'+act('OPEN_INSERT_EDITOR',' data-insert="'+token+'"')+'>'+esc(slot.name||'VST3')+'</button>'+
    '<button class="fxslot-bypass"'+act('SET_INSERT_BYPASS',' data-insert="'+token+'" data-bypassed="'+!!slot.bypassed+'"')+'>'+(slot.bypassed?'OFF':'ON')+'</button></div>';
  }).join('');
- return '<article class="strip '+role+'" data-id="'+esc(r.id)+'" style="--track-color:'+color+';--ch:'+color+'" aria-label="'+esc(r.name)+'">'+
-   '<div class="strip-identity-top"><span class="identity-number">'+(main?'MASTER':esc(r.id))+'</span><span class="identity-name">'+esc(r.name)+'</span></div>'+
+ return '<article class="strip '+role+(selectedIds.has(r.id)?' selected':'')+'" data-id="'+esc(r.id)+'" style="--track-color:'+color+';--ch:'+color+'" aria-label="'+esc(r.name)+'">'+
+   '<button class="strip-identity-top" type="button" data-select-channel="'+esc(r.id)+'" aria-pressed="'+selectedIds.has(r.id)+'"><span class="identity-number">'+(main?'MASTER':esc(r.id))+'</span><span class="identity-name">'+esc(r.name)+'</span></button>'+
    '<div class="section route-section"><div class="route-top"><span class="route-indicator">IN / OUT</span><button class="mini format-badge"'+act('SET_PROCESSING_FORMAT')+'>'+ (format==='MONO'?'M':'ST')+'</button></div>'+
    '<div class="route-field"><span class="route-caption">IN</span><select class="route-select"'+act(r.nativeScoped?'NATIVE_PATCH_CHANNEL':'SET_SOURCE')+'>'+sourceOptions(r)+'</select></div>'+
    '<div class="route-field"><span class="route-caption">OUT</span><select class="route-select"'+act('SET_PRIMARY_OUT')+'>'+outputOptions(r)+'</select></div></div>'+
@@ -107,7 +111,7 @@ function nativeStrip(r){
    (format==='MONO'?'':'<div class="meter-lane"><div class="meter-fill right"></div></div>')+
    '</div><div class="vu-scale"><div class="vu-scale-travel">'+meterTick+'</div></div></div>'+
    '<div class="fader-box" style="--fader-fill:'+((db+60)/70*100)+'%;--fader-y:'+(100-(db+60)/70*100)+'%"><div class="fader-travel"><div class="cap"></div></div>'+
-   '<input class="fader" type="range" min="-60" max="10" step="0.1" value="'+db+'"'+act('SET_FADER')+'></div>'+
+   '<input class="fader" type="range" min="-60" max="10" step="0.1" value="'+db+'"'+act(r.role==='GROUP'?'NATIVE_SET_BUS_MIX':'SET_FADER')+'></div>'+
    '<div class="fader-scale"><div class="gain-scale-travel">'+gainTick+'</div></div></div></div>'+
    '<div class="bottom-section"><div class="db-value">'+fmt(db)+'</div><div class="footer-label"><span class="name">'+esc(r.name)+'</span><span class="footer-icon">♫</span><div class="color-strip"></div></div></div>'+
    '</article>';
@@ -122,6 +126,8 @@ function render(){
  const selector=el('bankSelect');selector.innerHTML=Array.from({length:max},(_,i)=>'<option value="'+i+'">BANK '+(i+1)+'</option>').join('');selector.value=String(bank);
  el('bankPrev').disabled=bank===0;el('bankNext').disabled=bank>=max-1;
  if(el('nativeAddAudio'))el('nativeAddAudio').disabled=!(opAvailable('CREATE_CHANNEL')||opAvailable('NATIVE_CREATE_CHANNEL'));
+ if(el('nativeGroup'))el('nativeGroup').disabled=!(opAvailable('NATIVE_CREATE_GROUP_SELECTED')&&selectedIds.size>0&&!snapshot?.device?.outputArmed);
+ if(el('nativeReturn'))el('nativeReturn').disabled=true;
  for(const [id,op] of [['addTrack','CREATE_CHANNEL'],['addBus','CREATE_GROUP'],['addFx','CREATE_FX_RETURN'],['clearCue','SET_CUE']])
   if(el(id))el(id).disabled=!snapshot?.productionCallbackLive||!opAvailable(op);
  for(const id of ['saveScene','recallScene','sceneSafe','sofToggle','pluginsButton','group','ungroup','copy','paste','pluginScan','pluginImport','pluginAddPath','routeParallel','routeOnly','wireMaster','wireMode'])
@@ -179,6 +185,9 @@ function submitNode(n){
  else if(op==='SET_SOURCE')send(op,row,{portId:n.value,sourceFormat:'MONO'});
  else if(op==='SET_PROCESSING_FORMAT')send(op,row,{format:row.format==='MONO'?'STEREO':'MONO'});
  else if(op==='SET_PRIMARY_OUT')send(op,row,{destinationId:n.value});
+ else if(op==='NATIVE_SET_BUS_MIX')send(op,row,{
+   gain:Math.pow(10,Math.max(-60,Math.min(10,Number(n.value)))/20),
+   pan:(Number(row.controls.pan)||0)/100});
  else if(op==='SET_FADER')send(op,row,{valueDb:Number(n.value)});
  else if(op==='SET_PAN')send(op,row,{value:Number(n.value)});
  else if(op==='SET_MUTE'||op==='SET_SOLO')send(op,row,{enabled:!row.controls[op==='SET_MUTE'?'mute':'solo']});
@@ -188,6 +197,7 @@ function submitNode(n){
 function accept(s){
  if(!s||s.schemaVersion!==6)return;
  snapshot=s;rows=normalize(s);
+ const alive=new Set(rows.map(r=>r.id));for(const id of selectedIds)if(!alive.has(id))selectedIds.delete(id);
  const signature=JSON.stringify([rows.map(r=>[r.id,r.name,r.role,r.format,r.source,r.out,r.controls,r.fx]),
    s.device?.epoch,s.device?.inputEndpoints,s.legacyM4?.supportedOps,s.legacyM4?.nativeBus?.supportedOps,s.graph?.capabilities?.supportedOps]);
  if(signature!==lastSignature){lastSignature=signature;render();}else paintMeters();
@@ -215,6 +225,19 @@ document.addEventListener('change',e=>{
  if(e.target.id==='densitySelect')document.querySelector('.console-body').dataset.density=e.target.value;
 });
 document.addEventListener('click',e=>{
+ const chosen=e.target.closest('[data-select-channel]');
+ if(chosen){
+   const id=chosen.dataset.selectChannel,row=rowFor(id);
+   if(row?.role==='INPUT'){
+     if(!e.ctrlKey&&!e.shiftKey)selectedIds.clear();
+     if(selectedIds.has(id))selectedIds.delete(id);else selectedIds.add(id);
+     document.querySelectorAll('[data-select-channel]').forEach(x=>{
+       x.closest('.strip')?.classList.toggle('selected',selectedIds.has(x.dataset.selectChannel));
+       x.setAttribute('aria-pressed',String(selectedIds.has(x.dataset.selectChannel)));
+     });
+     if(el('nativeGroup'))el('nativeGroup').disabled=!(opAvailable('NATIVE_CREATE_GROUP_SELECTED')&&selectedIds.size&&!snapshot?.device?.outputArmed);
+   }
+ }
  const n=e.target.closest('button[data-op]');
  if(n)submitNode(n);
  if(e.target.closest('#bankPrev')){bank=Math.max(0,bank-1);render();}
@@ -237,6 +260,13 @@ document.getElementById('nativeOutput')?.addEventListener('click',()=>{
  }
  api.emitEvent('arMixAction',args);
  announce(!armed?'REQUESTING NATIVE OUTPUT ARM':'REQUESTING OUTPUT MUTE');
+});
+document.getElementById('nativeGroup')?.addEventListener('click',()=>{
+ if(!native||!opAvailable('NATIVE_CREATE_GROUP_SELECTED')||!selectedIds.size)return;
+ if(snapshot?.device?.outputArmed){announce('MUTE OUTPUT before native Group structure edit',true);return;}
+ const selected=[...selectedIds].filter(id=>rowFor(id)?.role==='INPUT');
+ if(selected.length)send('NATIVE_CREATE_GROUP_SELECTED',{id:'0',legacy:false},
+   {name:'Group '+(rows.filter(r=>r.role==='GROUP').length+1),selectedChannelIds:selected,sendGain:.25});
 });
 document.getElementById('nativeAddAudio')?.addEventListener('click',()=>{
  if(!native)return;
