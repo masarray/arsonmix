@@ -79,6 +79,9 @@ function outputOptions(row){
 function nativeStrip(r){
  const main=r.role==='MAIN',db=gain(r.controls.faderDb),pan=Number(r.controls.pan)||0;
  const can=op=>opAvailable(op)&&native&&
+   !((r.role!=='INPUT')&&['SET_SOURCE','NATIVE_PATCH_CHANNEL','SET_PROCESSING_FORMAT'].includes(op))&&
+   !(r.role==='MAIN'&&['SET_FADER','SET_PAN','SET_MUTE','SET_SOLO'].includes(op))&&
+   !(r.role==='FX_RETURN'&&['SET_FADER','SET_PAN','SET_MUTE','SET_SOLO'].includes(op))&&
    !(snapshot?.legacyM4?.nativeBus?.structural&&
      (op==='SET_PRIMARY_OUT'||op==='SET_PROCESSING_FORMAT'));
  const act=(op,attrs='')=>' data-op="'+op+'" data-id="'+esc(r.id)+'"'+attrs+
@@ -96,8 +99,14 @@ function nativeStrip(r){
  return '<article class="strip '+role+(selectedIds.has(r.id)?' selected':'')+'" data-id="'+esc(r.id)+'" style="--track-color:'+color+';--ch:'+color+'" aria-label="'+esc(r.name)+'">'+
    '<button class="strip-identity-top" type="button" data-select-channel="'+esc(r.id)+'" aria-pressed="'+selectedIds.has(r.id)+'"><span class="identity-number">'+(main?'MASTER':esc(r.id))+'</span><span class="identity-name">'+esc(r.name)+'</span></button>'+
    '<div class="section route-section"><div class="route-top"><span class="route-indicator">IN / OUT</span><button class="mini format-badge"'+act('SET_PROCESSING_FORMAT')+'>'+ (format==='MONO'?'M':'ST')+'</button></div>'+
-   '<div class="route-field"><span class="route-caption">IN</span><select class="route-select"'+act(r.nativeScoped?'NATIVE_PATCH_CHANNEL':'SET_SOURCE')+'>'+sourceOptions(r)+'</select></div>'+
-   '<div class="route-field"><span class="route-caption">OUT</span><select class="route-select"'+act('SET_PRIMARY_OUT')+'>'+outputOptions(r)+'</select></div></div>'+
+   '<div class="route-field"><span class="route-caption">IN</span>'+
+     (r.role==='INPUT'?'<select class="route-select"'+act(r.nativeScoped?'NATIVE_PATCH_CHANNEL':'SET_SOURCE')+'>'+sourceOptions(r)+'</select>':
+     '<span class="route-identity">'+(main?'SUM':'BUS RECEIVE')+'</span>')+'</div>'+
+   '<div class="route-field"><span class="route-caption">OUT</span>'+
+     (r.nativeScoped?'<span class="route-identity">'+esc(
+       snapshot?.legacyM4?.nativeBus?.channels?.find(x=>String(x.id)===r.out)?.name||r.out||'MAIN')+'</span>':
+     '<select class="route-select"'+act('SET_PRIMARY_OUT')+'>'+outputOptions(r)+'</select>')+
+     '</div></div>'+
    '<div class="section fx-section"><div class="fxslot-list">'+fx+
    '<button class="fxslot-add" disabled title="LOAD_FX not admitted by native engine">+ ADD VST3</button></div></div>'+
    '<div class="section send-section"><span class="route-caption">SEND</span><span class="route-identity">'+esc((r.sends||[]).length)+' native sends</span></div>'+
@@ -270,7 +279,7 @@ document.getElementById('nativeGroup')?.addEventListener('click',()=>{
 });
 document.getElementById('nativeAddAudio')?.addEventListener('click',()=>{
  if(!native)return;
- const name='Channel '+(rows.length+1),op=opAvailable('CREATE_CHANNEL')?
+ const name='Channel '+(rows.filter(r=>r.role==='INPUT').length+1),op=opAvailable('CREATE_CHANNEL')?
    'CREATE_CHANNEL':opAvailable('NATIVE_CREATE_CHANNEL')?'NATIVE_CREATE_CHANNEL':null;
  if(op)send(op,{id:'0',legacy:false},{name,format:'MONO'});
 });
