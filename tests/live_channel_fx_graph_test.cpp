@@ -225,6 +225,23 @@ static void verifyUniversalChannelIdFxLeaseAndLivePcm() {
     assert(near(left[31],((.2f*2.f+.1f*4.f)*3.f+
                          (.1f*4.f)*.5f*2.f)*center));
     assert(near(left[31],right[31]));
+    // Real hosted JUCE VST instances remain leased exactly once while
+    // a muted GROUP silences serial dry PCM, not the parallel FX Return.
+    const auto livingBeforeMute=GainFx::living;
+    const auto heapBeforeMute=heapCalls.load(std::memory_order_relaxed);
+    assert(native.setChannelMuteSolo(epoch,2,bus,true,false));
+    assert(native.render(epoch,pins,2,left.data(),right.data(),32,false,legacyFx));
+    assert(native.render(epoch,pins,2,left.data(),right.data(),32,false,legacyFx));
+    assert(heapCalls.load(std::memory_order_relaxed)==heapBeforeMute);
+    assert(GainFx::living==livingBeforeMute && legacyFallbackCalls==0);
+    assert(near(left[31],(.1f*4.f)*.5f*2.f*center));
+    assert(native.setChannelMuteSolo(epoch,2,bus,false,false));
+    assert(native.render(epoch,pins,2,left.data(),right.data(),32,false,legacyFx));
+    assert(native.render(epoch,pins,2,left.data(),right.data(),32,false,legacyFx));
+    assert(heapCalls.load(std::memory_order_relaxed)==heapBeforeMute);
+    assert(GainFx::living==livingBeforeMute && legacyFallbackCalls==0);
+    assert(near(left[31],((.2f*2.f+.1f*4.f)*3.f+
+                         (.1f*4.f)*.5f*2.f)*center));
     // M-U2: the canonical ChannelId fader is smoothed over 64 SAMPLES,
     // not 64 frames-per-callback. A 32-frame backend callback must reach
     // only the halfway coefficient; the next 32 reaches the exact goal.

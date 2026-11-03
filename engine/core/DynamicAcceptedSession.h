@@ -144,6 +144,13 @@ public:
             return false;
         return accepted_.rememberLiveMix(id,linear,pan);
     }
+    bool setLiveMuteSolo(std::uint64_t epoch,std::uint64_t graphRevision,
+                         ChannelId id,bool mute,bool solo) noexcept {
+        if(!accepted_.find(id)||
+           !publisher_.setChannelMuteSolo(epoch,graphRevision,id,mute,solo))
+            return false;
+        return accepted_.rememberLiveMuteSolo(id,mute,solo);
+    }
     bool setLiveParallelSend(std::uint64_t epoch,std::uint64_t graphRevision,
                              ChannelId source,ChannelId destination,
                              bool preFader,float linear) noexcept {

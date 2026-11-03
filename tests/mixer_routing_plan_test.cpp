@@ -400,7 +400,7 @@ static void verifyDynamicPreparedPcm() {
     ChannelEdit solo;solo.kind=Kind::setSolo;solo.id=ids[10];solo.enabled=true;
     assert(bank.edit(bank.revision(),std::span<const ChannelEdit>(&solo,1)).ok());
     assert(DynamicPreparedMixerBlock::compile(bank,request,renderer,error));
-    assert(renderer.activeChannels()==2); // CH11 + MAIN only
+    assert(renderer.activeChannels()==6); // 5 sources retain VST tails; SOLO gates PCM
     assert(renderer.process(physical,2,l.data(),r.data(),32,fx));
     assert(close(l[0],.4f*center));
     solo.enabled=false;
@@ -522,7 +522,7 @@ static void verifyDynamicDualBusPcm() {
     muteMain.enabled=true;
     assert(bank.edit(bank.revision(),std::span<const ChannelEdit>(&muteMain,1)).ok());
     assert(DynamicPreparedMixerBlock::compile(bank,req,live,error));
-    assert(live.activeChannels()==3); // CH1, CH32 and MONITOR
+    assert(live.activeChannels()==5); // MAIN mute retains tails; MONITOR stays independent
     assert(live.process(inputs,3,mainL.data(),mainR.data(),64,fx,
                         monL.data(),monR.data()));
     assert(mainL[0]==0.f && mainR[0]==0.f);

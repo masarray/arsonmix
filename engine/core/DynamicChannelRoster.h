@@ -102,6 +102,13 @@ public:
         row.faderLinear=gain;row.pan=pan;
         return true;
     }
+    bool rememberLiveMuteSolo(ChannelId id,bool mute,bool solo) noexcept {
+        const auto it=index_.find(id.value);
+        if(!id.value||it==index_.end())return false;
+        auto& row=channels_[it->second];
+        row.mute=mute;row.solo=solo;
+        return true;
+    }
     bool rememberLiveParallelSend(ChannelId id,ChannelId destination,
                                   bool preFader,float gain) noexcept {
         if(!id.value || !destination.value || !std::isfinite(gain) ||
