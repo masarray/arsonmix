@@ -59,7 +59,7 @@ def make_baseline():
         tag = f'<link rel="stylesheet" href="assets/{name}?v={version}">'
         assert html.count(tag) == 1, name
         html = html.replace(tag, "<style>" + css + "</style>")
-    assert not any(f"css-owner-v{v}" in html for v in (11,14,15))
+    assert all(f"assets/{name}?v=" not in html for name in OWNED)
     file = tempfile.NamedTemporaryFile(
         mode="w", encoding="utf-8", suffix=".html",
         prefix=".v11-visual-baseline-", dir=HTML.parent, delete=False,
