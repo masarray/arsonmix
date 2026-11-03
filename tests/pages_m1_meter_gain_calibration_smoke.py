@@ -94,10 +94,13 @@ def math_and_preview(page,label):
     close(data["demo"][1]-data["demo"][0],6,.00001)
     assert data["demo"][2]==-60 and data["demo"][3]==0,(label,"preview clipping",data)
     btn=page.locator("#preview")
-    btn.click()
+    btn.evaluate("el=>el.click()")  # hidden in More menu at dense viewport
     page.wait_for_function("""()=>Number.parseFloat(
      document.querySelector('#tracks .strip[data-id="1"] .meter-fill.left')
       ?.style.getPropertyValue('--lit')||'0')>5""",timeout=8000)
+    if label=="pages" and page.viewport_size["width"]==1680:
+        page.locator("#tracks .strip[data-id='1'] .fader-section").screenshot(
+            path="m1-active-meter-dbfs-1680.png")
     result=page.evaluate("""() => {
       const {meterDbfsPercent,demoMeterDbfs,readDemo}=window.ArSonMixMeterCalibration;
       const {gain,frame,running}=readDemo();
@@ -110,7 +113,7 @@ def math_and_preview(page,label):
     }""")
     assert result["preview"] and "preview" in result["text"].lower(),(label,result)
     close(result["actual"],result["expected"],.0001)
-    btn.click()
+    btn.evaluate("el=>el.click()")  # hidden in More menu at dense viewport
     assert not page.evaluate("window.ArSonMixMeterCalibration.readDemo().running")
     assert page.locator("#tracks .strip[data-id='1'] .meter-fill.left").evaluate(
         "el=>el.style.getPropertyValue('--lit')")=="0%",label
@@ -142,6 +145,7 @@ def main():
                     if width==1680 and label=="pages" and density=="comfort":
                         page.locator("#tracks .strip[data-id='1'] .fader-section").screenshot(
                             path="m1-calibrated-fader-meter-1680.png")
+                if label=="pages":page.locator("#densitySelect").select_option("comfort")
                 math_and_preview(page,label)
                 assert not errors,(label,width,errors)
                 page.close()
