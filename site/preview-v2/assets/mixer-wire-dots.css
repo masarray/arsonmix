@@ -59,6 +59,9 @@
  container-type:inline-size;
  grid-template-columns:minmax(28px,1fr) minmax(30px,1.22fr) minmax(24px,1.4fr)!important;
  gap:3px!important;justify-content:stretch!important;
+ /* Keep the existing 16px approach region INSIDE the strip/tray hit test;
+    flush-to-left grid placement made near-OUT hover unclickable. */
+ padding-inline:7px 2px!important;
 }
 .console-body.wire-routing-v15 .strip .wire-tray .wire-node-out{
  display:flex!important;flex-direction:row!important;justify-content:flex-start!important;
