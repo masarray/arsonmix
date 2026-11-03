@@ -27,6 +27,11 @@ def historical_meter_css():
     old_comment="/* Keep all dBFS values on one right-hand numeral baseline. */"
     old_rule="left:4px;right:0;top:-5.5px;text-align:right;"
     assert css.count(new_comment)==1 and css.count(RULE)==1
-    prior=css.replace(new_comment,old_comment,1).replace(RULE,old_rule,1)
+    new_spacing="font-variant-numeric:lining-nums tabular-nums!important;letter-spacing:-.13em;"
+    old_spacing="font-variant-numeric:lining-nums tabular-nums!important;letter-spacing:-.035em;"
+    assert css.count(new_spacing)==1
+    prior=(css.replace(new_comment,old_comment,1)
+             .replace(RULE,old_rule,1)
+             .replace(new_spacing,old_spacing,1))
     assert prior.count(old_comment)==1 and prior.count(old_rule)==1
     return prior
