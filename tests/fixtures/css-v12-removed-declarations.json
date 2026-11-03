@@ -1,0 +1,923 @@
+{
+  "version": "v12",
+  "previousInline": 136506,
+  "nextInline": 126354,
+  "previousFNV": "39885f8a",
+  "nextFNV": "8cb19a32",
+  "previousCSS": 186176,
+  "nextCSS": 176024,
+  "previousImportant": 1449,
+  "nextImportant": 1354,
+  "removed": [
+    {
+      "block": 0,
+      "original": 2750,
+      "final": 2750,
+      "rules": 30,
+      "deadDeclarations": 0,
+      "eliminatedRules": 0,
+      "deletedEntries": 0,
+      "deletedImportant": 0,
+      "removedChars": 0,
+      "kinds": {}
+    },
+    {
+      "block": 1,
+      "original": 20121,
+      "final": 19991,
+      "rules": 99,
+      "deadDeclarations": 6,
+      "eliminatedRules": 1,
+      "deletedEntries": 6,
+      "deletedImportant": 1,
+      "removedChars": 130,
+      "kinds": {
+        "earlier-override": 3,
+        "same-value": 2,
+        "dead-rule": 1
+      }
+    },
+    {
+      "block": 2,
+      "original": 113635,
+      "final": 103613,
+      "rules": 546,
+      "deadDeclarations": 165,
+      "eliminatedRules": 30,
+      "deletedEntries": 138,
+      "deletedImportant": 94,
+      "removedChars": 10022,
+      "kinds": {
+        "dead-rule": 30,
+        "same-value": 31,
+        "earlier-override": 77
+      }
+    }
+  ],
+  "insertions": [
+    {
+      "block": 1,
+      "offset": 10736,
+      "source": "--fx-h:173px;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 1,
+      "offset": 10760,
+      "source": "--trim-h:43px;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 1,
+      "offset": 10774,
+      "source": "--switch-h:42px;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 1,
+      "offset": 10790,
+      "source": "--send-h:23px;",
+      "kind": "same-value"
+    },
+    {
+      "block": 1,
+      "offset": 10804,
+      "source": "--footer-h:46px;",
+      "kind": "same-value"
+    },
+    {
+      "block": 1,
+      "offset": 16195,
+      "source": "\n.console-body:not(.collapsed-fx){--fx-h:194px!important}",
+      "kind": "dead-rule"
+    },
+    {
+      "block": 2,
+      "offset": 2838,
+      "source": "\n.console-body .strip{\n background:linear-gradient(90deg,#1e2e39 0%,#2a3c46 10%,#293943 52%,#25343e 92%,#1d2b35 100%)!important;\n border-right:1px solid #0b151c!important;\n box-shadow:inset 1px 0 #74889439,inset -1px 0 #0b161c!important;\n}",
+      "kind": "dead-rule"
+    },
+    {
+      "block": 2,
+      "offset": 3138,
+      "source": "z-index:2!important;",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 3158,
+      "source": "\n background:linear-gradient(90deg,#22343f,#30434c 12%,#2c3e48 90%,#20303a)!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 3244,
+      "source": "\n box-shadow:inset 0 0 0 1px var(--ch),inset 0 0 0 2px #111e26b5!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 3321,
+      "source": "\n.console-body .strip .route-section{background:linear-gradient(#293b46,#23343d)!important}",
+      "kind": "dead-rule"
+    },
+    {
+      "block": 2,
+      "offset": 3412,
+      "source": "\n.console-body .strip .send-section{background:#263843!important}",
+      "kind": "dead-rule"
+    },
+    {
+      "block": 2,
+      "offset": 3477,
+      "source": "\n.console-body .strip .switch-section{background:#2c3e48!important}",
+      "kind": "dead-rule"
+    },
+    {
+      "block": 2,
+      "offset": 3629,
+      "source": "\n.console-body .strip .section{\n border-bottom:1px solid #0d2029b0!important;\n box-shadow:inset 0 -1px #73899529!important;\n}",
+      "kind": "dead-rule"
+    },
+    {
+      "block": 2,
+      "offset": 4081,
+      "source": "\n background:linear-gradient(#334752,#243743 46%,#1d303a)!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 7516,
+      "source": "\n.console-body .strip .bottom-section{background:#253944!important}",
+      "kind": "dead-rule"
+    },
+    {
+      "block": 2,
+      "offset": 10950,
+      "source": "\n.console-body .section-rail .rail-cell.send{height:var(--send-h)!important;flex:0 0 var(--send-h)!important}",
+      "kind": "dead-rule"
+    },
+    {
+      "block": 2,
+      "offset": 11382,
+      "source": "--fader-fixed-h:clamp(198px,31vh,300px)",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 12634,
+      "source": "\n  background:linear-gradient(90deg,#1b303b,#304650 12%,#293c46 80%,#1a2b36)!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 12723,
+      "source": "\n.console-body .strip .send-section{\n  background:linear-gradient(90deg,#1e303b,#293e49 12%,#253841 83%,#172c37)!important;\n}",
+      "kind": "dead-rule"
+    },
+    {
+      "block": 2,
+      "offset": 14230,
+      "source": "\n  background:linear-gradient(#1b323b,#10242d 40%,#07171e)!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 15085,
+      "source": "background:linear-gradient(#bded9c,#65b96c)!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 15139,
+      "source": "\n  box-shadow:inset 0 1px #efffcb,0 1px #06190c!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 16027,
+      "source": "\n  z-index:6;",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 22391,
+      "source": "--send-h:80px!important",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 22596,
+      "source": "\n background:linear-gradient(90deg,#142934 0%,#29404b 8%,#1b323d 51%,#233844 92%,#142732 100%)!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 22701,
+      "source": "\n border-top:1px solid #7698a353!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 22744,
+      "source": "\n box-shadow:inset 0 1px #d4f0fa16,inset 0 -1px #020b12a8!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 23276,
+      "source": "\n box-shadow:inset 0 3px 6px #0005,inset 0 1px #60879448!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 24433,
+      "source": "\n background:linear-gradient(#243a45,#122732 30%,#07151e 100%)!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 24506,
+      "source": "\n box-shadow:inset 0 1px #b3d8e818,0 -1px #000a!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 24672,
+      "source": "\n box-shadow:inset 0 1px #ecfbff34,0 2px 2px #020a0ed0!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 24739,
+      "source": "\n.console-body.wire-routing-v13 .strip .wire-socket.is-linked{\n box-shadow:inset 0 1px #c8ffd956,0 0 8px #32d17414,0 2px 2px #000a!important;\n}",
+      "kind": "dead-rule"
+    },
+    {
+      "block": 2,
+      "offset": 25013,
+      "source": "\n background:linear-gradient(#263e4a,#112530)!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 25069,
+      "source": "\n border-top:1px solid #607d8770!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 25919,
+      "source": "\n .console-body.wire-routing-v13.collapsed-send{--send-h:58px!important}",
+      "kind": "dead-rule"
+    },
+    {
+      "block": 2,
+      "offset": 26525,
+      "source": "\n --v13-fader-h:clamp(150px,calc(100dvh - 630px),485px);",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 26581,
+      "source": "\n --v13-plate:#1b2c36;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 26603,
+      "source": "\n --v13-route:#1b2d37;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 26625,
+      "source": "\n --v13-insert:#182a34;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 26648,
+      "source": "\n --v13-send:#1d2e38;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 26669,
+      "source": "\n --v13-lower:#1c2e38;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 26691,
+      "source": "\n --v13-edge:#39515c;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 29770,
+      "source": "\n margin-top:auto!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 31293,
+      "source": "background:#162a35!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 31402,
+      "source": "background:#1b2e39!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 31473,
+      "source": "box-shadow:inset 0 1px #ffffff08!important",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 31516,
+      "source": "\n.console-body .section-rail>.rail-cell[data-section]:hover{background:#2c4350!important}",
+      "kind": "dead-rule"
+    },
+    {
+      "block": 2,
+      "offset": 31605,
+      "source": "\n.console-body .section-rail>.rail-cell[data-section].collapsed{background:#223947!important}",
+      "kind": "dead-rule"
+    },
+    {
+      "block": 2,
+      "offset": 31698,
+      "source": "\n.console-body .strip{\n background:#1c2f3a!important;border-right:1px solid #10222c!important;\n box-shadow:inset 1px 0 #9bb3bd1a,inset -1px 0 #05141b55!important;\n}",
+      "kind": "dead-rule"
+    },
+    {
+      "block": 2,
+      "offset": 31862,
+      "source": "\n.console-body .strip.selected{\n background:#233b48!important;\n box-shadow:inset 0 0 0 1px var(--ch),inset 0 0 0 2px #10222d!important;\n}",
+      "kind": "dead-rule"
+    },
+    {
+      "block": 2,
+      "offset": 31999,
+      "source": "\n\n\n\n.console-body .strip .bottom-section{background:#192b36!important}",
+      "kind": "dead-rule"
+    },
+    {
+      "block": 2,
+      "offset": 34674,
+      "source": "\n background:#182b36!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 34938,
+      "source": "\n background:#112833!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 35078,
+      "source": "\n background:#1b303b!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 37859,
+      "source": "\n.console-body .section-rail>.rail-cell[data-section]:hover{background:#29424f!important}",
+      "kind": "dead-rule"
+    },
+    {
+      "block": 2,
+      "offset": 38487,
+      "source": "--send-h:80px!important",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 38511,
+      "source": "\n.console-body.wire-routing-v15:not(.collapsed-send){--send-h:160px!important}",
+      "kind": "dead-rule"
+    },
+    {
+      "block": 2,
+      "offset": 38615,
+      "source": "\n .console-body.wire-routing-v15.collapsed-send{--send-h:66px!important}",
+      "kind": "dead-rule"
+    },
+    {
+      "block": 2,
+      "offset": 38687,
+      "source": "\n .console-body.wire-routing-v15:not(.collapsed-send){--send-h:146px!important}",
+      "kind": "dead-rule"
+    },
+    {
+      "block": 2,
+      "offset": 46439,
+      "source": "\n  --am-hw-key-radius:2px;",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 46465,
+      "source": "\n  --am-hw-key-neutral:#bfc3c5;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 46496,
+      "source": "\n  --am-hw-key-dark:#46515b;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 46524,
+      "source": "\n  --am-hw-key-rim:#5f696f;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 46551,
+      "source": "\n  --am-hw-key-upper-glint:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.75) 48%,transparent 100%);",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 46659,
+      "source": "\n  --am-hw-key-lower-glint:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.34) 50%,transparent 100%);",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 46767,
+      "source": "\n  --am-hw-key-relief:inset 1px 0 0 rgba(255,255,255,.45),inset -1px 0 0 rgba(0,0,0,.25),0 2px 0 #070a0c,0 3px 3px rgba(0,0,0,.6);",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 46897,
+      "source": "\n  --am-hw-key-flat:inset 0 1px 2px rgba(0,0,0,.65),0 0 0 transparent;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 46967,
+      "source": "\n  --am-hw-key-face:var(--am-hw-key-neutral);",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 47012,
+      "source": "\n  --am-hw-key-ink:#171c20;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 47039,
+      "source": "\n  --am-hw-key-border:var(--am-hw-key-rim);",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 50993,
+      "source": "\n --am-hw-key-face:var(--am-hw-key-dark);",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 51034,
+      "source": "\n --am-hw-key-ink:#ecf4f6;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 51060,
+      "source": "\n --am-hw-key-border:#66737b;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 51316,
+      "source": "\n.console-body .strip .switch-section button.switch.on.mute{\n --am-hw-key-face:#c43b37;--am-hw-key-ink:#fff;--am-hw-key-border:#752626;\n text-shadow:0 -1px #641313!important;\n}",
+      "kind": "dead-rule"
+    },
+    {
+      "block": 2,
+      "offset": 51492,
+      "source": "\n.console-body .strip .switch-section button.switch.on.solo{\n --am-hw-key-face:#e0c23a;--am-hw-key-ink:#1d1a0c;--am-hw-key-border:#92761b;\n}",
+      "kind": "dead-rule"
+    },
+    {
+      "block": 2,
+      "offset": 51632,
+      "source": "\n.console-body .strip .switch-section button.switch.on.cue{\n --am-hw-key-face:#65b7cb;--am-hw-key-ink:#0d2530;--am-hw-key-border:#417b8e;\n}",
+      "kind": "dead-rule"
+    },
+    {
+      "block": 2,
+      "offset": 51771,
+      "source": "\n.route-choice-option.primary{\n --am-hw-key-face:#39745a;--am-hw-key-ink:#f0fff6;--am-hw-key-border:#5b9c77;\n}",
+      "kind": "dead-rule"
+    },
+    {
+      "block": 2,
+      "offset": 51881,
+      "source": "\n#identitySave{\n --am-hw-key-face:#84cbd9;--am-hw-key-ink:#0b2832;--am-hw-key-border:#5a9aab;\n}",
+      "kind": "dead-rule"
+    },
+    {
+      "block": 2,
+      "offset": 56756,
+      "source": "\n --am-hw-key-radius:2px;",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 56781,
+      "source": "\n --am-hw-key-press-y:1px;",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 56807,
+      "source": "\n --am-hw-key-relief:\n   inset 1px 0 0 rgba(255,255,255,.38),\n   inset -1px 0 0 rgba(0,0,0,.27),\n   inset 0 1px 0 rgba(255,255,255,.12),\n   0 1px 0 #050a0d,\n   0 0 0 1px #070c10,\n   0 0 0 2px #3b4d57,\n   0 1px 0 2px #04090c;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 57031,
+      "source": "\n --am-hw-key-flat:\n   inset 0 1px 0 #10171c,\n   inset 0 -1px 0 rgba(255,255,255,.07),\n   0 0 0 1px #03080c,\n   0 0 0 2px #3b4d57;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 57379,
+      "source": "\n background:#111f28!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 57410,
+      "source": "\n border-top:1px solid #07141b!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 57451,
+      "source": "\n border-bottom:1px solid #415561!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 57495,
+      "source": "\n box-shadow:inset 0 1px 0 #060d12,inset 0 -1px 0 #263a45!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 58172,
+      "source": "\n border-radius:var(--am-hw-key-radius)!important;",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 58222,
+      "source": "\n box-shadow:var(--am-hw-key-relief)!important;",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 58269,
+      "source": "\n transition:none!important;",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 58328,
+      "source": "\n:is(.command-bar button.tool,.command-bar summary.tool,\n .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,.plugin-footer button,\n .route-choice-head button,.route-choice-option,button.hw-key):active:not(:disabled){\n transform:translateY(var(--am-hw-key-press-y))!important;\n box-shadow:var(--am-hw-key-flat)!important;\n}",
+      "kind": "dead-rule"
+    },
+    {
+      "block": 2,
+      "offset": 59138,
+      "source": "\n top:0!important;",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 59156,
+      "source": "height:2px!important;",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 59177,
+      "source": "left:1px!important;",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 59196,
+      "source": "right:1px!important;",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 59218,
+      "source": "\n:is(.command-bar button.tool,.command-bar summary.tool,\n .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,.plugin-footer button,\n .route-choice-head button,.route-choice-option,button.hw-key)::after{\n bottom:0!important;height:1px!important;left:1px!important;right:1px!important;\n}",
+      "kind": "dead-rule"
+    },
+    {
+      "block": 2,
+      "offset": 61369,
+      "source": "\n --am-hw-key-upper-glint:linear-gradient(90deg,\n   rgba(233,249,255,0) 0%,rgba(233,249,255,.24) 19%,\n   rgba(246,253,255,.74) 50%,rgba(233,249,255,.24) 81%,\n   rgba(233,249,255,0) 100%);",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 61556,
+      "source": "\n --am-hw-key-lower-glint:linear-gradient(90deg,\n   rgba(208,231,240,0) 0%,rgba(208,231,240,.2) 50%,\n   rgba(208,231,240,0) 100%);",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 61798,
+      "source": "\n --am-hw-key-relief:\n   inset 1px 0 0 rgba(238,249,255,.22),\n   inset -1px 0 0 rgba(0,0,0,.43),\n   inset 0 1px 0 rgba(255,255,255,.11),\n   0 1px 0 #030b10,\n   0 0 0 1px #071219,\n   0 0 0 2px #485d68,\n   0 1px 0 2px #050f15;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 62022,
+      "source": "\n --am-hw-key-flat:\n   inset 0 1px 0 #09151b,\n   inset 0 -1px 0 rgba(220,245,255,.08),\n   0 0 0 1px #071219,\n   0 0 0 2px #485d68;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 64940,
+      "source": "\n --am-hw-key-face:#405360;",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 65085,
+      "source": "\n --am-hw-key-face:#bd344b;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 65112,
+      "source": "\n --am-hw-key-ink:#fff4f5;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 65138,
+      "source": "\n --am-hw-key-border:#ed6575;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 65279,
+      "source": "\n --am-hw-key-face:#dbad39;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 65306,
+      "source": "\n --am-hw-key-ink:#231b07;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 65332,
+      "source": "\n --am-hw-key-border:#ffdc74;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 65416,
+      "source": "\n.console-body .strip .switch-section button.switch.on.cue {\n --am-hw-key-face:#399db4;\n --am-hw-key-ink:#f5fdff;\n --am-hw-key-border:#79d5e5;\n}",
+      "kind": "dead-rule"
+    },
+    {
+      "block": 2,
+      "offset": 65590,
+      "source": "\n --am-hw-key-face:#357a65;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 65690,
+      "source": "\n --am-hw-key-face:#358c9f;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 65888,
+      "source": "\n background:#111f28!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 65919,
+      "source": "\n box-shadow:inset 0 1px 0 #071017,inset 0 -1px 0 #273c48!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 66114,
+      "source": "\n backdrop-filter:none!important;",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 66147,
+      "source": "\n -webkit-backdrop-filter:none!important;",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 66500,
+      "source": "\n --am-hw-key-relief:inset 1px 0 0 #e5f7ff37,inset -1px 0 0 #070e1377,\n   inset 0 1px 0 #e5f7ff2e,inset 0 -1px 0 #0009,\n   0 1px 0 var(--am-hw-key-wall),0 2px 0 #080e13,0 3px 0 #05090d,\n   0 0 0 1px #071017,0 0 0 2px #405762;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 66725,
+      "source": "\n --am-hw-key-flat:inset 1px 0 0 #e5f7ff23,inset -1px 0 0 #070e1377,\n   inset 0 1px 0 #0006,inset 0 -1px 0 #e1f4ff13,\n   0 1px 0 #080e13,0 2px 0 #05090d,\n   0 0 0 1px #071017,0 0 0 2px #405762;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 66918,
+      "source": "\n --am-hw-key-upper-glint:linear-gradient(90deg,transparent,#ffffff2b 18%,#ffffffb8 50%,#ffffff2b 82%,transparent);",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 67033,
+      "source": "\n --am-hw-key-lower-glint:linear-gradient(90deg,transparent,#ffffff18 26%,#ffffff5c 50%,#ffffff18 74%,transparent);",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 68053,
+      "source": "\n box-shadow:var(--am-hw-key-relief)!important;",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 68136,
+      "source": "transition:none!important;",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 68162,
+      "source": "\n filter:none!important;",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 68188,
+      "source": "\n:is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,\n .console-body .strip .switch-section button.switch,\n .identity-actions button.console-control,.plugin-footer button,\n .route-choice-head button,.route-choice-option,button.hw-key):active:not(:disabled){\n transform:translateY(1px)!important;box-shadow:var(--am-hw-key-flat)!important;\n}",
+      "kind": "dead-rule"
+    },
+    {
+      "block": 2,
+      "offset": 69492,
+      "source": "\n background:#12232d!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 69523,
+      "source": "\n box-shadow:inset 0 1px 0 #050b10,inset 1px 0 0 #08131a,\n            inset -1px 0 0 #263b47!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 73610,
+      "source": "\n display:flex!important;",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 73685,
+      "source": "\n width:100%;",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 73767,
+      "source": "background:transparent!important;",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 73800,
+      "source": "\n color:#9bb0ba;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 77676,
+      "source": "\n background:#08141b!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 77707,
+      "source": "\n border:1px solid #09131a!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 77744,
+      "source": "\n border-radius:3px!important;",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 77774,
+      "source": "\n box-shadow:inset 0 1px 0 #000,inset 1px 0 0 #02080c,\n            inset -1px 0 0 #2b424f,inset 0 -1px 0 #263b47!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 78095,
+      "source": "\n z-index:0!important;",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 78177,
+      "source": "\n background:linear-gradient(180deg,#03080d 0%,#0c1921 46%,#172a33 100%)!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 78462,
+      "source": "\n z-index:4!important;",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 78484,
+      "source": "pointer-events:none!important;",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 78514,
+      "source": "\n border-radius:3px!important;",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 78616,
+      "source": "\n box-shadow:inset 0 1px 0 #60808b5c,\n            inset 1px 0 0 #6b87904a,\n            inset -1px 0 0 #02090ebf,\n            inset 0 -1px 0 #03090e!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 79769,
+      "source": "\n --v13-fader-h:clamp(150px,calc(100dvh - 624px),490px);",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 80500,
+      "source": "\n box-shadow:inset 0 0 0 1px #061923!important;",
+      "kind": "earlier-override"
+    },
+    {
+      "block": 2,
+      "offset": 83698,
+      "source": "\n overflow:visible;",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 83729,
+      "source": "pointer-events:none;",
+      "kind": "same-value"
+    },
+    {
+      "block": 2,
+      "offset": 84150,
+      "source": "\n.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary .has-in .fold-link-in{\n fill:currentColor;stroke:currentColor;opacity:.65;\n}",
+      "kind": "dead-rule"
+    },
+    {
+      "block": 2,
+      "offset": 86533,
+      "source": "\n.console-body{\n --v13-fader-h:clamp(150px,calc(100dvh - 612px),502px);\n}",
+      "kind": "dead-rule"
+    }
+  ]
+}

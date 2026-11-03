@@ -1,0 +1,97 @@
+/* V43 WIRE DOT OWNER — the 12px pin is the only OUT indicator.
+   Neutral graphite when idle; approach/armed changes PIN FILL, never adds
+   a second outer circle or glowing key housing. Kept in this one owner block. */
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out,
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out:is(.is-near,:hover,:focus-visible,.is-source):not(:disabled){
+ background:transparent!important;border:0!important;box-shadow:none!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out .wire-pin{
+ width:12px;height:12px;box-sizing:border-box;border-radius:50%;
+ background:#4b535b!important;border:1px solid #56636c!important;
+ box-shadow:inset 0 1px 0 #ffffff12!important;filter:none!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out:is(.is-near,:hover,:focus-visible,.is-source):not(:disabled) .wire-pin{
+ background:var(--ch,#83d7b5)!important;border-color:#a6e9ce!important;
+ box-shadow:inset 0 1px 0 #e6fff846,0 0 5px var(--ch,#83d7b5)!important;
+}
+/* Preserve the original magnetic IN ring and inner socket. The inactive
+   receiver is dark even when a committed wire exists. A hovered eligible
+   receiver or snap-target lights independently of prior click-to-arm:
+   dragging a brand-new wire must NOT keep the socket dormant. */
+.console-body.wire-routing-v15:not(.wire-intent):not(.wire-dragging) .strip .wire-tray .wire-node-in{
+ color:#687881!important;border-color:#394a55!important;
+ background:#1b2b35!important;box-shadow:inset 0 1px 2px #07141c!important;
+ filter:none!important;opacity:1!important;
+}
+.console-body.wire-routing-v15:not(.wire-intent):not(.wire-dragging) .strip .wire-tray .wire-node-in .wire-arrow{
+ background:#4b535b!important;border-color:#40505a!important;
+ box-shadow:none!important;filter:none!important;
+}
+.console-body.wire-routing-v15:not(.wire-intent):not(.wire-dragging) .strip .wire-tray .wire-node-in .wire-label{
+ color:#687881!important;
+}
+.console-body.wire-routing-v15:is(.wire-intent,.wire-dragging) .strip .wire-tray .wire-node-in:is(:hover,.is-snap-target):not(.is-source){
+ color:#c9f9e8!important;border-color:#90edbf!important;
+ background:#174433!important;
+ box-shadow:inset 0 2px 4px #0009,0 0 0 2px #61c99e77!important;
+ opacity:1!important;
+}
+.console-body.wire-routing-v15:is(.wire-intent,.wire-dragging) .strip .wire-tray .wire-node-in:is(:hover,.is-snap-target):not(.is-source) .wire-arrow{
+ background:var(--ch,#8de1bc)!important;border-color:#c7ffe6!important;
+ box-shadow:0 0 5px var(--ch,#8de1bc)!important;
+}
+.console-body .strip.selected::after{
+ border-width:1px!important;opacity:.58!important;box-shadow:none!important;
+}
+
+/* The same original pin grows subtly while held; never create a second ring. */
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out.is-drag-origin:not(.is-snap-locked) .wire-pin{
+ transform:scale(1.27)!important;transform-origin:center!important;
+ background:var(--ch,#83d7b5)!important;border-color:#b1f6d7!important;
+ box-shadow:inset 0 1px 0 #e6fff846,0 0 5px var(--ch,#83d7b5)!important;
+}
+
+/* V44 original WIRE component: labels sit to the right of the physical icons. */
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out small,
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in .wire-label{
+ bottom:auto!important;top:50%!important;transform:translateY(-50%);
+ font:600 7px/9px Inter,'Segoe UI',sans-serif!important;letter-spacing:0!important;
+ white-space:nowrap;pointer-events:none;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out small{left:18px!important}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in .wire-label{left:29px!important}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-pot .wire-gain-caption{
+ position:absolute;left:23px;top:50%;transform:translateY(-50%);
+ font:600 7px/9px Inter,'Segoe UI',sans-serif;letter-spacing:0;
+ color:#91aab5;white-space:nowrap;pointer-events:none;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-pot.is-active .wire-gain-caption{color:#b9d4de}
+/* Compact retains three usable touch targets without overflow. */
+.console-body.wire-routing-v15[data-density="compact"] .strip .wire-tray,
+.console-body.wire-routing-v15[data-density="compact"] .strip .wire-tray.linked{
+ grid-template-columns:28px 36px 22px!important;gap:2px!important;
+}
+.console-body.wire-routing-v15[data-density="compact"] .strip .wire-tray .wire-gain-caption{display:none}
+/* A cable actually rendered in the viewport owns the hue and alpha of its
+   ORIGINAL OUT pin and IN center. No committed but hidden edge can illuminate. */
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out[data-wire-visible="true"] .wire-pin{
+ background:var(--wire-edge-color)!important;opacity:var(--wire-edge-opacity);
+}
+.console-body.wire-routing-v15:not(.wire-intent):not(.wire-dragging) .strip .wire-tray .wire-node-in[data-wire-visible="true"] .wire-arrow,
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in[data-wire-visible="true"] .wire-arrow{
+ background:var(--wire-edge-color)!important;opacity:var(--wire-edge-opacity);
+}
+
+/* V44 WIRE geometry belongs to this component, not the V12 historical
+   console cascade. Rail + strips share a single 27px folded height token. */
+.console-body.wire-routing-v15.collapsed-send{--send-h:27px!important}
+.console-body.wire-routing-v15.collapsed-send .strip .send-section.wire-section{
+ height:27px!important;min-height:27px!important;max-height:27px!important;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary{
+ flex:0 0 26px!important;height:26px!important;min-height:26px!important;max-height:26px!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray,
+.console-body.wire-routing-v15 .strip .wire-tray.linked{
+ grid-template-columns:30px 40px 44px!important;gap:2px!important;
+}
