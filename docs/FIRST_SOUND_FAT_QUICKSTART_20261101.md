@@ -51,3 +51,14 @@ One real device, one verified I/O clock, wired monitoring, LOW output gain and i
 
 ### SHA authority for native PR builds
 The Windows workflow explicitly checks out **`github.event.pull_request.head.sha`**, verifies it against `git rev-parse HEAD` **before** building, and packages the same `sourceCommit`. This avoids GitHub Actions' default transient PR merge commit being mislabelled as the ENGINE HEAD. If provenance SHA differs from the run's exact source SHA, **STOP**; do not start hardware FAT. The GUI and ENGINE on the *new integration branch* still require their own joined exact-SHA test before final UAT.
+
+
+## Matched 0FX / 1FX physical FAT — experimental joined executable (3 Nov 2026)
+
+The packaged `ArSonMix-Hardware-FAT.ps1` collects human-observed evidence, never starts audio or validates acoustic quality by itself. From the **extracted verified Windows ZIP**, run `-Action Verify` first. Use the **same native-verified ASIO/WASAPI driver, device name, 48 kHz/other actual rate, buffer, physical input and output pins** for both runs; enter only what AUDIO SETUP / SIGNAL CHECK actually displays. Do not type illustrative sample values as if they were hardware readings.
+
+Complete `-Mode DRY_THROUGH_0FX` with all VST3 inserts removed, `-Wired`, low listening level, `-Action Start`, at least **1800 seconds**, then `-Action Stop -ReportPath "<COPY FULL REPORT saved text>" -Result CLEAR/CRACKLE -Witness "<operator>"`. This baseline must have the full report, witness and a conclusive observation before starting 1FX.
+
+Next load **exactly one real native VST3** into the applicable audio channel, ensure it is active/not bypassed and the native audio route still matches. Use `-Action Start -Mode LIVE_THROUGH_1FX -FxCount 1 -Vst3Name "<name shown in native FX rack>" -Wired` plus **identical** `-Backend`, `-SampleRate`, `-BufferFrames`, `-InputPins`, `-OutputPins`, `-CaptureEndpoint` and `-RenderEndpoint` as the 0FX run. The collector refuses to begin if any detail or the witnessed baseline is missing/mismatched. Run another **1800-second** wired observation, then `-Action Stop` with the new full diagnostic report and witness. Run `-Action Summary` to create `FAT_SUMMARY.json`.
+
+The existing OUTPUT_ONLY_TONE and CAPTURE_ONLY isolation runs are also required in the summary. `EVIDENCE_READY_FOR_HUMAN_REVIEW` requires all four modes and matching 0FX/1FX conditions. The VST3 name/count, audibility and crackle observations are **operator reports**, not measurements automatically obtained from the plugin or DAC. `hardwareCertified` and `physicalAudibilityVerifiedBySoftware` always remain **false**; issue #15 and GUI/ChannelId universal release blockers are not cleared by running the script.

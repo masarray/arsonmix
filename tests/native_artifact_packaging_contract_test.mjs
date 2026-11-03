@@ -162,7 +162,7 @@ test('native sourceCommit attest matches GitHub PR head and exact compiled sourc
 
 test('field FAT collector is packaged, checked against source + ZIP hash, never certifies audio',()=>{
   const collector=read('scripts/collect_hardware_fat_windows.ps1');
-  for(const part of ['OUTPUT_ONLY_TONE','CAPTURE_ONLY','DRY_THROUGH_0FX','FAT_RUNS.json',
+  for(const part of ['OUTPUT_ONLY_TONE','CAPTURE_ONLY','DRY_THROUGH_0FX','LIVE_THROUGH_1FX','FAT_RUNS.json',
       'FAT_SUMMARY.json','elapsedSeconds','reportSha256','hardwareCertified=$false',
       'Get-FileHash','sourceCommit','PSScriptRoot']) assert.ok(collector.includes(part),part);
   assert.match(packaging,/fatCollectorSha256 = /);
@@ -172,4 +172,32 @@ test('field FAT collector is packaged, checked against source + ZIP hash, never 
   assert.match(verify,/Missing FAT collector inside ZIP/);
   assert.doesNotMatch(collector,/AudioDeviceManager|setAudioDeviceSetup|startAudio|armOutput|backend\.emitEvent/i);
   assert.match(workflow,/ParseFile\('scripts\/collect_hardware_fat_windows\.ps1'/);
+});
+
+test('joined FAT 1FX compares the same verified hardware as witnessed 0FX, never self-certifies',()=>{
+  const script=read('scripts/collect_hardware_fat_windows.ps1');
+  // The field collector is an *operator evidence journal*, not a fake VST3
+  // host. Start must fail BEFORE a 30-minute soak on mismatched drivers.
+  for(const required of [
+    "[ValidateRange(0,8)][int]$FxCount=0",
+    "[string]$Vst3Name=''",
+    "$Mode -eq 'LIVE_THROUGH_1FX'",
+    "$FxCount -ne 1",
+    "the active native VST3 rack",
+    "Record a completed 30-minute wired 0FX baseline",
+    "1FX must use the identical ASIO/WASAPI device",
+    "backend, clock, buffer and physical routes must match",
+    "operatorReportedFxCount=$FxCount",
+    "operatorReportedVst3Name=$Vst3Name.Trim()",
+    "fxComparisonSource='OPERATOR_REPORTED_ONLY'",
+    "hardwareCertified=$false",
+    "physicalAudibilityVerifiedBySoftware=$false"
+  ]) assert.ok(script.includes(required),required);
+  assert.match(script,/\$baseline\[0\]\.elapsedSeconds -lt 1800/);
+  assert.match(script,/\$base\.captureEndpoint -ne \$CaptureEndpoint/);
+  assert.match(script,/\$base\.renderEndpoint -ne \$RenderEndpoint/);
+  assert.match(script,/\$base\.capturePins -join ','/);
+  assert.match(script,/\$base\.renderPins -join ','/);
+  assert.match(script,/\$run\.elapsedSeconds -lt 1800/);
+  assert.doesNotMatch(script,/AudioDeviceManager|setAudioDeviceSetup|startAudio|armOutput|backend\.emitEvent/i);
 });

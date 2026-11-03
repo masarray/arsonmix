@@ -2,7 +2,7 @@
 # Offline Windows field evidence recorder. NEVER controls audio devices, DSP, ARM or plugins.
 param(
   [ValidateSet('Verify','Start','Stop','Summary')][string]$Action='Verify',
-  [ValidateSet('OUTPUT_ONLY_TONE','CAPTURE_ONLY','DRY_THROUGH_0FX')][string]$Mode='DRY_THROUGH_0FX',
+  [ValidateSet('OUTPUT_ONLY_TONE','CAPTURE_ONLY','DRY_THROUGH_0FX','LIVE_THROUGH_1FX')][string]$Mode='DRY_THROUGH_0FX',
   [string]$Backend='',
   [int]$SampleRate=0,
   [int]$BufferFrames=0,
@@ -10,6 +10,10 @@ param(
   [string]$OutputPins='',
   [string]$CaptureEndpoint='',
   [string]$RenderEndpoint='',
+  # MANUALLY read from the native VST3 rack; not a synthetic software probe.
+  # A 1FX run must identify exactly one active, non-bypassed vendor insert.
+  [ValidateRange(0,8)][int]$FxCount=0,
+  [string]$Vst3Name='',
   [switch]$Wired,
   [ValidateSet('CLEAR','CRACKLE','INCONCLUSIVE')][string]$Result='INCONCLUSIVE',
   [string]$ReportPath='',
@@ -85,8 +89,42 @@ if ($Action -eq 'Start') {
   if ($Mode -eq 'CAPTURE_ONLY' -and ($outputs.Count -ne 0 -or $inputs.Count -lt 1)) {
     throw 'CAPTURE_ONLY must have NO render pins and a real capture pin'
   }
-  if ($Mode -eq 'DRY_THROUGH_0FX' -and ($inputs.Count -lt 1 -or $outputs.Count -lt 1)) {
-    throw 'DRY_THROUGH_0FX needs verified capture and render pins'
+  if ($Mode -in @('DRY_THROUGH_0FX','LIVE_THROUGH_1FX') -and
+      ($inputs.Count -lt 1 -or $outputs.Count -lt 1)) {
+    throw 'Live-through FAT requires actual capture and render pins'
+  }
+  # Prevent confusing a 0FX soak with a real active vendor effect. The
+  # operator enters verified-in-GUI details; collector cannot observe DSP.
+  if ($Mode -in @('DRY_THROUGH_0FX','LIVE_THROUGH_1FX') -and -not $Wired) {
+    throw 'Both matched 0FX/1FX tests require actual -Wired hardware routing'
+  }
+  if ($Mode -eq 'LIVE_THROUGH_1FX') {
+    if ($FxCount -ne 1 -or [string]::IsNullOrWhiteSpace($Vst3Name) -or
+        $Vst3Name.Length -gt 120) {
+      throw '1FX FAT requires -FxCount 1 and -Vst3Name copied from the active native VST3 rack'
+    }
+    # A user should not spend another 30 minutes on an incomparable setup.
+    # Compare against the most recent completed, witnessed 0FX baseline
+    # BEFORE the 1FX timer starts; never accept a guess about the device.
+    $baseline=@($j.sessions | Where-Object { $_.mode -eq 'DRY_THROUGH_0FX' } | Select-Object -Last 1)
+    if ($baseline.Count -ne 1 -or $baseline[0].elapsedSeconds -lt 1800 -or
+        -not $baseline[0].wired -or -not $baseline[0].reportSha256 -or
+        -not $baseline[0].witness -or
+        $baseline[0].operatorObservation -eq 'INCONCLUSIVE') {
+      throw 'Record a completed 30-minute wired 0FX baseline with witness and full report before 1FX'
+    }
+    $base=$baseline[0]
+    if ($base.backend -ne $Backend -or
+        $base.sampleRate -ne $SampleRate -or
+        $base.bufferFrames -ne $BufferFrames -or
+        ($base.capturePins -join ',') -ne ($inputs -join ',') -or
+        ($base.renderPins -join ',') -ne ($outputs -join ',') -or
+        $base.captureEndpoint -ne $CaptureEndpoint -or
+        $base.renderEndpoint -ne $RenderEndpoint) {
+      throw '1FX must use the identical ASIO/WASAPI device, clock, buffer and physical ports as the 0FX baseline'
+    }
+  } elseif ($FxCount -ne 0 -or -not [string]::IsNullOrWhiteSpace($Vst3Name)) {
+    throw 'Only LIVE_THROUGH_1FX accepts an active VST3 rack; other FAT modes require zero FX'
   }
   # The operator must select the mode in the running native app FIRST.
   # Starting this timer does not change any endpoint or output ARM.
@@ -100,6 +138,8 @@ if ($Action -eq 'Start') {
     renderPins=$outputs
     captureEndpoint=$CaptureEndpoint
     renderEndpoint=$RenderEndpoint
+    operatorReportedFxCount=$FxCount
+    operatorReportedVst3Name=$Vst3Name.Trim()
     wired=[bool]$Wired
   }
   Save-Journal $j
@@ -132,6 +172,8 @@ if ($Action -eq 'Stop') {
     renderPins=$j.active.renderPins
     captureEndpoint=$j.active.captureEndpoint
     renderEndpoint=$j.active.renderEndpoint
+    operatorReportedFxCount=$j.active.operatorReportedFxCount
+    operatorReportedVst3Name=$j.active.operatorReportedVst3Name
     wired=$j.active.wired
     operatorObservation=$Result
     witness=$Witness
@@ -144,13 +186,15 @@ if ($Action -eq 'Stop') {
   Save-Journal $j
   Write-Host ('FAT '+$session.mode+' ended: '+$elapsed+' seconds; observation='+$Result)
   if ($null -eq $reportHash) { Write-Warning 'No full report supplied. Evidence will be incomplete.' }
-  if ($session.mode -eq 'DRY_THROUGH_0FX' -and $elapsed -lt 1800) { Write-Warning 'Under 30 minutes; this does NOT satisfy the 0FX soak gate.' }
+  if ($session.mode -in @('DRY_THROUGH_0FX','LIVE_THROUGH_1FX') -and $elapsed -lt 1800) {
+    Write-Warning 'Under 30 minutes; this does NOT satisfy the matched 0FX/1FX soak comparison.'
+  }
   exit 0
 }
 if ($Action -eq 'Summary') {
   $missing=@()
   $selected=@()
-  foreach ($required in @('OUTPUT_ONLY_TONE','CAPTURE_ONLY','DRY_THROUGH_0FX')) {
+  foreach ($required in @('OUTPUT_ONLY_TONE','CAPTURE_ONLY','DRY_THROUGH_0FX','LIVE_THROUGH_1FX')) {
     $s=@($j.sessions | Where-Object { $_.mode -eq $required } | Select-Object -Last 1)
     if ($s.Count -eq 0) { $missing+= $required; continue }
     $selected+= $s[0]
@@ -158,9 +202,35 @@ if ($Action -eq 'Summary') {
       $missing+=($required+': report/observation/witness missing')
     }
   }
-  $dry=@($selected | Where-Object { $_.mode -eq 'DRY_THROUGH_0FX' })
-  if ($dry.Count -eq 1 -and ($dry[0].elapsedSeconds -lt 1800 -or -not $dry[0].wired)) {
-    $missing+='DRY_THROUGH_0FX: 1800 seconds on wired route required'
+  foreach ($mode in @('DRY_THROUGH_0FX','LIVE_THROUGH_1FX')) {
+    $matches=@($selected | Where-Object { $_.mode -eq $mode })
+    if ($matches.Count -eq 1) {
+      $run=$matches[0]
+      if ($run.elapsedSeconds -lt 1800 -or -not $run.wired) {
+        $missing+=($mode+': 1800 seconds on wired route required')
+      }
+      if ($mode -eq 'LIVE_THROUGH_1FX' -and
+          ($run.operatorReportedFxCount -ne 1 -or
+           [string]::IsNullOrWhiteSpace($run.operatorReportedVst3Name))) {
+        $missing+='LIVE_THROUGH_1FX: native vendor insert identity missing'
+      }
+    }
+  }
+  # Compare like-for-like driver, clock, buffer, input/output pins before
+  # attributing any crackle difference to one vendor VST3.
+  $zero=@($selected | Where-Object { $_.mode -eq 'DRY_THROUGH_0FX' })
+  $one=@($selected | Where-Object { $_.mode -eq 'LIVE_THROUGH_1FX' })
+  if ($zero.Count -eq 1 -and $one.Count -eq 1) {
+    $base=$zero[0];$withFx=$one[0]
+    if ($base.backend -ne $withFx.backend -or
+        $base.sampleRate -ne $withFx.sampleRate -or
+        $base.bufferFrames -ne $withFx.bufferFrames -or
+        ($base.capturePins -join ',') -ne ($withFx.capturePins -join ',') -or
+        ($base.renderPins -join ',') -ne ($withFx.renderPins -join ',') -or
+        $base.captureEndpoint -ne $withFx.captureEndpoint -or
+        $base.renderEndpoint -ne $withFx.renderEndpoint) {
+      $missing+='0FX/1FX: backend, clock, buffer and physical routes must match for valid comparison'
+    }
   }
   if ($null -ne $j.active) { $missing+='An active session must be stopped first' }
   $state=if ($missing.Count -eq 0) { 'EVIDENCE_READY_FOR_HUMAN_REVIEW' } else { 'EVIDENCE_INCOMPLETE' }
@@ -172,10 +242,11 @@ if ($Action -eq 'Summary') {
     status=$state
     hardwareCertified=$false
     physicalAudibilityVerifiedBySoftware=$false
+    fxComparisonSource='OPERATOR_REPORTED_ONLY'
     unresolvedIssue=15
     sessions=$selected
     blockers=$missing
-    caution='Observations are human-entered. Validate driver clocks, RAW/MAIN PCM, glitch windows and speaker audio manually. Capture flags are NOT render xruns.'
+    caution='Observations and VST3 identity are human-entered, not hardware telemetry. Review real 0FX/1FX audio and exact clock/pins before attributing crackles. Capture flags are NOT render xruns.'
   }
   $outPath=Join-Path $root 'FAT_SUMMARY.json'
   $resultJson | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $outPath -Encoding UTF8

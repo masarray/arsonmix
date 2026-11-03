@@ -43,3 +43,10 @@ The trace file MUST be schema v2 WebView native ACK/PCM state with \`provenance:
 
 ### PR #278 V8 — adaptive geometry (2 Nov 2026)
 The newest isolated design study `eda57f931ae3cc2872579df29cdf4e1486592b64` adds density-aware bank capacity (Comfort 150px, Standard 125px, Compact 105px), corrected 32px rail budget and pinned MAIN at the same channel width. Folded Route, FX and Send children must be `display:none`, never clipped into 23px. Source authority gate now reports these as native GUI blockers; actual Chromium rendered geometry remains a separate test (`design-references/audition-mixer-study/visual_layout_audit_v8.py`). No simulated DSP from the reference enters the app.
+
+
+### Joined hardware 1FX comparison recorder (3 Nov 2026)
+
+The native Windows FAT ZIP now includes a source+EXE hash-bound offline collector with a fourth explicit mode, `LIVE_THROUGH_1FX`, alongside OUTPUT_ONLY_TONE, CAPTURE_ONLY and DRY_THROUGH_0FX. The 1FX mode requires a **completed witnessed 1800-second wired 0FX baseline with full report** before starting. Its native GUI operator-reported VST3 name and count=1 are journalled, and the backend, rate, frames, capture/render endpoint names and ordered physical pins must exactly match the baseline. A second 1800-second wired 1FX run and separate full diagnostic report are required for the summary to become `EVIDENCE_READY_FOR_HUMAN_REVIEW`. The first mismatch is rejected before starting the timer.
+
+This is stricter than the legacy v6 automated release-intake minimum, which already requires 0FX issue #15 evidence. The new fourth-mode summary requirement is **field review evidence**; it neither changes the native PCM gate nor fabricates plugin telemetry, acoustic measurements, hardware certification or universal ChannelId readiness. The existing independent `console_v6_fat_gate.mjs` continues to return `certified:false`.
