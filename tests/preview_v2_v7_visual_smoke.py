@@ -51,8 +51,10 @@ def audit_geometry(page, title):
                     problems.push('29px physical key height regression '+tag);
             }
             const cap=t.querySelector('.fader-travel .cap');
-            if(!cap||Math.abs(r(cap).width-23)>1.5||Math.abs(r(cap).height-48)>1.5)
-                problems.push('scaled 23x48 fader cap missing '+tag);
+            const density=document.querySelector('.console-body')?.dataset.density;
+            const [cw,ch]=density==='compact'?[25,50]:[27,54];
+            if(!cap||Math.abs(r(cap).width-cw)>.75||Math.abs(r(cap).height-ch)>.75)
+                problems.push('M2 '+cw+'x'+ch+' physical fader cap missing '+tag);
             const route=t.querySelector('.route-section');
             if(route&&route.scrollHeight>route.clientHeight+3)
                 problems.push('IN/OUT clipped '+tag);
