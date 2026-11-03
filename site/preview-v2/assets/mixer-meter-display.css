@@ -193,3 +193,14 @@
   color:#f0fbff!important;font-weight:600!important;
 }
 .console-body .strip .meter-box .vu-tick.minor span{display:none!important}
+
+/* M1.1: 3-character dBFS values need ~16px of ink; the legacy 19px ruler
+   left only 15px after its tick gutter. Reallocate 2px INSIDE the original
+   51px instrument housing (30/19 → 28/21); retain LED lane widths, 0/−60
+   vertical calibration, label right edge and full meter-module footprint. */
+.console-body .strip .meter-box .vu-bars{
+  flex-basis:28px;width:28px;min-width:28px;max-width:28px;
+}
+.console-body .strip .meter-box .vu-scale{
+  flex-basis:21px;width:21px;min-width:21px;max-width:21px;
+}
