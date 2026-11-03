@@ -105,6 +105,8 @@ jobs:
         run: python tests/pages_controls_v6_smoke.py
       - name: Verify CSS-built MUTE reference face and active/inactive interaction
         run: python tests/pages_mute_css_reference_smoke.py
+      - name: Validate approved PNG preview with independent stable V45 mixer
+        run: python tests/pages_v45_native_png_preview_smoke.py
       - name: Run mixer UI smoke tests
         run: python tests/ui_smoke.py
       - name: Verify Preview V2 V7 physical visual geometry and modeless mixer workflow
