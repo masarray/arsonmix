@@ -85,6 +85,9 @@ def mount_original():
     from css_v18_restore import mount_owner as mount_chrome
     html,old_chrome=mount_chrome(html)
     temporary.extend(old_chrome)
+    from css_v19_restore import mount_owners as mount_pre_v19
+    html,old_controls=mount_pre_v19(html,include_chrome=False)
+    temporary.extend(old_controls)
     try:
         f=tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",suffix=".html",
             prefix=".v17-old-console-",dir=HTML.parent,delete=False)

@@ -20,11 +20,12 @@ MANIFEST=ROOT/"tests/fixtures/css-v13-owner-removals.json"
 # remain exact; changing the fader/meter ruler deliberately re-approves ONLY
 # the owned suffix fingerprints, not the historical owner source.
 V18_OWNER_TAILS={
+    "mixer-section-controls.css":(1017,"f950adfc"), # V19 exact toolbar tail
     "mixer-pan-controls.css":(294,"01ccf01a"),
     "mixer-fader-assembly.css":(5239,"21b50649"),
     "mixer-meter-display.css":(4159,"94c0c481"),
     "mixer-plugin-browser.css":(4285,"1ce2ede9"), # V17 exact appended owner suffix
-    "mixer-fx-rack.css":(310,"bc79a5b1"), # M3 empty FX placeholder
+    "mixer-fx-rack.css":(310,"bc79a5b1"), # M3 inert + Add FX row
 }
 def tail_fingerprint(text):
     h=2166136261
@@ -101,8 +102,10 @@ def restore_baseline():
                 # original V13 removal history differs in these reconstructions.
                 # Keep V18 moved material before historical V13 Chrome source.
                 prefix=(v18_manifest()["prefix"] if name=="mixer-chrome-material.css" else "")
+                from css_v19_restore import manifest as v19_manifest
+                v19_suffix=(v19_manifest()["movedChromeSuffix"] if name=="mixer-chrome-material.css" else "")
                 from gui_m3_compat import suffix
-                tf.write(prefix+restored+tail+(suffix("chrome")[1] if name=="mixer-chrome-material.css" else ""))
+                tf.write(prefix+restored+tail+v19_suffix+(suffix("chrome")[1] if name=="mixer-chrome-material.css" else ""))
             temporary.append(Path(tf.name))
             search=f"assets/{name}?v="
             assert html.count(search)==1,name

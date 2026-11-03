@@ -38,8 +38,10 @@ def suffix(owner):
     record=d[owner]
     file={"chrome":"mixer-chrome-material.css","fxRack":"mixer-fx-rack.css"}[owner]
     css=(ROOT/"site/preview-v2/assets"/file).read_text(encoding="utf-8")
-    base=css[:record["baseSize"]]
-    tail=css[record["baseSize"]:]
+    # Later CSS-owner milestones can append their own material before M3.
+    # Validate the immutable M3 tail by suffix, not its former base offset.
+    base=css[:-record["suffixSize"]]
+    tail=css[-record["suffixSize"]:]
     assert (len(tail),fingerprint(tail))==(
         record["suffixSize"],record["suffixFNV"]),(file,"M3 owner tail drift")
     return base,tail

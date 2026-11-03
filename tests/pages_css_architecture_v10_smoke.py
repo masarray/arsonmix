@@ -49,8 +49,11 @@ def source_gate():
     # Immutable historical CSS source: V18 moved the former inline middle block.
     from css_v18_restore import reconstruct as restore_previous_chrome
     previous_chrome=restore_previous_chrome()[1]
+    from css_v19_restore import reconstruct as restore_pre_v19
+    _,previous_sections,_=restore_pre_v19()
     all_css = "".join(
         (previous_chrome if n=="mixer-chrome-material.css" else
+         previous_sections if n=="mixer-section-controls.css" else
          (HTML.parent / "assets" / n).read_text(encoding="utf-8")) if n else body
         for n, version, tag, body in css_order
     )
@@ -104,7 +107,7 @@ async def visual(page, width, height):
         assert any("/" + name + "?" in uri for uri in data["links"]), (width, name)
     assert 20 <= data["title"]["height"] <= 30, (width, "chrome title", data)
     assert 30 <= data["toolbar"]["height"] <= 45, (width, "toolbar", data)
-    assert 64 <= data["header"]["height"] <= 68, (width, "M3 expanded mixer title", data)
+    assert 64 <= data["header"]["height"] <= 68, (width, "M3 expanded mixer header", data)
     assert abs(data["strip"]["width"] - data["master"]["width"]) < 1.5, (width, "master geometry", data)
     assert abs(data["pan"]["top"] - data["railPan"]["top"]) < 1.6, (width, "PAN rail", data)
     assert abs(data["fader"]["top"] - data["railFader"]["top"]) < 1.6, (width, "fader rail", data)
