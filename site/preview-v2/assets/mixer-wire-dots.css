@@ -66,6 +66,9 @@
 .console-body.wire-routing-v15 .strip .wire-tray .wire-node-out{
  display:flex!important;flex-direction:row!important;justify-content:flex-start!important;
  align-items:center!important;gap:3px!important;padding:0 0 0 1px!important;
+ /* V47: inset the complete physical OUT connector + caption 4px within
+    its own first grid lane. Preserve button hit area and SVG pin anchor. */
+ margin-inline-start:4px!important;
  width:35px!important;min-width:35px!important;flex:0 0 35px!important;
 }
 .console-body.wire-routing-v15 .strip .wire-tray .wire-node-out small{
