@@ -129,12 +129,12 @@
   "currentHtmlFNV": "97cf85c2",
   "chrome": {
     "baseSize": 28143,
-    "suffixSize": 2368,
-    "suffixFNV": "99f0ea8b"
+    "suffixSize": 1955,
+    "suffixFNV": "762d927a"
   },
   "fxRack": {
     "baseSize": 5567,
-    "suffixSize": 310,
-    "suffixFNV": "bc79a5b1"
+    "suffixSize": 663,
+    "suffixFNV": "18203286"
   }
 }

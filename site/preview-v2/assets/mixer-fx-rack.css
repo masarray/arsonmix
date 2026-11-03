@@ -110,3 +110,10 @@
  display:inline-flex;flex:0 0 17px;width:17px;height:17px;min-width:17px;
  visibility:hidden;pointer-events:none;
 }
+
+/* Shared physical FX flex contract: the rail MUST shrink with its channel
+   racks at short viewport heights (e.g. 1366x768). Own this after the old
+   inline layout recipe, not in early Chrome CSS where it was overwritten. */
+.console-body:not(.collapsed-fx) .section-rail>.rail-cell.fx{
+  flex:1 1 var(--fx-h)!important;min-height:23px!important;
+}

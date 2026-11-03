@@ -25,7 +25,7 @@ V18_OWNER_TAILS={
     "mixer-fader-assembly.css":(5239,"cb988af4"),
     "mixer-meter-display.css":(4159,"94c0c481"),
     "mixer-plugin-browser.css":(4285,"1ce2ede9"), # V17 exact appended owner suffix
-    "mixer-fx-rack.css":(310,"bc79a5b1"), # M3 inert + Add FX row
+    "mixer-fx-rack.css":(663,"18203286"), # M3 inert + Add FX row
 }
 def tail_fingerprint(text):
     h=2166136261
