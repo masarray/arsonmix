@@ -60,6 +60,26 @@ def snapshot(revision=3, epoch=7, new_channel=False):
         "mainPcmPresent":False,"monitorPcmPresent":False,"channelMeterRmsPeak":{}}}
 
 
+async def selected_hardware_label(locator):
+    """Read the ONE visible V5 engraved legend, not combined SVG + SR DOM text.
+
+    Both copies must agree for the accessible backlit button; ordinary
+    pre-decoration buttons remain supported without masking label failures.
+    """
+    assert await locator.is_visible()
+    state = await locator.evaluate("""(el)=>({
+      hardware:el.classList.contains('mx-hw-key'),
+      canonical:el.dataset.mxHwLegend || null,
+      accessible:el.querySelector(':scope > .mx-hw-screen-reader')?.textContent.trim() || null,
+      engraved:el.querySelector(':scope > svg.mx-hw-face text')?.textContent.trim() || null,
+      plain:el.textContent.trim()
+    })""")
+    if state["hardware"]:
+        assert state["canonical"] and state["canonical"]==state["accessible"]==state["engraved"], state
+        return state["canonical"]
+    return state["plain"]
+
+
 async def main():
     async with async_playwright() as play:
         browser = await play.chromium.launch(headless=True)
@@ -321,24 +341,8 @@ async def main():
         assert await page.evaluate("()=>window.__arMixV6ReadOnly().selectedChannelIds")==["7","8","9"]
         assert await page.locator('#arV6Main .arV6Master').get_attribute("aria-selected")=="false"
         selected_count = page.locator('.arV6SelectionCount')
-        assert await selected_count.is_visible()
-        # V5 backlit button material engraves its label in an SVG mask and
-        # retains one visually-hidden screen-reader copy. textContent/innerText
-        # include BOTH copies even though the user sees one painted label.
-        # Assert the actual hardware legend and accessible copy agree rather
-        # than mistaking the intentional SVG + SR text for duplicated ink.
-        legend = await selected_count.evaluate("""(el)=>({
-          hardware:el.classList.contains('mx-hw-key'),
-          canonical:el.dataset.mxHwLegend || null,
-          accessible:el.querySelector(':scope > .mx-hw-screen-reader')?.textContent.trim() || null,
-          engraved:el.querySelector(':scope > svg.mx-hw-face text')?.textContent.trim() || null,
-          plain:el.textContent.trim()
-        })""")
-        assert (
-            (legend["hardware"] and legend["canonical"]=="3 SEL" and
-             legend["accessible"]=="3 SEL" and legend["engraved"]=="3 SEL")
-            or (not legend["hardware"] and legend["plain"]=="3 SEL")
-        ), {
+        legend = await selected_hardware_label(selected_count)
+        assert legend == "3 SEL", {
             "selectionButton":legend,
             "selectedIds":await page.evaluate(
               "()=>window.__arMixV6ReadOnly().selectedChannelIds")
@@ -659,7 +663,7 @@ async def main():
 
         # F8 searches ONLY the native catalog and adds through one typed intent.
         # An epoch change clears prior selection; one native ChannelId is required.
-        assert await page.locator(".arV6SelectionCount").inner_text()=="0 SEL"
+        assert await selected_hardware_label(page.locator(".arV6SelectionCount"))=="0 SEL"
         await page.keyboard.press("F8")
         manager=page.locator("#arV6PluginPanel")
         assert await manager.is_visible()
