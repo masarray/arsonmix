@@ -47,6 +47,13 @@ test('package is a real PE32+ x64 GUI, not a console test binary or old 10CH art
  assert.match(packageScript,/NATIVE_CHANNELID_CH11_DYNAMIC_INPUT__10CH4AUX_COMPAT_FALLBACK__NOT_FULL_UNIVERSAL/);
  assert.match(verify,/NATIVE_CHANNELID_CH11_DYNAMIC_INPUT__10CH4AUX_COMPAT_FALLBACK__NOT_FULL_UNIVERSAL/);
 });
+test('native Console embeds both PAN knob masks without unserved artwork',()=>{
+ const css=read('web/console-native.css');
+ assert.ok((css.match(/data:image\/svg\+xml,%3Csvg/g)||[]).length===2);
+ assert.doesNotMatch(css,/url\(\s*['"]?assets\//);
+ assert.doesNotMatch(css,/url\(\s*['"]?\.\.\//);
+});
+
 test('release verifier hashes ALL active GUI bytes inside actual EXE and ZIP',()=>{
  for(const f of ['consoleNativeHtmlSha256','consoleNativeCssSha256','consoleNativeJsSha256','activeGuiEntrypoint']) {
   assert.ok(packageScript.includes(f+' = '));
