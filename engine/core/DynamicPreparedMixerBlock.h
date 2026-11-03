@@ -463,12 +463,16 @@ public:
                  std::span<float> channelPeaksL={},
                  std::span<float> channelPeaksR={}) noexcept {
         if(frames<=0 || !outputL || !outputR)return false;
-        if(channelPeaksL.size()!=channelPeaksR.size() ||
-           (!channelPeaksL.empty() && channelPeaksL.size()<lanes_.size()))
+        // The physical 10CH/4AUX callback requests only the stable
+        // legacy prefix of an expanded ChannelId roster. Dynamic extra
+        // GROUP/FX RETURN lanes still process PCM, but need no JS meter
+        // until a native meter UI consumer is explicitly subscribed.
+        // Never allocate proportional-to-roster arrays on AUDIO.
+        if(channelPeaksL.size()!=channelPeaksR.size())
             return false;
         if(!channelPeaksL.empty()) {
-            std::fill_n(channelPeaksL.data(),lanes_.size(),0.f);
-            std::fill_n(channelPeaksR.data(),lanes_.size(),0.f);
+            std::fill_n(channelPeaksL.data(),channelPeaksL.size(),0.f);
+            std::fill_n(channelPeaksR.data(),channelPeaksR.size(),0.f);
         }
         if(outputL==outputR ||
            (monitorL==nullptr)!=(monitorR==nullptr) ||
@@ -624,7 +628,7 @@ public:
                 observedL=std::max(observedL,std::abs(l[f]));
                 observedR=std::max(observedR,std::abs(r[f]));
             }
-            if(!channelPeaksL.empty()) {
+            if(i<channelPeaksL.size()) {
                 channelPeaksL[i]=observedL;
                 channelPeaksR[i]=observedR;
             }

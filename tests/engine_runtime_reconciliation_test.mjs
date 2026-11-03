@@ -88,6 +88,29 @@ test('occupied CH1 Orbit uses one strong Graph lease through native renderer and
   assert.equal(count(engine,/void audioDeviceIOCallbackWithContext\s*\(/g),1);
 });
 
+test('E3 stable ChannelId GROUP/FX RETURN is a real guarded physical PCM transaction',()=>{
+  assert.match(physical,/NativeBusResult editNativeBus\(/);
+  assert.match(physical,/next\.createBusForSelected\(/);
+  assert.match(physical,/next\.removeBusAndRestoreSources\(/);
+  assert.match(physical,/DynamicChannelFxLeaseBank::reuseRevision\(/);
+  assert.match(physical,/nativePublisher_\.commit\(/);
+  assert.match(physical,/nativeAccepted_\.graph\.roster=std::move\(next\)/);
+  assert.match(physical,/if\(!published\.ok\(\)\)/);
+  assert.match(physical,/nativeStructureLive_=true/);
+  assert.match(physical,/topologyFault_\.store\(true,std::memory_order_release\)/);
+  assert.match(engine,/LiveDryRoutingLab::NativeBusResult editNativeBus\(/);
+  assert.match(engine,/if\(dryRoutingLab_\.nativeBusTopologyLive\(\)\)return false/);
+  assert.match(bridge,/juce::var processNativeBusIntent\(/);
+  assert.match(bridge,/nativeGraphRevision/);
+  assert.match(bridge,/NATIVE_CREATE_GROUP_SELECTED/);
+  assert.match(bridge,/NATIVE_CREATE_FX_RETURN_SELECTED/);
+  assert.match(bridge,/NATIVE_REMOVE_BUS/);
+  assert.match(host,/consoleBridge_\.processNativeBusIntent\(/);
+  assert.match(bridge,/w\.productionCallbackLive=false/);
+  assert.match(wire,/callbackOwnsChannelIds/);
+  assert.equal(count(callback,/dryRoutingLab_\.process\(/g),1);
+});
+
 test('shipping application does not compile a second test-only native mixer',()=>{
   const app=cmake.split(/\r?\n/).find(l=>l.startsWith('target_sources(ARMixConsole PRIVATE'));
   assert.ok(app,'native JUCE application source list missing');

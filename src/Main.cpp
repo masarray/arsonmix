@@ -234,7 +234,13 @@ public:
                   // GROUP/FX_RETURN remain rejected until one ChannelId
                   // callback really owns them.
                   const auto snapshot=armix::console::LiveConsoleBridgeV6::snapshot(engine_.status());
-                  const auto ack=consoleBridge_.processProductionIntent(
+                  const auto op=args.getProperty("operation","").toString();
+                  juce::var ack;
+                  if(op.startsWith("NATIVE_"))
+                      ack=consoleBridge_.processNativeBusIntent(
+                          args,snapshot,engine_,
+                          nativeShowBusy_||studioBackupBusy_);
+                  else ack=consoleBridge_.processProductionIntent(
                       args,snapshot,engine_,
                       [this](int lane,int slot,std::uint64_t epoch,
                              std::uint64_t revision,const juce::String& token)

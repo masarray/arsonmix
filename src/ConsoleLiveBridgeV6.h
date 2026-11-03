@@ -11,6 +11,8 @@
 #include <limits>
 #include <string>
 #include <unordered_set>
+#include <span>
+#include <vector>
 
 // Native Console v6 adapter, exclusively on the JUCE MESSAGE/CONTROL thread.
 // This projects the real M4 callback/device readback WITHOUT promoting its
@@ -146,6 +148,12 @@ public:
                     object->setProperty("originalCh1GraphLeased",
                         native && static_cast<bool>(route.getProperty(
                             "originalCh1GraphLeased",false)));
+                    // Separate scoped native bus transport, not universal
+                    // v8 graph capabilities or synthetic M4 strip ordinals.
+                    const auto bus=route.getProperty("nativeBus",juce::var());
+                    if(native && bus.isObject()) {
+                        object->setProperty("nativeBus",bus);
+                    }
                     // Separate namespace: these operations mutate the one
                     // INSTALLED M4 JUCE PCM graph. They are NEVER universal
                     // graph.capabilities.supportedOps or ChannelIds.
@@ -515,6 +523,158 @@ public:
         ack.errorCode=error.toStdString();
         const auto json=PuzzleV8Wire::ack(ack);
         return juce::JSON::parse(juce::String::fromUTF8(json.c_str()));
+    }
+
+
+    // E3 scoped native bus control transport. The installed callback already
+    // owns this stable ChannelId graph; output is DISARMED for structural
+    // changes, and readback comes from the newly accepted PCM publisher.
+    // This is deliberately a SEPARATE legacyM4.nativeBus namespace rather
+    // than claiming that universal CH11/WIRE/SHOW is available.
+    template<class Engine>
+    juce::var processNativeBusIntent(const juce::var& intent,
+                                     const juce::var& snapshot,
+                                     Engine& engine,bool ioBusy=false) {
+        const auto req=intent.getProperty("requestId",juce::var());
+        const auto request=req.isString()?req.toString():juce::String();
+        const auto key=request.toStdString();
+        const auto device=snapshot.getProperty("device",juce::var());
+        const auto graph=snapshot.getProperty("graph",juce::var());
+        const auto legacy=snapshot.getProperty("legacyM4",juce::var());
+        const auto bus=legacy.getProperty("nativeBus",juce::var());
+        const auto epoch=device.getProperty("epoch","0").toString();
+        juce::String error;
+        bool applied=false;
+        std::uint64_t nativeRev=0,rosterRev=0,requestedEpoch=0,legacyRevision=0;
+        armix::mixer::ChannelId created{};
+        if(!armix::integration::validConsoleRequestId(key))
+            error="INVALID_REQUEST_ID";
+        else if(completed_.find(key)!=completed_.end())
+            error="DUPLICATE_REQUEST_ID";
+        else {
+            if(recentIds_.size()==maxRecentIds) {
+                completed_.erase(recentIds_.front());recentIds_.pop_front();
+            }
+            recentIds_.push_back(key);completed_.insert(key);
+            const auto operation=intent.getProperty("operation","").toString();
+            const auto payload=intent.getProperty("payload",juce::var());
+            if(ioBusy)error="NATIVE_SHOW_OR_BACKUP_BUSY";
+            else if(!decodeDecimal(intent.getProperty("deviceEpoch",{}),requestedEpoch) ||
+               !decodeDecimal(intent.getProperty("legacyRoutingRevision",{}),legacyRevision) ||
+               !decodeDecimal(intent.getProperty("nativeGraphRevision",{}),nativeRev) ||
+               !decodeDecimal(intent.getProperty("nativeRosterRevision",{}),rosterRev) ||
+               intent.getProperty("deviceEpoch","").toString()!=epoch ||
+               intent.getProperty("legacyRoutingRevision","").toString()!=
+                    legacy.getProperty("routingRevision","").toString())
+                error="STALE_NATIVE_BUS_DEVICE_OR_ROUTE";
+            else if(!bus.isObject() ||
+                    bus.getProperty("graphRevision","").toString()!=
+                        intent.getProperty("nativeGraphRevision","").toString() ||
+                    bus.getProperty("rosterRevision","").toString()!=
+                        intent.getProperty("nativeRosterRevision","").toString() ||
+                    legacy.getProperty("controlPlane","").toString()!="LEGACY_M4_ORDINAL")
+                error="NATIVE_BUS_GRAPH_NOT_ADMITTED";
+            else if(!payload.isObject())error="INVALID_NATIVE_BUS_PAYLOAD";
+            else if(operation=="NATIVE_SET_BUS_MIX") {
+                std::uint64_t target=0;
+                const auto rawGain=payload.getProperty("gain",juce::var());
+                const auto rawPan=payload.getProperty("pan",juce::var());
+                if(!decodeDecimal(intent.getProperty("targetChannelId",{}),target) ||
+                   target==0 ||
+                   !(rawGain.isInt()||rawGain.isDouble()) ||
+                   !(rawPan.isInt()||rawPan.isDouble()))
+                    error="INVALID_NATIVE_BUS_MIX";
+                else {
+                    const auto gain=static_cast<double>(rawGain);
+                    const auto pan=static_cast<double>(rawPan);
+                    if(!std::isfinite(gain)||gain<0.||gain>4. ||
+                       !std::isfinite(pan)||pan< -1.||pan>1.)
+                        error="INVALID_NATIVE_BUS_MIX";
+                    else {
+                        applied=engine.setNativeBusMix(
+                            requestedEpoch,nativeRev,
+                            armix::mixer::ChannelId{target},
+                            static_cast<float>(gain),static_cast<float>(pan));
+                        if(!applied)error="NATIVE_BUS_MIX_REJECTED";
+                    }
+                }
+            }
+            else if(operation!="NATIVE_CREATE_GROUP_SELECTED" &&
+                    operation!="NATIVE_CREATE_FX_RETURN_SELECTED" &&
+                    operation!="NATIVE_REMOVE_BUS")
+                error="UNSUPPORTED_NATIVE_BUS_OPERATION";
+            else {
+                using namespace armix::mixer;
+                std::vector<ChannelId> selected;
+                ChannelId remove{};
+                auto role=ChannelRole::group;
+                juce::String name;
+                float gain=.25f;
+                if(operation=="NATIVE_REMOVE_BUS") {
+                    std::uint64_t id=0;
+                    if(!decodeDecimal(intent.getProperty("targetChannelId",{}),id) ||
+                       id==0)error="INVALID_NATIVE_BUS_ID";
+                    else remove={id};
+                } else {
+                    role=operation=="NATIVE_CREATE_GROUP_SELECTED"
+                        ?ChannelRole::group:ChannelRole::fxReturn;
+                    name=payload.getProperty("name","").toString();
+                    const auto raw=payload.getProperty("selectedChannelIds",juce::var());
+                    const auto* ids=raw.getArray();
+                    const auto g=payload.getProperty("sendGain",juce::var(.25));
+                    const double value=static_cast<double>(g);
+                    if(name.isEmpty()||name.length()>64 ||
+                       !ids||ids->isEmpty()||ids->size()>64 ||
+                       !(g.isDouble()||g.isInt()) ||
+                       !std::isfinite(value)||value<0.||value>4.) {
+                        error="INVALID_NATIVE_BUS_SELECTION";
+                    } else {
+                        gain=static_cast<float>(value);
+                        selected.reserve(static_cast<std::size_t>(ids->size()));
+                        for(const auto& item:*ids) {
+                            std::uint64_t id=0;
+                            if(!decodeDecimal(item,id)||id==0) {
+                                error="INVALID_NATIVE_BUS_SOURCE_ID";break;
+                            }
+                            selected.push_back({id});
+                        }
+                    }
+                }
+                if(error.isEmpty()) {
+                    auto result=engine.editNativeBus(
+                        requestedEpoch,nativeRev,rosterRev,role,
+                        std::span<const ChannelId>(selected),name.toStdString(),
+                        gain,remove);
+                    applied=result.accepted;
+                    if(!applied)error=result.error;
+                    else {
+                        created=result.created;
+                        nativeRev=result.pcmRevision;
+                        rosterRev=result.rosterRevision;
+                    }
+                }
+            }
+        }
+        // Preserve universal revision 0. Provide native namespace revision
+        // and created stable ID ONLY after the actual hardware PCM ACK.
+        PuzzleV8Ack ack;
+        ack.requestId=key;
+        ack.status=applied?"ACCEPTED":"REJECTED";
+        ack.deviceEpoch=epoch.toStdString();
+        ack.graphRevision=graph.getProperty("revision","0").toString().toStdString();
+        ack.rosterRevision=graph.getProperty("rosterRevision","0").toString().toStdString();
+        ack.errorCode=error.toStdString();
+        const auto json=PuzzleV8Wire::ack(ack);
+        auto wire=juce::JSON::parse(juce::String::fromUTF8(json.c_str()));
+        if(applied)if(auto* object=wire.getDynamicObject()) {
+            object->setProperty("nativeGraphRevision",
+                juce::String(std::to_string(nativeRev)));
+            object->setProperty("nativeRosterRevision",
+                juce::String(std::to_string(rosterRev)));
+            object->setProperty("createdChannelId",
+                juce::String(std::to_string(created.value)));
+        }
+        return wire;
     }
 
     static bool parsePortId(const juce::String& wire,const char* prefix,int& physical) {

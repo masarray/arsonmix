@@ -723,6 +723,10 @@ public:
     {
         // All checks precede staging: a rejected edit must not alter the
         // currently audible graph or any accepted route revision.
+        // An extra native GROUP/FX RETURN has no equivalent M4 fallback.
+        // Do not silently reroute its sources during an original CH1
+        // structural FX edit; remove native BUSes or replace the patch first.
+        if(dryRoutingLab_.nativeBusTopologyLive())return false;
         if(!next || !attached_ || !device || independent_.active() ||
            !directFence_.permitted() || handoff_.busy() ||
            fxMovePhase_.load(std::memory_order_acquire)!=0 ||
@@ -1243,6 +1247,42 @@ public:
     }
     std::uint64_t dryRoutingLabEpoch() const noexcept {return dryRoutingLab_.epoch();}
     std::uint64_t dryRoutingLabRevision() const noexcept {return dryRoutingLab_.revision();}
+    // One native ChannelId bus transaction on the installed DIRECT device.
+    // The GUI only obtains accepted state after successful native publisher
+    // commit; no speculative UI role or second audio engine.
+    LiveDryRoutingLab::NativeBusResult editNativeBus(
+           std::uint64_t epoch,std::uint64_t pcmRevision,
+           std::uint64_t rosterRevision,
+           armix::mixer::ChannelRole role,
+           std::span<const armix::mixer::ChannelId> selected,
+           const std::string& name,float gain,
+           armix::mixer::ChannelId remove={}) {
+        LiveDryRoutingLab::NativeBusResult rejected;
+        rejected.error="HARDWARE_NOT_DISARMED";
+        if(independent_.active() || !attached_ ||
+           !directFence_.permitted() ||
+           routeReconfiguring_.load(std::memory_order_acquire) ||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal ||
+           !allOutputsDisarmed() || handoff_.busy() ||
+           fxMovePhase_.load(std::memory_order_acquire)!=0)
+            return rejected;
+        return dryRoutingLab_.editNativeBus(
+            epoch,pcmRevision,rosterRevision,role,selected,
+            name,gain,remove,true);
+    }
+    bool nativeBusTopologyLive() const noexcept {
+        return dryRoutingLab_.nativeBusTopologyLive();
+    }
+    bool setNativeBusMix(std::uint64_t epoch,
+                         std::uint64_t revision,
+                         armix::mixer::ChannelId id,float gain,float pan) noexcept {
+        if(independent_.active()||!directFence_.permitted()||
+           routeReconfiguring_.load(std::memory_order_acquire) ||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal)return false;
+        return dryRoutingLab_.setNativeBusMix(epoch,revision,id,gain,pan);
+    }
     bool dryRoutingLabActive() const noexcept {return dryRoutingLab_.active();}
     void pollDryRoutingLab() noexcept {dryRoutingLab_.poll();}
 

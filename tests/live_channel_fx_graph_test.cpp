@@ -605,6 +605,81 @@ static void verifyOccupiedExternalCh1Owner() {
                              32,false,fallback));
     assert(newL[31]==0.f&&newR[31]==0.f);
     assert(publisher.acceptedRevision()==1);
+
+    // E3: the same physical publisher and original external VST owner
+    // survive a true serial GROUP then a parallel wet FX_RETURN. There is
+    // NO additional JUCE callback, source alias or vendor re-instantiation.
+    // A bounded prefix meter must not reject a graph > fixed 10CH+4AUX.
+    const auto publishBus=[&](ChannelRole role,const char* name,
+                              float gain) {
+        auto candidate=accepted.graph.roster;
+        const ChannelId selected[]{accepted.graph.ids.inputs[0]};
+        auto edit=candidate.createBusForSelected(
+            candidate.revision(),selected,name,role,gain);
+        assert(edit.ok()&&edit.createdIds.size()==1);
+        DynamicChannelFxLeaseBank nextBank;
+        const auto nextRevision=accepted.pcmRevision+1;
+        assert(DynamicChannelFxLeaseBank::reuseRevision(
+            epoch,nextRevision,*accepted.fxOwners,nextBank)==
+            DynamicChannelFxLeaseBank::Fault::none);
+        auto owner=std::make_shared<DynamicChannelFxLeaseBank>(
+            std::move(nextBank));
+        DynamicNativeSessionPublisher::FxPlan plan;
+        plan.owner=std::static_pointer_cast<void>(owner);
+        plan.context=owner.get();
+        plan.render=+[](void* ctx,ChannelId id,float* l,float* r,int n) noexcept {
+            (*static_cast<DynamicChannelFxLeaseBank*>(ctx))(id,l,r,n);
+        };
+        plan.deviceEpoch=epoch;plan.graphRevision=nextRevision;
+        auto committed=publisher.commit(
+            candidate,accepted.graph.request,accepted.pcmRevision,
+            epoch,epoch,true,std::move(plan));
+        assert(committed.ok());
+        accepted.graph.roster=std::move(candidate);
+        accepted.fxOwners=std::move(owner);
+        accepted.pcmRevision=committed.revision;
+        publisher.pollRetirement(); // old VST Graph reclaimed on CONTROL
+        return edit.createdIds[0];
+    };
+    const auto group=publishBus(ChannelRole::group,"SERIAL GROUP",1.f);
+    const auto* groupView=publisher.acceptedRouting(epoch,2);
+    assert(groupView&&groupView->find(accepted.graph.ids.inputs[0])
+                      ->primaryOutput==group);
+    assert(groupView->find(group)->primaryOutput==accepted.graph.ids.main);
+    std::array<float,14> meterL{},meterR{}; // fewer than total PCM lanes
+    const auto beforeGroup=heapCalls.load(std::memory_order_relaxed);
+    assert(publisher.render(epoch,pins,2,newL.data(),newR.data(),32,
+        false,fallback,nullptr,nullptr,meterL,meterR));
+    assert(heapCalls.load(std::memory_order_relaxed)==beforeGroup);
+    assert(raw->calls==3);
+    for(int i=0;i<32;++i){
+        assert(near(newL[i],oldL[i]));assert(near(newR[i],oldR[i]));
+    }
+    // Operator GROUP fader changes the LIVE ChannelId bus. Preserve its
+    // accepted target before the next graph publication (FX Return).
+    assert(publisher.setChannelMix(epoch,2,group,2.f,0.f));
+    assert(accepted.graph.roster.rememberLiveMix(group,2.f,0.f));
+    assert(!publisher.setChannelMix(epoch,1,group,.5f,0.f));
+    const auto wet=publishBus(ChannelRole::fxReturn,"PARALLEL WET",.25f);
+    const auto* wetView=publisher.acceptedRouting(epoch,3);
+    assert(wetView&&wetView->find(wet));
+    assert(wetView->find(accepted.graph.ids.inputs[0])->primaryOutput==group);
+    assert(wetView->find(accepted.graph.ids.inputs[0])->parallelSends.size()==1);
+    assert(wetView->find(accepted.graph.ids.inputs[0])
+           ->parallelSends[0].destination==wet);
+    const auto beforeWet=heapCalls.load(std::memory_order_relaxed);
+    assert(publisher.render(epoch,pins,2,newL.data(),newR.data(),32,
+        false,fallback,nullptr,nullptr,meterL,meterR));
+    assert(heapCalls.load(std::memory_order_relaxed)==beforeWet);
+    assert(raw->calls==4); // ONE original vendor process per graph pass
+    assert(std::abs(newL[31])>std::abs(oldL[31]));
+    assert(std::abs(newR[31])>std::abs(oldR[31]));
+    assert(publisher.acceptedRevision()==3);
+    // Stale or incompatible native topology must not advance the accepted
+    // graph; the existing audible GROUP + FX return remains intact.
+    const auto stale=publisher.commit(accepted.graph.roster,
+        accepted.graph.request,1,epoch,epoch,true);
+    assert(!stale.ok()&&publisher.acceptedRevision()==3);
     // Once no callback may hold the accepted PCM snapshot, there is no
     // hidden second FX owner. All vendor/plugin cleanup is off realtime.
     publisher.unpublish();
@@ -687,6 +762,19 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
     route->setProperty("active",true);
     route->setProperty("ready",true);
     route->setProperty("hasAcceptedRoute",true);
+    // Exact native accepted publisher data, not an imagined v8 graph.
+    auto nativeBus=std::make_unique<juce::DynamicObject>();
+    nativeBus->setProperty("graphRevision","3");
+    nativeBus->setProperty("rosterRevision","4");
+    nativeBus->setProperty("structural",true);
+    juce::Array<juce::var> realBuses;
+    auto groupRow=std::make_unique<juce::DynamicObject>();
+    groupRow->setProperty("id","18");
+    groupRow->setProperty("role","GROUP");
+    groupRow->setProperty("primaryOutput","15");
+    realBuses.add(juce::var(groupRow.release()));
+    nativeBus->setProperty("channels",juce::var(realBuses));
+    route->setProperty("nativeBus",juce::var(nativeBus.release()));
     // These booleans are device-loop truth, NOT permission to promote
     // universal CH11, GROUP or WIRE operations in the GUI.
     route->setProperty("nativeChannelIdPcmActive",true);
@@ -771,6 +859,13 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
     assert(diagnostic.getProperty("controlPlane","").toString()=="LEGACY_M4_ORDINAL");
     assert(diagnostic.getProperty("pcmRenderer","").toString()=="CHANNEL_ID_10CH4AUX");
     assert(static_cast<bool>(diagnostic.getProperty("originalCh1GraphLeased",false)));
+    const auto deliveredBus=diagnostic.getProperty("nativeBus",{});
+    assert(deliveredBus.isObject());
+    assert(deliveredBus.getProperty("graphRevision","").toString()=="3");
+    assert(deliveredBus.getProperty("rosterRevision","").toString()=="4");
+    const auto* deliveredChannels=deliveredBus.getProperty("channels",{}).getArray();
+    assert(deliveredChannels&&deliveredChannels->size()==1);
+    assert(deliveredChannels->getReference(0).getProperty("id","").toString()=="18");
     // A revoked native PCM mode must immediately report M4 fallback without
     // inventing any universal ChannelId capabilities or stale FX identity.
     auto pcmRouteReadback=live.getProperty("dryRoutingLab",{});
@@ -780,6 +875,7 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
     assert(fallbackM4.getProperty("pcmRenderer","").toString()=="M4_COMPAT");
     assert(!static_cast<bool>(fallbackM4.getProperty("originalCh1GraphLeased",true)));
     assert(!static_cast<bool>(fallbackSnap.getProperty("productionCallbackLive",true)));
+    assert(fallbackM4.getProperty("nativeBus",{}).isVoid());
     pcmRouteReadback.getDynamicObject()->setProperty("nativeChannelIdPcmActive",true);
     const auto legacyRows=diagnostic.getProperty("acceptedChannels",{});
     assert(legacyRows.getArray()&&
@@ -827,6 +923,85 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
     assert(!Bridge::decodeDecimal(juce::var("18446744073709551616"),decoded));
     assert(!Bridge::decodeDecimal(juce::var("01"),decoded));
     assert(!Bridge::decodeDecimal(juce::var(9007199254740993.0),decoded));
+    // This adapter receives an actual operator WebView intent and returns
+    // a post-publication stable ChannelId+revisions, never graph revision 0
+    // masquerading as the native PCM version. No device is required here:
+    // the transport test uses an injected native CONTROL writer; golden
+    // vendor PCM and lifetime were verified separately above.
+    struct BusControl {
+        struct Report {
+            bool accepted=false;
+            ChannelId created{};
+            std::uint64_t pcmRevision=0,rosterRevision=0;
+            const char* error="NOT_ADMITTED";
+        };
+        int commits=0;
+        int liveMixes=0;
+        bool setNativeBusMix(std::uint64_t ep,std::uint64_t rev,
+                             ChannelId id,float gain,float pan) {
+            assert(ep==9007199254740993ULL&&rev==3);
+            assert(id.value==18&&near(gain,.5f)&&near(pan,0.f));
+            ++liveMixes;return true;
+        }
+        Report editNativeBus(std::uint64_t ep,std::uint64_t pcm,
+                            std::uint64_t roster,ChannelRole role,
+                            std::span<const ChannelId> selected,
+                            const std::string& name,float gain,ChannelId remove) {
+            assert(ep==9007199254740993ULL);
+            assert(pcm==3 && roster==4);
+            assert(role==ChannelRole::group && remove.value==0);
+            assert(selected.size()==1 && selected[0].value==1);
+            assert(name=="VOCALS"&&near(gain,.25f));
+            ++commits;
+            return {true,{19},4,5,""};
+        }
+    } busControl;
+    const auto makeBusIntent=[&](const juce::String& req) {
+        auto command=std::make_unique<juce::DynamicObject>();
+        command->setProperty("requestId",req);
+        command->setProperty("deviceEpoch","9007199254740993");
+        command->setProperty("legacyRoutingRevision","77");
+        command->setProperty("nativeGraphRevision","3");
+        command->setProperty("nativeRosterRevision","4");
+        command->setProperty("operation","NATIVE_CREATE_GROUP_SELECTED");
+        auto payload=std::make_unique<juce::DynamicObject>();
+        payload->setProperty("name","VOCALS");
+        payload->setProperty("sendGain",.25);
+        juce::Array<juce::var> selection;selection.add("1");
+        payload->setProperty("selectedChannelIds",juce::var(selection));
+        command->setProperty("payload",juce::var(payload.release()));
+        return juce::var(command.release());
+    };
+    auto nativeAck=bridge.processNativeBusIntent(
+        makeBusIntent("native:bus:1"),snap,busControl);
+    assert(nativeAck.getProperty("status","").toString()=="ACCEPTED");
+    assert(nativeAck.getProperty("graphRevision","").toString()=="0");
+    assert(nativeAck.getProperty("nativeGraphRevision","").toString()=="4");
+    assert(nativeAck.getProperty("nativeRosterRevision","").toString()=="5");
+    assert(nativeAck.getProperty("createdChannelId","").toString()=="19");
+    assert(busControl.commits==1);
+    nativeAck=bridge.processNativeBusIntent(
+        makeBusIntent("native:bus:1"),snap,busControl);
+    assert(nativeAck.getProperty("errorCode","").toString()=="DUPLICATE_REQUEST_ID");
+    assert(busControl.commits==1);
+    auto staleBus=makeBusIntent("native:bus:2");
+    staleBus.getDynamicObject()->setProperty("nativeGraphRevision","2");
+    nativeAck=bridge.processNativeBusIntent(staleBus,snap,busControl);
+    assert(nativeAck.getProperty("status","").toString()=="REJECTED");
+    assert(busControl.commits==1);
+    auto liveMixIntent=makeBusIntent("native:mix:1");
+    liveMixIntent.getDynamicObject()->setProperty(
+        "operation","NATIVE_SET_BUS_MIX");
+    liveMixIntent.getDynamicObject()->setProperty("targetChannelId","18");
+    auto mixPayload=std::make_unique<juce::DynamicObject>();
+    mixPayload->setProperty("gain",.5);
+    mixPayload->setProperty("pan",0.0);
+    liveMixIntent.getDynamicObject()->setProperty(
+        "payload",juce::var(mixPayload.release()));
+    const auto mixAck=bridge.processNativeBusIntent(
+        liveMixIntent,snap,busControl);
+    assert(mixAck.getProperty("status","").toString()=="ACCEPTED");
+    assert(busControl.liveMixes==1&&busControl.commits==1);
     // Fail-closed device fault: do not advertise a compatibility actuator
     // against a poisoned physical port topology or stale hardware session.
     auto liveRoute=live.getProperty("dryRoutingLab",{});
