@@ -28,6 +28,22 @@ test('preset UI reflects callback-acknowledged state not queued state',()=>{
   assert.match(m,/arMixNativePresetLoaded/);
   assert.match(b,/RECALL LIVE/);
 });
+test('single engine production selection forbids old VST processing in diagnostic fallback',()=>{
+  const authority=readFileSync(new URL('../engine/core/NativeRenderAuthority.h',import.meta.url),'utf8');
+  assert.match(authority,/enum class NativeRenderOwner/);
+  assert.match(authority,/failSilentUnpatched/);
+  assert.match(authority,/acceptedM4Session/);
+  assert.match(authority,/isolatedDiagnostic/);
+  assert.match(e,/NativeRenderAuthority::select\(/);
+  assert.match(e,/NativeRenderOwner::acceptedM4Session/);
+  const start=e.indexOf('// The only remaining stereo renderer is DIAGNOSTIC');
+  const end=e.indexOf('const auto elapsedUs = clockMicros() - beginUs',start);
+  assert.ok(start>0 && end>start,'explicit diagnostic-only tail must exist');
+  const fallback=e.slice(start,end);
+  assert.doesNotMatch(fallback,/processor->processBlock|MidiBuffer midi|make_unique|make_shared/,
+    'no second legacy stereo FX chain may be executed from diagnostics');
+});
+
 test('ADD/REMOVE remain guarded while MOVE publishes physical-slot order',()=>{
   assert.match(e,/fxMovePhase_\.load/);
   assert.match(e,/FxOrderPlan::moved/);
@@ -38,11 +54,16 @@ test('ADD/REMOVE remain guarded while MOVE publishes physical-slot order',()=>{
 
 test('bypass is sample-smoothed on audio callback without control-thread CPU work',()=>{
  assert.match(e,/bypassEnvelope/);
- assert.match(e,/bypass\.request\(cycle\.graph->bypassFlags/);
- assert.match(e,/bypass\.transitioning\(\)/);
+ const start=e.indexOf('static void processLegacyChannelOne(');
+ const end=e.indexOf('void audioDeviceIOCallbackWithContext',start);
+ assert.ok(start>=0&&end>start,'the accepted M4 CH1 owner must still exist');
+ const leaseFx=e.slice(start,end);
+ assert.match(leaseFx,/bypass\.request\(graph->bypassFlags/);
+ assert.match(leaseFx,/slot\.processor->processBlock\(buffer,midi\)/);
+ assert.match(leaseFx,/bypass\.transitioning\(\)/);
  assert.match(e,/dryScratch_\.setSize \(2, maxFrames/);
- assert.match(e,/bypass\.next\(\)/);
- assert.match(e,/bypass\.shouldProcessWet\(\)/);
+ assert.match(leaseFx,/bypass\.next\(\)/);
+ assert.match(leaseFx,/bypass\.shouldProcessWet\(\)/);
  assert.doesNotMatch(e.slice(e.indexOf('bool setBypass'),e.indexOf('bool removeAt')),/detach\(|prepareToPlay|releaseResources/);
 });
 
@@ -52,7 +73,7 @@ test('R0B CH1 MOVE inside routed 10CH graph uses the same callback-boundary de-c
   assert.match(move,/FxOrderPlan::moved/);
   assert.match(move,/fxMovePendingOrder_\.store/);
   assert.doesNotMatch(move,/detach\(|attach\(|prepareToPlay|releaseResources/);
-  const begin=e.indexOf('if (dryRoutingLab_.active())',e.indexOf('callbackCount_.fetch_add'));
+  const begin=e.indexOf('if (renderOwner ==',e.indexOf('callbackCount_.fetch_add'));
   const end=e.indexOf('const bool enabled = monitor_',begin);
   const routed=e.slice(begin,end);
   assert.match(routed,/FxMoveRamp::gain\(\s*routedFxMove,i,samples\)/);
@@ -79,7 +100,7 @@ test('R0B major milestone: ADD and REMOVE are prepared control-thread transactio
   assert.match(e,/ownPlugin\s*\(/);
   assert.match(e,/old\.reset\(\); \/\/ Vendor cleanup only on final CONTROL-owned reference/);
   assert.match(e,/handoff_\.stage\(stagedOwner_\.get\(\)\)/);
-  const callback=e.slice(e.indexOf('if (dryRoutingLab_.active())',e.indexOf('callbackCount_.fetch_add')),
+  const callback=e.slice(e.indexOf('if (renderOwner ==',e.indexOf('callbackCount_.fetch_add')),
                          e.indexOf('const bool enabled = monitor_',e.indexOf('callbackCount_.fetch_add')));
   assert.match(callback,/handoff_\.endCycle\(cycle\)/);
   assert.match(callback,/cycle\.fadeOut/);
@@ -103,13 +124,14 @@ test('R0B B3 NORMAL output is fail-silent while FX graph retirement still progre
   const beginning=e.indexOf('void audioDeviceIOCallbackWithContext');
   const fence=e.indexOf('if (!independent_.active()',beginning);
   const lease=e.indexOf('const auto cycle = handoff_.beginCycle()',beginning);
-  const failSilent=e.indexOf('if (activeDiagnosticRoute == armix::diagnostics::Route::normal',beginning);
+  const failSilent=e.indexOf('if (renderOwner ==',lease);
   const callbackMetrics=e.indexOf('const std::uint64_t beginUs = clockMicros()',beginning);
   assert.ok(beginning>=0 && fence>beginning && lease>fence &&
     failSilent>lease && callbackMetrics>failSilent,
     'DIRECT fence first, then FX cycle lease, then fail-silent native gate');
   const gate=e.slice(failSilent,callbackMetrics);
-  assert.match(gate,/!dryRoutingLab_\.active\(\)/);
+  assert.match(e,/NativeRenderAuthority::select\(/);
+  assert.match(gate,/NativeRenderOwner::failSilentUnpatched/);
   assert.match(gate,/FloatVectorOperations::clear\(outputs\[c\], samples\)/);
   assert.match(gate,/outputPeakL_\.store\(0\.f/);
   assert.match(gate,/handoff_\.endCycle\(cycle\)/,

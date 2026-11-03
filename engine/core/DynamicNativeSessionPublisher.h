@@ -3,6 +3,7 @@
 #include "DynamicPreparedMixerBlock.h"
 #include "DynamicConsoleRoutingView.h"
 #include "RealtimeRoutePublisher.h"
+#include "RealtimeRenderPermit.h"
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
@@ -18,9 +19,25 @@
 // Never run both renderers or sum their outputs. No browser-only LIVE status.
 namespace armix::mixer {
 class DynamicNativeSessionPublisher final {
+public:
+    // Control-owned native FX lifetime travels IN the same accepted PCM
+    // snapshot. JUCE types stay outside this portable DSP publisher.
+    struct FxPlan final {
+        std::shared_ptr<void> owner; // CONTROL-only copy/destruction
+        void* context=nullptr;       // unchanged owner.get(), RT raw pointer
+        void (*render)(void*,ChannelId,float*,float*,int) noexcept=nullptr;
+        std::uint64_t deviceEpoch=0,graphRevision=0;
+        bool valid() const noexcept {
+            return (!owner&&!context&&!render&&!deviceEpoch&&!graphRevision) ||
+                   (owner&&context==owner.get()&&render&&
+                    deviceEpoch>0&&graphRevision>0);
+        }
+    };
+private:
     struct Prepared final {
         DynamicPreparedMixerBlock graph;
         DynamicConsoleRoutingView routing;
+        FxPlan fx; // SAME lifetime and revision as native PCM graph
         int physicalInputs=0;
         bool monitor=false;
     };
@@ -49,8 +66,14 @@ public:
                         std::uint64_t expectedRevision,
                         std::uint64_t proposedDeviceEpoch,
                         std::uint64_t activeDeviceEpoch,
-                        bool allOutputsDisarmed) {
+                        bool allOutputsDisarmed,
+                        FxPlan fx={}) {
         CommitResult report;report.revision=publisher_.lastRevision();
+        if(!fx.valid() ||
+           (fx.owner && (fx.deviceEpoch!=proposedDeviceEpoch ||
+                         fx.graphRevision!=expectedRevision+1))) {
+            report.fault=Fault::invalidCandidate;return report;
+        }
         if(proposedDeviceEpoch==0 ||
            proposedDeviceEpoch!=activeDeviceEpoch) {
             report.fault=Fault::staleDevice;return report;
@@ -76,6 +99,7 @@ public:
             report.fault=Fault::invalidGraph;return report;
         }
         prepared->physicalInputs=request.physicalInputs;
+        prepared->fx=std::move(fx); // one accepted control-plane publication
         prepared->monitor=std::any_of(roster.channels().begin(),
           roster.channels().end(),[](const ChannelStripDefinition& row) {
               return row.role==ChannelRole::monitor;
@@ -140,13 +164,23 @@ public:
         }
         // A single callback producer owns the prepared scratch. In case a
         // broken backend calls simultaneously, fail closed rather than race.
-        if(rendering_.test_and_set(std::memory_order_acquire)) {
+        armix::rt::RealtimeRenderPermit exclusive{rendering_};
+        if(!exclusive) {
             clearOutputs();return false;
         }
+        // Prepared FX takes precedence over the legacy external callback.
+        // NEVER invoke both: that would double-compress or double-reverb.
+        // Snapshot ownership pins the M4 instance throughout this callback;
+        // only control-thread retirement releases the shared owner.
+        const auto dispatch=[&](ChannelId id,float* l,float* r,int n) noexcept {
+            const auto& acceptedFx=snap->prepared->fx;
+            if(acceptedFx.render)
+                acceptedFx.render(acceptedFx.context,id,l,r,n);
+            else effect(id,l,r,n);
+        };
         const bool ok=snap->prepared->graph.process(
              physical,physicalCount,mainL,mainR,frames,
-             std::forward<Fx>(effect),monitorL,monitorR);
-        rendering_.clear(std::memory_order_release);
+             dispatch,monitorL,monitorR);
         if(!ok)clearOutputs();
         return ok;
     }

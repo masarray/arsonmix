@@ -57,8 +57,23 @@ jobs:
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
+        with:
+          # PR default is a transient refs/pull/*/merge. Test and package
+          # the precise approved ENGINE SHA, never a synthetic merge.
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      - name: Attest exact source SHA before native compile or packaging
+        shell: pwsh
+        run: |
+          $expected = "${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}"
+          $actual = (& git rev-parse HEAD).Trim()
+          if ($expected -notmatch '^[0-9a-f]{40}$' -or $actual -ne $expected) {
+            throw "ENGINE SOURCE SHA MISMATCH: expected=$expected checkout=$actual"
+          }
+          Write-Host "ENGINE_EXACT_SOURCE_SHA_VERIFIED: $actual"
       - name: Cheap canonical Console v6 puzzle socket gate (no JUCE)
-        run: node scripts/check_console_puzzle.mjs
+        run: |
+          node --test tests/engine_runtime_reconciliation_test.mjs
+          node scripts/check_console_puzzle.mjs
       - name: Stop incomplete integrated product promotion before JUCE checkout
         if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-') }}
         run: node scripts/check_console_puzzle.mjs --release
@@ -137,12 +152,13 @@ jobs:
           & ./scripts/verify_native_windows_artifact.ps1 -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       # PRs compile/CTest/package but never silently publish a stable build.
-      # This single M4 FAT branch is explicitly allowed to upload an
-      # UNQUALIFIED experimental ZIP for real physical hardware testing.
+      # Sole ENGINE #266 may upload an EXACT-SHA, CI/PE-verified
+      # UNQUALIFIED 10CH+4AUX engineering FAT ZIP; NOT universal live.
+      # Retired M4-only branches cannot publish competing ENGINE builds.
       - uses: actions/upload-artifact@v4
-        if: ${{ github.event_name != 'pull_request' || github.head_ref == 'milestone/m4-unified-native-multichannel-fx-20261101' }}
+        if: ${{ github.event_name != 'pull_request' || github.head_ref == 'milestone/m5-universal-channelid-vst3-lease-migration-20261101' }}
         with:
-          name: ${{ github.event_name == 'pull_request' && 'ArSonMix-M4-EXPERIMENTAL-Hardware-FAT-Windows-x64' || 'ArSonMix-GUI10CH-P012-Verified-Hardware-FAT-Windows-x64' }}
+          name: ${{ github.event_name == 'pull_request' && 'ArSonMix-ENGINE-10CH4AUX-EXPERIMENTAL-Hardware-FAT-Windows-x64' || 'ArSonMix-GUI10CH-P012-Verified-Hardware-FAT-Windows-x64' }}
           path: dist/
           if-no-files-found: error
           retention-days: 14
