@@ -33,6 +33,18 @@ if (@(Compare-Object -ReferenceObject $expected -DifferenceObject $actual).Count
 }
 
 $manifest = Get-Content -LiteralPath (Join-Path $OutputDir "BUILD_PROVENANCE.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+# The first truly approved Console runtime must be proven INSIDE the shipped EXE,
+# not merely shipped alongside an old demo or hidden in unused assets.
+if ($manifest.activeGuiEntrypoint -ne "web/console-native.html__JUCE_BINARYDATA_ROOT") {
+    throw "STALE PRODUCT GUI: active WebView2 entrypoint not approved"
+}
+$nativeSource = [System.IO.File]::ReadAllText(
+    (Resolve-Path -LiteralPath "src/Main.cpp").Path,[Text.Encoding]::UTF8)
+if ($nativeSource -notmatch 'data = BinaryData::consolenative_html' -or
+    $nativeSource -match 'data = BinaryData::index_html') {
+    throw "STALE PRODUCT GUI: native / entrypoint still serves retired HTML"
+}
+
 # App-only ZIP does not ship an untracked dynamic WebView2Loader.dll.
 if ($manifest.webView2LoaderMode -ne "JUCE_WEBVIEW2_LOADER_STATIC_LINKED_V1" -or
     $manifest.guiStartupVerification -ne "WEBVIEW2_PREFLIGHT_AND_AR_MIX_GUI_READY_HANDSHAKE") {
@@ -70,6 +82,9 @@ if ($LASTEXITCODE -ne 0 -or $sha -ne $manifest.sourceCommit) {
 # hashes recorded next to an unrelated executable. This catches packaging an
 # older GUI with the latest source files and avoids brittle marker-only checks.
 $resources = @(
+    @{Path="web/console-native.html"; Hash=$manifest.consoleNativeHtmlSha256},
+    @{Path="web/console-native.css"; Hash=$manifest.consoleNativeCssSha256},
+    @{Path="web/console-native.js"; Hash=$manifest.consoleNativeJsSha256},
     @{Path="web/index.html"; Hash=$manifest.indexHtmlSha256},
     @{Path="web/app.js"; Hash=$manifest.appJsSha256},
     @{Path="web/styles.css"; Hash=$manifest.stylesCssSha256},
@@ -89,6 +104,21 @@ foreach ($item in $resources) {
     if ($sourceText.Length -eq 0 -or
         $embeddedText.IndexOf($sourceText, [StringComparison]::Ordinal) -lt 0) {
         throw "STALE NATIVE GUI: exact JUCE BinaryData resource absent from EXE: $($item.Path)"
+    }
+}
+# Require the source-owned native Console transport and approved layout,
+# not a perfect legacy-source hash match promoted as the wrong product.
+foreach ($marker in @(
+    "ArSonMix — Native Live Console",
+    "class=\"console-body",
+    "arMixConsoleSubscribe",
+    "arMixConsoleIntent",
+    "arMixConsoleAck",
+    "channelPeaksL",
+    "NATIVE JUCE BACKEND REQUIRED"
+)) {
+    if ($embeddedText.IndexOf($marker,[StringComparison]::Ordinal) -lt 0) {
+        throw "STALE PRODUCT GUI: native Console runtime marker absent from EXE: $marker"
     }
 }
 # Assert current approved calibration is present inside the actual shipped binary.

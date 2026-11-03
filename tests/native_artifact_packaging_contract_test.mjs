@@ -83,15 +83,17 @@ test('physical hardware FAT documents verified 10CH and dedicated 4 AUX native m
 });
 
 test('release proves exact calibrated GUI bytes are embedded in the executable, not just copied beside it', () => {
-  for (const field of ['indexHtmlSha256','appJsSha256','stylesCssSha256','pluginUiCssSha256','pluginUiJsSha256','bridgeJsSha256','monitorJsSha256','guiCalibration']) {
+  for (const field of ['consoleNativeHtmlSha256','consoleNativeCssSha256','consoleNativeJsSha256','activeGuiEntrypoint','indexHtmlSha256','appJsSha256','stylesCssSha256','pluginUiCssSha256','pluginUiJsSha256','bridgeJsSha256','monitorJsSha256','guiCalibration']) {
     assert.ok(packaging.includes(field+' = '), 'provenance missing '+field);
     assert.ok(verify.includes('manifest.'+field), 'verifier missing '+field);
   }
-  for (const file of ['web/index.html','web/app.js','web/styles.css','web/plugin-ui.css','web/plugin-ui.js','web/bridge.js','web/monitor.js']) {
+  for (const file of ['web/console-native.html','web/console-native.css','web/console-native.js','web/index.html','web/app.js','web/styles.css','web/plugin-ui.css','web/plugin-ui.js','web/bridge.js','web/monitor.js']) {
     assert.ok(verify.includes('Path="'+file+'"'), 'native resource not checked: '+file);
   }
   assert.match(verify,/IndexOf\(\$sourceText, \[StringComparison\]::Ordinal\)/);
   assert.match(verify,/STALE NATIVE GUI: exact JUCE BinaryData resource absent from EXE/);
+  assert.match(verify,/STALE PRODUCT GUI: active WebView2 entrypoint not approved/);
+  assert.match(verify,/STALE PRODUCT GUI: native Console runtime marker absent from EXE/);
   for (const marker of ['gain-scale-travel','vu-scale-travel','meter-signal-area','fader-travel']) {
     assert.ok(verify.includes('"'+marker+'"'), 'calibration marker absent: '+marker);
   }
