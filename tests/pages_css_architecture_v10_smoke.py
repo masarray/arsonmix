@@ -15,8 +15,8 @@ OWNERS = (
     "mixer-v3-layout-contract.css",
     "mixer-chrome-material.css",
 )
-EXPECTED_FNV = "6e2cc352"
-EXPECTED_CSS_LENGTH = 175840
+EXPECTED_FNV = "188064b0"
+EXPECTED_CSS_LENGTH = 175850
 EXPECTED_INLINE_LENGTH = 124497
 
 def fingerprint(css):

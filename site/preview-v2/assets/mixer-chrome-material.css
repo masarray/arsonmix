@@ -11,9 +11,9 @@
  --am-text-muted:#afc0c6;
  --am-accent:#6cb9ca;
  --am-crystal:#e7eff0;
- --b180-off:#cbd1d1;
- --b180-edge:#747f7f;
- --b180-off-ink:#172229;
+ --b180-off:var(--am-crystal);
+ --b180-edge:#899aa0;
+ --b180-off-ink:#12212a;
  /* Shared BTN-180 palette; final approved V13 values */
  --b180-color:var(--b180-off);
  --b180-border:var(--b180-edge);
