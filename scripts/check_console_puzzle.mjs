@@ -12,8 +12,9 @@ const files={
   guiTest:'tests/operator_console_v6_smoke.py',
   fat:'scripts/console_v6_fat_gate.mjs',
   fatTest:'tests/console_v6_fat_gate_test.mjs',
-  operatorHtml:'web/index.html',
-  operatorApp:'web/app.js',
+  operatorHtml:'web/console-native.html',
+  operatorApp:'web/console-native.js',
+  nativeEntry:'src/Main.cpp',
   cmake:'CMakeLists.txt'
 };
 const release=process.argv.includes('--release');
@@ -33,6 +34,7 @@ const checks=[
  ['GUI retired ten-strip demo removed',
   !/\bconst\s+raw\s*=\s*\[/.test(data.operatorApp) &&
   !/\bconst\s+channels\s*=\s*raw\.map\s*\(/.test(data.operatorApp),
+
   'GUI #271: replace hard-coded 10-channel demo array with native accepted ChannelId roster'],
  ['GUI approved single Console is packaged, not retired multi-workspace shell',
   !/data-view=["']FX RACK["']/.test(data.operatorHtml) &&
@@ -44,9 +46,21 @@ const checks=[
   /CREATE_CHANNEL/.test(data.gui) &&
   (data.gui.includes('graph.channels') || data.gui.includes('graph?.channels')),
   'ENGINE #266 + GUI #271: CREATE_CHANNEL native ACK then accepted graph.channels renders CH11+, no browser-created strips'],
+ ['Windows WebView2 root serves native approved Console, NOT legacy index',
+  /data = BinaryData::consolenative_html/.test(data.nativeEntry) &&
+  /console-native\.css/.test(data.nativeEntry) &&
+  /console-native\.js/.test(data.nativeEntry) &&
+  !/AR MIX Studio UI-only demonstration/.test(data.operatorApp),
+  'ENGINE #266: native / root must embed approved native operator Console and never the legacy fixed-ten HTML'],
+ ['Console listens to native ACK/snapshot and never fabricates metering',
+  /arMixConsoleSubscribe/.test(data.operatorApp) &&
+  /arMixConsoleIntent/.test(data.operatorApp) &&
+  /arMixConsoleAck/.test(data.operatorApp) &&
+  /channelPeaksL/.test(data.operatorApp) &&
+  !/Math\.sin/.test(data.operatorApp),
+  'GUI #271: actual native event bus and PCM; no browser animated meters'],
  ['JUCE BinaryData embeds release-gated operator HTML and JS',
-  /web\/index\.html\s+web\/styles\.css/.test(data.cmake) &&
-  /web\/app\.js/.test(data.cmake),
+  /web\/console-native\.html\s+web\/console-native\.css\s+web\/console-native\.js/.test(data.cmake),
   'FAT #270: CMake BinaryData must embed audited Console HTML/JS'],
 ];
 execFileSync(process.execPath,['--test','tests/console_v6_puzzle_seam_test.mjs'],{stdio:'inherit'});

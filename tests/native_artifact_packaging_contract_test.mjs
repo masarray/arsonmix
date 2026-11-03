@@ -137,11 +137,20 @@ test('FAT ZIP uses current single-APPLY physical first-sound guide',()=>{
 
 test('retired 10CH UI cannot upload until a joined approved native Console exists',()=>{
  const gate=read('scripts/check_console_puzzle.mjs');
+ const native=read('src/Main.cpp');
+ const gui=read('web/console-native.js');
+ const html=read('web/console-native.html');
  assert.match(gate,/GUI retired ten-strip demo removed/);
  assert.match(gate,/GUI approved single Console is packaged/);
  assert.match(gate,/GUI direct universal channel operation/);
  assert.match(gate,/data\.operatorHtml/);
  assert.match(gate,/CREATE_CHANNEL/);
+ assert.match(native,/BinaryData::consolenative_html/);
+ assert.match(gui,/arMixConsoleSubscribe/);
+ assert.match(gui,/arMixConsoleAck/);
+ assert.match(gui,/channelPeaksL/);
+ assert.match(html,/ArSonMix — Native Live Console/);
+ assert.doesNotMatch(html,/data-view="FX RACK"/);
  assert.match(workflow,/github\.event_name != 'pull_request' \|\| startsWith\(github\.head_ref, 'integration\/product-'\)/);
  const upload=workflow.split('uses: actions/upload-artifact@v4')[1]||'';
  assert.ok(upload.includes("github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')"));

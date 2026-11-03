@@ -15,8 +15,8 @@ test('only an integrated product branch may upload a Windows mixer candidate',()
  assert.match(windows,/'web\/\*\*'/);
  assert.match(windows,/workflow_dispatch:/);
  assert.match(windows,/cancel-in-progress: true/);
- assert.match(windows,/github\\.event_name == 'pull_request' && startsWith\\(github\\.head_ref, 'integration\\/product-'\\)/);
- assert.match(windows,/ArSonMix-INTEGRATED-UNIVERSAL-CONSOLE-EXPERIMENTAL-NOT-HARDWARE-QUALIFIED/);
+ assert.ok(windows.includes("github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')"));
+ assert.ok(windows.includes('ArSonMix-INTEGRATED-UNIVERSAL-CONSOLE-EXPERIMENTAL-NOT-HARDWARE-QUALIFIED'));
  assert.doesNotMatch(windows,/ArSonMix-ENGINE-10CH4AUX-EXPERIMENTAL-Hardware-FAT/);
  assert.ok(!windows.includes("github.head_ref == 'milestone/m4-unified-native-multichannel-fx-20261101'"));
  assert.ok(windows.indexOf('scripts/verify_native_windows_artifact.ps1') <
@@ -47,8 +47,8 @@ test('retain current native audio and dearVR CTests during CI optimization',()=>
  }
  assert.match(windows,/ctest --test-dir build -C Release --output-on-failure/);
  assert.match(windows,/'scripts\/build_ui_css\.py'/);
- assert.match(windows,/github\\.event_name == 'pull_request' && startsWith\\(github\\.head_ref, 'integration\\/product-'\\)/);
- assert.match(windows,/ArSonMix-INTEGRATED-UNIVERSAL-CONSOLE-EXPERIMENTAL-NOT-HARDWARE-QUALIFIED/);
+ assert.ok(windows.includes("github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')"));
+ assert.ok(windows.includes('ArSonMix-INTEGRATED-UNIVERSAL-CONSOLE-EXPERIMENTAL-NOT-HARDWARE-QUALIFIED'));
  assert.doesNotMatch(windows,/ArSonMix-ENGINE-10CH4AUX-EXPERIMENTAL-Hardware-FAT/);
 });
 
