@@ -7,7 +7,8 @@
 - **Preferred final recovery branch:** `checkpoint/gui-m1-wire-v48-buttons-v23-m1cache-20261103` (created from the exact post-reconciliation `main` commit after this lock is merged and checked). Its Git ref, not a mutable notion of "latest", is the recovery point.
 - **Published page:** https://masarray.github.io/arsonmix/preview/ ; source `site/preview-v2/index.html`; aliases include `/preview-v2/` and `/preview-buttons/` built using `scripts/build_pages.py`.
 - **CI evidence before cache-fix merge:** main UI smoke [#41597552546](https://github.com/masarray/arsonmix/actions/runs/41597552546) PASS; Pages [#41597927095](https://github.com/masarray/arsonmix/actions/runs/41597927095) PASS.
-- **Cache-fix head evidence:** PR #336 UI smoke [#41597737625](https://github.com/masarray/arsonmix/actions/runs/41597737625) PASS. Post-merge `main` run [#41599630359](https://github.com/masarray/arsonmix/actions/runs/41599630359) is the exact revision's required independent release gate.
+- **Cache-fix head evidence:** PR #336 UI smoke [#41597737625](https://github.com/masarray/arsonmix/actions/runs/41597737625) PASS. **Exact post-merge `main@3cdcb984` GUI smoke [#41599630359](https://github.com/masarray/arsonmix/actions/runs/41599630359) PASS; Pages deployment [#41600106291](https://github.com/masarray/arsonmix/actions/runs/41600106291) PASS.**
+- **Separate scope, not a clean full-product CI claim:** FactoryFX upstream release intake [#41599799098](https://github.com/masarray/arsonmix/actions/runs/41599799098) reported failure; its upstream packaging proposal is not part of the GUI reference gate and must be resolved independently before claiming broader production readiness.
 
 ## Reconciled source truth — already merged
 
