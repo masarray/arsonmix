@@ -38,6 +38,34 @@ struct UnifiedLegacyAccepted final {
     std::shared_ptr<DynamicChannelFxLeaseBank> fxOwners{};
     VerifiedNativeOutputs hardware{};
     std::uint64_t deviceEpoch=0,pcmRevision=0;
+
+    // E2 native GUI seam: bind a VST3 gesture to the CURRENT accepted PCM
+    // publisher, never just a retained old FX lease. Old editor handles may
+    // stay alive while a graph is retired, but stale controls cannot mutate
+    // a processor now referenced by a newer admitted graph. CONTROL only.
+    bool matches(const DynamicNativeSessionPublisher& publisher,
+                 std::uint64_t epoch,std::uint64_t revision) const noexcept {
+        return epoch!=0 && revision!=0 && epoch==deviceEpoch &&
+               revision==pcmRevision && fxOwners &&
+               fxOwners->epoch()==epoch && fxOwners->revision()==revision &&
+               publisher.acceptedRevision()==revision &&
+               publisher.acceptedRouting(epoch,revision)!=nullptr;
+    }
+    bool setFxBypass(const DynamicNativeSessionPublisher& publisher,
+                     std::uint64_t epoch,std::uint64_t revision,
+                     ChannelId id,std::size_t slot,
+                     const juce::String& instanceId,bool bypass) const noexcept {
+        return matches(publisher,epoch,revision) &&
+               fxOwners->setInsertBypass(epoch,revision,id,slot,
+                                         instanceId,bypass);
+    }
+    DynamicChannelFxLeaseBank::Lease leaseFxEditor(
+            const DynamicNativeSessionPublisher& publisher,
+            std::uint64_t epoch,std::uint64_t revision,ChannelId id,
+            std::size_t slot,const juce::String& instanceId) const noexcept {
+        if(!matches(publisher,epoch,revision))return {};
+        return fxOwners->leaseEditor(epoch,revision,id,slot,instanceId);
+    }
 };
 class UnifiedLegacyProductionAdmission final {
 public:

@@ -239,6 +239,36 @@ static void verifyUniversalChannelIdFxLeaseAndLivePcm() {
     assert(near(left[31],((.2f*2.f+.1f*4.f)*3.f+
                          (.1f*4.f)*.5f*2.f)*center));
     assert(near(left[31],right[31]));
+    // E2: bypass a REAL hosted JUCE VST in the SAME native ChannelId graph.
+    // Acknowledged plugin identity, epoch and revision must all agree. The
+    // bypass uses FxInstance's existing 8ms audio-thread envelope, not a
+    // second DSP path or a control-thread plugin restart.
+    auto* acceptedBank=static_cast<Bank*>(ownerPlan.context);
+    const auto ch11Id=(*acceptedBank->ownerForControl(ch11,0))->instanceId;
+    const int livingAtBypass=GainFx::living;
+    assert(!acceptedBank->setInsertBypass(epoch-1,2,ch11,0,ch11Id,true));
+    assert(!acceptedBank->setInsertBypass(epoch,1,ch11,0,ch11Id,true));
+    assert(!acceptedBank->setInsertBypass(epoch,2,ch11,0,"wrong-token",true));
+    assert(!acceptedBank->setInsertBypass(epoch,2,ch11,1,ch11Id,true));
+    {
+        auto editorLease=acceptedBank->leaseEditor(epoch,2,ch11,0,ch11Id);
+        assert(editorLease && editorLease->instanceId==ch11Id);
+        assert(!acceptedBank->leaseEditor(epoch,1,ch11,0,ch11Id));
+        assert(!acceptedBank->leaseEditor(epoch,2,ch11,0,"wrong-token"));
+    }
+    assert(acceptedBank->setInsertBypass(epoch,2,ch11,0,ch11Id,true));
+    for(int i=0;i<16;++i)
+        assert(native.render(epoch,pins,2,left.data(),right.data(),32,false,
+                             legacyFx));
+    assert(near(left[31],((.2f*2.f+.1f)*3.f+.1f*.5f*2.f)*center));
+    assert(GainFx::living==livingAtBypass && legacyFallbackCalls==0);
+    assert(acceptedBank->setInsertBypass(epoch,2,ch11,0,ch11Id,false));
+    for(int i=0;i<16;++i)
+        assert(native.render(epoch,pins,2,left.data(),right.data(),32,false,
+                             legacyFx));
+    assert(near(left[31],((.2f*2.f+.1f*4.f)*3.f+
+                          (.1f*4.f)*.5f*2.f)*center));
+    assert(GainFx::living==livingAtBypass && legacyFallbackCalls==0);
     // M5.3 physical SOURCE hot switch reuses the exact live JUCE VST
     // instances; no catalog lookup, plugin restart, heap or extra renderer.
     const auto heapAtSource=heapCalls.load(std::memory_order_relaxed);
@@ -408,6 +438,32 @@ static void verifyMU1LegacyM4FxFullMigrationAndMonitorPcm() {
         assert(near(legacyML[i],dynamicML[i]));
         assert(near(legacyMR[i],dynamicMR[i]));
     }
+    // E2 native accepted-state FX seam: stale epoch/revision/token is
+    // rejected; a genuine VST bypass changes PCM through the SAME accepted
+    // ChannelId processor lease, not through old M4 or a mock plug-in.
+    const auto ch1Id=accepted.graph.ids.inputs[0];
+    assert(!accepted.setFxBypass(publisher,epoch-1,1,ch1Id,0,oldCh1,true));
+    assert(!accepted.setFxBypass(publisher,epoch,0,ch1Id,0,oldCh1,true));
+    assert(!accepted.setFxBypass(publisher,epoch,1,ch1Id,0,"unowned",true));
+    {
+        auto editor=accepted.leaseFxEditor(publisher,epoch,1,ch1Id,0,oldCh1);
+        assert(editor && editor->instanceId==oldCh1);
+        assert(!accepted.leaseFxEditor(publisher,epoch,1,ch1Id,0,"unowned"));
+    }
+    assert(accepted.setFxBypass(publisher,epoch,1,ch1Id,0,oldCh1,true));
+    const auto heapAtFxControl=heapCalls.load(std::memory_order_relaxed);
+    for(int i=0;i<16;++i)
+        assert(publisher.render(epoch,physical,4,dynamicL.data(),dynamicR.data(),
+                                32,false,mustNeverCall,
+                                dynamicML.data(),dynamicMR.data()));
+    assert(heapCalls.load(std::memory_order_relaxed)==heapAtFxControl);
+    assert(!near(legacyL[31],dynamicL[31]));
+    assert(accepted.setFxBypass(publisher,epoch,1,ch1Id,0,oldCh1,false));
+    for(int i=0;i<16;++i)
+        assert(publisher.render(epoch,physical,4,dynamicL.data(),dynamicR.data(),
+                                32,false,mustNeverCall,
+                                dynamicML.data(),dynamicMR.data()));
+    assert(near(legacyL[31],dynamicL[31]));
     // Faults are non-destructive: no external CH1 Orbit state dropped, no
     // wrong-speaker output, no stale hardware, no armed graph recreation.
     LiveChannelFxGraph blockedLegacy(legacyGraph,32,32);

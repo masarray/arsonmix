@@ -157,6 +157,36 @@ public:
         const auto* p=find(id);return p&&slot<p->count?&p->owners[slot]:nullptr;
     }
 
+    // E2: stable ChannelId VST3 control plane. Requests are serialized by
+    // the native CONTROL writer, never the audio callback. A stale epoch,
+    // graph or opaque instance token cannot bypass somebody else's plugin.
+    // FxInstance owns the existing 8-ms realtime wet/dry envelope and vendor
+    // processBlock. No graph swap, device restart, VST creation or RT heap.
+    bool setInsertBypass(std::uint64_t expectedEpoch,
+                         std::uint64_t expectedRevision,ChannelId id,
+                         std::size_t slot,const juce::String& instanceToken,
+                         bool bypass) const noexcept {
+        if(expectedEpoch!=epoch_ || expectedRevision!=revision_ ||
+           !id.value || instanceToken.isEmpty())return false;
+        const auto* owner=ownerForControl(id,slot);
+        if(!owner || !*owner || !(*owner)->processor ||
+           (*owner)->instanceId!=instanceToken)return false;
+        (*owner)->bypassRequested.store(bypass,std::memory_order_release);
+        return true;
+    }
+    // The actual prepared vendor instance is also the native editor owner;
+    // never synthesize a WebView editor or use a catalog name as identity.
+    Lease leaseEditor(std::uint64_t expectedEpoch,
+                      std::uint64_t expectedRevision,ChannelId id,
+                      std::size_t slot,
+                      const juce::String& instanceToken) const noexcept {
+        if(expectedEpoch!=epoch_ || expectedRevision!=revision_ ||
+           !id.value || instanceToken.isEmpty())return {};
+        const auto* owner=ownerForControl(id,slot);
+        return owner && *owner && (*owner)->processor &&
+               (*owner)->instanceId==instanceToken ? *owner : Lease{};
+    }
+
     // Process each M4 VST exactly once at its target ChannelId. CPU work is
     // proportional to that node's FX rack, not every Channel in the session.
     // Call only on the native audio thread after epoch/revision graph admission.
