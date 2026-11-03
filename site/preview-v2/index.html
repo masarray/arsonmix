@@ -2287,7 +2287,7 @@ html * ,html *::before,html *::after{
 <link rel="stylesheet" href="assets/mixer-meter-display.css?v=css-owner-v9">
 <link rel="stylesheet" href="assets/mixer-utility-controls.css?v=inter-utility-v7">
 <link rel="stylesheet" href="assets/inter-embedded.css?v=inter-utility-v7">
-<link rel="stylesheet" href="assets/mixer-wire-dots.css?v=v44">
+<link rel="stylesheet" href="assets/mixer-wire-dots.css?v=v45">
 
 </head>
 <body>
@@ -3439,6 +3439,7 @@ function renderWireRouting(){
  if(!svg||!viewport)return;
  if(!source||document.querySelector('.console-body')?.classList.contains('collapsed-send')){
   if(svg.childNodes?.length)svg.replaceChildren?.();
+  syncVisibleWireDots(svg); // no visible cables means no illuminated receiving rings
   return;
  }
  const vp=viewport.getBoundingClientRect?.();
@@ -3449,7 +3450,7 @@ function renderWireRouting(){
  const visibleSource=!!from?.width;
  const bankIn=viewport.querySelector?.('#tracks .strip .wire-node-in');
  const bankRect=bankIn?.getBoundingClientRect?.();
- if(!vp||!vp.width||!vp.height||(!visibleSource&&!bankRect?.width)){svg.innerHTML='';return;}
+ if(!vp||!vp.width||!vp.height||(!visibleSource&&!bankRect?.width)){svg.innerHTML='';syncVisibleWireDots(svg);return;}
  svg.setAttribute('viewBox','0 0 '+vp.width+' '+vp.height);
  // An off-bank SOURCE enters via the left patch-bay boundary. This is a
  // labelled portal, never a fabricated channel position across unseen banks.
@@ -3561,10 +3562,14 @@ function renderWireRouting(){
 /* Only visible SVG cables paint matching physical dot hue/opacity.
    No RAF repaint and no forced active light on hidden/off-bank channels. */
 function syncVisibleWireDots(svg){
- const visible=new Map();
+ const visible=new Map(),arrivals=new Set();
  for(const path of svg.querySelectorAll('path.wire-incoming-line,path.wire-outgoing-line,path.wire-context-line')){
+  // A hover hint is not a plugged-in cable. Keep snap/hover illumination
+  // independent of physical connection state and endpoint paint.
+  if(path.dataset.routeKind==='preview')continue;
   const color=path.getAttribute('stroke'),opacity=Number(path.getAttribute('opacity'));
   if(!color||!Number.isFinite(opacity))continue;
+  if(path.dataset.to)arrivals.add(path.dataset.to);
   for(const [id,direction] of [[path.dataset.from,'out'],[path.dataset.to,'in']]){
    const key=id+':'+direction;
    if(!id||(visible.has(key)&&visible.get(key).opacity>=opacity))continue;
@@ -3572,7 +3577,16 @@ function syncVisibleWireDots(svg){
   }
  }
  for(const node of document.querySelectorAll('.strip .wire-node-out,.strip .wire-node-in')){
-  const key=node.closest('.strip')?.dataset.id+':'+(node.classList.contains('wire-node-out')?'out':'in');
+  const isInput=node.classList.contains('wire-node-in');
+  const trackId=node.closest('.strip')?.dataset.id;
+  const key=trackId+':'+(isInput?'in':'out');
+  // Track a real visible arrival separately from an armed or stored route.
+  // The receiving ring uses --ch (its own channel); the inner dot still
+  // uses the incoming wire's SVG hue and opacity.
+  if(isInput){
+   if(arrivals.has(trackId))node.setAttribute('data-wire-arrival','true');
+   else node.removeAttribute('data-wire-arrival');
+  }
   const edge=visible.get(key);
   if(!edge){node.removeAttribute('data-wire-visible');continue;}
   node.setAttribute('data-wire-visible','true');

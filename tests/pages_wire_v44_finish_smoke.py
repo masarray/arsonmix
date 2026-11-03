@@ -23,7 +23,7 @@ def main():
   public=dst/"preview/mixer.html"
   assert public.read_bytes()==SRC.read_bytes(),"published /preview/ differs from canonical GUI"
   assert (dst/"preview/assets/mixer-wire-dots.css").read_bytes()==CSS.read_bytes(),"published WIRE style missing"
-  assert 'assets/mixer-wire-dots.css?v=v44' in public.read_text("utf-8")
+  assert 'assets/mixer-wire-dots.css?v=v45' in public.read_text("utf-8")
   with sync_playwright() as pw:
    browser=pw.chromium.launch(headless=True)
    for width in (1366,1680):
@@ -46,9 +46,14 @@ def main():
     out_label=src.locator('small')
     in_label=dest.locator('.wire-label')
     level=page.locator('#tracks .strip[data-id="5"] .wire-gain-caption')
-    assert box(out_label)["x"] >= box(pin)["x"]+box(pin)["width"]-1,(width,"OUT label overlaps pin")
-    assert box(in_label)["x"] >= box(dest)["x"]+box(dest)["width"]-1,(width,"IN label not right")
-    assert box(level)["x"] >= box(page.locator('#tracks .strip[data-id="5"] .wire-pot'))["x"]+20,(width,"LEVEL not right")
+    # V45: captions intentionally fold away only when the actual channel
+    # cannot safely fit icon + text; do not punish responsive dense banks.
+    if out_label.is_visible():
+     assert box(out_label)["x"] >= box(pin)["x"]+box(pin)["width"]-1,(width,"OUT label overlaps pin")
+     assert box(in_label)["x"] >= box(dest)["x"]+box(dest)["width"]-1,(width,"IN label not right")
+     assert box(level)["x"] >= box(page.locator('#tracks .strip[data-id="5"] .wire-pot'))["x"]+20,(width,"LEVEL not right")
+    else:
+     assert not in_label.is_visible() and not level.is_visible(),"caption fallback must be all or none"
     assert pin.evaluate("el=>getComputedStyle(el).backgroundColor")=="rgb(75, 83, 91)","idle OUT is not graphite"
     x0,y0=center(src);x1,y1=center(dest)
     page.evaluate("""()=>{
