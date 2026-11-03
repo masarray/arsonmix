@@ -9,7 +9,7 @@ const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const palette=['#1699cd','#b92e41','#cf6b1e','#b28c27','#34a544','#168762','#0e95c9','#066fa9','#7140b5','#b52893','#c32974','#586889'];
 const pending=new Map(),lastValues=new Map();
 let snapshot=null,rows=[],bank=0,selectedIds=new Set(),serial=0,lastSignature='',native=!!(api?.emitEvent&&api?.addEventListener);
-let controlsEnabled=false;
+let controlsEnabled=false,focusNewChannel=false;
 const announce=(message,problem=false)=>{const n=el('info');if(n){n.textContent=message;n.style.color=problem?'#e2a5a5':'';}};
 const opAvailable=op=>!!(snapshot?.productionCallbackLive?
     snapshot.graph?.capabilities?.supportedOps?.includes(op):
@@ -47,7 +47,9 @@ function normalize(s){
      const patch=ch.source||null;
      actual.push({id,name:String(ch.name||'Channel '+id),
        role:String(ch.role),format:String(ch.format||'STEREO'),
-       source:patch?.portId||'',out:String(ch.primaryOutput||''),
+       source:patch?.portIdRight && patch?.portId ?
+         'pair:'+String(patch.portId).slice(3)+':'+String(patch.portIdRight).slice(3):
+         patch?.portId||'',out:String(ch.primaryOutput||''),
        controls:{faderDb:20*Math.log10(Math.max(Number(ch.fader)||0,1e-6)),
                  pan:(Number(ch.pan)||0)*100,mute:!!ch.mute,solo:!!ch.solo},
        fx:[],sends:ch.parallelSends||[],legacy:false,nativeScoped:true});
@@ -62,11 +64,22 @@ function listedRows(){const filter=el('viewFilter')?.value||'all';
 }
 function gain(v){const n=Number(v);return Number.isFinite(n)?Math.max(-60,Math.min(10,n)):-60}
 function sourceOptions(row){
- const list=['<option value="">UNPATCHED</option>'];
- for(const e of snapshot?.device?.inputEndpoints||[]){
-  if(!e.active)continue;
-  list.push('<option value="'+esc(e.id)+'"'+(row.source===e.id?' selected':'')+'>'+esc(e.label||e.id)+'</option>');
- }
+ const endpoints=(snapshot?.device?.inputEndpoints||[]).filter(e=>
+   e.active && Number.isInteger(e.port) && e.port>=0 && typeof e.id==='string');
+ const list=['<option value=""'+(row.source?' disabled':'')+'>UNPATCHED</option>'];
+ // A stereo physical patch is NEVER synthesized from a neighbouring
+ // ordinal. Both named pins MUST be in the current accepted device mask.
+ if(row.nativeScoped && row.format==='STEREO'){
+   for(let i=0;i<endpoints.length;i++)for(let j=0;j<endpoints.length;j++){
+     const l=endpoints[i],r=endpoints[j];
+     if(i===j||l.port===r.port)continue;
+     const value='pair:'+l.port+':'+r.port;
+     list.push('<option value="'+esc(value)+'"'+(row.source===value?' selected':'')+'>'+
+       'L '+esc(l.label||l.id)+' / R '+esc(r.label||r.id)+'</option>');
+   }
+ }else for(const e of endpoints)
+   list.push('<option value="'+esc(e.id)+'"'+(row.source===e.id?' selected':'')+'>'+
+     esc(e.label||e.id)+'</option>');
  return list.join('');
 }
 function outputOptions(row){
@@ -83,7 +96,8 @@ function nativeStrip(r){
    !(r.role==='MAIN'&&['SET_FADER','SET_PAN','SET_MUTE','SET_SOLO'].includes(op))&&
    !(r.role==='FX_RETURN'&&['SET_FADER','SET_PAN','SET_MUTE','SET_SOLO'].includes(op))&&
    !(snapshot?.legacyM4?.nativeBus?.structural&&
-     (op==='SET_PRIMARY_OUT'||op==='SET_PROCESSING_FORMAT'));
+     (op==='SET_PRIMARY_OUT'||op==='SET_PROCESSING_FORMAT'))&&
+   !(snapshot?.device?.outputArmed && op==='NATIVE_PATCH_CHANNEL');
  const act=(op,attrs='')=>' data-op="'+op+'" data-id="'+esc(r.id)+'"'+attrs+
     (can(op)?'':' disabled title="Requires native accepted operation"');
  const role=main?'master':r.role==='GROUP'?'bus':r.role==='FX_RETURN'?'fx':'audio';
@@ -127,6 +141,10 @@ function nativeStrip(r){
 }
 function render(){
  const list=listedRows(),max=Math.max(1,Math.ceil(list.length/8));bank=Math.min(bank,max-1);
+ if(focusNewChannel){
+   const pos=list.map(r=>r.role).lastIndexOf('INPUT');
+   if(pos>=0){bank=Math.floor(pos/8);focusNewChannel=false;}
+ }
  const start=bank*8,visible=list.slice(start,start+8);
  el('tracks').innerHTML=visible.map(nativeStrip).join('');
  const main=rows.find(r=>r.role==='MAIN');
@@ -134,7 +152,9 @@ function render(){
  el('trackCount').textContent=rows.length+' NATIVE CHANNELS · '+(snapshot?.productionCallbackLive?'UNIVERSAL':'LEGACY M4 COMPAT');
  const selector=el('bankSelect');selector.innerHTML=Array.from({length:max},(_,i)=>'<option value="'+i+'">BANK '+(i+1)+'</option>').join('');selector.value=String(bank);
  el('bankPrev').disabled=bank===0;el('bankNext').disabled=bank>=max-1;
- if(el('nativeAddAudio'))el('nativeAddAudio').disabled=!(opAvailable('CREATE_CHANNEL')||opAvailable('NATIVE_CREATE_CHANNEL'));
+ const createCap=opAvailable('CREATE_CHANNEL')||opAvailable('NATIVE_CREATE_CHANNEL');
+ if(el('nativeAddAudio'))el('nativeAddAudio').disabled=!native||!createCap||!!snapshot?.device?.outputArmed;
+ if(el('nativeChannelFormat'))el('nativeChannelFormat').disabled=!native||!createCap||!!snapshot?.device?.outputArmed;
  if(el('nativeGroup'))el('nativeGroup').disabled=!(opAvailable('NATIVE_CREATE_GROUP_SELECTED')&&selectedIds.size>0&&!snapshot?.device?.outputArmed);
  if(el('nativeReturn'))el('nativeReturn').disabled=true;
  for(const [id,op] of [['addTrack','CREATE_CHANNEL'],['addBus','CREATE_GROUP'],['addFx','CREATE_FX_RETURN'],['clearCue','SET_CUE']])
@@ -188,8 +208,22 @@ function submitNode(n){
  const row=rowFor(n.dataset.id),op=n.dataset.op;
  if(!row||!op)return;
  if(op==='NATIVE_PATCH_CHANNEL'){
-    const pin=snapshot?.device?.inputEndpoints?.find(x=>x.id===n.value);
-    if(pin)send(op,row,{physicalLeft:pin.port,physicalRight:-1,sourceFormat:'MONO'});
+    const allowed=(snapshot?.device?.inputEndpoints||[]).filter(x=>
+      x.active && Number.isInteger(x.port) && x.port>=0);
+    if(!n.value)return;
+    if(row.format==='STEREO'){
+      const match=/^pair:([0-9]+):([0-9]+)$/.exec(n.value);
+      if(!match){announce('Choose two verified stereo input pins',true);return;}
+      const l=Number(match[1]),r=Number(match[2]);
+      if(l===r||!allowed.some(x=>x.port===l)||!allowed.some(x=>x.port===r)){
+        announce('STEREO PATCH REJECTED · both distinct pins must be active',true);return;
+      }
+      send(op,row,{physicalLeft:l,physicalRight:r,sourceFormat:'STEREO'});
+    }else{
+      const pin=allowed.find(x=>x.id===n.value);
+      if(pin)send(op,row,{physicalLeft:pin.port,physicalRight:-1,sourceFormat:'MONO'});
+      else announce('MONO PATCH REJECTED · input no longer active',true);
+    }
  }
  else if(op==='SET_SOURCE')send(op,row,{portId:n.value,sourceFormat:'MONO'});
  else if(op==='SET_PROCESSING_FORMAT')send(op,row,{format:row.format==='MONO'?'STEREO':'MONO'});
@@ -235,6 +269,8 @@ function ack(a){
  const key=a?.requestId,op=pending.get(key);
  if(!op)return;
  pending.delete(key);
+ if(a.status==='ACCEPTED' && (op.op==='NATIVE_CREATE_CHANNEL'||op.op==='CREATE_CHANNEL'))
+   focusNewChannel=true; // navigate only after the next accepted native snapshot
  announce(a.status==='ACCEPTED'?op.op+' ACCEPTED · verifying native snapshot':
    op.op+' REJECTED · '+(a.errorCode||'UNKNOWN'),a.status!=='ACCEPTED');
  // Never mutate GUI state from ACK alone; subsequent native snapshot is authoritative.
@@ -292,9 +328,11 @@ document.getElementById('nativeGroup')?.addEventListener('click',()=>{
 });
 document.getElementById('nativeAddAudio')?.addEventListener('click',()=>{
  if(!native)return;
+ if(snapshot?.device?.outputArmed){announce('MUTE OUTPUT before creating a channel',true);return;}
  const name='Channel '+(rows.filter(r=>r.role==='INPUT').length+1),op=opAvailable('CREATE_CHANNEL')?
    'CREATE_CHANNEL':opAvailable('NATIVE_CREATE_CHANNEL')?'NATIVE_CREATE_CHANNEL':null;
- if(op)send(op,{id:'0',legacy:false},{name,format:'MONO'});
+ const format=el('nativeChannelFormat')?.value==='STEREO'?'STEREO':'MONO';
+ if(op)send(op,{id:'0',legacy:false},{name,format});
 });
 for(const id of ['wireView','wireMode','sofTarget'])if(el(id))el(id).disabled=true;
 if(!native){announce('NATIVE JUCE BACKEND REQUIRED · NO SIMULATED AUDIO',true);return;}

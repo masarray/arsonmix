@@ -115,6 +115,7 @@ jobs:
             'tests/independent_clock_adapter_contract_test.mjs'
             'tests/direct_restore_recovery_contract_test.mjs'
             'tests/native_artifact_packaging_contract_test.mjs'
+            'tests/console_native_stereo_operator_test.mjs'
             'tests/portable_workspace_contract_test.mjs'
             'tests/plugin_vault_contract_test.mjs'
             'tests/plugin_ui_contract_test.mjs'

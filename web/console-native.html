@@ -5,7 +5,8 @@
     <button type="button" class="tool primary" id="nativeDevice" title="Select verified ASIO/WASAPI device">AUDIO DEVICE</button>
     <button type="button" class="tool" id="nativeOutput" title="Native hardware output mute and guarded ARM" aria-pressed="false">OUTPUT MUTED</button>
     <span class="sep"></span>
-    <button type="button" class="tool primary" id="nativeAddAudio" title="Add native channel after ChannelId graph admission" disabled>+ CHANNEL</button>
+    <label class="toolbar-label" for="nativeChannelFormat">CHANNEL FORMAT</label><select class="toolbar-select" id="nativeChannelFormat" aria-label="New native channel processing format" disabled><option value="MONO">MONO</option><option value="STEREO">STEREO</option></select>
+    <button type="button" class="tool primary" id="nativeAddAudio" title="Create a verified native ChannelId channel with selected mono/stereo format; disarm output for topology edits" disabled>+ CHANNEL</button>
     <button type="button" class="tool" id="nativeGroup" disabled>GROUP SELECTED</button>
     <button type="button" class="tool" id="nativeReturn" disabled title="Requires actual wet VST3 ownership">+ FX RETURN</button>
     <span class="sep"></span>

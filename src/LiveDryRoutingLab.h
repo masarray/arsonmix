@@ -1471,6 +1471,13 @@ public:
                     const auto pin=enabledPorts_[source.inputL].load(std::memory_order_relaxed);
                     physical->setProperty("portId","in:"+juce::String(pin));
                 }
+                // Preserve BOTH actual physical pins on native readback, not
+                // just the left pin. The GUI may not invent the right channel.
+                if(source.stereo && source.inputR>=0 &&
+                   source.inputR<portCount_.load(std::memory_order_acquire)) {
+                    const auto right=enabledPorts_[source.inputR].load(std::memory_order_relaxed);
+                    physical->setProperty("portIdRight","in:"+juce::String(right));
+                }
                 physical->setProperty("sourceFormat",source.stereo?"STEREO":"MONO");
                 row->setProperty("source",juce::var(physical.release()));
                 break;
