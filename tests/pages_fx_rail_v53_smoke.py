@@ -101,7 +101,12 @@ def check_transactions(page):
  # Real pointer Drag&Drop on dedicated grip; non-draggable rows cannot reorder.
  root.locator('.fx-grip[data-slot="0"]').drag_to(root.locator('.fxslot-row[data-slot="1"]'))
  dragged=model(page)
- assert dragged[:2]==initial[:2][::-1],("grip DnD changed order/state incorrectly",dragged)
+ # Slot indices are physical positions and MUST remain 0/1 after moving.
+ # Compare stable insert payload separately from its new position.
+ assert [r["slot"] for r in dragged[:2]]==[0,1],("invalid DnD positions",dragged)
+ for key in ("id","name","bypassed"):
+  assert [r[key] for r in dragged[:2]]==[
+   r[key] for r in initial[:2][::-1]],("grip DnD changed "+key,dragged)
  # Cross-channel FX lease cannot become a blind name-only clone.
  before=model(page)
  second=model(page,"2")
