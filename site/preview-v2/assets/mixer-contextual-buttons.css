@@ -20,7 +20,6 @@
   #wireMaster,
   .mixer-title button.wire-v34-tool,
   .console-body .section-rail button.rail-cell[data-section],
-  .console-body .strip button.mx-util-key,
   .plugin-footer button,
   .plugin-browser .plugin-head button,
   .plugin-browser .plugin-actions button,
@@ -56,7 +55,6 @@
   .command-bar button.tool,.command-bar summary.tool,
   .more-tools-panel button.tool,.identity-actions button.console-control,
   #wireMaster,.mixer-title button.wire-v34-tool,
-  .console-body .strip button.mx-util-key,
   .plugin-footer button,.plugin-browser .plugin-head button,
   .plugin-browser .plugin-actions button,.plugin-browser .plugin-paths button,
   .fast-picker button:not(.fast-effect),.route-choice-head button,
@@ -74,17 +72,16 @@
 }
 /* Keep hardware action color local to its semantic role, not a generic glow. */
 .app :is(
-  #wireMaster,#routeOnly,#routeParallel,.mx-util-key[data-util-kind="fx-main"],
-  .mx-util-key[data-util-kind="fx-slot"],#identitySave
+  #wireMaster,#routeOnly,#routeParallel,#identitySave
 ){--ari-on-top:#3b8c6e;--ari-on-hi:#50a783;--ari-on-mid:#3d956f;--ari-on-bottom:#308665;--ari-on-edge:#266347;--ari-on-ink:#f0fff7}
-.app :is(#mode,#wireNavigatorToggle,#wireMatrixToggle,.mx-util-key[data-util-kind="format"],#pluginsButton)
+.app :is(#mode,#wireNavigatorToggle,#wireMatrixToggle,#pluginsButton)
 {--ari-on-top:#388ea9;--ari-on-hi:#54aec6;--ari-on-mid:#3e94ae;--ari-on-bottom:#2d839c;--ari-on-edge:#246577;--ari-on-ink:#152b36}
 .app :is(#sofToggle,#saveScene,#recallScene,#pluginScan,#pluginImport)
 {--ari-on-top:#3c76a7;--ari-on-hi:#548ebd;--ari-on-mid:#417aaa;--ari-on-bottom:#366b99;--ari-on-edge:#28486f;--ari-on-ink:#f4faff}
-.app :is(#sceneSafe,#preview,.mx-util-key[data-util-kind="phase"],#wireWsUndo)
+.app :is(#sceneSafe,#preview,#wireWsUndo)
 {--ari-on-top:#ba8034;--ari-on-hi:#cc9849;--ari-on-mid:#b98033;--ari-on-bottom:#aa722a;--ari-on-edge:#7d5021;--ari-on-ink:#21180c}
 .app :is(#group,#ungroup){--ari-on-top:#70649a;--ari-on-hi:#8576b2;--ari-on-mid:#7768a3;--ari-on-bottom:#695e90;--ari-on-edge:#493c68;--ari-on-ink:#f8f4ff}
-.app :is(#reset,#clearCue,.mx-util-key[data-util-kind="fx-remove"],#pluginClose,#fastClose)
+.app :is(#reset,#clearCue,#pluginClose,#fastClose)
 {--ari-on-top:#bc3838;--ari-on-hi:#c43c3c;--ari-on-mid:#b93434;--ari-on-bottom:#b03535;--ari-on-edge:#a42e2e;--ari-on-ink:#fff2f2}
 /* Only existing application state can latch. Momentary actions have no
    aria-pressed and NEVER retain the ON material after releasing the mouse. */
@@ -93,7 +90,6 @@
   .more-tools-panel button.tool,.identity-actions button.console-control,
   #wireMaster,.mixer-title button.wire-v34-tool,
   .console-body .section-rail button.rail-cell[data-section],
-  .console-body .strip button.mx-util-key,
   .plugin-footer button,.plugin-browser .plugin-head button,
   .plugin-browser .plugin-actions button,.plugin-browser .plugin-paths button,
   .fast-picker button:not(.fast-effect),.route-choice-head button,
@@ -118,7 +114,6 @@
   .command-bar button.tool,.command-bar summary.tool,
   .more-tools-panel button.tool,.identity-actions button.console-control,
   #wireMaster,.mixer-title button.wire-v34-tool,
-  .console-body .strip button.mx-util-key,
   .plugin-footer button,.plugin-browser .plugin-head button,
   .plugin-browser .plugin-actions button,.plugin-browser .plugin-paths button,
   .fast-picker button:not(.fast-effect),.route-choice-head button,
@@ -135,8 +130,6 @@
   box-shadow:none!important;transform:none!important;
 }
 /* Micro keys are physically smaller and must stay exactly their old size. */
-.app .console-body .strip button.mx-util-key{border-radius:2px!important}
-.app .console-body .strip button.mx-util-key::before{top:0!important;opacity:.45!important}
 /* No button should move its OWN bounding box or its neighboring controls.
    Focus visibility is non-geometric and remains available for keyboard users. */
 .app :is(.command-bar,.console-body,.mixer-title,.plugin-browser,.wire-workspace,.identity-actions)
@@ -160,7 +153,6 @@
   .more-tools-panel button.tool,
   .identity-actions button.console-control,
   .mixer-title button.wire-v34-tool,
-  .console-body .strip button.mx-util-key,
   .wire-workspace button
 ):active:not(:disabled){
   transform:none!important;

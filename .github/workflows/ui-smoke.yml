@@ -105,6 +105,8 @@ jobs:
         run: python tests/pages_css_architecture_v16_smoke.py
       - name: Verify embedded Inter font and contextual V7 micro-controls
         run: python tests/pages_inter_utility_v7_smoke.py
+      - name: Validate exact alpha micro hardware sprite states and WIRE coexistence
+        run: python tests/pages_micro_button_assets_v1_smoke.py
       - name: Verify owned V6 mixer hardware keys and WIRE regression
         run: python tests/pages_controls_v6_smoke.py
       - name: Verify CSS-built MUTE reference face and active/inactive interaction
