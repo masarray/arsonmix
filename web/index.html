@@ -3239,6 +3239,115 @@ window.addEventListener('resize',()=>{
  if(resizeQueued)return;resizeQueued=true;
  requestAnimationFrame(()=>{resizeQueued=false;render();});
 });
+
+/* Actual JUCE snapshot is sole accepted DSP state. ID shown in strip is only
+   a bank ordinal; the uint64 native ChannelId stays a canonical string. */
+const displayIds=new Map();
+let nextDisplay=1,lastRenderedStructure='';
+function projectNative(s){
+ if(!NATIVE||!s||s.schemaVersion!==6||!s.device||!s.graph)return;
+ nativeSnapshot=s;
+ const legacy=s.legacyM4||{},universal=s.productionCallbackLive===true;
+ const rows=[];
+ if(universal&&Array.isArray(s.graph.channels)){
+  for(const r of s.graph.channels){
+   if(r.role==='MAIN'||!/^[1-9][0-9]*$/.test(String(r.id)))continue;
+   rows.push({id:String(r.id),role:r.role,name:r.name||r.role,
+    width:r.format||r.processingFormat||'STEREO',
+    source:r.source?.portId||'None',
+    main:!!r.primaryOutId,db:Number(r.faderDb)||0,pan:Number(r.pan)||0,
+    mute:!!r.mute,solo:!!r.solo,fx:Array.isArray(r.inserts)?r.inserts:[]});
+  }
+ }else if(legacy.controlPlane==='LEGACY_M4_ORDINAL'&&Array.isArray(legacy.acceptedChannels)){
+  legacy.acceptedChannels.forEach((r,i)=>{
+   const c=legacy.channelControls?.[i]||{};
+   rows.push({id:String(i+1),role:'INPUT',name:'CH '+String(i+1).padStart(2,'0'),
+    width:r.channelFormat||'STEREO',
+    source:r.mode!=='NONE'&&Number(r.left)>=0?'in:'+r.left:'None',
+    main:!!r.main,db:Number(c.db)||0,pan:Number(c.pan)||0,mute:!!c.mute,solo:!!c.solo,
+    fx:legacy.fxInstances?.[i]||[]});
+  });
+  (legacy.auxReturns||[]).forEach((r,i)=>{
+   const gain=Number(r.gain);
+   rows.push({id:String(i+11),role:'FX_RETURN',name:'AUX '+(i+1),
+    width:'STEREO',source:'None',main:!!r.main,
+    db:gain>0?20*Math.log10(gain):-60,pan:0,mute:!r.enabled,solo:false,
+    fx:legacy.fxInstances?.[i+10]||[]});
+  });
+ }
+ const selected=new Set(tracks.filter(t=>t.selected).map(t=>t.nativeId));
+ const mapped=rows.map((r,i)=>{
+  let id=displayIds.get(r.id);
+  if(!id){id=nextDisplay++;displayIds.set(r.id,id);}
+  const kind=r.role==='GROUP'?'bus':r.role==='FX_RETURN'||r.role==='AUX'?'fx':'audio';
+  const t=make(r.name,kind,COLORS[i%COLORS.length]);
+  t.id=id;t.nativeId=r.id;t.selected=selected.has(r.id);
+  t.format=String(r.width).toLowerCase()==='mono'?'mono':'stereo';
+  t.input=r.source;t.output=r.main?'Master':'SOURCE ONLY (No Main)';
+  t.level=Math.max(-60,Math.min(10,r.db));t.pan=Math.max(-100,Math.min(100,r.pan));
+  t.mute=r.mute;t.solo=r.solo;t.fx=Array(8).fill('None');t.nativeFxSlots=[];
+  r.fx.slice(0,8).forEach((fx,k)=>{
+   if(fx?.instanceId){t.fx[k]=fx.catalogId||fx.name||'VST3';t.slotBypass[k]=!!fx.bypassed;t.nativeFxSlots[k]=fx;}
+  });
+  return t;
+ });
+ const key=JSON.stringify(mapped.map(t=>[t.nativeId,t.kind,t.name,t.input,t.output,t.format,t.fx]))
+  +s.device.epoch+JSON.stringify(s.device.enabledInputs);
+ const structural=key!==lastRenderedStructure;
+ lastRenderedStructure=key;
+ const prev=new Map(tracks.map(t=>[t.nativeId,t]));
+ tracks=mapped;
+ if(structural){
+  wireEdges=[]; // No guessed cables: GUI graph derives ONLY from accepted edges.
+  render();
+ }else{
+  for(const t of tracks){
+   const old=prev.get(t.nativeId);
+   if(!old)continue;
+   if(old.mute!==t.mute||old.solo!==t.solo)refreshStrip(t);
+   const root=document.querySelector('.strip[data-id="'+t.id+'"]');
+   const f=root?.querySelector('.fader');
+   if(f&&document.activeElement!==f){f.value=String(t.level);syncFaderVisual(t,root);}
+  }
+ }
+ // The bridge supplies real post-DSP peak samples; never animate a demo meter.
+ for(const t of tracks){
+  const i=Number(t.nativeId)-1;
+  const root=document.querySelector('.strip[data-id="'+t.id+'"]');
+  for(const [side,p] of [['left',legacy.channelPeaksL?.[i]],['right',legacy.channelPeaksR?.[i]]]){
+   const meter=root?.querySelector('.meter-fill.'+side),a=Number(p)||0;
+   if(meter)meter.style.setProperty('--lit',meterDbfsPercent(a>0?20*Math.log10(a):METER_DBFS_MIN)+'%');
+  }
+ }
+ document.getElementById('nativeAuthority').textContent=universal
+  ?'NATIVE CHANNELID · '+rows.length+' CHANNELS':'M4 COMPAT · UNIVERSAL PENDING';
+ document.getElementById('transport').textContent=s.device.outputArmed?'OUTPUT ARMED':'OUTPUT DISARMED';
+ document.getElementById('nativeTruth').textContent=universal?'CHANNELID PCM':
+  legacy.controlPlane?'REAL M4 PCM · CH11+ PENDING':'NO VERIFIED ROUTE';
+ const ops=universal?s.graph.capabilities?.supportedOps||[]:legacy.supportedOps||[];
+ for(const [id,op] of [['addTrack','CREATE_CHANNEL'],['addBus','CREATE_GROUP_BUS'],['addFx','CREATE_FX_RETURN']]){
+  const b=document.getElementById(id);
+  if(b){b.disabled=!ops.includes(op);b.title=b.disabled?op+' not implemented in installed callback':'Native '+op;}
+ }
+ for(const id of ['preview','reset','saveScene','recallScene','sceneSafe','paste','copy','group','ungroup','clearCue','sofToggle','sofTarget','pluginImport','pluginScan','pluginAddPath']){
+  const element=document.getElementById(id);if(element)element.disabled=true;
+ }
+ const plugin=document.getElementById('pluginsButton');
+ if(plugin)plugin.disabled=!ops.includes('LIST_PLUGINS');
+}
+if(NATIVE)window.ArSonMixNativeModel=Object.freeze({
+ project:projectNative,row:findTrack,
+ snapshot:()=>nativeSnapshot,
+ supported:()=>nativeSnapshot?.productionCallbackLive===true
+  ?nativeSnapshot.graph.capabilities?.supportedOps||[]
+  :nativeSnapshot?.legacyM4?.supportedOps||[],
+ visual:(t,field,value)=>{
+  if(!t)return;
+  if(field==='level'){t.level=value;syncFaderVisual(t);}
+  if(field==='pan')t.pan=value;
+ }
+});
+
 restorePluginPreferences();init();
 })();
 </script>
