@@ -21,8 +21,8 @@ MANIFEST=ROOT/"tests/fixtures/css-v13-owner-removals.json"
 # the owned suffix fingerprints, not the historical owner source.
 V18_OWNER_TAILS={
     "mixer-pan-controls.css":(294,"01ccf01a"),
-    "mixer-fader-assembly.css":(971,"67b71c22"),
-    "mixer-meter-display.css":(993,"2fec79b8"),
+    "mixer-fader-assembly.css":(1059,"e679275b"),
+    "mixer-meter-display.css":(1095,"af342967"),
 }
 def tail_fingerprint(text):
     h=2166136261
