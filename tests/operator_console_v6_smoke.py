@@ -689,7 +689,14 @@ async def main():
         # grouping transaction, NOT a serial audio GROUP BUS.
         await page.locator('[data-channel-id="2"] .arV6StripHead').click()
         await page.locator('[data-channel-id="7"] .arV6StripHead').click(modifiers=["Control"])
-        await page.get_by_role("button",name="Selected channels and native group actions").click()
+        # The accessible name is dynamic ("N selected channels...").
+        # Target the stable native selection controller, then assert its
+        # device-epoch-bound count instead of the stale pre-render label.
+        assert await page.locator(".arV6SelectionCount").get_attribute(
+          "data-selection-count")=="2"
+        assert await page.locator(".arV6SelectionCount").get_attribute(
+          "data-mx-hw-legend")=="2 SEL"
+        await page.locator(".arV6SelectionCount").click()
         operator=page.locator("#arV6SelectionPanel")
         assert await operator.is_visible()
         link=page.get_by_role("button",
@@ -786,7 +793,19 @@ async def main():
         no_group["graph"]["revision"]="9"
         no_group["graph"]["capabilities"]["supportedOps"]=OPS
         await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",no_group)
-        await page.get_by_role("button",name="Selected channels and native group actions").click()
+        # The accessible name is dynamic ("N selected channels...").
+        # Target the stable native selection controller, then assert its
+        # device-epoch-bound count instead of the stale pre-render label.
+        # Inline rename may change current selection through channel-header
+        # clicks. Check the same canonical JS Set and SVG/count projection;
+        # do not assume the earlier two-channel selection is still active.
+        selected_now=await page.evaluate(
+          "()=>window.__arMixV6ReadOnly().selectedChannelIds")
+        assert await page.locator(".arV6SelectionCount").get_attribute(
+          "data-selection-count")==str(len(selected_now))
+        assert await page.locator(".arV6SelectionCount").get_attribute(
+          "data-mx-hw-legend")==f"{len(selected_now)} SEL"
+        await page.locator(".arV6SelectionCount").click()
         assert await link.is_disabled() and await route.is_disabled()
 
         # 4 desktop widths and 3 heights: meter/fader zones aligned, MAIN pinned.
