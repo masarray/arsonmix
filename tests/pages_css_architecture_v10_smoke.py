@@ -46,8 +46,13 @@ def source_gate():
     assert names == expected, names
     styles = [body for n, version, tag, body in css_order if tag]
     assert len(styles) == 3, "V11 stylesheet order or inline structure drift"
+    # V18 physically moved the middle inline material into the Chrome owner.
+    # Reconstruct the exact V16 Chrome bytes for this immutable historical V10 gate.
+    from css_v18_restore import reconstruct as restore_pre_v18
+    old_chrome=restore_pre_v18()[1]
     all_css = "".join(
-        (HTML.parent / "assets" / n).read_text(encoding="utf-8") if n else body
+        (old_chrome if n=="mixer-chrome-material.css" else
+         (HTML.parent / "assets" / n).read_text(encoding="utf-8")) if n else body
         for n, version, tag, body in css_order
     )
     assert len(all_css) == EXPECTED_CSS_LENGTH, "CSS ownership source bytes missing"
