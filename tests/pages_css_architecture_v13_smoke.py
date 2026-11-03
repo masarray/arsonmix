@@ -22,7 +22,7 @@ MANIFEST=ROOT/"tests/fixtures/css-v13-owner-removals.json"
 V18_OWNER_TAILS={
     "mixer-pan-controls.css":(294,"01ccf01a"),
     "mixer-fader-assembly.css":(1069,"683d96a2"),
-    "mixer-meter-display.css":(1105,"fdae179c"),
+    "mixer-meter-display.css":(1617,"13ddc2f3"),
 }
 def tail_fingerprint(text):
     h=2166136261
