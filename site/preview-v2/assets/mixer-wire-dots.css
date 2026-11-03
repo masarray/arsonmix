@@ -854,11 +854,13 @@
 }
 .wire-config-row .wire-master{
  box-sizing:border-box;width:96px;max-width:100%;height:26px!important;
- border-radius:3px;border:1px solid #557786;background:#254353;
+ border-radius:3px;border:1px solid #557786;
+ background:linear-gradient(180deg,#466472,#1c3948);
  color:#d7ecf0;padding:0 8px;font-size:10px;cursor:pointer;
 }
 .wire-config-row .wire-master[aria-pressed="true"]{
- color:#baf8df;border-color:#5a9b7f;background:#225144;
+ color:#baf8df;border-color:#5a9b7f;
+ background:linear-gradient(180deg,#3a8067,#164c39);
 }
 .wire-config-context{padding:8px 10px 10px;min-width:0}
 .wire-config-caption{display:block;margin-bottom:6px;color:#9dbdc7;font:600 9px/1.2 'Segoe UI',Arial,sans-serif;letter-spacing:.04em}
