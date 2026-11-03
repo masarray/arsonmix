@@ -298,7 +298,7 @@ test('shared #279 release preflight blocks even a source with working M4 control
 });
 
 // PR #278 visual authority is separate from real JUCE PCM/ACK qualification.
-import {inspectPr278} from '../scripts/check_pr278_console_authority.mjs';
+
 test('PR278 source contract blocks divergent universal chrome/identity/MAIN',()=>{
  const reference='<div id="tracks"></div><div id="master"></div><aside id="pluginBrowser"></aside>';
  const js="root.id='arV6Console' main.id='arV6Main'"+

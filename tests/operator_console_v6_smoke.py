@@ -320,7 +320,12 @@ async def main():
         await page.locator('[data-channel-id="9"] .arV6StripHead').click(modifiers=["Shift"])
         assert await page.evaluate("()=>window.__arMixV6ReadOnly().selectedChannelIds")==["7","8","9"]
         assert await page.locator('#arV6Main .arV6Master').get_attribute("aria-selected")=="false"
-        assert await page.locator('.arV6SelectionCount').inner_text()=="3 SEL"
+        selection=page.locator('.arV6SelectionCount')
+        assert await selection.get_attribute('data-selection-count')=="3"
+        assert await selection.get_attribute('aria-label')=="3 selected channels; native link and group controls"
+        # SVG hardware key hides ordinary DOM text: its visible legend must
+        # match the accepted UI-only selection, not a stale decorative label.
+        assert await selection.get_attribute('data-mx-hw-legend')=="3 SEL"
         assert await page.evaluate("""()=>window.__v6Test.sent.filter(
           x=>x.event==='arMixConsoleIntent').length""")==count_start
 

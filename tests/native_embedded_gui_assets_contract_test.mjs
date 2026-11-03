@@ -53,7 +53,10 @@ test('native WebView resolves every referenced physical fader/PAN graphic withou
     assert.ok(cmake.includes('web/'+path),'missing JUCE BinaryData: '+path);
     assert.ok(host.includes('"/'+path+'"'),'WebView route absent: '+path);
   }
-  assert.doesNotMatch(host.slice(host.indexOf('else if (path.startsWith("/assets/"))'),
-    host.indexOf('else return std::nullopt;',host.indexOf('else if (path.startsWith("/assets/"))')),
+  const allowlistStart=host.indexOf('else if (path.startsWith("/assets/"))');
+  const allowlistEnd=host.indexOf('else return std::nullopt;',allowlistStart);
+  assert.ok(allowlistStart>0&&allowlistEnd>allowlistStart,
+    'native asset whitelist must precede the default fail-closed path');
+  assert.doesNotMatch(host.slice(allowlistStart,allowlistEnd),
     /FileInputStream|File::|getChildFile|http:|https:/);
 });
