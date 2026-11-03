@@ -31,7 +31,12 @@ def reconstruct():
     # Reverse only the explicitly recorded M3 operator delta before checking
     # the immutable V20 CSS-only fingerprint. Reapply it to baseline HTML.
     from gui_m3_compat import transform
-    current=transform(HTML.read_text(encoding="utf-8"),reverse=True)
+    current=transform(HTML.read_text(encoding="utf-8"),reverse=True,
+                      skip={"chrome version"})
+    m3_chrome="assets/mixer-chrome-material.css?v=css-chrome-owner-v19-m3-header"
+    v19_chrome="assets/mixer-chrome-material.css?v=css-chrome-owner-v19"
+    assert current.count(m3_chrome)==1
+    current=current.replace(m3_chrome,v19_chrome,1)
     assert (len(current),fingerprint(current))==(
         data["result"]["htmlLength"],data["result"]["htmlFNV"]
     ),"V20 live HTML changed outside approved source ledger"
@@ -61,7 +66,9 @@ def reconstruct():
     assert (len(previous),fingerprint(previous))==(
         data["original"]["htmlLength"],data["original"]["htmlFNV"]
     ),"V19 approved HTML fingerprint cannot be re-baselined"
-    return transform(previous)
+    restored=transform(previous,skip={"chrome version"})
+    assert restored.count(v19_chrome)==1
+    return restored.replace(v19_chrome,m3_chrome,1)
 
 def mount_original():
     html=reconstruct()
