@@ -1111,6 +1111,86 @@ static void verifyNativePuzzleV8FixtureAndWire() {
         .getProperty("rawPeak",0.))==.25);
 }
 
+// E2: native JUCE VST3 stays audible through a serial GROUP edit; a missing
+// successor FX owner rejects atomically rather than deleting hosted processing.
+static void verifyChannelIdGroupPreservesHostedFx() {
+    using Bank=DynamicChannelFxLeaseBank;
+    using Pub=DynamicNativeSessionPublisher;
+    constexpr std::uint64_t epoch=1007;
+    constexpr float center=.7071067811865475f;
+    DynamicAcceptedSession live;
+    DynamicGraphRequest route;route.physicalInputs=1;route.maxFrames=32;
+    ChannelEdit micCreate;micCreate.kind=ChannelEdit::Kind::add;
+    micCreate.position=0;micCreate.role=ChannelRole::input;
+    micCreate.format=ProcessingFormat::mono;micCreate.text="VOICE";
+    ChannelEdit mainCreate=micCreate;mainCreate.position=1;
+    mainCreate.role=ChannelRole::main;
+    mainCreate.format=ProcessingFormat::stereo;mainCreate.text="MAIN";
+    const std::array<ChannelEdit,2> creates{micCreate,mainCreate};
+    const auto created=live.edit(0,0,creates,route,epoch,epoch,true);
+    assert(created.ok()&&created.edit.createdIds.size()==2);
+    const auto voice=created.edit.createdIds[0],main=created.edit.createdIds[1];
+    route.sources={{voice,0,-1,false}};
+    ChannelEdit link;link.kind=ChannelEdit::Kind::setPrimaryOutput;
+    link.id=voice;link.target=main;
+    const std::array<ChannelEdit,1> routeEdit{link};
+    auto gain=std::make_unique<GainFx>(2.f);
+    gain->prepareToPlay(48000.,32);
+    Bank::Assignment assignment;assignment.id=voice;
+    assignment.format=ProcessingFormat::mono;
+    assignment.inserts.push_back(std::make_shared<LiveChannelFxGraph::FxInstance>(
+        std::move(gain),"voice-gain","voice-gain",32));
+    const auto token=assignment.inserts[0]->instanceId;
+    const std::array<Bank::Assignment,1> assignments{assignment};
+    auto bank=std::make_shared<Bank>();
+    assert(Bank::prepare(epoch,2,assignments,*bank)==Bank::Fault::none);
+    const auto plan=[&](std::shared_ptr<Bank> owner,std::uint64_t rev) {
+        Pub::FxPlan fx;fx.owner=std::static_pointer_cast<void>(owner);
+        fx.context=owner.get();
+        fx.render=+[](void* p,ChannelId id,float* l,float* r,int n) noexcept {
+            (*static_cast<Bank*>(p))(id,l,r,n);
+        };
+        fx.deviceEpoch=epoch;fx.graphRevision=rev;return fx;
+    };
+    assert(live.edit(1,1,routeEdit,route,epoch,epoch,true,plan(bank,2)).ok());
+    std::array<float,32> input{},l{},rr{};input.fill(.2f);
+    const float* pins[]{input.data()};
+    int fallbackCalls=0;
+    const auto noFallback=[&](ChannelId,float*,float*,int) noexcept {
+        ++fallbackCalls;
+    };
+    const auto render=[&]() {
+        return live.render(epoch,pins,1,l.data(),rr.data(),32,false,noFallback);
+    };
+    auto heapBefore=heapCalls.load(std::memory_order_relaxed);
+    assert(render()&&near(l[31],.2f*2.f*center));
+    assert(heapCalls.load(std::memory_order_relaxed)==heapBefore);
+    const std::array<ChannelId,1> selected{voice};
+    const auto denied=live.createBusForSelected(2,2,selected,"VOCALS",
+        ChannelRole::group,route,epoch,epoch,true);
+    assert(!denied.ok()&&denied.edit.createdIds.empty());
+    assert(denied.native.fault==Pub::Fault::invalidCandidate);
+    assert(live.acceptedGraphRevision()==2);
+    assert(render()&&near(l[31],.2f*2.f*center));
+    auto nextBank=std::make_shared<Bank>();
+    assert(Bank::reuseRevision(epoch,3,*bank,*nextBank)==Bank::Fault::none);
+    assert(Bank::reuseRevision(epoch,2,*bank,*nextBank)==Bank::Fault::invalidEpoch);
+    assert((*nextBank->ownerForControl(voice,0))->instanceId==token);
+    const int pluginCount=GainFx::living;
+    const auto group=live.createBusForSelected(2,2,selected,"VOCALS",
+        ChannelRole::group,route,epoch,epoch,true,.25f,plan(nextBank,3));
+    assert(group.ok()&&group.edit.createdIds.size()==1);
+    assert(live.acceptedGraphRevision()==3);
+    assert(live.acceptedRouting(epoch,3)->find(voice)->primaryOutput==
+           group.edit.createdIds.front());
+    heapBefore=heapCalls.load(std::memory_order_relaxed);
+    assert(render()&&near(l[31],.2f*2.f*center));
+    assert(heapCalls.load(std::memory_order_relaxed)==heapBefore);
+    assert(GainFx::living==pluginCount&&fallbackCalls==0);
+    assert(!live.setLiveMix(epoch,2,voice,0.f,0.f));
+    live.unpublish();live.pollRetirement();
+}
+
 int main(int argc,char** argv) {
     if(argc==2 && std::string(argv[1])=="--emit-console-s0-json") {
         verifyNativePuzzleV8FixtureAndWire();
@@ -1494,6 +1574,7 @@ int main(int argc,char** argv) {
     verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch();
     verifyFirstSoundOnePinNativeSourceDraft();
     verifyNativePuzzleV8FixtureAndWire();
+    verifyChannelIdGroupPreservesHostedFx();
     // Tests above use a real JUCE AudioProcessor processing seam. Vendor
     // VST3 formats and sound quality require separate Windows hardware FAT.
 }

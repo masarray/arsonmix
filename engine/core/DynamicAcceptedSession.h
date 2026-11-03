@@ -51,7 +51,8 @@ public:
                 const DynamicGraphRequest& route,
                 std::uint64_t expectedDeviceEpoch,
                 std::uint64_t activeDeviceEpoch,
-                bool allOutputsDisarmed) {
+                bool allOutputsDisarmed,
+                DynamicNativeSessionPublisher::FxPlan fx={}) {
         Result result=preflight(expectedRosterRevision,expectedGraphRevision);
         if(!result.ok())return result;
         auto candidate=accepted_; // once per batch; ONLY CONTROL
@@ -61,7 +62,7 @@ public:
         }
         return publish(std::move(candidate),route,expectedGraphRevision,
                        expectedDeviceEpoch,activeDeviceEpoch,allOutputsDisarmed,
-                       std::move(result));
+                       std::move(result),std::move(fx));
     }
 
     // Studio Pro: one independent Bus ChannelId and automatic assignment of
@@ -74,7 +75,8 @@ public:
                                std::uint64_t expectedDeviceEpoch,
                                std::uint64_t activeDeviceEpoch,
                                bool allOutputsDisarmed,
-                               float parallelGain=.25f) {
+                               float parallelGain=.25f,
+                               DynamicNativeSessionPublisher::FxPlan fx={}) {
         Result result=preflight(expectedRosterRevision,expectedGraphRevision);
         if(!result.ok())return result;
         auto candidate=accepted_;
@@ -85,7 +87,7 @@ public:
         }
         return publish(std::move(candidate),route,expectedGraphRevision,
                        expectedDeviceEpoch,activeDeviceEpoch,allOutputsDisarmed,
-                       std::move(result));
+                       std::move(result),std::move(fx));
     }
 
     // Add an empty GROUP or FX Channel, directly OUT -> MAIN, exactly as a
@@ -96,7 +98,8 @@ public:
                      const DynamicGraphRequest& route,
                      std::uint64_t expectedDeviceEpoch,
                      std::uint64_t activeDeviceEpoch,
-                     bool allOutputsDisarmed) {
+                     bool allOutputsDisarmed,
+                     DynamicNativeSessionPublisher::FxPlan fx={}) {
         Result result=preflight(expectedRosterRevision,expectedGraphRevision);
         if(!result.ok())return result;
         auto candidate=accepted_;
@@ -107,7 +110,7 @@ public:
         }
         return publish(std::move(candidate),route,expectedGraphRevision,
                        expectedDeviceEpoch,activeDeviceEpoch,allOutputsDisarmed,
-                       std::move(result));
+                       std::move(result),std::move(fx));
     }
 
     // Delete an existing GROUP or FX return, atomically rerouting primary
@@ -119,7 +122,8 @@ public:
                      const DynamicGraphRequest& route,
                      std::uint64_t expectedDeviceEpoch,
                      std::uint64_t activeDeviceEpoch,
-                     bool allOutputsDisarmed) {
+                     bool allOutputsDisarmed,
+                     DynamicNativeSessionPublisher::FxPlan fx={}) {
         Result result=preflight(expectedRosterRevision,expectedGraphRevision);
         if(!result.ok())return result;
         auto candidate=accepted_;
@@ -130,7 +134,7 @@ public:
         }
         return publish(std::move(candidate),route,expectedGraphRevision,
                        expectedDeviceEpoch,activeDeviceEpoch,allOutputsDisarmed,
-                       std::move(result));
+                       std::move(result),std::move(fx));
     }
 
     // Live routine controls change ONLY accepted edges/nodes. Persist values
@@ -197,7 +201,7 @@ public:
         return publisher_.render(epoch,inputs,inputCount,mainL,mainR,frames,
                                  muted,std::forward<Fx>(fx),monitorL,monitorR);
     }
-    void unpublish() noexcept {publisher_.unpublish();}
+    void unpublish() noexcept {publisher_.unpublish();hasHostedFx_=false;}
     void pollRetirement() noexcept {publisher_.pollRetirement();}
 
 private:
@@ -216,11 +220,24 @@ private:
                    const DynamicGraphRequest& route,
                    std::uint64_t previousGraphRevision,
                    std::uint64_t requestedEpoch,std::uint64_t currentEpoch,
-                   bool outputsDisarmed,Result&& result) {
+                   bool outputsDisarmed,Result&& result,
+                   DynamicNativeSessionPublisher::FxPlan fx) {
         // Existing SOURCE targets belong to the accepted native session.
         // For already-patched ChannelIds with the same input format, ignore
         // stale physical pin ordinals supplied by an old GUI draft during
         // +GROUP/+FX Return. An explicit format change is structural.
+        // E2: once an accepted graph has hosted native VST, structural
+        // +GROUP/+FX Return/reorder must publish the same real instance
+        // leases at the next revision. Without this check, an omitted FxPlan
+        // silently drops processing on every already-audible channel.
+        // Reject while preserving old graph, vendor state and PCM.
+        if(hasHostedFx_ && !fx.owner) {
+            result.fault=Fault::graphRejected;
+            result.native.fault=DynamicNativeSessionPublisher::Fault::invalidCandidate;
+            result.native.revision=publisher_.acceptedRevision();
+            result.edit.createdIds.clear();
+            return result;
+        }
         // Validate ALL incoming physical requests before retaining any
         // accepted live patch. The old M5.3 overlay quietly replaced even an
         // out-of-range draft, then ACKed an unrelated structural edit.
@@ -248,8 +265,10 @@ private:
                source.stereo==prior->stereo)
                 source=*prior;
         }
+        const bool nextHasFx=static_cast<bool>(fx.owner);
         result.native=publisher_.commit(candidate,effective,previousGraphRevision,
-                                       requestedEpoch,currentEpoch,outputsDisarmed);
+                                       requestedEpoch,currentEpoch,outputsDisarmed,
+                                       std::move(fx));
         if(!result.native.ok()) {
             result.fault=Fault::graphRejected;
             result.edit.createdIds.clear(); // NEVER advertise phantom Bus
@@ -258,6 +277,7 @@ private:
         static_assert(std::is_nothrow_move_assignable_v<DynamicChannelRoster>);
         accepted_=std::move(candidate);
         acceptedRequest_=std::move(effective);
+        hasHostedFx_=nextHasFx;
         result.rosterRevision=accepted_.revision();
         result.graphRevision=result.native.revision;
         return result;
@@ -266,5 +286,6 @@ private:
     DynamicChannelRoster accepted_;
     DynamicGraphRequest acceptedRequest_{}; // CONTROL-only accepted physical SSOT
     DynamicNativeSessionPublisher publisher_;
+    bool hasHostedFx_=false; // CONTROL only; never an audio callback flag
 };
 } // namespace armix::mixer

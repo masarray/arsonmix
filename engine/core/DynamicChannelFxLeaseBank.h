@@ -187,6 +187,27 @@ public:
                (*owner)->instanceId==instanceToken ? *owner : Lease{};
     }
 
+    // CONTROL only: rebind all current vendor leases to a new graph revision.
+    // The same FxInstance keeps editor/state/tail and the audio callback only
+    // sees raw prepared pointers. No new plugin or audio pipeline is created.
+    static Fault reuseRevision(std::uint64_t epoch,std::uint64_t revision,
+                               const DynamicChannelFxLeaseBank& prior,
+                               DynamicChannelFxLeaseBank& destination) {
+        if(!epoch || epoch!=prior.epoch_ ||
+           revision<=prior.revision_)return Fault::invalidEpoch;
+        std::vector<Assignment> retained;
+        retained.reserve(prior.rows_.size());
+        for(const auto& row:prior.rows_) {
+            Assignment item;
+            item.id=row.id;item.format=row.format;
+            item.inserts.reserve(row.count);
+            for(std::size_t slot=0;slot<row.count;++slot)
+                item.inserts.push_back(row.owners[slot]);
+            retained.push_back(std::move(item));
+        }
+        return prepare(epoch,revision,retained,destination,prior.external_);
+    }
+
     // Process each M4 VST exactly once at its target ChannelId. CPU work is
     // proportional to that node's FX rack, not every Channel in the session.
     // Call only on the native audio thread after epoch/revision graph admission.
