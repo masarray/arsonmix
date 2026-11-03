@@ -19,7 +19,7 @@ MANIFEST=ROOT/"tests/fixtures/css-v13-owner-removals.json"
 # The V13 pre-revision bytes, declaration-removal ledger, and parity remain
 # exact; unapproved edits to either the historical prefix or new suffix fail.
 V18_OWNER_TAILS={
-    "mixer-pan-controls.css":(299,"ed657bfe"),
+    "mixer-pan-controls.css":(294,"54fe5dbd"),
     "mixer-fader-assembly.css":(973,"32e76b31"),
     "mixer-meter-display.css":(956,"66160bb8"),
 }

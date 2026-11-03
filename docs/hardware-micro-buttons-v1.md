@@ -58,3 +58,12 @@ Validation checks actual PNG pixels and unchanged control/WIRE behavior.
   No changes to layout, keyboard, WIRE, DSP, faders, PAN or other buttons.
 - Chromium/Python regressions check exact icon path, RGBA green pixel,
   pressed contrast and stable 17×17 control geometry.
+
+## V22 — PAN thumb optical micro-adjustment
+
+The PAN slider thumb is raised **2 CSS px** relative to the previous V19
+position (`margin-top: -12px` → `-14px` on the WebKit thumb). Only the PAN
+painted thumb position changes; SEND remains `-10px`, and the 40px input
+hitbox, PAN track, detent, mapping, pointer/keyboard behavior and nearby mixer
+controls remain unchanged. The existing CSS V13 fingerprint and browser smoke
+are updated without relaxing those regression checks.
