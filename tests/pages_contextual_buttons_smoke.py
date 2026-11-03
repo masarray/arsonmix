@@ -62,7 +62,13 @@ def check_page(browser,path,label):
        scroll:window.scrollY,doc:document.documentElement.scrollTop,
        mix:document.querySelector('.tracks-viewport')?.scrollLeft||0
     })""")==position,(label,'viewport shifted after clicking action')
-    # Real application latch, without creating or overwriting JS UI state.
+    # Real application latch with its REQUIRED WIRE source context; do not
+    # weaken toggleDirectMain() or fake its aria-pressed state in the test.
+    body=page.locator('.console-body')
+    if 'collapsed-send' in (body.get_attribute('class') or ''):
+        page.locator('.section-rail [data-section="send"]').click()
+    source=page.locator('#tracks .strip[data-id="1"] .wire-node-out')
+    source.click()
     master=page.locator('#wireMaster')
     on=css_for(master)
     assert on['pressed']=='true',(label,on)
