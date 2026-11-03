@@ -183,9 +183,10 @@
   width:5px;background:#cdebf3;opacity:1;
 }
 .console-body .strip .meter-box .vu-tick span{
-  left:4px;top:-5.5px;
+  /* Keep all dBFS values on one right-hand numeral baseline. */
+  left:4px;right:0;top:-5.5px;text-align:right;
   font:500 8.5px/11px Inter,"Segoe UI",sans-serif!important;
-  font-variant-numeric:tabular-nums;letter-spacing:-.035em;
+  font-variant-numeric:tabular-nums lining-nums;letter-spacing:-.035em;
   white-space:nowrap;color:#bdd0d9!important;text-shadow:none!important;
 }
 .console-body .strip .meter-box .vu-tick.zero span{
