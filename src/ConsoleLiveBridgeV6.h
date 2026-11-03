@@ -3,7 +3,6 @@
 #include <juce_core/juce_core.h>
 #include "../integration/ConsoleNativeContractV6.h"
 #include "../engine/core/ConsolePuzzleV8Wire.h"
-#include "../engine/core/ChannelRoutingPlan.h"
 #include <cstdint>
 #include <deque>
 #include <cmath>
