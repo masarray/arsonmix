@@ -51,33 +51,73 @@
  box-shadow:inset 0 1px 0 #e6fff846,0 0 5px var(--ch,#83d7b5)!important;
 }
 
-/* V44 original WIRE component: labels sit to the right of the physical icons. */
-.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out small,
-.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in .wire-label{
- bottom:auto!important;top:50%!important;transform:translateY(-50%);
- font:600 7px/9px Inter,'Segoe UI',sans-serif!important;letter-spacing:0!important;
- white-space:nowrap;pointer-events:none;
+/* V45 WIRE component owns all three caption lanes.
+   Grid tracks flex with channel width; hit targets and magnet centers remain
+   the real original buttons, not extra visual rings or overlay wrappers. */
+.console-body.wire-routing-v15 .strip .wire-tray,
+.console-body.wire-routing-v15 .strip .wire-tray.linked{
+ container-type:inline-size;
+ grid-template-columns:minmax(28px,1fr) minmax(30px,1.22fr) minmax(24px,1.4fr)!important;
+ gap:3px!important;justify-content:stretch!important;
 }
-.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out small{left:18px!important}
-.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in .wire-label{left:29px!important}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out{
+ display:flex!important;flex-direction:row!important;justify-content:flex-start!important;
+ align-items:center!important;gap:3px!important;padding:0 0 0 1px!important;
+ width:35px!important;min-width:35px!important;flex:0 0 35px!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out small{
+ position:static!important;left:auto!important;top:auto!important;bottom:auto!important;
+ transform:none!important;white-space:nowrap;pointer-events:none;
+ font:600 7px/9px Inter,'Segoe UI',sans-serif!important;letter-spacing:0!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in .wire-label{
+ position:absolute;bottom:auto!important;top:50%!important;left:31px!important;
+ transform:translateY(-50%);white-space:nowrap;pointer-events:none;
+ font:600 7px/9px Inter,'Segoe UI',sans-serif!important;letter-spacing:0!important;
+}
 .console-body.wire-routing-v15 .strip .wire-tray .wire-pot .wire-gain-caption{
- position:absolute;left:23px;top:50%;transform:translateY(-50%);
+ position:absolute;left:26px;top:50%;transform:translateY(-50%);
  font:600 7px/9px Inter,'Segoe UI',sans-serif;letter-spacing:0;
  color:#91aab5;white-space:nowrap;pointer-events:none;
 }
 .console-body.wire-routing-v15 .strip .wire-tray .wire-pot.is-active .wire-gain-caption{color:#b9d4de}
-/* Compact retains three usable touch targets without overflow. */
-.console-body.wire-routing-v15[data-density="compact"] .strip .wire-tray,
-.console-body.wire-routing-v15[data-density="compact"] .strip .wire-tray.linked{
- grid-template-columns:28px 36px 22px!important;gap:2px!important;
+/* The captions are supplementary: at narrow strip widths preserve the 24/28/22px
+   physical controls and their full hit targets rather than overlap neighbours. */
+@container (max-width:133px){
+ .console-body.wire-routing-v15 .strip .wire-tray .wire-node-out{
+  width:24px!important;min-width:24px!important;flex-basis:24px!important;
+  justify-content:center!important;padding:0!important;
+ }
+ .console-body.wire-routing-v15 .strip .wire-tray .wire-node-out small,
+ .console-body.wire-routing-v15 .strip .wire-tray .wire-node-in .wire-label,
+ .console-body.wire-routing-v15 .strip .wire-tray .wire-gain-caption{display:none!important}
 }
-.console-body.wire-routing-v15[data-density="compact"] .strip .wire-tray .wire-gain-caption{display:none}
-/* A cable actually rendered in the viewport owns the hue and alpha of its
-   ORIGINAL OUT pin and IN center. No committed but hidden edge can illuminate. */
+/* Chromium/WebView2 container query children must match without the query
+   container as an ancestor selector: fallback is the standard dense mode. */
+.console-body.wire-routing-v15[data-density="compact"] .strip .wire-tray .wire-node-out small,
+.console-body.wire-routing-v15[data-density="compact"] .strip .wire-tray .wire-node-in .wire-label,
+.console-body.wire-routing-v15[data-density="compact"] .strip .wire-tray .wire-gain-caption{display:none!important}
+.console-body.wire-routing-v15[data-density="compact"] .strip .wire-tray .wire-node-out{
+ width:24px!important;min-width:24px!important;flex-basis:24px!important;
+ justify-content:center!important;padding:0!important;
+}
+/* Only a committed route rendered INTO this socket applies its receiving
+   CHANNEL hue to the 28px circle. A stored but hidden edge remains graphite.
+   Pointer hover and magnetic snap keep their prior independent highlight. */
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in[data-wire-arrival="true"]:not(:hover):not(.is-snap-target){
+ border-color:var(--ch,#83d7b5)!important;
+ background:color-mix(in srgb,var(--ch,#83d7b5) 22%,#0b1d28)!important;
+ box-shadow:inset 0 2px 4px #0008,inset 0 0 0 1px #ffffff16!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in:not([data-wire-arrival="true"]):not(:hover):not(.is-snap-target){
+ border-color:#394a55!important;background:#1b2b35!important;
+ box-shadow:inset 0 1px 2px #07141c!important;
+}
+/* The original OUT and IN inner dots continue to match their SVG cable
+   source hue/alpha; receiver ring independently shows its CHANNEL identity. */
 .console-body.wire-routing-v15 .strip .wire-tray .wire-node-out[data-wire-visible="true"] .wire-pin{
  background:var(--wire-edge-color)!important;opacity:var(--wire-edge-opacity);
 }
-.console-body.wire-routing-v15:not(.wire-intent):not(.wire-dragging) .strip .wire-tray .wire-node-in[data-wire-visible="true"] .wire-arrow,
 .console-body.wire-routing-v15 .strip .wire-tray .wire-node-in[data-wire-visible="true"] .wire-arrow{
  background:var(--wire-edge-color)!important;opacity:var(--wire-edge-opacity);
 }
@@ -90,8 +130,4 @@
 }
 .console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary{
  flex:0 0 26px!important;height:26px!important;min-height:26px!important;max-height:26px!important;
-}
-.console-body.wire-routing-v15 .strip .wire-tray,
-.console-body.wire-routing-v15 .strip .wire-tray.linked{
- grid-template-columns:30px 40px 44px!important;gap:2px!important;
 }
