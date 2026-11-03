@@ -193,9 +193,13 @@ def main():
             cwd=ROOT,check=True,capture_output=True,text=True)
         published=dist/"preview/mixer.html"
         assert published.read_bytes()==CANON.read_bytes(),"Published mixer source drift"
-        for name in ("mixer-fader-assembly.css","mixer-meter-display.css"):
-            key=f"assets/{name}?v=css-owner-v9-ruler-m3-left-70"
-            assert key in published.read_text("utf-8"),("stale ruler cache URL",name)
+        expected_ruler_keys={
+            "mixer-fader-assembly.css":"css-owner-v9-ruler-m3-left-70-v51-shadow",
+            "mixer-meter-display.css":"css-owner-v9-ruler-m3-left-70-v51-portrait-peakcell",
+        }
+        for name,key in expected_ruler_keys.items():
+            assert f"assets/{name}?v={key}" in published.read_text("utf-8"),(
+                "stale ruler cache URL",name,key)
         for name in ("mixer-fader-assembly.css","mixer-meter-display.css"):
             assert (dist/"preview/assets"/name).read_bytes()==(ASSETS/name).read_bytes(),name
         with sync_playwright() as pw:
