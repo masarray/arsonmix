@@ -1,5 +1,5 @@
 {
-  "version": "preview-v47-out-control-inset",
+  "version": "preview-v48-out-internal-inset-and-optical-center",
   "kind": "GUI_REFERENCE_ONLY",
   "live_audio": false,
   "source_pr": 285,
@@ -32,7 +32,8 @@
     "V44 docked plug vanishes, dots share rendered wire hue and alpha, captions right, stronger impact and 27px folded row",
     "V45 only rendered incoming routes color receiving socket ring by destination channel; idle socket graphite; collision-free caption lanes on dense mixer",
     "V46 exact cable anchor on source pin and centered IN dot, LVL caption and destination-color lit center",
-    "V47 OUT dot and caption inset together 4px within the OUT grid lane; dot anchor remains physical"
+    "V47 OUT dot and caption inset together 4px within the OUT grid lane; dot anchor remains physical",
+    "V48 OUT dot+caption +3px inside same button (4px inset unchanged), caption line-box centered to 12px physical dot"
   ],
   "preserved": "V39 utility controls and Inter, WIRE V36/V37, existing routes/FX/faders/meters; no native audio changes",
   "limitations": "Static WIRE GUI reference only; not native PCM/ASIO/VST3 routing",
