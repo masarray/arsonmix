@@ -641,8 +641,17 @@ async def main():
         assert await page.locator('[data-channel-id="7"] .arV6FxSlot').count()==fx_count
 
         # F8 searches ONLY the native catalog and adds through one typed intent.
-        # An epoch change clears prior selection; one native ChannelId is required.
-        assert await page.locator(".arV6SelectionCount").inner_text()=="0 SEL"
+        # Device epoch change MUST revoke multi-selection, and contextual
+        # quick FX must NOT silently select its target channel.
+        # Hardware key legends are SVG-backed: inner_text() is not the
+        # operator-visible label after the key-upgrade controller runs.
+        selection=page.locator(".arV6SelectionCount")
+        assert await page.evaluate(
+          "()=>window.__arMixV6ReadOnly().selectedChannelIds")==[]
+        assert await selection.get_attribute("data-selection-count")=="0"
+        assert await selection.get_attribute("data-mx-hw-legend")=="0 SEL"
+        assert await selection.get_attribute("aria-label")==(
+          "0 selected channels; native link and group controls")
         await page.keyboard.press("F8")
         manager=page.locator("#arV6PluginPanel")
         assert await manager.is_visible()
