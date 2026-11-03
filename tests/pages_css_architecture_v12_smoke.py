@@ -12,6 +12,7 @@ from playwright.async_api import async_playwright
 from pages_css_architecture_v10_smoke import source_gate, fingerprint
 from pages_css_architecture_v11_smoke import check, HTML, SELECTORS, PROPS, CAPTURE
 from pages_css_architecture_v14_smoke import reconstruct_previous, combined_css
+from css_v15_restore import restore_previous_owners,restore_as_inline
 
 ROOT=Path(__file__).resolve().parents[1]
 MANIFEST=ROOT/"tests/fixtures/css-v12-removed-declarations.json"
@@ -38,15 +39,16 @@ def source_baseline():
         m=matches[i]
         old=old[:m.start(1)]+parts[i]+old[m.end(1):]
     def old_css(document):
-        return combined_css(document, chrome_override=original_chrome)
+        return combined_css(document, chrome_override=original_chrome,
+                            owner_override=restore_previous_owners())
     assert len(old_css(old))==manifest["previousCSS"]==186176
     assert fingerprint(old_css(old))==manifest["previousFNV"]=="39885f8a"
     assert len(old_css(previous))==manifest["nextCSS"]==176024
     assert fingerprint(old_css(previous))==manifest["nextFNV"]=="8cb19a32"
     assert old_css(old).count("!important")==manifest["previousImportant"]==1449
     assert old_css(previous).count("!important")==manifest["nextImportant"]==1354
-    assert len(combined_css(current))==175850
-    assert fingerprint(combined_css(current))=="188064b0"
+    assert len(combined_css(current))==173298
+    assert fingerprint(combined_css(current))=="ad118593"
     assert manifest["previousImportant"]-manifest["nextImportant"]==95
     assert manifest["previousCSS"]-manifest["nextCSS"]==10152
     # Historical V11's CSS owner must also be original; inline it in the
@@ -54,6 +56,9 @@ def source_baseline():
     chrome_link='<link rel="stylesheet" href="assets/mixer-chrome-material.css?v=css-owner-v11">'
     assert old.count(chrome_link)==1
     old=old.replace(chrome_link,"<style>"+original_chrome+"</style>")
+    other_owners={name:css for name,css in restore_previous_owners().items()
+                  if name!="mixer-chrome-material.css"}
+    old=restore_as_inline(old,other_owners)
     f=tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",suffix=".html",
                                    prefix=".v12-reconstructed-original-",dir=HTML.parent,delete=False)
     with f:

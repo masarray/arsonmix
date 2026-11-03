@@ -1,5 +1,5 @@
 
-.console-body{flex:1;min-height:0;display:flex;overflow:hidden;--route-h:59px;--fx-h:119px;--send-h:84px;--eq-h:49px;--pan-h:35px;--trim-h:23px;--switch-h:31px;--footer-h:53px}
+.console-body{flex:1;min-height:0;display:flex;overflow:hidden;}
 .section-rail{flex:0 0 33px;width:33px;display:flex;flex-direction:column;border-right:1px solid #060707;background:#262729;box-shadow:inset -1px 0 #343537;text-align:center}
 .rail-cell{position:relative;width:100%;min-width:0;border:0;background:transparent;cursor:default;display:flex;align-items:center;justify-content:center;border-bottom:1px solid #111;color:#a0a3a5;flex:none;font-size:15px}
 .rail-cell small{font-size:9px;color:#8d9294}

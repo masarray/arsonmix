@@ -16,7 +16,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .logo{color:#72bbce;font-size:12px;font-weight:600;letter-spacing:.03em}
 .window-title .file-name{color:#bcc0c2;font-size:11px}
 .window-title .study{margin-left:auto;font-size:10px;color:#a4a6a6;letter-spacing:.06em}
-.command-bar{height:38px;flex:none;display:flex;align-items:center;gap:7px;padding:0 11px;border-bottom:1px solid #111;background:linear-gradient(#303133,#2a2b2c);overflow:visible;position:relative;z-index:12;white-space:nowrap}
+.command-bar{flex:none;display:flex;align-items:center;padding:0 11px;border-bottom:1px solid #111;background:linear-gradient(#303133,#2a2b2c);overflow:visible;position:relative;z-index:12;white-space:nowrap}
 .tool{padding:4px 9px;background:linear-gradient(#414244,#343537);border:1px solid #1b1d1e;border-radius:2px;box-shadow:inset 0 1px #545658;font-size:11px;white-space:nowrap}
 .tool:hover{background:#4a4b4d}
 .toolbar-label{color:#a0a5a6;font-size:10px}
@@ -27,7 +27,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .sep{height:18px;width:1px;background:#171819;margin:0 3px}
 .short-help{margin-left:auto;color:#848a8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px}
 .console-pane{flex:1;min-height:0;display:flex;flex-direction:column;background:#202122;position:relative}
-.mixer-title{height:24px;display:flex;align-items:center;padding:0 9px;flex:none;border-bottom:1px solid #0f1010;background:#292a2b;gap:9px}
+.mixer-title{height:24px;display:flex;align-items:center;padding:0 9px;flex:none;gap:9px}
 .mixer-title .accent{height:12px;width:3px;background:#55afcb}
 .mixer-title .panel-name{font-weight:600}
 .mixer-title .panel-sub{color:#8f9295}

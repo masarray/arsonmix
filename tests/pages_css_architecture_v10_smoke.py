@@ -15,8 +15,8 @@ OWNERS = (
     "mixer-v3-layout-contract.css",
     "mixer-chrome-material.css",
 )
-EXPECTED_FNV = "188064b0"
-EXPECTED_CSS_LENGTH = 175850
+EXPECTED_FNV = "ad118593"
+EXPECTED_CSS_LENGTH = 173298
 EXPECTED_INLINE_LENGTH = 124497
 
 def fingerprint(css):
@@ -29,7 +29,7 @@ def source_gate():
     html = HTML.read_text(encoding="utf-8")
     head = html.split("</head>", 1)[0]
     css_order = re.findall(
-        r'<link[^>]+href="assets/([^"]+\.css)\?v=css-owner-v(10|11|14)"[^>]*>|(<style>(.*?)</style>)',
+        r'<link[^>]+href="assets/([^"]+\.css)\?v=css-owner-v(10|11|14|15)"[^>]*>|(<style>(.*?)</style>)',
         head, re.S)
     names = [n for n, version, tag, body in css_order if n]
     expected = [
@@ -51,7 +51,7 @@ def source_gate():
     assert len(all_css) == EXPECTED_CSS_LENGTH, "CSS ownership source bytes missing"
     assert fingerprint(all_css) == EXPECTED_FNV, "CSS cascade/content drift"
     assert sum(map(len, styles)) == EXPECTED_INLINE_LENGTH
-    assert all_css.count("!important") == 1354
+    assert all_css.count("!important") == 1317
     assert sum(body.count("!important") for body in styles) == 1099
     original = (HTML.parent / "assets" / OWNERS[0]).read_text(encoding="utf-8")
     grid = (HTML.parent / "assets" / OWNERS[1]).read_text(encoding="utf-8")

@@ -14,29 +14,32 @@ from playwright.async_api import async_playwright
 from pages_css_architecture_v10_smoke import source_gate, fingerprint
 from pages_css_architecture_v11_smoke import HTML, check
 from pages_css_architecture_v13_smoke import interactive_compare
+from css_v15_restore import restore_previous_owners,before_v15_html,original_assets_as_baseline
 
 ROOT=Path(__file__).resolve().parents[1]
 MANIFEST=ROOT/"tests/fixtures/css-v14-material-token-ownership.json"
 CHROME=HTML.parent/"assets/mixer-chrome-material.css"
 
-def combined_css(document, chrome_override=None):
+def combined_css(document, chrome_override=None, owner_override=None):
     head=document.split("</head>",1)[0]
     css_order=re.findall(
-        r'<link[^>]+href="assets/([^"]+\.css)\?v=css-owner-v(?:10|11|14)"[^>]*>|<style>(.*?)</style>',
+        r'<link[^>]+href="assets/([^"]+\.css)\?v=css-owner-v(?:10|11|14|15)"[^>]*>|<style>(.*?)</style>',
         head,re.S
     )
     def lookup(name,inline):
         if not name:return inline
         if name=="mixer-chrome-material.css" and chrome_override is not None:
             return chrome_override
+        if owner_override and name in owner_override:return owner_override[name]
         return (HTML.parent/"assets"/name).read_text(encoding="utf-8")
     return "".join(lookup(name,inline) for name,inline in css_order)
 
 def reconstruct_previous():
     ledger=json.loads(MANIFEST.read_text(encoding="utf-8"))
     assert ledger["milestone"]=="V14"
-    current=HTML.read_text(encoding="utf-8")
-    current_chrome=CHROME.read_text(encoding="utf-8")
+    originals=restore_previous_owners()
+    current=before_v15_html()
+    current_chrome=originals["mixer-chrome-material.css"]
     c=ledger["chrome"]
     assert len(current_chrome)==c["newSize"]
     assert current_chrome.count(c["after"])==1
@@ -62,8 +65,8 @@ def reconstruct_previous():
     old=old.replace(new_link,old_link,1)
     assert sum(map(len,parts))==ledger["beforeInline"]==126354
     assert len(ledger["removedInlineRoots"])==8
-    before=combined_css(old,original_chrome)
-    after=combined_css(current)
+    before=combined_css(old,original_chrome,owner_override=originals)
+    after=combined_css(current,owner_override=originals)
     assert len(before)==ledger["beforeCSS"]==176024
     assert fingerprint(before)==ledger["beforeFNV"]=="8cb19a32"
     assert len(after)==ledger["afterCSS"]==175850
@@ -78,26 +81,11 @@ def reconstruct_previous():
     return old,original_chrome
 
 def open_v13_baseline():
-    old,css=reconstruct_previous()
-    artifacts=[]
-    try:
-        cssfile=tempfile.NamedTemporaryFile(mode="w",suffix=".css",
-            prefix=".v14-original-chrome-",dir=CHROME.parent,
-            encoding="utf-8",delete=False)
-        with cssfile:cssfile.write(css)
-        artifacts.append(Path(cssfile.name))
-        original='assets/mixer-chrome-material.css?v=css-owner-v11'
-        assert old.count(original)==1
-        old=old.replace(original,f'assets/{Path(cssfile.name).name}?v=css-owner-v11')
-        htmlfile=tempfile.NamedTemporaryFile(mode="w",suffix=".html",
-            prefix=".v14-original-console-",dir=HTML.parent,
-            encoding="utf-8",delete=False)
-        with htmlfile:htmlfile.write(old)
-        artifacts.append(Path(htmlfile.name))
-        return Path(htmlfile.name),artifacts
-    except Exception:
-        for path in artifacts:path.unlink(missing_ok=True)
-        raise
+    previous,original_chrome=reconstruct_previous()
+    original_owners=restore_previous_owners()
+    # V13 predates V14 Chrome token consolidation and V15 owner removals.
+    original_owners["mixer-chrome-material.css"]=original_chrome
+    return original_assets_as_baseline(previous,original_owners)
 
 async def root_parity(browser,original,width,height):
     old=await browser.new_page(viewport={"width":width,"height":height})
