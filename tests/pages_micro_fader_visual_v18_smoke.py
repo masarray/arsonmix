@@ -75,7 +75,7 @@ def check(page,path,label):
              gainZero:gain.querySelector('.gain-tick.unity')?.querySelector('span')?.textContent,
              vuZero:vu.querySelector('.vu-tick.zero')?.querySelector('span')?.textContent,
              value:strip.querySelector('input.fader')?.value,
-             panMargin:getComputedStyle(strip.querySelector('.center-pan'),'::-webkit-slider-thumb').marginTop
+             panHeight:strip.querySelector('.center-pan').getBoundingClientRect().height
            };
         }""",channel)
         assert tick["gainCount"]==8 and tick["vuCount"]==8,(label,density,"scale marks missing",tick)
@@ -86,7 +86,7 @@ def check(page,path,label):
         assert not tick["gainOverlap"] and not tick["vuOverlap"],(
             label,density,"printed scale numbers collide",tick)
         assert tick["value"]=="0",(label,density,"fader numeric value changed",tick)
-        assert tick["panMargin"]=="-12px",(label,density,"PAN thumb alignment drift",tick["panMargin"])
+        assert abs(tick["panHeight"]-40)<.6,(label,density,"PAN input hitbox moved",tick["panHeight"])
         if density=="comfort" and label=="png":
             page.locator(channel+" .fader-section").screenshot(path="pages-v18-fader-scale-1680.png")
             page.locator(channel+" .fx-section").screenshot(path="pages-v18-fx-micro-1680.png")
