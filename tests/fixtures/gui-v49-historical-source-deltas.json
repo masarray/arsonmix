@@ -1,18 +1,18 @@
 {
   "milestone": "V49",
-  "baseCommit": "9b286f486bc59cd0e7a663912787b00b73a30a18",
+  "baseCommit": "241f3a1627163c845239d8cbdca2e95489d25575",
   "scope": "M3 + V21 GUI baseline with full reversible V49 UX deltas",
   "source": {
-    "length": 193759,
-    "fnv": "b8d9287e"
+    "length": 193771,
+    "fnv": "9209aaae"
   },
   "current": {
-    "length": 198688,
-    "fnv": "1a200b1a"
+    "length": 198695,
+    "fnv": "897bed3f"
   },
   "hunks": [
     {
-      "old": "<link rel=\"stylesheet\" href=\"assets/inter-embedded.css?v=inter-utility-v7\">\n<link rel=\"stylesheet\" href=\"assets/mixer-wire-dots.css?v=v47-css-v16\">\n<link rel=\"stylesheet\" href=\"assets/mixer-wire-out-align-v48.css?v=out-center-v48\">\n",
+      "old": "<link rel=\"stylesheet\" href=\"assets/inter-embedded.css?v=inter-utility-v7\">\n<link rel=\"stylesheet\" href=\"assets/mixer-wire-dots.css?v=v23-wire-cascade\">\n<link rel=\"stylesheet\" href=\"assets/mixer-wire-out-align-v48.css?v=out-center-v48\">\n",
       "new": "<link rel=\"stylesheet\" href=\"assets/inter-embedded.css?v=inter-utility-v7\">\n<link rel=\"stylesheet\" href=\"assets/mixer-wire-dots.css?v=v49-direct-physics\">\n<link rel=\"stylesheet\" href=\"assets/mixer-wire-out-align-v48.css?v=out-center-v48\">\n"
     },
     {
@@ -141,10 +141,10 @@
     }
   ],
   "wireOwner": {
-    "historicalLength": 49178,
-    "historicalFNV": "eab3857f",
+    "historicalLength": 48720,
+    "historicalFNV": "d7deca46",
     "suffix": "\n/* V49 premium WIRE interaction: logical edge ↔ one precise transparent hit\n   curve. 6% dead ends on either side protect physical IN/OUT jack hitboxes. */\n#wireLayer path.wire-interaction-hit{\n pointer-events:stroke!important;fill:none!important;stroke:transparent!important;\n stroke-width:12px!important;stroke-linecap:butt!important;cursor:pointer;\n}\n#wireLayer path.wire-interaction-hit.is-wire-selected{\n stroke:rgba(136,217,241,.19)!important;\n}\n#wireLayer path.wire-incoming-line.is-wire-selected,\n#wireLayer path.wire-outgoing-line.is-wire-selected,\n#wireLayer path.wire-context-line.is-wire-selected{\n stroke-width:3px!important;opacity:1!important;\n}\n/* Source selection is temporary intent, while cable connection derives only\n   from the committed route model. No phantom lit output without an edge. */\n.console-body.wire-routing-v15:not(.wire-intent):not(.wire-dragging)\n .strip .wire-tray .wire-node-out:not([data-wire-connected=\"true\"]):not(.is-near):not(.is-source):not(:hover) .wire-pin{\n background:#4b535b!important;border-color:#627681!important;\n box-shadow:inset 0 1px 2px #061017!important;\n}\n.console-body.wire-routing-v15:not(.wire-intent):not(.wire-dragging)\n .strip .wire-tray .wire-node-out[data-wire-connected=\"true\"]:not([data-wire-visible=\"true\"]) .wire-pin{\n background:var(--ch,#9fc9d4)!important;border-color:#a8ced8!important;\n box-shadow:inset 0 1px #ffffff38!important;\n}\n",
-    "liveLength": 50588,
-    "liveFNV": "7fda0b3a"
+    "liveLength": 50130,
+    "liveFNV": "a6238007"
   }
 }

@@ -21,7 +21,7 @@ def fingerprint(text):
 def manifest():
     data=json.loads(LEDGER.read_text(encoding="utf-8"))
     assert data["milestone"]=="V49"
-    assert data["baseCommit"]=="9b286f486bc59cd0e7a663912787b00b73a30a18"
+    assert data["baseCommit"]=="241f3a1627163c845239d8cbdca2e95489d25575"
     assert len(data["hunks"])==32
     return data
 

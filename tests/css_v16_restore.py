@@ -22,8 +22,8 @@ def reconstruct():
     data=manifest()
     from css_v17_restore import reconstruct as restore_v16_source
     current,_=restore_v16_source()
-    from gui_v49_restore import historical_wire_css
-    now_wire=historical_wire_css()
+    from css_v23_restore import original_owner
+    now_wire=original_owner("mixer-wire-dots.css")
     assert len(now_wire)==data["afterWireSize"],"WIRE owner changed"
     prefix=data["movedPrefix"]
     assert now_wire.startswith(prefix),"WIRE original moved rule prefix changed"

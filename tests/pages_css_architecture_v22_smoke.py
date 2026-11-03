@@ -18,8 +18,9 @@ async def source_audit():
     source_gate()
     old_html,old_chrome=reconstruct()
     data=manifest()
-    live=HTML.read_text(encoding="utf-8")
-    chrome=CHROME.read_text(encoding="utf-8")
+    from css_v23_restore import reconstruct as restore_pre_v23
+    live,owners=restore_pre_v23()
+    chrome=owners["mixer-chrome-material.css"]
     assert data["old"]["inlineLength"]==34529
     assert data["current"]["inlineLength"]==23140
     assert data["old"]["inlineImportant"]-data["current"]["inlineImportant"]==52
