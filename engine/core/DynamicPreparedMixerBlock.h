@@ -140,16 +140,26 @@ public:
                            std::memory_order_release);
         return true;
     }
+    // Canonical physical-pin validation shared by structural preflight and
+    // accepted realtime SOURCE changes. Never normalize an invalid draft
+    // into an apparently successful ACK by replacing it with old pins.
+    static bool validPhysicalPatch(int physicalInputs,int inputL,int inputR,
+                                   bool stereo) noexcept {
+        return physicalInputs>=0 && physicalInputs<=256 &&
+               inputL>=0 && inputL<physicalInputs && inputL<0xffff &&
+               (stereo ? (inputR>=0 && inputR<physicalInputs &&
+                          inputR<0xffff && inputR!=inputL)
+                       : inputR==-1);
+    }
     // Same-format live physical INPUT switch. Stable ChannelId and VST
     // instance never change; retain one latest target, no command FIFO.
     // A new source request during the 64-sample crossfade is coalesced and
     // starts only after the current ramp completes, avoiding a click.
     bool setPhysicalSource(ChannelId id,int inputL,int inputR,
                            bool stereo) noexcept {
-        if(!id.value||inputL<0||inputL>=physicalInputs_||
-           inputL>=0xffff||inputR>=0xffff ||
-           (stereo&&(inputR<0||inputR>=physicalInputs_||inputR==inputL))||
-           (!stereo&&inputR!=-1))return false;
+        if(!id.value ||
+           !validPhysicalPatch(physicalInputs_,inputL,inputR,stereo))
+            return false;
         const auto it=controlIndex_.find(id.value);
         if(it==controlIndex_.end())return false;
         const auto& lane=lanes_[it->second];
@@ -256,10 +266,8 @@ public:
             if(it==byId.end()){error={DynamicGraphFault::missingSource,patch.id};return false;}
             auto& lane=next.lanes_[it->second];
             if(lane.role!=ChannelRole::input || lane.inputL!=-1 ||
-               patch.inputL<0 || patch.inputL>=req.physicalInputs ||
-               (patch.stereo && (patch.inputR<0 ||
-                  patch.inputR>=req.physicalInputs || patch.inputL==patch.inputR)) ||
-               (!patch.stereo && patch.inputR!=-1)) {
+               !validPhysicalPatch(req.physicalInputs,patch.inputL,
+                                   patch.inputR,patch.stereo)) {
                 error={DynamicGraphFault::invalidSource,patch.id};return false;
             }
             lane.inputL=patch.inputL;lane.inputR=patch.inputR;

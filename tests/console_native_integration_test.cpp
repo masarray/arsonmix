@@ -214,6 +214,10 @@ int main() {
     const std::array<ChannelEdit,1> editOne{linkOut(ch2,main)};
     auto rejected=native.edit(4,4,editOne,route,epoch,epoch,true);
     assert(!rejected.ok());
+    assert(rejected.fault==DynamicAcceptedSession::Fault::graphRejected);
+    assert(rejected.native.fault==DynamicNativeSessionPublisher::Fault::invalidGraph);
+    assert(rejected.native.graphError.fault==DynamicGraphFault::invalidSource);
+    assert(native.acceptedPhysicalRequest().sources[1].inputL==1);
     assert(native.acceptedGraphRevision()==4);
     assert(projectAcceptedConsoleV6(native,epoch,4,snap));
     assert(snap.channels.size()==14 && !snap.productionCallbackLive);

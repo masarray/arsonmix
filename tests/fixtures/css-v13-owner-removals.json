@@ -1,0 +1,561 @@
+{
+  "milestone": "V13",
+  "base": "dddd4d83d5996b83378582275cb55e6edc258517",
+  "files": {
+    "mixer-fx-rack.css": {
+      "beforeSize": 6103,
+      "afterSize": 5567,
+      "beforeImportant": 68,
+      "afterImportant": 62,
+      "insertions": [
+        {
+          "offset": 907,
+          "text": "\n.fx-section .subhead{height:18px}",
+          "kind": "whole-rule"
+        },
+        {
+          "offset": 970,
+          "text": "\n.fxslot-row{height:15px}",
+          "kind": "whole-rule"
+        },
+        {
+          "offset": 1531,
+          "text": "\n.console-body.collapsed-fx .fxslot-list,.console-body.narrow .fxslot-list{display:none}",
+          "kind": "whole-rule"
+        },
+        {
+          "offset": 3334,
+          "text": "overflow-y:auto!important;",
+          "kind": "duplicate"
+        },
+        {
+          "offset": 3388,
+          "text": "scrollbar-width:thin",
+          "kind": "duplicate"
+        },
+        {
+          "offset": 3409,
+          "text": "\n.console-body .strip .fxslot-row{background:#1b2c35!important;border-bottom:1px solid #475b6440!important}",
+          "kind": "whole-rule"
+        },
+        {
+          "offset": 3516,
+          "text": "\n.console-body .strip .fxslot-row:hover{background:#304956!important}",
+          "kind": "whole-rule"
+        },
+        {
+          "offset": 5103,
+          "text": "\n.console-body .strip .fxslot-row:hover{background:linear-gradient(#34505f,#263f4d)!important}",
+          "kind": "whole-rule"
+        },
+        {
+          "offset": 5549,
+          "text": "\n.console-body .strip .fx-section{background:var(--v13-insert)!important}",
+          "kind": "whole-rule"
+        }
+      ]
+    },
+    "mixer-plugin-browser.css": {
+      "beforeSize": 3668,
+      "afterSize": 3253,
+      "beforeImportant": 51,
+      "afterImportant": 36,
+      "insertions": [
+        {
+          "offset": 225,
+          "text": "display:none!important",
+          "kind": "duplicate"
+        },
+        {
+          "offset": 1935,
+          "text": "top:67px!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 1986,
+          "text": "bottom:0!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 2073,
+          "text": "box-shadow:none!important",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 2116,
+          "text": "position:absolute!important;",
+          "kind": "duplicate"
+        },
+        {
+          "offset": 2165,
+          "text": "top:36px!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 2184,
+          "text": "right:12px!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 2225,
+          "text": "bottom:12px!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 2247,
+          "text": "width:min(440px,calc(100% - 40px))!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 2318,
+          "text": "max-height:calc(100% - 48px)!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 2357,
+          "text": "border:1px solid #577084!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 2392,
+          "text": "border-radius:6px!important;",
+          "kind": "duplicate"
+        },
+        {
+          "offset": 2420,
+          "text": "background:#192933!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 2449,
+          "text": "box-shadow:0 12px 32px #000a!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 2488,
+          "text": "overflow:hidden!important",
+          "kind": "duplicate"
+        }
+      ]
+    },
+    "mixer-pan-controls.css": {
+      "beforeSize": 4996,
+      "afterSize": 4953,
+      "beforeImportant": 36,
+      "afterImportant": 34,
+      "insertions": [
+        {
+          "offset": 2300,
+          "text": "height:23px!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 2322,
+          "text": "width:100%!important;",
+          "kind": "duplicate"
+        }
+      ]
+    },
+    "mixer-fader-assembly.css": {
+      "beforeSize": 20508,
+      "afterSize": 17646,
+      "beforeImportant": 223,
+      "afterImportant": 156,
+      "insertions": [
+        {
+          "offset": 7793,
+          "text": "background:#20282f!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 7866,
+          "text": "min-height:145px!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 7994,
+          "text": "background:#0c171e!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 8023,
+          "text": "box-shadow:inset 0 1px 2px #050b0e!important",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 8242,
+          "text": "\n.console-body .fader-workspace{display:grid!important;grid-template-columns:25px minmax(0,1fr) 24px!important;gap:3px!important}",
+          "kind": "whole-rule"
+        },
+        {
+          "offset": 8411,
+          "text": "border:0!important;",
+          "kind": "duplicate"
+        },
+        {
+          "offset": 8430,
+          "text": "border-radius:4px!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 8458,
+          "text": "background:linear-gradient(90deg,#172026,#303a42 12%,#202a31 50%,#303a42 88%,#141c21)!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 8554,
+          "text": "box-shadow:inset 2px 0 4px #090e13,inset -2px 0 4px #0b1216!important",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 10162,
+          "text": "width:auto!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 10183,
+          "text": "min-width:0!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 10205,
+          "text": "padding:38px 0!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 10392,
+          "text": "grid-template-columns:51px minmax(36px,1fr) 26px!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 10451,
+          "text": "gap:3px!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 10737,
+          "text": "background:transparent!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 10917,
+          "text": "\n width:min(46px,100%)!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 11041,
+          "text": "\n background:linear-gradient(90deg,#15232c 0%,#283741 13%,#2a3942 48%,#283741 87%,#15232c 100%)!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 11168,
+          "text": "border-radius:6px!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 11196,
+          "text": "\n box-shadow:inset 0 4px 4px -3px #070e13,inset 0 -4px 4px -3px #070e13,\n   inset 4px 0 5px -4px #081116,inset -4px 0 5px -4px #081116!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 11426,
+          "text": "top:38px!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 11445,
+          "text": "bottom:39px!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 11467,
+          "text": "width:5px!important;",
+          "kind": "duplicate"
+        },
+        {
+          "offset": 11577,
+          "text": "opacity:1!important;",
+          "kind": "duplicate"
+        },
+        {
+          "offset": 11623,
+          "text": "height:auto!important;",
+          "kind": "duplicate"
+        },
+        {
+          "offset": 12286,
+          "text": "height:calc(100% - 77px)!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 12425,
+          "text": "\n opacity:0!important;",
+          "kind": "duplicate"
+        },
+        {
+          "offset": 14333,
+          "text": "\n.console-body .fader-workspace{grid-template-columns:51px minmax(35px,1fr) 26px!important;gap:2px!important}",
+          "kind": "whole-rule"
+        },
+        {
+          "offset": 14442,
+          "text": "\n.console-body .fader-box::before{width:min(40px,100%)!important;background:linear-gradient(90deg,#15232c,#283741 13%,#2a3942 48%,#283741 87%,#15232c)!important;border-radius:5px!important}",
+          "kind": "whole-rule"
+        },
+        {
+          "offset": 14664,
+          "text": "top:31px!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 14683,
+          "text": "bottom:31px!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 14705,
+          "text": "background-color:#03080b!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 14740,
+          "text": "background-image:none!important;",
+          "kind": "duplicate"
+        },
+        {
+          "offset": 14772,
+          "text": "width:5px!important;",
+          "kind": "duplicate"
+        },
+        {
+          "offset": 14834,
+          "text": "box-shadow:inset 1px 0 #010406,inset -1px 0 #010406!important",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 14925,
+          "text": "top:31px!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 14944,
+          "text": "bottom:31px!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 15063,
+          "text": "width:29px!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 15084,
+          "text": "height:62px!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 15213,
+          "text": "filter:none!important",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 15380,
+          "text": "top:31px!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 15399,
+          "text": "bottom:31px!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 15421,
+          "text": "height:calc(100% - 62px)!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 15682,
+          "text": "\n.console-body .fader-head{background:#07151b!important;box-shadow:inset 0 1px 3px #000b!important}",
+          "kind": "whole-rule"
+        },
+        {
+          "offset": 15781,
+          "text": "\n.console-body .strip .fader-section{background:#0c1922!important}",
+          "kind": "whole-rule"
+        },
+        {
+          "offset": 15847,
+          "text": "\n.console-body .strip .fader-head{background:#07131a!important}",
+          "kind": "whole-rule"
+        },
+        {
+          "offset": 16035,
+          "text": "\n background:linear-gradient(90deg,#253640,#30434e 15%,#2c3f49 78%,#22343e)!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 16999,
+          "text": "\n width:26px!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 17022,
+          "text": "height:55px!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 17780,
+          "text": "\n.console-body .strip .fader-head{\n  background:linear-gradient(113deg,#030b11,#0e2733 42%,#091b25 72%,#06131b)!important;\n  border:1px solid #4c6876!important;\n  box-shadow:inset 0 2px 5px #0009,inset 0 -1px #9cb6c51e,0 1px #ffffff25!important;\n}",
+          "kind": "whole-rule"
+        },
+        {
+          "offset": 18108,
+          "text": "color:#a7f1ff!important",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 18398,
+          "text": "\n background:#142530!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 18463,
+          "text": "\n box-shadow:inset 1px 0 #7997a33d,inset -1px 0 #050d14a6!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 18570,
+          "text": "\n background:#1b2e3a!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 18644,
+          "text": "\n box-shadow:inset 0 1px #ffffff09!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 18725,
+          "text": "\n background:#081923!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 18791,
+          "text": "\n box-shadow:inset 0 1px 1px #0009,inset 0 -1px #8da9b21d!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 18982,
+          "text": "background:#1b2e39!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 19037,
+          "text": "\n.console-body .strip .fader-box::before{\n background:#142530!important;\n box-shadow:inset 1px 0 #7997a33d,inset -1px 0 #050d14a6!important;\n}",
+          "kind": "whole-rule"
+        }
+      ]
+    },
+    "mixer-meter-display.css": {
+      "beforeSize": 10436,
+      "afterSize": 9005,
+      "beforeImportant": 91,
+      "afterImportant": 70,
+      "insertions": [
+        {
+          "offset": 1930,
+          "text": "width:25px!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 1951,
+          "text": "max-width:25px!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 1976,
+          "text": "padding:12px 2px 5px!important",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 2242,
+          "text": "border-radius:4px!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 2270,
+          "text": "\n background:#080f14!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 2301,
+          "text": "box-shadow:inset 0 3px 3px #0008!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 4437,
+          "text": "background:linear-gradient(90deg,#0d2028,#010608 22%,#07141b)!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 4537,
+          "text": "\n.console-body .meter-box .vu-bars{background:linear-gradient(90deg,#0d1d26,#02080b 19%,#010609 64%,#0c1d27)!important}",
+          "kind": "whole-rule"
+        },
+        {
+          "offset": 5241,
+          "text": "\n  border:1px solid #60778460!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 5312,
+          "text": "\n  background:linear-gradient(90deg,#091720 0%,#01070c 25%,#06151c 76%,#1b3039)!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 5402,
+          "text": "\n  box-shadow:inset 2px 2px 5px #000c,inset -1px 0 #afc4cf27,0 1px #ffffff19!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 5572,
+          "text": "\n  background:linear-gradient(90deg,#071620,#020b10 28%,#01090e 71%,#152b35)!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 5745,
+          "text": "\n  box-shadow:inset 1px 0 3px #000,inset -1px 0 2px #000!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 6295,
+          "text": "\n  background:linear-gradient(90deg,#040e12,#071c19 55%,#071117)!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 6401,
+          "text": "box-shadow:inset 1px 1px 3px #000,inset -1px 0 2px #000!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 6469,
+          "text": "\n.console-body .strip .meter-box .meter-fill{\n  background:linear-gradient(to top,\n    #08a862 0%,#1de483 43%,#6cf178 64%,#dbdf39 76%,#ffbc38 87%,#ff7b30 94%,#fa4545 100%)!important;\n  filter:none!important;box-shadow:inset 1px 0 #cfffff30,inset -1px 0 #020b0766!important;\n}",
+          "kind": "whole-rule"
+        },
+        {
+          "offset": 6744,
+          "text": "\n.console-body .strip .meter-box .meter-lane::before{\n  background:repeating-linear-gradient(to top,transparent 0px,transparent 5px,#010d13df 5px,#010d13df 7px)!important;\n}",
+          "kind": "whole-rule"
+        },
+        {
+          "offset": 7764,
+          "text": "\n background:#06131b!important;",
+          "kind": "shadowed"
+        },
+        {
+          "offset": 8099,
+          "text": "\n.console-body .strip .meter-box .vu-bars{background:#07141b!important}",
+          "kind": "whole-rule"
+        }
+      ]
+    }
+  }
+}

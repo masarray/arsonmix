@@ -221,6 +221,24 @@ private:
         // For already-patched ChannelIds with the same input format, ignore
         // stale physical pin ordinals supplied by an old GUI draft during
         // +GROUP/+FX Return. An explicit format change is structural.
+        // Validate ALL incoming physical requests before retaining any
+        // accepted live patch. The old M5.3 overlay quietly replaced even an
+        // out-of-range draft, then ACKed an unrelated structural edit.
+        // Invalid/hotplug-stale pins must fail closed with unchanged PCM,
+        // canonical accepted source and graph revision. A valid but stale
+        // draft may still inherit the last ACKed realtime source below.
+        for(const auto& source:route.sources) {
+            if(!DynamicPreparedMixerBlock::validPhysicalPatch(
+                 route.physicalInputs,source.inputL,source.inputR,
+                 source.stereo)) {
+                result.fault=Fault::graphRejected;
+                result.native.fault=DynamicNativeSessionPublisher::Fault::invalidGraph;
+                result.native.graphError={DynamicGraphFault::invalidSource,source.id};
+                result.native.revision=publisher_.acceptedRevision();
+                result.edit.createdIds.clear();
+                return result;
+            }
+        }
         auto effective=route; // CONTROL-only, never on audio callback
         for(auto& source:effective.sources){
             const auto prior=std::find_if(acceptedRequest_.sources.begin(),

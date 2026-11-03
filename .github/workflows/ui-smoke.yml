@@ -79,12 +79,66 @@ jobs:
         run: python tests/fader_asset_test.py
       - name: Validate recessed Button 180 + embedded Inter font contract
         run: python tests/button_asset_test.py
+      - name: Verify SVG WIRE knob mask available on all preview routes
+        run: python tests/wire_knob_asset_contract_test.py
       - name: Verify original PAN slider and CSS buttons
         run: python tests/pan_button_asset_test.py
       - name: Validate linked 11-strip geometry and LV1-style rail workspace
         run: python tests/mixer_shell_geometry_smoke.py
+      - name: Verify V8 FX rack and Plugin Manager CSS ownership
+        run: python tests/pages_css_ownership_v8_smoke.py
+      - name: Verify V9 PAN/fader/meter CSS ownership and geometry
+        run: python tests/pages_css_ownership_v9_smoke.py
+      - name: Verify V10 cascade ownership and rendered console geometry
+        run: python tests/pages_css_architecture_v10_smoke.py
+      - name: Validate V11 section ownership, cascade and computed visual styles
+        run: python tests/pages_css_architecture_v11_smoke.py
+      - name: Verify V12 removed shadow declarations and old/new visual + control parity
+        run: python tests/pages_css_architecture_v12_smoke.py
+      - name: Verify V13 owned CSS conflicts and physical control visual parity
+        run: python tests/pages_css_architecture_v13_smoke.py
+      - name: Verify V14 canonical 45 material tokens and V13 browser parity
+        run: python tests/pages_css_architecture_v14_smoke.py
+      - name: Verify V15 clean cross-owner CSS and actual interactive visual parity
+        run: python tests/pages_css_architecture_v15_smoke.py
+      - name: Verify V16 WIRE single CSS owner, 241-rule exact source and visual parity
+        run: python tests/pages_css_architecture_v16_smoke.py
+      - name: Verify embedded Inter font and contextual V7 micro-controls
+        run: python tests/pages_inter_utility_v7_smoke.py
+      - name: Validate exact alpha micro hardware sprite states and WIRE coexistence
+        run: python tests/pages_micro_button_assets_v1_smoke.py
+      - name: Verify owned V6 mixer hardware keys and WIRE regression
+        run: python tests/pages_controls_v6_smoke.py
+      - name: Verify CSS-built MUTE reference face and active/inactive interaction
+        run: python tests/pages_mute_css_reference_smoke.py
+      - name: Reconcile PNG button preview with exact latest WIRE source and geometry
+        run: python tests/pages_png_buttons_wire_reconciliation_smoke.py
+      - name: Verify V6 contextual buttons, momentary press and zero pointer scroll
+        run: python tests/pages_contextual_buttons_smoke.py
+      - name: Verify V6 contextual OFF and ON readability, SVG ink and WIRE matrix statuses
+        run: python tests/pages_contextual_contrast_smoke.py
+      - name: Verify V18 square Material icon controls and calibrated fader + VU rulers
+        run: python tests/pages_micro_fader_visual_v18_smoke.py
+      - name: Verify M1 true dBFS signal-to-LED mapping and pixel-calibrated gain/meter ruler
+        run: python tests/pages_m1_meter_gain_calibration_smoke.py
       - name: Run mixer UI smoke tests
         run: python tests/ui_smoke.py
+      - name: Verify Preview V2 V7 physical visual geometry and modeless mixer workflow
+        run: python tests/preview_v2_v7_visual_smoke.py
+      - name: Verify V15 real pointer OUT-to-IN wire and exclusive Bus routing
+        run: python tests/preview_v15_drag_wire_smoke.py
+      - name: Verify V40 WIRE proximity, focus release and full-tray channel selection
+        run: python tests/pages_wire_focus_v40_smoke.py
+      - name: Verify V42 original OUT fill and magnetic dot-follow drag
+        run: python tests/pages_wire_dot_v42_smoke.py
+      - name: Verify V43 public Pages WIRE CSS, incoming cables and propagating socket impact
+        run: python tests/pages_wire_incoming_v43_smoke.py
+      - name: Verify V44 dock, cable-matched dots, right labels, folded row and broader impact
+        run: python tests/pages_wire_v44_finish_smoke.py
+      - name: Verify V45 destination channel-color socket and collision-free responsive captions
+        run: python tests/pages_wire_v45_socket_layout_smoke.py
+      - name: Verify V46 exact dot endpoint anchors, LVL geometry and socket inner color
+        run: python tests/pages_wire_v46_precision_smoke.py
       - name: Verify G1/G2 LIVE mixer bank and native I/O transaction
         run: python tests/mixer_io_smoke.py
       - name: Verify MIX and FX RACK Auto Orbit workflow
@@ -117,7 +171,44 @@ jobs:
             fader-ui-smoke.png
             toolbar-global-btn180-pad.png
             device-green-on-palette-review.png
+            pages-v8-fx-rack-expanded-1680.png
+            pages-v8-fx-browser-closed-1680.png
+            pages-v9-pan-fader-meter-1366.png
+            pages-v9-pan-fader-meter-1680.png
+            pages-v10-shell-1366.png
+            pages-v10-shell-1680.png
+            pages-v11-collapse-1366.png
+            pages-v11-console-1680.png
+            pages-v12-console-1680.png
+            pages-v13-owner-console-1680.png
+            pages-v14-tokens-console-1680.png
+            pages-v15-clean-cascade-1680.png
+            pages-v16-wire-owner-1680.png
+            pages-v7-embedded-inter-utility-1680.png
+            pages-mixer-v6-OFF-1680.png
+            pages-mixer-v6-ON-1680.png
             mixer-design-review.png
+            preview-v2-v7-1366.png
+            preview-v2-v7-1666.png
+            preview-v2-v7-1920.png
+            preview-operator-1366.png
+            preview-operator-1666.png
+            preview-operator-1920.png
+            preview-operator-1711.png
+            preview-v13-all-expanded-1711.png
+            preview-v14-all-folded-1711.png
+            preview-v16-reordered-1711.png
+            preview-v2-v7-1711.png
+            preview-v15-wire-left-1680.png
+            preview-v15-wire-bus-only-1680.png
+            preview-p0-fx-expanded-1366.png
+            pages-v6-arrow-contrast-1680.png
+            pages-v18-fader-scale-1680.png
+            m1-calibrated-fader-meter-1680.png
+            m1-active-meter-dbfs-1680.png
+            pages-v18-fx-micro-1680.png
+            site/preview-v2/index.html
+            site/preview-v2/assets/
             mixer-design-review-1440.png
             native-input-patch-review-1680.png
             native-input-patch-review-1440.png

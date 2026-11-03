@@ -193,6 +193,27 @@ int main() {
     assert(near(l[63],(.2f+.4f)*center));
     assert(near(ml[63],(.2f*.2f+.4f*.25f)*center));
     assert(session.acceptedGraphRevision()==2);
+    // E1: structural draft pins are preflighted BEFORE accepted SOURCE
+    // reconciliation. Out-of-range or same-pin stereo must not be hidden by
+    // an earlier valid MONO source, falsely ACKed, or silence existing PCM.
+    const std::array<ChannelEdit,0> noStructure{};
+    auto invalidSource=route;
+    invalidSource.sources[0].inputL=2; // exactly physicalInputs
+    auto deniedSource=session.edit(2,2,noStructure,invalidSource,epoch,epoch,true);
+    assert(!deniedSource.ok());
+    assert(deniedSource.fault==DynamicAcceptedSession::Fault::graphRejected);
+    assert(deniedSource.native.fault==DynamicNativeSessionPublisher::Fault::invalidGraph);
+    assert(deniedSource.native.graphError.fault==DynamicGraphFault::invalidSource);
+    assert(deniedSource.edit.createdIds.empty());
+    assert(session.acceptedGraphRevision()==2);
+    assert(session.acceptedPhysicalRequest().sources[0].inputL==0);
+    invalidSource=route;
+    invalidSource.sources[0].stereo=true;
+    invalidSource.sources[0].inputR=0;
+    deniedSource=session.edit(2,2,noStructure,invalidSource,epoch,epoch,true);
+    assert(!deniedSource.ok() &&
+           deniedSource.native.graphError.fault==DynamicGraphFault::invalidSource);
+    assert(render()&&near(l[63],(.2f+.4f)*center));
     // One accepted ChannelId graph: realtime MUTE/SOLO and PRE/POST follow
     // the same callback, not a recompilation or an extra FX instance.
     assert(session.setLiveMuteSolo(epoch,2,micA,true,false));
