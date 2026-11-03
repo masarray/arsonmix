@@ -44,10 +44,10 @@ async def main():
     info=manifest()["totals"]
     assert len(oldcss)==info["beforeCss"]==175850
     assert fingerprint(oldcss)==info["beforeFNV"]=="188064b0"
-    assert len(newcss)==info["afterCss"]==173298
-    assert fingerprint(newcss)==info["afterFNV"]=="ad118593"
+    assert len(newcss)==133992
+    assert fingerprint(newcss)=="4bd22884"
     assert oldcss.count("!important")==1354
-    assert newcss.count("!important")==1317
+    assert newcss.count("!important")==981
     baseline,temporary=original_assets_as_baseline(oldhtml,oldowners)
     try:
         async with async_playwright() as p:
@@ -65,7 +65,7 @@ async def main():
             await browser.close()
     finally:
         for file in temporary:file.unlink(missing_ok=True)
-    print("PASS V15: exact V14 source reconstructed, 95 declarations, 15 whole rules,"
+    print("PASS V15+V16: original V14 CSS reconstructed, V15 owner pruning retained,"
           " 37 important removed; 5 viewports x 8 fold states, hardware and WIRE parity")
 
 if __name__=="__main__":

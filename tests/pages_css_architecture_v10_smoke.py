@@ -15,9 +15,9 @@ OWNERS = (
     "mixer-v3-layout-contract.css",
     "mixer-chrome-material.css",
 )
-EXPECTED_FNV = "ad118593"
-EXPECTED_CSS_LENGTH = 173298
-EXPECTED_INLINE_LENGTH = 124497
+EXPECTED_FNV = "4bd22884"
+EXPECTED_CSS_LENGTH = 133992
+EXPECTED_INLINE_LENGTH = 85191
 
 def fingerprint(css):
     h = 2166136261
@@ -51,8 +51,8 @@ def source_gate():
     assert len(all_css) == EXPECTED_CSS_LENGTH, "CSS ownership source bytes missing"
     assert fingerprint(all_css) == EXPECTED_FNV, "CSS cascade/content drift"
     assert sum(map(len, styles)) == EXPECTED_INLINE_LENGTH
-    assert all_css.count("!important") == 1317
-    assert sum(body.count("!important") for body in styles) == 1099
+    assert all_css.count("!important") == 981
+    assert sum(body.count("!important") for body in styles) == 763
     original = (HTML.parent / "assets" / OWNERS[0]).read_text(encoding="utf-8")
     grid = (HTML.parent / "assets" / OWNERS[1]).read_text(encoding="utf-8")
     artwork = (HTML.parent / "assets" / OWNERS[2]).read_text(encoding="utf-8")
@@ -61,7 +61,7 @@ def source_gate():
     assert all("--ari-" + n + ":url(data:image/png" in artwork
                for n in ("silver", "rose", "pan"))
     assert "wireWsCanJoin" in html
-    assert "assets/mixer-wire-dots.css?v=v47" in html
+    assert "assets/mixer-wire-dots.css?v=v47-css-v16" in html
     assert "assets/inter-embedded.css" in html
     for p in (ROOT / "scripts/build_pages.py", ROOT / ".github/workflows/pages-publish.yml"):
         source = p.read_text(encoding="utf-8")

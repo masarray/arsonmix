@@ -14,7 +14,8 @@ def assert_ownership():
     html=PAGE.read_text(encoding="utf-8")
     css=STYLE.read_text(encoding="utf-8")
     js=RUNTIME.read_text(encoding="utf-8")
-    assert "wireWsCanJoin" in html and "data:image/svg+xml;base64" in html
+    wire_css=(PAGE.parent/"assets"/"mixer-wire-dots.css").read_text(encoding="utf-8")
+    assert "wireWsCanJoin" in html and "data:image/svg+xml;base64" in (html+wire_css)
     assert "switch-section mx-hw-row" in html
     assert "assets/mixer-control-keys.css" in html and "assets/mixer-control-keys.js" in html
     # Legacy stylesheet comments/selectors still exist for unrelated sections;

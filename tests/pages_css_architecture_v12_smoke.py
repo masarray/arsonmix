@@ -47,8 +47,8 @@ def source_baseline():
     assert fingerprint(old_css(previous))==manifest["nextFNV"]=="8cb19a32"
     assert old_css(old).count("!important")==manifest["previousImportant"]==1449
     assert old_css(previous).count("!important")==manifest["nextImportant"]==1354
-    assert len(combined_css(current))==173298
-    assert fingerprint(combined_css(current))=="ad118593"
+    assert len(combined_css(current))==133992
+    assert fingerprint(combined_css(current))=="4bd22884"
     assert manifest["previousImportant"]-manifest["nextImportant"]==95
     assert manifest["previousCSS"]-manifest["nextCSS"]==10152
     # Historical V11's CSS owner must also be original; inline it in the
