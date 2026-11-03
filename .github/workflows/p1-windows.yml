@@ -75,7 +75,7 @@ jobs:
           node --test tests/engine_runtime_reconciliation_test.mjs
           node scripts/check_console_puzzle.mjs
       - name: Stop incomplete integrated product promotion before JUCE checkout
-        if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-') }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.head_ref, 'integration/product-') }}
         run: node scripts/check_console_puzzle.mjs --release
       - name: Fast offline FactoryFX release and integrity contract tests
         shell: pwsh
@@ -151,14 +151,12 @@ jobs:
         run: |
           & ./scripts/verify_native_windows_artifact.ps1 -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      # PRs compile/CTest/package but never silently publish a stable build.
-      # Sole ENGINE #266 may upload an EXACT-SHA, CI/PE-verified
-      # UNQUALIFIED 10CH+4AUX engineering FAT ZIP; NOT universal live.
-      # Retired M4-only branches cannot publish competing ENGINE builds.
+      # Stop-ship: ENGINE-only CI is still built with abandoned 10-strip GUI.
+      # Never upload it as a user-testable mixer. Only exact-SHA joined product
+      # integration may upload after mandatory approved-Console release gating.
       - uses: actions/upload-artifact@v4
-        if: ${{ github.event_name != 'pull_request' || github.head_ref == 'milestone/m5-universal-channelid-vst3-lease-migration-20261101' }}
+        if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-') }}
         with:
-          name: ${{ github.event_name == 'pull_request' && 'ArSonMix-ENGINE-10CH4AUX-EXPERIMENTAL-Hardware-FAT-Windows-x64' || 'ArSonMix-GUI10CH-P012-Verified-Hardware-FAT-Windows-x64' }}
+          name: ArSonMix-INTEGRATED-UNIVERSAL-CONSOLE-EXPERIMENTAL-NOT-HARDWARE-QUALIFIED-Windows-x64
           path: dist/
           if-no-files-found: error
-          retention-days: 14

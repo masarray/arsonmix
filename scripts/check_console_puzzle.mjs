@@ -11,7 +11,10 @@ const files={
   gui:'web/mixer-layout.js',
   guiTest:'tests/operator_console_v6_smoke.py',
   fat:'scripts/console_v6_fat_gate.mjs',
-  fatTest:'tests/console_v6_fat_gate_test.mjs'
+  fatTest:'tests/console_v6_fat_gate_test.mjs',
+  operatorHtml:'web/index.html',
+  operatorApp:'web/app.js',
+  cmake:'CMakeLists.txt'
 };
 const release=process.argv.includes('--release');
 const read=path=>{try{return readFileSync(resolve(path),'utf8')}catch{return ''}};
@@ -25,6 +28,26 @@ const checks=[
  ['GUI fixture from one canonical source',/console-v6\/fixtures\.json/.test(data.guiTest),'GUI #271: use shared fixture file, remove standalone MAIN/BUS-FX fake ids'],
  ['FAT checks native device endpoints and pin masks',/enabledInputs/.test(data.fat)&&/enabledOutputs/.test(data.fat),'FAT #270: validate native producer enabled pins, not hand-authored fantasy fields'],
  ['FAT fixture from one canonical source',/console-v6\/fixtures\.json/.test(data.fatTest),'FAT #270: use the SAME shared fixture as GUI tests, not duplicate schema'],
+ // The legacy app shipped a source-exact, but WRONG, fixed-ten GUI.
+ // The approved operator Console must own the embedded WebView assets.
+ ['GUI retired ten-strip demo removed',
+  !/\bconst\s+raw\s*=\s*\[/.test(data.operatorApp) &&
+  !/\bconst\s+channels\s*=\s*raw\.map\s*\(/.test(data.operatorApp),
+  'GUI #271: replace hard-coded 10-channel demo array with native accepted ChannelId roster'],
+ ['GUI approved single Console is packaged, not retired multi-workspace shell',
+  !/data-view=["']FX RACK["']/.test(data.operatorHtml) &&
+  !/data-view=["']SIGNAL FLOW["']/.test(data.operatorHtml) &&
+  !/Live FX Host GUI Preview/.test(data.operatorHtml),
+  'GUI #271: remove abandoned MIX / FX RACK / SIGNAL FLOW shell; follow approved one-Console workflow'],
+ ['GUI direct universal channel operation originates from native accepted state',
+  /arMixConsoleSnapshot/.test(data.gui) &&
+  /CREATE_CHANNEL/.test(data.gui) &&
+  (data.gui.includes('graph.channels') || data.gui.includes('graph?.channels')),
+  'ENGINE #266 + GUI #271: CREATE_CHANNEL native ACK then accepted graph.channels renders CH11+, no browser-created strips'],
+ ['JUCE BinaryData embeds release-gated operator HTML and JS',
+  /web\/index\.html\s+web\/styles\.css/.test(data.cmake) &&
+  /web\/app\.js/.test(data.cmake),
+  'FAT #270: CMake BinaryData must embed audited Console HTML/JS'],
 ];
 execFileSync(process.execPath,['--test','tests/console_v6_puzzle_seam_test.mjs'],{stdio:'inherit'});
 const blockers=checks.filter(x=>!x[1]);
