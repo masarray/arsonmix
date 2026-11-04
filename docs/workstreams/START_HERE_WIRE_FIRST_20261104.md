@@ -2,7 +2,7 @@
 
 **Final owner decision:** https://masarray.github.io/arsonmix/preview/ is the ONLY approved preview and Windows GUI/UX. **/preview-v2/ was explicitly rejected** and may not be shown as another public GUI or native design target. The actual approved /preview/ screen includes **PNG hardware MUTE/SOLO/PFL controls** that are not the bare preview-v2 rendering.
 
-**How to source exactly the approved visual:** `scripts/build_pages.py` assembles ONE `/preview/` HTML+assets from internal `site/preview-v2/index.html` and shared FX/WIRE/fader/meter assets but overlays `site/preview-buttons/assets/mixer-control-keys.css`, `mixer-control-keys.js`, `mute-solo-pfl-56x37.png`. Internal source names are **not separate product GUIs**. The published /preview/ assembly, not /preview-v2/ alone, must be deterministically embedded in JUCE WebView2. Old public preview URLs are redirect-only. See [canonical handoff](HANDOFF_APPROVED_PREVIEW_V2_NATIVE_20261104.md) (filename historic), root AGENTS.md, PRD, ARD and P0 #389.
+**How to source the approved visual:** the ONE checked-in source is `site/preview/index.html` with `site/preview/assets/**` (approved PNG keys included). `scripts/build_pages.py` publishes it; `scripts/build_approved_native_gui.py` consumes the same Pages output for JUCE. Do not resurrect retired preview-v2/buttons sources.
 
 ## Four meaningful milestones (do not re-plan)
 1. **One public preview:** `python scripts/build_pages.py` generates /preview/index.html directly. `python tests/single_preview_publication_contract_test.py dist-pages` must verify PNG buttons, WIRE and all legacy redirects. Never serve a separate /preview-v2/ mixer.

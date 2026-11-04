@@ -30,7 +30,7 @@ class ApprovedNativeGuiBundleTests(unittest.TestCase):
                 self.assertEqual((out / "assets" / asset.name).read_bytes(), asset.read_bytes(),
                                  "Native /preview/ asset differs: " + asset.name)
             for name in ("mixer-control-keys.css", "mixer-control-keys.js", "mute-solo-pfl-56x37.png"):
-                button = (ROOT / "site/preview-buttons/assets" / name).read_bytes()
+                button = (ROOT / "site/preview/assets" / name).read_bytes()
                 self.assertEqual((out / "assets" / name).read_bytes(), button)
             self.assertIn("assets/mixer-control-keys.css?rev=", native)
             self.assertNotIn("console-native.html", native)

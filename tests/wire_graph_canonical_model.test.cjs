@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 const assert=require('node:assert/strict');
-const graph=require('../site/preview-v2/assets/wire-graph-model.js');
+const graph=require('../site/preview/assets/wire-graph-model.js');
 const channels=[{id:1,name:'CH1',output:'Master'},{id:2,name:'CH2',output:'Master'},
  {id:3,name:'CH3',output:'Master'}];
 const base=graph.migrateLegacy(channels,9);

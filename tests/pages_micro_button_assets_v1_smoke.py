@@ -8,8 +8,8 @@ import tempfile
 from playwright.sync_api import sync_playwright
 
 ROOT=Path(__file__).resolve().parents[1]
-ASSET=ROOT/'site/preview-v2/assets'
-PAGE=ROOT/'site/preview-v2/index.html'
+ASSET=ROOT/'site/preview/assets'
+PAGE=ROOT/'site/preview/index.html'
 SQUARE='micro-hardware-17x17-2x4.png'
 FORMAT='format-hardware-25x15-2x1.png'
 

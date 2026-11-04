@@ -6,7 +6,7 @@ No semantic selector rewrites and no live/current owner ownership ambiguity.
 import json,re,tempfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-HTML=ROOT/"site/preview-v2/index.html"
+HTML=ROOT/"site/preview/index.html"
 ASSETS=HTML.parent/"assets"
 LEDGER=ROOT/"tests/fixtures/css-v23-cascade-winners.json"
 

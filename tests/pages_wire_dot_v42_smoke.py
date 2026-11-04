@@ -2,7 +2,7 @@
 """Public ArSonMix V42: original OUT pin fill, drag follower and magnetic IN."""
 from pathlib import Path
 from playwright.sync_api import sync_playwright
-PAGE=Path(__file__).resolve().parents[1]/"site/preview-v2/index.html"
+PAGE=Path(__file__).resolve().parents[1]/"site/preview/index.html"
 WIRE_STYLE=PAGE.with_name("assets")/"mixer-wire-dots.css"
 assert 'assets/mixer-wire-dots.css?v=v59-selected-wire-quiet' in PAGE.read_text(encoding="utf-8")
 assert 'wire-node-out .wire-pin' in WIRE_STYLE.read_text(encoding="utf-8")

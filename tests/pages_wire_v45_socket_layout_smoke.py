@@ -9,8 +9,8 @@ from playwright.sync_api import sync_playwright
 from pages_wire_incoming_v43_smoke import center
 
 ROOT=Path(__file__).resolve().parents[1]
-HTML=ROOT/"site/preview-v2/index.html"
-STYLE=ROOT/"site/preview-v2/assets/mixer-wire-dots.css"
+HTML=ROOT/"site/preview/index.html"
+STYLE=ROOT/"site/preview/assets/mixer-wire-dots.css"
 
 def rect(loc):
  box=loc.bounding_box()

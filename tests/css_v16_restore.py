@@ -8,7 +8,7 @@ original asset source order and query string; no synthetic CSS.
 import json,re,tempfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-HTML=ROOT/"site/preview-v2/index.html"
+HTML=ROOT/"site/preview/index.html"
 WIRE=HTML.parent/"assets/mixer-wire-dots.css"
 LEDGER=ROOT/"tests/fixtures/css-v16-wire-inline-migration.json"
 

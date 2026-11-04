@@ -6,8 +6,8 @@ from pathlib import Path
 from playwright.async_api import async_playwright
 
 ROOT=Path(__file__).resolve().parents[1]
-PAGE=ROOT/'site/preview-v2/index.html'
-ASSET=ROOT/'site/preview-v2/assets'
+PAGE=ROOT/'site/preview/index.html'
+ASSET=ROOT/'site/preview/assets'
 ENGINE_FONT=ROOT/'web/styles-src/00-font-and-assets.css'
 
 def source_contract():

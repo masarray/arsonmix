@@ -16,8 +16,8 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 ROOT=Path(__file__).resolve().parents[1]
-REFERENCE=ROOT/"site/preview-v2"
-OWNER=ROOT/"site/preview-buttons/assets"
+REFERENCE=ROOT/"site/preview"
+OWNER=ROOT/"site/preview/assets"
 SPECIAL=("mixer-control-keys.css","mixer-control-keys.js")
 SPRITE="mute-solo-pfl-56x37.png"
 
@@ -60,7 +60,7 @@ def verify_bundle(dist):
         assert (generated/"assets"/name).read_bytes()==(REFERENCE/"assets"/name).read_bytes(),name
 
     png=(generated/"assets"/SPRITE).read_bytes()
-    assert png==(ROOT/"site/preview-v34/assets"/SPRITE).read_bytes()
+    assert png==(REFERENCE/"assets"/SPRITE).read_bytes()
     assert png[:8]==bytes.fromhex("89504e470d0a1a0a")
     assert struct.unpack(">II",png[16:24])==(112,111)
     assert png[25]==6,"Must keep RGBA transparency"

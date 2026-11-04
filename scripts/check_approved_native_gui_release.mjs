@@ -12,8 +12,8 @@ const digest=b=>createHash('sha256').update(b).digest('hex');
 const fail=s=>{console.error('RELEASE BLOCKED — approved /preview/ GUI: '+s);process.exitCode=1;};
 const entry='web/approved-preview/index.html';
 const manifest='web/approved-preview/native-manifest.json';
-const source='site/preview-v2/index.html'; // INTERNAL HTML seed, NOT /preview-v2/ product
-const buttons='site/preview-buttons/assets/';
+const source='site/preview/index.html'; // INTERNAL HTML seed, NOT /preview-v2/ product
+const buttons='site/preview/assets/';
 if(!exists(entry)||!exists(manifest)){
   fail('Windows approved GUI bundle missing. Generate the exact /preview/ assembled HTML, CSS/JS/PNG, then embed it into JUCE.');
   process.exit(1);
@@ -37,12 +37,12 @@ if(read(entry).toString('utf8')!==expected)fail('Native HTML does not match EXAC
 const linked=[...new Set([...sourceHtml.matchAll(/(?:src|href)=["'](assets\/[^"'?]+)(?:\?[^"']*)?["']/g)].map(v=>v[1]))];
 for(const rel of linked){
   const name=rel.slice('assets/'.length);
-  const sourceAsset=['mixer-control-keys.css','mixer-control-keys.js','mute-solo-pfl-56x37.png'].includes(name)?buttons+name:'site/preview-v2/'+rel;
+  const sourceAsset=['mixer-control-keys.css','mixer-control-keys.js','mute-solo-pfl-56x37.png'].includes(name)?buttons+name:'site/preview/'+rel;
   const nativeAsset='web/approved-preview/'+rel;
   if(!exists(sourceAsset)||!exists(nativeAsset)||digest(read(sourceAsset))!==digest(read(nativeAsset)))fail('Native CSS/JS/art missing/changed: '+rel);
 }
 for(const name of ['mute-solo-pfl-56x37.png','mixer-wire-dots.css','knob-ICON.svg']){
-  const ref=name==='mute-solo-pfl-56x37.png'?buttons+name:'site/preview-v2/assets/'+name;
+  const ref=name==='mute-solo-pfl-56x37.png'?buttons+name:'site/preview/assets/'+name;
   const native='web/approved-preview/assets/'+name;
   if(!exists(native)||!exists(ref)||digest(read(native))!==digest(read(ref)))fail('Mandatory GUI art mismatch: '+name);
 }

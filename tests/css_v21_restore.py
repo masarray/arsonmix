@@ -8,7 +8,7 @@ import json,re,tempfile
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
-HTML=ROOT/"site/preview-v2/index.html"
+HTML=ROOT/"site/preview/index.html"
 CHROME=HTML.parent/"assets/mixer-chrome-material.css"
 LEDGER=ROOT/"tests/fixtures/css-v21-chassis-geometry-migration.json"
 

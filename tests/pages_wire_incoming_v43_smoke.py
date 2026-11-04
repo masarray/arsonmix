@@ -5,8 +5,8 @@ import math,re,subprocess,sys,tempfile
 from playwright.sync_api import sync_playwright
 
 ROOT=Path(__file__).resolve().parents[1]
-CANONICAL=ROOT/"site/preview-v2/index.html"
-WIRE_CSS=ROOT/"site/preview-v2/assets/mixer-wire-dots.css"
+CANONICAL=ROOT/"site/preview/index.html"
+WIRE_CSS=ROOT/"site/preview/assets/mixer-wire-dots.css"
 
 def center(el):
  r=el.bounding_box()

@@ -22,8 +22,7 @@ juce_add_gui_app(ARMixConsole
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(ARMIX_APPROVED_GUI_DIR "${CMAKE_CURRENT_BINARY_DIR}/approved_gui")
 file(GLOB_RECURSE ARMIX_APPROVED_GUI_SOURCE_INPUTS CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/site/preview-v2/*"
-    "${CMAKE_CURRENT_SOURCE_DIR}/site/preview-buttons/assets/*")
+    "${CMAKE_CURRENT_SOURCE_DIR}/site/preview/*")
 list(APPEND ARMIX_APPROVED_GUI_SOURCE_INPUTS
     "${CMAKE_CURRENT_SOURCE_DIR}/web/approved-native-bridge.js"
     "${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_approved_native_gui.py")

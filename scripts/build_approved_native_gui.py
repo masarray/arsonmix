@@ -19,7 +19,7 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-CANONICAL = ROOT / "site" / "preview-v2"
+CANONICAL = ROOT / "site" / "preview"
 NATIVE_ADAPTER = ROOT / "web" / "approved-native-bridge.js"
 ADAPTER_MARKER = '<script defer src="assets/approved-native-bridge.js"></script>'
 SCHEMA = "arsonmix.approved-native-pages-bundle.v2"
@@ -123,7 +123,7 @@ def stage(out: Path) -> dict:
         "schema": SCHEMA,
         "authoritativePagesRoute": "/preview/",
         "authoritativePagesOutput": "preview/index.html",
-        "canonicalSource": "site/preview-v2/index.html",
+        "canonicalSource": "site/preview/index.html",
         "canonicalSourceSha256": sha256((CANONICAL / "index.html").read_bytes()),
         "approvedPagesHtmlSha256": sha256(approved),
         "nativeHtmlSha256": sha256(native),

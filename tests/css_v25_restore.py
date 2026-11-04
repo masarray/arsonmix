@@ -8,7 +8,7 @@ import json,re,tempfile
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
-HTML=ROOT/"site/preview-v2/index.html"
+HTML=ROOT/"site/preview/index.html"
 OWNER=HTML.parent/"assets/mixer-control-keys.css"
 LEDGER=ROOT/"tests/fixtures/css-v25-physical-key-owner-migration.json"
 

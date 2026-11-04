@@ -10,7 +10,7 @@ from playwright.sync_api import sync_playwright
 
 HERE=Path(__file__).resolve()
 ROOT=next(p for p in HERE.parents if (p/".github").is_dir())
-PAGE=HERE.with_name("index.html") if HERE.parent.name=="audition-mixer-study" else ROOT/"site/preview-v2/index.html"
+PAGE=HERE.with_name("index.html") if HERE.parent.name=="audition-mixer-study" else ROOT/"site/preview/index.html"
 
 def assert_true(value,message):
     if not value: raise AssertionError(message)

@@ -12,8 +12,8 @@ import subprocess, sys, tempfile
 from playwright.sync_api import sync_playwright
 
 ROOT=Path(__file__).resolve().parents[1]
-PAGE=ROOT/"site/preview-v2/index.html"
-CSS=ROOT/"site/preview-v2/assets/mixer-contextual-buttons.css"
+PAGE=ROOT/"site/preview/index.html"
+CSS=ROOT/"site/preview/assets/mixer-contextual-buttons.css"
 
 def luminance(hexv):
     rgb=[int(hexv[i:i+2],16)/255 for i in (1,3,5)]
@@ -116,8 +116,7 @@ def main():
         with sync_playwright() as p:
             browser=p.chromium.launch(headless=True)
             for path,label in ((PAGE,"canonical"),
-                               (dst/"preview/mixer.html","published-mixer"),
-                               (dst/"preview-buttons/index.html","approved-png")):
+                               (dst/"preview/index.html","approved-png")):
                 page=browser.new_page(viewport={"width":1680,"height":900})
                 verify(page,label,path)
                 page.close()

@@ -1,90 +1,92 @@
-"""Build public Pages landing and interactive console from canonical standalone HTML."""
-from pathlib import Path
-import argparse,os,json,shutil,subprocess,sys
-ROOT=Path(__file__).resolve().parents[1]
-p=argparse.ArgumentParser()
-p.add_argument('--out',default='dist-pages')
-p.add_argument('--sha',default=os.environ.get('GITHUB_SHA','local'))
-p.add_argument('--branch',default=os.environ.get('GITHUB_REF_NAME','local'))
-args=p.parse_args()
-dst=Path(args.out).resolve()
-if dst==ROOT or dst==ROOT/'site': raise SystemExit('unsafe output path')
-dst.mkdir(parents=True,exist_ok=True)
-# Publish only the landing and ONE approved /preview/ GUI. Internal GUI seed
-# folders remain in repo for design tests, never as separate public screens.
-shutil.copy2(ROOT/'site/index.html',dst/'index.html')
-subprocess.run([sys.executable,str(ROOT/'scripts/build_ui_css.py'),'--check'],check=True)
+"""Build ONE public approved /preview/ from ONE physical source directory.
 
-# Build the ONLY owner-approved GUI at /preview/: internal base source plus
-# exactly the approved PNG control material. No second public renderer.
-buttons_source=ROOT/'site/preview-buttons/assets'
-canonical=ROOT/'site/preview-v2'
-buttons_dest=dst/'preview'
-if buttons_dest.exists(): shutil.rmtree(buttons_dest)
-# Public /preview/ is the only compiled GUI. Canonical base and PNG overrides
-# are source inputs only; this output has ONE HTML, ONE CSS/JS/asset set.
-(buttons_dest/'assets').mkdir(parents=True)
-canonical_html=(canonical/'index.html').read_text(encoding='utf-8')
-special=('mixer-control-keys.css','mixer-control-keys.js')
-sprite='mute-solo-pfl-56x37.png'
-for src in sorted((canonical/'assets').iterdir()):
-    if not src.is_file(): raise SystemExit('Unexpected nested preview-v2 asset: '+str(src))
-    if src.name not in special:
-        shutil.copy2(src,buttons_dest/'assets'/src.name)
-for name in (*special,sprite):
-    src=buttons_source/name
-    if not src.is_file(): raise SystemExit('Approved PNG asset missing: '+str(src))
-    shutil.copy2(src,buttons_dest/'assets'/name)
-# Content-addressed URLs prevent browser caching of a superseded button skin.
-import hashlib,re
-revisions={}
-for name in special:
-    token='assets/'+name
-    pattern=re.compile(re.escape(token)+r'(?:\?[^"\s>]+)?')
-    matches=list(pattern.finditer(canonical_html))
-    if len(matches)!=1:
-        raise SystemExit(f'Expected one source link for {token}; found {len(matches)}')
-    digest=hashlib.sha256((buttons_dest/'assets'/name).read_bytes()).hexdigest()[:16]
-    revisions[name]=digest
-    match=matches[0]
-    canonical_html=canonical_html[:match.start()]+token+'?rev='+digest+canonical_html[match.end():]
-(buttons_dest/'index.html').write_text(canonical_html,encoding='utf-8')
-(buttons_dest/'build.json').write_text(json.dumps({
-    'canonical_url':'/preview/',
-    'sha':args.sha,'branch':args.branch,
-    'kind':'APPROVED_SINGLE_GUI','live_audio':False,
-    'wire_source':'site/preview-v2/index.html',
-    'wire_source_sha256':hashlib.sha256((canonical/'index.html').read_bytes()).hexdigest(),
-    'button_asset_source':'site/preview-buttons/assets/',
-    'button_css_js_revisions':revisions
-},indent=2),encoding='utf-8')
-# Fail closed if routing has no identical source files in the variant.
-for name in ('mixer-wire-dots.css','knob-ICON.svg'):
-    if (buttons_dest/'assets'/name).read_bytes()!=(canonical/'assets'/name).read_bytes():
-        raise SystemExit('PNG preview WIRE dependency drift: '+name)
-# The source directories /preview-v2/ and /preview-buttons/ MUST NOT ship
-# alternative mixer pages. Preserve old bookmarks with redirect-only shells;
-# all redirects lead to exactly the SAME approved /preview/ GUI.
-legacy_paths=('preview-v2','preview-buttons','preview-v33','preview-v34')
-redirect_html=('<!doctype html><html lang="en"><head><meta charset="utf-8">'
-               '<meta http-equiv="refresh" content="0;url=../preview/">'
-               '<link rel="canonical" href="../preview/">'
-               '<title>ArSonMix — Official Preview</title></head>'
-               '<body><a href="../preview/">Open the only approved ArSonMix preview</a></body></html>')
-for legacy in legacy_paths:
-    target=dst/legacy
-    if target.exists(): shutil.rmtree(target)
-    target.mkdir(parents=True)
-    (target/'index.html').write_text(redirect_html,encoding='utf-8')
-# Retire the old competing /preview/mixer.html body and its candidate metadata;
-# they are never an alternate product skin.
-(dst/'preview'/'mixer.html').write_text(
+The checked-in site/preview/ files are the approved GUI with PNG MUTE/SOLO/PFL
+skin. Never assemble a second renderer or source CSS from retired preview-v2.
+The native JUCE packager invokes this same builder for byte-for-byte parity.
+"""
+from pathlib import Path
+import argparse
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+SOURCE = ROOT / "site" / "preview"
+KEY_ASSETS = ("mixer-control-keys.css", "mixer-control-keys.js")
+REDIRECTS = ("preview-v2", "preview-buttons", "preview-v33", "preview-v34")
+
+p = argparse.ArgumentParser()
+p.add_argument("--out", default="dist-pages")
+p.add_argument("--sha", default=os.environ.get("GITHUB_SHA", "local"))
+p.add_argument("--branch", default=os.environ.get("GITHUB_REF_NAME", "local"))
+args = p.parse_args()
+dst = Path(args.out).resolve()
+if dst in (ROOT, ROOT / "site", SOURCE) or ROOT in dst.parents and dst.parts[-1] in ("site", "preview"):
+    raise SystemExit("unsafe Pages output path")
+if not (SOURCE / "index.html").is_file():
+    raise SystemExit("canonical approved /preview/ source missing")
+subprocess.run([sys.executable, str(ROOT / "scripts/build_ui_css.py"), "--check"], check=True)
+dst.mkdir(parents=True, exist_ok=True)
+shutil.copy2(ROOT / "site/index.html", dst / "index.html")
+dest = dst / "preview"
+if dest.exists():
+    shutil.rmtree(dest)
+shutil.copytree(SOURCE, dest)
+
+source_html = (SOURCE / "index.html").read_text(encoding="utf-8")
+html = source_html
+revisions = {}
+for name in KEY_ASSETS:
+    asset = SOURCE / "assets" / name
+    if not asset.is_file():
+        raise SystemExit("approved PNG-button component missing: " + name)
+    token = "assets/" + name
+    pattern = re.compile(re.escape(token) + r'(?:\?[^"\s>]+)?')
+    matches = list(pattern.finditer(html))
+    if len(matches) != 1:
+        raise SystemExit("expected one approved GUI asset link for " + name)
+    digest = hashlib.sha256(asset.read_bytes()).hexdigest()[:16]
+    match = matches[0]
+    html = html[:match.start()] + token + "?rev=" + digest + html[match.end():]
+    revisions[name] = digest
+    if (dest / "assets" / name).read_bytes() != asset.read_bytes():
+        raise SystemExit("source-to-published PNG-button asset drift: " + name)
+if "console-body" not in html or "<iframe" in html:
+    raise SystemExit("approved GUI missing or obsolete iframe renderer included")
+for essential in ("mixer-wire-dots.css", "knob-ICON.svg", "mute-solo-pfl-56x37.png"):
+    if (dest / "assets" / essential).read_bytes() != (SOURCE / "assets" / essential).read_bytes():
+        raise SystemExit("approved physical GUI asset drift: " + essential)
+(dest / "index.html").write_text(html, encoding="utf-8")
+(dest / "build.json").write_text(json.dumps({
+    "canonical_url": "/preview/",
+    "sha": args.sha,
+    "branch": args.branch,
+    "kind": "APPROVED_SINGLE_GUI",
+    "live_audio": False,
+    "wire_source": "site/preview/index.html",
+    "wire_source_sha256": hashlib.sha256(source_html.encode("utf-8")).hexdigest(),
+    "button_asset_source": "site/preview/assets/",
+    "button_css_js_revisions": revisions,
+}, indent=2), encoding="utf-8")
+
+redirect_html = ('<!doctype html><html lang="en"><head><meta charset="utf-8">'
+                 '<meta http-equiv="refresh" content="0;url=../preview/">'
+                 '<link rel="canonical" href="../preview/">'
+                 '<title>ArSonMix — Official Preview</title></head>'
+                 '<body><a href="../preview/">Open the only approved ArSonMix preview</a></body></html>')
+for old in REDIRECTS:
+    route = dst / old
+    if route.exists():
+        shutil.rmtree(route)
+    route.mkdir(parents=True)
+    (route / "index.html").write_text(redirect_html, encoding="utf-8")
+(dest / "mixer.html").write_text(
     '<!doctype html><meta http-equiv="refresh" content="0;url=./">'
-    '<link rel="canonical" href="./">',encoding='utf-8')
-for obsolete in ('candidate.json',):
-    (dst/'preview'/obsolete).unlink(missing_ok=True)
-(dst/'.nojekyll').touch()
-assert (dst/'index.html').exists() and (dst/'preview'/'index.html').exists()
-assert 'APPROVED_SINGLE_GUI' in (dst/'preview'/'build.json').read_text(encoding='utf-8')
-print('Built ONE approved public GUI at /preview/:',dst/'preview',
-      'from internal HTML + approved button assets', 'revision:',args.sha)
+    '<link rel="canonical" href="./">', encoding="utf-8")
+(dst / ".nojekyll").touch()
+print("Built ONE /preview/ GUI from site/preview/ source:",
+      len(list((dest / "assets").iterdir())), "assets", args.sha)

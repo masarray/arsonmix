@@ -8,8 +8,8 @@ const path=require("node:path");
 const root=path.resolve(__dirname,"..");
 const read=p=>fs.readFileSync(path.join(root,p),"utf8");
 const contract=JSON.parse(read("contracts/console-puzzle-v8.json"));
-const ui=read("site/preview-v2/index.html");
-const css=read("site/preview-v2/assets/mixer-wire-dots.css");
+const ui=read("site/preview/index.html");
+const css=read("site/preview/assets/mixer-wire-dots.css");
 const handoff=read("docs/workstreams/WIRE_V59_MAIN_NATIVE_ENGINE_RECONCILIATION_20261104.md");
 
 assert.equal(contract.schemaVersion,6,"The installed Console v8 envelope must not be replaced");

@@ -6,7 +6,7 @@ Delete only 11 rules whose *entire* selectors require the legacy DOM wrapper
 import json,re,tempfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-HTML=ROOT/"site/preview-v2/index.html"
+HTML=ROOT/"site/preview/index.html"
 KEY=HTML.parent/"assets/mixer-control-keys.css"
 LEDGER=ROOT/"tests/fixtures/css-v26-retired-socket-removals.json"
 

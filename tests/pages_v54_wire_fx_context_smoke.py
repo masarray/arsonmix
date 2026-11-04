@@ -3,7 +3,7 @@
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
-PAGE=Path(__file__).resolve().parents[1]/"site/preview-v2/index.html"
+PAGE=Path(__file__).resolve().parents[1]/"site/preview/index.html"
 
 def wire(page,ch,direction):
     node=".wire-node-out" if direction=="out" else ".wire-node-in"

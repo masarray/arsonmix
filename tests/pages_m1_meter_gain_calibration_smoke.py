@@ -13,7 +13,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
-CANON = ROOT / "site/preview-v2/index.html"
+CANON = ROOT / "site/preview/index.html"
 ASSETS = CANON.parent / "assets"
 
 def close(a, b, tolerance=0.65):
@@ -199,8 +199,8 @@ def main():
         subprocess.run([sys.executable,str(ROOT/"scripts/build_pages.py"),
             "--out",str(dist),"--sha","m1-calibrated","--branch","m1"],
             cwd=ROOT,check=True,capture_output=True,text=True)
-        published=dist/"preview/mixer.html"
-        assert published.read_bytes()==CANON.read_bytes(),"Published mixer source drift"
+        published=dist/"preview/index.html"
+        subprocess.run([sys.executable,str(ROOT/"tests/single_preview_publication_contract_test.py"),str(dist)],cwd=ROOT,check=True,capture_output=True,text=True)
         expected_ruler_keys={
             "mixer-fader-assembly.css":"css-owner-v27-fader-rollback-pre-v52-tail",
             "mixer-meter-display.css":"css-owner-v27-meter-pruned",
@@ -217,7 +217,7 @@ def main():
                 (CANON,"canonical",1680,900),
                 (CANON,"canonical",1920,1080),
                 (published,"pages",1680,900),
-                (dist/"preview-buttons/index.html","png",1366,768)):
+                (published,"approved-png",1366,768)):
                 page=browser.new_page(viewport={"width":width,"height":height})
                 errors=[]
                 page.on("pageerror",lambda exc:errors.append(str(exc)))

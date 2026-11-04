@@ -7,8 +7,8 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 ROOT=Path(__file__).resolve().parents[1]
-HTML=ROOT/"site/preview-v2/index.html"
-CSS=ROOT/"site/preview-v2/assets/mixer-meter-display.css"
+HTML=ROOT/"site/preview/index.html"
+CSS=ROOT/"site/preview/assets/mixer-meter-display.css"
 
 def inspect_geometry(page,density,w):
     page.locator("#densitySelect").select_option(density)
