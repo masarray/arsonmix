@@ -77,6 +77,8 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Verify V49 direct WIRE, gain wheel, connected status, replug and scoped undo
         run: python tests/pages_wire_v49_direct_controls_smoke.py
+      - name: Verify V53 safe FX grip keyboard and DnD, unified rack and rail
+        run: python tests/pages_fx_rail_v53_smoke.py
       - name: Verify original metallic asset and standalone synchronization
         run: python tests/fader_asset_test.py
       - name: Validate recessed Button 180 + embedded Inter font contract
@@ -261,6 +263,10 @@ jobs:
           name: arsonmix-gui-baseline-smoke
           path: |
             pages-v51-portrait-meter-1680.png
+            pages-v53-fx-rail-1366.png
+            pages-v53-fx-rail-1378.png
+            pages-v53-fx-rail-1680.png
+            pages-v53-fx-rail-1920.png
             pages-v51-peak-hold-release-1680.png
             native-orbit-ui-review.png
             mixer-g1-g2-1366.png

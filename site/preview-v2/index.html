@@ -86,7 +86,8 @@
 .console-body .section-rail>.rail-cell[data-section]{
  font:500 9px/1.1 Arial,Helvetica,sans-serif!important;
  font-style:normal!important;letter-spacing:0!important;
- color:#9aafb9!important;background:#182b35!important;
+ color:#a0b7c1!important;background:#1d303a!important;
+ border-left:2px solid #233640!important;
  text-shadow:none!important;transition:none!important;
  border-top:0!important;
 }
@@ -94,14 +95,16 @@
  background:#182b35!important;color:#9aafb9!important;
 }
 .console-body .section-rail>.rail-cell[data-section].collapsed{
- background:#12232d!important;color:#768d98!important;
- box-shadow:inset 2px 0 #627e8e65!important;
+ background:#182934!important;color:#748e9b!important;
+ border-left-color:#314a57!important;
+ box-shadow:inset 1px 0 #536f7c30!important;
 }
 .console-body .section-rail>.rail-cell[data-section]:not(.collapsed){
- box-shadow:inset 2px 0 #91c9d080!important;
+ border-left-color:#8bcdd5!important;
+ box-shadow:inset 1px 0 #a4dde054!important;
 }
 .console-body .section-rail>.rail-cell[data-section]:hover{
- background:#29404b!important;color:#e3eff2!important;
+ background:#2a424d!important;color:#e3eff2!important;
 }
 .console-body .section-rail>.rail-cell[data-section]::after,
 .console-body.wire-routing-v13 .section-rail>.rail-cell.send::after,
@@ -207,13 +210,13 @@
 /* V22: iconography faithfully traced from approved wire + FX references.
    Inline SVGs are single-pass vector paint; no icon fonts or image requests. */
 .console-body .section-rail .rail-svg-icon{
- width:21px!important;height:21px!important;
+ width:16px!important;height:16px!important;
  display:block;flex:none;overflow:visible;pointer-events:none;
  color:inherit;fill:currentColor;opacity:.94;
 }
-.console-body .section-rail .rail-cell.fx .rail-svg-icon{width:23px!important;height:23px!important}
-.console-body .section-rail .rail-cell.send .rail-svg-icon{width:20px!important;height:20px!important}
-.console-body .section-rail .rail-cell.route .rail-svg-icon{width:20px!important;height:20px!important}
+.console-body .section-rail .rail-cell.fx .rail-svg-icon{width:16px!important;height:16px!important}
+.console-body .section-rail .rail-cell.send .rail-svg-icon{width:16px!important;height:16px!important}
+.console-body .section-rail .rail-cell.route .rail-svg-icon{width:16px!important;height:16px!important}
 .console-body .section-rail .rail-cell[data-section]:hover .rail-svg-icon{opacity:1}
 .console-body .section-rail .rail-cell[data-section].collapsed .rail-svg-icon{opacity:.76}
 
@@ -452,7 +455,7 @@ const make=(name,kind,color)=>{
  const id=nextId++;
  return {id,name,kind,color,icon:kind==='master'?'◎':kind==='bus'?'⊞':kind==='fx'?'◉':'♩',group:null,safe:false,format:'stereo',input:'None',output:kind==='master'?'Default Output':'Master',fx:Array(8).fill('None'),slotBypass:Array(8).fill(false),fxOn:true,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,activeSend:0,sendSlots:Array.from({length:16},()=>({send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0})),eq:true,pan:0,trim:0,mute:false,solo:false,cue:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
 };
-function init(){meterPeakHolds.clear();wireWsOpen=false;wireWsDestinationId=null;wireWsInspect=null;wireWsRemoveConfirm=null;wireWsHistory=[];wireWsPendingBefore=null;wireWsEditBefore=null;const ws=document.getElementById('wireWorkspace');if(ws)ws.hidden=true;const cfg=document.getElementById('wireConfigWindow');if(cfg)cfg.hidden=true;document.getElementById('wireConfigToggle').setAttribute('aria-expanded','false');document.getElementById('wireMode').value='send';nextId=1;nextGroup=1;wireSourceId=1;wireEdges=[];selectedWireEdgeId=null;nextWireId=1;wireMode='send';wireView='focus';wireSourcePinned=false;wireIntent=false;document.getElementById('wireView').value='focus';wireAnchorId=null;wireHoverId=null;wireGesture=null;wireSuppressClick=false;pendingBusRoute=null;const choice=document.getElementById('routeChoice');if(choice)choice.hidden=true;document.getElementById('wireMode').value='send';tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
+function init(){meterPeakHolds.clear();wireWsOpen=false;wireWsDestinationId=null;wireWsInspect=null;wireWsRemoveConfirm=null;wireWsHistory=[];wireWsPendingBefore=null;wireWsEditBefore=null;const ws=document.getElementById('wireWorkspace');if(ws)ws.hidden=true;const cfg=document.getElementById('wireConfigWindow');if(cfg)cfg.hidden=true;document.getElementById('wireConfigToggle').setAttribute('aria-expanded','false');document.getElementById('wireMode').value='send';nextId=1;nextGroup=1;nextDemoFxId=1;fxDrag=null;fxReorderUndo=null;wireSourceId=1;wireEdges=[];selectedWireEdgeId=null;nextWireId=1;wireMode='send';wireView='focus';wireSourcePinned=false;wireIntent=false;document.getElementById('wireView').value='focus';wireAnchorId=null;wireHoverId=null;wireGesture=null;wireSuppressClick=false;pendingBusRoute=null;const choice=document.getElementById('routeChoice');if(choice)choice.hidden=true;document.getElementById('wireMode').value='send';tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 /* Google Material Icons SVG paths, Apache-2.0. Inline/zero font or network requests. */
 const MATERIAL_PATH=Object.freeze({
@@ -507,17 +510,68 @@ const channelOptions=(t,type)=>{
  if(type==='output')return t.kind==='master'?['Default Output','Output 1 + 2','Speakers (Realtek)','Virtual Cable']:[...(t.kind==='audio'?['SOURCE ONLY (No Main)']:[]),master.name,...tracks.filter(x=>x.kind==='bus'&&x.id!==t.id).map(x=>x.name),'Output 1 + 2'];
  return ['None',...tracks.filter(x=>(x.kind==='bus'||x.kind==='fx')&&x.id!==t.id).map(x=>x.name)];
 };
+/* V53: demo-only insert identity, one reversible transaction per real move.
+   Native WebView2 FX order requires graphRevision/requestId/deviceEpoch ACK instead. */
+let nextDemoFxId=1,fxDrag=null,fxReorderUndo=null;
+function ensureFxInsertIds(t){
+ if(!Array.isArray(t.fxInsertIds))t.fxInsertIds=Array(t.fx.length).fill(null);
+ for(let i=0;i<t.fx.length;i++){
+  const name=t.fx[i],entry=t.fxInsertIds[i];
+  if(name==='None'){t.fxInsertIds[i]=null;continue;}
+  if(!entry||entry.name!==name)
+   t.fxInsertIds[i]={name,id:'demo-'+t.id+'-'+(nextDemoFxId++)};
+ }
+ return t.fxInsertIds;
+}
+function fxOrderSignature(t){
+ ensureFxInsertIds(t);
+ return JSON.stringify([t.fx,t.slotBypass,t.fxInsertIds]);
+}
+function fxNativeTransactionRequired(){
+ return !!window.chrome?.webview?.postMessage||typeof window.arMixConsoleIntent==='function';
+}
+function moveReferenceFx(t,from,to){
+ ensureFxInsertIds(t);
+ if(fxNativeTransactionRequired()){
+  say('FX reorder requires native intent → ACK → accepted snapshot; no demo mutation');
+  return false;
+ }
+ if(!Number.isInteger(from)||!Number.isInteger(to)||from===to||
+    from<0||to<0||from>=t.fx.length||to>=t.fx.length||
+    t.fx[from]==='None'||t.fx[to]==='None')return false;
+ const before={fx:t.fx.slice(),slotBypass:t.slotBypass.slice(),fxInsertIds:clone(t.fxInsertIds)};
+ const id=t.fxInsertIds[from].id;
+ for(const key of ['fx','slotBypass','fxInsertIds']){
+  const entry=t[key].splice(from,1)[0];t[key].splice(to,0,entry);
+ }
+ fxReorderUndo={channelId:t.id,before,after:fxOrderSignature(t)};
+ refreshStrip(t);
+ document.querySelector('.strip[data-id="'+t.id+'"] .fx-grip[data-insert-id="'+id+'"]')?.focus();
+ say(t.name+' · FX order '+(from+1)+' → '+(to+1)+' · GUI reference (Ctrl+Z on grip to undo)');
+ return true;
+}
+function undoReferenceFx(t){
+ if(!fxReorderUndo||fxReorderUndo.channelId!==t.id||
+    fxOrderSignature(t)!==fxReorderUndo.after)return false;
+ const previous=fxReorderUndo.before;
+ t.fx=previous.fx;t.slotBypass=previous.slotBypass;t.fxInsertIds=previous.fxInsertIds;
+ fxReorderUndo=null;
+ refreshStrip(t);
+ say(t.name+' · FX reorder undone · GUI reference');
+ return true;
+}
 function sectionFx(t){
+ ensureFxInsertIds(t);
  const used=t.fx.map((name,i)=>({name,i})).filter(x=>x.name!=='None');
  const first=t.fx.findIndex(x=>x==='None');
  const rows=used.concat(first<0?[]:[{name:'None',i:first}]);
  let out='<div class="section fx-section"><div class="subhead"><span class="sym">fx</span><span class="hint">FX '+used.length+'</span><span class="push"></span><button class="mx-util-key" data-util-kind="fx-main" data-action="fxOn" title="Bypass all effects" aria-label="Toggle effects" aria-pressed="'+Boolean(t.fxOn)+'">'+materialIcon("power_settings_new")+'</button></div><div class="fxslot-list">';
  for(const {name,i} of rows){
-  out+='<div class="fxslot-row" draggable="'+(name!=='None')+'" data-slot="'+i+'" title="Insert '+(i+1)+'">'+
+  out+='<div class="fxslot-row '+(name==='None'?'is-empty':t.slotBypass[i]?'is-bypassed':'is-active')+'" data-slot="'+i+'" data-insert-id="'+(t.fxInsertIds[i]?.id||'')+'" title="Insert '+(i+1)+' · GUI reference">'+
    (name==='None'?'<span class="fx-slot-placeholder" aria-hidden="true"></span>':
    '<button class="mx-util-key" data-util-kind="fx-slot" data-action="slotPower" data-slot="'+i+'" title="Toggle effect" aria-label="Toggle effect slot '+(i+1)+'" aria-pressed="'+Boolean(!t.slotBypass[i])+'">'+materialIcon("power_settings_new")+'</button>');
   out+='<button class="fx-pick '+(name==='None'?'empty':'')+'" data-action="openPlugin" data-slot="'+i+'" aria-label="Choose plugin for '+escapeHtml(t.name)+' insert '+(i+1)+'">'+(name==='None'?'+ Add FX':escapeHtml(name))+'</button>';
-  if(name!=='None')out+='<button class="mx-util-key" data-util-kind="fx-remove" data-action="removeFx" data-slot="'+i+'" title="Remove insert '+(i+1)+'" aria-label="Remove insert '+(i+1)+'">'+materialIcon("delete_forever")+'</button><span class="grip" title="Drag reorder" aria-hidden="true">'+materialIcon("drag_indicator")+'</span>';
+  if(name!=='None')out+='<button type="button" class="grip fx-grip" draggable="true" data-insert-id="'+t.fxInsertIds[i].id+'" data-slot="'+i+'" aria-label="Move insert '+(i+1)+' in '+escapeHtml(t.name)+'; drag handle, or Alt plus arrow keys; Control Z to undo" title="Reorder: drag handle / Alt + ↑↓; Ctrl+Z undo">'+materialIcon("drag_indicator")+'</button><button class="mx-util-key" data-util-kind="fx-remove" data-action="removeFx" data-slot="'+i+'" title="Remove insert '+(i+1)+'" aria-label="Remove insert '+(i+1)+'">'+materialIcon("delete_forever")+'</button>';
   out+='</div>';
  }
  return out+'</div></div>';
@@ -2136,7 +2190,7 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  if(a==='rename'||a==='editIdentity')return; // double-click edits; single-click selects
  if(a==='format'&&t.kind==='audio'){t.format=t.format==='mono'?'stereo':'mono';refreshStrip(t);say(t.name+' processing → '+t.format.toUpperCase()+' · physical source '+t.input+' unchanged (reference only)');return;}
  if(a==='openPlugin'){openFastPicker(t,Number(btn.dataset.slot),btn);return;}
- if(a==='removeFx'){const i=Number(btn.dataset.slot);t.fx[i]='None';t.slotBypass[i]=false;refreshStrip(t);say(t.name+' · cleared FX insert '+(i+1));return;}
+ if(a==='removeFx'){const i=Number(btn.dataset.slot);t.fx[i]='None';t.slotBypass[i]=false;if(t.fxInsertIds)t.fxInsertIds[i]=null;fxReorderUndo=null;refreshStrip(t);say(t.name+' · cleared FX insert '+(i+1));return;}
  if(a==='slotPower'){const slot=Number(btn.dataset.slot);if(t.fx[slot]==='None'){say(t.name+': choose an effect before toggling bypass');return;}t.slotBypass[slot]=!t.slotBypass[slot];refreshStrip(t);say(t.name+': FX '+(slot+1)+(t.slotBypass[slot]?' bypassed':' enabled'));return;}
  if(a==='eq')t.eq=!t.eq;
  else if(a==='fxOn')t.fxOn=!t.fxOn;
@@ -2218,32 +2272,71 @@ arrangeSurface.addEventListener('keydown',e=>{
  document.querySelector('#tracks .strip[data-id="'+t.id+'"] .strip-identity-top')?.focus();
  say(t.name+' moved '+(step>0?'right':'left')+' · channel ID unchanged');
 },true);
-document.querySelector('.console-body').addEventListener('dragstart',e=>{
- const row=e.target.closest('.fxslot-row');if(!row)return;
- const t=findTrack(row);if(!t)return;
- e.dataTransfer.setData('text/plain',t.id+':'+row.dataset.slot);e.dataTransfer.effectAllowed='move';row.classList.add('dragged');
-});
-document.querySelector('.console-body').addEventListener('dragend',()=>document.querySelectorAll('.fxslot-row').forEach(e=>e.classList.remove('dragged','drop-target')));
-document.querySelector('.console-body').addEventListener('dragover',e=>{
- const row=e.target.closest('.fxslot-row');if(!row)return;
- e.preventDefault();row.classList.add('drop-target');
-});
-document.querySelector('.console-body').addEventListener('dragleave',e=>{const row=e.target.closest('.fxslot-row');if(row)row.classList.remove('drop-target');});
-document.querySelector('.console-body').addEventListener('drop',e=>{
- const row=e.target.closest('.fxslot-row');if(!row)return;e.preventDefault();
- const parts=(e.dataTransfer.getData('text/plain')||'').split(':');const t=findTrack(row);if(!t)return;
- const source=tracks.concat(master).find(x=>x.id===Number(parts[0]));if(!source)return;
- const from=Number(parts[1]),to=Number(row.dataset.slot);
- if(from<0||from>=source.fx.length||to<0||to>=t.fx.length)return;
- if(source.id===t.id){
-  const moved=t.fx.splice(from,1)[0];t.fx.splice(to,0,moved);
-  const bypass=t.slotBypass.splice(from,1)[0];t.slotBypass.splice(to,0,bypass);
-  refreshStrip(t);say(t.name+' · FX reordered '+(from+1)+' → '+(to+1));
- }else{
-  t.fx[to]=source.fx[from];t.slotBypass[to]=source.slotBypass[from];
-  refreshStrip(t);say('Copied '+source.fx[from]+' from '+source.name+' to '+t.name+' slot '+(to+1));
+/* FX V53: the focused 16px grip alone owns drag; no row-wide HTML DnD.
+   No state mutation on dragover, cross-channel drop, Escape, or dragend. */
+function clearFxDrag(){
+ fxDrag=null;
+ consoleBody.querySelectorAll('.fxslot-row').forEach(row=>
+  row.classList.remove('dragged','drop-before','drop-after'));
+}
+consoleBody.addEventListener('dragstart',e=>{
+ const grip=e.target.closest?.('.fx-grip[draggable="true"]');
+ if(!grip||!e.dataTransfer)return;
+ const row=grip.closest('.fxslot-row'),t=findTrack(grip),slot=Number(row?.dataset.slot);
+ if(!t||!Number.isInteger(slot)||t.fx[slot]==='None'||fxNativeTransactionRequired()){
+  e.preventDefault();say('FX reorder unavailable without accepted native operation');return;
  }
-});
+ ensureFxInsertIds(t);
+ const insertId=t.fxInsertIds[slot]?.id;
+ if(!insertId||insertId!==grip.dataset.insertId){e.preventDefault();return;}
+ fxDrag={channelId:t.id,slot,insertId};
+ e.dataTransfer.effectAllowed='move';
+ e.dataTransfer.setData('application/x-arsonmix-fx',t.id+':'+insertId);
+ row.classList.add('dragged');
+},true);
+consoleBody.addEventListener('dragover',e=>{
+ if(!fxDrag)return;
+ const row=e.target.closest?.('.fxslot-row'),t=row&&findTrack(row);
+ if(!row)return;
+ e.preventDefault();
+ const slot=Number(row.dataset.slot);
+ const valid=t?.id===fxDrag.channelId&&t.fx[slot]!=='None'&&slot!==fxDrag.slot;
+ if(e.dataTransfer)e.dataTransfer.dropEffect=valid?'move':'none';
+ consoleBody.querySelectorAll('.fxslot-row').forEach(x=>x.classList.remove('drop-before','drop-after'));
+ if(valid)row.classList.add(slot<fxDrag.slot?'drop-before':'drop-after');
+},true);
+consoleBody.addEventListener('drop',e=>{
+ if(!fxDrag)return;
+ const row=e.target.closest?.('.fxslot-row');
+ if(!row){clearFxDrag();return;}
+ e.preventDefault();e.stopPropagation();
+ const gesture=fxDrag,t=findTrack(row),to=Number(row.dataset.slot);
+ clearFxDrag();
+ if(!t||t.id!==gesture.channelId){say('Cross-channel FX transfer refused: native plugin state/lease not transferable');return;}
+ ensureFxInsertIds(t);
+ if(t.fxInsertIds[gesture.slot]?.id!==gesture.insertId){say('FX reordered elsewhere; canceled stale drag');return;}
+ if(!moveReferenceFx(t,gesture.slot,to))say('FX move canceled · order unchanged');
+},true);
+consoleBody.addEventListener('dragend',clearFxDrag,true);
+consoleBody.addEventListener('keydown',e=>{
+ const grip=e.target.closest?.('.fx-grip');
+ if(!grip)return;
+ const t=findTrack(grip),from=Number(grip.dataset.slot);
+ if(!t)return;
+ if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){
+  e.preventDefault();undoReferenceFx(t);return;
+ }
+ if(e.altKey&&!e.ctrlKey&&!e.metaKey&&['ArrowUp','ArrowDown'].includes(e.key)){
+  e.preventDefault();
+  const used=t.fx.map((name,i)=>name==='None'?-1:i).filter(i=>i>=0);
+  const current=used.indexOf(from),next=used[current+(e.key==='ArrowUp'?-1:1)];
+  if(Number.isInteger(next)&&!moveReferenceFx(t,from,next))
+   say('FX move unavailable');
+ }
+},true);
+document.addEventListener('keydown',e=>{
+ if(e.key==='Escape'&&fxDrag){clearFxDrag();e.preventDefault();}
+},true);
 document.querySelector('.console-body').addEventListener('pointerover',e=>{
  const btn=e.target.closest?.('[data-action="wireRoute"]');
  const t=btn?findTrack(btn):null;
