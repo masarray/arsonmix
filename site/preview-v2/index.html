@@ -267,11 +267,11 @@
 <link rel="stylesheet" href="assets/mixer-fx-rack.css?v=fx-owner-v8-m3-inserts-v54-independent-bypass">
 <link rel="stylesheet" href="assets/mixer-plugin-browser.css?v=css-plugin-owner-v27-cascade-pruned">
 <link rel="stylesheet" href="assets/mixer-pan-controls.css?v=css-owner-v27-pan-pruned">
-<link rel="stylesheet" href="assets/mixer-fader-assembly.css?v=css-owner-v27-fader-pruned-v52-recess-v54-raised-shadow">
+<link rel="stylesheet" href="assets/mixer-fader-assembly.css?v=css-owner-v27-fader-pruned-v52-recess-v55-depth">
 <link rel="stylesheet" href="assets/mixer-meter-display.css?v=css-owner-v27-meter-pruned">
 <link rel="stylesheet" href="assets/mixer-utility-controls.css?v=css-owner-v27-utility-pruned">
 <link rel="stylesheet" href="assets/inter-embedded.css?v=inter-utility-v7">
-<link rel="stylesheet" href="assets/mixer-wire-dots.css?v=v54-graph-socket-context">
+<link rel="stylesheet" href="assets/mixer-wire-dots.css?v=v55-accepted-wire-paint">
 <link rel="stylesheet" href="assets/mixer-wire-out-align-v48.css?v=out-center-v48">
 
 <link rel="stylesheet" href="assets/mixer-contextual-buttons.css?v=contextual-micro-handoff-v1">
@@ -762,12 +762,12 @@ function wireTray(t){
   hasAnyArrival?'Select one incoming route to inspect':
   legacy?'Existing SEND slot · managed in legacy routing':
   'Choose OUT then click IN, or drag an OUT jack here';
- const from='<button type="button" class="wire-node-out'+(isSource?' is-source':'')+
+ const from='<button type="button" data-wire-paint="idle" class="wire-node-out'+(isSource?' is-source':'')+
   '" data-action="wireSource"'+(isMain?' disabled':'')+
   ' title="SEND OUT · drag this solid jack to another channel IN" aria-label="Send OUT from '+
   escapeHtml(t.name)+'" aria-pressed="'+isSource+
   '"><span class="wire-pin" aria-hidden="true"></span><small>OUT</small></button>';
- const to='<button type="button" class="wire-socket wire-node-in'+(isSource&&!hasAnyArrival?' is-source':'')+
+ const to='<button type="button" data-wire-paint="idle" class="wire-socket wire-node-in'+
   (linked?' is-linked':'')+'" data-action="wireRoute" aria-pressed="'+sourceLinked+
   '" aria-label="Receive IN on '+escapeHtml(t.name)+' · '+label+
   '" title="'+escapeHtml(label+' · '+modeLabel+' · GUI DEMO')+'" '+
@@ -1777,6 +1777,9 @@ function syncVisibleWireDots(svg){
    else node.removeAttribute('data-wire-arrival');
   }
   const edge=visible.get(key);
+  // Visual paint follows the visible committed WIRE path, not a legacy
+  // SEND or an off-bank hidden connection. Keep graph state separate.
+  node.dataset.wirePaint=edge?'connected':'idle';
   if(!edge){
    node.removeAttribute('data-wire-visible');
    node.style.removeProperty('--wire-edge-color');
