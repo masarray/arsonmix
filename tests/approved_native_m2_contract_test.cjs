@@ -120,6 +120,21 @@ test('cannot send source outside actual enabled endpoints or unknown channel ids
  assert.equal(ctl.request('SET_FADER','1',{db:-5}),null);
  assert.equal(events.length,0);
 });
+test('ACK timeout never says rejected or accepted; requires fresh native snapshot',()=>{
+ const {ctl}=session();
+ ctl.receiveSnapshot(status());
+ const id=ctl.request('SET_FADER','18446744073709551614',{db:-7});
+ assert.equal(ctl.expirePending('other:12'),false);
+ assert.equal(ctl.expirePending(id),true);
+ assert.equal(ctl.pendingRequest(),null);
+ assert.equal(ctl.snapshot(),null);
+ assert.equal(ctl.status(),'NATIVE_ACK_TIMEOUT');
+ assert.equal(ctl.receiveAck({requestId:id,status:'ACCEPTED',deviceEpoch:'69',
+  graphRevision:'6',rosterRevision:'2',errorCode:''}),false);
+ assert.equal(ctl.request('SET_FADER','18446744073709551614',{db:-7}),null);
+ assert.equal(ctl.receiveSnapshot(status('69','6')),true);
+ assert.equal(ctl.status(),'ACCEPTED_NATIVE_CALLBACK');
+});
 test('native EXE exposes ONE approved GUI + truthful producer with no JS DSP',()=>{
  const cpp=read('src/Main.cpp'),header=read('src/ApprovedConsoleM2Snapshot.h');
  const adapter=read('web/approved-native-bridge.js');
