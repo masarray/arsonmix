@@ -95,6 +95,18 @@ def run():
             control=main_button(page,5)
             assert page.locator('#master .wire-node-in').get_attribute("data-wire-main-edge")==initial
             assert control.get_attribute("aria-pressed")=="true"
+            # One graph edge paints TWO measured local cubic cables, never a
+            # cross-bank line. Geometry and edge identity survive all widths.
+            source_stub=page.locator('#tracks .strip[data-id="5"] .wire-main-fragment')
+            main_stub=page.locator('#master .wire-main-fragment')
+            assert source_stub.count()==1 and main_stub.count()==1,(
+                width,"missing paired physical MAIN cables")
+            assert source_stub.get_attribute("data-edge-id")==initial
+            assert main_stub.get_attribute("data-edge-id")==initial
+            assert " C" in source_stub.locator(".wire-main-jacket").get_attribute("d")
+            assert " C" in main_stub.locator(".wire-main-jacket").get_attribute("d")
+            assert page.locator('#tracks .strip[data-id="6"] .wire-main-fragment').count()==1
+
             # Distinct disconnect is reversible and only affects this channel.
             control.click()
             assert edge(page,5,"out") is None,(width,"MAIN disconnect not real")
