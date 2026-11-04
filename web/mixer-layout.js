@@ -829,14 +829,21 @@
     const a=data?.ack||data;
     if(!a||typeof a.requestId!=='string')return;
     const task=pending.get(a.requestId);if(!task)return;
+    const unlock=()=>{for(const target of task.targets||[])pendingTargets.delete(target)};
     const epoch=decimal(a.deviceEpoch),rev=decimal(a.graphRevision),roster=decimal(a.rosterRevision);
     if(!['ACCEPTED','REJECTED','REQUIRES_DEVICE_CHANGE'].includes(a.status)||
        epoch===null||rev===null||roster===null||epoch!==task.epoch||
        typeof a.errorCode!=='string'){
-      showFeedback('INVALID NATIVE ACK · accepted route unchanged');return;
+      // A malformed ACK with a matching outstanding requestId is terminal.
+      // Release its UI lock, retain the LAST accepted native graph and
+      // resubscribe rather than leaving the physical MAIN plug stuck pending.
+      pending.delete(a.requestId);
+      unlock();
+      showFeedback('INVALID NATIVE ACK · accepted route unchanged');
+      requestSnapshot();refreshAcceptedControls();refreshDisabled();
+      return;
     }
     pending.delete(a.requestId);
-    const unlock=()=>{for(const target of task.targets||[])pendingTargets.delete(target)};
     if(a.status==='ACCEPTED'){
       // A WIRE transaction changes topology. An ACK at the request's old
       // graph revision cannot authorize a cable repaint or an accepted edit.
