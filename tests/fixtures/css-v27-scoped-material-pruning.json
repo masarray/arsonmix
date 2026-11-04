@@ -1,0 +1,638 @@
+{
+  "milestone": "V27",
+  "baseCommit": "0215986fbbe2c67971680952f75f069950ac653e",
+  "scope": "Constrain global HTML material filter to .app without changing specificity; remove earlier same-selector/context/property/importance loser declarations in five existing component owners.",
+  "ownerOrder": [
+    "mixer-chrome-material.css",
+    "mixer-plugin-browser.css",
+    "mixer-pan-controls.css",
+    "mixer-fader-assembly.css",
+    "mixer-meter-display.css",
+    "mixer-utility-controls.css"
+  ],
+  "originalHTML": {
+    "length": 193836,
+    "important": 115,
+    "fnv": "d37af180"
+  },
+  "currentHTML": {
+    "length": 193813,
+    "important": 115,
+    "fnv": "dbfaa46c"
+  },
+  "linkChanges": [
+    {
+      "name": "mixer-chrome-material.css",
+      "old": "assets/mixer-chrome-material.css?v=css-chrome-owner-v23-v50-popouts-z34",
+      "now": "assets/mixer-chrome-material.css?v=css-chrome-owner-v27-scoped-material"
+    },
+    {
+      "name": "mixer-plugin-browser.css",
+      "old": "assets/mixer-plugin-browser.css?v=css-plugin-owner-v17",
+      "now": "assets/mixer-plugin-browser.css?v=css-plugin-owner-v27-cascade-pruned"
+    },
+    {
+      "name": "mixer-pan-controls.css",
+      "old": "assets/mixer-pan-controls.css?v=css-owner-v9-pan-up5-v23",
+      "now": "assets/mixer-pan-controls.css?v=css-owner-v27-pan-pruned"
+    },
+    {
+      "name": "mixer-fader-assembly.css",
+      "old": "assets/mixer-fader-assembly.css?v=css-owner-v9-ruler-m3-left-70-v51-shadow",
+      "now": "assets/mixer-fader-assembly.css?v=css-owner-v27-fader-pruned"
+    },
+    {
+      "name": "mixer-meter-display.css",
+      "old": "assets/mixer-meter-display.css?v=css-owner-v9-ruler-m3-left-70-v51-portrait-peakcell",
+      "now": "assets/mixer-meter-display.css?v=css-owner-v27-meter-pruned"
+    },
+    {
+      "name": "mixer-utility-controls.css",
+      "old": "assets/mixer-utility-controls.css?v=fx-rack-user-icon-green-v21",
+      "now": "assets/mixer-utility-controls.css?v=css-owner-v27-utility-pruned"
+    }
+  ],
+  "owners": {
+    "mixer-chrome-material.css": {
+      "old": {
+        "length": 63661,
+        "important": 623,
+        "fnv": "d92a8a72"
+      },
+      "current": {
+        "length": 63717,
+        "important": 623,
+        "fnv": "facf6ddc"
+      },
+      "edits": [],
+      "globalScope": {
+        "old": "html * ,html *::before,html *::after",
+        "now": "html :where(.app, .app *),html :where(.app, .app *)::before,html :where(.app, .app *)::after",
+        "oldSpecificity": [
+          "0-0-1",
+          "0-0-2",
+          "0-0-2"
+        ],
+        "newSpecificity": [
+          "0-0-1",
+          "0-0-2",
+          "0-0-2"
+        ],
+        "excludedOutsideApp": true
+      },
+      "metrics": {
+        "declarations": 0,
+        "removedChars": 0,
+        "removedImportant": 0
+      }
+    },
+    "mixer-plugin-browser.css": {
+      "old": {
+        "length": 7538,
+        "important": 38,
+        "fnv": "47f75da4"
+      },
+      "current": {
+        "length": 7407,
+        "important": 34,
+        "fnv": "4f999e38"
+      },
+      "edits": [
+        {
+          "offset": 1864,
+          "text": "right:var(--master-w)!important",
+          "selector": ".plugin-browser",
+          "atContext": "",
+          "property": "right",
+          "priority": true,
+          "loserValue": "var(--master-w)!important",
+          "winnerValue": "14px!important",
+          "winnerOffset": 2146,
+          "winnerText": "right:14px!important;"
+        },
+        {
+          "offset": 1913,
+          "text": "right:var(--master-w)!important;",
+          "selector": ".plugin-browser",
+          "atContext": "",
+          "property": "right",
+          "priority": true,
+          "loserValue": "var(--master-w)!important",
+          "winnerValue": "14px!important",
+          "winnerOffset": 2146,
+          "winnerText": "right:14px!important;"
+        },
+        {
+          "offset": 1945,
+          "text": "width:var(--plugin-w)!important;",
+          "selector": ".plugin-browser",
+          "atContext": "",
+          "property": "width",
+          "priority": true,
+          "loserValue": "var(--plugin-w)!important",
+          "winnerValue": "min(408px,calc(100% - 32px))!important",
+          "winnerOffset": 2220,
+          "winnerText": "width:min(408px,calc(100% - 32px))!important;"
+        },
+        {
+          "offset": 1977,
+          "text": "max-width:var(--plugin-w)!important;",
+          "selector": ".plugin-browser",
+          "atContext": "",
+          "property": "max-width",
+          "priority": true,
+          "loserValue": "var(--plugin-w)!important",
+          "winnerValue": "440px!important",
+          "winnerOffset": 2072,
+          "winnerText": "max-width:440px!important;"
+        }
+      ],
+      "metrics": {
+        "declarations": 4,
+        "removedChars": 131,
+        "removedImportant": 4
+      }
+    },
+    "mixer-pan-controls.css": {
+      "old": {
+        "length": 5247,
+        "important": 36,
+        "fnv": "2762369a"
+      },
+      "current": {
+        "length": 5220,
+        "important": 35,
+        "fnv": "8b5aed48"
+      },
+      "edits": [
+        {
+          "offset": 3983,
+          "text": "margin-top:-18px!important;",
+          "selector": ".console-body .center-pan::-webkit-slider-thumb",
+          "atContext": "",
+          "property": "margin-top",
+          "priority": true,
+          "loserValue": "-18px!important",
+          "winnerValue": "-15px!important",
+          "winnerOffset": 5139,
+          "winnerText": "margin-top:-15px!important"
+        }
+      ],
+      "metrics": {
+        "declarations": 1,
+        "removedChars": 27,
+        "removedImportant": 1
+      }
+    },
+    "mixer-fader-assembly.css": {
+      "old": {
+        "length": 22552,
+        "important": 205,
+        "fnv": "90c875f3"
+      },
+      "current": {
+        "length": 22493,
+        "important": 203,
+        "fnv": "cbd7fa73"
+      },
+      "edits": [
+        {
+          "offset": 16688,
+          "text": "filter:none!important;",
+          "selector": ".console-body .strip .fader-travel .cap",
+          "atContext": "",
+          "property": "filter",
+          "priority": true,
+          "loserValue": "none!important",
+          "winnerValue": "none!important",
+          "winnerOffset": 22527,
+          "winnerText": "filter:none!important;"
+        },
+        {
+          "offset": 16710,
+          "text": "box-shadow:0 1px 0 #010508!important;",
+          "selector": ".console-body .strip .fader-travel .cap",
+          "atContext": "",
+          "property": "box-shadow",
+          "priority": true,
+          "loserValue": "0 1px 0 #010508!important",
+          "winnerValue": "0 2px 3px -2px #000c,0 4px 3px -4px #000a!important",
+          "winnerOffset": 22462,
+          "winnerText": "box-shadow:0 2px 3px -2px #000c,0 4px 3px -4px #000a!important;"
+        }
+      ],
+      "metrics": {
+        "declarations": 2,
+        "removedChars": 59,
+        "removedImportant": 2
+      }
+    },
+    "mixer-meter-display.css": {
+      "old": {
+        "length": 14522,
+        "important": 117,
+        "fnv": "50150587"
+      },
+      "current": {
+        "length": 13796,
+        "important": 108,
+        "fnv": "b4daa331"
+      },
+      "edits": [
+        {
+          "offset": 5680,
+          "text": "z-index:3;",
+          "selector": ".console-body .strip .meter-box .meter-lane::after",
+          "atContext": "",
+          "property": "z-index",
+          "priority": false,
+          "loserValue": "3",
+          "winnerValue": "3",
+          "winnerOffset": 13905,
+          "winnerText": "z-index:3;"
+        },
+        {
+          "offset": 5690,
+          "text": "pointer-events:none;",
+          "selector": ".console-body .strip .meter-box .meter-lane::after",
+          "atContext": "",
+          "property": "pointer-events",
+          "priority": false,
+          "loserValue": "none",
+          "winnerValue": "none",
+          "winnerOffset": 14080,
+          "winnerText": "pointer-events:none;"
+        },
+        {
+          "offset": 7451,
+          "text": "border-radius:0!important;",
+          "selector": ".console-body .strip .meter-box .meter-lane, .console-body .strip .meter-box.mono .meter-lane",
+          "atContext": "",
+          "property": "border-radius",
+          "priority": true,
+          "loserValue": "0!important",
+          "winnerValue": "0!important",
+          "winnerOffset": 13272,
+          "winnerText": "border-radius:0!important;"
+        },
+        {
+          "offset": 7479,
+          "text": "background:#07141a!important;",
+          "selector": ".console-body .strip .meter-box .meter-lane, .console-body .strip .meter-box.mono .meter-lane",
+          "atContext": "",
+          "property": "background",
+          "priority": true,
+          "loserValue": "#07141a!important",
+          "winnerValue": "#030b11!important",
+          "winnerOffset": 13241,
+          "winnerText": "background:#030b11!important;"
+        },
+        {
+          "offset": 7622,
+          "text": "left:0!important;",
+          "selector": ".console-body .strip .meter-box .meter-fill",
+          "atContext": "",
+          "property": "left",
+          "priority": true,
+          "loserValue": "0!important",
+          "winnerValue": "2px!important",
+          "winnerOffset": 13347,
+          "winnerText": "left:2px!important;"
+        },
+        {
+          "offset": 7639,
+          "text": "right:0!important;",
+          "selector": ".console-body .strip .meter-box .meter-fill",
+          "atContext": "",
+          "property": "right",
+          "priority": true,
+          "loserValue": "0!important",
+          "winnerValue": "2px!important",
+          "winnerOffset": 13366,
+          "winnerText": "right:2px!important;"
+        },
+        {
+          "offset": 7659,
+          "text": "background:linear-gradient(to top,\n   #0e9f43 0%,#3bd849 24%,#7bef40 43%,\n   #c5e936 56%,#f6d42e 69%,#ffae27 80%,\n   #ff761e 91%,#ee3028 100%)!important;",
+          "selector": ".console-body .strip .meter-box .meter-fill",
+          "atContext": "",
+          "property": "background",
+          "priority": true,
+          "loserValue": "linear-gradient(to top,\n   #0e9f43 0%,#3bd849 24%,#7bef40 43%,\n   #c5e936 56%,#f6d42e 69%,#ffae27 80%,\n   #ff761e 91%,#ee3028 100%)!important",
+          "winnerValue": "var(--meter-led-ramp)!important",
+          "winnerOffset": 13398,
+          "winnerText": "background:var(--meter-led-ramp)!important;"
+        },
+        {
+          "offset": 8084,
+          "text": "content:\"\"!important;",
+          "selector": ".console-body .strip .meter-box .meter-lane::before",
+          "atContext": "",
+          "property": "content",
+          "priority": true,
+          "loserValue": "\"\"!important",
+          "winnerValue": "\"\"!important",
+          "winnerOffset": 13637,
+          "winnerText": "content:\"\"!important;"
+        },
+        {
+          "offset": 8107,
+          "text": "background:repeating-linear-gradient(to top,\n   transparent 0px,transparent 9px,#020a0f 9px,#020a0f 11px)!important;",
+          "selector": ".console-body .strip .meter-box .meter-lane::before",
+          "atContext": "",
+          "property": "background",
+          "priority": true,
+          "loserValue": "repeating-linear-gradient(to top,\n   transparent 0px,transparent 9px,#020a0f 9px,#020a0f 11px)!important",
+          "winnerValue": "repeating-linear-gradient(to top,\n   #26343b 0 12px,#02080d 12px 14px)!important",
+          "winnerOffset": 13692,
+          "winnerText": "background:repeating-linear-gradient(to top,\n   #26343b 0 12px,#02080d 12px 14px)!important;"
+        },
+        {
+          "offset": 8307,
+          "text": "content:\"\"!important;",
+          "selector": ".console-body .strip .meter-box .meter-lane::after",
+          "atContext": "",
+          "property": "content",
+          "priority": true,
+          "loserValue": "\"\"!important",
+          "winnerValue": "\"\"!important",
+          "winnerOffset": 13862,
+          "winnerText": "content:\"\"!important;"
+        },
+        {
+          "offset": 8330,
+          "text": "background:\n   repeating-linear-gradient(to top,\n     rgba(255,255,255,.13) 0px,rgba(255,255,255,.05) 1px,\n     transparent 3px,transparent 6px,rgba(0,0,0,.28) 9px,\n     transparent 9px,transparent 11px),\n   linear-gradient(90deg,rgba(255,255,255,.13),transparent 55%,rgba(0,0,0,.28))!important;",
+          "selector": ".console-body .strip .meter-box .meter-lane::after",
+          "atContext": "",
+          "property": "background",
+          "priority": true,
+          "loserValue": "repeating-linear-gradient(to top,\n     rgba(255,255,255,.13) 0px,rgba(255,255,255,.05) 1px,\n     transparent 3px,transparent 6px,rgba(0,0,0,.28) 9px,\n     transparent 9px,transparent 11px),\n   linear-gradient(90deg,rgba(255,255,255,.13),transparent 55%,rgba(0,0,0,.28))!important",
+          "winnerValue": "repeating-linear-gradient(to top,\n     transparent 0 12px,#02070b 12px 14px),\n   linear-gradient(90deg,#ffffff16,transparent 44%,#0008)!important",
+          "winnerOffset": 13917,
+          "winnerText": "background:\n   repeating-linear-gradient(to top,\n     transparent 0 12px,#02070b 12px 14px),\n   linear-gradient(90deg,#ffffff16,transparent 44%,#0008)!important;"
+        }
+      ],
+      "metrics": {
+        "declarations": 11,
+        "removedChars": 726,
+        "removedImportant": 9
+      }
+    },
+    "mixer-utility-controls.css": {
+      "old": {
+        "length": 5896,
+        "important": 0,
+        "fnv": "6522871a"
+      },
+      "current": {
+        "length": 5499,
+        "important": 0,
+        "fnv": "48dcc3dc"
+      },
+      "edits": [
+        {
+          "offset": 539,
+          "text": "border:1px solid #172b35;",
+          "selector": ".app .console-body .strip button.mx-util-key",
+          "atContext": "",
+          "property": "border",
+          "priority": false,
+          "loserValue": "1px solid #172b35",
+          "winnerValue": "0",
+          "winnerOffset": 3499,
+          "winnerText": "border:0;"
+        },
+        {
+          "offset": 567,
+          "text": "border-radius:3px;",
+          "selector": ".app .console-body .strip button.mx-util-key",
+          "atContext": "",
+          "property": "border-radius",
+          "priority": false,
+          "loserValue": "3px",
+          "winnerValue": "0",
+          "winnerOffset": 3511,
+          "winnerText": "border-radius:0;"
+        },
+        {
+          "offset": 642,
+          "text": "box-shadow:inset 0 1px 0 #d2eaf021,0 1px 0 #091820aa;",
+          "selector": ".app .console-body .strip button.mx-util-key",
+          "atContext": "",
+          "property": "box-shadow",
+          "priority": false,
+          "loserValue": "inset 0 1px 0 #d2eaf021,0 1px 0 #091820aa",
+          "winnerValue": "none",
+          "winnerOffset": 3752,
+          "winnerText": "box-shadow:none;"
+        },
+        {
+          "offset": 698,
+          "text": "color:#d0dfe5;",
+          "selector": ".app .console-body .strip button.mx-util-key",
+          "atContext": "",
+          "property": "color",
+          "priority": false,
+          "loserValue": "#d0dfe5",
+          "winnerValue": "#23323a",
+          "winnerOffset": 3771,
+          "winnerText": "color:#23323a;"
+        },
+        {
+          "offset": 811,
+          "text": "text-shadow:none;",
+          "selector": ".app .console-body .strip button.mx-util-key",
+          "atContext": "",
+          "property": "text-shadow",
+          "priority": false,
+          "loserValue": "none",
+          "winnerValue": "none",
+          "winnerOffset": 3788,
+          "winnerText": "text-shadow:none;"
+        },
+        {
+          "offset": 892,
+          "text": "transition:none;",
+          "selector": ".app .console-body .strip button.mx-util-key",
+          "atContext": "",
+          "property": "transition",
+          "priority": false,
+          "loserValue": "none",
+          "winnerValue": "none",
+          "winnerOffset": 3841,
+          "winnerText": "transition:none;"
+        },
+        {
+          "offset": 911,
+          "text": "filter:none;",
+          "selector": ".app .console-body .strip button.mx-util-key",
+          "atContext": "",
+          "property": "filter",
+          "priority": false,
+          "loserValue": "none",
+          "winnerValue": "none",
+          "winnerOffset": 3826,
+          "winnerText": "filter:none;"
+        },
+        {
+          "offset": 926,
+          "text": "transform:none;",
+          "selector": ".app .console-body .strip button.mx-util-key",
+          "atContext": "",
+          "property": "transform",
+          "priority": false,
+          "loserValue": "none",
+          "winnerValue": "none",
+          "winnerOffset": 3808,
+          "winnerText": "transform:none;"
+        },
+        {
+          "offset": 1090,
+          "text": "color:rgb(var(--mx-util-accent));",
+          "selector": ".app .console-body .strip button.mx-util-key[aria-pressed=\"true\"]",
+          "atContext": "",
+          "property": "color",
+          "priority": false,
+          "loserValue": "rgb(var(--mx-util-accent))",
+          "winnerValue": "#f9fdff",
+          "winnerOffset": 4717,
+          "winnerText": "color:#f9fdff;"
+        },
+        {
+          "offset": 1204,
+          "text": "box-shadow:inset 0 1px 2px #06131c,0 1px 0 #67869529;",
+          "selector": ".app .console-body .strip button.mx-util-key[aria-pressed=\"true\"]",
+          "atContext": "",
+          "property": "box-shadow",
+          "priority": false,
+          "loserValue": "inset 0 1px 2px #06131c,0 1px 0 #67869529",
+          "winnerValue": "none",
+          "winnerOffset": 4698,
+          "winnerText": "box-shadow:none;"
+        },
+        {
+          "offset": 1787,
+          "text": "width:auto;",
+          "selector": ".app .console-body .strip button.mx-util-key[data-util-kind=\"format\"]",
+          "atContext": "",
+          "property": "width",
+          "priority": false,
+          "loserValue": "auto",
+          "winnerValue": "25px",
+          "winnerOffset": 4125,
+          "winnerText": "width:25px;"
+        },
+        {
+          "offset": 1801,
+          "text": "min-width:25px;",
+          "selector": ".app .console-body .strip button.mx-util-key[data-util-kind=\"format\"]",
+          "atContext": "",
+          "property": "min-width",
+          "priority": false,
+          "loserValue": "25px",
+          "winnerValue": "25px",
+          "winnerOffset": 4151,
+          "winnerText": "min-width:25px;"
+        },
+        {
+          "offset": 1819,
+          "text": "height:15px;",
+          "selector": ".app .console-body .strip button.mx-util-key[data-util-kind=\"format\"]",
+          "atContext": "",
+          "property": "height",
+          "priority": false,
+          "loserValue": "15px",
+          "winnerValue": "15px",
+          "winnerOffset": 4166,
+          "winnerText": "height:15px;"
+        },
+        {
+          "offset": 1834,
+          "text": "min-height:15px;",
+          "selector": ".app .console-body .strip button.mx-util-key[data-util-kind=\"format\"]",
+          "atContext": "",
+          "property": "min-height",
+          "priority": false,
+          "loserValue": "15px",
+          "winnerValue": "15px",
+          "winnerOffset": 4178,
+          "winnerText": "min-height:15px;"
+        },
+        {
+          "offset": 1853,
+          "text": "padding:0 3px;",
+          "selector": ".app .console-body .strip button.mx-util-key[data-util-kind=\"format\"]",
+          "atContext": "",
+          "property": "padding",
+          "priority": false,
+          "loserValue": "0 3px",
+          "winnerValue": "0",
+          "winnerOffset": 4361,
+          "winnerText": "padding:0;"
+        },
+        {
+          "offset": 2153,
+          "text": "color:#b7c3c9;",
+          "selector": ".app .console-body .strip button.mx-util-key[data-util-kind=\"fx-remove\"]",
+          "atContext": "",
+          "property": "color",
+          "priority": false,
+          "loserValue": "#b7c3c9",
+          "winnerValue": "#a4494e",
+          "winnerOffset": 5519,
+          "winnerText": "color:#a4494e;"
+        },
+        {
+          "offset": 2325,
+          "text": "color:#ffb0a9;",
+          "selector": ".app .console-body .strip button.mx-util-key[data-util-kind=\"fx-remove\"]:active:not(:disabled)",
+          "atContext": "",
+          "property": "color",
+          "priority": false,
+          "loserValue": "#ffb0a9",
+          "winnerValue": "#fff",
+          "winnerOffset": 5694,
+          "winnerText": "color:#fff;"
+        },
+        {
+          "offset": 2822,
+          "text": "outline:2px solid #93d5e4;",
+          "selector": ".app .console-body .strip button.mx-util-key:focus-visible",
+          "atContext": "",
+          "property": "outline",
+          "priority": false,
+          "loserValue": "2px solid #93d5e4",
+          "winnerValue": "2px solid #9bd9e8",
+          "winnerOffset": 5770,
+          "winnerText": "outline:2px solid #9bd9e8;"
+        },
+        {
+          "offset": 2851,
+          "text": "outline-offset:1px;",
+          "selector": ".app .console-body .strip button.mx-util-key:focus-visible",
+          "atContext": "",
+          "property": "outline-offset",
+          "priority": false,
+          "loserValue": "1px",
+          "winnerValue": "1px",
+          "winnerOffset": 5796,
+          "winnerText": "outline-offset:1px;"
+        }
+      ],
+      "metrics": {
+        "declarations": 19,
+        "removedChars": 397,
+        "removedImportant": 0
+      }
+    }
+  },
+  "totals": {
+    "removedDeclarations": 37,
+    "cssCharsDeleted": 1340,
+    "importantDeleted": 16,
+    "newStylesheets": 0,
+    "addedImportant": 0,
+    "changedJS": 0,
+    "changedEngine": 0
+  }
+}

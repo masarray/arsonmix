@@ -108,7 +108,7 @@ jobs:
           baseline=283ce45dc84b86d42f5ce72841239d8a13c0ba4c
           backup="$RUNNER_TEMP/v50-current-sources"
           git fetch --no-tags --depth=1 origin "$baseline"
-          for path in site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-wire-dots.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-fx-rack.css site/preview-v2/assets/mixer-control-keys.css; do
+          for path in site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-wire-dots.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-fx-rack.css site/preview-v2/assets/mixer-control-keys.css site/preview-v2/assets/mixer-plugin-browser.css site/preview-v2/assets/mixer-pan-controls.css site/preview-v2/assets/mixer-utility-controls.css; do
             mkdir -p "$backup/$(dirname "$path")"
             cp "$path" "$backup/$path"
             git show "$baseline:$path" > "$path"
@@ -152,11 +152,11 @@ jobs:
         run: |
           set -euo pipefail
           backup="$RUNNER_TEMP/v50-current-sources"
-          for path in site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-wire-dots.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-fx-rack.css site/preview-v2/assets/mixer-control-keys.css; do
+          for path in site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-wire-dots.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-fx-rack.css site/preview-v2/assets/mixer-control-keys.css site/preview-v2/assets/mixer-plugin-browser.css site/preview-v2/assets/mixer-pan-controls.css site/preview-v2/assets/mixer-utility-controls.css; do
             test -s "$backup/$path"
             cp "$backup/$path" "$path"
           done
-          git diff --exit-code -- site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-wire-dots.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-fx-rack.css site/preview-v2/assets/mixer-control-keys.css
+          git diff --exit-code -- site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-wire-dots.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-fx-rack.css site/preview-v2/assets/mixer-control-keys.css site/preview-v2/assets/mixer-plugin-browser.css site/preview-v2/assets/mixer-pan-controls.css site/preview-v2/assets/mixer-utility-controls.css
       # The V25 historical test is an immutable exact-byte migration gate.
       # Do not rebaseline it after deliberate V26 dead-rule removals.
       - name: Mount pinned V25 original CSS before historical V25 migration test
@@ -166,7 +166,7 @@ jobs:
           baseline=2f01022370c589205d738366242d2d2aeb77b10d
           backup="$RUNNER_TEMP/v26-current-sources"
           git fetch --no-tags --depth=1 origin "$baseline"
-          for path in site/preview-v2/index.html site/preview-v2/assets/mixer-control-keys.css; do
+          for path in site/preview-v2/index.html site/preview-v2/assets/mixer-control-keys.css site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-plugin-browser.css site/preview-v2/assets/mixer-pan-controls.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-utility-controls.css; do
             mkdir -p "$backup/$(dirname "$path")"
             cp "$path" "$backup/$path"
             git show "$baseline:$path" > "$path"
@@ -178,11 +178,11 @@ jobs:
         run: |
           set -euo pipefail
           backup="$RUNNER_TEMP/v26-current-sources"
-          for path in site/preview-v2/index.html site/preview-v2/assets/mixer-control-keys.css; do
+          for path in site/preview-v2/index.html site/preview-v2/assets/mixer-control-keys.css site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-plugin-browser.css site/preview-v2/assets/mixer-pan-controls.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-utility-controls.css; do
             test -s "$backup/$path"
             cp "$backup/$path" "$path"
           done
-          git diff --exit-code -- site/preview-v2/index.html site/preview-v2/assets/mixer-control-keys.css
+          git diff --exit-code -- site/preview-v2/index.html site/preview-v2/assets/mixer-control-keys.css site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-plugin-browser.css site/preview-v2/assets/mixer-pan-controls.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-utility-controls.css
       # Byte-exact V26 historical CSS check is pinned, not rebaselined.
       - name: Mount V26 approved source before historical regression
         shell: bash
@@ -191,7 +191,7 @@ jobs:
           baseline=91a27b035b9665353f75dee5ac5beeaa813f39c9
           backup="$RUNNER_TEMP/v26-wire-current-sources"
           git fetch --no-tags --depth=1 origin "$baseline"
-          for path in site/preview-v2/index.html site/preview-v2/assets/mixer-control-keys.css; do
+          for path in site/preview-v2/index.html site/preview-v2/assets/mixer-control-keys.css site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-plugin-browser.css site/preview-v2/assets/mixer-pan-controls.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-utility-controls.css; do
             mkdir -p "$backup/$(dirname "$path")"
             cp "$path" "$backup/$path"
             git show "$baseline:$path" > "$path"
@@ -203,11 +203,13 @@ jobs:
         run: |
           set -euo pipefail
           backup="$RUNNER_TEMP/v26-wire-current-sources"
-          for path in site/preview-v2/index.html site/preview-v2/assets/mixer-control-keys.css; do
+          for path in site/preview-v2/index.html site/preview-v2/assets/mixer-control-keys.css site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-plugin-browser.css site/preview-v2/assets/mixer-pan-controls.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-utility-controls.css; do
             test -s "$backup/$path"
             cp "$backup/$path" "$path"
           done
-          git diff --exit-code -- site/preview-v2/index.html site/preview-v2/assets/mixer-control-keys.css
+          git diff --exit-code -- site/preview-v2/index.html site/preview-v2/assets/mixer-control-keys.css site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-plugin-browser.css site/preview-v2/assets/mixer-pan-controls.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-utility-controls.css
+      - name: Verify V27 scoped material and 37 owned loser declarations with Chromium parity
+        run: python tests/pages_css_architecture_v27_smoke.py
       - name: Verify embedded Inter font and contextual V7 micro-controls
         run: python tests/pages_inter_utility_v7_smoke.py
       - name: Validate exact alpha micro hardware sprite states and WIRE coexistence
@@ -292,6 +294,7 @@ jobs:
             pages-v24-fader-meter-fx-1680.png
             pages-v25-control-keys-v51-1680.png
             pages-v26-dead-socket-pruned-1680.png
+            pages-v27-scoped-chrome-1680.png
             pages-v7-embedded-inter-utility-1680.png
             pages-mixer-v6-OFF-1680.png
             pages-mixer-v6-ON-1680.png

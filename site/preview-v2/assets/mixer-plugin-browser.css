@@ -18,8 +18,8 @@
 .plugin-browser{right:111px;width:min(310px,calc(100% - 148px))}
 
 }
-.plugin-browser{right:var(--master-w)!important}
-.plugin-browser{right:var(--master-w)!important;width:var(--plugin-w)!important;max-width:var(--plugin-w)!important;}
+.plugin-browser{}
+.plugin-browser{}
 .plugin-browser{z-index:90!important;left:auto!important;max-width:440px!important;}
 .plugin-browser{
  position:absolute!important;right:14px!important;left:auto;top:40px!important;bottom:auto!important;
