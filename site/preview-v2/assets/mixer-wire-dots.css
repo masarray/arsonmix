@@ -919,7 +919,7 @@
 /* V57: OUT connection paint indicates a real non-MAIN wire, even while
    that cable is hidden. MAIN remains a separate canonical default edge.
    IN still uses visible cable focus; hover/drag remain transient. */
-.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out[data-wire-paint="idle"]:not([data-wire-connected="true"]):not(.is-source):not(.is-drag-origin):not(.is-near):not(:hover):not(:focus-visible) .wire-pin,
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out[data-wire-paint="idle"]:not([data-wire-connected="true"]):not(.is-drag-origin):not(.is-near):not(:hover):not(:focus-visible) .wire-pin,
 .console-body.wire-routing-v15 .strip .wire-tray .wire-node-in[data-wire-paint="idle"]:not(.is-snap-target):not(.is-replug-origin):not(:hover):not(:focus-visible) .wire-arrow{
  background:#4b535b!important;border-color:#657681!important;
  box-shadow:inset 0 1px 2px #061017!important;opacity:1!important;
@@ -959,17 +959,7 @@
  transform:rotate(8deg);transform-origin:top center;
  border-radius:4px 4px 0 0;z-index:-1;
 }
-/* Folded 23px WIRE retains two discreet color fragments tied to exact graph IDs.
-   The accepted V52 fader, V51 meter and V54 jack material remain unchanged. */
-.console-body.wire-routing-v15.collapsed-send .strip
- .wire-fold-summary[data-wire-main-edge][data-wire-display-focus="true"]::after,
-.console-body.wire-routing-v15.collapsed-send #master
- .wire-fold-summary[data-wire-main-edge]::after{
- content:"";position:absolute;left:22%;bottom:1px;width:2px;height:8px;
- border-radius:2px;background:var(--main-wire-hue,#a04b65);
- transform:rotate(-9deg);pointer-events:none;opacity:.85;
-}
-.console-body.wire-routing-v15.collapsed-send #master
- .wire-fold-summary[data-wire-main-edge]::after{
- left:78%;transform:rotate(9deg);
-}
+/* V58: Collapsed WIRE is a quiet routing overview, never a physical
+   hanging MAIN cable. Only the existing SVG fold-link dots indicate
+   committed NON-MAIN wires; no ::after stem on any folded strip or MAIN. */
+
