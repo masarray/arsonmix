@@ -6,8 +6,8 @@ from playwright.sync_api import sync_playwright
 from pages_wire_incoming_v43_smoke import center, impact_peak
 
 ROOT=Path(__file__).resolve().parents[1]
-SRC=ROOT/"site/preview-v2/index.html"
-CSS=ROOT/"site/preview-v2/assets/mixer-wire-dots.css"
+SRC=ROOT/"site/preview/index.html"
+CSS=ROOT/"site/preview/assets/mixer-wire-dots.css"
 
 def box(loc):
  r=loc.bounding_box()

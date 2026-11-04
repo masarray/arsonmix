@@ -9,9 +9,9 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 ROOT=Path(__file__).resolve().parents[1]
-HTML=ROOT/"site/preview-v2/index.html"
-FADER=ROOT/"site/preview-v2/assets/mixer-fader-assembly.css"
-METER=ROOT/"site/preview-v2/assets/mixer-meter-display.css"
+HTML=ROOT/"site/preview/index.html"
+FADER=ROOT/"site/preview/assets/mixer-fader-assembly.css"
+METER=ROOT/"site/preview/assets/mixer-meter-display.css"
 APPROVED_V27_METER_BLOB="e168fe3fde3b176ce46f2c637a17db65bc510944"
 APPROVED_PRE_V52_FADER_BLOB="8a2eac41b3508e35d8a6c49855512e8a0868b0e6"
 
@@ -39,9 +39,8 @@ def audit_checkpoint():
     )
     assert '#14232e!important' in css
     assert "mixer-fader-assembly.css?v=css-owner-v27-fader-rollback-pre-v52-tail" in html
-    assert "REFERENCE_WORKFLOW_QA_ONLY" in (
-        ROOT/"site/preview/candidate.json").read_text(encoding="utf-8"), (
-        "Public /preview/ must keep canonical GUI source, not a parallel stale demo"
+    assert not (ROOT/"site/preview/candidate.json").exists(), (
+        "Legacy candidate metadata must not exist in the approved source"
     )
 
 def inspect(page,width,height,density):
