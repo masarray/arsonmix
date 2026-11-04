@@ -155,15 +155,16 @@ def main():
         subprocess.run([sys.executable,str(ROOT/'scripts/build_pages.py'),
             '--out',str(dist),'--sha','micro-qa','--branch','pr'],
             cwd=ROOT,check=True,capture_output=True,text=True)
-        for route in ('preview','preview-v2','preview-buttons'):
-            assets=dist/route/'assets'
-            for png in (SQUARE,FORMAT):
-                assert (assets/png).read_bytes()==(ASSET/png).read_bytes(),(route,png)
+        # Only /preview/ publishes a mixer; old routes are redirects only.
+        assets=dist/'preview/assets'
+        for png in (SQUARE,FORMAT):
+            assert (assets/png).read_bytes()==(ASSET/png).read_bytes(),png
+        for legacy in ('preview-v2','preview-buttons','preview-v33','preview-v34'):
+            assert sorted(x.name for x in (dist/legacy).iterdir())==['index.html']
         with sync_playwright() as p:
             browser=p.chromium.launch(headless=True)
-            test_page(browser,PAGE.as_uri(),'canonical')
-            test_page(browser,(dist/'preview-buttons/index.html').as_uri(),'approved-png')
-            test_page(browser,(dist/'preview/mixer.html').as_uri(),'public-alias')
+            test_page(browser,PAGE.as_uri(),'internal-source')
+            test_page(browser,(dist/'preview/index.html').as_uri(),'approved-png')
             browser.close()
     print('PASS micro RGBA frames, state depth, no movement, dynamic label and WIRE preservation')
 

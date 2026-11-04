@@ -7,12 +7,12 @@ No external web request; local site/preview-v2/index.html only.
 """
 from __future__ import annotations
 from pathlib import Path
-import subprocess, sys
+import subprocess, sys, re
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 PAGE = (ROOT / "site/preview-v2/index.html").resolve()
-PUBLIC = (ROOT / "_preview-public-qa/preview/mixer.html").resolve()
+PUBLIC = (ROOT / "_preview-public-qa/preview/index.html").resolve()
 SIZES = [(1366, 768), (1666, 888), (1711, 1005), (1920, 1080)]
 
 
@@ -296,7 +296,16 @@ def main():
                     "--out", str(ROOT / "_preview-public-qa"), "--sha", "qa"],
                    check=True)
     assert PAGE.exists() and PUBLIC.exists(), (PAGE, PUBLIC)
-    assert PUBLIC.read_bytes()==PAGE.read_bytes(), "Public /preview/mixer.html must be the PR278 reference, not old M4"
+    assembled=PUBLIC.read_text(encoding="utf-8")
+    raw=PAGE.read_text(encoding="utf-8")
+    for asset in ("mixer-control-keys.css","mixer-control-keys.js"):
+        token="assets/"+asset
+        source_link=re.search(re.escape(token)+r'(?:\?[^"\s>]+)?',raw)
+        assert source_link,(asset,"source link missing")
+        assembled=re.sub(re.escape(token)+r'\?rev=[0-9a-f]{16}',
+                         lambda _: source_link.group(0),assembled)
+    assert assembled==raw, "Public /preview/ must preserve every GUI interaction and differ only in approved PNG key URLs"
+    assert 'http-equiv="refresh"' in (PUBLIC.parent/"mixer.html").read_text(encoding="utf-8")
     count = 0
     with sync_playwright() as playwright:
         browser=playwright.chromium.launch(headless=True)
@@ -358,14 +367,14 @@ def main():
                 audit_channel_rearrange(page,f"{width}x{height} arrangement");count+=1
                 assert not errors, f"{width}x{height}: JavaScript runtime errors {errors}"
                 page.close()
-            # The URL explicitly requested by the owner is an independent
-            # acceptance surface. Verify its behavior, not just /preview-v2/.
+            # The user-approved /preview/ is the sole public acceptance surface.
+            # Verify its real behavior as well as the internal source.
             for width,height in SIZES:
                 page=browser.new_page(viewport={"width":width,"height":height},device_scale_factor=1)
                 errors=[]
                 page.on("pageerror",lambda error: errors.append(str(error)))
                 page.goto(PUBLIC.as_uri())
-                audit_geometry(page,f"PUBLIC /preview/mixer.html {width}x{height}");count+=1
+                audit_geometry(page,f"PUBLIC /preview/ {width}x{height}");count+=1
                 audit_p0_collapse(page,f"PUBLIC {width}x{height} P0");count+=1
                 audit_p0_pan_center(page,f"PUBLIC {width}x{height} PAN");count+=1
                 page.screenshot(path=str(ROOT / f"preview-operator-{width}.png"))
