@@ -299,13 +299,13 @@ public:
                 if(i==main) {error={DynamicGraphFault::mainFeedback,rows[i].id};return false;}
                 if(i==monitor) {error={DynamicGraphFault::monitorFeedback,rows[i].id};return false;}
                 if(to==i) {error={DynamicGraphFault::cycle,rows[i].id};return false;}
-                // A duplicate edge would sum the same send twice and can
-                // cause unexpectedly loud signal. Different taps are legal.
+                // WIRE-first MVP admits ONE audible edge per ordered pair.
+                // A legacy PRE + POST pair is still duplicate dry PCM,
+                // even when the tap flag differs. Reject before publication.
                 const bool duplicate=std::any_of(
                     outgoing[i].begin(),outgoing[i].end(),
                     [&](const Edge& existing) {
-                        return existing.destination==to &&
-                               existing.pre==send.preFader;
+                        return existing.destination==to;
                     });
                 if(duplicate) {
                     error={DynamicGraphFault::duplicateSend,rows[i].id};
