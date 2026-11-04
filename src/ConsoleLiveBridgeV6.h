@@ -161,6 +161,38 @@ public:
                     const auto bus=route.getProperty("nativeBus",juce::var());
                     if(native && bus.isObject()) {
                         object->setProperty("nativeBus",bus);
+                        // Native PCM is the only source of exact ChannelIds,
+                        // EdgeIds and accepted revision for the v8 projection.
+                        const auto channels=bus.getProperty("channels",{});
+                        const auto edges=bus.getProperty("edges",{});
+                        const auto rev=bus.getProperty("graphRevision",{});
+                        const auto roster=bus.getProperty("rosterRevision",{});
+                        const auto nativeOps=bus.getProperty("supportedOps",{});
+                        std::uint64_t graphId=0,rosterId=0;
+                        const auto* ops=nativeOps.getArray();
+                        if(channels.isArray() && edges.isArray() && ops &&
+                           ops->contains(juce::var(juce::String(
+                               "NATIVE_APPLY_WIRE_TRANSACTION"))) &&
+                           decodeDecimal(rev,graphId) && graphId &&
+                           decodeDecimal(roster,rosterId) && rosterId) {
+                            const auto graph=actual.getProperty("graph",{});
+                            if(auto* accepted=graph.getDynamicObject()) {
+                                accepted->setProperty("revision",rev);
+                                accepted->setProperty("rosterRevision",roster);
+                                accepted->setProperty("channels",channels);
+                                accepted->setProperty("edges",edges);
+                                const auto capabilities=graph.getProperty("capabilities",{});
+                                if(auto* caps=capabilities.getDynamicObject()) {
+                                    caps->setProperty("callbackOwnsChannelIds",true);
+                                    juce::Array<juce::var> available;
+                                    available.add(juce::var(juce::String(
+                                        "APPLY_WIRE_TRANSACTION")));
+                                    caps->setProperty("supportedOps",juce::var(available));
+                                }
+                            }
+                        }
+                        // Full product-LIVE remains gated on VST3/Show/monitor
+                        // parity and measured hardware FAT (#15).
                     }
                     // Separate namespace: these operations mutate the one
                     // INSTALLED M4 JUCE PCM graph. They are NEVER universal
@@ -566,25 +598,58 @@ public:
             }
             recentIds_.push_back(key);completed_.insert(key);
             const auto operation=intent.getProperty("operation","").toString();
+            const bool v8Wire=operation=="APPLY_WIRE_TRANSACTION";
             const auto payload=intent.getProperty("payload",juce::var());
+            // One existing decoder, one native candidate, one PCM publisher.
+            const auto baseGraph=v8Wire?intent.getProperty("baseGraphRevision",{})
+                :intent.getProperty("nativeGraphRevision",{});
+            const auto baseRoster=v8Wire?intent.getProperty("baseRosterRevision",{})
+                :intent.getProperty("nativeRosterRevision",{});
+            const auto legacyBase=v8Wire?legacy.getProperty("routingRevision",{})
+                :intent.getProperty("legacyRoutingRevision",{});
             if(ioBusy)error="NATIVE_SHOW_OR_BACKUP_BUSY";
             else if(!decodeDecimal(intent.getProperty("deviceEpoch",{}),requestedEpoch) ||
-               !decodeDecimal(intent.getProperty("legacyRoutingRevision",{}),legacyRevision) ||
-               !decodeDecimal(intent.getProperty("nativeGraphRevision",{}),nativeRev) ||
-               !decodeDecimal(intent.getProperty("nativeRosterRevision",{}),rosterRev) ||
+               !decodeDecimal(legacyBase,legacyRevision) ||
+               !decodeDecimal(baseGraph,nativeRev) ||
+               !decodeDecimal(baseRoster,rosterRev) ||
                intent.getProperty("deviceEpoch","").toString()!=epoch ||
-               intent.getProperty("legacyRoutingRevision","").toString()!=
-                    legacy.getProperty("routingRevision","").toString())
+               legacyBase.toString()!=legacy.getProperty("routingRevision","").toString())
                 error="STALE_NATIVE_BUS_DEVICE_OR_ROUTE";
             else if(!bus.isObject() ||
-                    bus.getProperty("graphRevision","").toString()!=
-                        intent.getProperty("nativeGraphRevision","").toString() ||
-                    bus.getProperty("rosterRevision","").toString()!=
-                        intent.getProperty("nativeRosterRevision","").toString() ||
+                    bus.getProperty("graphRevision","").toString()!=baseGraph.toString() ||
+                    bus.getProperty("rosterRevision","").toString()!=baseRoster.toString() ||
                     legacy.getProperty("controlPlane","").toString()!="LEGACY_M4_ORDINAL")
                 error="NATIVE_BUS_GRAPH_NOT_ADMITTED";
-            else if(!payload.isObject())error="INVALID_NATIVE_BUS_PAYLOAD";
-            else if(operation=="NATIVE_CREATE_CHANNEL" ||
+            else if(v8Wire &&
+                    (graph.getProperty("revision","").toString()!=baseGraph.toString() ||
+                     graph.getProperty("rosterRevision","").toString()!=baseRoster.toString()))
+                error="STALE_GRAPH_REVISION";
+            else if(v8Wire) {
+                const auto caps=graph.getProperty("capabilities",{});
+                const auto ops=caps.getProperty("supportedOps",{});
+                const auto* allowed=ops.getArray();
+                const auto rows=graph.getProperty("channels",{});
+                const auto focus=intent.getProperty("targetChannelId",{});
+                armix::mixer::ChannelId parsed{};
+                const bool valid=focus.isString() &&
+                    armix::integration::parseNativeChannelId(
+                        focus.toString().toStdString(),parsed);
+                bool admitted=false;
+                if(valid)if(const auto* channels=rows.getArray())
+                    for(const auto& row:*channels)
+                        if(row.getProperty("id","").toString()==focus.toString())
+                            {admitted=true;break;}
+                if(!admitted || !graph.getProperty("edges",{}).isArray() ||
+                   !static_cast<bool>(caps.getProperty("callbackOwnsChannelIds",false)) ||
+                   !allowed || !allowed->contains(juce::var(juce::String(
+                       "APPLY_WIRE_TRANSACTION"))))
+                    error="UNIVERSAL_WIRE_NOT_ADMITTED";
+            }
+            if(error.isEmpty() && !payload.isObject())
+                error="INVALID_NATIVE_BUS_PAYLOAD";
+            if(error.isNotEmpty()) {
+                // Do not touch installed native audio on stale requests.
+            } else if(operation=="NATIVE_CREATE_CHANNEL" ||
                     operation=="NATIVE_PATCH_CHANNEL") {
                 if(operation=="NATIVE_CREATE_CHANNEL") {
                     const auto name=payload.getProperty("name","").toString();
@@ -696,7 +761,7 @@ public:
                           rosterRev=response.rosterRevision;}
                 }
             }
-            else if(operation=="NATIVE_APPLY_WIRE_TRANSACTION") {
+            else if(operation=="NATIVE_APPLY_WIRE_TRANSACTION" || v8Wire) {
                 using namespace armix::mixer;
                 const auto raw=payload.getProperty("changes",juce::var());
                 const auto* list=raw.getArray();
@@ -847,8 +912,10 @@ public:
         ack.requestId=key;
         ack.status=applied?"ACCEPTED":"REJECTED";
         ack.deviceEpoch=epoch.toStdString();
-        ack.graphRevision=graph.getProperty("revision","0").toString().toStdString();
-        ack.rosterRevision=graph.getProperty("rosterRevision","0").toString().toStdString();
+        ack.graphRevision=v8Wire && applied?std::to_string(nativeRev):
+            graph.getProperty("revision","0").toString().toStdString();
+        ack.rosterRevision=v8Wire && applied?std::to_string(rosterRev):
+            graph.getProperty("rosterRevision","0").toString().toStdString();
         ack.errorCode=error.toStdString();
         const auto json=PuzzleV8Wire::ack(ack);
         auto wire=juce::JSON::parse(juce::String::fromUTF8(json.c_str()));
