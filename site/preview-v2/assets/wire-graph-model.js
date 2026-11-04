@@ -175,6 +175,10 @@
     if(!Number.isSafeInteger(active)||active<0||active>=slots.length)
      return {ok:false,error:'INVALID_LEGACY_ACTIVE_SEND'};
     for(let i=0;i<slots.length;i++){
+     // Even the currently selected slot must be structurally valid, although
+     // its live gain/target are projected from the channel fields.
+     if(!slots[i]||typeof slots[i]!=='object')
+      return {ok:false,error:'INVALID_LEGACY_SEND_SLOT'};
      const error=importSend(t,i===active?t:slots[i]);
      if(error)return {ok:false,error};
     }
