@@ -1168,6 +1168,19 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
     assert(batchAck.getProperty("status","").toString()=="REJECTED");
     assert(batchAck.getProperty("errorCode","").toString()=="INVALID_NATIVE_WIRE_SOURCE");
     assert(busControl.nativeWireBatches==1);
+    auto liveMixIntent=makeBusIntent("native:mix:1");
+    liveMixIntent.getDynamicObject()->setProperty(
+        "operation","NATIVE_SET_BUS_MIX");
+    liveMixIntent.getDynamicObject()->setProperty("targetChannelId","18");
+    auto mixPayload=std::make_unique<juce::DynamicObject>();
+    mixPayload->setProperty("gain",.5);
+    mixPayload->setProperty("pan",0.0);
+    liveMixIntent.getDynamicObject()->setProperty(
+        "payload",juce::var(mixPayload.release()));
+    const auto mixAck=routeBusIntent(
+        liveMixIntent);
+    assert(mixAck.getProperty("status","").toString()=="ACCEPTED");
+    assert(busControl.liveMixes==1&&busControl.commits==1);
     // Canonical public v8 operation uses the SAME installed ChannelId
     // publisher and ACK revisions, never a WebView/legacy owned PCM graph.
     const auto v8Route=live.getProperty("dryRoutingLab",{});
@@ -1250,19 +1263,6 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
                .toString()==v8Reply.getProperty("graphRevision","").toString());
     assert(afterV8.getProperty("graph",{}).getProperty("rosterRevision","")
                .toString()==v8Reply.getProperty("rosterRevision","").toString());
-    auto liveMixIntent=makeBusIntent("native:mix:1");
-    liveMixIntent.getDynamicObject()->setProperty(
-        "operation","NATIVE_SET_BUS_MIX");
-    liveMixIntent.getDynamicObject()->setProperty("targetChannelId","18");
-    auto mixPayload=std::make_unique<juce::DynamicObject>();
-    mixPayload->setProperty("gain",.5);
-    mixPayload->setProperty("pan",0.0);
-    liveMixIntent.getDynamicObject()->setProperty(
-        "payload",juce::var(mixPayload.release()));
-    const auto mixAck=routeBusIntent(
-        liveMixIntent);
-    assert(mixAck.getProperty("status","").toString()=="ACCEPTED");
-    assert(busControl.liveMixes==1&&busControl.commits==1);
     // Fail-closed device fault: do not advertise a compatibility actuator
     // against a poisoned physical port topology or stale hardware session.
     auto liveRoute=live.getProperty("dryRoutingLab",{});
