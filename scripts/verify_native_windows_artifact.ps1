@@ -66,60 +66,80 @@ $sha = (& git rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $sha -ne $manifest.sourceCommit) {
     throw "Distribution manifest Git sourceCommit does not match checkout"
 }
-# Verify the exact full resource text shipped by JUCE BinaryData, not merely
-# hashes recorded next to an unrelated executable. This catches packaging an
-# older GUI with the latest source files and avoids brittle marker-only checks.
-$resources = @(
-    @{Path="web/index.html"; Hash=$manifest.indexHtmlSha256},
-    @{Path="web/app.js"; Hash=$manifest.appJsSha256},
-    @{Path="web/styles.css"; Hash=$manifest.stylesCssSha256},
-    @{Path="web/plugin-ui.css"; Hash=$manifest.pluginUiCssSha256},
-    @{Path="web/plugin-ui.js"; Hash=$manifest.pluginUiJsSha256},
-    @{Path="web/bridge.js"; Hash=$manifest.bridgeJsSha256},
-    @{Path="web/monitor.js"; Hash=$manifest.monitorJsSha256}
-)
+# Release gate must verify the EXACT GUI shown by /preview/, not a
+# self-consistent but WRONG legacy web/index.html or console-native renderer.
+$approvedGuiDir = Join-Path "build" "approved_gui"
+& python scripts/build_approved_native_gui.py --out $approvedGuiDir --verify
+if ($LASTEXITCODE -ne 0) { throw "REJECT: native GUI is not built from current approved Pages" }
+$approvedPath = Join-Path $approvedGuiDir "approved-gui-manifest.json"
+$approved = Get-Content -LiteralPath $approvedPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$approvedHash = (Get-FileHash -LiteralPath $approvedPath -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($manifest.approvedGuiManifestSha256 -ne $approvedHash -or
+    $manifest.approvedGuiRoute -ne "/preview/" -or
+    $manifest.approvedGuiIframe -ne "/preview-buttons/index.html" -or
+    $manifest.approvedGuiPagesSha256 -ne $approved.approvedPagesHtmlSha256 -or
+    $manifest.approvedGuiNativeHtmlSha256 -ne $approved.nativeHtmlSha256 -or
+    $manifest.approvedGuiCanonicalSha256 -ne $approved.canonicalSourceSha256 -or
+    $manifest.approvedGuiAdapterStatus -ne "SCAFFOLD_ONLY__NOT_LIVE_PCM" -or
+    $manifest.guiCalibration -ne "APPROVED_PAGES_VISUAL_PROVENANCE_ONLY__M1_NOT_PRODUCT_READY" -or
+    $manifest.approvedGuiResourceCount -ne @($approved.files).Count) {
+    throw "REJECT: native release provenance does not match the approved Pages GUI"
+}
+$cmakeSource = Get-Content -LiteralPath "CMakeLists.txt" -Raw -Encoding UTF8
+$nativeSource = Get-Content -LiteralPath "src/Main.cpp" -Raw -Encoding UTF8
+if (-not $cmakeSource.Contains('juce_add_binary_data(ARMixAssets SOURCES') -or
+    -not $cmakeSource.Contains('ARMIX_APPROVED_GUI_DIR') -or
+    -not $nativeSource.Contains('resolveApprovedGuiResource (path, data, size, mime)') -or
+    $nativeSource.Contains('BinaryData::consolenative_html') -or
+    $nativeSource.Contains('BinaryData::index_html')) {
+    throw "REJECT: competing legacy GUI renderer is compiled or served"
+}
+# PNG artwork is binary; CSS/JS/SVG/HTML are compared as exact UTF8 text,
+# rather than mere marker matches. Each staged resource is also SHA-attested.
+function Test-EmbeddedBytes([byte[]]$haystack, [byte[]]$needle) {
+    if ($needle.Length -eq 0 -or $needle.Length -gt $haystack.Length) { return $false }
+    $last = $haystack.Length - $needle.Length
+    for ($i = 0; $i -le $last; $i++) {
+        if ($haystack[$i] -ne $needle[0]) { continue }
+        $found = $true
+        for ($j = 1; $j -lt $needle.Length; $j++) {
+            if ($haystack[$i + $j] -ne $needle[$j]) { $found = $false; break }
+        }
+        if ($found) { return $true }
+    }
+    return $false
+}
 $embeddedText = [Text.Encoding]::UTF8.GetString($bytes)
-foreach ($item in $resources) {
-    $real = (Get-FileHash -LiteralPath $item.Path -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($real -ne $item.Hash) {
-        throw "GUI provenance SHA256 mismatch: $($item.Path)"
+foreach ($item in $approved.files) {
+    $rel = [string]$item.path
+    $resourcePath = Join-Path $approvedGuiDir $rel
+    if (-not (Test-Path -LiteralPath $resourcePath -PathType Leaf)) {
+        throw "REJECT: compiled GUI missing staged asset $rel"
     }
-    $sourceText = [System.IO.File]::ReadAllText(
-        (Resolve-Path -LiteralPath $item.Path).Path, [Text.Encoding]::UTF8)
-    if ($sourceText.Length -eq 0 -or
-        $embeddedText.IndexOf($sourceText, [StringComparison]::Ordinal) -lt 0) {
-        throw "STALE NATIVE GUI: exact JUCE BinaryData resource absent from EXE: $($item.Path)"
+    $real = (Get-FileHash -LiteralPath $resourcePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($real -ne $item.sha256) {
+        throw "REJECT: approved GUI staged resource digest differs: $rel"
     }
-}
-# Assert current approved calibration is present inside the actual shipped binary.
-if ($manifest.guiCalibration -ne "GAIN_10_TO_MINUS60_BLACK_DETENT_AT_38PX__VU_DBFS_INDEPENDENT_TICKS") {
-    throw "GUI calibration release contract is missing"
-}
-# Marker checks below supplement, not replace, full resource byte correspondence.
-foreach ($marker in @(
-    "function openChannelIdentity",   # latest mixer channel editor
-    'class="master-analysis"',       # native-compatible master analyzer
-    "--ari-master-cap",             # rose/silver MASTER styling
-    "gain-scale-travel",            # calibrated +10..-60 dB scale
-    "vu-scale-travel",              # independent dBFS meter ruler
-    "meter-signal-area",            # VU activity region distinct from CLIP LED
-    "fader-travel",                 # PNG black detent in 38px inset travel
-    "function syncNativeMixerControls", # JUCE WebView bridge
-    "arMixGuiReady",               # Native GUI JS ready handshake
-    "WEBVIEW2_GUI_READY_TIMEOUT",  # Visible failure, never a blank IE page
-    "AUDIO_GLITCH_WINDOW",          # engine P0-12 compiled diagnostics
-    "--b180-on-mute",              # current harmonized BTN-180 palette
-    "--b180-on-solo",              # MUTE / SOLO lightness calibration
-    "--b180-on-stereo",            # STEREO blue lightness calibration
-    "--b180-on-green",             # native device-connected green
-    "inset 5px 5px 2px -1px",      # owner-approved hardware button shadow
-    "gain-scale-travel",           # calibrated fader detent
-    "function syncNativeMixerControls" # latest native GUI state bridge
-)) {
-    if ($embeddedText.IndexOf($marker, [StringComparison]::Ordinal) -lt 0) {
-        throw "Compiled GUI/engine marker absent from shipped EXE: $marker"
+    $resourceBytes = [IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $resourcePath).Path)
+    $present = if ($rel.EndsWith(".png", [StringComparison]::OrdinalIgnoreCase)) {
+        Test-EmbeddedBytes $bytes $resourceBytes
+    } else {
+        $sourceText = [Text.Encoding]::UTF8.GetString($resourceBytes)
+        $sourceText.Length -gt 0 -and
+            $embeddedText.IndexOf($sourceText, [StringComparison]::Ordinal) -ge 0
+    }
+    if (-not $present) {
+        throw "REJECT: APPROVED GUI BYTE RESOURCE NOT IN WINDOWS EXE: $rel"
     }
 }
+if ($embeddedText.IndexOf('APPROVED_PAGES_PREVIEW_BUTTONS', [StringComparison]::Ordinal) -lt 0 -or
+    $embeddedText.IndexOf('M1_VISUAL_BUNDLE_ONLY__NOT_AUDIO_READY', [StringComparison]::Ordinal) -lt 0 -or
+    $embeddedText.IndexOf('WEBVIEW2_GUI_READY_TIMEOUT', [StringComparison]::Ordinal) -lt 0 -or
+    $embeddedText.IndexOf('AUDIO_GLITCH_WINDOW', [StringComparison]::Ordinal) -lt 0) {
+    throw "REJECT: approved GUI bridge or native device safety markers absent"
+}
+Write-Host "APPROVED_GUI_EMBEDDED: /preview/ exact PNG skin and renderer resource hashes verified"
+Write-Host "NOT_PRODUCT_READY: native accepted PCM/ACK + hardware/FAT remain separate release blockers"
 
 # Probe a fresh compressed archive outside dist/ using the SAME dist folder
 # that actions/upload-artifact will upload; reject the original 648KB class
@@ -185,7 +205,7 @@ try {
     }
     Write-Host "FAT_RELEASE_ACCEPTED: source=$sha GUI_WIN64_PE32+=2"
     Write-Host "FAT_RELEASE_ACCEPTED: exeBytes=$($bytes.Length) testZipBytes=$archiveBytes sha256=$appHash"
-    Write-Host "FAT_RELEASE_ACCEPTED: full embedded GUI HTML/CSS/JS/bridge/monitor + calibrated VU/fader matched exactly"
+    Write-Host "FAT_RESOURCE_ACCEPTED: approved Pages GUI HTML/CSS/JS/SVG/PNG are embedded exact bytes; native controls NOT YET QUALIFIED"
     Write-Host "FAT_RELEASE_ACCEPTED: P0-12 and static WebView2 startup contract verified"
 } finally {
     if (Test-Path -LiteralPath $archivePath) { Remove-Item -LiteralPath $archivePath -Force }
