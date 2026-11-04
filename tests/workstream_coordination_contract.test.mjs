@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {POLICY_EPOCH_PR, ownerOf, metadata, audit} from '../scripts/check_workstream_coordination.mjs';
+import {POLICY_EPOCH_PR, ownerOf, metadata, audit, requiresUiSmoke} from '../scripts/check_workstream_coordination.mjs';
 
 const body=(lane,issue=397,parked=false)=>
   '<!-- arsonmix-workstream: '+lane+' -->\n'+
@@ -206,4 +206,26 @@ test('coordinator uses existing native + Chromium CI, not a fifth workflow',()=>
   const guide=readFileSync('AGENTS.md','utf8');
   assert.match(guide,/MULTI_AGENT_COORDINATION\.md/);
   assert.match(guide,/#397/);
+});
+
+test('M2.6 always-on PR admission scopes Chromium to UI changes',()=>{
+  for(const path of [
+    'docs/RELEASE_NOTES.md','README.md','src/LiveAudioEngine.h',
+    'engine/core/PreparedMixerBlock.h',
+    'scripts/check_workstream_coordination.mjs',
+    'tests/workstream_coordination_contract.test.mjs'
+  ]) assert.equal(requiresUiSmoke([path]),false,path);
+  for(const path of [
+    'site/preview/index.html','web/approved-native-bridge.js',
+    'integration/console-v6/contract.json','tests/pages_wire_first_canonical_main_smoke.py',
+    '.github/workflows/ui-smoke.yml'
+  ]) assert.equal(requiresUiSmoke([path]),true,path);
+  assert.equal(requiresUiSmoke(['README.md','src/Main.cpp','site/preview/index.html']),true);
+  const workflow=readFileSync('.github/workflows/ui-smoke.yml','utf8');
+  const prBlock=workflow.split('\n  pull_request:\n')[1]?.split('\n  # Manual full suite')[0] || '';
+  assert.ok(prBlock,'missing PR event');
+  assert.doesNotMatch(prBlock,/^\s+paths:/m,'PR entrypoint must not filter docs or PCM PRs');
+  assert.match(workflow,/name: PR coordination admission/);
+  assert.match(workflow,/needs: coordination/);
+  assert.match(workflow,/needs\.coordination\.outputs\.run_ui/);
 });
