@@ -28,7 +28,7 @@ def audit_checkpoint():
     assert "filter:none!important" in css
     assert ".console-body .strip .fader-workspace" in css
     assert "#263944" in css
-    assert "0 4px 6px -1px #000f" in css and "2px 10px 13px -3px #000e" in css and "0 17px 17px -7px #000b" in css, "V55 stronger three-layer cap depth must retain original static PNG and zero GPU filters"
+    assert "0 2px 3px -1px #000c" in css and "1px 5px 7px -3px #0009" in css, "V56 must use subtle static shadow, without V55 excessive depth"
     assert "linear-gradient(90deg," in css
 
 def inspect(page,width,height,density):
@@ -52,6 +52,8 @@ def inspect(page,width,height,density):
           slotWidth:slot.width,slotBackground:slot.backgroundImage,
           thumbShadow:c.boxShadow,thumbFilter:c.filter,thumbTransition:c.transitionDuration,
           meterWidth:rect(meter).width,meterFillWidth:rect(fill).width,
+          wellTop:before.top,wellBottom:before.bottom,wellWidth:before.width,
+          slotTop:slot.top,slotBottom:slot.bottom,
           gainRulerGap:rect(scale).left-rect(box).right,
           meterPocketGap:rect(box).left-rect(meter).right,
           borderRadius:p.borderRadius,
@@ -59,20 +61,26 @@ def inspect(page,width,height,density):
       });
     }""")
     assert len(vals)==2,(width,density,'missing channel/master')
-    targetBox,targetCap={"comfort":(29,27),"standard":(27,27),"compact":(25,25)}[density]
+    targetBox,targetCap={"comfort":(29,27),"standard":(29,27),"compact":(27,25)}[density]
     for v in vals:
         assert abs(v["boxWidth"]-targetBox)<.75,(width,density,"pocket width",v)
         assert abs(v["capWidth"]-targetCap)<.75,(width,density,"PNG cap width",v)
-        assert 0<=v["boxWidth"]-v["capWidth"]<=2.6,(width,density,"width delta",v)
+        assert 1.5<=v["boxWidth"]-v["capWidth"]<=2.6,(width,density,"width delta",v)
         assert v["workColor"]==v["rulerColor"]=="rgb(38, 57, 68)",(
             width,density,"ambiguous gain ruler surface",v)
+        assert v["wellTop"]==v["wellBottom"]=="13px", (
+            width,density,"pocket ends must be inset inside fader box",v)
+        assert v["slotTop"]==v["slotBottom"]=="16px",(
+            width,density,"slot end must remain inside pocket",v)
+        assert abs(float(v["wellWidth"].replace("px",""))-targetBox)<.75,(
+            width,density,"recess must remain only 2px wider than thumb",v)
         assert "linear-gradient" in v["pocket"] and "inset" in v["depth"],(
             width,density,"recess lost",v)
         assert "inset" in v["rim"],(width,density,"machined rim lost",v)
         assert abs(float(v["slotWidth"].replace("px",""))-5)<.6,(width,density,"dark slot drift",v)
         assert "rgb(1, 4, 7)" in v["slotBackground"],(
             width,density,"center aperture not near-black",v)
-        assert v["thumbShadow"]!="none" and "10px 13px -3px" in v["thumbShadow"] and "17px 17px -7px" in v["thumbShadow"],(
+        assert v["thumbShadow"]!="none" and "5px 7px -3px" in v["thumbShadow"],(
             width,density,"visible low-cost lower thumb shadow missing",v)
         assert v["thumbFilter"]=="none",(width,density,"GPU filter forbidden",v)
         assert v["thumbTransition"]=="0s",(width,density,"animated shadow forbidden",v)
@@ -117,8 +125,8 @@ def main():
             assert not errors,(width,height,errors)
             page.close()
         browser.close()
-    print("PASS V52: V51 meter frozen, flat ruler/chassis, inset pocket, 29/27/25px box,"
-          " black 5px slot, three-layer shadow depth and real pointer drag")
+    print("PASS V52: V51 meter frozen, flat ruler/chassis, inset pocket, 29/29/27px box,"
+          " black 5px slot, moderate inset ends, soft shadow and real pointer drag")
 
 if __name__=="__main__":
     main()
