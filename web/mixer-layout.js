@@ -207,7 +207,8 @@
     SET_FADER:'SET_FADER',SET_PAN:'SET_PAN',SET_MUTE:'SET_MUTE',
     SET_SOLO:'SET_SOLO',SET_TRIM:'SET_TRIM',SET_CUE:'SET_CUE',
     SET_LINK_GROUP:'SET_LINK_GROUP',ROUTE_SELECTED_TO_GROUP:'ROUTE_SELECTED_TO_GROUP',
-    RENAME_CHANNEL:'RENAME_CHANNEL',CREATE_CHANNEL:'CREATE_CHANNEL'
+    RENAME_CHANNEL:'RENAME_CHANNEL',CREATE_CHANNEL:'CREATE_CHANNEL',
+    APPLY_WIRE_TRANSACTION:'APPLY_WIRE_TRANSACTION'
   };
   let accepted=null,acceptedNative=false,modeSend='',lastStructure='',requestSeq=0;
   let lastControlProjection='',lastHeaderProjection='';
@@ -710,6 +711,47 @@
     backend.emitEvent('arMixConsoleIntent',command);
     return true;
   }
+  /* Packet C additive WIRE consumer. This is NOT a browser-owned audio
+     graph: every edge is read fresh from the accepted native snapshot.
+     A request never paints a cable as accepted until ACK + matching snapshot. */
+  function acceptedWireGraph(){
+    const graph=accepted?.graph;
+    if(!supported('APPLY_WIRE_TRANSACTION')||
+       !Array.isArray(graph?.edges)||decimal(graph.mainChannelId)===null)return null;
+    return {
+      deviceEpoch:accepted.device.epoch,graphRevision:graph.revision,
+      rosterRevision:graph.rosterRevision,mainChannelId:graph.mainChannelId,
+      edges:graph.edges.map(e=>({edgeId:e.edgeId,from:e.from,to:e.to,
+        tap:e.tap,gainLinear:e.gainLinear,enabled:e.enabled,signalKind:e.signalKind}))
+    };
+  }
+  function applyNativeWireTransaction(sourceId,reason,changes){
+    const graph=acceptedWireGraph();
+    if(!graph||!can('APPLY_WIRE_TRANSACTION',sourceId)||
+       !['CONNECT','UNPLUG','REPLUG','ROUTE_ONLY','MATRIX','NAVIGATOR'].includes(reason)||
+       !Array.isArray(changes)||!changes.length||changes.length>64){
+      showFeedback('WIRE UNAVAILABLE · native accepted graph/operation not installed');
+      return false;
+    }
+    const own=graph.edges.filter(e=>e.from===sourceId);
+    for(const change of changes){
+      if(!change||!['CONNECT','REMOVE','RETARGET'].includes(change.op))return false;
+      if(change.op==='CONNECT'){
+        if(change.from!==sourceId||decimal(change.to)===null||
+           change.to===sourceId||!byId.has(change.to)||
+           change.tap!=='POST_FADER'||!Number.isFinite(change.gainLinear)||
+           change.gainLinear<0)return false;
+      }else{
+        if(decimal(change.edgeId)===null||
+           !own.some(e=>e.edgeId===change.edgeId))return false;
+        if(change.op==='RETARGET'&&(decimal(change.to)===null||
+           !byId.has(change.to)||change.to===sourceId))return false;
+      }
+    }
+    // Reuse the SAME v8 requestId/epoch/revisions, existing pending locks,
+    // native ACK and accepted same-revision snapshot fencing.
+    return sendIntent('APPLY_WIRE_TRANSACTION',sourceId,{reason,changes});
+  }
   function receiveAck(data){
     const a=data?.ack||data;
     if(!a||typeof a.requestId!=='string')return;
@@ -791,6 +833,28 @@
          !roles.includes(ch.role)||!['MONO','STEREO'].includes(ch.processingFormat)||
          typeof ch.name!=='string'||!Array.isArray(ch.inserts)||!Array.isArray(ch.sends))return false;
       ids.add(ch.id);
+    }
+    // The optional WIRE graph is authoritative only when the installed
+    // native callback explicitly advertises its additive v8 operation.
+    if(c.supportedOps.includes('APPLY_WIRE_TRANSACTION')){
+      if(!Array.isArray(g.edges)||decimal(g.mainChannelId)===null||
+         !ids.has(g.mainChannelId)||
+         !g.channels.some(ch=>ch.id===g.mainChannelId&&ch.role==='MAIN'))
+        return false;
+      const wireIds=new Set(),pairs=new Set();
+      for(const edge of g.edges){
+        if(!edge||decimal(edge.edgeId)===null||edge.edgeId==='0'||
+           decimal(edge.from)===null||decimal(edge.to)===null||
+           !ids.has(edge.from)||!ids.has(edge.to)||edge.from===g.mainChannelId||
+           edge.from===edge.to||wireIds.has(edge.edgeId)||
+           !['POST_FADER','PRE_FADER','PRE_FX'].includes(edge.tap)||
+           !Number.isFinite(edge.gainLinear)||edge.gainLinear<0||
+           edge.enabled!==true||edge.signalKind!=='AUDIO')
+          return false;
+        const pair=edge.from+':'+edge.to;
+        if(pairs.has(pair))return false;
+        pairs.add(pair);wireIds.add(edge.edgeId);
+      }
     }
     for(const ch of g.channels){
       if(ch.primaryOutId!==undefined&&ch.primaryOutId!==null){
@@ -889,7 +953,8 @@
     // Full snapshots remain authoritative; a telemetry-only message must
     // still pass the same epoch/graph/roster validation and ACK fences.
     const controlProjection=JSON.stringify([
-      s.graph.channels,s.graph.destinations,s.graph.capabilities,s.catalog||null]);
+      s.graph.channels,s.graph.destinations,s.graph.capabilities,
+      s.graph.mainChannelId||null,s.graph.edges||null,s.catalog||null]);
     const headerProjection=JSON.stringify([
       s.device.backend,s.device.sampleRate,s.device.bufferFrames,
       s.device.outputArmed,s.device.epoch,s.graph.revision,s.productionCallbackLive,!!fromNative]);
@@ -1685,6 +1750,12 @@
   if(!native){
     window.addEventListener('arMixV6Fixture',e=>receiveSnapshot(e.detail?.snapshot||e.detail,false));
   }
+  // GUI #271 physical plugs/Matrix use this capability-gated native
+  // adapter; it has no independent graph, timer, audio route or mock PCM.
+  window.__arMixNativeWire=Object.freeze({
+    readAccepted:acceptedWireGraph,
+    applyTransaction:applyNativeWireTransaction
+  });
   window.__arMixV6ReadOnly=()=>({
     nativePublisher:acceptedNative,revision:accepted?.graph?.revision??null,
     epoch:accepted?.device?.epoch??null,visibleChannelIds:[...byId.keys()],
