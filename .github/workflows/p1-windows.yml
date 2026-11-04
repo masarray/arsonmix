@@ -9,13 +9,10 @@ on:
       - 'integration/console-v6/**'
       - 'src/**'
       - 'engine/**'
-      - 'web/**'
-      - 'AR-MIX-Live-FX-Host-Standalone-v0.3.html'
-      - 'scripts/build_ui_css.py'
+      # Only the native WebView bridge can trigger Windows; pure GUI/CSS uses Chromium + Pages.
+      - 'web/bridge.js'
+      - 'web/monitor.js'
       - 'tests/*.cpp'
-      # Native Windows gate executes this JS integration contract; source-only
-      # contract corrections must not leave a stale failed release gate.
-      - 'tests/live_routing_ui_contract_test.mjs'
       - 'scripts/package_native_windows.ps1'
       - 'scripts/verify_native_windows_artifact.ps1'
       - 'scripts/factoryfx_release_bundle.py'
@@ -24,17 +21,19 @@ on:
       - 'scripts/tests/test_factoryfx_release_bundle.py'
       - '.github/workflows/p1-windows.yml'
   # GUI-only PRs receive browser checks; they need not compile JUCE on every edit.
-  # A merged GUI change is still packaged once on main, or manually for FAT.
+  # Native bridge changes still require Windows; pure visual GUI follows Pages only.
+  # A full executable/package is still produced on native main and explicit FAT.
   pull_request:
     paths:
       - 'CMakeLists.txt'
       - 'integration/console-v6/**'
       - 'src/**'
+      - 'web/bridge.js'
+      - 'web/monitor.js'
       - 'engine/**'
       - 'tests/*.cpp'
       - 'tests/*native*contract*.mjs'
       - 'tests/live_graph_contract_test.mjs'
-      - 'tests/ci_workflow_efficiency_test.mjs'
       - 'scripts/package_native_windows.ps1'
       - 'scripts/verify_native_windows_artifact.ps1'
       - 'scripts/factoryfx_release_bundle.py'
@@ -122,21 +121,25 @@ jobs:
       - name: Test realtime control primitives
         run: ctest --test-dir build -C Release --output-on-failure
       - name: Package verified JUCE GUI for hardware FAT
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.head_ref, 'integration/product-') || github.head_ref == 'milestone/m4-unified-native-multichannel-fx-20261101' }}
         shell: pwsh
         run: |
           & ./scripts/package_native_windows.ps1 -BuildDir build -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Stage ONLY legally approved and host-qualified Factory VST3 bundles
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.head_ref, 'integration/product-') || github.head_ref == 'milestone/m4-unified-native-multichannel-fx-20261101' }}
         shell: pwsh
         run: |
           python scripts/factoryfx_release_bundle.py stage --lock config/factoryfx-approved-releases.json --output dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Independently verify release ZIP and embedded GUI/engine before upload
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.head_ref, 'integration/product-') || github.head_ref == 'milestone/m4-unified-native-multichannel-fx-20261101' }}
         shell: pwsh
         run: |
           & ./scripts/verify_native_windows_artifact.ps1 -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      # PRs compile/CTest/package but never silently publish a stable build.
+      # Ordinary engine PRs compile/CTest without wasting package/ZIP work.
+      # Release-integration PRs and main/manual runs package and verify, but never silently publish a stable release.
       # This single M4 FAT branch is explicitly allowed to upload an
       # UNQUALIFIED experimental ZIP for real physical hardware testing.
       - uses: actions/upload-artifact@v4
