@@ -1566,6 +1566,9 @@ function renderWireRouting(){
  const selectedChannels=selection().filter(t=>t.kind!=='master');
  const source=dragging?wireSourceTrack(wireGesture.sourceId):
   (selectedChannels.length===1?selectedChannels[0]:null);
+ // Selected channel owns the drawn cables; explicitly armed OUT owns
+ // patch controls. The two must not fight over MAIN's pressed state.
+ const controlSource=focus||source;
  const legend=document.getElementById('wireLegend'),main=document.getElementById('wireMaster');
  if(legend){
   const filter=document.getElementById('viewFilter').value;
@@ -1575,7 +1578,7 @@ function renderWireRouting(){
   const markup=focus&&!sourceInBank?
    '<button type="button" class="wire-offbank-source" data-wire-jump-source="1" title="Return to '+escapeHtml(focus.name)+' without changing the patch source">FROM CH'+String(focus.id).padStart(2,'0')+' · '+escapeHtml(focus.name)+' ↶</button>'+
    '<span class="wire-offbank-instruction">Click any IN on this bank</span>':
-   source?wireLegendHtml(source,routes):'Select a channel for IN / OUT';
+   controlSource?wireLegendHtml(controlSource,routes):'Select a channel for IN / OUT';
   const picker=focus?'<span class="wire-patch-source" title="Pinned wire source">CH'+
     String(focus.id).padStart(2,'0')+' OUT →</span>'+
    '<select class="wire-dest-picker" data-wire-destination aria-label="Patch '+escapeHtml(focus.name)+' to any channel across all mixer banks" title="Patch to any bank: selecting a destination does not change mixer bank">'+
@@ -1591,15 +1594,15 @@ function renderWireRouting(){
   if(legend.innerHTML!==fullMarkup)legend.innerHTML=fullMarkup;
  }
  const configSource=document.getElementById('wireConfigSource');
- if(configSource)configSource.textContent=source?wireWsLabel(source.id)+' · '+(focus?'OUT armed':'selected channel'):'Select a channel or OUT jack to inspect routing';
+ if(configSource)configSource.textContent=controlSource?wireWsLabel(controlSource.id)+' · '+(focus?'OUT armed':'selected channel'):'Select a channel or OUT jack to inspect routing';
  if(main){
-  main.disabled=!source;
-  if(!source){main.textContent='MAIN';main.setAttribute('aria-pressed','false');}
+  main.disabled=!controlSource;
+  if(!controlSource){main.textContent='MAIN';main.setAttribute('aria-pressed','false');}
  }
- if(main&&source){
-  const direct=!!wireFor(source.id,master.id);
+ if(main&&controlSource){
+  const direct=!!wireFor(controlSource.id,master.id);
   main.textContent=direct?'MAIN ON':'MAIN OFF';main.setAttribute('aria-pressed',String(direct));
-  main.title='Direct source output: '+source.output+' · click to toggle Main only when currently mapped to Main or Source Only';
+  main.title='Direct source output: '+controlSource.output+' · click to toggle Main only when currently mapped to Main or Source Only';
  }
  if(!svg||!viewport)return;
  if(!source||document.querySelector('.console-body')?.classList.contains('collapsed-send')){
