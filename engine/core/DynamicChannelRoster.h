@@ -268,9 +268,18 @@ public:
                         result.fault=ChannelEditFault::invalidValue;break;
                     }
                     auto& edges=it->sends;
-                    edges.erase(std::remove_if(edges.begin(),edges.end(),
-                        [](const auto& x){return x.primaryOutput;}),edges.end());
-                    if(op.target.value) {
+                    const auto primary=std::find_if(edges.begin(),edges.end(),
+                        [](const auto& edge){return edge.primaryOutput;});
+                    if(!op.target.value) {
+                        if(primary!=edges.end())edges.erase(primary);
+                    } else if(primary!=edges.end()) {
+                        // Retarget the EXACT original physical cable; preserve
+                        // stable edgeId instead of removing/recreating it.
+                        primary->destination=op.target;
+                        primary->gain=1.f;
+                        primary->preFader=false;
+                        primary->pan=0.f;
+                    } else {
                         if(edges.size()>=budget_.maximumSendsPerChannel) {
                             result.fault=ChannelEditFault::budgetExceeded;break;
                         }

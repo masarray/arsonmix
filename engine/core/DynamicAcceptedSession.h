@@ -79,6 +79,15 @@ public:
                            DynamicNativeSessionPublisher::FxPlan fx={}) {
         Result result=preflight(expectedRosterRevision,expectedGraphRevision);
         if(!result.ok())return result;
+        // Validate the hardware generation BEFORE inspecting draft edge IDs.
+        // A stale request may reference an edge removed by a newer device
+        // epoch; return the stronger device fault without touching the graph.
+        if(!expectedDeviceEpoch || expectedDeviceEpoch!=activeDeviceEpoch) {
+            result.fault=Fault::graphRejected;
+            result.native.fault=DynamicNativeSessionPublisher::Fault::staleDevice;
+            result.native.revision=publisher_.acceptedRevision();
+            return result;
+        }
         auto candidate=accepted_;
         result.edit=candidate.wireTransaction(expectedRosterRevision,changes);
         if(!result.edit.ok()) {
@@ -260,6 +269,7 @@ private:
             result.native.fault=DynamicNativeSessionPublisher::Fault::invalidCandidate;
             result.native.revision=publisher_.acceptedRevision();
             result.edit.createdIds.clear();
+            result.edit.createdEdgeIds.clear();
             return result;
         }
         // A structural OUT/GROUP/Return edit does NOT implicitly change IN.
@@ -284,6 +294,7 @@ private:
                 result.native.graphError={DynamicGraphFault::invalidSource,source.id};
                 result.native.revision=publisher_.acceptedRevision();
                 result.edit.createdIds.clear();
+            result.edit.createdEdgeIds.clear();
                 return result; // old audible SOURCE and VST3 leases unchanged
             }
         }
@@ -294,7 +305,8 @@ private:
                                        std::move(fx));
         if(!result.native.ok()) {
             result.fault=Fault::graphRejected;
-            result.edit.createdIds.clear(); // NEVER advertise phantom Bus
+            result.edit.createdIds.clear();
+            result.edit.createdEdgeIds.clear(); // NEVER advertise phantom Bus
             return result; // candidate destroyed; accepted state intact
         }
         static_assert(std::is_nothrow_move_assignable_v<DynamicChannelRoster>);
