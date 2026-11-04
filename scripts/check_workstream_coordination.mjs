@@ -79,7 +79,7 @@ export function audit({pr, files, others = [], filesByPR = {}, fileStatuses = {}
   const owners = new Set([...changed].map(ownerOf).filter(Boolean));
   // Reject a NEW alternate mixer renderer; deleting its old archive is fine.
   for(const path of changed) {
-    if(/^web/console-native.(?:html|js|css)$/.test(path) &&
+    if(['web/console-native.html','web/console-native.js','web/console-native.css'].includes(path) &&
        fileStatuses[path] !== 'removed')
       errors.push('ALTERNATE GUI ' + path + ' is forbidden; only /preview/ is approved.');
   }
