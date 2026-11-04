@@ -43,6 +43,66 @@ const legacy=graph.migrateLegacy([{...channels[0],send:'CH2',sendOn:true,sendLev
  channels[1],channels[2]],9);
 assert.equal(legacy.ok,true);
 assert.equal(legacy.edges.filter(e=>e.sourceId===1&&e.destId===2).length,1);
+// Imported saved patches must never vanish because a renamed destination is
+// missing. No partial migration/ghost route is allowed on Scene recall.
+const badOutput=graph.migrateLegacy([{...channels[0],output:'Deleted Bus'},channels[1],channels[2]],9);
+assert.equal(badOutput.error,'UNRESOLVED_LEGACY_OUTPUT');
+const badSend=graph.migrateLegacy([{...channels[0],send:'Deleted Bus',sendOn:true,
+ sendSlots:[{send:'Deleted Bus',sendOn:true,sendLevel:-6}],activeSend:0},
+ channels[1],channels[2]],9);
+assert.equal(badSend.error,'UNRESOLVED_LEGACY_SEND');
+const badGain=graph.migrateLegacy([{...channels[0],send:'CH2',sendOn:true,
+ sendSlots:[{send:'CH2',sendOn:true,sendLevel:NaN}],activeSend:0,sendLevel:NaN},
+ channels[1],channels[2]],9);
+assert.equal(badGain.error,'INVALID_LEGACY_SEND_GAIN');
+const badSplit=graph.migrateLegacy([{...channels[0],input:'CH99 PRE-FX SPLIT'},channels[1],channels[2]],9);
+assert.equal(badSplit.error,'INVALID_EDGE');
+const unrecognizedSplit=graph.migrateLegacy([{...channels[0],input:'CH?? PRE-FX SPLIT'},channels[1],channels[2]],9);
+assert.equal(unrecognizedSplit.error,'UNRESOLVED_LEGACY_SPLIT');
+// A legacy migration is transactional: never silently drop duplicated slots,
+// unknown source indices, ambiguous names, or an older single live SEND.
+const duplicateLegacySend=graph.migrateLegacy([
+ {...channels[0],send:'CH2',sendOn:true,sendLevel:-6,activeSend:0,
+  sendSlots:[{send:'CH2',sendOn:true,sendLevel:-6},
+             {send:'CH2',sendOn:true,sendLevel:-12}]},
+ channels[1],channels[2]],9);
+assert.equal(duplicateLegacySend.error,'DUPLICATE_LEGACY_ROUTE');
+assert.equal(graph.migrateLegacy([{...channels[0],name:'CH2'},channels[1],channels[2]],9).error,
+ 'AMBIGUOUS_LEGACY_NAME');
+assert.equal(graph.migrateLegacy([{...channels[0],sendSlots:[null],activeSend:0},
+ channels[1],channels[2]],9).error,'INVALID_LEGACY_SEND_SLOT');
+assert.equal(graph.migrateLegacy([{...channels[0],sendSlots:[{}],activeSend:3},
+ channels[1],channels[2]],9).error,'INVALID_LEGACY_ACTIVE_SEND');
+assert.equal(graph.migrateLegacy([{...channels[0],input:'CH0 PRE-FX SPLIT'},
+ channels[1],channels[2]],9).error,'INVALID_LEGACY_ROUTE');
+const singleSlotLegacy=graph.migrateLegacy([{...channels[0],send:'CH2',sendOn:true,sendLevel:-9},
+ channels[1],channels[2]],9);
+assert.equal(singleSlotLegacy.ok,true,'legacy single live SEND must remain audible');
+assert.equal(singleSlotLegacy.edges.filter(e=>e.sourceId===1&&e.destId===2).length,1);
+const mixedDuplicate=graph.migrateLegacy(channels,9,[base.edges[0]],base.nextId);
+assert.equal(mixedDuplicate.error,'DUPLICATE_LEGACY_ROUTE');
+// Deterministic random edit sequences check that no rejected candidate
+// changes graph data and all accepted candidates remain acyclic.
+let seed=0x5eeda11;
+const rand=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed;};
+for(let sequence=0;sequence<32;sequence++){
+ let cur={channels,mainId:9,edges:base.edges.map(e=>({...e})),nextId:base.nextId};
+ for(let step=0;step<48;step++){
+  const src=1+(rand()%3),dst=[1,2,3,9][rand()%4];
+  const existing=cur.edges.filter(e=>e.sourceId===src);
+  const pick=existing.length?existing[rand()%existing.length]:null;
+  const op=pick&&(rand()%3===0)?{type:'REMOVE',sourceId:src,edgeId:pick.id}:
+   {type:'CONNECT',sourceId:src,destId:dst};
+  const oldJson=JSON.stringify(cur),result=graph.applyWireTransaction(cur,[op]);
+  assert.equal(JSON.stringify(cur),oldJson,'pure reducer must never mutate input');
+  if(result.ok){
+   cur={...cur,edges:result.edges,nextId:result.nextId};
+   assert.equal(graph.validateCandidateGraph(channels,9,cur.edges).ok,true);
+   assert.equal(new Set(cur.edges.map(e=>e.id)).size,cur.edges.length);
+   assert.equal(new Set(cur.edges.map(e=>e.sourceId+':'+e.destId)).size,cur.edges.length);
+  }
+ }
+}
 // Safety contract: every entry point (including Scenes and untrusted imports)
 // must fail closed for unknown kinds/taps, never silently create a SEND.
 const unknownKind={...state.edges[0],kind:'phantom'};

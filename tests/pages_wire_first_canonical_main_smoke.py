@@ -78,9 +78,91 @@ def physical_main_plug(page):
     page.locator("#wireWsUndo").click()
     assert source.get_attribute("data-wire-main-edge")==original,"Retarget Undo did not restore MAIN"
 
+
+def audit_visual_matrix(browser):
+    """Nine real Chromium renders: viewport, density, focus, collapse, plug."""
+    for width,height in ((1366,768),(1680,900),(1920,1080)):
+        for density in ("comfort","standard","compact"):
+            page=browser.new_page(viewport={"width":width,"height":height},
+                                  reduced_motion="reduce")
+            errors=[]
+            page.on("pageerror",lambda exc: errors.append(str(exc)))
+            page.goto(PAGE.as_uri())
+            page.locator("#densitySelect").select_option(density)
+            body=page.locator(".console-body")
+            # Narrow/Compact intentionally locks the WIRE bay folded to keep
+            # 23px physical geometry. It has graph-bound compact contacts,
+            # not a full cable overlay; the rail refuses expansion by design.
+            if density=="compact":
+                assert "collapsed-send" in (body.get_attribute("class") or "")
+                initial=edge(page,1,"out")
+                assert initial and page.locator(
+                    '#tracks .strip[data-id="1"] .wire-fold-summary'
+                ).get_attribute("data-wire-main-edge")==initial
+                assert page.locator(
+                    '#master .wire-fold-summary'
+                ).get_attribute("data-wire-main-edge")==initial
+                assert page.locator(".wire-main-fragment").count()==0
+                page.screenshot(path=str(PAGE.parents[2]/
+                    f"pages-wire-main-{width}x{height}-{density}.png"))
+                assert not errors,(width,height,density,errors)
+                page.close()
+                continue
+            if "collapsed-send" in (body.get_attribute("class") or ""):
+                page.locator('.section-rail [data-section="send"]').click()
+            pair=page.evaluate("""() => {
+              const src=document.querySelector('#tracks .strip[data-id="1"]');
+              const main=document.querySelector('#master');
+              const fragment=src?.querySelector('.wire-main-fragment');
+              const incoming=main?.querySelector('.wire-main-fragment');
+              const dot=src?.querySelector('.wire-node-out .wire-pin');
+              const jack=main?.querySelector('.wire-node-in .wire-arrow');
+              function position(svg,pin){
+                if(!svg||!pin)return null;
+                const r=svg.getBoundingClientRect(),p=pin.getBoundingClientRect();
+                const c=svg.querySelector('.wire-main-plug');
+                const x=Number(c?.getAttribute('cx')),y=Number(c?.getAttribute('cy'));
+                if(!Number.isFinite(x)||!Number.isFinite(y))return null;
+                return {error:Math.hypot(r.left+x-(p.left+p.width/2),
+                      r.top+y-(p.top+p.height/2)),
+                    bounded:x>0&&x<r.width&&y>0&&y<r.height,
+                    cubic:svg.querySelector('.wire-main-jacket')?.getAttribute('d')?.includes(' C'),
+                    width:r.width,height:r.height};
+              }
+              const strips=[...document.querySelectorAll('#tracks .strip')];
+              return {source:fragment?.dataset.edgeId,main:incoming?.dataset.edgeId,
+                connected:src?.querySelector('.wire-node-out')?.getAttribute('data-wire-main-edge'),
+                sourceGeometry:position(fragment,dot),mainGeometry:position(incoming,jack),
+                sources:strips.filter(x=>x.querySelector('.wire-node-out[data-wire-main-edge]')).length,
+                painted:strips.filter(x=>x.querySelector('.wire-main-fragment')).length};
+            }""")
+            assert pair["source"] and pair["source"]==pair["main"]==pair["connected"],(
+                width,height,density,"MAIN fragments do not share exact graph edge",pair)
+            assert pair["sources"]==pair["painted"],(
+                width,height,density,"one physical MAIN fragment per connected source",pair)
+            for side in ("sourceGeometry","mainGeometry"):
+                geom=pair[side]
+                assert geom and geom["bounded"] and geom["cubic"] and geom["error"]<=1.1,(
+                    width,height,density,side,"misaligned or clipped MAIN plug",geom)
+            # Selecting CH5 changes the MAIN plug edgeId, not other connections.
+            page.locator('#tracks .strip[data-id="5"] .strip-identity-top').click()
+            focused=page.locator('#master .wire-main-fragment').get_attribute("data-edge-id")
+            assert focused==edge(page,5,"out") and focused!=pair["source"],(
+                width,height,density,"focused MAIN edge selection")
+            page.locator('.section-rail [data-section="send"]').click()
+            assert page.locator('.wire-main-fragment').count()==0,(
+                width,height,density,"collapsed MAIN fragments not retired")
+            page.locator('.section-rail [data-section="send"]').click()
+            assert page.locator('#master .wire-main-fragment').get_attribute("data-edge-id")==focused
+            page.screenshot(path=str(PAGE.parents[2]/
+                f"pages-wire-main-{width}x{height}-{density}.png"))
+            assert not errors,(width,height,density,errors)
+            page.close()
+
 def run():
     with sync_playwright() as pw:
         browser=pw.chromium.launch(headless=True)
+        audit_visual_matrix(browser)
         for width in (1366,1680,1920):
             page=browser.new_page(viewport={"width":width,"height":900})
             errors=[]
@@ -95,6 +177,20 @@ def run():
             control=main_button(page,5)
             assert page.locator('#master .wire-node-in').get_attribute("data-wire-main-edge")==initial
             assert control.get_attribute("aria-pressed")=="true"
+            if "collapsed-send" in (page.locator(".console-body").get_attribute("class") or ""):
+                page.locator('.section-rail [data-section="send"]').click()
+            # One graph edge paints TWO measured local cubic cables, never a
+            # cross-bank line. Geometry and edge identity survive all widths.
+            source_stub=page.locator('#tracks .strip[data-id="5"] .wire-main-fragment')
+            main_stub=page.locator('#master .wire-main-fragment')
+            assert source_stub.count()==1 and main_stub.count()==1,(
+                width,"missing paired physical MAIN cables")
+            assert source_stub.get_attribute("data-edge-id")==initial
+            assert main_stub.get_attribute("data-edge-id")==initial
+            assert " C" in source_stub.locator(".wire-main-jacket").get_attribute("d")
+            assert " C" in main_stub.locator(".wire-main-jacket").get_attribute("d")
+            assert page.locator('#tracks .strip[data-id="6"] .wire-main-fragment').count()==1
+
             # Distinct disconnect is reversible and only affects this channel.
             control.click()
             assert edge(page,5,"out") is None,(width,"MAIN disconnect not real")
@@ -196,7 +292,7 @@ def run():
         assert edge(page,5,"out") is None,"Snapshot SAFE overwrote live MAIN route"
         page.close()
         browser.close()
-    print("PASS WIRE A: real Chrome MAIN edgeId, physical plug Escape/unplug/replug/Undo, cycle guard, Scene/SAFE, 3 widths")
+    print("PASS WIRE A: nine Chromium viewport/density cable audits plus exact-edge MAIN gesture, Scene/SAFE, Undo")
 
 if __name__=="__main__":
     run()

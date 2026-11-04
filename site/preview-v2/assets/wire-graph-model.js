@@ -141,21 +141,58 @@
   const edges=existingEdges.map(e=>({...e})),seen=new Set(edges.map(edgeKey));
   nextId=Math.max(nextId,1,...edges.map(e=>e.id+1));
   const names=new Map(channels.map(c=>[c.name,c.id]));
+  if(names.size!==channels.length)return {ok:false,error:'AMBIGUOUS_LEGACY_NAME'};
   const add=(src,dst,kind='send',mode='send',levelDb=0)=>{
-   if(!validId(src)||!validId(dst)||src===dst||seen.has(src+':'+dst))return;
-   seen.add(src+':'+dst);
+   if(!validId(src)||!validId(dst)||src===dst)return 'INVALID_LEGACY_ROUTE';
+   const key=src+':'+dst;
+   if(seen.has(key))return 'DUPLICATE_LEGACY_ROUTE';
+   seen.add(key);
    edges.push({id:nextId++,sourceId:src,destId:dst,kind,mode,levelDb,enabled:true});
+   return null;
+  };
+  const importSend=(t,slot)=>{
+   if(!slot||typeof slot!=='object')return 'INVALID_LEGACY_SEND_SLOT';
+   if(!slot.sendOn)return null;
+   if(!names.has(slot.send))return 'UNRESOLVED_LEGACY_SEND';
+   const gain=Number(slot.sendLevel);
+   if(!Number.isFinite(gain))return 'INVALID_LEGACY_SEND_GAIN';
+   return add(t.id,names.get(slot.send),'send','send',Math.max(-60,Math.min(6,gain)));
   };
   for(const t of channels){
-   const out=t.output==='Master'?mainId:names.get(t.output);
-   if(out)add(t.id,out,'primary',out===mainId?'postFader':'routeOnly');
-   if(Array.isArray(t.sendSlots))for(let i=0;i<t.sendSlots.length;i++){
-    const slot=i===t.activeSend?t:t.sendSlots[i];
-    if(slot.sendOn&&names.has(slot.send))add(t.id,names.get(slot.send),'send','send',
-     Math.max(-60,Math.min(6,Number(slot.sendLevel)||0)));
+   // A legacy patch that points to a deleted/renamed channel must not
+   // silently disappear on Show/Scene import. Fail before graph publication.
+   const output=String(t.output||'');
+   const out=output==='Master'?mainId:names.get(output);
+   if(!out&&output&&output!=='None'&&output!=='SOURCE ONLY (No Main)')
+    return {ok:false,error:'UNRESOLVED_LEGACY_OUTPUT'};
+   if(out){
+    const error=add(t.id,out,'primary',out===mainId?'postFader':'routeOnly');
+    if(error)return {ok:false,error};
    }
-   const split=/^CH(\d+) (PRE|POST)-FX SPLIT$/.exec(String(t.input||''));
-   if(split)add(Number(split[1]),t.id,'split',split[2]==='PRE'?'splitPre':'splitPost');
+   const slots=Array.isArray(t.sendSlots)?t.sendSlots:[];
+   if(slots.length){
+    const active=t.activeSend===undefined?0:t.activeSend;
+    if(!Number.isSafeInteger(active)||active<0||active>=slots.length)
+     return {ok:false,error:'INVALID_LEGACY_ACTIVE_SEND'};
+    for(let i=0;i<slots.length;i++){
+     // Even the currently selected slot must be structurally valid, although
+     // its live gain/target are projected from the channel fields.
+     if(!slots[i]||typeof slots[i]!=='object')
+      return {ok:false,error:'INVALID_LEGACY_SEND_SLOT'};
+     const error=importSend(t,i===active?t:slots[i]);
+     if(error)return {ok:false,error};
+    }
+   }else{
+    // Legacy saves may have one live SEND without the modern 16-slot array.
+    const error=importSend(t,t);
+    if(error)return {ok:false,error};
+   }
+   const input=String(t.input||'');
+   const split=/^CH(\d+) (PRE|POST)-FX SPLIT$/.exec(input);
+   if(split){
+    const error=add(Number(split[1]),t.id,'split',split[2]==='PRE'?'splitPre':'splitPost');
+    if(error)return {ok:false,error};
+   }else if(/\bSPLIT\b/i.test(input))return {ok:false,error:'UNRESOLVED_LEGACY_SPLIT'};
   }
   const valid=validateCandidateGraph(channels,mainId,edges);
   return valid.ok?{ok:true,edges,nextId}:valid;
