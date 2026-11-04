@@ -1459,6 +1459,75 @@ public:
             reply.error="NATIVE_SOURCE_PREPARE_FAILED";return reply;
         }
     }
+    // CONTROL-only primary OUT/WIRE transaction: stable ChannelId routing,
+    // native graph DAG validation and immutable PCM publication.
+    NativeBusResult setNativePrimaryOutput(std::uint64_t ep,
+            std::uint64_t expectedPcmRev,std::uint64_t expectedRosterRev,
+            armix::mixer::ChannelId src,armix::mixer::ChannelId dst,
+            bool outputsDisarmed=false) {
+        using namespace armix::mixer;
+        NativeBusResult r{};
+        r.pcmRevision=nativeAccepted_.pcmRevision;
+        r.rosterRevision=nativeAccepted_.graph.roster.revision();
+        if(!outputsDisarmed){r.error="OUTPUT_MUST_BE_DISARMED";return r;}
+        if(!nativeStructureLive_||!channelIdPhysicalPcmActive()||!ready()||
+           ep!=epoch()||nativeAccepted_.deviceEpoch!=ep||
+           !nativeAccepted_.fxOwners||
+           expectedPcmRev!=nativeAccepted_.pcmRevision||
+           expectedRosterRev!=nativeAccepted_.graph.roster.revision())return r;
+        const auto* source=nativeAccepted_.graph.roster.find(src);
+        const auto* target=nativeAccepted_.graph.roster.find(dst);
+        if(!source||(source->role!=ChannelRole::input&&
+                       source->role!=ChannelRole::group)||
+           (dst.value&&(!target||(target->role!=ChannelRole::main&&
+                                  target->role!=ChannelRole::group)))||src==dst){
+            r.error="INVALID_NATIVE_WIRE_ENDPOINT";return r;
+        }
+        for(const auto id:nativeAccepted_.graph.ids.inputs)
+            if(id==src){r.error="M4_INPUT_ROUTE_NOT_DYNAMIC";return r;}
+        if(originalM4Aux(src)){r.error="M4_AUX_ROUTE_NOT_DYNAMIC";return r;}
+        try {
+            auto roster=nativeAccepted_.graph.roster;
+            armix::mixer::ChannelEdit edit;
+            edit.kind=armix::mixer::ChannelEdit::Kind::setPrimaryOutput;
+            edit.id=src;edit.target=dst;
+            if(!roster.edit(expectedRosterRev,
+                           std::span<const armix::mixer::ChannelEdit>(&edit,1)).ok()){
+                r.error="NATIVE_WIRE_ROUTE_REJECTED";return r;
+            }
+            DynamicChannelFxLeaseBank nextBank;
+            if(DynamicChannelFxLeaseBank::reuseRevision(
+                   ep,expectedPcmRev+1,*nativeAccepted_.fxOwners,nextBank)!=
+                   DynamicChannelFxLeaseBank::Fault::none){
+                r.error="NATIVE_WIRE_FX_LEASE_REJECTED";return r;
+            }
+            auto owner=std::make_shared<DynamicChannelFxLeaseBank>(std::move(nextBank));
+            DynamicNativeSessionPublisher::FxPlan fx;
+            fx.owner=std::static_pointer_cast<void>(owner);
+            fx.context=owner.get();
+            fx.render=+[](void* ctx,ChannelId id,float* l,float* rr,int n) noexcept{
+                (*static_cast<DynamicChannelFxLeaseBank*>(ctx))(id,l,rr,n);
+            };
+            fx.deviceEpoch=ep;fx.graphRevision=expectedPcmRev+1;
+            const auto published=nativePublisher_.commit(
+                 roster,nativeAccepted_.graph.request,expectedPcmRev,
+                 ep,epoch(),true,std::move(fx));
+            if(!published.ok()){
+                r.error="NATIVE_WIRE_PCM_GRAPH_REJECTED";return r;
+            }
+            nativeAccepted_.graph.roster=std::move(roster);
+            nativeAccepted_.fxOwners=std::move(owner);
+            nativeAccepted_.pcmRevision=published.revision;
+            nativeMeterEpoch_.store(0,std::memory_order_release);
+            r.accepted=true;r.error="";
+            r.pcmRevision=published.revision;
+            r.rosterRevision=nativeAccepted_.graph.roster.revision();
+            return r;
+        }catch(...){
+            r.error="NATIVE_WIRE_PREPARE_FAILED";return r;
+        }
+    }
+
     // Live dynamic-input controls: one canonical ChannelId PCM callback,
     // no M4 ordinal alias, vendor reload or RT thread allocation.
     bool setNativeInputMix(std::uint64_t epochValue,std::uint64_t revision,
@@ -1530,6 +1599,7 @@ public:
         for(const char* op: {"NATIVE_CREATE_GROUP_SELECTED",
                              "NATIVE_REMOVE_BUS","NATIVE_SET_BUS_MIX",
                              "NATIVE_CREATE_CHANNEL","NATIVE_PATCH_CHANNEL",
+                             "NATIVE_SET_PRIMARY_OUT",
                              "NATIVE_SET_CHANNEL_MIX",
                              "NATIVE_SET_CHANNEL_MUTE_SOLO",
                              "NATIVE_LOAD_INSERT","NATIVE_SET_INSERT_BYPASS",

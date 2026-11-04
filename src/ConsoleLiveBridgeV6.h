@@ -680,6 +680,22 @@ public:
                     }
                 }
             }
+            else if(operation=="NATIVE_SET_PRIMARY_OUT") {
+                std::uint64_t source=0,dest=0;
+                if(!decodeDecimal(intent.getProperty("targetChannelId",{}),source)||
+                   !source||!decodeDecimal(payload.getProperty("destinationId",{}),dest))
+                    error="INVALID_NATIVE_WIRE_ENDPOINT";
+                else {
+                    const auto response=engine.setNativePrimaryOutput(
+                        requestedEpoch,nativeRev,rosterRev,
+                        armix::mixer::ChannelId{source},
+                        armix::mixer::ChannelId{dest});
+                    applied=response.accepted;
+                    if(!applied)error=response.error;
+                    else {nativeRev=response.pcmRevision;
+                          rosterRev=response.rosterRevision;}
+                }
+            }
             else if(operation=="NATIVE_SET_BUS_MIX") {
                 std::uint64_t target=0;
                 const auto rawGain=payload.getProperty("gain",juce::var());

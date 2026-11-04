@@ -1373,6 +1373,20 @@ public:
         return dryRoutingLab_.patchNativeInputSource(
             epoch,pcmRevision,rosterRevision,channel,left,right,stereo,true);
     }
+    LiveDryRoutingLab::NativeBusResult setNativePrimaryOutput(
+            std::uint64_t ep,std::uint64_t pcmRev,std::uint64_t rosterRev,
+            armix::mixer::ChannelId src,armix::mixer::ChannelId dst) {
+        LiveDryRoutingLab::NativeBusResult fail;
+        fail.error="HARDWARE_NOT_DISARMED";
+        if(independent_.active()||!attached_||!directFence_.permitted()||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal||
+           !allOutputsDisarmed()||handoff_.busy()||
+           fxMovePhase_.load(std::memory_order_acquire)!=0)return fail;
+        return dryRoutingLab_.setNativePrimaryOutput(
+            ep,pcmRev,rosterRev,src,dst,true);
+    }
     bool setNativeInputMix(std::uint64_t epoch,std::uint64_t rev,
                            armix::mixer::ChannelId id,float gain,float pan) noexcept {
         if(independent_.active()||!directFence_.permitted()||

@@ -138,12 +138,26 @@ function stereoSourceMarkup(row,attr){
    '<select class="route-select" aria-label="Stereo right input"'+attr('R')+'>'+portOptions('R')+'</select></div>';
 }
 function outputOptions(row){
- let opts=['<option value="MAIN">MAIN</option>'];
- for(const d of snapshot?.graph?.destinations||[])
-  if(d.role==='GROUP'||d.role==='MAIN')opts.push('<option value="'+esc(d.id)+'"'+
-  (row.out===d.id?' selected':'')+'>'+esc(d.name||d.id)+'</option>');
- return opts.join('');
+  if(row.nativeScoped){
+    // The only legal OUT sockets are real accepted Group/MAIN ChannelIds.
+    const channels=snapshot?.legacyM4?.nativeBus?.channels||[];
+    const disconnected=!row.out||row.out==='0';
+    const opts=['<option value="0"'+(disconnected?' selected':'')+'>DISCONNECTED</option>'];
+    for(const dest of channels){
+      if(!['MAIN','GROUP'].includes(dest.role)||String(dest.id)===row.id)continue;
+      const id=String(dest.id);
+      opts.push('<option value="'+esc(id)+'"'+(row.out===id?' selected':'')+'>'+
+                esc(dest.name||dest.role||id)+'</option>');
+    }
+    return opts.join('');
+  }
+  let opts=['<option value="MAIN">MAIN</option>'];
+  for(const d of snapshot?.graph?.destinations||[])
+    if(d.role==='GROUP'||d.role==='MAIN')opts.push('<option value="'+esc(d.id)+'"'+
+      (row.out===d.id?' selected':'')+'>'+esc(d.name||d.id)+'</option>');
+  return opts.join('');
 }
+
 function nativeStrip(r){
  const main=r.role==='MAIN',db=gain(r.controls.faderDb),pan=Number(r.controls.pan)||0;
  const can=op=>opAvailable(op)&&native&&
@@ -152,7 +166,8 @@ function nativeStrip(r){
    !(r.role==='FX_RETURN'&&['SET_FADER','SET_PAN','SET_MUTE','SET_SOLO'].includes(op))&&
    !(snapshot?.legacyM4?.nativeBus?.structural&&
      (op==='SET_PRIMARY_OUT'||op==='SET_PROCESSING_FORMAT'))&&
-   !(snapshot?.device?.outputArmed && op==='NATIVE_PATCH_CHANNEL');
+   !(snapshot?.device?.outputArmed &&
+      (op==='NATIVE_PATCH_CHANNEL'||op==='NATIVE_SET_PRIMARY_OUT'));
  const act=(op,attrs='')=>' data-op="'+op+'" data-id="'+esc(r.id)+'"'+attrs+
     (can(op)?'':' disabled title="Requires native accepted operation"');
  const role=main?'master':r.role==='GROUP'?'bus':r.role==='FX_RETURN'?'fx':'audio';
@@ -177,10 +192,8 @@ function nativeStrip(r){
        '<select class="route-select"'+act(r.nativeScoped?'NATIVE_PATCH_CHANNEL':'SET_SOURCE')+'>'+sourceOptions(r)+'</select>'):
      '<span class="route-identity">'+(main?'SUM':'BUS RECEIVE')+'</span>')+'</div>'+
    '<div class="route-field"><span class="route-caption">OUT</span>'+
-     (r.nativeScoped?'<span class="route-identity">'+esc(
-       snapshot?.legacyM4?.nativeBus?.channels?.find(x=>String(x.id)===r.out)?.name||r.out||'MAIN')+'</span>':
-     '<select class="route-select"'+act('SET_PRIMARY_OUT')+'>'+outputOptions(r)+'</select>')+
-     '</div></div>'+
+     '<select class="route-select"'+act(r.nativeScoped?'NATIVE_SET_PRIMARY_OUT':'SET_PRIMARY_OUT')+'>'+
+     outputOptions(r)+'</select></div></div>'+
    '<div class="section fx-section"><div class="fxslot-list">'+fx+
    '<button type="button" class="fxslot-add" data-open-native-fx="'+esc(r.id)+'"'+
    (r.nativeScoped&&['INPUT','GROUP'].includes(r.role)&&opAvailable('NATIVE_LOAD_INSERT')&&
@@ -299,6 +312,10 @@ function submitNode(n){
  else if(op==='SET_SOURCE')send(op,row,{portId:n.value,sourceFormat:'MONO'});
  else if(op==='SET_PROCESSING_FORMAT')send(op,row,{format:row.format==='MONO'?'STEREO':'MONO'});
  else if(op==='SET_PRIMARY_OUT')send(op,row,{destinationId:n.value});
+  else if(op==='NATIVE_SET_PRIMARY_OUT'){
+    if(snapshot?.device?.outputArmed){announce('MUTE OUTPUT before changing OUT wire',true);return;}
+    send(op,row,{destinationId:String(n.value)});
+  }
  else if(op==='NATIVE_SET_BUS_MIX')send(op,row,{
    gain:Math.pow(10,Math.max(-60,Math.min(10,Number(n.value)))/20),
    pan:(Number(row.controls.pan)||0)/100});
