@@ -30,7 +30,8 @@ def audit_checkpoint():
     assert "#263944" in css
     assert "1px 8px 9px -3px" in css and "0 13px 12px -7px" in css
     assert "linear-gradient(90deg," in css
-    assert "top:10px!important;bottom:10px!important" in css, "Pocket top/bottom must be inset"\n    assert "#247eaa" in css, "Soft cyan tail light must be preserved"
+    assert "top:10px!important;bottom:10px!important" in css, "Pocket top/bottom must be inset"
+    assert "#247eaa" in css, "Soft cyan tail light must be preserved"
 
 def inspect(page,width,height,density):
     page.locator("#densitySelect").select_option(density)
