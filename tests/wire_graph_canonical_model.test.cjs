@@ -59,6 +59,28 @@ const badSplit=graph.migrateLegacy([{...channels[0],input:'CH99 PRE-FX SPLIT'},c
 assert.equal(badSplit.error,'INVALID_EDGE');
 const unrecognizedSplit=graph.migrateLegacy([{...channels[0],input:'CH?? PRE-FX SPLIT'},channels[1],channels[2]],9);
 assert.equal(unrecognizedSplit.error,'UNRESOLVED_LEGACY_SPLIT');
+// A legacy migration is transactional: never silently drop duplicated slots,
+// unknown source indices, ambiguous names, or an older single live SEND.
+const duplicateLegacySend=graph.migrateLegacy([
+ {...channels[0],send:'CH2',sendOn:true,sendLevel:-6,activeSend:0,
+  sendSlots:[{send:'CH2',sendOn:true,sendLevel:-6},
+             {send:'CH2',sendOn:true,sendLevel:-12}]},
+ channels[1],channels[2]],9);
+assert.equal(duplicateLegacySend.error,'DUPLICATE_LEGACY_ROUTE');
+assert.equal(graph.migrateLegacy([{...channels[0],name:'CH2'},channels[1],channels[2]],9).error,
+ 'AMBIGUOUS_LEGACY_NAME');
+assert.equal(graph.migrateLegacy([{...channels[0],sendSlots:[null],activeSend:0},
+ channels[1],channels[2]],9).error,'INVALID_LEGACY_SEND_SLOT');
+assert.equal(graph.migrateLegacy([{...channels[0],sendSlots:[{}],activeSend:3},
+ channels[1],channels[2]],9).error,'INVALID_LEGACY_ACTIVE_SEND');
+assert.equal(graph.migrateLegacy([{...channels[0],input:'CH0 PRE-FX SPLIT'},
+ channels[1],channels[2]],9).error,'INVALID_LEGACY_ROUTE');
+const singleSlotLegacy=graph.migrateLegacy([{...channels[0],send:'CH2',sendOn:true,sendLevel:-9},
+ channels[1],channels[2]],9);
+assert.equal(singleSlotLegacy.ok,true,'legacy single live SEND must remain audible');
+assert.equal(singleSlotLegacy.edges.filter(e=>e.sourceId===1&&e.destId===2).length,1);
+const mixedDuplicate=graph.migrateLegacy(channels,9,[base.edges[0]],base.nextId);
+assert.equal(mixedDuplicate.error,'DUPLICATE_LEGACY_ROUTE');
 // Deterministic random edit sequences check that no rejected candidate
 // changes graph data and all accepted candidates remain acyclic.
 let seed=0x5eeda11;
