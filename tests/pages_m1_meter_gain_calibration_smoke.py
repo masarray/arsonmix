@@ -202,8 +202,8 @@ def main():
         published=dist/"preview/mixer.html"
         assert published.read_bytes()==CANON.read_bytes(),"Published mixer source drift"
         expected_ruler_keys={
-            "mixer-fader-assembly.css":"css-owner-v9-ruler-m3-left-70-v51-shadow",
-            "mixer-meter-display.css":"css-owner-v9-ruler-m3-left-70-v51-portrait-peakcell",
+            "mixer-fader-assembly.css":"css-owner-v27-fader-pruned",
+            "mixer-meter-display.css":"css-owner-v27-meter-pruned",
         }
         for name,key in expected_ruler_keys.items():
             assert f"assets/{name}?v={key}" in published.read_text("utf-8"),(

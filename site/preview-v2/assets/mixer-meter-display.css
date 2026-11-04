@@ -94,7 +94,7 @@
   border-radius:2px!important;
 }
 .console-body .strip .meter-box .meter-lane::after{
-  content:"";position:absolute;inset:0;z-index:3;pointer-events:none;
+  content:"";position:absolute;inset:0;
   background:linear-gradient(90deg,#eaffff28 0%,transparent 30%,transparent 73%,#0009 100%);
 }
 .console-body .strip .meter-box .vu-scale{color:#bfd4df!important;text-shadow:0 1px #000}
@@ -132,35 +132,26 @@
 .console-body .strip .meter-box.mono .meter-lane{
  box-sizing:border-box!important;
 
- border:0!important;border-radius:0!important;
- background:#07141a!important;
+ border:0!important;
+ 
  box-shadow:inset 1px 0 0 #20303a,inset -1px 0 0 #000!important;
 }
 .console-body .strip .meter-box .meter-fill{
- left:0!important;right:0!important;
- background:linear-gradient(to top,
-   #0e9f43 0%,#3bd849 24%,#7bef40 43%,
-   #c5e936 56%,#f6d42e 69%,#ffae27 80%,
-   #ff761e 91%,#ee3028 100%)!important;
+ 
+ 
  box-shadow:none!important;filter:none!important;
  transition:none!important;
 }
 /* Individual LED's own top-face/shadow shading has 9px portrait lit area,
    2px non-emitting separator; no per-cell colored blocks. */
 .console-body .strip .meter-box .meter-lane::before{
- content:""!important;
- background:repeating-linear-gradient(to top,
-   transparent 0px,transparent 9px,#020a0f 9px,#020a0f 11px)!important;
+ 
+ 
  box-shadow:none!important;
 }
 .console-body .strip .meter-box .meter-lane::after{
- content:""!important;
- background:
-   repeating-linear-gradient(to top,
-     rgba(255,255,255,.13) 0px,rgba(255,255,255,.05) 1px,
-     transparent 3px,transparent 6px,rgba(0,0,0,.28) 9px,
-     transparent 9px,transparent 11px),
-   linear-gradient(90deg,rgba(255,255,255,.13),transparent 55%,rgba(0,0,0,.28))!important;
+ 
+ 
  box-shadow:none!important;
 }
 

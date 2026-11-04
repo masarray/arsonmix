@@ -25,7 +25,7 @@
 .console-body .pan-icon{font-size:9px!important}
 .console-body .center-pan{height:40px!important;min-height:40px!important;max-height:40px!important;width:100%!important;appearance:none!important;-webkit-appearance:none!important;background:transparent!important;padding:0!important}
 .console-body .center-pan::-webkit-slider-runnable-track{height:5px!important;border:1px solid #0a1218!important;background:linear-gradient(to right,#0b151a 0%,#0b151a var(--pan-start),#42b5ca var(--pan-start),#42b5ca var(--pan-end),#0b151a var(--pan-end),#0b151a 100%)!important}
-.console-body .center-pan::-webkit-slider-thumb{-webkit-appearance:none!important;appearance:none!important;width:18px!important;height:40px!important;margin-top:-18px!important;border:0!important;border-radius:0!important;background:var(--ari-pan) center/18px 40px no-repeat!important;box-shadow:none!important}
+.console-body .center-pan::-webkit-slider-thumb{-webkit-appearance:none!important;appearance:none!important;width:18px!important;height:40px!important;border:0!important;border-radius:0!important;background:var(--ari-pan) center/18px 40px no-repeat!important;box-shadow:none!important}
 .console-body .center-pan::-moz-range-thumb{width:18px!important;height:40px!important;border:0!important;border-radius:0!important;background:var(--ari-pan) center/18px 40px no-repeat!important;box-shadow:none!important}
 .console-body .pan-control .center-pan{margin-top:3px!important}
 /* Keep the four visible FX rows ≥88px even while expanded SEND consumes space. */
