@@ -298,6 +298,10 @@ jobs:
           path: |
             pages-wire-main-1680.png
             pages-v51-portrait-meter-1680.png
+            pages-v56-fader-console-1366.png
+            pages-v56-fader-console-1680.png
+            pages-v56-fader-detail-1366.png
+            pages-v56-fader-detail-1680.png
             pages-v53-fx-rail-1366.png
             pages-v53-fx-rail-1378.png
             pages-v53-fx-rail-1680.png
