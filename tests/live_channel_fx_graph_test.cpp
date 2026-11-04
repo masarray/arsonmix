@@ -957,7 +957,7 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
         int liveMixes=0;
         int nativeInputCreates=0,nativeInputPatches=0;
         int nativeInputMixes=0,nativeInputToggles=0;
-        int nativeWireRoutes=0;
+        int nativeWireRoutes=0,nativeWireBatches=0;
         Report createNativeInputChannel(std::uint64_t ep,std::uint64_t pcm,
             std::uint64_t roster,const std::string& name,
             ProcessingFormat format){
@@ -996,6 +996,19 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
             assert(ep==9007199254740993ULL&&pcm==3&&roster==4);
             assert(src.value==20&&dst.value==18);
             ++nativeWireRoutes;return {true,{},4,5,""};
+        }
+        Report applyNativeWireTransaction(std::uint64_t ep,
+            std::uint64_t pcm,std::uint64_t roster,
+            std::span<const WireChange> changes) {
+            assert(ep==9007199254740993ULL&&pcm==3&&roster==4);
+            assert(changes.size()==2);
+            assert(changes[0].kind==WireChange::Kind::remove);
+            assert(changes[0].from.value==20&&changes[0].edgeId==77);
+            assert(changes[1].kind==WireChange::Kind::connect);
+            assert(changes[1].from.value==20&&changes[1].to.value==18);
+            assert(near(changes[1].gain,.5f));
+            ++nativeWireBatches;
+            return {true,{},4,5,""};
         }
         Report editNativeBus(std::uint64_t ep,std::uint64_t pcm,
                             std::uint64_t roster,ChannelRole role,
@@ -1109,6 +1122,52 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
     const auto wireAck=routeBusIntent(wireIntent);
     assert(wireAck.getProperty("status","").toString()=="ACCEPTED");
     assert(busControl.nativeWireRoutes==1);
+    // Same existing native bridge -> exact batch -> post-publication ACK.
+    // Legacy M4 revision remains separate; no false universal LIVE claim.
+    auto batch=makeBusIntent("native:wire:batch:1");
+    batch.getDynamicObject()->setProperty(
+        "operation","NATIVE_APPLY_WIRE_TRANSACTION");
+    juce::Array<juce::var> changes;
+    auto unplug=std::make_unique<juce::DynamicObject>();
+    unplug->setProperty("op","REMOVE");
+    unplug->setProperty("from","20");
+    unplug->setProperty("edgeId","77");
+    changes.add(juce::var(unplug.release()));
+    auto connect=std::make_unique<juce::DynamicObject>();
+    connect->setProperty("op","CONNECT");
+    connect->setProperty("from","20");
+    connect->setProperty("to","18");
+    connect->setProperty("tap","POST_FADER");
+    connect->setProperty("gainLinear",.5);
+    changes.add(juce::var(connect.release()));
+    auto transaction=std::make_unique<juce::DynamicObject>();
+    transaction->setProperty("changes",juce::var(changes));
+    batch.getDynamicObject()->setProperty(
+        "payload",juce::var(transaction.release()));
+    auto batchAck=routeBusIntent(batch);
+    assert(batchAck.getProperty("status","").toString()=="ACCEPTED");
+    assert(batchAck.getProperty("nativeGraphRevision","").toString()=="4");
+    assert(batchAck.getProperty("nativeRosterRevision","").toString()=="5");
+    assert(busControl.nativeWireBatches==1);
+    batchAck=routeBusIntent(batch);
+    assert(batchAck.getProperty("errorCode","").toString()=="DUPLICATE_REQUEST_ID");
+    assert(busControl.nativeWireBatches==1);
+    auto invalidBatch=makeBusIntent("native:wire:bad:2");
+    invalidBatch.getDynamicObject()->setProperty(
+        "operation","NATIVE_APPLY_WIRE_TRANSACTION");
+    auto malformed=std::make_unique<juce::DynamicObject>();
+    juce::Array<juce::var> badChanges;
+    auto bad=std::make_unique<juce::DynamicObject>();
+    bad->setProperty("op","REMOVE");bad->setProperty("from","020");
+    bad->setProperty("edgeId","77");
+    badChanges.add(juce::var(bad.release()));
+    malformed->setProperty("changes",juce::var(badChanges));
+    invalidBatch.getDynamicObject()->setProperty(
+        "payload",juce::var(malformed.release()));
+    batchAck=routeBusIntent(invalidBatch);
+    assert(batchAck.getProperty("status","").toString()=="REJECTED");
+    assert(batchAck.getProperty("errorCode","").toString()=="INVALID_NATIVE_WIRE_SOURCE");
+    assert(busControl.nativeWireBatches==1);
     auto liveMixIntent=makeBusIntent("native:mix:1");
     liveMixIntent.getDynamicObject()->setProperty(
         "operation","NATIVE_SET_BUS_MIX");

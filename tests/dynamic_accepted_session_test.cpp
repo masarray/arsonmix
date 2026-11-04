@@ -8,6 +8,7 @@
 #include <cassert>
 #include <cmath>
 #include <limits>
+#include <cstdio>
 #include <vector>
 
 using namespace armix::mixer;
@@ -200,7 +201,258 @@ static void verifyConsoleWirePrimaryOutputPcm() {
     session.pollRetirement();
 }
 
+
+// Native WIRE-first acceptance: exactly ONE immutable PCM graph owner.
+// Direct, nested and reconvergent paths process within the SAME sample block;
+// exact edgeId detach only affects its source, rejected DAG stays audible.
+static void verifyAtomicWireTransactionAndZeroSampleHops() {
+    constexpr std::uint64_t epoch=9909;
+    constexpr float center=.7071067811865475f;
+    DynamicAcceptedSession session;
+    DynamicGraphRequest physical;
+    physical.physicalInputs=1;physical.maxFrames=64;
+    const std::array<ChannelEdit,4> create{
+        add(0,ChannelRole::input,"INPUT"),
+        add(1,ChannelRole::input,"SUM 1",ProcessingFormat::stereo),
+        add(2,ChannelRole::input,"SUM 2",ProcessingFormat::stereo),
+        add(3,ChannelRole::main,"MAIN",ProcessingFormat::stereo)
+    };
+    auto a=session.edit(0,0,create,physical,epoch,epoch,true);
+    assert(a.ok() && a.edit.createdIds.size()==4);
+    const auto one=a.edit.createdIds[0],two=a.edit.createdIds[1];
+    const auto three=a.edit.createdIds[2],main=a.edit.createdIds[3];
+    physical.sources={{one,0,-1,false}};
+    auto connect=[](ChannelId from,ChannelId to,float gain=1.f) {
+        WireChange w;w.kind=WireChange::Kind::connect;w.from=from;
+        w.to=to;w.gain=gain;return w;
+    };
+    auto routeOnly=[](ChannelId from,ChannelId to) {
+        WireChange w;w.kind=WireChange::Kind::routeOnly;
+        w.from=from;w.to=to;return w;
+    };
+    auto remove=[](ChannelId from,std::uint64_t id) {
+        WireChange w;w.kind=WireChange::Kind::remove;
+        w.from=from;w.edgeId=id;return w;
+    };
+    const std::array<WireChange,3> initial{
+        connect(one,main),connect(two,main),connect(three,main)
+    };
+    a=session.wireTransaction(1,1,initial,physical,epoch,epoch,true);
+    assert(a.ok()&&a.graphRevision==2&&a.edit.createdEdgeIds.size()==3);
+    const auto* graph=session.acceptedRouting(epoch,2);
+    assert(graph&&graph->edges.size()==3);
+    const auto findEdge=[&](ChannelId from,ChannelId to,
+                            std::uint64_t revision){
+        const auto* current=session.acceptedRouting(epoch,revision);
+        assert(current);
+        const auto it=std::find_if(current->edges.begin(),current->edges.end(),
+            [&](const auto& edge){return edge.from==from && edge.to==to;});
+        return it==current->edges.end()?std::uint64_t{0}:it->edgeId;
+    };
+    const auto originalMain=findEdge(one,main,2);
+    const auto otherMain=findEdge(three,main,2);
+    assert(originalMain!=0 && otherMain!=0 && originalMain!=otherMain);
+    std::array<float,64> impulse{},left{},right{};
+    impulse[11]=.3f;
+    const float* inputs[]{impulse.data()};
+    const auto noFx=+[](ChannelId,float*,float*,int) noexcept {};
+    const auto render=[&]{
+        return session.render(epoch,inputs,1,left.data(),right.data(),64,
+                              false,noFx);
+    };
+    assert(render() && near(left[11],.3f*center));
+    for(int i=0;i<64;++i)
+        if(i!=11)assert(near(left[i],0.f));
+
+    const std::array<WireChange,1> hop1{routeOnly(one,two)};
+    a=session.wireTransaction(2,2,hop1,physical,epoch,epoch,false); // live PCM routing while armed
+    assert(a.ok() && a.graphRevision==3);
+    assert(!findEdge(one,main,3) && findEdge(one,two,3));
+    assert(render() && near(left[11],.3f*center));
+
+    const std::array<WireChange,1> hop2{routeOnly(two,three)};
+    a=session.wireTransaction(3,3,hop2,physical,epoch,epoch,true);
+    assert(a.ok() && a.graphRevision==4);
+    const auto chainId=findEdge(one,two,4);
+    assert(chainId && !findEdge(two,main,4));
+    assert(findEdge(three,main,4)==otherMain);
+    assert(render() && near(left[11],.3f*center));
+    for(int i=0;i<64;++i)
+        if(i!=11)assert(near(left[i],0.f));
+
+    // A second real path doubles PCM only by explicit legal fan-out.
+    const std::array<WireChange,1> parallel{connect(one,main)};
+    a=session.wireTransaction(4,4,parallel,physical,epoch,epoch,true);
+    assert(a.ok() && a.graphRevision==5);
+    const auto directId=findEdge(one,main,5);
+    assert(directId && directId!=originalMain);
+    assert(render() && near(left[11],2.f*.3f*center,1e-4f));
+    const std::array<WireChange,1> unplug{remove(one,directId)};
+    a=session.wireTransaction(5,5,unplug,physical,epoch,epoch,true);
+    assert(a.ok() && a.graphRevision==6);
+    assert(!findEdge(one,main,6) && findEdge(three,main,6)==otherMain);
+    assert(render() && near(left[11],.3f*center));
+
+    // Wrong edge identity cannot disconnect another source's MAIN.
+    const std::array<WireChange,1> wrongEdge{remove(one,otherMain)};
+    auto rejected=session.wireTransaction(6,6,wrongEdge,physical,epoch,epoch,true);
+    assert(rejected.fault==DynamicAcceptedSession::Fault::editRejected);
+    assert(session.acceptedGraphRevision()==6);
+    assert(render() && near(left[11],.3f*center));
+    const std::array<WireChange,1> duplicate{connect(one,two)};
+    rejected=session.wireTransaction(6,6,duplicate,physical,epoch,epoch,true);
+    assert(rejected.fault==DynamicAcceptedSession::Fault::editRejected);
+    assert(session.acceptedGraphRevision()==6);
+
+    // Mixed existing route cycle: whole native DAG compile must roll back.
+    const std::array<WireChange,1> feedback{connect(three,one)};
+    rejected=session.wireTransaction(6,6,feedback,physical,epoch,epoch,true);
+    if(rejected.fault!=DynamicAcceptedSession::Fault::graphRejected)
+        std::fprintf(stderr,"WIRE feedback rejection diagnostic: acceptedFault=%u rosterFault=%u nativeFault=%u graphFault=%u revision=%llu\\n",
+            static_cast<unsigned>(rejected.fault),
+            static_cast<unsigned>(rejected.edit.fault),
+            static_cast<unsigned>(rejected.native.fault),
+            static_cast<unsigned>(rejected.native.graphError.fault),
+            static_cast<unsigned long long>(rejected.graphRevision));
+    assert(rejected.fault==DynamicAcceptedSession::Fault::graphRejected);
+    assert(rejected.edit.createdEdgeIds.empty()); // no phantom rejected ID
+    assert(session.acceptedGraphRevision()==6);
+    assert(render() && near(left[11],.3f*center));
+    // Preserve output safety: the same WIRE edit with a changed hardware
+    // block budget is rejected BEFORE the native PCM graph is published.
+    DynamicGraphRequest changedPhysical=physical;
+    changedPhysical.maxFrames=128;
+    const std::array<WireChange,1> validTopology{connect(two,main)};
+    rejected=session.wireTransaction(6,6,validTopology,changedPhysical,
+                                     epoch,epoch,false);
+    assert(rejected.fault==DynamicAcceptedSession::Fault::graphRejected);
+    assert(rejected.native.fault==DynamicNativeSessionPublisher::Fault::outputArmed);
+    assert(rejected.edit.createdEdgeIds.empty());
+    assert(session.acceptedGraphRevision()==6);
+    assert(render() && near(left[11],.3f*center));
+    rejected=session.wireTransaction(5,5,unplug,physical,epoch,epoch,true);
+    assert(rejected.fault==DynamicAcceptedSession::Fault::staleRoster);
+    assert(session.acceptedGraphRevision()==6);
+    rejected=session.wireTransaction(6,6,unplug,physical,epoch+1,epoch,true);
+    assert(rejected.fault==DynamicAcceptedSession::Fault::graphRejected);
+    assert(rejected.native.fault==DynamicNativeSessionPublisher::Fault::staleDevice);
+    assert(rejected.edit.createdEdgeIds.empty());
+    // A genuinely valid edge must also reject the wrong epoch before
+    // publication, irrespective of the edit's own validity.
+    const std::array<WireChange,1> validButStale{connect(one,main)};
+    rejected=session.wireTransaction(6,6,validButStale,physical,epoch+1,epoch,true);
+    assert(rejected.fault==DynamicAcceptedSession::Fault::graphRejected);
+    assert(rejected.native.fault==DynamicNativeSessionPublisher::Fault::staleDevice);
+    assert(session.acceptedGraphRevision()==6);
+    assert(render() && near(left[11],.3f*center));
+
+    // RETARGET keeps identity and gain, not a new/ghost wire.
+    WireChange retarget;
+    retarget.kind=WireChange::Kind::retarget;
+    retarget.from=one;retarget.to=main;retarget.edgeId=chainId;
+    const std::array<WireChange,1> reroute{retarget};
+    a=session.wireTransaction(6,6,reroute,physical,epoch,epoch,true);
+    assert(a.ok() && a.graphRevision==7);
+    assert(findEdge(one,main,7)==chainId && !findEdge(one,two,7));
+    assert(render() && near(left[11],.3f*center));
+    session.unpublish();
+    session.pollRetirement();
+}
+
+
+// New native channel = exactly one CH->MAIN edge in ONE accepted revision,
+// even when MAIN appears later in the same initial transaction. Restoring
+// an intentionally disconnected older channel never auto-repairs its route.
+static void verifyDefaultNativeMainEdgeAndDisconnectedRestore() {
+    constexpr std::uint64_t epoch=9910;
+    DynamicAcceptedSession session;
+    DynamicGraphRequest physical;
+    physical.maxFrames=64;
+    auto source=add(0,ChannelRole::input,"NEW WIRE");
+    source.connectMainOnCreate=true;
+    const auto main=add(1,ChannelRole::main,"MAIN",ProcessingFormat::stereo);
+    const std::array<ChannelEdit,2> first{source,main};
+    auto a=session.edit(0,0,first,physical,epoch,epoch,true);
+    assert(a.ok() && a.edit.createdIds.size()==2);
+    const auto ch=a.edit.createdIds[0],master=a.edit.createdIds[1];
+    const auto* routing=session.acceptedRouting(epoch,1);
+    assert(routing && routing->edges.size()==1);
+    const auto id=routing->edges.front().edgeId;
+    assert(id && routing->edges.front().from==ch &&
+           routing->edges.front().to==master &&
+           routing->edges.front().primaryOutput &&
+           routing->edges.front().gainLinear==1.f);
+    WireChange unplug;unplug.kind=WireChange::Kind::remove;
+    unplug.from=ch;unplug.edgeId=id;
+    const std::array<WireChange,1> batch{unplug};
+    a=session.wireTransaction(1,1,batch,physical,epoch,epoch,true);
+    assert(a.ok() && a.graphRevision==2);
+    assert(session.acceptedRouting(epoch,2)->edges.empty());
+    auto newer=add(1,ChannelRole::input,"NEWER WIRE");
+    newer.connectMainOnCreate=true;
+    const std::array<ChannelEdit,1> append{newer};
+    a=session.edit(2,2,append,physical,epoch,epoch,true);
+    assert(a.ok() && a.edit.createdIds.size()==1);
+    routing=session.acceptedRouting(epoch,3);
+    assert(routing && routing->edges.size()==1);
+    assert(routing->edges.front().from==a.edit.createdIds.front());
+    assert(routing->edges.front().to==master);
+    assert(routing->edges.front().edgeId!=id);
+    session.unpublish();session.pollRetirement();
+}
+
+static void verifyPrimaryOutKeepsCanonicalEdgeIdentity() {
+    constexpr std::uint64_t epoch=9931;
+    DynamicAcceptedSession session;
+    DynamicGraphRequest physical;
+    physical.physicalInputs=1;physical.maxFrames=64;
+    const std::array<ChannelEdit,3> first{
+        add(0,ChannelRole::input,"SOURCE"),
+        add(1,ChannelRole::input,"INTERMEDIATE",ProcessingFormat::stereo),
+        add(2,ChannelRole::main,"MAIN",ProcessingFormat::stereo)
+    };
+    auto a=session.edit(0,0,first,physical,epoch,epoch,true);
+    assert(a.ok());
+    const auto src=a.edit.createdIds[0],via=a.edit.createdIds[1];
+    const auto main=a.edit.createdIds[2];
+    const std::array<ChannelEdit,2> initial{output(src,main),output(via,main)};
+    physical.sources={{src,0,-1,false}};
+    a=session.edit(1,1,initial,physical,epoch,epoch,true);
+    assert(a.ok());
+    const auto* accepted=session.acceptedRouting(epoch,2);
+    assert(accepted&&accepted->edges.size()==2);
+    const auto edgeId=accepted->edges[0].edgeId;
+    const auto viaId=accepted->edges[1].edgeId;
+    assert(edgeId!=0&&viaId!=0&&edgeId!=viaId);
+    std::array<float,64> impulse{},left{},right{};
+    impulse[19]=.25f;
+    const float* pins[]{impulse.data()};
+    const auto noFx=+[](ChannelId,float*,float*,int) noexcept {};
+    const auto render=[&] {
+        return session.render(epoch,pins,1,left.data(),right.data(),64,false,noFx);
+    };
+    assert(render() && near(left[19],.25f*.7071067811865475f));
+    const std::array<ChannelEdit,1> same{output(src,main)};
+    a=session.edit(2,2,same,physical,epoch,epoch,true);
+    assert(a.ok());
+    assert(session.acceptedRouting(epoch,3)->edges[0].edgeId==edgeId);
+    assert(render() && near(left[19],.25f*.7071067811865475f));
+    const std::array<ChannelEdit,1> retarget{output(src,via)};
+    a=session.edit(3,3,retarget,physical,epoch,epoch,true);
+    assert(a.ok());
+    accepted=session.acceptedRouting(epoch,4);
+    assert(accepted->edges[0].edgeId==edgeId);
+    assert(accepted->edges[0].to==via);
+    assert(accepted->edges[1].edgeId==viaId);
+    assert(render() && near(left[19],.25f*.7071067811865475f));
+    session.unpublish();
+    session.pollRetirement();
+}
+
 int main() {
+    verifyPrimaryOutKeepsCanonicalEdgeIdentity();
+    verifyDefaultNativeMainEdgeAndDisconnectedRestore();
+    verifyAtomicWireTransactionAndZeroSampleHops();
 
     // WIRE-first regression: PRE and POST to the SAME destination are
     // NOT two valid edges. Reject before accepting duplicate dry PCM.

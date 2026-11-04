@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -18,6 +19,13 @@ struct ConsoleSendView final {
     ChannelId destination{};
     float gain=1.f,pan=0.f;
     bool preFader=false;
+    std::uint64_t edgeId=0;
+};
+struct ConsoleEdgeView final {
+    std::uint64_t edgeId=0;
+    ChannelId from{},to{};
+    float gainLinear=1.f;
+    bool preFader=false,primaryOutput=false;
 };
 struct ConsoleChannelView final {
     ChannelId id{};
@@ -40,6 +48,7 @@ class DynamicConsoleRoutingView final {
 public:
     std::uint64_t rosterRevision=0;
     std::vector<ConsoleChannelView> channels;
+    std::vector<ConsoleEdgeView> edges; // exact native accepted graph, NOT a second graph
     ChannelId main{},monitor{};
     const ConsoleChannelView* find(ChannelId id) const noexcept {
         const auto it=std::find_if(channels.begin(),channels.end(),
@@ -73,11 +82,15 @@ public:
             next.channels.push_back(std::move(item));
         }
         if(!next.main.value)return false;
+        std::unordered_set<std::uint64_t> acceptedEdgeIds;
         for(std::size_t i=0;i<rows.size();++i) {
             auto& sender=next.channels[i];
             for(const auto& link:rows[i].sends) {
                 const auto it=index.find(link.destination.value);
-                if(it==index.end())return false;
+                if(it==index.end() || !link.edgeId ||
+                   !acceptedEdgeIds.insert(link.edgeId).second)return false;
+                next.edges.push_back({link.edgeId,sender.id,link.destination,
+                    link.gain,link.preFader,link.primaryOutput});
                 auto& destination=next.channels[it->second];
                 if(link.primaryOutput) {
                     if(sender.primaryOutput.value || link.preFader ||
@@ -87,7 +100,7 @@ public:
                     destination.primarySources.push_back(sender.id);
                 } else {
                     sender.parallelSends.push_back(
-                        {link.destination,link.gain,link.pan,link.preFader});
+                        {link.destination,link.gain,link.pan,link.preFader,link.edgeId});
                     // One source shown once in the Bus fan-in even if it has
                     // multiple legal taps to that destination.
                     if(std::find(destination.parallelSendSources.begin(),

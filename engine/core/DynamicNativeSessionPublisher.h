@@ -68,7 +68,7 @@ public:
                         std::uint64_t proposedDeviceEpoch,
                         std::uint64_t activeDeviceEpoch,
                         bool allOutputsDisarmed,
-                        FxPlan fx={}) {
+                        FxPlan fx={},bool verifiedInternalWireOnly=false) {
         CommitResult report;report.revision=publisher_.lastRevision();
         if(!fx.valid() ||
            (fx.owner && (fx.deviceEpoch!=proposedDeviceEpoch ||
@@ -83,7 +83,9 @@ public:
            expectedRevision==std::numeric_limits<std::uint64_t>::max()) {
             report.fault=Fault::staleRevision;return report;
         }
-        if(!allOutputsDisarmed) {
+        // Only the canonical native WIRE owner may attest unchanged
+        // physical patch / device epoch. Other structural edits disarm.
+        if(!allOutputsDisarmed && !verifiedInternalWireOnly) {
             report.fault=Fault::outputArmed;return report;
         }
         auto next=std::make_unique<Publisher::Snapshot>();
