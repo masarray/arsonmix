@@ -55,6 +55,9 @@ def run():
             errors = []
             page.on("pageerror", lambda exc: errors.append(str(exc)))
             page.goto(PAGE.as_uri())
+            # At narrow viewport an auto-chosen compact density forbids rail
+            # disclosure. Enter explicit Comfort before testing the rail UI.
+            page.locator("#densitySelect").select_option("comfort")
             body = page.locator(".console-body")
             # MAIN is a graph edge, NOT a permanent visual wire. Folded
             # source/MAIN summaries must never draw physical wire fragments.
@@ -62,7 +65,9 @@ def run():
             # the operator's collapse action instead of assuming a preset.
             if "collapsed-send" not in (body.get_attribute("class") or ""):
                 page.locator('.section-rail [data-section="send"]').click()
-            assert "collapsed-send" in (body.get_attribute("class") or ""), width
+            assert "collapsed-send" in (body.get_attribute("class") or ""), (
+                width,"SEND collapse control did not fold",body.get_attribute("class"),
+                page.locator("#info").inner_text())
             for ch in (1, 5, 6):
                 folded = page.locator(f'#tracks .strip[data-id="{ch}"] .wire-fold-summary')
                 assert folded.get_attribute("data-wire-main-edge") is None, (width, ch, "ghost MAIN edge")
