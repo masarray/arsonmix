@@ -2041,10 +2041,15 @@ consoleBody.addEventListener('pointerdown',ev=>{
  const receiver=socket?findTrack(socket):null;
  const activeSource=armedWireSource();
  const selectedSources=selection().filter(t=>t.kind!=='master');
- const mainFocus=activeSource||(selectedSources.length===1?selectedSources[0]:null);
+ // MAIN has N summed incoming edges; the physical jack presents exactly ONE
+ // focused edgeId. Resolve that committed identity before pointer capture,
+ // rather than depending on selection timing or any hidden primary OUT field.
+ const mainEdgeId=receiver?.kind==='master'?
+  Number(socket.getAttribute('data-wire-main-edge')):null;
+ const focusedMainEdge=Number.isSafeInteger(mainEdgeId)&&mainEdgeId>0?
+  wireEdges.find(e=>e.enabled&&e.id===mainEdgeId&&e.destId===master.id):null;
  const incoming=receiver?(receiver.kind==='master'?
-  (mainFocus?[wireFor(mainFocus.id,master.id)].filter(Boolean):[]):
-  incomingWireEdges(receiver.id)):[];
+  (focusedMainEdge?[focusedMainEdge]:[]):incomingWireEdges(receiver.id)):[];
  const existing=incoming.find(e=>e.id===selectedWireEdgeId)||
   (incoming.length===1?incoming[0]:
    (activeSource&&receiver?wireFor(activeSource.id,receiver.id):null));
