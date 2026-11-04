@@ -4,73 +4,17 @@
   "wire": {
     "uint64": "canonical decimal string, compare as BigInt in JS",
     "requestId": "unique WebView session prefix plus monotonically increasing local token",
-    "events": [
-      "arMixConsoleSubscribe",
-      "arMixConsoleSnapshot",
-      "arMixConsoleIntent",
-      "arMixConsoleAck"
-    ]
+    "events": ["arMixConsoleSubscribe", "arMixConsoleSnapshot", "arMixConsoleIntent", "arMixConsoleAck"]
   },
   "requiredSnapshotFields": {
-    "root": [
-      "schemaVersion",
-      "productionCallbackLive",
-      "device",
-      "graph",
-      "telemetry"
-    ],
-    "device": [
-      "epoch",
-      "backend",
-      "captureDevice",
-      "playbackDevice",
-      "inputEndpoints",
-      "outputEndpoints",
-      "enabledInputs",
-      "enabledOutputs",
-      "sampleRate",
-      "bufferFrames",
-      "outputArmed"
-    ],
-    "graph": [
-      "revision",
-      "rosterRevision",
-      "channels",
-      "destinations",
-      "capabilities"
-    ],
-    "capabilities": [
-      "callbackOwnsChannelIds",
-      "supportedOps",
-      "dynamicChannels",
-      "groups",
-      "fxReturns",
-      "monitor"
-    ],
-    "telemetry": [
-      "rawCapturePresent",
-      "rawCapturePeak",
-      "mainPcmPresent",
-      "monitorPcmPresent"
-    ]
+    "root": ["schemaVersion", "productionCallbackLive", "device", "graph", "telemetry"],
+    "device": ["epoch", "backend", "captureDevice", "playbackDevice", "inputEndpoints", "outputEndpoints", "enabledInputs", "enabledOutputs", "sampleRate", "bufferFrames", "outputArmed"],
+    "graph": ["revision", "rosterRevision", "channels", "destinations", "capabilities"],
+    "capabilities": ["callbackOwnsChannelIds", "supportedOps", "dynamicChannels", "groups", "fxReturns", "monitor"],
+    "telemetry": ["rawCapturePresent", "rawCapturePeak", "mainPcmPresent", "monitorPcmPresent"]
   },
-  "intentRequired": [
-    "requestId",
-    "deviceEpoch",
-    "baseGraphRevision",
-    "baseRosterRevision",
-    "operation",
-    "targetChannelId",
-    "payload"
-  ],
-  "ackRequired": [
-    "requestId",
-    "status",
-    "deviceEpoch",
-    "graphRevision",
-    "rosterRevision",
-    "errorCode"
-  ],
+  "intentRequired": ["requestId", "deviceEpoch", "baseGraphRevision", "baseRosterRevision", "operation", "targetChannelId", "payload"],
+  "ackRequired": ["requestId", "status", "deviceEpoch", "graphRevision", "rosterRevision", "errorCode"],
   "integratedJourneys": [
     "one verified pin -> CH07 MONO -> native MAIN with RAW/MAIN PCM",
     "two independently verified pins -> CH07 and CH02 -> independent native VST3",
@@ -83,30 +27,9 @@
     "status": "additive conditional wire graph contract; reference GUI alone is simulation",
     "operation": "APPLY_WIRE_TRANSACTION",
     "requiredNativeReadback": {
-      "graph": [
-        "mainChannelId",
-        "channels",
-        "edges",
-        "revision",
-        "rosterRevision"
-      ],
-      "channel": [
-        "id",
-        "role",
-        "name",
-        "processingFormat",
-        "inserts",
-        "sends"
-      ],
-      "edge": [
-        "edgeId",
-        "from",
-        "to",
-        "tap",
-        "gainLinear",
-        "enabled",
-        "signalKind"
-      ],
+      "graph": ["mainChannelId","channels","edges","revision","rosterRevision"],
+      "channel": ["id","role","name","processingFormat","inserts","sends"],
+      "edge": ["edgeId","from","to","tap","gainLinear","enabled","signalKind"],
       "ids": "canonical decimal uint64 strings, never Number",
       "signalKind": "AUDIO"
     },
