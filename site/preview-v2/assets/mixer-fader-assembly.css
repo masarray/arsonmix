@@ -409,9 +409,10 @@
 .console-body[data-density="standard"] .strip .fader-box::before{width:calc(100% - 2px)!important}
 .console-body[data-density="standard"] .strip .fader-scale{width:28px!important;min-width:28px!important}
 
-/* V52: static lower grounding under approved silver/rose original PNG,
-   no filter, no compositing animation, no per-frame work. */
+/* V52.1: three bounded, static shadows create a raised mechanical cap:
+   close contact + soft offset body + lower ambient falloff. Preserve the
+   approved PNG alpha/dimensions and avoid costly GPU filter/compositing. */
 .console-body .strip .fader-travel .cap{
- box-shadow:0 3px 3px -1px #000d,0 7px 5px -3px #000a!important;
+ box-shadow:0 3px 4px -1px #000e,1px 8px 9px -3px #000c,0 13px 12px -7px #0009!important;
  filter:none!important;
 }
