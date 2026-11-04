@@ -13,7 +13,7 @@
   const uiByNativeId = new Map();       // EXACT uint64 string -> local view-only ordinal
   const wireByUiId = new Map();         // view-only EdgeId -> EXACT decimal-string native EdgeId
   const uiByWireId = new Map();
-  let lastPaintedIdentity = "", lastNativeError = "NATIVE_NOT_SUBSCRIBED";
+  let lastPaintedSignature = "", lastNativeError = "NATIVE_NOT_SUBSCRIBED";
   let controller = null;
   const status = message => {
     lastNativeError = message;
@@ -34,6 +34,10 @@
   };
   const nativeIdFor = t => nativeByUiId.get(t?.id) || null;
   const intent = (operation,t,payload) => {
+    if (!flags.acceptedGraphConnected) {
+      status("NATIVE: accepted graph not projected; control unchanged");
+      return false;
+    }
     const id = nativeIdFor(t);
     const result = controller?.intent(operation,id,payload) || {ok:false,error:"NATIVE_UNAVAILABLE"};
     if (!result.ok) status("NATIVE: "+result.error+" — controls unchanged");
@@ -122,14 +126,18 @@
       status("NATIVE G0 · perangkat aktual terbaca; ChannelId PCM/WIRE belum diterima. Edit audio diblokir.");
       return;
     }
-    if (next.identity===lastPaintedIdentity)return;
+    // Control readback may change at the SAME structural graph revision.
+    // Compare the actual accepted controls/edges, never skip native fader updates.
+    const signature=next.identity+"|"+JSON.stringify(next.graph.channels.map(ch=>[
+      ch.id,ch.controls,ch.inserts,ch.primaryOutId]))+"|"+JSON.stringify(next.graph.edges);
+    if (signature===lastPaintedSignature)return;
     if (!projection(next)) {
       flags.acceptedGraphConnected=false;flags.productionCallbackLive=false;
       stopDemo();status("NATIVE READBACK INVALID · existing GUI controls unchanged");
       return;
     }
     flags.productionCallbackLive=true;flags.acceptedGraphConnected=true;
-    lastPaintedIdentity=next.identity;stopDemo();
+    lastPaintedSignature=signature;stopDemo();
     status("NATIVE ACCEPTED · device "+next.device.epoch+
       " · graph "+next.graph.revision+" · roster "+next.graph.rosterRevision);
   }
@@ -157,6 +165,12 @@
       if (!field)return false;
       const t=typeof findTrack==="function"?findTrack(el):null;
       if (!t)return true;
+      if (!flags.acceptedGraphConnected) {
+        if (field==="level")el.value=String(t.level);
+        else if (field==="pan")el.value=String(t.pan);
+        status("NATIVE: ChannelId PCM not admitted; control unchanged");
+        return true;
+      }
       if (event.type!=="change") return true; // no optimistic input-frame mutations
       const numeric=Number(el.value);
       if (field==="level"&&Number.isFinite(numeric))
@@ -180,7 +194,8 @@
     consumeWire(ops) {
       if (!connected)return false;
       const current=controller?.state().current;
-      if (!current?.admitted || !current.graph.capabilities.supportedOps.includes("APPLY_WIRE_TRANSACTION")) {
+      if (!flags.acceptedGraphConnected || !current?.admitted ||
+          !current.graph.capabilities.supportedOps.includes("APPLY_WIRE_TRANSACTION")) {
         status("NATIVE: WIRE transaction not admitted; graph unchanged");return true;
       }
       const changes=[];
@@ -225,6 +240,14 @@
     value:descriptor,configurable:false,writable:false
   });
   if (!connected)return;
+  // Disable physical control gestures while G0 has no accepted ChannelId graph.
+  // Presentation-only bank/selection remains available.
+  document.addEventListener("pointerdown",event=>{
+    if (flags.acceptedGraphConnected) return;
+    if (!event.target.closest?.(".fader-box,.center-pan")) return;
+    event.preventDefault();event.stopImmediatePropagation();
+    status("NATIVE G0: physical gain/pan unavailable until engine graph admission");
+  },true);
   // Reference-only buttons outside strips must not mutate fake Show/FX state.
   document.addEventListener("click",event=>{
     const target=event.target.closest?.(
