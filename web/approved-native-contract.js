@@ -127,9 +127,39 @@
       if (edit.op==="REMOVE")
         return decimal(edit.edgeId)!==null &&
           !edges.some(e=>e.edgeId===edit.edgeId);
-      if (edit.op==="CONNECT" || edit.op==="ROUTE_ONLY")
-        return decimal(edit.to)!==null &&
-          edges.some(e=>e.from===edit.from&&e.to===edit.to);
+      if (edit.op==="CONNECT" || edit.op==="ROUTE_ONLY") {
+        if (decimal(edit.to)===null) return false;
+        // A cable painted at the requested destination is not proof that
+        // the actual native tap/gain was accepted. Verify readback whenever
+        // the request names those fields; older v6 CONNECT still works.
+        const matching=edges.filter(e=>e.from===edit.from&&e.to===edit.to);
+        const effect=matching.some(e=>{
+          if (edit.tap!==undefined &&
+              e.tap!==edit.tap &&
+              !(edit.tap==="POST_FADER"&&e.tap==="POST") &&
+              !(edit.tap==="PRE_FADER"&&e.tap==="PRE"))
+            return false;
+          if (edit.gainLinear!==undefined &&
+              (!Number.isFinite(edit.gainLinear) ||
+               !Number.isFinite(e.gainLinear) ||
+               Math.abs(edit.gainLinear-e.gainLinear)>0.0001))
+            return false;
+          return edit.op!=="ROUTE_ONLY" || e.primaryOutput===true;
+        });
+        if (!effect) return false;
+        if (edit.op==="ROUTE_ONLY") {
+          // Route Only must REMOVE the previous primary dry path. An ACK
+          // with both new BUS and original MAIN remains double-dry even
+          // when the graph revision advanced.
+          if (ch.primaryOutId!==edit.to) return false;
+          if (edges.some(e=>e.from===edit.from&&e.primaryOutput===true&&e.to!==edit.to))
+            return false;
+          if (edit.to!==next.graph.mainChannelId &&
+              edges.some(e=>e.from===edit.from&&e.to===next.graph.mainChannelId))
+            return false;
+        }
+        return true;
+      }
       if (edit.op==="RETARGET")
         return decimal(edit.edgeId)!==null && decimal(edit.to)!==null &&
           edges.some(e=>e.edgeId===edit.edgeId&&e.from===edit.from&&e.to===edit.to);
