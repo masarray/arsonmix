@@ -48,7 +48,7 @@ test('JUCE embeds only generated approved Pages DOM, CSS, JS, and PNG button var
   assert.match(nativeMain,/withResourceProvider \(assetFor\)/);
   assert.match(generator,/approvedPagesHtmlSha256/);
   assert.match(generator,/authoritativePagesOutput/);
-  assert.match(generator,/mute-solo-pfl-56x37\.png/);
+  assert.match(read('scripts/build_pages.py'),/mute-solo-pfl-56x37\.png/);
 });
 
 test('independent release gate rejects old self-consistent web hash artifact',()=>{
