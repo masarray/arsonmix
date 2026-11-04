@@ -56,6 +56,106 @@ test("strict producer rejects JS Number identities, invalid hardware pins and fa
  assert.equal(protocol.normalizeSnapshot(s).admitted,true);
  assert.equal(s.graph.channels[0].id,"9007199254740993");
 });
+test("real ChannelId PCM graph is usable before product/vendor FAT, without fake LIVE",()=>{
+ const staged=acceptedFixture();
+ staged.productionCallbackLive=false;
+ const parsed=protocol.normalizeSnapshot(staged);
+ assert.ok(parsed);
+ assert.equal(parsed.admitted,true,"native callback admission is independent of product FAT");
+ assert.equal(parsed.productLive,false,"staged graph NEVER claims full product LIVE");
+ const shipped=acceptedFixture();
+ assert.equal(protocol.normalizeSnapshot(shipped).productLive,true);
+ const lying=acceptedFixture();
+ lying.graph.capabilities.callbackOwnsChannelIds=false;
+ assert.equal(protocol.normalizeSnapshot(lying),null,
+   "product LIVE cannot be claimed without an installed ChannelId PCM callback");
+ const fake=acceptedFixture();
+ fake.graph.channels[0].controls=undefined;
+ assert.equal(protocol.normalizeSnapshot(fake),null,
+   "missing native fader/mute/solo readback cannot be papered over in JS");
+});
+
+test("ACCEPTED ACK without matching physical control readback is rejected, not painted",()=>{
+ const sent=[],visible=[];
+ const c=protocol.createController({emit:(name,payload)=>sent.push({name,payload}),
+   onAccepted:x=>visible.push(x.graph.channels[0].controls.faderDb)});
+ const staged=acceptedFixture();staged.productionCallbackLive=false;
+ assert.equal(c.onSnapshot(staged),true);
+ const i=c.intent("SET_FADER","9007199254740993",{valueDb:-23});
+ assert.equal(i.ok,true);
+ assert.equal(c.onAck({requestId:i.requestId,status:"ACCEPTED",
+   deviceEpoch:staged.device.epoch,graphRevision:"6",rosterRevision:"7",
+   errorCode:"NONE"}),true);
+ const lied=clone(staged);
+ lied.graph.revision="6"; // claimed graph revision, but fader still -6 dB
+ assert.equal(c.onSnapshot(lied),false);
+ assert.equal(c.state().current.graph.revision,"5");
+ assert.deepEqual(visible,[-6]);
+ assert.equal(c.state().pending,null);
+ assert.equal(c.state().lastError,"ACK_READBACK_EFFECT_MISMATCH");
+ assert.equal(sent.at(-1).name,"arMixConsoleSubscribe");
+});
+
+test("staged PCM PAN/MUTE checks real native controls and rejects wrong readback",()=>{
+ const s=acceptedFixture();s.productionCallbackLive=false;
+ const c=protocol.createController({emit:()=>{}});
+ c.onSnapshot(s);
+ const pan=c.intent("SET_PAN","9007199254740993",{value:0.5});
+ assert.equal(pan.ok,false,"never advertise an uninstalled operation");
+ s.graph.capabilities.supportedOps.push("SET_PAN");
+ const d=protocol.createController({emit:()=>{}});
+ d.onSnapshot(s);
+ const p=d.intent("SET_PAN","9007199254740993",{value:0.5});
+ assert.equal(p.ok,true);
+ assert.equal(d.onAck({requestId:p.requestId,status:"ACCEPTED",
+   deviceEpoch:s.device.epoch,graphRevision:"5",rosterRevision:"7",errorCode:"NONE"}),true);
+ const updated=clone(s);updated.graph.channels[0].controls.pan=0.5;
+ assert.equal(d.onSnapshot(updated),true);
+ assert.equal(d.state().current.graph.channels[0].controls.pan,0.5);
+ const m=d.intent("SET_MUTE","9007199254740993",{value:true});
+ assert.equal(m.ok,true);
+ assert.equal(d.onAck({requestId:m.requestId,status:"ACCEPTED",
+   deviceEpoch:s.device.epoch,graphRevision:"5",rosterRevision:"7",errorCode:"NONE"}),true);
+ const mute=clone(updated);mute.graph.channels[0].controls.mute=true;
+ assert.equal(d.onSnapshot(mute),true);
+ assert.equal(d.state().current.graph.channels[0].controls.mute,true);
+});
+
+test("WIRE REMOVE requires actual native EdgeId absent from later accepted graph",()=>{
+ const s=acceptedFixture();s.productionCallbackLive=false;
+ const source="9007199254740993",edge="9223372036854775808";
+ const sent=[];
+ const c=protocol.createController({emit:(n,p)=>sent.push({n,p})});
+ c.onSnapshot(s);
+ const removed=c.intent("APPLY_WIRE_TRANSACTION",source,
+   {changes:[{type:"REMOVE",sourceId:source,edgeId:edge}]});
+ assert.equal(removed.ok,true);
+ assert.equal(c.onAck({requestId:removed.requestId,status:"ACCEPTED",
+   deviceEpoch:s.device.epoch,graphRevision:"6",rosterRevision:"7",errorCode:"NONE"}),true);
+ const before=clone(s);before.graph.revision="6";
+ assert.equal(c.onSnapshot(before),false,"ACK with unchanged cable MUST NOT light a false connection");
+ assert.equal(c.state().current.graph.edges.length,1);
+ assert.equal(c.state().lastError,"ACK_READBACK_EFFECT_MISMATCH");
+ const verified=protocol.createController({emit:()=>{}});
+ verified.onSnapshot(s);
+ const req=verified.intent("APPLY_WIRE_TRANSACTION",source,
+   {changes:[{type:"REMOVE",sourceId:source,edgeId:edge}]});
+ verified.onAck({requestId:req.requestId,status:"ACCEPTED",
+   deviceEpoch:s.device.epoch,graphRevision:"6",rosterRevision:"7",errorCode:"NONE"});
+ before.graph.edges=[];
+ assert.equal(verified.onSnapshot(before),true);
+ assert.deepEqual(verified.state().current.graph.edges,[]);
+});
+
+test("native meter and PAN scale are driven by PCM readback, not Pages demo",()=>{
+ const source=read("web/approved-native-bridge.js");
+ assert.match(source,/paintNativeMeters\(next\)/);
+ assert.match(source,/displayMeterDbfs\(fill,/);
+ assert.match(source,/t\.pan=ch\.controls\.pan\*100/);
+ assert.match(source,/next\.productLive/);
+ assert.doesNotMatch(source,/Math\.sin\(/);
+});
+
 test("SET_FADER: one exact string request, ACK then LATER same-revision native readback",()=>{
  const sent=[],visible=[];
  const c=protocol.createController({emit:(name,payload)=>sent.push({name,payload}),onAccepted:s=>visible.push(s.identity)});
