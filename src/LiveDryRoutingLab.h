@@ -1666,6 +1666,7 @@ public:
                              "NATIVE_REMOVE_BUS","NATIVE_SET_BUS_MIX",
                              "NATIVE_CREATE_CHANNEL","NATIVE_PATCH_CHANNEL",
                              "NATIVE_SET_PRIMARY_OUT",
+                             "NATIVE_APPLY_WIRE_TRANSACTION",
                              "NATIVE_SET_CHANNEL_MIX",
                              "NATIVE_SET_CHANNEL_MUTE_SOLO",
                              "NATIVE_LOAD_INSERT","NATIVE_SET_INSERT_BYPASS",
