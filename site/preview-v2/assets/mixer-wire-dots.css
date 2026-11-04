@@ -919,8 +919,12 @@
 /* WIRE A2: MAIN-color cable stubs. Source and pinned MAIN consume the SAME
    data-wire-main-edge identity. Scoped to the existing WIRE CSS owner.
    No new layout box, no cross-bank SVG, no hit area or compositor animation. */
+/* Position source stub on the actual 12px OUT PIN, not the wider
+   caption-bearing button: accurate at every density and browser width. */
 .console-body.wire-routing-v15 .strip .wire-tray
- .wire-node-out[data-wire-main-edge]::after,
+ .wire-node-out[data-wire-main-edge] .wire-pin{position:relative;overflow:visible}
+.console-body.wire-routing-v15 .strip .wire-tray
+ .wire-node-out[data-wire-main-edge] .wire-pin::after,
 .console-body.wire-routing-v15 #master .wire-tray
  .wire-node-in[data-wire-main-edge]::before{
  content:"";position:absolute;left:calc(50% - 1.25px);width:2.5px;
@@ -929,7 +933,7 @@
  pointer-events:none;z-index:1;
 }
 .console-body.wire-routing-v15 .strip .wire-tray
- .wire-node-out[data-wire-main-edge]::after{top:23px;transform:rotate(-8deg);transform-origin:top center}
+ .wire-node-out[data-wire-main-edge] .wire-pin::after{top:10px;transform:rotate(-8deg);transform-origin:top center}
 .console-body.wire-routing-v15 #master .wire-tray
  .wire-node-in[data-wire-main-edge]::before{
  top:23px;transform:rotate(8deg);transform-origin:top center;
