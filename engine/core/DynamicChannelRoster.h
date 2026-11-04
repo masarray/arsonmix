@@ -382,14 +382,19 @@ public:
                     [](const auto& row){return row.role==ChannelRole::main;});
                 if(master==candidate.end() ||
                    !legal(change.source,change.destination,change.gain) ||
-                   change.destination==master->id ||
-                   duplicate(change.source,change.destination))break;
+                   change.destination==master->id)break;
                 const auto mainId=master->id;
+                // Normal SEND retained its MAIN route. ROUTE_ONLY removes
+                // precisely MAIN and reuses an existing target edge instead
+                // of double summing or rejecting an already-connected target.
+                const bool alreadyConnected=duplicate(change.source,
+                                                        change.destination);
                 auto& sends=src->sends;
                 sends.erase(std::remove_if(sends.begin(),sends.end(),
                     [mainId](const auto& e){return e.destination==mainId;}),
                     sends.end());
-                ok=connect(change.source,change.destination,change.gain,
+                ok=alreadyConnected ||
+                   connect(change.source,change.destination,change.gain,
                            change.preFader);
                 break;
             }
