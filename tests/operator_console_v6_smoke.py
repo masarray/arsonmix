@@ -320,14 +320,11 @@ async def main():
         await page.locator('[data-channel-id="9"] .arV6StripHead').click(modifiers=["Shift"])
         assert await page.evaluate("()=>window.__arMixV6ReadOnly().selectedChannelIds")==["7","8","9"]
         assert await page.locator('#arV6Main .arV6Master').get_attribute("aria-selected")=="false"
-        displayed_count=await page.locator('.arV6SelectionCount').inner_text()
-        assert displayed_count=="3 SEL", (
-            "selected counter",repr(displayed_count),
-            await page.evaluate("""() => ({
-              text:document.querySelector('.arV6SelectionCount')?.textContent,
-              selected:window.__arMixV6ReadOnly().selectedChannelIds,
-              outer:document.querySelector('.arV6SelectionCount')?.outerHTML.slice(0,400)
-            })"""))
+        # A hardware key has one engraved SVG and separate screen-reader text.
+        count=page.locator('.arV6SelectionCount')
+        assert await count.get_attribute("data-mx-hw-legend")=="3 SEL"
+        assert await count.locator('.mx-hw-screen-reader').inner_text()=="3 SEL"
+        assert await count.locator('svg.mx-hw-face').count()==1
         assert await page.evaluate("""()=>window.__v6Test.sent.filter(
           x=>x.event==='arMixConsoleIntent').length""")==count_start
 
