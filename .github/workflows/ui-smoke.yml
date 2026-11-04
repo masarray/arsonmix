@@ -70,8 +70,10 @@ jobs:
         run: python tests/gui_baseline_lock_test.py
       - name: Validate smart audio architecture handoff contract
         run: node --test tests/smart_audio_ard_contract_test.mjs
-      - name: WIRE A canonical graph transaction/DAG unit contract
-        run: node tests/wire_graph_canonical_model.test.cjs
+      - name: WIRE A canonical graph and v8 GUI-to-native handoff contract
+        run: |
+          node tests/wire_graph_canonical_model.test.cjs
+          node tests/wire_main_native_handoff_contract.test.cjs
       - name: Install Chromium testing dependencies
         run: |
           python -m pip install --upgrade pip
