@@ -6,6 +6,7 @@
 #include <BinaryData.h>
 #include "ApprovedGuiResources.h"
 #include "LiveAudioEngine.h"
+#include "ApprovedConsoleM2Snapshot.h"
 #include "ArSonMixStartupSplash.h"
 #include "VstOrbitController.h"
 #include "../engine/core/OrbitDistanceMapping.h"
@@ -195,6 +196,37 @@ public:
               })
               .withEventListener ("arMixParameter", [this] (juce::var args) { onParameter (args); })
               .withEventListener ("arMixAction", [this] (juce::var args) { onAction (args); })
+              .withEventListener ("arMixConsoleSubscribe", [this] (juce::var args)
+              {
+                  if (args.getProperty("protocol","").toString()!="v6" ||
+                      static_cast<int>(args.getProperty("schemaVersion",0))!=6) return;
+                  m2ConsoleSubscribed_ = true;
+                  emitApprovedM2Snapshot();
+              })
+              .withEventListener ("arMixConsoleIntent", [this] (juce::var args)
+              {
+                  // Native M4 does not own the v8 universal ChannelId graph.
+                  // Explicit REJECTED ACK: NEVER mutate an ordinal route through
+                  // an unadmitted operation and NEVER claim audio success.
+                  const auto id=args.getProperty("requestId",{}).toString();
+                  if(id.isEmpty()||id.length()>128)return;
+                  const auto snapshot=armix::console::approvedM2::build(
+                      engine_.status(),currentDeviceSnapshot());
+                  const auto device=snapshot.getProperty("device",{});
+                  const auto graph=snapshot.getProperty("graph",{});
+                  auto ack=std::make_unique<juce::DynamicObject>();
+                  ack->setProperty("requestId",id);
+                  ack->setProperty("status","REJECTED");
+                  ack->setProperty("deviceEpoch",device.getProperty("epoch","1"));
+                  ack->setProperty("graphRevision",graph.getProperty("revision","0"));
+                  ack->setProperty("rosterRevision",graph.getProperty("rosterRevision","0"));
+                  ack->setProperty("errorCode","NATIVE_CHANNELID_CALLBACK_NOT_ADMITTED");
+                  if(browser_.loaded) {
+                      browser_.emitEventIfBrowserIsVisible("arMixConsoleAck",
+                          juce::var(ack.release()));
+                      emitApprovedM2Snapshot();
+                  }
+              })
               .withResourceProvider (assetFor))
     {
         settingsDirectory().createDirectory();
@@ -259,6 +291,7 @@ private:
     std::unique_ptr<AudioSetupWindow> audioSetupWindow_;
     juce::String startupError_, lastAudioXml_;
     bool initialStateSent_ = false;
+    bool m2ConsoleSubscribed_ = false;
     bool webViewPeerWarmed_ = false;
     bool webViewStartupNoticeSent_ = false;
     juce::uint32 webViewStartupTick_ = 0;
@@ -465,6 +498,14 @@ private:
                         "Check AUDIO SETUP or retry DIRECT manually. " + error, true);
         else if (next.attempts == 1)
             emitNotice ("Device interrupted. DIRECT restore is retrying with bounded backoff.", true);
+    }
+
+    void emitApprovedM2Snapshot()
+    {
+        if (!browser_.loaded || !m2ConsoleSubscribed_) return;
+        browser_.emitEventIfBrowserIsVisible("arMixConsoleSnapshot",
+            armix::console::approvedM2::build(engine_.status(),
+                currentDeviceSnapshot()));
     }
 
     void emitNotice (const juce::String& message, bool error = false)
@@ -2542,6 +2583,11 @@ private:
         if (startupError_.isNotEmpty() && !bool (state.getProperty ("connected", false)))
             state.getDynamicObject()->setProperty ("error", startupError_);
         browser_.emitEventIfBrowserIsVisible ("arMixStatus", state);
+        // Control-thread native readback. Same existing 12 Hz timer; no
+        // callback allocations or a second polling worker. One Hz is enough
+        // for topology/device invalidation, not for audio metering.
+        if(m2ConsoleSubscribed_ && timerTicks_ % 12 == 0)
+            emitApprovedM2Snapshot();
     }
 };
 
