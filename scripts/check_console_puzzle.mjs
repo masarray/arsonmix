@@ -38,3 +38,10 @@ if(release){
 }else{
   console.log('G0 contract self-tests complete; --release will block until all three real owner branches match.');
 }
+
+// Windows RELEASE must embed EXACT current /preview/ with approved PNG controls.
+// Intent/snapshot schema alone is not a finished GUI; reject alternate shells.
+if(release){
+ try{execFileSync(process.execPath,['scripts/check_approved_native_gui_release.mjs'],{stdio:'inherit'});}
+ catch(e){console.error('RELEASE BLOCKED: Windows GUI is not identical to approved /preview/');process.exitCode=1;}
+}
