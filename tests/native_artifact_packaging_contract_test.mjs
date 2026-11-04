@@ -79,8 +79,8 @@ test('native bridge authenticates UI readiness but never hallucinates PCM/VST3 L
   assert.match(nativeMain,/withEventListener \("arMixGuiReady"/);
   assert.doesNotMatch(nativeMain,/pageFinishedLoading \(const juce::String&\) override \{ loaded = true; \}/);
   assert.match(adapter,/emitEvent\("arMixGuiReady"/);
-  assert.match(adapter,/acceptedGraphConnected: false/);
-  assert.match(adapter,/productionCallbackLive: false/);
+  assert.match(adapter,/acceptedGraphConnected:false/);
+  assert.match(adapter,/productionCallbackLive:false/);
   assert.match(packaging,/webView2LoaderMode = "JUCE_WEBVIEW2_LOADER_STATIC_LINKED_V1"/);
   assert.match(verify,/manifest\.webView2LoaderMode/);
   assert.match(verify,/WEBVIEW2_GUI_READY_TIMEOUT/);
