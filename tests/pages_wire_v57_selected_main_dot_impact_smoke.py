@@ -90,8 +90,40 @@ def run():
             page.locator("#densitySelect").select_option("comfort")
             if "collapsed-send" in (page.locator(".console-body").get_attribute("class") or ""):
                 page.locator('.section-rail [data-section="send"]').click()
+            if width == 1680:
+                # Observe the real animated SVG path rather than calling
+                # the private renderer function from outside its closure.
+                page.evaluate("""() => {
+                  window.__v57Impact = [];
+                  new MutationObserver(records => {
+                    for (const r of records) {
+                      const path = r.target;
+                      if (r.type !== 'attributes' ||
+                          !path.matches?.('path.wire-outgoing-line[data-cable-key="5-3"]')) continue;
+                      const d = path.getAttribute('d');
+                      if (d?.includes(' L ') && window.__v57Impact.at(-1) !== d)
+                        window.__v57Impact.push(d);
+                    }
+                  }).observe(document.querySelector('#wireLayer'), {
+                    subtree:true, attributes:true, attributeFilter:['d']
+                  });
+                }""")
             page.locator('#tracks .strip[data-id="5"] .wire-node-out').click()
             page.locator('#tracks .strip[data-id="3"] .wire-node-in').click()
+            if width == 1680:
+                page.wait_for_function("""() =>
+                  window.__v57Impact.length >= 18 &&
+                  document.querySelector('#wireLayer path.wire-outgoing-line[data-cable-key="5-3"]')
+                    ?.getAttribute('d')?.includes(' C ')""", timeout=6000)
+                captured = page.evaluate("""() => ({
+                  frames:window.__v57Impact,
+                  base:document.querySelector('#wireLayer path.wire-outgoing-line[data-cable-key="5-3"]').getAttribute('d')
+                })""")
+                early = displacement(captured["frames"][0], captured["base"])
+                late = displacement(captured["frames"][-1], captured["base"])
+                assert max(early[42:53]) > 6, ("weak receiver impact", max(early))
+                assert max(late[2:12]) > 1.25, ("wave stops before OUT", max(late[:12]))
+                assert max(late[2:12]) < max(early[42:53])*.6, "wave fails to fade towards OUT"
             assert inspect(page, 5)["custom"] == "true"
             original_main = inspect(page, 5)["main"]
             select(page, 6)
@@ -109,17 +141,6 @@ def run():
             assert page.locator('#wireLayer path.wire-incoming-line').count() == 0
             page.locator("#wireView").select_option("focus")
             assert page.locator('#wireLayer path.wire-incoming-line[data-from="5"][data-to="3"]').count() == 1
-            # Precise impact physics: strong impulse at IN, attenuated ripple
-            # reaches OUT, both physical jack endpoints remain fixed.
-            base, first, last = page.evaluate("""() => [
-              wirePathData(0,0,180,0,72,0),
-              wireImpactPathData(0,0,180,0,72,0),
-              wireImpactPathData(0,0,180,0,72,1600)
-            ]""")
-            head, tail = displacement(first, base), displacement(last, base)
-            assert max(head[42:53]) > 6, (width, "weak impact at receiver", max(head))
-            assert max(tail[2:12]) > 1.25, (width, "impact stops short of OUT", max(tail[:12]))
-            assert max(tail[2:12]) < max(head[42:53])*.6, "impact must weaken towards OUT"
             assert not errors, (width, errors)
             if width == 1680:
                 page.screenshot(path=str(PAGE.parents[2] / "pages-wire-v57-selected-1680.png"))
