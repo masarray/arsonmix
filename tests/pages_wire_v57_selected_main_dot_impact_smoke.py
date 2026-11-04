@@ -55,6 +55,25 @@ def run():
             errors = []
             page.on("pageerror", lambda exc: errors.append(str(exc)))
             page.goto(PAGE.as_uri())
+            body = page.locator(".console-body")
+            # MAIN is a graph edge, NOT a permanent visual wire. Folded
+            # source/MAIN summaries must never draw physical wire fragments.
+            assert "collapsed-send" in (body.get_attribute("class") or ""), width
+            for ch in (1, 5, 6):
+                folded = page.locator(f'#tracks .strip[data-id="{ch}"] .wire-fold-summary')
+                assert folded.get_attribute("data-wire-main-edge") is None, (width, ch, "ghost MAIN edge")
+                assert folded.evaluate(
+                    "el=>getComputedStyle(el,'::after').content") in ("none", "normal"), (
+                    width, ch, "folded MAIN stem visible")
+                assert "has-out" not in (folded.locator(".fold-link-icon").get_attribute("class") or "")
+            master_fold = page.locator("#master .wire-fold-summary")
+            assert master_fold.get_attribute("data-wire-main-edge") is None
+            assert master_fold.evaluate(
+                "el=>getComputedStyle(el,'::after').content") in ("none", "normal")
+            select(page, 5)
+            assert page.locator('#wireLayer path.wire-outgoing-line,#wireLayer path.wire-incoming-line').count() == 0
+            assert page.locator('#tracks .strip[data-id="5"] .wire-fold-summary').evaluate(
+                "el=>getComputedStyle(el,'::after').content") in ("none", "normal")
             for density in ("comfort", "standard", "compact"):
                 page.locator("#densitySelect").select_option(density)
                 if "collapsed-send" in (page.locator(".console-body").get_attribute("class") or ""):
@@ -64,6 +83,8 @@ def run():
                 assert inspect(page, 5)["custom"] is None and inspect(page, 6)["custom"] is None
                 select(page, 5)
                 a = inspect(page, 5)
+                assert a["pin"] == "rgb(75, 83, 91)", (
+                    width, density, "default MAIN falsely illuminated OUT", a)
                 assert a["display"] == "true", (width, density, a)
                 assert inspect(page, 6)["display"] is None
                 master = page.locator("#master .wire-node-in")
@@ -145,12 +166,37 @@ def run():
             assert page.locator('#wireLayer path.wire-incoming-line').count() == 0
             page.locator("#wireView").select_option("focus")
             assert page.locator('#wireLayer path.wire-incoming-line[data-from="5"][data-to="3"]').count() == 1
+            page.locator("#wireConfigClose").click()
+            # Custom route 5→3 lights only its own OUT and IN folded dots.
+            # Default MAIN must never create a colored OUT or ghost line.
+            page.locator('.section-rail [data-section="send"]').click()
+            assert "collapsed-send" in (body.get_attribute("class") or ""), width
+            for ch in (3, 5, 6):
+                folded = page.locator(f'#tracks .strip[data-id="{ch}"] .wire-fold-summary')
+                assert folded.get_attribute("data-wire-main-edge") is None
+                assert folded.evaluate(
+                    "el=>getComputedStyle(el,'::after').content") in ("none", "normal")
+                active = folded.locator(".fold-link-icon").get_attribute("class") or ""
+                assert ("has-out" in active) == (ch == 5), (width, ch, active)
+            assert "has-in" in (page.locator('#tracks .strip[data-id="3"] .fold-link-icon').get_attribute("class") or "")
+            dark_out = page.locator('#tracks .strip[data-id="3"] .fold-link-out').evaluate(
+                "el=>getComputedStyle(el).fill")
+            assert dark_out == "rgb(50, 73, 86)", (width, "receiver MAIN-only OUT lit", dark_out)
+            master_fold = page.locator("#master .wire-fold-summary")
+            assert master_fold.get_attribute("data-wire-main-edge") is None
+            assert master_fold.evaluate(
+                "el=>getComputedStyle(el,'::after').content") in ("none", "normal")
+            assert page.locator('#wireLayer path.wire-incoming-line,#wireLayer path.wire-outgoing-line').count() == 0
+            if width == 1680:
+                page.screenshot(path=str(PAGE.parents[2] / "pages-wire-v58-collapsed-1680.png"))
+            page.locator('.section-rail [data-section="send"]').click()
+            assert page.locator('#wireLayer path.wire-incoming-line[data-from="5"][data-to="3"]').count() == 1
             assert not errors, (width, errors)
             if width == 1680:
                 page.screenshot(path=str(PAGE.parents[2] / "pages-wire-v57-selected-1680.png"))
             page.close()
         browser.close()
-    print("PASS V57: MAIN dot, selected-only wires, custom OUT, attenuated IN-to-OUT pulse, 3 widths/3 densities")
+    print("PASS V58: folded MAIN quiet, graphite MAIN-only OUT, focused wire tracing, custom LEDs and damped impact, 3 widths/3 densities")
 
 
 if __name__ == "__main__":
