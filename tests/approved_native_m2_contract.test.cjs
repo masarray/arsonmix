@@ -246,3 +246,107 @@ test("M2 code edits approved Pages *events* only, not a second native GUI/audio 
  assert.doesNotMatch(native,/BinaryData::consolenative_html|BinaryData::index_html/);
  assert.doesNotMatch(adapter,/AudioContext|AudioWorklet|processBlock|setChannelGainDb/);
 });
+
+test("M3 native-only Pages scope performs real bridge projection, fader intent and ACK readback",()=>{
+ const vm=require("node:vm"),sent=[],listeners=new Map();
+ let nextId=100,nextEdgeId=200,paints=0,rollbacks=0;
+ const scope={
+   tracks:[],master:{id:1,name:"Master"},colors:["#568ead"],
+   wireGraph:{validateCandidateGraph:()=>({ok:true})},
+   make:(name,kind,color)=>({id:nextId++,name,kind,color,selected:false}),
+   render(){paints++;},
+   findTrack(){return this.tracks[0];},
+   displayMeterDbfs(){},
+   allocateWireId(){return nextEdgeId++;},
+   installGraph(channels,main,edges){
+     this.tracks=channels;this.master=main;this.edges=edges;this.render();
+   },
+   stopDemo(){}
+ };
+ const native={
+   emitEvent:(name,payload)=>sent.push({name,payload}),
+   addEventListener:(name,fn)=>listeners.set(name,fn)
+ };
+ const info={textContent:""},previewButton={disabled:false,setAttribute(){}};
+ const document={
+   readyState:"complete",documentElement:{dataset:{}},
+   getElementById:id=>id==="info"?info:id==="preview"?previewButton:null,
+   querySelector:()=>null,addEventListener(){}
+ };
+ const window={
+   __JUCE__:{backend:native},ArSonApprovedNativeContract:protocol,
+   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},setTimeout(){return 0;}
+ };
+ vm.runInNewContext(read("web/approved-native-bridge.js"),{
+   window,document,performance:{now:()=>0},console
+ },{timeout:1500});
+ assert.equal(sent[0].name,"arMixGuiReady");
+ assert.equal(sent[1].name,"arMixConsoleSubscribe");
+ assert.equal(window.__ARMIX_APPROVED_NATIVE_GUI__.acceptedGraphConnected,false);
+ const accepted=acceptedFixture();
+ listeners.get("arMixConsoleSnapshot")(accepted);
+ assert.equal(window.__ARMIX_APPROVED_NATIVE_GUI__.acceptedGraphConnected,true);
+ assert.equal(scope.tracks.length,1);
+ assert.equal(scope.tracks[0].level,-6);
+ assert.equal(scope.edges[0].sourceId,scope.tracks[0].id);
+ assert.equal(previewButton.disabled,true);
+ const gesture={dataset:{field:"level"},value:"-12",min:"-60",max:"10",closest:()=>null};
+ assert.equal(window.__ARMIX_NATIVE_M2__.consumeField({target:gesture,type:"change"}),true);
+ const command=sent.findLast(x=>x.name==="arMixConsoleIntent");
+ assert.ok(command);
+ assert.equal(command.payload.operation,"SET_FADER");
+ assert.equal(command.payload.targetChannelId,"9007199254740993");
+ assert.equal(command.payload.payload.valueDb,-12);
+ assert.equal(scope.tracks[0].level,-6,"GUI cannot optimistically commit before readback");
+ listeners.get("arMixConsoleAck")({
+   requestId:command.payload.requestId,status:"ACCEPTED",errorCode:"NONE",
+   deviceEpoch:accepted.device.epoch,graphRevision:"5",rosterRevision:"7"
+ });
+ assert.equal(scope.tracks[0].level,-6,"ACK alone cannot repaint");
+ const updated=clone(accepted);updated.graph.channels[0].controls.faderDb=-12;
+ listeners.get("arMixConsoleSnapshot")(updated);
+ assert.equal(scope.tracks[0].level,-12);
+ const before=paints;
+ gesture.value="-24";
+ window.__ARMIX_NATIVE_M2__.consumeField({target:gesture,type:"change"});
+ const rejected=sent.findLast(x=>x.name==="arMixConsoleIntent").payload;
+ listeners.get("arMixConsoleAck")({
+   requestId:rejected.requestId,status:"REJECTED",errorCode:"UNSUPPORTED_OP",
+   deviceEpoch:accepted.device.epoch,graphRevision:"5",rosterRevision:"7"
+ });
+ rollbacks=paints-before;
+ assert.ok(rollbacks>0,"REJECTED restores the original GUI model");
+ assert.equal(scope.tracks[0].level,-12);
+ assert.equal(window.__ARMIX_NATIVE_M2__.state().pending,null);
+ // Selected hardware WIRE gesture must bind to the *real* decimal-string
+ // EdgeId and publish only after native graph ACK + a later PCM readback.
+ const sourceUi=scope.tracks[0].id,edgeUi=scope.edges[0].id;
+ assert.equal(window.__ARMIX_NATIVE_M2__.consumeWire([
+   {type:"REMOVE",sourceId:sourceUi,edgeId:edgeUi}
+ ]),true);
+ const wire=sent.findLast(x=>x.name==="arMixConsoleIntent").payload;
+ assert.equal(wire.operation,"APPLY_WIRE_TRANSACTION");
+ assert.equal(wire.targetChannelId,"9007199254740993");
+ assert.equal(wire.payload.changes[0].edgeId,"9223372036854775808");
+ assert.equal(scope.edges.length,1,"pending WIRE cannot change drawn routing");
+ listeners.get("arMixConsoleAck")({
+   requestId:wire.requestId,status:"ACCEPTED",errorCode:"NONE",
+   deviceEpoch:accepted.device.epoch,graphRevision:"6",rosterRevision:"7"
+ });
+ assert.equal(scope.edges.length,1,"ACK is not the graph publication");
+ const unwired=clone(updated);unwired.graph.revision="6";unwired.graph.edges=[];
+ listeners.get("arMixConsoleSnapshot")(unwired);
+ assert.equal(scope.edges.length,0,"accepted snapshot replaces reference wire");
+});
+
+test("M3 Windows bundle owns pointerup fader gesture and fences native FX keyboard reorder",()=>{
+ const builder=read("scripts/build_approved_native_gui.py");
+ const bridge=read("web/approved-native-bridge.js");
+ assert.ok(builder.includes("const g=faderGesture;faderGesture=null;"));
+ assert.ok(builder.includes("consumeField?.({target:g.input,type:'change'})"));
+ assert.ok(builder.includes("function fxNativeTransactionRequired"));
+ assert.ok(builder.includes("__ARMIX_NATIVE_SCOPE__"));
+ assert.ok(bridge.includes("scope.installGraph(nextTracks,nextMaster,edges)"));
+ assert.ok(bridge.includes("scope?.findTrack?.(el)"));
+ assert.ok(!bridge.includes('window.addEventListener("pointerup"'));
+});

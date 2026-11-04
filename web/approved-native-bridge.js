@@ -4,6 +4,9 @@
   "use strict";
   const backend = window.__JUCE__?.backend;
   const protocol = window.ArSonApprovedNativeContract;
+  // The public GUI owns one lexical model. Native-only bundle exports a narrow
+  // reference to that SAME model; never reconstruct a parallel DOM/DSP.
+  const scope = window.__ARMIX_NATIVE_SCOPE__ || null;
   const connected = Boolean(backend?.emitEvent && backend?.addEventListener && protocol);
   // The old M1 wording is retained as an explicit boot-time fallback for
   // release-train compatibility, NOT a claim that a demo graph is audio.
@@ -25,10 +28,7 @@
     // reference-only physical operations are never passed off as live audio.
     const demo = document.getElementById("preview");
     if (demo) {demo.disabled = true;demo.title = "Demo meters disabled in native Windows application";}
-    if (typeof preview !== "undefined" && preview) {
-      preview = false; // original Pages animation sees false and stops itself
-      demo?.setAttribute("aria-pressed","false");
-    }
+    scope?.stopDemo?.();
     document.documentElement.dataset.armixNativeAuthority =
       flags.productionCallbackLive ? "product-live" :
       flags.acceptedGraphConnected ? "pcm-accepted" : "not-admitted";
@@ -47,13 +47,13 @@
   };
   function projection(native) {
     if (!native?.admitted || !Array.isArray(native.graph.edges) ||
-        typeof make !== "function" || typeof render !== "function" ||
-        typeof ArSonWireGraph === "undefined") return false;
+        !scope?.make || !scope?.render || !scope?.wireGraph ||
+        !scope?.installGraph || !scope?.allocateWireId) return false;
     const accepted = native.graph;
     // No fake default fader/mute/solo when the producer omitted real readback.
     if (accepted.channels.some(ch => !ch.controls ||
         !["faderDb","pan","mute","solo"].every(k => Object.hasOwn(ch.controls,k)))) return false;
-    const previous = new Map(tracks.concat(master).map(t=>[t.id,t]));
+    const previous = new Map(scope.tracks.concat(scope.master).map(t=>[t.id,t]));
     const nextTracks = [], localByNative = new Map(), nextNativeByUi = new Map();
     let nextMaster = null;
     for (const [index,ch] of accepted.channels.entries()) {
@@ -61,7 +61,7 @@
         ch.role==="FX_RETURN"?"fx":"audio";
       const savedId = uiByNativeId.get(ch.id);
       const t = savedId !== undefined && previous.has(savedId) ?
-        previous.get(savedId) : make(ch.name,kind,COLORS[index%COLORS.length]||"#568ead");
+        previous.get(savedId) : scope.make(ch.name,kind,scope.colors[index%scope.colors.length]||"#568ead");
       if (savedId !== undefined) t.id = savedId;
       // No Number(ch.id): all native identities stay canonical uint64 strings.
       localByNative.set(ch.id,t.id);
@@ -99,30 +99,27 @@
       const gainDb=isMain?0:Math.round(Math.max(-60,Math.min(6,
         edge.gainLinear>0?20*Math.log10(edge.gainLinear):-60))*10)/10;
       let uiId=uiByWireId.get(edge.edgeId);
-      if (uiId===undefined) uiId=nextWireId++;
+      if (uiId===undefined) uiId=scope.allocateWireId();
       newWireByUi.set(uiId,edge.edgeId);
       newUiByWire.set(edge.edgeId,uiId);
       edges.push({id:uiId,sourceId:src,destId:dst,kind,mode,
         enabled:true,levelDb:gainDb});
     }
-    if (!ArSonWireGraph.validateCandidateGraph(nextTracks,nextMaster.id,edges).ok) return false;
+    if (!scope.wireGraph.validateCandidateGraph(nextTracks,nextMaster.id,edges).ok) return false;
     const previouslySelected = nextTracks.filter(t=>t.selected);
     if (!previouslySelected.length && nextTracks.length) nextTracks[0].selected=true;
     // One atomic accepted readback projection. Demo wire reducer NEVER runs.
-    tracks=nextTracks;master=nextMaster;wireEdges=edges;
     for (const [id,ui] of localByNative) uiByNativeId.set(id,ui);
     nativeByUiId.clear();for(const [ui,id] of nextNativeByUi)nativeByUiId.set(ui,id);
     wireByUiId.clear();for(const [ui,id] of newWireByUi)wireByUiId.set(ui,id);
     uiByWireId.clear();for(const [id,ui] of newUiByWire)uiByWireId.set(id,ui);
-    if (typeof wireWsHistory!=="undefined")wireWsHistory=[];
-    selectedWireEdgeId=null;
-    syncWireOutputProjection();render();
+    scope.installGraph(nextTracks,nextMaster,edges);
     return true;
   }
   // Native telemetry owns the physical meter. When no measured per-channel
   // samples are published, leave the meter dark; never use Pages sine demo.
   function paintNativeMeters(next) {
-    if (typeof displayMeterDbfs!=="function")return;
+    if (!scope?.displayMeterDbfs)return;
     const data=next.telemetry?.channelMeterRmsPeak;
     if (!data || typeof data!=="object")return;
     const ts=performance.now();
@@ -141,7 +138,7 @@
         const fill=root.querySelector('.meter-fill.'+side);
         if(!fill)return;
         const db=peak===null || peak===0?-90:20*Math.log10(peak);
-        displayMeterDbfs(fill,Math.max(-90,Math.min(6,db)),ts,ui+':'+(side==="left"?"L":"R"));
+        scope.displayMeterDbfs(fill,Math.max(-90,Math.min(6,db)),ts,ui+':'+(side==="left"?"L":"R"));
       };
       paint("left",l);
       paint("right",right);
@@ -185,9 +182,15 @@
         if(state.lastError==="PENDING_NATIVE_ACK"||state.lastError==="PENDING_ACCEPTED_SNAPSHOT")
           status("NATIVE "+state.lastError+" · awaiting authoritative readback");
         else if(state.lastError!=="ACCEPTED_READBACK"&&state.lastError!=="NONE"&&
-                state.lastError!=="NATIVE_NOT_SUBSCRIBED"&&
-                state.lastError!=="INVALID_NATIVE_SNAPSHOT")
+                state.lastError!=="NATIVE_NOT_SUBSCRIBED") {
           lastNativeError=state.lastError;
+          // Native REJECTED / STALE / timeout must roll back a temporary fader
+          // cap and every input value; no optimistic GUI state survives.
+          if (!state.pending && flags.acceptedGraphConnected && scope?.render) {
+            scope.render();
+            if(state.current)paintNativeMeters(state.current);
+          }
+        }
       }
     });
     backend.addEventListener("arMixConsoleSnapshot", snapshot=>controller.onSnapshot(snapshot));
@@ -199,7 +202,7 @@
       if (!connected)return false;
       const el=event.target,field=el?.dataset?.field;
       if (!field)return false;
-      const t=typeof findTrack==="function"?findTrack(el):null;
+      const t=scope?.findTrack?.(el) || null;
       if (!t)return true;
       if (!flags.acceptedGraphConnected) {
         if (field==="level")el.value=String(t.level);
@@ -207,13 +210,35 @@
         status("NATIVE: ChannelId PCM not admitted; control unchanged");
         return true;
       }
-      if (event.type!=="change") return true; // no optimistic input-frame mutations
+      // During a native pointer drag move the approved fader *cap* only.
+      // The authoritative track/PCM state stays unchanged until ACK+readback.
+      if (event.type!=="change") {
+        if (field==="level") {
+          const n=Number(el.value),min=Number(el.min),max=Number(el.max);
+          if ([n,min,max].every(Number.isFinite)&&max>min) {
+            const p=Math.max(0,Math.min(100,100*(n-min)/(max-min)));
+            const box=el.closest?.(".fader-box");
+            box?.style?.setProperty("--fader-fill",p+"%");
+            box?.style?.setProperty("--fader-lit",String(p/100));
+            box?.style?.setProperty("--fader-y",(100-p)+"%");
+            box?.style?.setProperty("--fader-frac",String(p/100));
+          }
+        }
+        return true;
+      }
       const numeric=Number(el.value);
       if (field==="level"&&Number.isFinite(numeric))
         intent("SET_FADER",t,{valueDb:numeric});
-      else if (field==="pan"&&Number.isFinite(numeric))
-        intent("SET_PAN",t,{value:numeric/100});
-      else status("NATIVE: "+field+" awaits native capability; reference graph unchanged");
+      else if (field==="pan"&&Number.isFinite(numeric)) {
+        // Preserve hardware center detent without publishing demo PAN state.
+        const fine=el.dataset.panKeyboard==="true";
+        const bypass=el.dataset.panAltPointer==="true";
+        const value=!fine&&!bypass&&Math.abs(numeric)<=12?0:numeric;
+        intent("SET_PAN",t,{value:value/100});
+      } else {
+        status("NATIVE: "+field+" awaits native capability; reference graph unchanged");
+        scope?.render?.(); // restore SELECT/route control from accepted graph
+      }
       return true;
     },
     consumeAction(t,action,btn) {
@@ -311,16 +336,9 @@
     event.preventDefault();event.stopImmediatePropagation();
     status("NATIVE: "+target.id+" requires real engine admission and readback");
   },true);
-  // Native pointer fader uses the approved physical fader geometry, but no
-  // reference JS gain state. Send once at release, not on every pointer frame.
-  window.addEventListener("pointerup",()=>{
-    if (typeof faderGesture==="undefined"||!faderGesture)return;
-    const input=faderGesture.input,t=typeof findTrack==="function"?findTrack(input):null;
-    if (t) {
-      const db=Number(input.value);
-      if(Number.isFinite(db))intent("SET_FADER",t,{valueDb:db});
-    }
-  },true);
+  // Native fader is committed exactly once INSIDE the original GUI's
+  // finishFaderPointer via build_approved_native_gui.py hook. A later
+  // window.pointerup listener would run after that handler clears the gesture.
   const ready=()=>{
     stopDemo();
     status("NATIVE: subscribed · waiting for true device and accepted ChannelId graph");

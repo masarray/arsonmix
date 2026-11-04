@@ -24,6 +24,14 @@ class ApprovedNativeGuiBundleTests(unittest.TestCase):
             self.assertEqual(bundle.public_from_native(native), approved)
             self.assertNotIn("__ARMIX_NATIVE_M2__", approved)
             self.assertIn("__ARMIX_NATIVE_M2__", native)
+            # M3 native-only scope is embedded inside the existing Pages IIFE:
+            # no visual duplication; it must be stripped in public_from_native.
+            self.assertIn("window.__ARMIX_NATIVE_SCOPE__=Object.freeze({", native)
+            self.assertNotIn("__ARMIX_NATIVE_SCOPE__", approved)
+            self.assertIn("make,render,findTrack,displayMeterDbfs", native)
+            self.assertIn("installGraph(channels,main,edges)", native)
+            self.assertIn("if(window.__JUCE__?.backend)return true;", native)
+            self.assertIn("consumeField?.({target:g.input,type:'change'})", native)
             self.assertEqual(manifest["approvedPagesHtmlSha256"], bundle.sha256((source / "index.html").read_bytes()))
             self.assertNotEqual(native, (ROOT / "web/index.html").read_text("utf-8"))
             self.assertIn("approved-native-bridge.js", native)

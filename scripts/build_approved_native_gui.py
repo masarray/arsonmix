@@ -59,21 +59,49 @@ def accepted_pages_html() -> str:
 NATIVE_EVENT_HOOKS = (
     ("function wireGraphCommit(ops,{record=true}={}){\n",
      "function wireGraphCommit(ops,{record=true}={}){\n"
-     " if(window.__ARMIX_NATIVE_M2__?.consumeWire?.(ops))return false;\n"),
+     " if(window.__JUCE__?.backend){window.__ARMIX_NATIVE_M2__?.consumeWire?.(ops);return false;}\n"),
     ("function wireWsUndo(){\n",
      "function wireWsUndo(){\n"
-     " if(window.__ARMIX_NATIVE_M2__?.consumeUndo?.())return false;\n"),
+     " if(window.__JUCE__?.backend){window.__ARMIX_NATIVE_M2__?.consumeUndo?.();return false;}\n"),
     ("function handleField(event){\n",
      "function handleField(event){\n"
-     " if(window.__ARMIX_NATIVE_M2__?.consumeField?.(event))return;\n"),
+     " if(window.__JUCE__?.backend){window.__ARMIX_NATIVE_M2__?.consumeField?.(event);return;}\n"),
     (" if(a==='wireExpand'){document.querySelector('.section-rail",
+     " if(window.__JUCE__?.backend&&!window.__ARMIX_NATIVE_M2__?.enabled)return;\n"
      " if(window.__ARMIX_NATIVE_M2__?.consumeAction?.(t,a,btn))return;\n"
      " if(a==='wireExpand'){document.querySelector('.section-rail"),
     ("document.querySelector('.console-body').addEventListener('dblclick',e=>{\n"
      " const t=findTrack(e.target);if(!t)return;\n",
      "document.querySelector('.console-body').addEventListener('dblclick',e=>{\n"
      " const t=findTrack(e.target);if(!t)return;\n"
+     " if(window.__JUCE__?.backend&&!window.__ARMIX_NATIVE_M2__?.enabled)return;\n"
      " if(window.__ARMIX_NATIVE_M2__?.consumeDoubleClick?.(e,t))return;\n"),
+    # Native-only: prevent keyboard FX moves from mutating demo inserts in JUCE.
+    ("function fxNativeTransactionRequired(){\n",
+     "function fxNativeTransactionRequired(){\n"
+     " if(window.__JUCE__?.backend)return true;\n"),
+    # Source's pointerup clears faderGesture BEFORE the later deferred bridge
+    # listener runs. Dispatch exactly once at the actual gesture commit point.
+    (" const g=faderGesture;faderGesture=null;\n"
+     " g.box.releasePointerCapture?.(ev.pointerId);\n",
+     " const g=faderGesture;faderGesture=null;\n"
+     " g.box.releasePointerCapture?.(ev.pointerId);\n"
+     " if(window.__ARMIX_NATIVE_M2__?.consumeField?.({target:g.input,type:'change'}))return;\n"),
+    # Native WebView2 only: expose the original Pages IIFE model to the thin
+    # bridge. No second renderer/state reducer, no change to public /preview/.
+    ("restorePluginPreferences();init();\n})();",
+     "window.__ARMIX_NATIVE_SCOPE__=Object.freeze({\n"
+     " get tracks(){return tracks;},get master(){return master;},\n"
+     " make,render,findTrack,displayMeterDbfs,\n"
+     " colors:COLORS,wireGraph:ArSonWireGraph,\n"
+     " allocateWireId(){return nextWireId++;},\n"
+     " installGraph(channels,main,edges){\n"
+     "  tracks=channels;master=main;wireEdges=edges;\n"
+     "  wireWsHistory=[];selectedWireEdgeId=null;\n"
+     "  syncWireOutputProjection();render();\n"
+     " },\n"
+     " stopDemo(){if(preview)togglePreview();}\n"
+     "});\nrestorePluginPreferences();init();\n})();"),
 )
 
 
