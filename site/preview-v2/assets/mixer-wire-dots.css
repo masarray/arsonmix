@@ -936,28 +936,35 @@
  box-shadow:inset 0 1px 2px #07141c!important;
 }
 
-/* WIRE A2: MAIN-color cable stubs. Source and pinned MAIN consume the SAME
-   data-wire-main-edge identity. Scoped to the existing WIRE CSS owner.
-   No new layout box, no cross-bank SVG, no hit area or compositor animation. */
-/* Position source stub on the actual 12px OUT PIN, not the wider
-   caption-bearing button: accurate at every density and browser width. */
-.console-body.wire-routing-v15 .strip .wire-tray
- .wire-node-out[data-wire-main-edge] .wire-pin{position:relative;overflow:visible}
-.console-body.wire-routing-v15 .strip .wire-tray
- .wire-node-out[data-wire-main-edge] .wire-pin::after,
-.console-body.wire-routing-v15 #master .wire-tray
- .wire-node-in[data-wire-main-edge]::before{
- content:"";position:absolute;left:calc(50% - 1.25px);width:2.5px;
- height:12px;background:var(--main-wire-hue,#a04b65);
- border-radius:0 0 4px 4px;box-shadow:1px 0 #09121f,0 0 0 1px #111e29;
- pointer-events:none;z-index:1;
+/* WIRE A2: two measured, local SVG fragments of one accepted MAIN edge.
+   Existing WIRE component owns material; jack hitboxes and console geometry
+   stay untouched. A tiny cubic sag replaces the former straight pseudo-stub. */
+.console-body.wire-routing-v15 .strip .send-section.wire-section{
+ position:relative;
 }
-.console-body.wire-routing-v15 .strip .wire-tray
- .wire-node-out[data-wire-main-edge] .wire-pin::after{top:10px;transform:rotate(-8deg);transform-origin:top center}
-.console-body.wire-routing-v15 #master .wire-tray
- .wire-node-in[data-wire-main-edge]::before{
- top:23px;transform:rotate(8deg);transform-origin:top center;
- border-radius:4px 4px 0 0;
+.console-body.wire-routing-v15 .strip .wire-main-fragment{
+ position:absolute;inset:0;width:100%;height:100%;
+ display:block;overflow:hidden;z-index:2;pointer-events:none;
+}
+.console-body.wire-routing-v15 .strip .wire-main-fragment .wire-main-shadow,
+.console-body.wire-routing-v15 .strip .wire-main-fragment .wire-main-jacket,
+.console-body.wire-routing-v15 .strip .wire-main-fragment .wire-main-sheen{
+ fill:none;stroke-linecap:round;stroke-linejoin:round;
+}
+.console-body.wire-routing-v15 .strip .wire-main-fragment .wire-main-shadow{
+ stroke:#061019;stroke-width:5.4;
+}
+.console-body.wire-routing-v15 .strip .wire-main-fragment .wire-main-jacket{
+ stroke:var(--main-wire-hue,#a04b65);stroke-width:3.4;
+}
+.console-body.wire-routing-v15 .strip .wire-main-fragment .wire-main-sheen{
+ stroke:#ffffff45;stroke-width:.8;opacity:.7;
+}
+.console-body.wire-routing-v15 .strip .wire-main-fragment .wire-main-plug{
+ fill:#9eabb2;stroke:#152530;stroke-width:1.3;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-main-fragment{
+ display:none;
 }
 /* Folded 23px WIRE retains two discreet color fragments tied to exact graph IDs.
    The accepted V52 fader, V51 meter and V54 jack material remain unchanged. */
