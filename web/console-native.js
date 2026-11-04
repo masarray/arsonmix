@@ -8,6 +8,7 @@ const el=id=>document.getElementById(id);
 const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const palette=['#1699cd','#b92e41','#cf6b1e','#b28c27','#34a544','#168762','#0e95c9','#066fa9','#7140b5','#b52893','#c32974','#586889'];
 const pending=new Map(),lastValues=new Map();
+let wireDrag=null,wirePaintQueued=false;
 let snapshot=null,rows=[],bank=0,selectedIds=new Set(),serial=0,lastSignature='',native=!!(api?.emitEvent&&api?.addEventListener);
 let controlsEnabled=false,focusNewChannel=false;
 let realCatalog={items:[],scanning:false,message:''},nativeFxTarget='';
@@ -98,7 +99,7 @@ function normalize(s){
          patch?.portId||'',out:String(ch.primaryOutput||''),
        controls:{faderDb:20*Math.log10(Math.max(Number(ch.fader)||0,1e-6)),
                  pan:(Number(ch.pan)||0)*100,mute:!!ch.mute,solo:!!ch.solo},
-       fx:ch.inserts||[],sends:ch.parallelSends||[],legacy:false,nativeScoped:true,
+       fx:ch.inserts||[],sends:ch.parallelSends||[],legacy:false,nativeScoped:true,nativeManaged:ch.nativeManaged===true,
        measuredL:ch.peakL,measuredR:ch.peakR});
    }
  }
@@ -161,6 +162,7 @@ function outputOptions(row){
 function nativeStrip(r){
  const main=r.role==='MAIN',db=gain(r.controls.faderDb),pan=Number(r.controls.pan)||0;
  const can=op=>opAvailable(op)&&native&&
+    !(op==='NATIVE_SET_PRIMARY_OUT'&&(r.role==='MAIN'||r.role==='FX_RETURN'||r.role==='MONITOR'||(r.role==='GROUP'&&!r.nativeManaged)))&&
    !((r.role!=='INPUT')&&['SET_SOURCE','NATIVE_PATCH_CHANNEL','SET_PROCESSING_FORMAT'].includes(op))&&
    !(r.role==='MAIN'&&['SET_FADER','SET_PAN','SET_MUTE','SET_SOLO'].includes(op))&&
    !(r.role==='FX_RETURN'&&['SET_FADER','SET_PAN','SET_MUTE','SET_SOLO'].includes(op))&&
@@ -199,7 +201,10 @@ function nativeStrip(r){
    (r.nativeScoped&&['INPUT','GROUP'].includes(r.role)&&opAvailable('NATIVE_LOAD_INSERT')&&
     !snapshot?.device?.outputArmed&&(r.fx||[]).length<8?'':' disabled')+
    ' title="Add a real catalog VST3 to this native ChannelId">+ ADD VST3</button></div></div>'+
-   '<div class="section send-section"><span class="route-caption">SEND</span><span class="route-identity">'+esc((r.sends||[]).length)+' native sends</span></div>'+
+   '<div class="section send-section"><span class="route-caption">SEND</span>'+
+ '<span class="route-identity">'+esc((r.sends||[]).length)+' native sends</span>'+
+ '<div class="wire-tray"><button class="wire-node-out wire-socket" data-wire-out="'+esc(r.id)+'"'+(can('NATIVE_SET_PRIMARY_OUT')?'':' disabled')+' aria-label="Drag channel OUT wire"><span>↗</span></button>'+
+ '<button class="wire-node-in wire-socket" data-wire-in="'+esc(r.id)+'"'+((main||(r.role==='GROUP'&&r.nativeManaged))?'':' disabled')+' aria-label="Group or Main input socket"><span class="wire-arrow">↓</span></button></div></div>'+
    '<div class="section pan-section"><span class="pan-icon">PAN</span><span class="pan-control" style="--pan-start:'+Math.min(50,50+pan/2)+'%;--pan-end:'+Math.max(50,50+pan/2)+'%"><input class="center-pan" type="range" min="-100" max="100" step="1" value="'+pan+'"'+act(r.nativeScoped&&r.role==='INPUT'?'NATIVE_SET_CHANNEL_MIX':'SET_PAN',' data-mix-field="pan"')+'></span><output>'+Math.round(pan)+'</output></div>'+
    '<div class="section switch-section"><span class="buttons-wrapper codepen-buttons-wrapper">'+
    '<button class="button switch mute '+(r.controls.mute?'on':'')+'"'+act(r.nativeScoped&&r.role==='INPUT'?'NATIVE_SET_CHANNEL_MUTE_SOLO':'SET_MUTE',' data-toggle="mute"')+' aria-pressed="'+!!r.controls.mute+'"><span class="fa">MUTE</span></button>'+
@@ -242,6 +247,7 @@ function render(){
    !rows.some(r=>!!fxTarget(r.id));
  if(el('pluginScan'))el('pluginScan').disabled=!native;
  paintMeters();
+ scheduleWirePaint();
 }
 function paintMeters(){
  if(!snapshot)return;
@@ -266,6 +272,74 @@ function paintMeters(){
   }
  }
 }
+
+// WIRE paints accepted native ChannelId routes only, never the pending draft.
+const svgNs='http://www.w3.org/2000/svg';
+function scheduleWirePaint(){
+ if(wirePaintQueued)return;
+ wirePaintQueued=true;
+ requestAnimationFrame(()=>{wirePaintQueued=false;paintWires();});
+}
+function wireNode(id,kind){
+ return document.querySelector('.strip[data-id="'+CSS.escape(String(id))+'"] [data-wire-'+kind+']');
+}
+function wirePoint(node,root){
+ const a=node.getBoundingClientRect(),b=root.getBoundingClientRect();
+ return {x:a.left+a.width/2-b.left,y:a.top+a.height/2-b.top};
+}
+function wirePath(svg,d,color){
+ const path=document.createElementNS(svgNs,'path');
+ path.setAttribute('d',d);path.setAttribute('stroke',color);
+ path.setAttribute('stroke-width','2.4');path.setAttribute('fill','none');
+ path.setAttribute('stroke-linecap','round');
+ svg.appendChild(path);return path;
+}
+function wireColor(id){
+ const r=rowFor(String(id));
+ if(r?.role==='MAIN')return '#bc8997';
+ if(r?.role==='GROUP')return '#cfac6b';
+ return palette[(rows.indexOf(r)+palette.length)%palette.length];
+}
+function paintWires(){
+ const svg=el('wireLayer'),root=document.querySelector('.console-body');
+ if(!svg||!root)return;
+ svg.setAttribute('viewBox','0 0 '+root.clientWidth+' '+root.clientHeight);
+ svg.replaceChildren();
+ for(const r of rows){
+  if(!r.nativeScoped||!['INPUT','GROUP'].includes(r.role)||!r.out||r.out==='0')continue;
+  const from=wireNode(r.id,'out');if(!from)continue;
+  const a=wirePoint(from,root),to=wireNode(r.out,'in');
+  if(!to){wirePath(svg,'M'+a.x+' '+a.y+' q0 17 0 32',wireColor(r.id));continue;}
+  const b=wirePoint(to,root),mid=(a.x+b.x)/2,y=Math.max(a.y,b.y)+24;
+  wirePath(svg,'M'+a.x+' '+a.y+' C'+a.x+' '+y+' '+mid+' '+y+' '+mid+' '+y,wireColor(r.id));
+  wirePath(svg,'M'+mid+' '+y+' C'+mid+' '+y+' '+b.x+' '+y+' '+b.x+' '+b.y,wireColor(r.out));
+ }
+}
+function previewWire(e){
+ if(!wireDrag||wireDrag.pointerId!==e.pointerId)return;
+ wireDrag.moved ||= Math.hypot(e.clientX-wireDrag.x,e.clientY-wireDrag.y)>8;
+ const root=document.querySelector('.console-body'),svg=el('wireLayer');
+ const from=wireNode(wireDrag.id,'out');if(!root||!svg||!from)return;
+ const p=wirePoint(from,root),b=root.getBoundingClientRect();
+ const x=e.clientX-b.left,y=e.clientY-b.top;
+ let path=svg.querySelector('[data-preview-wire]');
+ if(!path){path=wirePath(svg,'',wireColor(wireDrag.id));path.dataset.previewWire='';}
+ path.setAttribute('d','M'+p.x+' '+p.y+' Q'+((p.x+x)/2)+' '+(Math.max(p.y,y)+25)+' '+x+' '+y);
+}
+function finishWire(e){
+ if(!wireDrag||wireDrag.pointerId!==e.pointerId)return;
+ const d=wireDrag;wireDrag=null;
+ const socket=document.elementFromPoint(e.clientX,e.clientY)?.closest('[data-wire-in]');
+ const dst=socket&&!socket.disabled?socket.dataset.wireIn:null;
+ scheduleWirePaint();
+ const src=rowFor(d.id);
+ if(!d.moved||!src||!opAvailable('NATIVE_SET_PRIMARY_OUT'))return;
+ if(snapshot?.device?.outputArmed){announce('MUTE OUTPUT before WIRE edit',true);return;}
+ if(dst===src.id){announce('WIRE feedback forbidden',true);return;}
+ // Dropping a connected OUT cable outside a socket detaches the native route.
+ send('NATIVE_SET_PRIMARY_OUT',src,{destinationId:String(dst||'0')});
+}
+
 function send(op,row,payload){
  if(!api||!snapshot){announce('NATIVE ENGINE NOT CONNECTED',true);return;}
  if(!opAvailable(op)){announce(op+' NOT AVAILABLE IN INSTALLED AUDIO ENGINE',true);return;}
@@ -458,6 +532,24 @@ document.getElementById('nativeAddAudio')?.addEventListener('click',()=>{
  const format=el('nativeChannelFormat')?.value==='STEREO'?'STEREO':'MONO';
  if(op)send(op,{id:'0',legacy:false},{name,format});
 });
+
+const wireOverlay=el('wireLayer'),wireContainer=document.querySelector('.console-body');
+if(wireOverlay&&wireContainer)wireContainer.appendChild(wireOverlay);
+document.addEventListener('pointerdown',e=>{
+ const socket=e.target.closest('[data-wire-out]');
+ if(!socket||socket.disabled||!native||!opAvailable('NATIVE_SET_PRIMARY_OUT')||
+    snapshot?.device?.outputArmed)return;
+ const src=rowFor(socket.dataset.wireOut);
+ if(!src||!['INPUT','GROUP'].includes(src.role))return;
+ wireDrag={id:src.id,x:e.clientX,y:e.clientY,pointerId:e.pointerId,moved:false};
+ e.preventDefault();
+});
+window.addEventListener('pointermove',previewWire,{passive:true});
+window.addEventListener('pointerup',finishWire);
+window.addEventListener('pointercancel',()=>{wireDrag=null;scheduleWirePaint();});
+window.addEventListener('resize',scheduleWirePaint,{passive:true});
+el('viewport')?.addEventListener('scroll',scheduleWirePaint,{passive:true});
+
 for(const id of ['wireView','wireMode','sofTarget'])if(el(id))el(id).disabled=true;
 if(!native){announce('NATIVE JUCE BACKEND REQUIRED · NO SIMULATED AUDIO',true);return;}
 api.addEventListener('arMixCatalog',catalog=>{

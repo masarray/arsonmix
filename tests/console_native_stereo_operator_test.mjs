@@ -52,3 +52,22 @@ test('CH11 and dynamic GROUP meters consume post-fader native PCM taps',()=>{
  assert.match(native,/nativeMeterEpoch_\.store\(0,std::memory_order_release\)/);
  assert.doesNotMatch(js,/new AudioContext|AudioWorklet|Math\.sin\(/);
 });
+
+
+test('native WIRE direct drag updates accepted primary OUT PCM graph',()=>{
+ const lab=readFileSync('src/LiveDryRoutingLab.h','utf8');
+ const engine=readFileSync('src/LiveAudioEngine.h','utf8');
+ assert.match(lab,/NativeBusResult setNativePrimaryOutput\(/);
+ assert.match(lab,/ChannelEdit::Kind::setPrimaryOutput/);
+ assert.match(lab,/DynamicChannelFxLeaseBank::reuseRevision/);
+ assert.match(lab,/nativePublisher_\.commit\(/);
+ assert.match(lab,/M4_INPUT_ROUTE_NOT_DYNAMIC/);
+ assert.match(engine,/dryRoutingLab_\.setNativePrimaryOutput/);
+ assert.match(bridge,/operation=="NATIVE_SET_PRIMARY_OUT"/);
+ assert.match(js,/data-wire-out/);assert.match(js,/data-wire-in/);
+ assert.match(js,/function paintWires\(\)/);
+ assert.match(js,/wireColor\(r\.out\)/);
+ assert.match(js,/send\('NATIVE_SET_PRIMARY_OUT',src,\{destinationId:String\(dst\|\|'0'\)\}\)/);
+ assert.match(html,/id="wireLayer"/);
+ assert.doesNotMatch(js,/AudioContext|AudioWorklet|Math\.sin\(/);
+});

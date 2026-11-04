@@ -3816,3 +3816,12 @@ body .status-bar .warning{color:#e2bd7d}body .strip [disabled]{cursor:not-allowe
 /* Native hardware stereo input: linear-size independent L/R selectors. */
 .native-stereo-pair{display:flex;gap:3px;flex:1;min-width:0;max-width:100%}
 .native-stereo-pair>.route-select{flex:1 1 0;min-width:0;width:50%;max-width:50%;font-size:9px}
+
+/* ACTUAL native WIRE routing overlay; no mocked audio or UI graph. */
+.console-body{position:relative}
+.console-body>.routing-wire-overlay{position:absolute;inset:0;width:100%;height:100%;z-index:8;pointer-events:none;overflow:hidden;contain:paint}
+.console-body .strip .wire-tray{display:flex;align-items:center;gap:5px;margin-top:auto;min-height:31px;padding:2px 4px 3px}
+.console-body .strip .wire-node-out{flex:1 1 auto;min-width:0;height:25px}
+.console-body .strip .wire-node-in{flex:0 0 27px;width:27px;min-width:27px;height:27px}
+.console-body .strip .wire-node-out:disabled{opacity:.42;cursor:default}
+.console-body .strip .wire-node-in:disabled{opacity:.38;cursor:default}
