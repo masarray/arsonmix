@@ -138,7 +138,13 @@ inline ApprovedNativeControlIntent translateApprovedNativeControl(
                 return reject("INVALID_PAN_VALUE");
             acceptedPan=requested;
         }
-        const double gain=acceptedDb<= -60.?0.:std::pow(10.,acceptedDb/20.);
+        // PAN must not round-trip the companion fader through a clipped dB
+        // projection: an accepted -60 dB can represent 0.001 linear, not
+        // silence, and an upper-clamped +12 dB can represent gain 4.0.
+        // Keep the verified native linear gain byte-for-byte on PAN edits.
+        // Only an explicit SET_FADER request converts dB into new gain.
+        const double gain=op=="SET_PAN"?nativeGain:
+            (acceptedDb<= -60.?0.:std::pow(10.,acceptedDb/20.));
         if(!std::isfinite(gain) || gain>4.)
             return reject("UNREPRESENTABLE_GAIN");
         nativeOperation=bus?"NATIVE_SET_BUS_MIX":"NATIVE_SET_CHANNEL_MIX";

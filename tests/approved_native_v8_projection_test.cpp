@@ -109,6 +109,37 @@ static void controlIntentTranslationCases(const juce::var& canonical,
                    .getProperty("gain",{}))-.5)<0.000001);
     assert(std::abs(static_cast<double>(pan.translated.getProperty("payload",{})
                    .getProperty("pan",{}))-.75)<0.000001);
+    // A PAN-only gesture must preserve the original LINEAR PCM gain.
+    // In particular, -60 dB in the GUI can be a nonzero 0.001 producer
+    // gain, while +12 dB can be a clamped readback of native gain 4.0.
+    // Recomputing from projected dB would unintentionally silence/attenuate
+    // the same channel despite a perfectly accepted PAN intent.
+    for(const double level : {0.0,0.001,4.0}) {
+        auto physicalBus=juce::JSON::parse(juce::JSON::toString(bus,false));
+        physicalBus.getProperty("channels",{})[0].getDynamicObject()
+            ->setProperty("fader",level);
+        auto physicalAccepted=canonicalSnapshot();
+        assert(projectApprovedNativeV8(physicalAccepted,physicalBus,true));
+        physicalAccepted.getProperty("graph",{}).getProperty("capabilities",{})
+            .getDynamicObject()->setProperty("supportedOps",juce::var(publicOps));
+        const auto panOnly=translateApprovedNativeControl(
+            makeIntent("SET_PAN",juce::var(-0.35),source),
+            physicalAccepted,physicalBus);
+        assert(panOnly.ok());
+        const auto cmd=panOnly.translated.getProperty("payload",{});
+        assert(std::abs(static_cast<double>(
+            cmd.getProperty("gain",{}))-level)<0.000000000001);
+        assert(std::abs(static_cast<double>(
+            cmd.getProperty("pan",{}))+0.35)<0.000000000001);
+        if(level==0.001) {
+            const auto explicitlySilent=translateApprovedNativeControl(
+                makeIntent("SET_FADER",juce::var(-60.),source),
+                physicalAccepted,physicalBus);
+            assert(explicitlySilent.ok());
+            assert(static_cast<double>(explicitlySilent.translated
+                .getProperty("payload",{}).getProperty("gain",-1.0))==0.);
+        }
+    }
     const auto muted=translateApprovedNativeControl(
         makeIntent("SET_MUTE",juce::var(true),source),accepted,bus);
     assert(muted.ok());
