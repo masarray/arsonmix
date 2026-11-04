@@ -323,11 +323,11 @@ test("M3 native-only Pages scope performs real bridge projection, fader intent a
 test("M3 Windows bundle owns pointerup fader gesture and fences native FX keyboard reorder",()=>{
  const builder=read("scripts/build_approved_native_gui.py");
  const bridge=read("web/approved-native-bridge.js");
- assert.match(builder,/const g=faderGesture;faderGesture=null;/);
- assert.match(builder,/consumeField\\?\\.\\(\\{target:g\\.input,type:'change'\\}\\)/);
- assert.match(builder,/function fxNativeTransactionRequired/);
- assert.match(builder,/__ARMIX_NATIVE_SCOPE__/);
- assert.match(bridge,/scope\\.installGraph\\(nextTracks,nextMaster,edges\\)/);
- assert.match(bridge,/scope\\?\\.findTrack/);
- assert.doesNotMatch(bridge,/window\\.addEventListener\\("pointerup"/);
+ assert.ok(builder.includes("const g=faderGesture;faderGesture=null;"));
+ assert.ok(builder.includes("consumeField?.({target:g.input,type:'change'})"));
+ assert.ok(builder.includes("function fxNativeTransactionRequired"));
+ assert.ok(builder.includes("__ARMIX_NATIVE_SCOPE__"));
+ assert.ok(bridge.includes("scope.installGraph(nextTracks,nextMaster,edges)"));
+ assert.ok(bridge.includes("scope?.findTrack?.(el)"));
+ assert.ok(!bridge.includes('window.addEventListener("pointerup"'));
 });
