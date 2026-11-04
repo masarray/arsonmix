@@ -68,7 +68,7 @@ public:
                         std::uint64_t proposedDeviceEpoch,
                         std::uint64_t activeDeviceEpoch,
                         bool allOutputsDisarmed,
-                        FxPlan fx={}) {
+                        FxPlan fx={},bool verifiedWireOnly=false) {
         CommitResult report;report.revision=publisher_.lastRevision();
         if(!fx.valid() ||
            (fx.owner && (fx.deviceEpoch!=proposedDeviceEpoch ||
@@ -83,7 +83,10 @@ public:
            expectedRevision==std::numeric_limits<std::uint64_t>::max()) {
             report.fault=Fault::staleRevision;return report;
         }
-        if(!allOutputsDisarmed) {
+        // Only DynamicAcceptedSession may authorize a WIRE-only change
+        // while armed after checking the physical device patch is unchanged.
+        // All source/device/roster edits still require output disarm.
+        if(!allOutputsDisarmed && !verifiedWireOnly) {
             report.fault=Fault::outputArmed;return report;
         }
         auto next=std::make_unique<Publisher::Snapshot>();
