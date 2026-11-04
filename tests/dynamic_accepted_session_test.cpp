@@ -329,7 +329,50 @@ static void verifyAtomicWireTransactionAndZeroSampleHops() {
     session.pollRetirement();
 }
 
+
+// New native channel = exactly one CH->MAIN edge in ONE accepted revision,
+// even when MAIN appears later in the same initial transaction. Restoring
+// an intentionally disconnected older channel never auto-repairs its route.
+static void verifyDefaultNativeMainEdgeAndDisconnectedRestore() {
+    constexpr std::uint64_t epoch=9910;
+    DynamicAcceptedSession session;
+    DynamicGraphRequest physical;
+    physical.maxFrames=64;
+    auto source=add(0,ChannelRole::input,"NEW WIRE");
+    source.connectMainOnCreate=true;
+    const auto main=add(1,ChannelRole::main,"MAIN",ProcessingFormat::stereo);
+    const std::array<ChannelEdit,2> first{source,main};
+    auto a=session.edit(0,0,first,physical,epoch,epoch,true);
+    assert(a.ok() && a.edit.createdIds.size()==2);
+    const auto ch=a.edit.createdIds[0],master=a.edit.createdIds[1];
+    const auto* routing=session.acceptedRouting(epoch,1);
+    assert(routing && routing->edges.size()==1);
+    const auto id=routing->edges.front().edgeId;
+    assert(id && routing->edges.front().from==ch &&
+           routing->edges.front().to==master &&
+           routing->edges.front().primaryOutput &&
+           routing->edges.front().gainLinear==1.f);
+    WireChange unplug;unplug.kind=WireChange::Kind::remove;
+    unplug.from=ch;unplug.edgeId=id;
+    const std::array<WireChange,1> batch{unplug};
+    a=session.wireTransaction(1,1,batch,physical,epoch,epoch,true);
+    assert(a.ok() && a.graphRevision==2);
+    assert(session.acceptedRouting(epoch,2)->edges.empty());
+    auto newer=add(1,ChannelRole::input,"NEWER WIRE");
+    newer.connectMainOnCreate=true;
+    const std::array<ChannelEdit,1> append{newer};
+    a=session.edit(2,2,append,physical,epoch,epoch,true);
+    assert(a.ok() && a.edit.createdIds.size()==1);
+    routing=session.acceptedRouting(epoch,3);
+    assert(routing && routing->edges.size()==1);
+    assert(routing->edges.front().from==a.edit.createdIds.front());
+    assert(routing->edges.front().to==master);
+    assert(routing->edges.front().edgeId!=id);
+    session.unpublish();session.pollRetirement();
+}
+
 int main() {
+    verifyDefaultNativeMainEdgeAndDisconnectedRestore();
     verifyAtomicWireTransactionAndZeroSampleHops();
 
     // WIRE-first regression: PRE and POST to the SAME destination are
