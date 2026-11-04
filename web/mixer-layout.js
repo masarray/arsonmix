@@ -727,7 +727,8 @@
   }
   function applyNativeWireTransaction(sourceId,reason,changes){
     const graph=acceptedWireGraph();
-    if(!graph||!can('APPLY_WIRE_TRANSACTION',sourceId)||
+    if(!graph||decimal(sourceId)===null||sourceId==='0'||
+       !can('APPLY_WIRE_TRANSACTION',sourceId)||
        !['CONNECT','UNPLUG','REPLUG','ROUTE_ONLY','MATRIX','NAVIGATOR'].includes(reason)||
        !Array.isArray(changes)||!changes.length||changes.length>64){
       showFeedback('WIRE UNAVAILABLE · native accepted graph/operation not installed');
