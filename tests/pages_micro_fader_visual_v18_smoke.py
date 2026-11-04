@@ -9,8 +9,8 @@ import tempfile
 from playwright.sync_api import sync_playwright
 
 ROOT=Path(__file__).resolve().parents[1]
-SOURCE=ROOT/"site/preview-v2/index.html"
-ASSETS=ROOT/"site/preview-v2/assets"
+SOURCE=ROOT/"site/preview/index.html"
+ASSETS=ROOT/"site/preview/assets"
 
 def same_box(a,b):
     return all(abs(a[k]-b[k])<=0.6 for k in ("x","y","width","height"))

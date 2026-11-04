@@ -6,9 +6,9 @@ from pathlib import Path
 from playwright.async_api import async_playwright
 
 ROOT=Path(__file__).resolve().parents[1]
-PAGE=ROOT/"site/preview-v2/index.html"
-STYLE=ROOT/"site/preview-v2/assets/mixer-control-keys.css"
-RUNTIME=ROOT/"site/preview-v2/assets/mixer-control-keys.js"
+PAGE=ROOT/"site/preview/index.html"
+STYLE=ROOT/"site/preview/assets/mixer-control-keys.css"
+RUNTIME=ROOT/"site/preview/assets/mixer-control-keys.js"
 
 def assert_ownership():
     html=PAGE.read_text(encoding="utf-8")

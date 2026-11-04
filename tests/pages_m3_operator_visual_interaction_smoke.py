@@ -4,7 +4,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 ROOT=Path(__file__).resolve().parents[1]
-HTML=ROOT/"site/preview-v2/index.html"
+HTML=ROOT/"site/preview/index.html"
 
 def physical(page,density,width):
     page.locator("#densitySelect").select_option(density)
