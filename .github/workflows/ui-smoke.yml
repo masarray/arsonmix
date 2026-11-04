@@ -297,6 +297,7 @@ jobs:
           name: arsonmix-gui-baseline-smoke
           path: |
             pages-wire-main-1680.png
+            pages-wire-main-*.png
             pages-v51-portrait-meter-1680.png
             pages-fader-rollback-console-1680.png
             pages-fader-rollback-detail-1680.png
