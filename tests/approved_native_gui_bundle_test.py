@@ -18,7 +18,7 @@ class ApprovedNativeGuiBundleTests(unittest.TestCase):
             manifest = bundle.stage(out)
             self.assertEqual(manifest["authoritativePagesRoute"], "/preview/")
             self.assertEqual(manifest["authoritativePagesOutput"], "preview/index.html")
-            self.assertEqual(manifest["adapterState"], "SCAFFOLD_ONLY__NOT_LIVE_PCM")
+            self.assertEqual(manifest["adapterState"], "M2_NATIVE_ACK_SNAPSHOT_GATED__PCM_NOT_CERTIFIED")
             approved = (source / "index.html").read_text("utf-8")
             native = (out / "index.html").read_text("utf-8")
             self.assertEqual(native.replace(bundle.ADAPTER_MARKER + "\n", ""), approved)
