@@ -3,7 +3,7 @@
 // These cannot replace real JUCE PCM/Windows screenshot/physical hardware FAT.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {collectSources,inspectMilestoneA} from '../scripts/check_console_puzzle.mjs';
+import {collectSources,inspectMilestoneA,PATHS} from '../scripts/check_console_puzzle.mjs';
 
 const sources=collectSources();
 const inspect=s=>inspectMilestoneA(s);
@@ -63,4 +63,13 @@ test('accepted native callback still requires a proper event dispatcher and phys
   assert.equal(typeof g0.g0Truthful,'boolean');
   assert.ok(g0.integration.every(x=>typeof x.pass==='boolean'&&x.release));
   assert.ok(g0.baseline.every(x=>x.release===false));
+});
+
+test('release preflight reads M3C INTEGRATOR-owned V8 projection rather than abandoned ENGINE path',()=>{
+  assert.equal(collectSources().projection,sources.projection);
+  assert.equal(PATHS.projection,'integration/ApprovedNativeV8Projection.h');
+  assert.notEqual(PATHS.projection,'src/ApprovedNativeV8Projection.h');
+  // The installed producer must still pass independent PCM/intent/FAT gates.
+  const g0=inspect(sources);
+  assert.ok(g0.integration.some(x=>!x.pass));
 });

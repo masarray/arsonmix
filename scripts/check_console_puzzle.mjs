@@ -14,7 +14,7 @@ export const PATHS=Object.freeze({
   engine:'src/LiveAudioEngine.h',
   nativeG0:'src/ApprovedConsoleNativeTransportV6.h',
   nativeV8:'src/ConsoleLiveBridgeV6.h',
-  projection:'src/ApprovedNativeV8Projection.h',
+  projection:'integration/ApprovedNativeV8Projection.h',
   renderOwner:'engine/core/NativeRenderAuthority.h',
   gui:'web/approved-native-bridge.js',
   protocol:'web/approved-native-contract.js',
