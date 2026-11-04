@@ -318,6 +318,25 @@ test("M3 native-only Pages scope performs real bridge projection, fader intent a
  assert.ok(rollbacks>0,"REJECTED restores the original GUI model");
  assert.equal(scope.tracks[0].level,-12);
  assert.equal(window.__ARMIX_NATIVE_M2__.state().pending,null);
+ // Selected hardware WIRE gesture must bind to the *real* decimal-string
+ // EdgeId and publish only after native graph ACK + a later PCM readback.
+ const sourceUi=scope.tracks[0].id,edgeUi=scope.edges[0].id;
+ assert.equal(window.__ARMIX_NATIVE_M2__.consumeWire([
+   {type:"REMOVE",sourceId:sourceUi,edgeId:edgeUi}
+ ]),true);
+ const wire=sent.findLast(x=>x.name==="arMixConsoleIntent").payload;
+ assert.equal(wire.operation,"APPLY_WIRE_TRANSACTION");
+ assert.equal(wire.targetChannelId,"9007199254740993");
+ assert.equal(wire.payload.changes[0].edgeId,"9223372036854775808");
+ assert.equal(scope.edges.length,1,"pending WIRE cannot change drawn routing");
+ listeners.get("arMixConsoleAck")({
+   requestId:wire.requestId,status:"ACCEPTED",errorCode:"NONE",
+   deviceEpoch:accepted.device.epoch,graphRevision:"6",rosterRevision:"7"
+ });
+ assert.equal(scope.edges.length,1,"ACK is not the graph publication");
+ const unwired=clone(updated);unwired.graph.revision="6";unwired.graph.edges=[];
+ listeners.get("arMixConsoleSnapshot")(unwired);
+ assert.equal(scope.edges.length,0,"accepted snapshot replaces reference wire");
 });
 
 test("M3 Windows bundle owns pointerup fader gesture and fences native FX keyboard reorder",()=>{
