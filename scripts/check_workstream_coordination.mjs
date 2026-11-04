@@ -50,7 +50,7 @@ export function metadata(body = '', headRef = '') {
 }
 export function audit({pr, files, others = [], filesByPR = {}}) {
   const current = metadata(pr.body || '', pr.head?.ref || pr.headRef || '');
-  const legacy = pr.number <= POLICY_EPOCH_PR;
+  const legacy = pr.number <= POLICY_EPOCH_PR && pr.draft === true;
   const errors = [], warnings = [];
   const changed = new Set(files);
   const owners = new Set([...changed].map(ownerOf).filter(Boolean));
@@ -76,7 +76,7 @@ export function audit({pr, files, others = [], filesByPR = {}}) {
     // that edited somebody else's files are reported, not allowed to block.
     const activeShared = shared.filter(f => {
       const owner = ownerOf(f);
-      return owner && owner === current.owner && owner === peer.inferred;
+      return peer.inferred === current.owner && (!owner || owner === current.owner);
     });
     if (activeShared.length) {
       errors.push('ACTIVE COLLISION with PR #' + other.number + ' (' +

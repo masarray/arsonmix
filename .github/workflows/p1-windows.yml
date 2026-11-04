@@ -29,6 +29,7 @@ on:
   # Native bridge changes still require Windows; pure visual GUI follows Pages only.
   # A full executable/package is still produced on native main and explicit FAT.
   pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
     paths:
       - 'CMakeLists.txt'
       - 'integration/console-v6/**'

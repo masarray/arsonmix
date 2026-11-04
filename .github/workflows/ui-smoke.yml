@@ -26,6 +26,7 @@ on:
       - '.github/workflows/ui-smoke.yml'
       - '.github/workflows/pages-publish.yml'
   pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
     paths:
       - 'web/**'
       - 'integration/console-v6/**'

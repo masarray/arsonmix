@@ -97,11 +97,25 @@ test('active same-owner native bridge collisions ARE blockers',()=>{
   assert.equal(result.activeCollisions,1);
 });
 test('pre-policy PRs remain report-only during migration, not retroactively blocked',()=>{
-  const old={number:POLICY_EPOCH_PR,head:{ref:'integration/old'},body:''};
+  const old={number:POLICY_EPOCH_PR,draft:true,head:{ref:'integration/old'},body:''};
   const result=check(old,['src/LiveAudioEngine.h']);
   assert.equal(result.ok,true);
   assert.equal(result.legacy,true);
   assert.match(result.warnings.join(' '),/LEGACY migration/);
+});
+test('legacy PR becomes strictly checked on ready-for-review promotion',()=>{
+  const old={number:POLICY_EPOCH_PR,draft:false,head:{ref:'integration/old'},body:''};
+  const result=check(old,['src/LiveAudioEngine.h']);
+  assert.equal(result.ok,false);
+  assert.match(result.errors.join(' '),/arsonmix-workstream/);
+});
+test('same-owner shared contract/test files cannot be edited in parallel',()=>{
+  const a=pr(405,'ENGINE','engine/route');
+  const b=pr(408,'ENGINE','engine/latency');
+  const x=check(a,['tests/engine_contract_test.mjs'],[b],
+    {'408':['tests/engine_contract_test.mjs']});
+  assert.equal(x.ok,false);
+  assert.match(x.errors.join(' '),/ACTIVE COLLISION/);
 });
 test('coordinator uses existing native + Chromium CI, not a fifth workflow',()=>{
   const native=readFileSync('.github/workflows/p1-windows.yml','utf8');
@@ -109,6 +123,7 @@ test('coordinator uses existing native + Chromium CI, not a fifth workflow',()=>
   for(const text of [native,ui]){
     assert.match(text,/scripts\/check_workstream_coordination\.mjs --pr/);
     assert.match(text,/pull-requests: read/);
+    assert.match(text,/ready_for_review/);
     assert.match(text,/GH_TOKEN: \$\{\{ github\.token \}\}/);
   }
   const guide=readFileSync('AGENTS.md','utf8');
