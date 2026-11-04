@@ -110,7 +110,7 @@ def geometry(page, density, label):
         for rig in out["rigs"]:
             compact=density=="compact"
             slim=density!="comfort"
-            close(rig["wellWidth"],25 if compact else (27 if slim else 29),.6)
+            close(rig["wellWidth"],25 if compact else (27 if slim else 32),.6)
             close(rig["capWidth"],25 if compact else 27,.6)
             close(rig["capHeight"],50 if compact else 54,.6)
             close(rig["laneWidth"],10,.6)
@@ -202,7 +202,7 @@ def main():
         published=dist/"preview/mixer.html"
         assert published.read_bytes()==CANON.read_bytes(),"Published mixer source drift"
         expected_ruler_keys={
-            "mixer-fader-assembly.css":"css-owner-v27-fader-pruned-v52-recess",
+            "mixer-fader-assembly.css":"css-owner-v27-fader-rollback-pre-v52-tail",
             "mixer-meter-display.css":"css-owner-v27-meter-pruned",
         }
         for name,key in expected_ruler_keys.items():

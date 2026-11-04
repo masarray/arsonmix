@@ -85,7 +85,7 @@ jobs:
         run: python tests/pages_fx_rail_v53_smoke.py
       - name: Verify V54 context-aware WIRE and independent FX chain/slot bypass
         run: python tests/pages_v54_wire_fx_context_smoke.py
-      - name: Verify V55 accepted WIRE paint and fader depth
+      - name: Verify V55 accepted WIRE paint and V51 fader rollback
         run: python tests/pages_v55_context_wire_fader_smoke.py
       - name: Verify original metallic asset and standalone synchronization
         run: python tests/fader_asset_test.py
@@ -99,7 +99,7 @@ jobs:
         run: python tests/mixer_shell_geometry_smoke.py
       - name: Verify V51 portrait LED steps, color-matched hold and quiet fader shadow
         run: python tests/pages_v51_portrait_led_peak_hold_smoke.py
-      - name: Verify V52 fader recess, gain ruler and immutable V51 portrait meter
+      - name: Verify owner-requested pre-V52 fader restoration, gain ruler and immutable V51 meter
         run: python tests/pages_v52_fader_recess_smoke.py
       - name: Verify V50 compact console WIRE configuration popouts and dBFS tick insets
         run: python tests/pages_v50_wire_popout_layout_smoke.py
@@ -298,6 +298,8 @@ jobs:
           path: |
             pages-wire-main-1680.png
             pages-v51-portrait-meter-1680.png
+            pages-fader-rollback-console-1680.png
+            pages-fader-rollback-detail-1680.png
             pages-v53-fx-rail-1366.png
             pages-v53-fx-rail-1378.png
             pages-v53-fx-rail-1680.png
