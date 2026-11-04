@@ -1407,12 +1407,12 @@ function renderWireWsInspector(){
  const p=wireWsInspect,info=p&&wireWsRouteKind(p.src,p.dst,wireWsRoutes());
  if(!info){panel.hidden=true;return;}
  panel.hidden=false;
- const src=tracks.find(t=>t.id===p.src),dst=tracks.find(t=>t.id===p.dst);
+ const src=tracks.find(t=>t.id===p.src),dst=tracks.concat(master).find(t=>t.id===p.dst);
  if(!src||!dst){panel.hidden=true;return;}
  const edge=info.edge,key=p.src+':'+p.dst;
  const controls=edge?
   '<div class="wire-ws-controls"><label for="wireWsGain">GAIN</label>'+
-  '<input type="range" id="wireWsGain" data-ws-gain="'+edge.id+'" min="-60" max="6" step="1" value="'+edge.levelDb+'">'+
+  '<input type="range" id="wireWsGain" data-ws-gain="'+edge.id+'" min="-60" max="6" step="1" value="'+edge.levelDb+'" '+(dst.kind==='master'?'disabled':'')+'>'+
   '<span id="wireWsGainText">'+edge.levelDb+' dB</span>'+
   '<label for="wireWsTap">TAP</label>'+
   '<select id="wireWsTap" data-ws-tap="'+edge.id+'" '+(edge.kind==='primary'?'disabled':'')+'>'+
@@ -2616,17 +2616,23 @@ document.getElementById('wireWsInspector').addEventListener('input',e=>{
  const gain=e.target.closest?.('[data-ws-gain]');
  if(!gain)return;
  const edge=wireEdges.find(x=>x.id===Number(gain.dataset.wsGain)&&x.enabled);
- if(!edge)return;
- edge.levelDb=Math.max(-60,Math.min(6,Math.round(Number(gain.value)||0)));
- document.getElementById('wireWsGainText').textContent=edge.levelDb+' dB';
+ if(!edge||edge.destId===master.id)return;
+ const amount=Math.max(-60,Math.min(6,Math.round(Number(gain.value)||0)));
+ if(!wireGraphCommit([{type:'GAIN',sourceId:edge.sourceId,edgeId:edge.id,
+  levelDb:amount}],{record:false}))return;
+ document.getElementById('wireWsGainText').textContent=amount+' dB';
 });
 document.getElementById('wireWsInspector').addEventListener('change',e=>{
  const gain=e.target.closest?.('[data-ws-gain]'),tap=e.target.closest?.('[data-ws-tap]');
  if(tap){
   const edge=wireEdges.find(x=>x.id===Number(tap.dataset.wsTap)&&x.enabled);
-  if(edge&&edge.kind!=='primary')edge.mode=tap.value==='split'?'split':'send';
+  if(!edge||!wireGraphCommit([{type:'MODE',sourceId:edge.sourceId,edgeId:edge.id,
+   mode:tap.value==='split'?'split':'send'}],{record:false}))return;
  }
- if(gain||tap){wireWsRecord(wireWsEditBefore);wireWsEditBefore=null;render();renderWireWorkspace();say('WIRE inspector updated '+wireWsLabel(wireWsInspect?.src)+' → '+wireWsLabel(wireWsInspect?.dst)+' · GUI reference');}
+ if(gain||tap){
+  wireWsRecord(wireWsEditBefore);wireWsEditBefore=null;render();renderWireWorkspace();
+  say('WIRE inspector accepted · reference graph only');
+ }
 });
 
 document.getElementById('wireLegend').addEventListener('change',e=>{
