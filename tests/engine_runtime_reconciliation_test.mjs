@@ -111,6 +111,7 @@ test('E6 original CH1-10 and dynamic INPUT use one accepted native PCM control w
   assert.match(native,/nativeAccepted_\.graph\.roster\.rememberLiveMix/);
   assert.match(native,/nativeAccepted_\.graph\.roster\.rememberLiveMuteSolo/);
   assert.match(physical,/nativeStructureLive_ \|\| nativeControlDirty_/);
+  assert.match(physical,/void rejectedNativeMirror\(\) noexcept \{[\s\S]*?nativeControlDirty_/);
   assert.match(physical,/nativeControlDirty_=false; \/\/ fresh accepted legacy\/native/);
 });
 

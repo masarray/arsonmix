@@ -1792,7 +1792,9 @@ public:
             topologyFault_.store(true,std::memory_order_release);
     }
     void rejectedNativeMirror() noexcept {
-        if(nativeStructureLive_)
+        // A failed AUX/mirror after any native-owned fader gesture must not
+        // reactivate stale legacy M4 controls on the original channels.
+        if(nativeStructureLive_ || nativeControlDirty_)
             topologyFault_.store(true,std::memory_order_release);
         else channelIdPcmEpoch_.store(0,std::memory_order_release);
     }
