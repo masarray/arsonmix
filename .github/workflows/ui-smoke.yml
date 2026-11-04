@@ -1,4 +1,6 @@
 name: UI smoke (Chromium)
+# FAST default: current critical paths only. Full historical suite only on manual dispatch
+# or release integration PR. Pages publisher waits for successful quick main push.
 
 on:
   push:
@@ -9,7 +11,13 @@ on:
       - 'site/**'
       - 'AR-MIX-Live-FX-Host-Standalone-v0.3.html'
       - 'scripts/build_pages.py'
-      - 'tests/**'
+      # GUI-only changes: do not start Chromium for native C++ or PCM tests.
+      - 'tests/*.py'
+      - 'tests/gui_workflow_contract_test.mjs'
+      - 'tests/*gui*contract*.mjs'
+      - 'tests/native_ui_contract_test.mjs'
+      - 'tests/wire_graph_canonical_model.test.cjs'
+      - 'tests/ci_workflow_efficiency_test.mjs'
       - 'scripts/build_ui_css.py'
       - '.github/workflows/ui-smoke.yml'
       - '.github/workflows/pages-publish.yml'
@@ -27,8 +35,10 @@ on:
       - 'tests/native_ui_contract_test.mjs'
       - 'tests/native_orbit_ui_smoke.py'
       - 'tests/ci_workflow_efficiency_test.mjs'
+      - 'tests/wire_graph_canonical_model.test.cjs'
       - '.github/workflows/ui-smoke.yml'
       - '.github/workflows/pages-publish.yml'
+  # Manual full suite (including immutable CSS migration tests) or release-integration PR.
   workflow_dispatch:
 
 # New PR commits supersede old UI checks. The production Pages dispatcher
@@ -104,16 +114,20 @@ jobs:
       - name: Verify V50 compact console WIRE configuration popouts and dBFS tick insets
         run: python tests/pages_v50_wire_popout_layout_smoke.py
       - name: Verify V6 contextual buttons, momentary press and zero pointer scroll
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_contextual_buttons_smoke.py
       - name: Verify V43 public Pages WIRE CSS, incoming cables and propagating socket impact
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_wire_incoming_v43_smoke.py
       - name: Verify V15 real pointer OUT-to-IN wire and exclusive Bus routing
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/preview_v15_drag_wire_smoke.py
       # V10–V24 are exact historical migration/restoration tests. They compare
       # original versioned bytes, so run them on immutable V24 rather than
       # pretending the intentional V50 layout/stylesheet changes are V22.
       # Restore PR files before ALL current GUI/function/geometry smoke tests.
       - name: Mount pinned V24 historical CSS fixture (reversible, no CI rebaseline)
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         shell: bash
         run: |
           set -euo pipefail
@@ -126,40 +140,58 @@ jobs:
             git show "$baseline:$path" > "$path"
           done
       - name: Verify V8 FX rack and Plugin Manager CSS ownership
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_css_ownership_v8_smoke.py
       - name: Verify V9 PAN/fader/meter CSS ownership and geometry
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_css_ownership_v9_smoke.py
       - name: Verify V10 cascade ownership and rendered console geometry
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_css_architecture_v10_smoke.py
       - name: Validate V11 section ownership, cascade and computed visual styles
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_css_architecture_v11_smoke.py
       - name: Verify V12 removed shadow declarations and old/new visual + control parity
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_css_architecture_v12_smoke.py
       - name: Verify V13 owned CSS conflicts and physical control visual parity
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_css_architecture_v13_smoke.py
       - name: Verify V14 canonical 45 material tokens and V13 browser parity
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_css_architecture_v14_smoke.py
       - name: Verify V15 clean cross-owner CSS and actual interactive visual parity
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_css_architecture_v15_smoke.py
       - name: Verify V16 WIRE single CSS owner, 241-rule exact source and visual parity
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_css_architecture_v16_smoke.py
       - name: Verify V17 Plugin Manager and Fast FX Picker single CSS owner
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_css_architecture_v17_smoke.py
       - name: Verify V18 physical Chrome ownership and four cascade conflict removals
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_css_architecture_v18_smoke.py
       - name: Verify V19 shared operator key ownership and six shadowed declarations
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_css_architecture_v19_smoke.py
       - name: Verify V20 elimination of 53 shadowed declarations and Chromium state parity
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_css_architecture_v20_smoke.py
       - name: Verify V21 physical console chassis geometry owner and visual parity
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_css_architecture_v21_smoke.py
       - name: Verify V22 legacy key material migration and M3 visual parity
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_css_architecture_v22_smoke.py
       - name: Verify V23 exact cascade deletions and browser parity
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_css_architecture_v23_smoke.py
       - name: Verify V24 Fader/Meter/FX cascade pruning and browser parity
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_css_architecture_v24_smoke.py
       - name: Restore and verify exact V50 PR assets before current UI smoke
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         shell: bash
         run: |
           set -euo pipefail
@@ -172,6 +204,7 @@ jobs:
       # The V25 historical test is an immutable exact-byte migration gate.
       # Do not rebaseline it after deliberate V26 dead-rule removals.
       - name: Mount pinned V25 original CSS before historical V25 migration test
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         shell: bash
         run: |
           set -euo pipefail
@@ -184,8 +217,10 @@ jobs:
             git show "$baseline:$path" > "$path"
           done
       - name: Verify V25 exact V51 physical-key owner migration and zero visual regression
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_css_architecture_v25_smoke.py
       - name: Restore and verify current V26 source before latest GUI tests
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         shell: bash
         run: |
           set -euo pipefail
@@ -197,6 +232,7 @@ jobs:
           git diff --exit-code -- site/preview-v2/index.html site/preview-v2/assets/mixer-control-keys.css site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-plugin-browser.css site/preview-v2/assets/mixer-pan-controls.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-utility-controls.css
       # Byte-exact V26 historical CSS check is pinned, not rebaselined.
       - name: Mount V26 approved source before historical regression
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         shell: bash
         run: |
           set -euo pipefail
@@ -209,8 +245,10 @@ jobs:
             git show "$baseline:$path" > "$path"
           done
       - name: Verify V26 retired socket dead rules and exact V25 visual/control parity
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_css_architecture_v26_smoke.py
       - name: Restore P0 current WIRE source after historical V26 regression
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         shell: bash
         run: |
           set -euo pipefail
@@ -223,6 +261,7 @@ jobs:
       # V27 is a byte-exact historical CSS migration proof; it must run
       # against its original qualified GUI, never rebaseline a newer FX/rail.
       - name: Mount pinned V27 GUI and CSS owners for immutable parity
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         shell: bash
         run: |
           set -euo pipefail
@@ -235,8 +274,10 @@ jobs:
             git show "$baseline:$path" > "$path"
           done
       - name: Verify V27 scoped material and 37 owned loser declarations with Chromium parity
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_css_architecture_v27_smoke.py
       - name: Restore and verify exact V53 current sources after historical V27
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         shell: bash
         run: |
           set -euo pipefail
@@ -247,132 +288,78 @@ jobs:
           done
           git diff --exit-code -- site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-plugin-browser.css site/preview-v2/assets/mixer-pan-controls.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-utility-controls.css
       - name: Verify embedded Inter font and contextual V7 micro-controls
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_inter_utility_v7_smoke.py
       - name: Validate exact alpha micro hardware sprite states and WIRE coexistence
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_micro_button_assets_v1_smoke.py
       - name: Verify owned V6 mixer hardware keys and WIRE regression
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_controls_v6_smoke.py
       - name: Verify CSS-built MUTE reference face and active/inactive interaction
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_mute_css_reference_smoke.py
       - name: Reconcile PNG button preview with exact latest WIRE source and geometry
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_png_buttons_wire_reconciliation_smoke.py
       - name: Verify V6 contextual OFF and ON readability, SVG ink and WIRE matrix statuses
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_contextual_contrast_smoke.py
       - name: Verify V18 square Material icon controls and calibrated fader + VU rulers
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_micro_fader_visual_v18_smoke.py
       - name: Verify M1 true dBFS signal-to-LED mapping and pixel-calibrated gain/meter ruler
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_m1_meter_gain_calibration_smoke.py
       - name: Verify M3 meter/clip/menu/FX/receiving multi-wire operator contract
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_m3_operator_visual_interaction_smoke.py
       - name: Run mixer UI smoke tests
         run: python tests/ui_smoke.py
       - name: Verify Preview V2 V7 physical visual geometry and modeless mixer workflow
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/preview_v2_v7_visual_smoke.py
       - name: Verify V40 WIRE proximity, focus release and full-tray channel selection
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_wire_focus_v40_smoke.py
       - name: Verify V42 original OUT fill and magnetic dot-follow drag
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_wire_dot_v42_smoke.py
       - name: Verify V44 dock, cable-matched dots, right labels, folded row and broader impact
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_wire_v44_finish_smoke.py
       - name: Verify V45 destination channel-color socket and collision-free responsive captions
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_wire_v45_socket_layout_smoke.py
       - name: Verify V46 exact dot endpoint anchors, LVL geometry and socket inner color
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_wire_v46_precision_smoke.py
       - name: Verify G1/G2 LIVE mixer bank and native I/O transaction
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/mixer_io_smoke.py
       - name: Verify MIX and FX RACK Auto Orbit workflow
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/native_orbit_ui_smoke.py
       # Firefox perf is deliberate: main release verification or manual opt-in.
       # Do not download/run a second browser for every iterative GUI PR.
       - name: Install Firefox for compositor functional regression
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python -m playwright install firefox
       - name: Run Firefox opt-in performance diagnostics smoke
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/ui_firefox_perf_smoke.py
-      - name: Attach visual regression screenshots
+      - name: Attach current WIRE / FX / meter / fader screenshots (small, PR-friendly)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: arsonmix-gui-baseline-smoke
+          name: arsonmix-gui-current-smoke
           path: |
-            pages-wire-main-1680.png
             pages-wire-main-*.png
-            pages-v51-portrait-meter-1680.png
-            pages-fader-rollback-console-1680.png
-            pages-fader-rollback-detail-1680.png
-            pages-v53-fx-rail-1366.png
-            pages-v53-fx-rail-1378.png
-            pages-v53-fx-rail-1680.png
-            pages-v53-fx-rail-1920.png
-            pages-v51-peak-hold-release-1680.png
-            native-orbit-ui-review.png
-            mixer-g1-g2-1366.png
-            mixer-g1-g2-1440.png
-            mixer-g1-g2-1680.png
-            mixer-g1-bank-fx-1680.png
-            mixer-g1-bank-route-1680.png
-            mixer-g1-bank-sends-1680.png
-            mixer-shell-fx-1680.png
-            mixer-shell-route-1680.png
-            mixer-shell-sends-1680.png
-            mixer-shell-compact-1366.png
-            fader-ui-smoke.png
-            toolbar-global-btn180-pad.png
-            device-green-on-palette-review.png
-            pages-v8-fx-rack-expanded-1680.png
-            pages-v8-fx-browser-closed-1680.png
-            pages-v9-pan-fader-meter-1366.png
-            pages-v9-pan-fader-meter-1680.png
-            pages-v10-shell-1366.png
-            pages-v10-shell-1680.png
-            pages-v11-collapse-1366.png
-            pages-v11-console-1680.png
-            pages-v12-console-1680.png
-            pages-v13-owner-console-1680.png
-            pages-v14-tokens-console-1680.png
-            pages-v15-clean-cascade-1680.png
-            pages-v16-wire-owner-1680.png
-            pages-v22-legacy-keys-1680.png
-            pages-v23-owners-pruned-1680.png
-            pages-v24-fader-meter-fx-1680.png
-            pages-v25-control-keys-v51-1680.png
-            pages-v26-dead-socket-pruned-1680.png
-            pages-v27-scoped-chrome-1680.png
-            pages-v7-embedded-inter-utility-1680.png
-            pages-mixer-v6-OFF-1680.png
-            pages-mixer-v6-ON-1680.png
-            mixer-design-review.png
-            preview-v2-v7-1366.png
-            preview-v2-v7-1666.png
-            preview-v2-v7-1920.png
-            preview-operator-1366.png
-            preview-operator-1666.png
-            preview-operator-1920.png
-            preview-operator-1711.png
-            preview-v13-all-expanded-1711.png
-            preview-v14-all-folded-1711.png
-            preview-v16-reordered-1711.png
-            preview-v2-v7-1711.png
-            preview-v15-wire-left-1680.png
-            preview-v15-wire-bus-only-1680.png
-            preview-p0-fx-expanded-1366.png
-            pages-v6-arrow-contrast-1680.png
-            pages-v18-fader-scale-1680.png
-            m1-calibrated-fader-meter-1680.png
-            m1-active-meter-dbfs-1680.png
-            pages-v18-fx-micro-1680.png
-            site/preview-v2/index.html
-            site/preview-v2/assets/
-            mixer-design-review-1440.png
-            native-input-patch-review-1680.png
-            native-input-patch-review-1440.png
-            mixer-master-clip-review.png
-            mixer-pro-view-review.png
-            mixer-master-dual-metric-left-rail.png
-            mixer-crystal-candy-review.png
-            mixer-crystal-depth-glow-review.png
-            mixer-inter-recessed-toggle-review.png
-            mixer-left-rail-unified-button180-pan-131512.png
+            pages-v53-fx-rail-*.png
+            pages-v51-portrait-meter-*.png
+            pages-fader-rollback-*.png
+            mixer-shell-*.png
+            pages-v54-*.png
+            pages-v55-*.png
           if-no-files-found: ignore
           retention-days: 3
