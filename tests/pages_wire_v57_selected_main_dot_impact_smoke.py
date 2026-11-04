@@ -111,14 +111,17 @@ def run():
             page.locator('#tracks .strip[data-id="5"] .wire-node-out').click()
             page.locator('#tracks .strip[data-id="3"] .wire-node-in').click()
             if width == 1680:
-                page.wait_for_function("""() =>
-                  window.__v57Impact.length >= 18 &&
-                  document.querySelector('#wireLayer path.wire-outgoing-line[data-cable-key="5-3"]')
-                    ?.getAttribute('d')?.includes(' C ')""", timeout=6000)
+                # A finite 1.6 s animation: inspect the real final DOM, not
+                # an inferred timeline / unexposed JavaScript renderer symbol.
+                page.wait_for_timeout(1950)
                 captured = page.evaluate("""() => ({
                   frames:window.__v57Impact,
-                  base:document.querySelector('#wireLayer path.wire-outgoing-line[data-cable-key="5-3"]').getAttribute('d')
+                  base:document.querySelector('#wireLayer path.wire-outgoing-line[data-cable-key="5-3"]')?.getAttribute('d')
                 })""")
+                assert len(captured["frames"]) >= 8, (
+                    "impact not repainted over multiple frames", width, len(captured["frames"]), captured["base"])
+                assert captured["base"] and " C " in captured["base"], (
+                    "animated curve did not settle to cubic", width, len(captured["frames"]), captured["base"])
                 early = displacement(captured["frames"][0], captured["base"])
                 late = displacement(captured["frames"][-1], captured["base"])
                 assert max(early[42:53]) > 6, ("weak receiver impact", max(early))
