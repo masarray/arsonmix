@@ -65,6 +65,29 @@ public:
                        std::move(result),std::move(fx));
     }
 
+    // WIRE transaction is validated against accepted roster+graph revisions,
+    // then compiled/published by the SAME native PCM publisher as other edits.
+    // No GUI state or separate audio graph becomes authoritative on rejection.
+    Result wireTransaction(std::uint64_t expectedRosterRevision,
+                           std::uint64_t expectedGraphRevision,
+                           std::span<const WireChange> changes,
+                           const DynamicGraphRequest& route,
+                           std::uint64_t expectedDeviceEpoch,
+                           std::uint64_t activeDeviceEpoch,
+                           bool allOutputsDisarmed,
+                           DynamicNativeSessionPublisher::FxPlan fx={}) {
+        Result result=preflight(expectedRosterRevision,expectedGraphRevision);
+        if(!result.ok())return result;
+        auto candidate=accepted_;
+        result.edit=candidate.wireTransaction(expectedRosterRevision,changes);
+        if(!result.edit.ok()) {
+            result.fault=Fault::editRejected;return result;
+        }
+        return publish(std::move(candidate),route,expectedGraphRevision,
+                       expectedDeviceEpoch,activeDeviceEpoch,allOutputsDisarmed,
+                       std::move(result),std::move(fx));
+    }
+
     // Studio Pro: one independent Bus ChannelId and automatic assignment of
     // selected primary OUTs; FX Return leaves those OUTs intact and adds sends.
     Result createBusForSelected(std::uint64_t expectedRosterRevision,
