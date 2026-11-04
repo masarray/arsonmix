@@ -4,6 +4,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+// FAT regression tests share the existing Windows Node contract runner.
+import './m3e_fat_evidence_gate.test.mjs';
 const read=path=>readFileSync(path,'utf8');
 const workflow=read('.github/workflows/p1-windows.yml');
 const packaging=read('scripts/package_native_windows.ps1');
@@ -107,4 +109,22 @@ test('FAT bundle retains the reviewed first-sound guide and SHA protection',()=>
   for(const text of ['10 input channels + 4 AUX','OUTPUT_ONLY_TONE',
     'CAPTURE_ONLY','COPY FULL REPORT','30 minutes','no separate manual START AUDIO'])
     assert.ok(quick.includes(text),text);
+});
+
+test('M3-E same-SHA native ZIP carries SHA-pinned FAT tools and no fake hardware claims',()=>{
+  const p=read('scripts/package_native_windows.ps1');
+  const v=read('scripts/verify_native_windows_artifact.ps1');
+  const collector=read('scripts/collect_hardware_fat_windows.ps1');
+  const checker=read('scripts/m3e_fat_evidence_gate.mjs');
+  assert.match(p,/fatCollectorSha256 =/);
+  assert.match(p,/fatGateSha256 =/);
+  assert.match(v,/FAT tool differs from exact source \/ manifest/);
+  assert.match(v,/FAT tool ZIP payload digest differs/);
+  assert.match(v,/scripts\/m3e_fat_evidence_gate\.mjs/);
+  assert.match(collector,/FAT_RUNS\.json/);
+  assert.match(collector,/EXPERIMENTAL_NOT_HARDWARE_QUALIFIED/);
+  assert.match(collector,/physicalAudibilityVerifiedBySoftware=\$false/);
+  assert.match(checker,/PENDING_NATIVE_CALLBACK_PROOF/);
+  assert.match(checker,/EVIDENCE_READY_FOR_HUMAN_REVIEW/);
+  assert.doesNotMatch(checker,/hardwareCertified:true/);
 });
