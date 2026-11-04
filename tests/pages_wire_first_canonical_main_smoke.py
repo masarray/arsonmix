@@ -90,6 +90,24 @@ def audit_visual_matrix(browser):
             page.goto(PAGE.as_uri())
             page.locator("#densitySelect").select_option(density)
             body=page.locator(".console-body")
+            # Narrow/Compact intentionally locks the WIRE bay folded to keep
+            # 23px physical geometry. It has graph-bound compact contacts,
+            # not a full cable overlay; the rail refuses expansion by design.
+            if density=="compact":
+                assert "collapsed-send" in (body.get_attribute("class") or "")
+                initial=edge(page,1,"out")
+                assert initial and page.locator(
+                    '#tracks .strip[data-id="1"] .wire-fold-summary'
+                ).get_attribute("data-wire-main-edge")==initial
+                assert page.locator(
+                    '#master .wire-fold-summary'
+                ).get_attribute("data-wire-main-edge")==initial
+                assert page.locator(".wire-main-fragment").count()==0
+                page.screenshot(path=str(PAGE.parents[2]/
+                    f"pages-wire-main-{width}x{height}-{density}.png"))
+                assert not errors,(width,height,density,errors)
+                page.close()
+                continue
             if "collapsed-send" in (body.get_attribute("class") or ""):
                 page.locator('.section-rail [data-section="send"]').click()
             pair=page.evaluate("""() => {
