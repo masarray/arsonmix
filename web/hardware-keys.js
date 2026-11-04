@@ -172,7 +172,18 @@
     // Watch DOM replacement only, not high-frequency meter/style attributes.
     observer.observe(document.body,{childList:true,subtree:true});
   }
-  window.ArSonMixHardwareKeys=Object.freeze({install,upgrade,scan,PALETTE});
+  // Update only the engraved control, without tearing down its SVG.
+  function setLegend(button,legend){
+    if(!(button instanceof HTMLButtonElement)||!button.isConnected||
+       typeof legend!=='string'||!(/^[A-Za-z0-9_Ø/+ -]{1,10}$/).test(legend))return false;
+    const record=instances.get(button);
+    if(!record)return false;
+    if(button.dataset.mxHwLegend===legend)return true;
+    record.legend=legend;button.dataset.mxHwLegend=legend;
+    render(button,true);
+    return true;
+  }
+  window.ArSonMixHardwareKeys=Object.freeze({install,upgrade,scan,setLegend,PALETTE});
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});
   else install();
 })();
