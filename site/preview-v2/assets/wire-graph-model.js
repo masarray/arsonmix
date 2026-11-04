@@ -25,6 +25,14 @@
       e.sourceId===mainId||e.sourceId===e.destId||
       e.enabled!==true||!Number.isFinite(e.levelDb)||e.levelDb < -60||e.levelDb > 6)
     return {ok:false,error:'INVALID_EDGE'};
+   // Unknown kinds/taps are never a valid audible connection. In particular,
+   // Scene and legacy import may not bypass the same deterministic Guardian.
+   if(!['primary','send','split'].includes(e.kind))
+    return {ok:false,error:'INVALID_EDGE_KIND'};
+   if((e.kind==='primary'&&!['postFader','routeOnly'].includes(e.mode))||
+      (e.kind==='send'&&!['send','split'].includes(e.mode))||
+      (e.kind==='split'&&!['splitPre','splitPost'].includes(e.mode)))
+    return {ok:false,error:'INVALID_EDGE_TAP'};
    edgeIds.add(e.id);
    const key=edgeKey(e);
    if(unique.has(key))return {ok:false,error:'DUPLICATE_ROUTE'};
@@ -63,6 +71,8 @@
  }
  function applyWireTransaction(state,ops){
   if(!state||!Array.isArray(ops)||!ops.length)return {ok:false,error:'EMPTY_TRANSACTION'};
+  if(!Array.isArray(state.channels)||!Array.isArray(state.edges))
+   return {ok:false,error:'INVALID_GRAPH'};
   const {channels,mainId}=state;
   let edges=state.edges.map(e=>({...e}));
   let nextId=state.nextId;
@@ -82,6 +92,8 @@
      edges.push({id:existing?.id??nextId++,sourceId,destId:op.destId,enabled:true,
       kind:'primary',mode:'routeOnly',levelDb:0});
     }else{
+     if(op.mode!==undefined&&!['send','split','splitPre','splitPost'].includes(op.mode))
+      return {ok:false,error:'INVALID_EDGE_TAP'};
      if(edges.some(e=>e.sourceId===sourceId&&e.destId===op.destId))
       return {ok:false,error:'DUPLICATE_ROUTE'};
      const isMain=op.destId===mainId;
