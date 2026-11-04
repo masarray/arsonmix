@@ -99,8 +99,10 @@ function planWire(view,request){
   if(sourceId===destinationId)return fail('SELF_ROUTE_FORBIDDEN');
   const source=view.channels.get(sourceId),destination=view.channels.get(destinationId);
   if(['MAIN','MONITOR'].includes(source.role))return fail('OUTPUT_BUS_CANNOT_SOURCE_SEND');
-  if(destination.role==='INPUT')return fail('INPUT_NOT_A_ROUTING_DESTINATION');
+  // A dependency cycle is the strongest/most specific routing fault.
+  // Report it before the more general INPUT destination role rejection.
   if(view.path(destinationId,sourceId))return fail('ROUTING_FEEDBACK_CYCLE');
+  if(destination.role==='INPUT')return fail('INPUT_NOT_A_ROUTING_DESTINATION');
   const same=view.edges.filter(e=>e.from===sourceId&&e.to===destinationId);
   const currentPrimary=view.edges.filter(e=>e.from===sourceId&&e.primaryOutput);
   if(currentPrimary.length>1)return fail('MULTIPLE_ACCEPTED_PRIMARY_OUTPUTS');
