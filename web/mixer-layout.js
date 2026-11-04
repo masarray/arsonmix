@@ -850,11 +850,16 @@
            edge.from===edge.to||wireIds.has(edge.edgeId)||
            !['POST_FADER','PRE_FADER','PRE_FX'].includes(edge.tap)||
            !Number.isFinite(edge.gainLinear)||edge.gainLinear<0||
-           edge.enabled!==true||edge.signalKind!=='AUDIO')
+           typeof edge.enabled!=='boolean'||edge.signalKind!=='AUDIO')
           return false;
+        if(edge.to===g.mainChannelId&&edge.enabled&&
+           (edge.tap!=='POST_FADER'||edge.gainLinear!==1))return false;
         const pair=edge.from+':'+edge.to;
-        if(pairs.has(pair))return false;
-        pairs.add(pair);wireIds.add(edge.edgeId);
+        // The MVP forbids duplicate *enabled* audible pairs, but a native
+        // accepted inventory may retain a disabled edge for later recall.
+        if(edge.enabled&&pairs.has(pair))return false;
+        if(edge.enabled)pairs.add(pair);
+        wireIds.add(edge.edgeId);
       }
     }
     for(const ch of g.channels){
