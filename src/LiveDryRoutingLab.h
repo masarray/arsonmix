@@ -1783,6 +1783,24 @@ public:
             rows.add(juce::var(row.release()));
         }
         state->setProperty("channels",juce::var(rows));
+        // Accepted edge inventory from the SAME native PCM publisher as
+        // channel meters and VST leases. Identity is decimal uint64, not
+        // a JS recomputation from OUT/send labels or a display index.
+        juce::Array<juce::var> wires;
+        for(const auto& edge:routing->edges) {
+            auto item=std::make_unique<juce::DynamicObject>();
+            item->setProperty("edgeId",juce::String(
+                std::to_string(edge.edgeId)));
+            item->setProperty("from",juce::String(
+                std::to_string(edge.source.value)));
+            item->setProperty("to",juce::String(
+                std::to_string(edge.destination.value)));
+            item->setProperty("tap",edge.preFader?"PRE_FADER":"POST_FADER");
+            item->setProperty("gainLinear",static_cast<double>(edge.gain));
+            item->setProperty("primaryOutput",edge.primaryOutput);
+            wires.add(juce::var(item.release()));
+        }
+        state->setProperty("edges",juce::var(wires));
         return juce::var(state.release());
     }
 
