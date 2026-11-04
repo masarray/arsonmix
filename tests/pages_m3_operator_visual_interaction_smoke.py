@@ -56,8 +56,9 @@ def interactions(page):
     assert config.locator("#wireMode").count()==1
     assert config.locator("#wireMaster").count()==1
     assert config.locator("#wireView").count()==1
-    config.locator("#wireView").select_option("all")
-    assert config.locator("#wireView").input_value()=="all"
+    # V57: selected-channel-only views; ALL routes remain in Navigator, not SVG.
+    config.locator("#wireView").select_option("out")
+    assert config.locator("#wireView").input_value()=="out"
     page.keyboard.press("Escape")
     assert config.is_hidden() and config_button.get_attribute("aria-expanded")=="false"
 
