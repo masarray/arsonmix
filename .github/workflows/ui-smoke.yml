@@ -20,6 +20,7 @@ on:
       - 'tests/wire_main_native_handoff_contract.test.cjs'
       - 'tests/ci_workflow_efficiency_test.mjs'
       - 'tests/approved_native_m2_contract.test.cjs'
+      - 'scripts/check_workstream_ownership.mjs'
       - 'scripts/build_ui_css.py'
       - '.github/workflows/ui-smoke.yml'
       - '.github/workflows/pages-publish.yml'
@@ -30,6 +31,7 @@ on:
       - 'site/**'
       - 'AR-MIX-Live-FX-Host-Standalone-v0.3.html'
       - 'scripts/build_pages.py'
+      - 'scripts/check_workstream_ownership.mjs'
       - 'scripts/build_ui_css.py'
       - 'tests/*.py'
       - 'tests/gui_workflow_contract_test.mjs'
@@ -64,6 +66,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: M2.5 active production owner collision guard (cheap / existing runner)
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/check_workstream_ownership.mjs
       - name: Cheap canonical Console v6 puzzle socket gate
         run: node scripts/check_console_puzzle.mjs
       - name: Stop incomplete integrated product promotion before browser setup
@@ -79,7 +86,7 @@ jobs:
           node --check web/plugin-ui.js
           node --check web/mixer-io.js
           node --check web/mixer-layout.js
-          node --test tests/gui_workflow_contract_test.mjs tests/plugin_ui_contract_test.mjs tests/ci_workflow_efficiency_test.mjs tests/fx_drag_reorder_contract_test.mjs tests/mixer_io_operator_contract_test.mjs tests/mixer_shell_contract_test.mjs tests/approved_native_m2_contract.test.cjs
+          node --test tests/workstream_ownership_guard.test.mjs tests/gui_workflow_contract_test.mjs tests/plugin_ui_contract_test.mjs tests/ci_workflow_efficiency_test.mjs tests/fx_drag_reorder_contract_test.mjs tests/mixer_io_operator_contract_test.mjs tests/mixer_shell_contract_test.mjs tests/approved_native_m2_contract.test.cjs
       - name: Validate approved GUI checkpoint and single publisher
         run: python tests/gui_baseline_lock_test.py
       - name: CSS V28 zero-regression source-order recovery (every GUI CI run)

@@ -30,3 +30,7 @@ The archival `docs/GUI_BASELINE_LOCK_2026-10-25.md` remains available only for r
 - [Smart Audio Engine Implementation Blueprint](docs/SMART_AUDIO_ENGINE_IMPLEMENTATION_BLUEPRINT.md)
 - [Dry physical crackle #15](https://github.com/masarray/arsonmix/issues/15)
 These remain for device-clock, render-discontinuity and hardware FAT engineering only. Their old GUI v0.8 descriptions do not override the sole **/preview/** GUI.
+
+## M2.5 — mandatory cross-thread ownership (issue #399)
+
+**Before coding:** inspect current `main`, PR owner branches and [M2.5 reconciliation ledger](https://github.com/masarray/arsonmix/issues/399). Do NOT create another GUI/native bridge/PCM/release-gate implementation while an open PR owns that subsystem. ENGINE #266 is the **sole** PCM/VST3 owner; #396 owns native GUI IIFE/gesture fixes; #398 owns release admission; #270 owns FAT-only evidence. #395's parallel M2 transport is superseded by merged #394 and must not be integrated as another controller. #393's GUI source migration must not overwrite approved M2 bridge. New PRs are checked for active owner conflicts by `scripts/check_workstream_ownership.mjs` (no extra runner), enforced from PR #400. Check exact HEAD and communicate by comments on issue #399. Do not claim the checker detects unsaved actions in other chat threads.
