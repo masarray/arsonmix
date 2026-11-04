@@ -87,19 +87,19 @@ NATIVE_EVENT_HOOKS = (
      " if(window.__ARMIX_NATIVE_M2__?.consumeField?.({target:g.input,type:'change'}))return;\n"),
     # Native WebView2 only: expose the original Pages IIFE model to the thin
     # bridge. No second renderer/state reducer, no change to public /preview/.
-    ("restorePluginPreferences();init();\\n})();",
-     "window.__ARMIX_NATIVE_SCOPE__=Object.freeze({\\n"
-     " get tracks(){return tracks;},get master(){return master;},\\n"
-     " make,render,findTrack,displayMeterDbfs,\\n"
-     " colors:COLORS,wireGraph:ArSonWireGraph,\\n"
-     " allocateWireId(){return nextWireId++;},\\n"
-     " installGraph(channels,main,edges){\\n"
-     "  tracks=channels;master=main;wireEdges=edges;\\n"
-     "  wireWsHistory=[];selectedWireEdgeId=null;\\n"
-     "  syncWireOutputProjection();render();\\n"
-     " },\\n"
-     " stopDemo(){if(preview)togglePreview();}\\n"
-     "});\\nrestorePluginPreferences();init();\\n})();"),
+    ("restorePluginPreferences();init();\n})();",
+     "window.__ARMIX_NATIVE_SCOPE__=Object.freeze({\n"
+     " get tracks(){return tracks;},get master(){return master;},\n"
+     " make,render,findTrack,displayMeterDbfs,\n"
+     " colors:COLORS,wireGraph:ArSonWireGraph,\n"
+     " allocateWireId(){return nextWireId++;},\n"
+     " installGraph(channels,main,edges){\n"
+     "  tracks=channels;master=main;wireEdges=edges;\n"
+     "  wireWsHistory=[];selectedWireEdgeId=null;\n"
+     "  syncWireOutputProjection();render();\n"
+     " },\n"
+     " stopDemo(){if(preview)togglePreview();}\n"
+     "});\nrestorePluginPreferences();init();\n})();"),
 )
 
 
