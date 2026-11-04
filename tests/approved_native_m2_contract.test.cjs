@@ -106,6 +106,7 @@ test("STALE/REJECTED/timeout leave accepted GUI untouched and request fresh nati
  changed.graph.revision="0";changed.graph.rosterRevision="0";
  changed.productionCallbackLive=false;
  changed.graph.channels=[];changed.graph.edges=[];changed.graph.destinations=[];
+ delete changed.graph.mainChannelId;
  changed.graph.capabilities.callbackOwnsChannelIds=false;
  changed.graph.capabilities.supportedOps=[];
  assert.equal(c.onSnapshot(changed),true);
