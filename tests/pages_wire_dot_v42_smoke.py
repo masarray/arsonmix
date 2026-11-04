@@ -21,6 +21,14 @@ def main():
    body=p.locator(".console-body")
    if "collapsed-send" in (body.get_attribute("class") or ""):
     p.locator('.section-rail [data-section="send"]').click()
+   # First-class MAIN is plugged by default. Explicitly disconnect the
+   # source and the later idle-control channel to verify TRUE dark graphite.
+   for channel in (5,6):
+    p.locator(f'#tracks .strip[data-id="{channel}"] .strip-identity-top').click()
+    p.locator("#wireConfigToggle").click()
+    assert p.locator("#wireMaster").get_attribute("aria-pressed")=="true"
+    p.locator("#wireMaster").click()
+    p.locator("#wireConfigClose").click()
    src=p.locator('#tracks .strip[data-id="5"] .wire-node-out')
    pin=src.locator(".wire-pin")
    dest=p.locator('#tracks .strip[data-id="3"] .wire-node-in')
