@@ -1528,6 +1528,94 @@ public:
         }
     }
 
+    // Native WIRE-first control transaction. Uses the EXISTING installed
+    // ChannelId publisher and VST3 lease bank, never a second callback or
+    // an independently accepted JS graph. CONTROL thread only.
+    NativeBusResult applyNativeWireTransaction(
+            std::uint64_t ep,std::uint64_t expectedPcmRev,
+            std::uint64_t expectedRosterRev,
+            std::span<const armix::mixer::WireChange> changes) {
+        using namespace armix::mixer;
+        NativeBusResult result{};
+        result.pcmRevision=nativeAccepted_.pcmRevision;
+        result.rosterRevision=nativeAccepted_.graph.roster.revision();
+        if(!nativeStructureLive_||!channelIdPhysicalPcmActive()||!ready()||
+           ep!=epoch()||nativeAccepted_.deviceEpoch!=ep||
+           !nativeAccepted_.fxOwners||
+           expectedPcmRev!=nativeAccepted_.pcmRevision||
+           expectedRosterRev!=nativeAccepted_.graph.roster.revision()) {
+            result.error="NATIVE_WIRE_STALE_OR_UNAVAILABLE";return result;
+        }
+        // M4's occupied input/aux FX path must never be moved by this
+        // universal WIRE transaction until its lease has been fully cut over.
+        // Reject the ENTIRE batch rather than partly moving a vendor source.
+        if(changes.empty()) {
+            result.error="NATIVE_WIRE_EMPTY";return result;
+        }
+        for(const auto& change:changes) {
+            ChannelId source=change.source;
+            if(change.kind==WireChange::Kind::remove ||
+               change.kind==WireChange::Kind::retarget) {
+                source={};
+                for(const auto& row:nativeAccepted_.graph.roster.channels())
+                    for(const auto& edge:row.sends)
+                        if(edge.edgeId==change.edgeId)source=row.id;
+            }
+            if(!source.value) {
+                result.error="NATIVE_WIRE_UNKNOWN_EDGE";return result;
+            }
+            for(const auto id:nativeAccepted_.graph.ids.inputs)
+                if(id==source) {
+                    result.error="M4_INPUT_ROUTE_NOT_DYNAMIC";return result;
+                }
+            if(originalM4Aux(source)) {
+                result.error="M4_AUX_ROUTE_NOT_DYNAMIC";return result;
+            }
+        }
+        try {
+            auto roster=nativeAccepted_.graph.roster;
+            const auto edited=roster.wireTransaction(expectedRosterRev,changes);
+            if(!edited.ok()) {
+                result.error="NATIVE_WIRE_GUARDIAN_REJECTED";return result;
+            }
+            DynamicChannelFxLeaseBank bank;
+            if(DynamicChannelFxLeaseBank::reuseRevision(
+                   ep,expectedPcmRev+1,*nativeAccepted_.fxOwners,bank)!=
+                   DynamicChannelFxLeaseBank::Fault::none) {
+                result.error="NATIVE_WIRE_FX_LEASE_REJECTED";return result;
+            }
+            auto owner=std::make_shared<DynamicChannelFxLeaseBank>(
+                std::move(bank));
+            DynamicNativeSessionPublisher::FxPlan fx;
+            fx.owner=std::static_pointer_cast<void>(owner);
+            fx.context=owner.get();
+            fx.render=+[](void* ctx,ChannelId id,float* l,float* rr,
+                          int n) noexcept {
+                (*static_cast<DynamicChannelFxLeaseBank*>(ctx))(id,l,rr,n);
+            };
+            fx.deviceEpoch=ep;fx.graphRevision=expectedPcmRev+1;
+            // Only internal wires changed: same admitted physical patch,
+            // same device epoch and same plugin instances. Routine WIRE
+            // gestures do not need to detach or mute the audio callback.
+            const auto accepted=nativePublisher_.commit(
+                roster,nativeAccepted_.graph.request,expectedPcmRev,
+                ep,epoch(),false,std::move(fx),true);
+            if(!accepted.ok()) {
+                result.error="NATIVE_WIRE_PCM_COMMIT_REJECTED";return result;
+            }
+            nativeAccepted_.graph.roster=std::move(roster);
+            nativeAccepted_.fxOwners=std::move(owner);
+            nativeAccepted_.pcmRevision=accepted.revision;
+            nativeMeterEpoch_.store(0,std::memory_order_release);
+            result.accepted=true;result.error="";
+            result.pcmRevision=accepted.revision;
+            result.rosterRevision=nativeAccepted_.graph.roster.revision();
+            return result;
+        } catch(...) {
+            result.error="NATIVE_WIRE_PREPARE_FAILED";return result;
+        }
+    }
+
     // Live dynamic-input controls: one canonical ChannelId PCM callback,
     // no M4 ordinal alias, vendor reload or RT thread allocation.
     bool setNativeInputMix(std::uint64_t epochValue,std::uint64_t revision,
