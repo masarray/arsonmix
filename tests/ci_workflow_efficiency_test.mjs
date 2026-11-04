@@ -3,6 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import {requiresUiSmoke} from '../scripts/check_workstream_coordination.mjs';
 
 const read = path => readFileSync(path, 'utf8');
 const native = read('.github/workflows/p1-windows.yml');
@@ -38,7 +39,8 @@ function globMatches(pattern, filename) {
 const windowsPush = pathsFor(native, 'push', 'pull_request');
 const windowsPR = pathsFor(native, 'pull_request', 'workflow_dispatch');
 const uiPush = pathsFor(ui, 'push', 'pull_request');
-const uiPR = pathsFor(ui, 'pull_request', 'workflow_dispatch');
+// Unfiltered PR entry runs cheap admission; only UI-relevant paths run browser.
+const uiPRSelected = filename => requiresUiSmoke([filename]);
 const selected = (paths, file) => paths.some(p => globMatches(p, file));
 
 test('visual GUI changes never consume Windows native runner on a PR or on main', () => {
@@ -47,7 +49,7 @@ test('visual GUI changes never consume Windows native runner on a PR or on main'
     'web/mixer-layout.js', 'web/mixer-io.js',
     'AR-MIX-Live-FX-Host-Standalone-v0.3.html'
   ]) {
-    assert.ok(selected(uiPR, filename), filename + ' must run frontend PR checks');
+    assert.ok(uiPRSelected(filename), filename + ' must run frontend PR checks');
     assert.ok(selected(uiPush, filename), filename + ' must qualify Pages');
     assert.equal(selected(windowsPR, filename), false, filename + ' wrongly triggers native PR');
     assert.equal(selected(windowsPush, filename), false, filename + ' wrongly triggers native main');
@@ -61,7 +63,7 @@ test('native PCM and device changes always use Windows/CTest, never Chromium by 
   ]) {
     assert.ok(selected(windowsPR, filename), filename + ' must qualify native PR');
     assert.ok(selected(windowsPush, filename), filename + ' must qualify native main');
-    assert.equal(selected(uiPR, filename), false, filename + ' wrongly triggers browser PR');
+    assert.equal(uiPRSelected(filename), false, filename + ' wrongly triggers browser PR');
     assert.equal(selected(uiPush, filename), false, filename + ' wrongly triggers browser main');
   }
   assert.match(native, /ctest --test-dir build -C Release --output-on-failure/);
@@ -89,17 +91,21 @@ test('native WebView bridge and integration genuinely require both owners', () =
   for (const filename of [
     'web/bridge.js', 'web/monitor.js', 'integration/console-v6/contract.json'
   ]) {
-    for (const paths of [windowsPush, windowsPR, uiPush, uiPR]) {
+    for (const paths of [windowsPush, windowsPR, uiPush]) {
       assert.ok(selected(paths, filename), filename + ' needs native+GUI checks');
     }
+    assert.ok(uiPRSelected(filename),filename+' needs PR Chromium tests');
   }
 });
 
 test('docs and isolated CI tests do not fan out into unrelated builds', () => {
-  const paths = [windowsPR, windowsPush, uiPR, uiPush];
+  const paths = [windowsPR, windowsPush, uiPush];
   for (const filename of [
     'README.md', 'docs/workstreams/START_HERE_WIRE_FIRST_20261104.md'
-  ]) assert.ok(paths.every(p => !selected(p, filename)), 'Doc triggered CI: ' + filename);
+  ]) {
+    assert.ok(paths.every(p => !selected(p, filename)), 'Doc triggered CI: ' + filename);
+    assert.equal(uiPRSelected(filename),false,'Doc only needs lightweight PR admission: '+filename);
+  }
   for (const filename of [
     'tests/pages_wire_first_canonical_main_smoke.py',
     'tests/wire_graph_canonical_model.test.cjs',
@@ -108,7 +114,7 @@ test('docs and isolated CI tests do not fan out into unrelated builds', () => {
   ]) {
     assert.equal(selected(windowsPR, filename), false);
     assert.equal(selected(windowsPush, filename), false);
-    assert.equal(selected(uiPR, filename), true);
+    assert.equal(uiPRSelected(filename), true);
     assert.equal(selected(uiPush, filename), true);
   }
 });
@@ -153,4 +159,14 @@ test('Pages is single guarded downstream publisher, never triggered by PR comple
   assert.doesNotMatch(native, /actions\/deploy-pages@/);
   assert.match(factory, /schedule:/);
   assert.doesNotMatch(factory, /^\s{2}push:/m);
+});
+
+test('M2.6 always-on coordination job has a stable name and skips unrelated Chromium', () => {
+  const prBlock=ui.split('\n  pull_request:\n')[1]?.split('\n  # Manual full suite')[0] || '';
+  assert.match(prBlock,/types: \[opened, reopened, synchronize, edited, ready_for_review\]/);
+  assert.doesNotMatch(prBlock,/^\s+paths:/m);
+  assert.match(ui,/name: PR coordination admission/);
+  assert.match(ui,/needs: coordination/);
+  assert.match(ui,/needs\.coordination\.outputs\.run_ui == 'true'/);
+  assert.match(ui,/node --test tests\/workstream_coordination_contract\.test\.mjs/);
 });

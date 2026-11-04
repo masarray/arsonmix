@@ -53,6 +53,14 @@ NEXT SINGLE MEANINGFUL MILESTONE:
 
 Do not create 10 micro-PRs or issue-only progress in place of code. The owning lane implements substantive code and targeted tests; one integrator joins exact checked SHA. GUI remains Pages-only visual authority; only ENGINE provides real PCM; FAT is the independent final judge. If the device is unavailable, mark physical FAT pending. Keep #15 crackling stop-ship.
 
+## M2.6: always-on lightweight PR coordination
+
+The existing `.github/workflows/ui-smoke.yml` now checks **every pull request**, including docs-only, ENGINE-only and metadata-edited PRs. Its named `PR coordination admission` job checks owner markers, active PR overlaps and runtime domains and runs offline unit regressions. It sets `run_ui=true` only for UI/browser/approved-native changes; docs-only and ENGINE-only PRs do **not** start the heavyweight Chromium job. Windows native CI keeps its existing path filters. No fifth workflow or audio engine is added.
+
+For merge safety, require the exact GitHub Actions job check **PR coordination admission** in `main` branch protection or rulesets, require PR review, and require up-to-date head (or merge queue). Verify a real check run exists before selecting the status name. Do not universally require Windows/Chromium checks when their path-based jobs are intentionally skipped. Configure this in repository Settings → Branches or Settings → Rules → Rulesets using administrator access. Confirm the GitHub branch API reports `protected: true` afterward.
+
+**Admin limitation:** the connected GitHub app cannot write protection/rulesets. Until enabled, a successful CI job is a meaningful PR signal, but it cannot stop an authorized maintainer from bypassing review or pushing directly to `main`. Hardware FAT #15 and exact-sha production gates remain independent and mandatory.
+
 ## Administrative limitation
 
 GitHub may allow a maintainer to merge even with a failed check unless **required status checks** and appropriate branch protection/rulesets are configured. App connections cannot always administer these. Treat #397 as the human coordination gate, and enable branch protection for existing Windows/Chromium checks (or a dedicated required coordination check if introduced later) through repository Settings when available. This policy does not magically observe unpushed private ChatGPT threads.

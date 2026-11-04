@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: AGPL-3.0-only
 // One-owner PR preflight. Runs in EXISTING GUI/Windows workflows only.
-// Cheap GitHub REST reads; NEVER changes a repo, builds audio or blocks push/main.
+// Cheap GitHub REST reads; NEVER changes a repo or builds audio.
 // New PRs fail closed on unowned production paths or active same-owner collisions.
 import { pathToFileURL } from 'node:url';
+import { appendFileSync } from 'node:fs';
 
 export const POLICY_EPOCH_PR = 399; // Existing #396/#398 are legacy; new #400+ are strict.
 export const WORKSTREAMS = Object.freeze(['GUI', 'ENGINE', 'INTEGRATOR', 'FAT']);
@@ -175,6 +176,30 @@ async function allPages(base, token, limit = 10) {
   }
   throw Error('GitHub API pagination exceeded bounded limit: '+base);
 }
+// Scope expensive Chromium to the prior UI PR path policy, while every
+// PR (docs-only / ENGINE-only included) receives fast ownership admission.
+export function requiresUiSmoke(paths) {
+  return paths.some(path =>
+    path.startsWith('site/') ||
+    path.startsWith('web/') ||
+    path.startsWith('integration/console-v6/') ||
+    path === 'AR-MIX-Live-FX-Host-Standalone-v0.3.html' ||
+    path === 'scripts/build_pages.py' ||
+    path === 'scripts/build_ui_css.py' ||
+    /^tests\/[^/]+\.py$/.test(path) ||
+    /^tests\/[^/]*gui[^/]*contract[^/]*\.mjs$/.test(path) ||
+    [
+      'tests/gui_workflow_contract_test.mjs',
+      'tests/native_ui_contract_test.mjs',
+      'tests/ci_workflow_efficiency_test.mjs',
+      'tests/approved_native_m2_contract.test.cjs',
+      'tests/wire_graph_canonical_model.test.cjs',
+      'tests/wire_main_native_handoff_contract.test.cjs',
+      '.github/workflows/ui-smoke.yml',
+      '.github/workflows/pages-publish.yml'
+    ].includes(path));
+}
+
 export async function auditGitHub({repo,number,token}) {
   if (!/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(repo))
     throw Error('Invalid repository selector');
@@ -196,8 +221,9 @@ export async function auditGitHub({repo,number,token}) {
         .map(f=>f.filename);
     }));
   }
-  return audit({pr,files:files.map(f=>f.filename),others,filesByPR,
+  const result = audit({pr,files:files.map(f=>f.filename),others,filesByPR,
     fileStatuses:Object.fromEntries(files.map(f=>[f.filename,f.status]))});
+  return {...result, runUi: requiresUiSmoke(files.map(f=>f.filename))};
 }
 async function main() {
   const args=process.argv.slice(2);
@@ -211,6 +237,9 @@ async function main() {
     repo:process.env.GITHUB_REPOSITORY || '',
     number,token:process.env.GH_TOKEN || ''
   });
+  if (process.env.GITHUB_OUTPUT) {
+    appendFileSync(process.env.GITHUB_OUTPUT, 'run_ui='+(result.runUi?'true':'false')+'\n');
+  }
   console.log('ArSonMix coordination: lane='+(result.lane||'UNDECLARED')+
     ' files='+result.changedFiles+' legacy='+result.legacy+
     ' authorized='+result.ok+' collision(s)='+result.activeCollisions);
