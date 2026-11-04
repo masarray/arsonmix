@@ -248,6 +248,10 @@ jobs:
             cp "$backup/$path" "$path"
           done
           git diff --exit-code -- site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-plugin-browser.css site/preview-v2/assets/mixer-pan-controls.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-utility-controls.css
+      # V28 checks the CURRENT GUI V59 approved source. Historic V8–V27
+      # fixtures above remain pinned to their original exact commits.
+      - name: Verify V28 full physical-console inline CSS owner migration and visual lock
+        run: python tests/pages_css_architecture_v28_smoke.py
       - name: Verify embedded Inter font and contextual V7 micro-controls
         run: python tests/pages_inter_utility_v7_smoke.py
       - name: Validate exact alpha micro hardware sprite states and WIRE coexistence
@@ -341,6 +345,7 @@ jobs:
             pages-v25-control-keys-v51-1680.png
             pages-v26-dead-socket-pruned-1680.png
             pages-v27-scoped-chrome-1680.png
+            pages-v28-physical-console-owner-v59-1680.png
             pages-v7-embedded-inter-utility-1680.png
             pages-mixer-v6-OFF-1680.png
             pages-mixer-v6-ON-1680.png
