@@ -58,6 +58,10 @@ def run():
             body = page.locator(".console-body")
             # MAIN is a graph edge, NOT a permanent visual wire. Folded
             # source/MAIN summaries must never draw physical wire fragments.
+            # Wide layouts can boot expanded; explicitly fold to test
+            # the operator's collapse action instead of assuming a preset.
+            if "collapsed-send" not in (body.get_attribute("class") or ""):
+                page.locator('.section-rail [data-section="send"]').click()
             assert "collapsed-send" in (body.get_attribute("class") or ""), width
             for ch in (1, 5, 6):
                 folded = page.locator(f'#tracks .strip[data-id="{ch}"] .wire-fold-summary')
