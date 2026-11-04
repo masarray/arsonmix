@@ -98,8 +98,11 @@ int main() {
     {
         auto lease=publisher.acquire();
         assert(lease.get(4)&&lease.get(4)->prepared->identity==42);
-        assert(near(lease.get(4)->prepared->params.at(3).left.load(),.4f)); // stereo pan +20% reduces LEFT
-        assert(near(lease.get(4)->prepared->params.at(3).right.load(),.5f));
+        // Read the complete accepted M4 GUI control once. Never recover
+        // independent left/right atomics (which can tear during pan drags).
+        const auto state=lease.get(4)->prepared->params.read(3);
+        assert(near(state.left,.4f)); // stereo pan +20% reduces LEFT
+        assert(near(state.right,.5f) && !state.mute && !state.solo);
     }
     publisher.unpublish();
     assert(!publisher.updateActiveControl(4,1,update));

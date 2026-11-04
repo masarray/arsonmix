@@ -61,7 +61,14 @@ test('JUCE native resources track the approved calibrated GUI without maintainin
   for (const resource of ['index_html','styles_css','pluginui_css','app_js','pluginui_js','bridge_js','monitor_js']) {
     assert.ok(cpp.includes('BinaryData::'+resource),resource+' missing from WebView provider');
   }
-  assert.ok(css.endsWith(sourceCss), 'native CSS must end with its authoritative calibration module');
+  // The approved V5 hardware-key overlay is intentionally appended AFTER
+  // the existing gain/meter calibration source. Exact calibration bytes,
+  // ordering and standalone parity remain checked: not a looser visual test.
+  const index=css.indexOf(sourceCss);
+  assert.ok(index>=0,'authoritative native fader/meter calibration CSS absent');
+  assert.equal(css.indexOf(sourceCss,index+1),-1,'duplicate DSP scale calibration');
+  assert.ok(css.slice(index+sourceCss.length).includes('mx-hw-key'),
+    'post-calibration CSS must be the approved hardware-button overlay');
   assert.ok(standalone.includes('<style>'+css+'</style>'), 'Pages/standalone CSS drift');
   assert.ok(standalone.includes('<script>'+app+'</script>'), 'Pages/standalone JS drift');
   for (const cls of ['gain-scale-travel','vu-scale-travel','meter-signal-area','fader-travel']) {

@@ -15,8 +15,10 @@ test('only main and explicitly selected branch can produce a Windows FAT artifac
  assert.match(windows,/'web\/\*\*'/);
  assert.match(windows,/workflow_dispatch:/);
  assert.match(windows,/cancel-in-progress: true/);
- assert.match(windows,/if: \$\{\{ github\.event_name != 'pull_request' \|\| github\.head_ref == 'milestone\/m4-unified-native-multichannel-fx-20261101' \}\}/);
- assert.match(windows,/ArSonMix-M4-EXPERIMENTAL-Hardware-FAT-Windows-x64/);
+ assert.match(windows,/github\.head_ref == 'milestone\/m5-universal-channelid-vst3-lease-migration-20261101'/);
+ assert.match(windows,/github\.head_ref == 'work\/integration-fat-console-v6'/);
+ assert.match(windows,/ArSonMix-ENGINE-10CH4AUX-EXPERIMENTAL-Hardware-FAT-Windows-x64/);
+ assert.ok(!windows.includes("github.head_ref == 'milestone/m4-unified-native-multichannel-fx-20261101'"));
  assert.ok(windows.indexOf('scripts/verify_native_windows_artifact.ps1') <
            windows.indexOf('uses: actions/upload-artifact@v4'));
 });
@@ -45,6 +47,16 @@ test('retain current native audio and dearVR CTests during CI optimization',()=>
  }
  assert.match(windows,/ctest --test-dir build -C Release --output-on-failure/);
  assert.match(windows,/'scripts\/build_ui_css\.py'/);
- assert.match(windows,/if: \$\{\{ github\.event_name != 'pull_request' \|\| github\.head_ref == 'milestone\/m4-unified-native-multichannel-fx-20261101' \}\}/);
- assert.match(windows,/ArSonMix-M4-EXPERIMENTAL-Hardware-FAT-Windows-x64/);
+ assert.match(windows,/github\.head_ref == 'milestone\/m5-universal-channelid-vst3-lease-migration-20261101'/);
+ assert.match(windows,/github\.head_ref == 'work\/integration-fat-console-v6'/);
+ assert.match(windows,/ArSonMix-ENGINE-10CH4AUX-EXPERIMENTAL-Hardware-FAT-Windows-x64/);
+});
+
+test('native FAT compiles the exact ENGINE PR HEAD and rejects transient merge refs',()=>{
+ const shaRef="ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}";
+ assert.ok(windows.includes(shaRef));
+ assert.match(windows,/ENGINE_EXACT_SOURCE_SHA_VERIFIED/);
+ assert.match(windows,/git rev-parse HEAD/);
+ assert.ok(windows.indexOf('ENGINE_EXACT_SOURCE_SHA_VERIFIED')<
+           windows.indexOf('name: Build executable and native RT tests'));
 });

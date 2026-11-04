@@ -12,6 +12,7 @@
 #include "../engine/device/JuceIndependentClockDevice.h"
 #include "../engine/device/LiveSecondaryOutputDevice.h"
 #include "../engine/core/LiveOutputRouteGate.h"
+#include "../engine/core/NativeRenderAuthority.h"
 #include "../engine/device/AsioPriorityDeviceManager.h"
 #include "../engine/device/AsioRegistryIdentityProbe.h"
 #include "../engine/device/DirectRouteFence.h"
@@ -69,6 +70,12 @@ public:
 
     struct Graph
     {
+        // This same Graph owns the original CH1 vendor rack, its bypass
+        // envelopes and transition scratch, for BOTH M4 and the admitted
+        // ChannelId external lease. All memory is allocated on CONTROL;
+        // the audio callback only dereferences the leased Graph*.
+        Graph() { dryScratch.setSize(2,maxFrames,false,true,false); }
+        juce::AudioBuffer<float> dryScratch;
         // Eight 4-bit physical slot indices in one x64 lock-free word.
         // Moving an insert publishes one complete order for the NEXT audio
         // block; the processor objects and their binary states never move.
@@ -99,8 +106,8 @@ public:
     {
         formats_.addFormat (std::make_unique<juce::VST3PluginFormat>());
         scratch_.setSize (2, maxFrames, false, true, false);
-        // One reusable preallocated stereo dry snapshot for transient FX bypass.
-        dryScratch_.setSize (2, maxFrames, false, true, false);
+        // CH1 bypass scratch now belongs to its shared Graph lifetime so
+        // a ChannelId PCM snapshot can retain the SAME original FX state.
         handoff_.initialize (graphOwned_.get());
     }
 
@@ -633,6 +640,18 @@ public:
         totalLatency_.store(graphOwned_->latency,std::memory_order_release);
         handoff_.completeRetirement();
         completedSwaps_.fetch_add (1, std::memory_order_relaxed);
+        // Only after the original host graph is the new accepted owner,
+        // safely migrate its exact original CH1 VSTs/Orbit and all M4 lanes.
+        // No plugin is recreated; retain M4 if the hardware is armed,
+        // stale or PDC disallows this graph. CONTROL/timer thread only.
+        if(allOutputsDisarmed() && dryRoutingLab_.hasExplicitRoute() &&
+           directFence_.permitted() && !independent_.active()) {
+            if(auto* device=deviceManager_.getCurrentAudioDevice())
+                (void)dryRoutingLab_.admitChannelIdFromAcceptedM4(
+                    graphOwned_->count,
+                    juce::jmax(32,device->getCurrentBufferSizeSamples()),
+                    true,currentOriginalCh1Lease());
+        }
         return true;
     }
 
@@ -715,6 +734,11 @@ public:
             return false;
         prepareFxEditEnvelope(*next,device->getCurrentSampleRate());
         stagedOwner_=std::move(next);
+        // CHANGE of original CH1 ownership must finish on the existing
+        // M4 buffer-boundary handoff first. Revoke the old native lease;
+        // once the staged Graph is accepted, re-admit its identical plugin
+        // state/editor/order into ChannelId without double processing.
+        dryRoutingLab_.revokeChannelIdPcm();
         if(!handoff_.stage(stagedOwner_.get()))
         {
             stagedOwner_.reset();
@@ -920,6 +944,10 @@ public:
                                                 staged->slots[i].latency);
             if (!staged->slots[i].bypass) staged->latency += staged->slots[i].latency;
         }
+        // Show recall can replace original CH1 owner and all its binary
+        // plugin state. Revoke ChannelId PCM BEFORE staging the pointer:
+        // the original handoff then owns the next audible vendor graph.
+        dryRoutingLab_.revokeChannelIdPcm();
         stagedOwner_ = std::move (staged);
         if (!handoff_.stage (stagedOwner_.get()))
         {
@@ -1046,11 +1074,18 @@ public:
         for(int i=0;i<graphOwned_->count;++i)
             if(graphOwned_->slots[i].latency!=0)
                 return "CH1 rack contains a latent VST3: zero-latency settings are required for native multi-channel sends";
-        return dryRoutingLab_.apply(command,directFence_.permitted(),
-                   independent_.active(),graphOwned_->count,fx,formats_,
-                   device->getCurrentSampleRate(),
-                   juce::jmax(32,device->getCurrentBufferSizeSamples()),
-                   true,restored);
+        const auto frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
+        const auto result=dryRoutingLab_.apply(
+            command,directFence_.permitted(),independent_.active(),
+            graphOwned_->count,fx,formats_,device->getCurrentSampleRate(),
+            frames,true,restored);
+        // Same original PCM callback/hardware gate; a failed ChannelId
+        // admission retains the last accepted M4 with original Orbit/Show.
+        if(result.isEmpty())
+            (void)dryRoutingLab_.admitChannelIdFromAcceptedM4(
+                graphOwned_->count,frames,allOutputsDisarmed(),
+                currentOriginalCh1Lease());
+        return result;
     }
     void disableDryRoutingLab() noexcept {
         setOutputMuted(true); // never expose CH1 unexpectedly on STOP
@@ -1058,14 +1093,68 @@ public:
     }
     juce::String switchDryRoutingLabSource(int strip,std::uint64_t epoch,
             std::uint64_t revision,const juce::String& mode,
-            int left,int right) noexcept {
+            int left,int right) {
         if(independent_.active()||routeReconfiguring_.load(std::memory_order_acquire)||
            handoff_.busy()||!directFence_.permitted()||
            diagnosticRoute_.load(std::memory_order_acquire)
                !=armix::diagnostics::Route::normal||
            savedDirectSetup_||savedLiveSetup_)
             return "SOURCE SWITCH: live DIRECT device or graph unavailable";
-        return dryRoutingLab_.switchPhysicalSource(strip,epoch,revision,mode,left,right);
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device)return "SOURCE: active DIRECT audio device unavailable";
+        // True first-input SOURCE selection is a control-prepared native graph
+        // transaction, not a browser-side APPLY or alternate callback. A
+        // single verified mono capture pin is a supported source.
+        try {
+            const auto frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
+            const auto oldRevision=dryRoutingLab_.revision();
+            const auto changed=dryRoutingLab_.repatchPhysicalSource(
+                strip,epoch,revision,mode,left,right,
+                directFence_.permitted(),independent_.active(),
+                graphOwned_->count,formats_,device->getCurrentSampleRate(),frames);
+            // Same-format SOURCE is an atomic live parameter on BOTH kernels:
+            // do not rebuild VST3/PCM or interrupt the 64-sample crossfade.
+            if(changed.isEmpty() && allOutputsDisarmed() &&
+               oldRevision!=dryRoutingLab_.revision())
+                (void)dryRoutingLab_.admitChannelIdFromAcceptedM4(
+                    graphOwned_->count,frames,true,
+                    currentOriginalCh1Lease());
+            return changed;
+        } catch(const std::exception& ex) {
+            return "SOURCE: native prepare failed; prior audio kept: " + juce::String(ex.what());
+        } catch(...) {
+            return "SOURCE: native prepare failed; prior audio kept";
+        }
+    }
+    // Direct compact OUT / MONO-STEREO operator edits. One existing M4
+    // prepared graph is republished; original VST3 instances/Orbit remain
+    // owned by the same native callback. Never touched on RT.
+    juce::String repatchDryRoutingLabChannel(int strip,std::uint64_t epoch,
+            std::uint64_t revision,const juce::String& operation,
+            const juce::String& value) {
+        if(independent_.active()||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           handoff_.busy()||!directFence_.permitted()||
+           diagnosticRoute_.load(std::memory_order_acquire)
+               !=armix::diagnostics::Route::normal||
+           savedDirectSetup_||savedLiveSetup_)
+            return "CHANNEL PATCH: DIRECT device or VST3 handoff unavailable";
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device)return "CHANNEL PATCH: no active native audio interface";
+        try {
+            const auto frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
+            const auto changed=dryRoutingLab_.repatchChannelStructure(
+                strip,epoch,revision,operation,value,
+                directFence_.permitted(),independent_.active(),
+                graphOwned_->count,formats_,device->getCurrentSampleRate(),frames);
+            if(changed.isEmpty() && allOutputsDisarmed())
+                (void)dryRoutingLab_.admitChannelIdFromAcceptedM4(
+                    graphOwned_->count,frames,true,
+                    currentOriginalCh1Lease());
+            return changed;
+        } catch(...) {
+            return "CHANNEL PATCH: native preparation failed; previous mix preserved";
+        }
     }
     bool setDryRoutingLabParameter(int strip,std::uint64_t epoch,
             std::uint64_t revision,const juce::String& parameter,
@@ -1082,13 +1171,49 @@ public:
         return dryRoutingLab_.setAuxBusGain(bus,epoch,revision,gain);
     }
     bool setDryRoutingLabAuxSendGain(int source,int bus,std::uint64_t epoch,
+            std::uint64_t revision,float gain,
+            armix::mixer::SendTap tap=armix::mixer::SendTap::postFader) noexcept {
+        if(independent_.active()||routeReconfiguring_.load(std::memory_order_acquire)||
+           diagnosticRoute_.load(std::memory_order_acquire)
+               !=armix::diagnostics::Route::normal||
+           !directFence_.permitted()||savedDirectSetup_||savedLiveSetup_)
+            return false;
+        return dryRoutingLab_.setAuxSendGain(source,bus,epoch,revision,gain,tap);
+    }
+    juce::String connectDryRoutingLabAuxSend(int source,int bus,
+            std::uint64_t epoch,std::uint64_t revision,
+            armix::mixer::SendTap tap,float gain,float pan) {
+        if(independent_.active()||routeReconfiguring_.load(std::memory_order_acquire)||
+           handoff_.busy()||!directFence_.permitted()||
+           diagnosticRoute_.load(std::memory_order_acquire)
+               !=armix::diagnostics::Route::normal||
+           savedDirectSetup_||savedLiveSetup_)
+            return "AUX CONNECT: DIRECT device or VST graph handoff unavailable";
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device)return "AUX CONNECT: no verified audio interface";
+        try {
+            const auto frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
+            const auto changed=dryRoutingLab_.connectPreparedAuxSend(
+                source,bus,epoch,revision,tap,gain,pan,
+                directFence_.permitted(),independent_.active(),graphOwned_->count,
+                formats_,device->getCurrentSampleRate(),frames);
+            if(changed.isEmpty() && allOutputsDisarmed())
+                (void)dryRoutingLab_.admitChannelIdFromAcceptedM4(
+                    graphOwned_->count,frames,true,
+                    currentOriginalCh1Lease());
+            return changed;
+        } catch(...) {
+            return "AUX CONNECT: failed native preparation; previous route retained";
+        }
+    }
+    bool setDryRoutingLabMonitorSendGain(int source,std::uint64_t epoch,
             std::uint64_t revision,float gain) noexcept {
         if(independent_.active()||routeReconfiguring_.load(std::memory_order_acquire)||
            diagnosticRoute_.load(std::memory_order_acquire)
                !=armix::diagnostics::Route::normal||
            !directFence_.permitted()||savedDirectSetup_||savedLiveSetup_)
             return false;
-        return dryRoutingLab_.setAuxSendGain(source,bus,epoch,revision,gain);
+        return dryRoutingLab_.setMonitorSendGain(source,epoch,revision,gain);
     }
     bool setDryRoutingLabFxBypass(int lane,int slot,std::uint64_t epoch,
             std::uint64_t revision,const juce::String& instanceId,
@@ -1436,8 +1561,12 @@ private:
     armix::device::LiveSecondaryOutputDevice secondaryOutput_;
     std::optional<juce::AudioDeviceManager::AudioDeviceSetup> savedDirectSetup_;
     juce::AudioPluginFormatManager formats_;
-    std::unique_ptr<Graph> graphOwned_ {std::make_unique<Graph>()};
-    std::unique_ptr<Graph> stagedOwner_;
+    // Strong ownership stays on CONTROL. The admitted native ChannelId
+    // snapshot may retain exactly this Graph while the vendor plugin, Show
+    // state and editor remain alive through an in-flight callback.
+    // Handoff still publishes Graph* atomically; no shared_ptr on AUDIO.
+    std::shared_ptr<Graph> graphOwned_ {std::make_shared<Graph>()};
+    std::shared_ptr<Graph> stagedOwner_;
     armix::rt::LiveGraphHandoff<Graph> handoff_;
     // 0 idle, 1 fade-out, 2 fade-in. One controller producer, one RT reader.
     // No allocation, plugin re-instantiation or extra processing pass.
@@ -1445,7 +1574,6 @@ private:
     std::atomic<std::uint64_t> fxMovePendingOrder_ {Graph::canonicalOrder};
     bool attached_ = false;
     juce::AudioBuffer<float> scratch_;
-    juce::AudioBuffer<float> dryScratch_;
     armix::dsp::NativeMasterLoudness masterLoudness_;
     armix::diagnostics::DiagnosticTone diagnosticTone_;
     LiveDryRoutingLab dryRoutingLab_;
@@ -1599,36 +1727,30 @@ private:
         outputPeak_.store (0.f);
     }
 
-    // R0 bridge: existing CH1 multi-insert vendor state/Orbit stays owned by
-    // the live FX handoff. The audio callback holds its Cycle lease throughout
-    // this render pass, so an old plugin graph cannot retire in mid-block.
-    // This is a temporary ownership adapter until all inserts are represented
-    // by the same native multi-lane graph; not a second rendering engine.
-    struct LegacyChannelOneLease final { LiveAudioEngine* host; Graph* graph; };
-    static void processLegacyChannelOne(void* token,int lane,float* left,
-                                        float* right,int frames) noexcept
+    // ONE original CH1 rack processor for M4 compatibility and the native
+    // ChannelId external lease. Graph lifetime is owned by CONTROL and the
+    // accepted publisher, never acquired or released inside audio callback.
+    static void renderOriginalChannelOneGraph(Graph& graph,float* left,
+                                              float* right,int frames) noexcept
     {
-        if(lane!=0 || !token || !left || !right || frames<=0 || frames>maxFrames)return;
-        const auto& lease=*static_cast<LegacyChannelOneLease*>(token);
-        auto* const host=lease.host;
-        auto* const graph=lease.graph;
-        if(!host || !graph || graph->count<=0)return;
+        if(!left||!right||left==right||frames<=0||frames>maxFrames||
+           graph.count<=0)return;
         float* channels[]{left,right};
         juce::AudioBuffer<float> buffer(channels,2,frames);
         juce::MidiBuffer midi;
-        const auto order=graph->orderPacked.load(std::memory_order_acquire);
-        for(int logical=0;logical<graph->count;++logical)
+        const auto order=graph.orderPacked.load(std::memory_order_acquire);
+        for(int logical=0;logical<graph.count;++logical)
         {
             const int physical=Graph::physicalAt(order,logical);
-            auto& slot=graph->slots[physical];
+            auto& slot=graph.slots[physical];
             if(!slot.processor)continue;
-            auto& bypass=graph->bypassEnvelope[physical];
-            bypass.request(graph->bypassFlags[physical].load(std::memory_order_acquire));
+            auto& bypass=graph.bypassEnvelope[physical];
+            bypass.request(graph.bypassFlags[physical].load(std::memory_order_acquire));
             const bool blend=bypass.transitioning();
             if(blend)
             {
-                juce::FloatVectorOperations::copy(host->dryScratch_.getWritePointer(0),left,frames);
-                juce::FloatVectorOperations::copy(host->dryScratch_.getWritePointer(1),right,frames);
+                juce::FloatVectorOperations::copy(graph.dryScratch.getWritePointer(0),left,frames);
+                juce::FloatVectorOperations::copy(graph.dryScratch.getWritePointer(1),right,frames);
             }
             if(bypass.shouldProcessWet())
             {
@@ -1642,8 +1764,8 @@ private:
             }
             if(blend)
             {
-                const float* dryL=host->dryScratch_.getReadPointer(0);
-                const float* dryR=host->dryScratch_.getReadPointer(1);
+                const float* dryL=graph.dryScratch.getReadPointer(0);
+                const float* dryR=graph.dryScratch.getReadPointer(1);
                 for(int i=0;i<frames;++i)
                 {
                     const auto gains=bypass.next();
@@ -1653,6 +1775,43 @@ private:
             }
             midi.clear();
         }
+    }
+
+    // The M4 callback borrows the already-active graph from the same native
+    // handoff cycle. No vendor object is copied or re-instantiated.
+    struct LegacyChannelOneLease final {Graph* graph;};
+    static void processLegacyChannelOne(void* token,int lane,float* left,
+                                        float* right,int frames) noexcept
+    {
+        if(lane!=0||!token)return;
+        auto* graph=static_cast<LegacyChannelOneLease*>(token)->graph;
+        if(graph)renderOriginalChannelOneGraph(*graph,left,right,frames);
+    }
+
+    // Native external FX is a raw callback on the EXACT shared Graph owner
+    // bound by UnifiedLegacyProductionAdmission. The snapshot owns the
+    // strong reference and validates context==owner.get() off realtime.
+    static void processOwnedChannelOne(void* token,float* left,
+                                       float* right,int frames) noexcept
+    {
+        if(token)renderOriginalChannelOneGraph(
+            *static_cast<Graph*>(token),left,right,frames);
+    }
+    armix::mixer::DynamicChannelFxLeaseBank::ExternalLease
+    currentOriginalCh1Lease() const noexcept {
+        armix::mixer::DynamicChannelFxLeaseBank::ExternalLease fx;
+        if(!graphOwned_||graphOwned_->count<=0)return fx;
+        // Native PRE/POST/AUX cannot accept the original external rack
+        // with latent inserts until graph-wide PDC exists. A missing lease
+        // keeps the original M4 callback audible without false admission.
+        for(int i=0;i<graphOwned_->count;++i)
+            if(graphOwned_->slots[i].latency!=0)return fx;
+        fx.owner=std::static_pointer_cast<void>(graphOwned_); // CONTROL
+        fx.context=graphOwned_.get();
+        fx.render=&processOwnedChannelOne;
+        // id is bound from the compiled native ChannelId roster, NEVER a
+        // guessed display index/port; no native owner can be misdirected.
+        return fx;
     }
 
     void audioDeviceIOCallbackWithContext (
@@ -1680,6 +1839,13 @@ private:
                                                std::memory_order_relaxed);
             return;
         }
+        // ONE explicit owner for the whole device callback. The GUI cannot
+        // select an experimental ChannelId renderer or revive stereo CH1.
+        // Cutover to universal will replace this authority transaction only
+        // after the full VST3/Show/epoch proof, never add a parallel callback.
+        const auto renderOwner=armix::mixer::NativeRenderAuthority::select(
+            activeDiagnosticRoute==armix::diagnostics::Route::normal,
+            dryRoutingLab_.active());
         const auto cycle = handoff_.beginCycle();
         // R0B B3: production NORMAL audio has a single native routing owner.
         // Until a device-epoch-validated 10CH/4AUX route is published, output
@@ -1690,8 +1856,8 @@ private:
         // Keep the existing FX graph handoff progressing even when unpatched:
         // a staged ADD/REMOVE must ACK and retire on the callback thread.
         // Only atomic reads and deterministic output writes; no RT heap or I/O.
-        if (activeDiagnosticRoute == armix::diagnostics::Route::normal
-            && !dryRoutingLab_.active())
+        if (renderOwner ==
+            armix::mixer::NativeRenderOwner::failSilentUnpatched)
         {
             // P0: SILENT output must not mean blind capture diagnostics.
             // A verified ASIO/WASAPI callback can carry PCM before any
@@ -1746,7 +1912,8 @@ private:
         // action, with an immutable preallocated P1D graph. Its own zero-VST
         // callback path NEVER falls through to CH1 on stale/hotplug routes.
         // DirectFence was already checked above; no output to unknown device.
-        if (dryRoutingLab_.active())
+        if (renderOwner ==
+            armix::mixer::NativeRenderOwner::acceptedM4Session)
         {
             const auto outputGate=armix::mixer::LiveOutputRouteGate::evaluate(
                 dryRoutingLab_.active(),
@@ -1767,7 +1934,7 @@ private:
             // Both native 10CH routing and the existing CH1 vendor FX chain
             // execute in ONE stereo output render pass. Never mix a parallel
             // CH1 output on top or copy vendor processors into another graph.
-            LegacyChannelOneLease ch1Lease{this,cycle.graph};
+            LegacyChannelOneLease ch1Lease{cycle.graph};
             std::array<int,2> nativeMainPair{{-1,-1}};
             std::array<int,2> nativeMonitorPair{{-1,-1}};
             const bool routed=dryRoutingLab_.process(inputs,inputChannels,outputs,
@@ -1867,13 +2034,16 @@ private:
                         juce::FloatVectorOperations::clear(outputs[channel],samples);
             return;
         }
+        // The only remaining stereo renderer is DIAGNOSTIC. It may emit
+        // a bounded test tone or test capture but never host channel VST3
+        // or become a fallback production mixer.
+        jassert(armix::mixer::NativeRenderAuthority::mayRunDiagnostic(
+            renderOwner));
         const bool enabled = monitor_.load (std::memory_order_relaxed)
                           && !routeReconfiguring_.load (std::memory_order_acquire);
         const auto route = diagnosticRoute_.load (std::memory_order_relaxed);
         const bool toneTest = route == armix::diagnostics::Route::outputOnlyTone;
         const bool captureTest = route == armix::diagnostics::Route::captureOnly;
-        const bool dry = dryTest_.load (std::memory_order_relaxed)
-                      || route != armix::diagnostics::Route::normal;
         if (toneTest && outputChannels > 0)
             testOutputFrames_.fetch_add (static_cast<std::uint64_t> (samples), std::memory_order_relaxed);
         if (captureTest && inputChannels > 0)
@@ -1903,10 +2073,8 @@ private:
         {
             const int frames = juce::jmin (maxFrames, samples - offset);
             // Preallocated backing store: no resizing/capacity bookkeeping in RT.
-            // Two-channel AudioBuffer view refers to scratch_ without ownership.
-            // JUCE uses its inline channel pointer storage for two channels.
-            juce::AudioBuffer<float> scratchView (
-                scratch_.getArrayOfWritePointers(), 2, frames);
+            // Test-only stereo buffers are preallocated. There is no VST
+            // buffer view or plugin dispatch in the diagnostic-only path.
             if (toneTest)
             {
                 auto* left = scratch_.getWritePointer (0);
@@ -1930,55 +2098,9 @@ private:
                 for (int i = 0; i < frames; ++i)
                     if (!toneTest) inPeak = juce::jmax (inPeak, std::abs (dst[i]));
             }
-            // MIDI capacity is empty unless the plugin itself changes it.
-            juce::MidiBuffer midi;
-            if (!dry)
-            {
-                // One atomic order snapshot per block: stable physical FX and bypass identity.
-                const auto order = cycle.graph->orderPacked.load (std::memory_order_acquire);
-                for (int fx = 0; fx < cycle.graph->count; ++fx)
-                {
-                    const int physical = Graph::physicalAt (order, fx);
-                    auto& slot = cycle.graph->slots[physical];
-                    if (!slot.processor) {midi.clear();continue;}
-                    auto& bypass=cycle.graph->bypassEnvelope[physical];
-                    bypass.request(cycle.graph->bypassFlags[physical].load(std::memory_order_acquire));
-                    // Steady wet/dry requires no copy or extra arithmetic.
-                    // A transition temporarily snapshots the exact input to
-                    // this insert; a second full FX graph is never created.
-                    const bool blend=bypass.transitioning();
-                    if (blend)
-                        for(int ch=0;ch<2;++ch)
-                            juce::FloatVectorOperations::copy(
-                                dryScratch_.getWritePointer(ch),
-                                scratch_.getReadPointer(ch),frames);
-                    if (bypass.shouldProcessWet())
-                    {
-                        const auto pluginBeginUs = clockMicros();
-                        slot.processor->processBlock (scratchView, midi);
-                        const auto pluginUs = clockMicros() - pluginBeginUs;
-                        lastPluginUsBySlot_[physical].store (pluginUs, std::memory_order_relaxed);
-                        publishMax (worstPluginUsBySlot_[physical], pluginUs);
-                        publishMax (worstPluginUs_, pluginUs);
-                        if (static_cast<double> (pluginUs) > periodUs * 0.75)
-                            slowPlugins_.fetch_add (1, std::memory_order_relaxed);
-                    }
-                    if (blend)
-                    {
-                        float* wetL=scratch_.getWritePointer(0);
-                        float* wetR=scratch_.getWritePointer(1);
-                        const float* dryL=dryScratch_.getReadPointer(0);
-                        const float* dryR=dryScratch_.getReadPointer(1);
-                        for(int i=0;i<frames;++i)
-                        {
-                            const auto g=bypass.next();
-                            wetL[i]=g.wet*wetL[i]+g.dry*dryL[i];
-                            wetR[i]=g.wet*wetR[i]+g.dry*dryR[i];
-                        }
-                    }
-                    midi.clear();
-                }
-            }
+            // This is a 0-FX diagnostic route. The old stereo VST dispatch
+            // was unreachable after explicit M4 routing became mandatory;
+            // do not resurrect it as a second engine.
             for (int ch = 0; ch < 2; ++ch)
             {
                 const float* processed = scratch_.getReadPointer (ch);

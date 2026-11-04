@@ -134,3 +134,70 @@ test('FAT ZIP uses current single-APPLY physical first-sound guide',()=>{
  for(const entry of ['10 input channels + 4 AUX','OUTPUT_ONLY_TONE','CAPTURE_ONLY','COPY FULL REPORT','30 minutes','no separate manual START AUDIO'])
    assert.ok(quick.includes(entry),entry);
 });
+
+test('sole ENGINE #266 may upload an unqualified, exact-SHA physical FAT ZIP',()=>{
+  const upload=workflow.split('uses: actions/upload-artifact@v4')[1]||'';
+  assert.ok(upload.includes('milestone/m5-universal-channelid-vst3-lease-migration-20261101'));
+  assert.ok(!upload.includes('milestone/m4-unified-native-multichannel-fx-20261101'));
+  assert.ok(upload.includes('ArSonMix-ENGINE-10CH4AUX-EXPERIMENTAL-Hardware-FAT-Windows-x64'));
+  assert.match(upload,/if-no-files-found: error/);
+  assert.ok(workflow.indexOf('ctest --test-dir build -C Release --output-on-failure')<
+            workflow.indexOf('uses: actions/upload-artifact@v4'));
+  assert.ok(workflow.indexOf('scripts/verify_native_windows_artifact.ps1')<
+            workflow.indexOf('uses: actions/upload-artifact@v4'));
+  const guide=read('docs/FIRST_SOUND_FAT_QUICKSTART_20261101.md');
+  assert.match(guide,/single canonical ENGINE #266 branch/);
+  assert.match(guide,/10CH \+ 4AUX/);
+  assert.match(guide,/sourceCommit/);
+  assert.match(guide,/exeSha256/);
+});
+
+test('native sourceCommit attest matches GitHub PR head and exact compiled source',()=>{
+ const shaRef="ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}";
+ assert.ok(workflow.includes(shaRef));
+ assert.match(workflow,/ENGINE SOURCE SHA MISMATCH/);
+ assert.match(packaging,/\$gitSha = \(\& git rev-parse HEAD\)\.Trim\(\)/);
+ assert.match(verify,/manifest\.sourceCommit/);
+});
+
+test('field FAT collector is packaged, checked against source + ZIP hash, never certifies audio',()=>{
+  const collector=read('scripts/collect_hardware_fat_windows.ps1');
+  for(const part of ['OUTPUT_ONLY_TONE','CAPTURE_ONLY','DRY_THROUGH_0FX','LIVE_THROUGH_1FX','FAT_RUNS.json',
+      'FAT_SUMMARY.json','elapsedSeconds','reportSha256','hardwareCertified=$false',
+      'Get-FileHash','sourceCommit','PSScriptRoot']) assert.ok(collector.includes(part),part);
+  assert.match(packaging,/fatCollectorSha256 = /);
+  assert.match(packaging,/ArSonMix-Hardware-FAT\.ps1/);
+  assert.match(verify,/manifest\.fatCollectorSha256/);
+  assert.match(verify,/ZIP field collector SHA mismatch/);
+  assert.match(verify,/Missing FAT collector inside ZIP/);
+  assert.doesNotMatch(collector,/AudioDeviceManager|setAudioDeviceSetup|startAudio|armOutput|backend\.emitEvent/i);
+  assert.match(workflow,/ParseFile\('scripts\/collect_hardware_fat_windows\.ps1'/);
+});
+
+test('joined FAT 1FX compares the same verified hardware as witnessed 0FX, never self-certifies',()=>{
+  const script=read('scripts/collect_hardware_fat_windows.ps1');
+  // The field collector is an *operator evidence journal*, not a fake VST3
+  // host. Start must fail BEFORE a 30-minute soak on mismatched drivers.
+  for(const required of [
+    "[ValidateRange(0,8)][int]$FxCount=0",
+    "[string]$Vst3Name=''",
+    "$Mode -eq 'LIVE_THROUGH_1FX'",
+    "$FxCount -ne 1",
+    "the active native VST3 rack",
+    "Record a completed 30-minute wired 0FX baseline",
+    "1FX must use the identical ASIO/WASAPI device",
+    "backend, clock, buffer and physical routes must match",
+    "operatorReportedFxCount=$FxCount",
+    "operatorReportedVst3Name=$Vst3Name.Trim()",
+    "fxComparisonSource='OPERATOR_REPORTED_ONLY'",
+    "hardwareCertified=$false",
+    "physicalAudibilityVerifiedBySoftware=$false"
+  ]) assert.ok(script.includes(required),required);
+  assert.match(script,/\$baseline\[0\]\.elapsedSeconds -lt 1800/);
+  assert.match(script,/\$base\.captureEndpoint -ne \$CaptureEndpoint/);
+  assert.match(script,/\$base\.renderEndpoint -ne \$RenderEndpoint/);
+  assert.match(script,/\$base\.capturePins -join ','/);
+  assert.match(script,/\$base\.renderPins -join ','/);
+  assert.match(script,/\$run\.elapsedSeconds -lt 1800/);
+  assert.doesNotMatch(script,/AudioDeviceManager|setAudioDeviceSetup|startAudio|armOutput|backend\.emitEvent/i);
+});
