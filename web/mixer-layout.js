@@ -838,7 +838,12 @@
     pending.delete(a.requestId);
     const unlock=()=>{for(const target of task.targets||[])pendingTargets.delete(target)};
     if(a.status==='ACCEPTED'){
-      if(BigInt(rev)<BigInt(task.baseRevision)||
+      // A WIRE transaction changes topology. An ACK at the request's old
+      // graph revision cannot authorize a cable repaint or an accepted edit.
+      // Fail closed even if a native producer erroneously reports ACCEPTED.
+      if((task.op==='APPLY_WIRE_TRANSACTION'&&
+          BigInt(rev)<=BigInt(task.baseRevision))||
+         BigInt(rev)<BigInt(task.baseRevision)||
          BigInt(roster)<BigInt(task.baseRosterRevision)){
         unlock();
         showFeedback('INVALID ACK REVISION · accepted route unchanged');
