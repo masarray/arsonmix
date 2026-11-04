@@ -29,6 +29,7 @@ struct ChannelSendRef final {
     bool preFader=false;
     float pan=0.f; // send-only balance: PRE mono uses equal-power coefficients
     bool primaryOutput=false; // OUT selector edge, not a parallel SEND
+    std::uint64_t edgeId=0; // stable native identity; CONTROL-only assignment
 };
 struct ChannelStripDefinition final {
     ChannelId id{};
@@ -51,7 +52,8 @@ struct ChannelRosterBudget final {
 
 enum class ChannelEditFault : std::uint8_t {
     none, staleRevision, invalidAction, missingChannel, invalidPosition,
-    invalidValue, budgetExceeded, linkedDestination, idExhausted
+    invalidValue, budgetExceeded, linkedDestination, idExhausted,
+    missingEdge, duplicateSend
 };
 struct ChannelEdit final {
     enum class Kind : std::uint8_t {
@@ -75,7 +77,16 @@ struct ChannelEditResult final {
     std::size_t actionIndex=0;
     std::uint64_t revision=0;
     std::vector<ChannelId> createdIds;
+    std::vector<std::uint64_t> createdEdgeIds;
     bool ok() const noexcept {return fault==ChannelEditFault::none;}
+};
+
+struct WireChange final {
+    enum class Kind : std::uint8_t {connect,remove,retarget,routeOnly};
+    Kind kind=Kind::connect;
+    ChannelId from{},to{};
+    std::uint64_t edgeId=0;
+    float gain=1.f;
 };
 
 class DynamicChannelRoster final {
@@ -276,10 +287,128 @@ public:
         // Structural edits are infrequent and prepared entirely on CONTROL.
         // Rebuild before acceptance: rejected/failed edits cannot leave the
         // active stable-ID map pointing into an old reordered vector.
+        std::uint64_t stagedNextEdge=nextEdgeId_;
+        if(!assignMissingEdgeIds(candidate,stagedNextEdge)) {
+            result.fault=ChannelEditFault::idExhausted;
+            result.createdIds.clear();return result;
+        }
+        auto stagedIndex=buildIndex(candidate);
+        channels_.swap(candidate);
+        nextEdgeId_=stagedNextEdge;
+        index_.swap(stagedIndex);
+        nextId_=next;
+        result.revision=++revision_;
+        return result;
+    }
+
+
+    // This is the only WIRE topology editor. Uses the SAME ChannelSendRef
+    // inventory as the native PCM compiler and existing source/FX ownership.
+    // The accepted session later compiles the whole DAG and publishes once.
+    ChannelEditResult wireTransaction(
+        std::uint64_t expectedRevision,std::span<const WireChange> changes) {
+        ChannelEditResult result;result.revision=revision_;
+        if(expectedRevision!=revision_){result.fault=ChannelEditFault::staleRevision;return result;}
+        if(changes.empty() || revision_==std::numeric_limits<std::uint64_t>::max()){
+            result.fault=ChannelEditFault::invalidAction;return result;
+        }
+        auto candidate=channels_; // one CONTROL-thread batch copy
+        const auto main=std::find_if(candidate.begin(),candidate.end(),
+            [](const auto& ch){return ch.role==ChannelRole::main;});
+        if(main==candidate.end()){result.fault=ChannelEditFault::invalidAction;return result;}
+        const ChannelId mainId=main->id;
+        std::uint64_t stagedNextEdge=nextEdgeId_;
+        if(!assignMissingEdgeIds(candidate,stagedNextEdge)){
+            result.fault=ChannelEditFault::idExhausted;return result;
+        }
+        for(std::size_t i=0;i<changes.size();++i) {
+            result.actionIndex=i;
+            const auto& op=changes[i];
+            auto source=std::find_if(candidate.begin(),candidate.end(),
+                [&](const auto& row){return row.id==op.from;});
+            if(!op.from.value || source==candidate.end() ||
+               source->role==ChannelRole::main || source->role==ChannelRole::monitor){
+                result.fault=ChannelEditFault::missingChannel;break;
+            }
+            auto& sends=source->sends;
+            if(op.kind==WireChange::Kind::remove ||
+               op.kind==WireChange::Kind::retarget) {
+                const auto edge=std::find_if(sends.begin(),sends.end(),
+                    [&](const auto& s){return s.edgeId==op.edgeId;});
+                if(!op.edgeId || edge==sends.end()) {
+                    result.fault=ChannelEditFault::missingEdge;break;
+                }
+                if(op.kind==WireChange::Kind::remove){sends.erase(edge);continue;}
+                if(!op.to.value || op.to==op.from || edge->destination==op.to){
+                    result.fault=ChannelEditFault::invalidValue;break;
+                }
+                edge->destination=op.to; // retain exact edgeId, gain and tap
+                continue;
+            }
+            if(op.kind!=WireChange::Kind::connect &&
+               op.kind!=WireChange::Kind::routeOnly) {
+                result.fault=ChannelEditFault::invalidAction;break;
+            }
+            if(!op.to.value || op.to==op.from || !std::isfinite(op.gain) ||
+               op.gain<0.f || op.gain>4.f ||
+               (op.kind==WireChange::Kind::routeOnly && op.to==mainId)){
+                result.fault=ChannelEditFault::invalidValue;break;
+            }
+            const bool already=std::any_of(sends.begin(),sends.end(),
+                [&](const auto& s){return s.destination==op.to;});
+            if(already && op.kind==WireChange::Kind::connect){
+                result.fault=ChannelEditFault::duplicateSend;break;
+            }
+            if(op.kind==WireChange::Kind::routeOnly){
+                sends.erase(std::remove_if(sends.begin(),sends.end(),
+                    [&](const auto& s){return s.destination==mainId;}),
+                    sends.end());
+                if(already)continue; // retain original edgeId/gain
+            }
+            if(sends.size()>=budget_.maximumSendsPerChannel){
+                result.fault=ChannelEditFault::budgetExceeded;break;
+            }
+            const bool hasPrimary=std::any_of(sends.begin(),sends.end(),
+                [](const auto& s){return s.primaryOutput;});
+            const bool primary=!hasPrimary &&
+                (op.to==mainId || op.kind==WireChange::Kind::routeOnly);
+            sends.push_back({op.to,op.gain,false,0.f,primary,0});
+        }
+        if(result.ok()){
+            // Legacy PRE and primary edges share the same accepted graph.
+            // The PCM compiler also validates complete reachability/cycles.
+            std::unordered_map<std::uint64_t,std::size_t> indexes;
+            for(std::size_t i=0;i<candidate.size();++i)
+                if(!indexes.emplace(candidate[i].id.value,i).second)
+                    {result.fault=ChannelEditFault::invalidValue;break;}
+            for(const auto& row:candidate)if(result.ok()){
+                std::unordered_set<std::uint64_t> destinations;
+                for(const auto& edge:row.sends){
+                    if(!indexes.count(edge.destination.value) ||
+                       row.id==edge.destination ||
+                       row.role==ChannelRole::main || row.role==ChannelRole::monitor){
+                        result.fault=ChannelEditFault::invalidValue;break;
+                    }
+                    if(!destinations.insert(edge.destination.value).second){
+                        result.fault=ChannelEditFault::duplicateSend;break;
+                    }
+                }
+            }
+            if(result.ok() && !withinBudget(candidate))
+                result.fault=ChannelEditFault::budgetExceeded;
+        }
+        if(!result.ok())return result;
+        if(!assignMissingEdgeIds(candidate,stagedNextEdge)){
+            result.fault=ChannelEditFault::idExhausted;return result;
+        }
+        for(const auto& row:candidate)
+            for(const auto& edge:row.sends)
+                if(edge.edgeId>=nextEdgeId_)
+                    result.createdEdgeIds.push_back(edge.edgeId);
         auto stagedIndex=buildIndex(candidate);
         channels_.swap(candidate);
         index_.swap(stagedIndex);
-        nextId_=next;
+        nextEdgeId_=stagedNextEdge;
         result.revision=++revision_;
         return result;
     }
@@ -322,8 +451,14 @@ public:
         // Structural edits are infrequent and prepared entirely on CONTROL.
         // Rebuild before acceptance: rejected/failed edits cannot leave the
         // active stable-ID map pointing into an old reordered vector.
+        std::uint64_t stagedNextEdge=nextEdgeId_;
+        if(!assignMissingEdgeIds(candidate,stagedNextEdge)) {
+            result.fault=ChannelEditFault::idExhausted;
+            result.createdIds.clear();return result;
+        }
         auto stagedIndex=buildIndex(candidate);
         channels_.swap(candidate);
+        nextEdgeId_=stagedNextEdge;
         index_.swap(stagedIndex);result.createdIds.push_back({nextId_++});
         result.revision=++revision_;return result;
     }
@@ -377,8 +512,14 @@ public:
         // Structural edits are infrequent and prepared entirely on CONTROL.
         // Rebuild before acceptance: rejected/failed edits cannot leave the
         // active stable-ID map pointing into an old reordered vector.
+        std::uint64_t stagedNextEdge=nextEdgeId_;
+        if(!assignMissingEdgeIds(candidate,stagedNextEdge)) {
+            result.fault=ChannelEditFault::idExhausted;
+            result.createdIds.clear();return result;
+        }
         auto stagedIndex=buildIndex(candidate);
         channels_.swap(candidate);
+        nextEdgeId_=stagedNextEdge;
         index_.swap(stagedIndex);
         result.revision=++revision_;return result;
     }
@@ -457,8 +598,14 @@ public:
         // Structural edits are infrequent and prepared entirely on CONTROL.
         // Rebuild before acceptance: rejected/failed edits cannot leave the
         // active stable-ID map pointing into an old reordered vector.
+        std::uint64_t stagedNextEdge=nextEdgeId_;
+        if(!assignMissingEdgeIds(candidate,stagedNextEdge)) {
+            result.fault=ChannelEditFault::idExhausted;
+            result.createdIds.clear();return result;
+        }
         auto stagedIndex=buildIndex(candidate);
         channels_.swap(candidate);
+        nextEdgeId_=stagedNextEdge;
         index_.swap(stagedIndex);
         ++nextId_;result.revision=++revision_;
         result.createdIds.push_back(busId);
@@ -466,6 +613,24 @@ public:
     }
 
 private:
+    static bool assignMissingEdgeIds(
+        std::vector<ChannelStripDefinition>& rows,std::uint64_t& next) {
+        std::unordered_set<std::uint64_t> used;
+        for(const auto& row:rows)
+            for(const auto& edge:row.sends)
+                if(edge.edgeId && !used.insert(edge.edgeId).second)return false;
+        for(auto& row:rows)
+            for(auto& edge:row.sends)if(!edge.edgeId){
+                while(used.count(next)) {
+                    if(next==std::numeric_limits<std::uint64_t>::max())return false;
+                    ++next;
+                }
+                if(!next || next==std::numeric_limits<std::uint64_t>::max())return false;
+                edge.edgeId=next;
+                used.insert(next++);
+            }
+        return true;
+    }
     static std::unordered_map<std::uint64_t,std::size_t> buildIndex(
             const std::vector<ChannelStripDefinition>& rows) {
         std::unordered_map<std::uint64_t,std::size_t> index;
@@ -506,6 +671,6 @@ private:
     ChannelRosterBudget budget_;
     std::vector<ChannelStripDefinition> channels_;
     std::unordered_map<std::uint64_t,std::size_t> index_; // CONTROL ONLY
-    std::uint64_t revision_=0, nextId_=1;
+    std::uint64_t revision_=0, nextId_=1, nextEdgeId_=1;
 };
 } // namespace armix::mixer
