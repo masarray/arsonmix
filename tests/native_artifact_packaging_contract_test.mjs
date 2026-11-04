@@ -47,7 +47,7 @@ test('JUCE embeds only generated approved Pages DOM, CSS, JS, and PNG button var
   assert.doesNotMatch(nativeMain,/BinaryData::consolenative_html|BinaryData::index_html|BinaryData::app_js/);
   assert.match(nativeMain,/withResourceProvider \(assetFor\)/);
   assert.match(generator,/approvedPagesHtmlSha256/);
-  assert.match(generator,/authoritativePagesIframe/);
+  assert.match(generator,/authoritativePagesOutput/);
   assert.match(generator,/mute-solo-pfl-56x37\.png/);
 });
 
