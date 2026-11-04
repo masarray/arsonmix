@@ -152,9 +152,9 @@ test("native meter and PAN scale are driven by PCM readback, not Pages demo",()=
  assert.match(source,/paintNativeMeters\(next\)/);
  assert.match(source,/displayMeterDbfs\(fill,/);
  assert.match(source,/t\.pan=ch\.controls\.pan\*100/);
- assert.match(source,/next\\.productLive/);
- assert.match(source,/op:op\\.type,from:sourceId/);
- assert.doesNotMatch(source,/changes\\.push\\(\\{type:op\\.type,sourceId/);
+ assert.ok(source.includes("next.productLive"));
+ assert.ok(source.includes("op:op.type,from:sourceId"));
+ assert.ok(!source.includes("changes.push({type:op.type,sourceId"));
  assert.doesNotMatch(source,/Math\.sin\(/);
 });
 
