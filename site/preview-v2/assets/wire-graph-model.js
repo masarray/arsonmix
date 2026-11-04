@@ -64,15 +64,20 @@
     if(!validId(op.destId)||op.destId===sourceId)return {ok:false,error:'INVALID_DESTINATION'};
     if(op.type==='ROUTE_ONLY'){
      if(op.destId===mainId)return {ok:false,error:'INVALID_ROUTE_ONLY'};
-     edges=edges.filter(e=>!(e.sourceId===sourceId&&(e.destId===mainId||e.kind==='primary')));
+     const existing=edges.find(e=>e.sourceId===sourceId&&e.destId===op.destId);
+     edges=edges.filter(e=>!(e.sourceId===sourceId&&
+      (e.destId===mainId||e.kind==='primary'||e.destId===op.destId)));
+     edges.push({id:existing?.id??nextId++,sourceId,destId:op.destId,enabled:true,
+      kind:'primary',mode:'routeOnly',levelDb:0});
+    }else{
+     if(edges.some(e=>e.sourceId===sourceId&&e.destId===op.destId))
+      return {ok:false,error:'DUPLICATE_ROUTE'};
+     const isMain=op.destId===mainId;
+     edges.push({id:nextId++,sourceId,destId:op.destId,enabled:true,
+      kind:isMain?'primary':'send',
+      mode:isMain?'postFader':op.mode==='split'?'splitPre':'send',
+      levelDb:0});
     }
-    if(edges.some(e=>e.sourceId===sourceId&&e.destId===op.destId))
-     return {ok:false,error:'DUPLICATE_ROUTE'};
-    const isMain=op.destId===mainId;
-    edges.push({id:nextId++,sourceId,destId:op.destId,enabled:true,
-     kind:isMain||op.type==='ROUTE_ONLY'?'primary':'send',
-     mode:isMain?'postFader':op.type==='ROUTE_ONLY'?'routeOnly':'send',
-     levelDb:0});
    }else if(op.type==='REMOVE'||op.type==='RETARGET'||op.type==='GAIN'){
     index=edges.findIndex(e=>e.id===op.edgeId&&e.sourceId===sourceId);
     if(index<0)return {ok:false,error:'STALE_EDGE'};
