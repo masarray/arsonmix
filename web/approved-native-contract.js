@@ -74,9 +74,11 @@
         (decimal(g.mainChannelId) === null || !ids.includes(g.mainChannelId))) return null;
     // Advertised LIVE is gated by real native callback, valid graph, and actual hardware.
     // A dishonest producer cannot be "fixed" by manufacturing Channels in JS.
+    const mainCount = g.channels.filter(ch=>ch.role==="MAIN").length;
     const admitted = raw.productionCallbackLive === true && caps.callbackOwnsChannelIds === true &&
       cmp(d.epoch,"0") > 0 && cmp(g.revision,"0") > 0 &&
-      g.channels.length > 0 && typeof g.mainChannelId === "string" &&
+      Array.isArray(g.edges) && g.channels.length > 0 && mainCount === 1 &&
+      typeof g.mainChannelId === "string" &&
       g.channels.some(ch => ch.id === g.mainChannelId && ch.role === "MAIN");
     if (!admitted && (raw.productionCallbackLive || caps.callbackOwnsChannelIds) &&
         g.channels.length === 0) return null;
