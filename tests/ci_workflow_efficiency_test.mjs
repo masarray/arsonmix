@@ -111,7 +111,7 @@ test('docs and isolated CI tests do not fan out into unrelated builds', () => {
   }
 });
 
-test('ordinary GUI PR and main use current targeted checks; full history is explicit', () => {
+test('ordinary GUI PR and main use current targeted checks; historical skin never mounts', () => {
   assert.match(ui, /concurrency:\s+group: ui-smoke-/);
   assert.match(ui, /cancel-in-progress: true/);
   assert.match(ui, /python tests\/pages_wire_first_canonical_main_smoke.py/);
@@ -119,8 +119,8 @@ test('ordinary GUI PR and main use current targeted checks; full history is expl
   assert.match(ui, /node tests\/wire_main_native_handoff_contract.test.cjs/);
   assert.match(ui, /python tests\/pages_v51_portrait_led_peak_hold_smoke.py/);
   const fullOnly = [...ui.matchAll(/^\s{8}if: .*workflow_dispatch.*integration\/product-/gm)].length;
-  assert.ok(fullOnly >= 35, 'Historical/extended GUI steps must be opt-in, found ' + fullOnly);
-  assert.match(ui, /python tests\/pages_css_architecture_v27_smoke.py/);
+  assert.ok(fullOnly >= 15, 'Extended GUI checks must remain opt-in, found ' + fullOnly);
+  assert.doesNotMatch(ui, /Mount pinned V24 historical|Mount pinned V27 GUI/, 'Do not overwrite sole approved GUI with rejected historical skin');
   assert.match(ui, /retention-days: 3/);
 });
 
