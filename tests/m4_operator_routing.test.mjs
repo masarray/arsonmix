@@ -7,7 +7,7 @@ import {createRequire} from 'node:module';
 import {planM4OperatorIntent,assessM4Pdc,M4_OPERATOR_ABI} from
   '../integration/console-v6/m4-operator-routing.mjs';
 const require=createRequire(import.meta.url);
-const {normalizeSnapshot}=require('../web/approved-native-contract.js');
+const {normalizeSnapshot,createController}=require('../web/approved-native-contract.js');
 const clone=x=>structuredClone(x);
 const g0=JSON.parse(readFileSync('integration/console-v6/fixtures.json','utf8')).g0;
 const ids={v:'9007199254740993',kick:'9007199254740994',
@@ -205,4 +205,59 @@ test('no version of plan can update browser acceptance without ACK + readback',(
   assert.equal(Object.hasOwn(p,'acceptedGraph'),false);
   assert.equal(Object.hasOwn(p,'productionCallbackLive'),false);
   assert.equal(JSON.stringify(current.raw),before);
+});
+
+test('Route Only ACK never approves new GROUP cable with old MAIN double-dry',()=>{
+  const raw=base(),snapshot=accepted(raw);
+  const plan=planM4OperatorIntent(snapshot,{kind:'ROUTE_ONLY',
+    sourceId:ids.v,destinationId:ids.group});
+  assert.ok(plan.ok);
+  const controller=createController({emit:()=>{}});
+  assert.equal(controller.onSnapshot(raw),true);
+  const req=controller.intent(plan.intent.operation,plan.intent.targetChannelId,
+    plan.intent.payload);
+  assert.equal(req.ok,true);
+  controller.onAck({requestId:req.requestId,status:'ACCEPTED',errorCode:'NONE',
+    deviceEpoch:'69',graphRevision:'4',rosterRevision:'2'});
+  const lied=clone(raw);lied.graph.revision='4';
+  lied.graph.channels[0].primaryOutId=ids.group;
+  lied.graph.edges.push({edgeId:'9',from:ids.v,to:ids.group,
+    primaryOutput:true,tap:'POST_FADER',gainLinear:1,enabled:true,signalKind:'AUDIO'});
+  assert.equal(controller.onSnapshot(lied),false,'old MAIN still audible; reject');
+  assert.equal(controller.state().lastError,'ACK_READBACK_EFFECT_MISMATCH');
+  assert.equal(controller.state().current.graph.revision,'3');
+
+  const validController=createController({emit:()=>{}});
+  validController.onSnapshot(raw);
+  const good=validController.intent(plan.intent.operation,plan.intent.targetChannelId,
+    plan.intent.payload);
+  validController.onAck({requestId:good.requestId,status:'ACCEPTED',errorCode:'NONE',
+    deviceEpoch:'69',graphRevision:'4',rosterRevision:'2'});
+  const actual=clone(raw);actual.graph.revision='4';
+  actual.graph.channels[0].primaryOutId=ids.group;
+  actual.graph.edges[0].to=ids.group;
+  assert.equal(validController.onSnapshot(actual),true);
+  assert.equal(validController.state().current.graph.channels[0].primaryOutId,ids.group);
+});
+
+test('POST send ACK requires actual accepted gain and tap, not cable existence',()=>{
+  const raw=base(),snapshot=accepted(raw);
+  const plan=planM4OperatorIntent(snapshot,{kind:'SEND_POST',
+    sourceId:ids.v,destinationId:ids.wet,gainDb:0});
+  assert.ok(plan.ok);
+  const check=(gain,tap)=>{
+    const c=createController({emit:()=>{}});
+    c.onSnapshot(raw);
+    const req=c.intent(plan.intent.operation,plan.intent.targetChannelId,
+      plan.intent.payload);
+    c.onAck({requestId:req.requestId,status:'ACCEPTED',errorCode:'NONE',
+      deviceEpoch:'69',graphRevision:'4',rosterRevision:'2'});
+    const next=clone(raw);next.graph.revision='4';
+    next.graph.edges.push({edgeId:'90',from:ids.v,to:ids.wet,
+      primaryOutput:false,tap,gainLinear:gain,enabled:true,signalKind:'AUDIO'});
+    return {pass:c.onSnapshot(next),error:c.state().lastError};
+  };
+  assert.equal(check(0.5,'POST_FADER').pass,false);
+  assert.equal(check(1,'PRE_FADER').pass,false);
+  assert.equal(check(1,'POST_FADER').pass,true);
 });
