@@ -754,31 +754,28 @@ public:
             if(name=="mute")updated.mute=value>0.5f;
             else updated.solo=value>0.5f;
         }else return false;
+        // The admitted native ChannelId graph is the ONLY active PCM control
+        // authority. Reject before changing legacy M4 DSP or claiming ACK.
+        if(channelIdPhysicalPcmActive()) {
+            if(nativeStructureLive_)return false; // old ordinal is now stale
+            const auto id=nativeAccepted_.graph.ids.inputs[strip];
+            const bool accepted=(name=="mute"||name=="solo")
+                ?setNativeInputMuteSolo(expectedEpoch,nativeAccepted_.pcmRevision,
+                                        id,updated.mute,updated.solo)
+                :setNativeInputMix(expectedEpoch,nativeAccepted_.pcmRevision,
+                                   id,updated.linear,updated.pan);
+            if(!accepted)return false;
+            channelEdits_[strip]=updated; // CONTROL-thread Show/re-admission baseline
+            return true;
+        }
+        if(nativeStructureLive_ || nativeControlDirty_)return false;
+        // Legacy M4 is still the installed PCM owner before native cutover.
         if(!publisher_.updateActiveControl(expectedEpoch,expectedRevision,
             [&](FxGraph& fx) noexcept {
                 return fx.setStripControl(strip,updated.linear,updated.pan,
                     updated.mono,updated.mute,updated.solo);
             }))return false;
         channelEdits_[strip]=updated;
-        if(channelIdPhysicalPcmActive()) {
-            const auto id=nativeAccepted_.graph.ids.inputs[strip];
-            const bool mirrored=(name=="mute"||name=="solo")
-                ?nativePublisher_.setChannelMuteSolo(
-                    expectedEpoch,nativeAccepted_.pcmRevision,
-                    id,updated.mute,updated.solo)
-                :nativePublisher_.setChannelMix(
-                    expectedEpoch,nativeAccepted_.pcmRevision,
-                    id,updated.linear,updated.pan);
-            if(!mirrored)rejectedNativeMirror();
-            else {
-                const auto id=nativeAccepted_.graph.ids.inputs[strip];
-                if(name=="mute"||name=="solo")
-                    nativeAccepted_.graph.roster.rememberLiveMuteSolo(
-                        id,updated.mute,updated.solo);
-                else nativeAccepted_.graph.roster.rememberLiveMix(
-                        id,updated.linear,updated.pan);
-            }
-        }
         return true;
     }
 
@@ -1013,7 +1010,8 @@ public:
              armix::mixer::DynamicChannelFxLeaseBank::ExternalLease externalCh1={}) {
         // E5: a native BUS uses topology that M4 cannot represent. Never
         // demote its renderer on an unsupported legacy re-admission.
-        if(nativeStructureLive_ && nativeAccepted_.deviceEpoch==epoch())
+        if((nativeStructureLive_ || nativeControlDirty_) &&
+           nativeAccepted_.deviceEpoch==epoch())
             return false;
         // Otherwise the last ACCEPTED M4 graph is the safe physical fallback
         // if migration rejects. This also handles a successfully replaced M4
@@ -1082,6 +1080,7 @@ public:
             true,nativePublisher_,nativeAccepted_,std::move(externalCh1));
         if(!applied.ok() || generation!=epoch() || m4Revision!=revision())
             return false; // selected M4 PCM owns the safe fallback
+        nativeControlDirty_=false; // fresh accepted legacy/native control baseline
         channelIdPcmEpoch_.store(generation,std::memory_order_release);
         return true;
         } catch(...) {
@@ -1588,34 +1587,43 @@ public:
         }
     }
 
-    // Live dynamic-input controls: one canonical ChannelId PCM callback,
-    // no M4 ordinal alias, vendor reload or RT thread allocation.
+    // E6: Original migrated CH1-10 AND added dynamic INPUTs are driven
+    // by the same installed ChannelId publisher, callback and VST3 lease.
+    // Identity/epoch/revision gates precede any audible DSP mutation.
     bool setNativeInputMix(std::uint64_t epochValue,std::uint64_t revision,
                            armix::mixer::ChannelId id,float gain,float pan) noexcept {
-        if(!nativeStructureLive_||!channelIdPhysicalPcmActive()||
+        if(!channelIdPhysicalPcmActive()||
+           nativeAccepted_.deviceEpoch!=epochValue||
            epochValue!=epoch()||revision!=nativeAccepted_.pcmRevision||
            !std::isfinite(gain)||gain<0.f||gain>4.f||
            !std::isfinite(pan)||pan< -1.f||pan>1.f)return false;
-        for(const auto original:nativeAccepted_.graph.ids.inputs)
-            if(original==id)return false;
         const auto* channel=nativeAccepted_.graph.roster.find(id);
         if(!channel||channel->role!=armix::mixer::ChannelRole::input)return false;
         if(!nativePublisher_.setChannelMix(epochValue,revision,id,gain,pan))
             return false;
-        return nativeAccepted_.graph.roster.rememberLiveMix(id,gain,pan);
+        if(!nativeAccepted_.graph.roster.rememberLiveMix(id,gain,pan)) {
+            topologyFault_.store(true,std::memory_order_release);
+            return false; // never ACK a rendered state missing from readback
+        }
+        nativeControlDirty_=true;
+        return true;
     }
     bool setNativeInputMuteSolo(std::uint64_t epochValue,std::uint64_t revision,
                                 armix::mixer::ChannelId id,
                                 bool mute,bool solo) noexcept {
-        if(!nativeStructureLive_||!channelIdPhysicalPcmActive()||
+        if(!channelIdPhysicalPcmActive()||
+           nativeAccepted_.deviceEpoch!=epochValue||
            epochValue!=epoch()||revision!=nativeAccepted_.pcmRevision)return false;
-        for(const auto original:nativeAccepted_.graph.ids.inputs)
-            if(original==id)return false;
         const auto* channel=nativeAccepted_.graph.roster.find(id);
         if(!channel||channel->role!=armix::mixer::ChannelRole::input)return false;
         if(!nativePublisher_.setChannelMuteSolo(
                   epochValue,revision,id,mute,solo))return false;
-        return nativeAccepted_.graph.roster.rememberLiveMuteSolo(id,mute,solo);
+        if(!nativeAccepted_.graph.roster.rememberLiveMuteSolo(id,mute,solo)) {
+            topologyFault_.store(true,std::memory_order_release);
+            return false;
+        }
+        nativeControlDirty_=true;
+        return true;
     }
 
     bool nativeBusTopologyLive() const noexcept {
@@ -1778,9 +1786,9 @@ public:
 
     void revokeChannelIdPcm() noexcept {
         channelIdPcmEpoch_.store(0,std::memory_order_release);
-        // A live Group/FX RETURN cannot be represented by the old M4
-        // schedule. Do not silently send its sources straight to MAIN.
-        if(nativeStructureLive_)
+        // Neither a structural BUS nor a native-owned fader/mute/pan may
+        // silently resume on the out-of-date legacy M4 PCM renderer.
+        if(nativeStructureLive_ || nativeControlDirty_)
             topologyFault_.store(true,std::memory_order_release);
     }
     void rejectedNativeMirror() noexcept {
@@ -1798,6 +1806,7 @@ public:
         channelIdPcmEpoch_.store(0,std::memory_order_release);
         nativeMeterEpoch_.store(0,std::memory_order_release);
         nativeStructureLive_=false;
+        nativeControlDirty_=false;
         nativePublisher_.unpublish(); // CONTROL-only; audio lease retires safely
         nativeAccepted_=armix::mixer::UnifiedLegacyAccepted{};
         userPatched_.store(false,std::memory_order_release);
@@ -2245,6 +2254,7 @@ private:
     armix::mixer::UnifiedLegacyAccepted nativeAccepted_;
     std::atomic<std::uint64_t> channelIdPcmEpoch_{0};
     bool nativeStructureLive_=false; // CONTROL only; never read by callback
+    bool nativeControlDirty_=false; // Native edit cannot fall back to stale M4 PCM
     std::atomic<float> monitorPeakL_{0.f},monitorPeakR_{0.f};
     armix::dsp::MasterOutputMonoPolicy masterMonoPolicy_; // audio thread only
     std::array<ChannelEdit,count> channelEdits_{}; // JUCE message thread only

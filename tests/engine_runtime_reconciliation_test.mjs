@@ -91,6 +91,29 @@ test('occupied CH1 Orbit uses one strong Graph lease through native renderer and
   assert.equal(count(engine,/void audioDeviceIOCallbackWithContext\s*\(/g),1);
 });
 
+test('E6 original CH1-10 and dynamic INPUT use one accepted native PCM control writer',()=>{
+  const legacy=physical.slice(physical.indexOf('bool setChannelParameter('),
+                              physical.indexOf('// Real AUX FX RETURN'));
+  const native=physical.slice(physical.indexOf('bool setNativeInputMix('),
+                              physical.indexOf('bool nativeBusTopologyLive()'));
+  assert.ok(legacy.indexOf('if(channelIdPhysicalPcmActive())')>=0);
+  assert.ok(legacy.indexOf('setNativeInputMix(')>=0);
+  assert.ok(legacy.indexOf('setNativeInputMuteSolo(')>=0);
+  assert.ok(legacy.indexOf('setNativeInputMix(')<
+            legacy.indexOf('publisher_.updateActiveControl('),
+            'legacy M4 PCM must never be mutated before accepted ChannelId write');
+  assert.match(legacy,/if\(!accepted\)return false/);
+  assert.doesNotMatch(native,/for\(const auto original/);
+  assert.doesNotMatch(native,/!nativeStructureLive_\|\|!channelIdPhysicalPcmActive/);
+  assert.match(native,/nativeAccepted_\.deviceEpoch!=epochValue/);
+  assert.match(native,/nativePublisher_\.setChannelMix/);
+  assert.match(native,/nativePublisher_\.setChannelMuteSolo/);
+  assert.match(native,/nativeAccepted_\.graph\.roster\.rememberLiveMix/);
+  assert.match(native,/nativeAccepted_\.graph\.roster\.rememberLiveMuteSolo/);
+  assert.match(physical,/nativeStructureLive_ \|\| nativeControlDirty_/);
+  assert.match(physical,/nativeControlDirty_=false; \/\/ fresh accepted legacy\/native/);
+});
+
 test('E3 stable ChannelId GROUP/FX RETURN is a real guarded physical PCM transaction',()=>{
   assert.match(physical,/NativeBusResult editNativeBus\(/);
   assert.match(physical,/next\.createBusForSelected\(/);

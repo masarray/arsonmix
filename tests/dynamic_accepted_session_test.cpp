@@ -449,7 +449,81 @@ static void verifyPrimaryOutKeepsCanonicalEdgeIdentity() {
     session.pollRetirement();
 }
 
+// Original CH1-10 do not get a different fader/solo DSP owner from CH11.
+// This is an actual accepted native publisher PCM test, not a mock GUI reducer.
+static void verifyOriginalAndAddedInputsShareNativePcmControls() {
+    constexpr std::uint64_t epoch=94011;
+    constexpr float center=.7071067811865475f;
+    DynamicAcceptedSession pcm;
+    DynamicGraphRequest physical;
+    physical.physicalInputs=3;
+    physical.maxFrames=64;
+    std::vector<ChannelEdit> initial;
+    for(int i=0;i<10;++i)
+        initial.push_back(add(static_cast<std::size_t>(i),
+                              ChannelRole::input,"ORIGINAL CH"));
+    initial.push_back(add(10,ChannelRole::main,"MAIN",
+                          ProcessingFormat::stereo));
+    auto applied=pcm.edit(0,0,initial,physical,epoch,epoch,true);
+    assert(applied.ok() && applied.edit.createdIds.size()==11);
+    const auto ch1=applied.edit.createdIds[0];
+    const auto ch2=applied.edit.createdIds[1];
+    const auto main=applied.edit.createdIds[10];
+    const std::array<ChannelEdit,2> originals{
+        output(ch1,main),output(ch2,main)};
+    physical.sources={{ch1,0,-1,false},{ch2,1,-1,false}};
+    applied=pcm.edit(1,1,originals,physical,epoch,epoch,true);
+    assert(applied.ok() && pcm.acceptedGraphRevision()==2);
+    // CH11 is added to the SAME accepted native graph later, not indexed
+    // as CH1 and not assigned a second VST/PCM process callback.
+    const std::array<ChannelEdit,1> added{
+        add(10,ChannelRole::input,"DYNAMIC CH11")};
+    applied=pcm.edit(2,2,added,physical,epoch,epoch,true);
+    assert(applied.ok() && applied.edit.createdIds.size()==1);
+    const auto ch11=applied.edit.createdIds[0];
+    assert(ch11!=ch1 && ch11!=ch2);
+    physical.sources.push_back({ch11,2,-1,false});
+    const std::array<ChannelEdit,1> connect{output(ch11,main)};
+    applied=pcm.edit(3,3,connect,physical,epoch,epoch,true);
+    assert(applied.ok() && pcm.acceptedGraphRevision()==4);
+    std::array<float,64> a{},b{},c{},l{},rr{};
+    a.fill(.2f);b.fill(.3f);c.fill(.4f);
+    const float* inputs[]{a.data(),b.data(),c.data()};
+    const auto noFx=+[](ChannelId,float*,float*,int) noexcept {};
+    const auto render=[&] {
+        return pcm.render(epoch,inputs,3,l.data(),rr.data(),64,false,noFx);
+    };
+    assert(render() && near(l[63],(.2f+.3f+.4f)*center));
+    const float minus12=std::pow(10.f,-12.f/20.f);
+    assert(pcm.setLiveMix(epoch,4,ch1,minus12,0.f));
+    assert(render() && near(l[63],(.2f*minus12+.3f+.4f)*center));
+    assert(pcm.setLiveMix(epoch,4,ch2,1.f,-1.f));
+    assert(render() && near(l[63],(.2f*minus12+.4f)*center+.3f));
+    assert(near(rr[63],(.2f*minus12+.4f)*center));
+    assert(pcm.setLiveMuteSolo(epoch,4,ch1,true,false));
+    assert(render() && near(l[63],.3f+.4f*center));
+    assert(pcm.setLiveMuteSolo(epoch,4,ch11,false,true));
+    assert(render() && near(l[63],.4f*center));
+    assert(pcm.setLiveMix(epoch,4,ch11,.5f,1.f));
+    assert(render() && near(l[63],0.f) && near(rr[63],.2f));
+    // No old device, old graph revision or invented ChannelId can change
+    // accepted native PCM, even while a solo/fader edit is in flight.
+    assert(!pcm.setLiveMix(epoch-1,4,ch1,1.f,0.f));
+    assert(!pcm.setLiveMix(epoch,3,ch2,1.f,0.f));
+    assert(!pcm.setLiveMuteSolo(epoch,3,ch11,false,false));
+    assert(!pcm.setLiveMuteSolo(epoch,4,ChannelId{987654},true,false));
+    assert(render() && near(l[63],0.f) && near(rr[63],.2f));
+    assert(pcm.acceptedGraphRevision()==4);
+    assert(near(pcm.acceptedRoster().find(ch1)->faderLinear,minus12));
+    assert(near(pcm.acceptedRoster().find(ch11)->faderLinear,.5f));
+    assert(pcm.acceptedRoster().find(ch1)->mute);
+    assert(pcm.acceptedRoster().find(ch11)->solo);
+    pcm.unpublish();
+    pcm.pollRetirement();
+}
+
 int main() {
+    verifyOriginalAndAddedInputsShareNativePcmControls();
     verifyPrimaryOutKeepsCanonicalEdgeIdentity();
     verifyDefaultNativeMainEdgeAndDisconnectedRestore();
     verifyAtomicWireTransactionAndZeroSampleHops();
