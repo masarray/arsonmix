@@ -4,7 +4,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 ROOT=Path(__file__).resolve().parents[1]
-PAGE=ROOT/"site/preview-v2/index.html"
+PAGE=ROOT/"site/preview/index.html"
 
 def center(box):
     assert box and box["width"] and box["height"], box

@@ -9,11 +9,11 @@ import re
 from xml.etree import ElementTree as ET
 
 root = Path(__file__).resolve().parents[1]
-ref = root / "site/preview-v2/index.html"
-svg = root / "site/preview-v2/assets/knob-ICON.svg"
+ref = root / "site/preview/index.html"
+svg = root / "site/preview/assets/knob-ICON.svg"
 legacy_preview = root / "site/preview/assets/knob-ICON.svg"
 html = ref.read_text(encoding="utf-8")
-wire_owner = (root / "site/preview-v2/assets/mixer-wire-dots.css").read_text(encoding="utf-8")
+wire_owner = (root / "site/preview/assets/mixer-wire-dots.css").read_text(encoding="utf-8")
 # WIRE declarations may be owned by the existing component stylesheet after V16.
 material = html + "\n" + wire_owner
 # Inline the supplied SVG exactly: CSS masks loaded from file:// or another

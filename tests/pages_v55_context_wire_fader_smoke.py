@@ -2,7 +2,7 @@
 """V55 context-aware physical WIRE dot paint; preserve owner-restored V51 fader shadow."""
 from pathlib import Path
 from playwright.sync_api import sync_playwright
-PAGE=Path(__file__).resolve().parents[1]/"site/preview-v2/index.html"
+PAGE=Path(__file__).resolve().parents[1]/"site/preview/index.html"
 def node(page,ch,direction):
     sel=".wire-node-out" if direction=="out" else ".wire-node-in"
     dot=".wire-pin" if direction=="out" else ".wire-arrow"

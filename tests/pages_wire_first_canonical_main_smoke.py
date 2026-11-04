@@ -3,7 +3,7 @@
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
-PAGE=Path(__file__).resolve().parents[1]/"site/preview-v2/index.html"
+PAGE=Path(__file__).resolve().parents[1]/"site/preview/index.html"
 
 def edge(page, channel, endpoint):
     selector=(f'#tracks .strip[data-id="{channel}"] .wire-node-out'
