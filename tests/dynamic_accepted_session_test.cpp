@@ -265,7 +265,7 @@ static void verifyAtomicWireTransactionAndZeroSampleHops() {
         if(i!=11)assert(near(left[i],0.f));
 
     const std::array<WireChange,1> hop1{routeOnly(one,two)};
-    a=session.wireTransaction(2,2,hop1,physical,epoch,epoch,true);
+    a=session.wireTransaction(2,2,hop1,physical,epoch,epoch,false); // live PCM routing while armed
     assert(a.ok() && a.graphRevision==3);
     assert(!findEdge(one,main,3) && findEdge(one,two,3));
     assert(render() && near(left[11],.3f*center));
@@ -316,6 +316,18 @@ static void verifyAtomicWireTransactionAndZeroSampleHops() {
             static_cast<unsigned long long>(rejected.graphRevision));
     assert(rejected.fault==DynamicAcceptedSession::Fault::graphRejected);
     assert(rejected.edit.createdEdgeIds.empty()); // no phantom rejected ID
+    assert(session.acceptedGraphRevision()==6);
+    assert(render() && near(left[11],.3f*center));
+    // Preserve output safety: the same WIRE edit with a changed hardware
+    // block budget is rejected BEFORE the native PCM graph is published.
+    DynamicGraphRequest changedPhysical=physical;
+    changedPhysical.maxFrames=128;
+    const std::array<WireChange,1> validTopology{connect(two,main)};
+    rejected=session.wireTransaction(6,6,validTopology,changedPhysical,
+                                     epoch,epoch,false);
+    assert(rejected.fault==DynamicAcceptedSession::Fault::graphRejected);
+    assert(rejected.native.fault==DynamicNativeSessionPublisher::Fault::outputArmed);
+    assert(rejected.edit.createdEdgeIds.empty());
     assert(session.acceptedGraphRevision()==6);
     assert(render() && near(left[11],.3f*center));
     rejected=session.wireTransaction(5,5,unplug,physical,epoch,epoch,true);

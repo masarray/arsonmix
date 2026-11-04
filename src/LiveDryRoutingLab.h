@@ -1530,13 +1530,13 @@ public:
     NativeBusResult applyNativeWireTransaction(
             std::uint64_t ep,std::uint64_t expectedPcmRev,
             std::uint64_t expectedRosterRev,
-            std::span<const armix::mixer::WireChange> changes,
-            bool outputsDisarmed=false) {
+            std::span<const armix::mixer::WireChange> changes) {
         using namespace armix::mixer;
         NativeBusResult r{};
         r.pcmRevision=nativeAccepted_.pcmRevision;
         r.rosterRevision=nativeAccepted_.graph.roster.revision();
-        if(!outputsDisarmed){r.error="OUTPUT_MUST_BE_DISARMED";return r;}
+        // This method has NO physical request argument. Always publish
+        // the previously accepted identical source/clock configuration.
         if(!channelIdPhysicalPcmActive()||!ready()||
            ep!=epoch()||nativeAccepted_.deviceEpoch!=ep||
            !nativeAccepted_.fxOwners||
@@ -1570,7 +1570,7 @@ public:
             fx.graphRevision=expectedPcmRev+1;
             const auto published=nativePublisher_.commit(
                 roster,nativeAccepted_.graph.request,expectedPcmRev,
-                ep,epoch(),true,std::move(fx));
+                ep,epoch(),false,std::move(fx),true);
             if(!published.ok()){
                 r.error="NATIVE_WIRE_PCM_GRAPH_REJECTED";return r;
             }

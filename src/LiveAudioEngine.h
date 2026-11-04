@@ -1394,16 +1394,16 @@ public:
             std::uint64_t ep,std::uint64_t pcmRev,std::uint64_t rosterRev,
             std::span<const armix::mixer::WireChange> changes) {
         LiveDryRoutingLab::NativeBusResult fail;
-        fail.error="HARDWARE_NOT_DISARMED";
+        fail.error="NATIVE_WIRE_DEVICE_NOT_READY";
         if(independent_.active()||!attached_||!directFence_.permitted()||
            routeReconfiguring_.load(std::memory_order_acquire)||
            diagnosticRoute_.load(std::memory_order_acquire)!=
                armix::diagnostics::Route::normal||
-           !allOutputsDisarmed()||handoff_.busy()||
+           handoff_.busy()||
            fxMovePhase_.load(std::memory_order_acquire)!=0)
             return fail;
         return dryRoutingLab_.applyNativeWireTransaction(
-            ep,pcmRev,rosterRev,changes,true);
+            ep,pcmRev,rosterRev,changes);
     }
     bool setNativeInputMix(std::uint64_t epoch,std::uint64_t rev,
                            armix::mixer::ChannelId id,float gain,float pan) noexcept {
