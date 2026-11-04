@@ -18,7 +18,7 @@ assert "assets/mixer-control-keys.js" in HTML
 assert "mute-solo-pfl-56x37.png" in CSS
 assert "background-size:200% 300%" in CSS
 assert "aria-pressed" in CSS
-assert len(re.findall(r"mixer-control-keys\\.css",HTML))==1
+assert HTML.count("mixer-control-keys.css")==1
 assert JS.strip(),"approved input owner JS must not be missing"
 assert not (ROOT/"site/preview-v2").exists()
 assert not (ROOT/"site/preview-buttons").exists()
