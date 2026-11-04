@@ -117,6 +117,43 @@ test('same-owner shared contract/test files cannot be edited in parallel',()=>{
   assert.equal(x.ok,false);
   assert.match(x.errors.join(' '),/ACTIVE COLLISION/);
 });
+test('new ENGINE branch cannot duplicate native PCM using DIFFERENT filenames',()=>{
+  const owner=pr(266,'ENGINE','milestone/m5-native');
+  const newcomer=pr(420,'ENGINE','engine/split-work');
+  const result=check(newcomer,['engine/core/BrandNewCallback.h'],[owner],
+    {'266':['src/LiveAudioEngine.h','engine/core/DynamicAcceptedSession.h']});
+  assert.equal(result.ok,false);
+  assert.match(result.errors.join(' '),/ACTIVE DOMAIN COLLISION.*engine-pcm/);
+});
+test('new bridge PR cannot fork JS state into another filename',()=>{
+  const newBridge=pr(421,'INTEGRATOR','integration/new-bridge');
+  const existing=pr(396,'INTEGRATOR','integration/m3-gestures');
+  const result=check(newBridge,['web/approved-native-m2-state.js'],[existing],
+    {'396':['web/approved-native-bridge.js']});
+  assert.equal(result.ok,false);
+  assert.match(result.errors.join(' '),/ACTIVE DOMAIN COLLISION.*approved-native-bridge/);
+});
+test('policy and native host stay separate domains despite same INTEGRATOR owner',()=>{
+  const newcomer=pr(422,'INTEGRATOR','coord/governance');
+  const owner=pr(396,'INTEGRATOR','integration/gestures');
+  const result=check(newcomer,['.github/workflows/p1-windows.yml'],[owner],
+    {'396':['web/approved-native-bridge.js']});
+  assert.equal(result.ok,true);
+});
+test('new alternate GUI is blocked but retiring old renderer is permitted',()=>{
+  const author=pr(423,'GUI','gui/cleanup');
+  assert.equal(check(author,['web/console-native.html']).ok,false);
+  assert.equal(audit({pr:author,files:['web/console-native.html'],
+    fileStatuses:{'web/console-native.html':'removed'}}).ok,true);
+});
+test('existing #396/#398 remain advisory, first strict PR is #400',()=>{
+  assert.equal(POLICY_EPOCH_PR,399);
+  assert.equal(check(pr(398,'INTEGRATOR','integration/old'),
+    ['src/LiveAudioEngine.h']).ok,true);
+  assert.equal(check(pr(400,'INTEGRATOR','integration/new'),
+    ['src/LiveAudioEngine.h']).ok,false);
+});
+
 test('coordinator uses existing native + Chromium CI, not a fifth workflow',()=>{
   const native=readFileSync('.github/workflows/p1-windows.yml','utf8');
   const ui=readFileSync('.github/workflows/ui-smoke.yml','utf8');

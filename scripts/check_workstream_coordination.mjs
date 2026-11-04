@@ -5,7 +5,7 @@
 // New PRs fail closed on unowned production paths or active same-owner collisions.
 import { pathToFileURL } from 'node:url';
 
-export const POLICY_EPOCH_PR = 395; // Earlier PRs are reported, not retroactively failed.
+export const POLICY_EPOCH_PR = 399; // Existing #396/#398 are legacy; new #400+ are strict.
 export const WORKSTREAMS = Object.freeze(['GUI', 'ENGINE', 'INTEGRATOR', 'FAT']);
 
 export function ownerOf(path) {
@@ -37,6 +37,29 @@ export function ownerOf(path) {
     return 'ENGINE';
   return null; // docs / tests / independent CI fixtures are shared, read-only contracts.
 }
+// Fine-grained subsystems within a workstream. Different filenames can
+// still implement a SECOND audio callback or GUI-native reducer. The owning
+// PR must coordinate an entire production domain, not merely one path.
+export function runtimeDomain(path) {
+  if (path.startsWith('engine/') ||
+      /^src\/(?:LiveAudioEngine|LiveDryRoutingLab|ConsoleLiveBridgeV6|ApprovedNativeV8Projection|NativeVerifiedSourcePatch)\./.test(path))
+    return 'engine-pcm';
+  if (/^web\/approved-native-(?:bridge|contract|m2-state)\.js$/.test(path) ||
+      path === 'scripts/build_approved_native_gui.py')
+    return 'approved-native-bridge';
+  if (path === 'src/Main.cpp' ||
+      /^src\/ApprovedConsole.*\.(?:h|cpp)$/.test(path))
+    return 'native-host-dispatch';
+  if (path.startsWith('site/preview') || path === 'scripts/build_pages.py')
+    return 'approved-visual';
+  if (/^scripts\/(?:check_console_puzzle|check_approved_native_gui_release)\.mjs$/.test(path))
+    return 'release-admission';
+  if (path.startsWith('.github/workflows/') ||
+      path === 'AGENTS.md' || path === 'scripts/check_workstream_coordination.mjs')
+    return 'coordination-policy';
+  return null;
+}
+
 export function metadata(body = '', headRef = '') {
   const owner = body.match(/<!--\s*arsonmix-workstream:\s*(GUI|ENGINE|INTEGRATOR|FAT)\s*-->/i)?.[1]?.toUpperCase() || null;
   const issue = Number(body.match(/<!--\s*arsonmix-issue:\s*#([1-9][0-9]*)\s*-->/i)?.[1] || 0);
@@ -48,12 +71,18 @@ export function metadata(body = '', headRef = '') {
   if (!inferred && /^work\/integration-fat/.test(headRef)) inferred = 'FAT';
   return {owner, inferred, issue, parked};
 }
-export function audit({pr, files, others = [], filesByPR = {}}) {
+export function audit({pr, files, others = [], filesByPR = {}, fileStatuses = {}}) {
   const current = metadata(pr.body || '', pr.head?.ref || pr.headRef || '');
   const legacy = pr.number <= POLICY_EPOCH_PR && pr.draft === true;
   const errors = [], warnings = [];
   const changed = new Set(files);
   const owners = new Set([...changed].map(ownerOf).filter(Boolean));
+  // Reject a NEW alternate mixer renderer; deleting its old archive is fine.
+  for(const path of changed) {
+    if(/^web/console-native.(?:html|js|css)$/.test(path) &&
+       fileStatuses[path] !== 'removed')
+      errors.push('ALTERNATE GUI ' + path + ' is forbidden; only /preview/ is approved.');
+  }
   if (!current.owner) errors.push('Declare <!-- arsonmix-workstream: GUI|ENGINE|INTEGRATOR|FAT --> in PR body');
   if (!current.issue) errors.push('Declare <!-- arsonmix-issue: #397 --> (or linked workstream issue) in PR body');
   if (current.parked) errors.push('PR is PARKED; remove parked marker only after owner reconciliation');
@@ -84,8 +113,21 @@ export function audit({pr, files, others = [], filesByPR = {}}) {
         (activeShared.length > 8 ? ' + ' + (activeShared.length - 8) + ' more' : '') +
         '. Consolidate into ONE owner branch or park the superseded PR.');
     } else {
-      warnings.push('PR #' + other.number + ' also edits ' + shared.length +
+      if(shared.length)warnings.push('PR #' + other.number + ' also edits ' + shared.length +
         ' path(s) outside its declared file owner; do not merge it raw.');
+      // Exact-path detection alone misses concurrent engine edits in
+      // different files. Keep domains narrow so CMake/policy is not confused
+      // with PCM/renderer ownership and existing legitimate owners can work.
+      if(current.owner && current.owner===peer.inferred) {
+        const myDomains=new Set([...changed].filter(f=>ownerOf(f)===current.owner)
+          .map(runtimeDomain).filter(Boolean));
+        const competing=(filesByPR[other.number]||[]).find(f=>
+          ownerOf(f)===current.owner && myDomains.has(runtimeDomain(f)) &&
+          !changed.has(f));
+        if(competing)errors.push('ACTIVE DOMAIN COLLISION with PR #' + other.number +
+          ': ' + runtimeDomain(competing) + ' (' + competing +
+          '). Distinct files are still ONE runtime subsystem; join the owner PR.');
+      }
     }
   }
   if (legacy && errors.length) {
@@ -144,7 +186,8 @@ export async function auditGitHub({repo,number,token}) {
         .map(f=>f.filename);
     }));
   }
-  return audit({pr,files:files.map(f=>f.filename),others,filesByPR});
+  return audit({pr,files:files.map(f=>f.filename),others,filesByPR,
+    fileStatuses:Object.fromEntries(files.map(f=>[f.filename,f.status]))});
 }
 async function main() {
   const args=process.argv.slice(2);
