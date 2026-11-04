@@ -4,6 +4,10 @@ import json, re, sys, hashlib
 ROOT=Path(__file__).resolve().parents[1]
 DST=Path(sys.argv[1]).resolve() if len(sys.argv)>1 else ROOT/'dist-pages'
 gui=DST/'preview'
+# There is exactly one checked-in renderer and one hardware-button asset owner.
+for retired in ("preview-v2","preview-buttons","preview-v33","preview-v34"):
+    if (ROOT/"site"/retired).exists():
+        raise AssertionError("REJECTED alternate source still checked in: site/"+retired)
 def require(ok,why):
     if not ok: raise AssertionError('SINGLE APPROVED PREVIEW FAILED: '+why)
 html=(gui/'index.html').read_text(encoding='utf-8')
