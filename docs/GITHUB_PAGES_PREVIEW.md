@@ -1,37 +1,18 @@
-# ArSonMix public Pages — approved GUI v0.8 runbook
+# ArSonMix GitHub Pages — ONE approved mixer GUI
 
-**The approved GUI lives in `main`**, merged via [PR #2](https://github.com/masarray/arsonmix/pull/2); original approved commit: `343692fc9b702661a8455cca30f0ffd108907324`.
+**The ONLY approved GUI route:** https://masarray.github.io/arsonmix/preview/ .
 
-- Landing: https://masarray.github.io/arsonmix/
-- Live mixer: https://masarray.github.io/arsonmix/preview/
-- Full-screen mixer: https://masarray.github.io/arsonmix/preview/mixer.html
-- Deployed SHA: https://masarray.github.io/arsonmix/preview/build.json
+The user explicitly rejected bare `/preview-v2/` as product GUI. The approved `/preview/` visual includes the special PNG-based MUTE/SOLO/PFL hardware keys. The publishing process assembles current internal mixer HTML/WIRE/FX/fader/meter sources with these specific key assets, and publishes **one** direct page at `/preview/index.html` with matching `/preview/assets/**`.
 
-## Publishing pipeline after approval
+The following old preview URLs are **redirect-only**, never independent mixer renderers: `/preview-v2/`, `/preview-buttons/`, `/preview-v33/`, `/preview-v34/`, and `/preview/mixer.html`.
 
-1. Contributions to GUI files on `main` trigger `.github/workflows/ui-smoke.yml`.
-2. Only a successful **`main` UI smoke** triggers `.github/workflows/pages-publish.yml`.
-3. Pages publisher checks out the **exact successful smoke-run head SHA**, not a mutable stale GUI branch or an untested newer commit. A manual dispatch builds current `main`.
-4. `scripts/build_pages.py` copies `site/` and the canonical single-file standalone to `preview/mixer.html`, then writes `build.json` with SHA/branch.
-5. Preview shell automatically reloads when idle and a newer SHA is deployed; it does not add a second application header.
+## Source and publishing
+- `scripts/build_pages.py` combines the shared internal HTML seed `site/preview-v2/index.html` and `site/preview-v2/assets/**` with explicitly user-approved `site/preview-buttons/assets/mixer-control-keys.css`, `mixer-control-keys.js` and `mute-solo-pfl-56x37.png`.
+- These directories are **internal build dependencies**, not additional published GUI variants. Refactor/rename only with byte-for-byte visual and interaction parity, not by switching to bare preview-v2 styling.
+- Pages workflow `.github/workflows/pages-publish.yml` publishes from the qualified `main` and runs `python tests/single_preview_publication_contract_test.py dist-pages`. That test ensures only /preview/ renders mixer HTML, verifies special key and WIRE material, and requires old routes to redirect.
+- The landing `site/index.html` must link and embed ONLY `./preview/`; no links to competing GUI paths.
 
-Only one production Pages workflow is authoritative. Do not introduce a parallel branch-local publisher or restore checkout of `fix/fader-thumb-symmetry-polish`.
+## Windows native product
+ENGINE #266/#387 must be stitched beneath the exact **assembled** /preview/ renderer via one JUCE WebView2 native adapter, no redesign. P0 [#389](https://github.com/masarray/arsonmix/issues/389) owns native GUI integration; FAT #270 must verify Windows EXE source/asset hash and screenshot/interaction parity plus actual PCM/VST3. `node scripts/check_console_puzzle.mjs --release` is fail-closed until actual compiled GUI and one engine are verified.
 
-## Local tests
-
-```bash
-node --check web/app.js
-python tests/fader_asset_test.py
-python tests/button_asset_test.py
-python tests/pan_button_asset_test.py
-python tests/gui_baseline_lock_test.py
-python tests/ui_smoke.py
-python scripts/build_pages.py --out dist-pages --sha local --branch main
-python -m http.server 8000 --directory dist-pages
-```
-
-Open `http://localhost:8000/preview/` and compare against [GUI baseline lock](GUI_BASELINE_LOCK_2026-10-25.md).
-
-## Scope / honesty
-
-The GitHub Pages console remains a **browser UI prototype**. VU meter animation, LUFS-I and dBTP are simulated, not authentic native DSP readings. It does not enumerate or process installed VST3 plugins. Native integration is a separate, unmerged engineering stage and requires Windows hardware/latency and plugin verification.
+**The Pages UI is a simulation and not proof that hardware audio, VST3 or PCM is production-ready.**
