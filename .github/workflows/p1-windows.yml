@@ -29,6 +29,7 @@ on:
   # Native bridge changes still require Windows; pure visual GUI follows Pages only.
   # A full executable/package is still produced on native main and explicit FAT.
   pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
     paths:
       - 'CMakeLists.txt'
       - 'integration/console-v6/**'
@@ -59,6 +60,7 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   windows-build:
@@ -66,6 +68,11 @@ jobs:
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
+      - name: Cheap one-owner / overlapping-PR preflight (read-only)
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/check_workstream_coordination.mjs --pr ${{ github.event.pull_request.number }}
       - name: Cheap canonical Console v6 puzzle socket gate (no JUCE)
         run: node scripts/check_console_puzzle.mjs
       - name: Stop incomplete integrated product promotion before JUCE checkout
@@ -100,6 +107,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
           $contracts = @(
+            'tests/workstream_coordination_contract.test.mjs'
             'tests/gui_workflow_contract_test.mjs'
             'tests/approved_native_m2_contract.test.cjs'
             'tests/native_ui_contract_test.mjs'
