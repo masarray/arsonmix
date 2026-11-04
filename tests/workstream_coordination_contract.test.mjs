@@ -36,6 +36,41 @@ test('only one approved GUI has GUI ownership; no accidental native source autho
   assert.equal(ownerOf('README.md'),null);
 });
 
+test('release-admission scripts belong to INTEGRATOR, not unclassified shared code',()=>{
+  for(const path of [
+    'scripts/check_console_puzzle.mjs',
+    'scripts/check_approved_native_gui_release.mjs',
+    'scripts/check_pr278_console_authority.mjs'
+  ]) {
+    assert.equal(ownerOf(path),'INTEGRATOR',path);
+    for(const lane of ['GUI','ENGINE','FAT']) {
+      const result=check(pr(405,lane,lane.toLowerCase()+'/gate'),[path]);
+      assert.equal(result.ok,false,lane+' wrongly edited '+path);
+      assert.match(result.errors.join(' '),/CROSS-OWNER/);
+    }
+  }
+});
+test('hardware FAT evidence remains exclusively independent FAT owned',()=>{
+  for(const path of [
+    'scripts/collect_hardware_fat_windows.ps1',
+    'scripts/console_v6_fat_gate.mjs',
+    'scripts/run_console_native_s0.mjs',
+    'scripts/verify_console_s0_native_fixture.mjs'
+  ]) {
+    assert.equal(ownerOf(path),'FAT',path);
+    assert.equal(check(pr(406,'INTEGRATOR','coord/release'),[path]).ok,false);
+    assert.equal(check(pr(406,'FAT','fat/evidence'),[path]).ok,true);
+  }
+});
+test('different release-admission script filenames still collide in one runtime domain',()=>{
+  const owner=pr(410,'INTEGRATOR','coord/release');
+  const peer=pr(411,'INTEGRATOR','integration/admission');
+  const result=check(owner,['scripts/check_approved_native_gui_release.mjs'],
+    [peer],{'411':['scripts/check_console_puzzle.mjs']});
+  assert.equal(result.ok,false);
+  assert.match(result.errors.join(' '),/ACTIVE DOMAIN COLLISION.*release-admission/);
+});
+
 test('new GUI PR may edit approved source but cannot change native CMake or PCM',()=>{
   assert.equal(check(pr(401,'GUI','gui/fader'),
     ['site/preview/index.html','site/preview/assets/meter.css']).ok,true);

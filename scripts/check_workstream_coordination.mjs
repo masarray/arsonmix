@@ -14,6 +14,11 @@ export function ownerOf(path) {
       path.startsWith('.github/workflows/') ||
       path === 'docs/workstreams/MULTI_AGENT_COORDINATION.md' ||
       path === 'scripts/check_workstream_coordination.mjs' ||
+      // Release admission is INTEGRATOR-owned; other lanes must not
+      // silently weaken the approved GUI/native stop-ship evidence.
+      path === 'scripts/check_console_puzzle.mjs' ||
+      path === 'scripts/check_approved_native_gui_release.mjs' ||
+      path === 'scripts/check_pr278_console_authority.mjs' ||
       path === 'tests/workstream_coordination_contract.test.mjs')
     return 'INTEGRATOR';
   if (path === 'CMakeLists.txt' || path === 'src/Main.cpp' ||
@@ -23,7 +28,11 @@ export function ownerOf(path) {
       path === 'web/bridge.js' || path === 'web/monitor.js' ||
       path === 'scripts/build_approved_native_gui.py')
     return 'INTEGRATOR';
-  if (/^(scripts\/(package_native_windows|verify_native_windows_artifact)\.ps1)$/.test(path) ||
+  if (path === 'scripts/collect_hardware_fat_windows.ps1' ||
+      path === 'scripts/console_v6_fat_gate.mjs' ||
+      path === 'scripts/verify_console_s0_native_fixture.mjs' ||
+      path === 'scripts/run_console_native_s0.mjs' ||
+(/^(scripts\/(package_native_windows|verify_native_windows_artifact)\.ps1)$/.test(path) ||
       /^tests\/(hardware_fat|native_artifact|fat_|windows_fat)/.test(path))
     return 'FAT';
   if (path.startsWith('site/') || path.startsWith('web/') ||

@@ -12,6 +12,8 @@
 | INTEGRATOR | `src/Main.cpp`, `CMakeLists.txt`, `integration/**`, `web/approved-native*`, native GUI resource builder, workflow/coordination policy | Reconciles accepted GUI and ENGINE ABI; no second GUI/PCM; owns merged Windows assembly |
 | FAT | Native Windows package/verification scripts, hardware and QA regression evidence | Independent end-to-end exact-SHA verdict; never rewrites DSP or GUI for PASS |
 
+Release-admission scripts (`scripts/check_console_puzzle.mjs`, `scripts/check_approved_native_gui_release.mjs`, `scripts/check_pr278_console_authority.mjs`) belong ONLY to INTEGRATOR. Independent hardware-evidence scripts (`scripts/collect_hardware_fat_windows.ps1`, `scripts/console_v6_fat_gate.mjs`, `scripts/run_console_native_s0.mjs`, `scripts/verify_console_s0_native_fixture.mjs`) belong ONLY to FAT. Neither workstream can weaken the other's release gate without a targeted handoff.
+
 Unclassified docs and isolated tests can be authored by their domain owner. A change to a source file outside a lane **must be handed to the owning lane**. Example: ENGINE can propose a diff to `src/Main.cpp` but INTEGRATOR applies it with the accepted native ABI. FAT files cannot silently turn off safety checks. "Working on a PR" does not grant a file lock against GitHub account credentials: this is enforceable-by-CI collaboration policy, not a security boundary.
 
 ## Before every coding session (GitHub is the live coordination bus)
