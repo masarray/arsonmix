@@ -23,18 +23,21 @@ SPRITE="mute-solo-pfl-56x37.png"
 
 
 def verify_bundle(dist):
-    generated=dist/"preview-buttons"
-    entry=(dist/"preview/index.html").read_text(encoding="utf-8")
-    assert "frame.src='../preview-buttons/index.html?b='" in entry, "Public /preview/ still opens obsolete mixer renderer"
-    assert (dist/"preview-buttons/index.html").is_file(), "iframe target missing from Pages build"
+    generated=dist/"preview"
+    entry=(generated/"index.html").read_text(encoding="utf-8")
+    assert 'id="console"' not in entry, "Duplicate preview iframe is forbidden"
+    assert 'class="console-body' in entry or 'console-body' in entry, "Approved console missing"
+    for legacy in ("preview-v2","preview-buttons","preview-v33","preview-v34"):
+        redirect=dist/legacy/"index.html"
+        assert redirect.is_file() and 'url=../preview/' in redirect.read_text(encoding="utf-8")
+        assert list((dist/legacy).iterdir())==[redirect], "Alternative GUI still published"
     original=(REFERENCE/"index.html").read_text(encoding="utf-8")
     html=(generated/"index.html").read_text(encoding="utf-8")
     meta=json.loads((generated/"build.json").read_text(encoding="utf-8"))
-    assert meta["kind"]=="APPROVED_PNG_VISUAL_REVIEW_ONLY"
+    assert meta["kind"]=="APPROVED_SINGLE_GUI" and meta["canonical_url"]=="/preview/"
     assert meta["live_audio"] is False
     assert meta["wire_source_sha256"]==hashlib.sha256(original.encode()).hexdigest()
-    assert (dist/"preview-v2/index.html").read_text(encoding="utf-8")==original
-    assert (dist/"preview/mixer.html").read_text(encoding="utf-8")==original
+    assert 'http-equiv="refresh"' in (dist/"preview/mixer.html").read_text(encoding="utf-8"),"Deprecated mixer alias must not render second GUI"
 
     # Strip only the two deliberate fingerprinted CSS/JS URLs. Everything
     # else, including the V46+ WIRE model and channel events, must be 1:1.
@@ -69,17 +72,16 @@ def verify_bundle(dist):
 
 
 def verify_browser(dist):
-    html=dist/"preview-buttons/index.html"
+    html=dist/"preview/index.html"
     with sync_playwright() as p:
         browser=p.chromium.launch(headless=True)
         # Public /preview/ is the user-facing route, not a separate PNG demo.
         entry=browser.new_page(viewport={"width":1680,"height":900})
         entry.goto((dist/"preview/index.html").as_uri())
-        iframe=entry.frame_locator("#console")
-        iframe.locator('#tracks .strip[data-id="1"] .mx-hw-row').wait_for(timeout=15000)
-        key=iframe.locator('#tracks .strip[data-id="1"] button[data-hw-kind="mute"]')
+        entry.locator('#tracks .strip[data-id="1"] .mx-hw-row').wait_for(timeout=15000)
+        key=entry.locator('#tracks .strip[data-id="1"] button[data-hw-kind="mute"]')
         assert SPRITE in key.evaluate("el=>getComputedStyle(el,'::before').backgroundImage"), "Public /preview/ did not load approved PNG"
-        assert iframe.locator("#wireLayer").count()==1, "Public /preview/ lost canonical WIRE"
+        assert entry.locator("#wireLayer").count()==1, "Public /preview/ lost canonical WIRE"
         state=key.get_attribute("aria-pressed")
         key.click()
         assert key.get_attribute("aria-pressed")!=state, "Public /preview/ MUTE latch failed"

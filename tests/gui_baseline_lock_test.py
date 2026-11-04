@@ -13,7 +13,8 @@ lock=(root/'docs/GUI_BASELINE_LOCK_2026-10-25.md').read_text(encoding='utf8')
 assert '343692fc9b702661a8455cca30f0ffd108907324' in lock
 assert 'checkpoint/gui-v0.8-approved-20261025' in lock
 assert 'docs/GUI_BASELINE_LOCK_2026-10-25.md' in readme
-assert 'docs/GUI_BASELINE_LOCK_2026-10-25.md' in agents
+assert 'SINGLE APPROVED GUI: /preview/' in agents and 'ONE public preview' in agents
+assert 'docs/GUI_BASELINE_LOCK_2026-10-25.md' in readme  # archived historical checkpoint
 assert "ref: fix/fader-thumb-symmetry-polish" not in page
 assert "branches: [main]" in page and "head_sha" in page
 assert "branches: [main]" in ui and "pull_request:" in ui
