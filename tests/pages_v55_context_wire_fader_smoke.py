@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+"""V55 context-aware physical WIRE dot paint and lightweight thumb shadow."""
+from pathlib import Path
+from playwright.sync_api import sync_playwright
+PAGE=Path(__file__).resolve().parents[1]/"site/preview-v2/index.html"
+def node(page,ch,direction):
+    sel=".wire-node-out" if direction=="out" else ".wire-node-in"
+    dot=".wire-pin" if direction=="out" else ".wire-arrow"
+    return page.locator(f'#tracks .strip[data-id="{ch}"] {sel}').evaluate("""(el,dot)=>({
+        paint:el.dataset.wirePaint,connected:el.getAttribute('data-wire-connected'),
+        visible:el.getAttribute('data-wire-visible'),
+        color:getComputedStyle(el.querySelector(dot)).backgroundColor})""",dot)
+def main():
+    with sync_playwright() as pw:
+        browser=pw.chromium.launch(headless=True)
+        for w,h in ((1366,768),(1680,900),(1920,1080)):
+            for density in ("comfort","standard","compact"):
+                page=browser.new_page(viewport={"width":w,"height":h})
+                page.goto(PAGE.as_uri())
+                page.locator("#densitySelect").select_option(density)
+                for ch in (1,2):
+                    for direction in ("in","out"):
+                        v=node(page,ch,direction)
+                        assert v["paint"]=="idle" and v["connected"] is None and v["visible"] is None,(w,density,ch,direction,v)
+                        assert v["color"]=="rgb(75, 83, 91)",(w,density,ch,direction,v)
+                cap=page.locator('#tracks .strip[data-id="1"] .fader-travel .cap').first
+                shadow=cap.evaluate("(el)=>getComputedStyle(el).boxShadow")
+                assert "17px" in shadow and shadow!="none",(w,density,shadow)
+                assert cap.evaluate("(el)=>getComputedStyle(el).filter")=="none"
+                if density=="comfort":
+                    page.locator('#tracks .strip[data-id="5"] .wire-node-out').click()
+                    page.locator('#tracks .strip[data-id="3"] .wire-node-in').click()
+                    a=node(page,5,"out");b=node(page,3,"in")
+                    assert a["connected"]=="true" and a["paint"]=="connected",(w,a)
+                    assert b["connected"]=="true" and b["paint"]=="connected",(w,b)
+                    assert node(page,1,"out")["paint"]=="idle"
+                    page.locator("#wireNavigatorToggle").click()
+                    page.locator("#wireWsUndo").click()
+                    assert node(page,5,"out")["paint"]=="idle"
+                    assert node(page,3,"in")["paint"]=="idle"
+                page.close()
+        browser.close()
+    print("PASS V55: dark idle nodes, accepted WIRE paint, undo and static fader shadow 3x3")
+if __name__=="__main__":main()

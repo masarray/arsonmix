@@ -807,12 +807,12 @@ function wireTray(t){
   hasAnyArrival?'Select one incoming route to inspect':
   legacy?'Existing SEND slot · managed in legacy routing':
   'Choose OUT then click IN, or drag an OUT jack here';
- const from='<button type="button" class="wire-node-out'+(isSource?' is-source':'')+
+ const from='<button type="button" data-wire-paint="idle" class="wire-node-out'+(isSource?' is-source':'')+
   '" data-action="wireSource"'+(isMain?' disabled':'')+
   ' title="SEND OUT · drag this solid jack to another channel IN" aria-label="Send OUT from '+
   escapeHtml(t.name)+'" aria-pressed="'+isSource+
   '"><span class="wire-pin" aria-hidden="true"></span><small>OUT</small></button>';
- const to='<button type="button" class="wire-socket wire-node-in'+(isSource&&!hasAnyArrival?' is-source':'')+
+ const to='<button type="button" data-wire-paint="idle" class="wire-socket wire-node-in'+
   (linked?' is-linked':'')+'" data-action="wireRoute" aria-pressed="'+sourceLinked+
   '" aria-label="Receive IN on '+escapeHtml(t.name)+' · '+label+
   '" title="'+escapeHtml(label+' · '+modeLabel+' · GUI DEMO')+'" '+
@@ -1834,6 +1834,9 @@ function syncVisibleWireDots(svg){
    else node.removeAttribute('data-wire-arrival');
   }
   const edge=visible.get(key);
+  // Visual paint follows the visible committed WIRE path, not a legacy
+  // SEND or an off-bank hidden connection. Keep graph state separate.
+  node.dataset.wirePaint=edge?'connected':'idle';
   if(!edge){
    node.removeAttribute('data-wire-visible');
    node.style.removeProperty('--wire-edge-color');
