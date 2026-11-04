@@ -71,6 +71,18 @@ test('native PCM and device changes always use Windows/CTest, never Chromium by 
   ]) assert.ok(native.includes(target), 'Missing vital audio test ' + target);
 });
 
+test('approved Pages to JUCE build seam is a native gate, never an unrelated CSS-only job', () => {
+  for (const filename of [
+    'web/approved-native-bridge.js',
+    'scripts/build_approved_native_gui.py',
+    'tests/approved_native_gui_bundle_test.py'
+  ]) {
+    assert.ok(selected(windowsPR,filename), filename+' must run native build on PR');
+    assert.ok(selected(windowsPush,filename), filename+' must rebuild native main bundle');
+  }
+  assert.match(native,/Check approved Pages GUI provenance before costly JUCE checkout/);
+});
+
 test('native WebView bridge and integration genuinely require both owners', () => {
   for (const filename of [
     'web/bridge.js', 'web/monitor.js', 'integration/console-v6/contract.json'

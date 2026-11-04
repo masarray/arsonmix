@@ -8,6 +8,9 @@ on:
       - 'CMakeLists.txt'
       - 'integration/console-v6/**'
       - 'src/**'
+      - 'web/approved-native-bridge.js'
+      - 'scripts/build_approved_native_gui.py'
+      - 'tests/approved_native_gui_bundle_test.py'
       - 'engine/**'
       # Only the native WebView bridge can trigger Windows; pure GUI/CSS uses Chromium + Pages.
       - 'web/bridge.js'
@@ -28,6 +31,9 @@ on:
       - 'CMakeLists.txt'
       - 'integration/console-v6/**'
       - 'src/**'
+      - 'web/approved-native-bridge.js'
+      - 'scripts/build_approved_native_gui.py'
+      - 'tests/approved_native_gui_bundle_test.py'
       - 'web/bridge.js'
       - 'web/monitor.js'
       - 'engine/**'
@@ -65,6 +71,11 @@ jobs:
         shell: pwsh
         run: |
           python -m unittest discover -s scripts/tests -p test_factoryfx_release_bundle.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Check approved Pages GUI provenance before costly JUCE checkout
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -p approved_native_gui_bundle_test.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Checkout JUCE 8 pinned
         uses: actions/checkout@v4

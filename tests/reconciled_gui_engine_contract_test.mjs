@@ -45,28 +45,31 @@ test('full engine capabilities preserved',()=>{
   assert.match(bridge,/arMixNativePresetLoaded/);
 });
 
-test('JUCE native resources track the approved calibrated GUI without maintaining a second mixer implementation', () => {
+test('JUCE native resources use EXACT assembled Pages /preview/, not archived web renderer', () => {
   const cmake=read('CMakeLists.txt');
   const cpp=read('src/Main.cpp');
-  const sourceCss=read('web/styles-src/42-mixer-premium.css');
+  const generator=read('scripts/build_approved_native_gui.py');
+  const pagesBuilder=read('scripts/build_pages.py');
+  const nativeAdapter=read('web/approved-native-bridge.js');
+  const oldSourceCss=read('web/styles-src/42-mixer-premium.css');
   const standalone=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
-  // Verify legacy assets in original order, while allowing additive UI modules.
-  const assetList=cmake.match(/juce_add_binary_data\(ARMixAssets SOURCES\s+([^)]+)\)/)?.[1];
-  assert.ok(assetList,'native WebView2 source list missing');
-  const expected=['web/index.html','web/styles.css','web/plugin-ui.css','web/app.js',
-    'web/plugin-ui.js','web/bridge.js','web/monitor.js','web/mixer-io.js','web/mixer-io.css'];
-  const listed=assetList.trim().split(/\s+/);
-  for(const asset of expected) assert.ok(listed.includes(asset),'missing WebView2 asset '+asset);
-  assert.equal(new Set(listed).size,listed.length,'duplicate native WebView2 resource');
-  for (const resource of ['index_html','styles_css','pluginui_css','app_js','pluginui_js','bridge_js','monitor_js']) {
-    assert.ok(cpp.includes('BinaryData::'+resource),resource+' missing from WebView provider');
-  }
-  assert.ok(css.endsWith(sourceCss), 'native CSS must end with its authoritative calibration module');
-  assert.ok(standalone.includes('<style>'+css+'</style>'), 'Pages/standalone CSS drift');
-  assert.ok(standalone.includes('<script>'+app+'</script>'), 'Pages/standalone JS drift');
-  for (const cls of ['gain-scale-travel','vu-scale-travel','meter-signal-area','fader-travel']) {
-    assert.ok(app.includes(cls)||sourceCss.includes(cls), 'calibration module missing '+cls);
-  }
-  assert.match(app,/const levelToTop=db=>/);
-  assert.match(app,/distance:Math\.max\(24,r\.height-77\)/);
+  assert.match(cmake,/build_approved_native_gui\.py/);
+  assert.match(cmake,/ARMIX_APPROVED_GUI_BINARIES/);
+  assert.match(cmake,/ARMIX_APPROVED_GUI_DIR/);
+  assert.match(cpp,/ApprovedGuiResources\.h/);
+  assert.match(cpp,/resolveApprovedGuiResource/);
+  assert.doesNotMatch(cpp,/BinaryData::consolenative_html|BinaryData::index_html/);
+  assert.doesNotMatch(cmake,/^\s+web\/index\.html web\/styles\.css/m);
+  assert.match(generator,/scripts" \/ "build_pages\.py"/);
+  assert.match(pagesBuilder,/APPROVED_SINGLE_GUI/);
+  assert.match(pagesBuilder,/buttons_dest=dst\/'preview'/);
+  assert.match(generator,/approvedPagesHtmlSha256/);
+  assert.match(generator,/SCAFFOLD_ONLY__NOT_LIVE_PCM/);
+  assert.match(nativeAdapter,/acceptedGraphConnected: false/);
+  assert.match(nativeAdapter,/productionCallbackLive: false/);
+  // Historical web app still verifies its archival CSS/standalone consistency.
+  // It is NEVER the native compiled mixer or a second GUI product.
+  assert.ok(css.endsWith(oldSourceCss),'archival CSS byte relationship drift');
+  assert.ok(standalone.includes('<style>'+css+'</style>'),'archival standalone CSS drift');
+  assert.ok(standalone.includes('<script>'+app+'</script>'),'archival standalone JS drift');
 });

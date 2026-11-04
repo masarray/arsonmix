@@ -16,14 +16,16 @@ test('mixer shell is a presentation module, not a second audio engine',()=>{
   assert.doesNotMatch(css,/\[data-io-mode="(?:ROUTE|SENDS)"\]\{--ar-upper-height:/);
   assert.doesNotMatch(script,/routingDryApply|createPluginInstance|AudioContext|processBlock|setInterval|requestAnimationFrame/);
 });
-test('new shell resources are in the exact native WebView2 asset list',()=>{
+test('legacy mixer shell stays archived; exact approved /preview/ replaces its native resource list',()=>{
   const cmake=read('CMakeLists.txt'),main=read('src/Main.cpp'),html=read('web/index.html');
   for(const name of ['mixer-layout.js','mixer-layout.css']){
-    assert.ok(cmake.includes('web/'+name),name+' not packaged');
-    assert.ok(main.includes('"/'+name+'"'),name+' not served');
+    assert.equal(cmake.includes('web/'+name),false,name+' must not be packaged');
+    assert.equal(main.includes('"/'+name+'"'),false,name+' must not be served');
     assert.ok(html.includes(name),name+' not referenced');
   }
   assert.ok(html.indexOf('mixer-io.js')<html.indexOf('mixer-layout.js'));
+  assert.match(cmake,/build_approved_native_gui\.py/);
+  assert.match(main,/resolveApprovedGuiResource/);
 });
 
 test('route status adapter never consumes the device epoch before the native controller',()=>{

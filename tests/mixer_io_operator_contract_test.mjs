@@ -33,14 +33,14 @@ test('MS3A MAIN physical output patch stages through existing muted native route
   assert.match(monitor,/routingDryApply/);
   assert.doesNotMatch(gui,/audioSelectDevice|setCurrentAudioDeviceType/);
 });
-test('native device inventory and packaged WebView2 assets are wired',()=>{
+test('native device inventory remains available; retired I/O workbench is NOT the shipped UI',()=>{
   assert.match(main,/action == "audioDeviceInventory"/);
   assert.match(main,/getAvailableDeviceTypes\(\)/);
   assert.match(main,/arMixAudioDeviceInventory/);
   for(const f of ['mixer-io.js','mixer-io.css']){
     assert.ok(html.includes(f));
-    assert.ok(cmake.includes('web/'+f));
-    assert.ok(main.includes('/'+f));
+    assert.equal(cmake.includes('web/'+f),false,'legacy GUI must not be embedded');
+    assert.equal(main.includes('"/'+f+'"'),false,'legacy UI must not be served');
   }
 });
 
@@ -156,8 +156,9 @@ test('IO-MATRIX uses only verified pins, dual-step stereo draft and native ACK w
   assert.match(gui,/\.dataset\.ioRowMode/);
   assert.match(css,/\.arIOMatrixCell\[data-assigned="true"\]/);
   assert.doesNotMatch(css,/backdrop-filter\s*:|filter\s*:\s*blur/);
-  assert.match(main,/assets\/audio-interface\.svg/);
-  assert.match(cmake,/web\/assets\/audio-interface\.svg/);
+  // The old workbench icon belongs to historical source tests, not public Pages.
+  assert.doesNotMatch(cmake,/web\/assets\/audio-interface\.svg/);
+  assert.match(main,/resolveApprovedGuiResource \(path, data, size, mime\)/);
 });
 
 test('MS3B independent physical MONITOR publishes in existing native ACK transaction',()=>{

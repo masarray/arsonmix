@@ -90,12 +90,14 @@ test('Windows Explorer pickers are separate, SafePointer guarded and have explic
     assert.ok(native.includes('action == "'+action+'"'));
 });
 
-test('asset registration and no blur/focus thrash in native plugin UI',()=>{
+test('legacy plugin UI stays testable but is not duplicated in approved Windows GUI',()=>{
   for(const f of ['plugin-ui.js','plugin-ui.css']){
     assert.ok(index.includes(f));
-    assert.ok(cmake.includes('web/'+f));
-    assert.ok(native.includes('"/'+f+'"'));
+    assert.equal(cmake.includes('web/'+f),false,'duplicate plugin GUI resource');
+    assert.equal(native.includes('"/'+f+'"'),false,'duplicate native renderer');
   }
+  assert.match(cmake,/build_approved_native_gui\.py/);
+  assert.match(native,/resolveApprovedGuiResource/);
   assert.ok(bridge.includes('pluginUi.updatePickerRows('));
   assert.ok(bridge.includes('renderPickerResults(); // Preserve search input, caret, focus'));
   assert.ok(bridge.includes('iconSvg("close")'));
