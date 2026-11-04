@@ -1181,6 +1181,88 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
         liveMixIntent);
     assert(mixAck.getProperty("status","").toString()=="ACCEPTED");
     assert(busControl.liveMixes==1&&busControl.commits==1);
+    // Canonical public v8 operation uses the SAME installed ChannelId
+    // publisher and ACK revisions, never a WebView/legacy owned PCM graph.
+    const auto v8Route=live.getProperty("dryRoutingLab",{});
+    const auto v8Bus=v8Route.getProperty("nativeBus",{});
+    auto* v8BusObject=v8Bus.getDynamicObject();
+    assert(v8BusObject);
+    const auto v8Rows=v8Bus.getProperty("channels",{});
+    auto v8Input=std::make_unique<juce::DynamicObject>();
+    v8Input->setProperty("id","20");
+    v8Input->setProperty("role","INPUT");
+    v8Rows.getArray()->add(juce::var(v8Input.release()));
+    juce::Array<juce::var> v8Edges;
+    auto v8Edge=std::make_unique<juce::DynamicObject>();
+    v8Edge->setProperty("edgeId","77");
+    v8Edge->setProperty("from","20");
+    v8Edge->setProperty("to","18");
+    v8Edge->setProperty("tap","POST_FADER");
+    v8Edge->setProperty("gainLinear",.5);
+    v8Edges.add(juce::var(v8Edge.release()));
+    v8BusObject->setProperty("edges",juce::var(v8Edges));
+    juce::Array<juce::var> v8InstalledOps;
+    v8InstalledOps.add(juce::var(juce::String("NATIVE_APPLY_WIRE_TRANSACTION")));
+    v8BusObject->setProperty("supportedOps",juce::var(v8InstalledOps));
+    const auto acceptedV8=Bridge::snapshot(live);
+    const auto acceptedV8Graph=acceptedV8.getProperty("graph",{});
+    const auto acceptedV8Caps=acceptedV8Graph.getProperty("capabilities",{});
+    assert(!static_cast<bool>(acceptedV8.getProperty("productionCallbackLive",true)));
+    assert(acceptedV8Graph.getProperty("revision","").toString()=="3");
+    assert(acceptedV8Graph.getProperty("rosterRevision","").toString()=="4");
+    assert(acceptedV8Graph.getProperty("channels",{}).getArray()->size()==2);
+    assert(acceptedV8Graph.getProperty("edges",{}).getArray()->size()==1);
+    assert(acceptedV8Graph.getProperty("edges",{}).getArray()->getReference(0)
+               .getProperty("edgeId","").toString()=="77");
+    assert(static_cast<bool>(acceptedV8Caps.getProperty("callbackOwnsChannelIds",false)));
+    assert(acceptedV8Caps.getProperty("supportedOps",{}).getArray()->contains(
+        juce::var(juce::String("APPLY_WIRE_TRANSACTION"))));
+    auto v8IntentObject=std::make_unique<juce::DynamicObject>();
+    v8IntentObject->setProperty("requestId","v8:wire:1");
+    v8IntentObject->setProperty("deviceEpoch","9007199254740993");
+    v8IntentObject->setProperty("baseGraphRevision","3");
+    v8IntentObject->setProperty("baseRosterRevision","4");
+    v8IntentObject->setProperty("operation","APPLY_WIRE_TRANSACTION");
+    v8IntentObject->setProperty("targetChannelId","20");
+    v8IntentObject->setProperty("payload",batch.getProperty("payload",{}));
+    const auto v8WireIntent=juce::var(v8IntentObject.release());
+    const auto applyV8=[&](const juce::var& command,const juce::var& snapshot) {
+        return bridge.processNativeBusIntent(command,snapshot,busControl,false,
+            [](const juce::String&,ChannelId,const juce::var&,
+               std::uint64_t,std::uint64_t,std::uint64_t)
+               ->BusControl::Report {return {};});
+    };
+    auto v8Reply=applyV8(v8WireIntent,acceptedV8);
+    assert(v8Reply.getProperty("status","").toString()=="ACCEPTED");
+    assert(v8Reply.getProperty("graphRevision","").toString()=="4");
+    assert(v8Reply.getProperty("rosterRevision","").toString()=="5");
+    assert(busControl.nativeWireBatches==2);
+    assert(applyV8(v8WireIntent,acceptedV8)
+               .getProperty("errorCode","").toString()=="DUPLICATE_REQUEST_ID");
+    auto staleV8=juce::JSON::parse(juce::JSON::toString(v8WireIntent,false));
+    staleV8.getDynamicObject()->setProperty("requestId","v8:wire:stale");
+    staleV8.getDynamicObject()->setProperty("baseGraphRevision","2");
+    assert(applyV8(staleV8,acceptedV8).getProperty("status","").toString()=="REJECTED");
+    assert(busControl.nativeWireBatches==2);
+    // A focused MAIN plug cannot modify another admitted channel's wire
+    // even if its edge ID is otherwise syntactically valid.
+    auto wrongFocus=juce::JSON::parse(juce::JSON::toString(v8WireIntent,false));
+    wrongFocus.getDynamicObject()->setProperty("requestId","v8:wire:wrong-focus");
+    wrongFocus.getDynamicObject()->setProperty("targetChannelId","18");
+    const auto rejectedFocus=applyV8(wrongFocus,acceptedV8);
+    assert(rejectedFocus.getProperty("status","").toString()=="REJECTED");
+    assert(rejectedFocus.getProperty("errorCode","").toString()==
+           "UNIVERSAL_WIRE_UNFOCUSED_SOURCE");
+    assert(busControl.nativeWireBatches==2);
+    // Subsequent native producer snapshot must match the acknowledged graph
+    // and roster revision before GUI may paint an accepted WIRE cable.
+    v8BusObject->setProperty("graphRevision","4");
+    v8BusObject->setProperty("rosterRevision","5");
+    const auto afterV8=Bridge::snapshot(live);
+    assert(afterV8.getProperty("graph",{}).getProperty("revision","")
+               .toString()==v8Reply.getProperty("graphRevision","").toString());
+    assert(afterV8.getProperty("graph",{}).getProperty("rosterRevision","")
+               .toString()==v8Reply.getProperty("rosterRevision","").toString());
     // Fail-closed device fault: do not advertise a compatibility actuator
     // against a poisoned physical port topology or stale hardware session.
     auto liveRoute=live.getProperty("dryRoutingLab",{});

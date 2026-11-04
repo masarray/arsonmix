@@ -218,7 +218,7 @@ public:
                   const auto snapshot=armix::console::LiveConsoleBridgeV6::snapshot(engine_.status());
                   const auto op=args.getProperty("operation","").toString();
                   juce::var ack;
-                  if(op.startsWith("NATIVE_"))
+                  if(op.startsWith("NATIVE_") || op=="APPLY_WIRE_TRANSACTION")
                       ack=consoleBridge_.processNativeBusIntent(
                           args,snapshot,engine_,
                           nativeShowBusy_||studioBackupBusy_,
