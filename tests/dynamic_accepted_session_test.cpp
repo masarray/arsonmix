@@ -371,7 +371,60 @@ static void verifyDefaultNativeMainEdgeAndDisconnectedRestore() {
     session.unpublish();session.pollRetirement();
 }
 
+
+// Legacy OUT selectors must project the SAME edgeId as native WIRE.
+// Clicking an unchanged MAIN target or rerouting its occupied plug does NOT
+// create a different edge and does not change the admitted PCM sum.
+static void verifyPrimaryOutKeepsCanonicalEdgeIdentity() {
+    constexpr std::uint64_t epoch=9931;
+    DynamicAcceptedSession session;
+    DynamicGraphRequest physical;
+    physical.physicalInputs=1;physical.maxFrames=64;
+    const std::array<ChannelEdit,3> first{
+        add(0,ChannelRole::input,"SOURCE"),
+        add(1,ChannelRole::input,"INTERMEDIATE",ProcessingFormat::stereo),
+        add(2,ChannelRole::main,"MAIN",ProcessingFormat::stereo)
+    };
+    auto a=session.edit(0,0,first,physical,epoch,epoch,true);
+    assert(a.ok());
+    const auto src=a.edit.createdIds[0],via=a.edit.createdIds[1];
+    const auto main=a.edit.createdIds[2];
+    const std::array<ChannelEdit,2> initial{output(src,main),output(via,main)};
+    physical.sources={{src,0,-1,false}};
+    a=session.edit(1,1,initial,physical,epoch,epoch,true);
+    assert(a.ok());
+    const auto* accepted=session.acceptedRouting(epoch,2);
+    assert(accepted&&accepted->edges.size()==2);
+    const auto edgeId=accepted->edges[0].edgeId;
+    const auto viaId=accepted->edges[1].edgeId;
+    assert(edgeId!=0&&viaId!=0&&edgeId!=viaId);
+    std::array<float,64> impulse{},left{},right{};
+    impulse[19]=.25f;
+    const float* pins[]{impulse.data()};
+    const auto noFx=+[](ChannelId,float*,float*,int) noexcept {};
+    const auto render=[&] {
+        return session.render(epoch,pins,1,left.data(),right.data(),64,false,noFx);
+    };
+    assert(render() && near(left[19],.25f*.7071067811865475f));
+    const std::array<ChannelEdit,1> same{output(src,main)};
+    a=session.edit(2,2,same,physical,epoch,epoch,true);
+    assert(a.ok());
+    assert(session.acceptedRouting(epoch,3)->edges[0].edgeId==edgeId);
+    assert(render() && near(left[19],.25f*.7071067811865475f));
+    const std::array<ChannelEdit,1> retarget{output(src,via)};
+    a=session.edit(3,3,retarget,physical,epoch,epoch,true);
+    assert(a.ok());
+    accepted=session.acceptedRouting(epoch,4);
+    assert(accepted->edges[0].edgeId==edgeId);
+    assert(accepted->edges[0].to==via);
+    assert(accepted->edges[1].edgeId==viaId);
+    assert(render() && near(left[19],.25f*.7071067811865475f));
+    session.unpublish();
+    session.pollRetirement();
+}
+
 int main() {
+    verifyPrimaryOutKeepsCanonicalEdgeIdentity();
     verifyDefaultNativeMainEdgeAndDisconnectedRestore();
     verifyAtomicWireTransactionAndZeroSampleHops();
 
