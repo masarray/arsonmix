@@ -122,6 +122,19 @@ def run():
                          (bay["x"]+bay["width"]-9,bay["y"]+bay["height"]-9)]
                 x1,y1=max(corners,key=lambda p:(p[0]-x0)**2+(p[1]-y0)**2)
                 assert (x1-x0)**2+(y1-y0)**2>34**2,"No legitimate MAIN unplug drop area"
+                page.evaluate("""() => {
+                    window.__wirePointerProbe=[];
+                    for(const event of ['pointerdown','pointermove','pointerup'])
+                      window.addEventListener(event, e => {
+                        if(window.__wirePointerProbe.length<40)
+                          window.__wirePointerProbe.push({
+                            event,tag:e.target.tagName,cls:String(e.target.className?.baseVal||e.target.className||''),
+                            x:Math.round(e.clientX),y:Math.round(e.clientY),
+                            hits:[...document.elementsFromPoint(e.clientX,e.clientY)].slice(0,3)
+                              .map(el=>el.tagName+'.'+String(el.className?.baseVal||el.className||''))
+                          });
+                      },true);
+                  }""")
                 page.mouse.move(x0,y0)
                 page.mouse.down()
                 page.mouse.move(x1,y1,steps=12)
@@ -130,7 +143,8 @@ def run():
                     "MAIN pointer drag failed",page.locator("#info").inner_text(),
                     "socket",jack,"bay",bay,"drop",(x1,y1),
                     "main-disabled",page.locator('#master .wire-node-in').get_attribute("disabled"),
-                    "master-highlight",page.locator('#master .wire-node-in').get_attribute("class"))
+                    "master-highlight",page.locator('#master .wire-node-in').get_attribute("class"),
+                    "event-probe",page.evaluate("window.__wirePointerProbe"))
                 assert edge(page,6,"out"),"MAIN drag unplugged other source"
                 page.locator("#wireNavigatorToggle").click()
                 page.locator("#wireWsUndo").click()
