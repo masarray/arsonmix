@@ -48,6 +48,31 @@ def run():
             # The accepted WIRE to another channel must preserve the MAIN route.
             if "collapsed-send" in (page.locator(".console-body").get_attribute("class") or ""):
                 page.locator('.section-rail [data-section="send"]').click()
+            # Actual pointer from pinned MAIN socket must remove CH05 only.
+            # Choose the furthest safe point inside the *measured* MAIN well.
+            if width==1680:
+                jack=page.locator('#master .wire-node-in').bounding_box()
+                bay=page.locator('#master .send-section').bounding_box()
+                assert jack and bay,(width,"physical MAIN jack geometry")
+                x0=jack["x"]+jack["width"]/2
+                y0=jack["y"]+jack["height"]/2
+                corners=[(bay["x"]+9,bay["y"]+9),
+                         (bay["x"]+bay["width"]-9,bay["y"]+9),
+                         (bay["x"]+9,bay["y"]+bay["height"]-9),
+                         (bay["x"]+bay["width"]-9,bay["y"]+bay["height"]-9)]
+                x1,y1=max(corners,key=lambda p:(p[0]-x0)**2+(p[1]-y0)**2)
+                assert (x1-x0)**2+(y1-y0)**2>34**2,"No legitimate MAIN unplug drop area"
+                page.mouse.move(x0,y0)
+                page.mouse.down()
+                page.mouse.move(x1,y1,steps=12)
+                page.mouse.up()
+                assert edge(page,5,"out") is None,"MAIN pointer drag failed to unplug focused edge"
+                assert edge(page,6,"out"),"MAIN drag unplugged other source"
+                page.locator("#wireNavigatorToggle").click()
+                page.locator("#wireWsUndo").click()
+                assert edge(page,5,"out")==initial,"MAIN pointer undo changed edge identity"
+                page.locator("#wireNavigatorToggle").click()
+                page.screenshot(path=str(PAGE.parents[2]/"pages-wire-main-1680.png"))
             page.locator('#tracks .strip[data-id="5"] .wire-node-out').click()
             page.locator('#tracks .strip[data-id="3"] .wire-node-in').click()
             assert page.locator('#tracks .strip[data-id="3"] .wire-gain').count()==1
