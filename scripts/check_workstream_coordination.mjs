@@ -100,7 +100,8 @@ export function audit({pr, files, others = [], filesByPR = {}, fileStatuses = {}
     if (peer.parked) continue;
     const shared = [...changed].filter(f =>
       (filesByPR[other.number] || []).includes(f));
-    if (!shared.length) continue;
+    // No exact overlap is NOT grounds to skip: two different files can
+    // still create two native PCM/bridge implementations in one domain.
     // The sole authorized owner must be free to progress. Legacy branches
     // that edited somebody else's files are reported, not allowed to block.
     const activeShared = shared.filter(f => {

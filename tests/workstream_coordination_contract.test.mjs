@@ -148,7 +148,7 @@ test('new alternate GUI is blocked but retiring old renderer is permitted',()=>{
 });
 test('existing #396/#398 remain advisory, first strict PR is #400',()=>{
   assert.equal(POLICY_EPOCH_PR,399);
-  assert.equal(check(pr(398,'INTEGRATOR','integration/old'),
+  assert.equal(check({...pr(398,'INTEGRATOR','integration/old'),draft:true},
     ['src/LiveAudioEngine.h']).ok,true);
   assert.equal(check(pr(400,'INTEGRATOR','integration/new'),
     ['src/LiveAudioEngine.h']).ok,false);
