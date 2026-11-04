@@ -835,8 +835,38 @@ async def main():
         accepted_wire=await page.evaluate("()=>window.__arMixNativeWire.readAccepted()")
         assert accepted_wire["graphRevision"]=="9" and accepted_wire["mainChannelId"]=="1000"
         assert len(accepted_wire["edges"])==10 and accepted_wire["edges"][6]["edgeId"]=="107"
-        assert await page.evaluate("""() => window.__arMixNativeWire.applyTransaction(
-          '7','UNPLUG',[{op:'REMOVE',edgeId:'107'}])""")
+        # Focus is an exact native EdgeId. One MAIN jack cannot unplug all
+        # 10 sources; rejected native requests leave the accepted graph intact.
+        assert await page.evaluate("""() => window.__arMixNativeWire.focusedMainEdge('7').edgeId""")=="107"
+        assert await page.evaluate("""() => window.__arMixNativeWire.focusedMainEdge('1').edgeId""")=="101"
+        assert await page.evaluate("""() => window.__arMixNativeWire.focusedMainEdge('0')""") is None
+        # The existing OUT selector is now the canonical ROUTE_ONLY sender,
+        # not a second SET_PRIMARY_OUT mutation of legacy routing state.
+        await page.locator('[data-op="SET_PRIMARY_OUT"][data-id="7"]').select_option("2")
+        route=await page.evaluate("""() => window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').at(-1).payload""")
+        assert route["operation"]=="APPLY_WIRE_TRANSACTION"
+        assert route["targetChannelId"]=="7" and route["payload"]=={
+          "reason":"ROUTE_ONLY","changes":[
+            {"op":"REMOVE","edgeId":"107"},
+            {"op":"CONNECT","from":"7","to":"2","tap":"POST_FADER","gainLinear":1}]}
+        assert await page.evaluate("""() => window.__arMixNativeWire.focusedMainEdge('7').edgeId""")=="107"
+        await page.evaluate("(a)=>window.__v6Test.publish('arMixConsoleAck',a)",{
+          "requestId":route["requestId"],"status":"REJECTED","deviceEpoch":"9",
+          "graphRevision":"9","rosterRevision":"9","errorCode":"REJECTED_CANDIDATE"})
+        assert await page.locator('[data-op="SET_PRIMARY_OUT"][data-id="7"]').input_value()=="1000"
+        assert await page.evaluate("""() => window.__arMixNativeWire.focusedMainEdge('7').edgeId""")=="107"
+        # ADD_SEND retains MAIN and is also translated to the WIRE intent.
+        await page.locator('[data-op="ADD_SEND"][data-id="7"]').select_option("2")
+        send=await page.evaluate("""() => window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').at(-1).payload""")
+        assert send["operation"]=="APPLY_WIRE_TRANSACTION" and send["payload"]=={
+          "reason":"CONNECT","changes":[
+            {"op":"CONNECT","from":"7","to":"2","tap":"POST_FADER","gainLinear":1}]}
+        await page.evaluate("(a)=>window.__v6Test.publish('arMixConsoleAck',a)",{
+          "requestId":send["requestId"],"status":"REJECTED","deviceEpoch":"9",
+          "graphRevision":"9","rosterRevision":"9","errorCode":"REJECTED_CANDIDATE"})
+        assert await page.evaluate("""() => window.__arMixNativeWire.unplugFocusedMain('7')""")
         wire_command=await page.evaluate("""() => window.__v6Test.sent.filter(
           x=>x.event==='arMixConsoleIntent').at(-1).payload""")
         assert wire_command["operation"]=="APPLY_WIRE_TRANSACTION"
@@ -868,6 +898,55 @@ async def main():
         broken_wire["graph"]["edges"]=next_wire["graph"]["edges"]+[next_wire["graph"]["edges"][0]]
         await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",broken_wire)
         assert await page.evaluate("()=>window.__arMixNativeWire.readAccepted().graphRevision")=="10"
+        # Native-only accepted revision creates one outgoing SEND from CH7,
+        # not a shadow send slot. No redraw or audible claim before readback.
+        send_snapshot=snapshot(revision=11,epoch=9)
+        send_snapshot["graph"]["mainChannelId"]="1000"
+        send_snapshot["graph"]["capabilities"]["supportedOps"].append("APPLY_WIRE_TRANSACTION")
+        send_edge={"edgeId":"207","from":"7","to":"2","tap":"POST_FADER",
+                   "gainLinear":0.5,"enabled":True,"signalKind":"AUDIO"}
+        send_snapshot["graph"]["edges"]=next_wire["graph"]["edges"]+[send_edge]
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",send_snapshot)
+        assert await page.evaluate("()=>window.__arMixNativeWire.focusedMainEdge('7')") is None
+        assert await page.locator('[data-op="SET_PRIMARY_OUT"][data-id="7"]').input_value()=="2"
+        native_send=page.locator('[data-channel-id="7"] .arV6Send[data-send-id="207"]')
+        assert await native_send.count()==1
+        assert await native_send.locator('[data-op="SET_SEND_LEVEL"]').is_disabled()
+        assert await native_send.locator('[data-op="SET_SEND_TAP"]').is_disabled()
+        # MAIN replug uses an exact CONNECT to the real MAIN ChannelId.
+        assert await page.evaluate("()=>window.__arMixNativeWire.replugFocusedMain('7')")
+        replug=await page.evaluate("""() => window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').at(-1).payload""")
+        assert replug["operation"]=="APPLY_WIRE_TRANSACTION"
+        assert replug["payload"]=={"reason":"REPLUG","changes":[
+          {"op":"CONNECT","from":"7","to":"1000","tap":"POST_FADER","gainLinear":1}]}
+        assert await page.evaluate("()=>window.__arMixNativeWire.focusedMainEdge('7')") is None
+        await page.evaluate("(a)=>window.__v6Test.publish('arMixConsoleAck',a)",{
+          "requestId":replug["requestId"],"status":"ACCEPTED","deviceEpoch":"9",
+          "graphRevision":"12","rosterRevision":"12","errorCode":""})
+        assert await page.evaluate("()=>window.__arMixNativeWire.focusedMainEdge('7')") is None
+        replugged=snapshot(revision=12,epoch=9)
+        replugged["graph"]["mainChannelId"]="1000"
+        replugged["graph"]["capabilities"]["supportedOps"].append("APPLY_WIRE_TRANSACTION")
+        replugged["graph"]["edges"]=send_snapshot["graph"]["edges"]+[{
+          "edgeId":"307","from":"7","to":"1000","tap":"POST_FADER",
+          "gainLinear":1.0,"enabled":True,"signalKind":"AUDIO"}]
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",replugged)
+        assert await page.evaluate("()=>window.__arMixNativeWire.focusedMainEdge('7').edgeId")=="307"
+        assert await page.locator('[data-op="SET_PRIMARY_OUT"][data-id="7"]').input_value()=="1000"
+        assert await native_send.count()==1
+        assert not await page.evaluate("()=>window.__arMixNativeWire.replugFocusedMain('7')")
+        # A cyclic native snapshot is rejected, retaining all last accepted
+        # MAIN/SEND edges and fader state; no ghost routing can be painted.
+        cyclic=snapshot(revision=13,epoch=9)
+        cyclic["graph"]["mainChannelId"]="1000"
+        cyclic["graph"]["capabilities"]["supportedOps"].append("APPLY_WIRE_TRANSACTION")
+        cyclic["graph"]["edges"]=replugged["graph"]["edges"]+[
+          {"edgeId":"401","from":"2","to":"7","tap":"POST_FADER",
+           "gainLinear":1.0,"enabled":True,"signalKind":"AUDIO"}]
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",cyclic)
+        assert await page.evaluate("()=>window.__arMixNativeWire.readAccepted().graphRevision")=="12"
+        assert await page.evaluate("()=>window.__arMixNativeWire.focusedMainEdge('7').edgeId")=="307"
         # The actual legacy mixer from web/app.js retains original fader,
         # meters, button materials and bridge.js ownership. Test V5 UX in
         # browser preview, NOT as evidence of loaded native VST3.
