@@ -268,9 +268,16 @@ public:
                         result.fault=ChannelEditFault::invalidValue;break;
                     }
                     auto& edges=it->sends;
-                    edges.erase(std::remove_if(edges.begin(),edges.end(),
-                        [](const auto& x){return x.primaryOutput;}),edges.end());
-                    if(op.target.value) {
+                    const auto primary=std::find_if(edges.begin(),edges.end(),
+                        [](const auto& x){return x.primaryOutput;});
+                    if(!op.target.value) {
+                        if(primary!=edges.end())edges.erase(primary);
+                    } else if(primary!=edges.end()) {
+                        // A replug/OUT retarget is still ONE physical edge.
+                        // Keep stable identity on identical or changed target.
+                        primary->destination=op.target;
+                        primary->gain=1.f;primary->preFader=false;primary->pan=0.f;
+                    } else {
                         if(edges.size()>=budget_.maximumSendsPerChannel) {
                             result.fault=ChannelEditFault::budgetExceeded;break;
                         }
