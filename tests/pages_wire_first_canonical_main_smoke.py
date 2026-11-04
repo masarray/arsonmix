@@ -179,10 +179,12 @@ def run():
             assert not edge(page,5,"out")==edge(page,6,"out"),(width,"nonunique edge IDs")
             # MAIN is pinned; its second stub follows the uniquely focused CH5.
             control=main_button(page,5)
-            assert page.locator('#master .wire-node-in').get_attribute("data-wire-main-edge")==initial
             assert control.get_attribute("aria-pressed")=="true"
             if "collapsed-send" in (page.locator(".console-body").get_attribute("class") or ""):
+                # Folded view suppresses physical MAIN fragments; graph remains.
+                assert page.locator('#master .wire-node-in').get_attribute("data-wire-main-edge") is None
                 page.locator('.section-rail [data-section="send"]').click()
+            assert page.locator('#master .wire-node-in').get_attribute("data-wire-main-edge")==initial
             # One graph edge paints TWO measured local cubic cables, never a
             # cross-bank line. Geometry and edge identity survive all widths.
             source_stub=page.locator('#tracks .strip[data-id="5"] .wire-main-fragment')
