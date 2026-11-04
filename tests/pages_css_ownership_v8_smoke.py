@@ -7,8 +7,8 @@ from pathlib import Path
 from playwright.async_api import async_playwright
 
 ROOT=Path(__file__).resolve().parents[1]
-HTML=ROOT/'site/preview-v2/index.html'
-ASSETS=ROOT/'site/preview-v2/assets'
+HTML=ROOT/'site/preview/index.html'
+ASSETS=ROOT/'site/preview/assets'
 RACK=ASSETS/'mixer-fx-rack.css'
 PLUGIN=ASSETS/'mixer-plugin-browser.css'
 

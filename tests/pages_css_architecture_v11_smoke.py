@@ -11,7 +11,7 @@ from playwright.async_api import async_playwright
 from pages_css_architecture_v10_smoke import source_gate
 
 ROOT = Path(__file__).resolve().parents[1]
-HTML = ROOT / "site/preview-v2/index.html"
+HTML = ROOT / "site/preview/index.html"
 OWNED = (
     "mixer-section-controls.css",
     "mixer-section-layout.css",
