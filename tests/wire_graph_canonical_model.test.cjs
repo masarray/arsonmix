@@ -37,8 +37,10 @@ assert.equal(JSON.stringify(state),unchanged,'rejected batch must preserve origi
 const intentionallyUnplugged=graph.migrateLegacy(channels,9,unplug.edges,unplug.nextId,{graphVersion:1});
 assert.equal(intentionallyUnplugged.ok,true);
 assert.equal(intentionallyUnplugged.edges.some(e=>e.sourceId===1&&e.destId===9),false);
-const legacy=graph.migrateLegacy([{...channels[0],sendSlots:[{send:'CH2',sendOn:true,sendLevel:-6}],
- activeSend:0},channels[1],channels[2]],9);
+// The active slot is represented by live channel fields, as in the V54 model.
+const legacy=graph.migrateLegacy([{...channels[0],send:'CH2',sendOn:true,sendLevel:-6,
+ sendSlots:[{send:'CH2',sendOn:true,sendLevel:-6}],activeSend:0},
+ channels[1],channels[2]],9);
 assert.equal(legacy.ok,true);
 assert.equal(legacy.edges.filter(e=>e.sourceId===1&&e.destId===2).length,1);
 console.log('PASS WIRE canonical model: MAIN defaults, exact-edge unplug/replug, batch, DAG, duplicate, migration');
