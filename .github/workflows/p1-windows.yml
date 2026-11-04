@@ -12,10 +12,7 @@ on:
       # Only the native WebView bridge can trigger Windows; pure GUI/CSS uses Chromium + Pages.
       - 'web/bridge.js'
       - 'web/monitor.js'
-      - 'AR-MIX-Live-FX-Host-Standalone-v0.3.html'
       - 'tests/*.cpp'
-      # Native Windows gate executes this JS integration contract; source-only
-      # contract corrections must not leave a stale failed release gate.
       - 'scripts/package_native_windows.ps1'
       - 'scripts/verify_native_windows_artifact.ps1'
       - 'scripts/factoryfx_release_bundle.py'
@@ -24,7 +21,8 @@ on:
       - 'scripts/tests/test_factoryfx_release_bundle.py'
       - '.github/workflows/p1-windows.yml'
   # GUI-only PRs receive browser checks; they need not compile JUCE on every edit.
-  # A merged GUI change is still packaged once on main, or manually for FAT.
+  # Native bridge changes still require Windows; pure visual GUI follows Pages only.
+  # A full executable/package is still produced on native main and explicit FAT.
   pull_request:
     paths:
       - 'CMakeLists.txt'
@@ -140,7 +138,8 @@ jobs:
         run: |
           & ./scripts/verify_native_windows_artifact.ps1 -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      # PRs compile/CTest/package but never silently publish a stable build.
+      # Ordinary engine PRs compile/CTest without wasting package/ZIP work.
+      # Release-integration PRs and main/manual runs package and verify, but never silently publish a stable release.
       # This single M4 FAT branch is explicitly allowed to upload an
       # UNQUALIFIED experimental ZIP for real physical hardware testing.
       - uses: actions/upload-artifact@v4
