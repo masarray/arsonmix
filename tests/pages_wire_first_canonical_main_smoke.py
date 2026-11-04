@@ -108,6 +108,11 @@ def run():
             # The accepted WIRE to another channel must preserve the MAIN route.
             if "collapsed-send" in (page.locator(".console-body").get_attribute("class") or ""):
                 page.locator('.section-rail [data-section="send"]').click()
+            # MAIN is a many-input sink: explicitly focus the one source
+            # whose plug is being handled, after Navigator and disclosure UI.
+            page.locator('#tracks .strip[data-id="5"] .strip-identity-top').click()
+            assert page.locator('#master .wire-node-in').get_attribute(
+                "data-wire-main-edge")==initial,"MAIN focus lost exact-edge identity"
             # Actual pointer from pinned MAIN socket must remove CH05 only.
             # Choose the furthest safe point inside the *measured* MAIN well.
             if width==1680:
