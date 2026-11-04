@@ -34,13 +34,17 @@ def scenario(page,w,density):
     page.locator("#densitySelect").select_option(density)
     if "collapsed-send" in (page.locator(".console-body").get_attribute("class") or ""):
         page.locator('.section-rail [data-section="send"]').click()
-    # CH1/CH2 have legacy SEND metadata, but no actual WIRE graph edge.
+    # In WIRE-first sessions every CH has one *real* default MAIN edge.
+    # IN stays unoccupied and graphite; OUT must stay attached to MAIN regardless
+    # of focus, not falsely simulated by the old legacy SEND slot metadata.
     for ch in (1,2):
-        for direction in ("in","out"):
-            s=wire(page,ch,direction)
-            assert s["connected"] is None and s["visible"] is None and not s["stale"],(
-                w,density,"phantom WIRE status",ch,direction,s)
-            assert s["color"]=="rgb(75, 83, 91)",(w,density,"idle dot isn't graphite",ch,direction,s)
+        incoming=wire(page,ch,"in")
+        outgoing=wire(page,ch,"out")
+        assert incoming["connected"] is None and incoming["arrival"] is None and not incoming["stale"],(
+            w,density,"phantom incoming graph route",ch,incoming)
+        assert incoming["color"]=="rgb(75, 83, 91)",(w,density,"idle IN dot isn't graphite",ch,incoming)
+        assert outgoing["connected"]=="true",(w,density,"default MAIN edge missing",ch,outgoing)
+        assert outgoing["stale"]=="",(w,density,"stale OUT paint",ch,outgoing)
     # Compact/Standard can intentionally fold SEND/WIRE controls to protect
     # the fixed meter/fader. Validate their passive material in every density;
     # exercise operator patch gestures only in Comfort where jacks are exposed.
@@ -51,12 +55,12 @@ def scenario(page,w,density):
     assert wire(page,5,"out")["connected"]=="true",(w,density,"missing OUT")
     assert wire(page,3,"in")["arrival"]=="true",(w,density,"missing IN")
     for ch in (1,2):
-        assert wire(page,ch,"out")["connected"] is None,(w,density,"legacy SEND lit OUT",ch)
+        assert wire(page,ch,"out")["connected"]=="true",(w,density,"default MAIN disappeared",ch)
     page.locator("#wireNavigatorToggle").click()
     undo=page.locator("#wireWsUndo")
     assert undo.is_enabled(),(w,density,"undo not available")
     undo.click()
-    assert wire(page,5,"out")["connected"] is None,(w,density,"ghost output after undo")
+    assert wire(page,5,"out")["connected"]=="true",(w,density,"Undo removed default MAIN")
     assert wire(page,3,"in")["arrival"] is None,(w,density,"ghost input after undo")
     page.locator("#wireNavigatorToggle").click()
     before=fx(page,1)
