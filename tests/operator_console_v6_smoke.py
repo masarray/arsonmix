@@ -55,7 +55,7 @@ def snapshot(revision=3, epoch=7, new_channel=False):
         "capabilities":{"callbackOwnsChannelIds":True,"fullVendorFxMigration":True,
           "showAndOutputParity":True,"physicalCaptureMapped":True,"dynamicChannels":True,
           "groups":True,"fxReturns":True,"monitor":True,"sendsOnFaders":True,
-          "supportedOps":OPS}},
+          "supportedOps":list(OPS)}},
       "telemetry":{"rawCapturePresent":False,"rawCapturePeak":0,
         "mainPcmPresent":False,"monitorPcmPresent":False,"channelMeterRmsPeak":{}}}
 
@@ -895,9 +895,8 @@ async def main():
         await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",next_wire)
         accepted_wire=await page.evaluate("()=>window.__arMixNativeWire.readAccepted()")
         assert len(accepted_wire["edges"])==9, (
-            "accepted MAIN unplug snapshot",accepted_wire,
-            "published source length",len(next_wire["graph"]["edges"]),
-            await page.evaluate("()=>window.__arMixV6ReadOnly()"))
+            "accepted revision",accepted_wire["graphRevision"],
+            "source edges",len(next_wire["graph"]["edges"]))
         assert not any(e["edgeId"]=="107" for e in accepted_wire["edges"])
         # A malformed graph must be denied without destroying the last accepted
         # edge inventory, fader, device epoch or native source mapping.
