@@ -264,14 +264,14 @@
 
 </style>
 <link rel="stylesheet" href="assets/mixer-control-keys.css?v=css-v26-retired-socket-pruned">
-<link rel="stylesheet" href="assets/mixer-fx-rack.css?v=fx-owner-v8-m3-inserts-v24-pruned-v53-chassis">
+<link rel="stylesheet" href="assets/mixer-fx-rack.css?v=fx-owner-v8-m3-inserts-v54-independent-bypass">
 <link rel="stylesheet" href="assets/mixer-plugin-browser.css?v=css-plugin-owner-v27-cascade-pruned">
 <link rel="stylesheet" href="assets/mixer-pan-controls.css?v=css-owner-v27-pan-pruned">
-<link rel="stylesheet" href="assets/mixer-fader-assembly.css?v=css-owner-v27-fader-pruned-v52-recess">
+<link rel="stylesheet" href="assets/mixer-fader-assembly.css?v=css-owner-v27-fader-pruned-v52-recess-v54-raised-shadow">
 <link rel="stylesheet" href="assets/mixer-meter-display.css?v=css-owner-v27-meter-pruned">
 <link rel="stylesheet" href="assets/mixer-utility-controls.css?v=css-owner-v27-utility-pruned">
 <link rel="stylesheet" href="assets/inter-embedded.css?v=inter-utility-v7">
-<link rel="stylesheet" href="assets/mixer-wire-dots.css?v=v49-direct-physics">
+<link rel="stylesheet" href="assets/mixer-wire-dots.css?v=v54-graph-socket-context">
 <link rel="stylesheet" href="assets/mixer-wire-out-align-v48.css?v=out-center-v48">
 
 <link rel="stylesheet" href="assets/mixer-contextual-buttons.css?v=contextual-micro-handoff-v1">
@@ -530,6 +530,12 @@ function fxOrderSignature(t){
 function fxNativeTransactionRequired(){
  return !!window.chrome?.webview?.postMessage||typeof window.arMixConsoleIntent==='function';
 }
+function deferNativeFxIntent(operation){
+ if(!fxNativeTransactionRequired())return false;
+ // Only matched native intent→ACK→accepted snapshot may update DSP state.
+ say(operation+' requires native intent → ACK → accepted snapshot; GUI unchanged');
+ return true;
+}
 function moveReferenceFx(t,from,to){
  ensureFxInsertIds(t);
  if(fxNativeTransactionRequired()){
@@ -565,11 +571,11 @@ function sectionFx(t){
  const used=t.fx.map((name,i)=>({name,i})).filter(x=>x.name!=='None');
  const first=t.fx.findIndex(x=>x==='None');
  const rows=used.concat(first<0?[]:[{name:'None',i:first}]);
- let out='<div class="section fx-section"><div class="subhead"><span class="sym">fx</span><span class="hint">FX '+used.length+'</span><span class="push"></span><button class="mx-util-key" data-util-kind="fx-main" data-action="fxOn" title="Bypass all effects" aria-label="Toggle effects" aria-pressed="'+Boolean(t.fxOn)+'">'+materialIcon("power_settings_new")+'</button></div><div class="fxslot-list">';
+ let out='<div class="section fx-section'+(t.fxOn?'':' is-chain-bypassed')+'" data-fx-chain-enabled="'+Boolean(t.fxOn)+'"><div class="subhead"><span class="sym">fx</span><span class="hint">FX '+used.length+'</span><span class="push"></span><button class="mx-util-key" data-util-kind="fx-main" data-action="fxOn" title="'+(t.fxOn?'Bypass':'Enable')+' all channel FX" aria-label="'+(t.fxOn?'Bypass':'Enable')+' entire FX chain in '+escapeHtml(t.name)+'" aria-pressed="'+Boolean(t.fxOn)+'">'+materialIcon("power_settings_new")+'</button></div><div class="fxslot-list">';
  for(const {name,i} of rows){
-  out+='<div class="fxslot-row '+(name==='None'?'is-empty':t.slotBypass[i]?'is-bypassed':'is-active')+'" data-slot="'+i+'" data-insert-id="'+(t.fxInsertIds[i]?.id||'')+'" title="Insert '+(i+1)+' · GUI reference">'+
+  out+='<div class="fxslot-row '+(name==='None'?'is-empty':t.slotBypass[i]?'is-bypassed':'is-active')+'" data-slot="'+i+'" data-insert-id="'+(t.fxInsertIds[i]?.id||'')+'" data-fx-slot-enabled="'+Boolean(name!=='None'&&!t.slotBypass[i])+'" data-fx-effective="'+Boolean(name!=='None'&&t.fxOn&&!t.slotBypass[i])+'" title="Insert '+(i+1)+' · GUI reference">'+
    (name==='None'?'<span class="fx-slot-placeholder" aria-hidden="true"></span>':
-   '<button class="mx-util-key" data-util-kind="fx-slot" data-action="slotPower" data-slot="'+i+'" title="Toggle effect" aria-label="Toggle effect slot '+(i+1)+'" aria-pressed="'+Boolean(!t.slotBypass[i])+'">'+materialIcon("power_settings_new")+'</button>');
+   '<button class="mx-util-key" data-util-kind="fx-slot" data-action="slotPower" data-slot="'+i+'" title="'+(t.slotBypass[i]?'Enable':'Bypass')+' only insert '+(i+1)+'" aria-label="'+(t.slotBypass[i]?'Enable':'Bypass')+' only FX insert '+(i+1)+' in '+escapeHtml(t.name)+'" aria-pressed="'+Boolean(!t.slotBypass[i])+'">'+materialIcon("power_settings_new")+'</button>');
   out+='<button class="fx-pick '+(name==='None'?'empty':'')+'" data-action="openPlugin" data-slot="'+i+'" aria-label="Choose plugin for '+escapeHtml(t.name)+' insert '+(i+1)+'">'+(name==='None'?'+ Add FX':escapeHtml(name))+'</button>';
   if(name!=='None')out+='<button type="button" class="grip fx-grip" draggable="true" data-insert-id="'+t.fxInsertIds[i].id+'" data-slot="'+i+'" aria-label="Move insert '+(i+1)+' in '+escapeHtml(t.name)+'; drag handle, or Alt plus arrow keys; Control Z to undo" title="Reorder: drag handle / Alt + ↑↓; Ctrl+Z undo">'+materialIcon("drag_indicator")+'</button><button class="mx-util-key" data-util-kind="fx-remove" data-action="removeFx" data-slot="'+i+'" title="Remove insert '+(i+1)+'" aria-label="Remove insert '+(i+1)+'">'+materialIcon("delete_forever")+'</button>';
   out+='</div>';
@@ -684,13 +690,14 @@ function requestWireConnection(source,dest,anchor){
 function wireConnect(source,dest){
  if(!source||source.kind==='master'||!dest||dest.kind==='master'||source.id===dest.id)return false;
  const old=wireFor(source.id,dest.id);
- if(old){wireEdges=wireEdges.filter(e=>e.id!==old.id);if(old.kind==='primary'&&source.output===dest.name)source.output='SOURCE ONLY (No Main)';render();say('WIRE removed '+source.name+' → '+dest.name+' · GUI DEMO');return true;}
+ if(old){const before=wireWsSnapshot();wireEdges=wireEdges.filter(e=>e.id!==old.id);if(old.kind==='primary'&&source.output===dest.name)source.output='SOURCE ONLY (No Main)';render();wireWsRecord(before);say('WIRE removed '+source.name+' → '+dest.name+' · GUI DEMO');return true;}
  if(hasLegacySendTo(source,dest)){
   say('WIRE not added: '+source.name+' already sends to '+dest.name+' via SEND slot · avoids doubled audio');return false;
  }
  if(wireIsCycle(source.id,dest.id)){say('WIRE REJECTED: feedback loop · existing signal graph preserved');return false;}
+ const before=wireWsSnapshot();
  wireEdges.push({id:nextWireId++,sourceId:source.id,destId:dest.id,mode:wireMode,levelDb:0,enabled:true});
- render();kickWireSpring(source.id,dest.id);say('WIRE '+source.name+' → '+dest.name+' · '+(wireMode==='send'?'FOLLOW FADER SEND':'INDEPENDENT PRE FX')+(source.output==='Master'?' · MAIN direct ON':'')+' · GUI DEMO ONLY, no native PCM');
+ render();wireWsRecord(before);kickWireSpring(source.id,dest.id);say('WIRE '+source.name+' → '+dest.name+' · '+(wireMode==='send'?'FOLLOW FADER SEND':'INDEPENDENT PRE FX')+(source.output==='Master'?' · MAIN direct ON':'')+' · GUI DEMO ONLY, no native PCM');
  return true;
 }
 
@@ -783,11 +790,11 @@ function wireTray(t){
  const armedEdge=!isMain&&source?wireFor(source.id,t.id):null;
  const selected=incoming.find(e=>e.id===selectedWireEdgeId);
  const incomingCount=isMain?0:wireWsRoutes().filter(r=>r.destId===t.id).length;
- const edge=selected||(incomingCount===1&&incoming.length===1?incoming[0]:armedEdge)||null;
+ const edge=selected||(incoming.length===1?incoming[0]:armedEdge)||null;
  const connected=incoming.length>0,hasAnyArrival=incomingCount>0;
  const legacy=!isMain&&source&&hasLegacySendTo(source,t);
- const linked=isMain?!!source&&source.output==='Master':hasAnyArrival||!!legacy;
- const sourceLinked=!!armedEdge||!!legacy;
+ const linked=isMain?!!source&&source.output==='Master':connected;
+ const sourceLinked=!!armedEdge;
  const canWire=!!(source&&!isSource)||hasAnyArrival;
  const label=isMain?(linked?'MAIN ON':'MAIN OFF'):
   incomingCount>1?incomingCount+' incoming wires · inspect routes':
@@ -1304,9 +1311,11 @@ function wireWsSnapshot(){
 function wireWsSignature(state){return JSON.stringify(state);}
 function wireWsRecord(before){
  if(!before)return;
- const after=wireWsSnapshot();
- if(wireWsSignature(before)===wireWsSignature(after))return;
- wireWsHistory.push({before,afterSig:wireWsSignature(after)});
+ const after=wireWsSnapshot(),afterSig=wireWsSignature(after);
+ // The same action may arrive through a socket and the Matrix controller;
+ // capture its accepted graph ONCE, never create duplicate Undo steps.
+ if(wireWsSignature(before)===afterSig||wireWsHistory.at(-1)?.afterSig===afterSig)return;
+ wireWsHistory.push({before,afterSig});
  if(wireWsHistory.length>10)wireWsHistory.shift();
  const btn=document.getElementById('wireWsUndo');if(btn)btn.disabled=false;
 }
@@ -1792,13 +1801,16 @@ function renderWireRouting(){
    No RAF repaint and no forced active light on hidden/off-bank channels. */
 function syncVisibleWireDots(svg){
  const visible=new Map();
- const committed=wireDisplayRoutes();
+ // Physical WIRE material follows accepted edges only; legacy SEND/OUT/split
+ // metadata remains in Navigator but cannot light an unplugged WIRE jack.
+ const committed=wireEdges.filter(e=>e.enabled);
  const arrivals=new Set(committed.map(e=>String(e.destId)));
  const sends=new Set(committed.map(e=>String(e.sourceId)));
  for(const path of svg.querySelectorAll('path.wire-incoming-line,path.wire-outgoing-line,path.wire-context-line')){
   // A hover hint is not a plugged-in cable. Keep snap/hover illumination
   // independent of physical connection state and endpoint paint.
-  if(path.dataset.routeKind==='preview')continue;
+  if(path.dataset.routeKind==='preview'||
+     !wireFor(Number(path.dataset.from),Number(path.dataset.to)))continue;
   const color=path.getAttribute('stroke'),opacity=Number(path.getAttribute('opacity'));
   if(!color||!Number.isFinite(opacity))continue;
   for(const [id,direction] of [[path.dataset.from,'out'],[path.dataset.to,'in']]){
@@ -1822,7 +1834,12 @@ function syncVisibleWireDots(svg){
    else node.removeAttribute('data-wire-arrival');
   }
   const edge=visible.get(key);
-  if(!edge){node.removeAttribute('data-wire-visible');continue;}
+  if(!edge){
+   node.removeAttribute('data-wire-visible');
+   node.style.removeProperty('--wire-edge-color');
+   node.style.removeProperty('--wire-edge-opacity');
+   continue;
+  }
   node.setAttribute('data-wire-visible','true');
   if(node.style.getPropertyValue('--wire-edge-color')!==edge.color)node.style.setProperty('--wire-edge-color',edge.color);
   const alpha=String(edge.opacity);
@@ -2190,10 +2207,10 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  if(a==='rename'||a==='editIdentity')return; // double-click edits; single-click selects
  if(a==='format'&&t.kind==='audio'){t.format=t.format==='mono'?'stereo':'mono';refreshStrip(t);say(t.name+' processing → '+t.format.toUpperCase()+' · physical source '+t.input+' unchanged (reference only)');return;}
  if(a==='openPlugin'){openFastPicker(t,Number(btn.dataset.slot),btn);return;}
- if(a==='removeFx'){const i=Number(btn.dataset.slot);t.fx[i]='None';t.slotBypass[i]=false;if(t.fxInsertIds)t.fxInsertIds[i]=null;fxReorderUndo=null;refreshStrip(t);say(t.name+' · cleared FX insert '+(i+1));return;}
- if(a==='slotPower'){const slot=Number(btn.dataset.slot);if(t.fx[slot]==='None'){say(t.name+': choose an effect before toggling bypass');return;}t.slotBypass[slot]=!t.slotBypass[slot];refreshStrip(t);say(t.name+': FX '+(slot+1)+(t.slotBypass[slot]?' bypassed':' enabled'));return;}
+ if(a==='removeFx'){if(deferNativeFxIntent('Remove FX insert'))return;const i=Number(btn.dataset.slot);t.fx[i]='None';t.slotBypass[i]=false;if(t.fxInsertIds)t.fxInsertIds[i]=null;fxReorderUndo=null;refreshStrip(t);say(t.name+' · cleared FX insert '+(i+1));return;}
+ if(a==='slotPower'){if(deferNativeFxIntent('FX insert bypass'))return;const slot=Number(btn.dataset.slot);if(t.fx[slot]==='None'){say(t.name+': choose an effect before toggling bypass');return;}t.slotBypass[slot]=!t.slotBypass[slot];refreshStrip(t);say(t.name+': FX '+(slot+1)+(t.slotBypass[slot]?' bypassed':' enabled'));return;}
  if(a==='eq')t.eq=!t.eq;
- else if(a==='fxOn')t.fxOn=!t.fxOn;
+ else if(a==='fxOn'){if(deferNativeFxIntent('FX chain bypass'))return;t.fxOn=!t.fxOn;}
  else if(a==='pre'){t.pre=!t.pre;syncActiveSend(t);}
  else if(a==='sendOn'){if(t.send==='None'){say('Select a send destination first.');return;}if(!t.sendOn&&wouldFeedback(t,t.send)){say('Send rejected: feedback path detected.');return;}t.sendOn=!t.sendOn;syncActiveSend(t);}
  else if(['mute','solo','cue','mon','phase'].includes(a)){
