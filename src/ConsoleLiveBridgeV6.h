@@ -579,6 +579,8 @@ public:
         const auto req=intent.getProperty("requestId",juce::var());
         const auto request=req.isString()?req.toString():juce::String();
         const auto key=request.toStdString();
+        const bool v8Wire=intent.getProperty("operation","").toString()==
+            "APPLY_WIRE_TRANSACTION";
         const auto device=snapshot.getProperty("device",juce::var());
         const auto graph=snapshot.getProperty("graph",juce::var());
         const auto legacy=snapshot.getProperty("legacyM4",juce::var());
@@ -598,7 +600,6 @@ public:
             }
             recentIds_.push_back(key);completed_.insert(key);
             const auto operation=intent.getProperty("operation","").toString();
-            const bool v8Wire=operation=="APPLY_WIRE_TRANSACTION";
             const auto payload=intent.getProperty("payload",juce::var());
             // One existing decoder, one native candidate, one PCM publisher.
             const auto baseGraph=v8Wire?intent.getProperty("baseGraphRevision",{})
@@ -787,6 +788,11 @@ public:
                             error="INVALID_NATIVE_WIRE_SOURCE";break;
                         }
                         change.from={source};
+                        // MAIN focus cannot disconnect someone else's edge.
+                        if(v8Wire && item.getProperty("from",{}).toString()!=
+                             intent.getProperty("targetChannelId",{}).toString()) {
+                            error="UNIVERSAL_WIRE_UNFOCUSED_SOURCE";break;
+                        }
                         if(change.kind!=WireChange::Kind::remove) {
                             if(!decodeDecimal(item.getProperty("to",{}),dest) ||
                                dest==0) {

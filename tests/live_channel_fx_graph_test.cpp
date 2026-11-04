@@ -1231,6 +1231,16 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
     staleV8.getDynamicObject()->setProperty("baseGraphRevision","2");
     assert(applyV8(staleV8,acceptedV8).getProperty("status","").toString()=="REJECTED");
     assert(busControl.nativeWireBatches==2);
+    // A focused MAIN plug cannot modify another admitted channel's wire
+    // even if its edge ID is otherwise syntactically valid.
+    auto wrongFocus=juce::JSON::parse(juce::JSON::toString(v8WireIntent,false));
+    wrongFocus.getDynamicObject()->setProperty("requestId","v8:wire:wrong-focus");
+    wrongFocus.getDynamicObject()->setProperty("targetChannelId","18");
+    const auto rejectedFocus=applyV8(wrongFocus,acceptedV8);
+    assert(rejectedFocus.getProperty("status","").toString()=="REJECTED");
+    assert(rejectedFocus.getProperty("errorCode","").toString()==
+           "UNIVERSAL_WIRE_UNFOCUSED_SOURCE");
+    assert(busControl.nativeWireBatches==2);
     // Subsequent native producer snapshot must match the acknowledged graph
     // and roster revision before GUI may paint an accepted WIRE cable.
     v8BusObject->setProperty("graphRevision","4");
