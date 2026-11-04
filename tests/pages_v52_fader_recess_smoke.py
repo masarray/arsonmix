@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""V52 fader bevel/ruler/thin static thumb-shadow; V51 meter is frozen.
+"""V52 fader bevel/ruler/raised static thumb-shadow; V51 meter is frozen.
 
 Browser GUI reference only. Never treats simulated meter data as native PCM.
 """
@@ -28,7 +28,7 @@ def audit_checkpoint():
     assert "filter:none!important" in css
     assert ".console-body .strip .fader-workspace" in css
     assert "#263944" in css
-    assert "0 7px 5px -3px" in css
+    assert "1px 8px 9px -3px" in css and "0 13px 12px -7px" in css
     assert "linear-gradient(90deg," in css
 
 def inspect(page,width,height,density):
@@ -72,7 +72,7 @@ def inspect(page,width,height,density):
         assert abs(float(v["slotWidth"].replace("px",""))-5)<.6,(width,density,"dark slot drift",v)
         assert "rgb(1, 4, 7)" in v["slotBackground"],(
             width,density,"center aperture not near-black",v)
-        assert v["thumbShadow"]!="none" and "7px" in v["thumbShadow"],(
+        assert v["thumbShadow"]!="none" and "9px" in v["thumbShadow"] and "13px" in v["thumbShadow"],(
             width,density,"visible low-cost lower thumb shadow missing",v)
         assert v["thumbFilter"]=="none",(width,density,"GPU filter forbidden",v)
         assert v["thumbTransition"]=="0s",(width,density,"animated shadow forbidden",v)
@@ -118,7 +118,7 @@ def main():
             page.close()
         browser.close()
     print("PASS V52: V51 meter frozen, flat ruler/chassis, inset pocket, 29/27/25px box,"
-          " black 5px slot, static lower thumb shadow and real pointer drag")
+          " black 5px slot, three-layer shadow depth and real pointer drag")
 
 if __name__=="__main__":
     main()

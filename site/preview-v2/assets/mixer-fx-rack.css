@@ -159,3 +159,10 @@
 @media(min-height:801px){
  .console-body{--v13-fader-h:clamp(160px,calc(100dvh - 598px),530px)!important}
 }
+
+/* V54 independent FX bypass: channel header disables the entire serial FX
+   chain without clearing per-insert states. No new layout or GPU filter. */
+.console-body .strip .fx-section.is-chain-bypassed>.fxslot-list .fxslot-row:not(.is-empty) .fx-pick{
+ color:#849ca7!important;
+}
+.console-body .strip .fx-section.is-chain-bypassed>.subhead [data-util-kind="fx-main"]{opacity:.65}
