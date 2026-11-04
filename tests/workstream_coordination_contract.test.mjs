@@ -69,6 +69,11 @@ test('different release-admission script filenames still collide in one runtime 
     [peer],{'411':['scripts/check_console_puzzle.mjs']});
   assert.equal(result.ok,false);
   assert.match(result.errors.join(' '),/ACTIVE DOMAIN COLLISION.*release-admission/);
+  const previousGate=pr(412,'INTEGRATOR','coord/old-gate');
+  const differentScript=check(owner,['scripts/check_pr278_console_authority.mjs'],
+    [previousGate],{'412':['scripts/check_console_puzzle.mjs']});
+  assert.equal(differentScript.ok,false);
+  assert.match(differentScript.errors.join(' '),/ACTIVE DOMAIN COLLISION.*release-admission/);
 });
 
 test('new GUI PR may edit approved source but cannot change native CMake or PCM',()=>{

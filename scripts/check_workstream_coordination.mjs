@@ -61,7 +61,7 @@ export function runtimeDomain(path) {
     return 'native-host-dispatch';
   if (path.startsWith('site/preview') || path === 'scripts/build_pages.py')
     return 'approved-visual';
-  if (/^scripts\/(?:check_console_puzzle|check_approved_native_gui_release)\.mjs$/.test(path))
+  if (/^scripts\/(?:check_console_puzzle|check_approved_native_gui_release|check_pr278_console_authority)\.mjs$/.test(path))
     return 'release-admission';
   if (path.startsWith('.github/workflows/') ||
       path === 'AGENTS.md' || path === 'scripts/check_workstream_coordination.mjs')
