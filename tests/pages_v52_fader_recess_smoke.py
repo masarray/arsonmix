@@ -70,7 +70,7 @@ def inspect(page,width,height,density):
             width,density,"ambiguous gain ruler surface",v)
         assert "linear-gradient" in v["pocket"] and "inset" in v["depth"],(
             width,density,"recess lost",v)
-        assert "inset" in v["rim"],(width,density,"machined rim lost",v)
+        assert v["rim"]=="none" and "inset" in v["depth"],(width,density,"separate outer frame or missing inner pocket",v)
         assert abs(float(v["slotWidth"].replace("px",""))-5)<.6,(width,density,"dark slot drift",v)
         assert "rgb(1, 4, 7)" in v["slotBackground"],(
             width,density,"center aperture not near-black",v)
