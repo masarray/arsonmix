@@ -66,7 +66,7 @@ if ($LASTEXITCODE -ne 0) { throw "APPROVED GUI PROVENANCE MISMATCH: generated bu
 $approvedGuiManifestPath = Join-Path $approvedGuiDir "approved-gui-manifest.json"
 $approvedGui = Get-Content -LiteralPath $approvedGuiManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($approvedGui.authoritativePagesRoute -ne "/preview/" -or
-    $approvedGui.authoritativePagesIframe -ne "/preview-buttons/index.html" -or
+    $approvedGui.authoritativePagesOutput -ne "preview/index.html" -or
     $approvedGui.adapterState -ne "SCAFFOLD_ONLY__NOT_LIVE_PCM") {
     throw "Native GUI bundle does not match approved Pages renderer and truthful M1 status"
 }
@@ -106,7 +106,7 @@ $manifest = [ordered]@{
     peSubsystem = "WINDOWS_GUI (2)"
     exeSha256 = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
     approvedGuiRoute = $approvedGui.authoritativePagesRoute
-    approvedGuiIframe = $approvedGui.authoritativePagesIframe
+    approvedGuiOutput = $approvedGui.authoritativePagesOutput
     approvedGuiCanonicalSource = $approvedGui.canonicalSource
     approvedGuiCanonicalSha256 = $approvedGui.canonicalSourceSha256
     approvedGuiPagesSha256 = $approvedGui.approvedPagesHtmlSha256
