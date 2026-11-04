@@ -37,6 +37,7 @@
     const id = nativeIdFor(t);
     const result = controller?.intent(operation,id,payload) || {ok:false,error:"NATIVE_UNAVAILABLE"};
     if (!result.ok) status("NATIVE: "+result.error+" — controls unchanged");
+    else window.setTimeout(()=>controller?.expire(result.requestId),8000);
     return result.ok;
   };
   function projection(native) {
