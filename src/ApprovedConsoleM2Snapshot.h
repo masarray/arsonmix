@@ -38,32 +38,55 @@ inline juce::var build (const juce::var& installed,
     device->setProperty("outputArmed",open &&
         !static_cast<bool>(actualDevice.getProperty("outputMuted",true)));
     juce::Array<juce::var> inputPorts,outputPorts,inputEndpoints,outputEndpoints;
+    // Correlate active JUCE mask with the EXACT callback ordinal published
+    // by LiveDryRoutingLab's verified per-epoch registry. A mask alone does
+    // not prove ordinal packing after device switch; no guessing allowed.
+    const auto verifiedInputs=route.getProperty("ports",juce::var());
+    const auto verifiedOutputs=route.getProperty("outputPorts",juce::var());
     const auto addPorts=[&](const char* enabledName,const char* labelsName,
-                            const char* prefix,juce::Array<juce::var>& ports,
+                            const char* prefix,const juce::var& verified,
+                            juce::Array<juce::var>& ports,
                             juce::Array<juce::var>& endpoints) {
         const auto enabled=actualDevice.getProperty(enabledName,juce::var());
         const auto labels=actualDevice.getProperty(labelsName,juce::var());
         const auto* indices=enabled.getArray();
         const auto* names=labels.getArray();
-        if (!open || !indices || !names) return;
+        const auto* actualCallbacks=verified.getArray();
+        if (!open || !indices || !names || !actualCallbacks) return;
         for (const auto& value:*indices) {
             if (!value.isInt()) continue;
             const int pin=static_cast<int>(value);
             if (pin<0 || pin>=names->size() || pin>255) continue;
+            int callback=-1;
+            for(int i=0;i<actualCallbacks->size();++i) {
+                const auto& row=actualCallbacks->getReference(i);
+                if(juce::String(prefix)=="in") {
+                    const auto actualPin=row.getProperty("port",juce::var());
+                    const auto actualCallback=row.getProperty("callback",juce::var());
+                    if(actualPin.isInt() && actualCallback.isInt() &&
+                       static_cast<int>(actualPin)==pin)
+                        callback=static_cast<int>(actualCallback);
+                } else if(row.isInt() && static_cast<int>(row)==pin) {
+                    callback=i;
+                }
+            }
+            if(callback<0 || callback>255)continue; // no native proof => no endpoint
             const auto label=names->getReference(pin).toString();
             if (label.isEmpty()) continue;
             auto entry=std::make_unique<juce::DynamicObject>();
             entry->setProperty("id",juce::String(prefix)+":"+juce::String(pin));
             entry->setProperty("port",pin);
-            entry->setProperty("callback",static_cast<int>(ports.size()));
+            entry->setProperty("callback",callback);
             entry->setProperty("label",label);
             entry->setProperty("active",true);
             ports.add(pin);
             endpoints.add(juce::var(entry.release()));
         }
     };
-    addPorts("enabledInputs","inputNames","in",inputPorts,inputEndpoints);
-    addPorts("enabledOutputs","outputNames","out",outputPorts,outputEndpoints);
+    addPorts("enabledInputs","inputNames","in",verifiedInputs,
+             inputPorts,inputEndpoints);
+    addPorts("enabledOutputs","outputNames","out",verifiedOutputs,
+             outputPorts,outputEndpoints);
     device->setProperty("enabledInputs",juce::var(inputPorts));
     device->setProperty("enabledOutputs",juce::var(outputPorts));
     device->setProperty("inputEndpoints",juce::var(inputEndpoints));
