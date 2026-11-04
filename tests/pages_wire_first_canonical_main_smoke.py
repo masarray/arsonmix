@@ -66,7 +66,11 @@ def run():
                 page.mouse.down()
                 page.mouse.move(x1,y1,steps=12)
                 page.mouse.up()
-                assert edge(page,5,"out") is None,"MAIN pointer drag failed to unplug focused edge"
+                assert edge(page,5,"out") is None,(
+                    "MAIN pointer drag failed",page.locator("#info").inner_text(),
+                    "socket",jack,"bay",bay,"drop",(x1,y1),
+                    "main-disabled",page.locator('#master .wire-node-in').get_attribute("disabled"),
+                    "master-highlight",page.locator('#master .wire-node-in').get_attribute("class"))
                 assert edge(page,6,"out"),"MAIN drag unplugged other source"
                 page.locator("#wireNavigatorToggle").click()
                 page.locator("#wireWsUndo").click()
