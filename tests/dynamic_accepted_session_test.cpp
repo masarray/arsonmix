@@ -135,7 +135,73 @@ static void verifyRealtimeSlewAndNativeChannelIdContinuousControls() {
     session.pollRetirement();
 }
 
+// Native WIRE PCM regression: source OUT → Group → MAIN must be an
+// exclusive serial route, not two dry feeds. Rejected feedback preserves the
+// previous audible graph. Disconnect really removes primary audio.
+static void verifyConsoleWirePrimaryOutputPcm() {
+    constexpr std::uint64_t epoch=9751;
+    constexpr float center=.7071067811865475f;
+    DynamicAcceptedSession session;
+    DynamicGraphRequest request;
+    request.physicalInputs=1;request.maxFrames=64;
+    const std::array<ChannelEdit,3> created{
+        add(0,ChannelRole::input,"CH11"),
+        add(1,ChannelRole::group,"VOICE GROUP",ProcessingFormat::stereo),
+        add(2,ChannelRole::main,"MAIN",ProcessingFormat::stereo)
+    };
+    auto result=session.edit(0,0,created,request,epoch,epoch,true);
+    assert(result.ok()&&result.edit.createdIds.size()==3);
+    const auto ch=result.edit.createdIds[0];
+    const auto group=result.edit.createdIds[1];
+    const auto main=result.edit.createdIds[2];
+    const std::array<ChannelEdit,2> first{
+        output(ch,main),output(group,main)
+    };
+    request.sources={{ch,0,-1,false}};
+    result=session.edit(1,1,first,request,epoch,epoch,true);
+    assert(result.ok()&&result.graphRevision==2);
+    std::array<float,64> audio{},left{},right{};
+    audio.fill(.35f);
+    const float* inputs[]{audio.data()};
+    const auto noFx=+[](ChannelId,float*,float*,int) noexcept {};
+    const auto render=[&]{
+        return session.render(epoch,inputs,1,left.data(),right.data(),64,false,noFx);
+    };
+    assert(render()&&near(left[63],.35f*center,1e-4f));
+    const std::array<ChannelEdit,1> routeGroup{output(ch,group)};
+    result=session.edit(session.acceptedRosterRevision(),2,routeGroup,
+                        request,epoch,epoch,true);
+    assert(result.ok()&&session.acceptedGraphRevision()==3);
+    const auto* graph=session.acceptedRouting(epoch,3);
+    assert(graph&&graph->find(ch)->primaryOutput==group);
+    assert(graph->find(group)->primaryOutput==main);
+    assert(render()&&near(left[63],.35f*center,1e-4f));
+
+    // Group -> CH11 while CH11 -> Group is cyclic. A rejected native
+    // publication must preserve CH11 -> Group -> MAIN and real PCM.
+    const std::array<ChannelEdit,1> feedback{output(group,ch)};
+    const auto rejected=session.edit(session.acceptedRosterRevision(),3,
+                                     feedback,request,epoch,epoch,true);
+    assert(!rejected.ok()&&session.acceptedGraphRevision()==3);
+    assert(session.acceptedRouting(epoch,3)->find(group)->primaryOutput==main);
+    assert(render()&&near(left[63],.35f*center,1e-4f));
+    const std::array<ChannelEdit,1> disconnected{output(ch,ChannelId{})};
+    result=session.edit(session.acceptedRosterRevision(),3,disconnected,
+                        request,epoch,epoch,true);
+    assert(result.ok()&&session.acceptedGraphRevision()==4);
+    assert(!session.acceptedRouting(epoch,4)->find(ch)->primaryOutput.value);
+    assert(render()&&near(left[63],0.f,1e-5f));
+    // Reconnect to the same real Group, with exactly one primary route.
+    result=session.edit(session.acceptedRosterRevision(),4,routeGroup,
+                        request,epoch,epoch,true);
+    assert(result.ok()&&session.acceptedGraphRevision()==5);
+    assert(render()&&near(left[63],.35f*center,1e-4f));
+    session.unpublish();
+    session.pollRetirement();
+}
+
 int main() {
+    verifyConsoleWirePrimaryOutputPcm();
     verifyRealtimeSlewAndNativeChannelIdContinuousControls();
     constexpr std::uint64_t epoch=77;
     constexpr float center=.7071067811865475f;
