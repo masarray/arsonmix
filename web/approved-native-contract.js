@@ -122,22 +122,19 @@
     if (cmp(next.graph.revision,pending.baseGraphRevision)<=0) return false;
     const edges=next.graph.edges.filter(e=>e.enabled);
     return payload.changes.every(edit=>{
-      if (!object(edit) || decimal(edit.sourceId)===null) return false;
-      if (edit.type==="REMOVE" || edit.type==="DISCONNECT")
+      if (!object(edit) || decimal(edit.from)===null ||
+          edit.from!==targetChannelId) return false;
+      if (edit.op==="REMOVE")
         return decimal(edit.edgeId)!==null &&
           !edges.some(e=>e.edgeId===edit.edgeId);
-      if (edit.type==="CONNECT" || edit.type==="ROUTE_ONLY")
-        return decimal(edit.destId)!==null &&
-          edges.some(e=>e.from===edit.sourceId&&e.to===edit.destId);
-      if (edit.type==="REPLUG")
-        return decimal(edit.edgeId)!==null && decimal(edit.destId)!==null &&
-          edges.some(e=>e.edgeId===edit.edgeId&&e.from===edit.sourceId&&e.to===edit.destId);
-      if (edit.type==="GAIN")
-        return decimal(edit.edgeId)!==null && Number.isFinite(edit.levelDb) &&
-          edges.some(e=>e.edgeId===edit.edgeId&&e.from===edit.sourceId&&
-            Math.abs((e.gainLinear>0?20*Math.log10(e.gainLinear):-60)-edit.levelDb)<=0.21);
-      // MODE and other operations require a native readback verifier before
-      // they can be advertised as effective by this consumer.
+      if (edit.op==="CONNECT" || edit.op==="ROUTE_ONLY")
+        return decimal(edit.to)!==null &&
+          edges.some(e=>e.from===edit.from&&e.to===edit.to);
+      if (edit.op==="RETARGET")
+        return decimal(edit.edgeId)!==null && decimal(edit.to)!==null &&
+          edges.some(e=>e.edgeId===edit.edgeId&&e.from===edit.from&&e.to===edit.to);
+      // Gain/tap controls remain unsupported by ENGINE #266's native
+      // transaction decoder. Never announce an applied JS-only edit.
       return false;
     });
   }

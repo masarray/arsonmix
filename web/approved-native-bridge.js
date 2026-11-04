@@ -243,13 +243,32 @@
             (op.edgeId!==undefined&&!edgeId)) {
           status("NATIVE: WIRE mapped identity missing; no mutation");return true;
         }
-        changes.push({type:op.type,sourceId,...(destId?{destId}:{}),
-          ...(edgeId?{edgeId}:{}),
-          ...(op.mode?{mode:op.mode}:{}),
-          ...(op.levelDb!==undefined?{levelDb:op.levelDb}:{})});
+        // ENGINE #266's real PCM decoder consumes op/from/to/edgeId,
+        // NOT the Pages reducer's type/sourceId/destId. Never feed it
+        // an unrecognized demo command or an unbound EdgeId.
+        if (!["CONNECT","REMOVE","RETARGET","ROUTE_ONLY"].includes(op.type) ||
+            (op.mode && !["send","postFader","routeOnly"].includes(op.mode))) {
+          status("NATIVE: WIRE "+op.type+" needs real engine capability; unchanged");
+          return true;
+        }
+        const change={op:op.type,from:sourceId};
+        if (destId)change.to=destId;
+        if (edgeId)change.edgeId=edgeId;
+        if (op.type==="CONNECT" || op.type==="ROUTE_ONLY") {
+          change.tap="POST_FADER";
+          change.gainLinear=op.levelDb===undefined?1:
+            Math.pow(10,Math.max(-60,Math.min(6,Number(op.levelDb)))/20);
+        }
+        changes.push(change);
       }
-      const source=changes[0]?.sourceId;
-      controller.intent("APPLY_WIRE_TRANSACTION",source,{changes});
+      const source=changes[0]?.from;
+      if (!source || changes.some(change=>change.from!==source)) {
+        status("NATIVE: multi-source transaction requires native batch admission");
+        return true;
+      }
+      const accepted=controller.intent("APPLY_WIRE_TRANSACTION",source,{changes});
+      if (!accepted.ok)status("NATIVE: "+accepted.error+"; WIRE unchanged");
+      else window.setTimeout(()=>controller?.expire(accepted.requestId),8000);
       return true;
     },
     consumeUndo() {if (!connected)return false;status("NATIVE: WIRE undo requires accepted native transaction");return true;},

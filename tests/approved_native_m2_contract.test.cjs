@@ -128,7 +128,7 @@ test("WIRE REMOVE requires actual native EdgeId absent from later accepted graph
  const c=protocol.createController({emit:(n,p)=>sent.push({n,p})});
  c.onSnapshot(s);
  const removed=c.intent("APPLY_WIRE_TRANSACTION",source,
-   {changes:[{type:"REMOVE",sourceId:source,edgeId:edge}]});
+   {changes:[{op:"REMOVE",from:source,edgeId:edge}]});
  assert.equal(removed.ok,true);
  assert.equal(c.onAck({requestId:removed.requestId,status:"ACCEPTED",
    deviceEpoch:s.device.epoch,graphRevision:"6",rosterRevision:"7",errorCode:"NONE"}),true);
@@ -139,7 +139,7 @@ test("WIRE REMOVE requires actual native EdgeId absent from later accepted graph
  const verified=protocol.createController({emit:()=>{}});
  verified.onSnapshot(s);
  const req=verified.intent("APPLY_WIRE_TRANSACTION",source,
-   {changes:[{type:"REMOVE",sourceId:source,edgeId:edge}]});
+   {changes:[{op:"REMOVE",from:source,edgeId:edge}]});
  verified.onAck({requestId:req.requestId,status:"ACCEPTED",
    deviceEpoch:s.device.epoch,graphRevision:"6",rosterRevision:"7",errorCode:"NONE"});
  before.graph.edges=[];
@@ -152,7 +152,9 @@ test("native meter and PAN scale are driven by PCM readback, not Pages demo",()=
  assert.match(source,/paintNativeMeters\(next\)/);
  assert.match(source,/displayMeterDbfs\(fill,/);
  assert.match(source,/t\.pan=ch\.controls\.pan\*100/);
- assert.match(source,/next\.productLive/);
+ assert.match(source,/next\\.productLive/);
+ assert.match(source,/op:op\\.type,from:sourceId/);
+ assert.doesNotMatch(source,/changes\\.push\\(\\{type:op\\.type,sourceId/);
  assert.doesNotMatch(source,/Math\.sin\(/);
 });
 
