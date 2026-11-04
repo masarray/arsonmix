@@ -147,15 +147,26 @@
    edges.push({id:nextId++,sourceId:src,destId:dst,kind,mode,levelDb,enabled:true});
   };
   for(const t of channels){
-   const out=t.output==='Master'?mainId:names.get(t.output);
+   // A legacy patch that points to a deleted/renamed channel must not
+   // silently disappear on Show/Scene import. Fail before graph publication.
+   const output=String(t.output||'');
+   const out=output==='Master'?mainId:names.get(output);
+   if(!out&&output&&output!=='None'&&output!=='SOURCE ONLY (No Main)')
+    return {ok:false,error:'UNRESOLVED_LEGACY_OUTPUT'};
    if(out)add(t.id,out,'primary',out===mainId?'postFader':'routeOnly');
    if(Array.isArray(t.sendSlots))for(let i=0;i<t.sendSlots.length;i++){
     const slot=i===t.activeSend?t:t.sendSlots[i];
-    if(slot.sendOn&&names.has(slot.send))add(t.id,names.get(slot.send),'send','send',
-     Math.max(-60,Math.min(6,Number(slot.sendLevel)||0)));
+    if(slot.sendOn){
+     if(!names.has(slot.send))return {ok:false,error:'UNRESOLVED_LEGACY_SEND'};
+     const gain=Number(slot.sendLevel);
+     if(!Number.isFinite(gain))return {ok:false,error:'INVALID_LEGACY_SEND_GAIN'};
+     add(t.id,names.get(slot.send),'send','send',Math.max(-60,Math.min(6,gain)));
+    }
    }
-   const split=/^CH(\d+) (PRE|POST)-FX SPLIT$/.exec(String(t.input||''));
+   const input=String(t.input||'');
+   const split=/^CH(\d+) (PRE|POST)-FX SPLIT$/.exec(input);
    if(split)add(Number(split[1]),t.id,'split',split[2]==='PRE'?'splitPre':'splitPost');
+   else if(/\bSPLIT\b/i.test(input))return {ok:false,error:'UNRESOLVED_LEGACY_SPLIT'};
   }
   const valid=validateCandidateGraph(channels,mainId,edges);
   return valid.ok?{ok:true,edges,nextId}:valid;
