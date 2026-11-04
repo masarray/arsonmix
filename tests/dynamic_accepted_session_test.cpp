@@ -293,14 +293,43 @@ int main() {
         result=wire.wireTransaction(4,3,removeOne,req,wireEpoch,wireEpoch,true);
         assert(result.fault==DynamicAcceptedSession::Fault::staleGraph);
         assert(wire.acceptedGraphRevision()==beforeCycle);
-        // RETARGET keeps source identity. Here reconnect direct MAIN using
-        // ROUTE_ONLY, atomically removing its former intermediate MAIN route.
+        // ROUTE_ONLY against an already-existing CH->CH edge removes MAIN
+        // exactly once without duplicating the intermediate signal.
+        WireChange reconnect;reconnect.kind=WireChange::Kind::connect;
+        reconnect.source=source;reconnect.destination=main;
+        const std::array<WireChange,1> replug{reconnect};
+        result=wire.wireTransaction(4,4,replug,req,wireEpoch,wireEpoch,true);
+        assert(result.ok() && wire.acceptedGraphRevision()==5);
+        const auto* beforeOnly=wire.acceptedRoster().find(source);
+        assert(beforeOnly && beforeOnly->sends.size()==2);
+        const auto submixEdge=std::find_if(beforeOnly->sends.begin(),
+            beforeOnly->sends.end(),[submix](const ChannelSendRef& edge) {
+                return edge.destination==submix;
+            })->edgeId;
         WireChange only;only.kind=WireChange::Kind::routeOnly;
-        only.source=source;only.destination=main;
+        only.source=source;only.destination=submix;
         const std::array<WireChange,1> routeOnly{only};
-        result=wire.wireTransaction(4,4,routeOnly,req,wireEpoch,wireEpoch,true);
-        assert(!result.ok()); // routeOnly to MAIN is intentionally unsupported
-        assert(wire.acceptedGraphRevision()==beforeCycle);
+        result=wire.wireTransaction(5,5,routeOnly,req,wireEpoch,wireEpoch,true);
+        assert(result.ok() && wire.acceptedGraphRevision()==6);
+        const auto* onlyRow=wire.acceptedRoster().find(source);
+        assert(onlyRow && onlyRow->sends.size()==1);
+        assert(onlyRow->sends.front().edgeId==submixEdge);
+        assert(onlyRow->sends.front().destination==submix);
+        assert(wire.render(wireEpoch,pins,1,left.data(),right.data(),
+                           64,false,noFx) && near(left[7],direct));
+        // Exact edge retarget preserves ID; source now goes directly MAIN,
+        // with no extra DSP hop or duplicate path.
+        WireChange retarget;retarget.kind=WireChange::Kind::retarget;
+        retarget.edgeId=submixEdge;retarget.destination=main;
+        const std::array<WireChange,1> moveOne{retarget};
+        result=wire.wireTransaction(6,6,moveOne,req,wireEpoch,wireEpoch,true);
+        assert(result.ok() && wire.acceptedGraphRevision()==7);
+        const auto* retargeted=wire.acceptedRoster().find(source);
+        assert(retargeted && retargeted->sends.size()==1);
+        assert(retargeted->sends.front().edgeId==submixEdge &&
+               retargeted->sends.front().destination==main);
+        assert(wire.render(wireEpoch,pins,1,left.data(),right.data(),
+                           64,false,noFx) && near(left[7],direct));
         wire.unpublish();wire.pollRetirement();
     }
 
