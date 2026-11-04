@@ -127,9 +127,53 @@
       if (edit.op==="REMOVE")
         return decimal(edit.edgeId)!==null &&
           !edges.some(e=>e.edgeId===edit.edgeId);
-      if (edit.op==="CONNECT" || edit.op==="ROUTE_ONLY")
-        return decimal(edit.to)!==null &&
-          edges.some(e=>e.from===edit.from&&e.to===edit.to);
+      if (edit.op==="CONNECT" || edit.op==="ROUTE_ONLY") {
+        if (decimal(edit.to)===null) return false;
+        // A cable painted at the requested destination is not proof that
+        // the actual native tap/gain was accepted. Verify readback whenever
+        // the request names those fields; older v6 CONNECT still works.
+        const matching=edges.filter(e=>e.from===edit.from&&e.to===edit.to);
+        const effect=matching.some(e=>{
+          if (edit.tap!==undefined &&
+              e.tap!==edit.tap &&
+              !(edit.tap==="POST_FADER"&&e.tap==="POST") &&
+              !(edit.tap==="PRE_FADER"&&e.tap==="PRE"))
+            return false;
+          if (edit.gainLinear!==undefined &&
+              (!Number.isFinite(edit.gainLinear) ||
+               !Number.isFinite(e.gainLinear) ||
+               Math.abs(edit.gainLinear-e.gainLinear)>0.0001))
+            return false;
+          // v8 makes channel.primaryOutId authoritative; primaryOutput on
+          // an edge is optional, but an explicitly false flag cannot be
+          // interpreted as a physical primary cable.
+          return edit.op!=="ROUTE_ONLY" ||
+            (ch.primaryOutId===edit.to&&e.primaryOutput!==false);
+        });
+        if (!effect) return false;
+        if (edit.op==="ROUTE_ONLY") {
+          // A unique primary cable must match both the channel-level
+          // identity and requested destination. Do not accept a second
+          // matching SEND cable as proof of exclusive output.
+          if (ch.primaryOutId!==edit.to||matching.length!==1||
+              matching[0].primaryOutput===false) return false;
+          if (edges.some(e=>e.from===edit.from&&
+              e.primaryOutput===true&&e.to!==edit.to))
+            return false;
+          // Preserve the original primary destination in the pending
+          // control transaction so even an old GROUP cable without an edge
+          // primaryOutput flag cannot survive Route Only unnoticed.
+          if (pending.originalPrimaryOutId &&
+              pending.originalPrimaryOutId!==edit.to &&
+              edges.some(e=>e.from===edit.from&&
+                e.to===pending.originalPrimaryOutId))
+            return false;
+          if (edit.to!==next.graph.mainChannelId &&
+              edges.some(e=>e.from===edit.from&&e.to===next.graph.mainChannelId))
+            return false;
+        }
+        return true;
+      }
       if (edit.op==="RETARGET")
         return decimal(edit.edgeId)!==null && decimal(edit.to)!==null &&
           edges.some(e=>e.edgeId===edit.edgeId&&e.from===edit.from&&e.to===edit.to);
@@ -215,6 +259,8 @@
         baseRosterRevision:current.graph.rosterRevision,
         operation,targetChannelId,payload};
       pending={requestId,operation,targetChannelId,payload,
+        originalPrimaryOutId:current.graph.channels.find(
+          ch=>ch.id===targetChannelId)?.primaryOutId||null,
         deviceEpoch:msg.deviceEpoch,baseGraphRevision:msg.baseGraphRevision,
         baseRosterRevision:msg.baseRosterRevision,ack:null};
       lastError="PENDING_NATIVE_ACK";

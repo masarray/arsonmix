@@ -14,7 +14,7 @@ export const PATHS=Object.freeze({
   engine:'src/LiveAudioEngine.h',
   nativeG0:'src/ApprovedConsoleNativeTransportV6.h',
   nativeV8:'src/ConsoleLiveBridgeV6.h',
-  projection:'src/ApprovedNativeV8Projection.h',
+  projection:'integration/ApprovedNativeV8Projection.h',
   renderOwner:'engine/core/NativeRenderAuthority.h',
   gui:'web/approved-native-bridge.js',
   protocol:'web/approved-native-contract.js',
@@ -112,7 +112,8 @@ export function inspectMilestoneA(s) {
 async function cli() {
   const release=process.argv.includes('--release');
   execFileSync(process.execPath,['--test','tests/console_v6_puzzle_seam_test.mjs',
-    'tests/milestone_a_native_contract_test.mjs'],{stdio:'inherit'});
+    'tests/milestone_a_native_contract_test.mjs',
+    'tests/m4_operator_routing.test.mjs'],{stdio:'inherit'});
   const report=inspectMilestoneA(collectSources());
   const selected=release?[...report.baseline,...report.integration]:report.baseline;
   for(const x of selected)
