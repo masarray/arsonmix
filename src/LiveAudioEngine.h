@@ -1387,6 +1387,25 @@ public:
         return dryRoutingLab_.setNativePrimaryOutput(
             ep,pcmRev,rosterRev,src,dst,true);
     }
+    // Native WIRE mutation on the already installed single ChannelId PCM
+    // path. No device restart, audio-thread heap work or output disarm;
+    // fail closed for legacy M4 sources until they are migrated.
+    LiveDryRoutingLab::NativeBusResult applyNativeWireTransaction(
+            std::uint64_t ep,std::uint64_t pcmRevision,
+            std::uint64_t rosterRevision,
+            std::span<const armix::mixer::WireChange> changes) {
+        LiveDryRoutingLab::NativeBusResult fail;
+        fail.error="NATIVE_WIRE_DEVICE_NOT_READY";
+        if(independent_.active()||!attached_||!directFence_.permitted()||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal||
+           handoff_.busy()||
+           fxMovePhase_.load(std::memory_order_acquire)!=0)
+            return fail;
+        return dryRoutingLab_.applyNativeWireTransaction(
+            ep,pcmRevision,rosterRevision,changes);
+    }
     bool setNativeInputMix(std::uint64_t epoch,std::uint64_t rev,
                            armix::mixer::ChannelId id,float gain,float pan) noexcept {
         if(independent_.active()||!directFence_.permitted()||
