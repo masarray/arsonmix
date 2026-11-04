@@ -966,15 +966,6 @@
 .console-body.wire-routing-v15.collapsed-send .strip .wire-main-fragment{
  display:none;
 }
-/* Folded 23px WIRE retains two discreet color fragments tied to exact graph IDs.
-   The accepted V52 fader, V51 meter and V54 jack material remain unchanged. */
-.console-body.wire-routing-v15.collapsed-send .strip
- .wire-fold-summary[data-wire-main-edge]::after{
- content:"";position:absolute;left:22%;bottom:1px;width:2px;height:8px;
- border-radius:2px;background:var(--main-wire-hue,#a04b65);
- transform:rotate(-9deg);pointer-events:none;opacity:.85;
-}
-.console-body.wire-routing-v15.collapsed-send #master
- .wire-fold-summary[data-wire-main-edge]::after{
- left:78%;transform:rotate(9deg);
-}
+/* V59: Folded WIRE shows only the flat IN/OUT contacts.
+   Physical MAIN cables (including ::after tails) are completely absent.
+   MAIN remains a canonical graph edge and does not light the OUT contact. */
