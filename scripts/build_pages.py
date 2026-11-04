@@ -90,8 +90,10 @@ for keycap_asset in ('micro-hardware-17x17-2x4.png','format-hardware-25x15-2x1.p
 # independent routing model, frozen WIRE styles or stale preview snapshot.
 buttons_source=ROOT/'site/preview-buttons/assets'
 canonical=ROOT/'site/preview-v2'
-buttons_dest=dst/'preview-buttons'
+buttons_dest=dst/'preview'
 if buttons_dest.exists(): shutil.rmtree(buttons_dest)
+# Public /preview/ is the only compiled GUI. Canonical base and PNG overrides
+# are source inputs only; this output has ONE HTML, ONE CSS/JS/asset set.
 (buttons_dest/'assets').mkdir(parents=True)
 canonical_html=(canonical/'index.html').read_text(encoding='utf-8')
 special=('mixer-control-keys.css','mixer-control-keys.js')
@@ -119,8 +121,9 @@ for name in special:
     canonical_html=canonical_html[:match.start()]+token+'?rev='+digest+canonical_html[match.end():]
 (buttons_dest/'index.html').write_text(canonical_html,encoding='utf-8')
 (buttons_dest/'build.json').write_text(json.dumps({
+    'canonical_url':'/preview/',
     'sha':args.sha,'branch':args.branch,
-    'kind':'APPROVED_PNG_VISUAL_REVIEW_ONLY','live_audio':False,
+    'kind':'APPROVED_SINGLE_GUI','live_audio':False,
     'wire_source':'site/preview-v2/index.html',
     'wire_source_sha256':hashlib.sha256((canonical/'index.html').read_bytes()).hexdigest(),
     'button_asset_source':'site/preview-buttons/assets/',
@@ -130,6 +133,29 @@ for name in special:
 for name in ('mixer-wire-dots.css','knob-ICON.svg'):
     if (buttons_dest/'assets'/name).read_bytes()!=(canonical/'assets'/name).read_bytes():
         raise SystemExit('PNG preview WIRE dependency drift: '+name)
+# The source directories /preview-v2/ and /preview-buttons/ MUST NOT ship
+# alternative mixer pages. Preserve old bookmarks with redirect-only shells;
+# all redirects lead to exactly the SAME approved /preview/ GUI.
+legacy_paths=('preview-v2','preview-buttons','preview-v33','preview-v34')
+redirect_html=('<!doctype html><html lang="en"><head><meta charset="utf-8">'
+               '<meta http-equiv="refresh" content="0;url=../preview/">'
+               '<link rel="canonical" href="../preview/">'
+               '<title>ArSonMix — Official Preview</title></head>'
+               '<body><a href="../preview/">Open the only approved ArSonMix preview</a></body></html>')
+for legacy in legacy_paths:
+    target=dst/legacy
+    if target.exists(): shutil.rmtree(target)
+    target.mkdir(parents=True)
+    (target/'index.html').write_text(redirect_html,encoding='utf-8')
+# Retire the old competing /preview/mixer.html body and its candidate metadata;
+# they are never an alternate product skin.
+(dst/'preview'/'mixer.html').write_text(
+    '<!doctype html><meta http-equiv="refresh" content="0;url=./">'
+    '<link rel="canonical" href="./">',encoding='utf-8')
+for obsolete in ('candidate.json',):
+    (dst/'preview'/obsolete).unlink(missing_ok=True)
 (dst/'.nojekyll').touch()
 assert (dst/'index.html').exists() and (dst/'preview'/'index.html').exists()
-print('Built GitHub Pages:',dst,'preview source:',source,'revision:',args.sha)
+assert 'APPROVED_SINGLE_GUI' in (dst/'preview'/'build.json').read_text(encoding='utf-8')
+print('Built ONE approved public GUI at /preview/:',dst/'preview',
+      'from internal HTML + approved button assets', 'revision:',args.sha)
